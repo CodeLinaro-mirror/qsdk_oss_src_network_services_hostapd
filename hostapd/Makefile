@@ -1,6 +1,7 @@
 ALL=hostapd hostapd_cli
 CONFIG_FILE = .config
 
+-include $(if $(MULTICALL), ../wpa_supplicant/.config)
 include ../src/build.rules
 
 ifdef LIBS
@@ -200,7 +201,8 @@ endif
 
 ifdef CONFIG_NO_VLAN
 CFLAGS += -DCONFIG_NO_VLAN
-else
+endif
+ifneq ($(findstring CONFIG_NO_VLAN,$(CFLAGS)), CONFIG_NO_VLAN)
 OBJS += ../src/ap/vlan_init.o
 OBJS += ../src/ap/vlan_ifconfig.o
 OBJS += ../src/ap/vlan.o
@@ -360,10 +362,14 @@ CFLAGS += -DCONFIG_MBO
 OBJS += ../src/ap/mbo_ap.o
 endif
 
+ifndef MULTICALL
+CFLAGS += -DNO_SUPPLICANT
+endif
+
 include ../src/drivers/drivers.mak
-OBJS += $(DRV_AP_OBJS)
-CFLAGS += $(DRV_AP_CFLAGS)
-LDFLAGS += $(DRV_AP_LDFLAGS)
+OBJS += $(sort $(DRV_AP_OBJS) $(if $(MULTICALL),$(DRV_WPA_OBJS)))
+CFLAGS += $(DRV_AP_CFLAGS) $(if $(MULTICALL),$(DRV_WPA_CFLAGS))
+LDFLAGS += $(DRV_AP_LDFLAGS) $(if $(MULTICALL),$(DRV_WPA_LDFLAGS))
 LIBS += $(DRV_AP_LIBS)
 
 ifdef CONFIG_L2_PACKET
@@ -1406,6 +1412,12 @@ install: $(addprefix $(DESTDIR)$(BINDIR)/,$(ALL))
 _OBJS_VAR := OBJS
 include ../src/objs.mk
 
+hostapd_multi.a: $(BCHECK) $(OBJS)
+	$(Q)$(CC) -c -o hostapd_multi.o -Dmain=hostapd_main $(CFLAGS) main.c
+	@$(E) "  CC " $<
+	@rm -f $@
+	@$(AR) cr $@ hostapd_multi.o $(OBJS)
+
 hostapd: $(OBJS)
 	$(Q)$(CC) $(LDFLAGS) -o hostapd $(OBJS) $(LIBS)
 	@$(E) "  LD " $@
@@ -1493,6 +1505,12 @@ _OBJS_VAR := HOBJS
 include ../src/objs.mk
 _OBJS_VAR := SOBJS
 include ../src/objs.mk
+
+dump_cflags:
+	@printf "%s " "$(CFLAGS)"
+
+dump_ldflags:
+	@printf "%s " "$(LDFLAGS) $(LIBS) $(EXTRALIBS)"
 
 nt_password_hash: $(NOBJS)
 	$(Q)$(CC) $(LDFLAGS) -o nt_password_hash $(NOBJS) $(LIBS_n)

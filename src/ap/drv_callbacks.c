@@ -2570,8 +2570,8 @@ static void hostapd_mld_iface_disable(struct hostapd_data *hapd)
 #endif /* CONFIG_IEEE80211BE */
 
 
-void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
-			  union wpa_event_data *data)
+void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
+		       union wpa_event_data *data)
 {
 	struct hostapd_data *hapd = ctx;
 	struct sta_info *sta;
@@ -2930,7 +2930,7 @@ void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
 }
 
 
-void wpa_supplicant_event_global(void *ctx, enum wpa_event_type event,
+void hostapd_wpa_event_global(void *ctx, enum wpa_event_type event,
 				 union wpa_event_data *data)
 {
 	struct hapd_interfaces *interfaces = ctx;

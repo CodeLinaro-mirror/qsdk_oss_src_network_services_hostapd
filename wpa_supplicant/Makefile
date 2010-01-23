@@ -10,6 +10,7 @@ ALL += dbus/fi.w1.wpa_supplicant1.service
 EXTRA_TARGETS=dynamic_eap_methods
 
 CONFIG_FILE=.config
+-include $(if $(MULTICALL),../hostapd/.config)
 include ../src/build.rules
 
 ifdef CONFIG_BUILD_PASN_SO
@@ -396,7 +397,9 @@ endif
 ifdef CONFIG_IBSS_RSN
 NEED_RSN_AUTHENTICATOR=y
 CFLAGS += -DCONFIG_IBSS_RSN
+ifndef MULTICALL
 CFLAGS += -DCONFIG_NO_VLAN
+endif
 OBJS += ibss_rsn.o
 endif
 
@@ -990,6 +993,10 @@ ifdef CONFIG_DYNAMIC_EAP_METHODS
 CFLAGS += -DCONFIG_DYNAMIC_EAP_METHODS
 LIBS += -ldl -rdynamic
 endif
+else
+  ifdef MULTICALL
+    OBJS += ../src/eap_common/eap_common.o
+  endif
 endif
 
 ifdef CONFIG_AP
@@ -997,9 +1004,11 @@ NEED_EAP_COMMON=y
 NEED_RSN_AUTHENTICATOR=y
 CFLAGS += -DCONFIG_AP
 OBJS += ap.o
+ifndef MULTICALL
 CFLAGS += -DCONFIG_NO_RADIUS
 CFLAGS += -DCONFIG_NO_ACCOUNTING
 CFLAGS += -DCONFIG_NO_VLAN
+endif
 OBJS += ../src/ap/hostapd.o
 OBJS += ../src/ap/wpa_auth_glue.o
 OBJS += ../src/ap/utils.o
@@ -1090,6 +1099,12 @@ endif
 ifdef CONFIG_HS20
 OBJS += ../src/ap/hs20.o
 endif
+else
+  ifdef MULTICALL
+    OBJS += ../src/eap_server/eap_server.o
+    OBJS += ../src/eap_server/eap_server_identity.o
+    OBJS += ../src/eap_server/eap_server_methods.o
+  endif
 endif
 
 ifdef CONFIG_MBO
@@ -1099,7 +1114,9 @@ NEED_GAS=y
 endif
 
 ifdef NEED_RSN_AUTHENTICATOR
+ifndef MULTICALL
 CFLAGS += -DCONFIG_NO_RADIUS
+endif
 NEED_AES_WRAP=y
 OBJS += ../src/ap/wpa_auth.o
 OBJS += ../src/ap/wpa_auth_ie.o
@@ -2090,6 +2107,12 @@ wpa_priv: $(BCHECK) $(OBJS_priv)
 
 _OBJS_VAR := OBJS
 include ../src/objs.mk
+wpa_supplicant_multi.a: .config $(BCHECK) $(OBJS) $(EXTRA_progs)
+	$(Q)$(CC) -c -o wpa_supplicant_multi.o -Dmain=wpa_supplicant_main $(CFLAGS) main.c
+	@$(E) "  CC " $<
+	@rm -f $@
+	@$(AR) cr $@ wpa_supplicant_multi.o $(OBJS)
+
 wpa_supplicant: $(BCHECK) $(OBJS) $(EXTRA_progs)
 	$(Q)$(LDO) $(LDFLAGS) -o wpa_supplicant $(OBJS) $(LIBS) $(EXTRALIBS)
 	@$(E) "  LD " $@
@@ -2221,6 +2244,12 @@ eap_gpsk.so: $(SRC_EAP_GPSK)
 %@.service: %.service.arg.in
 	$(Q)sed -e 's|\@BINDIR\@|$(BINDIR)|g' $< >$@
 	@$(E) "  sed" $<
+
+dump_cflags:
+	@printf "%s " "$(CFLAGS)"
+
+dump_ldflags:
+	@printf "%s " "$(LDFLAGS) $(LIBS) $(EXTRALIBS)"
 
 wpa_supplicant.exe: wpa_supplicant
 	mv -f $< $@
