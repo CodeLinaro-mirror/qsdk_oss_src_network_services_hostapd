@@ -6569,8 +6569,8 @@ static void nl80211_teardown_ap(struct i802_bss *bss)
 	}
 
 	nl80211_put_wiphy_data_ap(bss);
-	if (bss->flink)
-		bss->flink->beacon_set = 0;
+
+	wpa_driver_nl80211_del_beacon_all(bss);
 }
 
 
@@ -9417,8 +9417,6 @@ static int wpa_driver_nl80211_if_remove(struct i802_bss *bss,
 		wpa_printf(MSG_DEBUG, "nl80211: First BSS - reassign context");
 		nl80211_teardown_ap(bss);
 		nl80211_remove_links(bss);
-		if (!bss->added_if && !drv->first_bss->next)
-			wpa_driver_nl80211_del_beacon_all(bss);
 		nl80211_destroy_bss(bss);
 		if (!bss->added_if)
 			i802_set_iface_flags(bss, 0);
