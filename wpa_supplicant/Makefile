@@ -1108,6 +1108,9 @@ ifdef CONFIG_FILS
 OBJS += ../src/ap/fils_hlp.o
 endif
 ifdef CONFIG_CTRL_IFACE
+ifdef CONFIG_CTRL_IFACE_MIB
+CFLAGS += -DCONFIG_CTRL_IFACE_MIB
+endif
 OBJS += ../src/ap/ctrl_iface_ap.o
 endif
 ifdef CONFIG_ROBUST_AV
