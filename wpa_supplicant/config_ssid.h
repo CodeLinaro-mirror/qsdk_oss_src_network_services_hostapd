@@ -911,6 +911,9 @@ struct wpa_ssid {
 	 */
 	void *parent_cred;
 
+	unsigned char rates[WLAN_SUPP_RATES_MAX];
+	double mcast_rate;
+
 #ifdef CONFIG_MACSEC
 	/**
 	 * macsec_policy - Determines the policy for MACsec secure session
