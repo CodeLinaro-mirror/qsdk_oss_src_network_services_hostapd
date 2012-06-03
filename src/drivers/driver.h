@@ -1019,6 +1019,9 @@ struct wpa_driver_associate_params {
 	 * responsible for selecting with which BSS to associate. */
 	const u8 *bssid;
 
+	unsigned char rates[WLAN_SUPP_RATES_MAX];
+	int mcast_rate;
+
 	/**
 	 * bssid_hint - BSSID of a proposed AP
 	 *
