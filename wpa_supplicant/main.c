@@ -217,7 +217,7 @@ int main(int argc, char *argv[])
 
 	for (;;) {
 		c = getopt(argc, argv,
-			   "b:Bc:C:D:de:f:g:G:hi:I:KLMm:No:O:p:P:qsTtuv::Wx:yz:");
+			   "b:Bc:C:D:de:f:g:G:hi:I:KLMm:nNo:O:p:P:qsTtuv::Wx:yz:");
 		if (c < 0)
 			break;
 		switch (c) {
@@ -283,6 +283,9 @@ int main(int argc, char *argv[])
 			params.conf_p2p_dev = os_rel2abs_path(optarg);
 			break;
 #endif /* CONFIG_P2P */
+		case 'n':
+			iface_count = 0;
+			break;
 		case 'o':
 			params.override_driver = optarg;
 			break;
