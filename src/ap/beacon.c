@@ -1456,6 +1456,12 @@ void handle_probe_req(struct hostapd_data *hapd,
 	int mld_id;
 	u16 links;
 #endif /* CONFIG_IEEE80211BE */
+	struct hostapd_ubus_request req = {
+		.type = HOSTAPD_UBUS_PROBE_REQ,
+		.mgmt_frame = mgmt,
+		.ssi_signal = ssi_signal,
+		.elems = &elems,
+	};
 
 	if (hapd->iconf->rssi_ignore_probe_request && ssi_signal &&
 	    ssi_signal < hapd->iconf->rssi_ignore_probe_request)
@@ -1641,6 +1647,12 @@ void handle_probe_req(struct hostapd_data *hapd,
 		return;
 	}
 #endif /* CONFIG_P2P */
+
+	if (hostapd_ubus_handle_event(hapd, &req)) {
+		wpa_printf(MSG_DEBUG, "Probe request for " MACSTR " rejected by ubus handler.\n",
+		       MAC2STR(mgmt->sa));
+		return;
+	}
 
 	/* TODO: verify that supp_rates contains at least one matching rate
 	 * with AP configuration */

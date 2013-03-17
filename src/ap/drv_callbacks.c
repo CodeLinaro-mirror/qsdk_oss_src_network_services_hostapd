@@ -331,6 +331,10 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 #endif /* CONFIG_OWE */
 	bool updated = false;
 	bool driver_acl;
+	struct hostapd_ubus_request req = {
+		.type = HOSTAPD_UBUS_ASSOC_REQ,
+		.addr = addr,
+	};
 
 #ifdef CONFIG_P2P
 	if (hapd->p2p_group && (!hapd->started || hapd->disabled)) {
@@ -520,6 +524,12 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 		}
 	}
 #endif /* CONFIG_IEEE80211BE */
+
+	if (hostapd_ubus_handle_event(hapd, &req)) {
+		wpa_printf(MSG_DEBUG, "Station " MACSTR " assoc rejected by ubus handler.\n",
+			   MAC2STR(req.addr));
+		goto fail;
+	}
 
 #ifdef CONFIG_P2P
 	if (elems.p2p) {
