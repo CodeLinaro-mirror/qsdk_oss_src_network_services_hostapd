@@ -517,6 +517,8 @@ static int wpa_supplicant_mesh_init(struct wpa_supplicant *wpa_s,
 			   frequency);
 		goto out_free;
 	}
+	if (conf->noscan)
+		ssid->noscan = 1;
 
 	if (ssid->mesh_basic_rates == NULL) {
 		/*

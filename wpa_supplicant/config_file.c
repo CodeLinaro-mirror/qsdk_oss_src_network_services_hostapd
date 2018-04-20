@@ -880,6 +880,7 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid)
 	INT(mode);
 #ifdef CONFIG_MESH
 	INT(no_auto_peer);
+	INT(noscan);
 	INT_DEF(mesh_fwding, DEFAULT_MESH_FWDING);
 #endif /* CONFIG_MESH */
 	INT(frequency);
