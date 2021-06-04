@@ -3245,6 +3245,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 #ifdef CONFIG_IEEE80211R_AP
+	} else if (os_strcmp(buf, "ft_iface") == 0) {
+		os_strlcpy(bss->ft_iface, pos, sizeof(bss->ft_iface));
 	} else if (os_strcmp(buf, "mobility_domain") == 0) {
 		if (os_strlen(pos) != 2 * MOBILITY_DOMAIN_ID_LEN ||
 		    hexstr2bin(pos, bss->mobility_domain,
