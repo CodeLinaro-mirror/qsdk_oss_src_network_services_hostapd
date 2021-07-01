@@ -3483,6 +3483,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->ht_vht_twt_responder = atoi(pos);
 	} else if (os_strcmp(buf, "obss_interval") == 0) {
 		conf->obss_interval = atoi(pos);
+	} else if (os_strcmp(buf, "skip_unii1_dfs_switch") == 0) {
+		conf->skip_unii1_dfs_switch = atoi(pos);
 #ifdef CONFIG_IEEE80211AC
 	} else if (os_strcmp(buf, "ieee80211ac") == 0) {
 		conf->ieee80211ac = atoi(pos);
