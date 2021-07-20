@@ -2662,6 +2662,8 @@ struct wpa_driver_capa {
 /** Driver supports Security Profile element (IEEE P802.11bn/D2.0, 9.4.2.369
  * and 37.33) handling */
 #define WPA_DRIVER_FLAGS2_SECURITY_PROFILE      0x0000008000000000ULL
+/** Driver supports Beacon frame TX rate configuration (EHT rates) */
+#define WPA_DRIVER_FLAGS2_BEACON_RATE_EHT		0x0000010000000000ULL
 
 #define FULL_AP_CLIENT_STATE_SUPP(drv_flags) \
 	(drv_flags & WPA_DRIVER_FLAGS_FULL_AP_CLIENT_STATE)
