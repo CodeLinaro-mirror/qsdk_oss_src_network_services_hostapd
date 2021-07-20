@@ -2472,6 +2472,7 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_NON_TRIGGER_BASED_RESPONDER   0x0000000020000000ULL
 /** Driver supports non-trigger based ranging initiator functionality */
 #define WPA_DRIVER_FLAGS2_NON_TRIGGER_BASED_INITIATOR	0x0000000040000000ULL
+#define WPA_DRIVER_FLAGS2_BEACON_RATE_EHT       0x0000000080000000ULL
 
 	u64 flags2;
 
