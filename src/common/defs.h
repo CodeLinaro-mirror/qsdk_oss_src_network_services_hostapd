@@ -439,7 +439,8 @@ enum beacon_rate_type {
 	BEACON_RATE_LEGACY,
 	BEACON_RATE_HT,
 	BEACON_RATE_VHT,
-	BEACON_RATE_HE
+	BEACON_RATE_HE,
+	BEACON_RATE_EHT,
 };
 
 enum eap_proxy_sim_state {

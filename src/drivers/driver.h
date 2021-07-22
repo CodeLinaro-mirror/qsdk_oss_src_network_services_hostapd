@@ -1612,8 +1612,9 @@ struct wpa_driver_ap_params {
 	 * This parameter can be used to set a specific Beacon frame data rate
 	 * for the BSS. The interpretation of this value depends on the
 	 * rate_type (legacy: in 100 kbps units, HT: HT-MCS, VHT: VHT-MCS,
-	 * HE: HE-MCS). If beacon_rate == 0 and rate_type == 0
-	 * (BEACON_RATE_LEGACY), the default Beacon frame data rate is used.
+	 * HE: HE-MCS, EHT: EHT-MCS).
+	 * If beacon_rate == 0 and rate_type == 0 (BEACON_RATE_LEGACY),
+	 * the default Beacon frame data rate is used.
 	 */
 	unsigned int beacon_rate;
 

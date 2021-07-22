@@ -4929,6 +4929,7 @@ static int nl80211_put_beacon_rate(struct nl_msg *msg, u64 flags, u64 flags2,
 	struct nlattr *bands, *band;
 	struct nl80211_txrate_vht vht_rate;
 	struct nl80211_txrate_he he_rate;
+	struct nl80211_txrate_eht eht_rate;
 
 	if (!params->freq ||
 	    (params->beacon_rate == 0 &&
@@ -4962,6 +4963,7 @@ static int nl80211_put_beacon_rate(struct nl_msg *msg, u64 flags, u64 flags2,
 
 	os_memset(&vht_rate, 0, sizeof(vht_rate));
 	os_memset(&he_rate, 0, sizeof(he_rate));
+	os_memset(&eht_rate, 0, sizeof(eht_rate));
 
 	switch (params->rate_type) {
 	case BEACON_RATE_LEGACY:
@@ -5028,6 +5030,25 @@ static int nl80211_put_beacon_rate(struct nl_msg *msg, u64 flags, u64 flags2,
 		    nla_put(msg, NL80211_TXRATE_HE, sizeof(he_rate), &he_rate))
 			return -1;
 		wpa_printf(MSG_DEBUG, " * beacon_rate = HE-MCS %u",
+			   params->beacon_rate);
+		break;
+	case BEACON_RATE_EHT:
+		if (!(flags2 & WPA_DRIVER_FLAGS2_BEACON_RATE_EHT)) {
+			wpa_printf(MSG_INFO,
+				   "nl80211: Driver does not support setting Beacon frame rate (EHT)");
+			return -1;
+		}
+		eht_rate.mcs[0] = BIT(params->beacon_rate);
+		if (nla_put(msg, NL80211_TXRATE_LEGACY, 0, NULL) ||
+		    nla_put(msg, NL80211_TXRATE_HT, 0, NULL) ||
+		    nla_put(msg, NL80211_TXRATE_VHT, sizeof(vht_rate),
+		    	    &vht_rate) ||
+		    nla_put(msg, NL80211_TXRATE_HE, sizeof(he_rate),
+		    	    &he_rate) ||
+		    nla_put(msg, NL80211_TXRATE_EHT, sizeof(eht_rate),
+		    	    &eht_rate))
+		    	return -1;
+		wpa_printf(MSG_DEBUG, " * beacon_rate = EHT-MCS %u",
 			   params->beacon_rate);
 		break;
 	}
