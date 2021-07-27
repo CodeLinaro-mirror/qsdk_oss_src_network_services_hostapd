@@ -4523,7 +4523,7 @@ struct wpa_driver_ops {
 	 * Returns: 0 on success, negative (<0) on failure
 	 */
 	int (*br_set_net_param)(void *priv, enum drv_br_net_param param,
-				unsigned int val);
+				const char *ifname, unsigned int val);
 
 	/**
 	 * get_wowlan - Get wake-on-wireless status

@@ -13032,7 +13032,7 @@ static const char * drv_br_net_param_str(enum drv_br_net_param param)
 
 
 static int wpa_driver_br_set_net_param(void *priv, enum drv_br_net_param param,
-				       unsigned int val)
+				       const char *ifname, unsigned int val)
 {
 	struct i802_bss *bss = priv;
 	char path[128];
@@ -13058,8 +13058,11 @@ static int wpa_driver_br_set_net_param(void *priv, enum drv_br_net_param param,
 			return -EINVAL;
 	}
 
+	if (!ifname)
+		ifname = bss->brname;
+
 	os_snprintf(path, sizeof(path), "/proc/sys/net/ipv%d/conf/%s/%s",
-		    ip_version, bss->brname, param_txt);
+		    ip_version, ifname, param_txt);
 
 set_val:
 	if (linux_write_system_file(path, val))
