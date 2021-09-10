@@ -8884,11 +8884,16 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 		 * Sublement ID: 1 octet
 		 * Length: 1 octet
 		 * Nontransmitted capabilities: 4 octets
-		 * SSID element: 2 + variable
+		 * SSID element: 2 + variable (except for hidden BSS)
 		 * Multiple BSSID Index Element: 3 octets (+2 octets in beacons)
 		 * Fixed length = 1 + 1 + 4 + 2 + 3 = 11
 		 */
-		nontx_profile_len = 11 + bss->conf->ssid.ssid_len;
+		nontx_profile_len = 11;
+
+		if (!bss->conf->ignore_broadcast_ssid ||
+		    bss->conf->ignore_broadcast_ssid == 2 ||
+		    (frame_type == WLAN_FC_STYPE_PROBE_RESP && bss == hapd))
+			nontx_profile_len += bss->conf->ssid.ssid_len;
 
 		if (frame_type == WLAN_FC_STYPE_BEACON)
 			nontx_profile_len += 2;
@@ -9039,9 +9044,18 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		eid += sizeof(capab_info);
 
 		*eid++ = WLAN_EID_SSID;
-		*eid++ = conf->ssid.ssid_len;
-		os_memcpy(eid, conf->ssid.ssid, conf->ssid.ssid_len);
-		eid += conf->ssid.ssid_len;
+		if (!conf->ignore_broadcast_ssid ||
+		    (frame_type == WLAN_FC_STYPE_PROBE_RESP && bss == hapd)) {
+			*eid++ = conf->ssid.ssid_len;
+			os_memcpy(eid, conf->ssid.ssid, conf->ssid.ssid_len);
+			eid += conf->ssid.ssid_len;
+		} else if (conf->ignore_broadcast_ssid == 2) {
+			*eid++ = conf->ssid.ssid_len;
+			os_memset(eid, 0, conf->ssid.ssid_len);
+			eid += conf->ssid.ssid_len;
+		} else {
+			*eid++ = 0;
+		}
 
 		if (conf->mbssid_index &&
 		    conf->mbssid_index > tx_conf->mbssid_index)

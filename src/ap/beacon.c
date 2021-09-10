@@ -1035,7 +1035,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 static void hostapd_gen_probe_resp(struct hostapd_data *hapd,
 				   struct probe_resp_params *params)
 {
-	struct hostapd_data *hapd_probed = hapd;
+	struct hostapd_data *hapd_probed = params->mld_ap? params->mld_ap : hapd;
 	u8 *pos;
 	size_t buflen;
 
@@ -1059,7 +1059,7 @@ static void hostapd_gen_probe_resp(struct hostapd_data *hapd,
 	 * the Probe Response frame template for the unsolicited (i.e., not as
 	 * a response to a specific request) case. */
 	if (params->req && (!is_6ghz_op_class(hapd->iconf->op_class) ||
-		    hapd->conf->ignore_broadcast_ssid))
+			    hapd_probed->conf->ignore_broadcast_ssid))
 		os_memcpy(params->resp->da, params->req->sa, ETH_ALEN);
 	else
 		os_memset(params->resp->da, 0xff, ETH_ALEN);
@@ -2313,13 +2313,15 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 
 	/* SSID */
 	*pos++ = WLAN_EID_SSID;
-	if (hapd->conf->ignore_broadcast_ssid == 2) {
-		/* clear the data, but keep the correct length of the SSID */
-		*pos++ = hapd->conf->ssid.ssid_len;
-		os_memset(pos, 0, hapd->conf->ssid.ssid_len);
-		pos += hapd->conf->ssid.ssid_len;
-	} else if (hapd->conf->ignore_broadcast_ssid) {
-		*pos++ = 0; /* empty SSID */
+	if (hapd->conf->ignore_broadcast_ssid) {
+		if (hapd->conf->ignore_broadcast_ssid == 2) {
+			/* clear the data, but keep the correct length of the SSID */
+			*pos++ = hapd->conf->ssid.ssid_len;
+			os_memset(pos, 0, hapd->conf->ssid.ssid_len);
+			pos += hapd->conf->ssid.ssid_len;
+		} else {
+			*pos++ = 0; /* empty SSID */
+		}
 	} else {
 		*pos++ = hapd->conf->ssid.ssid_len;
 		os_memcpy(pos, hapd->conf->ssid.ssid,

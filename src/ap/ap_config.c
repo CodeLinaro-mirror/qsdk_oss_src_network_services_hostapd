@@ -1496,12 +1496,6 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
-	if (full_config && bss->ignore_broadcast_ssid && conf->mbssid) {
-		wpa_printf(MSG_ERROR,
-			   "Hidden SSID is not suppored when MBSSID is enabled");
-		return -1;
-	}
-
 	/* Do not advertise SPP A-MSDU support if not using CCMP/GCMP */
 	if (full_config && bss->spp_amsdu &&
 	    !(bss->wpa &&
