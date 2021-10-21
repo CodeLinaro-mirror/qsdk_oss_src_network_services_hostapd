@@ -27,6 +27,7 @@
 #include "pae/ieee802_1x_kay.h"
 #endif /* CONFIG_MACSEC */
 #include "utils/list.h"
+#include "drivers/nl80211_copy.h"
 
 struct nan_subscribe_params;
 struct nan_publish_params;
@@ -325,6 +326,12 @@ struct hostapd_hw_modes {
 	 * eht_capab - EHT (IEEE 802.11be) capabilities
 	 */
 	struct eht_capabilities eht_capab[IEEE80211_MODE_NUM];
+
+	/**
+	 * This array is used to store the psd value of each power mode
+	 * supported in 6G band.
+	 */
+	s8 psd_values[NL80211_REG_NUM_POWER_MODES];
 };
 
 
@@ -905,6 +912,17 @@ struct hostapd_freq_params {
 	 * subchannel is punctured, otherwise active.
 	 */
 	u16 punct_bitmap;
+
+	/**
+	 * he_6ghz_reg_pwr_type - 6G regulatory power mode
+	 * Since many operation related to channel for 6G depends on the
+	 * power mode, this parameter is added here.
+	 *
+	 * 0 - LPI_AP
+	 * 1 - SP_AP
+	 * 2 - VLP_AP
+	 */
+	u8 he_6ghz_reg_pwr_type;
 
 	/**
 	 * link_id: If >=0 indicates the link of the AP MLD to configure
@@ -3571,12 +3589,13 @@ struct wpa_driver_ops {
 	 * @num_modes: Variable for returning the number of returned modes
 	 * flags: Variable for returning hardware feature flags
 	 * @dfs: Variable for returning DFS region (HOSTAPD_DFS_REGION_*)
+	 * @pwr_mode: Variable required for processing the support data for 6G
 	 * Returns: Pointer to allocated hardware data on success or %NULL on
 	 * failure. Caller is responsible for freeing this.
 	 */
 	struct hostapd_hw_modes * (*get_hw_feature_data)(void *priv,
 							 u16 *num_modes,
-							 u16 *flags, u8 *dfs);
+							 u16 *flags, u8 *dfs, u8 pwr_mode);
 
 	/**
 	 * send_mlme - Send management frame from MLME

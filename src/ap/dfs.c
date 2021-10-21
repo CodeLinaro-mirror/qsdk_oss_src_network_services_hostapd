@@ -1111,7 +1111,8 @@ static int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 				      cmode->vht_capab,
 				      &cmode->he_capab[ieee80211_mode],
 				      &cmode->eht_capab[ieee80211_mode],
-				      hostapd_get_punct_bitmap(iface->bss[0]));
+				      hostapd_get_punct_bitmap(iface->bss[0]),
+				      iface->conf->he_6ghz_reg_pwr_type);
 
 	if (err) {
 		wpa_printf(MSG_ERROR,
@@ -1284,7 +1285,8 @@ static int hostapd_dfs_testmode_set_beacon_csa(struct hostapd_iface *iface)
 				      iface->current_mode->vht_capab,
 				      &iface->current_mode->he_capab[IEEE80211_MODE_AP],
 				      &iface->current_mode->eht_capab[IEEE80211_MODE_AP],
-				      hostapd_get_punct_bitmap(iface->bss[0]));
+				      hostapd_get_punct_bitmap(iface->bss[0]),
+				      iface->conf->he_6ghz_reg_pwr_type);
 
 	if (err) {
 		wpa_printf(MSG_ERROR, "DFS failed to calculate CSA freq params");

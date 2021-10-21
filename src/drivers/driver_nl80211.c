@@ -5868,6 +5868,19 @@ static int nl80211_set_channel(struct i802_bss *bss,
 		return -1;
 	}
 
+#ifdef CONFIG_IEEE80211AX
+	if (freq->freq && is_6ghz_freq(freq->freq)) {
+		wpa_printf(MSG_DEBUG, "%s: 6g_reg_pwr_mode=%d",
+			   __func__, freq->he_6ghz_reg_pwr_type);
+		if (nla_put_u8(msg, NL80211_ATTR_6G_REG_POWER_MODE,
+			       freq->he_6ghz_reg_pwr_type)) {
+			wpa_printf(MSG_ERROR, "%s: Failed to put 6g_reg_pwr_mode", __func__);
+			nlmsg_free(msg);
+			return -1;
+		}
+	}
+#endif /* CONFIG_IEEE80211AX */
+
 	if (nl80211_link_valid(bss->valid_links, freq->link_id)) {
 		wpa_printf(MSG_DEBUG, "nl80211: Set link_id=%u for freq",
 			   freq->link_id);
@@ -9639,7 +9652,7 @@ static int wpa_driver_nl80211_send_action(struct i802_bss *bss,
 		int i;
 
 		modes = nl80211_get_hw_feature_data(bss, &num_modes,
-						    &flags, &dfs_domain);
+						    &flags, &dfs_domain, 0);
 		if (dfs_domain != HOSTAPD_DFS_REGION_ETSI &&
 		    ieee80211_is_dfs(bss->flink->freq, modes, num_modes))
 			offchanok = 0;

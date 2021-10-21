@@ -7724,6 +7724,7 @@ u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid)
 	u8 channel, tx_pwr_count, local_pwr_constraint;
 	int max_tx_power;
 	u8 tx_pwr;
+	s8 psd;
 
 	if (!mode)
 		return eid;
@@ -7755,11 +7756,16 @@ u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid)
 		tx_pwr_count = 0;
 		tx_pwr_intrpn = REGULATORY_CLIENT_EIRP_PSD;
 
-		/* Default Transmit Power Envelope for Global Operating Class */
-		if (hapd->iconf->reg_def_cli_eirp_psd != -1)
+		if (hapd->iconf->reg_def_cli_eirp_psd != -1) {
 			tx_pwr = hapd->iconf->reg_def_cli_eirp_psd;
-		else
-			tx_pwr = REG_PSD_MAX_TXPOWER_FOR_DEFAULT_CLIENT * 2;
+		} else {
+			psd = mode->psd_values[NL80211_REG_REGULAR_CLIENT_LPI +
+					       iconf->he_6ghz_reg_pwr_type];
+			if (psd)
+				tx_pwr = psd *2;
+			else
+				tx_pwr = chan->max_tx_power;
+		}
 
 		eid = hostapd_add_tpe_info(eid, tx_pwr_count, tx_pwr_intrpn,
 					   REG_DEFAULT_CLIENT, tx_pwr);
@@ -7768,10 +7774,17 @@ u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid)
 		 * subordinate devices */
 		if (he_reg_is_indoor(iconf->he_6ghz_reg_pwr_type)) {
 			/* TODO: Extract PSD limits from channel data */
-			if (hapd->iconf->reg_sub_cli_eirp_psd != -1)
+			if (hapd->iconf->reg_sub_cli_eirp_psd != -1) {
 				tx_pwr = hapd->iconf->reg_sub_cli_eirp_psd;
-			else
-				tx_pwr = REG_PSD_MAX_TXPOWER_FOR_SUBORDINATE_CLIENT * 2;
+			} else {
+				psd = mode->psd_values[NL80211_REG_AP_LPI +
+						       iconf->he_6ghz_reg_pwr_type];
+				if (psd)
+					tx_pwr = psd *2;
+				else
+					tx_pwr = chan->max_tx_power;
+			}
+
 			eid = hostapd_add_tpe_info(eid, tx_pwr_count,
 						   tx_pwr_intrpn,
 						   REG_SUBORDINATE_CLIENT,

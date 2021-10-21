@@ -1636,6 +1636,7 @@ struct phy_info_arg {
 	int last_mode, last_chan_idx;
 	int failed;
 	u8 dfs_domain;
+	u8 pwr_mode;
 };
 
 static void phy_info_ht_capa(struct hostapd_hw_modes *mode, struct nlattr *capa,
@@ -2336,7 +2337,9 @@ static void nl80211_set_ht40_mode_sec(struct hostapd_hw_modes *mode, int start,
 
 
 static void nl80211_reg_rule_max_eirp(u32 start, u32 end, u32 max_eirp,
-				      struct phy_info_arg *results)
+				      struct phy_info_arg *results,
+				      u8 config_pwr_mode, u8 pwr_mode,
+				      s8 psd)
 {
 	u16 m;
 
@@ -2346,10 +2349,16 @@ static void nl80211_reg_rule_max_eirp(u32 start, u32 end, u32 max_eirp,
 
 		for (c = 0; c < mode->num_channels; c++) {
 			struct hostapd_channel_data *chan = &mode->channels[c];
+
+			if (is_6ghz_freq(chan->freq) && config_pwr_mode != pwr_mode)
+				continue;
+
 			if ((u32) chan->freq - 10 >= start &&
 			    (u32) chan->freq + 10 <= end)
 				chan->max_tx_power = max_eirp;
 		}
+		/* Update the psd rules */
+		 mode->psd_values[pwr_mode] = psd;
 	}
 }
 
@@ -2552,6 +2561,7 @@ static int nl80211_get_reg(struct nl_msg *msg, void *arg)
 		[NL80211_ATTR_POWER_RULE_MAX_EIRP] = { .type = NLA_U32 },
 	};
 
+	u8 config_pwr_mode = results->pwr_mode;
 	nla_parse(tb_msg, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
 		  genlmsg_attrlen(gnlh, 0), NULL);
 	if (!tb_msg[NL80211_ATTR_REG_ALPHA2] ||
@@ -2576,6 +2586,8 @@ static int nl80211_get_reg(struct nl_msg *msg, void *arg)
 	nla_for_each_nested(nl_rule, tb_msg[NL80211_ATTR_REG_RULES], rem_rule)
 	{
 		u32 start, end, max_eirp = 0, max_bw = 0, flags = 0;
+		u8 pwr_mode = 0;
+		s8 psd = 0;
 		nla_parse(tb_rule, NL80211_FREQUENCY_ATTR_MAX,
 			  nla_data(nl_rule), nla_len(nl_rule), reg_policy);
 		if (tb_rule[NL80211_ATTR_FREQ_RANGE_START] == NULL ||
@@ -2589,9 +2601,13 @@ static int nl80211_get_reg(struct nl_msg *msg, void *arg)
 			max_bw = nla_get_u32(tb_rule[NL80211_ATTR_FREQ_RANGE_MAX_BW]) / 1000;
 		if (tb_rule[NL80211_ATTR_REG_RULE_FLAGS])
 			flags = nla_get_u32(tb_rule[NL80211_ATTR_REG_RULE_FLAGS]);
+		 if (tb_rule[NL80211_ATTR_REG_POWER_MODE])
+			 pwr_mode = nla_get_u8(tb_rule[NL80211_ATTR_REG_POWER_MODE]);
+		 if (tb_rule[NL80211_ATTR_POWER_RULE_PSD])
+			 psd = (s8) nla_get_u8(tb_rule[NL80211_ATTR_POWER_RULE_PSD]);
 
-		wpa_printf(MSG_DEBUG, "nl80211: %u-%u @ %u MHz %u mBm%s%s%s%s%s%s%s%s",
-			   start, end, max_bw, max_eirp,
+		 wpa_printf(MSG_DEBUG, "nl80211: %u-%u @ %u MHz %u mBm pwr_mode: %u psd: %d%s%s%s%s%s%s%s%s",
+			    start, end, max_bw, max_eirp, pwr_mode, psd,
 			   flags & NL80211_RRF_NO_OFDM ? " (no OFDM)" : "",
 			   flags & NL80211_RRF_NO_CCK ? " (no CCK)" : "",
 			   flags & NL80211_RRF_NO_INDOOR ? " (no indoor)" : "",
@@ -2605,7 +2621,8 @@ static int nl80211_get_reg(struct nl_msg *msg, void *arg)
 			nl80211_reg_rule_ht40(start, end, results);
 		if (tb_rule[NL80211_ATTR_POWER_RULE_MAX_EIRP])
 			nl80211_reg_rule_max_eirp(start, end, max_eirp,
-						  results);
+						  results, config_pwr_mode,
+						  pwr_mode, psd);
 	}
 
 	nla_for_each_nested(nl_rule, tb_msg[NL80211_ATTR_REG_RULES], rem_rule)
@@ -2716,7 +2733,7 @@ static void nl80211_dump_chan_list(struct wpa_driver_nl80211_data *drv,
 
 struct hostapd_hw_modes *
 nl80211_get_hw_feature_data(void *priv, u16 *num_modes, u16 *flags,
-			    u8 *dfs_domain)
+			    u8 *dfs_domain, u8 pwr_mode)
 {
 	u32 feat;
 	struct i802_bss *bss = priv;
@@ -2729,6 +2746,7 @@ nl80211_get_hw_feature_data(void *priv, u16 *num_modes, u16 *flags,
 		.last_mode = -1,
 		.failed = 0,
 		.dfs_domain = 0,
+		.pwr_mode = pwr_mode
 	};
 
 	*num_modes = 0;

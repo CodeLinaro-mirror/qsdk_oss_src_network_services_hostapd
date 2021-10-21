@@ -486,7 +486,8 @@ int hostapd_set_freq_params(struct hostapd_freq_params *data,
 			    int center_segment1, u32 vht_caps,
 			    struct he_capabilities *he_cap,
 			    struct eht_capabilities *eht_cap,
-			    u16 punct_bitmap)
+			    u16 punct_bitmap,
+			    u8 reg_6g_pwr_mode)
 {
 	enum oper_chan_width oper_chwidth_legacy;
 	u8 seg0_legacy, seg1_legacy;
@@ -590,6 +591,8 @@ int hostapd_set_freq_params(struct hostapd_freq_params *data,
 		data->ht_enabled = 0;
 		data->vht_enabled = 0;
 
+		/* Append 6G reg power info */
+		data->he_6ghz_reg_pwr_type = reg_6g_pwr_mode;
 		return 0;
 	}
 

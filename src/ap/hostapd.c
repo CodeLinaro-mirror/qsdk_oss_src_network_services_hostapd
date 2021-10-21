@@ -4541,7 +4541,8 @@ int hostapd_change_config_freq(struct hostapd_data *hapd,
 				    NULL,
 				    mode ? &mode->eht_capab[IEEE80211_MODE_AP] :
 				    NULL,
-				    hostapd_get_punct_bitmap(hapd)))
+				    hostapd_get_punct_bitmap(hapd),
+				    hapd->iconf->he_6ghz_reg_pwr_type))
 		return -1;
 
 	switch (params->bandwidth) {
