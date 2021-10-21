@@ -2291,6 +2291,9 @@ struct tpc_report {
 	u8 link_margin;
 } STRUCT_PACKED;
 
+/* Regulatory-domain PSD values are available through nl80211 rules. */
+#define REG_DOM_SUPPORT_TX_POWER 1
+
 /*
  * IEEE Std 802.11ax-2021, Table 9-275a - Maximum Transmit Power
  * Interpretation subfield encoding
@@ -2729,6 +2732,9 @@ static inline bool he_reg_is_sp(enum he_reg_info_6ghz_ap_type type)
 	return type == HE_REG_INFO_6GHZ_AP_TYPE_SP ||
 		type == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP;
 }
+
+#define IEEE80211_HE_6GHZ_OPER_CTRL_REG_INFO      0x38
+#define IEEE80211_HE_6GHZ_OPER_CTRL_REG_INFO_LSB  3
 
 /* Spatial Reuse defines */
 #define SPATIAL_REUSE_SRP_DISALLOWED		BIT(0)

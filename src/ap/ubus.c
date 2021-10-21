@@ -759,6 +759,7 @@ hostapd_switch_chan(struct ubus_context *ctx, struct ubus_object *obj,
 		.he.cap = mode ? &mode->he_capab[IEEE80211_MODE_AP] : NULL,
 		.eht.cap = mode ? &mode->eht_capab[IEEE80211_MODE_AP] : NULL,
 		.eht.punct_bitmap = hostapd_get_punct_bitmap(hapd),
+		.he_6ghz_reg_pwr_type = hapd->iconf->he_6ghz_reg_pwr_type,
 	};
 
 	if (hostapd_set_freq_params(&css.freq_params, &info))

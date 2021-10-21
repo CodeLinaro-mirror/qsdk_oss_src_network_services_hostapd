@@ -700,6 +700,7 @@ int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
 		.he.cap = cmode ? &cmode->he_capab[IEEE80211_MODE_AP] : NULL,
 		.eht.cap = cmode ? &cmode->eht_capab[IEEE80211_MODE_AP] : NULL,
 		.eht.punct_bitmap = hostapd_get_punct_bitmap(hapd),
+		.he_6ghz_reg_pwr_type = hapd->iconf->he_6ghz_reg_pwr_type,
 	};
 
 	if (hostapd_set_freq_params(&data, &info))
@@ -795,7 +796,8 @@ hostapd_get_hw_feature_data(struct hostapd_data *hapd, u16 *num_modes,
 	    !hapd->drv_priv)
 		return NULL;
 	return hapd->driver->get_hw_feature_data(hapd->drv_priv, num_modes,
-						 flags, dfs_domain, NULL, 0);
+						 flags, dfs_domain, NULL, 0,
+						 hapd->iconf->he_6ghz_reg_pwr_type);
 }
 
 
@@ -1137,6 +1139,7 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 		.he.cap = cmode ? &cmode->he_capab[IEEE80211_MODE_AP] : NULL,
 		.eht.cap = cmode ? &cmode->eht_capab[IEEE80211_MODE_AP] : NULL,
 		.eht.punct_bitmap = hostapd_get_punct_bitmap(hapd),
+		.he_6ghz_reg_pwr_type = hapd->iconf->he_6ghz_reg_pwr_type,
 	};
 
 	if (!hapd->driver || !hapd->driver->start_dfs_cac || !cmode)

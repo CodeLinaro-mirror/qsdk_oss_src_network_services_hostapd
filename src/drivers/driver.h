@@ -27,6 +27,7 @@
 #include "pae/ieee802_1x_kay.h"
 #endif /* CONFIG_MACSEC */
 #include "utils/list.h"
+#include "drivers/nl80211_copy.h"
 
 struct nan_subscribe_params;
 struct nan_publish_params;
@@ -339,6 +340,11 @@ struct hostapd_hw_modes {
 	 * uhr_capab - UHR (IEEE 802.11bn) capabilities
 	 */
 	struct uhr_capabilities uhr_capab[IEEE80211_MODE_NUM];
+
+	/**
+	 * psd_values - Regulatory PSD values indexed by 6 GHz power mode.
+	 */
+	s8 psd_values[NL80211_REG_NUM_POWER_MODES];
 };
 
 
@@ -922,6 +928,11 @@ struct hostapd_freq_params {
 	 * subchannel is punctured, otherwise active.
 	 */
 	u16 punct_bitmap;
+
+	/**
+	 * he_6ghz_reg_pwr_type - 6 GHz regulatory power mode.
+	 */
+	u8 he_6ghz_reg_pwr_type;
 
 	/**
 	 * link_id: If >=0 indicates the link of the AP MLD to configure
@@ -3974,7 +3985,8 @@ struct wpa_driver_ops {
 							 u16 *num_modes,
 							 u16 *flags, u8 *dfs,
 							 char *alpha2,
-							 size_t alpha2_len);
+							 size_t alpha2_len,
+							 u8 pwr_mode);
 
 	/**
 	 * send_mlme - Send management frame from MLME

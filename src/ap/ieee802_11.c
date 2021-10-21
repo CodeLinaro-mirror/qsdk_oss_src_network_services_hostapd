@@ -10833,6 +10833,25 @@ static u8 * hostapd_add_tpe_info(u8 *eid, u8 tx_pwr_count,
 #define REG_PSD_MAX_TXPOWER_FOR_DEFAULT_CLIENT      (-1) /* dBm/MHz */
 #define REG_PSD_MAX_TXPOWER_FOR_SUBORDINATE_CLIENT  5    /* dBm/MHz */
 
+#ifdef CONFIG_IEEE80211AX
+static u8 hostapd_reg_psd_power_mode(u8 ap_pwr_type, bool subordinate)
+{
+	switch (ap_pwr_type) {
+	case HE_REG_INFO_6GHZ_AP_TYPE_SP:
+		return NL80211_REG_REGULAR_CLIENT_SP;
+	case HE_REG_INFO_6GHZ_AP_TYPE_VLP:
+		return NL80211_REG_REGULAR_CLIENT_VLP;
+	case HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP:
+		return subordinate ? NL80211_REG_SUBORDINATE_CLIENT_SP :
+			NL80211_REG_REGULAR_CLIENT_SP;
+	case HE_REG_INFO_6GHZ_AP_TYPE_INDOOR:
+	default:
+		return subordinate ? NL80211_REG_SUBORDINATE_CLIENT_LPI :
+			NL80211_REG_REGULAR_CLIENT_LPI;
+	}
+}
+#endif /* CONFIG_IEEE80211AX */
+
 u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid)
 {
 	struct hostapd_iface *iface = hapd->iface;
@@ -10856,6 +10875,7 @@ u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid)
 	}
 	if (i == mode->num_channels)
 		return eid;
+	chan = &mode->channels[i];
 
 #ifdef CONFIG_IEEE80211AX
 	/* IEEE Std 802.11ax-2021, Annex E.2.7 (6 GHz band in the United
@@ -10870,6 +10890,7 @@ u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid)
 	if (is_6ghz_op_class(iconf->op_class)) {
 		enum max_tx_pwr_interpretation tx_pwr_intrpn;
 		int err;
+		s8 psd;
 		int max_eirp_psd = REG_PSD_MAX_TXPOWER_FOR_DEFAULT_CLIENT * 2;
 		int max_eirp_power = iconf->reg_def_cli_eirp;
 
@@ -10884,9 +10905,15 @@ u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid)
 			if (hapd->iconf->reg_def_cli_eirp_psd != -1)
 				max_eirp_psd =
 					hapd->iconf->reg_def_cli_eirp_psd;
-			else
-				max_eirp_psd =
-					REG_PSD_MAX_TXPOWER_FOR_DEFAULT_CLIENT * 2;
+			else {
+				psd = mode->psd_values[
+					hostapd_reg_psd_power_mode(
+						iconf->he_6ghz_reg_pwr_type, false)];
+				if (psd)
+					max_eirp_psd = psd * 2;
+				else
+					max_eirp_psd = chan->max_tx_power * 2;
+			}
 		}
 
 		eid = hostapd_add_tpe_info(eid, tx_pwr_count, tx_pwr_intrpn,
@@ -10900,9 +10927,16 @@ u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid)
 				if (hapd->iconf->reg_sub_cli_eirp_psd != -1)
 					max_eirp_psd =
 						hapd->iconf->reg_sub_cli_eirp_psd;
-				else
-					max_eirp_psd =
-						REG_PSD_MAX_TXPOWER_FOR_SUBORDINATE_CLIENT * 2;
+				else {
+					psd = mode->psd_values[
+						hostapd_reg_psd_power_mode(
+							iconf->he_6ghz_reg_pwr_type,
+							true)];
+					if (psd)
+						max_eirp_psd = psd * 2;
+					else
+						max_eirp_psd = chan->max_tx_power * 2;
+				}
 			}
 			eid = hostapd_add_tpe_info(eid, tx_pwr_count,
 						   tx_pwr_intrpn,
@@ -10978,7 +11012,6 @@ u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid)
 	 * channel in Country element and local pwr constraint is specified
 	 * for channel in this Power Constraint element.
 	 */
-	chan = &mode->channels[i];
 	max_tx_power = chan->max_tx_power - local_pwr_constraint;
 
 	/*

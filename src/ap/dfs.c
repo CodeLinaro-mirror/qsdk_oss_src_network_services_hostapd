@@ -1116,6 +1116,7 @@ static int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 		.he.cap = &cmode->he_capab[ieee80211_mode],
 		.eht.cap = &cmode->eht_capab[ieee80211_mode],
 		.eht.punct_bitmap = hostapd_get_punct_bitmap(iface->bss[0]),
+		.he_6ghz_reg_pwr_type = iface->conf->he_6ghz_reg_pwr_type,
 	};
 
 	err = hostapd_set_freq_params(&csa_settings.freq_params, &info);
@@ -1292,6 +1293,7 @@ static int hostapd_dfs_testmode_set_beacon_csa(struct hostapd_iface *iface)
 		.he.cap = &iface->current_mode->he_capab[IEEE80211_MODE_AP],
 		.eht.cap = &iface->current_mode->eht_capab[IEEE80211_MODE_AP],
 		.eht.punct_bitmap = hostapd_get_punct_bitmap(iface->bss[0]),
+		.he_6ghz_reg_pwr_type = iface->conf->he_6ghz_reg_pwr_type,
 	};
 	err = hostapd_set_freq_params(&csa_settings.freq_params, &info);
 

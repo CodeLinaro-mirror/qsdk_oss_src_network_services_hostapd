@@ -322,7 +322,7 @@ wpa_drv_get_hw_feature_data(struct wpa_supplicant *wpa_s, u16 *num_modes,
 		return wpa_s->driver->get_hw_feature_data(wpa_s->drv_priv,
 							  num_modes, flags,
 							  dfs_domain,
-							  alpha2, alpha2_len);
+							  alpha2, alpha2_len, 0);
 	return NULL;
 }
 

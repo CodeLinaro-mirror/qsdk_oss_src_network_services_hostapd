@@ -673,6 +673,7 @@ int hostapd_set_freq_params(struct hostapd_freq_params *data,
 		}
 		data->ht_enabled = 0;
 		data->vht_enabled = 0;
+		data->he_6ghz_reg_pwr_type = info->he_6ghz_reg_pwr_type;
 
 		goto handle_uhr;
 	}

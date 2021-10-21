@@ -78,6 +78,11 @@ struct hostapd_channel_info {
 		u16 punct_bitmap;
 	} eht;
 
+	/**
+	 * he_6ghz_reg_pwr_type - 6 GHz regulatory power mode.
+	 */
+	u8 he_6ghz_reg_pwr_type;
+
 	struct {
 		bool enabled;
 		const struct uhr_capabilities *cap;
@@ -87,7 +92,7 @@ struct hostapd_channel_info {
 };
 
 int hostapd_set_freq_params(struct hostapd_freq_params *data,
-			    const struct hostapd_channel_info *info);
+				    const struct hostapd_channel_info *info);
 void set_disable_ht40(struct ieee80211_ht_capabilities *htcaps,
 		      int disabled);
 int ieee80211ac_cap_check(u32 hw, u32 conf);

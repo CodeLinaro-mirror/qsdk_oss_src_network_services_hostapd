@@ -2922,6 +2922,7 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 		.he.cap = cmode ? &cmode->he_capab[IEEE80211_MODE_AP] : NULL,
 		.eht.cap = cmode ? &cmode->eht_capab[IEEE80211_MODE_AP] : NULL,
 		.eht.punct_bitmap = hostapd_get_punct_bitmap(hapd),
+		.he_6ghz_reg_pwr_type = iconf->he_6ghz_reg_pwr_type,
 #ifdef CONFIG_IEEE80211BN
 		.uhr.enabled = iconf->ieee80211bn,
 		.uhr.dbe_bandwidth = iconf->dbe_bandwidth,

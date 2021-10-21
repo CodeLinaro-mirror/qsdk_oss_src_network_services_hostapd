@@ -210,6 +210,7 @@ static int wpas_mesh_update_freq_params(struct wpa_supplicant *wpa_s)
 		.vht.caps = ifmsh->conf->vht_capab,
 		.he.cap = ifmsh->current_mode ?
 		&ifmsh->current_mode->he_capab[IEEE80211_MODE_MESH] : NULL,
+		.he_6ghz_reg_pwr_type = ifmsh->conf->he_6ghz_reg_pwr_type,
 	};
 
 	if (hostapd_set_freq_params(&params->freq, &info)) {
