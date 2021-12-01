@@ -6208,6 +6208,7 @@ enum wpa_event_type {
 	 * beacon.
 	 */
 	EVENT_UPDATE_MUEDCA_PARAMS,
+	EVENT_AWGN_DETECTED,
 
 
 	/**
@@ -7208,6 +7209,17 @@ union wpa_event_data {
 		u8 he_mu_ac_vi_param[3];
 		u8 he_mu_ac_vo_param[3];
 	} update_muedca;
+
+	/**
+	 * Data for EVENT_AWGN
+	 */
+	struct awgn_event {
+		int freq;
+		enum chan_width chan_width;
+		int cf1;
+		int cf2;
+		u32 chan_bw_interference_bitmap;
+	} awgn_event;
 
 	/**
 	 * struct port_authorized - Data for EVENT_PORT_AUTHORIZED

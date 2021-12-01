@@ -1190,6 +1190,7 @@ struct hostapd_config {
 	u8 he_6ghz_rx_ant_pat;
 	u8 he_6ghz_tx_ant_pat;
 	u8 he_6ghz_reg_pwr_type;
+	bool discard_6g_awgn_event;
 
 	int reg_def_cli_eirp_psd;
 	int reg_sub_cli_eirp_psd;

@@ -3867,6 +3867,33 @@ static void nl80211_update_muedca_params_event(struct wpa_driver_nl80211_data *d
 	wpa_supplicant_event(drv->ctx, EVENT_UPDATE_MUEDCA_PARAMS, &ed);
 }
 
+static void nl80211_awgn_event(struct wpa_driver_nl80211_data *drv,
+			       struct nlattr **tb)
+{
+	union wpa_event_data data;
+
+	os_memset(&data, 0, sizeof(data));
+
+	if (tb[NL80211_ATTR_WIPHY_FREQ])
+		data.awgn_event.freq = nla_get_u32(tb[NL80211_ATTR_WIPHY_FREQ]);
+
+	if (tb[NL80211_ATTR_CHANNEL_WIDTH])
+		data.awgn_event.chan_width =
+			convert2width(nla_get_u32(tb[NL80211_ATTR_CHANNEL_WIDTH]));
+
+	if (tb[NL80211_ATTR_CENTER_FREQ1])
+		data.awgn_event.cf1 = nla_get_u32(tb[NL80211_ATTR_CENTER_FREQ1]);
+
+	if (tb[NL80211_ATTR_CENTER_FREQ2])
+		data.awgn_event.cf2 = nla_get_u32(tb[NL80211_ATTR_CENTER_FREQ2]);
+
+	if (tb[NL80211_ATTR_AWGN_INTERFERENCE_BITMAP])
+		data.awgn_event.chan_bw_interference_bitmap =
+			nla_get_u32(tb[NL80211_ATTR_AWGN_INTERFERENCE_BITMAP]);
+
+	wpa_supplicant_event(drv->ctx, EVENT_AWGN_DETECTED, &data);
+}
+
 static void nl80211_port_authorized(struct wpa_driver_nl80211_data *drv,
 				    struct nlattr **tb)
 {
@@ -4451,6 +4478,9 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 		break;
 	case NL80211_CMD_UPDATE_HE_MUEDCA_PARAMS:
 		nl80211_update_muedca_params_event(drv, tb);
+		break;
+	case NL80211_CMD_AWGN_DETECT:
+		nl80211_awgn_event(drv, tb);
 		break;
 	default:
 		wpa_dbg(drv->ctx, MSG_DEBUG, "nl80211: Ignored unknown event "

@@ -45,6 +45,7 @@
 #include "fils_hlp.h"
 #include "neighbor_db.h"
 #include "nan_usd_ap.h"
+#include "interference.h"
 
 
 #ifdef CONFIG_FILS
@@ -2293,6 +2294,13 @@ static void hostapd_event_dfs_radar_detected(struct hostapd_data *hapd,
 				   radar->cf1, radar->cf2);
 }
 
+static void hostapd_event_awgn_detected(struct hostapd_data *hapd,
+					 struct awgn_event *awgn_info)
+{
+	hostapd_intf_awgn_detected(hapd->iface, awgn_info->freq, awgn_info->chan_width,
+				   awgn_info->cf1, awgn_info->cf2,
+				   awgn_info->chan_bw_interference_bitmap);
+}
 
 static void hostapd_event_dfs_pre_cac_expired(struct hostapd_data *hapd,
 					      struct dfs_event *radar)
@@ -2852,6 +2860,11 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 			break;
 		hapd = switch_link_hapd(hapd, data->dfs_event.link_id);
 		hostapd_event_dfs_radar_detected(hapd, &data->dfs_event);
+		break;
+	case EVENT_AWGN_DETECTED:
+		if (!data)
+			break;
+		hostapd_event_awgn_detected(hapd, &data->awgn_event);
 		break;
 	case EVENT_DFS_PRE_CAC_EXPIRED:
 		if (!data)

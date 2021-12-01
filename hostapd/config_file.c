@@ -3683,6 +3683,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->unsol_bcast_probe_resp_interval = val;
+	} else if (os_strcmp(buf, "discard_6g_awgn_event") == 0) {
+		conf->discard_6g_awgn_event = atoi(pos);
 	} else if (os_strcmp(buf, "mbssid") == 0) {
 		int mbssid = atoi(pos);
 		if (mbssid < 0 || mbssid > ENHANCED_MBSSID_ENABLED) {
