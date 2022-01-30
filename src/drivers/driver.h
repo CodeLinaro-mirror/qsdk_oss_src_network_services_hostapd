@@ -2456,6 +2456,9 @@ struct wpa_driver_capa {
 	/** Maximum number of iterations in a single scan plan */
 	u32 max_sched_scan_plan_iterations;
 
+	/** Maximum number of extra IE bytes for scans */
+	u16 max_scan_ie_len;
+
 	/** Whether sched_scan (offloaded scanning) is supported */
 	int sched_scan_supported;
 
