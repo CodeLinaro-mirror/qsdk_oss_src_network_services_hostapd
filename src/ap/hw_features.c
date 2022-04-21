@@ -730,10 +730,37 @@ static int ieee80211be_supported_eht_capab(struct hostapd_iface *iface)
 
 
 #ifdef CONFIG_IEEE80211AX
+static int _ieee80211he_cap_check(u8 *hw, u32 offset, u8 bits)
+{
+	if (bits & hw[offset])
+		return 1;
+
+	return 0;
+}
+
 static int ieee80211ax_supported_he_capab(struct hostapd_iface *iface)
 {
-	return iface->current_mode->he_capab[IEEE80211_MODE_AP].he_supported;
+	struct hostapd_hw_modes *mode = iface->current_mode;
+	struct he_capabilities *hw = &mode->he_capab[IEEE80211_MODE_AP];
+	struct hostapd_config *conf = iface->conf;
+
+#define HE_CAP_CHECK(hw_cap, cap, bytes, conf) \
+	do { \
+		if (conf && !_ieee80211he_cap_check(hw_cap, bytes, cap)) { \
+			wpa_printf(MSG_ERROR, "Driver does not support configured" \
+				   " HE capability [%s]", #cap); \
+			return 0; \
+		} \
+	} while (0)
+
+	if (conf->he_phy_capab.he_ul_mumimo != -1)
+		HE_CAP_CHECK(hw->phy_cap, HE_PHYCAP_UL_MUMIMO_CAPB,
+			     HE_PHYCAP_UL_MUMIMO_CAPB_IDX,
+			     conf->he_phy_capab.he_ul_mumimo);
+
+	return 1;
 }
+
 #endif /* CONFIG_IEEE80211AX */
 
 

@@ -3530,6 +3530,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->he_phy_capab.he_su_beamformee = atoi(pos);
 	} else if (os_strcmp(buf, "he_mu_beamformer") == 0) {
 		conf->he_phy_capab.he_mu_beamformer = atoi(pos);
+	} else if (os_strcmp(buf, "he_ul_mumimo") == 0) {
+		 conf->he_phy_capab.he_ul_mumimo = atoi(pos);
 	} else if (os_strcmp(buf, "he_bss_color") == 0) {
 		conf->he_op.he_bss_color = atoi(pos) & 0x3f;
 		conf->he_op.he_bss_color_disabled = 0;
@@ -4936,6 +4938,14 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 	} else if (os_strcmp(buf, "eht_bw320_offset") == 0) {
 		conf->eht_bw320_offset = atoi(pos);
+	} else if (os_strcmp(buf, "eht_part_dl_mu_mimo") == 0) {
+		conf->eht_phy_capab.partial_bw_dl_mu_mimo = atoi(pos);
+	} else if (os_strcmp(buf, "eht_ulmumimo_80mhz") == 0) {
+		conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz = atoi(pos);
+	} else if (os_strcmp(buf, "eht_ulmumimo_160mhz") == 0) {
+		conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz = atoi(pos);
+	} else if (os_strcmp(buf, "eht_ulmumimo_320mhz") == 0) {
+		conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz = atoi(pos);
 #ifdef CONFIG_TESTING_OPTIONS
 	} else if (os_strcmp(buf, "eht_oper_puncturing_override") == 0) {
 		if (get_u16(pos, line, &bss->eht_oper_puncturing_override))

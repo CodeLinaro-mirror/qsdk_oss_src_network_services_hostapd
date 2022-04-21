@@ -1003,6 +1003,7 @@ struct he_phy_capabilities_info {
 	bool he_su_beamformer;
 	bool he_su_beamformee;
 	bool he_mu_beamformer;
+	int he_ul_mumimo;
 };
 
 /**
@@ -1039,6 +1040,10 @@ struct eht_phy_capabilities_info {
 	bool su_beamformer;
 	bool su_beamformee;
 	bool mu_beamformer;
+	bool partial_bw_dl_mu_mimo;
+	bool non_ofdma_ulmumimo_80mhz;
+	bool non_ofdma_ulmumimo_160mhz;
+	bool non_ofdma_ulmumimo_320mhz;
 };
 
 /**

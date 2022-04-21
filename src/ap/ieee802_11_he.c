@@ -145,6 +145,13 @@ u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
 		cap->he_phy_capab_info[HE_PHYCAP_MU_BEAMFORMER_CAPAB_IDX] &=
 			~HE_PHYCAP_MU_BEAMFORMER_CAPAB;
 
+	if (hapd->iface->conf->he_phy_capab.he_ul_mumimo == 1)
+		cap->he_phy_capab_info[HE_PHYCAP_UL_MUMIMO_CAPB_IDX] |=
+			HE_PHYCAP_UL_MUMIMO_CAPB;
+	else if (hapd->iface->conf->he_phy_capab.he_ul_mumimo == 0)
+		cap->he_phy_capab_info[HE_PHYCAP_UL_MUMIMO_CAPB_IDX] &=
+			~HE_PHYCAP_UL_MUMIMO_CAPB;
+
 	pos += ie_size;
 
 	return pos;
