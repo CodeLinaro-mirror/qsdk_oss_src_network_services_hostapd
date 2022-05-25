@@ -1315,6 +1315,12 @@ struct wpa_ssid {
 	int beacon_tx_mode;
 
 	 /**
+	 * puncturing bitmap - Each bit corresponds to a 20 MHz subchannel,
+	 * lowest bit for the channel with the lowest frequency.
+	 * Bit set to 1 indicates that the subchannel is punctured, otherwise active.*/
+	u32 punct_bitmap;
+
+	/**
 	 * disable_eht - Disable EHT (IEEE 802.11be) for this network
 	 *
 	 * By default, use it if it is available, but this can be configured

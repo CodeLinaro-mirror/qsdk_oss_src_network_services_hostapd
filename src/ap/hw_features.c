@@ -1020,6 +1020,14 @@ static bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface)
 		return false;
 	}
 
+#ifdef CONFIG_MESH
+	if (iface->mconf != NULL) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: Mesh puncturing bitmap will be validated in kernel while joining the mesh network",
+			   iface->bss[0]->conf->iface);
+		return true;
+	}
+#endif
 	/*
 	 * In the 6 GHz band, eht_oper_chwidth is ignored. Use operating class
 	 * to determine channel width.

@@ -731,6 +731,7 @@ static struct sta_info * mesh_mpm_add_peer(struct wpa_supplicant *wpa_s,
 	struct hostapd_data *data = wpa_s->ifmsh->bss[0];
 	struct sta_info *sta;
 	struct ieee80211_ht_operation *oper;
+	struct ieee80211_eht_operation *eht_oper_ie;
 	int ret;
 
 	if (elems->mesh_config_len >= 7 &&
@@ -817,6 +818,46 @@ static struct sta_info * mesh_mpm_add_peer(struct wpa_supplicant *wpa_s,
 	params.he_6ghz_capab = sta->he_6ghz_capab;
 	params.eht_capab = sta->eht_capab;
 	params.eht_capab_len = sta->eht_capab_len;
+#ifdef CONFIG_IEEE80211BE
+	if (elems->eht_operation && elems->eht_operation_len >= sizeof(*eht_oper_ie)) {
+		u16 bw = 0;
+		u16 start_chan = 0;
+		u16 pri_chan = wpa_s->ifmsh->conf->channel;
+
+		eht_oper_ie = (struct ieee80211_eht_operation *)elems->eht_operation;
+		if (eht_oper_ie->oper_info.control >= EHT_OPER_CHANNEL_WIDTH_80MHZ &&
+		    (eht_oper_ie->oper_params & EHT_OPER_DISABLED_SUBCHAN_BITMAP_PRESENT) &&
+		    eht_oper_ie->oper_info.disabled_chan_bitmap) {
+			params.punct_bitmap = eht_oper_ie->oper_info.disabled_chan_bitmap;
+			/* Validate Peer's puncture bitmap and reset if invalid */
+			switch (eht_oper_ie->oper_info.control) {
+			case EHT_OPER_CHANNEL_WIDTH_80MHZ:
+				bw = 80;
+				start_chan = eht_oper_ie->oper_info.ccfs0 - 6;
+				if (!is_punct_bitmap_valid(bw, (pri_chan - start_chan) / 4,
+							      params.punct_bitmap))
+					params.punct_bitmap = 0;
+				break;
+			case EHT_OPER_CHANNEL_WIDTH_160MHZ:
+				bw = 160;
+				start_chan = eht_oper_ie->oper_info.ccfs0 - 14;
+				if (!is_punct_bitmap_valid(bw, (pri_chan - start_chan) / 4,
+							      params.punct_bitmap))
+					params.punct_bitmap = 0;
+				break;
+			case EHT_OPER_CHANNEL_WIDTH_320MHZ:
+				bw = 320;
+				start_chan = eht_oper_ie->oper_info.ccfs0 - 30;
+				if (!is_punct_bitmap_valid(bw, (pri_chan - start_chan) / 4,
+							      params.punct_bitmap))
+					params.punct_bitmap = 0;
+				break;
+			default:
+				params.punct_bitmap = 0;
+			}
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
 	params.flags |= WPA_STA_WMM;
 	params.flags_mask |= WPA_STA_AUTHENTICATED;
 	params.mld_link_id = -1;

@@ -433,8 +433,12 @@ int wpa_supplicant_conf_ap_ht(struct wpa_supplicant *wpa_s,
 			 * and checks if conf->ieee8021ax == 1 */
 			if (mode->eht_capab[wpas_mode_to_ieee80211_mode(
 					    ssid->mode)].eht_supported &&
-			    ssid->eht)
+			    ssid->eht) {
 				conf->ieee80211be = 1;
+#ifdef CONFIG_IEEE80211BE
+				conf->punct_bitmap = ssid->punct_bitmap;
+#endif
+			}
 
 			if (mode->he_capab[wpas_mode_to_ieee80211_mode(
 					    ssid->mode)].he_supported &&

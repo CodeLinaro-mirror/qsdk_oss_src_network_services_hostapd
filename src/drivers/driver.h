@@ -1428,6 +1428,13 @@ struct wpa_driver_associate_params {
 	int beacon_tx_mode;
 
 	/**
+	 * puncturing bitmap - Each bit corresponds to a 20 MHz subchannel,
+	 * lowest bit for the channel with the lowest frequency.
+	 * Bit set to 1 indicates that the subchannel is punctured, otherwise active.
+	 */
+	u32 punct_bitmap;
+
+	/**
 	 * disable_eht - Disable EHT for this connection
 	 */
 	int disable_eht;
@@ -2003,6 +2010,7 @@ struct wpa_driver_mesh_join_params {
 #define WPA_DRIVER_MESH_FLAG_AMPE	0x00000008
 	unsigned int flags;
 	bool handle_dfs;
+	u32 punct_bitmap;
 	int mcast_rate;
 	int beacon_tx_mode;
 };
@@ -2720,6 +2728,7 @@ struct hostapd_sta_add_params {
 	const u8 *supp_oper_classes;
 	size_t supp_oper_classes_len;
 	int support_p2p_ps;
+	u32 punct_bitmap;
 
 	bool mld_link_sta;
 	s8 mld_link_id;
