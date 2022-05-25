@@ -261,6 +261,7 @@ static int wpas_mesh_complete(struct wpa_supplicant *wpa_s)
 		wpa_s->mgmt_group_cipher = wpa_s->mesh_rsn->mgmt_group_cipher;
 	}
 
+	params->freq.punct_bitmap = ifmsh->conf->punct_bitmap;
 	params->ies = ifmsh->mconf->rsn_ie;
 	params->ie_len = ifmsh->mconf->rsn_ie_len;
 	params->basic_rates = ifmsh->bss[0]->basic_rates;
@@ -499,6 +500,10 @@ static int wpa_supplicant_mesh_init(struct wpa_supplicant *wpa_s,
 		wpa_s->mesh_params->handle_dfs = true;
 	}
 
+#ifdef CONFIG_IEEE80211BE
+	if (ssid->eht)
+		conf->punct_bitmap = ssid->punct_bitmap;
+#endif
 	bss->iconf = conf;
 	ifmsh->conf = conf;
 

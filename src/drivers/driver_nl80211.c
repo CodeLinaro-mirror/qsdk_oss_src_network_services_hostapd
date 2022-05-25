@@ -6646,6 +6646,12 @@ static int wpa_driver_nl80211_sta_add(void *priv,
 		nla_nest_end(msg, wme);
 	}
 
+	if (params->punct_bitmap) {
+		wpa_printf(MSG_DEBUG, "  * eht puncturing bitmap=0x%x", params->punct_bitmap);
+		if (nla_put_u32(msg, NL80211_ATTR_PUNCT_BITMAP, params->punct_bitmap))
+			goto fail;
+	}
+
 	/* In case we are an AP MLD need to always specify the link ID */
 	if (params->mld_link_id >= 0) {
 		wpa_printf(MSG_DEBUG, "  * mld_link_id=%d",

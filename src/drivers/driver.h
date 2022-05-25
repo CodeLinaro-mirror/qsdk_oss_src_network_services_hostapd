@@ -2946,6 +2946,7 @@ struct hostapd_sta_add_params {
 	const u8 *supp_oper_classes;
 	size_t supp_oper_classes_len;
 	int support_p2p_ps;
+	u32 punct_bitmap;
 
 	bool mld_link_sta;
 	s8 mld_link_id;
