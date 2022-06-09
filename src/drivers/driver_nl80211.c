@@ -5768,7 +5768,10 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 		    (params->he_bss_color_partial &&
 		     nla_put_flag(msg, NL80211_HE_BSS_COLOR_ATTR_PARTIAL)) ||
 		    nla_put_u8(msg, NL80211_HE_BSS_COLOR_ATTR_COLOR,
-			       params->he_bss_color))
+			       params->he_bss_color) ||
+		    (!params->he_bss_color_collision_detection &&
+		     nla_put_flag(msg,
+				  NL80211_HE_BSS_COLOR_ATTR_COLLISION_DETECTION_DISABLED)))
 			goto fail;
 		nla_nest_end(msg, bss_color);
 	}

@@ -1880,6 +1880,12 @@ struct wpa_driver_ap_params {
 	int he_bss_color;
 
 	/**
+	 * he_bss_color_collision_detection - Whether the BSS Color collision
+	 * detection is enabled
+	 */
+	int he_bss_color_collision_detection;
+
+	/**
 	 * twt_responder - Whether Target Wait Time responder is enabled
 	 */
 	int twt_responder;
