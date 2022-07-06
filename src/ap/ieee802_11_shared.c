@@ -506,6 +506,9 @@ u8 * hostapd_eid_ext_capab(struct hostapd_data *hapd, u8 *eid,
 	if (len < hapd->iface->extended_capa_len)
 		len = hapd->iface->extended_capa_len;
 
+	 if (hapd->iconf->ext_cap_len > 0 && hapd->iconf->ext_cap_len < len)
+		 len = hapd->iconf->ext_cap_len;
+
 	*pos++ = WLAN_EID_EXT_CAPAB;
 	*pos++ = len;
 	for (i = 0; i < len; i++, pos++) {

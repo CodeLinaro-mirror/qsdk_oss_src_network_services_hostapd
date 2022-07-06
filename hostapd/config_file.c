@@ -2313,6 +2313,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->country[2] = strtol(pos, NULL, 16);
 	} else if (os_strcmp(buf, "ieee80211d") == 0) {
 		conf->ieee80211d = atoi(pos);
+	 } else if (os_strcmp(buf, "ext_cap_len") == 0) {
+		 conf->ext_cap_len = atoi(pos);
 	} else if (os_strcmp(buf, "ieee80211h") == 0) {
 		conf->ieee80211h = atoi(pos);
 	 } else if (os_strcmp(buf, "dfs_test_mode") == 0) {

@@ -1142,6 +1142,7 @@ struct hostapd_config {
 	/* Use driver-generated interface addresses when adding multiple BSSs */
 	u8 use_driver_iface_addr;
 	u8 skip_unii1_dfs_switch;
+	u8 ext_cap_len;
 
 #ifdef CONFIG_FST
 	struct fst_iface_cfg fst_cfg;
