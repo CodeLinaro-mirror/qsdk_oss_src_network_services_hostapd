@@ -11,6 +11,8 @@
 
 /* CSA beacon duration in seconds for dfs testing mode */
 #define HOSTAPD_DFS_TEST_MODE_CSA_DUR 1
+/* Wait duration between radar detection and channel switch*/
+#define HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR 500000
 
 void hostapd_dfs_test_mode_csa_timeout(void *eloop_data, void *user_data);
 
@@ -37,5 +39,5 @@ int hostapd_dfs_start_cac(struct hostapd_iface *iface, int freq,
 int hostapd_handle_dfs_offload(struct hostapd_iface *iface);
 int hostapd_is_dfs_overlap(struct hostapd_iface *iface, enum chan_width width,
 			   int center_freq);
-
+void hostapd_dfs_radar_handling_timeout(void *eloop_data, void *user_data);
 #endif /* DFS_H */

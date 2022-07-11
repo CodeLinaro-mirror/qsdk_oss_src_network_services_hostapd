@@ -1252,6 +1252,17 @@ void hostapd_dfs_test_mode_csa_timeout(void *eloop_data, void *user_data)
 	ieee802_11_set_beacon(hapd);
 }
 
+void hostapd_dfs_radar_handling_timeout(void *eloop_data, void *user_data)
+{
+	struct hostapd_iface *iface = eloop_data;
+
+	wpa_printf(MSG_INFO, "Disabling interface %s since no channel"
+		   " switch is initiated within radar handling timeout",
+		   iface->conf->bss[0]->iface);
+
+	hostapd_disable_iface(iface);
+}
+
 static int hostapd_dfs_testmode_set_beacon_csa(struct hostapd_iface *iface)
 {
 	struct hostapd_data *hapd = iface->bss[0];
@@ -1724,8 +1735,15 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	}
 
 	if (hostapd_dfs_background_start_channel_switch(iface, freq)) {
-		/* Radar detected while operating, switch the channel. */
-		return hostapd_dfs_start_channel_switch(iface);
+		if (!iface->conf->disable_csa_dfs) {
+			/* Radar detected while operating, switch the channel. */
+			return hostapd_dfs_start_channel_switch(iface);
+		} else if (!eloop_is_timeout_registered(hostapd_dfs_radar_handling_timeout,
+			   iface, NULL)) {
+			eloop_register_timeout(0, HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR,
+					       hostapd_dfs_radar_handling_timeout,
+					       iface, NULL);
+		}
 	}
 
 	return 0;

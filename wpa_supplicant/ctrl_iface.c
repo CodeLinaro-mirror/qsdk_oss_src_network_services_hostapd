@@ -60,6 +60,7 @@
 #include "mesh.h"
 #include "dpp_supplicant.h"
 #include "sme.h"
+#include "ap/dfs.h"
 #include "nan_usd.h"
 #include "pr_supplicant.h"
 
@@ -3743,7 +3744,16 @@ static int wpa_supplicant_ctrl_iface_set_network(
 		   id, name);
 	wpa_hexdump_ascii_key(MSG_DEBUG, "CTRL_IFACE: value",
 			      (u8 *) value, os_strlen(value));
-
+#ifdef NEED_AP_MLME
+	if ((os_strcmp(name, "frequency") == 0) &&
+	    (wpa_s->ifmsh && wpa_s->ifmsh->conf->disable_csa_dfs == 1)) {
+		wpa_printf(MSG_DEBUG, "wpa interface %s :"
+			   " cancelling radar handling timeout",
+			   wpa_s->ifmsh->conf->bss[0]->iface);
+		eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout,
+				     wpa_s->ifmsh, NULL);
+	}
+#endif
 	ssid = wpa_config_get_network(wpa_s->conf, id);
 	if (ssid == NULL) {
 		wpa_printf(MSG_DEBUG, "CTRL_IFACE: Could not find network "

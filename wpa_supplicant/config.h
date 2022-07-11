@@ -1831,6 +1831,8 @@ struct wpa_config {
 #endif /* CONFIG_TESTING_OPTIONS */
 #endif /* CONFIG_PASN*/
 
+	int disable_csa_dfs;
+
 #ifdef CONFIG_TESTING_OPTIONS
 	enum {
 		MLD_CONNECT_BAND_PREF_AUTO = 0,

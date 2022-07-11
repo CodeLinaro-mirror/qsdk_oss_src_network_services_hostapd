@@ -1276,6 +1276,13 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 	} else if (os_strcasecmp(cmd, "setband") == 0) {
 		ret = hostapd_ctrl_iface_set_band(hapd, value);
 	} else {
+		if (hapd->iface->conf->disable_csa_dfs &&
+		    ((os_strcmp(cmd, "channel") == 0) &&
+		    ((os_strcmp(value, "acs_survey") != 0) &&
+		    (atoi(value) != 0)))) {
+			eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout,
+					     hapd->iface, NULL);
+		}
 		ret = hostapd_set_iface(hapd->iconf, hapd->conf, cmd, value);
 		if (ret)
 			return ret;
@@ -2499,6 +2506,12 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 			return -1;
 		}
 
+		if (iface->conf->disable_csa_dfs == 1) {
+			wpa_printf(MSG_DEBUG, "chanswitch interface %s : cancel radar handling timer",
+				   iface->conf->bss[0]->iface);
+			eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout, iface, NULL);
+		}
+
 		settings.freq_params.channel = chan;
 
 		wpa_printf(MSG_DEBUG,
@@ -2519,6 +2532,12 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 		wpa_printf(MSG_DEBUG,
 			   "CAC is in progress - switching channel without CSA");
 		return hostapd_force_channel_switch(iface, &settings);
+	}
+
+	if (iface->conf->disable_csa_dfs == 1) {
+		wpa_printf(MSG_DEBUG, "chanswitch interface %s : cancel radar handling timer",
+			   iface->conf->bss[0]->iface);
+		eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout, iface, NULL);
 	}
 
 	for (i = 0; i < iface->num_bss; i++) {

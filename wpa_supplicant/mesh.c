@@ -553,6 +553,8 @@ static int wpa_supplicant_mesh_init(struct wpa_supplicant *wpa_s,
 			goto out_free;
 	}
 
+	ifmsh->conf->disable_csa_dfs = wpa_s->conf->disable_csa_dfs;
+
 	/* While it can enhance performance to switch the primary channel, which
 	 * is also the secondary channel of another network at the same time),
 	 * to the other primary channel, problems exist with this in mesh

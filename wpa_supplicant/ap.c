@@ -1876,6 +1876,14 @@ int ap_ctrl_iface_chanswitch(struct wpa_supplicant *wpa_s, const char *pos)
 #ifdef CONFIG_MESH
 	if (!iface && wpa_s->ifmsh)
 		iface = wpa_s->ifmsh;
+
+	if (wpa_s->ifmsh && wpa_s->ifmsh->conf->disable_csa_dfs == 1) {
+		wpa_printf(MSG_DEBUG, "wpa chanswitch interface %s :"
+			   " cancelling radar handling timeout",
+			   wpa_s->ifmsh->conf->bss[0]->iface);
+		eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout,
+				     wpa_s->ifmsh, NULL);
+	}
 #endif /* CONFIG_MESH */
 
 	if (!iface)
