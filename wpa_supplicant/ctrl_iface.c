@@ -2277,7 +2277,7 @@ static int wpa_supplicant_ctrl_iface_status(struct wpa_supplicant *wpa_s,
 					    const char *params,
 					    char *buf, size_t buflen)
 {
-	char *pos, *end, tmp[30];
+	char *pos, *end, tmp[30], *tmp_buf;
 	int res, verbose, wps, ret;
 #ifdef CONFIG_HS20
 	const u8 *hs20;
@@ -2418,11 +2418,26 @@ static int wpa_supplicant_ctrl_iface_status(struct wpa_supplicant *wpa_s,
 	}
 #endif /* CONFIG_SAE */
 #endif /* CONFIG_SME */
+	if (wpa_s->ifmsh) {
+		if(wpa_s->wpa_state == WPA_SCANNING && wpa_s->ifmsh->cac_started)
+			tmp_buf = "inprogress";
+		else
+			tmp_buf = "N/A";
+	} else {
+		tmp_buf = "N/A";
+	}
 	ret = os_snprintf(pos, end - pos, "wpa_state=%s\n",
 			  wpa_supplicant_state_txt(wpa_s->wpa_state));
 	if (os_snprintf_error(end - pos, ret))
 		return pos - buf;
 	pos += ret;
+
+	ret = os_snprintf(pos, end - pos, "cac=%s\n",
+			  tmp_buf);
+	if (os_snprintf_error(end - pos, ret))
+		return pos - buf;
+	pos += ret;
+
 
 	if (wpa_s->l2 &&
 	    l2_packet_get_ip_addr(wpa_s->l2, tmp, sizeof(tmp)) >= 0) {
