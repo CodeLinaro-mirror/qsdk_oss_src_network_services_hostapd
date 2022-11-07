@@ -27,7 +27,7 @@ int hostapd_dfs_pre_cac_expired(struct hostapd_iface *iface, int freq,
 int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			       int ht_enabled,
 			       int chan_offset, int chan_width,
-			       int cf1, int cf2);
+			       int cf1, int cf2, u16 radar_bitmap);
 int hostapd_dfs_nop_finished(struct hostapd_iface *iface, int freq,
 			     int ht_enabled,
 			     int chan_offset, int chan_width, int cf1, int cf2);

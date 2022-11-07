@@ -761,7 +761,7 @@ static int set_dfs_state_freq(struct hostapd_iface *iface, int freq, u32 state)
 
 static int set_dfs_state(struct hostapd_iface *iface, int freq, int ht_enabled,
 			 int chan_offset, int chan_width, int cf1,
-			 int cf2, u32 state)
+			 int cf2, u32 state, u16 radar_bitmap)
 {
 	int n_chans = 1, i;
 	struct hostapd_hw_modes *mode;
@@ -812,12 +812,25 @@ static int set_dfs_state(struct hostapd_iface *iface, int freq, int ht_enabled,
 	wpa_printf(MSG_DEBUG, "DFS freq: %dMHz, n_chans: %d", frequency,
 		   n_chans);
 	for (i = 0; i < n_chans; i++) {
-		ret += set_dfs_state_freq(iface, frequency, state);
-		frequency = frequency + 20;
 
-		if (chan_width == CHAN_WIDTH_80P80) {
-			ret += set_dfs_state_freq(iface, frequency2, state);
-			frequency2 = frequency2 + 20;
+		if (radar_bitmap && state == HOSTAPD_CHAN_DFS_UNAVAILABLE)
+		{
+			if (radar_bitmap & 1<<i)
+				ret += set_dfs_state_freq(iface, frequency, state);
+			frequency = frequency + 20;
+
+			if (chan_width == CHAN_WIDTH_80P80 && (radar_bitmap & 1<<(i+4))) {
+				ret += set_dfs_state_freq(iface, frequency2, state);
+				frequency2 = frequency2 + 20;
+			}
+		}
+		else {
+			ret += set_dfs_state_freq(iface, frequency, state);
+			frequency = frequency + 20;
+			if (chan_width == CHAN_WIDTH_80P80) {
+				ret += set_dfs_state_freq(iface, frequency2, state);
+				frequency2 = frequency2 + 20;
+			}
 		}
 	}
 
@@ -1398,7 +1411,7 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 		} else {
 			set_dfs_state(iface, freq, ht_enabled, chan_offset,
 				      chan_width, cf1, cf2,
-				      HOSTAPD_CHAN_DFS_AVAILABLE);
+				      HOSTAPD_CHAN_DFS_AVAILABLE,0);
 
 			/*
 			 * Radar event from background chain for the selected
@@ -1464,7 +1477,7 @@ int hostapd_dfs_pre_cac_expired(struct hostapd_iface *iface, int freq,
 		return 0;
 
 	set_dfs_state(iface, freq, ht_enabled, chan_offset, chan_width,
-		      cf1, cf2, HOSTAPD_CHAN_DFS_USABLE);
+		      cf1, cf2, HOSTAPD_CHAN_DFS_USABLE,0);
 
 	return 0;
 }
@@ -1702,7 +1715,7 @@ static int hostapd_dfs_start_channel_switch(struct hostapd_iface *iface)
 
 int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			       int ht_enabled, int chan_offset, int chan_width,
-			       int cf1, int cf2)
+			       int cf1, int cf2, u16 radar_bitmap)
 {
 	if (!hostapd_is_freq_in_current_hw_info(iface, freq)) {
 		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
@@ -1727,13 +1740,13 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 
 	/* mark radar frequency as invalid */
 	if (!set_dfs_state(iface, freq, ht_enabled, chan_offset, chan_width,
-			   cf1, cf2, HOSTAPD_CHAN_DFS_UNAVAILABLE))
+			   cf1, cf2, HOSTAPD_CHAN_DFS_UNAVAILABLE, radar_bitmap))
 		return 0;
 
 	 if (iface->conf->dfs_test_mode) {
 		 set_dfs_state(iface, freq, ht_enabled, chan_offset,
 			       chan_width, cf1, cf2,
-			       HOSTAPD_CHAN_DFS_AVAILABLE);
+			       HOSTAPD_CHAN_DFS_AVAILABLE, radar_bitmap);
 	 }
 
 	if (!hostapd_dfs_is_background_event(iface, freq)) {
@@ -1781,7 +1794,7 @@ int hostapd_dfs_nop_finished(struct hostapd_iface *iface, int freq,
 
 	/* TODO add correct implementation here */
 	set_dfs_state(iface, freq, ht_enabled, chan_offset, chan_width,
-		      cf1, cf2, HOSTAPD_CHAN_DFS_USABLE);
+		      cf1, cf2, HOSTAPD_CHAN_DFS_USABLE,0);
 
 	if (iface->state == HAPD_IFACE_DFS && !iface->cac_started) {
 		/* Handle cases where all channels were initially unavailable */
