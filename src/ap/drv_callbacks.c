@@ -2291,7 +2291,7 @@ static void hostapd_event_dfs_radar_detected(struct hostapd_data *hapd,
 	wpa_printf(MSG_DEBUG, "DFS radar detected on %d MHz", radar->freq);
 	hostapd_dfs_radar_detected(hapd->iface, radar->freq, radar->ht_enabled,
 				   radar->chan_offset, radar->chan_width,
-				   radar->cf1, radar->cf2);
+				   radar->cf1, radar->cf2, radar->radar_bitmap);
 }
 
 static void hostapd_event_awgn_detected(struct hostapd_data *hapd,

@@ -2151,7 +2151,8 @@ void wpas_ap_event_dfs_radar_detected(struct wpa_supplicant *wpa_s,
 	hostapd_dfs_radar_detected(iface, radar->freq,
 				   radar->ht_enabled, radar->chan_offset,
 				   radar->chan_width,
-				   radar->cf1, radar->cf2);
+				   radar->cf1, radar->cf2,
+				   radar->radar_bitmap);
 }
 
 

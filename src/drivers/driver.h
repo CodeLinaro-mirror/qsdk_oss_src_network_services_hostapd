@@ -7055,6 +7055,7 @@ union wpa_event_data {
 		int cf1;
 		int cf2;
 		int link_id;
+		u16 radar_bitmap;
 	} dfs_event;
 
 	/**

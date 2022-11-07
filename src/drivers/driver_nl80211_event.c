@@ -2645,11 +2645,11 @@ static void nl80211_process_radar_event(struct i802_bss *bss,
 					enum nl80211_radar_event event_type)
 {
 	wpa_printf(MSG_DEBUG,
-		   "nl80211: DFS event on freq %d MHz, ht: %d, offset: %d, width: %d, cf1: %dMHz, cf2: %dMHz, link_id=%d",
+		   "nl80211: DFS event on freq %d MHz, ht: %d, offset: %d, width: %d, cf1: %dMHz, cf2: %dMHz, link_id=%d radar_bitmap: %0x ",
 		   data->dfs_event.freq, data->dfs_event.ht_enabled,
 		   data->dfs_event.chan_offset, data->dfs_event.chan_width,
 		   data->dfs_event.cf1, data->dfs_event.cf2,
-		   data->dfs_event.link_id);
+		   data->dfs_event.link_id, data->dfs_event.radar_bitmap);
 
 	switch (event_type) {
 	case NL80211_RADAR_DETECTED:
@@ -2725,6 +2725,8 @@ static void nl80211_radar_event(struct i802_bss *bss, struct nlattr **tb)
 		data.dfs_event.cf1 = nla_get_u32(tb[NL80211_ATTR_CENTER_FREQ1]);
 	if (tb[NL80211_ATTR_CENTER_FREQ2])
 		data.dfs_event.cf2 = nla_get_u32(tb[NL80211_ATTR_CENTER_FREQ2]);
+	if (tb[NL80211_ATTR_RADAR_BITMAP])
+		data.dfs_event.radar_bitmap = nla_get_u16(tb[NL80211_ATTR_RADAR_BITMAP]);
 
 	wpa_printf(MSG_DEBUG,
 		   "nl80211: Checking suitable BSS for the DFS event");
@@ -3146,12 +3148,14 @@ qca_nl80211_dfs_offload_radar_event(struct i802_bss *bss, u32 subcmd, u8 *msg,
 		data.dfs_event.cf1 = nla_get_u32(tb[NL80211_ATTR_CENTER_FREQ1]);
 	if (tb[NL80211_ATTR_CENTER_FREQ2])
 		data.dfs_event.cf2 = nla_get_u32(tb[NL80211_ATTR_CENTER_FREQ2]);
+	if (tb[NL80211_ATTR_RADAR_BITMAP])
+		data.dfs_event.radar_bitmap = nla_get_u16(tb[NL80211_ATTR_RADAR_BITMAP]);
 
 	wpa_printf(MSG_DEBUG, "nl80211: DFS event on freq %d MHz, ht: %d, "
-		    "offset: %d, width: %d, cf1: %dMHz, cf2: %dMHz",
+		    "offset: %d, width: %d, cf1: %dMHz, cf2: %dMHz radar bitmap: %0x",
 		    data.dfs_event.freq, data.dfs_event.ht_enabled,
 		    data.dfs_event.chan_offset, data.dfs_event.chan_width,
-		    data.dfs_event.cf1, data.dfs_event.cf2);
+		    data.dfs_event.cf1, data.dfs_event.cf2, data.dfs_event.radar_bitmap);
 
 	switch (subcmd) {
 	case QCA_NL80211_VENDOR_SUBCMD_DFS_OFFLOAD_RADAR_DETECTED:
