@@ -799,9 +799,9 @@ int hostapd_set_freq_params(struct hostapd_freq_params *data,
 		break;
 	case CONF_OPER_CHWIDTH_320MHZ:
 		data->bandwidth = 320;
-		if (!data->eht_enabled || !is_6ghz_freq(freq)) {
+		if (!data->eht_enabled) {
 			wpa_printf(MSG_ERROR,
-				   "320 MHz: EHT not enabled or not a 6 GHz channel");
+				   "320 MHz: EHT not enabled");
 			return -1;
 		}
 		if (center_segment1) {
