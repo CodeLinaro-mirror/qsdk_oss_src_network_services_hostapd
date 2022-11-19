@@ -2198,7 +2198,8 @@ void wpas_ap_event_dfs_cac_started(struct wpa_supplicant *wpa_s,
 	wpa_printf(MSG_DEBUG, "DFS CAC started on %d MHz", radar->freq);
 	hostapd_dfs_start_cac(iface->bss[0], radar->freq,
 			      radar->ht_enabled, radar->chan_offset,
-			      radar->chan_width, radar->cf1, radar->cf2);
+			      radar->chan_width, radar->cf1, radar->cf2,
+			      radar->is_background);
 }
 
 
@@ -2214,7 +2215,8 @@ void wpas_ap_event_dfs_cac_finished(struct wpa_supplicant *wpa_s,
 	wpa_printf(MSG_DEBUG, "DFS CAC finished on %d MHz", radar->freq);
 	hostapd_dfs_complete_cac(iface, 1, radar->freq,
 				 radar->ht_enabled, radar->chan_offset,
-				 radar->chan_width, radar->cf1, radar->cf2);
+				 radar->chan_width, radar->cf1, radar->cf2,
+				 radar->is_background);
 }
 
 
@@ -2230,7 +2232,8 @@ void wpas_ap_event_dfs_cac_aborted(struct wpa_supplicant *wpa_s,
 	wpa_printf(MSG_DEBUG, "DFS CAC aborted on %d MHz", radar->freq);
 	hostapd_dfs_complete_cac(iface, 0, radar->freq,
 				 radar->ht_enabled, radar->chan_offset,
-				 radar->chan_width, radar->cf1, radar->cf2);
+				 radar->chan_width, radar->cf1, radar->cf2,
+				 radar->is_background);
 }
 
 

@@ -7653,6 +7653,7 @@ union wpa_event_data {
 		int cf2;
 		int link_id;
 		u16 radar_bitmap;
+		bool is_background;
 	} dfs_event;
 
 	/**
