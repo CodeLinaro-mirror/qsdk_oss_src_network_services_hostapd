@@ -1368,7 +1368,7 @@ hostapd_dfs_start_channel_switch_background(struct hostapd_iface *iface)
 
 int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			     int ht_enabled, int chan_offset, int chan_width,
-			     int cf1, int cf2)
+			     int cf1, int cf2, 	bool is_background)
 {
 	if (!hostapd_is_freq_in_current_hw_info(iface, freq)) {
 		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
@@ -1410,13 +1410,14 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			 * selected channel and configure the background chain
 			 * to a new DFS channel.
 			 */
-			if (hostapd_dfs_is_background_event(iface, freq)) {
+			if (is_background || hostapd_dfs_is_background_event(iface, freq)) {
 				iface->radar_background.cac_started = 0;
 				if (!iface->radar_background.temp_ch)
 					return 0;
 
 				iface->radar_background.temp_ch = 0;
-				return hostapd_dfs_start_channel_switch_background(iface);
+				if (iface->conf->enable_background_radar)
+					return hostapd_dfs_start_channel_switch_background(iface);
 			}
 
 			/*
@@ -1435,9 +1436,10 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 				iface->cac_started = 0;
 			}
 		}
-	} else if (hostapd_dfs_is_background_event(iface, freq)) {
+	} else if (is_background || hostapd_dfs_is_background_event(iface, freq)) {
 		iface->radar_background.cac_started = 0;
-		hostapd_dfs_update_background_chain(iface);
+		if (iface->conf->enable_background_radar)
+			hostapd_dfs_update_background_chain(iface);
 	}
 
 	iface->radar_detected = false;
@@ -1830,7 +1832,7 @@ int hostapd_is_dfs_required(struct hostapd_iface *iface)
 
 int hostapd_dfs_start_cac(struct hostapd_iface *iface, int freq,
 			  int ht_enabled, int chan_offset, int chan_width,
-			  int cf1, int cf2)
+			  int cf1, int cf2, bool is_background)
 {
 	if (!hostapd_is_freq_in_current_hw_info(iface, freq)) {
 		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_START
@@ -1839,7 +1841,7 @@ int hostapd_dfs_start_cac(struct hostapd_iface *iface, int freq,
 		return 0;
 	}
 
-	if (hostapd_dfs_is_background_event(iface, freq)) {
+	if (is_background || hostapd_dfs_is_background_event(iface, freq)) {
 		iface->radar_background.cac_started = 1;
 	} else {
 		/* This is called when the driver indicates that an offloaded

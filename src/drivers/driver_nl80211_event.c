@@ -2716,6 +2716,10 @@ static void nl80211_radar_event(struct i802_bss *bss, struct nlattr **tb)
 		}
 	}
 
+	if ((drv->capa.flags2 & WPA_DRIVER_FLAGS2_RADAR_BACKGROUND) &&
+	    tb[NL80211_ATTR_RADAR_BACKGROUND]) {
+		data.dfs_event.is_background = true;
+	}
 	/* Get VHT params */
 	if (tb[NL80211_ATTR_CHANNEL_WIDTH])
 		data.dfs_event.chan_width =
