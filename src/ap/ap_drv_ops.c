@@ -1138,7 +1138,8 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 		.vht.caps = cmode ? cmode->vht_capab : 0,
 		.he.cap = cmode ? &cmode->he_capab[IEEE80211_MODE_AP] : NULL,
 		.eht.cap = cmode ? &cmode->eht_capab[IEEE80211_MODE_AP] : NULL,
-		.eht.punct_bitmap = hostapd_get_punct_bitmap(hapd),
+		.eht.punct_bitmap = hostapd_get_punct_bitmap(hapd) |
+			iface->radar_bit_pattern,
 		.he_6ghz_reg_pwr_type = hapd->iconf->he_6ghz_reg_pwr_type,
 	};
 

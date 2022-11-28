@@ -1330,6 +1330,11 @@ struct wpa_ssid {
 	u32 punct_bitmap;
 
 	/**
+	 * Enable DFS subchannel puncturing when radar affects a subchannel.
+	 */
+	int use_ru_puncture_dfs;
+
+	/**
 	 * disable_uhr - Disable UHR (IEEE 802.11bn) for this network
 	 *
 	 * By default, use it if it is available, but this can be configured
