@@ -592,6 +592,7 @@ out:
 		struct hostapd_data *hapd = iface->bss[i];
 
 		hapd->conf->start_disabled = 0;
+
 		hostapd_set_freq(hapd, conf->hw_mode, iface->freq,
 				 conf->channel,
 				 conf->enable_edmg,

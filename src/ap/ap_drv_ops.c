@@ -1118,7 +1118,8 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 				    cmode->vht_capab,
 				    &cmode->he_capab[IEEE80211_MODE_AP],
 				    &cmode->eht_capab[IEEE80211_MODE_AP],
-				    hostapd_get_punct_bitmap(hapd),
+				    hostapd_get_punct_bitmap(hapd) |
+				    iface->radar_bit_pattern,
 				    hapd->iconf->he_6ghz_reg_pwr_type)) {
 		wpa_printf(MSG_ERROR, "Can't set freq params");
 		return -1;

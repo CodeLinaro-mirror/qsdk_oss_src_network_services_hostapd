@@ -14,6 +14,11 @@
 /* Wait duration between radar detection and channel switch*/
 #define HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR 500000
 
+/*identify freq using channel number*/
+#define BASE_FREQ_5G 5160
+#define BASE_CHAN_5G 32
+#define GET_FREQ_CHAN_5G(chan) (BASE_FREQ_5G + ((chan - BASE_CHAN_5G) * 5))
+
 void hostapd_dfs_test_mode_csa_timeout(void *eloop_data, void *user_data);
 
 int hostapd_handle_dfs(struct hostapd_iface *iface);

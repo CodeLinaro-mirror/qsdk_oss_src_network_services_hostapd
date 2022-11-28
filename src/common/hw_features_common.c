@@ -1028,12 +1028,17 @@ bool is_punct_bitmap_valid(u16 bw, u16 pri_ch_bit_pos, u16 punct_bitmap)
 
 	switch (bw) {
 	case 80:
+		/* Subchannel bits outside operating BW shouldn't be set */
+		if (punct_bitmap & 0xFFF0)
+			return false;
 		bitmap &= 0xF;
 		valid_bitmaps = punct_bitmap_80;
 		count = ARRAY_SIZE(punct_bitmap_80);
 		break;
 
 	case 160:
+		if (punct_bitmap & 0xFF00)
+			return false;
 		bitmap &= 0xFF;
 		valid_bitmaps = punct_bitmap_160;
 		count = ARRAY_SIZE(punct_bitmap_160);

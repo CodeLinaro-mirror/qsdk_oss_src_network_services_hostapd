@@ -761,6 +761,9 @@ struct hostapd_iface {
 	/* Maximum profile periodicity for enhanced MBSSID advertisement */
 	unsigned int ema_max_periodicity;
 
+	/* Radar infected sub channel bit pattern */
+	u16 radar_bit_pattern;
+
 	int (*enable_iface_cb)(struct hostapd_iface *iface);
 	int (*disable_iface_cb)(struct hostapd_iface *iface);
 
@@ -927,6 +930,7 @@ static inline bool hostapd_mld_is_first_bss(struct hostapd_data *hapd)
 #endif /* CONFIG_IEEE80211BE */
 
 u16 hostapd_get_punct_bitmap(struct hostapd_data *hapd);
+bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface);
 
 static inline bool ap_pmf_enabled(struct hostapd_bss_config *conf)
 {

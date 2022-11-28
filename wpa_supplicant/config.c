@@ -2922,6 +2922,7 @@ static const struct parse_data ssid_fields[] = {
 	{ INT_RANGE(disable_40mhz_scan, 0, 1)},
 	{ INT_RANGE(beacon_tx_mode, 1, 2)},
 	{ INT(punct_bitmap) },
+	{ INT_RANGE(use_ru_puncture_dfs, 0, 1) },
 	{ INT_RANGE(disable_eht, 0, 1)},
 	{ INT_RANGE(enable_4addr_mode, 0, 1)},
 	{ INT_RANGE(max_idle, 0, 65535)},

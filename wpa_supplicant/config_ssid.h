@@ -1321,6 +1321,11 @@ struct wpa_ssid {
 	u32 punct_bitmap;
 
 	/**
+	 * Enable dfs punctuing - set it 1 to enable dfs sub channel puncturing
+	 */
+	int use_ru_puncture_dfs;
+
+	/**
 	 * disable_eht - Disable EHT (IEEE 802.11be) for this network
 	 *
 	 * By default, use it if it is available, but this can be configured

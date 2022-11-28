@@ -2651,6 +2651,11 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 		}
 #endif /* NEED_AP_MLME */
 
+		if (iface->radar_bit_pattern) {
+			hapd->iconf->punct_bitmap |=
+				iface->radar_bit_pattern;
+		}
+
 #ifdef CONFIG_MESH
 		if (iface->mconf != NULL) {
 			wpa_printf(MSG_DEBUG,
@@ -4653,6 +4658,9 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 	int ret;
 	enum oper_chan_width chanwidth;
 	u8 chan;
+	u8 oper_centr_freq0_idx = 0;
+	u8 oper_centr_freq1_idx = 0;
+	int sec_channel_offset = settings->freq_params.sec_channel_offset;
 
 	os_memset(&old_freq, 0, sizeof(old_freq));
 	if (!iface || !iface->freq || hapd->csa_in_progress)
@@ -4660,16 +4668,40 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 
 	chanwidth = hostapd_chan_width_from_freq_params(&settings->freq_params);
 
+	if (iface->radar_bit_pattern) {
+		enum oper_chan_width chan_op_bw = chanwidth;
+
+		ieee80211_freq_to_chan(settings->freq_params.center_freq1,
+				       &oper_centr_freq0_idx);
+		ieee80211_freq_to_chan(settings->freq_params.center_freq2,
+				       &oper_centr_freq1_idx);
+
+		punct_update_legacy_bw(settings->freq_params.punct_bitmap,
+				       iface->conf->channel,
+				       &chan_op_bw,
+				       &oper_centr_freq0_idx,
+				       &oper_centr_freq1_idx);
+
+		if (oper_centr_freq0_idx == 0)
+			sec_channel_offset = 0;
+		else if (oper_centr_freq0_idx > iface->conf->channel)
+			sec_channel_offset = 1;
+		else
+			sec_channel_offset = -1;
+
+                chanwidth = chan_op_bw;
+        }
+
 	if (ieee80211_freq_to_channel_ext(
 		    settings->freq_params.freq,
-		    settings->freq_params.sec_channel_offset,
+		    sec_channel_offset,
 		    chanwidth,
 		    &hapd->iface->cs_oper_class,
 		    &chan) == NUM_HOSTAPD_MODES) {
 		wpa_printf(MSG_DEBUG,
 			   "invalid frequency for channel switch (freq=%d, sec_channel_offset=%d, vht_enabled=%d, he_enabled=%d, eht_enabled=%d)",
 			   settings->freq_params.freq,
-			   settings->freq_params.sec_channel_offset,
+			   sec_channel_offset,
 			   settings->freq_params.vht_enabled,
 			   settings->freq_params.he_enabled,
 			   settings->freq_params.eht_enabled);
@@ -4692,6 +4724,39 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 
 	if (ret)
 		return ret;
+
+	if (iface->radar_bit_pattern) {
+		settings->freq_params.center_freq1 = ieee80211_chan_to_freq(NULL,
+									    hapd->iface->cs_oper_class,
+									    oper_centr_freq0_idx);
+		if (settings->freq_params.center_freq1 == -1)
+			settings->freq_params.center_freq1 = 0;
+		settings->freq_params.center_freq2 = ieee80211_chan_to_freq(NULL,
+									    hapd->iface->cs_oper_class,
+									    oper_centr_freq1_idx);
+		if (settings->freq_params.center_freq2 == -1)
+			settings->freq_params.center_freq2 = 0;
+
+		settings->freq_params.sec_channel_offset = sec_channel_offset;
+
+		if (chanwidth == CONF_OPER_CHWIDTH_80MHZ)
+			settings->freq_params.bandwidth = 80;
+		else if (chanwidth == CONF_OPER_CHWIDTH_160MHZ ||
+			 chanwidth == CONF_OPER_CHWIDTH_80P80MHZ)
+			settings->freq_params.bandwidth = 160;
+		else if (chanwidth == CONF_OPER_CHWIDTH_320MHZ)
+			settings->freq_params.bandwidth = 320;
+		else if (settings->freq_params.sec_channel_offset)
+			settings->freq_params.bandwidth = 40;
+		else
+			settings->freq_params.bandwidth = 20;
+		wpa_printf(MSG_DEBUG,
+			   "Fill csa beacon with updated bw:%d cf1:%d cf2:%d oper class:%d ch:%d",
+			   chanwidth,
+			   settings->freq_params.center_freq1,
+			   settings->freq_params.center_freq2,
+			   hapd->iface->cs_oper_class, chan);
+	}
 
 	/* set channel switch parameters for csa ie */
 	hapd->cs_freq_params = settings->freq_params;
@@ -4771,15 +4836,27 @@ int hostapd_switch_channel(struct hostapd_data *hapd,
 			   struct csa_settings *settings)
 {
 	int ret;
+	int oper_centr_freq0_idx;
+	int cur_bandwidth;
 
 	if (!(hapd->iface->drv_flags & WPA_DRIVER_FLAGS_AP_CSA)) {
 		wpa_printf(MSG_INFO, "CSA is not supported");
 		return -1;
 	}
 
+	cur_bandwidth = settings->freq_params.bandwidth;
+	oper_centr_freq0_idx = hostapd_get_oper_centr_freq_seg0_idx(hapd->iconf);
+
 	ret = hostapd_fill_csa_settings(hapd, settings);
 	if (ret)
 		return ret;
+
+	if (hapd->iface->radar_bit_pattern) {
+		hapd->iface->conf->punct_bitmap =  hapd->iface->conf->punct_bitmap |
+						   hapd->iface->radar_bit_pattern;
+		settings->freq_params.bandwidth = cur_bandwidth;
+		settings->freq_params.center_freq1 = GET_FREQ_CHAN_5G(oper_centr_freq0_idx);
+	}
 
 	ret = hostapd_drv_switch_channel(hapd, settings);
 	free_beacon_data(&settings->beacon_csa);

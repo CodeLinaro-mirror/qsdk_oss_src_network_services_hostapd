@@ -998,7 +998,7 @@ static int hostapd_is_usable_edmg(struct hostapd_iface *iface)
 }
 
 
-static bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface)
+bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface)
 {
 #ifdef CONFIG_IEEE80211BE
 	struct hostapd_config *conf = iface->conf;

@@ -21,6 +21,7 @@
 #include "crypto/crypto.h"
 #include "beacon.h"
 #include "eloop.h"
+#include "ieee802_11.h"
 
 enum dfs_channel_type {
 	DFS_ANY_CHANNEL,
@@ -1072,7 +1073,8 @@ static int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 					      int secondary_channel,
 					      u8 current_vht_oper_chwidth,
 					      u8 oper_centr_freq_seg0_idx,
-					      u8 oper_centr_freq_seg1_idx)
+					      u8 oper_centr_freq_seg1_idx,
+					      u16 punct_bitmap)
 {
 	struct hostapd_hw_modes *cmode = iface->current_mode;
 	int ieee80211_mode = IEEE80211_MODE_AP, err;
@@ -1126,7 +1128,7 @@ static int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 				      cmode->vht_capab,
 				      &cmode->he_capab[ieee80211_mode],
 				      &cmode->eht_capab[ieee80211_mode],
-				      hostapd_get_punct_bitmap(iface->bss[0]),
+				      punct_bitmap | iface->radar_bit_pattern,
 				      iface->conf->he_6ghz_reg_pwr_type);
 
 	if (err) {
@@ -1362,7 +1364,8 @@ hostapd_dfs_start_channel_switch_background(struct hostapd_iface *iface)
 		iface, iface->conf->channel, iface->freq,
 		iface->conf->secondary_channel, current_vht_oper_chwidth,
 		hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
-		hostapd_get_oper_centr_freq_seg1_idx(iface->conf));
+		hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
+		hostapd_get_punct_bitmap(iface->bss[0]));
 }
 
 
@@ -1533,6 +1536,7 @@ static int hostapd_dfs_start_channel_switch_cac(struct hostapd_iface *iface)
 
 	/* Radar detected during active CAC */
 	iface->cac_started = 0;
+	iface->conf->punct_bitmap = 0;
 	channel = dfs_get_valid_channel(iface, &secondary_channel,
 					&oper_centr_freq_seg0_idx,
 					&oper_centr_freq_seg1_idx,
@@ -1683,6 +1687,7 @@ static int hostapd_dfs_start_channel_switch(struct hostapd_iface *iface)
 		}
 
 		if (channel_type == DFS_ANY_CHANNEL) {
+			iface->conf->punct_bitmap = 0;
 			iface->freq = channel->freq;
 			iface->conf->channel = channel->chan;
 			iface->conf->secondary_channel = secondary_channel;
@@ -1702,14 +1707,39 @@ static int hostapd_dfs_start_channel_switch(struct hostapd_iface *iface)
 						  secondary_channel,
 						  current_vht_oper_chwidth,
 						  oper_centr_freq_seg0_idx,
-						  oper_centr_freq_seg1_idx);
+						  oper_centr_freq_seg1_idx,
+						  0);
 }
 
+
+/*convert common width(chan_width) to oper channel width*/
+enum oper_chan_width convert_to_oper_chan_width(int chan_width)
+{
+	switch (chan_width) {
+	case CHAN_WIDTH_20_NOHT:
+	case CHAN_WIDTH_20:
+	case CHAN_WIDTH_40:
+		return CONF_OPER_CHWIDTH_USE_HT;
+	case CHAN_WIDTH_80:
+		return CONF_OPER_CHWIDTH_80MHZ;
+	case CHAN_WIDTH_80P80:
+		return CONF_OPER_CHWIDTH_80P80MHZ;
+	case CHAN_WIDTH_160:
+		return CONF_OPER_CHWIDTH_160MHZ;
+	case CHAN_WIDTH_320:
+		return CONF_OPER_CHWIDTH_320MHZ;
+	}
+
+	return CHAN_WIDTH_UNKNOWN;
+}
 
 int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			       int ht_enabled, int chan_offset, int chan_width,
 			       int cf1, int cf2, u16 radar_bitmap)
 {
+	u16 radar_bit_pattern;
+	u16 cur_punct_bits = iface->conf->punct_bitmap;
+
 	if (!hostapd_is_freq_in_current_hw_info(iface, freq)) {
 		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
 			DFS_EVENT_RADAR_DETECTED
@@ -1719,8 +1749,19 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	}
 
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_RADAR_DETECTED
-		"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d",
-		freq, ht_enabled, chan_offset, chan_width, cf1, cf2);
+		"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d radar_bitmap:%d",
+		freq, ht_enabled, chan_offset, chan_width, cf1, cf2, radar_bitmap);
+
+	if (iface->conf->use_ru_puncture_dfs) {
+		radar_bit_pattern = iface->radar_bit_pattern | iface->conf->punct_bitmap;
+
+		/* Radar detected already punctured sub channel*/
+		if (radar_bit_pattern & radar_bitmap)
+			return 0;
+
+		radar_bit_pattern |= radar_bitmap;
+		iface->conf->punct_bitmap = radar_bit_pattern;
+	}
 
 	iface->radar_detected = true;
 
@@ -1745,9 +1786,51 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	if (!hostapd_dfs_is_background_event(iface, freq)) {
 		/* Skip if reported radar event not overlapped our channels */
 		if (!dfs_are_channels_overlapped(iface, freq, chan_width,
-						 cf1, cf2))
+						 cf1, cf2)) {
+			iface->conf->punct_bitmap = cur_punct_bits;
 			return 0;
+		}
 	}
+
+	if (iface->conf->use_ru_puncture_dfs && hostapd_is_usable_punct_bitmap(iface)) {
+		iface->radar_bit_pattern = radar_bitmap;
+		iface->conf->punct_bitmap = cur_punct_bits;
+		u8 oper_centr_freq_seg0_idx = iface->conf->vht_oper_centr_freq_seg0_idx;
+		u8 oper_centr_freq_seg1_idx = iface->conf->vht_oper_centr_freq_seg1_idx;
+
+		chan_width = convert_to_oper_chan_width(chan_width);
+
+		if (iface->cac_started) {
+
+			wpa_printf(MSG_DEBUG, "radar detected during cac,"
+				   "it restarted with valid puncturing bitmap :%d",
+				   iface->conf->punct_bitmap |
+				   iface->radar_bit_pattern);
+
+			iface->cac_started = 0;
+			return hostapd_start_dfs_cac(iface, iface->conf->hw_mode,
+						     iface->freq, iface->conf->channel,
+						     iface->conf->ieee80211n,
+						     iface->conf->ieee80211ac,
+						     iface->conf->ieee80211ax,
+						     iface->conf->ieee80211be,
+						     iface->conf->secondary_channel,
+						     hostapd_get_oper_chwidth(iface->conf),
+						     hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
+						     hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
+						     dfs_use_radar_background(iface));
+		}
+
+		return hostapd_dfs_request_channel_switch(
+			iface, iface->conf->channel, freq,
+			iface->conf->secondary_channel, chan_width,
+			oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx,
+			hostapd_get_punct_bitmap(iface->bss[0]));
+	}
+
+	/* Switch channel with random channel selection for invalid puncturing pattern */
+	iface->radar_bit_pattern = 0;
+	iface->conf->punct_bitmap = cur_punct_bits;
 
 	if (hostapd_dfs_background_start_channel_switch(iface, freq)) {
 		if (!iface->conf->disable_csa_dfs) {

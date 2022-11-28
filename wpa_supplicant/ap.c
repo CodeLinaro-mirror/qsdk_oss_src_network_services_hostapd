@@ -437,6 +437,7 @@ int wpa_supplicant_conf_ap_ht(struct wpa_supplicant *wpa_s,
 				conf->ieee80211be = 1;
 #ifdef CONFIG_IEEE80211BE
 				conf->punct_bitmap = ssid->punct_bitmap;
+				conf->use_ru_puncture_dfs = ssid->use_ru_puncture_dfs;
 #endif
 			}
 

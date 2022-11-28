@@ -2321,6 +2321,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		 conf->dfs_test_mode = atoi(pos);
 	} else if (os_strcmp(buf, "disable_csa_dfs") == 0) {
 		conf->disable_csa_dfs = atoi(pos);
+	} else if (os_strcmp(buf, "use_ru_puncture_dfs") == 0) {
+		conf->use_ru_puncture_dfs = atoi(pos);
 	} else if (os_strcmp(buf, "ieee8021x") == 0) {
 		bss->ieee802_1x = atoi(pos);
 	} else if (os_strcmp(buf, "eapol_version") == 0) {
