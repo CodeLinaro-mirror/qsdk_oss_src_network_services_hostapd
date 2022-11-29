@@ -1438,6 +1438,12 @@ struct wpa_driver_associate_params {
 	int beacon_tx_mode;
 
 	/**
+	 * ccfs - Center frequency for 320 MHz operation. 320 MHz has overlapping
+	 * bands and this can be configured to select a particular range.
+	 */
+	int ccfs;
+
+	/**
 	 * disable_eht - Disable EHT for this connection
 	 */
 	int disable_eht;

@@ -1335,6 +1335,12 @@ struct wpa_ssid {
 	int use_ru_puncture_dfs;
 
 	/**
+	 * ccfs - Center frequency for 320 MHz operation. 320 MHz has overlapping
+	 * bands and this can be configured to select a particular range.
+	 */
+	int ccfs;
+
+	/**
 	 * disable_uhr - Disable UHR (IEEE 802.11bn) for this network
 	 *
 	 * By default, use it if it is available, but this can be configured
