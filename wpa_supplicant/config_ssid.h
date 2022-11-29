@@ -1326,6 +1326,12 @@ struct wpa_ssid {
 	int use_ru_puncture_dfs;
 
 	/**
+	 * Center Frequency - 320MHz has overlapping bands and by default, center frequency
+	 * will be selected from non-overlapping bands.
+	 * CCFS can be configured from script to select particular range.*/
+	int ccfs;
+
+	/**
 	 * disable_eht - Disable EHT (IEEE 802.11be) for this network
 	 *
 	 * By default, use it if it is available, but this can be configured

@@ -1435,6 +1435,12 @@ struct wpa_driver_associate_params {
 	u32 punct_bitmap;
 
 	/**
+	 * Center Frequency - 320MHz has overlapping bands and by default, center frequency
+	 * will be selected from non-overlapping bands.
+	 * CCFS can be configured from script to select particular range. */
+	int ccfs;
+
+	/**
 	 * disable_eht - Disable EHT for this connection
 	 */
 	int disable_eht;

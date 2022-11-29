@@ -4398,6 +4398,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "wowlan_triggers") == 0) {
 		os_free(bss->wowlan_triggers);
 		bss->wowlan_triggers = os_strdup(pos);
+	} else if (os_strcmp(buf, "ccfs") == 0) {
+		conf->ccfs = atoi(pos);
 	} else if (os_strcmp(buf, "disable_40mhz_scan") == 0) {
 		 conf->disable_40mhz_scan = atoi(pos);
 #ifdef CONFIG_FST
