@@ -2945,6 +2945,7 @@ struct csa_settings {
 	int link_id;
 
 	struct unsol_bcast_probe_resp ubpr;
+	bool handle_dfs;
 };
 
 /**

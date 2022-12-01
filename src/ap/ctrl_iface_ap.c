@@ -1539,6 +1539,7 @@ int hostapd_parse_csa_settings(struct hostapd_iface *iface,
 	}
 
 	settings->block_tx = !!os_strstr(pos, " blocktx");
+	settings->handle_dfs = !!os_strstr(pos, " handle_dfs");
 
 	ret = hostapd_parse_freq_params(end, &settings->freq_params, 0);
 	if (ret < 0) {

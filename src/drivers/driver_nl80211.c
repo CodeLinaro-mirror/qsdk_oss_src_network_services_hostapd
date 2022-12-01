@@ -12006,6 +12006,9 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 		goto fail;
 #endif /* CONFIG_IEEE80211AX */
 
+	if (settings->handle_dfs && nla_put_flag(msg, NL80211_ATTR_HANDLE_DFS))
+		goto fail;
+
 	ret = send_and_recv_cmd(drv, msg);
 	if (ret) {
 		wpa_printf(MSG_DEBUG, "nl80211: switch_channel failed err=%d (%s)",
