@@ -252,6 +252,11 @@ u8 * hostapd_eid_he_operation(struct hostapd_data *hapd, u8 *eid)
 		control |= hapd->iconf->he_6ghz_reg_pwr_type <<
 			HE_6GHZ_OPER_INFO_CTRL_REG_INFO_SHIFT;
 
+		if (center_idx_to_bw_6ghz(seg0) &&
+		    !is_6ghz_psc_frequency(ieee80211_chan_to_freq(NULL,
+				    hapd->iconf->op_class, hapd->iconf->channel)))
+			control |= HE_6GHZ_OPER_INFO_CTRL_DUP_BEACON;
+
 		*pos++ = control;
 
 		/* Channel Center Freq Seg0/Seg1 */
