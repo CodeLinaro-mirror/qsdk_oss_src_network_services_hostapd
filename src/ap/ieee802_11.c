@@ -6803,6 +6803,14 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 	const u8 *wpa_ie;
 	size_t wpa_ie_len;
 	const u8 *p2p_dev_addr = NULL;
+	const struct element *elem;
+
+	for_each_element(elem, ies, ies_len) {
+		memcpy(sta->vendor_oui, elem->data, 3);
+		if(elem->id == WLAN_EID_VENDOR_SPECIFIC &&
+		   !WPA_GET_BE24(sta->vendor_oui))
+			break;
+	}
 	const struct security_profile_entry *matched_profile = NULL;
 #ifdef CONFIG_PMKSA_PRIVACY
 	bool derive_next_pmkid = true;
