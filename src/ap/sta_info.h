@@ -315,6 +315,9 @@ struct sta_info {
 	struct pasn_data *pasn;
 #endif /* CONFIG_PASN */
 
+	/* Vendor Specific OUI from associated STA */
+	u8 vendor_oui[3];
+
 #ifdef CONFIG_IEEE80211BE
 	struct mld_info mld_info;
 	u8 mld_assoc_link_id;

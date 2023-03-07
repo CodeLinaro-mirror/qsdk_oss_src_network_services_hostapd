@@ -327,6 +327,12 @@ static int hostapd_ctrl_iface_sta_mib(struct hostapd_data *hapd,
 		len += ret;
 	}
 
+	ret = os_snprintf(buf + len, buflen - len, "vendor_oui=%02x:%02x:%02x\n",
+			  sta->vendor_oui[0], sta->vendor_oui[1], sta->vendor_oui[2]);
+	if (os_snprintf_error(buflen - len, ret))
+		return len;
+	len += ret;
+
 	res = ieee802_11_get_mib_sta(hapd, sta, buf + len, buflen - len);
 	if (res >= 0)
 		len += res;
