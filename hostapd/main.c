@@ -40,6 +40,7 @@ struct hapd_global {
 
 static struct hapd_global global;
 
+extern int radius_main(int argc, char **argv);
 
 #ifndef CONFIG_NO_HOSTAPD_LOGGER
 static void hostapd_logger_cb(void *ctx, const u8 *addr, unsigned int module,
@@ -833,6 +834,11 @@ int main(int argc, char *argv[])
 
 	if (os_program_init())
 		return -1;
+
+#ifdef RADIUS_SERVER
+	if (strstr(argv[0], "radius"))
+		return radius_main(argc, argv);
+#endif
 
 	os_memset(&interfaces, 0, sizeof(interfaces));
 	interfaces.reload_config = hostapd_reload_config;

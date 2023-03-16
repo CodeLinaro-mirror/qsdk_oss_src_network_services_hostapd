@@ -63,6 +63,10 @@ endif
 OBJS += main.o
 OBJS += config_file.o
 
+ifdef CONFIG_RADIUS_SERVER
+OBJS += radius.o
+endif
+
 OBJS += ../src/ap/hostapd.o
 OBJS += ../src/ap/wpa_auth_glue.o
 OBJS += ../src/ap/drv_callbacks.o
