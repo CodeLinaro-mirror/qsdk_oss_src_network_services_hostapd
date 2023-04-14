@@ -199,7 +199,6 @@ wpa_supplicant_find_hw_mode(struct wpa_supplicant *wpa_s,
 }
 
 
-#ifdef CONFIG_P2P
 
 static int get_max_oper_chwidth_6ghz(int chwidth)
 {
@@ -213,6 +212,8 @@ static int get_max_oper_chwidth_6ghz(int chwidth)
 	case CONF_OPER_CHWIDTH_80P80MHZ:
 	case CONF_OPER_CHWIDTH_160MHZ:
 		return 160;
+	case CONF_OPER_CHWIDTH_320MHZ:
+		return 320;
 	default:
 		return 0;
 	}
@@ -224,6 +225,16 @@ static void wpas_conf_ap_he_6ghz(struct wpa_supplicant *wpa_s,
 				 struct wpa_ssid *ssid,
 				 struct hostapd_config *conf)
 {
+	if (!ssid->p2p_group && get_max_oper_chwidth_6ghz(ssid->max_oper_chwidth) >= 80) {
+		if (ssid->max_oper_chwidth)
+			hostapd_set_oper_chwidth(conf, ssid->max_oper_chwidth);
+		if (hostapd_get_oper_chwidth(conf))
+			ieee80211_freq_to_channel_ext(ssid->frequency, 0,
+					hostapd_get_oper_chwidth(conf),
+					&conf->op_class,
+					&conf->channel);
+	}
+#ifdef CONFIG_P2P
 	bool is_chanwidth_40_80, is_chanwidth_160;
 	int he_chanwidth;
 
@@ -259,9 +270,8 @@ static void wpas_conf_ap_he_6ghz(struct wpa_supplicant *wpa_s,
 	if ((is_chanwidth_40_80 || is_chanwidth_160) && ssid->p2p_group &&
 	    get_max_oper_chwidth_6ghz(ssid->max_oper_chwidth) >= 80)
 		wpas_conf_ap_vht(wpa_s, ssid, conf, mode);
+#endif
 }
-
-#endif /* CONFIG_P2P */
 
 
 int wpa_supplicant_conf_ap_ht(struct wpa_supplicant *wpa_s,
@@ -352,9 +362,7 @@ int wpa_supplicant_conf_ap_ht(struct wpa_supplicant *wpa_s,
 			    ssid->he)
 				conf->ieee80211ax = 1;
 
-#ifdef CONFIG_P2P
 			wpas_conf_ap_he_6ghz(wpa_s, mode, ssid, conf);
-#endif /* CONFIG_P2P */
 		} else if (!no_ht && mode && mode->ht_capab) {
 			wpa_printf(MSG_DEBUG,
 				   "Enable HT support (p2p_group=%d 11a=%d ht40_hw_capab=%d ssid->ht40=%d, he40=%d)",

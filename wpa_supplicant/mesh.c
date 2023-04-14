@@ -678,25 +678,28 @@ int wpa_supplicant_join_mesh(struct wpa_supplicant *wpa_s,
 	if (wpa_s->mesh_vht_enabled) {
 		ssid->vht = 1;
 		ssid->vht_center_freq1 = params->freq.center_freq1;
-		switch (params->freq.bandwidth) {
-		case 80:
-			if (params->freq.center_freq2) {
-				ssid->max_oper_chwidth =
-					CONF_OPER_CHWIDTH_80P80MHZ;
-				ssid->vht_center_freq2 =
-					params->freq.center_freq2;
-			} else {
-				ssid->max_oper_chwidth =
-					CONF_OPER_CHWIDTH_80MHZ;
-			}
-			break;
-		case 160:
-			ssid->max_oper_chwidth = CONF_OPER_CHWIDTH_160MHZ;
-			break;
-		default:
-			ssid->max_oper_chwidth = CONF_OPER_CHWIDTH_USE_HT;
-			break;
+	}
+	switch (params->freq.bandwidth) {
+	case 80:
+		if (params->freq.center_freq2) {
+			ssid->max_oper_chwidth =
+				CONF_OPER_CHWIDTH_80P80MHZ;
+			ssid->vht_center_freq2 =
+				params->freq.center_freq2;
+		} else {
+			ssid->max_oper_chwidth =
+				CONF_OPER_CHWIDTH_80MHZ;
 		}
+		break;
+	case 160:
+		ssid->max_oper_chwidth = CONF_OPER_CHWIDTH_160MHZ;
+		break;
+	case 320:
+		ssid->max_oper_chwidth = CONF_OPER_CHWIDTH_320MHZ;
+		break;
+	default:
+		ssid->max_oper_chwidth = CONF_OPER_CHWIDTH_USE_HT;
+		break;
 	}
 	if (wpa_s->mesh_he_enabled)
 		ssid->he = 1;
