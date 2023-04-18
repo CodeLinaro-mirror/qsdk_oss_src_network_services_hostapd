@@ -1723,6 +1723,8 @@ int ap_ctrl_iface_acl_add_mac(struct wpa_supplicant *wpa_s,
 
 	if (wpa_s->ap_iface)
 		hapd = wpa_s->ap_iface->bss[0];
+	else if (wpa_s->ifmsh)
+		hapd = wpa_s->ifmsh->bss[0];
 	else
 		return -1;
 
@@ -1749,6 +1751,8 @@ int ap_ctrl_iface_acl_del_mac(struct wpa_supplicant *wpa_s,
 
 	if (wpa_s->ap_iface)
 		hapd = wpa_s->ap_iface->bss[0];
+	else if (wpa_s->ifmsh)
+		hapd = wpa_s->ifmsh->bss[0];
 	else
 		return -1;
 
@@ -1775,6 +1779,8 @@ int ap_ctrl_iface_acl_show_mac(struct wpa_supplicant *wpa_s,
 
 	if (wpa_s->ap_iface)
 		hapd = wpa_s->ap_iface->bss[0];
+	else if (wpa_s->ifmsh)
+		hapd = wpa_s->ifmsh->bss[0];
 	else
 		return -1;
 
@@ -1798,6 +1804,8 @@ void ap_ctrl_iface_acl_clear_list(struct wpa_supplicant *wpa_s,
 
 	if (wpa_s->ap_iface)
 		hapd = wpa_s->ap_iface->bss[0];
+	else if (wpa_s->ifmsh)
+		hapd = wpa_s->ifmsh->bss[0];
 	else
 		return;
 
@@ -1818,6 +1826,8 @@ int ap_ctrl_iface_disassoc_deny_mac(struct wpa_supplicant *wpa_s)
 
 	if (wpa_s->ap_iface)
 		hapd = wpa_s->ap_iface->bss[0];
+	else if (wpa_s->ifmsh)
+		hapd = wpa_s->ifmsh->bss[0];
 	else
 		return -1;
 
@@ -1831,6 +1841,8 @@ int ap_ctrl_iface_disassoc_accept_mac(struct wpa_supplicant *wpa_s)
 
 	if (wpa_s->ap_iface)
 		hapd = wpa_s->ap_iface->bss[0];
+	else if (wpa_s->ifmsh)
+		hapd = wpa_s->ifmsh->bss[0];
 	else
 		return -1;
 
@@ -1844,6 +1856,8 @@ int ap_ctrl_iface_set_acl(struct wpa_supplicant *wpa_s)
 
 	if (wpa_s->ap_iface)
 		hapd = wpa_s->ap_iface->bss[0];
+	else if (wpa_s->ifmsh)
+		hapd = wpa_s->ifmsh->bss[0];
 	else
 		return -1;
 
