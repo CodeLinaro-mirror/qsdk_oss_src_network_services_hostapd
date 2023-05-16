@@ -3389,7 +3389,8 @@ static int hostapd_5ghz_vht_80_channel_bw(struct hostapd_hw_modes *mode,
 {
 	int k, m, ok, allowed[][4] = {{36, 40, 44, 48}, {52, 56, 60, 64},
 				      {100, 104, 108, 112}, {116, 120, 124, 128},
-				      {132, 136, 140, 144}, {149, 153, 157, 161}};
+				      {132, 136, 140, 144}, {149, 153, 157, 161},
+				      {165, 169, 173, 177}};
 	struct hostapd_channel_data *chan = &mode->channels[channel_idx];
 
 	ok = 0;
@@ -3421,7 +3422,8 @@ static bool hostapd_5ghz_vht_160_channel_bw(struct hostapd_hw_modes *mode,
 					    int channel_idx)
 {
 	int k, m, ok, allowed[][8] = {{36, 40, 44, 48, 52, 56, 60, 64},
-				      {100, 104, 108, 112, 116, 120, 124, 128}};
+				      {100, 104, 108, 112, 116, 120, 124, 128},
+				      {149, 153, 157, 161, 165, 169, 173, 177}};
 	struct hostapd_channel_data *chan = &mode->channels[channel_idx];
 
 	ok = 0;
@@ -3454,7 +3456,7 @@ static int hostapd_5ghz_ht_40_channel_bw(struct hostapd_hw_modes *mode,
 {
 
 	int  k, ok, allowed[] = {36, 44, 52, 60, 100, 108, 116, 124, 132, 140,
-				 149, 157, 184, 192};
+				 149, 157, 165, 173, 184, 192};
 	struct hostapd_channel_data *chan = &mode->channels[channel_idx];
 
 	if (!((chan->flag & HOSTAPD_CHAN_HT40MINUS) ||
@@ -3541,6 +3543,251 @@ static int hostapd_5ghz_channel_bw(struct hostapd_hw_modes *mode,
 	return len;
 }
 
+static int hostapd_6ghz_he_40_channel_bw(struct hostapd_hw_modes *mode,
+					 int channel_idx)
+{
+
+	int  k, ok, allowed[] = {1, 9, 17, 25, 33, 41, 49, 57, 65, 73, 81, 89,
+				 97, 105, 113, 121, 129, 137, 145, 153, 161, 169,
+				 177, 185, 193, 201, 209, 217, 225};
+	struct hostapd_channel_data *chan = &mode->channels[channel_idx];
+
+	ok = 0;
+	for (k = 0; k < ARRAY_SIZE(allowed); k++) {
+		if (chan->chan < allowed[k])
+			break;
+		if (chan->chan == allowed[k]) {
+			ok = 1;
+			break;
+		}
+	}
+
+	/* ok would be 0 for secondary channel offset -1 channels. If channel
+	 * number is not equivalent to previous primary channel + 4, then 40 MHz
+	 * bonding is not possible
+	 */
+	if (!ok && chan->chan != (allowed[k - 1] + 4))
+		return false;
+
+	/* ok would be 1 for secondary channel offset 1 channels. If next immediate
+	 * channel is disabled, 40 MHz bonding can't happen
+	 */
+	if (ok == 1 && (mode->channels[channel_idx + 1].flag &
+	    HOSTAPD_CHAN_DISABLED))
+		return false;
+
+	return true;
+}
+
+static int hostapd_6ghz_he_80_channel_bw(struct hostapd_hw_modes *mode,
+					 int channel_idx)
+{
+	int k, m, ok, allowed[][4] = {{1, 5, 9, 13}, {17, 21, 25, 29},
+				      {33, 37, 41, 45}, {49, 53, 57, 61},
+				      {65, 69, 73, 77}, {81, 85, 89, 93},
+				      {97, 101, 105, 109}, {113, 117, 121, 125},
+				      {129, 133, 137, 141}, {145, 149, 153, 157},
+				      {161, 165, 169, 173}, {177, 181, 185, 189},
+				      {193, 197, 201, 205}, {209, 213, 217, 221}};
+	struct hostapd_channel_data *chan = &mode->channels[channel_idx];
+
+	ok = 0;
+	for (k = 0; k < ARRAY_SIZE(allowed); k++) {
+		for(m = 0; m < ARRAY_SIZE(allowed[0]); m++) {
+			if (chan->chan == allowed[k][m]) {
+				ok = 1;
+				break;
+			}
+		}
+		if(ok == 1)
+			break;
+	}
+
+	if (ok == 0)
+		return false;
+
+	for (m = 0; m < ARRAY_SIZE(allowed[0]); m++) {
+		channel_idx = hostapd_get_channel_idx(mode, allowed[k][m]);
+		if((channel_idx == -1) || (mode->channels[channel_idx].flag &
+		   HOSTAPD_CHAN_DISABLED))
+			return false;
+	}
+
+	return true;
+}
+
+static bool hostapd_6ghz_he_160_channel_bw(struct hostapd_hw_modes *mode,
+					   int channel_idx)
+{
+	int k, m, ok, allowed[][8] = {{1, 5, 9, 13, 17, 21, 25, 29},
+				      {33, 37, 41, 45, 49, 53, 57, 61},
+				      {65, 69, 73, 77, 81, 85, 89, 93},
+				      {97, 101, 105, 109, 113, 117, 121, 125},
+				      {129, 133, 137, 141, 145, 149, 153, 157},
+				      {161, 165, 169, 173, 177, 181, 185, 189},
+				      {193, 197, 201, 205, 209, 213, 217, 221}};
+	struct hostapd_channel_data *chan = &mode->channels[channel_idx];
+
+	ok = 0;
+	for (k = 0; k < ARRAY_SIZE(allowed); k++) {
+		for(m = 0; m < ARRAY_SIZE(allowed[0]); m++) {
+			if (chan->chan == allowed[k][m]) {
+				ok = 1;
+				break;
+			}
+		}
+		if(ok == 1)
+			break;
+	}
+
+	if (ok == 0)
+		return false;
+
+	for (m = 0; m < ARRAY_SIZE(allowed[0]); m++) {
+		channel_idx = hostapd_get_channel_idx(mode, allowed[k][m]);
+		if (channel_idx == -1 || (mode->channels[channel_idx].flag &
+		    HOSTAPD_CHAN_DISABLED))
+			return false;
+	}
+	return true;
+}
+
+static bool hostapd_6ghz_he_320_channel_bw(struct hostapd_hw_modes *mode,
+					   int channel_idx)
+{
+	int k, m, ok, allowed[][16] = {
+		{1, 5, 9, 13, 17, 21, 25, 29, 33, 37, 41, 45, 49, 53, 57, 61},
+		{65, 69, 73, 77, 81, 85, 89, 93, 97, 101, 105, 109, 113, 117, 121, 125},
+		{129, 133, 137, 141, 145, 149, 153, 157, 161, 165, 169, 173, 177, 181, 185, 189}};
+	struct hostapd_channel_data *chan = &mode->channels[channel_idx];
+
+	ok = 0;
+	for (k = 0; k < ARRAY_SIZE(allowed); k++) {
+		for(m = 0; m < ARRAY_SIZE(allowed[0]); m++) {
+			if (chan->chan == allowed[k][m]) {
+				ok = 1;
+				break;
+			}
+		}
+		if(ok == 1)
+			break;
+	}
+
+	if (ok == 0)
+		return false;
+
+	for (m = 0; m < ARRAY_SIZE(allowed[0]); m++) {
+		channel_idx = hostapd_get_channel_idx(mode, allowed[k][m]);
+		if (channel_idx == -1 || (mode->channels[channel_idx].flag &
+		    HOSTAPD_CHAN_DISABLED))
+			return false;
+	}
+	return true;
+}
+
+/* 6 GHz band could have two different types of 320 MHz channels bonding. The above
+ * one uses different cf1 and below uses different. */
+static bool hostapd_6ghz_he_320_1_channel_bw(struct hostapd_hw_modes *mode,
+					     int channel_idx)
+{
+	int k, m, ok, allowed[][16] = {
+		{33, 37, 41, 45, 49, 53, 57, 61, 65, 69, 73, 77, 81, 85, 89, 93},
+		{97, 101, 105, 109, 113, 117, 121, 125, 129, 133, 137, 141, 145, 149, 153, 157},
+		{161, 165, 169, 173, 177, 181, 185, 189, 193, 197, 201, 205, 209, 213, 217, 221}};
+	struct hostapd_channel_data *chan = &mode->channels[channel_idx];
+
+	ok = 0;
+	for (k = 0; k < ARRAY_SIZE(allowed); k++) {
+		for(m = 0; m < ARRAY_SIZE(allowed[0]); m++) {
+			if (chan->chan == allowed[k][m]) {
+				ok = 1;
+				break;
+			}
+		}
+		if(ok == 1)
+			break;
+	}
+
+	if (ok == 0)
+		return false;
+
+	for (m = 0; m < ARRAY_SIZE(allowed[0]); m++) {
+		channel_idx = hostapd_get_channel_idx(mode, allowed[k][m]);
+		if (channel_idx == -1 || (mode->channels[channel_idx].flag &
+		    HOSTAPD_CHAN_DISABLED))
+			return false;
+	}
+	return true;
+}
+
+static int hostapd_6ghz_channel_bw(struct hostapd_hw_modes *mode,
+                                   char *buf, size_t buflen)
+{
+	struct hostapd_channel_data *chan = NULL;
+        int j, ret, len = 0, total_valid_chnls = 0;
+        char temp_buf[30] = {0};
+
+	for (j = 0; j < mode->num_channels; j++) {
+		chan = &mode->channels[j];
+
+		if (!(chan->flag & HOSTAPD_CHAN_DISABLED))
+			++total_valid_chnls;
+	}
+
+        for (j = 0; j < mode->num_channels; j++) {
+                chan = &mode->channels[j];
+
+                if (chan->flag & HOSTAPD_CHAN_DISABLED)
+                        continue;
+
+                ret = os_snprintf(temp_buf, 30, "Channel[%d]", chan->chan);
+                if (os_snprintf_error(30, ret))
+                        return len;
+
+                ret = os_snprintf(buf + len, buflen - len, "%-13s : %d - 20MHz ",
+                                  temp_buf, chan->freq);
+                if (os_snprintf_error(buflen - len, ret))
+                        return len;
+                len += ret;
+
+		if (hostapd_6ghz_he_40_channel_bw(mode, j)) {
+                        ret = os_snprintf(buf + len, buflen - len, "40MHz ");
+                        if (os_snprintf_error(buflen - len, ret))
+                                return len;
+                        len += ret;
+                }
+
+		if (hostapd_6ghz_he_80_channel_bw(mode, j)) {
+			ret = os_snprintf(buf + len, buflen - len, "80MHz ");
+                        if (os_snprintf_error(buflen - len, ret))
+                                return len;
+			len += ret;
+		}
+
+		if (hostapd_6ghz_he_160_channel_bw(mode, j)) {
+                        ret = os_snprintf(buf + len, buflen - len, "160MHz ");
+                        if (os_snprintf_error(buflen - len, ret))
+                                return len;
+                        len += ret;
+                }
+
+		if (hostapd_6ghz_he_320_channel_bw(mode, j) ||
+		    hostapd_6ghz_he_320_1_channel_bw(mode, j)) {
+                        ret = os_snprintf(buf + len, buflen - len, "320MHz ");
+                        if (os_snprintf_error(buflen - len, ret))
+                                return len;
+                        len += ret;
+		}
+
+		ret = os_snprintf(buf + len, buflen - len,"\n");
+                if (os_snprintf_error(buflen - len, ret))
+                        return len;
+                len += ret;
+	}
+
+	return len;
+}
+
 static int hostapd_ctrl_iface_channel_bw(struct hostapd_iface *iface,
 					 char *buf, size_t buflen)
 {
@@ -3548,15 +3795,40 @@ static int hostapd_ctrl_iface_channel_bw(struct hostapd_iface *iface,
 	struct hostapd_hw_modes *mode;
 	int len = 0;
 	u16 num_modes, flags;
-	u8 dfs_domain;
+	u8 dfs_domain,i;
 
 	mode = hostapd_get_hw_feature_data(hapd, &num_modes, &flags,
 					   &dfs_domain);
 
-	if (mode->mode != HOSTAPD_MODE_IEEE80211A)
-		len = hostapd_2ghz_channel_bw(mode, buf, buflen);
-	else
-		len = hostapd_5ghz_channel_bw(mode, buf, buflen);
+	if (!mode) {
+		wpa_printf(MSG_ERROR, "CTRL: CHAN_BW: get hw feature data failure");
+		return len;
+	}
+
+	if (!iface->current_mode)
+		return len;
+
+	for (i=0; i < num_modes; ++i) {
+		if (iface->current_mode->mode == mode[i].mode ) {
+			if (mode[i].mode != HOSTAPD_MODE_IEEE80211A) {
+				len = hostapd_2ghz_channel_bw(&mode[i],
+							      buf,
+							      buflen);
+			} else {
+				if ((is_5ghz_freq(iface->current_mode->channels->freq) &&
+				    is_5ghz_freq(mode[i].channels->freq))) {
+					len = hostapd_5ghz_channel_bw(&mode[i],
+								      buf,
+								      buflen);
+				} else if ((is_6ghz_freq(iface->current_mode->channels->freq) &&
+					    is_6ghz_freq(mode[i].channels->freq))) {
+					len = hostapd_6ghz_channel_bw(&mode[i],
+								      buf,
+								      buflen);
+				}
+			}
+		}
+	}
 
 	return len;
 }
