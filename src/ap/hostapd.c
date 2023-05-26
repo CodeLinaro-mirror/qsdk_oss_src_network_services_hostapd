@@ -295,6 +295,8 @@ int hostapd_reload_config(struct hostapd_iface *iface)
 	struct hostapd_config *newconf, *oldconf;
 	size_t j;
 
+	hostapd_ucode_reload_bss(hapd);
+
 	if (iface->config_fname == NULL) {
 		/* Only in-memory config in use - assume it has been updated */
 		hostapd_clear_old(iface);
@@ -525,6 +527,7 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 	hapd->beacon_set_done = 0;
 
 	wpa_printf(MSG_DEBUG, "%s(%s)", __func__, hapd->conf->iface);
+	hostapd_ucode_free_bss(hapd);
 	hostapd_ubus_free_bss(hapd);
 	accounting_deinit(hapd);
 	hostapd_deinit_wpa(hapd);
@@ -795,6 +798,7 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 static void hostapd_cleanup_iface(struct hostapd_iface *iface)
 {
 	wpa_printf(MSG_DEBUG, "%s(%p)", __func__, iface);
+	hostapd_ucode_free_iface(iface);
 	hostapd_afc_stop(iface);
 	eloop_cancel_timeout(hostapd_interface_setup_failure_handler, iface,
 			     NULL);
@@ -1385,6 +1389,7 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
 		hapd->driver->set_operstate(hapd->drv_priv, 1);
 
 	hostapd_ubus_add_bss(hapd);
+	hostapd_ucode_add_bss(hapd);
 
 	return 0;
 }
@@ -1460,7 +1465,7 @@ static int hostapd_bss_radius_init(struct hostapd_data *hapd)
  * initialized. Most of the modules that are initialized here will be
  * deinitialized in hostapd_cleanup().
  */
-static int hostapd_setup_bss(struct hostapd_data *hapd, bool first,
+int hostapd_setup_bss(struct hostapd_data *hapd, bool first,
 			     bool start_beacon)
 {
 	struct hostapd_bss_config *conf = hapd->conf;
@@ -3065,7 +3070,7 @@ hostapd_alloc_bss_data(struct hostapd_iface *hapd_iface,
 }
 
 
-static void hostapd_bss_deinit(struct hostapd_data *hapd)
+void hostapd_bss_deinit(struct hostapd_data *hapd)
 {
 	if (!hapd)
 		return;
@@ -4152,7 +4157,8 @@ int hostapd_remove_iface(struct hapd_interfaces *interfaces, char *buf)
 		hapd_iface = interfaces->iface[i];
 		if (hapd_iface == NULL)
 			return -1;
-		if (!os_strcmp(hapd_iface->conf->bss[0]->iface, buf)) {
+		if (!os_strcmp(hapd_iface->phy, buf) ||
+		    !os_strcmp(hapd_iface->conf->bss[0]->iface, buf)) {
 			wpa_printf(MSG_INFO, "Remove interface '%s'", buf);
 			return hostapd_remove_hapd_iface(hapd_iface);
 		}

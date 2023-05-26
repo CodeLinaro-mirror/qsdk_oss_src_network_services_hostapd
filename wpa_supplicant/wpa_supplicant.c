@@ -1302,6 +1302,7 @@ void wpa_supplicant_set_state(struct wpa_supplicant *wpa_s,
 		sme_sched_obss_scan(wpa_s, 0);
 	}
 	wpa_s->wpa_state = state;
+	wpas_ucode_update_state(wpa_s);
 
 	if (state == WPA_COMPLETED && new_connection &&
 	    wpa_s->conf->wfa_gen_capa == WFA_GEN_CAPA_PROTECTED &&
@@ -9437,6 +9438,7 @@ struct wpa_supplicant * wpa_supplicant_add_iface(struct wpa_global *global,
 #endif /* CONFIG_P2P */
 
 	wpas_ubus_add_bss(wpa_s);
+	wpas_ucode_add_bss(wpa_s);
 
 	return wpa_s;
 }
@@ -9464,6 +9466,7 @@ int wpa_supplicant_remove_iface(struct wpa_global *global,
 	struct wpa_supplicant *parent = wpa_s->parent;
 #endif /* CONFIG_MESH */
 
+	wpas_ucode_free_bss(wpa_s);
 	wpas_ubus_free_bss(wpa_s);
 
 	/* Remove interface from the global list of interfaces */
@@ -9786,6 +9789,7 @@ struct wpa_global * wpa_supplicant_init(struct wpa_params *params)
 
 	eloop_register_timeout(WPA_SUPPLICANT_CLEANUP_INTERVAL, 0,
 			       wpas_periodic, global, NULL);
+	wpas_ucode_init(global);
 
 	return global;
 }
@@ -9824,11 +9828,7 @@ int wpa_supplicant_run(struct wpa_global *global)
 	eloop_register_signal_terminate(wpa_supplicant_terminate, global);
 	eloop_register_signal_reconfig(wpa_supplicant_reconfig, global);
 
-	wpas_ubus_add(global);
-
 	eloop_run();
-
-	wpas_ubus_free(global);
 
 	return 0;
 }
@@ -9861,6 +9861,8 @@ void wpa_supplicant_deinit(struct wpa_global *global)
 		wpa_supplicant_global_ctrl_iface_deinit(global->ctrl_iface);
 
 	wpas_notify_supplicant_deinitialized(global);
+
+	wpas_ucode_free();
 
 	eap_peer_unregister_methods();
 #ifdef CONFIG_AP
