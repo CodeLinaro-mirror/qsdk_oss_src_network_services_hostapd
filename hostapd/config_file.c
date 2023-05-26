@@ -4994,7 +4994,12 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 	int errors = 0;
 	size_t i;
 
-	f = fopen(fname, "r");
+	if (!strncmp(fname, "data:", 5)) {
+		f = fmemopen((void *)(fname + 5), strlen(fname + 5), "r");
+		fname = "<inline>";
+	} else {
+		f = fopen(fname, "r");
+	}
 	if (f == NULL) {
 		wpa_printf(MSG_ERROR, "Could not open configuration file '%s' "
 			   "for reading.", fname);
