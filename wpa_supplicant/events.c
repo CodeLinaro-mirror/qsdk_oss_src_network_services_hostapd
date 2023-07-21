@@ -7047,6 +7047,13 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			wpa_tdls_disable_unreachable_link(wpa_s->wpa,
 							  data->low_ack.addr);
 #endif /* CONFIG_TDLS */
+#ifdef CONFIG_MESH
+		if (wpa_s->ifmsh) {
+			if (data->low_ack.num_packets == 0xFFFF)
+				wpas_mesh_peer_remove(wpa_s, data->low_ack.addr);
+		} else
+#endif
+			wpa_supplicant_deauthenticate(wpa_s, WLAN_REASON_DISASSOC_LOW_ACK);
 		break;
 	case EVENT_IBSS_PEER_LOST:
 #ifdef CONFIG_IBSS_RSN
