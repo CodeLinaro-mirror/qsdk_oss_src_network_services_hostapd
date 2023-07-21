@@ -3597,6 +3597,32 @@ void hostapd_interface_deinit_free(struct hostapd_iface *iface)
 	hostapd_interface_free(iface);
 }
 
+void hostapd_deauthenticate_stations(struct hapd_interfaces *interfaces)
+{
+	int i, j;
+	struct hostapd_iface *iface;
+	struct hostapd_data *hapd;
+	u8 addr[ETH_ALEN];
+	int reason = WLAN_REASON_DEAUTH_LEAVING;
+
+	for (i = 0; i < interfaces->count; i++) {
+		if (!interfaces->iface[i])
+			continue;
+
+		iface = interfaces->iface[i];
+		os_memset(addr, 0xff, ETH_ALEN);
+		for (j = 0; j < iface->num_bss; j++) {
+			hapd = iface->bss[j];
+			if (!hapd)
+				continue;
+			wpa_dbg(hapd->msg_ctx, MSG_DEBUG,
+					"Sending deauth frame sa=" MACSTR "da=" MACSTR "reason=%d",
+					MAC2STR(hapd->own_addr), MAC2STR(addr), reason);
+			hostapd_drv_sta_deauth(hapd, addr, reason);
+		}
+
+	}
+}
 
 static void hostapd_deinit_driver(const struct wpa_driver_ops *driver,
 				  void *drv_priv,

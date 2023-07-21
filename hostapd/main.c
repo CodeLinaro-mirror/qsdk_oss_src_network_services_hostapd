@@ -1092,6 +1092,8 @@ int main(int argc, char *argv[])
  out:
 	hostapd_ucode_free();
 	hostapd_global_ctrl_iface_deinit(&interfaces);
+	/* Sending deauth to all stations before deinit */
+	hostapd_deauthenticate_stations(&interfaces);
 	/* Deinitialize all interfaces */
 	for (i = 0; i < interfaces.count; i++) {
 		if (!interfaces.iface[i])
