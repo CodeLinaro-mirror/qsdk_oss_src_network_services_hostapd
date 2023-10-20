@@ -3317,8 +3317,11 @@ wpa_driver_nl80211_finish_drv_init(struct i802_bss *bss, const u8 *set_addr,
 				set_addr)))
 		return -1;
 
-	if (first && nl80211_get_ifmode(bss) == NL80211_IFTYPE_STATION)
-		drv->start_mode_sta = 1;
+	if (nl80211_get_ifmode(bss) == NL80211_IFTYPE_STATION) {
+		if (first)
+			drv->start_mode_sta = 1;
+		bss->start_mode_sta = 1;
+	}
 
 	if (drv->hostapd || bss->static_ap)
 		nlmode = NL80211_IFTYPE_AP;
@@ -9430,6 +9433,7 @@ static int wpa_driver_nl80211_if_remove(struct i802_bss *bss,
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	int ifindex = if_nametoindex(ifname);
+	enum nl80211_iftype nlmode;
 
 	wpa_printf(MSG_DEBUG, "nl80211: %s(type=%d ifname=%s) ifindex=%d added_if=%d",
 		   __func__, type, ifname, ifindex, bss->added_if);
@@ -9469,12 +9473,20 @@ static int wpa_driver_nl80211_if_remove(struct i802_bss *bss,
 		for (tbss = drv->first_bss; tbss; tbss = tbss->next) {
 			if (tbss->next == bss) {
 				tbss->next = bss->next;
-				/* Unsubscribe management frames */
-				nl80211_teardown_ap(bss);
+				bss->in_deinit = 1;
 				nl80211_remove_links(bss);
-				nl80211_destroy_bss(bss);
+				nlmode = drv->nlmode;
 				if (!bss->added_if)
 					i802_set_iface_flags(bss, 0);
+				if (drv->nlmode != NL80211_IFTYPE_P2P_DEVICE &&
+				    bss->start_mode_sta)
+					wpa_driver_nl80211_set_mode(bss,
+								    NL80211_IFTYPE_STATION);
+				else
+					/* Unsubscribe management frames */
+					nl80211_teardown_ap(bss);
+				nl80211_destroy_bss(bss);
+				drv->nlmode = nlmode;
 				os_free(bss);
 				bss = NULL;
 				break;
@@ -9485,16 +9497,31 @@ static int wpa_driver_nl80211_if_remove(struct i802_bss *bss,
 				   "BSS %p in the list", __func__, bss);
 	} else {
 		wpa_printf(MSG_DEBUG, "nl80211: First BSS - reassign context");
-		nl80211_teardown_ap(bss);
+		bss->in_deinit = 1;
 		nl80211_remove_links(bss);
 		nl80211_destroy_bss(bss);
 		if (!bss->added_if)
+		nlmode = drv->nlmode;
+		if (!bss->start_iface_up)
 			i802_set_iface_flags(bss, 0);
+		if (drv->nlmode != NL80211_IFTYPE_P2P_DEVICE &&
+		    bss->start_mode_sta)
+			wpa_driver_nl80211_set_mode(bss,
+						    NL80211_IFTYPE_STATION);
+		else
+			nl80211_teardown_ap(bss);
+		nl80211_destroy_bss(bss);
+		drv->nlmode = nlmode;
+
+		wpa_printf(MSG_DEBUG, "nl80211: First BSS - reassign context");
+
 		if (drv->first_bss->next) {
 			drv->first_bss = drv->first_bss->next;
 			drv->ctx = drv->first_bss->ctx;
 			drv->ifindex = drv->first_bss->ifindex;
+			drv->start_mode_sta = drv->first_bss->start_mode_sta;
 			os_free(bss);
+			bss = NULL;
 		} else {
 			wpa_printf(MSG_DEBUG, "nl80211: No second BSS to reassign context to");
 		}
@@ -15145,6 +15172,14 @@ static bool wpa_driver_nl80211_can_share_drv(void *ctx,
 	wpa_printf(MSG_DEBUG, "nl80211: Driver for phy %s already exist",
 		   match_drv->phyname);
 
+	/* store the original state and mode */
+	if (nl80211_get_ifmode(bss) != NL80211_IFTYPE_P2P_DEVICE &&
+	    linux_iface_up(match_drv->global->ioctl_sock, bss->ifname) > 0)
+		bss->start_iface_up = 1;
+
+	if (nl80211_get_ifmode(bss) == NL80211_IFTYPE_STATION)
+		bss->start_mode_sta = 1;
+
 	*hapd = match_drv->first_bss->ctx;
 	ret = true;
 
@@ -15281,7 +15316,6 @@ wpa_driver_get_multi_hw_info(void *priv, unsigned int *num_multi_hws)
 
 	return nl80211_get_multi_hw_info(bss, num_multi_hws);
 }
-
 
 const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.name = "nl80211",
