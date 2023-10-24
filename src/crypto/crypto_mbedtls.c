@@ -2299,25 +2299,30 @@ struct crypto_ecdh * crypto_ecdh_init2(int group,
 struct wpabuf * crypto_ecdh_get_pubkey(struct crypto_ecdh *ecdh, int inc_y)
 {
 	mbedtls_ecp_group *grp = &ecdh->grp;
-	size_t len = CRYPTO_EC_plen(grp);
+	size_t prime_len = CRYPTO_EC_plen(grp);
+	size_t output_len = prime_len;
+	u8 output_offset = 0;
+	u8 buf[256];
+
   #ifdef MBEDTLS_ECP_MONTGOMERY_ENABLED
 	/* len */
   #endif
   #ifdef MBEDTLS_ECP_SHORT_WEIERSTRASS_ENABLED
-	if (mbedtls_ecp_get_type(grp) == MBEDTLS_ECP_TYPE_SHORT_WEIERSTRASS)
-		len = inc_y ? len*2+1 : len+1;
+	if (mbedtls_ecp_get_type(grp) == MBEDTLS_ECP_TYPE_SHORT_WEIERSTRASS) {
+		output_len = inc_y ? prime_len * 2 + 1 : prime_len + 1;
+		output_offset = 1;
+	}
   #endif
-	struct wpabuf *buf = wpabuf_alloc(len);
-	if (buf == NULL)
+
+	if (output_len > sizeof(buf))
 		return NULL;
+
 	inc_y = inc_y ? MBEDTLS_ECP_PF_UNCOMPRESSED : MBEDTLS_ECP_PF_COMPRESSED;
-	if (mbedtls_ecp_point_write_binary(grp, &ecdh->Q, inc_y, &len,
-	                                   wpabuf_mhead_u8(buf), len) == 0) {
-		wpabuf_put(buf, len);
-		return buf;
+	if (mbedtls_ecp_point_write_binary(grp, &ecdh->Q, inc_y, &output_len,
+	                                   buf, output_len) == 0) {
+		return wpabuf_alloc_copy(buf + output_offset, output_len - output_offset);
 	}
 
-	wpabuf_free(buf);
 	return NULL;
 }
 
@@ -2379,10 +2384,7 @@ struct wpabuf * crypto_ecdh_set_peerkey(struct crypto_ecdh *ecdh, int inc_y,
 				os_memcpy(buf+2, key, len);
 			}
 			len >>= 1; /*(repurpose len to prime_len)*/
-		}
-		else if (key[0] == 0x02 || key[0] == 0x03) { /* (inc_y == 0) */
-			--len; /*(repurpose len to prime_len)*/
-
+		} else { /* (inc_y == 0) */
 			/* mbedtls_ecp_point_read_binary() does not currently support
 			 * MBEDTLS_ECP_PF_COMPRESSED format (buf[1] = 0x02 or 0x03)
 			 * (returns MBEDTLS_ERR_ECP_FEATURE_UNAVAILABLE) */
@@ -2390,21 +2392,20 @@ struct wpabuf * crypto_ecdh_set_peerkey(struct crypto_ecdh *ecdh, int inc_y,
 			/* derive y, amend buf[] with y for UNCOMPRESSED format */
 			if (sizeof(buf)-2 < len*2 || len == 0)
 				return NULL;
+
 			buf[0] = (u8)(1+len*2);
 			buf[1] = 0x04;
+			os_memcpy(buf+2, key, len);
+
 			mbedtls_mpi bn;
 			mbedtls_mpi_init(&bn);
-			int ret = mbedtls_mpi_read_binary(&bn, key+1, len)
-			       || crypto_mbedtls_short_weierstrass_derive_y(grp, &bn,
-			                                                    key[0] & 1)
+			int ret = mbedtls_mpi_read_binary(&bn, key, len)
+			       || crypto_mbedtls_short_weierstrass_derive_y(grp, &bn, 0)
 			       || mbedtls_mpi_write_binary(&bn, buf+2+len, len);
 			mbedtls_mpi_free(&bn);
 			if (ret != 0)
 				return NULL;
 		}
-
-		if (key[0] == 0) /*(repurpose len to prime_len)*/
-			len = CRYPTO_EC_plen(grp);
 
 		if (mbedtls_ecdh_read_public(&ecdh->ctx, buf, buf[0]+1))
 			return NULL;
