@@ -3875,10 +3875,12 @@ static void nl80211_update_muedca_params_event(struct wpa_driver_nl80211_data *d
 	wpa_supplicant_event(drv->ctx, EVENT_UPDATE_MUEDCA_PARAMS, &ed);
 }
 
-static void nl80211_awgn_event(struct wpa_driver_nl80211_data *drv,
+static void nl80211_awgn_event(struct i802_bss *bss,
 			       struct nlattr **tb)
 {
+	struct wpa_driver_nl80211_data *drv = bss->drv;
 	union wpa_event_data data;
+	struct i802_bss *bss_iter;
 
 	os_memset(&data, 0, sizeof(data));
 
@@ -3899,7 +3901,54 @@ static void nl80211_awgn_event(struct wpa_driver_nl80211_data *drv,
 		data.awgn_event.chan_bw_interference_bitmap =
 			nla_get_u32(tb[NL80211_ATTR_AWGN_INTERFERENCE_BITMAP]);
 
-	wpa_supplicant_event(drv->ctx, EVENT_AWGN_DETECTED, &data);
+	data.awgn_event.link_id = nl80211_get_link_id_by_freq(bss, data.awgn_event.freq);
+	if (data.awgn_event.link_id == NL80211_DRV_LINK_ID_NA) {
+		/* For non-MLO operation, freq should still match */
+		if (!bss->valid_links &&
+		    (int)bss->links[0].freq == data.dfs_event.freq)
+			goto process_awgn_event;
+	} else {
+		/* valid link ID was found */
+		goto process_awgn_event;
+	}
+
+	wpa_printf(MSG_DEBUG, "nl80211: Checking suitable BSS for the AWGN event");
+
+	/* This event comes without ifidx and wdev_id. Hence need to check on all BSSes.
+	 */
+	for (bss_iter = drv->first_bss; bss_iter; bss_iter = bss_iter->next) {
+		data.awgn_event.link_id =
+				nl80211_get_link_id_by_freq(bss_iter,
+							    data.awgn_event.freq);
+		if (data.awgn_event.link_id == NL80211_DRV_LINK_ID_NA) {
+			/* For non-MLO operation, freq should still match */
+			if (!bss_iter->valid_links &&
+			    (int)bss_iter->links[0].freq == data.awgn_event.freq) {
+				bss = bss_iter;
+				goto process_awgn_event;
+			}
+		} else {
+			/* valid link ID was found */
+			bss = bss_iter;
+			goto process_awgn_event;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG, "nl80211: AWGN event on unknown freq on %s",
+		   bss->ifname);
+
+	return;
+
+process_awgn_event:
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: AWGN event on freq %d MHz, width: %d, cf1: %d MHz, cf2: %d MHz, bitmap: 0x%x, link_id: %d",
+		   data.awgn_event.freq, data.awgn_event.chan_width,
+		   data.awgn_event.cf1, data.awgn_event.cf2,
+		   data.awgn_event.chan_bw_interference_bitmap,
+		   data.awgn_event.link_id);
+
+	wpa_supplicant_event(bss->ctx, EVENT_AWGN_DETECTED, &data);
+
 }
 
 static void nl80211_port_authorized(struct wpa_driver_nl80211_data *drv,
@@ -4488,7 +4537,7 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 		nl80211_update_muedca_params_event(drv, tb);
 		break;
 	case NL80211_CMD_AWGN_DETECT:
-		nl80211_awgn_event(drv, tb);
+		nl80211_awgn_event(bss, tb);
 		break;
 	default:
 		wpa_dbg(drv->ctx, MSG_DEBUG, "nl80211: Ignored unknown event "

@@ -7264,6 +7264,7 @@ union wpa_event_data {
 		int cf1;
 		int cf2;
 		u32 chan_bw_interference_bitmap;
+		int link_id;
 	} awgn_event;
 
 	/**

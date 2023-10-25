@@ -2864,6 +2864,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 	case EVENT_AWGN_DETECTED:
 		if (!data)
 			break;
+		hapd = switch_link_hapd(hapd, data->awgn_event.link_id);
 		hostapd_event_awgn_detected(hapd, &data->awgn_event);
 		break;
 	case EVENT_DFS_PRE_CAC_EXPIRED:

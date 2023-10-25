@@ -242,6 +242,13 @@ static int intf_awgn_find_channel_list(struct hostapd_iface *iface,
 	for (i = 0; i < mode->num_channels; i++) {
 		chan = &mode->channels[i];
 
+		if (!chan_in_current_hw_info(iface->current_hw_info, chan)) {
+			wpa_printf(MSG_DEBUG,
+				   "AWGN: channel %d (%d) is not under current hardware index",
+				   chan->freq, chan->chan);
+			continue;
+		}
+
 		/* Skip incompatible chandefs */
 		if (!intf_awgn_chan_range_available(mode, i, n_chans)) {
 			wpa_printf(MSG_DEBUG,
