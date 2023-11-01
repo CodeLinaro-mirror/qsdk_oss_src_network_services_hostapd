@@ -87,26 +87,6 @@ static const int dot11RSNAConfigPMKReauthThreshold = 70;
 static const int dot11RSNAConfigSATimeout = 60;
 
 
-static const u8 * wpa_auth_get_aa(const struct wpa_state_machine *sm)
-{
-#ifdef CONFIG_IEEE80211BE
-	if (sm->mld_assoc_link_id >= 0)
-		return sm->wpa_auth->mld_addr;
-#endif /* CONFIG_IEEE80211BE */
-	return sm->wpa_auth->addr;
-}
-
-
-static const u8 * wpa_auth_get_spa(const struct wpa_state_machine *sm)
-{
-#ifdef CONFIG_IEEE80211BE
-	if (sm->mld_assoc_link_id >= 0)
-		return sm->peer_mld_addr;
-#endif /* CONFIG_IEEE80211BE */
-	return sm->addr;
-}
-
-
 static void wpa_gkeydone_sta(struct wpa_state_machine *sm)
 {
 #ifdef CONFIG_IEEE80211BE
@@ -834,10 +814,18 @@ struct wpa_authenticator * wpa_init(const u8 *addr,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211R_AP
-	wpa_auth->ft_pmk_cache = wpa_ft_pmk_cache_init();
-	if (!wpa_auth->ft_pmk_cache) {
-		wpa_printf(MSG_ERROR, "FT PMK cache initialization failed.");
-		goto fail;
+	/* if MLD share FT PMK cache across link BSS
+	 * refcount is used to check and free the cache during link BSS's deinit.
+	 */
+	if (!conf->first_link_auth) {
+		wpa_auth->ft_pmk_cache = wpa_ft_pmk_cache_init();
+		if (!wpa_auth->ft_pmk_cache) {
+			wpa_printf(MSG_ERROR, "FT PMK cache initialization failed.");
+			goto fail;
+		}
+	} else {
+		wpa_auth->ft_pmk_cache = conf->first_link_auth->ft_pmk_cache;
+		wpa_ft_pmk_cache_inc_refcount(wpa_auth->ft_pmk_cache);
 	}
 #endif /* CONFIG_IEEE80211R_AP */
 
@@ -4588,6 +4576,10 @@ static size_t wpa_auth_ml_kdes_len(struct wpa_state_machine *sm)
 		if (!wpa_auth)
 			continue;
 
+#ifdef CONFIG_IEEE80211R_AP
+		if (wpa_key_mgmt_ft(sm->wpa_key_mgmt))
+			kde_len += 2 + PMKID_LEN; /* PMKR1Name into RSN IE */
+#endif
 		/* MLO Link KDE */
 		kde_len += 2 + RSN_SELECTOR_LEN + 1 + ETH_ALEN;
 
@@ -4635,6 +4627,9 @@ static u8 * wpa_auth_ml_kdes(struct wpa_state_machine *sm, u8 *pos)
 #ifdef CONFIG_IEEE80211BE
 	u8 link_id;
 	u8 *start = pos;
+#ifdef CONFIG_IEEE80211R_AP
+	u8 *len_pos;
+#endif
 
 	if (sm->mld_assoc_link_id < 0)
 		return pos;
@@ -4648,6 +4643,9 @@ static u8 * wpa_auth_ml_kdes(struct wpa_state_machine *sm, u8 *pos)
 		const u8 *rsne, *rsnxe, *rsnoe, *rsno2e, *rsnxoe;
 		size_t rsne_len, rsnxe_len, rsnoe_len, rsno2e_len, rsnxoe_len;
 		size_t kde_len;
+#ifdef CONFIG_IEEE80211R_AP
+		u8 *rsne_start;
+#endif
 
 		wpa_auth = wpa_get_link_auth(sm->wpa_auth, link_id);
 		if (!wpa_auth)
@@ -4668,6 +4666,9 @@ static u8 * wpa_auth_ml_kdes(struct wpa_state_machine *sm, u8 *pos)
 
 		/* MLO Link KDE */
 		*pos++ = WLAN_EID_VENDOR_SPECIFIC;
+#ifdef CONFIG_IEEE80211R_AP
+		len_pos = pos;
+#endif
 		*pos++ = RSN_SELECTOR_LEN + 1 + ETH_ALEN +
 			rsne_len + rsnxe_len;
 
@@ -4684,11 +4685,32 @@ static u8 * wpa_auth_ml_kdes(struct wpa_state_machine *sm, u8 *pos)
 		pos++;
 		os_memcpy(pos, wpa_auth->addr, ETH_ALEN);
 		pos += ETH_ALEN;
-
+#ifdef CONFIG_IEEE80211R_AP
+		rsne_start = pos;
+#endif
 		if (rsne_len) {
 			os_memcpy(pos, rsne, rsne_len);
 			pos += rsne_len;
 		}
+
+#ifdef CONFIG_IEEE80211R_AP
+		if (wpa_key_mgmt_ft(sm->wpa_key_mgmt)) {
+			int res;
+			size_t e_len = pos - rsne_start;
+
+			res = wpa_insert_pmkid(rsne_start, &e_len, sm->pmk_r1_name, true);
+			if (res < 0) {
+				wpa_printf(MSG_ERROR,
+					   "FT: Failed to insert PMKR1Name into RSN IE in EAPOL-Key data");
+			}
+			/*
+			 * Add the additional length increased in pmkid insertion
+			 * to totol IE len.
+			 */
+			*len_pos = *len_pos + e_len - (pos - rsne_start);
+			pos = rsne_start + e_len;
+		}
+#endif /* CONFIG_IEEE80211R_AP */
 
 		if (rsnxe_len) {
 			os_memcpy(pos, rsnxe, rsnxe_len);
@@ -4854,7 +4876,7 @@ fail:
 SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 {
 	u8 rsc[WPA_KEY_RSC_LEN], *_rsc, *gtk, *kde = NULL, *pos, stub_gtk[32];
-	size_t gtk_len, kde_len = 0, wpa_ie_len;
+	size_t gtk_len, kde_len = 0, wpa_ie_len = 0;
 	struct wpa_group *gsm = sm->group;
 	u8 *wpa_ie;
 	int secure, gtkidx, encr = 0;
@@ -4890,17 +4912,19 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 	os_memset(rsc, 0, WPA_KEY_RSC_LEN);
 	wpa_auth_get_seqnum(sm->wpa_auth, NULL, gsm->GN, rsc);
 	/* If FT is used, wpa_auth->wpa_ie includes both RSNIE and MDIE */
-	wpa_ie = sm->wpa_auth->wpa_ie;
-	wpa_ie_len = sm->wpa_auth->wpa_ie_len;
-	if (sm->wpa == WPA_VERSION_WPA && (conf->wpa & WPA_PROTO_RSN) &&
-	    wpa_ie_len > wpa_ie[1] + 2U && wpa_ie[0] == WLAN_EID_RSN) {
-		/* WPA-only STA, remove RSN IE and possible MDIE */
-		wpa_ie = wpa_ie + wpa_ie[1] + 2;
-		if (wpa_ie[0] == WLAN_EID_RSNX)
+	if (!is_mld) {
+		wpa_ie = sm->wpa_auth->wpa_ie;
+		wpa_ie_len = sm->wpa_auth->wpa_ie_len;
+		if (sm->wpa == WPA_VERSION_WPA && (conf->wpa & WPA_PROTO_RSN) &&
+		    wpa_ie_len > wpa_ie[1] + 2U && wpa_ie[0] == WLAN_EID_RSN) {
+			/* WPA-only STA, remove RSN IE and possible MDIE */
 			wpa_ie = wpa_ie + wpa_ie[1] + 2;
-		if (wpa_ie[0] == WLAN_EID_MOBILITY_DOMAIN)
-			wpa_ie = wpa_ie + wpa_ie[1] + 2;
-		wpa_ie_len = wpa_ie[1] + 2;
+			if (wpa_ie[0] == WLAN_EID_RSNX)
+				wpa_ie = wpa_ie + wpa_ie[1] + 2;
+			if (wpa_ie[0] == WLAN_EID_MOBILITY_DOMAIN)
+				wpa_ie = wpa_ie + wpa_ie[1] + 2;
+			wpa_ie_len = wpa_ie[1] + 2;
+		}
 	}
 	if ((conf->rsn_override_key_mgmt || conf->rsn_override_key_mgmt_2) &&
 	    !rsn_is_snonce_cookie(sm->SNonce)) {
@@ -5047,7 +5071,8 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 		kde_len += 2 + RSN_SELECTOR_LEN + 2 + gtk_len;
 #ifdef CONFIG_IEEE80211R_AP
 	if (wpa_key_mgmt_ft(sm->wpa_key_mgmt)) {
-		kde_len += 2 + PMKID_LEN; /* PMKR1Name into RSN IE */
+		if (!is_mld)
+			kde_len += 2 + PMKID_LEN; /* PMKR1Name into RSN IE */
 		kde_len += 300; /* FTIE + 2 * TIE */
 	}
 #endif /* CONFIG_IEEE80211R_AP */
@@ -5095,7 +5120,7 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 		pos += wpa_ie_len;
 	}
 #ifdef CONFIG_IEEE80211R_AP
-	if (wpa_key_mgmt_ft(sm->wpa_key_mgmt)) {
+	if (!is_mld && wpa_key_mgmt_ft(sm->wpa_key_mgmt)) {
 		int res;
 		size_t elen;
 
@@ -5129,6 +5154,16 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 #ifdef CONFIG_IEEE80211R_AP
 	if (wpa_key_mgmt_ft(sm->wpa_key_mgmt)) {
 		int res;
+		if (is_mld) {
+			res = wpa_write_mdie(conf,
+					     pos, kde + kde_len - pos);
+			if (res < 0) {
+				wpa_printf(MSG_ERROR,
+					   "Failed to add MDIE into EAPOL-key data");
+				goto done;
+			}
+			pos += res;
+		}
 
 		if (sm->assoc_resp_ftie &&
 		    kde + kde_len - pos >= 2 + sm->assoc_resp_ftie[1]) {
@@ -7742,6 +7777,7 @@ void wpa_auth_set_ml_info(struct wpa_state_machine *sm,
 			continue;
 
 		os_memcpy(sm_link->peer_addr, link->peer_addr, ETH_ALEN);
+		os_memcpy(sm_link->own_addr, link->local_addr, ETH_ALEN);
 
 		wpa_printf(MSG_DEBUG,
 			   "WPA_AUTH: MLD: id=%u, peer=" MACSTR,
@@ -7816,6 +7852,21 @@ bool wpa_auth_sm_known_sta_identification(struct wpa_state_machine *sm,
 	}
 
 	return true;
+}
+
+void wpa_auth_reset_ml_link_info(struct wpa_state_machine *sm, u8 mld_assoc_link_id) {
+#ifdef CONFIG_IEEE80211BE
+	struct mld_link *link;
+	u8 link_id;
+
+	for_each_sm_auth(sm, link_id) {
+		link = &sm->mld_links[link_id];
+		if (link_id != mld_assoc_link_id)
+			wpa_group_put(link->wpa_auth, link->wpa_auth->group);
+		link->wpa_auth = NULL;
+		link->valid = false;
+	}
+#endif /* CONFIG_IEEE80211BE */
 }
 
 

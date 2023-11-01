@@ -324,11 +324,15 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 
 void ml_deinit_link_reconf_req(struct link_reconf_req_list **req_list_ptr);
 int ieee80211_ml_process_link(struct hostapd_data *hapd,
+			      struct hostapd_data *phapd,
 			      struct sta_info *origin_sta,
 			      struct mld_link_info *link,
 			      const u8 *ies, size_t ies_len,
 			      enum link_parse_type type, bool offload);
+
 void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
+				   struct hostapd_data *phapd,
+				   struct sta_info *sta,
 				   struct mld_link_info *link);
 
 void ieee802_11_rx_protected_eht_action(struct hostapd_data *hapd,

@@ -567,7 +567,7 @@ void wpa_ft_process_auth(struct wpa_state_machine *sm,
 				    const u8 *ies, size_t ies_len),
 			 void *ctx);
 int wpa_ft_validate_reassoc(struct wpa_state_machine *sm, const u8 *ies,
-			    size_t ies_len);
+			    size_t ies_len, struct mld_info *mld_info);
 int wpa_ft_action_rx(struct wpa_state_machine *sm, const u8 *data, size_t len);
 int wpa_ft_rrb_rx(struct wpa_authenticator *wpa_auth, const u8 *src_addr,
 		  const u8 *data, size_t data_len);
@@ -684,6 +684,7 @@ void wpa_auth_sta_radius_psk_resp(struct wpa_state_machine *sm, bool success);
 
 void wpa_auth_set_ml_info(struct wpa_state_machine *sm,
 			  u8 mld_assoc_link_id, struct mld_info *info);
+void wpa_auth_reset_ml_link_info(struct wpa_state_machine *sm, u8 mld_assoc_link_id);
 void wpa_auth_ml_get_key_info(struct wpa_authenticator *a,
 			      struct wpa_auth_ml_link_key_info *info,
 			      bool mgmt_frame_prot, bool beacon_prot,

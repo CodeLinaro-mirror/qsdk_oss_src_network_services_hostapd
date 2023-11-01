@@ -987,10 +987,12 @@ int wpa_ft_mic(int key_mgmt, const u8 *kck, size_t kck_len, const u8 *sta_addr,
 	       const u8 *ric, size_t ric_len,
 	       const u8 *rsnxe, size_t rsnxe_len,
 	       const struct wpabuf *extra,
+	       u8 *elem_count,
+	       struct ft_mld_links_data *assoc_links_data,
 	       u8 *mic)
 {
-	const u8 *addr[11];
-	size_t len[11];
+	const u8 *addr[20];
+	size_t len[20];
 	size_t i, num_elem = 0;
 	u8 zero_mic[32];
 	size_t mic_len, fte_fixed_len;
@@ -1026,10 +1028,29 @@ int wpa_ft_mic(int key_mgmt, const u8 *kck, size_t kck_len, const u8 *sta_addr,
 	len[num_elem] = 1;
 	num_elem++;
 
+#ifdef CONFIG_IEEE80211BE
+	/* Add Link RSN IEs if this is an ML association
+	 */
+	if (assoc_links_data && assoc_links_data->has_rsn) {
+		for (i = 0; i < assoc_links_data->num_links; i++) {
+			if (assoc_links_data->link_data[i].link_rsnie_len) {
+				wpa_printf(MSG_WARNING, "FT MIC link %zu rsn ie len %d curr index %zu",
+					   i, assoc_links_data->link_data[i].link_rsnie_len, num_elem);
+				addr[num_elem] = assoc_links_data->link_data[i].link_rsnie;
+				len[num_elem] = assoc_links_data->link_data[i].link_rsnie_len;
+				num_elem++;
+				if (elem_count)
+					*elem_count += 1;
+			}
+		}
+	} else
+#endif /*CONFIG_IEEE80211BE */
 	if (rsnie) {
 		addr[num_elem] = rsnie;
 		len[num_elem] = rsnie_len;
 		num_elem++;
+		if (elem_count)
+			*elem_count += 1;
 	}
 	if (mdie) {
 		addr[num_elem] = mdie;
@@ -1062,10 +1083,30 @@ int wpa_ft_mic(int key_mgmt, const u8 *kck, size_t kck_len, const u8 *sta_addr,
 		num_elem++;
 	}
 
+#ifdef CONFIG_IEEE80211BE
+	/* Add Link RSNXEs if this is an ML association.
+	 */
+	if (assoc_links_data && assoc_links_data->has_rsnx) {
+		for (i = 0; i < assoc_links_data->num_links; i++) {
+			if (assoc_links_data->link_data[i].link_rsnxe_len) {
+				wpa_printf(MSG_DEBUG, "FT MIC link %zu rsnxe len %d curr index %zu",
+					   i, assoc_links_data->link_data[i].link_rsnxe_len, num_elem);
+				addr[num_elem] = assoc_links_data->link_data[i].link_rsnxe;
+				len[num_elem] = assoc_links_data->link_data[i].link_rsnxe_len;
+				num_elem++;
+				if (elem_count)
+					*elem_count += 1;
+			}
+		}
+	} else
+#endif /* CONFIG_IEEE80211BE */
+
 	if (rsnxe) {
 		addr[num_elem] = rsnxe;
 		len[num_elem] = rsnxe_len;
 		num_elem++;
+		if (elem_count)
+			*elem_count += 1;
 	}
 
 	if (extra) {
@@ -1073,6 +1114,18 @@ int wpa_ft_mic(int key_mgmt, const u8 *kck, size_t kck_len, const u8 *sta_addr,
 		len[num_elem] = wpabuf_len(extra);
 		num_elem++;
 	}
+
+#ifdef CONFIG_IEEE80211BE
+	if (assoc_links_data) {
+		for (i = 0; i < assoc_links_data->num_links ; i++) {
+			wpa_printf(MSG_DEBUG, " FT MIC link %zu addr %pM curr index %zu",
+				   i, assoc_links_data->link_data[i].link_addr, num_elem);
+			addr[num_elem] = assoc_links_data->link_data[i].link_addr;
+			len[num_elem] = ETH_ALEN;
+			num_elem++;
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
 
 	for (i = 0; i < num_elem; i++)
 		wpa_hexdump(MSG_MSGDUMP, "FT: MIC data", addr[i], len[i]);

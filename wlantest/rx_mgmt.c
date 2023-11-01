@@ -2034,7 +2034,7 @@ static void rx_mgmt_reassoc_req(struct wlantest *wt, const u8 *data,
 			       parse.rsnxe ? parse.rsnxe - 2 : NULL,
 			       parse.rsnxe ? parse.rsnxe_len + 2 : 0,
 			       extra,
-			       mic) < 0) {
+			       NULL, NULL, mic) < 0) {
 			wpabuf_free(extra);
 			add_note(wt, MSG_INFO, "FT: Failed to calculate MIC");
 			goto out;
@@ -2719,7 +2719,7 @@ static void rx_mgmt_reassoc_resp(struct wlantest *wt, const u8 *data,
 			       rsnxe ? wpabuf_head(rsnxe) : NULL,
 			       rsnxe ? wpabuf_len(rsnxe) : 0,
 			       extra,
-			       mic) < 0) {
+			       NULL, NULL, mic) < 0) {
 			add_note(wt, MSG_INFO, "FT: Failed to calculate MIC");
 			goto out;
 		}

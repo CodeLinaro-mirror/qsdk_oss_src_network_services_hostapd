@@ -186,7 +186,9 @@ struct wpa_state_machine {
 		bool valid;
 		bool rejected;
 		u8 peer_addr[ETH_ALEN];
-
+		u8 own_addr[ETH_ALEN];
+		const u8 *rsnxe;
+		size_t rsnxe_len;
 		struct wpa_authenticator *wpa_auth;
 	} mld_links[MAX_NUM_MLD_LINKS];
 #endif /* CONFIG_IEEE80211BE */
@@ -351,9 +353,27 @@ void wpa_auth_ft_store_keys(struct wpa_state_machine *sm, const u8 *pmk_r0,
 			    size_t key_len);
 struct wpa_ft_pmk_cache * wpa_ft_pmk_cache_init(void);
 void wpa_ft_pmk_cache_deinit(struct wpa_ft_pmk_cache *cache);
+void wpa_ft_pmk_cache_inc_refcount(struct wpa_ft_pmk_cache *cache);
 void wpa_ft_install_ptk(struct wpa_state_machine *sm, int retry);
 int wpa_ft_store_pmk_fils(struct wpa_state_machine *sm, const u8 *pmk_r0,
 			  const u8 *pmk_r0_name);
 #endif /* CONFIG_IEEE80211R_AP */
 
+static inline const u8 *wpa_auth_get_aa(const struct wpa_state_machine *sm)
+{
+#ifdef CONFIG_IEEE80211BE
+       if (sm->mld_assoc_link_id >= 0)
+               return sm->wpa_auth->mld_addr;
+#endif /* CONFIG_IEEE80211BE */
+       return sm->wpa_auth->addr;
+}
+
+static inline const u8 *wpa_auth_get_spa(const struct wpa_state_machine *sm)
+{
+#ifdef CONFIG_IEEE80211BE
+       if (sm->mld_assoc_link_id >= 0)
+               return sm->peer_mld_addr;
+#endif /* CONFIG_IEEE80211BE */
+       return sm->addr;
+}
 #endif /* WPA_AUTH_I_H */

@@ -730,7 +730,7 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 #ifdef CONFIG_IEEE80211R_AP
 		if (sta->auth_alg == WLAN_AUTH_FT) {
 			status = wpa_ft_validate_reassoc(sta->wpa_sm, req_ies,
-							 req_ies_len);
+							 req_ies_len, NULL);
 			if (status != WLAN_STATUS_SUCCESS) {
 				if (status == WLAN_STATUS_INVALID_PMKID)
 					reason = WLAN_REASON_INVALID_IE;

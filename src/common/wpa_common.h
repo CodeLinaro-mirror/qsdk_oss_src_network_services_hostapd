@@ -446,6 +446,22 @@ struct rsn_rdie {
 	le16 status_code;
 } STRUCT_PACKED;
 
+struct link_data {
+	u8 link_id;
+	u8 link_addr[ETH_ALEN];
+	const u8 link_rsnie[255];
+	int link_rsnie_len;
+	const u8 *link_rsnxe;
+	int link_rsnxe_len;
+};
+
+struct ft_mld_links_data {
+	u8 num_links;
+	struct link_data *link_data;
+	bool has_rsn;
+	bool has_rsnx;
+};
+
 /* WFA Transition Disable KDE (using OUI_WFA) */
 /* Transition Disable Bitmap bits */
 #define TRANSITION_DISABLE_WPA3_PERSONAL BIT(0)
@@ -495,6 +511,8 @@ int wpa_ft_mic(int key_mgmt, const u8 *kck, size_t kck_len, const u8 *sta_addr,
 	       const u8 *ric, size_t ric_len,
 	       const u8 *rsnxe, size_t rsnxe_len,
 	       const struct wpabuf *extra,
+	       u8 *elem_count,
+	       struct ft_mld_links_data *assoc_links_data,
 	       u8 *mic);
 int wpa_derive_pmk_r0(const u8 *xxkey, size_t xxkey_len,
 		      const u8 *ssid, size_t ssid_len,
