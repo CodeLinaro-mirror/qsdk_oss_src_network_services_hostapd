@@ -1155,6 +1155,7 @@ static const u8 * auth_skip_fixed_fields(struct hostapd_data *hapd,
 			pos += encap_len;
 		}
 
+	case WLAN_AUTH_FT:
 		return pos;
 	}
 #endif /* CONFIG_IEEE8021X_AUTH */
@@ -1177,7 +1178,6 @@ static const u8 * auth_skip_fixed_fields(struct hostapd_data *hapd,
 		return pos;
 #endif /* CONFIG_SAE */
 	/* TODO: Support additional algorithms that can be used for MLO */
-	case WLAN_AUTH_FT:
 	case WLAN_AUTH_FILS_SK:
 	case WLAN_AUTH_FILS_SK_PFS:
 	case WLAN_AUTH_FILS_PK:
@@ -1883,7 +1883,7 @@ hostapd_ml_process_reconf_link(struct hostapd_data *hapd,
 	os_memcpy(link.peer_addr, link_addr, ETH_ALEN);
 
 	/* Parse STA profile, check the IEs, and send ADD_LINK_STA */
-	ieee80211_ml_process_link(lhapd, assoc_sta, &link, ies, ies_len,
+	ieee80211_ml_process_link(lhapd, NULL, assoc_sta, &link, ies, ies_len,
 				  LINK_PARSE_RECONF, false, NULL);
 	if (link.status != WLAN_STATUS_SUCCESS)
 		return link.status;
@@ -2029,7 +2029,7 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 				continue;
 
 			link->valid = true;
-			ieee80211_ml_build_assoc_resp(lhapd, link, assoc_sta);
+			ieee80211_ml_build_assoc_resp(lhapd, NULL, assoc_sta, link);
 		}
 		/* TODO: Basic MLE is not supposed to include BPCC in Link
 		 * Reconfiguration Response, but mac80211 implementation for

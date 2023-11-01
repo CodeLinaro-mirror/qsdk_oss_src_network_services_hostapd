@@ -63,7 +63,7 @@
 #include "nan_usd_ap.h"
 #include "pasn/pasn_common.h"
 #include "robust_av.h"
-
+#include "wpa_auth_i.h"
 
 #ifdef CONFIG_FILS
 static struct wpabuf *
@@ -5566,12 +5566,12 @@ static void handle_auth(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_DEBUG, "authentication: STA=" MACSTR " auth_alg=%d "
 		   "auth_transaction=%d status_code=%d protected=%d%s "
-		   "seq_ctrl=0x%x%s%s",
+		   "seq_ctrl=0x%x%s%s ml sta %d",
 		   MAC2STR(sa), auth_alg, auth_transaction,
 		   status_code, !!(fc & WLAN_FC_PROTECTED),
 		   challenge ? " challenge" : "",
 		   seq_ctrl, (fc & WLAN_FC_RETRY) ? " retry" : "",
-		   from_queue ? " (from queue)" : "");
+		   from_queue ? " (from queue)" : "", mld_sta);
 
 #ifdef CONFIG_NO_RC4
 	if (auth_alg == WLAN_AUTH_SHARED_KEY) {
@@ -5965,14 +5965,25 @@ static void handle_auth(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211R_AP
 	case WLAN_AUTH_FT:
 		sta->auth_alg = WLAN_AUTH_FT;
-		if (sta->wpa_sm == NULL)
+		if (sta->wpa_sm == NULL) {
 			sta->wpa_sm = wpa_auth_sta_init(hapd->wpa_auth,
 							sta->addr, NULL);
-		if (sta->wpa_sm == NULL) {
-			wpa_printf(MSG_DEBUG, "FT: Failed to initialize WPA "
-				   "state machine");
-			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
-			goto fail;
+			if (sta->wpa_sm == NULL) {
+				wpa_printf(MSG_DEBUG, "FT: Failed to initialize WPA "
+					   "state machine");
+				resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+				goto fail;
+			}
+#ifdef CONFIG_IEEE80211BE
+			struct mld_info *sta_mld_info = &sta->mld_info;
+			if (ap_sta_is_mld(hapd, sta)) {
+				wpa_printf(MSG_DEBUG,
+					   "MLD: Set ML info in RSN Authenticator");
+				wpa_auth_set_ml_info(sta->wpa_sm,
+						     sta->mld_assoc_link_id,
+						     sta_mld_info);
+			}
+#endif /* CONFIG_IEEE80211BE */
 		}
 		if (hapd->conf->security_profiles) {
 			struct ieee802_11_elems elems;
@@ -7308,9 +7319,13 @@ skip_pmkid_update:
 				resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 				goto out;
 			}
-
+#ifdef CONFIG_IEEE80211BE
 			resp = wpa_ft_validate_reassoc(sta->wpa_sm, ies,
-						       ies_len);
+						       ies_len, &sta->mld_info);
+#else /* CONFIG_IEEE80211BE */
+			resp = wpa_ft_validate_reassoc(sta->wpa_sm, ies,
+						       ies_len, NULL);
+#endif /* CONFIG_IEEE80211BE */
 			if (resp != WLAN_STATUS_SUCCESS)
 				goto out;
 		}
@@ -7318,6 +7333,22 @@ skip_pmkid_update:
 
 		if (assoc_wpa_sm)
 			goto skip_sae_owe;
+#ifdef CONFIG_IEEE80211BE
+	/*
+	 * For FT, since the MIC has been validated, reset the affiliated
+	 * links' auth references of previous association.
+	 */
+	if (info->mld_sta && sta->auth_alg == WLAN_AUTH_FT) {
+		sta->wpa_sm->n_mld_affiliated_links = 0;
+		wpa_auth_reset_ml_link_info(sta->wpa_sm, sta->mld_assoc_link_id);
+		wpa_printf(MSG_DEBUG,
+			   "MLD: Set ML info in RSN Authenticator");
+		wpa_auth_set_ml_info(sta->wpa_sm,
+				     sta->mld_assoc_link_id,
+				     info);
+	}
+#endif /* CONFIG_IEEE80211BE */
+
 #ifdef CONFIG_SAE
 		if (wpa_auth_uses_sae(sta->wpa_sm) && sta->sae &&
 		    sta->sae->state == SAE_ACCEPTED) {
@@ -7641,14 +7672,20 @@ static int check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 #ifdef CONFIG_IEEE80211BE
 
 void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
-				   struct mld_link_info *link,
-				   struct sta_info *sta)
+				   struct hostapd_data *phapd,
+				   struct sta_info *sta,
+				   struct mld_link_info *link)
 {
 	struct hostapd_data *assoc_hapd;
 	struct sta_info *assoc_sta;
 	u8 buf[EHT_ML_MAX_STA_PROF_LEN];
 	u8 *p = buf;
 	size_t buflen = sizeof(buf);
+#ifdef CONFIG_IEEE80211R_AP
+	u8 assoc_rsne[128];
+	u8 link_rsne[128];
+	size_t assoc_rsn_len, link_rsn_len;
+#endif
 
 	/* Capability Info */
 	WPA_PUT_LE16(p, hostapd_own_capab_info(hapd));
@@ -7667,6 +7704,22 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 	p = hostapd_eid_rm_enabled_capab(hapd, p, buf + buflen - p);
 	p = hostapd_eid_ht_capabilities(hapd, p);
 	p = hostapd_eid_ht_operation(hapd, p);
+
+#ifdef CONFIG_IEEE80211R_AP
+	if (phapd && hapd && (sta->auth_alg == WLAN_AUTH_FT)) {
+		assoc_rsn_len = wpa_write_rsn_ie(&phapd->wpa_auth->conf,
+						 assoc_rsne, sizeof(assoc_rsne),
+						 sta->wpa_sm->pmk_r1_name);
+		link_rsn_len = wpa_write_rsn_ie(&hapd->wpa_auth->conf, link_rsne,
+						sizeof(link_rsne),
+						sta->wpa_sm->pmk_r1_name);
+		if ((assoc_rsn_len != link_rsn_len) ||
+		    (os_memcmp(assoc_rsne, link_rsne, assoc_rsn_len) != 0)) {
+			os_memcpy(p, link_rsne, link_rsn_len);
+			p += link_rsn_len;
+		}
+	}
+#endif
 
 	if (hostapd_is_vht_enabled(hapd)) {
 		p = hostapd_eid_vht_capabilities(hapd, p, 0);
@@ -7778,6 +7831,7 @@ out:
 
 
 int ieee80211_ml_process_link(struct hostapd_data *hapd,
+			       struct hostapd_data *phapd,
 			      struct sta_info *origin_sta,
 			      struct mld_link_info *link,
 			      const u8 *ies, size_t ies_len,
@@ -7897,7 +7951,7 @@ out:
 	link->status = status;
 
 	if (!offload && type != LINK_PARSE_RECONF)
-		ieee80211_ml_build_assoc_resp(hapd, link, sta);
+		ieee80211_ml_build_assoc_resp(hapd, phapd, sta, link);
 
 	wpa_printf(MSG_DEBUG, "MLD: link: status=%u", status);
 	if (status != WLAN_STATUS_SUCCESS) {
@@ -7979,15 +8033,15 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 
 			link->status = WLAN_STATUS_UNSPECIFIED_FAILURE;
 			if (!offload)
-				ieee80211_ml_build_assoc_resp(hapd, link, sta);
+				ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link);
 		} else if (tx_link_status != WLAN_STATUS_SUCCESS) {
 			/* TX link rejected the connection */
 			link->status = WLAN_STATUS_DENIED_TX_LINK_NOT_ACCEPTED;
 			if (!offload)
-				ieee80211_ml_build_assoc_resp(hapd, link, sta);
+				ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link);
 		} else {
 			if (ieee80211_ml_process_link(
-				    bss, sta, link, ies, ies_len,
+				    bss, hapd, sta, link, ies, ies_len,
 				    reassoc ? LINK_PARSE_REASSOC :
 				    LINK_PARSE_ASSOC, offload,
 				    set_beacon))
