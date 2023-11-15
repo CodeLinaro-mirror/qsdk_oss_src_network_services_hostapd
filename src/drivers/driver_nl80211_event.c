@@ -2795,8 +2795,10 @@ static void nl80211_radar_event(struct i802_bss *bss, struct nlattr **tb)
 static void nl80211_spurious_frame(struct i802_bss *bss, struct nlattr **tb,
 				   int wds)
 {
-	struct wpa_driver_nl80211_data *drv = bss->drv;
 	union wpa_event_data event;
+	struct i802_link *mld_link;
+	void *ctx = bss->ctx;
+	int link_id = -1;
 
 	if (!tb[NL80211_ATTR_MAC])
 		return;
@@ -2808,7 +2810,19 @@ static void nl80211_spurious_frame(struct i802_bss *bss, struct nlattr **tb,
 	event.rx_from_unknown.link_id = tb[NL80211_ATTR_MLO_LINK_ID] ?
 		nla_get_u8(tb[NL80211_ATTR_MLO_LINK_ID]) : -1;
 
-	wpa_supplicant_event(drv->ctx, EVENT_RX_FROM_UNKNOWN, &event);
+	if (wds && tb[NL80211_ATTR_MLO_LINK_ID]) {
+		link_id = nla_get_u8(tb[NL80211_ATTR_MLO_LINK_ID]);
+
+		if (!nl80211_link_valid(bss->valid_links, link_id)) {
+			wpa_printf(MSG_DEBUG,
+				   "ignoring unknown RX event from link_id:%d", link_id);
+			return;
+		}
+		mld_link = nl80211_get_link(bss, link_id);
+		ctx = mld_link->ctx;
+		event.rx_from_unknown.bssid = mld_link->addr;
+	}
+	wpa_supplicant_event(ctx, EVENT_RX_FROM_UNKNOWN, &event);
 }
 
 

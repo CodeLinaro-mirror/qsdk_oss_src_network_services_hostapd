@@ -237,6 +237,7 @@ struct hostapd_data {
 	 */
 #define AID_WORDS ((2008 + 31) / 32)
 	u32 sta_aid[AID_WORDS];
+	u32 wds_sta_uid[AID_WORDS];
 
 	const struct wpa_driver_ops *driver;
 	void *drv_priv;

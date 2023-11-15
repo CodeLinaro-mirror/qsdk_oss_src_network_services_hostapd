@@ -256,6 +256,9 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	struct hostapd_data *vlan_bss = hapd;
 #endif /* CONFIG_NO_VLAN */
 	int set_beacon = 0;
+	struct hostapd_data *phapd;
+	struct sta_info *psta;
+	bool remove = true;
 
 	accounting_sta_stop(hapd, sta);
 
@@ -265,10 +268,31 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 
 	if ((sta->flags & WLAN_STA_WDS) ||
 	    (sta->flags & WLAN_STA_MULTI_AP &&
-	     (hapd->conf->multi_ap & BACKHAUL_BSS) &&
-	     hapd->conf->wds_sta &&
-	     !(sta->flags & WLAN_STA_WPS)))
-		hostapd_set_wds_sta(hapd, NULL, sta->addr, sta->aid, 0);
+	    (hapd->conf->multi_ap & FRONTHAUL_BSS) &&
+	    !(sta->flags & WLAN_STA_WPS))) {
+		int aid;
+
+		if (hapd->conf->mld_ap && (sta->flags & WLAN_STA_WDS))
+			aid = sta->wds_mld_uid;
+		else
+			aid = sta->aid;
+
+		if (ap_sta_is_mld(hapd, sta)) {
+			for_each_mld_link(phapd, hapd) {
+				if (phapd == hapd)
+					continue;
+
+				psta = ap_get_sta(phapd, sta->addr);
+				if (psta) {
+					remove = false;
+					break;
+				}
+			}
+		}
+
+		if (remove)
+			hostapd_set_wds_sta(hapd, NULL, sta->addr, aid, 0);
+	}
 
 	if (sta->ipaddr)
 		hostapd_drv_br_delete_ip_neigh(hapd, 4, (u8 *) &sta->ipaddr);
@@ -286,6 +310,10 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	if (sta->aid > 0)
 		hapd->sta_aid[(sta->aid - 1) / 32] &=
 			~BIT((sta->aid - 1) % 32);
+
+	if (sta->wds_mld_uid > 0)
+		hapd->wds_sta_uid[(sta->wds_mld_uid - 1) / 32] &=
+			~BIT((sta->wds_mld_uid - 1) % 32);
 
 	hapd->num_sta--;
 	if (sta->nonerp_set) {

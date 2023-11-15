@@ -3825,6 +3825,54 @@ static u32 hostapd_get_aid_word(struct hostapd_data *hapd,
 }
 
 
+int hostapd_get_wds_mld_sta_uid(struct hostapd_data *hapd, struct sta_info *sta)
+{
+	struct hostapd_data *link_bss;
+	int i, j = 32, aid;
+
+	/* get a unique ID */
+	if (sta->wds_mld_uid > 0) {
+		wpa_printf(MSG_DEBUG, "  old UID %d", sta->wds_mld_uid);
+		return 0;
+	}
+
+	if (!hapd->conf->mld_ap)
+		return -1;
+
+	link_bss = hostapd_mld_get_first_bss(hapd);
+	if (!link_bss)
+		link_bss = hapd;
+
+	for (i = 0; i < AID_WORDS; i++) {
+		if (link_bss->wds_sta_uid[i] == (u32) -1)
+			continue;
+
+		for (j = 0; j < 32; j++) {
+			if (!(link_bss->wds_sta_uid[i] & BIT(j))) {
+				break;
+			}
+		}
+
+		if (j < 32)
+			break;
+	}
+	if (j == 32)
+		return -1;
+
+	aid = i * 32 + j + 1;
+
+	if (aid > 2007)
+		return -1;
+
+	sta->wds_mld_uid = aid;
+	link_bss->wds_sta_uid[i] |= BIT(j);
+
+	wpa_printf(MSG_DEBUG, "  new UID %d", sta->wds_mld_uid);
+
+	return 0;
+}
+
+
 int hostapd_get_aid(struct hostapd_data *hapd, struct sta_info *sta)
 {
 	int i, j = 32, aid;
@@ -7338,6 +7386,12 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 			   MAC2STR(sta->addr));
 		sta->pending_wds_enable = 0;
 		sta->flags |= WLAN_STA_WDS;
+		if (hapd->conf->mld_ap && hostapd_get_wds_mld_sta_uid(hapd, sta) < 0) {
+			wpa_printf(MSG_DEBUG, "No room for uid"
+				   "to enable 4-address WDS mode for STA "
+				   MACSTR, MAC2STR(sta->addr));
+			return;
+		}
 	}
 
 	/* WPS not supported on backhaul BSS. Disable 4addr mode on fronthaul */
@@ -7348,12 +7402,18 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 	     !(sta->flags & WLAN_STA_WPS))) {
 		int ret;
 		char ifname_wds[IFNAMSIZ + 1];
+		int aid;
+
+		if (hapd->conf->mld_ap && (sta->flags & WLAN_STA_WDS))
+			aid = sta->wds_mld_uid;
+		else
+			aid = sta->aid;
 
 		wpa_printf(MSG_DEBUG, "Reenable 4-address WDS mode for STA "
 			   MACSTR " (aid %u)",
-			   MAC2STR(sta->addr), sta->aid);
+			   MAC2STR(sta->addr), aid);
 		ret = hostapd_set_wds_sta(hapd, ifname_wds, sta->addr,
-					  sta->aid, 1);
+					  aid, 1);
 		if (!ret)
 			hostapd_set_wds_encryption(hapd, sta, ifname_wds);
 	}
@@ -7682,6 +7742,7 @@ void ieee802_11_rx_from_unknown(struct hostapd_data *hapd, const u8 *src,
 				int wds)
 {
 	struct sta_info *sta;
+	int aid = 0;
 
 	sta = ap_get_sta(hapd, src);
 	if (sta &&
@@ -7689,6 +7750,19 @@ void ieee802_11_rx_from_unknown(struct hostapd_data *hapd, const u8 *src,
 	     ((sta->flags & WLAN_STA_ASSOC_REQ_OK) && wds))) {
 		if (!hapd->conf->wds_sta)
 			return;
+
+		if (hapd->conf->mld_ap && wds) {
+			if (hostapd_get_wds_mld_sta_uid(hapd, sta) < 0) {
+				wpa_printf(MSG_DEBUG, "No room for uid"
+					   "to enable 4-address WDS mode for STA "
+					    MACSTR, MAC2STR(sta->addr));
+				return;
+			}
+			aid = sta->wds_mld_uid;
+		}
+		else {
+			aid = sta->aid;
+		}
 
 		if ((sta->flags & (WLAN_STA_ASSOC | WLAN_STA_ASSOC_REQ_OK)) ==
 		    WLAN_STA_ASSOC_REQ_OK) {
@@ -7706,10 +7780,15 @@ void ieee802_11_rx_from_unknown(struct hostapd_data *hapd, const u8 *src,
 
 			wpa_printf(MSG_DEBUG, "Enable 4-address WDS mode for "
 				   "STA " MACSTR " (aid %u)",
-				   MAC2STR(sta->addr), sta->aid);
+				   MAC2STR(sta->addr), aid);
+
+			hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+				       HOSTAPD_LEVEL_INFO, "Enable 4-address WDS"
+					"mode for STA with id %u flags 0x%x", aid, sta->flags);
+
 			sta->flags |= WLAN_STA_WDS;
 			ret = hostapd_set_wds_sta(hapd, ifname_wds,
-						  sta->addr, sta->aid, 1);
+						  sta->addr, aid, 1);
 			if (!ret)
 				hostapd_set_wds_encryption(hapd, sta,
 							   ifname_wds);
