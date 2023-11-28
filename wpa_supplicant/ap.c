@@ -2176,7 +2176,8 @@ void wpas_ap_event_dfs_radar_detected(struct wpa_supplicant *wpa_s,
 				   radar->ht_enabled, radar->chan_offset,
 				   radar->chan_width,
 				   radar->cf1, radar->cf2,
-				   radar->radar_bitmap);
+				   radar->radar_bitmap,
+				   radar->chan_width_device, radar->cf_device);
 }
 
 
@@ -2193,7 +2194,8 @@ void wpas_ap_event_dfs_cac_started(struct wpa_supplicant *wpa_s,
 	hostapd_dfs_start_cac(iface, radar->freq,
 			      radar->ht_enabled, radar->chan_offset,
 			      radar->chan_width, radar->cf1, radar->cf2,
-			      radar->is_background);
+			      radar->is_background,
+			      radar->chan_width_device, radar->cf_device);
 }
 
 
@@ -2210,7 +2212,8 @@ void wpas_ap_event_dfs_cac_finished(struct wpa_supplicant *wpa_s,
 	hostapd_dfs_complete_cac(iface, 1, radar->freq,
 				 radar->ht_enabled, radar->chan_offset,
 				 radar->chan_width, radar->cf1, radar->cf2,
-				 radar->is_background);
+				 radar->is_background,
+				 radar->chan_width_device, radar->cf_device);
 }
 
 
@@ -2227,7 +2230,8 @@ void wpas_ap_event_dfs_cac_aborted(struct wpa_supplicant *wpa_s,
 	hostapd_dfs_complete_cac(iface, 0, radar->freq,
 				 radar->ht_enabled, radar->chan_offset,
 				 radar->chan_width, radar->cf1, radar->cf2,
-				 radar->is_background);
+				 radar->is_background,
+				 radar->chan_width_device, radar->cf_device);
 }
 
 
@@ -2243,7 +2247,8 @@ void wpas_ap_event_dfs_cac_nop_finished(struct wpa_supplicant *wpa_s,
 	wpa_printf(MSG_DEBUG, "DFS NOP finished on %d MHz", radar->freq);
 	hostapd_dfs_nop_finished(iface, radar->freq,
 				 radar->ht_enabled, radar->chan_offset,
-				 radar->chan_width, radar->cf1, radar->cf2);
+				 radar->chan_width, radar->cf1, radar->cf2,
+				 radar->chan_width_device, radar->cf_device);
 }
 #endif /* NEED_AP_MLME */
 

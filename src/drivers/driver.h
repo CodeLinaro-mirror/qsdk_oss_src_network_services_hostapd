@@ -7096,6 +7096,8 @@ union wpa_event_data {
 		int link_id;
 		u16 radar_bitmap;
 		bool is_background;
+		enum chan_width chan_width_device;
+		int cf_device;
 	} dfs_event;
 
 	/**

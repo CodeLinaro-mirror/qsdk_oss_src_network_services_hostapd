@@ -1384,10 +1384,18 @@ hostapd_dfs_start_channel_switch_background(struct hostapd_iface *iface)
 		hostapd_get_punct_bitmap(iface->bss[0]));
 }
 
+bool hostapd_is_device_params_present(int chan_width, int cf1, int chan_width_device,
+				      int cf_device)
+{
+	return (cf_device && chan_width_device &&
+		chan_width_device != chan_width && cf_device != cf1);
+}
+
 
 int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			     int ht_enabled, int chan_offset, int chan_width,
-			     int cf1, int cf2, 	bool is_background)
+			     int cf1, int cf2, bool is_background,
+			     int chan_width_device, int cf_device)
 {
 	if (!hostapd_is_freq_in_current_hw_info(iface, freq)) {
 		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
@@ -1398,9 +1406,10 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 	}
 
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_COMPLETED
-		"success=%d freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d radar_detected=%d",
+		"success=%d freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d radar_detected=%d"
+		"chan_width_device=%d cf_device=%d",
 		success, freq, ht_enabled, chan_offset, chan_width, cf1, cf2,
-		iface->radar_detected);
+		iface->radar_detected, chan_width_device, cf_device);
 
 	if (success) {
 		/* Complete iface/ap configuration */
@@ -1419,9 +1428,15 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			else
 				iface->cac_started = 0;
 		} else {
-			set_dfs_state(iface, freq, ht_enabled, chan_offset,
-				      chan_width, cf1, cf2,
-				      HOSTAPD_CHAN_DFS_AVAILABLE,0);
+			if (hostapd_is_device_params_present(chan_width, cf1,
+							     chan_width_device, cf_device))
+				set_dfs_state(iface, freq, ht_enabled, chan_offset,
+					      chan_width_device, cf_device, cf2,
+					      HOSTAPD_CHAN_DFS_AVAILABLE, 0);
+			else
+				set_dfs_state(iface, freq, ht_enabled, chan_offset,
+					      chan_width, cf1, cf2,
+					      HOSTAPD_CHAN_DFS_AVAILABLE, 0);
 
 			/*
 			 * Radar event from background chain for the selected
@@ -1465,10 +1480,10 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 	return 0;
 }
 
-
 int hostapd_dfs_pre_cac_expired(struct hostapd_iface *iface, int freq,
 				int ht_enabled, int chan_offset, int chan_width,
-				int cf1, int cf2)
+				int cf1, int cf2,
+				int chan_width_device, int cf_device)
 {
 	if (!hostapd_is_freq_in_current_hw_info(iface, freq)) {
 		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
@@ -1479,8 +1494,10 @@ int hostapd_dfs_pre_cac_expired(struct hostapd_iface *iface, int freq,
 	}
 
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_PRE_CAC_EXPIRED
-		"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d",
-		freq, ht_enabled, chan_offset, chan_width, cf1, cf2);
+		"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d"
+		 "chan_width_device=%d cf_device=%d",
+		freq, ht_enabled, chan_offset, chan_width, cf1, cf2,
+		chan_width_device, cf_device);
 
 	hostapd_ubus_notify_radar_detected(iface, freq, chan_width, cf1, cf2);
 
@@ -1752,12 +1769,52 @@ enum oper_chan_width convert_to_oper_chan_width(int chan_width)
 	return CHAN_WIDTH_UNKNOWN;
 }
 
+static u32 hostapd_radar_bitmap_oper(int chan_width, int cf1, u16 radar_bitmap,
+				     int chan_width_device, int cf_device)
+{
+	u16 radar_bitmap_oper;
+
+	switch (chan_width_device) {
+	case CHAN_WIDTH_40:
+		if (cf1 < cf_device)
+			radar_bitmap_oper = radar_bitmap & 0x1;
+		else
+			radar_bitmap_oper = (radar_bitmap >> 1) & 0x1;
+		break;
+	case CHAN_WIDTH_80:
+		if (cf1 < cf_device)
+			radar_bitmap_oper = radar_bitmap & 0x3;
+		else
+			radar_bitmap_oper = (radar_bitmap >> 2) & 0x3;
+		break;
+	case CHAN_WIDTH_160:
+		if (cf1 < cf_device)
+			radar_bitmap_oper = radar_bitmap & 0xF;
+		else
+			radar_bitmap_oper = (radar_bitmap >> 4) & 0xF;
+		break;
+	case CHAN_WIDTH_320:
+		if (cf1 < cf_device)
+			radar_bitmap_oper = radar_bitmap & 0xFF;
+		else
+			radar_bitmap_oper = (radar_bitmap >> 8) & 0xFF;
+		break;
+	default:
+		return 0;
+	}
+
+	return radar_bitmap_oper;
+}
+
+
 int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			       int ht_enabled, int chan_offset, int chan_width,
-			       int cf1, int cf2, u16 radar_bitmap)
+			       int cf1, int cf2, u16 radar_bitmap,
+			       int chan_width_device, int cf_device)
 {
-	u16 radar_bit_pattern;
+	u16 radar_bit_pattern, radar_bitmap_oper = 0;
 	u16 cur_punct_bits = iface->conf->punct_bitmap;
+	bool device_params_present;
 
 	if (!hostapd_is_freq_in_current_hw_info(iface, freq)) {
 		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
@@ -1768,19 +1825,22 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	}
 
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_RADAR_DETECTED
-		"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d radar_bitmap:%d",
-		freq, ht_enabled, chan_offset, chan_width, cf1, cf2, radar_bitmap);
+		"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d radar_bitmap:%d"
+		"chan_width_device=%d cf_device=%d",
+		freq, ht_enabled, chan_offset, chan_width, cf1, cf2, radar_bitmap,
+		chan_width_device, cf_device);
 
-	if (iface->conf->use_ru_puncture_dfs) {
-		radar_bit_pattern = iface->radar_bit_pattern | iface->conf->punct_bitmap;
+	radar_bitmap_oper = radar_bitmap;
+	device_params_present = hostapd_is_device_params_present(chan_width,
+								 cf1,
+								 chan_width_device,
+								 cf_device);
 
-		/* Radar detected already punctured sub channel*/
-		if (radar_bit_pattern & radar_bitmap)
-			return 0;
-
-		radar_bit_pattern |= radar_bitmap;
-		iface->conf->punct_bitmap = radar_bit_pattern;
-	}
+	if (device_params_present)
+		radar_bitmap_oper = hostapd_radar_bitmap_oper(chan_width, cf1,
+							      radar_bitmap,
+							      chan_width_device,
+							      cf_device);
 
 	iface->radar_detected = true;
 
@@ -1792,9 +1852,27 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 		return 0;
 
 	/* mark radar frequency as invalid */
-	if (!set_dfs_state(iface, freq, ht_enabled, chan_offset, chan_width,
-			   cf1, cf2, HOSTAPD_CHAN_DFS_UNAVAILABLE, radar_bitmap))
-		return 0;
+	if (device_params_present) {
+		if (!set_dfs_state(iface, freq, ht_enabled, chan_offset,
+				   chan_width_device, cf_device, cf2,
+				   HOSTAPD_CHAN_DFS_UNAVAILABLE, radar_bitmap))
+			return 0;
+	} else {
+		if (!set_dfs_state(iface, freq, ht_enabled, chan_offset, chan_width,
+				   cf1, cf2, HOSTAPD_CHAN_DFS_UNAVAILABLE, radar_bitmap))
+			return 0;
+	}
+
+	if (iface->conf->use_ru_puncture_dfs && radar_bitmap_oper) {
+		radar_bit_pattern = iface->radar_bit_pattern | iface->conf->punct_bitmap;
+
+		/* Radar detected already punctured sub channel*/
+		if (radar_bitmap_oper && !(radar_bitmap_oper & ~radar_bit_pattern))
+			return 0;
+
+		radar_bit_pattern |= radar_bitmap_oper;
+		iface->conf->punct_bitmap = radar_bit_pattern;
+	}
 
 	 if (iface->conf->dfs_test_mode) {
 		 set_dfs_state(iface, freq, ht_enabled, chan_offset,
@@ -1812,7 +1890,7 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	}
 
 	if (iface->conf->use_ru_puncture_dfs && hostapd_is_usable_punct_bitmap(iface)) {
-		iface->radar_bit_pattern = radar_bitmap;
+		iface->radar_bit_pattern = radar_bitmap_oper;
 		iface->conf->punct_bitmap = cur_punct_bits;
 		u8 oper_centr_freq_seg0_idx = iface->conf->vht_oper_centr_freq_seg0_idx;
 		u8 oper_centr_freq_seg1_idx = iface->conf->vht_oper_centr_freq_seg1_idx;
@@ -1853,7 +1931,7 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	iface->radar_bit_pattern = 0;
 	iface->conf->punct_bitmap = cur_punct_bits;
 
-	if (hostapd_dfs_background_start_channel_switch(iface, freq)) {
+	if (hostapd_dfs_background_start_channel_switch(iface, freq) && radar_bitmap_oper) {
 		if (!iface->conf->disable_csa_dfs) {
 			/* Radar detected while operating, switch the channel. */
 			return hostapd_dfs_start_channel_switch(iface);
@@ -1871,7 +1949,8 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 
 int hostapd_dfs_nop_finished(struct hostapd_iface *iface, int freq,
 			     int ht_enabled, int chan_offset, int chan_width,
-			     int cf1, int cf2)
+			     int cf1, int cf2,
+			     int chan_width_device, int cf_device)
 {
 	if (!hostapd_is_freq_in_current_hw_info(iface, freq)) {
 		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
@@ -1882,16 +1961,20 @@ int hostapd_dfs_nop_finished(struct hostapd_iface *iface, int freq,
 	}
 
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_NOP_FINISHED
-		"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d",
-		freq, ht_enabled, chan_offset, chan_width, cf1, cf2);
+		"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d chan_width_device=%d cf_device=%d",
+		freq, ht_enabled, chan_offset, chan_width, cf1, cf2, chan_width_device, cf_device);
 
 	/* Proceed only if DFS is not offloaded to the driver */
 	if (iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD)
 		return 0;
 
-	/* TODO add correct implementation here */
-	set_dfs_state(iface, freq, ht_enabled, chan_offset, chan_width,
-		      cf1, cf2, HOSTAPD_CHAN_DFS_USABLE,0);
+	if (hostapd_is_device_params_present(chan_width, cf1,
+					     chan_width_device, cf_device))
+		set_dfs_state(iface, freq, ht_enabled, chan_offset, chan_width_device,
+			      cf_device, cf2, HOSTAPD_CHAN_DFS_USABLE, 0);
+	else
+		set_dfs_state(iface, freq, ht_enabled, chan_offset, chan_width,
+			      cf1, cf2, HOSTAPD_CHAN_DFS_USABLE,0);
 
 	if (iface->state == HAPD_IFACE_DFS && !iface->cac_started) {
 		/* Handle cases where all channels were initially unavailable */
@@ -1939,7 +2022,8 @@ int hostapd_is_dfs_required(struct hostapd_iface *iface)
 
 int hostapd_dfs_start_cac(struct hostapd_iface *iface, int freq,
 			  int ht_enabled, int chan_offset, int chan_width,
-			  int cf1, int cf2, bool is_background)
+			  int cf1, int cf2, bool is_background,
+			  int chan_width_device, int cf_device)
 {
 	int n_chans, n_chans1, ch_idx, ch_idx_1, dfs_cac_ms;
 	int chwidth;
@@ -2033,10 +2117,10 @@ int hostapd_dfs_start_cac(struct hostapd_iface *iface, int freq,
 
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_START
 		"freq=%d chan=%d chan_offset=%d width=%d seg0=%d "
-		"seg1=%d cac_time=%ds%s",
+		"seg1=%d cac_time=%ds chan_width_device=%d cf_device=%d%s",
 		freq, (freq - 5000) / 5, chan_offset, chan_width, cf1, cf2,
-		dfs_cac_ms / 1000,
-		hostapd_dfs_is_background_event(iface, freq) ?
+		dfs_cac_ms / 1000, chan_width_device, cf_device,
+		(is_background || hostapd_dfs_is_background_event(iface, freq)) ?
 		" (background)" : "");
 
 	os_get_reltime(&iface->dfs_cac_start);

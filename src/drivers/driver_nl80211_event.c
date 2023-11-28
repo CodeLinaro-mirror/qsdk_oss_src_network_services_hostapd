@@ -2745,11 +2745,12 @@ static void nl80211_process_radar_event(struct i802_bss *bss,
 					enum nl80211_radar_event event_type)
 {
 	wpa_printf(MSG_DEBUG,
-		   "nl80211: DFS event on freq %d MHz, ht: %d, offset: %d, width: %d, cf1: %dMHz, cf2: %dMHz, link_id=%d radar_bitmap: %0x ",
+		   "nl80211: DFS event on freq %d MHz, ht: %d, offset: %d, width: %d, cf1: %dMHz, cf2: %dMHz, link_id=%d radar_bitmap: %0x chan_width_device: %d cf_device: %d",
 		   data->dfs_event.freq, data->dfs_event.ht_enabled,
 		   data->dfs_event.chan_offset, data->dfs_event.chan_width,
 		   data->dfs_event.cf1, data->dfs_event.cf2,
-		   data->dfs_event.link_id, data->dfs_event.radar_bitmap);
+		   data->dfs_event.link_id, data->dfs_event.radar_bitmap,
+		   data->dfs_event.chan_width_device, data->dfs_event.cf_device);
 
 	switch (event_type) {
 	case NL80211_RADAR_DETECTED:
@@ -2831,6 +2832,12 @@ static void nl80211_radar_event(struct i802_bss *bss, struct nlattr **tb)
 		data.dfs_event.cf2 = nla_get_u32(tb[NL80211_ATTR_CENTER_FREQ2]);
 	if (tb[NL80211_ATTR_RADAR_BITMAP])
 		data.dfs_event.radar_bitmap = nla_get_u16(tb[NL80211_ATTR_RADAR_BITMAP]);
+	if (tb[NL80211_ATTR_CHANNEL_WIDTH_DEVICE])
+		data.dfs_event.chan_width_device =
+			convert2width(nla_get_u32(tb[NL80211_ATTR_CHANNEL_WIDTH_DEVICE]));
+	if (tb[NL80211_ATTR_CENTER_FREQ_DEVICE])
+		data.dfs_event.cf_device =
+			nla_get_u32(tb[NL80211_ATTR_CENTER_FREQ_DEVICE]);
 
 	if (is_sta_interface(drv->nlmode))
 		return nl80211_process_radar_event(bss, &data, event_type);
