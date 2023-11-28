@@ -22,6 +22,7 @@
 #include "beacon.h"
 #include "eloop.h"
 #include "ieee802_11.h"
+#include "hw_features.h"
 
 #define IEEE80211_DFS_MIN_CAC_TIME_MS  60000
 
@@ -1931,19 +1932,128 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	iface->radar_bit_pattern = 0;
 	iface->conf->punct_bitmap = cur_punct_bits;
 
-	if (hostapd_dfs_background_start_channel_switch(iface, freq) && radar_bitmap_oper) {
-		if (!iface->conf->disable_csa_dfs) {
-			/* Radar detected while operating, switch the channel. */
+	if (hostapd_dfs_background_start_channel_switch(iface, freq)) {
+		if (!radar_bitmap) {
+			/* Frequency hopping radar detected while operating, switch the channel.*/
 			return hostapd_dfs_start_channel_switch(iface);
-		} else if (!eloop_is_timeout_registered(hostapd_dfs_radar_handling_timeout,
-			   iface, NULL)) {
-			eloop_register_timeout(0, HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR,
-					       hostapd_dfs_radar_handling_timeout,
-					       iface, NULL);
+		}
+
+		if (radar_bitmap_oper) {
+			if (!iface->conf->disable_csa_dfs) {
+				/* Radar detected while operating, switch the channel. */
+				return hostapd_dfs_start_channel_switch(iface);
+			} else if (!eloop_is_timeout_registered(hostapd_dfs_radar_handling_timeout,
+								iface, NULL)) {
+				eloop_register_timeout(0, HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR,
+						       hostapd_dfs_radar_handling_timeout,
+						       iface, NULL);
+			}
 		}
 	}
 
 	return 0;
+}
+
+void hostapd_start_device_cac_background(struct hostapd_iface *iface)
+{
+	int width, start_chan, start_chan_idx = -1, n_chans = 1, i;
+	struct hostapd_channel_data *chan;
+	struct hostapd_hw_modes *mode;
+	bool res = false;
+	u8 seg0;
+
+	if (!iface->conf->ieee80211be ||
+	    !(iface->drv_flags2 & WPA_DRIVER_FLAGS2_RADAR_BACKGROUND) ||
+	    iface->radar_background.cac_started)
+		return;
+
+	width = hostapd_get_oper_chwidth(iface->conf);
+	seg0 = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
+	if (!hostapd_is_device_params_present(width, seg0,
+					      iface->conf->bandwidth_device,
+					      iface->conf->center_freq_device))
+		return;
+
+	start_chan = seg0;
+
+	switch (width) {
+	case CONF_OPER_CHWIDTH_USE_HT:
+		if (iface->conf->secondary_channel) {
+			start_chan = seg0 - 2;
+			n_chans = 2;
+		}
+		break;
+	case CONF_OPER_CHWIDTH_80MHZ:
+		start_chan = seg0 - 6;
+		n_chans = 4;
+		break;
+	case CONF_OPER_CHWIDTH_160MHZ:
+		start_chan = seg0 - 14;
+		n_chans = 8;
+		break;
+	case CONF_OPER_CHWIDTH_320MHZ:
+		start_chan = seg0 - 30;
+		n_chans = 16;
+		break;
+	default:
+		return;
+	}
+
+	if (iface->conf->center_freq_device <
+	    ieee80211_chan_to_freq(NULL, iface->conf->op_class, seg0))
+		start_chan = start_chan - (4 * n_chans);
+	else
+		start_chan = start_chan + (4 * n_chans);
+
+	mode = iface->current_mode;
+	for (i = 0; i < mode->num_channels; i++) {
+		chan = &mode->channels[i];
+		if (chan->chan == start_chan) {
+			start_chan_idx = i;
+			break;
+		}
+	}
+
+	if (start_chan_idx == -1)
+		return;
+
+	for (i = 0; i < n_chans; i++) {
+		chan = &mode->channels[start_chan_idx + i];
+
+		if (!(chan->flag & HOSTAPD_CHAN_RADAR))
+			continue;
+
+		if ((chan->flag & HOSTAPD_CHAN_DFS_MASK) == HOSTAPD_CHAN_DFS_AVAILABLE)
+			continue;
+		else if ((chan->flag & HOSTAPD_CHAN_DFS_MASK) == HOSTAPD_CHAN_DFS_USABLE)
+			res = true;
+		else
+			return;
+	}
+
+	if (res == false)
+		return;
+
+	hostapd_start_dfs_cac(iface, iface->conf->hw_mode, iface->freq,
+			      iface->conf->channel, iface->conf->ieee80211n,
+			      iface->conf->ieee80211ac, iface->conf->ieee80211ax,
+			      iface->conf->ieee80211be,
+			      iface->conf->secondary_channel,
+			      hostapd_get_oper_chwidth(iface->conf),
+			      hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
+			      hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
+			      true,
+			      iface->conf->bandwidth_device,
+			      iface->conf->center_freq_device);
+
+	iface->radar_background.channel = iface->conf->channel;
+	iface->radar_background.secondary_channel =
+		iface->conf->secondary_channel;
+	iface->radar_background.freq = iface->freq;
+	iface->radar_background.centr_freq_seg0_idx =
+		hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
+	iface->radar_background.centr_freq_seg1_idx =
+		hostapd_get_oper_centr_freq_seg1_idx(iface->conf);
 }
 
 
@@ -1980,9 +2090,11 @@ int hostapd_dfs_nop_finished(struct hostapd_iface *iface, int freq,
 		/* Handle cases where all channels were initially unavailable */
 		hostapd_handle_dfs(iface);
 	} else if (dfs_use_radar_background(iface) &&
-		   iface->radar_background.channel == -1) {
+			iface->radar_background.channel == -1) {
 		/* Reset radar background chain if disabled */
 		hostapd_dfs_update_background_chain(iface);
+	} else {
+		hostapd_start_device_cac_background(iface);
 	}
 
 	return 0;
