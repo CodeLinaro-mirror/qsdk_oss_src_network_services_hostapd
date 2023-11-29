@@ -857,7 +857,8 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 void hostapd_notif_disassoc(struct hostapd_data *hapd, const u8 *addr);
 void hostapd_notif_disassoc_mld(struct hostapd_data *assoc_hapd,
 				struct sta_info *sta, const u8 *addr);
-void hostapd_event_sta_low_ack(struct hostapd_data *hapd, const u8 *addr);
+void hostapd_event_sta_low_ack(struct hostapd_data *hapd, const u8 *addr,
+			       const u32 num_packets);
 void hostapd_event_connect_failed_reason(struct hostapd_data *hapd,
 					 const u8 *addr, int reason_code);
 int hostapd_probe_req_rx(struct hostapd_data *hapd, const u8 *sa, const u8 *da,
