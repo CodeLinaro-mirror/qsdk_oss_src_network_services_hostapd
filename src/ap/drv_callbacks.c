@@ -1165,9 +1165,12 @@ legacy:
 }
 
 
-void hostapd_event_sta_low_ack(struct hostapd_data *hapd, const u8 *addr)
+void hostapd_event_sta_low_ack(struct hostapd_data *hapd, const u8 *addr,
+			       u32 num_packets)
 {
 	struct sta_info *sta = ap_get_sta(hapd, addr);
+	u32 reason = WLAN_REASON_DISASSOC_LOW_ACK;
+
 #ifdef CONFIG_IEEE80211BE
 	struct hostapd_data *orig_hapd = hapd;
 
@@ -1183,14 +1186,18 @@ void hostapd_event_sta_low_ack(struct hostapd_data *hapd, const u8 *addr)
 	}
 #endif /* CONFIG_IEEE80211BE */
 
-	if (!sta || !hapd->conf->disassoc_low_ack || sta->agreed_to_steer)
+	if (!sta || (!hapd->conf->disassoc_low_ack && num_packets != 0xFFFF) ||
+	    sta->agreed_to_steer)
 		return;
+
+	if (num_packets == 0xFFFF)
+		reason = WLAN_REASON_UNSPECIFIED;
 
 	hostapd_logger(hapd, addr, HOSTAPD_MODULE_IEEE80211,
 		       HOSTAPD_LEVEL_INFO,
 		       "disconnected due to excessive missing ACKs");
-	hostapd_drv_sta_disassoc(hapd, addr, WLAN_REASON_DISASSOC_LOW_ACK);
-	ap_sta_disassociate(hapd, sta, WLAN_REASON_DISASSOC_LOW_ACK);
+	hostapd_drv_sta_disassoc(hapd, addr, reason);
+	ap_sta_disassociate(hapd, sta, reason);
 }
 
 
@@ -2844,7 +2851,8 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 	case EVENT_STATION_LOW_ACK:
 		if (!data)
 			break;
-		hostapd_event_sta_low_ack(hapd, data->low_ack.addr);
+		hostapd_event_sta_low_ack(hapd, data->low_ack.addr,
+					  data->low_ack.num_packets);
 		break;
 	case EVENT_AUTH:
 		hostapd_notif_auth(hapd, &data->auth);
