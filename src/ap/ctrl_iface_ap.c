@@ -1405,6 +1405,8 @@ int hostapd_parse_freq_params(const char *pos,
 	SET_FREQ_PARAM(bandwidth);
 	SET_FREQ_PARAM(sec_channel_offset);
 	SET_FREQ_PARAM(punct_bitmap);
+	SET_FREQ_PARAM(bandwidth_device);
+	SET_FREQ_PARAM(center_freq_device);
 	params->ht_enabled = !!os_strstr(pos, " ht");
 	params->vht_enabled = !!os_strstr(pos, " vht");
 	params->eht_enabled = !!os_strstr(pos, " eht");

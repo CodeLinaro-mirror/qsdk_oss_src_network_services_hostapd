@@ -2439,6 +2439,75 @@ static int hostapd_ctrl_register_frame(struct hostapd_data *hapd,
 
 #endif /* CONFIG_TESTING_OPTIONS */
 
+static int hostapd_check_validity_device_params(struct hostapd_freq_params *params)
+{
+	int freq_section = 0;
+
+	if (params->bandwidth_device == 0 && params->center_freq_device == 0)
+		return 0;
+	else if (params->bandwidth_device == 0 || params->center_freq_device == 0)
+		return -EINVAL;
+
+	if ((params->center_freq1 == params->center_freq_device) &&
+	    (params->bandwidth == params->bandwidth_device)) {
+		params->bandwidth_device = 0;
+		params->center_freq_device = 0;
+		return 0;
+	}
+
+	if (params->bandwidth_device != 2*params->bandwidth) {
+		wpa_printf(MSG_ERROR,
+			   "Device bandwidth is not set to twice the operating bandwidth\n");
+		return -EINVAL;
+	}
+
+	if (params->center_freq1 > params->center_freq_device)
+		freq_section = 1;
+
+	switch (params->bandwidth_device) {
+	case 320:
+		if (freq_section) {
+			if (params->center_freq_device != params->center_freq1 - 80)
+				return -EINVAL;
+		} else {
+			if (params->center_freq_device != params->center_freq1 + 80)
+				return -EINVAL;
+		}
+		break;
+	case 160:
+		if (freq_section) {
+			if (params->center_freq_device != params->center_freq1 - 40)
+				return -EINVAL;
+		} else {
+			if (params->center_freq_device != params->center_freq1 + 40)
+				return -EINVAL;
+		}
+		break;
+	case 80:
+		if (freq_section) {
+			if (params->center_freq_device != params->center_freq1 - 20)
+				return -EINVAL;
+		} else {
+			if (params->center_freq_device != params->center_freq1 + 20)
+				return -EINVAL;
+		}
+		break;
+	case 40:
+		if (freq_section) {
+			if (params->center_freq_device != params->center_freq1 - 10)
+				return -EINVAL;
+		} else {
+			if (params->center_freq_device != params->center_freq1 + 10)
+				return -EINVAL;
+		}
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 
 static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 					  char *pos)
@@ -2462,6 +2531,14 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 	if (iface->num_bss && iface->bss[0]->conf->mld_ap)
 		settings.link_id = iface->bss[0]->mld_link_id;
 #endif /* CONFIG_IEEE80211BE */
+
+	ret = hostapd_check_validity_device_params(&settings.freq_params);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "chanswitch: invalid device parameters provided %d %d",
+			   settings.freq_params.bandwidth_device,
+			   settings.freq_params.center_freq_device);
+		return ret;
+	}
 
 	switch (settings.freq_params.bandwidth) {
 	case 40:

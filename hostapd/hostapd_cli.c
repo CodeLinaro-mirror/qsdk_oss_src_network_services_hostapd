@@ -1195,6 +1195,7 @@ static int hostapd_cli_cmd_chan_switch(struct wpa_ctrl *ctrl,
 		       "arguments (count and freq)\n"
 		       "usage: <cs_count> <freq> [sec_channel_offset=] "
 		       "[center_freq1=] [center_freq2=] [bandwidth=] "
+		       "[bandwidth_device =] [center_freq_device=] "
 		       "[blocktx] [ht|vht|he|eht]\n");
 		return -1;
 	}
@@ -1765,7 +1766,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<addr> = send QoS Map Configure frame" },
 	{ "chan_switch", hostapd_cli_cmd_chan_switch, NULL,
 	  "<cs_count> <freq> [sec_channel_offset=] [center_freq1=]\n"
-	  "  [center_freq2=] [bandwidth=] [blocktx] [ht|vht]\n"
+	  "  [center_freq2=] [bandwidth=] [bandwidth_device=] \n"
+	  "  [center_freq_device=] [blocktx] [ht|vht|he|eht] \n"
 	  "  = initiate channel switch announcement" },
 #ifdef CONFIG_IEEE80211AX
 	{ "color_change", hostapd_cli_cmd_color_change, NULL,
