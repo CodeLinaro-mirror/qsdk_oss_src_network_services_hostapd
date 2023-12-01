@@ -1576,6 +1576,24 @@ static int hostapd_wpa_auth_add_tspec(void *ctx, const u8 *sta_addr,
 }
 
 
+static u8 *hostapd_wpa_ft_add_bmle(void *ctx, u8 *bmle_ie, u8 type, void *mle_data)
+{
+	struct hostapd_data *hapd = ctx;
+
+	if (!hapd->mld)
+		return bmle_ie;
+
+	return hostapd_eid_eht_ml_beacon(hapd, NULL, bmle_ie, true);
+}
+
+
+static size_t hostapd_wpa_ft_add_bmle_len(void *ctx, u8 type, void *mle_data)
+{
+	struct hostapd_data *hapd = ctx;
+
+	return hostapd_eid_eht_ml_beacon_len(hapd, NULL, true);
+}
+
 
 static int hostapd_wpa_register_ft_oui(struct hostapd_data *hapd,
 				       const char *ft_iface)
@@ -1792,6 +1810,8 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 		.add_sta = hostapd_wpa_auth_add_sta,
 		.add_sta_ft = hostapd_wpa_auth_add_sta_ft,
 		.add_tspec = hostapd_wpa_auth_add_tspec,
+		.add_bmle = hostapd_wpa_ft_add_bmle,
+		.add_bmle_len = hostapd_wpa_ft_add_bmle_len,
 		.set_vlan = hostapd_wpa_auth_set_vlan,
 		.get_vlan = hostapd_wpa_auth_get_vlan,
 		.set_identity = hostapd_wpa_auth_set_identity,

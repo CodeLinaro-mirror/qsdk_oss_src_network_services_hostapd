@@ -779,6 +779,30 @@ static int wpa_ft_add_tspec(struct wpa_authenticator *wpa_auth,
 }
 
 
+static u8 *wpa_ft_add_bmle(struct wpa_authenticator *wpa_auth,
+			   u8 *bmle_ie, u32 type,
+			   void *ml_data)
+{
+	if (wpa_auth->cb->add_bmle == NULL) {
+		wpa_printf(MSG_DEBUG, "FT: add_bmle is not initialized");
+		return bmle_ie;
+	}
+	return wpa_auth->cb->add_bmle(wpa_auth->cb_ctx, bmle_ie, type,
+				      ml_data);
+}
+
+static size_t wpa_ft_add_bmle_len(struct wpa_authenticator *wpa_auth,
+				  u32 type,
+				  void *ml_data)
+{
+	if (wpa_auth->cb->add_bmle_len == NULL) {
+		wpa_printf(MSG_DEBUG, "FT: add_bmle_len is not initialized");
+		return 0;
+	}
+	return wpa_auth->cb->add_bmle_len(wpa_auth->cb_ctx, type, ml_data);
+}
+
+
 #ifdef CONFIG_OCV
 static int wpa_channel_info(struct wpa_authenticator *wpa_auth,
 			       struct wpa_channel_info *ci)
@@ -3542,7 +3566,7 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 	struct vlan_description vlan;
 	const u8 *identity, *radius_cui;
 	size_t identity_len = 0, radius_cui_len = 0;
-	size_t pmk_r1_len, kdk_len, len;
+	size_t pmk_r1_len, kdk_len, len, bmle_len;
 	int retval = WLAN_STATUS_UNSPECIFIED_FAILURE;
 
 	*resp_ies = NULL;
@@ -3777,8 +3801,10 @@ pmk_r1_derived:
 	}
 	wpa_ft_set_session_timeout(sm->wpa_auth, wpa_auth_get_spa(sm), session_timeout);
 
+	bmle_len = wpa_ft_add_bmle_len(sm->wpa_auth, WLAN_FC_STYPE_AUTH, NULL);
+
 	buflen = 2 + sizeof(struct rsn_mdie) + 2 + sizeof(struct rsn_ftie) +
-		2 + FT_R1KH_ID_LEN + 200;
+		 2 + FT_R1KH_ID_LEN + bmle_len + 200;
 	*resp_ies = os_zalloc(buflen);
 	if (*resp_ies == NULL)
 		goto fail;
@@ -3808,6 +3834,8 @@ pmk_r1_derived:
 	if (ret < 0)
 		goto fail;
 	pos += ret;
+
+	pos = wpa_ft_add_bmle(sm->wpa_auth, pos, WLAN_FC_STYPE_AUTH, NULL);
 
 	*resp_ies_len = pos - *resp_ies;
 
