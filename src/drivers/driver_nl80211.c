@@ -5334,6 +5334,60 @@ err:
 }
 #endif /* CONFIG_DRIVER_NL80211_QCA */
 
+static int nl80211_put_freq_params_device(struct wpa_driver_nl80211_data *drv,
+					  struct nl_msg *msg,
+					  const struct hostapd_freq_params *freq)
+{
+	enum nl80211_chan_width width_device;
+
+	if (freq->center_freq_device == 0 && freq->bandwidth_device == 0)
+		return 0;
+
+	if (!drv->device_bw) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Driver does not support device BW parameters separate from operating BW");
+		return -EOPNOTSUPP;
+	}
+
+	if (!freq->eht_enabled) {
+		wpa_printf(MSG_ERROR,
+			   "Device Parameters are supported only for EHT mode");
+		return -EINVAL;
+	}
+
+	if (freq->center_freq_device == 0 || freq->bandwidth_device == 0) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid input: bandwidth_device=%d center_freq_device=%d\n",
+			   freq->bandwidth_device, freq->center_freq_device);
+		return -EINVAL;
+	}
+
+	switch (freq->bandwidth_device) {
+	case 40:
+		width_device = NL80211_CHAN_WIDTH_40;
+		break;
+	case 80:
+		width_device = NL80211_CHAN_WIDTH_80;
+		break;
+	case 160:
+		width_device = NL80211_CHAN_WIDTH_160;
+		break;
+	case 320:
+		width_device = NL80211_CHAN_WIDTH_320;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	nla_put_u32(msg, NL80211_ATTR_CENTER_FREQ_DEVICE, freq->center_freq_device);
+	nla_put_u32(msg, NL80211_ATTR_CHANNEL_WIDTH_DEVICE, width_device);
+	wpa_printf(MSG_DEBUG,
+		   "  * bandwidth_device=%d  * center_freq_device=%d\n",
+		   freq->bandwidth_device, freq->center_freq_device);
+	return 0;
+}
+
+
 static int nl80211_put_freq_params(struct wpa_driver_nl80211_data *drv,
 				   struct nl_msg *msg,
  				   const struct hostapd_freq_params *freq)
@@ -5433,6 +5487,12 @@ static int nl80211_put_freq_params(struct wpa_driver_nl80211_data *drv,
 				NL80211_CHAN_NO_HT))
 			return -ENOBUFS;
 	}
+
+	if (nl80211_put_freq_params_device(drv, msg, freq)) {
+		wpa_printf(MSG_ERROR, "Failed to add device parameters");
+		return -EINVAL;
+	}
+
 	if (freq->radar_background &&
 	    nla_put_flag(msg, NL80211_ATTR_RADAR_BACKGROUND))
 		return -ENOBUFS;
