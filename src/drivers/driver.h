@@ -1950,6 +1950,10 @@ struct wpa_driver_ap_params {
 	/* Unsolicited broadcast Probe Response data */
 	struct unsol_bcast_probe_resp ubpr;
 
+	/* critical_update_flag - critical update flag*/
+	bool elemid_added;
+	bool elemid_modified;
+
 	/**
 	 * allowed_freqs - List of allowed 20 MHz channel center frequencies in
 	 * MHz for AP operation. Drivers which support this parameter will

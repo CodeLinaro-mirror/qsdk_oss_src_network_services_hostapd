@@ -13,6 +13,7 @@
 #ifndef CONFIG_NATIVE_WINDOWS
 
 #include "utils/common.h"
+#include "utils/crc32.h"
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
 #include "common/hw_features_common.h"
@@ -2240,6 +2241,31 @@ static u8 * hostapd_fils_discovery(struct hostapd_data *hapd,
 #endif /* CONFIG_FILS */
 
 
+#ifdef CONFIG_IEEE80211BE
+static void hostapd_eid_update_cu_info(struct hostapd_data *hapd, u8 *elemid_modified,
+				       const u8 *eid_pos, size_t eid_len,
+				       enum elemid_cu eid_cu)
+{
+	u32 hash;
+
+	if (!hapd->conf->mld_ap)
+		return;
+	if (!eid_pos || (eid_len == 0) || (eid_len > 255))
+		return;
+	if (eid_cu >= ELEMID_CU_PARAM_MAX)
+		return;
+
+	hash = ieee80211_crc32(eid_pos, eid_len);
+	if ((hapd->cu_eid[eid_cu].eid_len != eid_len) ||
+	    (hapd->cu_eid[eid_cu].hash != hash)) {
+		hapd->cu_eid[eid_cu].eid_len = eid_len;
+		hapd->cu_eid[eid_cu].hash = hash;
+		*elemid_modified |= BIT(eid_cu);
+	}
+}
+#endif
+
+
 int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 			       struct wpa_driver_ap_params *params)
 {
@@ -2252,6 +2278,8 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	u16 capab_info;
 	u8 *pos, *tailpos, *tailend, *csa_pos;
 	bool complete = false;
+	u8 *startpos;
+	u8 elemid_modified = 0;
 #endif /* NEED_AP_MLME */
 
 	os_memset(params, 0, sizeof(*params));
@@ -2399,7 +2427,13 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 
 	tailpos = hostapd_eid_supported_op_classes(hapd, tailpos);
 	tailpos = hostapd_eid_ht_capabilities(hapd, tailpos);
+	startpos = tailpos;
 	tailpos = hostapd_eid_ht_operation(hapd, tailpos);
+
+#ifdef CONFIG_IEEE80211BE
+	hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
+				   tailpos-startpos, ELEMID_CU_PARAM_HTOP);
+#endif
 
 	if (hapd->iconf->mbssid && hapd->iconf->num_bss > 1) {
 		if (ieee802_11_build_ap_params_mbssid(hapd, params)) {
@@ -2438,7 +2472,12 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	if (hapd->iconf->ieee80211ac && !hapd->conf->disable_11ac &&
 	    !is_6ghz_op_class(hapd->iconf->op_class)) {
 		tailpos = hostapd_eid_vht_capabilities(hapd, tailpos, 0);
+		startpos = tailpos;
 		tailpos = hostapd_eid_vht_operation(hapd, tailpos);
+#ifdef CONFIG_IEEE80211BE
+		hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
+					   tailpos-startpos, ELEMID_CU_PARAM_VHTOP);
+#endif
 		tailpos = hostapd_eid_txpower_envelope(hapd, tailpos);
 	}
 #endif /* CONFIG_IEEE80211AC */
@@ -2467,16 +2506,31 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 
 		tailpos = hostapd_eid_he_capab(hapd, tailpos,
 					       IEEE80211_MODE_AP);
+		startpos = tailpos;
 		tailpos = hostapd_eid_he_operation(hapd, tailpos);
 
+#ifdef CONFIG_IEEE80211BE
+		hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
+					   tailpos-startpos, ELEMID_CU_PARAM_EXT_HEOP);
+#endif
 		/* BSS Color Change Announcement element */
 		cca_pos = hostapd_eid_cca(hapd, tailpos);
 		if (cca_pos != tailpos)
 			hapd->cca_c_off_beacon = cca_pos - tail - 2;
 		tailpos = cca_pos;
 
+		startpos = tailpos;
 		tailpos = hostapd_eid_spatial_reuse(hapd, tailpos);
+#ifdef CONFIG_IEEE80211BE
+		hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
+					   tailpos-startpos, ELEMID_CU_PARAM_SPATIAL_REUSE);
+#endif
+		startpos = tailpos;
 		tailpos = hostapd_eid_he_mu_edca_parameter_set(hapd, tailpos);
+#ifdef CONFIG_IEEE80211BE
+		hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
+					   tailpos-startpos, ELEMID_CU_PARAM_MU_EDCA);
+#endif
 		tailpos = hostapd_eid_he_6ghz_band_cap(hapd, tailpos);
 	}
 #endif /* CONFIG_IEEE80211AX */
@@ -2488,7 +2542,10 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 							    tailpos, false);
 		tailpos = hostapd_eid_eht_capab(hapd, tailpos,
 						IEEE80211_MODE_AP);
+		startpos = tailpos;
 		tailpos = hostapd_eid_eht_operation(hapd, tailpos);
+		hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
+					   tailpos-startpos, ELEMID_CU_PARAM_EXT_EHTOP);
 	}
 #endif /* CONFIG_IEEE80211BE */
 
@@ -2501,8 +2558,12 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	tailpos = hostapd_get_wpa_ie(hapd, tailpos, tailend - tailpos);
 
 	/* Wi-Fi Alliance WMM */
+	startpos = tailpos;
 	tailpos = hostapd_eid_wmm(hapd, tailpos);
-
+#ifdef CONFIG_IEEE80211BE
+	hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
+				   tailpos-startpos, ELEMID_CU_PARAM_WMM);
+#endif
 #ifdef CONFIG_WPS
 	if (hapd->conf->wps_state && hapd->wps_beacon_ie) {
 		os_memcpy(tailpos, wpabuf_head(hapd->wps_beacon_ie),
@@ -2686,6 +2747,9 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	}
 
 	params->beacon_tx_mode = hapd->conf->beacon_tx_mode;
+
+	if (hapd->conf->mld_ap && elemid_modified)
+		params->elemid_modified = 1;
 
 #ifdef CONFIG_IEEE80211BE
 	if (hapd->conf->mld_ap && hapd->iconf->ieee80211be &&

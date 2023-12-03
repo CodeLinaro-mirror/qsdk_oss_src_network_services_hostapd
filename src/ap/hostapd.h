@@ -212,6 +212,27 @@ struct rx_critical_param {
 };
 
 /**
+ * enum elemid_cu - used for detecting element id modification
+ * category 2 critical update
+ */
+enum elemid_cu {
+	ELEMID_CU_PARAM_EXT_EHTOP = 0,
+	ELEMID_CU_PARAM_EXT_HEOP,
+	ELEMID_CU_PARAM_VHTOP,
+	ELEMID_CU_PARAM_HTOP,
+	ELEMID_CU_PARAM_WMM,
+	ELEMID_CU_PARAM_MU_EDCA,
+	ELEMID_CU_PARAM_SPATIAL_REUSE,
+
+	ELEMID_CU_PARAM_MAX,
+};
+
+struct elemid_cu_param {
+	u8 eid_len;
+	u32 hash;
+};
+
+/**
  * struct hostapd_data - hostapd per-BSS data structure
  */
 struct hostapd_data {
@@ -523,6 +544,8 @@ struct hostapd_data {
 #endif /* CONFIG_CTRL_IFACE_UDP */
 
        struct rx_critical_param rx_cu_param;
+       /*Element ID critical update data*/
+       struct elemid_cu_param cu_eid[ELEMID_CU_PARAM_MAX];
 #ifdef CONFIG_IEEE80211BE
 	u8 eht_mld_bss_param_change;
 	struct hostapd_mld *mld;
