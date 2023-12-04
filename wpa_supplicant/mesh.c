@@ -210,6 +210,8 @@ static int wpas_mesh_update_freq_params(struct wpa_supplicant *wpa_s)
 		.vht.caps = ifmsh->conf->vht_capab,
 		.he.cap = ifmsh->current_mode ?
 		&ifmsh->current_mode->he_capab[IEEE80211_MODE_MESH] : NULL,
+		.bandwidth_device = ifmsh->conf->bandwidth_device,
+		.center_freq_device = ifmsh->conf->center_freq_device,
 		.he_6ghz_reg_pwr_type = ifmsh->conf->he_6ghz_reg_pwr_type,
 	};
 
@@ -501,8 +503,11 @@ static int wpa_supplicant_mesh_init(struct wpa_supplicant *wpa_s,
 	}
 
 #ifdef CONFIG_IEEE80211BE
-	if (ssid->eht)
+	if (ssid->eht) {
 		conf->punct_bitmap = ssid->punct_bitmap;
+		conf->bandwidth_device = freq->bandwidth_device;
+		conf->center_freq_device = freq->center_freq_device;
+	}
 #endif
 	bss->iconf = conf;
 	ifmsh->conf = conf;

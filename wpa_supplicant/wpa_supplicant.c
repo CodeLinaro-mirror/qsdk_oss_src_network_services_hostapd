@@ -4319,6 +4319,8 @@ skip_80mhz:
 		.vht.caps = vht_caps,
 		.he.cap = &mode->he_capab[ieee80211_mode],
 		.eht.cap = &mode->eht_capab[ieee80211_mode],
+		.bandwidth_device = freq->bandwidth_device,
+		.center_freq_device = freq->center_freq_device,
 		.he_6ghz_reg_pwr_type = freq->he_6ghz_reg_pwr_type,
 	};
 	if (hostapd_set_freq_params(&vht_freq, &info))

@@ -591,6 +591,8 @@ int hostapd_set_freq_params(struct hostapd_freq_params *data,
 	data->center_freq1 = freq + sec_channel_offset * 10;
 	data->center_freq2 = 0;
 	data->punct_bitmap = punct_bitmap;
+	data->bandwidth_device = info->bandwidth_device;
+	data->center_freq_device = info->center_freq_device;
 	if (oper_chwidth == CONF_OPER_CHWIDTH_80MHZ)
 		data->bandwidth = 80;
 	else if (oper_chwidth == CONF_OPER_CHWIDTH_160MHZ ||

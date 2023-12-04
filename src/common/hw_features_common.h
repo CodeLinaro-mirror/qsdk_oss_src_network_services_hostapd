@@ -89,6 +89,8 @@ struct hostapd_channel_info {
 		u8 dbe_bandwidth;
 		u16 dbe_punct_bitmap;
 	} uhr;
+	int bandwidth_device;
+	int center_freq_device;
 };
 
 int hostapd_set_freq_params(struct hostapd_freq_params *data,

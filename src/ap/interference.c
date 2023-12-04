@@ -561,7 +561,9 @@ int hostapd_incumbt_sig_intf_detected(struct hostapd_iface *iface, int freq,
 			    iface->conf->secondary_channel,
 			    hostapd_get_oper_chwidth(iface->conf),
 			    hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
-			    hostapd_get_oper_centr_freq_seg1_idx(iface->conf))) {
+			    hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
+			    iface->conf->bandwidth_device,
+			    iface->conf->center_freq_device)) {
 			wpa_printf(MSG_ERROR,
 				   "Intf: Failed to apply bandwidth update");
 			ret = -1;
