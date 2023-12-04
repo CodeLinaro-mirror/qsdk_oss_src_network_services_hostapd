@@ -3572,7 +3572,9 @@ skip_80mhz:
 				    chwidth, seg0, seg1, vht_caps,
 				    &mode->he_capab[ieee80211_mode],
 				    &mode->eht_capab[ieee80211_mode], 0,
-				    freq->he_6ghz_reg_pwr_type) != 0)
+				    freq->he_6ghz_reg_pwr_type,
+				    freq->bandwidth_device,
+				    freq->center_freq_device) != 0)
 		return false;
 
 	*freq = vht_freq;

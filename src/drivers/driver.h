@@ -928,6 +928,18 @@ struct hostapd_freq_params {
 	 * link_id: If >=0 indicates the link of the AP MLD to configure
 	 */
 	int link_id;
+
+	/**
+	 * bandwidth_device - Device bandwidth in MHz, minimum 40 MHz.
+	 * The member 'bandwidth' corresponds to the operating bandwidth.
+	 */
+	int bandwidth_device;
+
+	/**
+	 * freq_device - Device center frequency in MHz, must coincide with
+	 * one edge of the operating bandwidth.
+	 */
+	int center_freq_device;
 };
 
 /**
@@ -7052,6 +7064,8 @@ union wpa_event_data {
 		int cf2;
 		int link_id;
 		u16 punct_bitmap;
+		u32 ch_width_device;
+		u32 cf_device;
 	} ch_switch;
 
 	/**

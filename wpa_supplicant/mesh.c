@@ -213,7 +213,9 @@ static int wpas_mesh_update_freq_params(struct wpa_supplicant *wpa_s)
 		    hostapd_get_oper_centr_freq_seg1_idx(ifmsh->conf),
 		    ifmsh->conf->vht_capab,
 		    he_capab, NULL, 0,
-		    ifmsh->conf->he_6ghz_reg_pwr_type)) {
+		    ifmsh->conf->he_6ghz_reg_pwr_type,
+		    ifmsh->conf->bandwidth_device,
+		    ifmsh->conf->center_freq_device)) {
 		wpa_printf(MSG_ERROR, "Error updating mesh frequency params");
 		wpa_supplicant_mesh_deinit(wpa_s, true);
 		return -1;
@@ -501,8 +503,11 @@ static int wpa_supplicant_mesh_init(struct wpa_supplicant *wpa_s,
 	}
 
 #ifdef CONFIG_IEEE80211BE
-	if (ssid->eht)
+	if (ssid->eht) {
 		conf->punct_bitmap = ssid->punct_bitmap;
+		conf->bandwidth_device = freq->bandwidth_device;
+		conf->center_freq_device = freq->center_freq_device;
+	}
 #endif
 	bss->iconf = conf;
 	ifmsh->conf = conf;

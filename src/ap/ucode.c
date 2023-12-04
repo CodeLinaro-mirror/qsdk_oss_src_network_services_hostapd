@@ -604,7 +604,9 @@ out:
 				 conf->secondary_channel,
 				 hostapd_get_oper_chwidth(conf),
 				 hostapd_get_oper_centr_freq_seg0_idx(conf),
-				 hostapd_get_oper_centr_freq_seg1_idx(conf));
+				 hostapd_get_oper_centr_freq_seg1_idx(conf),
+				 conf->bandwidth_device,
+				 conf->center_freq_device);
 
 		ieee802_11_set_beacon(hapd);
 	}

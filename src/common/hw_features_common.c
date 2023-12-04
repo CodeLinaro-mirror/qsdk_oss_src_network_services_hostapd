@@ -487,7 +487,8 @@ int hostapd_set_freq_params(struct hostapd_freq_params *data,
 			    struct he_capabilities *he_cap,
 			    struct eht_capabilities *eht_cap,
 			    u16 punct_bitmap,
-			    u8 reg_6g_pwr_mode)
+			    u8 reg_6g_pwr_mode,
+			    int bandwidth_device, int center_freq_device)
 {
 	enum oper_chan_width oper_chwidth_legacy;
 	u8 seg0_legacy, seg1_legacy;
@@ -508,6 +509,8 @@ int hostapd_set_freq_params(struct hostapd_freq_params *data,
 	data->center_freq1 = freq + sec_channel_offset * 10;
 	data->center_freq2 = 0;
 	data->punct_bitmap = punct_bitmap;
+	data->bandwidth_device = bandwidth_device;
+	data->center_freq_device = center_freq_device;
 	if (oper_chwidth == CONF_OPER_CHWIDTH_80MHZ)
 		data->bandwidth = 80;
 	else if (oper_chwidth == CONF_OPER_CHWIDTH_160MHZ ||

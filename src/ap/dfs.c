@@ -1025,7 +1025,8 @@ int hostapd_handle_dfs(struct hostapd_iface *iface)
 		hostapd_get_oper_chwidth(iface->conf),
 		hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
 		hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
-		dfs_use_radar_background(iface));
+		dfs_use_radar_background(iface),
+		iface->conf->bandwidth_device, iface->conf->center_freq_device);
 
 	if (res) {
 		wpa_printf(MSG_ERROR, "DFS start_dfs_cac() failed, %d", res);
@@ -1140,7 +1141,9 @@ static int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 				      &cmode->he_capab[ieee80211_mode],
 				      &cmode->eht_capab[ieee80211_mode],
 				      punct_bitmap | iface->radar_bit_pattern,
-				      iface->conf->he_6ghz_reg_pwr_type);
+				      iface->conf->he_6ghz_reg_pwr_type,
+				      iface->conf->bandwidth_device,
+				      iface->conf->center_freq_device);
 
 	if (err) {
 		wpa_printf(MSG_ERROR,
@@ -1224,7 +1227,7 @@ static void hostapd_dfs_update_background_chain(struct hostapd_iface *iface)
 				  iface->conf->ieee80211be,
 				  sec, hostapd_get_oper_chwidth(iface->conf),
 				  oper_centr_freq_seg0_idx,
-				  oper_centr_freq_seg1_idx, true)) {
+				  oper_centr_freq_seg1_idx, true, 0, 0)) {
 		wpa_printf(MSG_ERROR, "DFS failed to start CAC offchannel");
 		iface->radar_background.channel = -1;
 		return;
@@ -1325,7 +1328,9 @@ static int hostapd_dfs_testmode_set_beacon_csa(struct hostapd_iface *iface)
 				      &iface->current_mode->he_capab[IEEE80211_MODE_AP],
 				      &iface->current_mode->eht_capab[IEEE80211_MODE_AP],
 				      hostapd_get_punct_bitmap(iface->bss[0]),
-				      iface->conf->he_6ghz_reg_pwr_type);
+				      iface->conf->he_6ghz_reg_pwr_type,
+				      iface->conf->bandwidth_device,
+				      iface->conf->center_freq_device);
 
 	if (err) {
 		wpa_printf(MSG_ERROR, "DFS failed to calculate CSA freq params");
@@ -1832,7 +1837,9 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 						     hostapd_get_oper_chwidth(iface->conf),
 						     hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
 						     hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
-						     dfs_use_radar_background(iface));
+						     dfs_use_radar_background(iface),
+						     iface->conf->bandwidth_device,
+						     iface->conf->center_freq_device);
 		}
 
 		return hostapd_dfs_request_channel_switch(

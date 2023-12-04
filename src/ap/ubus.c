@@ -756,7 +756,9 @@ hostapd_switch_chan(struct ubus_context *ctx, struct ubus_object *obj,
 				mode ? &mode->eht_capab[IEEE80211_MODE_AP] :
 				NULL,
 				hostapd_get_punct_bitmap(hapd),
-				hapd->iconf->he_6ghz_reg_pwr_type);
+				hapd->iconf->he_6ghz_reg_pwr_type,
+				iconf->bandwidth_device,
+				iconf->center_freq_device);
 
 	for (i = 0; i < hapd->iface->num_bss; i++) {
 		struct hostapd_data *bss = hapd->iface->bss[i];

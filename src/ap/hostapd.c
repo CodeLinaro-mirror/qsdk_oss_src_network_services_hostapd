@@ -357,6 +357,8 @@ int hostapd_reload_config(struct hostapd_iface *iface)
 			hapd->iconf,
 			hostapd_get_oper_centr_freq_seg1_idx(oldconf));
 		hapd->conf = newconf->bss[j];
+		hapd->iconf->bandwidth_device = oldconf->bandwidth_device;
+		hapd->iconf->center_freq_device = oldconf->center_freq_device;
 		hostapd_reload_bss(hapd);
 	}
 
@@ -2679,7 +2681,9 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 				     hostapd_get_oper_centr_freq_seg0_idx(
 					     hapd->iconf),
 				     hostapd_get_oper_centr_freq_seg1_idx(
-					     hapd->iconf))) {
+					     hapd->iconf),
+				     hapd->iconf->bandwidth_device,
+				     hapd->iconf->center_freq_device)) {
 			wpa_printf(MSG_ERROR, "Could not set channel for "
 				   "kernel driver");
 			goto fail;
@@ -4580,7 +4584,9 @@ int hostapd_change_config_freq(struct hostapd_data *hapd,
 				    mode ? &mode->eht_capab[IEEE80211_MODE_AP] :
 				    NULL,
 				    hostapd_get_punct_bitmap(hapd),
-				    hapd->iconf->he_6ghz_reg_pwr_type))
+				    hapd->iconf->he_6ghz_reg_pwr_type,
+				    conf->bandwidth_device,
+				    conf->center_freq_device))
 		return -1;
 
 	switch (params->bandwidth) {
@@ -5010,6 +5016,8 @@ hostapd_switch_channel_fallback(struct hostapd_iface *iface,
 	iface->conf->ieee80211ac = freq_params->vht_enabled;
 	iface->conf->ieee80211ax = freq_params->he_enabled;
 	iface->conf->ieee80211be = freq_params->eht_enabled;
+	iface->conf->bandwidth_device = freq_params->bandwidth_device;
+	iface->conf->center_freq_device = freq_params->center_freq_device;
 
 	/*
 	 * cs_params must not be cleared earlier because the freq_params
