@@ -185,7 +185,9 @@ static int nl80211_send_frame_cmd(struct i802_bss *bss,
 				  size_t csa_offs_len, int link_id);
 static int wpa_driver_nl80211_probe_req_report(struct i802_bss *bss,
 					       int report);
-
+static int nl80211_put_freq_params(struct wpa_driver_nl80211_data *drv,
+				   struct nl_msg *msg,
+				   const struct hostapd_freq_params *freq);
 #define IFIDX_ANY -1
 
 static void add_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx,
@@ -5332,9 +5334,9 @@ err:
 }
 #endif /* CONFIG_DRIVER_NL80211_QCA */
 
-
-static int nl80211_put_freq_params(struct nl_msg *msg,
-				   const struct hostapd_freq_params *freq)
+static int nl80211_put_freq_params(struct wpa_driver_nl80211_data *drv,
+				   struct nl_msg *msg,
+ 				   const struct hostapd_freq_params *freq)
 {
 	enum hostapd_hw_mode hw_mode;
 	int is_24ghz;
@@ -5724,7 +5726,7 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 		nla_nest_end(msg, ftm);
 	}
 
-	if (params->freq && nl80211_put_freq_params(msg, params->freq) < 0)
+	if (params->freq && nl80211_put_freq_params(drv, msg, params->freq) < 0)
 		goto fail;
 
 #ifdef CONFIG_IEEE80211AX
@@ -5906,7 +5908,7 @@ static int nl80211_set_channel(struct i802_bss *bss,
 
 	msg = nl80211_bss_msg(bss, 0, set_chan ? NL80211_CMD_SET_CHANNEL :
 			      NL80211_CMD_SET_WIPHY);
-	if (!msg || nl80211_put_freq_params(msg, freq) < 0) {
+	if (!msg || nl80211_put_freq_params(drv, msg, freq) < 0) {
 		nlmsg_free(msg);
 		return -1;
 	}
@@ -6979,7 +6981,7 @@ retry:
 	os_memcpy(drv->ssid, params->ssid, params->ssid_len);
 	drv->ssid_len = params->ssid_len;
 
-	if (nl80211_put_freq_params(msg, &params->freq) < 0 ||
+	if (nl80211_put_freq_params(drv, msg, &params->freq) < 0 ||
 	    nl80211_put_beacon_int(msg, params->beacon_int))
 		goto fail;
 
@@ -11094,7 +11096,7 @@ static int nl80211_start_radar_detection(void *priv,
 	}
 
 	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_RADAR_DETECT)) ||
-	    nl80211_put_freq_params(msg, freq) < 0) {
+	    nl80211_put_freq_params(drv, msg, freq) < 0) {
 		nlmsg_free(msg);
 		return -1;
 	}
@@ -11291,7 +11293,7 @@ nl80211_tdls_enable_channel_switch(void *priv, const u8 *addr, u8 oper_class,
 	if (!msg ||
 	    nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, addr) ||
 	    nla_put_u8(msg, NL80211_ATTR_OPER_CLASS, oper_class) ||
-	    (ret = nl80211_put_freq_params(msg, params))) {
+	    (ret = nl80211_put_freq_params(drv, msg, params))) {
 		nlmsg_free(msg);
 		wpa_printf(MSG_DEBUG, "nl80211: Could not build TDLS chan switch");
 		return ret;
@@ -12002,7 +12004,7 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_CHANNEL_SWITCH)) ||
 	    nla_put_u32(msg, NL80211_ATTR_CH_SWITCH_COUNT,
 			settings->cs_count) ||
-	    (ret = nl80211_put_freq_params(msg, &settings->freq_params)) ||
+	    (ret = nl80211_put_freq_params(drv, msg, &settings->freq_params)) ||
 	    (settings->block_tx &&
 	     nla_put_flag(msg, NL80211_ATTR_CH_SWITCH_BLOCK_TX)) ||
 	    (settings->freq_params.punct_bitmap &&
@@ -12779,7 +12781,7 @@ static int nl80211_join_mesh(struct i802_bss *bss,
 	wpa_printf(MSG_DEBUG, "nl80211: mesh join (ifindex=%d)", drv->ifindex);
 	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_JOIN_MESH);
 	if (!msg ||
-	    nl80211_put_freq_params(msg, &params->freq) ||
+	    nl80211_put_freq_params(drv, msg, &params->freq) ||
 	    nl80211_put_basic_rates(msg, params->basic_rates) ||
 	    nl80211_put_mesh_id(msg, params->meshid, params->meshid_len) ||
 	    nl80211_put_beacon_int(msg, params->beacon_int) ||

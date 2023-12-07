@@ -513,7 +513,6 @@ static void wiphy_info_tdls(struct wpa_driver_capa *capa, struct nlattr *tdls,
 	}
 }
 
-
 static int ext_feature_isset(const u8 *ext_features, int ext_features_len,
 			     enum nl80211_ext_feature_index ftidx)
 {
@@ -725,6 +724,10 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 	if (ext_feature_isset(ext_features, len,
 			      NL80211_EXT_FEATURE_SPP_AMSDU_SUPPORT))
 		capa->flags2 |= WPA_DRIVER_FLAGS2_SPP_AMSDU;
+
+	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_DEVICE_BW))
+		info->drv->device_bw = 1;
 }
 
 

@@ -211,6 +211,7 @@ struct wpa_driver_nl80211_data {
 	unsigned int puncturing:1;
 	unsigned int qca_ap_allowed_freqs:1;
 	unsigned int connect_ext_vendor_cmd_avail:1;
+	unsigned int device_bw:1;
 
 	u8 extra_bss_membership_selectors[8];
 
