@@ -2579,6 +2579,14 @@ static void hostapd_iface_disable(struct hostapd_data *hapd)
 	hapd->disabled = 1;
 }
 
+static void hostapd_event_update_cu_param(struct hostapd_data *hapd,
+					  struct cu_event *cu_event)
+{
+	/* Update critical update parameters */
+	hapd->rx_cu_param.critical_flag = cu_event->critical_flag;
+	hapd->rx_cu_param.bpcc = cu_event->bpcc;
+	hapd->rx_cu_param.switch_count = cu_event->switch_count;
+}
 
 #ifdef CONFIG_IEEE80211BE
 
@@ -2635,6 +2643,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 {
 	struct hostapd_data *hapd = ctx;
 	struct sta_info *sta;
+	struct hostapd_data *link_hapd;
 #ifndef CONFIG_NO_STDOUT_DEBUG
 	int level = MSG_DEBUG;
 
@@ -2993,6 +3002,11 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 	 case EVENT_UPDATE_MUEDCA_PARAMS:
 		 hostapd_event_update_muedca_params(hapd, &data->update_muedca);
 		 break;
+	case EVENT_RX_CRITICAL_UPDATE:
+		link_hapd = switch_link_hapd(hapd, data->cu_event.link_id);
+		if (link_hapd)
+			hostapd_event_update_cu_param(link_hapd, &data->cu_event);
+		break;
 	default:
 		wpa_printf(MSG_DEBUG, "Unknown event %d", event);
 		break;

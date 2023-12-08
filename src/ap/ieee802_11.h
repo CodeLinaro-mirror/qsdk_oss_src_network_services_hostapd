@@ -309,6 +309,7 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd, u8 *eid, u8 *end,
 bool hostapd_is_multiple_link_mld(struct hostapd_data *hapd);
 int sae_password_bind(struct hostapd_data *hapd, const u8 *addr,
 		      const char *password);
+u16 hostapd_critical_update_capab(struct hostapd_data *hapd);
 const char * sae_get_password(struct hostapd_data *hapd,
 			      struct sta_info *sta, const u8 *rx_id,
 			      size_t rx_id_len,

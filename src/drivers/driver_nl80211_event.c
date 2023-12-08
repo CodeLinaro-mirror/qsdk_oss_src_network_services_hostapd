@@ -1463,7 +1463,7 @@ mlme_event_mgmt_critical_update(struct i802_bss *bss, struct nlattr *rx_cu_param
 				wpa_printf(MSG_WARNING,
 						"nl80211: Unknown ifindex (%d) for critical update",
 						ifidx);
-				return;
+				continue;
 			}
 		}
 		if (tmp_bss && mld[NL80211_CU_MLD_ATTR_LINK_LIST]) {
@@ -1494,7 +1494,7 @@ mlme_event_mgmt_critical_update(struct i802_bss *bss, struct nlattr *rx_cu_param
 						event.cu_event.switch_count =
 							nla_get_u8(link[NL80211_CU_MLD_LINK_ATTR_SWITCH_COUNT]);
 					}
-					wpa_supplicant_event(drv->ctx,
+					wpa_supplicant_event(tmp_bss->ctx,
 							     EVENT_RX_CRITICAL_UPDATE, &event);
 				}
 			}

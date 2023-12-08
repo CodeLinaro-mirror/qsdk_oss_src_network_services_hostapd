@@ -2570,6 +2570,7 @@ static int hostapd_ctrl_iface_color_change(struct hostapd_iface *iface,
 	int ret, color;
 	unsigned int i;
 	char *end;
+	struct hostapd_data *link_bss;
 
 	os_memset(&settings, 0, sizeof(settings));
 
@@ -2640,6 +2641,15 @@ static int hostapd_ctrl_iface_color_change(struct hostapd_iface *iface,
 		ret = hostapd_drv_switch_color(bss, &settings);
 		if (ret)
 			hostapd_cleanup_cca_params(bss);
+
+		if (!ret && bss->conf->mld_ap) {
+			/* Generate per sta profiles for affiliated APs */
+			for_each_mld_link(link_bss, bss) {
+				if (bss == link_bss)
+					continue;
+				hostapd_gen_per_sta_profiles(link_bss);
+			}
+		}
 
 		free_beacon_data(&settings.beacon_cca);
 		free_beacon_data(&settings.beacon_after);

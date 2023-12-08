@@ -281,6 +281,29 @@ u16 hostapd_own_capab_info(struct hostapd_data *hapd)
 }
 
 
+u16 hostapd_critical_update_capab(struct hostapd_data *hapd)
+{
+	int capab = 0;
+	struct hostapd_data *bss;
+	size_t i;
+
+	if (!hapd)
+		return capab;
+
+	if (hapd->conf->mld_ap && hapd->rx_cu_param.critical_flag)
+		capab |= WLAN_CAPABILITY_PBCC;
+
+	if (hapd->iconf && hapd->iconf->mbssid) {
+		for (i = 1; i < hapd->iface->num_bss; i++) {
+			bss = hapd->iface->bss[i];
+			if (bss && bss->conf->mld_ap && bss->rx_cu_param.critical_flag)
+				capab |= WLAN_CAPABILITY_CHANNEL_AGILITY;
+		}
+	}
+	return capab;
+}
+
+
 #ifdef CONFIG_WEP
 #ifndef CONFIG_NO_RC4
 static u16 auth_shared_key(struct hostapd_data *hapd, struct sta_info *sta,
@@ -6951,6 +6974,43 @@ static void notify_mgmt_frame(struct hostapd_data *hapd, const u8 *buf,
 
 
 /**
+ * ieee80211_clear_critical_flag - clear critical flags on mbssid profile and MLD links
+ * @hapd: hostapd BSS data structure (the BSS to which the management frame was
+ * sent to)
+ *
+ * Clear critical flags after sending probe /assoc response frame because driver
+ * will update critical flags for each of these frames through NL80211_CMD_FRAME event
+ */
+
+static void ieee80211_clear_critical_flag(struct hostapd_data *hapd)
+{
+	struct hostapd_data *bss, *link_bss;
+	size_t i;
+
+	if (!hapd->conf->mld_ap)
+		return;
+	/*clear mbssid bss critical flags*/
+	if (hapd->iconf->mbssid) {
+		for (i = 0; i < hapd->iface->num_bss; i++) {
+			bss = hapd->iface->bss[i];
+			if (bss)
+				bss->rx_cu_param.critical_flag  = 0;
+		}
+	} else {
+		/*clear bss critical flag*/
+		hapd->rx_cu_param.critical_flag  = 0;
+	}
+
+	/*clear MLO partner link bss critical flags*/
+	for_each_mld_link(link_bss, hapd) {
+		if (hapd == link_bss)
+			continue;
+		link_bss->rx_cu_param.critical_flag  = 0;
+	}
+}
+
+
+/**
  * ieee802_11_mgmt - process incoming IEEE 802.11 management frames
  * @hapd: hostapd BSS data structure (the BSS to which the management frame was
  * sent to)
@@ -7038,6 +7098,7 @@ int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 
 	if (stype == WLAN_FC_STYPE_PROBE_REQ) {
 		handle_probe_req(hapd, mgmt, len, ssi_signal);
+		ieee80211_clear_critical_flag(hapd);
 		return 1;
 	}
 
@@ -7074,11 +7135,13 @@ int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 	case WLAN_FC_STYPE_ASSOC_REQ:
 		wpa_printf(MSG_DEBUG, "mgmt::assoc_req");
 		handle_assoc(hapd, mgmt, len, 0, ssi_signal);
+		ieee80211_clear_critical_flag(hapd);
 		ret = 1;
 		break;
 	case WLAN_FC_STYPE_REASSOC_REQ:
 		wpa_printf(MSG_DEBUG, "mgmt::reassoc_req");
 		handle_assoc(hapd, mgmt, len, 1, ssi_signal);
+		ieee80211_clear_critical_flag(hapd);
 		ret = 1;
 		break;
 	case WLAN_FC_STYPE_DISASSOC:
@@ -8747,22 +8810,32 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 
 #ifdef CONFIG_IEEE80211BE
 	if (ap_mld) {
-		u8 param_ch = bss->eht_mld_bss_param_change;
-
+		u8 param_ch = bss->rx_cu_param.bpcc;
 		/* If BSS is not a partner of the reporting_hapd or
 		 * it is one of the nontransmitted hapd,
 		 *  a) MLD ID advertised shall be 255.
 		 *  b) Link ID advertised shall be 15.
 		 *  c) BPCC advertised shall be 255 */
-		/* MLD ID */
-		*eid++ = match_idx;
-		/* Link ID (Bit 3 to Bit 0)
-		 * BPCC (Bit 4 to Bit 7) */
-		*eid++ = match_idx < 255 ?
-			bss->mld_link_id | ((param_ch & 0xF) << 4) :
-			(MAX_NUM_MLD_LINKS | 0xF0);
-		/* BPCC (Bit 3 to Bit 0) */
-		*eid = match_idx < 255 ? ((param_ch & 0xF0) >> 4) : 0x0F;
+
+  		/* If atleast one of the MLD params is Unknown, set Unknown for all
+		 * mld params.
+		 */
+		if ((match_idx == 0xff) || (bss->mld_link_id == 0xf) ||
+		    (param_ch == 0xff)) {
+			*eid++ = 0xff;
+			*eid++ = 0xff;
+			*eid = 0xf;
+		} else {
+			/* MLD ID */
+			*eid++ = match_idx;
+			/* TODO colocated bss match + MBSSID + MLO case */
+			/* Link ID */
+			*eid++ = (bss->mld_link_id & 0xf) |
+				 (param_ch & 0xf) << 4;
+			/* BPCC */
+			*eid = (param_ch & 0xf0) >> 4;
+		}
+
 #ifdef CONFIG_TESTING_OPTIONS
 		if (bss->conf->mld_indicate_disabled)
 			*eid |= RNR_TBTT_INFO_MLD_PARAM2_LINK_DISABLED;
@@ -9178,6 +9251,9 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		capab_info = hostapd_own_capab_info(bss);
 		*eid++ = WLAN_EID_NONTRANSMITTED_BSSID_CAPA;
 		*eid++ = sizeof(capab_info);
+		if (bss->conf->mld_ap && bss->rx_cu_param.critical_flag)
+			capab_info |= WLAN_CAPABILITY_PBCC;
+
 		WPA_PUT_LE16(eid, capab_info);
 		eid += sizeof(capab_info);
 

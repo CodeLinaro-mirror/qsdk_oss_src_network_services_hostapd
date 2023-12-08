@@ -1073,6 +1073,9 @@ static void hostapd_gen_probe_resp(struct hostapd_data *hapd,
 	params->resp->u.probe_resp.capab_info =
 		host_to_le16(hostapd_own_capab_info(hapd));
 
+	params->resp->u.probe_resp.capab_info |=
+		host_to_le16(hostapd_critical_update_capab(hapd));
+
 	pos = hostapd_probe_resp_fill_elems(hapd_probed, params,
 					    params->resp->u.probe_resp.variable,
 					    buflen);
@@ -3195,7 +3198,7 @@ static u8 * hostapd_gen_sta_profile(struct ieee80211_mgmt *link_data,
 }
 
 
-static void hostapd_gen_per_sta_profiles(struct hostapd_data *hapd)
+void hostapd_gen_per_sta_profiles(struct hostapd_data *hapd)
 {
 	bool tx_vap = hapd == hostapd_mbssid_get_tx_bss(hapd);
 	size_t link_data_len, sta_profile_len;
