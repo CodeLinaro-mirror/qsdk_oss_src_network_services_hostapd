@@ -521,6 +521,12 @@ static void ap_ht40_scan_retry(void *eloop_data, void *user_data)
 	else
 		ieee80211n_scan_channels_5g(iface, &params);
 
+	if (iface->num_multi_hws) {
+		params.bssid = iface->bss[0]->conf->bssid;
+		wpa_printf(MSG_DEBUG, "HT40 scan triggered with bssid" MACSTR "\n",
+			   MAC2STR(params.bssid));
+	}
+
 	ret = hostapd_driver_scan(iface->bss[0], &params);
 	iface->num_ht40_scan_tries++;
 	os_free(params.freqs);
@@ -572,6 +578,12 @@ static int ieee80211n_check_40mhz(struct hostapd_iface *iface)
 		ieee80211n_scan_channels_2g4(iface, &params);
 	else
 		ieee80211n_scan_channels_5g(iface, &params);
+
+	if (iface->num_multi_hws) {
+		params.bssid = iface->bss[0]->conf->bssid;
+		wpa_printf(MSG_DEBUG, "scan triggered with bssid" MACSTR "\n",
+			   MAC2STR(params.bssid));
+	}
 
 	ret = hostapd_driver_scan(iface->bss[0], &params);
 	os_free(params.freqs);

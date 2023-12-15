@@ -1472,6 +1472,12 @@ static int acs_request_scan(struct hostapd_iface *iface)
 			   iface->acs_num_completed_scans + 1,
 			   iface->conf->acs_num_scans);
 
+	if (iface->num_multi_hws) {
+		params.bssid = iface->bss[0]->conf->bssid;
+		wpa_printf(MSG_DEBUG, "scan triggered with bssid" MACSTR "\n",
+			   MAC2STR(params.bssid));
+	}
+
 	ret = hostapd_driver_scan(iface->bss[0], &params);
 	os_free(params.freqs);
 
