@@ -675,11 +675,12 @@ static const u8 * wpa_ft_get_psk(struct wpa_authenticator *wpa_auth,
 
 
 static struct wpa_state_machine *
-wpa_ft_add_sta(struct wpa_authenticator *wpa_auth, const u8 *sta_addr)
+wpa_ft_add_sta(struct wpa_authenticator *wpa_auth, const u8 *sta_addr,
+	       bool is_ml)
 {
 	if (wpa_auth->cb->add_sta == NULL)
 		return NULL;
-	return wpa_auth->cb->add_sta(wpa_auth->cb_ctx, sta_addr);
+	return wpa_auth->cb->add_sta(wpa_auth->cb_ctx, sta_addr, is_ml);
 }
 
 
@@ -4287,8 +4288,39 @@ static int wpa_ft_rrb_rx_request(struct wpa_authenticator *wpa_auth,
 	u8 *resp_ies;
 	size_t resp_ies_len;
 	int res;
+	bool is_ml = false;
+	struct ieee802_11_elems elems;
+	const u8 *mld_mac;
 
-	sm = wpa_ft_add_sta(wpa_auth, sta_addr);
+	if (ieee802_11_parse_elems(body, len, &elems, 1) == ParseFailed) {
+		wpa_printf(MSG_DEBUG,
+			   "ERROR!! %s parse_elems failure for " MACSTR,
+			   __func__,
+			   MAC2STR(sta_addr));
+		return -1;
+	}
+
+	if (elems.basic_mle) {
+		mld_mac = get_basic_mle_mld_addr(elems.basic_mle, elems.basic_mle_len);
+		if (!mld_mac) {
+			wpa_printf(MSG_ERROR,
+				   "ERROR!! %s MLD Mac extraction from ML-IE failure\n",
+				   __func__);
+		} else {
+			if (os_memcmp(mld_mac, sta_addr, ETH_ALEN) != 0) {
+				wpa_printf(MSG_ERROR,
+					   "ERROR!! %s MIMSATCH between sta_addr in FT-REQUEST fixed field and in the ML-IE "MACSTR" "MACSTR"\n",
+					   __func__, MAC2STR(mld_mac), MAC2STR(sta_addr));
+				return -1;
+			}
+			wpa_printf(MSG_MSGDUMP,
+				   "FT over DS: Received STA "MACSTR" "MACSTR"\n",
+				   MAC2STR(mld_mac), MAC2STR(sta_addr));
+			is_ml = true;
+		}
+	}
+
+	sm = wpa_ft_add_sta(wpa_auth, sta_addr, is_ml);
 	if (sm == NULL) {
 		wpa_printf(MSG_DEBUG, "FT: Failed to add new STA based on "
 			   "RRB Request");

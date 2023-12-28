@@ -3234,6 +3234,7 @@ void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
 	interfaces->mld = all_mld;
 	interfaces->mld[interfaces->mld_count] = mld;
 	interfaces->mld_count++;
+	dl_list_init(&hapd->mld->ft_ds_ml_stas);
 
 	return;
 fail:

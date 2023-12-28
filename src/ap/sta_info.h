@@ -101,6 +101,7 @@ struct sta_info {
 	u8 supported_rates[WLAN_SUPP_RATES_MAX];
 	int supported_rates_len;
 	u8 qosinfo; /* Valid when WLAN_STA_WMM is set */
+	int ft_over_ds_saquery_status;
 
 #ifdef CONFIG_MESH
 	enum mesh_plink_state plink_state;
@@ -355,6 +356,8 @@ int ap_for_each_sta(struct hostapd_data *hapd,
 		    int (*cb)(struct hostapd_data *hapd, struct sta_info *sta,
 			      void *ctx),
 		    void *ctx);
+struct hostapd_ft_over_ds_ml_sta_entry *ap_get_ft_ds_ml_sta(struct hostapd_data *hapd,
+							    const u8 *sta_mld);
 struct sta_info * ap_get_sta(struct hostapd_data *hapd, const u8 *sta);
 struct sta_info * ap_get_link_sta(struct hostapd_data *hapd,
 				  const u8 *link_addr);
@@ -442,6 +445,10 @@ static inline void ap_sta_set_mld(struct sta_info *sta, bool mld)
 #endif /* CONFIG_IEEE80211BE */
 }
 
+#ifdef CONFIG_IEEE80211BE
+void ap_sta_remove_link_sta(struct hostapd_data *hapd,
+                            struct sta_info *sta);
+#endif
 void ap_sta_free_sta_profile(struct mld_info *info);
 
 void hostapd_free_link_stas(struct hostapd_data *hapd);

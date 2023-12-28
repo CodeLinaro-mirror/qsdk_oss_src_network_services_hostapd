@@ -131,7 +131,7 @@ hostapd_drv_send_action_cancel_wait(struct hostapd_data *hapd)
 	hapd->driver->send_action_cancel_wait(hapd->drv_priv);
 }
 int hostapd_add_sta_node(struct hostapd_data *hapd, const u8 *addr,
-			 u16 auth_alg);
+			 u16 auth_alg, bool is_ml);
 int hostapd_sta_auth(struct hostapd_data *hapd, const u8 *addr,
 		     u16 seq, u16 status, const u8 *ie, size_t len);
 int hostapd_sta_assoc(struct hostapd_data *hapd, const u8 *addr,

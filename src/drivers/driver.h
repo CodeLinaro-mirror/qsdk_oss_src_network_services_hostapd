@@ -4759,7 +4759,7 @@ struct wpa_driver_ops {
 	 * This function adds the station node in the driver, when
 	 * the station gets added by FT-over-DS.
 	 */
-	int (*add_sta_node)(void *priv, const u8 *addr, u16 auth_alg);
+	int (*add_sta_node)(void *priv, const u8 *addr, u16 auth_alg, bool is_ml);
 
 	/**
 	 * sched_scan - Request the driver to initiate scheduled scan

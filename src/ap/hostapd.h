@@ -584,6 +584,17 @@ struct hostapd_sta_info {
 };
 
 #ifdef CONFIG_IEEE80211BE
+
+/**
+ * struct hostapd_ft_over_ds_ml_sta_entry - ft over ds ml sta structure
+ */
+struct hostapd_ft_over_ds_ml_sta_entry {
+	struct dl_list list;
+	u8 mld_mac[ETH_ALEN];
+	struct wpa_state_machine *wpa_sm;
+	struct wpa_authenticator *wpa_auth;
+};
+
 /**
  * struct hostapd_mld - hostapd per-mld data structure
  */
@@ -601,6 +612,7 @@ struct hostapd_mld {
 
 	struct hostapd_data *fbss;
 	struct dl_list links; /* List head of all affiliated links */
+	struct dl_list ft_ds_ml_stas;
 
 	int ctrl_sock;
 	struct dl_list ctrl_dst;

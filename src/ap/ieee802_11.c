@@ -3535,6 +3535,17 @@ static void handle_auth(struct hostapd_data *hapd,
 		return;
 	}
 #endif /* CONFIG_SAE */
+	{
+		struct hostapd_ft_over_ds_ml_sta_entry *entry;
+
+		entry = ap_get_ft_ds_ml_sta(hapd, sa);
+		if (entry) {
+			wpa_printf(MSG_ERROR,
+				   "handle_auth: Auth frame received with SA = FT-OVER-DS list MLD mac "MACSTR"\n",
+				   MAC2STR(sa));
+			return;
+		}
+	}
 
 	sta = ap_get_sta(hapd, sa);
 	if (sta) {
@@ -3791,6 +3802,21 @@ static void handle_auth(struct hostapd_data *hapd,
 	}
 }
 
+void hostap_ft_ds_ml_sta_timeout(void *eloop_ctx, void *timeout_ctx)
+{
+	struct hostapd_ft_over_ds_ml_sta_entry *entry = eloop_ctx;
+
+	if (!entry)
+		return;
+
+	wpa_printf(MSG_DEBUG, "%s: removing "MACSTR"\n", __func__,
+		   MAC2STR(entry->mld_mac));
+	if (entry->wpa_sm)
+		wpa_auth_sta_deinit(entry->wpa_sm);
+
+	dl_list_del(&entry->list);
+	os_free(entry);
+}
 
 static u8 hostapd_max_bssid_indicator(struct hostapd_data *hapd)
 {
@@ -6024,6 +6050,105 @@ static struct sta_info * handle_mlo_translate(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 
+#ifdef CONFIG_IEEE80211R_AP
+static const u8 *
+hostapd_mlie_to_get_mld_addr_from_assoc(struct hostapd_data *hapd,
+					const struct ieee80211_mgmt *mgmt,
+					size_t len, int reassoc)
+{
+	struct ieee802_11_elems elems;
+	const u8 *pos;
+	int assoc_ies_len;
+
+	if (!hapd->mld)
+		return NULL;
+	pos = reassoc ? mgmt->u.reassoc_req.variable : mgmt->u.assoc_req.variable;
+	if (!pos)
+		return NULL;
+
+	if (reassoc) {
+		len -= offsetof(struct ieee80211_mgmt, u.reassoc_req.variable);
+		assoc_ies_len = (int)len - (pos - mgmt->u.reassoc_req.variable);
+	} else {
+		len -= offsetof(struct ieee80211_mgmt, u.assoc_req.variable);
+		assoc_ies_len = (int)len - (pos - mgmt->u.assoc_req.variable);
+	}
+
+	if (ieee802_11_parse_elems(pos, assoc_ies_len,
+				   &elems, 0) == ParseFailed) {
+		wpa_printf(MSG_DEBUG,
+			   "MLD: Failed parsing Authentication frame");
+		return NULL;
+	}
+
+	if (!elems.basic_mle || !elems.basic_mle_len)
+		return NULL;
+
+	return get_basic_mle_mld_addr(elems.basic_mle, elems.basic_mle_len);
+}
+
+static struct sta_info *
+get_sta_from_ft_ds_list(struct hostapd_data *hapd,
+			const struct ieee80211_mgmt *mgmt,
+			size_t len, int reassoc)
+{
+	struct hostapd_ft_over_ds_ml_sta_entry *entry;
+	const u8 *sta_mld;
+	struct wpa_state_machine *wpa_sm;
+	struct sta_info *sta;
+
+	if (!hapd->mld)
+		return NULL;
+
+	sta_mld = hostapd_mlie_to_get_mld_addr_from_assoc(hapd, mgmt, len, reassoc);
+	if (!sta_mld)
+		return NULL;
+
+	entry = ap_get_ft_ds_ml_sta(hapd, sta_mld);
+	if (!entry)
+		return NULL;
+
+	wpa_sm = entry->wpa_sm;
+
+	if (hapd->mld_link_id != wpa_sm->wpa_auth->link_id) {
+		wpa_printf(MSG_DEBUG, "FT: assoc link id different from"
+			   " the MLD id hence changing wpa_auth of sm to assoc link");
+		wpa_group_put_sm(wpa_sm);
+		wpa_sm->wpa_auth = hapd->wpa_auth;
+		wpa_sm->group = hapd->wpa_auth->group;
+		wpa_group_get_sm(wpa_sm);
+	}
+
+	eloop_cancel_timeout(hostap_ft_ds_ml_sta_timeout, entry, NULL);
+	dl_list_del(&entry->list);
+	os_free(entry);
+
+	if (wpa_sm) {
+		wpa_auth_sta_addr_change(wpa_sm, mgmt->sa);
+		if (!wpa_sm->group)
+			wpa_sm->group = hapd->wpa_auth->group;
+	}  else {
+		wpa_printf(MSG_DEBUG, "%s : Temp reject the station as it is a existing entry",
+			   __func__);
+		return NULL;
+	}
+
+	sta = ap_sta_add(hapd, mgmt->sa);
+	if (!sta) {
+		if (wpa_sm)
+			wpa_auth_sta_deinit(wpa_sm);
+		return NULL;
+	}
+
+	sta->auth_alg = WLAN_AUTH_FT;
+	sta->ft_over_ds = true;
+	sta->wpa_sm = wpa_sm;
+	//sta->ft_over_ds_saquery_status = sa_query_status;
+
+	return sta;
+}
+#endif
+
 static void handle_assoc(struct hostapd_data *hapd,
 			 const struct ieee80211_mgmt *mgmt, size_t len,
 			 int reassoc, int rssi)
@@ -6133,6 +6258,11 @@ static void handle_assoc(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211R_AP
+	if (!sta) {
+		wpa_printf(MSG_DEBUG,
+			   "FT over DS: Check for STA entry with ML address");
+		sta = get_sta_from_ft_ds_list(hapd, mgmt, len, reassoc);
+	}
 	if (sta && sta->auth_alg == WLAN_AUTH_FT &&
 	    (sta->flags & WLAN_STA_AUTH) == 0) {
 		wpa_printf(MSG_DEBUG, "FT: Allow STA " MACSTR " to associate "

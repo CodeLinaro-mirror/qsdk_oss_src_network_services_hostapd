@@ -66,6 +66,29 @@ int ap_for_each_sta(struct hostapd_data *hapd,
 }
 
 
+struct hostapd_ft_over_ds_ml_sta_entry *ap_get_ft_ds_ml_sta(struct hostapd_data *hapd,
+							    const u8 *sta)
+{
+	struct hostapd_ft_over_ds_ml_sta_entry *item;
+
+	if (!hapd->mld) {
+		wpa_printf(MSG_ERROR, "NULL Pointer %s:%d\n",
+			   __func__, __LINE__);
+		return NULL;
+	}
+
+	if (!sta)
+		return NULL;
+
+	dl_list_for_each(item, &hapd->mld->ft_ds_ml_stas,
+			  struct hostapd_ft_over_ds_ml_sta_entry, list) {
+		if (os_memcmp(item->mld_mac, sta, ETH_ALEN) == 0)
+			return item;
+	}
+	return NULL;
+}
+
+
 struct sta_info * ap_get_sta(struct hostapd_data *hapd, const u8 *sta)
 {
 	struct sta_info *s;
@@ -2011,8 +2034,8 @@ int ap_sta_pending_delayed_1x_auth_fail_disconnect(struct hostapd_data *hapd,
 
 
 #ifdef CONFIG_IEEE80211BE
-static void ap_sta_remove_link_sta(struct hostapd_data *hapd,
-				   struct sta_info *sta)
+void ap_sta_remove_link_sta(struct hostapd_data *hapd,
+			    struct sta_info *sta)
 {
 	struct hostapd_data *tmp_hapd;
 

@@ -402,7 +402,8 @@ struct wpa_auth_callbacks {
 				   const u8 *anonce,
 				   const u8 *eapol, size_t eapol_len);
 #ifdef CONFIG_IEEE80211R_AP
-	struct wpa_state_machine * (*add_sta)(void *ctx, const u8 *sta_addr);
+	struct wpa_state_machine * (*add_sta)(void *ctx, const u8 *sta_addr,
+					      bool is_ml);
 	int (*add_sta_ft)(void *ctx, const u8 *sta_addr);
 	int (*set_vlan)(void *ctx, const u8 *sta_addr,
 			struct vlan_description *vlan);
@@ -477,6 +478,7 @@ int wpa_auth_uses_ocv(struct wpa_state_machine *sm);
 struct wpa_state_machine *
 wpa_auth_sta_init(struct wpa_authenticator *wpa_auth, const u8 *addr,
 		  const u8 *p2p_dev_addr);
+void wpa_auth_sta_addr_change(struct wpa_state_machine *wpa_sm, const u8 *addr);
 int wpa_auth_sta_associated(struct wpa_authenticator *wpa_auth,
 			    struct wpa_state_machine *sm);
 void wpa_auth_sta_no_wpa(struct wpa_state_machine *sm);
@@ -707,6 +709,8 @@ void wpa_reset_assoc_sm_info(struct wpa_state_machine *assoc_sm,
 		if (sm->mld_links[link_id].valid &&			\
 		    sm->mld_links[link_id].wpa_auth &&			\
 		    sm->wpa_auth != sm->mld_links[link_id].wpa_auth)
+void wpa_group_get_sm(struct wpa_state_machine *sm);
+void wpa_group_put_sm(struct wpa_state_machine *sm);
 
 static inline bool wpa_auth_pmf_enabled(struct wpa_auth_config *conf)
 {

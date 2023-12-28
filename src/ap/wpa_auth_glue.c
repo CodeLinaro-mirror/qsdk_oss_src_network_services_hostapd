@@ -1212,7 +1212,90 @@ static int hostapd_wpa_auth_send_ft_action(void *ctx, const u8 *dst,
 
 
 static struct wpa_state_machine *
-hostapd_wpa_auth_add_sta(void *ctx, const u8 *sta_addr)
+hostapd_wpa_auth_add_sta_ml(struct hostapd_data *hapd, const u8 *sta_mld)
+{
+	struct sta_info *sta_ml_obj;
+	bool new_allocation = false;
+	bool ft_ds_list_found = false;
+	struct hostapd_ft_over_ds_ml_sta_entry *entry;
+	struct wpa_state_machine *wpa_sm = NULL;
+
+	if (!hapd->mld) {
+		wpa_printf(MSG_ERROR, "%s hapd is not MLO\n", __func__);
+		return NULL;
+	}
+
+	entry = ap_get_ft_ds_ml_sta(hapd, sta_mld);
+	if (!entry) {
+		entry = os_zalloc(sizeof(*entry));
+		if (entry == NULL) {
+			wpa_printf(MSG_ERROR,
+				   "%s: failed to allocate ft_ds_ml_entry\n",
+				   __func__);
+			return NULL;
+		}
+		new_allocation = true;
+		os_memcpy(entry->mld_mac, sta_mld, 6);
+		entry->wpa_auth = hapd->wpa_auth;
+	} else {
+		ft_ds_list_found = true;
+	}
+
+	sta_ml_obj = ap_get_sta(hapd, sta_mld);
+	if (sta_ml_obj) {
+		/* WAR: Remove and add the sta to make it as source to target
+		 * roaming though it is target to source.
+		 *
+		 * TODO: Remove this WAR when handling FT roaming if STA exist.
+		 */
+		wpa_printf(MSG_DEBUG, "Remove STA "MACSTR" to make source to"
+			   " target roaming", MAC2STR(sta_mld));
+		ap_sta_remove_link_sta(hapd, sta_ml_obj);
+		ap_free_sta(hapd, sta_ml_obj);
+		sta_ml_obj = NULL;
+	}
+
+	if (!wpa_sm) {
+		/*
+		 * entry->wpa_sm is marked only if wpa-sm is newly
+		 * allocated during the FT-Over-DS entry addition here.
+		 * Otherwise entry-wpa_sm remains as NULL
+		 *
+		 * On receiving assoc-request if a sta_info node has to be
+		 * created entry->wpa_sm should be available to attach to that
+		 * sta_info.
+		 */
+		entry->wpa_sm =
+			wpa_auth_sta_init(hapd->wpa_auth, sta_mld, NULL);
+		wpa_sm = entry->wpa_sm;
+	}
+
+	if (wpa_sm == NULL) {
+		wpa_printf(MSG_ERROR, "%s: wpa_sm NULL\n", __func__);
+		if (new_allocation)
+			os_free(entry);
+		return NULL;
+	}
+
+	if (ft_ds_list_found)
+		/*
+		 * Cancel the existing timer
+		 */
+		eloop_cancel_timeout(hostap_ft_ds_ml_sta_timeout, entry, NULL);
+	else
+		dl_list_add(&hapd->mld->ft_ds_ml_stas, &entry->list);
+
+	/*
+	 * Expect FT-Assoc at least 5 seconds after receiving FT-Request,
+	 * otherwise remove from list
+	 */
+	eloop_register_timeout(5, 0, hostap_ft_ds_ml_sta_timeout, entry, NULL);
+	return wpa_sm;
+}
+
+
+static struct wpa_state_machine *
+hostapd_wpa_auth_add_sta(void *ctx, const u8 *sta_addr, bool is_ml)
 {
 	struct hostapd_data *hapd = ctx;
 	struct sta_info *sta;
@@ -1221,7 +1304,7 @@ hostapd_wpa_auth_add_sta(void *ctx, const u8 *sta_addr)
 	wpa_printf(MSG_DEBUG, "Add station entry for " MACSTR
 		   " based on WPA authenticator callback",
 		   MAC2STR(sta_addr));
-	ret = hostapd_add_sta_node(hapd, sta_addr, WLAN_AUTH_FT);
+	ret = hostapd_add_sta_node(hapd, sta_addr, WLAN_AUTH_FT, is_ml);
 
 	/*
 	 * The expected return values from hostapd_add_sta_node() are
@@ -1231,6 +1314,9 @@ hostapd_wpa_auth_add_sta(void *ctx, const u8 *sta_addr)
 	 * any other negative value: error in adding the STA entry */
 	if (ret < 0 && ret != -EOPNOTSUPP)
 		return NULL;
+
+	if (is_ml)
+		return hostapd_wpa_auth_add_sta_ml(hapd, sta_addr);
 
 	sta = ap_sta_add(hapd, sta_addr);
 	if (sta == NULL)

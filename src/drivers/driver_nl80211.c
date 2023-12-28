@@ -12604,7 +12604,7 @@ fail:
 }
 
 
-static int nl80211_add_sta_node(void *priv, const u8 *addr, u16 auth_alg)
+static int nl80211_add_sta_node(void *priv, const u8 *addr, u16 auth_alg, bool is_ml)
 {
 	struct i802_bss *bss = priv;
 	struct wpa_driver_nl80211_data *drv = bss->drv;

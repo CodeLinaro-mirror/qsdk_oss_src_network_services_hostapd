@@ -996,6 +996,12 @@ int wpa_reconfig(struct wpa_authenticator *wpa_auth,
 }
 
 
+void wpa_auth_sta_addr_change(struct wpa_state_machine *wpa_sm, const u8 *addr)
+{
+	os_memcpy(wpa_sm->addr, addr, sizeof(wpa_sm->addr));
+}
+
+
 struct wpa_state_machine *
 wpa_auth_sta_init(struct wpa_authenticator *wpa_auth, const u8 *addr,
 		  const u8 *p2p_dev_addr)
@@ -7019,6 +7025,15 @@ static void wpa_group_put(struct wpa_authenticator *wpa_auth,
 	wpa_group_free(wpa_auth, group);
 }
 
+void wpa_group_get_sm(struct wpa_state_machine *sm)
+{
+	wpa_group_get(sm->wpa_auth, sm->group);
+}
+
+void wpa_group_put_sm(struct wpa_state_machine *sm)
+{
+	wpa_group_put(sm->wpa_auth, sm->group);
+}
 
 /*
  * Add a group that has its references counter set to zero. Caller needs to
