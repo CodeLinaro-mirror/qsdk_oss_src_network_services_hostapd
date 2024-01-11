@@ -5925,7 +5925,8 @@ static void handle_auth(struct hostapd_data *hapd,
 	 * will translate addresses in the frame and we need to avoid overriding
 	 * peer_addr based on mgmt->sa which would have been translated to the
 	 * MLD MAC address. */
-	if (!sta->added_unassoc && auth_transaction == 1) {
+	if ((!(sta->flags & WLAN_STA_MFP) || !ap_sta_is_authorized(sta)) &&
+	    !sta->added_unassoc && auth_transaction == 1) {
 		ap_sta_free_sta_profile(&sta->mld_info);
 		os_memset(&sta->mld_info, 0, sizeof(sta->mld_info));
 
@@ -5947,8 +5948,7 @@ static void handle_auth(struct hostapd_data *hapd,
 				  hapd->own_addr, ETH_ALEN);
 		}
 
-		if ((!(sta->flags & WLAN_STA_MFP) ||
-		     !ap_sta_is_authorized(sta)) && sta->wpa_sm) {
+		if (sta->wpa_sm) {
 			struct wpa_state_machine *sm = sta->wpa_sm;
 
 			clear_wpa_sm_for_each_partner_link(hapd, sta);
