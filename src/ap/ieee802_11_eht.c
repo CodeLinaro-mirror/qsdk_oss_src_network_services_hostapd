@@ -509,6 +509,12 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 	/* BSS Parameters Change Count */
 	wpabuf_put_u8(buf, hapd->rx_cu_param.bpcc);
 
+	/* Reset the EMLSR Transision and Padding delay to zero for
+	 * MLD AP as per IEEE802.11 be draft 5.0
+	 */
+	hapd->iface->mld_eml_capa &= ~EHT_ML_EML_CAPA_EMLSR_TRANS_DELAY_MASK;
+	hapd->iface->mld_eml_capa &= ~EHT_ML_EML_CAPA_EMLSR_PADDING_DELAY_MASK;
+
 	wpa_printf(MSG_DEBUG, "MLD: EML Capabilities=0x%x",
 		   hapd->iface->mld_eml_capa);
 	wpabuf_put_le16(buf, hapd->iface->mld_eml_capa);
