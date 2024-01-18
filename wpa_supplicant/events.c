@@ -6690,9 +6690,12 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 #ifdef CONFIG_AP
 #ifdef NEED_AP_MLME
 	case EVENT_DFS_RADAR_DETECTED:
-		if (data)
+		if (data) {
+			wpa_msg(wpa_s, MSG_INFO, "%s on %d MHz", DFS_EVENT_RADAR_DETECTED,
+				data->dfs_event.freq);
 			wpas_ap_event_dfs_radar_detected(wpa_s,
 							 &data->dfs_event);
+		}
 		break;
 	case EVENT_DFS_NOP_FINISHED:
 		if (data)

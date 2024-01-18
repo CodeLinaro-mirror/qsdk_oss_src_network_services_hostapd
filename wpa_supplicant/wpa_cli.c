@@ -4543,6 +4543,8 @@ static void wpa_cli_action_process(const char *msg)
 		wpa_cli_exec(action_file, ifname, pos);
 	} else if (str_starts(pos, DPP_EVENT_NET_ACCESS_KEY)) {
 		wpa_cli_exec(action_file, ifname, pos);
+	} else if (str_starts(pos, DFS_EVENT_RADAR_DETECTED)) {
+		wpa_cli_exec(action_file, ifname, pos);
 	} else if (str_starts(pos, WPA_EVENT_TERMINATING)) {
 		printf("wpa_supplicant is terminating - stop monitoring\n");
 		if (!reconnect)

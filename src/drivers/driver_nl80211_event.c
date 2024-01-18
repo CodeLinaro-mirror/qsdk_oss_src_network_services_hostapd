@@ -2826,6 +2826,9 @@ static void nl80211_radar_event(struct i802_bss *bss, struct nlattr **tb)
 	if (tb[NL80211_ATTR_RADAR_BITMAP])
 		data.dfs_event.radar_bitmap = nla_get_u16(tb[NL80211_ATTR_RADAR_BITMAP]);
 
+	if (is_sta_interface(drv->nlmode))
+		return nl80211_process_radar_event(bss, &data, event_type);
+
 	wpa_printf(MSG_DEBUG,
 		   "nl80211: Checking suitable BSS for the DFS event");
 
