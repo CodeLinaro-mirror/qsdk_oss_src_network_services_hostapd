@@ -4299,6 +4299,64 @@ out:
 }
 
 
+/* Returns true if all freq count and link count
+ * are same, false otherwise
+ */
+static bool is_all_links_associated(struct wpa_supplicant *wpa_s)
+{
+	int i = 0, freq;
+	int *freq_list = &wpa_s->conf->freq_list[0];
+	u16 valid_links = wpa_s->valid_links;
+	u8 freq_lists = 0; /* Bitmap of user configured frequencies */
+	u8 link_count = 0, freq_count = 0;
+	bool is_split_phy_5ghz = false, is_split_phy_6ghz = false;
+
+	/* If valid_links is not set, consider that all links are associated
+	 * Note: freq_list is not mandotary to present in station
+	 * configuration file.
+	 */
+	if (!valid_links || !freq_list)
+		return true;
+
+	i = 0;
+
+	freq = freq_list[i];
+	while(freq) {
+		if (!(freq < 5180 || freq > 5885)) {
+			if (is_split_phy_5ghz &&
+			    (freq >= 5180 && freq < 5490))
+				freq_lists |= SCAN_FREQ_BAND_5GHZ_LOW;
+			else
+				freq_lists |= SCAN_FREQ_BAND_5GHZ;
+		} else if (is_6ghz_freq(freq)) {
+			if (is_split_phy_6ghz &&
+			    (freq > 5925 && freq < 6425))
+				freq_lists |= SCAN_FREQ_BAND_6GHZ_LOW;
+			else
+				freq_lists |= SCAN_FREQ_BAND_6GHZ;
+		} else
+			freq_lists |= SCAN_FREQ_BAND_2GHZ;
+
+		freq = freq_list[++i];
+	}
+
+	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+		if (valid_links & BIT(i))
+			link_count++;
+	}
+
+	for (i = 0; i < SCAN_FREQ_BAND_MAX; i++) {
+		if (freq_lists & BIT(i))
+			freq_count++;
+	}
+
+	if (freq_count <= link_count)
+		return true;
+
+	return false;
+}
+
+
 static void wpa_supplicant_event_assoc(struct wpa_supplicant *wpa_s,
 				       union wpa_event_data *data)
 {
@@ -4627,6 +4685,17 @@ static void wpa_supplicant_event_assoc(struct wpa_supplicant *wpa_s,
 
 	if (wpa_s->current_ssid && wpa_s->current_ssid->enable_4addr_mode)
 		wpa_supplicant_set_4addr_mode(wpa_s);
+
+	/* WAR: Check if all the links configured by user are associated,
+	 * otherwise trigger a scan request in background to re-associate
+	 * to all the links after CAC/ACS timer is completed in AP MLD
+	 */
+	if ((!is_all_links_associated(wpa_s)) &&
+	    wpa_s->current_ssid && !wpa_s->current_ssid->disable_reconfig)
+		eloop_register_timeout(5, 0,
+				       wpas_scan_for_rnr_entries,
+				       wpa_s, NULL);
+
 }
 
 

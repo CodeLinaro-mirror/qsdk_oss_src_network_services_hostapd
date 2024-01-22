@@ -2064,4 +2064,6 @@ bool wpas_ap_supports_rsn_overriding_2(struct wpa_supplicant *wpa_s,
 int wpas_get_owe_trans_network(const u8 *owe_ie, const u8 **bssid,
 			       const u8 **ssid, size_t *ssid_len);
 
+void wpas_scan_for_rnr_entries(void *eloop_ctx, void *timeout_ctx);
+
 #endif /* WPA_SUPPLICANT_I_H */

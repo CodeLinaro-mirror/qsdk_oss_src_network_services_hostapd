@@ -4094,3 +4094,171 @@ void wpas_scan_restart_sched_scan(struct wpa_supplicant *wpa_s)
 	wpa_s->prev_sched_ssid = NULL;
 	wpa_supplicant_cancel_sched_scan(wpa_s);
 }
+
+static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
+					struct wpa_scan_res *res,
+					struct os_reltime *fetch_time)
+{
+	const u8 *rnr_ie, *ssid, *pos;
+	u8 rnr_ie_len, i = 0, mbssid_idx = 0;
+	struct wpa_bss *bss;
+	u32 changes;
+	u8 ret = true;
+
+	bss = wpa_bss_get_bssid(wpa_s, res->bssid);
+	if (!bss) {
+		wpa_printf(MSG_ERROR, "No BSS found for entry" MACSTR,
+				MAC2STR(res->bssid));
+		return ret;
+	}
+
+	ssid = wpa_scan_get_ie(res, WLAN_EID_SSID);
+	if (ssid == NULL) {
+		wpa_dbg(wpa_s, MSG_DEBUG, "BSS: No SSID IE included for "
+			MACSTR, MAC2STR(res->bssid));
+		return ret;
+	}
+	if (ssid[1] > SSID_MAX_LEN) {
+		wpa_dbg(wpa_s, MSG_DEBUG, "BSS: Too long SSID IE included for "
+			MACSTR, MAC2STR(res->bssid));
+		return ret;
+	}
+
+	/* Res now will have matching ssid, check if the rnr has
+	 * changed.
+	 */
+	changes = wpa_bss_compare_res(bss, res);
+	if (changes & WPA_BSS_IES_CHANGED_FLAG) {
+		bss = wpa_bss_update(wpa_s, bss, res, fetch_time, true);
+		mbssid_idx = wpa_bss_get_mbssid_idx(bss);
+		i = 0;
+		/* NOTE: Any changes in rnr ie len calculation or fetching the ap info
+		 * from rnr ie must be reflected in wpa_bss_update_scan_rnr_res API as
+		 * it uses similar logic for WAR
+		 */
+		while ((rnr_ie = wpa_bss_get_ie_pos(bss, WLAN_EID_REDUCED_NEIGHBOR_REPORT, i++))) {
+			rnr_ie_len = rnr_ie[1];
+			pos = rnr_ie + 2;
+
+			while (rnr_ie_len > sizeof(struct ieee80211_neighbor_ap_info)) {
+				const struct ieee80211_neighbor_ap_info *ap_info =
+					(const struct ieee80211_neighbor_ap_info *) pos;
+				const u8 *data = ap_info->data;
+				size_t rnr_info_len = sizeof(struct ieee80211_neighbor_ap_info);
+				u8 tbtt_count = ((ap_info->tbtt_info_hdr & 0xF0) >> 4) + 1;
+				rnr_ie_len -= rnr_info_len;
+				pos += rnr_info_len;
+
+				if (ap_info->tbtt_info_len < 16) {
+					rnr_ie_len -= (tbtt_count * ap_info->tbtt_info_len);
+					pos += (tbtt_count * ap_info->tbtt_info_len);
+					continue;
+				}
+
+				while (tbtt_count--) {
+					u16 mld_id = *(data + 13);
+					u8 link_id = *(data + 14) & 0xF;
+
+					if (wpa_s->valid_links & BIT(link_id))
+						/*Existing link_id IE */
+						goto cont;
+
+					/* RNR updated with the new link */
+					/* For NON-MBSSID BSS and MBSSID Tx BSS, idx will be 0 */
+					if (mbssid_idx != mld_id) {
+						wpa_printf(MSG_DEBUG,
+							   "MLD: Reported link not part of current MLD");
+					} else {
+						int partner_freq = ieee80211_chan_to_freq(NULL, ap_info->op_class, ap_info->channel);
+						int curr_freq = 0;
+						if (partner_freq && wpa_s->conf->freq_list && wpa_s->conf->freq_list[0]) {
+							int i = 0;
+							curr_freq = wpa_s->conf->freq_list[i];
+							while (curr_freq) {
+								i++;
+								if (curr_freq == partner_freq) {
+									wpa_printf(MSG_DEBUG, "ML Partner freq %d is part of our scan list", partner_freq);
+									break;
+								}
+								curr_freq = wpa_s->conf->freq_list[i];
+							}
+						}
+						if (wpa_s->conf->freq_list && wpa_s->conf->freq_list[0] && !curr_freq) {
+							wpa_printf(MSG_DEBUG, "ML Partner freq %d is not part of our scan list ignore this link", partner_freq);
+							goto cont;
+						}
+
+						wpa_s->own_disconnect_req = 1;
+						wpa_supplicant_deauthenticate(wpa_s,
+									      WLAN_REASON_DEAUTH_LEAVING);
+						wpa_printf(MSG_INFO, "Match found and triggering deauthenticate\n");
+						ret = false;
+						goto exit;
+					}
+
+cont:
+					data += ap_info->tbtt_info_len;
+				}
+
+				rnr_ie_len -= (data - ap_info->data);
+				pos += (data - ap_info->data);
+			}
+		}
+	}
+
+exit:
+	return ret;
+}
+
+void wpas_scan_for_rnr_entries(void *eloop_ctx, void *timeout_ctx)
+{
+	struct wpa_supplicant *wpa_s = eloop_ctx;
+	struct wpa_scan_results *scan_res;
+	size_t i;
+	bool ret = true;
+
+	if (wpa_s->wpa_state != WPA_COMPLETED)
+		/* Still the original authentication is not completed
+		 * No need to re-check here, re-schedule to check after
+		 * authetication is completed
+		 */
+		goto exit;
+
+	scan_res = wpa_drv_get_scan_results(wpa_s, NULL);
+	if (scan_res == NULL) {
+		wpa_dbg(wpa_s, MSG_DEBUG, "No scan results available");
+		goto exit;
+	}
+	filter_scan_res(wpa_s, scan_res);
+
+	for (i = 0; i < scan_res->num; i++) {
+		const u8 *ml_ie, *mld_addr;
+
+		ml_ie = wpa_scan_get_ml_ie(scan_res->res[i],
+					   MULTI_LINK_CONTROL_TYPE_BASIC);
+		if (!ml_ie)
+			continue;
+
+		mld_addr = get_basic_mle_mld_addr(&ml_ie[3], ml_ie[1] - 1);
+		if (!mld_addr)
+			continue;
+
+		if (os_memcmp(wpa_s->bssid, mld_addr, ETH_ALEN) != 0) {
+			/* Need to check any scan entry for current assoc bssid */
+			continue;
+		}
+
+		ret = wpa_bss_update_scan_rnr_res(wpa_s,
+						  scan_res->res[i],
+						  &scan_res->fetch_time);
+		if (!ret)
+			break;
+	}
+	wpa_scan_results_free(scan_res);
+
+exit:
+	if (ret)
+		eloop_register_timeout(5, 0,
+				       wpas_scan_for_rnr_entries,
+				       wpa_s, NULL);
+}

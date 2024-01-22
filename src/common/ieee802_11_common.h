@@ -283,6 +283,7 @@ extern const struct oper_class_map global_op_class[];
 extern size_t global_op_class_size;
 
 const u8 * get_ie(const u8 *ies, size_t len, u8 eid);
+const u8 * get_ie_pos(const u8 *ies, size_t len, u8 eid, u8 idx);
 const u8 * get_ie_ext(const u8 *ies, size_t len, u8 ext);
 const u8 * get_vendor_ie(const u8 *ies, size_t len, u32 vendor_type);
 

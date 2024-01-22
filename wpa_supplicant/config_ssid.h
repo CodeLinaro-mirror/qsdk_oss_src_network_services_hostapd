@@ -1375,6 +1375,12 @@ struct wpa_ssid {
 	enum wpa_p2p_mode p2p_mode;
 
 	/**
+	 * disable_reconfig - Whether to re-associate if a new link gets added
+	 * in assciated AP MLD
+	 */
+	bool disable_reconfig;
+
+	/**
 	 * go_dik_id - ID of Device Identity block of group owner
 	 */
 	int go_dik_id;

@@ -233,11 +233,20 @@ void wpa_bss_parse_basic_ml_element(struct wpa_supplicant *wpa_s,
 u16 wpa_bss_parse_reconf_ml_element(struct wpa_supplicant *wpa_s,
 				    struct wpa_bss *bss);
 
+u32 wpa_bss_compare_res(const struct wpa_bss *old,
+			const struct wpa_scan_res *new_res);
+struct wpa_bss *
+wpa_bss_update(struct wpa_supplicant *wpa_s, struct wpa_bss *bss,
+	       struct wpa_scan_res *res, struct os_reltime *fetch_time,
+	       bool override);
+
 const u8 * wpa_bss_get_rsne(struct wpa_supplicant *wpa_s,
 			    const struct wpa_bss *bss, struct wpa_ssid *ssid,
 			    bool mlo);
 const u8 * wpa_bss_get_rsnxe(struct wpa_supplicant *wpa_s,
 			     const struct wpa_bss *bss, struct wpa_ssid *ssid,
 			     bool mlo);
+const u8 * wpa_bss_get_ie_pos(const struct wpa_bss *bss, u8 ie, u8 idx);
+u8 wpa_bss_get_mbssid_idx(const struct wpa_bss *bss);
 
 #endif /* BSS_H */

@@ -2927,6 +2927,7 @@ static const struct parse_data ssid_fields[] = {
 	{ INT_RANGE(disable_eht, 0, 1)},
 	{ INT_RANGE(enable_4addr_mode, 0, 1)},
 	{ INT_RANGE(max_idle, 0, 65535)},
+	{ INT_RANGE(disable_reconfig, 0, 1)},
 	{ INT_RANGE(ssid_protection, 0, 1)},
 	{ INT_RANGE(rsn_overriding, 0, 2)},
 	{ INT_RANGE(sae_password_id_change, 0, 1)},

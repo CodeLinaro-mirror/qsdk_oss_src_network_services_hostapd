@@ -1020,6 +1020,7 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid)
 	INT(ccfs);
 	INT(enable_4addr_mode);
 	INT(max_idle);
+	INT(disable_reconfig);
 	INT(ssid_protection);
 	INT_DEF(rsn_overriding, RSN_OVERRIDING_NOT_SET);
 #ifdef CONFIG_SAE

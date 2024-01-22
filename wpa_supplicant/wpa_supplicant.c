@@ -722,6 +722,7 @@ static void wpa_supplicant_cleanup(struct wpa_supplicant *wpa_s)
 	eloop_cancel_timeout(wpas_clear_disabled_interface, wpa_s, NULL);
 	eloop_cancel_timeout(wpas_verify_ssid_beacon, wpa_s, NULL);
 	eloop_cancel_timeout(wpas_wfa_capab_tx, wpa_s, NULL);
+	eloop_cancel_timeout(wpas_scan_for_rnr_entries, wpa_s, NULL);
 
 	wpas_wps_deinit(wpa_s);
 

@@ -2557,6 +2557,30 @@ const u8 * get_ie(const u8 *ies, size_t len, u8 eid)
 	return NULL;
 }
 
+/**
+* get_ie_pos - Fetch a specified information element at given index from IEs buffer
+* @ies: Information elements buffer
+* @len: Information elements buffer length
+* @eid: Information element identifier (WLAN_EID_*)
+* @idx: index of entry of element to be found.
+*
+* Returns: Pointer to the information element (id field) at given @idx
+* or %NULL if not found.
+*/
+const u8 * get_ie_pos(const u8 *ies, size_t len, u8 eid, u8 idx)
+{
+	const struct element *elem;
+
+	if (!ies)
+		return NULL;
+
+	for_each_element(elem, ies, len) {
+		if (elem->id == eid && !idx--)
+			return &elem->id;
+	}
+	return NULL;
+}
+
 
 /**
  * get_ie_ext - Fetch a specified extended information element from IEs buffer

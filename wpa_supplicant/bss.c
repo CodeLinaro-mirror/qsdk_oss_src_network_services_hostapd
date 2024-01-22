@@ -699,8 +699,8 @@ static int are_ies_equal(const struct wpa_bss *old,
 }
 
 
-static u32 wpa_bss_compare_res(const struct wpa_bss *old,
-			       const struct wpa_scan_res *new_res)
+u32 wpa_bss_compare_res(const struct wpa_bss *old,
+			const struct wpa_scan_res *new_res)
 {
 	u32 changes = 0;
 	int caps_diff = old->caps ^ new_res->caps;
@@ -773,9 +773,10 @@ void notify_bss_changes(struct wpa_supplicant *wpa_s, u32 changes,
 }
 
 
-static struct wpa_bss *
+struct wpa_bss *
 wpa_bss_update(struct wpa_supplicant *wpa_s, struct wpa_bss *bss,
-	       struct wpa_scan_res *res, struct os_reltime *fetch_time)
+	       struct wpa_scan_res *res, struct os_reltime *fetch_time,
+	       bool override)
 {
 	u32 changes;
 
@@ -804,13 +805,20 @@ wpa_bss_update(struct wpa_supplicant *wpa_s, struct wpa_bss *bss,
 			   (unsigned int) update_time.usec,
 			   res->freq,
 			   (res->flags & WPA_SCAN_ASSOCIATED) ? " assoc" : "");
-		if ((bss->flags & WPA_BSS_ASSOCIATED) ||
+
+		/* Override flag is set during scanning for RNR entries in the
+		 * associated link when the requested affliated link is
+		 * initially in CAC/ACS timer, so that the new scan entry is
+		 * updated to re-initiate the association
+		 */
+		if (!override && ((bss->flags & WPA_BSS_ASSOCIATED) ||
 		    (!(res->flags & WPA_SCAN_ASSOCIATED) &&
-		     !os_reltime_before(&bss->last_update, &update_time))) {
+		     !os_reltime_before(&bss->last_update, &update_time)))) {
 			wpa_printf(MSG_DEBUG,
 				   "Ignore this BSS entry since the previous update looks more current");
 			return bss;
 		}
+
 		wpa_printf(MSG_DEBUG,
 			   "Accept this BSS entry since it looks more current than the previous update");
 	}
@@ -1000,7 +1008,7 @@ void wpa_bss_update_scan_res(struct wpa_supplicant *wpa_s,
 	if (bss == NULL)
 		bss = wpa_bss_add(wpa_s, ssid + 2, ssid[1], res, fetch_time);
 	else {
-		bss = wpa_bss_update(wpa_s, bss, res, fetch_time);
+		bss = wpa_bss_update(wpa_s, bss, res, fetch_time, false);
 		if (wpa_s->last_scan_res) {
 			unsigned int i;
 			for (i = 0; i < wpa_s->last_scan_res_used; i++) {
@@ -1357,6 +1365,40 @@ const u8 * wpa_bss_get_ie_beacon(const struct wpa_bss *bss, u8 ie)
 	ies = wpa_bss_ie_ptr(bss);
 	ies += bss->ie_len;
 	return get_ie(ies, bss->beacon_ie_len, ie);
+}
+
+
+/**
+ * wpa_bss_get_ie_pos - Fetch a specified information element at given index
+ * from a BSS entry. This can be used to iterate over an element which is present
+ * multiple times in ie space
+ * @bss: BSS table entry
+ * @ie: Information element identitifier (WLAN_EID_*)
+ * @idx: index of entry of element to be found.
+ *
+ * This function returns the @idx'th matching information element in the BSS
+ * entry or NULL.
+ */
+const u8 * wpa_bss_get_ie_pos(const struct wpa_bss *bss, u8 ie, u8 idx)
+{
+        return get_ie_pos(wpa_bss_ie_ptr(bss), bss->ie_len, ie, idx);
+}
+
+/**
+ * wpa_bss_get_mbssid_idx - Fetch a mbssid idx of a BSS entry
+ * @bss: BSS table entry
+ *
+ * This function returns the mbssid idx of a BSS if MULTIPLE_BSSID_INDEX
+ * element is present in the BSS ie, 0 otherwise.
+ */
+u8 wpa_bss_get_mbssid_idx(const struct wpa_bss *bss)
+{
+        const u8 *mbssid_idx_ie = get_ie(wpa_bss_ie_ptr(bss), bss->ie_len,
+                                         WLAN_EID_MULTIPLE_BSSID_INDEX);
+        if (!mbssid_idx_ie)
+                return 0;
+        else
+                return mbssid_idx_ie[2];
 }
 
 
