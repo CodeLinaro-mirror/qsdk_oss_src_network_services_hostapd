@@ -2307,4 +2307,6 @@ int security_profile_get_rsn_caps(const u8 *sp);
 bool sec_prof_list_has_eap_over_auth(const int *numbers);
 bool security_profile_is_enabled(const u8 *sp, int profile);
 
+void wpas_scan_for_rnr_entries(void *eloop_ctx, void *timeout_ctx);
+
 #endif /* WPA_SUPPLICANT_I_H */

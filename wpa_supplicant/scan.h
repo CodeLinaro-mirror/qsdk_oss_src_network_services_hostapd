@@ -38,6 +38,16 @@
  */
 #define TX_POWER_NO_CONSTRAINT 64
 
+enum configured_freq_band {
+	SCAN_FREQ_BAND_2GHZ	= BIT(0),
+	SCAN_FREQ_BAND_5GHZ_LOW	= BIT(1),
+	SCAN_FREQ_BAND_5GHZ	= BIT(2),
+	SCAN_FREQ_BAND_6GHZ_LOW	= BIT(3),
+	SCAN_FREQ_BAND_6GHZ 	= BIT(4),
+
+	SCAN_FREQ_BAND_MAX	= BIT(5),
+};
+
 int wpa_supplicant_enabled_networks(struct wpa_supplicant *wpa_s);
 void wpa_supplicant_req_scan(struct wpa_supplicant *wpa_s, int sec, int usec);
 int wpa_supplicant_delayed_sched_scan(struct wpa_supplicant *wpa_s,
