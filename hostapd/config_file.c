@@ -2177,7 +2177,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "vlan_bridge") == 0) {
 		os_strlcpy(bss->vlan_bridge, pos, sizeof(bss->vlan_bridge));
 	} else if (os_strcmp(buf, "wds_bridge") == 0) {
-		os_strlcpy(bss->wds_bridge, pos, sizeof(bss->wds_bridge));
+		if (*pos != '\0')
+			os_strlcpy(bss->wds_bridge, pos, sizeof(bss->wds_bridge));
 	} else if (os_strcmp(buf, "driver") == 0) {
 		int j;
 		const struct wpa_driver_ops *driver = NULL;
