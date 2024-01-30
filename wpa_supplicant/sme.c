@@ -3608,7 +3608,7 @@ void sme_event_ch_switch(struct wpa_supplicant *wpa_s)
 
 static void sme_process_sa_query_request(struct wpa_supplicant *wpa_s,
 					 const u8 *sa, const u8 *data,
-					 size_t len)
+					 size_t len, int freq)
 {
 	u8 resp[2 + WLAN_SA_QUERY_TR_ID_LEN + OCV_OCI_EXTENDED_LEN];
 	u8 resp_len = 2 + WLAN_SA_QUERY_TR_ID_LEN;
@@ -3647,7 +3647,7 @@ static void sme_process_sa_query_request(struct wpa_supplicant *wpa_s,
 	}
 #endif /* CONFIG_OCV */
 
-	if (wpa_drv_send_action(wpa_s, wpa_s->assoc_freq, 0, wpa_s->bssid,
+	if (wpa_drv_send_action(wpa_s, freq, 0, wpa_s->bssid,
 				wpa_s->own_addr, wpa_s->bssid,
 				resp, resp_len, 0) < 0)
 		wpa_msg(wpa_s, MSG_INFO,
@@ -3690,7 +3690,7 @@ static void sme_process_sa_query_response(struct wpa_supplicant *wpa_s,
 
 
 void sme_sa_query_rx(struct wpa_supplicant *wpa_s, const u8 *da, const u8 *sa,
-		     const u8 *data, size_t len)
+		     const u8 *data, size_t len, int freq)
 {
 	if (len < 1 + WLAN_SA_QUERY_TR_ID_LEN)
 		return;
@@ -3736,7 +3736,7 @@ void sme_sa_query_rx(struct wpa_supplicant *wpa_s, const u8 *da, const u8 *sa,
 #endif /* CONFIG_OCV */
 
 	if (data[0] == WLAN_SA_QUERY_REQUEST)
-		sme_process_sa_query_request(wpa_s, sa, data, len);
+		sme_process_sa_query_request(wpa_s, sa, data, len, freq);
 	else if (data[0] == WLAN_SA_QUERY_RESPONSE)
 		sme_process_sa_query_response(wpa_s, sa, data, len);
 }

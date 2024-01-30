@@ -31,7 +31,7 @@ void sme_event_unprot_disconnect(struct wpa_supplicant *wpa_s, const u8 *sa,
 				 const u8 *da, u16 reason_code);
 void sme_event_ch_switch(struct wpa_supplicant *wpa_s);
 void sme_sa_query_rx(struct wpa_supplicant *wpa_s, const u8 *da, const u8 *sa,
-		     const u8 *data, size_t len);
+		     const u8 *data, size_t len, int freq);
 void sme_state_changed(struct wpa_supplicant *wpa_s);
 void sme_clear_on_disassoc(struct wpa_supplicant *wpa_s);
 void sme_deinit(struct wpa_supplicant *wpa_s);
