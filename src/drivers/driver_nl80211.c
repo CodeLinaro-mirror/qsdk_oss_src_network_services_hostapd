@@ -1068,6 +1068,7 @@ nl80211_get_wiphy_data_ap(struct i802_bss *bss)
 	struct nl80211_wiphy_data *w;
 	int wiphy_idx, found = 0;
 	struct i802_bss *tmp_bss;
+	struct dl_list *list;
 	u8 channel;
 
 	if (bss->wiphy_data != NULL)
@@ -1129,9 +1130,13 @@ add:
 			break;
 		}
 	}
-	/* if not add it */
-	if (!found)
+	/* if not add it by deleting the older wiphy */
+	if (!found) {
+		list = &bss->drv->wiphy_list;
+		if (list->next && list->prev)
+			dl_list_del(list);
 		dl_list_add(&w->drvs, &bss->drv->wiphy_list);
+	}
 
 	dl_list_add(&w->bsss, &bss->wiphy_list);
 	bss->wiphy_data = w;
@@ -2561,6 +2566,7 @@ static void * wpa_driver_nl80211_drv_init(void *ctx, const char *ifname,
 	drv->hostapd = !!hostapd;
 	drv->eapol_sock = -1;
 	drv->unique_drv_id = next_unique_drv_id++;
+	dl_list_init(&drv->wiphy_list);
 
 	/*
 	 * There is no driver capability flag for this, so assume it is
