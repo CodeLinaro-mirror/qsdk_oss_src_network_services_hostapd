@@ -570,6 +570,7 @@ struct hostapd_data {
 
 	u64 scan_cookie; /* Scan instance identifier for the ongoing HT40 scan
 			  */
+	bool disable_cu;
 };
 
 

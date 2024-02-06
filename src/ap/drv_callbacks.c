@@ -1454,6 +1454,7 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 	if (hapd->csa_in_progress &&
 	    freq == hapd->cs_freq_params.freq) {
 		hostapd_cleanup_cs_params(hapd);
+		hapd->disable_cu = 1;
 		ieee802_11_set_beacon(hapd);
 		hostapd_start_device_cac_background(hapd->iface);
 

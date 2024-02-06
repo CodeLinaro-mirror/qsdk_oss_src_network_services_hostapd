@@ -2873,6 +2873,8 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 #ifdef CONFIG_IEEE80211BE
 	params.punct_bitmap = iconf->punct_bitmap;
 #endif /* CONFIG_IEEE80211BE */
+	params.disable_cu = hapd->disable_cu;
+	hapd->disable_cu = 0;
 
 	if (cmode &&
 	    hostapd_set_freq_params(&freq, iconf->hw_mode, iface->freq,

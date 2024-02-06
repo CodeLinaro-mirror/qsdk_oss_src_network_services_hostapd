@@ -4457,6 +4457,9 @@ int hostapd_build_beacon_data(struct hostapd_data *hapd,
 		beacon->assocresp_ies_len = wpabuf_len(assocresp_extra);
 	}
 
+	beacon->elemid_added = params.elemid_added;
+	beacon->elemid_modified = params.elemid_modified;
+
 	/* MBSSID element */
 	if (!params.mbssid.mbssid_elem_len)
 		goto done;
@@ -4750,6 +4753,8 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 		return ret;
 
 	ret = hostapd_build_beacon_data(hapd, &settings->beacon_after);
+	if (settings->beacon_after.elemid_modified)
+		settings->beacon_after_cu = 1;
 
 	/* change back the configuration */
 	hostapd_change_config_freq(iface->bss[0], iface->conf,

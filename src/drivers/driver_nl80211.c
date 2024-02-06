@@ -5868,7 +5868,8 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 		goto fail;
 #endif /* CONFIG_FILS */
 
-	if (bss->valid_links && (params->elemid_added || params->elemid_modified)) {
+	if (bss->valid_links && (params->elemid_added || params->elemid_modified) &&
+	    !params->disable_cu) {
 		if (params->elemid_added)
 			critical_update |= NL80211_CU_ELEMID_ADDED;
 		if (params->elemid_modified)
@@ -12101,6 +12102,10 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 		     settings->counter_offset_presp)))
 		goto fail;
 
+	if (bss->valid_links) {
+		if (nla_put_u8(msg, NL80211_ATTR_SET_CRITICAL_UPDATE, NL80211_CU_ELEMID_ADDED))
+			goto fail;
+	}
 	nla_nest_end(msg, beacon_csa);
 
 #ifdef CONFIG_IEEE80211AX

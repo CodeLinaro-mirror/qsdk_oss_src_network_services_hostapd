@@ -1965,6 +1965,7 @@ struct wpa_driver_ap_params {
 	/* critical_update_flag - critical update flag*/
 	bool elemid_added;
 	bool elemid_modified;
+	bool disable_cu;
 
 	/**
 	 * allowed_freqs - List of allowed 20 MHz channel center frequencies in
@@ -2944,6 +2945,10 @@ struct beacon_data {
 	size_t assocresp_ies_len;
 	size_t probe_resp_len;
 
+	/* critical_update_flag - critical update flag*/
+	bool elemid_added;
+	bool elemid_modified;
+
 	struct mbssid_data mbssid;
 };
 
@@ -2974,6 +2979,10 @@ struct csa_settings {
 
 	struct unsol_bcast_probe_resp ubpr;
 	bool handle_dfs;
+
+	/* critical_update_flag - critical update flag*/
+	bool beacon_after_cu;
+
 };
 
 /**
