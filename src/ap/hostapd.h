@@ -576,6 +576,7 @@ struct hostapd_data {
 
 	u64 scan_cookie; /* Scan instance identifier for the ongoing HT40 scan
 			  */
+	bool disable_cu;
 
 #if defined(CONFIG_INTERWORKING) || defined(CONFIG_DPP)
 	bool gas_serv_initialized;
