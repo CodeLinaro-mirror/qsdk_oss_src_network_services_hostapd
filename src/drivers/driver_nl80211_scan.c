@@ -367,7 +367,8 @@ int wpa_driver_nl80211_scan(struct i802_bss *bss,
 	int ret = -1, timeout;
 	struct nl_msg *msg = NULL;
 
-	wpa_dbg(bss->ctx, MSG_DEBUG, "nl80211: scan request");
+	wpa_dbg(drv->ctx, MSG_DEBUG, "nl80211: scan request for %s, iftype %s",
+			bss->ifname, nl80211_iftype_str(drv->nlmode));
 	drv->scan_for_auth = 0;
 
 	if (TEST_FAIL())
@@ -479,6 +480,12 @@ int wpa_driver_nl80211_scan(struct i802_bss *bss,
 			ret = 0;
 		} else
 			goto fail;
+	} else if (drv->ap_scan_as_station == NL80211_IFTYPE_UNSPECIFIED &&
+			drv->hostapd) {
+		/* Restore AP mode when processing scan results */
+		wpa_printf(MSG_DEBUG, "nl80211: scan triggered, restore AP mode for %s\n",
+				bss->ifname);
+		drv->ap_scan_as_station = drv->nlmode;
 	}
 
 	drv->scan_state = SCAN_REQUESTED;

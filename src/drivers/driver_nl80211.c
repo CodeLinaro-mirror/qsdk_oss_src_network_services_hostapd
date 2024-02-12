@@ -8058,10 +8058,11 @@ done:
 void nl80211_restore_ap_mode(struct i802_bss *bss)
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
-	int was_ap = is_ap_interface(drv->nlmode);
 
-	wpa_driver_nl80211_set_mode(bss, drv->ap_scan_as_station);
-	if (!was_ap && is_ap_interface(drv->ap_scan_as_station) &&
+	/* Set back AP mode if not currently in AP mode */
+	if (drv->nlmode != drv->ap_scan_as_station)
+		wpa_driver_nl80211_set_mode(bss, drv->ap_scan_as_station);
+	if (is_ap_interface(drv->ap_scan_as_station) &&
 	    bss->brname[0] &&
 	    (bss->added_if_into_bridge || bss->already_in_bridge)) {
 		wpa_printf(MSG_DEBUG,
