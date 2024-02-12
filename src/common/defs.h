@@ -66,6 +66,10 @@
 			 WPA_KEY_MGMT_FT_FILS_SHA384 | \
 			 WPA_KEY_MGMT_FT_PQC_8021X)
 
+/* Maximum number of supported rates (from both Supported Rates and Extended
+ * Supported Rates IEs). */
+#define WLAN_SUPP_RATES_MAX 32
+
 static inline int wpa_key_mgmt_wpa_ieee8021x(int akm)
 {
 	return !!(akm & (WPA_KEY_MGMT_IEEE8021X |
