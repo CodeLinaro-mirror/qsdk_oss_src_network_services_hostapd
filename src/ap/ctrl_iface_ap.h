@@ -9,6 +9,15 @@
 #ifndef CTRL_IFACE_AP_H
 #define CTRL_IFACE_AP_H
 
+enum maxnss_htmode_t {
+	MAXNSS_HTMODE_UNSET = 0x00,
+	MAXNSS_HTMODE_HT_N = 0x01,
+	MAXNSS_HTMODE_VHT_AC = 0x02,
+	MAXNSS_HTMODE_EHT_BE = 0x04,
+	MAXNSS_HTMODE_HE_AX = 0x08,
+	MAXNSS_HTMODE_MAX = 0x0F
+};
+
 int hostapd_ctrl_iface_sta_first(struct hostapd_data *hapd,
 				 char *buf, size_t buflen);
 int hostapd_ctrl_iface_sta(struct hostapd_data *hapd, const char *txtaddr,

@@ -2742,47 +2742,104 @@ static int hostapd_ctrl_iface_color_change(struct hostapd_iface *iface,
 
 u8 hostapd_maxnss(struct hostapd_data *hapd, struct sta_info *sta)
 {
-	u8 *mcs_set = NULL;
-	u16 mcs_map;
-	u8 ht_rx_nss = 0;
-	u8 vht_rx_nss = 1;
-	u8 mcs;
-	bool ht_supported = false;
-	bool vht_supported = false;
-	int i;
+	u8 nss = 0;
+	u8 rx_nss = 1;
+	u8 mcs_count;
+	u16 rx_mcs_set;
+	int i, j;
+	const u16 *ap_mcs_set = NULL;
+	const u8 *mcs_set = NULL;
+	struct hostapd_config *conf = hapd->iface->conf;
+	struct hostapd_hw_modes *mode = NULL;
+	u8 support_check[MAXNSS_HTMODE_MAX] = {};
+	u8 htmode = MAXNSS_HTMODE_UNSET;
 
-	if (sta->ht_capabilities && (sta->flags & WLAN_STA_HT)) {
-		mcs_set = sta->ht_capabilities->supported_mcs_set;
-		ht_supported = true;
+	if (sta) {
+		htmode =  (!!(sta->flags & WLAN_STA_HT)) |
+			((!!(sta->flags & WLAN_STA_VHT)) << 1) |
+			((!!(sta->flags & WLAN_STA_EHT)) << 2) |
+			((!!(sta->flags & WLAN_STA_HE)) << 3);
+		support_check[MAXNSS_HTMODE_HT_N] = !!sta->ht_capabilities;
+		support_check[MAXNSS_HTMODE_VHT_AC] = !!sta->vht_capabilities;
+		support_check[MAXNSS_HTMODE_EHT_BE] = !!sta->eht_capab;
+		support_check[MAXNSS_HTMODE_HE_AX] = !!sta->he_capab;
+	} else {
+		htmode = (!!conf->ieee80211ac) |
+			((!!conf->ieee80211n) << 1) |
+			((!!conf->ieee80211be) << 2) |
+			((!!conf->ieee80211ax) << 3);
+		support_check[MAXNSS_HTMODE_HT_N] = !hapd->conf->disable_11n;
+		support_check[MAXNSS_HTMODE_VHT_AC] = !hapd->conf->disable_11ac;
+		support_check[MAXNSS_HTMODE_EHT_BE] = !hapd->conf->disable_11be;
+		support_check[MAXNSS_HTMODE_HE_AX] = !hapd->conf->disable_11ax;
+		mode = hapd->iface->current_mode;
 	}
-
-	if (sta->vht_capabilities && (sta->flags & WLAN_STA_VHT)) {
-		mcs_map = le_to_host16(
-			sta->vht_capabilities->vht_supported_mcs_set.rx_map);
-		vht_supported = true;
-	}
-
-	if (ht_supported && mcs_set) {
-		if (mcs_set[0])
-			ht_rx_nss++;
-		if (mcs_set[1])
-			ht_rx_nss++;
-		if (mcs_set[2])
-			ht_rx_nss++;
-		if (mcs_set[3])
-			ht_rx_nss++;
-	}
-	if (vht_supported) {
-		for (i = 7; i >= 0; i--) {
-			mcs = (mcs_map >> (2 * i)) & 0x03;
-			if (mcs != 0x03) {
-				vht_rx_nss = i + 1;
-				break;
+	htmode |= htmode >> 1;
+	htmode |= htmode >> 2;
+	htmode |= htmode >> 4;
+	htmode++;
+	htmode = htmode >> 1;
+	if (!(htmode < MAXNSS_HTMODE_MAX) || !support_check[htmode] || (!sta && !mode))
+		return rx_nss;
+	switch (htmode) {
+		case MAXNSS_HTMODE_HT_N:
+			mcs_set = (sta) ? sta->ht_capabilities->supported_mcs_set : mode->mcs_set;
+			return (!!mcs_set[0])  + (!!mcs_set[1]) + (!!mcs_set[2]) + (!!mcs_set[3]);
+		case MAXNSS_HTMODE_VHT_AC:
+			rx_mcs_set = (sta) ?
+				le_to_host16(sta->vht_capabilities->vht_supported_mcs_set.rx_map) :
+				mode->vht_mcs_set[4] | (mode->vht_mcs_set[5] << 8);
+			for (i = VHT_RX_NSS_MAX_STREAMS - 1; i >= 0; i--) {
+				if (((rx_mcs_set >> (2 * i)) & 0x03) != 0x03)
+					return i + 1;
 			}
-		}
+			return rx_nss;
+		case MAXNSS_HTMODE_EHT_BE:
+			mcs_count = 1;
+			mcs_set = (sta) ? sta->eht_capab->optional : mode->eht_capab[IEEE80211_MODE_AP].mcs;
+			switch (conf->eht_oper_chwidth) {
+				case CONF_OPER_CHWIDTH_320MHZ:
+					mcs_count++;
+					/* fall through */
+				case CONF_OPER_CHWIDTH_80P80MHZ:
+				case CONF_OPER_CHWIDTH_160MHZ:
+					mcs_count++;
+					break;
+				default:
+					break;
+			}
+			for (i = 0; i < mcs_count * EHT_PHYCAP_MCS_NSS_LEN_20MHZ_PLUS; i++) {
+				nss = (mcs_set[i] & 0x000F);
+				if (nss > rx_nss)
+					rx_nss = nss;
+			}
+			return rx_nss;
+		case MAXNSS_HTMODE_HE_AX:
+			mcs_count = 0;
+			ap_mcs_set =   (sta) ?  (u16 *) sta->he_capab->optional :
+				(u16 *) mode->he_capab[IEEE80211_MODE_AP].mcs;
+			switch (conf->he_oper_chwidth) {
+				case CONF_OPER_CHWIDTH_80P80MHZ:
+					mcs_count = 3;
+					break;
+				case CONF_OPER_CHWIDTH_160MHZ:
+					mcs_count = 2;
+					break;
+				default:
+					mcs_count = 1;
+					break;
+			}
+			for (i = 0; i < mcs_count; i++) {
+				rx_mcs_set = WPA_GET_LE16((const u8 *)&ap_mcs_set[(i * 2)]);
+				for (j = HE_NSS_MAX_STREAMS - 1; j >= 0; j--) {
+					if (((rx_mcs_set >> (2 * j)) & 0x03) != 0x03)
+						return j + 1;
+				}
+			}
+		default:
+			return rx_nss;
 	}
-
-	return ht_rx_nss > vht_rx_nss ? ht_rx_nss : vht_rx_nss;
+	return rx_nss;
 }
 
 
