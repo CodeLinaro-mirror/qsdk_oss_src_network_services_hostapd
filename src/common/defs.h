@@ -556,4 +556,6 @@ enum wpa_p2p_mode {
 #define USEC_TO_TU(m) ((m) / USEC_80211_TU)
 #define TU_TO_USEC(m) ((m) * USEC_80211_TU)
 
+#define BW_INTERFERENCE_MAXBITS 32
+
 #endif /* DEFS_H */

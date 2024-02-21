@@ -82,9 +82,7 @@ static int intf_awgn_chan_range_available(struct hostapd_hw_modes *mode,
 	int allowed_320_6g[] = {1, 65, 129, 33, 97, 161};
 	int allowed_arr_size = 0;
 	int *allowed_arr = NULL;
-	int chan_idx_match = 0;
-	int chan_disabled = 0;
-	int i, j;
+	int i;
 
 	first_chan = &mode->channels[first_chan_idx];
 
@@ -119,25 +117,19 @@ static int intf_awgn_chan_range_available(struct hostapd_hw_modes *mode,
 		break;
 	}
 
-	/* check whether all the 20 MHz channels in the given operating range is enabled */
 	for (i = 0; i < allowed_arr_size; i++) {
-		if (first_chan->chan == allowed_arr[i]) {
-			for (j = 1; j <= num_chans - 1; j++) {
-				if (is_chan_disabled(mode, first_chan->chan + j * 4)) {
-					chan_disabled = 1;
-					break;
-				}
-			}
-			if (!chan_disabled)
-				chan_idx_match = 1;
+		if (first_chan->chan == allowed_arr[i])
 			break;
-		}
 	}
 
-	if (chan_idx_match == 1)
-		return 1;
-
-	return 0;
+	if (i == allowed_arr_size)
+		return 0;
+	/* check whether all the 20 MHz channels in the given operating range is enabled */
+	for (i = 1; i <= num_chans - 1; i++) {
+		if (is_chan_disabled(mode, first_chan->chan + i * 4))
+			return 0;
+	}
+	return 1;
 }
 
 static int is_in_chanlist(struct hostapd_iface *iface,
@@ -188,30 +180,38 @@ int get_centre_freq_6g(int chan_idx, int chan_width, int *centre_freq)
 	return 0;
 }
 
+static int is_interference_in_chanlist(int freq_start, int freq_end,
+					int *awgn_interference_freqs)
+{
+	int i, j;
+
+	for (i = freq_start; i <= freq_end; i += 20) {
+		for (j = 0; j < BW_INTERFERENCE_MAXBITS; j++) {
+			if (awgn_interference_freqs[j] == i)
+				return 1;
+		}
+	}
+	return 0;
+}
 
 /*
  * intf_awgn_find_channel_list - find the list of channels that can operate with
    channel width chan_width and not present within the range of current operating range.
    returns the total number of available chandefs that supports the provided bandwidth
  * @chan_width - channel width to be checked
- * @curr_centre_freq - current centre frequency
- * @curr_chan_width - current channel width
  * @chandef_list - pointer array to hold the list of valid available chandef
  */
-static int intf_awgn_find_channel_list(struct hostapd_iface *iface,
-				       int chan_width, int curr_centre_freq,
-				       int curr_chan_width,
-				       struct hostapd_channel_data ***chandef_list)
+static int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
+				       struct hostapd_channel_data ***chandef_list,
+				       int *awgn_interference_freqs)
 {
 	struct hostapd_hw_modes *mode = iface->current_mode;
 	struct hostapd_channel_data *chan;
 	int i, channel_idx = 0, n_chans;
 	int new_centre_freq;
-	int ret;
-	int curr_start_freq;
-	int curr_end_freq;
 	int new_start_freq;
 	int new_end_freq;
+	int ret;
 
 	switch (chan_width) {
 	case CHAN_WIDTH_20_NOHT:
@@ -235,9 +235,6 @@ static int intf_awgn_find_channel_list(struct hostapd_iface *iface,
 		n_chans = 1;
 		break;
 	}
-
-	curr_start_freq = curr_centre_freq - channel_width_to_int(curr_chan_width) / 2;
-	curr_end_freq = curr_centre_freq + channel_width_to_int(curr_chan_width) / 2;
 
 	for (i = 0; i < mode->num_channels; i++) {
 		chan = &mode->channels[i];
@@ -273,22 +270,14 @@ static int intf_awgn_find_channel_list(struct hostapd_iface *iface,
 			return 0;
 		}
 
-		new_start_freq = new_centre_freq - channel_width_to_int(chan_width) / 2;
-		new_end_freq = new_centre_freq + channel_width_to_int(chan_width) / 2;
+               new_start_freq = (new_centre_freq - channel_width_to_int(chan_width) / 2) + 10;
+               new_end_freq = (new_centre_freq + channel_width_to_int(chan_width) / 2) - 10;
 
-		/* check whether new operating range is outside the current
-		 * operating range since current operating range contains awgn
-		 * interference
-		 */
-		if (((new_start_freq > curr_start_freq) && (new_start_freq < curr_end_freq)) ||
-		    ((new_end_freq > curr_start_freq) && (new_end_freq < curr_end_freq)) ||
-		    ((new_centre_freq > curr_start_freq && new_centre_freq < curr_end_freq))) {
+               if (is_interference_in_chanlist(new_start_freq, new_end_freq,
+                                                   awgn_interference_freqs)) {
 			wpa_printf(MSG_DEBUG,
-				   "AWGN : freq range overlap new_start_freq : %d"
-				   " new_end_freq : %d curr_start_freq : %d"
-				   " curr_end_freq : %d centre_freq : %d",
-				   new_start_freq, new_end_freq, curr_start_freq,
-				   curr_end_freq, new_centre_freq);
+				   "AWGN: found frequency which has interference in channel (%d)",
+				   chan->chan);
 			continue;
 		}
 
@@ -369,8 +358,10 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 	u8 channel_switch = 0;
 	int new_chan_width;
 	int new_centre_freq;
+	int current_start_freq;
 	int temp_width;
 	struct hostapd_hw_modes *mode = iface->current_mode;
+	int awgn_interference_freqs[BW_INTERFERENCE_MAXBITS] = {};
 
 	wpa_printf(MSG_DEBUG,
 		   "input freq=%d, chan_width=%d, cf1=%d cf2=%d"
@@ -397,18 +388,26 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 	}
 
 	if (channel_switch) {
+		/* store frequencies with interference in awgn_interference_freqs */
+		current_start_freq = (cf1 - channel_width_to_int(chan_width) / 2) + 10;
+		for (i = 0; i < BW_INTERFERENCE_MAXBITS; i++) {
+			if ((1 << i) & chan_bw_interference_bitmap) {
+				wpa_printf(MSG_DEBUG,
+					   "AWGN: found awgn interference in frequency %d",
+					   current_start_freq + (20 * i));
+				awgn_interference_freqs[i] = current_start_freq + (20 * i);
+			}
+		}
 		/* find a random channel to be switched */
 		temp_width = chan_width;
 
 		while (temp_width > CHAN_WIDTH_20_NOHT) {
-			num_available_chandefs = intf_awgn_find_channel_list(iface,
-									     temp_width,
-									     cf1, chan_width,
-									     &available_chandef_list);
-			if (num_available_chandefs == 0)
-				temp_width = get_next_max_width(chan_width);
-			else
+			num_available_chandefs = intf_awgn_find_channel_list(iface, temp_width,
+									     &available_chandef_list,
+									     awgn_interference_freqs);
+			if (num_available_chandefs > 0)
 				break;
+			temp_width = get_next_max_width(temp_width);
 		}
 
 		if (num_available_chandefs == 0) {
