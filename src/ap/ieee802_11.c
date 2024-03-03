@@ -11209,17 +11209,16 @@ u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid)
 							 &max_eirp_psd);
 		if (err < 0) {
 			if (hapd->iconf->reg_def_cli_eirp_psd != -1)
-				max_eirp_psd =
-					hapd->iconf->reg_def_cli_eirp_psd;
+				max_eirp_psd = hapd->iconf->reg_def_cli_eirp_psd;
 			else {
-				psd = mode->psd_values[
-					hostapd_reg_psd_power_mode(
-						iconf->he_6ghz_reg_pwr_type, false)];
+				psd = chan->psd_values[NL80211_REG_REGULAR_CLIENT_LPI +
+						       iconf->he_6ghz_reg_pwr_type];
 				if (psd)
 					max_eirp_psd = psd * 2;
 				else
 					max_eirp_psd = chan->max_tx_power * 2;
 			}
+
 		}
 
 		eid = hostapd_add_tpe_info(eid, tx_pwr_count, tx_pwr_intrpn,
@@ -11231,18 +11230,16 @@ u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid)
 			if (err < 0) {
 				/* non-AFC connection */
 				if (hapd->iconf->reg_sub_cli_eirp_psd != -1)
-					max_eirp_psd =
-						hapd->iconf->reg_sub_cli_eirp_psd;
+					max_eirp_psd = hapd->iconf->reg_sub_cli_eirp_psd;
 				else {
-					psd = mode->psd_values[
-						hostapd_reg_psd_power_mode(
-							iconf->he_6ghz_reg_pwr_type,
-							true)];
+					psd = chan->psd_values[NL80211_REG_AP_LPI +
+						       iconf->he_6ghz_reg_pwr_type];
 					if (psd)
 						max_eirp_psd = psd * 2;
 					else
 						max_eirp_psd = chan->max_tx_power * 2;
 				}
+
 			}
 			eid = hostapd_add_tpe_info(eid, tx_pwr_count,
 						   tx_pwr_intrpn,

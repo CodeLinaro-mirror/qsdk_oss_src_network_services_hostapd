@@ -189,6 +189,7 @@ struct hostapd_channel_data {
 	 * punct_bitmap - RU puncturing bitmap
 	 */
 	u16 punct_bitmap;
+	s8 psd_values[NL80211_REG_NUM_POWER_MODES];
 };
 
 #define HE_MAC_CAPAB_0		0
@@ -340,11 +341,6 @@ struct hostapd_hw_modes {
 	 * uhr_capab - UHR (IEEE 802.11bn) capabilities
 	 */
 	struct uhr_capabilities uhr_capab[IEEE80211_MODE_NUM];
-
-	/**
-	 * psd_values - Regulatory PSD values indexed by 6 GHz power mode.
-	 */
-	s8 psd_values[NL80211_REG_NUM_POWER_MODES];
 };
 
 
