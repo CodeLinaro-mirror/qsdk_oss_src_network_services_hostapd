@@ -8173,7 +8173,7 @@ u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid)
 		if (hapd->iconf->reg_def_cli_eirp_psd != -1) {
 			tx_pwr = hapd->iconf->reg_def_cli_eirp_psd;
 		} else {
-			psd = mode->psd_values[NL80211_REG_REGULAR_CLIENT_LPI +
+			psd = chan->psd_values[NL80211_REG_REGULAR_CLIENT_LPI +
 					       iconf->he_6ghz_reg_pwr_type];
 			if (psd)
 				tx_pwr = psd *2;
@@ -8191,7 +8191,7 @@ u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid)
 			if (hapd->iconf->reg_sub_cli_eirp_psd != -1) {
 				tx_pwr = hapd->iconf->reg_sub_cli_eirp_psd;
 			} else {
-				psd = mode->psd_values[NL80211_REG_AP_LPI +
+				psd = chan->psd_values[NL80211_REG_AP_LPI +
 						       iconf->he_6ghz_reg_pwr_type];
 				if (psd)
 					tx_pwr = psd *2;

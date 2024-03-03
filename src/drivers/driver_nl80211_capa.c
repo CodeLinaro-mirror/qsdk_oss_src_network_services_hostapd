@@ -2357,15 +2357,12 @@ static void nl80211_reg_rule_max_eirp(u32 start, u32 end, u32 max_eirp,
 		for (c = 0; c < mode->num_channels; c++) {
 			struct hostapd_channel_data *chan = &mode->channels[c];
 
-			if (is_6ghz_freq(chan->freq) && config_pwr_mode != pwr_mode)
-				continue;
-
 			if ((u32) chan->freq - 10 >= start &&
-			    (u32) chan->freq + 10 <= end)
+			    (u32) chan->freq + 10 <= end) {
 				chan->max_tx_power = max_eirp;
+				chan->psd_values[pwr_mode] = psd;
+			}
 		}
-		/* Update the psd rules */
-		 mode->psd_values[pwr_mode] = psd;
 	}
 }
 

@@ -188,6 +188,7 @@ struct hostapd_channel_data {
 	 * punct_bitmap - RU puncturing bitmap
 	 */
 	u16 punct_bitmap;
+	s8 psd_values[NL80211_REG_NUM_POWER_MODES];
 };
 
 #define HE_MAC_CAPAB_0		0
@@ -327,11 +328,6 @@ struct hostapd_hw_modes {
 	 */
 	struct eht_capabilities eht_capab[IEEE80211_MODE_NUM];
 
-	/**
-	 * This array is used to store the psd value of each power mode
-	 * supported in 6G band.
-	 */
-	s8 psd_values[NL80211_REG_NUM_POWER_MODES];
 };
 
 
