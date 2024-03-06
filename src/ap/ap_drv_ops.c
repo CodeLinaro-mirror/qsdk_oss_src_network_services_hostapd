@@ -609,7 +609,7 @@ int hostapd_if_remove(struct hostapd_data *hapd, enum wpa_driver_if_type type,
 		return -1;
 
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->conf->mld_ap)
+	if (hapd->conf->mld_ap && type == WPA_IF_AP_BSS)
 		return hostapd_if_link_remove(hapd, type, ifname,
 					      hapd->mld_link_id);
 #endif /* CONFIG_IEEE80211BE */
