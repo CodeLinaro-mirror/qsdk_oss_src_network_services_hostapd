@@ -1031,8 +1031,8 @@ sae_confirm_skip_fixed_fields(struct hostapd_data *hapd,
 	 * on the MLD MAC address.
 	 */
 	sta = ap_get_sta(hapd, mgmt->sa);
-	if (!sta) {
-		wpa_printf(MSG_DEBUG, "SAE: No MLD STA for SAE confirm");
+	if (!sta && (sta = ap_get_unadded_sta(hapd, mgmt->sa)) == NULL) {
+
 		for (sta = hapd->sta_list; sta; sta = sta->next) {
 			int link_id = hapd->mld_link_id;
 

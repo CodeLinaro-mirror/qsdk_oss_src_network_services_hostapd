@@ -355,6 +355,9 @@ void ieee802_11_sa_query_action(struct hostapd_data *hapd,
 		return;
 	}
 
+#ifdef CONFIG_IEEE80211BE
+	ap_free_unadded_link_sta(hapd, sta);
+#endif /* CONFIG_IEEE80211BE */
 	hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 		       HOSTAPD_LEVEL_DEBUG,
 		       "Reply to pending SA Query received");

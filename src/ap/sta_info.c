@@ -228,6 +228,61 @@ void ap_free_sta_pasn(struct hostapd_data *hapd, struct sta_info *sta)
 
 #endif /* CONFIG_PASN */
 
+#ifdef CONFIG_IEEE80211BE
+void ap_free_unadded_link_sta(struct hostapd_data *hapd, struct sta_info *sta)
+{
+	struct hostapd_data *phapd;
+	struct sta_info *psta;
+
+	if (!ap_sta_is_mld(hapd, sta))
+		return;
+
+	for_each_mld_link(phapd, hapd) {
+		psta = ap_get_sta(phapd, sta->addr);
+		if (!(psta && psta->unadded_sta))
+			continue;
+		wpa_printf(MSG_DEBUG, "Remove unadded parter sta: "MACSTR"\n", MAC2STR(sta->addr));
+
+		accounting_sta_stop(phapd, psta);
+		ap_sta_ip6addr_del(phapd, psta);
+
+		ap_sta_hash_del(phapd, psta);
+		ap_sta_list_del(phapd, psta);
+
+		phapd->num_sta--;
+
+#ifdef CONFIG_TAXONOMY
+		wpabuf_free(psta->probe_ie_taxonomy);
+		psta->probe_ie_taxonomy = NULL;
+		wpabuf_free(psta->assoc_ie_taxonomy);
+		psta->assoc_ie_taxonomy = NULL;
+#endif /* CONFIG_TAXONOMY */
+
+		rsn_preauth_free_station(phapd, psta);
+
+		eloop_cancel_timeout(ap_handle_timer, phapd, sta);
+
+		os_free(psta->challenge);
+		wpabuf_free(psta->wps_ie);
+		wpabuf_free(psta->p2p_ie);
+		wpabuf_free(psta->hs20_ie);
+		wpabuf_free(psta->roaming_consortium);
+		os_free(psta->ht_capabilities);
+		os_free(psta->vht_capabilities);
+		os_free(psta->vht_operation);
+		os_free(psta->he_capab);
+		os_free(psta->he_6ghz_capab);
+		os_free(psta->eht_capab);
+
+#ifdef CONFIG_SAE
+		sae_clear_data(psta->sae);
+		os_free(psta->sae);
+#endif /* CONFIG_SAE */
+		os_free(psta);
+	}
+}
+#endif /* CONFIG_IEEE80211BE */
+
 
 static void __ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 {
@@ -271,6 +326,31 @@ void clear_wpa_sm_for_each_partner_link(struct hostapd_data *hapd,
 }
 
 #endif /* CONFIG_IEEE80211BE */
+
+
+int ap_sta_check_link_sta(struct hostapd_data *hapd,
+			  struct sta_info *sta)
+{
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_data *bss;
+	struct sta_info *lsta;
+
+	if (sta && !sta->mld_info.mld_sta)
+		return 0;
+
+	for_each_mld_link(bss, hapd) {
+		if (bss == hapd)
+			continue;
+		lsta = ap_get_sta(bss, sta->addr);
+		if (lsta && ap_sta_is_authorized(lsta)) {
+			return 1;
+		}
+	}
+	return 0;
+#else
+	return 0;
+#endif
+}
 
 
 void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
@@ -570,6 +650,22 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	os_free(sta);
 }
 
+struct sta_info *ap_get_unadded_sta(struct hostapd_data *hapd, const u8 *addr)
+{
+#ifdef CONFIG_IEEE80211BE
+	struct sta_info *lsta;
+
+	for (lsta = hapd->sta_list; lsta; lsta = lsta->next) {
+		u8 link_id = lsta->mld_assoc_link_id;
+
+		if (lsta->mld_info.mld_sta && lsta->unadded_sta &&
+		    (os_memcmp(lsta->mld_info.links[link_id].peer_addr, addr, ETH_ALEN) == 0)) {
+			return lsta;
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+	return NULL;
+}
 
 void hostapd_free_stas(struct hostapd_data *hapd)
 {
@@ -631,6 +727,17 @@ void ap_handle_timer(void *eloop_ctx, void *timeout_ctx)
 	wpa_printf(MSG_DEBUG, "%s: %s: " MACSTR " flags=0x%x timeout_next=%d",
 		   hapd->conf->iface, __func__, MAC2STR(sta->addr), sta->flags,
 		   sta->timeout_next);
+
+#ifdef CONFIG_IEEE80211BE
+	if (sta->unadded_sta) {
+		wpa_msg(hapd->msg_ctx, MSG_DEBUG, " Unadded partner sta " MACSTR
+			" has been inactive",
+			MAC2STR(sta->addr));
+		ap_free_unadded_link_sta(hapd, sta);
+		return;
+	}
+#endif /* CONFIG_IEEE80211BE */
+
 	if (sta->timeout_next == STA_REMOVE) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_INFO, "deauthenticated due to "

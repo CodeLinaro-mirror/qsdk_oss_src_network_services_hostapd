@@ -325,6 +325,11 @@ struct sta_info {
 	struct mld_info mld_info;
 	u8 mld_assoc_link_id;
 	struct link_reconf_req_list *reconf_req;
+
+	/* if receive auth request from partner link, when partner sta exist,
+	 * response send without add the station in kernel.
+	 */
+	u8 unadded_sta;
 #endif /* CONFIG_IEEE80211BE */
 
 	u16 max_idle_period; /* if nonzero, the granted BSS max idle period in
@@ -360,11 +365,13 @@ int ap_for_each_sta(struct hostapd_data *hapd,
 struct hostapd_ft_over_ds_ml_sta_entry *ap_get_ft_ds_ml_sta(struct hostapd_data *hapd,
 							    const u8 *sta_mld);
 struct sta_info * ap_get_sta(struct hostapd_data *hapd, const u8 *sta);
+struct sta_info *ap_get_unadded_sta(struct hostapd_data *hapd, const u8 *sta);
 struct sta_info * ap_get_link_sta(struct hostapd_data *hapd,
 				  const u8 *link_addr);
 struct sta_info * ap_get_sta_p2p(struct hostapd_data *hapd, const u8 *addr);
 void ap_sta_hash_add(struct hostapd_data *hapd, struct sta_info *sta);
 void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta);
+void ap_free_unadded_link_sta(struct hostapd_data *hapd, struct sta_info *sta);
 void ap_sta_ip6addr_del(struct hostapd_data *hapd, struct sta_info *sta);
 void hostapd_free_stas(struct hostapd_data *hapd);
 void ap_handle_timer(void *eloop_ctx, void *timeout_ctx);
@@ -449,6 +456,8 @@ static inline void ap_sta_set_mld(struct sta_info *sta, bool mld)
 #ifdef CONFIG_IEEE80211BE
 void ap_sta_remove_link_sta(struct hostapd_data *hapd,
                             struct sta_info *sta);
+int ap_sta_check_link_sta(struct hostapd_data *hapd,
+			  struct sta_info *sta);
 #endif
 void ap_sta_free_sta_profile(struct mld_info *info);
 
