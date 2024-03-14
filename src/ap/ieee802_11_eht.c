@@ -210,6 +210,17 @@ u8 * hostapd_eid_eht_operation(struct hostapd_data *hapd, u8 *eid)
 	else
 		chwidth = conf->eht_oper_chwidth;
 
+	seg0 = hostapd_get_oper_centr_freq_seg0_idx(conf);
+	if (!seg0)
+		seg0 = hapd->iconf->channel;
+
+	if (is_5ghz_freq(hapd->iface->freq) && (chwidth == CONF_OPER_CHWIDTH_320MHZ)
+	    && (hapd->iconf->punct_bitmap)) {
+		chwidth = CONF_OPER_CHWIDTH_160MHZ;
+		punct_bitmap &= 0xFF;
+		seg0 -= 16;
+	}
+
 	eht_oper_info_present = chwidth == CONF_OPER_CHWIDTH_320MHZ ||
 		punct_bitmap;
 
@@ -239,9 +250,6 @@ u8 * hostapd_eid_eht_operation(struct hostapd_data *hapd, u8 *eid)
 		return pos + elen;
 
 	oper->oper_params |= EHT_OPER_INFO_PRESENT;
-	seg0 = hostapd_get_oper_centr_freq_seg0_idx(conf);
-	if (!seg0)
-		seg0 = hapd->iconf->channel;
 
 	switch (chwidth) {
 	case CONF_OPER_CHWIDTH_320MHZ:
@@ -273,6 +281,7 @@ u8 * hostapd_eid_eht_operation(struct hostapd_data *hapd, u8 *eid)
 
 		break;
 	default:
+		punct_bitmap = 0;
 		oper->oper_info.control |= EHT_OPER_CHANNEL_WIDTH_20MHZ;
 		break;
 	}
