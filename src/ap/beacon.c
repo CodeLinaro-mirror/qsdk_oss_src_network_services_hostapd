@@ -2942,9 +2942,12 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 	struct hostapd_hw_modes *cmode = iface->current_mode;
 	struct wpabuf *beacon, *proberesp, *assocresp;
 	bool twt_he_responder = false;
-	int res, ret = -1, i;
-	struct hostapd_hw_modes *mode;
+	int res, ret = -1;
 	struct hostapd_channel_info info;
+#ifdef CONFIG_DRIVER_NL80211_QCA
+	int i;
+	struct hostapd_hw_modes *mode;
+#endif /* CONFIG_DRIVER_NL80211_QCA */
 
 	if (!hapd->drv_priv) {
 		wpa_printf(MSG_ERROR, "Interface is disabled");
@@ -3056,6 +3059,8 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 		params.freq = &freq;
 	}
 
+	params.allowed_freqs = NULL;
+#ifdef CONFIG_DRIVER_NL80211_QCA
 	for (i = 0; i < hapd->iface->num_hw_features; i++) {
 		mode = &hapd->iface->hw_features[i];
 
@@ -3068,6 +3073,7 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 						   iconf->acs_ch_list.num),
 						 true, &params.allowed_freqs);
 	}
+#endif /* CONFIG_DRIVER_NL80211_QCA */
 
 	res = hostapd_drv_set_ap(hapd, &params);
 	hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
