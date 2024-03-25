@@ -5399,7 +5399,7 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 	bool mld_link_sta = false;
 	u16 eml_cap = 0;
 
-	if (!hostapd_is_multiple_link_mld(hapd))
+	if (!hapd->conf->mld_ap)
 		return 0;
 
 	if (tx_link_status == WLAN_STATUS_SUCCESS && sta->mld_info.mld_sta) {
@@ -6175,7 +6175,7 @@ get_sta_from_ft_ds_list(struct hostapd_data *hapd,
 	struct hostapd_ft_over_ds_ml_sta_entry *entry;
 	const u8 *sta_mld;
 	struct wpa_state_machine *wpa_sm;
-	struct sta_info *sta;
+	struct sta_info *sta = NULL;
 
 	if (!hapd->mld)
 		return NULL;
@@ -6185,8 +6185,11 @@ get_sta_from_ft_ds_list(struct hostapd_data *hapd,
 		return NULL;
 
 	entry = ap_get_ft_ds_ml_sta(hapd, sta_mld);
-	if (!entry)
+	if (!entry) {
+		wpa_printf(MSG_DEBUG, "FT: Entry not found for sta_mld " MACSTR,
+			   MAC2STR(sta_mld));
 		return NULL;
+	}
 
 	wpa_sm = entry->wpa_sm;
 
@@ -6200,29 +6203,40 @@ get_sta_from_ft_ds_list(struct hostapd_data *hapd,
 	}
 
 	eloop_cancel_timeout(hostap_ft_ds_ml_sta_timeout, entry, NULL);
-	dl_list_del(&entry->list);
-	os_free(entry);
 
 	if (wpa_sm) {
-		wpa_auth_sta_addr_change(wpa_sm, mgmt->sa);
 		if (!wpa_sm->group)
 			wpa_sm->group = hapd->wpa_auth->group;
 	}  else {
 		wpa_printf(MSG_DEBUG, "%s : Temp reject the station as it is a existing entry",
 			   __func__);
-		return NULL;
+		goto free_entry;
 	}
 
-	sta = ap_sta_add(hapd, mgmt->sa);
+	sta = ap_sta_add(hapd, sta_mld);
 	if (!sta) {
 		if (wpa_sm)
 			wpa_auth_sta_deinit(wpa_sm);
-		return NULL;
+		goto free_entry;
 	}
 
 	sta->auth_alg = WLAN_AUTH_FT;
 	sta->ft_over_ds = true;
 	sta->wpa_sm = wpa_sm;
+	if (sta_mld) {
+		u8 link_id = hapd->mld_link_id;
+
+		sta->mld_info.mld_sta = true;
+		sta->mld_assoc_link_id = link_id;
+
+		os_memcpy(sta->mld_info.common_info.mld_addr, sta_mld, ETH_ALEN);
+		os_memcpy(sta->mld_info.links[link_id].peer_addr, mgmt->sa, ETH_ALEN);
+		os_memcpy(sta->mld_info.links[link_id].local_addr, hapd->own_addr, ETH_ALEN);
+	}
+
+free_entry:
+	dl_list_del(&entry->list);
+	os_free(entry);
 	//sta->ft_over_ds_saquery_status = sa_query_status;
 
 	return sta;
@@ -6240,6 +6254,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 	int left, i, ubus_resp;
 	struct sta_info *sta;
 	u8 *tmp = NULL;
+	u8 *sa;
 #ifdef CONFIG_FILS
 	int delay_assoc = 0;
 #endif /* CONFIG_FILS */
@@ -6276,6 +6291,10 @@ static void handle_assoc(struct hostapd_data *hapd,
 
 	fc = le_to_host16(mgmt->frame_control);
 	seq_ctrl = le_to_host16(mgmt->seq_ctrl);
+	/* sa should always be MLD address for assoc req, except for
+	 * ft_over_the_ds ml case.
+	 */
+	sa = (u8 *)mgmt->sa;
 
 	if (reassoc) {
 		capab_info = le_to_host16(mgmt->u.reassoc_req.capab_info);
@@ -6342,7 +6361,18 @@ static void handle_assoc(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG,
 			   "FT over DS: Check for STA entry with ML address");
 		sta = get_sta_from_ft_ds_list(hapd, mgmt, len, reassoc);
+		if (sta)
+			sa = sta->addr;
 	}
+
+	if (sta && sta->auth_alg == WLAN_AUTH_FT) {
+		/*
+		 * Mark station with WLAN_STA_FT_AUTH flag to open the port
+		 * without waiting for EAPOL handshake in case of FT roaming.
+		 */
+		sta->flags |= WLAN_STA_FT_AUTH;
+	}
+
 	if (sta && sta->auth_alg == WLAN_AUTH_FT &&
 	    (sta->flags & WLAN_STA_AUTH) == 0) {
 		wpa_printf(MSG_DEBUG, "FT: Allow STA " MACSTR " to associate "
@@ -6685,7 +6715,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 		reply_res = send_assoc_resp(hapd,
 					    mld_addrs_not_translated ?
 					    NULL : sta,
-					    mgmt->sa, resp, reassoc,
+					    sa, resp, reassoc,
 					    pos, left, rssi, omit_rsnxe);
 	os_free(tmp);
 
@@ -7028,7 +7058,7 @@ static int handle_action(struct hostapd_data *hapd,
 	case WLAN_ACTION_FT:
 		if (!sta ||
 		    wpa_ft_action_rx(sta->wpa_sm, (u8 *) &mgmt->u.action,
-				     len - IEEE80211_HDRLEN))
+				     mgmt->sa, hapd->own_addr, len - IEEE80211_HDRLEN))
 			break;
 		return 1;
 #endif /* CONFIG_IEEE80211R_AP */
@@ -7540,6 +7570,12 @@ static void hostapd_ml_handle_assoc_cb(struct hostapd_data *hapd,
 			    sta->mld_assoc_link_id ||
 			    tmp_sta->aid != sta->aid)
 				continue;
+
+			/* To-do: WLAN_STA_AUTHORIZED flag to be set to partner
+			 * links in other places as well.
+			 */
+			tmp_sta->flags |= (sta->flags & WLAN_STA_AUTHORIZED);
+			tmp_sta->flags |= (sta->flags & WLAN_STA_FT_AUTH);
 
 			ieee80211_ml_link_sta_assoc_cb(tmp_hapd, tmp_sta, link,
 						       ok);

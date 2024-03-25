@@ -995,13 +995,6 @@ int wpa_reconfig(struct wpa_authenticator *wpa_auth,
 	return 0;
 }
 
-
-void wpa_auth_sta_addr_change(struct wpa_state_machine *wpa_sm, const u8 *addr)
-{
-	os_memcpy(wpa_sm->addr, addr, sizeof(wpa_sm->addr));
-}
-
-
 struct wpa_state_machine *
 wpa_auth_sta_init(struct wpa_authenticator *wpa_auth, const u8 *addr,
 		  const u8 *p2p_dev_addr)
@@ -1028,6 +1021,11 @@ wpa_auth_sta_init(struct wpa_authenticator *wpa_auth, const u8 *addr,
 	return sm;
 }
 
+
+void wpa_auth_set_sta_ft_over_ds_ml(struct wpa_state_machine *sm, bool status)
+{
+	sm->ft_over_ds_ml = status;
+}
 
 int wpa_auth_sta_associated(struct wpa_authenticator *wpa_auth,
 			    struct wpa_state_machine *sm)
@@ -5177,7 +5175,7 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 				  2 + sm->assoc_resp_ftie[1]);
 			res = 2 + sm->assoc_resp_ftie[1];
 		} else {
-			res = wpa_write_ftie(conf, sm->wpa_key_mgmt,
+			res = wpa_write_ftie(conf->r1_key_holder, sm->wpa_key_mgmt,
 					     sm->xxkey_len,
 					     conf->r0_key_holder,
 					     conf->r0_key_holder_len,
@@ -7323,7 +7321,7 @@ int wpa_auth_write_fte(struct wpa_authenticator *wpa_auth,
 {
 	struct wpa_auth_config *conf = &wpa_auth->conf;
 
-	return wpa_write_ftie(conf, sm->wpa_key_mgmt, sm->xxkey_len,
+	return wpa_write_ftie(conf->r1_key_holder, sm->wpa_key_mgmt, sm->xxkey_len,
 			      conf->r0_key_holder, conf->r0_key_holder_len,
 			      NULL, NULL, buf, len, NULL, 0, 0);
 }
@@ -7570,7 +7568,7 @@ int wpa_auth_resend_m3(struct wpa_state_machine *sm,
 				  2 + sm->assoc_resp_ftie[1]);
 			res = 2 + sm->assoc_resp_ftie[1];
 		} else {
-			res = wpa_write_ftie(conf, sm->wpa_key_mgmt,
+			res = wpa_write_ftie(conf->r1_key_holder, sm->wpa_key_mgmt,
 					     sm->xxkey_len,
 					     conf->r0_key_holder,
 					     conf->r0_key_holder_len,

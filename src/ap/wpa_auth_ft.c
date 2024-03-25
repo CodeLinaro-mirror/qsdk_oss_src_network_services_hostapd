@@ -29,7 +29,7 @@
 #include "wpa_auth_i.h"
 #include "pmksa_cache_auth.h"
 #include "sta_info.h"
-
+#include "hostapd.h"
 
 #ifdef CONFIG_IEEE80211R_AP
 
@@ -42,8 +42,9 @@ static const int dot11RSNAConfigPMKLifetime = 43200;
 
 static int wpa_ft_send_rrb_auth_resp(struct wpa_state_machine *sm,
 				     const u8 *current_ap, const u8 *sta_addr,
-				     u16 status, const u8 *resp_ies,
-				     size_t resp_ies_len);
+				     const u8 *sta_sa_addr, u16 status,
+				     const u8 *resp_ies, size_t resp_ies_len,
+				     bool is_mld);
 static void ft_finish_pull(struct wpa_state_machine *sm);
 static void wpa_ft_expire_pull(void *eloop_ctx, void *timeout_ctx);
 static void wpa_ft_rrb_seq_timeout(void *eloop_ctx, void *timeout_ctx);
@@ -835,7 +836,7 @@ int wpa_write_mdie(struct wpa_auth_config *conf, u8 *buf, size_t len)
 }
 
 
-int wpa_write_ftie(struct wpa_auth_config *conf, int key_mgmt, size_t key_len,
+int wpa_write_ftie(u8 *r1kh_id, int key_mgmt, size_t key_len,
 		   const u8 *r0kh_id, size_t r0kh_id_len,
 		   const u8 *anonce, const u8 *snonce,
 		   u8 *buf, size_t len, const u8 *subelem,
@@ -908,7 +909,7 @@ int wpa_write_ftie(struct wpa_auth_config *conf, int key_mgmt, size_t key_len,
 	/* Optional Parameters */
 	*pos++ = FTIE_SUBELEM_R1KH_ID;
 	*pos++ = FT_R1KH_ID_LEN;
-	os_memcpy(pos, conf->r1_key_holder, FT_R1KH_ID_LEN);
+	os_memcpy(pos, r1kh_id, FT_R1KH_ID_LEN);
 	pos += FT_R1KH_ID_LEN;
 
 	if (r0kh_id) {
@@ -2226,6 +2227,7 @@ int wpa_auth_derive_ptk_ft(struct wpa_state_machine *sm, struct wpa_ptk *ptk,
 			      pmk_r1, sm->pmk_r1_name) < 0)
 		return -1;
 
+	os_memcpy(sm->r1_key_holder, r1kh, sizeof(sm->r1_key_holder));
 	return wpa_pmk_r1_to_ptk(pmk_r1, pmk_r1_len, sm->SNonce, sm->ANonce,
 				 wpa_auth_get_spa(sm), wpa_auth_get_aa(sm), sm->pmk_r1_name,
 				 ptk, ptk_name, sm->wpa_key_mgmt, sm->pairwise,
@@ -3105,7 +3107,8 @@ u8 * wpa_sm_write_assoc_resp_ies(struct wpa_state_machine *sm, u8 *pos,
 					      NULL, &psk_len, NULL))
 			key_len = psk_len;
 	}
-	res = wpa_write_ftie(conf, sm->wpa_key_mgmt, key_len,
+	res = wpa_write_ftie(sm->pmk_r1_name_valid ? sm->r1_key_holder : conf->r1_key_holder,
+			     sm->wpa_key_mgmt, key_len,
 			     r0kh_id, r0kh_id_len,
 			     anonce, snonce, pos, end - pos,
 			     subelem, subelem_len, rsnxe_used);
@@ -3547,7 +3550,6 @@ static int wpa_ft_local_derive_pmk_r1(struct wpa_authenticator *wpa_auth,
 	return 0;
 }
 
-
 static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 				   const u8 *ies, size_t ies_len,
 				   u8 **resp_ies, size_t *resp_ies_len)
@@ -3647,6 +3649,8 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 			retval = WLAN_STATUS_INVALID_PMKID;
 			goto out;
 		}
+		os_memcpy(sm->r1_key_holder, sm->wpa_auth->conf.r1_key_holder,
+			  sizeof(sm->r1_key_holder));
 		pmk_r1_len = PMK_LEN;
 		wpa_printf(MSG_DEBUG,
 			   "FT: Generated PMK-R1 for FT-PSK locally");
@@ -3676,6 +3680,8 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 			wpa_printf(MSG_DEBUG,
 				   "FT: Found PMKR1Name (using SHA%zu) from local cache",
 				   pmk_r1_len * 8);
+			os_memcpy(sm->r1_key_holder, sm->wpa_auth->conf.r1_key_holder,
+				  sizeof(sm->r1_key_holder));
 			goto pmk_r1_derived;
 		}
 	}
@@ -3691,6 +3697,8 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 				       &session_timeout, &pmk_r1_len) == 0) {
 		wpa_printf(MSG_DEBUG,
 			   "FT: Generated PMK-R1 based on local PMK-R0");
+		os_memcpy(sm->r1_key_holder, sm->wpa_auth->conf.r1_key_holder,
+			  sizeof(sm->r1_key_holder));
 		goto pmk_r1_derived;
 	}
 
@@ -3784,20 +3792,22 @@ pmk_r1_derived:
 	sm->pairwise = pairwise;
 	sm->PTK_valid = true;
 	sm->tk_already_set = false;
-	wpa_auth_add_sta_ft(sm->wpa_auth, sm->addr);
-
-	if (wpa_ft_set_vlan(sm->wpa_auth, wpa_auth_get_spa(sm), &vlan) < 0) {
-		wpa_printf(MSG_DEBUG, "FT: Failed to configure VLAN");
-		goto out;
+	if (!sm->ft_over_ds_ml) {
+		/* TODO: Defer these actions to handle_assoc for FT over DS */
+		wpa_auth_add_sta_ft(sm->wpa_auth, sm->addr);
+		if (wpa_ft_set_vlan(sm->wpa_auth, wpa_auth_get_spa(sm), &vlan) < 0) {
+			wpa_printf(MSG_DEBUG, "FT: Failed to configure VLAN");
+			return WLAN_STATUS_UNSPECIFIED_FAILURE;
+		}
+		if (wpa_ft_set_identity(sm->wpa_auth, wpa_auth_get_spa(sm),
+					identity, identity_len) < 0 ||
+				wpa_ft_set_radius_cui(sm->wpa_auth, wpa_auth_get_spa(sm),
+					radius_cui, radius_cui_len) < 0) {
+			wpa_printf(MSG_DEBUG, "FT: Failed to configure identity/CUI");
+			return WLAN_STATUS_UNSPECIFIED_FAILURE;
+		}
+		wpa_ft_set_session_timeout(sm->wpa_auth, wpa_auth_get_spa(sm), session_timeout);
 	}
-	if (wpa_ft_set_identity(sm->wpa_auth, wpa_auth_get_spa(sm),
-				identity, identity_len) < 0 ||
-	    wpa_ft_set_radius_cui(sm->wpa_auth, wpa_auth_get_spa(sm),
-				  radius_cui, radius_cui_len) < 0) {
-		wpa_printf(MSG_DEBUG, "FT: Failed to configure identity/CUI");
-		goto out;
-	}
-	wpa_ft_set_session_timeout(sm->wpa_auth, wpa_auth_get_spa(sm), session_timeout);
 
 	bmle_len = wpa_ft_add_bmle_len(sm->wpa_auth, WLAN_FC_STYPE_AUTH, NULL);
 
@@ -3825,7 +3835,7 @@ pmk_r1_derived:
 		goto fail;
 	pos += ret;
 
-	ret = wpa_write_ftie(conf, parse.key_mgmt, pmk_r1_len,
+	ret = wpa_write_ftie(conf->r1_key_holder, parse.key_mgmt, pmk_r1_len,
 			     parse.r0kh_id, parse.r0kh_id_len,
 			     sm->ANonce, sm->SNonce, pos, end - pos, NULL, 0,
 			     0);
@@ -3866,6 +3876,7 @@ void wpa_ft_process_auth(struct wpa_state_machine *sm,
 		return;
 	}
 
+	sm->ft_over_ds_ml = false;
 	wpa_printf(MSG_DEBUG, "FT: Received authentication frame: STA=" MACSTR
 		   " BSSID=" MACSTR " transaction=%d",
 		   MAC2STR(sm->addr), MAC2STR(sm->wpa_auth->addr),
@@ -4012,14 +4023,14 @@ int wpa_ft_validate_reassoc(struct wpa_state_machine *sm, const u8 *ies,
 		goto out;
 	}
 
-	if (os_memcmp_const(parse.r1kh_id, conf->r1_key_holder,
+	if (os_memcmp_const(parse.r1kh_id, sm->r1_key_holder,
 			    FT_R1KH_ID_LEN) != 0) {
 		wpa_printf(MSG_DEBUG, "FT: Unknown R1KH-ID used in "
 			   "ReassocReq");
 		wpa_hexdump(MSG_DEBUG, "FT: R1KH-ID in FTIE",
 			    parse.r1kh_id, FT_R1KH_ID_LEN);
 		wpa_hexdump(MSG_DEBUG, "FT: Expected R1KH-ID",
-			    conf->r1_key_holder, FT_R1KH_ID_LEN);
+			    sm->r1_key_holder, FT_R1KH_ID_LEN);
 		retval = WLAN_STATUS_INVALID_FTIE;
 		goto out;
 	}
@@ -4085,6 +4096,8 @@ int wpa_ft_validate_reassoc(struct wpa_state_machine *sm, const u8 *ies,
 			os_memcpy(assoc_link_data[pos].link_addr, link_info->peer_addr, ETH_ALEN);
 			pos++;
 		}
+		ml_links_data.has_rsn = false;
+		ml_links_data.has_rsnx = false;
 		ml_links_data.num_links = pos;
 		ml_links_data.link_data = assoc_link_data;
 	}
@@ -4188,7 +4201,8 @@ out:
 }
 
 
-int wpa_ft_action_rx(struct wpa_state_machine *sm, const u8 *data, size_t len)
+int wpa_ft_action_rx(struct wpa_state_machine *sm, const u8 *data, const u8 *sa,
+		     const u8 *da, size_t len)
 {
 	const u8 *sta_addr, *target_ap;
 	const u8 *ies;
@@ -4216,14 +4230,16 @@ int wpa_ft_action_rx(struct wpa_state_machine *sm, const u8 *data, size_t len)
 	ies = data + 14;
 	ies_len = len - 14;
 
+	wpa_printf(MSG_DEBUG, "FT: AP Local Addr: " MACSTR,
+		   MAC2STR(sm->wpa_auth->addr));
 	wpa_printf(MSG_DEBUG, "FT: Received FT Action frame (STA=" MACSTR
 		   " Target AP=" MACSTR " Action=%d)",
 		   MAC2STR(sta_addr), MAC2STR(target_ap), action);
 
-	if (!ether_addr_equal(sta_addr, sm->addr)) {
+	if (!ether_addr_equal(sta_addr, wpa_auth_get_spa(sm))) {
 		wpa_printf(MSG_DEBUG, "FT: Mismatch in FT Action STA address: "
 			   "STA=" MACSTR " STA-Address=" MACSTR,
-			   MAC2STR(sm->addr), MAC2STR(sta_addr));
+			   MAC2STR(wpa_auth_get_spa(sm)), MAC2STR(sta_addr));
 		return -1;
 	}
 
@@ -4254,7 +4270,13 @@ int wpa_ft_action_rx(struct wpa_state_machine *sm, const u8 *data, size_t len)
 	frame->packet_type = FT_PACKET_REQUEST;
 	frame->action_length = host_to_le16(len);
 	os_memcpy(frame->ap_address, sm->wpa_auth->addr, ETH_ALEN);
+	os_memcpy(frame->ap_address, da, ETH_ALEN);
+	os_memcpy(frame->sta_address, sa, ETH_ALEN);
 	os_memcpy(frame + 1, data, len);
+	wpa_printf(MSG_DEBUG, "FT: SA: " MACSTR,
+		   MAC2STR(frame->sta_address));
+	wpa_printf(MSG_DEBUG, "FT: DA: " MACSTR,
+		   MAC2STR(frame->ap_address));
 
 	wpa_ft_rrb_send(sm->wpa_auth, target_ap, (u8 *) frame,
 			sizeof(*frame) + len);
@@ -4269,16 +4291,18 @@ static void wpa_ft_rrb_rx_request_cb(void *ctx, const u8 *dst,
 				     const u8 *ies, size_t ies_len)
 {
 	struct wpa_state_machine *sm = ctx;
+	bool is_mld = sm->mld_assoc_link_id >= 0;
 	wpa_printf(MSG_DEBUG, "FT: Over-the-DS RX request cb for " MACSTR,
 		   MAC2STR(sm->addr));
 	wpa_ft_send_rrb_auth_resp(sm, sm->ft_pending_current_ap, sm->addr,
-				  WLAN_STATUS_SUCCESS, ies, ies_len);
+				  sm->addr, WLAN_STATUS_SUCCESS, ies, ies_len,
+				  is_mld);
 }
 
 
 static int wpa_ft_rrb_rx_request(struct wpa_authenticator *wpa_auth,
 				 const u8 *current_ap, const u8 *sta_addr,
-				 const u8 *body, size_t len)
+				 const u8 *sta_sa_addr, const u8 *body, size_t len)
 {
 	struct wpa_state_machine *sm;
 	u16 status;
@@ -4338,22 +4362,26 @@ static int wpa_ft_rrb_rx_request(struct wpa_authenticator *wpa_auth,
 	}
 	status = res;
 
-	res = wpa_ft_send_rrb_auth_resp(sm, current_ap, sta_addr, status,
-					resp_ies, resp_ies_len);
+	res = wpa_ft_send_rrb_auth_resp(sm, current_ap, sta_addr, sta_sa_addr,
+					status, resp_ies, resp_ies_len, is_ml);
 	os_free(resp_ies);
 	return res;
 }
 
-
 static int wpa_ft_send_rrb_auth_resp(struct wpa_state_machine *sm,
 				     const u8 *current_ap, const u8 *sta_addr,
-				     u16 status, const u8 *resp_ies,
-				     size_t resp_ies_len)
+				     const u8 *sta_sa_addr, u16 status,
+				     const u8 *resp_ies, size_t resp_ies_len,
+				     bool is_mld)
 {
 	struct wpa_authenticator *wpa_auth = sm->wpa_auth;
 	size_t rlen;
 	struct ft_rrb_frame *frame;
 	u8 *pos;
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_data *hapd = wpa_auth->cb_ctx;
+	struct wpabuf *ml_resp = NULL;
+#endif
 
 	wpa_printf(MSG_DEBUG, "FT: RRB authentication response: STA=" MACSTR
 		   " CurrentAP=" MACSTR " status=%u (%s)",
@@ -4366,8 +4394,18 @@ static int wpa_ft_send_rrb_auth_resp(struct wpa_state_machine *sm,
 	/*
 	 * data: Category[1] Action[1] STA_Address[6] Target_AP_Address[6]
 	 * Status_Code[2] FT Request action frame body[variable]
+	 * Basic MLIE
 	 */
 	rlen = 2 + 2 * ETH_ALEN + 2 + resp_ies_len;
+
+#ifdef CONFIG_IEEE80211BE
+	if (is_mld) {
+		ml_resp = hostapd_ml_auth_resp(hapd);
+		if (!ml_resp)
+			return -1;
+		rlen += wpabuf_len(ml_resp);
+	}
+#endif
 
 	frame = os_malloc(sizeof(*frame) + rlen);
 	if (frame == NULL)
@@ -4376,6 +4414,7 @@ static int wpa_ft_send_rrb_auth_resp(struct wpa_state_machine *sm,
 	frame->packet_type = FT_PACKET_RESPONSE;
 	frame->action_length = host_to_le16(rlen);
 	os_memcpy(frame->ap_address, wpa_auth->addr, ETH_ALEN);
+	os_memcpy(frame->sta_address, sta_sa_addr, ETH_ALEN);
 	pos = (u8 *) (frame + 1);
 	*pos++ = WLAN_ACTION_FT;
 	*pos++ = 2; /* Action: Response */
@@ -4388,6 +4427,12 @@ static int wpa_ft_send_rrb_auth_resp(struct wpa_state_machine *sm,
 	if (resp_ies)
 		os_memcpy(pos, resp_ies, resp_ies_len);
 
+#ifdef CONFIG_IEEE80211BE
+	pos += resp_ies_len;
+	if (ml_resp)
+		os_memcpy(pos, wpabuf_head(ml_resp), wpabuf_len(ml_resp));
+	wpabuf_free(ml_resp);
+#endif
 	wpa_ft_rrb_send(wpa_auth, current_ap, (u8 *) frame,
 			sizeof(*frame) + rlen);
 	os_free(frame);
@@ -5227,6 +5272,7 @@ int wpa_ft_rrb_rx(struct wpa_authenticator *wpa_auth, const u8 *src_addr,
 	wpa_printf(MSG_DEBUG, "FT: RRB received frame from remote AP " MACSTR,
 		   MAC2STR(src_addr));
 
+	wpa_hexdump(MSG_MSGDUMP, "FT: Action frame body", data, data_len);
 	if (data_len < sizeof(*frame)) {
 		wpa_printf(MSG_DEBUG, "FT: Too short RRB frame (data_len=%lu)",
 			   (unsigned long) data_len);
@@ -5292,15 +5338,21 @@ int wpa_ft_rrb_rx(struct wpa_authenticator *wpa_auth, const u8 *src_addr,
 			return -1;
 		}
 
-		if (!ether_addr_equal(target_ap_addr, wpa_auth->addr)) {
+		if (!ether_addr_equal(target_ap_addr, wpa_auth->addr) &&
+		    !ether_addr_equal(target_ap_addr, wpa_auth->mld_addr)) {
 			wpa_printf(MSG_DEBUG, "FT: Target AP address in the "
 				   "RRB Request does not match with own "
 				   "address");
 			return -1;
 		}
 
+		wpa_printf(MSG_DEBUG, "FT: RRB frame->ap_address="
+				MACSTR " frame->sta_address=" MACSTR,
+				MAC2STR(frame->ap_address), MAC2STR(frame->sta_address));
+
 		if (wpa_ft_rrb_rx_request(wpa_auth, frame->ap_address,
-					  sta_addr, pos, end - pos) < 0)
+					  sta_addr, frame->sta_address,
+					  pos, end - pos) < 0)
 			return -1;
 	} else if (frame->packet_type == FT_PACKET_RESPONSE) {
 		u16 status_code;
@@ -5315,7 +5367,8 @@ int wpa_ft_rrb_rx(struct wpa_authenticator *wpa_auth, const u8 *src_addr,
 		wpa_printf(MSG_DEBUG, "FT: FT Packet Type - Response "
 			   "(status_code=%d)", status_code);
 
-		if (wpa_ft_action_send(wpa_auth, sta_addr, start, alen) < 0)
+		if (wpa_ft_action_send(wpa_auth, frame->sta_address,
+				       start, alen) < 0)
 			return -1;
 	} else {
 		wpa_printf(MSG_DEBUG, "FT: RRB discarded frame with unknown "

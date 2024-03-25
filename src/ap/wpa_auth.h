@@ -30,6 +30,7 @@ struct ft_rrb_frame {
 	u8 packet_type; /* FT_PACKET_REQUEST/FT_PACKET_RESPONSE */
 	le16 action_length; /* little endian length of action_frame */
 	u8 ap_address[ETH_ALEN];
+	u8 sta_address[ETH_ALEN];
 	/*
 	 * Followed by action_length bytes of FT Action frame (from Category
 	 * field to the end of Action Frame body.
@@ -478,7 +479,7 @@ int wpa_auth_uses_ocv(struct wpa_state_machine *sm);
 struct wpa_state_machine *
 wpa_auth_sta_init(struct wpa_authenticator *wpa_auth, const u8 *addr,
 		  const u8 *p2p_dev_addr);
-void wpa_auth_sta_addr_change(struct wpa_state_machine *wpa_sm, const u8 *addr);
+void wpa_auth_set_sta_ft_over_ds_ml(struct wpa_state_machine *sm, bool status);
 int wpa_auth_sta_associated(struct wpa_authenticator *wpa_auth,
 			    struct wpa_state_machine *sm);
 void wpa_auth_sta_no_wpa(struct wpa_state_machine *sm);
@@ -572,7 +573,8 @@ void wpa_ft_process_auth(struct wpa_state_machine *sm,
 			 void *ctx);
 int wpa_ft_validate_reassoc(struct wpa_state_machine *sm, const u8 *ies,
 			    size_t ies_len, struct mld_info *mld_info);
-int wpa_ft_action_rx(struct wpa_state_machine *sm, const u8 *data, size_t len);
+int wpa_ft_action_rx(struct wpa_state_machine *sm, const u8 *data,
+		const u8 *sa, const u8 *da, size_t len);
 int wpa_ft_rrb_rx(struct wpa_authenticator *wpa_auth, const u8 *src_addr,
 		  const u8 *data, size_t data_len);
 void wpa_ft_rrb_oui_rx(struct wpa_authenticator *wpa_auth, const u8 *src_addr,

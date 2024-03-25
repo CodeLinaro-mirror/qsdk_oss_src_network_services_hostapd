@@ -594,6 +594,7 @@ struct hostapd_ft_over_ds_ml_sta_entry {
 	u8 mld_mac[ETH_ALEN];
 	struct wpa_state_machine *wpa_sm;
 	struct wpa_authenticator *wpa_auth;
+	struct hostapd_data *hapd;
 };
 
 /**

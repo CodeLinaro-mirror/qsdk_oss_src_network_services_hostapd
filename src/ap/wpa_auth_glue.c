@@ -33,7 +33,7 @@
 #include "pmksa_cache_auth.h"
 #include "wpa_auth.h"
 #include "wpa_auth_glue.h"
-
+#include "wpa_auth_i.h"
 
 static void hostapd_wpa_auth_config_update(struct hostapd_data *hapd,
 					   struct wpa_auth_config *_conf)
@@ -1237,6 +1237,8 @@ hostapd_wpa_auth_add_sta_ml(struct hostapd_data *hapd, const u8 *sta_mld)
 		new_allocation = true;
 		os_memcpy(entry->mld_mac, sta_mld, 6);
 		entry->wpa_auth = hapd->wpa_auth;
+		entry->hapd = hapd;
+		wpa_printf(MSG_DEBUG, "FT: Entry created for STA MLD address " MACSTR, MAC2STR(sta_mld));
 	} else {
 		ft_ds_list_found = true;
 	}
@@ -1277,13 +1279,15 @@ hostapd_wpa_auth_add_sta_ml(struct hostapd_data *hapd, const u8 *sta_mld)
 		return NULL;
 	}
 
-	if (ft_ds_list_found)
+	wpa_auth_set_sta_ft_over_ds_ml(wpa_sm, true);
+	if (ft_ds_list_found) {
 		/*
 		 * Cancel the existing timer
 		 */
 		eloop_cancel_timeout(hostap_ft_ds_ml_sta_timeout, entry, NULL);
-	else
+	} else {
 		dl_list_add(&hapd->mld->ft_ds_ml_stas, &entry->list);
+	}
 
 	/*
 	 * Expect FT-Assoc at least 5 seconds after receiving FT-Request,
@@ -1627,12 +1631,15 @@ static void hostapd_rrb_receive(void *ctx, const u8 *src_addr, const u8 *buf,
 	struct l2_ethhdr *ethhdr;
 	if (len < sizeof(*ethhdr))
 		return;
+
 	ethhdr = (struct l2_ethhdr *) buf;
 	wpa_printf(MSG_DEBUG, "FT: RRB received packet " MACSTR " -> "
-		   MACSTR, MAC2STR(ethhdr->h_source), MAC2STR(ethhdr->h_dest));
+		   MACSTR " & own addr  " MACSTR, MAC2STR(ethhdr->h_source),
+		   MAC2STR(ethhdr->h_dest), MAC2STR(hapd->own_addr));
 	if (!is_multicast_ether_addr(ethhdr->h_dest) &&
 	    !ether_addr_equal(hapd->own_addr, ethhdr->h_dest))
 		return;
+
 	wpa_ft_rrb_rx(hapd->wpa_auth, ethhdr->h_source, buf + sizeof(*ethhdr),
 		      len - sizeof(*ethhdr));
 }

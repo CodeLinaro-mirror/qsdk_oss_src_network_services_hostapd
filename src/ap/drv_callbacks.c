@@ -1829,7 +1829,8 @@ static void hostapd_action_rx(struct hostapd_data *hapd,
 	}
 #ifdef CONFIG_IEEE80211R_AP
 	if (mgmt->u.action.category == WLAN_ACTION_FT) {
-		wpa_ft_action_rx(sta->wpa_sm, (u8 *) &mgmt->u.action, plen);
+		wpa_ft_action_rx(sta->wpa_sm, (u8 *) &mgmt->u.action, mgmt->sa,
+				 hapd->own_addr, plen);
 		return;
 	}
 #endif /* CONFIG_IEEE80211R_AP */

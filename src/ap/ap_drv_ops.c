@@ -42,6 +42,9 @@ u32 hostapd_sta_flags_to_drv(u32 flags)
 		res |= WPA_STA_ASSOCIATED;
 	if (flags & WLAN_STA_SPP_AMSDU)
 		res |= WPA_STA_SPP_AMSDU;
+	if (flags & WLAN_STA_FT_AUTH)
+		res |= WPA_STA_FT_AUTH;
+
 	return res;
 }
 

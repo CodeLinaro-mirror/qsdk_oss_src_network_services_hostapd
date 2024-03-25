@@ -134,6 +134,7 @@ struct wpa_state_machine {
 	u8 xxkey[PMK_LEN_MAX]; /* PSK or the second 256 bits of MSK, or the
 				* first 384 bits of MSK */
 	size_t xxkey_len;
+	u8 r1_key_holder[FT_R1KH_ID_LEN];
 	u8 pmk_r1[PMK_LEN_MAX];
 	unsigned int pmk_r1_len;
 	u8 pmk_r1_name[WPA_PMK_NAME_LEN]; /* PMKR1Name derived from FT Auth
@@ -191,6 +192,7 @@ struct wpa_state_machine {
 		size_t rsnxe_len;
 		struct wpa_authenticator *wpa_auth;
 	} mld_links[MAX_NUM_MLD_LINKS];
+	bool ft_over_ds_ml;
 #endif /* CONFIG_IEEE80211BE */
 
 	bool ssid_protection;
@@ -340,7 +342,7 @@ void wpa_auth_store_ptksa(struct wpa_authenticator *wpa_auth,
 
 #ifdef CONFIG_IEEE80211R_AP
 int wpa_write_mdie(struct wpa_auth_config *conf, u8 *buf, size_t len);
-int wpa_write_ftie(struct wpa_auth_config *conf, int key_mgmt, size_t key_len,
+int wpa_write_ftie(u8 *r1kh_id, int key_mgmt, size_t key_len,
 		   const u8 *r0kh_id, size_t r0kh_id_len,
 		   const u8 *anonce, const u8 *snonce,
 		   u8 *buf, size_t len, const u8 *subelem,
