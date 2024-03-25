@@ -1932,7 +1932,9 @@ int hostapd_ctrl_iface_bss_tm_req(struct hostapd_data *hapd,
 	}
 
 	sta = ap_get_sta(hapd, addr);
-	if (sta == NULL) {
+	if (!sta && hapd->mld)
+		sta = ap_get_link_sta(hapd, addr);
+	if (!sta) {
 		wpa_printf(MSG_DEBUG, "Station " MACSTR
 			   " not found for BSS TM Request message",
 			   MAC2STR(addr));
