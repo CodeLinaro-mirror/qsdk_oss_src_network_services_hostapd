@@ -645,11 +645,15 @@ int hostapd_send_beacon_req(struct hostapd_data *hapd, const u8 *addr,
 	pos = wpabuf_head(req);
 	mode = pos[6];
 
-	if (!sta || !(sta->flags & WLAN_STA_AUTHORIZED)) {
-		wpa_printf(MSG_INFO,
-			   "Beacon request: " MACSTR " is not connected",
-			   MAC2STR(addr));
-		return -1;
+	if (!sta) {
+		if (hapd->mld)
+			sta = ap_get_link_sta(hapd, addr);
+		if (!sta || !(sta->flags & WLAN_STA_AUTHORIZED)) {
+			wpa_printf(MSG_INFO,
+				   "Beacon request: " MACSTR " is not connected",
+				   MAC2STR(addr));
+			return -1;
+		}
 	}
 
 	switch (mode) {
@@ -710,7 +714,7 @@ int hostapd_send_beacon_req(struct hostapd_data *hapd, const u8 *addr,
 	wpabuf_put_u8(buf, MEASURE_TYPE_BEACON); /* Measurement Type */
 	wpabuf_put_buf(buf, req);
 
-	ret = hostapd_drv_send_action(hapd, hapd->iface->freq, 0, addr,
+	ret = hostapd_drv_send_action(hapd, hapd->iface->freq, 0, sta->addr,
 				      wpabuf_head(buf), wpabuf_len(buf));
 	wpabuf_free(buf);
 	if (ret < 0)
