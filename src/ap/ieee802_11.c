@@ -10220,6 +10220,13 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 		}
 #endif /* CONFIG_IEEE80211BE */
 
+		/* WMM IE */
+		if (bss->conf->wmm_override) {
+			nontx_profile_len += hostapd_eid_wmm_len(bss);
+			if (tx_bss->conf->wmm_enabled && !bss->conf->wmm_enabled)
+				ie_count++;
+		}
+
 		if (ie_count)
 			nontx_profile_len += 4 + ie_count + 1;
 
@@ -10311,7 +10318,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		struct hostapd_bss_config *tx_conf = tx_bss->conf;
 		u8 *eid_len_pos, *nontx_bss_start = eid;
 		const u8 *auth, *rsn = NULL, *rsnx = NULL;
-		u8 ie_count = 0, non_inherit_ie[3];
+		u8 ie_count = 0, non_inherit_ie[4];
 		size_t auth_len = 0, xrate_len;
 		u16 capab_info;
 		u8 mbssindex = i;
@@ -10410,6 +10417,13 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 				eid = hostapd_eid_eht_reconf_ml(bss, eid);
 		}
 #endif /* CONFIG_IEEE80211BE */
+
+		/* WMM IE */
+		if (bss->conf->wmm_override) {
+			eid = hostapd_eid_wmm(bss, eid);
+			if (tx_bss->conf->wmm_enabled && !bss->conf->wmm_enabled)
+				non_inherit_ie[ie_count++] = WLAN_EID_VENDOR_SPECIFIC;
+		}
 		if (ie_count) {
 			*eid++ = WLAN_EID_EXTENSION;
 			*eid++ = 2 + ie_count + 1;

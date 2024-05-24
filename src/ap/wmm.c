@@ -99,6 +99,13 @@ void wmm_calc_regulatory_limit(struct hostapd_data *hapd,
 }
 
 
+size_t hostapd_eid_wmm_len(struct hostapd_data *hapd)
+{
+	if (!hapd->conf->wmm_enabled)
+		return 0;
+	/* Tag (1) + elem len (1) + elem */
+	return 2 + sizeof(struct wmm_parameter_element);
+}
 /*
  * Add WMM Parameter Element to Beacon, Probe Response, and (Re)Association
  * Response frames.
