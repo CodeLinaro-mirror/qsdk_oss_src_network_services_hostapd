@@ -3927,6 +3927,38 @@ static void qca_nl80211_roam_status_event(struct wpa_driver_nl80211_data *drv,
 
 #endif /* CONFIG_DRIVER_NL80211_QCA */
 
+static void
+qca_nl80211_6ghz_pwr_mode_change_completed(struct wpa_driver_nl80211_data *drv,
+					   u8 *data, size_t len)
+{
+	union wpa_event_data event;
+	u8 ap_6ghz_pwr_mode;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_MAX + 1];
+
+	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_MAX,
+		      (struct nlattr *)data, len, NULL) ||
+	    !tb[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE]) {
+		return;
+	}
+
+	ap_6ghz_pwr_mode = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE]);
+
+	if (ap_6ghz_pwr_mode < NL80211_REG_AP_LPI ||
+	    ap_6ghz_pwr_mode > NL80211_REG_AP_VLP) {
+		wpa_printf(MSG_ERROR, "Invalid power mode update received %u\n",
+			   ap_6ghz_pwr_mode);
+		return;
+	}
+
+	os_memset(&event, 0, sizeof(event));
+	event.ap_6ghz_pwr_mode_event.pwr_mode = ap_6ghz_pwr_mode;
+
+	wpa_printf(MSG_INFO, "nl80211: 6GHZ power mode changed %d",
+		   event.ap_6ghz_pwr_mode_event.pwr_mode);
+
+	wpa_supplicant_event(drv->ctx, EVENT_6GHZ_POWER_MODE_NOTIFY, &event);
+}
+
 
 static void nl80211_vendor_event_qca(struct i802_bss *bss,
 				     u32 subcmd, u8 *data, size_t len)
@@ -3979,6 +4011,9 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 		qca_nl80211_roam_status_event(bss->drv, data, len);
 		break;
 #endif /* CONFIG_DRIVER_NL80211_QCA */
+	case QCA_NL80211_VENDOR_SUBCMD_POWER_MODE_CHANGE_COMPLETED:
+		qca_nl80211_6ghz_pwr_mode_change_completed(bss->drv, data, len);
+		break;
 	default:
 		wpa_printf(MSG_DEBUG,
 			   "nl80211: Ignore unsupported QCA vendor event %u",

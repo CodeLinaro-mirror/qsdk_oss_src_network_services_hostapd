@@ -3217,6 +3217,14 @@ struct csa_settings {
 };
 
 /**
+ * struct he_6ghz_pwr_mode_settings - Settings for the 6 GHz power mode
+ * @pwr_mode: 6 GHz power mode
+ */
+struct he_6ghz_pwr_mode_settings {
+	u8 pwr_mode;
+};
+
+/**
  * struct cca_settings - Settings for color switch command
  * @cca_count: Count in Beacon frames (TBTT) to perform the switch
  * @cca_color: The new color that we are switching to
@@ -5208,6 +5216,15 @@ struct wpa_driver_ops {
 	int (*switch_channel)(void *priv, struct csa_settings *settings);
 
 	/**
+	 * set_6ghz_pwr_mode - Set the 6 GHz power mode
+	 * @priv: Private driver interface data
+	 * @@settings: Settings for 6GHz power mode
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*set_6ghz_pwr_mode)(void *priv,
+				 struct he_6ghz_pwr_mode_settings *settings);
+
+	/**
 	 * switch_color - Announce color switch and migrate the BSS to the
 	 * given color
 	 * @priv: Private driver interface data
@@ -6309,6 +6326,11 @@ enum wpa_event_type {
 	 */
 	EVENT_ASSOC_TIMED_OUT,
 
+
+	/**
+	 * EVENT_6GHZ_POWER_MODE_NOTIFY - Notify the AP power mode change
+	 */
+	EVENT_6GHZ_POWER_MODE_NOTIFY,
 	/**
 	 * EVENT_WPS_BUTTON_PUSHED - Report hardware push button press for WPS
 	 */
@@ -7294,6 +7316,13 @@ union wpa_event_data {
 		u8 *buf;
 		u16 buf_len;
 	} wnm;
+
+	/**
+	 * ap_6ghz_pwr_mode_event - Data for EVENT_6GHZ_POWER_MODE_NOTIFY
+	 */
+	struct ap_6ghz_pwr_mode_event {
+		u8 pwr_mode;
+	} ap_6ghz_pwr_mode_event;
 
 	/**
 	 * struct ft_ies - FT information elements (EVENT_FT_RESPONSE)

@@ -1969,6 +1969,10 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_PREDICTIVE_ROAMING = 284,
 	QCA_NL80211_VENDOR_SUBCMD_EXTENDED_MONITOR = 285,
 	QCA_NL80211_VENDOR_SUBCMD_UHR_OMP_REQUEST = 286,
+
+	/* yet to upstream */
+	QCA_NL80211_VENDOR_SUBCMD_SET_6GHZ_POWER_MODE = 500,
+	QCA_NL80211_VENDOR_SUBCMD_POWER_MODE_CHANGE_COMPLETED = 501,
 };
 
 /* Compatibility defines for previously used subcmd names.
@@ -26324,4 +26328,18 @@ enum qca_vendor_attr_extended_monitor_peer_info {
 	QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_AFTER_LAST - 1,
 };
 
+/*
+ * enum qca_wlan_vendor_6ghz_power_mode - Used by the vendor command
+ * QCA_NL80211_VENDOR_SUBCMD_SET_6GHZ_POWER_MODE command to configure the
+ * 6 GHz power mode.
+ */
+enum qca_wlan_vendor_6ghz_power_mode {
+	QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE = 1,
+
+	/* Keep last */
+	QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_MAX =
+	QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_AFTER_LAST - 1,
+};
 #endif /* QCA_VENDOR_H */
