@@ -12148,6 +12148,47 @@ error:
 	return ret;
 }
 
+static int nl80211_set_6ghz_pwr_mode(void *priv,
+				     struct he_6ghz_pwr_mode_settings *settings)
+{
+	struct nl_msg *msg;
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nlattr *params;
+	int ret = -ENOBUFS;
+
+	wpa_printf(MSG_DEBUG, "nl80211: 6 GHz power mode change req (pwr_mode=%d)",
+		   settings->pwr_mode);
+
+	if (drv->nlmode != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
+
+	if (!(msg = nl80211_drv_msg(drv, 0, NL80211_CMD_VENDOR)) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_SET_6GHZ_POWER_MODE)) {
+		goto error;
+	}
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto error;
+	nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE,
+		   settings->pwr_mode);
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv(drv, bss->nl_connect, msg, NULL, NULL, NULL, NULL, NULL);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: set 6 GHz power mode failed err=%d (%s)",
+			   ret, strerror(-ret));
+	}
+	return ret;
+error:
+	nlmsg_free(msg);
+	wpa_printf(MSG_DEBUG, "nl80211: Could not set 6 GHz power mode");
+	return ret;
+}
 
 #ifdef CONFIG_IEEE80211AX
 static int nl80211_switch_color(void *priv, struct cca_settings *settings)
@@ -15505,6 +15546,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.get_survey = wpa_driver_nl80211_get_survey,
 	.status = wpa_driver_nl80211_status,
 	.switch_channel = nl80211_switch_channel,
+	.set_6ghz_pwr_mode = nl80211_set_6ghz_pwr_mode,
 #ifdef CONFIG_IEEE80211AX
 	.switch_color = nl80211_switch_color,
 #endif /* CONFIG_IEEE80211AX */

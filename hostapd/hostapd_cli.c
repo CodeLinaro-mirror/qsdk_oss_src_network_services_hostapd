@@ -1181,6 +1181,31 @@ static int hostapd_cli_cmd_color_change(struct wpa_ctrl *ctrl,
 #endif /* CONFIG_IEEE80211AX */
 
 
+static int hostapd_cli_cmd_set_pwr_mode(struct wpa_ctrl *ctrl,
+					int argc, char *argv[])
+{
+	char cmd[256];
+	int res;
+	int ret;
+
+	if (argc < 1) {
+		printf("Invalid power mode command: no argument given\n"
+		       "usage: <pwr_mode-0/1/2>\n"
+		       "0 - LPI; 1 - SP; 2 - VLP\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SET_6GHZ_PWR_MODE %s",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Too long SET_PWR_MODE command\n");
+		return -1;
+	}
+
+	ret = wpa_ctrl_command(ctrl, cmd);
+	return ret;
+}
+
 static int hostapd_cli_cmd_chan_switch(struct wpa_ctrl *ctrl,
 				       int argc, char *argv[])
 {
@@ -1769,6 +1794,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "  [center_freq2=] [bandwidth=] [bandwidth_device=] \n"
 	  "  [center_freq_device=] [blocktx] [ht|vht|he|eht] \n"
 	  "  = initiate channel switch announcement" },
+	{ "set_6ghz_power_mode", hostapd_cli_cmd_set_pwr_mode, NULL,
+	   "<pwr_mode> = 0 - LPI, 1 - SP, 2 - VLP\n"},
 #ifdef CONFIG_IEEE80211AX
 	{ "color_change", hostapd_cli_cmd_color_change, NULL,
 	  "<color> = initiate BSS color change to set the specified color\n"

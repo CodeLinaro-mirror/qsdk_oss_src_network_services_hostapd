@@ -105,6 +105,7 @@ const char * event_to_string(enum wpa_event_type event)
 	E2S(MLD_INTERFACE_FREED);
 	E2S(SETUP_LINK_RECONFIG);
 	E2S(RX_CRITICAL_UPDATE);
+	E2S(6GHZ_POWER_MODE_NOTIFY);
 	}
 
 	return "UNKNOWN";

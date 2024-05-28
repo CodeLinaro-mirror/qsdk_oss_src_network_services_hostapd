@@ -763,6 +763,17 @@ struct hostapd_iface {
 	/* lowest observed noise floor in dBm */
 	s8 lowest_nf;
 
+	/*
+	 * User configured 6 GHz power mode
+	 *
+	 * No power mode change - -1
+	 * Low power Indoor AP  -  0
+	 * Standard power AP    -  1
+	 * Very low power AP    -  2
+	 *
+	 */
+	int power_mode_6ghz_before_change;
+
 	/* channel utilization calculation */
 	u64 last_channel_time;
 	u64 last_channel_time_busy;

@@ -2509,6 +2509,62 @@ static int hostapd_check_validity_device_params(struct hostapd_freq_params *para
 }
 
 
+static int hostapd_ctrl_iface_set_pwr_mode(struct hostapd_iface *iface,
+					   char *pos)
+{
+#ifdef NEED_AP_MLME
+	struct he_6ghz_pwr_mode_settings settings;
+	int ret = 0, he_6ghz_pwr_mode, err = 0;
+	unsigned int i, num_err = 0;
+	char *end;
+
+	if (iface->power_mode_6ghz_before_change > -1) {
+		wpa_printf(MSG_ERROR, "Power mode change in progress");
+		return -1;
+	}
+
+	os_memset(&settings, 0, sizeof(settings));
+	he_6ghz_pwr_mode = strtol(pos, &end, 10);
+	if (pos == end || he_6ghz_pwr_mode < 0 || he_6ghz_pwr_mode > 2) {
+		wpa_printf(MSG_ERROR, "Invalid power mode provided");
+		return -1;
+	}
+
+	if (!is_6ghz_freq(iface->freq)) {
+		wpa_printf(MSG_ERROR, "set_pwr_mode is only for 6 GHz");
+		return -1;
+	}
+
+	if (he_6ghz_pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_SP &&
+	    !iface->is_afc_power_event_received) {
+		wpa_printf(MSG_ERROR, "Standard Power mode cant be set without AFC");
+		return -1;
+	}
+
+	settings.pwr_mode = he_6ghz_pwr_mode;
+	iface->power_mode_6ghz_before_change = he_6ghz_pwr_mode;
+	wpa_printf(MSG_DEBUG, "Setting user selected 6 GHz power mode: %d\n",
+		   he_6ghz_pwr_mode);
+
+	for (i = 0; i < iface->num_bss; i++) {
+		err = hostapd_drv_set_6ghz_pwr_mode(iface->bss[i], &settings);
+		if (err) {
+			ret = err;
+			num_err++;
+		}
+	}
+
+	if (iface->num_bss != num_err)
+		return 0;
+
+	iface->power_mode_6ghz_before_change = -1;
+
+	return ret;
+#else /* NEED_AP_MLME */
+	return -1;
+#endif /* NEED_AP_MLME */
+}
+
 static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 					  char *pos)
 {
@@ -4816,6 +4872,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211AX
 	} else if (os_strncmp(buf, "COLOR_CHANGE ", 13) == 0) {
 		if (hostapd_ctrl_iface_color_change(hapd->iface, buf + 13))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "SET_6GHZ_PWR_MODE ", 18) == 0) {
+		if (hostapd_ctrl_iface_set_pwr_mode(hapd->iface, buf + 18))
 			reply_len = -1;
 #endif /* CONFIG_IEEE80211AX */
 	} else if (os_strncmp(buf, "NOTIFY_CW_CHANGE ", 17) == 0) {

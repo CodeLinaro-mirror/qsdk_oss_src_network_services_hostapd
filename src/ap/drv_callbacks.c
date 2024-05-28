@@ -2446,6 +2446,39 @@ static void hostapd_event_update_muedca_params(struct hostapd_data *hapd,
 			   "Failed to update beacons with MU-EDCA parameters");
 }
 
+static void hostapd_event_6ghz_power_mode(struct hostapd_data *hapd,
+					  u8 he_6ghz_power_mode)
+{
+	struct hostapd_config *conf = hapd->iconf;
+	struct hostapd_iface *iface = hapd->iface;
+	int ret;
+
+	if (he_6ghz_power_mode != iface->power_mode_6ghz_before_change) {
+		wpa_printf(MSG_ERROR, "Invalid power mode sent by the target");
+		return;
+	}
+
+	conf->he_6ghz_reg_pwr_type = he_6ghz_power_mode;
+	hostapd_get_hw_features(iface);
+	ret = hostapd_select_hw_mode(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "Could not change 6GHZ power mode(%d)",
+			   ret);
+		hostapd_disable_iface(iface);
+	}
+
+	if (hostapd_set_current_hw_info(iface, iface->freq)) {
+		wpa_printf(MSG_ERROR, "Failed to get operating hw mac id");
+		hostapd_disable_iface(iface);
+	}
+
+	if (ieee802_11_update_beacons(hapd->iface))
+		wpa_printf(MSG_DEBUG,
+			   "Failed to update beacons with new pwr_mode");
+
+	iface->power_mode_6ghz_before_change = -1;
+}
+
 #ifdef CONFIG_OWE
 static int hostapd_notif_update_dh_ie(struct hostapd_data *hapd,
 				      const u8 *peer, const u8 *ie,
@@ -3022,6 +3055,10 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		wpa_printf(MSG_DEBUG, "CCA finished on %s",
 			   hapd->conf->iface);
 		hostapd_event_color_change(hapd, true);
+		break;
+	case EVENT_6GHZ_POWER_MODE_NOTIFY:
+		hostapd_event_6ghz_power_mode(hapd,
+					      data->ap_6ghz_pwr_mode_event.pwr_mode);
 		break;
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE

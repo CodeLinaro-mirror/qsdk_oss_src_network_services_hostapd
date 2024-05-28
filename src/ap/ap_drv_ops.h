@@ -327,6 +327,17 @@ static inline int hostapd_drv_switch_channel(struct hostapd_data *hapd,
 	return hapd->driver->switch_channel(hapd->drv_priv, settings);
 }
 
+static inline int
+hostapd_drv_set_6ghz_pwr_mode(struct hostapd_data *hapd,
+			      struct he_6ghz_pwr_mode_settings *settings)
+{
+	if (hapd->driver == NULL || hapd->drv_priv == NULL ||
+	    hapd->driver->set_6ghz_pwr_mode == NULL)
+		return -1;
+
+	return hapd->driver->set_6ghz_pwr_mode(hapd->drv_priv, settings);
+}
+
 #ifdef CONFIG_IEEE80211AX
 static inline int hostapd_drv_switch_color(struct hostapd_data *hapd,
 					   struct cca_settings *settings)

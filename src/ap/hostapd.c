@@ -2267,6 +2267,7 @@ static int setup_interface2(struct hostapd_iface *iface)
 {
 	iface->wait_channel_update = 0;
 	iface->is_no_ir = false;
+	iface->power_mode_6ghz_before_change = -1;
 
 	if (hostapd_get_hw_features(iface)) {
 		/* Not all drivers support this yet, so continue without hw
@@ -3076,6 +3077,7 @@ void hostapd_interface_deinit(struct hostapd_iface *iface)
 
 	eloop_cancel_timeout(channel_list_update_timeout, iface, NULL);
 	iface->wait_channel_update = 0;
+	iface->power_mode_6ghz_before_change = -1;
 	iface->is_no_ir = false;
 
 #ifdef CONFIG_FST
