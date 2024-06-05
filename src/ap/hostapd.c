@@ -4695,7 +4695,7 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 	struct hostapd_freq_params old_freq;
 	int ret;
 	enum oper_chan_width chanwidth;
-	u8 chan;
+	u8 chan, old_reg_6ghz_power_mode;
 	u8 oper_centr_freq0_idx = 0;
 	u8 oper_centr_freq1_idx = 0;
 	int sec_channel_offset = settings->freq_params.sec_channel_offset;
@@ -4754,6 +4754,10 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 	if (ret)
 		return ret;
 
+	old_reg_6ghz_power_mode = iface->conf->he_6ghz_reg_pwr_type;
+	if (settings->power_mode >= 0)
+		iface->conf->he_6ghz_reg_pwr_type = settings->power_mode;
+
 	ret = hostapd_build_beacon_data(hapd, &settings->beacon_after);
 	if (settings->beacon_after.elemid_modified)
 		settings->beacon_after_cu = 1;
@@ -4807,6 +4811,7 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 	 hapd->iface->conf->he_mu_edca.he_qos_info &= 0xfff0;
 	 hapd->parameter_set_count = 0;
 
+	iface->conf->he_6ghz_reg_pwr_type = old_reg_6ghz_power_mode;
 	ret = hostapd_build_beacon_data(hapd, &settings->beacon_csa);
 	if (ret) {
 		free_beacon_data(&settings->beacon_after);

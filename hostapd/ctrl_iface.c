@@ -2587,12 +2587,21 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 	if (iface->num_bss && iface->bss[0]->conf->mld_ap)
 		settings.link_id = iface->bss[0]->mld_link_id;
 #endif /* CONFIG_IEEE80211BE */
+	if (iface->power_mode_6ghz_before_change > -1) {
+		wpa_printf(MSG_ERROR, "Power mode change in progress");
+		return -1;
+	}
+
+	if (settings.power_mode > -1)
+		iface->power_mode_6ghz_before_change = settings.power_mode;
 
 	ret = hostapd_check_validity_device_params(&settings.freq_params);
 	if (ret) {
 		wpa_printf(MSG_ERROR, "chanswitch: invalid device parameters provided %d %d",
 			   settings.freq_params.bandwidth_device,
 			   settings.freq_params.center_freq_device);
+		if (iface->power_mode_6ghz_before_change != -1)
+			iface->power_mode_6ghz_before_change = -1;
 		return ret;
 	}
 
@@ -2636,6 +2645,9 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 				   settings.freq_params.freq,
 				   settings.freq_params.sec_channel_offset,
 				   settings.freq_params.bandwidth);
+			if (iface->power_mode_6ghz_before_change != -1)
+				iface->power_mode_6ghz_before_change = -1;
+
 			return -1;
 		}
 
@@ -2658,6 +2670,9 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 		/* Perform CAC and switch channel */
 		iface->is_ch_switch_dfs = true;
 		hostapd_switch_channel_fallback(iface, &settings.freq_params);
+		if (iface->power_mode_6ghz_before_change != -1)
+			iface->power_mode_6ghz_before_change = -1;
+
 		return 0;
 	}
 
@@ -2681,6 +2696,9 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 
 		err = hostapd_switch_channel(iface->bss[i], &settings);
 		if (err) {
+			if (iface->power_mode_6ghz_before_change != -1)
+				iface->power_mode_6ghz_before_change = -1;
+
 			ret = err;
 			num_err++;
 		}

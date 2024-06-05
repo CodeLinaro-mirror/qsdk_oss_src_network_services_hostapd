@@ -1254,6 +1254,29 @@ void hostapd_event_sta_opmode_changed(struct hostapd_data *hapd, const u8 *addr,
 	}
 }
 
+static int hostapd_switch_power_mode(struct hostapd_data *hapd)
+{
+	struct he_6ghz_pwr_mode_settings settings;
+	unsigned int i, num_err =  0;
+	int ret = 0, err = 0;
+
+	settings.pwr_mode =
+		hapd->iface->power_mode_6ghz_before_change;
+	for (i = 0; i < hapd->iface->num_bss; i++) {
+		err = hostapd_drv_set_6ghz_pwr_mode(hapd->iface->bss[i], &settings);
+		if (err) {
+			ret = err;
+			num_err++;
+		}
+	}
+
+	if (hapd->iface->num_bss != num_err)
+		return 0;
+
+	hapd->iface->power_mode_6ghz_before_change = -1;
+
+	return ret;
+}
 
 void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 			     int offset, int width, int cf1, int cf2,
@@ -1453,6 +1476,16 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 
 	if (hapd->csa_in_progress &&
 	    freq == hapd->cs_freq_params.freq) {
+		if (hapd->iface->power_mode_6ghz_before_change > -1) {
+			if (hapd->iface->power_mode_6ghz_before_change !=
+			    hapd->iconf->he_6ghz_reg_pwr_type) {
+				if (hostapd_switch_power_mode(hapd))
+					wpa_printf(MSG_ERROR, "Power mode change failed");
+			} else {
+				hapd->iface->power_mode_6ghz_before_change = -1;
+			}
+		}
+
 		hostapd_cleanup_cs_params(hapd);
 		hapd->disable_cu = 1;
 		ieee802_11_set_beacon(hapd);

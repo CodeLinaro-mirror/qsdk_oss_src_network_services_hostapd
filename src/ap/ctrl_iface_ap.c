@@ -1668,6 +1668,7 @@ int hostapd_parse_csa_settings(struct hostapd_iface *iface,
 
 	os_memset(settings, 0, sizeof(*settings));
 	settings->cs_count = strtol(pos, &end, 10);
+	settings->power_mode = -1;
 	if (pos == end) {
 		wpa_printf(MSG_ERROR, "chanswitch: invalid cs_count provided");
 		return -1;
@@ -1681,6 +1682,30 @@ int hostapd_parse_csa_settings(struct hostapd_iface *iface,
 		wpa_printf(MSG_INFO,
 				"chanswitch: failed to parse frequency parameters");
 		return ret;
+	}
+
+#define SET_CSA_SETTING_EXT(str) \
+	do { \
+		const char *pos2 = os_strstr(pos, " " #str "="); \
+		if (pos2) { \
+			pos2 += sizeof(" " #str "=") - 1; \
+			settings->str = atoi(pos2); \
+		} \
+	} while (0)
+
+	SET_CSA_SETTING_EXT(power_mode);
+
+	if (!is_6ghz_freq(settings->freq_params.freq) &&
+	    (settings->power_mode != -1)) {
+		wpa_printf(MSG_ERROR,
+			   "chanswitch: power mode is not supported for non- 6 GHz frequency");
+		return -1;
+	}
+
+	if (settings->power_mode < -1 ||
+	    settings->power_mode > HE_REG_INFO_6GHZ_AP_TYPE_VLP) {
+		wpa_printf(MSG_ERROR, "chanswitch: invalid 6 GHz power_mode provided");
+		return -1;
 	}
 
 	target_mode = get_target_hw_mode(iface, settings->freq_params.freq);

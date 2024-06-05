@@ -2964,6 +2964,7 @@ struct beacon_data {
  * @counter_offset_presp: Offset to the count field in probe resp.
  * @link_id: Link ID to determine the link for MLD; -1 for non-MLD
  * @ubpr: Unsolicited broadcast Probe Response frame data
+ * @power_mode: 6 GHz Power mode
  */
 struct csa_settings {
 	u8 cs_count;
@@ -2983,7 +2984,7 @@ struct csa_settings {
 
 	/* critical_update_flag - critical update flag*/
 	bool beacon_after_cu;
-
+	int power_mode;
 };
 
 /**

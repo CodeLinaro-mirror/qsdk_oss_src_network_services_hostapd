@@ -503,6 +503,7 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 	settings.freq_params.vht_enabled = iface->conf->ieee80211ac;
 	settings.freq_params.he_enabled = iface->conf->ieee80211ax;
 	settings.freq_params.eht_enabled= iface->conf->ieee80211be;
+	settings.power_mode = -1;
 
 	for (i = 0; i < iface->num_bss; i++) {
 		/* Save CHAN_SWITCH VHT and HE config */

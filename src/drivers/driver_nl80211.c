@@ -12092,6 +12092,12 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 	     nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, settings->link_id)))
 		goto error;
 
+	if (is_6ghz_freq(settings->freq_params.freq) && settings->power_mode > -1) {
+		if (nla_put_u8(msg, NL80211_ATTR_6G_REG_POWER_MODE,
+			       settings->power_mode))
+			goto error;
+	}
+
 	/* beacon_after params */
 	ret = set_beacon_data(msg, &settings->beacon_after, false);
 	if (ret)
