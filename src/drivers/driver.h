@@ -3194,6 +3194,7 @@ struct beacon_data {
  * @counter_offset_presp: Offset to the count field in probe resp.
  * @link_id: Link ID to determine the link for MLD; -1 for non-MLD
  * @ubpr: Unsolicited broadcast Probe Response frame data
+ * @power_mode: 6 GHz Power mode
  */
 struct csa_settings {
 	u8 cs_count;
@@ -3213,7 +3214,7 @@ struct csa_settings {
 
 	/* critical_update_flag - critical update flag*/
 	bool beacon_after_cu;
-
+	int power_mode;
 };
 
 /**
@@ -6326,11 +6327,6 @@ enum wpa_event_type {
 	 */
 	EVENT_ASSOC_TIMED_OUT,
 
-
-	/**
-	 * EVENT_6GHZ_POWER_MODE_NOTIFY - Notify the AP power mode change
-	 */
-	EVENT_6GHZ_POWER_MODE_NOTIFY,
 	/**
 	 * EVENT_WPS_BUTTON_PUSHED - Report hardware push button press for WPS
 	 */
@@ -6905,6 +6901,11 @@ enum wpa_event_type {
 	 * is not exposed through this event interface.
 	 */
 	EVENT_ROAM_STATUS,
+
+	/**
+	 * EVENT_6GHZ_POWER_MODE_NOTIFY - Notify the AP power mode change
+	 */
+	EVENT_6GHZ_POWER_MODE_NOTIFY,
 };
 
 
@@ -7316,13 +7317,6 @@ union wpa_event_data {
 		u8 *buf;
 		u16 buf_len;
 	} wnm;
-
-	/**
-	 * ap_6ghz_pwr_mode_event - Data for EVENT_6GHZ_POWER_MODE_NOTIFY
-	 */
-	struct ap_6ghz_pwr_mode_event {
-		u8 pwr_mode;
-	} ap_6ghz_pwr_mode_event;
 
 	/**
 	 * struct ft_ies - FT information elements (EVENT_FT_RESPONSE)
@@ -8092,6 +8086,13 @@ union wpa_event_data {
 		u8 bssid[ETH_ALEN];
 		u8 ap_mld_addr[ETH_ALEN];
 	} roam_auth_status;
+
+	/**
+	 * ap_6ghz_pwr_mode_event - Data for EVENT_6GHZ_POWER_MODE_NOTIFY
+	 */
+	struct ap_6ghz_pwr_mode_event {
+		u8 pwr_mode;
+	} ap_6ghz_pwr_mode_event;
 };
 
 /**

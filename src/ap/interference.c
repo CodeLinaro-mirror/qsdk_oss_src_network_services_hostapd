@@ -536,6 +536,7 @@ int hostapd_incumbt_sig_intf_detected(struct hostapd_iface *iface, int freq,
 	settings.freq_params.vht_enabled = iface->conf->ieee80211ac;
 	settings.freq_params.he_enabled = iface->conf->ieee80211ax;
 	settings.freq_params.eht_enabled = iface->conf->ieee80211be;
+	settings.power_mode = -1;
 	wpa_printf(MSG_DEBUG,
 		   "Intf: channel=%u, freq=%d, bw=%d, center_freq1=%d",
 		   settings.freq_params.channel,

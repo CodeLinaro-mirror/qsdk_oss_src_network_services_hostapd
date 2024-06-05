@@ -831,6 +831,9 @@ struct hostapd_iface {
 	int (*enable_iface_cb)(struct hostapd_iface *iface);
 	int (*disable_iface_cb)(struct hostapd_iface *iface);
 
+	/* AFC power update received from the driver. */
+	bool is_afc_power_event_received;
+
 	/* Configured freq of interface is NO_IR */
 	bool is_no_ir;
 
