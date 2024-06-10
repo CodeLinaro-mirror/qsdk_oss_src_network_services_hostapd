@@ -6203,6 +6203,7 @@ static const struct global_parse_data global_fields[] = {
 	{ BOOL(ft_prepend_pmkid), CFG_CHANGED_FT_PREPEND_PMKID },
 	{ INT_RANGE(wfa_gen_capa, 0, 2), 0},
 	{ BIN(wfa_gen_capa_supp), 0 },
+	{ INT_RANGE(ppe_vp, 0, 3), 1 },
 	{ BOOL(disable_op_classes_80_80_mhz), 0 },
 	{ INT(pr_pasn_type), 0 },
 	{ INT_RANGE(pr_preferred_role, 0, 1), 0},

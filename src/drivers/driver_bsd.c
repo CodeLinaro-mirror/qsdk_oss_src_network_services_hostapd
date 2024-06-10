@@ -1562,7 +1562,7 @@ get80211opmode(struct bsd_driver_data *drv)
 
 static void *
 wpa_driver_bsd_init(void *ctx, const char *ifname, void *priv,
-		    enum wpa_p2p_mode p2p_mode)
+		    enum wpa_p2p_mode p2p_mode, int ppe_vp_type)
 {
 #define	GETPARAM(drv, param, v) \
 	(((v) = get80211param(drv, param)) != -1)

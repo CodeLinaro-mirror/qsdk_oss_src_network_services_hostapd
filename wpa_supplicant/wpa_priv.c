@@ -54,7 +54,7 @@ struct wpa_priv_global {
 
 
 static void wpa_priv_cmd_register(struct wpa_priv_interface *iface,
-				  struct sockaddr_un *from, socklen_t fromlen)
+				  struct sockaddr_un *from, socklen_t fromlen, int ppe_vp_type)
 {
 	int i;
 
@@ -92,7 +92,9 @@ static void wpa_priv_cmd_register(struct wpa_priv_interface *iface,
 			iface->drv_global_priv = NULL;
 		}
 		iface->drv_priv = iface->driver->init2(iface, iface->ifname,
-						       iface->drv_global_priv);
+						       iface->drv_global_priv,
+						       WPA_P2P_MODE_WFD_R1,
+						       ppe_vp_type);
 	} else if (iface->driver->init) {
 		iface->drv_priv = iface->driver->init(iface, iface->ifname);
 	} else {
@@ -642,6 +644,7 @@ static void wpa_priv_receive(int sock, void *eloop_ctx, void *sock_ctx)
 	size_t cmd_len;
 	int res, cmd;
 	struct sockaddr_un from;
+	int ppe_vp_type = 5;
 	socklen_t fromlen = sizeof(from);
 
 	res = recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr *) &from,
@@ -664,7 +667,7 @@ static void wpa_priv_receive(int sock, void *eloop_ctx, void *sock_ctx)
 
 	switch (cmd) {
 	case PRIVSEP_CMD_REGISTER:
-		wpa_priv_cmd_register(iface, &from, fromlen);
+		wpa_priv_cmd_register(iface, &from, fromlen, ppe_vp_type);
 		break;
 	case PRIVSEP_CMD_UNREGISTER:
 		wpa_priv_cmd_unregister(iface, &from);

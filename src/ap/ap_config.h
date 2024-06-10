@@ -13,6 +13,7 @@
 #include "utils/list.h"
 #include "ip_addr.h"
 #include "common/wpa_common.h"
+#include "common/qca-vendor.h"
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
 #include "crypto/sha256.h"
@@ -1061,6 +1062,8 @@ struct hostapd_bss_config {
 	int *security_profiles; /* -1 terminated array of enabled security
 				 * profiles */
 	u64 rsnxe_capab_mask;
+
+	enum qca_wlan_intf_offload_type ppe_vp_type;
 };
 
 /**
