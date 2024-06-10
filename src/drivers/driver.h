@@ -23,6 +23,7 @@
 #include "common/ieee802_11_defs.h"
 #include "common/wpa_common.h"
 #include "common/nan.h"
+#include "common/qca-vendor.h"
 #ifdef CONFIG_MACSEC
 #include "pae/ieee802_1x_kay.h"
 #endif /* CONFIG_MACSEC */
@@ -2825,6 +2826,7 @@ struct wpa_init_params {
 	size_t num_bridge;
 
 	u8 *own_addr; /* buffer for writing own MAC address */
+	enum qca_wlan_intf_offload_type ppe_vp_type;
 };
 
 
@@ -3827,7 +3829,7 @@ struct wpa_driver_ops {
 	 * uses global data.
 	 */
 	void * (*init2)(void *ctx, const char *ifname, void *global_priv,
-			enum wpa_p2p_mode p2p_mode);
+			enum wpa_p2p_mode p2p_mode, int ppe_vp_type);
 
 	/**
 	 * get_interfaces - Get information about available interfaces
@@ -4238,7 +4240,8 @@ struct wpa_driver_ops {
 	int (*if_add)(void *priv, enum wpa_driver_if_type type,
 		      const char *ifname, const u8 *addr, void *bss_ctx,
 		      void **drv_priv, char *force_ifname, u8 *if_addr,
-		      const char *bridge, int use_existing, int setup_ap);
+		      const char *bridge, int use_existing, int setup_ap,
+		      int ppe_vp_type);
 
 	/**
 	 * if_remove - Remove a virtual interface
@@ -5744,6 +5747,12 @@ struct wpa_driver_ops {
 	int (*ml_reconfig_link_remove)(void *priv, enum wpa_driver_if_type type,
 				       const struct driver_reconfig_link_removal_params *params);
 
+	int (*mark_ppe_vp_type)(void *priv, unsigned int vendor_id,
+				unsigned int subcmd, const u8 *data,
+				size_t data_len,
+				enum nested_attr nested_attr_flag,
+				struct wpabuf *buf, const char *ifname,
+				int ppe_vp_type, bool is_bss);
 #endif /* CONFIG_IEEE80211BE */
 };
 

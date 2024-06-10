@@ -13,6 +13,7 @@
 #include "utils/list.h"
 #include "ip_addr.h"
 #include "common/wpa_common.h"
+#include "common/qca-vendor.h"
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
 #include "crypto/sha256.h"
@@ -1007,6 +1008,8 @@ struct hostapd_bss_config {
 
 	bool wmm_override;
 	struct hostapd_wmm_ac_params wmm_ac_params[4];
+
+	enum qca_wlan_intf_offload_type ppe_vp_type;
 };
 
 /**

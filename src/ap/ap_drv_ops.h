@@ -59,7 +59,7 @@ int hostapd_set_ssid(struct hostapd_data *hapd, const u8 *buf, size_t len);
 int hostapd_if_add(struct hostapd_data *hapd, enum wpa_driver_if_type type,
 		   const char *ifname, const u8 *addr, void *bss_ctx,
 		   void **drv_priv, char *force_ifname, u8 *if_addr,
-		   const char *bridge, int use_existing);
+		   const char *bridge, int use_existing, int ppe_vp_type);
 int hostapd_if_remove(struct hostapd_data *hapd, enum wpa_driver_if_type type,
 		      const char *ifname);
 int hostapd_if_link_remove(struct hostapd_data *hapd,
@@ -161,6 +161,9 @@ int hostapd_drv_set_secure_ranging_ctx(struct hostapd_data *hapd,
 				       u8 ltf_keyseed_len,
 				       const u8 *ltf_keyseed, u32 action);
 
+#ifdef CONFIG_IEEE80211BE
+int hostapd_drv_mark_ppe_vp_type(struct hostapd_data *hapd);
+#endif
 
 #include "drivers/driver.h"
 

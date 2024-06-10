@@ -113,6 +113,7 @@ struct i802_bss {
 	struct nl80211_wiphy_data *wiphy_data;
 	struct dl_list wiphy_list;
 	u8 rand_addr[ETH_ALEN];
+	int ppe_vp_type;
 
 	unsigned int start_iface_up:1;
 };
@@ -341,7 +342,8 @@ int nl80211_create_iface(struct wpa_driver_nl80211_data *drv,
 			 const char *ifname, enum nl80211_iftype iftype,
 			 const u8 *addr, int wds,
 			 int (*handler)(struct nl_msg *, void *),
-			 void *arg, int use_existing);
+			 void *arg, int use_existing,
+			 int ppe_vp_type);
 void nl80211_remove_iface(struct wpa_driver_nl80211_data *drv, int ifidx);
 unsigned int nl80211_get_assoc_freq(struct wpa_driver_nl80211_data *drv);
 const u8 * nl80211_get_assoc_bssid(struct i802_bss *bss);

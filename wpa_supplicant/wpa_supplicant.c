@@ -6527,6 +6527,7 @@ int wpa_supplicant_driver_init(struct wpa_supplicant *wpa_s)
 	} else
 		wpa_supplicant_set_state(wpa_s, WPA_INACTIVE);
 
+	wpa_drv_mark_ppe_vp_type(wpa_s, wpa_s->conf->ppe_vp);
 	return 0;
 }
 
@@ -7696,7 +7697,8 @@ next_driver:
 	if (wpa_supplicant_set_driver(wpa_s, driver) < 0)
 		return -1;
 
-	wpa_s->drv_priv = wpa_drv_init(wpa_s, wpa_s->ifname);
+	/* TODO: Fix PPE_VP_TYPE hardcoding */
+	wpa_s->drv_priv = wpa_drv_init(wpa_s, wpa_s->ifname, 5);
 	if (wpa_s->drv_priv == NULL) {
 		const char *pos;
 		int level = MSG_ERROR;

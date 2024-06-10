@@ -11,10 +11,12 @@
 
 #include "common/nan_de.h"
 #include "drivers/driver.h"
+#include "common/qca-vendor.h"
 
 /* driver_ops */
 static inline void * wpa_drv_init(struct wpa_supplicant *wpa_s,
-				  const char *ifname)
+				  const char *ifname,
+				  int ppe_vp_type)
 {
 	if (wpa_s->driver->init2) {
 		enum wpa_p2p_mode p2p_mode = WPA_P2P_MODE_WFD_R1;
@@ -25,7 +27,8 @@ static inline void * wpa_drv_init(struct wpa_supplicant *wpa_s,
 
 		return wpa_s->driver->init2(wpa_s, ifname,
 					    wpa_s->global_drv_priv,
-					    p2p_mode);
+					    p2p_mode,
+					    ppe_vp_type);
 	}
 	if (wpa_s->driver->init) {
 		return wpa_s->driver->init(wpa_s, ifname);
@@ -442,10 +445,11 @@ static inline int wpa_drv_if_add(struct wpa_supplicant *wpa_s,
 				 void *bss_ctx, char *force_ifname,
 				 u8 *if_addr, const char *bridge)
 {
+	/* TODO: Fix PPE_VP_TYPE hardcoding */
 	if (wpa_s->driver->if_add)
 		return wpa_s->driver->if_add(wpa_s->drv_priv, type, ifname,
 					     addr, bss_ctx, NULL, force_ifname,
-					     if_addr, bridge, 0, 0);
+					     if_addr, bridge, 0, 0, 5);
 	return -1;
 }
 
@@ -1255,6 +1259,20 @@ wpas_drv_nan_subscribe(struct wpa_supplicant *wpa_s, const u8 *addr,
 	return wpa_s->driver->nan_subscribe(wpa_s->drv_priv, addr, subscribe_id,
 					    service_name, service_id,
 					    srv_proto_type, ssi, elems, params);
+}
+
+static inline int wpa_drv_mark_ppe_vp_type(struct wpa_supplicant *wpa_s,
+					   int ppe_vp_type)
+{
+	if (!wpa_s->driver->mark_ppe_vp_type)
+		return -1;
+
+	wpa_printf(MSG_DEBUG, "sta ppe type ifname %s ppe_vp_type %d\n",
+		   wpa_s->ifname, ppe_vp_type);
+	return wpa_s->driver->mark_ppe_vp_type(wpa_s->drv_priv,
+			OUI_QCA, QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
+			NULL, 0, 0, NULL,  wpa_s->ifname, ppe_vp_type, true);
+
 }
 
 static inline int

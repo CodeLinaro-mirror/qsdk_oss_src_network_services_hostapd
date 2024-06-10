@@ -213,6 +213,14 @@ static int i802_sta_disassoc(void *priv, const u8 *own_addr, const u8 *addr,
 			     u16 reason, int link_id);
 
 
+static int nl80211_vendor_cmd_if_offload_type(void *priv,  unsigned int vendor_id,
+					      unsigned int subcmd,
+					      const u8 *data,
+					      size_t data_len,
+					      enum nested_attr nested_attr,
+					      struct wpabuf *buf, const char *ifname,
+					      int ppe_vp_type, bool is_bss);
+
 /* Converts nl80211_chan_width to a common format */
 enum chan_width convert2width(int width)
 {
@@ -2530,7 +2538,8 @@ static void * wpa_driver_nl80211_drv_init(void *ctx, const char *ifname,
 					  void *global_priv, int hostapd,
 					  const u8 *set_addr,
 					  const char *driver_params,
-					  enum wpa_p2p_mode p2p_mode)
+					  enum wpa_p2p_mode p2p_mode,
+					  int ppe_vp_type)
 {
 	static unsigned int next_unique_drv_id = 0;
 	struct wpa_driver_nl80211_data *drv;
@@ -2586,6 +2595,7 @@ static void * wpa_driver_nl80211_drv_init(void *ctx, const char *ifname,
 	bss = drv->first_bss;
 	bss->drv = drv;
 	bss->ctx = ctx;
+	bss->ppe_vp_type = ppe_vp_type;
 
 	os_strlcpy(bss->ifname, ifname, sizeof(bss->ifname));
 	drv->eapol_tx_sock = -1;
@@ -2658,10 +2668,11 @@ failed:
  */
 static void * wpa_driver_nl80211_init(void *ctx, const char *ifname,
 				      void *global_priv,
-				      enum wpa_p2p_mode p2p_mode)
+				      enum wpa_p2p_mode p2p_mode,
+				      int ppe_vp_type)
 {
 	return wpa_driver_nl80211_drv_init(ctx, ifname, global_priv, 0, NULL,
-					   NULL, p2p_mode);
+					   NULL, p2p_mode, ppe_vp_type);
 }
 
 
@@ -6639,15 +6650,13 @@ static int nl80211_create_iface_once(struct wpa_driver_nl80211_data *drv,
 	return ifidx;
 }
 
-
 int nl80211_create_iface(struct wpa_driver_nl80211_data *drv,
 			 const char *ifname, enum nl80211_iftype iftype,
 			 const u8 *addr, int wds,
 			 int (*handler)(struct nl_msg *, void *),
-			 void *arg, int use_existing)
+			 void *arg, int use_existing, int ppe_vp_type)
 {
 	int ret;
-
 	ret = nl80211_create_iface_once(drv, ifname, iftype, addr, wds, handler,
 					arg);
 
@@ -6685,9 +6694,12 @@ int nl80211_create_iface(struct wpa_driver_nl80211_data *drv,
 		nl80211_disable_11b_rates(drv, ret, 1);
 	}
 
+	nl80211_vendor_cmd_if_offload_type((void *)drv,  OUI_QCA,
+					   QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
+					   NULL, 0, 0, NULL, ifname,
+					   ppe_vp_type, false);
 	return ret;
 }
-
 
 static int nl80211_setup_ap(struct i802_bss *bss)
 {
@@ -7903,6 +7915,12 @@ static int nl80211_set_mode(struct i802_bss *bss, enum nl80211_iftype mode)
 	wpa_printf(MSG_DEBUG, "nl80211: Set mode ifindex %d iftype %d (%s)",
 		   bss->ifindex, mode, nl80211_iftype_str(mode));
 
+	if (bss->ppe_vp_type > 0)
+		nl80211_vendor_cmd_if_offload_type((void *)bss->drv,  OUI_QCA,
+						   QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
+						   NULL, 0, 0, NULL, bss->ifname,
+						   bss->ppe_vp_type, false);
+
 	msg = nl80211_cmd_msg(bss, 0, NL80211_CMD_SET_INTERFACE);
 	if (!msg || nla_put_u32(msg, NL80211_ATTR_IFTYPE, mode))
 		goto fail;
@@ -9010,10 +9028,10 @@ static int i802_set_wds_sta(void *priv, const u8 *addr, int aid, int val,
 
 	if (val) {
 		if (!if_nametoindex(name)) {
+			/* TODO: Fix PPE_VP_TYPE for VLAN interface */
 			if (nl80211_create_iface(drv, name,
 						 NL80211_IFTYPE_AP_VLAN,
-						 bss->addr, 1, NULL, NULL, 0) <
-			    0)
+						 bss->addr, 1, NULL, NULL, 0, 0) <  0)
 				return -1;
 
 			if (bridge_ifname)
@@ -9165,7 +9183,8 @@ static void *i802_init(struct hostapd_data *hapd,
 	bss = wpa_driver_nl80211_drv_init(hapd, params->ifname,
 					  params->global_priv, 1,
 					  params->bssid, params->driver_params,
-					  WPA_P2P_MODE_WFD_R1);
+					  WPA_P2P_MODE_WFD_R1,
+					  params->ppe_vp_type);
 	if (bss == NULL)
 		return NULL;
 
@@ -9369,7 +9388,7 @@ static int wpa_driver_nl80211_if_add(void *priv, enum wpa_driver_if_type type,
 				     void *bss_ctx, void **drv_priv,
 				     char *force_ifname, u8 *if_addr,
 				     const char *bridge, int use_existing,
-				     int setup_ap)
+				     int setup_ap, int ppe_vp_type)
 {
 	enum nl80211_iftype nlmode;
 	struct i802_bss *bss = priv;
@@ -9386,7 +9405,7 @@ static int wpa_driver_nl80211_if_add(void *priv, enum wpa_driver_if_type type,
 		os_memset(&p2pdev_info, 0, sizeof(p2pdev_info));
 		ifidx = nl80211_create_iface(drv, ifname, nlmode, addr,
 					     0, nl80211_wdev_handler,
-					     &p2pdev_info, use_existing);
+					     &p2pdev_info, use_existing, ppe_vp_type);
 		if (!p2pdev_info.wdev_id_set || ifidx != 0) {
 			wpa_printf(MSG_ERROR, "nl80211: Failed to create a P2P Device interface %s",
 				   ifname);
@@ -9402,7 +9421,7 @@ static int wpa_driver_nl80211_if_add(void *priv, enum wpa_driver_if_type type,
 			   (long long unsigned int) p2pdev_info.wdev_id);
 	} else {
 		ifidx = nl80211_create_iface(drv, ifname, nlmode, addr,
-					     0, NULL, NULL, use_existing);
+					     0, NULL, NULL, use_existing, ppe_vp_type);
 		if (use_existing && ifidx == -ENFILE) {
 			added = 0;
 			ifidx = if_nametoindex(ifname);
@@ -12524,6 +12543,69 @@ static bool is_cmd_with_nested_attrs(unsigned int vendor_id,
 	}
 }
 
+static int nl80211_vendor_cmd_if_offload_type(void *priv,  unsigned int vendor_id,
+					      unsigned int subcmd,
+					      const u8 *data,
+					      size_t data_len,
+					      enum nested_attr nested_attr,
+					      struct wpabuf *buf, const char *ifname,
+					      int ppe_vp_type, bool is_bss)
+{
+	struct i802_bss *bss = NULL;
+	struct wpa_driver_nl80211_data *drv =  NULL;
+	struct nl_msg *msg;
+	struct nlattr *attr;
+	int ret;
+	int ifidx;
+
+	if (is_bss) {
+		bss = priv;
+		drv = bss->drv;
+		bss->ppe_vp_type = ppe_vp_type;
+	} else {
+		drv = priv;
+	}
+
+	if (!drv)
+		return -EINVAL;
+
+	ifidx = if_nametoindex(ifname);
+
+	msg = nlmsg_alloc();
+	if (!msg)
+		return -EINVAL;
+
+	if (!genlmsg_put(msg, 0, 0, drv->global->nl80211_id,
+			0,  0, NL80211_CMD_VENDOR, 0))
+		goto fail;
+
+	if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, ifidx) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, vendor_id) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD, subcmd))
+		goto fail;
+
+	attr = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if(!attr)
+		goto fail;
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_INTF_OFFLOAD_TYPE,
+		       ppe_vp_type))
+		goto fail;
+
+	nla_nest_end(msg, attr);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR, "nl80211: vendor command failed err=%d",
+			   ret);
+	else
+		wpa_printf(MSG_INFO, "nl80211: vendorcmd ppe: ifname %s ppe_vp %d",
+			   ifname, ppe_vp_type);
+	return ret;
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
 
 static int nl80211_vendor_cmd(void *priv, unsigned int vendor_id,
 			      unsigned int subcmd, const u8 *data,
@@ -15712,6 +15794,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.is_drv_shared = nl80211_is_drv_shared,
 	.link_sta_remove = wpa_driver_nl80211_link_sta_remove,
 	.can_share_drv = wpa_driver_nl80211_can_share_drv,
+	.mark_ppe_vp_type = nl80211_vendor_cmd_if_offload_type,
 	.ml_reconfig_link_remove = driver_nl80211_ml_reconfig_link_removal,
 	.setup_link_reconfig = nl80211_send_link_reconfig_request,
 #endif /* CONFIG_IEEE80211BE */

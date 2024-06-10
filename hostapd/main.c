@@ -244,6 +244,7 @@ static int hostapd_driver_init(struct hostapd_iface *iface)
 
 	params.num_bridge = hapd->iface->num_bss;
 	params.bridge = os_calloc(hapd->iface->num_bss, sizeof(char *));
+	params.ppe_vp_type = conf ? conf->ppe_vp_type : -1;
 	if (params.bridge == NULL)
 		return -1;
 	for (i = 0; i < hapd->iface->num_bss; i++) {
@@ -275,7 +276,7 @@ static int hostapd_driver_init(struct hostapd_iface *iface)
 				   &hapd->drv_priv, force_ifname, if_addr,
 				   params.num_bridge && params.bridge[0] ?
 				   params.bridge[0] : NULL,
-				   1)) {
+				   1, params.ppe_vp_type)) {
 			wpa_printf(MSG_ERROR, "Failed to add BSS (BSSID="
 				   MACSTR ")", MAC2STR(hapd->own_addr));
 			os_free(params.bridge);
@@ -301,6 +302,10 @@ static int hostapd_driver_init(struct hostapd_iface *iface)
 
 #ifdef CONFIG_IEEE80211BE
 pre_setup_mld:
+	if (hostapd_drv_mark_ppe_vp_type(hapd))
+		wpa_printf(MSG_ERROR, "ppe_vp vendor command failed: %s",
+			   hapd->conf->iface);
+
 	/*
 	 * This is the first interface added to the AP MLD, so have the
 	 * interface hardware address be the MLD address, while the link address

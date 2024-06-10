@@ -1833,6 +1833,17 @@ struct wpa_config {
 
 	int disable_csa_dfs;
 
+	/**
+	 * ppe_vp_type - Type of PPE mode per interface
+	 *
+	 * 0 - NONE
+	 * 1 - PASSIVE aka RFS
+	 * 2 - ACTIVE aka active PPE assist
+	 * 3 - Direct Switching
+	 * others - invalid
+	 */
+	int ppe_vp;
+
 #ifdef CONFIG_TESTING_OPTIONS
 	enum {
 		MLD_CONNECT_BAND_PREF_AUTO = 0,

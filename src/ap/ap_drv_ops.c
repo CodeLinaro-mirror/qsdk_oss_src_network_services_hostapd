@@ -24,6 +24,9 @@
 #include "hw_features.h"
 #include "ap_drv_ops.h"
 
+#ifdef CONFIG_IEEE80211BE
+#include "common/qca-vendor.h"
+#endif
 
 u32 hostapd_sta_flags_to_drv(u32 flags)
 {
@@ -381,7 +384,8 @@ int hostapd_vlan_if_add(struct hostapd_data *hapd, const char *ifname)
 #endif /* CONFIG_IEEE80211BE */
 
 	return hostapd_if_add(hapd, WPA_IF_AP_VLAN, ifname, addr,
-			      NULL, NULL, force_ifname, if_addr, NULL, 0);
+			      NULL, NULL, force_ifname, if_addr, NULL, 0,
+			      hapd->conf->ppe_vp_type);
 }
 
 
@@ -412,6 +416,21 @@ int hostapd_add_sta_node(struct hostapd_data *hapd, const u8 *addr,
 		return -EOPNOTSUPP;
 	return hapd->driver->add_sta_node(hapd->drv_priv, addr, auth_alg, is_ml);
 }
+
+
+#ifdef CONFIG_IEEE80211BE
+int hostapd_drv_mark_ppe_vp_type(struct hostapd_data *hapd)
+{
+	if (hapd->driver == NULL || hapd->driver->mark_ppe_vp_type == NULL)
+		return -1;
+
+	return hapd->driver->mark_ppe_vp_type(hapd->drv_priv,
+			OUI_QCA,
+			QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
+			NULL, 0, 0, NULL, hapd->conf->iface,
+			hapd->conf->ppe_vp_type, true);
+}
+#endif
 
 
 int hostapd_sta_auth(struct hostapd_data *hapd, const u8 *addr,
@@ -577,13 +596,13 @@ int hostapd_set_ssid(struct hostapd_data *hapd, const u8 *buf, size_t len)
 int hostapd_if_add(struct hostapd_data *hapd, enum wpa_driver_if_type type,
 		   const char *ifname, const u8 *addr, void *bss_ctx,
 		   void **drv_priv, char *force_ifname, u8 *if_addr,
-		   const char *bridge, int use_existing)
+		   const char *bridge, int use_existing, int ppe_vp_type)
 {
 	if (hapd->driver == NULL || hapd->driver->if_add == NULL)
 		return -1;
 	return hapd->driver->if_add(hapd->drv_priv, type, ifname, addr,
 				    bss_ctx, drv_priv, force_ifname, if_addr,
-				    bridge, use_existing, 1);
+				    bridge, use_existing, 1, ppe_vp_type);
 }
 
 
