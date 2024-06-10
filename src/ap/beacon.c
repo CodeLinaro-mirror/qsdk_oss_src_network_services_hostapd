@@ -698,7 +698,8 @@ static size_t he_elem_len(struct hostapd_data *hapd)
 		 * client EIRP */
 		if (hapd->iconf->reg_def_cli_eirp != -1 &&
 		    he_reg_is_sp(hapd->iconf->he_6ghz_reg_pwr_type))
-			len += 4;
+			len += 3 + MAX_TPE_EIRP_NUM_POWER_SUPPORTED +
+			       1 + MAX_EIRP_TPE_POWER_EXT_COUNT;
 	}
 #endif /* CONFIG_IEEE80211AX */
 
@@ -2126,6 +2127,11 @@ static u8 * hostapd_gen_fils_discovery(struct hostapd_data *hapd, size_t *len)
                 if (hapd->iconf->he_6ghz_reg_pwr_type == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR)
                         total_len += 3 + MAX_PSD_TPE_POWER_COUNT +
                                      1 + MAX_PSD_TPE_EXT_POWER_COUNT;
+		if (hapd->iconf->he_6ghz_reg_pwr_type == HE_REG_INFO_6GHZ_AP_TYPE_SP) {
+			total_len += 3 + MAX_TPE_EIRP_NUM_POWER_SUPPORTED +
+				     1 + MAX_EIRP_TPE_POWER_EXT_COUNT;
+		}
+
         }
 #endif /* CONFIG_IEEE80211AX */
 

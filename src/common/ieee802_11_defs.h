@@ -2220,6 +2220,27 @@ enum reg_6g_client_type {
 #define MAX_PSD_TPE_EXT_POWER_COUNT		15
 #define MAX_TPE_EIRP_NUM_POWER_SUPPORTED	4
 
+/**
+ * struct bw_10log10_pair - The bandwidth and 10*log10(bandwidth) pair.
+ * ten_l_len = trunc(10*log10(bw)).  'trunc' is truncation function.
+ * @bw: The input bandwidth
+ * @ten_l_ten: Integer value of 10 times the Logarithm (to the base-10) of the
+ * input bandwidth(@bw).
+ */
+struct bw_10log10_pair {
+	u16 bw;
+	s16 ten_l_ten;
+};
+
+/* The array of bandwidth to trunc(10log10(bandwidth)) mapping */
+static const struct bw_10log10_pair bw_to_10log10_map[] = {
+	{ 20, 13}, /* 10* 1.30102 = 13.0102 */
+	{ 40, 16}, /* 10* 1.60205 = 16.0205 */
+	{ 80, 19}, /* 10* 1.90308 = 19.0308 */
+	{160, 22}, /* 10* 2.20411 = 22.0411 */
+	{320, 25}, /* 10* 2.50514 = 25.0514 */
+};
+
 #define RRM_CAPABILITIES_IE_LEN 5
 
 /* IEEE Std 802.11-2020, 9.6.6.4 - Link Measurement Request frame format */

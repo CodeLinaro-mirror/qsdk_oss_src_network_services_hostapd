@@ -3007,6 +3007,92 @@ bool is_6ghz_freq(int freq)
 	return true;
 }
 
+/**
+ * fill_subchan_centers() - Fill the subchannels for the given cfi.
+ * @nchans: Number of sub-channels
+ * @cfi: Center frequency index
+ * @subchannels: Array of subchannels to be filled
+ *
+ * eg: subchannels[0] = cfi - 6 : The second left hand channel is
+ *     4 MHz to the left of the previous channel.
+ *     subchannels[1] = cfi - 2 : The first left hand channel is 2 MHz
+ *     to the left of the CFI.
+ *     subchannels[2] = cfi + 2 : The first right hand channel is 2 MHz
+ *     to the right of the center (or CFI) as the distance between
+ *     two IEEE channels is 4 MHz.
+ *     subchannels[3] = cfi + 6 : The second right hand channel is 4 MHz to the
+ *     right the of previous channel
+ *
+ * Return: void
+ */
+static void
+fill_subchan_centers(u8 nchans, u8 cfi, u8 *subchannels)
+{
+#define HALF_IEEE_CH_SEP  2
+#define IEEE_20MHZ_CH_SEP 4
+	u8 last_idx = nchans - 1;
+	u8 offset = HALF_IEEE_CH_SEP;
+	u8 i;
+
+	if (nchans == 1) {
+		subchannels[0] = cfi;
+		return;
+	}
+
+	for (i = nchans / 2; i < nchans; i++) {
+		subchannels[i] = cfi + offset;
+		subchannels[last_idx - i] = cfi - offset;
+		offset += IEEE_20MHZ_CH_SEP;
+	}
+}
+
+struct opclass_nchans_pair {
+	u8 opclass;
+	u8 nchans;
+};
+
+static const struct opclass_nchans_pair opclass_nchans_map[] = {
+	{131, 1},
+	{136, 1},
+	{132, 2},
+	{133, 4},
+	{134, 8},
+#ifdef CONFIG_IEEE80211BE
+	{137, 16},
+#endif
+};
+
+static u8 get_nsubchanels_for_opclass(u8 opclass)
+{
+	u8 i, n_opclasses = ARRAY_SIZE(opclass_nchans_map);
+
+	for (i = 0; i < n_opclasses; i++)
+		if (opclass == opclass_nchans_map[i].opclass)
+			return opclass_nchans_map[i].nchans;
+
+	return 0;
+}
+
+u8 get_subchannels_for_opclass(u8 cfi,
+			       u8 opclass,
+			       u8 *subchannels)
+{
+	u8 nchans;
+
+	nchans = get_nsubchanels_for_opclass(opclass);
+	fill_subchan_centers(nchans, cfi, subchannels);
+
+	return nchans;
+}
+
+bool is_320_opclass(u8 op_class)
+{
+#ifdef CONFIG_IEEE80211BE
+	return (op_class == 137);
+#else
+	return false;
+#endif
+}
 
 bool is_6ghz_op_class(u8 op_class)
 {
