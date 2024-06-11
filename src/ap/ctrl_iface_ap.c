@@ -705,6 +705,18 @@ static int hostapd_ctrl_iface_sta_mib(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_IEEE80211N */
 
+#ifdef CONFIG_IEEE80211BE
+	if (sta->mld_info.mld_sta == true) {
+		size_t link_type;
+
+		link_type = sta->mld_info.links[hapd->mld_link_id].nstr_bitmap_len;
+		ret = os_snprintf(buf + len, buflen-len, "link_type[%d]=%s\n",
+				  hapd->mld_link_id, link_type ? "NSTR" : "STR");
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+#endif /* CONFIG_IEEE80211BE*/
+
 	return len;
 }
 
