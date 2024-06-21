@@ -9468,6 +9468,14 @@ static int wpa_driver_nl80211_if_add(void *priv, enum wpa_driver_if_type type,
 		if (nl80211_set_mode(new_bss, nlmode))
 			return -1;
 
+		if (linux_set_iface_flags(drv->global->ioctl_sock, ifname, 1))
+		{
+			if (added)
+				nl80211_remove_iface(drv, ifidx);
+			os_free(new_bss);
+			return -1;
+		}
+
 		if (bridge &&
 		    i802_check_bridge(drv, new_bss, bridge, ifname) < 0) {
 			wpa_printf(MSG_ERROR, "nl80211: Failed to add the new "
@@ -9479,13 +9487,6 @@ static int wpa_driver_nl80211_if_add(void *priv, enum wpa_driver_if_type type,
 			return -1;
 		}
 
-		if (linux_set_iface_flags(drv->global->ioctl_sock, ifname, 1))
-		{
-			if (added)
-				nl80211_remove_iface(drv, ifidx);
-			os_free(new_bss);
-			return -1;
-		}
 		os_strlcpy(new_bss->ifname, ifname, IFNAMSIZ);
 		os_memcpy(new_bss->addr, if_addr, ETH_ALEN);
 		os_memcpy(new_bss->flink->addr, new_bss->addr, ETH_ALEN);
