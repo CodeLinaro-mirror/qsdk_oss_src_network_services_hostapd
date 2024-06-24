@@ -5457,6 +5457,12 @@ static int nl80211_put_freq_params(struct wpa_driver_nl80211_data *drv,
 		     nla_put_u32(msg, NL80211_ATTR_CENTER_FREQ2,
 				 freq->center_freq2)))
 			return -ENOBUFS;
+
+		wpa_printf(MSG_DEBUG, "  * punct_bitmap=%d",
+			   freq->punct_bitmap);
+		if (freq->punct_bitmap &&
+		    nla_put_u32(msg, NL80211_ATTR_PUNCT_BITMAP, freq->punct_bitmap))
+			return -ENOBUFS;
 	} else if (freq->ht_enabled || ((freq->he_enabled || freq->eht_enabled) && is_24ghz)) {
 		enum nl80211_channel_type ct;
 
