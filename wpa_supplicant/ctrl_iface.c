@@ -9001,7 +9001,7 @@ static void wpa_supplicant_ctrl_iface_flush(struct wpa_supplicant *wpa_s)
 	wpa_s->dpp_resp_max_tries = 0;
 	wpa_s->dpp_resp_retry_time = 0;
 #ifdef CONFIG_DPP2
-	wpas_dpp_chirp_stop(wpa_s);
+	wpas_dpp_chirp_stop(wpa_s, 0);
 	wpa_s->dpp_pfs_fallback = 0;
 #endif /* CONFIG_DPP2 */
 #ifdef CONFIG_DPP3
@@ -14166,7 +14166,7 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 		if (wpas_dpp_chirp(wpa_s, buf + 9) < 0)
 			reply_len = -1;
 	} else if (os_strcmp(buf, "DPP_STOP_CHIRP") == 0) {
-		wpas_dpp_chirp_stop(wpa_s);
+		wpas_dpp_chirp_stop(wpa_s, 0);
 	} else if (os_strncmp(buf, "DPP_RECONFIG ", 13) == 0) {
 		if (wpas_dpp_reconfig(wpa_s, buf + 13) < 0)
 			reply_len = -1;
