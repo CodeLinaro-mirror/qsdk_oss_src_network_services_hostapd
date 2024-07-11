@@ -8757,7 +8757,7 @@ static int i802_set_sta_vlan(struct i802_bss *bss, const u8 *addr,
 	struct nl_msg *msg;
 	int ret;
 
-	wpa_printf(MSG_DEBUG, "nl80211: %s[%d]: set_sta_vlan(" MACSTR
+	wpa_printf(MSG_INFO, "nl80211: %s[%d]: set_sta_vlan(" MACSTR
 		   ", ifname=%s[%d], vlan_id=%d)",
 		   bss->ifname, if_nametoindex(bss->ifname),
 		   MAC2STR(addr), ifname, if_nametoindex(ifname), vlan_id);
@@ -9028,13 +9028,17 @@ static int i802_set_wds_sta(void *priv, const u8 *addr, int aid, int val,
 				   "interface %s up", name);
 		}
 
-		if (add_br &&
+		ret = i802_set_sta_vlan(priv, addr, name, 0,
+					NL80211_DRV_LINK_ID_NA);
+		if (!ret && add_br &&
 		    linux_br_add_if(drv->global->ioctl_sock,
-				    bridge_ifname, name) < 0)
+				    bridge_ifname, name) < 0) {
+			wpa_printf(MSG_INFO,
+				   "nl80211: Failed to add interface %s to bridge %s: %s",
+				   name, bridge_ifname, strerror(errno));
 			return -1;
-
-		return i802_set_sta_vlan(priv, addr, name, 0,
-					 NL80211_DRV_LINK_ID_NA);
+		}
+		return ret;
 	} else {
 		if (bridge_ifname &&
 		    linux_br_del_if(drv->global->ioctl_sock, bridge_ifname,
