@@ -12175,7 +12175,7 @@ static int nl80211_set_6ghz_pwr_mode(void *priv,
 	if (drv->nlmode != NL80211_IFTYPE_AP)
 		return -EOPNOTSUPP;
 
-	if (!(msg = nl80211_drv_msg(drv, 0, NL80211_CMD_VENDOR)) ||
+	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR)) ||
 	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
 	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
 			QCA_NL80211_VENDOR_SUBCMD_SET_6GHZ_POWER_MODE)) {
