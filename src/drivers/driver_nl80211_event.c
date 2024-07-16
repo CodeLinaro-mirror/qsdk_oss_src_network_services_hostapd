@@ -3928,7 +3928,7 @@ static void qca_nl80211_roam_status_event(struct wpa_driver_nl80211_data *drv,
 #endif /* CONFIG_DRIVER_NL80211_QCA */
 
 static void
-qca_nl80211_6ghz_pwr_mode_change_completed(struct wpa_driver_nl80211_data *drv,
+qca_nl80211_6ghz_pwr_mode_change_completed(struct i802_bss *bss,
 					 u8 *data, size_t len)
 {
 	union wpa_event_data event;
@@ -3954,7 +3954,7 @@ qca_nl80211_6ghz_pwr_mode_change_completed(struct wpa_driver_nl80211_data *drv,
 	os_memset(&event, 0, sizeof(event));
 	event.ap_6ghz_pwr_mode_event.pwr_mode = pwr_mode;
 	wpa_printf(MSG_INFO, "nl80211: 6 GHz power mode changed %u", pwr_mode);
-	wpa_supplicant_event(drv->ctx, EVENT_6GHZ_POWER_MODE_NOTIFY, &event);
+	wpa_supplicant_event(bss->ctx, EVENT_6GHZ_POWER_MODE_NOTIFY, &event);
 }
 
 
@@ -4175,7 +4175,7 @@ static int copy_afc_chan_obj(struct nlattr *nl,
 }
 
 static int
-qca_nl80211_afc_power_update_completed(struct wpa_driver_nl80211_data *drv,
+qca_nl80211_afc_power_update_completed(struct i802_bss *bss,
 				       u8 *data, size_t len)
 {
 	union wpa_event_data event;
@@ -4313,7 +4313,7 @@ qca_nl80211_afc_power_update_completed(struct wpa_driver_nl80211_data *drv,
 		afc_rsp->afc_chan_info = afc_chan_info;
 	}
 
-	wpa_supplicant_event(drv->ctx, EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY,
+	wpa_supplicant_event(bss->ctx, EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY,
 			     &event);
 	os_free(afc_freq_info);
 	os_free(afc_chan_info);
@@ -4327,10 +4327,10 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 {
 	switch (subcmd) {
 	case QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT:
-		qca_nl80211_afc_power_update_completed(bss->drv, data, len);
+		qca_nl80211_afc_power_update_completed(bss, data, len);
 		break;
 	case QCA_NL80211_VENDOR_SUBCMD_POWER_MODE_CHANGE_COMPLETED:
-		qca_nl80211_6ghz_pwr_mode_change_completed(bss->drv, data, len);
+		qca_nl80211_6ghz_pwr_mode_change_completed(bss, data, len);
 		break;
 	case QCA_NL80211_VENDOR_SUBCMD_TEST:
 		wpa_hexdump(MSG_DEBUG, "nl80211: QCA test event", data, len);
