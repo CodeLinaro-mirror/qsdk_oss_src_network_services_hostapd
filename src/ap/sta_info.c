@@ -1103,6 +1103,7 @@ struct sta_info * ap_sta_add(struct hostapd_data *hapd, const u8 *addr)
 	ap_sta_remove_in_other_bss(hapd, sta);
 	sta->last_seq_ctrl = WLAN_INVALID_MGMT_SEQ;
 	dl_list_init(&sta->ip6addr);
+	sta->mld_assoc_link_id = -1;
 
 #ifdef CONFIG_TAXONOMY
 	sta_track_claim_taxonomy_info(hapd->iface, addr,
