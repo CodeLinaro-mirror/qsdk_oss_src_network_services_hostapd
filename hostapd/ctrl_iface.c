@@ -4438,8 +4438,6 @@ static int hostapd_ctrl_iface_disable_mld(struct hostapd_iface *iface)
 }
 
 
-#ifdef CONFIG_TESTING_OPTIONS
-
 static int hostapd_ctrl_iface_link_remove(struct hostapd_data *hapd, char *cmd)
 {
 	u32 count = atoi(cmd);
@@ -4451,6 +4449,7 @@ static int hostapd_ctrl_iface_link_remove(struct hostapd_data *hapd, char *cmd)
 }
 
 
+#ifdef CONFIG_TESTING_OPTIONS
 static int hostapd_ctrl_iface_link_enable(struct hostapd_data *hapd, char *cmd)
 {
 	struct hapd_interfaces *interfaces = hapd->iface->interfaces;
@@ -5552,10 +5551,11 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strcmp(buf, "DISABLE_MLD") == 0) {
 		if (hostapd_ctrl_iface_disable_mld(hapd->iface))
 			reply_len = -1;
-#ifdef CONFIG_TESTING_OPTIONS
 	} else if (os_strncmp(buf, "LINK_REMOVE ", 12) == 0) {
 		if (hostapd_ctrl_iface_link_remove(hapd, buf + 12))
 			reply_len = -1;
+
+#ifdef CONFIG_TESTING_OPTIONS
 	} else if (os_strncmp(buf, "LINK_ENABLE ", 12) == 0) {
 		if (hostapd_ctrl_iface_link_enable(hapd, buf + 12))
 			reply_len = -1;
