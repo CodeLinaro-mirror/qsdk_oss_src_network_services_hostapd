@@ -13522,11 +13522,12 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		u8 ie_count = 0, non_inherit_ie[3];
 		size_t auth_len = 0, xrate_len;
 		u16 capab_info;
-		u8 mbssindex = i;
+		u8 mbssindex;
 
 		if (!bss || !bss->conf || !bss->started ||
 		    mbssid_known_bss(i, known_bss, known_bss_len))
 			continue;
+		mbssindex = bss->mbssid_idx;
 		conf = bss->conf;
 
 		*eid++ = WLAN_MBSSID_SUBELEMENT_NONTRANSMITTED_BSSID_PROFILE;

@@ -576,6 +576,9 @@ struct hostapd_data {
 			  */
 	bool disable_cu;
 
+	/* Stable default BSSID index across dynamic link removal. */
+	size_t mbssid_idx;
+
 #if defined(CONFIG_INTERWORKING) || defined(CONFIG_DPP)
 	bool gas_serv_initialized;
 	struct dl_list gas_peers; /* dl_list of struct gas_peer */
