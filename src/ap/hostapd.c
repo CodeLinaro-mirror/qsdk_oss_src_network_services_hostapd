@@ -3413,6 +3413,11 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 		if (hapd == NULL)
 			goto fail;
 		hapd->msg_ctx = hapd;
+		/* mbssid index is needed if any of the link from the mbssid group is
+		 * dynamically removed, will use this index for updating the
+		 * non-transmitting profile in beacon
+		 */
+		hapd->mbssid_idx = i;
 		hostapd_bss_setup_multi_link(hapd, interfaces);
 	}
 
@@ -3550,6 +3555,12 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 
 
 		bss_idx = iface->num_bss++;
+		/* mbssid index is needed if any of the link from the mbssid group is
+		 * dynamically removed, will use this index for updating the
+		 * non-transmitting profile in beacon
+		 */
+		hapd->mbssid_idx = bss_idx;
+
 		conf->num_bss--;
 		conf->bss[0] = NULL;
 		hostapd_config_free(conf);

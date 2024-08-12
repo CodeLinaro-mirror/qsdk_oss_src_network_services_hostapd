@@ -10348,7 +10348,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		*eid++ = WLAN_EID_MULTIPLE_BSSID_INDEX;
 		if (frame_type == WLAN_FC_STYPE_BEACON) {
 			*eid++ = 3;
-			*eid++ = mbssindex; /* BSSID Index */
+			*eid++ = bss->mbssid_idx; /* BSSID Index */
 			if (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
 			    (conf->dtim_period % elem_count))
 				conf->dtim_period = elem_count;
