@@ -2694,6 +2694,8 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_SECURITY_PROFILE      0x0000008000000000ULL
 /** Driver supports Beacon frame TX rate configuration (EHT rates) */
 #define WPA_DRIVER_FLAGS2_BEACON_RATE_EHT		0x0000010000000000ULL
+/** Driver support ML reconfigure link removal offload */
+#define WPA_DRIVER_FLAGS2_MLD_LINK_REMOVAL_OFFLOAD	0x0000020000000000ULL
 
 #define FULL_AP_CLIENT_STATE_SUPP(drv_flags) \
 	(drv_flags & WPA_DRIVER_FLAGS_FULL_AP_CLIENT_STATE)
