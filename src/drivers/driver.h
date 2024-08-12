@@ -3334,6 +3334,15 @@ struct driver_sta_mlo_info {
 	} links[MAX_NUM_MLD_LINKS];
 };
 
+#ifdef CONFIG_IEEE80211BE
+struct driver_reconfig_link_removal_params {
+	u8 link_id;
+	u8 *ml_reconfig_elem;
+	size_t ml_reconfig_elem_len;
+	u32 removal_count;
+};
+#endif /* CONFIG_IEEE80211BE */
+
 /**
  * struct wpa_driver_ops - Driver interface API definition
  *
@@ -5709,6 +5718,21 @@ struct wpa_driver_ops {
 	 */
 	struct hostapd_multi_hw_info *
 	(*get_multi_hw_info)(void *priv, unsigned int *num_multi_hws);
+
+#ifdef CONFIG_IEEE80211BE
+	/**
+	 * ml_reconfig_link_remove - Send Reconfig Multi-Link element to driver
+	 * 			     with tbtt count
+	 * @priv: Private driver interface data
+	 * @type: driver interface type
+	 * @params: reconfig link removal parameters
+	 * Returns: Success when NL command is successfully posted, failure
+	 * otherwise
+	 */
+	int (*ml_reconfig_link_remove)(void *priv, enum wpa_driver_if_type type,
+				       const struct driver_reconfig_link_removal_params *params);
+
+#endif /* CONFIG_IEEE80211BE */
 };
 
 /**

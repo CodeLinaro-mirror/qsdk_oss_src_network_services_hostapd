@@ -80,6 +80,11 @@
 #define HOSTAPD_GLOBAL_CTRL_IFACE_PORT_LIMIT	50
 #endif /* CONFIG_CTRL_IFACE_UDP */
 
+#ifdef CONFIG_IEEE80211BE
+#define MIN_ML_RECONF_COUNT 5
+#define MAX_ML_RECONF_COUNT 50
+#endif /* CONFIG_IEEE80211BE */
+
 static void hostapd_ctrl_iface_send(struct hostapd_data *hapd, int level,
 				    enum wpa_msg_type type,
 				    const char *buf, size_t len);
@@ -4277,8 +4282,21 @@ static int hostapd_ctrl_iface_link_remove(struct hostapd_data *hapd, char *cmd,
 	int ret;
 	u32 count = atoi(cmd);
 
-	if (!count)
-		count = 1;
+	if (!count) {
+		count = MIN_ML_RECONF_COUNT;
+	} else if (count < MIN_ML_RECONF_COUNT || count > MAX_ML_RECONF_COUNT) {
+		wpa_printf(MSG_ERROR, "Invalid link removal count:%d allowed range %d-%d\n",
+			   count, MIN_ML_RECONF_COUNT, MAX_ML_RECONF_COUNT);
+		ret = os_snprintf(buf, buflen, "%s\n", "FAIL");
+		if (os_snprintf_error(buflen, ret))
+			return -1;
+	} else if (!hapd->conf->mld_ap) {
+		wpa_printf(MSG_ERROR, "ML reconfigure is not supported in non-MLO case\n");
+		ret = os_snprintf(buf, buflen, "%s\n", "FAIL");
+		if (os_snprintf_error(buflen, ret))
+			return -1;
+		return -1;
+	}
 
 	ret = hostapd_link_remove(hapd, count);
 	if (ret == 0) {

@@ -450,6 +450,112 @@ void hostapd_get_eht_capab(struct hostapd_data *hapd,
 }
 
 
+/* Common info (1) + MLD Mac address (6) + STA Info
+ * length(1) + STA Mac address(6) + AP removal
+ * timer(2) + Operation parameters(3)
+ */
+#define ML_RECONFIG_FIXED_IE_LEN 19
+size_t hostapd_eid_eht_ml_reconfig_len(struct hostapd_data *hapd)
+{
+	size_t len, sta_prof_len = 0;
+	struct hostapd_data *link_bss;
+
+	/* Include WLAN_EID_EXT_MULTI_LINK (1) */
+	len = 1;
+	/* Control Field */
+	len += 2;
+	/* Common Info - Doesn't include any information */
+	len += 1;
+
+	for_each_mld_link(link_bss, hapd) {
+
+		/* Currently we support removing only one link
+		 * at a time from a MLD
+		 */
+		if (!link_bss->eht_mld_link_removal_count ||
+		    !link_bss->eht_mld_link_removal_inprogress)
+			continue;
+
+		/* Sub-Element field */
+		sta_prof_len += 2;
+
+		/* Per-STA profile */
+
+		/*STA-Control(2) field - only AP removal timer */
+		sta_prof_len += 2;
+
+		/* STA-Info(3) */
+
+		/* STA-Info length */
+		sta_prof_len += 1;
+
+		/* STA-Info AP removal timer */
+		sta_prof_len += 2;
+	}
+
+	/* If no Sta profile is present, element itself is not needed */
+	if (!sta_prof_len)
+		return 0;
+
+	/*WLAN_EID_EXTENSION (1) + length (1) */
+	return len + sta_prof_len + 2;
+}
+
+
+u8 *hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd,
+			      u8 *eid)
+{
+	struct hostapd_data *link_bss;
+	u16 control;
+	u8 *pos = eid;
+
+	*pos++ = WLAN_EID_EXTENSION;
+	*pos++ = 0;
+	*pos++ = WLAN_EID_EXT_MULTI_LINK;
+
+	/* set the multi-link control field */
+	control = MULTI_LINK_CONTROL_TYPE_RECONF;
+	WPA_PUT_LE16(pos, control);
+	pos += 2;
+
+	/* common info doesn't include any information */
+	*pos++ = 1;
+
+	/* Need to have this in other API and make this generic or align with
+	 * the upstream
+	 */
+	for_each_mld_link(link_bss, hapd) {
+		/* Currently we support removing only one link
+		 * at a time from a MLD
+		 */
+		if (!link_bss->eht_mld_link_removal_count ||
+		    !link_bss->eht_mld_link_removal_inprogress)
+			continue;
+
+		/* sub element ID is 0 */
+		*pos++ = 0;
+		*pos++ = 5;
+
+		control = link_bss->mld_link_id |
+			  EHT_PER_STA_RECONF_CTRL_AP_REMOVAL_TIMER;
+		WPA_PUT_LE16(pos, control);
+		pos += 2;
+
+		/* STA Profile length */
+		*pos++ = 3;
+
+		WPA_PUT_LE16(pos, link_bss->eht_mld_link_removal_count);
+		pos += 2;
+	}
+
+	eid[1] = pos - eid - 2;
+
+	wpa_hexdump_ascii(MSG_INFO, "MLD: reconfiguration MLE dump: ",
+			  eid, eid[1]);
+	return pos;
+}
+
+
 /* Beacon or a non ML Probe Response frame should include
  * Common Info Length(1) + MLD MAC Address(6) +
  * Link ID Info(1) + BSS Parameters Change count(1) +
@@ -769,75 +875,6 @@ out:
 }
 
 
-static u8 * hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd, u8 *eid)
-{
-	struct hostapd_data *other_hapd;
-	u16 control;
-	u8 *pos = eid;
-	unsigned int i;
-
-	wpa_printf(MSG_DEBUG, "MLD: Reconfiguration ML");
-
-	/* First check if the element needs to be added */
-	for (i = 0; i < hapd->iface->interfaces->count; i++) {
-		other_hapd = hapd->iface->interfaces->iface[i]->bss[0];
-
-		wpa_printf(MSG_DEBUG, "MLD: Reconfiguration ML: %u",
-			   other_hapd->eht_mld_link_removal_count);
-
-		if (other_hapd->eht_mld_link_removal_count)
-			break;
-	}
-
-	/* No link is going to be removed */
-	if (i == hapd->iface->interfaces->count)
-		return eid;
-
-	wpa_printf(MSG_DEBUG, "MLD: Reconfiguration ML: Adding element");
-
-	/* The length will be set at the end */
-	*pos++ = WLAN_EID_EXTENSION;
-	*pos++ = 0;
-	*pos++ = WLAN_EID_EXT_MULTI_LINK;
-
-	/* Set the Multi-Link Control field */
-	control = MULTI_LINK_CONTROL_TYPE_RECONF;
-	WPA_PUT_LE16(pos, control);
-	pos += 2;
-
-	/* Common Info doesn't include any information */
-	*pos++ = 1;
-
-	/* Add the per station profiles */
-	for (i = 0; i < hapd->iface->interfaces->count; i++) {
-		other_hapd = hapd->iface->interfaces->iface[i]->bss[0];
-		if (!other_hapd->eht_mld_link_removal_count)
-			continue;
-
-		/* Subelement ID is 0 */
-		*pos++ = 0;
-		*pos++ = 5;
-
-		control = other_hapd->mld_link_id |
-			EHT_PER_STA_RECONF_CTRL_AP_REMOVAL_TIMER;
-
-		WPA_PUT_LE16(pos, control);
-		pos += 2;
-
-		/* STA profile length */
-		*pos++ = 3;
-
-		WPA_PUT_LE16(pos, other_hapd->eht_mld_link_removal_count);
-		pos += 2;
-	}
-
-	eid[1] = pos - eid - 2;
-
-	wpa_hexdump(MSG_DEBUG, "MLD: Reconfiguration ML", eid, eid[1] + 2);
-	return pos;
-}
-
-
 static size_t hostapd_eid_eht_ml_len(struct mld_info *info,
 				     bool include_mld_id, bool include_bpcc)
 {
@@ -890,9 +927,12 @@ u8 * hostapd_eid_eht_ml_beacon(struct hostapd_data *hapd,
 {
 	eid = hostapd_eid_eht_basic_ml_common(hapd, eid, info, include_mld_id,
 					      false);
-	return hostapd_eid_eht_reconf_ml(hapd, eid);
-}
 
+	if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAG2_MLD_LINK_REMOVAL_OFFLOAD)
+		return eid;
+	else
+		return hostapd_eid_eht_reconf_ml(hapd, eid);
+}
 
 
 u8 * hostapd_eid_eht_ml_assoc(struct hostapd_data *hapd, struct sta_info *info,
@@ -904,7 +944,7 @@ u8 * hostapd_eid_eht_ml_assoc(struct hostapd_data *hapd, struct sta_info *info,
 	eid = hostapd_eid_eht_basic_ml_common(hapd, eid, &info->mld_info,
 					      false, true);
 	ap_sta_free_sta_profile(&info->mld_info);
-	return hostapd_eid_eht_reconf_ml(hapd, eid);
+	return eid;
 }
 
 

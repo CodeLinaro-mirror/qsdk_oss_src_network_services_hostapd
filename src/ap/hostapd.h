@@ -560,6 +560,7 @@ struct hostapd_data {
 	char ctrl_sock_iface[IFNAMSIZ + 7 + 1];
 
 	u8 eht_mld_link_removal_count;
+	u8 eht_mld_link_removal_inprogress;
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_NAN_USD
@@ -994,6 +995,8 @@ static inline bool hostapd_mld_is_first_bss(struct hostapd_data *hapd)
 u16 hostapd_get_punct_bitmap(struct hostapd_data *hapd);
 bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface);
 void hostapd_gen_per_sta_profiles(struct hostapd_data *hapd);
+size_t hostapd_eid_eht_ml_reconfig_len(struct hostapd_data *hapd);
+u8 * hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd, u8 *eid);
 
 static inline bool ap_pmf_enabled(struct hostapd_bss_config *conf)
 {

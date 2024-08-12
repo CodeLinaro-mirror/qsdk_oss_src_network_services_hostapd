@@ -10178,6 +10178,66 @@ int nl80211_remove_link(struct i802_bss *bss, int link_id)
 }
 
 
+#ifdef CONFIG_IEEE80211BE
+int nl80211_ml_reconfig_link_remove(struct i802_bss *bss,
+				    const struct driver_reconfig_link_removal_params *params)
+{
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret = 0;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Remove link (ifindex=%d)", bss->ifindex);
+	wpa_printf(MSG_DEBUG, "nl80211: MLD: remove link_id=%u", params->link_id);
+
+	wpa_hexdump(MSG_DEBUG, "nl80211: Reconfig ie", params->ml_reconfig_elem,
+		    params->ml_reconfig_elem_len);
+
+	if (!(bss->valid_links & BIT(params->link_id))) {
+		wpa_printf(MSG_DEBUG, "nl80211: MLD: remove link: Link not found");
+		return -1;
+	}
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_REMOVE_LINK);
+	if (!msg ||
+	    nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, params->link_id) ||
+	    nla_put_u32(msg, NL80211_ATTR_AP_REMOVAL_COUNT, params->removal_count) ||
+	    nla_put(msg, NL80211_ATTR_IE, params->ml_reconfig_elem_len,
+		    params->ml_reconfig_elem)) {
+		nlmsg_free(msg);
+		return -1;
+	}
+
+	ret = send_and_recv_resp(drv, msg, NULL, NULL);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "nl80211: reconfig link remove (%d) failed. ret=%d (%s)",
+			   params->link_id, ret, strerror(-ret));
+
+	return ret;
+}
+
+
+static int
+driver_nl80211_ml_reconfig_link_removal(void *priv,
+					enum wpa_driver_if_type type,
+					const struct driver_reconfig_link_removal_params *params)
+{
+	struct i802_bss *bss = priv;
+
+	if (params->link_id < 0 || params->link_id >= MAX_NUM_MLD_LINKS)
+		return -1;
+
+	if (type != WPA_IF_AP_BSS)
+		return -1;
+
+	if (!(bss->valid_links & BIT(params->link_id)))
+		return -1;
+
+	return nl80211_ml_reconfig_link_remove(bss, params);
+}
+#endif /* CONFIG_IEEE80211BE */
+
+
 static void nl80211_remove_links(struct i802_bss *bss)
 {
 	int ret;
@@ -15631,6 +15691,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.is_drv_shared = nl80211_is_drv_shared,
 	.link_sta_remove = wpa_driver_nl80211_link_sta_remove,
 	.can_share_drv = wpa_driver_nl80211_can_share_drv,
+	.ml_reconfig_link_remove = driver_nl80211_ml_reconfig_link_removal,
 	.setup_link_reconfig = nl80211_send_link_reconfig_request,
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_TESTING_OPTIONS
