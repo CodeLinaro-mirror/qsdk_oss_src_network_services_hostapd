@@ -489,6 +489,7 @@ static void hostapd_link_remove_timeout_handler(void *eloop_data,
 	ieee802_11_set_beacon(hapd);
 
 	if (!hapd->eht_mld_link_removal_count) {
+		hapd->eht_mld_link_removal_inprogress = false;
 		hostapd_free_link_stas(hapd);
 		hostapd_disable_iface(hapd->iface);
 		return;
@@ -500,17 +501,127 @@ static void hostapd_link_remove_timeout_handler(void *eloop_data,
 }
 
 
+static int hostapd_send_ml_reconfig_link_removal(struct hostapd_data *hapd,
+						 u32 count)
+{
+	struct driver_reconfig_link_removal_params params = { 0 };
+	int ret = -1;
+
+	params.link_id = hapd->mld_link_id;
+	params.removal_count = count;
+
+	params.ml_reconfig_elem_len = hostapd_eid_eht_ml_reconfig_len(hapd);
+	if (!params.ml_reconfig_elem_len)
+		goto out;
+	params.ml_reconfig_elem = os_zalloc(params.ml_reconfig_elem_len);
+
+	if (!params.ml_reconfig_elem)
+		goto out;
+
+	hostapd_eid_eht_reconf_ml(hapd, params.ml_reconfig_elem);
+
+	/*send NL with tbtt count and ml reconfig ie */
+	ret = hostapd_drv_ml_reconfig_link_remove(hapd, WPA_IF_AP_BSS, &params);
+
+out:
+	os_free(params.ml_reconfig_elem);
+	if (ret) {
+		hapd->eht_mld_link_removal_inprogress = false;
+		hapd->eht_mld_link_removal_count = 0;
+	}
+
+	return ret;
+}
+
+
+static bool is_link_reconfigure_allowed(struct hostapd_data *hapd)
+{
+	struct hostapd_mld *mld = hapd->mld;
+	struct hostapd_data *link_bss;
+	u8 list_len;
+
+	if (!hapd->conf->mld_ap || !mld || !mld->num_links) {
+		wpa_printf(MSG_ERROR, "mld_ap is NOT set\n");
+		return false;
+	}
+
+	list_len = dl_list_len(&mld->links);
+	if (!list_len || list_len == 1) {
+		wpa_printf(MSG_INFO,
+			   "link reconfigure is currently not applicable for this mld links:%u\n",
+			   list_len);
+		return false;
+	}
+
+	for_each_mld_link(link_bss, hapd) {
+		/* Currently we support removing only one link
+		 * at a time from a MLD
+		 */
+		if (link_bss->eht_mld_link_removal_inprogress) {
+			wpa_printf(MSG_INFO, "Rejecting this request as Link reconfigure is already in-progress for" MACSTR,
+				  MAC2STR(link_bss->own_addr));
+			return false;
+		}
+	}
+
+	return true;
+}
+
+
 int hostapd_link_remove(struct hostapd_data *hapd, u32 count)
 {
-	if (!hapd->conf->mld_ap)
+	struct hostapd_iface *iface = hapd->iface;
+	size_t i;
+
+	if (!hapd->conf->mld_ap || !hapd->mld || !hapd->started ||
+	    !count || count > 255 || hapd->eht_mld_link_removal_inprogress)
 		return -1;
 
 	wpa_printf(MSG_DEBUG,
 		   "MLD: Remove link_id=%u in %u beacons",
 		   hapd->mld_link_id, count);
 
-	hapd->eht_mld_link_removal_count = count;
+	if (iface->drv_flags2 & WPA_DRIVER_FLAGS2_MLD_LINK_REMOVAL_OFFLOAD) {
+	    if (!is_link_reconfigure_allowed(hapd)) {
+		    wpa_printf(MSG_INFO, "link reconfigure is currently not applicable\n");
+		    return -1;
+	    }
 
+	    /* Check if the link removal is scheduled for tx BSS
+	     * If yes, schedule link removal for all non-tx BSS first
+	     */
+	    if (iface->conf->mbssid != MBSSID_DISABLED &&
+		hapd == hostapd_mbssid_get_tx_bss(hapd)) {
+		    for (i = 0; i < iface->num_bss; i++) {
+			    struct hostapd_data *bss = iface->bss[i];
+
+			    if (bss == hapd)
+				    continue;
+			    if (!bss->started || !is_link_reconfigure_allowed(bss))
+				    return -1;
+		    }
+		    for (i = 0; i < iface->num_bss; i++) {
+			    struct hostapd_data *bss = hapd->iface->bss[i];
+
+			    if (bss == hapd)
+				    continue;
+			    bss->eht_mld_link_removal_inprogress = true;
+			    bss->eht_mld_link_removal_count = count;
+			    if (hostapd_send_ml_reconfig_link_removal(bss, count)) {
+				    wpa_printf(MSG_DEBUG,
+					       "Failed to send link removal non-tx BSS");
+				    return -EINVAL;
+			   }
+		    }
+	    }
+
+	    hapd->eht_mld_link_removal_inprogress = true;
+	    hapd->eht_mld_link_removal_count = count;
+	    return hostapd_send_ml_reconfig_link_removal(hapd, count);
+	}
+
+	hapd->eht_mld_link_removal_count = count;
+	hapd->eht_mld_link_removal_inprogress = true;
 	eloop_register_timeout(0, TU_TO_USEC(hapd->iconf->beacon_int),
 			       hostapd_link_remove_timeout_handler,
 			       hapd, NULL);

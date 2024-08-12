@@ -83,6 +83,11 @@
 #define HOSTAPD_GLOBAL_CTRL_IFACE_PORT_LIMIT	50
 #endif /* CONFIG_CTRL_IFACE_UDP */
 
+#ifdef CONFIG_IEEE80211BE
+#define MIN_ML_RECONF_COUNT 5
+#define MAX_ML_RECONF_COUNT 50
+#endif /* CONFIG_IEEE80211BE */
+
 static void hostapd_ctrl_iface_send(struct hostapd_data *hapd, int level,
 				    enum wpa_msg_type type,
 				    const char *buf, size_t len);
@@ -4443,7 +4448,13 @@ static int hostapd_ctrl_iface_link_remove(struct hostapd_data *hapd, char *cmd)
 	u32 count = atoi(cmd);
 
 	if (!count)
-		count = 1;
+		count = MIN_ML_RECONF_COUNT;
+	if (count < MIN_ML_RECONF_COUNT || count > MAX_ML_RECONF_COUNT ||
+	    !hapd->conf->mld_ap) {
+		wpa_printf(MSG_ERROR, "Invalid ML link removal request (count=%u)",
+			   count);
+		return -1;
+	}
 
 	return hostapd_link_remove(hapd, count);
 }
