@@ -771,7 +771,6 @@ out:
 
 static u8 * hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd, u8 *eid)
 {
-#ifdef CONFIG_TESTING_OPTIONS
 	struct hostapd_data *other_hapd;
 	u16 control;
 	u8 *pos = eid;
@@ -836,9 +835,6 @@ static u8 * hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd, u8 *eid)
 
 	wpa_hexdump(MSG_DEBUG, "MLD: Reconfiguration ML", eid, eid[1] + 2);
 	return pos;
-#else /* CONFIG_TESTING_OPTIONS */
-	return eid;
-#endif /* CONFIG_TESTING_OPTIONS */
 }
 
 

@@ -431,7 +431,6 @@ static int hostapd_broadcast_wep_set(struct hostapd_data *hapd)
 
 
 #ifdef CONFIG_IEEE80211BE
-#ifdef CONFIG_TESTING_OPTIONS
 
 static void hostapd_link_remove_timeout_handler(void *eloop_data,
 						void *user_ctx)
@@ -470,9 +469,6 @@ int hostapd_link_remove(struct hostapd_data *hapd, u32 count)
 		   hapd->mld_link_id, count);
 
 	hapd->eht_mld_link_removal_count = count;
-	hapd->eht_mld_bss_param_change++;
-	if (hapd->eht_mld_bss_param_change == 255)
-		hapd->eht_mld_bss_param_change = 0;
 
 	eloop_register_timeout(0, TU_TO_USEC(hapd->iconf->beacon_int),
 			       hostapd_link_remove_timeout_handler,
@@ -482,7 +478,6 @@ int hostapd_link_remove(struct hostapd_data *hapd, u32 count)
 	return 0;
 }
 
-#endif /* CONFIG_TESTING_OPTIONS */
 #endif /* CONFIG_IEEE80211BE */
 
 
@@ -638,11 +633,9 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 
 #ifdef CONFIG_IEEE80211AX
 	eloop_cancel_timeout(hostapd_switch_color_timeout_handler, hapd, NULL);
-#ifdef CONFIG_TESTING_OPTIONS
 #ifdef CONFIG_IEEE80211BE
 	eloop_cancel_timeout(hostapd_link_remove_timeout_handler, hapd, NULL);
 #endif /* CONFIG_IEEE80211BE */
-#endif /* CONFIG_TESTING_OPTIONS */
 
 #endif /* CONFIG_IEEE80211AX */
 }

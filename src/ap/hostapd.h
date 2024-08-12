@@ -559,9 +559,7 @@ struct hostapd_data {
 	 * total, additional 7 characters required. */
 	char ctrl_sock_iface[IFNAMSIZ + 7 + 1];
 
-#ifdef CONFIG_TESTING_OPTIONS
 	u8 eht_mld_link_removal_count;
-#endif /* CONFIG_TESTING_OPTIONS */
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_NAN_USD
