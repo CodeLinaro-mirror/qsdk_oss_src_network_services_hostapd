@@ -10209,9 +10209,12 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 		/* For ML Probe Response frame, the solicited hapd's MLE will
 		 * be in the frame body */
 		if (bss->conf->mld_ap &&
-		    (bss != hapd || frame_type != WLAN_FC_STYPE_PROBE_RESP))
+		    (bss != hapd || frame_type != WLAN_FC_STYPE_PROBE_RESP)) {
 			nontx_profile_len += hostapd_eid_eht_basic_ml_len(
 				bss, NULL, true, false);
+			if (bss->eht_mld_link_removal_inprogress)
+				nontx_profile_len += hostapd_eid_eht_ml_reconfig_len(bss);
+		}
 #endif /* CONFIG_IEEE80211BE */
 
 		if (ie_count)
@@ -10397,9 +10400,12 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		/* For ML Probe Response frame, the solicited hapd's MLE will
 		 * be in the frame body */
 		if (bss->conf->mld_ap &&
-		    (bss != hapd || frame_type != WLAN_FC_STYPE_PROBE_RESP))
+		    (bss != hapd || frame_type != WLAN_FC_STYPE_PROBE_RESP)) {
 			eid = hostapd_eid_eht_basic_ml_common(bss, eid, NULL,
 							      true, false);
+			if (bss->eht_mld_link_removal_inprogress)
+				eid = hostapd_eid_eht_reconf_ml(bss, eid);
+		}
 #endif /* CONFIG_IEEE80211BE */
 		if (ie_count) {
 			*eid++ = WLAN_EID_EXTENSION;

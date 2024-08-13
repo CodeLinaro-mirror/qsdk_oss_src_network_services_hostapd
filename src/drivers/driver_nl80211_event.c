@@ -1510,10 +1510,80 @@ mlme_event_mgmt_critical_update(struct i802_bss *bss, struct nlattr *rx_cu_param
 }
 
 
+static void
+mlme_event_mgmt_link_removal_update(struct i802_bss *bss,
+				    struct nlattr *rx_link_removal_params)
+{
+	struct nlattr *link_removal[NL80211_CU_ATTR_MAX + 1];
+	struct nlattr *mld_list;
+	struct nlattr *mld[NL80211_CU_MLD_ATTR_MAX + 1];
+	struct nlattr *link_list;
+	struct nlattr *link[NL80211_CU_MLD_LINK_ATTR_MAX + 1];
+	union wpa_event_data event;
+	int mld_list_rem, link_list_rem;
+
+	/* Link removal attribute policy */
+	static struct nla_policy
+		link_removal_attr_policy[NL80211_CU_ATTR_MAX + 1] = {
+			[NL80211_CU_ATTR_MLD_LIST] = { .type = NLA_NESTED },
+		};
+
+	/* MLD attribute policy */
+	static struct nla_policy
+		mld_attr_policy[NL80211_CU_MLD_ATTR_MAX + 1] = {
+			[NL80211_CU_MLD_ATTR_IFINDEX] = { .type = NLA_U32 },
+			[NL80211_CU_MLD_ATTR_LINK_LIST] = { .type = NLA_NESTED },
+		};
+
+	/* Link attribute policy */
+	static struct nla_policy
+		link_policy[NL80211_CU_MLD_LINK_ATTR_MAX + 1] = {
+			[NL80211_CU_MLD_LINK_ATTR_ID] = { .type = NLA_U8 },
+			[NL80211_CU_ATTR_AP_REMOVAL_COUNT] = { .type = NLA_U16 },
+		};
+
+	nla_parse_nested(link_removal, NL80211_CU_ATTR_MAX,
+			 rx_link_removal_params, link_removal_attr_policy);
+
+	if (!link_removal[NL80211_CU_ATTR_MLD_LIST]) {
+		wpa_printf(MSG_DEBUG, "nl80211: Couldn't parse link_removal attribute\n");
+		return;
+	}
+
+	nla_for_each_nested(mld_list, link_removal[NL80211_CU_ATTR_MLD_LIST], mld_list_rem) {
+		if (nla_parse_nested(mld, NL80211_CU_MLD_ATTR_MAX, mld_list,
+			mld_attr_policy) || !mld[NL80211_CU_MLD_ATTR_LINK_LIST])
+			return;
+
+		if (mld[NL80211_CU_MLD_ATTR_LINK_LIST]) {
+			nla_for_each_nested(link_list, mld[NL80211_CU_MLD_ATTR_LINK_LIST],
+					    link_list_rem) {
+				if (nla_parse_nested(link, NL80211_CU_MLD_LINK_ATTR_MAX,
+						     link_list, link_policy))
+					return;
+
+				os_memset(&event, 0, sizeof(event));
+				if (link[NL80211_CU_MLD_LINK_ATTR_ID]) {
+					event.link_removal_event.link_id =
+						nla_get_u8(link[NL80211_CU_MLD_LINK_ATTR_ID]);
+
+					if (link[NL80211_CU_ATTR_AP_REMOVAL_COUNT])
+						event.link_removal_event.link_removal_count =
+							nla_get_u16(link[NL80211_CU_ATTR_AP_REMOVAL_COUNT]);
+
+					wpa_supplicant_event(bss->ctx,
+							     EVENT_LINK_RECONFIG, &event);
+				}
+			}
+		}
+	}
+}
+
+
 static void mlme_event_mgmt(struct i802_bss *bss,
 			    struct nlattr *freq, struct nlattr *sig,
 			    const u8 *frame, size_t len, struct nlattr *rx_cu_param,
-			    int link_id)
+			    int link_id, struct nlattr *link_removal_param)
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	const struct ieee80211_mgmt *mgmt;
@@ -1554,6 +1624,10 @@ static void mlme_event_mgmt(struct i802_bss *bss,
 	if (rx_cu_param && ((stype == WLAN_FC_STYPE_PROBE_REQ) || (stype == WLAN_FC_STYPE_ASSOC_REQ)
 		|| (stype == WLAN_FC_STYPE_REASSOC_REQ)))
 		mlme_event_mgmt_critical_update(bss, rx_cu_param);
+
+	if (link_removal_param && ((stype == WLAN_FC_STYPE_PROBE_REQ) || (stype == WLAN_FC_STYPE_ASSOC_REQ)
+	    || (stype == WLAN_FC_STYPE_REASSOC_REQ)))
+		mlme_event_mgmt_link_removal_update(bss, link_removal_param);
 
 	event.rx_mgmt.ctx = bss->ctx;
 	event.rx_mgmt.link_id = link_id;
@@ -1892,7 +1966,8 @@ static void mlme_event(struct i802_bss *bss,
 		       struct nlattr *freq, struct nlattr *ack,
 		       struct nlattr *cookie, struct nlattr *sig,
 		       struct nlattr *wmm, struct nlattr *req_ie,
-		       struct nlattr *rx_cu_param, struct nlattr *link)
+		       struct nlattr *rx_cu_param, struct nlattr *link,
+		       struct nlattr *link_removal_param)
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	u16 stype = 0, auth_type = 0;
@@ -1991,7 +2066,8 @@ static void mlme_event(struct i802_bss *bss,
 		break;
 	case NL80211_CMD_FRAME:
 		mlme_event_mgmt(bss, freq, sig, nla_data(frame),
-				nla_len(frame), rx_cu_param, link_id);
+				nla_len(frame), rx_cu_param, link_id,
+				link_removal_param);
 		break;
 	case NL80211_CMD_FRAME_TX_STATUS:
 		mlme_event_mgmt_tx_status(bss, cookie, nla_data(frame),
@@ -4942,7 +5018,7 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 			   tb[NL80211_ATTR_RX_SIGNAL_DBM],
 			   tb[NL80211_ATTR_STA_WME],
 			   tb[NL80211_ATTR_REQ_IE], NULL,
-			   tb[NL80211_ATTR_MLO_LINK_ID]);
+			   tb[NL80211_ATTR_MLO_LINK_ID], NULL);
 		break;
 	case NL80211_CMD_CONNECT:
 	case NL80211_CMD_ROAM:
@@ -5271,7 +5347,8 @@ int process_bss_event(struct nl_msg *msg, void *arg)
 			   tb[NL80211_ATTR_RX_SIGNAL_DBM],
 			   tb[NL80211_ATTR_STA_WME], NULL,
 			   tb[NL80211_ATTR_RXMGMT_CRITICAL_UPDATE],
-			   tb[NL80211_ATTR_MLO_LINK_ID]);
+			   tb[NL80211_ATTR_MLO_LINK_ID],
+			   tb[NL80211_ATTR_RXMGMT_LINK_REMOVAL_UPDATE]);
 		break;
 	case NL80211_CMD_UNEXPECTED_FRAME:
 		nl80211_spurious_frame(bss, tb, 0);

@@ -802,6 +802,10 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 			 * switch */
 			buflen += 6;
 		}
+		/* ML reconfigure feature */
+		if (hapd->conf->mld_ap)
+			buflen += hostapd_eid_eht_ml_reconfig_len(hapd);
+
 	}
 #endif /* CONFIG_IEEE80211BE */
 
@@ -968,6 +972,9 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 							params->mld_info,
 							pos, false);
 		}
+		/* ML reconfigure feature */
+		if (hapd->conf->mld_ap)
+			pos = hostapd_eid_eht_reconf_ml(hapd, pos);
 
 		pos = hostapd_eid_eht_capab(hapd, pos, IEEE80211_MODE_AP);
 		pos = hostapd_eid_eht_operation(hapd, pos);
