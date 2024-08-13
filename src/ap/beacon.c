@@ -819,6 +819,9 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 			buflen += hostapd_eid_eht_ml_beacon_len(
 				params->mld_ap, params->mld_info,
 				!!params->mld_ap);
+			if (params->mld_ap->iface->drv_flags2 &
+			    WPA_DRIVER_FLAGS2_MLD_LINK_REMOVAL_OFFLOAD)
+				buflen += hostapd_eid_eht_ml_reconfig_len(params->mld_ap);
 
 			if (hapd->conf->mld_ap)
 				buflen += hostapd_eid_eht_ml_beacon_len(
@@ -835,6 +838,12 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 			 * switch */
 			buflen += 6;
 		}
+
+		/* ML reconfigure feature */
+		if (hapd->conf->mld_ap &&
+		    (hapd->iface->drv_flags2 &
+		     WPA_DRIVER_FLAGS2_MLD_LINK_REMOVAL_OFFLOAD))
+			buflen += hostapd_eid_eht_ml_reconfig_len(hapd);
 
 		if (hapd->conf->mld_ap)
 			buflen += hostapd_eid_eht_ml_tid_to_link_map_len(
@@ -1004,6 +1013,9 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 			pos = hostapd_eid_eht_ml_beacon(
 				params->mld_ap, params->mld_info,
 				pos, !!params->mld_ap);
+			if (params->mld_ap->iface->drv_flags2 &
+			    WPA_DRIVER_FLAGS2_MLD_LINK_REMOVAL_OFFLOAD)
+				pos = hostapd_eid_eht_reconf_ml(params->mld_ap, pos);
 
 			if (hapd->conf->mld_ap)
 				pos = hostapd_eid_eht_ml_beacon(
@@ -1014,6 +1026,12 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 							params->mld_info,
 							pos, false);
 		}
+		/* ML reconfigure feature */
+		/* Software removal is already included by the ML beacon helper. */
+		if (hapd->conf->mld_ap &&
+		    (hapd->iface->drv_flags2 &
+		     WPA_DRIVER_FLAGS2_MLD_LINK_REMOVAL_OFFLOAD))
+			pos = hostapd_eid_eht_reconf_ml(hapd, pos);
 
 		pos = hostapd_eid_eht_capab(hapd, pos, IEEE80211_MODE_AP);
 		pos = hostapd_eid_eht_operation(hapd, pos);

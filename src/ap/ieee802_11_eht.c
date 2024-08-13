@@ -1008,7 +1008,11 @@ size_t hostapd_eid_eht_ml_beacon_len(struct hostapd_data *hapd,
 				     struct mld_info *info,
 				     bool include_mld_id)
 {
-	return hostapd_eid_eht_ml_len(hapd, info, include_mld_id, false);
+	size_t len = hostapd_eid_eht_ml_len(hapd, info, include_mld_id, false);
+
+	if (!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_MLD_LINK_REMOVAL_OFFLOAD))
+		len += hostapd_eid_eht_ml_reconfig_len(hapd);
+	return len;
 }
 
 
