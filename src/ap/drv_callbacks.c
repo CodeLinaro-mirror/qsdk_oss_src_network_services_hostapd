@@ -2851,6 +2851,106 @@ static void hostapd_mld_iface_disable(struct hostapd_data *hapd)
 #endif /* CONFIG_IEEE80211BE */
 
 
+
+#ifdef CONFIG_IEEE80211BE
+static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
+					      struct link_removal_event *ev,
+					      enum wpa_event_type event)
+{
+	struct hostapd_data *phapd, *partner = NULL;
+	struct hostapd_iface *iface;
+	unsigned int i;
+	struct hapd_interfaces *interfaces;
+#ifdef CONFIG_WNM_AP
+	u8 bss_term_dur[12] = { 0 };
+	u8 req_mode;
+#endif
+
+	if (!hapd->conf->mld_ap || !hapd->mld || !hapd->started ||
+	    !(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_MLD_LINK_REMOVAL_OFFLOAD))
+		return;
+
+	if (event == EVENT_LINK_REMOVAL_STARTED) {
+		if (!ev || ev->link_removal_count > 255)
+			return;
+#ifdef CONFIG_WNM_AP
+		req_mode = WNM_BSS_TM_REQ_DISASSOC_IMMINENT |
+			   WNM_BSS_TM_REQ_BSS_TERMINATION_INCLUDED |
+			   WNM_BSS_TM_REQ_LINK_REMOVAL_IMMINENT;
+
+		bss_term_dur[0] = 4; /* Subelement ID */
+		bss_term_dur[1] = 10; /* Length */
+		/* TSF timer when corresponding BSS will be removed
+		 * link_removal_count * beacon_interval will give total number of
+		 * beacons ML reconfiguration element will be present after which the
+		 * BSS will be removed
+		 * Adding this with the TSF value of first beacon with ML reconfiguration
+		 * element is sent will be equal/greater than the last beacon with ML
+		 * reconfiguration element will be sent.
+		 */
+		WPA_PUT_LE64(&bss_term_dur[2], ev->tsf +
+			(u64) ev->link_removal_count *
+			TU_TO_USEC(hapd->iconf->beacon_int));
+
+		wnm_send_bss_tm_req(hapd, NULL, req_mode, ev->link_removal_count,
+				    0x01, &bss_term_dur[0], 0x01, NULL, NULL, 0,
+				    NULL, 0);
+#endif
+		hapd->eht_mld_link_removal_count = ev->link_removal_count;
+		hapd->eht_mld_link_removal_inprogress = true;
+	} else if (event == EVENT_LINK_REMOVAL_COMPLETED) {
+		if (!hapd->eht_mld_link_removal_inprogress)
+			return;
+		hapd->eht_mld_link_removal_inprogress = false;
+		hapd->eht_mld_link_removal_count = 0;
+
+		iface = hapd->iface;
+		interfaces = iface->interfaces;
+
+		/* Save one of the partner bss to update the beacon */
+		for_each_mld_link(phapd, hapd) {
+			if (phapd != hapd) {
+				partner = phapd;
+				break;
+			}
+		}
+
+		if (iface->num_bss == 1) {
+
+			hostapd_free_link_stas(hapd);
+
+			for (i = 0; i < interfaces->count; i++) {
+				if (interfaces->iface[i] == iface) {
+					hostapd_interface_deinit_free(iface);
+					os_remove_in_array(interfaces->iface, interfaces->count, sizeof(struct hostapd_iface *), i);
+					interfaces->count--;
+					break;
+				}
+			}
+		} else {
+			/* Should be updated when MBSSID grouping is enabled */
+			for (i = 0; i < iface->conf->num_bss; i++) {
+				if (iface->bss[i] == hapd)
+					break;
+			}
+
+			/* Shouldn't happen */
+			if (i >= iface->conf->num_bss) {
+				wpa_printf(MSG_ERROR, "Wrong hapd is provided\n");
+				return;
+			}
+
+			hostapd_remove_bss(iface, i, true);
+		}
+
+		/* Refresh all the partner beacons */
+		if (partner)
+			hostapd_refresh_all_iface_beacons(partner->iface);
+	}
+}
+#endif /* CONFIG_IEEE80211BE */
+
+
 void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		       union wpa_event_data *data)
 {
@@ -3220,6 +3320,28 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		break;
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
+	case EVENT_LINK_REMOVAL_STARTED:
+		hostapd_update_link_removal_field(hapd, &data->link_removal_event,
+						  EVENT_LINK_REMOVAL_STARTED);
+		break;
+	case EVENT_LINK_REMOVAL_COMPLETED:
+		hostapd_update_link_removal_field(hapd, NULL,
+						  EVENT_LINK_REMOVAL_COMPLETED);
+		break;
+	case EVENT_LINK_RECONFIG: {
+		struct hostapd_data *link_hapd;
+
+		if (!data || !hapd->conf->mld_ap || !hapd->mld ||
+		    data->link_removal_event.link_id >= MAX_NUM_MLD_LINKS ||
+		    data->link_removal_event.link_removal_count > 255)
+			break;
+		link_hapd = hostapd_mld_get_link_bss(
+			hapd, data->link_removal_event.link_id);
+		if (link_hapd && link_hapd->eht_mld_link_removal_inprogress)
+			link_hapd->eht_mld_link_removal_count =
+				data->link_removal_event.link_removal_count;
+		break;
+	}
 	case EVENT_MLD_INTERFACE_FREED:
 		wpa_printf(MSG_DEBUG, "MLD: Interface %s freed",
 			   hapd->conf->iface);

@@ -1760,6 +1760,9 @@ enum nl80211_commands {
 	 */
 	NL80211_CMD_INTERFERENCE_DETECT,
 
+	NL80211_CMD_LINK_REMOVAL_STARTED,
+	NL80211_CMD_LINK_REMOVAL_COMPLETED,
+
 	/* add new commands above here */
 
 	/* used to define NL80211_CMD_MAX below */

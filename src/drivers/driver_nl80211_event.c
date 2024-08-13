@@ -206,6 +206,8 @@ static const char * nl80211_command_to_string(enum nl80211_commands cmd)
 	C2S(NL80211_CMD_AWGN_DETECT)
 	C2S(NL80211_CMD_STOP_BGRADAR_DETECT)
 	C2S(NL80211_CMD_INTERFERENCE_DETECT)
+	C2S(NL80211_CMD_LINK_REMOVAL_STARTED)
+	C2S(NL80211_CMD_LINK_REMOVAL_COMPLETED)
 	C2S(__NL80211_CMD_AFTER_LAST)
 	}
 #undef C2S
@@ -3001,6 +3003,42 @@ static void nl80211_radar_event(struct i802_bss *bss, struct nlattr **tb)
 }
 
 
+static void nl80211_link_removal_event(struct i802_bss *bss,
+				       struct nlattr **tb, bool started)
+{
+	union wpa_event_data data;
+	struct i802_link *link;
+	u8 link_id;
+
+	if (!tb || !tb[NL80211_ATTR_MLO_LINK_ID] ||
+	    nla_len(tb[NL80211_ATTR_MLO_LINK_ID]) < 1)
+		return;
+	link_id = nla_get_u8(tb[NL80211_ATTR_MLO_LINK_ID]);
+	if (link_id >= MAX_NUM_MLD_LINKS || !(bss->valid_links & BIT(link_id)))
+		return;
+	link = nl80211_get_link(bss, link_id);
+	if (!link || !link->ctx)
+		return;
+
+	os_memset(&data, 0, sizeof(data));
+	data.link_removal_event.link_id = link_id;
+	if (started) {
+		if (!tb[NL80211_ATTR_AP_REMOVAL_COUNT] ||
+		    !tb[NL80211_ATTR_TSF] ||
+		    nla_len(tb[NL80211_ATTR_AP_REMOVAL_COUNT]) < 4 ||
+		    nla_len(tb[NL80211_ATTR_TSF]) < 8)
+			return;
+		data.link_removal_event.link_removal_count =
+			nla_get_u32(tb[NL80211_ATTR_AP_REMOVAL_COUNT]);
+		if (data.link_removal_event.link_removal_count > 255)
+			return;
+		data.link_removal_event.tsf = nla_get_u64(tb[NL80211_ATTR_TSF]);
+	}
+	wpa_supplicant_event(link->ctx, started ? EVENT_LINK_REMOVAL_STARTED :
+			     EVENT_LINK_REMOVAL_COMPLETED, &data);
+}
+
+
 static void nl80211_spurious_frame(struct i802_bss *bss, struct nlattr **tb,
 				   int wds)
 {
@@ -5604,6 +5642,12 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 		nl80211_restore_ap_mode(bss);
 
 	switch (cmd) {
+	case NL80211_CMD_LINK_REMOVAL_STARTED:
+		nl80211_link_removal_event(bss, tb, true);
+		break;
+	case NL80211_CMD_LINK_REMOVAL_COMPLETED:
+		nl80211_link_removal_event(bss, tb, false);
+		break;
 	case NL80211_CMD_TRIGGER_SCAN:
 		wpa_dbg(bss->ctx, MSG_DEBUG, "nl80211: Scan trigger");
 		drv->scan_state = SCAN_STARTED;

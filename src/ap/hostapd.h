@@ -1037,6 +1037,8 @@ struct hostapd_data * hostapd_mld_get_link_bss(struct hostapd_data *hapd,
 int hostapd_link_remove(struct hostapd_data *hapd, u32 count);
 size_t hostapd_eid_eht_ml_reconfig_len(struct hostapd_data *hapd);
 u8 *hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd, u8 *eid);
+int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx,
+		       bool is_link_remove);
 bool hostapd_is_ml_partner(struct hostapd_data *hapd1,
 			   struct hostapd_data *hapd2);
 u8 hostapd_get_mld_id(struct hostapd_data *hapd);
