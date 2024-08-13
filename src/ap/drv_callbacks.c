@@ -2760,6 +2760,102 @@ static void hostapd_iface_disable(struct hostapd_data *hapd)
 	hapd->disabled = 1;
 }
 
+
+#ifdef CONFIG_IEEE80211BE
+static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
+					      struct link_removal_event *ev,
+					      enum wpa_event_type event)
+{
+	struct hostapd_data *phapd;
+	struct hostapd_iface *iface, **tmp;
+	unsigned int i;
+	struct hapd_interfaces *interfaces;
+#ifdef CONFIG_WNM_AP
+	u8 bss_term_dur[12];
+	u8 req_mode;
+	u32 total_us;
+#endif
+
+	if (event == EVENT_LINK_REMOVAL_STARTED) {
+#ifdef CONFIG_WNM_AP
+		req_mode = WNM_BSS_TM_REQ_DISASSOC_IMMINENT |
+			   WNM_BSS_TM_REQ_BSS_TERMINATION_INCLUDED |
+			   WNM_BSS_TM_REQ_LINK_REMOVAL_IMMINENT;
+
+		bss_term_dur[0] = 4; /* Subelement ID */
+		bss_term_dur[1] = 10; /* Length */
+		/* TSF timer when corresponding BSS will be removed
+		 * link_removal_count * beacon_interval will give total number of
+		 * beacons ML reconfiguration element will be present after which the
+		 * BSS will be removed
+		 * Adding this with the TSF value of first beacon with ML reconfiguration
+		 * element is sent will be equal/greater than the last beacon with ML
+		 * reconfiguration element will be sent.
+		 */
+		total_us = host_to_le16(ev->link_removal_count) *
+			   TU_TO_USEC(hapd->iconf->beacon_int);
+		bss_term_dur[2] = ev->tsf + total_us;
+		os_memset(&bss_term_dur[3], 0, 7); /* Optional */
+
+		wnm_send_bss_tm_req(hapd, NULL, req_mode, ev->link_removal_count,
+				    0x01, &bss_term_dur[0], 0x01, NULL, NULL, 0,
+				    NULL, 0);
+#endif
+		hapd->eht_mld_link_removal_count = ev->link_removal_count;
+		hapd->eht_mld_link_removal_inprogress = true;
+	} else if (event == EVENT_LINK_REMOVAL_COMPLETED) {
+		hapd->eht_mld_link_removal_inprogress = false;
+		hapd->eht_mld_link_removal_count = 0;
+
+		iface = hapd->iface;
+		interfaces = iface->interfaces;
+
+		/* Save one of the partner bss to update the beacon */
+		for_each_mld_link(phapd, hapd)
+			if (phapd != hapd)
+				break;
+
+		if (iface->num_bss == 1) {
+
+			hostapd_free_link_stas(hapd);
+
+			for (i = 0; i < interfaces->count; i++) {
+				if (interfaces->iface[i] == iface) {
+					hostapd_interface_deinit_free(iface);
+					os_remove_in_array(interfaces->iface, interfaces->count, sizeof(struct hostapd_iface *), i);
+					interfaces->count--;
+					tmp = os_realloc_array(interfaces->iface,
+							       interfaces->count,
+							       sizeof(struct hostapd_iface *));
+					if (!tmp)
+						return;
+					interfaces->iface = tmp;
+					break;
+				}
+			}
+		} else {
+			/* Should be updated when MBSSID grouping is enabled */
+			for (i = 0; i < iface->conf->num_bss; i++) {
+				if (iface->bss[i] == hapd)
+					break;
+			}
+
+			/* Shouldn't happen */
+			if (i >= iface->conf->num_bss) {
+				wpa_printf(MSG_ERROR, "Wrong hapd is provided\n");
+				return;
+			}
+
+			hostapd_remove_bss(iface, i, true);
+		}
+
+		/* Refresh all the partner beacons */
+		hostapd_refresh_all_iface_beacons(phapd->iface);
+	}
+}
+#endif /* CONFIG_IEEE80211BE */
+
+
 static void hostapd_event_update_cu_param(struct hostapd_data *hapd,
 					  struct cu_event *cu_event)
 {
@@ -3198,6 +3294,22 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		hostapd_event_afc_update_complete(hapd,
 						  &data->afc_rsp_info);
 		break;
+#ifdef CONFIG_IEEE80211BE
+	case EVENT_LINK_REMOVAL_STARTED:
+		hostapd_update_link_removal_field(hapd,
+						  &data->link_removal_event,
+						  EVENT_LINK_REMOVAL_STARTED);
+		break;
+	case EVENT_LINK_REMOVAL_COMPLETED:
+		hostapd_update_link_removal_field(hapd, 0,
+						  EVENT_LINK_REMOVAL_COMPLETED);
+		break;
+	case EVENT_LINK_RECONFIG:
+		link_hapd = switch_link_hapd(hapd, data->link_removal_event.link_id);
+		if (link_hapd->eht_mld_link_removal_inprogress)
+			link_hapd->eht_mld_link_removal_count = data->link_removal_event.link_removal_count;
+		break;
+#endif
 	default:
 		wpa_printf(MSG_DEBUG, "Unknown event %d", event);
 		break;

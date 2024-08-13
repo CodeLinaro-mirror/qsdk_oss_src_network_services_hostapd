@@ -997,6 +997,9 @@ bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface);
 void hostapd_gen_per_sta_profiles(struct hostapd_data *hapd);
 size_t hostapd_eid_eht_ml_reconfig_len(struct hostapd_data *hapd);
 u8 * hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd, u8 *eid);
+int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx,
+		       bool is_link_remove);
+void hostapd_refresh_all_iface_beacons(struct hostapd_iface *hapd_iface);
 
 static inline bool ap_pmf_enabled(struct hostapd_bss_config *conf)
 {

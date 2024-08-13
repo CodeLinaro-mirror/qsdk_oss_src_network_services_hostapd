@@ -195,7 +195,8 @@ static const char * nl80211_command_to_string(enum nl80211_commands cmd)
 	C2S(NL80211_CMD_AWGN_DETECT)
 	C2S(NL80211_CMD_STOP_BGRADAR_DETECT)
 	C2S(NL80211_CMD_INTERFERENCE_DETECT)
-
+	C2S(NL80211_CMD_LINK_REMOVAL_STARTED)
+	C2S(NL80211_CMD_LINK_REMOVAL_COMPLETED)
 	C2S(__NL80211_CMD_AFTER_LAST)
 	}
 #undef C2S
@@ -2935,6 +2936,44 @@ static void nl80211_spurious_frame(struct i802_bss *bss, struct nlattr **tb,
 	wpa_supplicant_event(ctx, EVENT_RX_FROM_UNKNOWN, &event);
 }
 
+static void nl80211_link_removal_event(struct i802_bss *bss, struct nlattr **tb, bool started)
+{
+	union wpa_event_data data;
+	struct i802_link *mld_link = bss->flink;
+	void *ctx = bss->ctx;
+
+	os_memset(&data, 0, sizeof(data));
+
+	if (!tb) {
+		wpa_printf(MSG_ERROR, "tb is not set\n");
+		return;
+	}
+
+	if (!tb[NL80211_ATTR_AP_REMOVAL_COUNT] ||
+	    !tb[NL80211_ATTR_TSF]) {
+		wpa_printf(MSG_ERROR, "ignoring unknown event since count and tsf is not set\n");
+		return;
+	}
+
+	data.link_removal_event.link_removal_count =
+		nla_get_u32(tb[NL80211_ATTR_AP_REMOVAL_COUNT]);
+	data.link_removal_event.tsf =
+		nla_get_u64(tb[NL80211_ATTR_TSF]);
+
+	if (tb[NL80211_ATTR_MLO_LINK_ID]) {
+		data.link_removal_event.link_id =
+			nla_get_u8(tb[NL80211_ATTR_MLO_LINK_ID]);
+		mld_link = nl80211_get_link(bss,
+					    data.link_removal_event.link_id);
+		ctx = mld_link->ctx;
+
+		wpa_supplicant_event(ctx, started ? EVENT_LINK_REMOVAL_STARTED:
+				     EVENT_LINK_REMOVAL_COMPLETED, &data);
+	}
+	else
+		wpa_printf(MSG_ERROR, "Ignoring link removal event as link_id is not set\n");
+}
+
 
 #ifdef CONFIG_DRIVER_NL80211_QCA
 
@@ -5069,6 +5108,12 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 		break;
 	case NL80211_CMD_AWGN_DETECT:
 		nl80211_awgn_event(bss, tb);
+		break;
+	case NL80211_CMD_LINK_REMOVAL_STARTED:
+		nl80211_link_removal_event(bss, tb, true);
+		break;
+	case NL80211_CMD_LINK_REMOVAL_COMPLETED:
+		nl80211_link_removal_event(bss, tb, false);
 		break;
 	default:
 		wpa_dbg(drv->ctx, MSG_DEBUG, "nl80211: Ignored unknown event "

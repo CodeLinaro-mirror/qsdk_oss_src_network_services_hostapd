@@ -51,7 +51,7 @@ static const u8 * wnm_ap_get_own_addr(struct hostapd_data *hapd,
 	const u8 *own_addr = hapd->own_addr;
 
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->conf->mld_ap && (!sta || ap_sta_is_mld(hapd, sta)))
+	if (hapd->conf->mld_ap && sta && ap_sta_is_mld(hapd, sta))
 		own_addr = hapd->mld->mld_addr;
 #endif /* CONFIG_IEEE80211BE */
 
@@ -1019,18 +1019,27 @@ int wnm_send_bss_tm_req(struct hostapd_data *hapd, struct sta_info *sta,
 	size_t url_len;
 	const u8 *own_addr = wnm_ap_get_own_addr(hapd, sta);
 
-	wpa_printf(MSG_DEBUG, "WNM: Send BSS Transition Management Request to "
-		   MACSTR
-		   " req_mode=0x%x disassoc_timer=%d valid_int=0x%x dialog_token=%u",
-		   MAC2STR(sta->addr), req_mode, disassoc_timer, valid_int,
-		   dialog_token);
+	if (sta)
+		wpa_printf(MSG_DEBUG, "WNM: Send BSS Transition Management Request to "
+			   MACSTR
+			   " req_mode=0x%x disassoc_timer=%d valid_int=0x%x dialog_token=%u",
+			   MAC2STR(sta->addr), req_mode, disassoc_timer, valid_int,
+			   dialog_token);
+	else
+		wpa_printf(MSG_DEBUG, "WNM: broadcast BSS Transition Management Request"
+			   "req_mode=0x%x disassoc_timer=%d valid_int=0x%x dialog_token=%u",
+			   req_mode, disassoc_timer, valid_int, dialog_token);
+
 	buf = os_zalloc(1000 + nei_rep_len + mbo_len);
 	if (buf == NULL)
 		return -1;
 	mgmt = (struct ieee80211_mgmt *) buf;
 	mgmt->frame_control = IEEE80211_FC(WLAN_FC_TYPE_MGMT,
 					   WLAN_FC_STYPE_ACTION);
-	os_memcpy(mgmt->da, sta->addr, ETH_ALEN);
+	if (sta)
+		os_memcpy(mgmt->da, sta->addr, ETH_ALEN);
+	else
+		os_memcpy(mgmt->da, broadcast_ether_addr, ETH_ALEN);
 	os_memcpy(mgmt->sa, own_addr, ETH_ALEN);
 	os_memcpy(mgmt->bssid, own_addr, ETH_ALEN);
 	mgmt->u.action.category = WLAN_ACTION_WNM;
@@ -1081,7 +1090,7 @@ int wnm_send_bss_tm_req(struct hostapd_data *hapd, struct sta_info *sta,
 	os_free(buf);
 
 	hapd->openwrt_stats.wnm.bss_transition_request_tx++;
-	if (disassoc_timer) {
+	if (disassoc_timer && sta) {
 #ifdef CONFIG_IEEE80211BE
 		/* Link removal is scheduled only when the Link Removal Imminent
 		 * field is set to 1 in BTM as per IEEE P802.11be/D7.0,

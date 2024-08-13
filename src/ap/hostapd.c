@@ -730,6 +730,8 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 	eloop_cancel_timeout(hostapd_switch_color_timeout_handler, hapd, NULL);
 #ifdef CONFIG_IEEE80211BE
 	eloop_cancel_timeout(hostapd_link_remove_timeout_handler, hapd, NULL);
+	hapd->eht_mld_link_removal_inprogress = false;
+	hapd->eht_mld_link_removal_count = 0;
 #endif /* CONFIG_IEEE80211BE */
 
 #endif /* CONFIG_IEEE80211AX */
@@ -3799,7 +3801,7 @@ static void hostapd_deinit_driver(const struct wpa_driver_ops *driver,
 }
 
 
-static void hostapd_refresh_all_iface_beacons(struct hostapd_iface *hapd_iface)
+void hostapd_refresh_all_iface_beacons(struct hostapd_iface *hapd_iface)
 {
 	size_t j;
 
@@ -4259,7 +4261,8 @@ fail:
 }
 
 
-static int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
+int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx,
+		       bool is_link_remove)
 {
 	size_t i;
 
@@ -4277,6 +4280,17 @@ static int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 #ifdef CONFIG_IEEE80211BE
 		hostapd_mld_ref_dec(hapd->mld);
 #endif /* CONFIG_IEEE80211BE */
+		if (is_link_remove)
+			/* If first bss is removed, if_link_remove will not be
+			 * called in hostapd_remove_bss, hence call
+			 * if_link_remove before calling the remove bss if the
+			 * first bss is removed.
+			 */
+			if (hapd->iface->bss[0] == hapd)
+				hostapd_if_link_remove(hapd, WPA_IF_AP_BSS,
+						       hapd->conf->iface,
+						       hapd->mld_link_id);
+
 		os_free(hapd);
 
 		iface->num_bss--;
@@ -4330,7 +4344,7 @@ int hostapd_remove_iface(struct hapd_interfaces *interfaces, char *buf)
 				hapd_iface->driver_ap_teardown =
 					!(hapd_iface->drv_flags &
 					  WPA_DRIVER_FLAGS_AP_TEARDOWN_SUPPORT);
-				return hostapd_remove_bss(hapd_iface, j);
+				return hostapd_remove_bss(hapd_iface, j, false);
 			}
 		}
 	}
