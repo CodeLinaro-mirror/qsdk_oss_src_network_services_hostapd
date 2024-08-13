@@ -705,6 +705,27 @@ void hostapd_free_link_stas(struct hostapd_data *hapd)
 		ap_free_sta(hapd, prev);
 	}
 }
+
+
+void set_valid_for_each_partner_link_sta(struct hostapd_data *hapd,
+					 struct sta_info *psta,
+					 int valid)
+{
+	struct sta_info *lsta;
+	struct hostapd_data *lhapd;
+
+	if (!psta->mld_info.mld_sta)
+		return;
+
+	for_each_mld_link(lhapd, hapd) {
+		if (lhapd == hapd)
+			continue;
+
+		lsta = ap_get_sta(lhapd, psta->addr);
+		if (lsta)
+			lsta->mld_info.links[hapd->mld_link_id].valid = valid;
+	}
+}
 #endif /* CONFIG_IEEE80211BE */
 
 
@@ -1092,6 +1113,55 @@ struct sta_info * ap_sta_add(struct hostapd_data *hapd, const u8 *addr)
 		eloop_register_timeout(60, 0, ap_sta_assoc_timeout, hapd, sta);
 
 	return sta;
+}
+
+
+void set_link_id_for_each_partner_link_sta(struct hostapd_data *hapd,
+					   struct sta_info *psta,
+					   int link_id)
+{
+	struct sta_info *lsta;
+	struct hostapd_data *lhapd;
+
+	if (!psta->mld_info.mld_sta)
+		return;
+
+	for_each_mld_link(lhapd, hapd) {
+		if (lhapd == hapd)
+			continue;
+
+		lsta = ap_get_sta(lhapd, psta->addr);
+		if (lsta)
+			lsta->mld_assoc_link_id = link_id;
+	}
+}
+
+
+int set_for_each_partner_link_sta(struct hostapd_data *hapd,
+				  struct sta_info *psta,
+				  void *data,
+				  int (*cb)(struct hostapd_data *hapd,
+					    struct sta_info *sta,
+					    void *data))
+{
+	struct sta_info *lsta;
+	struct hostapd_data *lhapd;
+	int ret = 0;
+
+	if (!psta->mld_info.mld_sta)
+		return 0;
+
+	for_each_mld_link(lhapd, hapd) {
+		if (lhapd == hapd)
+			continue;
+
+		lsta = ap_get_sta(lhapd, psta->addr);
+		if (lsta)
+			ret = cb(lhapd, lsta, data);
+		if (ret)
+			return ret;
+	}
+	return ret;
 }
 
 

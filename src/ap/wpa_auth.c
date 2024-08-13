@@ -7883,6 +7883,20 @@ void wpa_auth_reset_ml_link_info(struct wpa_state_machine *sm, u8 mld_assoc_link
 }
 
 
+int wpa_auth_reconfig_wpa_auth_sm(struct hostapd_data *rhapd,
+				  struct sta_info *lsta,
+				  void *data)
+{
+#ifdef CONFIG_IEEE80211BE
+	struct wpa_authenticator *wpa_auth = (struct wpa_authenticator *)data;
+
+	if (lsta->wpa_sm)
+		lsta->wpa_sm->wpa_auth = wpa_auth;
+#endif /* CONFIG_IEEE80211BE */
+	return 0;
+}
+
+
 void wpa_reset_assoc_sm_info(struct wpa_state_machine *assoc_sm,
 			     struct wpa_authenticator *wpa_auth,
 			     u8 mld_assoc_link_id)

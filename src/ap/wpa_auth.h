@@ -13,6 +13,8 @@
 #include "common/eapol_common.h"
 #include "common/wpa_common.h"
 #include "common/ieee802_11_defs.h"
+#include "sta_info.h"
+#include "hostapd.h"
 
 struct vlan_description;
 struct mld_info;
@@ -713,6 +715,9 @@ void wpa_reset_assoc_sm_info(struct wpa_state_machine *assoc_sm,
 		    sm->wpa_auth != sm->mld_links[link_id].wpa_auth)
 void wpa_group_get_sm(struct wpa_state_machine *sm);
 void wpa_group_put_sm(struct wpa_state_machine *sm);
+int wpa_auth_reconfig_wpa_auth_sm(struct hostapd_data *rhapd,
+				  struct sta_info *lsta,
+				  void *data);
 
 static inline bool wpa_auth_pmf_enabled(struct wpa_auth_config *conf)
 {
