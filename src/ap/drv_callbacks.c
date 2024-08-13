@@ -2853,6 +2853,30 @@ static void hostapd_mld_iface_disable(struct hostapd_data *hapd)
 
 
 #ifdef CONFIG_IEEE80211BE
+static int hostapd_sm_link_reconfigure(struct hostapd_data *hapd,
+				       struct sta_info *sta,
+				       void *ctx)
+{
+	struct hostapd_data *phapd = (struct hostapd_data *)ctx;
+
+	if (!sta || !sta->mld_info.mld_sta)
+		/* No action needed for legacy station */
+		return 0;
+
+	if (sta->mld_assoc_link_id == hapd->mld_link_id) {
+		set_for_each_partner_link_sta(hapd, sta, phapd->wpa_auth,
+					      wpa_auth_reconfig_wpa_auth_sm);
+
+		set_link_id_for_each_partner_link_sta(hapd, sta, phapd->mld_link_id);
+		sta->mld_assoc_link_id = phapd->mld_link_id;
+	}
+
+	set_valid_for_each_partner_link_sta(hapd, sta, false);
+
+	return 0;
+}
+
+
 static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 					      struct link_removal_event *ev,
 					      enum wpa_event_type event)
@@ -2939,6 +2963,9 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 				wpa_printf(MSG_ERROR, "Wrong hapd is provided\n");
 				return;
 			}
+
+			if (partner)
+				ap_for_each_sta(hapd, hostapd_sm_link_reconfigure, partner);
 
 			hostapd_remove_bss(iface, i, true);
 		}

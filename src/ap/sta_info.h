@@ -404,6 +404,27 @@ struct sta_info {
 /* Number of seconds to keep STA entry after it has been deauthenticated. */
 #define AP_MAX_INACTIVITY_AFTER_DEAUTH (1 * 5)
 
+#define DEFINE_PARTNER_STA_FUNC_CB(obj_name) \
+static inline int set_partner_sta_cb_##obj_name(struct hostapd_data *hapd, \
+						struct sta_info *sta, \
+						void *data) \
+{ \
+	sta->obj_name = data; \
+	return 0; \
+}
+
+#define SET_EACH_PARTNER_STA_OBJ(hapd, sta, objname, data) \
+set_for_each_partner_link_sta(hapd, sta, data, set_partner_sta_cb_##objname)
+
+DEFINE_PARTNER_STA_FUNC_CB(wpa_sm)
+int set_for_each_partner_link_sta(struct hostapd_data *hapd,
+				  struct sta_info *psta,
+				  void *data,
+				  int (*cb)(struct hostapd_data *hapd,
+					    struct sta_info *sta, void *data));
+void set_link_id_for_each_partner_link_sta(struct hostapd_data *hapd,
+					   struct sta_info *psta,
+					   int link_id);
 
 int ap_for_each_sta(struct hostapd_data *hapd,
 		    int (*cb)(struct hostapd_data *hapd, struct sta_info *sta,
@@ -538,4 +559,11 @@ static inline bool ap_sta_support_enc_assoc(struct hostapd_data *hapd,
 	return false;
 #endif /* CONFIG_ENC_ASSOC */
 }
+
+#ifdef CONFIG_IEEE80211BE
+void set_valid_for_each_partner_link_sta(struct hostapd_data *hapd,
+					struct sta_info *psta,
+					int valid);
+#endif /* CONFIG_IEEE80211BE */
+
 #endif /* STA_INFO_H */
