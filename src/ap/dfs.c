@@ -1413,6 +1413,8 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 		iface->radar_detected, chan_width_device, cf_device);
 
 	if (success) {
+		u8 seg0;
+
 		/* Complete iface/ap configuration */
 		if (iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD) {
 			/* Complete AP configuration for the first bring up. If
@@ -1467,6 +1469,8 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			 */
 			if (iface->state != HAPD_IFACE_ENABLED &&
 			    hostapd_is_dfs_chan_available(iface)) {
+				ieee80211_freq_to_chan(cf1, &seg0);
+				hostapd_set_oper_centr_freq_seg0_idx(iface->conf, seg0);
 				hostapd_setup_interface_complete(iface, 0);
 				iface->cac_started = 0;
 			}
