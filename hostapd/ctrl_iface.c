@@ -1182,6 +1182,7 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 {
 	char *value;
 	int ret = 0;
+	struct hostapd_data *tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
 
 	value = os_strchr(cmd, ' ');
 	if (value == NULL)
@@ -1306,7 +1307,8 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			  (hapd->iface->conf->he_mu_edca.he_qos_info & 0xf0) |
 			  ((hapd->iface->conf->he_mu_edca.he_qos_info + 1) &
 			   0xf);
-			if (ieee802_11_update_beacons(hapd->iface))
+
+			if (tx_hapd && ieee802_11_update_beacons(tx_hapd->iface))
 				wpa_printf(MSG_DEBUG,
 					   "Failed to update beacons with WMM parameters");
 		} else if (os_strcmp(cmd, "wpa_passphrase") == 0 ||

@@ -10,6 +10,7 @@
 #define IEEE802_11_H
 
 #include "utils/list.h"
+#include "hostapd.h"
 
 struct hostapd_iface;
 struct hostapd_data;
@@ -307,7 +308,11 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd, u8 *eid, u8 *end,
 			unsigned int frame_stype, u8 elem_count,
 			u8 **elem_offset,
 			const u8 *known_bss, size_t known_bss_len, u8 *rnr_eid,
-			u8 *rnr_count, u8 **rnr_offset, size_t rnr_len);
+			u8 *rnr_count, u8 **rnr_offset, size_t rnr_len,
+			u32 *elemid_modified_bmap);
+void hostapd_eid_update_cu_info(struct hostapd_data *hapd, u16 *elemid_modified,
+				const u8 *eid_pos, size_t eid_len,
+				enum elemid_cu eid_cu);
 bool hostapd_is_multiple_link_mld(struct hostapd_data *hapd);
 int sae_password_bind(struct hostapd_data *hapd, const u8 *addr,
 		      const char *password);

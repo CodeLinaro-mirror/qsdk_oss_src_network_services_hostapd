@@ -104,10 +104,10 @@ struct hostapd_data * hostapd_mbssid_get_tx_bss(struct hostapd_data *hapd)
 }
 
 
-int hostapd_mbssid_get_bss_index(struct hostapd_data *hapd)
+unsigned int hostapd_mbssid_get_bss_index(struct hostapd_data *hapd)
 {
 	if (hapd->iconf->mbssid) {
-		size_t i;
+		unsigned int i;
 
 		for (i = 1; i < hapd->iface->num_bss; i++)
 			if (hapd->iface->bss[i] == hapd)
@@ -4614,8 +4614,8 @@ int hostapd_build_beacon_data(struct hostapd_data *hapd,
 		beacon->assocresp_ies_len = wpabuf_len(assocresp_extra);
 	}
 
-	beacon->elemid_added = params.elemid_added;
-	beacon->elemid_modified = params.elemid_modified;
+	beacon->elemid_added_bmap = params.elemid_added_bmap;
+	beacon->elemid_modified_bmap = params.elemid_modified_bmap;
 
 	/* MBSSID element */
 	if (!params.mbssid.mbssid_elem_len)
@@ -4914,8 +4914,10 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 		iface->conf->he_6ghz_reg_pwr_type = settings->power_mode;
 
 	ret = hostapd_build_beacon_data(hapd, &settings->beacon_after);
-	if (settings->beacon_after.elemid_modified)
+	if (settings->beacon_after.elemid_modified_bmap)
 		settings->beacon_after_cu = 1;
+
+	settings->bss_idx = hostapd_mbssid_get_bss_index(hapd);
 
 	/* change back the configuration */
 	hostapd_change_config_freq(iface->bss[0], iface->conf,
@@ -5250,6 +5252,8 @@ int hostapd_fill_cca_settings(struct hostapd_data *hapd,
 	settings->counter_offset_presp = hapd->cca_c_off_proberesp;
 
 	hostapd_interface_update_fils_ubpr(iface, true);
+
+	settings->bss_idx = hostapd_mbssid_get_bss_index(hapd);
 
 	return 0;
 }

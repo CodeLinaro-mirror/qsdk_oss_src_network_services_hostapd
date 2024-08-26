@@ -5529,7 +5529,7 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 #ifdef CONFIG_MESH
 	struct wpa_driver_mesh_bss_params mesh_params;
 #endif /* CONFIG_MESH */
-	u8 critical_update = 0;
+	struct nlattr *elems;
 
 	if (params->mld_ap) {
 		if (!nl80211_link_valid(bss->valid_links,
@@ -5880,14 +5880,16 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 		goto fail;
 #endif /* CONFIG_FILS */
 
-	if (bss->valid_links && (params->elemid_added || params->elemid_modified) &&
+	if (bss->valid_links && (params->elemid_added_bmap || params->elemid_modified_bmap) &&
 	    !params->disable_cu) {
-		if (params->elemid_added)
-			critical_update |= NL80211_CU_ELEMID_ADDED;
-		if (params->elemid_modified)
-			critical_update |= NL80211_CU_ELEMID_MODIFIED;
-		if (nla_put_u8(msg, NL80211_ATTR_SET_CRITICAL_UPDATE, critical_update))
+		elems = nla_nest_start(msg, NL80211_ATTR_SET_CRITICAL_UPDATE);
+		if (!elems || nla_put_u32(msg, NL80211_SET_CU_ATTR_ELEM_ADDED_BMAP,
+					  params->elemid_added_bmap))
 			goto fail;
+		if (nla_put_u32(msg, NL80211_SET_CU_ATTR_ELEM_MODIFIED_BMAP,
+				params->elemid_modified_bmap))
+			goto fail;
+		nla_nest_end(msg, elems);
 	}
 
 	if (params->punct_bitmap) {
@@ -12063,10 +12065,11 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 	struct nl_msg *msg;
 	struct i802_bss *bss = priv;
 	struct wpa_driver_nl80211_data *drv = bss->drv;
-	struct nlattr *beacon_csa;
+	struct nlattr *beacon_csa, *elems;
 	int ret = -ENOBUFS;
 	int csa_off_len = 0;
 	int i;
+	u32 cu_bmap = BIT(settings->bss_idx);
 
 	wpa_printf(MSG_DEBUG,
 		   "nl80211: Channel switch request (cs_count=%u block_tx=%u freq=%d channel=%d sec_channel_offset=%d width=%d cf1=%d cf2=%d puncturing_bitmap=0x%04x link_id=%d%s%s%s)",
@@ -12191,8 +12194,11 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 		goto fail;
 
 	if (bss->valid_links) {
-		if (nla_put_u8(msg, NL80211_ATTR_SET_CRITICAL_UPDATE, NL80211_CU_ELEMID_ADDED))
+		elems = nla_nest_start(msg, NL80211_ATTR_SET_CRITICAL_UPDATE);
+		if (!elems || nla_put_u32(msg, NL80211_SET_CU_ATTR_ELEM_ADDED_BMAP,
+					  cu_bmap))
 			goto fail;
+		nla_nest_end(msg, elems);
 	}
 	nla_nest_end(msg, beacon_csa);
 
@@ -12206,8 +12212,11 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 		goto fail;
 
 	if (bss->valid_links) {
-		if (nla_put_u8(msg, NL80211_ATTR_SET_CRITICAL_UPDATE, NL80211_CU_ELEMID_ADDED))
+		elems = nla_nest_start(msg, NL80211_ATTR_SET_CRITICAL_UPDATE);
+		if (!elems || nla_put_u32(msg, NL80211_SET_CU_ATTR_ELEM_MODIFIED_BMAP,
+					  cu_bmap))
 			goto fail;
+		nla_nest_end(msg, elems);
 	}
 
 	ret = send_and_recv_cmd(drv, msg);
@@ -12272,10 +12281,10 @@ static int nl80211_switch_color(void *priv, struct cca_settings *settings)
 {
 	struct i802_bss *bss = priv;
 	struct wpa_driver_nl80211_data *drv = bss->drv;
-	struct nlattr *beacon_cca;
+	struct nlattr *beacon_cca, *elems;
 	struct nl_msg *msg;
 	int ret = -ENOBUFS;
-	u8 critical_update = 0;
+	u32 cu_bmap = BIT(settings->bss_idx);
 
 	wpa_printf(MSG_DEBUG,
 		   "nl80211: Color change request (cca_count=%u color=%d)",
@@ -12355,9 +12364,10 @@ static int nl80211_switch_color(void *priv, struct cca_settings *settings)
 #endif /* CONFIG_IEEE80211BE */
 
 	if (bss->valid_links) {
-		critical_update |= NL80211_CU_ELEMID_ADDED;
-		if (nla_put_u8(msg, NL80211_ATTR_SET_CRITICAL_UPDATE, critical_update))
+		elems = nla_nest_start(msg, NL80211_ATTR_SET_CRITICAL_UPDATE);
+		if (nla_put_u32(msg, NL80211_SET_CU_ATTR_ELEM_ADDED_BMAP, cu_bmap))
 			goto error;
+		nla_nest_end(msg, elems);
 	}
 
 	ret = send_and_recv_cmd(drv, msg);

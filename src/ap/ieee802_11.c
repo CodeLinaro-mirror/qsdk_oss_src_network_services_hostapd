@@ -12,6 +12,7 @@
 
 #include "utils/common.h"
 #include "utils/eloop.h"
+#include "utils/crc32.h"
 #include "crypto/crypto.h"
 #include "crypto/sha256.h"
 #include "crypto/sha384.h"
@@ -10295,16 +10296,42 @@ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd_probed, u32 frame_type,
 	return len;
 }
 
+#ifdef CONFIG_IEEE80211BE
+void hostapd_eid_update_cu_info(struct hostapd_data *hapd, u16 *elemid_modified,
+				const u8 *eid_pos, size_t eid_len,
+				enum elemid_cu eid_cu)
+{
+	u32 hash;
+
+	if (!hapd->conf->mld_ap)
+		return;
+
+	if (!eid_pos || (eid_len == 0) || (eid_len > 255))
+		return;
+	if (eid_cu >= ELEMID_CU_PARAM_MAX)
+		return;
+
+	hash = ieee80211_crc32(eid_pos, eid_len);
+	if ((hapd->cu_eid[eid_cu].eid_len != eid_len) ||
+	    (hapd->cu_eid[eid_cu].hash != hash)) {
+		hapd->cu_eid[eid_cu].eid_len = eid_len;
+		hapd->cu_eid[eid_cu].hash = hash;
+		*elemid_modified |= BIT(eid_cu);
+	}
+}
+#endif
 
 static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 				    u32 frame_type, u8 max_bssid_indicator,
 				    size_t *bss_index, u8 elem_count,
-				    const u8 *known_bss, size_t known_bss_len)
+				    const u8 *known_bss, size_t known_bss_len,
+				    u32 *elemid_modified_bmap)
 {
 	struct hostapd_data *tx_bss = hostapd_mbssid_get_tx_bss(hapd);
 	size_t i, tx_xrate_len;
 	u8 *eid_len_offset, *max_bssid_indicator_offset;
 	u8 buf[100];
+	u8 *startpos;
 
 	*eid++ = WLAN_EID_MULTIPLE_BSSID;
 	eid_len_offset = eid++;
@@ -10322,6 +10349,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		size_t auth_len = 0, xrate_len;
 		u16 capab_info;
 		u8 mbssindex = i;
+		u16 modified_flag = 0;
 
 		if (!bss || !bss->conf || !bss->started ||
 		    mbssid_known_bss(i, known_bss, known_bss_len))
@@ -10419,8 +10447,14 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 #endif /* CONFIG_IEEE80211BE */
 
 		/* WMM IE */
+		startpos = eid;
 		if (bss->conf->wmm_override) {
 			eid = hostapd_eid_wmm(bss, eid);
+			hostapd_eid_update_cu_info(bss, &modified_flag, startpos,
+						   eid-startpos, ELEMID_CU_PARAM_WMM);
+			if (modified_flag && elemid_modified_bmap)
+				*elemid_modified_bmap |= BIT(i);
+
 			if (tx_bss->conf->wmm_enabled && !bss->conf->wmm_enabled)
 				non_inherit_ie[ie_count++] = WLAN_EID_VENDOR_SPECIFIC;
 		}
@@ -10455,7 +10489,8 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 			unsigned int frame_stype, u8 elem_count,
 			u8 **elem_offset,
 			const u8 *known_bss, size_t known_bss_len, u8 *rnr_eid,
-			u8 *rnr_count, u8 **rnr_offset, size_t rnr_len)
+			u8 *rnr_count, u8 **rnr_offset, size_t rnr_len,
+			u32 *elemid_modified_bmap)
 {
 	struct hostapd_data *hapd = hostapd_mbssid_get_tx_bss(hapd_probed);
 	size_t bss_index = 1, cur_len = 0;
@@ -10494,7 +10529,8 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 					      frame_stype,
 					      hostapd_max_bssid_indicator(hapd),
 					      &bss_index, elem_count,
-					      known_bss, known_bss_len);
+					      known_bss, known_bss_len,
+					      elemid_modified_bmap);
 
 		if (add_rnr) {
 			struct mbssid_ie_profiles skip_profiles = {
