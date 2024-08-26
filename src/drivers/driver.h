@@ -2021,9 +2021,9 @@ struct wpa_driver_ap_params {
 	/* Unsolicited broadcast Probe Response data */
 	struct unsol_bcast_probe_resp ubpr;
 
-	/* critical_update_flag - critical update flag*/
-	bool elemid_added;
-	bool elemid_modified;
+	/* critical_update_bitmap - critical update bitmap*/
+	u32 elemid_added_bmap;
+	u32 elemid_modified_bmap;
 	bool disable_cu;
 
 	/**
@@ -3185,6 +3185,8 @@ struct wpa_channel_info {
  * @proberesp_ies_len: Length of proberesp_ies in octets
  * @probe_resp_len: Length of probe response template (@probe_resp)
  * @mbssid: MBSSID element(s) to add into Beacon frames
+ * @elemid_added_bmap: Critical Update bitmap for element added
+ * @elemid_modified_bmap: Critical Update bitmap for element modified
  */
 struct beacon_data {
 	u8 *head, *tail;
@@ -3199,9 +3201,8 @@ struct beacon_data {
 	size_t assocresp_ies_len;
 	size_t probe_resp_len;
 
-	/* critical_update_flag - critical update flag*/
-	bool elemid_added;
-	bool elemid_modified;
+	bool elemid_added_bmap;
+	bool elemid_modified_bmap;
 
 	struct mbssid_data mbssid;
 };
@@ -3217,6 +3218,10 @@ struct beacon_data {
  * @counter_offset_presp: Offset to the count field in probe resp.
  * @link_id: Link ID to determine the link for MLD; -1 for non-MLD
  * @ubpr: Unsolicited broadcast Probe Response frame data
+ * @beacon_after_cu - critical update flag for beacon data after
+ * channel switch
+ * @bss_idx - BSS index of the BSS currently undergoing channel
+ * switch
  * @power_mode: 6 GHz Power mode
  */
 struct csa_settings {
@@ -3235,8 +3240,8 @@ struct csa_settings {
 	struct unsol_bcast_probe_resp ubpr;
 	bool handle_dfs;
 
-	/* critical_update_flag - critical update flag*/
 	bool beacon_after_cu;
+	unsigned int bss_idx;
 	int power_mode;
 };
 
@@ -3259,6 +3264,7 @@ struct he_6ghz_pwr_mode_settings {
  * @counter_offset_presp: Offset to the count field in Probe Response frame
  * @ubpr: Unsolicited broadcast Probe Response frame data
  * @link_id: If >= 0 indicates the link of the AP MLD to configure
+ * @bss_idx - BSS index of the BSS currently undergoing channel switch
  */
 struct cca_settings {
 	u8 cca_count;
@@ -3273,6 +3279,7 @@ struct cca_settings {
 	struct unsol_bcast_probe_resp ubpr;
 
 	int link_id;
+	unsigned int bss_idx;
 };
 
 /* TDLS peer capabilities for send_tdls_mgmt() */
