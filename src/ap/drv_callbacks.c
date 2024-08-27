@@ -2449,7 +2449,6 @@ static void hostapd_event_update_muedca_params(struct hostapd_data *hapd,
 					       struct update_muedca *params)
 {
 	int i;
-	u8 updated_count;
 
 	/* Update current MU-EDCA parameters */
 	for (i = 0; i < 3; i++) {
@@ -2466,12 +2465,8 @@ static void hostapd_event_update_muedca_params(struct hostapd_data *hapd,
 	/* Increment Parameter Set Update Count for MU-EDCA and WME EDCA only
 	 * if any STA is connected
 	 */
-	if (hapd->num_sta) {
-		updated_count = (hapd->iface->conf->he_mu_edca.he_qos_info + 1) & 0xf;
-		hapd->iface->conf->he_mu_edca.he_qos_info &= 0xf0;
-		hapd->iface->conf->he_mu_edca.he_qos_info |= updated_count;
+	if (hapd->num_sta)
 		hapd->parameter_set_count++;
-	}
 
 	/* Update beacon with updated MU-EDCA parameters */
 	if (ieee802_11_update_beacons(hapd->iface))

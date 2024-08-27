@@ -66,8 +66,14 @@ void wmm_calc_regulatory_limit(struct hostapd_data *hapd,
 {
 	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
 	int c;
+	struct hostapd_wmm_ac_params *wmm_ac_params = hapd->iconf->wmm_ac_params;
+	struct hostapd_wmm_ac_params *prev_wmm = hapd->iface->prev_wmm;
 
-	os_memcpy(acp, hapd->iconf->wmm_ac_params,
+	if (hapd->conf->wmm_override) {
+		wmm_ac_params = hapd->conf->wmm_ac_params;
+		prev_wmm = hapd->prev_wmm;
+	}
+	os_memcpy(acp, wmm_ac_params,
 		  sizeof(hapd->iconf->wmm_ac_params));
 
 	for (c = 0; mode && c < mode->num_channels; c++) {
@@ -77,7 +83,7 @@ void wmm_calc_regulatory_limit(struct hostapd_data *hapd,
 			continue;
 
 		if (chan->wmm_rules_valid)
-			wmm_set_regulatory_limit(hapd->iconf->wmm_ac_params,
+			wmm_set_regulatory_limit(wmm_ac_params,
 						 acp, chan->wmm_rules);
 		break;
 	}
@@ -86,15 +92,11 @@ void wmm_calc_regulatory_limit(struct hostapd_data *hapd,
 	 * Check if we need to update set count. Since both were initialized to
 	 * zero we can compare the whole array in one shot.
 	 */
-	if (os_memcmp(acp, hapd->iface->prev_wmm,
+	if (os_memcmp(acp, prev_wmm,
 		      sizeof(hapd->iconf->wmm_ac_params)) != 0) {
-		os_memcpy(hapd->iface->prev_wmm, acp,
+		os_memcpy(prev_wmm, acp,
 			  sizeof(hapd->iconf->wmm_ac_params));
 		hapd->parameter_set_count++;
-		 /* Incrementing MU-EDCA Parameter Set Update Count*/
-		  hapd->iface->conf->he_mu_edca.he_qos_info =
-		  (hapd->iface->conf->he_mu_edca.he_qos_info & 0xf0) |
-		  ((hapd->iface->conf->he_mu_edca.he_qos_info + 1) & 0xf);
 	}
 }
 

@@ -1004,6 +1004,9 @@ struct hostapd_bss_config {
 	 * 6GHz AP based on colocation.
 	 */
 	bool force_disable_in_band_discovery;
+
+	bool wmm_override;
+	struct hostapd_wmm_ac_params wmm_ac_params[4];
 };
 
 /**

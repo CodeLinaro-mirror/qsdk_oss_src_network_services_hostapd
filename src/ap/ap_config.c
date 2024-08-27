@@ -180,6 +180,23 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->urnm_mfpr_x20 = -1;
 	bss->urnm_mfpr = -1;
 	bss->force_disable_in_band_discovery = 1;
+
+	bss->wmm_override = false;
+#define ecw2cw(ecw) ((1 << (ecw)) - 1)
+	const int aCWmin = 4, aCWmax = 10;
+	const struct hostapd_wmm_ac_params ac_bk =
+		{ aCWmin, aCWmax, 7, 0, 0 }; /* background traffic */
+	const struct hostapd_wmm_ac_params ac_be =
+		{ aCWmin, aCWmax, 3, 0, 0 }; /* best effort traffic */
+	const struct hostapd_wmm_ac_params ac_vi = /* video traffic */
+		{ aCWmin - 1, aCWmin, 2, 3008 / 32, 0 };
+	const struct hostapd_wmm_ac_params ac_vo = /* voice traffic */
+		{ aCWmin - 2, aCWmin - 1, 2, 1504 / 32, 0 };
+#undef ecw2cw
+	bss->wmm_ac_params[0] = ac_be;
+	bss->wmm_ac_params[1] = ac_bk;
+	bss->wmm_ac_params[2] = ac_vi;
+	bss->wmm_ac_params[3] = ac_vo;
 }
 
 

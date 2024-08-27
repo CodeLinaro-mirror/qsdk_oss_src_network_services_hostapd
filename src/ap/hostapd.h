@@ -570,6 +570,7 @@ struct hostapd_data {
 	u64 scan_cookie; /* Scan instance identifier for the ongoing HT40 scan
 			  */
 	bool disable_cu;
+	struct hostapd_wmm_ac_params prev_wmm[4];
 	size_t mbssid_idx;
 };
 

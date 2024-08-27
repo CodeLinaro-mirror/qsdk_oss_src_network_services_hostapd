@@ -289,7 +289,7 @@ u8 * hostapd_eid_he_mu_edca_parameter_set(struct hostapd_data *hapd, u8 *eid)
 {
 	struct ieee80211_he_mu_edca_parameter_set *edca;
 	struct hostapd_wmm_ac_params wmmp[WMM_AC_NUM];
-	u8 *pos;
+	u8 *pos, updated_count;
 	size_t i;
 
 	 /* Updating WME Parameter Set Count to avoid mismatch */
@@ -313,6 +313,13 @@ u8 * hostapd_eid_he_mu_edca_parameter_set(struct hostapd_data *hapd, u8 *eid)
 
 	edca = (struct ieee80211_he_mu_edca_parameter_set *) pos;
 	os_memcpy(edca, &hapd->iface->conf->he_mu_edca, sizeof(*edca));
+
+	updated_count = edca->he_qos_info & 0xf;
+	if (updated_count != (hapd->parameter_set_count & 0xf)) {
+		updated_count = hapd->parameter_set_count & 0xf;
+		edca->he_qos_info &= 0xf0;
+		edca->he_qos_info |= updated_count;
+	}
 
 	wpa_hexdump(MSG_DEBUG, "HE: MU EDCA Parameter Set element",
 		    pos, sizeof(*edca));

@@ -3419,9 +3419,11 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->wmm_uapsd = atoi(pos);
 	} else if (os_strncmp(buf, "wme_ac_", 7) == 0 ||
 		   os_strncmp(buf, "wmm_ac_", 7) == 0) {
-		if (hostapd_config_wmm_ac(conf->wmm_ac_params, buf, pos)) {
+		bss->wmm_override = true;
+		if (hostapd_config_wmm_ac(bss->wmm_ac_params, buf, pos)) {
 			wpa_printf(MSG_ERROR, "Line %d: invalid WMM ac item",
 				   line);
+			bss->wmm_override = false;
 			return 1;
 		}
 	} else if (os_strcmp(buf, "bss") == 0) {
