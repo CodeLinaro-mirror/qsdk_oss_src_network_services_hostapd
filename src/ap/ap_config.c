@@ -191,6 +191,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 #endif /* CONFIG_PASN */
 	bss->urnm_mfpr_x20 = -1;
 	bss->urnm_mfpr = -1;
+	bss->force_disable_in_band_discovery = 1;
 #ifdef CONFIG_ENC_ASSOC
 	bss->assoc_frame_encryption = 0;
 	bss->pmksa_caching_privacy = 0;
