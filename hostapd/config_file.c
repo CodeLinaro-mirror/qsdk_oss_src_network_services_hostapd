@@ -4553,6 +4553,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "fils_discovery_max_interval") == 0) {
 		bss->fils_discovery_max_int = atoi(pos);
 #endif /* CONFIG_FILS */
+	} else if (os_strcmp(buf, "force_disable_in_band_discovery") == 0) {
+		bss->force_disable_in_band_discovery = atoi(pos);
 	} else if (os_strcmp(buf, "multicast_to_unicast") == 0) {
 		bss->multicast_to_unicast = atoi(pos);
 	} else if (os_strcmp(buf, "bridge_multicast_to_unicast") == 0) {

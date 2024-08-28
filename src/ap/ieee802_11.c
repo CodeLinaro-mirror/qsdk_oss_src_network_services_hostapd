@@ -8348,14 +8348,7 @@ repeat_rnr_len:
 }
 
 
-enum colocation_mode {
-	NO_COLOCATED_6GHZ,
-	STANDALONE_6GHZ,
-	COLOCATED_6GHZ,
-	COLOCATED_LOWER_BAND,
-};
-
-static enum colocation_mode get_colocation_mode(struct hostapd_data *hapd)
+enum colocation_mode get_colocation_mode(struct hostapd_data *hapd)
 {
 	u8 i;
 	bool is_6ghz = is_6ghz_op_class(hapd->iconf->op_class);
@@ -8372,6 +8365,9 @@ static enum colocation_mode get_colocation_mode(struct hostapd_data *hapd)
 
 		iface = hapd->iface->interfaces->iface[i];
 		if (iface == hapd->iface || !iface || !iface->conf)
+			continue;
+
+		if (iface->state == HAPD_IFACE_DISABLED)
 			continue;
 
 		is_colocated_6ghz = is_6ghz_op_class(iface->conf->op_class);

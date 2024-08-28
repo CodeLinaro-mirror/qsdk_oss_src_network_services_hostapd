@@ -29,6 +29,15 @@ struct sae_password_entry;
 struct mld_info;
 struct mld_link_info;
 
+enum colocation_mode {
+	NO_COLOCATED_6GHZ,
+	STANDALONE_6GHZ,
+	COLOCATED_6GHZ,
+	COLOCATED_LOWER_BAND,
+};
+
+enum colocation_mode get_colocation_mode(struct hostapd_data *hapd);
+
 enum link_parse_type {
 	LINK_PARSE_ASSOC,
 	LINK_PARSE_REASSOC,

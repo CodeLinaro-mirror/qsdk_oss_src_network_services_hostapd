@@ -994,6 +994,16 @@ struct hostapd_bss_config {
 	int mbssid_index;
 
 	bool spp_amsdu;
+	enum {
+		FILS_UBPR_USER_DISABLED,
+		FILS_UBPR_FORCE_DISABLED,
+		FILS_UBPR_ENABLED
+	} fils_state, ubpr_state;
+
+	/* Flag to decide whether or not to force disable FILS/UBPR for
+	 * 6GHz AP based on colocation.
+	 */
+	bool force_disable_in_band_discovery;
 };
 
 /**

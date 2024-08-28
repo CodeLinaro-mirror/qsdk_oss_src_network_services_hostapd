@@ -1833,17 +1833,30 @@ static u8 * hostapd_probe_resp_offloads(struct hostapd_data *hapd,
 
 
 #ifdef CONFIG_IEEE80211AX
-/* Unsolicited broadcast Probe Response transmission, 6 GHz only */
+/* Unsolicited broadcast Probe Response(UBPR) transmission, 6 GHz only */
 u8 * hostapd_unsol_bcast_probe_resp(struct hostapd_data *hapd,
 				    struct unsol_bcast_probe_resp *ubpr)
 {
 	struct probe_resp_params probe_params;
 
+	/* Do not enable UBPR in 6GHz AP if colocated with lower band APs */
+	hapd->conf->ubpr_state = FILS_UBPR_USER_DISABLED;
+
 	if (!is_6ghz_op_class(hapd->iconf->op_class))
 		return NULL;
 
+	if (hapd->conf->unsol_bcast_probe_resp_interval &&
+	    hapd->conf->force_disable_in_band_discovery &&
+	    (get_colocation_mode(hapd) == COLOCATED_6GHZ)) {
+		hapd->conf->ubpr_state = FILS_UBPR_FORCE_DISABLED;
+		return NULL;
+	}
+
 	ubpr->unsol_bcast_probe_resp_interval =
 		hapd->conf->unsol_bcast_probe_resp_interval;
+
+	if (ubpr->unsol_bcast_probe_resp_interval)
+		hapd->conf->ubpr_state = FILS_UBPR_ENABLED;
 
 	os_memset(&probe_params, 0, sizeof(probe_params));
 	probe_params.req = NULL;
@@ -2190,6 +2203,18 @@ static u8 * hostapd_gen_fils_discovery(struct hostapd_data *hapd, size_t *len)
 static u8 * hostapd_fils_discovery(struct hostapd_data *hapd,
 				   struct wpa_driver_ap_params *params)
 {
+	/* Do not enable Fils discovery for 6GHz AP if its colocated
+	 * with lower band APs.
+	 */
+
+	if (is_6ghz_op_class(hapd->iconf->op_class) &&
+	    hapd->conf->force_disable_in_band_discovery &&
+	    get_colocation_mode(hapd) == COLOCATED_6GHZ &&
+	    hapd->conf->fils_discovery_max_int) {
+		hapd->conf->fils_state = FILS_UBPR_FORCE_DISABLED;
+		return NULL;
+	}
+
 	params->fd_max_int = hapd->conf->fils_discovery_max_int;
 	if (is_6ghz_op_class(hapd->iconf->op_class) &&
 	    params->fd_max_int > FD_MAX_INTERVAL_6GHZ)
@@ -2199,9 +2224,12 @@ static u8 * hostapd_fils_discovery(struct hostapd_data *hapd,
 	if (params->fd_min_int > params->fd_max_int)
 		params->fd_min_int = params->fd_max_int;
 
-	if (params->fd_max_int)
+	if (params->fd_max_int) {
+		hapd->conf->fils_state = FILS_UBPR_ENABLED;
 		return hostapd_gen_fils_discovery(hapd,
 						  &params->fd_frame_tmpl_len);
+	}
+	hapd->conf->fils_state = FILS_UBPR_USER_DISABLED;
 
 	return NULL;
 }

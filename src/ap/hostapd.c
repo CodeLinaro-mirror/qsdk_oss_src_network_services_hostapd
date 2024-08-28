@@ -73,6 +73,8 @@ static void hostapd_switch_color_timeout_handler(void *eloop_data,
 						 void *user_ctx);
 #endif /* CONFIG_IEEE80211AX */
 
+static void hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface,
+					       bool iface_enabled);
 
 int hostapd_for_each_interface(struct hapd_interfaces *interfaces,
 			       int (*cb)(struct hostapd_iface *iface,
@@ -2040,6 +2042,7 @@ static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface,
 		}
 
 		hostapd_set_state(iface, HAPD_IFACE_NO_IR);
+		hostapd_interface_update_fils_ubpr(iface, false);
 		iface->is_no_ir = true;
 		hostapd_drv_stop_ap(iface->bss[0]);
 		hostapd_no_ir_cleanup(iface->bss[0]);
@@ -3079,6 +3082,8 @@ void hostapd_interface_deinit(struct hostapd_iface *iface)
 		hostapd_bss_deinit(iface->bss[j]);
 	}
 
+	hostapd_interface_update_fils_ubpr(iface, false);
+
 #ifdef NEED_AP_MLME
 	hostapd_stop_setup_timers(iface);
 	eloop_cancel_timeout(ap_ht2040_timeout, iface, NULL);
@@ -3761,6 +3766,7 @@ int hostapd_disable_iface(struct hostapd_iface *hapd_iface)
 	wpa_printf(MSG_DEBUG, "Interface %s disabled",
 		   hapd_iface->bss[0]->conf->iface);
 	hostapd_set_state(hapd_iface, HAPD_IFACE_DISABLED);
+	hostapd_interface_update_fils_ubpr(hapd_iface, false);
 	hostapd_refresh_all_iface_beacons(hapd_iface);
 	return 0;
 }
@@ -4954,6 +4960,8 @@ int hostapd_fill_cca_settings(struct hostapd_data *hapd,
 	settings->counter_offset_beacon = hapd->cca_c_off_beacon;
 	settings->counter_offset_presp = hapd->cca_c_off_proberesp;
 
+	hostapd_interface_update_fils_ubpr(iface, true);
+
 	return 0;
 }
 
@@ -5128,8 +5136,74 @@ void hostapd_ocv_check_csa_sa_query(void *eloop_ctx, void *timeout_ctx)
 #endif /* CONFIG_OCV */
 
 
-#ifdef CONFIG_IEEE80211BE
+/**
+ * hostapd_interface_update_fils_ubpr - Update 6GHz In-band discovery
+ * frames (FILS/UBPR) based on lower band interface state change.
+ * @iface_enabled: Whether lower band AP is enabled or disabled
+ *
+ * This function iterates through interfaces list and updates all 6GHz
+ * APs In-band discovery frames (enable/disable) based on state of lower
+ * band interfaces.
+ * Lower band interfaces going down: Enable FILS/UBPR for all 6GHz APs if config
+ * has it enabled.
+ * Lower band interfaces coming up: Disable FILS/UBPR for all 6GHz APs if not done
+ * already.
+ */
+static void
+hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface, bool iface_enabled)
+{
+	int i, j;
 
+	if (!iface || (iface->interfaces == NULL))
+		return;
+
+#ifdef CONFIG_MESH
+	if (iface->mconf != NULL)
+		return;
+#endif
+
+	if (is_6ghz_op_class(iface->conf->op_class))
+		return;
+
+	for (i = 0; i < iface->interfaces->count; i++) {
+		struct hostapd_iface *iface_6g = iface->interfaces->iface[i];
+		if (iface == iface_6g || !iface_6g || !iface_6g->conf)
+			continue;
+
+		if (!is_6ghz_op_class(iface_6g->conf->op_class))
+			continue;
+
+		for (j = 0; j < iface_6g->num_bss; j++) {
+			if (!iface_6g->bss[j] || !iface_6g->bss[j]->started)
+				continue;
+
+			/* fils/ubpr force disabling is not preferred for this BSS */
+			if (!iface_6g->bss[j]->conf->force_disable_in_band_discovery)
+				continue;
+
+			/* Lower band interface coming up but fils/ubpr is already disabled */
+			if (iface_enabled &&
+			    (iface_6g->bss[j]->conf->fils_state != FILS_UBPR_ENABLED &&
+			    iface_6g->bss[j]->conf->ubpr_state != FILS_UBPR_ENABLED)) {
+				continue;
+			}
+			/* Lower band interface going down but fils/ubpr is not force disabled */
+			if (!iface_enabled &&
+			    (iface_6g->bss[j]->conf->fils_state != FILS_UBPR_FORCE_DISABLED &&
+			    iface_6g->bss[j]->conf->ubpr_state != FILS_UBPR_FORCE_DISABLED)) {
+				continue;
+			}
+			wpa_printf(MSG_DEBUG, "%s Interface getting %s, check and set 6GHz Interface(%s)"
+				   "In-band discovery frames", iface->bss[0]->conf->iface,
+				   iface_enabled ? "enabled" : "disabled", iface_6g->bss[j]->conf->iface);
+			ieee802_11_set_beacon(iface_6g->bss[j]);
+		}
+	}
+	return;
+}
+
+
+#ifdef CONFIG_IEEE80211BE
 struct hostapd_data * hostapd_mld_get_link_bss(struct hostapd_data *hapd,
 					       u8 link_id)
 {

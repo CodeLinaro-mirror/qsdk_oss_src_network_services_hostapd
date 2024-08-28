@@ -5137,10 +5137,13 @@ static int nl80211_fils_discovery(struct i802_bss *bss, struct nl_msg *msg,
 	struct nlattr *attr;
 
 	if (!bss->drv->fils_discovery) {
-		wpa_printf(MSG_ERROR,
-			   "nl80211: Driver does not support FILS Discovery frame transmission for %s",
-			   bss->ifname);
-		return -1;
+		if (params->fd_max_int) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: Driver does not support FILS Discovery frame transmission for %s",
+				   bss->ifname);
+			return -1;
+		}
+		return 0;
 	}
 
 	attr = nla_nest_start(msg, NL80211_ATTR_FILS_DISCOVERY);
@@ -5169,10 +5172,13 @@ static int nl80211_unsol_bcast_probe_resp(struct i802_bss *bss,
 	struct nlattr *attr;
 
 	if (!bss->drv->unsol_bcast_probe_resp) {
-		wpa_printf(MSG_ERROR,
-			   "nl80211: Driver does not support unsolicited broadcast Probe Response frame transmission for %s",
-			   bss->ifname);
-		return -1;
+		if (ubpr->unsol_bcast_probe_resp_interval) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: Driver does not support unsolicited broadcast Probe Response frame transmission for %s",
+				   bss->ifname);
+			return -1;
+		}
+		return 0;
 	}
 
 	wpa_printf(MSG_DEBUG,
