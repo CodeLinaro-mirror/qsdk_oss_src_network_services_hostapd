@@ -8936,16 +8936,6 @@ static int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 		if (!is_different_psd && (start_chan_psd != chan_psd))
 			is_different_psd = 1;
 	}
-
-	if (!is_different_psd && !punct_bitmap) {
-		*tx_pwr_count = 0;
-	} else {
-		*tx_pwr_count = num_psd_values_to_psd_count(non_11be_chan_count);
-		if (*tx_pwr_count == 0) {
-			wpa_printf(MSG_ERROR, "Invalid channel count:%d", non_11be_chan_count);
-			return -1;
-		}
-	}
 #ifdef CONFIG_IEEE80211BE
 	/* For 11be the TPE extension parameter added if the bw is 320MHZ or if
 	 * any channel is punctured in 320MHZ/160MHZ/80MHZ
@@ -8970,8 +8960,21 @@ static int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 		}
 		tx_pwr_ext_array++;
 		*tx_pwr_ext_count += 1;
+		if (!is_different_psd && (start_chan_psd != chan_psd))
+			is_different_psd = 1;
 	}
 #endif
+	if (!is_different_psd && !punct_bitmap) {
+		*tx_pwr_count = 0;
+		*tx_pwr_ext_count = 0;
+	} else {
+		*tx_pwr_count = num_psd_values_to_psd_count(non_11be_chan_count);
+		if (*tx_pwr_count == 0) {
+			wpa_printf(MSG_ERROR, "Invalid channel count:%d", non_11be_chan_count);
+			return -1;
+		}
+	}
+
 	return 0;
 }
 
