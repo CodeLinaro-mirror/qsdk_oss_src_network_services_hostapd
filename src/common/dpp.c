@@ -4592,6 +4592,38 @@ dpp_bootstrap_get_id(struct dpp_global *dpp, unsigned int id)
 }
 
 
+int dpp_global_configurations_remove(struct dpp_global *dpp)
+{
+	if (!dpp)
+		return -1;
+
+	os_free(dpp->dpp_configurator_params);
+	dpp->dpp_configurator_params = NULL;
+
+	return 0;
+}
+
+
+int dpp_global_configurations_add(struct dpp_global *dpp, const char *value)
+{
+	if (!dpp)
+		return -1;
+
+	dpp->dpp_configurator_params = os_strdup(value);
+
+	return 0;
+}
+
+
+const char *dpp_get_global_configuration(struct dpp_global *dpp)
+{
+	if (!dpp)
+		return NULL;
+
+	return dpp->dpp_configurator_params;
+}
+
+
 int dpp_bootstrap_remove(struct dpp_global *dpp, const char *id)
 {
 	unsigned int id_val;
@@ -5109,6 +5141,7 @@ void dpp_global_clear(struct dpp_global *dpp)
 	dpp_tcp_init_flush(dpp);
 	dpp_relay_flush_controllers(dpp);
 	dpp_controller_stop(dpp);
+	dpp_global_configurations_remove(dpp);
 #endif /* CONFIG_DPP2 */
 }
 

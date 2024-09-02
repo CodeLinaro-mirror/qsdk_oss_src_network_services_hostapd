@@ -829,7 +829,9 @@ struct dpp_global * dpp_global_init(struct dpp_global_config *config);
 void dpp_global_clear(struct dpp_global *dpp);
 void dpp_global_deinit(struct dpp_global *dpp);
 void dpp_notify_auth_success(struct dpp_authentication *auth, int initiator);
-
+int dpp_global_configurations_remove(struct dpp_global *dpp);
+int dpp_global_configurations_add(struct dpp_global *dpp, const char *value);
+const char *dpp_get_global_configuration(struct dpp_global *dpp);
 /* dpp_reconfig.c */
 
 struct wpabuf * dpp_build_reconfig_announcement(const u8 *csign_key,

@@ -17,6 +17,7 @@ struct dpp_global {
 	void *msg_ctx;
 	struct dl_list bootstrap; /* struct dpp_bootstrap_info */
 	struct dl_list configurator; /* struct dpp_configurator */
+	char *dpp_configurator_params;
 #ifdef CONFIG_DPP2
 	struct dl_list controllers; /* struct dpp_relay_controller */
 	struct dpp_relay_controller *tmp_controller;
