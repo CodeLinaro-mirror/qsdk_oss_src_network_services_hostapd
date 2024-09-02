@@ -1304,7 +1304,7 @@ static void wpas_dpp_rx_auth_req(struct wpa_supplicant *wpa_s, const u8 *src,
 	}
 	wpas_dpp_set_testing_options(wpa_s, wpa_s->dpp_auth);
 	if (dpp_set_configurator(wpa_s->dpp_auth,
-				 wpa_s->dpp_configurator_params) < 0) {
+				 dpp_get_global_configuration(wpa_s->dpp)) < 0) {
 		dpp_auth_deinit(wpa_s->dpp_auth);
 		wpa_s->dpp_auth = NULL;
 		return;
@@ -2498,7 +2498,7 @@ wpas_dpp_rx_presence_announcement(struct wpa_supplicant *wpa_s, const u8 *src,
 	if (!auth)
 		return;
 	wpas_dpp_set_testing_options(wpa_s, auth);
-	if (dpp_set_configurator(auth, wpa_s->dpp_configurator_params) < 0) {
+	if (dpp_set_configurator(auth, dpp_get_global_configuration(wpa_s->dpp)) < 0) {
 		dpp_auth_deinit(auth);
 		return;
 	}
@@ -2599,7 +2599,7 @@ wpas_dpp_rx_reconfig_announcement(struct wpa_supplicant *wpa_s, const u8 *src,
 	if (!auth)
 		return;
 	wpas_dpp_set_testing_options(wpa_s, auth);
-	if (dpp_set_configurator(auth, wpa_s->dpp_configurator_params) < 0) {
+	if (dpp_set_configurator(auth, dpp_get_global_configuration(wpa_s->dpp)) < 0) {
 		dpp_auth_deinit(auth);
 		return;
 	}
@@ -4933,8 +4933,6 @@ void wpas_dpp_deinit(struct wpa_supplicant *wpa_s)
 	wpas_dpp_stop(wpa_s);
 	wpas_dpp_pkex_remove(wpa_s, "*");
 	os_memset(wpa_s->dpp_intro_bssid, 0, ETH_ALEN);
-	os_free(wpa_s->dpp_configurator_params);
-	wpa_s->dpp_configurator_params = NULL;
 	dpp_global_clear(wpa_s->dpp);
 }
 
@@ -5057,7 +5055,7 @@ int wpas_dpp_controller_start(struct wpa_supplicant *wpa_s, const char *cmd)
 
 		config.qr_mutual = os_strstr(cmd, " qr=mutual") != NULL;
 	}
-	config.configurator_params = wpa_s->dpp_configurator_params;
+	config.configurator_params = dpp_get_global_configuration(wpa_s->dpp);
 	return dpp_controller_start(wpa_s->dpp, &config);
 }
 

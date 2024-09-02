@@ -680,8 +680,9 @@ static int wpa_supplicant_ctrl_iface_set(struct wpa_supplicant *wpa_s,
 		wpa_s->no_keep_alive = !!atoi(value);
 #ifdef CONFIG_DPP
 	} else if (os_strcasecmp(cmd, "dpp_configurator_params") == 0) {
-		os_free(wpa_s->dpp_configurator_params);
-		wpa_s->dpp_configurator_params = os_strdup(value);
+		ret = dpp_global_configurations_remove(wpa_s->dpp);
+		if (!ret)
+			ret = dpp_global_configurations_add(wpa_s->dpp, value);
 #ifdef CONFIG_DPP2
 		dpp_controller_set_params(wpa_s->dpp, value);
 #endif /* CONFIG_DPP2 */

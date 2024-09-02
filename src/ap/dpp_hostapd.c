@@ -1119,7 +1119,8 @@ static void hostapd_dpp_rx_auth_req(struct hostapd_data *hapd, const u8 *src,
 	}
 	hostapd_dpp_set_testing_options(hapd, hapd->dpp_auth);
 	if (dpp_set_configurator(hapd->dpp_auth,
-				 hapd->dpp_configurator_params) < 0) {
+				 dpp_get_global_configuration(
+					hapd->iface->interfaces->dpp)) < 0) {
 		dpp_auth_deinit(hapd->dpp_auth);
 		hapd->dpp_auth = NULL;
 		return;
@@ -1735,7 +1736,8 @@ hostapd_dpp_rx_presence_announcement(struct hostapd_data *hapd, const u8 *src,
 		return;
 	hostapd_dpp_set_testing_options(hapd, auth);
 	if (dpp_set_configurator(auth,
-				 hapd->dpp_configurator_params) < 0) {
+				 dpp_get_global_configuration(
+					hapd->iface->interfaces->dpp)) < 0) {
 		dpp_auth_deinit(auth);
 		return;
 	}
@@ -1833,7 +1835,9 @@ hostapd_dpp_rx_reconfig_announcement(struct hostapd_data *hapd, const u8 *src,
 	if (!auth)
 		return;
 	hostapd_dpp_set_testing_options(hapd, auth);
-	if (dpp_set_configurator(auth, hapd->dpp_configurator_params) < 0) {
+	if (dpp_set_configurator(auth,
+				 dpp_get_global_configuration(
+					hapd->iface->interfaces->dpp)) < 0) {
 		dpp_auth_deinit(auth);
 		return;
 	}
@@ -3580,8 +3584,6 @@ void hostapd_dpp_deinit(struct hostapd_data *hapd)
 	hapd->dpp_auth = NULL;
 	hostapd_dpp_pkex_remove(hapd, "*");
 	hapd->dpp_pkex = NULL;
-	os_free(hapd->dpp_configurator_params);
-	hapd->dpp_configurator_params = NULL;
 	os_free(hapd->dpp_pkex_auth_cmd);
 	hapd->dpp_pkex_auth_cmd = NULL;
 }
@@ -3623,7 +3625,7 @@ int hostapd_dpp_controller_start(struct hostapd_data *hapd, const char *cmd)
 
 		config.qr_mutual = os_strstr(cmd, " qr=mutual") != NULL;
 	}
-	config.configurator_params = hapd->dpp_configurator_params;
+	config.configurator_params = dpp_get_global_configuration(hapd->iface->interfaces->dpp);
 	return dpp_controller_start(hapd->iface->interfaces->dpp, &config);
 }
 

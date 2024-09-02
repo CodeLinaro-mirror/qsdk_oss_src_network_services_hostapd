@@ -1263,8 +1263,9 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 #endif /* CONFIG_MBO */
 #ifdef CONFIG_DPP
 	} else if (os_strcasecmp(cmd, "dpp_configurator_params") == 0) {
-		os_free(hapd->dpp_configurator_params);
-		hapd->dpp_configurator_params = os_strdup(value);
+		ret = dpp_global_configurations_remove(hapd->iface->interfaces->dpp);
+		if (!ret)
+			ret = dpp_global_configurations_add(hapd->iface->interfaces->dpp, value);
 #ifdef CONFIG_DPP2
 		dpp_controller_set_params(hapd->iface->interfaces->dpp, value);
 #endif /* CONFIG_DPP2 */

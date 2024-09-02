@@ -1513,7 +1513,6 @@ struct wpa_supplicant {
 	char *dpp_pkex_identifier;
 	enum dpp_pkex_ver dpp_pkex_ver;
 	char *dpp_pkex_auth_cmd;
-	char *dpp_configurator_params;
 	struct os_reltime dpp_last_init;
 	struct os_reltime dpp_init_iter_start;
 	unsigned int dpp_init_max_tries;
