@@ -5036,8 +5036,9 @@ static int nl80211_put_beacon_rate(struct nl_msg *msg, u64 flags, u64 flags2,
 		he_rate.mcs[0] = BIT(params->beacon_rate);
 		if (nla_put(msg, NL80211_TXRATE_LEGACY, 0, NULL) ||
 		    nla_put(msg, NL80211_TXRATE_HT, 0, NULL) ||
+		    (params->freq->vht_enabled &&
 		    nla_put(msg, NL80211_TXRATE_VHT, sizeof(vht_rate),
-			    &vht_rate) ||
+			    &vht_rate)) ||
 		    nla_put(msg, NL80211_TXRATE_HE, sizeof(he_rate), &he_rate))
 			return -1;
 		wpa_printf(MSG_DEBUG, " * beacon_rate = HE-MCS %u",
@@ -5052,8 +5053,9 @@ static int nl80211_put_beacon_rate(struct nl_msg *msg, u64 flags, u64 flags2,
 		eht_rate.mcs[0] = BIT(params->beacon_rate);
 		if (nla_put(msg, NL80211_TXRATE_LEGACY, 0, NULL) ||
 		    nla_put(msg, NL80211_TXRATE_HT, 0, NULL) ||
+		    (params->freq->vht_enabled &&
 		    nla_put(msg, NL80211_TXRATE_VHT, sizeof(vht_rate),
-		    	    &vht_rate) ||
+		    	    &vht_rate)) ||
 		    nla_put(msg, NL80211_TXRATE_HE, sizeof(he_rate),
 		    	    &he_rate) ||
 		    nla_put(msg, NL80211_TXRATE_EHT, sizeof(eht_rate),
