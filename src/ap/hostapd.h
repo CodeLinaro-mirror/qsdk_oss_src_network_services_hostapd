@@ -1034,6 +1034,9 @@ unsigned int hostapd_mbssid_get_bss_index(struct hostapd_data *hapd);
 struct hostapd_data * hostapd_mld_get_link_bss(struct hostapd_data *hapd,
 					       u8 link_id);
 int hostapd_link_remove(struct hostapd_data *hapd, u32 count);
+struct hostapd_data *
+hostapd_interfaces_get_hapd(struct hapd_interfaces *interfaces,
+			    const char *ifname);
 size_t hostapd_eid_eht_ml_reconfig_len(struct hostapd_data *hapd);
 u8 *hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd, u8 *eid);
 int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx,

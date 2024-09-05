@@ -2551,14 +2551,22 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	 * element may include zero or more nontransmitted BSSID profiles.
 	 */
 	if (hapd->iconf->mbssid) {
-		if (ieee802_11_build_ap_params_mbssid(hapd, params)) {
-			wpa_printf(MSG_ERROR,
-				   "MBSSID: Failed to set beacon data");
-			goto error;
+		if (hapd->iconf->num_bss == 1) {
+			params->mbssid.mbssid_tx_iface = hapd->conf->iface;
+			params->mbssid.mbssid_index = hostapd_mbssid_get_bss_index(hapd);
+			params->mbssid.mbssid_tx_iface_linkid = hapd->conf->mld_ap ?
+				hapd->mld_link_id : -1;
+			complete = true;
+		} else {
+			if (ieee802_11_build_ap_params_mbssid(hapd, params)) {
+				wpa_printf(MSG_ERROR,
+					   "MBSSID: Failed to set beacon data");
+				goto error;
+			}
+			complete = hapd->iconf->mbssid == MBSSID_ENABLED ||
+				   (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
+				    params->mbssid.mbssid_elem_count == 1);
 		}
-		complete = hapd->iconf->mbssid == MBSSID_ENABLED ||
-			(hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
-			 params->mbssid.mbssid_elem_count == 1);
 	}
 
 	tailpos = hostapd_eid_ext_capab(hapd, tailpos, complete);
