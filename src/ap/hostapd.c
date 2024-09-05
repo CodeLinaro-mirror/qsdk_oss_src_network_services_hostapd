@@ -1547,6 +1547,7 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon)
 	char force_ifname[IFNAMSIZ];
 	u8 if_addr[ETH_ALEN];
 	int flush_old_stations = 1;
+	struct hostapd_data *tx_hapd;
 
 	if (!hostapd_mld_is_first_bss(hapd))
 		wpa_printf(MSG_DEBUG,
@@ -1637,7 +1638,7 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon)
 
 #ifdef CONFIG_IEEE80211BE
 setup_mld:
-	if (hapd->conf->mld_ap && !first) {
+	if (hapd->conf->mld_ap && (!first || first == -1)) {
 		wpa_printf(MSG_DEBUG,
 			   "MLD: Set link_id=%u, mld_addr=" MACSTR
 			   ", own_addr=" MACSTR,
@@ -1878,6 +1879,13 @@ setup_mld:
 		wpa_printf(MSG_ERROR, "VLAN initialization failed.");
 		return -1;
 	}
+
+	tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
+
+	/* If TX BSS is already beaconing, update it with newly added profile
+	 */
+	if (start_beacon && tx_hapd && tx_hapd != hapd && tx_hapd->beacon_set_done)
+		ieee802_11_set_beacon(tx_hapd);
 
 	if (start_beacon && hostapd_start_beacon(hapd, flush_old_stations) < 0)
 		return -1;
@@ -3536,21 +3544,12 @@ fail:
 	return NULL;
 }
 
-
-static int ifname_in_use(struct hapd_interfaces *interfaces, const char *ifname)
+bool hostapd_is_existing_interface(struct hostapd_iface *iface,
+				   struct hostapd_config *new_conf)
 {
-	size_t i, j;
-
-	for (i = 0; i < interfaces->count; i++) {
-		struct hostapd_iface *iface = interfaces->iface[i];
-		for (j = 0; j < iface->num_bss; j++) {
-			struct hostapd_data *hapd = iface->bss[j];
-			if (os_strcmp(ifname, hapd->conf->iface) == 0)
-				return 1;
-		}
-	}
-
-	return 0;
+	return (iface->conf->hw_mode == new_conf->hw_mode &&
+		((iface->conf->channel &&
+		iface->conf->channel == new_conf->channel)));
 }
 
 
@@ -3578,8 +3577,13 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 	if (!phy || !*phy)
 		return NULL;
 
+	conf = interfaces->config_read_cb(config_fname);
+	if (!conf)
+		return NULL;
+
 	for (i = 0; i < interfaces->count; i++) {
-		if (os_strcmp(interfaces->iface[i]->phy, phy) == 0) {
+		if (os_strcmp(interfaces->iface[i]->phy, phy) == 0 &&
+		    hostapd_is_existing_interface(interfaces->iface[i], conf)) {
 			iface = interfaces->iface[i];
 			break;
 		}
@@ -3588,21 +3592,9 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 	wpa_printf(MSG_INFO, "Configuration file: %s (phy %s)%s",
 		   config_fname, phy, iface ? "" : " --> new PHY");
 
-	conf = interfaces->config_read_cb(config_fname);
-	if (!conf)
-		return NULL;
-
-#ifdef CONFIG_IEEE80211BE
-	/* AP MLD can be enabled with the same interface name, so even if we
-	 * get the interface, we still need to allocate a new hostapd_iface
-	 * structure. */
-	if (conf->bss[0]->mld_ap)
-		iface = NULL;
-#endif /* CONFIG_IEEE80211BE */
-
 	if (iface) {
 		struct hostapd_bss_config **tmp_conf;
-		struct hostapd_data **tmp_bss;
+		struct hostapd_data **tmp_bss, *tmp_hapd;
 		struct hostapd_bss_config *bss;
 		const char *ifname;
 
@@ -3614,11 +3606,22 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 		}
 
 		ifname = conf->bss[0]->iface;
-		if (ifname[0] != '\0' && ifname_in_use(interfaces, ifname)) {
+		if (ifname[0] == '\0') {
 			wpa_printf(MSG_ERROR,
-				   "Interface name %s already in use", ifname);
+				   "Invalid interface name %s", ifname);
 			hostapd_config_free(conf);
 			return NULL;
+		}
+		tmp_hapd = hostapd_interfaces_get_hapd(interfaces, ifname);
+		if (tmp_hapd) {
+			wpa_printf(MSG_ERROR,
+				   "Interface name %s already in use", ifname);
+			if (conf->bss[0]->mld_ap && tmp_hapd->conf->mld_ap)
+				wpa_printf(MSG_ERROR, "Proceed setup for ML AP link addition");
+			else {
+				hostapd_config_free(conf);
+				return NULL;
+			}
 		}
 
 		tmp_conf = os_realloc_array(
@@ -5504,6 +5507,28 @@ hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface, bool iface_enabl
 		}
 	}
 	return;
+}
+
+
+struct hostapd_data *
+hostapd_interfaces_get_hapd(struct hapd_interfaces *interfaces,
+			    const char *ifname)
+{
+	size_t i, j;
+
+	for (i = 0; i < interfaces->count; i++) {
+		struct hostapd_iface *iface = interfaces->iface[i];
+
+		for (j = 0; j < iface->num_bss; j++) {
+			struct hostapd_data *hapd;
+
+			hapd = iface->bss[j];
+			if (os_strcmp(ifname, hapd->conf->iface) == 0)
+				return hapd;
+		}
+	}
+
+	return NULL;
 }
 
 

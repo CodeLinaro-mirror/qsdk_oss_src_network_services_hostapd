@@ -2443,17 +2443,27 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 					   tailpos-startpos, ELEMID_CU_PARAM_HTOP);
 #endif
 
-	if (hapd->iconf->mbssid && hapd->iconf->num_bss > 1) {
-		if (ieee802_11_build_ap_params_mbssid(hapd, params)) {
-			os_free(head);
-			os_free(tail);
-			wpa_printf(MSG_ERROR,
-				   "MBSSID: Failed to set beacon data");
-			return -1;
+	if (hapd->iconf->mbssid) {
+		if (hapd->iconf->num_bss == 1) {
+			params->mbssid.mbssid_tx_iface = hapd->conf->iface;
+			params->mbssid.mbssid_index = hostapd_mbssid_get_bss_index(hapd);
+			if (hapd->conf->mld_ap)
+				params->mbssid.mbssid_tx_iface_linkid = hapd->mld_link_id;
+			else
+				params->mbssid.mbssid_tx_iface_linkid = -1;
+			complete = true;
+		} else {
+			if (ieee802_11_build_ap_params_mbssid(hapd, params)) {
+				os_free(head);
+				os_free(tail);
+				wpa_printf(MSG_ERROR,
+					   "MBSSID: Failed to set beacon data");
+				return -1;
+			}
+			complete = hapd->iconf->mbssid == MBSSID_ENABLED ||
+				   (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
+				    params->mbssid.mbssid_elem_count == 1);
 		}
-		complete = hapd->iconf->mbssid == MBSSID_ENABLED ||
-			(hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
-			 params->mbssid.mbssid_elem_count == 1);
 	}
 
 	tailpos = hostapd_eid_ext_capab(hapd, tailpos, complete);
