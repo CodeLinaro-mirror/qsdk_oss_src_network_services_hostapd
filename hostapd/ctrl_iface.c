@@ -90,6 +90,10 @@ static void hostapd_ctrl_iface_send(struct hostapd_data *hapd, int level,
 				    const char *buf, size_t len);
 
 
+static int hostapd_ctrl_iface_add(struct hapd_interfaces *interfaces,
+				  char *buf);
+
+
 static int hostapd_ctrl_iface_attach(struct hostapd_data *hapd,
 				     struct sockaddr_storage *from,
 				     socklen_t fromlen, const char *input)
@@ -4837,6 +4841,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 			reply_len = -1;
 	} else if (os_strcmp(buf, "UPDATE_BEACON") == 0) {
 		if (ieee802_11_set_beacon(hapd))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "MLD_ADD_LINK ", 13) == 0) {
+		if (hostapd_ctrl_iface_add(hapd->iface->interfaces, buf + 13))
 			reply_len = -1;
 #ifdef CONFIG_TESTING_OPTIONS
 	} else if (os_strncmp(buf, "RADAR ", 6) == 0) {

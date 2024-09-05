@@ -1475,6 +1475,15 @@ static int hostapd_cli_cmd_req_range(struct wpa_ctrl *ctrl, int argc,
 }
 
 
+#ifdef CONFIG_IEEE80211BE
+static int hostapd_cli_cmd_mld_add_link(struct wpa_ctrl *ctrl, int argc,
+					char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "MLD_ADD_LINK", 1, argc, argv);
+}
+#endif
+
+
 static int hostapd_cli_cmd_driver_flags(struct wpa_ctrl *ctrl, int argc,
 					char *argv[])
 {
@@ -1946,6 +1955,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "driver", hostapd_cli_cmd_driver, NULL,
 	  "<driver sub command> [<hex formatted data>] = send driver command data" },
 #endif /* ANDROID */
+#ifdef CONFIG_IEEE80211BE
+	{ "mld_add_link", hostapd_cli_cmd_mld_add_link, NULL,
+	"<config_file_location>" },
+#endif
 	{ NULL, NULL, NULL, NULL }
 };
 
