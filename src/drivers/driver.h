@@ -2675,6 +2675,11 @@ struct wpa_driver_capa {
 	 * Request frames */
 	size_t max_probe_req_ie_len;
 
+	/* Maximum number of Muli-MBSSID groups supported by driver */
+	u8  mbssid_max_ngroups;
+	/* Maximum supported beacon size */
+	unsigned int max_beacon_size;
+
 	/* EDCA based ranging capabilities */
 	u8 edca_format_and_bw;
 	u8 max_tx_antenna;

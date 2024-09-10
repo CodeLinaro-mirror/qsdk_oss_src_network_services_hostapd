@@ -2867,7 +2867,32 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 
 	if (hostapd_build_ap_extra_ies(hapd, &beacon, &proberesp, &assocresp) <
 	    0)
-		goto fail;
+		goto fail1;
+
+	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
+		size_t bcn_len;
+
+		bcn_len = params.head_len + params.tail_len + wpabuf_len(beacon) +
+			  params.mbssid.mbssid_elem_len;
+		if (bcn_len > hapd->iface->multi_mbssid.max_beacon_size) {
+			if (params.mbssid.mbssid_elem_count > 1) {
+				wpa_printf(MSG_ERROR,
+					   "Reduce MBSSID group size (%d) to accommodate within beacon size limit of %u bytes. Current beacon length is %zu",
+					   hapd->iconf->group_size,
+					   iface->multi_mbssid.max_beacon_size,
+					   bcn_len);
+			}
+			goto fail2;
+		}
+		if (hapd->iface->multi_mbssid.num_mbssid_groups >
+		    hapd->iface->multi_mbssid.mbssid_max_ngroups) {
+			wpa_printf(MSG_ERROR,
+				   "Created Multi MBSSID groups(%zu) exceeded max allowed groups(%d)\n",
+				   hapd->iface->multi_mbssid.num_mbssid_groups,
+				   hapd->iface->multi_mbssid.mbssid_max_ngroups);
+			goto fail2;
+		}
+	}
 
 	params.beacon_ies = beacon;
 	params.proberesp_ies = proberesp;
@@ -2956,12 +2981,13 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 #endif /* CONFIG_DRIVER_NL80211_QCA */
 
 	res = hostapd_drv_set_ap(hapd, &params);
-	hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
 	if (res)
 		wpa_printf(MSG_ERROR, "Failed to set beacon parameters");
 	else
 		ret = 0;
-fail:
+fail2:
+	hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
+fail1:
 	ieee802_11_free_ap_params(&params);
 	return ret;
 }

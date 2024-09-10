@@ -11978,7 +11978,9 @@ static int wpa_driver_nl80211_status(void *priv, char *buf, size_t buflen)
 				  "capa.max_sched_scan_plan_iterations=%u\n"
 				  "capa.mbssid_max_interfaces=%u\n"
 				  "capa.ema_max_periodicity=%u\n"
-				  "capa.max_probe_req_ie_len=%zu\n",
+				  "capa.max_probe_req_ie_len=%zu\n"
+				  "capa.mbssid_max_ngroups=%u\n"
+				  "capa.max_beacon_size=%u\n",
 				  drv->capa.key_mgmt,
 				  drv->capa.enc,
 				  drv->capa.auth,
@@ -12004,7 +12006,9 @@ static int wpa_driver_nl80211_status(void *priv, char *buf, size_t buflen)
 				  drv->capa.max_sched_scan_plan_iterations,
 				  drv->capa.mbssid_max_interfaces,
 				  drv->capa.ema_max_periodicity,
-				  drv->capa.max_probe_req_ie_len);
+				  drv->capa.max_probe_req_ie_len,
+				  drv->capa.mbssid_max_ngroups,
+				  drv->capa.max_beacon_size);
 		if (os_snprintf_error(end - pos, res))
 			return pos - buf;
 		pos += res;

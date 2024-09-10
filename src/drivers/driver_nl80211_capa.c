@@ -946,9 +946,17 @@ static void wiphy_info_mbssid(struct wpa_driver_capa *cap, struct nlattr *attr)
 		cap->ema_max_periodicity =
 			nla_get_u8(config[NL80211_MBSSID_CONFIG_ATTR_MAX_EMA_PROFILE_PERIODICITY]);
 
+	if (config[NL80211_MBSSID_CONFIG_ATTR_MAX_MBSSID_GROUPS])
+		cap->mbssid_max_ngroups =
+			nla_get_u8(config[NL80211_MBSSID_CONFIG_ATTR_MAX_MBSSID_GROUPS]);
+
+	if (config[NL80211_MBSSID_CONFIG_ATTR_MAX_BEACON_SIZE])
+		cap->max_beacon_size =
+			nla_get_u16(config[NL80211_MBSSID_CONFIG_ATTR_MAX_BEACON_SIZE]);
 	wpa_printf(MSG_DEBUG,
-		   "mbssid: max interfaces %u, max profile periodicity %u",
-		   cap->mbssid_max_interfaces, cap->ema_max_periodicity);
+		   "mbssid: max interfaces %u max profile periodicity %u max ngroups %u max beacon size %u\n",
+		   cap->mbssid_max_interfaces, cap->ema_max_periodicity,
+		   cap->mbssid_max_ngroups, cap->max_beacon_size);
 }
 
 

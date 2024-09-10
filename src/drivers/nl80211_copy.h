@@ -8281,6 +8281,16 @@ enum nl80211_sar_specs_attrs {
  *	are sent for a non-transmitted profile and if the transmitted profile
  *	is part of an MLD. For all other cases this parameter is unnecessary.
  *
+ * @NL80211_MBSSID_CONFIG_ATTR_MAX_MBSSID_GROUPS: Used to advertise
+ * 	the maximum mbssid groups (u8) supported by the driver.
+ * 	Driver should indicate this to the userspace
+ * 	by setting wiphy->mbssid_max_ngroups to a non-zero value.
+ *
+ * @NL80211_MBSSID_CONFIG_ATTR_MAX_BEACON_SIZE: Used to advertise
+ * 	the maximum beacon size (u16) supported by the driver.
+ * 	Driver should indicate this to the userspac
+ * 	by setting wiphy->max_beacon_size to a non-zero value.
+ *
  * @__NL80211_MBSSID_CONFIG_ATTR_LAST: Internal
  * @NL80211_MBSSID_CONFIG_ATTR_MAX: highest attribute
  */
@@ -8293,6 +8303,8 @@ enum nl80211_mbssid_config_attributes {
 	NL80211_MBSSID_CONFIG_ATTR_TX_IFINDEX,
 	NL80211_MBSSID_CONFIG_ATTR_EMA,
 	NL80211_MBSSID_CONFIG_ATTR_TX_LINK_ID,
+	NL80211_MBSSID_CONFIG_ATTR_MAX_MBSSID_GROUPS,
+	NL80211_MBSSID_CONFIG_ATTR_MAX_BEACON_SIZE,
 
 	/* keep last */
 	__NL80211_MBSSID_CONFIG_ATTR_LAST,

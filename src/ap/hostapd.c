@@ -4951,6 +4951,33 @@ int hostapd_build_beacon_data(struct hostapd_data *hapd,
 		}
 	}
 
+	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
+		size_t bcn_len;
+
+		bcn_len = params.head_len + params.tail_len + wpabuf_len(beacon_extra) +
+			  params.mbssid.mbssid_elem_len;
+
+		if (bcn_len > hapd->iface->multi_mbssid.max_beacon_size) {
+			if (params.mbssid.mbssid_elem_count > 1) {
+				wpa_printf(MSG_ERROR,
+					   "Reduce MBSSID group size (%d) to accommodate within beacon size limit of %u bytes. Current beacon length is %zu",
+					   hapd->iconf->group_size,
+					   hapd->iface->multi_mbssid.max_beacon_size,
+					   bcn_len);
+			}
+			goto free_beacon;
+		}
+
+		if (hapd->iface->multi_mbssid.num_mbssid_groups >
+		    hapd->iface->multi_mbssid.mbssid_max_ngroups) {
+			wpa_printf(MSG_ERROR,
+				   "Created Multi MBSSID groups(%zu) exceeded max allowed groups(%d)\n",
+				   hapd->iface->multi_mbssid.num_mbssid_groups,
+				   hapd->iface->multi_mbssid.mbssid_max_ngroups);
+			goto free_beacon;
+		}
+	}
+
 done:
 	ret = 0;
 free_beacon:
