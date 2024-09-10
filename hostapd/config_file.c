@@ -3711,13 +3711,35 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->discard_6g_awgn_event = atoi(pos);
 	} else if (os_strcmp(buf, "mbssid") == 0) {
 		int mbssid = atoi(pos);
-		if (mbssid < 0 || mbssid > ENHANCED_MBSSID_ENABLED) {
+		if (mbssid < 0 || mbssid > MULTI_MBSSID_GROUP_ENABLED) {
 			wpa_printf(MSG_ERROR,
 				   "Line %d: invalid mbssid (%d): '%s'.",
 				   line, mbssid, pos);
 			return 1;
 		}
 		conf->mbssid = mbssid;
+	} else if (os_strcmp(buf, "mbssid_group_size") == 0) {
+		int group_size = atoi(pos);
+		int val = group_size;
+
+		if (group_size < MULTI_MBSSID_GROUP_SIZE_MIN ||
+		    group_size > MULTI_MBSSID_GROUP_SIZE_MAX) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid group_size, allowed range [%d to %d]",
+				   line, MULTI_MBSSID_GROUP_SIZE_MIN,
+				   MULTI_MBSSID_GROUP_SIZE_MAX);
+			return 1;
+		}
+		while (val != 1) {
+			if (val % 2 != 0) {
+				wpa_printf(MSG_ERROR,
+					   "Line %d: invalid group_size, not power of 2",
+					   line);
+				return 1;
+			}
+			val = val / 2;
+		}
+		conf->group_size = group_size;
 	} else if (os_strcmp(buf, "mbssid_index") == 0) {
 		bss->mbssid_index = atoi(pos);
 	} else if (os_strcmp(buf, "mbssid_max") == 0) {

@@ -327,6 +327,7 @@ struct hostapd_config * hostapd_config_defaults(void)
 #ifdef CONFIG_AIRTIME_POLICY
 	conf->airtime_update_interval = AIRTIME_DEFAULT_UPDATE_INTERVAL;
 #endif /* CONFIG_AIRTIME_POLICY */
+	conf->group_size = MULTI_MBSSID_GROUP_SIZE_DEFAULT;
 
 	hostapd_set_and_check_bw320_offset(conf, 0);
 

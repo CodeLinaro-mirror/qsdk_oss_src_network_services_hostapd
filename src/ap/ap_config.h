@@ -1287,6 +1287,10 @@ struct hostapd_config {
 	int ccfs;
 	int bandwidth_device;
 	int center_freq_device;
+
+#define MULTI_MBSSID_GROUP_SIZE_MIN 2
+#define MULTI_MBSSID_GROUP_SIZE_MAX 8
+#define MULTI_MBSSID_GROUP_SIZE_DEFAULT 4
 	u8 group_size;
 
 	/* Set I2R LMR policy to allow LMR response from ISTA */
