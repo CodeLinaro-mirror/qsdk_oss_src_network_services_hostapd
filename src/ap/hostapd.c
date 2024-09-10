@@ -3624,7 +3624,7 @@ fail:
 }
 
 
-static int hostapd_multi_mbssid_setup_bss(struct hostapd_data *hapd)
+static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 {
 	struct hostapd_iface *iface;
 	struct hostapd_multi_mbssid_group *group = NULL, **all_group;
@@ -3696,6 +3696,30 @@ fail:
 	os_free(group);
 	hapd->mbssid_group = NULL;
 	return -1;
+}
+
+int hostapd_mbssid_setup_bss(struct hostapd_data *hapd)
+{
+	struct hostapd_data *tx_bss;
+	size_t num_bss, i;
+
+	if (hostapd_multi_mbssid_add_bss(hapd))
+		return -1;
+
+	/*
+	 * When setting up multi bssid, reserve AIDs for group transmssion
+	 * on Tx VAP
+	 */
+	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+	if (tx_bss != hapd)
+		return 0;
+
+	num_bss = (1 << hostapd_max_bssid_indicator(tx_bss));
+
+	for (i = 0; i < num_bss && i < AID_WORDS * 32; i++)
+		tx_bss->sta_aid[i / 32] |= BIT(i % 32);
+
+	return 0;
 }
 
 static void hostapd_cleanup_unused_mlds(struct hapd_interfaces *interfaces)
@@ -3826,7 +3850,7 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 		 * non-transmitting profile in beacon
 		 */
 		hapd->mbssid_idx = i;
-		if (hostapd_multi_mbssid_setup_bss(hapd))
+		if (hostapd_mbssid_setup_bss(hapd))
 			goto fail;
 		hostapd_bss_setup_multi_link(hapd, interfaces);
 	}
@@ -3952,7 +3976,7 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 		iface->conf->num_bss++;
 
 		hapd = hostapd_alloc_bss_data(iface, iface->conf, bss);
-		if (hapd == NULL || hostapd_multi_mbssid_setup_bss(hapd)) {
+		if (hapd == NULL || hostapd_mbssid_setup_bss(hapd)) {
 			os_free(hapd);
 			iface->conf->num_bss--;
 			iface->conf->bss[iface->conf->num_bss] = NULL;
@@ -4357,10 +4381,11 @@ static int hostapd_data_alloc(struct hostapd_iface *hapd_iface,
 	if (hapd_iface->bss == NULL)
 		return -1;
 
+	hapd_iface->num_bss = conf->num_bss;
 	for (i = 0; i < conf->num_bss; i++) {
 		hapd = hapd_iface->bss[i] =
 			hostapd_alloc_bss_data(hapd_iface, conf, conf->bss[i]);
-		if (hapd == NULL || hostapd_multi_mbssid_setup_bss(hapd)) {
+		if (hapd == NULL || hostapd_mbssid_setup_bss(hapd)) {
 			os_free(hapd);
 			hapd_iface->bss[i] = NULL;
 			while (i > 0) {
@@ -4374,6 +4399,7 @@ static int hostapd_data_alloc(struct hostapd_iface *hapd_iface,
 			}
 			os_free(hapd_iface->bss);
 			hapd_iface->bss = NULL;
+			hapd_iface->num_bss = 0;
 			return -1;
 		}
 		hapd->msg_ctx = hapd;
@@ -4381,7 +4407,6 @@ static int hostapd_data_alloc(struct hostapd_iface *hapd_iface,
 	}
 
 	hapd_iface->conf = conf;
-	hapd_iface->num_bss = conf->num_bss;
 
 	return 0;
 }

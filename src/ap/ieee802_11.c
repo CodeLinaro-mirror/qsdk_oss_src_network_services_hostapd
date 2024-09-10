@@ -6224,7 +6224,7 @@ static u32 hostapd_get_aid_word(struct hostapd_data *hapd,
 					   "MLD: Failed to get link BSS for AID");
 				continue;
 			}
-
+			link_bss = hostapd_mbssid_get_tx_bss(link_bss);
 			aid_word |= link_bss->sta_aid[i];
 		}
 
@@ -6329,7 +6329,7 @@ int hostapd_get_aid(struct hostapd_data *hapd, struct sta_info *sta)
 	}
 	if (j == 32)
 		return -1;
-	aid = i * 32 + j + (1 << hostapd_max_bssid_indicator(hapd));
+	aid = i * 32 + j;
 	if (aid > 2007)
 		return -1;
 
@@ -8034,7 +8034,7 @@ int ieee80211_ml_process_link(struct hostapd_data *hapd,
 			status = WLAN_STATUS_UNSPECIFIED_FAILURE;
 			goto out;
 		}
-		hapd->sta_aid[(sta->aid - 1) / 32] |= BIT((sta->aid - 1) % 32);
+		hapd->sta_aid[sta->aid / 32] |= BIT(sta->aid % 32);
 		sta->listen_interval = origin_sta->listen_interval;
 		if (update_ht_state(hapd, sta) > 0 && set_beacon)
 			*set_beacon = true;
