@@ -2843,6 +2843,8 @@ struct wpa_driver_capa {
 	/* Maximum number of bytes of extra IE(s) that can be added to Probe
 	 * Request frames */
 	size_t max_probe_req_ie_len;
+	u8 mbssid_max_ngroups;
+	unsigned int max_beacon_size;
 
 	/* EDCA based ranging capabilities */
 	u8 max_tx_antenna;
