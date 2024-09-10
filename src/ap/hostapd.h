@@ -259,7 +259,7 @@ struct hostapd_data {
 
 	/*
 	 * Bitfield for indicating which AIDs are allocated. Only AID values
-	 * 1-2007 are used and as such, the bit at index 0 corresponds to AID
+	 * 1-2007 are used and as such, the bit at index 1 corresponds to AID
 	 * 1.
 	 */
 #define AID_WORDS ((2008 + 31) / 32)
@@ -865,6 +865,7 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon);
 void hostapd_bss_deinit(struct hostapd_data *hapd);
 void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
 				  struct hapd_interfaces *interfaces);
+void hostapd_mbssid_setup_bss(struct hostapd_data *hapd);
 void hostapd_new_assoc_sta(struct hostapd_data *hapd, struct sta_info *sta,
 			   int reassoc);
 void hostapd_interface_deinit_free(struct hostapd_iface *iface);

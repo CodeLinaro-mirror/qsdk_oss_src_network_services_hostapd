@@ -3566,7 +3566,7 @@ fail:
 }
 
 
-void hostapd_multi_mbssid_setup_bss(struct hostapd_data *hapd)
+static void hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 {
 	struct hostapd_iface *iface = hapd->iface;
 	struct hostapd_multi_mbssid_group *group = NULL, **all_group;
@@ -3629,6 +3629,27 @@ fail:
 		   hapd->conf->iface, group->group_id);
 	os_free(group);
 	hapd->mbssid_group = NULL;
+}
+
+void hostapd_mbssid_setup_bss(struct hostapd_data *hapd)
+{
+	struct hostapd_data *tx_bss;
+	size_t num_bss, i;
+
+	hostapd_multi_mbssid_add_bss(hapd);
+
+	/*
+	 * When setting up multi bssid, reserve AIDs for group transmssion
+	 * on Tx VAP
+	 */
+	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+	if (tx_bss != hapd)
+		return;
+
+	num_bss = (1 << hostapd_max_bssid_indicator(tx_bss));
+
+	for (i = 0; i < num_bss; i++)
+		tx_bss->sta_aid[0] |= BIT(i);
 }
 
 static void hostapd_cleanup_unused_mlds(struct hapd_interfaces *interfaces)
@@ -3760,7 +3781,7 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 		 */
 		hapd->mbssid_idx = i;
 		hostapd_bss_setup_multi_link(hapd, interfaces);
-		hostapd_multi_mbssid_setup_bss(hapd);
+		hostapd_mbssid_setup_bss(hapd);
 	}
 
 	hapd_iface->is_ch_switch_dfs = false;
@@ -3889,7 +3910,7 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 		iface->bss[iface->num_bss] = hapd;
 		hapd->msg_ctx = hapd;
 		hostapd_bss_setup_multi_link(hapd, interfaces);
-		hostapd_multi_mbssid_setup_bss(hapd);
+		hostapd_mbssid_setup_bss(hapd);
 
 
 		bss_idx = iface->num_bss++;
@@ -4299,7 +4320,7 @@ static int hostapd_data_alloc(struct hostapd_iface *hapd_iface,
 		}
 		hapd->msg_ctx = hapd;
 		hostapd_bss_setup_multi_link(hapd, hapd_iface->interfaces);
-		hostapd_multi_mbssid_setup_bss(hapd);
+		hostapd_mbssid_setup_bss(hapd);
 	}
 
 	hapd_iface->conf = conf;

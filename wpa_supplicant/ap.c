@@ -1202,6 +1202,8 @@ int wpa_supplicant_create_ap(struct wpa_supplicant *wpa_s,
 		ssid->acs = 1;
 	}
 #endif /* CONFIG_P2P && CONFIG_ACS */
+	for (i = 0; i < conf->num_bss; i++)
+		hostapd_mbssid_setup_bss(hapd_iface->bss[i]);
 
 	if (hostapd_setup_interface(wpa_s->ap_iface)) {
 		wpa_printf(MSG_ERROR, "Failed to initialize AP interface");
