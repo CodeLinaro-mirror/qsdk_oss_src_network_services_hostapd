@@ -4115,6 +4115,7 @@ int hostapd_enable_iface(struct hostapd_iface *hapd_iface)
 	}
 
 	if (hostapd_setup_interface(hapd_iface)) {
+		hostapd_bss_link_deinit(hapd_iface->bss[0]);
 		hostapd_deinit_driver(hapd_iface->bss[0]->driver,
 				      hapd_iface->bss[0]->drv_priv,
 				      hapd_iface);
