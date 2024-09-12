@@ -1321,6 +1321,7 @@ struct hostapd_config {
 		MBSSID_DISABLED = 0,
 		MBSSID_ENABLED = 1,
 		ENHANCED_MBSSID_ENABLED = 2,
+		MULTI_MBSSID_GROUP_ENABLED = 3,
 	} mbssid;
 	unsigned int mbssid_max;
 
@@ -1333,6 +1334,7 @@ struct hostapd_config {
 	int ccfs;
 	int bandwidth_device;
 	int center_freq_device;
+	u8 group_size;
 
 	/* Set I2R LMR policy to allow LMR response from ISTA */
 	bool i2r_lmr_policy;

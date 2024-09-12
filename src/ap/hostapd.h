@@ -579,6 +579,8 @@ struct hostapd_data {
 
 	/* Stable default BSSID index across dynamic link removal. */
 	size_t mbssid_idx;
+	struct hostapd_multi_mbssid_group *mbssid_group;
+	struct dl_list mbssid_bss;
 
 #if defined(CONFIG_INTERWORKING) || defined(CONFIG_DPP)
 	bool gas_serv_initialized;
@@ -846,6 +848,8 @@ struct hostapd_iface {
 	struct hostapd_multi_hw_info *multi_hw_info;
 	unsigned int num_multi_hws;
 	struct hostapd_multi_hw_info *current_hw_info;
+	/* Multi MBSSID group information */
+	struct hostapd_multi_mbssid multi_mbssid;
 
 	/* Use assisted DFS functionality from the driver. This is used only
 	 * in wpa_supplicant builds for P2P GO functionality. */
@@ -1032,6 +1036,10 @@ void fst_hostapd_fill_iface_obj(struct hostapd_data *hapd,
 int hostapd_set_acl(struct hostapd_data *hapd);
 struct hostapd_data * hostapd_mbssid_get_tx_bss(struct hostapd_data *hapd);
 unsigned int hostapd_mbssid_get_bss_index(struct hostapd_data *hapd);
+struct hostapd_data *
+hostapd_get_multi_group_bss(struct hostapd_multi_mbssid_group *group,
+			   int bss_idx);
+u8 hostapd_max_bssid_indicator(struct hostapd_data *hapd);
 struct hostapd_data * hostapd_mld_get_link_bss(struct hostapd_data *hapd,
 					       u8 link_id);
 int hostapd_link_remove(struct hostapd_data *hapd, u32 count);
