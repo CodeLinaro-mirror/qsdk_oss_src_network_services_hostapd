@@ -11,6 +11,7 @@
 
 #include "defs.h"
 #include "ieee802_11_defs.h"
+#include "utils/list.h"
 
 struct element {
 	u8 id;
@@ -390,5 +391,34 @@ size_t ieee802_11_defrag_mle_subelem(struct wpabuf *mlbuf,
 				     size_t *defrag_len);
 const u8 * get_ml_ie(const u8 *ies, size_t len, u8 type);
 const u8 * get_basic_mle_mld_addr(const u8 *buf, size_t len);
+
+/**
+ * struct hostapd_multi_mbssid_group: hostapd per group MBSSID info
+ */
+struct hostapd_multi_mbssid_group {
+	/* Group id for the group */
+	u8 group_id;
+	/* Active bss added in the group */
+	size_t num_bss;
+	struct hostapd_data *txbss;
+	/* List of bss in the group */
+	struct dl_list bss_list;
+};
+
+/**
+ * struct hostapd_multi_mbssid: hostapd Multi group MBSSID info
+ */
+struct hostapd_multi_mbssid {
+	/* Maximum number of groups supported for MBSSID advertisement */
+	u8  mbssid_max_ngroups;
+	/* Maximum supported beacon size */
+	unsigned int max_beacon_size;
+	/* Maximum number of bss allowed in each group */
+	u8  group_size;
+	/* Active mbssid groups present */
+	size_t num_mbssid_groups;
+	/* hostapd Per group MBSSID info */
+	struct hostapd_multi_mbssid_group **group;
+};
 
 #endif /* IEEE802_11_COMMON_H */

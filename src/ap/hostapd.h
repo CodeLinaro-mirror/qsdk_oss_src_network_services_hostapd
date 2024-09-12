@@ -571,6 +571,8 @@ struct hostapd_data {
 	bool disable_cu;
 	struct hostapd_wmm_ac_params prev_wmm[4];
 	size_t mbssid_idx;
+	struct hostapd_multi_mbssid_group *mbssid_group;
+	struct dl_list mbssid_bss;
 };
 
 
@@ -834,6 +836,8 @@ struct hostapd_iface {
 	struct hostapd_multi_hw_info *multi_hw_info;
 	unsigned int num_multi_hws;
 	struct hostapd_multi_hw_info *current_hw_info;
+	/* Multi MBSSID group information */
+	struct hostapd_multi_mbssid multi_mbssid;
 };
 
 /* hostapd.c */
@@ -1016,5 +1020,10 @@ hostapd_chan_width_from_freq_params(struct hostapd_freq_params *freq_params);
 
 struct hostapd_data *
 hostapd_get_mbssid_bss_by_idx(struct hostapd_data *hapd, size_t idx);
+
+struct hostapd_data *
+hostapd_get_multi_group_bss(struct hostapd_multi_mbssid_group *group,
+                           int bss_idx);
+u8 hostapd_max_bssid_indicator(struct hostapd_data *hapd);
 
 #endif /* HOSTAPD_H */

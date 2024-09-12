@@ -597,6 +597,10 @@ ieee802_11_build_ap_params_mbssid(struct hostapd_data *hapd,
 	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
 	len = hostapd_eid_mbssid_len(tx_bss, WLAN_FC_STYPE_BEACON, &elem_count,
 				     NULL, 0, &rnr_len);
+
+	if (iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED && !elem_count)
+		return 0;
+
 	if (!len || (iface->conf->mbssid == ENHANCED_MBSSID_ENABLED &&
 		     elem_count > iface->ema_max_periodicity))
 		goto fail;
@@ -2444,7 +2448,8 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 #endif
 
 	if (hapd->iconf->mbssid) {
-		if (hapd->iconf->num_bss == 1) {
+		if (((hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) &&
+		    (hapd->mbssid_group->num_bss == 1)) || hapd->iconf->num_bss == 1) {
 			params->mbssid.mbssid_tx_iface = hapd->conf->iface;
 			params->mbssid.mbssid_index = hostapd_mbssid_get_bss_index(hapd);
 			if (hapd->conf->mld_ap)
@@ -2461,6 +2466,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 				return -1;
 			}
 			complete = hapd->iconf->mbssid == MBSSID_ENABLED ||
+				   hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED ||
 				   (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
 				    params->mbssid.mbssid_elem_count == 1);
 		}
