@@ -987,6 +987,9 @@ static void eloop_handle_signal(int sig)
 {
 	size_t i;
 
+	if (!eloop.signals)
+		return;
+
 #ifndef CONFIG_NATIVE_WINDOWS
 	if ((sig == SIGINT || sig == SIGTERM) && !eloop.pending_terminate) {
 		/* Use SIGALRM to break out from potential busy loops that
@@ -1314,6 +1317,7 @@ void eloop_destroy(void)
 		signal(eloop.signals[i].sig, SIG_DFL);
 
 	os_free(eloop.signals);
+	eloop.signals = NULL;
 
 #ifdef CONFIG_ELOOP_POLL
 	os_free(eloop.pollfds);
