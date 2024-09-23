@@ -9167,13 +9167,36 @@ static u8 * hostapd_eid_wb_channel_switch(struct hostapd_data *hapd, u8 *eid,
 					  u8 chan1, u8 chan2)
 {
 	u8 bw;
+	enum oper_chan_width chan_width;
+
+	switch (hapd->cs_freq_params.bandwidth) {
+	case 320:
+		chan_width = CONF_OPER_CHWIDTH_320MHZ;
+		break;
+	case 160:
+		chan_width = CONF_OPER_CHWIDTH_160MHZ;
+		break;
+	case 80:
+		chan_width = CONF_OPER_CHWIDTH_80MHZ;
+		break;
+	case 40:
+		chan_width = CONF_OPER_CHWIDTH_USE_HT;
+		break;
+	default:
+		return eid;
+	}
+
+	/* check max bandwidth without any disabled channels */
+	punct_update_legacy_bw(hapd->cs_freq_params.punct_bitmap,
+			       hapd->cs_freq_params.channel, &chan_width,
+			       &chan1, &chan2);
 
 	/* bandwidth: 0: 40, 1: 80, 160, 80+80, 4 to 255 reserved as per
 	 * IEEE Std 802.11-2024, 9.4.2.156 and Table 9-316 (VHT Operation
 	 * Information subfields).
 	 */
-	switch (hapd->cs_freq_params.bandwidth) {
-	case 320:
+	switch (chan_width) {
+	case CONF_OPER_CHWIDTH_320MHZ:
 		/* As per IEEE P802.11be/D7.0, 35.15.3,
 		 * For EHT BSS operating channel width wider than 160 MHz,
 		 * the announced BSS bandwidth in the Wide Bandwidth
@@ -9188,7 +9211,7 @@ static u8 * hostapd_eid_wb_channel_switch(struct hostapd_data *hapd, u8 *eid,
 			chan1 += 16;
 
 		/* fallthrough */
-	case 160:
+	case CONF_OPER_CHWIDTH_160MHZ:
 		/* Update the CCFS0 and CCFS1 values in the element based on
 		 * IEEE Std 802.11-2024, Table 9-316 (VHT Operation
 		 * Information subfields).
@@ -9207,10 +9230,15 @@ static u8 * hostapd_eid_wb_channel_switch(struct hostapd_data *hapd, u8 *eid,
 
 		bw = 1;
 		break;
-	case 80:
+	case CONF_OPER_CHWIDTH_80MHZ:
 		bw = 1;
 		break;
-	case 40:
+	case CONF_OPER_CHWIDTH_USE_HT:
+		/* Wide Bandwidth Channel Switch element is present only
+		 * when the new channel width is wider than 20 MHz
+		 */
+		if (chan1 == hapd->cs_freq_params.channel)
+			return eid;
 		bw = 0;
 		break;
 	default:
@@ -9302,7 +9330,7 @@ static u8 * hostapd_eid_bw_indication(struct hostapd_data *hapd, u8 *eid,
 u8 * hostapd_eid_chsw_wrapper(struct hostapd_data *hapd, u8 *eid)
 {
 	u8 chan1 = 0, chan2 = 0;
-	u8 *eid_len_offset;
+	u8 *eid_len_offset, *start_pos;
 	int freq1;
 
 	if (!(hapd->iconf->ieee80211ac && !hapd->conf->disable_11ac) &&
@@ -9328,6 +9356,7 @@ u8 * hostapd_eid_chsw_wrapper(struct hostapd_data *hapd, u8 *eid)
 				   &chan2) != HOSTAPD_MODE_IEEE80211A)
 		return eid;
 
+	start_pos = eid;
 	*eid++ = WLAN_EID_CHANNEL_SWITCH_WRAPPER;
 	eid_len_offset = eid++; /* Length of Channel Switch Wrapper element */
 
@@ -9340,7 +9369,11 @@ u8 * hostapd_eid_chsw_wrapper(struct hostapd_data *hapd, u8 *eid)
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+	if (eid == start_pos + 2)
+		return start_pos;
+
 	*eid_len_offset = (eid - eid_len_offset) - 1;
+
 	return eid;
 }
 

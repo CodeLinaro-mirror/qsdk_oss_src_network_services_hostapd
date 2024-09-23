@@ -388,7 +388,7 @@ static void punct_update_legacy_bw_80(u8 bitmap, u8 pri_chan, u8 *seg0)
 	switch (bitmap) {
 	case 0x6:
 	case 0x9:
-		*seg0 = 0;
+		*seg0 = pri_chan;
 		return;
 	case 0x8:
 	case 0x4:
@@ -409,7 +409,7 @@ static void punct_update_legacy_bw_80(u8 bitmap, u8 pri_chan, u8 *seg0)
 		sec_chan = pri_chan - 4;
 
 	if (bitmap & BIT((sec_chan - first_chan) / 4))
-		*seg0 = 0;
+		*seg0 = pri_chan;
 }
 
 
