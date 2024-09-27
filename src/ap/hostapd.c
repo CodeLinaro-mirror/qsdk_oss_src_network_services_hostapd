@@ -5929,6 +5929,9 @@ int hostapd_mld_remove_link(struct hostapd_data *hapd)
 	if (!mld)
 		return -1;
 
+	if (hapd->link.next == NULL || hapd->link.prev == NULL)
+		return -1;
+
 	dl_list_del(&hapd->link);
 	mld->free_links |= BIT(hapd->mld_link_id);
 	mld->num_links--;
