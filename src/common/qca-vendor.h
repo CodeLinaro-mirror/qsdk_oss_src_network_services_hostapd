@@ -17730,6 +17730,9 @@ enum qca_wlan_vendor_attr_afc_event {
  * the attributes defined in enum qca_wlan_vendor_attr_afc_opclass_info and
  * enum qca_wlan_vendor_attr_afc_chan_eirp_info. Required attribute.
  *
+ * @QCA_WLAN_VENDOR_ATTR_AFC_RESP_HW_IDX: (u8) array index in wiphy @hw_chans
+ * to refer an underlying hw mac for which the AFC Response data is
+ * advertised.
  */
 enum qca_wlan_vendor_attr_afc_response {
 	QCA_WLAN_VENDOR_ATTR_AFC_RESP_INVALID = 0,
@@ -17741,6 +17744,7 @@ enum qca_wlan_vendor_attr_afc_response {
 	QCA_WLAN_VENDOR_ATTR_AFC_RESP_AFC_SERVER_RESP_CODE = 6,
 	QCA_WLAN_VENDOR_ATTR_AFC_RESP_FREQ_PSD_INFO = 7,
 	QCA_WLAN_VENDOR_ATTR_AFC_RESP_OPCLASS_CHAN_EIRP_INFO = 8,
+	QCA_WLAN_VENDOR_ATTR_AFC_RESP_HW_IDX = 9,
 
 	QCA_WLAN_VENDOR_ATTR_AFC_RESP_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_AFC_RESP_MAX =
