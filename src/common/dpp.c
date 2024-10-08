@@ -4073,6 +4073,10 @@ int dpp_configurator_own_config(struct dpp_authentication *auth,
 		   "DPP: Building own configuration/connector with curve %s",
 		   auth->curve->name);
 
+#ifdef CONFIG_DPP2
+	auth->peer_version = 2;
+#endif
+
 	auth->own_protocol_key = dpp_gen_keypair(auth->curve);
 	if (!auth->own_protocol_key)
 		return -1;

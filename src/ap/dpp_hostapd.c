@@ -349,8 +349,8 @@ static int hostapd_dpp_pkex_done(void *ctx, void *conn,
 
 	auth = dpp_auth_init(hapd->iface->interfaces->dpp, hapd->msg_ctx,
 			     peer_bi, own_bi, allowed_roles, 0,
-			     hapd->iface->hw_features,
-			     hapd->iface->num_hw_features);
+			     hapd->iface->current_mode,
+			     1);
 	if (!auth)
 		return -1;
 
@@ -792,15 +792,16 @@ static int hostapd_dpp_auth_init_next(struct hostapd_data *hapd)
 		hapd->dpp_resp_wait_time : 2000;
 	if (wait_time > max_wait_time)
 		wait_time = max_wait_time;
-	wait_time += 10; /* give the driver some extra time to complete */
-	eloop_register_timeout(wait_time / 1000, (wait_time % 1000) * 1000,
-			       hostapd_dpp_reply_wait_timeout, hapd, NULL);
-	wait_time -= 10;
 	if (auth->neg_freq > 0 && freq != auth->neg_freq) {
+		wait_time = 500;
 		wpa_printf(MSG_DEBUG,
 			   "DPP: Initiate on %u MHz and move to neg_freq %u MHz for response",
 			   freq, auth->neg_freq);
 	}
+	wait_time += 10; /* give the driver some extra time to complete */
+	eloop_register_timeout(wait_time / 1000, (wait_time % 1000) * 1000,
+			       hostapd_dpp_reply_wait_timeout, hapd, NULL);
+	wait_time -= 10;
 	wpa_msg(hapd->msg_ctx, MSG_INFO, DPP_EVENT_TX "dst=" MACSTR
 		" freq=%u type=%d",
 		MAC2STR(dst), freq, DPP_PA_AUTHENTICATION_REQ);
@@ -938,8 +939,8 @@ int hostapd_dpp_auth_init(struct hostapd_data *hapd, const char *cmd)
 
 	auth = dpp_auth_init(hapd->iface->interfaces->dpp, hapd->msg_ctx,
 			     peer_bi, own_bi, allowed_roles, neg_freq,
-			     hapd->iface->hw_features,
-			     hapd->iface->num_hw_features);
+			     hapd->iface->current_mode,
+			     1);
 	if (!auth)
 		goto fail;
 	hostapd_dpp_set_testing_options(hapd, auth);
@@ -969,7 +970,6 @@ int hostapd_dpp_auth_init(struct hostapd_data *hapd, const char *cmd)
 fail:
 	return -1;
 }
-
 
 int hostapd_dpp_listen(struct hostapd_data *hapd, const char *cmd)
 {
@@ -3709,7 +3709,7 @@ hostapd_dpp_chirp_scan_res_handler(struct hostapd_iface *iface)
 
 	/* Preferred chirping channels */
 	mode = dpp_get_mode(hapd, HOSTAPD_MODE_IEEE80211G);
-	if (mode) {
+	if (mode && (mode == hapd->iface->current_mode)) {
 		for (c = 0; c < mode->num_channels; c++) {
 			struct hostapd_channel_data *chan = &mode->channels[c];
 
@@ -3725,7 +3725,7 @@ hostapd_dpp_chirp_scan_res_handler(struct hostapd_iface *iface)
 		int_array_add_unique(&hapd->dpp_chirp_freqs, 2437);
 
 	mode = dpp_get_mode(hapd, HOSTAPD_MODE_IEEE80211A);
-	if (mode) {
+	if (mode && (mode == hapd->iface->current_mode)) {
 		int chan44 = 0, chan149 = 0;
 
 		for (c = 0; c < mode->num_channels; c++) {
@@ -3746,7 +3746,7 @@ hostapd_dpp_chirp_scan_res_handler(struct hostapd_iface *iface)
 	}
 
 	mode = dpp_get_mode(hapd, HOSTAPD_MODE_IEEE80211AD);
-	if (mode) {
+	if (mode && (mode == hapd->iface->current_mode)) {
 		for (c = 0; c < mode->num_channels; c++) {
 			struct hostapd_channel_data *chan = &mode->channels[c];
 
