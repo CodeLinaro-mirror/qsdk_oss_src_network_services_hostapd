@@ -249,8 +249,14 @@ u8 * hostapd_eid_he_operation(struct hostapd_data *hapd, u8 *eid)
 		else
 			control = center_idx_to_bw_6ghz(seg0);
 
-		control |= hapd->iconf->he_6ghz_reg_pwr_type <<
-			HE_6GHZ_OPER_INFO_CTRL_REG_INFO_SHIFT;
+		if (hapd->iconf->he_6ghz_reg_pwr_type == HE_REG_INFO_6GHZ_AP_TYPE_SP &&
+		    hapd->iconf->enable_6ghz_composite_ap) {
+			control |= HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP <<
+				HE_6GHZ_OPER_INFO_CTRL_REG_INFO_SHIFT;
+		} else {
+			control |= hapd->iconf->he_6ghz_reg_pwr_type <<
+				HE_6GHZ_OPER_INFO_CTRL_REG_INFO_SHIFT;
+		}
 
 		if (center_idx_to_bw_6ghz(seg0) &&
 		    !is_6ghz_psc_frequency(ieee80211_chan_to_freq(NULL,

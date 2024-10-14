@@ -1296,6 +1296,12 @@ struct hostapd_config {
 #define MULTI_MBSSID_GROUP_SIZE_DEFAULT 4
 	u8 group_size;
 
+	/* Config to enable composite AP mode.
+	 * Will be enabled by default if not explicitly disabled in the
+	 * hostpd config.
+	 */
+	bool enable_6ghz_composite_ap;
+
 	/* Set I2R LMR policy to allow LMR response from ISTA */
 	bool i2r_lmr_policy;
 };
