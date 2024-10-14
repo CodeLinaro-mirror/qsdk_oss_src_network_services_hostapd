@@ -1328,6 +1328,12 @@ struct hostapd_config {
 	} mbssid;
 	unsigned int mbssid_max;
 
+	/* Config to enable composite AP mode.
+	 * Will be enabled by default if not explicitly disabled in the
+	 * hostpd config.
+	 */
+	bool enable_6ghz_composite_ap;
+
 	/* Whether to enable TWT responder in HT and VHT modes */
 	bool ht_vht_twt_responder;
 
