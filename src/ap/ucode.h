@@ -14,6 +14,7 @@ struct hostapd_ucode_bss {
 struct hostapd_ucode_iface {
 #ifdef UCODE_SUPPORT
 	int idx;
+	int radio_id;
 #endif
 };
 
