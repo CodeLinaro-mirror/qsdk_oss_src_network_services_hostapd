@@ -10,6 +10,7 @@ struct wpa_supplicant;
 struct wpas_ucode_bss {
 #ifdef UCODE_SUPPORT
 	unsigned int idx;
+	int radio_bitmap;
 #endif
 };
 
