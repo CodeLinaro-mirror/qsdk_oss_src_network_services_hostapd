@@ -9667,6 +9667,13 @@ static bool hostapd_skip_rnr(size_t i, struct mbssid_ie_profiles *skip_profiles,
 	    (*match_idx < skip_profiles->start ||
 	     *match_idx >= skip_profiles->end))
 		return true;
+	/* When 6GHz is in STANDALONE MODE with MULTI_MBSSID_GROUPING enabled
+	 * only the group's RNR info should be reported in FILS discovery, so
+	 * don't include the other group's info in RNR.
+	 */
+	if (!mld_update && (get_colocation_mode(reporting_hapd) == STANDALONE_6GHZ) &&
+	    (hostapd_mbssid_get_tx_bss(reporting_hapd) != hostapd_mbssid_get_tx_bss(bss)))
+		return true;
 #endif /* CONFIG_IEEE80211BE */
 
 	return false;
