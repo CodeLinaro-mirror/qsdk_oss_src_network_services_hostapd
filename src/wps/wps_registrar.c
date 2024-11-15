@@ -560,7 +560,8 @@ static int wps_build_sel_pbc_reg_uuid_e(struct wps_registrar *reg,
 		return 0;
 	if (reg->sel_reg_dev_password_id_override >= 0)
 		id = reg->sel_reg_dev_password_id_override;
-	if (id != DEV_PW_PUSHBUTTON || !reg->dualband)
+	if ((id != DEV_PW_PUSHBUTTON || !reg->dualband) &&
+	    !reg->wps->wps_mbssid_cb(reg->wps->cb_ctx))
 		return 0;
 	return wps_build_uuid_e(msg, reg->wps->uuid);
 }
