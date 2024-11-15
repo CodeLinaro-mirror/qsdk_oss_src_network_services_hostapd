@@ -617,7 +617,13 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	UPDATE_VAL(op_class, "op_class");
 	UPDATE_VAL(hw_mode, "hw_mode");
 	UPDATE_VAL(channel, "channel");
-	UPDATE_VAL(secondary_channel, "sec_channel");
+
+	intval = ucv_int64_get(ucv_object_get(info, "sec_channel", NULL));
+	if (!errno) {
+		conf->secondary_channel = intval;
+		changed = true;
+	}
+
 	if (!changed &&
 	    (iface->bss[0]->beacon_set_done ||
 	     iface->state == HAPD_IFACE_DFS))
