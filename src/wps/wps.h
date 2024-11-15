@@ -850,6 +850,13 @@ struct wps_context {
 	/* Whether to send WPA2-PSK passphrase as a passphrase instead of PSK
 	 * for WPA3-Personal transition mode needs. */
 	bool use_passphrase;
+
+	/**
+	 * wps_mbssid_cb - fetch mbssid
+	 * @ctx: Higher layer context data (cb_ctx)
+	 * Return: number of mbssid
+	 */
+	 int (*wps_mbssid_cb)(void *ctx);
 };
 
 struct wps_registrar *

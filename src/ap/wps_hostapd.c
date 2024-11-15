@@ -940,6 +940,12 @@ static void hostapd_wps_event_cb(void *ctx, enum wps_event event,
 		hapd->wps_event_cb(hapd->wps_event_cb_ctx, event, data);
 }
 
+static int hostapd_wps_mbssid_cb (void *ctx)
+{
+	struct hostapd_data *hapd = ctx;
+
+	return hapd->iconf->mbssid;
+}
 
 static int hostapd_wps_rf_band_cb(void *ctx)
 {
@@ -1099,6 +1105,7 @@ int hostapd_init_wps(struct hostapd_data *hapd,
 	wps->cred_cb = hostapd_wps_cred_cb;
 	wps->event_cb = hostapd_wps_event_cb;
 	wps->rf_band_cb = hostapd_wps_rf_band_cb;
+	wps->wps_mbssid_cb = hostapd_wps_mbssid_cb;
 	wps->cb_ctx = hapd;
 
 	os_memset(&cfg, 0, sizeof(cfg));
