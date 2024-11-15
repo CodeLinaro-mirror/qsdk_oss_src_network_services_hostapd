@@ -155,6 +155,7 @@ void wpas_ucode_event(struct wpa_supplicant *wpa_s, int event, union wpa_event_d
 	if (event == EVENT_CH_SWITCH_STARTED) {
 		ucv_object_add(val, "csa_count", ucv_int64_new(data->ch_switch.count));
 		ucv_object_add(val, "frequency", ucv_int64_new(data->ch_switch.freq));
+		ucv_object_add(val, "chan_width", ucv_int64_new(data->ch_switch.ch_width));
 		ucv_object_add(val, "sec_chan_offset", ucv_int64_new(data->ch_switch.ch_offset));
 		ucv_object_add(val, "center_freq1", ucv_int64_new(data->ch_switch.cf1));
 		ucv_object_add(val, "center_freq2", ucv_int64_new(data->ch_switch.cf2));
@@ -291,6 +292,7 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 	uc_value_t *radio_id = uc_fn_arg(0);
 	s8 hw_idx;
 	int freq, sec_chan, i;
+	struct wpa_signal_info si = {0};
 	struct wpa_mlo_signal_info mlo_si = {0};
 
 	if (!wpa_s)
@@ -304,10 +306,8 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 	hw_idx = ucv_int64_get(radio_id);
 
 	if (wpa_s->wpa_state == WPA_COMPLETED && wpa_s->valid_links) {
-		wpa_printf(MSG_INFO, "%s: wpa_s->valid_links=%d and hw_idx %d", __func__, wpa_s->valid_links, hw_idx);
 		for_each_link(wpa_s->valid_links, i) {
 			freq = wpa_s->links[i].freq;
-			wpa_printf(MSG_INFO, "%s: freq: %d for link_id %d", __func__, freq, i);
 			if ( hw_idx == wpa_get_hw_idx_by_freq(wpa_s, freq )) {
 				ucv_object_add(ret, "frequency", ucv_int64_new(freq));
 				sec_chan = wpas_get_sec_chan(wpa_s->links[i].bss);
@@ -317,11 +317,7 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 						ucv_object_add(ret, "chan_width", ucv_int64_new(mlo_si.links[i].chanwidth));
 						ucv_object_add(ret, "center_freq1", ucv_int64_new(mlo_si.links[i].center_frq1));
 						ucv_object_add(ret, "center_freq2", ucv_int64_new(mlo_si.links[i].center_frq2));
-						wpa_printf(MSG_INFO, "%s: status frequency filled %d width %d cf1 %d cf2 %d for radio_id %d", __func__, freq,
-						mlo_si.links[i].chanwidth, mlo_si.links[i].center_frq1, mlo_si.links[i].center_frq2, hw_idx);
 					}
-				} else {
-						wpa_printf(MSG_ERROR, "%s: error getting signal poll");
 				}
 			}
 		}
@@ -339,6 +335,17 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 		sec_chan = wpas_get_sec_chan(bss);
 		ucv_object_add(ret, "sec_chan_offset", ucv_int64_new(sec_chan));
 		ucv_object_add(ret, "frequency", ucv_int64_new(bss->freq));
+		if (wpa_s->wpa_state == WPA_COMPLETED &&
+		    wpa_drv_signal_poll(wpa_s, &si) == 0) {
+			if (si.chanwidth != CHAN_WIDTH_UNKNOWN) {
+				ucv_object_add(ret, "chan_width",
+					       ucv_int64_new(si.chanwidth));
+				ucv_object_add(ret, "center_freq1",
+					       ucv_int64_new(si.center_frq1));
+				ucv_object_add(ret, "center_freq2",
+					       ucv_int64_new(si.center_frq2));
+			}
+		}
 	}
 
 #ifdef CONFIG_MESH
@@ -347,6 +354,17 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 
 		ucv_object_add(ret, "sec_chan_offset", ucv_int64_new(ifmsh->conf->secondary_channel));
 		ucv_object_add(ret, "frequency", ucv_int64_new(ifmsh->freq));
+		if (wpa_s->wpa_state == WPA_COMPLETED &&
+		    wpa_drv_signal_poll(wpa_s, &si) == 0) {
+			if (si.chanwidth != CHAN_WIDTH_UNKNOWN) {
+				ucv_object_add(ret, "chan_width",
+					       ucv_int64_new(si.chanwidth));
+				ucv_object_add(ret, "center_freq1",
+					       ucv_int64_new(si.center_frq1));
+				ucv_object_add(ret, "center_freq2",
+					       ucv_int64_new(si.center_frq2));
+			}
+		}
 	}
 #endif
 out:

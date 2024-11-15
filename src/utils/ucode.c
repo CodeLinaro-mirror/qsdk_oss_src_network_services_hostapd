@@ -110,10 +110,13 @@ uc_value_t *uc_wpa_freq_info(uc_vm_t *vm, size_t nargs)
 	uc_value_t *freq = uc_fn_arg(0);
 	uc_value_t *sec = uc_fn_arg(1);
 	int width = ucv_uint64_get(uc_fn_arg(2));
+	uc_value_t *chan_width = uc_fn_arg(3);
+	int cf1 = ucv_uint64_get(uc_fn_arg(4));
+	int cf2 = ucv_uint64_get(uc_fn_arg(5));
 	int freq_val, center_idx, center_ofs;
 	enum oper_chan_width chanwidth;
 	enum hostapd_hw_mode hw_mode;
-	u8 op_class, channel, tmp_channel;
+	u8 op_class, channel, tmp_channel, seg0_idx = 0, seg1_idx = 0;
 	const char *modestr;
 	int sec_channel = 0;
 	uc_value_t *ret;
@@ -144,10 +147,38 @@ uc_value_t *uc_wpa_freq_info(uc_vm_t *vm, size_t nargs)
 	case 2:
 		chanwidth = CONF_OPER_CHWIDTH_160MHZ;
 		break;
+	case 9:
+		chanwidth = CONF_OPER_CHWIDTH_320MHZ;
+		break;
 	default:
 		return NULL;
 	}
 
+	if (ucv_type(chan_width) != UC_INTEGER)
+		goto skip_chan_width;
+
+	switch (ucv_int64_get(chan_width)) {
+        case CHAN_WIDTH_80:
+                chanwidth = CONF_OPER_CHWIDTH_80MHZ;
+                break;
+        case CHAN_WIDTH_80P80:
+                chanwidth = CONF_OPER_CHWIDTH_80P80MHZ;
+                break;
+        case CHAN_WIDTH_160:
+                chanwidth = CONF_OPER_CHWIDTH_160MHZ;
+                break;
+        case CHAN_WIDTH_320:
+                chanwidth = CONF_OPER_CHWIDTH_320MHZ;
+                break;
+        case CHAN_WIDTH_20_NOHT:
+        case CHAN_WIDTH_20:
+        case CHAN_WIDTH_40:
+        default:
+                chanwidth = CONF_OPER_CHWIDTH_USE_HT;
+                break;
+        }
+
+skip_chan_width:
 	hw_mode = ieee80211_freq_to_channel_ext(freq_val, sec_channel,
 						chanwidth, &op_class, &channel);
 	switch (hw_mode) {
@@ -174,8 +205,9 @@ uc_value_t *uc_wpa_freq_info(uc_vm_t *vm, size_t nargs)
 	ucv_object_add(ret, "hw_mode_str", ucv_get(ucv_string_new(modestr)));
 	ucv_object_add(ret, "sec_channel", ucv_int64_new(sec_channel));
 	ucv_object_add(ret, "frequency", ucv_int64_new(freq_val));
+	ucv_object_add(ret, "oper_chwidth", ucv_int64_new(chanwidth));
 
-	if (!sec_channel)
+	if (!sec_channel && freq_val < 5900 && !cf1)
 		return ret;
 
 	if (freq_val >= 5900)
@@ -188,12 +220,47 @@ uc_value_t *uc_wpa_freq_info(uc_vm_t *vm, size_t nargs)
 	tmp_channel &= ~((8 << width) - 1);
 	center_idx = tmp_channel + center_ofs + (4 << width) - 1;
 
+	// Handle EHT240 in 5G
+	if (freq_val >= 5500 && freq_val <= 5730 && chanwidth == 9)
+		center_idx=130;
+
 	if (freq_val < 3000)
 		ucv_object_add(ret, "center_seg0_idx", ucv_int64_new(0));
 	else
 		ucv_object_add(ret, "center_seg0_idx", ucv_int64_new(center_idx));
 	center_idx = (center_idx - channel) * 5 + freq_val;
 	ucv_object_add(ret, "center_freq1", ucv_int64_new(center_idx));
+
+	if (!cf1 && !cf2)
+		return ret;
+
+	switch (hw_mode) {
+		case HOSTAPD_MODE_IEEE80211A:
+			if (cf1 == 5935)
+				seg0_idx = (cf1 - 5925) / 5;
+			else if (cf1 > 5950)
+				seg0_idx = (cf1 - 5950) / 5;
+			else if (cf1 > 5000)
+				seg0_idx = (cf1 - 5000) / 5;
+
+			if (cf2 == 5935)
+				seg1_idx = (cf2 - 5925) / 5;
+			else if (cf2 > 5950)
+				seg1_idx = (cf2 - 5950) / 5;
+			else if (cf2 > 5000)
+				seg1_idx = (cf2 - 5000) / 5;
+		break;
+		default:
+			if (cf1)
+				ieee80211_freq_to_chan(cf1, &seg0_idx);
+			if (cf2)
+				ieee80211_freq_to_chan(cf2, &seg1_idx);
+		break;
+	}
+	ucv_object_add(ret, "center_freq1", ucv_int64_new(cf1));
+	ucv_object_add(ret, "center_freq2", ucv_int64_new(cf2));
+	ucv_object_add(ret, "center_seg0_idx", ucv_int64_new(seg0_idx));
+	ucv_object_add(ret, "center_seg1_idx", ucv_int64_new(seg1_idx));
 
 	return ret;
 }
