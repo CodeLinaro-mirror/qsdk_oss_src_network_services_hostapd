@@ -1820,6 +1820,7 @@ hostapd_ml_process_reconf_link(struct hostapd_data *hapd,
 	struct hostapd_data *lhapd, *other_hapd;
 	struct mld_link_info link;
 	struct sta_info *lsta, *other_sta;
+	bool *set_beacon = false;
 
 	lhapd = hostapd_mld_get_link_bss(hapd, link_id);
 	if (!lhapd) /* This cannot be NULL */
@@ -1833,7 +1834,7 @@ hostapd_ml_process_reconf_link(struct hostapd_data *hapd,
 
 	/* Parse STA profile, check the IEs, and send ADD_LINK_STA */
         ieee80211_ml_process_link(lhapd, NULL, assoc_sta, &link, ies, ies_len,
-                                  LINK_PARSE_RECONF, false);
+                                  LINK_PARSE_RECONF, false, set_beacon);
 
 	if (link.status != WLAN_STATUS_SUCCESS)
 		return link.status;
