@@ -3481,11 +3481,18 @@ struct hostapd_iface * hostapd_alloc_iface(void)
 
 
 #ifdef CONFIG_IEEE80211BE
-static void hostapd_bss_alloc_link_id(struct hostapd_data *hapd)
+static int hostapd_bss_alloc_link_id(struct hostapd_data *hapd)
 {
-	hapd->mld_link_id = hapd->mld->next_link_id++;
+	/* All links are exhausted */
+	if (!hapd->mld->free_links)
+		return -1;
+
+	hapd->mld_link_id = ffs(hapd->mld->free_links) - 1;
+	hapd->mld->free_links &= ~BIT(hapd->mld_link_id);
 	wpa_printf(MSG_DEBUG, "AP MLD: %s: Link ID %d assigned.",
 		   hapd->mld->name, hapd->mld_link_id);
+
+	return 0;
 }
 #endif /* CONFIG_IEEE80211BE */
 
@@ -3515,7 +3522,8 @@ void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
 
 		hapd->mld = mld;
 		hostapd_mld_ref_inc(mld);
-		hostapd_bss_alloc_link_id(hapd);
+		if (hostapd_bss_alloc_link_id(hapd))
+			goto fail;
 		break;
 	}
 
@@ -3528,6 +3536,7 @@ void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
 
 	os_strlcpy(mld->name, conf->iface, sizeof(conf->iface));
 	dl_list_init(&mld->links);
+	mld->free_links = 0x7FFF;
 	mld->ctrl_sock = -1;
 	if (hapd->conf->ctrl_interface)
 		mld->ctrl_interface = os_strdup(hapd->conf->ctrl_interface);
@@ -3541,7 +3550,8 @@ void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
 
 	hapd->mld = mld;
 	hostapd_mld_ref_inc(mld);
-	hostapd_bss_alloc_link_id(hapd);
+	if (hostapd_bss_alloc_link_id(hapd))
+		goto fail;
 
 	all_mld = os_realloc_array(interfaces->mld, interfaces->mld_count + 1,
 				   sizeof(struct hostapd_mld *));
@@ -4197,6 +4207,13 @@ int hostapd_disable_iface(struct hostapd_iface *hapd_iface)
 		hostapd_bss_deinit_no_free(hapd);
 		hostapd_bss_link_deinit(hapd);
 		hostapd_free_hapd_data(hapd);
+#ifdef CONFIG_IEEE80211BE
+	/* Retain the link ID to ensure that the disabled interface link ID is not
+	 * utilized during dynamic link addition.
+	 */
+		if (hapd->mld)
+			hapd->mld->free_links &= ~BIT(hapd->mld_link_id);
+#endif /* CONFIG_IEEE80211BE */
 	}
 
 	hostapd_deinit_driver(hapd_iface->bss[0]->driver,
@@ -5913,6 +5930,7 @@ int hostapd_mld_remove_link(struct hostapd_data *hapd)
 		return -1;
 
 	dl_list_del(&hapd->link);
+	mld->free_links |= BIT(hapd->mld_link_id);
 	mld->num_links--;
 
 	wpa_printf(MSG_DEBUG, "AP MLD %s: Link ID %d removed. num_links: %d",
