@@ -852,9 +852,11 @@ int hostapd_driver_scan(struct hostapd_data *hapd,
 			h_hapd = h_iface->bss[0];
 
 			if (hostapd_is_ml_partner(hapd, h_hapd) &&
-			    h_hapd->iface->state == HAPD_IFACE_ACS) {
+			    (h_hapd->iface->state == HAPD_IFACE_ACS ||
+			     h_hapd->iface->state == HAPD_IFACE_HT_SCAN) &&
+			    h_hapd->iface->scan_cb) {
 				wpa_printf(MSG_INFO,
-					   "ACS in progress in a partner link - try to scan later");
+					   "ACS in progress in a partner link %d- try to scan later", hapd->mld_link_id);
 				return -EBUSY;
 			}
 		}
