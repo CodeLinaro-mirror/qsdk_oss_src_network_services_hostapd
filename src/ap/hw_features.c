@@ -594,7 +594,7 @@ static void ap_ht40_scan_retry(void *eloop_data, void *user_data)
 		wpa_printf(MSG_ERROR,
 			   "Failed to request a scan of neighboring BSSes ret=%d (%s) - try to scan again (attempt %d)",
 			   ret, strerror(-ret), iface->num_ht40_scan_tries);
-		eloop_register_timeout(1, 0, ap_ht40_scan_retry, iface, NULL);
+		eloop_register_timeout(5, 0, ap_ht40_scan_retry, iface, NULL);
 		return;
 	}
 
