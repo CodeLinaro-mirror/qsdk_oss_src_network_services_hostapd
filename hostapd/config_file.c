@@ -2328,6 +2328,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->use_ru_puncture_dfs = atoi(pos);
 	} else if (os_strcmp(buf, "enable_6ghz_composite_ap") == 0) {
 		conf->enable_6ghz_composite_ap = atoi(pos);
+	} else if (os_strcmp(buf, "enable_mcs15") == 0) {
+		conf->enable_mcs15 = atoi(pos);
 	} else if (os_strcmp(buf, "ieee8021x") == 0) {
 		bss->ieee802_1x = atoi(pos);
 	} else if (os_strcmp(buf, "eapol_version") == 0) {
