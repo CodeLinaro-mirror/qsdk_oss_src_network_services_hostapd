@@ -1333,6 +1333,7 @@ struct hostapd_config {
 	 * hostpd config.
 	 */
 	bool enable_6ghz_composite_ap;
+	bool enable_mcs15;
 
 	/* Whether to enable TWT responder in HT and VHT modes */
 	bool ht_vht_twt_responder;

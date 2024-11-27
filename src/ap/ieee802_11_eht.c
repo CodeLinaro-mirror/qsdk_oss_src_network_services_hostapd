@@ -239,6 +239,8 @@ u8 * hostapd_eid_eht_operation(struct hostapd_data *hapd, u8 *eid)
 
 	if (hapd->iconf->eht_default_pe_duration)
 		oper->oper_params |= EHT_OPER_DEFAULT_PE_DURATION;
+	if (!hapd->iconf->enable_mcs15)
+		oper->oper_params |= EHT_OPER_MCS15_DISABLE;
 
 	/* TODO: Fill in appropriate EHT-MCS max Nss information */
 	oper->basic_eht_mcs_nss_set[0] = 0x11;
