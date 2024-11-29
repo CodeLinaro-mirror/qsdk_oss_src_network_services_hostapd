@@ -1124,7 +1124,6 @@ int main(int argc, char *argv[])
 	ret = 0;
 
  out:
-	hostapd_ucode_free();
 	hostapd_global_ctrl_iface_deinit(&interfaces);
 	/* Sending deauth to all stations before deinit */
 	hostapd_deauthenticate_stations(&interfaces);
@@ -1143,6 +1142,7 @@ int main(int argc, char *argv[])
 	interfaces.count = 0;
 
 	hostapd_global_cleanup_mld(&interfaces);
+	hostapd_ucode_free();
 
 #ifdef CONFIG_DPP
 	dpp_global_deinit(interfaces.dpp);
