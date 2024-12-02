@@ -1610,6 +1610,41 @@ void handle_probe_req(struct hostapd_data *hapd,
 	res = ssid_match(hapd, elems.ssid, elems.ssid_len,
 			 elems.ssid_list, elems.ssid_list_len,
 			 elems.short_ssid_list, elems.short_ssid_list_len);
+	/* Check the SSID of Non Transmitting BSS if it is not
+	 * a broadcast probe request frame
+	 */
+	if (res == NO_SSID_MATCH && hapd->iconf->mbssid &&
+	    !(mgmt->da[0] & 0x01)) {
+		if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
+			struct hostapd_data *bss;
+			struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
+
+			dl_list_for_each(bss, &group->bss_list,
+					 struct hostapd_data, mbssid_bss) {
+				if (bss == hapd)
+					continue;
+				res = ssid_match(bss, elems.ssid,
+						 elems.ssid_len, elems.ssid_list,
+						 elems.ssid_list_len,
+						 elems.short_ssid_list,
+						 elems.short_ssid_list_len);
+				if (res != NO_SSID_MATCH)
+					break;
+			}
+		} else {
+			for (i = 0; i < hapd->iface->num_bss; i++) {
+				if (hapd->iface->bss[i] == hapd)
+					continue;
+				res = ssid_match(hapd->iface->bss[i], elems.ssid,
+						 elems.ssid_len, elems.ssid_list,
+						 elems.ssid_list_len,
+						 elems.short_ssid_list,
+						 elems.short_ssid_list_len);
+				if (res != NO_SSID_MATCH)
+					break;
+			}
+		}
+	}
 	if (res == NO_SSID_MATCH) {
 		if (!(mgmt->da[0] & 0x01)) {
 			wpa_printf(MSG_MSGDUMP, "Probe Request from " MACSTR
