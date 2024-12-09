@@ -726,6 +726,34 @@ void set_valid_for_each_partner_link_sta(struct hostapd_data *hapd,
 			lsta->mld_info.links[hapd->mld_link_id].valid = valid;
 	}
 }
+
+
+int hostapd_free_partner_link_stas(struct hostapd_data *hapd,
+				   struct sta_info *sta,
+				   void *ctx)
+{
+	struct sta_info *lsta;
+	struct hostapd_data *lhapd;
+
+	if (!hostapd_is_multiple_link_mld(hapd))
+		return -1;
+
+	for_each_mld_link(lhapd, hapd) {
+		if (hapd == lhapd)
+			continue;
+
+		lsta = ap_get_sta(lhapd, sta->addr);
+		if (lsta && ap_sta_is_mld(lhapd, lsta) &&
+		    lsta->mld_info.links[hapd->mld_link_id].valid) {
+			wpa_printf(MSG_DEBUG, "Removing link station " MACSTR,
+				   MAC2STR(lsta->addr));
+			mlme_deletekeys_request(lhapd, lsta);
+			ap_free_sta(lhapd, lsta);
+		}
+	}
+
+	return 0;
+}
 #endif /* CONFIG_IEEE80211BE */
 
 

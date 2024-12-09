@@ -1088,6 +1088,9 @@ static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason)
 
 void hostapd_bss_deinit_no_free(struct hostapd_data *hapd)
 {
+#ifdef CONFIG_IEEE80211BE
+	ap_for_each_sta(hapd, hostapd_free_partner_link_stas, NULL);
+#endif /* CONFIG_IEEE80211BE */
 	hostapd_free_stas(hapd);
 	hostapd_flush_old_stations(hapd, WLAN_REASON_DEAUTH_LEAVING);
 #ifdef CONFIG_WEP

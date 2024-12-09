@@ -490,4 +490,8 @@ void clear_wpa_sm_for_each_partner_link(struct hostapd_data *hapd,
 void set_valid_for_each_partner_link_sta(struct hostapd_data *hapd,
                                            struct sta_info *psta,
                                            int valid);
+
+int hostapd_free_partner_link_stas(struct hostapd_data *hapd,
+				   struct sta_info *sta,
+				   void *ctx);
 #endif /* STA_INFO_H */
