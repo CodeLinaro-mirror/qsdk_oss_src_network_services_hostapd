@@ -566,4 +566,7 @@ void set_valid_for_each_partner_link_sta(struct hostapd_data *hapd,
 					int valid);
 #endif /* CONFIG_IEEE80211BE */
 
+int hostapd_free_partner_link_stas(struct hostapd_data *hapd,
+				   struct sta_info *sta,
+				   void *ctx);
 #endif /* STA_INFO_H */
