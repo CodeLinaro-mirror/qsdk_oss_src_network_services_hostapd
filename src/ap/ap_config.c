@@ -1265,6 +1265,8 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 				    struct hostapd_config *conf,
 				    int full_config)
 {
+	size_t i;
+
 	if (full_config && is_6ghz_op_class(conf->op_class) &&
 	    !hostapd_config_check_bss_6g(bss))
 		return -1;
@@ -1318,8 +1320,6 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 	}
 
 	if (full_config && !is_zero_ether_addr(bss->bssid)) {
-		size_t i;
-
 		for (i = 0; i < conf->num_bss; i++) {
 			if (conf->bss[i] != bss &&
 			    (hostapd_mac_comp(conf->bss[i]->bssid,
@@ -1511,6 +1511,23 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 		wpa_printf(MSG_INFO,
 			   "Enabling beacon protection as IEEE 802.11be is enabled for this BSS");
 	}
+
+	/* Avoid duplicate radio link in same MLD by comparing the interface name
+	 * of all the other 11BE capable bss configured and ensure that it does
+	 * not have same interface name.
+	 */
+	for (i = 0; i < conf->num_bss; i++) {
+		if (conf->bss[i] != bss && (conf->ieee80211be && !bss->disable_11be)) {
+			if (os_strncmp(conf->bss[i]->iface, bss->iface,
+				       IFNAMSIZ) == 0) {
+				wpa_printf(MSG_ERROR, "Duplicate MLD %s on link"
+					   " BSSID " MACSTR,
+					   bss->iface, MAC2STR(bss->bssid));
+				return -1;
+			}
+		}
+	}
+
 
 	if ((!conf->ieee80211be || bss->disable_11be) && bss->mld_ap) {
 		wpa_printf(MSG_INFO,
