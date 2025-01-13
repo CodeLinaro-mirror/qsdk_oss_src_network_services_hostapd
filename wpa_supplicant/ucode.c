@@ -159,6 +159,8 @@ void wpas_ucode_event(struct wpa_supplicant *wpa_s, int event, union wpa_event_d
 		ucv_object_add(val, "sec_chan_offset", ucv_int64_new(data->ch_switch.ch_offset));
 		ucv_object_add(val, "center_freq1", ucv_int64_new(data->ch_switch.cf1));
 		ucv_object_add(val, "center_freq2", ucv_int64_new(data->ch_switch.cf2));
+		ucv_object_add(val, "link_id", ucv_int64_new(data->ch_switch.link_id));
+		ucv_object_add(val, "punct_bitmap", ucv_int64_new(data->ch_switch.punct_bitmap));
 	}
 
 	ucv_put(wpa_ucode_call(5));
@@ -317,6 +319,7 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 						ucv_object_add(ret, "chan_width", ucv_int64_new(mlo_si.links[i].chanwidth));
 						ucv_object_add(ret, "center_freq1", ucv_int64_new(mlo_si.links[i].center_frq1));
 						ucv_object_add(ret, "center_freq2", ucv_int64_new(mlo_si.links[i].center_frq2));
+						ucv_object_add(ret, "punct_bitmap", ucv_int64_new(mlo_si.links[i].punct_bitmap));
 					}
 				}
 			}
@@ -344,6 +347,7 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 					       ucv_int64_new(si.center_frq1));
 				ucv_object_add(ret, "center_freq2",
 					       ucv_int64_new(si.center_frq2));
+				ucv_object_add(ret, "punct_bitmap", ucv_int64_new(si.punct_bitmap));
 			}
 		}
 	}
@@ -363,6 +367,8 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 					       ucv_int64_new(si.center_frq1));
 				ucv_object_add(ret, "center_freq2",
 					       ucv_int64_new(si.center_frq2));
+				ucv_object_add(ret, "punct_bitmap",
+					       ucv_int64_new(si.punct_bitmap));
 			}
 		}
 	}
