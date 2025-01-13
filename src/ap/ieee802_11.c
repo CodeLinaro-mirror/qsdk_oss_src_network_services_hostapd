@@ -10542,6 +10542,27 @@ static void hostapd_ml_handle_assoc_cb(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 }
 
+#ifdef CONFIG_IEEE80211BE
+static void set_wds_sta_flag(struct hostapd_data *hapd,
+			     struct sta_info *sta)
+{
+	struct sta_info *psta;
+	struct hostapd_data *phapd;
+	u16 ifname_id = sta->wds_ifname_id;
+
+	if (ap_sta_is_mld(hapd, sta)) {
+		for_each_mld_link(phapd, hapd) {
+			if (phapd == hapd)
+				continue;
+			psta = ap_get_sta(phapd, sta->addr);
+			if (psta) {
+				psta->wds_ifname_id = ifname_id;
+				psta->flags |= WLAN_STA_WDS;
+			}
+		}
+	}
+}
+#endif /* CONFIG_IEEE80211BE */
 
 static void handle_assoc_cb(struct hostapd_data *hapd,
 			    const struct ieee80211_mgmt *mgmt,
@@ -10754,6 +10775,7 @@ skip_update:
 		sta->pending_wds_enable = 0;
 		sta->flags |= WLAN_STA_WDS;
 #ifdef CONFIG_IEEE80211BE
+		set_wds_sta_flag(hapd, sta);
 		if (hapd->conf->mld_ap &&
 		    hostapd_get_wds_mld_ifname_id(hapd, sta) < 0) {
 			wpa_printf(MSG_DEBUG,
@@ -11182,6 +11204,9 @@ void ieee802_11_rx_from_unknown(struct hostapd_data *hapd, const u8 *src,
 				   "STA " MACSTR " (ifname_id %u)",
 				   MAC2STR(sta->addr), ifname_id);
 			sta->flags |= WLAN_STA_WDS;
+#ifdef CONFIG_IEEE80211BE
+			set_wds_sta_flag(hapd, sta);
+#endif /* CONFIG_IEEE80211BE */
 			ret = hostapd_set_wds_sta(hapd, ifname_wds,
 						  sta->addr, ifname_id, 1);
 			if (!ret)
