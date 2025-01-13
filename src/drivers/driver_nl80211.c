@@ -10404,6 +10404,9 @@ static int get_channel_width(struct nl_msg *msg, void *arg)
 		if (tb[NL80211_ATTR_CENTER_FREQ2])
 			sig_change->center_frq2 =
 				nla_get_u32(tb[NL80211_ATTR_CENTER_FREQ2]);
+		if (tb[NL80211_ATTR_PUNCT_BITMAP])
+			sig_change->punct_bitmap =
+				nla_get_u32(tb[NL80211_ATTR_PUNCT_BITMAP]);
 	}
 
 	return NL_SKIP;
@@ -10539,6 +10542,10 @@ static int get_links_channel_width(struct nl_msg *msg, void *arg)
 		if (tb2[NL80211_ATTR_CENTER_FREQ2])
 			mlo_sig->links[link_id].center_frq2 =
 				nla_get_u32(tb2[NL80211_ATTR_CENTER_FREQ2]);
+
+		if (tb2[NL80211_ATTR_PUNCT_BITMAP])
+			mlo_sig->links[link_id].punct_bitmap =
+				nla_get_u32(tb2[NL80211_ATTR_PUNCT_BITMAP]);
 	}
 
 	return NL_SKIP;
