@@ -113,6 +113,7 @@ uc_value_t *uc_wpa_freq_info(uc_vm_t *vm, size_t nargs)
 	uc_value_t *chan_width = uc_fn_arg(3);
 	int cf1 = ucv_uint64_get(uc_fn_arg(4));
 	int cf2 = ucv_uint64_get(uc_fn_arg(5));
+	int punct_bitmap = ucv_uint64_get(uc_fn_arg(6));
 	int freq_val, center_idx, center_ofs;
 	enum oper_chan_width chanwidth;
 	enum hostapd_hw_mode hw_mode;
@@ -261,6 +262,7 @@ skip_chan_width:
 	ucv_object_add(ret, "center_freq2", ucv_int64_new(cf2));
 	ucv_object_add(ret, "center_seg0_idx", ucv_int64_new(seg0_idx));
 	ucv_object_add(ret, "center_seg1_idx", ucv_int64_new(seg1_idx));
+	ucv_object_add(ret, "punct_bitmap", ucv_int64_new(punct_bitmap));
 
 	return ret;
 }

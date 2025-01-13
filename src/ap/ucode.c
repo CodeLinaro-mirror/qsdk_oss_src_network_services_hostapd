@@ -614,9 +614,13 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	if (!conf)
 		return NULL;
 
-	UPDATE_VAL(op_class, "op_class");
 	UPDATE_VAL(hw_mode, "hw_mode");
 	UPDATE_VAL(channel, "channel");
+
+	/*op_class for 5GHz 320MHz bw is not defined in spec. So unset op_class*/
+	intval = ucv_int64_get(ucv_object_get(info, "op_class", NULL));
+	if (!errno)
+		conf->op_class = intval;
 
 	intval = ucv_int64_get(ucv_object_get(info, "sec_channel", NULL));
 	if (!errno) {
@@ -647,6 +651,12 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	else
 		iface->freq = 0;
 	conf->acs = 0;
+
+	intval = ucv_int64_get(ucv_object_get(info, "punct_bitmap", NULL));
+	if (!errno)
+		conf->punct_bitmap = intval;
+	else
+		conf->punct_bitmap = 0;
 
 out:
 	switch (iface->state) {
@@ -734,6 +744,8 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 		csa.freq_params.center_freq1 = intval;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "center_freq2", NULL))) && !errno)
 		csa.freq_params.center_freq2 = intval;
+	if ((intval = ucv_int64_get(ucv_object_get(info, "punct_bitmap", NULL))) && !errno)
+		csa.freq_params.punct_bitmap = intval;
 
 	for (i = 0; i < iface->num_bss; i++)
 		ret = hostapd_switch_channel(iface->bss[i], &csa);
