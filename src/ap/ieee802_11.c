@@ -12758,8 +12758,8 @@ static bool hostapd_rnr_get_bss_info(struct hostapd_data *hapd,
 		return false;
 
 	bss = hapd->iface->bss[i];
-	if (!bss || !bss->conf || !bss->started || !bss->beacon_set_done ||
-	    bss == reporting_hapd)
+	if (!bss || !bss->conf || !bss->started || bss->disabled ||
+	    !bss->beacon_set_done || bss == reporting_hapd)
 		return false;
 
 #ifdef CONFIG_IEEE80211BE
@@ -13133,7 +13133,7 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 	u8 *eid = *pos;
 
-	if (!bss || !bss->conf || bss == reporting_hapd)
+	if (!bss || !bss->conf || bss->disabled || bss == reporting_hapd)
 		return false;
 
 #ifdef CONFIG_IEEE80211BE
@@ -13528,6 +13528,7 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 			bss = tx_bss->iface->bss[i];
 
 		if (!bss || bss == tx_bss || !bss->conf || !bss->started ||
+		    bss->disabled ||
 		    mbssid_known_bss(i, known_bss, known_bss_len))
 			continue;
 
@@ -13751,6 +13752,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 			bss = tx_bss->iface->bss[i];
 
 		if (!bss || bss == tx_bss || !bss->conf || !bss->started ||
+		    bss->disabled ||
 		    mbssid_known_bss(i, known_bss, known_bss_len))
 			continue;
 		if (tx_bss->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
