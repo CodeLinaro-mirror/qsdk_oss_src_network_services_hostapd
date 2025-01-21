@@ -2346,6 +2346,10 @@ static void hostapd_event_iface_unavailable(struct hostapd_data *hapd)
 		hostapd_switch_channel_fallback(hapd->iface,
 						&hapd->cs_freq_params);
 	}
+
+	/* Set disabled to false so the RNR and other beacon params are properly
+	 * updated */
+	hapd->disabled = 1;
 }
 
 
@@ -3171,6 +3175,10 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 #ifdef NEED_AP_MLME
 	case EVENT_INTERFACE_UNAVAILABLE:
 		hostapd_event_iface_unavailable(hapd);
+		/* Update beacon to all the interfaces about the
+		 * removal/disable of one of the BSS.
+		 */
+		hostapd_refresh_all_iface_beacons(hapd->iface);
 		break;
 	case EVENT_DFS_RADAR_DETECTED:
 		if (!data)
