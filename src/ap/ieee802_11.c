@@ -3724,7 +3724,7 @@ static void handle_auth(struct hostapd_data *hapd,
 	    !(sta->added_unassoc) && auth_alg != WLAN_AUTH_PASN) {
 		res = ap_sta_check_link_sta(hapd, sta);
 		if (!res) {
-			if (ap_sta_re_add(hapd, sta) < 0) {
+			if (ap_sta_re_add(hapd, sta, 1) < 0) {
 				resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
 				goto fail;
 			}
@@ -3733,6 +3733,16 @@ static void handle_auth(struct hostapd_data *hapd,
 		if (res)
 			sta->unadded_sta = true;
 #endif /* CONFIG_IEEE80211BE */
+	}
+
+	if ((sta = ap_get_sta(hapd, sa)) != NULL &&
+	    ap_sta_is_authorized(sta) &&
+	    !(sta->added_unassoc) &&
+	    (sta->skip_kernel_delete)) {
+		if (ap_sta_re_add(hapd, sta, 1) < 0) {
+			resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
+			goto fail;
+		}
 	}
 
 	switch (auth_alg) {
@@ -5487,7 +5497,7 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 				   "ML STA was already created and we received assoc resp again (reassoc: %d)",
 				   reassoc);
 			/* cleanup all link sta in kernel and add later on ml processing */
-			ap_sta_remove_link_sta(hapd, sta);
+			ap_sta_remove_link_sta(hapd, sta, 0);
 			hostapd_drv_sta_remove(hapd, sta->addr);
 			sta->flags &= ~(WLAN_STA_ASSOC | WLAN_STA_AUTHORIZED);
 			sta->unadded_sta = false;
@@ -5597,7 +5607,7 @@ static int add_associated_sta(struct hostapd_data *hapd,
 	}
 
 	if (sta->unadded_sta) {
-		ap_sta_remove_link_sta(hapd, sta);
+		ap_sta_remove_link_sta(hapd, sta, 0);
 		sta->unadded_sta = false;
 	}
 #endif /* CONFIG_IEEE80211BE */
@@ -5644,6 +5654,7 @@ static int add_associated_sta(struct hostapd_data *hapd,
 		hostapd_drv_sta_remove(hapd, sta->addr);
 		wpa_auth_sm_event(sta->wpa_sm, WPA_DRV_STA_REMOVED);
 		set = 0;
+		sta->skip_kernel_delete = false;
 
 		 /* Do not allow the FT-over-DS exception to be used more than
 		  * once per authentication exchange to guarantee a new TK is

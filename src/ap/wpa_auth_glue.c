@@ -1252,7 +1252,7 @@ hostapd_wpa_auth_add_sta_ml(struct hostapd_data *hapd, const u8 *sta_mld)
 		 */
 		wpa_printf(MSG_DEBUG, "Remove STA "MACSTR" to make source to"
 			   " target roaming", MAC2STR(sta_mld));
-		ap_sta_remove_link_sta(hapd, sta_ml_obj);
+		ap_sta_remove_link_sta(hapd, sta_ml_obj, 0);
 		ap_free_sta(hapd, sta_ml_obj);
 		sta_ml_obj = NULL;
 	}
@@ -1366,7 +1366,7 @@ static int hostapd_wpa_auth_add_sta_ft(void *ctx, const u8 *sta_addr)
 		 * previous association. */
 		wpa_printf(MSG_DEBUG,
 			   "FT: Remove and re-add driver STA entry after successful FT authentication");
-		return ap_sta_re_add(hapd, sta);
+		return ap_sta_re_add(hapd, sta, 0);
 	}
 
 	return 0;

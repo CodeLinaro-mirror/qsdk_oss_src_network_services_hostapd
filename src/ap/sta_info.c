@@ -292,8 +292,8 @@ static void __ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 		return;
 	}
 #endif /* CONFIG_IEEE80211BE */
-
-	hostapd_drv_sta_remove(hapd, sta->addr);
+	if (!sta->skip_kernel_delete)
+		hostapd_drv_sta_remove(hapd, sta->addr);
 }
 
 
@@ -728,6 +728,38 @@ void set_valid_for_each_partner_link_sta(struct hostapd_data *hapd,
 }
 
 
+int skip_prune_for_partner_links(struct hostapd_data *hapd,
+					 struct sta_info *sta)
+{
+	struct sta_info *link_sta;
+	struct hostapd_data *lhapd;
+
+	if (!hostapd_is_multiple_link_mld(hapd))
+		return 0;
+
+	for_each_mld_link(lhapd, hapd) {
+		if (hapd == lhapd)
+			continue;
+
+		link_sta = ap_get_sta(lhapd, sta->addr);
+		if (link_sta &&
+		    ap_sta_is_authorized(sta)) {
+			if (!sta->mld_info.mld_sta ||
+			    !link_sta->mld_info.mld_sta) {
+				wpa_printf(MSG_DEBUG,
+					   "Skip kernel Delete in link=%d for STA "
+					   MACSTR,
+					   hapd->mld_link_id,
+					   MAC2STR(sta->addr));
+				sta->skip_kernel_delete = true;
+			}
+			return 1;
+		}
+	}
+	return 0;
+}
+
+
 int hostapd_free_partner_link_stas(struct hostapd_data *hapd,
 				   struct sta_info *sta,
 				   void *ctx)
@@ -745,7 +777,8 @@ int hostapd_free_partner_link_stas(struct hostapd_data *hapd,
 		lsta = ap_get_sta(lhapd, sta->addr);
 		if (lsta && ap_sta_is_mld(lhapd, lsta) &&
 		    lsta->mld_info.links[hapd->mld_link_id].valid) {
-			wpa_printf(MSG_DEBUG, "Removing link station " MACSTR,
+			wpa_printf(MSG_DEBUG, "Removing link station "
+				   MACSTR,
 				   MAC2STR(lsta->addr));
 			mlme_deletekeys_request(lhapd, lsta);
 			ap_free_sta(lhapd, lsta);
@@ -1908,10 +1941,10 @@ bool ap_sta_set_authorized_flag(struct hostapd_data *hapd, struct sta_info *sta,
 				mld_assoc_link_id = -2;
 		}
 #endif /* CONFIG_IEEE80211BE */
+		sta->flags |= WLAN_STA_AUTHORIZED;
 		if (mld_assoc_link_id != -2)
 			hostapd_prune_associations(hapd, sta->addr,
 						   mld_assoc_link_id);
-		sta->flags |= WLAN_STA_AUTHORIZED;
 	} else {
 		sta->flags &= ~WLAN_STA_AUTHORIZED;
 	}
@@ -2241,9 +2274,13 @@ int ap_sta_pending_delayed_1x_auth_fail_disconnect(struct hostapd_data *hapd,
 
 #ifdef CONFIG_IEEE80211BE
 void ap_sta_remove_link_sta(struct hostapd_data *hapd,
-			    struct sta_info *sta)
+			    struct sta_info *sta,
+			    int check_authorized)
 {
 	struct hostapd_data *tmp_hapd;
+
+	if (!hostapd_is_multiple_link_mld(hapd))
+		return;
 
 	for_each_mld_link(tmp_hapd, hapd) {
 		struct sta_info *tmp_sta;
@@ -2256,16 +2293,25 @@ void ap_sta_remove_link_sta(struct hostapd_data *hapd,
 			if (tmp_sta == sta ||
 			    !ether_addr_equal(tmp_sta->addr, sta->addr))
 				continue;
+			/*
+			 * In case the AP is affiliated with an AP MLD is
+			 * authorized, Don't remove the link sta.
+			 */
 
-			ap_free_sta(tmp_hapd, tmp_sta);
-			break;
+			if(check_authorized && ap_sta_is_authorized(tmp_sta))
+				continue;
+
+			if (ap_sta_is_mld(tmp_hapd, tmp_sta)) {
+				ap_free_sta(tmp_hapd, tmp_sta);
+				break;
+			}
 		}
 	}
 }
 #endif /* CONFIG_IEEE80211BE */
 
 
-int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta)
+int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_authorized)
 {
 	const u8 *mld_link_addr = NULL;
 	bool mld_link_sta = false;
@@ -2280,18 +2326,18 @@ int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta)
 	 */
 
 #ifdef CONFIG_IEEE80211BE
+	/*
+	 * In case the AP is affiliated with an AP MLD, we need to
+	 * remove the station from all relevant links/APs.
+	 */
+	ap_sta_remove_link_sta(hapd, sta, check_authorized);
+
 	if (ap_sta_is_mld(hapd, sta)) {
 		u8 mld_link_id = hapd->mld_link_id;
 
 		mld_link_sta = sta->mld_assoc_link_id != mld_link_id;
 		mld_link_addr = sta->mld_info.links[mld_link_id].peer_addr;
 		eml_cap = sta->mld_info.common_info.eml_capa;
-
-		/*
-		 * In case the AP is affiliated with an AP MLD, we need to
-		 * remove the station from all relevant links/APs.
-		 */
-		ap_sta_remove_link_sta(hapd, sta);
 	}
 #endif /* CONFIG_IEEE80211BE */
 
@@ -2313,6 +2359,7 @@ int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta)
 	}
 
 	sta->added_unassoc = 1;
+	sta->skip_kernel_delete = false;
 	return 0;
 }
 
