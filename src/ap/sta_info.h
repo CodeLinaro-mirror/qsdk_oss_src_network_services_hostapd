@@ -180,6 +180,7 @@ struct sta_info {
 	unsigned int radius_das_match:1;
 	unsigned int ecsa_supported:1;
 	unsigned int added_unassoc:1;
+	unsigned int skip_kernel_delete:1;
 	unsigned int pending_wds_enable:1;
 	unsigned int power_capab:1;
 	unsigned int agreed_to_steer:1;
@@ -499,7 +500,8 @@ void ap_sta_delayed_1x_auth_fail_disconnect(struct hostapd_data *hapd,
 					    unsigned timeout);
 int ap_sta_pending_delayed_1x_auth_fail_disconnect(struct hostapd_data *hapd,
 						   struct sta_info *sta);
-int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta);
+int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta,
+		  int check_authorized);
 
 void ap_free_sta_pasn(struct hostapd_data *hapd, struct sta_info *sta);
 
@@ -523,7 +525,8 @@ static inline void ap_sta_set_mld(struct sta_info *sta, bool mld)
 
 #ifdef CONFIG_IEEE80211BE
 void ap_sta_remove_link_sta(struct hostapd_data *hapd,
-                            struct sta_info *sta);
+                            struct sta_info *sta,
+                            int check_authorized);
 int ap_sta_check_link_sta(struct hostapd_data *hapd,
 			  struct sta_info *sta);
 #endif
@@ -569,4 +572,7 @@ void set_valid_for_each_partner_link_sta(struct hostapd_data *hapd,
 int hostapd_free_partner_link_stas(struct hostapd_data *hapd,
 				   struct sta_info *sta,
 				   void *ctx);
+
+int skip_prune_for_partner_links(struct hostapd_data *hapd,
+				 struct sta_info *sta);
 #endif /* STA_INFO_H */
