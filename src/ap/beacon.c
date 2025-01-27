@@ -536,7 +536,7 @@ static u8 * hostapd_eid_max_cs_time(struct hostapd_data *hapd, u8 *eid)
 	 *
 	 * TODO: Use dynamic interface restart time. For now, assume 1 sec.
 	 */
-	switch_time = USEC_TO_TU(1000 * 1000) + 2 * hapd->iconf->beacon_int;
+	switch_time = USEC_TO_TU(250 * 1000) + 2 * hapd->iconf->beacon_int;
 
 	*eid++ = WLAN_EID_EXTENSION;
 	*eid++ = 4;
