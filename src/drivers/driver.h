@@ -2914,6 +2914,7 @@ struct wpa_signal_info {
 	enum chan_width chanwidth;
 	int center_frq1;
 	int center_frq2;
+	u32 punct_bitmap;
 };
 
 struct wpa_mlo_signal_info {

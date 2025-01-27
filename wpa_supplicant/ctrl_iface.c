@@ -8622,6 +8622,11 @@ static int wpa_supplicant_signal_poll(struct wpa_supplicant *wpa_s, char *buf,
 		if (os_snprintf_error(end - pos, ret))
 			return -1;
 		pos += ret;
+
+		ret = os_snprintf(pos, end - pos, "PUNCT_BITMAP=%u\n", si.punct_bitmap);
+		if (os_snprintf_error(end - pos, ret))
+			return -1;
+		pos += ret;
 	}
 
 	if (si.center_frq1 > 0) {
@@ -12485,6 +12490,12 @@ static int wpas_ctrl_iface_mlo_signal_poll(struct wpa_supplicant *wpa_s,
 			ret = os_snprintf(pos, end - pos, "WIDTH=%s\n",
 					  channel_width_to_string(
 						  mlo_si.links[i].chanwidth));
+			if (os_snprintf_error(end - pos, ret))
+				return -1;
+			pos += ret;
+
+			ret = os_snprintf(pos, end - pos, "PUNCT_BITMAP=%u\n",
+					  mlo_si.links[i].punct_bitmap);
 			if (os_snprintf_error(end - pos, ret))
 				return -1;
 			pos += ret;
