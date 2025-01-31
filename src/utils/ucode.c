@@ -173,6 +173,7 @@ uc_value_t *uc_wpa_freq_info(uc_vm_t *vm, size_t nargs)
                 break;
         case CHAN_WIDTH_20_NOHT:
         case CHAN_WIDTH_20:
+		sec_channel = 0;
         case CHAN_WIDTH_40:
         default:
                 chanwidth = CONF_OPER_CHWIDTH_USE_HT;
@@ -208,8 +209,12 @@ skip_chan_width:
 	ucv_object_add(ret, "frequency", ucv_int64_new(freq_val));
 	ucv_object_add(ret, "oper_chwidth", ucv_int64_new(chanwidth));
 
-	if (!sec_channel && freq_val < 5900 && !cf1)
+	if (!sec_channel && freq_val < 5900 && !cf1) {
+		ucv_object_add(ret, "center_seg0_idx", ucv_int64_new(seg0_idx));
+		ucv_object_add(ret, "center_seg1_idx", ucv_int64_new(seg1_idx));
+		ucv_object_add(ret, "punct_bitmap", ucv_int64_new(punct_bitmap));
 		return ret;
+	}
 
 	if (freq_val >= 5900)
 		center_ofs = 0;
