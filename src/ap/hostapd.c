@@ -106,28 +106,61 @@ struct hostapd_data * hostapd_mbssid_get_tx_bss(struct hostapd_data *hapd)
 	return hapd;
 }
 
-
-unsigned int hostapd_mbssid_get_bss_index(struct hostapd_data *hapd)
+void hostapd_free_mbssid_idx(struct hostapd_data *hapd)
 {
-	if (hapd->iconf->mbssid) {
-		struct hostapd_data *bss;
-		struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
-		unsigned int i = 0;
+	struct hostapd_iface *iface = hapd->iface;
+	struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
 
+	if (iface->conf->mbssid != MBSSID_DISABLED) {
+		if (iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
+			group->mbssid_idx_bmap &= ~BIT(hapd->mbssid_idx);
+		else
+			iface->mbssid_idx_bmap &= ~BIT(hapd->mbssid_idx);
+	}
+}
+
+int hostapd_get_mbssid_index(u32 *bmap)
+{
+	int pos = 0;
+	u32 idx_present = *bmap;
+
+	while (idx_present & 1) {
+		idx_present >>= 1;
+		pos++;
+	}
+	return pos;
+}
+
+int hostapd_allocate_mbssid_idx(struct hostapd_data *hapd)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
+	int index;
+
+	if (hapd->iconf->mbssid) {
 		if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
-			dl_list_for_each(bss, &group->bss_list,
-					 struct hostapd_data, mbssid_bss) {
-				if (bss == hapd)
-					return i;
-				i++;
+			index = hostapd_get_mbssid_index(&group->mbssid_idx_bmap);
+			if (index < group->num_bss) {
+				/* Set the first unset bit */
+				group->mbssid_idx_bmap |= BIT(index);
+				return index;
 			}
 		} else {
-			for (i = 0; i < hapd->iface->num_bss; i++) {
-				if (hapd->iface->bss[i] == hapd)
-					return i;
+			index = hostapd_get_mbssid_index(&iface->mbssid_idx_bmap);
+			if (index < iface->num_bss) {
+				/* Set the first unset bit */
+				iface->mbssid_idx_bmap |= BIT(index);
+				return index;
 			}
 		}
 	}
+	return 0;
+}
+
+unsigned int hostapd_mbssid_get_bss_index(struct hostapd_data *hapd)
+{
+	if (hapd->iconf->mbssid)
+		return hapd->mbssid_idx;
 	return 0;
 }
 
@@ -3788,13 +3821,13 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 		if (hapd == NULL)
 			goto fail;
 		hapd->msg_ctx = hapd;
+		hostapd_bss_setup_multi_link(hapd, interfaces);
+		hostapd_mbssid_setup_bss(hapd);
 		/* mbssid index is needed if any of the link from the mbssid group is
 		 * dynamically removed, will use this index for updating the
 		 * non-transmitting profile in beacon
 		 */
-		hapd->mbssid_idx = i;
-		hostapd_bss_setup_multi_link(hapd, interfaces);
-		hostapd_mbssid_setup_bss(hapd);
+		hapd->mbssid_idx = hostapd_allocate_mbssid_idx(hapd);
 	}
 
 	hapd_iface->is_ch_switch_dfs = false;
@@ -3931,7 +3964,7 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 		 * dynamically removed, will use this index for updating the
 		 * non-transmitting profile in beacon
 		 */
-		hapd->mbssid_idx = bss_idx;
+		hapd->mbssid_idx = hostapd_allocate_mbssid_idx(hapd);
 
 		conf->num_bss--;
 		conf->bss[0] = NULL;
@@ -4434,6 +4467,7 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 #ifdef CONFIG_IEEE80211BE
 				hostapd_mld_ref_dec(hapd->mld);
 #endif /* CONFIG_IEEE80211BE */
+				hostapd_free_mbssid_idx(hapd);
 				hostapd_multi_mbssid_remove_bss(hapd);
 				os_free(hapd);
 				return -1;
@@ -4529,6 +4563,7 @@ fail:
 #ifdef CONFIG_IEEE80211BE
 				hostapd_mld_ref_dec(hapd->mld);
 #endif /* CONFIG_IEEE80211BE */
+				hostapd_free_mbssid_idx(hapd);
 				hostapd_multi_mbssid_remove_bss(hapd);
 				os_free(hapd);
 				hapd_iface->bss[i] = NULL;
@@ -4576,6 +4611,7 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx,
 				hostapd_if_link_remove(hapd, WPA_IF_AP_BSS,
 						       hapd->conf->iface,
 						       hapd->mld_link_id);
+		hostapd_free_mbssid_idx(hapd);
 		hostapd_multi_mbssid_remove_bss(hapd);
 		os_free(hapd);
 

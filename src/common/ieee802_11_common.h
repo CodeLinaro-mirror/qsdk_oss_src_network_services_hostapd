@@ -404,6 +404,7 @@ struct hostapd_multi_mbssid_group {
 	struct hostapd_data *txbss;
 	/* List of bss in the group */
 	struct dl_list bss_list;
+	u32 mbssid_idx_bmap;
 };
 
 /**

@@ -9648,7 +9648,7 @@ static bool hostapd_mbssid_mld_match(struct hostapd_data *tx_hapd,
 
 		if (hostapd_is_ml_partner(bss, ml_hapd)) {
 			if (match_idx)
-				*match_idx = bss_idx;
+				*match_idx = bss->mbssid_idx;
 			return true;
 		}
 	}
