@@ -850,6 +850,7 @@ struct hostapd_iface {
 	struct hostapd_multi_hw_info *current_hw_info;
 	/* Multi MBSSID group information */
 	struct hostapd_multi_mbssid multi_mbssid;
+	u32 mbssid_idx_bmap;
 
 	/* Use assisted DFS functionality from the driver. This is used only
 	 * in wpa_supplicant builds for P2P GO functionality. */
@@ -1044,6 +1045,9 @@ u8 hostapd_max_bssid_indicator(struct hostapd_data *hapd);
 struct hostapd_data * hostapd_mld_get_link_bss(struct hostapd_data *hapd,
 					       u8 link_id);
 int hostapd_link_remove(struct hostapd_data *hapd, u32 count);
+int hostapd_allocate_mbssid_idx(struct hostapd_data *hapd);
+int hostapd_get_mbssid_index(u32 *bmap);
+void hostapd_free_mbssid_idx(struct hostapd_data *hapd);
 struct hostapd_data *
 hostapd_interfaces_get_hapd(struct hapd_interfaces *interfaces,
 			    const char *ifname);
