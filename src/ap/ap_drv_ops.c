@@ -162,7 +162,10 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 #ifdef CONFIG_WPS
 	if (hapd->conf->wps_state) {
 		struct wpabuf *a = wps_build_assoc_resp_ie();
-		add_buf(&assocresp, a);
+		if (add_buf(&assocresp, a) < 0) {
+			wpabuf_free(a);
+			goto fail;
+		}
 		wpabuf_free(a);
 	}
 #endif /* CONFIG_WPS */
@@ -182,7 +185,10 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 	if (hapd->p2p_group) {
 		struct wpabuf *a;
 		a = p2p_group_assoc_resp_ie(hapd->p2p_group, P2P_SC_SUCCESS);
-		add_buf(&assocresp, a);
+		if (add_buf(&assocresp, a) < 0) {
+			wpabuf_free(a);
+			goto fail;
+		}
 		wpabuf_free(a);
 	}
 #endif /* CONFIG_WIFI_DISPLAY */
@@ -212,12 +218,15 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 		goto fail;
 #endif /* CONFIG_OWE */
 
-	add_buf(&beacon, hapd->conf->vendor_elements);
-	add_buf(&proberesp, hapd->conf->vendor_elements);
+	if (add_buf(&beacon, hapd->conf->vendor_elements) < 0 ||
+	    add_buf(&proberesp, hapd->conf->vendor_elements) < 0)
+		goto fail;
 #ifdef CONFIG_TESTING_OPTIONS
-	add_buf(&proberesp, hapd->conf->presp_elements);
+	if (add_buf(&proberesp, hapd->conf->presp_elements) < 0)
+		goto fail;
 #endif /* CONFIG_TESTING_OPTIONS */
-	add_buf(&assocresp, hapd->conf->assocresp_elements);
+	if (add_buf(&assocresp, hapd->conf->assocresp_elements) < 0)
+		goto fail;
 
 	*beacon_ret = beacon;
 	*proberesp_ret = proberesp;
