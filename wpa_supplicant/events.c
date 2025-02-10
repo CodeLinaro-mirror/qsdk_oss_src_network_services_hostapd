@@ -6478,6 +6478,15 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			break;
 		}
 
+		if (wpa_s->missing_link_scan) {
+			eloop_cancel_timeout(wpas_scan_for_rnr_entries, wpa_s, NULL);
+			if (data && data->scan_info.nl_scan_event)
+				wpa_s->radio->external_scan_req_interface = NULL;
+			wpa_s->missing_link_scan = false;
+			wpas_scan_for_rnr_entries(wpa_s, NULL);
+			break;
+		}
+
 		if (!(data && data->scan_info.external_scan) &&
 		    os_reltime_initialized(&wpa_s->scan_start_time)) {
 			struct os_reltime now, diff;

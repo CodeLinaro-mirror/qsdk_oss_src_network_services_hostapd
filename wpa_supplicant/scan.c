@@ -23,6 +23,7 @@
 #include "bss.h"
 #include "scan.h"
 #include "mesh.h"
+#include "bssid_ignore.h"
 
 static struct wpabuf * wpa_supplicant_extra_ies(struct wpa_supplicant *wpa_s);
 
@@ -4095,15 +4096,53 @@ void wpas_scan_restart_sched_scan(struct wpa_supplicant *wpa_s)
 	wpa_supplicant_cancel_sched_scan(wpa_s);
 }
 
+static bool wpa_is_bss_freq_present_in_conf(struct wpa_supplicant *wpa_s,
+					    int freq)
+{
+	int curr_freq = 0;
+
+	if (freq && wpa_s->conf->freq_list && wpa_s->conf->freq_list[0]) {
+		int i = 0;
+		curr_freq = wpa_s->conf->freq_list[i];
+
+		while (curr_freq) {
+			i++;
+
+			if (curr_freq == freq) {
+				wpa_printf(MSG_DEBUG, "ML freq %d is part of our scanlist", freq);
+				return true;
+			}
+
+			curr_freq = wpa_s->conf->freq_list[i];
+		}
+	}
+
+	return false;
+}
+
 static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 					struct wpa_scan_res *res,
 					struct os_reltime *fetch_time)
 {
-	const u8 *rnr_ie, *ssid, *pos;
+	const u8 *rnr_ie, *ssid, *pos, *ml_ie;
 	u8 rnr_ie_len, i = 0, mbssid_idx = 0;
 	struct wpa_bss *bss;
+	u8 link_id, ret = true;
+	u16 non_assoc_links = 0;
+	int freqs[MAX_NUM_MLD_LINKS], j = 0;
+	s8 hw_idx;
+	u16 associated_hw_bmap = 0;
 	u32 changes;
-	u8 ret = true;
+
+	if (wpa_s->missing_link_scan)
+		return ret;
+
+	for_each_link(wpa_s->valid_links, i) {
+		hw_idx = wpa_get_hw_idx_by_freq(wpa_s, wpa_s->links[i].freq);
+
+		if (hw_idx >= 0)
+			associated_hw_bmap |= BIT(hw_idx);
+	}
 
 	bss = wpa_bss_get_bssid(wpa_s, res->bssid);
 	if (!bss) {
@@ -4124,88 +4163,147 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 		return ret;
 	}
 
-	/* Res now will have matching ssid, check if the rnr has
-	 * changed.
-	 */
+	ml_ie = wpa_scan_get_ml_ie(res,
+				   MULTI_LINK_CONTROL_TYPE_BASIC);
+	link_id = get_link_id(ml_ie);
+	hw_idx = wpa_get_hw_idx_by_freq(wpa_s, bss->freq);
+
+	if (hw_idx < 0)
+		goto exit;
+
+	if (!(wpa_s->valid_links & BIT(link_id)) &&
+	    !(associated_hw_bmap & BIT(hw_idx))) {
+		if (wpa_is_bss_freq_present_in_conf(wpa_s, bss->freq) &&
+		    !wpa_bssid_ignore_is_listed(wpa_s, bss->bssid))
+			non_assoc_links |= BIT(link_id);
+	}
+
 	changes = wpa_bss_compare_res(bss, res);
-	if (changes & WPA_BSS_IES_CHANGED_FLAG) {
-		bss = wpa_bss_update(wpa_s, bss, res, fetch_time, true);
-		mbssid_idx = wpa_bss_get_mbssid_idx(bss);
-		i = 0;
-		/* NOTE: Any changes in rnr ie len calculation or fetching the ap info
-		 * from rnr ie must be reflected in wpa_bss_update_scan_rnr_res API as
-		 * it uses similar logic for WAR
-		 */
-		while ((rnr_ie = wpa_bss_get_ie_pos(bss, WLAN_EID_REDUCED_NEIGHBOR_REPORT, i++))) {
-			rnr_ie_len = rnr_ie[1];
-			pos = rnr_ie + 2;
+	bss = wpa_bss_update(wpa_s, bss, res, fetch_time, true);
+	mbssid_idx = wpa_bss_get_mbssid_idx(bss);
+	i = 0;
+	/* NOTE: Any changes in rnr ie len calculation or fetching the ap info
+	 * from rnr ie must be reflected in wpa_bss_update_scan_rnr_res API as
+	 * it uses similar logic for WAR
+	 */
+	while ((rnr_ie = wpa_bss_get_ie_pos(bss, WLAN_EID_REDUCED_NEIGHBOR_REPORT, i++))) {
+		rnr_ie_len = rnr_ie[1];
+		pos = rnr_ie + 2;
 
-			while (rnr_ie_len > sizeof(struct ieee80211_neighbor_ap_info)) {
-				const struct ieee80211_neighbor_ap_info *ap_info =
-					(const struct ieee80211_neighbor_ap_info *) pos;
-				const u8 *data = ap_info->data;
-				size_t rnr_info_len = sizeof(struct ieee80211_neighbor_ap_info);
-				u8 tbtt_count = ((ap_info->tbtt_info_hdr & 0xF0) >> 4) + 1;
-				rnr_ie_len -= rnr_info_len;
-				pos += rnr_info_len;
+		while (rnr_ie_len > sizeof(struct ieee80211_neighbor_ap_info)) {
+			const struct ieee80211_neighbor_ap_info *ap_info =
+				(const struct ieee80211_neighbor_ap_info *) pos;
+			const u8 *data = ap_info->data;
+			size_t rnr_info_len = sizeof(struct ieee80211_neighbor_ap_info);
+			u8 tbtt_count = ((ap_info->tbtt_info_hdr & 0xF0) >> 4) + 1;
+			rnr_ie_len -= rnr_info_len;
+			pos += rnr_info_len;
 
-				if (ap_info->tbtt_info_len < 16) {
-					rnr_ie_len -= (tbtt_count * ap_info->tbtt_info_len);
-					pos += (tbtt_count * ap_info->tbtt_info_len);
-					continue;
-				}
+			if (ap_info->tbtt_info_len < 16) {
+				rnr_ie_len -= (tbtt_count * ap_info->tbtt_info_len);
+				pos += (tbtt_count * ap_info->tbtt_info_len);
+				continue;
+			}
 
-				while (tbtt_count--) {
-					u16 mld_id = *(data + 13);
-					u8 link_id = *(data + 14) & 0xF;
+			while (tbtt_count--) {
+				const u8 *bssid = data + 1;
+				u16 mld_id = *(data + 13);
+				u8 link_id = *(data + 14) & 0xF;
 
-					if (wpa_s->valid_links & BIT(link_id))
-						/*Existing link_id IE */
+				if (wpa_s->valid_links & BIT(link_id))
+					/*Existing link_id IE */
+					goto cont;
+
+				/* RNR updated with the new link */
+				/* For NON-MBSSID BSS and MBSSID Tx BSS, idx will be 0 */
+				if (mbssid_idx != mld_id) {
+					wpa_printf(MSG_DEBUG,
+							"MLD: Reported link not part of current MLD");
+				} else {
+					struct wpa_scan_results *scan_res;
+					int partner_freq = ieee80211_chan_to_freq(NULL, ap_info->op_class, ap_info->channel);
+
+					hw_idx = wpa_get_hw_idx_by_freq(wpa_s, partner_freq);
+
+					if (hw_idx < 0)
 						goto cont;
 
-					/* RNR updated with the new link */
-					/* For NON-MBSSID BSS and MBSSID Tx BSS, idx will be 0 */
-					if (mbssid_idx != mld_id) {
-						wpa_printf(MSG_DEBUG,
-							   "MLD: Reported link not part of current MLD");
-					} else {
-						int partner_freq = ieee80211_chan_to_freq(NULL, ap_info->op_class, ap_info->channel);
-						int curr_freq = 0;
-						if (partner_freq && wpa_s->conf->freq_list && wpa_s->conf->freq_list[0]) {
-							int i = 0;
-							curr_freq = wpa_s->conf->freq_list[i];
-							while (curr_freq) {
-								i++;
-								if (curr_freq == partner_freq) {
-									wpa_printf(MSG_DEBUG, "ML Partner freq %d is part of our scan list", partner_freq);
-									break;
-								}
-								curr_freq = wpa_s->conf->freq_list[i];
-							}
-						}
-						if (wpa_s->conf->freq_list && wpa_s->conf->freq_list[0] && !curr_freq) {
-							wpa_printf(MSG_DEBUG, "ML Partner freq %d is not part of our scan list ignore this link", partner_freq);
-							goto cont;
-						}
+					if (associated_hw_bmap & BIT(hw_idx))
+						goto cont;
 
-						wpa_s->own_disconnect_req = 1;
-						wpa_supplicant_deauthenticate(wpa_s,
-									      WLAN_REASON_DEAUTH_LEAVING);
-						wpa_printf(MSG_INFO, "Match found and triggering deauthenticate\n");
-						ret = false;
-						goto exit;
+					if (wpa_bssid_ignore_is_listed(wpa_s, bssid))
+						goto cont;
+
+					if (wpa_is_bss_freq_present_in_conf(wpa_s, partner_freq)) {
+						non_assoc_links |= BIT(link_id);
+					} else {
+						wpa_printf(MSG_DEBUG, "ML Partner freq %d is not part of our scan list ignore this link", partner_freq);
+						goto cont;
 					}
 
-cont:
-					data += ap_info->tbtt_info_len;
+					scan_res = wpa_drv_get_scan_results(wpa_s, bssid);
+
+					if (scan_res == NULL)
+						return ret;
+
+					if (scan_res && !scan_res->num) {
+						freqs[j] = partner_freq;
+						j++;
+					}
 				}
 
-				rnr_ie_len -= (data - ap_info->data);
-				pos += (data - ap_info->data);
+cont:
+				data += ap_info->tbtt_info_len;
 			}
+
+			rnr_ie_len -= (data - ap_info->data);
+			pos += (data - ap_info->data);
 		}
 	}
 
+	freqs[j] = 0;
+
+	/* Trigger scan if,
+	 * 1 - Only beacon len is changed but there is no RNR IE present
+	 * 2 - if partner RNR is set but the partner beacon is not
+	 *     available in the scan res.  [Freqs is set]
+	 *
+	 * Trigger deauth if, RNR in associated beacon is updated with
+	 * affiliated AP information.
+	 */
+	if ((changes & WPA_BSS_BEACON_LEN_CHANGED_FLAG || freqs[0]) &&
+	    (wpa_s->driver->scan2 && !wpa_s->missing_link_scan)) {
+		struct wpa_driver_scan_params scan;
+		int ret;
+		wpa_s->missing_link_scan = true;
+		os_memset(&scan, 0, sizeof(scan));
+		scan.num_ssids = 1;
+		if (bss) {
+			scan.ssids[0].ssid = bss->ssid;
+			scan.ssids[0].ssid_len = bss->ssid_len;
+		}
+
+		if (freqs[0])
+			scan.freqs = freqs;
+
+		ret = wpa_drv_scan(wpa_s, &scan);
+
+		if (ret) {
+			if (wpa_s->wpa_state == WPA_SCANNING)
+				wpa_supplicant_set_state(wpa_s,
+							 wpa_s->scan_prev_wpa_state);
+			if (wpa_s->scan_res_handler)
+				wpa_s->scan_res_handler = NULL;
+		} else {
+			wpa_s->curr_scan_cookie = scan.scan_cookie;
+		}
+	} else if (non_assoc_links) {
+		wpa_s->own_disconnect_req = 1;
+		wpa_supplicant_deauthenticate(wpa_s,
+				WLAN_REASON_DEAUTH_LEAVING);
+		wpa_printf(MSG_INFO, "Match found and triggering deauthenticate\n");
+		ret = false;
+	}
 exit:
 	return ret;
 }

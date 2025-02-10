@@ -29,6 +29,7 @@ struct wpa_scan_res;
 #define WPA_BSS_WPS_CHANGED_FLAG	BIT(6)
 #define WPA_BSS_RATES_CHANGED_FLAG	BIT(7)
 #define WPA_BSS_IES_CHANGED_FLAG	BIT(8)
+#define WPA_BSS_BEACON_LEN_CHANGED_FLAG	BIT(9)
 
 struct wpa_bss_anqp_elem {
 	struct dl_list list;

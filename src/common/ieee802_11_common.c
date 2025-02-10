@@ -3667,6 +3667,14 @@ size_t ieee802_11_defrag_mle_subelem(struct wpabuf *mlbuf,
 	return num_frag_subelems;
 }
 
+u8 get_link_id(const u8 *ml_ie)
+{
+	u8 link_id;
+
+	const size_t link_id_pos = 12;
+	link_id = ml_ie[link_id_pos] & 0x0f;
+	return link_id;
+}
 
 const u8 * get_ml_ie(const u8 *ies, size_t len, u8 type)
 {

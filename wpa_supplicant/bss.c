@@ -718,8 +718,13 @@ u32 wpa_bss_compare_res(const struct wpa_bss *old,
 		changes |= WPA_BSS_MODE_CHANGED_FLAG;
 
 	if (old->ie_len == new_res->ie_len &&
-	    os_memcmp(wpa_bss_ie_ptr(old), new_res + 1, old->ie_len) == 0)
+	    os_memcmp(wpa_bss_ie_ptr(old), new_res + 1, old->ie_len) == 0) {
+		if (old->beacon_ie_len < new_res->beacon_ie_len)
+			changes |= WPA_BSS_BEACON_LEN_CHANGED_FLAG;
+
 		return changes;
+	}
+
 	changes |= WPA_BSS_IES_CHANGED_FLAG;
 
 	if (!are_ies_equal(old, new_res, WPA_IE_VENDOR_TYPE))

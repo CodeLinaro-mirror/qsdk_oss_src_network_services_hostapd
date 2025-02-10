@@ -1602,6 +1602,7 @@ struct wpa_supplicant {
 	bool supp_pbc_active; /* Set for interface when PBC is triggered */
 	bool wps_overlap;
 	bool scan_in_progress_6ghz; /* Set upon a 6 GHz scan being triggered */
+	bool missing_link_scan;
 
 #ifdef CONFIG_PASN
 	struct pasn_data pasn;
