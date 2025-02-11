@@ -251,6 +251,10 @@ struct ieee80211_edmg_config {
 	enum edmg_bw_config bw_config;
 };
 
+struct ieee_chan_data {
+	int num_channels;
+	struct hostapd_channel_data *channels;
+};
 /**
  * struct hostapd_hw_modes - Supported hardware mode information
  */

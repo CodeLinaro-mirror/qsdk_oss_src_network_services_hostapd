@@ -685,10 +685,13 @@ static size_t he_elem_len(struct hostapd_data *hapd)
 	if (is_6ghz_op_class(hapd->iconf->op_class)) {
 		len += sizeof(struct ieee80211_he_6ghz_oper_info) +
 			3 + sizeof(struct ieee80211_he_6ghz_band_cap);
+		len += 3 + MAX_PSD_TPE_POWER_COUNT +
+		       1 + MAX_PSD_TPE_EXT_POWER_COUNT;
 		/* An additional Transmit Power Envelope element for
 		 * subordinate client */
 		if (he_reg_is_indoor(hapd->iconf->he_6ghz_reg_pwr_type))
-			len += 4;
+			len += 3 + MAX_PSD_TPE_POWER_COUNT +
+			       1 + MAX_PSD_TPE_EXT_POWER_COUNT;
 
 		/* An additional Transmit Power Envelope element for
 		 * default client with unit interpretation of regulatory
@@ -2114,6 +2117,17 @@ static u8 * hostapd_gen_fils_discovery(struct hostapd_data *hapd, size_t *len)
 	pos = hostapd_eid_fils_indic(hapd, buf, 0);
 	buf_len = pos - buf;
 	total_len += buf_len;
+
+#ifdef CONFIG_IEEE80211AX
+        /* Transmit Power Envelope element(s) */
+        if (is_6ghz_op_class(hapd->iconf->op_class)) {
+                total_len += 3 + MAX_PSD_TPE_POWER_COUNT +
+                             1 + MAX_PSD_TPE_EXT_POWER_COUNT;
+                if (hapd->iconf->he_6ghz_reg_pwr_type == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR)
+                        total_len += 3 + MAX_PSD_TPE_POWER_COUNT +
+                                     1 + MAX_PSD_TPE_EXT_POWER_COUNT;
+        }
+#endif /* CONFIG_IEEE80211AX */
 
 	/* he_elem_len() may return too large a value for FD frame, but that is
 	 * fine here since this is used as the maximum length of the buffer. */

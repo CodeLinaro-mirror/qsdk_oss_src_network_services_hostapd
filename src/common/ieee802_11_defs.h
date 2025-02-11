@@ -2212,7 +2212,13 @@ enum max_tx_pwr_interpretation {
 enum reg_6g_client_type {
 	REG_DEFAULT_CLIENT = 0,
 	REG_SUBORDINATE_CLIENT = 1,
+	REG_MAX_CLIENT_TYPE = 2,
 };
+
+#define MAX_EIRP_TPE_POWER_EXT_COUNT		1
+#define MAX_PSD_TPE_POWER_COUNT			8
+#define MAX_PSD_TPE_EXT_POWER_COUNT		15
+#define MAX_TPE_EIRP_NUM_POWER_SUPPORTED	4
 
 #define RRM_CAPABILITIES_IE_LEN 5
 
@@ -2686,6 +2692,9 @@ struct ieee80211_he_mu_edca_parameter_set {
 #define RNR_BSS_PARAM_MEMBER_CO_LOCATED_ESS         BIT(4)
 #define RNR_BSS_PARAM_UNSOLIC_PROBE_RESP_ACTIVE     BIT(5)
 #define RNR_BSS_PARAM_CO_LOCATED                    BIT(6)
+/* Maximum transmit power in Y/2 dBm (-127..126); setting -128 indicates
+ * no power is configured for that corresponding 20 MHz channel */
+#define RNR_20_MHZ_PSD_NO_POWER			   -128
 /* Maximum transmit power in Y/2 dBm (-127..126); 127 indicates no maximum
  * transmit power is specified for the corresponding 20 MHz channel. */
 #define RNR_20_MHZ_PSD_MAX_TXPOWER                  127
