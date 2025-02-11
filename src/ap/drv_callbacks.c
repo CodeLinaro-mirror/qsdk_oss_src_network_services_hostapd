@@ -1171,7 +1171,9 @@ void hostapd_event_sta_low_ack(struct hostapd_data *hapd, const u8 *addr,
 #endif /* CONFIG_IEEE80211BE */
 
 	if (!sta || (!hapd->conf->disassoc_low_ack && num_packets != 0xFFFF) ||
-	    sta->agreed_to_steer)
+	    sta->agreed_to_steer ||
+	    (sta->auth_alg == WLAN_AUTH_FT && sta->ft_re_add == true &&
+	     num_packets == 0xFFFF))
 		return;
 
 	if (num_packets == 0xFFFF)

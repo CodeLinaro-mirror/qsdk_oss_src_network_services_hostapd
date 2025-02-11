@@ -333,6 +333,7 @@ struct sta_info {
 #endif /* CONFIG_IEEE80211BE */
 	u8 skip_kernel_delete;
 
+	bool ft_re_add;
 	u16 max_idle_period; /* if nonzero, the granted BSS max idle period in
 			      * units of 1000 TUs */
 

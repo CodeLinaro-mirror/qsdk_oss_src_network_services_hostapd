@@ -7774,6 +7774,9 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		ap_sta_set_authorized(hapd, sta, 1);
 	}
 
+	if (sta->auth_alg == WLAN_AUTH_FT)
+		sta->ft_re_add = false;
+
 	if (reassoc)
 		mlme_reassociate_indication(hapd, sta);
 	else
