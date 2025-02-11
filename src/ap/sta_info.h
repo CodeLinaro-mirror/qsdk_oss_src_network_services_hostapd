@@ -189,6 +189,8 @@ struct sta_info {
 	unsigned int external_dh_updated:1;
 	unsigned int post_csa_sa_query:1;
 
+	bool ft_re_add;
+
 	u16 auth_alg;
 
 	enum {
