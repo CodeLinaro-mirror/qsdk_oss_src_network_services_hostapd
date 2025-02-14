@@ -510,6 +510,7 @@ u8 *hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd,
 	struct hostapd_data *link_bss;
 	u16 control;
 	u8 *pos = eid;
+	bool sta_profile_present = false;
 
 	*pos++ = WLAN_EID_EXTENSION;
 	*pos++ = 0;
@@ -534,6 +535,7 @@ u8 *hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd,
 		    !link_bss->eht_mld_link_removal_inprogress)
 			continue;
 
+		sta_profile_present = true;
 		/* sub element ID is 0 */
 		*pos++ = 0;
 		*pos++ = 5;
@@ -549,6 +551,9 @@ u8 *hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd,
 		WPA_PUT_LE16(pos, link_bss->eht_mld_link_removal_count);
 		pos += 2;
 	}
+
+	if (!sta_profile_present)
+		return eid;
 
 	eid[1] = pos - eid - 2;
 
