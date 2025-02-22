@@ -382,7 +382,7 @@ static void httpread_read_handler(int sd, void *eloop_ctx, void *sock_ctx)
 		wpa_printf(MSG_DEBUG, "httpread failed: %s", strerror(errno));
 		goto bad;
 	}
-	wpa_hexdump_ascii(MSG_MSGDUMP, "httpread - read", readbuf, nread);
+	wpa_hexdump_ascii(MSG_MSGDUMP, "httpread - read", (u8 *)readbuf, nread);
 	if (nread == 0) {
 		/* end of transmission... this may be normal
 		 * or may be an error... in some cases we can't
@@ -695,7 +695,7 @@ got_file:
 	wpa_printf(MSG_DEBUG, "httpread got file %d bytes type %d",
 		   h->body_nbytes, h->hdr_type);
 	wpa_hexdump_ascii(MSG_MSGDUMP, "httpread: body",
-			  h->body, h->body_nbytes);
+			  (u8 *)h->body, h->body_nbytes);
 	/* Null terminate for convenience of some applications */
 	if (h->body)
 		h->body[h->body_nbytes] = 0; /* null terminate */
