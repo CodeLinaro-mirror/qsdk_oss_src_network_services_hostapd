@@ -7,6 +7,7 @@
 #include "wps_supplicant.h"
 #include "bss.h"
 #include "ucode.h"
+#include "driver_i.h"
 
 static struct wpa_global *wpa_global;
 static uc_resource_type_t *global_type, *iface_type;
@@ -32,7 +33,6 @@ wpas_ucode_update_interfaces(void)
 {
 	uc_value_t *ifs = ucv_object_new(vm);
 	struct wpa_supplicant *wpa_s;
-	int i;
 
 	for (wpa_s = wpa_global->ifaces; wpa_s; wpa_s = wpa_s->next)
 		ucv_object_add(ifs, wpa_s->ifname, ucv_get(wpas_ucode_iface_get_uval(wpa_s)));
@@ -43,8 +43,6 @@ wpas_ucode_update_interfaces(void)
 
 void wpas_ucode_add_bss(struct wpa_supplicant *wpa_s)
 {
-	uc_value_t *val;
-
 	if (wpa_ucode_call_prepare("iface_add"))
 		return;
 
@@ -94,7 +92,6 @@ void wpas_ucode_update_state(struct wpa_supplicant *wpa_s)
 
 void wpas_ucode_event(struct wpa_supplicant *wpa_s, int event, union wpa_event_data *data)
 {
-	const char *state;
 	uc_value_t *val;
 
 	if (event != EVENT_CH_SWITCH_STARTED)
@@ -123,13 +120,6 @@ void wpas_ucode_event(struct wpa_supplicant *wpa_s, int event, union wpa_event_d
 
 	ucv_put(wpa_ucode_call(4));
 	ucv_gc(vm);
-}
-
-static const char *obj_stringval(uc_value_t *obj, const char *name)
-{
-	uc_value_t *val = ucv_object_get(obj, name, NULL);
-
-	return ucv_string_get(val);
 }
 
 static uc_value_t *
@@ -267,7 +257,6 @@ int wpas_ucode_init(struct wpa_global *gl)
 	static const uc_function_list_t iface_fns[] = {
 		{ "status", uc_wpas_iface_status },
 	};
-	uc_value_t *data, *proto;
 
 	wpa_global = gl;
 	vm = wpa_ucode_create_vm();

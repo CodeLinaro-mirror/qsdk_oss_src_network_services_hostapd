@@ -22,7 +22,7 @@ enum radius_das_res {
 struct radius_das_attrs {
 	/* NAS identification attributes */
 	const u8 *nas_ip_addr;
-	const u8 *nas_identifier;
+	const char *nas_identifier;
 	size_t nas_identifier_len;
 	const u8 *nas_ipv6_addr;
 
@@ -44,7 +44,7 @@ struct radius_das_attrs {
 struct radius_das_conf {
 	int port;
 	const u8 *shared_secret;
-	const u8 *nas_identifier;
+	const char *nas_identifier;
 	size_t shared_secret_len;
 	const struct hostapd_ip_addr *client_addr;
 	unsigned int time_window;

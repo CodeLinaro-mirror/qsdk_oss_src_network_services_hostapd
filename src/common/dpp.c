@@ -438,7 +438,7 @@ static struct dpp_bootstrap_info * dpp_parse_uri(const char *uri)
 	const char *version = NULL, *supported_curves = NULL, *host = NULL;
 	struct dpp_bootstrap_info *bi;
 
-	wpa_hexdump_ascii(MSG_DEBUG, "DPP: URI", uri, os_strlen(uri));
+	wpa_hexdump_ascii(MSG_DEBUG, "DPP: URI", (u8 *)uri, os_strlen(uri));
 
 	if (os_strncmp(pos, "DPP:", 4) != 0) {
 		wpa_printf(MSG_INFO, "DPP: Not a DPP URI");
@@ -475,7 +475,7 @@ static struct dpp_bootstrap_info * dpp_parse_uri(const char *uri)
 		else
 			wpa_hexdump_ascii(MSG_DEBUG,
 					  "DPP: Ignore unrecognized URI parameter",
-					  pos, end - pos);
+					  (u8 *)pos, end - pos);
 		pos = end + 1;
 	}
 
@@ -802,7 +802,7 @@ static struct wpabuf * dpp_build_conf_req_attr(struct dpp_authentication *auth,
 	}
 	wpa_hexdump(MSG_DEBUG, "DPP: E-nonce", auth->e_nonce, nonce_len);
 	json_len = os_strlen(json);
-	wpa_hexdump_ascii(MSG_DEBUG, "DPP: configRequest JSON", json, json_len);
+	wpa_hexdump_ascii(MSG_DEBUG, "DPP: configRequest JSON", (u8 *)json, json_len);
 
 	/* { E-nonce, configAttrib }ke */
 	clear_len = 4 + nonce_len + 4 + json_len;
@@ -2624,7 +2624,7 @@ static int dpp_parse_cred_legacy(struct dpp_config_obj *conf,
 #endif /* CONFIG_DPP3 */
 
 		wpa_hexdump_ascii_key(MSG_DEBUG, "DPP: Legacy passphrase",
-				      pass->string, len);
+				      (u8 *)pass->string, len);
 		if (dpp_akm_psk(conf->akm) && (len < 8 || len > 63)) {
 			wpa_printf(MSG_DEBUG,
 				   "DPP: Unexpected pass length %zu for a config object that includes PSK",
@@ -3022,7 +3022,7 @@ static int dpp_parse_cred_dpp(struct dpp_authentication *auth,
 		goto fail;
 	}
 	wpa_hexdump_ascii(MSG_DEBUG, "DPP: signedConnector",
-			  token->string, os_strlen(token->string));
+			  (u8 *)token->string, os_strlen(token->string));
 	signed_connector = token->string;
 
 	if (os_strchr(signed_connector, '"') ||
@@ -3270,7 +3270,7 @@ static int dpp_parse_conf_obj(struct dpp_authentication *auth,
 			goto fail;
 		}
 		wpa_hexdump_ascii(MSG_DEBUG, "DPP: discovery::ssid",
-				  token->string, os_strlen(token->string));
+				  (u8 *)token->string, os_strlen(token->string));
 		if (os_strlen(token->string) > SSID_MAX_LEN) {
 			dpp_auth_fail(auth,
 				      "Too long discovery::ssid string value");

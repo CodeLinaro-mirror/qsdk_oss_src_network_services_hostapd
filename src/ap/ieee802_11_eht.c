@@ -1295,7 +1295,7 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG, "MLD: EXT ML capabilities not present");
 	}
 
-	wpa_printf(MSG_DEBUG, "MLD: expected_common_info_len=%lu",
+	wpa_printf(MSG_DEBUG, "MLD: expected_common_info_len=%zu",
 		   common_info_len);
 
 	if (sizeof(*ml) + common_info_len > ml_len) {

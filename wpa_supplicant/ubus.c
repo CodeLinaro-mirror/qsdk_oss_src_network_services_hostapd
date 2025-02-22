@@ -126,7 +126,7 @@ wpas_bss_wps_start(struct ubus_context *ctx, struct ubus_object *obj,
 {
 	int rc;
 	struct wpa_supplicant *wpa_s = get_wpas_from_object(obj);
-	struct blob_attr *tb[__WPS_START_MAX], *cur;
+	struct blob_attr *tb[__WPS_START_MAX];
 	int multi_ap = 0;
 
 	blobmsg_parse(wps_start_policy, __WPS_START_MAX, tb, blobmsg_data(msg), blobmsg_data_len(msg));
@@ -175,7 +175,6 @@ void wpas_ubus_add_bss(struct wpa_supplicant *wpa_s)
 {
 	struct ubus_object *obj = &wpa_s->ubus.obj;
 	char *name;
-	int ret;
 
 	if (!wpas_ubus_init())
 		return;
@@ -187,7 +186,7 @@ void wpas_ubus_add_bss(struct wpa_supplicant *wpa_s)
 	obj->type = &bss_object_type;
 	obj->methods = bss_object_type.methods;
 	obj->n_methods = bss_object_type.n_methods;
-	ret = ubus_add_object(ctx, obj);
+	ubus_add_object(ctx, obj);
 	wpas_ubus_ref_inc();
 }
 

@@ -31,7 +31,7 @@ struct radius_das_data {
 	struct dl_list list;
 	struct radius_das_port *port;
 	u8 *shared_secret;
-	u8 *nas_identifier;
+	char *nas_identifier;
 	size_t shared_secret_len;
 	struct hostapd_ip_addr client_addr;
 	unsigned int time_window;
@@ -114,7 +114,7 @@ static struct radius_msg * radius_das_disconnect(struct radius_das_data *das,
 
 	if (radius_msg_get_attr_ptr(msg, RADIUS_ATTR_NAS_IDENTIFIER,
 				    &buf, &len, NULL) == 0) {
-		attrs.nas_identifier = buf;
+		attrs.nas_identifier = (const char *)buf;
 		attrs.nas_identifier_len = len;
 	}
 
@@ -284,7 +284,7 @@ static struct radius_msg * radius_das_coa(struct radius_das_data *das,
 
 	if (radius_msg_get_attr_ptr(msg, RADIUS_ATTR_NAS_IDENTIFIER,
 				    &buf, &len, NULL) == 0) {
-		attrs.nas_identifier = buf;
+		attrs.nas_identifier = (const char *)buf;
 		attrs.nas_identifier_len = len;
 	}
 

@@ -78,13 +78,13 @@ static void uc_gc_timer(struct uloop_timeout *timeout)
 uc_value_t *uc_wpa_printf(uc_vm_t *vm, size_t nargs)
 {
 	uc_value_t *level = uc_fn_arg(0);
-	uc_value_t *ret, **args;
+	uc_value_t *ret;
 	uc_cfn_ptr_t _sprintf;
 	int l = MSG_INFO;
-	int i, start = 0;
+	int start = 0;
 
 	_sprintf = uc_stdlib_function("sprintf");
-	if (!sprintf)
+	if (!_sprintf)
 		return NULL;
 
 	if (ucv_type(level) == UC_INTEGER) {
@@ -195,7 +195,6 @@ uc_value_t *uc_wpa_freq_info(uc_vm_t *vm, size_t nargs)
 	center_idx = (center_idx - channel) * 5 + freq_val;
 	ucv_object_add(ret, "center_freq1", ucv_int64_new(center_idx));
 
-out:
 	return ret;
 }
 
@@ -223,7 +222,7 @@ uc_value_t *uc_wpa_sha1(uc_vm_t *vm, size_t nargs)
 		if (ucv_type(val) != UC_STRING)
 			return NULL;
 
-		args[i] = ucv_string_get(val);
+		args[i] = (const u8 *)ucv_string_get(val);
 		lens[i] = ucv_string_length(val);
 	}
 
@@ -443,7 +442,6 @@ uc_value_t *wpa_ucode_global_init(const char *name, uc_resource_type_t *global_t
 
 int wpa_ucode_registry_add(uc_value_t *reg, uc_value_t *val)
 {
-	uc_value_t *data;
 	int i = 0;
 
 	while (ucv_array_get(reg, i))

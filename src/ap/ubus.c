@@ -102,22 +102,6 @@ void hostapd_ubus_free_iface(struct hostapd_iface *iface)
 		return;
 }
 
-static void hostapd_notify_ubus(struct ubus_object *obj, char *bssname, char *event)
-{
-	char *event_type;
-
-	if (!ctx || !obj)
-		return;
-
-	if (asprintf(&event_type, "bss.%s", event) < 0)
-		return;
-
-	blob_buf_init(&b, 0);
-	blobmsg_add_string(&b, "name", bssname);
-	ubus_notify(ctx, obj, event_type, b.head, -1);
-	free(event_type);
-}
-
 static void
 hostapd_bss_del_ban(void *eloop_data, void *user_ctx)
 {
@@ -439,9 +423,6 @@ hostapd_notify_response(struct ubus_context *ctx, struct ubus_object *obj,
 {
 	struct blob_attr *tb[__NOTIFY_MAX];
 	struct hostapd_data *hapd = get_hapd_from_object(obj);
-	struct wpabuf *elems;
-	const char *pos;
-	size_t len;
 
 	blobmsg_parse(notify_policy, __NOTIFY_MAX, tb,
 		      blob_data(msg), blob_len(msg));
@@ -580,7 +561,6 @@ hostapd_bss_wps_status(struct ubus_context *ctx, struct ubus_object *obj,
 			struct ubus_request_data *req, const char *method,
 			struct blob_attr *msg)
 {
-	int rc;
 	struct hostapd_data *hapd = container_of(obj, struct hostapd_data, ubus.obj);
 
 	blob_buf_init(&b, 0);
@@ -858,7 +838,6 @@ hostapd_vendor_elements(struct ubus_context *ctx, struct ubus_object *obj,
 static void
 hostapd_rrm_print_nr(struct hostapd_neighbor_entry *nr)
 {
-	const u8 *data;
 	char *str;
 	int len;
 
@@ -906,7 +885,7 @@ __hostapd_bss_mgmt_enable_f(struct hostapd_data *hapd, int flag)
 			WLAN_RRM_CAPS_BEACON_REPORT_ACTIVE |
 			WLAN_RRM_CAPS_BEACON_REPORT_TABLE;
 
-		if (bss->radio_measurements[0] & flags == flags)
+		if (bss->radio_measurements[0])
 			return false;
 
 		bss->radio_measurements[0] |= (u8) flags;
@@ -914,7 +893,7 @@ __hostapd_bss_mgmt_enable_f(struct hostapd_data *hapd, int flag)
 	case BSS_MGMT_EN_LINK_MEASUREMENT:
 		flags = WLAN_RRM_CAPS_LINK_MEASUREMENT;
 
-		if (bss->radio_measurements[0] & flags == flags)
+		if (bss->radio_measurements[0])
 			return false;
 
 		bss->radio_measurements[0] |= (u8) flags;
@@ -927,6 +906,8 @@ __hostapd_bss_mgmt_enable_f(struct hostapd_data *hapd, int flag)
 		bss->bss_transition = 1;
 		return true;
 #endif
+	default:
+		return false;
 	}
 }
 
@@ -965,10 +946,8 @@ hostapd_bss_mgmt_enable(struct ubus_context *ctx, struct ubus_object *obj,
 {
 	struct hostapd_data *hapd = get_hapd_from_object(obj);
 	struct blob_attr *tb[__BSS_MGMT_EN_MAX];
-	struct blob_attr *cur;
 	uint32_t flags = 0;
 	int i;
-	bool neigh = false, beacon = false;
 
 	blobmsg_parse(bss_mgmt_enable_policy, __BSS_MGMT_EN_MAX, tb, blob_data(msg), blob_len(msg));
 
@@ -1177,7 +1156,7 @@ hostapd_rrm_beacon_req(struct ubus_context *ctx, struct ubus_object *obj,
 	struct wpabuf *req;
 	u8 bssid[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 	u8 addr[ETH_ALEN];
-	int mode, rem, ret;
+	int ret;
 	int buf_len = 13;
 
 	blobmsg_parse(beacon_req_policy, __BEACON_REQ_MAX, tb, blob_data(msg), blob_len(msg));
@@ -1189,7 +1168,6 @@ hostapd_rrm_beacon_req(struct ubus_context *ctx, struct ubus_object *obj,
 	if (tb[BEACON_REQ_SSID])
 		buf_len += blobmsg_data_len(tb[BEACON_REQ_SSID]) + 2 - 1;
 
-	mode = blobmsg_get_u32(tb[BEACON_REQ_MODE]);
 	if (hwaddr_aton(blobmsg_data(tb[BEACON_REQ_ADDR]), addr))
 		return UBUS_STATUS_INVALID_ARGUMENT;
 
@@ -1465,7 +1443,6 @@ hostapd_bss_transition_request(struct ubus_context *ctx, struct ubus_object *obj
 {
 	struct hostapd_data *hapd = container_of(obj, struct hostapd_data, ubus.obj);
 	struct blob_attr *tb[__BSS_TR_DISASSOC_MAX];
-	struct sta_info *sta;
 	u32 da_timer = 0;
 	u32 valid_period = 0;
 	u8 addr[ETH_ALEN];
@@ -1661,7 +1638,6 @@ void hostapd_ubus_add_bss(struct hostapd_data *hapd)
 {
 	struct ubus_object *obj = &hapd->ubus.obj;
 	char *name;
-	int ret;
 
 #ifdef CONFIG_MESH
 	if (hapd->conf->mesh & MESH_ENABLED)
@@ -1679,7 +1655,7 @@ void hostapd_ubus_add_bss(struct hostapd_data *hapd)
 	obj->type = &bss_object_type;
 	obj->methods = bss_object_type.methods;
 	obj->n_methods = bss_object_type.n_methods;
-	ret = ubus_add_object(ctx, obj);
+	ubus_add_object(ctx, obj);
 	hostapd_ubus_ref_inc();
 }
 
@@ -1947,7 +1923,6 @@ void hostapd_ubus_notify_bss_transition_response(
 	const u8 *candidate_list, u16 candidate_list_len)
 {
 #ifdef CONFIG_WNM_AP
-	u16 i;
 
 	if (!hapd->ubus.obj.has_subscribers)
 		return;
@@ -1975,8 +1950,6 @@ int hostapd_ubus_notify_bss_transition_query(
 {
 #ifdef CONFIG_WNM_AP
 	struct ubus_event_req ureq = {};
-	char *cl_str;
-	u16 i;
 
 	if (!hapd->ubus.obj.has_subscribers)
 		return 0;
@@ -2002,5 +1975,7 @@ int hostapd_ubus_notify_bss_transition_query(
 	ubus_complete_request(ctx, &ureq.nreq.req, 100);
 
 	return ureq.resp;
+#else
+	return 0;
 #endif
 }

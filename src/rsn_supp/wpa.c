@@ -777,7 +777,7 @@ static int wpa_handle_ext_key_id(struct wpa_sm *sm,
 
 		if (!kde->key_id) {
 			wpa_msg(sm->ctx->msg_ctx,
-				sm->use_ext_key_id ? MSG_INFO : MSG_DEBUG,
+				MSG_INFO,
 				"RSN: No Key ID in Extended Key ID handshake");
 			sm->keyidx_active = 0;
 			return sm->use_ext_key_id ? -1 : 0;

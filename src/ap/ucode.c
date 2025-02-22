@@ -10,6 +10,7 @@
 #include "dfs.h"
 #include "acs.h"
 #include <libubox/uloop.h>
+#include "sta_info.h"
 
 static uc_resource_type_t *global_type, *bss_type, *iface_type;
 static struct hapd_interfaces *interfaces;
@@ -589,7 +590,6 @@ out:
 
 	for (i = 0; i < iface->num_bss; i++) {
 		struct hostapd_data *hapd = iface->bss[i];
-		int ret;
 
 		hapd->conf->start_disabled = 0;
 		hostapd_set_freq(hapd, conf->hw_mode, iface->freq,
@@ -730,7 +730,6 @@ int hostapd_ucode_init(struct hapd_interfaces *ifaces)
 		{ "start", uc_hostapd_iface_start },
 		{ "switch_channel", uc_hostapd_iface_switch_channel },
 	};
-	uc_value_t *data, *proto;
 
 	interfaces = ifaces;
 	vm = wpa_ucode_create_vm();
