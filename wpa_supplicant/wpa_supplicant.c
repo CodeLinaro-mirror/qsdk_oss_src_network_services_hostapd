@@ -3489,6 +3489,30 @@ static bool ibss_mesh_select_80_160mhz(struct wpa_supplicant *wpa_s,
 		}
 	}
 
+	/* 240MHz 5 GHz handling */
+        if (is_5ghz_freq(freq->freq) && (mode->eht_capab[ieee80211_mode].phy_cap[
+                     EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_IDX] &
+             EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_MASK) &&
+            ssid->max_oper_chwidth == CONF_OPER_CHWIDTH_320MHZ) {
+		/* There is only one 320MHz(240+80 Punctured) in 5 GHz Band */
+		u8 start_chan_idx = 100;
+		if (freq->channel >= 100 && freq->channel <= 144 && (ssid->punct_bitmap & 0xF000) == 0xF000) {
+			for (i = start_chan_idx; i <= start_chan_idx + 44; i += 4) {
+				struct hostapd_channel_data *chan;
+				chan = hw_get_channel_chan(mode, i, NULL);
+				if (!chan)
+					return false;
+
+				if (chan->flag & (HOSTAPD_CHAN_DISABLED|
+						  HOSTAPD_CHAN_NO_IR))
+					return false;
+			}
+			seg0 = 130;
+			chwidth = CONF_OPER_CHWIDTH_320MHZ;
+		}
+	}
+
+
 	if (ssid->max_oper_chwidth == CONF_OPER_CHWIDTH_80P80MHZ) {
 		/* setup center_freq2, bandwidth */
 		for (k = 0; k < ARRAY_SIZE(bw80); k++) {
@@ -3617,6 +3641,13 @@ void ibss_mesh_setup_freq(struct wpa_supplicant *wpa_s,
 		ibss_mesh_setup_2G_he40(freq, mode, wpa_s,
 					ssid, ieee80211_mode);
 	freq->channel = channel;
+	if (mode->mode == HOSTAPD_MODE_IEEE80211G && ssid->noscan)
+		ibss_mesh_select_40mhz(wpa_s, ssid, mode, freq, obss_scan, is_6ghz, dfs_enabled);
+
+	if (freq->he_enabled)
+		freq->eht_enabled = ibss_mesh_can_use_eht(wpa_s, ssid, mode,
+							  ieee80211_mode);
+
 	/* Setup higher BW only for 5 and 6 GHz */
 	if (mode->mode == HOSTAPD_MODE_IEEE80211G && ssid->noscan)
 		ibss_mesh_select_40mhz(wpa_s, ssid, mode, freq, obss_scan, is_6ghz, dfs_enabled);
@@ -3624,13 +3655,12 @@ void ibss_mesh_setup_freq(struct wpa_supplicant *wpa_s,
 		ibss_mesh_select_40mhz(wpa_s, ssid, mode, freq, obss_scan,
 				       is_6ghz, dfs_enabled);
 		if (!ibss_mesh_select_80_160mhz(wpa_s, ssid, mode, freq,
-						ieee80211_mode, is_6ghz, dfs_enabled))
+						ieee80211_mode, is_6ghz, dfs_enabled)) {
 			freq->he_enabled = freq->vht_enabled = false;
-	}
+			freq->eht_enabled = freq->he_enabled;
+		}
 
-	if (freq->he_enabled)
-		freq->eht_enabled = ibss_mesh_can_use_eht(wpa_s, ssid, mode,
-							  ieee80211_mode);
+	}
 }
 
 
