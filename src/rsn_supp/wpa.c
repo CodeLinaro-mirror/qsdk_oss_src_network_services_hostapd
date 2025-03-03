@@ -4822,6 +4822,8 @@ int wpa_sm_set_mlo_params(struct wpa_sm *sm, const struct wpa_sm_mlo *mlo)
 		if (sm->mlo.req_links & BIT(i)) {
 			if (!mlo->links[i].ap_rsne ||
 			    mlo->links[i].ap_rsne_len == 0) {
+				if (!(sm->mlo.valid_links & BIT(i)))
+					continue;
 				wpa_dbg(sm->ctx->msg_ctx, MSG_INFO,
 					"RSN: No RSNE for AP MLO link %d with BSSID "
 					MACSTR,

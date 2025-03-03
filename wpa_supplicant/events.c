@@ -4263,6 +4263,8 @@ static int wpa_sm_set_ml_info(struct wpa_supplicant *wpa_s)
 
 		bss = wpa_supplicant_get_new_bss(wpa_s, drv_mlo.links[i].bssid);
 		if (!bss) {
+			if (!(wpa_mlo.valid_links & BIT(i)))
+				continue;
 			wpa_dbg(wpa_s, MSG_INFO,
 				"Failed to get MLO link %d BSS", i);
 			return -1;
