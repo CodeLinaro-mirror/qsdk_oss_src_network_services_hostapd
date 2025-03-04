@@ -2371,6 +2371,7 @@ static int radius_server_get_eap_user(void *ctx, const u8 *identity,
 	ret = data->get_eap_user(data->conf_ctx, identity, identity_len,
 				 phase2, user);
 	if (ret == 0 && user) {
+		os_free(sess->accept_attr);
 		sess->accept_attr = radius_server_copy_attr(user->accept_attr);
 		sess->macacl = user->macacl;
 		sess->t_c_timestamp = user->t_c_timestamp;
