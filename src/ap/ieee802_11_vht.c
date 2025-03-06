@@ -91,7 +91,7 @@ u8 * hostapd_eid_vht_capabilities(struct hostapd_data *hapd, u8 *eid, u32 nsts)
 u8 * hostapd_eid_vht_operation(struct hostapd_data *hapd, u8 *eid)
 {
 	struct ieee80211_vht_operation *oper;
-	le32 vht_capabilities_info;
+	le32 vht_capabilities_info = 0;
 	u8 *pos = eid;
 	enum oper_chan_width oper_chwidth =
 		hostapd_get_oper_chwidth(hapd->iconf);
@@ -130,7 +130,8 @@ u8 * hostapd_eid_vht_operation(struct hostapd_data *hapd, u8 *eid)
 	oper->vht_op_info_chan_center_freq_seg1_idx = seg1;
 
 	oper->vht_op_info_chwidth = oper_chwidth;
-	vht_capabilities_info = host_to_le32(hapd->iface->current_mode->vht_capab);
+	if (hapd->iface->current_mode && hapd->iface->current_mode->vht_capab)
+		vht_capabilities_info = host_to_le32(hapd->iface->current_mode->vht_capab);
 	if (oper_chwidth == CONF_OPER_CHWIDTH_160MHZ) {
 		/*
 		 * Convert 160 MHz channel width to new style as interop
