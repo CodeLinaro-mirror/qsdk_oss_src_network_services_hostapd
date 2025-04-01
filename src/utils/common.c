@@ -1345,3 +1345,23 @@ void forced_memzero(void *ptr, size_t len)
 	if (len)
 		forced_memzero_val = ((u8 *) ptr)[0];
 }
+
+#ifdef CONFIG_IEEE80211AX
+u8 find_bit_offset(u8 val)
+{
+	u8 res = 0;
+
+	for (; val; val >>= 1) {
+		if (val & 1)
+			break;
+		res++;
+	}
+
+	return res;
+}
+
+u8 set_he_cap(int val, u8 mask)
+{
+	return (u8) (mask & (val << find_bit_offset(mask)));
+}
+#endif /*CONFIG_IEEE80211AX*/

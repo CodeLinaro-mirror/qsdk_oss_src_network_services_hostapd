@@ -647,6 +647,12 @@ void forced_memzero(void *ptr, size_t len);
  * in the future to handle these cases.
  */
 void * __hide_aliasing_typecast(void *foo);
+
+#ifdef CONFIG_IEEE80211AX
+u8 find_bit_offset(u8 val);
+u8 set_he_cap(int val, u8 mask);
+#endif /*CONFIG_IEEE80211AX*/
+
 #define aliasing_hide_typecast(a,t) (t *) __hide_aliasing_typecast((a))
 
 #ifdef CONFIG_VALGRIND
