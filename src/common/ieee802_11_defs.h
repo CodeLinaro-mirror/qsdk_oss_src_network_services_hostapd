@@ -1107,6 +1107,23 @@ struct ieee80211_mgmt {
 					u8 variable[]; /* OCI element */
 				} STRUCT_PACKED sa_query_req;
 				struct {
+					u8 action;
+					u8 dialog_token;
+					/*Priority Access Multi-Link element*/
+					u8 variable[];
+				} STRUCT_PACKED epcs_req;
+				struct {
+					u8 action;
+					u8 dialog_token;
+					le16 status;
+					/*Priority Access Multi-Link element*/
+					u8 variable[];
+				} STRUCT_PACKED epcs_resp;
+				struct {
+					u8 action;
+					u8 variable[];
+				} STRUCT_PACKED epcs_teardown;
+				struct {
 					u8 action; /* */
 					u8 trans_id[WLAN_SA_QUERY_TR_ID_LEN];
 					u8 variable[]; /* OCI element */
