@@ -10554,6 +10554,7 @@ static int wpa_driver_nl80211_stop_ap(void *priv, int link_id)
 {
 	struct i802_bss *bss = priv;
 	struct wpa_driver_nl80211_data *drv = bss->drv;
+	int ret;
 
 	if (!is_ap_interface(drv->nlmode))
 		return -1;
@@ -10564,7 +10565,10 @@ static int wpa_driver_nl80211_stop_ap(void *priv, int link_id)
 	}
 
 	if (nl80211_link_valid(bss->valid_links, link_id)) {
-		wpa_driver_nl80211_del_beacon(bss, link_id);
+		ret = wpa_driver_nl80211_del_beacon(bss, link_id);
+		if (ret)
+			wpa_printf(MSG_ERROR, "nl80211: failed to del_beacon for (ifindex=%d) link_id %d\n",
+				   bss->ifindex, link_id);
 		return 0;
 	}
 

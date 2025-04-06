@@ -591,7 +591,7 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	struct hostapd_config *conf;
 	bool changed = false;
 	uint64_t intval;
-	int i;
+	int i, ret;
 
 	if (!iface)
 		return NULL;
@@ -699,22 +699,26 @@ out:
 
 		hapd->conf->start_disabled = 0;
 
-		hostapd_set_freq(hapd, conf->hw_mode, iface->freq,
-				 conf->channel,
-				 conf->enable_edmg,
-				 conf->edmg_channel,
-				 conf->ieee80211n,
-				 conf->ieee80211ac,
-				 conf->ieee80211ax,
-				 conf->ieee80211be,
-				 conf->secondary_channel,
-				 hostapd_get_oper_chwidth(conf),
-				 hostapd_get_oper_centr_freq_seg0_idx(conf),
-				 hostapd_get_oper_centr_freq_seg1_idx(conf),
-				 conf->bandwidth_device,
-				 conf->center_freq_device);
+		ret = hostapd_set_freq(hapd, conf->hw_mode, iface->freq,
+				       conf->channel,
+				       conf->enable_edmg,
+				       conf->edmg_channel,
+				       conf->ieee80211n,
+				       conf->ieee80211ac,
+				       conf->ieee80211ax,
+				       conf->ieee80211be,
+				       conf->secondary_channel,
+				       hostapd_get_oper_chwidth(conf),
+				       hostapd_get_oper_centr_freq_seg0_idx(conf),
+				       hostapd_get_oper_centr_freq_seg1_idx(conf),
+				       conf->bandwidth_device,
+				       conf->center_freq_device);
 
-		ieee802_11_set_beacon(hapd);
+		wpa_printf(MSG_INFO, "set_freq called for bssid " MACSTR " ret %d ifname %s\n",
+			   MAC2STR(hapd->own_addr), ret, hapd->conf->iface);
+		ret = ieee802_11_set_beacon(hapd);
+		wpa_printf(MSG_DEBUG, "set beacon called for bssid " MACSTR " ret %d \n",
+			   MAC2STR(hapd->own_addr), ret);
 	}
 
 	return ucv_boolean_new(true);
