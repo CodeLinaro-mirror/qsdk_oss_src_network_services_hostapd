@@ -382,4 +382,7 @@ void hostapd_get_uhr_capab(struct hostapd_data *hapd,
 			   struct ieee80211_uhr_capabilities *dest,
 			   size_t len);
 
+#ifdef CONFIG_IEEE80211BE
+void hostapd_epcs_timeout_handler(void *eloop_ctx, void *timeout_ctx);
+#endif /* CONFIG_IEEE80211BE */
 #endif /* IEEE802_11_H */

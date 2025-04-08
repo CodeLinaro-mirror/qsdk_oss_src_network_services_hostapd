@@ -9,6 +9,34 @@
 #ifndef MLD_H
 #define MLD_H
 
+/*
+ * enum peer_epcs_state - EPCS states of peer
+ */
+enum peer_epcs_state {
+	EPCS_STATE_DISABLED = 0, /* The default state */
+	EPCS_STATE_ENABLE_REQ_SENT, /* EPCS request sent to the peer, waiting for EPCS response */
+	EPCS_STATE_ENABLED, /* EPCS session established */
+};
+
+/*
+ * struct wlan_epcs_info - EPCS information of frame
+ */
+struct wlan_epcs_info {
+	u8 action_code;
+	u8 dialog_token;
+	u16 status_code;
+};
+
+/*
+ * struct mld_peer_epcs_info - per mld-peer epcs info
+ */
+struct mld_peer_epcs_info {
+	bool is_epcs_capable;
+	enum peer_epcs_state state;
+	u8 self_gen_dialog_token;
+	bool timer_started;
+};
+
 struct mld_link_info {
 	u8 valid:1;
 	u8 nstr_bitmap_len:2;
@@ -35,6 +63,7 @@ struct mld_info {
 	} common_info;
 
 	struct mld_link_info links[MAX_NUM_MLD_LINKS];
+	struct mld_peer_epcs_info epcs;
 };
 
 #endif /* MLD_H */

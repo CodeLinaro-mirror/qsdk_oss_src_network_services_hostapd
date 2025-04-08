@@ -1277,4 +1277,11 @@ hostapd_is_uhr_enabled(struct hostapd_data *hapd)
 	return hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn;
 }
 
+#ifdef CONFIG_IEEE80211BE
+int hostapd_epcs_handle_and_send_action_frame(struct hostapd_data *hapd,
+					      struct wlan_epcs_info *epcs_info,
+					      struct sta_info *sta,
+					      bool is_rx_frame);
+#endif /* CONFIG_IEEE80211BE */
+
 #endif /* HOSTAPD_H */
