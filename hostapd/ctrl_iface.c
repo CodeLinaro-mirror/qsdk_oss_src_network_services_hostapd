@@ -5731,6 +5731,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "LINK_REMOVE ", 12) == 0) {
 		if (hostapd_ctrl_iface_link_remove(hapd, buf + 12))
 			reply_len = -1;
+	} else if (os_strncmp(buf, "EPCS ", 5) == 0) {
+		reply_len = hostapd_epcs_handle_cli(hapd, buf + 5,
+						    reply, reply_size);
 
 #ifdef CONFIG_TESTING_OPTIONS
 	} else if (os_strncmp(buf, "LINK_ENABLE ", 12) == 0) {

@@ -1747,6 +1747,18 @@ static int hostapd_cli_cmd_dpp_push_button(struct wpa_ctrl *ctrl, int argc,
 #endif /* CONFIG_DPP3 */
 #endif /* CONFIG_DPP */
 
+#ifdef CONFIG_IEEE80211BE
+static int hostapd_cli_cmd_epcs(struct wpa_ctrl *ctrl, int argc,
+				char *argv[])
+{
+	if (argc < 1) {
+		printf("Invalid EPCS command: needs 1 argument atleast\n");
+		return -1;
+	}
+	return hostapd_cli_cmd(ctrl, "EPCS", 1, argc, argv);
+}
+#endif /* CONFIG_IEEE80211BE */
+
 
 static int hostapd_cli_cmd_accept_macacl(struct wpa_ctrl *ctrl, int argc,
 					 char *argv[])
@@ -2111,6 +2123,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 #ifdef CONFIG_IEEE80211BE
 	{ "mld_add_link", hostapd_cli_cmd_mld_add_link, NULL,
 	"<config_file_location>" },
+	{ "epcs", hostapd_cli_cmd_epcs, NULL,
+	  "[session_initiate|session_teardown|show] [<peer_mld_mac>|mu_edca_params|wmm_params]"},
 #endif
 
 	{ NULL, NULL, NULL, NULL }
