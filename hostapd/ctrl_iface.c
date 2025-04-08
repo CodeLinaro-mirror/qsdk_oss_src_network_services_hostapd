@@ -5404,6 +5404,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		if (hostapd_ctrl_iface_link_remove(hapd, buf + 12,
 						   reply, reply_size))
 			reply_len = -1;
+        } else if (os_strncmp(buf, "EPCS ", 5) == 0) {
+                reply_len = hostapd_epcs_handle_cli(hapd, buf + 5,
+                                                    reply, reply_size);
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_SAE
 	} else if (os_strncmp(buf, "SAE_PASSWORD_BIND ", 18) == 0) {

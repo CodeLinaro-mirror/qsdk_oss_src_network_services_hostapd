@@ -3218,3 +3218,157 @@ void hostapd_get_epcs_capab(struct hostapd_data *hapd, struct sta_info *sta)
 	} else
 		sta->mld_info.epcs.is_epcs_capable = false;
 }
+
+
+static int hostapd_print_epcs_mu_edca_params(struct hostapd_data *hapd,
+					     char *buf, size_t buflen)
+{
+	int i, len = 0, ret;
+	u8 *epcs_he_muedca;
+	char *ac_name[4] = {"be", "bk", "vi", "vo"};
+
+	for (i = 0; i < 4; i++) {
+		switch (i) {
+		case 0:
+			epcs_he_muedca = hapd->conf->epcs_he_mu_edca.he_mu_ac_be_param;
+			break;
+		case 1:
+			epcs_he_muedca = hapd->conf->epcs_he_mu_edca.he_mu_ac_bk_param;
+			break;
+		case 2:
+			epcs_he_muedca = hapd->conf->epcs_he_mu_edca.he_mu_ac_vi_param;
+			break;
+		case 3:
+			epcs_he_muedca = hapd->conf->epcs_he_mu_edca.he_mu_ac_vo_param;
+			break;
+		}
+
+		ret = os_snprintf(buf + len, buflen - len,
+				  "epcs_he_mu_edca_%s_aifsn: %d\n", ac_name[i],
+				  get_bits_using_bitmask(epcs_he_muedca[HE_MU_AC_PARAM_ACI_IDX],
+				  HE_MU_AC_PARAM_AIFSN));
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+		ret = os_snprintf(buf + len, buflen - len,
+				  "epcs_he_mu_edca_%s_acm: %d\n", ac_name[i],
+				  get_bits_using_bitmask(epcs_he_muedca[HE_MU_AC_PARAM_ACI_IDX],
+				  HE_MU_AC_PARAM_ACM));
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+		ret = os_snprintf(buf + len, buflen - len,
+				  "epcs_he_mu_edca_%s_aci: %d\n", ac_name[i],
+				  get_bits_using_bitmask(epcs_he_muedca[HE_MU_AC_PARAM_ACI_IDX],
+				  HE_MU_AC_PARAM_ACI));
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+		ret = os_snprintf(buf + len, buflen - len,
+				  "epcs_he_mu_edca_%s_ecwmin: %d\n", ac_name[i],
+				  get_bits_using_bitmask(epcs_he_muedca[HE_MU_AC_PARAM_ECW_IDX],
+				  HE_MU_AC_PARAM_ECWMIN));
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+		ret = os_snprintf(buf + len, buflen - len,
+				  "epcs_he_mu_edca_%s_ecwmax: %d\n", ac_name[i],
+				  get_bits_using_bitmask(epcs_he_muedca[HE_MU_AC_PARAM_ECW_IDX],
+				  HE_MU_AC_PARAM_ECWMAX));
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+		ret = os_snprintf(buf + len, buflen - len,
+				  "epcs_he_mu_edca_%s_timer: %d\n", ac_name[i],
+				  epcs_he_muedca[HE_MU_AC_PARAM_TIMER_IDX]);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	return len;
+}
+
+
+static int hostapd_print_wmm_params(struct hostapd_data *hapd,
+				    char *buf, size_t buflen)
+{
+	int i, len = 0, ret;
+	char *ac_name[4] = {"be", "bk", "vi", "vo"};
+
+	for (i = 0; i < 4; i++) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  "epcs_wmm_ac_%s_cwmin: %d\n", ac_name[i],
+				  hapd->conf->epcs_wmm_ac_params[i].cwmin);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+		ret = os_snprintf(buf + len, buflen - len,
+				  "epcs_wmm_ac_%s_cwmax: %d\n", ac_name[i],
+				  hapd->conf->epcs_wmm_ac_params[i].cwmax);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+		ret = os_snprintf(buf + len, buflen - len,
+				  "epcs_wmm_ac_%s_aifs: %d\n", ac_name[i],
+				  hapd->conf->epcs_wmm_ac_params[i].aifs);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+		ret = os_snprintf(buf + len, buflen - len,
+				  "epcs_wmm_ac_%s_txop_limit: %d\n",
+				  ac_name[i],
+				  hapd->conf->epcs_wmm_ac_params[i].txop_limit);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	return len;
+}
+
+struct sta_info * hostapd_get_sta_info_from_mld_addr(struct hostapd_data *hapd,
+						     const u8 *peer_mld_addr)
+{
+	struct sta_info *sta;
+
+	for (sta = hapd->sta_list; sta; sta = sta->next) {
+		if (sta->mld_info.mld_sta &&
+		    (os_memcmp(sta->mld_info.common_info.mld_addr,
+			       peer_mld_addr, ETH_ALEN) == 0)) {
+			return sta;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG, "sta with requested mld_addr is not present");
+	return NULL;
+}
+
+
+int hostapd_epcs_handle_cli(struct hostapd_data *hapd, char *pos,
+			    char *buf, size_t buflen)
+{
+	u8 peer_mld_addr[ETH_ALEN];
+	struct wlan_epcs_info epcs_info = {0};
+
+	if (os_strncmp(pos, "session_initiate ", 17) == 0) {
+		epcs_info.action_code = WLAN_PROT_EHT_EPCS_ENABLE_REQUEST;
+		if (!hwaddr_aton((pos + 17), peer_mld_addr))
+			return hostapd_epcs_handle_and_send_action_frame(hapd,
+									 &epcs_info,
+									 hostapd_get_sta_info_from_mld_addr(hapd, (const u8*)peer_mld_addr),
+									 false);
+
+	} else if (os_strncmp(pos, "session_terminate ", 18) == 0) {
+		epcs_info.action_code = WLAN_PROT_EHT_EPCS_ENABLE_TEARDOWN;
+		if (!hwaddr_aton((pos + 18), peer_mld_addr))
+			return hostapd_epcs_handle_and_send_action_frame(hapd,
+									 &epcs_info,
+									 hostapd_get_sta_info_from_mld_addr(hapd, (const u8*)peer_mld_addr),
+									 false);
+
+	} else if (os_strncmp(pos, "show ", 5) == 0) {
+		if (os_strncmp(pos + 5, "mu_edca_params", 15) == 0) {
+			return hostapd_print_epcs_mu_edca_params(hapd, buf, buflen);
+		} else if (os_strncmp(pos + 5, "wmm_params", 10) == 0) {
+			return hostapd_print_wmm_params(hapd, buf, buflen);
+		} else {
+			wpa_printf(MSG_ERROR, "specify the params to be displayed");
+			return -1;
+		}
+
+	} else {
+		wpa_printf(MSG_ERROR, "invalid epcs command");
+		return -1;
+	}
+
+	return 0;
+}
