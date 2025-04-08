@@ -2800,6 +2800,11 @@ void ieee802_11_rx_protected_eht_action(struct hostapd_data *hapd,
 			wpa_printf(MSG_INFO,
 				   "MLD: Link Reconf Request processing failed");
 		return;
+	case WLAN_PROT_EHT_EPCS_ENABLE_REQUEST:
+	case WLAN_PROT_EHT_EPCS_ENABLE_RESPONSE:
+	case WLAN_PROT_EHT_EPCS_ENABLE_TEARDOWN:
+		hostapd_handle_epcs_action(hapd, (const u8 *)mgmt, len);
+		return;
 	}
 
 	wpa_printf(MSG_DEBUG,
@@ -3150,4 +3155,49 @@ failed:
 	}
 
 	return 0;
+}
+
+
+void hostapd_handle_epcs_action(struct hostapd_data *hapd,
+				const u8 *buf,
+				size_t len)
+{
+	const struct ieee80211_mgmt *mgmt = (const struct ieee80211_mgmt *) buf;
+	const u8 action_type = mgmt->u.action.u.epcs_req.action;
+	struct wlan_epcs_info epcs = {0};
+	struct sta_info *sta;
+
+	sta = ap_get_sta(hapd, mgmt->sa);
+	if (!sta) {
+		wpa_printf(MSG_DEBUG, "sta is NULL");
+		return;
+	}
+
+	if (len == IEEE80211_HDRLEN + 4 || len > IEEE80211_HDRLEN + 5)
+		return;
+
+	epcs.action_code = action_type;
+	wpa_msg(hapd->msg_ctx, MSG_INFO, "EPCS frame received: %d", action_type);
+
+	if (action_type == WLAN_PROT_EHT_EPCS_ENABLE_REQUEST &&
+	    len == IEEE80211_HDRLEN + 3) /* length: Header len +
+					  * action category (1)
+					  * action code (1) +
+					  * dialog token (1)
+					  */
+		epcs.dialog_token = mgmt->u.action.u.epcs_req.dialog_token;
+
+	if (action_type == WLAN_PROT_EHT_EPCS_ENABLE_RESPONSE &&
+	    len == IEEE80211_HDRLEN + 5) /* length: Header len +
+					  * action category (1)
+					  * action code (1) +
+					  * dialog token (1)
+					  * status code (2)
+					  */
+	{
+		epcs.dialog_token = mgmt->u.action.u.epcs_resp.dialog_token;
+		epcs.status_code = mgmt->u.action.u.epcs_resp.status;
+	}
+
+	hostapd_epcs_handle_and_send_action_frame(hapd, &epcs, sta, true);
 }

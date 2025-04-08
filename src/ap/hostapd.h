@@ -1271,5 +1271,9 @@ int hostapd_epcs_handle_and_send_action_frame(struct hostapd_data *hapd,
 					      struct sta_info *sta,
 					      bool is_rx_frame);
 
+void hostapd_handle_epcs_action(struct hostapd_data *hapd,
+				const u8 *buf,
+				size_t len);
+
 #endif /* CONFIG_IEEE80211BE */
 #endif /* HOSTAPD_H */
