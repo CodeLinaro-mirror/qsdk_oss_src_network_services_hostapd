@@ -85,6 +85,7 @@ struct mld_info {
 	} common_info;
 
 	struct mld_link_info links[MAX_NUM_MLD_LINKS];
+	struct mld_peer_epcs_info epcs;
 };
 
 struct sta_info {

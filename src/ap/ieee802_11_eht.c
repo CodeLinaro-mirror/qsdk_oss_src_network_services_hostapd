@@ -17,6 +17,11 @@
 #include "ap_drv_ops.h"
 #include "wpa_auth.h"
 #include "ieee802_11.h"
+#include "common/defs.h"
+#include "common/ieee802_11_defs.h"
+#include "ap_config.h"
+#include "ap_drv_ops.h"
+#include "utils/eloop.h"
 
 
 static u16 ieee80211_eht_ppet_size(u16 ppe_thres_hdr, const u8 *phy_cap_info)
@@ -2891,3 +2896,93 @@ int hostapd_wnm_add_multi_link_sub_elem(struct hostapd_data *hapd,
 	return *len_pos + 2;
 }
 #endif /* CONFIG_IEEE80211BE */
+
+
+void hostapd_epcs_timeout_handler(void *eloop_ctx, void *timeout_ctx)
+{
+	struct wlan_epcs_info epcs_info = {0};
+	struct sta_info *sta = timeout_ctx;
+	struct hostapd_data *hapd = eloop_ctx;
+	struct mld_info *mld_info = &sta->mld_info;
+
+	if (!mld_info->mld_sta)
+		return;
+
+	epcs_info.action_code = WLAN_PROT_EHT_EPCS_ENABLE_TEARDOWN;
+	hostapd_epcs_handle_and_send_action_frame(hapd, &epcs_info, sta, false);
+	mld_info->epcs.timer_started = false;
+}
+
+int hostapd_epcs_handle_and_send_action_frame(struct hostapd_data *hapd,
+					      struct wlan_epcs_info *epcs_info,
+					      struct sta_info *sta,
+					      bool is_rx_frame)
+{
+	struct mld_peer_epcs_info *sta_epcs;
+	enum peer_epcs_state prev_epcs_state;
+
+	if (!sta || !sta->mld_info.mld_sta)
+		return -1;
+
+	sta_epcs = &sta->mld_info.epcs;
+	prev_epcs_state = sta_epcs->state;
+
+	switch (prev_epcs_state) {
+	case EPCS_STATE_DISABLED:
+		if (epcs_info->action_code != WLAN_PROT_EHT_EPCS_ENABLE_REQUEST)
+			goto failed;
+
+		if (is_rx_frame) {
+			epcs_info->action_code = WLAN_PROT_EHT_EPCS_ENABLE_RESPONSE;
+			sta_epcs->state = EPCS_STATE_ENABLED;
+		} else {
+			sta_epcs->state = EPCS_STATE_ENABLE_REQ_SENT;
+			if (sta_epcs->timer_started) {
+				wpa_printf(MSG_DEBUG, "Timer is already started for EPCS Request sent. Restarting the timer");
+				eloop_cancel_timeout(hostapd_epcs_timeout_handler, hapd, sta);
+				sta_epcs->timer_started = false;
+			}
+
+			if (!eloop_register_timeout(150, 0, hostapd_epcs_timeout_handler, hapd, sta))
+				sta_epcs->timer_started = true;
+
+			epcs_info->dialog_token = ++sta_epcs->self_gen_dialog_token;
+		}
+		break;
+
+	case EPCS_STATE_ENABLE_REQ_SENT:
+		if (epcs_info->action_code == WLAN_PROT_EHT_EPCS_ENABLE_TEARDOWN) {
+			sta_epcs->state = EPCS_STATE_DISABLED;
+
+		} else if (epcs_info->action_code == WLAN_PROT_EHT_EPCS_ENABLE_RESPONSE && is_rx_frame) {
+			if (epcs_info->dialog_token == sta_epcs->self_gen_dialog_token) {
+				sta_epcs->state = EPCS_STATE_ENABLED;
+			} else {
+				sta_epcs->state = EPCS_STATE_DISABLED;
+				wpa_printf(MSG_ERROR, "dialog token mis-match, "
+					   "received token: %d, peer token: %d",
+					   epcs_info->dialog_token, sta_epcs->self_gen_dialog_token);
+			}
+
+			eloop_cancel_timeout(hostapd_epcs_timeout_handler, hapd, sta);
+			sta_epcs->timer_started = false;
+		}
+		break;
+
+	case EPCS_STATE_ENABLED:
+		if (epcs_info->action_code != WLAN_PROT_EHT_EPCS_ENABLE_TEARDOWN)
+			goto failed;
+
+		sta_epcs->state = EPCS_STATE_DISABLED;
+		break;
+	}
+
+failed:
+	if (prev_epcs_state == sta_epcs->state) {
+		wpa_printf(MSG_ERROR, "Invalid EPCS State: %d, for the received action code: %d",
+			   prev_epcs_state, epcs_info->action_code);
+		return -1;
+	}
+
+	return 0;
+}

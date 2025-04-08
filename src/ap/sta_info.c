@@ -636,6 +636,7 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	os_free(sta->ifname_wds);
 
 #ifdef CONFIG_IEEE80211BE
+	eloop_cancel_timeout(hostapd_epcs_timeout_handler, hapd, sta);
 	ap_sta_free_sta_profile(&sta->mld_info);
 	ml_deinit_link_reconf_req(&sta->reconf_req);
 #endif /* CONFIG_IEEE80211BE */

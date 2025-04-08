@@ -863,6 +863,36 @@ struct hostapd_iface {
 	u32 mbssid_idx_bmap;
 };
 
+
+/*
+ * enum peer_epcs_state - EPCS states of peer
+ */
+enum peer_epcs_state {
+	EPCS_STATE_DISABLED = 0, /* The default state */
+	EPCS_STATE_ENABLE_REQ_SENT, /* EPCS request sent to the peer, waiting for EPCS response */
+	EPCS_STATE_ENABLED, /* EPCS session established */
+};
+
+/*
+ * struct wlan_epcs_info - EPCS information of frame
+ */
+struct wlan_epcs_info {
+	u8 action_code;
+	u8 dialog_token;
+	u16 status_code;
+};
+
+/*
+ * struct mld_peer_epcs_info - per mld-peer epcs info
+ */
+struct mld_peer_epcs_info {
+	bool is_epcs_capable;
+	enum peer_epcs_state state;
+	u8 self_gen_dialog_token;
+	bool timer_started;
+};
+
+
 /* hostapd.c */
 int hostapd_for_each_interface(struct hapd_interfaces *interfaces,
 			       int (*cb)(struct hostapd_iface *iface,
@@ -1235,4 +1265,11 @@ afc_channel_change_timeout(void *eloop_ctx, void *timeout_ctx)
 	/* No-op if hostapd is not defined */
 }
 #endif
+#ifdef CONFIG_IEEE80211BE
+int hostapd_epcs_handle_and_send_action_frame(struct hostapd_data *hapd,
+					      struct wlan_epcs_info *epcs_info,
+					      struct sta_info *sta,
+					      bool is_rx_frame);
+
+#endif /* CONFIG_IEEE80211BE */
 #endif /* HOSTAPD_H */

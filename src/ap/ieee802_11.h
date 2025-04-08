@@ -355,4 +355,7 @@ void hostapd_link_reconf_resp_tx_status(struct hostapd_data *hapd,
 					const struct ieee80211_mgmt *mgmt,
 					size_t len, int ok);
 
+#ifdef CONFIG_IEEE80211BE
+void hostapd_epcs_timeout_handler(void *eloop_ctx, void *timeout_ctx);
+#endif /* CONFIG_IEEE80211BE */
 #endif /* IEEE802_11_H */
