@@ -435,10 +435,21 @@ static int wpa_cli_cmd_mlo_signal_poll(struct wpa_ctrl *ctrl, int argc, char *ar
 
 
 static int wpa_cli_cmd_setup_link_reconfig(struct wpa_ctrl *ctrl, int argc,
-					   char *argv[])
+						   char *argv[])
 {
 	return wpa_cli_cmd(ctrl, "SETUP_LINK_RECONFIG", 1, argc, argv);
 }
+
+#ifdef CONFIG_IEEE80211BE
+static int wpa_cli_cmd_epcs(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc < 1) {
+		printf("Invalid EPCS session command: needs 1 argument - \n");
+		return -1;
+	}
+	return wpa_cli_cmd(ctrl, "EPCS", 1, argc, argv);
+}
+#endif /* CONFIG_IEEE80211BE */
 
 
 static int wpa_cli_cmd_set(struct wpa_ctrl *ctrl, int argc, char *argv[])
@@ -4283,6 +4294,12 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	{ "mlo_signal_poll", wpa_cli_cmd_mlo_signal_poll, NULL,
 	  cli_cmd_flag_none,
 	  "= get mlo signal parameters" },
+#ifdef CONFIG_IEEE80211BE
+	{ "epcs", wpa_cli_cmd_epcs, NULL,
+	  cli_cmd_flag_none,
+	  "  [session_initiate|session_terminate]\n"
+	  " =enable/disable EPCS session" },
+#endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_NAN_USD
 	{ "nan_publish", wpa_cli_cmd_nan_publish, NULL,
 	  cli_cmd_flag_none,

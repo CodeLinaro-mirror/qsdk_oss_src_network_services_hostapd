@@ -1413,4 +1413,15 @@ wpa_get_multi_hw_info(struct wpa_supplicant *wpa_s,
 					    num_multi_hws);
 }
 
+#ifdef CONFIG_IEEE80211BE
+static inline int wpa_drv_set_epcs_cfg(struct wpa_supplicant *wpa_s,
+					       bool epcs_cfg_value)
+{
+	if (!wpa_s->driver->set_epcs_cfg)
+		return -1;
+
+	return wpa_s->driver->set_epcs_cfg(wpa_s->drv_priv, epcs_cfg_value);
+}
+#endif /* CONFIG_IEEE80211BE */
+
 #endif /* DRIVER_I_H */
