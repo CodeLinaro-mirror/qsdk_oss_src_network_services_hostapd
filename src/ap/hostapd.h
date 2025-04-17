@@ -1286,4 +1286,7 @@ int hostapd_epcs_handle_cli(struct hostapd_data *hapd, char *pos,
 			    char *buf, size_t buflen);
 
 #endif /* CONFIG_IEEE80211BE */
+bool
+hostapd_verify_action_frame_has_min_length(const struct ieee80211_mgmt *mgmt,
+					   size_t len);
 #endif /* HOSTAPD_H */

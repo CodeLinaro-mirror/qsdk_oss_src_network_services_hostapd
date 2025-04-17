@@ -112,3 +112,26 @@ void hostapd_prune_associations(struct hostapd_data *hapd, const u8 *addr,
 		hapd->iface->interfaces->for_each_interface(
 			hapd->iface->interfaces, prune_associations, &data);
 }
+
+bool
+hostapd_verify_action_frame_has_min_length(const struct ieee80211_mgmt *mgmt,
+					   size_t len)
+{
+	size_t min_len;
+
+	/* Ignore frames that are too short to even contain the frame category
+	 * and action code fields
+	 */
+	if (len < IEEE80211_HDRLEN + 2)
+		return false;
+
+	min_len = (mgmt->u.action.u.epcs_teardown.action ==
+		   WLAN_PROT_EHT_EPCS_ENABLE_TEARDOWN)
+		  ? IEEE80211_HDRLEN + 2
+		  : IEEE80211_HDRLEN + 3;
+
+	if (len < min_len)
+		return false;
+
+	return true;
+}
