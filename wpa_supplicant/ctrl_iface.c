@@ -12646,6 +12646,25 @@ static int wpas_ctrl_iface_mlo_status(struct wpa_supplicant *wpa_s,
 	return pos - buf;
 }
 
+#ifdef CONFIG_IEEE80211BE
+static int wpas_ctrl_iface_epcs(struct wpa_supplicant *wpa_s, char *pos,
+				char *buf, size_t buflen)
+{
+	int ret = -1;
+
+	if (os_strncmp(pos, "session_initiate", 16) == 0)
+		ret = wpa_drv_set_epcs_cfg(wpa_s, true);
+	else if (os_strncmp(pos, "session_terminate", 17) == 0)
+		ret = wpa_drv_set_epcs_cfg(wpa_s, false);
+
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR, "sending NL EPCS_CFG failed");
+		return -1;
+	}
+
+	return 0;
+}
+#endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_TESTING_OPTIONS
 static int wpas_ctrl_ml_probe(struct wpa_supplicant *wpa_s, char *cmd)
@@ -14287,6 +14306,11 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 		if (wpas_update_random_addr_disassoc(wpa_s) != 1)
 			reply_len = -1;
 		wpa_s->conf->preassoc_mac_addr = mac_addr_style;
+#ifdef CONFIG_IEEE80211BE
+	} else if (os_strncmp(buf, "EPCS ", 5) == 0) {
+		reply_len = wpas_ctrl_iface_epcs(wpa_s, buf+5, reply,
+						 reply_size);
+#endif /* CONFIG_IEEE80211BE */
 	} else {
 		os_memcpy(reply, "UNKNOWN COMMAND\n", 16);
 		reply_len = 16;

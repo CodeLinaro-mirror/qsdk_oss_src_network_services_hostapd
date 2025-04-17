@@ -15757,6 +15757,40 @@ wpa_driver_get_multi_hw_info(void *priv, unsigned int *num_multi_hws)
 	return nl80211_get_multi_hw_info(bss, num_multi_hws);
 }
 
+
+#ifdef CONFIG_IEEE80211BE
+static int wpa_driver_set_epcs_cfg(void *priv, bool epcs_cfg_value)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret;
+
+	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_EPCS_CFG)))
+		goto failed;
+
+	if (epcs_cfg_value && nla_put_flag(msg, NL80211_ATTR_EPCS))
+		goto failed;
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: send EPCS cfg failed. ret=%d (%s)",
+			   ret, strerror(-ret));
+		return ret;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: epcs_cfg value (%d) is sent", epcs_cfg_value);
+	return ret;
+
+failed:
+	nlmsg_free(msg);
+	return -1;
+}
+#endif /* CONFIG_IEEE80211BE */
+
+
 const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.name = "nl80211",
 	.desc = "Linux nl80211/cfg80211",
@@ -15934,4 +15968,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #endif /* CONFIG_TESTING_OPTIONS */
 	.get_multi_hw_info = wpa_driver_get_multi_hw_info,
 	.is_retail_afc_supported = nl80211_is_retail_afc_supported,
+#ifdef CONFIG_IEEE80211BE
+	.set_epcs_cfg = wpa_driver_set_epcs_cfg,
+#endif /* CONFIG_IEEE80211BE */
 };

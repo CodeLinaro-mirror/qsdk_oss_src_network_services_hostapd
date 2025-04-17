@@ -5783,6 +5783,18 @@ struct wpa_driver_ops {
 				enum nested_attr nested_attr_flag,
 				struct wpabuf *buf, const char *ifname,
 				int ppe_vp_type, bool is_bss);
+	/**
+	 * set_epcs_cfg - Initiate or Terminate a EPCS session from the
+	 * 		  supplicant.
+	 * @priv: Private driver interface data
+	 * @epcs_cfg_value: The EPCS session type. A value of 0 indicates that
+	 * 		    the EPCS session needs to be terminated. A value
+	 * 		    of 1 indicates that the EPCS session needs to be
+	 * 		    initiated from the supplicant.
+	 * Returns: 0 on success, negative value on failure
+	 */
+	int (*set_epcs_cfg)(void *priv, bool epcs_cfg_value);
+
 #endif /* CONFIG_IEEE80211BE */
 	/*
 	 * is_retail_afc_supported - Check if the driver supports retail AFC

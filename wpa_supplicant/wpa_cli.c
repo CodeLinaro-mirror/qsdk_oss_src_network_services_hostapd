@@ -441,6 +441,19 @@ static int wpa_cli_cmd_setup_link_reconfig(struct wpa_ctrl *ctrl, int argc,
 }
 
 
+#ifdef CONFIG_IEEE80211BE
+static int wpa_cli_cmd_epcs(struct wpa_ctrl *ctrl, int argc,
+			    char *argv[])
+{
+	if (argc < 1) {
+		printf("Invalid EPCS session command: needs 1 argument - \n");
+		return -1;
+	}
+	return wpa_cli_cmd(ctrl, "EPCS", 1, argc, argv);
+}
+#endif /* CONFIG_IEEE80211BE */
+
+
 static int wpa_cli_cmd_set(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	char cmd[256];
@@ -4181,6 +4194,12 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	{ "nan_flush", wpa_cli_cmd_nan_flush, NULL,
 	  cli_cmd_flag_none, "= Flush all NAN USD services" },
 #endif /* CONFIG_NAN_USD */
+#ifdef CONFIG_IEEE80211BE
+	{ "epcs", wpa_cli_cmd_epcs, NULL,
+	  cli_cmd_flag_none,
+	  "  [session_initiate|session_teardown]\n"
+	  " =enable/disable EPCS session" },
+#endif /* CONFIG_IEEE80211BE */
 	{ "new_random_mac_address", wpa_cli_cmd_generate_new_mac, NULL,
 	  cli_cmd_flag_none, "= Generate new random MAC address" },
 	{ NULL, NULL, NULL, cli_cmd_flag_none, NULL }
