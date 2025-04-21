@@ -1763,6 +1763,8 @@ enum nl80211_commands {
 	NL80211_CMD_LINK_REMOVAL_STARTED,
 	NL80211_CMD_LINK_REMOVAL_COMPLETED,
 
+	NL80211_CMD_ERP,
+
 	/* add new commands above here */
 
 	/* used to define NL80211_CMD_MAX below */
@@ -3930,6 +3932,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_AP_REMOVAL_COUNT,
 	NL80211_ATTR_TSF,
 	NL80211_ATTR_RXMGMT_LINK_REMOVAL_UPDATE,
+
+	NL80211_ATTR_ERP,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -7348,6 +7352,8 @@ enum nl80211_feature_flags {
  * @NL80211_EXT_FEATURE_MLD_LINK_REMOVAL_OFFLOAD: Driver/device supports
  *	offloading MLD link removal.
  *
+ * @NL80211_EXT_FEATURE_ERP: Driver supports ErP low power mode.
+ *
  * @NL80211_EXT_FEATURE_EPPKE: Driver supports Enhanced Privacy Protection
  *	Key Exchange (EPPKE) with user space SME (NL80211_CMD_AUTHENTICATE)
  *	in non-AP STA mode.
@@ -7459,6 +7465,7 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_BEACON_RATE_EHT,
 	NL80211_EXT_FEATURE_DEVICE_BW,
 	NL80211_EXT_FEATURE_MLD_LINK_REMOVAL_OFFLOAD,
+	NL80211_EXT_FEATURE_ERP,
 	NL80211_EXT_FEATURE_EPPKE,
 	NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION,
 	NL80211_EXT_FEATURE_IEEE8021X_AUTH,
@@ -9519,6 +9526,31 @@ enum nl80211_set_cu {
 	NL80211_CU_ELEMID_MODIFIED = BIT(1),
 
 	NUM_NL80211_CUS = BIT(2),
+};
+
+/**
+ * enum nl80211_erp_attrs - set ErP attributes during entry/exit
+ *
+ * @NL80211_ERP_ATTR_ENTER: (flag) enter into ErP mode.
+ * @NL80211_ERP_ATTR_EXIT: (flag) exit from ErP mode.
+ * @NL80211_ERP_ATTR_STATUS: (u8) get/send ErP status from driver.
+ * @NL80211_ERP_ATTR_TRIGGER: (u32) trigger to initiate automatic exit from ErP
+ *	low power mode.
+ *
+ * @__NL80211_ERP_ATTR_LAST: internal use
+ * @NL80211_ERP_ATTR_MAX: maximum ErP attributes
+ */
+enum nl80211_erp_attrs {
+	__NL80211_ERP_ATTR_INVALID,
+
+	NL80211_ERP_ATTR_ENTER,
+	NL80211_ERP_ATTR_EXIT,
+	NL80211_ERP_ATTR_STATUS,
+	NL80211_ERP_ATTR_TRIGGER,
+
+	/* keep last */
+	__NL80211_ERP_ATTR_LAST,
+	NL80211_ERP_ATTR_MAX = __NL80211_ERP_ATTR_LAST - 1
 };
 
 #define NL80211_NAN_SCHED_NOT_AVAIL_SLOT 0xff
