@@ -10780,6 +10780,7 @@ skip_update:
 	}
 
 	hostapd_set_sta_flags(hapd, sta);
+	ap_sta_set_sa_query_timeout(hapd, sta, 0);
 
 	if (!(sta->flags & WLAN_STA_WDS) && sta->pending_wds_enable) {
 		wpa_printf(MSG_DEBUG, "Enable 4-address WDS mode for STA "
