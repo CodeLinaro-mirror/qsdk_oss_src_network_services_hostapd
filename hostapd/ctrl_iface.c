@@ -3069,6 +3069,7 @@ static int hostapd_ctrl_iface_set_pwr_mode(struct hostapd_iface *iface,
 #endif /* NEED_AP_MLME */
 }
 
+
 static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 					  char *pos)
 {
@@ -6014,6 +6015,29 @@ static int hostapd_ctrl_afc_send_request(struct hostapd_data *hapd, char *cmd)
 #endif /* CONFIG_AFC */
 
 
+static int hostapd_ctrl_iface_clear_afc_payload(struct hostapd_data *hapd,
+						char *pos)
+{
+#ifdef NEED_AP_MLME
+	if (hostapd_drv_is_retail_afc_supported(hapd)) {
+		wpa_printf(MSG_ERROR, "AFC payload clear cmd is allowed only in enterprise mode");
+		return -1;
+	}
+
+	if (!is_6ghz_freq(hapd->iface->freq)) {
+		wpa_printf(MSG_ERROR, "AFC payload clear cmd is only for 6 GHz");
+		return -1;
+	}
+
+	wpa_printf(MSG_DEBUG, "Clearing AFC payload\n");
+
+	return hostapd_drv_clear_afc_payload(hapd);
+#else /* NEED_AP_MLME */
+	return -1;
+#endif /* NEED_AP_MLME */
+}
+
+
 static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 					      char *buf, char *reply,
 					      int reply_size,
@@ -6700,6 +6724,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		if (hostapd_ctrl_afc_send_request(hapd, buf + 16) < 0)
 			reply_len = -1;
 #endif /* CONFIG_AFC */
+	} else if (os_strncmp(buf, "CLEAR_AFC_PAYLOAD", 17) == 0) {
+		if (hostapd_ctrl_iface_clear_afc_payload(hapd, buf + 17))
+			reply_len = -1;
 	} else {
 		os_memcpy(reply, "UNKNOWN COMMAND\n", 16);
 		reply_len = 16;
