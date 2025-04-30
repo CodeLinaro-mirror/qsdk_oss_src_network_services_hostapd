@@ -560,6 +560,16 @@ static inline int hostapd_drv_ml_reconf(struct hostapd_data *hapd,
 }
 #endif /* CONFIG_IEEE80211BE */
 
+static inline int
+hostapd_drv_clear_afc_payload(struct hostapd_data *hapd)
+{
+	if (hapd->driver == NULL || hapd->drv_priv == NULL ||
+	    hapd->driver->clear_afc_payload == NULL)
+		return -1;
+
+	return hapd->driver->clear_afc_payload(hapd->drv_priv, hapd->mld_link_id);
+}
+
 struct hostapd_multi_hw_info *
 hostapd_get_multi_hw_info(struct hostapd_data *hapd,
 			  unsigned int *num_multi_hws);

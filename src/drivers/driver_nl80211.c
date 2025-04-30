@@ -16506,6 +16506,51 @@ nla_fail:
 }
 
 
+
+static int nl80211_clear_afc_payload(void *priv, u8 link_id)
+{
+	struct nl_msg *msg;
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nlattr *params;
+	int ret = -ENOBUFS;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Clearing AFC payload");
+
+	if (drv->nlmode != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
+
+	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR)) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_AFC_CLEAR_PAYLOAD)) {
+		goto error;
+	}
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto error;
+
+	if (link_id != NL80211_DRV_LINK_ID_NA &&
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID, link_id))
+		goto error;
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv(drv, bss->nl_connect, msg, NULL, NULL, NULL, NULL, NULL);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: AFC payload clearing failed err=%d (%s)",
+			   ret, strerror(-ret));
+	}
+	return ret;
+error:
+	nlmsg_free(msg);
+	wpa_printf(MSG_DEBUG, "nl80211: Could not clear AFC payload on link %d",
+		   link_id);
+	return ret;
+}
+
+
 const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.name = "nl80211",
 	.desc = "Linux nl80211/cfg80211",
@@ -16691,4 +16736,5 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.ml_reconf = wpa_driver_nl80211_ml_reconf,
 #endif /* CONFIG_IEEE80211BE */
 	.set_qos = nl80211_set_qos,
+	.clear_afc_payload = nl80211_clear_afc_payload,
 };

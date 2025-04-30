@@ -1458,6 +1458,8 @@ enum qca_radiotap_vendor_ids {
  * @QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS: This vendor subcommand is used to
  *     configure airtime fairness. The attributes used with this subcommand
  *     are defined in enum qca_wlan_vendor_attr_atf_offload_ops.
+ * @QCA_NL80211_VENDOR_SUBCMD_AFC_CLEAR_PAYLOAD: Vendor subcommand to trigger
+ * 	clearing of AFC payload in firmware.
  */
 enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_UNSPEC = 0,

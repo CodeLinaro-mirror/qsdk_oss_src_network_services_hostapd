@@ -6099,6 +6099,15 @@ struct wpa_driver_ops {
 	int (*set_qos)(void *priv, struct qm_req_data *qm_req,
 		       struct qm_resp_data *qm_resp);
 
+	/**
+	 * clear_afc_payload - Notify driver to send a request to firmware to
+	 * clear the stored AFC payload
+	 * @priv: Private driver interface data
+	 * @link_id: Link ID of the specified link; -1 for non-MLD
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*clear_afc_payload)(void *priv, u8 link_id);
+
 	/*
 	 * is_retail_afc_supported - Check if the driver supports retail AFC
 	 * @priv: Private driver interface data
