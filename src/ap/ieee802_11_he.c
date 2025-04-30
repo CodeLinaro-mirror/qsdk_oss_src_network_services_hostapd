@@ -292,20 +292,35 @@ u8 * hostapd_eid_he_operation(struct hostapd_data *hapd, u8 *eid)
 }
 
 
-u8 * hostapd_eid_he_mu_edca_parameter_set(struct hostapd_data *hapd, u8 *eid)
+u8 * hostapd_eid_he_mu_edca_parameter_set(struct hostapd_data *hapd, u8 *eid, bool is_epcs)
 {
 	struct ieee80211_he_mu_edca_parameter_set *edca;
 	struct hostapd_wmm_ac_params wmmp[WMM_AC_NUM];
 	u8 *pos, updated_count;
 	size_t i;
+	struct ieee80211_he_mu_edca_parameter_set *he_mu_edca = NULL;
 
 	 /* Updating WME Parameter Set Count to avoid mismatch */
 	 os_memset(wmmp, 0, sizeof(wmmp));
 
 	 if (hapd->conf->wmm_enabled)
-		 wmm_calc_regulatory_limit(hapd, wmmp);
+		wmm_calc_regulatory_limit(hapd, wmmp, is_epcs);
 
-	pos = (u8 *) &hapd->iface->conf->he_mu_edca;
+	if (!is_epcs)
+		he_mu_edca = &hapd->iface->conf->he_mu_edca;
+#ifdef CONFIG_IEEE80211BE
+	else
+		he_mu_edca = &hapd->conf->epcs_he_mu_edca;
+#endif /* CONFIG_IEEE80211BE */
+
+	if (!he_mu_edca) {
+		wpa_printf(MSG_ERROR,
+			   "he_mu_edca is NULL, is_epcs flag is set to: %d",
+			   is_epcs);
+		return eid;
+	}
+
+	pos = (u8 *) he_mu_edca;
 	for (i = 0; i < sizeof(*edca); i++) {
 		if (pos[i])
 			break;
@@ -319,7 +334,7 @@ u8 * hostapd_eid_he_mu_edca_parameter_set(struct hostapd_data *hapd, u8 *eid)
 	*pos++ = WLAN_EID_EXT_HE_MU_EDCA_PARAMS;
 
 	edca = (struct ieee80211_he_mu_edca_parameter_set *) pos;
-	os_memcpy(edca, &hapd->iface->conf->he_mu_edca, sizeof(*edca));
+	os_memcpy(edca, he_mu_edca, sizeof(*edca));
 
 	updated_count = edca->he_qos_info & 0xf;
 	if (updated_count != (hapd->parameter_set_count & 0xf)) {

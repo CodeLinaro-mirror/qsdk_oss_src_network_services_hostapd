@@ -113,7 +113,8 @@ u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid);
 u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
 			  enum ieee80211_op_mode opmode);
 u8 * hostapd_eid_he_operation(struct hostapd_data *hapd, u8 *eid);
-u8 * hostapd_eid_he_mu_edca_parameter_set(struct hostapd_data *hapd, u8 *eid);
+u8 * hostapd_eid_he_mu_edca_parameter_set(struct hostapd_data *hapd, u8 *eid,
+					  bool is_epcs);
 u8 * hostapd_eid_spatial_reuse(struct hostapd_data *hapd, u8 *eid);
 u8 * hostapd_eid_he_6ghz_band_cap(struct hostapd_data *hapd, u8 *eid);
 

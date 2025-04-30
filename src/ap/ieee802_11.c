@@ -5268,7 +5268,7 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 		p = hostapd_eid_he_capab(hapd, p, IEEE80211_MODE_AP);
 		p = hostapd_eid_he_operation(hapd, p);
 		p = hostapd_eid_spatial_reuse(hapd, p);
-		p = hostapd_eid_he_mu_edca_parameter_set(hapd, p);
+		p = hostapd_eid_he_mu_edca_parameter_set(hapd, p, false);
 		p = hostapd_eid_he_6ghz_band_cap(hapd, p);
 		if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
 			p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
@@ -5278,7 +5278,7 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 
 	p = hostapd_eid_ext_capab(hapd, p, false);
 	p = hostapd_eid_mbo(hapd, p, buf + buflen - p);
-	p = hostapd_eid_wmm(hapd, p);
+	p = hostapd_eid_wmm(hapd, p, false);
 
 	if (hapd->conf->assocresp_elements &&
 	    (size_t) (buf + buflen - p) >=
@@ -5867,7 +5867,7 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 		p = hostapd_eid_he_operation(hapd, p);
 		p = hostapd_eid_cca(hapd, p);
 		p = hostapd_eid_spatial_reuse(hapd, p);
-		p = hostapd_eid_he_mu_edca_parameter_set(hapd, p);
+		p = hostapd_eid_he_mu_edca_parameter_set(hapd, p, false);
 		p = hostapd_eid_he_6ghz_band_cap(hapd, p);
 	}
 #endif /* CONFIG_IEEE80211AX */
@@ -5954,7 +5954,7 @@ rsnxe_done:
 #endif /* CONFIG_IEEE80211AC */
 
 	if (sta && (sta->flags & WLAN_STA_WMM))
-		p = hostapd_eid_wmm(hapd, p);
+		p = hostapd_eid_wmm(hapd, p, false);
 
 #ifdef CONFIG_WPS
 	if (sta &&
@@ -10383,7 +10383,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		/* WMM IE */
 		startpos = eid;
 		if (bss->conf->wmm_override) {
-			eid = hostapd_eid_wmm(bss, eid);
+			eid = hostapd_eid_wmm(bss, eid, false);
 			hostapd_eid_update_cu_info(bss, &modified_flag, startpos,
 						   eid-startpos, ELEMID_CU_PARAM_WMM);
 			if (modified_flag && elemid_modified_bmap)

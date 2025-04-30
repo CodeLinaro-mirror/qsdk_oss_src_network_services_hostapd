@@ -141,7 +141,7 @@ size_t hostapd_eid_wmm_len(struct hostapd_data *hapd)
  * Add WMM Parameter Element to Beacon, Probe Response, and (Re)Association
  * Response frames.
  */
-u8 * hostapd_eid_wmm(struct hostapd_data *hapd, u8 *eid)
+u8 * hostapd_eid_wmm(struct hostapd_data *hapd, u8 *eid, bool is_epcs)
 {
 	u8 *pos = eid;
 	struct wmm_parameter_element *wmm =
@@ -153,7 +153,9 @@ u8 * hostapd_eid_wmm(struct hostapd_data *hapd, u8 *eid)
 
 	if (!hapd->conf->wmm_enabled)
 		return eid;
-	wmm_calc_regulatory_limit(hapd, wmmp);
+
+	wmm_calc_regulatory_limit(hapd, wmmp, is_epcs);
+
 	eid[0] = WLAN_EID_VENDOR_SPECIFIC;
 	wmm->oui[0] = 0x00;
 	wmm->oui[1] = 0x50;
@@ -161,7 +163,13 @@ u8 * hostapd_eid_wmm(struct hostapd_data *hapd, u8 *eid)
 	wmm->oui_type = WMM_OUI_TYPE;
 	wmm->oui_subtype = WMM_OUI_SUBTYPE_PARAMETER_ELEMENT;
 	wmm->version = WMM_VERSION;
-	wmm->qos_info = hapd->parameter_set_count & 0xf;
+
+	if (!is_epcs)
+		wmm->qos_info = (hapd->parameter_set_count) & 0xf;
+#ifdef CONFIG_IEEE80211BE
+	else
+		wmm->qos_info = (hapd->conf->epcs_parameter_set_count) & 0xf;
+#endif /* CONFIG_IEEE80211BE */
 
 	if (hapd->conf->wmm_uapsd &&
 	    (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_AP_UAPSD))

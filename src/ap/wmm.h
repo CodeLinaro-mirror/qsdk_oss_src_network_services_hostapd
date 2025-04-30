@@ -17,7 +17,7 @@ void wmm_calc_regulatory_limit(struct hostapd_data *hapd,
 				struct hostapd_wmm_ac_params *acp,
 				bool is_epcs);
 size_t hostapd_eid_wmm_len(struct hostapd_data *hapd);
-u8 * hostapd_eid_wmm(struct hostapd_data *hapd, u8 *eid);
+u8 * hostapd_eid_wmm(struct hostapd_data *hapd, u8 *eid, bool is_epcs);
 int hostapd_eid_wmm_valid(struct hostapd_data *hapd, const u8 *eid,
 			  size_t len);
 void hostapd_wmm_action(struct hostapd_data *hapd,
