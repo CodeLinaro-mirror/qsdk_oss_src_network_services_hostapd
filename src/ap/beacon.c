@@ -1009,7 +1009,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 		pos = cca_pos;
 
 		pos = hostapd_eid_spatial_reuse(hapd, pos);
-		pos = hostapd_eid_he_mu_edca_parameter_set(hapd, pos);
+		pos = hostapd_eid_he_mu_edca_parameter_set(hapd, pos, false);
 		pos = hostapd_eid_he_6ghz_band_cap(hapd, pos);
 	}
 #endif /* CONFIG_IEEE80211AX */
@@ -1065,7 +1065,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	pos = hostapd_get_wpa_ie(hapd, pos, epos - pos);
 
 	/* Wi-Fi Alliance WMM */
-	pos = hostapd_eid_wmm(hapd, pos);
+	pos = hostapd_eid_wmm(hapd, pos, false);
 
 #ifdef CONFIG_WPS
 	if (hapd->conf->wps_state && hapd->wps_probe_resp_ie) {
@@ -2675,7 +2675,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 						   tailpos-startpos, ELEMID_CU_PARAM_SPATIAL_REUSE);
 #endif
 		startpos = tailpos;
-		tailpos = hostapd_eid_he_mu_edca_parameter_set(hapd, tailpos);
+		tailpos = hostapd_eid_he_mu_edca_parameter_set(hapd, tailpos, false);
 #ifdef CONFIG_IEEE80211BE
 		if (hapd == tx_bss)
 			hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
@@ -2738,7 +2738,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 
 	/* Wi-Fi Alliance WMM */
 	startpos = tailpos;
-	tailpos = hostapd_eid_wmm(hapd, tailpos);
+	tailpos = hostapd_eid_wmm(hapd, tailpos, false);
 #ifdef CONFIG_IEEE80211BE
 	if (hapd == tx_bss)
 		hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
