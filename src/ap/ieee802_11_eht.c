@@ -3207,3 +3207,14 @@ void hostapd_handle_epcs_action(struct hostapd_data *hapd,
 
 	hostapd_epcs_handle_and_send_action_frame(hapd, &epcs, sta, true);
 }
+
+
+void hostapd_get_epcs_capab(struct hostapd_data *hapd, struct sta_info *sta)
+{
+	if (sta->mld_info.mld_sta && sta->eht_capab &&
+	    (sta->eht_capab->mac_cap & EHT_MACCAP_EPCS_PRIO)) {
+		sta->mld_info.epcs.is_epcs_capable = true;
+		sta->mld_info.epcs.state = EPCS_STATE_DISABLED;
+	} else
+		sta->mld_info.epcs.is_epcs_capable = false;
+}

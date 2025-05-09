@@ -1275,5 +1275,6 @@ void hostapd_handle_epcs_action(struct hostapd_data *hapd,
 				const u8 *buf,
 				size_t len);
 
+void hostapd_get_epcs_capab(struct hostapd_data *hapd, struct sta_info *sta);
 #endif /* CONFIG_IEEE80211BE */
 #endif /* HOSTAPD_H */
