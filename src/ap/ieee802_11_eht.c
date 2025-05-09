@@ -145,6 +145,12 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 	cap = (struct ieee80211_eht_capabilities *) pos;
 	os_memset(cap, 0, sizeof(*cap));
 	cap->mac_cap = host_to_le16(eht_cap->mac_cap);
+
+	if (hapd->conf->is_epcs_enabled)
+		cap->mac_cap |= EHT_MACCAP_EPCS_PRIO;
+	else
+		cap->mac_cap &= ~EHT_MACCAP_EPCS_PRIO;
+
 	os_memcpy(cap->phy_cap, eht_cap->phy_cap, EHT_PHY_CAPAB_LEN);
 
 	if (!is_6ghz_op_class(hapd->iconf->op_class))
