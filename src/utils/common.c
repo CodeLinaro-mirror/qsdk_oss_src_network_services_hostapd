@@ -1364,4 +1364,9 @@ u8 set_he_cap(int val, u8 mask)
 {
 	return (u8) (mask & (val << find_bit_offset(mask)));
 }
+
+u8 get_bits_using_bitmask(int val, u8 mask)
+{
+	return (u8) ((mask & val) >> find_bit_offset(mask));
+}
 #endif /*CONFIG_IEEE80211AX*/
