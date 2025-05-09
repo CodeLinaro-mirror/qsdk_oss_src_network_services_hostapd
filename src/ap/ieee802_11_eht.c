@@ -3061,8 +3061,8 @@ static int hapd_epcs_drv_send_action_frame(struct hostapd_data *hapd,
 }
 
 
-bool hostapd_epcs_is_sta_authorized(struct hostapd_data *hapd,
-				    struct sta_info *sta)
+static bool hostapd_epcs_is_sta_authorized(struct hostapd_data *hapd,
+					   struct sta_info *sta)
 {
 	return hostapd_maclist_found(hapd->mld->epcs_authorized_mac,
 				     hapd->mld->num_epcs_authorized_mac,
@@ -3097,7 +3097,24 @@ int hostapd_epcs_handle_and_send_action_frame(struct hostapd_data *hapd,
 	if (!sta || !sta->mld_info.mld_sta)
 		return -1;
 
+	if (!hapd->conf->is_epcs_enabled && !is_rx_frame) {
+		wpa_printf(MSG_ERROR, "EPCS feature is disabled");
+		return -1;
+	}
+
+	if (!hostapd_epcs_is_sta_authorized(hapd, sta) && !is_rx_frame) {
+		wpa_printf(MSG_ERROR, "sta is not authorized for EPCS");
+		return -1;
+	}
+
 	sta_epcs = &sta->mld_info.epcs;
+
+	if (!sta_epcs->is_epcs_capable && !is_rx_frame) {
+		wpa_printf(MSG_ERROR, "sta with mld addr: " MACSTR  " is not EPCS Capable",
+			   MAC2STR(sta->mld_info.common_info.mld_addr));
+		return -1;
+	}
+
 	prev_epcs_state = sta_epcs->state;
 
 	switch (prev_epcs_state) {
@@ -3105,15 +3122,19 @@ int hostapd_epcs_handle_and_send_action_frame(struct hostapd_data *hapd,
 		if (epcs_info->action_code != WLAN_PROT_EHT_EPCS_ENABLE_REQUEST)
 			goto failed;
 
-		if (is_rx_frame)
+		if (is_rx_frame) {
 			epcs_info->action_code = WLAN_PROT_EHT_EPCS_ENABLE_RESPONSE;
-		else
+			epcs_info->status_code = (hapd->conf->is_epcs_enabled && sta_epcs->is_epcs_capable) ?
+						 (hostapd_epcs_is_sta_authorized(hapd, sta) ?
+						 WLAN_STATUS_SUCCESS : WLAN_STATUS_EPCS_DENIED_UNAUTHORIZED) :
+						 WLAN_STATUS_EPCS_DENIED;
+		} else
 			epcs_info->dialog_token = ++sta_epcs->self_gen_dialog_token;
 
 		if (hapd_epcs_drv_send_action_frame(hapd, epcs_info, sta))
 			break;
 
-		if (is_rx_frame) {
+		if (is_rx_frame && epcs_info->status_code == WLAN_STATUS_SUCCESS) {
 			sta_epcs->state = EPCS_STATE_ENABLED;
 			break;
 		}
@@ -3138,9 +3159,10 @@ int hostapd_epcs_handle_and_send_action_frame(struct hostapd_data *hapd,
 				sta_epcs->state = EPCS_STATE_DISABLED;
 
 		} else if (epcs_info->action_code == WLAN_PROT_EHT_EPCS_ENABLE_RESPONSE && is_rx_frame) {
-			if (epcs_info->dialog_token == sta_epcs->self_gen_dialog_token) {
-				sta_epcs->state = EPCS_STATE_ENABLED;
-			} else {
+			if (epcs_info->dialog_token == sta_epcs->self_gen_dialog_token)
+				sta_epcs->state = (epcs_info->status_code == WLAN_STATUS_SUCCESS) ?
+						  EPCS_STATE_ENABLED : EPCS_STATE_DISABLED;
+			else {
 				sta_epcs->state = EPCS_STATE_DISABLED;
 				wpa_printf(MSG_ERROR, "dialog token mis-match, "
 					   "received token: %d, peer token: %d",
@@ -3163,10 +3185,15 @@ int hostapd_epcs_handle_and_send_action_frame(struct hostapd_data *hapd,
 		break;
 	}
 
+	if (epcs_info->status_code)
+		wpa_printf(MSG_DEBUG, "EPCS status_code is set to %d for the sta with mld addr" MACSTR,
+			   epcs_info->status_code, MAC2STR(sta->mld_info.common_info.mld_addr));
+
 failed:
 	if (prev_epcs_state == sta_epcs->state) {
-		wpa_printf(MSG_ERROR, "Invalid EPCS State: %d, for the received action code: %d",
-			   prev_epcs_state, epcs_info->action_code);
+		wpa_printf(MSG_ERROR, "Invalid EPCS State: %d, for the received action code: %d. EPCS state is moved to: %d"
+			   "for sta with mld addr" MACSTR, prev_epcs_state, epcs_info->action_code, sta_epcs->state,
+			   MAC2STR(sta->mld_info.common_info.mld_addr));
 		return -1;
 	}
 
