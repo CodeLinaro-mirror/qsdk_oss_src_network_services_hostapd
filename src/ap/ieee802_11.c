@@ -8608,6 +8608,7 @@ rsnxe_done:
 			p = hostapd_eid_eht_ml_assoc(hapd, sta, p);
 		p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
 		p = hostapd_eid_eht_operation(hapd, p);
+		hostapd_get_epcs_capab(hapd, sta);
 		if (ap_sta_is_mld(hapd, sta))
 			p = hostapd_eid_eht_ml_tid_to_link_map(hapd, p);
 	}
