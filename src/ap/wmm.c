@@ -62,7 +62,8 @@ wmm_set_regulatory_limit(const struct hostapd_wmm_ac_params *wmm_conf,
  * Calculate WMM regulatory limit if any.
  */
 void wmm_calc_regulatory_limit(struct hostapd_data *hapd,
-			       struct hostapd_wmm_ac_params *acp)
+			       struct hostapd_wmm_ac_params *acp,
+			       bool is_epcs)
 {
 	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
 	int c;
@@ -96,6 +97,16 @@ void wmm_calc_regulatory_limit(struct hostapd_data *hapd,
 		  (hapd->iface->conf->he_mu_edca.he_qos_info & 0xf0) |
 		  ((hapd->iface->conf->he_mu_edca.he_qos_info + 1) & 0xf);
 	}
+#ifdef CONFIG_IEEE80211BE
+	else  {
+		if (os_memcmp(acp, hapd->conf->prev_epcs_wmm_ac_params,
+			      sizeof(hapd->conf->wmm_ac_params)) != 0) {
+			os_memcpy(hapd->conf->prev_epcs_wmm_ac_params, acp,
+				  sizeof(hapd->conf->wmm_ac_params));
+			hapd->conf->epcs_parameter_set_count++;
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
 }
 
 
