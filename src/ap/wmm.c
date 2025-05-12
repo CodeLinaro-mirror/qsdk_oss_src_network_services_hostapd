@@ -62,18 +62,35 @@ wmm_set_regulatory_limit(const struct hostapd_wmm_ac_params *wmm_conf,
  * Calculate WMM regulatory limit if any.
  */
 void wmm_calc_regulatory_limit(struct hostapd_data *hapd,
-			       struct hostapd_wmm_ac_params *acp)
+			       struct hostapd_wmm_ac_params *acp,
+			       bool is_epcs)
 {
 	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
 	int c;
 	struct hostapd_wmm_ac_params *wmm_ac_params = hapd->iconf->wmm_ac_params;
 	struct hostapd_wmm_ac_params *prev_wmm = hapd->iface->prev_wmm;
+	struct hostapd_wmm_ac_params *conf_wmm_ac_params = NULL;
 
 	if (hapd->conf->wmm_override) {
 		wmm_ac_params = hapd->conf->wmm_ac_params;
 		prev_wmm = hapd->prev_wmm;
 	}
-	os_memcpy(acp, wmm_ac_params,
+
+	if (!is_epcs)
+		conf_wmm_ac_params = wmm_ac_params;
+#ifdef CONFIG_IEEE80211BE
+	else
+		conf_wmm_ac_params = hapd->conf->epcs_wmm_ac_params;
+#endif
+
+	if (!conf_wmm_ac_params) {
+		wpa_printf(MSG_ERROR,
+			   "conf_wmm_ac_params is NULL, is_epcs flag is set to: %d",
+			   is_epcs);
+		return;
+	}
+
+	os_memcpy(acp, conf_wmm_ac_params,
 		  sizeof(hapd->iconf->wmm_ac_params));
 
 	for (c = 0; mode && c < mode->num_channels; c++) {
@@ -83,7 +100,7 @@ void wmm_calc_regulatory_limit(struct hostapd_data *hapd,
 			continue;
 
 		if (chan->wmm_rules_valid)
-			wmm_set_regulatory_limit(wmm_ac_params,
+			wmm_set_regulatory_limit(conf_wmm_ac_params,
 						 acp, chan->wmm_rules);
 		break;
 	}
@@ -92,12 +109,24 @@ void wmm_calc_regulatory_limit(struct hostapd_data *hapd,
 	 * Check if we need to update set count. Since both were initialized to
 	 * zero we can compare the whole array in one shot.
 	 */
-	if (os_memcmp(acp, prev_wmm,
-		      sizeof(hapd->iconf->wmm_ac_params)) != 0) {
-		os_memcpy(prev_wmm, acp,
-			  sizeof(hapd->iconf->wmm_ac_params));
-		hapd->parameter_set_count++;
+	if (!is_epcs) {
+		if (os_memcmp(acp, prev_wmm,
+			      sizeof(hapd->iconf->wmm_ac_params)) != 0) {
+			os_memcpy(prev_wmm, acp,
+				  sizeof(hapd->iconf->wmm_ac_params));
+			hapd->parameter_set_count++;
+		}
 	}
+#ifdef CONFIG_IEEE80211BE
+	else  {
+		if (os_memcmp(acp, hapd->conf->prev_epcs_wmm_ac_params,
+			      sizeof(hapd->iconf->wmm_ac_params)) != 0) {
+			os_memcpy(hapd->conf->prev_epcs_wmm_ac_params, acp,
+				  sizeof(hapd->iconf->wmm_ac_params));
+			hapd->conf->epcs_parameter_set_count++;
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
 }
 
 

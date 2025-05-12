@@ -1012,7 +1012,9 @@ struct hostapd_bss_config {
 	enum qca_wlan_intf_offload_type ppe_vp_type;
 #ifdef CONFIG_IEEE80211BE
 	struct hostapd_wmm_ac_params epcs_wmm_ac_params[4];
+	struct hostapd_wmm_ac_params prev_epcs_wmm_ac_params[4];
 	struct ieee80211_he_mu_edca_parameter_set epcs_he_mu_edca;
+	int epcs_parameter_set_count;
 #endif /* CONFIG_IEEE80211BE */
 
 };
