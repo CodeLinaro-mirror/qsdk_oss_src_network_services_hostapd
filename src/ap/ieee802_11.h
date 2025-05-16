@@ -359,4 +359,5 @@ void hostapd_link_reconf_resp_tx_status(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211BE
 void hostapd_epcs_timeout_handler(void *eloop_ctx, void *timeout_ctx);
 #endif /* CONFIG_IEEE80211BE */
+u8 * hostapd_fragment_multi_link_element(struct wpabuf *buf, u8 *pos);
 #endif /* IEEE802_11_H */

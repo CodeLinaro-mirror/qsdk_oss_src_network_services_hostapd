@@ -784,38 +784,7 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 
 out:
 	/* Fragment the Multi-Link element, if needed */
-	len = wpabuf_len(buf);
-	ptr = wpabuf_head(buf);
-
-	if (len <= 254)
-		slice_len = len;
-	else
-		slice_len = 254;
-
-	*pos++ = WLAN_EID_EXTENSION;
-	*pos++ = slice_len + 1;
-	*pos++ = WLAN_EID_EXT_MULTI_LINK;
-	os_memcpy(pos, ptr, slice_len);
-
-	ptr += slice_len;
-	pos += slice_len;
-	len -= slice_len;
-
-	while (len) {
-		if (len <= 255)
-			slice_len = len;
-		else
-			slice_len = 255;
-
-		*pos++ = WLAN_EID_FRAGMENT;
-		*pos++ = slice_len;
-		os_memcpy(pos, ptr, slice_len);
-
-		ptr += slice_len;
-		pos += slice_len;
-		len -= slice_len;
-	}
-
+	pos = hostapd_fragment_multi_link_element(buf, pos);
 	wpabuf_free(buf);
 	return pos;
 }
@@ -2896,6 +2865,46 @@ int hostapd_wnm_add_multi_link_sub_elem(struct hostapd_data *hapd,
 	return *len_pos + 2;
 }
 #endif /* CONFIG_IEEE80211BE */
+
+
+u8 * hostapd_fragment_multi_link_element(struct wpabuf *buf, u8 *pos)
+{
+	size_t len, slice_len;
+	const u8 *ptr;
+
+	len = wpabuf_len(buf);
+	ptr = wpabuf_head(buf);
+
+	if (len <= 254)
+		slice_len = len;
+	else
+		slice_len = 254;
+
+	*pos++ = WLAN_EID_EXTENSION;
+	*pos++ = slice_len + 1;
+	*pos++ = WLAN_EID_EXT_MULTI_LINK;
+	os_memcpy(pos, ptr, slice_len);
+
+	ptr += slice_len;
+	pos += slice_len;
+	len -= slice_len;
+
+	while (len) {
+		if (len <= 255)
+			slice_len = len;
+		else
+			slice_len = 255;
+
+		*pos++ = WLAN_EID_FRAGMENT;
+		*pos++ = slice_len;
+		os_memcpy(pos, ptr, slice_len);
+
+		ptr += slice_len;
+		pos += slice_len;
+		len -= slice_len;
+	}
+	return pos;
+}
 
 
 void hostapd_epcs_timeout_handler(void *eloop_ctx, void *timeout_ctx)
