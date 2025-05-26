@@ -670,6 +670,12 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 	if (ext_feature_isset(ext_features, len, NL80211_EXT_FEATURE_PUNCT))
 		info->drv->puncturing = 1;
 
+	if (ext_feature_isset(ext_features, len, NL80211_EXT_FEATURE_TARGET_AND_HOST_AFC_SUPPORT))
+		info->drv->afc_support = 1;
+
+	if (ext_feature_isset(ext_features, len, NL80211_EXT_FEATURE_RETAIL_AFC_SUPPORT))
+		info->drv->afc_retail_support = 1;
+
 	if (ext_feature_isset(ext_features, len,
 			      NL80211_EXT_FEATURE_BEACON_PROTECTION_CLIENT))
 		capa->flags2 |= WPA_DRIVER_FLAGS2_BEACON_PROTECTION_CLIENT;
