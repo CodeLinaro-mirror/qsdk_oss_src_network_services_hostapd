@@ -8389,6 +8389,66 @@ static void get_sta_tid_stats(struct hostap_sta_driver_data *data,
 	}
 }
 
+static int get_link_sta_inactive_time(struct hostap_sta_driver_data *data,
+				      struct nlattr *link_sta_stats[],
+				      u8 mld_link_id)
+{
+	if (!data || !link_sta_stats || (mld_link_id > MAX_NUM_MLD_LINKS))
+		return -EINVAL;
+
+	if (!link_sta_stats[NL80211_STA_INFO_INACTIVE_TIME])
+		return 0;
+
+	data->link_sta_data[mld_link_id] = (struct hostap_sta_driver_data *)
+				os_zalloc(sizeof(struct hostap_sta_driver_data));
+	if (!data->link_sta_data[mld_link_id])
+		return -ENOMEM;
+
+	data->valid_links |= BIT(mld_link_id);
+	data->link_sta_data[mld_link_id]->inactive_msec =
+		nla_get_u32(link_sta_stats[NL80211_STA_INFO_INACTIVE_TIME]);
+
+	return 0;
+}
+
+static int get_link_sta_stats(struct hostap_sta_driver_data *data,
+			      struct nlattr **tb,
+			      struct nla_policy *stats_policy)
+{
+	struct nlattr *link_attr[NL80211_ATTR_MAX + 1];
+	struct nlattr *link_sta_stats[NL80211_STA_INFO_MAX + 1];
+	unsigned char mlo_link_id = MAX_NUM_MLD_LINKS;
+	struct nlattr *link;
+	int rem;
+
+	if (!data || !tb || !stats_policy)
+		return -1;
+
+	nla_for_each_nested(link, tb[NL80211_ATTR_MLO_LINKS], rem) {
+		if (link &&
+		    nla_parse_nested(link_attr, NL80211_ATTR_MAX, link,
+				     NULL) == 0) {
+			if (link_attr[NL80211_ATTR_MLO_LINK_ID])
+				mlo_link_id = nla_get_u8(link_attr[NL80211_ATTR_MLO_LINK_ID]);
+
+			if ((mlo_link_id < MAX_NUM_MLD_LINKS) &&
+			    link_attr[NL80211_ATTR_STA_INFO]) {
+				if (nla_parse_nested(link_sta_stats,
+						     NL80211_STA_INFO_MAX,
+						     link_attr[NL80211_ATTR_STA_INFO],
+						     stats_policy) == 0) {
+					if (get_link_sta_inactive_time(data,
+								       link_sta_stats,
+								       mlo_link_id))
+						wpa_printf(MSG_DEBUG, "failed to get %u link info",
+							   mlo_link_id);
+				}
+			}
+		}
+	}
+
+	return 0;
+}
 
 static int get_sta_handler(struct nl_msg *msg, void *arg)
 {
@@ -8396,6 +8456,7 @@ static int get_sta_handler(struct nl_msg *msg, void *arg)
 	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
 	struct hostap_sta_driver_data *data = arg;
 	struct nlattr *stats[NL80211_STA_INFO_MAX + 1];
+	unsigned char mlo_link_id = MAX_NUM_MLD_LINKS;
 	static struct nla_policy stats_policy[NL80211_STA_INFO_MAX + 1] = {
 		[NL80211_STA_INFO_INACTIVE_TIME] = { .type = NLA_U32 },
 		[NL80211_STA_INFO_RX_BYTES] = { .type = NLA_U32 },
@@ -8660,6 +8721,12 @@ static int get_sta_handler(struct nl_msg *msg, void *arg)
 		}
 	}
 
+	if (tb[NL80211_ATTR_MLO_LINKS])
+		if (get_link_sta_stats(data, tb, stats_policy))
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: link=%d: failed to get link stats",
+				    mlo_link_id);
+
 	if (stats[NL80211_STA_INFO_TID_STATS])
 		get_sta_tid_stats(data, stats[NL80211_STA_INFO_TID_STATS]);
 
@@ -8808,16 +8875,35 @@ static int i802_set_sta_vlan(struct i802_bss *bss, const u8 *addr,
 static int i802_get_inact_sec(void *priv, const u8 *addr)
 {
 	struct hostap_sta_driver_data data;
-	int ret;
+	int ret, i;
+	unsigned long inactive_time;
 
 	os_memset(&data, 0, sizeof(data));
-	data.inactive_msec = (unsigned long) -1;
+	data.inactive_msec = -1UL;
+
 	ret = i802_read_sta_data(priv, &data, addr);
-	if (ret == -ENOENT)
-		return -ENOENT;
-	if (ret || data.inactive_msec == (unsigned long) -1)
+	if (ret)
+		goto free_link_sta_data;
+
+	inactive_time = data.inactive_msec;
+	for_each_link(data.valid_links, i) {
+		if (data.link_sta_data[i] &&
+		    (data.link_sta_data[i]->inactive_msec != -1UL) &&
+		    (inactive_time > data.link_sta_data[i]->inactive_msec))
+			inactive_time = data.link_sta_data[i]->inactive_msec;
+	}
+
+free_link_sta_data:
+	for_each_link(data.valid_links, i)
+		os_free(data.link_sta_data[i]);
+
+	if (ret || (inactive_time == -1UL)) {
+		if (ret == -ENOENT)
+			return ret;
 		return -1;
-	return data.inactive_msec / 1000;
+	}
+
+	return (inactive_time / 1000);
 }
 
 

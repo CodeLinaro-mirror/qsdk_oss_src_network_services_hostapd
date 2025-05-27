@@ -2765,6 +2765,8 @@ struct hostap_sta_driver_data {
 	s8 avg_ack_signal; /* dBm */
 	enum guard_interval rx_guard_interval, tx_guard_interval;
 	u8 rx_dcm, tx_dcm;
+	u16 valid_links;
+	struct hostap_sta_driver_data *link_sta_data[MAX_NUM_MLD_LINKS];
 };
 
 struct hostapd_sta_add_params {
