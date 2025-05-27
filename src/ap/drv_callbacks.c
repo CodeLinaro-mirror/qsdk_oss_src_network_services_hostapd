@@ -2524,7 +2524,15 @@ static int hostapd_allocate_afc_rsp_info(struct hostapd_iface *iface,
 	}
 
 	os_memcpy(afc_response, afc_rsp_info, sizeof(*afc_response));
+	afc_response->afc_freq_info = NULL;
+	afc_response->afc_chan_info = NULL;
 	iface->afc_rsp_info = afc_response;
+
+	if (!afc_rsp_info->num_freq_objs || !afc_rsp_info->num_chan_objs) {
+		wpa_printf(MSG_DEBUG, "No AFC Freq / Chan objects");
+		return 0;
+	}
+
 	afc_freq_info = os_malloc(afc_rsp_info->num_freq_objs *
 				  sizeof(*afc_freq_info));
 	if (!afc_freq_info) {

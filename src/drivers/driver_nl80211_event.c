@@ -4013,12 +4013,10 @@ qca_nl80211_afc_power_update_completed(struct i802_bss *bss,
 
 	if (!num_frange_obj) {
 		wpa_printf(MSG_ERROR, "Number of freq objects is zero");
-		return -EINVAL;
 	}
 
 	if (!num_opclass_obj) {
 		wpa_printf(MSG_ERROR, "Number of chan objects is zero");
-		return -EINVAL;
 	}
 
 	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_REQ_ID]) {
@@ -4050,52 +4048,56 @@ qca_nl80211_afc_power_update_completed(struct i802_bss *bss,
 	afc_rsp->num_chan_objs = num_opclass_obj;
 
 	i = 0;
-	afc_freq_info = os_malloc(num_frange_obj *
-				  sizeof(*afc_freq_info));
-	if (!afc_freq_info) {
-		wpa_printf(MSG_DEBUG, "afc_freq_info allocation failed");
-		return -ENOMEM;
-	}
-
-	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_FREQ_RANGE_LIST]) {
-		nla_for_each_nested(nl,
-				    attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_FREQ_RANGE_LIST],
-				    rem) {
-			if (i >= num_frange_obj || copy_afc_freq_objs(nl, afc_freq_info, &i)) {
-				wpa_printf(MSG_DEBUG, "afc_freq_info copy failed");
-				os_free(afc_freq_info);
-				return -EINVAL;
-			}
+	if (num_frange_obj) {
+		afc_freq_info = os_malloc(num_frange_obj *
+					  sizeof(*afc_freq_info));
+		if (!afc_freq_info) {
+			wpa_printf(MSG_DEBUG, "afc_freq_info allocation failed");
+			return -ENOMEM;
 		}
 
-		afc_rsp->afc_freq_info = afc_freq_info;
+		if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_FREQ_RANGE_LIST]) {
+			nla_for_each_nested(nl,
+					    attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_FREQ_RANGE_LIST],
+					    rem) {
+				if (i >= num_frange_obj || copy_afc_freq_objs(nl, afc_freq_info, &i)) {
+					wpa_printf(MSG_DEBUG, "afc_freq_info copy failed");
+					os_free(afc_freq_info);
+					return -EINVAL;
+				}
+			}
+
+			afc_rsp->afc_freq_info = afc_freq_info;
+		}
 	}
 
 	/* Start parsing and updating the opclass list and corresponding channel
 	 * and EIRP power information.
 	 */
-	i = 0;
-	afc_chan_info = os_malloc(num_opclass_obj * sizeof(*afc_chan_info));
-	if (!afc_chan_info) {
-		wpa_printf(MSG_DEBUG, "afc_chan_info allocation failed");
-		os_free(afc_freq_info);
-		return -ENOMEM;
-	}
-
-	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_OPCLASS_CHAN_LIST]) {
-		nla_for_each_nested(nl,
-				    attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_OPCLASS_CHAN_LIST],
-				    rem) {
-			if (copy_afc_chan_obj(nl, afc_chan_info,
-					      opclass_chan_list, &i)) {
-				wpa_printf(MSG_DEBUG, "afc_chan_info copy failed");
-				os_free(afc_freq_info);
-				os_free(afc_chan_info);
-				return -EINVAL;
-			}
+	if (num_opclass_obj) {
+		i = 0;
+		afc_chan_info = os_malloc(num_opclass_obj * sizeof(*afc_chan_info));
+		if (!afc_chan_info) {
+			wpa_printf(MSG_DEBUG, "afc_chan_info allocation failed");
+			os_free(afc_freq_info);
+			return -ENOMEM;
 		}
 
-		afc_rsp->afc_chan_info = afc_chan_info;
+		if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_OPCLASS_CHAN_LIST]) {
+			nla_for_each_nested(nl,
+					    attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_OPCLASS_CHAN_LIST],
+					    rem) {
+				if (copy_afc_chan_obj(nl, afc_chan_info,
+						      opclass_chan_list, &i)) {
+					wpa_printf(MSG_DEBUG, "afc_chan_info copy failed");
+					os_free(afc_freq_info);
+					os_free(afc_chan_info);
+					return -EINVAL;
+				}
+			}
+
+			afc_rsp->afc_chan_info = afc_chan_info;
+		}
 	}
 
 	wpa_supplicant_event(bss->ctx, EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY,
