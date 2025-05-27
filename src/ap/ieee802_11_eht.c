@@ -2988,9 +2988,9 @@ static size_t hostapd_eid_eht_ml_priority_access(struct hostapd_data *hapd,
 }
 
 
-int hapd_epcs_drv_send_action_frame(struct hostapd_data *hapd,
-				    struct wlan_epcs_info *epcs_info,
-				    struct sta_info *sta)
+static int hapd_epcs_drv_send_action_frame(struct hostapd_data *hapd,
+					   struct wlan_epcs_info *epcs_info,
+					   struct sta_info *sta)
 {
 	size_t prio_access_ml_elem_len;
 	u8 *prio_access_ml_elem;
@@ -3084,27 +3084,37 @@ int hostapd_epcs_handle_and_send_action_frame(struct hostapd_data *hapd,
 		if (epcs_info->action_code != WLAN_PROT_EHT_EPCS_ENABLE_REQUEST)
 			goto failed;
 
-		if (is_rx_frame) {
+		if (is_rx_frame)
 			epcs_info->action_code = WLAN_PROT_EHT_EPCS_ENABLE_RESPONSE;
-			sta_epcs->state = EPCS_STATE_ENABLED;
-		} else {
-			sta_epcs->state = EPCS_STATE_ENABLE_REQ_SENT;
-			if (sta_epcs->timer_started) {
-				wpa_printf(MSG_DEBUG, "Timer is already started for EPCS Request sent. Restarting the timer");
-				eloop_cancel_timeout(hostapd_epcs_timeout_handler, hapd, sta);
-				sta_epcs->timer_started = false;
-			}
-
-			if (!eloop_register_timeout(150, 0, hostapd_epcs_timeout_handler, hapd, sta))
-				sta_epcs->timer_started = true;
-
+		else
 			epcs_info->dialog_token = ++sta_epcs->self_gen_dialog_token;
+
+		if (hapd_epcs_drv_send_action_frame(hapd, epcs_info, sta))
+			break;
+
+		if (is_rx_frame) {
+			sta_epcs->state = EPCS_STATE_ENABLED;
+			break;
 		}
+
+		sta_epcs->state = EPCS_STATE_ENABLE_REQ_SENT;
+		if (sta_epcs->timer_started) {
+			wpa_printf(MSG_DEBUG, "Timer is already started for EPCS Request sent. Restarting the timer");
+			eloop_cancel_timeout(hostapd_epcs_timeout_handler, hapd, sta);
+			sta_epcs->timer_started = false;
+		}
+
+		if (!eloop_register_timeout(150, 0, hostapd_epcs_timeout_handler, hapd, sta))
+			sta_epcs->timer_started = true;
+
 		break;
 
 	case EPCS_STATE_ENABLE_REQ_SENT:
 		if (epcs_info->action_code == WLAN_PROT_EHT_EPCS_ENABLE_TEARDOWN) {
-			sta_epcs->state = EPCS_STATE_DISABLED;
+			if (is_rx_frame)
+				sta_epcs->state = EPCS_STATE_DISABLED;
+			else if (!is_rx_frame && !hapd_epcs_drv_send_action_frame(hapd, epcs_info, sta))
+				sta_epcs->state = EPCS_STATE_DISABLED;
 
 		} else if (epcs_info->action_code == WLAN_PROT_EHT_EPCS_ENABLE_RESPONSE && is_rx_frame) {
 			if (epcs_info->dialog_token == sta_epcs->self_gen_dialog_token) {
@@ -3115,17 +3125,20 @@ int hostapd_epcs_handle_and_send_action_frame(struct hostapd_data *hapd,
 					   "received token: %d, peer token: %d",
 					   epcs_info->dialog_token, sta_epcs->self_gen_dialog_token);
 			}
+		}
 
 			eloop_cancel_timeout(hostapd_epcs_timeout_handler, hapd, sta);
 			sta_epcs->timer_started = false;
-		}
 		break;
 
 	case EPCS_STATE_ENABLED:
 		if (epcs_info->action_code != WLAN_PROT_EHT_EPCS_ENABLE_TEARDOWN)
 			goto failed;
 
-		sta_epcs->state = EPCS_STATE_DISABLED;
+		if (is_rx_frame)
+			sta_epcs->state = EPCS_STATE_DISABLED;
+		else if (!is_rx_frame && !hapd_epcs_drv_send_action_frame(hapd, epcs_info, sta))
+			sta_epcs->state = EPCS_STATE_DISABLED;
 		break;
 	}
 
