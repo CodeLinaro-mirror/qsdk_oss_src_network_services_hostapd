@@ -371,11 +371,11 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 
 	if ((sta->flags & WLAN_STA_WDS) ||
 	    (sta->flags & WLAN_STA_MULTI_AP &&
-	    (hapd->conf->multi_ap & FRONTHAUL_BSS) &&
+	    ((hapd->conf->multi_ap & FRONTHAUL_BSS)||(hapd->conf->multi_ap & BACKHAUL_BSS)) &&
 	    !(sta->flags & WLAN_STA_WPS))) {
 		int aid;
 
-		if (hapd->conf->mld_ap && (sta->flags & WLAN_STA_WDS))
+		if (hapd->conf->mld_ap)
 			aid = sta->wds_mld_uid;
 		else
 			aid = sta->aid;
