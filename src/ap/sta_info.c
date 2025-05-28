@@ -398,13 +398,12 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 
 	if ((sta->flags & WLAN_STA_WDS) ||
 	    (sta->flags & WLAN_STA_MULTI_AP &&
-	     (hapd->conf->multi_ap & BACKHAUL_BSS) &&
-	     hapd->conf->wds_sta &&
-	     !(sta->flags & WLAN_STA_WPS))) {
+	    (hapd->conf->multi_ap & (FRONTHAUL_BSS | BACKHAUL_BSS)) &&
+	    !(sta->flags & WLAN_STA_WPS))) {
 		int ifname_id = sta->aid;
 
 #ifdef CONFIG_IEEE80211BE
-		if (hapd->conf->mld_ap && (sta->flags & WLAN_STA_WDS))
+		if (hapd->conf->mld_ap)
 			ifname_id = sta->wds_ifname_id;
 
 		if (ap_sta_is_mld(hapd, sta)) {

@@ -10802,17 +10802,16 @@ skip_update:
 	}
 
 	/* WPS not supported on backhaul BSS. Disable 4addr mode on fronthaul */
-	if ((sta->flags & WLAN_STA_WDS) ||
+	if (((sta->flags & WLAN_STA_WDS) && hapd->conf->wds_sta) ||
 	    (sta->flags & WLAN_STA_MULTI_AP &&
 	     (hapd->conf->multi_ap & BACKHAUL_BSS) &&
-	     hapd->conf->wds_sta &&
 	     !(sta->flags & WLAN_STA_WPS))) {
 		int ret;
 		char ifname_wds[IFNAMSIZ + 1];
 		int ifname_id = sta->aid;
 
 #ifdef CONFIG_IEEE80211BE
-		if (hapd->conf->mld_ap && (sta->flags & WLAN_STA_WDS))
+		if (hapd->conf->mld_ap)
 			ifname_id = sta->wds_ifname_id;
 #endif /* CONFIG_IEEE80211BE */
 
