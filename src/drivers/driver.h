@@ -1177,6 +1177,11 @@ struct hostapd_freq_params {
 	bool eht_enabled;
 
 	/**
+	 * uhr_enabled - Whether UHR is enabled
+	 */
+	bool uhr_enabled;
+
+	/**
 	 * punct_bitmap - Preamble puncturing bitmap
 	 * Each bit corresponds to a 20 MHz subchannel, the lowest bit for the
 	 * channel with the lowest frequency. A bit set to 1 indicates that the
