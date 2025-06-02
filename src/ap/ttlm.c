@@ -13,6 +13,7 @@
 #include "sta_info.h"
 #include "hostapd.h"
 #include "ap_drv_ops.h"
+#include "drivers/driver.h"
 #include "ttlm.h"
 
 
@@ -260,6 +261,192 @@ int hostapd_send_ttlm_req(struct hostapd_data *hapd, struct ttlm_ongoing_negotia
 
 	wpabuf_free(buf);
 	os_free(ttlm_elem);
+
+	return ret;
+}
+
+
+static void hostapd_reset_ttlm_info(struct ttlm_info *ttlm)
+{
+	u8 dir;
+
+	for (dir = 0; dir < TTLM_DIRECTION_MAX; dir++) {
+		ttlm[dir].default_link_mapping = true;
+		os_memset(ttlm[dir].ieee_link_map_tid, 0,
+			  sizeof(u16) * NUM_MAX_TIDS);
+	}
+}
+
+
+static void hostapd_copy_negotiated_ttlm_info_to_sta(struct hostapd_data *hapd,
+						     struct sta_info *sta,
+						     struct ttlm_ongoing_negotiation_info
+						     *ongoing_ttlm)
+{
+	struct ttlm_prev_negotiated_info *negotiated_ttlm = NULL;
+	struct ttlm_info *negotiated_ttlm_of_tids = NULL;
+	struct ttlm_info *ongoing_ttlm_of_tids = NULL;
+	struct ttlm_ongoing_negotiation_info *lsta_ttlm;
+	struct hostapd_data *lhapd;
+	struct sta_info *lsta;
+	int i, dir, tid;
+
+	negotiated_ttlm = &sta->mld_info.tid_map_info.ttlm_prev_negotiated_info;
+	negotiated_ttlm->dialog_token = ongoing_ttlm->dialog_token;
+
+	for (i = 0; i < TTLM_DIRECTION_MAX; i++) {
+		negotiated_ttlm->ttlm_info[i].direction = TTLM_DIRECTION_INVALID;
+		if (ongoing_ttlm->ttlm_info[i].direction == TTLM_DIRECTION_INVALID)
+			continue;
+
+		dir = ongoing_ttlm->ttlm_info[i].direction;
+
+		/* Populate the ongoing TTLM info into negotiated TTLM directions UL
+		 * and DL when direction is BIDI
+		 */
+		if (dir == TTLM_DIRECTION_BIDI) {
+			for (int j = 0; j < TTLM_DIRECTION_BIDI; j++) {
+				negotiated_ttlm_of_tids = &negotiated_ttlm->ttlm_info[j];
+				ongoing_ttlm_of_tids = &ongoing_ttlm->ttlm_info[dir];
+
+				if (j == TTLM_DIRECTION_DL)
+					negotiated_ttlm_of_tids->direction =
+						TTLM_DIRECTION_DL;
+				else
+					negotiated_ttlm_of_tids->direction =
+						TTLM_DIRECTION_UL;
+
+				negotiated_ttlm_of_tids->default_link_mapping =
+					ongoing_ttlm_of_tids->default_link_mapping;
+
+				for (tid = 0; tid < NUM_MAX_TIDS; tid++) {
+					negotiated_ttlm_of_tids->ieee_link_map_tid[tid] =
+						ongoing_ttlm_of_tids->ieee_link_map_tid[tid];
+				}
+
+				negotiated_ttlm_of_tids->link_mapping_size =
+					ongoing_ttlm_of_tids->link_mapping_size;
+			}
+		} else {
+			negotiated_ttlm_of_tids = &negotiated_ttlm->ttlm_info[dir];
+			ongoing_ttlm_of_tids = &ongoing_ttlm->ttlm_info[dir];
+
+			negotiated_ttlm_of_tids->direction = ongoing_ttlm_of_tids->direction;
+			negotiated_ttlm_of_tids->default_link_mapping =
+				ongoing_ttlm_of_tids->default_link_mapping;
+
+			for (tid = 0; tid < NUM_MAX_TIDS; tid++) {
+				negotiated_ttlm_of_tids->ieee_link_map_tid[tid] =
+					ongoing_ttlm_of_tids->ieee_link_map_tid[tid];
+			}
+
+			negotiated_ttlm_of_tids->link_mapping_size =
+				ongoing_ttlm_of_tids->link_mapping_size;
+		}
+	}
+
+	if ((negotiated_ttlm->ttlm_info[TTLM_DIRECTION_DL].direction ==
+	     TTLM_DIRECTION_DL) ||
+	    (negotiated_ttlm->ttlm_info[TTLM_DIRECTION_UL].direction ==
+	     TTLM_DIRECTION_UL)) {
+		os_memset(&negotiated_ttlm->ttlm_info[TTLM_DIRECTION_BIDI], 0,
+			  sizeof(struct ttlm_info));
+		negotiated_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].direction =
+			TTLM_DIRECTION_INVALID;
+	}
+
+	for_each_mld_link(lhapd, hapd) {
+		lsta = ap_get_sta(lhapd, sta->addr);
+		if (lsta && lsta->mld_info.mld_sta) {
+			lsta_ttlm = &lsta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info;
+			lsta_ttlm->ttlm_resp_type = TTLM_RESP_TYPE_INVALID;
+			lsta_ttlm->dialog_token = 0;
+			hostapd_reset_ttlm_info(lsta_ttlm->ttlm_info);
+		}
+	}
+}
+
+
+static void hostapd_fill_ttlm_nl_params(struct driver_ttlm_info *driver_ttlm_info,
+					struct ttlm_prev_negotiated_info *negotiated_ttlm)
+{
+	u8 dir_mask[3] = {BIT(TTLM_DIRECTION_DL), BIT(TTLM_DIRECTION_UL),
+			  BIT(TTLM_DIRECTION_BIDI)};
+	int i, dir;
+
+	for (i = 0; i < TTLM_DIRECTION_MAX; i++) {
+		if (negotiated_ttlm->ttlm_info[i].direction == TTLM_DIRECTION_INVALID)
+			continue;
+
+		dir = negotiated_ttlm->ttlm_info[i].direction;
+		driver_ttlm_info->dir_bmap |= dir_mask[dir];
+
+		/* As either DLINK or ULINK values can be sent via NL,
+		 * when the direction is BIDI populated the ttlm info
+		 * in both DL and UL directions and hence checking only
+		 * UL/DL directions here to fill driver ttlm info params.
+		 */
+		if (dir == TTLM_DIRECTION_DL)
+			os_memcpy(driver_ttlm_info->dlink,
+				  negotiated_ttlm->ttlm_info[dir].ieee_link_map_tid,
+				  sizeof(driver_ttlm_info->dlink));
+		else if (dir == TTLM_DIRECTION_UL)
+			os_memcpy(driver_ttlm_info->ulink,
+				  negotiated_ttlm->ttlm_info[dir].ieee_link_map_tid,
+				  sizeof(driver_ttlm_info->ulink));
+	}
+}
+
+
+int hostapd_apply_ttlm_mapping_to_driver(struct hostapd_data *hapd, struct sta_info *sta)
+{
+	struct ttlm_ongoing_negotiation_info *ongoing_ttlm;
+	struct driver_ttlm_info driver_ttlm_info = {};
+	int ret;
+
+	ongoing_ttlm = &sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info;
+	hostapd_copy_negotiated_ttlm_info_to_sta(hapd, sta, ongoing_ttlm);
+	hostapd_fill_ttlm_nl_params(&driver_ttlm_info,
+				    &sta->mld_info.tid_map_info.ttlm_prev_negotiated_info);
+
+	ret = hostapd_drv_set_ttlm_link_mapping(hapd, &driver_ttlm_info, sta->addr);
+	if (ret)
+		wpa_printf(MSG_ERROR, "Failed to send ttlm params to driver");
+
+	return ret;
+}
+
+
+int hostapd_handle_ttlm_resp(struct hostapd_data *hapd, struct sta_info *sta,
+			     const u8 *buf, size_t len)
+{
+	const struct ieee80211_mgmt *mgmt = (const struct ieee80211_mgmt *) buf;
+	struct ttlm_ongoing_negotiation_info *ongoing_ttlm;
+	int ret = 0;
+
+	if (!sta) {
+		wpa_printf(MSG_ERROR, "Station is not found");
+		return -1;
+	}
+	ongoing_ttlm = &sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info;
+
+	if (ongoing_ttlm->dialog_token != mgmt->u.action.u.ttlm_resp.dialog_token) {
+		wpa_printf(MSG_ERROR, "TTLM dialog token mismatch: expected:%d, received:%d",
+			   ongoing_ttlm->dialog_token, mgmt->u.action.u.ttlm_resp.dialog_token);
+		hostapd_send_ttlm_teardown(hapd, sta);
+		return -1;
+	}
+
+	ongoing_ttlm->ttlm_resp_type = mgmt->u.action.u.ttlm_resp.status_code;
+	wpa_printf(MSG_DEBUG, "TTLM response received: dialog_token:%d response_code:%d",
+		   ongoing_ttlm->dialog_token, ongoing_ttlm->ttlm_resp_type);
+
+	if (ongoing_ttlm->ttlm_resp_type == TTLM_RESP_TYPE_SUCCESS)
+		ret = hostapd_apply_ttlm_mapping_to_driver(hapd, sta);
+	else if (ongoing_ttlm->ttlm_resp_type == TTLM_RESP_TYPE_PREFERRED_TID_TO_LINK_MAPPING)
+		wpa_printf(MSG_DEBUG, "Preferred mapping is suggested");
+	else
+		wpa_printf(MSG_DEBUG, "Denied Tid to link mapping");
 
 	return ret;
 }

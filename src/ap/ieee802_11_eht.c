@@ -2913,6 +2913,7 @@ out:
 
 
 void ieee802_11_rx_protected_eht_action(struct hostapd_data *hapd,
+					struct sta_info *sta,
 					const struct ieee80211_mgmt *mgmt,
 					size_t len)
 {
@@ -2931,17 +2932,21 @@ void ieee802_11_rx_protected_eht_action(struct hostapd_data *hapd,
 						   len))
 			wpa_printf(MSG_INFO,
 				   "MLD: Link Reconf Request processing failed");
-		return;
+		break;
 	case WLAN_PROT_EHT_EPCS_ENABLE_REQUEST:
 	case WLAN_PROT_EHT_EPCS_ENABLE_RESPONSE:
 	case WLAN_PROT_EHT_EPCS_ENABLE_TEARDOWN:
 		hostapd_handle_epcs_action(hapd, (const u8 *) mgmt, len);
-		return;
+		break;
+	case WLAN_PROT_EHT_T2L_MAPPING_RESPONSE:
+		hostapd_handle_ttlm_resp(hapd, sta, (const u8 *) mgmt, len);
+		break;
+	default:
+		wpa_printf(MSG_DEBUG,
+			   "MLD: Unsupported Protected EHT Action %u from " MACSTR
+			   " discarded", action, MAC2STR(mgmt->sa));
+		break;
 	}
-
-	wpa_printf(MSG_DEBUG,
-		   "MLD: Unsupported Protected EHT Action %u from " MACSTR
-		   " discarded", action, MAC2STR(mgmt->sa));
 }
 
 size_t hostapd_eid_eht_ml_tid_to_link_map_len(struct hostapd_data *hapd)

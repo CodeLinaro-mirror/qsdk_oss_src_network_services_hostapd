@@ -64,6 +64,7 @@
 #include "comeback_token.h"
 #include "nan_usd_ap.h"
 #include "pasn/pasn_common.h"
+#include "ttlm.h"
 #include "robust_av.h"
 #include "wpa_auth_i.h"
 
@@ -10135,7 +10136,7 @@ static int handle_action(struct hostapd_data *hapd,
 #endif /* CONFIG_NO_RRM */
 #ifdef CONFIG_IEEE80211BE
 	case WLAN_ACTION_PROTECTED_EHT:
-		ieee802_11_rx_protected_eht_action(hapd, mgmt, len);
+		ieee802_11_rx_protected_eht_action(hapd, sta, mgmt, len);
 		return 1;
 #endif /* CONFIG_IEEE80211BE */
 	}

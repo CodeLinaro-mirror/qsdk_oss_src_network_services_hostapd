@@ -3422,6 +3422,21 @@ enum wpa_drv_update_connect_params_mask {
 	WPA_DRV_UPDATE_AUTH_TYPE	= BIT(2),
 };
 
+#define NUM_MAX_TIDS 8
+#define DRV_MAX_TTLM_DIR 2
+/**
+ * struct driver_ttlm_info - Holds TTLM data
+ * @dlink: link map of each tids in downlink direction
+ * @ulink: link map of each tids in uplink direction
+ * @dir_bmap: bitmap of directions (Bit 0 - for downlink,
+ *	Bit 1 - for uplink, Bit 2 - for bi-direction)
+ */
+struct driver_ttlm_info {
+	u16 dlink[NUM_MAX_TIDS];
+	u16 ulink[NUM_MAX_TIDS];
+	u8 dir_bmap;
+};
+
 /**
  * struct external_auth - External authentication trigger parameters
  *
@@ -6139,6 +6154,18 @@ struct wpa_driver_ops {
 	 * Returns: 0 on success, negative value on failure
 	 */
 	int (*set_epcs_cfg)(void *priv, bool epcs_cfg_value);
+
+	/**
+	 * set_ttlm_link_mapping - Set TTLM link mapping
+	 * @priv: Private driver interface data
+	 * @type: Driver interface type
+	 * @params: TTLM parameters
+	 * @addr: Peer MLD address
+	 * Returns: 0 on success, negative value on failure
+	 */
+	int (*set_ttlm_link_mapping)(void *priv, enum wpa_driver_if_type type,
+				     struct driver_ttlm_info *params,
+				     const u8 *addr);
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_NAN
