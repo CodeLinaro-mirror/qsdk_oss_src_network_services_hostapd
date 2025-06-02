@@ -9,6 +9,10 @@
 #ifndef MLD_H
 #define MLD_H
 
+#ifdef CONFIG_IEEE80211BE
+#include "ttlm.h"
+#endif /* CONFIG_IEEE80211BE */
+
 /*
  * enum peer_epcs_state - EPCS states of peer
  */
@@ -64,6 +68,9 @@ struct mld_info {
 
 	struct mld_link_info links[MAX_NUM_MLD_LINKS];
 	struct mld_peer_epcs_info epcs;
+#ifdef CONFIG_IEEE80211BE
+	struct tid_to_link_map_info tid_map_info;
+#endif /* CONFIG_IEEE80211BE */
 };
 
 #endif /* MLD_H */

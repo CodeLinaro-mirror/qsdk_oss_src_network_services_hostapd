@@ -1112,6 +1112,7 @@ OBJS += ../src/ap/ieee802_11_he.o
 endif
 ifdef CONFIG_IEEE80211BE
 OBJS += ../src/ap/ieee802_11_eht.o
+OBJS += ../src/ap/ttlm.o
 endif
 ifdef CONFIG_IEEE80211BN
 OBJS += ../src/ap/ieee802_11_uhr.o
