@@ -5913,6 +5913,11 @@ rsnxe_done:
 		p = hostapd_eid_eht_operation(hapd, p);
 		hostapd_get_epcs_capab(hapd, sta);
 	}
+
+	if (hapd->conf->ttlm_enable &&
+	    sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info.ttlm_resp_type ==
+	    WLAN_STATUS_SUCCESS)
+		hostapd_apply_ttlm_mapping_to_driver(hapd, sta);
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_OWE
@@ -6045,6 +6050,22 @@ rsnxe_done:
 		}
 	}
 #endif /* CONFIG_FILS */
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->ttlm_enable && status_code == WLAN_STATUS_DENIED_TID_TO_LINK_MAPPING) {
+		struct ttlm_ongoing_negotiation_info *ongoing_ttlm;
+		size_t ttlm_elem_len;
+		u8 *ttlm_elem;
+
+		ongoing_ttlm = &sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info;
+
+		if (hostapd_build_ttlm_elem(ongoing_ttlm, &ttlm_elem, &ttlm_elem_len) < 0)
+			return -1;
+
+		send_len += ttlm_elem_len;
+		os_free(ttlm_elem);
+	}
+#endif /* CONFIG_IEEE80211BE */
 
 	if (hostapd_drv_send_mlme(hapd, reply, send_len, 0, NULL, 0, 0) < 0) {
 		wpa_printf(MSG_INFO, "Failed to send assoc resp: %s",
@@ -6433,6 +6454,12 @@ static void handle_assoc(struct hostapd_data *hapd,
 			}
 
 		}
+	}
+
+	if (sta) {
+		resp = hostapd_handle_ttlm_assoc_req(hapd, mgmt, len, sta, pos, left);
+		if (resp == TTLM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING)
+			goto fail;
 	}
 #endif /* CONFIG_IEEE80211BE */
 

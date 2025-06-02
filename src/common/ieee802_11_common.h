@@ -37,6 +37,8 @@ struct multi_ap_params {
 	u16 vlanid;
 };
 
+#define IEEE80211_TTLM_MAX_CNT 2 /* Maximum number of TTLM IE's */
+
 /* Parsed Information Elements */
 struct ieee802_11_elems {
 	const u8 *ssid;
@@ -124,6 +126,7 @@ struct ieee802_11_elems {
 	const u8 *rsn_selection;
 	const u8 *wfa_capab;
 	const u8 *proximity_ranging;
+	const struct ieee80211_ttlm_elem *ttlm[IEEE80211_TTLM_MAX_CNT];
 
 	u8 ssid_len;
 	u8 supp_rates_len;
@@ -204,6 +207,7 @@ struct ieee802_11_elems {
 	 * fragmented element.
 	 */
 	unsigned int num_frag_elems;
+	u8 ttlm_num;
 };
 
 typedef enum { ParseOK = 0, ParseUnknown = 1, ParseFailed = -1 } ParseRes;

@@ -425,6 +425,9 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
 		elems->pasn_encrypted_data = pos;
 		elems->pasn_encrypted_data_len = elen;
 		break;
+	case WLAN_EID_EXT_TID_TO_LINK_MAPPING:
+		elems->ttlm[elems->ttlm_num] = (void *)pos;
+		elems->ttlm_num++;
 	default:
 		if (show_errors) {
 			wpa_printf(MSG_MSGDUMP,

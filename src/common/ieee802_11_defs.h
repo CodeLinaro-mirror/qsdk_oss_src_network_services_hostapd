@@ -3522,4 +3522,15 @@ struct elem_header {
 	u8 elem_id;
 	u8 elem_len;
 } STRUCT_PACKED;
+
+/**
+ * struct ieee80211_ttlm_elem - TID-To-Link Mapping element
+ *
+ * @control: the first part of control field
+ * @optional: the second part of control field
+ */
+struct ieee80211_ttlm_elem {
+	u8 control;
+	u8 optional[];
+} STRUCT_PACKED;
 #endif /* IEEE802_11_DEFS_H */

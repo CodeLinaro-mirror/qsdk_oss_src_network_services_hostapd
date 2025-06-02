@@ -140,5 +140,8 @@ int hostapd_build_ttlm_elem(struct ttlm_ongoing_negotiation_info *ttlm,
 int hostapd_handle_ttlm_resp(struct hostapd_data *hapd, struct sta_info *sta,
 			     const u8 *buf, size_t len);
 int hostapd_apply_ttlm_mapping_to_driver(struct hostapd_data *hapd, struct sta_info *sta);
+int hostapd_handle_ttlm_assoc_req(struct hostapd_data *hapd, const struct ieee80211_mgmt *mgmt,
+				  size_t len, struct sta_info *sta, const u8 *ie, size_t ie_len);
+bool hostapd_is_mapping_homogeneous(struct ttlm_ongoing_negotiation_info *ongoing_ttlm);
 
 #endif /* TTLM_H */

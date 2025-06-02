@@ -417,6 +417,27 @@ int hostapd_apply_ttlm_mapping_to_driver(struct hostapd_data *hapd, struct sta_i
 }
 
 
+bool hostapd_is_mapping_homogeneous(struct ttlm_ongoing_negotiation_info *ongoing_ttlm)
+{
+	u8 tid, i;
+
+	for (i = 0; i < TTLM_DIRECTION_MAX; i++) {
+		for (tid = 1; tid < NUM_MAX_TIDS; tid++) {
+			if (ongoing_ttlm->ttlm_info[i].direction == TTLM_DIRECTION_INVALID)
+				break;
+
+			if (ongoing_ttlm->ttlm_info[i].ieee_link_map_tid[tid] !=
+			    ongoing_ttlm->ttlm_info[i].ieee_link_map_tid[0]) {
+				wpa_printf(MSG_DEBUG, "Mapping is not homogeneous");
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
+
+
 int hostapd_handle_ttlm_resp(struct hostapd_data *hapd, struct sta_info *sta,
 			     const u8 *buf, size_t len)
 {
@@ -449,4 +470,158 @@ int hostapd_handle_ttlm_resp(struct hostapd_data *hapd, struct sta_info *sta,
 		wpa_printf(MSG_DEBUG, "Denied Tid to link mapping");
 
 	return ret;
+}
+
+
+static int hostapd_parse_ttlm_elem(struct hostapd_data *hapd,
+				   const struct ieee80211_ttlm_elem *ttlm,
+				   struct ttlm_info *ttlm_info)
+{
+	u8 control, tid, link_mapping_presence_ind, map_size;
+	u8 *pos;
+	enum ttlm_dir dir;
+
+	if (!ttlm) {
+		wpa_printf(MSG_ERROR, "IE buffer is NULL");
+		return -1;
+	}
+
+	pos = (void *)ttlm->optional;
+	control = ttlm->control;
+
+	if (control == 0)
+		return -1;
+
+	if (control & (TTLM_CONTROL_MAPPING_SWITCH_TIME_PRESENT_MASK |
+		       TTLM_CONTROL_EXPECTED_DURATION_PRESENT_MASK)) {
+		wpa_printf(MSG_ERROR, "Invalid TTLM element");
+		return -1;
+	}
+
+	dir = control & TTLM_CONTROL_DIRECTION_MASK;
+
+	if (dir >= TTLM_DIRECTION_INVALID) {
+		wpa_printf(MSG_ERROR, "Invalid direction");
+		return -1;
+	}
+
+	ttlm_info->direction = dir;
+	ttlm_info->default_link_mapping = control & TTLM_CONTROL_DEFAULT_LINK_MAPPING_MASK;
+
+	if (ttlm_info->default_link_mapping) {
+		wpa_printf(MSG_DEBUG, "Default link mapping");
+		return 0;
+	}
+
+	ttlm_info->link_mapping_size = control & TTLM_CONTROL_LINK_MAPPING_SIZE_MASK;
+
+	link_mapping_presence_ind = *pos;
+	pos++;
+
+	if (ttlm_info->link_mapping_size) {
+		/* Link mapping of TIDs is 1 octet if link_mapping_size is set to 1*/
+		map_size = 1;
+	} else {
+		/* Link mapping of TIDs is 2 octet if link_mapping_size is set to 0*/
+		map_size = 2;
+	}
+
+	for (tid = 0; tid < NUM_MAX_TIDS; tid++) {
+		if (!(link_mapping_presence_ind & BIT(tid)))
+			continue;
+
+		if (map_size == 1)
+			ttlm_info->ieee_link_map_tid[tid] = *pos;
+		else
+			ttlm_info->ieee_link_map_tid[tid] = host_to_le16(*pos);
+
+		pos += map_size;
+	}
+
+	return 0;
+}
+
+
+int hostapd_handle_ttlm_assoc_req(struct hostapd_data *hapd, const struct ieee80211_mgmt *mgmt,
+				  size_t len, struct sta_info *sta, const u8 *elem,
+				  size_t elem_len)
+{
+	struct ttlm_ongoing_negotiation_info *ongoing_ttlm;
+	struct ieee802_11_elems elems;
+	struct ttlm_info ttlm_info;
+	enum ttlm_dir dir;
+	int retval;
+	u8 i;
+
+	sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info.ttlm_resp_type = -1;
+	if (!hapd->conf->ttlm_enable)
+		return WLAN_STATUS_REQUEST_DECLINED;
+
+	if (ieee802_11_parse_elems(elem, elem_len, &elems, 0) == ParseFailed) {
+		wpa_printf(MSG_ERROR, "Could not parse assocReq from " MACSTR,
+			   MAC2STR(mgmt->sa));
+		return WLAN_STATUS_INVALID_IE;
+	}
+
+	ongoing_ttlm = os_zalloc(sizeof(struct ttlm_ongoing_negotiation_info));
+	if (!ongoing_ttlm) {
+		wpa_printf(MSG_ERROR, "Memory allocation for ongoing_ttlm failed");
+		return -1;
+	}
+
+	if (!elems.ttlm_num) {
+		wpa_printf(MSG_ERROR, "No TTLM elements present");
+		os_free(ongoing_ttlm);
+		return -1;
+	}
+
+	for (dir = 0; dir < TTLM_DIRECTION_MAX; dir++)
+		ongoing_ttlm->ttlm_info[dir].direction = TTLM_DIRECTION_INVALID;
+
+	for (i = 0; i < elems.ttlm_num; i++) {
+		retval = hostapd_parse_ttlm_elem(hapd, elems.ttlm[i], &ttlm_info);
+		if (!retval && ttlm_info.direction < TTLM_DIRECTION_MAX) {
+			os_memcpy(&ongoing_ttlm->ttlm_info[ttlm_info.direction],
+				  &ttlm_info, sizeof(struct ttlm_info));
+		} else {
+			wpa_printf(MSG_ERROR, "Failed to parse TTLM IE");
+			os_free(ongoing_ttlm);
+			return WLAN_STATUS_INVALID_IE;
+		}
+	}
+
+	if ((ongoing_ttlm->ttlm_info[TTLM_DIRECTION_DL].direction == TTLM_DIRECTION_DL ||
+	     ongoing_ttlm->ttlm_info[TTLM_DIRECTION_UL].direction == TTLM_DIRECTION_UL) &&
+	    ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].direction == TTLM_DIRECTION_BIDI) {
+		wpa_printf(MSG_DEBUG, "Both DL/UL and BIDI TTLM IEs cannot exist at same time");
+		os_memset(ongoing_ttlm, 0, sizeof(*ongoing_ttlm));
+		ongoing_ttlm->ttlm_resp_type = WLAN_STATUS_DENIED_TID_TO_LINK_MAPPING;
+	}
+
+	os_memcpy(&sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info, ongoing_ttlm,
+		  sizeof(struct ttlm_ongoing_negotiation_info));
+
+	if (ongoing_ttlm->ttlm_resp_type != 0) {
+		wpa_printf(MSG_DEBUG, "DENIED response type");
+		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].direction = TTLM_DIRECTION_BIDI;
+		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_DL].direction = TTLM_DIRECTION_INVALID;
+		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_UL].direction = TTLM_DIRECTION_INVALID;
+		ongoing_ttlm->ttlm_info->default_link_mapping = true;
+
+		os_memcpy(&sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info, ongoing_ttlm,
+			  sizeof(struct ttlm_ongoing_negotiation_info));
+
+		sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info.ttlm_resp_type =
+			WLAN_STATUS_DENIED_TID_TO_LINK_MAPPING;
+
+		os_free(ongoing_ttlm);
+		return WLAN_STATUS_DENIED_TID_TO_LINK_MAPPING;
+	}
+
+	sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info.ttlm_resp_type =
+		WLAN_STATUS_SUCCESS;
+
+	os_free(ongoing_ttlm);
+	wpa_printf(MSG_DEBUG, "TTLM IE in assoc request has been parsed successfully");
+	return WLAN_STATUS_SUCCESS;
 }

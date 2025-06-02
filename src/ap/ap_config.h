@@ -1016,6 +1016,7 @@ struct hostapd_bss_config {
 	struct ieee80211_he_mu_edca_parameter_set epcs_he_mu_edca;
 	int epcs_parameter_set_count;
 	bool is_epcs_enabled;
+	bool ttlm_enable;
 #endif /* CONFIG_IEEE80211BE */
 
 };
