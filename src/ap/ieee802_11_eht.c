@@ -2812,6 +2812,9 @@ void ieee802_11_rx_protected_eht_action(struct hostapd_data *hapd,
 	case WLAN_PROT_EHT_EPCS_ENABLE_TEARDOWN:
 		hostapd_handle_epcs_action(hapd, (const u8 *)mgmt, len);
 		break;
+	case WLAN_PROT_EHT_T2L_MAPPING_REQUEST:
+		hostapd_handle_ttlm_req(hapd, sta, (const u8 *) mgmt, len);
+		break;
 	case WLAN_PROT_EHT_T2L_MAPPING_RESPONSE:
 		hostapd_handle_ttlm_resp(hapd, sta, (const u8 *) mgmt, len);
 		break;

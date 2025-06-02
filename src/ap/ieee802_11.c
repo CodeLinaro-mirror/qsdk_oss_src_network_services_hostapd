@@ -8034,6 +8034,12 @@ static void handle_action_cb(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BE
+	if (mgmt->u.action.category == WLAN_ACTION_PROTECTED_EHT &&
+	    mgmt->u.action.u.ttlm_resp.action == WLAN_PROT_EHT_T2L_MAPPING_RESPONSE)
+		hostapd_ttlm_resp_tx_status(hapd, sta, ok);
+#endif /* CONFIG_IEEE80211BE */
+
 #ifndef CONFIG_NO_RRM
 	if (len < 24 + 5 + sizeof(*report))
 		return;

@@ -1209,6 +1209,11 @@ struct ieee80211_mgmt {
 					u8 variable[];
 				} STRUCT_PACKED ttlm_resp;
 				struct {
+					u8 action;
+					u8 dialog_token;
+					u8 variable[];
+				} STRUCT_PACKED ttlm_req;
+				struct {
 					u8 action; /* Protected EHT - 11 */
 					u8 dialog_token;
 					/* Reconfiguration Multi-Link element,
