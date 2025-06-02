@@ -18,6 +18,7 @@
 #include "crypto/sha384.h"
 #include "pasn/pasn_common.h"
 #include "hostapd.h"
+#include "ttlm.h"
 
 /* STA flags */
 #define WLAN_STA_AUTH BIT(0)
@@ -86,6 +87,9 @@ struct mld_info {
 
 	struct mld_link_info links[MAX_NUM_MLD_LINKS];
 	struct mld_peer_epcs_info epcs;
+#ifdef CONFIG_IEEE80211BE
+	struct tid_to_link_map_info tid_map_info;
+#endif /* CONFIG_IEEE80211BE */
 };
 
 struct sta_info {

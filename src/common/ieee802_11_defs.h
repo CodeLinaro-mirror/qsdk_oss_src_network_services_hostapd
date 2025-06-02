@@ -3486,4 +3486,34 @@ struct ieee80211_s1g_beacon_compat {
 #pragma pack(pop)
 #endif /* _MSC_VER */
 
+/* Definitions related TID-to-link mapping control*/
+/* Direction */
+#define TTLM_CONTROL_DIRECTION_IDX                              0
+#define TTLM_CONTROL_DIRECTION_MASK                             0x0003
+/* Default link mapping */
+#define TTLM_CONTROL_DEFAULT_LINK_MAPPING_IDX                   2
+#define TTLM_CONTROL_DEFAULT_LINK_MAPPING_MASK                  0x0004
+/* Mapping switch time present bit */
+#define TTLM_CONTROL_MAPPING_SWITCH_TIME_PRESENT_IDX            3
+#define TTLM_CONTROL_MAPPING_SWITCH_TIME_PRESENT_MASK           0x0008
+/* Expected duration present bit */
+#define TTLM_CONTROL_EXPECTED_DURATION_PRESENT_IDX              4
+#define TTLM_CONTROL_EXPECTED_DURATION_PRESENT_MASK             0x0010
+/* Link Mapping size bit */
+#define TTLM_CONTROL_LINK_MAPPING_SIZE_IDX                      5
+#define TTLM_CONTROL_LINK_MAPPING_SIZE_MASK                     0x0020
+/* Bits 6-7 are reserved */
+/* Link mapping presence indicator */
+#define TTLM_CONTROL_LINK_MAPPING_PRESENCE_INDICATOR_IDX        8
+#define TTLM_CONTROL_LINK_MAPPING_PRESENCE_INDICATOR_MASK       0xff00
+
+/**
+ * struct elem_header : IE header
+ * @elem_id: Element Id
+ * @elem_len: IE Length
+ */
+struct elem_header {
+	u8 elem_id;
+	u8 elem_len;
+} STRUCT_PACKED;
 #endif /* IEEE802_11_DEFS_H */
