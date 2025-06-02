@@ -64,6 +64,7 @@
 #include "nan_usd_ap.h"
 #include "pasn/pasn_common.h"
 #include "wpa_auth_i.h"
+#include "ttlm.h"
 
 #ifdef CONFIG_FILS
 static struct wpabuf *
@@ -7257,7 +7258,7 @@ static int handle_action(struct hostapd_data *hapd,
 #endif /* CONFIG_NO_RRM */
 #ifdef CONFIG_IEEE80211BE
 	case WLAN_ACTION_PROTECTED_EHT:
-		ieee802_11_rx_protected_eht_action(hapd, mgmt, len);
+		ieee802_11_rx_protected_eht_action(hapd, sta, mgmt, len);
 		return 1;
 #endif /* CONFIG_IEEE80211BE */
 	}

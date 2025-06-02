@@ -539,6 +539,15 @@ static inline int hostapd_drv_link_sta_remove(struct hostapd_data *hapd,
 					     addr);
 }
 
+static inline int hostapd_drv_set_ttlm_link_mapping(struct hostapd_data *hapd,
+						    struct driver_ttlm_info *params,
+						    const u8 *addr)
+{
+	if (!hapd->driver || !hapd->drv_priv || !hapd->driver->set_ttlm_link_mapping)
+		return -1;
+
+	return hapd->driver->set_ttlm_link_mapping(hapd->drv_priv, WPA_IF_AP_BSS, params, addr);
+}
 #endif /* CONFIG_IEEE80211BE */
 
 struct hostapd_multi_hw_info *

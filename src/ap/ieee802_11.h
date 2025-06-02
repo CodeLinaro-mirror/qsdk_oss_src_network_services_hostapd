@@ -349,6 +349,7 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 				   struct mld_link_info *link);
 
 void ieee802_11_rx_protected_eht_action(struct hostapd_data *hapd,
+					struct sta_info *sta,
 					const struct ieee80211_mgmt *mgmt,
 					size_t len);
 void hostapd_link_reconf_resp_tx_status(struct hostapd_data *hapd,

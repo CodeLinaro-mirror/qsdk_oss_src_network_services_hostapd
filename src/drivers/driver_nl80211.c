@@ -15791,6 +15791,55 @@ failed:
 #endif /* CONFIG_IEEE80211BE */
 
 
+#ifdef CONFIG_IEEE80211BE
+static int wpa_driver_nl80211_set_ttlm_link_mapping(void *priv, enum wpa_driver_if_type type,
+						    struct driver_ttlm_info *params,
+						    const u8 *addr)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	enum nl80211_iftype nlmode;
+	int ret;
+
+	wpa_printf(MSG_DEBUG, "nl80211: MLD: set ttlm params");
+	msg = nlmsg_alloc();
+	if (!msg)
+		return -ENOMEM;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_TID_TO_LINK_MAPPING);
+	if (!msg) {
+		nlmsg_free(msg);
+		return -ENOBUFS;
+	}
+
+	nlmode = wpa_driver_nl80211_if_type(type);
+	if (nlmode == NL80211_IFTYPE_AP) {
+		if (nla_put(msg, NL80211_ATTR_MLD_ADDR, ETH_ALEN, addr)) {
+			nlmsg_free(msg);
+			return -ENOBUFS;
+		}
+	}
+
+	if (nla_put(msg, NL80211_ATTR_MLO_TTLM_DLINK, sizeof(params->dlink), params->dlink)) {
+		nlmsg_free(msg);
+		return -ENOBUFS;
+	}
+
+	if (nla_put(msg, NL80211_ATTR_MLO_TTLM_ULINK, sizeof(params->ulink), params->ulink)) {
+		nlmsg_free(msg);
+		return -ENOBUFS;
+	}
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR, "nl80211: set ttlm failed. ret=%d (%s)",
+			   ret, strerror(-ret));
+	return ret;
+}
+#endif /* CONFIG_IEEE80211BE */
+
+
 const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.name = "nl80211",
 	.desc = "Linux nl80211/cfg80211",
@@ -15970,5 +16019,6 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.is_retail_afc_supported = nl80211_is_retail_afc_supported,
 #ifdef CONFIG_IEEE80211BE
 	.set_epcs_cfg = wpa_driver_set_epcs_cfg,
+	.set_ttlm_link_mapping = wpa_driver_nl80211_set_ttlm_link_mapping,
 #endif /* CONFIG_IEEE80211BE */
 };

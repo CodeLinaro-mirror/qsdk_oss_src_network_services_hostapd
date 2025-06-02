@@ -59,13 +59,45 @@ struct ttlm_info {
 };
 
 /**
+ * enum ttlm_resp_type - TTLM status corresponds to TTLM response frame
+ *
+ * @TTLM_RESP_TYPE_SUCCESS: TTLM mapping provided in the TTLM request is
+ *                       accepted by AP
+ * @TTLM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING: TTLM Request denied because
+ *                       the requested TID-to-link mapping is unacceptable.
+ * @TTLM_RESP_TYPE_PREFERRED_TID_TO_LINK_MAPPING: TTLM Request rejected and
+ *                       preferred TID-to-link mapping is suggested.
+ * @TTLM_RESP_TYPE_INVALID: Status code is not applicable.
+ */
+enum ttlm_resp_type {
+	TTLM_RESP_TYPE_SUCCESS = 0,
+	TTLM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING = 133,
+	TTLM_RESP_TYPE_PREFERRED_TID_TO_LINK_MAPPING = 134,
+	TTLM_RESP_TYPE_INVALID,
+};
+
+/**
  * struct ttlm_onging_negotiation_info - Current ongoing TTLM negotiation
  * (information about transmitted TTLM request/response frame)
  *
  * @dialog_token: Save the dialog token used in TTLM request and response frame.
  * @ttlm_info: Provides the TID-to-link mapping info for UL/DL/BiDi
+ * @ttlm_resp_type: TTLM status corresponds to TTLM response frame.
  */
 struct ttlm_ongoing_negotiation_info {
+	u8 dialog_token;
+	struct ttlm_info ttlm_info[TTLM_DIRECTION_MAX];
+	enum ttlm_resp_type ttlm_resp_type;
+};
+
+/**
+ * struct ttlm_prev_negotiated_info - Previous successful TTLM negotiation
+ * is saved here.
+ *
+ * @dialog_token: Save the dialog token used in TTLM request and response frame.
+ * @ttlm_info: Provides the TID to LINK mapping information
+ */
+struct ttlm_prev_negotiated_info {
 	u8 dialog_token;
 	struct ttlm_info ttlm_info[TTLM_DIRECTION_MAX];
 };
@@ -77,10 +109,12 @@ struct ttlm_ongoing_negotiation_info {
  * frame.
  * @ttlm_ongoing_negotiation_info: This has the ongoing TID-to-link mapping info
  * transmitted by this peer to the connected peer.
+ * @ttlm_prev_negotiated_info: Previous successful TTLM negotiation is saved here.
  */
 struct tid_to_link_map_info {
 	u8 dialog_token;
 	struct ttlm_ongoing_negotiation_info ttlm_ongoing_negotiation_info;
+	struct ttlm_prev_negotiated_info ttlm_prev_negotiated_info;
 };
 
 /**
@@ -103,5 +137,8 @@ int hostapd_send_ttlm_req(struct hostapd_data *hapd,
 			  struct sta_info *sta);
 int hostapd_build_ttlm_elem(struct ttlm_ongoing_negotiation_info *ttlm,
 			    u8 **ttlm_elem, size_t *ttlm_elem_len);
+int hostapd_handle_ttlm_resp(struct hostapd_data *hapd, struct sta_info *sta,
+			     const u8 *buf, size_t len);
+int hostapd_apply_ttlm_mapping_to_driver(struct hostapd_data *hapd, struct sta_info *sta);
 
 #endif /* TTLM_H */
