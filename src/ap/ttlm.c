@@ -856,3 +856,28 @@ int hostapd_ttlm_teardown_tx_status(struct hostapd_data *hapd, struct sta_info *
 
 	return ret;
 }
+
+
+int hostapd_handle_ttlm_teardown(struct hostapd_data *hapd, struct sta_info *sta,
+				 const u8 *buf, size_t len)
+{
+	struct ttlm_prev_negotiated_info *negotiated_ttlm;
+	struct driver_ttlm_info driver_ttlm_info;
+	int ret;
+
+	if (!hapd->conf->ttlm_enable) {
+		wpa_printf(MSG_ERROR, "TTLM Negotiation support is disabled");
+		return -1;
+	}
+
+	negotiated_ttlm = &sta->mld_info.tid_map_info.ttlm_prev_negotiated_info;
+	negotiated_ttlm->dialog_token = 0;
+	hostapd_reset_ttlm_info(negotiated_ttlm->ttlm_info);
+	hostapd_fill_ttlm_nl_params(&driver_ttlm_info,
+				    &sta->mld_info.tid_map_info.ttlm_prev_negotiated_info);
+	ret = hostapd_drv_set_ttlm_link_mapping(hapd, &driver_ttlm_info, sta->addr);
+	if (ret)
+		wpa_printf(MSG_ERROR, "Failed to send ttlm params to driver");
+
+	return ret;
+}

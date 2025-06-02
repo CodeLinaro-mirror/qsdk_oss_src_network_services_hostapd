@@ -126,7 +126,9 @@ hostapd_verify_action_frame_has_min_length(const struct ieee80211_mgmt *mgmt,
 		return false;
 
 	min_len = (mgmt->u.action.u.epcs_teardown.action ==
-		   WLAN_PROT_EHT_EPCS_ENABLE_TEARDOWN)
+		   WLAN_PROT_EHT_EPCS_ENABLE_TEARDOWN ||
+		   mgmt->u.action.u.ttlm_teardown.action ==
+		   WLAN_PROT_EHT_T2L_MAPPING_TEARDOWN)
 		  ? IEEE80211_HDRLEN + 2
 		  : IEEE80211_HDRLEN + 3;
 
