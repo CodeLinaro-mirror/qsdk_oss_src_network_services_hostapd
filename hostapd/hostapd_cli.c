@@ -1736,6 +1736,20 @@ static int hostapd_cli_cmd_epcs(struct wpa_ctrl *ctrl, int argc,
 }
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BE
+static int hostapd_cli_cmd_negotiated_ttlm(struct wpa_ctrl *ctrl, int argc,
+					   char *argv[])
+{
+	if (argc < 2) {
+		printf("Invalid negotiated_ttlm command: needs at least 2 arguments\n");
+		return -1;
+	}
+
+	return hostapd_cli_cmd(ctrl, "NEGOTIATED_TTLM", 1, argc, argv);
+}
+#endif /* CONFIG_IEEE80211BE */
+
+
 struct hostapd_cli_cmd {
 	const char *cmd;
 	int (*handler)(struct wpa_ctrl *ctrl, int argc, char *argv[]);
@@ -1978,6 +1992,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	"<config_file_location>" },
 	{ "epcs", hostapd_cli_cmd_epcs, NULL,
 	  "[session_initiate|session_teardown|show] [<peer_mld_mac>|mu_edca_params|wmm_params]"},
+	{ "negotiated_ttlm", hostapd_cli_cmd_negotiated_ttlm, NULL,
+	  "= send ttlm test commands" },
 #endif
 	{ NULL, NULL, NULL, NULL }
 };

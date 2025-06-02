@@ -131,6 +131,29 @@ struct tid_to_link_mapping_elem {
 	u8 data[];
 } STRUCT_PACKED;
 
+/**
+ * struct ttlm_of_direction - TID-to-link mapping for a given direction
+ * @num_tids: Total number of TIDs for which mapping is given
+ * @direction: direction, DL/UL/BIDI
+ * @default_mapping: default tid-to-link mapping value
+ * @map_tid_to_links: link mappings of the TIDs
+ * @link_mapping_size: link map size for TIDn where value 0:2 bytes 1:1 byte
+ */
+struct ttlm_of_direction {
+	u8 num_tids;
+	u8 direction;
+	u8 default_mapping;
+	u8 link_mapping_size;
+	struct tid_to_link_map map_tid_to_links[NUM_MAX_TIDS];
+} STRUCT_PACKED;
+
+/**
+ * struct ttlm_config - User configured TTLM params
+ * @ttlm_direction: TID-to-link mapping params for DL/UL/BIDI
+ */
+struct ttlm_config {
+	struct ttlm_of_direction ttlm_direction[TTLM_DIRECTION_MAX];
+};
 
 int hostapd_send_ttlm_req(struct hostapd_data *hapd,
 			  struct ttlm_ongoing_negotiation_info *ttlm_negotiation,

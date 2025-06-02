@@ -69,6 +69,7 @@
 #include "fst/fst_ctrl_iface.h"
 #include "config_file.h"
 #include "ctrl_iface.h"
+#include "ap/ttlm.h"
 
 
 #define HOSTAPD_CLI_DUP_VALUE_MAX_LEN 256
@@ -4464,6 +4465,369 @@ static int hostapd_ctrl_iface_link_remove(struct hostapd_data *hapd, char *cmd,
 
 	return ret;
 }
+
+
+static int hostapd_ctrl_iface_negotiated_ttlm_request(struct hostapd_data *hapd, const char *cmd)
+{
+	struct ttlm_ongoing_negotiation_info *ongoing_ttlm;
+	struct ttlm_of_direction *ttlm_dir = NULL;
+	struct ttlm_config *ttlm_conf;
+	struct sta_info *sta;
+	char *input, *token, *saveptr, *tid_str, *map_str;
+	int ret, i, num_tids, dir = -1;
+	bool homogeneous_map;
+	u8 addr[ETH_ALEN];
+	u8 tid_num = 0;
+	u16 link_map = 0;
+
+	if (!hapd->conf->ttlm_enable) {
+		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
+		return -1;
+	}
+
+	input = os_strdup(cmd);
+	if (!input)
+		return -1;
+
+	token = strtok_r(input, " ", &saveptr);
+	if (!token || hwaddr_aton(token, addr)) {
+		wpa_printf(MSG_ERROR, "Invalid or missing STA MAC address");
+		os_free(input);
+		return -1;
+	}
+
+	sta = ap_get_sta(hapd, addr);
+	if (!sta) {
+		wpa_printf(MSG_ERROR, "Station " MACSTR " not found", MAC2STR(addr));
+		os_free(input);
+		return -1;
+	}
+
+	ttlm_conf = os_zalloc(sizeof(*ttlm_conf));
+	ongoing_ttlm = os_zalloc(sizeof(*ongoing_ttlm));
+	if (!ttlm_conf || !ongoing_ttlm) {
+		os_free(input);
+		if (ttlm_conf)
+			os_free(ttlm_conf);
+		if (ongoing_ttlm)
+			os_free(ongoing_ttlm);
+		return -1;
+	}
+
+	for (i = 0; i < TTLM_DIRECTION_MAX; i++) {
+		ttlm_conf->ttlm_direction[i].direction = TTLM_DIRECTION_INVALID;
+		ongoing_ttlm->ttlm_info[i].direction = TTLM_DIRECTION_INVALID;
+	}
+
+	while ((token = strtok_r(NULL, " ", &saveptr))) {
+		if (os_strncmp(token, "dir=", 4) == 0) {
+			dir = atoi(token + 4);
+			if (dir < 0 || dir > TTLM_DIRECTION_BIDI) {
+				wpa_printf(MSG_DEBUG, "Invalid direction: %d", dir);
+				goto fail;
+			}
+
+			if (dir == TTLM_DIRECTION_BIDI &&
+			    (ttlm_conf->ttlm_direction[TTLM_DIRECTION_DL].direction !=
+			     TTLM_DIRECTION_INVALID ||
+			     ttlm_conf->ttlm_direction[TTLM_DIRECTION_UL].direction !=
+			     TTLM_DIRECTION_INVALID)) {
+				wpa_printf(MSG_DEBUG, "Cannot mix BIDI with UL/DL");
+				goto fail;
+			}
+
+			ttlm_conf->ttlm_direction[dir].direction = dir;
+
+		} else {
+			if (dir < 0 || dir > TTLM_DIRECTION_BIDI) {
+				wpa_printf(MSG_DEBUG, "Direction is not specified");
+				goto fail;
+			}
+
+			ttlm_dir = &ttlm_conf->ttlm_direction[dir];
+			if (os_strncmp(token, "def_link_map=", 13) == 0) {
+				ttlm_dir->default_mapping = atoi(token + 13);
+
+			} else if (os_strncmp(token, "link_map_size=", 14) == 0) {
+				ttlm_dir->link_mapping_size = atoi(token + 14);
+
+			} else if (os_strncmp(token, "num_tids=", 9) == 0) {
+				num_tids = atoi(token + 9);
+				ttlm_dir->num_tids = num_tids;
+
+				for (i = 0; i < num_tids; i++) {
+					tid_str = strtok_r(NULL, " ", &saveptr);
+					map_str = strtok_r(NULL, " ", &saveptr);
+					if (!tid_str || !map_str) {
+						wpa_printf(MSG_DEBUG, "Missing TID or mapping");
+						goto fail;
+					}
+
+					ttlm_dir->map_tid_to_links[i].tid = atoi(tid_str);
+					ttlm_dir->map_tid_to_links[i].link_map =
+						strtol(map_str, NULL, 0);
+				}
+			}
+		}
+	}
+
+	for (dir = 0; dir < TTLM_DIRECTION_MAX; dir++) {
+		ttlm_dir = &ttlm_conf->ttlm_direction[dir];
+
+		if (ttlm_dir->direction > TTLM_DIRECTION_BIDI)
+			continue;
+
+		ongoing_ttlm->ttlm_info[ttlm_dir->direction].link_mapping_size =
+			ttlm_dir->link_mapping_size;
+		ongoing_ttlm->ttlm_info[ttlm_dir->direction].direction = ttlm_dir->direction;
+		ongoing_ttlm->ttlm_info[ttlm_dir->direction].default_link_mapping =
+			ttlm_dir->default_mapping;
+
+		if (ttlm_dir->default_mapping)
+			continue;
+
+		for (i = 0; i < ttlm_dir->num_tids; i++) {
+			tid_num = ttlm_dir->map_tid_to_links[i].tid;
+			link_map = ttlm_dir->map_tid_to_links[i].link_map;
+			ongoing_ttlm->ttlm_info[ttlm_dir->direction].ieee_link_map_tid[tid_num] =
+				link_map;
+		}
+	}
+
+	homogeneous_map = hostapd_is_mapping_homogeneous(ongoing_ttlm);
+	if (homogeneous_map == false) {
+		wpa_printf(MSG_DEBUG, "Mapping is not homogeneous");
+		goto fail;
+	}
+
+	ret = hostapd_send_ttlm_req(hapd, ongoing_ttlm, sta);
+	os_free(input);
+	os_free(ttlm_conf);
+	os_free(ongoing_ttlm);
+	return ret;
+
+fail:
+	os_free(input);
+	os_free(ttlm_conf);
+	os_free(ongoing_ttlm);
+	return -1;
+}
+
+
+static int hostapd_ctrl_iface_negotiated_ttlm_teardown(struct hostapd_data *hapd, const char *cmd)
+{
+	struct sta_info *sta;
+	u8 addr[ETH_ALEN];
+
+	if (!hapd->conf->ttlm_enable) {
+		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
+		return -1;
+	}
+
+	if (hwaddr_aton(cmd, addr)) {
+		wpa_printf(MSG_ERROR, "Invalid STA MAC address");
+		return -1;
+	}
+
+	sta = ap_get_sta(hapd, addr);
+	if (!sta) {
+		wpa_printf(MSG_ERROR, "Station " MACSTR
+			   " not found for Negotiated TTLM  Request message",
+			   MAC2STR(addr));
+		return -1;
+	}
+
+	return hostapd_send_ttlm_teardown(hapd, sta);
+}
+
+
+static int hostapd_ctrl_iface_negotiated_ttlm_response(struct hostapd_data *hapd, const char *cmd)
+{
+	struct ttlm_ongoing_negotiation_info *ongoing_ttlm, *partner_ttlm;
+	struct tid_to_link_map_info *partner_tid_map;
+	struct ttlm_of_direction *ttlm_dir = NULL;
+	struct ttlm_config *ttlm_conf;
+	struct sta_info *sta, *lsta;
+	struct hostapd_data *lhapd;
+	char *tid_str, *map_str;
+	bool homogeneous_map;
+	char *input, *token;
+	int assoc_frame = 0;
+	int resp_code = 0;
+	int i, dir = -1;
+	int tmp;
+	u8 addr[ETH_ALEN];
+	u8 tid_num = 0;
+	u16 link_map = 0;
+
+	if (!hapd->conf->ttlm_enable) {
+		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
+		return -1;
+	}
+
+	input = os_strdup(cmd);
+	if (!input)
+		return -1;
+
+	token = strtok(input, " ");
+	if (!token || hwaddr_aton(token, addr)) {
+		wpa_printf(MSG_ERROR, "Invalid STA MAC address");
+		os_free(input);
+		return -1;
+	}
+
+	sta = ap_get_sta(hapd, addr);
+	if (!sta) {
+		wpa_printf(MSG_ERROR, "Station " MACSTR " not found", MAC2STR(addr));
+		os_free(input);
+		return -1;
+	}
+
+	ttlm_conf = os_zalloc(sizeof(*ttlm_conf));
+	if (!ttlm_conf) {
+		os_free(input);
+		return -1;
+	}
+
+	for (i = 0; i < TTLM_DIRECTION_MAX; i++)
+		ttlm_conf->ttlm_direction[i].direction = TTLM_DIRECTION_INVALID;
+
+	while ((token = strtok(NULL, " "))) {
+		if (strncmp(token, "assoc_frame=", 12) == 0) {
+			assoc_frame = atoi(token + 12);
+		} else if (strncmp(token, "resp_code=", 10) == 0) {
+			resp_code = atoi(token + 10);
+		} else if (strncmp(token, "dir=", 4) == 0) {
+			dir = atoi(token + 4);
+			if (dir < 0 || dir > TTLM_DIRECTION_BIDI) {
+				wpa_printf(MSG_DEBUG, "Invalid direction:%d", dir);
+				goto fail;
+			}
+
+			if (dir == TTLM_DIRECTION_BIDI &&
+			    (ttlm_conf->ttlm_direction[TTLM_DIRECTION_DL].direction !=
+			     TTLM_DIRECTION_INVALID ||
+			     ttlm_conf->ttlm_direction[TTLM_DIRECTION_UL].direction !=
+			     TTLM_DIRECTION_INVALID)) {
+				wpa_printf(MSG_DEBUG, "Cannot mix BIDI with UL/DL");
+				goto fail;
+			}
+
+			ttlm_conf->ttlm_direction[dir].direction = dir;
+		} else {
+			if (dir < 0 || dir > TTLM_DIRECTION_BIDI) {
+				wpa_printf(MSG_DEBUG, "Direction is not specified");
+				goto fail;
+			}
+
+			ttlm_dir = &ttlm_conf->ttlm_direction[dir];
+			if (strncmp(token, "def_link_map=", 13) == 0) {
+				ttlm_dir->default_mapping = atoi(token + 13);
+			} else if (strncmp(token, "link_map_size=", 14) == 0) {
+				ttlm_dir->link_mapping_size = atoi(token + 14);
+			} else if (strncmp(token, "num_tids=", 9) == 0) {
+				ttlm_dir->num_tids = atoi(token + 9);
+				for (i = 0; i < ttlm_dir->num_tids; i++) {
+					tid_str = strtok(NULL, " ");
+					map_str = strtok(NULL, " ");
+					if (!tid_str || !map_str) {
+						wpa_printf(MSG_DEBUG, "Missing TID or mapping");
+						goto fail;
+					}
+					ttlm_dir->map_tid_to_links[i].tid = atoi(tid_str);
+					ttlm_dir->map_tid_to_links[i].link_map =
+						strtol(map_str, NULL, 0);
+				}
+			}
+		}
+	}
+
+	ongoing_ttlm = &sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info;
+
+	for (i = 0; i < TTLM_DIRECTION_MAX; i++)
+		ongoing_ttlm->ttlm_info[i].direction = TTLM_DIRECTION_INVALID;
+
+	if (resp_code == TTLM_RESP_TYPE_PREFERRED_TID_TO_LINK_MAPPING) {
+		ongoing_ttlm->ttlm_resp_type = TTLM_RESP_TYPE_PREFERRED_TID_TO_LINK_MAPPING;
+
+		for (dir = 0; dir < TTLM_DIRECTION_MAX; dir++) {
+			ttlm_dir = &ttlm_conf->ttlm_direction[dir];
+
+			if (ttlm_dir->direction > TTLM_DIRECTION_BIDI)
+				continue;
+
+			ongoing_ttlm->ttlm_info[ttlm_dir->direction].link_mapping_size =
+				ttlm_dir->link_mapping_size;
+			ongoing_ttlm->ttlm_info[ttlm_dir->direction].direction =
+				ttlm_dir->direction;
+			ongoing_ttlm->ttlm_info[ttlm_dir->direction].default_link_mapping =
+				ttlm_dir->default_mapping;
+
+			if (ttlm_dir->default_mapping)
+				continue;
+
+			for (int tid = 0; tid < ttlm_dir->num_tids; tid++) {
+				tid_num = ttlm_dir->map_tid_to_links[tid].tid;
+				link_map = ttlm_dir->map_tid_to_links[tid].link_map;
+				tmp = ttlm_dir->direction;
+				ongoing_ttlm->ttlm_info[tmp].ieee_link_map_tid[tid_num] =
+					link_map;
+			}
+		}
+
+		homogeneous_map = hostapd_is_mapping_homogeneous(ongoing_ttlm);
+		if (homogeneous_map == false) {
+			wpa_printf(MSG_DEBUG, "Preferred Mapping is not homogeneous");
+			goto fail;
+		}
+
+	} else if (resp_code == TTLM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING) {
+		ongoing_ttlm->ttlm_resp_type = TTLM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING;
+		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].direction = TTLM_DIRECTION_BIDI;
+		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_DL].direction = TTLM_DIRECTION_INVALID;
+		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_UL].direction = TTLM_DIRECTION_INVALID;
+		ongoing_ttlm->ttlm_info->default_link_mapping = true;
+	} else {
+		wpa_printf(MSG_DEBUG, "Invalid response type, set 133/134");
+		goto fail;
+	}
+
+	if (!assoc_frame) {
+		for_each_mld_link(lhapd, hapd) {
+			if (lhapd == hapd)
+				continue;
+
+			lsta = ap_get_sta(lhapd, sta->addr);
+			if (lsta && lsta->mld_info.mld_sta) {
+				partner_tid_map = &lsta->mld_info.tid_map_info;
+				partner_ttlm = &partner_tid_map->ttlm_ongoing_negotiation_info;
+				os_memcpy(partner_ttlm, ongoing_ttlm, sizeof(*partner_ttlm));
+			}
+		}
+	}
+
+	os_free(ttlm_conf);
+	os_free(input);
+	return 0;
+
+fail:
+	os_free(ttlm_conf);
+	os_free(input);
+	return -1;
+}
+
+
+static int hostapd_ctrl_iface_negotiated_ttlm(struct hostapd_data *hapd, const char *cmd)
+{
+	if (os_strncmp(cmd, "request ", 8) == 0)
+		return hostapd_ctrl_iface_negotiated_ttlm_request(hapd, cmd + 8);
+	else if (os_strncmp(cmd, "response ", 9) == 0)
+		return hostapd_ctrl_iface_negotiated_ttlm_response(hapd, cmd + 9);
+	else if (os_strncmp(cmd, "teardown ", 9) == 0)
+		return hostapd_ctrl_iface_negotiated_ttlm_teardown(hapd, cmd + 9);
+
+	return 0;
+}
 #endif /* CONFIG_IEEE80211BE */
 
 
@@ -5407,6 +5771,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
         } else if (os_strncmp(buf, "EPCS ", 5) == 0) {
                 reply_len = hostapd_epcs_handle_cli(hapd, buf + 5,
                                                     reply, reply_size);
+	} else if (os_strncmp(buf, "NEGOTIATED_TTLM ", 16) == 0) {
+		if (hostapd_ctrl_iface_negotiated_ttlm(hapd, buf + 16))
+			reply_len = -1;
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_SAE
 	} else if (os_strncmp(buf, "SAE_PASSWORD_BIND ", 18) == 0) {
