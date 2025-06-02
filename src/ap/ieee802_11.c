@@ -11038,6 +11038,11 @@ static void handle_action_cb(struct hostapd_data *hapd,
 		hostapd_link_reconf_resp_tx_status(hapd, sta, mgmt, len, ok);
 		return;
 	}
+
+	if (mgmt->u.action.category == WLAN_ACTION_PROTECTED_EHT &&
+	    mgmt->u.action.u.ttlm_resp.action ==
+	    WLAN_PROT_EHT_T2L_MAPPING_RESPONSE)
+		hostapd_ttlm_resp_tx_status(hapd, sta, ok);
 #endif /* CONFIG_IEEE80211BE */
 
 #ifndef CONFIG_NO_RRM
