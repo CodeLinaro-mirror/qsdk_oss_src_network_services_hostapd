@@ -792,3 +792,67 @@ int hostapd_ttlm_resp_tx_status(struct hostapd_data *hapd, struct sta_info *sta,
 
 	return ret;
 }
+
+
+int hostapd_send_ttlm_teardown(struct hostapd_data *hapd, struct sta_info *sta)
+{
+	struct ttlm_ongoing_negotiation_info *ongoing_ttlm;
+	struct hostapd_data *lhapd;
+	struct wpabuf *buf;
+	int ret;
+
+	buf = wpabuf_alloc(sizeof(u16));
+	if (!buf)
+		return -1;
+
+	ongoing_ttlm = &sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info;
+	wpabuf_put_u8(buf, WLAN_ACTION_PROTECTED_EHT);
+	wpabuf_put_u8(buf, WLAN_PROT_EHT_T2L_MAPPING_TEARDOWN);
+
+	ongoing_ttlm->dialog_token = 0;
+	ongoing_ttlm->ttlm_resp_type = TTLM_RESP_TYPE_INVALID;
+	hostapd_reset_ttlm_info(ongoing_ttlm->ttlm_info);
+
+	if (hapd->mld_link_id != sta->mld_assoc_link_id) {
+		for_each_mld_link(lhapd, hapd) {
+			if (lhapd->mld_link_id != sta->mld_assoc_link_id)
+				continue;
+			hapd = lhapd;
+			break;
+		}
+	}
+
+	ret = hostapd_drv_send_action(hapd, hapd->iface->freq, 0, sta->addr,
+				      wpabuf_head(buf), wpabuf_len(buf));
+
+	if (ret == 0) {
+		wpa_printf(MSG_DEBUG, "TTLM teardown frame is sent");
+		hostapd_copy_configured_ttlm_to_sta_info(sta, hapd, ongoing_ttlm,
+							 ongoing_ttlm->dialog_token);
+	} else
+		wpa_printf(MSG_ERROR, "Failed to send TTLM teardown frame");
+
+	wpabuf_free(buf);
+	return ret;
+}
+
+
+int hostapd_ttlm_teardown_tx_status(struct hostapd_data *hapd, struct sta_info *sta, int ok)
+{
+	int ret = 0;
+
+	if (!sta) {
+		wpa_printf(MSG_ERROR, "Station is not found");
+		return -1;
+	}
+
+	wpa_printf(MSG_DEBUG, "TTLM teardown: TX status: ok=%d peer_mac_addr:" MACSTR, ok,
+		   MAC2STR(sta->addr));
+	if (ok) {
+		ret = hostapd_apply_ttlm_mapping_to_driver(hapd, sta);
+		if (ret)
+			wpa_printf(MSG_ERROR, "Failed to send ttlm params to driver");
+	}
+
+	return ret;
+}

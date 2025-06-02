@@ -157,5 +157,7 @@ int hostapd_ttlm_resp_tx_status(struct hostapd_data *hapd,
 				struct sta_info *sta, int ok);
 int hostapd_send_ttlm_resp_action(struct hostapd_data *hapd,
 				struct sta_info *sta);
+int hostapd_send_ttlm_teardown(struct hostapd_data *hapd, struct sta_info *sta);
+int hostapd_ttlm_teardown_tx_status(struct hostapd_data *hapd, struct sta_info *sta, int ok);
 
 #endif /* TTLM_H */
