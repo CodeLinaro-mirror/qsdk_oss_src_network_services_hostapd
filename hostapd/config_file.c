@@ -5128,6 +5128,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->epcs_wmm_ac_params[WMM_AC_VO].txop_limit = atoi(pos);
 	} else if (os_strcmp(buf, "enable_epcs") == 0) {
 		bss->is_epcs_enabled = atoi(pos);
+	} else if (os_strcmp(buf, "ttlm_enable") == 0) {
+		bss->ttlm_enable = atoi(pos);
 #endif /* CONFIG_IEEE80211BE */
 
 	} else if (os_strcmp(buf, "i2r_lmr_policy") == 0) {
