@@ -1063,6 +1063,11 @@ struct hostapd_bss_config {
 				 * profiles */
 	u64 rsnxe_capab_mask;
 
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_wmm_ac_params epcs_wmm_ac_params[4];
+	struct ieee80211_he_mu_edca_parameter_set epcs_he_mu_edca;
+#endif /* CONFIG_IEEE80211BE */
+
 	enum qca_wlan_intf_offload_type ppe_vp_type;
 };
 
