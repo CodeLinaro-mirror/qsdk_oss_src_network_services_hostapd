@@ -199,6 +199,46 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->wmm_ac_params[3] = ac_vo;
 }
 
+#ifdef CONFIG_IEEE80211BE
+static void hostapd_set_default_epcs_params(struct hostapd_bss_config *bss)
+{
+	bss->epcs_he_mu_edca.he_mu_ac_be_param[HE_MU_AC_PARAM_ACI_IDX] = 0x03;
+	bss->epcs_he_mu_edca.he_mu_ac_be_param[HE_MU_AC_PARAM_ECW_IDX] = 0xA4;
+	bss->epcs_he_mu_edca.he_mu_ac_be_param[HE_MU_AC_PARAM_TIMER_IDX] = 255;
+
+	bss->epcs_he_mu_edca.he_mu_ac_bk_param[HE_MU_AC_PARAM_ACI_IDX] = 0x27;
+	bss->epcs_he_mu_edca.he_mu_ac_bk_param[HE_MU_AC_PARAM_ECW_IDX] = 0xA4;
+	bss->epcs_he_mu_edca.he_mu_ac_bk_param[HE_MU_AC_PARAM_TIMER_IDX] = 255;
+
+	bss->epcs_he_mu_edca.he_mu_ac_vi_param[HE_MU_AC_PARAM_ACI_IDX] = 0x42;
+	bss->epcs_he_mu_edca.he_mu_ac_vi_param[HE_MU_AC_PARAM_ECW_IDX] = 0x43;
+	bss->epcs_he_mu_edca.he_mu_ac_vi_param[HE_MU_AC_PARAM_TIMER_IDX] = 255;
+
+	bss->epcs_he_mu_edca.he_mu_ac_vo_param[HE_MU_AC_PARAM_ACI_IDX] = 0x62;
+	bss->epcs_he_mu_edca.he_mu_ac_vo_param[HE_MU_AC_PARAM_ECW_IDX] = 0x32;
+	bss->epcs_he_mu_edca.he_mu_ac_vo_param[HE_MU_AC_PARAM_TIMER_IDX] = 255;
+
+	bss->epcs_wmm_ac_params[WMM_AC_BE].cwmin = 4;
+	bss->epcs_wmm_ac_params[WMM_AC_BE].cwmax = 9;
+	bss->epcs_wmm_ac_params[WMM_AC_BE].aifs = 3;
+	bss->epcs_wmm_ac_params[WMM_AC_BE].txop_limit = 0;
+
+	bss->epcs_wmm_ac_params[WMM_AC_BK].cwmin = 4;
+	bss->epcs_wmm_ac_params[WMM_AC_BK].cwmax = 9;
+	bss->epcs_wmm_ac_params[WMM_AC_BK].aifs = 7;
+	bss->epcs_wmm_ac_params[WMM_AC_BK].txop_limit = 0;
+
+	bss->epcs_wmm_ac_params[WMM_AC_VI].cwmin = 3;
+	bss->epcs_wmm_ac_params[WMM_AC_VI].cwmax = 4;
+	bss->epcs_wmm_ac_params[WMM_AC_VI].aifs = 2;
+	bss->epcs_wmm_ac_params[WMM_AC_VI].txop_limit = 188;
+
+	bss->epcs_wmm_ac_params[WMM_AC_VO].cwmin = 2;
+	bss->epcs_wmm_ac_params[WMM_AC_VO].cwmax = 3;
+	bss->epcs_wmm_ac_params[WMM_AC_VO].aifs = 2;
+	bss->epcs_wmm_ac_params[WMM_AC_VO].txop_limit = 102;
+}
+#endif /* CONFIG_IEEE80211BE */
 
 struct hostapd_config * hostapd_config_defaults(void)
 {
@@ -332,6 +372,10 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->enable_6ghz_composite_ap = 1;
 
 	hostapd_set_and_check_bw320_offset(conf, 0);
+
+#ifdef CONFIG_IEEE80211BE
+	hostapd_set_default_epcs_params(bss);
+#endif /* CONFIG_IEEE80211BE */
 
 	return conf;
 }
