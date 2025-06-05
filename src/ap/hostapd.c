@@ -6800,6 +6800,208 @@ s16 hostapd_get_eirp_pwr(struct hostapd_iface *iface, u16 freq, u16 center_freq,
 }
 
 
+enum chan_width
+hostapd_get_chan_width_from_oper_chan_width(struct hostapd_config *iconf)
+{
+	enum chan_width ch_width = CHAN_WIDTH_UNKNOWN;
+
+	switch (hostapd_get_oper_chwidth(iconf)) {
+	case CONF_OPER_CHWIDTH_USE_HT:
+		if (iconf->secondary_channel == 0)
+			ch_width = CHAN_WIDTH_20;
+		else
+			ch_width = CHAN_WIDTH_40;
+		break;
+	case CONF_OPER_CHWIDTH_80MHZ:
+		ch_width = CHAN_WIDTH_80;
+		break;
+	case CONF_OPER_CHWIDTH_80P80MHZ:
+	case CONF_OPER_CHWIDTH_160MHZ:
+		ch_width = CHAN_WIDTH_160;
+		break;
+	case CONF_OPER_CHWIDTH_320MHZ:
+		ch_width = CHAN_WIDTH_320;
+		break;
+	default:
+		return CHAN_WIDTH_20;
+	}
+
+	return ch_width;
+}
+
+
+u8
+hostapd_get_best_ap_6ghz_power_mode_for_iface(struct hostapd_iface *iface)
+{
+	enum chan_width ch_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
+	u8 center_chan_no = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
+	u16 center_freq = ieee80211_chan_to_freq(NULL, iface->conf->op_class,
+						 center_chan_no);
+
+	return hostapd_get_best_ap_6ghz_power_mode(iface, iface->freq,
+						   center_freq, channel_width_to_int(ch_width),
+						   iface->conf->punct_bitmap);
+}
+
+
+/**
+ * hostapd_is_bonded_chan_freq() - Validate freq and BW for channel bonding
+ * @freq: Primary frequency in MHz
+ * @bonded_chan_entry: Bonded channel entry
+ * @bw: Bandwidth in MHz
+ * @center_freq_320_mhz: Center frequency for 320 MHz
+ *
+ * Return: True if the input freq, BW can form a bonded channel, false otherwise
+ */
+static bool
+hostapd_is_bonded_chan_freq(u16 freq,
+			    const struct bonded_channel_freq *bonded_chan_entry,
+			    u16 bw, u16 center_freq_320_mhz)
+{
+	if (bw == 320 && center_freq_320_mhz) {
+		u16 band_center;
+
+		/*
+		 * For the 5GHz 320/240 MHz channel, bonded pair ends are not
+		 * symmetric around the center of the channel. Use the start
+		 * frequency of the bonded channel to calculate the center
+		 */
+		if (is_5ghz_freq(freq))
+			band_center = bonded_chan_entry->start_freq - 10 + bw / 2;
+		else
+			band_center = (bonded_chan_entry->start_freq +
+					bonded_chan_entry->end_freq) >> 1;
+
+		if (band_center != center_freq_320_mhz)
+			return false;
+	}
+
+	if (freq >= bonded_chan_entry->start_freq &&
+	    freq <= bonded_chan_entry->end_freq)
+		return true;
+
+	return false;
+}
+
+/**
+ * hostapd_get_bonded_chan_entry() - Get the bonded channel entry
+ *
+ * This API returns the bonded channel entry for the given frequency and
+ * bandwidth. For 320 MHz, if center_freq_320_mhz is 0, the function will return
+ * the first bonded channel entry that matches the frequency and bandwidth.
+ *
+ * @freq: Frequency in MHz
+ * @bw: Bandwidth in MHz
+ * @center_freq_320_mhz: Center frequency for 320 MHz
+ *
+ * Return: Pointer to the bonded channel entry or NULL if not found.
+ */
+static const struct bonded_channel_freq *
+hostapd_get_bonded_chan_entry(u16 freq, u16 bw, u16 center_freq_320_mhz)
+{
+	const struct bonded_channel_freq *bonded_chan_arr;
+	u16 array_size, i, num_bws;
+
+	num_bws = ARRAY_SIZE(bw_bonded_array_pair_map);
+	for (i = 0; i < num_bws; i++) {
+		if (bw == bw_bonded_array_pair_map[i].bw) {
+			bonded_chan_arr =
+				bw_bonded_array_pair_map[i].bonded_chan_arr;
+			array_size = bw_bonded_array_pair_map[i].array_size;
+			break;
+		}
+	}
+
+	if (i == num_bws)
+		return NULL;
+
+	for (i = 0; i < array_size; i++) {
+		if (hostapd_is_bonded_chan_freq(freq, &bonded_chan_arr[i],
+						bw, center_freq_320_mhz))
+			return &bonded_chan_arr[i];
+	}
+
+	return NULL;
+}
+
+
+u16
+hostapd_get_bonded_chan_center_freq(u16 freq, u16 bw, u16 center_freq_320_mhz,
+				    s8 sec_chan_offset)
+{
+	const struct bonded_channel_freq *bonded_chan_ptr;
+
+	if (bw == 20)
+		return freq;
+
+	if (bw == 40 && (freq >= 2412 && freq <= 2472)) {
+		if (sec_chan_offset > 0)
+			return freq + 10;
+
+		if (sec_chan_offset < 0)
+			return freq - 10;
+
+		wpa_printf(MSG_DEBUG, "Invalid secondary channel offset %d",
+			   sec_chan_offset);
+		return 0;
+	}
+
+	bonded_chan_ptr = hostapd_get_bonded_chan_entry(freq, bw, center_freq_320_mhz);
+	if (!bonded_chan_ptr) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid bonded channel freq: %d, bw: %d, center freq: %d",
+			   freq, bw, center_freq_320_mhz);
+		return 0;
+	}
+
+	return (bonded_chan_ptr->start_freq + bonded_chan_ptr->end_freq) / 2;
+}
+
+
+u8
+hostapd_get_best_ap_6ghz_power_mode(struct hostapd_iface *iface,
+				    u16 freq, u16 center_freq, u16 bw,
+				    u16 in_punc_pattern)
+{
+	static const enum nl80211_regulatory_power_modes p_mode_order[] = {
+		NL80211_REG_AP_LPI,
+		NL80211_REG_AP_VLP,
+		NL80211_REG_AP_SP,
+	};
+	int i;
+	u8 best_ap_pwr_mode = NL80211_REG_NUM_POWER_MODES;
+	s16 max_eirp_pwr = CHAN_MIN_TX_POWER;
+
+	if (bw > 20 && !hostapd_get_bonded_chan_entry(freq, bw, center_freq)) {
+		wpa_printf(MSG_ERROR,
+			   "BPM: Invalid bonded channel freq %d, bw %d, center_freq %d",
+			   freq, bw, center_freq);
+		return best_ap_pwr_mode;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(p_mode_order); i++) {
+		s16 tmp_eirp_pwr = hostapd_get_eirp_pwr(iface, freq,
+							center_freq, bw,
+							in_punc_pattern,
+							p_mode_order[i],
+							false,
+							NL80211_REG_NUM_POWER_MODES,
+							false);
+
+		wpa_printf(MSG_INFO,
+			   "%s freq %d, cfreq %d, bw %d, pp %d, pwr_type %d, EIRP %d",
+			   __func__, freq, center_freq, bw, in_punc_pattern, p_mode_order[i],
+			   tmp_eirp_pwr);
+
+		if (tmp_eirp_pwr > max_eirp_pwr) {
+			max_eirp_pwr = tmp_eirp_pwr;
+			best_ap_pwr_mode = p_mode_order[i];
+		}
+	}
+
+	return best_ap_pwr_mode;
+}
+
 u16 hostapd_get_punct_bitmap(struct hostapd_data *hapd)
 {
 	u16 punct_bitmap = 0;

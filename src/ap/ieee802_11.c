@@ -8482,35 +8482,6 @@ static void free_ieee_ordered_chan_list(struct ieee_chan_data *chan_data)
 	os_free(chan_data->channels);
 }
 
-static enum chan_width
-hostapd_get_chan_width_from_oper_chan_width(struct hostapd_config *iconf)
-{
-	enum chan_width ch_width = CHAN_WIDTH_UNKNOWN;
-
-	switch (hostapd_get_oper_chwidth(iconf)) {
-	case CONF_OPER_CHWIDTH_USE_HT:
-		if (iconf->secondary_channel == 0)
-			ch_width = CHAN_WIDTH_20;
-		else
-			ch_width = CHAN_WIDTH_40;
-		break;
-	case CONF_OPER_CHWIDTH_80MHZ:
-		ch_width = CHAN_WIDTH_80;
-		break;
-	case CONF_OPER_CHWIDTH_80P80MHZ:
-	case CONF_OPER_CHWIDTH_160MHZ:
-		ch_width = CHAN_WIDTH_160;
-		break;
-	case CONF_OPER_CHWIDTH_320MHZ:
-		ch_width = CHAN_WIDTH_320;
-		break;
-	default:
-		return CHAN_WIDTH_20;
-	}
-
-	return ch_width;
-}
-
 static inline bool
 hostapd_is_additional_tpe(enum max_tx_pwr_interpretation tx_pwr_intrpn)
 {
@@ -8530,15 +8501,19 @@ static void hostapd_get_eirp_arr_for_6ghz(struct hostapd_iface *iface,
 	u16 bw, max_bw = channel_width_to_int(chanwidth);
 	u8 i, op_class = iface->conf->op_class;
 	u16 cf_320 = 0;
+	u8 pwr_type = iface->conf->he_6ghz_reg_pwr_type;
+	u16 bw_cen_freq;
 
 	if (is_320_opclass(op_class))
 		cf_320 = ieee80211_chan_to_freq(NULL, op_class, cen320);
 
-	for (i = 0, bw = 20; bw <= max_bw; i++, bw *= 2)
-		max_eirp_arr[i] = hostapd_get_eirp_pwr(iface, freq, cf_320, bw,
+	for (i = 0, bw = 20; bw <= max_bw; i++, bw *= 2) {
+		bw_cen_freq = hostapd_get_bonded_chan_center_freq(freq, bw, cf_320, 0);
+		max_eirp_arr[i] = hostapd_get_eirp_pwr(iface, freq, bw_cen_freq, bw,
 						       iface->conf->punct_bitmap,
-						       NL80211_REG_NUM_POWER_MODES,
+						       pwr_type,
 						       true, client_type, true);
+	}
 
 	if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP &&
 	    !hostapd_is_additional_tpe(tx_pwr_intrpn)) {
@@ -8549,9 +8524,10 @@ static void hostapd_get_eirp_arr_for_6ghz(struct hostapd_iface *iface,
 		else
 			client_type = NL80211_REG_SUBORDINATE_CLIENT_LPI;
 		for (i = 0, bw = 20; bw <= max_bw; i++, bw *= 2) {
+			bw_cen_freq = hostapd_get_bonded_chan_center_freq(freq, bw, cf_320, 0);
 			/* TODO: Pass Intersected PP */
 			max_eirp_arr_lpi[i] =
-			    hostapd_get_eirp_pwr(iface, freq, cf_320, bw,
+			    hostapd_get_eirp_pwr(iface, freq, bw_cen_freq, bw,
 						 iface->conf->punct_bitmap,
 						 NL80211_REG_NUM_POWER_MODES,
 						 true, client_type, true);

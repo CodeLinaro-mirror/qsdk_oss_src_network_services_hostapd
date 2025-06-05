@@ -1074,6 +1074,57 @@ s16 hostapd_get_eirp_pwr(struct hostapd_iface *iface, u16 freq, u16 center_freq,
 			 bool is_client_lookup, u8 client_type,
 			 bool is_twice_pwr);
 
+/**
+ * hostapd_get_chan_width_from_oper_chan_width() - Get the channel width
+ * @iconf: Pointer to hostapd_config
+ *
+ * Return: Channel width enum value for the given config's operating ch width.
+ */
+enum chan_width
+hostapd_get_chan_width_from_oper_chan_width(struct hostapd_config *iconf);
+
+/**
+ * hostapd_get_best_ap_6ghz_power_mode() - Get the best 6 GHz AP power mode
+ * @iface: Pointer to hostapd_iface
+ * @freq: Frequency in MHz
+ * @center_freq: Band center frequency
+ * @bw: Bandwidth in MHz
+ * @in_punc_pattern: Puncturing pattern
+ *
+ * Return: Best AP power mode for the given channel parameters.
+ */
+u8
+hostapd_get_best_ap_6ghz_power_mode(struct hostapd_iface *iface,
+				    u16 freq, u16 center_freq,
+				    u16 bw,
+				    u16 in_punc_pattern);
+
+/**
+ * hostapd_get_best_ap_6ghz_power_mode_for_iface() - Get the best 6 GHz power mode
+ * @iface: Pointer to hostapd_iface
+ *
+ * Return: Best AP power mode for the iface's channel parameters
+ */
+u8
+hostapd_get_best_ap_6ghz_power_mode_for_iface(struct hostapd_iface *iface);
+
+/**
+ * hostapd_get_bonded_chan_center_freq() - Get the bonded channel center freq
+ *
+ * This API returns the center frequency of the bonded channel based on the
+ * frequency, bandwidth, 320 MHz BW center frequency and secondary channel offset.
+ *
+ * @freq: Frequency in MHz
+ * @bw: Bandwidth in MHz
+ * @cen320_freq: Center frequency for 320 MHz
+ * @sec_chan_offset: Secondary channel offset
+ *
+ * Return: Center frequency in MHz for the bonded channel or 0 if not found.
+ */
+u16
+hostapd_get_bonded_chan_center_freq(u16 freq, u16 bw, u16 cen320_freq,
+				    s8 sec_chan_offset);
+
 u16 hostapd_get_punct_bitmap(struct hostapd_data *hapd);
 bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface);
 void hostapd_gen_per_sta_profiles(struct hostapd_data *hapd);
