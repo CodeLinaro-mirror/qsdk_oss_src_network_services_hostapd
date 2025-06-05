@@ -2227,23 +2227,164 @@ enum reg_6g_client_type {
 
 /**
  * struct bw_10log10_pair - The bandwidth and 10*log10(bandwidth) pair.
- * ten_l_len = trunc(10*log10(bw)).  'trunc' is truncation function.
  * @bw: The input bandwidth
- * @ten_l_ten: Integer value of 10 times the Logarithm (to the base-10) of the
- * input bandwidth(@bw).
+ * @ten_l_ten_ceil: Integer value of 10 times the Logarithm (to the base-10) of
+ * the input bandwidth(@bw) rounded up to the nearest integer.
+ * @ten_l_ten_floor: Integer value of 10 times the Logarithm (to the base-10) of
+ * the input bandwidth(@bw) rounded down to the nearest integer.
  */
 struct bw_10log10_pair {
 	u16 bw;
-	s16 ten_l_ten;
+	s16 ten_l_ten_ceil;
+	s16 ten_l_ten_floor;
 };
 
 /* The array of bandwidth to trunc(10log10(bandwidth)) mapping */
 static const struct bw_10log10_pair bw_to_10log10_map[] = {
-	{ 20, 13}, /* 10* 1.30102 = 13.0102 */
-	{ 40, 16}, /* 10* 1.60205 = 16.0205 */
-	{ 80, 19}, /* 10* 1.90308 = 19.0308 */
-	{160, 22}, /* 10* 2.20411 = 22.0411 */
-	{320, 25}, /* 10* 2.50514 = 25.0514 */
+	{  20, 14, 13 }, /* 10 * log10(20)  = 13.0102 */
+	{  40, 17, 16 }, /* 10 * log10(40)  = 16.0203 */
+	{  60, 18, 17 }, /* 10 * log10(60)  = 17.7815 */
+	{  80, 20, 19 }, /* 10 * log10(80)  = 19.0308 */
+	{ 120, 21, 20 }, /* 10 * log10(120) = 20.7918 */
+	{ 140, 22, 21 }, /* 10 * log10(140) = 21.4612 */
+	{ 160, 23, 22 }, /* 10 * log10(160) = 22.0411 */
+	{ 200, 24, 23 }, /* 10 * log10(200) = 23.0102 */
+	{ 240, 24, 23 }, /* 10 * log10(240) = 23.8021 */
+	{ 280, 25, 24 }, /* 10 * log10(280) = 24.4715 */
+	{ 320, 26, 25 }, /* 10 * log10(320) = 25.0514 */
+};
+
+/*
+ * struct bonded_channel_freq - Start and end frequency pair of bonded channel
+ * @start_freq: Start frequency of the bonded channel
+ * @end_freq: End frequency of the bonded channel
+ */
+struct bonded_channel_freq {
+	u16 start_freq;
+	u16 end_freq;
+};
+
+/* bonded_chan_40mhz_list_freq - List of 40MHz bonnded channel frequencies */
+static const struct bonded_channel_freq bonded_chan_40mhz_list_freq[] = {
+	{5180, 5200},
+	{5220, 5240},
+	{5260, 5280},
+	{5300, 5320},
+	{5500, 5520},
+	{5540, 5560},
+	{5580, 5600},
+	{5620, 5640},
+	{5660, 5680},
+	{5700, 5720},
+	{5745, 5765},
+	{5785, 5805},
+	{5825, 5845},
+	{5865, 5885},
+	{5955, 5975},
+	{5995, 6015},
+	{6035, 6055},
+	{6075, 6095},
+	{6115, 6135},
+	{6155, 6175},
+	{6195, 6215},
+	{6235, 6255},
+	{6275, 6295},
+	{6315, 6335},
+	{6355, 6375},
+	{6395, 6415},
+	{6435, 6455},
+	{6475, 6495},
+	{6515, 6535},
+	{6555, 6575},
+	{6595, 6615},
+	{6635, 6655},
+	{6675, 6695},
+	{6715, 6735},
+	{6755, 6775},
+	{6795, 6815},
+	{6835, 6855},
+	{6875, 6895},
+	{6915, 6935},
+	{6955, 6975},
+	{6995, 7015},
+	{7035, 7055},
+	{7075, 7095}
+};
+
+/* bonded_chan_80mhz_list_freq - List of 80MHz bonnded channel frequencies */
+static const struct bonded_channel_freq bonded_chan_80mhz_list_freq[] = {
+	{5180, 5240},
+	{5260, 5320},
+	{5500, 5560},
+	{5580, 5640},
+	{5660, 5720},
+	{5745, 5805},
+	{5825, 5885},
+	{5955, 6015},
+	{6035, 6095},
+	{6115, 6175},
+	{6195, 6255},
+	{6275, 6335},
+	{6355, 6415},
+	{6435, 6495},
+	{6515, 6575},
+	{6595, 6655},
+	{6675, 6735},
+	{6755, 6815},
+	{6835, 6895},
+	{6915, 6975},
+	{6995, 7055}
+};
+
+/* bonded_chan_160mhz_list_freq - List of 160MHz bonnded channel frequencies */
+static const struct bonded_channel_freq bonded_chan_160mhz_list_freq[] = {
+	{5180, 5320},
+	{5500, 5640},
+	{5745, 5885},
+	{5955, 6095},
+	{6115, 6255},
+	{6275, 6415},
+	{6435, 6575},
+	{6595, 6735},
+	{6755, 6895},
+	{6915, 7055}
+};
+
+/* bonded_chan_320mhz_list_freq - List of 320MHz bonnded channel frequencies */
+static const struct bonded_channel_freq bonded_chan_320mhz_list_freq[] = {
+	{5500, 5720}, /* center freq: 5650: The 5Ghz 240MHz chan */
+	{5955, 6255}, /* center freq: 6105 */
+	{6115, 6415}, /* center freq: 6265 */
+	{6275, 6575}, /* center freq: 6425 */
+	{6435, 6735}, /* center freq: 6585 */
+	{6595, 6895}, /* center freq: 6745 */
+	{6755, 7055}  /* center freq: 6905 */
+};
+
+/**
+ * struct bw_bonded_array_pair - Structure containing bandwidth, bonded_array
+ *	corresponding to bandwidth and the size of the bonded array.
+ * @BW: channel width
+ * @bonded_chan_arr: bonded array corresponding to BW.
+ * @array_size: size of the bonded_chan_arr.
+ */
+struct bw_bonded_array_pair {
+	u16 bw;
+	const struct bonded_channel_freq *bonded_chan_arr;
+	u16 array_size;
+};
+
+/* Mapping of BW to bonded array and size of bonded array */
+static const
+struct bw_bonded_array_pair bw_bonded_array_pair_map[] = {
+	{ 40, bonded_chan_40mhz_list_freq,
+		ARRAY_SIZE(bonded_chan_40mhz_list_freq)},
+	{ 80, bonded_chan_80mhz_list_freq,
+		ARRAY_SIZE(bonded_chan_80mhz_list_freq)},
+	{160, bonded_chan_160mhz_list_freq,
+		ARRAY_SIZE(bonded_chan_160mhz_list_freq)},
+	{320, bonded_chan_320mhz_list_freq,
+		ARRAY_SIZE(bonded_chan_320mhz_list_freq)},
 };
 
 #define RRM_CAPABILITIES_IE_LEN 5

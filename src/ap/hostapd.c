@@ -6192,7 +6192,7 @@ static int hapd_psd_to_eirp(s16 psd, u8 psd_scale, u16 ch_bw, s16 *eirp)
 	num_bws = ARRAY_SIZE(bw_to_10log10_map);
 	for (i = 0; i < num_bws; i++) {
 		if (ch_bw == bw_to_10log10_map[i].bw) {
-			ten_log10_bw = bw_to_10log10_map[i].ten_l_ten;
+			ten_log10_bw = bw_to_10log10_map[i].ten_l_ten_floor;
 			*eirp = psd + ten_log10_bw * psd_scale;
 			return 0;
 		}
@@ -6220,7 +6220,7 @@ static int hapd_eirp_to_psd(s16 eirp, u8 eirp_scale, u16 ch_bw, s16 *psd)
 	num_bws = ARRAY_SIZE(bw_to_10log10_map);
 	for (i = 0; i < num_bws; i++) {
 		if (ch_bw == bw_to_10log10_map[i].bw) {
-			ten_log10_bw = bw_to_10log10_map[i].ten_l_ten;
+			ten_log10_bw = bw_to_10log10_map[i].ten_l_ten_ceil;
 			*psd = eirp - ten_log10_bw * eirp_scale;
 			return 0;
 		}
