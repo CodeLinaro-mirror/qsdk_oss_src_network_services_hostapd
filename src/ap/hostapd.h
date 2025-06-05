@@ -1195,6 +1195,17 @@ s16 hostapd_get_eirp_pwr(struct hostapd_iface *iface, u16 freq,
 			 u8 ap_pwr_type, bool is_client_lookup,
 			 u8 client_type, bool is_twice_pwr);
 
+enum chan_width
+hostapd_get_chan_width_from_oper_chan_width(struct hostapd_config *iconf);
+
+u8 hostapd_get_best_ap_6ghz_power_mode(struct hostapd_iface *iface,
+				       u16 freq, u16 center_freq, u16 bw,
+				       u16 in_punc_pattern);
+u8 hostapd_get_best_ap_6ghz_power_mode_for_iface(struct hostapd_iface *iface);
+
+u16 hostapd_get_bonded_chan_center_freq(u16 freq, u16 bw,
+				       u16 cen320_freq, s8 sec_chan_offset);
+
 u16 hostapd_get_punct_bitmap(struct hostapd_data *hapd);
 bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface);
 void hostapd_gen_per_sta_profiles(struct hostapd_data *hapd);
