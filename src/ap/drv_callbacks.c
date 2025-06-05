@@ -1277,6 +1277,7 @@ int hostapd_switch_power_mode(struct hostapd_data *hapd)
 
 	hapd->iface->power_mode_6ghz_before_change = -1;
 
+	wpa_printf(MSG_ERROR, "Power mode change failed");
 	return ret;
 }
 
@@ -1479,13 +1480,7 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 	if (hapd->csa_in_progress &&
 	    freq == hapd->cs_freq_params.freq) {
 		if (hapd->iface->power_mode_6ghz_before_change > -1) {
-			if (hapd->iface->power_mode_6ghz_before_change !=
-			    hapd->iconf->he_6ghz_reg_pwr_type) {
-				if (hostapd_switch_power_mode(hapd))
-					wpa_printf(MSG_ERROR, "Power mode change failed");
-			} else {
-				hapd->iface->power_mode_6ghz_before_change = -1;
-			}
+			hostapd_switch_power_mode(hapd);
 		}
 
 		hostapd_cleanup_cs_params(hapd);
