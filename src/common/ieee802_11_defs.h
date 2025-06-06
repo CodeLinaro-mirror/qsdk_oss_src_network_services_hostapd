@@ -3158,6 +3158,72 @@ struct ieee80211_eht_capabilities {
 	u8 optional[EHT_MCS_NSS_CAPAB_LEN + EHT_PPE_THRESH_CAPAB_LEN];
 } STRUCT_PACKED;
 
+/* Figure 9-aa2: UHR Operation Parameters field format described in P802.11bn_D1.0 section 9.4.2.aa1 */
+#define UHR_OPER_DPS_ENABLED		BIT(0)
+#define UHR_OPER_NPCA_OPER_PRESENT	BIT(1)
+#define UHR_OPER_DBE_ENABLED		BIT(2)
+#define UHR_OPER_P_EDCA_ENABLED		BIT(3)
+
+struct ieee80211_dbe_info {
+	/* TODO: Convert this into structure bitfield
+	 * As per spec dbe_params defined as below
+	 * dbe_bandwidth				:3
+	 * reserved					:5
+	 * dbe_disabled_subchannel_bitmap		:16
+	 */
+	u8 dbe_bandwidth;
+	u16 dbe_disabled_subchannel_bitmap;
+} STRUCT_PACKED;
+
+struct ieee80211_p_edca_info {
+	/* TODO: Convert this into structure bitfield
+	 * As per spec p_edca_params defined as below
+	 * p_edca_ecwmin		:4
+	 * p_edca_ecwmax		:4
+	 */
+	u8 p_edca_ec;
+
+	/* p_edca_aifsn			:4
+	 * p_edca_cw_ds			:2
+	 * p_edca_psrc_thres		:3
+	 * p_edca_qsrc_thres		:2
+	 * reserved			:4
+	 */
+	u16 p_edca_params;
+} STRUCT_PACKED;
+
+/* Figure 9-aa3: NPCA Operation Information field format */
+struct ieee80211_npca_info {
+	/* TODO: Convert this into structure bitfield
+	 * As per spec npca_params defined as below
+	 * npca_primary_chan					:4
+	 * npca_min_dur_threshold				:4
+	 * npca_switching_delay					:6
+	 * npca_switch_back_delay				:6
+	 * npca_initial_qsrc					:2
+	 * npca_moplen						:1
+	 * npca_disabled_subchan_bitmap_pres			:1
+	 * reserved						:8
+	 */
+	u32 npca_params;
+	u16 npca_disabled_subchan_bitmap;
+} STRUCT_PACKED;
+
+/* UHR Operation Information field format described in P802.11bn_D1.0 section 9.4.2.aa1 */
+struct ieee80211_uhr_oper_info {
+	struct ieee80211_npca_info npca_info;
+	struct ieee80211_p_edca_info p_edca_info;
+	struct ieee80211_dbe_info dbe_info;
+} STRUCT_PACKED;
+
+/* Figure 9-aa1: UHR Operation element format described in P802.11bn_D1.0 section 9.4.2.aa1 */
+struct ieee80211_uhr_operation {
+	u16 uhr_oper_params;   /*UHR Operation Parameters*/
+	u8 basic_uhr_mcs_nss_set[4];
+	struct ieee80211_uhr_oper_info uhr_info;
+	u16 dps_oper_param; /*DPS Operation Parameters*/
+} STRUCT_PACKED;
+
 #define UHR_MAC_CAPAB_LEN	5
 #define UHR_PHY_CAPAB_LEN	1
 /* Figure 9-aa4: UHR Capabilities element format P802.11bn_D1.0 section 9.4.2.aa2 */
