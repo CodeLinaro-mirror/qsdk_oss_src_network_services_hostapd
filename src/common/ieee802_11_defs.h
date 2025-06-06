@@ -3157,6 +3157,16 @@ struct ieee80211_eht_capabilities {
 	u8 optional[EHT_MCS_NSS_CAPAB_LEN + EHT_PPE_THRESH_CAPAB_LEN];
 } STRUCT_PACKED;
 
+#define UHR_MAC_CAPAB_LEN	5
+#define UHR_PHY_CAPAB_LEN	1
+/* Figure 9-aa4: UHR Capabilities element format P802.11bn_D1.0 section 9.4.2.aa2 */
+struct ieee80211_uhr_capabilities {
+	/* UHR MAC Capabilities Information */
+	u8 mac_cap[UHR_MAC_CAPAB_LEN];
+	/* UHR PHY Capabilities Information */
+	u8 phy_cap[UHR_PHY_CAPAB_LEN];
+} STRUCT_PACKED;
+
 #define IEEE80211_EHT_CAPAB_MIN_LEN (2 + 9)
 
 /* IEEE P802.11be/D2.1, 9.4.2.312 - Multi-Link element */
