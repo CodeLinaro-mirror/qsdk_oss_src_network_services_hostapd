@@ -2846,49 +2846,114 @@ static const char * modestr(enum hostapd_hw_mode mode)
 	}
 }
 
+/**
+ * power_mode_6ghz_to_str - Convert power mode to string
+ * @power_mode: Power mode
+ *
+ * Return string representation of the power mode.
+ */
+static
+const char *power_mode_6ghz_to_str(enum nl80211_regulatory_power_modes power_mode)
+{
+	switch (power_mode) {
+	case NL80211_REG_AP_LPI:
+		return "LPI";
+	case NL80211_REG_AP_SP:
+		return "SP";
+	case NL80211_REG_AP_VLP:
+		return "VLP";
+	case NL80211_REG_REGULAR_CLIENT_LPI:
+		return "REGULAR_LPI";
+	case NL80211_REG_REGULAR_CLIENT_SP:
+		return "REGULAR_SP";
+	case NL80211_REG_REGULAR_CLIENT_VLP:
+		return "REGULAR_VLP";
+	case NL80211_REG_SUBORDINATE_CLIENT_LPI:
+		return "SUBORDINATE_LPI";
+	case NL80211_REG_SUBORDINATE_CLIENT_SP:
+		return "SUBORDINATE_SP";
+	case NL80211_REG_SUBORDINATE_CLIENT_VLP:
+		return "SUBORDINATE_VLP";
+	case NL80211_REG_NUM_POWER_MODES:
+		return "unknown";
+	}
+
+	return "unknown";
+}
+
+static void nl80211_print_chans(struct wpa_driver_nl80211_data *drv,
+				struct hostapd_channel_data *channels, int num_channels,
+				const char *mode_str)
+{
+	char str[1000];
+	char *pos = str;
+	char *end = pos + sizeof(str);
+	int j;
+
+	for (j = 0; j < num_channels; j++) {
+		int res;
+		struct hostapd_channel_data *chan = NULL;
+
+		chan = &channels[j];
+		if (is_6ghz_freq(chan->freq))
+			drv->uses_6ghz = true;
+		if (chan->freq >= 900 && chan->freq < 1000)
+			drv->uses_s1g = true;
+
+		res = os_snprintf(pos, end - pos, " %d%s%s%s",
+				  chan->freq,
+				  (chan->flag & HOSTAPD_CHAN_DISABLED) ?
+				  "[DISABLED]" : "",
+				  (chan->flag & HOSTAPD_CHAN_NO_IR) ?
+				  "[NO_IR]" : "",
+				  (chan->flag & HOSTAPD_CHAN_RADAR) ?
+				  "[RADAR]" : "");
+		if (os_snprintf_error(end - pos, res))
+			break;
+		pos += res;
+	}
+
+	*pos = '\0';
+	wpa_printf(MSG_DEBUG, "nl80211: Mode IEEE %s:%s",
+		   mode_str, str);
+}
 
 static void nl80211_dump_chan_list(struct wpa_driver_nl80211_data *drv,
 				   struct hostapd_hw_modes *modes,
 				   u16 num_modes)
 {
 	int i;
+	struct hostapd_hw_modes *mode_6ghz = NULL;
 
 	if (!modes)
 		return;
 
 	for (i = 0; i < num_modes; i++) {
 		struct hostapd_hw_modes *mode = &modes[i];
-		char str[1000];
-		char *pos = str;
-		char *end = pos + sizeof(str);
-		int j, res;
+		struct hostapd_channel_data *channels = mode->channels;
 
-		for (j = 0; j < mode->num_channels; j++) {
-			struct hostapd_channel_data *chan = &mode->channels[j];
+		if (mode->is_6ghz)
+			mode_6ghz = mode;
 
-			if (is_6ghz_freq(chan->freq))
-				drv->uses_6ghz = true;
-			if (chan->freq >= 900 && chan->freq < 1000)
-				drv->uses_s1g = true;
-			res = os_snprintf(pos, end - pos, " %d%s%s%s",
-					  chan->freq,
-					  (chan->flag & HOSTAPD_CHAN_DISABLED) ?
-					  "[DISABLED]" : "",
-					  (chan->flag & HOSTAPD_CHAN_NO_IR) ?
-					  "[NO_IR]" : "",
-					  (chan->flag & HOSTAPD_CHAN_RADAR) ?
-					  "[RADAR]" : "");
-			if (os_snprintf_error(end - pos, res))
-				break;
-			pos += res;
-		}
+		nl80211_print_chans(drv, channels, mode->num_channels,
+				    modestr(mode->mode));
+	}
 
-		*pos = '\0';
-		wpa_printf(MSG_DEBUG, "nl80211: Mode IEEE %s:%s",
-			   modestr(mode->mode), str);
+	if (!mode_6ghz)
+		return;
+
+	for (i = NL80211_REG_AP_LPI; i < NL80211_REG_NUM_POWER_MODES; i++) {
+		int num_chans = mode_6ghz->channels_6ghz.num_channels_6ghz[i];
+		struct hostapd_channel_data *channels =
+		    mode_6ghz->channels_6ghz.chans_6ghz[i];
+
+		if (!num_chans)
+			continue;
+
+		nl80211_print_chans(drv, channels, num_chans,
+				    power_mode_6ghz_to_str(i));
 	}
 }
-
 
 struct hostapd_hw_modes *
 nl80211_get_hw_feature_data(void *priv, u16 *num_modes, u16 *flags,
