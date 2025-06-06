@@ -117,6 +117,7 @@ struct ieee802_11_elems {
 	const u8 *pasn_params;
 	const u8 *eht_capabilities;
 	const u8 *eht_operation;
+	const u8 *uhr_capabilities;
 	const u8 *basic_mle;
 	const u8 *probe_req_mle;
 	const u8 *reconf_mle;
@@ -189,6 +190,7 @@ struct ieee802_11_elems {
 	u8 sae_pk_len;
 	u8 pasn_params_len;
 	u8 eht_capabilities_len;
+	u8 uhr_capabilities_len;
 	u8 eht_operation_len;
 	size_t basic_mle_len;
 	size_t probe_req_mle_len;
