@@ -55,6 +55,8 @@ struct nan_publish_params;
 #define HOSTAPD_CHAN_GO_CONCURRENT 0x00020000
 #define HOSTAPD_CHAN_AUTO_BW 0x00040000
 
+#define HOSTAPD_CHAN_PSD 0x00200000
+
 /* Allowed bandwidth mask */
 enum hostapd_chan_width_attr {
 	HOSTAPD_CHAN_WIDTH_10   = BIT(0),
@@ -214,6 +216,16 @@ struct hostapd_channel_data {
 	u16 punct_bitmap;
 
 	/**
+	 * psd_power - PSD power
+	 */
+	s8 psd_power;
+
+	/**
+	 * eirp_power - EIRP power
+	 */
+	s8 eirp_power;
+
+	/**
 	 * This array is used to store the psd value of each power mode
 	 * supported in 6G band.
 	 */
@@ -286,6 +298,16 @@ struct ieee80211_edmg_config {
 	enum edmg_bw_config bw_config;
 };
 
+/**
+ * struct hostapd_channel_data_6ghz - 6 GHz channel information
+ * @chans_6ghz: Array of channel data for each power mode
+ * @num_channels_6ghz: Number of channels for each power mode
+ */
+struct hostapd_channel_data_6ghz {
+	struct hostapd_channel_data *chans_6ghz[NL80211_REG_NUM_POWER_MODES];
+	size_t num_channels_6ghz[NL80211_REG_NUM_POWER_MODES];
+};
+
 struct ieee_chan_data {
 	int num_channels;
 	struct hostapd_channel_data *channels;
@@ -313,6 +335,11 @@ struct hostapd_hw_modes {
 	 * channels - Array of supported channels
 	 */
 	struct hostapd_channel_data *channels;
+
+	/**
+	 * channels_6ghz - Structure to hold 6 GHz channel information
+	 */
+	struct hostapd_channel_data_6ghz channels_6ghz;
 
 	/**
 	 * num_rates - Number of entries in the rates array

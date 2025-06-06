@@ -1660,6 +1660,7 @@ struct phy_info_arg {
 	u16 *num_modes;
 	struct hostapd_hw_modes *modes;
 	int last_mode, last_chan_idx;
+	int last_pwr_mode, last_6g_chan_idx;
 	int failed;
 	u8 dfs_domain;
 	u8 pwr_mode;
@@ -1777,6 +1778,14 @@ static void phy_info_freq(struct hostapd_hw_modes *mode,
 	if (tb_freq[NL80211_FREQUENCY_ATTR_NO_320MHZ])
 		chan->allowed_bw &= ~HOSTAPD_CHAN_WIDTH_320;
 
+	if (tb_freq[NL80211_FREQUENCY_ATTR_MAX_TX_POWER])
+		chan->eirp_power = nla_get_u32(tb_freq[NL80211_FREQUENCY_ATTR_MAX_TX_POWER]) / 100;
+
+	if (tb_freq[NL80211_FREQUENCY_ATTR_PSD]) {
+		chan->flag |= HOSTAPD_CHAN_PSD;
+		chan->psd_power = nla_get_s8(tb_freq[NL80211_FREQUENCY_ATTR_PSD]);
+	}
+
 	if (tb_freq[NL80211_FREQUENCY_ATTR_DFS_STATE]) {
 		enum nl80211_dfs_state state =
 			nla_get_u32(tb_freq[NL80211_FREQUENCY_ATTR_DFS_STATE]);
@@ -1861,25 +1870,79 @@ static void phy_info_freq(struct hostapd_hw_modes *mode,
 }
 
 
+static struct nla_policy freq_policy[NL80211_FREQUENCY_ATTR_MAX + 1] = {
+	[NL80211_FREQUENCY_ATTR_FREQ] = { .type = NLA_U32 },
+	[NL80211_FREQUENCY_ATTR_DISABLED] = { .type = NLA_FLAG },
+	[NL80211_FREQUENCY_ATTR_NO_IR] = { .type = NLA_FLAG },
+	[NL80211_FREQUENCY_ATTR_RADAR] = { .type = NLA_FLAG },
+	[NL80211_FREQUENCY_ATTR_MAX_TX_POWER] = { .type = NLA_U32 },
+	[NL80211_FREQUENCY_ATTR_DFS_STATE] = { .type = NLA_U32 },
+	[NL80211_FREQUENCY_ATTR_NO_10MHZ] = { .type = NLA_FLAG },
+	[NL80211_FREQUENCY_ATTR_NO_20MHZ] = { .type = NLA_FLAG },
+	[NL80211_FREQUENCY_ATTR_NO_HT40_PLUS] = { .type = NLA_FLAG },
+	[NL80211_FREQUENCY_ATTR_NO_HT40_MINUS] = { .type = NLA_FLAG },
+	[NL80211_FREQUENCY_ATTR_NO_80MHZ] = { .type = NLA_FLAG },
+	[NL80211_FREQUENCY_ATTR_NO_160MHZ] = { .type = NLA_FLAG },
+	[NL80211_FREQUENCY_ATTR_NO_320MHZ] = { .type = NLA_FLAG },
+	[NL80211_FREQUENCY_ATTR_PSD] = { .type = NLA_S8 },
+
+};
+
+
+static int
+phy_info_6ghz_freqs(struct phy_info_arg *phy_info, struct hostapd_hw_modes *mode,
+		    struct nlattr *tb, u8 power_mode)
+{
+	struct nlattr *tb_freq[NL80211_FREQUENCY_ATTR_MAX + 1];
+	struct nlattr *nl_freq;
+	int rem_freq, idx;
+	int new_channels;
+	struct hostapd_channel_data *chans_6ghz;
+	int num_6ghz_chan;
+
+	if (!tb)
+		return NL_OK;
+
+	new_channels = 0;
+	nla_for_each_nested(nl_freq, tb, rem_freq) {
+		nla_parse(tb_freq, NL80211_FREQUENCY_ATTR_MAX,
+			  nla_data(nl_freq), nla_len(nl_freq), freq_policy);
+		if (!tb_freq[NL80211_FREQUENCY_ATTR_FREQ])
+			continue;
+		new_channels++;
+	}
+
+	chans_6ghz = mode->channels_6ghz.chans_6ghz[power_mode];
+	num_6ghz_chan = mode->channels_6ghz.num_channels_6ghz[power_mode];
+	chans_6ghz = os_realloc_array(chans_6ghz, num_6ghz_chan + new_channels,
+				      sizeof(struct hostapd_channel_data));
+	if (!chans_6ghz) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to allocate memory for 6GHz channels");
+		return NL_STOP;
+	}
+
+	mode->channels_6ghz.chans_6ghz[power_mode] = chans_6ghz;
+	mode->channels_6ghz.num_channels_6ghz[power_mode] += new_channels;
+
+	idx = phy_info->last_6g_chan_idx;
+
+	nla_for_each_nested(nl_freq, tb, rem_freq) {
+		nla_parse(tb_freq, NL80211_FREQUENCY_ATTR_MAX,
+			  nla_data(nl_freq), nla_len(nl_freq), freq_policy);
+		if (!tb_freq[NL80211_FREQUENCY_ATTR_FREQ])
+			continue;
+		phy_info_freq(mode, &chans_6ghz[idx], tb_freq);
+		idx++;
+	}
+	phy_info->last_6g_chan_idx = idx;
+
+	return NL_OK;
+}
+
 static int phy_info_freqs(struct phy_info_arg *phy_info,
 			  struct hostapd_hw_modes *mode, struct nlattr *tb)
 {
-	static struct nla_policy freq_policy[NL80211_FREQUENCY_ATTR_MAX + 1] = {
-		[NL80211_FREQUENCY_ATTR_FREQ] = { .type = NLA_U32 },
-		[NL80211_FREQUENCY_ATTR_DISABLED] = { .type = NLA_FLAG },
-		[NL80211_FREQUENCY_ATTR_NO_IR] = { .type = NLA_FLAG },
-		[NL80211_FREQUENCY_ATTR_RADAR] = { .type = NLA_FLAG },
-		[NL80211_FREQUENCY_ATTR_MAX_TX_POWER] = { .type = NLA_U32 },
-		[NL80211_FREQUENCY_ATTR_DFS_STATE] = { .type = NLA_U32 },
-		[NL80211_FREQUENCY_ATTR_NO_10MHZ] = { .type = NLA_FLAG },
-		[NL80211_FREQUENCY_ATTR_NO_20MHZ] = { .type = NLA_FLAG },
-		[NL80211_FREQUENCY_ATTR_NO_HT40_PLUS] = { .type = NLA_FLAG },
-		[NL80211_FREQUENCY_ATTR_NO_HT40_MINUS] = { .type = NLA_FLAG },
-		[NL80211_FREQUENCY_ATTR_NO_80MHZ] = { .type = NLA_FLAG },
-		[NL80211_FREQUENCY_ATTR_NO_160MHZ] = { .type = NLA_FLAG },
-		[NL80211_FREQUENCY_ATTR_NO_320MHZ] = { .type = NLA_FLAG },
-
-	};
 	int new_channels = 0;
 	struct hostapd_channel_data *channel;
 	struct nlattr *tb_freq[NL80211_FREQUENCY_ATTR_MAX + 1];
@@ -2107,6 +2170,36 @@ static int phy_info_iftype(struct hostapd_hw_modes *mode,
 	return NL_OK;
 }
 
+static int
+phy_info_6ghz_power_mode(struct phy_info_arg *phy_info, struct hostapd_hw_modes *mode,
+			 struct nlattr *nl_6ghz_power_mode)
+{
+	static struct nla_policy power_mode_policy[NL80211_6GHZ_POWER_MODE_ATTR_MAX + 1] = {
+		[NL80211_6GHZ_POWER_MODE_ATTR_POWER_MODE] = { .type = NLA_U8 },
+		[NL80211_6GHZ_POWER_MODE_ATTR_FREQS] = { .type = NLA_NESTED },
+
+	};
+
+	struct nlattr *tb_6ghz[NL80211_6GHZ_POWER_MODE_ATTR_MAX + 1];
+	u8 power_mode;
+
+	nla_parse(tb_6ghz, NL80211_6GHZ_POWER_MODE_ATTR_MAX,
+		  nla_data(nl_6ghz_power_mode),
+		  nla_len(nl_6ghz_power_mode), power_mode_policy);
+
+	power_mode = nla_get_u8(tb_6ghz[NL80211_6GHZ_POWER_MODE_ATTR_POWER_MODE]);
+	if (phy_info->last_pwr_mode != power_mode) {
+		phy_info->last_pwr_mode = power_mode;
+		phy_info->last_6g_chan_idx = 0;
+		mode->channels_6ghz.num_channels_6ghz[power_mode] = 0;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: 6GHz power mode %d", power_mode);
+	}
+
+	return phy_info_6ghz_freqs(phy_info, mode,
+				   tb_6ghz[NL80211_6GHZ_POWER_MODE_ATTR_FREQS],
+				   power_mode);
+}
 
 static int phy_info_band(struct phy_info_arg *phy_info, struct nlattr *nl_band)
 {
@@ -2170,6 +2263,22 @@ static int phy_info_band(struct phy_info_arg *phy_info, struct nlattr *nl_band)
 		return ret;
 	}
 
+	if (tb_band[NL80211_BAND_ATTR_6GHZ_POWER_MODE_FREQS]) {
+		struct nlattr *nl_6ghz_power_mode;
+		int rem_modes;
+
+		nla_for_each_nested(nl_6ghz_power_mode,
+				    tb_band[NL80211_BAND_ATTR_6GHZ_POWER_MODE_FREQS],
+				    rem_modes) {
+			int res = phy_info_6ghz_power_mode(phy_info,
+							   mode,
+							   nl_6ghz_power_mode);
+			if (res != NL_OK) {
+				return res;
+			}
+		}
+	}
+
 	if (tb_band[NL80211_BAND_ATTR_IFTYPE_DATA]) {
 		struct nlattr *nl_iftype;
 		int rem_band;
@@ -2211,6 +2320,30 @@ static int phy_info_handler(struct nl_msg *msg, void *arg)
 	return NL_SKIP;
 }
 
+/**
+ * wpa_driver_free_6ghz_channels - Free 6 GHz channels for a given mode
+ * @mode: Pointer to the hostapd_hw_modes structure
+ *
+ * This function frees the 6 GHz channels for the given mode.
+ *
+ * Returns: None
+ */
+void
+wpa_driver_free_6ghz_channels(struct hostapd_hw_modes *mode)
+{
+	struct hostapd_channel_data **chan_6ghz;
+	size_t i;
+
+	if (!mode)
+		return;
+
+	chan_6ghz = mode->channels_6ghz.chans_6ghz;
+	if (!chan_6ghz)
+		return;
+
+	for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++)
+		os_free(chan_6ghz[i]);
+}
 
 static struct hostapd_hw_modes *
 wpa_driver_nl80211_postprocess_modes(struct hostapd_hw_modes *modes,
@@ -2256,6 +2389,7 @@ wpa_driver_nl80211_postprocess_modes(struct hostapd_hw_modes *modes,
 				   "nl80211: Remove unsupported mode");
 			os_free(modes[m].channels);
 			os_free(modes[m].rates);
+			wpa_driver_free_6ghz_channels(&modes[m]);
 			if (m + 1 < *num_modes)
 				os_memmove(&modes[m], &modes[m + 1],
 					   sizeof(struct hostapd_hw_modes) *
@@ -2321,6 +2455,7 @@ wpa_driver_nl80211_postprocess_modes(struct hostapd_hw_modes *modes,
 	if (mode->num_rates == 0) {
 		os_free(mode->channels);
 		os_free(mode->rates);
+		wpa_driver_free_6ghz_channels(mode);
 		(*num_modes)--;
 		return modes; /* No 802.11b rates */
 	}
@@ -2768,6 +2903,7 @@ nl80211_get_hw_feature_data(void *priv, u16 *num_modes, u16 *flags,
 		.num_modes = num_modes,
 		.modes = NULL,
 		.last_mode = -1,
+		.last_pwr_mode = -1,
 		.failed = 0,
 		.dfs_domain = 0,
 		.pwr_mode = pwr_mode
@@ -2796,6 +2932,7 @@ nl80211_get_hw_feature_data(void *priv, u16 *num_modes, u16 *flags,
 			for (i = 0; result.modes && i < *num_modes; i++) {
 				os_free(result.modes[i].channels);
 				os_free(result.modes[i].rates);
+				wpa_driver_free_6ghz_channels(&result.modes[i]);
 			}
 			os_free(result.modes);
 			*num_modes = 0;

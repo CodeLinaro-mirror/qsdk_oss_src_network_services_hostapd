@@ -383,6 +383,17 @@ int process_bss_event(struct nl_msg *msg, void *arg);
 
 const char * nl80211_iftype_str(enum nl80211_iftype mode);
 
+/**
+ * wpa_driver_free_6ghz_channels - Free 6 GHz channels for a given mode
+ * @mode: Pointer to the hostapd_hw_modes structure
+ *
+ * This function frees the 6 GHz channels for the given mode.
+ *
+ * Returns: None
+ */
+void
+wpa_driver_free_6ghz_channels(struct hostapd_hw_modes *mode);
+
 void nl80211_restore_ap_mode(struct i802_bss *bss);
 struct i802_link * nl80211_get_link(struct i802_bss *bss, s8 link_id);
 u8 nl80211_get_link_id_from_link(struct i802_bss *bss, struct i802_link *link);

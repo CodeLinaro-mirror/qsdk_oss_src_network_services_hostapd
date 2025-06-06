@@ -3143,6 +3143,7 @@ static unsigned int chan_to_freq(struct wpa_driver_nl80211_data *drv,
 		for (i = 0; i < num_modes; i++) {
 			os_free(modes[i].channels);
 			os_free(modes[i].rates);
+			wpa_driver_free_6ghz_channels(&modes[i]);
 		}
 
 		os_free(modes);

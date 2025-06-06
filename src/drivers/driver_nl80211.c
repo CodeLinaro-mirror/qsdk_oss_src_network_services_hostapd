@@ -9925,9 +9925,22 @@ static int wpa_driver_nl80211_send_action(struct i802_bss *bss,
 		    ieee80211_is_dfs(bss->flink->freq, modes, num_modes))
 			offchanok = 0;
 		if (modes) {
+			struct hostapd_channel_data **chan_6ghz;
+			int j = 0;
+
 			for (i = 0; i < num_modes; i++) {
 				os_free(modes[i].channels);
 				os_free(modes[i].rates);
+				chan_6ghz =
+				    modes[i].channels_6ghz.chans_6ghz;
+
+				if (!chan_6ghz)
+					continue;
+
+				while (j < NL80211_REG_NUM_POWER_MODES) {
+					os_free(chan_6ghz[j]);
+					j++;
+				}
 			}
 			os_free(modes);
 		}
