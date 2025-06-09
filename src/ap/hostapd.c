@@ -3723,6 +3723,7 @@ fail:
 
 	interfaces->mld_ctrl_iface_deinit(mld);
 	wpa_printf(MSG_DEBUG, "AP MLD %s: free mld %p", mld->name, mld);
+	os_free(mld->epcs_authorized_mac);
 	os_free(mld);
 	hapd->mld = NULL;
 #endif /* CONFIG_IEEE80211BE */
@@ -3853,6 +3854,7 @@ static void hostapd_cleanup_unused_mlds(struct hapd_interfaces *interfaces)
 
 		wpa_printf(MSG_DEBUG, "AP MLD %s: Freed%s", mld->name,
 			   forced_remove ? " (forced)" : "");
+		os_free(mld->epcs_authorized_mac);
 		os_free(mld);
 		interfaces->mld[i] = NULL;
 		num_mlds--;

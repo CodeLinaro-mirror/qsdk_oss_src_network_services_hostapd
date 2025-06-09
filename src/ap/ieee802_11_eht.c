@@ -23,7 +23,7 @@
 #include "ap_drv_ops.h"
 #include "utils/eloop.h"
 #include "wmm.h"
-
+#include "ap/ctrl_iface_ap.h"
 
 static u16 ieee80211_eht_ppet_size(u16 ppe_thres_hdr, const u8 *phy_cap_info)
 {
@@ -3061,6 +3061,16 @@ static int hapd_epcs_drv_send_action_frame(struct hostapd_data *hapd,
 }
 
 
+bool hostapd_epcs_is_sta_authorized(struct hostapd_data *hapd,
+				    struct sta_info *sta)
+{
+	return hostapd_maclist_found(hapd->mld->epcs_authorized_mac,
+				     hapd->mld->num_epcs_authorized_mac,
+				     sta->mld_info.common_info.mld_addr,
+				     NULL);
+}
+
+
 void hostapd_epcs_timeout_handler(void *eloop_ctx, void *timeout_ctx)
 {
 	struct wlan_epcs_info epcs_info = {0};
@@ -3328,8 +3338,56 @@ struct sta_info * hostapd_get_sta_info_from_mld_addr(struct hostapd_data *hapd,
 		}
 	}
 
-	wpa_printf(MSG_DEBUG, "sta with requested mld_addr is not present");
+	wpa_printf(MSG_DEBUG, "sta with requested mld_addr:" MACSTR ", is not present",
+		   MAC2STR(peer_mld_addr));
 	return NULL;
+}
+
+
+static int hostapd_epcs_deauthorize_mac_using_cli(struct hostapd_data *hapd,
+						  char *pos)
+{
+	u8 peer_mld_addr[ETH_ALEN];
+	struct sta_info *sta;
+	struct wlan_epcs_info epcs_info;
+	char *mldaddr_pos = pos;
+
+	if (hwaddr_aton(pos, peer_mld_addr))
+		return -1;
+
+	if (hostapd_ctrl_iface_acl_del_mac(&hapd->mld->epcs_authorized_mac,
+					   &hapd->mld->num_epcs_authorized_mac,
+					   mldaddr_pos))
+		return -1;
+
+	sta = hostapd_get_sta_info_from_mld_addr(hapd, peer_mld_addr);
+	if (sta) {
+		epcs_info.action_code = WLAN_PROT_EHT_EPCS_ENABLE_TEARDOWN;
+		hostapd_epcs_handle_and_send_action_frame(hapd, &epcs_info,
+							  sta, false);
+	}
+
+	return 0;
+}
+
+static int hostapd_epcs_show_authorized_clients(struct hostapd_data *hapd,
+						char *buf, size_t buflen)
+{
+	int len = 0, i = 0, ret;
+
+	/* Display the clients authorized through CLI*/
+	while (i < hapd->mld->num_epcs_authorized_mac) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  MACSTR "\n",
+				  MAC2STR(
+				  hapd->mld->epcs_authorized_mac[i].addr));
+		if (os_snprintf_error(buflen - len, ret))
+			return len;
+		len += ret;
+		i++;
+	}
+
+	return len;
 }
 
 
@@ -3355,11 +3413,26 @@ int hostapd_epcs_handle_cli(struct hostapd_data *hapd, char *pos,
 									 hostapd_get_sta_info_from_mld_addr(hapd, (const u8*)peer_mld_addr),
 									 false);
 
+	} else if (os_strncmp(pos, "deauthorize_mac ", 16) == 0) {
+		return hostapd_epcs_deauthorize_mac_using_cli(hapd, pos + 16);
+
+	} else if (os_strncmp(pos, "authorize_mac ", 14) == 0) {
+		return hostapd_ctrl_iface_acl_add_mac(
+				&hapd->mld->epcs_authorized_mac,
+				&hapd->mld->num_epcs_authorized_mac,
+				pos + 14);
+
 	} else if (os_strncmp(pos, "show ", 5) == 0) {
 		if (os_strncmp(pos + 5, "mu_edca_params", 15) == 0) {
 			return hostapd_print_epcs_mu_edca_params(hapd, buf, buflen);
 		} else if (os_strncmp(pos + 5, "wmm_params", 10) == 0) {
 			return hostapd_print_wmm_params(hapd, buf, buflen);
+
+		} else if (os_strncmp(pos + 5, "authorized_clients", 18) == 0) {
+			return hostapd_epcs_show_authorized_clients(hapd,
+								    buf,
+								    buflen);
+
 		} else {
 			wpa_printf(MSG_ERROR, "specify the params to be displayed");
 			return -1;

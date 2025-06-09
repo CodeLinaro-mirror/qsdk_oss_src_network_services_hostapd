@@ -638,6 +638,11 @@ struct hostapd_mld {
 	int ctrl_sock;
 	struct dl_list ctrl_dst;
 	char *ctrl_interface; /* Directory for UNIX domain sockets */
+
+#ifdef CONFIG_IEEE80211BE
+	struct mac_acl_entry *epcs_authorized_mac;
+	int num_epcs_authorized_mac;
+#endif /* CONFIG_IEEE80211BE */
 };
 
 #define HOSTAPD_MLD_MAX_REF_COUNT      0xFF
