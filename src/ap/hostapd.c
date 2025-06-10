@@ -57,6 +57,7 @@
 #include "airtime_policy.h"
 #include "wpa_auth_kay.h"
 #include "hw_features.h"
+#include "interference.h"
 
 
 static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason);
@@ -2347,6 +2348,7 @@ static void channel_list_update_timeout(void *eloop_ctx, void *timeout_ctx)
 static int hostapd_find_random_chan_and_switch(struct hostapd_iface *iface)
 {
 	u8 best_power_mode;
+	int ret;
 
 	if (!is_6ghz_freq(iface->freq)) {
 		wpa_printf(MSG_DEBUG, "Not a 6GHz iface");
@@ -2359,6 +2361,17 @@ static int hostapd_find_random_chan_and_switch(struct hostapd_iface *iface)
 		return -1;
 	}
 
+	/**
+	 * (1) Find a random channel for the current operating BW based on the
+	 *     new AFC payload and regulatory channel lists.
+	 * (2) Calculate the best power mode for the channel.
+	 * (3) Switch to the new channel in the computed power mode.
+	 */
+	ret = hostapd_intf_afc_received(iface);
+	if (!ret)
+		return ret;
+
+	wpa_printf(MSG_ERROR, "Failed to select a random channel");
 	best_power_mode = hostapd_get_best_ap_6ghz_power_mode_for_iface(iface);
 	if (best_power_mode != NL80211_REG_NUM_POWER_MODES) {
 		wpa_printf(MSG_INFO, "%s: Best power mode for Freq %d is %d",
