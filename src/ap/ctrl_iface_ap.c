@@ -26,6 +26,7 @@
 #include "mbo_ap.h"
 #include "taxonomy.h"
 #include "wnm_ap.h"
+#include "neighbor_db.h"
 
 static const char * hw_mode_str(enum hostapd_hw_mode mode)
 {
@@ -1945,6 +1946,86 @@ int hostapd_ctrl_iface_ess_disassoc(struct hostapd_data *hapd,
 	return wnm_send_ess_disassoc_imminent(hapd, sta, url, disassoc_timer);
 }
 
+#ifdef CONFIG_IEEE80211BE
+static int hostapd_parse_candidate_partner_links(struct hostapd_data *hapd,
+						 const char *pos, u8 *nei_rep,
+						 size_t nei_rep_len)
+{
+	struct hostapd_data *partner_link;
+	const char *tmp, *end;
+	u8 *nei_rep_pos = nei_rep;
+	int rem_nei_len = nei_rep_len;
+	int len = 0;
+	int pref;
+
+	tmp = os_strstr(pos, " partner_link_pref=");
+	if (tmp) {
+		pos = tmp + 19;
+		pref = atoi(pos);
+		for_each_mld_link(partner_link, hapd) {
+			if (hapd == partner_link)
+				continue;
+
+			len += hostapd_add_candidate_own(partner_link, pref,
+							 NULL,
+							 0,
+							 nei_rep_pos,
+							 rem_nei_len);
+			nei_rep_pos = nei_rep + len;
+			rem_nei_len = nei_rep_len - len;
+		}
+		return len;
+	}
+
+	while (pos) {
+		u8 link_set[MAX_NUM_MLD_LINKS];
+		u8 num_links = 0;
+		int i;
+
+		link_set[0] = 255;
+
+		pos = os_strstr(pos, " partner_link_set=");
+		if (!pos)
+			break;
+
+		/* Candidate preference */
+		pos += 18;
+		pref = atoi(pos);
+
+		/* Candidate MLD link set */
+		end = os_strchr(pos, ' ');
+		for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+			tmp = os_strchr(pos, ',');
+			if (tmp && (!end || tmp < end)) {
+				pos = tmp + 1;
+				link_set[i] = atoi(pos);
+				num_links++;
+			} else {
+				pos = end;
+				break;
+			}
+		}
+
+		if (link_set[0] == 255)
+			return -1;
+
+		for_each_mld_link(partner_link, hapd) {
+			if (partner_link->mld_link_id != link_set[0])
+				continue;
+
+			len += hostapd_add_candidate_own(partner_link, pref,
+							 link_set,
+							 num_links,
+							 nei_rep_pos,
+							 rem_nei_len);
+			nei_rep_pos = nei_rep + len;
+			rem_nei_len = nei_rep_len - len;
+		}
+	}
+
+	return len;
+}
+#endif /* CONFIG_IEEE80211BE */
 
 int hostapd_ctrl_iface_bss_tm_req(struct hostapd_data *hapd,
 				  const char *cmd)
@@ -1958,7 +2039,9 @@ int hostapd_ctrl_iface_bss_tm_req(struct hostapd_data *hapd,
 	char *url = NULL;
 	int ret;
 	u8 nei_rep[1000];
-	int nei_len;
+	int nei_len = 0;
+	u8 *nei_rep_pos = nei_rep;
+	int rem_nei_len = sizeof(nei_rep);
 	u8 mbo[10];
 	size_t mbo_len = 0;
 	void *non_pref_chan = NULL;
@@ -2022,8 +2105,20 @@ int hostapd_ctrl_iface_bss_tm_req(struct hostapd_data *hapd,
 	non_pref_chan = (void *)sta->non_pref_chan;
 #endif /* CONFIG_MBO */
 
-	nei_len = ieee802_11_parse_candidate_list(cmd, non_pref_chan, nei_rep,
-						  sizeof(nei_rep));
+#ifdef CONFIG_IEEE80211BE
+	nei_len = hostapd_parse_candidate_partner_links(hapd, cmd,
+							nei_rep,
+							sizeof(nei_rep));
+	if (nei_len < 0)
+		return -1;
+
+	nei_rep_pos += nei_len;
+	rem_nei_len = sizeof(nei_rep) - nei_len;
+#endif /* CONFIG_IEEE80211BE */
+
+	nei_len += ieee802_11_parse_candidate_list(cmd, non_pref_chan,
+						   nei_rep_pos,
+						   rem_nei_len);
 	if (nei_len < 0)
 		return -1;
 

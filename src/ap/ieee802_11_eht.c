@@ -2831,3 +2831,63 @@ void ieee802_11_rx_protected_eht_action(struct hostapd_data *hapd,
 		   "MLD: Unsupported Protected EHT Action %u from " MACSTR
 		   " discarded", action, MAC2STR(mgmt->sa));
 }
+
+#ifdef CONFIG_IEEE80211BE
+int hostapd_wnm_add_multi_link_sub_elem(struct hostapd_data *hapd,
+					u8 *links, u8 num_links,
+					u8 *pos, size_t len)
+{
+	u16 control;
+	u8 *len_pos = &pos[1];
+	u8 link_id;
+	int i;
+
+	if (len < 12)
+		return -1;
+
+	*pos++ = WNM_NEIGHBOR_MULTI_LINK;
+	*pos++ = MULTI_LINK_CONTROL_LEN + 1 + ETH_ALEN + 1;
+
+	control = MULTI_LINK_CONTROL_TYPE_BASIC |
+		BASIC_MULTI_LINK_CTRL_PRES_LINK_ID;
+	WPA_PUT_LE16(pos, control);
+	pos += 2;
+
+	/* common info */
+	*pos++ = 1 + ETH_ALEN + 1;
+
+	/* MLD address */
+	os_memcpy(pos, hapd->mld->mld_addr, ETH_ALEN);
+	pos += ETH_ALEN;
+
+	/* own link-id */
+	*pos++ = hapd->mld_link_id;
+
+	len -= 12;
+
+	/* per-STA profile subelements */
+	for (i = 0; i < num_links; i++) {
+		link_id = links[i];
+
+		if (hapd->mld_link_id == link_id)
+			continue;
+		if (!hapd->partner_links[link_id].valid)
+			return -1;
+		if (len < 4)
+			return -1;
+
+		*pos++ = EHT_ML_SUB_ELEM_PER_STA_PROFILE;
+		*pos++ = 2;
+
+		/* per-STA link-id */
+		control = link_id & 0xf;
+		WPA_PUT_LE16(pos, control);
+		pos += 2;
+
+		*len_pos += 4;
+		len -= 4;
+	}
+
+	return *len_pos + 2;
+}
+#endif /* CONFIG_IEEE80211BE */

@@ -348,6 +348,127 @@ void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
 #endif /* NEED_AP_MLME */
 }
 
+int hostapd_add_candidate_own(struct hostapd_data *hapd, int pref,
+			      u8 *links, u8 num_links,
+			      u8 *nei_rep, size_t nei_rep_len)
+{
+	u8 *nei_pos = nei_rep;
+#ifdef NEED_AP_MLME
+	u16 capab = hostapd_own_capab_info(hapd);
+	bool ht = hapd->iconf->ieee80211n && !hapd->conf->disable_11n;
+	bool vht = hapd->iconf->ieee80211ac && !hapd->conf->disable_11ac;
+	bool he = hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax;
+	bool eht = he && hapd->iconf->ieee80211be && !hapd->conf->disable_11be;
+	struct wpa_ssid_value ssid;
+	u8 channel, op_class;
+	u8 center_freq1_idx = 0, center_freq2_idx = 0;
+	enum nr_chan_width width;
+	u32 bssid_info;
+
+	bssid_info = NEI_REP_BSSID_INFO_AP_REACHABLE; /* AP is reachable */
+	bssid_info |= NEI_REP_BSSID_INFO_SECURITY; /* "same as the AP" */
+	bssid_info |= NEI_REP_BSSID_INFO_KEY_SCOPE; /* "same as the AP" */
+
+	if (capab & WLAN_CAPABILITY_SPECTRUM_MGMT)
+		bssid_info |= NEI_REP_BSSID_INFO_SPECTRUM_MGMT;
+
+	bssid_info |= NEI_REP_BSSID_INFO_RM; /* RRM is supported */
+
+	if (hapd->conf->wmm_enabled) {
+		bssid_info |= NEI_REP_BSSID_INFO_QOS;
+
+		if (hapd->conf->wmm_uapsd &&
+		    (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_AP_UAPSD))
+			bssid_info |= NEI_REP_BSSID_INFO_APSD;
+	}
+
+	if (ht) {
+		bssid_info |= NEI_REP_BSSID_INFO_HT |
+			NEI_REP_BSSID_INFO_DELAYED_BA;
+
+		/* VHT bit added in IEEE P802.11-REVmc/D4.3 */
+		if (vht)
+			bssid_info |= NEI_REP_BSSID_INFO_VHT;
+	}
+
+	if (he)
+		bssid_info |= NEI_REP_BSSID_INFO_HE;
+	if (eht)
+		bssid_info |= NEI_REP_BSSID_INFO_EHT;
+	/* TODO: Set NEI_REP_BSSID_INFO_MOBILITY_DOMAIN if MDE is set */
+
+	if (ieee80211_freq_to_channel_ext(hapd->iface->freq,
+					  hapd->iconf->secondary_channel,
+					  hostapd_get_oper_chwidth(hapd->iconf),
+					  &op_class, &channel) ==
+	    NUM_HOSTAPD_MODES)
+		return 0;
+	width = hostapd_get_nr_chan_width(hapd, ht, vht, he);
+	if (vht) {
+		center_freq1_idx = hostapd_get_oper_centr_freq_seg0_idx(
+			hapd->iconf);
+		if (width == NR_CHAN_WIDTH_80P80)
+			center_freq2_idx =
+				hostapd_get_oper_centr_freq_seg1_idx(
+					hapd->iconf);
+	} else if (ht) {
+		ieee80211_freq_to_chan(hapd->iface->freq +
+				       10 * hapd->iconf->secondary_channel,
+				       &center_freq1_idx);
+	}
+
+	ssid.ssid_len = hapd->conf->ssid.ssid_len;
+	os_memcpy(ssid.ssid, hapd->conf->ssid.ssid, ssid.ssid_len);
+
+	*nei_pos++ = WLAN_EID_NEIGHBOR_REPORT;
+	nei_pos++; /* length to be filled in */
+
+	os_memcpy(nei_pos, hapd->own_addr, ETH_ALEN);
+	nei_pos += ETH_ALEN;
+
+	WPA_PUT_LE32(nei_pos, bssid_info);
+	nei_pos += 4;
+
+	*nei_pos++ = op_class;
+	*nei_pos++ = channel;
+	*nei_pos++ = ieee80211_get_phy_type(hapd->iface->freq, ht, vht);
+
+	/* Candidate preference subelement */
+	*nei_pos++ = WNM_NEIGHBOR_BSS_TRANSITION_CANDIDATE;
+	*nei_pos++ = 1;
+	*nei_pos++ = pref;
+
+	/*
+	 * Wide Bandwidth Channel subelement may be needed to allow the
+	 * receiving STA to send packets to the AP. See IEEE P802.11-REVmc/D5.0
+	 * Figure 9-301.
+	 */
+	*nei_pos++ = WNM_NEIGHBOR_WIDE_BW_CHAN;
+	*nei_pos++ = 3;
+	*nei_pos++ = width;
+	*nei_pos++ = center_freq1_idx;
+	*nei_pos++ = center_freq2_idx;
+
+#ifdef CONFIG_IEEE80211BE
+	/* Basic multi-link subelement */
+	if (hapd->conf->mld_ap) {
+		int len;
+
+		len = hostapd_wnm_add_multi_link_sub_elem(hapd, links,
+							  num_links,
+							  nei_pos,
+							  nei_pos - nei_rep);
+		if (len < 0)
+			return -1;
+
+		nei_pos += len;
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	nei_rep[1] = nei_pos - nei_rep - 2;
+#endif /* NEED_AP_MLME */
+	return nei_pos - nei_rep;
+}
 
 static struct hostapd_neighbor_entry *
 hostapd_neighbor_get_diff_short_ssid(struct hostapd_data *hapd, const u8 *bssid)
