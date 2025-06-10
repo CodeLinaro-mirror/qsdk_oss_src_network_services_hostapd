@@ -1173,6 +1173,28 @@ static inline bool hostapd_mld_is_first_bss(struct hostapd_data *hapd)
 
 #endif /* CONFIG_IEEE80211BE */
 
+#define CONV_20MHZ_EIRP_TO_PSD_IN_DBM 13
+#define SP_AP_AND_CLIENT_POWER_DIFF_IN_SCALE 600
+#define TPE_NUM_POWER_SUPP_IN_11BE 5
+#define TPE_NUM_EIRP_POWER_EXT_SUPPORTED 1
+#define MAX_NUM_20_MHZ_IN_CURR_BW 16
+#define EIRP_PWR_SCALE 100
+#define PSD_SCALE 100
+#define CHAN_MIN_TX_POWER -64
+#define CHAN_MAX_TX_POWER 63
+#define CHAN_MIN_TWICE_TX_POWER (CHAN_MIN_TX_POWER * 2)
+#define CHAN_MAX_TWICE_TX_POWER ((CHAN_MAX_TX_POWER * 2) + 1)
+
+struct hostapd_channel_data *
+hostapd_iface_get_6ghz_chan_list(struct hostapd_iface *iface,
+				 u16 freq, u8 pwr_type,
+				 u8 *num_channels_6ghz, u8 *chan_idx);
+
+s16 hostapd_get_eirp_pwr(struct hostapd_iface *iface, u16 freq,
+			 u16 center_freq, u16 bw, u16 in_punc_pattern,
+			 u8 ap_pwr_type, bool is_client_lookup,
+			 u8 client_type, bool is_twice_pwr);
+
 u16 hostapd_get_punct_bitmap(struct hostapd_data *hapd);
 bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface);
 void hostapd_gen_per_sta_profiles(struct hostapd_data *hapd);
