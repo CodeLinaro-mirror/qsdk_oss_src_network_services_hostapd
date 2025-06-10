@@ -6128,6 +6128,166 @@ u8 hostapd_get_active_links(struct hostapd_data *hapd)
 #endif /* CONFIG_IEEE80211BE */
 
 
+struct hostapd_channel_data *
+hostapd_iface_get_6ghz_chan_list(struct hostapd_iface *iface, u16 freq,
+				 u8 pwr_type, u8 *num_channels_6ghz, u8 *chan_idx)
+{
+	struct hostapd_hw_modes *mode = NULL;
+	struct hostapd_channel_data *pwr_mode_chan_list;
+	int i;
+	u8 num_6ghz_chans;
+
+	if (!iface->num_hw_features) {
+		wpa_printf(MSG_ERROR, "No hw features");
+		return NULL;
+	}
+
+	for (i = 0; i < iface->num_hw_features; i++) {
+		if (iface->hw_features[i].is_6ghz) {
+			mode = &iface->hw_features[i];
+			break;
+		}
+	}
+
+	if (!mode) {
+		wpa_printf(MSG_ERROR, "No 6 GHz mode");
+		return NULL;
+	}
+
+	num_6ghz_chans = mode->channels_6ghz.num_channels_6ghz[pwr_type];
+	pwr_mode_chan_list = mode->channels_6ghz.chans_6ghz[pwr_type];
+
+	if (num_channels_6ghz)
+		*num_channels_6ghz = num_6ghz_chans;
+
+	for (i = 0; i < num_6ghz_chans; i++) {
+		if (pwr_mode_chan_list[i].freq == freq) {
+			if (chan_idx)
+				*chan_idx = i;
+
+			return &pwr_mode_chan_list[i];
+		}
+	}
+
+	return NULL;
+}
+
+
+/**
+ * hapd_psd_to_eirp() - Convert PSD to EIRP
+ * @psd: PSD Power
+ * @psd_scale: PSD power scale
+ * @ch_bw: Channel bandwidth
+ * @eirp: Output pointer to EIRP
+ *
+ * Return: 0 on success, -1 on failure
+ */
+static int hapd_psd_to_eirp(s16 psd, u8 psd_scale, u16 ch_bw, s16 *eirp)
+{
+	s16 ten_log10_bw;
+	u8 i;
+	u8 num_bws;
+
+	/* EIRP = PSD + (10 * log10(CH_BW)) */
+	num_bws = ARRAY_SIZE(bw_to_10log10_map);
+	for (i = 0; i < num_bws; i++) {
+		if (ch_bw == bw_to_10log10_map[i].bw) {
+			ten_log10_bw = bw_to_10log10_map[i].ten_l_ten;
+			*eirp = psd + ten_log10_bw * psd_scale;
+			return 0;
+		}
+	}
+
+	return -1;
+}
+
+
+/**
+ * reg_get_eirp_from_psd_and_reg_max_eirp() - Get PSD limited EIRP
+ * @psd: PSD Power
+ * @bw: Bandwidth in Mhz
+ * @reg_eirp_pwr: Output pointer to reg_eirp_pwr
+ *
+ * This API returns the EIRP as minimum(Regulatory EIRP, EIRP from Regulatory PSD)
+ *
+ * Return: Void
+ */
+static void
+reg_get_eirp_from_psd_and_reg_max_eirp(s16 psd, u16 bw, s16 *reg_eirp_pwr)
+{
+	s16 eirp_from_psd = CHAN_MAX_TX_POWER;
+
+	if (hapd_psd_to_eirp(psd, 1, bw, &eirp_from_psd))
+		wpa_printf(MSG_ERROR, "Failed to convert PSD to EIRP");
+
+	*reg_eirp_pwr = MIN(*reg_eirp_pwr, eirp_from_psd);
+}
+
+
+/**
+ * hostapd_reg_get_eirp_from_chan_list() - Get the regulatory EIRP for the freq
+ * @iface: Pointer to hostapd_iface
+ * @freq: Frequency in MHz
+ * @center_freq: Band center frequency
+ * @bw: Bandwidth in MHz
+ * @in_punc_pattern: Puncturing pattern
+ * @ap_pwr_type: AP power type
+ * @client_type: Client type
+ * @is_client_lookup: Whether the lookup is for client
+ * @is_twice_pwr: Flag to indicate twice power
+ * @eirp_pwr: Output pointer to EIRP power
+ *
+ * Return: 0 on success, -1 on failure
+ */
+static int
+hostapd_reg_get_eirp_from_chan_list(struct hostapd_iface *iface, u16 freq,
+				    u16 center_freq, u16 bw, u16 in_punc_pattern,
+				    u8 ap_pwr_type, u8 client_type,
+				    bool is_client_lookup,
+				    bool is_twice_pwr, s16 *eirp_pwr)
+{
+	struct hostapd_channel_data *chan_6ghz = NULL;
+	s16 psd_pwr;
+	u16 start_freq = (bw == 20) ? freq : center_freq - (bw / 2) + 10;
+	u8 pwr_type = (is_client_lookup) ? client_type : ap_pwr_type;
+
+	chan_6ghz = hostapd_iface_get_6ghz_chan_list(iface, start_freq, pwr_type,
+						     NULL, NULL);
+	if (!chan_6ghz) {
+		wpa_printf(MSG_ERROR, "Failed to get 6 GHz channel list");
+		return -1;
+	}
+
+	*eirp_pwr = chan_6ghz->eirp_power;
+	psd_pwr = chan_6ghz->psd_power;
+	reg_get_eirp_from_psd_and_reg_max_eirp(psd_pwr, bw, eirp_pwr);
+
+	if (is_twice_pwr)
+		*eirp_pwr *= 2;
+
+	return 0;
+}
+
+
+s16 hostapd_get_eirp_pwr(struct hostapd_iface *iface, u16 freq, u16 center_freq,
+			 u16 bw, u16 in_punc_pattern, u8 ap_pwr_type,
+			 bool is_client_lookup, u8 client_type, bool is_twice_pwr)
+{
+	int ret;
+	s16 eirp_pwr;
+
+	ret = hostapd_reg_get_eirp_from_chan_list(iface, freq, center_freq, bw,
+						  in_punc_pattern, ap_pwr_type,
+						  client_type, is_client_lookup,
+						  is_twice_pwr, &eirp_pwr);
+
+	if (ret)
+		return is_twice_pwr ? CHAN_MIN_TWICE_TX_POWER : CHAN_MIN_TX_POWER;
+
+	return eirp_pwr;
+}
+
+
 u16 hostapd_get_punct_bitmap(struct hostapd_data *hapd)
 {
 	u16 punct_bitmap = 0;

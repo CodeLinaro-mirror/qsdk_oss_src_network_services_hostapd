@@ -8246,14 +8246,6 @@ void ieee802_11_rx_from_unknown(struct hostapd_data *hapd, const u8 *src,
 			WLAN_REASON_CLASS3_FRAME_FROM_NONASSOC_STA);
 }
 
-#define CONV_20MHZ_EIRP_TO_PSD_IN_DBM        13
-#define SP_AP_AND_CLIENT_POWER_DIFF_IN_SCALE 600
-#define TPE_NUM_POWER_SUPP_IN_11BE           5
-#define TPE_NUM_EIRP_POWER_EXT_SUPPORTED     1
-#define MAX_NUM_20_MHZ_IN_CURR_BW	     16
-#define EIRP_PWR_SCALE                       100
-#define PSD_SCALE                            100
-
 static u8 *hostapd_add_tpe_info(u8 *eid, enum max_tx_pwr_interpretation tx_pwr_intrpn,
 				u8 tx_pwr_count, s8 *tx_pwr_array,
 				u8 tx_pwr_ext_count, s8 *tx_pwr_ext_array,
@@ -8490,255 +8482,6 @@ static void free_ieee_ordered_chan_list(struct ieee_chan_data *chan_data)
 	os_free(chan_data->channels);
 }
 
-static void hapd_psd_2_eirp(s8 psd, u16 ch_bw, s8 *eirp)
-{
-	s16 ten_log10_bw;
-	u8 i;
-	u8 num_bws;
-
-	/* EIRP = PSD + (10 * log10(CH_BW)) */
-	num_bws = ARRAY_SIZE(bw_to_10log10_map);
-	for (i = 0; i < num_bws; i++) {
-		if (ch_bw == bw_to_10log10_map[i].bw) {
-			ten_log10_bw = bw_to_10log10_map[i].ten_l_ten;
-			*eirp = psd + ten_log10_bw;
-			return;
-		}
-	}
-}
-
-/**
- * reg_get_eirp_from_psd_and_reg_max_eirp() - Get the EIRP by the computing the
- * minimum(max regulatory EIRP, EIRP computed from regulatory PSD)
- * @mas_chan_list: Pointer to master_chan_list
- * @freq: Frequency in mhz
- * @bw: Bandwidth in mhz
- * @reg_eirp_pwr: Pointer to reg_eirp_pwr
- *
- * Return: Void
- */
-static void
-reg_get_eirp_from_psd_and_reg_max_eirp(s8 psd, u16 bw, s8 *reg_eirp_pwr)
-{
-	s8 eirp_from_psd = 0;
-
-	hapd_psd_2_eirp(psd, bw, &eirp_from_psd);
-	*reg_eirp_pwr = MIN(*reg_eirp_pwr, eirp_from_psd);
-}
-
-static s8 hostapd_get_reg_max_eirp(struct hostapd_iface *iface,
-				   u16 bw, u8 client_type,
-				   bool is_twice_pwr)
-{
-	struct hostapd_hw_modes *mode = iface->current_mode;
-	int non_11be_chan_count = 0, total_chan_count = 0;
-	int non_11be_start_idx = 0, chan_start_idx = 0;
-	struct hostapd_data *hapd = iface->bss[0];
-	s8 psd, reg_eirp_pwr = 0;
-	struct ieee_chan_data chan_data;
-
-	if (set_ieee_order_chan_list(mode, &chan_data)) {
-		wpa_printf(MSG_ERROR, "Unable to get chan_data");
-		return 0;
-	}
-
-	if (get_chan_list(hapd, &non_11be_start_idx, &chan_start_idx,
-			  &non_11be_chan_count, &total_chan_count, chan_data)) {
-		wpa_printf(MSG_ERROR, "Unable to get chan list");
-		goto free;
-	}
-
-	psd = chan_data.channels[non_11be_start_idx].psd_values[client_type];
-	reg_eirp_pwr =
-		chan_data.channels[non_11be_start_idx].eirp_values[client_type];
-	reg_get_eirp_from_psd_and_reg_max_eirp(psd, bw, &reg_eirp_pwr);
-
-free:
-	free_ieee_ordered_chan_list(&chan_data);
-
-	if (is_twice_pwr)
-		return reg_eirp_pwr * 2;
-
-	return reg_eirp_pwr;
-}
-
-/**
- * hostapd_find_eirp_in_afc_eirp_obj() - Get eirp power from the AFC eirp object
- * based on the channel center frequency and operating class.
- * @eirp_obj: Pointer to eirp_obj
- * @freq: Frequency in MHz
- * @cen320: 320 MHz band center frequency
- * @op_class: Operating class
- *
- * Return: EIRP power
- */
-static s16 hostapd_find_eirp_in_afc_eirp_obj(struct chan_eirp_obj *eirp_obj,
-					     u16 freq,
-					     u8 cen320,
-					     u8 op_class)
-{
-	u8 k, subchannels[MAX_NUM_20_MHZ_IN_CURR_BW], nchans;
-
-	if (is_320_opclass(op_class)) {
-		u16 cfi_freq = ieee80211_chan_to_freq(NULL, op_class,
-						      eirp_obj->cfi);
-		u16 input_cfi_freq = ieee80211_chan_to_freq(NULL, op_class,
-							    cen320);
-
-		if (cfi_freq == input_cfi_freq)
-			return eirp_obj->eirp_power;
-
-		return 0;
-	}
-
-	nchans = get_subchannels_for_opclass(eirp_obj->cfi, op_class,
-					     subchannels);
-
-	for (k = 0; k < nchans; k++)
-		if (ieee80211_chan_to_freq(NULL, op_class, subchannels[k]) ==
-					   freq)
-			return eirp_obj->eirp_power;
-
-	return 0;
-}
-
-/**
- * hostapd_find_eirp_in_afc_chan_obj() - Get eirp power from the AFC channel
- * object based on the channel center frequency and operating class
- * @chan_obj: Pointer to chan_obj
- * @freq: Frequency in MHz
- * @cen320: 320 MHz band center frequency index
- * @op_class: Operating class
- *
- * Return: EIRP power
- */
-static s16 hostapd_find_eirp_in_afc_chan_obj(struct afc_chan_obj *chan_obj,
-					     u16 freq,
-					     u8 cen320,
-					     u8 op_class)
-{
-	u8 j;
-
-	if (chan_obj->global_opclass != op_class)
-		return 0;
-
-	for (j = 0; j < chan_obj->num_chans; j++) {
-		s16 afc_eirp;
-		struct chan_eirp_obj *eirp_obj = &chan_obj->chan_eirp_info[j];
-
-		afc_eirp = hostapd_find_eirp_in_afc_eirp_obj(eirp_obj,
-							     freq, cen320,
-							     op_class);
-
-		if (afc_eirp)
-			return afc_eirp;
-	}
-
-	return 0;
-}
-
-/**
- * hostapd_get_sp_eirp() - For the given power mode, using the bandwidth,
- * find the  corresponding EIRP values from the afc info. The minimum of found
- * EIRP and regulatory max EIRP is returned
- * @iface: pointer to iface
- * @freq: Frequency in MHz
- * @cen320: 320 MHz band center frequency index
- * @bw: Bandwidth in MHz
- * @client_type: Client power type
- *
- * Return: EIRP
- */
-static s8 hostapd_get_sp_eirp(struct hostapd_iface *iface,
-			      u16 freq,
-			      u8 cen320,
-			      u16 bw,
-			      u8 client_type)
-{
-	s16 afc_eirp_pwr = 0, min_eirp_pwr = 0, reg_sp_eirp_pwr = 0;
-	u8 i, op_class = 0;
-	struct afc_sp_reg_info *afc_info;
-
-	reg_sp_eirp_pwr = hostapd_get_reg_max_eirp(iface, bw, client_type, false);
-	if (!reg_sp_eirp_pwr) {
-		wpa_printf(MSG_ERROR, "Unable to get regulatory EIRP for SP");
-		return 0;
-	}
-
-	afc_info = iface->afc_rsp_info;
-	if (!afc_info) {
-		wpa_printf(MSG_ERROR, "afc info is NULL");
-		return 0;
-	}
-
-	switch (bw) {
-	case 20:
-		if (freq == 5935)
-			op_class = 136;
-		else
-			op_class = 131;
-		break;
-	case 40:
-		op_class = 132;
-		break;
-	case 80:
-		op_class = 133;
-		break;
-	case 160:
-		op_class = 134;
-		break;
-#ifdef CONFIG_IEEE80211BE
-	case 320:
-		op_class = 137;
-		break;
-#endif
-	default:
-		wpa_printf(MSG_ERROR, "Invalid channel width");
-		return 0;
-	}
-
-	for (i = 0; i < afc_info->num_chan_objs; i++) {
-		struct afc_chan_obj *chan_obj = &afc_info->afc_chan_info[i];
-
-		afc_eirp_pwr = hostapd_find_eirp_in_afc_chan_obj(chan_obj,
-								 freq,
-								 cen320,
-								 op_class);
-		if (afc_eirp_pwr)
-			break;
-	}
-
-	if (afc_eirp_pwr) {
-		reg_sp_eirp_pwr *= EIRP_PWR_SCALE;
-		min_eirp_pwr = MIN(afc_eirp_pwr - SP_AP_AND_CLIENT_POWER_DIFF_IN_SCALE,
-				   reg_sp_eirp_pwr);
-		return (min_eirp_pwr * 2) / EIRP_PWR_SCALE;
-	}
-
-	return 0;
-}
-
-/**
- * hostapd_get_eirp_pwr() - Get eirp power based on the client power mode
- * @iface: Pointer to iface
- * @freq: Frequency in MHz
- * @cen320: Band center frequency index
- * @bw: Bandwidth in MHz
- * @client_type: Client power type
- *
- * Return: EIRP power
- */
-static s8 hostapd_get_eirp_pwr(struct hostapd_iface *iface,
-			       u16 freq, u8 cen320, u16 bw,
-			       u8 client_type)
-{
-	if (iface->conf->he_6ghz_reg_pwr_type == HE_REG_INFO_6GHZ_AP_TYPE_SP)
-		return hostapd_get_sp_eirp(iface, freq, cen320, bw,
-					   client_type);
-
-	return hostapd_get_reg_max_eirp(iface, bw, client_type, true);
-}
-
 static enum chan_width
 hostapd_get_chan_width_from_oper_chan_width(struct hostapd_config *iconf)
 {
@@ -8785,11 +8528,17 @@ static void hostapd_get_eirp_arr_for_6ghz(struct hostapd_iface *iface,
 					  enum max_tx_pwr_interpretation tx_pwr_intrpn)
 {
 	u16 bw, max_bw = channel_width_to_int(chanwidth);
-	u8 i;
+	u8 i, op_class = iface->conf->op_class;
+	u16 cf_320 = 0;
+
+	if (is_320_opclass(op_class))
+		cf_320 = ieee80211_chan_to_freq(NULL, op_class, cen320);
 
 	for (i = 0, bw = 20; bw <= max_bw; i++, bw *= 2)
-		max_eirp_arr[i] = hostapd_get_eirp_pwr(iface, freq, cen320, bw,
-						       client_type);
+		max_eirp_arr[i] = hostapd_get_eirp_pwr(iface, freq, cf_320, bw,
+						       iface->conf->punct_bitmap,
+						       NL80211_REG_NUM_POWER_MODES,
+						       true, client_type, true);
 
 	if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP &&
 	    !hostapd_is_additional_tpe(tx_pwr_intrpn)) {
@@ -8800,9 +8549,12 @@ static void hostapd_get_eirp_arr_for_6ghz(struct hostapd_iface *iface,
 		else
 			client_type = NL80211_REG_SUBORDINATE_CLIENT_LPI;
 		for (i = 0, bw = 20; bw <= max_bw; i++, bw *= 2) {
-			max_eirp_arr_lpi[i] = hostapd_get_reg_max_eirp(iface, bw,
-								       client_type,
-								       true);
+			/* TODO: Pass Intersected PP */
+			max_eirp_arr_lpi[i] =
+			    hostapd_get_eirp_pwr(iface, freq, cf_320, bw,
+						 iface->conf->punct_bitmap,
+						 NL80211_REG_NUM_POWER_MODES,
+						 true, client_type, true);
 			max_eirp_arr[i] = MAX(max_eirp_arr[i], max_eirp_arr_lpi[i]);
 		}
 	}
@@ -8946,16 +8698,15 @@ static s8 get_psd_for_chan_idx(struct hostapd_data *hapd,
 	s8 reg_psd, chan_psd;
 	s8 eirp_for_20mhz;
 	u16 chan_freq;
-	u8 cen320;
 
 	reg_psd = chan_data.channels[non_11be_start_idx].psd_values[client_mode];
 	if (ap_pwr_type != HE_REG_INFO_6GHZ_AP_TYPE_SP)
 		return reg_psd;
 
-	cen320 = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
 	chan_freq = chan_data.channels[non_11be_start_idx].freq;
-	eirp_for_20mhz = hostapd_get_eirp_pwr(iface, chan_freq, cen320, 20,
-					      client_mode);
+	eirp_for_20mhz = hostapd_get_eirp_pwr(iface, chan_freq, 0, 20,
+					      0, ap_pwr_type, true,
+					      client_mode, true);
 	chan_psd = (eirp_for_20mhz - (CONV_20MHZ_EIRP_TO_PSD_IN_DBM * 2)) / 2;
 
 	if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP &&
