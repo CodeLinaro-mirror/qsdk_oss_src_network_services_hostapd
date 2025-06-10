@@ -1154,6 +1154,9 @@ void hostapd_refresh_all_iface_beacons(struct hostapd_iface *hapd_iface);
 
 bool hostapd_mld_is_first_bss(struct hostapd_data *hapd);
 void hostapd_mld_interface_freed(struct hostapd_data *hapd);
+int hostapd_wnm_add_multi_link_sub_elem(struct hostapd_data *hapd,
+					u8 *links, u8 num_links,
+					u8 *pos, size_t len);
 
 #define for_each_mld_link(partner, self) \
 	dl_list_for_each(partner, &self->mld->links, struct hostapd_data, link)
