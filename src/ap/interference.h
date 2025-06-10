@@ -16,3 +16,4 @@ int hostapd_incumbt_sig_intf_detected(struct hostapd_iface *iface, int freq,
 				      u32 chan_bw_interference_bitmap);
 
 #endif /* INTERFERENCE_H */
+int hostapd_intf_afc_received(struct hostapd_iface *iface);
