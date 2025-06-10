@@ -6483,6 +6483,13 @@ enum wpa_event_type {
 	 * of the respective link(s).
 	 */
 	EVENT_LINK_REMOVAL_COMPLETED,
+
+	/**
+	 * EVENT_AFC_RECEIVED - Recieved AFC event
+	 * This event is used to slect random channel on trigger of
+	 * AFC
+	 */
+	EVENT_AFC_RECEIVED,
 };
 
 

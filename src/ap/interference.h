@@ -39,4 +39,4 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq,
 			        int cf1, int cf2,
 			        u32 chan_bw_interference_bitmap);
 
-
+int hostapd_intf_afc_received(struct hostapd_iface *iface);

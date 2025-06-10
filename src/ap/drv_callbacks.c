@@ -2368,6 +2368,11 @@ static void hostapd_event_awgn_detected(struct hostapd_data *hapd,
 				   awgn_info->chan_bw_interference_bitmap);
 }
 
+static void hostapd_event_afc_received(struct hostapd_data *hapd)
+{
+	hostapd_intf_afc_received(hapd->iface);
+}
+
 static void hostapd_event_dfs_pre_cac_expired(struct hostapd_data *hapd,
 					      struct dfs_event *radar)
 {
@@ -3263,6 +3268,9 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 			break;
 		hapd = switch_link_hapd(hapd, data->awgn_event.link_id);
 		hostapd_event_awgn_detected(hapd, &data->awgn_event);
+		break;
+	case EVENT_AFC_RECEIVED:
+		hostapd_event_afc_received(hapd);
 		break;
 	case EVENT_DFS_PRE_CAC_EXPIRED:
 		if (!data)

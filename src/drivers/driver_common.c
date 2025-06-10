@@ -110,6 +110,7 @@ const char * event_to_string(enum wpa_event_type event)
 	E2S(AFC_PAYLOAD_RESET);
 	E2S(LINK_REMOVAL_STARTED);
 	E2S(LINK_REMOVAL_COMPLETED);
+	E2S(AFC_RECEIVED);
 	}
 
 	return "UNKNOWN";
