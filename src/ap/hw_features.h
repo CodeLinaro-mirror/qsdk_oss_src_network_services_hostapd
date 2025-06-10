@@ -32,6 +32,16 @@ int hostapd_hw_skip_mode(struct hostapd_iface *iface,
 int hostapd_determine_mode(struct hostapd_iface *iface);
 void hostapd_free_multi_hw_info(struct hostapd_multi_hw_info *multi_hw_info);
 int hostapd_set_current_hw_info(struct hostapd_iface *iface, int oper_freq);
+
+/**
+ * hostapd_free_6ghz_channels() - Free 6 GHz channels for a given mode
+ * @mode: Pointer to the hostapd_hw_modes structure
+ *
+ * This function frees the 6 GHz channels for the given mode.
+ *
+ * Returns: None
+ */
+void hostapd_free_6ghz_channels(struct hostapd_hw_modes *mode);
 #else /* NEED_AP_MLME */
 static inline void
 hostapd_free_hw_features(struct hostapd_hw_modes *hw_features,

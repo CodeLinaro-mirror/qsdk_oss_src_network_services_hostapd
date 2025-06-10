@@ -2220,30 +2220,15 @@ void hostapd_no_ir_cleanup(struct hostapd_data *bss)
 
 static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 {
-	struct hostapd_data *hapd = iface->bss[0];
 	bool all_no_ir, is_6ghz;
 	int i, j;
 	struct hostapd_hw_modes *mode = NULL;
-	struct hostapd_hw_modes *hw_features;
-	u16 num_hw_features, flags;
-	u8 dfs_domain;
-
-	if (hostapd_drv_none(hapd))
-		return -1;
-
-	hw_features = hostapd_get_hw_feature_data(hapd, &num_hw_features,
-						  &flags, &dfs_domain);
-	if (!hw_features) {
-		wpa_printf(MSG_DEBUG,
-			   "Could not fetching hardware channel list");
-		return -1;
-	}
 
 	all_no_ir = true;
 	is_6ghz = false;
 
-	for (i = 0; i < num_hw_features; i++) {
-		mode = &hw_features[i];
+	for (i = 0; i < iface->num_hw_features; i++) {
+		mode = &iface->hw_features[i];
 
 		if (mode->mode == iface->conf->hw_mode) {
 			if (iface->freq > 0 &&
@@ -2265,25 +2250,25 @@ static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 	}
 
 	if (!mode || !is_6ghz)
-		goto free_hw_features;
+		return 0;
 
 	if (iface->state == HAPD_IFACE_ENABLED) {
 		if (!all_no_ir) {
 			struct hostapd_channel_data *chan;
 
-			chan = hw_get_channel_freq(mode->mode,
+			chan = hw_get_channel_freq(iface->current_mode->mode,
 						   iface->freq, NULL,
-						   hw_features,
-						   num_hw_features);
+						   iface->hw_features,
+						   iface->num_hw_features);
 
 			if (!chan) {
 				wpa_printf(MSG_ERROR,
 					   "NO_IR: Could not derive chan from freq");
-				goto free_hw_features;
+				return 0;
 			}
 
 			if (!(chan->flag & HOSTAPD_CHAN_NO_IR))
-				goto free_hw_features;
+				return 0;
 			wpa_printf(MSG_DEBUG,
 				   "NO_IR: The current channel has NO_IR flag now, stop AP.");
 		} else {
@@ -2296,20 +2281,20 @@ static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 		if (all_no_ir) {
 			wpa_printf(MSG_DEBUG,
 				   "NO_IR: AP in NO_IR and all chan in the new chanlist are NO_IR. Ignore");
-			goto free_hw_features;
+			return 0;
 		}
 
 		if (!iface->conf->acs) {
 			struct hostapd_channel_data *chan;
 
-			chan = hw_get_channel_freq(mode->mode,
+			chan = hw_get_channel_freq(iface->current_mode->mode,
 						   iface->freq, NULL,
-						   hw_features,
-						   num_hw_features);
+						   iface->hw_features,
+						   iface->num_hw_features);
 			if (!chan) {
 				wpa_printf(MSG_ERROR,
 					   "NO_IR: Could not derive chan from freq");
-				goto free_hw_features;
+				return 0;
 			}
 
 			/* If the last operating channel is NO_IR, trigger ACS.
@@ -2320,15 +2305,13 @@ static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 				if (acs_init(iface) != HOSTAPD_CHAN_ACS)
 					wpa_printf(MSG_ERROR,
 						   "NO_IR: Could not start ACS");
-				goto free_hw_features;
+				return 0;
 			}
 		}
 
 		setup_interface2(iface);
 	}
 
-free_hw_features:
-	hostapd_free_hw_features(hw_features, num_hw_features);
 	return 0;
 }
 
@@ -2397,10 +2380,31 @@ int hostapd_handle_afc_channel_change(struct hostapd_iface *iface)
 static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 					    void *ctx)
 {
+	int ret;
+
+	ret = hostapd_get_hw_features(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "Failed to get hardware features (%d)", ret);
+		return ret;
+	}
+
+	ret = hostapd_select_hw_mode(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "Failed to select hardware mode (%d)", ret);
+		return ret;
+	}
+
+	ret = hostapd_set_current_hw_info(iface, iface->freq);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "Failed to set current hw info (%d)", ret);
+		return ret;
+	}
+
 	if (iface->is_afc_channel_change_pending) {
 		wpa_printf(MSG_DEBUG, "Handling AFC channel change");
 		return hostapd_handle_afc_channel_change(iface);
 	}
+
 	wpa_printf(MSG_DEBUG, "Handling AFC NOIR");
 	return hostapd_no_ir_channel_list_updated(iface);
 }

@@ -24,6 +24,21 @@
 #include "beacon.h"
 #include "hw_features.h"
 
+void hostapd_free_6ghz_channels(struct hostapd_hw_modes *mode)
+{
+	struct hostapd_channel_data **chan_6ghz;
+	int i;
+
+	if (!mode)
+		return;
+
+	chan_6ghz = mode->channels_6ghz.chans_6ghz;
+	if (!chan_6ghz)
+		return;
+
+	for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++)
+		os_free(chan_6ghz[i]);
+}
 
 void hostapd_free_hw_features(struct hostapd_hw_modes *hw_features,
 			      size_t num_hw_features)
@@ -36,6 +51,7 @@ void hostapd_free_hw_features(struct hostapd_hw_modes *hw_features,
 	for (i = 0; i < num_hw_features; i++) {
 		os_free(hw_features[i].channels);
 		os_free(hw_features[i].rates);
+		hostapd_free_6ghz_channels(&hw_features[i]);
 	}
 
 	os_free(hw_features);

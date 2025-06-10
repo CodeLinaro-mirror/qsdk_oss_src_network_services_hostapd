@@ -470,6 +470,7 @@ void free_hw_features(struct wpa_supplicant *wpa_s)
 	for (i = 0; i < wpa_s->hw.num_modes; i++) {
 		os_free(wpa_s->hw.modes[i].channels);
 		os_free(wpa_s->hw.modes[i].rates);
+		hostapd_free_6ghz_channels(&wpa_s->hw.modes[i]);
 	}
 
 	os_free(wpa_s->hw.modes);
