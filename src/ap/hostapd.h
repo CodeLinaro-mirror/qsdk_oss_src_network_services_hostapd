@@ -168,6 +168,22 @@ struct hostapd_neighbor_entry {
 	u8 bss_parameters;
 };
 
+struct hostapd_bcn_report_entry {
+	struct dl_list list;
+	u8 op_class;
+	u8 channel;
+	u64 start_time;
+	u16 duration;
+	u8 report_info;
+	u8 rcpi;
+	u8 rsni;
+	u8 bssid[ETH_ALEN];
+	u8 antenna_id;
+	u32 parent_tsf;
+	u8 *subelem;
+	size_t subelem_len;
+};
+
 struct hostapd_sae_commit_queue {
 	struct dl_list list;
 	int rssi;
@@ -473,6 +489,7 @@ struct hostapd_data {
 #endif /* CONFIG_MBO */
 
 	struct dl_list nr_db;
+	struct dl_list bcn_report_db;
 
 	u8 beacon_req_token;
 	u8 lci_req_token;

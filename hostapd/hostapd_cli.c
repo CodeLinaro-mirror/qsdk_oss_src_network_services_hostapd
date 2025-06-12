@@ -1679,6 +1679,11 @@ static int hostapd_cli_cmd_req_beacon(struct wpa_ctrl *ctrl, int argc,
 	return hostapd_cli_cmd(ctrl, "REQ_BEACON", 2, argc, argv);
 }
 
+static int hostapd_cli_cmd_show_rrm_bcn_report(struct wpa_ctrl *ctrl, int argc,
+					       char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "SHOW_RRM_BEACON_REPORT");
+}
 
 static int hostapd_cli_cmd_req_link_measurement(struct wpa_ctrl *ctrl, int argc,
 						char *argv[])
@@ -1941,6 +1946,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "= show allowed bandwidth on each channel"},
 	{ "req_beacon", hostapd_cli_cmd_req_beacon, NULL,
 	  "<addr> [req_mode=] <measurement request hexdump>  = send a Beacon report request to a station" },
+	{ "show_rrm_beacon_report", hostapd_cli_cmd_show_rrm_bcn_report, NULL,
+	  "= show recent received RRM Beacon Report"},
 	{ "req_link_measurement", hostapd_cli_cmd_req_link_measurement, NULL,
 	  "<addr> = send a link measurement report request to a station"},
 	{ "reload_wpa_psk", hostapd_cli_cmd_reload_wpa_psk, NULL,

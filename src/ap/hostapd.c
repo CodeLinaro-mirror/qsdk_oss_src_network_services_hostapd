@@ -3327,6 +3327,7 @@ hostapd_alloc_bss_data(struct hostapd_iface *hapd_iface,
 	hapd->ctrl_sock = -1;
 	dl_list_init(&hapd->ctrl_dst);
 	dl_list_init(&hapd->nr_db);
+	dl_list_init(&hapd->bcn_report_db);
 	hapd->dhcp_sock = -1;
 #ifdef CONFIG_IEEE80211R_AP
 	dl_list_init(&hapd->l2_queue);

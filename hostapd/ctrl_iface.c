@@ -3436,6 +3436,13 @@ static int hostapd_ctrl_iface_req_beacon(struct hostapd_data *hapd,
 	return ret;
 }
 
+static int
+hostapd_ctrl_iface_show_rrm_beacon_report(struct hostapd_data *hapd,
+					  char *buf,
+					  size_t buflen)
+{
+	return hostapd_show_rrm_bcn_report(hapd, buf, buflen);
+}
 
 static int hostapd_ctrl_iface_req_link_measurement(struct hostapd_data *hapd,
 						   const char *cmd, char *reply,
@@ -4981,6 +4988,10 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "REQ_BEACON ", 11) == 0) {
 		reply_len = hostapd_ctrl_iface_req_beacon(hapd, buf + 11,
 							  reply, reply_size);
+	} else if (os_strncmp(buf, "SHOW_RRM_BEACON_REPORT", 22) == 0) {
+		reply_len = hostapd_ctrl_iface_show_rrm_beacon_report(hapd,
+								      reply,
+								      reply_size);
 	} else if (os_strncmp(buf, "REQ_LINK_MEASUREMENT ", 21) == 0) {
 		reply_len = hostapd_ctrl_iface_req_link_measurement(
 			hapd, buf + 21, reply, reply_size);

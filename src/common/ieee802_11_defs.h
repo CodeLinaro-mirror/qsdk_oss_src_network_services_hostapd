@@ -2361,6 +2361,8 @@ struct rrm_measurement_beacon_report {
 	u8 variable[0]; /* Optional Subelements */
 } STRUCT_PACKED;
 
+#define WLAN_BEACON_REPORT_FIXED_LEN	26
+
 /* IEEE Std 802.11-2020, Table 9-130 - Optional subelement IDs for
  * Beacon report */
 #define WLAN_BEACON_REPORT_SUBELEM_FRAME_BODY	1

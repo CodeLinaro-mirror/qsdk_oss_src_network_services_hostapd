@@ -55,6 +55,161 @@ static void hostapd_range_rep_timeout_handler(void *eloop_data, void *user_ctx)
 	hapd->range_req_active = 0;
 }
 
+struct hostapd_bcn_report_entry *
+hostapd_bcn_report_get(struct hostapd_data *hapd, const u8 *bssid, size_t len)
+{
+	struct hostapd_bcn_report_entry *bcn_report;
+	size_t subelem_len = len - WLAN_BEACON_REPORT_FIXED_LEN;
+
+	dl_list_for_each(bcn_report, &hapd->bcn_report_db,
+			 struct hostapd_bcn_report_entry,
+			 list) {
+		if (ether_addr_equal(bssid, bcn_report->bssid)) {
+			if (bcn_report->subelem &&
+			    (bcn_report->subelem_len != subelem_len)) {
+				os_free(bcn_report->subelem);
+				if (subelem_len)
+					bcn_report->subelem = os_zalloc(subelem_len);
+			} else if (!bcn_report->subelem && subelem_len)
+				bcn_report->subelem = os_zalloc(subelem_len);
+			if (!bcn_report->subelem && subelem_len) {
+				os_free(bcn_report);
+				bcn_report = NULL;
+			}
+			return bcn_report;
+		}
+	}
+
+	return NULL;
+}
+
+static void
+hostapd_bcn_report_free(struct hostapd_bcn_report_entry *bcn_report)
+{
+	dl_list_del(&bcn_report->list);
+	if (bcn_report->subelem)
+		os_free(bcn_report->subelem);
+	os_free(bcn_report);
+}
+
+int hostapd_show_rrm_bcn_report(struct hostapd_data *hapd,
+				char *buf, size_t buflen)
+{
+	struct hostapd_bcn_report_entry *bcn_report;
+	char *pos, *end;
+	int ret;
+	char subelem[512];
+
+	if (!hapd || !buf || !buflen)
+		return -1;
+
+	pos = buf;
+	end = buf + buflen;
+
+	if (!dl_list_len(&hapd->bcn_report_db))
+		return 0;
+
+	dl_list_for_each(bcn_report, &hapd->bcn_report_db,
+			 struct hostapd_bcn_report_entry, list) {
+
+		os_memset(subelem, '\0', sizeof(subelem));
+		if (bcn_report->subelem && bcn_report->subelem_len)
+			wpa_snprintf_hex(subelem, sizeof(subelem),
+					 bcn_report->subelem,
+					 bcn_report->subelem_len);
+		ret = os_snprintf(pos, end - pos, "bssid="MACSTR
+				  " op_class=%u chan=%u start_time=%llu"
+				  " dur=%hu report_info=%u rcpi=%u"
+				  " rsni=%u ant_id=%u parent_tsf=%u"
+				  "%s%s\n",
+				  MAC2STR(bcn_report->bssid),
+				  bcn_report->op_class, bcn_report->channel,
+				  (long long unsigned int)bcn_report->start_time,
+				  bcn_report->duration,
+				  bcn_report->report_info, bcn_report->rcpi,
+				  bcn_report->rsni, bcn_report->antenna_id,
+				  bcn_report->parent_tsf,
+				  bcn_report->subelem ? " subelem=" : "",
+				  subelem);
+		if (os_snprintf_error(end - pos, ret))
+			break;
+		pos += ret;
+	}
+
+	return pos - buf;
+}
+
+void hostapd_free_bcn_report_db(struct hostapd_data *hapd)
+{
+	struct hostapd_bcn_report_entry *bcn_report, *prev;
+
+	dl_list_for_each_safe(bcn_report, prev, &hapd->bcn_report_db,
+			      struct hostapd_bcn_report_entry, list)
+		hostapd_bcn_report_free(bcn_report);
+}
+
+
+static struct hostapd_bcn_report_entry *
+hostapd_bcn_report_alloc(struct hostapd_data *hapd, size_t len)
+{
+	struct hostapd_bcn_report_entry *bcn_report;
+	size_t subelem_len = len - WLAN_BEACON_REPORT_FIXED_LEN;
+
+	bcn_report = os_zalloc(sizeof(struct hostapd_bcn_report_entry));
+	if (!bcn_report)
+		return NULL;
+
+	if (subelem_len > 0) {
+		bcn_report->subelem = os_zalloc(subelem_len);
+		if (!bcn_report->subelem) {
+			os_free(bcn_report);
+			return NULL;
+		}
+	}
+
+	dl_list_add(&hapd->bcn_report_db, &bcn_report->list);
+
+	return bcn_report;
+}
+
+static int
+hostapd_bcn_report_add(struct hostapd_data *hapd,
+		       struct rrm_measurement_beacon_report *bcn_report,
+		       size_t len)
+{
+	struct hostapd_bcn_report_entry *entry;
+	size_t subelem_len = len - WLAN_BEACON_REPORT_FIXED_LEN;
+	char subelem[256] = {'\0'};
+
+	if (!hapd || !bcn_report)
+		return -1;
+
+	entry = hostapd_bcn_report_get(hapd, bcn_report->bssid, len);
+	if (!entry)
+		entry = hostapd_bcn_report_alloc(hapd, len);
+	if (!entry)
+		return -1;
+
+	os_memcpy(entry->bssid, bcn_report->bssid, ETH_ALEN);
+	entry->channel = bcn_report->channel;
+	entry->start_time = bcn_report->start_time;
+	entry->duration = bcn_report->duration;
+	entry->report_info = bcn_report->report_info;
+	entry->rcpi = bcn_report->rcpi;
+	entry->rsni = bcn_report->rsni;
+	entry->antenna_id = bcn_report->antenna_id;
+	entry->parent_tsf = bcn_report->parent_tsf;
+	if ((subelem_len > 0) &&
+	    entry->subelem) {
+		wpa_snprintf_hex(subelem, sizeof(subelem),
+				bcn_report->variable,
+				subelem_len);
+		os_memcpy(entry->subelem, bcn_report->variable, subelem_len);
+		entry->subelem_len = subelem_len;
+	}
+
+	return 0;
+}
 
 static void hostapd_handle_range_report(struct hostapd_data *hapd, u8 token,
 					const u8 *pos, size_t len)
@@ -92,6 +247,11 @@ static void hostapd_handle_beacon_report(struct hostapd_data *hapd,
 	if (len < sizeof(struct rrm_measurement_beacon_report))
 		return;
 	hostapd_ubus_notify_beacon_report(hapd, addr, token, rep_mode, (struct rrm_measurement_beacon_report*) pos, len);
+	if (hostapd_bcn_report_add(hapd,
+				   (struct rrm_measurement_beacon_report *) pos,
+				   len))
+		wpa_printf(MSG_DEBUG, "Failed to add Beacon report for "MACSTR,
+			   MAC2STR(addr));
 }
 
 
@@ -621,6 +781,7 @@ void hostapd_clean_rrm(struct hostapd_data *hapd)
 	eloop_cancel_timeout(hostapd_range_rep_timeout_handler, hapd, NULL);
 	hapd->range_req_active = 0;
 	eloop_cancel_timeout(hostapd_link_mesr_rep_timeout_handler, hapd, NULL);
+	hostapd_free_bcn_report_db(hapd);
 }
 
 
@@ -713,6 +874,11 @@ int hostapd_send_beacon_req(struct hostapd_data *hapd, const u8 *addr,
 	wpabuf_put_u8(buf, req_mode); /* Measurement Request Mode */
 	wpabuf_put_u8(buf, MEASURE_TYPE_BEACON); /* Measurement Type */
 	wpabuf_put_buf(buf, req);
+
+	/* flush previous Beacon reports before sending new Beacon
+	 * Report Request.
+	 */
+	hostapd_free_bcn_report_db(hapd);
 
 	ret = hostapd_drv_send_action(hapd, hapd->iface->freq, 0, sta->addr,
 				      wpabuf_head(buf), wpabuf_len(buf));
