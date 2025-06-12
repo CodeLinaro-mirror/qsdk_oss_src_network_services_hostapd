@@ -42,3 +42,36 @@ u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 	*length_pos = pos - (eid + 2);
 	return pos;
 }
+
+
+u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn)
+{
+	struct ieee80211_uhr_operation *oper;
+	u8 *pos = eid, *length_pos;
+
+	if (!hapd->iface->current_mode)
+		return eid;
+
+	*pos++ = WLAN_EID_EXTENSION;
+	length_pos = pos++;
+	*pos++ = WLAN_EID_EXT_UHR_OPERATION;
+
+	oper = (struct ieee80211_uhr_operation *)pos;
+	os_memset(oper, 0, sizeof(*oper));
+	/* TODO: Fill in appropriate UHR-MCS max NSS information */
+	oper->basic_uhr_mcs_nss_set[0] = 0x11;
+	pos += sizeof(struct ieee80211_uhr_operation);
+	if (is_bcn)
+		pos -= sizeof(oper->uhr_info) - sizeof(oper->dps_oper_param);
+
+	*length_pos = pos - (eid + 2);
+
+	/* TODO: Handle UHR operation parameters */
+
+	if (is_bcn)
+		return pos;
+
+	/* TODO: Handle npca_info, p_edca_info and dbe_info here */
+
+	return pos;
+}
