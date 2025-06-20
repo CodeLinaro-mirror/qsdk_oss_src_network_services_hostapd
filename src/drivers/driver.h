@@ -3917,7 +3917,14 @@ struct wpa_driver_ops {
 	 */
 	int (*authenticate)(void *priv,
 			    struct wpa_driver_auth_params *params);
-
+	/**
+	 * set_chain_mask - Set tx/rx chain mask
+	 * @priv: private driver interface data
+	 * @radio_idx: Radio index or hardware index
+	 * @tx_ant: tx antenna chain mask value
+	 * @rx_ant: rx antenna chain mask value
+	 */
+	int (*set_chain_mask)(void *priv, uint8_t radio_idx, uint32_t tx_ant, uint32_t rx_ant);
 	/**
 	 * set_ap - Set Beacon and Probe Response information for AP mode
 	 * @priv: Private driver interface data

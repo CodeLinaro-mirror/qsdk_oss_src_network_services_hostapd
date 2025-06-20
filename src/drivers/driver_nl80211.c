@@ -5525,6 +5525,42 @@ static int nl80211_put_freq_params(struct wpa_driver_nl80211_data *drv,
 	return 0;
 }
 
+static int wpa_driver_set_chain_mask(void *priv, uint8_t radio_idx,
+				     uint32_t tx_ant, uint32_t rx_ant)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret = -1;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_WIPHY);
+	if (!msg) {
+		wpa_printf(MSG_ERROR, "Failed to build NL80211_CMD_SET_WIPHY msg");
+		return -1;
+	}
+
+	NLA_PUT_U8(msg, NL80211_ATTR_DYNAMIC_CHAIN_MASK, 1);
+
+	if (radio_idx < NL80211_WIPHY_RADIO_ID_MAX)
+		NLA_PUT_U8(msg, NL80211_ATTR_WIPHY_RADIO_INDEX, radio_idx);
+
+	NLA_PUT_U32(msg, NL80211_ATTR_WIPHY_ANTENNA_TX, tx_ant);
+	NLA_PUT_U32(msg, NL80211_ATTR_WIPHY_ANTENNA_RX, rx_ant);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (!ret) {
+		return 0;
+	}
+nla_put_failure:
+	wpa_printf(MSG_ERROR, "nl80211: Chain_mask: Failed to set chain mask %d %d: "
+		   "%d (%s)", tx_ant, rx_ant, ret, strerror(-ret));
+
+	if (msg)
+		nlmsg_free(msg);
+
+	return ret;
+
+}
 
 static int wpa_driver_nl80211_set_ap(void *priv,
 				     struct wpa_driver_ap_params *params)
@@ -15871,6 +15907,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.set_supp_port = wpa_driver_nl80211_set_supp_port,
 	.set_country = wpa_driver_nl80211_set_country,
 	.get_country = wpa_driver_nl80211_get_country,
+	.set_chain_mask = wpa_driver_set_chain_mask,
 	.set_ap = wpa_driver_nl80211_set_ap,
 	.set_acl = wpa_driver_nl80211_set_acl,
 	.if_add = wpa_driver_nl80211_if_add,

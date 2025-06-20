@@ -70,6 +70,7 @@
 #include "config_file.h"
 #include "ctrl_iface.h"
 #include "ap/ttlm.h"
+#include "../src/drivers/driver_nl80211.h"
 
 
 #define HOSTAPD_CLI_DUP_VALUE_MAX_LEN 256
@@ -4441,6 +4442,73 @@ static int hostapd_ctrl_iface_disable_mld(struct hostapd_iface *iface)
 	return 0;
 }
 
+static int hotapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd, char *cmd,
+					    char *buf, size_t buflen)
+{
+	int ret = -1, i;
+	uint32_t tx_ant, rx_ant;
+	uint8_t radio_idx = NL80211_WIPHY_RADIO_ID_MAX;
+	char *ptr;
+	u16 num_modes, flags;
+	u8 dfs_domain;
+	struct hostapd_hw_modes *modes;
+
+	if (!hapd->started) {
+		wpa_printf(MSG_ERROR, "Interface is not UP.\n");
+		return ret;
+	}
+
+	tx_ant = (uint32_t)strtol(cmd, &ptr, 10);
+	rx_ant = (uint32_t)strtol(ptr, NULL, 10);
+
+	if (hapd->iface->num_multi_hws)
+		radio_idx = hapd->iface->current_hw_info->hw_idx;
+
+	/* Set tx_ant and rx_ant values to max so that driver
+	 * can move tx_ant and rx_ant to max supported values
+	 */
+
+	if (tx_ant == 0)
+		tx_ant = 0xffffffff;
+	if (rx_ant == 0)
+		rx_ant = 0xffffffff;
+
+	if (hapd->driver == NULL || hapd->driver->set_chain_mask == NULL) {
+		wpa_printf(MSG_ERROR, "Set chain mask not found.\n");
+		return -1;
+	}
+	ret = hapd->driver->set_chain_mask(hapd->drv_priv, radio_idx, tx_ant, rx_ant);
+
+	if (ret)
+		return ret;
+
+	/* Get latest modes sent by driver with new chain mask values.
+	 */
+	modes = nl80211_get_hw_feature_data(hapd->drv_priv, &num_modes,
+				    &flags, &dfs_domain, 0);
+	if (modes) {
+		for (i = 0; i < num_modes; i++) {
+			struct hostapd_hw_modes *mode = &modes[i];
+
+			if (mode->channels->freq ==
+			    hapd->iface->current_mode->channels->freq) {
+				os_memcpy(hapd->iface->current_mode,
+					  mode, sizeof(struct hostapd_hw_modes));
+				break;
+			}
+		}
+		os_free(modes);
+	} else {
+		wpa_printf(MSG_ERROR, "Failed to get latest modes.\n");
+		return -1;
+	}
+
+	ret = ieee802_11_update_beacons(hapd->iface);
+	if (ret)
+		wpa_printf(MSG_ERROR, "Failed to update beacons.\n");
+
+	return ret;
+}
 
 static int hostapd_ctrl_iface_link_remove(struct hostapd_data *hapd, char *cmd,
 					  char *buf, size_t buflen)
@@ -5820,6 +5888,10 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		if (hostapd_ctrl_iface_conf_ml_rec_links(hapd, buf + 17))
 			reply_len = -1;
 #endif /* CONFIG_IEEE80211BE */
+	} else if (os_strncmp(buf, "CHAIN_MASK ", 11) == 0) {
+		if (hotapd_ctrl_set_tx_rx_chain_mask(hapd, buf+11,
+						     reply, reply_size))
+			reply_len = -1;
 #ifdef CONFIG_SAE
 	} else if (os_strncmp(buf, "SAE_PASSWORD_BIND ", 18) == 0) {
 		if (hostapd_ctrl_iface_sae_password_bind(hapd, buf + 18))
