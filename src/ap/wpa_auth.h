@@ -562,6 +562,8 @@ int wpa_auth_sta_set_vlan(struct wpa_state_machine *sm, int vlan_id);
 void wpa_auth_eapol_key_tx_status(struct wpa_authenticator *wpa_auth,
 				  struct wpa_state_machine *sm, int ack);
 
+u8 wpa_sta_sm_get_num_mld_links(struct wpa_state_machine *sm);
+
 #ifdef CONFIG_IEEE80211R_AP
 u8 * wpa_sm_write_assoc_resp_ies(struct wpa_state_machine *sm, u8 *pos,
 				 size_t max_len, int auth_alg,
@@ -600,7 +602,10 @@ void wpa_set_wnmsleep(struct wpa_state_machine *sm, int flag);
 int wpa_wnmsleep_gtk_subelem(struct wpa_state_machine *sm, u8 *pos);
 int wpa_wnmsleep_igtk_subelem(struct wpa_state_machine *sm, u8 *pos);
 int wpa_wnmsleep_bigtk_subelem(struct wpa_state_machine *sm, u8 *pos);
-
+int wpa_populate_mlo_keys(struct wpa_authenticator *wpa_auth,
+			  struct wpa_state_machine *sm,
+			  struct wpa_auth_ml_key_info *ml_key_info,
+			  u8 **buf);
 int wpa_auth_uses_sae(struct wpa_state_machine *sm);
 int wpa_auth_uses_ft_sae(struct wpa_state_machine *sm);
 

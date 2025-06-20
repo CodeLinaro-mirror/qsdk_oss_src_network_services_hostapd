@@ -58,6 +58,42 @@ static const u8 * wnm_ap_get_own_addr(struct hostapd_data *hapd,
 	return own_addr;
 }
 
+#ifdef CONFIG_IEEE80211BE
+static int wpa_wnmsleep_add_mlo_keys(void *hapd_ctx,
+				     void *sta_ctx,
+				     u8 **buf, size_t *keydata_len)
+{
+	struct hostapd_data *hapd = (struct hostapd_data *)hapd_ctx;
+	struct sta_info *sta = (struct sta_info *)sta_ctx;
+	struct hostapd_data *hapd_ptr;
+	struct mld_link_info *sta_link;
+	struct wpa_auth_ml_key_info ml_key_info;
+	int res, i = 0;
+	u8 partner_link_id;
+
+	if (!hapd || !hapd->conf || !buf || !*buf || !sta)
+		return -1;
+
+	os_memset(&ml_key_info, 0, sizeof(struct mld_link_info));
+	sta_link = sta->mld_info.links;
+	for_each_mld_link(hapd_ptr, hapd) {
+		partner_link_id = hapd_ptr->mld_link_id;
+		if (!sta_link[partner_link_id].valid)
+			continue;
+		ml_key_info.links[i++].link_id = partner_link_id;
+	}
+	ml_key_info.n_mld_links = i;
+
+	res = wpa_populate_mlo_keys(hapd->wpa_auth, sta->wpa_sm, &ml_key_info,
+				    buf);
+	if (res < 0)
+		return -1;
+
+	*keydata_len += res;
+
+	return 0;
+}
+#endif
 
 /* MLME-SLEEPMODE.response */
 static int ieee802_11_send_wnmsleep_resp(struct hostapd_data *hapd,
@@ -66,6 +102,7 @@ static int ieee802_11_send_wnmsleep_resp(struct hostapd_data *hapd,
 {
 	struct ieee80211_mgmt *mgmt;
 	int res;
+	size_t keydata_len = 0;
 	size_t len;
 	size_t gtk_elem_len = 0;
 	size_t igtk_elem_len = 0;
@@ -73,6 +110,7 @@ static int ieee802_11_send_wnmsleep_resp(struct hostapd_data *hapd,
 	struct wnm_sleep_element wnmsleep_ie;
 	u8 *wnmtfs_ie, *oci_ie;
 	u8 wnmsleep_ie_len, oci_ie_len;
+	u8 wnmsleep_subie_size, n_mld_affiliated_links;
 	u16 wnmtfs_ie_len;
 	u8 *pos;
 	struct sta_info *sta;
@@ -146,13 +184,23 @@ static int ieee802_11_send_wnmsleep_resp(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_OCV */
 
-#define MAX_GTK_SUBELEM_LEN 45
-#define MAX_IGTK_SUBELEM_LEN 26
-#define MAX_BIGTK_SUBELEM_LEN 26
+/* Subelement lengths as defined in 9.6.13.20 of IEEE P802.11be/D7.0 */
+#define MAX_GTK_SUBELEM_LEN 46
+#define MAX_IGTK_SUBELEM_LEN 27
+#define MAX_BIGTK_SUBELEM_LEN 43
+	n_mld_affiliated_links = wpa_sta_sm_get_num_mld_links(sta->wpa_sm);
+	if (ap_sta_is_mld(hapd, sta) && n_mld_affiliated_links)
+		wnmsleep_subie_size = (MAX_GTK_SUBELEM_LEN +
+					MAX_IGTK_SUBELEM_LEN +
+					MAX_BIGTK_SUBELEM_LEN) *
+					n_mld_affiliated_links;
+	else
+		wnmsleep_subie_size = MAX_GTK_SUBELEM_LEN +
+					MAX_IGTK_SUBELEM_LEN +
+					MAX_BIGTK_SUBELEM_LEN;
+
 	mgmt = os_zalloc(sizeof(*mgmt) + wnmsleep_ie_len +
-			 MAX_GTK_SUBELEM_LEN + MAX_IGTK_SUBELEM_LEN +
-			 MAX_BIGTK_SUBELEM_LEN +
-			 oci_ie_len);
+			 wnmsleep_subie_size + oci_ie_len);
 	if (mgmt == NULL) {
 		wpa_printf(MSG_DEBUG, "MLME: Failed to allocate buffer for "
 			   "WNM-Sleep Response action frame");
@@ -177,32 +225,45 @@ static int ieee802_11_send_wnmsleep_resp(struct hostapd_data *hapd,
 	    action_type != WNM_SLEEP_MODE_EXIT) {
 		mgmt->u.action.u.wnm_sleep_resp.keydata_len = 0;
 	} else {
-		gtk_elem_len = wpa_wnmsleep_gtk_subelem(sta->wpa_sm, pos);
-		pos += gtk_elem_len;
-		wpa_printf(MSG_DEBUG, "Pass 4, gtk_len = %d",
-			   (int) gtk_elem_len);
-		res = wpa_wnmsleep_igtk_subelem(sta->wpa_sm, pos);
-		if (res < 0)
-			goto fail;
-		igtk_elem_len = res;
-		pos += igtk_elem_len;
-		wpa_printf(MSG_DEBUG, "Pass 4 igtk_len = %d",
-			   (int) igtk_elem_len);
-		if (hapd->conf->beacon_prot &&
-		    (hapd->iface->drv_flags &
-		     WPA_DRIVER_FLAGS_BEACON_PROTECTION)) {
-			res = wpa_wnmsleep_bigtk_subelem(sta->wpa_sm, pos);
+#ifdef CONFIG_IEEE80211BE
+		if (ap_sta_is_mld(hapd, sta)) {
+			res = wpa_wnmsleep_add_mlo_keys((void *)hapd, sta,
+							&pos, &keydata_len);
 			if (res < 0)
 				goto fail;
-			bigtk_elem_len = res;
-			pos += bigtk_elem_len;
-			wpa_printf(MSG_DEBUG, "Pass 4 bigtk_len = %d",
-				   (int) bigtk_elem_len);
+		} else
+#endif
+		{
+			gtk_elem_len = wpa_wnmsleep_gtk_subelem(sta->wpa_sm,
+								pos);
+			pos += gtk_elem_len;
+			wpa_printf(MSG_DEBUG, "Pass 4, gtk_len = %d",
+				   (int) gtk_elem_len);
+			res = wpa_wnmsleep_igtk_subelem(sta->wpa_sm, pos);
+			if (res < 0)
+				goto fail;
+			igtk_elem_len = res;
+			pos += igtk_elem_len;
+			wpa_printf(MSG_DEBUG, "Pass 4 igtk_len = %d",
+				   (int) igtk_elem_len);
+			if (hapd->conf->beacon_prot &&
+			    (hapd->iface->drv_flags &
+			     WPA_DRIVER_FLAGS_BEACON_PROTECTION)) {
+				res = wpa_wnmsleep_bigtk_subelem(sta->wpa_sm,
+								 pos);
+				if (res < 0)
+					goto fail;
+				bigtk_elem_len = res;
+				pos += bigtk_elem_len;
+				wpa_printf(MSG_DEBUG, "Pass 4 bigtk_len = %d",
+					   (int) bigtk_elem_len);
+			}
+			keydata_len = gtk_elem_len + igtk_elem_len +
+				      bigtk_elem_len;
 		}
-
 		WPA_PUT_LE16((u8 *)
 			     &mgmt->u.action.u.wnm_sleep_resp.keydata_len,
-			     gtk_elem_len + igtk_elem_len + bigtk_elem_len);
+			     keydata_len);
 	}
 	os_memcpy(pos, &wnmsleep_ie, wnmsleep_ie_len);
 	/* copy TFS IE here */
@@ -217,8 +278,7 @@ static int ieee802_11_send_wnmsleep_resp(struct hostapd_data *hapd,
 		os_memcpy(pos, oci_ie, oci_ie_len);
 #endif /* CONFIG_OCV */
 
-	len = 1 + sizeof(mgmt->u.action.u.wnm_sleep_resp) + gtk_elem_len +
-		igtk_elem_len + bigtk_elem_len +
+	len = 1 + sizeof(mgmt->u.action.u.wnm_sleep_resp) + keydata_len +
 		wnmsleep_ie_len + wnmtfs_ie_len + oci_ie_len;
 
 	/* In driver, response frame should be forced to sent when STA is in

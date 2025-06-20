@@ -5986,6 +5986,249 @@ void wpa_set_wnmsleep(struct wpa_state_machine *sm, int flag)
 }
 
 
+#ifdef CONFIG_IEEE80211BE
+static int wpa_wnmsleep_add_mlo_gtk(struct wpa_state_machine *sm,
+				    struct wpa_auth_ml_key_info *ml_key_info,
+				    u8 **pos)
+{
+	unsigned int i, link_id;
+	u8 *start;
+
+	if (!sm || !ml_key_info || !pos || !*pos)
+		return -1;
+
+	start = *pos;
+
+	for (i = 0; i < ml_key_info->n_mld_links; i++) {
+		link_id = ml_key_info->links[i].link_id;
+		if (!sm->mld_links[link_id].valid ||
+		    !ml_key_info->links[i].gtk_len)
+			continue;
+		/*
+		 * GTK subelement:
+		 * Sub-elem ID[1] | Length[1] | Link ID Info[1] |
+		 * Key Info[2] | Key Length[1] | RSC[8] | Key[5..32]
+		 */
+		**pos = WNM_SLEEP_SUBELEM_MLO_GTK;
+		(*pos)++;
+
+		**pos = 1 + 2 + 1 + 8 + ml_key_info->links[i].gtk_len;
+		(*pos)++;
+
+		**pos = link_id << 4;
+		(*pos)++;
+
+		/* Key ID in B0-B1 of Key Info */
+		WPA_PUT_LE16(*pos, ml_key_info->links[i].gtkidx & 0x03);
+		*pos += 2;
+
+		**pos = ml_key_info->links[i].gtk_len;
+		(*pos)++;
+
+		os_memcpy(*pos, ml_key_info->links[i].pn, 6);
+		*pos += WPA_KEY_RSC_LEN;
+
+		os_memcpy(*pos, ml_key_info->links[i].gtk,
+			  ml_key_info->links[i].gtk_len);
+
+		if (sm->mld_links[link_id].wpa_auth &&
+		    sm->mld_links[link_id].wpa_auth->conf.disable_gtk) {
+			/*
+			 * Provide unique random GTK to each STA to prevent use
+			 * of GTK in the BSS.
+			 */
+			if (random_get_bytes(*pos,
+			    ml_key_info->links[i].gtk_len) < 0)
+				return 0;
+		}
+		*pos += ml_key_info->links[i].gtk_len;
+
+		wpa_printf(MSG_DEBUG, "WNM[link %u]: GTK Key ID %u "
+			   "in WNM-Sleep Mode exit",
+			   link_id,
+			   ml_key_info->links[i].gtkidx & 0x03);
+		wpa_hexdump(MSG_DEBUG, "WNM: GTK in WNM-Sleep Mode exit",
+				ml_key_info->links[i].gtk,
+				ml_key_info->links[i].gtk_len);
+	}
+
+	return *pos - start;
+}
+
+
+static int wpa_wnmsleep_add_mlo_igtk(struct wpa_state_machine *sm,
+				     struct wpa_auth_ml_key_info *ml_key_info,
+				     u8 **pos)
+{
+	unsigned int i, link_id;
+	u8 *start;
+
+	if (!sm || !ml_key_info || !pos || !*pos)
+		return -1;
+
+	start = *pos;
+
+	for (i = 0; i < ml_key_info->n_mld_links; i++) {
+		link_id = ml_key_info->links[i].link_id;
+
+		if (!sm->mld_links[link_id].valid ||
+		    !ml_key_info->links[i].igtk_len)
+			continue;
+		/*
+		 * IGTK subelement:
+		 * Sub-elem ID[1] | Length[1] | Link ID Info[1] | KeyID[2] |
+		 * PN[6] | Key[16]
+		 */
+		**pos = WNM_SLEEP_SUBELEM_MLO_IGTK;
+		(*pos)++;
+
+		**pos = 1 + 2 + 6 + ml_key_info->links[i].igtk_len;
+		(*pos)++;
+
+		**pos = link_id << 4;
+		(*pos)++;
+
+		WPA_PUT_LE16(*pos, ml_key_info->links[i].igtkidx);
+		*pos += 2;
+
+		os_memcpy(*pos, ml_key_info->links[i].ipn,
+			  sizeof(ml_key_info->links[i].ipn));
+		*pos += RSN_PN_LEN;
+
+		os_memcpy(*pos, ml_key_info->links[i].igtk,
+			  ml_key_info->links[i].igtk_len);
+
+		if (sm->mld_links[link_id].wpa_auth &&
+		    sm->mld_links[link_id].wpa_auth->conf.disable_gtk) {
+			/*
+			 * Provide unique random IGTK to each STA to prevent use
+			 * of IGTK in the BSS.
+			 */
+			if (random_get_bytes(*pos,
+					     ml_key_info->links[i].igtk_len) < 0)
+				return 0;
+		}
+		*pos += ml_key_info->links[i].igtk_len;
+
+		wpa_printf(MSG_DEBUG, "WNM[link %u]: IGTK Key ID %u in "
+			   "WNM-Sleep Mode exit", link_id,
+			   ml_key_info->links[i].igtkidx);
+		wpa_hexdump(MSG_DEBUG, "WNM: IGTK in WNM-Sleep Mode exit",
+			    ml_key_info->links[i].igtk,
+			    ml_key_info->links[i].igtk_len);
+	}
+
+	return *pos - start;
+}
+
+
+static int wpa_wnmsleep_add_mlo_bigtk(struct wpa_state_machine *sm,
+				      struct wpa_auth_ml_key_info *ml_key_info,
+				      u8 **pos)
+{
+	unsigned int i, link_id;
+	u8 *start = *pos;
+
+	if (!sm || !ml_key_info || !pos || !*pos)
+		return -1;
+
+	start = *pos;
+
+	for (i = 0; i < ml_key_info->n_mld_links; i++) {
+		link_id = ml_key_info->links[i].link_id;
+
+		if (!sm->mld_links[link_id].valid ||
+		    !ml_key_info->links[i].bigtk ||
+		    !ml_key_info->links[i].igtk_len)
+			continue;
+
+		/*
+		 * BIGTK subelement:
+		 * Sub-elem ID[1] | Length[1] | Link ID Info[1] | KeyID[2] |
+		 * BIPN[6] | Key[16..32]
+		 */
+		**pos = WNM_SLEEP_SUBELEM_MLO_BIGTK;
+		(*pos)++;
+
+		**pos = 1 + 2 + 6 + ml_key_info->links[i].igtk_len;
+		(*pos)++;
+
+		**pos = link_id << 4;
+		(*pos)++;
+
+		WPA_PUT_LE16(*pos, ml_key_info->links[i].bigtkidx);
+		*pos += 2;
+
+		os_memcpy(*pos, ml_key_info->links[i].bipn,
+			  sizeof(ml_key_info->links[i].bipn));
+		*pos += RSN_PN_LEN;
+
+		os_memcpy(*pos, ml_key_info->links[i].bigtk,
+			  ml_key_info->links[i].igtk_len);
+		*pos += ml_key_info->links[i].igtk_len;
+
+		wpa_printf(MSG_DEBUG, "WNM[link %u]: BIGTK Key ID %u in "
+			   "WNM-Sleep Mode exit", link_id,
+			   ml_key_info->links[i].bigtkidx);
+		wpa_hexdump_key(MSG_DEBUG, "WNM: BIGTK in "
+				"WNM-Sleep Mode exit",
+				ml_key_info->links[i].bigtk,
+				ml_key_info->links[i].igtk_len);
+	}
+
+	return *pos - start;
+}
+#endif
+
+
+int wpa_populate_mlo_keys(struct wpa_authenticator *wpa_auth,
+			  struct wpa_state_machine *sm,
+			  struct wpa_auth_ml_key_info *ml_key_info,
+			  u8 **buf)
+{
+#ifdef CONFIG_IEEE80211BE
+	u8 *start;
+	int res;
+	u64 drv_flag1, drv_flag2;
+
+	if (!wpa_auth || !sm || !ml_key_info || !buf || !*buf)
+		return -1;
+
+	start = *buf;
+
+	ml_key_info->mgmt_frame_prot = sm->mgmt_frame_prot;
+	ml_key_info->beacon_prot = sm->wpa_auth->conf.beacon_prot;
+	wpa_auth_get_ml_key_info(wpa_auth, ml_key_info,
+				 WPA_PTK_GROUP_IDLE, sm->group->vlan_id);
+
+	res = wpa_wnmsleep_add_mlo_gtk(sm,
+				       ml_key_info, buf);
+	if (res < 0)
+		return -1;
+
+	if (!sm->mgmt_frame_prot)
+		return *buf - start;
+
+	res = wpa_wnmsleep_add_mlo_igtk(sm,
+					ml_key_info, buf);
+	if (res < 0)
+		return -1;
+
+	if (sm->wpa_auth->conf.beacon_prot &&
+	    !wpa_auth_get_drv_flags(wpa_auth, &drv_flag1, &drv_flag2) &&
+	    (drv_flag1 & WPA_DRIVER_FLAGS_BEACON_PROTECTION))
+		res = wpa_wnmsleep_add_mlo_bigtk(sm,
+						 ml_key_info,
+						 buf);
+	if (res < 0)
+		return -1;
+
+	return *buf - start;
+#else
+	return -1;
+#endif
+}
+
 int wpa_wnmsleep_gtk_subelem(struct wpa_state_machine *sm, u8 *pos)
 {
 	struct wpa_auth_config *conf = &sm->wpa_auth->conf;
@@ -7905,6 +8148,19 @@ void wpa_reset_assoc_sm_info(struct wpa_state_machine *assoc_sm,
 	assoc_sm->wpa_auth = wpa_auth;
 	assoc_sm->mld_assoc_link_id = mld_assoc_link_id;
 #endif /* CONFIG_IEEE80211BE */
+}
+
+
+u8 wpa_sta_sm_get_num_mld_links(struct wpa_state_machine *sm)
+{
+#if CONFIG_IEEE80211BE
+	/* n_mld_affiliated_links always be total setup links - 1.
+	 * return n_mld_affiliated_links+1 to account all setup links.
+	 */
+	return (sm == NULL) ? 0 :
+		sm->n_mld_affiliated_links + 1;
+#endif
+	return 0;
 }
 
 
