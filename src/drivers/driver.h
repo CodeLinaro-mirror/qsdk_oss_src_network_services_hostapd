@@ -3886,6 +3886,10 @@ struct wpa_driver_ops {
 	 */
 	int (*set_key)(void *priv, struct wpa_driver_set_key_params *params);
 
+	/** Set TX/RX chain mask. */
+	int (*set_chain_mask)(void *priv, uint8_t radio_idx,
+				     uint32_t tx_ant, uint32_t rx_ant);
+
 	/**
 	 * init - Initialize driver interface
 	 * @ctx: context to be used when calling wpa_supplicant functions,

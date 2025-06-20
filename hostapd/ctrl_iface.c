@@ -73,6 +73,7 @@
 #include "config_file.h"
 #include "ctrl_iface.h"
 #include "ap/ttlm.h"
+#include "../src/drivers/driver_nl80211.h"
 
 
 #define HOSTAPD_CLI_DUP_VALUE_MAX_LEN 256
@@ -4613,6 +4614,57 @@ static int hostapd_ctrl_iface_disable_mld(struct hostapd_iface *iface)
 }
 
 
+static int hostapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd,
+						     char *cmd)
+{
+	int ret = -1, i;
+	u32 tx_ant, rx_ant;
+	u8 radio_idx = NL80211_WIPHY_RADIO_ID_MAX;
+	char *ptr;
+	u16 num_modes, flags;
+	u8 dfs_domain;
+	struct hostapd_hw_modes *modes;
+
+	if (!hapd->started) {
+		wpa_printf(MSG_ERROR, "Interface is not UP.");
+		return -1;
+	}
+
+	tx_ant = strtoul(cmd, &ptr, 0);
+	rx_ant = strtoul(ptr, NULL, 0);
+	if (!tx_ant)
+		tx_ant = 0xffffffff;
+	if (!rx_ant)
+		rx_ant = 0xffffffff;
+
+	if (hapd->iface->num_multi_hws)
+		radio_idx = hapd->iface->current_hw_info->hw_idx;
+
+	if (!hapd->driver || !hapd->driver->set_chain_mask)
+		return -1;
+	ret = hapd->driver->set_chain_mask(hapd->drv_priv, radio_idx,
+					  tx_ant, rx_ant);
+	if (ret)
+		return ret;
+
+	modes = nl80211_get_hw_feature_data(hapd->drv_priv, &num_modes,
+						&flags, &dfs_domain, NULL, 0, 0);
+	if (!modes)
+		return -1;
+	for (i = 0; i < num_modes; i++) {
+		struct hostapd_hw_modes *mode = &modes[i];
+		if (mode->channels->freq == hapd->iface->current_mode->channels->freq) {
+			os_memcpy(hapd->iface->current_mode, mode,
+				  sizeof(struct hostapd_hw_modes));
+			break;
+		}
+	}
+	os_free(modes);
+
+	return ieee802_11_update_beacons(hapd->iface);
+}
+
+
 static int hostapd_ctrl_iface_link_remove(struct hostapd_data *hapd, char *cmd)
 {
 	u32 count = atoi(cmd);
@@ -6144,6 +6196,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 			reply_len = -1;
 	} else if (os_strncmp(buf, "ML_MAX_REC_LINKS ", 17) == 0) {
 		if (hostapd_ctrl_iface_conf_ml_rec_links(hapd, buf + 17))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "CHAIN_MASK ", 11) == 0) {
+		if (hostapd_ctrl_set_tx_rx_chain_mask(hapd, buf + 11))
 			reply_len = -1;
 
 #ifdef CONFIG_TESTING_OPTIONS

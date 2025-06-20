@@ -1592,6 +1592,12 @@ static int hostapd_cli_cmd_mld_add_link(struct wpa_ctrl *ctrl, int argc,
 {
 	return hostapd_cli_cmd(ctrl, "MLD_ADD_LINK", 1, argc, argv);
 }
+
+static int hostapd_cli_cmd_chain_mask(struct wpa_ctrl *ctrl, int argc,
+					     char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "CHAIN_MASK", 2, argc, argv);
+}
 #endif
 
 
@@ -2160,6 +2166,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "negotiated_ttlm", hostapd_cli_cmd_negotiated_ttlm, NULL,
 	  "= send ttlm test commands" },
 #endif
+	{ "chain_mask", hostapd_cli_cmd_chain_mask, NULL,
+	  "<tx chain mask> <rx chain mask>" },
 
 	{ NULL, NULL, NULL, NULL }
 };
