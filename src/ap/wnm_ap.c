@@ -21,6 +21,7 @@
 #include "mbo_ap.h"
 #include "wnm_ap.h"
 #include "neighbor_db.h"
+#include "ap/ieee802_11.h"
 
 #define MAX_TFS_IE_LEN  1024
 
@@ -58,10 +59,72 @@ static const u8 * wnm_ap_get_own_addr(struct hostapd_data *hapd,
 	return own_addr;
 }
 
+
+static int wnmsleep_send_drv_evt(struct hostapd_data *hapd,
+				 struct sta_info *sta,
+				 enum wnm_oper wnm_operation)
+{
+	struct hostapd_data *hapd_ptr;
+	struct sta_info *partner_sta;
+	struct sta_info *assoc_sta;
+	struct mld_link_info *sta_link = sta->mld_info.links;
+	u8 partner_link_id;
+	u8 rekey_gtk = 0;
+
+	if (wnm_operation == WNM_SLEEP_ENTER_CONFIRM)
+		wpa_set_wnmsleep(sta->wpa_sm, 1);
+	else if (wnm_operation == WNM_SLEEP_EXIT_CONFIRM)
+		wpa_set_wnmsleep(sta->wpa_sm, 0);
+
+	if (!ap_sta_is_mld(hapd, sta)) {
+		hostapd_drv_wnm_oper(hapd,
+				     wnm_operation,
+				     sta->addr, NULL, NULL);
+		if (wnm_operation == WNM_SLEEP_ENTER_CONFIRM)
+			sta->flags |= WLAN_STA_WNM_SLEEP_MODE;
+		else if (wnm_operation == WNM_SLEEP_EXIT_CONFIRM) {
+			sta->flags &= ~WLAN_STA_WNM_SLEEP_MODE;
+			if (!wpa_auth_uses_mfp(sta->wpa_sm) ||
+			    hapd->conf->wnm_sleep_mode_no_keys)
+				wpa_wnmsleep_rekey_gtk(sta->wpa_sm);
+		}
+		return 0;
+	}
+
 #ifdef CONFIG_IEEE80211BE
-static int wpa_wnmsleep_add_mlo_keys(void *hapd_ctx,
-				     void *sta_ctx,
-				     u8 **buf, size_t *keydata_len)
+	for_each_mld_link(hapd_ptr, hapd) {
+		partner_link_id = hapd_ptr->mld_link_id;
+		if (!sta_link[partner_link_id].valid)
+			continue;
+		partner_sta = ap_get_sta(hapd_ptr, sta->addr);
+		if (!partner_sta)
+			continue;
+		if (wnm_operation == WNM_SLEEP_EXIT_CONFIRM) {
+			partner_sta->flags &= ~WLAN_STA_WNM_SLEEP_MODE;
+
+			if (!wpa_auth_uses_mfp(partner_sta->wpa_sm) ||
+				hapd_ptr->conf->wnm_sleep_mode_no_keys)
+				rekey_gtk = 1;
+		}
+		hostapd_drv_wnm_oper(hapd_ptr, wnm_operation,
+				     sta_link[partner_link_id].peer_addr,
+				     NULL, NULL);
+		if (wnm_operation == WNM_SLEEP_ENTER_CONFIRM)
+			partner_sta->flags |= WLAN_STA_WNM_SLEEP_MODE;
+	}
+	if (rekey_gtk) {
+		assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta, &hapd_ptr);
+		wpa_wnmsleep_rekey_gtk(assoc_sta->wpa_sm);
+	}
+#endif
+	return 0;
+}
+
+
+#ifdef CONFIG_IEEE80211BE
+int wpa_wnmsleep_add_mlo_keys(void *hapd_ctx,
+			      void *sta_ctx,
+			      u8 **buf, size_t *keydata_len)
 {
 	struct hostapd_data *hapd = (struct hostapd_data *)hapd_ctx;
 	struct sta_info *sta = (struct sta_info *)sta_ctx;
@@ -296,12 +359,9 @@ static int ieee802_11_send_wnmsleep_resp(struct hostapd_data *hapd,
 		 * during WNM Sleep
 		 */
 		if (wnmsleep_ie.status == WNM_STATUS_SLEEP_ACCEPT &&
-		    wnmsleep_ie.action_type == WNM_SLEEP_MODE_ENTER) {
-			sta->flags |= WLAN_STA_WNM_SLEEP_MODE;
-			hostapd_drv_wnm_oper(hapd, WNM_SLEEP_ENTER_CONFIRM,
-					     addr, NULL, NULL);
-			wpa_set_wnmsleep(sta->wpa_sm, 1);
-		}
+		    wnmsleep_ie.action_type == WNM_SLEEP_MODE_ENTER)
+			wnmsleep_send_drv_evt(hapd, sta,
+					      WNM_SLEEP_ENTER_CONFIRM);
 		/* when exiting wnmsleep
 		 * 1. unmark the node
 		 * 2. start GTK/IGTK/BIGTK update if MFP is not used
@@ -310,15 +370,9 @@ static int ieee802_11_send_wnmsleep_resp(struct hostapd_data *hapd,
 		if ((wnmsleep_ie.status == WNM_STATUS_SLEEP_ACCEPT ||
 		     wnmsleep_ie.status ==
 		     WNM_STATUS_SLEEP_EXIT_ACCEPT_GTK_UPDATE) &&
-		    wnmsleep_ie.action_type == WNM_SLEEP_MODE_EXIT) {
-			sta->flags &= ~WLAN_STA_WNM_SLEEP_MODE;
-			wpa_set_wnmsleep(sta->wpa_sm, 0);
-			hostapd_drv_wnm_oper(hapd, WNM_SLEEP_EXIT_CONFIRM,
-					     addr, NULL, NULL);
-			if (!wpa_auth_uses_mfp(sta->wpa_sm) ||
-			    hapd->conf->wnm_sleep_mode_no_keys)
-				wpa_wnmsleep_rekey_gtk(sta->wpa_sm);
-		}
+		    wnmsleep_ie.action_type == WNM_SLEEP_MODE_EXIT)
+			wnmsleep_send_drv_evt(hapd, sta,
+					      WNM_SLEEP_EXIT_CONFIRM);
 	} else
 		wpa_printf(MSG_DEBUG, "Fail to send WNM-Sleep Response frame");
 
