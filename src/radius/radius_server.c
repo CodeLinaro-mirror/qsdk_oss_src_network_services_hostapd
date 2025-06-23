@@ -961,11 +961,10 @@ radius_server_encapsulate_eap(struct radius_server_data *data,
 	}
 
 	if (code == RADIUS_CODE_ACCESS_ACCEPT) {
-		struct hostapd_radius_attr *attr;
-		for (attr = sess->accept_attr; attr; attr = attr->next) {
-			if (!radius_msg_add_attr(msg, attr->type,
-						 wpabuf_head(attr->val),
-						 wpabuf_len(attr->val))) {
+		struct radius_accept_attr *attr;
+		for (attr = sess->accept_attr; attr->data; attr++) {
+			if (!radius_msg_add_attr(msg, attr->type, attr->data,
+						 attr->len)) {
 				wpa_printf(MSG_ERROR, "Could not add RADIUS attribute");
 				radius_msg_free(msg);
 				return NULL;
