@@ -2375,6 +2375,22 @@ static u8 * hostapd_fils_discovery(struct hostapd_data *hapd,
 
 #endif /* CONFIG_FILS */
 
+u8 *hostapd_add_traffic_ind_elem(struct hostapd_data *hapd, u8 *eid)
+{
+#ifdef CONFIG_IEEE80211BE
+	struct ml_traffic_indication_elem *ml_tim;
+
+	ml_tim = (struct ml_traffic_indication_elem *)eid;
+	ml_tim->elem_id = WLAN_EID_EXTENSION;
+	ml_tim->elem_id_extn = WLAN_EID_EXT_MULTI_LINK_TRAFFIC_INDICATION;
+	ml_tim->elem_len = sizeof(*ml_tim) - sizeof(struct elem_header);
+	ml_tim->ml_traffic_ind_control = 0;
+	ml_tim->per_link_traffic_ind_list[0] = 0;
+	eid += sizeof(*ml_tim);
+
+#endif
+	return eid;
+}
 
 int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 			       struct wpa_driver_ap_params *params)
@@ -2687,6 +2703,8 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		if (hapd == tx_bss)
 			hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
 						   tailpos-startpos, ELEMID_CU_PARAM_EXT_EHTOP);
+		if (hapd->conf->mld_ap)
+			tailpos = hostapd_add_traffic_ind_elem(hapd, tailpos);
 	}
 #endif /* CONFIG_IEEE80211BE */
 

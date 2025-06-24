@@ -189,6 +189,24 @@ struct ttlm_of_direction {
 } STRUCT_PACKED;
 
 /**
+ * struct ml_traffic_indication_elem - Multi-link traffic indication element
+ * @elem_id: Multi-link traffic indication IE
+ * @elem_len: Multi-link traffic indication IE len
+ * @elem_id_extn: Multi-link traffic indication extension id
+ * @ml_traffic_ind_control: Multi-link traffic indication control
+ * @per_link_traffic_ind_list: Indicates the per-link traffic indication. Each
+ *				bit in the per_link_traffic_ind_list corresponds
+ *				to a link of the MLD.
+ */
+struct ml_traffic_indication_elem {
+	u8 elem_id;
+	u8 elem_len;
+	u8 elem_id_extn;
+	le16 ml_traffic_ind_control;
+	le16 per_link_traffic_ind_list[];
+} STRUCT_PACKED;
+
+/**
  * struct ttlm_config - User configured TTLM params
  * @ttlm_direction: TID-to-link mapping params for DL/UL/BIDI
  */
