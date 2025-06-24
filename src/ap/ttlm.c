@@ -17,7 +17,7 @@
 #include "ttlm.h"
 
 
-static int hostapd_get_ttlm_elem_len(struct ttlm_info *ttlm)
+int hostapd_get_ttlm_elem_len(struct ttlm_info *ttlm)
 {
 	u8 tid, num_tids;
 	size_t elem_len;

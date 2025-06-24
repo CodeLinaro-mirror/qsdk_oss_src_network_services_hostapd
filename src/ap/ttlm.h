@@ -201,6 +201,7 @@ int hostapd_send_ttlm_req(struct hostapd_data *hapd,
 			  struct sta_info *sta);
 u8 *hostapd_add_ttlm_info_elem(u8 *pos, struct ttlm_info *ttlm,
 			       struct hostapd_data *hapd);
+int hostapd_get_ttlm_elem_len(struct ttlm_info *ttlm);
 int hostapd_build_ttlm_elem(struct ttlm_ongoing_negotiation_info *ttlm,
 			    u8 **ttlm_elem, size_t *ttlm_elem_len);
 int hostapd_handle_ttlm_resp(struct hostapd_data *hapd, struct sta_info *sta,
