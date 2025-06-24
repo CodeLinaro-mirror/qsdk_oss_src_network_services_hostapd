@@ -40,13 +40,19 @@ static int hostapd_get_ttlm_elem_len(struct ttlm_info *ttlm)
 		}
 
 		elem_len += num_tids * (ttlm->link_mapping_size ? sizeof(u8) : sizeof(u16));
+
+		if (ttlm->mapping_switch_time_present)
+			elem_len += sizeof(u16);
+
+		if (ttlm->expected_duration_present)
+			elem_len += TTLM_EXPECTED_DURATION_SIZE * sizeof(u8);
 	}
 
 	return elem_len;
 }
 
 
-static u8 *hostapd_add_ttlm_info_elem(u8 *pos, struct ttlm_info *ttlm)
+u8 *hostapd_add_ttlm_info_elem(u8 *pos, struct ttlm_info *ttlm, struct hostapd_data *hapd)
 {
 	struct tid_to_link_mapping_elem *ttlm_elem;
 	u8 link_mapping_presence_indicator = 0;
@@ -54,6 +60,16 @@ static u8 *hostapd_add_ttlm_info_elem(u8 *pos, struct ttlm_info *ttlm)
 	u8 tid, len;
 	u16 ttlm_control = 0;
 	u16 *ttlm_control_field;
+
+	if (ttlm->mapping_switch_time_present && !hapd->mapping_switch_time) {
+		wpa_printf(MSG_DEBUG, "TTLM MST TSF update not received. Skip adding TTLM IE");
+		return pos;
+	}
+
+	if (ttlm->direction >= TTLM_DIRECTION_MAX) {
+		wpa_printf(MSG_DEBUG, "TTLM Invalid direction. Skip adding TTLM IE");
+		return pos;
+	}
 
 	ttlm_elem = (struct tid_to_link_mapping_elem *)pos;
 	ttlm_elem->elem_id = WLAN_EID_EXTENSION;
@@ -75,7 +91,7 @@ static u8 *hostapd_add_ttlm_info_elem(u8 *pos, struct ttlm_info *ttlm)
 		 */
 		*ttlm_control_field = (u8)ttlm_control;
 
-		wpa_printf(MSG_DEBUG, "TTLM IE added, dir:%d default_link_mapping:%d",
+		wpa_printf(MSG_DEBUG, "TTLM IE added, dir %d default_link_mapping %d",
 			   ttlm->direction, ttlm->default_link_mapping);
 		pos += sizeof(*ttlm_elem) + sizeof(u8);
 
@@ -85,6 +101,14 @@ static u8 *hostapd_add_ttlm_info_elem(u8 *pos, struct ttlm_info *ttlm)
 	ttlm_control |= (ttlm->link_mapping_size << TTLM_CONTROL_LINK_MAPPING_SIZE_IDX)
 			& TTLM_CONTROL_LINK_MAPPING_SIZE_MASK;
 
+	ttlm_control |=
+		(ttlm->mapping_switch_time_present << TTLM_CONTROL_MAPPING_SWITCH_TIME_PRESENT_IDX)
+		& TTLM_CONTROL_MAPPING_SWITCH_TIME_PRESENT_MASK;
+
+	ttlm_control |=
+		(ttlm->expected_duration_present << TTLM_CONTROL_EXPECTED_DURATION_PRESENT_IDX)
+		& TTLM_CONTROL_EXPECTED_DURATION_PRESENT_MASK;
+
 	for (tid = 0; tid < NUM_MAX_TIDS; tid++)
 		if (ttlm->ieee_link_map_tid[tid])
 			link_mapping_presence_indicator |= BIT(tid);
@@ -93,14 +117,34 @@ static u8 *hostapd_add_ttlm_info_elem(u8 *pos, struct ttlm_info *ttlm)
 			 TTLM_CONTROL_LINK_MAPPING_PRESENCE_INDICATOR_IDX)
 			& TTLM_CONTROL_LINK_MAPPING_PRESENCE_INDICATOR_MASK;
 
-	wpa_printf(MSG_DEBUG, "TTLM IE added, dir:%d link_mapping_presence_indicator:0x%x",
-		   ttlm->direction, link_mapping_presence_indicator);
-
 	/* The size of TID-To-Link mapping control is two octets when
 	 * default link mapping is not set.
 	 */
 	*ttlm_control_field = host_to_le16(ttlm_control);
 	pos += sizeof(*ttlm_elem) + sizeof(u16);
+
+	if (hapd && ttlm->mapping_switch_time_present) {
+		/* Mapping switch time is different for each vdevs. Hence,
+		 * populate the mapping switch time from hapd.
+		 */
+
+		*(u16 *)pos = host_to_le16(hapd->mapping_switch_time);
+		wpa_printf(MSG_DEBUG, "mapping_switch_time %d",
+			   ttlm->mapping_switch_time);
+		pos += sizeof(u16);
+	}
+
+	if (ttlm->expected_duration_present) {
+		memcpy(pos, &ttlm->expected_duration,
+		       TTLM_EXPECTED_DURATION_SIZE *
+		       sizeof(u8));
+		wpa_printf(MSG_DEBUG, "expected_duration %u",
+			   ttlm->expected_duration);
+		pos += TTLM_EXPECTED_DURATION_SIZE * sizeof(u8);
+	}
+
+	wpa_printf(MSG_DEBUG, "TTLM IE added, dir %d link_mapping_presence_indicator 0x%x",
+		   ttlm->direction, link_mapping_presence_indicator);
 
 	link_mapping_of_tids = pos;
 
@@ -159,7 +203,7 @@ int hostapd_build_ttlm_elem(struct ttlm_ongoing_negotiation_info *ttlm,
 	pos = *ttlm_elem;
 	for (dir = 0; dir < TTLM_DIRECTION_MAX; dir++) {
 		if (ttlm->ttlm_info[dir].direction != TTLM_DIRECTION_INVALID)
-			pos = hostapd_add_ttlm_info_elem(pos, &ttlm->ttlm_info[dir]);
+			pos = hostapd_add_ttlm_info_elem(pos, &ttlm->ttlm_info[dir], NULL);
 	}
 
 	return 0;
