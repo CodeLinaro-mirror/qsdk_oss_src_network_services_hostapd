@@ -13539,6 +13539,10 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 		if (bss->conf->mld_indicate_disabled)
 			*eid |= RNR_TBTT_INFO_MLD_PARAM2_LINK_DISABLED;
 #endif /* CONFIG_TESTING_OPTIONS */
+		if (type == WLAN_FC_STYPE_PROBE_RESP && hapd->mld &&
+		    (BIT(bss->mld_link_id) &
+		     hapd->mld->ttlm_ctx.established_ttlm.disabled_link_bitmap))
+			*eid |= RNR_TBTT_INFO_MLD_PARAM2_LINK_DISABLED;
 		eid++;
 	}
 #endif /* CONFIG_IEEE80211BE */
@@ -13825,6 +13829,7 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 					  bool bcast_prb_resp)
 {
 	struct hostapd_data *tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+	struct ttlm_context *tx_bss_ttlm_ctx;
 	size_t len, i, tx_xrate_len;
 	u8 ext_capa[20], buf[100];
 	u8 ext_cap;
@@ -13844,11 +13849,13 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 	len = 1;
 
 	tx_xrate_len = hostapd_eid_ext_supp_rates(tx_bss, buf) - buf;
+	tx_bss_ttlm_ctx = tx_bss->mld ? &tx_bss->mld->ttlm_ctx : NULL;
 
 	for (i = *bss_index; i < num_bss; i++) {
 		struct hostapd_data *bss;
 		const u8 *auth, *rsn = NULL, *rsnx = NULL;
 		size_t nontx_profile_len, auth_len, xrate_len;
+		struct ttlm_info *bss_est_ttlm = NULL, *bss_up_ttlm = NULL;
 		u8 ie_count = 0;
 
 		if (tx_bss->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
@@ -13860,6 +13867,9 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 		    bss->disabled ||
 		    mbssid_known_bss(i, known_bss, known_bss_len))
 			continue;
+
+		bss_up_ttlm = bss->mld ? &bss->mld->ttlm_ctx.upcoming_ttlm.ttlm : NULL;
+		bss_est_ttlm = bss->mld ? &bss->mld->ttlm_ctx.established_ttlm.ttlm : NULL;
 
 		/*
 		 * Sublement ID: 1 octet
@@ -13929,6 +13939,19 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 			nontx_profile_len += hostapd_eid_wmm_len(bss);
 			if (tx_bss->conf->wmm_enabled && !bss->conf->wmm_enabled)
 				ie_count++;
+		}
+
+		/* TTLM IE */
+		if (frame_type == WLAN_FC_STYPE_PROBE_RESP && tx_bss_ttlm_ctx &&
+		    bss_est_ttlm && bss_up_ttlm &&
+		    (tx_bss_ttlm_ctx->established_ttlm.ttlm.expected_duration_present ||
+		     tx_bss_ttlm_ctx->upcoming_ttlm.ttlm.mapping_switch_time_present ||
+		     bss_est_ttlm->expected_duration_present ||
+		     bss_up_ttlm->mapping_switch_time_present)) {
+			if (bss_up_ttlm->mapping_switch_time_present)
+				nontx_profile_len += hostapd_get_ttlm_elem_len(bss_up_ttlm);
+			else
+				nontx_profile_len += hostapd_get_ttlm_elem_len(bss_est_ttlm);
 		}
 
 		if (ie_count)
@@ -14056,6 +14079,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 				    bool bcast_prb_resp)
 {
 	struct hostapd_data *tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+	struct ttlm_context *tx_bss_ttlm_ctx;
 	size_t i, tx_xrate_len;
 	u8 *eid_len_offset, *max_bssid_indicator_offset;
 	u8 buf[100];
@@ -14072,6 +14096,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 	max_bssid_indicator_offset = eid++;
 
 	tx_xrate_len = hostapd_eid_ext_supp_rates(tx_bss, buf) - buf;
+	tx_bss_ttlm_ctx = tx_bss->mld ? &tx_bss->mld->ttlm_ctx : NULL;
 
 	for (i = *bss_index; i < num_bss; i++) {
 		struct hostapd_data *bss;
@@ -14086,6 +14111,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 #ifdef CONFIG_IEEE80211BE
 		u16 modified_flag = 0;
 #endif /* CONFIG_IEEE80211BE */
+		struct ttlm_info *bss_est_ttlm = NULL, *bss_up_ttlm = NULL;
 
 		if (tx_bss->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
 			bss = hostapd_get_multi_group_bss(tx_bss->mbssid_group, i);
@@ -14101,6 +14127,8 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		else
 			mbssindex = bss->mbssid_idx;
 		conf = bss->conf;
+		bss_up_ttlm = bss->mld ? &bss->mld->ttlm_ctx.upcoming_ttlm.ttlm : NULL;
+		bss_est_ttlm = bss->mld ? &bss->mld->ttlm_ctx.established_ttlm.ttlm : NULL;
 
 		*eid++ = WLAN_MBSSID_SUBELEMENT_NONTRANSMITTED_BSSID_PROFILE;
 		eid_len_pos = eid++;
@@ -14172,6 +14200,19 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		eid += hostapd_mbssid_ext_capa(bss, tx_bss, eid);
 		xrate_len = hostapd_eid_ext_supp_rates(bss, eid) - eid;
 		eid += xrate_len;
+
+		/* TTLM IE */
+		if (frame_type == WLAN_FC_STYPE_PROBE_RESP && tx_bss_ttlm_ctx &&
+		    bss_est_ttlm && bss_up_ttlm &&
+		    (tx_bss_ttlm_ctx->established_ttlm.ttlm.expected_duration_present ||
+		     tx_bss_ttlm_ctx->upcoming_ttlm.ttlm.mapping_switch_time_present ||
+		     bss_est_ttlm->expected_duration_present ||
+		     bss_up_ttlm->mapping_switch_time_present)) {
+			if (bss_up_ttlm->mapping_switch_time_present)
+				eid = hostapd_add_ttlm_info_elem(eid, bss_up_ttlm, bss);
+			else
+				eid = hostapd_add_ttlm_info_elem(eid, bss_est_ttlm, bss);
+		}
 
 		/* List of Element ID values in increasing order */
 		if (!rsn && hostapd_wpa_ie(tx_bss, WLAN_EID_RSN))

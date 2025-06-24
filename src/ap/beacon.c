@@ -866,6 +866,17 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 		if (hapd->conf->mld_ap)
 			buflen += hostapd_eid_eht_ml_tid_to_link_map_len(
 				hapd);
+
+		/* TTLM IE */
+		if (hapd->mld &&
+		    hapd->mld->ttlm_ctx.established_ttlm.ttlm.expected_duration_present)
+			buflen += hostapd_get_ttlm_elem_len(
+				&hapd->mld->ttlm_ctx.established_ttlm.ttlm);
+
+		if (hapd->mld &&
+		    hapd->mld->ttlm_ctx.upcoming_ttlm.ttlm.mapping_switch_time_present)
+			buflen += hostapd_get_ttlm_elem_len(
+				&hapd->mld->ttlm_ctx.upcoming_ttlm.ttlm);
 	}
 #endif /* CONFIG_IEEE80211BE */
 	/* RMSL value is included in broadcast Probe Response frames. */
@@ -1084,6 +1095,17 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 
 		if (hapd->conf->mld_ap)
 			pos = hostapd_eid_eht_ml_tid_to_link_map(hapd, pos);
+
+		/* TTLM IE */
+		if (hapd->mld &&
+		    hapd->mld->ttlm_ctx.established_ttlm.ttlm.expected_duration_present)
+			pos = hostapd_add_ttlm_info_elem(
+				pos, &hapd->mld->ttlm_ctx.established_ttlm.ttlm, hapd);
+
+		if (hapd->mld &&
+		    hapd->mld->ttlm_ctx.upcoming_ttlm.ttlm.mapping_switch_time_present)
+			pos = hostapd_add_ttlm_info_elem(
+				pos, &hapd->mld->ttlm_ctx.upcoming_ttlm.ttlm, hapd);
 	}
 #endif /* CONFIG_IEEE80211BE */
 
