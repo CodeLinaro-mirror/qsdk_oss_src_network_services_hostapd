@@ -1074,6 +1074,18 @@ struct hostapd_bss_config {
 	bool is_epcs_enabled;
 	bool ttlm_enable;
 #endif /* CONFIG_IEEE80211BE */
+	/*
+	 * twt_responder_caps: 0 - Disable TWT
+	 *                     1 - Enable TWT
+	 *                     2 - Enable TWT & B-TWT
+	 *                     3 - Enable TWT & B-TWT & R-TWT
+	 */
+	enum {
+		TWT_DISABLED,
+		TWT_ITWT_ENABLED,
+		TWT_ITWT_BTWT_ENABLED,
+		TWT_ITWT_BTWT_RTWT_ENABLED,
+	} twt_responder_caps;
 
 	enum qca_wlan_intf_offload_type ppe_vp_type;
 };
