@@ -403,6 +403,7 @@ struct hostapd_channel_data {
 };
 
 #define HE_MAC_CAPAB_0		0
+#define HE_MAC_CAPAB_2		2
 #define HE_MAX_MAC_CAPAB_SIZE	6
 #define HE_MAX_PHY_CAPAB_SIZE	11
 #define HE_MAX_MCS_CAPAB_SIZE	12

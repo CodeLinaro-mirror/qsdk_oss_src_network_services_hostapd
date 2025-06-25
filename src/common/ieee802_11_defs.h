@@ -2824,7 +2824,14 @@ struct ieee80211_spatial_reuse {
 
 /* HE Capabilities Information defines */
 
+/* IEEE 80211ax-2021, 9.4.2.248.2 HE MAC Capabilities Information field
+ * HE MAC caps is 6 bytes. Add index and bit pos as per this.
+ * */
+/* Mac capabilities for index 0 octet HE_MAC_CAPAB_0 */
 #define HE_MACCAP_TWT_RESPONDER			((u8) BIT(2))
+
+/* Mac capabilities for index 2 octet HE_MAC_CAPAB_2 */
+#define HE_MACCAP_TWT_BROADCAST			((u8) BIT(4))
 
 #define HE_PHYCAP_CHANNEL_WIDTH_SET_IDX		0
 #define HE_PHYCAP_CHANNEL_WIDTH_MASK		((u8) (BIT(1) | BIT(2) | \
@@ -3057,7 +3064,7 @@ struct ieee80211_eht_operation {
 #define EHT_MACCAP_OM_CONTROL			BIT(1)
 #define EHT_MACCAP_TRIGGERED_TXOP_MODE1		BIT(2)
 #define EHT_MACCAP_TRIGGERED_TXOP_MODE2		BIT(3)
-#define EHT_MACCAP_RESTRICTED_TWT		BIT(4)
+#define EHT_MACCAP_TWT_RESTRICTED		BIT(4)
 #define EHT_MACCAP_SCS_TRAFFIC_DESC		BIT(5)
 #define EHT_MACCAP_MAX_MPDU_LEN_MASK		(BIT(6) | BIT(7))
 #define EHT_MACCAP_MAX_MPDU_LEN_3895		0

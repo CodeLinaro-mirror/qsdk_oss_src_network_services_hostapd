@@ -5154,6 +5154,14 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "ttlm_enable") == 0) {
 		bss->ttlm_enable = atoi(pos);
 #endif /* CONFIG_IEEE80211BE */
+	} else if (os_strcmp(buf, "twt_responder_caps") == 0) {
+		int val;
+		val = atoi(pos);
+		if (val >= TWT_DISABLED && val <=TWT_ITWT_BTWT_RTWT_ENABLED)
+			bss->twt_responder_caps = atoi(pos);
+		else
+			wpa_printf(MSG_ERROR,
+				   "Invalid value for twt_responder_caps");
 
 	} else if (os_strcmp(buf, "i2r_lmr_policy") == 0) {
 		conf->i2r_lmr_policy = atoi(pos);

@@ -120,6 +120,10 @@ size_t hostapd_eid_eht_capab_len(struct hostapd_data *hapd,
 	return len;
 }
 
+static bool hostapd_conf_eht_rtwt_enabled(struct hostapd_data *hapd)
+{
+	return (hapd->conf->twt_responder_caps == TWT_ITWT_BTWT_RTWT_ENABLED);
+}
 
 u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 			   enum ieee80211_op_mode opmode)
@@ -152,6 +156,9 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 		cap->mac_cap &= ~EHT_MACCAP_EPCS_PRIO;
 
 	os_memcpy(cap->phy_cap, eht_cap->phy_cap, EHT_PHY_CAPAB_LEN);
+
+	if (!hostapd_conf_eht_rtwt_enabled(hapd))
+		cap->mac_cap &= ~EHT_MACCAP_TWT_RESTRICTED;
 
 	if (!is_6ghz_op_class(hapd->iconf->op_class))
 		cap->phy_cap[EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_IDX] &=

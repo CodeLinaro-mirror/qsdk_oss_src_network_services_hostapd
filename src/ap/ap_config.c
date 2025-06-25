@@ -197,6 +197,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->wmm_ac_params[1] = ac_bk;
 	bss->wmm_ac_params[2] = ac_vi;
 	bss->wmm_ac_params[3] = ac_vo;
+	bss->twt_responder_caps = TWT_ITWT_ENABLED;
 }
 
 #ifdef CONFIG_IEEE80211BE

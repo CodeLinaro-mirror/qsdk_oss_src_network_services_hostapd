@@ -86,6 +86,15 @@ static int ieee80211_invalid_he_cap_size(const u8 *buf, size_t len)
 	return len < cap_len;
 }
 
+static bool hostapd_conf_he_twt_enabled(struct hostapd_data *hapd)
+{
+	return (hapd->conf->twt_responder_caps > TWT_DISABLED);
+}
+
+static bool hostapd_conf_he_btwt_enabled(struct hostapd_data *hapd)
+{
+	return (hapd->conf->twt_responder_caps >= TWT_ITWT_BTWT_ENABLED);
+}
 
 u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
 			  enum ieee80211_op_mode opmode)
@@ -123,6 +132,12 @@ u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
 	if (ppet_size)
 		os_memcpy(&cap->optional[mcs_nss_size], he_capab->ppet,
 			  ppet_size);
+
+	if (!hostapd_conf_he_btwt_enabled(hapd))
+		cap->he_mac_capab_info[HE_MAC_CAPAB_2] &= ~HE_MACCAP_TWT_BROADCAST;
+
+	if (!hostapd_conf_he_twt_enabled(hapd))
+		cap->he_mac_capab_info[HE_MAC_CAPAB_0] &= ~HE_MACCAP_TWT_RESPONDER;
 
 	if (hapd->iface->conf->he_phy_capab.he_su_beamformer)
 		cap->he_phy_capab_info[HE_PHYCAP_SU_BEAMFORMER_CAPAB_IDX] |=
