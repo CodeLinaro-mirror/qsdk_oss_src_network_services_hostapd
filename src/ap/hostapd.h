@@ -1075,6 +1075,14 @@ static inline bool hostapd_mld_is_first_bss(struct hostapd_data *hapd)
 #define CHAN_MIN_TWICE_TX_POWER              (CHAN_MIN_TX_POWER * 2)
 #define CHAN_MAX_TWICE_TX_POWER              ((CHAN_MAX_TX_POWER * 2) + 1)
 
+
+#define NUM_20PP_PUNC_80MHZ      4
+#define NUM_20PP_PUNC_160MHZ     8
+#define NUM_40PP_PUNC_160MHZ     4
+#define NUM_40PP_PUNC_320MHZ     8
+#define NUM_80PP_PUNC_320MHZ     4
+#define NUM_40P80PP_PUNC_320MHZ 12
+
 /**
  * hostapd_iface_get_6ghz_chan_list() - Find the 6 GHz channel data for the given freq
  * @iface: Pointer to hostapd_iface
@@ -1119,6 +1127,44 @@ s16 hostapd_get_eirp_pwr(struct hostapd_iface *iface, u16 freq, u16 center_freq,
  */
 enum chan_width
 hostapd_get_chan_width_from_oper_chan_width(struct hostapd_config *iconf);
+
+/**
+ * hostapd_allow_6ghz_dynamic_puncture() - Check if dynamic puncturing is allowed
+ * @iface: Pointer to hostapd_iface
+ * @freq: Frequency in MHz
+ * @pwr_type: 6 GHz Power type.
+ *
+ * Return: true if dynamic puncturing is allowed, false otherwise.
+ */
+bool hostapd_allow_6ghz_dynamic_puncture(struct hostapd_iface *iface, u16 freq,
+					 u8 pwr_type);
+
+/**
+ * hostapd_apply_6ghz_dynamic_puncturing() - Apply dynamic puncturing for 6 GHz
+ * @iface: Pointer to hostapd_iface
+ *
+ * This function applies dynamic puncturing for 6 GHz channels in SP power mode.
+ * It updates the puncturing pattern which gives the highest EIRP
+ * for the given channel parameters.
+ *
+ * Return: None
+ */
+void hostapd_apply_6ghz_dynamic_puncturing(struct hostapd_iface *iface);
+
+/**
+ * hostapd_get_6ghz_best_pp() - Get the best 6 GHz Puncturing Pattern
+ * @iface: Pointer to hostapd_iface
+ * @freq: Frequency in MHz
+ * @center_freq: Band center frequency
+ * @bw: Bandwidth in MHz
+ * @pp: Output pointer to the best Puncturing Pattern
+ * @is_bpm_enabled: Flag to indicate if the best power mode is enabled
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+s8 hostapd_get_6ghz_best_pp(struct hostapd_iface *iface, u16 freq,
+			    u16 center_freq, u16 bw, u16 *pp,
+			    bool is_bpm_enabled);
 
 /**
  * hostapd_get_best_ap_6ghz_power_mode() - Get the best 6 GHz AP power mode

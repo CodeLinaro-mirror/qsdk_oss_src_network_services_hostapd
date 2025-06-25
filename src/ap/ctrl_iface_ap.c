@@ -1157,6 +1157,15 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 			len += ret;
 		}
 
+		if (is_6ghz_op_class(iface->conf->op_class)) {
+			ret = os_snprintf(buf + len, buflen - len,
+					  "puncture_strict_6ghz=%d\n",
+					  iface->conf->puncture_strict_6ghz);
+			if (os_snprintf_error(buflen - len, ret))
+				return len;
+			len += ret;
+		}
+
 		if (hapd->conf->mld_ap) {
 			struct hostapd_data *link_bss;
 

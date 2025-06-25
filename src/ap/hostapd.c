@@ -3023,6 +3023,7 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 		}
 #endif /* CONFIG_MESH */
 
+		hostapd_apply_6ghz_dynamic_puncturing(iface);
 		if (is_6ghz_freq(iface->freq) && iface->conf->enable_best_power_mode) {
 			u8 best_power_mode;
 
@@ -7096,6 +7097,342 @@ hostapd_get_bonded_chan_center_freq(u16 freq, u16 bw, u16 center_freq_320_mhz,
 }
 
 
+/** hostapd_get_num_puncture_types() - Get the number of puncture types
+ * @bw: Bandwidth in MHz
+ * @num_punc_type1: Pointer to store the number of puncture patterns with
+ *                  the smallest granularity supported for the given bandwidth
+ * @num_punc_type2: Pointer to store the number of puncture patterns with
+ *                  the second smallest granularity supported for the given
+ *                  bandwidth, if applicable
+ * @num_punc_type3: Pointer to store the number of puncture patterns with
+ *                  the largest granularity supported for the given bandwidth,
+ *                  if applicable
+ *
+ * Return: None
+ */
+static void hostapd_get_num_puncture_types(u16 bw, u8 *num_punc_type1,
+					   u8 *num_punc_type2, u8 *num_punc_type3)
+{
+	*num_punc_type1 = 0;
+	*num_punc_type2 = 0;
+	*num_punc_type3 = 0;
+
+	switch (bw) {
+	case 320:
+		*num_punc_type1 = NUM_40PP_PUNC_320MHZ;
+		*num_punc_type2 = NUM_80PP_PUNC_320MHZ;
+		*num_punc_type3 = NUM_40P80PP_PUNC_320MHZ;
+		break;
+	case 160:
+		*num_punc_type1 = NUM_20PP_PUNC_160MHZ;
+		*num_punc_type2 = NUM_40PP_PUNC_160MHZ;
+		break;
+	case 80:
+		*num_punc_type1 = NUM_20PP_PUNC_80MHZ;
+		break;
+	}
+}
+
+
+/**
+ * hostapd_get_valid_puncture_pattern_arr() - Get the valid puncture pattern array
+ * @bw: Bandwidth in MHz
+ * @num_pp: Output pointer to store the number of valid puncture patterns
+ * @pp_mask: Output pointer to store the puncture pattern mask for the given bandwidth
+ *
+ * Return: Pointer to the valid puncture pattern array or NULL if not found
+ */
+static const u16 *
+hostapd_get_valid_puncture_pattern_arr(u16 bw, u16 *num_pp, u16 *pp_mask)
+{
+	u8 i;
+
+	for (i = 0; i < ARRAY_SIZE(bw_puncture_bitmap_pair_map); i++) {
+		if (bw == bw_puncture_bitmap_pair_map[i].bw) {
+			*num_pp = bw_puncture_bitmap_pair_map[i].array_size;
+			*pp_mask = bw_puncture_bitmap_pair_map[i].puncture_mask;
+			return bw_puncture_bitmap_pair_map[i].puncture_bitmap_arr;
+		}
+	}
+
+	return NULL;
+}
+
+
+/**
+ * hostapd_get_eirp_powers() - Get EIRP powers for all AP power modes
+ * @iface: Pointer to hostapd_iface
+ * @freq: Frequency in MHz
+ * @center_freq: Band center frequency
+ * @bw: Bandwidth in MHz
+ * @in_punc_pattern: Puncturing pattern
+ * @eirp_vals: Output array to store EIRP powers for each power mode
+ *
+ * This function retrieves the EIRP powers for all 6 GHz AP power modes and stores
+ * them in the provided eirp_vals array.
+ */
+static void
+hostapd_get_eirp_powers(struct hostapd_iface *iface, u16 freq,
+			u16 center_freq, u16 bw, u16 in_punc_pattern,
+			s16 *eirp_vals)
+{
+	u8 i;
+
+	for (i = NL80211_REG_AP_LPI; i <= NL80211_REG_AP_VLP; i++) {
+		eirp_vals[i] =
+		    hostapd_get_eirp_pwr(iface, freq, center_freq, bw,
+					 in_punc_pattern, i, false,
+					 NL80211_REG_NUM_POWER_MODES, false);
+		wpa_printf(MSG_DEBUG,
+			   "EIRP for freq %d, center_freq %d, bw %d, pp 0x%x, power mode %d: %d",
+			   freq, center_freq, bw, in_punc_pattern,
+			   i, eirp_vals[i]);
+	}
+}
+
+
+bool hostapd_allow_6ghz_dynamic_puncture(struct hostapd_iface *iface, u16 freq, u8 pwr_type)
+{
+	return (is_6ghz_freq(freq) && iface->conf->ieee80211be &&
+		!iface->conf->puncture_strict_6ghz &&
+		(pwr_type == NL80211_REG_AP_SP || iface->conf->enable_best_power_mode));
+}
+
+
+void hostapd_apply_6ghz_dynamic_puncturing(struct hostapd_iface *iface)
+{
+	u16 best_6ghz_pp, center_freq;
+	enum chan_width width;
+	u8 center_chan_no;
+	s8 ret;
+
+	if (!hostapd_allow_6ghz_dynamic_puncture(iface, iface->freq,
+						 iface->conf->he_6ghz_reg_pwr_type))
+		return;
+
+	center_chan_no = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
+	center_freq = ieee80211_chan_to_freq(NULL, iface->conf->op_class, center_chan_no);
+	width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
+	best_6ghz_pp = iface->conf->punct_bitmap;
+	ret = hostapd_get_6ghz_best_pp(iface, iface->freq,
+				       center_freq, channel_width_to_int(width),
+				       &best_6ghz_pp, iface->conf->enable_best_power_mode);
+	if (!ret)
+		iface->conf->punct_bitmap = best_6ghz_pp;
+
+	return;
+}
+
+
+/**
+ * hostapd_get_start_freq() - Get the start frequency for a given bandwidth
+ * @freq: Primary frequency in MHz
+ * @bw: Bandwidth in MHz
+ * @center_freq: Band center frequency
+ *
+ * Return: The start frequency for the given bandwidth
+ */
+static inline u16
+hostapd_get_start_freq(u16 freq, u16 bw, u16 center_freq)
+{
+	return (bw == 20) ? freq : center_freq - (bw / 2) + 10;
+}
+
+
+/**
+ * hostapd_is_pp_subset_and_valid() - Check if the new pp is a subset of the input pp
+ * @input_pp: Input puncture pattern
+ * @new_pp: New puncture pattern to check
+ * @pp_mask: Puncture pattern mask for the given bandwidth
+ * @pri_chan_pos: Primary channel position
+ *
+ * Return: True if the new puncture pattern is a valid subset of the input
+ * puncture pattern and does not puncture the primary channel.
+ */
+static inline bool
+hostapd_is_pp_subset_and_valid(u16 input_pp, u16 new_pp,
+			       u16 pp_mask, u16 pri_chan_pos)
+{
+	bool is_subset_pp = (new_pp == ((input_pp | new_pp) & pp_mask));
+	bool is_pri_chan_punctured = (BIT(pri_chan_pos) & new_pp);
+
+	return is_subset_pp && !is_pri_chan_punctured;
+}
+
+
+/**
+ * hostapd_is_optimal_pp_found() - Check if the optimal puncture pattern is found
+ * @n_punc_type1: Number of puncture patterns of type 1 for given BW
+ * @n_punc_type2: Number of puncture patterns of type 2 for given BW
+ * @n_punc_type3: Number of puncture patterns of type 3 for given BW
+ * @i: Current index in the loop
+ * @ref_eirp: Reference EIRP power
+ * @initial_sp_eirp: Initial SP EIRP power
+ *
+ * This function checks if an optimal puncture pattern is found at the end of a
+ * puncture type group for a given bandwidth. If the reference EIRP power
+ * is greater than the initial SP EIRP power at the end of a puncture
+ * type group, then stop further puncturing - no need to over-puncture.
+ *
+ * Return: True if the optimal puncture pattern is found at the end of a
+ * puncture type group, false otherwise
+ */
+static inline bool
+hostapd_is_optimal_pp_found(u8 n_punc_type1, u8 n_punc_type2, u8 n_punc_type3,
+			     u16 i, s16 ref_eirp, s16 initial_sp_eirp)
+{
+	bool is_end_of_group = (i == (n_punc_type1 - 1)) ||
+			       (i == (n_punc_type1 + n_punc_type2 - 1)) ||
+			       (i == (n_punc_type1 + n_punc_type2 + n_punc_type3 - 1));
+
+	return is_end_of_group && (ref_eirp > initial_sp_eirp);
+}
+
+
+/**
+ * hostapd_get_valid_pp() - Get a valid puncture pattern
+ * @pp: Input/output pointer to the puncture pattern
+ * @bw: Bandwidth in MHz
+ * @pri_chan_pos: Primary channel position
+ *
+ * Returns a valid puncture pattern that is a subset of the input
+ * puncture pattern.
+ * If no valid puncture pattern is found, return -1.
+ */
+static int
+hostapd_get_valid_pp(u16 *pp, u16 bw, u16 pri_chan_pos)
+{
+	const u16 *bw_pp_arr;
+	u16 num_pp, pp_mask;
+	u16 i;
+
+	bw_pp_arr = hostapd_get_valid_puncture_pattern_arr(bw, &num_pp, &pp_mask);
+	for  (i = 0; i < num_pp; i++) {
+		if (hostapd_is_pp_subset_and_valid(*pp, bw_pp_arr[i],
+						   pp_mask, pri_chan_pos)) {
+			*pp = bw_pp_arr[i];
+			return 0;
+		}
+	}
+
+	wpa_printf(MSG_ERROR,
+		   "Invalid PP: 0x%x, bw: %d, pri_chan_pos: %d",
+		   *pp, bw, pri_chan_pos);
+	return -1;
+}
+
+/**
+ * hostapd_get_optimal_pp() - Get the optimal puncture pattern
+ * @iface: Pointer to hostapd_iface
+ * @freq: Frequency in MHz
+ * @center_freq: Band center frequency
+ * @bw: Bandwidth in MHz
+ * @pp: Input puncture pattern
+ * @pri_chan_pos: Primary channel position
+ * @initial_sp_eirp: Initial SP EIRP power
+ * @ref_eirp: Output pointer to reference EIRP power
+ * @out_pp: Output pointer to optimal puncture pattern
+ *
+ * This function finds the optimal puncture pattern that maximizes the EIRP power.
+ */
+static void
+hostapd_get_optimal_pp(struct hostapd_iface *iface, u16 freq,
+		       u16 center_freq, u16 bw, u16 pp, u16 pri_chan_pos,
+		       s16 initial_sp_eirp, s16 *ref_eirp, u16 *out_pp)
+{
+	u8 n_punc_type1, n_punc_type2, n_punc_type3;
+	u16 num_pp, pp_mask;
+	const u16 *bw_pp_arr;
+	s16 tmp_eirp_pwr;
+	u16 i;
+
+	bw_pp_arr = hostapd_get_valid_puncture_pattern_arr(bw, &num_pp, &pp_mask);
+	if (!bw_pp_arr) {
+		wpa_printf(MSG_ERROR, "No valid puncture pattern array found for bw %d", bw);
+		return;
+	}
+
+	hostapd_get_num_puncture_types(bw, &n_punc_type1, &n_punc_type2,
+				       &n_punc_type3);
+
+	*ref_eirp = initial_sp_eirp;
+	for  (i = 0; i < num_pp; i++) {
+		if (!hostapd_is_pp_subset_and_valid(pp, bw_pp_arr[i], pp_mask, pri_chan_pos))
+			continue;
+		tmp_eirp_pwr = hostapd_get_eirp_pwr(iface, freq, center_freq, bw, bw_pp_arr[i],
+						    NL80211_REG_AP_SP, false,
+						    NL80211_REG_NUM_POWER_MODES, false);
+
+		wpa_printf(MSG_DEBUG, "Trying PP %x freq %d, cf %d, bw %d EIRP: %d > ref EIRP: %d",
+			   bw_pp_arr[i], freq, center_freq, bw, tmp_eirp_pwr, *ref_eirp);
+
+		if (tmp_eirp_pwr > *ref_eirp) {
+			*ref_eirp = tmp_eirp_pwr;
+			*out_pp = bw_pp_arr[i];
+		}
+
+		if (hostapd_is_optimal_pp_found(n_punc_type1, n_punc_type2, n_punc_type3,
+						 i, *ref_eirp, initial_sp_eirp)) {
+			wpa_printf(MSG_INFO,
+				   "SP Punc: Freq %d CF %d BW %d Input PP %x Final PP %x",
+				   freq, center_freq, bw, pp, *out_pp);
+			wpa_printf(MSG_INFO,
+				   "SP Punc: EIRP %d Initial EIRP %d",
+				   *ref_eirp, initial_sp_eirp);
+			return;
+		}
+	}
+
+	return;
+}
+
+
+s8 hostapd_get_6ghz_best_pp(struct hostapd_iface *iface, u16 freq,
+			    u16 center_freq, u16 bw, u16 *pp,
+			    bool is_bpm_enabled)
+{
+	u16 start_freq = hostapd_get_start_freq(freq, bw, center_freq);
+	u16 pri_chan_pos = (freq - start_freq) / 20;
+	s16 initial_sp_eirp, ref_eirp, non_sp_eirp;
+	s16 eirp_vals[NL80211_REG_AP_VLP + 1];
+	u16 out_pp = 0;
+
+	if (!is_punct_bitmap_valid(bw, pri_chan_pos, *pp)) {
+		if (hostapd_get_valid_pp(pp, bw, pri_chan_pos))
+			return -1;
+	}
+
+	hostapd_get_eirp_powers(iface, freq, center_freq, bw, *pp, eirp_vals);
+	initial_sp_eirp = eirp_vals[NL80211_REG_AP_SP];
+	if (initial_sp_eirp == CHAN_MIN_TX_POWER)
+		out_pp = PUNCTURE_INVALID;
+
+	hostapd_get_optimal_pp(iface, freq, center_freq, bw, *pp, pri_chan_pos,
+			       initial_sp_eirp, &ref_eirp, &out_pp);
+	if (out_pp == PUNCTURE_INVALID) {
+		wpa_printf(MSG_ERROR,
+			   "No valid SP PP found for freq %d, center_freq %d, bw %d",
+			   freq, center_freq, bw);
+		return -1;
+	}
+
+	/**
+	 * If best power mode is enabled, compare if the derived power is
+	 * greater than both the SP and non-SP EIRP powers.
+	 * Else, compare only with the SP EIRP power.
+	 */
+	non_sp_eirp = eirp_vals[NL80211_REG_AP_LPI];
+	if (eirp_vals[NL80211_REG_AP_VLP] > non_sp_eirp)
+		non_sp_eirp = eirp_vals[NL80211_REG_AP_VLP];
+
+	if ((!is_bpm_enabled && ref_eirp > initial_sp_eirp) ||
+	    (is_bpm_enabled && ref_eirp > MAX(initial_sp_eirp, non_sp_eirp)))
+		*pp = out_pp;
+
+	return 0;
+}
+
+
 u8
 hostapd_get_best_ap_6ghz_power_mode(struct hostapd_iface *iface,
 				    u16 freq, u16 center_freq, u16 bw,
@@ -7109,6 +7446,7 @@ hostapd_get_best_ap_6ghz_power_mode(struct hostapd_iface *iface,
 	int i;
 	u8 best_ap_pwr_mode = NL80211_REG_NUM_POWER_MODES;
 	s16 max_eirp_pwr = CHAN_MIN_TX_POWER;
+	s16 eirp_vals[NL80211_REG_AP_VLP + 1];
 
 	if (bw > 20 && !hostapd_get_bonded_chan_entry(freq, bw, center_freq)) {
 		wpa_printf(MSG_ERROR,
@@ -7117,14 +7455,9 @@ hostapd_get_best_ap_6ghz_power_mode(struct hostapd_iface *iface,
 		return best_ap_pwr_mode;
 	}
 
+	hostapd_get_eirp_powers(iface, freq, center_freq, bw, in_punc_pattern, eirp_vals);
 	for (i = 0; i < ARRAY_SIZE(p_mode_order); i++) {
-		s16 tmp_eirp_pwr = hostapd_get_eirp_pwr(iface, freq,
-							center_freq, bw,
-							in_punc_pattern,
-							p_mode_order[i],
-							false,
-							NL80211_REG_NUM_POWER_MODES,
-							false);
+		s16 tmp_eirp_pwr = eirp_vals[p_mode_order[i]];
 
 		wpa_printf(MSG_INFO,
 			   "%s freq %d, cfreq %d, bw %d, pp %d, pwr_type %d, EIRP %d",

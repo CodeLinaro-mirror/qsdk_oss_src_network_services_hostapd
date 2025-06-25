@@ -3663,6 +3663,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line);
 			return 1;
 		}
+	} else if (os_strcmp(buf, "puncture_strict_6ghz") == 0) {
+		conf->puncture_strict_6ghz = atoi(pos);
 	} else if (os_strcmp(buf, "reg_def_cli_eirp_psd") == 0) {
 		conf->reg_def_cli_eirp_psd = atoi(pos);
 	} else if (os_strcmp(buf, "reg_sub_cli_eirp_psd") == 0) {

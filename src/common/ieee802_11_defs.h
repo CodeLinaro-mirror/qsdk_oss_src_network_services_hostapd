@@ -2419,6 +2419,82 @@ struct bw_bonded_array_pair bw_bonded_array_pair_map[] = {
 		ARRAY_SIZE(bonded_chan_320mhz_list_freq)},
 };
 
+/* chan_80mhz_puncture_bitmap - Supported 80 MHz puncturing patterns */
+static const u16 chan_80mhz_puncture_bitmap[] = {
+	/* 20Mhz puncturing pattern */
+	0x1,
+	0x2,
+	0x4,
+	0x8
+};
+
+/* chan_160mhz_puncture_bitmap - Supported 160 Mhz puncturing pattern */
+static const u16 chan_160mhz_puncture_bitmap[] = {
+	/* 20Mhz puncturing pattern */
+	0x01,
+	0x02,
+	0x04,
+	0x08,
+	0x10,
+	0x20,
+	0x40,
+	0x80,
+	/* 40Mhz puncturing pattern */
+	0x03,
+	0x0c,
+	0x30,
+	0xc0
+};
+
+/* chan_320mhz_puncture_bitmap - Supported 320 Mhz puncturing patterns */
+static const u16 chan_320mhz_puncture_bitmap[] = {
+	/* 40Mhz puncturing pattern */
+	0x0003,
+	0x000c,
+	0x0030,
+	0x00c0,
+	0x0300,
+	0x0c00,
+	0x3000,
+	0xc000,
+	/* 80Mhz puncturing pattern */
+	0x000f,
+	0x00f0,
+	0x0f00,
+	0xf000,
+	/* 80+40Mhz puncturing pattern: Left 80MHz punctured */
+	0x003f,
+	0x00cf,
+	0x030f,
+	0x0c0f,
+	0x300f,
+	0xc00f,
+	/* 80+40Mhz puncturing pattern: Right 80MHz punctured */
+	0xf003,
+	0xf00c,
+	0xf030,
+	0xf0c0,
+	0xf300,
+	0xfc00
+};
+
+struct bw_puncture_bitmap_pair {
+	u16 bw;
+	const u16 *puncture_bitmap_arr;
+	u16 array_size;
+	u16 puncture_mask;
+};
+
+static const
+struct bw_puncture_bitmap_pair bw_puncture_bitmap_pair_map[] = {
+	{ 80, chan_80mhz_puncture_bitmap,
+		ARRAY_SIZE(chan_80mhz_puncture_bitmap),     0xF},
+	{160, chan_160mhz_puncture_bitmap,
+		ARRAY_SIZE(chan_160mhz_puncture_bitmap),   0xFF},
+	{320, chan_320mhz_puncture_bitmap,
+		ARRAY_SIZE(chan_320mhz_puncture_bitmap), 0xFFFF},
+};
+
 #define RRM_CAPABILITIES_IE_LEN 5
 
 /* IEEE Std 802.11-2020, 9.6.6.4 - Link Measurement Request frame format */

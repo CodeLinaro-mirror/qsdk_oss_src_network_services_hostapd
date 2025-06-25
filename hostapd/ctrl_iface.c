@@ -2720,6 +2720,26 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 		return -1;
 	}
 
+	if (settings.power_mode == -1 || settings.power_mode == HE_REG_INFO_6GHZ_AP_TYPE_SP) {
+		bool is_bpm_needed = iface->conf->enable_best_power_mode;
+
+		if (settings.power_mode == HE_REG_INFO_6GHZ_AP_TYPE_SP)
+			is_bpm_needed = false;
+
+		if (hostapd_allow_6ghz_dynamic_puncture(iface, settings.freq_params.freq,
+							settings.power_mode)) {
+			u16 best_6ghz_pp = settings.freq_params.punct_bitmap;
+
+			if (!hostapd_get_6ghz_best_pp(iface, settings.freq_params.freq,
+						      settings.freq_params.center_freq1,
+						      settings.freq_params.bandwidth,
+						      &best_6ghz_pp,
+						      is_bpm_needed)) {
+				settings.freq_params.punct_bitmap = best_6ghz_pp;
+			}
+		}
+	}
+
 	if (iface->power_mode_6ghz_before_change > -1) {
 		wpa_printf(MSG_ERROR, "Power mode change in progress");
 		return -1;

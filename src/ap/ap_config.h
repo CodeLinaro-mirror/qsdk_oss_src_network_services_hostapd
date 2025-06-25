@@ -1233,6 +1233,14 @@ struct hostapd_config {
 	 * selection, etc.
 	 */
 	bool enable_best_power_mode;
+	/*
+	 * This controls the hostapd support for dynamically puncturing
+	 * the Low Power channels or disabled channels in 6 GHz band in
+	 * Standard Power mode. Setting this to false will allow hostapd
+	 * to dynamically puncture channels. Setting this to true will
+	 * disable dynamic puncturing.
+	 */
+	bool puncture_strict_6ghz;
 	bool discard_6g_awgn_event;
 
 	int reg_def_cli_eirp_psd;
