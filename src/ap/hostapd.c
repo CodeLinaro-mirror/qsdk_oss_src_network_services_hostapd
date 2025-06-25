@@ -6617,17 +6617,25 @@ hostapd_get_sp_punc_eirp(struct hostapd_iface *iface, u16 freq, u16 center_freq,
 			 s16 reg_sp_eirp_pwr, s16 *sp_eirp_pwr)
 {
 	u16 effective_bw = hostapd_reg_find_non_punc_bw(bw, in_punc_pattern);
-	s16 oobe_psd_pwr, afc_eirp_pwr;
+	s16 oobe_psd_pwr, afc_eirp_pwr, reg_psd_pwr;
 	int ret;
+
+	get_min_psd_values(iface->afc_rsp_info, freq, center_freq,
+			   in_punc_pattern, bw, &oobe_psd_pwr);
+	if (oobe_psd_pwr == CHAN_MAX_TWICE_TX_POWER * PSD_SCALE) {
+		wpa_printf(MSG_ERROR, "Failed to calculate OOBE PSD");
+		return -1;
+	}
 
 	ret = hostapd_reg_get_psd_from_chan_list(iface, freq, center_freq, bw,
 						 in_punc_pattern, NL80211_REG_AP_SP,
 						 client_type, is_client_lookup,
-						 false, &oobe_psd_pwr);
+						 false, &reg_psd_pwr);
 	if (ret)
 		return ret;
 
-	oobe_psd_pwr *= PSD_SCALE;
+	reg_psd_pwr *= PSD_SCALE;
+	oobe_psd_pwr = MIN(oobe_psd_pwr, reg_psd_pwr);
 	if (hapd_psd_to_eirp(oobe_psd_pwr, PSD_SCALE, effective_bw, &afc_eirp_pwr)) {
 		wpa_printf(MSG_ERROR, "Unable to get EIRP from PSD");
 		return -1;
