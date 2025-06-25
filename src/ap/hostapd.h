@@ -1192,6 +1192,13 @@ static inline bool hostapd_mld_is_first_bss(struct hostapd_data *hapd)
 #define CHAN_MIN_TWICE_TX_POWER (CHAN_MIN_TX_POWER * 2)
 #define CHAN_MAX_TWICE_TX_POWER ((CHAN_MAX_TX_POWER * 2) + 1)
 
+#define NUM_20PP_PUNC_80MHZ      4
+#define NUM_20PP_PUNC_160MHZ     8
+#define NUM_40PP_PUNC_160MHZ     4
+#define NUM_40PP_PUNC_320MHZ     8
+#define NUM_80PP_PUNC_320MHZ     4
+#define NUM_40P80PP_PUNC_320MHZ 12
+
 struct hostapd_channel_data *
 hostapd_iface_get_6ghz_chan_list(struct hostapd_iface *iface,
 				 u16 freq, u8 pwr_type,
@@ -1204,6 +1211,13 @@ s16 hostapd_get_eirp_pwr(struct hostapd_iface *iface, u16 freq,
 
 enum chan_width
 hostapd_get_chan_width_from_oper_chan_width(struct hostapd_config *iconf);
+
+bool hostapd_allow_6ghz_dynamic_puncture(struct hostapd_iface *iface,
+						 u16 freq, u8 pwr_type);
+void hostapd_apply_6ghz_dynamic_puncturing(struct hostapd_iface *iface);
+s8 hostapd_get_6ghz_best_pp(struct hostapd_iface *iface, u16 freq,
+				    u16 center_freq, u16 bw, u16 *pp,
+				    bool is_bpm_enabled);
 
 u8 hostapd_get_best_ap_6ghz_power_mode(struct hostapd_iface *iface,
 				       u16 freq, u16 center_freq, u16 bw,

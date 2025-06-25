@@ -679,6 +679,7 @@ out:
 		return ucv_boolean_new(true);
 	}
 
+	hostapd_apply_6ghz_dynamic_puncturing(iface);
 	if (is_6ghz_freq(iface->freq) && iface->conf->enable_best_power_mode) {
 		u8 best_power_mode;
 
