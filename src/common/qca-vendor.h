@@ -1702,6 +1702,9 @@ enum qca_radiotap_vendor_ids {
  *
  * @QCA_NL80211_VENDOR_SUBCMD_AFC_CLEAR_PAYLOAD: Vendor subcommand to trigger
  * 	clearing of AFC payload in firmware.
+ *
+ * @QCA_NL80211_VENDOR_SUBCMD_AFC_RESET: Vendor subcommand to trigger reset of
+ * 	AFC expiry timer in firmware.
  */
 enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_UNSPEC = 0,

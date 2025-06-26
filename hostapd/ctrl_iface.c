@@ -6038,6 +6038,29 @@ static int hostapd_ctrl_iface_clear_afc_payload(struct hostapd_data *hapd,
 }
 
 
+static int hostapd_ctrl_iface_reset_afc(struct hostapd_data *hapd,
+					char *pos)
+{
+#ifdef NEED_AP_MLME
+	if (!hostapd_drv_is_retail_afc_supported(hapd)) {
+		wpa_printf(MSG_ERROR, "AFC reset cmd is allowed only in retail mode");
+		return -1;
+	}
+
+	if (!is_6ghz_freq(hapd->iface->freq)) {
+		wpa_printf(MSG_ERROR, "AFC reset is only for 6 GHz");
+		return -1;
+	}
+
+	wpa_printf(MSG_DEBUG, "Resetting AFC\n");
+
+	return hostapd_drv_reset_afc(hapd);
+#else /* NEED_AP_MLME */
+	return -1;
+#endif /* NEED_AP_MLME */
+}
+
+
 static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 					      char *buf, char *reply,
 					      int reply_size,
@@ -6726,6 +6749,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 #endif /* CONFIG_AFC */
 	} else if (os_strncmp(buf, "CLEAR_AFC_PAYLOAD", 17) == 0) {
 		if (hostapd_ctrl_iface_clear_afc_payload(hapd, buf + 17))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "RESET_AFC", 9) == 0) {
+		if (hostapd_ctrl_iface_reset_afc(hapd, buf + 9))
 			reply_len = -1;
 	} else {
 		os_memcpy(reply, "UNKNOWN COMMAND\n", 16);
