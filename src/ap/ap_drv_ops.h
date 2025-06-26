@@ -570,6 +570,16 @@ hostapd_drv_clear_afc_payload(struct hostapd_data *hapd)
 	return hapd->driver->clear_afc_payload(hapd->drv_priv, hapd->mld_link_id);
 }
 
+static inline int
+hostapd_drv_reset_afc(struct hostapd_data *hapd)
+{
+	if (hapd->driver == NULL || hapd->drv_priv == NULL ||
+	    hapd->driver->reset_afc == NULL)
+		return -1;
+
+	return hapd->driver->reset_afc(hapd->drv_priv, hapd->mld_link_id);
+}
+
 struct hostapd_multi_hw_info *
 hostapd_get_multi_hw_info(struct hostapd_data *hapd,
 			  unsigned int *num_multi_hws);

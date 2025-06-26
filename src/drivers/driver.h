@@ -6108,6 +6108,15 @@ struct wpa_driver_ops {
 	 */
 	int (*clear_afc_payload)(void *priv, u8 link_id);
 
+	/**
+	 * reset_afc - Notify driver to send a request to firmware to reset the
+	 * AFC expiry timer so that a new request is triggered
+	 * @priv: Private driver interface data
+	 * @link_id: Link ID of the specified link; -1 for non-MLD
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*reset_afc)(void *priv, u8 link_id);
+
 	/*
 	 * is_retail_afc_supported - Check if the driver supports retail AFC
 	 * @priv: Private driver interface data

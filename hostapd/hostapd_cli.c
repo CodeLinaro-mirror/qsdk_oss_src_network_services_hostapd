@@ -1865,6 +1865,24 @@ static int hostapd_cli_cmd_clear_afc_payload(struct wpa_ctrl *ctrl,
 }
 
 
+static int hostapd_cli_cmd_reset_afc(struct wpa_ctrl *ctrl,
+				     int argc, char *argv[])
+{
+	char cmd[256];
+	int res;
+	int ret;
+
+	res = os_snprintf(cmd, sizeof(cmd), "RESET_AFC");
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command error\n");
+		return -1;
+	}
+
+	ret = wpa_ctrl_command(ctrl, cmd);
+	return ret;
+}
+
+
 struct hostapd_cli_cmd {
 	const char *cmd;
 	int (*handler)(struct wpa_ctrl *ctrl, int argc, char *argv[]);
@@ -2130,6 +2148,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "[set_afc_chan_sel_config|get_afc_chan_sel_config] <afc_chan_sel_config_value>" },
 	{ "clear_afc_payload", hostapd_cli_cmd_clear_afc_payload, NULL,
 	  "= Clear AFC payload stored in driver and firmware\n"},
+	{ "reset_afc", hostapd_cli_cmd_reset_afc, NULL,
+	  "= Reset AFC in target\n"},
 	{ NULL, NULL, NULL, NULL }
 };
 
