@@ -8750,6 +8750,7 @@ static s8 get_psd_for_chan_idx(struct hostapd_data *hapd,
  * Return: Minimum PSD limit for the given frequency, or INVALID_PSD if the
  * frequency is not found within the AFC frequency objects.
  */
+static
 s16 get_psd_limit(u16 freq, u8 num_freq_obj, struct afc_freq_obj *afc_freq_info)
 {
 	u8 i;
@@ -8799,6 +8800,7 @@ s16 get_psd_limit(u16 freq, u8 num_freq_obj, struct afc_freq_obj *afc_freq_info)
  *
  * Return: The interpolated y-value for the given x-coordinate.
  */
+static
 s16 get_y_val(s16 x1, s16 x2, s16 y1, s16 y2, s16 x)
 {
 	s16 den = x2 - x1;
@@ -8821,6 +8823,7 @@ s16 get_y_val(s16 x1, s16 x2, s16 y1, s16 y2, s16 x)
  *
  * Return: The calculated regulatory mask value.
  */
+static
 s16 get_regmask_non_puncture(s16 offset, u16 bw)
 {
 	u16 hbw = bw >> 1;
@@ -8859,7 +8862,7 @@ s16 get_regmask_non_puncture(s16 offset, u16 bw)
  * The mask is symmetric and ensures a smooth transition from the edge of the
  * punctured region to the adjacent usable spectrum.
  */
-void
+static void
 handle_edge_puncture(struct punct_mask *pu_mask_l_edge,
 		     struct punct_mask *pu_mask_r_edge, s16 pu_l_edge,
 		     s16 pu_r_edge, const s16 *pdbm1)
@@ -8910,7 +8913,7 @@ handle_edge_puncture(struct punct_mask *pu_mask_l_edge,
  * The function uses predefined dB masks (pdbm1 and pdbm2) to shape the
  * attenuation profile for both edge and interim regions.
  */
-void
+static void
 handle_interim_20_plus(struct punct_mask *pu_mask_l_edge,
 		       struct punct_mask *pu_mask_r_edge,
 		       struct punct_mask *pu_mask_l,
@@ -8979,7 +8982,7 @@ handle_interim_20_plus(struct punct_mask *pu_mask_l_edge,
  * The mask ensures a smooth regulatory transition across the 20 MHz interim
  * puncture region, helping to meet spectral emission constraints.
  */
-void
+static void
 handle_interim_20(struct punct_mask *pu_mask_l, struct punct_mask *pu_mask_r,
 		  s16 pu_edge1, s16 pu_edge2, const s16 *pdbm3)
 {
@@ -9020,7 +9023,7 @@ handle_interim_20(struct punct_mask *pu_mask_l, struct punct_mask *pu_mask_r,
  *
  * Return: The type of puncture determined (enum puncture_type).
  */
-enum puncture_type
+static enum puncture_type
 get_puncture_type_and_masks(u16 bw, u16 puncture_bitmap,
 			    struct punct_mask *pu_mask_l_edge,
 			    struct punct_mask *pu_mask_l,
@@ -9181,6 +9184,7 @@ static s16 get_regmask_puncture(s16 offset, u16 bw, struct punct_mask *pmask)
  *
  * Return: The calculated regulatory mask value.
  */
+static
 s16 get_regmask(s16 offset, u16 bw, enum puncture_type punc_type,
 		struct punct_mask *pu_mask_l_edge, struct punct_mask *pu_mask_l,
 		struct punct_mask *pu_mask_r,
@@ -9218,6 +9222,77 @@ s16 get_regmask(s16 offset, u16 bw, enum puncture_type punc_type,
 	mask = MIN(mask_punc, mask_def);
 
 	return mask;
+}
+
+void
+get_min_psd_values(struct afc_sp_reg_info *afc_rsp_info, u16 freq, u16 cfreq,
+		   u16 punc_bitmap, u16 bw, s16 *min_psd)
+{
+	u16 freq_start, freq_end;
+	u16 adj_freq_start, adj_freq_end;
+	s16 offset;
+	u16 modoffset;
+	u16 hbw = bw >> 1;
+	enum puncture_type punc_type;
+	struct punct_mask pu_mask_l = {0}, pu_mask_r = {0},
+			  pu_mask_l_edge = {0}, pu_mask_r_edge = {0};
+	struct afc_freq_obj *afc_freq_info;
+	u8 num_freq_obj;
+	int i;
+	s16 mask, psd_limit = 0;
+
+	*min_psd = CHAN_MAX_PSD_POWER * PSD_SCALE;
+	if (!is_6ghz_freq(cfreq))
+		return;
+
+	freq_start = cfreq - hbw;
+	freq_end   = cfreq + hbw;
+	adj_freq_start = MAX(DEFAULT_LOW_6GFREQ, (cfreq - (3 * hbw)));
+	adj_freq_end   = MIN((cfreq + (3 * hbw)), DEFAULT_HIGH_6GFREQ);
+
+	num_freq_obj = afc_rsp_info->num_freq_objs;
+	if (!num_freq_obj) {
+		wpa_printf(MSG_ERROR, "No frequency objects found!");
+		return;
+	}
+
+	afc_freq_info = afc_rsp_info->afc_freq_info;
+	if (!afc_freq_info) {
+		wpa_printf(MSG_ERROR, "freq info is NULL!");
+		return;
+	}
+
+	punc_type = get_puncture_type_and_masks(bw, punc_bitmap,
+						&pu_mask_l_edge,
+						&pu_mask_l, &pu_mask_r,
+						&pu_mask_r_edge);
+
+	for (i = adj_freq_start; i <= adj_freq_end; i++) {
+		offset = i - cfreq;
+		modoffset = abs(offset);
+
+		psd_limit = get_psd_limit(i, num_freq_obj, afc_freq_info);
+		if (psd_limit == INVALID_PSD) {
+			/* If PSD limit is invalid for usable freq and not
+			 * punctured, return here. Other adjacent freq can be
+			 * ignored.
+			 */
+			if (i >= freq_start && i < freq_end) {
+				if (!(punc_bitmap &
+				      (1 << ((i - freq_start) / CHWIDTH_20))))
+					return;
+			}
+			continue;
+		}
+
+		if (modoffset <= ((bw * 3) >> 1)) {
+			mask = get_regmask(offset, bw, punc_type,
+					   &pu_mask_l_edge, &pu_mask_l,
+					   &pu_mask_r, &pu_mask_r_edge);
+			*min_psd = MIN((s16)(*min_psd),
+				       (s16)(psd_limit - (mask * 10)));
+		}
+	}
 }
 
 static int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,

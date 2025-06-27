@@ -254,6 +254,7 @@ static inline u8 hostapd_mbo_ie_len(struct hostapd_data *hapd)
 #define DEFAULT_LOW_6GFREQ     5925
 #define DEFAULT_HIGH_6GFREQ    7125
 #define MAX_PUNC_MASK_LIMITS      3
+#define CHWIDTH_20               20  /* Channel width 20 */
 
 /* in the bitmap 0 indicates no puncturing and 1 indicated that sub channel is
  * punctured
@@ -311,175 +312,25 @@ static const s16 pdbm3[3] = {0, -200, -230};
 #define CHAN_MAX_PSD_POWER   127
 
 /**
- * get_psd_limit - Get the minimum PSD limit for a given frequency
- * @freq: Frequency for which the PSD limit is to be determined
- * @num_freq_obj: Number of frequency objects in the AFC response
- * @afc_freq_info: Pointer to the array of AFC frequency objects
- *
- * This function calculates the minimum PSD (Power Spectral Density) limit for
- * a given frequency by iterating through the AFC frequency objects. It returns
- * the minimum PSD limit found within the range of the frequency objects.
- *
- * Return: Minimum PSD limit for the given frequency, or INVALID_PSD if the
- * frequency is not found within the AFC frequency objects.
- */
-s16 get_psd_limit(u16 freq, u8 num_freq_obj,
-		  struct afc_freq_obj *afc_freq_info);
-
-/**
- * get_y_val - Calculate the interpolated y-value for a given x-value
- * @x1: First x-coordinate
- * @x2: Second x-coordinate
- * @y1: y-coordinate corresponding to x1
- * @y2: y-coordinate corresponding to x2
- * @x: x-coordinate for which the interpolated y-value is to be calculated
- *
- * This function calculates the interpolated y-value for a given x-value using
- * linear interpolation between two points (x1, y1) and (x2, y2). The function
- * returns the interpolated y-value based on the input x-coordinate.
- *
- * Return: The interpolated y-value for the given x-coordinate.
- */
-s16 get_y_val(s16 x1, s16 x2, s16 y1, s16 y2, s16 x);
-
-/**
- * get_regmask_non_puncture - Calculate the regulatory mask for non-punctured
- * channels.
- * @offset: Offset value for the frequency
+ * get_min_psd_values - Calculate the minimum PSD values for a given frequency
+ * and bandwidth
+ * @afc_rsp_info: Pointer to the AFC response information structure containing
+ * frequency-specific PSD limits
+ * @freq: Frequency for which the minimum PSD values are to be calculated
+ * @cfreq: Center frequency of the channel
+ * @punc_bitmap: Bitmap indicating the punctured sub-channels
  * @bw: Bandwidth of the channel
+ * @min_psd: Pointer to the variable where the minimum PSD value will be stored
  *
- * This function calculates the regulatory mask for non-punctured channels based
- * on the given offset and bandwidth. The mask value is determined by the offset
- * relative to the bandwidth and predefined thresholds.
- *
- * Return: The calculated regulatory mask value.
- */
-s16 get_regmask_non_puncture(s16 offset, u16 bw);
-
-/**
- * handle_edge_puncture - Populate puncture mask values for edge puncture type
- * @pu_mask_l_edge: Pointer to the left edge puncture mask structure
- * @pu_mask_r_edge: Pointer to the right edge puncture mask structure
- * @pu_l_edge: Offset value for the left edge of the puncture
- * region (in 0.01 MHz units)
- * @pu_r_edge: Offset value for the right edge of the puncture
- * region (in 0.01 MHz units)
- * @pdbm1: Pointer to an array of dB reduction values used to populate the mask
- *
- * This function sets the offset and dB reduction (dbr) values in the left and
- * right edge puncture mask structures for the PUNCTURE_TYPE_EDGE case. It uses
- * the provided edge offsets and a predefined dB mask array (typically pdbm1) to
- * define the regulatory mask shape on both sides of the punctured region.
- *
- * The mask is symmetric and ensures a smooth transition from the edge of the
- * punctured region to the adjacent usable spectrum.
+ * This function calculates the minimum PSD (Power Spectral Density) values for
+ * a given frequency and bandwidth. It determines the puncture type and
+ * calculates the regulatory mask values based on the puncture mask limits. The
+ * minimum PSD value is then calculated by iterating through the adjacent
+ * frequencies and applying the regulatory mask values.
  */
 void
-handle_edge_puncture(struct punct_mask *pu_mask_l_edge,
-		     struct punct_mask *pu_mask_r_edge, s16 pu_l_edge,
-		     s16 pu_r_edge, const s16 *pdbm1);
-
-/**
- * handle_interim_20_plus - Populate puncture mask values for INTERIM_20_PLUS
- * type.
- * @pu_mask_l_edge: Pointer to the left edge puncture mask structure
- * @pu_mask_r_edge: Pointer to the right edge puncture mask structure
- * @pu_mask_l: Pointer to the left interim puncture mask structure
- * @pu_mask_r: Pointer to the right interim puncture mask structure
- * @pu_l_edge: Offset value for the left edge of the puncture
- * region (in 0.01 MHz units)
- * @pu_r_edge: Offset value for the right edge of the puncture
- * region (in 0.01 MHz units)
- * @l_edge: Logical left edge of the channel (in 0.01 MHz units)
- * @r_edge: Logical right edge of the channel (in 0.01 MHz units)
- * @pu_edge1: Start offset of the interim puncture region (in 0.01 MHz units)
- * @pu_edge2: End offset of the interim puncture region (in 0.01 MHz units)
- * @pdbm1: Pointer to dB reduction values for edge shaping
- * @pdbm2: Pointer to dB reduction values for interim shaping
- *
- * This function sets the offset and dB reduction (dbr) values in the puncture
- * mask structures for the PUNCTURE_TYPE_INTERIM_20_PLUS case. It handles both
- * edge and interim puncture shaping, ensuring smooth transitions in the
- * regulatory mask across the punctured and adjacent usable spectrum.
- *
- * The function uses predefined dB masks (pdbm1 and pdbm2) to shape the
- * attenuation profile for both edge and interim regions.
- */
-void
-handle_interim_20_plus(struct punct_mask *pu_mask_l_edge,
-		       struct punct_mask *pu_mask_r_edge,
-		       struct punct_mask *pu_mask_l,
-		       struct punct_mask *pu_mask_r,
-		       s16 pu_l_edge, s16 pu_r_edge, s16 l_edge, s16 r_edge,
-		       s16 pu_edge1, s16 pu_edge2, const s16 *pdbm1,
-		       const s16 *pdbm2);
-
-/**
- * handle_interim_20 - Populate puncture mask values for INTERIM_20 type
- * @pu_mask_l: Pointer to the left interim puncture mask structure
- * @pu_mask_r: Pointer to the right interim puncture mask structure
- * @pu_edge1: Start offset of the interim puncture region (in 0.01 MHz units)
- * @pu_edge2: End offset of the interim puncture region (in 0.01 MHz units)
- * @pdbm3: Pointer to dB reduction values used to shape the interim mask
- *
- * This function sets the offset and dB reduction (dbr) values in the left and
- * right interim puncture mask structures for the PUNCTURE_TYPE_INTERIM_20 case.
- * It defines a symmetric attenuation profile across the punctured region using
- * the provided dB mask array (typically pdbm3).
- *
- * The mask ensures a smooth regulatory transition across the 20 MHz interim
- * puncture region, helping to meet spectral emission constraints.
- */
-void
-handle_interim_20(struct punct_mask *pu_mask_l, struct punct_mask *pu_mask_r,
-		  s16 pu_edge1, s16 pu_edge2, const s16 *pdbm3);
-
-/**
- * get_regmask - Calculate the regulatory mask for a given offset and bandwidth
- * @offset: Offset value for the frequency
- * @bw: Bandwidth of the channel
- * @punc_type: Type of puncture (enum puncture_type)
- * @pu_mask_l_edge: Pointer to the left edge puncture mask structure
- * @pu_mask_l: Pointer to the left interim puncture mask structure
- * @pu_mask_r: Pointer to the right interim puncture mask structure
- * @pu_mask_r_edge: Pointer to the right edge puncture mask structure
- *
- * This function calculates the regulatory mask for a given offset and bandwidth
- * based on the puncture type and the puncture mask limits defined in the pmask
- * structures. It determines the appropriate mask value by comparing the
- * non-puncture mask and puncture mask values.
- *
- * Return: The calculated regulatory mask value.
- */
-s16 get_regmask(s16 offset, u16 bw, enum puncture_type punc_type,
-		struct punct_mask *pu_mask_l_edge, struct punct_mask *pu_mask_l,
-		struct punct_mask *pu_mask_r,
-		struct punct_mask *pu_mask_r_edge);
-
-/**
- * get_puncture_type_and_masks - Determine the puncture mask limits for a given
- * bandwidth and puncture bitmap
- * @bw: Bandwidth for which the puncture mask limits are to be determined
- * @puncture_bitmap: Bitmap indicating the punctured sub-channels
- * @pu_mask_l_edge: Pointer to the left edge puncture mask structure
- * @pu_mask_l: Pointer to the left interim puncture mask structure
- * @pu_mask_r: Pointer to the right interim puncture mask structure
- * @pu_mask_r_edge: Pointer to the right edge puncture mask structure
- *
- * This function calculates the puncture mask limits for a given bandwidth and
- * puncture bitmap. It determines the type of puncture (edge, interim 20 MHz,
- * interim 20 MHz plus, or invalid) and sets the appropriate offset and dbr
- * values in the provided pmask structures.
- *
- * Return: The type of puncture determined (enum puncture_type).
- */
-enum puncture_type
-get_puncture_type_and_masks(u16 bw, u16 puncture_bitmap,
-			    struct punct_mask *pu_mask_l_edge,
-			    struct punct_mask *pu_mask_l,
-			    struct punct_mask *pu_mask_r,
-			    struct punct_mask *pu_mask_r_edge);
-
+get_min_psd_values(struct afc_sp_reg_info *afc_rsp_info, u16 freq, u16 cfreq,
+		   u16 punc_bitmap, u16 bw, s16 *min_psd);
 
 void ap_copy_sta_supp_op_classes(struct sta_info *sta,
 				 const u8 *supp_op_classes,
