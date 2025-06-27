@@ -8841,6 +8841,168 @@ s16 get_regmask_non_puncture(s16 offset, u16 bw)
 	return mask;
 }
 
+/**
+ * handle_edge_puncture - Populate puncture mask values for edge puncture type
+ * @pu_mask_l_edge: Pointer to the left edge puncture mask structure
+ * @pu_mask_r_edge: Pointer to the right edge puncture mask structure
+ * @pu_l_edge: Offset value for the left edge of the puncture
+ * region (in 0.01 MHz units)
+ * @pu_r_edge: Offset value for the right edge of the puncture
+ * region (in 0.01 MHz units)
+ * @pdbm1: Pointer to an array of dB reduction values used to populate the mask
+ *
+ * This function sets the offset and dB reduction (dbr) values in the left and
+ * right edge puncture mask structures for the PUNCTURE_TYPE_EDGE case. It uses
+ * the provided edge offsets and a predefined dB mask array (typically pdbm1) to
+ * define the regulatory mask shape on both sides of the punctured region.
+ *
+ * The mask is symmetric and ensures a smooth transition from the edge of the
+ * punctured region to the adjacent usable spectrum.
+ */
+void
+handle_edge_puncture(struct punct_mask *pu_mask_l_edge,
+		     struct punct_mask *pu_mask_r_edge, s16 pu_l_edge,
+		     s16 pu_r_edge, const s16 *pdbm1)
+{
+	wpa_printf(MSG_DEBUG, "EDGE puncture");
+	pu_mask_l_edge->offset[0] = pu_l_edge - ((pu_r_edge - pu_l_edge) / 2);
+	pu_mask_l_edge->dbr[0] = pdbm1[2];
+
+	pu_mask_l_edge->offset[1] = pu_l_edge - 5;
+	pu_mask_l_edge->dbr[1] = pdbm1[1];
+
+	pu_mask_l_edge->offset[2] = pu_l_edge;
+	pu_mask_l_edge->dbr[2] = pdbm1[0];
+
+	pu_mask_r_edge->offset[0] = pu_r_edge;
+	pu_mask_r_edge->dbr[0] = pdbm1[0];
+
+	pu_mask_r_edge->offset[1] = pu_r_edge + 5;
+	pu_mask_r_edge->dbr[1] = pdbm1[1];
+
+	pu_mask_r_edge->offset[2] = pu_r_edge + ((pu_r_edge - pu_l_edge) / 2);
+	pu_mask_r_edge->dbr[2] = pdbm1[2];
+}
+
+/**
+ * handle_interim_20_plus - Populate puncture mask values for INTERIM_20_PLUS
+ * type.
+ * @pu_mask_l_edge: Pointer to the left edge puncture mask structure
+ * @pu_mask_r_edge: Pointer to the right edge puncture mask structure
+ * @pu_mask_l: Pointer to the left interim puncture mask structure
+ * @pu_mask_r: Pointer to the right interim puncture mask structure
+ * @pu_l_edge: Offset value for the left edge of the puncture
+ * region (in 0.01 MHz units)
+ * @pu_r_edge: Offset value for the right edge of the puncture
+ * region (in 0.01 MHz units)
+ * @l_edge: Logical left edge of the channel (in 0.01 MHz units)
+ * @r_edge: Logical right edge of the channel (in 0.01 MHz units)
+ * @pu_edge1: Start offset of the interim puncture region (in 0.01 MHz units)
+ * @pu_edge2: End offset of the interim puncture region (in 0.01 MHz units)
+ * @pdbm1: Pointer to dB reduction values for edge shaping
+ * @pdbm2: Pointer to dB reduction values for interim shaping
+ *
+ * This function sets the offset and dB reduction (dbr) values in the puncture
+ * mask structures for the PUNCTURE_TYPE_INTERIM_20_PLUS case. It handles both
+ * edge and interim puncture shaping, ensuring smooth transitions in the
+ * regulatory mask across the punctured and adjacent usable spectrum.
+ *
+ * The function uses predefined dB masks (pdbm1 and pdbm2) to shape the
+ * attenuation profile for both edge and interim regions.
+ */
+void
+handle_interim_20_plus(struct punct_mask *pu_mask_l_edge,
+		       struct punct_mask *pu_mask_r_edge,
+		       struct punct_mask *pu_mask_l,
+		       struct punct_mask *pu_mask_r,
+		       s16 pu_l_edge, s16 pu_r_edge, s16 l_edge, s16 r_edge,
+		       s16 pu_edge1, s16 pu_edge2, const s16 *pdbm1,
+		       const s16 *pdbm2)
+{
+	/* type 2 mask */
+	wpa_printf(MSG_DEBUG, "INTERIM 20 PLUS puncture");
+	/* Edge concurrent puncture */
+	if (l_edge != pu_l_edge || r_edge != pu_r_edge) {
+		pu_mask_l_edge->offset[0] =
+				pu_l_edge - ((pu_edge1 - pu_l_edge) / 2);
+		pu_mask_l_edge->dbr[0] = pdbm1[2];
+
+		pu_mask_l_edge->offset[1] = pu_l_edge - 5;
+		pu_mask_l_edge->dbr[1] = pdbm1[1];
+
+		pu_mask_l_edge->offset[2] = pu_l_edge;
+		pu_mask_l_edge->dbr[2] = pdbm1[0];
+
+		pu_mask_r_edge->offset[0] = pu_r_edge;
+		pu_mask_r_edge->dbr[0] = pdbm1[0];
+
+		pu_mask_r_edge->offset[1] = pu_r_edge + 5;
+		pu_mask_r_edge->dbr[1] = pdbm1[1];
+
+		pu_mask_r_edge->offset[2] =
+				pu_r_edge + ((pu_r_edge - pu_edge2) / 2);
+		pu_mask_r_edge->dbr[2] = pdbm1[2];
+	}
+
+	pu_mask_l->offset[0] = pu_edge1;
+	pu_mask_l->dbr[0] = pdbm2[0];
+
+	pu_mask_l->offset[1] = pu_edge1 + 5;
+	pu_mask_l->dbr[1] = pdbm2[1];
+
+	pu_mask_l->offset[2] = pu_edge1 + ((pu_edge1 - pu_l_edge) >> 1);
+	pu_mask_l->dbr[2] = pdbm2[2];
+
+	pu_mask_r->offset[0] = pu_edge2 - ((pu_r_edge - pu_edge2) >> 1);
+	pu_mask_r->dbr[0] = pdbm2[2];
+
+	pu_mask_r->offset[1] = pu_edge2 - 5;
+	pu_mask_r->dbr[1] = pdbm2[1];
+
+	pu_mask_r->offset[2] = pu_edge2;
+	pu_mask_r->dbr[2] = pdbm2[0];
+}
+
+/**
+ * handle_interim_20 - Populate puncture mask values for INTERIM_20 type
+ * @pu_mask_l: Pointer to the left interim puncture mask structure
+ * @pu_mask_r: Pointer to the right interim puncture mask structure
+ * @pu_edge1: Start offset of the interim puncture region (in 0.01 MHz units)
+ * @pu_edge2: End offset of the interim puncture region (in 0.01 MHz units)
+ * @pdbm3: Pointer to dB reduction values used to shape the interim mask
+ *
+ * This function sets the offset and dB reduction (dbr) values in the left and
+ * right interim puncture mask structures for the PUNCTURE_TYPE_INTERIM_20 case.
+ * It defines a symmetric attenuation profile across the punctured region using
+ * the provided dB mask array (typically pdbm3).
+ *
+ * The mask ensures a smooth regulatory transition across the 20 MHz interim
+ * puncture region, helping to meet spectral emission constraints.
+ */
+void
+handle_interim_20(struct punct_mask *pu_mask_l, struct punct_mask *pu_mask_r,
+		  s16 pu_edge1, s16 pu_edge2, const s16 *pdbm3)
+{
+	wpa_printf(MSG_DEBUG, "INTERIM 20 puncture");
+	pu_mask_l->offset[0] = pu_edge1;
+	pu_mask_l->dbr[0] = pdbm3[0];
+
+	pu_mask_l->offset[1] = pu_edge1 + 5;
+	pu_mask_l->dbr[1] = pdbm3[1];
+
+	pu_mask_l->offset[2] = pu_edge1 + 100;
+	pu_mask_l->dbr[2] = pdbm3[2];
+
+	pu_mask_r->offset[0] = pu_edge2 - 100;
+	pu_mask_r->dbr[0] = pdbm3[2];
+
+	pu_mask_r->offset[1] = pu_edge2 - 5;
+	pu_mask_r->dbr[1] = pdbm3[1];
+
+	pu_mask_r->offset[2] = pu_edge2;
+	pu_mask_r->dbr[2] = pdbm3[0];
+}
+
 static int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 			  int chan_start_idx, int non_11be_chan_count,
 			  int total_chan_count, u8 *tx_pwr_count,
