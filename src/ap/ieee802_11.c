@@ -9003,6 +9003,223 @@ handle_interim_20(struct punct_mask *pu_mask_l, struct punct_mask *pu_mask_r,
 	pu_mask_r->dbr[2] = pdbm3[0];
 }
 
+/**
+ * get_puncture_type_and_masks - Determine the puncture mask limits for a given
+ * bandwidth and puncture bitmap
+ * @bw: Bandwidth for which the puncture mask limits are to be determined
+ * @puncture_bitmap: Bitmap indicating the punctured sub-channels
+ * @pu_mask_l_edge: Pointer to the left edge puncture mask structure
+ * @pu_mask_l: Pointer to the left interim puncture mask structure
+ * @pu_mask_r: Pointer to the right interim puncture mask structure
+ * @pu_mask_r_edge: Pointer to the right edge puncture mask structure
+ *
+ * This function calculates the puncture mask limits for a given bandwidth and
+ * puncture bitmap. It determines the type of puncture (edge, interim 20 MHz,
+ * interim 20 MHz plus, or invalid) and sets the appropriate offset and dbr
+ * values in the provided pmask structures.
+ *
+ * Return: The type of puncture determined (enum puncture_type).
+ */
+enum puncture_type
+get_puncture_type_and_masks(u16 bw, u16 puncture_bitmap,
+			    struct punct_mask *pu_mask_l_edge,
+			    struct punct_mask *pu_mask_l,
+			    struct punct_mask *pu_mask_r,
+			    struct punct_mask *pu_mask_r_edge)
+{
+	u16 punc_mask, pp;
+	s16 i, num_valid_bits = 0;
+	s16 l_edge = (bw >> 1) - bw, r_edge = bw - (bw >> 1);
+	s16 pu_l_edge = INVALID_EDGE, pu_r_edge = INVALID_EDGE;
+	s16 pu_edge1 = INVALID_EDGE, pu_edge2 = INVALID_EDGE,
+	punc_start = INVALID_EDGE;
+	enum puncture_type punc_type;
+
+	switch (bw) {
+	case 80:
+		punc_mask = PUNCTURE_80MHZ_MASK;
+		num_valid_bits = 4;
+		break;
+	case 160:
+		punc_mask = PUNCTURE_160MHZ_MASK;
+		num_valid_bits = 8;
+		break;
+	case 320:
+		punc_mask = PUNCTURE_320MHZ_MASK;
+		num_valid_bits = 16;
+		break;
+	default:
+		punc_mask = 0;
+		wpa_printf(MSG_ERROR, "Bandwidth input invalid");
+		return PUNCTURE_TYPE_INVALID;
+	}
+
+	pp = puncture_bitmap & punc_mask;
+	if (!pp)
+		return PUNCTURE_TYPE_INVALID;
+
+	for (i = 0; i < num_valid_bits; i++) {
+		if (!((1 << i) & pp) && pu_l_edge == INVALID_EDGE)
+			pu_l_edge = l_edge + (i * 20);
+
+		if (!((1 << (num_valid_bits - 1 - i)) & pp) &&
+		    pu_r_edge == INVALID_EDGE)
+			pu_r_edge = r_edge - (i * 20);
+
+		if (punc_start != INVALID_EDGE &&
+		    pu_edge1 == INVALID_EDGE &&
+		    !((1 << i) & pp)) {
+			/* End of interim puncture */
+			pu_edge1 = punc_start;
+			pu_edge2 = l_edge + (i * 20);
+			punc_start = INVALID_EDGE;
+		}
+
+		if (((1 << i) & pp) && punc_start == INVALID_EDGE &&
+		    ((l_edge + (i * 20)) > pu_l_edge)) {
+			/* Start of interim puncture */
+			punc_start = l_edge + (i * 20);
+		}
+	}
+
+	/* Find the puncture type */
+	if (pu_edge1 == INVALID_EDGE && (l_edge != pu_l_edge ||
+	    r_edge != pu_r_edge))
+		punc_type = PUNCTURE_TYPE_EDGE;
+	else if ((pu_edge2 - pu_edge1) >= 40)
+		punc_type = PUNCTURE_TYPE_INTERIM_20_PLUS;
+	else if ((pu_edge2 - pu_edge1) == 20)
+		punc_type = PUNCTURE_TYPE_INTERIM_20;
+	else
+		punc_type = PUNCTURE_TYPE_INVALID;
+
+	pu_l_edge *= 10;
+	pu_r_edge *= 10;
+	pu_edge1 *= 10;
+	pu_edge2 *= 10;
+	l_edge  *= 10;
+	r_edge  *= 10;
+
+	switch (punc_type) {
+	case PUNCTURE_TYPE_EDGE:
+		handle_edge_puncture(pu_mask_l_edge, pu_mask_r_edge, pu_l_edge,
+				     pu_r_edge, pdbm1);
+		break;
+	case PUNCTURE_TYPE_INTERIM_20_PLUS:
+		handle_interim_20_plus(pu_mask_l_edge, pu_mask_r_edge,
+				       pu_mask_l, pu_mask_r, pu_l_edge,
+				       pu_r_edge, l_edge, r_edge, pu_edge1,
+				       pu_edge2, pdbm1, pdbm2);
+		break;
+	case PUNCTURE_TYPE_INTERIM_20:
+		handle_interim_20(pu_mask_l, pu_mask_r, pu_edge1, pu_edge2,
+				  pdbm3);
+		break;
+	default:
+		wpa_printf(MSG_ERROR,
+			   "Investigate - Invalid puncture type!!!");
+		break;
+	}
+
+	return punc_type;
+}
+
+/**
+ * get_regmask_puncture - Calculate the regulatory mask for punctured channels
+ * @offset: Offset value for the frequency
+ * @bw: Bandwidth of the channel
+ * @pmask: Pointer to the pmask structure containing puncture mask limits
+ *
+ * This function calculates the regulatory mask for punctured channels based
+ * on the given offset, bandwidth, and puncture mask limits. The mask value is
+ * determined by the offset relative to the puncture mask limits defined in the
+ * pmask structure.
+ *
+ * Return: The calculated regulatory mask value, or INVALID_DBR if the offset
+ * does not fall within the defined puncture mask limits.
+ */
+
+static s16 get_regmask_puncture(s16 offset, u16 bw, struct punct_mask *pmask)
+{
+	s16 mask;
+
+	offset *= 10;
+
+	if (offset <= pmask->offset[0]) {
+		mask = pmask->dbr[0];
+	} else if ((offset > pmask->offset[0]) && (offset < pmask->offset[1])) {
+		mask = get_y_val(pmask->offset[0], pmask->offset[1],
+				 pmask->dbr[0], pmask->dbr[1], offset);
+	} else if (offset == pmask->offset[1]) {
+		mask = pmask->dbr[1];
+	} else if ((offset > pmask->offset[1]) && (offset < pmask->offset[2])) {
+		mask = get_y_val(pmask->offset[1], pmask->offset[2],
+				 pmask->dbr[1], pmask->dbr[2], offset);
+	} else if (offset >= pmask->offset[2]) {
+		mask = pmask->dbr[2];
+	} else {
+		mask = INVALID_DBR;
+	}
+
+	return mask;
+}
+
+/**
+ * get_regmask - Calculate the regulatory mask for a given offset and bandwidth
+ * @offset: Offset value for the frequency
+ * @bw: Bandwidth of the channel
+ * @punc_type: Type of puncture (enum puncture_type)
+ * @pu_mask_l_edge: Pointer to the left edge puncture mask structure
+ * @pu_mask_l: Pointer to the left interim puncture mask structure
+ * @pu_mask_r: Pointer to the right interim puncture mask structure
+ * @pu_mask_r_edge: Pointer to the right edge puncture mask structure
+ *
+ * This function calculates the regulatory mask for a given offset and bandwidth
+ * based on the puncture type and the puncture mask limits defined in the pmask
+ * structures. It determines the appropriate mask value by comparing the
+ * non-puncture mask and puncture mask values.
+ *
+ * Return: The calculated regulatory mask value.
+ */
+s16 get_regmask(s16 offset, u16 bw, enum puncture_type punc_type,
+		struct punct_mask *pu_mask_l_edge, struct punct_mask *pu_mask_l,
+		struct punct_mask *pu_mask_r,
+		struct punct_mask *pu_mask_r_edge)
+{
+	s16 mask, mask_def, mask_le, mask_re, mask_l, mask_r, mask_punc;
+
+	mask_def = get_regmask_non_puncture(offset, bw);
+	if (punc_type == PUNCTURE_TYPE_INVALID)
+		return mask_def;
+
+	mask_le = get_regmask_puncture(offset, bw, pu_mask_l_edge);
+	mask_re = get_regmask_puncture(offset, bw, pu_mask_r_edge);
+	mask_l  = get_regmask_puncture(offset, bw, pu_mask_l);
+	mask_r  = get_regmask_puncture(offset, bw, pu_mask_r);
+
+	switch (punc_type) {
+	case PUNCTURE_TYPE_EDGE:
+		mask_punc = MIN(mask_le, mask_re);
+		break;
+	case PUNCTURE_TYPE_INTERIM_20_PLUS:
+		if ((pu_mask_l->offset[0] <= (offset * 10)) &&
+		    ((offset * 10) <= pu_mask_r->offset[2]))
+			mask_punc = MAX(mask_l, mask_r);
+		else
+			mask_punc = MIN(mask_le, mask_re);
+		break;
+	case PUNCTURE_TYPE_INTERIM_20:
+		mask_punc = MAX(mask_l, mask_r);
+		break;
+	default:
+		return mask_def;
+	}
+
+	mask = MIN(mask_punc, mask_def);
+
+	return mask;
+}
+
 static int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 			  int chan_start_idx, int non_11be_chan_count,
 			  int total_chan_count, u8 *tx_pwr_count,

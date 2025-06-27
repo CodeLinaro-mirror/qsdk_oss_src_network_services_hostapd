@@ -434,6 +434,52 @@ void
 handle_interim_20(struct punct_mask *pu_mask_l, struct punct_mask *pu_mask_r,
 		  s16 pu_edge1, s16 pu_edge2, const s16 *pdbm3);
 
+/**
+ * get_regmask - Calculate the regulatory mask for a given offset and bandwidth
+ * @offset: Offset value for the frequency
+ * @bw: Bandwidth of the channel
+ * @punc_type: Type of puncture (enum puncture_type)
+ * @pu_mask_l_edge: Pointer to the left edge puncture mask structure
+ * @pu_mask_l: Pointer to the left interim puncture mask structure
+ * @pu_mask_r: Pointer to the right interim puncture mask structure
+ * @pu_mask_r_edge: Pointer to the right edge puncture mask structure
+ *
+ * This function calculates the regulatory mask for a given offset and bandwidth
+ * based on the puncture type and the puncture mask limits defined in the pmask
+ * structures. It determines the appropriate mask value by comparing the
+ * non-puncture mask and puncture mask values.
+ *
+ * Return: The calculated regulatory mask value.
+ */
+s16 get_regmask(s16 offset, u16 bw, enum puncture_type punc_type,
+		struct punct_mask *pu_mask_l_edge, struct punct_mask *pu_mask_l,
+		struct punct_mask *pu_mask_r,
+		struct punct_mask *pu_mask_r_edge);
+
+/**
+ * get_puncture_type_and_masks - Determine the puncture mask limits for a given
+ * bandwidth and puncture bitmap
+ * @bw: Bandwidth for which the puncture mask limits are to be determined
+ * @puncture_bitmap: Bitmap indicating the punctured sub-channels
+ * @pu_mask_l_edge: Pointer to the left edge puncture mask structure
+ * @pu_mask_l: Pointer to the left interim puncture mask structure
+ * @pu_mask_r: Pointer to the right interim puncture mask structure
+ * @pu_mask_r_edge: Pointer to the right edge puncture mask structure
+ *
+ * This function calculates the puncture mask limits for a given bandwidth and
+ * puncture bitmap. It determines the type of puncture (edge, interim 20 MHz,
+ * interim 20 MHz plus, or invalid) and sets the appropriate offset and dbr
+ * values in the provided pmask structures.
+ *
+ * Return: The type of puncture determined (enum puncture_type).
+ */
+enum puncture_type
+get_puncture_type_and_masks(u16 bw, u16 puncture_bitmap,
+			    struct punct_mask *pu_mask_l_edge,
+			    struct punct_mask *pu_mask_l,
+			    struct punct_mask *pu_mask_r,
+			    struct punct_mask *pu_mask_r_edge);
+
 
 void ap_copy_sta_supp_op_classes(struct sta_info *sta,
 				 const u8 *supp_op_classes,
