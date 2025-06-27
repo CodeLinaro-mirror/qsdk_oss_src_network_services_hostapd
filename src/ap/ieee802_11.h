@@ -246,6 +246,117 @@ static inline u8 hostapd_mbo_ie_len(struct hostapd_data *hapd)
 
 #endif /* CONFIG_MBO */
 
+#define INVALID_EDGE 0xFFF
+#define INVALID_DBR    100
+#define INVALID_PSD (-1270) /* -127 multiplied by 10 */
+
+/* Have the entire 6Ghz band as single range */
+#define DEFAULT_LOW_6GFREQ     5925
+#define DEFAULT_HIGH_6GFREQ    7125
+#define MAX_PUNC_MASK_LIMITS      3
+
+/* in the bitmap 0 indicates no puncturing and 1 indicated that sub channel is
+ * punctured
+ */
+#define PUNCTURE_INVALID     0xFFFF
+#define PUNCTURE_NONE        0x0000
+#define PUNCTURE_80MHZ_MASK  0x000F
+#define PUNCTURE_160MHZ_MASK 0x00FF
+#define PUNCTURE_320MHZ_MASK 0xFFFF
+#define PUNCTURE_40MHZ_MASK  0x0003
+
+/**
+ * struct punct_mask - Structure to hold puncture mask limits
+ * @offset: Array of offsets for puncture mask limits
+ * @dbr: Array of dbr values corresponding to the offsets
+ *
+ * This structure is used to define the puncture mask limits for different
+ * bandwidths. The `offset` array holds the offset values, and the `dbr` array
+ * holds the corresponding dbr values. The size of both arrays is defined by
+ * `MAX_PUNC_MASK_LIMITS`.
+ */
+struct punct_mask {
+	s16 offset[MAX_PUNC_MASK_LIMITS];
+	s16 dbr[MAX_PUNC_MASK_LIMITS];
+};
+
+/**
+ * enum puncture_type - Enumeration of puncture types
+ * @PUNCTURE_TYPE_EDGE: Represents edge puncture type
+ * @PUNCTURE_TYPE_INTERIM_20_PLUS: Represents interim puncture type with 20 MHz
+ * plus
+ * @PUNCTURE_TYPE_INTERIM_20: Represents interim puncture type with 20 MHz
+ * @PUNCTURE_TYPE_INVALID: Represents an invalid puncture type
+ *
+ * This enumeration defines the different types of punctures that can occur
+ * within a given bandwidth. Each type specifies a unique puncture pattern
+ * and is used to determine the appropriate mask limits for the puncture.
+ */
+enum puncture_type {
+	PUNCTURE_TYPE_EDGE = 0,
+	PUNCTURE_TYPE_INTERIM_20_PLUS,
+	PUNCTURE_TYPE_INTERIM_20,
+	PUNCTURE_TYPE_INVALID,
+};
+
+/**
+ * pdbm1, pdbm2 and pdbm3 - Array of dbr values for puncture mask type
+ * PUNCTURE_TYPE_EDGE, PUNCTURE_TYPE_INTERIM_20_PLUS and
+ * PUNCTURE_TYPE_INTERIM_20 respectively.
+ */
+static const s16 pdbm1[3] = {0, -200, -280};
+static const s16 pdbm2[3] = {0, -200, -250};
+static const s16 pdbm3[3] = {0, -200, -230};
+
+#define CHAN_MAX_PSD_POWER   127
+
+/**
+ * get_psd_limit - Get the minimum PSD limit for a given frequency
+ * @freq: Frequency for which the PSD limit is to be determined
+ * @num_freq_obj: Number of frequency objects in the AFC response
+ * @afc_freq_info: Pointer to the array of AFC frequency objects
+ *
+ * This function calculates the minimum PSD (Power Spectral Density) limit for
+ * a given frequency by iterating through the AFC frequency objects. It returns
+ * the minimum PSD limit found within the range of the frequency objects.
+ *
+ * Return: Minimum PSD limit for the given frequency, or INVALID_PSD if the
+ * frequency is not found within the AFC frequency objects.
+ */
+s16 get_psd_limit(u16 freq, u8 num_freq_obj,
+		  struct afc_freq_obj *afc_freq_info);
+
+/**
+ * get_y_val - Calculate the interpolated y-value for a given x-value
+ * @x1: First x-coordinate
+ * @x2: Second x-coordinate
+ * @y1: y-coordinate corresponding to x1
+ * @y2: y-coordinate corresponding to x2
+ * @x: x-coordinate for which the interpolated y-value is to be calculated
+ *
+ * This function calculates the interpolated y-value for a given x-value using
+ * linear interpolation between two points (x1, y1) and (x2, y2). The function
+ * returns the interpolated y-value based on the input x-coordinate.
+ *
+ * Return: The interpolated y-value for the given x-coordinate.
+ */
+s16 get_y_val(s16 x1, s16 x2, s16 y1, s16 y2, s16 x);
+
+/**
+ * get_regmask_non_puncture - Calculate the regulatory mask for non-punctured
+ * channels.
+ * @offset: Offset value for the frequency
+ * @bw: Bandwidth of the channel
+ *
+ * This function calculates the regulatory mask for non-punctured channels based
+ * on the given offset and bandwidth. The mask value is determined by the offset
+ * relative to the bandwidth and predefined thresholds.
+ *
+ * Return: The calculated regulatory mask value.
+ */
+s16 get_regmask_non_puncture(s16 offset, u16 bw);
+
+
 void ap_copy_sta_supp_op_classes(struct sta_info *sta,
 				 const u8 *supp_op_classes,
 				 size_t supp_op_classes_len);

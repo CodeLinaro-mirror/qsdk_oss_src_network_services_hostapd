@@ -8737,6 +8737,110 @@ static s8 get_psd_for_chan_idx(struct hostapd_data *hapd,
 	return chan_psd;
 }
 
+/**
+ * get_psd_limit - Get the minimum PSD limit for a given frequency
+ * @freq: Frequency for which the PSD limit is to be determined
+ * @num_freq_obj: Number of frequency objects in the AFC response
+ * @afc_freq_info: Pointer to the array of AFC frequency objects
+ *
+ * This function calculates the minimum PSD (Power Spectral Density) limit for
+ * a given frequency by iterating through the AFC frequency objects. It returns
+ * the minimum PSD limit found within the range of the frequency objects.
+ *
+ * Return: Minimum PSD limit for the given frequency, or INVALID_PSD if the
+ * frequency is not found within the AFC frequency objects.
+ */
+s16 get_psd_limit(u16 freq, u8 num_freq_obj, struct afc_freq_obj *afc_freq_info)
+{
+	u8 i;
+	s16 min_psd = CHAN_MAX_PSD_POWER * EIRP_PWR_SCALE;
+	bool chan_freq_found = false;
+
+	for (i = 0; i < num_freq_obj; i++) {
+		if (freq >= afc_freq_info[i].low_freq &&
+		    freq <= afc_freq_info[i].high_freq) {
+			chan_freq_found = true;
+			if (afc_freq_info[i].max_psd < min_psd)
+				min_psd = afc_freq_info[i].max_psd;
+
+			/* Even though the frequency object is found, there may
+			 * be more matching frequency-object following it.
+			 * Continue search until the input frequency is out of
+			 * range.
+			 */
+			continue;
+		}
+
+		/* Assuming AFC payload is sorted in increasing order of
+		 * frequencies, stop and return here
+		 */
+		if (chan_freq_found)
+			return min_psd;
+	}
+
+	/* Handle for last frequency object */
+	if (chan_freq_found)
+		return min_psd;
+
+	return INVALID_PSD;
+}
+
+/**
+ * get_y_val - Calculate the interpolated y-value for a given x-value
+ * @x1: First x-coordinate
+ * @x2: Second x-coordinate
+ * @y1: y-coordinate corresponding to x1
+ * @y2: y-coordinate corresponding to x2
+ * @x: x-coordinate for which the interpolated y-value is to be calculated
+ *
+ * This function calculates the interpolated y-value for a given x-value using
+ * linear interpolation between two points (x1, y1) and (x2, y2). The function
+ * returns the interpolated y-value based on the input x-coordinate.
+ *
+ * Return: The interpolated y-value for the given x-coordinate.
+ */
+s16 get_y_val(s16 x1, s16 x2, s16 y1, s16 y2, s16 x)
+{
+	s16 den = x2 - x1;
+
+	if (!den)
+		return INVALID_DBR;
+
+	return y1 + ((x - x1) * (y2 - y1)) / (x2 - x1);
+}
+
+/**
+ * get_regmask_non_puncture - Calculate the regulatory mask for non-punctured
+ * channels.
+ * @offset: Offset value for the frequency
+ * @bw: Bandwidth of the channel
+ *
+ * This function calculates the regulatory mask for non-punctured channels based
+ * on the given offset and bandwidth. The mask value is determined by the offset
+ * relative to the bandwidth and predefined thresholds.
+ *
+ * Return: The calculated regulatory mask value.
+ */
+s16 get_regmask_non_puncture(s16 offset, u16 bw)
+{
+	u16 hbw = bw >> 1;
+	s16 mask;
+
+	if (offset < 0)
+		offset = 0 - offset;
+
+	if (offset >= ((bw * 3) / 2))
+		mask = -400;
+	else if (offset >= bw)
+		mask = -280 - ((120 * (offset - bw)) / hbw);
+	else if (offset >= (hbw + 1))
+		mask = -200 - ((80 * (offset - (hbw + 1))) / (hbw - 1));
+	else
+		mask = 0;
+
+	return mask;
+}
+
 static int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 			  int chan_start_idx, int non_11be_chan_count,
 			  int total_chan_count, u8 *tx_pwr_count,
