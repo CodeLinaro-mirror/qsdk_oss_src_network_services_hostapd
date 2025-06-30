@@ -5183,6 +5183,123 @@ static int hostapd_ctrl_iface_conf_ml_rec_links(struct hostapd_data *hapd,
 	return 0;
 }
 
+int hostapd_ctrl_iface_advertise_ttlm(struct hostapd_data *hapd,
+					      const char *cmd)
+{
+	struct mlo_ttlm_ie *ttlm_conf = os_zalloc(sizeof(*ttlm_conf));
+	struct ttlm_info *ttlm;
+	struct hostapd_data *link_bss;
+	u16 removal_links = 0;
+	u16 ieee_link_map;
+	const char *pos;
+	int ret;
+	u8 i;
+
+	if (!ttlm_conf)
+		return -1;
+	ttlm = &ttlm_conf->ttlm;
+
+	if (!hapd->conf->ttlm_enable) {
+		wpa_printf(MSG_ERROR, "TTLM support is not enabled");
+		ret = -1;
+		goto out;
+	}
+
+	if (!hostapd_is_multiple_link_mld(hapd)) {
+		wpa_printf(MSG_ERROR, "TTLM: Command is applicable only for an MLD");
+		ret = -1;
+		goto out;
+	}
+
+	if (hapd->mld->num_links == 1) {
+		wpa_printf(MSG_INFO, "T2TM: Skip TTLM advertisement on single link MLO");
+		ret = 0;
+		goto out;
+	}
+
+	pos = os_strstr(cmd, "ieee_link_map=");
+	if (!pos) {
+		ret = -1;
+		goto out;
+	}
+	pos += 14;
+	ieee_link_map = strtol(pos, NULL, 16);
+	if (!ieee_link_map) {
+		wpa_printf(MSG_ERROR, "TTLM: ieee_link_map cannot be 0");
+		ret = -1;
+		goto out;
+	}
+
+	for_each_mld_link(link_bss, hapd) {
+		if (link_bss->eht_mld_link_removal_count)
+			removal_links |= BIT(link_bss->mld_link_id);
+	}
+	if (removal_links & ieee_link_map) {
+		wpa_printf(MSG_ERROR,
+			   "TTLM: Cannot map to link under removal process, removal_links:%x provisioned_links:%x",
+			   removal_links, ieee_link_map);
+		ret = -1;
+		goto out;
+	}
+
+	pos = os_strstr(cmd, " map_switch_time=");
+	if (!pos) {
+		ret = -1;
+		goto out;
+	}
+	pos += 17;
+	ttlm->mapping_switch_time = atoi(pos);
+	if (ttlm->mapping_switch_time)
+		ttlm->mapping_switch_time_present = true;
+	if (ttlm->mapping_switch_time > 0xFFFF) {
+		wpa_printf(MSG_ERROR,
+			   "TTLM: Mapping switch time cannot be greater than 0xFFFF");
+		ret = -1;
+		goto out;
+	}
+
+	pos = os_strstr(cmd, " expected_dur=");
+	if (!pos) {
+		wpa_printf(MSG_ERROR, "TTLM: Expected duration cannot be NULL");
+		ret = -1;
+		goto out;
+	}
+	pos += 14;
+	ttlm->expected_duration = atoi(pos);
+	if (!ttlm->expected_duration) {
+		wpa_printf(MSG_ERROR, "TTLM: Expected duration cannot be 0");
+		ret = -1;
+		goto out;
+	}
+	ttlm->expected_duration_present = true;
+	if (ttlm->expected_duration > 0xFFFFFF) {
+		wpa_printf(MSG_ERROR,
+			   "TTLM: Expected duration cannot be greater than 0xFFFFFF");
+		ret = -1;
+		goto out;
+	}
+
+	pos = os_strstr(cmd, " link_mapping_size=");
+	if (!pos) {
+		ret = -1;
+		goto out;
+	}
+	pos += 19;
+	ttlm->link_mapping_size = atoi(pos);
+	ttlm->direction = TTLM_DIRECTION_BIDI;
+	for (i = 0; i < NUM_MAX_TIDS; i++)
+		ttlm->ieee_link_map_tid[i] = ieee_link_map;
+
+	wpa_printf(MSG_INFO,
+		   "TTLM: ieee_link_map=%d map_switch_time=%d expected_dur=%d link_mapping_size=%d",
+		   ieee_link_map, ttlm->mapping_switch_time,
+		   ttlm->expected_duration, ttlm->link_mapping_size);
+	ret = hostapd_send_advertised_ttlm(hapd, ttlm_conf);
+out:
+	os_free(ttlm_conf);
+	return ret;
+}
+
 #ifdef CONFIG_TESTING_OPTIONS
 static int hostapd_ctrl_iface_link_enable(struct hostapd_data *hapd, char *cmd)
 {
@@ -6303,6 +6420,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 			reply_len = -1;
 	} else if (os_strncmp(buf, "ML_MAX_REC_LINKS ", 17) == 0) {
 		if (hostapd_ctrl_iface_conf_ml_rec_links(hapd, buf + 17))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "ADVERTISED_TTLM ", 16) == 0) {
+		if (hostapd_ctrl_iface_advertise_ttlm(hapd, buf + 16))
 			reply_len = -1;
 	} else if (os_strncmp(buf, "CHAIN_MASK ", 11) == 0) {
 		if (hostapd_ctrl_set_tx_rx_chain_mask(hapd, buf + 11))
