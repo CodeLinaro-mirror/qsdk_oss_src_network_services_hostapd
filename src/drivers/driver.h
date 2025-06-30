@@ -7143,6 +7143,12 @@ enum wpa_event_type {
 	 * EVENT_TTLM_UPDATE - Notification about TTLM info update event
 	 */
 	EVENT_TTLM_UPDATE,
+
+	/**
+	 * EVENT_TTLM_EXPEC_DUR_UPDATE - Update the expected duration with the
+	 * received value
+	 */
+	EVENT_TTLM_EXPEC_DUR_UPDATE,
 };
 
 
@@ -8198,6 +8204,14 @@ union wpa_event_data {
 		enum ttlm_status status;
 		u16 mapping_switch_tsf;
 	} ttlm_update_event;
+
+	/**
+	 * Data for TTLM expected duration update
+	 */
+	struct ttlm_expec_dur_event {
+		u8 link_id;
+		u32 expec_dur;
+	} ttlm_expec_dur_event;
 
 	/**
 	 * struct reconfig_info - Data for EVENT_SETUP_LINK_RECONFIG
