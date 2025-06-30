@@ -3060,6 +3060,18 @@ static void hostapd_event_update_ttlm_status(struct hostapd_data *hapd,
 }
 #endif /* CONFIG_IEEE80211BE */
 
+static void hostapd_event_update_expec_dur(struct hostapd_data *hapd,
+					  struct ttlm_expec_dur_event *ttlm_expec_dur_event)
+{
+	struct ttlm_context *ttlm_ctx = &hapd->mld->ttlm_ctx;
+
+	if (ttlm_ctx->established_ttlm.ttlm.expected_duration_present)
+		ttlm_ctx->established_ttlm.ttlm.expected_duration =
+			ttlm_expec_dur_event->expec_dur;
+	else if (ttlm_ctx->upcoming_ttlm.ttlm.expected_duration_present)
+		ttlm_ctx->upcoming_ttlm.ttlm.expected_duration =
+			ttlm_expec_dur_event->expec_dur;
+}
 
 void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		       union wpa_event_data *data)
@@ -3469,6 +3481,11 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		link_hapd = switch_link_hapd(hapd, data->link_removal_event.link_id);
 		if (link_hapd->eht_mld_link_removal_inprogress)
 			link_hapd->eht_mld_link_removal_count = data->link_removal_event.link_removal_count;
+		break;
+	case EVENT_TTLM_EXPEC_DUR_UPDATE:
+		link_hapd = switch_link_hapd(hapd, data->ttlm_expec_dur_event.link_id);
+		if (link_hapd)
+			hostapd_event_update_expec_dur(hapd, &data->ttlm_expec_dur_event);
 		break;
 #endif
 	default:

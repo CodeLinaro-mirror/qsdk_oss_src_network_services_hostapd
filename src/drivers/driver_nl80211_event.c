@@ -1581,10 +1581,92 @@ mlme_event_mgmt_link_removal_update(struct i802_bss *bss,
 }
 
 
+static void mlme_send_expec_dur_update_event(struct i802_bss *bss,
+					     struct nlattr *mld_list)
+{
+	struct nlattr *link[NL80211_CU_MLD_LINK_ATTR_MAX + 1];
+	struct nlattr *mld[NL80211_CU_MLD_ATTR_MAX + 1];
+	union wpa_event_data event;
+	struct nlattr *link_list;
+	int link_list_rem;
+
+	/* MLD attribute policy */
+	static struct nla_policy
+		mld_attr_policy[NL80211_CU_MLD_ATTR_MAX + 1] = {
+			[NL80211_CU_MLD_ATTR_IFINDEX] = { .type = NLA_U32 },
+			[NL80211_CU_MLD_ATTR_LINK_LIST] = { .type = NLA_NESTED },
+		};
+
+	/* Link attribute policy */
+	static struct nla_policy
+		link_policy[NL80211_CU_MLD_LINK_ATTR_MAX + 1] = {
+			[NL80211_CU_MLD_LINK_ATTR_ID] = { .type = NLA_U8 },
+			[NL80211_CU_ATTR_TTLM_EXPEC_DUR] = { .type = NLA_U32 },
+		};
+
+	if (nla_parse_nested(mld, NL80211_CU_MLD_ATTR_MAX, mld_list,
+			     mld_attr_policy) || !mld[NL80211_CU_MLD_ATTR_LINK_LIST])
+		return;
+
+	if (mld[NL80211_CU_MLD_ATTR_LINK_LIST]) {
+		nla_for_each_nested(link_list, mld[NL80211_CU_MLD_ATTR_LINK_LIST],
+				    link_list_rem) {
+			if (nla_parse_nested(link, NL80211_CU_MLD_LINK_ATTR_MAX,
+					     link_list, link_policy))
+				return;
+
+			os_memset(&event, 0, sizeof(event));
+			if (link[NL80211_CU_MLD_LINK_ATTR_ID]) {
+				event.ttlm_expec_dur_event.link_id =
+					nla_get_u8(link[NL80211_CU_MLD_LINK_ATTR_ID]);
+
+				if (link[NL80211_CU_ATTR_TTLM_EXPEC_DUR])
+					event.ttlm_expec_dur_event.expec_dur =
+						nla_get_u32(link[NL80211_CU_ATTR_TTLM_EXPEC_DUR]);
+
+				wpa_supplicant_event(bss->ctx,
+						     EVENT_TTLM_EXPEC_DUR_UPDATE, &event);
+			}
+		}
+	}
+}
+
+
+static void
+mlme_event_mgmt_ttlm_expec_dur_update(struct i802_bss *bss,
+				      struct nlattr *ttlm_expec_dur_update_param)
+{
+	struct nlattr *expec_dur_update[NL80211_CU_ATTR_MAX + 1];
+	struct nlattr *mld_list;
+	int mld_list_rem;
+
+	/* Link removal attribute policy */
+	static struct nla_policy
+		expec_dur_attr_policy[NL80211_CU_ATTR_MAX + 1] = {
+			[NL80211_CU_ATTR_MLD_LIST] = { .type = NLA_NESTED },
+		};
+
+	nla_parse_nested(expec_dur_update, NL80211_CU_ATTR_MAX,
+			 ttlm_expec_dur_update_param, expec_dur_attr_policy);
+
+	if (!expec_dur_update[NL80211_CU_ATTR_MLD_LIST]) {
+		wpa_printf(MSG_DEBUG, "nl80211: Couldn't parse expec_dur_update attribute\n");
+		return;
+	}
+
+	nla_for_each_nested(mld_list, expec_dur_update[NL80211_CU_ATTR_MLD_LIST],
+			    mld_list_rem) {
+
+		mlme_send_expec_dur_update_event(bss, mld_list);
+	}
+}
+
+
 static void mlme_event_mgmt(struct i802_bss *bss,
 			    struct nlattr *freq, struct nlattr *sig,
 			    const u8 *frame, size_t len, struct nlattr *rx_cu_param,
-			    int link_id, struct nlattr *link_removal_param)
+			    int link_id, struct nlattr *link_removal_param,
+			    struct nlattr *ttlm_expec_dur_update_param)
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	const struct ieee80211_mgmt *mgmt;
@@ -1629,6 +1711,9 @@ static void mlme_event_mgmt(struct i802_bss *bss,
 	if (link_removal_param && ((stype == WLAN_FC_STYPE_PROBE_REQ) || (stype == WLAN_FC_STYPE_ASSOC_REQ)
 	    || (stype == WLAN_FC_STYPE_REASSOC_REQ)))
 		mlme_event_mgmt_link_removal_update(bss, link_removal_param);
+
+	if (ttlm_expec_dur_update_param && stype == WLAN_FC_STYPE_PROBE_REQ)
+		mlme_event_mgmt_ttlm_expec_dur_update(bss, ttlm_expec_dur_update_param);
 
 	event.rx_mgmt.ctx = bss->ctx;
 	event.rx_mgmt.link_id = link_id;
@@ -1968,7 +2053,8 @@ static void mlme_event(struct i802_bss *bss,
 		       struct nlattr *cookie, struct nlattr *sig,
 		       struct nlattr *wmm, struct nlattr *req_ie,
 		       struct nlattr *rx_cu_param, struct nlattr *link,
-		       struct nlattr *link_removal_param)
+		       struct nlattr *link_removal_param,
+		       struct nlattr *ttlm_expec_dur_update_param)
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	u16 stype = 0, auth_type = 0;
@@ -2068,7 +2154,8 @@ static void mlme_event(struct i802_bss *bss,
 	case NL80211_CMD_FRAME:
 		mlme_event_mgmt(bss, freq, sig, nla_data(frame),
 				nla_len(frame), rx_cu_param, link_id,
-				link_removal_param);
+				link_removal_param,
+				ttlm_expec_dur_update_param);
 		break;
 	case NL80211_CMD_FRAME_TX_STATUS:
 		mlme_event_mgmt_tx_status(bss, cookie, nla_data(frame),
@@ -5148,7 +5235,8 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 			   tb[NL80211_ATTR_RX_SIGNAL_DBM],
 			   tb[NL80211_ATTR_STA_WME],
 			   tb[NL80211_ATTR_REQ_IE], NULL,
-			   tb[NL80211_ATTR_MLO_LINK_ID], NULL);
+			   tb[NL80211_ATTR_MLO_LINK_ID], NULL,
+			   NULL);
 		break;
 	case NL80211_CMD_CONNECT:
 	case NL80211_CMD_ROAM:
@@ -5483,7 +5571,8 @@ int process_bss_event(struct nl_msg *msg, void *arg)
 			   tb[NL80211_ATTR_STA_WME], NULL,
 			   tb[NL80211_ATTR_RXMGMT_CRITICAL_UPDATE],
 			   tb[NL80211_ATTR_MLO_LINK_ID],
-			   tb[NL80211_ATTR_RXMGMT_LINK_REMOVAL_UPDATE]);
+			   tb[NL80211_ATTR_RXMGMT_LINK_REMOVAL_UPDATE],
+			   tb[NL80211_ATTR_ADVERTISED_TTLM_EXPEC_DUR_UPDATE]);
 		break;
 	case NL80211_CMD_UNEXPECTED_FRAME:
 		nl80211_spurious_frame(bss, tb, 0);
