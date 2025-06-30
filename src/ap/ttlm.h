@@ -50,12 +50,51 @@ enum ttlm_dir {
  * @link_mapping_size: value 1 indicates the length of Link Mapping Of TIDn
  *                     field is 1 octet, value 0 indicates the length of the
  *                     Link Mapping of TIDn field is 2 octets
+ * @mapping_switch_time_present: Indicates if mapping switch time field present
+ *                               in the TTLM IE
+ * @expected_duration_present: Indicates if expected duration present in the
+ *                             TTLM IE
+ * @mapping_switch_time: Mapping switch time of this TTLM IE
+ * @expected_duration: Expected duration of this TTLM IE
  */
 struct ttlm_info {
 	enum ttlm_dir direction;
 	bool default_link_mapping;
 	u16 ieee_link_map_tid[NUM_MAX_TIDS];
 	u8 link_mapping_size;
+	bool mapping_switch_time_present;
+	bool expected_duration_present;
+	u16 mapping_switch_time;
+	u32 expected_duration;
+};
+
+/**
+ * struct mlo_ttlm_ie - TTLM information
+ *
+ * @disabled_link_bitmap: Bitmap of disabled links. This is used to update the
+ *			  disabled link field of RNR IE
+ * @ttlm: TTLM info structure
+ */
+struct mlo_ttlm_ie {
+	uint16_t disabled_link_bitmap;
+	struct ttlm_info ttlm;
+};
+
+/**
+ * struct ttlm_context - TTLM IE information
+ *
+ * @established_ttlm: Indicates the already established broadcast TTLM IE
+ *                    advertised by the AP in beacon/probe response frames.
+ *                    In this TTLM IE, expected duration flag is set to 1 and
+ *                    mapping switch time present flag is set to 0 when the
+ *                    mapping is non-default.
+ * @upcoming_ttlm: Indicates the new broadcast TTLM IE advertised by the AP in
+ *                 beacon/probe response frames. STA needs to use this mapping
+ *                 when expected duration in the established TTLM is expires.
+ */
+struct ttlm_context {
+	struct mlo_ttlm_ie established_ttlm;
+	struct mlo_ttlm_ie upcoming_ttlm;
 };
 
 /**

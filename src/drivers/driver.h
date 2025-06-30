@@ -2580,6 +2580,8 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_BEACON_RATE_EHT       0x0000000080000000ULL
 /** Driver support ML reconfigure link removal offload */
 #define WPA_DRIVER_FLAG2_MLD_LINK_REMOVAL_OFFLOAD 0x0000000100000000ULL
+/** Driver supports TTLM beacon offload */
+#define WPA_DRIVER_FLAGS2_TTLM_BEACON_OFFLOAD  0x0000000200000000ULL
 	u64 flags2;
 
 #define FULL_AP_CLIENT_STATE_SUPP(drv_flags) \

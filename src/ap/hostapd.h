@@ -20,6 +20,7 @@
 #include "drivers/driver.h"
 #include "ubus.h"
 #include "ucode.h"
+#include "ttlm.h"
 
 #define OCE_STA_CFON_ENABLED(hapd) \
 	((hapd->conf->oce & OCE_STA_CFON) && \
@@ -643,6 +644,7 @@ struct hostapd_mld {
 	struct mac_acl_entry *epcs_authorized_mac;
 	int num_epcs_authorized_mac;
 #endif /* CONFIG_IEEE80211BE */
+	struct ttlm_context ttlm_ctx;
 };
 
 #define HOSTAPD_MLD_MAX_REF_COUNT      0xFF

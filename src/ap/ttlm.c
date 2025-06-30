@@ -211,6 +211,338 @@ static void hostapd_copy_configured_ttlm_to_sta_info(struct sta_info *sta,
 }
 
 
+static void
+hostapd_fill_ttlm_params(struct ttlm_info *upcoming_info,
+			 struct ttlm_info *established_info,
+			 struct drv_adv_ttlm_params *upcoming_ttlm_params,
+			 struct drv_adv_ttlm_params *established_ttlm_params)
+{
+		upcoming_ttlm_params->default_link_mapping =
+			upcoming_info->default_link_mapping;
+		upcoming_ttlm_params->link_mapping_size =
+			upcoming_info->link_mapping_size;
+		upcoming_ttlm_params->mapping_switch_time_present =
+			upcoming_info->mapping_switch_time_present;
+		upcoming_ttlm_params->expected_duration_present =
+			upcoming_info->expected_duration_present;
+		upcoming_ttlm_params->mapping_switch_time =
+			upcoming_info->mapping_switch_time;
+		upcoming_ttlm_params->expected_duration =
+			upcoming_info->expected_duration;
+		os_memcpy(upcoming_ttlm_params->ieee_link_map_tid,
+			  upcoming_info->ieee_link_map_tid,
+			  sizeof(u16) * NUM_MAX_TIDS);
+
+		established_ttlm_params->default_link_mapping =
+			established_info->default_link_mapping;
+		established_ttlm_params->link_mapping_size =
+			established_info->link_mapping_size;
+		established_ttlm_params->mapping_switch_time_present =
+			established_info->mapping_switch_time_present;
+		established_ttlm_params->expected_duration_present =
+			established_info->expected_duration_present;
+		established_ttlm_params->mapping_switch_time =
+			established_info->mapping_switch_time;
+		established_ttlm_params->expected_duration =
+			established_info->expected_duration;
+		os_memcpy(established_ttlm_params->ieee_link_map_tid,
+			  established_info->ieee_link_map_tid,
+			  sizeof(u16) * NUM_MAX_TIDS);
+}
+
+
+static int
+hostapd_offload_set_adv_ttlm_multi_mbssid(struct hostapd_data *hapd)
+{
+	struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
+	struct hostapd_data *bss;
+	int ret = 0;
+
+	dl_list_for_each(bss, &group->bss_list, struct hostapd_data, mbssid_bss) {
+		if (bss != hapd) {
+			struct drv_adv_ttlm_params upcoming_ttlm_params, established_ttlm_params;
+			bool send_default_mapping =
+				!bss->mld->ttlm_ctx.upcoming_ttlm.ttlm.mapping_switch_time_present;
+
+			hostapd_fill_ttlm_params(&bss->mld->ttlm_ctx.upcoming_ttlm.ttlm,
+						 &bss->mld->ttlm_ctx.established_ttlm.ttlm,
+						 &upcoming_ttlm_params,
+						 &established_ttlm_params);
+			ret =  hostapd_drv_set_advertised_ttlm_params(bss,
+								      &upcoming_ttlm_params,
+								      &established_ttlm_params,
+								      send_default_mapping);
+			if (ret) {
+				wpa_printf(MSG_DEBUG,
+					   "Failed to set advertised TTLM configs for non-tx BSS");
+				return -EINVAL;
+			}
+		}
+	}
+
+	return ret;
+}
+
+
+static int
+hostapd_offload_set_adv_ttlm_mbssid_enhanced(struct hostapd_data *hapd)
+{
+	struct hostapd_data *bss;
+	int ret = 0;
+	int i;
+
+	for (i = 1; i < hapd->iface->num_bss; i++) {
+		struct drv_adv_ttlm_params upcoming_ttlm_params, established_ttlm_params;
+		bool send_default_mapping;
+
+		bss = hapd->iface->bss[i];
+		send_default_mapping =
+			!bss->mld->ttlm_ctx.upcoming_ttlm.ttlm.mapping_switch_time_present;
+		hostapd_fill_ttlm_params(&bss->mld->ttlm_ctx.upcoming_ttlm.ttlm,
+					 &bss->mld->ttlm_ctx.established_ttlm.ttlm,
+					 &upcoming_ttlm_params,
+					 &established_ttlm_params);
+
+		ret =  hostapd_drv_set_advertised_ttlm_params(bss,
+							      &upcoming_ttlm_params,
+							      &established_ttlm_params,
+							      send_default_mapping);
+		if (ret) {
+			wpa_printf(MSG_DEBUG,
+				   "Failed to set advertised TTLM configs for non-tx BSS");
+			return -EINVAL;
+		}
+	}
+
+	return ret;
+}
+
+
+static int
+hostapd_offload_set_advertised_ttlm(struct hostapd_data *hapd,
+				    struct mlo_ttlm_ie *upcoming_ttlm,
+				    struct drv_adv_ttlm_params *upcoming_ttlm_params,
+				    struct drv_adv_ttlm_params *established_ttlm_params)
+{
+	struct hostapd_data *link_bss;
+
+	/* Get the 6 GHz bss */
+	for_each_mld_link(link_bss, hapd) {
+		if (is_6ghz_freq(link_bss->iface->freq)) {
+			hapd = link_bss;
+			break;
+		}
+	}
+
+	/* Non-Tx vaps which are part of 6GHz Tx vap inherits the T2LM IE from Tx
+	 * vap. The newly configured mapping may not be applicable for non-tx vaps
+	 * as they are part of some other MLD. Hence, send the T2LM WMI comamnd to
+	 * non-tx vap first with the already established, ongoing T2LM of the
+	 * non-tx vaps and then send the newly configured T2LM for Tx vap.
+	 */
+	if (is_6ghz_freq(hapd->iface->freq) &&
+	    hapd->iface->conf->mbssid != MBSSID_DISABLED &&
+	    hapd == hostapd_mbssid_get_tx_bss(hapd)) {
+		int err;
+
+		if (hapd->iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
+			err = hostapd_offload_set_adv_ttlm_multi_mbssid(hapd);
+		else
+			err = hostapd_offload_set_adv_ttlm_mbssid_enhanced(hapd);
+
+		if (err)
+			return err;
+	}
+
+	return hostapd_drv_set_advertised_ttlm_params(hapd,
+						      upcoming_ttlm_params,
+						      established_ttlm_params,
+						      false);
+}
+
+
+static int
+hostapd_fill_upcoming_established_ttlm(struct mlo_ttlm_ie *ttlm_conf,
+				       struct mlo_ttlm_ie *upcoming_ttlm,
+				       struct mlo_ttlm_ie *established_ttlm)
+{
+	struct ttlm_info *ttlm_info = &ttlm_conf->ttlm;
+	struct ttlm_info *upcoming_info = &upcoming_ttlm->ttlm;
+	struct ttlm_info *established_info = &established_ttlm->ttlm;
+
+	/* If AP is advertising the new TTLM (mapping_switch_time_present true),
+	 * then modify the TTLM IE and send the updated TTLM IE to lower layer. Else,
+	 * populate the upcoming TTLM IE in the TTLM context and send the TTLM IE to
+	 * lower layer.
+	 */
+	if (upcoming_info->mapping_switch_time_present) {
+		upcoming_ttlm->disabled_link_bitmap &= ttlm_conf->disabled_link_bitmap;
+		upcoming_info->default_link_mapping = ttlm_info->default_link_mapping;
+		upcoming_info->link_mapping_size = ttlm_info->link_mapping_size;
+
+		/* Update mapping switch time only if it is provided in the new config
+		 * else use the mapping switch time from the upcoming TTLM.
+		 */
+		if (ttlm_info->mapping_switch_time_present) {
+			upcoming_info->mapping_switch_time_present = 1;
+			upcoming_info->mapping_switch_time =
+				ttlm_info->mapping_switch_time;
+		}
+
+		/* Update expected duration only if it is provided in the new config
+		 * else use the expected duration from upcoming TTLM.
+		 */
+		if (upcoming_info->expected_duration_present) {
+			upcoming_info->expected_duration_present = 1;
+			upcoming_info->expected_duration =
+				ttlm_info->expected_duration;
+		}
+
+		if (upcoming_info->default_link_mapping) {
+			/* Clear the ieee_link_map_tid if the new
+			 * mapping is default mapping.
+			 */
+			os_memset(upcoming_info->ieee_link_map_tid, 0,
+				  sizeof(uint16_t) * NUM_MAX_TIDS);
+		} else {
+			int i;
+
+			/* Update the ieee_link_map_tid with the mapping
+			 * from the new config.
+			 */
+			for (i = 0; i < NUM_MAX_TIDS; i++) {
+				upcoming_info->ieee_link_map_tid[i] |=
+					ttlm_info->ieee_link_map_tid[i];
+			}
+		}
+	} else {
+		os_memcpy(upcoming_ttlm, ttlm_conf, sizeof(struct mlo_ttlm_ie));
+	}
+
+	/* Update the expected duration of established TTLM IE */
+	if (established_info->expected_duration_present) {
+		if (upcoming_info->mapping_switch_time <
+		    established_info->expected_duration) {
+			established_info->expected_duration =
+				upcoming_info->mapping_switch_time;
+		} else {
+			wpa_printf(MSG_ERROR, "TTLM: Mapping switch time(%d) of the new mapping"
+				   " can not be greater than the expected duration(%d) of the"
+				   " old mapping",
+				   upcoming_info->mapping_switch_time,
+				   established_info->expected_duration);
+			os_memset(upcoming_ttlm, 0, sizeof(struct mlo_ttlm_ie));
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+
+int hostapd_send_advertised_ttlm(struct hostapd_data *hapd, struct mlo_ttlm_ie *ttlm_conf)
+{
+	struct drv_adv_ttlm_params upcoming_ttlm_params, established_ttlm_params;
+	u16 ieee_link_id_mask = 0, link_map_value = 0;
+	struct mlo_ttlm_ie *established_ttlm;
+	struct mlo_ttlm_ie *upcoming_ttlm;
+	struct ttlm_context *ttlm_ctx;
+	struct hostapd_data *link_bss;
+	bool beacon_offload;
+	u32 min_dtim = 0;
+	int i, j;
+	int err;
+
+	for_each_mld_link(link_bss, hapd) {
+		if (!min_dtim || link_bss->conf->dtim_period < min_dtim)
+			min_dtim = link_bss->conf->dtim_period;
+		ieee_link_id_mask |= BIT(link_bss->mld_link_id);
+	}
+
+	if (!min_dtim) {
+		wpa_printf(MSG_ERROR, "TTLM: Min DTIM cannot be 0");
+		return -1;
+	}
+
+	/* Mapping switch time and expected duration should be multiple of min DITM */
+	if (ttlm_conf->ttlm.mapping_switch_time &&
+	    (ttlm_conf->ttlm.mapping_switch_time % min_dtim) &&
+	    (ttlm_conf->ttlm.expected_duration % min_dtim)) {
+		wpa_printf(MSG_ERROR, "TTLM: Mapping switch time (%d), expected duration (%d)"
+			   " should be multiple of DTIM (%d)",
+			   ttlm_conf->ttlm.mapping_switch_time,
+			   ttlm_conf->ttlm.expected_duration,
+			   min_dtim);
+		return -1;
+	}
+
+	for (i = 0; i < NUM_MAX_TIDS; i++) {
+		link_map_value = ttlm_conf->ttlm.ieee_link_map_tid[i];
+
+		if ((ieee_link_id_mask & link_map_value) != link_map_value) {
+			wpa_printf(MSG_ERROR, "TTLM: Invalid link mask");
+			return -1;
+		}
+
+		/* Get the disabled link bitmap to update RNR IE */
+		ttlm_conf->disabled_link_bitmap |= ~link_map_value;
+	}
+
+	for (j = 0; j < NUM_MAX_TIDS; j++) {
+		if (ttlm_conf->ttlm.ieee_link_map_tid[j] == ieee_link_id_mask) {
+			ttlm_conf->ttlm.default_link_mapping = true;
+		} else {
+			ttlm_conf->ttlm.default_link_mapping = false;
+			break;
+		}
+	}
+
+	/* The number of links in the disabled link bitmap should not be greater
+	 * than the configured number of links
+	 */
+	ttlm_conf->disabled_link_bitmap &= ieee_link_id_mask;
+	wpa_printf(MSG_INFO, "TTLM: disabled_link_bitmap:%x", ttlm_conf->disabled_link_bitmap);
+
+	ttlm_ctx = &hapd->mld->ttlm_ctx;
+	upcoming_ttlm = &ttlm_ctx->upcoming_ttlm;
+	established_ttlm = &ttlm_ctx->established_ttlm;
+
+	err = hostapd_fill_upcoming_established_ttlm(ttlm_conf, upcoming_ttlm,
+						     established_ttlm);
+
+	if (err)
+		return err;
+
+	if (upcoming_ttlm->disabled_link_bitmap == ieee_link_id_mask) {
+		wpa_printf(MSG_ERROR, "TTLM: Do not send the TTLM WMI command to"
+			   " disable all the links");
+		goto free_upcoming_ttlm;
+	}
+
+	beacon_offload = hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_TTLM_BEACON_OFFLOAD;
+	if (beacon_offload) {
+		hostapd_fill_ttlm_params(&upcoming_ttlm->ttlm,
+					 &established_ttlm->ttlm,
+					 &upcoming_ttlm_params,
+					 &established_ttlm_params);
+
+		return hostapd_offload_set_advertised_ttlm(hapd, upcoming_ttlm,
+							   &upcoming_ttlm_params,
+							   &established_ttlm_params);
+	} else {
+		wpa_printf(MSG_ERROR, "TTLM: TTLM offload mode is not supported by the driver "
+			   "& non-offload mode is currently unavailable");
+		goto free_upcoming_ttlm;
+	}
+
+	return 0;
+
+free_upcoming_ttlm:
+	os_memset(upcoming_ttlm, 0, sizeof(struct mlo_ttlm_ie));
+	return -1;
+}
+
+
 int hostapd_send_ttlm_req(struct hostapd_data *hapd, struct ttlm_ongoing_negotiation_info *ttlm,
 			  struct sta_info *sta)
 {

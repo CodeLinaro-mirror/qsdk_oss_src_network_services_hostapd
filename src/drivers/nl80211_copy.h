@@ -6860,6 +6860,9 @@ enum nl80211_feature_flags {
  *
  * @NL80211_EXT_FEATURE_ERP: Driver supports ErP low power mode.
  *
+ * @NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD: Driver/device which
+ *	supports advertised ttlm in offload mode.
+ *
  * @NUM_NL80211_EXT_FEATURES: number of extended features.
  * @MAX_NL80211_EXT_FEATURES: highest extended feature index.
  */
@@ -6943,6 +6946,7 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_ERP,
 	NL80211_EXT_FEATURE_TARGET_AND_HOST_AFC_SUPPORT,
 	NL80211_EXT_FEATURE_RETAIL_AFC_SUPPORT,
+	NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD,
 
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,

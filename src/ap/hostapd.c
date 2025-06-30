@@ -3636,6 +3636,7 @@ struct hostapd_iface * hostapd_alloc_iface(void)
 
 
 #ifdef CONFIG_IEEE80211BE
+
 static int hostapd_bss_alloc_link_id(struct hostapd_data *hapd)
 {
 	/* All links are exhausted */
@@ -3649,6 +3650,20 @@ static int hostapd_bss_alloc_link_id(struct hostapd_data *hapd)
 
 	return 0;
 }
+
+static inline void hostapd_mld_ttlm_ctx_init(struct hostapd_mld *mld)
+{
+	struct ttlm_info *ttlm;
+
+	ttlm = &mld->ttlm_ctx.established_ttlm.ttlm;
+
+	os_memset(&mld->ttlm_ctx, 0, sizeof(struct ttlm_context));
+
+	ttlm->direction = TTLM_DIRECTION_BIDI;
+	ttlm->default_link_mapping = 1;
+	ttlm->link_mapping_size = 0;
+}
+
 #endif /* CONFIG_IEEE80211BE */
 
 
@@ -3695,6 +3710,7 @@ void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
 	mld->ctrl_sock = -1;
 	if (hapd->conf->ctrl_interface)
 		mld->ctrl_interface = os_strdup(hapd->conf->ctrl_interface);
+	hostapd_mld_ttlm_ctx_init(mld);
 
 	wpa_printf(MSG_DEBUG, "AP MLD %s created", mld->name);
 
