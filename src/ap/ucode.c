@@ -746,7 +746,9 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 	intval = ucv_int64_get(ucv_object_get(info, "oper_chwidth", NULL));
 	if (errno)
 		intval = hostapd_get_oper_chwidth(conf);
-	if (intval)
+	if (intval == CONF_OPER_CHWIDTH_320MHZ)
+		csa.freq_params.bandwidth = 320;
+	else if (intval)
 		csa.freq_params.bandwidth = 40 << intval;
 	else
 		csa.freq_params.bandwidth = csa.freq_params.sec_channel_offset ? 40 : 20;
