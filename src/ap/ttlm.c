@@ -251,6 +251,66 @@ hostapd_fill_ttlm_params(struct ttlm_info *upcoming_info,
 }
 
 
+void hostapd_ttlm_handle_mapping_switch_time_expiry(struct ttlm_context *ttlm_ctx,
+						    u8 link_id)
+{
+	struct ttlm_info *ttlm;
+
+	wpa_printf(MSG_INFO, "TTLM: Mapping switch time expired for link id:%d ",
+		   link_id);
+
+	memcpy(&ttlm_ctx->established_ttlm, &ttlm_ctx->upcoming_ttlm,
+	       sizeof(struct mlo_ttlm_ie));
+
+	ttlm_ctx->established_ttlm.ttlm.mapping_switch_time_present = false;
+	ttlm_ctx->established_ttlm.ttlm.mapping_switch_time = 0;
+
+	ttlm = &ttlm_ctx->established_ttlm.ttlm;
+	wpa_printf(MSG_INFO, "TTLM: Established mapping: disabled_link_bitmap:%x "
+		   "dir:%d default_map:%d MSTP:%d EDP:%d MST:%d ED:%d ieee_link_map:%x",
+		   ttlm_ctx->established_ttlm.disabled_link_bitmap,
+		   ttlm->direction, ttlm->default_link_mapping,
+		   ttlm->mapping_switch_time_present,
+		   ttlm->expected_duration_present,
+		   ttlm->mapping_switch_time, ttlm->expected_duration,
+		   ttlm->ieee_link_map_tid[0]);
+
+	memset(&ttlm_ctx->upcoming_ttlm, 0, sizeof(struct mlo_ttlm_ie));
+	ttlm_ctx->upcoming_ttlm.ttlm.direction = TTLM_DIRECTION_INVALID;
+}
+
+
+void hostapd_ttlm_handle_expected_duration_expiry(struct ttlm_context *ttlm_ctx,
+						  u8 link_id)
+{
+	wpa_printf(MSG_INFO, "TTLM: Expected duration expired for link id:%d ",
+		   link_id);
+
+	if (ttlm_ctx->upcoming_ttlm.ttlm.mapping_switch_time_present) {
+		/* Copy the new non-default ongoing mapping to established
+		 * mapping if expected duration expires for the established
+		 * mapping.
+		 */
+		hostapd_ttlm_handle_mapping_switch_time_expiry(ttlm_ctx,
+							       link_id);
+		return;
+	}
+
+	/* Use the default mapping when expected duration expires for the
+	 * established mapping and no new non-default TTLM announcement is
+	 * ongoing.
+	 */
+	memset(&ttlm_ctx->established_ttlm, 0,
+	       sizeof(struct mlo_ttlm_ie));
+
+	ttlm_ctx->established_ttlm.ttlm.direction = TTLM_DIRECTION_BIDI;
+	ttlm_ctx->established_ttlm.ttlm.default_link_mapping = 1;
+	ttlm_ctx->established_ttlm.disabled_link_bitmap = 0;
+	ttlm_ctx->established_ttlm.ttlm.link_mapping_size = 0;
+	wpa_printf(MSG_INFO, "TTLM: Set established mapping to default mapping");
+}
+
+
 static int
 hostapd_offload_set_adv_ttlm_multi_mbssid(struct hostapd_data *hapd)
 {

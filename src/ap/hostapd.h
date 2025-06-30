@@ -600,6 +600,8 @@ struct hostapd_data {
 	struct hostapd_multi_mbssid_group *mbssid_group;
 	struct dl_list mbssid_bss;
 
+	u16 mapping_switch_time;
+
 #if defined(CONFIG_INTERWORKING) || defined(CONFIG_DPP)
 	bool gas_serv_initialized;
 	struct dl_list gas_peers; /* dl_list of struct gas_peer */
