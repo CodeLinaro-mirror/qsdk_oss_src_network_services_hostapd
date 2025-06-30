@@ -4968,6 +4968,69 @@ static void nl80211_obss_color_event(struct i802_bss *bss,
 #endif /* CONFIG_IEEE80211AX */
 
 
+#ifdef CONFIG_IEEE80211BE
+static void nl80211_ttlm_update_event(struct i802_bss *bss, struct nlattr **tb)
+{
+	struct nlattr *ttlm_attrs[NL80211_ADVERTISED_TTLM_ATTR_MAX + 1];
+	static struct nla_policy
+		nl80211_advertised_ttlm_policy[NL80211_ADVERTISED_TTLM_ATTR_MAX + 1] = {
+		[NL80211_ADVERTISED_TTLM_ATTR_IE_COUNT] = { .type = NLA_U8 },
+		[NL80211_ADVERTISED_TTLM_ATTR_LINK_MAP_SIZE] = { .type = NLA_U8 },
+		[NL80211_ADVERTISED_TTLM_ATTR_IEEE_LINK_MAP] = { .type = NLA_U16 },
+		[NL80211_ADVERTISED_TTLM_ATTR_SWITCH_TIME] = { .type = NLA_U16 },
+		[NL80211_ADVERTISED_TTLM_ATTR_DURATION] = { .type = NLA_U32 },
+		[NL80211_ADVERTISED_TTLM_ATTR_STATUS] = { .type = NLA_U8 },
+		[NL80211_ADVERTISED_TTLM_ATTR_MST_TSF_UPDATE] = { .type = NLA_U16 },
+		[NL80211_ADVERTISED_TTLM_ATTR_ED_UPDATE] = { .type = NLA_U32 },
+	};
+	struct i802_link *mld_link = bss->flink;
+	union wpa_event_data data;
+	void *ctx = bss->ctx;
+
+	os_memset(&data, 0, sizeof(data));
+
+	if (tb[NL80211_ATTR_ADVERTISED_TTLM] == NULL ||
+	    nla_parse_nested(ttlm_attrs, NL80211_ADVERTISED_TTLM_ATTR_MAX,
+			     tb[NL80211_ATTR_ADVERTISED_TTLM],
+			     nl80211_advertised_ttlm_policy)) {
+		wpa_printf(MSG_DEBUG, "nl80211: Failed to parse TTLM status event");
+		return;
+	}
+
+	if (tb[NL80211_ATTR_MLO_LINK_ID]) {
+		data.ttlm_update_event.link_id = nla_get_u8(tb[NL80211_ATTR_MLO_LINK_ID]);
+
+		if (!nl80211_link_valid(bss->valid_links,
+					data.ttlm_update_event.link_id)) {
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: Invalid link ID %d for TTLM status event",
+				   data.bss_color_collision.link_id);
+			return;
+		}
+
+		mld_link = nl80211_get_link(bss,
+					    data.ttlm_update_event.link_id);
+		ctx = mld_link->ctx;
+	}
+
+	if (ttlm_attrs[NL80211_ADVERTISED_TTLM_ATTR_STATUS])
+		data.ttlm_update_event.status =
+			nla_get_u8(ttlm_attrs[NL80211_ADVERTISED_TTLM_ATTR_STATUS]);
+
+	if (ttlm_attrs[NL80211_ADVERTISED_TTLM_ATTR_MST_TSF_UPDATE])
+		data.ttlm_update_event.mapping_switch_tsf =
+			nla_get_u16(ttlm_attrs[NL80211_ADVERTISED_TTLM_ATTR_MST_TSF_UPDATE]);
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: TTLM update event on link_id: %d with status: %d, MST = %u",
+		   data.ttlm_update_event.link_id, data.ttlm_update_event.status,
+		   data.ttlm_update_event.mapping_switch_tsf);
+
+	wpa_supplicant_event(ctx, EVENT_TTLM_UPDATE, &data);
+}
+#endif /* CONFIG_IEEE80211BE */
+
+
 static void do_process_drv_event(struct i802_bss *bss, int cmd,
 				 struct nlattr **tb)
 {
@@ -5258,6 +5321,11 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 	case NL80211_CMD_LINK_REMOVAL_COMPLETED:
 		nl80211_link_removal_event(bss, tb, false);
 		break;
+#ifdef CONFIG_IEEE80211BE
+	case NL80211_CMD_SET_TID_TO_LINK_MAPPING:
+		nl80211_ttlm_update_event(bss, tb);
+		break;
+#endif /* CONFIG_IEEE80211BE */
 	default:
 		wpa_dbg(drv->ctx, MSG_DEBUG, "nl80211: Ignored unknown event "
 			"(cmd=%d)", cmd);

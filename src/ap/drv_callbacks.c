@@ -46,6 +46,7 @@
 #include "neighbor_db.h"
 #include "nan_usd_ap.h"
 #include "interference.h"
+#include "ttlm.h"
 
 
 #ifdef CONFIG_FILS
@@ -3018,6 +3019,45 @@ static void hostapd_mld_iface_disable(struct hostapd_data *hapd)
 		hostapd_iface_disable(link_bss);
 }
 
+static void hostapd_event_update_ttlm_status(struct hostapd_data *hapd,
+					     struct ttlm_update_event *ttlm_update_event)
+{
+	struct ttlm_context *ttlm_ctx = &hapd->mld->ttlm_ctx;
+	struct hostapd_data *link_bss;
+
+	wpa_printf(MSG_INFO, "TTLM: link id = %d status = %d",
+		   hapd->mld_link_id, ttlm_update_event->status);
+
+	switch (ttlm_update_event->status) {
+	case TTLM_MAP_SWITCH_TIMER_TSF:
+		if (ttlm_ctx->upcoming_ttlm.ttlm.mapping_switch_time_present)
+			hapd->mapping_switch_time =
+				ttlm_update_event->mapping_switch_tsf;
+		wpa_printf(MSG_INFO, "TTLM: Updated mapping switch time to %d",
+			   ttlm_update_event->mapping_switch_tsf);
+		break;
+	case TTLM_MAP_SWITCH_TIMER_EXPIRED:
+		for_each_mld_link(link_bss, hapd)
+			link_bss->mapping_switch_time = 0;
+
+		hostapd_ttlm_handle_mapping_switch_time_expiry(ttlm_ctx,
+							       hapd->mld_link_id);
+		/* TO-DO:
+		 * Send event to user-space to notify link update.
+		 * Go over all MLO peers on this MLD and clear the
+		 * peer-to-peer level mapping.
+		 */
+		break;
+	case TTLM_EXPECTED_DUR_EXPIRED:
+		hostapd_ttlm_handle_expected_duration_expiry(ttlm_ctx,
+							     hapd->mld_link_id);
+		/* TO-DO: Move P2P negotiated mapping to default */
+		break;
+	default:
+		wpa_printf(MSG_ERROR, "TTLM: Invalid status");
+
+	}
+}
 #endif /* CONFIG_IEEE80211BE */
 
 
@@ -3393,6 +3433,11 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		wpa_printf(MSG_DEBUG, "MLD: Interface %s freed",
 			   hapd->conf->iface);
 		hostapd_mld_interface_freed(hapd);
+		break;
+	case EVENT_TTLM_UPDATE:
+		if (!data)
+			break;
+		hostapd_event_update_ttlm_status(hapd, &data->ttlm_update_event);
 		break;
 #endif /* CONFIG_IEEE80211BE */
 	 case EVENT_UPDATE_MUEDCA_PARAMS:

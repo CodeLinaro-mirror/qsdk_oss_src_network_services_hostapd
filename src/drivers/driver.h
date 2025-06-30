@@ -6585,6 +6585,11 @@ enum wpa_event_type {
 	 * AFC
 	 */
 	EVENT_AFC_RECEIVED,
+
+	/**
+	 * EVENT_TTLM_UPDATE - Notification about TTLM info update event
+	 */
+	EVENT_TTLM_UPDATE,
 };
 
 
@@ -7642,6 +7647,18 @@ union wpa_event_data {
 		u32 link_removal_count;
 		u64 tsf;
 	} link_removal_event;
+
+	/**
+	 * struct ttlm_update_event - Data for EVENT_TTLM_UPDATE
+	 * @link_id: Link for which TTLM update was received
+	 * @status: Type of update received
+	 * mapping_switch_tsf: Mapping switch time in TSF
+	 */
+	struct ttlm_update_event {
+		u8 link_id;
+		enum ttlm_status status;
+		u16 mapping_switch_tsf;
+	} ttlm_update_event;
 };
 
 /**

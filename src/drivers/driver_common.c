@@ -111,6 +111,7 @@ const char * event_to_string(enum wpa_event_type event)
 	E2S(LINK_REMOVAL_STARTED);
 	E2S(LINK_REMOVAL_COMPLETED);
 	E2S(AFC_RECEIVED);
+	E2S(TTLM_UPDATE);
 	}
 
 	return "UNKNOWN";

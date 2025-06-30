@@ -558,4 +558,10 @@ enum wpa_p2p_mode {
 
 #define BW_INTERFERENCE_MAXBITS 32
 
+enum ttlm_status {
+	TTLM_MAP_SWITCH_TIMER_TSF	= 0,
+	TTLM_MAP_SWITCH_TIMER_EXPIRED	= 1,
+	TTLM_EXPECTED_DUR_EXPIRED	= 2,
+};
+
 #endif /* DEFS_H */

@@ -591,6 +591,8 @@ struct hostapd_data {
 	size_t mbssid_idx;
 	struct hostapd_multi_mbssid_group *mbssid_group;
 	struct dl_list mbssid_bss;
+
+	u16 mapping_switch_time;
 };
 
 

@@ -214,5 +214,8 @@ int hostapd_ttlm_teardown_tx_status(struct hostapd_data *hapd, struct sta_info *
 int hostapd_send_ttlm_teardown(struct hostapd_data *hapd, struct sta_info *sta);
 int hostapd_handle_ttlm_teardown(struct hostapd_data *hapd, struct sta_info *sta,
 				 const u8 *buf, size_t len);
-
+void hostapd_ttlm_handle_mapping_switch_time_expiry(struct ttlm_context *ttlm_ctx,
+						    u8 link_id);
+void hostapd_ttlm_handle_expected_duration_expiry(struct ttlm_context *ttlm_ctx,
+						  u8 link_id);
 #endif /* TTLM_H */
