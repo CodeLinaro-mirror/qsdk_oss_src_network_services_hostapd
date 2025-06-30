@@ -12,7 +12,7 @@
 struct drv_adv_ttlm_params;
 #define TTLM_H
 
-#define NUM_MAX_TIDS 8
+#define NUM_MAX_TIDS	8
 
 /**
  * struct tid_to_link_map - TID-to-link mapping params
