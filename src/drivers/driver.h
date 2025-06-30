@@ -3336,6 +3336,37 @@ struct pasn_auth {
 };
 
 /**
+ * struct drv_adv_ttlm_params - Params to trigger advertisement of TTLM element
+ *
+ * These are the params to be sent to the driver to be filled in the TTLM
+ * element.
+ * @default_link_mapping: Value 1 indicates the default TTLM, where all the TIDs
+ *	are mapped to all the links. Value 0 indicates the preferred TTLM
+ *	mapping.
+ * @ieee_link_map_tid: Holds the IEEE link id mapping of all the TIDs
+ * @link_mapping_size: Set to 1 if the length of the Link Mapping Of TID n field
+ *	is 1 octet and is set to 0 if the length of the Link Mapping Of TID n
+ *	field is 2 octets.
+ * @mapping_switch_time_present: Flag to indicate the presence of mapping
+ *	switch time.
+ * @expected_duration_present: Flag to indicate the presence of expected
+ *	duration.
+ * @mapping_switch_time: Duration after which the preferred link mapping is
+ *	established or applied.
+ * @expected_duration: Duration through which the preferred link mapping is
+ *	established or applied.
+ */
+struct drv_adv_ttlm_params {
+	bool default_link_mapping;
+	u16 ieee_link_map_tid[NUM_MAX_TIDS];
+	u8 link_mapping_size;
+	bool mapping_switch_time_present;
+	bool expected_duration_present;
+	u16 mapping_switch_time;
+	u32 expected_duration;
+};
+
+/**
  * struct secure_ranging_params - Parameters required to set secure ranging
  *	context for a peer.
  *
@@ -5832,6 +5863,18 @@ struct wpa_driver_ops {
 	int (*set_ttlm_link_mapping)(void *priv, enum wpa_driver_if_type type,
 				     struct driver_ttlm_info *params,
 				     const u8 *addr);
+	/**
+	 * set_advertised_ttlm_params - Set advertised ttlm params
+	 * @priv: Private driver interface data
+	 * @up_ttlm: Upcoming TTLM elemen params
+	 * @est_ttlm: Established TTLM element params
+	 * @send_default_mapping: Flag to send default link mapping
+	 * Returns: 0 on success, negative value on failure
+	 */
+	int (*set_advertised_ttlm_params)(void *priv,
+					  const struct drv_adv_ttlm_params *up_ttlm,
+					  const struct drv_adv_ttlm_params *est_ttlm,
+					  bool send_default_mapping);
 
 #endif /* CONFIG_IEEE80211BE */
 	/*

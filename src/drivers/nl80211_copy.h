@@ -2968,6 +2968,9 @@ enum nl80211_commands {
  * @NL80211_ATTR_CENTER_FREQ_DEVICE: Device center frequency (u32). The value
  * must coincide with one edge of the operating bandwidth.
  *
+ * * @NL80211_ATTR_ADVERTISED_TTLM: Nested attributes associated with advertised
+ * 	TTLM. See &enum nl80211_advertised_ttlm_attrs for the attributes.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3562,6 +3565,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_ML_MAX_REC_LINKS,
 
 	NL80211_ATTR_ERP,
+
+	NL80211_ATTR_ADVERTISED_TTLM,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -8576,5 +8581,60 @@ enum nl80211_erp_attrs {
 	/* keep last */
 	__NL80211_ERP_ATTR_LAST,
 	NL80211_ERP_ATTR_MAX = __NL80211_ERP_ATTR_LAST - 1
+};
+
+/**
+ * enum nl80211_advertised_ttlm_attrs - Advertised TTLM attributes
+ *
+ * @__NL80211_ADVERTISED_TTLM_ATTR_INVALID: Invalid
+ *
+ * @NL80211_ADVERTISED_TTLM_ATTR_IE_COUNT: Indicates the number of TTLM IEs to
+ *	be included by target in beacon.
+ * @NL80211_ADVERTISED_TTLM_ATTR_LINK_MAP_SIZE: Indicates the link mapping size
+ *	to be used while forming TTLM IE as defined in section 9.4.2.314
+ *	(TID-To-Link Mapping element) in Draft P802.11be_D4.0. A value of 1
+ *	indicates that the length of the link mapping is 1 octet and a value of
+ *	0 indicates that it is of 2 octets.
+ * @NL80211_ADVERTISED_TTLM_ATTR_IEEE_LINK_MAP: indicates bitmap of the links
+ *	that will be enabled and advertised in TTLM IE of beacon. The same
+ *	bitmap will be copied to all TIDs map value of the IE with directection
+ *	bit set to 0x3 indicating BiDi direction as defined in section
+ *	35.3.7.2.4 (Advertised TTLM in Beacon and Probe Response frames) in
+ *	Draft P802.11be_D4.0.
+ * @NL80211_ADVERTISED_TTLM_ATTR_SWITCH_TIME: Indicates the mapping switch time
+ *	of each TTLM IE as defined in section 9.4.2.314 (TID-To-Link Mapping
+ *	element) in Draft P802.11be_D4.0.
+ * @NL80211_ADVERTISED_TTLM_ATTR_DURATION: Indicates the expected duration of
+ *	each TTLM IE as defined in section 9.4.2.314 (TID-To-Link Mapping
+ *	element) in Draft P802.11be_D4.0.
+ * @NL80211_ADVERTISED_TTLM_ATTR_STATUS: Indicates the type of status update
+ *	received for advertised TTLM from lower layers. See &enum advertised_ttlm_status_type
+ *	for details.
+ * @NL80211_ADVERTISED_TTLM_ATTR_MST_TSF_UPDATE: Indicates the MST value in TSF
+ *	format converted from TU by lower layers. This attribute carried the MST
+ *	in TSF for each link of the MLD.
+ * @NL80211_ADVERTISED_TTLM_ATTR_ED_UPDATE: Indicates the current ED value to be
+ *	used in Probe Response frame. This attribute carries the ED values for
+ *	each link of the AP MLD.
+ *
+ * @__NL80211_ADVERTISED_TTLM_ATTR_LAST: Internal use
+ * @NL80211_ADVERTISED_TTLM_ATTR_MAX: Highest attribute
+ */
+enum nl80211_advertised_ttlm_attrs {
+	__NL80211_ADVERTISED_TTLM_ATTR_INVALID,
+
+	NL80211_ADVERTISED_TTLM_ATTR_IE_COUNT,
+	NL80211_ADVERTISED_TTLM_ATTR_LINK_MAP_SIZE,
+	NL80211_ADVERTISED_TTLM_ATTR_IEEE_LINK_MAP,
+	NL80211_ADVERTISED_TTLM_ATTR_SWITCH_TIME,
+	NL80211_ADVERTISED_TTLM_ATTR_DURATION,
+	NL80211_ADVERTISED_TTLM_ATTR_STATUS,
+	NL80211_ADVERTISED_TTLM_ATTR_MST_TSF_UPDATE,
+	NL80211_ADVERTISED_TTLM_ATTR_ED_UPDATE,
+
+	/* keep last */
+	__NL80211_ADVERTISED_TTLM_ATTR_LAST,
+	NL80211_ADVERTISED_TTLM_ATTR_MAX =
+		__NL80211_ADVERTISED_TTLM_ATTR_LAST - 1,
 };
 #endif /* __LINUX_NL80211_H */

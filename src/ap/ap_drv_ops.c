@@ -1475,3 +1475,20 @@ int hostapd_remove_pmkid(struct hostapd_data *hapd, const u8 *sta_addr,
 
 	return hostapd_drv_remove_pmkid(hapd, &params);
 }
+
+#ifdef CONFIG_IEEE80211BE
+int hostapd_drv_set_advertised_ttlm_params(struct hostapd_data *hapd,
+					   const struct drv_adv_ttlm_params *up_ttlm_params,
+					   const struct drv_adv_ttlm_params *est_ttlm_params,
+					   bool send_default_mapping)
+{
+	if (!hapd->driver || !hapd->drv_priv ||
+	    !hapd->driver->set_advertised_ttlm_params)
+		return 0;
+
+	return hapd->driver->set_advertised_ttlm_params(hapd->drv_priv,
+							up_ttlm_params,
+							est_ttlm_params,
+							send_default_mapping);
+}
+#endif /* CONFIG_IEEE80211BE */

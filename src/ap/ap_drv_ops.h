@@ -561,4 +561,9 @@ int hostapd_add_pmkid(struct hostapd_data *hapd, const u8 *bssid, const u8 *pmk,
 int hostapd_remove_pmkid(struct hostapd_data *hapd, const u8 *sta_addr,
 			 const u8 *pmkid);
 
+int hostapd_drv_set_advertised_ttlm_params(struct hostapd_data *hapd,
+					   const struct drv_adv_ttlm_params *up_ttlm_params,
+					   const struct drv_adv_ttlm_params *est_ttlm_params,
+					   bool send_default_mapping);
+
 #endif /* AP_DRV_OPS */

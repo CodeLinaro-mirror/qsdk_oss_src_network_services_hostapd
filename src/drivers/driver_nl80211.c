@@ -15881,6 +15881,75 @@ static int wpa_driver_nl80211_set_ttlm_link_mapping(void *priv, enum wpa_driver_
 			   ret, strerror(-ret));
 	return ret;
 }
+
+static int
+wpa_driver_nl80211_set_advertised_ttlm_params(void *priv,
+					      const struct drv_adv_ttlm_params *up_ttlm,
+					      const struct drv_adv_ttlm_params *est_ttlm,
+					      bool send_default_mapping)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	u8 link_map_size_arr[2] = {0};
+	u16 switch_time_arr[2] = {0};
+	u16 link_map_arr[2] = {0};
+	u32 duration_arr[2] = {0};
+	struct nlattr *attr;
+	struct nl_msg *msg;
+	u8 num_ttlm_ie = 0;
+	int ret = -ENOBUFS;
+
+	if (drv->nlmode != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
+
+	if (est_ttlm->expected_duration_present || send_default_mapping) {
+		link_map_size_arr[num_ttlm_ie] = est_ttlm->link_mapping_size;
+		switch_time_arr[num_ttlm_ie] = est_ttlm->mapping_switch_time;
+		duration_arr[num_ttlm_ie] = est_ttlm->expected_duration;
+		link_map_arr[num_ttlm_ie] = est_ttlm->ieee_link_map_tid[0];
+		num_ttlm_ie++;
+	}
+
+	if (up_ttlm->mapping_switch_time_present ||
+	    up_ttlm->expected_duration_present) {
+		link_map_size_arr[num_ttlm_ie] = up_ttlm->link_mapping_size;
+		switch_time_arr[num_ttlm_ie] = up_ttlm->mapping_switch_time;
+		duration_arr[num_ttlm_ie] = up_ttlm->expected_duration;
+		link_map_arr[num_ttlm_ie] = up_ttlm->ieee_link_map_tid[0];
+		num_ttlm_ie++;
+	}
+
+	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_TID_TO_LINK_MAPPING)))
+		goto error;
+
+	attr = nla_nest_start(msg, NL80211_ATTR_ADVERTISED_TTLM);
+	if (!attr)
+		goto error;
+
+	if (nla_put_u8(msg, NL80211_ADVERTISED_TTLM_ATTR_IE_COUNT, num_ttlm_ie) ||
+	    nla_put(msg, NL80211_ADVERTISED_TTLM_ATTR_LINK_MAP_SIZE,
+		    sizeof(link_map_size_arr), link_map_size_arr) ||
+	    nla_put(msg, NL80211_ADVERTISED_TTLM_ATTR_SWITCH_TIME,
+		    sizeof(switch_time_arr), switch_time_arr) ||
+	    nla_put(msg, NL80211_ADVERTISED_TTLM_ATTR_DURATION,
+		    sizeof(duration_arr), duration_arr) ||
+	    nla_put(msg, NL80211_ADVERTISED_TTLM_ATTR_IEEE_LINK_MAP,
+		    sizeof(link_map_arr), link_map_arr))
+		goto error;
+
+	nla_nest_end(msg, attr);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret) {
+		wpa_printf(MSG_DEBUG, "nl80211: advertised set ttlm failed err=%d (%s)",
+			   ret, strerror(-ret));
+	}
+	return ret;
+
+error:
+	nlmsg_free(msg);
+	return ret;
+}
 #endif /* CONFIG_IEEE80211BE */
 
 
@@ -16065,5 +16134,6 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #ifdef CONFIG_IEEE80211BE
 	.set_epcs_cfg = wpa_driver_set_epcs_cfg,
 	.set_ttlm_link_mapping = wpa_driver_nl80211_set_ttlm_link_mapping,
+	.set_advertised_ttlm_params = wpa_driver_nl80211_set_advertised_ttlm_params,
 #endif /* CONFIG_IEEE80211BE */
 };
