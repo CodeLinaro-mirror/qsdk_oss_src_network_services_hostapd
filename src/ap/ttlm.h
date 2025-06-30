@@ -241,4 +241,5 @@ void hostapd_ttlm_handle_mapping_switch_time_expiry(struct ttlm_context *ttlm_ct
 						    u8 link_id);
 void hostapd_ttlm_handle_expected_duration_expiry(struct ttlm_context *ttlm_ctx,
 						  u8 link_id);
+int hostapd_send_advertised_ttlm(struct hostapd_data *hapd, struct mlo_ttlm_ie *ttlm_conf);
 #endif /* TTLM_H */

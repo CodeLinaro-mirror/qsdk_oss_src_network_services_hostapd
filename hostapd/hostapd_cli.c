@@ -1767,6 +1767,11 @@ static int hostapd_cli_cmd_negotiated_ttlm(struct wpa_ctrl *ctrl, int argc,
 
 	return hostapd_cli_cmd(ctrl, "NEGOTIATED_TTLM", 1, argc, argv);
 }
+static int hostapd_cli_cmd_advertised_ttlm(struct wpa_ctrl *ctrl,
+					   int argc, char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "ADVERTISED_TTLM", 3, argc, argv);
+}
 #endif /* CONFIG_IEEE80211BE */
 
 
@@ -2018,6 +2023,9 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "[session_initiate|session_teardown|show] [<peer_mld_mac>|mu_edca_params|wmm_params]"},
 	{ "negotiated_ttlm", hostapd_cli_cmd_negotiated_ttlm, NULL,
 	  "= send ttlm test commands" },
+	{ "advertised_ttlm", hostapd_cli_cmd_advertised_ttlm, NULL,
+	  "ieee_link_map= map_switch_time= expected_dur= link_mapping_size=\n"
+	  "  = Trigger advertised TTLM" },
 #endif
 	{ "chain_mask", hostapd_cli_cmd_chain_mask, NULL,
 	"<tx chain mask> <rx chain mask>" },
