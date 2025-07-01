@@ -6052,17 +6052,23 @@ rsnxe_done:
 #endif /* CONFIG_FILS */
 
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->conf->ttlm_enable && status_code == WLAN_STATUS_DENIED_TID_TO_LINK_MAPPING) {
+	if (hapd->conf->ttlm_enable &&
+	    (sta && hapd->mld_link_id == sta->mld_assoc_link_id &&
+	     sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info.ttlm_resp_type ==
+	     TTLM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING)) {
 		struct ttlm_ongoing_negotiation_info *ongoing_ttlm;
 		size_t ttlm_elem_len;
-		u8 *ttlm_elem;
+		u8 *ttlm_elem = NULL;
+		int err;
 
 		ongoing_ttlm = &sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info;
+		err = hostapd_build_ttlm_elem(ongoing_ttlm, &ttlm_elem, &ttlm_elem_len);
 
-		if (hostapd_build_ttlm_elem(ongoing_ttlm, &ttlm_elem, &ttlm_elem_len) < 0)
-			return -1;
-
-		send_len += ttlm_elem_len;
+		if (!err) {
+			os_memcpy(p, ttlm_elem, ttlm_elem_len);
+			p = p + ttlm_elem_len;
+			send_len += ttlm_elem_len;
+		}
 		os_free(ttlm_elem);
 	}
 #endif /* CONFIG_IEEE80211BE */
@@ -6456,11 +6462,9 @@ static void handle_assoc(struct hostapd_data *hapd,
 		}
 	}
 
-	if (sta) {
-		resp = hostapd_handle_ttlm_assoc_req(hapd, mgmt, len, sta, pos, left);
-		if (resp == TTLM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING)
-			goto fail;
-	}
+	if (sta)
+		hostapd_handle_ttlm_assoc_req(hapd, mgmt, len, sta, pos, left);
+
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211R_AP

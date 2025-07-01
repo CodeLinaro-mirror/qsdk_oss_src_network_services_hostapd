@@ -977,6 +977,62 @@ static int hostapd_parse_ttlm_elem(struct hostapd_data *hapd,
 	return 0;
 }
 
+bool is_valid_negotiated_ttlm(struct mlo_ttlm_ie *established_ttlm,
+			      struct ttlm_ongoing_negotiation_info *neg_info)
+{
+	int dir, tid;
+	struct ttlm_info *ttlm_info;
+
+	if (established_ttlm->ttlm.default_link_mapping)
+		return true;
+
+	for (dir = 0; dir < TTLM_DIRECTION_MAX; dir++) {
+		ttlm_info = &neg_info->ttlm_info[dir];
+		if (ttlm_info->direction == TTLM_DIRECTION_INVALID)
+			continue;
+
+		if (ttlm_info->default_link_mapping)
+			continue;
+
+		for (tid = 0; tid < NUM_MAX_TIDS; tid++) {
+			if ((established_ttlm->ttlm.ieee_link_map_tid[0] &
+			     ttlm_info->ieee_link_map_tid[tid]) !=
+			    ttlm_info->ieee_link_map_tid[tid])
+				return false;
+		}
+	}
+
+	return true;
+}
+
+void copy_established_ttlm_to_ongoing(struct ttlm_ongoing_negotiation_info *ongoing_ttlm,
+				      struct hostapd_mld *mld)
+{
+	int dir;
+
+	memset(ongoing_ttlm, 0, sizeof(*ongoing_ttlm));
+
+	for (dir = 0; dir < TTLM_DIRECTION_MAX; dir++)
+		ongoing_ttlm->ttlm_info[dir].direction = TTLM_DIRECTION_INVALID;
+
+	if (mld->ttlm_ctx.established_ttlm.ttlm.expected_duration_present) {
+		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].direction = TTLM_DIRECTION_BIDI;
+		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].default_link_mapping = 0;
+		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].mapping_switch_time_present = 0;
+		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].mapping_switch_time = 0;
+		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].expected_duration_present = 1;
+		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].expected_duration =
+			mld->ttlm_ctx.established_ttlm.ttlm.expected_duration;
+		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].link_mapping_size =
+			mld->ttlm_ctx.established_ttlm.ttlm.link_mapping_size;
+		memcpy(ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].ieee_link_map_tid,
+		       mld->ttlm_ctx.established_ttlm.ttlm.ieee_link_map_tid,
+		       sizeof(ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].ieee_link_map_tid));
+	} else {
+		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].direction = TTLM_DIRECTION_BIDI;
+		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].default_link_mapping = 1;
+	}
+}
 
 int hostapd_handle_ttlm_assoc_req(struct hostapd_data *hapd, const struct ieee80211_mgmt *mgmt,
 				  size_t len, struct sta_info *sta, const u8 *elem,
@@ -984,10 +1040,18 @@ int hostapd_handle_ttlm_assoc_req(struct hostapd_data *hapd, const struct ieee80
 {
 	struct ttlm_ongoing_negotiation_info *ongoing_ttlm;
 	struct ieee802_11_elems elems;
+	struct hostapd_mld *mld = hapd->mld;
 	struct ttlm_info ttlm_info;
+	bool homogeneous_map;
 	enum ttlm_dir dir;
 	int retval;
+	enum ttlm_resp_type resp_type = TTLM_RESP_TYPE_SUCCESS;
 	u8 i;
+
+	/* initialize all partner stas */
+	os_memset(&sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info,
+		  0,
+		  sizeof(sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info));
 
 	sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info.ttlm_resp_type = -1;
 	if (!hapd->conf->ttlm_enable)
@@ -1007,22 +1071,39 @@ int hostapd_handle_ttlm_assoc_req(struct hostapd_data *hapd, const struct ieee80
 
 	if (!elems.ttlm_num) {
 		wpa_printf(MSG_ERROR, "No TTLM elements present");
-		os_free(ongoing_ttlm);
-		return -1;
+		/* if an advertised ttlm already established, add TTLM element with the advertised
+		 * mapping in assoc response frame. The ongoing_ttlm_info of sta is used while
+		 * constructing the assoc response frame, hence update it with established mapping.
+		 */
+		if (mld->ttlm_ctx.established_ttlm.ttlm.expected_duration_present) {
+			copy_established_ttlm_to_ongoing(ongoing_ttlm, mld);
+			resp_type = TTLM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING;
+			goto copy_info;
+		} else {
+			os_free(ongoing_ttlm);
+			return -1;
+		}
 	}
 
 	for (dir = 0; dir < TTLM_DIRECTION_MAX; dir++)
 		ongoing_ttlm->ttlm_info[dir].direction = TTLM_DIRECTION_INVALID;
 
 	for (i = 0; i < elems.ttlm_num; i++) {
+		memset(&ttlm_info, 0, sizeof(struct ttlm_info));
 		retval = hostapd_parse_ttlm_elem(hapd, elems.ttlm[i], &ttlm_info);
 		if (!retval && ttlm_info.direction < TTLM_DIRECTION_MAX) {
 			os_memcpy(&ongoing_ttlm->ttlm_info[ttlm_info.direction],
 				  &ttlm_info, sizeof(struct ttlm_info));
 		} else {
 			wpa_printf(MSG_ERROR, "Failed to parse TTLM IE");
-			os_free(ongoing_ttlm);
-			return WLAN_STATUS_INVALID_IE;
+			/* if an advertised ttlm already established, add TTLM element in assoc
+			 * response with advertised mapping, else add default ttlm element in assoc
+			 * response frame. The ongoing_ttlm_info of sta is used while constructing
+			 * the assoc response frame, hence update it accordingly.
+			 */
+			copy_established_ttlm_to_ongoing(ongoing_ttlm, mld);
+			resp_type = TTLM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING;
+			goto copy_info;
 		}
 	}
 
@@ -1030,32 +1111,43 @@ int hostapd_handle_ttlm_assoc_req(struct hostapd_data *hapd, const struct ieee80
 	     ongoing_ttlm->ttlm_info[TTLM_DIRECTION_UL].direction == TTLM_DIRECTION_UL) &&
 	    ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].direction == TTLM_DIRECTION_BIDI) {
 		wpa_printf(MSG_DEBUG, "Both DL/UL and BIDI TTLM IEs cannot exist at same time");
-		os_memset(ongoing_ttlm, 0, sizeof(*ongoing_ttlm));
-		ongoing_ttlm->ttlm_resp_type = WLAN_STATUS_DENIED_TID_TO_LINK_MAPPING;
+		/* if an advertised ttlm already established, add TTLM element in assoc
+		 * response with advertised mapping, else add default ttlm element in assoc
+		 * response frame. The ongoing_ttlm_info of sta is used while constructing
+		 * the assoc response frame, hence update it accordingly.
+		 */
+		copy_established_ttlm_to_ongoing(ongoing_ttlm, mld);
+		resp_type = TTLM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING;
+		goto copy_info;
 	}
 
-	os_memcpy(&sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info, ongoing_ttlm,
-		  sizeof(struct ttlm_ongoing_negotiation_info));
-
-	if (ongoing_ttlm->ttlm_resp_type != 0) {
-		wpa_printf(MSG_DEBUG, "DENIED response type");
-		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].direction = TTLM_DIRECTION_BIDI;
-		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_DL].direction = TTLM_DIRECTION_INVALID;
-		ongoing_ttlm->ttlm_info[TTLM_DIRECTION_UL].direction = TTLM_DIRECTION_INVALID;
-		ongoing_ttlm->ttlm_info->default_link_mapping = true;
-
-		os_memcpy(&sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info, ongoing_ttlm,
-			  sizeof(struct ttlm_ongoing_negotiation_info));
-
-		sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info.ttlm_resp_type =
-			WLAN_STATUS_DENIED_TID_TO_LINK_MAPPING;
-
-		os_free(ongoing_ttlm);
-		return WLAN_STATUS_DENIED_TID_TO_LINK_MAPPING;
+	homogeneous_map = hostapd_is_mapping_homogeneous(ongoing_ttlm);
+	if (homogeneous_map == false) {
+		wpa_printf(MSG_DEBUG, "Assoc request is with disjoint mapping");
+		copy_established_ttlm_to_ongoing(ongoing_ttlm, mld);
+		resp_type = WLAN_STATUS_DENIED_TID_TO_LINK_MAPPING;
+		goto copy_info;
+	}
+	/* if established ttlm present and the requested negotiation is not subset of established
+	 * ttlm, deny the negotiation with established ttlm element included in assoc response
+	 */
+	if (mld->ttlm_ctx.established_ttlm.ttlm.expected_duration_present &&
+	    !is_valid_negotiated_ttlm(&mld->ttlm_ctx.established_ttlm, ongoing_ttlm)) {
+		copy_established_ttlm_to_ongoing(ongoing_ttlm, mld);
+		resp_type = TTLM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING;
 	}
 
-	sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info.ttlm_resp_type =
-		WLAN_STATUS_SUCCESS;
+	/* TODO: check if assoc link is disabled in requested negotiation mapping. If yes
+	 * add default TTLM element in assoc response frame.
+	 */
+
+	/* TODO: if ttlm_enable is homogeneous && user configured default_resp_code==success &&
+	 * negotiated mapping is homogeneous, allow the negotiation. If any of these condition fails
+	 * add default TTLM element in assoc response frame.
+	 */
+copy_info:
+	ongoing_ttlm->ttlm_resp_type = resp_type;
+	hostapd_copy_configured_ttlm_to_sta_info(sta, hapd, ongoing_ttlm, 0);
 
 	os_free(ongoing_ttlm);
 	wpa_printf(MSG_DEBUG, "TTLM IE in assoc request has been parsed successfully");
