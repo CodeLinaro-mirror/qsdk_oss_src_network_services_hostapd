@@ -550,6 +550,88 @@ static void hostapd_link_remove_timeout_handler(void *eloop_data,
 			       hapd, NULL);
 }
 
+static bool hostapd_ttlm_info_check_non_default_mappings(int link_id,
+							 struct ttlm_info *ttlm_info,
+							 int ttlm_info_size)
+{
+	int dir, tid;
+
+	for (dir = 0; dir < ttlm_info_size; dir++) {
+		struct ttlm_info *info = &ttlm_info[dir];
+
+		if (info->direction == TTLM_DIRECTION_INVALID)
+			continue;
+		if (info->default_link_mapping)
+			continue;
+		for (tid = 0; tid < NUM_MAX_TIDS; tid++)
+			if (info->ieee_link_map_tid[tid] & BIT(link_id))
+				return true;
+	}
+	return false;
+}
+
+static bool hostapd_validate_link_removal_ttlm_global(struct hostapd_data *hapd)
+{
+	/* check the established mapping */
+	if (hostapd_ttlm_info_check_non_default_mappings(hapd->mld_link_id,
+							 &hapd->mld->ttlm_ctx.established_ttlm.ttlm,
+							 1)) {
+		return false;
+	}
+
+	/* check the upcoming mapping */
+	if (hostapd_ttlm_info_check_non_default_mappings(hapd->mld_link_id,
+							 &hapd->mld->ttlm_ctx.upcoming_ttlm.ttlm,
+							 1)) {
+		return false;
+	}
+
+	return true;
+}
+
+static bool hostapd_validate_link_removal_ttlm(struct hostapd_data *hapd)
+{
+	if (hapd->iface->conf->mbssid != MBSSID_DISABLED) {
+		struct hostapd_data *tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+		struct hostapd_data *bss;
+		int i;
+
+		if (hapd != tx_bss)
+			goto check_hapd;
+
+		if (hapd->iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
+			struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
+
+			dl_list_for_each(bss, &group->bss_list, struct hostapd_data, mbssid_bss) {
+				if (bss == hapd)
+					continue;
+
+				/* even if one non-tx bss fails validation, return false */
+				if (!hostapd_validate_link_removal_ttlm_global(bss))
+					return false;
+
+				/* check for negotiated mapping as well */
+			}
+		} else {
+			for (i = 1; hapd->iface->num_bss; i++) {
+				bss = hapd->iface->bss[i];
+				if (!hostapd_validate_link_removal_ttlm_global(bss))
+					return false;
+
+				/* check for negotited mapping as well */
+			}
+		}
+	}
+	/* If we are here means, all non-tx bss allows this link to be removed, now validate tx-bss
+	 * OR the hapd is not same as tx_bss, hence validate for hapd,
+	 * OR the hapd is non-mbssid bss, hence validate for hapd
+	 */
+check_hapd:
+	if (!hostapd_validate_link_removal_ttlm_global(hapd))
+		return false;
+	/* check for negotiated mapping as well */
+	return true;
+}
 
 static int hostapd_send_ml_reconfig_link_removal(struct hostapd_data *hapd,
 						 u32 count)
@@ -565,6 +647,17 @@ static int hostapd_send_ml_reconfig_link_removal(struct hostapd_data *hapd,
 
 	if (!params.ml_reconfig_elem)
 		return -1;
+
+	/* check if the link being removed is currently enabled in ttlm,
+	 * if so deny the link removal.
+	 * This API considers MBSSID tx vap case as well
+	 */
+	if (hapd->conf->ttlm_enable &&
+	    !hostapd_validate_link_removal_ttlm(hapd)) {
+		hapd->eht_mld_link_removal_inprogress = false;
+		os_free(params.ml_reconfig_elem);
+		return -1;
+	}
 
 	hostapd_eid_eht_reconf_ml(hapd, params.ml_reconfig_elem);
 
