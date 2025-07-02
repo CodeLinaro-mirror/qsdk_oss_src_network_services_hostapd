@@ -4785,7 +4785,14 @@ static int hostapd_ctrl_iface_negotiated_ttlm_request(struct hostapd_data *hapd,
 		goto fail;
 	}
 
+	/* check if requested mapping conflicts with advertised ttlm mapping. If yes, ignore the
+	 * request.
+	 */
+	if (!is_valid_negotiated_ttlm(&hapd->mld->ttlm_ctx.established_ttlm, ongoing_ttlm))
+		goto fail;
+
 	ret = hostapd_send_ttlm_req(hapd, ongoing_ttlm, sta);
+
 	os_free(input);
 	os_free(ttlm_conf);
 	os_free(ongoing_ttlm);

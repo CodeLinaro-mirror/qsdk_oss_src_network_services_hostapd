@@ -242,4 +242,7 @@ void hostapd_ttlm_handle_mapping_switch_time_expiry(struct ttlm_context *ttlm_ct
 void hostapd_ttlm_handle_expected_duration_expiry(struct ttlm_context *ttlm_ctx,
 						  u8 link_id);
 int hostapd_send_advertised_ttlm(struct hostapd_data *hapd, struct mlo_ttlm_ie *ttlm_conf);
+bool is_valid_negotiated_ttlm(struct mlo_ttlm_ie *established_ttlm,
+			      struct ttlm_ongoing_negotiation_info *neg_info);
+
 #endif /* TTLM_H */

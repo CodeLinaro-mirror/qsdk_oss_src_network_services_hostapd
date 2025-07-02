@@ -3019,6 +3019,40 @@ static void hostapd_mld_iface_disable(struct hostapd_data *hapd)
 		hostapd_iface_disable(link_bss);
 }
 
+static int hostapd_update_sta_negotiated_info(struct hostapd_data *hapd,
+					      struct sta_info *sta,
+					      void *ctx)
+{
+	struct ttlm_prev_negotiated_info *neg_info;
+	int dir;
+
+	/* no operation needed on legacy sta, continue iterator on remaining clients */
+	if (!ap_sta_is_mld(hapd, sta))
+		return 0;
+
+	neg_info = &sta->mld_info.tid_map_info.ttlm_prev_negotiated_info;
+
+	neg_info->dialog_token = 0;
+
+	for (dir = 0; dir < TTLM_DIRECTION_MAX; dir++)
+		neg_info->ttlm_info[dir].direction = TTLM_DIRECTION_INVALID;
+
+	memcpy(&neg_info->ttlm_info[TTLM_DIRECTION_BIDI],
+	       &hapd->mld->ttlm_ctx.established_ttlm.ttlm,
+	       sizeof(struct ttlm_info));
+
+	/* check further on remaining clients if present without breaking the iterator */
+	return 0;
+}
+
+static void hostapd_update_sta_negotiated_info_across_partners(struct hostapd_data *hapd)
+{
+	struct hostapd_data *link_bss;
+
+	for_each_mld_link(link_bss, hapd)
+		ap_for_each_sta(link_bss, hostapd_update_sta_negotiated_info, NULL);
+}
+
 static void hostapd_event_update_ttlm_status(struct hostapd_data *hapd,
 					     struct ttlm_update_event *ttlm_update_event)
 {
@@ -3042,16 +3076,22 @@ static void hostapd_event_update_ttlm_status(struct hostapd_data *hapd,
 
 		hostapd_ttlm_handle_mapping_switch_time_expiry(ttlm_ctx,
 							       hapd->mld_link_id);
-		/* TO-DO:
-		 * Send event to user-space to notify link update.
-		 * Go over all MLO peers on this MLD and clear the
+		/* TO-DO: Send event to user-space to notify link update.*/
+
+		/* Go over all MLO peers on this MLD and clear the
 		 * peer-to-peer level mapping.
 		 */
+		hostapd_update_sta_negotiated_info_across_partners(hapd);
 		break;
 	case TTLM_EXPECTED_DUR_EXPIRED:
 		hostapd_ttlm_handle_expected_duration_expiry(ttlm_ctx,
 							     hapd->mld_link_id);
 		/* TO-DO: Move P2P negotiated mapping to default */
+
+		/* Go over all MLO peers on this MLD and reset the
+		 * peer-to-peer level mapping to default mapping.
+		 */
+		hostapd_update_sta_negotiated_info_across_partners(hapd);
 		break;
 	default:
 		wpa_printf(MSG_ERROR, "TTLM: Invalid status");

@@ -1284,6 +1284,11 @@ void hostapd_handle_ttlm_req(struct hostapd_data *hapd, struct sta_info *sta,
 		ongoing_ttlm->ttlm_resp_type = TTLM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING;
 	}
 
+	if (!is_valid_negotiated_ttlm(&hapd->mld->ttlm_ctx.established_ttlm,
+				      ongoing_ttlm)) {
+		ongoing_ttlm->ttlm_resp_type = TTLM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING;
+	}
+
 	configured_ttlm = &sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info;
 	if (configured_ttlm->ttlm_resp_type !=
 	    TTLM_RESP_TYPE_PREFERRED_TID_TO_LINK_MAPPING && configured_ttlm->ttlm_resp_type !=
