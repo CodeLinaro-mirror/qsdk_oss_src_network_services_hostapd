@@ -1338,6 +1338,8 @@ void hostapd_get_epcs_capab(struct hostapd_data *hapd,
 
 int hostapd_epcs_handle_cli(struct hostapd_data *hapd, char *pos,
 			    char *buf, size_t buflen);
+int hostapd_ctrl_iface_negotiated_ttlm_capabilities(struct hostapd_data *hapd,
+							    char *buf, size_t buflen);
 #endif /* CONFIG_IEEE80211BE */
 
 bool hostapd_verify_action_frame_has_min_length(
