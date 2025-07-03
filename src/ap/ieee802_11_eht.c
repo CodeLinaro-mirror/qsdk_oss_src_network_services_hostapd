@@ -3655,3 +3655,23 @@ int hostapd_epcs_handle_cli(struct hostapd_data *hapd, char *pos,
 
 	return 0;
 }
+
+
+int hostapd_ctrl_iface_negotiated_ttlm_capabilities(struct hostapd_data *hapd,
+							   char *buf, size_t buflen)
+{
+	int len = 0, ttlm_cap, ret;
+	u16 mld_cap;
+
+	mld_cap = hapd->iface->mld_mld_capa;
+	ttlm_cap = (mld_cap & EHT_ML_MLD_CAPA_TID_TO_LINK_MAP_NEG_SUPP_MSK) >> 5;
+
+	ret = os_snprintf(buf + len, buflen - len, "ttlm_capability:%d\n", ttlm_cap);
+
+	if (os_snprintf_error(buflen - len, ret))
+		return len;
+
+	len += ret;
+
+	return len;
+}

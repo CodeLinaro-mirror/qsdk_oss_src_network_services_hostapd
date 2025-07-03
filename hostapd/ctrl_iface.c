@@ -5298,7 +5298,8 @@ fail:
 }
 
 
-static int hostapd_ctrl_iface_negotiated_ttlm(struct hostapd_data *hapd, const char *cmd)
+static int hostapd_ctrl_iface_negotiated_ttlm(struct hostapd_data *hapd, const char *cmd,
+					      char *buf, size_t buflen)
 {
 	if (os_strncmp(cmd, "request ", 8) == 0)
 		return hostapd_ctrl_iface_negotiated_ttlm_request(hapd, cmd + 8);
@@ -5306,6 +5307,13 @@ static int hostapd_ctrl_iface_negotiated_ttlm(struct hostapd_data *hapd, const c
 		return hostapd_ctrl_iface_negotiated_ttlm_response(hapd, cmd + 9);
 	else if (os_strncmp(cmd, "teardown ", 9) == 0)
 		return hostapd_ctrl_iface_negotiated_ttlm_teardown(hapd, cmd + 9);
+	else if (os_strncmp(cmd, "show ", 5) == 0) {
+		if (os_strncmp(cmd + 5, "ttlm_capability", 15) == 0)
+			return hostapd_ctrl_iface_negotiated_ttlm_capabilities(hapd, buf, buflen);
+	} else {
+		wpa_printf(MSG_ERROR, "invalid negotiated ttlm command");
+		return -1;
+	}
 
 	return 0;
 }
@@ -6441,8 +6449,8 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
                 reply_len = hostapd_epcs_handle_cli(hapd, buf + 5,
                                                     reply, reply_size);
 	} else if (os_strncmp(buf, "NEGOTIATED_TTLM ", 16) == 0) {
-		if (hostapd_ctrl_iface_negotiated_ttlm(hapd, buf + 16))
-			reply_len = -1;
+		reply_len = hostapd_ctrl_iface_negotiated_ttlm(hapd, buf + 16,
+							       reply, reply_size);
 	} else if (os_strncmp(buf, "ML_MAX_REC_LINKS ", 17) == 0) {
 		if (hostapd_ctrl_iface_conf_ml_rec_links(hapd, buf + 17))
 			reply_len = -1;
