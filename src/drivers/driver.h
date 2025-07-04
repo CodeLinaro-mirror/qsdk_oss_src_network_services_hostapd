@@ -2063,6 +2063,11 @@ struct wpa_driver_ap_params {
 	 * sae_password - SAE password for SAE offload
 	 */
 	const char *sae_password;
+
+	/**
+	 * ml_max_rec_links - Max recommended links for ML
+	 */
+	u8 ml_max_rec_links;
 };
 
 struct wpa_driver_mesh_bss_params {

@@ -3048,6 +3048,20 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 		params.freq = &freq;
 	}
 
+#ifdef CONFIG_IEEE80211BE
+	if ((hapd->conf->mld_ap) && (hapd->conf->enable_aal)) {
+		if (hapd->mld->num_links >= hapd->conf->ml_max_rec_links)
+			params.ml_max_rec_links = hapd->conf->ml_max_rec_links;
+		else
+			params.ml_max_rec_links = hapd->mld->num_links;
+
+		if (params.ml_max_rec_links == ML_IE_RSVD_MAX_REC_LINKS)
+			params.ml_max_rec_links = ML_IE_NO_MAX_REC_LINKS;
+	} else {
+		params.ml_max_rec_links = ML_IE_MAX_REC_LINKS_INVAL;
+	}
+#endif /* CONFIG_IEEE80211BE */
+
 	params.allowed_freqs = NULL;
 #ifdef CONFIG_DRIVER_NL80211_QCA
 	for (i = 0; i < hapd->iface->num_hw_features; i++) {

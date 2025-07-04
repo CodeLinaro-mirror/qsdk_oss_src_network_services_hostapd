@@ -5923,6 +5923,14 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 			goto fail;
 	}
 
+	if (params->ml_max_rec_links != ML_IE_MAX_REC_LINKS_INVAL) {
+		wpa_printf(MSG_DEBUG, "nl80211: ML Max rec links=%u",
+			   params->ml_max_rec_links);
+		if (nla_put_u8(msg, NL80211_ATTR_ML_MAX_REC_LINKS,
+			       params->ml_max_rec_links))
+			goto fail;
+	}
+
 #ifdef CONFIG_DRIVER_NL80211_QCA
 	if (cmd == NL80211_CMD_NEW_BEACON && params->allowed_freqs)
 		qca_set_allowed_ap_freqs(bss, params->allowed_freqs,
