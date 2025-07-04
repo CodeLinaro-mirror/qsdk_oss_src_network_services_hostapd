@@ -8431,8 +8431,8 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 			buflen += EHT_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
 		if (ap_sta_is_mld(hapd, sta)) {
 			buflen += hostapd_eid_eht_ml_tid_to_link_map_len(hapd);
-			buflen += hostapd_eid_eht_basic_ml_len(hapd, sta,
-							       false, true);
+		buflen += hostapd_eid_eht_basic_ml_len(hapd, sta,
+						       false, true, 0);
 		}
 	}
 #endif /* CONFIG_IEEE80211BE */
@@ -13821,11 +13821,13 @@ static size_t hostapd_mbssid_ext_capa(struct hostapd_data *bss,
 static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 					  u32 frame_type, size_t *bss_index,
 					  const u8 *known_bss,
-					  size_t known_bss_len, size_t num_bss)
+					  size_t known_bss_len, size_t num_bss,
+					  bool bcast_prb_resp)
 {
 	struct hostapd_data *tx_bss = hostapd_mbssid_get_tx_bss(hapd);
 	size_t len, i, tx_xrate_len;
 	u8 ext_capa[20], buf[100];
+	u8 ext_cap;
 
 	if (!tx_bss)
 		return 0;
@@ -13908,8 +13910,16 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 		 * be in the frame body */
 		if (bss->conf->mld_ap &&
 		    (bss != hapd || frame_type != WLAN_FC_STYPE_PROBE_RESP)) {
+			ext_cap = 0;
+			/* RMSL value sent in broadcast Probe response case and beacon */
+			if (bss->conf->enable_aal &&
+			    (((frame_type == WLAN_FC_STYPE_PROBE_RESP) &&
+			       bcast_prb_resp) ||
+			     (frame_type == WLAN_FC_STYPE_BEACON)))
+				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
+
 			nontx_profile_len += hostapd_eid_eht_basic_ml_len(
-				bss, NULL, true, false);
+				bss, NULL, true, false, ext_cap);
 			nontx_profile_len += hostapd_eid_eht_ml_reconfig_len(bss);
 		}
 #endif /* CONFIG_IEEE80211BE */
@@ -13939,7 +13949,8 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 
 size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd_probed, u32 frame_type,
 			      u8 *elem_count, const u8 *known_bss,
-			      size_t known_bss_len, size_t *rnr_len)
+			      size_t known_bss_len, size_t *rnr_len,
+			      bool bcast_prb_resp)
 {
 	struct hostapd_data *hapd = hostapd_mbssid_get_tx_bss(hapd_probed);
 	size_t len = 0, bss_index = 1;
@@ -13985,7 +13996,8 @@ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd_probed, u32 frame_type,
 
 		len += hostapd_eid_mbssid_elem_len(hapd_probed, frame_type,
 						   &bss_index, known_bss,
-						   known_bss_len, num_bss);
+						   known_bss_len, num_bss,
+						   bcast_prb_resp);
 
 		if (frame_type == WLAN_FC_STYPE_BEACON)
 			*elem_count += 1;
@@ -14040,7 +14052,8 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 				    u32 frame_type, u8 max_bssid_indicator,
 				    size_t *bss_index, u8 elem_count,
 				    const u8 *known_bss, size_t known_bss_len,
-				    u32 *elemid_modified_bmap, size_t num_bss)
+				    u32 *elemid_modified_bmap, size_t num_bss,
+				    bool bcast_prb_resp)
 {
 	struct hostapd_data *tx_bss = hostapd_mbssid_get_tx_bss(hapd);
 	size_t i, tx_xrate_len;
@@ -14049,6 +14062,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 #ifdef CONFIG_IEEE80211BE
 	u8 *startpos;
 #endif /* CONFIG_IEEE80211BE */
+	u8 ext_cap;
 
 	if (!tx_bss)
 		return eid;
@@ -14171,8 +14185,15 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		 * be in the frame body */
 		if (bss->conf->mld_ap &&
 		    (bss != hapd || frame_type != WLAN_FC_STYPE_PROBE_RESP)) {
+			ext_cap = 0;
+			if (bss->conf->enable_aal &&
+			    (((frame_type == WLAN_FC_STYPE_PROBE_RESP) &&
+			       bcast_prb_resp) ||
+			     (frame_type == WLAN_FC_STYPE_BEACON)))
+				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
+
 			eid = hostapd_eid_eht_basic_ml_common(bss, eid, NULL,
-							      true, false);
+							      true, false, ext_cap);
 			eid = hostapd_eid_eht_reconf_ml(bss, eid);
 		}
 #endif /* CONFIG_IEEE80211BE */
@@ -14225,7 +14246,7 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 			u8 **elem_offset,
 			const u8 *known_bss, size_t known_bss_len, u8 *rnr_eid,
 			u8 *rnr_count, u8 **rnr_offset, size_t rnr_len,
-			u32 *elemid_modified_bmap)
+			u32 *elemid_modified_bmap, bool bcast_prb_resp)
 {
 	struct hostapd_data *hapd = hostapd_mbssid_get_tx_bss(hapd_probed);
 	size_t bss_index = 1, cur_len = 0;
@@ -14264,8 +14285,8 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 		return hostapd_eid_mbssid_elem(
 			hapd_probed, eid, end, frame_stype,
 			hostapd_max_bssid_indicator(hapd),
-			&bss_index, elem_count, known_bss, known_bss_len,
-			elemid_modified_bmap, num_bss);
+				&bss_index, elem_count, known_bss, known_bss_len,
+				elemid_modified_bmap, num_bss, bcast_prb_resp);
 	}
 
 	while (bss_index < num_bss) {
@@ -14286,7 +14307,8 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 					      hostapd_max_bssid_indicator(hapd),
 					      &bss_index, elem_count,
 					      known_bss, known_bss_len,
-					      elemid_modified_bmap, num_bss);
+					      elemid_modified_bmap, num_bss,
+					      bcast_prb_resp);
 
 		if (add_rnr) {
 			struct mbssid_ie_profiles skip_profiles = {

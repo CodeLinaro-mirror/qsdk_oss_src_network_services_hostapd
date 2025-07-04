@@ -1157,6 +1157,8 @@ void hostapd_refresh_all_iface_beacons(struct hostapd_iface *hapd_iface);
 
 #ifdef CONFIG_IEEE80211BE
 
+void hostapd_set_ml_max_rec_links(struct hostapd_data *hapd, u8 ml_max_rec_links);
+void hostapd_validate_update_ml_max_rec_links(struct hostapd_data *hapd);
 bool hostapd_mld_is_first_bss(struct hostapd_data *hapd);
 void hostapd_mld_interface_freed(struct hostapd_data *hapd);
 int hostapd_wnm_add_multi_link_sub_elem(struct hostapd_data *hapd,

@@ -398,6 +398,7 @@ setup_mld:
 			return -1;
 		}
 		hostapd_mld_add_link(hapd);
+		hostapd_validate_update_ml_max_rec_links(hapd);
 	}
 #endif /* CONFIG_IEEE80211BE */
 

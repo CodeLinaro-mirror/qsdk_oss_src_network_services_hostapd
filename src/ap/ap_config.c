@@ -369,6 +369,8 @@ struct hostapd_config * hostapd_config_defaults(void)
 	hostapd_set_and_check_bw320_offset(conf, 0);
 
 #ifdef CONFIG_IEEE80211BE
+	/* set ML max rec links as Invalid */
+	bss->ml_max_rec_links = ML_IE_MAX_REC_LINKS_INVAL;
 	hostapd_set_default_epcs_params(bss);
 #endif /* CONFIG_IEEE80211BE */
 
@@ -1642,6 +1644,10 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 			   "Cannot enable mld_ap when IEEE 802.11be is disabled");
 		return -1;
 	}
+
+	if (bss->mld_ap && bss->enable_aal &&
+	    bss->ml_max_rec_links == ML_IE_MAX_REC_LINKS_INVAL)
+		bss->ml_max_rec_links = ML_IE_DEF_MAX_REC_LINKS;
 
 	if (full_config && (!conf->ieee80211be || bss->disable_11be) &&
 	    bss->bss_require_eht) {

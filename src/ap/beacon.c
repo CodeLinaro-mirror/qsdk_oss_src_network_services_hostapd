@@ -629,7 +629,7 @@ ieee802_11_build_ap_params_mbssid(struct hostapd_data *hapd,
 
 	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
 	len = hostapd_eid_mbssid_len(tx_bss, WLAN_FC_STYPE_BEACON, &elem_count,
-				     NULL, 0, &rnr_len);
+				     NULL, 0, &rnr_len, true);
 
 	if (iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED && !elem_count)
 		return 0;
@@ -659,7 +659,7 @@ ieee802_11_build_ap_params_mbssid(struct hostapd_data *hapd,
 	end = hostapd_eid_mbssid(tx_bss, elem, elem + len, WLAN_FC_STYPE_BEACON,
 				 elem_count, elem_offset, NULL, 0, rnr_elem,
 				 &rnr_elem_count, rnr_elem_offset, rnr_len,
-				 &elemid_modified_bmap);
+				 &elemid_modified_bmap, true);
 
 	params->mbssid.mbssid_tx_iface = tx_bss->conf->iface;
 	params->mbssid.mbssid_index = hostapd_mbssid_get_bss_index(hapd);
@@ -786,6 +786,10 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 	struct hostapd_data *hapd_probed = params->mld_ap ? params->mld_ap :
 		hapd;
 	size_t buflen = 0;
+	u8 include_ext_cap = 0;
+	u8 param_ext_cap = 0;
+	bool bcast_prb_resp = false;
+
 
 	hapd = hostapd_mbssid_get_tx_bss(hapd);
 
@@ -822,24 +826,31 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 		if (hapd->iconf->punct_bitmap)
 			buflen += EHT_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
 
+		if (hapd->conf->enable_aal)
+			include_ext_cap = BIT(BASIC_MULTI_LINK_CTRL_EXT_EN);
+
 		if (params->mld_ap && params->mld_ap->conf->mld_ap) {
+			/* Check for non-Tx BSS conf */
+			if (params->mld_ap->conf->enable_aal)
+				param_ext_cap = BIT(BASIC_MULTI_LINK_CTRL_EXT_EN);
+
 			buflen += hostapd_eid_eht_ml_beacon_len(
 				params->mld_ap, params->mld_info,
-				!!params->mld_ap);
+				!!params->mld_ap, param_ext_cap);
 			if (params->mld_ap->iface->drv_flags2 &
 			    WPA_DRIVER_FLAGS2_MLD_LINK_REMOVAL_OFFLOAD)
 				buflen += hostapd_eid_eht_ml_reconfig_len(params->mld_ap);
 
 			if (hapd->conf->mld_ap)
 				buflen += hostapd_eid_eht_ml_beacon_len(
-					hapd, NULL, false);
+					hapd, NULL, false, include_ext_cap);
 
 			/* For Max Channel Switch Time element during channel
 			 * switch */
 			buflen += 6;
 		} else if (hapd->conf->mld_ap) {
 			buflen += hostapd_eid_eht_ml_beacon_len(
-				hapd, params->mld_info, false);
+				hapd, params->mld_info, false, include_ext_cap);
 
 			/* For Max Channel Switch Time element during channel
 			 * switch */
@@ -857,11 +868,15 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 				hapd);
 	}
 #endif /* CONFIG_IEEE80211BE */
+	/* RMSL value is included in broadcast Probe Response frames. */
+	if (!(params->req && (!is_6ghz_op_class(hapd->iconf->op_class) ||
+			     hapd_probed->conf->ignore_broadcast_ssid)))
+		bcast_prb_resp = true;
 
 	buflen += hostapd_eid_mbssid_len(hapd_probed, WLAN_FC_STYPE_PROBE_RESP,
 					 NULL,
 					 params->known_bss,
-					 params->known_bss_len, NULL);
+				 params->known_bss_len, NULL, bcast_prb_resp);
 	buflen += hostapd_eid_rnr_len(hapd, WLAN_FC_STYPE_PROBE_RESP, true);
 
 #ifdef CONFIG_IEEE80211BN
@@ -891,6 +906,9 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 		hapd;
 	u8 *csa_pos;
 	u8 *epos;
+	u8 ext_cap = 0;
+	u8 p_ext_cap = 0;
+	bool bcast_prb_resp = false;
 
 	hapd = hostapd_mbssid_get_tx_bss(hapd);
 	epos = pos + len;
@@ -928,10 +946,16 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 
 	pos = hostapd_get_rsne(hapd, pos, epos - pos);
 	pos = hostapd_eid_bss_load(hapd, pos, epos - pos);
+
+	/* RMSL value would be sent in broadcast Probe response case */
+	if (is_broadcast_ether_addr(params->resp->da))
+		bcast_prb_resp = true;
+
 	pos = hostapd_eid_mbssid(hapd_probed, pos, epos,
 				 WLAN_FC_STYPE_PROBE_RESP, 0,
 				 NULL, params->known_bss, params->known_bss_len,
-				 NULL, NULL, NULL, 0, NULL);
+				 NULL, NULL, NULL, 0, NULL,
+				 bcast_prb_resp);
 	pos = hostapd_eid_rm_enabled_capab(hapd, pos, epos - pos);
 	pos = hostapd_get_mde(hapd, pos, epos - pos);
 
@@ -1016,22 +1040,37 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 
 #ifdef CONFIG_IEEE80211BE
 	if (hostapd_is_eht_enabled(hapd)) {
+		if (hapd->conf->enable_aal) {
+			ext_cap = BIT(BASIC_MULTI_LINK_CTRL_EXT_EN);
+			if (bcast_prb_resp)
+				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
+		}
 		if (params->mld_ap && params->mld_ap->conf->mld_ap) {
+			/* Check for non-Tx BSS conf */
+			if (params->mld_ap->conf->enable_aal) {
+				p_ext_cap = BIT(BASIC_MULTI_LINK_CTRL_EXT_EN);
+
+				/* RMSL value would be sent in broadcast Probe response */
+				if (bcast_prb_resp)
+					p_ext_cap |=
+					BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
+			}
+
 			pos = hostapd_eid_eht_ml_beacon(
 				params->mld_ap, params->mld_info,
-				pos, !!params->mld_ap);
+				pos, !!params->mld_ap, p_ext_cap);
 			if (params->mld_ap->iface->drv_flags2 &
 			    WPA_DRIVER_FLAGS2_MLD_LINK_REMOVAL_OFFLOAD)
 				pos = hostapd_eid_eht_reconf_ml(params->mld_ap, pos);
 
 			if (hapd->conf->mld_ap)
 				pos = hostapd_eid_eht_ml_beacon(
-					hapd, NULL, pos, false);
+					hapd, NULL, pos, false, ext_cap);
 
 		} else if (hapd->conf->mld_ap) {
 			pos = hostapd_eid_eht_ml_beacon(hapd,
 							params->mld_info,
-							pos, false);
+							pos, false, ext_cap);
 		}
 		/* ML reconfigure feature */
 		/* Software removal is already included by the ML beacon helper. */
@@ -2403,6 +2442,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	u8 *startpos;
 	u16 elemid_modified = 0;
 	struct hostapd_data *tx_bss;
+	u8 ext_cap = 0;
 #endif /* NEED_AP_MLME */
 
 	os_memset(params, 0, sizeof(*params));
@@ -2689,8 +2729,12 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	if (hostapd_is_eht_enabled(hapd)) {
 		if (hapd->conf->mld_ap) {
 			startpos = tailpos;
+
+			ext_cap = 0;
+			if (hapd->conf->enable_aal)
+				ext_cap = BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
 			tailpos = hostapd_eid_eht_ml_beacon(hapd, NULL,
-							    tailpos, false);
+							    tailpos, false, ext_cap);
 			hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
 						   tailpos-startpos, ELEMID_CU_PARAM_EXT_ML);
 		}

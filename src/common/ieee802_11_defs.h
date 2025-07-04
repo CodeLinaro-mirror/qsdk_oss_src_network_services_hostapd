@@ -3151,6 +3151,9 @@ struct ieee80211_eht_capabilities {
 #define BASIC_MULTI_LINK_CTRL_PRES_EXT_MLD_CAP		0x0400
 #define BASIC_MULTI_LINK_CTRL_PRES_ENH_CRIT_UPD		0x0800
 
+#define BASIC_MULTI_LINK_CTRL_EXT_EN			0
+#define BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN		1
+
 /*
  * STA Control field definitions of Per-STA Profile subelement in Basic
  * Multi-Link element as described in Figure 9-1074v: STA Control field format
@@ -3227,6 +3230,16 @@ struct eht_ml_basic_common_info {
 #define EHT_ML_EXT_MLD_CAPA_NSTR_UPDATE               0x0020
 #define EHT_ML_EXT_MLD_CAPA_EMLSR_ENA_ONE_LINK        0x0040
 #define EHT_ML_EXT_MLD_CAPA_BTM_MLD_RECO_MULTI_AP     0x0080
+
+#define EHT_ML_MLD_EXT_CAPA_MAX_NUM_REC_LINKS_MASK    0x001e
+#define EHT_ML_MLD_EXT_CAPA_MAX_NUM_REC_LINKS_OFFSET  1
+
+/* RMSL defines */
+#define ML_IE_NO_MAX_REC_LINKS				0
+#define ML_IE_RSVD_MAX_REC_LINKS				1
+#define ML_IE_DEF_MAX_REC_LINKS				2
+#define ML_IE_MAX_SUPPORT_MAX_REC_LINKS			3
+#define ML_IE_MAX_REC_LINKS_INVAL			0xff
 
 /* IEEE Std 802.11be-2024, Figure 9-1074u - Per-STA Profile subelement format
  * of the Basic Multi-Link element*/
