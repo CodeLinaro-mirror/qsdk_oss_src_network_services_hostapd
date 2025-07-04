@@ -2091,6 +2091,11 @@ struct wpa_driver_ap_params {
 	const char *sae_password;
 
 	/**
+	 * ml_max_rec_links - Max recommended links for ML
+	 */
+	u8 ml_max_rec_links;
+
+	/**
 	 * uhr_oper - Full UHR operation (beacon only has abridged data),
 	 * includes the extended element header
 	 */

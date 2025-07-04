@@ -6283,6 +6283,11 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 		goto fail;
 #endif /* CONFIG_FILS */
 
+	if (params->ml_max_rec_links != ML_IE_MAX_REC_LINKS_INVAL &&
+	    nla_put_u8(msg, NL80211_ATTR_ML_MAX_REC_LINKS,
+		       params->ml_max_rec_links))
+		goto fail;
+
 	if (bss->valid_links && (params->elemid_added_bmap || params->elemid_modified_bmap) &&
 	    !params->disable_cu) {
 		elems = nla_nest_start(msg, NL80211_ATTR_SET_CRITICAL_UPDATE);
