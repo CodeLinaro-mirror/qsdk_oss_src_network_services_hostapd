@@ -984,6 +984,9 @@ struct hostapd_bss_config {
 	/* The AP's MLD MAC address within the AP MLD */
 	u8 mld_addr[ETH_ALEN];
 
+	bool enable_aal;
+	u8 ml_max_rec_links;
+
 #ifdef CONFIG_TESTING_OPTIONS
 	/*
 	 * If set indicate the AP as disabled in the RNR element included in the

@@ -1145,6 +1145,16 @@ static int hostapd_ctrl_iface_get_config(struct hostapd_data *hapd,
 		pos += ret;
 	}
 
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap && hapd->conf->enable_aal) {
+		ret = os_snprintf(pos, end - pos, "ml_max_rec_links=%d\n",
+				  hapd->conf->ml_max_rec_links);
+		if (os_snprintf_error(end - pos, ret))
+			return pos - buf;
+		pos += ret;
+	}
+#endif /* CONFIG_IEEE80211BE */
+
 	return pos - buf;
 }
 
@@ -4828,6 +4838,38 @@ static int hostapd_ctrl_iface_negotiated_ttlm(struct hostapd_data *hapd, const c
 
 	return 0;
 }
+
+static int hostapd_ctrl_iface_conf_ml_rec_links(struct hostapd_data *hapd,
+						const char *links)
+{
+	int links_val;
+
+	links_val = atoi(links);
+
+	if (!hapd->conf->mld_ap || !hapd->conf->enable_aal) {
+		wpa_printf(MSG_ERROR,
+			   "MLD or AAL is not enabled (MLD enable %d AAL enable %d)",
+			   hapd->conf->mld_ap, hapd->conf->enable_aal);
+		return -1;
+	}
+
+	if (links_val > ML_IE_MAX_SUPPORT_MAX_REC_LINKS) {
+		wpa_printf(MSG_ERROR,
+			   "configured max rec links is %d greater than %d", links_val,
+			   ML_IE_MAX_SUPPORT_MAX_REC_LINKS);
+		return -1;
+	}
+
+	if (links_val == ML_IE_RSVD_MAX_REC_LINKS) {
+		wpa_printf(MSG_ERROR,
+			   "configured max rec links is %d reserved value", links_val);
+		return -1;
+	}
+
+	hostapd_set_ml_max_rec_links(hapd, links_val);
+
+	return 0;
+}
 #endif /* CONFIG_IEEE80211BE */
 
 
@@ -5773,6 +5815,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
                                                     reply, reply_size);
 	} else if (os_strncmp(buf, "NEGOTIATED_TTLM ", 16) == 0) {
 		if (hostapd_ctrl_iface_negotiated_ttlm(hapd, buf + 16))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "ML_MAX_REC_LINKS ", 17) == 0) {
+		if (hostapd_ctrl_iface_conf_ml_rec_links(hapd, buf + 17))
 			reply_len = -1;
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_SAE

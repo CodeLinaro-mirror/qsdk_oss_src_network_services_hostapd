@@ -137,18 +137,22 @@ void hostapd_get_eht_capab(struct hostapd_data *hapd,
 			   size_t len);
 u8 * hostapd_eid_eht_ml_beacon(struct hostapd_data *hapd,
 			       struct mld_info *mld_info,
-			       u8 *eid, bool include_mld_id);
+			       u8 *eid, bool include_mld_id,
+			       u8 include_ext_cap);
 u8 * hostapd_eid_eht_ml_assoc(struct hostapd_data *hapd, struct sta_info *info,
 			      u8 *eid);
 u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 				     u8 *eid, struct mld_info *mld_info,
-				     bool include_mld_id, bool include_bpcc);
+				     bool include_mld_id, bool include_bpcc,
+				     u8 include_ext_cap);
 size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 				    struct sta_info *info,
-				    bool include_mld_id, bool include_pbcc);
+				    bool include_mld_id, bool include_pbcc,
+				    u8 include_ext_cap);
 size_t hostapd_eid_eht_ml_beacon_len(struct hostapd_data *hapd,
 				     struct mld_info *info,
-				     bool include_mld_id);
+				     bool include_mld_id,
+				     u8 include_ext_cap);
 struct wpabuf * hostapd_ml_auth_resp(struct hostapd_data *hapd);
 const u8 * hostapd_process_ml_auth(struct hostapd_data *hapd,
 				   const struct ieee80211_mgmt *mgmt,
@@ -390,13 +394,15 @@ u16 copy_sta_eht_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		       const u8 *eht_capab, size_t eht_capab_len);
 size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd, u32 frame_type,
 			      u8 *elem_count, const u8 *known_bss,
-			      size_t known_bss_len, size_t *rnr_len);
+			      size_t known_bss_len, size_t *rnr_len,
+			      bool bcast_prb_resp);
 u8 * hostapd_eid_mbssid(struct hostapd_data *hapd, u8 *eid, u8 *end,
 			unsigned int frame_stype, u8 elem_count,
 			u8 **elem_offset,
 			const u8 *known_bss, size_t known_bss_len, u8 *rnr_eid,
 			u8 *rnr_count, u8 **rnr_offset, size_t rnr_len,
-			u32 *elemid_modified_bmap);
+			u32 *elemid_modified_bmap,
+			bool bcast_prb_resp);
 void hostapd_eid_update_cu_info(struct hostapd_data *hapd, u16 *elemid_modified,
 				const u8 *eid_pos, size_t eid_len,
 				enum elemid_cu eid_cu);

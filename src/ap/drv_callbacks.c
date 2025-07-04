@@ -2870,6 +2870,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 	struct hostapd_iface *iface, **tmp;
 	unsigned int i;
 	struct hapd_interfaces *interfaces;
+	u8 active_links;
 #ifdef CONFIG_WNM_AP
 	u8 bss_term_dur[12];
 	u8 req_mode;
@@ -2909,7 +2910,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 
 		iface = hapd->iface;
 		interfaces = iface->interfaces;
-
+		active_links = hostapd_get_active_links(hapd);
 		/* Save one of the partner bss to update the beacon */
 		for_each_mld_link(phapd, hapd)
 			if (phapd != hapd)
@@ -2953,6 +2954,9 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 
 		/* Refresh all the partner beacons */
 		hostapd_refresh_all_iface_beacons(phapd->iface);
+		/* update ML Max recommended links */
+		if (active_links < phapd->conf->ml_max_rec_links)
+			hostapd_set_ml_max_rec_links(phapd, active_links);
 	}
 }
 #endif /* CONFIG_IEEE80211BE */

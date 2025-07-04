@@ -1677,7 +1677,7 @@ static u8 *hostapd_wpa_ft_add_bmle(void *ctx, u8 *bmle_ie, u8 type, void *mle_da
 	if (!hapd->mld)
 		return bmle_ie;
 
-	return hostapd_eid_eht_ml_beacon(hapd, NULL, bmle_ie, true);
+	return hostapd_eid_eht_ml_beacon(hapd, NULL, bmle_ie, true, 0);
 }
 
 
@@ -1685,7 +1685,7 @@ static size_t hostapd_wpa_ft_add_bmle_len(void *ctx, u8 type, void *mle_data)
 {
 	struct hostapd_data *hapd = ctx;
 
-	return hostapd_eid_eht_ml_beacon_len(hapd, NULL, true);
+	return hostapd_eid_eht_ml_beacon_len(hapd, NULL, true, 0);
 }
 
 

@@ -588,7 +588,8 @@ u8 *hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd,
 #define EHT_ML_STA_INFO_LEN 21
 u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 				     u8 *eid, struct mld_info *mld_info,
-				     bool include_mld_id, bool include_bpcc)
+				     bool include_mld_id, bool include_bpcc,
+				     u8 include_ext_cap)
 {
 	struct wpabuf *buf;
 	u16 control;
@@ -598,7 +599,8 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 	u8 link_id;
 	u8 common_info_len;
 	u16 mld_cap;
-	u8 max_simul_links, active_links;
+	u8 max_simul_links, active_links, max_rec_links;
+	u16 ext_mld_cap;
 
 	/*
 	 * As the Multi-Link element can exceed the size of 255 bytes need to
@@ -628,6 +630,11 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		/* AP MLD ID */
 		control |= BASIC_MULTI_LINK_CTRL_PRES_AP_MLD_ID;
 		common_info_len++;
+	}
+
+	if (include_ext_cap) {
+		control |= BASIC_MULTI_LINK_CTRL_PRES_EXT_MLD_CAP;
+		common_info_len += 2;
 	}
 
 	wpabuf_put_le16(buf, control);
@@ -683,6 +690,31 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG, "MLD: AP MLD ID=0x%x",
 			   hostapd_get_mld_id(hapd));
 		wpabuf_put_u8(buf, hostapd_get_mld_id(hapd));
+	}
+
+	if (include_ext_cap) {
+		ext_mld_cap = 0;
+		if (include_ext_cap & BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN)) {
+			max_rec_links = hapd->conf->ml_max_rec_links;
+			if (max_rec_links > (active_links + 1)) {
+				wpa_printf(MSG_ERROR,
+					   "MLD: Error in max recommended links, advertised: 0x%x current: 0x%x",
+					   active_links + 1, max_rec_links);
+				max_rec_links = active_links + 1;
+			}
+
+			if (max_rec_links == ML_IE_RSVD_MAX_REC_LINKS)
+				max_rec_links = ML_IE_NO_MAX_REC_LINKS;
+
+			ext_mld_cap &= ~EHT_ML_MLD_EXT_CAPA_MAX_NUM_REC_LINKS_MASK;
+			ext_mld_cap |= ((max_rec_links <<
+					EHT_ML_MLD_EXT_CAPA_MAX_NUM_REC_LINKS_OFFSET) &
+					EHT_ML_MLD_EXT_CAPA_MAX_NUM_REC_LINKS_MASK);
+		}
+		wpa_printf(MSG_DEBUG,
+			   "MLD: Ext MLD Capabilities and Operations=0x%x rec_links %u",
+			   ext_mld_cap, max_rec_links);
+		wpabuf_put_le16(buf, ext_mld_cap);
 	}
 
 	if (!mld_info)
@@ -799,7 +831,8 @@ out:
 
 size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 				    struct sta_info *info,
-				    bool include_mld_id, bool include_bpcc)
+				    bool include_mld_id, bool include_bpcc,
+				    u8 include_ext_cap)
 {
 	int link_id;
 	size_t len, num_frags;
@@ -815,6 +848,9 @@ size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 	len += EHT_ML_COMMON_INFO_LEN;
 	if (include_mld_id)
 		len++;
+
+	if (include_ext_cap)
+		len += 2;
 
 	if (!info)
 		goto out;
@@ -867,7 +903,8 @@ out:
 
 
 static size_t hostapd_eid_eht_ml_len(struct mld_info *info,
-				     bool include_mld_id, bool include_bpcc)
+				     bool include_mld_id, bool include_bpcc,
+				     u8 include_ext_cap)
 {
 	size_t len = 0;
 	size_t eht_ml_len = 2 + EHT_ML_COMMON_INFO_LEN;
@@ -875,6 +912,9 @@ static size_t hostapd_eid_eht_ml_len(struct mld_info *info,
 
 	if (include_mld_id)
 		eht_ml_len++;
+
+	if (include_ext_cap)
+		eht_ml_len += 2;
 
 	for (link_id = 0; info && link_id < ARRAY_SIZE(info->links);
 	     link_id++) {
@@ -914,10 +954,11 @@ static size_t hostapd_eid_eht_ml_len(struct mld_info *info,
 
 u8 * hostapd_eid_eht_ml_beacon(struct hostapd_data *hapd,
 			       struct mld_info *info,
-			       u8 *eid, bool include_mld_id)
+			       u8 *eid, bool include_mld_id,
+			       u8 include_ext_cap)
 {
 	eid = hostapd_eid_eht_basic_ml_common(hapd, eid, info, include_mld_id,
-					      false);
+					      false, include_ext_cap);
 
 	if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAG2_MLD_LINK_REMOVAL_OFFLOAD)
 		return eid;
@@ -933,7 +974,7 @@ u8 * hostapd_eid_eht_ml_assoc(struct hostapd_data *hapd, struct sta_info *info,
 		return eid;
 
 	eid = hostapd_eid_eht_basic_ml_common(hapd, eid, &info->mld_info,
-					      false, true);
+					      false, true, 0);
 	ap_sta_free_sta_profile(&info->mld_info);
 	return eid;
 }
@@ -941,9 +982,10 @@ u8 * hostapd_eid_eht_ml_assoc(struct hostapd_data *hapd, struct sta_info *info,
 
 size_t hostapd_eid_eht_ml_beacon_len(struct hostapd_data *hapd,
 				     struct mld_info *info,
-				     bool include_mld_id)
+				     bool include_mld_id,
+				     u8 include_ext_cap)
 {
-	return hostapd_eid_eht_ml_len(info, include_mld_id, false);
+	return hostapd_eid_eht_ml_len(info, include_mld_id, false, include_ext_cap);
 }
 
 
@@ -1975,7 +2017,7 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 		 * once mac80211 is fixed to match the standard (or this comment
 		 * be removed if the standard is modified to match
 		 * implementation). */
-		mle_len = hostapd_eid_eht_ml_len(&mld, false, true);
+		mle_len = hostapd_eid_eht_ml_len(&mld, false, true, 0);
 		len += mle_len;
 	}
 
@@ -2081,7 +2123,7 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 		 * be removed if the standard is modified to match
 		 * implementation). */
 		mle_pos = hostapd_eid_eht_basic_ml_common(hapd, mle_pos, &mld,
-							  false, true);
+							  false, true, 0);
 		if ((size_t) (mle_pos - pos) != mle_len) {
 			wpa_printf(MSG_DEBUG,
 				   "MLD: Unexpected MLE length: %ld != %zu",

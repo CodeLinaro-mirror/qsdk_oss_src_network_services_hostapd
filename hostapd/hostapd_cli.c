@@ -678,6 +678,21 @@ static int hostapd_cli_cmd_link_remove(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, buf);
 }
 
+#ifdef CONFIG_IEEE80211BE
+static int hostapd_cli_cmd_ml_max_rec_links(struct wpa_ctrl *ctrl, int argc,
+					    char *argv[])
+{
+	char buf[256];
+
+	if (argc < 1) {
+		printf("Invalid 'ml_max_rec_links' command  - atleast 2 args required\n");
+		return -1;
+	}
+
+	snprintf(buf, sizeof(buf), "ML_MAX_REC_LINKS %s", argv[0]);
+	return wpa_ctrl_command(ctrl, buf);
+}
+#endif /* CONFIG_IEEE80211BE */
 
 static int hostapd_cli_cmd_disassoc_imminent(struct wpa_ctrl *ctrl, int argc,
 					     char *argv[])
@@ -1824,6 +1839,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "= show this usage help" },
 	{ "interface", hostapd_cli_cmd_interface, hostapd_complete_interface,
 	  "[ifname] = show interfaces/select interface" },
+#ifdef CONFIG_IEEE80211BE
+	{ "ml_max_rec_links", hostapd_cli_cmd_ml_max_rec_links, NULL,
+	  "= Configures Max ML recommended links Ext MLD CAP" },
+#endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_FST
 	{ "fst", hostapd_cli_cmd_fst, NULL,
 	  "<params...> = send FST-MANAGER control interface command" },

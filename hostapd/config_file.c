@@ -4967,6 +4967,18 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz = atoi(pos);
 	} else if (os_strcmp(buf, "eht_ulmumimo_320mhz") == 0) {
 		conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz = atoi(pos);
+#ifdef CONFIG_IEEE80211BE
+	} else if (os_strcmp(buf, "enable_aal") == 0) {
+		bss->enable_aal = atoi(pos);
+	} else if (os_strcmp(buf, "ml_max_rec_links") == 0) {
+		int ml_max_rec_links;
+
+		ml_max_rec_links = atoi(pos);
+		if (ml_max_rec_links == ML_IE_RSVD_MAX_REC_LINKS)
+			bss->ml_max_rec_links = ML_IE_NO_MAX_REC_LINKS;
+		else
+			bss->ml_max_rec_links = ml_max_rec_links;
+#endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_TESTING_OPTIONS
 	} else if (os_strcmp(buf, "eht_oper_puncturing_override") == 0) {
 		if (get_u16(pos, line, &bss->eht_oper_puncturing_override))

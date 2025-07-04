@@ -1805,6 +1805,7 @@ setup_mld:
 			return -1;
 		}
 		hostapd_mld_add_link(hapd);
+		hostapd_validate_update_ml_max_rec_links(hapd);
 	}
 #endif /* CONFIG_IEEE80211BE */
 
@@ -6189,6 +6190,69 @@ u8 hostapd_get_active_links(struct hostapd_data *hapd)
 	}
 
 	return active_links;
+}
+
+void hostapd_set_ml_max_rec_links(struct hostapd_data *hapd, u8 ml_max_rec_links)
+{
+	struct hostapd_data *link_bss;
+	struct hostapd_data *tx_hapd;
+
+	if (!hapd || !hapd->conf->mld_ap)
+		return;
+
+	if (ml_max_rec_links == ML_IE_RSVD_MAX_REC_LINKS)
+		ml_max_rec_links = ML_IE_NO_MAX_REC_LINKS;
+
+	for_each_mld_link(link_bss, hapd) {
+		link_bss->conf->ml_max_rec_links = ml_max_rec_links;
+
+		wpa_printf(MSG_DEBUG, "enable_aal %d, ml_max_rec_links %u",
+			   link_bss->conf->enable_aal, link_bss->conf->ml_max_rec_links);
+	}
+
+	wpa_printf(MSG_DEBUG, "link-%u: beacon update with max rec links",
+		   hapd->mld_link_id);
+
+	if (!hapd->beacon_set_done) {
+		wpa_printf(MSG_DEBUG, "link-%u: is not beaconing, skipping set_beacon",
+			   hapd->mld_link_id);
+		return;
+	}
+
+	ieee802_11_set_beacon(hapd);
+
+	/* If link BSS is non-TX BSS, Invoke set beacon for Tx BSS */
+	for_each_mld_link(link_bss, hapd) {
+		/* if link bss is non-tx bss, get Tx BSS */
+		tx_hapd = hostapd_mbssid_get_tx_bss(link_bss);
+		if ((link_bss != tx_hapd) && tx_hapd->beacon_set_done)
+			ieee802_11_set_beacon(tx_hapd);
+	}
+}
+
+void hostapd_validate_update_ml_max_rec_links(struct hostapd_data *hapd)
+{
+	struct hostapd_data *link_bss;
+
+	if (!hapd || !hapd->conf->mld_ap)
+		return;
+
+	for_each_mld_link(link_bss, hapd) {
+		if (link_bss == hapd)
+			continue;
+
+		if (hapd->conf->ml_max_rec_links > link_bss->conf->ml_max_rec_links) {
+			wpa_printf(MSG_DEBUG,
+				   "Overwriting ml rec links %u with %u[link id %u]",
+				   hapd->conf->ml_max_rec_links,
+				   link_bss->conf->ml_max_rec_links,
+				   link_bss->mld_link_id);
+
+			hapd->conf->ml_max_rec_links = link_bss->conf->ml_max_rec_links;
+
+			break;
+		}
+	}
 }
 
 #endif /* CONFIG_IEEE80211BE */
