@@ -3467,6 +3467,8 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 		wpa_s->ssid_verified = true;
 #endif /* CONFIG_SME */
 #endif /* CONFIG_SAE */
+	if (!data->assoc_info.freq && wpa_s->current_bss)
+		data->assoc_info.freq = wpa_s->current_bss->freq;
 	bssid_known = wpa_drv_get_bssid(wpa_s, bssid) == 0;
 	if (data->assoc_info.req_ies)
 		wpa_hexdump(MSG_DEBUG, "req_ies", data->assoc_info.req_ies,
@@ -3820,7 +3822,6 @@ no_pfs:
 			wpa_supplicant_update_scan_results(wpa_s, bssid);
 		}
 	}
-
 	wpa_s->assoc_freq = data->assoc_info.freq;
 
 #ifndef CONFIG_NO_ROBUST_AV
