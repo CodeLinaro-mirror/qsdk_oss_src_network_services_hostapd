@@ -34,5 +34,9 @@ int hostapd_send_link_measurement_req(struct hostapd_data *hapd,
 int hostapd_show_rrm_bcn_report(struct hostapd_data *hapd,
 				char *buf, size_t buflen);
 void hostapd_free_bcn_report_db(struct hostapd_data *hapd);
+void hostapd_send_nei_report_resp(struct hostapd_data *hapd,
+				  const u8 *addr, u8 dialog_token,
+				  struct wpa_ssid_value *ssid, u8 lci,
+				  u8 civic, u16 lci_max_age);
 
 #endif /* RRM_H */
