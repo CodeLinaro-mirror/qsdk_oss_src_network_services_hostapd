@@ -4368,6 +4368,45 @@ static int hostapd_ctrl_iface_remove_neighbor(struct hostapd_data *hapd,
 	return hostapd_neighbor_remove(hapd, bssid, ssidp);
 }
 
+static int hostapd_ctrl_iface_send_neighbor(struct hostapd_data *hapd,
+					    char *buf)
+{
+	struct sta_info *sta;
+	struct wpa_ssid_value ssid;
+	u8 addr[ETH_ALEN];
+	char *tmp;
+	u8 token = 1;
+
+	if (hwaddr_aton(buf, addr)) {
+		wpa_printf(MSG_ERROR, "CTRL: SEND_NEIGHBOR: Bad Address");
+		return -1;
+	}
+
+	sta = ap_get_sta(hapd, addr);
+	if (!sta && hapd->mld)
+		sta = ap_get_link_sta(hapd, addr);
+	if (!sta) {
+		wpa_printf(MSG_ERROR, "Station " MACSTR
+			   " not found for neighbor report message",
+			   MAC2STR(addr));
+		return -1;
+	}
+
+	tmp = os_strstr(buf, "ssid=");
+	if (!tmp || ssid_parse(tmp + 5, &ssid)) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SEND_NEIGHBOR: Bad or missing SSID");
+		return -1;
+	}
+
+	tmp = os_strstr(buf, "dialog_token=");
+	if (tmp)
+		token = atoi(tmp + 13);
+
+	hostapd_send_nei_report_resp(hapd, sta->addr, token, &ssid, 0, 0, 0);
+
+	return 0;
+}
 
 static int hostapd_ctrl_driver_flags(struct hostapd_iface *iface, char *buf,
 				     size_t buflen)
@@ -5815,6 +5854,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 							     reply_size);
 	} else if (os_strncmp(buf, "REMOVE_NEIGHBOR ", 16) == 0) {
 		if (hostapd_ctrl_iface_remove_neighbor(hapd, buf + 16))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "SEND_NEIGHBOR ", 14) == 0) {
+		if (hostapd_ctrl_iface_send_neighbor(hapd, buf + 14))
 			reply_len = -1;
 	} else if (os_strncmp(buf, "REQ_LCI ", 8) == 0) {
 		if (hostapd_ctrl_iface_req_lci(hapd, buf + 8))

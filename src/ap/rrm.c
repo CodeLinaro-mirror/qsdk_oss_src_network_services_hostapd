@@ -359,10 +359,10 @@ static size_t hostapd_neighbor_report_len(struct wpabuf *buf,
 }
 
 
-static void hostapd_send_nei_report_resp(struct hostapd_data *hapd,
-					 const u8 *addr, u8 dialog_token,
-					 struct wpa_ssid_value *ssid, u8 lci,
-					 u8 civic, u16 lci_max_age)
+void hostapd_send_nei_report_resp(struct hostapd_data *hapd,
+				  const u8 *addr, u8 dialog_token,
+				  struct wpa_ssid_value *ssid, u8 lci,
+				  u8 civic, u16 lci_max_age)
 {
 	struct hostapd_neighbor_entry *nr;
 	struct wpabuf *buf;

@@ -1457,6 +1457,11 @@ static int hostapd_cli_cmd_remove_neighbor(struct wpa_ctrl *ctrl, int argc,
 	return hostapd_cli_cmd(ctrl, "REMOVE_NEIGHBOR", 1, argc, argv);
 }
 
+static int hostapd_cli_cmd_send_neighbor(struct wpa_ctrl *ctrl, int argc,
+					   char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "SEND_NEIGHBOR", 2, argc, argv);
+}
 
 static int hostapd_cli_cmd_req_lci(struct wpa_ctrl *ctrl, int argc,
 				   char *argv[])
@@ -1934,6 +1939,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "  = show neighbor database entries" },
 	{ "remove_neighbor", hostapd_cli_cmd_remove_neighbor, NULL,
 	  "<addr> [ssid=<hex>] = remove AP from neighbor database" },
+	{ "send_neighbor", hostapd_cli_cmd_send_neighbor, NULL,
+	  "<addr> <ssid=> [dialog_token=] = send neighbor report to addr" },
 	{ "req_lci", hostapd_cli_cmd_req_lci, hostapd_complete_stations,
 	  "<addr> = send LCI request to a station"},
 	{ "req_range", hostapd_cli_cmd_req_range, NULL,
