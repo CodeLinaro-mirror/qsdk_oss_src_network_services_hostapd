@@ -148,6 +148,22 @@ enum qos_mgmt_type {
 	/* Future QM protocols to be added here */
 };
 
+/**
+ * enum qos_mgmt_req_type - Define QoS Management request types
+ * @QM_ADD_REQ: Add a new QoS Management configuration
+ * @QM_REMOVE_REQ: Remove an existing QoS Management configuration
+ * @QM_CHANGE_REQ: Modify an existing QoS Management configuration
+ *
+ * Specify the type of operation requested in a QoS Management transaction.
+ * These request types are used to indicate the intent of the configuration
+ * being applied by user space.
+ */
+enum qos_mgmt_req_type {
+	QM_ADD_REQ,
+	QM_REMOVE_REQ,
+	QM_CHANGE_REQ,
+};
+
 #define IPV4_LEN	4
 #define IPV6_LEN	16
 
@@ -276,6 +292,7 @@ struct qm_req_desc_data {
 #ifdef CONFIG_IEEE80211BE
 	struct qm_qos_attributes qos_attr;
 #endif /* CONFIG_IEEE80211BE */
+
 };
 
 struct qm_req_data {
@@ -6501,6 +6518,17 @@ struct wpa_driver_ops {
 	 * Returns: true if the driver supports retail AFC, false otherwise
 	 */
 	bool (*is_retail_afc_supported)(void *priv);
+	/**
+	 * set_qos - Send QoS management request data to driver and get back
+	 * 	     response data filled from driver.
+	 * @priv: Private driver interface data
+	 * @qm_req: QoS management request data
+	 * @qm_resp: QoS management response data
+	 * Returns: 0 on success, negative value on failure
+	 */
+	int (*set_qos)(void *priv, struct qm_req_data *qm_req,
+		       struct qm_resp_data *qm_resp);
+
 };
 
 /**
