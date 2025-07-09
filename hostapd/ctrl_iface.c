@@ -3746,11 +3746,15 @@ static int hostapd_ctrl_iface_show_neighbor(struct hostapd_data *hapd,
 
 static int hostapd_ctrl_iface_set_neighbor(struct hostapd_data *hapd, char *buf)
 {
-	struct wpa_ssid_value ssid;
+	struct wpa_ssid_value ssid = {
+		.ssid_len = 0
+	};
 	u8 bssid[ETH_ALEN];
-	struct wpabuf *nr, *lci = NULL, *civic = NULL;
+	struct wpabuf *nr = NULL, *lci = NULL, *civic = NULL;
 	int stationary = 0;
 	int bss_parameters = 0;
+	int scan = 0;
+	u32 bands = 0;
 	char *tmp;
 	int ret = -1;
 
@@ -3759,6 +3763,32 @@ static int hostapd_ctrl_iface_set_neighbor(struct hostapd_data *hapd, char *buf)
 		wpa_printf(MSG_ERROR,
 			   "CTRL: SET_NEIGHBOR: Neighbor report is not enabled");
 		return -1;
+	}
+
+	/* Set neighbors from available scan results matching the SSID */
+	tmp = os_strstr(buf, "scan");
+	if (tmp) {
+		scan = 1;
+		tmp = os_strstr(buf, "ssid=");
+		if (tmp) {
+			if (ssid_parse(tmp + 5, &ssid)) {
+				wpa_printf(MSG_ERROR,
+					   "CTRL: SET_NEIGHBOR: Bad SSID");
+				return -1;
+			}
+		}
+
+		tmp = os_strstr(buf, "bands=");
+		if (tmp) {
+			buf = tmp + 6;
+			if (os_strstr(buf, "5G"))
+				bands |= WPA_SETBAND_5G;
+			if (os_strstr(buf, "6G"))
+				bands |= WPA_SETBAND_6G;
+			if (os_strstr(buf, "2G"))
+				bands |= WPA_SETBAND_2G;
+		}
+		goto set;
 	}
 
 	if (hwaddr_aton(buf, bssid)) {
@@ -3843,8 +3873,12 @@ static int hostapd_ctrl_iface_set_neighbor(struct hostapd_data *hapd, char *buf)
 	}
 
 set:
-	ret = hostapd_neighbor_set(hapd, bssid, &ssid, nr, lci, civic,
-				   stationary, bss_parameters);
+	if (scan)
+		ret = hostapd_neighbor_set_ifaces_scan_report(hapd, &ssid,
+							      bands);
+	else
+		ret = hostapd_neighbor_set(hapd, bssid, &ssid, nr, lci, civic,
+					   stationary, bss_parameters);
 
 fail:
 	wpabuf_free(nr);

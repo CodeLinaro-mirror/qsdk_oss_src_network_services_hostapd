@@ -29,5 +29,8 @@ void hostapd_free_neighbor_db(struct hostapd_data *hapd);
 int hostapd_add_candidate_own(struct hostapd_data *hapd, int pref,
 			      u8 *links, u8 num_links,
 			      u8 *nei_rep, size_t nei_rep_len);
+int hostapd_neighbor_set_ifaces_scan_report(struct hostapd_data *hapd,
+					    const struct wpa_ssid_value *ssid,
+					    u32 bands);
 
 #endif /* NEIGHBOR_DB_H */

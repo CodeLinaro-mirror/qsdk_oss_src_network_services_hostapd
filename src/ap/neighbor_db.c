@@ -14,7 +14,7 @@
 #include "hostapd.h"
 #include "ieee802_11.h"
 #include "neighbor_db.h"
-
+#include "ap_drv_ops.h"
 
 struct hostapd_neighbor_entry *
 hostapd_neighbor_get(struct hostapd_data *hapd, const u8 *bssid,
@@ -497,6 +497,335 @@ int hostapd_neighbor_sync_own_report(struct hostapd_data *hapd)
 	hostapd_neighbor_free(nr);
 
 	hostapd_neighbor_set_own_report(hapd);
+
+	return 0;
+}
+
+#ifdef NEED_AP_MLME
+static u32 hostapd_get_band(struct hostapd_iface *iface)
+{
+	int freq = iface->freq;
+	enum hostapd_hw_mode mode = iface->current_mode ?
+				    iface->current_mode->mode :
+				    iface->conf->hw_mode;
+
+	if (mode == HOSTAPD_MODE_IEEE80211B ||
+	    mode == HOSTAPD_MODE_IEEE80211G)
+		return WPA_SETBAND_2G;
+	else if (mode == HOSTAPD_MODE_IEEE80211A) {
+		if (is_6ghz_freq(freq))
+			return WPA_SETBAND_6G;
+		else
+			return WPA_SETBAND_5G;
+	}
+
+	return WPA_SETBAND_AUTO;
+}
+
+static u32 hostapd_get_nr_bssid_info(struct wpa_scan_res *bss,
+				     struct ieee802_11_elems *elems)
+{
+	u32 info = 0;
+
+	/* AP reachability unknown */
+	info = NEI_REP_BSSID_INFO_AP_UNKNOWN_REACH;
+
+	/*
+	 * Leave the security and key scope bits unset to indicate that the
+	 * security information is not available.
+	 */
+
+	if (bss->caps & WLAN_CAPABILITY_SPECTRUM_MGMT)
+		info |= NEI_REP_BSSID_INFO_SPECTRUM_MGMT;
+	if (bss->caps & WLAN_CAPABILITY_QOS)
+		info |= NEI_REP_BSSID_INFO_QOS;
+	if (bss->caps & WLAN_CAPABILITY_APSD)
+		info |= NEI_REP_BSSID_INFO_APSD;
+	if (bss->caps & WLAN_CAPABILITY_RADIO_MEASUREMENT)
+		info |= NEI_REP_BSSID_INFO_RM;
+	if (bss->caps & WLAN_CAPABILITY_DELAYED_BLOCK_ACK)
+		info |= NEI_REP_BSSID_INFO_DELAYED_BA;
+	if (bss->caps & WLAN_CAPABILITY_IMM_BLOCK_ACK)
+		info |= NEI_REP_BSSID_INFO_IMM_BA;
+
+	/* TODO: Mobility domain flag */
+
+	if (elems->ht_capabilities) {
+		info |= NEI_REP_BSSID_INFO_HT;
+		if (elems->vht_capabilities)
+			info |= NEI_REP_BSSID_INFO_VHT;
+	}
+	if (elems->he_capabilities)
+		info |= NEI_REP_BSSID_INFO_HE;
+	if (elems->eht_capabilities)
+		info |= NEI_REP_BSSID_INFO_EHT;
+
+	return info;
+}
+
+static void get_channel_width_and_center_freqs(struct ieee802_11_elems *elems,
+					       enum nr_chan_width *width,
+					       u8 *center_freq1_idx,
+					       u8 *center_freq2_idx)
+{
+	*width = NR_CHAN_WIDTH_20;
+	*center_freq1_idx = 0;
+	*center_freq2_idx = 0;
+
+	if (elems->eht_operation) {
+		const struct ieee80211_eht_operation *eht_oper =
+		(const struct ieee80211_eht_operation *) elems->eht_operation;
+
+		if (eht_oper->oper_params & EHT_OPER_INFO_PRESENT) {
+			*width = eht_oper->oper_info.control & 0x7;
+			*center_freq1_idx = eht_oper->oper_info.ccfs0;
+			*center_freq2_idx = eht_oper->oper_info.ccfs1;
+			return;
+		}
+	}
+
+	if (elems->he_operation) {
+		const struct ieee80211_he_operation *he_oper =
+		(const struct ieee80211_he_operation *) elems->he_operation;
+		int offset = 0;
+
+		if (he_oper->he_oper_params & HE_OPERATION_VHT_OPER_INFO)
+			offset = 3;
+		if (he_oper->he_oper_params & HE_OPERATION_COHOSTED_BSS)
+			offset += 1;
+		if (he_oper->he_oper_params & HE_OPERATION_6GHZ_OPER_INFO) {
+			const struct ieee80211_he_6ghz_oper_info *oper_info =
+			    (const struct ieee80211_he_6ghz_oper_info *)
+			    (elems->he_operation +
+			     sizeof(struct ieee80211_he_operation) + offset);
+
+			*width = oper_info->control &
+			    HE_6GHZ_OPER_INFO_CTRL_CHAN_WIDTH_MASK;
+			*center_freq1_idx =
+			    oper_info->chan_center_freq_seg0;
+			*center_freq2_idx =
+			    oper_info->chan_center_freq_seg1;
+			return;
+		}
+	}
+
+	if (elems->vht_operation) {
+		const struct ieee80211_vht_operation *vht_oper =
+		(const struct ieee80211_vht_operation *) elems->vht_operation;
+
+		switch (vht_oper->vht_op_info_chwidth) {
+		case CHANWIDTH_80MHZ:
+			*width = NR_CHAN_WIDTH_80;
+			break;
+		case CHANWIDTH_160MHZ:
+			*width = NR_CHAN_WIDTH_160;
+			break;
+		case CHANWIDTH_80P80MHZ:
+			*width = NR_CHAN_WIDTH_80P80;
+			break;
+		default:
+			*width = NR_CHAN_WIDTH_20;
+			break;
+		}
+
+		*center_freq1_idx = vht_oper->vht_op_info_chan_center_freq_seg0_idx;
+		*center_freq2_idx = vht_oper->vht_op_info_chan_center_freq_seg1_idx;
+	}
+}
+
+static int
+hostapd_neighbor_set_scan_report(struct hostapd_data *hapd,
+				 const struct wpa_ssid_value *ssid,
+				 int freq,
+				 struct wpa_scan_results *scan_res)
+{
+	struct wpa_ssid_value bss_ssid = *ssid;
+	int i;
+
+	for (i = 0; i < scan_res->num; i++) {
+		struct wpa_scan_res *bss = scan_res->res[i];
+		struct ieee802_11_elems elems;
+		struct ieee80211_ht_operation *ht_oper = NULL;
+		struct ieee80211_vht_operation *vht_oper = NULL;
+		enum oper_chan_width vht_width = CONF_OPER_CHWIDTH_USE_HT;
+		enum phy_type phy_type;
+		enum nr_chan_width width;
+		u8 center_freq1_idx = 0, center_freq2_idx = 0;
+		struct wpabuf *nr;
+		int ht = 0, vht = 0;
+		int sec_chan = 0;
+		u8 op_class, chan;
+		u32 info;
+
+		/* Check for SSID match if supplied, otherwise fill with all */
+		if (ieee802_11_parse_elems((u8 *) (bss + 1), bss->ie_len,
+					   &elems, 0) == ParseFailed ||
+		    freq != bss->freq ||
+		    (ssid->ssid_len &&
+		     (ssid->ssid_len != elems.ssid_len ||
+		      os_memcmp(ssid->ssid, elems.ssid, ssid->ssid_len))))
+			continue;
+
+		if (!ssid->ssid_len && elems.ssid_len) {
+			os_memcpy(bss_ssid.ssid, elems.ssid, elems.ssid_len);
+			bss_ssid.ssid_len = elems.ssid_len;
+		}
+
+		if (elems.ht_operation) {
+			ht_oper = (struct ieee80211_ht_operation *) (elems.ht_operation);
+			ht = 1;
+
+			if (ht_oper->ht_param &
+			    HT_INFO_HT_PARAM_SECONDARY_CHNL_ABOVE)
+				sec_chan = 1;
+			else if (ht_oper->ht_param &
+				 HT_INFO_HT_PARAM_SECONDARY_CHNL_BELOW)
+				sec_chan = -1;
+		}
+
+		if (elems.vht_operation) {
+			vht_oper = (struct ieee80211_vht_operation *) (elems.vht_operation);
+			vht = 1;
+
+			if (vht_oper->vht_op_info_chwidth == CHANWIDTH_80MHZ ||
+			    vht_oper->vht_op_info_chwidth == CHANWIDTH_160MHZ ||
+			    vht_oper->vht_op_info_chwidth == CHANWIDTH_80P80MHZ)
+				vht_width = vht_oper->vht_op_info_chwidth;
+		}
+
+		/* Get channel and opmode */
+		if (ieee80211_freq_to_channel_ext(bss->freq, sec_chan,
+						  vht_width, &op_class,
+						  &chan) == NUM_HOSTAPD_MODES) {
+			wpa_printf(MSG_DEBUG,
+				   "NR: Cannot determine opclass and channel");
+			continue;
+		}
+
+		/* Get phy type */
+		phy_type = ieee80211_get_phy_type(bss->freq, ht, vht);
+		if (phy_type == PHY_TYPE_UNSPECIFIED) {
+			wpa_printf(MSG_DEBUG,
+				   "NR: Cannot determine BSS phy type");
+			continue;
+		}
+
+		/* Get BSSID info */
+		info = hostapd_get_nr_bssid_info(bss, &elems);
+
+		/* Get WB channel width and freq idx */
+		get_channel_width_and_center_freqs(&elems, &width,
+						   &center_freq1_idx,
+						   &center_freq2_idx);
+
+		wpa_printf(MSG_DEBUG, "Neighboring BSS: " MACSTR
+			   " info=08%x opclass=%d chan=%d", MAC2STR(bss->bssid),
+			   info, op_class, chan);
+
+		/*
+		 * Neighbor Report element size = BSSID + BSSID info +
+		 * op_class + chan + phy type +
+		 * wide bandwidth channel subelement.
+		 */
+		if (center_freq1_idx || center_freq2_idx)
+			nr = wpabuf_alloc(ETH_ALEN + 4 + 1 + 1 + 1 + 5);
+		else
+			nr = wpabuf_alloc(ETH_ALEN + 4 + 1 + 1 + 1);
+		if (!nr)
+			return -1;
+
+		wpabuf_put_data(nr, bss->bssid, ETH_ALEN);
+		wpabuf_put_le32(nr, info);
+		wpabuf_put_u8(nr, op_class);
+		wpabuf_put_u8(nr, chan);
+		wpabuf_put_u8(nr, phy_type);
+
+		/*
+		 * Wide Bandwidth Channel subelement may be needed to allow the
+		 * receiving STA to send packets to the AP.
+		 * See IEEE P802.11-REVmc/D5.0
+		 * Figure 9-301.
+		 */
+		if (center_freq1_idx || center_freq2_idx) {
+			wpabuf_put_u8(nr, WNM_NEIGHBOR_WIDE_BW_CHAN);
+			wpabuf_put_u8(nr, 3);
+			wpabuf_put_u8(nr, width);
+			wpabuf_put_u8(nr, center_freq1_idx);
+			wpabuf_put_u8(nr, center_freq2_idx);
+		}
+
+		hostapd_neighbor_set(hapd, bss->bssid, &bss_ssid, nr,
+				     NULL, NULL, 0, 0);
+
+		wpabuf_free(nr);
+	}
+
+	return 0;
+}
+#endif /* NEED_AP_MLME */
+
+int hostapd_neighbor_set_ifaces_scan_report(struct hostapd_data *hapd,
+					    const struct wpa_ssid_value *ssid,
+					    u32 bands)
+{
+#ifdef NEED_AP_MLME
+	struct hapd_interfaces *interfaces = hapd->iface->interfaces;
+	struct wpa_scan_results *scan_res;
+	int ret;
+	int i;
+
+	/* Clear the old NR entries */
+	hostapd_free_neighbor_db(hapd);
+
+	/*
+	 * Get list of neighboring BSSes (from scan) and add to the
+	 * neighbor database
+	 */
+
+	/* Get own radio scan report and set the neighbor databse */
+	scan_res = hostapd_driver_get_scan_results(hapd);
+	if (scan_res == NULL)
+		wpa_printf(MSG_DEBUG, "No scan result found");
+	else {
+		ret = hostapd_neighbor_set_scan_report(hapd,
+						       ssid,
+						       hapd->iface->freq,
+						       scan_res);
+		wpa_scan_results_free(scan_res);
+		if (ret)
+			return -1;
+	}
+
+	if (!bands)
+		return 0;
+
+	/* Iterate over other radio interfaces and get the scan results */
+	for (i = 0; i < interfaces->count; i++) {
+		struct hostapd_iface *iface = interfaces->iface[i];
+
+		if (!iface)
+			continue;
+
+		if (iface == hapd->iface)
+			continue;
+
+		if ((hostapd_get_band(iface) & bands) == 0)
+			continue;
+
+		scan_res = hostapd_driver_get_scan_results(iface->bss[0]);
+		if (scan_res == NULL)
+			wpa_printf(MSG_DEBUG, "No scan result found");
+		else {
+			ret = hostapd_neighbor_set_scan_report(hapd,
+							       ssid,
+							       iface->freq,
+							       scan_res);
+			wpa_scan_results_free(scan_res);
+			if (ret)
+				return -1;
+		}
+	}
+#endif /* NEED_AP_MLME */
 
 	return 0;
 }
