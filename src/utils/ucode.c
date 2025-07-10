@@ -419,11 +419,28 @@ static void udebug_netlink_hook(int tx, const void *data, size_t len)
 	const struct genlmsghdr *gnlh = data + NLMSG_HDRLEN;
 	struct udebug_buf *buf = &ud_nl[!!tx];
 
-	if (nlh->nlmsg_type == 0x10)
+	if (nlh->nlmsg_type == 0x10) {
 		buf = &ud_nl[2];
-	else if (!tx && gnlh->cmd == NL80211_CMD_FRAME &&
-	         !(udebug_buf_flags(buf) & UDEBUG_FLAG_RX_FRAME))
+	} else if (!tx && gnlh->cmd == NL80211_CMD_FRAME &&
+	         !(udebug_buf_flags(buf) & UDEBUG_FLAG_RX_FRAME)) {
 		return;
+	} else if (nlh->nlmsg_type == 0x2 || nlh->nlmsg_type == 0x3) {
+		/* Remove error and  end of dump NL msgs type*/
+		return;
+	} else if (gnlh->cmd == NL80211_CMD_TRIGGER_SCAN ||
+		 gnlh->cmd == NL80211_CMD_GET_SCAN ||
+		 gnlh->cmd == NL80211_CMD_NEW_SCAN_RESULTS ||
+		 gnlh->cmd == NL80211_CMD_GET_WIPHY ||
+		 gnlh->cmd == NL80211_CMD_SET_WIPHY ||
+		 gnlh->cmd == NL80211_CMD_NEW_WIPHY ||
+		 gnlh->cmd == NL80211_CMD_GET_SURVEY ||
+		 gnlh->cmd == NL80211_CMD_NEW_SURVEY_RESULTS ||
+		 gnlh->cmd == NL80211_CMD_SET_BEACON ||
+		 gnlh->cmd == NL80211_CMD_SET_BSS ||
+		 gnlh->cmd == NL80211_CMD_SET_MULTICAST_TO_UNICAST ||
+		 gnlh->cmd == NL80211_CMD_OBSS_COLOR_COLLISION) {
+		return;
+	}
 
 	if (!udebug_buf_valid(buf))
 		return;
