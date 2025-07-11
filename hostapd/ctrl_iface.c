@@ -5310,6 +5310,9 @@ static int hostapd_ctrl_iface_negotiated_ttlm(struct hostapd_data *hapd, const c
 	else if (os_strncmp(cmd, "show ", 5) == 0) {
 		if (os_strncmp(cmd + 5, "ttlm_capability", 15) == 0)
 			return hostapd_ctrl_iface_negotiated_ttlm_capabilities(hapd, buf, buflen);
+		else if (os_strncmp(cmd + 5, "ttlm_config ", 12) == 0)
+			return hostapd_ctrl_iface_negotiated_ttlm_config(hapd, cmd + 17, buf,
+									 buflen);
 	} else {
 		wpa_printf(MSG_ERROR, "invalid negotiated ttlm command");
 		return -1;

@@ -3675,3 +3675,85 @@ int hostapd_ctrl_iface_negotiated_ttlm_capabilities(struct hostapd_data *hapd,
 
 	return len;
 }
+
+
+int hostapd_ctrl_iface_negotiated_ttlm_config(struct hostapd_data *hapd, const char *cmd,
+					      char *buf, size_t buflen)
+{
+	struct ttlm_prev_negotiated_info *negotiated_ttlm;
+	int dir = -1, len = 0, tid = 0, ret;
+	struct ttlm_info *ttlm_info;
+	struct sta_info *sta;
+	u8 addr[ETH_ALEN];
+
+	if (!hapd->conf->ttlm_enable) {
+		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
+		return -1;
+	}
+
+	if (hwaddr_aton(cmd, addr)) {
+		wpa_printf(MSG_ERROR, "Invalid STA MAC address");
+		return -1;
+	}
+
+	sta = ap_get_sta(hapd, addr);
+	if (!sta) {
+		wpa_printf(MSG_ERROR, "Station " MACSTR
+			   " not found for Negotiated TTLM config",
+			   MAC2STR(addr));
+		return -1;
+	}
+
+	negotiated_ttlm = &sta->mld_info.tid_map_info.ttlm_prev_negotiated_info;
+
+	for (dir = 0; dir < TTLM_DIRECTION_MAX; dir++) {
+		ttlm_info = negotiated_ttlm->ttlm_info;
+
+		if (ttlm_info[dir].direction == TTLM_DIRECTION_INVALID)
+			continue;
+
+		ret = os_snprintf(buf + len, buflen - len, "direction:%d\n",
+				  ttlm_info[dir].direction);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+
+		ret = os_snprintf(buf + len, buflen - len, "default_link_mapping:%d\n",
+				  ttlm_info[dir].default_link_mapping);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+
+		for (tid = 0; tid < NUM_MAX_TIDS; tid++) {
+			ret = os_snprintf(buf + len, buflen - len, "ieee_link_map_tid[%d]:0x%x\n",
+					  tid, ttlm_info[dir].ieee_link_map_tid[tid]);
+			if (!os_snprintf_error(buflen - len, ret))
+				len += ret;
+		}
+
+		ret = os_snprintf(buf + len, buflen - len, "link_mapping_size:%d\n",
+				  ttlm_info[dir].link_mapping_size);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+
+		ret = os_snprintf(buf + len, buflen - len, "mapping_switch_time_present:%d\n",
+				  ttlm_info[dir].mapping_switch_time_present);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+
+		ret = os_snprintf(buf + len, buflen - len, "expected_duration_present:%d\n",
+				  ttlm_info[dir].expected_duration_present);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+
+		ret = os_snprintf(buf + len, buflen - len, "mapping_switch_time:%u\n",
+				  ttlm_info[dir].mapping_switch_time);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+
+		ret = os_snprintf(buf + len, buflen - len, "expected_duration:%u\n",
+				  ttlm_info[dir].expected_duration);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+
+	return len;
+}
