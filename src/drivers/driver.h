@@ -226,9 +226,6 @@ struct hostapd_channel_data {
 	 */
 	s8 eirp_power;
 
-	s8 psd_values[NL80211_REG_NUM_POWER_MODES];
-	/* Per-channel regulatory PSD and EIRP for each 6 GHz power mode. */
-	s8 eirp_values[NL80211_REG_NUM_POWER_MODES];
 };
 
 #define HE_MAC_CAPAB_0		0

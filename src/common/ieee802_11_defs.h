@@ -3069,6 +3069,7 @@ struct ieee80211_he_mu_edca_parameter_set {
 /* Maximum transmit power in Y/2 dBm (-127..126); 127 indicates no maximum
  * transmit power is specified for the corresponding 20 MHz channel. */
 #define RNR_20_MHZ_PSD_MAX_TXPOWER                  127
+#define PUNCTURED_SP_CHAN_POWER_DIFF                 16
 
 /* IEEE Std 802.11be-2024, Figure 9-734c - MLD Parameters subfield format */
 /* B0..B7: AP MLD ID */
