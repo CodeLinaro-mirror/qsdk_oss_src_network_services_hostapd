@@ -6639,7 +6639,7 @@ hostapd_reg_get_eirp_from_chan_list(struct hostapd_iface *iface, u16 freq,
  *
  * Return: 0 on success, -1 on failure
  */
-static int
+int
 hostapd_reg_get_psd_from_chan_list(struct hostapd_iface *iface, u16 freq,
 				   u16 center_freq, u16 bw, u16 in_punc_pattern,
 				   u8 ap_pwr_type, u8 client_type,
@@ -6682,15 +6682,21 @@ hostapd_reg_get_psd_from_chan_list(struct hostapd_iface *iface, u16 freq,
 		wpa_printf(MSG_INFO,
 			   "Channel %d does not support PSD, flag: 0x%x",
 			   chan_6ghz->freq, chan_6ghz->flag);
-		reg_eirp_pwr = hostapd_reg_get_eirp_from_chan_list(iface, freq,
-								   center_freq,
-								   bw,
-								   in_punc_pattern,
-								   ap_pwr_type,
-								   client_type,
-								   is_client_lookup,
-								   is_twice_pwr,
-								   &reg_eirp_pwr);
+		ret = hostapd_reg_get_eirp_from_chan_list(iface, freq,
+							  center_freq,
+							  bw,
+							  in_punc_pattern,
+							  ap_pwr_type,
+							  client_type,
+							  is_client_lookup,
+							  is_twice_pwr,
+							  &reg_eirp_pwr);
+		if (ret) {
+			wpa_printf(MSG_WARNING,
+				   "Failed to get EIRP from channel list for freq %d",
+				   freq);
+			return -1;
+		}
 		ret = hapd_eirp_to_psd(reg_eirp_pwr, is_twice_pwr ? 2 : 1,
 				       effective_bw, psd_pwr);
 		if (ret) {

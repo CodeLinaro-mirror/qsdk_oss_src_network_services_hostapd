@@ -8471,23 +8471,31 @@ static u8 num_psd_values_to_psd_count(int n_chans)
 }
 
 static int set_ieee_order_chan_list(struct hostapd_hw_modes *mode,
-				       struct ieee_chan_data *chan_data)
+				    struct ieee_chan_data *chan_data,
+				    enum nl80211_regulatory_power_modes client_mode)
 {
-	int ieee_6g_chan[60] = {2,
-				1, 5, 9, 13, 17, 21, 25, 29,
-				33, 37, 41, 45, 49, 53, 57, 61,
-				65, 69, 73, 77, 81, 85, 89, 93,
-				97, 101, 105, 109, 113, 117, 121, 125,
-				129, 133, 137, 141, 145, 149, 153, 157,
-				161, 165, 169, 173, 177, 181, 185, 189,
-				193, 197, 201, 205, 209, 213, 217, 221,
-				225, 229, 233};
+	static const int ieee_6g_chan[] =  {2,
+					    1, 5, 9, 13, 17, 21, 25, 29,
+					    33, 37, 41, 45, 49, 53, 57, 61,
+					    65, 69, 73, 77, 81, 85, 89, 93,
+					    97, 101, 105, 109, 113, 117, 121, 125,
+					    129, 133, 137, 141, 145, 149, 153, 157,
+					    161, 165, 169, 173, 177, 181, 185, 189,
+					    193, 197, 201, 205, 209, 213, 217, 221,
+					    225, 229, 233};
 	struct hostapd_channel_data *channels =  NULL, tmp_chan;
 	int i, j;
-	int chan_data_size = mode->num_channels * sizeof(struct hostapd_channel_data);
+	int num_6ghz_chans = mode->channels_6ghz.num_channels_6ghz[client_mode];
+	int chan_data_size = num_6ghz_chans * sizeof(struct hostapd_channel_data);
+	struct hostapd_channel_data *channels_6ghz = mode->channels_6ghz.chans_6ghz[client_mode];
+	int n_6g_arr_elems = ARRAY_SIZE(ieee_6g_chan);
 
-	if (mode->num_channels == 0) {
+	if (num_6ghz_chans == 0) {
 		wpa_printf(MSG_ERROR, "Invalid num channels or chan data");
+		return -1;
+	}
+	if (!channels_6ghz) {
+		wpa_printf(MSG_WARNING, "Invalid channel data for 6GHz of client_mode: %d", client_mode);
 		return -1;
 	}
 
@@ -8497,11 +8505,11 @@ static int set_ieee_order_chan_list(struct hostapd_hw_modes *mode,
 		return -1;
 	}
 
-	os_memcpy(channels, mode->channels, chan_data_size);
+	os_memcpy(channels, channels_6ghz, chan_data_size);
 
-	for (i = 0; i < mode->num_channels && i < 60; i++) {
+	for (i = 0; i < MIN(num_6ghz_chans,n_6g_arr_elems); i++) {
 		if (ieee_6g_chan[i] != channels[i].chan) {
-			for (j = 0; j < mode->num_channels; j++) {
+			for (j = 0; j < num_6ghz_chans; j++) {
 				if (ieee_6g_chan[i] == channels[j].chan) {
 					os_memcpy(&tmp_chan, &channels[j],
 						  sizeof(struct hostapd_channel_data));
@@ -8514,7 +8522,15 @@ static int set_ieee_order_chan_list(struct hostapd_hw_modes *mode,
 		}
 	}
 	chan_data->channels = channels;
-	chan_data->num_channels = mode->num_channels;
+	chan_data->num_channels = num_6ghz_chans;
+
+	wpa_printf(MSG_DEBUG, "Set IEEE 6GHz channel list with %d channels",
+		   chan_data->num_channels);
+	for (i = 0; i < chan_data->num_channels; i++) {
+		wpa_printf(MSG_DEBUG, "Channel %d: freq %d MHz, flags 0x%x",
+			   channels[i].chan, channels[i].freq,
+			   channels[i].flag);
+	}
 
 	return 0;
 }
@@ -8567,7 +8583,6 @@ static void hostapd_get_eirp_arr_for_6ghz(struct hostapd_iface *iface,
 			client_type = NL80211_REG_SUBORDINATE_CLIENT_LPI;
 		for (i = 0, bw = 20; bw <= max_bw; i++, bw *= 2) {
 			bw_cen_freq = hostapd_get_bonded_chan_center_freq(freq, bw, cf_320, 0);
-			/* TODO: Pass Intersected PP */
 			max_eirp_arr_lpi[i] =
 			    hostapd_get_eirp_pwr(iface, freq, bw_cen_freq, bw,
 						 iface->conf->punct_bitmap,
@@ -8704,41 +8719,156 @@ static u8 *hostapd_add_eirp_tpe(struct hostapd_data *hapd, u8 client_type,
 				    tx_pwr_ext_array, tx_pwr_cat);
 }
 
+static s16
+get_max_psd_for_composite_ap(struct hostapd_iface *iface,
+			     u16 chan_freq, u8 ap_pwr_type,
+			     u8 client_mode,
+			     s16 sp_psd)
+{
+	s16 lpi_psd, max_psd;
+	int ret;
+
+	if (client_mode == NL80211_REG_REGULAR_CLIENT_SP)
+		client_mode = NL80211_REG_REGULAR_CLIENT_LPI;
+	else
+		client_mode = NL80211_REG_SUBORDINATE_CLIENT_LPI;
+
+	ret = hostapd_reg_get_psd_from_chan_list(iface,
+						 chan_freq, chan_freq, CHWIDTH_20, 0,
+						 ap_pwr_type, client_mode,
+						 true, false, &lpi_psd);
+	if (ret) {
+	    wpa_printf(MSG_WARNING, "Failed to calculate reg PSD for channel %d",
+		       chan_freq);
+	    return CHAN_MIN_TX_POWER;
+	}
+	max_psd = MAX(sp_psd, lpi_psd);
+	wpa_printf(MSG_DEBUG, "Composite AP channel PSD for %d MHz channel %d is %d dBm, sp_psd: %d, lpi_psd: %d",
+		   20, chan_freq, max_psd, sp_psd, lpi_psd);
+	return max_psd;
+}
+
+static s16
+get_sp_psd_for_non_punctured_chan(struct hostapd_data *hapd,
+				  u16 chan_freq,
+				  u8 client_mode,
+				  u8 pwr_mode,
+				  enum max_tx_pwr_interpretation tx_pwr_intrpn)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	u8 ap_pwr_type = iface->conf->he_6ghz_reg_pwr_type;
+	s16 sp_psd;
+	s8 eirp_20mhz;
+
+	eirp_20mhz = hostapd_get_eirp_pwr(iface, chan_freq, 0, CHWIDTH_20, 0,
+					  ap_pwr_type, true, client_mode, true);
+	if (eirp_20mhz == CHAN_MIN_TWICE_TX_POWER) {
+	    wpa_printf(MSG_WARNING, "Failed to calculate EIRP in TPE for channel %d",
+		       chan_freq);
+	    sp_psd = CHAN_MIN_TX_POWER;
+	} else {
+	    sp_psd = (eirp_20mhz - (CONV_20MHZ_EIRP_TO_PSD_IN_DBM * 2)) / 2;
+	    wpa_printf(MSG_DEBUG, "SP channel PSD for %d MHz channel %d is %d dBm, eirp: %d",
+		       20, chan_freq, sp_psd, eirp_20mhz);
+	}
+
+	if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP &&
+	    !hostapd_is_additional_tpe(tx_pwr_intrpn)) {
+	    return get_max_psd_for_composite_ap(iface, chan_freq,
+						ap_pwr_type, client_mode,
+						sp_psd);
+	}
+	return sp_psd;
+}
+
+static s16 get_sp_psd_for_punctured_chan(struct hostapd_data *hapd,
+					 u16 chan_freq,
+					 u8 client_mode,
+					 u8 pwr_mode,
+					 enum max_tx_pwr_interpretation tx_pwr_intrpn,
+					 s16 *primary_20_mhz_psd)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	s16 oobe_psd, reg_psd;
+	u8 ap_pwr_type = iface->conf->he_6ghz_reg_pwr_type;
+	int ret;
+
+	get_min_psd_values(iface->afc_rsp_info, chan_freq, chan_freq, 0,
+			   CHWIDTH_20, &oobe_psd);
+	if (oobe_psd == CHAN_MAX_TWICE_TX_POWER * PSD_SCALE) {
+	    wpa_printf(MSG_WARNING, "Failed to calculate OOBE PSD in TPE");
+	    return CHAN_MIN_TX_POWER;
+	}
+
+	ret = hostapd_reg_get_psd_from_chan_list(iface, chan_freq, chan_freq,
+						 CHWIDTH_20, 0,
+						 ap_pwr_type, client_mode,
+						 true,
+						 false, &reg_psd);
+	if (ret) {
+	    wpa_printf(MSG_WARNING, "Failed to calculate reg PSD for channel %d",
+		       chan_freq);
+	    reg_psd = CHAN_MIN_TX_POWER;
+	}
+	oobe_psd -= SP_AP_AND_CLIENT_POWER_DIFF_IN_SCALE;
+	reg_psd *= PSD_SCALE;
+	oobe_psd = MIN(oobe_psd, reg_psd);
+	oobe_psd /= PSD_SCALE;
+    	/* Primary 20 MHz PSD shouldnt consider the mandatory power difference
+	 * of SP AP and client SP as per regulatory guidelines.
+	 */
+	if (chan_freq == iface->freq && primary_20_mhz_psd)
+	    *primary_20_mhz_psd = oobe_psd + SP_AP_AND_CLIENT_POWER_DIFF;
+
+	wpa_printf(MSG_DEBUG, "OOBE PSD for %d MHz channel %d is %d dBm, primary_20_mhz_psd = %d",
+		   20, chan_freq, oobe_psd, *primary_20_mhz_psd);
+
+	if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP &&
+	    !hostapd_is_additional_tpe(tx_pwr_intrpn)) {
+	    return get_max_psd_for_composite_ap(iface, chan_freq,
+						ap_pwr_type, client_mode,
+						oobe_psd);
+	}
+	return oobe_psd;
+}
+
 static s8 get_psd_for_chan_idx(struct hostapd_data *hapd,
 			       int non_11be_start_idx,
 			       struct ieee_chan_data chan_data,
 			       u8 client_mode,
 			       u8 pwr_mode,
-			       enum max_tx_pwr_interpretation tx_pwr_intrpn)
+			       enum max_tx_pwr_interpretation tx_pwr_intrpn,
+			       s16 *primary_20mhz_psd)
 {
 	struct hostapd_iface *iface = hapd->iface;
 	u8 ap_pwr_type = iface->conf->he_6ghz_reg_pwr_type;
-	s8 reg_psd, chan_psd;
-	s8 eirp_for_20mhz;
 	u16 chan_freq;
 
-	reg_psd = chan_data.channels[non_11be_start_idx].psd_values[client_mode];
-	if (ap_pwr_type != HE_REG_INFO_6GHZ_AP_TYPE_SP)
+	if (ap_pwr_type != HE_REG_INFO_6GHZ_AP_TYPE_SP) {
+		bool is_psd = chan_data.channels[non_11be_start_idx].flag & HOSTAPD_CHAN_PSD;
+		s8 reg_psd;
+
+		if (is_psd) {
+			reg_psd = chan_data.channels[non_11be_start_idx].psd_power;
+		} else {
+			s8 reg_eirp_pwr = chan_data.channels[non_11be_start_idx].eirp_power;
+
+			reg_psd = reg_eirp_pwr - CONV_20MHZ_EIRP_TO_PSD_IN_DBM;
+		}
+
+		wpa_printf(MSG_DEBUG, "Using reg_psd:%d for channel %d",
+			   reg_psd, chan_data.channels[non_11be_start_idx].chan);
 		return reg_psd;
-
-	chan_freq = chan_data.channels[non_11be_start_idx].freq;
-	eirp_for_20mhz = hostapd_get_eirp_pwr(iface, chan_freq, 0, 20,
-					      0, ap_pwr_type, true,
-					      client_mode, true);
-	chan_psd = (eirp_for_20mhz - (CONV_20MHZ_EIRP_TO_PSD_IN_DBM * 2)) / 2;
-
-	if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP &&
-	    !hostapd_is_additional_tpe(tx_pwr_intrpn)) {
-		if (client_mode == NL80211_REG_REGULAR_CLIENT_SP)
-			client_mode = NL80211_REG_REGULAR_CLIENT_LPI;
-		else
-			client_mode = NL80211_REG_SUBORDINATE_CLIENT_LPI;
-
-		reg_psd = chan_data.channels[non_11be_start_idx].psd_values[client_mode];
-		chan_psd = MAX(chan_psd, reg_psd);
 	}
 
-	return chan_psd;
+	chan_freq = chan_data.channels[non_11be_start_idx].freq;
+	if (!iface->conf->punct_bitmap)
+		return get_sp_psd_for_non_punctured_chan(hapd, chan_freq,
+							 client_mode, pwr_mode,
+							 tx_pwr_intrpn);
+	return get_sp_psd_for_punctured_chan(hapd, chan_freq, client_mode,
+					     pwr_mode, tx_pwr_intrpn,
+					     primary_20mhz_psd);
 }
 
 /**
@@ -9299,6 +9429,56 @@ get_min_psd_values(struct afc_sp_reg_info *afc_rsp_info, u16 freq, u16 cfreq,
 	}
 }
 
+static s16
+fill_psd_power_for_punctured_freq(struct hostapd_data *hapd, u16 freq,
+				  u8 client_mode, u8 pwr_mode,
+				  enum max_tx_pwr_interpretation tx_pwr_intrpn,
+				  s16 primary_20_mhz_psd)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	u8 num_channels_6ghz, chan_idx;
+	struct hostapd_channel_data *ch_6g_lst;
+	u8 pwr_type = iface->conf->he_6ghz_reg_pwr_type;
+	s16 psd_power;
+
+	ch_6g_lst = hostapd_iface_get_6ghz_chan_list(iface,
+						     freq,
+						     pwr_type,
+						     &num_channels_6ghz,
+						     &chan_idx);
+	if (!ch_6g_lst || (ch_6g_lst->flag & HOSTAPD_CHAN_DISABLED)) {
+		int ret;
+
+		/* The given freq is not found in SP power mode channel list, so it is
+		 * an LPI/VLP channel. Fetch the LPI reg power from regulatory
+		 * database
+		 */
+		wpa_printf(MSG_WARNING,
+			   "Error getting 6 GHz chan: power mode: %d freq: %d",
+			   pwr_type, freq);
+		ret = hostapd_reg_get_psd_from_chan_list(iface, freq, freq, CHWIDTH_20, 0,
+							 NL80211_REG_AP_LPI,
+							 NL80211_REG_REGULAR_CLIENT_LPI, true, false,
+							 &psd_power);
+		if (ret)
+			psd_power = CHAN_MIN_TX_POWER;
+		wpa_printf(MSG_DEBUG, "LPI/VLP channel %d MHz, psd_power: %d",
+			   freq, psd_power);
+	} else {
+		/* For SP punctured channel, psd power is primary 20 MHZ PSD - 16 */
+		psd_power = (primary_20_mhz_psd - PUNCTURED_SP_CHAN_POWER_DIFF);
+		if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP &&
+		    !hostapd_is_additional_tpe(tx_pwr_intrpn)) {
+		    return get_max_psd_for_composite_ap(iface, freq,
+							pwr_type, client_mode,
+							psd_power);
+		}
+		wpa_printf(MSG_DEBUG, "SP channel %d MHz, psd_power: %d",
+			   freq, psd_power);
+	}
+	return psd_power;
+}
+
 static int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 			  int chan_start_idx, int non_11be_chan_count,
 			  int total_chan_count, u8 *tx_pwr_count,
@@ -9310,8 +9490,12 @@ static int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 	u16 punct_bitmap = iface->conf->punct_bitmap;
 	u16 non_be_chan_index_map = 0;
 	int is_different_psd = 0, non11be_chan_pos = non_11be_start_idx - chan_start_idx;
-	s8 start_chan_psd = 0, chan_psd = 0;
+	s16 start_chan_psd = RNR_20_MHZ_PSD_NO_POWER, chan_psd = RNR_20_MHZ_PSD_NO_POWER;
 	int i = 0, j = 0;
+	s16 primary_20mhz_psd = RNR_20_MHZ_PSD_NO_POWER;
+	u8 pwr_type = iface->conf->he_6ghz_reg_pwr_type;
+	bool is_composite_ap_sp = false;
+	bool fill_psd_for_sp = false;
 
 	if (!tx_pwr_array || ((total_chan_count - non_11be_chan_count) && !tx_pwr_ext_array))
 		return -1;
@@ -9323,7 +9507,8 @@ static int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 	}
 
 	start_chan_psd = get_psd_for_chan_idx(hapd, non_11be_start_idx, chan_data,
-					      client_mode, pwr_mode, tx_pwr_intrpn);
+					      client_mode, pwr_mode, tx_pwr_intrpn,
+					      &primary_20mhz_psd);
 
 	for (i = non_11be_start_idx; i < non_11be_start_idx + non_11be_chan_count;
 	     i++, non11be_chan_pos++) {
@@ -9333,7 +9518,8 @@ static int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 		}
 		non_be_chan_index_map |= BIT(non11be_chan_pos);
 		chan_psd = get_psd_for_chan_idx(hapd, i, chan_data, client_mode,
-						pwr_mode, tx_pwr_intrpn);
+						pwr_mode, tx_pwr_intrpn,
+						&primary_20mhz_psd);
 		*tx_pwr_array = chan_psd * 2;
 		tx_pwr_array++;
 		if (!is_different_psd && (start_chan_psd != chan_psd))
@@ -9343,6 +9529,13 @@ static int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 	/* For 11be the TPE extension parameter added if the bw is 320MHZ or if
 	 * any channel is punctured in 320MHZ/160MHZ/80MHZ
 	 */
+	if (pwr_type == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP &&
+		hostapd_is_additional_tpe(tx_pwr_intrpn))
+		is_composite_ap_sp = true;
+
+	if (is_composite_ap_sp || pwr_type == HE_REG_INFO_6GHZ_AP_TYPE_SP)
+		fill_psd_for_sp = true;
+
 	for (i = chan_start_idx, j = 0; i < chan_start_idx + total_chan_count; i++, j++) {
 		if (i >= chan_data.num_channels) {
 			wpa_printf(MSG_ERROR, "Invalid channel index :%d", i);
@@ -9351,24 +9544,27 @@ static int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 		if (non_be_chan_index_map & BIT(j)) { /* filled in 11ax TPE*/
 			continue;
 		}
-		if (punct_bitmap & BIT(j)) {
-			/* Punctured channel. set power value to
-			 * RNR_20_MHZ_PSD_NO_POWER (-128) which
-			 * indicates "no transmit power is specified"
-			 */
-			*tx_pwr_ext_array = RNR_20_MHZ_PSD_NO_POWER;
+		if (punct_bitmap & BIT(j) && fill_psd_for_sp) {
+			u16 punc_freq = chan_data.channels[i].freq;
+
+			chan_psd = fill_psd_power_for_punctured_freq(hapd, punc_freq,
+								     client_mode,
+								     pwr_mode,
+								     tx_pwr_intrpn,
+								     primary_20mhz_psd);
 		} else {
 			chan_psd = get_psd_for_chan_idx(hapd, i, chan_data, client_mode,
-							pwr_mode, tx_pwr_intrpn);
-			*tx_pwr_ext_array = chan_psd * 2;;
+							pwr_mode, tx_pwr_intrpn,
+							&primary_20mhz_psd);
 		}
+		*tx_pwr_ext_array = chan_psd * 2;
 		tx_pwr_ext_array++;
 		*tx_pwr_ext_count += 1;
 		if (!is_different_psd && (start_chan_psd != chan_psd))
 			is_different_psd = 1;
 	}
 #endif
-	if (!is_different_psd && !punct_bitmap) {
+	if (!is_different_psd) {
 		*tx_pwr_count = 0;
 		*tx_pwr_ext_count = 0;
 	} else {
@@ -9382,7 +9578,6 @@ static int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 	return 0;
 }
 
-
 static u8 *hostapd_add_psd_tpe(struct hostapd_data *hapd, u8 client_mode,
 			       u8 *eid, u8 tx_pwr_cat,
 			       enum max_tx_pwr_interpretation tx_pwr_intrpn,
@@ -9394,10 +9589,12 @@ static u8 *hostapd_add_psd_tpe(struct hostapd_data *hapd, u8 client_mode,
 	s8 tx_pwr_array[MAX_PSD_TPE_POWER_COUNT] = {0};
 	u8 tx_pwr_count = 0, tx_pwr_ext_count = 0;
  	struct hostapd_iface *iface = hapd->iface;
- 	struct hostapd_hw_modes *mode = iface->current_mode;
+	struct hostapd_hw_modes *mode = iface->current_mode;
 	struct ieee_chan_data chan_data;
 
-	if (set_ieee_order_chan_list(mode, &chan_data))
+	wpa_printf(MSG_DEBUG, "Adding TPE for client mode: %d, pwr_mode: %d",
+		   client_mode, pwr_mode);
+	if (set_ieee_order_chan_list(mode, &chan_data, client_mode))
 		return eid;
 
 	if (get_chan_list(hapd, &non_11be_start_idx, &chan_start_idx,
@@ -9405,6 +9602,10 @@ static u8 *hostapd_add_psd_tpe(struct hostapd_data *hapd, u8 client_mode,
 		wpa_printf(MSG_ERROR, "Unable to get chan list");
 		goto free;
 	}
+	wpa_printf(MSG_DEBUG, "non_11be_start_idx: %d, chan_start_idx: %d, "
+		   "non_11be_chan_count: %d, total_chan_count: %d, pwr_mode: %d, client_mode: %d, tx_pwr_in: %d\n",
+		   non_11be_start_idx, chan_start_idx,
+		   non_11be_chan_count, total_chan_count, pwr_mode, client_mode, tx_pwr_intrpn);
 
 	if (get_psd_values(hapd, non_11be_start_idx, chan_start_idx,
 			   non_11be_chan_count, total_chan_count, &tx_pwr_count,

@@ -1067,6 +1067,7 @@ static inline bool hostapd_mld_is_first_bss(struct hostapd_data *hapd)
 
 #endif /* CONFIG_IEEE80211BE */
 
+#define SP_AP_AND_CLIENT_POWER_DIFF            6
 #define CONV_20MHZ_EIRP_TO_PSD_IN_DBM         13
 #define SP_AP_AND_CLIENT_POWER_DIFF_IN_SCALE 600
 #define TPE_NUM_POWER_SUPP_IN_11BE             5
@@ -1342,4 +1343,26 @@ int hostapd_epcs_handle_cli(struct hostapd_data *hapd, char *pos,
 bool
 hostapd_verify_action_frame_has_min_length(const struct ieee80211_mgmt *mgmt,
 					   size_t len);
+
+/**
+ * hostapd_reg_get_psd_from_chan_list() - Get the regulatory PSD for the freq
+ * @iface: Pointer to hostapd_iface
+ * @freq: Frequency in MHz
+ * @center_freq: Band center frequency
+ * @bw: Bandwidth in MHz
+ * @in_punc_pattern: Puncturing pattern
+ * @ap_pwr_type: AP power type
+ * @client_type: Client type
+ * @is_client_lookup: Whether the lookup is for client
+ * @is_twice_pwr: Flag to indicate twice power
+ * @psd_pwr: Output pointer to PSD power
+ *
+ * Return: 0 on success, -1 on failure
+ */
+int
+hostapd_reg_get_psd_from_chan_list(struct hostapd_iface *iface, u16 freq,
+				   u16 center_freq, u16 bw, u16 in_punc_pattern,
+				   u8 ap_pwr_type, u8 client_type,
+				   bool is_client_lookup, bool is_twice_pwr,
+				   s16 *psd_pwr);
 #endif /* HOSTAPD_H */

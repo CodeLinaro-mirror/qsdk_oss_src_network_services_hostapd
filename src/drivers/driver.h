@@ -224,18 +224,6 @@ struct hostapd_channel_data {
 	 * eirp_power - EIRP power
 	 */
 	s8 eirp_power;
-
-	/**
-	 * This array is used to store the psd value of each power mode
-	 * supported in 6G band.
-	 */
-	s8 psd_values[NL80211_REG_NUM_POWER_MODES];
-
-	/**
-	 * This array is used to store the regulatory max EIRP value of each
-	 * power mode supported in 6GHz band.
-	 */
-	s8 eirp_values[NL80211_REG_NUM_POWER_MODES];
 };
 
 #define HE_MAC_CAPAB_0		0
