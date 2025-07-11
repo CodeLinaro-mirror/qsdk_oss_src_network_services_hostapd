@@ -259,6 +259,10 @@ static inline u8 hostapd_mbo_ie_len(struct hostapd_data *hapd)
 #define DEFAULT_HIGH_6GFREQ    7125
 #define MAX_PUNC_MASK_LIMITS      3
 #define CHWIDTH_20               20  /* Channel width 20 */
+#define CHWIDTH_40               40  /* Channel width 40 */
+#define CHWIDTH_80               80  /* Channel width 80 */
+#define CHWIDTH_160             160  /* Channel width 160 */
+#define CHWIDTH_320             320  /* Channel width 320 */
 
 /* in the bitmap 0 indicates no puncturing and 1 indicated that sub channel is
  * punctured
