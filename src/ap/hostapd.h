@@ -1306,6 +1306,9 @@ hostapd_is_uhr_enabled(struct hostapd_data *hapd)
 }
 
 #ifdef CONFIG_IEEE80211BE
+/* TID value to be used when EPCS is enabled */
+#define EPCS_TID_VALUE	7
+
 int hostapd_epcs_handle_and_send_action_frame(struct hostapd_data *hapd,
 					      struct wlan_epcs_info *epcs_info,
 					      struct sta_info *sta,
