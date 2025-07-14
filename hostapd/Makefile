@@ -378,6 +378,8 @@ OBJS += ../src/ap/ieee802_11_eht.o
 OBJS += ../src/ap/ttlm.o
 endif
 
+OBJS += ../src/ap/dscp_policy.o
+
 ifdef CONFIG_IEEE80211AX
 CFLAGS += -DCONFIG_IEEE80211AX
 OBJS += ../src/ap/ieee802_11_he.o

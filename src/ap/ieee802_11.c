@@ -65,6 +65,7 @@
 #include "pasn/pasn_common.h"
 #include "wpa_auth_i.h"
 #include "ttlm.h"
+#include "dscp_policy.h"
 
 #ifdef CONFIG_FILS
 static struct wpabuf *
@@ -5963,6 +5964,9 @@ rsnxe_done:
 	if (sta && (sta->flags & WLAN_STA_WMM))
 		p = hostapd_eid_wmm(hapd, p, false);
 
+	if (sta && hapd->conf->enable_dscp_policy_capa)
+		p = hostapd_set_dscp_capabilities(hapd, sta, p);
+
 #ifdef CONFIG_WPS
 	if (sta &&
 	    ((sta->flags & WLAN_STA_WPS) ||
@@ -6694,6 +6698,9 @@ static void handle_assoc(struct hostapd_data *hapd,
 		    hapd->iface->num_sta_no_short_slot_time == 1)
 			set_beacon = true;
 	}
+
+	if (sta)
+		hostapd_check_dscp_policy_capability(sta, pos, left);
 
 	if (sta->capability & WLAN_CAPABILITY_SHORT_PREAMBLE)
 		sta->flags |= WLAN_STA_SHORT_PREAMBLE;

@@ -27,6 +27,7 @@
 #ifdef CONFIG_IEEE80211BE
 #include "common/qca-vendor.h"
 #endif
+#include "dscp_policy.h"
 
 u32 hostapd_sta_flags_to_drv(u32 flags)
 {
@@ -80,7 +81,7 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 			       struct wpabuf **assocresp_ret)
 {
 	struct wpabuf *beacon = NULL, *proberesp = NULL, *assocresp = NULL;
-	u8 buf[200], *pos;
+	u8 buf[216], *pos;
 
 	*beacon_ret = *proberesp_ret = *assocresp_ret = NULL;
 
@@ -124,6 +125,14 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 	    add_buf_data(&proberesp, buf, pos - buf) < 0)
 		goto fail;
 #endif /* CONFIG_FILS */
+
+	if (hapd->conf->enable_dscp_policy_capa) {
+		pos = hostapd_set_dscp_capabilities(hapd, NULL, buf);
+		if (add_buf_data(&beacon, buf, pos - buf) < 0 ||
+		    add_buf_data(&proberesp, buf, pos - buf) < 0 ||
+		    add_buf_data(&assocresp, buf, pos - buf) < 0)
+			goto fail;
+	}
 
 	if (!hapd->conf->rsn_override_omit_rsnxe) {
 		pos = hostapd_eid_rsnxe(hapd, buf, sizeof(buf));

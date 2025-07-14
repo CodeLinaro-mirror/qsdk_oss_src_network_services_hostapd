@@ -1057,6 +1057,7 @@ ifdef CONFIG_IEEE80211BE
 OBJS += ../src/ap/ieee802_11_eht.o
 OBJS += ../src/ap/ttlm.o
 endif
+OBJS += ../src/ap/dscp_policy.o
 ifdef CONFIG_WNM_AP
 CFLAGS += -DCONFIG_WNM_AP
 OBJS += ../src/ap/wnm_ap.o
