@@ -1056,9 +1056,7 @@ struct hostapd_bss_config {
 	unsigned int pmksa_caching_privacy:1;
 	unsigned int eap_using_authentication_frames:1;
 #endif /* CONFIG_ENC_ASSOC  */
-#ifdef CONFIG_ROBUST_AV
 	bool enable_dscp_policy_capa;
-#endif /* CONFIG_ROBUST_AV */
 
 	unsigned int gas_max_peers;
 

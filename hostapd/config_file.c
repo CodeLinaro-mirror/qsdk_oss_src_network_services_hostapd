@@ -5489,6 +5489,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		if (get_u16(pos, line, &conf->dbe_punct_bitmap))
 			return 1;
 #endif /* CONFIG_IEEE80211BN */
+	} else if (os_strcmp(buf, "enable_dscp_policy_capa") == 0) {
+		bss->enable_dscp_policy_capa = atoi(pos);
 	} else if (os_strcmp(buf, "twt_responder_caps") == 0) {
 		int val;
 		val = atoi(pos);
@@ -5499,10 +5501,6 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   "Invalid value for twt_responder_caps");
 	} else if (os_strcmp(buf, "i2r_lmr_policy") == 0) {
 		conf->i2r_lmr_policy = atoi(pos);
-#ifdef CONFIG_ROBUST_AV
-	} else if (os_strcmp(buf, "enable_dscp_policy_capa") == 0) {
-		bss->enable_dscp_policy_capa = atoi(pos);
-#endif /* CONFIG_ROBUST_AV */
 	} else {
 		wpa_printf(MSG_ERROR,
 			   "Line %d: unknown configuration item '%s'",
