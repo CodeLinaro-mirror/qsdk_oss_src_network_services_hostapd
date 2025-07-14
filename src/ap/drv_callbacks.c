@@ -3116,9 +3116,10 @@ static void hostapd_event_update_expec_dur(struct hostapd_data *hapd,
 void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		       union wpa_event_data *data)
 {
-	struct hostapd_data *hapd = ctx;
+	struct hostapd_data *hapd = ctx, *phapd;
 	struct sta_info *sta;
 	struct hostapd_data *link_hapd;
+	bool found = false;
 #ifndef CONFIG_NO_STDOUT_DEBUG
 	int level = MSG_DEBUG;
 
@@ -3528,6 +3529,35 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 			hostapd_event_update_expec_dur(hapd, &data->ttlm_expec_dur_event);
 		break;
 #endif
+	case EVENT_IFACE_RELOAD:
+		if (!hapd->conf->mld_ap) {
+			if (hostapd_reload_bss_only(hapd) < 0)
+				wpa_printf(MSG_ERROR, "Reloading of BSS failed");
+			break;
+		}
+		if (data->iface_reload.link_id == 0xFF) {
+			/* If link id is invalid reload all bss of the mld interface */
+			for_each_mld_link(phapd, hapd) {
+				if (hostapd_reload_bss_only(phapd) < 0) {
+					wpa_printf(MSG_ERROR, "Reloading of BSS failed");
+					continue;
+				}
+			}
+		} else {
+			for_each_mld_link(phapd, hapd) {
+				if (phapd->mld_link_id == data->iface_reload.link_id) {
+					found = true;
+					break;
+				}
+			}
+			if (!found)
+				return;
+			if (hostapd_reload_bss_only(phapd) < 0) {
+				wpa_printf(MSG_ERROR, "Reloading of BSS failed");
+				return;
+			}
+		}
+		break;
 	default:
 		wpa_printf(MSG_DEBUG, "Unknown event %d", event);
 		break;

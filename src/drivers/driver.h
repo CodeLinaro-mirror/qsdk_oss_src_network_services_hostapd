@@ -6763,6 +6763,13 @@ enum wpa_event_type {
 	EVENT_AFC_RECEIVED,
 
 	/**
+	 * EVENT_IFACE_RELOAD - Reload BSS
+	 * This event is sent by the driver, if it expects hostapd to reload
+	 * the BSS, for a vendor configuration to complete
+	 */
+	EVENT_IFACE_RELOAD,
+
+	/**
 	 * EVENT_TTLM_UPDATE - Notification about TTLM info update event
 	 */
 	EVENT_TTLM_UPDATE,
@@ -7829,6 +7836,13 @@ union wpa_event_data {
 		u32 link_removal_count;
 		u64 tsf;
 	} link_removal_event;
+
+	/**
+	 * Data for iface reload event
+	 */
+	struct iface_reload {
+		u8 link_id;
+	} iface_reload;
 
 	/**
 	 * struct ttlm_update_event - Data for EVENT_TTLM_UPDATE

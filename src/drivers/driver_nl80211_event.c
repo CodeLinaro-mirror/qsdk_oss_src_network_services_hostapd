@@ -4047,6 +4047,42 @@ static int copy_afc_chan_obj(struct nlattr *nl,
 	return 0;
 }
 
+static int
+qca_nl80211_iface_reload(struct i802_bss *bss, u8 *data, size_t len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ACS_MAX + 1];
+	union wpa_event_data event;
+	struct iface_reload *iface_reload;
+	u8 link_id = -1;
+
+	if (!(data && len)) {
+		wpa_printf(MSG_ERROR, "Invalid data length data ptr: %pK ",
+			   data);
+		return -EINVAL;
+	}
+
+	os_memset(&event, 0, sizeof(event));
+	iface_reload = &event.iface_reload;
+
+	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_IFACE_RELOAD_MAX,
+		      (struct nlattr *) data, len, NULL)) {
+		wpa_printf(MSG_ERROR,
+			   "invalid Iface Reload attribute\n");
+		return -EINVAL;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_IFACE_RELOAD_LINKID])
+		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_IFACE_RELOAD_LINKID]);
+	else
+		link_id = -1;
+
+	iface_reload->link_id = link_id;
+
+	wpa_supplicant_event(bss->ctx, EVENT_IFACE_RELOAD, &event);
+
+	return 0;
+}
+
 #define NUM_6GHZ_OPCLASS 7
 static int
 qca_nl80211_afc_power_update_completed(struct i802_bss *bss,
@@ -4310,6 +4346,9 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 		break;
 	case QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT:
 		qca_nl80211_handle_afc_events(bss, data, len);
+		break;
+	case QCA_NL80211_VENDOR_SUBCMD_IFACE_RELOAD:
+		qca_nl80211_iface_reload(bss, data, len);
 		break;
 	default:
 		wpa_printf(MSG_DEBUG,
