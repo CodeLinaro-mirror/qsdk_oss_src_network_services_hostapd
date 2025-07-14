@@ -23,6 +23,7 @@
 #include "wpa_auth.h"
 #include "hw_features.h"
 #include "robust_av.h"
+#include "dscp_policy.h"
 #include "beacon.h"
 #include "ap_drv_ops.h"
 
@@ -82,7 +83,7 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 			       struct wpabuf **assocresp_ret)
 {
 	struct wpabuf *beacon = NULL, *proberesp = NULL, *assocresp = NULL;
-	u8 buf[208], *pos;
+	u8 buf[216], *pos;
 #ifdef CONFIG_P2P
 	u8 rsn_override[3 * (2 + 255)];
 	size_t len;
@@ -131,11 +132,13 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 		goto fail;
 #endif /* CONFIG_FILS */
 
-	pos = hostapd_eid_wfa_capab(hapd, NULL, buf);
-	if (add_buf_data(&beacon, buf, pos - buf) < 0 ||
-	    add_buf_data(&proberesp, buf, pos - buf) < 0 ||
-	    add_buf_data(&assocresp, buf, pos - buf) < 0)
-		goto fail;
+	if (hapd->conf->enable_dscp_policy_capa) {
+		pos = hostapd_set_dscp_capabilities(hapd, NULL, buf);
+		if (add_buf_data(&beacon, buf, pos - buf) < 0 ||
+		    add_buf_data(&proberesp, buf, pos - buf) < 0 ||
+		    add_buf_data(&assocresp, buf, pos - buf) < 0)
+			goto fail;
+	}
 
 	if (!hapd->conf->rsn_override_omit_rsnxe) {
 		pos = hostapd_eid_rsnxe(hapd, buf, sizeof(buf),

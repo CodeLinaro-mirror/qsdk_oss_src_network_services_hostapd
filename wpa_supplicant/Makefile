@@ -1117,6 +1117,7 @@ endif
 ifdef CONFIG_IEEE80211BN
 OBJS += ../src/ap/ieee802_11_uhr.o
 endif
+OBJS += ../src/ap/dscp_policy.o
 ifdef CONFIG_WNM_AP
 CFLAGS += -DCONFIG_WNM_AP
 OBJS += ../src/ap/wnm_ap.o

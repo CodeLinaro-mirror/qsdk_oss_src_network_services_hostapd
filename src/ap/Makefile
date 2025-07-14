@@ -66,6 +66,7 @@ LIB_OBJS= \
 	wpa_auth_ie.o \
 	wps_hostapd.o \
 	x_snoop.o \
-	ttlm.o
+	ttlm.o \
+	dscp_policy.o
 
 include ../lib.rules

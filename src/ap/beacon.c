@@ -36,7 +36,7 @@
 #include "taxonomy.h"
 #include "ieee802_11_auth.h"
 #include "robust_av.h"
-
+#include "dscp_policy.h"
 
 #ifdef NEED_AP_MLME
 
@@ -903,7 +903,8 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 	buflen += hostapd_get_rsne_override_len(hapd);
 	buflen += hostapd_get_rsne_override_2_len(hapd);
 	buflen += hostapd_get_rsnxe_override_len(hapd);
-	buflen += hostapd_eid_wfa_capab_len(hapd);
+	if (hapd->conf->enable_dscp_policy_capa)
+		buflen += hostapd_dscp_cap_ie_len(hapd);
 
 	return buflen;
 }
@@ -1127,6 +1128,8 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 
 	/* Wi-Fi Alliance WMM */
 	pos = hostapd_eid_wmm(hapd, pos, false);
+	if (hapd->conf->enable_dscp_policy_capa)
+		pos = hostapd_set_dscp_capabilities(hapd, NULL, pos);
 
 #ifdef CONFIG_WPS
 	if (hapd->conf->wps_state && hapd->wps_probe_resp_ie) {
@@ -1161,8 +1164,6 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	pos = hostapd_get_rsne_override(hapd, pos, epos - pos);
 	pos = hostapd_get_rsne_override_2(hapd, pos, epos - pos);
 	pos = hostapd_get_rsnxe_override(hapd, pos, epos - pos);
-
-	pos = hostapd_eid_wfa_capab(hapd, NULL, pos);
 
 	if (hapd->conf->vendor_elements) {
 		os_memcpy(pos, wpabuf_head(hapd->conf->vendor_elements),
@@ -2557,7 +2558,8 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	tail_len += hostapd_get_rsne_override_len(hapd);
 	tail_len += hostapd_get_rsne_override_2_len(hapd);
 	tail_len += hostapd_get_rsnxe_override_len(hapd);
-	tail_len += hostapd_eid_wfa_capab_len(hapd);
+	if (hapd->conf->enable_dscp_policy_capa)
+		tail_len += hostapd_dscp_cap_ie_len(hapd);
 
 	tailpos = tail = os_malloc(tail_len);
 	if (head == NULL || tail == NULL) {
@@ -2829,6 +2831,8 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
 					   tailpos-startpos, ELEMID_CU_PARAM_WMM);
 #endif
+	if (hapd->conf->enable_dscp_policy_capa)
+		tailpos = hostapd_set_dscp_capabilities(hapd, NULL, tailpos);
 #ifdef CONFIG_WPS
 	if (hapd->conf->wps_state && hapd->wps_beacon_ie) {
 		os_memcpy(tailpos, wpabuf_head(hapd->wps_beacon_ie),
@@ -2865,8 +2869,6 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 					      tail + tail_len - tailpos);
 	tailpos = hostapd_get_rsnxe_override(hapd, tailpos,
 					     tail + tail_len - tailpos);
-
-	tailpos = hostapd_eid_wfa_capab(hapd, NULL, tailpos);
 
 	if (hapd->conf->vendor_elements) {
 		os_memcpy(tailpos, wpabuf_head(hapd->conf->vendor_elements),
