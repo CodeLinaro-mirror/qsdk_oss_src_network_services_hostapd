@@ -2975,7 +2975,8 @@ u8 * hostapd_fragment_multi_link_element(struct wpabuf *buf, u8 *pos)
 #define EHT_PRIO_ACCESS_ML_COMMON_INFO_LEN 7 /* common info length: length field (1) + AP MLD MAC ADDR (6) */
 
 static size_t hostapd_eid_eht_ml_priority_access(struct hostapd_data *hapd,
-						 u8 *eid)
+						 u8 *eid,
+						 struct mld_info *mld_info)
 {
 	u8 *pos = eid;
 	u32 i;
@@ -2984,6 +2985,7 @@ static size_t hostapd_eid_eht_ml_priority_access(struct hostapd_data *hapd,
 	size_t sta_profile_len;
 	u8 mu_edca_start[3 + sizeof(struct ieee80211_he_mu_edca_parameter_set)];
 	u8 wmm_start[2 + sizeof(struct wmm_parameter_element)];
+	struct mld_link_info *link;
 
 	/*
 	 * As the Multi-Link element can exceed the size of 255 bytes need to
@@ -3012,7 +3014,7 @@ static size_t hostapd_eid_eht_ml_priority_access(struct hostapd_data *hapd,
 			  2 + sizeof(struct wmm_parameter_element);
 
 	/* EPCS Priority Access Multi-Link element Link Info
-	 * Add link info for all the links
+	 * Add link info of links to which connected non-AP MLD is connected
 	 */
 	for (i = 0; i < hapd->iface->interfaces->count; i++) {
 		if (!hapd->iface->interfaces->iface[i])
@@ -3021,6 +3023,11 @@ static size_t hostapd_eid_eht_ml_priority_access(struct hostapd_data *hapd,
 		other_hapd = hapd->iface->interfaces->iface[i]->bss[0];
 
 		if (!other_hapd->conf->mld_ap)
+			continue;
+
+		link = &mld_info->links[other_hapd->mld_link_id];
+
+		if (!link || !link->valid)
 			continue;
 
 		/* Set the Per-STA Profile subelement */
@@ -3083,8 +3090,10 @@ static int hapd_epcs_drv_send_action_frame(struct hostapd_data *hapd,
 			return -1;
 		}
 
-		prio_access_ml_elem_len = hostapd_eid_eht_ml_priority_access(hapd,
-									     prio_access_ml_elem);
+		prio_access_ml_elem_len =
+			hostapd_eid_eht_ml_priority_access(hapd,
+							   prio_access_ml_elem,
+							   &sta->mld_info);
 		wpabuf_put_data(buf, prio_access_ml_elem, prio_access_ml_elem_len);
 		os_free(prio_access_ml_elem);
 		break;
