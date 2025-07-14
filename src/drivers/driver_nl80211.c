@@ -16353,6 +16353,21 @@ static int nl80211_set_qm_desc(struct nl_msg *msg,
 			goto nla_fail;
 	}
 
+	if (qm_req_desc.user_priority_bitmap &&
+		nla_put_u8(msg, NL80211_QM_DESC_ATTR_USER_PRIORITY_BITMAP,
+			qm_req_desc.user_priority_bitmap))
+		goto nla_fail;
+
+	if (qm_req_desc.user_priority_limit &&
+		nla_put_u8(msg, NL80211_QM_DESC_ATTR_USER_PRIORITY_LIMIT,
+			qm_req_desc.user_priority_limit))
+		goto nla_fail;
+
+	if (qm_req_desc.tclas_mask &&
+		nla_put_u8(msg, NL80211_QM_DESC_ATTR_TCLAS_MASK,
+			qm_req_desc.tclas_mask))
+		goto nla_fail;
+
 #ifdef CONFIG_IEEE80211BE
 	if (qm_req_desc.is_qos_present) {
 		if (nl80211_set_qm_qos_attr(msg, qm_req_desc.qos_attr))
