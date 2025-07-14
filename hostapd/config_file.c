@@ -5154,6 +5154,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "ttlm_enable") == 0) {
 		bss->ttlm_enable = atoi(pos);
 #endif /* CONFIG_IEEE80211BE */
+	} else if (os_strcmp(buf, "enable_dscp_policy_capa") == 0) {
+		bss->enable_dscp_policy_capa = atoi(pos);
 	} else if (os_strcmp(buf, "twt_responder_caps") == 0) {
 		int val;
 		val = atoi(pos);

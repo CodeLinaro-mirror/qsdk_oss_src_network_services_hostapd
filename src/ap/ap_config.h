@@ -1021,6 +1021,7 @@ struct hostapd_bss_config {
 	bool is_epcs_enabled;
 	bool ttlm_enable;
 #endif /* CONFIG_IEEE80211BE */
+	bool enable_dscp_policy_capa;
 	/*
 	 * twt_responder_caps: 0 - Disable TWT
 	 *                     1 - Enable TWT
