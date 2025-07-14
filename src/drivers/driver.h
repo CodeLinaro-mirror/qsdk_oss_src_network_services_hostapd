@@ -163,6 +163,29 @@ enum qos_mgmt_req_type {
 	QM_CHANGE_REQ,
 };
 
+/**
+ * enum qos_mgmt_desc_qos_direction - Direction of QM Descriptor QoS
+ *				      element
+ * @QM_DIRECTION_UPLINK: Indicates that the traffic direction is uplink from the
+ * non-AP STA to the AP.
+ * @QM_DIRECTION_DOWNLINK: Indicates that the traffic direction is downlink from
+ * the AP to the non-AP STA.
+ * @QM_DIRECTION_DIRECT: Indicates direct link traffic between STAs
+ * (P2P scenario).
+ *
+ * Enumerate QoS characteristic element direction subfield encoding which
+ * denotes QoS attributes should be linked to traffic in which direction.
+ */
+enum qos_mgmt_desc_qos_direction {
+	QM_DIRECTION_UPLINK = 0,
+	QM_DIRECTION_DOWNLINK = 1,
+	QM_DIRECTION_DIRECT = 2,
+};
+
+#define QM_ID_MAX_VALUE		127
+#define EPCS_QM_ID		QM_ID_MAX_VALUE
+#define EPCS_NUM_QM_DESC	1
+
 #define IPV4_LEN	4
 #define IPV6_LEN	16
 

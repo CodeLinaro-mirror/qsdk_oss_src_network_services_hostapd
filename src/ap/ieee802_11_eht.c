@@ -3155,6 +3155,64 @@ void hostapd_epcs_timeout_handler(void *eloop_ctx, void *timeout_ctx)
 	mld_info->epcs.timer_started = false;
 }
 
+static int hostapd_configure_epcs(struct hostapd_data *hapd,
+				  struct sta_info *sta,
+				  enum qos_mgmt_req_type req_type)
+{
+	struct qm_req_data qm_req = {0};
+	struct qm_resp_data qm_resp = {0};
+
+	if (hapd->driver == NULL)
+		return -1;
+
+	/* Fill QM request data */
+	os_memcpy(qm_req.peer_mac, sta->addr, ETH_ALEN);
+	qm_req.qm_type = HOSTAPD_QM_TYPE_SCS;
+	/* EPCS carries only one descriptor */
+	qm_req.num_qm_desc = EPCS_NUM_QM_DESC;
+
+	/* Fill QM request descriptor data */
+	qm_req.qm_req_desc[0].qm_id = EPCS_QM_ID;
+	if (req_type == QM_ADD_REQ) {
+		qm_req.qm_req_desc[0].request_type = QM_ADD_REQ;
+		qm_req.qm_req_desc[0].priority = EPCS_TID_VALUE;
+		qm_req.qm_req_desc[0].is_qos_present = true;
+
+		/* Fill QM request descriptor QoS attributes */
+		qm_req.qm_req_desc[0].qos_attr.direction =
+			QM_DIRECTION_DOWNLINK;
+		qm_req.qm_req_desc[0].qos_attr.tid = EPCS_TID_VALUE;
+		qm_req.qm_req_desc[0].qos_attr.up = EPCS_TID_VALUE;
+
+	} else if (req_type == QM_REMOVE_REQ)
+		qm_req.qm_req_desc[0].request_type = QM_REMOVE_REQ;
+	else {
+		wpa_printf(MSG_ERROR, "Invalid req type for EPCS: %d", req_type);
+		return -1;
+	}
+
+	/* Send the QoS request */
+	if (hapd->drv_priv && hapd->driver->set_qos &&
+	    hapd->driver->set_qos(hapd->drv_priv, &qm_req, &qm_resp)) {
+		wpa_printf(MSG_ERROR, "Set QoS failed");
+		return -1;
+	}
+
+	if (qm_resp.qm_resp_desc[0].qm_id != qm_req.qm_req_desc[0].qm_id) {
+		wpa_printf(MSG_ERROR, "EPCS QM ID mismatch in response:%u",
+			   qm_resp.qm_resp_desc[0].qm_id);
+		return -1;
+	}
+
+	if (qm_resp.qm_resp_desc[0].status) {
+		wpa_printf(MSG_ERROR, "EPCS QM response failure:%u",
+			   qm_resp.qm_resp_desc[0].status);
+		return -1;
+	}
+
+	return 0;
+}
+
 int hostapd_epcs_handle_and_send_action_frame(struct hostapd_data *hapd,
 					      struct wlan_epcs_info *epcs_info,
 					      struct sta_info *sta,
@@ -3162,6 +3220,7 @@ int hostapd_epcs_handle_and_send_action_frame(struct hostapd_data *hapd,
 {
 	struct mld_peer_epcs_info *sta_epcs;
 	enum peer_epcs_state prev_epcs_state;
+	int ret = 0;
 
 	if (!sta || !sta->mld_info.mld_sta)
 		return -1;
@@ -3264,6 +3323,17 @@ failed:
 			   "for sta with mld addr" MACSTR, prev_epcs_state, epcs_info->action_code, sta_epcs->state,
 			   MAC2STR(sta->mld_info.common_info.mld_addr));
 		return -1;
+
+	} else {
+		if (sta_epcs->state == EPCS_STATE_DISABLED)
+			ret = hostapd_configure_epcs(hapd, sta, QM_REMOVE_REQ);
+		else if (sta_epcs->state == EPCS_STATE_ENABLED)
+			ret = hostapd_configure_epcs(hapd, sta, QM_ADD_REQ);
+
+		if (ret) {
+			wpa_printf(MSG_ERROR, "EPCS configure failed:%d", ret);
+			return ret;
+		}
 	}
 
 	return 0;

@@ -882,6 +882,9 @@ enum peer_epcs_state {
 	EPCS_STATE_ENABLED, /* EPCS session established */
 };
 
+/* TID value to be used when EPCS is enabled */
+#define EPCS_TID_VALUE	7
+
 /*
  * struct wlan_epcs_info - EPCS information of frame
  */
