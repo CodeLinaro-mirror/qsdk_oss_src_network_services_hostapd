@@ -5129,6 +5129,13 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 	wpa_printf(MSG_DEBUG, "nl80211: Drv Event %d (%s) received for %s",
 		   cmd, nl80211_command_to_string(cmd), bss->ifname);
 
+	if (bss->valid_links && !bss->active_links) {
+		wpa_printf(MSG_ERROR, "nl80211: Ignoring BSS Event %d (%s) received for %s",
+			   cmd, nl80211_command_to_string(cmd),
+			   bss->ifname);
+		return;
+	}
+
 #ifdef CONFIG_DRIVER_NL80211_QCA
 	if (cmd == NL80211_CMD_ROAM &&
 	    (drv->capa.flags & WPA_DRIVER_FLAGS_KEY_MGMT_OFFLOAD)) {
@@ -5560,6 +5567,13 @@ int process_bss_event(struct nl_msg *msg, void *arg)
 	wpa_printf(MSG_DEBUG, "nl80211: BSS Event %d (%s) received for %s",
 		   gnlh->cmd, nl80211_command_to_string(gnlh->cmd),
 		   bss->ifname);
+
+	if (bss->valid_links && !bss->active_links) {
+		wpa_printf(MSG_ERROR, "nl80211: Ignoring BSS Event %d (%s) received for %s",
+			   gnlh->cmd, nl80211_command_to_string(gnlh->cmd),
+			   bss->ifname);
+		return NL_SKIP;
+	}
 
 	switch (gnlh->cmd) {
 	case NL80211_CMD_FRAME:
