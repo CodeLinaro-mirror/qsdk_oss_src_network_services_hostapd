@@ -72,6 +72,20 @@ struct type4_params {
 	} ip_params;
 };
 
+struct dscp_context {
+	struct hostapd_data *hapd;
+	struct sta_info *sta;
+	u8 dialog_token;
+	u8 more;
+	u8 reset;
+	struct hostapd_dscp_policy **query_policy;
+	size_t num_query_policies;
+	struct hostapd_dscp_policy **req_policy;
+	size_t num_req_policies;
+	size_t req_size;
+	bool is_wildcard;
+};
+
 struct hostapd_dscp_policy {
 	u8 policy_id;  /* Unique Identifier*/
 	u8 req_type;
@@ -103,3 +117,5 @@ void hostapd_send_unsolicited_dscp_policy_request(struct hostapd_data *hapd,
 						  u8 reset,
 						  const int *policy_ids,
 						  size_t num_policies);
+int hostapd_handle_dscp_policy_query(struct hostapd_data *hapd, struct sta_info *sta,
+				     const u8 *data, size_t len);

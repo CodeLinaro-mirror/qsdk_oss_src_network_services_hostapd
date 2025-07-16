@@ -7066,6 +7066,28 @@ static void handle_beacon(struct hostapd_data *hapd,
 	ap_list_process_beacon(hapd->iface, mgmt, &elems, fi);
 }
 
+static void hostapd_dscp_action(struct hostapd_data *hapd,
+				struct sta_info *sta,
+				const u8 *pos, const u8 *end,
+				bool protected)
+{
+	u8 subtype;
+
+	if (end - pos < 1) {
+		wpa_printf(MSG_DEBUG, "DSCP Action: Frame too short");
+		return;
+	}
+
+	subtype = *pos++;
+	switch (subtype) {
+	case QM_DSCP_POLICY_QUERY:
+		hostapd_handle_dscp_policy_query(hapd, sta, pos, end - pos);
+		break;
+	default:
+		wpa_printf(MSG_DEBUG, "QM Action: Unknown subtype %u", subtype);
+		break;
+	}
+}
 
 static int hostapd_action_vs(struct hostapd_data *hapd,
 			     struct sta_info *sta,
@@ -7089,6 +7111,13 @@ static int hostapd_action_vs(struct hostapd_data *hapd,
 	case WFA_CAPAB_VENDOR_TYPE:
 		hostapd_wfa_capab(hapd, sta, pos, end);
 		return 0;
+	case QM_ACTION_VENDOR_TYPE:
+		if (!protected) {
+			wpa_printf(MSG_ERROR, "DSCP: Ignoring unprotected frame");
+			return -1;
+		}
+		hostapd_dscp_action(hapd, sta, pos, end, protected);
+		return 0;
 	default:
 		wpa_printf(MSG_DEBUG,
 			   "Ignore unknown Vendor Specific Action frame OUI/type %08x%s",
@@ -7098,7 +7127,6 @@ static int hostapd_action_vs(struct hostapd_data *hapd,
 
 	return -1;
 }
-
 
 static int robust_action_frame(u8 category)
 {
