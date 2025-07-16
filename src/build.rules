@@ -90,6 +90,13 @@ $(BUILDDIR)/$(PROJ)/%.o: %.c $(CONFIG_FILE) | _make_dirs
 	@echo $(CURDIR): '$(CC) -c -o $@ $(CFLAGS) $<' >$@.cmd
 	$(Q)$(CC) -c -o $@ $(CFLAGS) $<
 	@$(E) "  CC " $<
+
+ifdef CONFIG_QCN_EXTN
+$(BUILDDIR)/$(PROJ)/qcn_extns/%.o: $(ROOTDIR)qcn_extns/%.c $(CONFIG_FILE) | _make_dirs
+	$(Q)$(CC) -c -o $@ $(CFLAGS) $<
+	@$(E) "  CC " $<
+endif
+
 # for the fuzzing tests
 $(BUILDDIR)/$(PROJ)/wpa_supplicant/%.o: $(ROOTDIR)wpa_supplicant/%.c $(CONFIG_FILE) | _make_dirs
 	@echo $(CURDIR): '$(CC) -c -o $@ $(CFLAGS) $<' >$@.cmd

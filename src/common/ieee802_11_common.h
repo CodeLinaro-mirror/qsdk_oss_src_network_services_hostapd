@@ -10,6 +10,7 @@
 #define IEEE802_11_COMMON_H
 
 #include "defs.h"
+#include "../../qcn_extns/cmn.h"
 #include "ieee802_11_defs.h"
 #include "utils/list.h"
 
@@ -43,6 +44,9 @@ struct multi_ap_params {
 struct ieee802_11_elems {
 	const u8 *ssid;
 	const u8 *supp_rates;
+
+	struct ieee802_11_elems_extn elems_extn;
+
 	const u8 *ds_params;
 	const u8 *challenge;
 	const u8 *erp_info;

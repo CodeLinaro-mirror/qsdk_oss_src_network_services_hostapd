@@ -67,6 +67,10 @@ ifdef CONFIG_RADIUS_SERVER
 OBJS += radius.o
 endif
 
+ifdef CONFIG_QCN_EXTN
+include ../qcn_extns/Makefile
+endif
+
 OBJS += ../src/ap/hostapd.o
 OBJS += ../src/ap/wpa_auth_glue.o
 OBJS += ../src/ap/drv_callbacks.o

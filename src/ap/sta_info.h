@@ -18,6 +18,7 @@
 #include "crypto/sha384.h"
 #include "pasn/pasn_common.h"
 #include "hostapd.h"
+#include "../../qcn_extns/cmn.h"
 #include "ttlm.h"
 #ifdef CONFIG_IEEE80211AX
 #include "robust_av.h"
@@ -107,6 +108,9 @@ struct dscp_policy_state {
 struct sta_info {
 	struct sta_info *next; /* next entry in sta list */
 	struct sta_info *hnext; /* next entry in hash table list */
+
+        struct sta_info_extn sta_extn;
+
 	u8 addr[6];
 	be32 ipaddr;
 	struct dl_list ip6addr; /* list head for struct ip6addr */

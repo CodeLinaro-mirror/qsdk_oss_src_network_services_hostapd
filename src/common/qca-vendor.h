@@ -22943,6 +22943,47 @@ enum qca_wlan_vendor_6ghz_power_mode {
 	QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_AFTER_LAST - 1,
 };
 
+/**
+ * enum qca_wlan_vendor_attr_240mhz_info - Represents the vendor specific
+ * 240MHz information. This enum is used by
+ * %QCA_NL80211_VENDOR_SUBCMD_240MHZ_INFO
+ *
+ * @QCA_WLAN_VENDOR_ATTR_240MHZ_BEAMFORMEE_SS: u8 mandatory attribute.
+ * This is for the beamformee SS capability to indicate the maximum number of
+ * spatial streams that the STA can receive in an EHT sounding NDP for 240 MHz.
+ * The range of the vale is from 3 to 7.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_240MHZ_NUM_SOUNDING_DIMENSIONS: u8 mandatory attribute.
+ * This indicates the maximum value of the TXVECTOR parameter NUM_STS
+ * supported by the beamformer for an EHT sounding NDP.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_240MHZ_NON_OFDMA_UL_MUMIMO: flag optional attribute.
+ * If present, this indicates the support for non-OFDMA UL MU-MIMO reception of
+ * an EHT TB PPDU, for PPDU with 240MHz.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_240MHZ_MU_BEAMFORMER: flag optional attribute.
+ * If present, this indicates the support for non-OFDMA DL MU-MIMO transmission
+ * and the required MU sounding, for PPDU 240MHz.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_240MHZ_MCS_MAP: u8 array of size 3, mandatory
+ * attribute. This indicates the maximum number of spatial streams supported for
+ * reception and the maximum number of spatial streams that the STA can
+ * transmit, for each MCS value, in a PPDU 240MHz.
+ */
+enum qca_wlan_vendor_attr_240mhz_info {
+	QCA_WLAN_VENDOR_ATTR_240MHZ_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_240MHZ_BEAMFORMEE_SS = 1,
+	QCA_WLAN_VENDOR_ATTR_240MHZ_NUM_SOUNDING_DIMENSIONS = 2,
+	QCA_WLAN_VENDOR_ATTR_240MHZ_NON_OFDMA_UL_MUMIMO = 3,
+	QCA_WLAN_VENDOR_ATTR_240MHZ_MU_BEAMFORMER = 4,
+	QCA_WLAN_VENDOR_ATTR_240MHZ_MCS_MAP = 5,
+	
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_240MHZ_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_240MHZ_MAX =
+		QCA_WLAN_VENDOR_ATTR_240MHZ_AFTER_LAST - 1,
+};
+
 enum qca_wlan_vendor_attr_iface_reload {
 	QCA_WLAN_VENDOR_ATTR_IFACE_RELOAD_INVALID = 0,
 	QCA_WLAN_VENDOR_ATTR_IFACE_RELOAD_LINKID = 1,

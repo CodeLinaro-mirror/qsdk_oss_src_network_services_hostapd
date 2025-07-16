@@ -29,6 +29,7 @@
 #endif /* CONFIG_MACSEC */
 #include "utils/list.h"
 #include "drivers/nl80211_copy.h"
+#include "../../qcn_extns/cmn.h"
 
 struct nan_subscribe_params;
 struct nan_publish_params;
@@ -3070,6 +3071,9 @@ struct hostap_sta_driver_data {
 struct hostapd_sta_add_params {
 	const u8 *addr;
 	u16 aid;
+
+	struct hostapd_sta_add_params_extn params_extn;
+
 	u16 capability;
 	const u8 *supp_rates;
 	size_t supp_rates_len;
