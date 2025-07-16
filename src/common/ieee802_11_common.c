@@ -218,6 +218,10 @@ static int ieee802_11_parse_vendor_specific(const u8 *pos, size_t elen,
 		break;
 
 	default:
+		if (!ieee802_11_parse_vendor_specific_elems_extn(elems, oui,
+								 pos, elen))
+			break;
+
 		wpa_printf(MSG_EXCESSIVE, "unknown vendor specific "
 			   "information element ignored (vendor OUI "
 			   "%02x:%02x:%02x len=%lu)",
@@ -1558,7 +1562,7 @@ ieee80211_freq_to_channel_ext(unsigned int freq, int sec_channel,
 		if ((freq - 5000) % 5)
 			return NUM_HOSTAPD_MODES;
 
-		if (vht_opclass)
+		if (vht_opclass || chanwidth == CONF_OPER_CHWIDTH_320MHZ)
 			*op_class = vht_opclass;
 		else if (sec_channel == 1)
 			*op_class = 122;

@@ -23,6 +23,7 @@
 #include "wpa_auth.h"
 #include "hw_features.h"
 #include "ap_drv_ops.h"
+#include "../../qcn_extns/cmn.h"
 
 #ifdef CONFIG_IEEE80211BE
 #include "common/qca-vendor.h"
@@ -533,6 +534,9 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    size_t he_capab_len,
 		    const struct ieee80211_eht_capabilities *eht_capab,
 		    size_t eht_capab_len,
+#ifdef CONFIG_QCN_EXTN
+		    struct sta_info_extn *sta_extn,
+#endif
 		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
 		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
 		    int set, const u8 *link_addr, bool mld_link_sta,
@@ -568,6 +572,10 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 	params.support_p2p_ps = supp_p2p_ps;
 	params.set = set;
 	params.mld_link_id = -1;
+
+#ifdef CONFIG_QCN_EXTN
+	hostapd_copy_sta_add_params_extn(&params.params_extn, sta_extn);
+#endif
 
 #ifdef CONFIG_IEEE80211BE
 	/*

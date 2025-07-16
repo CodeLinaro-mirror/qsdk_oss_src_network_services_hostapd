@@ -47,6 +47,9 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    size_t he_capab_len,
 		    const struct ieee80211_eht_capabilities *eht_capab,
 		    size_t eht_capab_len,
+#ifdef CONFIG_QCN_EXTN
+		    struct sta_info_extn *sta_extn,
+#endif
 		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
 		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
 		    int set, const u8 *link_addr, bool mld_link_sta,

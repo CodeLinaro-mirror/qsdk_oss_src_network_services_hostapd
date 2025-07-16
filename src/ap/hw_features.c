@@ -1025,6 +1025,11 @@ bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface)
 			start_chan = conf->eht_oper_centr_freq_seg0_idx - 14;
 			break;
 		default:
+			if (hostapd_get_bw_and_startchan_for_240mhz_extn(
+				conf->eht_oper_chwidth,
+				conf->eht_oper_centr_freq_seg0_idx,
+				&bw, &start_chan))
+
 			return false;
 		}
 	}

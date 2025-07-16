@@ -41,6 +41,7 @@
 #include "radiotap_iter.h"
 #include "rfkill.h"
 #include "driver_nl80211.h"
+#include "../../qcn_extns/cmn.h"
 
 
 #ifndef NETLINK_CAP_ACK
@@ -6537,6 +6538,8 @@ static int wpa_driver_nl80211_sta_add(void *priv,
 	int ret = -ENOBUFS;
 	u8 cmd;
 	const char *cmd_string;
+
+	wpa_driver_nl80211_sta_add_extn(priv, params);
 
 	if (params->mld_link_sta) {
 		cmd = params->set ? NL80211_CMD_MODIFY_LINK_STA :

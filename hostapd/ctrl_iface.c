@@ -3068,6 +3068,11 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 		break;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	dfs_range += hostapd_find_dfs_range_extn(iface, bandwidth,
+						 &settings.freq_params);
+#else
+
 	if (settings.freq_params.center_freq1)
 		dfs_range += hostapd_is_dfs_overlap(
 			iface, bandwidth, settings.freq_params.center_freq1);
@@ -3078,6 +3083,7 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 	if (settings.freq_params.center_freq2)
 		dfs_range += hostapd_is_dfs_overlap(
 			iface, bandwidth, settings.freq_params.center_freq2);
+#endif
 
 	if (dfs_range) {
 		ret = ieee80211_freq_to_chan(settings.freq_params.freq, &chan);

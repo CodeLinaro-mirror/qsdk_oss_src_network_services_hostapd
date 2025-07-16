@@ -20,6 +20,7 @@
 #include "wps/wps.h"
 #include "fst/fst.h"
 #include "vlan.h"
+#include "../../qcn_extns/cmn.h"
 
 enum macaddr_acl {
 	ACCEPT_UNLESS_DENIED = 0,
@@ -1431,6 +1432,11 @@ hostapd_set_oper_centr_freq_seg0_idx(struct hostapd_config *conf,
 	    center_idx_to_bw_6ghz(oper_centr_freq_seg0_idx) == 4)
 		oper_centr_freq_seg0_idx +=
 			conf->channel > oper_centr_freq_seg0_idx ? 16 : -16;
+
+	oper_centr_freq_seg0_idx =
+		hostapd_set_legacy_oper_centr_freq_seg0_extn(
+			conf, oper_centr_freq_seg0_idx);
+
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_IEEE80211AX
 	if (conf->ieee80211ax)

@@ -22,6 +22,7 @@
 #include "beacon.h"
 #include "eloop.h"
 #include "ieee802_11.h"
+#include "../../qcn_extns/cmn.h"
 #include "hw_features.h"
 
 #define IEEE80211_DFS_MIN_CAC_TIME_MS  60000
@@ -72,6 +73,9 @@ static int dfs_get_used_n_chans(struct hostapd_iface *iface, int *seg1,
 			*seg1 = 4;
 			break;
 		default:
+			hostapd_get_n_chans_and_frequency_extn(chan_width, 0,
+							       &n_chans, NULL);
+
 			break;
 		}
 	}
@@ -150,6 +154,11 @@ static int dfs_is_chan_allowed(struct hostapd_channel_data *chan, int n_chans)
 		allowed_no = ARRAY_SIZE(allowed_160);
 		break;
 	default:
+		if (!hostapd_dfs_get_allowed_channels_extn(n_chans,
+							   allowed,
+							   &allowed_no))
+			break;
+
 		wpa_printf(MSG_DEBUG, "Unknown width for %d channels", n_chans);
 		break;
 	}
@@ -418,6 +427,11 @@ static void dfs_adjust_center_freq(struct hostapd_iface *iface,
 		break;
 
 	default:
+		if (!hostapd_dfs_adjust_center_freq_extn(
+			hostapd_get_oper_chwidth(iface->conf), chan->chan,
+			oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx))
+			break;
+
 		wpa_printf(MSG_INFO,
 			   "DFS: Unsupported channel width configuration");
 		*oper_centr_freq_seg0_idx = 0;
@@ -809,6 +823,11 @@ static int set_dfs_state(struct hostapd_iface *iface, int freq, int ht_enabled,
 		frequency = cf1 - 70;
 		break;
 	default:
+		if (!hostapd_get_n_chans_and_frequency_extn(
+			convert_to_oper_chan_width(chan_width),
+			cf1, &n_chans, &frequency))
+			break;
+
 		wpa_printf(MSG_INFO, "DFS chan_width %d not supported",
 			   chan_width);
 		break;
@@ -885,6 +904,11 @@ static int dfs_are_channels_overlapped(struct hostapd_iface *iface, int freq,
 		frequency = cf1 - 70;
 		break;
 	default:
+		if (!hostapd_get_n_chans_and_frequency_extn(
+			convert_to_oper_chan_width(chan_width),
+			cf1, &radar_n_chans, &frequency))
+			break;
+
 		wpa_printf(MSG_INFO, "DFS chan_width %d not supported",
 			   chan_width);
 		break;
@@ -1009,6 +1033,19 @@ int hostapd_handle_dfs(struct hostapd_iface *iface)
 	hostapd_set_state(iface, HAPD_IFACE_DFS);
 	wpa_printf(MSG_DEBUG, "DFS start CAC on %d MHz%s", iface->freq,
 		   dfs_use_radar_background(iface) ? " (background)" : "");
+
+#ifdef CONFIG_QCN_EXTN
+	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_START
+		"freq=%d chan=%d sec_chan=%d, width=%d, seg0=%d, seg1=%d, cac_time=%ds bitmap:0x%04x",
+		iface->freq,
+		iface->conf->channel, iface->conf->secondary_channel,
+		hostapd_get_oper_chwidth(iface->conf),
+		hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
+		hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
+		iface->dfs_cac_ms / 1000,
+		iface->conf->punct_bitmap);
+#else
+
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_START
 		"freq=%d chan=%d sec_chan=%d, width=%d, seg0=%d, seg1=%d, cac_time=%ds",
 		iface->freq,
@@ -1017,6 +1054,7 @@ int hostapd_handle_dfs(struct hostapd_iface *iface)
 		hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
 		hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
 		iface->dfs_cac_ms / 1000);
+#endif
 
 	res = hostapd_start_dfs_cac(
 		iface, iface->conf->hw_mode, iface->freq, iface->conf->channel,
@@ -1877,6 +1915,11 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 
 		chan_width = convert_to_oper_chan_width(chan_width);
 
+		hostapd_get_oper_center_freq_seg_extn(iface->conf,
+						      &oper_centr_freq_seg0_idx,
+						      &oper_centr_freq_seg1_idx,
+						      NULL);
+
 		if (iface->cac_started) {
 
 			wpa_printf(MSG_DEBUG, "radar detected during cac,"
@@ -2274,6 +2317,10 @@ int hostapd_is_dfs_overlap(struct hostapd_iface *iface, enum chan_width width,
 		half_width = 80;
 		break;
 	default:
+		half_width = hostapd_get_dfs_half_chwidth_extn(width);
+		if (half_width)
+			break;
+
 		wpa_printf(MSG_WARNING, "DFS chanwidth %d not supported",
 			   width);
 		return 0;

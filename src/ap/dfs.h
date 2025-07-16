@@ -49,4 +49,7 @@ int hostapd_is_dfs_overlap(struct hostapd_iface *iface, enum chan_width width,
 			   int center_freq);
 void hostapd_dfs_radar_handling_timeout(void *eloop_data, void *user_data);
 void hostapd_start_device_cac_background(struct hostapd_iface *iface);
+
+enum oper_chan_width convert_to_oper_chan_width(int chan_width);
+
 #endif /* DFS_H */

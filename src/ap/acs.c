@@ -290,6 +290,7 @@ static const struct bw_item bw_160[] = {
 	{ 6755, 6895, 175 }, { 6915, 7055, 207 }, { -1, -1, -1 }
 };
 static const struct bw_item bw_320_1[] = {
+	{ 5500, 5720, 130 },
 	{ 5955, 6255, 31 }, { 6275, 6575, 95 }, { 6595, 6895, 159 },
 	{ -1, -1, -1 }
 };
@@ -891,7 +892,8 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 				continue;
 			}
 		}
-
+		n_chans = hostapd_modify_n_chans_for_240mhz_extn(iface,
+								 n_chans);
 		factor = 0;
 		best = NULL;
 

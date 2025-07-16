@@ -63,6 +63,7 @@
 #include "comeback_token.h"
 #include "nan_usd_ap.h"
 #include "pasn/pasn_common.h"
+#include "../../qcn_extns/cmn.h"
 #include "wpa_auth_i.h"
 #include "ttlm.h"
 #include "dscp_policy.h"
@@ -4766,6 +4767,12 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		if (resp != WLAN_STATUS_SUCCESS)
 			goto out;
 
+		resp = hostapd_copy_sta_eht_240mhz_cap_extn(hapd, sta,
+							    IEEE80211_MODE_AP,
+							    &elems->elems_extn);
+		if (resp != WLAN_STATUS_SUCCESS)
+			goto out;
+
 		if (!assoc_wpa_sm) {
 			resp = hostapd_process_ml_assoc_req(hapd, elems, sta);
 			if (resp != WLAN_STATUS_SUCCESS)
@@ -5348,6 +5355,8 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 		if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
 			p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
 			p = hostapd_eid_eht_operation(hapd, p);
+			p = hostapd_eid_vendor_240mhz_extn(hapd, p,
+							   IEEE80211_MODE_AP);
 		}
 	}
 
@@ -5583,7 +5592,14 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 			if (hostapd_sta_add(hapd, sta->addr, 0, 0,
 					    sta->supported_rates,
 					    sta->supported_rates_len,
+
+#ifdef CONFIG_QCN_EXTN
+					    0, NULL, NULL, NULL, 0, NULL, 0,
+					    NULL, NULL,
+#else
+
 					    0, NULL, NULL, NULL, 0, NULL, 0, NULL,
+#endif
 					    sta->flags, 0, 0, 0, 0,
 					    mld_link_addr, mld_link_sta,
 					    eml_cap, reassoc)) {
@@ -5775,6 +5791,11 @@ static int add_associated_sta(struct hostapd_data *hapd,
 			    sta->flags & WLAN_STA_HE ? sta->he_capab_len : 0,
 			    sta->flags & WLAN_STA_EHT ? &eht_cap : NULL,
 			    sta->flags & WLAN_STA_EHT ? sta->eht_capab_len : 0,
+
+#ifdef CONFIG_QCN_EXTN
+			    (struct sta_info_extn *)&sta->sta_extn,
+#endif
+
 			    sta->he_6ghz_capab,
 			    sta->flags | WLAN_STA_ASSOC, sta->qosinfo,
 			    sta->vht_opmode, sta->p2p_ie ? 1 : 0,
@@ -5834,6 +5855,7 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 		buflen += hostapd_eid_channel_usage_len(hapd);
 		if (hapd->iconf->punct_bitmap)
 			buflen += EHT_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
+		hostapd_modify_buflen_for_240mhz_extn(&buflen, hapd);
 	}
 #endif /* CONFIG_IEEE80211BE */
 
@@ -5999,6 +6021,8 @@ rsnxe_done:
 			p = hostapd_eid_eht_ml_assoc(hapd, sta, p);
 		p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
 		p = hostapd_eid_eht_operation(hapd, p);
+		p = hostapd_eid_vendor_240mhz_extn(hapd, p,
+						   IEEE80211_MODE_AP);
 		hostapd_get_epcs_capab(hapd, sta);
 
 		/* Append Channel Usage element to Association response */
@@ -11080,6 +11104,14 @@ static u8 * hostapd_eid_rnr_iface(struct hostapd_data *hapd,
 
 	if (!(iface->drv_flags & WPA_DRIVER_FLAGS_AP_CSA) || !iface->freq)
 		return eid;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_get_oper_chwidth(hapd->iconf) == CONF_OPER_CHWIDTH_320MHZ)
+		hostapd_modify_supported_op_class_for_320mhz_extn(
+			iface->freq,
+			&op_class);
+	else
+#endif
 
 	if (ieee80211_freq_to_channel_ext(iface->freq,
 					  hapd->iconf->secondary_channel,
