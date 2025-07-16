@@ -39,6 +39,14 @@
 
 #define MAX_DSCP_REQ_SIZE 1500
 
+enum dscp_policy_status {
+	DSCP_STATUS_UNKNOWN = 0,
+	DSCP_STATUS_SUCCESS = 1,
+	DSCP_STATUS_INSUFFICIENT_RESOURCES = 2,
+	DSCP_STATUS_REQUEST_DECLINED = 3,
+	DSCP_STATUS_CLASSIFIER_NOT_SUPPORTED = 4
+};
+
 enum ip_version {
 	IPV4 = 4,
 	IPV6 = 6,
@@ -99,6 +107,7 @@ struct hostapd_dscp_policy {
 	u16 start_port;
 	u16 end_port;
 	bool port_range_info;
+	enum dscp_policy_status status;
 };
 
 size_t hostapd_dscp_cap_ie_len(struct hostapd_data *hapd);
@@ -119,3 +128,5 @@ void hostapd_send_unsolicited_dscp_policy_request(struct hostapd_data *hapd,
 						  size_t num_policies);
 int hostapd_handle_dscp_policy_query(struct hostapd_data *hapd, struct sta_info *sta,
 				     const u8 *data, size_t len);
+int hostapd_handle_dscp_policy_response(struct hostapd_data *hapd, struct sta_info *sta,
+					const u8 *data, size_t len);
