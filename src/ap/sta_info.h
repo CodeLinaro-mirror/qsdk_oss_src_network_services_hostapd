@@ -339,6 +339,9 @@ struct sta_info {
 	u8 skip_kernel_delete;
 
 	bool dscp_policy_capable;
+	struct hostapd_dscp_policy **policies;
+	u8 num_dscp_policies;
+	bool dscp_reset;
 	bool ft_re_add;
 	u16 max_idle_period; /* if nonzero, the granted BSS max idle period in
 			      * units of 1000 TUs */

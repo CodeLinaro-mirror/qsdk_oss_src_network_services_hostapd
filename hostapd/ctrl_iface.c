@@ -71,7 +71,7 @@
 #include "ctrl_iface.h"
 #include "ap/ttlm.h"
 #include "../src/drivers/driver_nl80211.h"
-
+#include "ap/dscp_policy.h"
 
 #define HOSTAPD_CLI_DUP_VALUE_MAX_LEN 256
 
@@ -758,6 +758,56 @@ static int hostapd_ctrl_iface_send_qos_map_conf(struct hostapd_data *hapd,
 
 #endif /* CONFIG_INTERWORKING */
 
+static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
+					       const char *cmd)
+{
+	u8 addr[ETH_ALEN];
+	struct hostapd_dscp_policy policy;
+	struct sta_info *sta;
+	const char *params;
+	char *reset_str;
+
+	if (!hapd->conf->enable_dscp_policy_capa)
+		return -1;
+
+	if (!cmd || *cmd == '\0')
+		return -1;
+
+	if (hwaddr_aton(cmd, addr))
+		return -1;
+
+	sta = ap_get_sta(hapd, addr);
+	if (!sta) {
+		wpa_printf(MSG_DEBUG, "DSCP: STA " MACSTR " not capable", MAC2STR(addr));
+		return -1;
+	}
+
+	params = os_strchr(cmd, ' ');
+	if (!params || *++params == '\0')
+		return -1;
+
+	reset_str = os_strstr(params, "reset=");
+	if (reset_str) {
+		sta->dscp_reset = atoi(reset_str + 6);
+		wpa_printf(MSG_DEBUG, "DSCP: Reset flag set to %d for STA " MACSTR,
+			   sta->dscp_reset, MAC2STR(addr));
+		return 0;
+	}
+
+	if (parse_dscp_policy_string(sta, &policy, params) < 0)
+		return -1;
+
+	if (validate_dscp_policy(&policy) < 0)
+		return -1;
+
+	if (build_frame_classifier(&policy) < 0)
+		return -1;
+
+	wpa_printf(MSG_INFO, "DSCP: Added policy ID %u to STA " MACSTR,
+		   policy.policy_id, MAC2STR(addr));
+
+	return 0;
+}
 
 #ifdef CONFIG_WNM_AP
 
@@ -6183,6 +6233,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		if (hostapd_ctrl_iface_advertise_ttlm(hapd, buf + 16))
 			reply_len = -1;
 #endif /* CONFIG_IEEE80211BE */
+	} else if (os_strncmp(buf, "SET_DSCP_POLICY ", 16) == 0) {
+		if (hostapd_ctrl_iface_set_dscp_policy(hapd, buf + 16))
+			reply_len = -1;
 	} else if (os_strncmp(buf, "CHAIN_MASK ", 11) == 0) {
 		if (hotapd_ctrl_set_tx_rx_chain_mask(hapd, buf+11,
 						     reply, reply_size))

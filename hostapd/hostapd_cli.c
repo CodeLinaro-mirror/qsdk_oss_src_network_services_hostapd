@@ -905,6 +905,38 @@ static int hostapd_cli_cmd_send_qos_map_conf(struct wpa_ctrl *ctrl,
 	return wpa_ctrl_command(ctrl, buf);
 }
 
+static int hostapd_cli_cmd_set_dscp_policy(struct wpa_ctrl *ctrl,
+					    int argc, char *argv[])
+{
+	char cmd[512];
+	int res;
+	int i;
+	int total = 0;
+
+	if (argc < 2) {
+		printf("Invalid set_dscp_policy command\n"
+		       "usage: set_dscp_policy <sta_addr> policy_id=<id> request_type=<Add/Remove> dscp=<val>\n"
+		       "[classifier_mask=] [ip_version=] [dst_ip=] [domain_name=] [reset=]\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SET_DSCP_POLICY");
+	if (os_snprintf_error(sizeof(cmd), res))
+		return -1;
+
+	total = res;
+
+	for (i = 0; i < argc; i++) {
+		res = os_snprintf(cmd + total, sizeof(cmd) - total, " %s", argv[i]);
+		if (os_snprintf_error(sizeof(cmd) - total, res)) {
+			printf("Too long SET_DSCP_POLICY command.\n");
+			return -1;
+		}
+		total += res;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
 
 static int hostapd_cli_cmd_hs20_wnm_notif(struct wpa_ctrl *ctrl, int argc,
 					  char *argv[])
@@ -2035,6 +2067,9 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "ieee_link_map= map_switch_time= expected_dur= link_mapping_size=\n"
 	  "  = Trigger advertised TTLM" },
 #endif
+	{"set_dscp_policy", hostapd_cli_cmd_set_dscp_policy, NULL,
+	 "[policy_id=] [request_type=] [dscp=] [classifier_mask=]\n"
+	 "[ip_version=] [dst_ip=] = Set DSCP policy"},
 	{ "chain_mask", hostapd_cli_cmd_chain_mask, NULL,
 	"<tx chain mask> <rx chain mask>" },
 	{ NULL, NULL, NULL, NULL }
