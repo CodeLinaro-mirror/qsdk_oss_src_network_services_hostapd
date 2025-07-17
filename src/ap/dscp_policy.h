@@ -93,3 +93,6 @@ void hostapd_check_dscp_policy_capability(struct sta_info *sta,
 int validate_dscp_policy(struct hostapd_dscp_policy *policy);
 int parse_dscp_policy_string(struct sta_info *sta, struct hostapd_dscp_policy *policy, const char *params);
 int build_frame_classifier(struct hostapd_dscp_policy *policy);
+int add_dscp_policy_to_sta(struct sta_info *sta,
+			   struct hostapd_dscp_policy *new_policy);
+void free_dscp_policies(struct sta_info *sta);

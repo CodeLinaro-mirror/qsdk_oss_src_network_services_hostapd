@@ -803,6 +803,12 @@ static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 	if (build_frame_classifier(&policy) < 0)
 		return -1;
 
+	if (add_dscp_policy_to_sta(sta, &policy) < 0) {
+		wpa_printf(MSG_WARNING, "DSCP: Failed to add policy for STA " MACSTR,
+			   MAC2STR(sta->addr));
+		return -1;
+	}
+
 	wpa_printf(MSG_INFO, "DSCP: Added policy ID %u to STA " MACSTR,
 		   policy.policy_id, MAC2STR(addr));
 
