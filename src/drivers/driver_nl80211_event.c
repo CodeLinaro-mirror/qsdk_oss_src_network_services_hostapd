@@ -19,6 +19,7 @@
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
 #include "driver_nl80211.h"
+#include "ap/robust_av.h"
 
 
 static void
@@ -366,6 +367,95 @@ static void mlme_event_assoc(struct wpa_driver_nl80211_data *drv,
 	wpa_supplicant_event(drv->ctx, EVENT_ASSOC, &event);
 }
 
+
+static void nl80211_process_mscs_event(struct i802_bss *bss, struct nlattr **tb)
+{
+	union wpa_event_data data;
+	struct nlattr *tb_qm[NL80211_QM_ATTR_MAX + 1];
+	struct nlattr *tb_desc[NL80211_QM_DESC_ATTR_MAX + 1];
+	struct nlattr *tb_tclas_entry[NL80211_TCLAS_ATTR_MAX + 1];
+	struct nlattr *tb_tclas_type4_element[NL80211_TCLAS_TYPE4_ATTR_MAX + 1];
+	struct nlattr *tb_tclas_elements, *tb_qm_desc;
+	struct hostapd_tclas_elements tclas = { 0 };
+	u8 tid = 0;
+	u8 *addr;
+	int rem_tclas_desc, rem_qm_desc;
+
+	os_memset(&data, 0, sizeof(data));
+
+	if (!tb || !tb[NL80211_ATTR_QOS_MGMT]) {
+		wpa_printf(MSG_ERROR, "QoS Management attribute missing\n");
+		return;
+	}
+	nla_parse_nested(tb_qm, NL80211_QM_ATTR_MAX,
+			 tb[NL80211_ATTR_QOS_MGMT], NULL);
+	if (!tb_qm[NL80211_QM_ATTR_MAC_ADDR])
+		return;
+	addr = os_memdup(nla_data(tb_qm[NL80211_QM_ATTR_MAC_ADDR]), ETH_ALEN);
+	if (!addr) {
+		wpa_printf(MSG_ERROR, "Failed to allocate memory for QM_ADDR");
+		return;
+	}
+	if (!tb_qm[NL80211_QM_ATTR_DESCRIPTOR_PARAMS]) {
+		os_free(addr);
+		return;
+	}
+	nla_for_each_nested(tb_qm_desc, tb_qm[NL80211_QM_ATTR_DESCRIPTOR_PARAMS],
+			    rem_qm_desc) {
+		nla_parse_nested(tb_desc, NL80211_QM_DESC_ATTR_MAX,
+				 tb_qm_desc, NULL);
+		if (!tb_desc[NL80211_QM_DESC_ATTR_TCLAS_ELEMENTS])
+			continue;
+		nla_for_each_nested(tb_tclas_elements,
+				    tb_desc[NL80211_QM_DESC_ATTR_TCLAS_ELEMENTS],
+				    rem_tclas_desc) {
+			os_memset(tb_tclas_entry, 0, sizeof(tb_tclas_entry));
+			nla_parse_nested(tb_tclas_entry, NL80211_TCLAS_ATTR_MAX,
+					 tb_tclas_elements, NULL);
+			if (!tb_tclas_entry[NL80211_TCLAS_ATTR_USER_PRIORITY] ||
+			    !tb_tclas_entry[NL80211_TCLAS_ATTR_TYPE4_PARAMS])
+				continue;
+			tid = nla_get_u8(tb_tclas_entry[NL80211_TCLAS_ATTR_USER_PRIORITY]);
+			nla_parse_nested(tb_tclas_type4_element,
+					NL80211_TCLAS_TYPE4_ATTR_MAX,
+					tb_tclas_entry[NL80211_TCLAS_ATTR_TYPE4_PARAMS], NULL);
+			tclas.tclas_elem.type4_params.classifier_mask =
+				nla_get_u8(tb_tclas_type4_element[NL80211_TCLAS_TYPE4_ATTR_CLASSIFIER_MASK]);
+			tclas.tclas_elem.type4_params.ip_ver =
+				nla_get_u8(tb_tclas_type4_element[NL80211_TCLAS_TYPE4_ATTR_IP_VERSION]);
+			tclas.tclas_elem.type4_params.src_port =
+				nla_get_u16(tb_tclas_type4_element[NL80211_TCLAS_TYPE4_ATTR_SRC_PORT]);
+			tclas.tclas_elem.type4_params.dst_port =
+				nla_get_u16(tb_tclas_type4_element[NL80211_TCLAS_TYPE4_ATTR_DST_PORT]);
+			tclas.tclas_elem.type4_params.dscp =
+				nla_get_u8(tb_tclas_type4_element[NL80211_TCLAS_TYPE4_ATTR_DSCP]);
+			if (tclas.tclas_elem.type4_params.ip_ver == 4) {
+				nla_memcpy(tclas.tclas_elem.type4_params.src_ip.ipv4,
+					   tb_tclas_type4_element[NL80211_TCLAS_TYPE4_ATTR_SRC_IP], IPV4_LEN);
+				nla_memcpy(tclas.tclas_elem.type4_params.dst_ip.ipv4,
+					   tb_tclas_type4_element[NL80211_TCLAS_TYPE4_ATTR_DST_IP], IPV4_LEN);
+				tclas.tclas_elem.type4_params.protocol =
+					nla_get_u8(tb_tclas_type4_element[NL80211_TCLAS_TYPE4_ATTR_PROTOCOL]);
+			} else if (tclas.tclas_elem.type4_params.ip_ver == 6) {
+				nla_memcpy(tclas.tclas_elem.type4_params.src_ip.ipv6,
+					   tb_tclas_type4_element[NL80211_TCLAS_TYPE4_ATTR_SRC_IP], IPV6_LEN);
+				nla_memcpy(tclas.tclas_elem.type4_params.dst_ip.ipv6,
+					   tb_tclas_type4_element[NL80211_TCLAS_TYPE4_ATTR_DST_IP], IPV6_LEN);
+				tclas.tclas_elem.type4_params.protocol =
+					nla_get_u8(tb_tclas_type4_element[NL80211_TCLAS_TYPE4_ATTR_PROTOCOL]);
+				nla_memcpy(tclas.tclas_elem.type4_params.flow_label,
+					   tb_tclas_type4_element[NL80211_TCLAS_TYPE4_ATTR_FLOW_LABEL],
+					   TCLAS4_FLOW_LABEL_SIZE);
+			}
+			data.tclas_flow_event.tclas = &tclas;
+			data.tclas_flow_event.addr = addr;
+			data.tclas_flow_event.tid = tid;
+			wpa_supplicant_event(bss->ctx, EVENT_MSCS_FLOW_RECEIVED, &data);
+			return;
+		}
+	}
+	os_free(addr);
+}
 
 #ifdef CONFIG_DRIVER_NL80211_QCA
 
@@ -6028,6 +6118,9 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 		nl80211_ttlm_update_event(bss, tb);
 		break;
 #endif /* CONFIG_IEEE80211BE */
+	case NL80211_CMD_QOS_MGMT:
+		nl80211_process_mscs_event(bss, tb);
+		break;
 	case NL80211_CMD_TRIGGER_SCAN:
 		wpa_dbg(bss->ctx, MSG_DEBUG, "nl80211: Scan trigger");
 		drv->scan_state = SCAN_STARTED;
