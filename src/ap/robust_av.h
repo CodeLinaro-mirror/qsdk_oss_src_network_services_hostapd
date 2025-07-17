@@ -332,6 +332,9 @@ struct hostapd_scs_resp_data {
 
 u8 *hostapd_add_scs_ie(u8 *frm, bool scs);
 
+void
+hostapd_handle_robust_av(struct hostapd_data *hapd, const u8 *buf, size_t len);
+
 #endif
 
 #endif /* ROBUST_AV_H */
