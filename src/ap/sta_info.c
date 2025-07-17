@@ -40,6 +40,7 @@
 #include "vlan.h"
 #include "wps_hostapd.h"
 #include "robust_av.h"
+#include "dscp_policy.h"
 
 static void ap_sta_remove_in_other_bss(struct hostapd_data *hapd,
 				       struct sta_info *sta);
@@ -1203,6 +1204,9 @@ struct sta_info * ap_sta_add(struct hostapd_data *hapd, const u8 *addr)
 	sta->last_seq_ctrl = WLAN_INVALID_MGMT_SEQ;
 	dl_list_init(&sta->ip6addr);
 	sta->mld_assoc_link_id = -1;
+	sta->policies = NULL;
+	sta->num_dscp_policies = 0;
+	sta->dscp_reset = 0;
 
 #ifdef CONFIG_TAXONOMY
 	sta_track_claim_taxonomy_info(hapd->iface, addr,

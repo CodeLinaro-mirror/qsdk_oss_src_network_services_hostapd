@@ -124,11 +124,9 @@ hostapd_update_dscp_policy_capability(struct hostapd_data *hapd,
 {
 }
 
-static inline void free_dscp_policies(struct sta_info *sta)
-{
-}
-
 #endif /* CONFIG_ROBUST_AV */
+
+void free_dscp_policies(struct sta_info *sta);
 
 int validate_dscp_policy(struct hostapd_dscp_policy *policy);
 void free_dscp_policy(struct hostapd_dscp_policy *policy);
