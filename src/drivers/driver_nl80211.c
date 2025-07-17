@@ -15778,12 +15778,17 @@ static int testing_nl80211_register_frame(void *priv, u16 type,
 {
 	struct i802_bss *bss = priv;
 	struct nl_sock *handle;
+	int ret;
 
 	if (!bss->nl_mgmt)
 		return -1;
 	handle = (void *) (((intptr_t) bss->nl_mgmt) ^ ELOOP_SOCKET_INVALID);
-	return nl80211_register_frame(bss, handle, type, match, match_len,
-				      multicast);
+	ret = nl80211_register_frame(bss, handle, type, match, match_len,
+				     multicast);
+	if (ret == -EALREADY)
+		return 0;
+
+	return ret;
 }
 
 

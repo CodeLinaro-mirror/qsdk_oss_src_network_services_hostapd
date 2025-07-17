@@ -932,6 +932,60 @@ static void hostapd_update_scs_resp_err(struct hostapd_scs_req_data *scs_req,
 }
 
 
+static int hostapd_send_scs_response(struct hostapd_data *hapd,
+				     struct sta_info *sta, const u8 *da,
+				     struct hostapd_scs_resp_data *scs_resp)
+{
+	u8 scs_id, dialog_token, num_scs_desc, status;
+	size_t len, scs_resp_len;
+	struct wpabuf *buf;
+	int idx = 0;
+	int ret = 0;
+
+	dialog_token = scs_resp->dialog_token;
+	num_scs_desc = scs_resp->num_scs_desc;
+
+	/* SCS ID (1), Status code (1) and padding (1) per descriptor */
+	scs_resp_len = 3 * num_scs_desc;
+
+	/* Header len and SCS response len */
+	len = 16 + scs_resp_len;
+	buf = wpabuf_alloc(len);
+	if (!buf)
+		return -1;
+
+	wpabuf_put_u8(buf, WLAN_ACTION_ROBUST_AV_STREAMING);
+	wpabuf_put_u8(buf, ROBUST_AV_SCS_RESP);
+	wpabuf_put_u8(buf, dialog_token);
+	wpabuf_put_u8(buf, num_scs_desc);
+
+	while ((num_scs_desc) &&
+	       (idx < HOSTAPD_SCS_MAX_DESCPRIPTORS_PER_REQUEST)) {
+		scs_id = scs_resp->scs_resp_desc[idx].scs_id;
+		wpabuf_put_u8(buf, scs_id);
+		status = scs_resp->scs_resp_desc[idx].status;
+		wpabuf_put_u8(buf, status);
+		wpabuf_put_u8(buf, 0x00);
+		num_scs_desc--;
+		idx++;
+	}
+
+	len = wpabuf_len(buf);
+	if (hostapd_drv_send_action(hapd, hapd->iface->freq, 0, da,
+				    wpabuf_head(buf), len)) {
+		wpa_printf(MSG_ERROR, "SCS response send action failed");
+		ret = -1;
+		goto error;
+	}
+
+	wpa_printf(MSG_DEBUG, "Successfully sent SCS response frame");
+
+error:
+	wpabuf_free(buf);
+	return ret;
+}
+
+
 static int hostapd_handle_scs_req(struct hostapd_data *hapd, const u8 *buf,
 				  size_t frame_length)
 {
@@ -998,10 +1052,16 @@ static int hostapd_handle_scs_req(struct hostapd_data *hapd, const u8 *buf,
 	if (ret) {
 		wpa_printf(MSG_ERROR, "Send SCS data failed, ret:%d", ret);
 		hostapd_update_scs_resp_err(&scs_req, &scs_resp);
-		return ret;
+		goto send_error_resp;
 	}
 
 	hostapd_process_scs_req(sta, &scs_req, &scs_resp);
+
+send_error_resp:
+	ret = hostapd_send_scs_response(hapd, sta, mgmt->sa, &scs_resp);
+	if (ret)
+		wpa_printf(MSG_ERROR, "SCS response frame send failed, ret:%d",
+			   ret);
 
 	return ret;
 }
