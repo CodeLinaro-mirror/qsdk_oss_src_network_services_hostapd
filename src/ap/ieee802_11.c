@@ -7329,6 +7329,11 @@ static int handle_action(struct hostapd_data *hapd,
 		    hostapd_action_vs(hapd, sta, mgmt, len, freq, true) == 0)
 			return 1;
 		break;
+#ifdef CONFIG_IEEE80211AX
+	case WLAN_ACTION_ROBUST_AV_STREAMING:
+		hostapd_handle_robust_av(hapd, (const u8 *)mgmt, len);
+		return 1;
+#endif /* CONFIG_IEEE80211AX */
 #ifndef CONFIG_NO_RRM
 	case WLAN_ACTION_RADIO_MEASUREMENT:
 		hostapd_handle_radio_measurement(hapd, (const u8 *) mgmt, len);
