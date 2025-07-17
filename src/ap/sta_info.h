@@ -92,6 +92,12 @@ struct mld_info {
 #endif /* CONFIG_IEEE80211BE */
 };
 
+struct dscp_policy_state {
+	size_t offset;
+	u8 last_dialog_token;
+	bool pending_more;
+};
+
 struct sta_info {
 	struct sta_info *next; /* next entry in sta list */
 	struct sta_info *hnext; /* next entry in hash table list */
@@ -341,6 +347,8 @@ struct sta_info {
 	bool dscp_policy_capable;
 	struct hostapd_dscp_policy **policies;
 	u8 num_dscp_policies;
+	u8 unsolicited_dialog_token;
+	struct dscp_policy_state dscp_state;
 	bool dscp_reset;
 	bool ft_re_add;
 	u16 max_idle_period; /* if nonzero, the granted BSS max idle period in

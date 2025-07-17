@@ -815,6 +815,70 @@ static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 	return 0;
 }
 
+static int hostapd_ctrl_send_unsolicited_dscp_req(struct hostapd_data *hapd, const char *cmd)
+{
+	struct sta_info *sta;
+	u8 addr[ETH_ALEN];
+	int reset = 0;
+	int policy_ids[10];
+	size_t num_policies = 0;
+	char *buf, *p, *end;
+
+	if (!hapd->conf->enable_dscp_policy_capa)
+		return -1;
+
+	buf = os_strdup(cmd);
+	if (!buf)
+		return -1;
+
+	p = buf;
+	end = os_strchr(p, ' ');
+	if (!end || hwaddr_aton(p, addr)) {
+		os_free(buf);
+		return -1;
+	}
+
+	*end = '\0';
+	p = end + 1;
+	end = os_strchr(p, ' ');
+	if (!end || os_strncmp(p, "reset=", 6) != 0) {
+		os_free(buf);
+		return -1;
+	}
+
+	*end = '\0';
+	reset = atoi(p + 6);
+	p = end + 1;
+
+	if (os_strncmp(p, "policy_id_list=", 15) != 0) {
+		os_free(buf);
+		return -1;
+	}
+	p += 15;
+
+	while (*p && num_policies < ARRAY_SIZE(policy_ids)) {
+		int val = strtol(p, &end, 10);
+		if (p == end)
+			break;
+		policy_ids[num_policies++] = val;
+		if (*end == '_')
+			p = end + 1;
+		else
+			break;
+	}
+	os_free(buf);
+
+	if (num_policies == 0)
+		return -1;
+
+	sta = ap_get_sta(hapd, addr);
+	if (!sta)
+		return -1;
+
+	hostapd_send_unsolicited_dscp_policy_request(hapd, sta, reset, policy_ids, num_policies);
+	return 0;
+}
+
 #ifdef CONFIG_WNM_AP
 
 static int hostapd_ctrl_iface_coloc_intf_req(struct hostapd_data *hapd,
@@ -6241,6 +6305,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 	} else if (os_strncmp(buf, "SET_DSCP_POLICY ", 16) == 0) {
 		if (hostapd_ctrl_iface_set_dscp_policy(hapd, buf + 16))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "SEND_UNSOLICITED_DSCP_REQ ", 26) == 0) {
+		if (hostapd_ctrl_send_unsolicited_dscp_req(hapd, buf + 26))
 			reply_len = -1;
 	} else if (os_strncmp(buf, "CHAIN_MASK ", 11) == 0) {
 		if (hotapd_ctrl_set_tx_rx_chain_mask(hapd, buf+11,

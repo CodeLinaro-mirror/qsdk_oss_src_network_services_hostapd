@@ -7918,6 +7918,27 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		sta->pending_eapol_rx = NULL;
 	}
 
+	if (sta && hapd->conf->enable_dscp_policy_capa && sta->dscp_policy_capable) {
+		int *policy_ids = NULL;
+		size_t num_policies = 0;
+
+		if (sta->num_dscp_policies > 0) {
+			policy_ids = os_malloc(sizeof(int) * sta->num_dscp_policies);
+			if (!policy_ids)
+				return;
+
+			for (size_t i = 0; i < sta->num_dscp_policies; i++)
+				policy_ids[num_policies++] = sta->policies[i]->policy_id;
+
+			hostapd_send_unsolicited_dscp_policy_request(hapd, sta, 0, policy_ids,
+								     num_policies);
+			os_free(policy_ids);
+		} else {
+			wpa_printf(MSG_DEBUG, "DSCP: No DSCP policies available");
+		}
+	}
+
+
 handle_ml:
 	hostapd_ml_handle_assoc_cb(hapd, sta, ok);
 }

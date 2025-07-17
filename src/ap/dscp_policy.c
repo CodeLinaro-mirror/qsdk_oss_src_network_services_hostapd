@@ -475,3 +475,160 @@ void free_dscp_policies(struct sta_info *sta)
 	sta->num_dscp_policies = 0;
 }
 
+u8 get_next_unsolicited_dialog_token(struct sta_info *sta)
+{
+	sta->unsolicited_dialog_token++;
+	if (sta->unsolicited_dialog_token == 0)
+		sta->unsolicited_dialog_token = 1;
+	return sta->unsolicited_dialog_token;
+}
+
+struct hostapd_dscp_policy *hostapd_get_dscp_policy_by_id(struct sta_info *sta, int id)
+{
+	size_t i;
+
+	for (i = 0; i < sta->num_dscp_policies; i++) {
+		if (sta->policies[i] && sta->policies[i]->policy_id == id)
+			return sta->policies[i];
+	}
+	return NULL;
+}
+
+
+struct wpabuf *hostapd_build_qos_element(struct hostapd_dscp_policy *policy)
+{
+	struct wpabuf *elem;
+	size_t domain_len;
+
+	elem = wpabuf_alloc(256);
+	if (!elem)
+		return NULL;
+
+	wpabuf_put_be32(elem, QM_IE_VENDOR_TYPE);
+	wpabuf_put_u8(elem, QM_ATTR_DSCP_POLICY);
+	wpabuf_put_u8(elem, 3);
+	wpabuf_put_u8(elem, policy->policy_id);
+	wpabuf_put_u8(elem, policy->req_type);
+	wpabuf_put_u8(elem,
+		      policy->req_type == DSCP_POLICY_REQ_REMOVE ? 255 : policy->dscp);
+
+	if (policy->frame_classifier && policy->frame_classifier_len > 0) {
+		wpabuf_put_u8(elem, QM_ATTR_TCLAS);
+		wpabuf_put_u8(elem, policy->frame_classifier_len);
+		wpabuf_put_data(elem, policy->frame_classifier, policy->frame_classifier_len);
+	}
+
+	if (policy->domain_name) {
+		domain_len = os_strlen((const char *)policy->domain_name);
+		if (domain_len < 256) {
+			wpabuf_put_u8(elem, QM_ATTR_DOMAIN_NAME);
+			wpabuf_put_u8(elem, domain_len);
+			wpabuf_put_data(elem, policy->domain_name, domain_len);
+		}
+	}
+
+	if (policy->port_range_info) {
+		wpabuf_put_u8(elem, QM_ATTR_PORT_RANGE);
+		wpabuf_put_u8(elem, 4);
+		wpabuf_put_be16(elem, policy->start_port);
+		wpabuf_put_be16(elem, policy->end_port);
+	}
+
+	return elem;
+}
+
+static struct wpabuf *start_new_dscp_frame(struct hostapd_data *hapd,
+					   struct sta_info *sta,
+					   u8 dialog_token,
+					   u8 reset, u8 more)
+{
+	u8 request_control = 0;
+	struct wpabuf *frame;
+
+	frame = wpabuf_alloc(MAX_DSCP_REQ_SIZE);
+	if (!frame)
+		return NULL;
+
+	wpabuf_put_u8(frame, WLAN_ACTION_VENDOR_SPECIFIC_PROTECTED);
+	wpabuf_put_be32(frame, QM_ACTION_VENDOR_TYPE);
+	wpabuf_put_u8(frame, QM_DSCP_POLICY_REQ);
+	wpabuf_put_u8(frame, dialog_token);
+
+	if (reset)
+		request_control |= 0x02;
+	if (more)
+		request_control |= 0x01;
+
+	wpabuf_put_u8(frame, request_control);
+
+	return frame;
+}
+
+void hostapd_send_unsolicited_dscp_policy_request(struct hostapd_data *hapd,
+						  struct sta_info *sta,
+						  u8 reset,
+						  const int *policy_ids,
+						  size_t num_policies)
+{
+	struct wpabuf *frame = NULL, *elem;
+	struct hostapd_dscp_policy *policy;
+	u8 dialog_token;
+	size_t i;
+	size_t frame_len;
+	bool more = false;
+
+	if (!hapd || !sta || !sta->dscp_policy_capable)
+		return;
+
+	dialog_token = get_next_unsolicited_dialog_token(sta);
+	frame = start_new_dscp_frame(hapd, sta, dialog_token, reset, more);
+	if (!frame)
+		return;
+
+	frame_len = wpabuf_len(frame);
+
+	for (i = 0; i < num_policies; i++) {
+		policy = hostapd_get_dscp_policy_by_id(sta, policy_ids[i]);
+		if (!policy)
+			continue;
+
+		if (reset && policy->req_type == DSCP_POLICY_REQ_REMOVE)
+			continue;
+
+		elem = hostapd_build_qos_element(policy);
+		if (!elem)
+			continue;
+
+		if (frame_len + 2 + wpabuf_len(elem) > MAX_DSCP_REQ_SIZE) {
+			more = true;
+			wpabuf_free(elem);
+			break;
+		}
+
+		wpabuf_put_u8(frame, WLAN_EID_VENDOR_SPECIFIC);
+		wpabuf_put_u8(frame, wpabuf_len(elem));
+		wpabuf_put_buf(frame, elem);
+		wpabuf_free(elem);
+		frame_len = wpabuf_len(frame);
+	}
+
+	if (more) {
+		u8 *buf = wpabuf_mhead_u8(frame);
+		buf[7] |= 0x01;
+	}
+
+	if (frame && wpabuf_len(frame) > 5) {
+		if (hostapd_drv_send_action(hapd, hapd->iface->freq, 0, sta->addr,
+					    wpabuf_head(frame), wpabuf_len(frame))) {
+			wpa_printf(MSG_DEBUG, "DSCP: Failed to send policy request to " MACSTR,
+				   MAC2STR(sta->addr));
+		}
+	}
+
+	wpabuf_free(frame);
+
+	sta->dscp_state.offset = i;
+	sta->dscp_state.last_dialog_token = dialog_token;
+	sta->dscp_state.pending_more = more;
+}
+

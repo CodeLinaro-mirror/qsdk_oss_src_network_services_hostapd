@@ -938,6 +938,29 @@ static int hostapd_cli_cmd_set_dscp_policy(struct wpa_ctrl *ctrl,
 	return wpa_ctrl_command(ctrl, cmd);
 }
 
+static int hostapd_cli_cmd_send_unsolicited_dscp_req(struct wpa_ctrl *ctrl,
+						     int argc, char *argv[])
+{
+	char cmd[512];
+	int res;
+	int i;
+
+	if (argc < 3) {
+		printf("Invalid 'send_unsolicited_dscp_req' command - "
+		       "usage: sta_addr=<addr> [reset=] [policy_id_list=]\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SEND_UNSOLICITED_DSCP_REQ");
+	for (i = 0; i < argc; i++) {
+		res = os_snprintf(cmd + strlen(cmd), sizeof(cmd) - strlen(cmd), " %s", argv[i]);
+		if (os_snprintf_error(sizeof(cmd) - strlen(cmd), res))
+			return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
 static int hostapd_cli_cmd_hs20_wnm_notif(struct wpa_ctrl *ctrl, int argc,
 					  char *argv[])
 {
@@ -2070,6 +2093,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{"set_dscp_policy", hostapd_cli_cmd_set_dscp_policy, NULL,
 	 "[policy_id=] [request_type=] [dscp=] [classifier_mask=]\n"
 	 "[ip_version=] [dst_ip=] = Set DSCP policy"},
+	{"send_unsolicited_dscp_req", hostapd_cli_cmd_send_unsolicited_dscp_req, NULL,
+	 "<addr>, [reset=], [policy_list=], Send unsolicited DSCP request"},
 	{ "chain_mask", hostapd_cli_cmd_chain_mask, NULL,
 	"<tx chain mask> <rx chain mask>" },
 	{ NULL, NULL, NULL, NULL }
