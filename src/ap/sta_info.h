@@ -190,6 +190,11 @@ struct sta_info {
 	unsigned int post_csa_sa_query:1;
 
 	bool dscp_policy_capable;
+#ifndef CONFIG_ROBUST_AV
+	struct hostapd_dscp_policy **policies;
+	u8 num_dscp_policies;
+	bool dscp_reset;
+#endif
 	bool ft_re_add;
 
 	u16 auth_alg;
