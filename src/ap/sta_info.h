@@ -193,6 +193,8 @@ struct sta_info {
 #ifndef CONFIG_ROBUST_AV
 	struct hostapd_dscp_policy **policies;
 	u8 num_dscp_policies;
+	u8 unsolicited_dialog_token;
+	struct dscp_policy_state dscp_state;
 	bool dscp_reset;
 #endif
 	bool ft_re_add;

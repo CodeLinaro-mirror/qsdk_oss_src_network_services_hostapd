@@ -978,6 +978,8 @@ static int hostapd_cli_cmd_set_dscp_policy(struct wpa_ctrl *ctrl,
 }
 
 
+#endif
+
 static int hostapd_cli_cmd_send_unsolicited_dscp_req(struct wpa_ctrl *ctrl,
 						     int argc, char *argv[])
 {
@@ -1007,9 +1009,6 @@ static int hostapd_cli_cmd_send_unsolicited_dscp_req(struct wpa_ctrl *ctrl,
 
 	return wpa_ctrl_command(ctrl, cmd);
 }
-
-#endif /* CONFIG_ROBUST_AV */
-
 
 static int hostapd_cli_cmd_hs20_wnm_notif(struct wpa_ctrl *ctrl, int argc,
 					  char *argv[])
@@ -2191,9 +2190,6 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	 "<sta_addr> <policy_id=> <request_type=> <dscp=> [classifier_mask=]\n"
 	 "[ip_version=] [src_ip=] [dst_ip=] [src_port=] [dst_port=]\n"
 	 "[protocol=] [domain_name=] [reset=] = Set DSCP policy"},
-	{"send_unsolicited_dscp_req", hostapd_cli_cmd_send_unsolicited_dscp_req,
-	 NULL,
-	 "<addr>, [reset=], [policy_id_list=], Send unsolicited DSCP request"},
 #endif /* CONFIG_ROBUST_AV */
 #ifdef CONFIG_AFC
 	{ "afc_get_request", hostapd_cli_cmd_afc_get_request, NULL,
@@ -2218,6 +2214,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{"set_dscp_policy", hostapd_cli_cmd_set_dscp_policy_compat, NULL,
 	 "[policy_id=] [request_type=] [dscp=] [classifier_mask=]\n"
 	 "[ip_version=] [dst_ip=] = Set DSCP policy"},
+	{"send_unsolicited_dscp_req", hostapd_cli_cmd_send_unsolicited_dscp_req, NULL,
+	 "<addr>, [reset=], [policy_list=], Send unsolicited DSCP request"},
 	{ "chain_mask", hostapd_cli_cmd_chain_mask, NULL,
 	  "<tx chain mask> <rx chain mask>" },
 
