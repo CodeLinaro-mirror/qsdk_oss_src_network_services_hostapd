@@ -566,4 +566,7 @@ int hostapd_drv_set_advertised_ttlm_params(struct hostapd_data *hapd,
 					   const struct drv_adv_ttlm_params *est_ttlm_params,
 					   bool send_default_mapping);
 
+int hostapd_drv_set_qos(struct hostapd_data *hapd, struct qm_req_data *qm_req,
+			struct qm_resp_data *qm_resp);
+
 #endif /* AP_DRV_OPS */

@@ -1516,3 +1516,13 @@ int hostapd_drv_set_advertised_ttlm_params(struct hostapd_data *hapd,
 							send_default_mapping);
 }
 #endif /* CONFIG_IEEE80211BE */
+
+
+int hostapd_drv_set_qos(struct hostapd_data *hapd, struct qm_req_data *qm_req,
+			struct qm_resp_data *qm_resp)
+{
+	if (!hapd->driver || !hapd->drv_priv)
+		return -1;
+
+	return hapd->driver->set_qos(hapd->drv_priv, qm_req, qm_resp);
+}
