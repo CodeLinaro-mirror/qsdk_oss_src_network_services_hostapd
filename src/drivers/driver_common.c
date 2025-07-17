@@ -114,6 +114,7 @@ const char * event_to_string(enum wpa_event_type event)
 	E2S(IFACE_RELOAD);
 	E2S(TTLM_UPDATE);
 	E2S(TTLM_EXPEC_DUR_UPDATE);
+	E2S(MSCS_FLOW_RECEIVED);
 	}
 
 	return "UNKNOWN";

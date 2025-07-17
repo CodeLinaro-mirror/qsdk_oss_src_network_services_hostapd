@@ -47,6 +47,7 @@
 #include "nan_usd_ap.h"
 #include "interference.h"
 #include "ttlm.h"
+#include "robust_av.h"
 
 
 #ifdef CONFIG_FILS
@@ -3612,6 +3613,10 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 				return;
 			}
 		}
+		break;
+	case EVENT_MSCS_FLOW_RECEIVED:
+		hostapd_process_mscs_flow(hapd, data->tclas_flow_event.tclas,
+				data->tclas_flow_event.addr, data->tclas_flow_event.tid);
 		break;
 	default:
 		wpa_printf(MSG_DEBUG, "Unknown event %d", event);

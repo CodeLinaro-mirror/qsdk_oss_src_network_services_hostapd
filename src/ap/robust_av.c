@@ -1569,6 +1569,60 @@ send_error_resp:
 	return ret;
 }
 
+u8 hostapd_mscs_get_tid(struct hostapd_data *hapd, struct sta_info *sta, u8 tid)
+{
+	u8 up_bitmap, up_limit;
+
+	if (!sta || !sta->mscs_ctxt) {
+		wpa_printf(MSG_DEBUG, "MSCS: MSCS ctxt missing for" MACSTR "sta",
+			   MAC2STR(sta->addr));
+		return 0;
+	}
+
+	up_bitmap = sta->mscs_ctxt->user_priority_bitmap;
+	up_limit = sta->mscs_ctxt->user_priority_limit;
+	if (BIT(tid) & up_bitmap) {
+		if (up_limit < tid)
+			return up_limit;
+		else
+			return tid;
+	}
+
+	return 0;
+}
+
+void hostapd_process_mscs_flow(struct hostapd_data *hapd,
+			       struct hostapd_tclas_elements *te,
+			       u8 *addr, u8 tid)
+{
+	struct sta_info *sta;
+
+	wpa_printf(MSG_DEBUG, "MSCS: Qos Flow received for " MACSTR " from driver"
+		   , MAC2STR(addr));
+
+	sta = ap_get_sta(hapd, addr);
+
+	if (!sta) {
+		os_free(addr);
+		return;
+	}
+
+	if (!hapd->conf->mscs) {
+		os_free(addr);
+		return;
+	}
+
+	tid = hostapd_mscs_get_tid(hapd, sta, tid);
+	te->classifier_type = QM_TCLAS_CLASSIFIER_TYPE4;
+	te->tclas_elem.type4_params.classifier_mask = sta->mscs_ctxt->tclas_mask;
+	te->up = tid;
+
+	hostapd_mscs_add_nft_rule(hapd, sta, te);
+
+	os_free(addr);
+	return;
+}
+
 void
 hostapd_handle_robust_av(struct hostapd_data *hapd, const u8 *buf, size_t len)
 {

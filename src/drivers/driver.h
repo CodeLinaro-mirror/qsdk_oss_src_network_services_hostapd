@@ -6823,6 +6823,16 @@ enum wpa_event_type {
 	 * received value
 	 */
 	EVENT_TTLM_EXPEC_DUR_UPDATE,
+
+	/**
+	 * EVENT_MSCS_FLOW_RECEIVED - Received a network flow event
+	 *
+	 * This event is used by the driver to notify the userspace about a
+	 * new UL flow received which needs QoS treatment - particularly
+	 * used for Mirrored SCS to prioritize the equivalent DL flow
+	 * which will be the mirrored value of the UL flow
+	 */
+	EVENT_MSCS_FLOW_RECEIVED,
 };
 
 
@@ -7917,6 +7927,15 @@ union wpa_event_data {
 		u8 link_id;
 		u32 expec_dur;
 	} ttlm_expec_dur_event;
+
+	/**
+	 * Data for MSCS event processing
+	 */
+	struct tclas_flow_event {
+		struct hostapd_tclas_elements *tclas;
+		u8 *addr;
+		u8 tid;
+	} tclas_flow_event;
 };
 
 /**

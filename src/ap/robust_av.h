@@ -273,5 +273,7 @@ hostapd_handle_robust_av(struct hostapd_data *hapd, const u8 *buf, size_t len);
 void hostapd_handle_mscs(struct hostapd_data *hapd, const u8 *buf, size_t len);
 int hostapd_mscs_delete_all_rules(struct hostapd_data *hapd,
 				  struct sta_info *sta);
-
+void hostapd_process_mscs_flow(struct hostapd_data *hapd,
+			       struct hostapd_tclas_elements *tclas,
+			       u8 *addr, u8 tid);
 #endif
