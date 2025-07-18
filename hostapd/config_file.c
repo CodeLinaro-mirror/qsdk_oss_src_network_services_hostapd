@@ -3665,6 +3665,15 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 	} else if (os_strcmp(buf, "puncture_strict_6ghz") == 0) {
 		conf->puncture_strict_6ghz = atoi(pos);
+	} else if (os_strcmp(buf, "punc_eirp_thres_6ghz") == 0) {
+		conf->punc_eirp_thres_6ghz = atoi(pos);
+		if (conf->punc_eirp_thres_6ghz < CHAN_MIN_TX_POWER ||
+		    conf->punc_eirp_thres_6ghz > MAX_EIRP_THRESHOLD) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid punc_eirp_thres value",
+				   line);
+			return 1;
+		}
 	} else if (os_strcmp(buf, "reg_def_cli_eirp_psd") == 0) {
 		conf->reg_def_cli_eirp_psd = atoi(pos);
 	} else if (os_strcmp(buf, "reg_sub_cli_eirp_psd") == 0) {

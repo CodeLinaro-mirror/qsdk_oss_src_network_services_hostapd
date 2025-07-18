@@ -7407,6 +7407,16 @@ s8 hostapd_get_6ghz_best_pp(struct hostapd_iface *iface, u16 freq,
 	if (initial_sp_eirp == CHAN_MIN_TX_POWER)
 		out_pp = PUNCTURE_INVALID;
 
+	if (iface->conf->punc_eirp_thres_6ghz != CHAN_MIN_TX_POWER) {
+		if (initial_sp_eirp > iface->conf->punc_eirp_thres_6ghz) {
+			wpa_printf(MSG_INFO,
+				   "AFC: Initial SP EIRP %d is greater than threshold %d",
+				   initial_sp_eirp, iface->conf->punc_eirp_thres_6ghz);
+			return 0;
+		}
+
+		initial_sp_eirp = iface->conf->punc_eirp_thres_6ghz;
+	}
 	hostapd_get_optimal_pp(iface, freq, center_freq, bw, *pp, pri_chan_pos,
 			       initial_sp_eirp, &ref_eirp, &out_pp);
 	if (out_pp == PUNCTURE_INVALID) {

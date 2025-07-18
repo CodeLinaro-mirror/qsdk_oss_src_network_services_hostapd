@@ -1159,8 +1159,10 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 
 		if (is_6ghz_op_class(iface->conf->op_class)) {
 			ret = os_snprintf(buf + len, buflen - len,
-					  "puncture_strict_6ghz=%d\n",
-					  iface->conf->puncture_strict_6ghz);
+					  "puncture_strict_6ghz=%d\n"
+					  "punc_eirp_thres_6ghz=%d\n",
+					  iface->conf->puncture_strict_6ghz,
+					  iface->conf->punc_eirp_thres_6ghz);
 			if (os_snprintf_error(buflen - len, ret))
 				return len;
 			len += ret;

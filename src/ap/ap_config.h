@@ -1241,6 +1241,13 @@ struct hostapd_config {
 	 * disable dynamic puncturing.
 	 */
 	bool puncture_strict_6ghz;
+	/*
+	 * This configures the EIRP threshold to be used for dynamic
+	 * puncturing of 6 GHz channels in Standard Power mode.
+	 * If puncture_strict_6ghz is set to false, we try to puncture
+	 * channels till the EIRP of the channel meets this threshold.
+	 */
+	s16 punc_eirp_thres_6ghz;
 	bool discard_6g_awgn_event;
 
 	int reg_def_cli_eirp_psd;

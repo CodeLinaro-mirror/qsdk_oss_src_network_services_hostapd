@@ -1075,6 +1075,7 @@ static inline bool hostapd_mld_is_first_bss(struct hostapd_data *hapd)
 #define CHAN_MIN_TWICE_TX_POWER              (CHAN_MIN_TX_POWER * 2)
 #define CHAN_MAX_TWICE_TX_POWER              ((CHAN_MAX_TX_POWER * 2) + 1)
 
+#define MAX_EIRP_THRESHOLD      33  /* A value above Max LPI and below Max SP */
 
 #define NUM_20PP_PUNC_80MHZ      4
 #define NUM_20PP_PUNC_160MHZ     8
