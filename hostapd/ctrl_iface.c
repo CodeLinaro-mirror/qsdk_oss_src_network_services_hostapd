@@ -1235,6 +1235,48 @@ static int hostapd_ctrl_iface_set_punc_strict(struct hostapd_iface *iface,
 }
 
 
+/**
+ * hostapd_ctrl_iface_set_punc_thres - Set the puncture threshold
+ * @iface: Pointer to hostapd interface data
+ * @value: Pointer to the string containing the value to set
+ *
+ * Return: 0 on success, -1 on failure
+ */
+static int hostapd_ctrl_iface_set_punc_thres(struct hostapd_iface *iface,
+					     char *value)
+{
+#ifdef NEED_AP_MLME
+	char *end;
+	int puncture_eirp_threshold;
+
+	puncture_eirp_threshold = strtol(value, &end, 10);
+	if (value == end || puncture_eirp_threshold < CHAN_MIN_TX_POWER ||
+	    puncture_eirp_threshold > MAX_EIRP_THRESHOLD) {
+		wpa_printf(MSG_ERROR, "Invalid puncture threshold: %s. Valid range: %d to %d dBm",
+			   value, CHAN_MIN_TX_POWER, MAX_EIRP_THRESHOLD);
+		return -1;
+	}
+
+	if (!is_6ghz_freq(iface->freq)) {
+		wpa_printf(MSG_ERROR, "set_punc_threshold is valid only for 6 GHz");
+		return -1;
+	}
+
+	if (iface->conf->punc_eirp_thres_6ghz == puncture_eirp_threshold) {
+		wpa_printf(MSG_DEBUG,
+			   "Puncture threshold already set to %d",
+			   puncture_eirp_threshold);
+		return -1;
+	}
+
+	iface->conf->punc_eirp_thres_6ghz = puncture_eirp_threshold;
+	return 0;
+#else /* NEED_AP_MLME */
+	return -1;
+#endif /* NEED_AP_MLME  */
+}
+
+
 static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 {
 	char *value;
@@ -1341,6 +1383,8 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 		ret = hostapd_ctrl_iface_set_band(hapd, value);
 	} else if (os_strcasecmp(cmd, "puncture_strict_6ghz") == 0) {
 		ret = hostapd_ctrl_iface_set_punc_strict(hapd->iface, value);
+	} else if (os_strcasecmp(cmd, "punc_eirp_thres_6ghz") == 0) {
+		ret = hostapd_ctrl_iface_set_punc_thres(hapd->iface, value);
 	} else {
 		if (hapd->iface->conf->disable_csa_dfs &&
 		    ((os_strcmp(cmd, "channel") == 0) &&
