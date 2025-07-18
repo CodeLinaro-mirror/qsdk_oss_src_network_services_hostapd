@@ -1194,6 +1194,47 @@ static int hostapd_ctrl_iface_set_band(struct hostapd_data *hapd,
 }
 
 
+/**
+ * hostapd_ctrl_iface_set_punc_strict - Set the puncture strict config
+ * @iface: Pointer to hostapd interface data
+ * @value: Pointer to the string containing the value to set
+ *
+ * Return: 0 on success, -1 on failure
+ */
+static int hostapd_ctrl_iface_set_punc_strict(struct hostapd_iface *iface,
+					      char *value)
+{
+#ifdef NEED_AP_MLME
+	int puncture_strict_config;
+	char *end;
+
+	puncture_strict_config = strtol(value, &end, 10);
+	if (value == end || (puncture_strict_config != 0 &&
+			   puncture_strict_config != 1)) {
+		wpa_printf(MSG_ERROR, "Invalid value for puncture strict config");
+		return -1;
+	}
+
+	if (!is_6ghz_freq(iface->freq)) {
+		wpa_printf(MSG_ERROR, "set_punc_strict is valid only for 6 GHz");
+		return -1;
+	}
+
+	if (iface->conf->puncture_strict_6ghz == puncture_strict_config) {
+		wpa_printf(MSG_DEBUG,
+			   "Puncture strict config already set to %d",
+			   puncture_strict_config);
+		return -1;
+	}
+
+	iface->conf->puncture_strict_6ghz = puncture_strict_config;
+	return 0;
+#else /* NEED_AP_MLME */
+	return -1;
+#endif /* NEED_AP_MLME  */
+}
+
+
 static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 {
 	char *value;
@@ -1298,6 +1339,8 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 #endif /* CONFIG_DPP */
 	} else if (os_strcasecmp(cmd, "setband") == 0) {
 		ret = hostapd_ctrl_iface_set_band(hapd, value);
+	} else if (os_strcasecmp(cmd, "puncture_strict_6ghz") == 0) {
+		ret = hostapd_ctrl_iface_set_punc_strict(hapd->iface, value);
 	} else {
 		if (hapd->iface->conf->disable_csa_dfs &&
 		    ((os_strcmp(cmd, "channel") == 0) &&
