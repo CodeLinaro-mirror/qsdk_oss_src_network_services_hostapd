@@ -19,6 +19,19 @@
 #include "pasn/pasn_common.h"
 #include "hostapd.h"
 
+/* sta_info.h must not include ap/robust_av.h: supplicant TUs (mesh_mpm.c,
+ * mesh_rsn.c) include this header and robust_av.h's types collide with the
+ * upstream supplicant definitions in wpa_supplicant_i.h. Only pointers to
+ * robust_av structs are stored in struct sta_info, so forward declarations
+ * and the one array-size macro suffice here.
+ */
+struct hostapd_scs_req_desc_data;
+struct hostapd_mscs_ctxt;
+/* Must match #define HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER in ap/robust_av.h */
+#ifndef HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER
+#define HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER 10
+#endif
+
 /* STA flags */
 #define WLAN_STA_AUTH BIT_ULL(0)
 #define WLAN_STA_ASSOC BIT_ULL(1)
@@ -380,6 +393,13 @@ struct sta_info {
 
 	u16 max_idle_period; /* if nonzero, the granted BSS max idle period in
 			      * units of 1000 TUs */
+
+
+#ifdef CONFIG_IEEE80211AX
+	struct hostapd_scs_req_desc_data
+		*scs_req_desc[HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER];
+	u8 scs_session_count;
+#endif
 
 	u64 last_known_sta_id_timestamp;
 

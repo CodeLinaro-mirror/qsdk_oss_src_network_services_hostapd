@@ -20,6 +20,7 @@
 #include "common/defs.h"
 #include "common/ieee802_11_defs.h"
 #include "ap_config.h"
+#include "robust_av.h"
 #include "utils/eloop.h"
 #include "wmm.h"
 #include "ap/ctrl_iface_ap.h"
