@@ -19,6 +19,9 @@
 #include "pasn/pasn_common.h"
 #include "hostapd.h"
 #include "ttlm.h"
+#ifdef CONFIG_IEEE80211AX
+#include "robust_av.h"
+#endif
 
 /* STA flags */
 #define WLAN_STA_AUTH BIT(0)
@@ -353,6 +356,12 @@ struct sta_info {
 	bool ft_re_add;
 	u16 max_idle_period; /* if nonzero, the granted BSS max idle period in
 			      * units of 1000 TUs */
+
+#ifdef CONFIG_IEEE80211AX
+	struct hostapd_scs_req_desc_data
+		*scs_req_desc[HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER];
+	u8 scs_session_count;
+#endif
 
 	u64 last_known_sta_id_timestamp;
 
