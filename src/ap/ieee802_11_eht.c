@@ -24,6 +24,7 @@
 #include "utils/eloop.h"
 #include "wmm.h"
 #include "ap/ctrl_iface_ap.h"
+#include <linux/netfilter.h>
 
 static u16 ieee80211_eht_ppet_size(u16 ppe_thres_hdr, const u8 *phy_cap_info)
 {
@@ -3155,12 +3156,13 @@ void hostapd_epcs_timeout_handler(void *eloop_ctx, void *timeout_ctx)
 	mld_info->epcs.timer_started = false;
 }
 
-static int hostapd_configure_epcs(struct hostapd_data *hapd,
+int hostapd_configure_epcs(struct hostapd_data *hapd,
 				  struct sta_info *sta,
 				  enum qos_mgmt_req_type req_type)
 {
 	struct qm_req_data qm_req = {0};
 	struct qm_resp_data qm_resp = {0};
+	struct hostapd_nft_rule_params rule = {0};
 
 	if (hapd->driver == NULL)
 		return -1;
@@ -3191,6 +3193,17 @@ static int hostapd_configure_epcs(struct hostapd_data *hapd,
 		return -1;
 	}
 
+	/* Program NFT rule delete */
+	if (req_type == QM_REMOVE_REQ) {
+		os_snprintf(rule.chain, sizeof(rule.chain), "%s_%s", CHAIN_NAME,
+			    hapd->conf->iface);
+		os_snprintf(rule.table, sizeof(rule.table), "%s", TABLE_NAME);
+		rule.mark = (EPCS_QM_ID << 8) | HOSTAPD_QOS_SCS_TAG;
+		rule.nf_family = NFPROTO_NETDEV;
+		memcpy(rule.dmac, sta->addr, ETH_ALEN);
+		hostapd_ucode_config_nft_rule(hapd, &rule, false);
+	}
+
 	/* Send the QoS request */
 	if (hapd->drv_priv && hapd->driver->set_qos &&
 	    hapd->driver->set_qos(hapd->drv_priv, &qm_req, &qm_resp)) {
@@ -3208,6 +3221,18 @@ static int hostapd_configure_epcs(struct hostapd_data *hapd,
 		wpa_printf(MSG_ERROR, "EPCS QM response failure:%u",
 			   qm_resp.qm_resp_desc[0].status);
 		return -1;
+	}
+
+	/* Program NFT rule add */
+	if (req_type == QM_ADD_REQ) {
+		os_snprintf(rule.chain, sizeof(rule.chain), "%s_%s", CHAIN_NAME,
+			    hapd->conf->iface);
+		os_snprintf(rule.table, sizeof(rule.table), "%s", TABLE_NAME);
+		memcpy(rule.dmac, sta->addr, ETH_ALEN);
+		rule.valid_flags |= NFT_RULE_PARAM_DMAC;
+		rule.mark = (EPCS_QM_ID << 8) | HOSTAPD_QOS_SCS_TAG;
+		rule.nf_family = NFPROTO_NETDEV;
+		hostapd_ucode_config_nft_rule(hapd, &rule, true);
 	}
 
 	return 0;
@@ -3323,7 +3348,6 @@ failed:
 			   "for sta with mld addr" MACSTR, prev_epcs_state, epcs_info->action_code, sta_epcs->state,
 			   MAC2STR(sta->mld_info.common_info.mld_addr));
 		return -1;
-
 	} else {
 		if (sta_epcs->state == EPCS_STATE_DISABLED)
 			ret = hostapd_configure_epcs(hapd, sta, QM_REMOVE_REQ);
