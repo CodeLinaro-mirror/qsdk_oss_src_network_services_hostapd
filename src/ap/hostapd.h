@@ -29,6 +29,9 @@
 	((hapd->conf->oce & OCE_AP) && \
 	 (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_OCE_AP))
 
+#define TABLE_NAME "wifi_qos_table"
+#define CHAIN_NAME "wifi_qos_chain"
+
 struct wpa_ctrl_dst;
 struct radius_server_data;
 struct upnp_wps_device_sm;

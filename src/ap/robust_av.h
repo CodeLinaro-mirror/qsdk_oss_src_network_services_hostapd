@@ -87,6 +87,26 @@ struct hostapd_data;
 #define HOSTAPD_SCS_IS_QOS_ATTR_PRESENT(PARAM1, PARAM2) \
 	(PARAM1 & HOSTAPD_SCS_QOS_ATTR_##PARAM2##_MASK)
 
+#define HOSTAPD_QOS_SCS_TAG	0xB9
+#define HOSTAPD_QOS_MSCS_TAG	0x58
+
+#define NFT_RULE_PARAM_SADDR    (1 << 0)
+#define NFT_RULE_PARAM_DADDR    (1 << 1)
+#define NFT_RULE_PARAM_SPORT    (1 << 2)
+#define NFT_RULE_PARAM_DPORT    (1 << 3)
+#define NFT_RULE_PARAM_PROTO    (1 << 4)
+#define NFT_RULE_PARAM_MARK     (1 << 5)
+#define NFT_RULE_PARAM_HANDLE   (1 << 6)
+#define NFT_RULE_PARAM_DMAC     (1 << 7)
+#define NFT_RULE_PARAM_ESP      (1 << 8)
+#define NFT_RULE_PARAM_SPI      (1 << 9)
+#define NFT_RULE_PARAM_DSCP     (1 << 10)
+
+#define NFT_RULE_PARAM_UDP_ENCAP_ESP (1 << 11)
+#define NFT_RULE_PARAM_UDP_ENCAP_ESP_SPI (1 << 12)
+
+#define NFT_UDP_PORT		4500
+
 /* QoS MGMT status values */
 enum hostapd_qm_status {
 	HOSTAPD_QM_STATUS_SUCCESS = 0,
@@ -185,6 +205,26 @@ struct hostapd_scs_resp_data {
 	u8 num_scs_desc;
 	struct hostapd_scs_resp_desc_data
 			scs_resp_desc[HOSTAPD_SCS_MAX_DESCPRIPTORS_PER_REQUEST];
+};
+
+struct hostapd_nft_rule_params {
+	u8 ip_family;
+	u8 nf_family;
+	char table[32];
+	char chain[32];
+	u32 valid_flags;
+	u8 saddr6[16];
+	u8 daddr6[16];
+	u32 saddr4;
+	u32 daddr4;
+	u16 sport;
+	u16 dport;
+	u8 proto;
+	u32 mark;
+	u64 rule_pos;
+	u8 dmac[ETH_ALEN];
+	u32 esp_spi;
+	u8 dscp;
 };
 
 u8 *hostapd_add_scs_ie(u8 *frm, bool scs);

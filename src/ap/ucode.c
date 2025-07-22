@@ -9,6 +9,7 @@
 #include "ap_drv_ops.h"
 #include "dfs.h"
 #include "acs.h"
+#include "robust_av.h"
 #include <libubox/uloop.h>
 #include "sta_info.h"
 
@@ -924,5 +925,114 @@ void hostapd_ucode_free_bss(struct hostapd_data *hapd)
 	uc_value_push(ucv_string_new(hapd->conf->iface));
 	uc_value_push(ucv_get(val));
 	ucv_put(wpa_ucode_call(2));
+	ucv_gc(vm);
+}
+
+void hostapd_ucode_config_nft_table(char *table, bool add)
+{
+	uc_value_t *nft_add;
+
+	if (wpa_ucode_call_prepare("config_nft_table"))
+		return;
+
+	wpa_printf(MSG_INFO, "%s: %s a NFT Table", __func__, add?"create":"delete");
+
+	if (add)
+		nft_add = ucv_boolean_new(true);
+	else
+		nft_add = ucv_boolean_new(false);
+
+	uc_value_push(ucv_get(ucv_string_new(table)));
+	uc_value_push(ucv_get(nft_add));
+	ucv_put(wpa_ucode_call(2));
+	ucv_gc(vm);
+}
+
+void hostapd_ucode_config_nft_chain(struct hostapd_data *hapd, char *table,
+				    char *chain, bool add)
+{
+	uc_value_t *nft_add;
+
+	if (wpa_ucode_call_prepare("config_nft_chain"))
+		return;
+
+	if (add)
+		nft_add = ucv_boolean_new(true);
+	else
+		nft_add = ucv_boolean_new(false);
+
+	wpa_printf(MSG_INFO, "%s: Create a NFT Chain", __func__);
+
+	uc_value_push(ucv_get(ucv_string_new(table)));
+	uc_value_push(ucv_get(ucv_string_new(chain)));
+	uc_value_push(ucv_get(ucv_string_new(hapd->conf->iface)));
+	uc_value_push(ucv_get(nft_add));
+	ucv_put(wpa_ucode_call(4));
+	ucv_gc(vm);
+}
+
+void hostapd_ucode_config_nft_rule(struct hostapd_data *hapd, struct hostapd_nft_rule_params *rparams,
+				   bool add)
+{
+	uc_value_t *nft_add;
+
+	char v4_src_addr[INET_ADDRSTRLEN] = {0};
+	char v4_dst_addr[INET_ADDRSTRLEN] = {0};
+	char v6_src_addr[INET6_ADDRSTRLEN] = {0};
+	char v6_dst_addr[INET6_ADDRSTRLEN] = {0};
+	char dst_mac_addr[18] = {0};
+
+	if (rparams->ip_family == 4) {
+		if ((rparams->valid_flags & NFT_RULE_PARAM_SADDR))
+			inet_ntop(AF_INET, &rparams->saddr4, v4_src_addr,
+				  sizeof(v4_src_addr));
+		if ((rparams->valid_flags & NFT_RULE_PARAM_DADDR))
+			inet_ntop(AF_INET, &rparams->daddr4, v4_dst_addr,
+				  sizeof(v4_dst_addr));
+	}
+
+	if (rparams->ip_family == 6) {
+		if ((rparams->valid_flags & NFT_RULE_PARAM_SADDR))
+			inet_ntop(AF_INET6, &rparams->saddr6, v6_src_addr,
+				  sizeof(v6_src_addr));
+		if ((rparams->valid_flags & NFT_RULE_PARAM_DADDR))
+			inet_ntop(AF_INET6, &rparams->daddr6, v6_dst_addr,
+				  sizeof(v6_src_addr));
+	}
+
+	snprintf(dst_mac_addr, sizeof(dst_mac_addr),
+		 "%02x:%02x:%02x:%02x:%02x:%02x",
+		 rparams->dmac[0], rparams->dmac[1], rparams->dmac[2],
+		 rparams->dmac[3], rparams->dmac[4], rparams->dmac[5]);
+
+	if (wpa_ucode_call_prepare("config_nft_rule"))
+		return;
+
+	wpa_printf(MSG_INFO, "%s: Create a NFT Rule", __func__);
+
+	if (add)
+		nft_add = ucv_boolean_new(true);
+	else
+		nft_add = ucv_boolean_new(false);
+
+	uc_value_push(ucv_get(ucv_string_new(rparams->table)));
+	uc_value_push(ucv_get(ucv_string_new(rparams->chain)));
+	uc_value_push(ucv_get(ucv_string_new(hapd->conf->iface)));
+	uc_value_push(ucv_get(nft_add));
+
+	uc_value_push(ucv_get(ucv_string_new(dst_mac_addr)));
+	uc_value_push(ucv_get(ucv_int64_new(rparams->proto)));
+	uc_value_push(ucv_get(ucv_string_new(v6_src_addr)));
+	uc_value_push(ucv_get(ucv_string_new(v6_dst_addr)));
+	uc_value_push(ucv_get(ucv_string_new(v4_src_addr)));
+	uc_value_push(ucv_get(ucv_string_new(v4_dst_addr)));
+
+	uc_value_push(ucv_get(ucv_int64_new(rparams->sport)));
+	uc_value_push(ucv_get(ucv_int64_new(rparams->dport)));
+	uc_value_push(ucv_get(ucv_int64_new(rparams->mark)));
+	uc_value_push(ucv_get(ucv_int64_new(rparams->esp_spi)));
+	uc_value_push(ucv_get(ucv_int64_new(rparams->dscp)));
+	uc_value_push(ucv_get(ucv_int64_new(rparams->ip_family)));
+	ucv_put(wpa_ucode_call(16));
 	ucv_gc(vm);
 }

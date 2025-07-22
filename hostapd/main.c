@@ -32,6 +32,7 @@
 #include "eap_register.h"
 #include "ctrl_iface.h"
 #include "build_features.h"
+#include "ap/robust_av.h"
 
 struct hapd_global {
 	void **drv_priv;
@@ -1089,12 +1090,31 @@ int main(int argc, char *argv[])
 	hostapd_global_ctrl_iface_init(&interfaces);
 	hostapd_ucode_init(&interfaces);
 
+	hostapd_ucode_config_nft_table(TABLE_NAME, true);
+
+	for (i = 0; i < interfaces.count; i++) {
+		struct hostapd_iface *iface = interfaces.iface[i];
+
+		for (int j = 0; j < iface->num_bss; j++) {
+			struct hostapd_data *hapd;
+			char buf[128] = {0};
+
+			hapd = iface->bss[j];
+			if (hapd->conf->scs) {
+				os_snprintf(buf, 128, "%s_%s", CHAIN_NAME, hapd->conf->iface);
+				hostapd_ucode_config_nft_chain(hapd, TABLE_NAME, buf, true);
+			}
+		}
+	}
+
 	if (hostapd_global_run(&interfaces, daemonize, pid_file)) {
 		wpa_printf(MSG_ERROR, "Failed to start eloop");
 		goto out;
 	}
 
 	ret = 0;
+
+	hostapd_ucode_config_nft_table(TABLE_NAME, false);
 
  out:
 	hostapd_global_ctrl_iface_deinit(&interfaces);

@@ -10,6 +10,7 @@
 #include "robust_av.h"
 #include "sta_info.h"
 #include "ap_drv_ops.h"
+#include <linux/netfilter.h>
 
 u8 *hostapd_add_scs_ie(u8 *frm, bool scs)
 {
@@ -728,9 +729,150 @@ hostapd_copy_and_send_scs_data(struct hostapd_data *hapd, struct sta_info *sta,
 	return ret;
 }
 
+static void hostapd_qm_prepare_nft_rule(struct hostapd_data *hapd, struct sta_info *sta,
+					struct hostapd_tclas_elements *te,
+					struct hostapd_nft_rule_params *rule,
+					u8 qm_id, u8 qm_tag)
+{
+
+	if (te->classifier_type == QM_TCLAS_CLASSIFIER_TYPE4) {
+		if (te->tclas_elem.type4_params.classifier_mask & BIT(0)) {
+			rule->ip_family = te->tclas_elem.type4_params.ip_ver;
+		}
+
+		if (te->tclas_elem.type4_params.classifier_mask & BIT(1)) {
+			if (rule->ip_family == 4) {
+				memcpy(&rule->saddr4, te->tclas_elem.type4_params.src_ip.ipv4, IPV4_LEN);
+				htonl(rule->saddr4);
+			} else {
+				memcpy(rule->saddr6, te->tclas_elem.type4_params.src_ip.ipv6, IPV6_LEN);
+			}
+			rule->valid_flags |= NFT_RULE_PARAM_SADDR;
+		}
+
+		if (te->tclas_elem.type4_params.classifier_mask & BIT(2)) {
+			if (rule->ip_family == 4) {
+				memcpy(&rule->daddr4, te->tclas_elem.type4_params.dst_ip.ipv4, IPV4_LEN);
+				htonl(rule->daddr4);
+			} else {
+				memcpy(rule->daddr6, te->tclas_elem.type4_params.dst_ip.ipv6, IPV6_LEN);
+			}
+			rule->valid_flags |= NFT_RULE_PARAM_DADDR;
+		}
+
+		if (te->tclas_elem.type4_params.classifier_mask & BIT(3)) {
+			rule->sport = te->tclas_elem.type4_params.src_port;
+			rule->valid_flags |= NFT_RULE_PARAM_SPORT;
+		}
+
+		if (te->tclas_elem.type4_params.classifier_mask & BIT(4)) {
+			rule->dport = te->tclas_elem.type4_params.dst_port;
+			rule->valid_flags |= NFT_RULE_PARAM_DPORT;
+		}
+
+		if (te->tclas_elem.type4_params.classifier_mask & BIT(6)) {
+			if (rule->ip_family == 4) {
+				rule->proto = te->tclas_elem.type4_params.protocol;
+			} else {
+				rule->proto = te->tclas_elem.type4_params.next_header;
+			}
+			rule->valid_flags |= NFT_RULE_PARAM_PROTO;
+		}
+
+		if (te->tclas_elem.type4_params.classifier_mask & BIT(5)) {
+			rule->dscp = te->tclas_elem.type4_params.dscp;
+			rule->valid_flags |= NFT_RULE_PARAM_DSCP;
+		}
+
+		wpa_printf(MSG_INFO, "qm_id : %d classifier_type : 0x%x classifier_mask : 0x%x\n", qm_id,
+			   te->classifier_type, te->tclas_elem.type4_params.classifier_mask);
+
+	} else if (te->classifier_type == QM_TCLAS_CLASSIFIER_TYPE10) {
+
+		rule->valid_flags |= NFT_RULE_PARAM_PROTO;
+		rule->proto = te->tclas_elem.type10_params.protocol_number;
+
+		if (rule->proto == IPPROTO_UDP) {
+			rule->valid_flags |= NFT_RULE_PARAM_DPORT;
+			rule->dport = 4500;
+		}
+
+		rule->esp_spi =  ((te->tclas_elem.type10_params.filter_value[0]  & te->tclas_elem.type10_params.filter_mask[0]) << 24) | \
+				  ((te->tclas_elem.type10_params.filter_value[1] & te->tclas_elem.type10_params.filter_mask[1]) << 16) | \
+				  ((te->tclas_elem.type10_params.filter_value[2] & te->tclas_elem.type10_params.filter_mask[2]) << 8)  | \
+				  ((te->tclas_elem.type10_params.filter_value[3] & te->tclas_elem.type10_params.filter_mask[3]) << 0);
+	}
+
+	memcpy(rule->dmac, sta->addr, ETH_ALEN);
+	rule->valid_flags |= NFT_RULE_PARAM_DMAC;
+	rule->mark = (qm_id << 8) | qm_tag;
+	os_snprintf(rule->chain, sizeof(rule->chain), "%s_%s", CHAIN_NAME, hapd->conf->iface);
+	os_snprintf(rule->table, sizeof(rule->table), "%s", TABLE_NAME);
+	rule->nf_family = NFPROTO_NETDEV;
+}
+
+static int hostapd_scs_add_nft_rule(struct hostapd_data *hapd, struct sta_info *sta, int scs_idx)
+{
+	struct hostapd_scs_req_desc_data *scs_req_desc = sta->scs_req_desc[scs_idx];
+	struct hostapd_tclas_elements te;
+	int i = 0;
+
+	struct hostapd_nft_rule_params rule = {0};
+
+	for (i = 0; i < scs_req_desc->num_tclas_elements; i++) {
+
+		os_memset(&rule, 0, sizeof(rule));
+
+		te = scs_req_desc->tclas[i];
+
+		hostapd_qm_prepare_nft_rule(hapd, sta, &te, &rule, scs_req_desc->scs_id, HOSTAPD_QOS_SCS_TAG);
+
+		if ((rule.valid_flags & NFT_RULE_PARAM_DPORT ||
+		    rule.valid_flags & NFT_RULE_PARAM_SPORT) &&
+		    !(rule.valid_flags & NFT_RULE_PARAM_PROTO)) {
+
+			rule.valid_flags |= NFT_RULE_PARAM_PROTO;
+
+			rule.proto = IPPROTO_UDP;
+			hostapd_ucode_config_nft_rule(hapd, &rule, true);
+
+			rule.proto = IPPROTO_TCP;
+		} else if (te.classifier_type == QM_TCLAS_CLASSIFIER_TYPE10) {
+			rule.ip_family = 4;
+			hostapd_ucode_config_nft_rule(hapd, &rule, true);
+			rule.ip_family = 6;
+		}
+
+		hostapd_ucode_config_nft_rule(hapd, &rule, true);
+
+		wpa_printf(MSG_INFO, "scs_id:%u rule valid flag : 0x%x ", scs_req_desc->scs_id, rule.valid_flags);
+	}
+	return 0;
+}
+
+static int hostapd_scs_delete_nft_rule(struct hostapd_data *hapd, struct sta_info *sta, int scs_idx)
+{
+	struct hostapd_scs_req_desc_data *scs_data;
+	struct hostapd_tclas_elements te;
+	struct hostapd_nft_rule_params rule = {0};
+	int i = 0;
+
+	scs_data = sta->scs_req_desc[scs_idx];
+
+	for (i = 0; i < scs_data->num_tclas_elements; i++) {
+
+		te = scs_data->tclas[i];
+
+		hostapd_qm_prepare_nft_rule(hapd, sta, &te, &rule, scs_data->scs_id, HOSTAPD_QOS_SCS_TAG);
+
+		hostapd_ucode_config_nft_rule(hapd, &rule, false);
+		wpa_printf(MSG_INFO, "scs_id:%u rule deleted", scs_data->scs_id);
+	}
+	return 0;
+}
 
 static int
-hostapd_process_scs_add(struct sta_info *sta,
+hostapd_process_scs_add(struct hostapd_data *hapd, struct sta_info *sta,
 			struct hostapd_scs_req_desc_data *scs_req_desc_tmp,
 			u8 status)
 {
@@ -763,12 +905,13 @@ hostapd_process_scs_add(struct sta_info *sta,
 	sta->scs_req_desc[idx] = scs_req_desc;
 	sta->scs_session_count++;
 
+	hostapd_scs_add_nft_rule(hapd, sta, idx);
+
 	return 0;
 }
 
-
 static int
-hostapd_process_scs_remove(struct sta_info *sta,
+hostapd_process_scs_remove(struct hostapd_data *hapd, struct sta_info *sta,
 			   struct hostapd_scs_req_desc_data *scs_req_desc,
 			   u8 status)
 {
@@ -789,6 +932,8 @@ hostapd_process_scs_remove(struct sta_info *sta,
 		return -EINVAL;
 	}
 
+	hostapd_scs_delete_nft_rule(hapd, sta, idx);
+
 	os_free(sta->scs_req_desc[idx]);
 
 	while (idx < (scs_session_count - 1)) {
@@ -804,7 +949,7 @@ hostapd_process_scs_remove(struct sta_info *sta,
 
 
 static int
-hostapd_process_scs_change(struct sta_info *sta,
+hostapd_process_scs_change(struct hostapd_data *hapd, struct sta_info *sta,
 			   struct hostapd_scs_req_desc_data *scs_req_desc_tmp,
 			   u8 status)
 {
@@ -826,14 +971,19 @@ hostapd_process_scs_change(struct sta_info *sta,
 		return -EINVAL;
 	}
 
+	hostapd_scs_delete_nft_rule(hapd, sta, idx);
+
 	os_memcpy(sta->scs_req_desc[idx], scs_req_desc_tmp,
 		  sizeof(*scs_req_desc_tmp));
+
+	hostapd_scs_add_nft_rule(hapd, sta, idx);
 
 	return 0;
 }
 
 
-static void hostapd_process_scs_req(struct sta_info *sta,
+static void hostapd_process_scs_req(struct hostapd_data *hapd,
+				    struct sta_info *sta,
 				    struct hostapd_scs_req_data *scs_req,
 				    struct hostapd_scs_resp_data *scs_resp)
 {
@@ -870,7 +1020,7 @@ static void hostapd_process_scs_req(struct sta_info *sta,
 
 		switch (request_type) {
 		case QM_ADD_REQ:
-			ret = hostapd_process_scs_add(sta, scs_req_desc,
+			ret = hostapd_process_scs_add(hapd, sta, scs_req_desc,
 						      status);
 			if (!ret)
 				scs_resp_desc->status = WLAN_STATUS_SUCCESS;
@@ -881,7 +1031,7 @@ static void hostapd_process_scs_req(struct sta_info *sta,
 			break;
 
 		case QM_REMOVE_REQ:
-			ret = hostapd_process_scs_remove(sta, scs_req_desc,
+			ret = hostapd_process_scs_remove(hapd, sta, scs_req_desc,
 							 status);
 			if (!ret)
 				scs_resp_desc->status =
@@ -893,7 +1043,7 @@ static void hostapd_process_scs_req(struct sta_info *sta,
 			break;
 
 		case QM_CHANGE_REQ:
-			ret = hostapd_process_scs_change(sta, scs_req_desc,
+			ret = hostapd_process_scs_change(hapd, sta, scs_req_desc,
 							 status);
 			if (!ret)
 				scs_resp_desc->status = WLAN_STATUS_SUCCESS;
@@ -1055,7 +1205,7 @@ static int hostapd_handle_scs_req(struct hostapd_data *hapd, const u8 *buf,
 		goto send_error_resp;
 	}
 
-	hostapd_process_scs_req(sta, &scs_req, &scs_resp);
+	hostapd_process_scs_req(hapd, sta, &scs_req, &scs_resp);
 
 send_error_resp:
 	ret = hostapd_send_scs_response(hapd, sta, mgmt->sa, &scs_resp);
@@ -1065,7 +1215,6 @@ send_error_resp:
 
 	return ret;
 }
-
 
 void
 hostapd_handle_robust_av(struct hostapd_data *hapd, const u8 *buf, size_t len)

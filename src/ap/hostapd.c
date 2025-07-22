@@ -11,6 +11,7 @@
 #include <sqlite3.h>
 #endif /* CONFIG_SQLITE */
 
+#include <linux/netfilter.h>
 #include "utils/common.h"
 #include "utils/eloop.h"
 #include "utils/crc32.h"
@@ -58,7 +59,7 @@
 #include "wpa_auth_kay.h"
 #include "hw_features.h"
 #include "interference.h"
-
+#include "robust_av.h"
 
 static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason);
 #ifdef CONFIG_WEP
@@ -1793,6 +1794,7 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon)
 	u8 if_addr[ETH_ALEN];
 	int flush_old_stations = 1;
 	struct hostapd_data *tx_hapd;
+	char buf[128] = {0};
 
 	if (!hostapd_mld_is_first_bss(hapd))
 		wpa_printf(MSG_DEBUG,
@@ -2127,6 +2129,11 @@ setup_mld:
 	}
 
 	tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
+
+	if (hapd->conf->scs) {
+		os_snprintf(buf, 128, "%s_%s", CHAIN_NAME, conf->iface);
+		hostapd_ucode_config_nft_chain(hapd, TABLE_NAME, buf, true);
+	}
 
 	/* If TX BSS is already beaconing, update it with newly added profile
 	 */
@@ -4816,12 +4823,18 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx,
 		       bool is_link_remove)
 {
 	size_t i;
+	char buf[128] = {0};
 
 	wpa_printf(MSG_INFO, "Remove BSS '%s'", iface->conf->bss[idx]->iface);
 
 	/* Remove hostapd_data only if it has already been initialized */
 	if (idx < iface->num_bss) {
-		struct hostapd_data *hapd = iface->bss[idx];
+ 		struct hostapd_data *hapd = iface->bss[idx];
+
+		if (hapd && hapd->conf && hapd->conf->scs) {
+			os_snprintf(buf, sizeof(buf), "%s_%s", CHAIN_NAME, hapd->conf->iface);
+			hostapd_ucode_config_nft_chain(hapd, TABLE_NAME, buf, false);
+		}
 
 		hostapd_bss_deinit(hapd);
 		wpa_printf(MSG_DEBUG, "%s: free hapd %p (%s)",
