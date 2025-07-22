@@ -2,8 +2,10 @@
 #define __HOSTAPD_AP_UCODE_H
 
 #include "utils/ucode.h"
+#include "robust_av.h"
 
 struct hostapd_data;
+struct nft_rule_params;
 
 struct hostapd_ucode_bss {
 #ifdef UCODE_SUPPORT
@@ -28,6 +30,12 @@ void hostapd_ucode_add_bss(struct hostapd_data *hapd);
 void hostapd_ucode_free_bss(struct hostapd_data *hapd);
 void hostapd_ucode_reload_bss(struct hostapd_data *hapd);
 
+void hostapd_ucode_config_nft_table(char *table, bool add);
+void hostapd_ucode_config_nft_chain(struct hostapd_data *hapd, char *table,
+				    char *chain, bool add);
+void hostapd_ucode_config_nft_rule(struct hostapd_data *hapd, struct hostapd_nft_rule_params *rparams,
+				   bool add);
+
 #else
 
 static inline int hostapd_ucode_init(struct hapd_interfaces *ifaces)
@@ -50,6 +58,19 @@ static inline void hostapd_ucode_free_bss(struct hostapd_data *hapd)
 {
 }
 
+static inline void hostapd_ucode_config_nft_table(char *table, bool add)
+{
+}
+static inline void hostapd_ucode_config_nft_chain(struct hostapd_data *hapd, char *table,
+						  char *chain, bool add)
+{
+}
+static inline void
+hostapd_ucode_config_nft_rule(struct hostapd_data *hapd,
+			      struct hostapd_nft_rule_params *rparams,
+			      bool add)
+{
+}
 #endif
 
 #endif

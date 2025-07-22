@@ -3,6 +3,7 @@
 
 #include "utils/includes.h"
 #include "utils/common.h"
+#ifdef UCODE_SUPPORT
 #include <ucode/lib.h>
 #include <ucode/vm.h>
 
@@ -27,4 +28,5 @@ uc_value_t *uc_wpa_getpid(uc_vm_t *vm, size_t nargs);
 uc_value_t *uc_wpa_sha1(uc_vm_t *vm, size_t nargs);
 uc_value_t *uc_wpa_freq_info(uc_vm_t *vm, size_t nargs);
 
+#endif /* UCODE_SUPPORT */
 #endif
