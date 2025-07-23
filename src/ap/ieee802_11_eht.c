@@ -1000,7 +1000,8 @@ static size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd,
 	len += 1 + eht_ml_len;
 
 	/* Fragmentation headers */
-	len += (len - 1) / 255 * 2;
+	if (eht_ml_len > 254)
+		len += (eht_ml_len + 1) / 255 * 2;
 
 	/* Outer header EID_EXT (1) + length (1) */
 	len += 2;
