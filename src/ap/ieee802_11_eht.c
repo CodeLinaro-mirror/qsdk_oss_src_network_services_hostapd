@@ -952,7 +952,8 @@ static size_t hostapd_eid_eht_ml_len(struct mld_info *info,
 	len += 3;
 
 	/* Fragmentation headers; +1 for shorter first chunk */
-	len += (eht_ml_len + 1) / 255 * 2;
+	if (eht_ml_len > 254)
+		len += (eht_ml_len + 1) / 255 * 2;
 
 	return len;
 }
