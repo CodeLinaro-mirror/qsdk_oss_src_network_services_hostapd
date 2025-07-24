@@ -3253,6 +3253,14 @@ struct hostapd_sta_add_params {
 #endif /* CONFIG_NAN */
 };
 
+struct ml_reconf_req {
+	u8 addr[6];
+	struct hostapd_sta_add_params *sta_add_params[MAX_NUM_MLD_LINKS];
+	u16 valid_links;
+	u16 add_links;
+	u16 del_links;
+};
+
 struct mac_address {
 	u8 addr[ETH_ALEN];
 };
