@@ -548,6 +548,16 @@ static inline int hostapd_drv_set_ttlm_link_mapping(struct hostapd_data *hapd,
 
 	return hapd->driver->set_ttlm_link_mapping(hapd->drv_priv, WPA_IF_AP_BSS, params, addr);
 }
+
+
+static inline int hostapd_drv_ml_reconf(struct hostapd_data *hapd,
+					struct ml_reconf_req *ml_reconf_req)
+{
+	if (hapd->driver == NULL || hapd->driver->ml_reconf == NULL)
+		return -1;
+
+	return hapd->driver->ml_reconf(hapd->drv_priv, ml_reconf_req);
+}
 #endif /* CONFIG_IEEE80211BE */
 
 struct hostapd_multi_hw_info *

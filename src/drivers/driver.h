@@ -5007,6 +5007,15 @@ struct wpa_driver_ops {
 				   struct wpa_mlo_reconfig_info *info);
 
 	/**
+	 * ml_reconf - Used to handle sta initiated  ML reconfig request
+	 * for the current MLO association.
+	 * @priv: Private driver interface data
+	 * @ml_reconf_req: ML reconfiguration requests info
+	 */
+	int (*ml_reconf)(void *priv,
+			 struct ml_reconf_req *ml_reconf_req);
+
+	/**
 	 * channel_info - Get parameters of the current operating channel
 	 * @priv: Private driver interface data
 	 * @channel_info: Channel info structure

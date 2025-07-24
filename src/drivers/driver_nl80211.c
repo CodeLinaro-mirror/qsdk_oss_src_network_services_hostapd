@@ -6149,38 +6149,16 @@ static u32 sta_plink_state_nl80211(enum mesh_plink_state state)
 #endif /* CONFIG_MESH */
 
 
-static int wpa_driver_nl80211_sta_add(void *priv,
-				      struct hostapd_sta_add_params *params)
+static int wpa_driver_nl80211_build_sta(struct wpa_driver_nl80211_data *drv,
+				        struct nl_msg *msg,
+					struct hostapd_sta_add_params *params)
 {
-	struct i802_bss *bss = priv;
-	struct wpa_driver_nl80211_data *drv = bss->drv;
-	struct nl_msg *msg;
 	struct nl80211_sta_flag_update upd;
 	int ret = -ENOBUFS;
-	u8 cmd;
-	const char *cmd_string;
 
 	if ((params->flags & WPA_STA_TDLS_PEER) &&
 	    !(drv->capa.flags & WPA_DRIVER_FLAGS_TDLS_SUPPORT))
 		return -EOPNOTSUPP;
-
-	if (params->mld_link_sta) {
-		cmd = params->set ? NL80211_CMD_MODIFY_LINK_STA :
-			NL80211_CMD_ADD_LINK_STA;
-		cmd_string = params->set ? "NL80211_CMD_MODIFY_LINK_STA" :
-			"NL80211_CMD_ADD_LINK_STA";
-	} else {
-		cmd = params->set ? NL80211_CMD_SET_STATION :
-			NL80211_CMD_NEW_STATION;
-		cmd_string = params->set ? "NL80211_CMD_SET_STATION" :
-			"NL80211_CMD_NEW_STATION";
-	}
-
-	wpa_printf(MSG_DEBUG, "nl80211: %s STA " MACSTR,
-		   cmd_string, MAC2STR(params->addr));
-	msg = nl80211_bss_msg(bss, 0, cmd);
-	if (!msg)
-		goto fail;
 
 	/*
 	 * Set the below properties only in one of the following cases:
@@ -6443,6 +6421,43 @@ static int wpa_driver_nl80211_sta_add(void *priv,
 		if (nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, params->addr))
 			goto fail;
 	}
+
+	ret = 0;
+fail:
+	return ret;
+}
+
+static int wpa_driver_nl80211_sta_add(void *priv,
+				      struct hostapd_sta_add_params *params)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret = -ENOBUFS;
+	u8 cmd;
+	const char *cmd_string;
+
+	if (params->mld_link_sta) {
+		cmd = params->set ? NL80211_CMD_MODIFY_LINK_STA :
+			NL80211_CMD_ADD_LINK_STA;
+		cmd_string = params->set ? "NL80211_CMD_MODIFY_LINK_STA" :
+			"NL80211_CMD_ADD_LINK_STA";
+	} else {
+		cmd = params->set ? NL80211_CMD_SET_STATION :
+			NL80211_CMD_NEW_STATION;
+		cmd_string = params->set ? "NL80211_CMD_SET_STATION" :
+			"NL80211_CMD_NEW_STATION";
+	}
+
+	wpa_printf(MSG_DEBUG, "nl80211: %s STA " MACSTR,
+		   cmd_string, MAC2STR(params->addr));
+	msg = nl80211_bss_msg(bss, 0, cmd);
+	if (!msg)
+		goto fail;
+
+	ret = wpa_driver_nl80211_build_sta(drv, msg, params);
+	if (ret)
+		goto fail;
 
 	ret = send_and_recv_cmd(drv, msg);
 	msg = NULL;
@@ -10422,6 +10437,76 @@ driver_nl80211_ml_reconfig_link_removal(void *priv,
 
 	return nl80211_ml_reconfig_link_remove(bss, params);
 }
+
+static int wpa_driver_nl80211_ml_reconf(void *priv,
+					struct ml_reconf_req *ml_reconf_req)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret = -ENOBUFS;
+	u8 cmd;
+	const char *cmd_string;
+	struct nlattr *links, *attr;
+	u16 link_id, added_links = 0;
+
+	cmd = NL80211_CMD_ASSOC_MLO_RECONF;
+	cmd_string = "NL80211_CMD_ASSOC_MLO_RECONF";
+	msg = nl80211_bss_msg(bss, 0, cmd);
+	if (!msg)
+		goto fail;
+
+	links = nla_nest_start(msg, NL80211_ATTR_MLO_LINKS);
+	for_each_link(ml_reconf_req->add_links, link_id) {
+		added_links |= BIT(link_id);
+		struct hostapd_sta_add_params *params;
+		attr = nla_nest_start(msg, 0);
+		if (!attr)
+			return -1;
+		params = ml_reconf_req->sta_add_params[link_id];
+		ret = wpa_driver_nl80211_build_sta(drv, msg, params);
+		if (ret) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: Failed to build sta info "
+				   "for link=%d", link_id);
+			goto fail;
+		}
+		nla_nest_end(msg, attr);
+	}
+	nla_nest_end(msg, links);
+
+	wpa_printf(MSG_DEBUG, "nl80211: Add links (ifindex=%d link_ids=0x%x)",
+		   bss->ifindex, added_links);
+
+	wpa_printf(MSG_DEBUG, "nl80211: ML reconfig for sta " MACSTR,
+		   MAC2STR(ml_reconf_req->addr));
+
+	if (nla_put(msg, NL80211_ATTR_MLD_ADDR,
+		    ETH_ALEN, ml_reconf_req->addr))
+		goto fail;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Remove links (ifindex=%d link_ids=0x%x)",
+		   bss->ifindex, ml_reconf_req->del_links);
+
+	if (ml_reconf_req->del_links &&
+	    nla_put_u16(msg, NL80211_ATTR_MLO_RECONF_REM_LINKS,
+			ml_reconf_req->del_links))
+		goto fail;
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_DEBUG, "nl80211: %s result: %d (%s)",
+				cmd_string, ret, strerror(-ret));
+
+	if (ret == -EEXIST)
+		ret = 0;
+
+	return ret;
+fail:
+	nlmsg_free(msg);
+	return ret;
+}
+
 #endif /* CONFIG_IEEE80211BE */
 
 
@@ -16588,6 +16673,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.set_epcs_cfg = wpa_driver_set_epcs_cfg,
 	.set_ttlm_link_mapping = wpa_driver_nl80211_set_ttlm_link_mapping,
 	.set_advertised_ttlm_params = wpa_driver_nl80211_set_advertised_ttlm_params,
+	.ml_reconf = wpa_driver_nl80211_ml_reconf,
 #endif /* CONFIG_IEEE80211BE */
 	.set_qos = nl80211_set_qos,
 };

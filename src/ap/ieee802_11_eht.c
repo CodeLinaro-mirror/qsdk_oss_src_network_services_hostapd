@@ -2829,6 +2829,15 @@ skip_oci_validation:
 	ml_reconf_req.del_links = req_list->links_del_ok;
 	ml_reconf_req.valid_links = req_list->new_valid_links;
 
+	if (ml_reconf_req.add_links || ml_reconf_req.del_links) {
+		ret = hostapd_drv_ml_reconf(hapd, &ml_reconf_req);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "MLD: Failed to send Link reconfiguration "
+				   "request to driver (%d)", ret);
+			goto out;
+		}
+	}
+
 	req_list->dialog_token = dialog_token;
 	ret = hostapd_send_link_reconf_resp(hapd, assoc_sta, req_list);
 	if (ret)
