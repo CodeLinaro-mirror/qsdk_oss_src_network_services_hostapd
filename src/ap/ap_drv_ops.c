@@ -552,9 +552,13 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    u64 flags, u8 qosinfo, u8 vht_opmode,
 		    int supp_p2p_ps,
 		    int set, const u8 *link_addr, bool mld_link_sta,
-		    u16 eml_cap, bool epp_sta)
+		    u16 eml_cap, bool epp_sta, int type)
 {
 	struct hostapd_sta_add_params params;
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_data *assoc_hapd;
+	struct sta_info *sta, *assoc_sta;
+#endif
 
 	if (hapd->driver == NULL)
 		return 0;
@@ -600,6 +604,62 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		/* Copy EML capabilities of ML STA */
 		if (link_addr)
 			params.eml_cap = eml_cap;
+	}
+
+	if (type == LINK_PARSE_RECONF) {
+		struct cached_sta_params {
+			struct hostapd_sta_add_params params;
+			struct ieee80211_ht_capabilities ht;
+			struct ieee80211_vht_capabilities vht;
+			struct ieee80211_he_capabilities he;
+			struct ieee80211_eht_capabilities eht;
+			u8 uhr[sizeof(struct ieee80211_uhr_capabilities) + 7];
+		} *cached;
+
+		if (hapd->mld_link_id >= MAX_NUM_MLD_LINKS ||
+		    he_capab_len > sizeof(cached->he) ||
+		    eht_capab_len > sizeof(cached->eht) ||
+		    uhr_capab_len > sizeof(cached->uhr))
+			return -1;
+		sta = ap_get_sta(hapd, addr);
+		if (!sta) {
+			wpa_printf(MSG_ERROR, "No link sta for addr = " MACSTR,
+				   MAC2STR(addr));
+			return -1;
+		}
+		assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd);
+		if (!assoc_sta) {
+			wpa_printf(MSG_ERROR, "No assoc sta found");
+			return -1;
+		}
+		cached = os_zalloc(sizeof(*cached));
+		if (!cached)
+			return -1;
+		cached->params = params;
+		if (ht_capab) {
+			cached->ht = *ht_capab;
+			cached->params.ht_capabilities = &cached->ht;
+		}
+		if (vht_capab) {
+			cached->vht = *vht_capab;
+			cached->params.vht_capabilities = &cached->vht;
+		}
+		if (he_capab) {
+			os_memcpy(&cached->he, he_capab, he_capab_len);
+			cached->params.he_capab = &cached->he;
+		}
+		if (eht_capab) {
+			os_memcpy(&cached->eht, eht_capab, eht_capab_len);
+			cached->params.eht_capab = &cached->eht;
+		}
+		if (uhr_capab) {
+			os_memcpy(cached->uhr, uhr_capab, uhr_capab_len);
+			cached->params.uhr_capab =
+				(const struct ieee80211_uhr_capabilities *) cached->uhr;
+		}
+		os_free(assoc_sta->recfg_sta_add_params[hapd->mld_link_id]);
+		assoc_sta->recfg_sta_add_params[hapd->mld_link_id] = &cached->params;
+		return 0;
 	}
 #endif /* CONFIG_IEEE80211BE */
 
