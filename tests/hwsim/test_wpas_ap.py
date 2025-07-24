@@ -1179,6 +1179,9 @@ def test_wpas_ap_acl_mgmt(dev):
     dev[0].set_network(id, "key_mgmt", "NONE")
     dev[0].set_network(id, "frequency", "2412")
     dev[0].set_network(id, "scan_freq", "2412")
+    # MAC based ACL is force disabled for a WPS enabled BSS
+    # disable it for this test.
+    dev[0].set_network(id, "wps_disabled", "1")
     dev[0].select_network(id)
     wait_ap_ready(dev[0])
 
