@@ -2707,6 +2707,7 @@ hostapd_handle_link_reconf_req(struct hostapd_data *hapd, const u8 *buf,
 	u8 dialog_token;
 	const struct ieee80211_mgmt *mgmt = (const struct ieee80211_mgmt *) buf;
 	struct link_reconf_req_list *req_list = NULL;
+	struct ml_reconf_req ml_reconf_req = {};
 	const u8 *pos = NULL;
 	int ret = -1;
 
@@ -2818,6 +2819,15 @@ skip_oci_validation:
 	/* Do STA profile validation */
 	if (!hostapd_validate_link_reconf_req(hapd, assoc_sta, req_list))
 		goto out;
+
+	os_memcpy(ml_reconf_req.addr, assoc_sta->addr, ETH_ALEN);
+	for (int i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+		ml_reconf_req.sta_add_params[i] =
+			assoc_sta->recfg_sta_add_params[i];
+	}
+	ml_reconf_req.add_links = req_list->links_add_ok;
+	ml_reconf_req.del_links = req_list->links_del_ok;
+	ml_reconf_req.valid_links = req_list->new_valid_links;
 
 	req_list->dialog_token = dialog_token;
 	ret = hostapd_send_link_reconf_resp(hapd, assoc_sta, req_list);

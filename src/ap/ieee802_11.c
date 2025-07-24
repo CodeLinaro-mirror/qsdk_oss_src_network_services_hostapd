@@ -5413,7 +5413,7 @@ int ieee80211_ml_process_link(struct hostapd_data *hapd,
 	/* TODO: What other processing is required? */
 
 	if (!offload &&
-	    add_associated_sta(hapd, sta, type == LINK_PARSE_REASSOC))
+	    add_associated_sta(hapd, sta, type))
 		status = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
 out:
 	wpabuf_free(mlbuf);
@@ -5513,7 +5513,7 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 					    0, NULL, NULL, NULL, 0, NULL, 0, NULL,
 					    sta->flags, 0, 0, 0, 0,
 					    mld_link_addr, mld_link_sta,
-					    eml_cap)) {
+					    eml_cap, reassoc)) {
 				hostapd_logger(hapd, sta->addr,HOSTAPD_MODULE_IEEE80211,HOSTAPD_LEVEL_NOTICE,
 					       "Could not add STA to kernel driver");
 				return -1;
@@ -5588,7 +5588,7 @@ static void send_deauth(struct hostapd_data *hapd, const u8 *addr,
 
 
 static int add_associated_sta(struct hostapd_data *hapd,
-			      struct sta_info *sta, int reassoc)
+			      struct sta_info *sta, int type)
 {
 	struct ieee80211_ht_capabilities ht_cap;
 	struct ieee80211_vht_capabilities vht_cap;
@@ -5598,6 +5598,7 @@ static int add_associated_sta(struct hostapd_data *hapd,
 	const u8 *mld_link_addr = NULL;
 	bool mld_link_sta = false;
 	u16 eml_cap = 0;
+	bool reassoc = (type == LINK_PARSE_REASSOC);
 
 #ifdef CONFIG_IEEE80211BE
 	if (ap_sta_is_mld(hapd, sta)) {
@@ -5643,12 +5644,12 @@ static int add_associated_sta(struct hostapd_data *hapd,
 	 * STA entry is removed from the list.
 	 */
 	wpa_printf(MSG_DEBUG, "Add associated STA " MACSTR
-		   " (added_unassoc=%d auth_alg=%u ft_over_ds=%u reassoc=%d authorized=%d ft_tk=%d fils_tk=%d)",
+		   " (added_unassoc=%d auth_alg=%u ft_over_ds=%u reassoc=%d authorized=%d ft_tk=%d fils_tk=%d, type=%d)",
 		   MAC2STR(sta->addr), sta->added_unassoc, sta->auth_alg,
 		   sta->ft_over_ds, reassoc,
 		   !!(sta->flags & WLAN_STA_AUTHORIZED),
 		   wpa_auth_sta_ft_tk_already_set(sta->wpa_sm),
-		   wpa_auth_sta_fils_tk_already_set(sta->wpa_sm));
+		   wpa_auth_sta_fils_tk_already_set(sta->wpa_sm), type);
 
 	if (!ap_sta_is_mld(hapd, sta) && !sta->added_unassoc &&
 	    (!(sta->flags & WLAN_STA_AUTHORIZED) ||
@@ -5702,7 +5703,8 @@ static int add_associated_sta(struct hostapd_data *hapd,
 			    sta->he_6ghz_capab,
 			    sta->flags | WLAN_STA_ASSOC, sta->qosinfo,
 			    sta->vht_opmode, sta->p2p_ie ? 1 : 0,
-			    set, mld_link_addr, mld_link_sta, eml_cap)) {
+			    set, mld_link_addr, mld_link_sta, eml_cap,
+			    type)) {
 		hostapd_logger(hapd, sta->addr,
 			       HOSTAPD_MODULE_IEEE80211, HOSTAPD_LEVEL_NOTICE,
 			       "Could not %s STA to kernel driver",

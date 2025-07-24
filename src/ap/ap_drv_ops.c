@@ -533,9 +533,11 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
 		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
 		    int set, const u8 *link_addr, bool mld_link_sta,
-		    u16 eml_cap)
+		    u16 eml_cap, int type)
 {
 	struct hostapd_sta_add_params params;
+	struct hostapd_data *assoc_hapd;
+	struct sta_info *sta, *assoc_sta;
 
 	if (hapd->driver == NULL)
 		return 0;
@@ -576,6 +578,26 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		/* Copy EML capabilities of ML STA */
 		if (link_addr)
 			params.eml_cap = eml_cap;
+	}
+
+	if (type == LINK_PARSE_RECONF) {
+		sta = ap_get_sta(hapd, addr);
+		if (!sta) {
+			wpa_printf(MSG_ERROR, "No link sta for addr = " MACSTR,
+				   MAC2STR(addr));
+			return -1;
+		}
+		assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd);
+		if (!assoc_sta) {
+			wpa_printf(MSG_ERROR, "No assoc sta found");
+			return -1;
+		}
+		assoc_sta->recfg_sta_add_params[hapd->mld_link_id] =
+			os_zalloc(sizeof(struct hostapd_sta_add_params));
+
+		os_memcpy(assoc_sta->recfg_sta_add_params[hapd->mld_link_id],
+			  &params, sizeof(params));
+		return 0;
 	}
 #endif /* CONFIG_IEEE80211BE */
 
