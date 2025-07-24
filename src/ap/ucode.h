@@ -2,10 +2,9 @@
 #define __HOSTAPD_AP_UCODE_H
 
 #include "utils/ucode.h"
-#include "robust_av.h"
 
 struct hostapd_data;
-struct nft_rule_params;
+struct hostapd_nft_rule_params;
 
 struct hostapd_ucode_bss {
 #ifdef UCODE_SUPPORT
