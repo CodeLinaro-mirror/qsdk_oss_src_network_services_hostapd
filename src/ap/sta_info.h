@@ -339,6 +339,7 @@ struct sta_info {
 	struct mld_info mld_info;
 	u8 mld_assoc_link_id;
 	struct link_reconf_req_list *reconf_req;
+	struct hostapd_sta_add_params *recfg_sta_add_params[MAX_NUM_MLD_LINKS];
 
 	/* if receive auth request from partner link, when partner sta exist,
 	 * response send without add the station in kernel.
