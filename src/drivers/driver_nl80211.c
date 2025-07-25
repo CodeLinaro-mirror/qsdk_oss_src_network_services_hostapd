@@ -5897,7 +5897,7 @@ static int wpa_driver_set_chain_mask(void *priv, uint8_t radio_idx,
 	struct i802_bss *bss = priv;
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	struct nl_msg *msg;
-	int ret;
+	int ret = -1;
 
 	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_WIPHY);
 	if (!msg)
@@ -5908,15 +5908,22 @@ static int wpa_driver_set_chain_mask(void *priv, uint8_t radio_idx,
 	     nla_put_u8(msg, NL80211_ATTR_WIPHY_RADIO_INDEX, radio_idx)) ||
 	    nla_put_u32(msg, NL80211_ATTR_WIPHY_ANTENNA_TX, tx_ant) ||
 	    nla_put_u32(msg, NL80211_ATTR_WIPHY_ANTENNA_RX, rx_ant)) {
-		nlmsg_free(msg);
-		return -1;
+		goto nla_put_failure;
 	}
 
 	ret = send_and_recv_cmd(drv, msg);
-	if (ret)
-		wpa_printf(MSG_ERROR,
-			   "nl80211: Chain_mask: Failed to set chain mask %u %u: %d (%s)",
-			   tx_ant, rx_ant, ret, strerror(-ret));
+	if (!ret)
+		return 0;
+	else
+		goto fail;
+
+nla_put_failure:
+	nlmsg_free(msg);
+	fail:
+	wpa_printf(MSG_ERROR,
+		   "nl80211: Chain_mask: Failed to set chain mask %u %u: "
+		   "%d (%s)", tx_ant, rx_ant, ret, strerror(-ret));
+
 	return ret;
 }
 

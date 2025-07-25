@@ -4933,7 +4933,7 @@ static int hostapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd,
 	int ret = -1, i;
 	u32 tx_ant, rx_ant;
 	u8 radio_idx = NL80211_WIPHY_RADIO_ID_MAX;
-	char *ptr;
+	char *ptr, *endptr;
 	u16 num_modes, flags;
 	u8 dfs_domain;
 	struct hostapd_hw_modes *modes;
@@ -4943,8 +4943,17 @@ static int hostapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	tx_ant = strtoul(cmd, &ptr, 0);
-	rx_ant = strtoul(ptr, NULL, 0);
+	tx_ant = (u32) strtol(cmd, &ptr, 10);
+	if (ptr == cmd) {
+		wpa_printf(MSG_ERROR, "Invalid argument given.\n");
+		return ret;
+	}
+
+	rx_ant = (u32) strtol(ptr, &endptr, 10);
+	if (ptr == endptr) {
+		wpa_printf(MSG_ERROR, "Invalid argument given.\n");
+		return ret;
+	}
 	if (!tx_ant)
 		tx_ant = 0xffffffff;
 	if (!rx_ant)
