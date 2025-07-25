@@ -5555,13 +5555,14 @@ static int wpa_driver_set_chain_mask(void *priv, uint8_t radio_idx,
 	ret = send_and_recv_cmd(drv, msg);
 	if (!ret) {
 		return 0;
-	}
+	} else
+		goto fail;
+
 nla_put_failure:
+	nlmsg_free(msg);
+fail:
 	wpa_printf(MSG_ERROR, "nl80211: Chain_mask: Failed to set chain mask %d %d: "
 		   "%d (%s)", tx_ant, rx_ant, ret, strerror(-ret));
-
-	if (msg)
-		nlmsg_free(msg);
 
 	return ret;
 
