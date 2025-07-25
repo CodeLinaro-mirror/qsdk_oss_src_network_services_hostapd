@@ -1379,6 +1379,8 @@ struct hostapd_config {
 	bool peer_to_peer_twt;
 	int use_ru_puncture_dfs;
 	int ccfs;
+	int afc_chan_sel_config;
+	int cur_chan_eirp;
 	int bandwidth_device;
 	int center_freq_device;
 
