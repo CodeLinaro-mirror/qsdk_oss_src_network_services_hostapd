@@ -7270,7 +7270,7 @@ static void hostapd_get_num_puncture_types(u16 bw, u8 *num_punc_type1,
  *
  * Return: Pointer to the valid puncture pattern array or NULL if not found
  */
-static const u16 *
+const u16 *
 hostapd_get_valid_puncture_pattern_arr(u16 bw, u16 *num_pp, u16 *pp_mask)
 {
 	u8 i;

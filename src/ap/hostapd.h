@@ -1371,4 +1371,15 @@ hostapd_reg_get_psd_from_chan_list(struct hostapd_iface *iface, u16 freq,
 				   u8 ap_pwr_type, u8 client_type,
 				   bool is_client_lookup, bool is_twice_pwr,
 				   s16 *psd_pwr);
+
+/**
+ * hostapd_get_valid_puncture_pattern_arr() - Get the valid puncture pattern array
+ * @bw: Bandwidth in MHz
+ * @num_pp: Output pointer to store the number of valid puncture patterns
+ * @pp_mask: Output pointer to store the puncture pattern mask for the given bandwidth
+ *
+ * Return: Pointer to the valid puncture pattern array or NULL if not found
+ */
+const u16 *
+hostapd_get_valid_puncture_pattern_arr(u16 bw, u16 *num_pp, u16 *pp_mask);
 #endif /* HOSTAPD_H */

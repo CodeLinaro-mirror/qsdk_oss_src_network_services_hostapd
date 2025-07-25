@@ -134,25 +134,26 @@ static int intf_awgn_chan_range_available(struct hostapd_hw_modes *mode,
 
 /*
  * intf_afc_chan_range_available - check whether the channel can operate
- * in the given bandwidth in 6Ghz and avail in regulatory channel list
+ * in the given bandwidth in 6Ghz and is available in regulatory channel list
+ * if its not available than mark as punctured in afc_bitmap
  * @num_chans - number of 20Mhz channels needed for the operating bandwidth
+ * @afc_bitmap - pointer to afc puncture_bitmap, will carry punctured info
+ * for unavailable channels.
  */
-static bool intf_afc_chan_range_available(struct hostapd_channel_data *chan_6ghz,
-					  int num_chans)
+static void intf_afc_chan_range_available(struct hostapd_channel_data *chan_6ghz,
+					  int num_chans, u16 *afc_bitmap)
 {
 	int i;
 
 	for (i = 0; i < num_chans; i++) {
 		if ((chan_6ghz->flag & HOSTAPD_CHAN_DISABLED) ||
 		    (chan_6ghz->flag & HOSTAPD_CHAN_NO_IR)) {
-			wpa_printf(MSG_ERROR, "Freq [%d] is disabled. Flag: %x",
+			*afc_bitmap |= 1 << i;
+			wpa_printf(MSG_DEBUG, "Freq [%d] is punctured. Flag: %x",
 				   chan_6ghz->freq, chan_6ghz->flag);
-			return false;
 		}
 		chan_6ghz++;
 	}
-
-	return true;
 }
 
 static int is_in_chanlist(struct hostapd_iface *iface,
@@ -342,9 +343,98 @@ static int convert_chwidth_to_20MHz_nchans(enum chan_width chan_width)
 	return n_chans;
 }
 
+int get_next_max_width(int chan_width)
+{
+	int next_max_width;
+
+	switch (chan_width) {
+	case CHAN_WIDTH_320:
+		next_max_width = CHAN_WIDTH_160;
+		break;
+	case CHAN_WIDTH_160:
+		next_max_width = CHAN_WIDTH_80;
+		break;
+	case CHAN_WIDTH_80:
+		next_max_width = CHAN_WIDTH_40;
+		break;
+	case CHAN_WIDTH_40:
+		next_max_width = CHAN_WIDTH_20;
+		break;
+	default:
+		next_max_width = CHAN_WIDTH_20_NOHT;
+		break;
+	}
+
+	return next_max_width;
+}
+
+/*
+ * find_6g_chan_20_40 - When AFC response will recieve than this function
+ * will fill 6GHz band 40 MHz and 20 MHz available channels.
+ * If afc_bitmap is nonzero then the 40 MHz channel has a NO_IR (non-Tx)
+ * subchannel. So ignore it. The reduced bandwidth channel (20 MHz channel)
+ * is picked up when the 20MHz bandwidth channel is process by the caller.
+ */
+static void find_6g_chan_20_40(struct hostapd_channel_data *chan,
+			       u16 afc_bitmap, int *channel_idx,
+			       struct hostapd_channel_data **chandef_list)
+{
+	if (!afc_bitmap) {
+		wpa_printf(MSG_DEBUG,
+			   "AFC: Adding channel %d (%d) to valid chandef list with puncture pattern 0x%x",
+			   chan->freq, chan->chan, chan->punct_bitmap);
+		(*chandef_list)[*channel_idx] = *chan;
+		(*channel_idx)++;
+	}
+}
+
+/*
+ * find_6g_chan_gt_40 - When AFC response will recieve than this function
+ * will fill 6GHz band 80, 160, 320 MHz available channels with puncture
+ * patterns.
+ */
+static void find_6g_chan_gt_40(struct hostapd_channel_data *chan,
+			       int new_start_freq, int channel_width,
+			       u16 afc_bitmap, int *channel_idx,
+			       struct hostapd_channel_data **chandef_list)
+{
+	u16 pri_chan_pos;
+	const u16 *bw_pp_arr;
+	u16 num_pp, pp_mask;
+	int i;
+
+	pri_chan_pos = (chan->freq - new_start_freq) / 20;
+	bw_pp_arr = hostapd_get_valid_puncture_pattern_arr(channel_width,
+							   &num_pp, &pp_mask);
+	if (!bw_pp_arr) {
+		wpa_printf(MSG_ERROR,
+			   "No valid puncture pattern array for bw %d", channel_width);
+		return;
+	}
+
+	for (i = 0; i < num_pp; i++) {
+		u16 temp_bitmap;
+
+		temp_bitmap = ((afc_bitmap | bw_pp_arr[i]) & pp_mask);
+		if (!is_punct_bitmap_valid(channel_width, pri_chan_pos, temp_bitmap)) {
+			wpa_printf(MSG_DEBUG,
+				   "Invalid PP: 0x%x, bw: %d, pri_chan_pos: %d",
+				   temp_bitmap, channel_width, pri_chan_pos);
+			continue;
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "AFC: Adding channel %d (%d) to valid chandef list with puncture pattern 0x%x",
+			   chan->freq, chan->chan, temp_bitmap);
+		(*chandef_list)[*channel_idx] = *chan;
+		(*chandef_list)[*channel_idx].punct_bitmap = temp_bitmap;
+		(*channel_idx)++;
+	}
+}
+
 static int find_6g_enabled_chans(struct hostapd_iface *iface,
 				 int chan_width,
-				 struct hostapd_channel_data ***chandef_list,
+				 struct hostapd_channel_data **chandef_list,
 				 struct hostapd_hw_modes *mode,
 				 struct hostapd_channel_data **chan_6ghz,
 				 int n_chans, int power_type)
@@ -357,6 +447,7 @@ static int find_6g_enabled_chans(struct hostapd_iface *iface,
 		int channel_width;
 		int new_centre_freq, new_start_freq, ret;
 		u8 num_channels_6ghz, chan_idx;
+		u16 afc_bitmap = 0;
 
 		chan = &chan_6ghz[power_type][i];
 
@@ -399,16 +490,14 @@ static int find_6g_enabled_chans(struct hostapd_iface *iface,
 			continue;
 		}
 
-		if (!intf_afc_chan_range_available(chan_6ghz_list, n_chans)) {
-			wpa_printf(MSG_DEBUG, "AFC: range not available for %d (%d)",
-				   chan->freq, chan->chan);
-			continue;
+		intf_afc_chan_range_available(chan_6ghz_list, n_chans, &afc_bitmap);
+		if (channel_width < 80) {
+			find_6g_chan_20_40(chan, afc_bitmap,
+					   &channel_idx, chandef_list);
+		} else {
+			find_6g_chan_gt_40(chan, new_start_freq, channel_width,
+					   afc_bitmap, &channel_idx, chandef_list);
 		}
-
-		wpa_printf(MSG_DEBUG, "AFC: Adding channel %d (%d) to valid chandef list",
-			   chan->freq, chan->chan);
-		(*chandef_list)[channel_idx] = chan;
-		channel_idx++;
 	}
 
 	return channel_idx;
@@ -419,12 +508,14 @@ static int find_6g_enabled_chans(struct hostapd_iface *iface,
    channel width chan_width and present within the range ofi regulatory channel
    list. returns the total number of available chandefs that supports the
    provided bandwidth
- * @chan_width - channel width to be checked
- * @chandef_list - pointer array to hold the list of valid available chandef
+ * @chan_width - pointer to current channel width
+ * @chandef_list - array to hold the list of valid available chandef
+ * @best_ap_pwr_mode - pointer to best power mode
  */
 static int intf_afc_find_channel_list(struct hostapd_iface *iface,
-				      int chan_width,
-					  struct hostapd_channel_data ***chandef_list)
+				      int *chan_width,
+				      struct hostapd_channel_data **chandef_list,
+				      int *best_ap_pwr_mode)
 {
 	struct hostapd_hw_modes *mode = iface->current_mode;
 	struct hostapd_channel_data_6ghz *channels_6g_data = &mode->channels_6ghz;
@@ -434,17 +525,25 @@ static int intf_afc_find_channel_list(struct hostapd_iface *iface,
 		NL80211_REG_AP_LPI,
 		NL80211_REG_AP_VLP};
 	int i, n_chans;
+	int start_chan_width = *chan_width;
 
-	n_chans = convert_chwidth_to_20MHz_nchans(chan_width);
 	for (i = 0; i < ARRAY_SIZE(pwr_mode_order); i++) {
 		enum nl80211_regulatory_power_modes pwr_mode;
 		int n_en_chans;
 
+		*chan_width = start_chan_width;
 		pwr_mode = pwr_mode_order[i];
-		n_en_chans = find_6g_enabled_chans(iface, chan_width, chandef_list,
-						   mode, chan_6ghz, n_chans, pwr_mode);
+		while (*chan_width > CHAN_WIDTH_20_NOHT) {
+			n_chans = convert_chwidth_to_20MHz_nchans(*chan_width);
+			n_en_chans = find_6g_enabled_chans(iface, *chan_width, chandef_list,
+							   mode, chan_6ghz, n_chans, pwr_mode);
+			if (n_en_chans > 0)
+				break;
+			*chan_width = get_next_max_width(*chan_width);
+		}
 		if (!n_en_chans)
 			continue;
+		*best_ap_pwr_mode = pwr_mode;
 
 		return n_en_chans;
 	}
@@ -473,31 +572,6 @@ enum chan_seg {
 	SEG_SEC160_UP		  = 0x8000,
 	SEG_SEC160		  = 0xFF00,
 };
-
-int get_next_max_width(int chan_width)
-{
-	int next_max_width;
-
-	switch (chan_width) {
-	case CHAN_WIDTH_320:
-		next_max_width = CHAN_WIDTH_160;
-		break;
-	case CHAN_WIDTH_160:
-		next_max_width = CHAN_WIDTH_80;
-		break;
-	case CHAN_WIDTH_80:
-		next_max_width = CHAN_WIDTH_40;
-		break;
-	case CHAN_WIDTH_40:
-		next_max_width = CHAN_WIDTH_20;
-		break;
-	default:
-		next_max_width = CHAN_WIDTH_20_NOHT;
-		break;
-	}
-
-	return next_max_width;
-}
 
 /*
  * hostapd_intf_awgn_detected - awgn interference is detected in the operating channel.
@@ -694,25 +768,8 @@ exit:
 	return 0;
 }
 
-static int get_chanlist_for_bandwidth(struct hostapd_iface *iface,
-				      int *chan_width,
-				      struct hostapd_channel_data ***available_chandef_list)
-{
-	int num_available_chandefs = 0;
-
-	while (*chan_width > CHAN_WIDTH_20_NOHT) {
-		num_available_chandefs = intf_afc_find_channel_list(iface, *chan_width,
-								    available_chandef_list);
-		if (num_available_chandefs > 0)
-			break;
-		*chan_width = get_next_max_width(*chan_width);
-	}
-
-	return num_available_chandefs;
-}
-
-static int get_random_channel(struct hostapd_channel_data **chan_data,
-			      struct hostapd_channel_data **available_chandef_list,
+static int get_random_channel(struct hostapd_channel_data *chan_data,
+			      struct hostapd_channel_data *available_chandef_list,
 			      int *chan_idx, int num_available_chandefs)
 {
 	u32 _rand;
@@ -758,11 +815,182 @@ static void set_csa_param(struct csa_settings *settings,
 	settings->freq_params.freq = chan_data->freq;
 	settings->freq_params.bandwidth = channel_width_to_int(chan_width);
 	settings->freq_params.center_freq1 = centre_freq;
+	settings->freq_params.punct_bitmap = chan_data->punct_bitmap;
 	settings->freq_params.ht_enabled = iface->conf->ieee80211n;
 	settings->freq_params.vht_enabled = iface->conf->ieee80211ac;
 	settings->freq_params.he_enabled = iface->conf->ieee80211ax;
 	settings->freq_params.eht_enabled = iface->conf->ieee80211be;
 	settings->power_mode = -1;
+
+	if (is_6ghz_freq(settings->freq_params.freq) &&
+	    iface->conf->enable_best_power_mode) {
+		int best_power_mode;
+
+		best_power_mode =
+			hostapd_get_best_ap_6ghz_power_mode(iface,
+							    settings->freq_params.freq,
+							    settings->freq_params.center_freq1,
+							    settings->freq_params.bandwidth,
+							    settings->freq_params.punct_bitmap);
+		if (best_power_mode != NL80211_REG_NUM_POWER_MODES) {
+			settings->power_mode = best_power_mode;
+			iface->power_mode_6ghz_before_change = best_power_mode;
+			wpa_printf(MSG_DEBUG, "%s: Best power mode for Freq %d is %d",
+				   __func__,
+				   settings->freq_params.freq,
+				   settings->power_mode);
+		}
+	}
+}
+
+/*
+ * @ACT_FIND_EIRPMAX   : Action of  finding maximum EIRP from an array of EIRPs
+ * @ACT_FILTER_MAXEIRP : Action of  filtering an array and creating a new array
+ *                       with a given value.
+ */
+enum eirp_array_action {
+	ACT_FIND_EIRPMAX = 0,
+	ACT_FILTER_MAXEIRP = 1
+};
+
+static int iterate_eirp_array(struct hostapd_iface *iface,
+			      int chan_width, int best_ap_pwr_mode,
+			      struct hostapd_channel_data *available_chandef_list,
+			      int n_chans, int *max_eirp_pwr,
+			      struct hostapd_channel_data **max_eirp_chandef_list,
+			      int *max_eirp_nchans, int action)
+{
+	int i;
+	int ret = 0;
+	int channel_width;
+	int channel_idx = 0;
+
+	channel_width = channel_width_to_int(chan_width);
+	for (i = 0; i < n_chans; i++) {
+		int center_freq;
+		int tmp_eirp_pwr;
+
+		if (get_new_center_freq(&available_chandef_list[i], chan_width, &center_freq)) {
+			ret = -1;
+			return ret;
+		}
+		tmp_eirp_pwr = hostapd_get_eirp_pwr(iface,
+						    available_chandef_list[i].freq,
+						    center_freq, channel_width,
+						    available_chandef_list[i].punct_bitmap,
+						    best_ap_pwr_mode,
+						    false,
+						    NL80211_REG_NUM_POWER_MODES,
+						    false);
+		if (action == ACT_FIND_EIRPMAX) {
+			if (tmp_eirp_pwr > *max_eirp_pwr)
+				*max_eirp_pwr = tmp_eirp_pwr;
+		} else if (action == ACT_FILTER_MAXEIRP) {
+			if (tmp_eirp_pwr == *max_eirp_pwr) {
+				(*max_eirp_chandef_list)[channel_idx] = available_chandef_list[i];
+				channel_idx++;
+			}
+		}
+	}
+
+	if (action == ACT_FILTER_MAXEIRP)
+		*max_eirp_nchans = channel_idx;
+
+	return ret;
+}
+
+static int find_max_eirp_pwr(struct hostapd_iface *iface,
+			     int chan_width, int best_ap_pwr_mode,
+			     struct hostapd_channel_data *available_chandef_list,
+			     int n_chans, int *max_eirp_pwr)
+{
+	return iterate_eirp_array(iface, chan_width, best_ap_pwr_mode,
+				  available_chandef_list, n_chans,
+				  max_eirp_pwr, NULL, NULL, ACT_FIND_EIRPMAX);
+}
+
+static int fill_max_eirp_chandef_list(struct hostapd_iface *iface,
+				      int chan_width, int best_ap_pwr_mode,
+				      struct hostapd_channel_data *available_chandef_list,
+				      int n_chans,
+				      struct hostapd_channel_data **max_eirp_chandef_list,
+				      int *max_eirp_nchans, int max_eirp_pwr)
+{
+	return iterate_eirp_array(iface, chan_width, best_ap_pwr_mode,
+				  available_chandef_list, n_chans,
+				  &max_eirp_pwr, max_eirp_chandef_list,
+				  max_eirp_nchans, ACT_FILTER_MAXEIRP);
+}
+
+static int find_afc_random_chan(struct hostapd_hw_modes *mode,
+				struct hostapd_iface *iface, int *chan_width,
+				struct hostapd_channel_data *chan_data, int *chan_idx)
+{
+	struct hostapd_channel_data *available_chandef_list;
+	struct hostapd_channel_data *max_eirp_chandef_list;
+	int num_available_chandefs;
+	int max_eirp_pwr = CHAN_MIN_TX_POWER;
+	int best_ap_pwr_mode = NL80211_REG_NUM_POWER_MODES;
+	int max_eirp_nchans;
+	int channel_width;
+	int num_pp;
+	int ret = 0;
+
+	channel_width = channel_width_to_int(*chan_width);
+	num_pp = hostapd_get_num_pp(channel_width);
+	available_chandef_list = os_zalloc(sizeof(struct hostapd_channel_data) *
+					   (mode->num_channels * num_pp));
+	if (!available_chandef_list) {
+		wpa_printf(MSG_ERROR, "available_chandef_list memory allocation failed");
+		ret = -1;
+		goto free_chandef_list;
+	}
+
+	num_available_chandefs = intf_afc_find_channel_list(iface, chan_width,
+							    &available_chandef_list,
+							    &best_ap_pwr_mode);
+	if (num_available_chandefs == 0) {
+		wpa_printf(MSG_ERROR, "AFC: no available_chandefs");
+		ret = -1;
+		goto free_chandef_list;
+	}
+
+	if (find_max_eirp_pwr(iface, *chan_width, best_ap_pwr_mode,
+			      available_chandef_list, num_available_chandefs,
+			      &max_eirp_pwr)) {
+		wpa_printf(MSG_ERROR, "AFC: could not able to find max eirp power");
+		ret = -1;
+		goto free_chandef_list;
+	}
+
+	max_eirp_chandef_list = os_zalloc(sizeof(struct hostapd_channel_data) *
+					  num_available_chandefs);
+	if (!max_eirp_chandef_list) {
+		wpa_printf(MSG_ERROR, "max_eirp_chandef_list memory allocation failed");
+		ret = -1;
+		goto free_eirp_list;
+	}
+
+	if (fill_max_eirp_chandef_list(iface, *chan_width, best_ap_pwr_mode,
+				       available_chandef_list, num_available_chandefs,
+				       &max_eirp_chandef_list, &max_eirp_nchans,
+				       max_eirp_pwr)) {
+		wpa_printf(MSG_ERROR, "AFC: could not able to fill max eirp chan list");
+		ret = -1;
+		goto free_eirp_list;
+	}
+	if (get_random_channel(chan_data, max_eirp_chandef_list, chan_idx,
+			       max_eirp_nchans)) {
+		ret = -1;
+		goto free_eirp_list;
+	}
+
+free_eirp_list:
+	os_free(max_eirp_chandef_list);
+free_chandef_list:
+	os_free(available_chandef_list);
+
+	return ret;
 }
 
 /*
@@ -775,12 +1003,10 @@ static void set_csa_param(struct csa_settings *settings,
 int hostapd_intf_afc_received(struct hostapd_iface *iface)
 {
 	struct csa_settings settings;
-	struct hostapd_channel_data *chan_data = NULL;
-	struct hostapd_channel_data **available_chandef_list;
+	struct hostapd_channel_data *chan_data;
 	int ret = 0;
 	unsigned int i;
 	int chan_idx;
-	int num_available_chandefs;
 	int chan_width;
 	int new_chan_width;
 	int new_centre_freq;
@@ -789,33 +1015,17 @@ int hostapd_intf_afc_received(struct hostapd_iface *iface)
 	chan_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
 	wpa_printf(MSG_DEBUG, "chan_width=%d", chan_width);
 
-	available_chandef_list = os_zalloc(sizeof(struct hostapd_channel_data *) *
-			mode->num_channels);
-	if (!available_chandef_list) {
-		wpa_printf(MSG_ERROR, "available_chandef_list memory allocation failed");
-		ret = -1;
-		goto exit;
-	}
-
-	/* find a random channel to be switched */
-	num_available_chandefs = get_chanlist_for_bandwidth(iface, &chan_width,
-							    &available_chandef_list);
-	if (num_available_chandefs == 0) {
-		wpa_printf(MSG_ERROR, "AFC: no available_chandefs");
-		ret = -1;
-		goto exit;
-	}
-
-	if (get_random_channel(&chan_data, available_chandef_list, &chan_idx,
-			       num_available_chandefs)) {
-		ret = -1;
-		goto exit;
-	}
+	chan_data = os_zalloc(sizeof(struct hostapd_channel_data));
 	if (!chan_data) {
-		wpa_printf(MSG_ERROR, "AFC: channel info not available for chan_idx : %d",
-			   chan_idx);
+		wpa_printf(MSG_ERROR, "chan_data memory allocation failed");
 		ret = -1;
-		goto exit;
+		goto free_chan_data;
+	}
+
+	if (find_afc_random_chan(mode, iface, &chan_width,
+				 chan_data, &chan_idx)) {
+		ret = -1;
+		goto free_chan_data;
 	}
 
 	wpa_printf(MSG_DEBUG, "AFC: got random channel %d (%d)",
@@ -823,37 +1033,19 @@ int hostapd_intf_afc_received(struct hostapd_iface *iface)
 	new_chan_width = chan_width;
 	if (get_new_center_freq(chan_data, new_chan_width, &new_centre_freq)) {
 		ret = -1;
-		goto exit;
+		goto free_chan_data;
 	}
 
 	set_csa_param(&settings, chan_data, iface, new_chan_width, new_centre_freq);
-	if (is_6ghz_freq(settings.freq_params.freq) &&
-	    iface->conf->enable_best_power_mode && settings.power_mode == -1) {
-		int best_power_mode;
-
-		best_power_mode =
-			hostapd_get_best_ap_6ghz_power_mode(iface,
-							    settings.freq_params.freq,
-								settings.freq_params.center_freq1,
-								settings.freq_params.bandwidth,
-								settings.freq_params.punct_bitmap);
-		if (best_power_mode != NL80211_REG_NUM_POWER_MODES) {
-			settings.power_mode = best_power_mode;
-			iface->power_mode_6ghz_before_change = best_power_mode;
-			wpa_printf(MSG_DEBUG, "%s: Best power mode for Freq %d is %d",
-				   __func__,
-				   settings.freq_params.freq,
-				   settings.power_mode);
-		}
-	}
-
 	for (i = 0; i < iface->num_bss; i++) {
 		/* Save CHAN_SWITCH VHT and HE config */
 		hostapd_chan_switch_config(iface->bss[i], &settings.freq_params);
-		wpa_printf(MSG_DEBUG, "channel=%u, freq=%d, bw=%d, center_freq1=%d, power_mode=%d",
+		wpa_printf(MSG_DEBUG,
+			   "channel=%u, freq=%d, bw=%d, pp 0x%x, center_freq1=%d, power_mode=%d",
 			   settings.freq_params.channel,
 			   settings.freq_params.freq,
 			   settings.freq_params.bandwidth,
+			   settings.freq_params.punct_bitmap,
 			   settings.freq_params.center_freq1,
 			   settings.power_mode);
 
@@ -862,12 +1054,12 @@ int hostapd_intf_afc_received(struct hostapd_iface *iface)
 			/* FIX: What do we do if CSA fails in the middle of
 			 * submitting multi-BSS CSA requests?
 			 */
-			goto exit;
+			break;
 		}
 	}
 
-exit:
-	os_free(available_chandef_list);
+free_chan_data:
+	os_free(chan_data);
 
 	return ret;
 }

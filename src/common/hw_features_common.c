@@ -1018,6 +1018,19 @@ static const u16 punct_bitmap_320[] = {
 	0x03FF
 };
 
+u16 hostapd_get_num_pp(u16 bw)
+{
+	switch (bw) {
+	case 80:
+		return ARRAY_SIZE(punct_bitmap_80);
+	case 160:
+		return ARRAY_SIZE(punct_bitmap_160);
+	case 320:
+		return ARRAY_SIZE(punct_bitmap_320);
+	default:
+		return 1;
+	}
+}
 
 bool is_punct_bitmap_valid(u16 bw, u16 pri_ch_bit_pos, u16 punct_bitmap)
 {
