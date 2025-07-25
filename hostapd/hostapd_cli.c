@@ -1835,6 +1835,16 @@ static int hostapd_cli_cmd_advertised_ttlm(struct wpa_ctrl *ctrl,
 }
 #endif /* CONFIG_IEEE80211BE */
 
+static int hostapd_cli_cmd_afc(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc < 1) {
+		printf("Invalid AFC command: needs 1 argument atleast\n");
+		return -1;
+	}
+
+	return hostapd_cli_cmd(ctrl, "AFC", 1, argc, argv);
+}
+
 
 struct hostapd_cli_cmd {
 	const char *cmd;
@@ -2097,6 +2107,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	 "<addr>, [reset=], [policy_list=], Send unsolicited DSCP request"},
 	{ "chain_mask", hostapd_cli_cmd_chain_mask, NULL,
 	"<tx chain mask> <rx chain mask>" },
+	{ "afc", hostapd_cli_cmd_afc, NULL,
+	  "[set_afc_chan_sel_config|get_afc_chan_sel_config] <afc_chan_sel_config_value>" },
 	{ NULL, NULL, NULL, NULL }
 };
 

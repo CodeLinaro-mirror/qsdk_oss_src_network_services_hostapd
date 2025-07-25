@@ -2903,6 +2903,8 @@ enum he_reg_info_6ghz_ap_type {
 	HE_REG_INFO_6GHZ_AP_TYPE_MAX = HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP,
 };
 
+#define CHAN_MIN_EIRP_POWER -128
+
 static inline bool he_reg_is_indoor(enum he_reg_info_6ghz_ap_type type)
 {
 	return type == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR ||

@@ -45,6 +45,7 @@
 #include "beacon.h"
 #include "eloop.h"
 #include "hw_features.h"
+#include "interference.h"
 
 static bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
 {
@@ -768,6 +769,36 @@ exit:
 	return 0;
 }
 
+int hostapd_afc_handle_cli(struct hostapd_data *hapd, char *pos,
+			   char *buf, size_t buflen)
+{
+	int value, len = 0, ret;
+
+	if (os_strncmp(pos, "set_afc_chan_sel_config ", 24) == 0) {
+		value = (int)strtol(pos + 24, NULL, 16);
+		value &= HOSTAPD_AFC_CHAN_SEL_ALL;
+		hapd->iface->conf->afc_chan_sel_config = value;
+		wpa_printf(MSG_DEBUG,
+			   "AFC channel selection: Curchan Reg Power < Curchan AFC Power: %d, Curchan Reg Power = Curchan AFC Power: %d, Curchan Reg Power > Curchan AFC Power: %d",
+			   !!(value & HOSTAPD_AFC_CHAN_SEL_CUR_PWR_LT_AFC_PWR),
+			   !!(value & HOSTAPD_AFC_CHAN_SEL_CUR_PWR_EQ_AFC_PWR),
+			   !!(value & HOSTAPD_AFC_CHAN_SEL_CUR_PWR_GT_AFC_PWR));
+		ret = len;
+	} else if (os_strncmp(pos, "get_afc_chan_sel_config", 23) == 0) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  "AFC channel selection: %x",
+				  hapd->iface->conf->afc_chan_sel_config);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+		ret = len;
+	} else {
+		wpa_printf(MSG_ERROR, "invalid afc command");
+		ret = -1;
+	}
+
+	return ret;
+}
+
 static int get_random_channel(struct hostapd_channel_data *chan_data,
 			      struct hostapd_channel_data *available_chandef_list,
 			      int *chan_idx, int num_available_chandefs)
@@ -994,6 +1025,124 @@ free_chandef_list:
 }
 
 /*
+ * is_eirp_pwr_eq - This will return true if current and afc
+ * eirp is equal and afc_chan_sel_config has
+ * HOSTAPD_AFC_CHAN_SEL_CUR_PWR_EQ_AFC_PWR bit set.
+ *
+ * @cur_chan_eirp: Current eirp value
+ * @afc_eirp: AFC eirp value
+ * @iface: Pointer to hostapd iface
+ *
+ * Return: True/False
+ */
+static bool is_eirp_pwr_eq(int cur_chan_eirp, int afc_eirp,
+			   struct hostapd_iface *iface)
+{
+	return (cur_chan_eirp == afc_eirp) &&
+		(iface->conf->afc_chan_sel_config &
+		 HOSTAPD_AFC_CHAN_SEL_CUR_PWR_EQ_AFC_PWR);
+}
+
+/*
+ * is_eirp_pwr_lt - This will return true if current eirp is
+ * less than afc eirp and afc_chan_sel_config has
+ * HOSTAPD_AFC_CHAN_SEL_CUR_PWR_LT_AFC_PWR bit set.
+ *
+ * @cur_chan_eirp: Current eirp value
+ * @afc_eirp: AFC eirp value
+ * @iface: Pointer to hostapd iface
+ *
+ * Return: True/False
+ */
+static bool is_eirp_pwr_lt(int cur_chan_eirp, int afc_eirp,
+			   struct hostapd_iface *iface)
+{
+	return (cur_chan_eirp < afc_eirp) &&
+		(iface->conf->afc_chan_sel_config &
+		 HOSTAPD_AFC_CHAN_SEL_CUR_PWR_LT_AFC_PWR);
+}
+
+/*
+ * is_eirp_pwr_gt - This will return true if current eirp is
+ * greater than afc eirp and afc_chan_sel_config has
+ * HOSTAPD_AFC_CHAN_SEL_CUR_PWR_GT_AFC_PWR bit set.
+ *
+ * @cur_chan_eirp: Current eirp value
+ * @afc_eirp: AFC eirp value
+ * @iface: Pointer to hostapd iface
+ *
+ * Return: True/False
+ */
+static bool is_eirp_pwr_gt(int cur_chan_eirp, int afc_eirp,
+			   struct hostapd_iface *iface)
+{
+	return (cur_chan_eirp > afc_eirp) &&
+		(iface->conf->afc_chan_sel_config &
+		 HOSTAPD_AFC_CHAN_SEL_CUR_PWR_GT_AFC_PWR);
+}
+
+/*
+ * is_afc_pwr_config_valid - This will compare afc eirp and
+ * current eirp and return true if corresponding condition is true.
+ *
+ * @cur_chan_eirp: Current eirp value
+ * @afc_eirp: AFC eirp value
+ * @iface: Pointer to hostapd iface
+ *
+ * Return: True/False
+ */
+static bool is_afc_pwr_config_valid(int cur_chan_eirp, int afc_eirp,
+				    struct hostapd_iface *iface)
+{
+	return is_eirp_pwr_eq(cur_chan_eirp, afc_eirp, iface) ||
+		is_eirp_pwr_lt(cur_chan_eirp, afc_eirp, iface) ||
+		is_eirp_pwr_gt(cur_chan_eirp, afc_eirp, iface);
+}
+
+/*
+ * validate_afc_trigger - This function is invoked when an
+ * AFC request is received. It performs the following validations:
+ * 1. Validates the request based on the channel selection configuration
+ *    set by the user.
+ * 2. Compares the current EIRP with the AFC-provided EIRP:
+ *    - If the current EIRP is greater than, less than, or equal to the
+ *    AFC EIRP, the corresponding comparison flag must be set.
+ * 3. If the relevant comparison flag is not set, the function returns false.
+ *    Otherwise, it returns true.
+ *
+ * @iface: Pointer to hostapd iface
+ *
+ * Return: True/False
+ */
+static bool validate_afc_trigger(struct hostapd_iface *iface)
+{
+	int afc_eirp;
+	bool ret = false;
+	int cur_chan_eirp = iface->conf->cur_chan_eirp;
+	enum chan_width ch_width;
+	u8 center_chan_no;
+	u16 center_freq;
+
+	ch_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
+	center_chan_no = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
+	center_freq = ieee80211_chan_to_freq(NULL,
+					     iface->conf->op_class,
+					     center_chan_no);
+	afc_eirp = hostapd_get_eirp_pwr(iface,
+					iface->freq, center_freq,
+					channel_width_to_int(ch_width),
+					iface->conf->punct_bitmap,
+					iface->conf->he_6ghz_reg_pwr_type,
+					false,
+					NL80211_REG_NUM_POWER_MODES,
+					false);
+
+	ret = is_afc_pwr_config_valid(cur_chan_eirp, afc_eirp, iface);
+
+	return ret;
+}
+
+/*
  * hostapd_intf_afc_received- afc request is recieved.
  * select random channel according to the availbilty .
  * starting with sp , if sp not possible than LPI, if LPI not
@@ -1011,6 +1160,11 @@ int hostapd_intf_afc_received(struct hostapd_iface *iface)
 	int new_chan_width;
 	int new_centre_freq;
 	struct hostapd_hw_modes *mode = iface->current_mode;
+
+	if (!validate_afc_trigger(iface)) {
+		wpa_printf(MSG_ERROR, "AFC: AFC trigger cannot be processed");
+		return -1;
+	}
 
 	chan_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
 	wpa_printf(MSG_DEBUG, "chan_width=%d", chan_width);

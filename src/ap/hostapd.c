@@ -3126,7 +3126,14 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 		hostapd_apply_6ghz_dynamic_puncturing(iface);
 		if (is_6ghz_freq(iface->freq) && iface->conf->enable_best_power_mode) {
 			u8 best_power_mode;
+			enum chan_width ch_width;
+			u8 center_chan_no;
+			u16 center_freq;
 
+			ch_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
+			center_chan_no = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
+			center_freq = ieee80211_chan_to_freq(NULL, iface->conf->op_class,
+							     center_chan_no);
 			best_power_mode = hostapd_get_best_ap_6ghz_power_mode_for_iface(iface);
 			if (best_power_mode != NL80211_REG_NUM_POWER_MODES) {
 				iface->conf->he_6ghz_reg_pwr_type = best_power_mode;
@@ -3134,6 +3141,16 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 					   "%s: Best power mode for Freq %d is %d",
 					   __func__,
 					   iface->freq, best_power_mode);
+				iface->conf->cur_chan_eirp =
+					hostapd_get_eirp_pwr(iface,
+							     iface->freq,
+							     center_freq,
+							     channel_width_to_int(ch_width),
+							     iface->conf->punct_bitmap,
+							     best_power_mode,
+							     false,
+							     NL80211_REG_NUM_POWER_MODES,
+							     false);
 			}
 		}
 

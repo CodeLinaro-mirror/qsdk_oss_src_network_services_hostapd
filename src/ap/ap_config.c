@@ -23,7 +23,7 @@
 #include "sta_info.h"
 #include "airtime_policy.h"
 #include "ap_config.h"
-
+#include "interference.h"
 
 static void hostapd_config_free_vlan(struct hostapd_bss_config *bss)
 {
@@ -374,6 +374,8 @@ struct hostapd_config * hostapd_config_defaults(void)
 #endif /* CONFIG_AIRTIME_POLICY */
 	conf->group_size = MULTI_MBSSID_GROUP_SIZE_DEFAULT;
 	conf->enable_6ghz_composite_ap = 1;
+	conf->cur_chan_eirp = CHAN_MIN_EIRP_POWER;
+	conf->afc_chan_sel_config = HOSTAPD_AFC_CHAN_SEL_ALL;
 
 	hostapd_set_and_check_bw320_offset(conf, 0);
 

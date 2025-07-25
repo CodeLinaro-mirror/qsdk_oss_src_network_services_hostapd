@@ -1354,6 +1354,8 @@ struct hostapd_config {
 	 */
 	bool enable_6ghz_composite_ap;
 	bool enable_mcs15;
+	int afc_chan_sel_config;
+	int cur_chan_eirp;
 
 	/* Set I2R LMR policy to allow LMR response from ISTA */
 	bool i2r_lmr_policy;

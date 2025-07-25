@@ -1382,4 +1382,18 @@ hostapd_reg_get_psd_from_chan_list(struct hostapd_iface *iface, u16 freq,
  */
 const u16 *
 hostapd_get_valid_puncture_pattern_arr(u16 bw, u16 *num_pp, u16 *pp_mask);
+
+/*
+ * hostapd_afc_handle_cli - This CLI handler to set or get the afc channel
+ * selection config
+ *
+ * @hapd: Pointer to hostapd data structure
+ * @pos: Starting position of the buffer
+ * @buf: Data buffer
+ * @buflen: Data buffer length
+ *
+ * Return: Response length
+ */
+int hostapd_afc_handle_cli(struct hostapd_data *hapd, char *pos,
+			   char *buf, size_t buflen);
 #endif /* HOSTAPD_H */
