@@ -1310,6 +1310,9 @@ struct hostapd_config {
 
 #ifdef CONFIG_ATF_OFFLOAD
 	bool atf_offload;
+	bool commitatf;
+	char *atf_offload_config;
+	bool atf_ssid_grp;
 #endif /* CONFIG_ATF_OFFLOAD */
 
 	int ieee80211be;

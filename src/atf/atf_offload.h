@@ -16,6 +16,29 @@
 #include "utils/common.h"
 #include "utils/list.h"
 
+#define ATF_INVALID_GROUP_ID 0xFF
+#define ATF_MAX_SSID_GROUP 16
+#define WLAN_SSID_MAX 16
+#define WLAN_SSID_MAX_LEN SSID_MAX_LEN
+
+/**
+ * @struct atf_group - configurations of each atf group which
+ * 		       consist one or more ssids.
+ */
+
+struct atf_group {
+	struct atf_algo *algo;
+	u8 index;
+	char name[WLAN_SSID_MAX_LEN + 1];
+
+	u32 num_of_ssid;
+	char ssidname[WLAN_SSID_MAX][WLAN_SSID_MAX_LEN + 1];
+	u32 user_cfg_airtime;
+
+	/* add this node to atf_algo */
+	struct dl_list list;
+};
+
 /**
  * @struct atf_algo - per-radio specific atf algorithm
  */
@@ -27,6 +50,15 @@ struct atf_algo {
 	 * algo_list
 	 */
 	struct dl_list list;
+	struct dl_list groups;
+	u8 num_group_cfg;
+	bool atf_enabled;
+
+	/* Feature flags */
+	bool ssid_group_enabled;
+
+	/* used for ATF config parsing*/
+	struct atf_group *last_group;
 };
 
 /**
@@ -45,6 +77,15 @@ void atf_offload_deinit(void);
 void atf_init_algo(struct hostapd_iface *iface);
 
 void atf_deinit_algo(struct hostapd_iface *iface);
+
+struct atf_group *atf_allocate_group(const char *name, struct atf_algo *algo);
+
+void atf_free_group(struct atf_group *group);
+
+struct atf_group *atf_find_group_by_name(const char *name, struct atf_algo *algo);
+
+void
+atf_free_algo_configs(struct atf_algo *algo);
 
 #else
 

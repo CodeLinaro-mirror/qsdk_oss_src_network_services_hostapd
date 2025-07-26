@@ -23,8 +23,125 @@
 #include "ap/sta_info.h"
 
 #include "atf_offload.h"
+#include "atf_offload_config.h"
 
 struct atf_offload *atf = NULL;
+
+int
+atf_add_ssid_to_group(struct atf_group *group, const char *name)
+{
+	if (group->num_of_ssid == WLAN_SSID_MAX)
+		return -1;
+
+	wpa_printf(MSG_INFO, "ATF: Adding %s  to group %s", name, group->name);
+	os_strlcpy(group->ssidname[group->num_of_ssid], name, WLAN_SSID_MAX_LEN);
+	group->num_of_ssid++;
+
+	return 0;
+}
+
+
+struct atf_group *
+atf_allocate_group(const char *name, struct atf_algo *algo)
+{
+	struct atf_group *group;
+
+	if (algo->num_group_cfg >= ATF_MAX_SSID_GROUP)
+		return NULL;
+
+	group = os_zalloc(sizeof(struct atf_group));
+	if (!group)
+		return NULL;
+
+	group->index = algo->num_group_cfg;
+	os_strlcpy(group->name, name, sizeof(group->name));
+
+	dl_list_init(&group->list);
+	dl_list_add(&algo->groups, &group->list);
+	group->algo = algo;
+	algo->num_group_cfg++;
+
+	wpa_printf(MSG_INFO, "ATF: Added group %s [%d], no of groups %d", group->name,
+	           group->index, algo->num_group_cfg);
+
+	return group;
+}
+
+
+void
+atf_free_group(struct atf_group *group)
+{
+	struct atf_algo *algo = group->algo;
+
+	if (!algo->num_group_cfg)
+		return;
+
+	algo->num_group_cfg--;
+	dl_list_del(&group->list);
+	os_free(group);
+	group = NULL;
+}
+
+
+static void
+atf_free_group_configs(struct atf_algo *algo)
+{
+	struct atf_group *group, *tmp;
+
+	if (dl_list_empty(&algo->groups))
+		return;
+
+	dl_list_for_each_safe(group, tmp, &algo->groups, struct atf_group, list)
+		atf_free_group(group);
+}
+
+
+void
+atf_free_algo_configs(struct atf_algo *algo)
+{
+
+	atf_free_group_configs(algo);
+
+	/* Ensure list is empty after removing all group configs.
+	 * if list is not empty, something is corrupted.
+	 */
+	if (!dl_list_empty(&algo->groups)) {
+		wpa_printf(MSG_ERROR, "ATF: Unexpected! group config is not cleared.\n");
+	}
+
+	algo->num_group_cfg = 0;
+	dl_list_init(&algo->groups);
+}
+
+
+struct atf_group *
+atf_find_group_by_name(const char *name, struct atf_algo *algo)
+{
+	struct atf_group *group;
+
+	if (!name)
+		return NULL;
+
+	if (!algo) {
+		wpa_printf(MSG_ERROR, "ATF: %s: algo is NULL", __func__);
+		return NULL;
+	}
+
+	if (dl_list_empty(&algo->groups)) {
+		wpa_printf(MSG_ERROR, "ATF: %s: group list is empty", __func__);
+		return NULL;
+	}
+
+	dl_list_for_each(group, &algo->groups, struct atf_group, list)
+	{
+		size_t len = strlen(group->name);
+		if (strlen(name) == len && os_strncmp(name, group->name, len) == 0)
+			return group;
+	}
+
+	return NULL;
+}
+
 
 void
 atf_cleanup_algo(struct atf_algo *algo)
@@ -32,6 +149,7 @@ atf_cleanup_algo(struct atf_algo *algo)
 	if (!algo)
 		return;
 
+	atf_free_algo_configs(algo);
 	dl_list_del(&algo->list);
 	os_free(algo);
 	algo = NULL;
@@ -50,6 +168,8 @@ atf_allocate_algo()
 	wpa_printf(MSG_DEBUG, "ATF: Allocated new algo structure for atf offload\n");
 	dl_list_init(&algo->list);
 	dl_list_add(&atf->algo_list, &algo->list);
+	algo->num_group_cfg = 0;
+	dl_list_init(&algo->groups);
 
 	return algo;
 }
@@ -75,6 +195,7 @@ void
 atf_init_algo(struct hostapd_iface *iface)
 {
 	struct atf_algo *algo;
+	struct atf_group *group;
 
 	if (!iface->conf->atf_offload)
 		return;
@@ -87,6 +208,20 @@ atf_init_algo(struct hostapd_iface *iface)
 
 	iface->atf_algo = algo;
 	algo->iface = iface;
+	algo->atf_enabled = iface->conf->commitatf;
+	algo->ssid_group_enabled = iface->conf->atf_ssid_grp;
+
+	if (iface->conf->atf_offload_config)
+		if (atf_read_config(algo, iface->conf->atf_offload_config))
+			wpa_printf(MSG_DEBUG, "ATF: could not read %s, expect issues",
+			           iface->conf->atf_offload_config);
+
+	wpa_printf(MSG_DEBUG, "ATF: allocating default group for %p", algo);
+	group = atf_allocate_group("default-group", algo);
+	if (!group) {
+		wpa_printf(MSG_ERROR, "ATF: Could not allocate default group");
+		return;
+	}
 }
 
 

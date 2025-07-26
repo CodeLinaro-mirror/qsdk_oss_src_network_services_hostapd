@@ -1116,6 +1116,10 @@ void hostapd_config_free(struct hostapd_config *conf)
 	wpabuf_free(conf->lci);
 	wpabuf_free(conf->civic);
 
+#ifdef CONFIG_ATF_OFFLOAD
+	os_free(conf->atf_offload_config);
+#endif /* CONFIG_ATF_OFFLOAD */
+
 	os_free(conf);
 }
 

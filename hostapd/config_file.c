@@ -4754,16 +4754,45 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 #endif /* CONFIG_AIRTIME_POLICY */
 #ifdef CONFIG_ATF_OFFLOAD
-        } else if (os_strcmp(buf, "atf_offload") == 0) {
-                int val = atoi(pos);
+	} else if (os_strcmp(buf, "atf_offload") == 0) {
+		int val = atoi(pos);
 
-                if (val < 0 || val > 1) {
-                        wpa_printf(MSG_INFO,
-                                        "Line %d: Invalid atf_offload (must be 0 or 1)",
-                                        line);
-                        return 1;
-                }
-                conf->atf_offload = val;
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_INFO,
+				   "Line %d: Invalid atf_offload (must be 0 or 1)",
+				   line);
+			return 1;
+		}
+		conf->atf_offload = val;
+	} else if (os_strcmp(buf, "atf_offload_config") == 0) {
+		if (*pos != '\0') {
+			os_free(conf->atf_offload_config);
+			conf->atf_offload_config = os_strdup(pos);
+		} else {
+			wpa_printf(MSG_ERROR, "atf_offload_config file not configured");
+		}
+
+	} else if (os_strcmp(buf, "commitatf") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid commitatf (must be 0 or 1)",
+				   line);
+			return 1;
+		}
+		conf->commitatf = val;
+	} else if (os_strcmp(buf, "atfssidgroup") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid atfssidgroup (must be 0 or 1)",
+				   line);
+			return 1;
+		}
+		conf->atf_ssid_grp = val;
+
 #endif /* CONFIG_ATF_OFFLOAD */
 #ifdef CONFIG_MACSEC
 	} else if (os_strcmp(buf, "macsec_policy") == 0) {
