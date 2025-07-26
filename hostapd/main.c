@@ -34,6 +34,7 @@
 #include "ctrl_iface.h"
 #include "build_features.h"
 #include "ap/robust_av.h"
+#include "atf/atf_offload.h"
 
 struct hapd_global {
 	void **drv_priv;
@@ -1115,6 +1116,8 @@ int main(int argc, char *argv[])
 			goto out;
 	}
 
+	atf_offload_init(&interfaces);
+
 	hostapd_global_ctrl_iface_init(&interfaces);
 	hostapd_ucode_init(&interfaces);
 
@@ -1161,6 +1164,8 @@ int main(int argc, char *argv[])
 	os_free(interfaces.iface);
 	interfaces.iface = NULL;
 	interfaces.count = 0;
+
+	atf_offload_deinit();
 
 	hostapd_global_cleanup_mld(&interfaces);
 	hostapd_ucode_free();

@@ -23,6 +23,7 @@
 #include "ubus.h"
 #include "ucode.h"
 #include "ttlm.h"
+#include "atf/atf_offload.h"
 
 #define OCE_STA_CFON_ENABLED(hapd) \
 	((hapd->conf->oce & OCE_STA_CFON) && \
@@ -117,6 +118,9 @@ struct hapd_interfaces {
 #ifdef CONFIG_PROCESS_COORDINATION
 	struct proc_coord *pc;
 #endif /* CONFIG_PROCESS_COORDINATION */
+#ifdef CONFIG_ATF_OFFLOAD
+	struct atf_offload atf;
+#endif
 };
 
 enum hostapd_chan_status {
@@ -852,6 +856,10 @@ struct hostapd_iface {
 #ifdef CONFIG_AIRTIME_POLICY
 	unsigned int airtime_quantum;
 #endif /* CONFIG_AIRTIME_POLICY */
+
+#ifdef CONFIG_ATF_OFFLOAD
+	struct atf_algo *atf_algo;
+#endif /* CONFIG_ATF_OFFLOAD */
 
 	/* Maximum number of interfaces supported for MBSSID advertisement */
 	unsigned int mbssid_max_interfaces;
