@@ -27,6 +27,75 @@
 
 struct atf_offload *atf = NULL;
 
+struct atf_ssid_config *
+atf_allocate_ssid_config(char *name, struct atf_algo *algo)
+{
+	struct atf_ssid_config *ssid_config;
+
+	if (algo->num_ssid_cfg >= ATF_MAX_SSID)
+		return NULL;
+
+	ssid_config = os_zalloc(sizeof(struct atf_ssid_config));
+	if (!ssid_config)
+		return NULL;
+
+	os_strlcpy(ssid_config->name, name, sizeof(ssid_config->name));
+	dl_list_init(&ssid_config->list);
+	dl_list_add(&algo->ssid_cfgs, &ssid_config->list);
+	ssid_config->algo = algo;
+	algo->num_ssid_cfg++;
+
+	wpa_printf(MSG_INFO, "ATF: Added ssid config %s [%d]", ssid_config->name,
+	           algo->num_ssid_cfg);
+
+	return ssid_config;
+}
+
+
+void
+atf_free_ssid_config(struct atf_ssid_config *ssid)
+{
+	struct atf_algo *algo;
+
+	if (!ssid) {
+		wpa_printf(MSG_INFO, "ATF: %s ssid_config is NULL", __func__);
+		return;
+	}
+
+	algo = ssid->algo;
+	if (!algo->num_ssid_cfg)
+		return;
+
+	algo->num_ssid_cfg--;
+	dl_list_del(&ssid->list);
+	os_free(ssid);
+}
+
+
+struct atf_ssid_config *
+atf_find_ssid_config_by_name(char *name, struct atf_algo *algo)
+{
+
+	struct atf_ssid_config *ssid;
+
+	if (!name || !algo) {
+		wpa_printf(MSG_ERROR, "ATF: %s invalid arguments", __func__);
+		return NULL;
+	}
+
+	if (dl_list_empty(&algo->ssid_cfgs))
+		return NULL;
+
+	dl_list_for_each(ssid, &algo->ssid_cfgs, struct atf_ssid_config, list)
+	{
+		size_t len = strlen(ssid->name);
+		if (strlen(name) == len && os_strncmp(name, ssid->name, len) == 0)
+			return ssid;
+	}
+	return NULL;
+}
+
+
 int
 atf_add_ssid_to_group(struct atf_group *group, const char *name)
 {
@@ -84,6 +153,21 @@ atf_free_group(struct atf_group *group)
 
 
 static void
+atf_free_ssid_configs(struct atf_algo *algo)
+{
+	struct atf_ssid_config *ssid_cfg, *tmp;
+
+	if (dl_list_empty(&algo->ssid_cfgs))
+		return;
+
+	dl_list_for_each_safe(ssid_cfg, tmp, &algo->ssid_cfgs, struct atf_ssid_config,
+	                      list)
+	{
+		atf_free_ssid_config(ssid_cfg);
+	}
+}
+
+static void
 atf_free_group_configs(struct atf_algo *algo)
 {
 	struct atf_group *group, *tmp;
@@ -99,6 +183,17 @@ atf_free_group_configs(struct atf_algo *algo)
 void
 atf_free_algo_configs(struct atf_algo *algo)
 {
+
+	atf_free_ssid_configs(algo);
+
+	/* Ensure ssid config list is empty after the cleanup.
+	 * if list is not empty, list is corrupted.
+	 */
+	if (!dl_list_empty(&algo->ssid_cfgs)) {
+		wpa_printf(MSG_ERROR, "ATF: Unexpected! ssid config is not cleared!\n");
+	}
+	algo->num_ssid_cfg = 0;
+	dl_list_init(&algo->ssid_cfgs);
 
 	atf_free_group_configs(algo);
 
@@ -170,6 +265,8 @@ atf_allocate_algo()
 	dl_list_add(&atf->algo_list, &algo->list);
 	algo->num_group_cfg = 0;
 	dl_list_init(&algo->groups);
+	algo->num_ssid_cfg = 0;
+	dl_list_init(&algo->ssid_cfgs);
 
 	return algo;
 }

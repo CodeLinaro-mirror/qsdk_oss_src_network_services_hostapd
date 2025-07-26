@@ -75,6 +75,7 @@ atf_read_config(struct atf_algo *algo, const char *conf_file)
 	char buffer[4096], *pos;
 	int line = 0, invalid_config = 0, error = 0;
 	struct atf_group *atf_group;
+	struct atf_ssid_config *ssid_config;
 	int val;
 
 	if (!conf_file || !algo)
@@ -190,6 +191,78 @@ atf_read_config(struct atf_algo *algo, const char *conf_file)
 				continue;
 			}
 			atf_free_group(atf_group);
+		} else if (os_strcmp(buffer, "atf-ssid") == 0) {
+
+			if (algo->ssid_group_enabled) {
+				wpa_printf(MSG_ERROR, "ATF: ssid config is not allowed when ssid group is enabled");
+				invalid_config++;
+				continue;
+			}
+
+			ssid_config = atf_find_ssid_config_by_name(pos, algo);
+			if (!ssid_config) {
+				ssid_config = atf_allocate_ssid_config(pos, algo);
+				if (!ssid_config) {
+					wpa_printf(MSG_ERROR, "ATF: could not allocate ssid config");
+					error++;
+					goto exit;
+				}
+
+				/* Add group for each ssid, this group
+				 * will be used in distribution algorithm
+				 */
+				atf_group = atf_allocate_group(pos, algo);
+				if (!atf_group) {
+					wpa_printf(MSG_ERROR, "ATF: could not allocate group for ssid config");
+					error++;
+					goto exit;
+				}
+			} else {
+				atf_group = atf_find_group_by_name(pos, algo);
+				if (!atf_group) {
+					wpa_printf(MSG_ERROR, "ATF: group not found for %s", pos);
+					error++;
+					goto exit;
+				}
+			}
+			algo->last_ssid_cfg = ssid_config;
+			algo->last_group = atf_group;
+		} else if (os_strcmp(buffer, "atf-ssid-airtime") == 0) {
+			if (algo->ssid_group_enabled) {
+				wpa_printf(MSG_ERROR, "ATF: ssid config is not allowed when ssid group is enabled");
+				invalid_config++;
+				continue;
+			}
+
+			val = atoi(pos);
+			if (val < 0 || val > 100) {
+				wpa_printf(MSG_ERROR, "ATF: incorrect airtime");
+				invalid_config++;
+				continue;
+			}
+			algo->last_ssid_cfg->user_cfg_airtime = algo->last_group->user_cfg_airtime = val;
+		} else if (os_strcmp(buffer, "atf-del-ssid") == 0) {
+			if (algo->ssid_group_enabled) {
+				wpa_printf(MSG_ERROR, "ATF: ssid config is not allowed when ssid group is enabled");
+				invalid_config++;
+				continue;
+			}
+
+			atf_group = atf_find_group_by_name(pos, algo);
+			if (!atf_group) {
+				wpa_printf(MSG_ERROR, "ATF: group not found for %s", pos);
+				invalid_config++;
+				continue;
+			}
+			atf_free_group(atf_group);
+
+			ssid_config = atf_find_ssid_config_by_name(pos, algo);
+			if (!ssid_config) {
+				wpa_printf(MSG_ERROR, "ATF: could not find ssid_config");
+				invalid_config++;
+				continue;
+			}
+			atf_free_ssid_config(ssid_config);
 		}
 	}
 
