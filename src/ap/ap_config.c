@@ -1142,6 +1142,10 @@ void hostapd_config_free(struct hostapd_config *conf)
 	os_free(conf->afc.op_class);
 #endif /* CONFIG_AFC */
 
+#ifdef CONFIG_ATF_OFFLOAD
+	os_free(conf->atf_offload_config);
+#endif /* CONFIG_ATF_OFFLOAD */
+
 	os_free(conf);
 }
 

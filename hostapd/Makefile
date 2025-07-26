@@ -410,6 +410,7 @@ endif
 ifdef CONFIG_ATF_OFFLOAD
 CFLAGS += -DCONFIG_ATF_OFFLOAD
 OBJS += ../src/atf/atf_offload.o
+OBJS += ../src/atf/atf_offload_config.o
 endif
 
 ifndef MULTICALL
