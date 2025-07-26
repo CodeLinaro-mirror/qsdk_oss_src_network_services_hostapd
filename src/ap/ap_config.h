@@ -1308,6 +1308,10 @@ struct hostapd_config {
 #define AIRTIME_MODE_MAX (__AIRTIME_MODE_MAX - 1)
 #endif /* CONFIG_AIRTIME_POLICY */
 
+#ifdef CONFIG_ATF_OFFLOAD
+	bool atf_offload;
+#endif /* CONFIG_ATF_OFFLOAD */
+
 	int ieee80211be;
 #ifdef CONFIG_IEEE80211BE
 	enum oper_chan_width eht_oper_chwidth;

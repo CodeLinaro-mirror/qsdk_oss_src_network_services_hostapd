@@ -4753,6 +4753,18 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 #endif /* CONFIG_AIRTIME_POLICY */
+#ifdef CONFIG_ATF_OFFLOAD
+        } else if (os_strcmp(buf, "atf_offload") == 0) {
+                int val = atoi(pos);
+
+                if (val < 0 || val > 1) {
+                        wpa_printf(MSG_INFO,
+                                        "Line %d: Invalid atf_offload (must be 0 or 1)",
+                                        line);
+                        return 1;
+                }
+                conf->atf_offload = val;
+#endif /* CONFIG_ATF_OFFLOAD */
 #ifdef CONFIG_MACSEC
 	} else if (os_strcmp(buf, "macsec_policy") == 0) {
 		int macsec_policy = atoi(pos);

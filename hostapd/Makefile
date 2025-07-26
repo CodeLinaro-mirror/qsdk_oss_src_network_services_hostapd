@@ -391,6 +391,11 @@ CFLAGS += -DCONFIG_MBO
 OBJS += ../src/ap/mbo_ap.o
 endif
 
+ifdef CONFIG_ATF_OFFLOAD
+CFLAGS += -DCONFIG_ATF_OFFLOAD
+OBJS += ../src/atf/atf_offload.o
+endif
+
 ifndef MULTICALL
 CFLAGS += -DNO_SUPPLICANT
 endif

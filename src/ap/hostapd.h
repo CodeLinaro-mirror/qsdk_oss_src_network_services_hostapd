@@ -21,6 +21,8 @@
 #include "ubus.h"
 #include "ucode.h"
 #include "ttlm.h"
+#include "atf/atf_offload.h"
+
 
 #define OCE_STA_CFON_ENABLED(hapd) \
 	((hapd->conf->oce & OCE_STA_CFON) && \
@@ -110,6 +112,10 @@ struct hapd_interfaces {
 	int (*mld_ctrl_iface_init)(struct hostapd_mld *mld);
 	void (*mld_ctrl_iface_deinit)(struct hostapd_mld *mld);
 #endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_ATF_OFFLOAD
+	struct atf_offload atf;
+#endif
 };
 
 enum hostapd_chan_status {
@@ -839,6 +845,10 @@ struct hostapd_iface {
 #ifdef CONFIG_AIRTIME_POLICY
 	unsigned int airtime_quantum;
 #endif /* CONFIG_AIRTIME_POLICY */
+
+#ifdef CONFIG_ATF_OFFLOAD
+        struct atf_algo *atf_algo;
+#endif /* CONFIG_ATF_OFFLOAD */
 
 	/* Previous WMM element information */
 	struct hostapd_wmm_ac_params prev_wmm[WMM_AC_NUM];

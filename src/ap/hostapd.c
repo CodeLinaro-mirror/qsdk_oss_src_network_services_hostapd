@@ -60,6 +60,7 @@
 #include "hw_features.h"
 #include "interference.h"
 #include "robust_av.h"
+#include "atf/atf_offload.h"
 
 static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason);
 #ifdef CONFIG_WEP
@@ -1120,6 +1121,9 @@ static void hostapd_cleanup_iface(struct hostapd_iface *iface)
 			     NULL);
 
 	hostapd_cleanup_iface_partial(iface);
+
+	atf_deinit_algo(iface);
+
 	hostapd_config_free(iface->conf);
 	iface->conf = NULL;
 
@@ -4085,6 +4089,9 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 	}
 
 	hapd_iface->is_ch_switch_dfs = false;
+
+	atf_init_algo(hapd_iface);
+
 	return hapd_iface;
 
 fail:
