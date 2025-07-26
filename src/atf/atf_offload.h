@@ -20,6 +20,21 @@
 #define ATF_MAX_SSID_GROUP 16
 #define WLAN_SSID_MAX 16
 #define WLAN_SSID_MAX_LEN SSID_MAX_LEN
+#define ATF_MAX_SSID 16
+
+/**
+ * @struct atf_ssid_config - per ssid config when group is not enabled.
+ */
+struct atf_ssid_config {
+	struct atf_algo *algo;
+	struct atf_group *group;
+	char ifname[IFNAMSIZ + 1];
+	char name[WLAN_SSID_MAX_LEN + 1];
+	u32 user_cfg_airtime;
+
+	/* add this node to atf_algo */
+	struct dl_list list;
+};
 
 struct atf_group {
 	struct atf_algo *algo;
@@ -47,8 +62,11 @@ struct atf_algo {
 	struct dl_list groups;
 	u8 num_group_cfg;
 	bool atf_enabled;
+	struct dl_list ssid_cfgs;
+	u8 num_ssid_cfg;
 	bool ssid_group_enabled;
 	struct atf_group *last_group;
+	struct atf_ssid_config *last_ssid_cfg;
 };
 
 /**
@@ -69,6 +87,10 @@ struct atf_group *atf_allocate_group(const char *name, struct atf_algo *algo);
 void atf_free_group(struct atf_group *group);
 struct atf_group *atf_find_group_by_name(const char *name, struct atf_algo *algo);
 void atf_free_algo_configs(struct atf_algo *algo);
+
+struct atf_ssid_config *atf_find_ssid_config_by_name(char *name, struct atf_algo *algo);
+struct atf_ssid_config *atf_allocate_ssid_config(char *name, struct atf_algo *algo);
+void atf_free_ssid_config(struct atf_ssid_config *ssid);
 
 #else
 
