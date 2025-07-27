@@ -4792,7 +4792,28 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		conf->atf_ssid_grp = val;
+	} else if (os_strcmp(buf, "atfssidsched") == 0) {
+		int val = atoi(pos);
 
+		if (val < 0 || val > 2) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid atfssidsched", line);
+			wpa_printf(MSG_ERROR,
+				   "set 0 for 'Fair',1 for 'Strict' or '2' for 'fair with Upper bound");
+			return 1;
+		}
+
+		bss->atf_ssid_sched = val;
+	} else if (os_strcmp(buf, "atfstrictsched") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid atfstrictsched (must be 0 or 1)",
+				   line);
+			return 1;
+		}
+
+		conf->atf_strict_sched = val;
 #endif /* CONFIG_ATF_OFFLOAD */
 #ifdef CONFIG_MACSEC
 	} else if (os_strcmp(buf, "macsec_policy") == 0) {

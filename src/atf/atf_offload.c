@@ -411,6 +411,7 @@ atf_init_algo(struct hostapd_iface *iface)
 	algo->iface = iface;
 	algo->atf_enabled = iface->conf->commitatf;
 	algo->ssid_group_enabled = iface->conf->atf_ssid_grp;
+	algo->atfstrictsched_enabled = iface->conf->atf_strict_sched;
 
 	if (iface->conf->atf_offload_config)
 		if (atf_read_config(algo, iface->conf->atf_offload_config))

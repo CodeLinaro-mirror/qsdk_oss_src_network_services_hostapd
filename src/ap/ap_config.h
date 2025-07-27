@@ -819,6 +819,10 @@ struct hostapd_bss_config {
 	struct airtime_sta_weight *airtime_weight_list;
 #endif /* CONFIG_AIRTIME_POLICY */
 
+#ifdef CONFIG_ATF_OFFLOAD
+	u8 atf_ssid_sched;
+#endif /* CONFIG_ATF_OFFLOAD */
+
 #ifdef CONFIG_MACSEC
 	/**
 	 * macsec_policy - Determines the policy for MACsec secure session
@@ -1313,6 +1317,7 @@ struct hostapd_config {
 	bool commitatf;
 	char *atf_offload_config;
 	bool atf_ssid_grp;
+	bool atf_strict_sched;
 #endif /* CONFIG_ATF_OFFLOAD */
 
 	int ieee80211be;

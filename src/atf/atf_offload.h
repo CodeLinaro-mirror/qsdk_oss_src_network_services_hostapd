@@ -92,6 +92,7 @@ struct atf_algo {
 
 	/* Feature flags */
 	bool ssid_group_enabled;
+	bool atfstrictsched_enabled;
 
 	/* used for ATF config parsing*/
 	struct atf_group *last_group;
