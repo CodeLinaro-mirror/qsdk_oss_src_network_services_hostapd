@@ -558,6 +558,9 @@ struct hostapd_data {
 	unsigned int num_backlogged_sta;
 	unsigned int airtime_weight;
 #endif /* CONFIG_AIRTIME_POLICY */
+#ifdef CONFIG_ATF_OFFLOAD
+        bool atf_configured;
+#endif
 
 	u8 last_1x_eapol_key_replay_counter[8];
 

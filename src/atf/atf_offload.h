@@ -128,6 +128,17 @@ struct atf_group {
 
 	/* add this node to atf_algo */
 	struct dl_list list;
+
+	/* used in ATF distribution logic */
+	struct dl_list implicit_peers;
+	u16 num_impl_peers;
+	struct dl_list explicit_peers;
+	u16 num_expl_peers;
+	u32 calculated_airtime;
+	u32 total_explicit_airtime;
+
+	/* set when ssid is valid and up and running */
+	bool is_configured;
 };
 
 /**
@@ -157,6 +168,9 @@ struct atf_algo {
 	enum atf_offload_update_flag update_flag;
 	/*Flag to indicate update task scheduled */
 	bool atf_tasksched;
+
+	/* no. of peers to be updated to driver*/
+	u16 no_of_peers;
 
 	/* used for ATF config parsing*/
 	struct atf_group *last_group;

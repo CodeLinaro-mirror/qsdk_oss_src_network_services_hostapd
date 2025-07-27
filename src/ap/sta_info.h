@@ -329,6 +329,7 @@ struct sta_info {
 #endif /* CONFIG_AIRTIME_POLICY */
 #ifdef CONFIG_ATF_OFFLOAD
         struct atf_peer atf_peer;
+	struct dl_list atf_candidate_list;
 #endif
 
 #ifdef CONFIG_PASN

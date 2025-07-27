@@ -192,6 +192,47 @@ atf_add_ssid_to_group(struct atf_group *group, const char *name)
 }
 
 
+void
+atf_clear_candidate_list(struct atf_group *group)
+{
+	struct sta_info *sta, *tmp;
+
+	if (!dl_list_empty(&group->implicit_peers)) {
+		dl_list_for_each_safe(sta, tmp, &group->implicit_peers, struct sta_info,
+		                      atf_candidate_list)
+		{
+			dl_list_del(&sta->atf_candidate_list);
+		}
+	}
+
+	if (!dl_list_empty(&group->explicit_peers)) {
+		dl_list_for_each_safe(sta, tmp, &group->explicit_peers, struct sta_info,
+		                      atf_candidate_list)
+		{
+			dl_list_del(&sta->atf_candidate_list);
+		}
+	}
+}
+
+
+void
+atf_reset_group_values(struct atf_group *group)
+{
+	group->calculated_airtime = 0;
+	group->total_explicit_airtime = 0;
+
+	atf_clear_candidate_list(group);
+	if (!dl_list_empty(&group->implicit_peers) ||
+	    !dl_list_empty(&group->explicit_peers)) {
+		wpa_printf(MSG_ERROR, "ATF: Unexpected! peer candidate list was not cleared\n");
+	}
+	dl_list_init(&group->implicit_peers);
+	dl_list_init(&group->explicit_peers);
+	group->num_impl_peers = 0;
+	group->num_expl_peers = 0;
+}
+
+
 struct atf_group *
 atf_allocate_group(const char *name, struct atf_algo *algo)
 {
@@ -212,6 +253,10 @@ atf_allocate_group(const char *name, struct atf_algo *algo)
 	group->algo = algo;
 	algo->num_group_cfg++;
 
+	dl_list_init(&group->implicit_peers);
+	dl_list_init(&group->explicit_peers);
+	atf_reset_group_values(group);
+
 	wpa_printf(MSG_INFO, "ATF: Added group %s [%d], no of groups %d", group->name,
 	           group->index, algo->num_group_cfg);
 
@@ -227,6 +272,7 @@ atf_free_group(struct atf_group *group)
 	if (!algo->num_group_cfg)
 		return;
 
+	atf_reset_group_values(group);
 	algo->num_group_cfg--;
 	dl_list_del(&group->list);
 	os_free(group);
@@ -424,6 +470,337 @@ atf_trigger_config_timer(struct hostapd_iface *iface)
 }
 
 
+void
+atf_reset_groups(struct atf_algo *algo)
+{
+	struct atf_group *group;
+
+	algo->no_of_peers = 0;
+
+	if (dl_list_empty(&algo->groups))
+		return;
+
+	dl_list_for_each(group, &algo->groups, struct atf_group, list)
+		atf_reset_group_values(group);
+}
+
+
+struct atf_group *
+atf_is_ssid_in_default_group(const char *name, struct atf_algo *algo, bool update)
+{
+	int i;
+	struct atf_group *group;
+
+	if (!name || !algo) {
+		return NULL;
+	}
+
+	group = atf_find_group_by_name("default-group", algo);
+	if (!group) {
+		wpa_printf(MSG_ERROR, "ATF: default-group is not found in %p", algo);
+		return NULL;
+	}
+
+	for (i = 0; i < group->num_of_ssid; i++) {
+		size_t len = strlen(group->ssidname[i]);
+		if (strlen(name) == len && !os_strncmp(name, group->ssidname[i], len))
+			return group;
+	}
+
+	/* SSID is not found in default-group.
+	 * if update == true, then update the ssid to default-group.
+	 * if update == false, return NULL.
+	 */
+	if (update) {
+		if (atf_add_ssid_to_group(group, name)) {
+			wpa_printf(MSG_ERROR, "ATF: Failed to add ssid to group");
+			return NULL;
+		}
+
+		return group;
+	}
+
+	return NULL;
+}
+
+
+struct atf_group *
+atf_find_group_if_ssid_exist(const char *name, struct atf_algo *algo)
+{
+	int i;
+	struct atf_group *group;
+
+	if (!algo) {
+		wpa_printf(MSG_ERROR, "ATF: Algo is null");
+		return NULL;
+	}
+
+	if (dl_list_empty(&algo->groups)) {
+		wpa_printf(MSG_ERROR, "ATF: %s: group is empty", __func__);
+		return NULL;
+	}
+
+	dl_list_for_each(group, &algo->groups, struct atf_group, list)
+	{
+		for (i = 0; i < group->num_of_ssid; i++) {
+			size_t len = strlen(group->ssidname[i]);
+			if (strlen(name) == len &&
+			    !os_strncmp(name, group->ssidname[i], len))
+				return group;
+		}
+	}
+
+	return NULL;
+}
+
+
+struct atf_group *
+atf_find_group(struct atf_algo *algo, const char *name)
+{
+	size_t name_len;
+	if (!algo || !name) {
+		wpa_printf(MSG_ERROR, "ATF: Invalid parameters to find_group");
+		return NULL;
+	}
+
+	name_len = os_strlen(name);
+	if (name_len == 0 || name_len > WLAN_SSID_MAX_LEN) {
+		wpa_printf(MSG_ERROR, "ATF: Invalid name length in find_group: %zu", name_len);
+		return NULL;
+	}
+
+	if (algo->ssid_group_enabled) {
+		wpa_printf(MSG_DEBUG, "ATF: find group with ssid name %s %p", name, algo);
+		return atf_find_group_if_ssid_exist(name, algo);
+	}
+
+	/* In case of non-ssid group, group name is same as ssid */
+	return atf_find_group_by_name(name, algo);
+}
+
+
+/**
+ * atf_update_interfaces_to_group - update all the ssid to its corresponding
+ * group.
+ */
+static int
+atf_update_interfaces_to_group(struct atf_algo *algo)
+{
+	struct hostapd_iface *iface = algo->iface;
+	struct atf_group *group = NULL;
+	struct hostapd_data *bss;
+	struct hostapd_ssid *ssid;
+	char ssid_buf[SSID_MAX_LEN + 1];
+	int i;
+	int ret = 0;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		bss = iface->bss[i];
+		if (!bss->started)
+			continue;
+
+		ssid = &bss->conf->ssid;
+		os_memset(ssid_buf, 0, sizeof(ssid_buf));
+		os_memcpy(ssid_buf, ssid->ssid, ssid->ssid_len);
+		ssid_buf[ssid->ssid_len] = '\0';
+
+		group = atf_find_group(algo, ssid_buf);
+		if (!group) {
+			wpa_printf(MSG_DEBUG, "ATF:ssid %s is not linked with any configured group",
+			           ssid_buf);
+
+			/* check if the ssid is in default group already, if
+			 * not add it to default-group
+			 */
+			group = atf_is_ssid_in_default_group(ssid_buf, algo, true);
+			if (!group) {
+				wpa_printf(MSG_DEBUG, "ATF: Not able to update  %s to default-group",
+					   ssid_buf);
+				ret = 1;
+				continue;
+			}
+			bss->atf_configured = 0;
+		} else {
+			group->is_configured = 1;
+			bss->atf_configured = 1;
+		}
+
+		/* copy the scheduling policy of ssid in case of ATF based on ssid */
+		if (!algo->ssid_group_enabled)
+			group->sched_policy = bss->conf->atf_ssid_sched;
+	}
+
+	return ret;
+}
+
+
+struct atf_group *
+atf_get_peer_group(struct hostapd_data *hapd)
+{
+	struct atf_group *group;
+	struct atf_algo *algo;
+	char ssid_buf[SSID_MAX_LEN + 1];
+
+	if (!hapd->conf->ssid.ssid_len) {
+		wpa_printf(MSG_ERROR, "ATF: Unexpected! conf doesnt have ssid");
+		return NULL;
+	}
+
+	if (!hapd->iface || !hapd->iface->atf_algo)
+		return NULL;
+
+	algo = hapd->iface->atf_algo;
+
+	os_memcpy(ssid_buf, hapd->conf->ssid.ssid, hapd->conf->ssid.ssid_len);
+	ssid_buf[hapd->conf->ssid.ssid_len] = '\0';
+
+	group = atf_find_group(algo, ssid_buf);
+	if (!group) {
+		/* check if it is in default group */
+		return atf_is_ssid_in_default_group(ssid_buf, algo, false);
+	}
+
+	return group;
+}
+
+
+int
+atf_update_peer(struct hostapd_data *hapd, struct sta_info *sta, void *ctx)
+{
+	struct atf_group *group = NULL;
+	struct atf_algo *algo;
+
+	if (!sta) {
+		wpa_printf(MSG_ERROR, "ATF: %s: sta is null", __func__);
+		return -1;
+	}
+
+	/* consider only the authorized sta */
+	if (sta && !ap_sta_is_authorized(sta))
+		return 0;
+
+	if (!hapd || !hapd->iface || !hapd->iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: unexpected, interface is not proper");
+		return -1;
+	}
+
+	algo = hapd->iface->atf_algo;
+
+	if (ATF_OFFLOAD_IS_FULL_UPDATE(algo) ||
+	    (ATF_OFFLOAD_IS_JOIN_UPDATE(algo) && ATF_IS_STA_UPDATED(sta->atf_peer)))
+		algo->no_of_peers++;
+
+	wpa_printf(MSG_DEBUG, "ATF: update peer " MACSTR "peer->is_configured %d",
+			MAC2STR(sta->addr), sta->atf_peer.atf_configured);
+
+	if (!sta->atf_peer.atf_configured) {
+		/* add it to implicit peer list */
+		group = atf_get_peer_group(hapd);
+		if (!group) {
+			wpa_printf(MSG_ERROR,
+			           "ATF: Unexpected! peer" MACSTR "should be associated with a group",
+				   MAC2STR(sta->addr));
+			return -1;
+		}
+
+		dl_list_add(&group->implicit_peers, &sta->atf_candidate_list);
+		group->num_impl_peers++;
+	} else {
+		group = sta->atf_peer.peer_cfg_ref->group;
+		if (!group) {
+                        wpa_printf(MSG_ERROR,
+                                   "ATF: peer" MACSTR "should be associated with configured group",
+                                   MAC2STR(sta->addr));
+
+			return -1;
+		}
+		group->num_expl_peers++;
+	}
+
+	return 0;
+}
+
+
+void
+atf_update_peer_cfg_to_peer(struct atf_algo *algo, struct atf_peer_config *peer_cfg)
+{
+	struct hostapd_iface *iface = algo->iface;
+	struct hostapd_data *bss;
+	struct sta_info *sta = NULL;
+	int i;
+
+	if (!peer_cfg)
+		return;
+
+	if (!peer_cfg->group) {
+		wpa_printf(MSG_ERROR, "ATF: Peer should always be associated with group");
+		return;
+	}
+
+	for (i = 0; i < iface->num_bss; i++) {
+		bss = iface->bss[i];
+		if (!bss->started || !bss->atf_configured)
+			continue;
+
+		sta = ap_get_sta(bss, peer_cfg->addr);
+		if (sta && ap_sta_is_authorized(sta))
+			break;
+	}
+
+	if (sta == NULL) {
+		wpa_printf(MSG_DEBUG,
+		           "ATF: Station " MACSTR " not found "
+		           "for ATF Configuration",
+		           MAC2STR(peer_cfg->addr));
+		return;
+	}
+
+	sta->atf_peer.atf_configured = true;
+	sta->atf_peer.peer_cfg_ref = peer_cfg;
+
+	/*update to the group candidate list*/
+	dl_list_add(&peer_cfg->group->explicit_peers, &sta->atf_candidate_list);
+
+	return;
+}
+
+
+static int
+atf_build_candidate_list(struct hostapd_iface *iface)
+{
+	struct atf_algo *algo;
+	struct hostapd_data *hapd;
+	int i;
+
+	if (!iface || !iface->atf_algo)
+		return -1;
+
+	algo = iface->atf_algo;
+
+	/* reset the previous group values */
+	atf_reset_groups(algo);
+	if (atf_update_interfaces_to_group(algo) != 0) {
+		wpa_printf(MSG_ERROR, "ATF: could not map the interfaces to group");
+		return -1;
+	}
+
+	if (!dl_list_empty(&algo->peer_cfgs)) {
+		atf_iterate_peer_config(algo, atf_update_peer_cfg_to_peer);
+	}
+
+	for (i = 0; i < iface->num_bss; i++) {
+		hapd = iface->bss[i];
+		if (!hapd->started)
+			continue;
+
+		if (ap_for_each_sta(hapd, atf_update_peer, NULL))
+			return -1;
+	}
+
+	return 0;
+}
+
+
 static void
 atf_cfg_timeout_handler(void *eloop_ctx, void *timeout_ctx)
 {
@@ -447,6 +824,11 @@ atf_cfg_timeout_handler(void *eloop_ctx, void *timeout_ctx)
 	if (!hostapd_iface_num_sta(iface)) {
 		wpa_printf(MSG_INFO,
 			   "ATF: There is no peer associated in this iface, Skip distribution");
+		goto out;
+	}
+
+	if (atf_build_candidate_list(iface) != 0) {
+		wpa_printf(MSG_ERROR, "ATF: couldnt build the candidate list");
 		goto out;
 	}
 
@@ -509,6 +891,8 @@ atf_init_algo(struct hostapd_iface *iface)
 		wpa_printf(MSG_ERROR, "ATF: Could not allocate default group");
 		return;
 	}
+	/* Default group is always configured */
+	group->is_configured = 1;
 }
 
 
