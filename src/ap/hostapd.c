@@ -397,7 +397,7 @@ static int hostapd_remove_hapd_iface(struct hostapd_iface *hapd_iface)
 	return 0;
 }
 
-static inline int hostapd_iface_num_sta(struct hostapd_iface *iface)
+int hostapd_iface_num_sta(struct hostapd_iface *iface)
 {
 	int num_sta = 0;
 	int i;
@@ -1155,6 +1155,11 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 	ap_list_deinit(iface);
 	sta_track_deinit(iface);
 	airtime_policy_update_deinit(iface);
+
+#ifdef CONFIG_ATF_OFFLOAD
+	atf_timer_stop(iface);
+#endif
+
 	hostapd_free_multi_hw_info(iface->multi_hw_info);
 	iface->multi_hw_info = NULL;
 	iface->num_multi_hws = 0;
