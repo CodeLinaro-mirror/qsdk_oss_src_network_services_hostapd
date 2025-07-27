@@ -21,6 +21,23 @@
 #define WLAN_SSID_MAX 16
 #define WLAN_SSID_MAX_LEN SSID_MAX_LEN
 #define ATF_MAX_SSID 16
+#define ATF_MAX_PEER 512
+
+/**
+ * @struct atf_peer_config - per sta config.
+ */
+
+struct atf_peer_config {
+	struct atf_group *group;
+	struct atf_algo *algo;
+	u8 link_id;
+	u32 user_cfg_airtime;
+	u8 addr[ETH_ALEN];
+
+	/* add this node to atf_algo */
+	struct dl_list list;
+	char group_name[WLAN_SSID_MAX_LEN];
+};
 
 /**
  * @struct atf_ssid_config - per ssid config when group is not enabled.
@@ -70,6 +87,8 @@ struct atf_algo {
 	bool atf_enabled;
 	struct dl_list ssid_cfgs;
 	u8 num_ssid_cfg;
+	struct dl_list peer_cfgs;
+	u16 num_peer_cfg;
 
 	/* Feature flags */
 	bool ssid_group_enabled;
@@ -77,6 +96,7 @@ struct atf_algo {
 	/* used for ATF config parsing*/
 	struct atf_group *last_group;
 	struct atf_ssid_config *last_ssid_cfg;
+	struct atf_peer_config *last_peer_cfg;
 };
 
 /**
@@ -110,6 +130,12 @@ struct atf_ssid_config *atf_find_ssid_config_by_name(char *name, struct atf_algo
 struct atf_ssid_config *atf_allocate_ssid_config(char *name, struct atf_algo *algo);
 
 void atf_free_ssid_config(struct atf_ssid_config *ssid);
+
+struct atf_peer_config *atf_find_peer_config_by_mac(u8 *mac, struct atf_algo *algo);
+
+struct atf_peer_config *atf_allocate_peer_config(u8 *macaddr, struct atf_algo *algo);
+
+void atf_free_peer_config(struct atf_peer_config *peer_config);
 
 #else
 

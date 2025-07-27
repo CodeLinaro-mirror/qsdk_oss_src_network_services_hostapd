@@ -76,6 +76,8 @@ atf_read_config(struct atf_algo *algo, const char *conf_file)
 	int line = 0, invalid_config = 0, error = 0;
 	struct atf_group *atf_group;
 	struct atf_ssid_config *ssid_config;
+	struct atf_peer_config *peer_config;
+	u8 sta_mac[ETH_ALEN];
 	int val;
 
 	if (!conf_file || !algo)
@@ -263,6 +265,67 @@ atf_read_config(struct atf_algo *algo, const char *conf_file)
 				continue;
 			}
 			atf_free_ssid_config(ssid_config);
+		} else if (os_strcmp(buffer, "atf-sta") == 0) {
+			if (hwaddr_aton(pos, sta_mac)) {
+				wpa_printf(MSG_ERROR,
+				           "ATF: Line %d: invalid sta mac address", line);
+				invalid_config++;
+				goto exit;
+			}
+			peer_config = atf_find_peer_config_by_mac(sta_mac, algo);
+			if (!peer_config) {
+				peer_config = atf_allocate_peer_config(sta_mac, algo);
+				if (!peer_config) {
+					wpa_printf(MSG_ERROR,
+					           "ATF: could not allocate peer config");
+					error++;
+					goto exit;
+				}
+			}
+			algo->last_peer_cfg = peer_config;
+		} else if (os_strcmp(buffer, "atf-sta-airtime") == 0) {
+			val = atoi(pos);
+			if (val < 0 || val > 100) {
+				wpa_printf(MSG_ERROR,
+				           "ATF: invalid airtime %d (valid range 0 -100)",
+				           val);
+				invalid_config++;
+				continue;
+			}
+			algo->last_peer_cfg->user_cfg_airtime = val;
+		} else if (os_strcmp(buffer, "atf-sta-ssid") == 0) {
+			if (*pos != '\0') {
+				atf_group = atf_find_group_by_name(pos, algo);
+				if (!atf_group) {
+					wpa_printf(MSG_ERROR,
+					           "ATF: ssid/group %s not found for "
+					           "station" MACSTR " ",
+					           pos,
+					           MAC2STR(algo->last_peer_cfg->addr));
+					error++;
+					goto exit;
+				}
+
+				os_strlcpy(algo->last_peer_cfg->group_name, pos,
+				           WLAN_SSID_MAX_LEN);
+			}
+		} else if (os_strcmp(buffer, "atf-del-sta") == 0) {
+			if (hwaddr_aton(pos, sta_mac)) {
+				wpa_printf(MSG_ERROR,
+				           "ATF: Line %d: invalid sta mac address", line);
+				invalid_config++;
+				continue;
+			}
+			peer_config = atf_find_peer_config_by_mac(sta_mac, algo);
+			if (!peer_config) {
+				wpa_printf(MSG_ERROR,
+				           "ATF: could not find the station " MACSTR
+				           " config",
+				           MAC2STR(sta_mac));
+				invalid_config++;
+				continue;
+			}
+			atf_free_peer_config(peer_config);
 		}
 	}
 
