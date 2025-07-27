@@ -27,6 +27,81 @@
 
 struct atf_offload *atf = NULL;
 
+struct atf_peer_config *
+atf_allocate_peer_config(u8 *macaddr, struct atf_algo *algo)
+{
+	struct atf_peer_config *peer_config;
+
+	if (algo->num_peer_cfg >= ATF_MAX_PEER)
+		return NULL;
+
+	peer_config = os_zalloc(sizeof(*peer_config));
+	if (!peer_config)
+		return NULL;
+
+	os_memcpy(peer_config->addr, macaddr, ETH_ALEN);
+	dl_list_init(&peer_config->list);
+	dl_list_add(&algo->peer_cfgs, &peer_config->list);
+	peer_config->algo = algo;
+	algo->num_peer_cfg++;
+
+	wpa_printf(MSG_INFO, "ATF: Added peer config %d", algo->num_peer_cfg);
+
+	return peer_config;
+}
+
+void
+atf_free_peer_config(struct atf_peer_config *peer_config)
+{
+	struct atf_algo *algo = peer_config->algo;
+
+	if (!algo->num_peer_cfg)
+		return;
+
+	algo->num_peer_cfg--;
+	dl_list_del(&peer_config->list);
+	os_free(peer_config);
+}
+
+struct atf_peer_config *
+atf_find_peer_config_by_mac(u8 *mac, struct atf_algo *algo)
+{
+	struct atf_peer_config *peer = NULL;
+
+	if (!algo) {
+		wpa_printf(MSG_ERROR, "ATF: algo is null");
+		return NULL;
+	}
+
+	if (dl_list_empty(&algo->peer_cfgs)) {
+		wpa_printf(MSG_DEBUG, "ATF: peer list is empty");
+		return NULL;
+	}
+
+	dl_list_for_each(peer, &algo->peer_cfgs, struct atf_peer_config, list)
+	{
+		if (os_memcmp(mac, peer->addr, ETH_ALEN) == 0)
+			return peer;
+	}
+
+	return NULL;
+}
+
+void
+atf_iterate_peer_config(struct atf_algo *algo,
+			void (*callback)(struct atf_algo *, struct atf_peer_config *))
+{
+	struct atf_peer_config *peer;
+
+	if (!algo) {
+		wpa_printf(MSG_ERROR, "ATF: algo is null");
+		return;
+	}
+
+	dl_list_for_each(peer, &algo->peer_cfgs, struct atf_peer_config, list)
+		callback(algo, peer);
+}
+
 struct atf_ssid_config *
 atf_allocate_ssid_config(char *name, struct atf_algo *algo)
 {
@@ -143,6 +218,20 @@ atf_free_group(struct atf_group *group)
 }
 
 static void
+atf_free_peer_configs(struct atf_algo *algo)
+{
+	struct atf_peer_config *peer, *tmp;
+
+	if (dl_list_empty(&algo->peer_cfgs))
+		return;
+
+	dl_list_for_each_safe(peer, tmp, &algo->peer_cfgs, struct atf_peer_config, list)
+	{
+		atf_free_peer_config(peer);
+	}
+}
+
+static void
 atf_free_ssid_configs(struct atf_algo *algo)
 {
 	struct atf_ssid_config *ssid_cfg, *tmp;
@@ -172,6 +261,20 @@ atf_free_group_configs(struct atf_algo *algo)
 void
 atf_free_algo_configs(struct atf_algo *algo)
 {
+	atf_free_peer_configs(algo);
+	if (!dl_list_empty(&algo->peer_cfgs))
+		wpa_printf(MSG_ERROR, "ATF: peer config is not cleared!\n");
+	algo->num_peer_cfg = 0;
+	dl_list_init(&algo->peer_cfgs);
+
+	/* Ensure all peer config is cleared by checking list is empty.
+	 * if list is not empty, its corrupted.
+	 */
+	if (!dl_list_empty(&algo->peer_cfgs)) {
+		wpa_printf(MSG_ERROR, "ATF: Unexpected! peer config is not cleared!\n");
+	}
+	algo->user_cfg_airtime = 0;
+
 	atf_free_ssid_configs(algo);
 
 	/* Ensure ssid config list is empty after the cleanup.
@@ -244,6 +347,8 @@ atf_allocate_algo()
 	dl_list_init(&algo->groups);
 	algo->num_ssid_cfg = 0;
 	dl_list_init(&algo->ssid_cfgs);
+	algo->num_peer_cfg = 0;
+	dl_list_init(&algo->peer_cfgs);
 
 	return algo;
 }
