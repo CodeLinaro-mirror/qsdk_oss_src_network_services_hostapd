@@ -80,6 +80,7 @@ struct atf_algo {
 	struct dl_list peer_cfgs;
 	u16 num_peer_cfg;
 	bool ssid_group_enabled;
+	bool atfstrictsched_enabled;
 	struct atf_group *last_group;
 	struct atf_ssid_config *last_ssid_cfg;
 	struct atf_peer_config *last_peer_cfg;
