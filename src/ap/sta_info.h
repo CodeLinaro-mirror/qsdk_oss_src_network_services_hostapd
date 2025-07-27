@@ -374,6 +374,7 @@ struct sta_info {
 
 #ifdef CONFIG_ATF_OFFLOAD
 	struct atf_peer atf_peer;
+	struct dl_list atf_candidate_list;
 #endif
 
 #ifdef CONFIG_PASN
