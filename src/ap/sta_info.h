@@ -327,6 +327,9 @@ struct sta_info {
 	unsigned int dyn_airtime_weight;
 	struct os_reltime backlogged_until;
 #endif /* CONFIG_AIRTIME_POLICY */
+#ifdef CONFIG_ATF_OFFLOAD
+        struct atf_peer atf_peer;
+#endif
 
 #ifdef CONFIG_PASN
 	struct pasn_data *pasn;

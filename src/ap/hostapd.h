@@ -948,6 +948,7 @@ void hostapd_new_assoc_sta(struct hostapd_data *hapd, struct sta_info *sta,
 			   int reassoc);
 void hostapd_interface_deinit_free(struct hostapd_iface *iface);
 void hostapd_deauthenticate_stations(struct hapd_interfaces *interfaces);
+int hostapd_iface_num_sta(struct hostapd_iface *iface);
 int hostapd_enable_iface(struct hostapd_iface *hapd_iface);
 int hostapd_reload_iface(struct hostapd_iface *hapd_iface);
 int hostapd_reload_bss_only(struct hostapd_data *bss);

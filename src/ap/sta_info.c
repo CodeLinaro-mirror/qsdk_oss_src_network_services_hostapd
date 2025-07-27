@@ -2101,6 +2101,8 @@ void ap_sta_set_authorized_event(struct hostapd_data *hapd,
 			buf, ip_addr, keyid_buf, dpp_pkhash_buf, vlanid_buf,
 			alg_buf);
 
+		atf_join_leave_update(hapd->iface, sta, true);
+
 		if (hapd->msg_ctx_parent &&
 		    hapd->msg_ctx_parent != hapd->msg_ctx)
 			wpa_msg_no_global(hapd->msg_ctx_parent, MSG_INFO,
@@ -2111,6 +2113,8 @@ void ap_sta_set_authorized_event(struct hostapd_data *hapd,
 	} else {
 		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_STA_DISCONNECTED "%s", buf);
 		hostapd_ubus_notify(hapd, "disassoc", sta->addr);
+
+		atf_join_leave_update(hapd->iface, sta, false);
 
 		if (hapd->msg_ctx_parent &&
 		    hapd->msg_ctx_parent != hapd->msg_ctx)

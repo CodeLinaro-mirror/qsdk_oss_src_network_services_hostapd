@@ -27,6 +27,9 @@
 
 struct atf_offload *atf = NULL;
 
+/* one second timeout for Airtime distribution */
+#define ATF_ALGO_TIMEOUT 1
+
 struct atf_peer_config *
 atf_allocate_peer_config(u8 *macaddr, struct atf_algo *algo)
 {
@@ -243,6 +246,7 @@ atf_free_peer_configs(struct atf_algo *algo)
 		atf_free_peer_config(peer);
 }
 
+
 static void
 atf_free_ssid_configs(struct atf_algo *algo)
 {
@@ -389,6 +393,87 @@ atf_get_algo_entry(struct hostapd_iface *iface)
 	}
 
 	return algo;
+}
+
+
+void
+atf_join_leave_update(struct hostapd_iface *iface, struct sta_info *sta, bool is_join)
+{
+	if (!iface || !iface->atf_algo || !sta)
+		return;
+
+	ATF_SET_STA_TO_UPDATE(sta->atf_peer);
+	if (is_join)
+		ATF_OFFLOAD_SET_JOIN_UPDATE(iface->atf_algo);
+	else
+		ATF_OFFLOAD_SET_LEAVE_UPDATE(iface->atf_algo);
+
+	atf_trigger_config_timer(iface);
+}
+
+
+void
+atf_trigger_config_timer(struct hostapd_iface *iface)
+{
+
+	wpa_printf(MSG_INFO, "ATF: Trigger distribution of airtime for iface %p", iface);
+	if (iface->atf_algo->atf_tasksched == 0) {
+		iface->atf_algo->atf_tasksched = 1;
+		atf_timer_start(iface);
+	}
+}
+
+
+static void
+atf_cfg_timeout_handler(void *eloop_ctx, void *timeout_ctx)
+{
+	struct hostapd_iface *iface = (struct hostapd_iface *)eloop_ctx;
+	struct atf_algo *algo;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Something is wrong, check iface");
+		return;
+	}
+
+	algo = iface->atf_algo;
+
+	if (!algo->atf_enabled) {
+		wpa_printf(MSG_ERROR, "ATF not enabled. skip distribution");
+		goto out;
+	}
+
+	wpa_printf(MSG_DEBUG, "ATF: Hitting the timeout handler for iface %p", iface);
+
+	if (!hostapd_iface_num_sta(iface)) {
+		wpa_printf(MSG_INFO,
+			   "ATF: There is no peer associated in this iface, Skip distribution");
+		goto out;
+	}
+
+out:
+	algo->atf_tasksched = 0;
+	return;
+}
+
+
+int
+atf_timer_start(struct hostapd_iface *iface)
+{
+	wpa_printf(MSG_ERROR, "ATF: Trigger algo for iface %p", iface);
+	eloop_register_timeout(ATF_ALGO_TIMEOUT, 0, atf_cfg_timeout_handler, iface, NULL);
+	return 0;
+}
+
+
+void
+atf_timer_stop(struct hostapd_iface *iface)
+{
+	wpa_printf(MSG_DEBUG, "ATF: cancelling timeout");
+	if (!iface->atf_algo)
+		return;
+
+	iface->atf_algo->atf_tasksched = 0;
+	eloop_cancel_timeout(atf_cfg_timeout_handler, iface, NULL);
 }
 
 
