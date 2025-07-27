@@ -23,6 +23,11 @@
 #define ATF_MAX_SSID 16
 #define ATF_MAX_PEER 512
 
+/* Percentage value scaled by 10 to avoid decimals. (e.g., 10.5% → 105)
+ * So, one digit after the decimal is accounted and represented as integer.
+ */
+#define ATF_RADIO_DEFAULT_AIRTIME 1000
+
 /**
  * enum atf_offload_update_flag - Airtime update flags for driver
  * @ATF_OFFLOAD_FULL_UPDATE: Full update and default update method
@@ -90,6 +95,7 @@ struct atf_peer_config {
 
 struct atf_peer {
 	bool atf_configured;
+	struct atf_group *group;
 	struct atf_peer_config *peer_cfg_ref;
 	struct sta_info *sta;
 	u32 calculated_airtime;
@@ -125,6 +131,7 @@ struct atf_group {
 	u32 num_of_ssid;
 	char ssidname[WLAN_SSID_MAX][WLAN_SSID_MAX_LEN + 1];
 	u32 user_cfg_airtime;
+	u32 sched_policy;
 
 	/* add this node to atf_algo */
 	struct dl_list list;
@@ -169,6 +176,12 @@ struct atf_algo {
 	/*Flag to indicate update task scheduled */
 	bool atf_tasksched;
 
+	/* first sta association should be sent as
+	 * full update. This flag represents whether
+	 * it is done or not
+	 */
+	bool init_update_done;
+
 	/* no. of peers to be updated to driver*/
 	u16 no_of_peers;
 
@@ -183,6 +196,55 @@ struct atf_algo {
  */
 struct atf_offload {
 	struct dl_list algo_list;
+};
+
+
+struct atf_peer_info {
+	u8 peer_macaddr[6];
+	u16 percentage_peer;
+	u16 group_index;
+	u32 explicit_peer_flag;
+};
+
+struct atf_peer_params {
+	u16 num_peers;
+	u8 full_update_flag;
+	struct atf_peer_info *peer_info;
+};
+
+struct atf_group_param_info {
+	u16 group_index;
+	u16 group_airtime;
+	u16 total_implicit_peers;
+	u16 total_explicit_peers;
+	u16 total_implicit_peer_units;
+	u32 group_policy;
+};
+
+struct atf_group_params {
+	u8 num_groups;
+	struct atf_group_param_info *group_info;
+};
+
+struct atf_group_wmm_ac_config {
+	u32 ac_be; /* Relative ATF % for BE */
+	u32 ac_bk; /* Relative ATF % for BK */
+	u32 ac_vi; /* Relative ATF % for VI */
+	u32 ac_vo; /* Relative ATF % for VO */
+	u32 reserved[2];
+};
+
+struct atf_group_wmm_ac_params {
+	u32 num_groups;
+	struct atf_group_wmm_ac_config *wmm_ac_cfg;
+};
+
+struct atf_group_info {
+	u8 percentage_group;
+	u8 implicit_peer;
+	u8 explicit_peers;
+	u8 implicit_peer_units;
+	u8 group_units_reserved;
 };
 
 #ifdef CONFIG_ATF_OFFLOAD
@@ -222,6 +284,10 @@ void atf_timer_stop(struct hostapd_iface *iface);
 
 void atf_trigger_config_timer(struct hostapd_iface *iface);
 
+void atf_offload_initialize_peer(struct sta_info *sta);
+
+void atf_offload_deinitialize_peer(struct sta_info *sta);
+
 void atf_join_leave_update(struct hostapd_iface *iface, struct sta_info *sta,
                            bool is_join);
 
@@ -245,6 +311,14 @@ static inline void atf_deinit_algo(struct hostapd_iface *iface)
 
 static inline void atf_join_leave_update(struct hostapd_iface *iface, struct sta_info *sta,
 					 bool is_join)
+{
+}
+
+static inline void atf_offload_initialize_peer(struct sta_info *sta)
+{
+}
+
+static inline void atf_offload_deinitialize_peer(struct sta_info *sta)
 {
 }
 

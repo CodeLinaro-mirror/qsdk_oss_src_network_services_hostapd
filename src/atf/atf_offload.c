@@ -30,6 +30,27 @@ struct atf_offload *atf = NULL;
 /* one second timeout for Airtime distribution */
 #define ATF_ALGO_TIMEOUT 1
 
+void atf_offload_initialize_peer(struct sta_info *sta)
+{
+	wpa_printf(MSG_DEBUG, "ATF: initialize sta %p %p",
+		   sta, &sta->atf_candidate_list);
+	dl_list_init(&sta->atf_candidate_list);
+}
+
+
+void atf_offload_deinitialize_peer(struct sta_info *sta)
+{
+	wpa_printf(MSG_DEBUG, "ATF: deinitialize sta %p %p",
+		   sta, &sta->atf_candidate_list);
+	if (dl_list_empty(&sta->atf_candidate_list)) {
+		wpa_printf(MSG_ERROR, "ATF: sta already deinitialized");
+		return;
+	}
+	dl_list_del(&sta->atf_candidate_list);
+	dl_list_init(&sta->atf_candidate_list);
+}
+
+
 struct atf_peer_config *
 atf_allocate_peer_config(u8 *macaddr, struct atf_algo *algo)
 {
@@ -201,7 +222,7 @@ atf_clear_candidate_list(struct atf_group *group)
 		dl_list_for_each_safe(sta, tmp, &group->implicit_peers, struct sta_info,
 		                      atf_candidate_list)
 		{
-			dl_list_del(&sta->atf_candidate_list);
+			atf_offload_deinitialize_peer(sta);
 		}
 	}
 
@@ -209,7 +230,7 @@ atf_clear_candidate_list(struct atf_group *group)
 		dl_list_for_each_safe(sta, tmp, &group->explicit_peers, struct sta_info,
 		                      atf_candidate_list)
 		{
-			dl_list_del(&sta->atf_candidate_list);
+			atf_offload_deinitialize_peer(sta);
 		}
 	}
 }
@@ -421,6 +442,7 @@ atf_allocate_algo()
 	dl_list_init(&algo->ssid_cfgs);
 	algo->num_peer_cfg = 0;
 	dl_list_init(&algo->peer_cfgs);
+	algo->init_update_done = 0;
 
 	return algo;
 }
@@ -448,11 +470,30 @@ atf_join_leave_update(struct hostapd_iface *iface, struct sta_info *sta, bool is
 	if (!iface || !iface->atf_algo || !sta)
 		return;
 
+	wpa_printf(MSG_DEBUG, "ATF: sta %p is %s %p", sta,
+		   is_join ? "join" : "leave" , &sta->atf_candidate_list);
 	ATF_SET_STA_TO_UPDATE(sta->atf_peer);
-	if (is_join)
+
+	if (is_join && !dl_list_empty(&sta->atf_candidate_list)) {
+		wpa_printf(MSG_DEBUG, "ATF: sta %p is reassociating %p", sta, &sta->atf_candidate_list);
+		/* when sta reassociates, re-initialize peer so that
+		 * it would avoid adding two node
+		 */
+		atf_offload_deinitialize_peer(sta);
+	}
+
+	/* After reboot, when first client joins it should be
+	 * full update.
+	 */
+	if (is_join && !iface->atf_algo->init_update_done) {
+		ATF_OFFLOAD_SET_FULL_UPDATE(iface->atf_algo);
+		iface->atf_algo->init_update_done = 1;
+	} else if (is_join) {
 		ATF_OFFLOAD_SET_JOIN_UPDATE(iface->atf_algo);
-	else
+	} else {
+		atf_offload_deinitialize_peer(sta);
 		ATF_OFFLOAD_SET_LEAVE_UPDATE(iface->atf_algo);
+	}
 
 	atf_trigger_config_timer(iface);
 }
@@ -480,8 +521,13 @@ atf_reset_groups(struct atf_algo *algo)
 	if (dl_list_empty(&algo->groups))
 		return;
 
-	dl_list_for_each(group, &algo->groups, struct atf_group, list)
+	dl_list_for_each(group, &algo->groups, struct atf_group, list) {
 		atf_reset_group_values(group);
+		if (os_strncmp(group->name, "default-group", strlen("default-group")) != 0) {
+			group->is_configured = 0;
+		}
+	}
+
 }
 
 
@@ -702,7 +748,7 @@ atf_update_peer(struct hostapd_data *hapd, struct sta_info *sta, void *ctx)
 				   MAC2STR(sta->addr));
 			return -1;
 		}
-
+		sta->atf_peer.group = group;
 		dl_list_add(&group->implicit_peers, &sta->atf_candidate_list);
 		group->num_impl_peers++;
 	} else {
@@ -714,6 +760,7 @@ atf_update_peer(struct hostapd_data *hapd, struct sta_info *sta, void *ctx)
 
 			return -1;
 		}
+		sta->atf_peer.group = group;
 		group->num_expl_peers++;
 	}
 
@@ -743,8 +790,38 @@ atf_update_peer_cfg_to_peer(struct atf_algo *algo, struct atf_peer_config *peer_
 			continue;
 
 		sta = ap_get_sta(bss, peer_cfg->addr);
-		if (sta && ap_sta_is_authorized(sta))
-			break;
+		if (!bss->mld) {
+			if (sta && ap_sta_is_authorized(sta))
+				break;
+		} else {
+			if (!sta) {
+				/* when user configured peer config with link address */
+				wpa_printf(MSG_DEBUG, "ATF: sta not found, find by link");
+				sta = ap_get_link_sta(bss, peer_cfg->addr);
+				if (sta && ap_sta_is_authorized(sta))
+					break;
+			} else if (sta->mld_info.mld_sta == true) {
+				/* when mld address is same as link address, we have
+				 * to ensure that its the link address as user
+				 * gives only link address
+				 */
+				sta = ap_get_link_sta(bss, peer_cfg->addr);
+				if (!sta) {
+					wpa_printf(MSG_DEBUG, "ATF: Link not found");
+					continue;
+				}
+				if (ap_sta_is_authorized(sta))
+					break;
+			} else {
+				/* when its legacy station, we just need to check the
+				 * authorized flag
+				 */
+				wpa_printf(MSG_DEBUG, "ATF:sta is not ml");
+				if (ap_sta_is_authorized(sta))
+					break;
+			}
+		}
+
 	}
 
 	if (sta == NULL) {
@@ -757,6 +834,7 @@ atf_update_peer_cfg_to_peer(struct atf_algo *algo, struct atf_peer_config *peer_
 
 	sta->atf_peer.atf_configured = true;
 	sta->atf_peer.peer_cfg_ref = peer_cfg;
+	sta->atf_peer.sta = sta;
 
 	/*update to the group candidate list*/
 	dl_list_add(&peer_cfg->group->explicit_peers, &sta->atf_candidate_list);
@@ -801,6 +879,327 @@ atf_build_candidate_list(struct hostapd_iface *iface)
 }
 
 
+void
+atf_cal_implicit_peers(struct atf_group *group)
+{
+	struct sta_info *sta;
+	u32 airtime;
+
+	if (dl_list_empty(&group->implicit_peers)) {
+		return;
+	}
+
+	if (group->num_impl_peers == 0)
+		return;
+
+	airtime = group->calculated_airtime / group->num_impl_peers;
+
+	dl_list_for_each(sta, &group->implicit_peers, struct sta_info, atf_candidate_list)
+		sta->atf_peer.calculated_airtime = airtime;
+}
+
+void
+atf_cal_explicit_peers(struct atf_group *group)
+{
+	struct sta_info *sta;
+	struct atf_peer_config *cfg = NULL;
+
+	if (dl_list_empty(&group->explicit_peers)) {
+		return;
+	}
+
+	dl_list_for_each(sta, &group->explicit_peers, struct sta_info, atf_candidate_list)
+	{
+		cfg = sta->atf_peer.peer_cfg_ref;
+
+		if (!cfg)
+			continue;
+
+		sta->atf_peer.calculated_airtime =
+		    ((group->user_cfg_airtime * cfg->user_cfg_airtime) /
+		     ATF_RADIO_DEFAULT_AIRTIME);
+		group->calculated_airtime -= sta->atf_peer.calculated_airtime;
+		group->total_explicit_airtime += sta->atf_peer.calculated_airtime;
+	}
+}
+
+int
+atf_distribute_airtime(struct hostapd_iface *iface)
+{
+	struct atf_algo *algo = iface->atf_algo;
+	struct atf_group *group, *def_group = NULL;
+	u16 iface_airtime = ATF_RADIO_DEFAULT_AIRTIME;
+
+	if (dl_list_empty(&algo->groups)) {
+		wpa_printf(MSG_ERROR, "ATF: group list is empty");
+		return -1;
+	}
+
+	dl_list_for_each(group, &algo->groups, struct atf_group, list)
+	{
+		if (!group->is_configured)
+			continue;
+
+		/* consider user configured group first and
+		 * residual airtime will be used by default-group.
+		 */
+		if (os_strncmp(group->name, "default-group",
+			       strlen("default-group")) == 0) {
+			def_group = group;
+		} else {
+			iface_airtime = iface_airtime - group->user_cfg_airtime;
+			group->calculated_airtime = group->user_cfg_airtime;
+			atf_cal_explicit_peers(group);
+			atf_cal_implicit_peers(group);
+		}
+	}
+
+	/*now calculate for the default group*/
+	group = def_group;
+	if (!group) {
+		wpa_printf(MSG_ERROR, "ATF: default-group missing");
+		return -1;
+	}
+
+	group->user_cfg_airtime = iface_airtime;
+	group->calculated_airtime = iface_airtime;
+	atf_cal_implicit_peers(group);
+	return 0;
+}
+
+int
+atf_offload_build_peer_config(struct hostapd_iface *iface,
+                              struct atf_peer_params *peer_param)
+{
+	int i;
+	struct atf_peer_info *peer_info;
+	u16 num_peers = 0;
+	struct atf_group *group = NULL;
+	struct atf_algo *algo = NULL;
+	struct hostapd_data *hapd;
+	struct sta_info *sta;
+
+	if (!iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: algo is null");
+		return -1;
+	}
+	algo = iface->atf_algo;
+
+	if (algo->no_of_peers == 0) {
+		wpa_printf(MSG_ERROR, "ATF: There is no peer details to be sent to "
+		                      "driver. Skip build config.");
+		return 0;
+	}
+
+	peer_info = os_zalloc(algo->no_of_peers * sizeof(struct atf_peer_info));
+	if (!peer_info) {
+		wpa_printf(MSG_ERROR, "ATF: could not allocate peer info");
+		return -1;
+	}
+
+	for (i = 0; i < iface->num_bss; i++) {
+		hapd = iface->bss[i];
+		if (!hapd->started)
+			continue;
+
+		for (sta = hapd->sta_list; sta; sta = sta->next) {
+			if (sta && ap_sta_is_authorized(sta)) {
+
+				group = sta->atf_peer.group;
+
+				if (ATF_OFFLOAD_IS_LEAVE_UPDATE(algo) ||
+				    (ATF_OFFLOAD_IS_JOIN_UPDATE(algo) &&
+				     !ATF_IS_STA_UPDATED(sta->atf_peer)))
+					continue;
+
+				ATF_CLEAR_STA_UPDATED(sta->atf_peer);
+				if (ap_sta_is_mld(hapd, sta)) {
+					wpa_printf(MSG_DEBUG, "ATF: Getting addrress from link %d " MACSTR " sta addr",
+						   hapd->mld_link_id, MAC2STR(sta->mld_info.links[hapd->mld_link_id].peer_addr));
+					memcpy(peer_info[num_peers].peer_macaddr, sta->mld_info.links[hapd->mld_link_id].peer_addr, 6);
+				} else {
+					memcpy(peer_info[num_peers].peer_macaddr, sta->addr, 6);
+				}
+
+				peer_info[num_peers].percentage_peer =
+				    sta->atf_peer.calculated_airtime;
+				peer_info[num_peers].group_index = group->index;
+
+				if (sta->atf_peer.atf_configured)
+					peer_info[num_peers].explicit_peer_flag = 1;
+
+				wpa_printf(MSG_DEBUG, "ATF: build peer " MACSTR " airtime %d group id %d %d",
+					   MAC2STR(peer_info[num_peers].peer_macaddr), sta->atf_peer.calculated_airtime, group->index,
+					   peer_info[num_peers].explicit_peer_flag);
+				num_peers++;
+			}
+		}
+	}
+
+	if (ATF_OFFLOAD_IS_FULL_UPDATE(algo) && algo->no_of_peers != num_peers) {
+		wpa_printf(MSG_ERROR,
+		           "ATF: Mismatched: Packed peers %d and no_of_peers %d",
+		           num_peers, algo->no_of_peers);
+		goto err_cleanup;
+	}
+
+	peer_param->full_update_flag = ATF_OFFLOAD_IS_FULL_UPDATE(algo);
+	peer_param->num_peers = num_peers;
+	peer_param->peer_info = peer_info;
+	wpa_printf(MSG_INFO, "ATF: build peer with %d peers and flags %d ", num_peers, peer_param->full_update_flag);
+
+	return 0;
+
+err_cleanup:
+	os_free(peer_info);
+	peer_info = NULL;
+	return -1;
+}
+
+int
+atf_offload_build_group_config(struct hostapd_iface *iface,
+                               struct atf_group_params *group_param)
+{
+	struct atf_group_param_info *group_info = NULL;
+	struct atf_algo *algo;
+	struct atf_group *group;
+	u8 i;
+
+	if (!iface->atf_algo)
+		return -1;
+
+	algo = iface->atf_algo;
+
+	/* Fill Group Configurations */
+	if (algo->num_group_cfg > ATF_MAX_SSID_GROUP) {
+		wpa_printf(MSG_ERROR, "ATF: invalid num of Configured group %d!",
+		           algo->num_group_cfg);
+		return -1;
+	}
+
+	if (dl_list_empty(&algo->groups)) {
+		wpa_printf(MSG_ERROR, "ATF: group list is empty");
+		return -1;
+	}
+
+	group_info = os_zalloc(algo->num_group_cfg * sizeof(struct atf_group_param_info));
+	if (!group_info) {
+		wpa_printf(MSG_ERROR, "ATF: could not  allocate group info");
+		return -1;
+	}
+
+	i = 0;
+	dl_list_for_each(group, &algo->groups, struct atf_group, list)
+	{
+		if (!group->is_configured)
+			continue;
+
+		group_info[i].group_index  = group->index;
+		group_info[i].group_airtime = group->user_cfg_airtime;
+		group_info[i].total_implicit_peers = group->num_impl_peers;
+		group_info[i].total_explicit_peers = group->num_expl_peers;
+		group_info[i].group_policy = group->sched_policy;
+
+		/* Calculate total implicit peer units by removing total
+		 * explicit peer units from Group units.
+		 */
+		if (group->user_cfg_airtime >= group->total_explicit_airtime)
+			group_info[i].total_implicit_peer_units =
+				    (group->user_cfg_airtime -
+				     group->total_explicit_airtime);
+
+		wpa_printf(MSG_INFO,
+			   "ATF: Group id:%d airtime:%u  scheduling policy:%u "
+			    "unconfigured peers:%d configured_peers:%d "
+			    "implicit_peer_units:%d\n",
+			    group_info[i].group_index, group_info[i].group_airtime,
+			    group_info[i].group_policy,
+			    group_info[i].total_implicit_peers,
+			    group_info[i].total_explicit_peers,
+			    group_info[i].total_implicit_peer_units);
+		i++;
+	}
+	group_param->group_info = group_info;
+	group_param->num_groups = i;
+
+	return 0;
+}
+
+int
+atf_offload_build_wmm_ac_config(struct hostapd_iface *iface,
+                                struct atf_group_wmm_ac_params *wmm_ac_param)
+{
+	struct atf_group_wmm_ac_config *wmm_ac_cfg;
+	struct atf_algo *algo = iface->atf_algo;
+
+	if (dl_list_empty(&algo->groups)) {
+		wpa_printf(MSG_ERROR, "ATF: %s group list is empty", __func__);
+		return -1;
+	}
+
+	wmm_ac_cfg = os_zalloc(algo->num_group_cfg * sizeof(*wmm_ac_cfg));
+	if (!wmm_ac_cfg) {
+		wpa_printf(MSG_ERROR, "ATF: could not allocate wmm_ac_config");
+		return -1;
+	}
+
+	wmm_ac_param->num_groups = algo->num_group_cfg;
+
+	/* TODO: Logic to update all the ac values in future */
+
+	wmm_ac_param->wmm_ac_cfg = wmm_ac_cfg;
+	return 0;
+}
+
+int
+atf_send_calculated_airtime(struct hostapd_iface *iface)
+{
+
+	struct atf_peer_params atf_peer_param = {0};
+	struct atf_group_params atf_group_param = {0};
+	struct atf_group_wmm_ac_params atf_group_ac = {0};
+	int ret = -1;
+
+	if (!iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: iface does not have atf_algo assigned");
+		return -1;
+	}
+
+	ret = atf_offload_build_peer_config(iface, &atf_peer_param);
+	if (ret != 0)
+		return ret;
+
+	/* Fill WMM AC configurations per group only in full Update mode */
+	if (ATF_OFFLOAD_IS_FULL_UPDATE(iface->atf_algo)) {
+		ret = atf_offload_build_wmm_ac_config(iface, &atf_group_ac);
+		if (ret != 0) {
+			goto peer_param_free;
+		}
+	}
+
+	ret = atf_offload_build_group_config(iface, &atf_group_param);
+	if (ret != 0) {
+		goto group_ac_free;
+	}
+
+	/* TODO: send the built params to driver */
+
+	ATF_OFFLOAD_SET_NO_UPDATE(iface->atf_algo);
+
+	if (atf_group_param.group_info)
+		os_free(atf_group_param.group_info);
+
+group_ac_free:
+	if (atf_group_ac.wmm_ac_cfg)
+		os_free(atf_group_ac.wmm_ac_cfg);
+
+peer_param_free:
+	if (atf_peer_param.peer_info)
+		os_free(atf_peer_param.peer_info);
+
+	return ret;
+}
+
 static void
 atf_cfg_timeout_handler(void *eloop_ctx, void *timeout_ctx)
 {
@@ -831,6 +1230,14 @@ atf_cfg_timeout_handler(void *eloop_ctx, void *timeout_ctx)
 		wpa_printf(MSG_ERROR, "ATF: couldnt build the candidate list");
 		goto out;
 	}
+
+	if (atf_distribute_airtime(iface) != 0) {
+		wpa_printf(MSG_ERROR, "ATF: could not distribute airtime");
+		goto out;
+	}
+
+	if (atf_send_calculated_airtime(iface) != 0)
+		goto out;
 
 out:
 	algo->atf_tasksched = 0;

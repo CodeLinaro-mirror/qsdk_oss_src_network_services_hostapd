@@ -664,6 +664,8 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	eloop_cancel_timeout(ap_sta_reset_steer_flag_timer, hapd, sta);
 #endif /* CONFIG_WNM_AP */
 
+	atf_join_leave_update(hapd->iface, sta, false);
+
 #ifdef CONFIG_PASN
 	ap_free_sta_pasn(hapd, sta);
 #endif /* CONFIG_PASN */
@@ -1210,6 +1212,7 @@ struct sta_info * ap_sta_add(struct hostapd_data *hapd, const u8 *addr)
 	ap_sta_hash_add(hapd, sta);
 	ap_sta_remove_in_other_bss(hapd, sta);
 	sta->last_seq_ctrl = WLAN_INVALID_MGMT_SEQ;
+	atf_offload_initialize_peer(sta);
 	dl_list_init(&sta->ip6addr);
 	sta->mld_assoc_link_id = -1;
 	sta->policies = NULL;
@@ -2113,8 +2116,6 @@ void ap_sta_set_authorized_event(struct hostapd_data *hapd,
 	} else {
 		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_STA_DISCONNECTED "%s", buf);
 		hostapd_ubus_notify(hapd, "disassoc", sta->addr);
-
-		atf_join_leave_update(hapd->iface, sta, false);
 
 		if (hapd->msg_ctx_parent &&
 		    hapd->msg_ctx_parent != hapd->msg_ctx)
