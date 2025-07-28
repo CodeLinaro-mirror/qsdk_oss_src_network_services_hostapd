@@ -7122,7 +7122,7 @@ hostapd_find_eirp_in_afc_eirp_obj(struct chan_eirp_obj *eirp_obj, u16 freq,
  *
  * Return: 0 on success, -1 on failure
  */
-static int
+int
 hostapd_find_eirp_in_afc_chan_obj(struct afc_chan_obj *chan_obj, u16 freq,
 				  u16 center_freq, u8 op_class, s16 *afc_eirp)
 {

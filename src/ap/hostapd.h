@@ -1354,6 +1354,24 @@ hostapd_reg_get_psd_from_chan_list(struct hostapd_iface *iface, u16 freq,
 				   s16 *psd_pwr);
 
 /**
+ * hostapd_find_eirp_in_afc_chan_obj() - Get AFC eirp power
+ *
+ * This API get the SP EIRP power from the AFC channel object based on the
+ * channel center frequency and operating class.
+ *
+ * @chan_obj: Pointer to chan_obj
+ * @freq: Frequency in MHz
+ * @center_freq: Band center Frequency
+ * @op_class: Operating class
+ * @afc_eirp: Output pointer to AFC EIRP power
+ *
+ * Return: 0 on success, -1 on failure
+ */
+int
+hostapd_find_eirp_in_afc_chan_obj(struct afc_chan_obj *chan_obj, u16 freq,
+				  u16 center_freq, u8 op_class, s16 *afc_eirp);
+
+/**
  * hostapd_get_valid_puncture_pattern_arr() - Get the valid puncture pattern array
  * @bw: Bandwidth in MHz
  * @num_pp: Output pointer to store the number of valid puncture patterns
