@@ -1351,6 +1351,24 @@ hostapd_verify_action_frame_has_min_length(const struct ieee80211_mgmt *mgmt,
 					   size_t len);
 
 /**
+ * hostapd_find_eirp_in_afc_chan_obj() - Get AFC eirp power
+ *
+ * This API get the SP EIRP power from the AFC channel object based on the
+ * channel center frequency and operating class.
+ *
+ * @chan_obj: Pointer to chan_obj
+ * @freq: Frequency in MHz
+ * @center_freq: Band center Frequency
+ * @op_class: Operating class
+ * @afc_eirp: Output pointer to AFC EIRP power
+ *
+ * Return: 0 on success, -1 on failure
+ */
+int
+hostapd_find_eirp_in_afc_chan_obj(struct afc_chan_obj *chan_obj, u16 freq,
+				  u16 center_freq, u8 op_class, s16 *afc_eirp);
+
+/**
  * hostapd_reg_get_psd_from_chan_list() - Get the regulatory PSD for the freq
  * @iface: Pointer to hostapd_iface
  * @freq: Frequency in MHz

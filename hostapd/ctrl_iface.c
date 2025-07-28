@@ -2735,6 +2735,75 @@ static int hostapd_check_validity_device_params(struct hostapd_freq_params *para
 
 
 /**
+ * is_afc_info_usable() - Check if AFC info is usable
+ * @afc_info: Pointer to AFC info
+ *
+ * Return: true if usable, false otherwise
+ */
+static bool
+is_afc_info_usable(struct afc_sp_reg_info *afc_info)
+{
+	if (!afc_info) {
+		wpa_printf(MSG_WARNING, "AFC info is NULL or empty");
+		return false;
+	}
+	if (!afc_info->num_chan_objs) {
+		wpa_printf(MSG_WARNING, "AFC info has no channel objects");
+		return false;
+	}
+	return true;
+}
+
+/**
+ * ieee80211_validate_chan_bw_in_afc_response() - Validate channel
+ * bandwidth in AFC response
+ * @iface: Pointer to hostapd interface data
+ * @he_6ghz_pwr_mode: HE 6 GHz power mode
+ * Return: true if valid, false otherwise
+ */
+static bool
+ieee80211_validate_chan_bw_in_afc_response(struct hostapd_iface *iface,
+					   u8 he_6ghz_pwr_mode)
+{
+	struct afc_sp_reg_info *afc_info;
+	bool valid;
+	u8 i;
+	u16 freq = iface->freq;
+	u16 cen_freq = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
+	u8 op_class = iface->conf->op_class;
+
+	if (he_6ghz_pwr_mode != HE_REG_INFO_6GHZ_AP_TYPE_SP || iface->conf->punct_bitmap)
+		return true;
+
+	afc_info = iface->afc_rsp_info;
+
+	if (!is_afc_info_usable(afc_info)) {
+		wpa_printf(MSG_WARNING, "AFC info is not usable");
+		return false;
+	}
+	valid = false;
+	for (i = 0; i < afc_info->num_chan_objs; i++) {
+		struct afc_chan_obj *chan_obj = &afc_info->afc_chan_info[i];
+		s16 afc_eirp_pwr = CHAN_MIN_TX_POWER;
+		int ret;
+
+		if (chan_obj->global_opclass != op_class)
+			continue;
+
+		ret = hostapd_find_eirp_in_afc_chan_obj(chan_obj, freq, cen_freq,
+							op_class, &afc_eirp_pwr);
+		if (!ret) {
+			valid = true;
+			wpa_printf(MSG_DEBUG,
+				   "AFC EIRP power %d for freq %d, center freq %d, op class %d",
+				   afc_eirp_pwr, freq, cen_freq, op_class);
+			break;
+		}
+	}
+	return valid;
+}
+
+/**
  * hostapd_validate_chan_bw_in_pwr_mode() - Validate the input channel parameters
  *
  * This API checks if the input channel parameters are valid in the given
@@ -2798,6 +2867,14 @@ hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
 		}
 
 		chan_6ghz++;
+	}
+
+	if (!ieee80211_validate_chan_bw_in_afc_response(iface,
+							pwr_type)) {
+		wpa_printf(MSG_WARNING,
+			   "Channel %d, bw: %d is not supported in power mode %d",
+			   iface->freq, bw, pwr_type);
+		return false;
 	}
 
 	return true;
