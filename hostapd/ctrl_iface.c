@@ -3066,6 +3066,11 @@ static int hostapd_ctrl_iface_set_pwr_mode(struct hostapd_iface *iface,
 		return -1;
 	}
 
+	if (hostapd_csa_in_progress(iface)) {
+		wpa_printf(MSG_ERROR, "Channel switch in progress");
+		return -1;
+	}
+
 	os_memset(&settings, 0, sizeof(settings));
 	he_6ghz_pwr_mode = strtol(pos, &end, 10);
 	if (pos == end || he_6ghz_pwr_mode < 0 || he_6ghz_pwr_mode > 2) {
@@ -3260,9 +3265,6 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 		wpa_printf(MSG_ERROR, "Power mode change in progress");
 		return -1;
 	}
-	if (settings.power_mode > -1)
-		iface->power_mode_6ghz_before_change = settings.power_mode;
-
 	ret = hostapd_check_validity_device_params(&settings.freq_params);
 	if (ret) {
 		wpa_printf(MSG_ERROR, "chanswitch: invalid device parameters provided %d %d",
@@ -3311,9 +3313,6 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 				   settings.freq_params.freq,
 				   settings.freq_params.sec_channel_offset,
 				   settings.freq_params.bandwidth);
-			if (iface->power_mode_6ghz_before_change != -1)
-				iface->power_mode_6ghz_before_change = -1;
-
 			return -1;
 		}
 
@@ -3336,9 +3335,6 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 		/* Perform CAC and switch channel */
 		iface->is_ch_switch_dfs = true;
 		hostapd_switch_channel_fallback(iface, &settings.freq_params);
-		if (iface->power_mode_6ghz_before_change != -1)
-			iface->power_mode_6ghz_before_change = -1;
-
 		return 0;
 	}
 
@@ -3362,9 +3358,6 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 
 		err = hostapd_switch_channel(iface->bss[i], &settings);
 		if (err) {
-			if (iface->power_mode_6ghz_before_change != -1)
-				iface->power_mode_6ghz_before_change = -1;
-
 			ret = err;
 			num_err++;
 		}
@@ -3387,6 +3380,11 @@ static int hostapd_ctrl_iface_color_change(struct hostapd_iface *iface,
 	unsigned int i;
 	char *end;
 	struct hostapd_data *link_bss;
+
+	if (hostapd_csa_in_progress(iface)) {
+		wpa_printf(MSG_ERROR, "Channel switch in progress");
+		return -1;
+	}
 
 	os_memset(&settings, 0, sizeof(settings));
 

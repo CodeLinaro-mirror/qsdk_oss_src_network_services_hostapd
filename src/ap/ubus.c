@@ -740,6 +740,7 @@ hostapd_switch_chan(struct ubus_context *ctx, struct ubus_object *obj,
 		chwidth = CHANWIDTH_USE_HT;
 		break;
 	}
+	css.power_mode = hapd->iconf->he_6ghz_reg_pwr_type;
 
 	info = (struct hostapd_channel_info) {
 		.mode = iconf->hw_mode,
