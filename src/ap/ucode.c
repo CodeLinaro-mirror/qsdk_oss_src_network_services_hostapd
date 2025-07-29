@@ -763,6 +763,8 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 		csa.freq_params.center_freq2 = intval;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "punct_bitmap", NULL))) && !errno)
 		csa.freq_params.punct_bitmap = intval;
+	if ((intval = ucv_int64_get(ucv_object_get(info, "power_mode", NULL))) && !errno)
+		csa.power_mode = intval;
 
 	for (i = 0; i < iface->num_bss; i++)
 		ret = hostapd_switch_channel(iface->bss[i], &csa);

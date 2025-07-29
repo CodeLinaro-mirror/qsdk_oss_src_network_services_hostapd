@@ -11142,6 +11142,7 @@ static int wpas_p2p_move_go_csa(struct wpa_supplicant *wpa_s)
 	csa_settings.freq_params.sec_channel_offset = conf->secondary_channel;
 	csa_settings.freq_params.ht_enabled = conf->ieee80211n;
 	csa_settings.freq_params.bandwidth = conf->secondary_channel ? 40 : 20;
+	csa_settings.power_mode = conf->he_6ghz_reg_pwr_type;
 
 	if (conf->ieee80211ac) {
 		int freq1 = 0, freq2 = 0;

@@ -740,6 +740,7 @@ hostapd_switch_chan(struct ubus_context *ctx, struct ubus_object *obj,
 		break;
 	}
 
+	css.power_mode = hapd->iconf->he_6ghz_reg_pwr_type;
 	hostapd_set_freq_params(&css.freq_params, iconf->hw_mode,
 				css.freq_params.freq,
 				css.freq_params.channel, iconf->enable_edmg,

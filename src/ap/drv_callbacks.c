@@ -1480,27 +1480,17 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 				  hapd->iface->num_hw_features);
 
 	wpa_msg(hapd->msg_ctx, MSG_INFO,
-		"%sfreq=%d ht_enabled=%d ch_offset=%d ch_width=%s cf1=%d cf2=%d is_dfs0=%d dfs=%d puncturing_bitmap=0x%04x width_device=%d, cf_device=%d",
+		"%sfreq=%d ht_enabled=%d ch_offset=%d ch_width=%s cf1=%d cf2=%d is_dfs0=%d dfs=%d puncturing_bitmap=0x%04x width_device=%d, cf_device=%d 6ghz power mode=%d",
 		finished ? WPA_EVENT_CHANNEL_SWITCH :
 		WPA_EVENT_CHANNEL_SWITCH_STARTED,
 		freq, ht, offset, channel_width_to_string(width),
-		cf1, cf2, is_dfs0, is_dfs, punct_bitmap, width_device, cf_device);
+		cf1, cf2, is_dfs0, is_dfs, punct_bitmap, width_device, cf_device, power_mode_6ghz);
 	if (!finished)
 		return;
 
 	if (hapd->csa_in_progress &&
 	    freq == hapd->cs_freq_params.freq) {
-		if (hapd->iface->power_mode_6ghz_before_change > -1) {
-			if (power_mode_6ghz == hapd->iface->power_mode_6ghz_before_change) {
-				hapd->iconf->he_6ghz_reg_pwr_type = power_mode_6ghz;
-				hapd->iface->power_mode_6ghz_before_change = -1;
-			} else {
-				wpa_printf(MSG_DEBUG,
-					   "CSA power mode: %d does not match requested power mode: %d",
-					   power_mode_6ghz, hapd->iface->power_mode_6ghz_before_change);
-				hostapd_switch_power_mode(hapd);
-			}
-		}
+		hapd->iconf->he_6ghz_reg_pwr_type = power_mode_6ghz;
 
 		hostapd_cleanup_cs_params(hapd);
 		hapd->disable_cu = 1;

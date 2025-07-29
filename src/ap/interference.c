@@ -744,6 +744,29 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 	settings.freq_params.eht_enabled= iface->conf->ieee80211be;
 	settings.power_mode = -1;
 
+	if (is_6ghz_freq(settings.freq_params.freq) &&
+	    iface->conf->enable_best_power_mode) {
+		int best_power_mode;
+
+		best_power_mode =
+			hostapd_get_best_ap_6ghz_power_mode(iface,
+							    settings.freq_params.freq,
+							    settings.freq_params.center_freq1,
+							    settings.freq_params.bandwidth,
+							    settings.freq_params.punct_bitmap);
+		if (best_power_mode != NL80211_REG_NUM_POWER_MODES) {
+			settings.power_mode = best_power_mode;
+			wpa_printf(MSG_DEBUG, "%s: Best power mode for Freq %d is %d",
+				   __func__,
+				   settings.freq_params.freq,
+				   settings.power_mode);
+		} else {
+			wpa_printf(MSG_DEBUG, "%s: Failed to get BPM for Freq %d",
+				   __func__, settings.freq_params.freq);
+			goto exit;
+		}
+	}
+
 	for (i = 0; i < iface->num_bss; i++) {
 		/* Save CHAN_SWITCH VHT and HE config */
 		hostapd_chan_switch_config(iface->bss[i],
@@ -866,7 +889,6 @@ static void set_csa_param(struct csa_settings *settings,
 							    settings->freq_params.punct_bitmap);
 		if (best_power_mode != NL80211_REG_NUM_POWER_MODES) {
 			settings->power_mode = best_power_mode;
-			iface->power_mode_6ghz_before_change = best_power_mode;
 			wpa_printf(MSG_DEBUG, "%s: Best power mode for Freq %d is %d",
 				   __func__,
 				   settings->freq_params.freq,
