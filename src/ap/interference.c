@@ -492,7 +492,8 @@ static int find_6g_enabled_chans(struct hostapd_iface *iface,
 		}
 
 		intf_afc_chan_range_available(chan_6ghz_list, n_chans, &afc_bitmap);
-		if (channel_width < 80) {
+		if (channel_width < 80 || !(iface->conf->ieee80211be) ||
+		    iface->conf->puncture_strict_6ghz) {
 			find_6g_chan_20_40(chan, afc_bitmap,
 					   &channel_idx, chandef_list);
 		} else {
@@ -875,6 +876,133 @@ static void set_csa_param(struct csa_settings *settings,
 }
 
 /*
+ * @ACT_FIND_MIN_PUNCT   : Action of finding minimum puncture bitmap from an
+ *                         array of puncture bitmap
+ * @ACT_FILTER_MIN_PUNCT : Action of filtering an array and creating a new array
+ *                         with a given value.
+ */
+enum punct_bitmap_array_action {
+	ACT_FIND_MIN_PUNCT = 0,
+	ACT_FILTER_MIN_PUNCT = 1
+};
+
+/*
+ * iterate_punct_bitmap_array - Commomn function to iterate puncture bitmap
+ * array.
+ *
+ * @max_eirp_chandef_list: Array of max eirp channels
+ * @max_eirp_nchans: Size of max eirp array
+ * @min_punct_bit_count: Pointer to count of bits of least puncture pattern
+ * @min_punct_chandef_listi: Array of least punctured channels
+ * @min_punct_bitmap_nchans: Size of least Punctured channels array
+ * @action: action can be ACT_FIND_MIN_PUNCT/ACT_FILTER_MIN_PUNCT.
+ *
+ * Return: 0
+ */
+static int
+iterate_punct_bitmap_array(struct hostapd_channel_data *max_eirp_chandef_list,
+			   int max_eirp_nchans, u16 *min_punct_bit_count,
+			   struct hostapd_channel_data **min_punct_chandef_list,
+			   int *min_punct_bitmap_nchans, int action)
+{
+	int i;
+	int channel_idx = 0;
+
+	for (i = 0; i < max_eirp_nchans; i++) {
+		int j;
+		u16 bitmap = max_eirp_chandef_list[i].punct_bitmap;
+		u16 bit_count = 0;
+
+		for (j = 0; j < 16; j++) {
+			bit_count += bitmap & 1;
+			bitmap >>= 1;
+		}
+		if (action == ACT_FIND_MIN_PUNCT) {
+			if (bit_count < *min_punct_bit_count)
+				*min_punct_bit_count = bit_count;
+		} else if (action == ACT_FILTER_MIN_PUNCT) {
+			if (bit_count == *min_punct_bit_count) {
+				(*min_punct_chandef_list)[channel_idx] = max_eirp_chandef_list[i];
+				channel_idx++;
+			}
+		}
+	}
+
+	if (action == ACT_FILTER_MIN_PUNCT)
+		*min_punct_bitmap_nchans = channel_idx;
+	return 0;
+}
+
+static int
+find_min_punct_bit_count(struct hostapd_channel_data *max_eirp_chandef_list,
+			 int max_eirp_nchans, u16 *min_punct_bit_count)
+{
+	return iterate_punct_bitmap_array(max_eirp_chandef_list, max_eirp_nchans,
+					  min_punct_bit_count, NULL, NULL,
+					  ACT_FIND_MIN_PUNCT);
+}
+
+static int
+fill_min_punct_list(struct hostapd_channel_data *max_eirp_chandef_list,
+		    int max_eirp_nchans, u16 min_punct_bit_count,
+		    struct hostapd_channel_data **min_punct_chandef_list,
+		    int *min_punct_bitmap_nchans)
+{
+	return iterate_punct_bitmap_array(max_eirp_chandef_list, max_eirp_nchans,
+					  &min_punct_bit_count,
+					  min_punct_chandef_list,
+					  min_punct_bitmap_nchans,
+					  ACT_FILTER_MIN_PUNCT);
+}
+
+/*
+ * get_min_punct_bitmap_channel - This will calculate least puncture bitmap
+ * channels and return array of those least punctured channels.
+ *
+ * @max_eirp_chandef_list: Max eirp channel list
+ * @max_eirp_nchans: Size of the eirp array
+ * @chan_data: Pointer to channel data
+ * @chan_idx: Pointer to channel idx
+
+ * Return : 0/-1
+ */
+static int
+get_min_punct_bitmap_channel(struct hostapd_channel_data *max_eirp_chandef_list,
+			     int max_eirp_nchans,
+			     struct hostapd_channel_data *chan_data,
+			     int *chan_idx)
+{
+	struct hostapd_channel_data *min_punct_chandef_list;
+	int min_punct_bitmap_nchans;
+	u16 min_punct_bit_count = 0xffff;
+	int ret = 0;
+
+	find_min_punct_bit_count(max_eirp_chandef_list, max_eirp_nchans,
+				 &min_punct_bit_count);
+	min_punct_chandef_list = os_zalloc(sizeof(struct hostapd_channel_data) *
+					   max_eirp_nchans);
+	if (!min_punct_chandef_list) {
+		wpa_printf(MSG_ERROR, "min_punct_chandef_list memory allocation failed");
+		ret = -1;
+		goto free_punct_list;
+	}
+
+	fill_min_punct_list(max_eirp_chandef_list, max_eirp_nchans,
+			    min_punct_bit_count, &min_punct_chandef_list,
+			    &min_punct_bitmap_nchans);
+	if (get_random_channel(chan_data, min_punct_chandef_list, chan_idx,
+			       min_punct_bitmap_nchans)) {
+		ret = -1;
+		goto free_punct_list;
+	}
+
+free_punct_list:
+	os_free(min_punct_chandef_list);
+
+	return ret;
+}
+
+/*
  * @ACT_FIND_EIRPMAX   : Action of  finding maximum EIRP from an array of EIRPs
  * @ACT_FILTER_MAXEIRP : Action of  filtering an array and creating a new array
  *                       with a given value.
@@ -889,7 +1017,8 @@ static int iterate_eirp_array(struct hostapd_iface *iface,
 			      struct hostapd_channel_data *available_chandef_list,
 			      int n_chans, int *max_eirp_pwr,
 			      struct hostapd_channel_data **max_eirp_chandef_list,
-			      int *max_eirp_nchans, int action)
+			      int *max_eirp_nchans, int action,
+			      bool *is_full_chan_avail)
 {
 	int i;
 	int ret = 0;
@@ -914,12 +1043,28 @@ static int iterate_eirp_array(struct hostapd_iface *iface,
 						    NL80211_REG_NUM_POWER_MODES,
 						    false);
 		if (action == ACT_FIND_EIRPMAX) {
-			if (tmp_eirp_pwr > *max_eirp_pwr)
+			if (tmp_eirp_pwr > *max_eirp_pwr) {
 				*max_eirp_pwr = tmp_eirp_pwr;
+				if (available_chandef_list[i].punct_bitmap)
+					*is_full_chan_avail = false;
+				else
+					*is_full_chan_avail = true;
+			} else if (tmp_eirp_pwr == *max_eirp_pwr) {
+				if (!available_chandef_list[i].punct_bitmap)
+					*is_full_chan_avail = true;
+			}
 		} else if (action == ACT_FILTER_MAXEIRP) {
 			if (tmp_eirp_pwr == *max_eirp_pwr) {
-				(*max_eirp_chandef_list)[channel_idx] = available_chandef_list[i];
-				channel_idx++;
+				if (*is_full_chan_avail &&
+				    !available_chandef_list[i].punct_bitmap) {
+					(*max_eirp_chandef_list)[channel_idx] =
+					    available_chandef_list[i];
+					channel_idx++;
+				} else if (!(*is_full_chan_avail)) {
+					(*max_eirp_chandef_list)[channel_idx] =
+					    available_chandef_list[i];
+					channel_idx++;
+				}
 			}
 		}
 	}
@@ -930,27 +1075,70 @@ static int iterate_eirp_array(struct hostapd_iface *iface,
 	return ret;
 }
 
+/*
+ * find_max_eirp_pwr: This function will calculate the max
+ * eirp of the given channel array.
+ *
+ * @iface: Pointer to hostapd iface data structure
+ * @chan_width: Channel width
+ * @best_ap_pwr_mode: Best power mode
+ * @available_chandef_list: Pointer to channel array
+ * @n_chans: Size of channel array
+ * @max_eirp_pwr: It will contain the max eirp calculate by this function
+ * @is_full_chan_avail: It indicates whether at least one channel is available
+ *                      or not with punct_bitmap 0x0 for max_eirp_pwr.
+ *                      This is an output parameter.
+ *
+ * Return: 0/-1
+ */
 static int find_max_eirp_pwr(struct hostapd_iface *iface,
 			     int chan_width, int best_ap_pwr_mode,
 			     struct hostapd_channel_data *available_chandef_list,
-			     int n_chans, int *max_eirp_pwr)
+			     int n_chans, int *max_eirp_pwr,
+			     bool *is_full_chan_avail)
 {
 	return iterate_eirp_array(iface, chan_width, best_ap_pwr_mode,
 				  available_chandef_list, n_chans,
-				  max_eirp_pwr, NULL, NULL, ACT_FIND_EIRPMAX);
+				  max_eirp_pwr, NULL, NULL, ACT_FIND_EIRPMAX,
+				  is_full_chan_avail);
 }
 
+/*
+ * fill_max_eirp_chandef_list: This function will fill those channels in
+ * available_chandef_list which has eirp equal to max_eirp_pwr.
+ *
+ * @iface: Pointer to hostapd iface data structure
+ * @chan_width: Channel width
+ * @best_ap_pwr_mode: Best power mode
+ * @available_chandef_list: Pointer to channel array
+ * @n_chans: Size of channel array
+ * @max_eirp_chandef_list: This array will contain those channels which has
+ *                         eirp equal to max_eirp_pwr
+ * @max_eirp_pwr: It will contain the max eirp of available_chandef_list array
+ * @is_full_chan_avail: When true, it indicates that there is at least one
+ *                      channel available in '@max_eirp_chandef_list' with
+ *                      punct_bitmap 0x0 for max_eirp_pwr and only those
+ *                      channels are filled in '@max_eirp_chandef_list' which
+ *                      have punct_bitmap 0x0. Else there is no full bandwidth
+ *                      (punct_bitmap 0x0) channels available in
+ *                      '@max_eirp_chandef_list', which mean only punctured
+ *                      channels are available in '@max_eirp_chandef_list'.
+ *
+ * Return: 0/-1
+ */
 static int fill_max_eirp_chandef_list(struct hostapd_iface *iface,
 				      int chan_width, int best_ap_pwr_mode,
 				      struct hostapd_channel_data *available_chandef_list,
 				      int n_chans,
 				      struct hostapd_channel_data **max_eirp_chandef_list,
-				      int *max_eirp_nchans, int max_eirp_pwr)
+				      int *max_eirp_nchans, int max_eirp_pwr,
+				      bool is_full_chan_avail)
 {
 	return iterate_eirp_array(iface, chan_width, best_ap_pwr_mode,
 				  available_chandef_list, n_chans,
 				  &max_eirp_pwr, max_eirp_chandef_list,
-				  max_eirp_nchans, ACT_FILTER_MAXEIRP);
+				  max_eirp_nchans, ACT_FILTER_MAXEIRP,
+				  &is_full_chan_avail);
 }
 
 static int find_afc_random_chan(struct hostapd_hw_modes *mode,
@@ -966,6 +1154,7 @@ static int find_afc_random_chan(struct hostapd_hw_modes *mode,
 	int channel_width;
 	int num_pp;
 	int ret = 0;
+	bool is_full_chan_avail = false;
 
 	channel_width = channel_width_to_int(*chan_width);
 	num_pp = hostapd_get_num_pp(channel_width);
@@ -988,7 +1177,7 @@ static int find_afc_random_chan(struct hostapd_hw_modes *mode,
 
 	if (find_max_eirp_pwr(iface, *chan_width, best_ap_pwr_mode,
 			      available_chandef_list, num_available_chandefs,
-			      &max_eirp_pwr)) {
+			      &max_eirp_pwr, &is_full_chan_avail)) {
 		wpa_printf(MSG_ERROR, "AFC: could not able to find max eirp power");
 		ret = -1;
 		goto free_chandef_list;
@@ -1005,15 +1194,25 @@ static int find_afc_random_chan(struct hostapd_hw_modes *mode,
 	if (fill_max_eirp_chandef_list(iface, *chan_width, best_ap_pwr_mode,
 				       available_chandef_list, num_available_chandefs,
 				       &max_eirp_chandef_list, &max_eirp_nchans,
-				       max_eirp_pwr)) {
+				       max_eirp_pwr, is_full_chan_avail)) {
 		wpa_printf(MSG_ERROR, "AFC: could not able to fill max eirp chan list");
 		ret = -1;
 		goto free_eirp_list;
 	}
-	if (get_random_channel(chan_data, max_eirp_chandef_list, chan_idx,
-			       max_eirp_nchans)) {
-		ret = -1;
-		goto free_eirp_list;
+
+	if (is_full_chan_avail) {
+		if (get_random_channel(chan_data, max_eirp_chandef_list, chan_idx,
+				       max_eirp_nchans)) {
+			ret = -1;
+			goto free_eirp_list;
+		}
+	} else {
+		if (get_min_punct_bitmap_channel(max_eirp_chandef_list,
+						 max_eirp_nchans,
+						 chan_data, chan_idx)) {
+			ret = -1;
+			goto free_eirp_list;
+		}
 	}
 
 free_eirp_list:
