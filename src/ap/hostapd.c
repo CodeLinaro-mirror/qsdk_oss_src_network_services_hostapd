@@ -409,7 +409,13 @@ int hostapd_reload_config_iface(struct hostapd_iface *iface)
 			hostapd_config_free(newconf);
 			return -1;
 		}
-		hostapd_remove_iface(interfaces, hapd->conf->iface);
+
+		if (hostapd_remove_hapd_iface(iface) != 0) {
+			os_free(fname);
+			hostapd_config_free(newconf);
+			return -1;
+		}
+
 		iface = hostapd_init(interfaces, fname);
 		os_free(fname);
 		hostapd_config_free(newconf);
@@ -4987,10 +4993,48 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx,
 }
 
 
+int hostapd_remove_hapd_iface(struct hostapd_iface *hapd_iface)
+{
+	struct hapd_interfaces *interfaces;
+	size_t i;
+
+	if (hapd_iface == NULL)
+		return -1;
+
+	hapd_iface->driver_ap_teardown =
+		!!(hapd_iface->drv_flags &
+				WPA_DRIVER_FLAGS_AP_TEARDOWN_SUPPORT);
+
+	interfaces = hapd_iface->interfaces;
+	for (i = 0; i < interfaces->count; i++) {
+
+		if (interfaces->iface[i] == hapd_iface)
+			break;
+	}
+
+	if (i >= interfaces->count)
+		return -1;
+
+	hostapd_interface_deinit_free(hapd_iface);
+
+	while (i < (interfaces->count - 1)) {
+		interfaces->iface[i] =
+			interfaces->iface[i + 1];
+		i++;
+	}
+	interfaces->count--;
+
+#ifdef CONFIG_IEEE80211BE
+	hostapd_cleanup_unused_mlds(interfaces);
+#endif /* CONFIG_IEEE80211BE */
+	return 0;
+}
+
+
 int hostapd_remove_iface(struct hapd_interfaces *interfaces, char *buf)
 {
 	struct hostapd_iface *hapd_iface;
-	size_t i, j, k = 0;
+	size_t i, j;
 
 	for (i = 0; i < interfaces->count; i++) {
 		hapd_iface = interfaces->iface[i];
@@ -4999,20 +5043,7 @@ int hostapd_remove_iface(struct hapd_interfaces *interfaces, char *buf)
 		if (!os_strcmp(hapd_iface->phy, buf) ||
 		    !os_strcmp(hapd_iface->conf->bss[0]->iface, buf)) {
 			wpa_printf(MSG_INFO, "Remove interface '%s'", buf);
-			hapd_iface->driver_ap_teardown =
-				!!(hapd_iface->drv_flags &
-				   WPA_DRIVER_FLAGS_AP_TEARDOWN_SUPPORT);
-
-			hostapd_interface_deinit_free(hapd_iface);
-			k = i;
-			while (k < (interfaces->count - 1)) {
-				interfaces->iface[k] =
-					interfaces->iface[k + 1];
-				k++;
-			}
-			interfaces->count--;
-			hostapd_cleanup_unused_mlds(interfaces);
-
+			hostapd_remove_hapd_iface(hapd_iface);
 			return 0;
 		}
 
