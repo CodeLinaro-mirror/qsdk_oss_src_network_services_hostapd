@@ -542,6 +542,7 @@ static void hostapd_link_remove_timeout_handler(void *eloop_data,
 	ieee802_11_set_beacon(hapd);
 
 	if (!hapd->eht_mld_link_removal_count) {
+		hapd->eht_mld_link_removal_inprogress = false;
 		hostapd_free_link_stas(hapd);
 		hostapd_disable_iface(hapd->iface);
 		return;
@@ -809,6 +810,7 @@ int hostapd_link_remove(struct hostapd_data *hapd, u32 count)
 	    return hostapd_send_ml_reconfig_link_removal(hapd, count);
 	}
 
+	hapd->eht_mld_link_removal_inprogress = true;
 	eloop_register_timeout(0, TU_TO_USEC(hapd->iconf->beacon_int),
 			       hostapd_link_remove_timeout_handler,
 			       hapd, NULL);
