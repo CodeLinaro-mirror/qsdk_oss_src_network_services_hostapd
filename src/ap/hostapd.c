@@ -3332,6 +3332,7 @@ dfs_offload:
 	if (iface->interfaces && iface->interfaces->count > 1)
 		ieee802_11_update_beacons(iface);
 
+	atf_offload_send_feature_params(hapd);
 	return 0;
 
 fail:

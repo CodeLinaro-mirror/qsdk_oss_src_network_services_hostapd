@@ -67,6 +67,39 @@ void atf_offload_deinitialize_peer(struct sta_info *sta)
 }
 
 
+void atf_offload_send_feature_params(struct hostapd_data *hapd)
+{
+	struct hostapd_iface *iface;
+	struct atf_algo *algo;
+	int ret;
+	u8 radio_index;
+
+	if (!hapd->iface || !hapd->iface->atf_algo || !hapd->drv_priv) {
+		wpa_printf(MSG_DEBUG, "ATF: Invalid hapd data %s\n", __func__);
+		return;
+	}
+
+	iface = hapd->iface;
+	algo = iface->atf_algo;
+
+	if (!iface->conf->atf_offload) {
+		wpa_printf(MSG_ERROR, "ATF: ATF offload feature is not enabled\n");
+		return;
+	}
+
+	radio_index = atf_get_hw_idx(iface);
+
+	if (algo->atf_enabled) {
+		ret = nl80211_atf_offload_enable_disable(hapd->drv_priv, radio_index,
+							 algo->atf_enabled);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "ATF: Failed to enable ATF offload\n");
+			return;
+		}
+	}
+}
+
+
 struct atf_peer_config *
 atf_allocate_peer_config(u8 *macaddr, struct atf_algo *algo)
 {
@@ -1165,6 +1198,46 @@ atf_offload_build_wmm_ac_config(struct hostapd_iface *iface,
 
 	wmm_ac_param->wmm_ac_cfg = wmm_ac_cfg;
 	return 0;
+}
+
+
+int
+nl80211_atf_offload_enable_disable(void *priv, u8 radio_index, u8 value)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret;
+	struct nlattr *data;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOBUFS;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS))
+		goto fail;
+
+	data = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!data ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_INDEX,
+		       radio_index) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLED,
+		       value))
+		goto fail;
+
+	nla_nest_end(msg, data);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR, "ATF: ATF offload enable/disable failed %s",
+			   strerror(-ret));
+
+	return ret;
+fail:
+	nlmsg_free(msg);
+	return -1;
 }
 
 

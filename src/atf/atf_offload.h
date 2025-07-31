@@ -324,10 +324,14 @@ void atf_offload_initialize_peer(struct sta_info *sta);
 
 void atf_offload_deinitialize_peer(struct sta_info *sta);
 
+void atf_offload_send_feature_params(struct hostapd_data *hapd);
+
 void atf_join_leave_update(struct hostapd_iface *iface, struct sta_info *sta,
                            bool is_join);
 
 u8 atf_get_hw_idx(struct hostapd_iface *iface);
+
+int nl80211_atf_offload_enable_disable(void *priv, u8 radio_index, u8 value);
 
 #else
 
@@ -360,5 +364,8 @@ static inline void atf_offload_deinitialize_peer(struct sta_info *sta)
 {
 }
 
+static inline void  atf_offload_send_feature_params(struct hostapd_data *hapd)
+{
+}
 #endif /* CONFIG_ATF_OFFLOAD */
 #endif /* ATF_OFFLOAD_H */

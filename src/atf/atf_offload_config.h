@@ -15,4 +15,7 @@ struct atf_algo;
 
 int atf_read_config(struct atf_algo *algo, const char *fname);
 
+int hostapd_ctrl_iface_config_atf_offload(struct hostapd_data *hapd,
+					  const char *cmd, char *buf, size_t buflen);
+
 #endif /* ATF_OFFLOAD_CONFIG_H */

@@ -343,3 +343,88 @@ exit:
 
 	return -1;
 }
+
+
+static int
+hostapd_ctrl_iface_atf_offload_commitatf(struct hostapd_data *hapd,
+					 const char *cmd)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	u8 enabled, radio_index;
+	int ret;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	if (!hapd->drv_priv) {
+		wpa_printf(MSG_ERROR, "ATF: Invalid hapd data %s\n", __func__);
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+	enabled = atoi(cmd);
+
+	if (enabled != 0 && enabled != 1) {
+		wpa_printf(MSG_ERROR, "ATF: Invalid input for atf enabled\n");
+		return -1;
+	}
+
+	radio_index = atf_get_hw_idx(iface);
+	if (algo->atf_enabled != enabled) {
+		ret = nl80211_atf_offload_enable_disable(hapd->drv_priv, radio_index, enabled);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "ATF: Failed to enable ATF\n");
+			return -1;
+		}
+	}
+
+	algo->atf_enabled = enabled;
+	iface->conf->commitatf = enabled;
+
+	if (algo->atf_enabled) {
+		ATF_OFFLOAD_SET_FULL_UPDATE(algo);
+		atf_trigger_config_timer(iface);
+	}
+
+	return 0;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_get_commitatf(struct hostapd_data *hapd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	int ret, len = 0;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	ret = os_snprintf(buf, buflen, "ATF is %s\n",
+			  algo->atf_enabled ? "enabled" : "disabled");
+	if (!os_snprintf_error(buflen, ret))
+		len += ret;
+
+	return len;
+}
+
+
+int
+hostapd_ctrl_iface_config_atf_offload(struct hostapd_data *hapd,
+				      const char *cmd, char *buf, size_t buflen)
+{
+	if (os_strncmp(cmd, "commitatf ", 10) == 0)
+		return hostapd_ctrl_iface_atf_offload_commitatf(hapd, cmd + 10);
+	else if (os_strncmp(cmd, "get_commitatf", 13) == 0)
+		return hostapd_ctrl_iface_atf_offload_get_commitatf(hapd, buf, buflen);
+
+	return -1;
+}
+

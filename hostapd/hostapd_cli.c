@@ -1847,6 +1847,20 @@ static int hostapd_cli_cmd_afc(struct wpa_ctrl *ctrl, int argc, char *argv[])
 }
 
 
+#ifdef CONFIG_ATF_OFFLOAD
+static int hostapd_cli_cmd_atf_offload(struct wpa_ctrl *ctrl,
+				       int argc, char *argv[])
+{
+	if (argc < 1) {
+		printf("Invalid ATF offload command: needs 1 argument atleast\n");
+		return -1;
+	}
+
+	return hostapd_cli_cmd(ctrl, "ATF_OFFLOAD", 1, argc, argv);
+}
+#endif /* CONFIG_ATF_OFFLOAD */
+
+
 static int hostapd_cli_cmd_clear_afc_payload(struct wpa_ctrl *ctrl,
 					     int argc, char *argv[])
 {
@@ -2126,6 +2140,9 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "driver", hostapd_cli_cmd_driver, NULL,
 	  "<driver sub command> [<hex formatted data>] = send driver command data" },
 #endif /* ANDROID */
+#ifdef CONFIG_ATF_OFFLOAD
+	{"atf_offload", hostapd_cli_cmd_atf_offload, NULL, "= send atf commands" },
+#endif /* CONFIG_ATF_OFFLOAD */
 #ifdef CONFIG_IEEE80211BE
 	{ "mld_add_link", hostapd_cli_cmd_mld_add_link, NULL,
 	"<config_file_location>" },

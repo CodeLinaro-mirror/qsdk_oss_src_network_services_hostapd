@@ -73,6 +73,10 @@
 #include "../src/drivers/driver_nl80211.h"
 #include "ap/dscp_policy.h"
 
+#ifdef CONFIG_ATF_OFFLOAD
+#include "atf/atf_offload_config.h"
+#endif
+
 #define HOSTAPD_CLI_DUP_VALUE_MAX_LEN 256
 
 #ifdef CONFIG_CTRL_IFACE_UDP
@@ -6421,6 +6425,11 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		reply_len = hostapd_ctrl_iface_driver_cmd(hapd, buf + 7, reply,
 							  reply_size);
 #endif /* ANDROID */
+#ifdef CONFIG_ATF_OFFLOAD
+	} else if (os_strncmp(buf, "ATF_OFFLOAD ", 12) == 0) {
+		reply_len = hostapd_ctrl_iface_config_atf_offload(hapd, buf + 12,
+								  reply, reply_size);
+#endif
 #ifdef CONFIG_IEEE80211BE
 	} else if (os_strcmp(buf, "ENABLE_MLD") == 0) {
 		if (hostapd_ctrl_iface_enable_mld(hapd->iface))
