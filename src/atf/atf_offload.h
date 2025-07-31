@@ -316,5 +316,9 @@ static inline void atf_offload_initialize_peer(struct sta_info *sta)
 {
 }
 
+static inline void atf_offload_send_feature_params(struct hostapd_data *hapd)
+{
+}
+
 #endif /* CONFIG_ATF_OFFLOAD */
 #endif /* ATF_OFFLOAD_H */
