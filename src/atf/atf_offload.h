@@ -288,6 +288,7 @@ void atf_join_leave_update(struct hostapd_iface *iface, struct sta_info *sta,
 				   bool is_join);
 
 void atf_offload_initialize_peer(struct sta_info *sta);
+int nl80211_atf_offload_strict_scheduling_enable_disable(void *priv, u8 radio_index, u8 value);
 
 #else
 
