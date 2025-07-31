@@ -276,6 +276,30 @@ atf_add_ssid_to_group(struct atf_group *group, const char *name)
 
 
 void
+atf_delete_ssid_from_group(struct atf_algo *algo, const char *name)
+{
+        struct atf_group *group;
+        int i, j;
+
+        dl_list_for_each(group, &algo->groups, struct atf_group, list)
+        {
+                for (i = 0; i < group->num_of_ssid; i++) {
+			size_t len = strlen(group->ssidname[i]);
+                        if (strlen(name) == len &&
+			    os_strncmp(name, group->ssidname[i], len) == 0) {
+                                for ( j = i; j < group->num_of_ssid - 1; j++)
+                                        os_strlcpy(group->ssidname[j],
+						    group->ssidname[j + 1],
+						    WLAN_SSID_MAX_LEN);
+                                group->num_of_ssid--;
+                                break;
+                        }
+                }
+        }
+}
+
+
+void
 atf_clear_candidate_list(struct atf_group *group)
 {
 	struct sta_info *sta, *tmp;

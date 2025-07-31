@@ -25,6 +25,21 @@
 #include "atf_offload.h"
 #include "atf_offload_config.h"
 
+bool atf_validate_group_configured_airtime(struct atf_algo *algo,
+					   struct atf_group *group,
+					   u32 airtime)
+{
+	if ((algo->user_cfg_airtime - group->user_cfg_airtime) +
+	    airtime > ATF_RADIO_DEFAULT_AIRTIME) {
+		wpa_printf(MSG_ERROR, "ATF: Air time should be between 0 and %d\n",
+			   100 - (algo->user_cfg_airtime / 10));
+		return false;
+	}
+
+	return true;
+}
+
+
 static int
 parse_ssid_set(struct atf_group *group, char *buf, int line)
 {
@@ -79,6 +94,7 @@ atf_read_config(struct atf_algo *algo, const char *conf_file)
 	struct atf_peer_config *peer_config;
 	u8 sta_mac[ETH_ALEN];
 	int val;
+	u32 scaled_airtime;
 
 	if (!conf_file || !algo)
 		return 0;
@@ -166,6 +182,7 @@ atf_read_config(struct atf_algo *algo, const char *conf_file)
 			}
 
 			val = atoi(pos);
+			atf_group = algo->last_group;
 
 			if (val < 0 || val > 100) {
 				wpa_printf(MSG_ERROR, "ATF: invalid airtime. Valid values (0 - 100)");
@@ -173,7 +190,17 @@ atf_read_config(struct atf_algo *algo, const char *conf_file)
 				continue;
 			}
 
-			algo->last_group->user_cfg_airtime = val;
+			scaled_airtime = SCALE_PERCENTAGE_TO_U32(val);
+
+			if (!atf_validate_group_configured_airtime(algo, atf_group,
+								   scaled_airtime)) {
+				invalid_config++;
+				goto exit;
+			}
+
+			algo->user_cfg_airtime -= atf_group->user_cfg_airtime;
+			algo->user_cfg_airtime += scaled_airtime;
+			atf_group->user_cfg_airtime = scaled_airtime;
 		} else if (os_strcmp(buffer, "atf-del-group") == 0) {
 			if (!algo->ssid_group_enabled) {
 				wpa_printf(MSG_ERROR, "ATF: ssid group config is not enabled");
@@ -192,6 +219,7 @@ atf_read_config(struct atf_algo *algo, const char *conf_file)
 				error++;
 				continue;
 			}
+			algo->user_cfg_airtime -= atf_group->user_cfg_airtime;
 			atf_free_group(atf_group);
 		} else if (os_strcmp(buffer, "atf-ssid") == 0) {
 
@@ -492,9 +520,312 @@ hostapd_ctrl_iface_atf_offload_gatfstrictsched(struct hostapd_data *hapd, char *
 }
 
 
+static int
+hostapd_ctrl_iface_atf_offload_atfssidgroup(struct hostapd_data *hapd,
+					    const char *cmd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	u8 atf_ssid_group;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+	atf_ssid_group = atoi(cmd);
+
+	if (atf_ssid_group != 0 && atf_ssid_group != 1) {
+		wpa_printf(MSG_ERROR, "ATF: Invalid input for atfssidgroup\n");
+		return -1;
+	}
+
+	algo->ssid_group_enabled = atf_ssid_group;
+	iface->conf->atf_ssid_grp = atf_ssid_group;
+
+	wpa_printf(MSG_INFO, "ATF: ATF SSID group is %s\n",
+		   algo->ssid_group_enabled ? "enabled" : "disabled");
+
+	return 0;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_g_atfssidgroup(struct hostapd_data *hapd,
+					      char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	int ret, len = 0;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	ret = os_snprintf(buf, buflen, "ATF SSID group is %s\n",
+			  algo->ssid_group_enabled ? "enabled" : "disabled");
+	if (!os_snprintf_error(buflen, ret))
+		len += ret;
+
+	return len;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_addatfgroup(struct hostapd_data *hapd,
+					   const char *cmd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	char *input, *group_name, *ssid_name, *context = NULL;
+	struct atf_group *group;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	if (!algo->ssid_group_enabled) {
+		wpa_printf(MSG_ERROR, "ATF: ATF ssid group is not enabled\n");
+		return -1;
+	}
+
+	input = os_strdup(cmd);
+	if (!input)
+		return -1;
+
+	group_name = str_token(input, " ", &context);
+	if (!group_name) {
+		wpa_printf(MSG_ERROR, "ATF: Group name not found\n");
+		goto fail;
+	}
+
+	if (os_strlen(group_name) > WLAN_SSID_MAX_LEN) {
+		wpa_printf(MSG_ERROR, "ATF: Group length exceeds the allowed limit");
+		goto fail;
+	}
+
+	ssid_name = str_token(input, " ", &context);
+	if (!ssid_name) {
+		wpa_printf(MSG_ERROR, "ATF: SSID name not found\n");
+		goto fail;
+	}
+
+	if (os_strlen(ssid_name) > WLAN_SSID_MAX_LEN) {
+		wpa_printf(MSG_ERROR, "ATF: SSID length exceeds the allowed limit");
+		goto fail;
+	}
+
+	group = atf_find_group_by_name(group_name, algo);
+	if (group) {
+		if (group->num_of_ssid == WLAN_SSID_MAX) {
+			wpa_printf(MSG_ERROR, "ATF: group has maximum allowed number of SSIDs\n");
+			return -1;
+		}
+
+		atf_delete_ssid_from_group(algo, ssid_name);
+		atf_add_ssid_to_group(group, ssid_name);
+	} else {
+		group = atf_allocate_group(group_name, algo);
+		if (!group) {
+			wpa_printf(MSG_ERROR, "ATF: Failed to allocate greoup config\n");
+			goto fail;
+		}
+		atf_delete_ssid_from_group(algo, ssid_name);
+		atf_add_ssid_to_group(group, ssid_name);
+		wpa_printf(MSG_INFO, "ATF: group name %s num_of_ssid %d\n",
+			   group->name, group->num_of_ssid);
+	}
+
+	os_free(input);
+	return 0;
+fail:
+	os_free(input);
+	return -1;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_configatfgroup(struct hostapd_data *hapd,
+					      const char *cmd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	struct atf_group *group;
+	char *input, *group_name, *a_time, *context = NULL;
+	int airtime;
+	u32 scaled_airtime;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	if (!algo->ssid_group_enabled) {
+		wpa_printf(MSG_ERROR, "ATF: ATF ssid group is not enabled\n");
+		return -1;
+	}
+
+	input = os_strdup(cmd);
+	if (!input)
+		return -1;
+
+	group_name = str_token(input, " ", &context);
+	if (!group_name) {
+		wpa_printf(MSG_ERROR, "ATF: Group name not found\n");
+		goto fail;
+	}
+
+	if (os_strlen(group_name) > WLAN_SSID_MAX_LEN) {
+		wpa_printf(MSG_ERROR, "ATF: Group length exceeds the allowed limit");
+		goto fail;
+	}
+
+	a_time = str_token(input, " ", &context);
+	if (!a_time) {
+		wpa_printf(MSG_ERROR, "ATF: airtime not found\n");
+		goto fail;
+	}
+
+	airtime = atoi(a_time);
+	scaled_airtime = SCALE_PERCENTAGE_TO_U32(airtime);
+
+	group = atf_find_group_by_name(group_name, algo);
+	if (!group) {
+		wpa_printf(MSG_ERROR, "ATF: Group not found\n");
+		goto fail;
+	}
+
+	if (!atf_validate_group_configured_airtime(algo, group, scaled_airtime))
+		goto fail;
+
+	algo->user_cfg_airtime -= group->user_cfg_airtime;
+	algo->user_cfg_airtime += scaled_airtime;
+	group->user_cfg_airtime = scaled_airtime;
+
+	os_free(input);
+	return 0;
+fail:
+	wpa_printf(MSG_ERROR, "ATF: Failed to config SSID group\n");
+	os_free(input);
+	return -1;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_delatfgroup(struct hostapd_data *hapd,
+					   const char *cmd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	struct atf_group *group;
+	char group_name[WLAN_SSID_MAX_LEN + 1];
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	if (!algo->ssid_group_enabled) {
+		wpa_printf(MSG_ERROR, "ATF: ATF ssid group is not enabled\n");
+		return -1;
+	}
+
+	if (os_strlen(cmd) > WLAN_SSID_MAX_LEN) {
+		wpa_printf(MSG_ERROR, "ATF: Group length exceeds the allowed limit");
+		return -1;
+	}
+
+	os_strlcpy(group_name, cmd, sizeof(group_name));
+	group_name[sizeof(group_name) - 1] = '\0';
+
+	group = atf_find_group_by_name(group_name, algo);
+	if (!group) {
+		wpa_printf(MSG_ERROR, "ATF: Group not found\n");
+		return -1;
+	}
+
+	algo->user_cfg_airtime -= group->user_cfg_airtime;
+	atf_free_group(group);
+
+	return 0;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_showatfgroup(struct hostapd_data *hapd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	struct atf_group *group;
+	int len = 0, j, ret;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	if (!iface->conf->atf_offload) {
+		wpa_printf(MSG_ERROR, "ATF: ATF is not enabled\n");
+		return -1;
+	}
+
+	if (!algo->ssid_group_enabled) {
+		wpa_printf(MSG_ERROR, "ATF: ATF Group is not enabled\n");
+		return -1;
+	}
+
+	if (dl_list_empty(&algo->groups)) {
+		wpa_printf(MSG_DEBUG, "ATF: No entry is present in list\n");
+		return -1;
+	}
+
+	ret = os_snprintf(buf, buflen, "\n%-20s%-12s%s", "Group", "Airtime", "SSID List");
+	if (!os_snprintf_error(buflen, ret))
+		len += ret;
+
+	dl_list_for_each(group, &algo->groups, struct atf_group, list)
+	{
+		ret = os_snprintf(buf + len, buflen - len, "\n%-20s",
+				  group->name);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+
+		ret = os_snprintf(buf + len, buflen - len, "%-10d",
+				  group->user_cfg_airtime / 10);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+
+		for (j = 0; j < group->num_of_ssid; j++) {
+			ret = os_snprintf(buf + len, buflen - len, "%-2s ",
+					  group->ssidname[j]);
+			if (!os_snprintf_error(buflen - len, ret))
+				len += ret;
+		}
+	}
+	ret = os_snprintf(buf + len, buflen - len, "\n");
+	if (!os_snprintf_error(buflen - len, ret))
+		len += ret;
+
+	return len;
+}
+
+
 int
 hostapd_ctrl_iface_config_atf_offload(struct hostapd_data *hapd,
-				      const char *cmd, char *buf, size_t buflen)
+		const char *cmd, char *buf, size_t buflen)
 {
 	if (os_strncmp(cmd, "commitatf ", 10) == 0)
 		return hostapd_ctrl_iface_atf_offload_commitatf(hapd, cmd + 10);
@@ -504,6 +835,18 @@ hostapd_ctrl_iface_config_atf_offload(struct hostapd_data *hapd,
 		return hostapd_ctrl_iface_atf_offload_atfstrictsched(hapd, cmd + 15, buf, buflen);
 	else if (os_strncmp(cmd, "gatfstrictsched", 15) == 0)
 		return hostapd_ctrl_iface_atf_offload_gatfstrictsched(hapd, buf, buflen);
+	else if (os_strncmp(cmd, "atfssidgroup ", 13) == 0)
+		return hostapd_ctrl_iface_atf_offload_atfssidgroup(hapd, cmd + 13, buf, buflen);
+	else if (os_strncmp(cmd, "g_atfssidgroup", 14) == 0)
+		return hostapd_ctrl_iface_atf_offload_g_atfssidgroup(hapd, buf, buflen);
+	else if (os_strncmp(cmd, "addatfgroup ", 12) == 0)
+		return hostapd_ctrl_iface_atf_offload_addatfgroup(hapd, cmd + 12, buf, buflen);
+	else if (os_strncmp(cmd, "configatfgroup ", 15) == 0)
+		return hostapd_ctrl_iface_atf_offload_configatfgroup(hapd, cmd + 15, buf, buflen);
+	else if (os_strncmp(cmd, "delatfgroup ", 12) == 0)
+		return hostapd_ctrl_iface_atf_offload_delatfgroup(hapd, cmd + 12, buf, buflen);
+	else if (os_strncmp(cmd, "showatfgroup", 12) == 0)
+		return hostapd_ctrl_iface_atf_offload_showatfgroup(hapd, buf, buflen);
 
 	return -1;
 }

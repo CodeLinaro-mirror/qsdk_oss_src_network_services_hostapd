@@ -11,6 +11,12 @@
 #ifndef ATF_OFFLOAD_CONFIG_H
 #define ATF_OFFLOAD_CONFIG_H
 
+/*
+ * Macro to scale a percentage value by 10 to avoid decimals.
+ * For example: 10.5% becomes 105 (stored as integer).
+ * One digit after the decimal is preserved.
+ */
+#define SCALE_PERCENTAGE_TO_U32(pct) ((u32)((pct) *= 10))
 struct atf_algo;
 
 int atf_read_config(struct atf_algo *algo, const char *fname);

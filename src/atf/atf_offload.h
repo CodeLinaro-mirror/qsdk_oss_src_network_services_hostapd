@@ -203,6 +203,11 @@ struct atf_algo {
 	struct dl_list peer_cfgs;
 	u16 num_peer_cfg;
 
+	/* Used to validate combined airtime of SSIDs/SSID
+	 * groups is betweeon 0 and 1000.
+	 */
+	u32 user_cfg_airtime;
+
 	/* Feature flags */
 	bool ssid_group_enabled;
 	bool atfstrictsched_enabled;
@@ -334,6 +339,8 @@ u8 atf_get_hw_idx(struct hostapd_iface *iface);
 int nl80211_atf_offload_enable_disable(void *priv, u8 radio_index, u8 value);
 
 int nl80211_atf_offload_strict_scheduling_enable_disable(void *priv, u8 radio_index, u8 value);
+
+void atf_delete_ssid_from_group(struct atf_algo *algo, const char *name);
 #else
 
 static inline void atf_offload_init(struct hapd_interfaces *ifaces)
