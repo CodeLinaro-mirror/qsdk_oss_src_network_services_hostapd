@@ -23,6 +23,18 @@
 #define ATF_MAX_SSID 16
 #define ATF_MAX_PEER 512
 
+/* Percentage value scaled by 10 to avoid decimals. (e.g., 10.5% → 105)
+ * So, one digit after the decimal is accounted and represented as integer.
+ */
+#define ATF_RADIO_DEFAULT_AIRTIME 1000
+
+/* To handle scalability in large client environments
+ * (e.g., 512 clients), limit peer data transmission to batches of 50
+ * clients per NL command to avoid exceeding netlink message size constraints.
+ */
+#define ATF_NUM_PEERS_DATA_PER_MSG 50
+#define TAG_ATF_GROUP_WMM_AC_INFO 841
+
 /**
  * enum atf_offload_update_flag - Airtime update flags for driver
  * @ATF_OFFLOAD_FULL_UPDATE: Full update and default update method
@@ -58,6 +70,35 @@ enum atf_offload_update_flag {
 #define ATF_SET_STA_TO_UPDATE(sta) (sta.is_updated = true)
 #define ATF_CLEAR_STA_UPDATED(sta) (sta.is_updated = false)
 #define ATF_IS_STA_UPDATED(sta) (sta.is_updated)
+
+#define GENMASK(h, l) (((INT32_C(1) << ((h) - (l) + 1)) - 1) << (l))
+#define LEN GENMASK(15, 0)
+#define TAG GENMASK(31, 16)
+
+#define sizeof_field(TYPE, MEMBER) sizeof((((TYPE *)0)->MEMBER))
+#define HDR_SIZE sizeof_field(struct build_header, header)
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
+#define PREP_LEN(val)     ((val) & 0xFFFF)
+#define PREP_TAG(val)     (((val) & 0xFFFF) << 16)
+#define PREP(tag, len)    (PREP_LEN(len) | PREP_TAG(tag))
+
+#define TAG_ARRAY_STRUCT 0x12
+
+struct build_header {
+	__le32 header;
+	u8 value[];
+} __attribute__((__packed__));
+
+struct atf_group_wmm_ac_info {
+	__le32 header;
+	__le32 atf_group_id;
+	__le32 atf_units_be;
+	__le32 atf_units_bk;
+	__le32 atf_units_vi;
+	__le32 atf_units_vo;
+} __attribute__((__packed__));
 
 struct atf_peer_config {
 	struct atf_group *group;
@@ -171,8 +212,8 @@ struct atf_offload {
 struct atf_peer_info {
 	u8 peer_macaddr[6];
 	u16 percentage_peer;
-	u16 group_index;
-	u32 explicit_peer_flag;
+	u8 group_index;
+	u8 explicit_peer_flag;
 };
 
 struct atf_peer_params {
@@ -182,17 +223,38 @@ struct atf_peer_params {
 };
 
 struct atf_group_param_info {
-	u16 group_index;
+	u8 group_index;
 	u16 group_airtime;
 	u16 total_implicit_peers;
 	u16 total_explicit_peers;
 	u16 total_implicit_peer_units;
-	u32 group_policy;
+	u8 group_policy;
 };
 
 struct atf_group_params {
 	u8 num_groups;
 	struct atf_group_param_info *group_info;
+};
+
+struct atf_group_wmm_ac_config {
+	u32 ac_be; /* Relative ATF % for BE */
+	u32 ac_bk; /* Relative ATF % for BK */
+	u32 ac_vi; /* Relative ATF % for VI */
+	u32 ac_vo; /* Relative ATF % for VO */
+	u32 reserved[2];
+};
+
+struct atf_group_wmm_ac_params {
+	u32 num_groups;
+	struct atf_group_wmm_ac_config *wmm_ac_cfg;
+};
+
+struct atf_group_info {
+	u8 percentage_group;
+	u8 implicit_peer;
+	u8 explicit_peers;
+	u8 implicit_peer_units;
+	u8 group_units_reserved;
 };
 
 #ifdef CONFIG_ATF_OFFLOAD
@@ -214,6 +276,10 @@ void atf_free_ssid_config(struct atf_ssid_config *ssid);
 struct atf_peer_config *atf_find_peer_config_by_mac(u8 *mac, struct atf_algo *algo);
 struct atf_peer_config *atf_allocate_peer_config(u8 *macaddr, struct atf_algo *algo);
 void atf_free_peer_config(struct atf_peer_config *peer_config);
+u8 atf_get_hw_idx(struct hostapd_iface *iface);
+void atf_offload_send_feature_params(struct hostapd_data *hapd);
+int nl80211_atf_offload_enable_disable(void *priv, u8 radio_index, u8 value);
+void atf_offload_set_ssid_sched_policy(struct hostapd_data *hapd);
 
 int atf_timer_start(struct hostapd_iface *iface);
 void atf_timer_stop(struct hostapd_iface *iface);
