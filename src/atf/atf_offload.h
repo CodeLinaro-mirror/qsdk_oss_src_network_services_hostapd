@@ -333,6 +333,7 @@ u8 atf_get_hw_idx(struct hostapd_iface *iface);
 
 int nl80211_atf_offload_enable_disable(void *priv, u8 radio_index, u8 value);
 
+int nl80211_atf_offload_strict_scheduling_enable_disable(void *priv, u8 radio_index, u8 value);
 #else
 
 static inline void atf_offload_init(struct hapd_interfaces *ifaces)

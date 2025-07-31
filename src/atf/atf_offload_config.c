@@ -416,6 +416,82 @@ hostapd_ctrl_iface_atf_offload_get_commitatf(struct hostapd_data *hapd, char *bu
 }
 
 
+static int
+hostapd_ctrl_iface_atf_offload_atfstrictsched(struct hostapd_data *hapd,
+					      const char *cmd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	u8 atf_scheduling, radio_index;
+	int ret;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	if (!hapd->drv_priv) {
+		wpa_printf(MSG_ERROR, "ATF: Invalid hapd data %s\n", __func__);
+		return -1;
+	}
+
+	atf_scheduling = atoi(cmd);
+
+	if (algo->atfstrictsched_enabled == atf_scheduling) {
+		wpa_printf(MSG_ERROR, "ATF: Current ATF scheduling is %d\n",
+			   algo->atfstrictsched_enabled);
+		return -1;
+	}
+
+	if (atf_scheduling > 1) {
+		wpa_printf(MSG_ERROR, "ATF: Invalid atf sctrict scheduling\n");
+		return -1;
+	}
+
+	radio_index = atf_get_hw_idx(iface);
+
+	ret = nl80211_atf_offload_strict_scheduling_enable_disable(hapd->drv_priv,
+								   radio_index,
+								   atf_scheduling);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "ATF: Failed to enable strict scheduling\n");
+		return ret;
+	}
+
+	algo->atfstrictsched_enabled = atf_scheduling;
+
+	wpa_printf(MSG_INFO, "ATF: ATF strict scheduling is %s",
+		   algo->atfstrictsched_enabled ? "enabled" : "disabled");
+
+	return 0;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_gatfstrictsched(struct hostapd_data *hapd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	int ret, len = 0;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	ret = os_snprintf(buf, buflen, "ATF scheduling is %s\n",
+			  algo->atfstrictsched_enabled ? "strict" : "fair");
+	if (!os_snprintf_error(buflen, ret))
+		len += ret;
+
+	return len;
+}
+
+
 int
 hostapd_ctrl_iface_config_atf_offload(struct hostapd_data *hapd,
 				      const char *cmd, char *buf, size_t buflen)
@@ -424,6 +500,10 @@ hostapd_ctrl_iface_config_atf_offload(struct hostapd_data *hapd,
 		return hostapd_ctrl_iface_atf_offload_commitatf(hapd, cmd + 10);
 	else if (os_strncmp(cmd, "get_commitatf", 13) == 0)
 		return hostapd_ctrl_iface_atf_offload_get_commitatf(hapd, buf, buflen);
+	else if (os_strncmp(cmd, "atfstrictsched ", 15) == 0)
+		return hostapd_ctrl_iface_atf_offload_atfstrictsched(hapd, cmd + 15, buf, buflen);
+	else if (os_strncmp(cmd, "gatfstrictsched", 15) == 0)
+		return hostapd_ctrl_iface_atf_offload_gatfstrictsched(hapd, buf, buflen);
 
 	return -1;
 }
