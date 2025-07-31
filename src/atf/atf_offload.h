@@ -28,6 +28,13 @@
  */
 #define ATF_RADIO_DEFAULT_AIRTIME 1000
 
+/* To handle scalability in large client environments
+ * (e.g., 512 clients), limit peer data transmission to batches of 50
+ * clients per NL command to avoid exceeding netlink message size constraints.
+ */
+#define ATF_NUM_PEERS_DATA_PER_MSG 50
+#define TAG_ATF_GROUP_WMM_AC_INFO 841
+
 /**
  * enum atf_offload_update_flag - Airtime update flags for driver
  * @ATF_OFFLOAD_FULL_UPDATE: Full update and default update method
@@ -72,6 +79,35 @@ enum atf_offload_update_flag {
 #define ATF_CLEAR_STA_UPDATED(sta) (sta.is_updated = false)
 
 #define ATF_IS_STA_UPDATED(sta) (sta.is_updated)
+
+#define GENMASK(h, l) (((INT32_C(1) << ((h) - (l) + 1)) - 1) << (l))
+#define LEN GENMASK(15, 0)
+#define TAG GENMASK(31, 16)
+
+#define sizeof_field(TYPE, MEMBER) sizeof((((TYPE *)0)->MEMBER))
+#define HDR_SIZE sizeof_field(struct build_header, header)
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
+#define PREP_LEN(val)     ((val) & 0xFFFF)
+#define PREP_TAG(val)     (((val) & 0xFFFF) << 16)
+#define PREP(tag, len)    (PREP_LEN(len) | PREP_TAG(tag))
+
+#define TAG_ARRAY_STRUCT 0x12
+
+struct build_header {
+	__le32 header;
+	u8 value[];
+} __attribute__((__packed__));
+
+struct atf_group_wmm_ac_info {
+	__le32 header;
+	__le32 atf_group_id;
+	__le32 atf_units_be;
+	__le32 atf_units_bk;
+	__le32 atf_units_vi;
+	__le32 atf_units_vo;
+} __attribute__((__packed__));
 
 /**
  * @struct atf_peer_config - per sta config.
@@ -202,8 +238,8 @@ struct atf_offload {
 struct atf_peer_info {
 	u8 peer_macaddr[6];
 	u16 percentage_peer;
-	u16 group_index;
-	u32 explicit_peer_flag;
+	u8 group_index;
+	u8 explicit_peer_flag;
 };
 
 struct atf_peer_params {
@@ -213,12 +249,12 @@ struct atf_peer_params {
 };
 
 struct atf_group_param_info {
-	u16 group_index;
+	u8 group_index;
 	u16 group_airtime;
 	u16 total_implicit_peers;
 	u16 total_explicit_peers;
 	u16 total_implicit_peer_units;
-	u32 group_policy;
+	u8 group_policy;
 };
 
 struct atf_group_params {
@@ -290,6 +326,8 @@ void atf_offload_deinitialize_peer(struct sta_info *sta);
 
 void atf_join_leave_update(struct hostapd_iface *iface, struct sta_info *sta,
                            bool is_join);
+
+u8 atf_get_hw_idx(struct hostapd_iface *iface);
 
 #else
 

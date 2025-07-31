@@ -22,6 +22,15 @@
 #include "ap/ap_drv_ops.h"
 #include "ap/sta_info.h"
 
+#include "utils/includes.h"
+#include <netlink/genl/genl.h>
+
+#include "common/ieee802_11_common.h"
+#include "common/wpa_common.h"
+#include "common/qca-vendor.h"
+#include "common/qca-vendor-attr.h"
+#include "../src/drivers/driver_nl80211.h"
+
 #include "atf_offload.h"
 #include "atf_offload_config.h"
 
@@ -29,6 +38,13 @@ struct atf_offload *atf = NULL;
 
 /* one second timeout for Airtime distribution */
 #define ATF_ALGO_TIMEOUT 1
+
+u8 atf_get_hw_idx(struct hostapd_iface *iface)
+{
+	if (iface->current_hw_info)
+		return iface->current_hw_info->hw_idx;
+	return 0;
+}
 
 void atf_offload_initialize_peer(struct sta_info *sta)
 {
@@ -1151,6 +1167,251 @@ atf_offload_build_wmm_ac_config(struct hostapd_iface *iface,
 	return 0;
 }
 
+
+int
+nl80211_atf_offload_send_group_config(void *priv, u8 radio_index, struct atf_group_params *param)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	struct nlattr *data, *groups_data, *group_data;
+	int ret, i;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOBUFS;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS))
+		goto fail;
+
+	data = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!data ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_INDEX,
+		       radio_index))
+		goto fail;
+
+	groups_data = nla_nest_start(msg,
+				     QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIG);
+	if (!groups_data)
+		goto fail;
+
+	if (!param->group_info) {
+		wpa_printf(MSG_ERROR, "ATF: Group info is NULL");
+		goto fail;
+	}
+
+	for (i = 0; i < param->num_groups; i++) {
+		group_data = nla_nest_start(msg, i);
+		if (!group_data)
+			goto fail;
+
+		if (nla_put_u8(msg,
+			       QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_INDEX,
+			       param->group_info[i].group_index) ||
+		    nla_put_u16(msg,
+				QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_AIRTIME_CONFIGURED,
+				param->group_info[i].group_airtime) ||
+		    nla_put_u8(msg,
+			       QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_POLICY,
+			       param->group_info[i].group_policy) ||
+		    nla_put_u16(msg,
+				QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS,
+				param->group_info[i].total_implicit_peers) ||
+		    nla_put_u16(msg,
+				QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIGURED_PEERS,
+				param->group_info[i].total_explicit_peers) ||
+		    nla_put_u16(msg,
+				QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS_AIRTIME,
+				param->group_info[i].total_implicit_peer_units))
+			goto fail;
+		nla_nest_end(msg, group_data);
+	}
+	nla_nest_end(msg, groups_data);
+	nla_nest_end(msg, data);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR, "nl80211: ATF group config send failed: %s",
+			   strerror(-ret));
+
+	return ret;
+fail:
+	nlmsg_free(msg);
+	return -1;
+}
+
+
+int
+nl80211_atf_offload_send_wmm_ac_config(void *priv, u8 radio_index,
+				       struct atf_group_wmm_ac_params *param)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	struct nlattr *data;
+	struct build_header *build_param;
+	struct atf_group_wmm_ac_info *group_info;
+	int ret, i;
+	u8 *ptr;
+	size_t total_len;
+	uint8_t *buffer;
+
+	total_len = HDR_SIZE +
+			   (param->num_groups * sizeof(struct atf_group_wmm_ac_info));
+	buffer = os_zalloc(total_len);
+	if (!buffer)
+		return -ENOMEM;
+
+	ptr = buffer;
+
+	build_param = (struct build_header *)ptr;
+	build_param->header = PREP(TAG_ARRAY_STRUCT, (param->num_groups *
+				   sizeof(struct atf_group_wmm_ac_info)));
+	ptr += sizeof(build_param->header);
+
+	group_info = (struct atf_group_wmm_ac_info *)ptr;
+
+	/* TODO: WMM ac configurations will be updated in phase 2.
+	 * Sending this because FW expects peer, ssid group and WMM ac configs.
+	 */
+	for (i = 0; i < param->num_groups; i++) {
+		group_info->header = PREP(TAG_ATF_GROUP_WMM_AC_INFO,
+					  sizeof(*group_info) - HDR_SIZE);
+		group_info->atf_group_id = i;
+		group_info->atf_units_be = 0;
+		group_info->atf_units_bk = 0;
+		group_info->atf_units_vi = 0;
+		group_info->atf_units_vo = 0;
+		group_info++;
+	}
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg) {
+		os_free(buffer);
+		return -ENOBUFS;
+	}
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS))
+		goto fail;
+
+	data = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!data ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_INDEX, radio_index) ||
+	    nla_put(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_CONFIG, total_len, buffer))
+		goto fail;
+
+	nla_nest_end(msg, data);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR, "nl80211: ATF WMM AC config send failed: %s", strerror(-ret));
+
+	os_free(buffer);
+	return ret;
+fail:
+	os_free(buffer);
+	nlmsg_free(msg);
+	return -1;
+}
+
+
+int
+nl80211_atf_offload_send_peer_config(void *priv, u8 radio_index, struct atf_peer_params *param)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	struct nlattr *data, *peers_data, *peer_data, *peers;
+	struct atf_peer_info *param_peer_info;
+	int ret = 0, i;
+	u16 rem_peers = param->num_peers;
+	u16 num_entry = ATF_NUM_PEERS_DATA_PER_MSG;
+
+	param_peer_info = param->peer_info;
+
+	do {
+		u16 encoded_peers = MIN(rem_peers, num_entry);
+
+		rem_peers -= encoded_peers;
+
+		msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+		if (!msg)
+			return -ENOBUFS;
+
+		if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+		    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+				QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS))
+			goto fail;
+
+		data = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+		if (!data ||
+		    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_INDEX,
+			       radio_index))
+			goto fail;
+
+		peers_data = nla_nest_start(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG);
+		if (!peers_data)
+			goto fail;
+
+		if (param->full_update_flag)
+			if (nla_put_flag(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_FULL_UPDATE))
+				goto fail;
+
+		if (rem_peers)
+			if (nla_put_flag(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_MORE))
+				goto fail;
+
+		peers = nla_nest_start(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_PAYLOAD);
+		if (!peers)
+			goto fail;
+
+		for (i = 0; i < encoded_peers; i++) {
+			peer_data = nla_nest_start(msg, i);
+			if (!peer_data)
+				goto fail;
+
+			if (nla_put(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MAC,
+				    ETH_ALEN, param_peer_info->peer_macaddr) ||
+			    nla_put_u16(msg,
+					QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME,
+					param_peer_info->percentage_peer) ||
+			    nla_put_u8(msg,
+				       QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_GROUP_INDEX,
+				       param_peer_info->group_index))
+				goto fail;
+
+			if (param_peer_info->explicit_peer_flag)
+				if (nla_put_flag(msg,
+						 QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIGURED))
+					goto fail;
+
+			nla_nest_end(msg, peer_data);
+			param_peer_info++;
+		}
+		nla_nest_end(msg, peers);
+		nla_nest_end(msg, peers_data);
+		nla_nest_end(msg, data);
+
+		ret = send_and_recv_cmd(drv, msg);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "nl80211: ATF peer config send failed: %s",
+				   strerror(-ret));
+			return ret;
+		}
+
+	} while (rem_peers > 0);
+
+	return ret;
+fail:
+	nlmsg_free(msg);
+	return -1;
+}
+
+
 int
 atf_send_calculated_airtime(struct hostapd_iface *iface)
 {
@@ -1158,11 +1419,18 @@ atf_send_calculated_airtime(struct hostapd_iface *iface)
 	struct atf_peer_params atf_peer_param = {0};
 	struct atf_group_params atf_group_param = {0};
 	struct atf_group_wmm_ac_params atf_group_ac = {0};
+	struct hostapd_data *hapd = iface->bss[0];
 	int ret = -1;
+	u8 radio_idx;
 
 	if (!iface->atf_algo) {
 		wpa_printf(MSG_ERROR, "ATF: iface does not have atf_algo assigned");
 		return -1;
+	}
+
+	if (!hapd->drv_priv) {
+		wpa_printf(MSG_ERROR, "ATF: Invalid hapd data\n");
+		goto group_info_free;
 	}
 
 	ret = atf_offload_build_peer_config(iface, &atf_peer_param);
@@ -1182,10 +1450,32 @@ atf_send_calculated_airtime(struct hostapd_iface *iface)
 		goto group_ac_free;
 	}
 
-	/* TODO: send the built params to driver */
+	radio_idx = atf_get_hw_idx(iface);
+
+	ret = nl80211_atf_offload_send_group_config(hapd->drv_priv, radio_idx, &atf_group_param);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "ATF: sending group config failed");
+		goto group_info_free;
+	}
+
+	if (ATF_OFFLOAD_IS_FULL_UPDATE(iface->atf_algo)) {
+		ret = nl80211_atf_offload_send_wmm_ac_config(hapd->drv_priv,
+							     radio_idx, &atf_group_ac);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "ATF: sending group wmm ac config failed");
+			goto group_info_free;
+		}
+	}
+
+	ret = nl80211_atf_offload_send_peer_config(hapd->drv_priv, radio_idx, &atf_peer_param);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "ATF: sending peer config failed");
+		goto group_info_free;
+	}
 
 	ATF_OFFLOAD_SET_NO_UPDATE(iface->atf_algo);
 
+group_info_free:
 	if (atf_group_param.group_info)
 		os_free(atf_group_param.group_info);
 
