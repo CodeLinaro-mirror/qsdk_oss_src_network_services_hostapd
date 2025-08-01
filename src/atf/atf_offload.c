@@ -67,6 +67,42 @@ void atf_offload_deinitialize_peer(struct sta_info *sta)
 }
 
 
+void atf_offload_set_ssid_sched_policy(struct hostapd_data *hapd)
+{
+	struct hostapd_iface *iface;
+	struct atf_algo *algo;
+	u8 radio_index, link_id = -1;
+
+	if (!hapd->iface || !hapd->iface->atf_algo || !hapd->drv_priv) {
+		wpa_printf(MSG_DEBUG, "ATF: Invalid hapd data %s\n", __func__);
+		return;
+	}
+
+	iface = hapd->iface;
+	algo = hapd->iface->atf_algo;
+
+	if (!algo->atf_enabled) {
+		wpa_printf(MSG_ERROR, "ATF: ATF is not enabled\n");
+		return;
+	}
+
+	if (!hapd->conf->atf_ssid_sched)
+		return;
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap)
+		link_id = hapd->mld_link_id;
+#endif /* CONFIG_IEEE80211BE */
+
+	radio_index = atf_get_hw_idx(iface);
+
+	if (nl80211_atf_offload_ssid_sched_policy(hapd->drv_priv, radio_index,
+						    hapd->conf->atf_ssid_sched,
+						    link_id))
+		wpa_printf(MSG_ERROR, "ATF: Failed to set ssid scheduling policy\n");
+}
+
+
 void atf_offload_send_feature_params(struct hostapd_data *hapd)
 {
 	struct hostapd_iface *iface;
@@ -1235,6 +1271,56 @@ atf_offload_build_wmm_ac_config(struct hostapd_iface *iface,
 
 	wmm_ac_param->wmm_ac_cfg = wmm_ac_cfg;
 	return 0;
+}
+
+
+int
+nl80211_atf_offload_ssid_sched_policy(void *priv, u8 radio_index, u8 value, int link_id)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	struct nlattr *data, *ssid_sched_policy_attr;
+	int ret;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOBUFS;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS))
+		goto fail;
+
+	data = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!data ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_INDEX, radio_index))
+		goto fail;
+
+	ssid_sched_policy_attr =
+		    nla_nest_start(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_POLICY);
+	if (!ssid_sched_policy_attr)
+		goto fail;
+
+	if (link_id != -1 && link_id >= 0 && link_id < MAX_NUM_MLD_LINKS &&
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_LINK_ID, link_id))
+		goto fail;
+
+	if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHEDULING, value))
+		goto fail;
+
+	nla_nest_end(msg, ssid_sched_policy_attr);
+	nla_nest_end(msg, data);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_DEBUG, "nl80211: ATF SSID sched policy config failed: %s",
+			   strerror(-ret));
+
+	return ret;
+fail:
+	nlmsg_free(msg);
+	return -1;
 }
 
 

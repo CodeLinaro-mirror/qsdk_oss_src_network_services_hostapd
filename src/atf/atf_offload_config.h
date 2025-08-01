@@ -17,6 +17,13 @@
  * One digit after the decimal is preserved.
  */
 #define SCALE_PERCENTAGE_TO_U32(pct) ((u32)((pct) *= 10))
+
+enum atf_scheduling_policy {
+	ATF_FAIR_SCHEDULING,
+	ATF_STRICT_SCHEDULING,
+	ATF_FAIR_WITH_UPPER_BOUND_SCHEDULING,
+};
+
 struct atf_algo;
 
 int atf_read_config(struct atf_algo *algo, const char *fname);

@@ -2155,6 +2155,7 @@ setup_mld:
 	if (hapd->wpa_auth && wpa_init_keys(hapd->wpa_auth) < 0)
 		return -1;
 
+	atf_offload_set_ssid_sched_policy(hapd);
 	return 0;
 }
 

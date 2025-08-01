@@ -315,6 +315,8 @@ void atf_free_ssid_config(struct atf_ssid_config *ssid);
 
 struct atf_peer_config *atf_find_peer_config_by_mac(u8 *mac, struct atf_algo *algo);
 
+int atf_add_ssid_to_group(struct atf_group *group, const char *name);
+
 struct atf_peer_config *atf_allocate_peer_config(u8 *macaddr, struct atf_algo *algo);
 
 void atf_free_peer_config(struct atf_peer_config *peer_config);
@@ -331,6 +333,8 @@ void atf_offload_deinitialize_peer(struct sta_info *sta);
 
 void atf_offload_send_feature_params(struct hostapd_data *hapd);
 
+void atf_offload_set_ssid_sched_policy(struct hostapd_data *hapd);
+
 void atf_join_leave_update(struct hostapd_iface *iface, struct sta_info *sta,
                            bool is_join);
 
@@ -340,7 +344,12 @@ int nl80211_atf_offload_enable_disable(void *priv, u8 radio_index, u8 value);
 
 int nl80211_atf_offload_strict_scheduling_enable_disable(void *priv, u8 radio_index, u8 value);
 
+int nl80211_atf_offload_ssid_sched_policy(void *priv, u8 radio_index, u8 value, int link_id);
+
 void atf_delete_ssid_from_group(struct atf_algo *algo, const char *name);
+
+struct atf_group *
+atf_find_group(struct atf_algo *algo, const char *name);
 #else
 
 static inline void atf_offload_init(struct hapd_interfaces *ifaces)
@@ -372,7 +381,11 @@ static inline void atf_offload_deinitialize_peer(struct sta_info *sta)
 {
 }
 
-static inline void  atf_offload_send_feature_params(struct hostapd_data *hapd)
+static inline void atf_offload_send_feature_params(struct hostapd_data *hapd)
+{
+}
+
+static inline void atf_offload_set_ssid_sched_policy(struct hostapd_data *hapd)
 {
 }
 #endif /* CONFIG_ATF_OFFLOAD */
