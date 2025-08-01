@@ -452,20 +452,23 @@ atf_free_ssid_configs(struct atf_algo *algo)
 
 
 static void
-atf_free_group_configs(struct atf_algo *algo)
+atf_free_group_configs(struct atf_algo *algo, bool skip_default)
 {
 	struct atf_group *group, *tmp;
 
 	if (dl_list_empty(&algo->groups))
 		return;
 
-	dl_list_for_each_safe(group, tmp, &algo->groups, struct atf_group, list)
-		atf_free_group(group);
+	dl_list_for_each_safe(group, tmp, &algo->groups, struct atf_group, list) {
+		if (!skip_default ||
+		    os_strncmp(group->name, "default-group", strlen("default-group")) != 0)
+				atf_free_group(group);
+	}
 }
 
 
 void
-atf_free_algo_configs(struct atf_algo *algo)
+atf_free_algo_configs(struct atf_algo *algo, bool skip_default)
 {
 	atf_free_peer_configs(algo);
 
@@ -490,7 +493,10 @@ atf_free_algo_configs(struct atf_algo *algo)
 	algo->user_cfg_airtime = 0;
 	dl_list_init(&algo->ssid_cfgs);
 
-	atf_free_group_configs(algo);
+	atf_free_group_configs(algo, skip_default);
+	/* In case of flush table, preserve the default group */
+	if (skip_default)
+		return;
 
 	/* Ensure list is empty after removing all group configs.
 	 * if list is not empty, something is corrupted.
@@ -539,7 +545,7 @@ atf_cleanup_algo(struct atf_algo *algo)
 	if (!algo)
 		return;
 
-	atf_free_algo_configs(algo);
+	atf_free_algo_configs(algo, false);
 	dl_list_del(&algo->list);
 	os_free(algo);
 	algo = NULL;
@@ -897,6 +903,9 @@ atf_update_peer_cfg_to_peer(struct atf_algo *algo, struct atf_peer_config *peer_
 	struct hostapd_data *bss;
 	struct sta_info *sta = NULL;
 	int i;
+	struct atf_group *group = NULL;
+	struct hostapd_ssid *ssid;
+	char ssid_buf[SSID_MAX_LEN + 1];
 
 	if (!peer_cfg)
 		return;
@@ -954,9 +963,23 @@ atf_update_peer_cfg_to_peer(struct atf_algo *algo, struct atf_peer_config *peer_
 		return;
 	}
 
+	ssid = &bss->conf->ssid;
+	os_memset(ssid_buf, 0, sizeof(ssid_buf));
+	os_memcpy(ssid_buf, ssid->ssid, ssid->ssid_len);
+	ssid_buf[ssid->ssid_len] = '\0';
+
+	group = atf_find_group(algo, ssid_buf);
+	if (!group)
+		return;
+
+	if (peer_cfg->group != group)
+		return;
+
 	sta->atf_peer.atf_configured = true;
 	sta->atf_peer.peer_cfg_ref = peer_cfg;
 	sta->atf_peer.sta = sta;
+	peer_cfg->algo = algo;
+	peer_cfg->calculated_for_airtime = true;
 
 	/*update to the group candidate list*/
 	dl_list_add(&peer_cfg->group->explicit_peers, &sta->atf_candidate_list);
@@ -1143,6 +1166,7 @@ atf_offload_build_peer_config(struct hostapd_iface *iface,
 					memcpy(peer_info[num_peers].peer_macaddr, sta->addr, 6);
 				}
 
+				sta->atf_peer.bss = hapd;
 				peer_info[num_peers].percentage_peer =
 				    sta->atf_peer.calculated_airtime;
 				peer_info[num_peers].group_index = group->index;

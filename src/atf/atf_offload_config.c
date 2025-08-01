@@ -55,6 +55,22 @@ bool atf_validate_ssid_configured_airtime(struct atf_algo *algo,
 }
 
 
+bool atf_validate_peer_configured_airtime(struct atf_group *group,
+					  struct atf_peer_config *peer_config,
+					  u32 airtime)
+{
+	if ((group->expl_peers_airtime - peer_config->user_cfg_airtime) +
+	    airtime > ATF_RADIO_DEFAULT_AIRTIME) {
+		wpa_printf(MSG_ERROR,
+				"New explicit peers airtime for SSID/SSID GROUP exceeds 100, config between 0 and %d\n",
+				100 - (group->expl_peers_airtime / 10));
+		return false;
+	}
+
+	return true;
+}
+
+
 int
 atf_set_ssid_config(char *ssidname, int airtime, struct hostapd_iface *iface)
 {
@@ -397,9 +413,21 @@ atf_read_config(struct atf_algo *algo, const char *conf_file)
 				invalid_config++;
 				continue;
 			}
-			algo->last_peer_cfg->user_cfg_airtime = val;
+
+			scaled_airtime = SCALE_PERCENTAGE_TO_U32(val);
+
+			if (!atf_validate_peer_configured_airtime(algo->last_peer_cfg->group,
+								  algo->last_peer_cfg,
+								  scaled_airtime)) {
+				invalid_config++;
+				goto exit;
+			}
+			atf_group = algo->last_peer_cfg->group;
+			atf_group->expl_peers_airtime += scaled_airtime;
+			algo->last_peer_cfg->user_cfg_airtime = scaled_airtime;
 		} else if (os_strcmp(buffer, "atf-sta-ssid") == 0) {
 			if (*pos != '\0') {
+				peer_config = algo->last_peer_cfg;
 				atf_group = atf_find_group_by_name(pos, algo);
 				if (!atf_group) {
 					wpa_printf(MSG_ERROR,
@@ -411,8 +439,14 @@ atf_read_config(struct atf_algo *algo, const char *conf_file)
 					goto exit;
 				}
 
+				if (peer_config->group && peer_config->group != atf_group) {
+                                        peer_config->group->expl_peers_airtime -= peer_config->user_cfg_airtime;
+                                        peer_config->user_cfg_airtime = 0;
+                                }
+
 				os_strlcpy(algo->last_peer_cfg->group_name, pos,
 				           WLAN_SSID_MAX_LEN);
+				peer_config->group = atf_group;
 			}
 		} else if (os_strcmp(buffer, "atf-del-sta") == 0) {
 			if (hwaddr_aton(pos, sta_mac)) {
@@ -444,7 +478,7 @@ exit:
 	fclose(file);
 
 	/* In case of fatal error, clean up all configurations */
-	atf_free_algo_configs(algo);
+	atf_free_algo_configs(algo, true);
 
 	return -1;
 }
@@ -617,6 +651,9 @@ hostapd_ctrl_iface_atf_offload_atfssidgroup(struct hostapd_data *hapd,
 		wpa_printf(MSG_ERROR, "ATF: Invalid input for atfssidgroup\n");
 		return -1;
 	}
+
+	if (algo->ssid_group_enabled != atf_ssid_group)
+		atf_free_algo_configs(algo, true);
 
 	algo->ssid_group_enabled = atf_ssid_group;
 	iface->conf->atf_ssid_grp = atf_ssid_group;
@@ -1036,6 +1073,7 @@ hostapd_ctrl_iface_atf_offload_atfssidsched(struct hostapd_data *hapd,
 	ssid = &hapd->conf->ssid;
 	os_memset(ssid_buf, 0, sizeof(ssid_buf));
 	os_memcpy(ssid_buf, ssid->ssid, ssid->ssid_len);
+	ssid_buf[ssid->ssid_len] = '\0';
 
 	algo = iface->atf_algo;
 
@@ -1202,6 +1240,354 @@ hostapd_ctrl_iface_atf_offload_delssid(struct hostapd_data *hapd,
 }
 
 
+static int
+hostapd_ctrl_iface_atf_offload_addsta(struct hostapd_data *hapd,
+				      const char *cmd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	struct atf_ssid_config *ssid_config;
+	struct atf_group *group;
+	struct atf_peer_config *peer_config;
+	char *input, *name, *a_time, *token, *context = NULL;
+	u8 addr[ETH_ALEN];
+	int airtime, ret = 0;
+	u32 scaled_airtime;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	if (!iface->conf->atf_offload) {
+		wpa_printf(MSG_ERROR, "ATF: ATF is not enabled\n");
+		return -1;
+	}
+
+	input = os_strdup(cmd);
+	if (!input)
+		return -1;
+
+	token = str_token(input, " ", &context);
+	if (!token || hwaddr_aton(token, addr)) {
+		wpa_printf(MSG_ERROR, "ATF: Invalid or missing STA MAC address\n");
+		ret = -1;
+		goto fail;
+	}
+
+	a_time = str_token(input, " ", &context);
+	if (!a_time) {
+		wpa_printf(MSG_ERROR, "ATF: airtime not found\n");
+		ret = -1;
+		goto fail;
+	}
+
+	name = str_token(input, " ", &context);
+	if (!name || os_strlen(name) > WLAN_SSID_MAX_LEN) {
+		wpa_printf(MSG_ERROR, "ATF: SSID/SSID group is invalid\n");
+		ret = -1;
+		goto fail;
+	}
+
+	airtime = atoi(a_time);
+	scaled_airtime = SCALE_PERCENTAGE_TO_U32(airtime);
+
+	if (algo->ssid_group_enabled) {
+		group = atf_find_group_by_name(name, algo);
+		if (!group) {
+			wpa_printf(MSG_ERROR, "ATF: Invalid group name\n");
+			ret = -1;
+			goto fail;
+		}
+	} else {
+		ssid_config = atf_find_ssid_config_by_name(name, algo);
+		if (!ssid_config) {
+			wpa_printf(MSG_ERROR, "ATF: Invalid SSID name\n");
+			ret = -1;
+			goto fail;
+		}
+		group = ssid_config->group;
+	}
+
+	peer_config = atf_find_peer_config_by_mac(addr, algo);
+	if (!peer_config) {
+		peer_config = atf_allocate_peer_config(addr, algo);
+		if (!peer_config) {
+			wpa_printf(MSG_ERROR, "ATF: Failed to allocate peer config\n");
+			ret = -1;
+			goto fail;
+		}
+
+		if (!atf_validate_peer_configured_airtime(group, peer_config, scaled_airtime)) {
+			atf_free_peer_config(peer_config);
+			ret = -1;
+			goto fail;
+		}
+
+		peer_config->user_cfg_airtime = scaled_airtime;
+	} else {
+		if (peer_config->group != group) {
+			peer_config->group->expl_peers_airtime -= peer_config->user_cfg_airtime;
+			peer_config->user_cfg_airtime = 0;
+		}
+
+		if (!atf_validate_peer_configured_airtime(group, peer_config, scaled_airtime)) {
+			ret = -1;
+			goto fail;
+		}
+
+		group->expl_peers_airtime -= peer_config->user_cfg_airtime;
+		peer_config->user_cfg_airtime = scaled_airtime;
+	}
+
+	peer_config->group = group;
+	group->expl_peers_airtime += scaled_airtime;
+
+fail:
+	os_free(input);
+	return ret;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_delsta(struct hostapd_data *hapd,
+				      const char *cmd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	struct atf_peer_config *peer_config;
+	char *input, *token, *context = NULL;
+	u8 addr[ETH_ALEN];
+	int ret = 0;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	if (!iface->conf->atf_offload) {
+		wpa_printf(MSG_ERROR, "ATF: ATF is not enabled\n");
+		return -1;
+	}
+
+	input = os_strdup(cmd);
+	if (!input)
+		return -1;
+
+	token = str_token(input, " ", &context);
+	if (!token || hwaddr_aton(token, addr)) {
+		wpa_printf(MSG_ERROR, "ATF: Invalid or missing STA MAC address\n");
+		ret = -1;
+		goto fail;
+	}
+
+	peer_config = atf_find_peer_config_by_mac(addr, algo);
+	if (!peer_config) {
+		wpa_printf(MSG_DEBUG, "ATF: Peer entry not found\n");
+		ret = -1;
+		goto fail;
+	} else {
+		peer_config->group->expl_peers_airtime -= peer_config->user_cfg_airtime;
+		atf_free_peer_config(peer_config);
+	}
+
+fail:
+	os_free(input);
+	return ret;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_showatftable(struct hostapd_data *hapd,
+					    char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	struct atf_group *group;
+	struct atf_peer_config *peer_config;
+	struct sta_info *sta, *tmp;
+	struct hostapd_data *bss;
+	u8 addr[ETH_ALEN];
+	int len = 0, ret;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	if (!iface->conf->atf_offload) {
+		wpa_printf(MSG_ERROR, "ATF: ATF is not enabled\n");
+		return -1;
+	}
+
+	wpa_printf(MSG_INFO, "\n\n                      ");
+	wpa_printf(MSG_INFO, "SHOW   ATF    TABLE\n");
+	wpa_printf(MSG_INFO, "%-16s %-22s %-20s %-24s %-24s\n",
+		   "SSID","Client(MAC Address)","Air time(Percentage)",
+		   "Config ATF(Percentage)","Peer_Assoc_Status(1--Assoc,0-No-Assoc)");
+
+	if (dl_list_empty(&algo->groups)) {
+		wpa_printf(MSG_ERROR, "ATF: No ssid configuration found\n");
+		return -1;
+	}
+
+	dl_list_for_each(group, &algo->groups, struct atf_group, list) {
+		wpa_printf(MSG_INFO, "%-50s %-15.1f %.1f\n",
+			   group->name,
+			   group->is_configured ? group->calculated_airtime / 10.0 :
+			   group->user_cfg_airtime / 10.0,
+			   group->user_cfg_airtime / 10.0);
+
+		if (dl_list_empty(&group->explicit_peers))
+			goto implicit_peers;
+
+		dl_list_for_each_safe(sta, tmp, &group->explicit_peers,
+				      struct sta_info, atf_candidate_list) {
+			if (sta->atf_peer.peer_cfg_ref) {
+				wpa_printf(MSG_INFO, "%-20s" MACSTR " %-12s %-20.1f %-24.1f %s\n",
+					   "", MAC2STR(sta->atf_peer.peer_cfg_ref->addr)," ",
+					   sta->atf_peer.calculated_airtime / 10.0,
+					   sta->atf_peer.peer_cfg_ref->user_cfg_airtime / 10.0, "1");
+			}
+		}
+
+implicit_peers:
+		/* To print unconfigured and associated peers */
+		if (dl_list_empty(&group->implicit_peers))
+			goto explicit_peers;
+
+		dl_list_for_each_safe(sta, tmp, &group->implicit_peers,
+				      struct sta_info, atf_candidate_list) {
+			if (sta->atf_peer.calculated_airtime) {
+				bss = sta->atf_peer.bss;
+
+				if (ap_sta_is_mld(bss, sta))
+					memcpy(addr, sta->mld_info.links[hapd->mld_link_id].peer_addr, 6);
+				else
+					memcpy(addr, sta->addr, 6);
+
+				wpa_printf(MSG_INFO, "%-20s" MACSTR " %-12s %-20.1f %-24d %s\n",
+					   "", MAC2STR(addr), " ",
+					   sta->atf_peer.calculated_airtime / 10.0,
+					   0, "1");
+			}
+		}
+
+explicit_peers:
+		/* To print the airtime of configured and unassociated peers */
+		if (dl_list_empty(&algo->peer_cfgs))
+			continue;
+
+		dl_list_for_each(peer_config, &algo->peer_cfgs,
+				 struct atf_peer_config, list) {
+			if (peer_config->calculated_for_airtime == 0 &&
+			    peer_config->group == group) {
+				wpa_printf(MSG_INFO, "%-20s" MACSTR " %-12s %-20d %-24.1f %s\n",
+					   "", MAC2STR(peer_config->addr), " ",
+					   0, peer_config->user_cfg_airtime / 10.0, "0");
+			}
+		}
+	}
+
+	ret = os_snprintf(buf, buflen, "Check hostapd logs for atf table\n");
+	if (!os_snprintf_error(buflen, ret))
+		len += ret;
+
+	return len;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_showairtime(struct hostapd_data *hapd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	struct atf_peer_config *peer;
+	int len = 0, ret;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	if (!iface->conf->atf_offload) {
+		wpa_printf(MSG_ERROR, "ATF: ATF is not enabled\n");
+		return -1;
+	}
+
+	if (!algo->num_peer_cfg) {
+		wpa_printf(MSG_ERROR, "ATF: No peers configured\n");
+		return -1;
+	}
+
+	ret = os_snprintf(buf, buflen,
+			  "\n\n                   SHOW   AIRTIME    TABLE\n");
+	if (!os_snprintf_error(buflen, ret))
+		len += ret;
+	ret = os_snprintf(buf + len, buflen - len,
+			  " Client(MAC Address)        Air time(Percentage)\n");
+	if (!os_snprintf_error(buflen - len, ret))
+		len += ret;
+
+	if (dl_list_empty(&algo->peer_cfgs)) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  "ATF: Peer configuration table is empty\n");
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+
+	dl_list_for_each(peer, &algo->peer_cfgs, struct atf_peer_config, list) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  " " MACSTR "         ",
+				  MAC2STR(peer->addr));
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+
+		ret = os_snprintf(buf + len, buflen - len,
+				  "	%.1f\n",
+				  peer->user_cfg_airtime / 10.0);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+
+	return len;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_flushatftable(struct hostapd_data *hapd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	if (!iface->conf->atf_offload) {
+		wpa_printf(MSG_ERROR, "ATF: ATF is not enabled\n");
+		return -1;
+	}
+
+	atf_free_algo_configs(algo, true);
+
+	wpa_printf(MSG_INFO, "ATF: ATF table id flushed\n");
+
+	return 0;
+}
+
+
 int
 hostapd_ctrl_iface_config_atf_offload(struct hostapd_data *hapd,
 		const char *cmd, char *buf, size_t buflen)
@@ -1238,6 +1624,16 @@ hostapd_ctrl_iface_config_atf_offload(struct hostapd_data *hapd,
 		return hostapd_ctrl_iface_atf_offload_addssid(hapd, cmd + 8, buf, buflen);
 	else if (os_strncmp(cmd, "delssid ", 8) == 0)
 		return hostapd_ctrl_iface_atf_offload_delssid(hapd, cmd + 8, buf, buflen);
+	else if (os_strncmp(cmd, "addsta ", 7) == 0)
+		return hostapd_ctrl_iface_atf_offload_addsta(hapd, cmd + 7, buf, buflen);
+	else if (os_strncmp(cmd, "delsta ", 7) == 0)
+		return hostapd_ctrl_iface_atf_offload_delsta(hapd, cmd + 7, buf, buflen);
+	else if (os_strncmp(cmd, "showatftable", 12) == 0)
+		return hostapd_ctrl_iface_atf_offload_showatftable(hapd, buf, buflen);
+	else if (os_strncmp(cmd, "showairtime", 11) == 0)
+		return hostapd_ctrl_iface_atf_offload_showairtime(hapd, buf, buflen);
+	else if (os_strncmp(cmd, "flushatftable", 13) == 0)
+		return hostapd_ctrl_iface_atf_offload_flushatftable(hapd, buf, buflen);
 
 	return -1;
 }
