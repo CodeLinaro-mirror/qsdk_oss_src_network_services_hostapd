@@ -622,7 +622,7 @@ static void radius_das_close_port(struct radius_das_port *p)
 	dl_list_del(&p->list);
 	eloop_unregister_read_sock(p->sock);
 	close(p->sock);
-	free(p);
+	os_free(p);
 }
 
 struct radius_das_data *
