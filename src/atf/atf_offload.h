@@ -106,6 +106,7 @@ struct atf_peer_config {
 	u8 link_id;
 	u32 user_cfg_airtime;
 	u8 addr[ETH_ALEN];
+	bool calculated_for_airtime;
 
 	/* add this node to atf_algo */
 	struct dl_list list;
@@ -122,6 +123,7 @@ struct atf_peer {
 	struct atf_peer_config *peer_cfg_ref;
 	struct sta_info *sta;
 	u32 calculated_airtime;
+	struct hostapd_data *bss;
 
 	/* Flag to indicate whether it is updated to driver */
 	bool is_updated;
@@ -160,6 +162,7 @@ struct atf_group {
 	u32 calculated_airtime;
 	u32 total_explicit_airtime;
 	u32 sched_policy;
+	u32 expl_peers_airtime;
 
 	/* set when ssid is valid and up and running */
 	bool is_configured;
@@ -274,7 +277,7 @@ struct atf_group *atf_allocate_group(const char *name, struct atf_algo *algo);
 void atf_free_group(struct atf_group *group);
 struct atf_group *atf_find_group_by_name(const char *name, struct atf_algo *algo);
 int atf_add_ssid_to_group(struct atf_group *group, const char *name);
-void atf_free_algo_configs(struct atf_algo *algo);
+void atf_free_algo_configs(struct atf_algo *algo, bool skip_default);
 
 struct atf_ssid_config *atf_find_ssid_config_by_name(char *name, struct atf_algo *algo);
 struct atf_ssid_config *atf_allocate_ssid_config(char *name, struct atf_algo *algo);
