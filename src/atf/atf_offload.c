@@ -1271,6 +1271,106 @@ atf_offload_build_group_config(struct hostapd_iface *iface,
 	return 0;
 }
 
+
+int
+nl80211_atf_offload_stats_enable_disable(void *priv, u8 radio_index, u8 value)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret;
+	struct nlattr *data;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOBUFS;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS))
+		goto fail;
+
+	data = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!data ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_INDEX, radio_index) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_ENABLED, value))
+		goto fail;
+
+	nla_nest_end(msg, data);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_DEBUG, "nl80211: ATF stats enable/disable failed: %s",
+			   strerror(-ret));
+
+	return ret;
+fail:
+	nlmsg_free(msg);
+	return -1;
+}
+
+
+void atf_offload_disable_atf_stats(struct hostapd_iface *iface)
+{
+	struct wpa_driver_nl80211_data *drv_priv;
+	int ret, radio_index;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: algo is missing\n");
+		return;
+	}
+
+	drv_priv = iface->bss[0]->drv_priv;
+	radio_index = atf_get_hw_idx(iface);
+
+	if (!iface->atf_algo->atf_stats_enabled)
+		return;
+
+	ret = nl80211_atf_offload_stats_enable_disable(drv_priv,
+						       radio_index,
+						       0);
+	if (ret)
+		wpa_printf(MSG_ERROR, "ATF: Failed to disable ATF stats\n");
+}
+
+
+int
+nl80211_atf_offload_stats_timeout(void *priv, u8 radio_index, u8 value)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret;
+	struct nlattr *data;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOBUFS;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS))
+		goto fail;
+
+	data = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!data ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_INDEX, radio_index) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_TIMEOUT, value))
+		goto fail;
+
+	nla_nest_end(msg, data);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_DEBUG, "nl80211: ATF stats timeout setting failed: %s",
+			   strerror(-ret));
+
+	return ret;
+fail:
+	nlmsg_free(msg);
+	return -1;
+}
+
 int
 atf_offload_build_wmm_ac_config(struct hostapd_iface *iface,
                                 struct atf_group_wmm_ac_params *wmm_ac_param)

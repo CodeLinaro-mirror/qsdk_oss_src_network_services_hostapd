@@ -214,6 +214,8 @@ struct atf_algo {
 	/* Feature flags */
 	bool ssid_group_enabled;
 	bool atfstrictsched_enabled;
+	bool atf_stats_enabled;
+	u8 atf_stats_timeout;
 
 	/* used in ATF distribution logic*/
 	enum atf_offload_update_flag update_flag;
@@ -353,7 +355,16 @@ void atf_delete_ssid_from_group(struct atf_algo *algo, const char *name);
 
 struct atf_group *
 atf_find_group(struct atf_algo *algo, const char *name);
+
+int nl80211_atf_offload_stats_enable_disable(void *priv, u8 radio_index, u8 value);
+
+void atf_offload_disable_atf_stats(struct hostapd_iface *ifaces);
+
+int nl80211_atf_offload_stats_timeout(void *priv, u8 radio_index, u8 value);
 #else
+static inline void atf_offload_disable_atf_stats(struct hostapd_iface *ifaces)
+{
+}
 
 static inline void atf_offload_init(struct hapd_interfaces *ifaces)
 {

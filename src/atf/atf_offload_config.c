@@ -1588,6 +1588,139 @@ hostapd_ctrl_iface_atf_offload_flushatftable(struct hostapd_data *hapd, char *bu
 }
 
 
+static int
+hostapd_ctrl_iface_atf_offload_enable_atf_stats(struct hostapd_data *hapd,
+						const char *cmd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	int ret, atf_stats;
+	u8 radio_index;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	atf_stats = atoi(cmd);
+
+	if (atf_stats != 0 && atf_stats != 1) {
+		wpa_printf(MSG_ERROR, "ATF: Invalid input for atf stats, expected 0/1\n");
+		return -1;
+	}
+
+	if (algo->atf_stats_enabled == atf_stats) {
+		wpa_printf(MSG_ERROR, "ATF: ATF stats already %s, skipping NL command\n",
+			   atf_stats ? "enabled" : "disabled");
+		return -1;
+	}
+
+	radio_index = atf_get_hw_idx(iface);
+	ret = nl80211_atf_offload_stats_enable_disable(hapd->drv_priv,
+						       radio_index,
+						       atf_stats);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "ATF: Failed to enable ATF stats\n");
+		return -1;
+	}
+
+	algo->atf_stats_enabled = atf_stats;
+
+	wpa_printf(MSG_INFO, "ATF: ATF stats is %s\n", atf_stats ? "enabled" : "disabled");
+
+	return ret;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_g_enable_atf_stats(struct hostapd_data *hapd,
+						  char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	int len = 0, ret;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	ret = os_snprintf(buf, buflen, "ATF stats is %s\n",
+			  iface->atf_algo->atf_stats_enabled ? "enabled" : "disabled");
+	if (!os_snprintf_error(buflen, ret))
+		len += ret;
+
+	return len;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_atf_stats_timeout(struct hostapd_data *hapd,
+						 const char *cmd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	u8 stats_timeout;
+	int ret, timeout;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	if (!algo->atf_stats_enabled) {
+		wpa_printf(MSG_ERROR, "ATF: ATF stats is not enabled\n");
+		return -1;
+	}
+
+	timeout = atoi(cmd);
+
+	if (timeout > 50 || timeout < 10) {
+		wpa_printf(MSG_ERROR, "ATF: atf_stats_timeout value between 10 and 50 seconds\n");
+		return -1;
+	}
+
+	stats_timeout = (u8)timeout;
+	ret = nl80211_atf_offload_stats_timeout(hapd->drv_priv,
+						hapd->iface->current_hw_info->hw_idx,
+						stats_timeout);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "ATF: Failed to set ATF stats timeout\n");
+		return ret;
+	}
+
+	algo->atf_stats_timeout = stats_timeout;
+
+	wpa_printf(MSG_INFO, "ATF: ATF stats timeout is %d\n", algo->atf_stats_timeout);
+
+	return 0;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_g_atf_stats_timeout(struct hostapd_data *hapd,
+						   char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	int len = 0, ret;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	ret = os_snprintf(buf, buflen, "ATF stats time out is %d\n",
+			  iface->atf_algo->atf_stats_timeout);
+	if (!os_snprintf_error(buflen, ret))
+		len += ret;
+
+	return len;
+}
+
+
 int
 hostapd_ctrl_iface_config_atf_offload(struct hostapd_data *hapd,
 		const char *cmd, char *buf, size_t buflen)
@@ -1634,6 +1767,15 @@ hostapd_ctrl_iface_config_atf_offload(struct hostapd_data *hapd,
 		return hostapd_ctrl_iface_atf_offload_showairtime(hapd, buf, buflen);
 	else if (os_strncmp(cmd, "flushatftable", 13) == 0)
 		return hostapd_ctrl_iface_atf_offload_flushatftable(hapd, buf, buflen);
+	else if (os_strncmp(cmd, "enable_atf_stats ", 17) == 0)
+		return hostapd_ctrl_iface_atf_offload_enable_atf_stats(hapd, cmd + 17, buf, buflen);
+	else if (os_strncmp(cmd, "g_enable_atf_stats", 18) == 0)
+		return hostapd_ctrl_iface_atf_offload_g_enable_atf_stats(hapd, buf, buflen);
+	else if (os_strncmp(cmd, "atf_stats_timeout ", 18) == 0)
+		return hostapd_ctrl_iface_atf_offload_atf_stats_timeout(hapd, cmd + 18,
+									buf, buflen);
+	else if (os_strncmp(cmd, "g_atf_stats_timeout", 19) == 0)
+		return hostapd_ctrl_iface_atf_offload_g_atf_stats_timeout(hapd, buf, buflen);
 
 	return -1;
 }
