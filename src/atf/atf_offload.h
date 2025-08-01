@@ -297,7 +297,11 @@ void atf_join_leave_update(struct hostapd_iface *iface, struct sta_info *sta,
 void atf_offload_initialize_peer(struct sta_info *sta);
 int nl80211_atf_offload_strict_scheduling_enable_disable(void *priv, u8 radio_index, u8 value);
 
+int nl80211_atf_offload_ssid_sched_policy(void *priv, u8 radio_index, u8 value, int link_id);
+
 void atf_delete_ssid_from_group(struct atf_algo *algo, const char *name);
+
+struct atf_group *atf_find_group(struct atf_algo *algo, const char *name);
 
 #else
 
@@ -327,6 +331,10 @@ static inline void atf_offload_initialize_peer(struct sta_info *sta)
 }
 
 static inline void atf_offload_send_feature_params(struct hostapd_data *hapd)
+{
+}
+
+static inline void atf_offload_set_ssid_sched_policy(struct hostapd_data *hapd)
 {
 }
 
