@@ -7861,8 +7861,13 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		ap_sta_set_authorized(hapd, sta, 1);
 	}
 
-	if (sta->auth_alg == WLAN_AUTH_FT)
+	if (sta->auth_alg == WLAN_AUTH_FT) {
 		sta->ft_re_add = false;
+#ifdef CONFIG_IEEE80211R_AP
+		if (reassoc && !sta->vlan_id)
+			wpa_ft_push_roam_notification(hapd->wpa_auth, sta->addr);
+#endif
+	}
 
 	if (reassoc)
 		mlme_reassociate_indication(hapd, sta);

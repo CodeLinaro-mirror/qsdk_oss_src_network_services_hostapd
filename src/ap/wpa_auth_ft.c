@@ -5259,6 +5259,53 @@ out:
 	return -1;
 }
 
+static int wpa_ft_rrb_rx_roam_indication(struct wpa_authenticator *wpa_auth,
+					 const u8 *src_addr, const u8 *msg,
+					 size_t msg_len)
+{
+	const u8 *f_s1kh_id;
+	size_t f_s1kh_id_len, min_sz;
+	struct hostapd_data *hapd = wpa_auth->cb_ctx;
+	struct hostapd_data *link_bss;
+	struct sta_info *sta = NULL;
+
+	wpa_printf(MSG_DEBUG, "FT: RRB received STA Roam notification\n");
+	RRB_GET_SRC(msg, FT_RRB_S1KH_ID, s1kh_id, "roam indication", ETH_ALEN);
+
+	min_sz = ETH_ALEN + sizeof(struct ft_rrb_tlv);
+
+	if (msg_len < min_sz) {
+		wpa_printf(MSG_ERROR, "FT: RRB Received invalid roam notification\n");
+		return -1;
+	}
+
+	if (hostapd_is_multiple_link_mld(hapd)) {
+		if (os_memcmp(hapd->own_addr, hapd->mld->mld_addr, ETH_ALEN) != 0)
+			return 0;
+
+		for_each_mld_link(link_bss, hapd) {
+			sta = ap_get_sta(link_bss, f_s1kh_id);
+			if (sta) {
+				hapd = link_bss;
+				break;
+			}
+		}
+	} else {
+		sta = ap_get_sta(hapd, f_s1kh_id);
+	}
+
+	if (!sta)
+		return 0;
+
+	if (ap_sta_is_mld(hapd, sta))
+		ap_sta_remove_link_sta(hapd, sta, 0);
+
+	ap_free_sta(hapd, sta);
+	return 0;
+
+out:
+	return -1;
+}
 
 int wpa_ft_rrb_rx(struct wpa_authenticator *wpa_auth, const u8 *src_addr,
 		  const u8 *data, size_t data_len)
@@ -5443,6 +5490,9 @@ void wpa_ft_rrb_oui_rx(struct wpa_authenticator *wpa_auth, const u8 *src_addr,
 		wpa_ft_rrb_rx_seq_resp(wpa_auth, src_addr, enc, elen, auth,
 				       alen, no_defer);
 		break;
+	case FT_PACKET_STATION_ROAM_INDICATION:
+		wpa_ft_rrb_rx_roam_indication(wpa_auth, src_addr, auth, alen);
+		break;
 	}
 }
 
@@ -5532,4 +5582,93 @@ void wpa_ft_push_pmk_r1(struct wpa_authenticator *wpa_auth, const u8 *addr)
 	}
 }
 
+void wpa_ft_send_roam_notification(struct wpa_authenticator *wpa_auth,
+				   struct ft_remote_r1kh *r1kh, const u8 *addr)
+{
+	u8 *packet;
+	size_t tlv_len;
+	u8 *pos, *endpos;
+	size_t packet_len = 0, pad_len = 0;
+	struct tlv_list push_roam_notify[] = {
+		{ .type = FT_RRB_S1KH_ID, .len = ETH_ALEN,
+		  .data = addr },
+		{ .type = FT_RRB_LAST_EMPTY, .len = 0, .data = NULL },
+	};
+
+	wpa_printf(MSG_DEBUG, "FT: RRB push Roam notification from " MACSTR
+		   " to remote R0KH address " MACSTR,
+		   MAC2STR(wpa_auth->addr), MAC2STR(r1kh->addr));
+
+	tlv_len = wpa_ft_tlv_len(push_roam_notify);
+	packet_len = sizeof(u16) + tlv_len;
+#define RRB_MIN_MSG_LEN 64
+	if (packet_len < RRB_MIN_MSG_LEN) {
+		pad_len = RRB_MIN_MSG_LEN - packet_len;
+		if (pad_len < sizeof(struct ft_rrb_tlv))
+			pad_len = sizeof(struct ft_rrb_tlv);
+		wpa_printf(MSG_DEBUG,
+			   "FT: Pad message to minimum Ethernet frame length (%zu --> %zu)",
+			   packet_len, packet_len + pad_len);
+		packet_len += pad_len;
+	}
+
+	packet = os_zalloc(packet_len);
+	if (!packet) {
+		wpa_printf(MSG_ERROR, "FT: Failed to allocate RRB message");
+		return;
+	}
+
+	pos = packet;
+	WPA_PUT_LE16(pos, tlv_len);
+	pos += 2;
+	endpos = packet + packet_len;
+	pos += wpa_ft_tlv_lin(push_roam_notify, pos, endpos);
+	WPA_PUT_LE16(pos, FT_RRB_LAST_EMPTY);
+	pos += 2;
+	WPA_PUT_LE16(pos, pad_len - sizeof(struct ft_rrb_tlv));
+	pos += 2;
+	os_memset(pos, 0, pad_len - sizeof(struct ft_rrb_tlv));
+	pos = pos + pad_len - sizeof(struct ft_rrb_tlv);
+
+	if (pos != endpos) {
+		wpa_printf(MSG_ERROR, "FT: Length error building RRB");
+		goto err;
+	}
+	wpa_hexdump(MSG_MSGDUMP, "FT: RRB frame payload", packet, packet_len);
+
+	wpa_ft_rrb_oui_send(wpa_auth, r1kh->addr, FT_PACKET_STATION_ROAM_INDICATION,
+			    packet, packet_len);
+err:
+	os_free(packet);
+}
+
+void wpa_ft_push_roam_notification(struct wpa_authenticator *wpa_auth, const u8 *addr)
+{
+	struct ft_remote_r1kh *r1kh;
+	struct hostapd_data *hapd = wpa_auth->cb_ctx;
+	struct hostapd_data *tmp_hapd;
+	bool own_addr;
+
+	for (r1kh = *wpa_auth->conf.r1kh_list; r1kh; r1kh = r1kh->next) {
+		if (is_zero_ether_addr(r1kh->addr) ||
+		    is_zero_ether_addr(r1kh->id))
+			continue;
+
+		own_addr = false;
+		if (hapd->conf->mld_ap) {
+			for_each_mld_link(tmp_hapd, hapd) {
+				if (os_memcmp(r1kh->addr, tmp_hapd->own_addr,
+					      ETH_ALEN) == 0) {
+					own_addr = true;
+					break;
+				}
+			}
+		}
+
+		if (own_addr)
+			continue;
+
+		wpa_ft_send_roam_notification(wpa_auth, r1kh, addr);
+	}
+}
 #endif /* CONFIG_IEEE80211R_AP */

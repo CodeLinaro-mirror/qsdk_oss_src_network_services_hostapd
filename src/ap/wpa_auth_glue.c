@@ -924,6 +924,8 @@ static struct eth_p_oui_ctx * hostapd_wpa_get_oui(struct hostapd_data *hapd,
 		return hapd->oui_sreq;
 	case FT_PACKET_R0KH_R1KH_SEQ_RESP:
 		return hapd->oui_sresp;
+	case FT_PACKET_STATION_ROAM_INDICATION:
+		return hapd->oui_rnotify;
 #endif /* CONFIG_IEEE80211R_AP */
 	default:
 		return NULL;
@@ -1722,6 +1724,12 @@ static int hostapd_wpa_register_ft_oui(struct hostapd_data *hapd,
 	if (!hapd->oui_sresp)
 		return -1;
 
+	hapd->oui_rnotify = eth_p_oui_register(hapd, ft_iface,
+					       FT_PACKET_STATION_ROAM_INDICATION,
+					       hostapd_rrb_oui_receive, hapd);
+	if (!hapd->oui_rnotify)
+		return -1;
+
 	return 0;
 }
 
@@ -1738,6 +1746,8 @@ static void hostapd_wpa_unregister_ft_oui(struct hostapd_data *hapd)
 	hapd->oui_sreq = NULL;
 	eth_p_oui_unregister(hapd->oui_sresp);
 	hapd->oui_sresp = NULL;
+	eth_p_oui_unregister(hapd->oui_rnotify);
+	hapd->oui_rnotify = NULL;
 }
 #endif /* CONFIG_IEEE80211R_AP */
 

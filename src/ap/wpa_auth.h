@@ -51,6 +51,7 @@ struct ft_rrb_frame {
 #define FT_PACKET_R0KH_R1KH_PUSH 0x03
 #define FT_PACKET_R0KH_R1KH_SEQ_REQ 0x04
 #define FT_PACKET_R0KH_R1KH_SEQ_RESP 0x05
+#define FT_PACKET_STATION_ROAM_INDICATION 0x06
 
 /* packet layout
  *  IEEE 802 extended OUI ethertype frame header
@@ -594,6 +595,7 @@ int wpa_ft_fetch_pmk_r1(struct wpa_authenticator *wpa_auth,
 			const u8 **identity, size_t *identity_len,
 			const u8 **radius_cui, size_t *radius_cui_len,
 			int *session_timeout);
+void wpa_ft_push_roam_notification(struct wpa_authenticator *wpa_auth, const u8 *addr);
 
 #endif /* CONFIG_IEEE80211R_AP */
 
