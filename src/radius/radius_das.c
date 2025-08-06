@@ -487,7 +487,6 @@ radius_das_receive_msg(struct radius_das_data *das, struct radius_msg *msg,
 	}
 
 fail:
-	radius_msg_free(msg);
 	radius_msg_free(reply);
 }
 
@@ -555,6 +554,8 @@ static void radius_das_receive(int sock, void *eloop_ctx, void *sock_ctx)
 
 	if (!found)
 		wpa_printf(MSG_DEBUG, "DAS: Drop message from unknown client");
+
+	radius_msg_free(msg);
 }
 
 
