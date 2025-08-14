@@ -50,5 +50,6 @@ void hostapd_dpp_push_button_stop(struct hostapd_data *hapd);
 bool hostapd_dpp_configurator_connectivity(struct hostapd_data *hapd);
 int hostapd_dpp_add_controller(struct hostapd_data *hapd, const char *cmd);
 void hostapd_dpp_remove_controller(struct hostapd_data *hapd, const char *cmd);
+bool is_freq_supported_by_hw(struct hostapd_iface *iface, int freq);
 
 #endif /* DPP_HOSTAPD_H */
