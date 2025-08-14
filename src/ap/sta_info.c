@@ -673,9 +673,12 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	os_free(sta->ifname_wds);
 
 #ifdef CONFIG_IEEE80211BE
-
-	wpa_printf(MSG_INFO, "EPCS Tear Down from AP free STA");
-	hostapd_configure_epcs(hapd, sta, QM_REMOVE_REQ);
+	if (sta->mld_info.mld_sta &&
+	    sta->mld_info.epcs.state == EPCS_STATE_ENABLED) {
+		wpa_printf(MSG_INFO, "EPCS Tear Down from AP free STA");
+		if (!hostapd_configure_epcs(hapd, sta, QM_REMOVE_REQ))
+			sta->mld_info.epcs.state = EPCS_STATE_DISABLED;
+	}
 	eloop_cancel_timeout(hostapd_epcs_timeout_handler, hapd, sta);
 	ap_sta_free_sta_profile(&sta->mld_info);
 	ml_deinit_link_reconf_req(&sta->reconf_req);
