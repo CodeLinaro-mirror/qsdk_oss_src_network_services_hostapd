@@ -3678,6 +3678,16 @@ dpp_get_mode(struct hostapd_data *hapd,
 	return NULL;
 }
 
+bool is_freq_supported_by_hw(struct hostapd_iface *iface, int freq)
+{
+	struct hostapd_multi_hw_info *info;
+
+	if (!iface->current_hw_info)
+		return true;
+
+	info = iface->current_hw_info;
+	return (freq >= info->start_freq && freq <= info->end_freq);
+}
 
 static void
 hostapd_dpp_chirp_scan_res_handler(struct hostapd_iface *iface)
@@ -3709,7 +3719,7 @@ hostapd_dpp_chirp_scan_res_handler(struct hostapd_iface *iface)
 
 	/* Preferred chirping channels */
 	mode = dpp_get_mode(hapd, HOSTAPD_MODE_IEEE80211G);
-	if (mode && (mode == hapd->iface->current_mode)) {
+	if(mode) {
 		for (c = 0; c < mode->num_channels; c++) {
 			struct hostapd_channel_data *chan = &mode->channels[c];
 
@@ -3717,15 +3727,18 @@ hostapd_dpp_chirp_scan_res_handler(struct hostapd_iface *iface)
 					  HOSTAPD_CHAN_RADAR) ||
 			    chan->freq != 2437)
 				continue;
-			chan6 = true;
-			break;
+
+			if (is_freq_supported_by_hw(hapd->iface, chan->freq)) {
+				chan6 = true;
+				break;
+			}
 		}
 	}
 	if (chan6)
 		int_array_add_unique(&hapd->dpp_chirp_freqs, 2437);
 
 	mode = dpp_get_mode(hapd, HOSTAPD_MODE_IEEE80211A);
-	if (mode && (mode == hapd->iface->current_mode)) {
+	if (mode) {
 		int chan44 = 0, chan149 = 0;
 
 		for (c = 0; c < mode->num_channels; c++) {
@@ -3734,6 +3747,10 @@ hostapd_dpp_chirp_scan_res_handler(struct hostapd_iface *iface)
 			if (chan->flag & (HOSTAPD_CHAN_DISABLED |
 					  HOSTAPD_CHAN_RADAR))
 				continue;
+
+			if (!is_freq_supported_by_hw(hapd->iface, chan->freq))
+				continue;
+
 			if (chan->freq == 5220)
 				chan44 = 1;
 			if (chan->freq == 5745)
@@ -3746,7 +3763,7 @@ hostapd_dpp_chirp_scan_res_handler(struct hostapd_iface *iface)
 	}
 
 	mode = dpp_get_mode(hapd, HOSTAPD_MODE_IEEE80211AD);
-	if (mode && (mode == hapd->iface->current_mode)) {
+	if (mode) {
 		for (c = 0; c < mode->num_channels; c++) {
 			struct hostapd_channel_data *chan = &mode->channels[c];
 
@@ -3754,6 +3771,10 @@ hostapd_dpp_chirp_scan_res_handler(struct hostapd_iface *iface)
 					   HOSTAPD_CHAN_RADAR)) ||
 			    chan->freq != 60480)
 				continue;
+
+			if (!is_freq_supported_by_hw(hapd->iface, chan->freq))
+				continue;
+
 			int_array_add_unique(&hapd->dpp_chirp_freqs, 60480);
 			break;
 		}
