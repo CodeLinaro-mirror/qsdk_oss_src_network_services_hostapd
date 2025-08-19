@@ -2122,6 +2122,8 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 				continue;
 
 			link->valid = true;
+
+			os_memcpy(link->local_addr, lhapd->own_addr, ETH_ALEN);
 			ieee80211_ml_build_assoc_resp(lhapd, NULL, assoc_sta, link);
 		}
 		/* TODO: Basic MLE is not supposed to include BPCC in Link
