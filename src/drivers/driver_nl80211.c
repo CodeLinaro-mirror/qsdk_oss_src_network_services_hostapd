@@ -10001,9 +10001,10 @@ static int wpa_driver_nl80211_send_action(struct i802_bss *bss,
 			offchanok = 0;
 		if (modes) {
 			struct hostapd_channel_data **chan_6ghz;
-			int j = 0;
+			int j;
 
 			for (i = 0; i < num_modes; i++) {
+				j = 0;
 				os_free(modes[i].channels);
 				os_free(modes[i].rates);
 				chan_6ghz =
