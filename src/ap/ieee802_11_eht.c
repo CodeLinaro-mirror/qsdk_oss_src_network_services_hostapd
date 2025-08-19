@@ -1789,10 +1789,10 @@ void hostapd_link_reconf_resp_tx_status(struct hostapd_data *hapd,
 		}
 
 		/* Free as a link STA */
-		ap_free_sta(lhapd, lsta);
 		wpa_msg(hapd->msg_ctx, MSG_INFO,
 			WPA_EVENT_LINK_STA_REMOVED "sta=" MACSTR " link_id=%u",
 			MAC2STR(lsta->addr), link_id);
+		ap_free_sta(lhapd, lsta);
 
 		for_each_mld_link(other_hapd, lhapd) {
 			struct mld_link_info *link;
@@ -2017,6 +2017,8 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 				continue;
 
 			link->valid = true;
+
+			os_memcpy(link->local_addr, lhapd->own_addr, ETH_ALEN);
 			ieee80211_ml_build_assoc_resp(lhapd, NULL, assoc_sta, link);
 		}
 		/* TODO: Basic MLE is not supposed to include BPCC in Link
