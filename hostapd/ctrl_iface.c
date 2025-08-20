@@ -4985,6 +4985,11 @@ static int hostapd_ctrl_iface_negotiated_ttlm_request(struct hostapd_data *hapd,
 		return -1;
 	}
 
+	if (is_sta_ttlm_capable(sta) == false) {
+		os_free(input);
+		return -1;
+	}
+
 	ttlm_conf = os_zalloc(sizeof(*ttlm_conf));
 	ongoing_ttlm = os_zalloc(sizeof(*ongoing_ttlm));
 	if (!ttlm_conf || !ongoing_ttlm) {

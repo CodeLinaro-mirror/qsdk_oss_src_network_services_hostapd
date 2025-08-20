@@ -6477,9 +6477,6 @@ static void handle_assoc(struct hostapd_data *hapd,
 		}
 	}
 
-	if (sta)
-		hostapd_handle_ttlm_assoc_req(hapd, mgmt, len, sta, pos, left);
-
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211R_AP
@@ -6799,6 +6796,11 @@ static void handle_assoc(struct hostapd_data *hapd,
 	if (sta)
 		hostapd_process_assoc_ml_info(hapd, sta, pos, left, reassoc,
 					      resp, false, &set_beacon);
+
+#ifdef CONFIG_IEEE80211BE
+	if (sta)
+		hostapd_handle_ttlm_assoc_req(hapd, mgmt, len, sta, pos, left);
+#endif /* CONFIG_IEEE80211BE */
 
 	if (resp == WLAN_STATUS_SUCCESS && sta &&
 	    add_associated_sta(hapd, sta, reassoc))
