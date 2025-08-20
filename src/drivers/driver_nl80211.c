@@ -16649,49 +16649,48 @@ static int wpa_driver_nl80211_set_ttlm_link_mapping(
 	return ret;
 }
 
-static int
-wpa_driver_nl80211_set_advertised_ttlm_params(void *priv,
-					      const struct drv_adv_ttlm_params *up_ttlm,
-					      const struct drv_adv_ttlm_params *est_ttlm,
-					      bool send_default_mapping)
+static void
+add_ttlm_params(u8 *num_ttlm_ie, u8 *link_map_size_arr, u16 *switch_time_arr,
+		u32 *duration_arr, u16 *link_map_arr,
+		const struct drv_adv_ttlm_params *ttlm)
 {
-	struct i802_bss *bss = priv;
-	struct wpa_driver_nl80211_data *drv = bss->drv;
-	u8 link_map_size_arr[2] = {0};
-	u16 switch_time_arr[2] = {0};
-	u16 link_map_arr[2] = {0};
-	u32 duration_arr[2] = {0};
-	struct nlattr *attr;
-	struct nl_msg *msg;
+	link_map_size_arr[*num_ttlm_ie] = ttlm->link_mapping_size;
+	switch_time_arr[*num_ttlm_ie] = ttlm->mapping_switch_time;
+	duration_arr[*num_ttlm_ie] = ttlm->expected_duration;
+	link_map_arr[*num_ttlm_ie] = ttlm->ieee_link_map_tid[0];
+	(*num_ttlm_ie)++;
+}
+
+static int
+wpa_set_offload_adv_ttlm_params(struct nl_msg *msg,
+				const struct drv_adv_ttlm_params *est_ttlm,
+				const struct drv_adv_ttlm_params *up_ttlm,
+				bool send_default_mapping)
+{
+	u8 link_map_size_arr[2] = {};
+	u16 switch_time_arr[2] = {};
+	u16 link_map_arr[2] = {};
+	u32 duration_arr[2] = {};
 	u8 num_ttlm_ie = 0;
-	int ret = -ENOBUFS;
+	struct nlattr *attr;
 
-	if (drv->nlmode != NL80211_IFTYPE_AP)
-		return -EOPNOTSUPP;
-
-	if (est_ttlm->expected_duration_present || send_default_mapping) {
-		link_map_size_arr[num_ttlm_ie] = est_ttlm->link_mapping_size;
-		switch_time_arr[num_ttlm_ie] = est_ttlm->mapping_switch_time;
-		duration_arr[num_ttlm_ie] = est_ttlm->expected_duration;
-		link_map_arr[num_ttlm_ie] = est_ttlm->ieee_link_map_tid[0];
-		num_ttlm_ie++;
-	}
+	if (est_ttlm->expected_duration_present || send_default_mapping)
+		add_ttlm_params(&num_ttlm_ie, link_map_size_arr,
+				switch_time_arr, duration_arr,
+				link_map_arr, est_ttlm);
 
 	if (up_ttlm->mapping_switch_time_present ||
-	    up_ttlm->expected_duration_present) {
-		link_map_size_arr[num_ttlm_ie] = up_ttlm->link_mapping_size;
-		switch_time_arr[num_ttlm_ie] = up_ttlm->mapping_switch_time;
-		duration_arr[num_ttlm_ie] = up_ttlm->expected_duration;
-		link_map_arr[num_ttlm_ie] = up_ttlm->ieee_link_map_tid[0];
-		num_ttlm_ie++;
-	}
+	    up_ttlm->expected_duration_present)
+		add_ttlm_params(&num_ttlm_ie, link_map_size_arr,
+				switch_time_arr, duration_arr,
+				link_map_arr, up_ttlm);
 
-	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_TID_TO_LINK_MAPPING)))
-		goto error;
+	if (!num_ttlm_ie)
+		return 0;
 
 	attr = nla_nest_start(msg, NL80211_ATTR_ADVERTISED_TTLM);
 	if (!attr)
-		goto error;
+		return -ENOBUFS;
 
 	if (nla_put_u8(msg, NL80211_ADVERTISED_TTLM_ATTR_IE_COUNT, num_ttlm_ie) ||
 	    nla_put(msg, NL80211_ADVERTISED_TTLM_ATTR_LINK_MAP_SIZE,
@@ -16701,10 +16700,38 @@ wpa_driver_nl80211_set_advertised_ttlm_params(void *priv,
 	    nla_put(msg, NL80211_ADVERTISED_TTLM_ATTR_DURATION,
 		    sizeof(duration_arr), duration_arr) ||
 	    nla_put(msg, NL80211_ADVERTISED_TTLM_ATTR_IEEE_LINK_MAP,
-		    sizeof(link_map_arr), link_map_arr))
-		goto error;
+		    sizeof(link_map_arr), link_map_arr)) {
+		wpa_printf(MSG_DEBUG, "nl80211: Failed to set adv ttlm params");
+		return -ENOBUFS;
+	}
 
 	nla_nest_end(msg, attr);
+
+	return 0;
+}
+
+static int
+wpa_driver_nl80211_set_advertised_ttlm_params(void *priv,
+					      const struct drv_adv_ttlm_params *up_ttlm,
+					      const struct drv_adv_ttlm_params *est_ttlm,
+					      bool send_default_mapping)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret = -ENOBUFS;
+
+	if (drv->nlmode != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
+
+	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_TID_TO_LINK_MAPPING)))
+		goto error;
+
+	if (wpa_set_offload_adv_ttlm_params(msg, est_ttlm, up_ttlm,
+					    send_default_mapping)) {
+		wpa_printf(MSG_DEBUG, "nl80211: set_adv_ttlm failed to set params");
+		goto error;
+	}
 
 	ret = send_and_recv_cmd(drv, msg);
 	if (ret) {

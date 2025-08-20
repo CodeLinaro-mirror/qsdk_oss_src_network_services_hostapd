@@ -255,43 +255,51 @@ static void hostapd_copy_configured_ttlm_to_sta_info(struct sta_info *sta,
 }
 
 
-static void
+int
 hostapd_fill_ttlm_params(struct ttlm_info *upcoming_info,
 			 struct ttlm_info *established_info,
 			 struct drv_adv_ttlm_params *upcoming_ttlm_params,
 			 struct drv_adv_ttlm_params *established_ttlm_params)
 {
-		upcoming_ttlm_params->default_link_mapping =
-			upcoming_info->default_link_mapping;
-		upcoming_ttlm_params->link_mapping_size =
-			upcoming_info->link_mapping_size;
-		upcoming_ttlm_params->mapping_switch_time_present =
-			upcoming_info->mapping_switch_time_present;
-		upcoming_ttlm_params->expected_duration_present =
-			upcoming_info->expected_duration_present;
-		upcoming_ttlm_params->mapping_switch_time =
-			upcoming_info->mapping_switch_time;
-		upcoming_ttlm_params->expected_duration =
-			upcoming_info->expected_duration;
-		os_memcpy(upcoming_ttlm_params->ieee_link_map_tid,
-			  upcoming_info->ieee_link_map_tid,
-			  sizeof(u16) * NUM_MAX_TIDS);
+	if (!upcoming_info || !established_info ||
+	    !upcoming_ttlm_params || !established_ttlm_params) {
+		wpa_printf(MSG_DEBUG, "TTLM: Invalid args to fill ttlm params");
+		return -EINVAL;
+	}
 
-		established_ttlm_params->default_link_mapping =
-			established_info->default_link_mapping;
-		established_ttlm_params->link_mapping_size =
-			established_info->link_mapping_size;
-		established_ttlm_params->mapping_switch_time_present =
-			established_info->mapping_switch_time_present;
-		established_ttlm_params->expected_duration_present =
-			established_info->expected_duration_present;
-		established_ttlm_params->mapping_switch_time =
-			established_info->mapping_switch_time;
-		established_ttlm_params->expected_duration =
-			established_info->expected_duration;
-		os_memcpy(established_ttlm_params->ieee_link_map_tid,
-			  established_info->ieee_link_map_tid,
-			  sizeof(u16) * NUM_MAX_TIDS);
+	upcoming_ttlm_params->default_link_mapping =
+		upcoming_info->default_link_mapping;
+	upcoming_ttlm_params->link_mapping_size =
+		upcoming_info->link_mapping_size;
+	upcoming_ttlm_params->mapping_switch_time_present =
+		upcoming_info->mapping_switch_time_present;
+	upcoming_ttlm_params->expected_duration_present =
+		upcoming_info->expected_duration_present;
+	upcoming_ttlm_params->mapping_switch_time =
+		upcoming_info->mapping_switch_time;
+	upcoming_ttlm_params->expected_duration =
+		upcoming_info->expected_duration;
+	os_memcpy(upcoming_ttlm_params->ieee_link_map_tid,
+		  upcoming_info->ieee_link_map_tid,
+		  sizeof(u16) * NUM_MAX_TIDS);
+
+	established_ttlm_params->default_link_mapping =
+		established_info->default_link_mapping;
+	established_ttlm_params->link_mapping_size =
+		established_info->link_mapping_size;
+	established_ttlm_params->mapping_switch_time_present =
+		established_info->mapping_switch_time_present;
+	established_ttlm_params->expected_duration_present =
+		established_info->expected_duration_present;
+	established_ttlm_params->mapping_switch_time =
+		established_info->mapping_switch_time;
+	established_ttlm_params->expected_duration =
+		established_info->expected_duration;
+	os_memcpy(established_ttlm_params->ieee_link_map_tid,
+		  established_info->ieee_link_map_tid,
+		  sizeof(u16) * NUM_MAX_TIDS);
+
+	return 0;
 }
 
 
@@ -303,8 +311,8 @@ void hostapd_ttlm_handle_mapping_switch_time_expiry(struct ttlm_context *ttlm_ct
 	wpa_printf(MSG_INFO, "TTLM: Mapping switch time expired for link id:%d ",
 		   link_id);
 
-	memcpy(&ttlm_ctx->established_ttlm, &ttlm_ctx->upcoming_ttlm,
-	       sizeof(struct mlo_ttlm_ie));
+	os_memcpy(&ttlm_ctx->established_ttlm, &ttlm_ctx->upcoming_ttlm,
+		  sizeof(struct mlo_ttlm_ie));
 
 	ttlm_ctx->established_ttlm.ttlm.mapping_switch_time_present = false;
 	ttlm_ctx->established_ttlm.ttlm.mapping_switch_time = 0;
@@ -319,7 +327,7 @@ void hostapd_ttlm_handle_mapping_switch_time_expiry(struct ttlm_context *ttlm_ct
 		   ttlm->mapping_switch_time, ttlm->expected_duration,
 		   ttlm->ieee_link_map_tid[0]);
 
-	memset(&ttlm_ctx->upcoming_ttlm, 0, sizeof(struct mlo_ttlm_ie));
+	os_memset(&ttlm_ctx->upcoming_ttlm, 0, sizeof(struct mlo_ttlm_ie));
 	ttlm_ctx->upcoming_ttlm.ttlm.direction = TTLM_DIRECTION_INVALID;
 }
 
@@ -344,8 +352,7 @@ void hostapd_ttlm_handle_expected_duration_expiry(struct ttlm_context *ttlm_ctx,
 	 * established mapping and no new non-default TTLM announcement is
 	 * ongoing.
 	 */
-	memset(&ttlm_ctx->established_ttlm, 0,
-	       sizeof(struct mlo_ttlm_ie));
+	os_memset(&ttlm_ctx->established_ttlm, 0, sizeof(struct mlo_ttlm_ie));
 
 	ttlm_ctx->established_ttlm.ttlm.direction = TTLM_DIRECTION_BIDI;
 	ttlm_ctx->established_ttlm.ttlm.default_link_mapping = 1;
@@ -355,7 +362,7 @@ void hostapd_ttlm_handle_expected_duration_expiry(struct ttlm_context *ttlm_ctx,
 }
 
 
-static int
+int
 hostapd_offload_set_adv_ttlm_multi_mbssid(struct hostapd_data *hapd)
 {
 	struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
@@ -363,19 +370,25 @@ hostapd_offload_set_adv_ttlm_multi_mbssid(struct hostapd_data *hapd)
 	int ret = 0;
 
 	dl_list_for_each(bss, &group->bss_list, struct hostapd_data, mbssid_bss) {
-		if (bss != hapd) {
-			struct drv_adv_ttlm_params upcoming_ttlm_params, established_ttlm_params;
-			bool send_default_mapping =
-				!bss->mld->ttlm_ctx.upcoming_ttlm.ttlm.mapping_switch_time_present;
+		if (bss != hapd && bss->beacon_set_done) {
+			struct drv_adv_ttlm_params upcoming_params;
+			struct drv_adv_ttlm_params established_params;
+			struct ttlm_context *ctx = &bss->mld->ttlm_ctx;
+			bool send_def_mapping =
+				!ctx->upcoming_ttlm.ttlm.mapping_switch_time_present;
 
-			hostapd_fill_ttlm_params(&bss->mld->ttlm_ctx.upcoming_ttlm.ttlm,
-						 &bss->mld->ttlm_ctx.established_ttlm.ttlm,
-						 &upcoming_ttlm_params,
-						 &established_ttlm_params);
+			if (hostapd_fill_ttlm_params(&ctx->upcoming_ttlm.ttlm,
+						     &ctx->established_ttlm.ttlm,
+						     &upcoming_params,
+						     &established_params)) {
+				wpa_printf(MSG_DEBUG,
+					   "Fail to fill TTLM params on non-tx bss");
+				return -EINVAL;
+			}
 			ret =  hostapd_drv_set_advertised_ttlm_params(bss,
-								      &upcoming_ttlm_params,
-								      &established_ttlm_params,
-								      send_default_mapping);
+								      &upcoming_params,
+								      &established_params,
+								      send_def_mapping);
 			if (ret) {
 				wpa_printf(MSG_DEBUG,
 					   "Failed to set advertised TTLM configs for non-tx BSS");
@@ -388,7 +401,7 @@ hostapd_offload_set_adv_ttlm_multi_mbssid(struct hostapd_data *hapd)
 }
 
 
-static int
+int
 hostapd_offload_set_adv_ttlm_mbssid_enhanced(struct hostapd_data *hapd)
 {
 	struct hostapd_data *bss;
@@ -398,14 +411,23 @@ hostapd_offload_set_adv_ttlm_mbssid_enhanced(struct hostapd_data *hapd)
 	for (i = 1; i < hapd->iface->num_bss; i++) {
 		struct drv_adv_ttlm_params upcoming_ttlm_params, established_ttlm_params;
 		bool send_default_mapping;
+		struct ttlm_context *ctx;
 
 		bss = hapd->iface->bss[i];
+		if (!bss->beacon_set_done)
+			continue;
+
+		ctx = &bss->mld->ttlm_ctx;
 		send_default_mapping =
-			!bss->mld->ttlm_ctx.upcoming_ttlm.ttlm.mapping_switch_time_present;
-		hostapd_fill_ttlm_params(&bss->mld->ttlm_ctx.upcoming_ttlm.ttlm,
-					 &bss->mld->ttlm_ctx.established_ttlm.ttlm,
-					 &upcoming_ttlm_params,
-					 &established_ttlm_params);
+			!ctx->upcoming_ttlm.ttlm.mapping_switch_time_present;
+		if (hostapd_fill_ttlm_params(&ctx->upcoming_ttlm.ttlm,
+					     &ctx->established_ttlm.ttlm,
+					     &upcoming_ttlm_params,
+					     &established_ttlm_params)) {
+			wpa_printf(MSG_DEBUG,
+				   "Fail to fill TTLM params on non-tx bss");
+			return -EINVAL;
+		}
 
 		ret =  hostapd_drv_set_advertised_ttlm_params(bss,
 							      &upcoming_ttlm_params,
@@ -413,7 +435,7 @@ hostapd_offload_set_adv_ttlm_mbssid_enhanced(struct hostapd_data *hapd)
 							      send_default_mapping);
 		if (ret) {
 			wpa_printf(MSG_DEBUG,
-				   "Failed to set advertised TTLM configs for non-tx BSS");
+				   "Fail to set advertised TTLM configs for non-tx BSS");
 			return -EINVAL;
 		}
 	}
@@ -625,10 +647,14 @@ int hostapd_send_advertised_ttlm(struct hostapd_data *hapd, struct mlo_ttlm_ie *
 
 	beacon_offload = hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_TTLM_BEACON_OFFLOAD;
 	if (beacon_offload) {
-		hostapd_fill_ttlm_params(&upcoming_ttlm->ttlm,
-					 &established_ttlm->ttlm,
-					 &upcoming_ttlm_params,
-					 &established_ttlm_params);
+		if (hostapd_fill_ttlm_params(&upcoming_ttlm->ttlm,
+					     &established_ttlm->ttlm,
+					     &upcoming_ttlm_params,
+					     &established_ttlm_params)) {
+			wpa_printf(MSG_DEBUG,
+				   "TTLM: Fail to fill ttlm params for adv ttlm");
+			return -EINVAL;
+		}
 
 		return hostapd_offload_set_advertised_ttlm(hapd, upcoming_ttlm,
 							   &upcoming_ttlm_params,
