@@ -371,7 +371,7 @@ int hostapd_check_max_sta(struct hostapd_data *hapd)
 	return 0;
 }
 
-int hostapd_reload_config(struct hostapd_iface *iface)
+int hostapd_reload_config_iface(struct hostapd_iface *iface)
 {
 	struct hapd_interfaces *interfaces = iface->interfaces;
 	struct hostapd_data *hapd = iface->bss[0];
@@ -463,6 +463,55 @@ int hostapd_reload_config(struct hostapd_iface *iface)
 	return 0;
 }
 
+int hostapd_reload_config(struct hostapd_iface *iface)
+{
+	int ret, reload_err = 0;
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_data *link;
+	size_t i, j;
+#endif /* CONFIG_IEEE80211BE */
+
+	ret = hostapd_reload_config_iface(iface);
+	if (ret)
+		return ret;
+
+#ifdef CONFIG_IEEE80211BE
+	for (i = 0; i < iface->interfaces->count; i++) {
+		struct hostapd_iface *other = iface->interfaces->iface[i];
+		bool mld_partner_found = false;
+
+		if (other == iface || !other || !other->conf)
+			continue;
+
+		for (j = 0; j < iface->num_bss && !mld_partner_found; j++) {
+			if (!iface->bss[j] || !iface->bss[j]->conf ||
+			    !iface->bss[j]->conf->mld_ap)
+				continue;
+
+			for_each_mld_link(link, iface->bss[j]) {
+				if (link->iface == other) {
+					mld_partner_found = true;
+					break;
+				}
+			}
+		}
+
+		if (!mld_partner_found)
+			continue;
+
+		ret = hostapd_reload_config_iface(other);
+		if (ret) {
+			wpa_printf(MSG_ERROR,
+				   "Failed to reload MLO partner links");
+			reload_err = ret;
+		} else {
+			wpa_printf(MSG_DEBUG, "Reloaded MLO partner links");
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	return reload_err;
+}
 
 #ifdef CONFIG_WEP
 
