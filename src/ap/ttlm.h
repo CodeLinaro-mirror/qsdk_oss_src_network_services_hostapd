@@ -255,5 +255,6 @@ int hostapd_send_advertised_ttlm(struct hostapd_data *hapd,
 					 struct mlo_ttlm_ie *ttlm_conf);
 bool is_valid_negotiated_ttlm(struct mlo_ttlm_ie *established_ttlm,
 			      struct ttlm_ongoing_negotiation_info *neg_info);
+bool is_sta_ttlm_capable(struct sta_info *sta);
 
 #endif /* TTLM_H */

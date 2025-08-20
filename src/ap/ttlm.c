@@ -874,6 +874,25 @@ bool hostapd_is_mapping_homogeneous(struct ttlm_ongoing_negotiation_info *ongoin
 }
 
 
+bool is_sta_ttlm_capable(struct sta_info *sta)
+{
+	u16 mld_sta_capa;
+	int sta_ttlm_cap;
+
+	if (!sta || !sta->mld_info.mld_sta)
+		return false;
+
+	mld_sta_capa = sta->mld_info.common_info.mld_capa;
+	sta_ttlm_cap = (mld_sta_capa & EHT_ML_MLD_CAPA_TID_TO_LINK_MAP_NEG_SUPP_MSK) >> 5;
+	if (!sta_ttlm_cap) {
+		wpa_printf(MSG_ERROR, "STA is not TTLM capable");
+		return false;
+	}
+
+	return true;
+}
+
+
 int hostapd_handle_ttlm_resp(struct hostapd_data *hapd, struct sta_info *sta,
 			     const u8 *buf, size_t len)
 {
@@ -1046,6 +1065,9 @@ int hostapd_handle_ttlm_assoc_req(struct hostapd_data *hapd, const struct ieee80
 	int retval;
 	enum ttlm_resp_type resp_type = TTLM_RESP_TYPE_SUCCESS;
 	u8 i;
+
+	if (is_sta_ttlm_capable(sta) == false)
+		return WLAN_STATUS_REQUEST_DECLINED;
 
 	os_memset(&sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info, 0,
 		  sizeof(sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info));
@@ -1244,6 +1266,9 @@ void hostapd_handle_ttlm_req(struct hostapd_data *hapd, struct sta_info *sta,
 		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
 		return;
 	}
+
+	if (is_sta_ttlm_capable(sta) == false)
+		return;
 
 	ongoing_ttlm = os_zalloc(sizeof(struct ttlm_ongoing_negotiation_info));
 	if (!ongoing_ttlm) {
