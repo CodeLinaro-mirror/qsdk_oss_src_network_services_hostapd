@@ -3827,8 +3827,29 @@ void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
 		break;
 	}
 
-	if (hapd->mld)
+	if (hapd->mld) {
+		struct ttlm_context *ttlm = &hapd->mld->ttlm_ctx;
+		struct ttlm_info *info;
+
+		/* Enable this new link by default if advertised ttlm is
+		 * already in progress with few links marked disabled
+		 */
+		if (ttlm->established_ttlm.ttlm.expected_duration_present) {
+			info = &ttlm->established_ttlm.ttlm;
+
+			for (i = 0; i < NUM_MAX_TIDS; i++)
+				info->ieee_link_map_tid[i] |=
+					BIT(hapd->mld_link_id);
+		}
+
+		if (ttlm->upcoming_ttlm.ttlm.mapping_switch_time_present) {
+			info = &ttlm->upcoming_ttlm.ttlm;
+			for (i = 0; i < NUM_MAX_TIDS; i++)
+				info->ieee_link_map_tid[i] |=
+					BIT(hapd->mld_link_id);
+		}
 		return;
+	}
 
 	mld = os_zalloc(sizeof(struct hostapd_mld));
 	if (!mld)

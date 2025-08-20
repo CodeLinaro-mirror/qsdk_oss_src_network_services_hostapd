@@ -2984,6 +2984,24 @@ void ieee802_11_free_ap_params(struct wpa_driver_ap_params *params)
 	params->allowed_freqs = NULL;
 }
 
+#ifdef CONFIG_IEEE80211BE
+static bool ieee802_11_is_link_beacon_set(struct hostapd_data *hapd)
+{
+	if (hapd->reenable_beacon)
+		return false;
+
+	return hostapd_drv_read_link_set_beacon(hapd, hapd->mld_link_id);
+}
+
+static inline int
+ieee802_11_configure_ttlm_on_non_tx(struct hostapd_data *hapd)
+{
+	if (hapd->iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
+		return hostapd_offload_set_adv_ttlm_multi_mbssid(hapd);
+
+	return hostapd_offload_set_adv_ttlm_mbssid_enhanced(hapd);
+}
+#endif
 
 static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 {
@@ -2999,6 +3017,9 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 	int i;
 	struct hostapd_hw_modes *mode;
 #endif /* CONFIG_DRIVER_NL80211_QCA */
+#ifdef CONFIG_IEEE80211BE
+	bool beacon_set = false;
+#endif /* CONFIG_IEEE80211BE */
 
 	if (!hapd->drv_priv) {
 		wpa_printf(MSG_ERROR, "Interface is disabled");
@@ -3051,6 +3072,11 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 			goto fail2;
 		}
 	}
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap)
+		beacon_set = ieee802_11_is_link_beacon_set(hapd);
+#endif
 
 	params.beacon_ies = beacon;
 	params.proberesp_ies = proberesp;
@@ -3152,6 +3178,94 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 	}
 #endif /* CONFIG_DRIVER_NL80211_QCA */
 
+#ifdef CONFIG_IEEE80211BE
+	/* If hapd has advertised ttlm established or under advertisement,
+	 * include ttlm attributes in params of start_ap despite of 2g/5g/6g
+	 * tx/non-tx bss.
+	 *
+	 * If the bss is 6GHz non-tx bss and its tx-bss has some non-default
+	 * TTLM being advertised send default TTLM mapping to driver as part of
+	 * ap_settings of non-tx bss.
+	 *
+	 * If hapd is 6GHz tx bss,
+	 *    - send set_ttlm nl command to driver across already started non-tx
+	 * bss's belonging to tx bss's mbssid group if any. If non-tx bss does
+	 * not have advertised ttlm, send default mapping to driver.
+	 *    - skip sending set_ttlm nl command on non-started non-tx bss's as
+	 * vdev not created yet. When start ap of the non-started non-tx bss
+	 * trigggered, send mapping through start ap params
+	 */
+	if (hapd->conf->mld_ap && hapd->conf->ttlm_enable && !beacon_set &&
+	    hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_TTLM_BEACON_OFFLOAD) {
+		struct hostapd_data *tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+		struct mlo_ttlm_ie *est_ttlm =
+			&hapd->mld->ttlm_ctx.established_ttlm;
+		struct mlo_ttlm_ie *up_ttlm =
+			&hapd->mld->ttlm_ctx.upcoming_ttlm;
+		struct wpa_driver_ap_ttlm_params *ttlm_params =
+			&params.ttlm_params;
+
+		/* bss has its own establised ttlm, include same in
+		 * params.ttlm_params
+		 */
+		if (est_ttlm->ttlm.expected_duration_present ||
+		    up_ttlm->ttlm.mapping_switch_time_present) {
+			if (hostapd_fill_ttlm_params(&up_ttlm->ttlm,
+						     &est_ttlm->ttlm,
+						     &ttlm_params->up_ttlm,
+						     &ttlm_params->est_ttlm)) {
+				wpa_printf(MSG_DEBUG,
+					   "TTLM: Failed to fill setap params");
+				os_memset(ttlm_params, 0, sizeof(*ttlm_params));
+				goto set_ap;
+			}
+
+			ttlm_params->send_default_mapping = false;
+
+			/* if this bss is 6g tx-bss, send ttlm config on already
+			 * started non-tx bss if any
+			 */
+			if (is_6ghz_freq(hapd->iface->freq) &&
+			    tx_bss == hapd &&
+			    ieee802_11_configure_ttlm_on_non_tx(hapd)) {
+				wpa_printf(MSG_DEBUG,
+					   "TTLM: fail to set param on non-tx");
+			}
+		} else if (is_6ghz_freq(hapd->iface->freq) &&
+			   hapd != tx_bss &&
+			   tx_bss->mld) {
+			/* 6g non-tx bss without ttlm advertisement, needs
+			 * default mapping to be sent to driver when its tx-bss
+			 * has non-default ttlm being advertised
+			 */
+			struct mlo_ttlm_ie *tx_est_ttlm =
+				&tx_bss->mld->ttlm_ctx.established_ttlm;
+			struct mlo_ttlm_ie *tx_up_ttlm =
+				&tx_bss->mld->ttlm_ctx.upcoming_ttlm;
+
+			if (!tx_est_ttlm->ttlm.expected_duration_present &&
+			    !tx_up_ttlm->ttlm.mapping_switch_time_present)
+				goto set_ap;
+
+			/* default value of established ttlm will be
+			 * default mapping
+			 */
+			if (hostapd_fill_ttlm_params(&up_ttlm->ttlm,
+						     &est_ttlm->ttlm,
+						     &ttlm_params->up_ttlm,
+						     &ttlm_params->est_ttlm)) {
+				wpa_printf(MSG_DEBUG,
+					   "TTLM: Fail to fill params");
+				os_memset(ttlm_params, 0,
+					  sizeof(*ttlm_params));
+				goto set_ap;
+			}
+			ttlm_params->send_default_mapping = true;
+		}
+	}
+#endif
+
+set_ap:
 	res = hostapd_drv_set_ap(hapd, &params);
 	if (res)
 		wpa_printf(MSG_ERROR, "Failed to set beacon parameters");

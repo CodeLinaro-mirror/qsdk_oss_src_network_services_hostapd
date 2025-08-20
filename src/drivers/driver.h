@@ -1891,6 +1891,26 @@ struct drv_adv_ttlm_params {
 	u32 expected_duration;
 };
 
+/**
+ * struct wpa_driver_ap_ttlm_params - TTLM parameters for AP mode during set
+ *	beacon
+ *
+ * This structure contains the TTLM (TID-to-Link Mapping) parameters to be
+ * used when starting an AP or updating its beacon. This structure to be
+ * populated when a new link is getting added to an MLD which already has an
+ * advertised TTLM established.
+ *
+ * @up_ttlm: upcoming TTLM element information
+ * @est_ttlm: established TTLM element information
+ * @send_default_mapping: whether to send default mapping (true for non-tx BSS
+ *	when its tx-BSS has non-default TTLM)
+ */
+struct wpa_driver_ap_ttlm_params {
+	struct drv_adv_ttlm_params up_ttlm;
+	struct drv_adv_ttlm_params est_ttlm;
+	bool send_default_mapping;
+};
+
 struct wpa_driver_ap_params {
 	/**
 	 * head - Beacon head from IEEE 802.11 header to IEs before TIM IE
@@ -2305,6 +2325,12 @@ struct wpa_driver_ap_params {
 	 * ml_max_rec_links - Max recommended links for ML
 	 */
 	u8 ml_max_rec_links;
+
+	/**
+	 * offload mode advertised ttlm data
+	 */
+	struct wpa_driver_ap_ttlm_params ttlm_params;
+
 };
 
 struct wpa_driver_mesh_bss_params {
@@ -6117,6 +6143,17 @@ struct wpa_driver_ops {
 	 * Returns: 0 on success, -1 on failure
 	 */
 	int (*reset_afc)(void *priv, u8 link_id);
+
+#ifdef CONFIG_IEEE80211BE
+	/**
+	 * read_link_set_beacon - read the value of set_beacon of link from
+	 * driver.
+	 * @priv: Private driver interface data
+	 * @mld_link_id: link id of the bss
+	 * Return: Value of set_beacon of driver interface data
+	 */
+	bool (*read_link_set_beacon)(void *priv, u8 mld_link_id);
+#endif /* CONFIG_IEEE80211BE */
 
 	/*
 	 * is_retail_afc_supported - Check if the driver supports retail AFC

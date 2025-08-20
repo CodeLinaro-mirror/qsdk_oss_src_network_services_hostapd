@@ -5629,6 +5629,24 @@ wpa_set_offload_adv_ttlm_params(struct nl_msg *msg,
 	return 0;
 }
 
+#ifdef CONFIG_IEEE80211BE
+static bool wpa_driver_read_link_set_beacon(void *priv, u8 mld_link_id)
+{
+	struct i802_bss *bss = priv;
+	struct i802_link *link;
+
+	if (!nl80211_link_valid(bss->valid_links, mld_link_id)) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Link ID=%u invalid (valid: 0x%04x)",
+			   mld_link_id, bss->valid_links);
+		return false;
+	}
+	link = nl80211_get_link(bss, mld_link_id);
+
+	return link->beacon_set;
+}
+#endif
+
 static int wpa_driver_nl80211_set_ap(void *priv,
 				     struct wpa_driver_ap_params *params)
 {
@@ -5646,6 +5664,9 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 	struct wpa_driver_mesh_bss_params mesh_params;
 #endif /* CONFIG_MESH */
 	struct nlattr *elems;
+#ifdef CONFIG_IEEE80211BE
+	struct wpa_driver_ap_ttlm_params *ttlm_param = &params->ttlm_params;
+#endif /* CONFIG_IEEE80211BE */
 
 	if (params->mld_ap) {
 		if (!nl80211_link_valid(bss->valid_links,
@@ -6033,6 +6054,16 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 			       params->ml_max_rec_links))
 			goto fail;
 	}
+
+#ifdef CONFIG_IEEE80211BE
+	if (cmd == NL80211_CMD_NEW_BEACON &&
+	    wpa_set_offload_adv_ttlm_params(msg, &ttlm_param->est_ttlm,
+					    &ttlm_param->up_ttlm,
+					    ttlm_param->send_default_mapping)) {
+		wpa_printf(MSG_DEBUG, "nl80211: set_beacon ttlm params failed");
+		goto fail;
+	}
+#endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_DRIVER_NL80211_QCA
 	if (cmd == NL80211_CMD_NEW_BEACON && params->allowed_freqs)
@@ -16824,4 +16855,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.set_qos = nl80211_set_qos,
 	.clear_afc_payload = nl80211_clear_afc_payload,
 	.reset_afc = nl80211_reset_afc,
+#ifdef CONFIG_IEEE80211BE
+	.read_link_set_beacon = wpa_driver_read_link_set_beacon,
+#endif /* CONFIG_IEEE80211BE */
 };
