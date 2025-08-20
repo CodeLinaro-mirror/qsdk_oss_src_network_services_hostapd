@@ -245,4 +245,10 @@ int hostapd_send_advertised_ttlm(struct hostapd_data *hapd, struct mlo_ttlm_ie *
 bool is_valid_negotiated_ttlm(struct mlo_ttlm_ie *established_ttlm,
 			      struct ttlm_ongoing_negotiation_info *neg_info);
 bool is_sta_ttlm_capable(struct sta_info *sta);
+int hostapd_fill_ttlm_params(struct ttlm_info *upcoming_info,
+			     struct ttlm_info *established_info,
+			     struct drv_adv_ttlm_params *upcoming_ttlm_params,
+			     struct drv_adv_ttlm_params *established_ttlm_params);
+int hostapd_offload_set_adv_ttlm_mbssid_enhanced(struct hostapd_data *hapd);
+int hostapd_offload_set_adv_ttlm_multi_mbssid(struct hostapd_data *hapd);
 #endif /* TTLM_H */

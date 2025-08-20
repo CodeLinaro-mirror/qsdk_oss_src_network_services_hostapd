@@ -1845,6 +1845,52 @@ struct mbssid_data {
 	u8 **rnr_elem_offset;
 };
 
+#define NUM_MAX_TIDS 8
+#define DRV_MAX_TTLM_DIR 2
+/**
+ * struct driver_ttlm_info - Holds TTLM data
+ * @dlink: link map of each tids in downlink direction
+ * @ulink: link map of each tids in uplink direction
+ * @dir_bmap: bitmap of directions (Bit 0 - for downlink,
+ *	Bit 1 - for uplink, Bit 2 - for bi-direction)
+ */
+struct driver_ttlm_info {
+	u16 dlink[NUM_MAX_TIDS];
+	u16 ulink[NUM_MAX_TIDS];
+	u8 dir_bmap;
+};
+
+/**
+ * struct drv_adv_ttlm_params - Params to trigger advertisement of TTLM element
+ *
+ * These are the params to be sent to the driver to be filled in the TTLM
+ * element.
+ * @default_link_mapping: Value 1 indicates the default TTLM, where all the TIDs
+ *	are mapped to all the links. Value 0 indicates the preferred TTLM
+ *	mapping.
+ * @ieee_link_map_tid: Holds the IEEE link id mapping of all the TIDs
+ * @link_mapping_size: Set to 1 if the length of the Link Mapping Of TID n field
+ *	is 1 octet and is set to 0 if the length of the Link Mapping Of TID n
+ *	field is 2 octets.
+ * @mapping_switch_time_present: Flag to indicate the presence of mapping
+ *	switch time.
+ * @expected_duration_present: Flag to indicate the presence of expected
+ *	duration.
+ * @mapping_switch_time: Duration after which the preferred link mapping is
+ *	established or applied.
+ * @expected_duration: Duration through which the preferred link mapping is
+ *	established or applied.
+ */
+struct drv_adv_ttlm_params {
+	bool default_link_mapping;
+	u16 ieee_link_map_tid[NUM_MAX_TIDS];
+	u8 link_mapping_size;
+	bool mapping_switch_time_present;
+	bool expected_duration_present;
+	u16 mapping_switch_time;
+	u32 expected_duration;
+};
+
 struct wpa_driver_ap_params {
 	/**
 	 * head - Beacon head from IEEE 802.11 header to IEs before TIM IE
@@ -3416,21 +3462,6 @@ enum wpa_drv_update_connect_params_mask {
 	WPA_DRV_UPDATE_AUTH_TYPE	= BIT(2),
 };
 
-#define NUM_MAX_TIDS 8
-#define DRV_MAX_TTLM_DIR 2
-/**
- * struct driver_ttlm_info - Holds TTLM data
- * @dlink: link map of each tids in downlink direction
- * @ulink: link map of each tids in uplink direction
- * @dir_bmap: bitmap of directions (Bit 0 - for downlink,
- *	Bit 1 - for uplink, Bit 2 - for bi-direction)
- */
-struct driver_ttlm_info {
-	u16 dlink[NUM_MAX_TIDS];
-	u16 ulink[NUM_MAX_TIDS];
-	u8 dir_bmap;
-};
-
 /**
  * struct external_auth - External authentication trigger parameters
  *
@@ -3536,37 +3567,6 @@ struct pasn_auth {
 	} action;
 	unsigned int num_peers;
 	struct pasn_peer peer[WPAS_MAX_PASN_PEERS];
-};
-
-/**
- * struct drv_adv_ttlm_params - Params to trigger advertisement of TTLM element
- *
- * These are the params to be sent to the driver to be filled in the TTLM
- * element.
- * @default_link_mapping: Value 1 indicates the default TTLM, where all the TIDs
- *	are mapped to all the links. Value 0 indicates the preferred TTLM
- *	mapping.
- * @ieee_link_map_tid: Holds the IEEE link id mapping of all the TIDs
- * @link_mapping_size: Set to 1 if the length of the Link Mapping Of TID n field
- *	is 1 octet and is set to 0 if the length of the Link Mapping Of TID n
- *	field is 2 octets.
- * @mapping_switch_time_present: Flag to indicate the presence of mapping
- *	switch time.
- * @expected_duration_present: Flag to indicate the presence of expected
- *	duration.
- * @mapping_switch_time: Duration after which the preferred link mapping is
- *	established or applied.
- * @expected_duration: Duration through which the preferred link mapping is
- *	established or applied.
- */
-struct drv_adv_ttlm_params {
-	bool default_link_mapping;
-	u16 ieee_link_map_tid[NUM_MAX_TIDS];
-	u8 link_mapping_size;
-	bool mapping_switch_time_present;
-	bool expected_duration_present;
-	u16 mapping_switch_time;
-	u32 expected_duration;
 };
 
 /**

@@ -5260,7 +5260,7 @@ static void nl80211_ttlm_update_event(struct i802_bss *bss, struct nlattr **tb)
 					data.ttlm_update_event.link_id)) {
 			wpa_printf(MSG_DEBUG,
 				   "nl80211: Invalid link ID %d for TTLM status event",
-				   data.bss_color_collision.link_id);
+				   data.ttlm_update_event.link_id);
 			return;
 		}
 
