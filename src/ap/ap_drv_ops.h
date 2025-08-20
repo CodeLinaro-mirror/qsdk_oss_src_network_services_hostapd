@@ -263,6 +263,17 @@ static inline int hostapd_drv_set_ap(struct hostapd_data *hapd,
 	return hapd->driver->set_ap(hapd->drv_priv, params);
 }
 
+#ifdef CONFIG_IEEE80211BE
+static inline bool
+hostapd_drv_read_link_set_beacon(struct hostapd_data *hapd, u8 mld_link_id)
+{
+	if (hapd->driver == NULL || hapd->driver->read_link_set_beacon == NULL)
+		return false;
+
+	return hapd->driver->read_link_set_beacon(hapd->drv_priv, mld_link_id);
+}
+#endif
+
 static inline int hostapd_drv_set_radius_acl_auth(struct hostapd_data *hapd,
 						  const u8 *mac, int accepted,
 						  u32 session_timeout)
