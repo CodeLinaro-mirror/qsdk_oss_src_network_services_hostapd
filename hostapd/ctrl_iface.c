@@ -4837,6 +4837,34 @@ static int hostapd_ctrl_iface_disable_mld(struct hostapd_iface *iface)
 	return 0;
 }
 
+
+static int hostapd_ctrl_iface_stop_mld(struct hostapd_data *hapd)
+{
+	struct hostapd_data *link;
+	int ret, stop_err = 0;
+
+	if (!hapd || !hapd->conf->mld_ap) {
+		wpa_printf(MSG_ERROR,
+			   "Trying to stop AP MLD on an interface that is not affiliated with an AP MLD.");
+		return -1;
+	}
+
+	for_each_mld_link(link, hapd) {
+		ret = hostapd_drv_stop_ap(link);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "Failed to stop %s link %u",
+				   link->conf->iface, link->mld_link_id);
+			stop_err = ret;
+		} else {
+			wpa_printf(MSG_DEBUG, "Stopped %s link %u",
+				   link->conf->iface, link->mld_link_id);
+		}
+	}
+
+	return stop_err;
+}
+
+
 static int hotapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd, char *cmd,
 					    char *buf, size_t buflen)
 {
@@ -6456,6 +6484,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 			reply_len = -1;
 	} else if (os_strcmp(buf, "DISABLE_MLD") == 0) {
 		if (hostapd_ctrl_iface_disable_mld(hapd->iface))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "STOP_MLD") == 0) {
+		if (hostapd_ctrl_iface_stop_mld(hapd))
 			reply_len = -1;
 	} else if (os_strncmp(buf, "LINK_REMOVE ", 12) == 0) {
 		if (hostapd_ctrl_iface_link_remove(hapd, buf + 12,
