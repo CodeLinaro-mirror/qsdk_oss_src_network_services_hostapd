@@ -2992,6 +2992,7 @@ struct hostap_sta_driver_data {
 	u8 rx_dcm, tx_dcm;
 	u16 valid_links;
 	struct hostap_sta_driver_data *link_sta_data[MAX_NUM_MLD_LINKS];
+	bool parse_link_sta_data;
 };
 
 struct hostapd_sta_add_params {

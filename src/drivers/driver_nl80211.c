@@ -8796,7 +8796,7 @@ static int get_sta_handler(struct nl_msg *msg, void *arg)
 		}
 	}
 
-	if (tb[NL80211_ATTR_MLO_LINKS])
+	if (tb[NL80211_ATTR_MLO_LINKS] && data->parse_link_sta_data)
 		if (get_link_sta_stats(data, tb, stats_policy))
 			wpa_printf(MSG_DEBUG,
 				   "nl80211: link=%d: failed to get link stats",
@@ -8806,6 +8806,18 @@ static int get_sta_handler(struct nl_msg *msg, void *arg)
 		get_sta_tid_stats(data, stats[NL80211_STA_INFO_TID_STATS]);
 
 	return NL_SKIP;
+}
+
+
+void nl80211_free_sta_driver_link_data(struct hostap_sta_driver_data *data)
+{
+	int i;
+
+	if (!data)
+		return;
+
+	for_each_link(data->valid_links, i)
+		os_free(data->link_sta_data[i]);
 }
 
 
@@ -8955,6 +8967,7 @@ static int i802_get_inact_sec(void *priv, const u8 *addr)
 
 	os_memset(&data, 0, sizeof(data));
 	data.inactive_msec = -1UL;
+	data.parse_link_sta_data = true;
 
 	ret = i802_read_sta_data(priv, &data, addr);
 	if (ret)
@@ -8969,8 +8982,7 @@ static int i802_get_inact_sec(void *priv, const u8 *addr)
 	}
 
 free_link_sta_data:
-	for_each_link(data.valid_links, i)
-		os_free(data.link_sta_data[i]);
+	nl80211_free_sta_driver_link_data(&data);
 
 	if (ret || (inactive_time == -1UL)) {
 		if (ret == -ENOENT)
