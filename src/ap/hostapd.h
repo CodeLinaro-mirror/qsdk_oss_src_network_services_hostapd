@@ -1247,6 +1247,26 @@ u8 hostapd_get_best_ap_6ghz_power_mode(struct hostapd_iface *iface,
 				       u16 in_punc_pattern);
 u8 hostapd_get_best_ap_6ghz_power_mode_for_iface(struct hostapd_iface *iface);
 
+/**
+ * hostapd_validate_chan_bw_in_pwr_mode() - Validate the input channel parameters
+ *
+ * This API checks if the input channel parameters are valid in the given
+ * power mode.
+ *
+ * @iface: Pointer to hostapd interface data
+ * @freq: Frequency of the channel
+ * @center_freq: Center frequency of the channel
+ * @bw: Bandwidth of the channel
+ * @pp: Puncturing bitmap
+ * @pwr_type: Power type
+ *
+ * Return: true if valid, false otherwise
+ */
+bool
+hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
+				     u16 center_freq, u16 bw, u16 pp,
+				     u8 pwr_type);
+
 u16 hostapd_get_bonded_chan_center_freq(u16 freq, u16 bw,
 				       u16 cen320_freq, s8 sec_chan_offset);
 
