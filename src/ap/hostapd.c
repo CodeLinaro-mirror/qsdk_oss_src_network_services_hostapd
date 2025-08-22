@@ -6957,7 +6957,7 @@ hostapd_get_sp_eirp(struct hostapd_iface *iface, u16 freq, u16 cen_freq,
 		    bool is_client_lookup, bool is_twice_pwr, s16 *sp_eirp_pwr)
 {
 	s16 afc_eirp_pwr, reg_sp_eirp_pwr;
-	u8 i, op_class = 0;
+	u8 i, op_class;
 	struct afc_sp_reg_info *afc_info;
 	int ret = -1;
 	bool found = false;
@@ -6991,31 +6991,8 @@ hostapd_get_sp_eirp(struct hostapd_iface *iface, u16 freq, u16 cen_freq,
 						reg_sp_eirp_pwr, sp_eirp_pwr);
 	}
 
-	switch (bw) {
-	case 20:
-		if (freq == 5935)
-			op_class = 136;
-		else
-			op_class = 131;
-		break;
-	case 40:
-		op_class = 132;
-		break;
-	case 80:
-		op_class = 133;
-		break;
-	case 160:
-		op_class = 134;
-		break;
-#ifdef CONFIG_IEEE80211BE
-	case 320:
-		op_class = 137;
-		break;
-#endif
-	default:
-		wpa_printf(MSG_ERROR, "Invalid channel width");
+	if (get_6ghz_opclass_from_bw(bw, freq, &op_class))
 		return -1;
-	}
 
 	afc_eirp_pwr = CHAN_MIN_TX_POWER * EIRP_PWR_SCALE;
 	for (i = 0; i < afc_info->num_chan_objs; i++) {

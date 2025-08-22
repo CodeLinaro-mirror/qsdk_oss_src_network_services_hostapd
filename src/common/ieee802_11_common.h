@@ -318,6 +318,16 @@ int get_6ghz_sec_channel(int channel);
 bool is_320_opclass(u8 op_class);
 u8 get_subchannels_for_opclass(u8 cfi, u8 opclass, u8 *subchannels);
 
+/**
+ * get_6ghz_opclass_from_bw - Get 6 GHz operating class for the given bandwidth
+ * @bw: Bandwidth in MHz (20, 40, 80, 160, 320)
+ * @freq: Primary frequency in MHz
+ * @op_class: Pointer to store the resulting operating class
+ *
+ * Returns: 0 on success, -1 on failure.
+ */
+int get_6ghz_opclass_from_bw(int bw, int freq, u8 *op_class);
+
 bool is_same_band(int freq1, int freq2);
 #define IS_2P4GHZ(n) (n >= 2412 && n <= 2484)
 #define IS_5GHZ(n) (n > 4000 && n < 5895)

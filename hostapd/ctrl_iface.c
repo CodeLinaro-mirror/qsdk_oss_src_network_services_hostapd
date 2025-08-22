@@ -2762,21 +2762,25 @@ is_afc_info_usable(struct afc_sp_reg_info *afc_info)
  * ieee80211_validate_chan_bw_in_afc_response() - Validate channel
  * bandwidth in AFC response
  * @iface: Pointer to hostapd interface data
+ * @freq: Frequency of the channel
+ * @cen_freq: Center frequency of the channel
+ * @bw: Bandwidth of the channel
+ * @pp: Puncturing bitmap
  * @he_6ghz_pwr_mode: HE 6 GHz power mode
+ *
  * Return: true if valid, false otherwise
  */
 static bool
 ieee80211_validate_chan_bw_in_afc_response(struct hostapd_iface *iface,
-					   u8 he_6ghz_pwr_mode)
+					   u16 freq, u16 cen_freq, u16 bw,
+					   u16 pp, u8 he_6ghz_pwr_mode)
 {
 	struct afc_sp_reg_info *afc_info;
 	bool valid;
 	u8 i;
-	u16 freq = iface->freq;
-	u16 cen_freq = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
-	u8 op_class = iface->conf->op_class;
+	u8 op_class;
 
-	if (he_6ghz_pwr_mode != HE_REG_INFO_6GHZ_AP_TYPE_SP || iface->conf->punct_bitmap)
+	if (he_6ghz_pwr_mode != HE_REG_INFO_6GHZ_AP_TYPE_SP || pp)
 		return true;
 
 	afc_info = iface->afc_rsp_info;
@@ -2785,6 +2789,10 @@ ieee80211_validate_chan_bw_in_afc_response(struct hostapd_iface *iface,
 		wpa_printf(MSG_WARNING, "AFC info is not usable");
 		return false;
 	}
+
+	if (get_6ghz_opclass_from_bw(bw, freq, &op_class))
+		return false;
+
 	valid = false;
 	for (i = 0; i < afc_info->num_chan_objs; i++) {
 		struct afc_chan_obj *chan_obj = &afc_info->afc_chan_info[i];
@@ -2873,11 +2881,11 @@ hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
 		chan_6ghz++;
 	}
 
-	if (!ieee80211_validate_chan_bw_in_afc_response(iface,
-							pwr_type)) {
+	if (!ieee80211_validate_chan_bw_in_afc_response(iface, freq, center_freq,
+							bw, pp, pwr_type)) {
 		wpa_printf(MSG_WARNING,
 			   "Channel %d, bw: %d is not supported in power mode %d",
-			   iface->freq, bw, pwr_type);
+			   freq, bw, pwr_type);
 		return false;
 	}
 

@@ -3088,6 +3088,37 @@ u8 get_subchannels_for_opclass(u8 cfi,
 	return nchans;
 }
 
+int get_6ghz_opclass_from_bw(int bw, int freq, u8 *op_class)
+{
+	switch (bw) {
+	case 20:
+		if (freq == 5935)
+			*op_class = 136;
+		else
+			*op_class = 131;
+		break;
+	case 40:
+		*op_class = 132;
+		break;
+	case 80:
+		*op_class = 133;
+		break;
+	case 160:
+		*op_class = 134;
+		break;
+#ifdef CONFIG_IEEE80211BE
+	case 320:
+		*op_class = 137;
+		break;
+#endif
+	default:
+		wpa_printf(MSG_ERROR, "Invalid channel width %d", bw);
+		return -1;
+	}
+
+	return 0;
+}
+
 bool is_320_opclass(u8 op_class)
 {
 #ifdef CONFIG_IEEE80211BE
