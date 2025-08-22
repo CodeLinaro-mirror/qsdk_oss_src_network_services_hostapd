@@ -8506,7 +8506,7 @@ static int get_chan_list(struct hostapd_data *hapd, int *non_11be_start_idx,
 			*non_11be_chan_count = 4;
 			break;
 		case CONF_OPER_CHWIDTH_USE_HT:
-			if (!seg0) {
+			if (!seg0 || (seg0 == pri_chan)) {
 				non11be_start_chan = pri_chan;
 				*non_11be_chan_count = 1;
 			} else {
