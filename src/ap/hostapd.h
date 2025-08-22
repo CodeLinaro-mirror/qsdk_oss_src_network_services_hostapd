@@ -1432,4 +1432,24 @@ hostapd_get_valid_puncture_pattern_arr(u16 bw, u16 *num_pp, u16 *pp_mask);
  */
 int hostapd_afc_handle_cli(struct hostapd_data *hapd, char *pos,
 			   char *buf, size_t buflen);
+
+/**
+ * hostapd_validate_chan_bw_in_pwr_mode() - Validate the input channel parameters
+ *
+ * This API checks if the input channel parameters are valid in the given
+ * power mode.
+ *
+ * @iface: Pointer to hostapd interface data
+ * @freq: Frequency of the channel
+ * @center_freq: Center frequency of the channel
+ * @bw: Bandwidth of the channel
+ * @pp: Puncturing bitmap
+ * @pwr_type: Power type
+ *
+ * Return: true if valid, false otherwise
+ */
+bool
+hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
+				     u16 center_freq, u16 bw, u16 pp,
+				     u8 pwr_type);
 #endif /* HOSTAPD_H */

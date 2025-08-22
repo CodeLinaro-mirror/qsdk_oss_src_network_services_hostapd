@@ -376,17 +376,52 @@ int get_next_max_width(int chan_width)
  * subchannel. So ignore it. The reduced bandwidth channel (20 MHz channel)
  * is picked up when the 20MHz bandwidth channel is process by the caller.
  */
-static void find_6g_chan_20_40(struct hostapd_channel_data *chan,
+static void find_6g_chan_20_40(struct hostapd_iface *iface,
+			       struct hostapd_channel_data *chan,
+			       int centre_freq, int channel_width,
+			       int power_type,
 			       u16 afc_bitmap, int *channel_idx,
 			       struct hostapd_channel_data **chandef_list)
 {
-	if (!afc_bitmap) {
-		wpa_printf(MSG_DEBUG,
-			   "AFC: Adding channel %d (%d) to valid chandef list with puncture pattern 0x%x",
-			   chan->freq, chan->chan, chan->punct_bitmap);
-		(*chandef_list)[*channel_idx] = *chan;
-		(*channel_idx)++;
+    int sp_pwr, lpi_pwr, vlp_pwr;
+    if (!afc_bitmap) {
+	if (!hostapd_validate_chan_bw_in_pwr_mode(iface,
+						  chan->freq, centre_freq,
+						  channel_width, 0,
+						  power_type)) {
+	    wpa_printf(MSG_DEBUG,
+		       "Invalid channel config with freq %d bw %d power mode %d",
+		       chan->freq, channel_width, power_type);
+	    return;
 	}
+
+	if (power_type == NL80211_REG_AP_SP) {
+	    sp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+					  channel_width, 0,
+					  NL80211_REG_AP_SP, false,
+					  NL80211_REG_NUM_POWER_MODES, false);
+	    lpi_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+					   channel_width, 0,
+					   NL80211_REG_AP_LPI, false,
+					   NL80211_REG_NUM_POWER_MODES, false);
+	    vlp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+					   channel_width, 0,
+					   NL80211_REG_AP_VLP, false,
+					   NL80211_REG_NUM_POWER_MODES, false);
+	    if (sp_pwr < lpi_pwr || sp_pwr < vlp_pwr) {
+		wpa_printf(MSG_DEBUG,
+			   "SP eirp %d is less than LPI eirp %d or VLP eirp %d for freq %d bw %d",
+			   sp_pwr, lpi_pwr, vlp_pwr, chan->freq, channel_width);
+		return;
+	    }
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "AFC: Adding channel %d (%d) to valid chandef list with bw %d puncture pattern 0x%x",
+		   chan->freq, chan->chan, channel_width, chan->punct_bitmap);
+	(*chandef_list)[*channel_idx] = *chan;
+	(*channel_idx)++;
+    }
 }
 
 /*
@@ -394,8 +429,11 @@ static void find_6g_chan_20_40(struct hostapd_channel_data *chan,
  * will fill 6GHz band 80, 160, 320 MHz available channels with puncture
  * patterns.
  */
-static void find_6g_chan_gt_40(struct hostapd_channel_data *chan,
+static void find_6g_chan_gt_40(struct hostapd_iface *iface,
+			       struct hostapd_channel_data *chan,
+			       int centre_freq,
 			       int new_start_freq, int channel_width,
+			       int power_type,
 			       u16 afc_bitmap, int *channel_idx,
 			       struct hostapd_channel_data **chandef_list)
 {
@@ -415,6 +453,7 @@ static void find_6g_chan_gt_40(struct hostapd_channel_data *chan,
 
 	for (i = 0; i < num_pp; i++) {
 		u16 temp_bitmap;
+		int sp_pwr, lpi_pwr, vlp_pwr;
 
 		temp_bitmap = ((afc_bitmap | bw_pp_arr[i]) & pp_mask);
 		if (!is_punct_bitmap_valid(channel_width, pri_chan_pos, temp_bitmap)) {
@@ -424,9 +463,40 @@ static void find_6g_chan_gt_40(struct hostapd_channel_data *chan,
 			continue;
 		}
 
+		if (!hostapd_validate_chan_bw_in_pwr_mode(iface,
+							 chan->freq, centre_freq,
+							 channel_width, temp_bitmap,
+							 power_type)) {
+		    wpa_printf(MSG_DEBUG,
+			       "Invalid channel config with freq %d bw %d pp 0x%x power mode %d",
+			       chan->freq, channel_width, temp_bitmap, power_type);
+		    continue;
+		}
+
+		if (power_type == NL80211_REG_AP_SP) {
+		    sp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+						  channel_width, temp_bitmap,
+						  NL80211_REG_AP_SP, false,
+						  NL80211_REG_NUM_POWER_MODES, false);
+		    lpi_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+						   channel_width, 0,
+						   NL80211_REG_AP_LPI, false,
+						   NL80211_REG_NUM_POWER_MODES, false);
+		    vlp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+						   channel_width, 0,
+						   NL80211_REG_AP_VLP, false,
+						   NL80211_REG_NUM_POWER_MODES, false);
+		    if (sp_pwr < lpi_pwr || sp_pwr < vlp_pwr) {
+			wpa_printf(MSG_DEBUG,
+				   "SP eirp %d is less than LPI eirp %d or VLP eirp %d for freq %d bw %d and PP 0x%x",
+				   sp_pwr, lpi_pwr, vlp_pwr, chan->freq, channel_width, temp_bitmap);
+			continue;
+		    }
+		}
+
 		wpa_printf(MSG_DEBUG,
-			   "AFC: Adding channel %d (%d) to valid chandef list with puncture pattern 0x%x",
-			   chan->freq, chan->chan, temp_bitmap);
+			   "AFC: Adding channel %d (%d) to valid chandef list with bw %d puncture pattern 0x%x",
+			   chan->freq, chan->chan, channel_width, temp_bitmap);
 		(*chandef_list)[*channel_idx] = *chan;
 		(*chandef_list)[*channel_idx].punct_bitmap = temp_bitmap;
 		(*channel_idx)++;
@@ -494,10 +564,13 @@ static int find_6g_enabled_chans(struct hostapd_iface *iface,
 		intf_afc_chan_range_available(chan_6ghz_list, n_chans, &afc_bitmap);
 		if (channel_width < 80 || !(iface->conf->ieee80211be) ||
 		    iface->conf->puncture_strict_6ghz) {
-			find_6g_chan_20_40(chan, afc_bitmap,
+			find_6g_chan_20_40(iface, chan, new_centre_freq,
+					   channel_width, power_type, afc_bitmap,
 					   &channel_idx, chandef_list);
 		} else {
-			find_6g_chan_gt_40(chan, new_start_freq, channel_width,
+			find_6g_chan_gt_40(iface, chan, new_centre_freq,
+					   new_start_freq, channel_width,
+					   power_type,
 					   afc_bitmap, &channel_idx, chandef_list);
 		}
 	}
@@ -1064,6 +1137,12 @@ static int iterate_eirp_array(struct hostapd_iface *iface,
 						    false,
 						    NL80211_REG_NUM_POWER_MODES,
 						    false);
+		wpa_printf(MSG_DEBUG, "freq %d cf %d width %d pb 0x%x power_mode %d eirp %d",
+			   available_chandef_list[i].freq,
+			   center_freq, channel_width,
+			   available_chandef_list[i].punct_bitmap,
+			   best_ap_pwr_mode,
+			   tmp_eirp_pwr);
 		if (action == ACT_FIND_EIRPMAX) {
 			if (tmp_eirp_pwr > *max_eirp_pwr) {
 				*max_eirp_pwr = tmp_eirp_pwr;
@@ -1204,6 +1283,8 @@ static int find_afc_random_chan(struct hostapd_hw_modes *mode,
 		ret = -1;
 		goto free_chandef_list;
 	}
+	wpa_printf(MSG_DEBUG, "max eirp power is %d and full channel avail is %d",
+		   max_eirp_pwr, is_full_chan_avail);
 
 	max_eirp_chandef_list = os_zalloc(sizeof(struct hostapd_channel_data) *
 					  num_available_chandefs);

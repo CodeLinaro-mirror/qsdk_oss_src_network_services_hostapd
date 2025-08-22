@@ -2426,6 +2426,8 @@ struct bw_bonded_array_pair bw_bonded_array_pair_map[] = {
 
 /* chan_80mhz_puncture_bitmap - Supported 80 MHz puncturing patterns */
 static const u16 chan_80mhz_puncture_bitmap[] = {
+	/* Non puncturing pattern */
+	0x0,
 	/* 20Mhz puncturing pattern */
 	0x1,
 	0x2,
@@ -2435,6 +2437,8 @@ static const u16 chan_80mhz_puncture_bitmap[] = {
 
 /* chan_160mhz_puncture_bitmap - Supported 160 Mhz puncturing pattern */
 static const u16 chan_160mhz_puncture_bitmap[] = {
+	/* Non puncturing pattern */
+	0x00,
 	/* 20Mhz puncturing pattern */
 	0x01,
 	0x02,
@@ -2453,6 +2457,8 @@ static const u16 chan_160mhz_puncture_bitmap[] = {
 
 /* chan_320mhz_puncture_bitmap - Supported 320 Mhz puncturing patterns */
 static const u16 chan_320mhz_puncture_bitmap[] = {
+	/* Non puncturing pattern */
+	0x0000,
 	/* 40Mhz puncturing pattern */
 	0x0003,
 	0x000c,
