@@ -17,6 +17,7 @@
  * One digit after the decimal is preserved.
  */
 #define SCALE_PERCENTAGE_TO_U32(pct) ((u32)((pct) *= 10))
+#define ATF_OFFLOAD_STATS_DEFAULT_TIMEOUT 30
 
 enum atf_scheduling_policy {
 	ATF_FAIR_SCHEDULING,
