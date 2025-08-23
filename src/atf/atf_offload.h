@@ -109,6 +109,18 @@ struct atf_group_wmm_ac_info {
 	__le32 atf_units_vo;
 } __attribute__((__packed__));
 
+struct atf_consumption {
+	u32 consumption;
+};
+
+/**
+ * @struct atf_airtime_consumption - airtime used
+ */
+struct atf_airtime_consumption {
+	struct atf_consumption tx_consumption[4];
+	struct atf_consumption rx_consumption[4];
+};
+
 /**
  * @struct atf_peer_config - per sta config.
  */
@@ -120,6 +132,11 @@ struct atf_peer_config {
 	u32 user_cfg_airtime;
 	u8 addr[ETH_ALEN];
 	bool calculated_for_airtime;
+	struct atf_airtime_consumption peer_airtime;
+	u8 actual_airtime;
+	u8 ul_airtime;
+	u32 actual_duration;
+	u32 actual_ul_duration;
 
 	/* add this node to atf_algo */
 	struct dl_list list;
@@ -137,6 +154,11 @@ struct atf_peer {
 	struct sta_info *sta;
 	u32 calculated_airtime;
 	struct hostapd_data *bss;
+	struct atf_airtime_consumption peer_airtime;
+	u8 actual_airtime;
+	u8 ul_airtime;
+	u32 actual_duration;
+	u32 actual_ul_duration;
 
 	/* Flag to indicate whether it is updated to driver */
 	bool is_updated;
@@ -171,6 +193,10 @@ struct atf_group {
 	u32 user_cfg_airtime;
 	u32 sched_policy;
 	u32 expl_peers_airtime;
+	u8 actual_airtime;
+	u8 ul_airtime;
+	u32 actual_duration;
+	u32 actual_ul_duration;
 
 	/* add this node to atf_algo */
 	struct dl_list list;
@@ -235,6 +261,11 @@ struct atf_algo {
 	struct atf_group *last_group;
 	struct atf_ssid_config *last_ssid_cfg;
 	struct atf_peer_config *last_peer_cfg;
+
+	/* Radio airtime stats */
+	struct atf_airtime_consumption radio_airtime;
+	u32 actual_duration;
+	u32 actual_ul_duration;
 };
 
 /**
@@ -361,6 +392,8 @@ int nl80211_atf_offload_stats_enable_disable(void *priv, u8 radio_index, u8 valu
 void atf_offload_disable_atf_stats(struct hostapd_iface *ifaces);
 
 int nl80211_atf_offload_stats_timeout(void *priv, u8 radio_index, u8 value);
+
+int nl80211_atf_offload_showatfstats(void *priv, u8 radio_index, struct hostapd_data *hapd);
 #else
 static inline void atf_offload_disable_atf_stats(struct hostapd_iface *ifaces)
 {

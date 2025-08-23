@@ -1626,6 +1626,9 @@ hostapd_ctrl_iface_atf_offload_enable_atf_stats(struct hostapd_data *hapd,
 		return -1;
 	}
 
+	if (!algo->atf_stats_timeout)
+		algo->atf_stats_timeout = ATF_OFFLOAD_STATS_DEFAULT_TIMEOUT;
+
 	algo->atf_stats_enabled = atf_stats;
 
 	wpa_printf(MSG_INFO, "ATF: ATF stats is %s\n", atf_stats ? "enabled" : "disabled");
@@ -1721,6 +1724,283 @@ hostapd_ctrl_iface_atf_offload_g_atf_stats_timeout(struct hostapd_data *hapd,
 }
 
 
+static int atf_offload_update_peer_airtime(struct hostapd_data *hapd)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	struct atf_airtime_consumption *airtime_stats;
+	struct atf_group *group;
+	struct atf_peer_config *peer_config;
+	struct atf_peer *implicit_peer;
+	struct sta_info *sta, *tmp;
+	u32 peer_airtime, peer_ul_airtime, radio_actual_airtime = 0, radio_ul_airtime = 0;
+	int ac;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+	airtime_stats = &algo->radio_airtime;
+
+	if (dl_list_empty(&algo->groups)) {
+		wpa_printf(MSG_ERROR, "ATF: No ssid/group configuration found\n");
+		return -1;
+	}
+
+	for (ac = 0; ac < 4; ac++) {
+		radio_actual_airtime += airtime_stats->tx_consumption[ac].consumption;
+		radio_ul_airtime += airtime_stats->rx_consumption[ac].consumption;
+	}
+
+	dl_list_for_each(group, &algo->groups, struct atf_group, list) {
+		group->actual_airtime = 0;
+		group->ul_airtime = 0;
+		group->actual_duration = 0;
+		group->actual_ul_duration = 0;
+
+		if (dl_list_empty(&group->explicit_peers))
+			goto implicit_peers;
+
+		dl_list_for_each_safe(sta, tmp, &group->explicit_peers,
+				      struct sta_info, atf_candidate_list) {
+			if (sta->atf_peer.peer_cfg_ref) {
+				peer_config = sta->atf_peer.peer_cfg_ref;
+				airtime_stats = &peer_config->peer_airtime;
+				peer_airtime = 0;
+				peer_ul_airtime = 0;
+
+				for (ac = 0; ac < 4; ac++) {
+					peer_airtime +=
+						airtime_stats->tx_consumption[ac].consumption;
+					peer_ul_airtime +=
+						airtime_stats->rx_consumption[ac].consumption;
+				}
+
+				if (peer_airtime > 0 && radio_actual_airtime > 0) {
+					peer_config->actual_duration =
+						peer_airtime;
+					peer_config->actual_airtime =
+						(u32)((u64)peer_airtime * 100ULL / radio_actual_airtime);
+				} else {
+					peer_config->actual_duration = 0;
+					peer_config->actual_airtime = 0;
+				}
+
+				if (peer_ul_airtime > 0 && radio_ul_airtime > 0) {
+					peer_config->actual_ul_duration =
+						peer_ul_airtime;
+					peer_config->ul_airtime =
+						(u32)((u64)peer_ul_airtime * 100ULL / radio_ul_airtime);
+				} else {
+					peer_config->actual_ul_duration = 0;
+					peer_config->ul_airtime = 0;
+				}
+
+				group->actual_airtime += peer_config->actual_airtime;
+				group->ul_airtime += peer_config->ul_airtime;
+				group->actual_duration += peer_config->actual_duration;
+				group->actual_ul_duration += peer_config->actual_ul_duration;
+			}
+		}
+implicit_peers:
+		if (dl_list_empty(&group->implicit_peers))
+			continue;
+
+		dl_list_for_each_safe(sta, tmp, &group->implicit_peers,
+				      struct sta_info, atf_candidate_list) {
+			if (sta->atf_peer.calculated_airtime) {
+				implicit_peer = &sta->atf_peer;
+				airtime_stats = &implicit_peer->peer_airtime;
+				peer_airtime = 0;
+				peer_ul_airtime = 0;
+
+				for (ac = 0; ac < 4; ac++) {
+					peer_airtime +=
+						airtime_stats->tx_consumption[ac].consumption;
+					peer_ul_airtime +=
+						airtime_stats->rx_consumption[ac].consumption;
+				}
+
+				if (peer_airtime > 0 && radio_actual_airtime > 0) {
+					implicit_peer->actual_duration =
+						peer_airtime;
+					implicit_peer->actual_airtime =
+						(u32)((u64)peer_airtime * 100ULL / radio_actual_airtime);
+				} else {
+					implicit_peer->actual_duration = 0;
+					implicit_peer->actual_airtime = 0;
+				}
+
+				if (peer_ul_airtime > 0 && radio_ul_airtime > 0) {
+					implicit_peer->actual_ul_duration =
+						peer_ul_airtime;
+					implicit_peer->ul_airtime =
+						(u32)((u64)peer_ul_airtime * 100ULL / radio_ul_airtime);
+				} else {
+					implicit_peer->actual_ul_duration = 0;
+					implicit_peer->ul_airtime = 0;
+				}
+
+				group->actual_airtime += implicit_peer->actual_airtime;
+				group->ul_airtime += implicit_peer->ul_airtime;
+				group->actual_duration += implicit_peer->actual_duration;
+				group->actual_ul_duration += implicit_peer->actual_ul_duration;
+			}
+		}
+	}
+
+	return 0;
+}
+
+
+static void atf_offload_print_stats(struct hostapd_data *hapd)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	struct atf_group *group;
+	struct atf_peer_config *peer;
+	struct sta_info *sta, *tmp;
+	struct atf_peer *implicit_peer;
+	int ret, borrowed, unused;
+	u8 addr[ETH_ALEN];
+
+	ret = atf_offload_update_peer_airtime(hapd);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "ATF: failed to update ATF stats\n");
+		return;
+	}
+
+	algo = iface->atf_algo;
+
+	wpa_printf(MSG_INFO, "******************************* ATF STATS For SSID Groups **************************");
+	wpa_printf(MSG_INFO, "GroupName       Configured  Actual  Borrowed  Unused  Duration(us)  ActualUL  UL(us)");
+
+	dl_list_for_each(group, &algo->groups, struct atf_group, list) {
+		borrowed = 0;
+		unused = 0;
+
+		if (group->actual_airtime > group->user_cfg_airtime / 10)
+			borrowed = group->actual_airtime - group->user_cfg_airtime / 10;
+		else
+			unused = group->user_cfg_airtime / 10 - group->actual_airtime;
+
+		wpa_printf(MSG_INFO, "%-18s %-10d %-7d %-9d %-7d %-13d %-9d %-7d",
+			   group->name,
+			   group->user_cfg_airtime / 10,
+			   group->actual_airtime,
+			   borrowed,
+			   unused,
+			   group->actual_duration,
+			   group->ul_airtime,
+			   group->actual_ul_duration);
+	}
+
+	wpa_printf(MSG_INFO, "******************************************************");
+	wpa_printf(MSG_INFO, "**************** ATF STATS For PEERs *************************");
+	wpa_printf(MSG_INFO, "PeerMAC             GroupName      Configured  Actual  Borrowed  Unused  Duration(us)  ActualUL  UL(us)");
+	dl_list_for_each(group, &algo->groups, struct atf_group, list) {
+		if (dl_list_empty(&group->explicit_peers))
+			goto impilicit_peers;
+
+		dl_list_for_each_safe(sta, tmp, &group->explicit_peers,
+				      struct sta_info, atf_candidate_list) {
+			if (sta->atf_peer.peer_cfg_ref) {
+				peer = sta->atf_peer.peer_cfg_ref;
+				borrowed = 0;
+				unused = 0;
+
+				if (peer->actual_airtime > sta->atf_peer.calculated_airtime / 10)
+					borrowed = peer->actual_airtime - sta->atf_peer.calculated_airtime / 10;
+				else
+					unused = peer->calculated_for_airtime / 10 - peer->actual_airtime;
+
+				wpa_printf(MSG_INFO, MACSTR "    %-17s %-10d %-7d %-9d %-7d %-13d %-9d %-7d",
+					   MAC2STR(peer->addr),
+					   peer->group->name,
+					   sta->atf_peer.calculated_airtime / 10,
+					   peer->actual_airtime,
+					   borrowed,
+					   unused,
+					   peer->actual_duration,
+					   peer->ul_airtime,
+					   peer->actual_ul_duration);
+			}
+		}
+impilicit_peers:
+		if (dl_list_empty(&group->implicit_peers))
+			continue;
+
+		dl_list_for_each_safe(sta, tmp, &group->implicit_peers,
+				      struct sta_info, atf_candidate_list) {
+			if (sta->atf_peer.calculated_airtime) {
+				implicit_peer = &sta->atf_peer;
+				borrowed = 0;
+				unused = 0;
+
+				if (implicit_peer->actual_airtime > implicit_peer->calculated_airtime / 10)
+					borrowed = implicit_peer->actual_airtime -
+						   implicit_peer->calculated_airtime / 10;
+				else
+					unused = implicit_peer->calculated_airtime / 10 -
+						 implicit_peer->actual_airtime;
+
+				if (ap_sta_is_mld(sta->atf_peer.bss, sta))
+					memcpy(addr, sta->mld_info.links[hapd->mld_link_id].peer_addr, 6);
+				else
+					memcpy(addr, sta->addr, 6);
+
+				wpa_printf(MSG_INFO, MACSTR "    %-17s %-10d %-7d %-9d %-7d %-13d %-9d %-7d",
+					   MAC2STR(addr),
+					   implicit_peer->group->name,
+					   sta->atf_peer.calculated_airtime / 10,
+					   implicit_peer->actual_airtime,
+					   borrowed,
+					   unused,
+					   implicit_peer->actual_duration,
+					   implicit_peer->ul_airtime,
+					   implicit_peer->actual_ul_duration);
+			}
+		}
+
+	}
+}
+
+
+int hostapd_ctrl_iface_atf_offload_showatfstats(struct hostapd_data *hapd,
+                                               char *buf, size_t buflen)
+{
+       struct hostapd_iface *iface = hapd->iface;
+       struct atf_algo *algo;
+       int ret;
+
+       if (!iface || !iface->atf_algo) {
+               wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+               return -1;
+       }
+
+       algo = iface->atf_algo;
+
+       if (!algo->atf_stats_enabled) {
+               wpa_printf(MSG_ERROR, "ATF: ATF stats is not enabled\n");
+               return -1;
+       }
+
+       ret = nl80211_atf_offload_showatfstats(hapd->drv_priv,
+                                              hapd->iface->current_hw_info->hw_idx,
+					      hapd);
+       if (ret) {
+               wpa_printf(MSG_ERROR, "ATF: Failed to dump ATF stats\n");
+               return ret;
+       }
+
+       atf_offload_print_stats(hapd);
+       return 0;
+}
+
+
+
 int
 hostapd_ctrl_iface_config_atf_offload(struct hostapd_data *hapd,
 		const char *cmd, char *buf, size_t buflen)
@@ -1776,6 +2056,8 @@ hostapd_ctrl_iface_config_atf_offload(struct hostapd_data *hapd,
 									buf, buflen);
 	else if (os_strncmp(cmd, "g_atf_stats_timeout", 19) == 0)
 		return hostapd_ctrl_iface_atf_offload_g_atf_stats_timeout(hapd, buf, buflen);
+	else if (os_strncmp(cmd, "showatfstats", 12) == 0)
+		return hostapd_ctrl_iface_atf_offload_showatfstats(hapd, buf, buflen);
 
 	return -1;
 }

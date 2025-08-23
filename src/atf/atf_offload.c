@@ -1023,6 +1023,55 @@ atf_build_candidate_list(struct hostapd_iface *iface)
 	return 0;
 }
 
+struct atf_peer *
+atf_implicit_peer_cfg(u8 *mac, struct hostapd_data *hapd)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	struct hostapd_data *bss;
+	struct atf_group *group;
+	struct sta_info *sta;
+	struct atf_peer *peer_cfg;
+	u8 addr[ETH_ALEN];
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return NULL;
+	}
+
+	algo = iface->atf_algo;
+
+	if (dl_list_empty(&algo->groups)) {
+		wpa_printf(MSG_ERROR, "ATF: %s: group list is empty", __func__);
+		return NULL;
+	}
+
+	dl_list_for_each(group, &algo->groups, struct atf_group, list)
+	{
+		if (dl_list_empty(&group->implicit_peers))
+			return NULL;
+
+		if (group->num_impl_peers == 0)
+			return NULL;
+
+		dl_list_for_each(sta, &group->implicit_peers,
+				 struct sta_info, atf_candidate_list) {
+			peer_cfg = &sta->atf_peer;
+			bss = sta->atf_peer.bss;
+
+			if (ap_sta_is_mld(bss, sta))
+				memcpy(addr, sta->mld_info.links[hapd->mld_link_id].peer_addr, ETH_ALEN);
+			else
+				memcpy(addr, sta->addr, ETH_ALEN);
+
+			if (ether_addr_equal(mac, addr))
+				return peer_cfg;
+		}
+	}
+
+	return NULL;
+}
+
 
 void
 atf_cal_implicit_peers(struct atf_group *group)
@@ -1366,6 +1415,139 @@ nl80211_atf_offload_stats_timeout(void *priv, u8 radio_index, u8 value)
 			   strerror(-ret));
 
 	return ret;
+fail:
+	nlmsg_free(msg);
+	return -1;
+}
+
+static int atf_stats_cb(struct nl_msg *msg, void *arg)
+{
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct nlattr *vdata[QCA_WLAN_VENDOR_ATTR_MAX + 1];
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	struct nlattr *radio_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_MAX + 1];
+	struct hostapd_data *hapd = arg;
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	struct atf_airtime_consumption *airtime_stats;
+	struct atf_peer_config *peer_config = NULL;
+	struct atf_peer *implicit_peer;
+	struct nlattr *peer;
+	int rem;
+	u8 *mac;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		  genlmsg_attrlen(gnlh, 0), NULL);
+
+	if (!tb[NL80211_ATTR_VENDOR_DATA])
+		return NL_SKIP;
+
+	nla_parse_nested(vdata, QCA_WLAN_VENDOR_ATTR_MAX,
+			 tb[NL80211_ATTR_VENDOR_DATA], NULL);
+
+	// Parse radio-level stats
+	if (!vdata[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS]) {
+		wpa_printf(MSG_ERROR, "ATF: ATF stats not present in NL data\n");
+		return NL_SKIP;
+	}
+
+	nla_parse_nested(radio_stats, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_MAX,
+			 vdata[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS], NULL);
+
+	airtime_stats = &algo->radio_airtime;
+	airtime_stats->tx_consumption[0].consumption =
+		nla_get_u32(radio_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_TX_BE_AIRTIME]);
+	airtime_stats->tx_consumption[1].consumption =
+		nla_get_u32(radio_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_TX_BK_AIRTIME]);
+	airtime_stats->tx_consumption[2].consumption =
+		nla_get_u32(radio_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_TX_VI_AIRTIME]);
+	airtime_stats->tx_consumption[3].consumption =
+		nla_get_u32(radio_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_TX_VO_AIRTIME]);
+	airtime_stats->rx_consumption[0].consumption =
+		nla_get_u32(radio_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_RX_BE_AIRTIME]);
+	airtime_stats->rx_consumption[1].consumption =
+		nla_get_u32(radio_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_RX_BK_AIRTIME]);
+	airtime_stats->rx_consumption[2].consumption =
+		nla_get_u32(radio_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_RX_VI_AIRTIME]);
+	airtime_stats->rx_consumption[3].consumption =
+		nla_get_u32(radio_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_RX_VO_AIRTIME]);
+
+	// Parse peer-level stats
+	if (!radio_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS]) {
+		wpa_printf(MSG_ERROR, "ATF: Peer stats not present in NL data\n");
+		return NL_SKIP;
+	}
+
+	nla_for_each_nested(peer, radio_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS], rem) {
+		struct nlattr *peer_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS_MAX + 1];
+		nla_parse_nested(peer_stats, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS_MAX,
+				 peer, NULL);
+
+		if (!peer_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS_MAC])
+			continue;
+
+		mac = nla_data(peer_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS_MAC]);
+
+		peer_config = atf_find_peer_config_by_mac(mac, algo);
+		if (!peer_config)
+			implicit_peer = atf_implicit_peer_cfg(mac, hapd);
+
+		if (!peer_config && !implicit_peer)
+			continue;
+
+		airtime_stats = peer_config ? &peer_config->peer_airtime : &implicit_peer->peer_airtime;
+
+		airtime_stats->tx_consumption[0].consumption =
+			nla_get_u32(peer_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_BE_AIRTIME]);
+		airtime_stats->tx_consumption[1].consumption =
+			nla_get_u32(peer_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_BK_AIRTIME]);
+		airtime_stats->tx_consumption[2].consumption =
+			nla_get_u32(peer_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_VI_AIRTIME]);
+		airtime_stats->tx_consumption[3].consumption =
+			nla_get_u32(peer_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_VO_AIRTIME]);
+		airtime_stats->rx_consumption[0].consumption =
+			nla_get_u32(peer_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_BE_AIRTIME]);
+		airtime_stats->rx_consumption[1].consumption =
+			nla_get_u32(peer_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_BK_AIRTIME]);
+		airtime_stats->rx_consumption[2].consumption =
+			nla_get_u32(peer_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_VI_AIRTIME]);
+		airtime_stats->rx_consumption[3].consumption =
+			nla_get_u32(peer_stats[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_VO_AIRTIME]);
+	}
+
+	return NL_OK;
+}
+
+int nl80211_atf_offload_showatfstats(void *priv, u8 radio_index, struct hostapd_data *hapd)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	struct nlattr *data;
+
+	msg = nl80211_bss_msg(bss, NLM_F_DUMP, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOBUFS;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+			nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+				QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS))
+		goto fail;
+	data = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!data ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_INDEX, radio_index))
+		goto fail;
+
+	nla_nest_end(msg, data);
+	return send_and_recv_resp(drv, msg, atf_stats_cb, hapd);
+
 fail:
 	nlmsg_free(msg);
 	return -1;
