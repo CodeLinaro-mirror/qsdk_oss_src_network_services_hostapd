@@ -10,6 +10,8 @@
 #include <libubox/uloop.h>
 #include <ucode/compiler.h>
 #include <udebug.h>
+#include <netlink/genl/genl.h>
+#include <netlink/genl/ctrl.h>
 
 static uc_value_t *registry;
 static uc_vm_t vm;
@@ -52,13 +54,13 @@ static struct udebug_ubus_ring udebug_rings[] = {
 		.buf = &ud_nl[0],
 		.meta = &meta_nl_rx,
 		.default_entries = 1024,
-		.default_size = 256 * 1024,
+		.default_size = 512 * 1024,
 	},
 	{
 		.buf = &ud_nl[1],
 		.meta = &meta_nl_tx,
 		.default_entries = 1024,
-		.default_size = 64 * 1024,
+		.default_size = 512 * 1024,
 	},
 	{
 		.buf = &ud_nl[2],
@@ -403,6 +405,40 @@ static void udebug_hexdump_hook(int level, const char *title,
 	udebug_entry_add(&ud_log);
 }
 
+static int udebug_skip_broadcast_cmd_frame(const void *data)
+{
+	const struct genlmsghdr *gnlh = data + NLMSG_HDRLEN;
+	struct nlattr *tb[NL80211_ATTR_MAX + 1] = {0};
+	struct ieee80211_hdr *hdr;
+	u8 *frame;
+	int frame_len;
+
+	if (!gnlh)
+		return 1;
+
+	if (nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		      genlmsg_attrlen(gnlh, 0), NULL) < 0)
+		return 1;
+
+	if (!tb[NL80211_ATTR_FRAME])
+		return 1;
+
+	frame = nla_data(tb[NL80211_ATTR_FRAME]);
+	frame_len = nla_len(tb[NL80211_ATTR_FRAME]);
+
+	if (frame_len < sizeof(struct ieee80211_hdr))
+		return 1;
+
+	hdr = (struct ieee80211_hdr *)frame;
+
+	// Check for broadcast receiver address
+	const u8 broadcast_addr[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+	if (memcmp(hdr->addr1, broadcast_addr, ETH_ALEN) == 0)
+		return 1;
+
+	return 0;
+}
+
 static void udebug_netlink_hook(int tx, const void *data, size_t len)
 {
 	struct {
@@ -426,6 +462,8 @@ static void udebug_netlink_hook(int tx, const void *data, size_t len)
 		return;
 	} else if (nlh->nlmsg_type == 0x2 || nlh->nlmsg_type == 0x3) {
 		/* Remove error and  end of dump NL msgs type*/
+		return;
+	} else if ((gnlh->cmd == NL80211_CMD_FRAME || gnlh->cmd == NL80211_CMD_FRAME_TX_STATUS) && udebug_skip_broadcast_cmd_frame(data)) {
 		return;
 	} else if (gnlh->cmd == NL80211_CMD_TRIGGER_SCAN ||
 		 gnlh->cmd == NL80211_CMD_GET_SCAN ||
