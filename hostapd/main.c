@@ -1094,6 +1094,7 @@ int main(int argc, char *argv[])
 	hostapd_global_ctrl_iface_init(&interfaces);
 	hostapd_ucode_init(&interfaces);
 
+#ifdef CONFIG_IEEE80211AX
 	hostapd_ucode_config_nft_table(TABLE_NAME, true);
 
 	for (i = 0; i < interfaces.count; i++) {
@@ -1105,11 +1106,14 @@ int main(int argc, char *argv[])
 
 			hapd = iface->bss[j];
 			if (hapd->conf->scs) {
-				os_snprintf(buf, 128, "%s_%s", CHAIN_NAME, hapd->conf->iface);
-				hostapd_ucode_config_nft_chain(hapd, TABLE_NAME, buf, true);
+				os_snprintf(buf, 128, "%s_%s", CHAIN_NAME,
+					    hapd->conf->iface);
+				hostapd_ucode_config_nft_chain(hapd, TABLE_NAME,
+							       buf, true);
 			}
 		}
 	}
+#endif
 
 	if (hostapd_global_run(&interfaces, daemonize, pid_file)) {
 		wpa_printf(MSG_ERROR, "Failed to start eloop");
@@ -1118,7 +1122,9 @@ int main(int argc, char *argv[])
 
 	ret = 0;
 
+#ifdef CONFIG_IEEE80211AX
 	hostapd_ucode_config_nft_table(TABLE_NAME, false);
+#endif
 
  out:
 	hostapd_global_ctrl_iface_deinit(&interfaces);

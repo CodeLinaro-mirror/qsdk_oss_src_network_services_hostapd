@@ -1854,7 +1854,6 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon)
 	u8 if_addr[ETH_ALEN];
 	int flush_old_stations = 1;
 	struct hostapd_data *tx_hapd;
-	char buf[128] = {0};
 
 	if (!hostapd_mld_is_first_bss(hapd))
 		wpa_printf(MSG_DEBUG,
@@ -2190,10 +2189,14 @@ setup_mld:
 
 	tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
 
+#ifdef CONFIG_IEEE80211AX
+	char buf[128] = {0};
+
 	if (hapd->conf->scs) {
 		os_snprintf(buf, 128, "%s_%s", CHAIN_NAME, conf->iface);
 		hostapd_ucode_config_nft_chain(hapd, TABLE_NAME, buf, true);
 	}
+#endif
 
 	/* If TX BSS is already beaconing, update it with newly added profile
 	 */
@@ -4927,7 +4930,6 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx,
 		       bool is_link_remove)
 {
 	size_t i;
-	char buf[128] = {0};
 
 	wpa_printf(MSG_INFO, "Remove BSS '%s'", iface->conf->bss[idx]->iface);
 
@@ -4935,10 +4937,16 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx,
 	if (idx < iface->num_bss) {
  		struct hostapd_data *hapd = iface->bss[idx];
 
+#ifdef CONFIG_IEEE80211AX
+		char buf[128] = {0};
+
 		if (hapd && hapd->conf && hapd->conf->scs) {
-			os_snprintf(buf, sizeof(buf), "%s_%s", CHAIN_NAME, hapd->conf->iface);
-			hostapd_ucode_config_nft_chain(hapd, TABLE_NAME, buf, false);
+			os_snprintf(buf, sizeof(buf), "%s_%s", CHAIN_NAME,
+				    hapd->conf->iface);
+			hostapd_ucode_config_nft_chain(hapd, TABLE_NAME, buf,
+						       false);
 		}
+#endif
 
 		hostapd_bss_deinit(hapd);
 		wpa_printf(MSG_DEBUG, "%s: free hapd %p (%s)",

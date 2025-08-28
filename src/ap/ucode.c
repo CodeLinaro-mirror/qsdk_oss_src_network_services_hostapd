@@ -934,6 +934,7 @@ void hostapd_ucode_free_bss(struct hostapd_data *hapd)
 	ucv_gc(vm);
 }
 
+#ifdef CONFIG_IEEE80211AX
 void hostapd_ucode_config_nft_table(char *table, bool add)
 {
 	uc_value_t *nft_add;
@@ -977,7 +978,8 @@ void hostapd_ucode_config_nft_chain(struct hostapd_data *hapd, char *table,
 	ucv_gc(vm);
 }
 
-void hostapd_ucode_config_nft_rule(struct hostapd_data *hapd, struct hostapd_nft_rule_params *rparams,
+void hostapd_ucode_config_nft_rule(struct hostapd_data *hapd,
+				   struct hostapd_nft_rule_params *rparams,
 				   bool add)
 {
 	uc_value_t *nft_add;
@@ -1042,3 +1044,4 @@ void hostapd_ucode_config_nft_rule(struct hostapd_data *hapd, struct hostapd_nft
 	ucv_put(wpa_ucode_call(16));
 	ucv_gc(vm);
 }
+#endif

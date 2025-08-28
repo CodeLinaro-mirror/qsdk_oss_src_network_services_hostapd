@@ -729,84 +729,111 @@ hostapd_copy_and_send_scs_data(struct hostapd_data *hapd, struct sta_info *sta,
 	return ret;
 }
 
-static void hostapd_qm_prepare_nft_rule(struct hostapd_data *hapd, struct sta_info *sta,
+static void hostapd_qm_prepare_nft_rule(struct hostapd_data *hapd,
+					struct sta_info *sta,
 					struct hostapd_tclas_elements *te,
 					struct hostapd_nft_rule_params *rule,
 					u8 qm_id, u8 qm_tag)
 {
+	struct hostapd_tclas4_params *type4_params = &te->tclas_elem.type4_params;
+	struct hostapd_tclas10_params *type10_params = &te->tclas_elem.type10_params;
 
 	if (te->classifier_type == QM_TCLAS_CLASSIFIER_TYPE4) {
-		if (te->tclas_elem.type4_params.classifier_mask & BIT(0)) {
-			rule->ip_family = te->tclas_elem.type4_params.ip_ver;
+		if (type4_params->classifier_mask & BIT(0)) {
+			rule->ip_family = type4_params->ip_ver;
 		}
 
-		if (te->tclas_elem.type4_params.classifier_mask & BIT(1)) {
+		if (type4_params->classifier_mask & BIT(1)) {
 			if (rule->ip_family == 4) {
-				memcpy(&rule->saddr4, te->tclas_elem.type4_params.src_ip.ipv4, IPV4_LEN);
+				os_memcpy(&rule->saddr4,
+					  type4_params->src_ip.ipv4,
+					  IPV4_LEN);
 				htonl(rule->saddr4);
 			} else {
-				memcpy(rule->saddr6, te->tclas_elem.type4_params.src_ip.ipv6, IPV6_LEN);
+				os_memcpy(rule->saddr6,
+					  type4_params->src_ip.ipv6,
+					  IPV6_LEN);
 			}
 			rule->valid_flags |= NFT_RULE_PARAM_SADDR;
 		}
 
-		if (te->tclas_elem.type4_params.classifier_mask & BIT(2)) {
+		if (type4_params->classifier_mask & BIT(2)) {
 			if (rule->ip_family == 4) {
-				memcpy(&rule->daddr4, te->tclas_elem.type4_params.dst_ip.ipv4, IPV4_LEN);
+				os_memcpy(&rule->daddr4,
+					  type4_params->dst_ip.ipv4,
+					  IPV4_LEN);
 				htonl(rule->daddr4);
 			} else {
-				memcpy(rule->daddr6, te->tclas_elem.type4_params.dst_ip.ipv6, IPV6_LEN);
+				os_memcpy(rule->daddr6,
+					  type4_params->dst_ip.ipv6,
+					  IPV6_LEN);
 			}
 			rule->valid_flags |= NFT_RULE_PARAM_DADDR;
 		}
 
-		if (te->tclas_elem.type4_params.classifier_mask & BIT(3)) {
-			rule->sport = te->tclas_elem.type4_params.src_port;
+		if (type4_params->classifier_mask & BIT(3)) {
+			rule->sport = type4_params->src_port;
 			rule->valid_flags |= NFT_RULE_PARAM_SPORT;
 		}
 
-		if (te->tclas_elem.type4_params.classifier_mask & BIT(4)) {
-			rule->dport = te->tclas_elem.type4_params.dst_port;
+		if (type4_params->classifier_mask & BIT(4)) {
+			rule->dport = type4_params->dst_port;
 			rule->valid_flags |= NFT_RULE_PARAM_DPORT;
 		}
 
-		if (te->tclas_elem.type4_params.classifier_mask & BIT(6)) {
+		if (type4_params->classifier_mask & BIT(6)) {
 			if (rule->ip_family == 4) {
-				rule->proto = te->tclas_elem.type4_params.protocol;
+				rule->proto = type4_params->protocol;
 			} else {
-				rule->proto = te->tclas_elem.type4_params.next_header;
+				rule->proto = type4_params->next_header;
 			}
 			rule->valid_flags |= NFT_RULE_PARAM_PROTO;
 		}
 
 		if (te->tclas_elem.type4_params.classifier_mask & BIT(5)) {
-			rule->dscp = te->tclas_elem.type4_params.dscp;
+			rule->dscp = type4_params->dscp;
 			rule->valid_flags |= NFT_RULE_PARAM_DSCP;
 		}
 
-		wpa_printf(MSG_INFO, "qm_id : %d classifier_type : 0x%x classifier_mask : 0x%x\n", qm_id,
-			   te->classifier_type, te->tclas_elem.type4_params.classifier_mask);
+		wpa_printf(MSG_INFO, "qm_id : %d classifier_type : 0x%x classifier_mask : 0x%x\n",
+			   qm_id, te->classifier_type, type4_params->classifier_mask);
 
 	} else if (te->classifier_type == QM_TCLAS_CLASSIFIER_TYPE10) {
 
 		rule->valid_flags |= NFT_RULE_PARAM_PROTO;
-		rule->proto = te->tclas_elem.type10_params.protocol_number;
+		rule->proto = type10_params->protocol_number;
 
 		if (rule->proto == IPPROTO_UDP) {
 			rule->valid_flags |= NFT_RULE_PARAM_DPORT;
 			rule->dport = 4500;
 		}
 
-		rule->esp_spi =  ((te->tclas_elem.type10_params.filter_value[0]  & te->tclas_elem.type10_params.filter_mask[0]) << 24) | \
-				  ((te->tclas_elem.type10_params.filter_value[1] & te->tclas_elem.type10_params.filter_mask[1]) << 16) | \
-				  ((te->tclas_elem.type10_params.filter_value[2] & te->tclas_elem.type10_params.filter_mask[2]) << 8)  | \
-				  ((te->tclas_elem.type10_params.filter_value[3] & te->tclas_elem.type10_params.filter_mask[3]) << 0);
+		if (type10_params->filter_len == 4) {
+			rule->esp_spi =  ((type10_params->filter_value[0] &
+					  type10_params->filter_mask[0]) << 24) | \
+					  ((type10_params->filter_value[1] &
+					  type10_params->filter_mask[1]) << 16) | \
+					  ((type10_params->filter_value[2] &
+					  type10_params->filter_mask[2]) << 8)  | \
+					  ((type10_params->filter_value[3] &
+					  type10_params->filter_mask[3]) << 0);
+		} else if (type10_params->filter_len == 12) {
+			rule->esp_spi =  ((type10_params->filter_value[8]  &
+					  type10_params->filter_mask[8]) << 24) | \
+					  ((type10_params->filter_value[9] &
+					  type10_params->filter_mask[9]) << 16) | \
+					  ((type10_params->filter_value[10] &
+					  type10_params->filter_mask[10]) << 8)  | \
+					  ((type10_params->filter_value[11] &
+					  type10_params->filter_mask[11]) << 0);
+		}
 	}
 
 	memcpy(rule->dmac, sta->addr, ETH_ALEN);
 	rule->valid_flags |= NFT_RULE_PARAM_DMAC;
 	rule->mark = (qm_id << 8) | qm_tag;
-	os_snprintf(rule->chain, sizeof(rule->chain), "%s_%s", CHAIN_NAME, hapd->conf->iface);
+	os_snprintf(rule->chain, sizeof(rule->chain), "%s_%s", CHAIN_NAME,
+		    hapd->conf->iface);
 	os_snprintf(rule->table, sizeof(rule->table), "%s", TABLE_NAME);
 	rule->nf_family = NFPROTO_NETDEV;
 }
@@ -913,7 +940,8 @@ int hostapd_mscs_delete_all_rules(struct hostapd_data *hapd,
 	return 0;
 }
 
-static int hostapd_scs_add_nft_rule(struct hostapd_data *hapd, struct sta_info *sta, int scs_idx)
+static int hostapd_scs_add_nft_rule(struct hostapd_data *hapd,
+				    struct sta_info *sta, int scs_idx)
 {
 	struct hostapd_scs_req_desc_data *scs_req_desc = sta->scs_req_desc[scs_idx];
 	struct hostapd_tclas_elements te;
@@ -923,12 +951,39 @@ static int hostapd_scs_add_nft_rule(struct hostapd_data *hapd, struct sta_info *
 
 	for (i = 0; i < scs_req_desc->num_tclas_elements; i++) {
 
-		os_memset(&rule, 0, sizeof(rule));
-
 		te = scs_req_desc->tclas[i];
 
-		hostapd_qm_prepare_nft_rule(hapd, sta, &te, &rule, scs_req_desc->scs_id, HOSTAPD_QOS_SCS_TAG);
+		hostapd_qm_prepare_nft_rule(hapd, sta, &te, &rule,
+					    scs_req_desc->scs_id,
+					    HOSTAPD_QOS_SCS_TAG);
 
+		if (scs_req_desc->tclas_processing != 0) {
+			if ((rule.valid_flags & NFT_RULE_PARAM_DPORT ||
+			    rule.valid_flags & NFT_RULE_PARAM_SPORT) &&
+			    !(rule.valid_flags & NFT_RULE_PARAM_PROTO)) {
+
+				rule.valid_flags |= NFT_RULE_PARAM_PROTO;
+
+				rule.proto = IPPROTO_UDP;
+				hostapd_ucode_config_nft_rule(hapd, &rule, true);
+
+				rule.proto = IPPROTO_TCP;
+			} else if (te.classifier_type == QM_TCLAS_CLASSIFIER_TYPE10) {
+				rule.ip_family = 4;
+				hostapd_ucode_config_nft_rule(hapd, &rule, true);
+				rule.ip_family = 6;
+			}
+
+			hostapd_ucode_config_nft_rule(hapd, &rule, true);
+
+			os_memset(&rule, 0, sizeof(rule));
+		}
+
+		wpa_printf(MSG_INFO, "scs_id:%u rule valid flag : 0x%x ",
+			   scs_req_desc->scs_id, rule.valid_flags);
+	}
+
+	if (scs_req_desc->tclas_processing == 0) {
 		if ((rule.valid_flags & NFT_RULE_PARAM_DPORT ||
 		    rule.valid_flags & NFT_RULE_PARAM_SPORT) &&
 		    !(rule.valid_flags & NFT_RULE_PARAM_PROTO)) {
@@ -939,7 +994,7 @@ static int hostapd_scs_add_nft_rule(struct hostapd_data *hapd, struct sta_info *
 			hostapd_ucode_config_nft_rule(hapd, &rule, true);
 
 			rule.proto = IPPROTO_TCP;
-		} else if (te.classifier_type == QM_TCLAS_CLASSIFIER_TYPE10) {
+		} else if (!rule.ip_family) {
 			rule.ip_family = 4;
 			hostapd_ucode_config_nft_rule(hapd, &rule, true);
 			rule.ip_family = 6;
@@ -947,12 +1002,14 @@ static int hostapd_scs_add_nft_rule(struct hostapd_data *hapd, struct sta_info *
 
 		hostapd_ucode_config_nft_rule(hapd, &rule, true);
 
-		wpa_printf(MSG_INFO, "scs_id:%u rule valid flag : 0x%x ", scs_req_desc->scs_id, rule.valid_flags);
+		wpa_printf(MSG_INFO, "scs_id:%u rule valid flag : 0x%x ",
+			   scs_req_desc->scs_id, rule.valid_flags);
 	}
 	return 0;
 }
 
-static int hostapd_scs_delete_nft_rule(struct hostapd_data *hapd, struct sta_info *sta, int scs_idx)
+static int hostapd_scs_delete_nft_rule(struct hostapd_data *hapd,
+				       struct sta_info *sta, int scs_idx)
 {
 	struct hostapd_scs_req_desc_data *scs_data;
 	struct hostapd_tclas_elements te;
@@ -965,7 +1022,9 @@ static int hostapd_scs_delete_nft_rule(struct hostapd_data *hapd, struct sta_inf
 
 		te = scs_data->tclas[i];
 
-		hostapd_qm_prepare_nft_rule(hapd, sta, &te, &rule, scs_data->scs_id, HOSTAPD_QOS_SCS_TAG);
+		hostapd_qm_prepare_nft_rule(hapd, sta, &te, &rule,
+					    scs_data->scs_id,
+					    HOSTAPD_QOS_SCS_TAG);
 
 		hostapd_ucode_config_nft_rule(hapd, &rule, false);
 		wpa_printf(MSG_INFO, "scs_id:%u rule deleted", scs_data->scs_id);
