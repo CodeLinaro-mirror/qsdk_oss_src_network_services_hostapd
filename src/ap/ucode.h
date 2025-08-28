@@ -4,7 +4,9 @@
 #include "utils/ucode.h"
 
 struct hostapd_data;
+#ifdef CONFIG_IEEE80211AX
 struct hostapd_nft_rule_params;
+#endif
 
 struct hostapd_ucode_bss {
 #ifdef UCODE_SUPPORT
@@ -29,11 +31,14 @@ void hostapd_ucode_add_bss(struct hostapd_data *hapd);
 void hostapd_ucode_free_bss(struct hostapd_data *hapd);
 void hostapd_ucode_reload_bss(struct hostapd_data *hapd);
 
+#ifdef CONFIG_IEEE80211AX
 void hostapd_ucode_config_nft_table(char *table, bool add);
 void hostapd_ucode_config_nft_chain(struct hostapd_data *hapd, char *table,
 				    char *chain, bool add);
-void hostapd_ucode_config_nft_rule(struct hostapd_data *hapd, struct hostapd_nft_rule_params *rparams,
+void hostapd_ucode_config_nft_rule(struct hostapd_data *hapd,
+				   struct hostapd_nft_rule_params *rparams,
 				   bool add);
+#endif
 
 #else
 
@@ -57,11 +62,13 @@ static inline void hostapd_ucode_free_bss(struct hostapd_data *hapd)
 {
 }
 
+#ifdef CONFIG_IEEE80211AX
 static inline void hostapd_ucode_config_nft_table(char *table, bool add)
 {
 }
-static inline void hostapd_ucode_config_nft_chain(struct hostapd_data *hapd, char *table,
-						  char *chain, bool add)
+static inline void hostapd_ucode_config_nft_chain(struct hostapd_data *hapd,
+						  char *table, char *chain,
+						  bool add)
 {
 }
 static inline void
@@ -70,6 +77,7 @@ hostapd_ucode_config_nft_rule(struct hostapd_data *hapd,
 			      bool add)
 {
 }
+#endif
 #endif
 
 #endif
