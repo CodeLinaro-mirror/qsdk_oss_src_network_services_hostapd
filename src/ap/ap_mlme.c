@@ -165,6 +165,15 @@ void mlme_disassociate_indication(struct hostapd_data *hapd,
 		       HOSTAPD_LEVEL_DEBUG,
 		       "MLME-DISASSOCIATE.indication(" MACSTR ", %d)",
 		       MAC2STR(sta->addr), reason_code);
+
+	/* Encryption keys must be retained for PMF-enabled STA
+	 * to allow secure DEAUTH transmission as per IEEE P802.11-REVme/D7.0,
+	 * Section 12.6.17.
+	 */
+	if (sta->flags & WLAN_STA_MFP &&
+	    sta->timeout_next == STA_DEAUTH)
+		return;
+
 	mlme_deletekeys_request(hapd, sta);
 }
 
