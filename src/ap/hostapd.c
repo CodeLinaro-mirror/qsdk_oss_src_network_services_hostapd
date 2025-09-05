@@ -7454,6 +7454,12 @@ hostapd_get_valid_pp(u16 *pp, u16 bw, u16 pri_chan_pos)
 	u16 i;
 
 	bw_pp_arr = hostapd_get_valid_puncture_pattern_arr(bw, &num_pp, &pp_mask);
+	if (!bw_pp_arr) {
+		wpa_printf(MSG_ERROR,
+			   "No valid puncture pattern array for bw %d", bw);
+		return -1;
+	}
+
 	for  (i = 0; i < num_pp; i++) {
 		if (hostapd_is_pp_subset_and_valid(*pp, bw_pp_arr[i],
 						   pp_mask, pri_chan_pos)) {
