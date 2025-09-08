@@ -5992,12 +5992,7 @@ static int wpa_wnmsleep_add_mlo_gtk(struct wpa_state_machine *sm,
 				    u8 **pos)
 {
 	unsigned int i, link_id;
-	u8 *start;
-
-	if (!sm || !ml_key_info || !pos || !*pos)
-		return -1;
-
-	start = *pos;
+	u8 *start = *pos;
 
 	for (i = 0; i < ml_key_info->n_mld_links; i++) {
 		link_id = ml_key_info->links[i].link_id;
@@ -6061,12 +6056,7 @@ static int wpa_wnmsleep_add_mlo_igtk(struct wpa_state_machine *sm,
 				     u8 **pos)
 {
 	unsigned int i, link_id;
-	u8 *start;
-
-	if (!sm || !ml_key_info || !pos || !*pos)
-		return -1;
-
-	start = *pos;
+	u8 *start = *pos;
 
 	for (i = 0; i < ml_key_info->n_mld_links; i++) {
 		link_id = ml_key_info->links[i].link_id;
@@ -6129,11 +6119,6 @@ static int wpa_wnmsleep_add_mlo_bigtk(struct wpa_state_machine *sm,
 	unsigned int i, link_id;
 	u8 *start = *pos;
 
-	if (!sm || !ml_key_info || !pos || !*pos)
-		return -1;
-
-	start = *pos;
-
 	for (i = 0; i < ml_key_info->n_mld_links; i++) {
 		link_id = ml_key_info->links[i].link_id;
 
@@ -6187,14 +6172,12 @@ int wpa_populate_mlo_keys(struct wpa_authenticator *wpa_auth,
 			  u8 **buf)
 {
 #ifdef CONFIG_IEEE80211BE
-	u8 *start;
+	u8 *start = *buf;
 	int res;
 	u64 drv_flag1, drv_flag2;
 
-	if (!wpa_auth || !sm || !ml_key_info || !buf || !*buf)
+	if (!wpa_auth || !sm)
 		return -1;
-
-	start = *buf;
 
 	ml_key_info->mgmt_frame_prot = sm->mgmt_frame_prot;
 	ml_key_info->beacon_prot = sm->wpa_auth->conf.beacon_prot;
