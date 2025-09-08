@@ -1197,7 +1197,7 @@ int wnm_scan_process(struct wpa_supplicant *wpa_s, bool pre_scan_check)
 			return 0;
 
 #ifndef CONFIG_NO_ROAMING
-		if (current_bss && bss != current_bss &&
+		if (bss && current_bss && bss != current_bss &&
 		    wpa_supplicant_need_to_roam_within_ess(wpa_s, bss,
 							   current_bss, false))
 			return 0;

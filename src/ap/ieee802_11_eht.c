@@ -718,10 +718,10 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 			ext_mld_cap |= ((max_rec_links <<
 					EHT_ML_MLD_EXT_CAPA_MAX_NUM_REC_LINKS_OFFSET) &
 					EHT_ML_MLD_EXT_CAPA_MAX_NUM_REC_LINKS_MASK);
+			wpa_printf(MSG_DEBUG, "MLD: rec_links %u", max_rec_links);
 		}
 		wpa_printf(MSG_DEBUG,
-			   "MLD: Ext MLD Capabilities and Operations=0x%x rec_links %u",
-			   ext_mld_cap, max_rec_links);
+			   "MLD: Ext MLD Capabilities and Operations=0x%x", ext_mld_cap);
 		wpabuf_put_le16(buf, ext_mld_cap);
 	}
 
@@ -3433,6 +3433,11 @@ void hostapd_handle_epcs_action(struct hostapd_data *hapd,
 
 void hostapd_get_epcs_capab(struct hostapd_data *hapd, struct sta_info *sta)
 {
+	if (!sta) {
+		wpa_printf(MSG_DEBUG, "sta is NULL, not able to get EPCS CAPABILITY");
+		return;
+	}
+
 	if (sta->mld_info.mld_sta && sta->eht_capab &&
 	    (sta->eht_capab->mac_cap & EHT_MACCAP_EPCS_PRIO)) {
 		sta->mld_info.epcs.is_epcs_capable = true;
