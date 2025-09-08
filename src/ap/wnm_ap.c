@@ -1204,6 +1204,47 @@ int wnm_send_bss_tm_req(struct hostapd_data *hapd, struct sta_info *sta,
 	os_free(buf);
 
 	hapd->openwrt_stats.wnm.bss_transition_request_tx++;
+
+#ifdef CONFIG_IEEE80211BE
+	/*
+	 * Optional ML reconfig path for STA-initiated reconfig via BTM:
+	 * If DISASSOC_IMMINENT and Neighbor Report includes a Basic Multi-Link
+	 * subelement, start per-link disassoc only on affiliated links NOT present
+	 * in the union of Common-Info Own Link-ID and Per-STA Profile Link-IDs.
+	 */
+	if (ap_sta_is_mld(hapd, sta) &&
+	    (req_mode & WNM_BSS_TM_REQ_DISASSOC_IMMINENT) &&
+	    nei_rep && nei_rep_len) {
+		u32 pref_links =
+			wnm_neighbor_report_get_pref_link_mask(nei_rep, nei_rep_len);
+		if (pref_links) {
+			struct hostapd_data *hapd_ptr;
+
+			for_each_mld_link(hapd_ptr, hapd) {
+				int link_id = hapd_ptr->mld_link_id;
+				struct sta_info *link_sta;
+
+				if (!sta->mld_info.links[link_id].valid)
+					continue;
+
+				/* Keep links explicitly referenced by NR/BMLE */
+				if (pref_links & BIT(link_id))
+					continue;
+
+				link_sta = ap_get_sta(hapd_ptr, sta->addr);
+				if (!link_sta)
+					continue;
+
+				set_disassoc_timer(hapd_ptr, link_sta, disassoc_timer);
+				wpa_printf(MSG_DEBUG,
+					   "WNM: DISASSOC_IMMINENT + NR/BMLE: link_id=%d started per-link disassoc timer(s) for "
+					   MACSTR, link_id, MAC2STR(sta->addr));
+			}
+			return 0;
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+
 	if (disassoc_timer && sta) {
 #ifdef CONFIG_IEEE80211BE
 		/* Link removal is scheduled only when the Link Removal Imminent

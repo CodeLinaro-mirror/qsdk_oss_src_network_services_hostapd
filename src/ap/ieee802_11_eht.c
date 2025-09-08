@@ -3764,3 +3764,95 @@ int hostapd_ctrl_iface_negotiated_ttlm_config(struct hostapd_data *hapd, const c
 
 	return len;
 }
+
+u32 wnm_neighbor_report_get_pref_link_mask(const u8 *neigh_rep,
+					   size_t neigh_rep_len)
+{
+	const u8 *ie, *ie_end, *val, *val_end, *ml, *ml_end, *ml_val, *ml_val_end;
+	u8 eid, elen, id, len, common_len, ml_id, ml_len, link_id, own_link_id;
+	const u8 *end = neigh_rep + neigh_rep_len;
+	const u8 *pos = neigh_rep;
+	u32 mask = 0;
+	u16 sta_ctrl;
+	size_t off;
+
+#define EHT_ML_COMMON_INFO_LEN 13
+	while (pos + 2 <= end) {
+		eid = pos[0];
+		elen = pos[1];
+		ie = pos + 2;
+		ie_end = ie + elen;
+
+		pos += 2 + elen;
+
+		if (ie_end > end)
+			break;
+
+		if (eid != WLAN_EID_NEIGHBOR_REPORT ||
+		    elen < EHT_ML_COMMON_INFO_LEN)
+			continue;
+
+		/* Neighbor Report subelements */
+		off = EHT_ML_COMMON_INFO_LEN;
+		while (ie + off + 2 <= ie_end) {
+			id = ie[off];
+			len = ie[off + 1];
+			val = ie + off + 2;
+			val_end = val + len;
+
+			if (val_end > ie_end)
+				break;
+
+			off += 2 + len;
+
+			if (id != WNM_NEIGHBOR_MULTI_LINK || len < 3)
+				continue;
+
+			/* BMLE: [ml_ctrl(2)][common_len(1)]
+			 * [Common Info][ML subelems...]
+			 */
+			common_len = val[2];
+
+			/* Ensure Common Info is fully present */
+			if (val + 2 + common_len > val_end)
+				continue;
+
+			/* If Common Info has [Length] [MLD addr(6)] + [Link-ID(1)],
+			 * consume it
+			 */
+			if (common_len >= 1 + ETH_ALEN + 1) {
+				own_link_id = val[2 + 1 + ETH_ALEN];
+
+				if (own_link_id < MAX_NUM_MLD_LINKS)
+					mask |= BIT(own_link_id);
+			}
+
+			/* Iterate ML subelements after Common Info */
+			ml = val + 2 + common_len;
+			ml_end = val_end;
+
+			while (ml + 2 <= ml_end) {
+				ml_id = ml[0];
+				ml_len = ml[1];
+				ml_val = ml + 2;
+				ml_val_end = ml_val + ml_len;
+
+				if (ml_val_end > ml_end)
+					break;
+				ml += 2 + ml_len;
+
+				if (ml_id != EHT_ML_SUB_ELEM_PER_STA_PROFILE ||
+				    ml_len < 2)
+					continue;
+
+				/* Link-ID is lower 4 bits of STA control (LE16) */
+				sta_ctrl = WPA_GET_LE16(ml_val);
+				link_id = sta_ctrl & 0x0f;
+
+				if (link_id < MAX_NUM_MLD_LINKS)
+					mask |= BIT(link_id);
+			}
+		}
+	}
+	return mask;
+}

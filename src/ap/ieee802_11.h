@@ -460,4 +460,6 @@ int hostapd_configure_epcs(struct hostapd_data *hapd,
 				  enum qos_mgmt_req_type req_type);
 #endif /* CONFIG_IEEE80211BE */
 u8 * hostapd_fragment_multi_link_element(struct wpabuf *buf, u8 *pos);
+unsigned int wnm_neighbor_report_get_pref_link_mask(const u8 *neigh_rep,
+						    size_t neigh_rep_len);
 #endif /* IEEE802_11_H */
