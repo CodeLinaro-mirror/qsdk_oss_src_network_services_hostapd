@@ -8560,7 +8560,7 @@ static int get_link_sta_inactive_time(struct hostap_sta_driver_data *data,
 				      struct nlattr *link_sta_stats[],
 				      u8 mld_link_id)
 {
-	if (!data || !link_sta_stats || (mld_link_id > MAX_NUM_MLD_LINKS))
+	if (!link_sta_stats)
 		return -EINVAL;
 
 	if (!link_sta_stats[NL80211_STA_INFO_INACTIVE_TIME])
