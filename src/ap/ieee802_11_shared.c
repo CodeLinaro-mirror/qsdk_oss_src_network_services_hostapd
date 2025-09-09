@@ -768,6 +768,74 @@ int hostapd_update_time_adv(struct hostapd_data *hapd)
 }
 
 
+/**
+ * hostapd_eid_channel_usage_len - Calculate total length occupied
+ * by channel usage elements
+ *
+ * @hapd: hostapd data structure
+ * Returns: Total length (bytes) of the Channel Usage element
+ */
+size_t hostapd_eid_channel_usage_len(struct hostapd_data *hapd)
+{
+	int i;
+	size_t payload_len;
+	size_t total_len = 0;
+
+	/* If no channel usage elements are defined, element will not be added */
+	if (hapd->chan_usage_config.num_elems == 0)
+		return 0;
+
+	/* Element payload size */
+	for (i = 0; i < hapd->chan_usage_config.num_elems; i++) {
+		/* Mode (1 Byte) + Channel Entry (2 Bytes each) */
+		payload_len = 1 + (2 * hapd->chan_usage_config.elems[i].num_entries);
+		/* Total Element Length = ID + Length + Payload */
+		total_len += 2 + payload_len;
+	}
+	return total_len;
+}
+
+/**
+ * hostapd_eid_channel_usage - Construct one or more Channel Usage elements
+ *
+ * @hapd : hostapd data structure
+ * @eid  : Pointer to the start of the Channel Usage element
+ * @limit: Max size of the Channel Usage element
+ *
+ * Returns: Pointer to the next available position in the buffer
+ * after writing the Channel Usage element(s)
+ */
+u8 * hostapd_eid_channel_usage(struct hostapd_data *hapd, u8 *eid,
+		               size_t limit)
+{
+	u8 *pos = eid;
+	size_t element_length;
+	int i, j;
+
+	if (hapd->chan_usage_config.num_elems == 0) {
+		return eid;
+	}
+
+	for (i = 0; i < hapd->chan_usage_config.num_elems; i++) {
+		const struct channel_usage_elem *elem = &hapd->chan_usage_config.elems[i];
+		element_length = 1 + (2 * elem->num_entries);
+		if ((pos + 2 + element_length) > (eid + limit)) {
+			wpa_printf(MSG_ERROR, "No space for Channel Usage element %d", i);
+			break;
+		}
+		/* Write the element data */
+		*pos++ = WLAN_EID_CHANNEL_USAGE;
+		*pos++ = element_length;
+		*pos++ = elem->mode;
+
+		for (j = 0; j < elem->num_entries; j++) {
+			*pos++ = elem->entries[j].op_class;
+			*pos++ = elem->entries[j].channel;
+		}
+	}
+	return pos;
+}
+
 u8 * hostapd_eid_bss_max_idle_period(struct hostapd_data *hapd, u8 *eid,
 				     u16 value)
 {

@@ -2465,6 +2465,10 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
 		tail_len += hostapd_eid_eht_capab_len(hapd, IEEE80211_MODE_AP);
 		tail_len += 3 + sizeof(struct ieee80211_eht_operation);
+
+		/* Add space in beacon tail for Channel Usage element */
+		tail_len += hostapd_eid_channel_usage_len(hapd);
+
 		if (hapd->iconf->punct_bitmap)
 			tail_len += EHT_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
 
@@ -2725,6 +2729,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 						IEEE80211_MODE_AP);
 		startpos = tailpos;
 		tailpos = hostapd_eid_eht_operation(hapd, tailpos);
+		tailpos = hostapd_eid_channel_usage(hapd, tailpos, tailend - tailpos);
 		if (hapd == tx_bss)
 			hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
 						   tailpos-startpos, ELEMID_CU_PARAM_EXT_EHTOP);

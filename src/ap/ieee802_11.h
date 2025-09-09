@@ -203,6 +203,9 @@ u8 * hostapd_eid_interworking(struct hostapd_data *hapd, u8 *eid);
 u8 * hostapd_eid_adv_proto(struct hostapd_data *hapd, u8 *eid);
 u8 * hostapd_eid_roaming_consortium(struct hostapd_data *hapd, u8 *eid);
 u8 * hostapd_eid_time_adv(struct hostapd_data *hapd, u8 *eid);
+size_t hostapd_eid_channel_usage_len(struct hostapd_data *hapd);
+u8 * hostapd_eid_channel_usage(struct hostapd_data *hapd, u8 *eid,
+								size_t limit);
 u8 * hostapd_eid_time_zone(struct hostapd_data *hapd, u8 *eid);
 int hostapd_update_time_adv(struct hostapd_data *hapd);
 void hostapd_client_poll_ok(struct hostapd_data *hapd, const u8 *addr);

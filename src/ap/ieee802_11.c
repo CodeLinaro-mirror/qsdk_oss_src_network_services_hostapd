@@ -5755,6 +5755,8 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 	if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
 		buflen += hostapd_eid_eht_capab_len(hapd, IEEE80211_MODE_AP);
 		buflen += 3 + sizeof(struct ieee80211_eht_operation);
+		/* Add space to include Channel Usage element */
+		buflen += hostapd_eid_channel_usage_len(hapd);
 		if (hapd->iconf->punct_bitmap)
 			buflen += EHT_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
 	}
@@ -5919,6 +5921,9 @@ rsnxe_done:
 		p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
 		p = hostapd_eid_eht_operation(hapd, p);
 		hostapd_get_epcs_capab(hapd, sta);
+
+		/* Append Channel Usage element to Association response */
+		p = hostapd_eid_channel_usage(hapd, p, buf + buflen - p);
 	}
 
 	if (hapd->conf->ttlm_enable &&
