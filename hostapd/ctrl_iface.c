@@ -5410,7 +5410,7 @@ static int hostapd_ctrl_iface_conf_ml_rec_links(struct hostapd_data *hapd,
 int hostapd_ctrl_iface_advertise_ttlm(struct hostapd_data *hapd,
 					      const char *cmd)
 {
-	struct mlo_ttlm_ie *ttlm_conf = os_zalloc(sizeof(*ttlm_conf));
+	struct mlo_ttlm_ie *ttlm_conf = NULL;
 	struct ttlm_info *ttlm;
 	struct hostapd_data *link_bss;
 	u16 removal_links = 0;
@@ -5418,10 +5418,6 @@ int hostapd_ctrl_iface_advertise_ttlm(struct hostapd_data *hapd,
 	const char *pos;
 	int ret;
 	u8 i;
-
-	if (!ttlm_conf)
-		return -1;
-	ttlm = &ttlm_conf->ttlm;
 
 	if (!hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM support is not enabled");
@@ -5440,6 +5436,14 @@ int hostapd_ctrl_iface_advertise_ttlm(struct hostapd_data *hapd,
 		ret = 0;
 		goto out;
 	}
+
+	ttlm_conf = os_zalloc(sizeof(struct mlo_ttlm_ie));
+	if (!ttlm_conf) {
+		wpa_printf(MSG_ERROR, "TTLM failed to allocate ttlm_conf");
+		return -1;
+	}
+
+	ttlm = &ttlm_conf->ttlm;
 
 	pos = os_strstr(cmd, "ieee_link_map=");
 	if (!pos) {
