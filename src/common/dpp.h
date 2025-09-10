@@ -734,6 +734,7 @@ struct dpp_bootstrap_info * dpp_add_qr_code(struct dpp_global *dpp,
 struct dpp_bootstrap_info * dpp_add_nfc_uri(struct dpp_global *dpp,
 					    const char *uri);
 int dpp_bootstrap_gen(struct dpp_global *dpp, const char *cmd);
+int dpp_bootstrap_set_keypair(struct dpp_global *dpp, const char *cmd);
 struct dpp_bootstrap_info *
 dpp_bootstrap_get_id(struct dpp_global *dpp, unsigned int id);
 int dpp_bootstrap_remove(struct dpp_global *dpp, const char *id);

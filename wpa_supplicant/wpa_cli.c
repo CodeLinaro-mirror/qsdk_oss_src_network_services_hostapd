@@ -3068,6 +3068,13 @@ static int wpa_cli_cmd_dpp_qr_code(struct wpa_ctrl *ctrl, int argc,
 }
 
 
+static int wpa_cli_cmd_dpp_bootstrap_set_keypair(struct wpa_ctrl *ctrl, int argc,
+					 char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "DPP_BOOTSTRAP_SET_KEYPAIR", 1, argc, argv);
+}
+
+
 static int wpa_cli_cmd_dpp_bootstrap_gen(struct wpa_ctrl *ctrl, int argc,
 					 char *argv[])
 {
@@ -4069,6 +4076,9 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 #ifdef CONFIG_DPP
 	{ "dpp_qr_code", wpa_cli_cmd_dpp_qr_code, NULL, cli_cmd_flag_none,
 	  "report a scanned DPP URI from a QR Code" },
+	{ "dpp_bootstrap_set_keypair", wpa_cli_cmd_dpp_bootstrap_set_keypair, NULL,
+	  cli_cmd_flag_sensitive,
+	  "type=<qrcode> [privkey=..] [pubkey=..] [chan=..] [mac=..] [info=..] [curve=..] = generate DPP bootstrap information" },
 	{ "dpp_bootstrap_gen", wpa_cli_cmd_dpp_bootstrap_gen, NULL,
 	  cli_cmd_flag_sensitive,
 	  "type=<qrcode> [chan=..] [mac=..] [info=..] [curve=..] [key=..] = generate DPP bootstrap information" },

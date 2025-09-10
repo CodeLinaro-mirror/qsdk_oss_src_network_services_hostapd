@@ -3160,6 +3160,127 @@ fail:
 }
 
 
+struct crypto_ec_key *crypto_ec_set_pri_pub_keypair(int group,
+			const u8 *priv_key, size_t priv_len,
+			const u8 *pub_key, size_t pub_len)
+
+{
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	const char *group_name;
+	OSSL_PARAM params[4];
+	EVP_PKEY_CTX *ctx = NULL;
+	EVP_PKEY *pkey = NULL;
+	BIGNUM *priv;
+	EC_GROUP *ec_group = NULL;
+	u8 *pub_bin = NULL;
+	u8 *priv_bin = NULL;
+	int priv_bin_len;
+
+	group_name = crypto_ec_group_2_name(group);
+	if (!group_name) {
+		wpa_printf(MSG_ERROR, "Invalid group name");
+		return NULL;
+	}
+
+	priv = BN_bin2bn(priv_key, priv_len, NULL);
+	if (!priv)
+		return NULL;
+	priv_bin = os_malloc(priv_len);
+	if (!priv_bin)
+		goto fail;
+	priv_bin_len = BN_bn2lebinpad(priv, priv_bin, priv_len);
+	if (priv_bin_len < 0)
+		goto fail;
+
+	pub_bin = os_malloc(1 + pub_len);
+	if (!pub_bin)
+		goto fail;
+	pub_bin[0] = 0x04;
+	os_memcpy(pub_bin + 1, pub_key, pub_len);
+
+	params[0] = OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME,
+						     (char *) group_name, 0);
+	params[1] = OSSL_PARAM_construct_BN(OSSL_PKEY_PARAM_PRIV_KEY,
+					    priv_bin, priv_bin_len);
+	params[2] = OSSL_PARAM_construct_octet_string(OSSL_PKEY_PARAM_PUB_KEY,
+						      pub_bin, pub_len+1);
+	params[3] = OSSL_PARAM_construct_end();
+
+	ctx = EVP_PKEY_CTX_new_from_name(NULL, "EC", NULL);
+	if (!ctx ||
+	    EVP_PKEY_fromdata_init(ctx) <= 0 ||
+	    EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_KEYPAIR, params) <= 0)
+		goto fail;
+
+out:
+	bin_clear_free(priv_bin, priv_len);
+	os_free(pub_bin);
+	BN_clear_free(priv);
+	EVP_PKEY_CTX_free(ctx);
+	EC_GROUP_free(ec_group);
+	return (struct crypto_ec_key *) pkey;
+
+fail:
+	EVP_PKEY_free(pkey);
+	pkey = NULL;
+	goto out;
+#else
+	EC_KEY *eckey = NULL;
+	EVP_PKEY *pkey = NULL;
+	BIGNUM *priv = NULL;
+	const EC_GROUP *ec_group;
+	EC_POINT *pub = NULL;
+
+	nid = crypto_ec_group_2_nid(group);
+	if (nid < 0) {
+		wpa_printf(MSG_ERROR, "OpenSSL: Unsupported group %d", group);
+		return NULL;
+	}
+
+	eckey = EC_KEY_new_by_curve_name(nid);
+	priv = BN_bin2bn(priv_key, priv_len, NULL);
+	if (!eckey || !priv ||
+	    EC_KEY_set_private_key(eckey, priv) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: Failed to set EC_KEY: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		goto fail;
+	}
+
+	ec_group = EC_KEY_get0_group(eckey);
+	if (!ec_group)
+		goto fail;
+	pub = EC_POINT_new(ec_group);
+	if (!pub || !EC_POINT_oct2point(ec_group, pub, pub_key, pub_len, NULL) ||
+	    EC_KEY_set_public_key(eckey, pub) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: Failed to set EC_KEY(pub): %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		goto fail;
+	}
+
+	EC_KEY_set_asn1_flag(eckey, OPENSSL_EC_NAMED_CURVE);
+
+	pkey = EVP_PKEY_new();
+	if (!pkey || EVP_PKEY_assign_EC_KEY(pkey, eckey) != 1) {
+		wpa_printf(MSG_ERROR, "OpenSSL: Could not create EVP_PKEY");
+		goto fail;
+	}
+
+out:
+	BN_clear_free(priv);
+	EC_POINT_free(pub);
+	return (struct crypto_ec_key *) pkey;
+
+fail:
+	EC_KEY_free(eckey);
+	EVP_PKEY_free(pkey);
+	pkey = NULL;
+	goto out;
+#endif /* OpenSSL version >= 3.0 */
+}
+
+
 struct crypto_ec_key * crypto_ec_key_set_priv(int group,
 					      const u8 *raw, size_t raw_len)
 {

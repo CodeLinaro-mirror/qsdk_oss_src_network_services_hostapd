@@ -1022,6 +1022,9 @@ struct crypto_ec_key * crypto_ec_key_parse_priv(const u8 *der, size_t der_len);
 struct crypto_ec_key * crypto_ec_key_set_priv(int group,
 					      const u8 *raw, size_t raw_len);
 
+struct crypto_ec_key *crypto_ec_set_pri_pub_keypair(int group,
+						     const u8 *pub_key, size_t pub_len,
+						      const u8 *priv_key, size_t priv_len);
 /**
  * crypto_ec_key_parse_pub - Initialize EC key pair from SubjectPublicKeyInfo ASN.1
  * @der: DER encoding of ASN.1 SubjectPublicKeyInfo

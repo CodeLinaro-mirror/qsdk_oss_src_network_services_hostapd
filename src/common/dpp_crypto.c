@@ -336,6 +336,66 @@ int dpp_bootstrap_key_hash(struct dpp_bootstrap_info *bi)
 }
 
 
+int dpp_set_priv_pub_key(struct dpp_bootstrap_info *bi, const u8 *privkey,
+		     size_t privkey_len, const u8 *pubkey, size_t pubkey_len,
+		     const char *curve)
+{
+	char *base64 = NULL;
+	char *pos, *end;
+	size_t len;
+	struct wpabuf *der = NULL;
+
+	if (privkey == NULL || pubkey == NULL) {
+		wpa_printf(MSG_ERROR, "Invalid public/private keys");
+		return -1;
+	}
+
+	bi->curve = dpp_get_curve_name(curve);
+	if (bi->curve == NULL) {
+		wpa_printf(MSG_ERROR, "unsupported curve");
+		return -1;
+	}
+
+	bi->pubkey = crypto_ec_set_pri_pub_keypair(bi->curve->ike_group, privkey,
+						   privkey_len,  pubkey, pubkey_len);
+	if (!bi->pubkey)
+		goto fail;
+	dpp_debug_print_key("Own generated key", bi->pubkey);
+	bi->own = 1;
+
+	der = crypto_ec_key_get_subject_public_key(bi->pubkey);
+	if (!der)
+		goto fail;
+	wpa_hexdump_buf(MSG_DEBUG, "DPP: Compressed public key (DER)",
+			der);
+
+	if (dpp_bi_pubkey_hash(bi, wpabuf_head(der), wpabuf_len(der)) < 0) {
+		wpa_printf(MSG_DEBUG, "DPP: Failed to hash public key");
+		goto fail;
+	}
+
+	base64 = base64_encode(wpabuf_head(der), wpabuf_len(der), &len);
+	wpabuf_free(der);
+	der = NULL;
+	if (!base64)
+		goto fail;
+
+	pos = base64;
+	end = pos + len;
+	for (;;) {
+		pos = os_strchr(pos, '\n');
+		if (!pos)
+			break;
+		os_memmove(pos, pos + 1, end - pos);
+	}
+	os_free(bi->pk);
+	bi->pk = base64;
+	return 0;
+fail:
+	os_free(base64);
+	wpabuf_free(der);
+	return -1;
+}
 int dpp_keygen(struct dpp_bootstrap_info *bi, const char *curve,
 	       const u8 *privkey, size_t privkey_len)
 {
