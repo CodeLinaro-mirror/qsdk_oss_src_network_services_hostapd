@@ -4556,6 +4556,95 @@ static int dpp_parse_supported_curves_list(struct dpp_bootstrap_info *bi,
 }
 
 
+int dpp_bootstrap_set_keypair(struct dpp_global *dpp, const char *cmd)
+{
+	char *privkey = NULL, *pubkey = NULL, *mac = NULL, *info = NULL;
+	char *supported_curves = NULL, *host = NULL, *curve = NULL, *type = NULL;
+	u8 *privkey_bin = NULL, *pubkey_bin = NULL;
+	size_t privkey_len = 0, pubkey_len = 0;
+	struct dpp_bootstrap_info *bi;
+	int ret = -1;
+
+	if (!dpp)
+		return -1;
+
+	bi = os_zalloc(sizeof(*bi));
+	if (!bi)
+		goto fail;
+
+	privkey = get_param(cmd, "privkey=");
+	pubkey = get_param(cmd, " pubkey=");
+	curve = get_param(cmd,  " curve=");
+	bi->chan = get_param(cmd, " chan=");
+	mac = get_param(cmd, " mac=");
+	info = get_param(cmd, " info=");
+	supported_curves = get_param(cmd, " supported_curves=");
+	host = get_param(cmd, " host=");
+	type = get_param(cmd, " type=");
+
+	if (privkey) {
+		privkey_len = os_strlen(privkey) / 2;
+		privkey_bin = os_malloc(privkey_len);
+		if (!privkey_bin ||
+		    hexstr2bin(privkey, privkey_bin, privkey_len) < 0)
+			goto fail;
+	} else {
+		wpa_printf(MSG_ERROR, "Invalid private key");
+		goto fail;
+	}
+
+	if (pubkey) {
+		pubkey_len = os_strlen(pubkey) / 2;
+		pubkey_bin = os_malloc(pubkey_len);
+		if (!pubkey_bin ||
+		    hexstr2bin(pubkey, pubkey_bin, pubkey_len) < 0)
+			goto fail;
+	} else {
+		wpa_printf(MSG_ERROR, "Invalid public key");
+		goto fail;
+	}
+
+	if (type) {
+		if (os_strstr(type, "qrcode"))
+			bi->type = DPP_BOOTSTRAP_QR_CODE;
+		else if (os_strstr(type, "pkex"))
+			bi->type = DPP_BOOTSTRAP_PKEX;
+		else if (os_strstr(type, "nfc-uri"))
+			bi->type = DPP_BOOTSTRAP_NFC_URI;
+	} else {
+		bi->type = DPP_BOOTSTRAP_QR_CODE;
+	}
+
+	if (dpp_set_priv_pub_key(bi, privkey_bin, privkey_len, pubkey_bin,
+			    pubkey_len, curve) < 0 ||
+	    dpp_parse_uri_chan_list(bi, bi->chan) < 0 ||
+	    dpp_parse_uri_mac(bi, mac) < 0 ||
+	    dpp_parse_uri_info(bi, info) < 0 ||
+	    dpp_parse_supported_curves_list(bi, supported_curves) < 0 ||
+	    dpp_parse_uri_host(bi, host) < 0 ||
+	    dpp_gen_uri(bi) < 0)
+		goto fail;
+
+	bi->id = dpp_next_id(dpp);
+	dl_list_add(&dpp->bootstrap, &bi->list);
+	ret = bi->id;
+	bi = NULL;
+fail:
+	os_free(curve);
+	os_free(mac);
+	os_free(info);
+	str_clear_free(privkey);
+	str_clear_free(pubkey);
+	os_free(supported_curves);
+	os_free(host);
+	os_free(type);
+	bin_clear_free(privkey_bin, privkey_len);
+	bin_clear_free(pubkey_bin, pubkey_len);
+	dpp_bootstrap_info_free(bi);
+	return ret;
+}
+
+
 int dpp_bootstrap_gen(struct dpp_global *dpp, const char *cmd)
 {
 	char *mac = NULL, *info = NULL, *curve = NULL;
