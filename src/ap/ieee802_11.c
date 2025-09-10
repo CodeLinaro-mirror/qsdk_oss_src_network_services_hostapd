@@ -5926,7 +5926,7 @@ rsnxe_done:
 		p = hostapd_eid_channel_usage(hapd, p, buf + buflen - p);
 	}
 
-	if (hapd->conf->ttlm_enable &&
+	if (hapd->conf->ttlm_enable && sta &&
 	    sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info.ttlm_resp_type ==
 	    WLAN_STATUS_SUCCESS)
 		hostapd_apply_ttlm_mapping_to_driver(hapd, sta);

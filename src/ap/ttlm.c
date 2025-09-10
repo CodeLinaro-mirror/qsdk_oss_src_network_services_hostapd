@@ -61,7 +61,7 @@ u8 *hostapd_add_ttlm_info_elem(u8 *pos, struct ttlm_info *ttlm, struct hostapd_d
 	u16 ttlm_control = 0;
 	u16 *ttlm_control_field;
 
-	if (ttlm->mapping_switch_time_present && !hapd->mapping_switch_time) {
+	if (ttlm->mapping_switch_time_present && hapd && !hapd->mapping_switch_time) {
 		wpa_printf(MSG_DEBUG, "TTLM MST TSF update not received. Skip adding TTLM IE");
 		return pos;
 	}
@@ -1274,7 +1274,7 @@ void hostapd_handle_ttlm_req(struct hostapd_data *hapd, struct sta_info *sta,
 	const struct ieee80211_mgmt *mgmt = (const struct ieee80211_mgmt *) buf;
 	struct ttlm_ongoing_negotiation_info *ongoing_ttlm, *configured_ttlm;
 	struct ieee802_11_elems elems;
-	struct ttlm_info ttlm_info;
+	struct ttlm_info ttlm_info = {};
 	bool homogeneous_map;
 	enum ttlm_dir dir;
 	const u8 *pos;
