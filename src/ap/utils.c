@@ -77,8 +77,14 @@ static int prune_associations(struct hostapd_iface *iface, void *ctx)
 		if (data->mld_assoc_link_id >= 0 &&
 		    osta->mld_assoc_link_id == data->mld_assoc_link_id)
 			continue;
-		if (skip_prune_for_partner_links(data->hapd, osta))
+		if (skip_prune_for_partner_links(data->hapd, osta)) {
+			/* Delete the sta instead of waiting for inactivity
+			 * timer
+			 */
+			if (osta->skip_kernel_delete)
+				ap_free_sta(ohapd, osta);
 			continue;
+		}
 #endif /* CONFIG_IEEE80211BE */
 
 		wpa_printf(MSG_INFO, "%s: Prune association for " MACSTR,
