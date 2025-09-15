@@ -1464,7 +1464,7 @@ int hostapd_handle_dscp_policy_response(struct hostapd_data *hapd, struct sta_in
 	if (!hapd->conf->enable_dscp_policy_capa)
 		return -1;
 
-	if (!sta || !sta->dscp_policy_capable) {
+	if (!sta->dscp_policy_capable) {
 		wpa_printf(MSG_DEBUG, "DSCP: STA " MACSTR " not capable", MAC2STR(sta->addr));
 		return -1;
 	}
