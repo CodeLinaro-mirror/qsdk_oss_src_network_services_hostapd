@@ -762,6 +762,10 @@ static void hostapd_copy_negotiated_ttlm_info_to_sta(struct hostapd_data *hapd,
 			continue;
 
 		dir = ongoing_ttlm->ttlm_info[i].direction;
+		if (dir < 0 || dir >= TTLM_DIRECTION_MAX) {
+			wpa_printf(MSG_ERROR, "Invalid TTLM direction index: %d", dir);
+			continue;
+		}
 
 		/* Populate the ongoing TTLM info into negotiated TTLM directions UL
 		 * and DL when direction is BIDI
@@ -841,6 +845,10 @@ static void hostapd_fill_ttlm_nl_params(struct driver_ttlm_info *driver_ttlm_inf
 			continue;
 
 		dir = negotiated_ttlm->ttlm_info[i].direction;
+		if (dir < 0 || dir >= ARRAY_SIZE(dir_mask)) {
+			wpa_printf(MSG_ERROR, "Invalid TTLM direction: %d", dir);
+			continue;
+		}
 		driver_ttlm_info->dir_bmap |= dir_mask[dir];
 
 		/* As either DLINK or ULINK values can be sent via NL,
