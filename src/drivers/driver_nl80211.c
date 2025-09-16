@@ -10562,12 +10562,15 @@ static int wpa_driver_nl80211_ml_reconf(void *priv,
 		goto fail;
 
 	links = nla_nest_start(msg, NL80211_ATTR_MLO_LINKS);
+	if (!links)
+		goto fail;
+
 	for_each_link(ml_reconf_req->add_links, link_id) {
 		added_links |= BIT(link_id);
 		struct hostapd_sta_add_params *params;
 		attr = nla_nest_start(msg, 0);
 		if (!attr)
-			return -1;
+			goto fail;
 		params = ml_reconf_req->sta_add_params[link_id];
 		ret = wpa_driver_nl80211_build_sta(drv, msg, params);
 		if (ret) {
