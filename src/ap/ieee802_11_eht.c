@@ -2245,6 +2245,12 @@ hostapd_parse_link_reconf_req_sta_profile(struct hostapd_data *hapd,
 
 	per_sta_prof = (const struct ieee80211_eht_per_sta_profile *)
 		elem->data;
+	sta_info = per_sta_prof->variable;
+	if (end < sta_info + *sta_info) {
+		wpa_printf(MSG_DEBUG, "MLD: STA Info with excess length");
+		goto out;
+	}
+
 	sta_control = le_to_host16(per_sta_prof->sta_control);
 	sta_info_len = 1;
 
@@ -2312,11 +2318,6 @@ hostapd_parse_link_reconf_req_sta_profile(struct hostapd_data *hapd,
 	}
 	sta_info_len += nstr_bitmap_size;
 
-	sta_info = per_sta_prof->variable;
-	if (*sta_info > end - sta_info) {
-		wpa_printf(MSG_DEBUG, "MLD: Not enough room for STA Info");
-		goto out;
-	}
 
 	if (*sta_info < sta_info_len) {
 		wpa_printf(MSG_DEBUG,
