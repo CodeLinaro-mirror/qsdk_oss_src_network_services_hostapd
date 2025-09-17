@@ -6001,8 +6001,7 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 			goto fail;
 	}
 
-	if (params->ubpr.unsol_bcast_probe_resp_interval &&
-	    nl80211_unsol_bcast_probe_resp(bss, msg, &params->ubpr) < 0)
+	if (nl80211_unsol_bcast_probe_resp(bss, msg, &params->ubpr) < 0)
 		goto fail;
 
 	if (nl80211_mbssid(msg, &params->mbssid) < 0)
@@ -6026,7 +6025,7 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 #endif /* CONFIG_SAE */
 
 #ifdef CONFIG_FILS
-	if (params->fd_max_int && nl80211_fils_discovery(bss, msg, params) < 0)
+	if (nl80211_fils_discovery(bss, msg, params) < 0)
 		goto fail;
 #endif /* CONFIG_FILS */
 
