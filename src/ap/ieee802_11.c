@@ -9986,8 +9986,9 @@ static void hostapd_add_6g_tpe(struct hostapd_data *hapd, u8 **eid, u8 pwr_mode)
 
 u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid)
 {
+	u8 channel, tx_pwr_count, local_pwr_constraint, tx_pwr_ext_count = 0;
+	s8 tx_pwr_ext_array[TPE_NUM_EIRP_POWER_EXT_SUPPORTED] = {0};
 	s8 eirp_tx_pwr_array[MAX_TPE_EIRP_NUM_POWER_SUPPORTED];
-	u8 channel, tx_pwr_count, local_pwr_constraint;
 	struct hostapd_iface *iface = hapd->iface;
 	struct hostapd_hw_modes *mode = iface->current_mode;
 	struct hostapd_config *iconf = iface->conf;
@@ -10034,7 +10035,8 @@ u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid)
 		break;
 	case CONF_OPER_CHWIDTH_80P80MHZ:
 	case CONF_OPER_CHWIDTH_160MHZ:
-		/* Max Transmit Power count = 3 (20, 40, 80, 160/80+80 MHz) */
+	case CONF_OPER_CHWIDTH_320MHZ:
+		/* Max Transmit Power count = 3 (20, 40, 80, 160/80+80, 320 MHz) */
 		tx_pwr_count = 3;
 		break;
 	default:
@@ -10090,11 +10092,13 @@ u8 * hostapd_eid_txpower_envelope(struct hostapd_data *hapd, u8 *eid)
 	else
 		tx_pwr = max_tx_power;
 
-	for (i = 0; i < tx_pwr_count; i++)
-		eirp_tx_pwr_array[0] = tx_pwr;
-
+	memset(eirp_tx_pwr_array, tx_pwr, tx_pwr_count + 1);
+	hostapd_fill_eirp_for_ext_tpe(iconf, tx_pwr_ext_array,
+				      eirp_tx_pwr_array, &tx_pwr_ext_count,
+				      tx_pwr_count + 1);
 	eid = hostapd_add_tpe_info(eid, LOCAL_EIRP, tx_pwr_count, eirp_tx_pwr_array,
-			           0, NULL, REG_MAX_CLIENT_TYPE);
+				   tx_pwr_ext_count, tx_pwr_ext_array,
+				    REG_MAX_CLIENT_TYPE);
 	return eid;
 }
 
