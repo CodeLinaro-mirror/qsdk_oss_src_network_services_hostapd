@@ -1945,6 +1945,23 @@ static int hostapd_cli_cmd_reload_wpa_psk(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, "RELOAD_WPA_PSK");
 }
 
+static int hostapd_cli_cmd_dump_mscs_ctxt(struct wpa_ctrl *ctrl,
+		int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "DUMP_MSCS_CTXT");
+}
+
+static int hostapd_cli_cmd_send_unsolicited_mscs_resp(struct wpa_ctrl *ctrl,
+		int argc, char *argv[])
+{
+	if (argc < 1) {
+		printf("Invalid 'send_unsolicited_mscs_resp' command - "
+				"one argument (STA addr) is needed\n");
+		return -1;
+	}
+
+	return hostapd_cli_cmd(ctrl, "SEND_UNSOLICITED_MSCS_RESP" ,1, argc, argv);
+}
 
 #ifdef CONFIG_IEEE80211R_AP
 
@@ -2329,6 +2346,13 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "advertised_ttlm", hostapd_cli_cmd_advertised_ttlm, NULL,
 	  "ieee_link_map= map_switch_time= expected_dur= link_mapping_size=\n"
 	  "  = Trigger advertised TTLM" },
+	{ "dump_mscs_ctxt",
+	  hostapd_cli_cmd_dump_mscs_ctxt, NULL,
+	  "= dump mscs context for all the associated STAs"},
+	{ "send_unsolicited_mscs_resp",
+	  hostapd_cli_cmd_send_unsolicited_mscs_resp,
+	  hostapd_complete_stations,
+	  "<addr> = send unsolicited MSCS response frame" },
 #endif
 	{"set_dscp_policy", hostapd_cli_cmd_set_dscp_policy, NULL,
 	 "[policy_id=] [request_type=] [dscp=] [classifier_mask=]\n"

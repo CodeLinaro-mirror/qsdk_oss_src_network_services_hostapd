@@ -5183,6 +5183,10 @@ skip_wpa_ies:
 		hostapd_wfa_capab(hapd, sta, elems->wfa_capab,
 				  elems->wfa_capab + elems->wfa_capab_len);
 
+	if (elems->mscs_desc && hapd->conf->mscs)
+		hostapd_handle_mscs_ie_assoc(hapd, sta, elems->mscs_desc,
+					     elems->mscs_desc_len);
+
 out:
 	if (resp != WLAN_STATUS_SUCCESS || assoc_wpa_sm) {
 		wpa_auth_sta_deinit(sta->wpa_sm);
@@ -5891,6 +5895,10 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 		p = hostapd_eid_he_mu_edca_parameter_set(hapd, p, false);
 		p = hostapd_eid_he_6ghz_band_cap(hapd, p);
 	}
+
+	if (hapd->conf->mscs && sta && sta->mscs_ctxt)
+		p = hostapd_add_mscs_desc(hapd, p, sta);
+
 #endif /* CONFIG_IEEE80211AX */
 
 	p = hostapd_eid_ext_capab(hapd, p, false);

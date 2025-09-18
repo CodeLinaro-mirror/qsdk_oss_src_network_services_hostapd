@@ -883,6 +883,100 @@ static int hostapd_ctrl_send_unsolicited_dscp_req(struct hostapd_data *hapd, con
 	return 0;
 }
 
+static int hostapd_ctrl_iface_dump_mscs_ctxt(struct hostapd_data *hapd,
+					     char *buf, size_t buflen)
+{
+	struct sta_info *sta;
+	int ret;
+	size_t len = 0;
+
+	for (sta = hapd->sta_list; sta; sta = sta->next) {
+		if (!sta->mscs_ctxt)
+			continue;
+
+		wpa_printf(MSG_DEBUG, "MSCS:Station " MACSTR "has an"
+			   "active MSCS session",
+			   MAC2STR(sta->addr));
+
+		ret = os_snprintf(buf + len, buflen - len,
+				  "MSCS context params for STA " MACSTR
+				  "\n",MAC2STR(sta->addr));
+
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+
+		ret = os_snprintf(buf + len, buflen - len,
+				  "bitmap 0x%x limit 0x%x mask 0x%x\n",
+				  sta->mscs_ctxt->user_priority_bitmap,
+				  sta->mscs_ctxt->user_priority_limit,
+				  sta->mscs_ctxt->tclas_mask);
+
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+
+		ret = os_snprintf(buf + len, buflen - len,
+				  "====\n");
+
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	return len;
+}
+
+static int hostapd_ctrl_iface_send_mscs_resp(struct hostapd_data *hapd,
+		const char *cmd)
+{
+	u8 addr[ETH_ALEN];
+	struct sta_info *sta;
+	int ret = -EINVAL;
+	const char *pos = cmd;
+	int status;
+
+	if (hwaddr_aton(cmd, addr))
+		return -1;
+
+	sta = ap_get_sta(hapd, addr);
+	if (sta == NULL) {
+		wpa_printf(MSG_ERROR, "Station " MACSTR " not found "
+				"for sending MSCS resp",
+				MAC2STR(addr));
+		return -1;
+	}
+	wpa_printf(MSG_DEBUG, "MSCS:Station " MACSTR " found "
+			"for sending MSCS resp",
+			MAC2STR(addr));
+
+	if (!sta->mscs_ctxt)
+		return -1;
+
+	pos = os_strchr(cmd, ' ');
+	if (!pos)
+		return -1;
+	pos++;
+
+	if (strncmp(pos, "--status", 8) != 0)
+		return -1;
+	pos += 9;
+	while (*pos == ' ')
+		 pos++;
+	status = (uint8_t)atoi(pos);
+	if (status > WLAN_STATUS_TCLAS_PROCESSING_TERMINATED)
+		return -1;
+
+	if (hostapd_send_mscs_response(hapd, sta, sta->addr, 0, status))
+		return -1;
+
+	if (status == WLAN_STATUS_TCLAS_PROCESSING_TERMINATED) {
+		ret = hostapd_copy_and_send_mscs_data(hapd, sta, QM_REMOVE_REQ,
+						      0);
+		sta->mscs_session_exists = false;
+		hostapd_mscs_delete_all_rules(hapd, sta);
+		os_free(sta->mscs_ctxt);
+		sta->mscs_ctxt = NULL;
+	}
+	return ret;
+}
+
 #ifdef CONFIG_WNM_AP
 
 static int hostapd_ctrl_iface_coloc_intf_req(struct hostapd_data *hapd,
@@ -6407,6 +6501,12 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "SET_CHANNEL_USAGE_ELEMENT ", 26) == 0) {
 		if (hostapd_ctrl_iface_set_channel_usage_element(hapd, buf + 26))
 			reply_len = -1;
+	} else if (os_strncmp(buf, "SEND_UNSOLICITED_MSCS_RESP ", 27) == 0) {
+		if (hostapd_ctrl_iface_send_mscs_resp(hapd, buf + 27))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "DUMP_MSCS_CTXT") == 0) {
+		reply_len = hostapd_ctrl_iface_dump_mscs_ctxt(hapd,
+							      reply, reply_size);
 #endif /* CONFIG_IEEE80211BE */
 	} else if (os_strncmp(buf, "SET_DSCP_POLICY ", 16) == 0) {
 		if (hostapd_ctrl_iface_set_dscp_policy(hapd, buf + 16))

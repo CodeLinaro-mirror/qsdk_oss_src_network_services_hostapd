@@ -1296,8 +1296,9 @@ error:
 	return ret;
 }
 
-static int hostapd_copy_and_send_mscs_data(struct hostapd_data *hapd,
-		struct sta_info *sta, u8 req_type, const u8 dialog_token)
+int hostapd_copy_and_send_mscs_data(struct hostapd_data *hapd,
+				    struct sta_info *sta, u8 req_type,
+				    const u8 dialog_token)
 {
 	struct qm_req_data qm_req = {0};
 	struct qm_resp_data qm_resp = {0};
@@ -1336,31 +1337,11 @@ static int hostapd_copy_and_send_mscs_data(struct hostapd_data *hapd,
 	return hostapd_drv_set_qos(hapd, &qm_req, &qm_resp);
 }
 
-static const u8 *hostapd_parse_mscs_desc(const u8 *payload,
+const u8 *hostapd_parse_mscs_desc(const u8 *payload,
 		struct hostapd_mscs_desc *mscs)
 {
-	u8 elem_id, elem_id_ext, length;
-
 	if (!payload || !mscs)
 	    return NULL;
-
-	elem_id = *payload++;
-
-	if (elem_id != WLAN_EID_EXTENSION)
-		return NULL;
-
-	length = *payload++;
-
-	if (length < IEEE80211_MSCS_DESC_MIN_LEN)
-		return NULL;
-
-	elem_id_ext = *payload++;
-	if (elem_id_ext != WLAN_EID_EXT_MSCS_DESCRIPTOR) {
-		wpa_printf(MSG_ERROR,
-			   "MSCS:mscs elem %d is not available in this frame !!!\n",
-			   WLAN_EID_EXT_MSCS_DESCRIPTOR);
-		return NULL;
-	}
 
 	mscs->req_type = *payload++;
 	mscs->user_priority_control.user_priority_bitmap = *payload++;
@@ -1389,7 +1370,7 @@ static const u8 *hostapd_parse_tclas_mask(const u8 *payload,
 
 }
 
-static int hostapd_process_mscs_req(struct hostapd_data *hapd,
+int hostapd_process_mscs_req(struct hostapd_data *hapd,
 		struct sta_info *sta, const u8 *payload,
 		struct hostapd_mscs_desc *mscs_desc, const u8 dialog_token)
 {
@@ -1473,8 +1454,57 @@ decline:
 	return HOSTAPD_QM_STATUS_DECLINED;
 }
 
-static int hostapd_send_mscs_response(struct hostapd_data *hapd,
-		struct sta_info *sta, const u8 *da, u8 dialog_token, int status_code)
+u8 *hostapd_add_mscs_desc(struct hostapd_data *hapd, u8 *eid,
+			  struct sta_info *sta)
+{
+	u8 *pos = eid;
+	size_t len;
+	struct hostapd_mscs_desc mscs_desc = {0};
+
+	if (!hapd->conf->mscs || !sta || !sta->mscs_ctxt)
+		return pos;
+	/**
+	 * Add MSCS descriptor containing these items:
+	 * ELEMID_EXT_MSCS_DESCRIPTOR
+	 * Request type
+	 * User priority control
+	 * Stream timeout
+	 * Assoc response status
+	 */
+	len = 4 + sizeof(struct hostapd_user_priority_control)
+	      + sizeof(u32) + sizeof(u16);
+	*pos++ = WLAN_EID_EXTENSION;
+	*pos++ = len;
+	*pos++ = WLAN_EID_EXT_MSCS_DESCRIPTOR;
+
+	*pos++ = QM_ADD_REQ;
+	os_memcpy(pos, &mscs_desc.user_priority_control,
+		  sizeof(struct hostapd_user_priority_control));
+
+	pos += sizeof(struct hostapd_user_priority_control);
+
+	os_memcpy(pos, &mscs_desc.stream_timeout,
+		  sizeof(u32));
+	pos += sizeof(u32);
+
+	/**
+	 * Add MSCS Subelement IE - id = 0
+	 * Length = 2
+	 * Status code of MSCS handshake
+	 */
+	*pos++ = HOSTAPD_MSCS_WLAN_EID_SUBELEMENT;
+	*pos++ = sizeof(u16);
+	os_memcpy(pos, &sta->mscs_ctxt->assoc_req_status, sizeof(u16));
+	pos += sizeof(u16);
+
+	wpa_printf(MSG_INFO, "Added MSCS descriptor len %d",
+		   (int)len);
+	return pos;
+}
+
+int hostapd_send_mscs_response(struct hostapd_data *hapd,
+			       struct sta_info *sta, const u8 *da,
+			       u8 dialog_token, int status_code)
 {
 	struct wpabuf *buf;
 	size_t len;
@@ -1519,7 +1549,7 @@ static int hostapd_handle_mscs_req(struct hostapd_data *hapd,
 	struct sta_info *sta;
 	const u8 *payload, *payload_start;
 	int ret = 0;
-	u8 dialog_token;
+	u8 dialog_token, elem_id, elem_id_ext, length;
 
 	if (!hapd->conf->mscs) {
 		wpa_printf(MSG_ERROR, "MSCS feature not enabled");
@@ -1537,6 +1567,28 @@ static int hostapd_handle_mscs_req(struct hostapd_data *hapd,
 
 	wpa_hexdump(MSG_DEBUG, "MSCS Request", payload_start, frame_length);
 	wpa_printf(MSG_DEBUG, "frame_len:%zu", frame_length);
+	/**
+	 * Check if elem id has Extension tag.
+	 * If it does not, then it means MSCS
+	 * Descriptor IE might be missing
+	 */
+	elem_id = *payload_start++;
+
+	if (elem_id != WLAN_EID_EXTENSION)
+		return -1;
+
+	length = *payload_start++;
+
+	if (length < IEEE80211_MSCS_DESC_MIN_LEN)
+		return -1;
+
+	elem_id_ext = *payload_start++;
+	if (elem_id_ext != WLAN_EID_EXT_MSCS_DESCRIPTOR) {
+		wpa_printf(MSG_ERROR,
+			   "MSCS:mscs elem %d is not available in this frame\n",
+			   WLAN_EID_EXT_MSCS_DESCRIPTOR);
+		return -1;
+	}
 
 	payload = hostapd_parse_mscs_desc(payload_start, &mscs);
 	if (!payload)
@@ -1546,6 +1598,36 @@ static int hostapd_handle_mscs_req(struct hostapd_data *hapd,
 
 	return hostapd_send_mscs_response(hapd, sta, mgmt->sa, dialog_token,
 					  ret);
+}
+
+
+int hostapd_handle_mscs_ie_assoc(struct hostapd_data *hapd,
+				 struct sta_info *sta,
+				 const u8 *buf, u8 len)
+{
+	struct hostapd_mscs_desc mscs = {0};
+	const u8 *payload_start = buf;
+	const u8 *payload;
+	size_t frame_length = len;
+	int ret = 0;
+
+	if (!sta) {
+		wpa_printf(MSG_ERROR, "%s: STA not found", __func__);
+		return -1;
+	}
+
+	wpa_hexdump(MSG_DEBUG, "MSCS Request", payload_start, frame_length);
+	wpa_printf(MSG_DEBUG, "frame_len:%zu", frame_length);
+
+	payload = hostapd_parse_mscs_desc(payload_start, &mscs);
+	if (!payload)
+		return -1;
+
+	ret = hostapd_process_mscs_req(hapd, sta, payload, &mscs, 0);
+
+	sta->mscs_ctxt->assoc_req_status = ret;
+	return 0;
+
 }
 
 static int hostapd_handle_scs_req(struct hostapd_data *hapd, const u8 *buf,

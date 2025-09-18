@@ -111,6 +111,7 @@ struct sta_info;
 
 #define NFT_UDP_PORT		4500
 
+#define HOSTAPD_MSCS_WLAN_EID_SUBELEMENT 0
 #define HOSTAPD_QM_DEFAULT_QM_ID 0xFF
 #define HOSTAPD_MSCS_MAX_FLOW_ENTRIES 255
 /* QoS MGMT status values */
@@ -249,6 +250,7 @@ struct hostapd_mscs_ctxt {
 	u8 tclas_mask;
 	u8 available_idx;
 	struct hostapd_tclas_elements flow_info[HOSTAPD_MSCS_MAX_FLOW_ENTRIES];
+	u16 assoc_req_status;
 };
 
 struct hostapd_tclas_mask_elem {
@@ -276,4 +278,15 @@ int hostapd_mscs_delete_all_rules(struct hostapd_data *hapd,
 void hostapd_process_mscs_flow(struct hostapd_data *hapd,
 			       struct hostapd_tclas_elements *tclas,
 			       u8 *addr, u8 tid);
+int hostapd_send_mscs_response(struct hostapd_data *hapd,
+			       struct sta_info *sta, const u8 *da,
+			       u8 dialog_token, int status_code);
+int hostapd_copy_and_send_mscs_data(struct hostapd_data *hapd,
+				    struct sta_info *sta, u8 req_type,
+				    const u8 dialog_token);
+u8 *hostapd_add_mscs_desc(struct hostapd_data *hapd, u8 *eid,
+			  struct sta_info *sta);
+int hostapd_handle_mscs_ie_assoc(struct hostapd_data *hapd,
+				 struct sta_info *sta,
+				 const u8 *buf, u8 len);
 #endif

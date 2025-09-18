@@ -3029,7 +3029,10 @@ static int nl80211_action_subscribe_ap(struct i802_bss *bss)
 #endif /* CONFIG_FST */
 #ifdef CONFIG_IEEE80211AX
 	/* Robust AV SCS request */
-	if (nl80211_register_action_frame(bss, (u8 *) "\x13\x00", 1) < 0)
+	if (nl80211_register_action_frame(bss, (u8 *) "\x13\x00", 2) < 0)
+		ret = -1;
+	/* Robust AV MSCS request */
+	if (nl80211_register_action_frame(bss, (u8 *) "\x13\x04", 2) < 0)
 		ret = -1;
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
