@@ -173,7 +173,8 @@ static int ieee802_11_send_wnmsleep_resp(struct hostapd_data *hapd,
 	struct wnm_sleep_element wnmsleep_ie;
 	u8 *wnmtfs_ie, *oci_ie;
 	u8 wnmsleep_ie_len, oci_ie_len;
-	u8 wnmsleep_subie_size, n_mld_affiliated_links;
+	u16 wnmsleep_subie_size;
+	u8 n_mld_affiliated_links;
 	u16 wnmtfs_ie_len;
 	u8 *pos;
 	struct sta_info *sta;
