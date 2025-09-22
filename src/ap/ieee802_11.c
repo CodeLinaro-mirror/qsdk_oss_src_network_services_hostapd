@@ -3340,6 +3340,7 @@ static void handle_auth(struct hostapd_data *hapd,
 	u16 seq_ctrl;
 	struct radius_sta rad_info;
 	const u8 *dst, *sa;
+	bool skip_acl = false;
 #ifdef CONFIG_IEEE80211BE
 	bool mld_sta = false;
 #endif /* CONFIG_IEEE80211BE */
@@ -3377,6 +3378,10 @@ static void handle_auth(struct hostapd_data *hapd,
 		mld_sta = true;
 	else
 		sa = mgmt->sa;
+
+	if (hapd->conf->mld_ap &&
+	    hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED)
+		skip_acl = true;
 #endif /* CONFIG_IEEE80211BE */
 
 	auth_alg = le_to_host16(mgmt->u.auth.auth_alg);
@@ -3535,15 +3540,19 @@ static void handle_auth(struct hostapd_data *hapd,
 		}
 	}
 
+
 	res = ieee802_11_allowed_address(hapd, sa, (const u8 *) mgmt, len,
 					 &rad_info);
-	if (res == HOSTAPD_ACL_REJECT) {
+	if (res == HOSTAPD_ACL_REJECT && !skip_acl) {
 		wpa_msg(hapd->msg_ctx, MSG_DEBUG,
 			"Ignore Authentication frame from " MACSTR
 			" due to ACL reject", MAC2STR(sa));
 		resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 		goto fail;
 	}
+	if (res == HOSTAPD_ACL_PENDING)
+		return;
+
 	ubus_resp = hostapd_ubus_handle_event(hapd, &req);
 	if (ubus_resp) {
 		wpa_printf(MSG_DEBUG, "Station " MACSTR " rejected by ubus handler.\n",
@@ -3551,15 +3560,17 @@ static void handle_auth(struct hostapd_data *hapd,
 		resp = ubus_resp > 0 ? (u16) ubus_resp : WLAN_STATUS_UNSPECIFIED_FAILURE;
 		goto fail;
 	}
-	if (res == HOSTAPD_ACL_PENDING)
-		return;
 
 #ifdef CONFIG_IEEE80211BE
+	/* In case of ACCEPT_UNLESS_DENIED, check both mld address and
+	 * source address
+	 */
 	if (mld_sta) {
+
 		res = ieee802_11_allowed_address(hapd, mgmt->sa,
 						 (const u8 *) mgmt, len,
 						 &rad_info);
-		if (res == HOSTAPD_ACL_REJECT) {
+		if (res == HOSTAPD_ACL_REJECT && !skip_acl) {
 			wpa_msg(hapd->msg_ctx, MSG_DEBUG,
 				"Ignore Authentication frame from " MACSTR
 				" due to ACL reject", MAC2STR(mgmt->sa));
@@ -6771,6 +6782,16 @@ static void handle_assoc(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_FILS */
 
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap) {
+		wpa_printf(MSG_INFO, "STA " MACSTR " for acl checking",
+			   MAC2STR(sta->addr));
+		if (hostapd_check_ml_acl(hapd, sta) == HOSTAPD_ACL_REJECT) {
+			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto fail;
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
 	ubus_resp = hostapd_ubus_handle_event(hapd, &req);
 	if (ubus_resp) {
 		wpa_printf(MSG_DEBUG, "Station " MACSTR " assoc rejected by ubus handler.\n",

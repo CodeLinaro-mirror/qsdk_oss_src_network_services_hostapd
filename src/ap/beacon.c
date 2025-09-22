@@ -1559,6 +1559,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 	struct radius_sta rad_info;
 	struct probe_resp_params params;
 	char *hex = NULL;
+	bool skip_acl = false;
 #ifdef CONFIG_IEEE80211BE
 	int mld_id;
 	u16 links;
@@ -1581,13 +1582,19 @@ void handle_probe_req(struct hostapd_data *hapd,
 		sta_track_add(hapd->iface, mgmt->sa, ssi_signal);
 	ie_len = len - IEEE80211_HDRLEN;
 
-	ret = hostapd_allowed_address(hapd, mgmt->sa, (const u8 *) mgmt, len,
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap)
+		skip_acl = true;
+#endif
+	if (!skip_acl) {
+		ret = hostapd_allowed_address(hapd, mgmt->sa, (const u8 *) mgmt, len,
 				      &rad_info, 1);
-	if (ret == HOSTAPD_ACL_REJECT) {
-		wpa_msg(hapd->msg_ctx, MSG_DEBUG,
-			"Ignore Probe Request frame from " MACSTR
-			" due to ACL reject ", MAC2STR(mgmt->sa));
-		return;
+		if (ret == HOSTAPD_ACL_REJECT) {
+			wpa_msg(hapd->msg_ctx, MSG_DEBUG,
+				"Ignore Probe Request frame from " MACSTR
+				" due to ACL reject ", MAC2STR(mgmt->sa));
+			return;
+		}
 	}
 
 	for (i = 0; hapd->probereq_cb && i < hapd->num_probereq_cb; i++)

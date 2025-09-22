@@ -2438,16 +2438,47 @@ int hostapd_disassoc_accept_mac(struct hostapd_data *hapd)
 {
 	struct sta_info *sta;
 	struct vlan_description vlan_id;
+	bool disconnect_sta;
 
 	if (hapd->conf->macaddr_acl != DENY_UNLESS_ACCEPTED)
 		return 0;
 
 	for (sta = hapd->sta_list; sta; sta = sta->next) {
+#ifdef CONFIG_IEEE80211BE
+		int link_id;
+		struct mld_link_info *info;
+#endif /* CONFIG_IEEE80211BE */
+
+		disconnect_sta = false;
+
 		if (!hostapd_maclist_found(hapd->conf->accept_mac,
 					   hapd->conf->num_accept_mac,
 					   sta->addr, &vlan_id) ||
 		    (vlan_id.notempty &&
 		     vlan_compare(&vlan_id, sta->vlan_desc)))
+			disconnect_sta = true;
+
+#ifdef CONFIG_IEEE80211BE
+		for (link_id = 0; hapd->conf->mld_ap &&
+				  link_id < MAX_NUM_MLD_LINKS &&
+				  sta->mld_info.mld_sta; link_id++) {
+			info = &sta->mld_info.links[link_id];
+			if (!info->valid || link_id != hapd->mld_link_id)
+				continue;
+			if (!hostapd_maclist_found(hapd->conf->accept_mac,
+						   hapd->conf->num_accept_mac,
+						   info->peer_addr,
+						   &vlan_id) ||
+			    (vlan_id.notempty &&
+			     vlan_compare(&vlan_id, sta->vlan_desc))) {
+				disconnect_sta = true;
+			} else {
+				disconnect_sta = false;
+				break;
+			}
+		}
+#endif /* CONFIG_IEEE80211BE */
+		if (disconnect_sta)
 			ap_sta_disconnect(hapd, sta, sta->addr,
 					  WLAN_REASON_UNSPECIFIED);
 	}

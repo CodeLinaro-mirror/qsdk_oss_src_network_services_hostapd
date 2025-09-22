@@ -496,37 +496,13 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 	 * For each peer link address, check the corresponding association
 	 * local link's ACL configuration whether it is acceptable.
 	 */
-	if (!driver_acl && hapd->conf->mld_ap && link_addr) {
-		int link_id;
-		struct mld_link_info *info;
-		struct hostapd_data *bss;
-
-		for (link_id = 0; link_id < MAX_NUM_MLD_LINKS; link_id++) {
-			info = &sta->mld_info.links[link_id];
-			if (!info->valid)
-				continue;
-
-			bss = hostapd_mld_get_link_bss(hapd, link_id);
-			if (bss && bss != hapd &&
-			    hostapd_check_acl(bss, addr, NULL) !=
-			    HOSTAPD_ACL_ACCEPT) {
-				wpa_printf(MSG_INFO, "STA " MACSTR
-					   " not allowed to connect",
-					   MAC2STR(addr));
-				reason = WLAN_REASON_UNSPECIFIED;
-				goto fail;
-			}
-			if (bss &&
-			    hostapd_check_acl(bss, info->peer_addr, NULL) !=
-			    HOSTAPD_ACL_ACCEPT) {
-				wpa_printf(MSG_INFO, "link addr " MACSTR
-					   " not allowed to connect",
-					   MAC2STR(info->peer_addr));
-				reason = WLAN_REASON_UNSPECIFIED;
-				goto fail;
-			}
+	if (!driver_acl && hapd->conf->mld_ap) {
+		if (hostapd_check_ml_acl(hapd, sta) != HOSTAPD_ACL_ACCEPT) {
+			reason = WLAN_REASON_UNSPECIFIED;
+			goto fail;
 		}
 	}
+
 #endif /* CONFIG_IEEE80211BE */
 
 	if (hostapd_ubus_handle_event(hapd, &req)) {
