@@ -39,5 +39,5 @@ void hostapd_copy_psk_list(struct hostapd_sta_wpa_psk_short **psk,
 void hostapd_acl_req_radius_psk(struct hostapd_data *hapd, const u8 *addr,
 				int key_mgmt, const u8 *anonce,
 				const u8 *eapol, size_t eapol_len);
-
+int hostapd_check_ml_acl(struct hostapd_data *hapd, struct sta_info *sta);
 #endif /* IEEE802_11_AUTH_H */

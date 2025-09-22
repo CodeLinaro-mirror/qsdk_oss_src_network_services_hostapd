@@ -339,6 +339,75 @@ int hostapd_allowed_address(struct hostapd_data *hapd, const u8 *addr,
 	return HOSTAPD_ACL_REJECT;
 }
 
+/**
+ * hostapd_check_ml_acl - Check a specified STA against accept/deny ACLs in
+ * 			that mld AP
+ * @hapd: hostapd BSS data
+ * @addr: MAC address of the STA
+ * Returns: HOSTAPD_ACL_ACCEPT, HOSTAPD_ACL_REJECT, or HOSTAPD_ACL_PENDING
+ */
+
+int hostapd_check_ml_acl(struct hostapd_data *hapd, struct sta_info *sta)
+{
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_data *tmp_hapd;
+	int acl_res, acl_res_linkaddr, accept = 0;
+
+	if (!ap_sta_is_mld(hapd, sta)) {
+		if (hostapd_check_acl(hapd, sta->addr, NULL) != HOSTAPD_ACL_ACCEPT) {
+			wpa_printf(MSG_INFO, "STA " MACSTR " not allowed to connect",
+				   MAC2STR(sta->addr));
+			return HOSTAPD_ACL_REJECT;
+		}
+		return HOSTAPD_ACL_ACCEPT;
+	}
+
+
+        for_each_mld_link(tmp_hapd, hapd) {
+                struct mld_link_info *link;
+
+
+                link = &sta->mld_info.links[tmp_hapd->mld_link_id];
+		if (!link->valid)
+			continue;
+
+		acl_res = hostapd_check_acl(tmp_hapd, sta->addr, NULL);
+
+		if (hapd->conf->macaddr_acl == ACCEPT_UNLESS_DENIED &&
+		    acl_res != HOSTAPD_ACL_ACCEPT) {
+			wpa_printf(MSG_INFO, "STA " MACSTR
+				   " not allowed to connect",
+				   MAC2STR(sta->addr));
+			return HOSTAPD_ACL_REJECT;
+		}
+
+		acl_res_linkaddr = hostapd_check_acl(tmp_hapd, link->peer_addr, NULL);
+		if (hapd->conf->macaddr_acl == ACCEPT_UNLESS_DENIED &&
+		    acl_res_linkaddr != HOSTAPD_ACL_ACCEPT) {
+			wpa_printf(MSG_INFO, "link addr" MACSTR
+				   " not allowed to connect",
+				   MAC2STR(link->peer_addr));
+			return HOSTAPD_ACL_REJECT;
+		}
+
+		if (hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED &&
+		    (acl_res_linkaddr != HOSTAPD_ACL_REJECT ||
+		     acl_res != HOSTAPD_ACL_REJECT)) {
+			accept = 1;
+			break;
+		}
+
+        }
+
+	if (hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED && !accept) {
+		wpa_printf(MSG_INFO, "STA " MACSTR " not accepted on any link",
+			   MAC2STR(sta->addr));
+		return HOSTAPD_ACL_REJECT;
+	}
+
+#endif /* CONFIG_IEEE80211BE */
+     return HOSTAPD_ACL_ACCEPT;
+}
 
 #ifndef CONFIG_NO_RADIUS
 static void hostapd_acl_expire_cache(struct hostapd_data *hapd,
