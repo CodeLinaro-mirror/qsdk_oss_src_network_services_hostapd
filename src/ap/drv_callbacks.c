@@ -283,8 +283,12 @@ static struct hostapd_data * hostapd_find_by_sta(struct hostapd_iface *iface,
 	for (j = 0; j < iface->num_bss; j++) {
 		hapd = iface->bss[j];
 		sta = ap_get_sta(hapd, src);
+		/*wpa_sm is not allocated if Assoc Request contains WPS_IE
+		 *So Ignore checking for sta->wpa_sm when sta flags have
+		 *WLAN_STA_WPS set
+		 */
 		if (sta && (sta->flags & WLAN_STA_ASSOC) &&
-		    (!rsn || sta->wpa_sm)) {
+		    (!rsn|| (sta->flags & WLAN_STA_WPS) || sta->wpa_sm)) {
 			if (sta_ret)
 				*sta_ret = sta;
 			return hapd;
@@ -296,10 +300,14 @@ static struct hostapd_data * hostapd_find_by_sta(struct hostapd_iface *iface,
 			for_each_mld_link(p_hapd, hapd) {
 				if (p_hapd == hapd)
 					continue;
+				/*wpa_sm is not allocated if Assoc Request contains WPS_IE
+				 *So Ignore checking for sta->wpa_sm when sta flags have
+				 *WLAN_STA_WPS set
+				 */
 
 				sta = ap_get_sta(p_hapd, src);
 				if (sta && (sta->flags & WLAN_STA_ASSOC) &&
-				    (!rsn || sta->wpa_sm)) {
+				    (!rsn ||(sta->flags & WLAN_STA_WPS) || sta->wpa_sm)) {
 					if (sta_ret)
 						*sta_ret = sta;
 					return p_hapd;

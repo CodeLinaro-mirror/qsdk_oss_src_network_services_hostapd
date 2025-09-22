@@ -2410,8 +2410,32 @@ static int ieee802_1x_sta_entry_alive(void *ctx, const u8 *addr)
 	struct sta_info *sta;
 
 	sta = ap_get_sta(hapd, addr);
-	if (!sta || !sta->eapol_sm)
-		return 0;
+	if (!sta || !sta->eapol_sm) {
+	/*Look for sta entry on partner links. If the
+	 *'first MLD BSS' happens to be non-Assoc link BSS, and 'eapol_auth'
+	 *is shared among all BSS, attempt to fetch station entry from
+	 *eapol_auth would look for the entry on the non-Assoc link hapd and
+	 *fail here causing it to not iterate over other states in
+	 *BE_AUTH/EAP/AUTH_PAE state machines.
+	*/
+#ifdef CONFIG_IEEE80211BE
+         if (hapd->conf->mld_ap) {
+                 struct hostapd_data *p_hapd;
+
+                 for_each_mld_link(p_hapd, hapd) {
+                         if (p_hapd == hapd)
+                                 continue;
+
+                         sta = ap_get_sta(p_hapd, addr);
+                         if (sta && sta->eapol_sm)
+                                 return 1;
+                 }
+        }
+	return 0;
+#else
+       return 0;
+#endif /* CONFIG_IEEE80211BE */
+       }
 	return 1;
 }
 

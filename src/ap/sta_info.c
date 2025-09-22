@@ -2235,6 +2235,19 @@ void ap_sta_clear_disconnect_timeouts(struct hostapd_data *hapd,
 		if (sta->flags & WLAN_STA_WPS)
 			hostapd_wps_eap_completed(hapd);
 	}
+#ifdef CONFIG_IEEE80211BE
+      else if (hapd->conf->mld_ap && hapd->mld && hapd->mld->fbss &&
+	       eloop_cancel_timeout(ap_sta_delayed_1x_auth_fail_cb, hapd->mld->fbss, sta) > 0)
+      {
+              wpa_printf(MSG_DEBUG,
+                         "%s: Removed ap_sta_delayed_1x_auth_fail_cb timeout for "
+                         MACSTR,
+                         hapd->mld->fbss ? hapd->mld->fbss->conf->iface : NULL,
+                         MAC2STR(sta->addr));
+              if (sta->flags & WLAN_STA_WPS)
+                      hostapd_wps_eap_completed(hapd);
+      }
+#endif
 }
 
 
