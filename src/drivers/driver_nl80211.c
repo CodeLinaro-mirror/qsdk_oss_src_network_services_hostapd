@@ -16213,6 +16213,9 @@ nl80211_set_qm_tclas10_elem(struct nl_msg *msg,
 	if (!tclas_type10)
 		return -ENOBUFS;
 
+	if (type10_params.filter_len > TCLAS10_FILTER_LEN)
+		return -EINVAL;
+
 	if (nla_put_u8(msg, NL80211_TCLAS_TYPE10_ATTR_PROT_INSTANCE,
 		       type10_params.protocol_instance) ||
 	    nla_put_u8(msg, NL80211_TCLAS_TYPE10_ATTR_PROT_NUMBER,
@@ -16282,6 +16285,8 @@ static int nl80211_set_qm_tclas(struct nl_msg *msg,
 	int tclas_idx;
 
 	qm_tclas = nla_nest_start(msg, NL80211_QM_DESC_ATTR_TCLAS_ELEMENTS);
+	if (!qm_tclas)
+		return -ENOBUFS;
 
 	for (tclas_idx = 0;
 	     tclas_idx < qm_req_desc.num_tclas_elements;
