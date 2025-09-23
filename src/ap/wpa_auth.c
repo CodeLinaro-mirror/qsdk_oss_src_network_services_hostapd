@@ -41,7 +41,6 @@
 #define KDE_ALL_LINKS 0xffff
 
 
-static void wpa_send_eapol_timeout(void *eloop_ctx, void *timeout_ctx);
 static int wpa_sm_step(struct wpa_state_machine *sm);
 static int wpa_verify_key_mic(int akmp, size_t pmk_len, struct wpa_ptk *PTK,
 			      u8 *data, size_t data_len);
@@ -2021,7 +2020,7 @@ static int wpa_gmk_to_gtk(const u8 *gmk, const char *label, const u8 *addr,
 }
 
 
-static void wpa_send_eapol_timeout(void *eloop_ctx, void *timeout_ctx)
+void wpa_send_eapol_timeout(void *eloop_ctx, void *timeout_ctx)
 {
 	struct wpa_authenticator *wpa_auth = eloop_ctx;
 	struct wpa_state_machine *sm = timeout_ctx;

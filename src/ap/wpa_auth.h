@@ -736,6 +736,7 @@ static inline bool wpa_auth_pmf_enabled(struct wpa_auth_config *conf)
 bool wpa_auth_sm_known_sta_identification(struct wpa_state_machine *sm,
 					  const u8 *timestamp,
 					  const u8 *mic, size_t mic_len);
+void wpa_send_eapol_timeout(void *eloop_ctx, void *timeout_ctx);
 struct wpa_group * wpa_select_vlan_wpa_group(struct wpa_group *gsm,
 					     int vlan_id);
 void wpa_auth_set_sae_pw_id(struct wpa_state_machine *sm,

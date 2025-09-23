@@ -2916,6 +2916,7 @@ static int hostapd_sm_link_reconfigure(struct hostapd_data *hapd,
 		return 0;
 
 	if (sta->mld_assoc_link_id == hapd->mld_link_id) {
+		eloop_cancel_timeout(wpa_send_eapol_timeout, hapd->wpa_auth, sta->wpa_sm);
 		set_for_each_partner_link_sta(hapd, sta, phapd->wpa_auth,
 					      wpa_auth_reconfig_wpa_auth_sm);
 
