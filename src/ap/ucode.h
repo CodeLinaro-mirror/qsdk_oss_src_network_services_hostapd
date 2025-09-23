@@ -31,6 +31,7 @@ void hostapd_ucode_free_iface(struct hostapd_iface *iface);
 void hostapd_ucode_add_bss(struct hostapd_data *hapd);
 void hostapd_ucode_free_bss(struct hostapd_data *hapd);
 void hostapd_ucode_reload_bss(struct hostapd_data *hapd);
+bool hostapd_ucode_update_radio_mask(char *ifname, u8 hw_idx);
 
 #ifdef CONFIG_IEEE80211AX
 void hostapd_ucode_config_nft_table(char *table, bool add);
@@ -60,6 +61,10 @@ static inline void hostapd_ucode_add_bss(struct hostapd_data *hapd)
 }
 static inline void hostapd_ucode_free_bss(struct hostapd_data *hapd)
 {
+}
+static inline bool hostapd_ucode_update_radio_mask(char *ifname, u8 hw_idx)
+{
+	return true;
 }
 #ifdef CONFIG_IEEE80211AX
 static inline void hostapd_ucode_config_nft_table(char *table, bool add)

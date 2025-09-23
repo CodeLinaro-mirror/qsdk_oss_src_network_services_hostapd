@@ -1783,6 +1783,11 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon)
 	u8 if_addr[ETH_ALEN];
 	int flush_old_stations = 1;
 	struct hostapd_data *tx_hapd;
+	bool is_mesh = false;
+
+#ifdef CONFIG_MESH
+	is_mesh = hapd->iface->mconf ? true : false;
+#endif
 
 	wpa_printf(MSG_DEBUG, "%s(hapd=%p (%s), first=%d)",
 		   __func__, hapd, conf->iface, first);
@@ -1885,6 +1890,14 @@ setup_mld:
 		}
 		hostapd_mld_add_link(hapd);
 		hostapd_validate_update_ml_max_rec_links(hapd);
+	}
+	if (!is_mesh && hapd->iface->current_hw_info &&
+	    !hostapd_ucode_update_radio_mask(hapd->conf->iface,
+					     hapd->iface->current_hw_info->hw_idx)) {
+		wpa_printf(MSG_ERROR,
+			   "Failed to update radio mask for %s",
+			   hapd->conf->iface);
+		return -1;
 	}
 #endif /* CONFIG_IEEE80211BE */
 
@@ -2715,6 +2728,12 @@ static void hostapd_set_6ghz_sec_chan(struct hostapd_iface *iface)
 
 static int setup_interface2(struct hostapd_iface *iface)
 {
+	struct hostapd_multi_hw_info *hw_info;
+	bool is_mesh = false;
+
+#ifdef CONFIG_MESH
+	is_mesh = iface->mconf ? true : false;
+#endif
 	iface->wait_channel_update = 0;
 	iface->is_afc_channel_change_pending = false;
 	iface->is_no_ir = false;
@@ -2760,6 +2779,20 @@ static int setup_interface2(struct hostapd_iface *iface)
 		ret = hostapd_check_he_6ghz_capab(iface);
 		if (ret < 0)
 			goto fail;
+
+		if (!is_mesh) {
+			hw_info = hostapd_get_current_hw_info(iface, iface->freq);
+
+			if (hw_info &&
+			    !hostapd_ucode_update_radio_mask(iface->conf->bss[0]->iface,
+							     hw_info->hw_idx)) {
+				wpa_printf(MSG_ERROR,
+					   "Failed to update radio mask for %s",
+					   iface->conf->bss[0]->iface);
+				goto fail;
+			}
+		}
+
 		ret = hostapd_check_ht_capab(iface);
 		if (ret < 0)
 			goto fail;

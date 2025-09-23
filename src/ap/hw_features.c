@@ -1515,3 +1515,25 @@ int hostapd_set_current_hw_info(struct hostapd_iface *iface, int oper_freq)
 
 	return -1;
 }
+
+
+struct hostapd_multi_hw_info *hostapd_get_current_hw_info(struct hostapd_iface *iface,
+							  int oper_freq)
+{
+	struct hostapd_multi_hw_info *hw_info;
+	unsigned int i;
+
+	if (!iface->num_multi_hws)
+		return NULL;
+
+	for (i = 0; i < iface->num_multi_hws; i++) {
+		hw_info = &iface->multi_hw_info[i];
+
+		if (hw_info->start_freq <= oper_freq &&
+		    hw_info->end_freq >= oper_freq) {
+			return hw_info;
+		}
+	}
+
+	return NULL;
+}

@@ -1045,3 +1045,16 @@ void hostapd_ucode_config_nft_rule(struct hostapd_data *hapd,
 	ucv_gc(vm);
 }
 #endif
+
+bool hostapd_ucode_update_radio_mask(char *ifname, u8 hw_idx)
+{
+	if (wpa_ucode_call_prepare("update_radio_mask"))
+		return false;
+
+	uc_value_push(ucv_string_new(ifname));
+	uc_value_push(ucv_int64_new(hw_idx));
+	ucv_put(wpa_ucode_call(2));
+	ucv_gc(vm);
+
+	return true;
+}
