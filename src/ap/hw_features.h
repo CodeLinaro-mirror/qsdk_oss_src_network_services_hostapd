@@ -33,6 +33,8 @@ int hostapd_determine_mode(struct hostapd_iface *iface);
 void hostapd_free_multi_hw_info(struct hostapd_multi_hw_info *multi_hw_info);
 int hostapd_set_current_hw_info(struct hostapd_iface *iface, int oper_freq);
 int hostapd_is_usable_chans(struct hostapd_iface *iface);
+struct hostapd_multi_hw_info *hostapd_get_current_hw_info(struct hostapd_iface *iface,
+							   int oper_freq);
 
 /**
  * hostapd_free_6ghz_channels() - Free 6 GHz channels for a given mode
@@ -134,6 +136,12 @@ static inline int hostapd_set_current_hw_info(struct hostapd_iface *iface,
 static inline int hostapd_is_usable_chans(struct hostapd_iface *iface)
 {
 	return 1;
+}
+
+static inline struct hostapd_multi_hw_info *hostapd_get_current_hw_info(struct hostapd_iface *iface,
+							   int oper_freq)
+{
+	return NULL;
 }
 #endif /* NEED_AP_MLME */
 
