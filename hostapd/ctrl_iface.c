@@ -5088,15 +5088,40 @@ static int hostapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd,
 						&flags, &dfs_domain, NULL, 0, 0);
 	if (!modes)
 		return -1;
-	for (i = 0; i < num_modes; i++) {
-		struct hostapd_hw_modes *mode = &modes[i];
-		if (mode->channels->freq == hapd->iface->current_mode->channels->freq) {
-			os_memcpy(hapd->iface->current_mode, mode,
-				  sizeof(struct hostapd_hw_modes));
-			break;
+	{
+		int found_matching_mode = 0;
+
+		for (i = 0; i < num_modes; i++) {
+			struct hostapd_hw_modes *mode = &modes[i];
+
+			if (mode->channels &&
+			    mode->channels->freq ==
+			    hapd->iface->current_mode->channels->freq) {
+				if (hapd->iface->current_mode->rates)
+					os_free(hapd->iface->current_mode->rates);
+
+				if (hapd->iface->current_mode->channels)
+					os_free(hapd->iface->current_mode->channels);
+
+				os_memcpy(hapd->iface->current_mode, mode,
+					  sizeof(struct hostapd_hw_modes));
+
+				/* Set pointers to NULL to prevent double free */
+				mode->rates = NULL;
+				mode->channels = NULL;
+				found_matching_mode = 1;
+				continue;
+			}
+
+			os_free(mode->rates);
+			os_free(mode->channels);
+		}
+		os_free(modes);
+		if (!found_matching_mode) {
+			wpa_printf(MSG_ERROR, "No matching mode found.\n");
+			return -1;
 		}
 	}
-	os_free(modes);
 
 	return ieee802_11_update_beacons(hapd->iface);
 }
