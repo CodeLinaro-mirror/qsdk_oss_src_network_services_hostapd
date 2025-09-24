@@ -4865,7 +4865,7 @@ static int hostapd_ctrl_iface_stop_mld(struct hostapd_data *hapd)
 }
 
 
-static int hotapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd, char *cmd,
+static int hostapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd, char *cmd,
 					    char *buf, size_t buflen)
 {
 	int ret = -1, i;
@@ -4919,17 +4919,34 @@ static int hotapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd, char *cmd
 	modes = nl80211_get_hw_feature_data(hapd->drv_priv, &num_modes,
 				    &flags, &dfs_domain, 0);
 	if (modes) {
+		int found_matching_mode = 0;
 		for (i = 0; i < num_modes; i++) {
 			struct hostapd_hw_modes *mode = &modes[i];
+			if (mode->channels && (mode->channels->freq ==
+			    hapd->iface->current_mode->channels->freq)) {
+				if (hapd->iface->current_mode->rates)
+					os_free(hapd->iface->current_mode->rates);
 
-			if (mode->channels->freq ==
-			    hapd->iface->current_mode->channels->freq) {
+				if (hapd->iface->current_mode->channels)
+					os_free(hapd->iface->current_mode->channels);
+
 				os_memcpy(hapd->iface->current_mode,
 					  mode, sizeof(struct hostapd_hw_modes));
-				break;
+
+				/* Set pointers to NULL to prevent double free */
+				mode->rates = NULL;
+				mode->channels = NULL;
+				found_matching_mode = 1;
+				continue;
 			}
+			os_free(mode->rates);
+			os_free(mode->channels);
 		}
 		os_free(modes);
+		if (!found_matching_mode) {
+			wpa_printf(MSG_ERROR, "No matching mode found.\n");
+			return -1;
+		}
 	} else {
 		wpa_printf(MSG_ERROR, "Failed to get latest modes.\n");
 		return -1;
@@ -6512,7 +6529,7 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		if (hostapd_ctrl_send_unsolicited_dscp_req(hapd, buf + 26))
 			reply_len = -1;
 	} else if (os_strncmp(buf, "CHAIN_MASK ", 11) == 0) {
-		if (hotapd_ctrl_set_tx_rx_chain_mask(hapd, buf+11,
+		if (hostapd_ctrl_set_tx_rx_chain_mask(hapd, buf+11,
 						     reply, reply_size))
 			reply_len = -1;
 	} else if (os_strncmp(buf, "AFC ", 4) == 0) {
