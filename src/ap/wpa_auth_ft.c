@@ -3719,10 +3719,18 @@ pmk_r1_derived:
 	os_memcpy(sm->pmk_r1, pmk_r1, pmk_r1_len);
 	sm->pmk_r1_len = pmk_r1_len;
 
-	if (random_get_bytes(sm->ANonce, WPA_NONCE_LEN)) {
-		wpa_printf(MSG_DEBUG, "FT: Failed to get random data for "
-			   "ANonce");
-		goto out;
+	if (!sm->ANonce_generated) {
+		/* Generate a new ANonce for the first FT authentication request */
+		if (random_get_bytes(sm->ANonce, WPA_NONCE_LEN)) {
+			wpa_printf(MSG_DEBUG, "FT: Failed to get random data for "
+				   "ANonce");
+			goto out;
+		}
+
+		sm->ANonce_generated = true;
+	} else  {
+		wpa_hexdump(MSG_DEBUG, "FT: Reusing existing ANonce",
+			    sm->ANonce, WPA_NONCE_LEN);
 	}
 
 	/* Now that we know the correct PMK-R1 length and as such, the length
@@ -3924,6 +3932,9 @@ int wpa_ft_validate_reassoc(struct wpa_state_machine *sm, const u8 *ies,
 	conf = &sm->wpa_auth->conf;
 
 	wpa_hexdump(MSG_DEBUG, "FT: Reassoc Req IEs", ies, ies_len);
+
+	/* Reset ANonce generation flag after receiving reassoc request */
+	sm->ANonce_generated = 0;
 
 	if (wpa_ft_parse_ies(ies, ies_len, &parse, sm->wpa_key_mgmt,
 			     false) < 0) {
