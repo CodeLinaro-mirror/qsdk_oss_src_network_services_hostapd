@@ -6869,6 +6869,14 @@ hostapd_reg_get_eirp_from_chan_list(struct hostapd_iface *iface, u16 freq,
 			   __func__, pwr_type, start_freq);
 		return -1;
 	}
+	prim_chan = hostapd_iface_get_6ghz_chan_list(iface, freq, pwr_type,
+						     NULL, NULL);
+	if (!prim_chan) {
+		wpa_printf(MSG_ERROR,
+			   "%s Error getting prim 6 GHz chan: power mode: %d freq: %d",
+			   __func__, pwr_type, freq);
+		return -1;
+	}
 
 	num_bw_chans = bw / 20;
 	if (chan_idx + num_bw_chans > num_channels_6ghz) {
@@ -6941,7 +6949,7 @@ hostapd_reg_get_psd_from_chan_list(struct hostapd_iface *iface, u16 freq,
 				   bool is_client_lookup, bool is_twice_pwr,
 				   s16 *psd_pwr)
 {
-	struct hostapd_channel_data *chan_6ghz = NULL;
+	struct hostapd_channel_data *chan_6ghz = NULL, *prim_chan;
 	u16 start_freq = (bw == 20) ? freq : center_freq - (bw / 2) + 10;
 	u8 pwr_type = (is_client_lookup) ? client_type : ap_pwr_type;
 	bool is_psd;
@@ -6969,14 +6977,14 @@ hostapd_reg_get_psd_from_chan_list(struct hostapd_iface *iface, u16 freq,
 
 	*psd_pwr = CHAN_MAX_TX_POWER;
 	effective_bw = hostapd_reg_find_non_punc_bw(bw, in_punc_pattern);
-	is_psd = chan_6ghz->flag & HOSTAPD_CHAN_PSD;
+	is_psd = prim_chan->flag & HOSTAPD_CHAN_PSD;
 	if (!is_psd) {
 		s16 reg_eirp_pwr;
 		int ret;
 
 		wpa_printf(MSG_INFO,
 			   "Channel %d does not support PSD, flag: 0x%x",
-			   chan_6ghz->freq, chan_6ghz->flag);
+			   prim_chan->freq, prim_chan->flag);
 		ret = hostapd_reg_get_eirp_from_chan_list(iface, freq,
 							  center_freq,
 							  bw,
@@ -6997,7 +7005,7 @@ hostapd_reg_get_psd_from_chan_list(struct hostapd_iface *iface, u16 freq,
 		if (ret) {
 			wpa_printf(MSG_ERROR,
 				   "Failed to convert EIRP to PSD for freq %d",
-				   chan_6ghz->freq);
+				   prim_chan->freq);
 			return -1;
 		}
 
@@ -7102,9 +7110,12 @@ hostapd_get_sp_punc_eirp(struct hostapd_iface *iface, u16 freq, u16 center_freq,
 		return -1;
 	}
 
+	/* Set is_client_lookup to false to get AP PSD value and to avoid
+	 * subtracting 6dbm twice.
+	 */
 	ret = hostapd_reg_get_psd_from_chan_list(iface, freq, center_freq, bw,
 						 in_punc_pattern, NL80211_REG_AP_SP,
-						 client_type, is_client_lookup,
+						 client_type, false,
 						 false, &reg_psd_pwr);
 	if (ret)
 		return ret;

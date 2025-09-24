@@ -9780,17 +9780,19 @@ fill_psd_power_for_punctured_freq(struct hostapd_data *hapd, u16 freq,
 			psd_power = CHAN_MIN_TX_POWER;
 		wpa_printf(MSG_DEBUG, "LPI/VLP channel %d MHz, psd_power: %d",
 			   freq, psd_power);
+
 	} else {
 		/* For SP punctured channel, psd power is primary 20 MHZ PSD - 16 */
 		psd_power = (primary_20_mhz_psd - PUNCTURED_SP_CHAN_POWER_DIFF);
-		if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP &&
-		    !hostapd_is_additional_tpe(tx_pwr_intrpn)) {
-		    return get_max_psd_for_composite_ap(iface, freq,
-							pwr_type, client_mode,
-							psd_power);
-		}
 		wpa_printf(MSG_DEBUG, "SP channel %d MHz, psd_power: %d",
 			   freq, psd_power);
+	}
+
+	if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP &&
+	    !hostapd_is_additional_tpe(tx_pwr_intrpn)) {
+		return get_max_psd_for_composite_ap(iface, freq,
+						    pwr_type, client_mode,
+						    psd_power);
 	}
 	return psd_power;
 }
