@@ -1498,6 +1498,25 @@ static int hostapd_cli_cmd_reload_bss(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, "RELOAD_BSS");
 }
 
+static int hostapd_cli_cmd_reload_config_bss(struct wpa_ctrl *ctrl,
+					     int argc, char *argv[])
+{
+        char cmd[256];
+	int res;
+
+	if (argc < 1) {
+		printf("Missing BSS Config file\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "RELOAD_CONFIG_BSS %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Too long RELOAD_CONFIG_BSS command.\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
 
 static int hostapd_cli_cmd_reload_config(struct wpa_ctrl *ctrl, int argc,
 					 char *argv[])
@@ -2182,6 +2201,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "= reload configuration for current BSS" },
 	{ "reload_config", hostapd_cli_cmd_reload_config, NULL,
 	  "= reload configuration for current interface" },
+	{"reload_config_bss", hostapd_cli_cmd_reload_config_bss, NULL,
+	 "= reload current bss from configuration" },
 	{ "disable", hostapd_cli_cmd_disable, NULL,
 	  "= disable hostapd on current interface" },
 	{ "enable_mld", hostapd_cli_cmd_enable_mld, NULL,

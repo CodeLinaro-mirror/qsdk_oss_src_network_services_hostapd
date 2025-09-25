@@ -248,6 +248,7 @@ static void hostapd_reload_bss(struct hostapd_data *hapd)
 		 */
 		hostapd_config_clear_wpa_psk(&hapd->conf->ssid.wpa_psk);
 	}
+
 	if (hostapd_setup_wpa_psk(hapd->conf)) {
 		wpa_printf(MSG_ERROR, "Failed to re-configure WPA PSK "
 			   "after reloading configuration");
@@ -468,6 +469,82 @@ int hostapd_reload_config_iface(struct hostapd_iface *iface)
 
 	return 0;
 }
+
+
+int hostapd_reload_config_bss(struct hostapd_iface *iface,
+			      const char *iface_name,
+			      char *buf)
+{
+	struct hapd_interfaces *interfaces = iface->interfaces;
+	struct hostapd_data *hapd = NULL;
+	struct hostapd_bss_config *bss = NULL;
+	struct hostapd_config *newconf, *oldconf;
+	char *conf_file = NULL;
+	size_t j;
+
+	wpa_printf(MSG_DEBUG,"Relaod config bss %s\n", iface_name);
+	for (j = 0; j < iface->num_bss; j++) {
+		hapd = iface->bss[j];
+		if (os_strcmp(hapd->conf->iface, iface_name) == 0)
+			break;
+	}
+
+	if (!hapd) {
+		wpa_printf(MSG_DEBUG,"%s does not exist\n", iface_name);
+		return -1;
+	}
+
+	newconf = oldconf = hapd->iconf;
+
+	if (os_strncmp(buf, "bss_config=", 11) == 0) {
+		conf_file = buf + 11;
+		if (!os_strlen(conf_file))
+			return -1;
+
+		newconf = interfaces->config_read_cb(conf_file);
+		if (!newconf)
+			return -1;
+	}
+
+	for (j = 0; j < newconf->num_bss; j++) {
+		bss = newconf->bss[j];
+		if (os_strcmp(bss->iface, iface_name) == 0)
+			break;
+	}
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR,"%s does not exist in bss config \n", iface_name);
+		return -1;
+	}
+
+	hostapd_clear_old_bss(hapd);
+	hapd->iconf = newconf;
+	hapd->iconf->channel = oldconf->channel;
+	hapd->iconf->acs = oldconf->acs;
+	hapd->iconf->secondary_channel = oldconf->secondary_channel;
+	hapd->iconf->ieee80211n = oldconf->ieee80211n;
+	hapd->iconf->ieee80211ac = oldconf->ieee80211ac;
+	hapd->iconf->ht_capab = oldconf->ht_capab;
+	hapd->iconf->vht_capab = oldconf->vht_capab;
+	hostapd_set_oper_chwidth(hapd->iconf,
+			hostapd_get_oper_chwidth(oldconf));
+	hostapd_set_oper_centr_freq_seg0_idx(
+			hapd->iconf,
+			hostapd_get_oper_centr_freq_seg0_idx(oldconf));
+	hostapd_set_oper_centr_freq_seg1_idx(
+			hapd->iconf,
+			hostapd_get_oper_centr_freq_seg1_idx(oldconf));
+	hapd->conf = bss;
+	hapd->iconf->bandwidth_device = oldconf->bandwidth_device;
+	hapd->iconf->center_freq_device = oldconf->center_freq_device;
+	hapd->reenable_beacon = 1;
+	hostapd_reload_bss(hapd);
+
+	wpa_printf(MSG_DEBUG,"Relaod config bss %s completed\n", iface_name);
+
+	return 0;
+}
+
 
 int hostapd_reload_config(struct hostapd_iface *iface)
 {

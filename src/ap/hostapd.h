@@ -965,6 +965,9 @@ int hostapd_for_each_interface(struct hapd_interfaces *interfaces,
 			       int (*cb)(struct hostapd_iface *iface,
 					 void *ctx), void *ctx);
 int hostapd_reload_config(struct hostapd_iface *iface);
+int hostapd_reload_config_bss(struct hostapd_iface *iface,
+                              const char *iface_name,
+                              char *buf);
 void hostapd_reconfig_encryption(struct hostapd_data *hapd);
 struct hostapd_data *
 hostapd_alloc_bss_data(struct hostapd_iface *hapd_iface,
