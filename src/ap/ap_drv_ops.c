@@ -466,6 +466,20 @@ int hostapd_drv_mark_ppe_vp_type(struct hostapd_data *hapd)
 #endif
 
 
+#ifdef CONFIG_IEEE80211AX
+int hostapd_drv_rule_config_notify(struct hostapd_data *hapd, u8 *mac)
+{
+	if (hapd->driver == NULL)
+		return -1;
+
+	return hapd->driver->rule_config_notify(hapd->drv_priv,
+			OUI_QCA,
+			QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG,
+			NULL, 0, 0, NULL, mac, hapd->conf->iface);
+}
+#endif /* CONFIG_IEEE80211AX */
+
+
 int hostapd_sta_auth(struct hostapd_data *hapd, const u8 *addr,
 		     u16 seq, u16 status, const u8 *ie, size_t len)
 {

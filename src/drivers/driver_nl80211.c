@@ -12932,6 +12932,71 @@ static bool is_cmd_with_nested_attrs(unsigned int vendor_id,
 	}
 }
 
+
+#ifdef CONFIG_IEEE80211AX
+static int nl80211_vendor_cmd_rule_config_notify(void *priv,
+						 unsigned int vendor_id,
+						 unsigned int subcmd,
+						 const u8 *data,
+						 size_t data_len,
+						 enum nested_attr nested_attr,
+						 struct wpabuf *buf, u8 *mac,
+						 const char *ifname)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nlattr *attr;
+	struct nl_msg *msg;
+	int ifidx;
+	int ret;
+
+	if (!drv)
+		return -EINVAL;
+
+	ifidx = if_nametoindex(ifname);
+	if (ifidx == 0) {
+		wpa_printf(MSG_ERROR, "nl80211: Failed to find interface index for %s", ifname);
+		return -ENODEV;
+	}
+
+	msg = nlmsg_alloc();
+	if (!msg)
+		return -EINVAL;
+
+	if (!genlmsg_put(msg, 0, 0, drv->global->nl80211_id,
+			0,  0, NL80211_CMD_VENDOR, 0))
+		goto fail;
+
+	if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, ifidx) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, vendor_id) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD, subcmd))
+		goto fail;
+
+	attr = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!attr)
+		goto fail;
+
+	if (nla_put(msg, QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_DST_MAC_ADDR,
+		    ETH_ALEN, mac))
+		goto fail;
+
+	nla_nest_end(msg, attr);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR, "nl80211: vendor sub command %d failed err=%d",
+			   subcmd, ret);
+	else
+		wpa_printf(MSG_INFO, "nl80211: vendor sub command %d scs_rule_config success",
+			   subcmd);
+	return ret;
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+#endif /* CONFIG_IEEE80211AX */
+
+
 static int nl80211_vendor_cmd_if_offload_type(void *priv,  unsigned int vendor_id,
 					      unsigned int subcmd,
 					      const u8 *data,
@@ -16981,4 +17046,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #ifdef CONFIG_IEEE80211BE
 	.read_link_set_beacon = wpa_driver_read_link_set_beacon,
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_IEEE80211AX
+	.rule_config_notify = nl80211_vendor_cmd_rule_config_notify,
+#endif /* CONFIG_IEEE80211AX */
 };

@@ -6170,6 +6170,26 @@ struct wpa_driver_ops {
 	bool (*read_link_set_beacon)(void *priv, u8 mld_link_id);
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211AX
+	/**
+	 * rule_config_notify - Notify driver on nft rule config for Qos features
+	 * 			like SCS/MSCS.
+	 * @priv: Private driver interface data
+	 * @vendor_id : vendor id
+	 * @subcmd: vendor subcmd
+	 * @data_len: data length
+	 * @nested_attr_flag: nested attribute flag
+	 * @buf: buffer data
+	 * @mac: mac address
+	 * @ifname: interface name
+	 */
+	int (*rule_config_notify)(void *priv, unsigned int vendor_id,
+				  unsigned int subcmd, const u8 *data,
+				  size_t data_len,
+				  enum nested_attr nested_attr_flag,
+				  struct wpabuf *buf, u8* mac, const char *ifname);
+#endif /* CONFIG_IEEE80211AX */
+
 	/*
 	 * is_retail_afc_supported - Check if the driver supports retail AFC
 	 * @priv: Private driver interface data
