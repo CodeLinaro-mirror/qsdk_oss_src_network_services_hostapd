@@ -3229,6 +3229,8 @@ static void hostapd_process_scs_req(struct hostapd_data *hapd,
 		}
 
 	}
+
+	hostapd_drv_rule_config_notify(hapd, sta->addr);
 }
 
 
@@ -3471,6 +3473,7 @@ int hostapd_process_mscs_req(struct hostapd_data *hapd,
 	default:
 		goto decline;
 	}
+	hostapd_drv_rule_config_notify(hapd, sta->addr);
 	return ret;
 
 decline:

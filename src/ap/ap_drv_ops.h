@@ -165,6 +165,10 @@ int hostapd_drv_set_secure_ranging_ctx(struct hostapd_data *hapd,
 int hostapd_drv_mark_ppe_vp_type(struct hostapd_data *hapd);
 #endif
 
+#ifdef CONFIG_IEEE80211AX
+int hostapd_drv_rule_config_notify(struct hostapd_data *hapd, u8 *mac);
+#endif /* CONFIG_IEEE80211AX */
+
 #include "drivers/driver.h"
 
 int hostapd_drv_wnm_oper(struct hostapd_data *hapd,

@@ -3412,6 +3412,7 @@ int hostapd_configure_epcs(struct hostapd_data *hapd,
 		rule.nf_family = NFPROTO_NETDEV;
 		memcpy(rule.dmac, sta->addr, ETH_ALEN);
 		hostapd_ucode_config_nft_rule(hapd, &rule, false);
+		hostapd_drv_rule_config_notify(hapd, sta->addr);
 	}
 
 	/* Send the QoS request */
@@ -3443,6 +3444,7 @@ int hostapd_configure_epcs(struct hostapd_data *hapd,
 		rule.mark = (EPCS_QM_ID << 8) | HOSTAPD_QOS_SCS_TAG;
 		rule.nf_family = NFPROTO_NETDEV;
 		hostapd_ucode_config_nft_rule(hapd, &rule, true);
+		hostapd_drv_rule_config_notify(hapd, sta->addr);
 	}
 
 	return 0;
