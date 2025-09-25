@@ -57,6 +57,7 @@ static void wpas_dpp_start_gas_client(struct wpa_supplicant *wpa_s);
 static int wpas_dpp_process_conf_obj(void *ctx,
 				     struct dpp_authentication *auth);
 static bool wpas_dpp_tcp_msg_sent(void *ctx, struct dpp_authentication *auth);
+static void wpas_dpp_chirp_start(struct wpa_supplicant *wpa_s);
 #endif /* CONFIG_DPP2 */
 #ifdef CONFIG_DPP3
 static void wpas_dpp_pb_next(void *eloop_ctx, void *timeout_ctx);
@@ -190,6 +191,24 @@ int wpas_dpp_nfc_handover_sel(struct wpa_supplicant *wpa_s, const char *cmd)
 	}
 
 	return peer_bi->id;
+}
+
+
+static void wpas_dpp_tx_status_timeout(void *eloop_ctx, void *timeout_ctx)
+{
+	struct wpa_supplicant *wpa_s = eloop_ctx;
+	struct dpp_authentication *auth = wpa_s->dpp_auth;
+
+	if (!auth)
+		return;
+
+	wpa_printf(MSG_DEBUG,
+		   "DPP: Terminate due to tx status failure");
+	wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_FAIL
+		"TX status timeout");
+	offchannel_send_action_done(wpa_s);
+	dpp_auth_deinit(auth);
+	wpa_s->dpp_auth = NULL;
 }
 
 
@@ -435,6 +454,7 @@ void wpas_dpp_send_conn_status_result(struct wpa_supplicant *wpa_s,
 
 	/* This exchange will be terminated in the TX status handler */
 	auth->remove_on_tx_status = 1;
+	eloop_register_timeout(1, 0, wpas_dpp_tx_status_timeout, wpa_s, NULL);
 
 	return;
 }
@@ -524,6 +544,7 @@ static void wpas_dpp_tx_status(struct wpa_supplicant *wpa_s,
 		return;
 	}
 
+	eloop_cancel_timeout(wpas_dpp_tx_status_timeout, wpa_s, NULL);
 #ifdef CONFIG_DPP2
 	if (auth->connect_on_tx_status) {
 		auth->connect_on_tx_status = 0;
@@ -1162,6 +1183,7 @@ static void wpas_dpp_tx_auth_resp(struct wpa_supplicant *wpa_s)
 			       wpabuf_head(auth->resp_msg),
 			       wpabuf_len(auth->resp_msg),
 			       500, wpas_dpp_tx_status, 0);
+	eloop_register_timeout(1, 0, wpas_dpp_tx_status_timeout, wpa_s, NULL);
 }
 
 
@@ -2190,6 +2212,7 @@ static void wpas_dpp_rx_auth_conf(struct wpa_supplicant *wpa_s, const u8 *src,
 	}
 
 	eloop_cancel_timeout(wpas_dpp_auth_conf_wait_timeout, wpa_s, NULL);
+	eloop_cancel_timeout(wpas_dpp_tx_status_timeout, wpa_s, NULL);
 
 	if (dpp_auth_conf_rx(auth, hdr, buf, len) < 0) {
 		wpa_printf(MSG_DEBUG, "DPP: Authentication failed");
@@ -5089,7 +5112,7 @@ static void wpas_dpp_chirp_tx_status(struct wpa_supplicant *wpa_s,
 
 	wpa_printf(MSG_DEBUG, "DPP: Chirp send completed - wait for response");
 	eloop_cancel_timeout(wpas_dpp_chirp_timeout, wpa_s, NULL);
-	if (eloop_register_timeout(2, 0, wpas_dpp_chirp_timeout,
+	if (eloop_register_timeout(4, 0, wpas_dpp_chirp_timeout,
 				   wpa_s, NULL) < 0)
 		wpas_dpp_chirp_stop(wpa_s, 0);
 }
@@ -5129,10 +5152,10 @@ static void wpas_dpp_chirp_start(struct wpa_supplicant *wpa_s)
 		    wpa_s, wpa_s->dpp_chirp_freq, broadcast,
 		    wpa_s->own_addr, broadcast,
 		    wpabuf_head(msg), wpabuf_len(msg),
-		    2000, wpas_dpp_chirp_tx_status, 0) < 0)
+		    3000, wpas_dpp_chirp_tx_status, 0) < 0)
 		wpas_dpp_chirp_stop(wpa_s, 0);
 
-	if (eloop_register_timeout(2, 0, wpas_dpp_chirp_timeout, wpa_s, NULL) < 0)
+	if (eloop_register_timeout(3, 0, wpas_dpp_chirp_timeout, wpa_s, NULL) < 0)
 		wpas_dpp_chirp_stop(wpa_s, 0);
 	wpabuf_free(announce);
 }
@@ -5255,6 +5278,7 @@ static void wpas_dpp_chirp_scan_res_handler(struct wpa_supplicant *wpa_s,
 		return;
 
 	wpa_s->dpp_chirp_scan_done = 1;
+	wpa_s->scan_req = NORMAL_SCAN_REQ;
 
 	os_free(wpa_s->dpp_chirp_freqs);
 	wpa_s->dpp_chirp_freqs = wpas_dpp_presence_ann_channels(wpa_s, bi);
