@@ -16481,6 +16481,8 @@ static int qos_drv_resp_handler(struct nl_msg *msg, void *arg)
 	int rem_qm_desc;
 	int idx = 0;
 
+	wpa_printf(MSG_DEBUG, "Processing QoS MGMT response handler");
+
 	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
 		  genlmsg_attrlen(gnlh, 0), NULL);
 
@@ -16529,6 +16531,7 @@ static int qos_drv_resp_handler(struct nl_msg *msg, void *arg)
 	}
 
 	qm_resp_data->num_qm_desc = idx;
+	wpa_printf(MSG_INFO, "QM driver response processing success");
 	return 0;
 
 error:
@@ -16556,6 +16559,10 @@ static int nl80211_set_qos(void *priv, struct qm_req_data *qm_req,
 	if (!qm)
 		goto nla_fail;
 
+	wpa_printf(MSG_INFO, "nl80211: MAC: "MACSTR " QM type:%u, Num desc: %u",
+		   MAC2STR(qm_req->peer_mac), qm_req->qm_type,
+		   qm_req->num_qm_desc);
+
 	if (nla_put(msg, NL80211_QM_ATTR_MAC_ADDR, ETH_ALEN,
 		    qm_req->peer_mac) ||
 	    nla_put_u8(msg, NL80211_QM_ATTR_QM_TYPE, qm_req->qm_type) ||
@@ -16576,10 +16583,14 @@ static int nl80211_set_qos(void *priv, struct qm_req_data *qm_req,
 	nla_nest_end(msg, qm_desc);
 	nla_nest_end(msg, qm);
 
+	wpa_printf(MSG_DEBUG, "nl80211: Sending QoS MGMT netlink message");
+
 	ret = send_and_recv_resp(drv, msg, qos_drv_resp_handler, qm_resp);
 	if (ret)
 		wpa_printf(MSG_ERROR, "nl80211: QM send_and_recv_resp failed:%d",
 			   ret);
+	else
+		wpa_printf(MSG_INFO, "nl80211: QM send_and_recv_resp success");
 
 	return ret;
 
