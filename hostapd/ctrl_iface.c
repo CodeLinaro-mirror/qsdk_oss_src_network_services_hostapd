@@ -5843,6 +5843,69 @@ static int hostapd_ctrl_iface_reset_afc(struct hostapd_data *hapd,
 }
 
 
+#ifdef CONFIG_IEEE80211AX
+static int hostapd_ctrl_iface_dump_scs_list(struct hostapd_data *hapd,
+					    const char *cmd, char *buf,
+					    size_t buflen)
+{
+	u8 addr[ETH_ALEN];
+	struct sta_info *sta;
+
+	if (hwaddr_aton(cmd, addr))
+		return -1;
+
+	sta = ap_get_sta(hapd, addr);
+	if (!sta) {
+		wpa_printf(MSG_ERROR,
+			   "Station " MACSTR " not found to dump SCS Info",
+			   MAC2STR(addr));
+		return -1;
+	}
+
+	return hostapd_dump_scs_list(hapd, sta, buf, buflen);
+}
+
+
+static int hostapd_ctrl_iface_dump_scs_info(struct hostapd_data *hapd,
+					    const char *cmd, char *buf,
+					    size_t buflen)
+{
+	char *token, *context = NULL;
+	struct sta_info *sta;
+	u8 addr[ETH_ALEN];
+	int scs_id_temp;
+	u8 scs_id;
+
+	token = str_token((char *)cmd, " ", &context);
+	if (!token || hwaddr_aton(token, addr) != 0) {
+		wpa_printf(MSG_ERROR, "Invalid or missing MAC address: %s",
+			   token ? token : "NULL");
+		return -1;
+	}
+
+	token = str_token((char *)cmd, " ", &context);
+	if (!token || sscanf(token, "%d", &scs_id_temp) != 1 ||
+	    scs_id_temp < 0 || scs_id_temp > 255) {
+		wpa_printf(MSG_ERROR, "Invalid or missing SCS ID: %s",
+			   token ? token : "NULL");
+		return -1;
+	}
+
+	sta = ap_get_sta(hapd, addr);
+	if (!sta) {
+		wpa_printf(MSG_ERROR,
+			   "Station " MACSTR " not found to dump SCS Info",
+			   MAC2STR(addr));
+		return -1;
+	}
+
+	scs_id = (u8) scs_id_temp;
+
+	return hostapd_dump_scs_info(hapd, sta, buf, buflen, scs_id);
+}
+#endif /* CONFIG_IEEE80211AX */
+
+
 static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 					      char *buf, char *reply,
 					      int reply_size,
@@ -6527,6 +6590,14 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "RESET_AFC", 9) == 0) {
 		if (hostapd_ctrl_iface_reset_afc(hapd, buf + 9))
 			reply_len = -1;
+#ifdef CONFIG_IEEE80211AX
+	} else if (os_strncmp(buf, "DUMP_SCS_LIST ", 14) == 0) {
+		reply_len = hostapd_ctrl_iface_dump_scs_list(hapd, buf + 14,
+							     reply, reply_size);
+	} else if (os_strncmp(buf, "DUMP_SCS_INFO ", 14) == 0) {
+		reply_len = hostapd_ctrl_iface_dump_scs_info(hapd, buf + 14,
+							     reply, reply_size);
+#endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_SAE
 	} else if (os_strncmp(buf, "SAE_PASSWORD_BIND ", 18) == 0) {
 		if (hostapd_ctrl_iface_sae_password_bind(hapd, buf + 18))

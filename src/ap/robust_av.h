@@ -270,6 +270,12 @@ struct hostapd_mscs_desc {
 
 u8 *hostapd_add_scs_ie(u8 *frm, bool scs);
 
+int hostapd_dump_scs_list(struct hostapd_data *hapd, struct sta_info *sta,
+			  char *buf, size_t buflen);
+
+int hostapd_dump_scs_info(struct hostapd_data *hapd, struct sta_info *sta,
+			  char *buf, size_t buflen, u8 scs_id);
+
 void
 hostapd_handle_robust_av(struct hostapd_data *hapd, const u8 *buf, size_t len);
 void hostapd_handle_mscs(struct hostapd_data *hapd, const u8 *buf, size_t len);

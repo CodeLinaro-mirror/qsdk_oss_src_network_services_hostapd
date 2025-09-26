@@ -2079,6 +2079,52 @@ static int hostapd_cli_cmd_reset_afc(struct wpa_ctrl *ctrl,
 }
 
 
+#ifdef CONFIG_IEEE80211AX
+static int hostapd_cli_cmd_dump_scs(struct wpa_ctrl *ctrl, int argc,
+				    char *argv[])
+{
+	char buf[100];
+	int res;
+
+	if (argc < 2 || argc > 3) {
+		printf("Invalid 'dump_scs' command - usage: dump_scs <addr> "
+		       "scs_list | scs_info <scs_id>\n");
+		return -1;
+	}
+
+	if (os_strcmp(argv[1], "scs_list") == 0) {
+		if (argc != 2) {
+			printf("Invalid 'dump_scs <addr> scs_list' usage\n");
+			return -1;
+		}
+
+		res = os_snprintf(buf, sizeof(buf), "DUMP_SCS_LIST %s",
+				  argv[0]);
+
+	} else if (os_strcmp(argv[1], "scs_info") == 0) {
+		if (argc != 3) {
+			printf("Invalid 'dump_scs <addr> scs_info <scs_id>' usage\n");
+			return -1;
+		}
+
+		res = os_snprintf(buf, sizeof(buf), "DUMP_SCS_INFO %s %s",
+				  argv[0], argv[2]);
+
+	} else {
+		printf("Unknown subcommand for 'dump_scs': %s\n", argv[1]);
+		return -1;
+	}
+
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("dump_scs cmd failed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+#endif /* CONFIG_IEEE80211AX */
+
+
 struct hostapd_cli_cmd {
 	const char *cmd;
 	int (*handler)(struct wpa_ctrl *ctrl, int argc, char *argv[]);
@@ -2367,6 +2413,11 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "= Clear AFC payload stored in driver and firmware\n"},
 	{ "reset_afc", hostapd_cli_cmd_reset_afc, NULL,
 	  "= Reset AFC in target\n"},
+#ifdef CONFIG_IEEE80211AX
+	{ "dump_scs", hostapd_cli_cmd_dump_scs, NULL,
+	  "<addr> scs_list | scs_info <scs_id> = Dump SCS list or specific SCS "
+	  "descriptor info of the STA" },
+#endif /* CONFIG_IEEE80211AX */
 	{ NULL, NULL, NULL, NULL }
 };
 

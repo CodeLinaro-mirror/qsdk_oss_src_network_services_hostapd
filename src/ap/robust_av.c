@@ -69,6 +69,219 @@ static bool hostapd_is_scs_present(struct sta_info *sta, u8 scs_id)
 }
 
 
+int hostapd_dump_scs_list(struct hostapd_data *hapd, struct sta_info *sta,
+			  char *buf, size_t buflen)
+{
+	int reply_len = 0, res;
+
+	if (sta->scs_session_count == 0) {
+		res = os_snprintf(buf + reply_len, buflen - reply_len,
+				  "No SCS sessions configured\n");
+		if (os_snprintf_error(buflen - reply_len, res))
+			return -1;
+
+		reply_len += res;
+		return reply_len;
+	}
+
+	res = os_snprintf(buf + reply_len, buflen - reply_len,
+			  "Configured SCS sessions for the client "
+			  MACSTR " are:\n", MAC2STR(sta->addr));
+
+	if (os_snprintf_error(buflen - reply_len, res))
+		return -1;
+	reply_len += res;
+
+	for (int i = 0; i < sta->scs_session_count; i++) {
+		struct hostapd_scs_req_desc_data *desc = sta->scs_req_desc[i];
+
+		res = os_snprintf(buf + reply_len, buflen - reply_len,
+				  "  Index: %d, SCS ID: %u\n",
+				  i, desc->scs_id);
+		if (os_snprintf_error(buflen - reply_len, res))
+			return -1;
+		reply_len += res;
+	}
+
+	return reply_len;
+}
+
+
+int hostapd_dump_scs_info(struct hostapd_data *hapd, struct sta_info *sta,
+			  char *buf, size_t buflen, u8 scs_id)
+{
+	struct hostapd_scs_req_desc_data *desc;
+	const char *qos_type, *direction;
+	int reply_len = 0, res;
+	int index = -1;
+
+	for (int i = 0; i < sta->scs_session_count; i++) {
+		desc = sta->scs_req_desc[i];
+		if (desc->scs_id == scs_id) {
+			index = i;
+			break;
+		}
+	}
+
+	if (index == -1) {
+		wpa_printf(MSG_ERROR, "SCS ID %u not found for STA " MACSTR,
+			   scs_id, MAC2STR(sta->addr));
+		return -1;
+	}
+
+#define APPEND(...) \
+	do { \
+		res = os_snprintf(buf + reply_len, buflen - reply_len, \
+				  __VA_ARGS__); \
+		if (os_snprintf_error(buflen - reply_len, res)) \
+			return -1; \
+		reply_len += res; \
+	} while (0)
+
+	APPEND("SCS Info for STA: " MACSTR "\n", MAC2STR(sta->addr));
+	APPEND("Number of SCS Descriptors: %u\n\n", sta->scs_session_count);
+
+	qos_type = desc->is_qos_present ? "QoS R3" : "QoS R2";
+	direction = "Downlink"; /* Default value */
+
+#ifdef CONFIG_IEEE80211BE
+	if (desc->is_qos_present)
+		direction = (desc->qos_attr.direction == 0) ?
+			    "Uplink" : "Downlink";
+#endif
+
+	APPEND("Descriptor type: %s %s\n", qos_type, direction);
+	APPEND("  SCS ID: %u\n", desc->scs_id);
+	APPEND("  Request Type: %u\n", desc->request_type);
+	APPEND("  Intra Access Priority: %u\n",
+	       desc->intra_access_priority);
+	APPEND("  TCLAS Processing: %u\n",
+	       desc->tclas_processing);
+	APPEND("  Number of TCLAS Elements: %u\n",
+	       desc->num_tclas_elements);
+
+	for (int j = 0; j < desc->num_tclas_elements; j++) {
+		struct hostapd_tclas_elements *tclas = &desc->tclas[j];
+
+		APPEND("\n  TCLAS Element %d:\n", j);
+		APPEND("    UP: %u\n", tclas->up);
+		APPEND("    Classifier Type: %u\n",
+		       tclas->classifier_type);
+		if (tclas->classifier_type == 4) {
+			struct hostapd_tclas4_params *tclas4 =
+					&tclas->tclas_elem.type4_params;
+			APPEND("    IP Version: %u\n", tclas4->ip_ver);
+			if (tclas4->ip_ver == 4) {
+				APPEND("    Src IP: %u.%u.%u.%u\n",
+				       tclas4->src_ip.ipv4[0],
+				       tclas4->src_ip.ipv4[1],
+				       tclas4->src_ip.ipv4[2],
+				       tclas4->src_ip.ipv4[3]);
+				APPEND("    Dst IP: %u.%u.%u.%u\n",
+				       tclas4->dst_ip.ipv4[0],
+				       tclas4->dst_ip.ipv4[1],
+				       tclas4->dst_ip.ipv4[2],
+				       tclas4->dst_ip.ipv4[3]);
+				APPEND("    Protocol: %u\n",
+				       tclas4->protocol);
+			} else if (tclas4->ip_ver == 6) {
+				APPEND("    Src IP: ");
+				for (int k = 0; k < 16; k += 2) {
+					if (k > 0)
+						APPEND(":");
+					APPEND("%02x%02x",
+					       tclas4->src_ip.ipv6[k],
+					       tclas4->src_ip.ipv6[k + 1]);
+				}
+				APPEND("\n");
+
+				APPEND("    Dst IP: ");
+				for (int k = 0; k < 16; k += 2) {
+					if (k > 0)
+						APPEND(":");
+					APPEND("%02x%02x",
+					       tclas4->dst_ip.ipv6[k],
+					       tclas4->dst_ip.ipv6[k + 1]);
+				}
+				APPEND("\n");
+
+				APPEND("    Next Header: %u\n",
+				       tclas4->next_header);
+				APPEND("    Flow Label: %02x %02x %02x\n",
+				       tclas4->flow_label[0],
+				       tclas4->flow_label[1],
+				       tclas4->flow_label[2]);
+			}
+
+			APPEND("    Src Port: %u\n", tclas4->src_port);
+			APPEND("    Dst Port: %u\n", tclas4->dst_port);
+			APPEND("    DSCP: %u\n", tclas4->dscp);
+
+			} else if (tclas->classifier_type == 10) {
+				struct hostapd_tclas10_params *tclas10 =
+				       &tclas->tclas_elem.type10_params;
+				APPEND("    Protocol Instance: %u\n",
+				       tclas10->protocol_instance);
+				APPEND("    Protocol Number: %u\n",
+				       tclas10->protocol_number);
+				APPEND("    Filter Value: ");
+				for (int k = 0; k < tclas10->filter_len; k++)
+					APPEND("%02x ",
+					       tclas10->filter_value[k]);
+				APPEND("\n    Filter Mask: ");
+				for (int k = 0; k < tclas10->filter_len; k++)
+					APPEND("%02x ",
+					       tclas10->filter_mask[k]);
+				APPEND("\n    Filter Length: %u\n",
+				       tclas10->filter_len);
+			}
+		}
+
+#ifdef CONFIG_IEEE80211BE
+	if (desc->is_qos_present) {
+		struct hostapd_scs_qos_attributes *qos_attr = &desc->qos_attr;
+
+		APPEND("\n  QoS Attributes:\n");
+		APPEND("    Direction: %s\n", qos_attr->direction == 0 ?
+		       "Uplink" : "Downlink");
+		APPEND("    TID: %u\n", qos_attr->tid);
+		APPEND("    UP: %u\n", qos_attr->up);
+		APPEND("    Bitmap: 0x%04x\n", qos_attr->bitmap);
+		APPEND("    Link ID: %u\n", qos_attr->link_id);
+		APPEND("    Min Service Interval: %u (us)\n",
+		       qos_attr->min_service_interval);
+		APPEND("    Max Service Interval: %u (us)\n",
+		       qos_attr->max_service_interval);
+		APPEND("    Min Data Rate: %u (kbps)\n",
+		       qos_attr->min_data_rate);
+		APPEND("    Delay Bound: %u (us)\n",
+		       qos_attr->delay_bound);
+		APPEND("    Max MSDU Size: %u\n",
+		       qos_attr->max_msdu_size);
+		APPEND("    Service Start Time: %u (us)\n",
+		       qos_attr->service_start_time);
+		APPEND("    Service Start Time Link ID: %u\n",
+		       qos_attr->service_start_time_link_id);
+		APPEND("    Mean Data Rate: %u (kbps)\n",
+		       qos_attr->mean_data_rate);
+		APPEND("    Burst Size: %u (bytes)\n",
+		       qos_attr->burst_size);
+		APPEND("    MSDU Lifetime: %u (ms)\n",
+		       qos_attr->msdu_lifetime);
+		APPEND("    MSDU Delivery Ratio: %u\n",
+		       qos_attr->msdu_delivery_ratio);
+		APPEND("    MSDU Count Exponent: %u\n",
+		       qos_attr->msdu_count_exponent);
+		APPEND("    Medium Time: %u (256us/s)\n",
+		       qos_attr->medium_time);
+	}
+#endif
+	APPEND("\n");
+
+	return reply_len;
+}
+
+
 static int hostapd_parse_tclas4_params(const u8 **payload,
 				       union tclas_elem *tclas_elem)
 {
