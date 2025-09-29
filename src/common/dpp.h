@@ -240,6 +240,7 @@ enum dpp_akm {
 	DPP_AKM_SAE_DPP,
 	DPP_AKM_PSK_SAE_DPP,
 	DPP_AKM_DOT1X,
+	DPP_AKM_SAE_EXT_KEY,
 };
 
 enum dpp_netrole {
@@ -265,6 +266,7 @@ struct dpp_configuration {
 	char *passphrase;
 	char *idpass;
 	u8 psk[32];
+	u8 sae_pwe;
 	int psk_set;
 
 	char *csrattrs;
@@ -366,6 +368,7 @@ struct dpp_authentication {
 		u8 psk[PMK_LEN];
 		int psk_set;
 		enum dpp_akm akm;
+		u8 sae_pwe;
 		struct wpabuf *c_sign_key;
 		struct wpabuf *certbag;
 		struct wpabuf *certs;
@@ -632,6 +635,7 @@ int dpp_akm_sae(enum dpp_akm akm);
 int dpp_akm_legacy(enum dpp_akm akm);
 int dpp_akm_dpp(enum dpp_akm akm);
 int dpp_akm_ver2(enum dpp_akm akm);
+int dpp_akm_sae_ext_key(enum dpp_akm akm);
 int dpp_configuration_valid(const struct dpp_configuration *conf);
 void dpp_configuration_free(struct dpp_configuration *conf);
 int dpp_set_configurator(struct dpp_authentication *auth, const char *cmd);

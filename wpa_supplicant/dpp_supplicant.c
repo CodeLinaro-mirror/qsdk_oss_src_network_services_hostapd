@@ -1523,7 +1523,7 @@ static struct wpa_ssid * wpas_dpp_add_network(struct wpa_supplicant *wpa_s,
 	}
 
 	if (!conf->connector || dpp_akm_psk(conf->akm) ||
-	    dpp_akm_sae(conf->akm)) {
+	    dpp_akm_sae(conf->akm) || dpp_akm_sae_ext_key(conf->akm)) {
 		if (!conf->connector || !dpp_akm_dpp(conf->akm))
 			ssid->key_mgmt = 0;
 		if (dpp_akm_psk(conf->akm))
@@ -1532,6 +1532,10 @@ static struct wpa_ssid * wpas_dpp_add_network(struct wpa_supplicant *wpa_s,
 		if (dpp_akm_sae(conf->akm))
 			ssid->key_mgmt |= WPA_KEY_MGMT_SAE |
 				WPA_KEY_MGMT_FT_SAE;
+		if (dpp_akm_sae_ext_key(conf->akm)) {
+			ssid->key_mgmt = WPA_KEY_MGMT_SAE_EXT_KEY;
+			ssid->sae_pwe = conf->sae_pwe;
+		}
 		if (dpp_akm_psk(conf->akm))
 			ssid->ieee80211w = MGMT_FRAME_PROTECTION_OPTIONAL;
 		else
@@ -1763,6 +1767,9 @@ static int wpas_dpp_handle_config_obj(struct wpa_supplicant *wpa_s,
 			conf->password_id);
 	}
 #endif /* CONFIG_DPP3 */
+	if (conf->sae_pwe) {
+		wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_SAE_PWE "%d", conf->sae_pwe);
+	}
 	if (conf->c_sign_key) {
 		char *hex;
 		size_t hexlen;

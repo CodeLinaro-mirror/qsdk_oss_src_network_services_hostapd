@@ -1094,6 +1094,8 @@ struct dpp_configuration * dpp_configuration_alloc(const char *type)
 		conf->akm = DPP_AKM_DPP;
 	else if (bin_str_eq(type, len, "dot1x"))
 		conf->akm = DPP_AKM_DOT1X;
+	else if (bin_str_eq(type, len, "sae-ext-key"))
+		conf->akm = DPP_AKM_SAE_EXT_KEY;
 	else
 		goto fail;
 
@@ -1117,6 +1119,10 @@ int dpp_akm_sae(enum dpp_akm akm)
 		akm == DPP_AKM_SAE_DPP || akm == DPP_AKM_PSK_SAE_DPP;
 }
 
+int dpp_akm_sae_ext_key(enum dpp_akm akm)
+{
+	return akm == DPP_AKM_SAE_EXT_KEY;
+}
 
 int dpp_akm_legacy(enum dpp_akm akm)
 {
@@ -1156,6 +1162,8 @@ int dpp_configuration_valid(const struct dpp_configuration *conf)
 	if (conf->idpass && (!conf->passphrase || !dpp_akm_sae(conf->akm)))
 		return 0;
 #endif /* CONFIG_DPP3 */
+	if (dpp_akm_sae_ext_key(conf->akm) && !conf->passphrase && !conf->sae_pwe)
+		return 0;
 	return 1;
 }
 
@@ -1200,6 +1208,14 @@ static int dpp_configuration_parse_helper(struct dpp_authentication *auth,
 			goto fail;
 		conf_ap->netrole = DPP_NETROLE_AP;
 		conf = conf_ap;
+	}
+
+	if (conf && dpp_akm_sae_ext_key(conf->akm)) {
+		pos = os_strstr(cmd, " sae_pwe=");
+		if (pos)
+			conf->sae_pwe = atoi(pos);
+		else
+			conf->sae_pwe = 1;
 	}
 
 	pos = os_strstr(cmd, " conf=configurator");
@@ -1697,7 +1713,7 @@ dpp_build_conf_obj_dpp(struct dpp_authentication *auth,
 	const struct dpp_curve_params *nak_curve; /* netAccessKey curve */
 	struct wpabuf *dppcon = NULL;
 	size_t extra_len = 1000;
-	int incl_legacy;
+	int incl_legacy, incl_akm24;
 	enum dpp_akm akm;
 	const char *akm_str;
 
@@ -1835,10 +1851,11 @@ skip_groups:
 		goto fail;
 
 	incl_legacy = dpp_akm_psk(akm) || dpp_akm_sae(akm);
+	incl_akm24 = dpp_akm_sae_ext_key(akm);
 	tailroom = 1000;
 	tailroom += 2 * curve->prime_len * 4 / 3 + os_strlen(auth->conf->kid);
 	tailroom += os_strlen(signed_conn);
-	if (incl_legacy)
+	if (incl_legacy || incl_akm24)
 		tailroom += 1000;
 	if (akm == DPP_AKM_DOT1X) {
 		if (auth->certbag)
@@ -1863,8 +1880,15 @@ skip_groups:
 	json_start_object(buf, "cred");
 	json_add_string(buf, "akm", akm_str);
 	json_value_sep(buf);
-	if (incl_legacy) {
+	if (incl_legacy || incl_akm24) {
 		dpp_build_legacy_cred_params(buf, conf);
+		if (incl_akm24) {
+			json_value_sep(buf);
+			if (conf->sae_pwe)
+				json_add_int(buf, "sae_pwe", conf->sae_pwe);
+			else
+				json_add_int(buf, "sae_pwe", 1);
+		}
 		json_value_sep(buf);
 	}
 	if (akm == DPP_AKM_DOT1X) {
@@ -2639,9 +2663,10 @@ static int dpp_parse_cred_legacy(struct dpp_config_obj *conf,
 				   sizeof(conf->password_id));
 #endif /* CONFIG_DPP3 */
 	} else if (psk_hex && psk_hex->type == JSON_STRING) {
-		if (dpp_akm_sae(conf->akm) && !dpp_akm_psk(conf->akm)) {
+		if ((dpp_akm_sae(conf->akm) && !dpp_akm_psk(conf->akm)) ||
+		    dpp_akm_sae_ext_key(conf->akm)) {
 			wpa_printf(MSG_DEBUG,
-				   "DPP: Unexpected psk_hex with akm=sae");
+				   "DPP: Unexpected psk_hex with akm=sae/sae-ext-key");
 			return -1;
 		}
 		if (os_strlen(psk_hex->string) != PMK_LEN * 2 ||
@@ -2657,7 +2682,7 @@ static int dpp_parse_cred_legacy(struct dpp_config_obj *conf,
 		return -1;
 	}
 
-	if (dpp_akm_sae(conf->akm) && !conf->passphrase[0]) {
+	if ((dpp_akm_sae_ext_key(conf->akm) || dpp_akm_sae(conf->akm)) && !conf->passphrase[0]) {
 		wpa_printf(MSG_DEBUG, "DPP: No pass for sae found");
 		return -1;
 	}
@@ -2976,14 +3001,25 @@ static int dpp_parse_cred_dpp(struct dpp_authentication *auth,
 	struct crypto_ec_key *csign_pub = NULL, *pp_pub = NULL;
 	const struct dpp_curve_params *key_curve = NULL, *pp_curve = NULL;
 	const char *signed_connector;
+	u8 sae_pwe = 0;
 
 	os_memset(&info, 0, sizeof(info));
 
-	if (dpp_akm_psk(conf->akm) || dpp_akm_sae(conf->akm)) {
+	if (dpp_akm_psk(conf->akm) || dpp_akm_sae(conf->akm) || dpp_akm_sae_ext_key(conf->akm)) {
 		wpa_printf(MSG_DEBUG,
 			   "DPP: Legacy credential included in Connector credential");
 		if (dpp_parse_cred_legacy(conf, cred) < 0)
 			return -1;
+		if (dpp_akm_sae_ext_key(conf->akm)) {
+			token = json_get_member(cred, "sae_pwe");
+			if (token && token->type == JSON_NUMBER)
+				sae_pwe = token->number;
+			if (!sae_pwe) {
+				wpa_printf(MSG_ERROR, "invalid sae_pwe for akm24");
+				return -1;
+			}
+			conf->sae_pwe = sae_pwe;
+		}
 	}
 
 	wpa_printf(MSG_DEBUG, "DPP: Connector credential");
@@ -3129,6 +3165,8 @@ const char * dpp_akm_str(enum dpp_akm akm)
 		return "dpp+psk+sae";
 	case DPP_AKM_DOT1X:
 		return "dot1x";
+	case DPP_AKM_SAE_EXT_KEY:
+		return "sae-ext-key";
 	default:
 		return "??";
 	}
@@ -3152,6 +3190,8 @@ const char * dpp_akm_selector_str(enum dpp_akm akm)
 		return "506F9A02+000FAC08+000FAC02+000FAC06";
 	case DPP_AKM_DOT1X:
 		return "000FAC01+000FAC05";
+	case DPP_AKM_SAE_EXT_KEY:
+		return "000FAC24";
 	default:
 		return "??";
 	}
@@ -3161,7 +3201,7 @@ const char * dpp_akm_selector_str(enum dpp_akm akm)
 static enum dpp_akm dpp_akm_from_str(const char *akm)
 {
 	const char *pos;
-	int dpp = 0, psk = 0, sae = 0, dot1x = 0;
+	int dpp = 0, psk = 0, sae = 0, dot1x = 0, sae_ext_key = 0;
 
 	if (os_strcmp(akm, "psk") == 0)
 		return DPP_AKM_PSK;
@@ -3177,6 +3217,8 @@ static enum dpp_akm dpp_akm_from_str(const char *akm)
 		return DPP_AKM_PSK_SAE_DPP;
 	if (os_strcmp(akm, "dot1x") == 0)
 		return DPP_AKM_DOT1X;
+	if (os_strcmp(akm, "sae-ext-key") == 0)
+		return DPP_AKM_SAE_EXT_KEY;
 
 	pos = akm;
 	while (*pos) {
@@ -3188,6 +3230,8 @@ static enum dpp_akm dpp_akm_from_str(const char *akm)
 			psk = 1;
 		else if (os_strncasecmp(pos, "000FAC06", 8) == 0)
 			psk = 1;
+		else if (os_strncasecmp(pos, "000FAC24", 8) == 0)
+			sae_ext_key = 1;
 		else if (os_strncasecmp(pos, "000FAC08", 8) == 0)
 			sae = 1;
 		else if (os_strncasecmp(pos, "000FAC01", 8) == 0)
@@ -3214,6 +3258,8 @@ static enum dpp_akm dpp_akm_from_str(const char *akm)
 		return DPP_AKM_PSK;
 	if (dot1x)
 		return DPP_AKM_DOT1X;
+	if (sae_ext_key)
+		return DPP_AKM_SAE_EXT_KEY;
 
 	return DPP_AKM_UNKNOWN;
 }
@@ -3328,7 +3374,8 @@ static int dpp_parse_conf_obj(struct dpp_authentication *auth,
 		if (dpp_parse_cred_legacy(conf, cred) < 0)
 			goto fail;
 	} else if (dpp_akm_dpp(conf->akm) ||
-		   (auth->peer_version >= 2 && dpp_akm_legacy(conf->akm))) {
+		   (auth->peer_version >= 2 && (dpp_akm_legacy(conf->akm) ||
+		   dpp_akm_sae_ext_key(conf->akm)))) {
 		if (dpp_parse_cred_dpp(auth, conf, cred) < 0)
 			goto fail;
 #ifdef CONFIG_DPP2

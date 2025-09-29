@@ -1171,6 +1171,9 @@ static void hostapd_dpp_handle_config_obj(struct hostapd_data *hapd,
 		wpa_msg(hapd->msg_ctx, MSG_INFO, DPP_EVENT_CONFOBJ_PSK "%s",
 			hex);
 	}
+	if (conf->sae_pwe) {
+		wpa_msg(hapd->msg_ctx, MSG_INFO, DPP_EVENT_SAE_PWE "%d", conf->sae_pwe);
+	}
 	if (conf->c_sign_key) {
 		char *hex;
 		size_t hexlen;
