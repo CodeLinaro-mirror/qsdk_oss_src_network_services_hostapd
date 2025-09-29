@@ -5129,7 +5129,7 @@ static int hostapd_ctrl_iface_negotiated_ttlm_response(struct hostapd_data *hapd
 	struct hostapd_data *lhapd;
 	char *tid_str, *map_str;
 	bool homogeneous_map;
-	char *input, *token;
+	char *input, *token, *saveptr;
 	int assoc_frame = 0;
 	int resp_code = 0;
 	int i, dir = -1;
@@ -5147,7 +5147,7 @@ static int hostapd_ctrl_iface_negotiated_ttlm_response(struct hostapd_data *hapd
 	if (!input)
 		return -1;
 
-	token = strtok(input, " ");
+	token = strtok_r(input, " ", &saveptr);
 	if (!token || hwaddr_aton(token, addr)) {
 		wpa_printf(MSG_ERROR, "Invalid STA MAC address");
 		os_free(input);
@@ -5170,7 +5170,7 @@ static int hostapd_ctrl_iface_negotiated_ttlm_response(struct hostapd_data *hapd
 	for (i = 0; i < TTLM_DIRECTION_MAX; i++)
 		ttlm_conf->ttlm_direction[i].direction = TTLM_DIRECTION_INVALID;
 
-	while ((token = strtok(NULL, " "))) {
+	while ((token = strtok_r(NULL, " ", &saveptr))) {
 		if (strncmp(token, "assoc_frame=", 12) == 0) {
 			assoc_frame = atoi(token + 12);
 		} else if (strncmp(token, "resp_code=", 10) == 0) {
@@ -5206,8 +5206,8 @@ static int hostapd_ctrl_iface_negotiated_ttlm_response(struct hostapd_data *hapd
 			} else if (strncmp(token, "num_tids=", 9) == 0) {
 				ttlm_dir->num_tids = atoi(token + 9);
 				for (i = 0; i < ttlm_dir->num_tids; i++) {
-					tid_str = strtok(NULL, " ");
-					map_str = strtok(NULL, " ");
+					tid_str = strtok_r(NULL, " ", &saveptr);
+					map_str = strtok_r(NULL, " ", &saveptr);
 					if (!tid_str || !map_str) {
 						wpa_printf(MSG_DEBUG, "Missing TID or mapping");
 						goto fail;
