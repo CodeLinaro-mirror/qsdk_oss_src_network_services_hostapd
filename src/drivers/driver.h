@@ -3953,6 +3953,13 @@ struct wpa_driver_ops {
 	unsigned int (*get_ifindex)(void *priv);
 
 	/**
+	 * is_only_afc_power_fetch - Check if only AFC power fetch is required
+	 * not channel change is needed.
+	 * @priv: private driver interface data
+	 */
+	bool (*is_only_afc_power_fetch)(void *priv);
+
+	/**
 	 * get_ifname - Get interface name
 	 * @priv: private driver interface data
 	 *
@@ -6143,6 +6150,14 @@ struct wpa_driver_ops {
 	 * Returns: 0 on success, -1 on failure
 	 */
 	int (*reset_afc)(void *priv, u8 link_id);
+
+	/**
+	 * fetch_afc_power_event - Request the driver to send the AFC power event that it has cached
+	 * so that hostapd chan choose an SP channel for bring-up.
+	 * @priv: Private driver interface data
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*fetch_afc_power_event)(void *priv, u8 radio_idx);
 
 #ifdef CONFIG_IEEE80211BE
 	/**

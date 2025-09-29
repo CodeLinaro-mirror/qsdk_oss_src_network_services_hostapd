@@ -2667,6 +2667,18 @@ static void hostapd_event_afc_update_complete(
 		return;
 	}
 	iface->is_afc_power_event_received = true;
+
+	if (hapd->driver && hapd->driver->is_only_afc_power_fetch &&
+	    hapd->drv_priv) {
+		bool is_only_afc_power_fetch =
+			hapd->driver->is_only_afc_power_fetch(hapd->drv_priv);
+
+		if (is_only_afc_power_fetch) {
+			wpa_printf(MSG_DEBUG, "AFC info fetch completed, no channel change requested\n");
+			return;
+		}
+	}
+
 	if (hostapd_drv_is_retail_afc_supported(hapd)) {
 		iface->is_afc_channel_change_pending = true;
 		/* Wait for NL8011_WIPHY_REG_CHANGE event to get the updated channel list */

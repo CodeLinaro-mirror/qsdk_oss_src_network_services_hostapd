@@ -591,6 +591,22 @@ hostapd_drv_reset_afc(struct hostapd_data *hapd)
 	return hapd->driver->reset_afc(hapd->drv_priv, hapd->mld_link_id);
 }
 
+/**
+ * hostapd_drv_fetch_afc_power_event - Fetch AFC power event from driver
+ * @hapd: hostapd data
+ * @radio_idx: Radio index for which to fetch the event
+ * Return: 0 on success, -ve value on failure
+ */
+static inline int
+hostapd_drv_fetch_afc_power_event(struct hostapd_data *hapd, uint8_t radio_idx)
+{
+	if (hapd->driver == NULL || hapd->drv_priv == NULL ||
+	    hapd->driver->fetch_afc_power_event == NULL)
+		return -1;
+
+	return hapd->driver->fetch_afc_power_event(hapd->drv_priv, radio_idx);
+}
+
 struct hostapd_multi_hw_info *
 hostapd_get_multi_hw_info(struct hostapd_data *hapd,
 			  unsigned int *num_multi_hws);

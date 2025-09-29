@@ -1194,6 +1194,13 @@ static unsigned int nl80211_get_ifindex(void *priv)
 	return drv->ifindex;
 }
 
+static bool nl80211_is_only_afc_power_fetch(void *priv)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+
+	return drv->is_only_fetch_afc_power_info;
+}
 
 static int wpa_driver_nl80211_get_bssid(void *priv, u8 *bssid)
 {
@@ -16646,6 +16653,99 @@ error:
 	return ret;
 }
 
+/**
+ * afc_process_power_event - Process AFC power event from the driver
+ * @msg: Pointer to netlink message
+ * @arg: Pointer to i802_bss
+ */
+static int
+afc_process_power_event(struct nl_msg *msg, void *arg)
+{
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	u8 *data;
+	u32 wiphy;
+	size_t len;
+	struct i802_bss *bss = arg;
+	int ret;
+
+	ret = nla_parse(tb, NL80211_ATTR_MAX,
+			genlmsg_attrdata(gnlh, 0),
+			genlmsg_attrlen(gnlh, 0), NULL);
+	if (ret) {
+	    wpa_printf(MSG_DEBUG, "nl80211: Failed to parse netlink attributes: %d", ret);
+	    return NL_SKIP;
+	}
+
+	if (tb[NL80211_ATTR_WIPHY]) {
+		wiphy = nla_get_u32(tb[NL80211_ATTR_WIPHY]);
+		wpa_printf(MSG_DEBUG, "nl80211: AFC power event on wiphy %u with cmd: %u\n", wiphy, gnlh->cmd);
+	}
+
+	if (!tb[NL80211_ATTR_VENDOR_DATA]) {
+		wpa_printf(MSG_DEBUG, "nl80211: No vendor data in AFC power event");
+		return NL_SKIP;
+	}
+	data = nla_data(tb[NL80211_ATTR_VENDOR_DATA]);
+	len = nla_len(tb[NL80211_ATTR_VENDOR_DATA]);
+	wpa_hexdump(MSG_MSGDUMP, "nl80211: AFC Vendor data", data, len);
+	ret = qca_nl80211_handle_afc_events(bss, data, len);
+	if (ret)
+		wpa_printf(MSG_DEBUG, "nl80211: Failed to handle AFC event: %d", ret);
+
+	return NL_SKIP;
+}
+
+/**
+ * nl80211_fetch_afc_power_event - Fetch AFC power event from the driver
+ * @priv: Pointer to i802_bss
+ * @radio_idx: Radio index to fetch the AFC power event for
+ *
+ * Return: 0 on success,-ve value on failure
+ */
+static int nl80211_fetch_afc_power_event(void *priv, u8 radio_idx)
+{
+	struct nl_msg *msg;
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nlattr *params;
+	int ret = -ENOBUFS;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Fetching AFC power event\n");
+
+	if (drv->nlmode != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
+	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR)) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_AFC_FETCH_POWER_EVENT)) {
+		goto error;
+	}
+
+	params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!params)
+		goto error;
+	if (radio_idx != NL80211_WIPHY_RADIO_ID_MAX &&
+	    nla_put_u8(msg,QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX, radio_idx))
+		goto error;
+	nla_nest_end(msg, params);
+
+	wpa_printf(MSG_DEBUG, "nl80211: Fetching AFC power event for radio_id: %d\n", radio_idx);
+
+	drv->is_only_fetch_afc_power_info = true;
+	ret = send_and_recv_resp(drv, msg, afc_process_power_event, bss);
+	if (ret)
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: AFC fetch power event failed err=%d (%s)",
+			   ret, strerror(-ret));
+	drv->is_only_fetch_afc_power_info = false;
+
+	return ret;
+error:
+	nlmsg_free(msg);
+	wpa_printf(MSG_DEBUG, "nl80211: Could not fetch afc power event on radio: %u", radio_idx);
+	return ret;
+}
 
 static int nl80211_reset_afc(void *priv, u8 link_id)
 {
@@ -16809,6 +16909,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.add_tx_ts = nl80211_add_ts,
 	.del_tx_ts = nl80211_del_ts,
 	.get_ifindex = nl80211_get_ifindex,
+	.is_only_afc_power_fetch = nl80211_is_only_afc_power_fetch,
 #ifdef CONFIG_DRIVER_NL80211_QCA
 	.roaming = nl80211_roaming,
 	.disable_fils = nl80211_disable_fils,
@@ -16876,6 +16977,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.set_qos = nl80211_set_qos,
 	.clear_afc_payload = nl80211_clear_afc_payload,
 	.reset_afc = nl80211_reset_afc,
+	.fetch_afc_power_event = nl80211_fetch_afc_power_event,
 #ifdef CONFIG_IEEE80211BE
 	.read_link_set_beacon = wpa_driver_read_link_set_beacon,
 #endif /* CONFIG_IEEE80211BE */

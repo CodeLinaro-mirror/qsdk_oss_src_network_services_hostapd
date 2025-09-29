@@ -3154,6 +3154,91 @@ static void hostapd_interface_setup_failure_handler(void *eloop_ctx,
 		hapd->setup_complete_cb(hapd->setup_complete_cb_ctx);
 }
 
+/**
+ * hostapd_is_sp_chans_available - Check if at least one tx-able
+ * 6Ghz SP channel is available for operation (A channel is non-tx-able if there
+ * is NO_IR flag is set in it)
+ * @iface: Pointer to hostapd interface data
+ * Return: true if SP channels are available, false otherwise
+ */
+static bool
+hostapd_is_sp_chans_available(struct hostapd_iface *iface)
+{
+	int i;
+	struct hostapd_hw_modes *mode = NULL;
+	bool sp_available = false;
+	struct hostapd_channel_data *pwr_mode_chan_list;
+	u8 num_6ghz_chans;
+
+	if (!iface->num_hw_features) {
+		wpa_printf(MSG_ERROR, "No hw features");
+		return sp_available;
+	}
+
+	for (i = 0; i < iface->num_hw_features; i++) {
+		if (iface->hw_features[i].is_6ghz) {
+			mode = &iface->hw_features[i];
+			break;
+		}
+	}
+	if (!mode) {
+		wpa_printf(MSG_ERROR, "No 6 GHz mode");
+		return sp_available;
+	}
+
+	num_6ghz_chans = mode->channels_6ghz.num_channels_6ghz[NL80211_REG_AP_SP];
+	pwr_mode_chan_list = mode->channels_6ghz.chans_6ghz[NL80211_REG_AP_SP];
+	if (!num_6ghz_chans || !pwr_mode_chan_list) {
+		wpa_printf(MSG_ERROR, "No 6 GHz SP channels");
+		return sp_available;
+	}
+
+	for (i = 0; i < num_6ghz_chans; i++) {
+		if (!(pwr_mode_chan_list[i].flag & HOSTAPD_CHAN_NO_IR) &&
+		    !(pwr_mode_chan_list[i].flag & HOSTAPD_CHAN_DISABLED)) {
+		    wpa_printf(MSG_DEBUG, "SP channel available: %d MHz",
+			       pwr_mode_chan_list[i].freq);
+		    sp_available = true;
+		    break;
+		}
+	}
+	return sp_available;
+}
+
+/**
+ * hostapd_fetch_afc_power_event - Fetch AFC power event from the driver
+ * @hapd: Pointer to hostapd BSS data
+ * Return: 0 on success, -ve value on failure
+ */
+static int hostapd_fetch_afc_power_event(struct hostapd_data *hapd)
+{
+#ifdef NEED_AP_MLME
+	uint8_t radio_idx = NL80211_WIPHY_RADIO_ID_MAX;
+	int ret = -1;
+
+	if (!hostapd_drv_is_retail_afc_supported(hapd)) {
+		wpa_printf(MSG_ERROR, "AFC enterprise mode, hostapd not supported");
+		return ret;
+	}
+
+	if (hapd->iface->num_multi_hws) {
+		if (hapd->iface->current_hw_info) {
+			radio_idx = hapd->iface->current_hw_info->hw_idx;
+		} else {
+			wpa_printf(MSG_ERROR, "No current_hw_info");
+			return ret;
+		}
+	}
+	wpa_printf(MSG_DEBUG, "Fetching AFC power event from the driver for idx: %d\n", radio_idx);
+	ret = hostapd_drv_fetch_afc_power_event(hapd, radio_idx);
+	if (ret)
+		wpa_printf(MSG_ERROR, "Failed to fetch AFC power event from driver: %d", ret);
+
+	return ret;
+#else /* NEED_AP_MLME */
+	return -1;
+#endif /* NEED_AP_MLME */
+}
 
 static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 						 int err)
@@ -3236,6 +3321,24 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 			u8 center_chan_no;
 			u16 center_freq;
 
+			if (!iface->is_afc_power_event_received) {
+			    bool sp_available = hostapd_is_sp_chans_available(iface);
+
+			    if (sp_available) {
+				int ret;
+
+				wpa_printf(MSG_DEBUG,
+					   "SP channels available in 6 GHz band for best power mode operation, fetching from driver");
+				ret = hostapd_fetch_afc_power_event(hapd);
+				if (ret)
+				    wpa_printf(MSG_DEBUG,
+					       "Failed to fetch AFC power event from driver");
+				/* Proceed with best power mode calculation */
+			    } else {
+				wpa_printf(MSG_DEBUG,
+					   "No SP channels available in 6 GHz band for best power mode operation");
+			    }
+			}
 			ch_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
 			center_chan_no = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
 			center_freq = ieee80211_chan_to_freq(NULL, iface->conf->op_class,

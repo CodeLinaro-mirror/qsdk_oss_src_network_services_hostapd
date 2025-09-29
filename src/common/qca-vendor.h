@@ -1722,6 +1722,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_AFC_CLEAR_PAYLOAD = 502,
 	QCA_NL80211_VENDOR_SUBCMD_AFC_RESET = 503,
 	QCA_NL80211_VENDOR_SUBCMD_IFACE_RELOAD = 504,
+	QCA_NL80211_VENDOR_SUBCMD_AFC_FETCH_POWER_EVENT = 510,
 };
 
 /* Compatibility defines for previously used subcmd names.
@@ -4173,6 +4174,14 @@ enum qca_wlan_vendor_attr_config {
 	 * 1 - Enable, 0 - Disable.
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ALLOW_STA_DFS_CH_SCC_P2P = 140,
+
+	/* 8-bit unsigned value. Used to specify the HW Radio Index of a wiphy
+	 * device that is being configured. This attribute may be included in
+	 * %QCA_NL80211_VENDOR_SUBCMD_SET_WIPHY_CONFIGURATION or
+	 * %QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION subcmds to
+	 * specify a particular Radio of the wiphy device.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX = 150,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,

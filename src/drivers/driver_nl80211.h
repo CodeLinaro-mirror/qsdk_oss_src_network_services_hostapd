@@ -273,6 +273,17 @@ struct wpa_driver_nl80211_data {
 	 * (NL80211_CMD_VENDOR). 0 if no pending scan request.
 	 */
 	int last_scan_cmd;
+	/* To indicate that only AFC power info is being fetched without
+	 * triggering an automatic channel change after power response.
+	 * This variable is set to "true" during  hostapd_setup_interface_complete_sync
+	 * during hostapd bringup so that it fetches the AFC power info without
+	 * changing the channel, the best power mode for the bootup channel is set.
+	 * This variable is reset to "false" after the operation so that after
+	 * every power response received, channel change can be done if required.
+	 *
+	 */
+	bool is_only_fetch_afc_power_info;
+
 #ifdef CONFIG_DRIVER_NL80211_QCA
 	bool roam_indication_done;
 	u8 *pending_roam_data;
@@ -464,5 +475,13 @@ u32 get_nl80211_protocol_features(struct wpa_driver_nl80211_data *drv);
 
 int get_sta_mlo_interface_info(struct i802_bss *bss);
 void nl80211_free_sta_driver_link_data(struct hostap_sta_driver_data *data);
+/*
+ * qca_nl80211_handle_afc_events - Handle AFC events from the driver
+ * @bss: Pointer to the BSS data
+ * @data: Event data
+ * @len: Length of the event data
+ * Returns: 0 on success, -ve value on failure
+ */
+int qca_nl80211_handle_afc_events(struct i802_bss *bss, u8 *data, size_t len);
 
 #endif /* DRIVER_NL80211_H */
