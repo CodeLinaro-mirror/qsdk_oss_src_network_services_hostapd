@@ -94,6 +94,9 @@ struct sta_info;
 #define HOSTAPD_QOS_SCS_TAG	0xB9
 #define HOSTAPD_QOS_MSCS_TAG	0x58
 
+#define NFT_MAX_RULE_COUNT	(HOSTAPD_SCS_MAX_TCLAS_ELEMENTS_PER_DESCRIPTOR * \
+				 HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER * 2)
+#define NFT_RULE_MAX_WEIGHT	8
 #define NFT_RULE_PARAM_SADDR    (1 << 0)
 #define NFT_RULE_PARAM_DADDR    (1 << 1)
 #define NFT_RULE_PARAM_SPORT    (1 << 2)
@@ -232,6 +235,7 @@ struct hostapd_nft_rule_params {
 	u8 dmac[ETH_ALEN];
 	u32 esp_spi;
 	u8 dscp;
+	u8 weight;
 };
 
 struct hostapd_mscs_resp {
