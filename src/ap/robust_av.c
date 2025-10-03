@@ -2222,6 +2222,87 @@ send_error_resp:
 	return ret;
 }
 
+
+int hostapd_send_unsolicited_scs_resp(struct hostapd_data *hapd,
+				      struct sta_info *sta, u8 scs_id,
+				      u8 req_type)
+{
+	struct hostapd_scs_resp_data scs_resp = {0};
+	struct hostapd_scs_req_data scs_req = {0};
+	struct sta_info *assoc_sta = NULL;
+	struct hostapd_data *assoc_hapd;
+	int idx, ret;
+	u8 addr[6];
+
+	wpa_printf(MSG_INFO, "Received SCS unsolicited Resp cmd from:" MACSTR,
+		   MAC2STR(sta->addr));
+
+	if (req_type != QM_REMOVE_REQ) {
+		wpa_printf(MSG_ERROR, "Send unsolicited response supported "
+			   "only for Remove request");
+		return -1;
+	}
+
+	idx = hostapd_get_scs_index(sta, scs_id);
+	if (idx >= HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER) {
+		wpa_printf(MSG_ERROR, "SCS resp cmd failed for scs_id:%u, "
+			   "Not active", scs_id);
+		return -1;
+	}
+
+	os_memcpy(addr, sta->addr, ETH_ALEN);
+
+#ifdef CONFIG_IEEE80211BE
+	if (!sta->mld_info.mld_sta) {
+		wpa_printf(MSG_DEBUG,
+			   "Assign sta to assoc_sta for Non-MLD STA");
+		assoc_sta = sta;
+	} else {
+		os_memcpy(addr, sta->mld_info.common_info.mld_addr, ETH_ALEN);
+	}
+#endif
+
+	assoc_hapd = hapd;
+
+	if (!assoc_sta) {
+		assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd);
+		if (!assoc_sta) {
+			wpa_printf(MSG_DEBUG,
+				   "Assoc STA not found in scs resp send");
+			return -1;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG, "SCS Unsolicited: Active SCS session count:%u",
+		   assoc_sta->scs_session_count);
+
+	os_memcpy(scs_req.peer_mac, addr, ETH_ALEN);
+	scs_req.num_scs_desc = 1;
+	scs_req.scs_req_desc[0].scs_id = scs_id;
+	scs_req.scs_req_desc[0].request_type = req_type;
+
+	wpa_printf(MSG_DEBUG, "Send SCS response - SCS ID:%u, Request type:%u",
+		   scs_id, req_type);
+
+	ret = hostapd_copy_and_send_scs_data(assoc_hapd, &scs_req, &scs_resp);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "Send SCS data failed, ret:%d", ret);
+		hostapd_update_scs_resp_err(&scs_req, &scs_resp);
+		goto send_error_resp;
+	}
+
+	hostapd_process_scs_req(assoc_hapd, assoc_sta, &scs_req, &scs_resp);
+
+send_error_resp:
+	ret = hostapd_send_scs_response(hapd, addr, &scs_resp);
+	if (ret)
+		wpa_printf(MSG_ERROR, "SCS response frame send failed, ret:%d",
+			   ret);
+
+	return ret;
+}
+
+
 u8 hostapd_mscs_get_tid(struct hostapd_data *hapd, struct sta_info *sta, u8 tid)
 {
 	u8 up_bitmap, up_limit;

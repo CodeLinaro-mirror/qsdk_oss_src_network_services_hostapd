@@ -5851,6 +5851,11 @@ static int hostapd_ctrl_iface_dump_scs_list(struct hostapd_data *hapd,
 	u8 addr[ETH_ALEN];
 	struct sta_info *sta;
 
+	if (!hapd->conf->scs) {
+		wpa_printf(MSG_ERROR, "SCS feature is disabled");
+		return -1;
+	}
+
 	if (hwaddr_aton(cmd, addr))
 		return -1;
 
@@ -5875,6 +5880,11 @@ static int hostapd_ctrl_iface_dump_scs_info(struct hostapd_data *hapd,
 	u8 addr[ETH_ALEN];
 	int scs_id_temp;
 	u8 scs_id;
+
+	if (!hapd->conf->scs) {
+		wpa_printf(MSG_ERROR, "SCS feature is disabled");
+		return -1;
+	}
 
 	token = str_token((char *)cmd, " ", &context);
 	if (!token || hwaddr_aton(token, addr) != 0) {
@@ -5902,6 +5912,63 @@ static int hostapd_ctrl_iface_dump_scs_info(struct hostapd_data *hapd,
 	scs_id = (u8) scs_id_temp;
 
 	return hostapd_dump_scs_info(hapd, sta, buf, buflen, scs_id);
+}
+
+
+static int hostapd_ctrl_iface_send_scs_resp(struct hostapd_data *hapd,
+					    const char *cmd)
+{
+	int scs_id_temp, req_type_temp;
+	char *token, *context = NULL;
+	struct sta_info *sta;
+	u8 scs_id, req_type;
+	u8 addr[ETH_ALEN];
+
+	if (!hapd->conf->scs) {
+		wpa_printf(MSG_ERROR, "SCS feature is disabled");
+		return -1;
+	}
+
+	token = str_token((char *)cmd, " ", &context);
+	if (!token || hwaddr_aton(token, addr) != 0) {
+		wpa_printf(MSG_ERROR, "Invalid MAC address");
+		return -1;
+	}
+
+	token = str_token((char *)cmd, " ", &context);
+	if (!token || sscanf(token, "%d", &scs_id_temp) != 1 ||
+	    scs_id_temp < 0 || scs_id_temp > 255) {
+		wpa_printf(MSG_ERROR, "Invalid SCS ID");
+		return -1;
+	}
+
+	token = str_token((char *)cmd, " ", &context);
+	if (!token || sscanf(token, "%d", &req_type_temp) != 1 ||
+	    req_type_temp < 0 || req_type_temp > 255) {
+		wpa_printf(MSG_ERROR, "Invalid Request Type");
+		return -1;
+	}
+
+	sta = ap_get_sta(hapd, addr);
+	if (!sta) {
+		wpa_printf(MSG_ERROR, "STA not found");
+		return -1;
+	}
+
+	if (!sta->scs_session_count) {
+		wpa_printf(MSG_ERROR, "No SCS sessions configured");
+		return -1;
+	}
+
+	scs_id = (u8) scs_id_temp;
+	req_type = (u8) req_type_temp;
+
+	if (hostapd_send_unsolicited_scs_resp(hapd, sta, scs_id, req_type) < 0) {
+		wpa_printf(MSG_ERROR, "Failed to send unsolicited SCS response");
+		return -1;
+	}
+
+	return 0;
 }
 #endif /* CONFIG_IEEE80211AX */
 
@@ -6597,6 +6664,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "DUMP_SCS_INFO ", 14) == 0) {
 		reply_len = hostapd_ctrl_iface_dump_scs_info(hapd, buf + 14,
 							     reply, reply_size);
+	} else if (os_strncmp(buf, "SEND_UNSOLICITED_SCS_RESP ", 26) == 0) {
+		if (hostapd_ctrl_iface_send_scs_resp(hapd, buf + 26))
+			reply_len = -1;
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_SAE
 	} else if (os_strncmp(buf, "SAE_PASSWORD_BIND ", 18) == 0) {

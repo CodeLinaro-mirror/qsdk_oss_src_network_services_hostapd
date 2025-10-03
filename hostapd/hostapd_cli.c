@@ -2122,6 +2122,32 @@ static int hostapd_cli_cmd_dump_scs(struct wpa_ctrl *ctrl, int argc,
 
 	return wpa_ctrl_command(ctrl, buf);
 }
+
+
+static int hostapd_cli_cmd_send_unsolicited_scs_resp(struct wpa_ctrl *ctrl,
+						     int argc, char *argv[])
+{
+	char buf[100];
+	int res;
+
+	if (argc != 5 || os_strcmp(argv[1], "--scsid") != 0 ||
+	    os_strcmp(argv[3], "--req_type") != 0) {
+		printf("Invalid 'send_unsolicited_scs_resp' usage\n");
+		printf("Usage: send_unsolicited_scs_resp <addr> --scsid "
+		       "<scsid> --req_type <req_type>\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "SEND_UNSOLICITED_SCS_RESP %s %s %s",
+			  argv[0], argv[2], argv[4]);
+
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("send_unsolicited_scs_resp cmd failed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
 #endif /* CONFIG_IEEE80211AX */
 
 
@@ -2417,6 +2443,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "dump_scs", hostapd_cli_cmd_dump_scs, NULL,
 	  "<addr> scs_list | scs_info <scs_id> = Dump SCS list or specific SCS "
 	  "descriptor info of the STA" },
+	{ "send_unsolicited_scs_resp", hostapd_cli_cmd_send_unsolicited_scs_resp,
+	  NULL, "<addr> --scsid <scsid> --req_type <req_type> = "
+	  "Send unsolicited SCS response to the STA" },
+
 #endif /* CONFIG_IEEE80211AX */
 	{ NULL, NULL, NULL, NULL }
 };
