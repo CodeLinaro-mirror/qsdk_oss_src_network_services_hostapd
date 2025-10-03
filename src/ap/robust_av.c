@@ -2226,11 +2226,8 @@ u8 hostapd_mscs_get_tid(struct hostapd_data *hapd, struct sta_info *sta, u8 tid)
 {
 	u8 up_bitmap, up_limit;
 
-	if (!sta || !sta->mscs_ctxt) {
-		wpa_printf(MSG_DEBUG, "MSCS: MSCS ctxt missing for" MACSTR "sta",
-			   MAC2STR(sta->addr));
+	if (!sta || !sta->mscs_ctxt)
 		return 0;
-	}
 
 	up_bitmap = sta->mscs_ctxt->user_priority_bitmap;
 	up_limit = sta->mscs_ctxt->user_priority_limit;
