@@ -1523,10 +1523,16 @@ hostapd_prepare_nft_rule_list(struct hostapd_data *hapd, struct sta_info *sta,
 {
 	int idx;
 
-	for (idx = 0; idx < sta->scs_session_count; idx++)
-		hostapd_scs_add_nft_rule(hapd, sta, idx, rules, rule_count);
-}
+	for (idx = 0; idx < sta->scs_session_count; idx++) {
+		/* SCS Uplink descriptors do not have TCLAS elements and do not
+		 * need rule prepare for NF table programming.
+		 */
+		if (!sta->scs_req_desc[idx]->num_tclas_elements)
+			continue;
 
+		hostapd_scs_add_nft_rule(hapd, sta, idx, rules, rule_count);
+	}
+}
 
 
 static int compare_rule_weight(const void *a, const void *b)
