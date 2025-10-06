@@ -1970,12 +1970,10 @@ setup_mld:
 	}
 	if (!is_mesh && hapd->iface->current_hw_info &&
 	    !hostapd_ucode_update_radio_mask(hapd->conf->iface,
-					     hapd->iface->current_hw_info->hw_idx)) {
+					     hapd->iface->current_hw_info->hw_idx))
 		wpa_printf(MSG_ERROR,
 			   "Failed to update radio mask for %s",
 			   hapd->conf->iface);
-		return -1;
-	}
 #endif /* CONFIG_IEEE80211BE */
 
 	if (conf->wmm_enabled < 0)
@@ -2862,12 +2860,10 @@ static int setup_interface2(struct hostapd_iface *iface)
 
 			if (hw_info &&
 			    !hostapd_ucode_update_radio_mask(iface->conf->bss[0]->iface,
-							     hw_info->hw_idx)) {
+							     hw_info->hw_idx))
 				wpa_printf(MSG_ERROR,
 					   "Failed to update radio mask for %s",
 					   iface->conf->bss[0]->iface);
-				goto fail;
-			}
 		}
 
 		ret = hostapd_check_ht_capab(iface);
