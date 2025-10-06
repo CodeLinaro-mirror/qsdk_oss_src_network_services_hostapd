@@ -1967,10 +1967,11 @@ int hostapd_process_mscs_req(struct hostapd_data *hapd,
 		if (ret == HOSTAPD_QM_STATUS_SUCCESS)
 			sta->mscs_session_exists = true;
 		else if (req_type == QM_ADD_REQ) {
-			if (!sta->mscs_ctxt)
-				goto decline;
-			os_free(sta->mscs_ctxt);
-			sta->mscs_ctxt = NULL;
+			if (sta->mscs_ctxt) {
+				os_free(sta->mscs_ctxt);
+				sta->mscs_ctxt = NULL;
+			}
+			goto decline;
 		}
 		break;
 	case QM_REMOVE_REQ:
@@ -2166,7 +2167,12 @@ int hostapd_handle_mscs_ie_assoc(struct hostapd_data *hapd,
 
 	ret = hostapd_process_mscs_req(hapd, sta, payload, &mscs, 0);
 
-	sta->mscs_ctxt->assoc_req_status = ret;
+	/**
+	 * Fill the MSCS descriptor in response, only when an
+	 * MSCS context is present
+	 */
+	if (sta->mscs_ctxt)
+		sta->mscs_ctxt->assoc_req_status = ret;
 	return 0;
 
 }
