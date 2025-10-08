@@ -349,6 +349,9 @@ struct sta_info {
 	 * response send without add the station in kernel.
 	 */
 	u8 unadded_sta;
+	/*auth received existing authorized sta*/
+	int mld_auth;
+	u8 reply_addr[6];
 #endif /* CONFIG_IEEE80211BE */
 	u8 skip_kernel_delete;
 

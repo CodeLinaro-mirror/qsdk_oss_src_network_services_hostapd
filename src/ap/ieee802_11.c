@@ -385,7 +385,7 @@ static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 	struct wpabuf *ml_resp = NULL;
 
 #ifdef CONFIG_IEEE80211BE
-	if (ap_sta_is_mld(hapd, sta)) {
+	if (ap_sta_is_mld(hapd, sta) && sta->mld_auth) {
 		ml_resp = hostapd_ml_auth_resp(hapd);
 		if (!ml_resp)
 			return -1;
@@ -862,7 +862,7 @@ static struct wpabuf * auth_build_sae_commit(struct hostapd_data *hapd,
 	const u8 *own_addr = hapd->own_addr;
 
 #ifdef CONFIG_IEEE80211BE
-	if (ap_sta_is_mld(hapd, sta))
+	if (ap_sta_is_mld(hapd, sta) && sta->mld_auth)
 		own_addr = hapd->mld->mld_addr;
 #endif /* CONFIG_IEEE80211BE */
 
@@ -1001,7 +1001,8 @@ static int auth_sae_send_commit(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211BE
 	u8 link_id = hapd->mld_link_id;
 
-	if (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta) {
+	if (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta && sta->mld_auth) {
+		dst = sta->reply_addr;
 		/*
 		 * dst address should be partner link peer address,
 		 * if receive auth frame from sta partner link with same mld address
@@ -1054,7 +1055,8 @@ static int auth_sae_send_confirm(struct hostapd_data *hapd,
 
 #ifdef CONFIG_IEEE80211BE
 	u8 link_id = hapd->mld_link_id;
-	if (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta) {
+	if (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta && sta->mld_auth) {
+		dst = sta->reply_addr;
 		if (sta->unadded_sta) {
 
 			/*
@@ -3713,6 +3715,8 @@ static void handle_auth(struct hostapd_data *hapd,
 	sta->flags &= ~WLAN_STA_PREAUTH;
 	ieee802_1x_notify_pre_auth(sta->eapol_sm, 0);
 
+	os_memcpy(sta->reply_addr, mgmt->sa, ETH_ALEN);
+	sta->mld_auth = mld_sta;
 	/*
 	 * If the driver supports full AP client state, add a station to the
 	 * driver before sending authentication reply to make sure the driver
@@ -3863,17 +3867,6 @@ static void handle_auth(struct hostapd_data *hapd,
 
  fail:
 	dst = mgmt->sa;
-
-#ifdef CONFIG_IEEE80211BE
-	if (ap_sta_is_mld(hapd, sta)) {
-		u8 link_id = hapd->mld_link_id;
-
-		if (!sta->unadded_sta)
-			dst = sta->addr;
-		else
-			dst = sta->mld_info.links[link_id].peer_addr;
-	}
-#endif /* CONFIG_IEEE80211BE */
 
 	reply_res = send_auth_reply(hapd, sta, dst, auth_alg,
 				    auth_alg == WLAN_AUTH_SAE ?
@@ -6686,6 +6679,56 @@ static void handle_assoc(struct hostapd_data *hapd,
 		.ssi_signal = rssi,
 	};
 
+	if ((sta->flags & WLAN_STA_MFP) &&
+	     sta->sa_query_timed_out &&
+	     sta->mld_info.mld_sta) {
+		struct ieee802_11_elems elems;
+		u8 mld_addr[ETH_ALEN];
+
+		wpa_auth_sta_deinit(sta->wpa_sm);
+		sta->wpa_sm = NULL;
+		SET_EACH_PARTNER_STA_OBJ(hapd, sta, wpa_sm, NULL);
+		ap_sta_remove_link_sta(hapd, sta, 0);
+		hostapd_drv_sta_remove(hapd, sta->addr);
+		sta->flags &= ~(WLAN_STA_ASSOC | WLAN_STA_AUTHORIZED);
+		sta->unadded_sta = false;
+
+		if (ieee802_11_parse_elems(pos, left, &elems, 1) == ParseFailed) {
+			wpa_printf(MSG_DEBUG, "FT: Failed to parse elements");
+			goto fail;
+		}
+
+		if (!hostapd_process_ml_assoc_req_addr(hapd, elems.basic_mle,
+						       elems.basic_mle_len,
+						       mld_addr)) {
+			u8 link_id = hapd->mld_link_id;
+
+			wpa_printf(MSG_DEBUG, "Allowing reassocation of MLD STA "
+				   MACSTR " after SA Query time out", MAC2STR(mld_addr));
+			sta->mld_info.mld_sta = true;
+			set_link_id_for_each_partner_link_sta(hapd,
+							      sta,
+							      link_id);
+			sta->mld_assoc_link_id = link_id;
+
+			/*
+			 * Set the MLD address as the station address and the
+			 * station addresses.
+			 */
+			os_memcpy(sta->mld_info.common_info.mld_addr, mld_addr,
+					ETH_ALEN);
+			os_memcpy(sta->mld_info.links[link_id].peer_addr,
+					mgmt->sa, ETH_ALEN);
+			os_memcpy(sta->mld_info.links[link_id].local_addr,
+					hapd->own_addr, ETH_ALEN);
+		} else {
+			wpa_printf(MSG_DEBUG, "Allowing reassocation of MLD STA as legacy"
+				   " STA " MACSTR " after timed out SA Query procedure",
+				   MAC2STR(mgmt->sa));
+			memset(&sta->mld_info, 0x00, sizeof(sta->mld_info));
+		}
+	}
+
 	/* followed by SSID and Supported rates; and HT capabilities if 802.11n
 	 * is used */
 	resp = check_assoc_ies(hapd, sta, pos, left,
@@ -7629,12 +7672,18 @@ static void handle_auth_cb(struct hostapd_data *hapd,
 
 	sta = ap_get_sta(hapd, mgmt->da);
 	if (!sta) {
-		sta = ap_get_unadded_sta(hapd, mgmt->da);
+		sta = ap_get_link_sta(hapd, mgmt->da);
 		if (!sta) {
+			sta = ap_get_unadded_sta(hapd, mgmt->da);
+			if (!sta) {
+				wpa_printf(MSG_DEBUG, "handle_auth_cb: sta " MACSTR
+						" not found",
+						MAC2STR(mgmt->da));
+				return;
+			}
+		} else {
 			wpa_printf(MSG_DEBUG, "handle_auth_cb: STA " MACSTR
-				   " not found",
-				   MAC2STR(mgmt->da));
-			return;
+				   " identified as link STA", MAC2STR(mgmt->da));
 		}
 	}
 
@@ -7828,11 +7877,17 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 
 	sta = ap_get_sta(hapd, mgmt->da);
 	if (!sta) {
-		sta = ap_get_unadded_sta(hapd, mgmt->da);
+		sta = ap_get_link_sta(hapd, mgmt->da);
 		if (!sta) {
-			wpa_printf(MSG_INFO, "handle_assoc_cb: STA " MACSTR " not found",
-				   MAC2STR(mgmt->da));
-			return;
+			sta = ap_get_unadded_sta(hapd, mgmt->da);
+			if (!sta) {
+				wpa_printf(MSG_INFO, "handle_assoc_cb: STA " MACSTR " not found",
+					   MAC2STR(mgmt->da));
+				return;
+			}
+		} else {
+			wpa_printf(MSG_DEBUG, "handle_assoc_cb: STA " MACSTR
+				   " identified as link STA", MAC2STR(mgmt->da));
 		}
 	}
 
