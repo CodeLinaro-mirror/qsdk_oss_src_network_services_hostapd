@@ -1165,8 +1165,11 @@ sae_confirm_skip_fixed_fields(struct hostapd_data *hapd,
 	 * on the MLD MAC address.
 	 */
 	sta = ap_get_sta(hapd, mgmt->sa);
-	if (!sta && (sta = ap_get_unadded_sta(hapd, mgmt->sa)) == NULL) {
-
+	if (!sta)
+		sta = ap_get_link_sta(hapd, mgmt->sa);
+	if (!sta)
+		sta = ap_get_unadded_sta(hapd, mgmt->sa);
+	if (!sta) {
 		for (sta = hapd->sta_list; sta; sta = sta->next) {
 			int link_id = hapd->mld_link_id;
 
