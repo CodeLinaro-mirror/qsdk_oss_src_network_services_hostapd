@@ -555,6 +555,7 @@ static int wpa_supplicant_wps_cred(void *ctx,
 			ssid->auth_alg = 0;
 			ssid->key_mgmt |= WPA_KEY_MGMT_SAE;
 			ssid->ieee80211w = MGMT_FRAME_PROTECTION_OPTIONAL;
+			ssid->sae_pwe = 2;
 		}
 		ssid->proto = WPA_PROTO_RSN;
 		break;
