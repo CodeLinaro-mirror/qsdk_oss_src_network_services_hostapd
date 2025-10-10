@@ -72,8 +72,8 @@ static void channel_list_update_timeout(void *eloop_ctx, void *timeout_ctx);
 static void hostapd_interface_setup_failure_handler(void *eloop_ctx,
 						    void *timeout_ctx);
 #ifdef CONFIG_IEEE80211AX
-static void hostapd_switch_color_timeout_handler(void *eloop_data,
-						 void *user_ctx);
+void hostapd_switch_color_timeout_handler(void *eloop_data,
+					  void *user_ctx);
 #endif /* CONFIG_IEEE80211AX */
 
 
@@ -6129,8 +6129,8 @@ int hostapd_fill_cca_settings(struct hostapd_data *hapd,
 }
 
 
-static void hostapd_switch_color_timeout_handler(void *eloop_data,
-						 void *user_ctx)
+void hostapd_switch_color_timeout_handler(void *eloop_data,
+					  void *user_ctx)
 {
 	struct hostapd_data *hapd = (struct hostapd_data *) eloop_data;
 	os_time_t delta_t;
@@ -6219,12 +6219,21 @@ static void hostapd_switch_color_timeout_handler(void *eloop_data,
 	}
 }
 
+bool hostapd_is_cca_in_progress(struct hostapd_iface *iface)
+{
+	for (int i = 0; i < iface->num_bss; i++) {
+		if (iface->bss[i]->cca_in_progress)
+			return true;
+	}
+
+	return false;
+}
 
 void hostapd_switch_color(struct hostapd_data *hapd, u64 bitmap)
 {
 	struct os_reltime now;
 
-	if (hapd->cca_in_progress)
+	if (hostapd_is_cca_in_progress(hapd->iface))
 		return;
 
 	if (os_get_reltime(&now))

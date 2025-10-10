@@ -1023,6 +1023,7 @@ int hostapd_owe_trans_get_info(struct hostapd_data *hapd);
 void hostapd_ocv_check_csa_sa_query(void *eloop_ctx, void *timeout_ctx);
 int hostapd_check_max_sta(struct hostapd_data *hapd);
 
+bool hostapd_is_cca_in_progress(struct hostapd_iface *iface);
 void hostapd_switch_color(struct hostapd_data *hapd, u64 bitmap);
 void hostapd_cleanup_cca_params(struct hostapd_data *hapd);
 
