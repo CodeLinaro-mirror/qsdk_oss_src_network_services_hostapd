@@ -1224,6 +1224,8 @@ struct sta_info * ap_sta_add(struct hostapd_data *hapd, const u8 *addr)
 	sta->policies = NULL;
 	sta->num_dscp_policies = 0;
 	sta->dscp_reset = 0;
+	sta->mscs_ctxt = NULL;
+	sta->mscs_session_exists = 0;
 
 #ifdef CONFIG_TAXONOMY
 	sta_track_claim_taxonomy_info(hapd->iface, addr,

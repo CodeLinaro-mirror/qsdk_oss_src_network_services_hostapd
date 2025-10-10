@@ -1964,8 +1964,11 @@ int hostapd_process_mscs_req(struct hostapd_data *hapd,
 		 * If drv returns an ADD failure, delete the
 		 * context.
 		 */
-		if (ret == HOSTAPD_QM_STATUS_SUCCESS)
+		if (ret == HOSTAPD_QM_STATUS_SUCCESS) {
 			sta->mscs_session_exists = true;
+			wpa_printf(MSG_INFO, "MSCS:Session created for "MACSTR,
+				   MAC2STR(sta->addr));
+		}
 		else if (req_type == QM_ADD_REQ) {
 			if (sta->mscs_ctxt) {
 				os_free(sta->mscs_ctxt);
@@ -1983,6 +1986,8 @@ int hostapd_process_mscs_req(struct hostapd_data *hapd,
 		hostapd_mscs_delete_all_rules(hapd, sta);
 		os_free(sta->mscs_ctxt);
 		sta->mscs_ctxt = NULL;
+		wpa_printf(MSG_INFO, "MSCS:Session deleted for "MACSTR,
+			   MAC2STR(sta->addr));
 		ret = WLAN_STATUS_TCLAS_PROCESSING_TERMINATED;
 		break;
 	default:
@@ -2003,7 +2008,8 @@ u8 *hostapd_add_mscs_desc(struct hostapd_data *hapd, u8 *eid,
 	size_t len;
 	struct hostapd_mscs_desc mscs_desc = {0};
 
-	if (!hapd->conf->mscs || !sta || !sta->mscs_ctxt)
+	if (!hapd->conf->mscs || !sta || !sta->mscs_session_exists ||
+	    !sta->mscs_ctxt)
 		return pos;
 	/**
 	 * Add MSCS descriptor containing these items:
