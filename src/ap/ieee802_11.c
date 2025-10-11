@@ -8356,9 +8356,11 @@ static int add_associated_sta(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
-	if (sta->flags & WLAN_STA_EHT)
+	if (sta->flags & WLAN_STA_EHT) {
 		hostapd_get_eht_capab(hapd, sta->eht_capab, &eht_cap,
 				      sta->eht_capab_len);
+		hostapd_get_epcs_capab(hapd, sta);
+	}
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_IEEE80211BN
 	if (sta->flags & WLAN_STA_UHR)
