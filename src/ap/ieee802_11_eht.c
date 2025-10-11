@@ -3566,6 +3566,28 @@ struct sta_info * hostapd_get_sta_info_from_mld_addr(struct hostapd_data *hapd,
 	return NULL;
 }
 
+static int hostapd_epcs_authorize_mac_using_cli(struct hostapd_data *hapd,
+						char *pos)
+{
+	u8 peer_mld_addr[ETH_ALEN];
+	char *mldaddr_pos = pos;
+
+	if (hwaddr_aton(pos, peer_mld_addr))
+		return -1;
+
+	if (hostapd_maclist_found(hapd->mld->epcs_authorized_mac,
+				  hapd->mld->num_epcs_authorized_mac,
+				  peer_mld_addr, NULL)) {
+		wpa_printf(MSG_ERROR, "sta with mld_addr " MACSTR " already authorized for EPCS",
+			   MAC2STR(peer_mld_addr));
+		return -1;
+	}
+
+	return hostapd_ctrl_iface_acl_add_mac(
+			&hapd->mld->epcs_authorized_mac,
+			&hapd->mld->num_epcs_authorized_mac,
+			mldaddr_pos);
+}
 
 static int hostapd_epcs_deauthorize_mac_using_cli(struct hostapd_data *hapd,
 						  char *pos)
@@ -3578,10 +3600,13 @@ static int hostapd_epcs_deauthorize_mac_using_cli(struct hostapd_data *hapd,
 	if (hwaddr_aton(pos, peer_mld_addr))
 		return -1;
 
-	if (hostapd_ctrl_iface_acl_del_mac(&hapd->mld->epcs_authorized_mac,
-					   &hapd->mld->num_epcs_authorized_mac,
-					   mldaddr_pos))
+	if (!hostapd_maclist_found(hapd->mld->epcs_authorized_mac,
+				   hapd->mld->num_epcs_authorized_mac,
+				   peer_mld_addr, NULL)) {
+		wpa_printf(MSG_ERROR, "sta with mld_addr " MACSTR " is not authorized for EPCS",
+			   MAC2STR(peer_mld_addr));
 		return -1;
+	}
 
 	sta = hostapd_get_sta_info_from_mld_addr(hapd, peer_mld_addr);
 	if (sta) {
@@ -3589,6 +3614,11 @@ static int hostapd_epcs_deauthorize_mac_using_cli(struct hostapd_data *hapd,
 		hostapd_epcs_handle_and_send_action_frame(hapd, &epcs_info,
 							  sta, false);
 	}
+
+	if (hostapd_ctrl_iface_acl_del_mac(&hapd->mld->epcs_authorized_mac,
+					   &hapd->mld->num_epcs_authorized_mac,
+					   mldaddr_pos))
+		return -1;
 
 	return 0;
 }
@@ -3640,10 +3670,7 @@ int hostapd_epcs_handle_cli(struct hostapd_data *hapd, char *pos,
 		return hostapd_epcs_deauthorize_mac_using_cli(hapd, pos + 16);
 
 	} else if (os_strncmp(pos, "authorize_mac ", 14) == 0) {
-		return hostapd_ctrl_iface_acl_add_mac(
-				&hapd->mld->epcs_authorized_mac,
-				&hapd->mld->num_epcs_authorized_mac,
-				pos + 14);
+		return hostapd_epcs_authorize_mac_using_cli(hapd, pos + 14);
 
 	} else if (os_strncmp(pos, "show ", 5) == 0) {
 		if (os_strncmp(pos + 5, "mu_edca_params", 15) == 0) {
