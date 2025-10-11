@@ -4973,6 +4973,7 @@ static int hostapd_ctrl_iface_negotiated_ttlm_request(struct hostapd_data *hapd,
 	}
 
 	if (is_sta_ttlm_capable(sta) == false) {
+		wpa_printf(MSG_ERROR, "%s: STA not TTLM capable", __func__);
 		os_free(input);
 		return -1;
 	}
