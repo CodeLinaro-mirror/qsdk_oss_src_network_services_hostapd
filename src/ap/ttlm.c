@@ -15,7 +15,7 @@
 #include "ap_drv_ops.h"
 #include "drivers/driver.h"
 #include "ttlm.h"
-
+#include "eloop.h"
 
 int hostapd_get_ttlm_elem_len(struct ttlm_info *ttlm)
 {
@@ -918,10 +918,8 @@ bool is_sta_ttlm_capable(struct sta_info *sta)
 
 	mld_sta_capa = sta->mld_info.common_info.mld_capa;
 	sta_ttlm_cap = (mld_sta_capa & EHT_ML_MLD_CAPA_TID_TO_LINK_MAP_NEG_SUPP_MSK) >> 5;
-	if (!sta_ttlm_cap) {
-		wpa_printf(MSG_ERROR, "STA is not TTLM capable");
+	if (!sta_ttlm_cap)
 		return false;
-	}
 
 	return true;
 }
@@ -938,6 +936,12 @@ int hostapd_handle_ttlm_resp(struct hostapd_data *hapd, struct sta_info *sta,
 		wpa_printf(MSG_ERROR, "Station is not found");
 		return -1;
 	}
+
+	if (is_sta_ttlm_capable(sta) == false) {
+		wpa_printf(MSG_ERROR, "%s: STA not TTLM capable", __func__);
+		return -1;
+	}
+
 	ongoing_ttlm = &sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info;
 
 	if (ongoing_ttlm->dialog_token != mgmt->u.action.u.ttlm_resp.dialog_token) {
@@ -1093,6 +1097,8 @@ int hostapd_handle_ttlm_assoc_req(struct hostapd_data *hapd, const struct ieee80
 	struct ttlm_ongoing_negotiation_info *ongoing_ttlm;
 	struct ieee802_11_elems elems;
 	struct hostapd_mld *mld = hapd->mld;
+	struct hostapd_data *lhapd;
+	struct sta_info *lsta;
 	struct ttlm_info ttlm_info;
 	bool homogeneous_map;
 	enum ttlm_dir dir;
@@ -1100,12 +1106,20 @@ int hostapd_handle_ttlm_assoc_req(struct hostapd_data *hapd, const struct ieee80
 	enum ttlm_resp_type resp_type = TTLM_RESP_TYPE_SUCCESS;
 	u8 i;
 
-	if (is_sta_ttlm_capable(sta) == false)
-		return WLAN_STATUS_REQUEST_DECLINED;
+	if (!hapd->conf->mld_ap)
+		return -1;
 
-	os_memset(&sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info, 0,
-		  sizeof(sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info));
-	sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info.ttlm_resp_type = -1;
+	/* initialize all partner stas */
+	for_each_mld_link(lhapd, hapd) {
+		lsta = ap_get_sta(lhapd, sta->addr);
+		if (lsta && lsta->mld_info.mld_sta) {
+			struct ttlm_ongoing_negotiation_info *neg;
+
+			neg = &lsta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info;
+			os_memset(neg, 0, sizeof(*neg));
+			neg->ttlm_resp_type = -1;
+		}
+	}
 	if (!hapd->conf->ttlm_enable)
 		return WLAN_STATUS_REQUEST_DECLINED;
 
@@ -1113,6 +1127,13 @@ int hostapd_handle_ttlm_assoc_req(struct hostapd_data *hapd, const struct ieee80
 		wpa_printf(MSG_ERROR, "Could not parse assocReq from " MACSTR,
 			   MAC2STR(mgmt->sa));
 		return WLAN_STATUS_INVALID_ELEMENT;
+	}
+
+	if (elems.ttlm_num && !is_sta_ttlm_capable(sta)) {
+		wpa_printf(MSG_ERROR,
+			   "%s: STA not TTLM capable, but has ttlm elems in assoc req",
+			   __func__);
+		return WLAN_STATUS_REQUEST_DECLINED;
 	}
 
 	ongoing_ttlm = os_zalloc(sizeof(struct ttlm_ongoing_negotiation_info));
@@ -1286,6 +1307,8 @@ int hostapd_send_ttlm_resp_action(struct hostapd_data *hapd,
 void hostapd_handle_ttlm_req(struct hostapd_data *hapd, struct sta_info *sta,
 			     const u8 *buf, size_t len)
 {
+	struct hostapd_data *lhapd;
+	struct sta_info *lsta;
 	const struct ieee80211_mgmt *mgmt = (const struct ieee80211_mgmt *) buf;
 	struct ttlm_ongoing_negotiation_info *ongoing_ttlm, *configured_ttlm;
 	struct ieee802_11_elems elems;
@@ -1301,8 +1324,10 @@ void hostapd_handle_ttlm_req(struct hostapd_data *hapd, struct sta_info *sta,
 		return;
 	}
 
-	if (is_sta_ttlm_capable(sta) == false)
+	if (is_sta_ttlm_capable(sta) == false) {
+		wpa_printf(MSG_ERROR, "%s: STA not TTLM capable", __func__);
 		return;
+	}
 
 	ongoing_ttlm = os_zalloc(sizeof(struct ttlm_ongoing_negotiation_info));
 	if (!ongoing_ttlm) {
@@ -1344,6 +1369,18 @@ void hostapd_handle_ttlm_req(struct hostapd_data *hapd, struct sta_info *sta,
 		return;
 	}
 
+	/* cancel disassoc timer */
+	for_each_mld_link(lhapd, hapd) {
+		lsta = ap_get_sta(lhapd, sta->addr);
+		if (lsta && lsta->mld_info.mld_sta &&
+		    lsta->timeout_next == STA_DISASSOC_FROM_CLI) {
+			eloop_cancel_timeout(ap_handle_timer, lhapd, lsta);
+			eloop_register_timeout(lhapd->conf->ap_max_inactivity, 0,
+					       ap_handle_timer, lhapd, lsta);
+			wpa_printf(MSG_DEBUG, "BTM timer cancelled for the client");
+		}
+	}
+
 	if ((ongoing_ttlm->ttlm_info[TTLM_DIRECTION_DL].direction == TTLM_DIRECTION_DL ||
 	     ongoing_ttlm->ttlm_info[TTLM_DIRECTION_UL].direction == TTLM_DIRECTION_UL) &&
 	    ongoing_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].direction == TTLM_DIRECTION_BIDI) {
@@ -1380,14 +1417,18 @@ int hostapd_ttlm_resp_tx_status(struct hostapd_data *hapd, struct sta_info *sta,
 				int ok)
 {
 	int ret = 0;
+	enum ttlm_resp_type status;
 
 	if (!sta) {
 		wpa_printf(MSG_ERROR, "Station is not found");
 		return -1;
 	}
 
-	wpa_printf(MSG_DEBUG, "TTLM response: TX status: ok=%d", ok);
-	if (ok) {
+	status = sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info.ttlm_resp_type;
+	wpa_printf(MSG_DEBUG, "TTLM response: TX status: ok=%d ttlm_resp_type=%d",
+		   ok, status);
+	if (ok &&
+	    status == TTLM_RESP_TYPE_SUCCESS) {
 		ret = hostapd_apply_ttlm_mapping_to_driver(hapd, sta);
 		if (ret)
 			wpa_printf(MSG_ERROR, "Failed to send ttlm params to driver");
@@ -1470,6 +1511,11 @@ int hostapd_handle_ttlm_teardown(struct hostapd_data *hapd, struct sta_info *sta
 
 	if (!hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM Negotiation support is disabled");
+		return -1;
+	}
+
+	if (is_sta_ttlm_capable(sta) == false) {
+		wpa_printf(MSG_ERROR, "%s: STA not TTLM capable", __func__);
 		return -1;
 	}
 
