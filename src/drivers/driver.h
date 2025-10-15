@@ -8154,6 +8154,7 @@ union wpa_event_data {
 	 */
 	struct new_sta {
 		const u8 *addr;
+		u32 flags; /* wired sta flags: BIT2 to indicate MAB sta */
 	} new_sta;
 
 	/**

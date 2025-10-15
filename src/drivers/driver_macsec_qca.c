@@ -34,10 +34,15 @@
 #include "pae/ieee802_1x_kay.h"
 #include "driver.h"
 #include "driver_wired_common.h"
+#include "ap/sta_info.h"
+#include "ap/ieee802_11_auth.h"
 
 #include "nss_macsec_secy.h"
 #include "nss_macsec_secy_rx.h"
 #include "nss_macsec_secy_tx.h"
+#include <netlink/netlink.h>
+#include <netlink/genl/genl.h>
+#include <netlink/genl/ctrl.h>
 
 #define MAXSC 16
 
@@ -79,6 +84,11 @@ struct macsec_qca_data {
 
 	/* ioctl sock */
 	int ioctl_sock;
+	/* genl sock */
+	struct nl_cb *nl_cb;
+	struct nl_sock *nl_event;
+	struct nl_sock *nl;
+	int genl_id;
 
 	/* authorize_policy: 0 port-based authorize, 1 mac-based authorize
 	 * used to backward compatibility with the macsec case where is wired
@@ -98,6 +108,22 @@ typedef struct
 	char ifname[IFNAMSIZ];
 	u8 acl_policy; /* 0 deny, 1 accept */
 } swMacEntry;
+
+#define SSDK_GENL_FAMILY_NAME "ssdk_nl_family"
+#define SSDK_GENL_MCAST_GRP_NAME "ssdk_nl_mcast"
+enum ssdk_attrs {
+       SSDK_ATTR_UNSPEC,
+       SSDK_ATTR_IFNAME, /* interface name */
+       SSDK_ATTR_MACADDR, /* mac address */
+       SSDK_ATTR_MACPOLL, /* macpoll: 1 enable, 0 disable */
+       SSDK_ATTR_MAX,
+};
+enum ssdk_nl_commands {
+       SSDK_COMMAND_NEW_MAC,
+       SSDK_COMMAND_EXPIRE_MAC,
+       SSDK_COMMAND_POLL_MAC,
+       SSDK_COMMAND_MAX,
+};
 
 static int switch_command_excute(void *priv, u32 api_id, int nrParam, ...)
 {
@@ -155,6 +181,14 @@ macsec_qca_set_sta_acl_policy(void *priv, const u8 *addr, u8 acl_policy)
 	entry.acl_policy = acl_policy;
 
 	return switch_set_mac_rule(drv, &entry);
+}
+
+static int macsec_qca_get_capa(void *priv, struct wpa_driver_capa *capa)
+{
+	os_memset(capa, 0, sizeof(*capa));
+	capa->flags = WPA_DRIVER_FLAGS_WIRED;
+	capa->max_acl_mac_addrs = 8;
+	return 0;
 }
 
 static void __macsec_drv_init(struct macsec_qca_data *drv)
@@ -391,6 +425,261 @@ static void macsec_qca_deinit(void *priv)
 	os_free(drv);
 }
 
+
+static int process_genl_event(struct nl_msg *msg, void *arg)
+{
+	struct macsec_qca_data *drv = arg;
+	struct nlmsghdr *nl_hdr;
+	struct genlmsghdr *genl_hdr;
+	int error;
+	u8 addr[ETH_ALEN] = {0};
+	union wpa_event_data event;
+	struct nlattr *attrs[SSDK_ATTR_MAX];
+
+	nl_hdr = nlmsg_hdr(msg);
+	genl_hdr = genlmsg_hdr(nl_hdr);
+
+	error = genlmsg_parse(nl_hdr, 0, attrs, SSDK_ATTR_MAX - 1, NULL);
+	if (error < 0) {
+		wpa_printf(MSG_DEBUG, "genlmsg_parse fail: %s", nl_geterror(error));
+		return error;
+	}
+	if (nl_hdr->nlmsg_type == drv->genl_id) {
+		if (genl_hdr->cmd == SSDK_COMMAND_NEW_MAC) {
+			if (attrs[SSDK_ATTR_MACADDR]) {
+				os_memcpy(addr, nla_data(attrs[SSDK_ATTR_MACADDR]),
+					nla_len(attrs[SSDK_ATTR_MACADDR]));
+			}
+			if (attrs[SSDK_ATTR_IFNAME] && os_memcmp(drv->common.ifname,
+				nla_get_string(attrs[SSDK_ATTR_IFNAME]),
+				nla_len(attrs[SSDK_ATTR_IFNAME])) == 0) {
+				wpa_printf(MSG_DEBUG, "genl new mac event: addr "
+					MACSTR " ifname %s", MAC2STR(addr),
+					nla_get_string(attrs[SSDK_ATTR_IFNAME]));
+				os_memset(&event, 0, sizeof(event));
+				event.new_sta.addr = addr;
+				event.new_sta.flags |= WIRED_STA_MAB;
+				wpa_supplicant_event(drv->common.ctx, EVENT_NEW_STA, &event);
+			}
+		}
+		if (genl_hdr->cmd == SSDK_COMMAND_EXPIRE_MAC) {
+			if (attrs[SSDK_ATTR_MACADDR]) {
+				os_memcpy(addr, nla_data(attrs[SSDK_ATTR_MACADDR]),
+					nla_len(attrs[SSDK_ATTR_MACADDR]));
+			}
+			if (attrs[SSDK_ATTR_IFNAME] && os_memcmp(drv->common.ifname,
+				nla_get_string(attrs[SSDK_ATTR_IFNAME]),
+				nla_len(attrs[SSDK_ATTR_IFNAME])) == 0) {
+				wpa_printf(MSG_DEBUG, "genl expire mac event: addr "
+					MACSTR " ifname %s", MAC2STR(addr),
+					nla_get_string(attrs[SSDK_ATTR_IFNAME]));
+				os_memset(&event, 0, sizeof(event));
+				event.disassoc_info.addr = addr;
+				wpa_supplicant_event(drv->common.ctx, EVENT_DISASSOC, &event);
+			}
+		}
+	}
+	return NL_SKIP;
+}
+
+static void wpa_driver_macsec_qca_event_receive(int sock, void *eloop_ctx,
+					     void *handle)
+{
+	struct nl_cb *cb = eloop_ctx;
+	int res;
+
+	wpa_printf(MSG_MSGDUMP, "macsec_qca: Event message available");
+
+	res = nl_recvmsgs(handle, cb);
+	if (res < 0) {
+		wpa_printf(MSG_INFO, "macsec_qca: %s->nl_recvmsgs failed: %d",
+			   __func__, res);
+	}
+}
+
+#if __WORDSIZE == 64
+#define ELOOP_SOCKET_INVALID	(intptr_t) 0x8888888888888889ULL
+#else
+#define ELOOP_SOCKET_INVALID	(intptr_t) 0x88888889ULL
+#endif
+
+static void macsec_qca_register_eloop_read(struct nl_sock **handle,
+					eloop_sock_handler handler,
+					void *eloop_data, int persist)
+{
+	/*
+	 * libnl uses a pretty small buffer (32 kB that gets converted to 64 kB)
+	 * by default. It is possible to hit that limit in some cases where
+	 * operations are blocked, e.g., with a burst of Deauthentication frames
+	 * to hostapd and STA entry deletion. Try to increase the buffer to make
+	 * this less likely to occur.
+	 */
+	int err;
+
+	err = nl_socket_set_buffer_size(*handle, 262144, 0);
+	if (err < 0) {
+		wpa_printf(MSG_DEBUG,
+			   "macsec_qca: Could not set nl_socket RX buffer size: %s",
+			   nl_geterror(err));
+		/* continue anyway with the default (smaller) buffer */
+	}
+
+	nl_socket_set_nonblocking(*handle);
+	eloop_register_read_sock(nl_socket_get_fd(*handle), handler,
+				 eloop_data, *handle);
+	if (!persist)
+		*handle = (void *) (((intptr_t) *handle) ^
+				    ELOOP_SOCKET_INVALID);
+}
+static int no_seq_check(struct nl_msg *msg, void *arg)
+{
+	return NL_OK;
+}
+
+static void macsec_qca_destroy_eloop_handle(struct nl_sock **handle, int persist)
+{
+	if (!persist)
+		*handle = (void *) (((intptr_t) *handle) ^
+				    ELOOP_SOCKET_INVALID);
+	eloop_unregister_read_sock(nl_socket_get_fd(*handle));
+	if (*handle) {
+		nl_socket_free(*handle);
+		*handle = NULL;
+	}
+}
+
+static int nl_send_recv(struct nl_sock *sk, struct nl_msg *msg)
+{
+	int ret;
+
+	ret = nl_send_auto_complete(sk, msg);
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR, "macsec_qca %s: failed to send: %d (%s)",
+			   __func__, ret, nl_geterror(-ret));
+		return ret;
+	}
+
+	ret = nl_recvmsgs_default(sk);
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR, "macsec_qca %s: failed to recv: %d (%s)",
+			   __func__, ret, nl_geterror(-ret));
+	}
+
+	return ret;
+}
+
+static int nl_send_mac_poll(struct macsec_qca_data *drv, u8 poll)
+{
+	struct nl_msg *msg;
+	int ret = -1;
+	msg = nlmsg_alloc();
+	if (!msg) {
+		wpa_printf(MSG_ERROR, "macsec_qca: failed to alloc message");
+		return ret;
+	}
+
+	if (!genlmsg_put(msg, 0, 0, drv->genl_id, 0, 0, SSDK_COMMAND_POLL_MAC, 0)) {
+		wpa_printf(MSG_ERROR, "macsec_qca: failed to put header");
+		goto nla_put_failure;
+	}
+
+	wpa_printf(MSG_DEBUG, "nl_send_mac_poll: ifname %s poll %d", drv->common.ifname, poll);
+	NLA_PUT_STRING(msg, SSDK_ATTR_IFNAME, drv->common.ifname);
+	NLA_PUT_U8(msg, SSDK_ATTR_MACPOLL, poll);
+
+	ret = nl_send_recv(drv->nl, msg);
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR, "macsec_qca: failed to communicate: %d (%s)",
+			ret, nl_geterror(-ret));
+	}
+nla_put_failure:
+	nlmsg_free(msg);
+	return ret;
+}
+
+static struct nl_sock * nl_create_handle(struct nl_cb *cb, const char *dbg)
+{
+	struct nl_sock *handle;
+
+	handle = nl_socket_alloc_cb(cb);
+	if (handle == NULL) {
+		wpa_printf(MSG_ERROR, "macsec_qca: Failed to allocate netlink "
+			   "callbacks (%s)", dbg);
+		return NULL;
+	}
+
+	if (genl_connect(handle)) {
+		wpa_printf(MSG_ERROR, "macsec_qca: Failed to connect to generic "
+			   "netlink (%s)", dbg);
+		nl_socket_free(handle);
+		return NULL;
+	}
+
+	return handle;
+}
+
+static int macsec_qca_init_genl(struct macsec_qca_data *drv)
+{
+	int group, error;
+	drv->nl_cb = nl_cb_alloc(NL_CB_DEFAULT);
+	if (drv->nl_cb == NULL) {
+		wpa_printf(MSG_ERROR, "macsec_qca: Failed to allocate netlink "
+			   "callbacks");
+		return -1;
+	}
+	drv->nl = nl_create_handle(drv->nl_cb, "nl");
+	if (drv->nl == NULL)
+		goto out_free;
+	drv->nl_event = nl_create_handle(drv->nl_cb, "event");
+	if (drv->nl_event == NULL)
+		goto out_free;
+
+	drv->genl_id = genl_ctrl_resolve(drv->nl, SSDK_GENL_FAMILY_NAME);
+	if (drv->genl_id < 0) {
+		wpa_printf(MSG_ERROR, "macsec_qca: genl resolve faimily id failed");
+		goto out_free;
+	}
+	group = genl_ctrl_resolve_grp(drv->nl, SSDK_GENL_FAMILY_NAME, SSDK_GENL_MCAST_GRP_NAME);
+	if (group < 0) {
+		wpa_printf(MSG_ERROR, "macsec_qca: genl resolve group fail");
+		goto out_free;
+	}
+
+	wpa_printf(MSG_DEBUG, "macsec_qca: genl id %d, group %d", drv->genl_id, group);
+
+	error = nl_socket_add_membership(drv->nl_event, group);
+	if (error) {
+		wpa_printf(MSG_ERROR, "macsec_qca: genl add membership failed: %d", error);
+		goto out_free;
+	}
+
+	nl_cb_set(drv->nl_cb, NL_CB_SEQ_CHECK, NL_CB_CUSTOM,
+		  no_seq_check, NULL);
+	nl_cb_set(drv->nl_cb, NL_CB_VALID, NL_CB_CUSTOM,
+		  process_genl_event, drv);
+
+	macsec_qca_register_eloop_read(&drv->nl_event,
+				    wpa_driver_macsec_qca_event_receive,
+				    drv->nl_cb, 0);
+
+	nl_send_mac_poll(drv, 1);
+	return 0;
+out_free:
+	if (drv->nl) {
+		nl_socket_free(drv->nl);
+		drv->nl = NULL;
+	}
+	if (drv->nl_event) {
+		nl_socket_free(drv->nl_event);
+		drv->nl_event = NULL;
+	}
+	if (drv->nl_cb) {
+		nl_cb_put(drv->nl_cb);
+		drv->nl_cb = NULL;
+	}
+	return -1;
+}
+
 static int macsec_qca_set_param(struct macsec_qca_data *drv, const char *param)
 {
 	if (param == NULL)
@@ -441,7 +730,10 @@ static void * macsec_qca_hapd_init(struct hostapd_data *hapd,
 		os_free(drv);
 		return NULL;
 	}
-
+	if ((drv->authorize_policy == 1) && macsec_qca_init_genl(drv) < 0) {
+		os_free(drv);
+		return NULL;
+	}
 	if ((drv->ioctl_sock = open(SW_SWITCH_IOCTL_DEV_NAME, O_RDWR)) < 0) {
 		os_free(drv);
 		return NULL;
@@ -465,6 +757,18 @@ static void macsec_qca_hapd_deinit(void *priv)
 		u8 mac[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 		macsec_qca_set_sta_acl_policy(drv, mac, 1);
 		close(drv->ioctl_sock);
+	}
+	if (drv->nl) {
+		nl_send_mac_poll(drv, 0);
+		nl_socket_free(drv->nl);
+		drv->nl = NULL;
+	}
+	if (drv->nl_event) {
+		macsec_qca_destroy_eloop_handle(&drv->nl_event, 0);
+	}
+	if (drv->nl_cb) {
+		nl_cb_put(drv->nl_cb);
+		drv->nl_cb = NULL;
 	}
 	os_free(drv);
 }
@@ -514,12 +818,41 @@ macsec_qca_sta_set_flags(void *priv, const u8 *addr,
 		      unsigned int total_flags, unsigned int flags_or,
 		      unsigned int flags_and)
 {
+	struct macsec_qca_data *drv = priv;
+	if (hostapd_check_acl(drv->common.ctx, addr, NULL) != HOSTAPD_ACL_PENDING)
+	{
+		return 0;
+	}
+
 	if (total_flags & WPA_STA_AUTHORIZED)
 		return macsec_qca_set_sta_acl_policy(priv, addr, 1);
 	if (!(total_flags & WPA_STA_AUTHORIZED))
 		return macsec_qca_set_sta_acl_policy(priv, addr, 0);
 	return 0;
 }
+
+static int macsec_qca_set_acl(void *priv,
+				 struct hostapd_acl_params *params)
+{
+	unsigned int i;
+
+	/* set each mac address in the accept mac list */
+	for (i = 0; i < params->num_mac_acl; i++) {
+		if (macsec_qca_set_sta_acl_policy(priv, params->mac_acl[i].addr,
+				params->acl_policy)) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
+static int macsec_qca_set_radius_acl_auth(void *priv, const u8 *mac, int accepted,
+				   u32 session_timeout)
+{
+	wpa_printf(MSG_DEBUG, "%s: accepted %d", __func__, accepted);
+	return macsec_qca_set_sta_acl_policy(priv, mac, accepted);
+}
+
 
 static int macsec_qca_macsec_init(void *priv, struct macsec_init_params *params)
 {
@@ -1158,13 +1491,15 @@ const struct wpa_driver_ops wpa_driver_macsec_qca_ops = {
 	.desc = "QCA MACsec Ethernet driver",
 	.get_ssid = driver_wired_get_ssid,
 	.get_bssid = driver_wired_get_bssid,
-	.get_capa = driver_wired_get_capa,
+	.get_capa = macsec_qca_get_capa,
 	.init = macsec_qca_init,
 	.deinit = macsec_qca_deinit,
 	.hapd_init = macsec_qca_hapd_init,
 	.hapd_deinit = macsec_qca_hapd_deinit,
 	.hapd_send_eapol = macsec_qca_send_eapol,
 	.sta_set_flags = macsec_qca_sta_set_flags,
+	.set_acl = macsec_qca_set_acl,
+	.set_radius_acl_auth = macsec_qca_set_radius_acl_auth,
 
 	.macsec_init = macsec_qca_macsec_init,
 	.macsec_deinit = macsec_qca_macsec_deinit,

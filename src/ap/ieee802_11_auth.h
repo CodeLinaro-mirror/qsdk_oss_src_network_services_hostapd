@@ -36,6 +36,7 @@ void hostapd_free_psk_list(struct hostapd_sta_wpa_psk_short *psk);
 void hostapd_acl_expire(struct hostapd_data *hapd);
 void hostapd_copy_psk_list(struct hostapd_sta_wpa_psk_short **psk,
 			   struct hostapd_sta_wpa_psk_short *src);
+void hostapd_acl_expire_sta(struct hostapd_data *hapd, const u8 *addr);
 void hostapd_acl_req_radius_psk(struct hostapd_data *hapd, const u8 *addr,
 				int key_mgmt, const u8 *anonce,
 				const u8 *eapol, size_t eapol_len);
