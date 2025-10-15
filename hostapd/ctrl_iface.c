@@ -5852,8 +5852,9 @@ static int hostapd_ctrl_iface_dump_scs_list(struct hostapd_data *hapd,
 					    const char *cmd, char *buf,
 					    size_t buflen)
 {
+	struct hostapd_data *temp_hapd = hapd;
+	struct sta_info *sta = NULL;
 	u8 addr[ETH_ALEN];
-	struct sta_info *sta;
 
 	if (!hapd->conf->scs) {
 		wpa_printf(MSG_ERROR, "SCS feature is disabled");
@@ -5863,15 +5864,23 @@ static int hostapd_ctrl_iface_dump_scs_list(struct hostapd_data *hapd,
 	if (hwaddr_aton(cmd, addr))
 		return -1;
 
-	sta = ap_get_sta(hapd, addr);
+	if (hapd->conf->mld_ap) {
+		for_each_mld_link(temp_hapd, hapd) {
+			sta = ap_get_sta(temp_hapd, addr);
+			if (sta)
+				break;
+		}
+	} else
+		sta = ap_get_sta(temp_hapd, addr);
+
 	if (!sta) {
 		wpa_printf(MSG_ERROR,
-			   "Station " MACSTR " not found to dump SCS Info",
+			   "Station " MACSTR " not found to dump SCS List",
 			   MAC2STR(addr));
 		return -1;
 	}
 
-	return hostapd_dump_scs_list(hapd, sta, buf, buflen);
+	return hostapd_dump_scs_list(temp_hapd, sta, buf, buflen);
 }
 
 
@@ -5879,8 +5888,9 @@ static int hostapd_ctrl_iface_dump_scs_info(struct hostapd_data *hapd,
 					    const char *cmd, char *buf,
 					    size_t buflen)
 {
+	struct hostapd_data *temp_hapd = hapd;
 	char *token, *context = NULL;
-	struct sta_info *sta;
+	struct sta_info *sta = NULL;
 	u8 addr[ETH_ALEN];
 	int scs_id_temp;
 	u8 scs_id;
@@ -5905,7 +5915,15 @@ static int hostapd_ctrl_iface_dump_scs_info(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	sta = ap_get_sta(hapd, addr);
+	if (hapd->conf->mld_ap) {
+		for_each_mld_link(temp_hapd, hapd) {
+			sta = ap_get_sta(temp_hapd, addr);
+			if (sta)
+				break;
+		}
+	} else
+		sta = ap_get_sta(temp_hapd, addr);
+
 	if (!sta) {
 		wpa_printf(MSG_ERROR,
 			   "Station " MACSTR " not found to dump SCS Info",
@@ -5915,16 +5933,17 @@ static int hostapd_ctrl_iface_dump_scs_info(struct hostapd_data *hapd,
 
 	scs_id = (u8) scs_id_temp;
 
-	return hostapd_dump_scs_info(hapd, sta, buf, buflen, scs_id);
+	return hostapd_dump_scs_info(temp_hapd, sta, buf, buflen, scs_id);
 }
 
 
 static int hostapd_ctrl_iface_send_scs_resp(struct hostapd_data *hapd,
 					    const char *cmd)
 {
+	struct hostapd_data *temp_hapd = hapd;
 	int scs_id_temp, req_type_temp;
 	char *token, *context = NULL;
-	struct sta_info *sta;
+	struct sta_info *sta = NULL;
 	u8 scs_id, req_type;
 	u8 addr[ETH_ALEN];
 
@@ -5953,21 +5972,25 @@ static int hostapd_ctrl_iface_send_scs_resp(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	sta = ap_get_sta(hapd, addr);
-	if (!sta) {
-		wpa_printf(MSG_ERROR, "STA not found");
-		return -1;
-	}
+	if (hapd->conf->mld_ap) {
+		for_each_mld_link(temp_hapd, hapd) {
+			sta = ap_get_sta(temp_hapd, addr);
+			if (sta)
+				break;
+		}
+	} else
+		sta = ap_get_sta(temp_hapd, addr);
 
-	if (!sta->scs_session_count) {
-		wpa_printf(MSG_ERROR, "No SCS sessions configured");
+	if (!sta) {
+		wpa_printf(MSG_ERROR, "STA not found for Unsolicited response");
 		return -1;
 	}
 
 	scs_id = (u8) scs_id_temp;
 	req_type = (u8) req_type_temp;
 
-	if (hostapd_send_unsolicited_scs_resp(hapd, sta, scs_id, req_type) < 0) {
+	if (hostapd_send_unsolicited_scs_resp(temp_hapd, sta, scs_id,
+					      req_type) < 0) {
 		wpa_printf(MSG_ERROR, "Failed to send unsolicited SCS response");
 		return -1;
 	}
