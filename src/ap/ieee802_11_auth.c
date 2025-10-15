@@ -228,6 +228,11 @@ int hostapd_check_acl(struct hostapd_data *hapd, const u8 *addr,
 				  hapd->conf->num_deny_mac, addr, vlan_id))
 		return HOSTAPD_ACL_REJECT;
 
+	if (hapd->iface->drv_flags == WPA_DRIVER_FLAGS_WIRED)
+	{
+		return HOSTAPD_ACL_PENDING;
+	}
+
 	if (hapd->conf->macaddr_acl == ACCEPT_UNLESS_DENIED)
 		return HOSTAPD_ACL_ACCEPT;
 	if (hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED)
@@ -410,6 +415,61 @@ int hostapd_check_ml_acl(struct hostapd_data *hapd, struct sta_info *sta)
 }
 
 #ifndef CONFIG_NO_RADIUS
+
+/**
+ * ACL cache and queries expiration for specific wired station
+ */
+void hostapd_acl_expire_sta(struct hostapd_data *hapd,
+		const u8 *addr)
+{
+	struct hostapd_cached_radius_acl *prev, *entry, *tmp;
+	struct hostapd_acl_query_data *prev_query, *entry_query, *tmp_query;
+
+	prev = NULL;
+	entry = hapd->acl_cache;
+
+	while (entry) {
+		if (os_memcmp(entry->addr, addr, ETH_ALEN) == 0) {
+			wpa_printf(MSG_DEBUG, "Flush Cached ACL entry for " MACSTR,
+						MAC2STR(entry->addr));
+			if (prev)
+				prev->next = entry->next;
+			else
+				hapd->acl_cache = entry->next;
+			hostapd_drv_set_radius_acl_expire(hapd, entry->addr);
+			tmp = entry;
+			entry = entry->next;
+			hostapd_acl_cache_free_entry(tmp);
+			break;
+		}
+
+		prev = entry;
+		entry = entry->next;
+	}
+
+	prev_query = NULL;
+	entry_query = hapd->acl_queries;
+
+	while (entry_query) {
+		if (os_memcmp(entry_query->addr, addr, ETH_ALEN) == 0) {
+			wpa_printf(MSG_DEBUG, "Flush ACL query for " MACSTR,
+						MAC2STR(entry_query->addr));
+			if (prev_query)
+				prev_query->next = entry_query->next;
+			else
+				hapd->acl_queries = entry_query->next;
+
+			tmp_query = entry_query;
+			entry_query = entry_query->next;
+			hostapd_acl_query_free(tmp_query);
+			break;
+		}
+
+		prev_query = entry_query;
+		entry_query = entry_query->next;
+	}
+}
+
 static void hostapd_acl_expire_cache(struct hostapd_data *hapd,
 				     struct os_reltime *now)
 {

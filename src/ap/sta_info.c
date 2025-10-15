@@ -530,6 +530,9 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	ap_sta_clear_disconnect_timeouts(hapd, sta);
 	ap_sta_clear_assoc_timeout(hapd, sta);
 	sae_clear_retransmit_timer(hapd, sta);
+	if (hapd->iface->drv_flags == WPA_DRIVER_FLAGS_WIRED) {
+		eloop_cancel_timeout(hostapd_mac_auth_timeout, hapd, sta);
+	}
 
 	ieee802_1x_free_station(hapd, sta);
 

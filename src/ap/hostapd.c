@@ -6296,6 +6296,24 @@ void hostapd_periodic_iface(struct hostapd_iface *iface)
 	}
 }
 
+/* mac authentication timeout handler for wired station */
+void hostapd_mac_auth_timeout(void *eloop_ctx, void *timeout_ctx)
+{
+	struct hostapd_data *hapd = eloop_ctx;
+	struct sta_info *sta = timeout_ctx;
+	struct radius_sta out;
+
+	if (sta->flags & WIRED_STA_MAB) {
+		if (hostapd_allowed_address(hapd, sta->addr, NULL, 0, &out, false)
+			 == HOSTAPD_ACL_REJECT && hapd->conf->ieee802_1x) {
+				/* try to initiate 802.1x with eap-identity-request,
+				 * this case happened when a wired 802.1x station is
+				 * connected but do not initiate 802.1x with eapol-start*/
+				sta->flags &= (~WIRED_STA_MAB);
+				hostapd_new_assoc_sta(hapd, sta, 0);
+		}
+	}
+}
 
 #ifdef CONFIG_OCV
 void hostapd_ocv_check_csa_sa_query(void *eloop_ctx, void *timeout_ctx)

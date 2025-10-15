@@ -1132,6 +1132,14 @@ legacy:
 	}
 
 	hostapd_remove_sta(hapd, sta);
+
+	/* expire acl caches and queries for the removed wired station */
+	if (hapd->iface->drv_flags == WPA_DRIVER_FLAGS_WIRED)
+	{
+#ifndef CONFIG_NO_RADIUS
+		hostapd_acl_expire_sta(hapd, addr);
+#endif
+	}
 }
 
 
@@ -2146,24 +2154,40 @@ static void hostapd_mgmt_tx_cb(struct hostapd_data *hapd, const u8 *buf,
 #endif /* NEED_AP_MLME */
 
 
-static int hostapd_event_new_sta(struct hostapd_data *hapd, const u8 *addr)
+static int hostapd_event_new_sta(struct hostapd_data *hapd, const u8 *addr, u32 flags)
 {
-	struct sta_info *sta = ap_get_sta(hapd, addr);
+	struct radius_sta out;
+	struct sta_info *sta;
 
-	if (sta)
-		return 0;
-
-	wpa_printf(MSG_DEBUG, "Data frame from unknown STA " MACSTR
-		   " - adding a new STA", MAC2STR(addr));
-	sta = ap_sta_add(hapd, addr);
-	if (sta) {
-		hostapd_new_assoc_sta(hapd, sta, 0);
+	sta = ap_get_sta(hapd, addr);
+	if (sta == NULL) {
+		wpa_printf(MSG_DEBUG, "Data frame from unknown STA " MACSTR
+			  " - adding a new STA, flags %d", MAC2STR(addr), flags);
+		sta = ap_sta_add(hapd, addr);
+		if (sta == NULL) {
+			wpa_printf(MSG_DEBUG, "Failed to add STA entry for " MACSTR,
+				  MAC2STR(addr));
+			return -1;
+		}
 	} else {
-		wpa_printf(MSG_DEBUG, "Failed to add STA entry for " MACSTR,
-			   MAC2STR(addr));
-		return -1;
+		if (!(sta->flags & WIRED_STA_MAB)) {
+			return 0;
+		}
 	}
 
+	if (flags & WIRED_STA_MAB) {
+		/* for MAB non-802.1x wired station
+		 * try mac authentication with external radius server */
+		sta->flags |= WIRED_STA_MAB;
+		wpa_printf(MSG_DEBUG, "try mac authentication with externel radius for QCA STA "
+				MACSTR, MAC2STR(addr));
+		eloop_cancel_timeout(ap_handle_timer, hapd, sta);
+		hostapd_allowed_address(hapd, addr, NULL, 0, &out, false);
+		eloop_register_timeout(6, 0, hostapd_mac_auth_timeout, hapd, sta);
+	} else {
+		sta->flags &= (~WIRED_STA_MAB);
+		hostapd_new_assoc_sta(hapd, sta, 0);
+	}
 	return 0;
 }
 
@@ -3309,7 +3333,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 				     data->rx_probe_req.ssi_signal);
 		break;
 	case EVENT_NEW_STA:
-		hostapd_event_new_sta(hapd, data->new_sta.addr);
+		hostapd_event_new_sta(hapd, data->new_sta.addr, data->new_sta.flags);
 		break;
 	case EVENT_EAPOL_RX:
 		hostapd_event_eapol_rx(hapd, data->eapol_rx.src,
