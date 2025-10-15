@@ -19,6 +19,7 @@
 #include "eap_peer/eap_config.h"
 #include "eap_peer/eap_proxy.h"
 #include "eapol_supp_sm.h"
+#include "../../wpa_supplicant/wpa_supplicant_i.h"
 
 #define STATE_MACHINE_DATA struct eapol_sm
 #define STATE_MACHINE_DEBUG_PREFIX "EAPOL"
@@ -1364,6 +1365,26 @@ int eapol_sm_rx_eapol(struct eapol_sm *sm, const u8 *src, const u8 *buf,
 			if (plen >= sizeof(*ehdr) && ehdr->code == 10) {
 				wpa_printf(MSG_DEBUG, "EAPOL: Ignore EAP packet with unknown code 10");
 				break;
+			}
+		}
+
+		/*
+		 * The EAP-Response is currently ignored in eap_sm_parseEapReq() in
+		 * EAP state machine. Here also ignore it in EAPOL state machine to
+		 * avoid the unexpected restart of EAPOL authentication triggered
+		 * by the EAP-Response message from the other supplicant in the
+		 * topology of two wired 802.1x station authentication with the
+		 * authenticator through a hub switch.
+		 */
+		struct wpa_supplicant *wpa_s = (struct wpa_supplicant *)sm->ctx->ctx;
+		if (wpa_s->drv_flags & WPA_DRIVER_FLAGS_WIRED) {
+			const struct eap_hdr *ehdr =
+				(const struct eap_hdr *) (hdr + 1);
+			if (plen >= sizeof(*ehdr) && ehdr->code == EAP_CODE_RESPONSE) {
+				if (sm->config->eap_methods->method != EAP_TYPE_LEAP) {
+					wpa_printf(MSG_DEBUG, "EAPOL: Ignore EAP-Response packet");
+					break;
+				}
 			}
 		}
 
