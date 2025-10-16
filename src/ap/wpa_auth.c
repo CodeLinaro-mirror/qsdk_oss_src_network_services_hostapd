@@ -5923,12 +5923,16 @@ static int wpa_group_update_sta(struct wpa_state_machine *sm, void *ctx)
 		return 0;
 
 #ifdef CONFIG_IEEE80211BE
-	/* For ML STA, run rekey on the association link and send G1 with keys
-	 * for all links. This is based on assumption that MLD level
-	 * Authenticator updates group keys on all affiliated links in one shot
-	 * and not independently or concurrently for separate links. */
-	if (sm->mld_assoc_link_id >= 0 &&
-	    sm->mld_assoc_link_id != wpa_auth->link_id)
+	/* For ML association, run rekey on the first authenticator to
+	 * enter SETKEYS and send G1 with keys for all links. This is
+	 * based on assumption that MLD level Authenticator updates
+	 * group keys on all affiliated links in one shot and not
+	 * independently or concurrently for separate links.
+	 * For Non-ML associations, this check is entered from the SETKEYS
+	 * state, which allows for group keys updation to the associated
+	 * station as is.
+	 */
+	if (sm->wpa_ptk_group_state == WPA_PTK_GROUP_REKEYNEGOTIATING)
 		return 0;
 #endif /* CONFIG_IEEE80211BE */
 
