@@ -604,7 +604,7 @@ static int intf_afc_find_channel_list(struct hostapd_iface *iface,
 
 	for (i = 0; i < ARRAY_SIZE(pwr_mode_order); i++) {
 		enum nl80211_regulatory_power_modes pwr_mode;
-		int n_en_chans;
+		int n_en_chans = 0;
 
 		*chan_width = start_chan_width;
 		pwr_mode = pwr_mode_order[i];
@@ -616,7 +616,7 @@ static int intf_afc_find_channel_list(struct hostapd_iface *iface,
 				break;
 			*chan_width = get_next_max_width(*chan_width);
 		}
-		if (!n_en_chans)
+		if (n_en_chans <= 0)
 			continue;
 		*best_ap_pwr_mode = pwr_mode;
 
