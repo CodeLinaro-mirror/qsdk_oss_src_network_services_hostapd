@@ -797,8 +797,7 @@ int skip_prune_for_partner_links(struct hostapd_data *hapd,
 			continue;
 
 		link_sta = ap_get_sta(lhapd, sta->addr);
-		if (link_sta &&
-		    ap_sta_is_authorized(sta)) {
+		if (link_sta) {
 			if (!sta->mld_info.mld_sta ||
 			    !link_sta->mld_info.mld_sta) {
 				wpa_printf(MSG_DEBUG,
