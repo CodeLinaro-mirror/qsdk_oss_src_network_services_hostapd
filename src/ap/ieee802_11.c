@@ -6697,6 +6697,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 		 * unprotected frame would be received by the STA that is now
 		 * trying to associate.
 		 */
+		sta->flags &= ~WLAN_STA_AUTHORIZED;
 	}
 
 	/* Make sure that the previously registered inactivity timer will not
