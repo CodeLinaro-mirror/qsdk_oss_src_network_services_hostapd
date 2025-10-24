@@ -6489,8 +6489,18 @@ int hostapd_mld_remove_link(struct hostapd_data *hapd)
 	if (!mld)
 		return -1;
 
-	if (hapd->link.next == NULL || hapd->link.prev == NULL)
-		return -1;
+	/*
+	 * If the link was never added to the MLD list (e.g., failure during
+	 * interface add), we still need to release the allocated link ID.
+	 * In that case, do not touch the link list or num_links, but ensure
+	 * the ID becomes available again.
+	 */
+	if (hapd->link.next == NULL || hapd->link.prev == NULL) {
+		mld->free_links |= BIT(hapd->mld_link_id);
+		wpa_printf(MSG_DEBUG, "AP MLD %s: Link ID %d released (not linked)",
+			   mld->name, hapd->mld_link_id);
+		return 0;
+	}
 
 	dl_list_del(&hapd->link);
 	mld->free_links |= BIT(hapd->mld_link_id);
