@@ -3499,8 +3499,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				return 1;
 			}
 			rate_type = BEACON_RATE_HE;
-		} else if (os_strncmp(pos, "eht:", 3) == 0) {
-			val = atoi(pos + 3);
+		} else if (os_strncmp(pos, "eht:", 4) == 0) {
+			val = atoi(pos + 4);
 			if (val < 0 || val > 15) {
 				wpa_printf(MSG_ERROR,
 					   "Line %d: invalid beacon_rate EHT-MCS %d",
