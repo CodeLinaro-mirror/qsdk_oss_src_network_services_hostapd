@@ -478,13 +478,18 @@ static void handle_auth_ft_finish(void *ctx, const u8 *dst,
 	struct sta_info *sta;
 	int reply_res;
 
-	reply_res = send_auth_reply(hapd, NULL, dst, WLAN_AUTH_FT,
-				    auth_transaction, status, ies, ies_len,
+	sta = ap_get_sta(hapd, dst);
+	if (!sta) {
+		reply_res = send_auth_reply(hapd, NULL, dst, WLAN_AUTH_FT,
+					    auth_transaction, status, ies, ies_len,
+					    "auth-ft-finish");
+		return;
+	}
+
+	reply_res = send_auth_reply(hapd, NULL, sta->mld_auth ? sta->reply_addr : dst,
+				    WLAN_AUTH_FT, auth_transaction, status, ies, ies_len,
 				    "auth-ft-finish");
 
-	sta = ap_get_sta(hapd, dst);
-	if (sta == NULL)
-		return;
 
 	if (sta->added_unassoc && (reply_res != WLAN_STATUS_SUCCESS ||
 				   status != WLAN_STATUS_SUCCESS)) {
@@ -2695,8 +2700,8 @@ static void handle_auth_fils_finish(struct hostapd_data *hapd,
 	auth_alg = (pub ||
 		    resp == WLAN_STATUS_FINITE_CYCLIC_GROUP_NOT_SUPPORTED) ?
 		WLAN_AUTH_FILS_SK_PFS : WLAN_AUTH_FILS_SK;
-	send_auth_reply(hapd, sta, sta->addr, auth_alg, 2, resp,
-			data ? wpabuf_head(data) : (u8 *) "",
+	send_auth_reply(hapd, sta, sta->mld_auth ? sta->reply_addr : sta->addr, auth_alg,
+			2, resp, data ? wpabuf_head(data) : (u8 *) "",
 			data ? wpabuf_len(data) : 0, "auth-fils-finish");
 	wpabuf_free(data);
 
