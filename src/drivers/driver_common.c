@@ -389,6 +389,7 @@ const char * driver_flag2_to_string(u64 flag2)
 	DF2S(SCAN_MIN_PREQ);
 	DF2S(SAE_OFFLOAD_STA);
 	DF2S(SPP_AMSDU);
+	DF2S(BEACON_RATE_EHT);
 	}
 	return "UNKNOWN";
 #undef DF2S
