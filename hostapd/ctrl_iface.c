@@ -4872,6 +4872,8 @@ static int hostapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd, char *cm
 				if (hapd->iface->current_mode->channels)
 					os_free(hapd->iface->current_mode->channels);
 
+				wpa_driver_free_6ghz_channels(hapd->iface->current_mode);
+
 				os_memcpy(hapd->iface->current_mode,
 					  mode, sizeof(struct hostapd_hw_modes));
 
@@ -4883,6 +4885,7 @@ static int hostapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd, char *cm
 			}
 			os_free(mode->rates);
 			os_free(mode->channels);
+			wpa_driver_free_6ghz_channels(mode);
 		}
 		os_free(modes);
 		if (!found_matching_mode) {
