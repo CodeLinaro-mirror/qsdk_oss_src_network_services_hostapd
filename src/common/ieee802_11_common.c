@@ -3719,9 +3719,9 @@ struct wpabuf * ieee802_11_defrag(const u8 *data, size_t len, bool ext_elem)
  * of data, see IEEE P802.11be/D7.0 Figure 35-4 - Per-STA Profile subelement
  * fragmentation within a fragmented Multi-Link element.
  */
-size_t ieee802_11_defrag_mle_subelem(struct wpabuf *mlbuf,
-				     const u8 *parent_subelem,
-				     size_t *defrag_len)
+ssize_t ieee802_11_defrag_mle_subelem(struct wpabuf *mlbuf,
+				      const u8 *parent_subelem,
+				      size_t *defrag_len)
 {
 	u8 *buf, *pos, *end;
 	size_t len, subelem_len;
