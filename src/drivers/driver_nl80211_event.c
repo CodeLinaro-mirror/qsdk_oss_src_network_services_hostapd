@@ -4827,6 +4827,15 @@ static void nl80211_update_muedca_params_event(struct wpa_driver_nl80211_data *d
 	union wpa_event_data ed;
 	int i;
 
+	os_memset(&ed, 0, sizeof(ed));
+
+	if (tb[NL80211_ATTR_WIPHY_RADIO_INDEX])
+		ed.update_muedca.radio_idx = nla_get_u8(tb[NL80211_ATTR_WIPHY_RADIO_INDEX]);
+	else {
+		/* Default to first radio */
+		ed.update_muedca.radio_idx = 0;
+	}
+
 	if (!tb[NL80211_ATTR_HE_MUEDCA_PARAMS])
 		return;
 

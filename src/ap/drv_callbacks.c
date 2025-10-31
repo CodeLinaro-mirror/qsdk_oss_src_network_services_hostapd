@@ -2512,7 +2512,32 @@ static void hostapd_event_wds_sta_interface_status(struct hostapd_data *hapd,
 static void hostapd_event_update_muedca_params(struct hostapd_data *hapd,
 					       struct update_muedca *params)
 {
+	struct hostapd_data *selected_hapd;
+	bool radio_matched = false;
 	int i;
+
+	if (hapd->conf->mld_ap) {
+		for_each_mld_link(selected_hapd, hapd) {
+			if (!selected_hapd->iface ||
+			    !selected_hapd->iface->current_hw_info)
+				continue;
+
+			if (selected_hapd->iface->current_hw_info->hw_idx ==
+							    params->radio_idx) {
+				radio_matched = true;
+				break;
+			}
+		}
+
+		if (!radio_matched) {
+			wpa_printf(MSG_DEBUG,
+				   "Radio index %u does not match HW index for any interface",
+				   params->radio_idx);
+			return;
+		}
+
+		hapd = selected_hapd;
+	}
 
 	/* Update current MU-EDCA parameters */
 	for (i = 0; i < 3; i++) {

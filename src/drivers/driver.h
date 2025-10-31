@@ -7904,6 +7904,7 @@ union wpa_event_data {
 	 * struct update_muedca - Data for EVENT_UPDATE_MU_EDCA_PARAMS
 	 */
 	struct update_muedca {
+		u8 radio_idx;
 		u8 he_mu_ac_be_param[3];
 		u8 he_mu_ac_bk_param[3];
 		u8 he_mu_ac_vi_param[3];
