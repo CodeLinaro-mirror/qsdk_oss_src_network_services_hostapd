@@ -75,8 +75,8 @@ static int get_noise_for_scan_results(struct nl_msg *msg, void *arg)
 }
 
 
-static int nl80211_get_noise_for_scan_results(
-	struct i802_bss *bss, struct nl80211_noise_info *info)
+static int nl80211_get_noise_for_scan_results(struct i802_bss *bss,
+						      struct nl80211_noise_info *info)
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	struct nl_msg *msg;
