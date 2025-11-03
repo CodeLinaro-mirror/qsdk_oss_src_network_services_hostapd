@@ -4559,8 +4559,7 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 	struct hostapd_data *bss;
 	struct sta_info *lsta;
 
-	if (sta->mld_info.mld_sta &&
-	    sta->unadded_sta &&
+	if (sta->unadded_sta &&
 	    (sta->flags & WLAN_STA_AUTH)) {
 		for_each_mld_link(bss, hapd) {
 			if (bss == hapd)

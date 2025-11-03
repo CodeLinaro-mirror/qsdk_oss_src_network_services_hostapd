@@ -335,7 +335,7 @@ int ap_sta_check_link_sta(struct hostapd_data *hapd,
 	struct hostapd_data *bss;
 	struct sta_info *lsta;
 
-	if (sta && !sta->mld_info.mld_sta)
+	if (!hostapd_is_multiple_link_mld(hapd))
 		return 0;
 
 	for_each_mld_link(bss, hapd) {
