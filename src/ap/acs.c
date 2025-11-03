@@ -1054,6 +1054,7 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 			*ideal_factor = factor;
 			*ideal_chan = chan;
 			ideal_bw320_offset = bw320_offset;
+			(*ideal_chan)->punct_bitmap = iface->conf->punct_bitmap;
 
 #ifdef CONFIG_IEEE80211BE
 			if (iface->conf->ieee80211be)
@@ -1175,9 +1176,10 @@ static void acs_adjust_secondary(struct hostapd_iface *iface)
 }
 
 
-static void acs_adjust_center_freq(struct hostapd_iface *iface)
+static void acs_adjust_center_freq(struct hostapd_iface *iface,
+				   struct hostapd_channel_data *chan)
 {
-	int center;
+	int center = 0;
 
 	wpa_printf(MSG_DEBUG, "ACS: Adjusting center frequency");
 
@@ -1325,7 +1327,7 @@ static void acs_study(struct hostapd_iface *iface)
 	if (iface->conf->ieee80211ac || iface->conf->ieee80211ax ||
 	    iface->conf->ieee80211be) {
 		acs_adjust_secondary(iface);
-		acs_adjust_center_freq(iface);
+		acs_adjust_center_freq(iface, ideal_chan);
 	}
 
 	err = hostapd_select_hw_mode(iface);

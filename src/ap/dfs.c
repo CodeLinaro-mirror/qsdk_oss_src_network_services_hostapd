@@ -51,7 +51,8 @@ static int dfs_get_used_n_chans(struct hostapd_iface *iface, int *seg1)
 	if (iface->conf->ieee80211n && iface->conf->secondary_channel)
 		n_chans = 2;
 
-	if (iface->conf->ieee80211ac || iface->conf->ieee80211ax) {
+	if (iface->conf->ieee80211ac || iface->conf->ieee80211ax ||
+	    iface->conf->ieee80211be) {
 		switch (hostapd_get_oper_chwidth(iface->conf)) {
 		case CONF_OPER_CHWIDTH_USE_HT:
 			break;
@@ -381,7 +382,8 @@ static void dfs_adjust_center_freq(struct hostapd_iface *iface,
 				   u8 *oper_centr_freq_seg0_idx,
 				   u8 *oper_centr_freq_seg1_idx)
 {
-	if (!iface->conf->ieee80211ac && !iface->conf->ieee80211ax)
+	if (!iface->conf->ieee80211ac && !iface->conf->ieee80211ax &&
+	    !iface->conf->ieee80211be)
 		return;
 
 	if (!chan)
