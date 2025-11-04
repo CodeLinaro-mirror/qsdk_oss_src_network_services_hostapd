@@ -249,7 +249,7 @@ void wpas_ubus_notify(struct wpa_supplicant *wpa_s, const struct wps_credential 
 
 	switch (auth_type) {
 		case WPS_AUTH_WPA2PSK:
-			encryption = "psk2";
+			encryption = "sae-mixed";
 			break;
 		case WPS_AUTH_WPAPSK:
 			encryption = "psk";
