@@ -3438,11 +3438,12 @@ enum edmg_bw_config {
 #define DPP_OUI_TYPE 0x1A
 
 /*
- * SCS_WFA_IE_LEN - Set the WFA IE len for SCS based on the below fields.
+ * WFA_IE_LEN - Set the WFA IE len for SCS and DSCP Policy
+ * based on the below fields.
  * Element ID (1) + Length (1) + WFA_OUI (3) + OUI Type (1) +
  * Capabilities length (1) + Capability (1)
  */
-#define SCS_WFA_IE_LEN	8
+#define WFA_IE_LEN	8
 
 /* Robust AV streaming Action field values */
 enum robust_av_streaming_action {

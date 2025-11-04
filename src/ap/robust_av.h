@@ -4,7 +4,6 @@
 #ifndef ROBUST_AV_H
 #define ROBUST_AV_H
 
-#define HOSTAPD_SCS_DESCR_CAP_BIT	2
 
 struct hostapd_data;
 struct sta_info;
@@ -272,7 +271,11 @@ struct hostapd_mscs_desc {
 	struct hostapd_tclas_mask_elem tclas_mask_elem;
 };
 
-u8 *hostapd_add_scs_ie(u8 *frm, bool scs);
+size_t hostapd_wfa_cap_ie_len(struct hostapd_data *hapd,
+                              struct sta_info *sta);
+u8 *hostapd_add_wfa_cap_ie(struct hostapd_data *hapd,
+                           struct sta_info *sta,
+                           u8 *eid);
 
 int hostapd_dump_scs_list(struct hostapd_data *hapd, struct sta_info *sta,
 			  char *buf, size_t buflen);

@@ -312,6 +312,62 @@ u16 hostapd_critical_update_capab(struct hostapd_data *hapd)
 }
 
 
+size_t hostapd_wfa_cap_ie_len(struct hostapd_data *hapd, struct sta_info *sta)
+{
+	bool scs_enabled = false;
+	bool dscp_enabled = false;
+
+#ifdef CONFIG_IEEE80211AX
+	scs_enabled = hapd->conf->scs;
+#endif /* CONFIG_IEEE80211AX */
+
+	if (hapd->conf->enable_dscp_policy_capa)
+		dscp_enabled = !sta || (sta && sta->dscp_policy_capable);
+
+	if (scs_enabled || dscp_enabled)
+		return WFA_IE_LEN;
+
+	return 0;
+}
+
+
+u8 *hostapd_add_wfa_cap_ie(struct hostapd_data *hapd,
+			    struct sta_info *sta,
+			    u8 *eid)
+{
+	u8 cap = 0;
+	bool scs_enabled = false;
+	bool dscp_enabled = false;
+
+#ifdef CONFIG_IEEE80211AX
+	scs_enabled = hapd->conf->scs;
+#endif /* CONFIG_IEEE80211AX */
+
+	if (hapd->conf->enable_dscp_policy_capa)
+		dscp_enabled = !sta || (sta && sta->dscp_policy_capable);
+
+	if (!scs_enabled && !dscp_enabled)
+		return eid;
+
+	*eid++ = WLAN_EID_VENDOR_SPECIFIC;
+	*eid++ = WFA_IE_LEN - 2;
+	*eid++ = (OUI_WFA >> 16) & 0xFF;
+	*eid++ = (OUI_WFA >> 8) & 0xFF;
+	*eid++ = OUI_WFA & 0xFF;
+	*eid++ = WFA_CAPA_OUI_TYPE;
+	*eid++ = 1;
+
+	if (scs_enabled)
+		cap |= WFA_CAPA_QM_NON_EHT_SCS_TRAFFIC_DESC;
+
+	if (dscp_enabled)
+		cap |= WFA_CAPA_QM_DSCP_POLICY | WFA_CAPA_QM_UNSOLIC_DSCP;
+
+	*eid++ = cap;
+	return eid;
+}
+
+
 #ifdef CONFIG_WEP
 #ifndef CONFIG_NO_RC4
 static u16 auth_shared_key(struct hostapd_data *hapd, struct sta_info *sta,
@@ -5998,13 +6054,7 @@ rsnxe_done:
 	if (sta && (sta->flags & WLAN_STA_WMM))
 		p = hostapd_eid_wmm(hapd, p, false);
 
-#ifdef CONFIG_IEEE80211AX
-	if (hapd->conf->scs)
-		p = hostapd_add_scs_ie(p, true);
-#endif /* CONFIG_IEEE80211AX */
-
-	if (sta && hapd->conf->enable_dscp_policy_capa)
-		p = hostapd_set_dscp_capabilities(hapd, sta, p);
+	p = hostapd_add_wfa_cap_ie(hapd, sta, p);
 
 #ifdef CONFIG_WPS
 	if (sta &&

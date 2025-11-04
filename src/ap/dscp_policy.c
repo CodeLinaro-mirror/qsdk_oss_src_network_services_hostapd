@@ -46,50 +46,6 @@ void hostapd_check_dscp_policy_capability(struct sta_info *sta,
 	}
 }
 
-size_t hostapd_dscp_cap_ie_len(struct hostapd_data *hapd)
-{
-
-	return DSCP_CAP_IE_HEADER_LEN +
-	       DSCP_CAP_IE_OUI_LEN +
-	       DSCP_CAP_IE_OUI_TYPE_LEN +
-	       DSCP_CAP_IE_CAP_LEN_FIELD +
-	       DSCP_CAPABILITIES_LEN;
-}
-
-u8 *hostapd_set_dscp_capabilities(struct hostapd_data *hapd, struct sta_info *sta, u8 *eid)
-{
-	struct wpabuf *dscp_ie = NULL;
-	u8 dscp_cap = 0;
-	size_t buf_len, dscp_ie_len;
-
-	dscp_cap |= WFA_CAPA_QM_DSCP_POLICY;
-	dscp_cap |= WFA_CAPA_QM_UNSOLIC_DSCP;
-
-	if (!hapd->conf->enable_dscp_policy_capa || (sta && !sta->dscp_policy_capable))
-		return eid;
-
-	/* Wi-Fi Alliance element */
-	buf_len = hostapd_dscp_cap_ie_len(hapd);
-
-	dscp_ie = wpabuf_alloc(buf_len);
-	if (!dscp_ie)
-		return eid;
-
-	wpabuf_put_u8(dscp_ie, WLAN_EID_VENDOR_SPECIFIC);
-	wpabuf_put_u8(dscp_ie, buf_len - 2);
-	wpabuf_put_be24(dscp_ie, OUI_WFA);
-	wpabuf_put_u8(dscp_ie, WFA_CAPA_OUI_TYPE);
-	wpabuf_put_u8(dscp_ie, sizeof(dscp_cap));
-	wpabuf_put_u8(dscp_ie, dscp_cap);
-
-	dscp_ie_len = wpabuf_len(dscp_ie);
-	os_memcpy(eid, wpabuf_head(dscp_ie), dscp_ie_len);
-	eid += dscp_ie_len;
-
-	wpabuf_free(dscp_ie);
-	return eid;
-}
-
 static int parse_ipv4_params(struct hostapd_dscp_policy *policy, const char *token)
 {
 	if (os_strncmp(token, "dst_ip=", 7) == 0) {
