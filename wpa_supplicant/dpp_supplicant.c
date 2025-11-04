@@ -5330,6 +5330,13 @@ static void wpas_dpp_chirp_next(void *eloop_ctx, void *timeout_ctx)
 		wpa_s->dpp_chirp_round++;
 		wpa_printf(MSG_DEBUG, "DPP: Start chirping round %d",
 			   wpa_s->dpp_chirp_round);
+		if (wpa_s->is_dpp_reconfig == false) {
+			wpa_drv_remain_on_channel(wpa_s, wpa_s->dpp_chirp_freq, 2000);
+			wpa_s->is_roc_started = true;
+			if (eloop_register_timeout(3, 0, wpas_dpp_chirp_timeout, wpa_s, NULL) < 0)
+				wpas_dpp_chirp_stop(wpa_s, 0);
+			return;
+		}
 	} else {
 		for (i = 0; wpa_s->dpp_chirp_freqs[i]; i++)
 			if (wpa_s->dpp_chirp_freqs[i] == wpa_s->dpp_chirp_freq)
@@ -5340,7 +5347,22 @@ static void wpas_dpp_chirp_next(void *eloop_ctx, void *timeout_ctx)
 				   wpa_s->dpp_chirp_freq);
 			return;
 		}
-		i++;
+		if (wpa_s->is_dpp_reconfig == false && wpa_s->is_roc_started == false) {
+			i++;
+			wpa_s->dpp_chirp_freq = wpa_s->dpp_chirp_freqs[i];
+			if (wpa_s->dpp_chirp_freq) {
+				wpa_drv_remain_on_channel(wpa_s, wpa_s->dpp_chirp_freq, 2000);
+				wpa_s->is_roc_started = true;
+				if (eloop_register_timeout(3, 0, wpas_dpp_chirp_timeout, wpa_s, NULL) < 0)
+					wpas_dpp_chirp_stop(wpa_s, 0);
+				return;
+			}
+		} else if (wpa_s->is_dpp_reconfig == true) {
+				i++;
+		}  else {
+			wpa_s->is_roc_started = false;
+		}
+
 		if (wpa_s->dpp_chirp_freqs[i]) {
 			wpa_s->dpp_chirp_freq = wpa_s->dpp_chirp_freqs[i];
 		} else {
@@ -5416,6 +5438,8 @@ int wpas_dpp_chirp(struct wpa_supplicant *wpa_s, const char *cmd)
 	if (!wpa_s->dpp_presence_announcement)
 		return -1;
 	wpa_s->dpp_chirp_iter = iter;
+	wpa_s->is_roc_started = false;
+	wpa_s->is_dpp_reconfig = false;
 	wpa_s->dpp_chirp_round = 0;
 	wpa_s->dpp_chirp_scan_done = 0;
 	wpa_s->dpp_chirp_listen = listen_freq;
@@ -5501,6 +5525,8 @@ int wpas_dpp_reconfig(struct wpa_supplicant *wpa_s, const char *cmd)
 	wpa_s->dpp_chirp_iter = iter;
 	wpa_s->dpp_chirp_round = 0;
 	wpa_s->dpp_chirp_scan_done = 0;
+	wpa_s->is_roc_started = false;
+	wpa_s->is_dpp_reconfig = true;
 	wpa_s->dpp_chirp_listen = 0;
 
 	return eloop_register_timeout(0, 0, wpas_dpp_chirp_next, wpa_s, NULL);

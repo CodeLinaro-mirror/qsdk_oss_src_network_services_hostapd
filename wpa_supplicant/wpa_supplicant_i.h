@@ -1532,6 +1532,8 @@ struct wpa_supplicant {
 	int dpp_chirp_freq;
 	int *dpp_chirp_freqs;
 	int dpp_chirp_iter;
+	bool is_roc_started;
+	bool is_dpp_reconfig;
 	int dpp_chirp_round;
 	int dpp_chirp_scan_done;
 	int dpp_chirp_listen;
