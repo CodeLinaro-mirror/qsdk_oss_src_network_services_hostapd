@@ -173,6 +173,14 @@ int hostapd_get_hw_features(struct hostapd_iface *iface)
 		iface->current_mode = NULL;
 	}
 
+	/**
+	 * This function frees survey results, and initializes the chan
+	 * survey list. That is fine as the modes are freed anyway.
+	 */
+	for (i = 0; i < iface->num_hw_features; i++)
+		acs_cleanup_mode(&iface->hw_features[i]);
+	iface->chans_surveyed = 0;
+
 	for (i = 0; i < num_modes; i++) {
 		struct hostapd_hw_modes *feature = &modes[i];
 		int dfs_enabled = hapd->iconf->ieee80211h &&
@@ -236,6 +244,13 @@ int hostapd_get_hw_features(struct hostapd_iface *iface)
 	hostapd_free_hw_features(iface->hw_features, iface->num_hw_features);
 	iface->hw_features = modes;
 	iface->num_hw_features = num_modes;
+
+	/**
+	 * This is done to (re)initialize the survey list for new channels as
+	 * the previous modes are freed.
+	 */
+	for (i = 0; i < iface->num_hw_features; i++)
+		acs_cleanup_mode(&iface->hw_features[i]);
 
 	hostap_afc_disable_channels(iface);
 
