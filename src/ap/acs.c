@@ -326,7 +326,7 @@ static void acs_clean_chan_surveys(struct hostapd_channel_data *chan)
 }
 
 
-static void acs_cleanup_mode(struct hostapd_hw_modes *mode)
+void acs_cleanup_mode(struct hostapd_hw_modes *mode)
 {
 	int i;
 	struct hostapd_channel_data *chan;
