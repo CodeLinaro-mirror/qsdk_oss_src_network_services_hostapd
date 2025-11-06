@@ -1203,7 +1203,7 @@ static bool hostapd_mscs_flow_exists(struct hostapd_data *hapd,
 	struct hostapd_tclas_elements te = {0};
 	int idx;
 
-	if (!sta || !sta->mscs_ctxt)
+	if (!sta || !sta->mscs_ctxt || !sta->mscs_session_exists)
 		return false;
 
 	for (idx = 0; idx < sta->mscs_ctxt->available_idx; idx++) {
@@ -1223,7 +1223,7 @@ static int hostapd_mscs_add_flow_info(struct sta_info *sta,
 	if (!sta)
 		return -EINVAL;
 
-	if (!sta->mscs_ctxt)
+	if (!sta->mscs_ctxt || !sta->mscs_session_exists)
 		return -EINVAL;
 
 	available_idx = sta->mscs_ctxt->available_idx;
@@ -1245,7 +1245,7 @@ static int hostapd_mscs_add_nft_rule(struct hostapd_data *hapd,
 	struct hostapd_nft_rule_params rule = {0};
 	u8 tid = te->up;
 
-	if (!sta || !sta->mscs_ctxt) {
+	if (!sta || !sta->mscs_ctxt || !sta->mscs_session_exists) {
 		wpa_printf(MSG_ERROR, "MSCS: Missing context for STA");
 		return -EINVAL;
 	}
@@ -2382,15 +2382,14 @@ void hostapd_process_mscs_flow(struct hostapd_data *hapd,
 
 	sta = ap_get_sta(hapd, addr);
 
-	if (!sta) {
-		os_free(addr);
-		return;
-	}
+	if (!sta || !sta->mscs_ctxt || !sta->mscs_session_exists)
+		goto fail;
 
-	if (!hapd->conf->mscs) {
-		os_free(addr);
-		return;
-	}
+	if (!hapd->conf->mscs)
+		goto fail;
+
+	if (!te)
+		goto fail;
 
 	tid = hostapd_mscs_get_tid(hapd, sta, tid);
 	te->classifier_type = QM_TCLAS_CLASSIFIER_TYPE4;
@@ -2399,6 +2398,7 @@ void hostapd_process_mscs_flow(struct hostapd_data *hapd,
 
 	hostapd_mscs_add_nft_rule(hapd, sta, te);
 
+fail:
 	os_free(addr);
 	return;
 }
