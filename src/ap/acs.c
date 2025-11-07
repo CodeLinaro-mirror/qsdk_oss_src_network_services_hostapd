@@ -23,6 +23,10 @@
 #include "hw_features.h"
 #include "acs.h"
 
+#ifdef CONFIG_QCN_EXTN
+#include "../../qcn_extns/cmn.h"
+#endif
+
 /*
  * Automatic Channel Selection
  * ===========================
@@ -1312,7 +1316,14 @@ static void acs_study(struct hostapd_iface *iface)
 		goto fail;
 	}
 
-	ideal_chan = acs_find_ideal_chan(iface);
+#ifdef CONFIG_QCN_EXTN
+	if (iface->conf->conf_extn.qacs_enable)
+		ideal_chan = qacs_find_ideal_chan(iface);
+	else
+#endif
+
+		ideal_chan = acs_find_ideal_chan(iface);
+
 	if (!ideal_chan) {
 		wpa_printf(MSG_ERROR, "ACS: Failed to compute ideal channel");
 		err = -1;
