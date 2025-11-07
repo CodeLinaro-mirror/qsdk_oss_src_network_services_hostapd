@@ -615,6 +615,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 			struct ieee80211_ht_capabilities ht;
 			struct ieee80211_vht_capabilities vht;
 			struct ieee80211_he_capabilities he;
+			struct ieee80211_he_6ghz_band_cap he_6ghz;
 			struct ieee80211_eht_capabilities eht;
 			u8 uhr[sizeof(struct ieee80211_uhr_capabilities) + 7];
 		} *cached;
@@ -650,6 +651,10 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		if (he_capab) {
 			os_memcpy(&cached->he, he_capab, he_capab_len);
 			cached->params.he_capab = &cached->he;
+		}
+		if (he_6ghz_capab) {
+			cached->he_6ghz = *he_6ghz_capab;
+			cached->params.he_6ghz_capab = &cached->he_6ghz;
 		}
 		if (eht_capab) {
 			os_memcpy(&cached->eht, eht_capab, eht_capab_len);
