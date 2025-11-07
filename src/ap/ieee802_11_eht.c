@@ -2721,7 +2721,7 @@ hostapd_handle_link_reconf_req(struct hostapd_data *hapd, const u8 *buf,
 	struct link_reconf_req_list *req_list = NULL;
 	struct ml_reconf_req ml_reconf_req = {};
 	const u8 *pos = NULL;
-	int ret = -1;
+	int ret = -1, i;
 
 	wpa_printf(MSG_DEBUG,
 		   "MLD: Link Reconfiguration Request frame from " MACSTR,
@@ -2833,7 +2833,7 @@ skip_oci_validation:
 		goto out;
 
 	os_memcpy(ml_reconf_req.addr, assoc_sta->addr, ETH_ALEN);
-	for (int i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
 		ml_reconf_req.sta_add_params[i] =
 			assoc_sta->recfg_sta_add_params[i];
 	}
@@ -2858,6 +2858,15 @@ skip_oci_validation:
 			   ret);
 
 out:
+	if (assoc_sta) {
+		for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+			if (assoc_sta->recfg_sta_add_params[i]) {
+				os_free(assoc_sta->recfg_sta_add_params[i]);
+				assoc_sta->recfg_sta_add_params[i] = NULL;
+			}
+		}
+	}
+
 	if (ret) {
 		ml_deinit_link_reconf_req(&req_list);
 		if (assoc_sta && assoc_sta->reconf_req)
