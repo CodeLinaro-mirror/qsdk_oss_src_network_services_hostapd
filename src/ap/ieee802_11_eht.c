@@ -1626,6 +1626,11 @@ void ml_deinit_link_reconf_req(struct link_reconf_req_list **req_list_ptr)
 
 	req_list = *req_list_ptr;
 
+	if (dl_list_empty(&req_list->add_req)) {
+		wpa_printf(MSG_DEBUG, "MLD: No Link Reconf additions");
+		return;
+	}
+
 	dl_list_for_each_safe(info, tmp, &req_list->add_req,
 			      struct link_reconf_req_info, list) {
 		dl_list_del(&info->list);
