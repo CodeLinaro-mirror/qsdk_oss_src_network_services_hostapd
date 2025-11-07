@@ -538,7 +538,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    int set, const u8 *link_addr, bool mld_link_sta,
 		    u16 eml_cap, int type)
 {
-	struct hostapd_sta_add_params params;
+	struct hostapd_sta_add_params params, *tmp = NULL;
 	struct hostapd_data *assoc_hapd;
 	struct sta_info *sta, *assoc_sta;
 
@@ -595,16 +595,54 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 			wpa_printf(MSG_ERROR, "No assoc sta found");
 			return -1;
 		}
-		assoc_sta->recfg_sta_add_params[hapd->mld_link_id] =
-			os_zalloc(sizeof(struct hostapd_sta_add_params));
 
-		os_memcpy(assoc_sta->recfg_sta_add_params[hapd->mld_link_id],
-			  &params, sizeof(params));
+		tmp = os_zalloc(sizeof(*tmp));
+		if (!tmp) {
+			wpa_printf(MSG_ERROR, "Failed to allocate reconf_sta_add_params");
+			return -1;
+		}
+
+		os_memcpy(tmp, &params, sizeof(params));
+
+		if (params.ht_capabilities) {
+			tmp->ht_capabilities = os_memdup(params.ht_capabilities,
+							 sizeof(*params.ht_capabilities));
+			if (!tmp->ht_capabilities)
+				goto fail;
+		}
+		if (params.vht_capabilities) {
+			tmp->vht_capabilities = os_memdup(params.vht_capabilities,
+							  sizeof(*params.vht_capabilities));
+			if (!tmp->vht_capabilities)
+				goto fail;
+		}
+		if (params.he_capab && params.he_capab_len) {
+			tmp->he_capab = os_memdup(params.he_capab, params.he_capab_len);
+			if (!tmp->he_capab)
+				goto fail;
+		}
+		if (params.he_6ghz_capab) {
+			tmp->he_6ghz_capab = os_memdup(params.he_6ghz_capab,
+						       sizeof(*params.he_6ghz_capab));
+			if (!tmp->he_6ghz_capab)
+				goto fail;
+		}
+		if (params.eht_capab && params.eht_capab_len) {
+			tmp->eht_capab = os_memdup(params.eht_capab, params.eht_capab_len);
+			if (!tmp->eht_capab)
+				goto fail;
+		}
+
+		assoc_sta->recfg_sta_add_params[hapd->mld_link_id] = tmp;
 		return 0;
 	}
 #endif /* CONFIG_IEEE80211BE */
 
 	return hapd->driver->sta_add(hapd->drv_priv, &params);
+
+fail:
+	hostapd_free_reconf_sta_add_params(tmp);
+	return -1;
 }
 
 

@@ -1613,6 +1613,21 @@ out:
 	return WLAN_STATUS_SUCCESS;
 }
 
+#ifdef CONFIG_IEEE80211BE
+void
+hostapd_free_reconf_sta_add_params(struct hostapd_sta_add_params *params)
+{
+	if (!params)
+		return;
+
+	os_free((void *)params->eht_capab);
+	os_free((void *)params->he_6ghz_capab);
+	os_free((void *)params->he_capab);
+	os_free((void *)params->vht_capabilities);
+	os_free((void *)params->ht_capabilities);
+	os_free(params);
+}
+#endif
 
 void ml_deinit_link_reconf_req(struct link_reconf_req_list **req_list_ptr)
 {
@@ -2860,10 +2875,9 @@ skip_oci_validation:
 out:
 	if (assoc_sta) {
 		for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
-			if (assoc_sta->recfg_sta_add_params[i]) {
-				os_free(assoc_sta->recfg_sta_add_params[i]);
-				assoc_sta->recfg_sta_add_params[i] = NULL;
-			}
+			hostapd_free_reconf_sta_add_params(
+					assoc_sta->recfg_sta_add_params[i]);
+			assoc_sta->recfg_sta_add_params[i] = NULL;
 		}
 	}
 

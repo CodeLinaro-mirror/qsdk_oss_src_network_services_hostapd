@@ -461,6 +461,8 @@ void hostapd_epcs_timeout_handler(void *eloop_ctx, void *timeout_ctx);
 int hostapd_configure_epcs(struct hostapd_data *hapd,
 				  struct sta_info *sta,
 				  enum qos_mgmt_req_type req_type);
+void
+hostapd_free_reconf_sta_add_params(struct hostapd_sta_add_params *params);
 #endif /* CONFIG_IEEE80211BE */
 u8 * hostapd_fragment_multi_link_element(struct wpabuf *buf, u8 *pos);
 unsigned int wnm_neighbor_report_get_pref_link_mask(const u8 *neigh_rep,
