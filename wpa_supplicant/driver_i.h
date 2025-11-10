@@ -1386,4 +1386,15 @@ static inline int wpa_drv_get_inact_sec(struct wpa_supplicant *wpa_s,
 
 #endif /* CONFIG_NAN */
 
+static inline struct hostapd_multi_hw_info *
+wpa_get_multi_hw_info(struct wpa_supplicant *wpa_s,
+		      unsigned int *num_multi_hws)
+{
+	if (!wpa_s->driver->get_multi_hw_info)
+		return NULL;
+
+	return wpa_s->driver->get_multi_hw_info(wpa_s->drv_priv,
+					    num_multi_hws);
+}
+
 #endif /* DRIVER_I_H */

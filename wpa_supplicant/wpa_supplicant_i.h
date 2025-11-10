@@ -1782,6 +1782,10 @@ struct wpa_supplicant {
 	unsigned int beacons_checked;
 	unsigned int next_beacon_check;
 
+	unsigned int ml_neigh_retries;
+	struct hostapd_multi_hw_info *multi_hw_info;
+	u8 num_multi_hws;
+
 	bool scs_reconfigure;
 	bool ext_auth_to_same_bss; /* Whether external authentication has been
 				    * completed successfully with the BSS that
