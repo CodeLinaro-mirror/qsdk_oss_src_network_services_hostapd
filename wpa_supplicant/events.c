@@ -4318,6 +4318,16 @@ static bool is_all_links_associated(struct wpa_supplicant *wpa_s)
 	if (!valid_links || !freq_list)
 		return true;
 
+	for (i = 0; i < wpa_s->num_multi_hws; i++) {
+		struct hostapd_multi_hw_info *hw_info = &wpa_s->multi_hw_info[i];
+
+		if(hw_info->start_freq >= 5925 && hw_info->end_freq <= 6425)
+			is_split_phy_6ghz = true;
+
+		if (hw_info->start_freq >= 5490 && hw_info->end_freq <= 5895)
+			is_split_phy_5ghz = true;
+	}
+
 	i = 0;
 
 	freq = freq_list[i];

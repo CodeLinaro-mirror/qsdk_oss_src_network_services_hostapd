@@ -64,6 +64,7 @@
 #include "wnm_sta.h"
 #include "wpas_kay.h"
 #include "mesh.h"
+#include "ap/hw_features.h"
 #include "dpp_supplicant.h"
 #include "nan_usd.h"
 #include "pr_supplicant.h"
@@ -7781,6 +7782,8 @@ static int wpa_supplicant_init_iface(struct wpa_supplicant *wpa_s,
 	struct wpa_driver_capa capa;
 	int capa_res;
 	u8 dfs_domain;
+	struct hostapd_multi_hw_info *multi_hw_info;
+	unsigned int num_multi_hws = 0;
 
 	wpa_printf(MSG_DEBUG, "Initializing interface '%s' conf '%s' driver "
 		   "'%s' ctrl_interface '%s' bridge '%s'", iface->ifname,
@@ -7953,6 +7956,23 @@ static int wpa_supplicant_init_iface(struct wpa_supplicant *wpa_s,
 				wpa_s->hw_capab |= BIT(CAPAB_HT);
 		}
 		wpa_s->support_6ghz = wpas_is_6ghz_supported(wpa_s, false);
+	}
+
+	multi_hw_info = wpa_get_multi_hw_info(wpa_s, &num_multi_hws);
+	if (multi_hw_info != NULL) {
+		wpa_s->multi_hw_info = multi_hw_info;
+		wpa_s->num_multi_hws = num_multi_hws;
+	}
+
+	wpa_printf(MSG_DEBUG, "Multiple underlying hardwares info:");
+
+	for (int i = 0; i < num_multi_hws; i++) {
+		struct hostapd_multi_hw_info *hw_info = &multi_hw_info[i];
+
+		wpa_printf(MSG_DEBUG,
+			   "  %d. hw_idx=%u, frequency range: %d-%d MHz",
+			   i + 1, hw_info->hw_idx, hw_info->start_freq,
+			   hw_info->end_freq);
 	}
 
 	capa_res = wpa_drv_get_capa(wpa_s, &capa);
@@ -8265,6 +8285,9 @@ static void wpa_supplicant_deinit_iface(struct wpa_supplicant *wpa_s,
 		wpa_s->conf = NULL;
 	}
 
+	hostapd_free_multi_hw_info(wpa_s->multi_hw_info);
+	wpa_s->multi_hw_info = NULL;
+	wpa_s->num_multi_hws = 0;
 	os_free(wpa_s->ssids_from_scan_req);
 	os_free(wpa_s->last_scan_freqs);
 

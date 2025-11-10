@@ -1661,16 +1661,34 @@ int wpa_bss_ext_capab(const struct wpa_bss *bss, unsigned int capab)
 }
 
 
+s8 wpa_get_hw_idx_by_freq(struct wpa_supplicant *wpa_s, int partner_freq)
+{
+	struct hostapd_multi_hw_info *hw_info;
+	int i;
+
+	for (i = 0; i < wpa_s->num_multi_hws; i++) {
+		hw_info = &wpa_s->multi_hw_info[i];
+		if (partner_freq >= hw_info->start_freq &&
+		    partner_freq <= hw_info->end_freq)
+			return i;
+	}
+
+	return -1;
+}
+
+
 static void
 wpa_bss_parse_ml_rnr_ap_info(struct wpa_supplicant *wpa_s,
 			     struct wpa_bss *bss, u8 ap_mld_id,
 			     const struct ieee80211_neighbor_ap_info *ap_info,
-			     size_t len, u16 *seen)
+			     size_t len, u16 *seen,
+			     u16 *associated_hw_bmap)
 {
 	const u8 *pos, *end;
 	const u8 *mld_params;
 	u8 count, mld_params_offset;
 	u8 i, type, link_id;
+	s8 hw_idx;
 
 	count = RNR_TBTT_INFO_COUNT_VAL(ap_info->tbtt_info_hdr) + 1;
 	type = ap_info->tbtt_info_hdr & RNR_TBTT_INFO_HDR_TYPE_MSK;
@@ -1698,6 +1716,26 @@ wpa_bss_parse_ml_rnr_ap_info(struct wpa_supplicant *wpa_s,
 		if (link_id >= MAX_NUM_MLD_LINKS)
 			continue;
 
+		int partner_freq = ieee80211_chan_to_freq(NULL, ap_info->op_class, ap_info->channel);
+		int curr_freq = 0;
+		if (partner_freq && wpa_s->conf->freq_list && wpa_s->conf->freq_list[0]) {
+			int i = 0;
+			curr_freq = wpa_s->conf->freq_list[i];
+			while (curr_freq) {
+				i++;
+				if (curr_freq == partner_freq) {
+					wpa_printf(MSG_DEBUG, "ML Partner freq %d is part of our scan list", partner_freq);
+					break;
+				}
+				curr_freq = wpa_s->conf->freq_list[i];
+			}
+		}
+		if (wpa_s->conf->freq_list && wpa_s->conf->freq_list[0] && !curr_freq) {
+			wpa_printf(MSG_DEBUG, "ML Partner freq %d is not part of our scan list ignore this link", partner_freq);
+			continue;
+		}
+
+
 		if (*mld_params != ap_mld_id) {
 			wpa_printf(MSG_DEBUG,
 				   "MLD: Reported link not part of MLD");
@@ -1707,6 +1745,16 @@ wpa_bss_parse_ml_rnr_ap_info(struct wpa_supplicant *wpa_s,
 			*seen |= BIT(link_id);
 			wpa_printf(MSG_DEBUG, "MLD: mld ID=%u, link ID=%u",
 				   *mld_params, link_id);
+
+			hw_idx = wpa_get_hw_idx_by_freq(wpa_s, partner_freq);
+			if (hw_idx >= 0) {
+				if (!(*associated_hw_bmap & BIT(hw_idx))) {
+					*associated_hw_bmap |= BIT(hw_idx);
+				} else {
+					wpa_printf(MSG_DEBUG, "ML Partner freq %d is already part of this hw_idx: %d", partner_freq, hw_idx);
+					continue;
+				}
+			}
 
 			bss->valid_links |= BIT(link_id);
 			l = &bss->mld_links[link_id];
@@ -2000,6 +2048,8 @@ void wpa_bss_parse_basic_ml_element(struct wpa_supplicant *wpa_s,
 	const u8 *ies_pos = wpa_bss_ie_ptr(bss);
 	size_t ies_len = bss->ie_len ? bss->ie_len : bss->beacon_ie_len;
 	struct mld_link *l;
+	s8 hw_idx;
+	u16 associated_hw_bmap = 0;
 
 	if (ieee802_11_parse_elems(ies_pos, ies_len, &elems, 1) ==
 	    ParseFailed) {
@@ -2144,6 +2194,10 @@ void wpa_bss_parse_basic_ml_element(struct wpa_supplicant *wpa_s,
 		bss->mld_bss_non_transmitted = !!mbssid_idx_elem[2];
 	}
 
+	hw_idx = wpa_get_hw_idx_by_freq(wpa_s, bss->freq);
+	if (hw_idx >= 0)
+		associated_hw_bmap |= BIT(hw_idx);
+
 	for_each_element_id(elem, WLAN_EID_REDUCED_NEIGHBOR_REPORT,
 			    wpa_bss_ie_ptr(bss),
 			    bss->ie_len ? bss->ie_len : bss->beacon_ie_len) {
@@ -2165,7 +2219,8 @@ void wpa_bss_parse_basic_ml_element(struct wpa_supplicant *wpa_s,
 				goto out;
 
 			wpa_bss_parse_ml_rnr_ap_info(wpa_s, bss, ap_mld_id,
-						     ap_info, len, &seen);
+						     ap_info, len, &seen,
+						     &associated_hw_bmap);
 
 			ap_info_pos += ap_info_len;
 			len -= ap_info_len;

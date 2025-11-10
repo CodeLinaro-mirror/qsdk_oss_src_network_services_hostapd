@@ -532,7 +532,8 @@ static int wpas_sme_ml_auth(struct wpa_supplicant *wpa_s,
 
 
 static void wpas_sme_set_mlo_links(struct wpa_supplicant *wpa_s,
-				   struct wpa_bss *bss, struct wpa_ssid *ssid)
+				   struct wpa_bss *bss, struct wpa_ssid *ssid,
+				   u16 *missing_links)
 {
 	u16 usable_links;
 	u8 i;
@@ -542,7 +543,7 @@ static void wpas_sme_set_mlo_links(struct wpa_supplicant *wpa_s,
 	if (!(wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_MLO))
 		return;
 
-	usable_links = wpa_bss_get_usable_links(wpa_s, bss, ssid, NULL);
+	usable_links = wpa_bss_get_usable_links(wpa_s, bss, ssid, missing_links);
 	if (!usable_links)
 		return;
 
@@ -621,6 +622,7 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 	const u8 *mbo_ie;
 #endif /* CONFIG_MBO */
 	int omit_rsnxe = 0;
+	u16 missing_links = 0;
 
 	if (bss == NULL) {
 		wpa_msg(wpa_s, MSG_ERROR, "SME: No scan result available for "
@@ -631,7 +633,19 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 
 	os_memset(&params, 0, sizeof(params));
 
-	wpas_sme_set_mlo_links(wpa_s, bss, ssid);
+	wpas_sme_set_mlo_links(wpa_s, bss, ssid, &missing_links);
+
+	if (missing_links && wpa_s->ml_neigh_retries <= 5) {
+		wpa_printf(MSG_DEBUG,
+			   "MLD: Neighbor not found in scan, current neigh scan retry count %u", wpa_s->ml_neigh_retries);
+		wpas_connect_work_done(wpa_s);
+		/* Tear down auth process and start scan again */
+		wpa_supplicant_cancel_scan(wpa_s);
+		wpa_supplicant_cancel_sched_scan(wpa_s);
+		wpa_s->ml_neigh_retries++;
+		wpa_supplicant_req_scan(wpa_s, 0, 0);
+		return;
+	}
 
 	if (wpa_s->valid_links) {
 		wpa_printf(MSG_DEBUG, "MLD: In authentication");

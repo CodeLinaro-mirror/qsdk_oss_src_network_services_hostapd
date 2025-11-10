@@ -1645,6 +1645,10 @@ struct wpa_supplicant {
 	unsigned int beacons_checked;
 	unsigned int next_beacon_check;
 
+	unsigned int ml_neigh_retries;
+	struct hostapd_multi_hw_info *multi_hw_info;
+	u8 num_multi_hws;
+
 	bool scs_reconfigure;
 };
 
