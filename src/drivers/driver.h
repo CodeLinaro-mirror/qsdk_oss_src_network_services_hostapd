@@ -4084,7 +4084,7 @@ struct wpa_driver_ops {
 	 * Returns: 0 on success, -1 on failure
 	 */
 	int (*send_mlme)(void *priv, const u8 *data, size_t data_len,
-			 int noack, unsigned int freq, const u16 *csa_offs,
+			 int noack, unsigned int freq, u16 rate, u8 rate_type, const u16 *csa_offs,
 			 size_t csa_offs_len, int no_encrypt,
 			 unsigned int wait, int link_id);
 

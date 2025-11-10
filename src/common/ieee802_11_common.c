@@ -3404,6 +3404,34 @@ bool ieee802_11_rsnx_capab(const u8 *rsnxe, unsigned int capab)
 	return ieee802_11_rsnx_capab_len(rsnxe + 2, rsnxe[1], capab);
 }
 
+bool ieee80211_is_oce_capable(const u8 *frm, int len)
+{
+	u8 attr_id;
+	u8 attr_len;
+
+	if (!frm || !len)
+		return false;
+
+	/* Increment frm to pass MBO OUI (3B) and OUT Type (1B) */
+	frm += 4;
+	len -= 4;
+
+	while (len > 0) {
+		attr_id = *frm++;
+		attr_len = *frm++;
+
+		if (attr_id == OCE_ATTR_ID_CAPA_IND)
+			return true;
+
+		if (attr_len > len - 2)
+			return false;
+
+		frm += attr_len;
+		len -= (attr_len + 2);
+	}
+
+	return false;
+}
 
 void hostapd_encode_edmg_chan(int edmg_enable, u8 edmg_channel,
 			      int primary_channel,
