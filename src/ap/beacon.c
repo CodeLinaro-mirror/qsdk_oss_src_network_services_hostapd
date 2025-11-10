@@ -1642,6 +1642,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 		      const struct ieee80211_mgmt *mgmt, size_t len,
 		      const struct hostapd_frame_info *fi)
 {
+	enum hostapd_hw_mode hw_mode = hapd->iface->current_mode->mode;
 	struct ieee802_11_elems elems;
 	const u8 *ie;
 	size_t ie_len;
@@ -1656,6 +1657,11 @@ void handle_probe_req(struct hostapd_data *hapd,
 	struct probe_resp_params params;
 	char *hex = NULL;
 	bool skip_acl = false;
+	u8 rate_type = 0;
+	u16 rate = 0;
+#ifdef CONFIG_MBO
+	u32 bitrate;
+#endif
 #ifdef CONFIG_IEEE80211BE
 	int mld_id;
 	u16 links;
@@ -1668,6 +1674,9 @@ void handle_probe_req(struct hostapd_data *hapd,
 	};
 
 	ssi_signal = fi ? fi->ssi_signal : 0;
+#ifdef CONFIG_MBO
+	bitrate = fi ? fi->datarate : 0;
+#endif
 
 	if (hapd->iconf->rssi_ignore_probe_request && ssi_signal &&
 	    ssi_signal < hapd->iconf->rssi_ignore_probe_request)
@@ -2010,6 +2019,24 @@ void handle_probe_req(struct hostapd_data *hapd,
 	if (!params.resp)
 		return;
 
+#ifdef CONFIG_MBO
+	/* TODO: Use OCE_AP_ENABLED() */
+	if ((hapd->conf->oce & OCE_AP) &&
+	    (hw_mode == HOSTAPD_MODE_IEEE80211G ||
+	     hw_mode == HOSTAPD_MODE_IEEE80211B) &&
+	    (is_broadcast_ether_addr(params.resp->da) ||
+	     (ieee80211_is_oce_capable(elems.mbo, elems.mbo_len)))) {
+		if (!is_broadcast_ether_addr(params.resp->da) &&
+		    (bitrate && bitrate < BITRATE_5_5_MBPS)) {
+			rate = bitrate;
+			rate_type = RATE_LEGACY;
+		} else {
+			rate = BITRATE_5_5_MBPS;
+			rate_type = RATE_LEGACY;
+		}
+	}
+#endif /* CONFIG_MBO */
+
 	/*
 	 * If this is a broadcast probe request, apply no ack policy to avoid
 	 * excessive retries.
@@ -2031,7 +2058,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 	ret = hostapd_drv_send_mlme(hostapd_mbssid_get_tx_bss(hapd),
 				    params.resp, params.resp_len, noack,
 				    csa_offs_len ? csa_offs : NULL,
-				    csa_offs_len, 0);
+				    csa_offs_len, 0, rate, rate_type);
 
 	if (ret < 0)
 		wpa_printf(MSG_INFO, "handle_probe_req: send failed");

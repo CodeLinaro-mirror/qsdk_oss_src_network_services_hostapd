@@ -923,7 +923,7 @@ static int p2p_manager_disconnect(struct hostapd_data *hapd, u16 stype,
 	*pos++ = minor_reason_code;
 
 	ret = hostapd_drv_send_mlme(hapd, mgmt, pos - (u8 *) mgmt, 0, NULL, 0,
-				    0);
+				    0, 0, 0);
 	os_free(mgmt);
 
 	return ret < 0 ? -1 : 0;
@@ -966,7 +966,7 @@ int hostapd_ctrl_iface_deauthenticate(struct hostapd_data *hapd,
 		if (hostapd_drv_send_mlme(hapd, (u8 *) &mgmt,
 					  IEEE80211_HDRLEN +
 					  sizeof(mgmt.u.deauth),
-					  0, NULL, 0, !encrypt) < 0)
+					  0, NULL, 0, !encrypt, 0, 0) < 0)
 			return -1;
 		return 0;
 	}
@@ -1031,7 +1031,7 @@ int hostapd_ctrl_iface_disassociate(struct hostapd_data *hapd,
 		if (hostapd_drv_send_mlme(hapd, (u8 *) &mgmt,
 					  IEEE80211_HDRLEN +
 					  sizeof(mgmt.u.deauth),
-					  0, NULL, 0, !encrypt) < 0)
+					  0, NULL, 0, !encrypt, 0, 0) < 0)
 			return -1;
 		return 0;
 	}

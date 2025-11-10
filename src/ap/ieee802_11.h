@@ -31,6 +31,8 @@ struct mld_info;
 struct mld_link_info;
 struct rsn_pmksa_cache_entry;
 
+#define BITRATE_5_5_MBPS 55
+
 struct ieee_chan_data {
 	int num_channels;
 	struct hostapd_channel_data *channels;

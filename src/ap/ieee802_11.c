@@ -1115,7 +1115,7 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 			if (hostapd_drv_send_mlme(hapd,
 						  sta->sae_postponed_commit,
 						  sta->sae_postponed_commit_len,
-						  0, NULL, 0, 0) < 0)
+						  0, NULL, 0, 0, 0, 0) < 0)
 				wpa_printf(MSG_INFO, "send_auth_reply: send failed");
 			os_free(sta->sae_postponed_commit);
 			sta->sae_postponed_commit = NULL;
@@ -1190,7 +1190,7 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 
 #endif /* CONFIG_IEEE8021X_AUTH */
 
-	if (hostapd_drv_send_mlme(hapd, reply, rlen, 0, NULL, 0, 0) < 0)
+	if (hostapd_drv_send_mlme(hapd, reply, rlen, 0, NULL, 0, 0, 0, 0) < 0)
 		wpa_printf(MSG_INFO, "send_auth_reply: send failed");
 	else
 		reply_res = WLAN_STATUS_SUCCESS;
@@ -5116,7 +5116,7 @@ static int hapd_pasn_send_mlme(void *ctx, const u8 *data, size_t data_len,
 {
 	struct hostapd_data *hapd = ctx;
 
-	return hostapd_drv_send_mlme(hapd, data, data_len, 0, NULL, 0, 0);
+	return hostapd_drv_send_mlme(hapd, data, data_len, 0, NULL, 0, 0, 0, 0);
 }
 
 
@@ -8428,7 +8428,7 @@ static void send_deauth(struct hostapd_data *hapd, const u8 *addr,
 	send_len = IEEE80211_HDRLEN + sizeof(reply.u.deauth);
 	reply.u.deauth.reason_code = host_to_le16(reason_code);
 
-	if (hostapd_drv_send_mlme(hapd, &reply, send_len, 0, NULL, 0, 0) < 0)
+	if (hostapd_drv_send_mlme(hapd, &reply, send_len, 0, NULL, 0, 0, 0, 0) < 0)
 		wpa_printf(MSG_INFO, "Failed to send deauth: %s",
 			   strerror(errno));
 }
@@ -9114,7 +9114,7 @@ rsnxe_done:
 		}
 	}
 
-	if (hostapd_drv_send_mlme(hapd, reply, send_len, 0, NULL, 0, 0) < 0) {
+	if (hostapd_drv_send_mlme(hapd, reply, send_len, 0, NULL, 0, 0, 0, 0) < 0) {
 		wpa_printf(MSG_INFO, "Failed to send assoc resp: %s",
 			   strerror(errno));
 		res = WLAN_STATUS_UNSPECIFIED_FAILURE;
