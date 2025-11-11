@@ -818,6 +818,11 @@ static bool is_link_reconfigure_allowed(struct hostapd_data *hapd)
 		return false;
 	}
 
+	if (hapd->disabled) {
+		wpa_printf(MSG_ERROR, "AP MLD is already disabled\n");
+		return false;
+	}
+
 	list_len = dl_list_len(&mld->links);
 	if (!list_len || list_len == 1) {
 		wpa_printf(MSG_INFO,
@@ -835,7 +840,7 @@ static bool is_link_reconfigure_allowed(struct hostapd_data *hapd)
 					 struct hostapd_data, mbssid_bss) {
 				if (bss == hapd)
 					continue;
-				if (!bss->conf->mld_ap)
+				if (!bss->conf->mld_ap || bss->disabled)
 					return false;
 				mld = bss->mld;
 
@@ -848,7 +853,7 @@ static bool is_link_reconfigure_allowed(struct hostapd_data *hapd)
 		} else {
 			for (i = 1; i < hapd->iface->num_bss; i++) {
 				bss = hapd->iface->bss[i];
-				if (!bss->conf->mld_ap)
+				if (!bss->conf->mld_ap || bss->disabled)
 					return false;
 				mld = bss->mld;
 
