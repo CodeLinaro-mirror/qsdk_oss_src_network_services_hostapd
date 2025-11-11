@@ -6928,6 +6928,11 @@ enum wpa_event_type {
 	 * which will be the mirrored value of the UL flow
 	 */
 	EVENT_MSCS_FLOW_RECEIVED,
+
+	/**
+	 * EVENT_ESP_UPDATE - Notification about ESP airtime fraction update event
+	 */
+	EVENT_ESP_UPDATE,
 };
 
 
