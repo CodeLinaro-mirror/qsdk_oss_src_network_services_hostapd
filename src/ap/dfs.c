@@ -1273,15 +1273,6 @@ hostapd_dfs_is_background_event(struct hostapd_iface *iface, int freq)
 		iface->radar_background.freq == freq;
 }
 
-void hostapd_dfs_test_mode_csa_timeout(void *eloop_data, void *user_data)
-{
-	struct hostapd_data *hapd = eloop_data;
-
-	wpa_printf(MSG_INFO, "Stopping CSA in dfs test mode");
-	hostapd_cleanup_cs_params(hapd);
-	ieee802_11_set_beacon(hapd);
-}
-
 void hostapd_dfs_radar_handling_timeout(void *eloop_data, void *user_data)
 {
 	struct hostapd_iface *iface = eloop_data;
@@ -1302,7 +1293,6 @@ static int hostapd_dfs_testmode_set_beacon_csa(struct hostapd_iface *iface)
 	u8 vht_oper_centr_freq_seg1_idx;
 	int err = 0;
 
-	eloop_cancel_timeout(hostapd_dfs_test_mode_csa_timeout, hapd, NULL);
 	secondary_channel = iface->conf->secondary_channel;
 	vht_oper_centr_freq_seg0_idx =
 			iface->conf->vht_oper_centr_freq_seg0_idx;
@@ -1311,6 +1301,14 @@ static int hostapd_dfs_testmode_set_beacon_csa(struct hostapd_iface *iface)
 
 	/* Setup CSA request */
 	os_memset(&csa_settings, 0, sizeof(csa_settings));
+	csa_settings.cs_count = 5;
+	csa_settings.block_tx = 1;
+	csa_settings.link_id = -1;
+#ifdef CONFIG_IEEE80211BE
+	if (iface->bss[0]->conf->mld_ap)
+		csa_settings.link_id = iface->bss[0]->mld_link_id;
+#endif /* CONFIG_IEEE80211BE */
+
 	err = hostapd_set_freq_params(&csa_settings.freq_params,
 				      iface->conf->hw_mode,
 				      iface->freq,
@@ -1343,17 +1341,18 @@ static int hostapd_dfs_testmode_set_beacon_csa(struct hostapd_iface *iface)
 		hostapd_disable_iface(iface);
 		return -1;
 	}
-	hapd->cs_freq_params = csa_settings.freq_params;
-	hapd->cs_count = 3;
-	hapd->cs_block_tx = 1;
-	err = ieee802_11_set_beacon(hapd);
-	if (err)
-		goto fail;
-	wpa_printf(MSG_DEBUG, "CSA beacon configured for dfs mode, count %d",
-		   hapd->cs_count);
-	hapd->csa_in_progress = 1;
-	eloop_register_timeout(HOSTAPD_DFS_TEST_MODE_CSA_DUR, 0,
-			       hostapd_dfs_test_mode_csa_timeout, hapd, NULL);
+
+	for (int i = 0; i < iface->num_bss; i++) {
+		err = hostapd_switch_channel(iface->bss[i], &csa_settings);
+		if (err) {
+			wpa_printf(MSG_ERROR,
+				   "CSA failed for BSS %d in dfs test mode", i);
+			goto fail;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG, "CSA started for dfs test mode");
+
 	return 0;
 
 fail:

@@ -4721,7 +4721,6 @@ int hostapd_disable_iface(struct hostapd_iface *hapd_iface)
 		hostapd_cleanup_cs_params(hapd_iface->bss[j]);
 #endif /* NEED_AP_MLME */
 
-	eloop_cancel_timeout(hostapd_dfs_test_mode_csa_timeout, hapd_iface, NULL);
 	/* same as hostapd_interface_deinit without deinitializing ctrl-iface */
 	for (j = 0; j < hapd_iface->num_bss; j++) {
 		struct hostapd_data *hapd = hapd_iface->bss[j];
