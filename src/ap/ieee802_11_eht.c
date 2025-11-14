@@ -1356,6 +1356,7 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 	int ret = -1;
 	u16 ml_control;
 	const u8 *ml_end;
+	unsigned int i;
 
 	mlbuf = ieee802_11_defrag(elems->basic_mle, elems->basic_mle_len, true);
 	if (!mlbuf)
@@ -1460,6 +1461,14 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 			   MAC2STR(common_info->mld_addr));
 		goto out;
 	}
+
+	/*
+	 * When a station initially connected as a 3-link STA
+	 * re-associates as a single-link STA, it is not valid.
+	 * Reset the valid flag
+	 */
+	for (i = 0; i < MAX_NUM_MLD_LINKS; i++)
+		info->links[i].valid = false;
 
 	info->links[hapd->mld_link_id].valid = 1;
 
