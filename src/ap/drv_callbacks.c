@@ -2364,9 +2364,9 @@ static void hostapd_event_iface_unavailable(struct hostapd_data *hapd)
 						&hapd->cs_freq_params);
 	}
 
-	/* Set disabled to false so the RNR and other beacon params are properly
+	/* Set beacon_set_done to false so the RNR and other beacon params are properly
 	 * updated */
-	hapd->disabled = 1;
+	hapd->beacon_set_done = 0;
 }
 
 
