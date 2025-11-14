@@ -6325,7 +6325,7 @@ static struct sta_info * handle_mlo_translate(struct hostapd_data *hapd,
 	wpa_printf(MSG_DEBUG, "MLD: assoc: mld=" MACSTR ", link=" MACSTR,
 		   MAC2STR(mld_addr), MAC2STR(mgmt->sa));
 
-	return hostapd_ml_get_assoc_sta(hapd, sta, assoc_hapd);
+	return sta;
 }
 #endif /* CONFIG_IEEE80211BE */
 
@@ -6460,7 +6460,6 @@ static void handle_assoc(struct hostapd_data *hapd,
 #endif /* CONFIG_FILS */
 	int omit_rsnxe = 0;
 	bool set_beacon = false;
-	bool mld_addrs_not_translated = false;
 
 	if (len < IEEE80211_HDRLEN + (reassoc ? sizeof(mgmt->u.reassoc_req) :
 				      sizeof(mgmt->u.assoc_req))) {
@@ -6535,23 +6534,14 @@ static void handle_assoc(struct hostapd_data *hapd,
 
 		sta = handle_mlo_translate(hapd, mgmt, len, reassoc,
 					   &assoc_hapd);
-		if (sta) {
-			if (hapd != assoc_hapd) {
-				wpa_printf(MSG_DEBUG,
-					   "MLD: Switching to assoc hapd/station");
-				hapd = assoc_hapd;
-				mld_addrs_not_translated = true;
-			}
 
+		if (sta && sta->sa_query_timed_out) {
 			/* Allow link address to be changed if an SA query
 			 * procedure has expired. */
-			if (sta->sa_query_timed_out) {
-				u8 _link = hapd->mld_link_id;
+			u8 _link = hapd->mld_link_id;
 
-				os_memcpy(sta->mld_info.links[_link].peer_addr,
-					  mgmt->sa, ETH_ALEN);
-			}
-
+			os_memcpy(sta->mld_info.links[_link].peer_addr,
+				  mgmt->sa, ETH_ALEN);
 		}
 	}
 
@@ -6983,8 +6973,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 
 	if (resp >= 0)
 		reply_res = send_assoc_resp(hapd,
-					    mld_addrs_not_translated ?
-					    NULL : sta,
+					    sta,
 					    sa, resp, reassoc,
 					    pos, left, rssi, omit_rsnxe);
 
