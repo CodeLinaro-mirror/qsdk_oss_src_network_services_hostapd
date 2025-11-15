@@ -239,6 +239,8 @@ static int hostapd_driver_init(struct hostapd_iface *iface)
 	 */
 	if (!is_zero_ether_addr(hapd->conf->mld_addr) && hapd->conf->mld_ap)
 		params.bssid = hapd->conf->mld_addr;
+	else if (hapd->iconf->use_driver_iface_addr)
+		params.bssid = NULL;
 #endif /* CONFIG_IEEE80211BE */
 
 	params.ifname = hapd->conf->iface;
@@ -316,7 +318,7 @@ pre_setup_mld:
 	 * configured, and otherwise it would be the configured BSSID.
 	 */
 	if (hapd->conf->mld_ap) {
-		os_memcpy(hapd->mld->mld_addr, hapd->own_addr, ETH_ALEN);
+		os_memcpy(hapd->mld->mld_addr, params.own_addr, ETH_ALEN);
 
 		if (!b)
 			random_mac_addr_keep_oui(hapd->own_addr);

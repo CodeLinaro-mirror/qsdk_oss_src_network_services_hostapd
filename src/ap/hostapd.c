@@ -2044,6 +2044,17 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon)
 					   hapd->mld_link_id, hapd->conf->iface);
 				goto setup_mld;
 			}
+			/*
+			 * Use the configured MLD MAC address
+			 * as the interface hardware address
+			 * if this AP is a part of an AP MLD.
+			 */
+			if (!is_zero_ether_addr(hapd->conf->mld_addr))
+				addr = hapd->conf->mld_addr;
+			else if (hapd->iconf->use_driver_iface_addr)
+				addr = NULL;
+			else
+				addr = hapd->own_addr;
 		}
 #endif /* CONFIG_IEEE80211BE */
 
@@ -2081,7 +2092,7 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon)
 			wpa_printf(MSG_DEBUG,
 				   "Setup of first link (%d) BSS of MLD %s",
 				   hapd->mld_link_id, hapd->conf->iface);
-			os_memcpy(hapd->mld->mld_addr, hapd->own_addr,
+			os_memcpy(hapd->mld->mld_addr, addr ? addr : if_addr,
 				  ETH_ALEN);
 		}
 #endif /* CONFIG_IEEE80211BE */
