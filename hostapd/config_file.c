@@ -3469,7 +3469,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 	} else if (os_strcmp(buf, "beacon_rate") == 0) {
-		enum beacon_rate_type rate_type;
+		enum beacon_rate_type rate_type = BEACON_RATE_LEGACY;
 		int val;
 
 		if (os_strncmp(pos, "ht:", 3) == 0) {
