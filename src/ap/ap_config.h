@@ -1043,6 +1043,9 @@ struct hostapd_bss_config {
 	bool scs;
 	bool mscs;
 #endif /* CONFIG_IEEE80211AX */
+
+	enum beacon_rate_type rate_type;
+	unsigned int beacon_rate;
 };
 
 /**
@@ -1127,8 +1130,6 @@ struct hostapd_config {
 
 	int *supported_rates;
 	int *basic_rates;
-	unsigned int beacon_rate;
-	enum beacon_rate_type rate_type;
 
 	const struct wpa_driver_ops *driver;
 	char *driver_params;

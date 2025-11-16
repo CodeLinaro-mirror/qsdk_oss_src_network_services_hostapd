@@ -276,7 +276,7 @@ u8 * hostapd_eid_he_operation(struct hostapd_data *hapd, u8 *eid)
 		if (center_idx_to_bw_6ghz(seg0) &&
 		    !is_6ghz_psc_frequency(ieee80211_chan_to_freq(NULL,
 				    hapd->iconf->op_class, hapd->iconf->channel)) &&
-				    hapd->iconf->rate_type == BEACON_RATE_LEGACY)
+				    hapd->conf->rate_type == BEACON_RATE_LEGACY)
 			control |= HE_6GHZ_OPER_INFO_CTRL_DUP_BEACON;
 
 		*pos++ = control;

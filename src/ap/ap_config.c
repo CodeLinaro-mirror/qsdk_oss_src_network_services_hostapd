@@ -385,6 +385,9 @@ struct hostapd_config * hostapd_config_defaults(void)
 	hostapd_set_default_epcs_params(bss);
 #endif /* CONFIG_IEEE80211BE */
 
+	bss->rate_type = BEACON_RATE_LEGACY;
+	bss->beacon_rate = 0;
+
 	return conf;
 }
 
