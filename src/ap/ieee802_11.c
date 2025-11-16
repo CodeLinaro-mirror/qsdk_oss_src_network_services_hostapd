@@ -6554,8 +6554,6 @@ static void handle_assoc(struct hostapd_data *hapd,
 			wpa_printf(MSG_DEBUG,
 				   "FT over DS: Check for STA entry with ML address");
 			sta = get_sta_from_ft_ds_list(hapd, mgmt, len, reassoc);
-			if (sta)
-				sa = sta->addr;
 		}
 	}
 
