@@ -372,12 +372,19 @@ int hostapd_check_max_sta(struct hostapd_data *hapd)
 	return 0;
 }
 
-int hostapd_reload_config_iface(struct hostapd_iface *iface)
+int hostapd_reload_config_iface(struct hostapd_iface **ifacep)
 {
-	struct hapd_interfaces *interfaces = iface->interfaces;
-	struct hostapd_data *hapd = iface->bss[0];
+	struct hostapd_iface *iface = *ifacep;
+	struct hapd_interfaces *interfaces;
+	struct hostapd_data *hapd;
 	struct hostapd_config *newconf, *oldconf;
 	size_t j;
+
+	if (!iface)
+		return -1;
+
+	interfaces = iface->interfaces;
+	hapd = iface->bss[0];
 
 	hostapd_ucode_reload_bss(hapd);
 
@@ -432,6 +439,7 @@ int hostapd_reload_config_iface(struct hostapd_iface *iface)
 		if (res < 0)
 			wpa_printf(MSG_ERROR,
 				   "Failed to enable interface on config reload");
+		*ifacep = iface;
 		return res;
 	}
 
@@ -554,9 +562,15 @@ int hostapd_reload_config(struct hostapd_iface *iface)
 	size_t i, j;
 #endif /* CONFIG_IEEE80211BE */
 
-	ret = hostapd_reload_config_iface(iface);
+	if (!iface)
+		return -1;
+
+	ret = hostapd_reload_config_iface(&iface);
 	if (ret)
 		return ret;
+
+	if (!iface || !iface->interfaces)
+		return -1;
 
 #ifdef CONFIG_IEEE80211BE
 	for (i = 0; i < iface->interfaces->count; i++) {
@@ -582,7 +596,7 @@ int hostapd_reload_config(struct hostapd_iface *iface)
 		if (!mld_partner_found)
 			continue;
 
-		ret = hostapd_reload_config_iface(other);
+		ret = hostapd_reload_config_iface(&other);
 		if (ret) {
 			wpa_printf(MSG_ERROR,
 				   "Failed to reload MLO partner links");
