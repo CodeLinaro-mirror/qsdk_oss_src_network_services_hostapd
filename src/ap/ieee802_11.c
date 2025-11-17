@@ -8708,11 +8708,6 @@ static int set_ieee_order_chan_list(struct hostapd_hw_modes *mode,
 
 	wpa_printf(MSG_DEBUG, "Set IEEE 6GHz channel list with %d channels",
 		   chan_data->num_channels);
-	for (i = 0; i < chan_data->num_channels; i++) {
-		wpa_printf(MSG_DEBUG, "Channel %d: freq %d MHz, flags 0x%x",
-			   channels[i].chan, channels[i].freq,
-			   channels[i].flag);
-	}
 
 	return 0;
 }
@@ -9234,8 +9229,6 @@ static s8 get_psd_for_chan_idx(struct hostapd_data *hapd,
 			reg_psd = reg_eirp_pwr - CONV_20MHZ_EIRP_TO_PSD_IN_DBM;
 		}
 
-		wpa_printf(MSG_DEBUG, "Using reg_psd:%d for channel %d",
-			   reg_psd, chan_data.channels[non_11be_start_idx].chan);
 		return reg_psd;
 	}
 
