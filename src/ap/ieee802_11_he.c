@@ -358,7 +358,7 @@ u8 * hostapd_eid_he_mu_edca_parameter_set(struct hostapd_data *hapd, u8 *eid, bo
 		edca->he_qos_info |= updated_count;
 	}
 
-	wpa_hexdump(MSG_DEBUG, "HE: MU EDCA Parameter Set element",
+	wpa_hexdump(MSG_MSGDUMP, "HE: MU EDCA Parameter Set element",
 		    pos, sizeof(*edca));
 
 	pos += sizeof(*edca);

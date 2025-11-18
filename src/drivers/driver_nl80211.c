@@ -5702,9 +5702,9 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 	else if (!drv->device_ap_sme && !nl80211_get_wiphy_data_ap(bss))
 		return -ENOBUFS;
 
-	wpa_hexdump(MSG_DEBUG, "nl80211: Beacon head",
+	wpa_hexdump(MSG_MSGDUMP, "nl80211: Beacon head",
 		    params->head, params->head_len);
-	wpa_hexdump(MSG_DEBUG, "nl80211: Beacon tail",
+	wpa_hexdump(MSG_MSGDUMP, "nl80211: Beacon tail",
 		    params->tail, params->tail_len);
 	wpa_printf(MSG_DEBUG, "nl80211: ifindex=%d", bss->ifindex);
 	wpa_printf(MSG_DEBUG, "nl80211: beacon_int=%d", params->beacon_int);
@@ -5869,7 +5869,7 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 		goto fail;
 
 	if (params->beacon_ies) {
-		wpa_hexdump_buf(MSG_DEBUG, "nl80211: beacon_ies",
+		wpa_hexdump_buf(MSG_MSGDUMP, "nl80211: beacon_ies",
 				params->beacon_ies);
 		if (nla_put(msg, NL80211_ATTR_IE,
 			    wpabuf_len(params->beacon_ies),
@@ -5877,7 +5877,7 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 			goto fail;
 	}
 	if (params->proberesp_ies) {
-		wpa_hexdump_buf(MSG_DEBUG, "nl80211: proberesp_ies",
+		wpa_hexdump_buf(MSG_MSGDUMP, "nl80211: proberesp_ies",
 				params->proberesp_ies);
 		if (nla_put(msg, NL80211_ATTR_IE_PROBE_RESP,
 			    wpabuf_len(params->proberesp_ies),
@@ -5885,7 +5885,7 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 			goto fail;
 	}
 	if (params->assocresp_ies) {
-		wpa_hexdump_buf(MSG_DEBUG, "nl80211: assocresp_ies",
+		wpa_hexdump_buf(MSG_MSGDUMP, "nl80211: assocresp_ies",
 				params->assocresp_ies);
 		if (nla_put(msg, NL80211_ATTR_IE_ASSOC_RESP,
 			    wpabuf_len(params->assocresp_ies),
