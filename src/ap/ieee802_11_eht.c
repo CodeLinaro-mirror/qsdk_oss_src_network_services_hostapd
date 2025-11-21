@@ -942,7 +942,7 @@ static size_t hostapd_eid_eht_ml_len(struct mld_info *info,
 
 		/* Element data and (fragmentation) headers */
 		eht_ml_len += sta_len;
-		eht_ml_len += 2 + sta_len / 255 * 2;
+		eht_ml_len += 2 + (sta_len > 255 ? ((sta_len - 1) / 255) * 2 : 0);
 	}
 
 	/* Element data */
@@ -951,9 +951,8 @@ static size_t hostapd_eid_eht_ml_len(struct mld_info *info,
 	/* First header (254 bytes of data) */
 	len += 3;
 
-	/* Fragmentation headers; +1 for shorter first chunk */
 	if (eht_ml_len > 254)
-		len += (eht_ml_len + 1) / 255 * 2;
+		len += (eht_ml_len / 255) * 2;
 
 	return len;
 }
