@@ -4184,6 +4184,11 @@ static u8 * ieee80211w_kde_add(struct wpa_state_machine *sm, u8 *pos)
 			  NULL, 0);
 	forced_memzero(&igtk, sizeof(igtk));
 
+	if (gsm->vlan_id) {
+		wpa_printf(MSG_DEBUG, "Fetch BIGTK from default VLAN");
+		gsm = wpa_auth->group;
+	}
+
 	if (wpa_auth->conf.tx_bss_auth) {
 		wpa_auth = wpa_auth->conf.tx_bss_auth;
 		conf = &wpa_auth->conf;
@@ -4323,6 +4328,11 @@ void wpa_auth_ml_get_key_info(struct wpa_authenticator *a,
 
 	if (!beacon_prot)
 		return;
+
+	if (gsm->vlan_id) {
+		wpa_printf(MSG_DEBUG, "Fetch BIGTK from default VLAN");
+		gsm = a->group;
+	}
 
 	if (a->conf.tx_bss_auth) {
 		a = a->conf.tx_bss_auth;
@@ -5850,6 +5860,10 @@ static int wpa_gtk_update(struct wpa_authenticator *wpa_auth,
 				group->IGTK[group->GN_igtk - 4], len);
 	}
 
+	/* Skip BIGTK generation for Non-zero VLAN groups */
+	if (group->vlan_id)
+		return ret;
+
 	if (!wpa_auth->non_tx_beacon_prot &&
 	     !wpa_auth_pmf_enabled(conf))
 		return ret;
@@ -6408,7 +6422,8 @@ static int wpa_group_config_group_keys(struct wpa_authenticator *wpa_auth,
 				     KEY_FLAG_GROUP_TX_DEFAULT) < 0)
 			ret = -1;
 
-		if (ret || !conf->beacon_prot)
+		/* Skip BIGTK set key for Non-Zero VLAN groups */
+		if (ret || !conf->beacon_prot || group->vlan_id)
 			return ret;
 		if (wpa_auth->conf.tx_bss_auth) {
 			wpa_auth = wpa_auth->conf.tx_bss_auth;
