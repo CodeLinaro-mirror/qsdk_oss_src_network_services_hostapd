@@ -20,6 +20,7 @@
 #include "dpp_hostapd.h"
 #include "robust_av.h"
 #include "ieee802_11.h"
+#include "hostapd_if/hostapd_if.h"
 
 
 static u8 * hostapd_eid_timeout_interval(u8 *pos, u8 *end, u8 type, u32 value)
@@ -358,6 +359,10 @@ void ieee802_11_sa_query_action(struct hostapd_data *hapd,
 		return;
 	}
 
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_event_sa_query_completion(hapd, sta->addr,
+					     HOSTAPD_IF_SAQUERY_STA_VALID);
+#endif
 #ifdef CONFIG_IEEE80211BE
 	ap_free_unadded_link_sta(hapd, sta);
 #endif /* CONFIG_IEEE80211BE */
