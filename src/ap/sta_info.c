@@ -1969,6 +1969,10 @@ int ap_check_sa_query_timeout(struct hostapd_data *hapd, struct sta_info *sta)
 		sta->sa_query_trans_id = NULL;
 		sta->sa_query_count = 0;
 		eloop_cancel_timeout(ap_sa_query_timer, hapd, sta);
+#ifdef CONFIG_HOSTAPD_IF
+		hostapd_if_event_sa_query_completion(hapd, sta->addr,
+						HOSTAPD_IF_SAQUERY_STA_INVALID);
+#endif
 		return 1;
 	}
 

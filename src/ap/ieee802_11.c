@@ -4693,6 +4693,24 @@ static bool check_sa_query(struct hostapd_data *hapd, struct sta_info *sta,
 	return false;
 }
 
+int start_unsolicited_sa_query(struct hostapd_data *hapd, struct sta_info *sta)
+{
+	if ((sta->flags &
+	     (WLAN_STA_ASSOC | WLAN_STA_MFP | WLAN_STA_AUTHORIZED)) !=
+	    (WLAN_STA_ASSOC | WLAN_STA_MFP | WLAN_STA_AUTHORIZED)) {
+		wpa_printf(MSG_ERROR, "ERROR! SA Query request in improper state\n");
+		return -1;
+	}
+
+	if (sta->sa_query_count != 0) {
+		wpa_printf(MSG_INFO, "INFO! SA Query already in progress\n");
+		return -1;
+	}
+
+	ap_sta_start_sa_query(hapd, sta);
+	return 0;
+}
+
 #ifdef CONFIG_IEEE80211BE
 static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_info *sta,
 					 enum link_parse_type type, const u8 *ies, size_t ies_len)

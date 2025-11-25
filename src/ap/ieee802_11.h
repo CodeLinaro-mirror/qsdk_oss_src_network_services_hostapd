@@ -589,4 +589,5 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 			   const u8 *dst,
 			   u16 auth_alg, u16 auth_transaction, u16 resp,
 			   const u8 *ies, size_t ies_len, const char *dbg);
+int start_unsolicited_sa_query(struct hostapd_data *hapd, struct sta_info *sta);
 #endif /* IEEE802_11_H */
