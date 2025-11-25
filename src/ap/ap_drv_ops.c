@@ -234,9 +234,16 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 		goto fail;
 #endif /* CONFIG_OWE */
 
-	if (add_buf(&beacon, hapd->conf->vendor_elements) < 0 ||
-	    add_buf(&proberesp, hapd->conf->vendor_elements) < 0)
-		goto fail;
+	/* Use plugin vendor elements if set, otherwise use conf vendor elements */
+	if (hapd->plugin_vendor_elements) {
+		if (add_buf(&beacon, hapd->plugin_vendor_elements) < 0 ||
+		    add_buf(&proberesp, hapd->plugin_vendor_elements) < 0)
+			goto fail;
+	} else if (hapd->conf->vendor_elements) {
+		if (add_buf(&beacon, hapd->conf->vendor_elements) < 0 ||
+		    add_buf(&proberesp, hapd->conf->vendor_elements) < 0)
+			goto fail;
+	}
 #ifdef CONFIG_TESTING_OPTIONS
 	if (add_buf(&proberesp, hapd->conf->presp_elements) < 0)
 		goto fail;
