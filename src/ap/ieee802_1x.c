@@ -38,6 +38,7 @@
 #include "ieee802_11.h"
 #include "ieee802_1x.h"
 #include "wpa_auth_kay.h"
+#include "hostapd_if/hostapd_if.h"
 
 
 #ifdef CONFIG_HS20
@@ -202,6 +203,9 @@ void ieee802_1x_set_sta_authorized(struct hostapd_data *hapd,
 {
 	ieee802_1x_set_authorized(hapd, sta, authorized, false);
 	ieee802_1x_ml_set_sta_authorized(hapd, sta, !!authorized);
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_event_authorize_completion(hapd, sta->addr, authorized);
+#endif
 }
 
 

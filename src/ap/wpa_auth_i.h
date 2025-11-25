@@ -208,6 +208,7 @@ struct wpa_state_machine {
 	unsigned int sae_pw_id_counter;
 	const struct security_profile_entry *security_profile;
 	u16 pasn_group;
+	bool externally_triggered_m3;
 };
 
 

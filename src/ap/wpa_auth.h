@@ -349,6 +349,7 @@ struct wpa_auth_config {
 	u8 security_profile[257];
 	size_t security_profile_len;
 	bool pqc_enabled;
+	int externally_triggered_m3;
 };
 
 typedef enum {
@@ -793,6 +794,7 @@ struct wpa_group * wpa_select_vlan_wpa_group(struct wpa_group *gsm,
 void wpa_auth_set_sae_pw_id(struct wpa_state_machine *sm,
 			    const struct wpabuf *pw_id,
 			    unsigned int counter);
+void wpa_auth_trigger_m3(struct wpa_state_machine *sm);
 
 int wpa_auth_802_1x_get_msk(struct wpa_authenticator *wpa_auth,
 			     const u8 *addr, u8 *msk, size_t *len);
