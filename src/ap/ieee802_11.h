@@ -94,6 +94,13 @@ static inline int ieee802_11_get_mib_sta(struct hostapd_data *hapd,
 	return 0;
 }
 #endif /* NEED_AP_MLME */
+void
+initiate_assoc_response(struct hostapd_data *hapd, struct sta_info *sta,
+			     int resp, int reassoc,
+			     uint8_t *tmp, const u8 *pos, int left,
+			     int omit_rsnxe, uint8_t *sa, int rssi,
+			     bool set_beacon);
+
 u16 hostapd_own_capab_info(struct hostapd_data *hapd);
 void ap_ht2040_timeout(void *eloop_data, void *user_data);
 u8 * hostapd_eid_ext_capab(struct hostapd_data *hapd, u8 *eid,
@@ -217,6 +224,12 @@ int auth_sae_init_committed(struct hostapd_data *hapd, struct sta_info *sta);
 void sae_clear_retransmit_timer(struct hostapd_data *hapd,
 				struct sta_info *sta);
 void sae_accept_sta(struct hostapd_data *hapd, struct sta_info *sta);
+int sae_sm_step(struct hostapd_data *hapd, struct sta_info *sta,
+		u16 auth_transaction, u16 status_code, int allow_reuse,
+		int *sta_removed);
+void sae_sme_send_external_auth_status(struct hostapd_data *hapd,
+				       struct sta_info *sta, u16 status);
+int sae_status_success(struct hostapd_data *hapd, u16 status_code);
 #else /* CONFIG_SAE */
 static inline void sae_clear_retransmit_timer(struct hostapd_data *hapd,
 					      struct sta_info *sta)
@@ -572,4 +585,8 @@ s8 hostapd_get_20mhz_psd_for_rnr(struct hostapd_data *hapd);
 u8 * hostapd_fragment_multi_link_element(struct wpabuf *buf, u8 *pos);
 unsigned int wnm_neighbor_report_get_pref_link_mask(const u8 *neigh_rep,
 						    size_t neigh_rep_len);
+int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
+			   const u8 *dst,
+			   u16 auth_alg, u16 auth_transaction, u16 resp,
+			   const u8 *ies, size_t ies_len, const char *dbg);
 #endif /* IEEE802_11_H */
