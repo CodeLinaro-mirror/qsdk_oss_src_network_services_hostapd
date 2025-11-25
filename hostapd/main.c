@@ -33,6 +33,7 @@
 #include "ctrl_iface.h"
 #include "build_features.h"
 #include "ap/robust_av.h"
+#include "hostapd_if/hostapd_if.h"
 
 #include "atf/atf_offload.h"
 
@@ -1031,6 +1032,14 @@ int main(int argc, char *argv[])
 		wpa_printf(MSG_WARNING, "Failed to add CLI FST ctrl");
 #endif /* CONFIG_FST && CONFIG_CTRL_IFACE */
 
+#ifdef CONFIG_HOSTAPD_IF
+	/* Initialize action frame registry before parsing configs */
+	if (hostapd_if_init(&interfaces) < 0) {
+		wpa_printf(MSG_ERROR, "Failed to init action frame registry");
+		goto out;
+	}
+#endif
+
 	/* Allocate and parse configuration for full interface files */
 	for (i = 0; i < interfaces.count; i++) {
 		char *if_name = NULL;
@@ -1161,6 +1170,9 @@ int main(int argc, char *argv[])
 	hostapd_global_cleanup_mld(&interfaces);
 	hostapd_ucode_free();
 
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_deinit();
+#endif
 #ifdef CONFIG_DPP
 	dpp_global_deinit(interfaces.dpp);
 #endif /* CONFIG_DPP */
