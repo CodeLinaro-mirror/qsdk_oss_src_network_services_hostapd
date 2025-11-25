@@ -989,4 +989,5 @@ int hkdf_expand(size_t hash_len, const u8 *prk, size_t prk_len,
 const struct ieee80211_pqc_profile *
 pqc_profile_get(int security_profile_num);
 
+unsigned int wpa_kck_len(int akmp, size_t pmk_len);
 #endif /* WPA_COMMON_H */
