@@ -7339,6 +7339,13 @@ static void handle_disassoc(struct hostapd_data *hapd,
 		return;
 	}
 
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_event_disassoc(hapd, sta->addr,
+			HOSTAPD_IF_DISCONNECT_FROM_STA,
+			le_to_host16(mgmt->u.disassoc.reason_code), false, 0);
+	hostapd_if_notify_disassoc(hapd, sta, mgmt, len);
+#endif
+
 	if (hostapd_ml_handle_disconnect(hapd, sta, mgmt, true))
 		return;
 
@@ -7370,6 +7377,13 @@ static void handle_deauth(struct hostapd_data *hapd,
 			MAC2STR(mgmt->sa));
 		return;
 	}
+
+#ifdef CONFIG_HOSTAPD_IF
+	/* FROM_STA deauthentication event */
+	hostapd_if_event_deauth(hapd, sta->addr, HOSTAPD_IF_DISCONNECT_FROM_STA,
+			le_to_host16(mgmt->u.deauth.reason_code), false, 0);
+	hostapd_if_notify_deauth(hapd, sta, mgmt, len);
+#endif
 
 	if (hostapd_ml_handle_disconnect(hapd, sta, mgmt, false))
 		return;
@@ -8361,6 +8375,10 @@ static void handle_deauth_cb(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG, "STA " MACSTR " did not acknowledge "
 			   "deauth", MAC2STR(sta->addr));
 
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_event_deauth(hapd, sta->addr, HOSTAPD_IF_DISCONNECT_TO_STA,
+			le_to_host16(mgmt->u.deauth.reason_code), true, ok);
+#endif
 	ap_sta_deauth_cb(hapd, sta);
 }
 
@@ -8385,6 +8403,11 @@ static void handle_disassoc_cb(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG, "STA " MACSTR " did not acknowledge "
 			   "disassoc", MAC2STR(sta->addr));
 
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_event_disassoc(hapd, sta->addr, HOSTAPD_IF_DISCONNECT_TO_STA,
+				  le_to_host16(mgmt->u.disassoc.reason_code),
+				  true, ok);
+#endif
 	ap_sta_disassoc_cb(hapd, sta);
 }
 

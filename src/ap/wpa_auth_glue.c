@@ -34,6 +34,7 @@
 #include "wpa_auth.h"
 #include "wpa_auth_glue.h"
 #include "wpa_auth_i.h"
+#include "hostapd_if/hostapd_if.h"
 
 static void hostapd_wpa_auth_config_update(struct hostapd_data *hapd,
 					   struct wpa_auth_config *_conf)
@@ -341,6 +342,9 @@ static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
 	wconf->no_disconnect_on_group_keyerror =
 		conf->bss_max_idle && conf->ap_max_inactivity &&
 		conf->no_disconnect_on_group_keyerror;
+
+	/* Propagate external M3 trigger policy to authenticator */
+	wconf->externally_triggered_m3 = conf->externally_triggered_m3;
 
 	wconf->rsn_override_omit_rsnxe = conf->rsn_override_omit_rsnxe;
 	wconf->spp_amsdu = conf->spp_amsdu &&

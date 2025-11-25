@@ -333,6 +333,7 @@ struct wpa_auth_config {
 
 	unsigned int sae_pw_id_num;
 	u8 sae_pw_id_key[32];
+	int externally_triggered_m3;
 };
 
 typedef enum {
@@ -755,5 +756,6 @@ struct wpa_group * wpa_select_vlan_wpa_group(struct wpa_group *gsm,
 void wpa_auth_set_sae_pw_id(struct wpa_state_machine *sm,
 			    const struct wpabuf *pw_id,
 			    unsigned int counter);
+void wpa_auth_trigger_m3(struct wpa_state_machine *sm);
 
 #endif /* WPA_AUTH_H */

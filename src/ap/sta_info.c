@@ -41,6 +41,7 @@
 #include "vlan.h"
 #include "wps_hostapd.h"
 #include "dscp_policy.h"
+#include "hostapd_if/hostapd_if.h"
 
 static void ap_sta_remove_in_other_bss(struct hostapd_data *hapd,
 				       struct sta_info *sta);
@@ -1417,6 +1418,10 @@ static void ap_sta_disassociate_common(struct hostapd_data *hapd,
 	eloop_register_timeout(hapd->iface->drv_flags &
 			       WPA_DRIVER_FLAGS_DEAUTH_TX_STATUS ? 2 : 0, 0,
 			       ap_sta_disassoc_cb_timeout, hapd, sta);
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_event_disassoc(hapd, sta->addr, HOSTAPD_IF_DISCONNECT_TO_STA,
+				  reason, false, 0);
+#endif
 }
 
 
@@ -1464,6 +1469,10 @@ static void ap_sta_deauthenticate_common(struct hostapd_data *hapd,
 	eloop_register_timeout(hapd->iface->drv_flags &
 			       WPA_DRIVER_FLAGS_DEAUTH_TX_STATUS ? 2 : 0, 0,
 			       ap_sta_deauth_cb_timeout, hapd, sta);
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_event_deauth(hapd, sta->addr, HOSTAPD_IF_DISCONNECT_TO_STA,
+			reason, false, 0);
+#endif
 }
 
 
