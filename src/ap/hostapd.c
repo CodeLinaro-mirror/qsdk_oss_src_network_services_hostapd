@@ -39,6 +39,7 @@
 #include "nan_usd_ap.h"
 #include "gas_query_ap.h"
 #include "hw_features.h"
+#include "hostapd_if/hostapd_if.h"
 #include "wpa_auth_glue.h"
 #include "ap_drv_ops.h"
 #include "ap_config.h"
@@ -1124,6 +1125,9 @@ static void hostapd_cleanup(struct hostapd_data *hapd)
 		wpa_msg(hapd->msg_ctx, MSG_INFO, WPA_EVENT_TERMINATING);
 		hapd->iface->interfaces->ctrl_iface_deinit(hapd);
 	}
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_interface_remove(hapd);
+#endif
 	hostapd_free_hapd_data(hapd);
 }
 
@@ -4688,6 +4692,9 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 		 * non-transmitting profile in beacon
 		 */
 		hapd->mbssid_idx = hostapd_allocate_mbssid_idx(hapd);
+#ifdef CONFIG_HOSTAPD_IF
+		hostapd_if_interface_create(hapd);
+#endif
 	}
 
 	hapd_iface->is_ch_switch_dfs = false;

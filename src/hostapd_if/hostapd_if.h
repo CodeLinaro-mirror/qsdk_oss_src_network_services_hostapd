@@ -89,6 +89,7 @@ hostapd_if_notify_assoc(struct hostapd_data *hapd,
 			const u8 *sa);
 
 int hostapd_if_init(struct hapd_interfaces *interfaces);
+int hostapd_if_deinit(void);
 
 void hostapd_if_interface_remove(struct hostapd_data *hapd);
 

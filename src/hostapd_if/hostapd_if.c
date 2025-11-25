@@ -352,6 +352,18 @@ int hostapd_if_init(struct hapd_interfaces *interfaces)
 	return 0;
 }
 
+#ifdef HOSTAPD_EXTERNAL_PLUGIN
+void hostapd_if_eloop_deinit(void);
+#endif
+
+int hostapd_if_deinit(void)
+{
+#ifdef HOSTAPD_EXTERNAL_PLUGIN
+	hostapd_if_eloop_deinit();
+#endif
+	return 0;
+}
+
 int hostapd_if_interface_create(struct hostapd_data *hapd)
 {
 	struct hostapd_data *leader;
