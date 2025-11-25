@@ -853,6 +853,7 @@ struct hostapd_bss_config {
 	int broadcast_deauth;
 
 	int notify_mgmt_frames;
+	int externally_triggered_m3;
 
 #ifdef CONFIG_DPP
 	char *dpp_name;
