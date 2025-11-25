@@ -877,4 +877,6 @@ bool rsn_is_snonce_cookie(const u8 *snonce);
 int rsn_cipher_suite_to_wpa_cipher(u32 cipher);
 int rsn_key_mgmt_to_wpa_akm(u32 akm_suite);
 
+unsigned int wpa_kck_len(int akmp, size_t pmk_len);
+unsigned int wpa_kek_len(int akmp, size_t pmk_len);
 #endif /* WPA_COMMON_H */
