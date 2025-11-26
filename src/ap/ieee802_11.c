@@ -11106,7 +11106,8 @@ static u8 * hostapd_eid_rnr_iface(struct hostapd_data *hapd,
 		return eid;
 
 #ifdef CONFIG_QCN_EXTN
-	if (hostapd_get_oper_chwidth(hapd->iconf) == CONF_OPER_CHWIDTH_320MHZ)
+	if ((hostapd_get_oper_chwidth(hapd->iconf) == CONF_OPER_CHWIDTH_320MHZ) &&
+	     hapd->iconf->downgrade_320mhz_opclass)
 		hostapd_modify_supported_op_class_for_320mhz_extn(
 			iface->freq,
 			&op_class);

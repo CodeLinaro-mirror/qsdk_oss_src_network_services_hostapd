@@ -5231,6 +5231,17 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "enable_mscs") == 0) {
 		bss->mscs = atoi(pos);
 #endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_QCN_EXTN
+	} else if (os_strcmp(buf, "downgrade_320mhz_opclass") == 0) {
+		int val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid downgrade_320mhz_opclass %d (expected 0 or 1)",
+				   line, val);
+			return 1;
+		}
+		conf->downgrade_320mhz_opclass = val;
+
+#endif
 	} else if (os_strcmp(buf, "i2r_lmr_policy") == 0) {
 		conf->i2r_lmr_policy = atoi(pos);
 	} else {

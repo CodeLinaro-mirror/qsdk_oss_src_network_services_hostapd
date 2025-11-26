@@ -387,6 +387,9 @@ struct hostapd_config * hostapd_config_defaults(void)
 
 	bss->rate_type = BEACON_RATE_LEGACY;
 	bss->beacon_rate = 0;
+#ifdef CONFIG_QCN_EXTN
+       conf->downgrade_320mhz_opclass = true;
+#endif
 
 	return conf;
 }
