@@ -6737,6 +6737,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 		hostapd_drv_sta_remove(hapd, sta->addr);
 		sta->flags &= ~(WLAN_STA_ASSOC | WLAN_STA_AUTHORIZED);
 		sta->unadded_sta = false;
+		ap_sta_set_sa_query_timeout(hapd, sta, 0);
 
 		if (ieee802_11_parse_elems(pos, left, &elems, 1) == ParseFailed) {
 			wpa_printf(MSG_DEBUG, "FT: Failed to parse elements");
