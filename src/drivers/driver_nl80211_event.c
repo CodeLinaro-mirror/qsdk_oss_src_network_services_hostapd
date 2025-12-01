@@ -6475,8 +6475,6 @@ nl80211_get_event_bss(struct wpa_driver_nl80211_data *drv, int ifidx,
 		if (wiphy_idx_set)
 			wiphy_idx = nl80211_get_wiphy_index(bss);
 		if ((ifidx == -1 && !wiphy_idx_set && !wdev_id_set) ||
-		    (bss->br_ifindex > 0 &&
-		     nl80211_has_ifidx(drv, bss->br_ifindex, ifidx)) ||
 		    (!wdev_id_set && wiphy_idx_set &&
 		     wiphy_idx == wiphy_idx_rx) ||
 		    (wdev_id_set && bss->wdev_id_set &&
