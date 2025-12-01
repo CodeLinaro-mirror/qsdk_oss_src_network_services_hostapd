@@ -1305,6 +1305,7 @@ void hostapd_handle_ttlm_req(struct hostapd_data *hapd, struct sta_info *sta,
 	const u8 *pos;
 	size_t ie_len;
 	int retval, i;
+	u16 enabled_links_bitmap = 0;
 
 	if (!hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
@@ -1342,6 +1343,8 @@ void hostapd_handle_ttlm_req(struct hostapd_data *hapd, struct sta_info *sta,
 			ongoing_ttlm->ttlm_resp_type = TTLM_RESP_TYPE_SUCCESS;
 			os_memcpy(&ongoing_ttlm->ttlm_info[ttlm_info.direction],
 				  &ttlm_info, sizeof(struct ttlm_info));
+			/* consider TID0 for now as we support only homogeneous mapping */
+			enabled_links_bitmap |= ttlm_info.ieee_link_map_tid[0];
 		} else {
 			wpa_printf(MSG_ERROR, "Failed to parse TTLM IE");
 			os_free(ongoing_ttlm);
@@ -1362,8 +1365,11 @@ void hostapd_handle_ttlm_req(struct hostapd_data *hapd, struct sta_info *sta,
 		if (lsta && lsta->mld_info.mld_sta &&
 		    lsta->timeout_next == STA_DISASSOC_FROM_CLI) {
 			eloop_cancel_timeout(ap_handle_timer, lhapd, lsta);
-			eloop_register_timeout(lhapd->conf->ap_max_inactivity, 0,
-					       ap_handle_timer, lhapd, lsta);
+			if (BIT(lhapd->mld_link_id) & enabled_links_bitmap) {
+				lsta->timeout_next = STA_NULLFUNC;
+				eloop_register_timeout(lhapd->conf->ap_max_inactivity, 0,
+						       ap_handle_timer, lhapd, lsta);
+			}
 			wpa_printf(MSG_DEBUG, "BTM timer cancelled for the client");
 		}
 	}
