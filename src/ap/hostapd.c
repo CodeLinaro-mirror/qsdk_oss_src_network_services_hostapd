@@ -76,6 +76,78 @@ void hostapd_switch_color_timeout_handler(void *eloop_data,
 					  void *user_ctx);
 #endif /* CONFIG_IEEE80211AX */
 
+/* Prepare per-BSS rates from BSS config and current hw mode */
+static int hostapd_prepare_rates(struct hostapd_data *hapd,
+				 struct hostapd_hw_modes *mode)
+{
+	struct hostapd_bss_config *conf = hapd->conf;
+	int i, num_basic_rates = 0;
+	int basic_rates_a[] = { 60, 120, 240, 0 };
+	int basic_rates_b[] = { 10, 20, 0 };
+	int basic_rates_g[] = { 10, 20, 55, 110, 0 };
+	const int *basic_rates;
+
+	if (conf->basic_rates)
+		basic_rates = conf->basic_rates;
+	else switch (mode->mode) {
+		case HOSTAPD_MODE_IEEE80211A:
+			basic_rates = basic_rates_a;
+			break;
+		case HOSTAPD_MODE_IEEE80211B:
+			basic_rates = basic_rates_b;
+			break;
+		case HOSTAPD_MODE_IEEE80211G:
+			basic_rates = basic_rates_g;
+			break;
+		case HOSTAPD_MODE_IEEE80211AD:
+			return 0; /* No basic rates for 11ad */
+		default:
+			return -1;
+	}
+
+	os_free(hapd->basic_rates);
+	hapd->basic_rates = int_array_dup(basic_rates);
+
+	os_free(hapd->current_rates);
+	hapd->num_rates = 0;
+	hapd->current_rates = os_calloc(mode->num_rates,
+					sizeof(struct hostapd_rate_data));
+	if (!hapd->current_rates) {
+		wpa_printf(MSG_ERROR, "Failed to allocate memory for rate "
+			   "table.");
+		return -1;
+	}
+
+	for (i = 0; i < mode->num_rates; i++) {
+		struct hostapd_rate_data *rate;
+
+		if (conf->supported_rates &&
+		    !int_array_includes(conf->supported_rates, mode->rates[i]))
+		    	continue;
+
+		rate = &hapd->current_rates[hapd->num_rates];
+		rate->rate = mode->rates[i];
+		if (int_array_includes(basic_rates, rate->rate)) {
+			rate->flags |= HOSTAPD_RATE_BASIC;
+			num_basic_rates++;
+		}
+
+		wpa_printf(MSG_DEBUG, "BSS RATE[%d] rate=%d flags=0x%x",
+			   hapd->num_rates, rate->rate, rate->flags);
+		hapd->num_rates++;
+	}
+
+	if ((hapd->num_rates == 0 || num_basic_rates == 0) &&
+	    (!hapd->iconf->ieee80211n || !hapd->iconf->require_ht)) {
+	    	wpa_printf(MSG_ERROR,
+	    		   "No rates remaining in supported/basic rate sets (%d,%d).",
+	    		   hapd->num_rates, num_basic_rates);
+	    	return -1;
+	}
+
+	return 0;
+}
+
 
 int hostapd_for_each_interface(struct hapd_interfaces *interfaces,
 			       int (*cb)(struct hostapd_iface *iface,
@@ -283,6 +355,15 @@ static void hostapd_reload_bss(struct hostapd_data *hapd)
 
 	hostapd_neighbor_sync_own_report(hapd);
 
+	if (hapd->iface->current_mode) {
+		if (hostapd_prepare_rates(hapd, hapd->iface->current_mode)) {
+			wpa_printf(MSG_ERROR, "Failed to prepare rates table.");
+			hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
+					HOSTAPD_LEVEL_WARNING,
+					"Failed to prepare rates table.");
+		}
+	}
+
 	ieee802_11_set_beacon(hapd);
 	hostapd_update_wps(hapd);
 
@@ -358,7 +439,6 @@ int hostapd_iface_num_sta(struct hostapd_iface *iface)
 
 	return num_sta;
 }
-
 
 int hostapd_check_max_sta(struct hostapd_data *hapd)
 {
@@ -979,6 +1059,11 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 	hapd->probereq_cb = NULL;
 	hapd->num_probereq_cb = 0;
 
+	os_free(hapd->current_rates);
+	hapd->current_rates = NULL;
+	os_free(hapd->basic_rates);
+	hapd->basic_rates = NULL;
+
 #ifdef CONFIG_P2P
 	wpabuf_free(hapd->p2p_beacon_ie);
 	hapd->p2p_beacon_ie = NULL;
@@ -1223,10 +1308,6 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 	iface->hw_features = NULL;
 	iface->num_hw_features = 0;
 	iface->current_mode = NULL;
-	os_free(iface->current_rates);
-	iface->current_rates = NULL;
-	os_free(iface->basic_rates);
-	iface->basic_rates = NULL;
 	iface->cac_started = 0;
 	ap_list_deinit(iface);
 	sta_track_deinit(iface);
@@ -1887,6 +1968,17 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon)
 
 	wpa_printf(MSG_DEBUG, "%s(hapd=%p (%s), first=%d)",
 		   __func__, hapd, conf->iface, first);
+
+	/* prepare per-BSS rates early from BSS config and current mode */
+	if (hapd->iface->current_mode) {
+		if (hostapd_prepare_rates(hapd, hapd->iface->current_mode)) {
+			wpa_printf(MSG_ERROR, "Failed to prepare rates table.");
+			hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
+				       HOSTAPD_LEVEL_WARNING,
+				       "Failed to prepare rates table.");
+			return -1;
+		}
+	}
 
 #ifdef EAP_SERVER_TNC
 	if (conf->tnc && tncs_global_init() < 0) {
@@ -3397,17 +3489,6 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 				     hapd->iconf->center_freq_device)) {
 			wpa_printf(MSG_ERROR, "Could not set channel for "
 				   "kernel driver");
-			goto fail;
-		}
-	}
-
-	if (iface->current_mode) {
-		if (hostapd_prepare_rates(iface, iface->current_mode)) {
-			wpa_printf(MSG_ERROR, "Failed to prepare rates "
-				   "table.");
-			hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
-				       HOSTAPD_LEVEL_WARNING,
-				       "Failed to prepare rates table.");
 			goto fail;
 		}
 	}

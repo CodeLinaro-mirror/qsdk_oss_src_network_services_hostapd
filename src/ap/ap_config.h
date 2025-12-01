@@ -332,6 +332,9 @@ struct hostapd_bss_config {
 
 	struct hostapd_ssid ssid;
 
+	int *supported_rates;
+	int *basic_rates;
+
 	char *eap_req_id_text; /* optional displayable message sent with
 				* EAP Request-Identity */
 	size_t eap_req_id_text_len;
@@ -1127,9 +1130,6 @@ struct hostapd_config {
 		LONG_PREAMBLE = 0,
 		SHORT_PREAMBLE = 1
 	} preamble;
-
-	int *supported_rates;
-	int *basic_rates;
 
 	const struct wpa_driver_ops *driver;
 	char *driver_params;
