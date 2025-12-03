@@ -1464,8 +1464,12 @@ static inline u8
 hostapd_get_bw320_offset(struct hostapd_config *conf)
 {
 #ifdef CONFIG_IEEE80211BE
-	if (conf->ieee80211be && is_6ghz_op_class(conf->op_class) &&
+	/* 240MHz (320 MHz with puncturing) is supported in 5GHz */
+	if (!is_6ghz_op_class(conf->op_class) &&
 	    hostapd_get_oper_chwidth(conf) == CONF_OPER_CHWIDTH_320MHZ)
+		return conf->eht_bw320_offset;
+	else if (conf->ieee80211be && is_6ghz_op_class(conf->op_class) &&
+		 hostapd_get_oper_chwidth(conf) == CONF_OPER_CHWIDTH_320MHZ)
 		return conf->eht_bw320_offset;
 #endif /* CONFIG_IEEE80211BE */
 	return 0;
@@ -1476,8 +1480,12 @@ hostapd_set_and_check_bw320_offset(struct hostapd_config *conf,
 				   u8 bw320_offset)
 {
 #ifdef CONFIG_IEEE80211BE
-	if (conf->ieee80211be && is_6ghz_op_class(conf->op_class) &&
-	    op_class_to_ch_width(conf->op_class) == CONF_OPER_CHWIDTH_320MHZ) {
+	/* 240MHz (320 MHz with puncturing) is supported in 5GHz */
+	if (!is_6ghz_op_class(conf->op_class) &&
+	    hostapd_get_oper_chwidth(conf) == CONF_OPER_CHWIDTH_320MHZ) {
+		conf->eht_bw320_offset = bw320_offset;
+	} else if (conf->ieee80211be && is_6ghz_op_class(conf->op_class) &&
+		   op_class_to_ch_width(conf->op_class) == CONF_OPER_CHWIDTH_320MHZ) {
 		if (conf->channel) {
 			/* If the channel is set, then calculate bw320_offset
 			 * by center frequency segment 0.
