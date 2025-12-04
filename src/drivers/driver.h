@@ -8593,6 +8593,13 @@ union wpa_event_data {
 	} tclas_flow_event;
 
 	/**
+	 * event_data_extn - Extension event data for vendor-specific events
+	 *
+	 * This field is used for extension events
+	 */
+	union wpa_event_data_extn event_data_extn;
+
+	/**
 	 * struct reconfig_info - Data for EVENT_SETUP_LINK_RECONFIG
 	 */
 	struct reconfig_info {
