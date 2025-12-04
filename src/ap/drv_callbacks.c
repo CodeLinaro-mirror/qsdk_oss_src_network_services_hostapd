@@ -1922,7 +1922,10 @@ static void hostapd_action_rx(struct hostapd_data *hapd,
 
 #ifdef NEED_AP_MLME
 
-static struct hostapd_data *
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+struct hostapd_data *
 switch_link_hapd(struct hostapd_data *hapd, int link_id)
 {
 #ifdef CONFIG_IEEE80211BE

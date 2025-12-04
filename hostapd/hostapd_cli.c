@@ -227,7 +227,10 @@ static int _wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd, int print)
 }
 
 
-static inline int wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd)
+#ifndef CONFIG_QCN_EXTN
+static inline
+#endif
+int wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd)
 {
 	return _wpa_ctrl_command(ctrl, cmd, 1);
 }

@@ -8041,6 +8041,13 @@ union wpa_event_data {
 		u8 *addr;
 		u8 tid;
 	} tclas_flow_event;
+
+	/**
+	 * event_data_extn - Extension event data for vendor-specific events
+	 *
+	 * This field is used for extension events
+	 */
+	union wpa_event_data_extn event_data_extn;
 };
 
 /**
