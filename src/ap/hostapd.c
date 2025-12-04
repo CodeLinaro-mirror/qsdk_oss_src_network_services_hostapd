@@ -1424,6 +1424,10 @@ void hostapd_bss_deinit_no_free(struct hostapd_data *hapd)
 #ifdef CONFIG_WEP
 	hostapd_clear_wep(hapd);
 #endif /* CONFIG_WEP */
+
+#ifdef CONFIG_QCN_EXTN
+	hostapd_free_bss_index_extn(hapd);
+#endif /* CONFIG_QCN_EXTN */
 }
 
 
@@ -1446,6 +1450,11 @@ static int hostapd_validate_bssid_configuration(struct hostapd_iface *iface)
 
 	if (iface->conf->use_driver_iface_addr)
 		return 0;
+
+#ifdef CONFIG_QCN_EXTN
+	if (iface->conf->use_driver_vendor_addr)
+		return 0;
+#endif /* CONFIG_QCN_EXTN */
 
 	/* Generate BSSID mask that is large enough to cover the BSSIDs. */
 
@@ -1992,6 +2001,10 @@ int hostapd_setup_bss(struct hostapd_data *hapd, bool first,
 			}
 		} else if (hapd->iconf->use_driver_iface_addr) {
 			addr = NULL;
+#ifdef CONFIG_QCN_EXTN
+		} else if (hapd->iconf->use_driver_vendor_addr) {
+			addr = NULL;
+#endif /* CONFIG_QCN_EXTN */
 		} else {
 			/* Allocate the next available BSSID. */
 			do {
@@ -2030,6 +2043,20 @@ int hostapd_setup_bss(struct hostapd_data *hapd, bool first,
 		if (!addr)
 			os_memcpy(hapd->own_addr, if_addr, ETH_ALEN);
 
+#ifdef CONFIG_QCN_EXTN
+		/*
+		 * When BSSID is not configured, try to derive a per-BSS address
+		 * via vendor command for both Non-MLD and first MLD BSS.
+		 * For Non-MLD, also update the netdev MAC to keep it in sync.
+		 */
+		if (is_zero_ether_addr(conf->bssid) &&
+		    hapd->iconf->use_driver_vendor_addr) {
+			if (hostapd_drv_fetch_and_set_vendor_bssid_extn(hapd))
+				wpa_printf(MSG_DEBUG,
+					   "fetch and set vendor BSSID failed");
+		}
+#endif /* CONFIG_QCN_EXTN */
+
 #ifdef CONFIG_IEEE80211BE
 		if (hapd->conf->mld_ap) {
 			wpa_printf(MSG_DEBUG,
@@ -2049,6 +2076,16 @@ setup_mld:
 			   ", own_addr=" MACSTR,
 			   hapd->mld_link_id, MAC2STR(hapd->mld->mld_addr),
 			   MAC2STR(hapd->own_addr));
+
+#ifdef CONFIG_QCN_EXTN
+		/* Get per-link BSSID using vendor cmd (non-first links) */
+		if (is_zero_ether_addr(conf->bssid) &&
+		    hapd->iconf->use_driver_vendor_addr) {
+			if (hostapd_drv_fetch_and_set_vendor_bssid_extn(hapd))
+				wpa_printf(MSG_DEBUG,
+					   "fetch and set vendor BSSID failed");
+		}
+#endif /* CONFIG_QCN_EXTN */
 
 		if (hostapd_drv_link_add(hapd, hapd->mld_link_id,
 					 hapd->own_addr)) {
@@ -3363,6 +3400,19 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 			goto fail;
 		}
 
+#ifdef CONFIG_QCN_EXTN
+		/*
+		 * If vendor BSSID was deferred (e.g., multiple radios and no
+		 * channel at driver init), fetch and apply it now.
+		 */
+		if (hapd && is_zero_ether_addr(hapd->conf->bssid) &&
+		    hapd->iconf->use_driver_vendor_addr) {
+			if (hostapd_drv_fetch_and_set_vendor_bssid_extn(hapd))
+				wpa_printf(MSG_DEBUG,
+					   "fetch and set vendor BSSID failed");
+		}
+#endif /* CONFIG_QCN_EXTN */
+
 #ifdef NEED_AP_MLME
 		if (iface->assisted_dfs) {
 			wpa_printf(MSG_DEBUG,
@@ -4042,6 +4092,10 @@ struct hostapd_iface * hostapd_alloc_iface(void)
 	dl_list_init(&hapd_iface->sta_seen);
 
 	hapd_iface->is_afc_power_event_received = false;
+
+#ifdef CONFIG_QCN_EXTN
+	hapd_iface->vendor_bssid_used_mask = 0;
+#endif /* CONFIG_QCN_EXTN */
 
 	return hapd_iface;
 }
