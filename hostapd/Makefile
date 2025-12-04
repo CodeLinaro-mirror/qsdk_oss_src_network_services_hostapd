@@ -67,10 +67,6 @@ ifdef CONFIG_RADIUS_SERVER
 OBJS += radius.o
 endif
 
-ifdef CONFIG_QCN_EXTN
-include ../qcn_extns/Makefile
-endif
-
 OBJS += ../src/ap/hostapd.o
 OBJS += ../src/ap/wpa_auth_glue.o
 OBJS += ../src/ap/drv_callbacks.o
@@ -99,6 +95,11 @@ OBJS_c = hostapd_cli.o
 OBJS_c += ../src/common/wpa_ctrl.o
 OBJS_c += ../src/utils/os_$(CONFIG_OS).o
 OBJS_c += ../src/common/cli.o
+
+ifdef CONFIG_QCN_EXTN
+OBJS_c += qcn_extns/hostapd_cli_extn.o
+include ../qcn_extns/Makefile
+endif
 
 NEED_RC4=y
 NEED_AES=y

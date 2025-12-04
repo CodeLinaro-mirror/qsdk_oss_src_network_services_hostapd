@@ -373,6 +373,9 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->afc_chan_sel_config = HOSTAPD_AFC_CHAN_SEL_ALL;
 
 	hostapd_set_and_check_bw320_offset(conf, 0);
+#ifdef CONFIG_QCN_EXTN
+	hostapd_config_defaults_extn(conf);
+#endif
 
 #ifdef CONFIG_IEEE80211BE
 	/* set ML max rec links as Invalid */
