@@ -11,6 +11,7 @@
 
 #include "common/wpa_ctrl.h"
 #include "common/ieee802_11_defs.h"
+#include "../qcn_extns/hostapd_cli_extn.h"
 #include "utils/common.h"
 #include "utils/eloop.h"
 #include "utils/edit.h"
@@ -231,9 +232,11 @@ static inline int wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd)
 	return _wpa_ctrl_command(ctrl, cmd, 1);
 }
 
-
-static int hostapd_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd,
-			   int min_args, int argc, char *argv[])
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int hostapd_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd,
+		    int min_args, int argc, char *argv[])
 {
 	char buf[4096];
 
@@ -2383,6 +2386,9 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "=Add/Delete/Show/Clear accept MAC ACL" },
 	{ "deny_acl", hostapd_cli_cmd_deny_macacl, NULL,
 	  "=Add/Delete/Show/Clear deny MAC ACL" },
+
+	HOSTAPD_CLI_CMDS_EXTN
+
 	{ "poll_sta", hostapd_cli_cmd_poll_sta, hostapd_complete_stations,
 	  "<addr> = poll a STA to check connectivity with a QoS null frame" },
 	{ "channel_bw", hostapd_cli_cmd_channel_bw, NULL,

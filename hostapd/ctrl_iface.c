@@ -6710,6 +6710,12 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 			reply_len = -1;
 #endif /* CONFIG_SAE */
 	} else {
+		if (!hostapd_ctrl_iface_receive_process_extn(hapd, buf, reply,
+							     reply_size,
+							     from, fromlen,
+							     &reply_len))
+			return reply_len;
+
 		os_memcpy(reply, "UNKNOWN COMMAND\n", 16);
 		reply_len = 16;
 	}

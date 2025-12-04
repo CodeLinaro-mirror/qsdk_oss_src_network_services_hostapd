@@ -291,6 +291,7 @@ struct hostapd_bss_config {
 	char snoop_iface[IFNAMSIZ + 1];
 	char vlan_bridge[IFNAMSIZ + 1];
 	char wds_bridge[IFNAMSIZ + 1];
+	struct hostapd_bss_config_extn bss_extn;
 	int bridge_hairpin; /* hairpin_mode on bridge members */
 
 	enum hostapd_logger_level logger_syslog_level, logger_stdout_level;
@@ -1110,6 +1111,7 @@ struct hostapd_config {
 	struct hostapd_bss_config **bss, *last_bss;
 	size_t num_bss;
 
+	struct hostapd_config_extn conf_extn;
 	u16 beacon_int;
 	int rts_threshold;
 	int fragm_threshold;
