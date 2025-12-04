@@ -3423,6 +3423,12 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line);
 			return 1;
 		}
+#ifdef CONFIG_QCN_EXTN
+	} else if (os_strcmp(buf, "bss_index") == 0) {
+		bss->bss_index = atoi(pos);
+	} else if (os_strcmp(buf, "use_driver_vendor_addr") == 0) {
+		conf->use_driver_vendor_addr = atoi(pos);
+#endif /* CONFIG_QCN_EXTN */
 	} else if (os_strcmp(buf, "use_driver_iface_addr") == 0) {
 		conf->use_driver_iface_addr = atoi(pos);
 	} else if (os_strcmp(buf, "ieee80211w") == 0) {

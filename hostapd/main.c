@@ -330,6 +330,16 @@ pre_setup_mld:
 setup_mld:
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_QCN_EXTN
+	if (b && is_zero_ether_addr(b))
+		b = NULL;
+	if (!b && iface->conf->use_driver_vendor_addr) {
+		if (hostapd_drv_fetch_and_set_vendor_bssid_extn(hapd))
+			wpa_printf(MSG_DEBUG,
+				   "Fetch and set vendor BSSID failed");
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	if (hapd->driver->get_capa &&
 	    hapd->driver->get_capa(hapd->drv_priv, &capa) == 0) {
 		struct wowlan_triggers *triggs;

@@ -23046,4 +23046,45 @@ enum qca_wlan_vendor_attr_config_esp_param {
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_MAX =
 		QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AFTER_LAST - 1,
 };
+
+/**
+ * enum qca_wlan_vendor_attr_mac_config - vendor MAC address derivation
+ * used by QCA_NL80211_VENDOR_SUBCMD_DERIVE_LINK_BSS_ADDR.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_RADIO_INDEX: radio id for which
+ * MAC address is derived.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_RADIO_BSS_ID: bss id for which
+ * MAC address is derived, this is expected to be in range
+ * [0..15] or [0..0..group_size-1] for multi mbssid.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MAC_ADDR: Derived MAC address
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_IFTYPE: 32-bit unsigned value.
+ * Interface type from enum nl80211_iftype
+ * (e.g., NL80211_IFTYPE_STATION, NL80211_IFTYPE_AP, etc.).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MBSSID_GRP_ID: 8-bit unsigned value.
+ * MBSSID group identifier for 6 GHz.
+ * Used with QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MBSSID_GRP_SIZE to
+ * derive 6 GHz link bss MAC addresses.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MBSSID_GRP_SIZE: 8-bit unsigned value.
+ * Number of VAPs in the MBSSID group.
+ * BSS IDs are expected to be in range [0..group_size-1].
+ */
+enum qca_wlan_vendor_attr_mac_config {
+	QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_RADIO_INDEX = 1,
+	QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_RADIO_BSS_ID,
+	QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MAC_ADDR,
+	QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_IFTYPE,
+	QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_FLAGS,
+	QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MBSSID_GRP_ID,
+	QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MBSSID_GRP_SIZE,
+
+	QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MAX =
+		QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_AFTER_LAST - 1,
+};
+
 #endif /* QCA_VENDOR_H */

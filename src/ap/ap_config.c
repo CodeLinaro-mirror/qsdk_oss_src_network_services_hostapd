@@ -112,6 +112,11 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	/* Set to -1 as defaults depends on HT in setup */
 	bss->wmm_enabled = -1;
 
+#ifdef CONFIG_QCN_EXTN
+	/* Not set by default; use runtime available BSS index */
+	bss->bss_index = -1;
+#endif /* CONFIG_QCN_EXTN */
+
 #ifdef CONFIG_IEEE80211R_AP
 	bss->ft_over_ds = 1;
 	bss->rkh_pos_timeout = 86400;

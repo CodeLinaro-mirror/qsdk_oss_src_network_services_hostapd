@@ -1006,6 +1006,16 @@ struct hostapd_bss_config {
 #endif /* CONFIG_IEEE80211BE */
 	int mbssid_index;
 
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * Override index used to derive vendor BSSID for
+	 * non-MBSSID cases when 'use_driver_vendor_addr=1'.
+	 * -1 means not set and hostapd will use the interface
+	 * BSS index available.
+	 */
+	int bss_index;
+#endif /* CONFIG_QCN_EXTN */
+
 	bool spp_amsdu;
 	enum {
 		FILS_UBPR_USER_DISABLED,
@@ -1200,6 +1210,12 @@ struct hostapd_config {
 
 	/* Use driver-generated interface addresses when adding multiple BSSs */
 	u8 use_driver_iface_addr;
+
+#ifdef CONFIG_QCN_EXTN
+	/* Use vendor-generated BSSID */
+	u8 use_driver_vendor_addr;
+#endif /* CONFIG_QCN_EXTN */
+
 	u8 skip_unii1_dfs_switch;
 	u8 ext_cap_len;
 

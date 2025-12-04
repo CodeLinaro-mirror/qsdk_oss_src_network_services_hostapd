@@ -312,6 +312,12 @@ struct hostapd_data {
 
 	u8 own_addr[ETH_ALEN];
 
+#ifdef CONFIG_QCN_EXTN
+	/* Vendor BSSID derivation bookkeeping for non-MBSSID */
+	u8 vendor_bss_index;
+	bool vendor_bss_index_valid;
+#endif /* CONFIG_QCN_EXTN */
+
 	/* OpenWrt specific statistics */
 	struct hostapd_openwrt_stats openwrt_stats;
 
@@ -736,6 +742,11 @@ struct hostapd_iface {
 
 	size_t num_bss;
 	struct hostapd_data **bss;
+
+#ifdef CONFIG_QCN_EXTN
+	/* Bitmask of used vendor BSSID indices (non-MBSSID) */
+	u32 vendor_bssid_used_mask;
+#endif /* CONFIG_QCN_EXTN */
 
 	unsigned int wait_channel_update:1;
 	unsigned int cac_started:1;
