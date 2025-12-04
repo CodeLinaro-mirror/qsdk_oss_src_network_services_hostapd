@@ -3631,7 +3631,7 @@ static void handle_auth(struct hostapd_data *hapd,
 	 */
 	if (mld_sta) {
 
-		res = ieee802_11_allowed_address(hapd, mgmt->sa,
+		res = ieee802_11_allowed_address(hapd, sa,
 						 (const u8 *) mgmt, len,
 						 &rad_info);
 		if (res == HOSTAPD_ACL_REJECT && !skip_acl) {
@@ -6316,7 +6316,8 @@ void fils_hlp_timeout(void *eloop_ctx, void *eloop_data)
 static struct sta_info * handle_mlo_translate(struct hostapd_data *hapd,
 					      const struct ieee80211_mgmt *mgmt,
 					      size_t len, bool reassoc,
-					      struct hostapd_data **assoc_hapd)
+					      struct hostapd_data **assoc_hapd,
+					      u8 *assoc_mld_addr)
 {
 	struct sta_info *sta;
 	struct ieee802_11_elems elems;
@@ -6341,6 +6342,8 @@ static struct sta_info * handle_mlo_translate(struct hostapd_data *hapd,
 					      elems.basic_mle_len,
 					      mld_addr))
 		return NULL;
+
+	os_memcpy(assoc_mld_addr, mld_addr, ETH_ALEN);
 
 	sta = ap_get_sta(hapd, mld_addr);
 	if (!sta)
@@ -6484,6 +6487,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 #endif /* CONFIG_FILS */
 	int omit_rsnxe = 0;
 	bool set_beacon = false;
+	u8 mld_addr[ETH_ALEN] = {0};
 
 	if (len < IEEE80211_HDRLEN + (reassoc ? sizeof(mgmt->u.reassoc_req) :
 				      sizeof(mgmt->u.assoc_req))) {
@@ -6557,7 +6561,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 		struct hostapd_data *assoc_hapd;
 
 		sta = handle_mlo_translate(hapd, mgmt, len, reassoc,
-					   &assoc_hapd);
+					   &assoc_hapd, mld_addr);
 
 		if (sta && sta->sa_query_timed_out) {
 			/* Allow link address to be changed if an SA query
@@ -6609,9 +6613,20 @@ static void handle_assoc(struct hostapd_data *hapd,
 			int acl_res;
 			struct radius_sta info;
 
-			acl_res = ieee802_11_allowed_address(hapd, mgmt->sa,
-							     (const u8 *) mgmt,
-							     len, &info);
+			if (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta) {
+				acl_res = ieee802_11_allowed_address(hapd, sta->addr,
+								     (const u8 *) mgmt,
+								     len, &info);
+			} else if (!is_zero_ether_addr(mld_addr)) {
+				acl_res = ieee802_11_allowed_address(hapd, mld_addr,
+								     (const u8 *) mgmt,
+								     len, &info);
+			} else {
+				acl_res = ieee802_11_allowed_address(hapd, mgmt->sa,
+								     (const u8 *) mgmt,
+								     len, &info);
+			}
+
 			if (acl_res == HOSTAPD_ACL_REJECT) {
 				wpa_msg(hapd->msg_ctx, MSG_DEBUG,
 					"Ignore Association Request frame from "
@@ -6752,7 +6767,6 @@ static void handle_assoc(struct hostapd_data *hapd,
 	     sta->sa_query_timed_out &&
 	     sta->mld_info.mld_sta) {
 		struct ieee802_11_elems elems;
-		u8 mld_addr[ETH_ALEN];
 
 		wpa_auth_sta_deinit(sta->wpa_sm);
 		sta->wpa_sm = NULL;
