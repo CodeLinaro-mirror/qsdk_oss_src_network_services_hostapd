@@ -3699,6 +3699,9 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 				data->tclas_flow_event.addr, data->tclas_flow_event.tid);
 		break;
 	default:
+		if (!hostapd_wpa_event_extn(ctx, event, data))
+			break;
+
 		wpa_printf(MSG_DEBUG, "Unknown event %d", event);
 		break;
 	}
