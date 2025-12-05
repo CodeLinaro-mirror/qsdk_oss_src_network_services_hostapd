@@ -4813,6 +4813,11 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 		break;
 #endif /* CONFIG_DRIVER_NL80211_QCA */
 	default:
+#ifdef CONFIG_QCN_EXTN
+		if (!nl80211_vendor_event_qca_extn(bss, subcmd, data, len))
+#endif
+			break;
+
 		wpa_printf(MSG_DEBUG,
 			   "nl80211: Ignore unsupported QCA vendor event %u",
 			   subcmd);
