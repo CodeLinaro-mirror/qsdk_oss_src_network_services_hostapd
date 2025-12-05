@@ -1471,6 +1471,17 @@ int hostapd_intf_afc_received(struct hostapd_iface *iface)
 	chan_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
 	wpa_printf(MSG_DEBUG, "chan_width=%d", chan_width);
 
+	/* Store the original channel width on first AFC request */
+	if (iface->conf->original_chan_width == 0) {
+		iface->conf->original_chan_width = chan_width;
+		wpa_printf(MSG_DEBUG, "AFC: Storing original channel width: %d",
+			   iface->conf->original_chan_width);
+	} else {
+		/* Use the original channel width as starting point for subsequent requests */
+		chan_width = iface->conf->original_chan_width;
+		wpa_printf(MSG_DEBUG, "AFC: Using original channel width: %d", chan_width);
+	}
+
 	chan_data = os_zalloc(sizeof(struct hostapd_channel_data));
 	if (!chan_data) {
 		wpa_printf(MSG_ERROR, "chan_data memory allocation failed");

@@ -376,6 +376,7 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->enable_6ghz_composite_ap = 1;
 	conf->cur_chan_eirp = CHAN_MIN_EIRP_POWER;
 	conf->afc_chan_sel_config = HOSTAPD_AFC_CHAN_SEL_ALL;
+	conf->original_chan_width = 0;
 
 	hostapd_set_and_check_bw320_offset(conf, 0);
 	hostapd_config_defaults_extn(conf);

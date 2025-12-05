@@ -1372,6 +1372,8 @@ struct hostapd_config {
 	bool enable_mcs15;
 	int afc_chan_sel_config;
 	int cur_chan_eirp;
+	int original_chan_width; /* Original channel width for AFC */
+
 #ifdef CONFIG_QCN_EXTN
 	bool downgrade_320mhz_opclass;
 #endif
