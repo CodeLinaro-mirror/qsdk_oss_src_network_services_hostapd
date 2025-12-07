@@ -416,8 +416,8 @@ def test_he_ap_ema(dev, apdev, params):
         subprocess.call(['ip', 'link', 'set', 'dev', apdev[0]['ifname'],
                          'address', apdev[0]['bssid']])
 
-def test_he_ap_mbssid_beacon_prot(dev, apdev, params):
-    """HE AP MBSSID beacon protection"""
+def test_he_ap_mbssid_beacon_prot_tx_then_non_tx(dev, apdev, params):
+    """HE AP MBSSID beacon protection with Association on Tx BSS followed by Non-Tx BSS"""
     check_sae_capab(dev[0])
     check_sae_capab(dev[1])
     f, fname, ifname = mbssid_create_cfg_file(apdev, params)
@@ -457,6 +457,55 @@ def test_he_ap_mbssid_beacon_prot(dev, apdev, params):
 
         if beacon_loss0 or beacon_loss1:
             raise Exception("Beacon loss detected")
+    finally:
+        subprocess.call(['ip', 'link', 'set', 'dev', apdev[0]['ifname'],
+                         'address', apdev[0]['bssid']])
+
+def test_mbssid_beacon_prot_non_tx_then_tx(dev, apdev, params):
+    """HE AP MBSSID beacon protection with Association on Non-Tx BSS followed by Tx BSS"""
+    check_sae_capab(dev[0])
+    check_sae_capab(dev[1])
+    f, fname, ifname = mbssid_create_cfg_file(apdev, params)
+
+    sae_params = {"wpa": "2", "sae_password": "12345678",
+                  "wpa_pairwise": "CCMP", "wpa_key_mgmt": "SAE",
+                  "ieee80211w": "2", "beacon_prot": "1"}
+    mbssid_write_bss_params(f, ifname, 0, sae_params)
+    sae_params = {"wpa": "2", "sae_password": "another password",
+                  "wpa_pairwise": "CCMP", "wpa_key_mgmt": "SAE",
+                  "ieee80211w": "2", "beacon_prot": "1"}
+    mbssid_write_bss_params(f, ifname, 1, sae_params)
+
+    f.close()
+    mbssid_dump_config(fname)
+
+    try:
+        dev[0].set("sae_groups", "")
+        dev[1].set("sae_groups", "")
+        hapd, pid = mbssid_start_ap(dev, apdev, params, fname, ifname, None,
+                                    only_start_ap=True)
+        #Associate on Non-TX BSS first followed by association on Tx BSS
+        dev[1].connect("bss-1", psk="another password", key_mgmt="SAE",
+                       ieee80211w="2", beacon_prot="1", scan_freq="2412")
+        dev[0].connect("bss-0", psk="12345678", key_mgmt="SAE",
+                       ieee80211w="2", beacon_prot="1", scan_freq="2412")
+
+        beacon_loss0 = False
+        beacon_loss1 = False
+        ev = dev[1].wait_event(["CTRL-EVENT-BEACON-LOSS"], timeout=5)
+        if ev is not None:
+            beacon_loss1 = True
+        ev = dev[0].wait_event(["CTRL-EVENT-BEACON-LOSS"], timeout=0.1)
+        if ev is not None:
+            beacon_loss0 = True
+
+        mbssid_stop_ap(hapd, pid)
+
+        if beacon_loss0:
+            raise Exception("Beacon loss detected on TX BSS")
+        if beacon_loss1:
+            raise Exception("Beacon loss detected on non-TX BSS")
+
     finally:
         subprocess.call(['ip', 'link', 'set', 'dev', apdev[0]['ifname'],
                          'address', apdev[0]['bssid']])
