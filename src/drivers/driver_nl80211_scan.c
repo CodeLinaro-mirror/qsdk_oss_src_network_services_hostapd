@@ -268,7 +268,7 @@ nl80211_scan_common(struct i802_bss *bss, u8 cmd,
 	params->filter_ssids = NULL;
 	drv->num_filter_ssids = params->num_filter_ssids;
 
-	if (!drv->hostapd && is_ap_interface(drv->nlmode)) {
+	if (is_ap_interface(drv->nlmode)) {
 		wpa_printf(MSG_DEBUG, "nl80211: Add NL80211_SCAN_FLAG_AP");
 		scan_flags |= NL80211_SCAN_FLAG_AP;
 	} else if (drv->support_ap_scan && is_ap_interface(drv->nlmode) &&
