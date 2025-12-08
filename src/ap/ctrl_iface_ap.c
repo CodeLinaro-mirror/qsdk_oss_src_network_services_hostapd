@@ -1788,6 +1788,7 @@ int hostapd_ctrl_iface_bss_tm_req(struct hostapd_data *hapd,
 	int nei_len;
 	u8 mbo[10];
 	size_t mbo_len = 0;
+	void *non_pref_chan = NULL;
 
 	if (hwaddr_aton(cmd, addr)) {
 		wpa_printf(MSG_DEBUG, "Invalid STA MAC address");
@@ -1828,10 +1829,11 @@ int hostapd_ctrl_iface_bss_tm_req(struct hostapd_data *hapd,
 	if (pos) {
 		pos += 10;
 		req_mode |= WNM_BSS_TM_REQ_BSS_TERMINATION_INCLUDED;
-		/* TODO: TSF configurable/learnable */
+		/* TODO: TSF learnable */
 		bss_term_dur[0] = 4; /* Subelement ID */
 		bss_term_dur[1] = 10; /* Length */
-		os_memset(&bss_term_dur[2], 0, 8);
+		bss_term_dur[2] = atoi(pos); /* TSF */
+		 os_memset(&bss_term_dur[3], 0, 7);
 		end = os_strchr(pos, ',');
 		if (end == NULL) {
 			wpa_printf(MSG_DEBUG, "Invalid bss_term data");
@@ -1841,7 +1843,11 @@ int hostapd_ctrl_iface_bss_tm_req(struct hostapd_data *hapd,
 		WPA_PUT_LE16(&bss_term_dur[10], atoi(end));
 	}
 
-	nei_len = ieee802_11_parse_candidate_list(cmd, nei_rep,
+#ifdef CONFIG_MBO
+	non_pref_chan = (void *)sta->non_pref_chan;
+#endif /* CONFIG_MBO */
+
+	nei_len = ieee802_11_parse_candidate_list(cmd, non_pref_chan, nei_rep,
 						  sizeof(nei_rep));
 	if (nei_len < 0)
 		return -1;

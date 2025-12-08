@@ -15,7 +15,7 @@
 #include "qca-vendor.h"
 #include "ieee802_11_defs.h"
 #include "ieee802_11_common.h"
-
+#include "ap/sta_info.h"
 
 static int ieee802_11_parse_vendor_specific(const u8 *pos, size_t elen,
 					    struct ieee802_11_elems *elems,
@@ -3049,11 +3049,19 @@ bool is_same_band(int freq1, int freq2)
 }
 
 
-int ieee802_11_parse_candidate_list(const char *pos, u8 *nei_rep,
-				    size_t nei_rep_len)
+int ieee802_11_parse_candidate_list(const char *pos, void *non_pref_chan,
+				    u8 *nei_rep, size_t nei_rep_len)
 {
 	u8 *nei_pos = nei_rep;
 	const char *end;
+#ifdef CONFIG_MBO
+	u8 non_pref_chan_num = 0;
+	u8 *pref_pos = NULL;
+	int i;
+
+	struct mbo_non_pref_chan_info *info =
+				(struct mbo_non_pref_chan_info *)non_pref_chan;
+#endif
 
 	/*
 	 * BSS Transition Candidate List Entries - Neighbor Report elements
@@ -3109,6 +3117,9 @@ int ieee802_11_parse_candidate_list(const char *pos, u8 *nei_rep,
 		pos++;
 
 		*nei_pos++ = atoi(pos); /* Channel Number */
+#ifdef CONFIG_MBO
+		non_pref_chan_num = atoi(pos);
+#endif
 		pos = os_strchr(pos, ',');
 		if (pos == NULL) {
 			wpa_printf(MSG_DEBUG, "Missing PHY Type");
@@ -3140,6 +3151,25 @@ int ieee802_11_parse_candidate_list(const char *pos, u8 *nei_rep,
 					   "Invalid neighbor subelement info");
 				return -1;
 			}
+#ifdef CONFIG_MBO
+			if (info) {
+				for (i = 0; i < (len / 2); i++)
+					if (nei_pos[i] == WNM_NEIGHBOR_BSS_TRANSITION_CANDIDATE &&
+							nei_pos[i + 1] == 0x1) /* length */
+						pref_pos = (nei_pos + i + 2);
+
+				/* If STA had updated MBO non-pref chan report,
+				 * use the same candidate preference value in the
+				 * BSS Transition Candidate sub-element.
+				 */
+				for ( ; info ; info = info->next)
+					for (i = 0; i < info->num_channels; i++)
+						if (non_pref_chan_num == info->channels[i])
+							*pref_pos = info->pref;
+
+				info = (struct mbo_non_pref_chan_info *)non_pref_chan;
+			}
+#endif
 			nei_pos += len / 2;
 			pos = end;
 		}
