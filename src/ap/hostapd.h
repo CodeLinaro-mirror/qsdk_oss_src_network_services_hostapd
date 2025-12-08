@@ -922,6 +922,8 @@ struct hostapd_iface {
 	 */
 	bool is_afc_channel_change_pending;
 
+	struct hostapd_iface_extn iface_extn;
+
 	/* Configured freq of interface is NO_IR */
 	bool is_no_ir;
 
