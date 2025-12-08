@@ -1914,6 +1914,8 @@ int wpa_config_write(const char *name, struct wpa_config *config)
 	const char *orig_name = name;
 	size_t tmp_len, prefix_len, suffix_len;
 	char *tmp_name;
+	const char *conf_file;
+	bool fallback = false;
 	struct stat file_stat;
 #ifdef WPAS_CONFIG_USE_OPEN
 	int fd;
@@ -1959,7 +1961,32 @@ int wpa_config_write(const char *name, struct wpa_config *config)
 	if (f == NULL) {
 		wpa_printf(MSG_DEBUG, "Failed to open '%s' for writing", name);
 		os_free(tmp_name);
-		return -1;
+		/*if writinging to /var/run/supplicant.conf write fails write it to
+		 * tmp/supplicant.conf
+		 */
+		name = orig_name;
+		conf_file = strrchr(name, '/');
+		if (conf_file == NULL) {
+			wpa_printf(MSG_ERROR, "Invalid config file path");
+			return -1;
+		}
+		conf_file++;
+		tmp_len = os_strlen(conf_file) + 6; /* allow space for /tmp/ prefix */
+		tmp_name = os_malloc(tmp_len);
+		if (tmp_name) {
+			os_snprintf(tmp_name, tmp_len, "%s%s", "/tmp/", conf_file);
+			name = tmp_name;
+			fallback = true;
+		} else {
+			wpa_printf(MSG_ERROR,"Failed to allocate memory for conf path");
+			return -1;
+		}
+		f = fopen(name, "w");
+		if (f == NULL) {
+			wpa_printf(MSG_DEBUG, "Failed to open '%s' for writing", name);
+			os_free(tmp_name);
+			return -1;
+		}
 	}
 
 	wpa_printf(MSG_DEBUG, "Writing configuration file '%s'", name);
@@ -2024,7 +2051,7 @@ int wpa_config_write(const char *name, struct wpa_config *config)
 #endif /* ANDROID */
 	if (!ret)
 		ret = rename(tmp_name, orig_name);
-	if (ret)
+	if (ret && !fallback)
 		unlink(tmp_name);
 
 	os_free(tmp_name);
