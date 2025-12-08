@@ -919,6 +919,8 @@ struct hostapd_iface {
 	 */
 	bool is_afc_channel_change_pending;
 
+	struct hostapd_iface_extn iface_extn;
+
 	struct hostapd_multi_hw_info *multi_hw_info;
 	unsigned int num_multi_hws;
 	struct hostapd_multi_hw_info *current_hw_info;
