@@ -9,6 +9,11 @@
 #ifndef DFS_H
 #define DFS_H
 
+/* CSA beacon duration in seconds for dfs testing mode */
+#define HOSTAPD_DFS_TEST_MODE_CSA_DUR 1
+
+void hostapd_dfs_test_mode_csa_timeout(void *eloop_data, void *user_data);
+
 int hostapd_handle_dfs(struct hostapd_iface *iface);
 
 int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,

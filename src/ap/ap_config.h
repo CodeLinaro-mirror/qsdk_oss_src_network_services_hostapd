@@ -1093,6 +1093,7 @@ struct hostapd_config {
 	int ieee80211d;
 
 	int ieee80211h; /* DFS */
+	int dfs_test_mode;
 
 	/*
 	 * Local power constraint is an octet encoded as an unsigned integer in
