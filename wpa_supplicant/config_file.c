@@ -1835,6 +1835,7 @@ int wpa_config_write(const char *name, struct wpa_config *config)
 	const char *orig_name = name;
 	int tmp_len;
 	char *tmp_name;
+	char *conf_file;
 
 	if (!name) {
 		wpa_printf(MSG_ERROR, "No configuration file for writing");
@@ -1846,16 +1847,45 @@ int wpa_config_write(const char *name, struct wpa_config *config)
 	if (tmp_name) {
 		os_snprintf(tmp_name, tmp_len, "%s.tmp", name);
 		name = tmp_name;
+	} else {
+		wpa_printf(MSG_ERROR,"Failed to allocate memory for conf path");
+		return -1;
 	}
-
 	wpa_printf(MSG_DEBUG, "Writing configuration file '%s'", name);
 
 	f = fopen(name, "w");
 	if (f == NULL) {
 		wpa_printf(MSG_DEBUG, "Failed to open '%s' for writing", name);
 		os_free(tmp_name);
-		return -1;
+		/*if writinging to /var/run/supplicant.conf write fails write it to
+		 * tmp/supplicant.conf
+		 */
+		name = orig_name;
+		conf_file = strrchr(name, '/');
+		if (conf_file == NULL) {
+			wpa_printf(MSG_ERROR, "Invalid config file path");
+			return -1;
+		}
+		conf_file++;
+		tmp_len = os_strlen(conf_file) + 6; /* allow space for /tmp/ prefix */
+		tmp_name = os_malloc(tmp_len);
+		if (tmp_name) {
+			os_snprintf(tmp_name, tmp_len, "%s%s", "/tmp/", conf_file);
+			name = tmp_name;
+		} else {
+			wpa_printf(MSG_ERROR,"Failed to allocate memory for conf path");
+			return -1;
+		}
+		wpa_printf(MSG_DEBUG, "Writing configuration file '%s'", name);
+
+		f = fopen(name, "w");
+		if (f == NULL) {
+			wpa_printf(MSG_DEBUG, "Failed to open '%s' for writing", name);
+			os_free(tmp_name);
+			return -1;
+		}
 	}
+
 
 	wpa_config_write_global(f, config);
 
