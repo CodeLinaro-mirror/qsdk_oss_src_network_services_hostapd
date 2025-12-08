@@ -1524,7 +1524,10 @@ dfs_downgrade_bandwidth(struct hostapd_iface *iface, int *secondary_channel,
 				continue;
 			}
 			*channel_type = DFS_AVAILABLE;
-			hostapd_set_oper_chwidth(iface->conf, oper_chwidth - 1);
+			hostapd_set_oper_chwidth(iface->conf,
+						 oper_chwidth == CONF_OPER_CHWIDTH_320MHZ ?
+						 CONF_OPER_CHWIDTH_160MHZ :
+						 oper_chwidth - 1);
 		}
 	}
 
