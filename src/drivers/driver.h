@@ -6218,6 +6218,13 @@ struct wpa_driver_ops {
 	 */
 	void (*stop_peer_measurement)(void *priv);
 #endif /* CONFIG_PR */
+
+	/*
+	 * is_retail_afc_supported - Check if the driver supports retail AFC
+	 * @priv: Private driver interface data
+	 * Returns: true if the driver supports retail AFC, false otherwise
+	 */
+	bool (*is_retail_afc_supported)(void *priv);
 };
 
 /**
@@ -6977,6 +6984,11 @@ enum wpa_event_type {
 	 * EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY - Notify AFC data is processed
 	 */
 	EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY,
+	/**
+	 * EVENT_AFC_PAYLOAD_RESET - Clear the AFC payload
+	 */
+
+	EVENT_AFC_PAYLOAD_RESET,
 
 	/**
 	 * EVENT_LINK_REMOVAL_STARTED - Update link_removal_count and TSF
