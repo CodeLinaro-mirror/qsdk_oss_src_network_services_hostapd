@@ -258,6 +258,43 @@ struct elemid_cu_param {
 	u32 hash;
 };
 
+#define MAX_CHANNEL_USAGE_ELEMENTS 6
+#define MAX_CHANNEL_ENTRIES_PER_ELEMENT 10
+
+/**
+ * struct channel_usage_entry - Represents a single channel entry in
+ * Channel Usage element
+ * @op_class: Operating Class of the channel
+ * @channel : Channel Number
+ */
+struct channel_usage_entry {
+	u8 op_class;
+	u8 channel;
+};
+
+/**
+ * struct channel_usage_elem - Represents a single Channel Usage element
+ * @mode: Mode of operation for this Channel Usage element
+ * @num_entries: Number of channel entries for this particular element
+ * @entries: Array of channel entries for this element
+ */
+struct channel_usage_elem {
+	u8 mode;
+	u8 num_entries;
+	struct channel_usage_entry entries[MAX_CHANNEL_ENTRIES_PER_ELEMENT];
+};
+
+/**
+ * struct channel_usage_config - Represents the list of all Channel
+ * Usage elements that have been configured
+ * @num_elems: Number of Channel Usage elements configured
+ * @elems: Array of Channel Usage elements
+ */
+struct channel_usage_config {
+	u8 num_elems;
+	struct channel_usage_elem elems[MAX_CHANNEL_USAGE_ELEMENTS];
+};
+
 /**
  * struct hostapd_data - hostapd per-BSS data structure
  */
@@ -606,6 +643,7 @@ struct hostapd_data {
 	struct dl_list mbssid_bss;
 
 	u16 mapping_switch_time;
+	struct channel_usage_config chan_usage_config;
 };
 
 

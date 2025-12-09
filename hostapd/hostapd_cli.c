@@ -1331,6 +1331,138 @@ static int hostapd_cli_cmd_chan_switch(struct wpa_ctrl *ctrl,
 	return wpa_ctrl_command(ctrl, cmd);
 }
 
+/**
+ * hostapd_cli_cmd_set_channel_usage_element - CLI Handler to construct and
+ * send the SET_CHANNEL_USAGE_ELEMENT command to the hostapd interface
+ * @ctrl: Control Interface Handle
+ * @argc: Number of arguments provided
+ * @argv: List of input arguments
+ *
+ * Returns: 0 on success, -1 on failure
+ */
+
+static int hostapd_cli_cmd_set_channel_usage_element(struct wpa_ctrl *ctrl,
+						      int argc, char *argv[])
+{
+	char cmd[1024]; /* Buffer to hold final command string */
+	int res;
+	int i, j;
+	int total;
+	char *tmp;
+	int num_channel_usage_elements;
+	int mode_count, mode, num_entry, op_class, chan;
+
+	/* At least 1 argument must exist: number of channel usage elements */
+	if (argc < 1) {
+		printf("Invalid set_channel_usage_element command: number of channel "
+		       "usage elements is a required field."
+		       "usage: <0-6> [mode <mode> num_entry <1-10> "
+		       "<op0> <channel0> [<op1> <channel1> ...]] [mode <mode> "
+		       "num_entry <1-10> ...] (up to 6 modes allowed)\n");
+		return -1;
+	}
+
+	num_channel_usage_elements = atoi(argv[0]);
+	if (num_channel_usage_elements < 0 || num_channel_usage_elements > 6) {
+		printf("Error: num_channel_usage_elements needs to be in range [0-6]\n");
+		return -1;
+	}
+
+	/* Initialize command string with base command and number of IEs */
+	res = os_snprintf(cmd, sizeof(cmd), "SET_CHANNEL_USAGE_ELEMENT %d",
+			  num_channel_usage_elements);
+
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Error: command too long\n");
+		return -1;
+	}
+	total = res;
+
+	/* If there are 0 channel usage elements, command is already complete */
+	if (num_channel_usage_elements == 0)
+		return wpa_ctrl_command(ctrl, cmd);
+
+	/* Parsing the mode blocks */
+	i = 1;
+	mode_count = 0;
+	while (i < argc && mode_count < num_channel_usage_elements) {
+		if (i + 3 >= argc || os_strcmp(argv[i], "mode") != 0 ||
+		    os_strcmp(argv[i + 2], "num_entry") != 0) {
+			printf("Error: Expected format 'mode <mode> num_entry "
+			       "<num_entry> at mode block %d\n", mode_count+1);
+			return -1;
+		}
+		mode = atoi(argv[i+1]);
+		if (mode < 0 || mode > 5) {
+			printf("Error: Mode value must be in range [0-5]\n");
+			return -1;
+		}
+		num_entry = atoi(argv[i+3]);
+
+		if (num_entry <= 0 || num_entry > 10) {
+			printf("Error: num_entry value must be in range [1-10]\n");
+			return -1;
+		}
+
+		tmp = cmd + total;
+		res = os_snprintf(tmp, sizeof(cmd) - total,
+			          " mode %d num_entry %d", mode, num_entry);
+		if (os_snprintf_error(sizeof(cmd) - total, res)) {
+			printf("Error: command too long while adding mode block\n");
+			return -1;
+		}
+
+		total += res;
+
+		/* Move past "mode", mode_ID, "num_entry", num_entry_val */
+		i += 4;
+
+		/* Append channel entries (op_class and channel fields) */
+		for (j = 0; j < num_entry; j++) {
+
+			if (i + 1 >= argc) {
+				printf("Error: Missing op_class/channel field entry "
+				       "for entry %d for mode %d\n", j+1, mode);
+				return -1;
+			}
+
+			op_class = atoi(argv[i]);
+			if (op_class < 0 || op_class > 255) {
+				printf("Error: op_class needs to be in range [0-255]\n");
+				return -1;
+			}
+			chan = atoi(argv[i + 1]);
+			if (chan < 0 || chan > 255) {
+				printf("Error: chan needs to be in range [0-255]\n");
+				return -1;
+			}
+
+			tmp = cmd + total;
+			res = os_snprintf(tmp, sizeof(cmd) - total, " %d %d",
+					  op_class, chan);
+			if (os_snprintf_error(sizeof(cmd) - total, res)) {
+				printf("Error: command too long while adding channel entry\n");
+				return -1;
+			}
+			total += res;
+			if (total >= sizeof(cmd) - 1) {
+				printf("Error: Command buffer full\n");
+				return -1;
+			}
+
+			/* Move past op_class and channel fields */
+			i += 2;
+		}
+		mode_count++;
+	}
+
+	if (mode_count != num_channel_usage_elements) {
+		printf("Error: expected %d mode blocks but only parsed %d\n",
+			num_channel_usage_elements, mode_count);
+		return -1;
+	}
+	return wpa_ctrl_command(ctrl, cmd);
+}
 
 static int hostapd_cli_cmd_notify_cw_change(struct wpa_ctrl *ctrl,
 					    int argc, char *argv[])
@@ -2015,6 +2147,11 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "  [center_freq2=] [bandwidth=] [bandwidth_device=] \n"
 	  "  [center_freq_device=] [blocktx] [ht|vht|he|eht] \n"
 	  "  = initiate channel switch announcement" },
+	{ "set_channel_usage_element", hostapd_cli_cmd_set_channel_usage_element, NULL,
+	  "<0-6> [mode <mode> num_entry <1-10> <op0> <channel0>\n"
+	  "[<op1> <channel1>]] [mode <mode> num_entry <1-10> ...]\n"
+	  "(up to 6 modes allowed)\n"
+	  " = set Channel Usage element" },
 	{ "set_6ghz_power_mode", hostapd_cli_cmd_set_pwr_mode, NULL,
 	   "<pwr_mode> = 0 - LPI, 1 - SP, 2 - VLP\n"},
 #ifdef CONFIG_IEEE80211AX

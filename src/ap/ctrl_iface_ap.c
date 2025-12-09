@@ -2038,6 +2038,132 @@ static int hostapd_parse_candidate_partner_links(struct hostapd_data *hapd,
 
 	return len;
 }
+
+/**
+ * hostapd_parse_channel_usage_settings - Parse channel usage settings
+ * from given input command string
+ *
+ * @pos: Input string containing channel usage configuration
+ * @cfg: Pointer to output configuration structure to be filled
+ *
+ * This function parses a space-separated string representing multiple
+ * channel usage elements and populates the cfg structure with its
+ * respective fields - mode, num_entry, and channel entry fields.
+ *
+ * Returns: 0 on success, -1 on failure
+ */
+
+int hostapd_parse_channel_usage_settings(const char *pos,
+					  struct channel_usage_config *cfg)
+{
+	unsigned long val;
+	int num_entries;
+	int i, j;
+	char *end;
+
+	if (!pos) {
+		wpa_printf(MSG_ERROR, "Null input string.");
+		return -1;
+	}
+
+	/* Parse number of Channel Usage elements */
+	val = strtoul(pos, &end, 10);
+	if (pos == end) {
+		wpa_printf(MSG_ERROR, "Failed to parse num_elems");
+		return -1;
+	}
+
+	if (val < 0 || val > MAX_CHANNEL_USAGE_ELEMENTS) {
+		wpa_printf(MSG_ERROR, "Invalid num_elems: %lu", val);
+		return -1;
+	}
+	cfg->num_elems = (u8)val;
+
+	if (cfg->num_elems == 0) {
+		wpa_printf(MSG_INFO, "Clearing all Channel Usage elements.");
+		os_memset(cfg->elems, 0, sizeof(cfg->elems));
+		return 0;
+	}
+
+	pos = end;
+	/* Parse each Channel Usage element */
+	for (i = 0; i < cfg->num_elems; i++) {
+		/* Skip spaces */
+		while (*pos == ' ')
+			pos++;
+
+		if (os_strncmp(pos, "mode", 4) != 0) {
+			wpa_printf(MSG_ERROR, "Missing 'mode' at element %d", i + 1);
+			return -1;
+		}
+
+		pos += 4; /* Move past 'mode' */
+		val = strtoul(pos, &end, 10);
+		if (pos == end) {
+			wpa_printf(MSG_ERROR, "Invalid mode at element %d", i + 1);
+			return -1;
+		}
+		cfg->elems[i].mode = (u8)val;
+		pos = end;
+
+		while (*pos == ' ')
+			pos++;
+
+		if (os_strncmp(pos, "num_entry", 9) != 0) {
+			wpa_printf(MSG_ERROR, "Missing 'num_entry' at element %d", i + 1);
+			return -1;
+		}
+
+		pos += 9; /* Move past 'num_entry' */
+		val = strtoul(pos, &end, 10);
+		if (pos == end || val < 1 || val > MAX_CHANNEL_ENTRIES_PER_ELEMENT) {
+			wpa_printf(MSG_ERROR, "Invalid num_entry count at element %d",
+				   i + 1);
+			return -1;
+		}
+		num_entries = (u8)val;
+		cfg->elems[i].num_entries = num_entries;
+		pos = end;
+
+		wpa_printf(MSG_DEBUG, "mode: %d num_entries: %d", cfg->elems[i].mode,
+			   cfg->elems[i].num_entries);
+
+		/* Parse individual channel entries */
+		for (j = 0; j < num_entries; j++) {
+			while (*pos == ' ')
+				pos++;
+			val = strtoul(pos, &end, 10);
+			if (pos == end) {
+				wpa_printf(MSG_ERROR,
+					   "Missing op_class for entry %d of mode %d",
+				           j + 1, cfg->elems[i].mode);
+				return -1;
+			}
+
+			cfg->elems[i].entries[j].op_class = (u8)val;
+			pos = end;
+
+			while (*pos == ' ')
+				pos++;
+			val = strtoul(pos, &end, 10);
+			if (pos == end) {
+				wpa_printf(MSG_ERROR,
+					   "Missing channel for entry %d of mode %d",
+					   j + 1, cfg->elems[i].mode);
+				return -1;
+			}
+
+			cfg->elems[i].entries[j].channel = (u8)val;
+			pos = end;
+
+			wpa_printf(MSG_DEBUG, "Entry %d: op_class=%d channel=%d",
+				   j, cfg->elems[i].entries[j].op_class,
+			           cfg->elems[i].entries[j].channel);
+		}
+	}
+	return 0;
+}
+
 #endif /* CONFIG_IEEE80211BE */
 
 int hostapd_ctrl_iface_bss_tm_req(struct hostapd_data *hapd,

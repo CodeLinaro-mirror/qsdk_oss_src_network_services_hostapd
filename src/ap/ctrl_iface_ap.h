@@ -41,6 +41,8 @@ int hostapd_parse_freq_params(const char *pos,
 int hostapd_parse_csa_settings(struct hostapd_iface *iface,
 			       const char *pos,
 			       struct csa_settings *settings);
+int hostapd_parse_channel_usage_settings(const char *pos,
+					 struct channel_usage_config *cfg);
 int hostapd_ctrl_iface_stop_ap(struct hostapd_data *hapd);
 int hostapd_ctrl_iface_pmksa_list(struct hostapd_data *hapd, char *buf,
 				  size_t len);

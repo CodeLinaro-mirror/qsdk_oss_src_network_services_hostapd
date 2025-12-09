@@ -5357,6 +5357,23 @@ int hostapd_ctrl_iface_advertise_ttlm(struct hostapd_data *hapd, const char *cmd
 	return ret;
 }
 
+static int hostapd_ctrl_iface_set_channel_usage_element(struct hostapd_data *hapd,
+		                                         char *pos)
+{
+	struct channel_usage_config cfg;
+	if (hostapd_parse_channel_usage_settings(pos, &cfg) < 0) {
+		wpa_printf(MSG_ERROR, "Failure in parsing SET_CHANNEL_USAGE_ELEMENT");
+		return -1;
+	}
+	/* Save the config into hostapd_data structure and set beacon */
+	os_memcpy(&hapd->chan_usage_config, &cfg, sizeof(cfg));
+	wpa_printf(MSG_DEBUG, "Channel Usage element updated with %d elements",
+		   hapd->chan_usage_config.num_elems);
+	ieee802_11_set_beacon(hapd);
+	return 0;
+}
+
+
 #endif /* CONFIG_IEEE80211BE */
 
 
@@ -6374,6 +6391,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 			reply_len = -1;
 	} else if (os_strncmp(buf, "ADVERTISED_TTLM ", 16) == 0) {
 		if (hostapd_ctrl_iface_advertise_ttlm(hapd, buf + 16))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "SET_CHANNEL_USAGE_ELEMENT ", 26) == 0) {
+		if (hostapd_ctrl_iface_set_channel_usage_element(hapd, buf + 26))
 			reply_len = -1;
 #endif /* CONFIG_IEEE80211BE */
 	} else if (os_strncmp(buf, "SET_DSCP_POLICY ", 16) == 0) {
