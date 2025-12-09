@@ -9,6 +9,8 @@
 #ifndef ROBUST_AV_H
 #define ROBUST_AV_H
 
+#define HOSTAPD_SCS_DESCR_CAP_BIT 2
+
 struct hostapd_data;
 struct sta_info;
 
@@ -147,5 +149,10 @@ int hostapd_handle_dscp_policy_query(struct hostapd_data *hapd,
 int hostapd_handle_dscp_policy_response(struct hostapd_data *hapd,
 					struct sta_info *sta,
 					const u8 *data, size_t len);
+
+#ifdef CONFIG_IEEE80211AX
+u8 *hostapd_add_scs_ie(u8 *frm, bool scs);
+
+#endif
 
 #endif /* ROBUST_AV_H */

@@ -132,6 +132,17 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 		goto fail;
 #endif /* CONFIG_FILS */
 
+#ifdef CONFIG_IEEE80211AX
+	if (hapd->conf->scs) {
+		pos = hostapd_add_scs_ie(buf, true);
+		if (add_buf_data(&beacon, buf, pos - buf) < 0 ||
+		    add_buf_data(&proberesp, buf, pos - buf) < 0 ||
+		    add_buf_data(&assocresp, buf, pos - buf) < 0) {
+			goto fail;
+		}
+	}
+#endif /* CONFIG_IEEE80211AX */
+
 	if (hapd->conf->enable_dscp_policy_capa) {
 		pos = hostapd_set_dscp_capabilities(hapd, NULL, buf);
 		if (add_buf_data(&beacon, buf, pos - buf) < 0 ||
