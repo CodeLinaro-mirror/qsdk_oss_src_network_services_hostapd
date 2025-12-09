@@ -638,7 +638,10 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 	wpabuf_put_u8(buf, hapd->mld_link_id);
 
 	/* BSS Parameters Change Count */
-	wpabuf_put_u8(buf, hapd->rx_cu_param.bpcc);
+	if (include_bpcc)
+		wpabuf_put_u8(buf, hapd->rx_cu_param.bpcc);
+	else
+		wpabuf_put_u8(buf, 0);
 
 	/* Set EMLSR/EMLMR Transition and Padding delay to zero for AP MLD as
 	 * per IEEE Std 802.11be-2024, 9.4.2.322.2.3 (Common Info field of the
