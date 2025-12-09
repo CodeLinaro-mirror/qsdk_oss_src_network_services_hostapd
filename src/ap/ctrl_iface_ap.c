@@ -1220,10 +1220,12 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 		ret = os_snprintf(buf + len, buflen - len,
 				  "he_oper_chwidth=%d\n"
 				  "he_oper_centr_freq_seg0_idx=%d\n"
-				  "he_oper_centr_freq_seg1_idx=%d\n",
+				  "he_oper_centr_freq_seg1_idx=%d\n"
+				  "he_6ghz_reg_pwr_type=%d\n",
 				  iface->conf->he_oper_chwidth,
 				  iface->conf->he_oper_centr_freq_seg0_idx,
-				  iface->conf->he_oper_centr_freq_seg1_idx);
+				  iface->conf->he_oper_centr_freq_seg1_idx,
+				  iface->conf->he_6ghz_reg_pwr_type);
 		if (os_snprintf_error(buflen - len, ret))
 			return len;
 		len += ret;

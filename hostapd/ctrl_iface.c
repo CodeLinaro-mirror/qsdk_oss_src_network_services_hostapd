@@ -2876,11 +2876,20 @@ static int hostapd_ctrl_iface_set_pwr_mode(struct hostapd_iface *iface,
 	}
 
 	settings.pwr_mode = he_6ghz_pwr_mode;
+	settings.link_id = -1;
+
 	iface->power_mode_6ghz_before_change = he_6ghz_pwr_mode;
 	wpa_printf(MSG_DEBUG, "Setting user selected 6 GHz power mode: %d\n",
 		   he_6ghz_pwr_mode);
 
 	for (i = 0; i < iface->num_bss; i++) {
+#ifdef CONFIG_IEEE80211BE
+		if (iface->bss[i]->conf->mld_ap)
+			settings.link_id = iface->bss[i]->mld_link_id;
+		else
+			settings.link_id = -1;
+#endif /* CONFIG_IEEE80211BE */
+
 		err = hostapd_drv_set_6ghz_pwr_mode(iface->bss[i], &settings);
 		if (err) {
 			ret = err;

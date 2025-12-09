@@ -6767,6 +6767,7 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 					  data->ch_switch.cf1,
 					  data->ch_switch.cf2,
 					  data->ch_switch.punct_bitmap,
+					  data->ch_switch.power_mode_6ghz,
 					  data->ch_switch.ch_width_device,
 					  data->ch_switch.cf_device,
 					  1);

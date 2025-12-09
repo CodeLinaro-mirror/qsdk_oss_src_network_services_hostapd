@@ -22873,6 +22873,7 @@ enum qca_wlan_vendor_attr_beacon_miss_stat {
 enum qca_wlan_vendor_6ghz_power_mode {
 	QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_INVALID = 0,
 	QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE = 1,
+	QCA_WLAN_VENDOR_ATTR_6GHZ_LINK_ID = 2,
 
 	/* Keep last */
 	QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_AFTER_LAST,

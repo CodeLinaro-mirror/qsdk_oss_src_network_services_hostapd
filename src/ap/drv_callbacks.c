@@ -1263,9 +1263,17 @@ int hostapd_switch_power_mode(struct hostapd_data *hapd)
 	unsigned int i, num_err =  0;
 	int ret = 0, err = 0;
 
-	settings.pwr_mode =
-		hapd->iface->power_mode_6ghz_before_change;
+	settings.pwr_mode = hapd->iface->power_mode_6ghz_before_change;
+	settings.link_id = -1;
+
 	for (i = 0; i < hapd->iface->num_bss; i++) {
+#ifdef CONFIG_IEEE80211BE
+		if (hapd->iface->bss[i]->conf->mld_ap)
+			settings.link_id = hapd->iface->bss[i]->mld_link_id;
+		else
+			settings.link_id = -1;
+#endif /* CONFIG_IEEE80211BE */
+
 		err = hostapd_drv_set_6ghz_pwr_mode(hapd->iface->bss[i], &settings);
 		if (err) {
 			ret = err;
@@ -1284,7 +1292,8 @@ int hostapd_switch_power_mode(struct hostapd_data *hapd)
 
 void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 			     int offset, int width, int cf1, int cf2,
-			     u16 punct_bitmap, int width_device, int cf_device, int finished)
+			     u16 punct_bitmap, u8 power_mode_6ghz,
+			     int width_device, int cf_device, int finished)
 {
 #ifdef NEED_AP_MLME
 	int channel, chwidth, is_dfs0, is_dfs;
@@ -1293,14 +1302,14 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 
 	hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
 		       HOSTAPD_LEVEL_INFO,
-		       "driver %s channel switch: iface->freq=%d, freq=%d, ht=%d, vht_ch=0x%x, he_ch=0x%x, eht_ch=0x%x, offset=%d, width=%d (%s), cf1=%d, cf2=%d, puncturing_bitmap=0x%x width_device=%d, cf_device=%d ",
+		       "driver %s channel switch: iface->freq=%d, freq=%d, ht=%d, vht_ch=0x%x, he_ch=0x%x, eht_ch=0x%x, offset=%d, width=%d (%s), cf1=%d, cf2=%d, puncturing_bitmap=0x%x width_device=%d, cf_device=%d 6ghz power mode=%d",
 		       finished ? "had" : "starting",
 		       hapd->iface->freq,
 		       freq, ht, hapd->iconf->ch_switch_vht_config,
 		       hapd->iconf->ch_switch_he_config,
 		       hapd->iconf->ch_switch_eht_config, offset,
 		       width, channel_width_to_string(width), cf1, cf2,
-		       punct_bitmap, width_device, cf_device);
+		       punct_bitmap, width_device, cf_device, power_mode_6ghz);
 
 	if (!hapd->iface->current_mode) {
 		hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
@@ -1481,7 +1490,15 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 	if (hapd->csa_in_progress &&
 	    freq == hapd->cs_freq_params.freq) {
 		if (hapd->iface->power_mode_6ghz_before_change > -1) {
-			hostapd_switch_power_mode(hapd);
+			if (power_mode_6ghz == hapd->iface->power_mode_6ghz_before_change) {
+				hapd->iconf->he_6ghz_reg_pwr_type = power_mode_6ghz;
+				hapd->iface->power_mode_6ghz_before_change = -1;
+			} else {
+				wpa_printf(MSG_DEBUG,
+					   "CSA power mode: %d does not match requested power mode: %d",
+					   power_mode_6ghz, hapd->iface->power_mode_6ghz_before_change);
+				hostapd_switch_power_mode(hapd);
+			}
 		}
 
 		hostapd_cleanup_cs_params(hapd);
@@ -2607,9 +2624,26 @@ afc_channel_change_timeout(void *eloop_ctx, void *timeout_ctx)
 
 static void hostapd_event_afc_update_complete(
 		struct hostapd_data *hapd,
-		struct afc_sp_reg_info *afc_rsp_info)
+		struct afc_info *afc_info)
 {
-	struct hostapd_iface *iface = hapd->iface;
+	struct afc_sp_reg_info *afc_rsp_info = &afc_info->afc_rsp_info;
+	struct hostapd_iface *iface = NULL;
+	int i;
+
+	for (i = 0; i < hapd->iface->interfaces->count; i++) {
+		struct hostapd_iface *h_iface = hapd->iface->interfaces->iface[i];
+
+		if (!h_iface->current_hw_info)
+			continue;
+		if (h_iface->current_hw_info->hw_idx != afc_info->hw_idx)
+			continue;
+		iface = h_iface;
+		break;
+	}
+	if (!iface) {
+		wpa_printf(MSG_ERROR, "No matching hostapd interface found for AFC update");
+		return;
+	}
 
 	hostapd_free_afc_data(iface);
 	if (hostapd_allocate_afc_rsp_info(iface, afc_rsp_info)) {
@@ -2652,9 +2686,25 @@ hostapd_set_no_ir_state(struct hostapd_iface *iface)
  */
 static void
 hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
-				struct afc_sp_reg_info *afc_rsp_info)
+				struct afc_info *afc_info)
 {
-	struct hostapd_iface *iface = hapd->iface;
+	struct hostapd_iface *iface = NULL;
+	int i;
+
+	for (i = 0; i < hapd->iface->interfaces->count; i++) {
+		struct hostapd_iface *h_iface = hapd->iface->interfaces->iface[i];
+
+		if (!h_iface->current_hw_info)
+			continue;
+		if (h_iface->current_hw_info->hw_idx != afc_info->hw_idx)
+			continue;
+		iface = h_iface;
+		break;
+	}
+	if (!iface) {
+		wpa_printf(MSG_DEBUG, "No matching hostapd interface found for AFC reset");
+		return;
+	}
 
 	wpa_printf(MSG_DEBUG, "Processing AFC payload reset event");
 	if (!iface->afc_rsp_info) {
@@ -3332,6 +3382,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 					data->ch_switch.cf1,
 					data->ch_switch.cf2,
 					data->ch_switch.punct_bitmap,
+					data->ch_switch.power_mode_6ghz,
 					data->ch_switch.ch_width_device,
 					data->ch_switch.cf_device,
 					event == EVENT_CH_SWITCH);
@@ -3477,6 +3528,10 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		hostapd_event_color_change(hapd, true);
 		break;
 	case EVENT_6GHZ_POWER_MODE_NOTIFY:
+		hapd = switch_link_hapd(hapd,
+					data->ap_6ghz_pwr_mode_event.link_id);
+		wpa_printf(MSG_DEBUG, "6GHz power mode changed on %s",
+			   hapd->conf->iface);
 		hostapd_event_6ghz_power_mode(hapd,
 					      data->ap_6ghz_pwr_mode_event.pwr_mode);
 		break;
@@ -3503,10 +3558,10 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		break;
 	case EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY:
 		hostapd_event_afc_update_complete(hapd,
-						  &data->afc_rsp_info);
+						  &data->afc_info);
 		break;
 	case EVENT_AFC_PAYLOAD_RESET:
-		hostapd_event_afc_payload_reset(hapd, &data->afc_rsp_info);
+		hostapd_event_afc_payload_reset(hapd, &data->afc_info);
 		break;
 #ifdef CONFIG_IEEE80211BE
 	case EVENT_LINK_REMOVAL_STARTED:

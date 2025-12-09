@@ -74,7 +74,7 @@ int ap_switch_channel(struct wpa_supplicant *wpa_s,
 int ap_ctrl_iface_chanswitch(struct wpa_supplicant *wpa_s, const char *txtaddr);
 void wpas_ap_ch_switch(struct wpa_supplicant *wpa_s, int freq, int ht,
 		       int offset, int width, int cf1, int cf2,
-		       u16 punct_bitmap,
+		       u16 punct_bitmap, u8 power_mode_6ghz,
 		       int width_device, int cf_device, int finished);
 struct wpabuf * wpas_ap_wps_nfc_config_token(struct wpa_supplicant *wpa_s,
 					     int ndef);

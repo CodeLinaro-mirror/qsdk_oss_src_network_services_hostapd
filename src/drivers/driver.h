@@ -3265,6 +3265,7 @@ struct csa_settings {
  */
 struct he_6ghz_pwr_mode_settings {
 	u8 pwr_mode;
+	int link_id;
 };
 
 /**
@@ -7566,6 +7567,7 @@ union wpa_event_data {
 		u16 punct_bitmap;
 		u32 ch_width_device;
 		u32 cf_device;
+		u8 power_mode_6ghz;
 	} ch_switch;
 
 	/**
@@ -7800,6 +7802,7 @@ union wpa_event_data {
 	 */
 	struct ap_6ghz_pwr_mode_event {
 		u8 pwr_mode;
+		int link_id;
 	} ap_6ghz_pwr_mode_event;
 
 	/**
@@ -7828,7 +7831,15 @@ union wpa_event_data {
 		struct t2lm_mapping t2lmap[MAX_NUM_MLD_LINKS];
 	} t2l_map_info;
 
-	struct afc_sp_reg_info afc_rsp_info;
+	/**
+	 * struct afc_info - EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY
+	 * @afc_rsp_info: AFC response information
+	 * @hw_idx: Hardware index
+	 */
+	struct afc_info {
+		struct afc_sp_reg_info afc_rsp_info;
+		int hw_idx;
+	} afc_info;
 
 	/**
 	 * struct reconfig_info - Data for EVENT_SETUP_LINK_RECONFIG

@@ -12346,6 +12346,8 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 		goto error;
 
 	if (is_6ghz_freq(settings->freq_params.freq) && settings->power_mode > -1) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: 6 GHz power mode= %d", settings->power_mode);
 		if (nla_put_u8(msg, NL80211_ATTR_6G_REG_POWER_MODE,
 			       settings->power_mode))
 			goto error;
@@ -12446,6 +12448,21 @@ static int nl80211_set_6ghz_pwr_mode(void *priv,
 		goto error;
 	nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE,
 		   settings->pwr_mode);
+
+#ifdef CONFIG_IEEE80211BE
+	if (nl80211_link_valid(bss->valid_links, settings->link_id)) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: 6 GHz power mode change request on link_id=%d",
+			   settings->link_id);
+
+		if (nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_6GHZ_LINK_ID,
+			       settings->link_id)) {
+			nlmsg_free(msg);
+			return -1;
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+
 	nla_nest_end(msg, params);
 
 	ret = send_and_recv(drv, bss->nl_connect, msg, NULL, NULL, NULL, NULL, NULL);
