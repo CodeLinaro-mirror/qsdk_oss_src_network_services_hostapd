@@ -2334,8 +2334,48 @@ static void channel_list_update_timeout(void *eloop_ctx, void *timeout_ctx)
 }
 
 #ifdef HOSTAPD
+/**
+ * hostapd_find_random_chan_and_switch() - Switch to a random 6 GHz channel
+ *
+ * This API find a random channel in the 6 GHz band and switches to it in
+ * best power mode.
+ *
+ * @iface: Pointer to hostapd interface data
+ *
+ * Return: 0 on success, -1 on failure
+ */
 static int hostapd_find_random_chan_and_switch(struct hostapd_iface *iface)
 {
+	u8 best_power_mode;
+
+	if (!is_6ghz_freq(iface->freq)) {
+		wpa_printf(MSG_DEBUG, "Not a 6GHz iface");
+		return 0;
+	}
+
+	if (!iface->conf->enable_best_power_mode) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: Best power mode not enabled", __func__);
+		return -1;
+	}
+
+	best_power_mode = hostapd_get_best_ap_6ghz_power_mode_for_iface(iface);
+	if (best_power_mode != NL80211_REG_NUM_POWER_MODES) {
+		wpa_printf(MSG_INFO, "%s: Best power mode for Freq %d is %d",
+			   __func__, iface->freq, best_power_mode);
+
+		iface->power_mode_6ghz_before_change = best_power_mode;
+		if (hostapd_switch_power_mode(iface->bss[0])) {
+			wpa_printf(MSG_ERROR, "Failed to switch to power mode %d",
+				   best_power_mode);
+			return -1;
+		}
+	} else {
+		wpa_printf(MSG_ERROR,
+			   "%s: Cannot determine best power mode for Freq %d",
+			   __func__, iface->freq);
+		return -1;
+	}
 
 	return 0;
 }
@@ -2565,8 +2605,6 @@ static void hostapd_set_6ghz_sec_chan(struct hostapd_iface *iface)
 
 static int setup_interface2(struct hostapd_iface *iface)
 {
-	iface->afc_rsp_info = NULL;
-	iface->is_afc_power_event_received = false;
 	iface->wait_channel_update = 0;
 	iface->is_afc_channel_change_pending = false;
 	iface->is_no_ir = false;
@@ -2970,6 +3008,19 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 			delay_apply_cfg = 1;
 		}
 #endif /* CONFIG_MESH */
+
+		if (is_6ghz_freq(iface->freq) && iface->conf->enable_best_power_mode) {
+			u8 best_power_mode;
+
+			best_power_mode = hostapd_get_best_ap_6ghz_power_mode_for_iface(iface);
+			if (best_power_mode != NL80211_REG_NUM_POWER_MODES) {
+				iface->conf->he_6ghz_reg_pwr_type = best_power_mode;
+				wpa_printf(MSG_INFO,
+					   "%s: Best power mode for Freq %d is %d",
+					   __func__,
+					   iface->freq, best_power_mode);
+			}
+		}
 
 		if (!delay_apply_cfg &&
 		    hostapd_set_freq(hapd, hapd->iconf->hw_mode, iface->freq,

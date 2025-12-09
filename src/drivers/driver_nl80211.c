@@ -5882,6 +5882,16 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 		goto fail;
 #endif /* CONFIG_IEEE80211AX */
 
+	if (params->freq && is_6ghz_freq(params->freq->freq)) {
+		if (nla_put_u8(msg, NL80211_ATTR_6G_REG_POWER_MODE,
+			       params->freq->he_6ghz_reg_pwr_type)) {
+			wpa_printf(MSG_ERROR, "%s: Failed to put 6g_reg_pwr_mode", __func__);
+			return -ENOBUFS;
+		}
+		wpa_printf(MSG_DEBUG, "nl80211: 6G reg power mode: %d",
+			   params->freq->he_6ghz_reg_pwr_type);
+	}
+
 #ifdef CONFIG_SAE
 	if (wpa_key_mgmt_sae(params->key_mgmt_suites) &&
 	    nl80211_put_sae_pwe(msg, params->sae_pwe) < 0)

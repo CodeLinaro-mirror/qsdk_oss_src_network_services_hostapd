@@ -2515,6 +2515,76 @@ static int hostapd_check_validity_device_params(struct hostapd_freq_params *para
 }
 
 
+/**
+ * hostapd_validate_chan_bw_in_pwr_mode() - Validate the input channel parameters
+ *
+ * This API checks if the input channel parameters are valid in the given
+ * power mode.
+ *
+ * @iface: Pointer to hostapd interface data
+ * @freq: Frequency of the channel
+ * @center_freq: Center frequency of the channel
+ * @bw: Bandwidth of the channel
+ * @pp: Puncturing bitmap
+ * @pwr_type: Power type
+ *
+ * Return: true if valid, false otherwise
+ */
+bool
+hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
+				     u16 center_freq, u16 bw, u16 pp,
+				     u8 pwr_type)
+{
+	u16 start_freq = (bw == 20) ? freq : center_freq - (bw / 2) + 10;
+	u8 num_channels_6ghz, chan_idx, i, num_bw_chans = bw / 20;
+	struct hostapd_channel_data *chan_6ghz = NULL;
+
+	wpa_printf(MSG_INFO,
+		   "Validating power mode: %d, Freq: %d, cf: %d, BW: %d, pp: 0x%x",
+		   pwr_type, iface->freq, center_freq, bw, pp);
+	chan_6ghz = hostapd_iface_get_6ghz_chan_list(iface,
+						     start_freq,
+						     pwr_type,
+						     &num_channels_6ghz,
+						     &chan_idx);
+
+	if (!chan_6ghz) {
+		wpa_printf(MSG_ERROR,
+			   "Error getting 6 GHz chan: power mode: %d freq: %d",
+			   pwr_type, start_freq);
+		return false;
+	}
+
+	if (chan_idx + num_bw_chans > num_channels_6ghz) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid channel index: %d bw: %d num chans: %d",
+			   chan_idx, bw, num_channels_6ghz);
+		return false;
+	}
+
+	for (i = 0; i < num_bw_chans; i++) {
+		if (pp & BIT(i)) {
+			wpa_printf(MSG_INFO,
+				   "Channel idx: %d is punctured. PP: 0x%x", i, pp);
+			chan_6ghz++;
+			continue;
+		}
+
+		if ((chan_6ghz->flag & HOSTAPD_CHAN_DISABLED) ||
+			(chan_6ghz->flag & HOSTAPD_CHAN_NO_IR)) {
+			wpa_printf(MSG_ERROR,
+				   "Freq [%d] is disabled. Flag: 0x%x, power type: %d",
+				   chan_6ghz->freq, chan_6ghz->flag, pwr_type);
+			return false;
+		}
+
+		chan_6ghz++;
+	}
+
+	return true;
+}
+
+
 static int hostapd_ctrl_iface_set_pwr_mode(struct hostapd_iface *iface,
 					   char *pos)
 {
@@ -2551,6 +2621,39 @@ static int hostapd_ctrl_iface_set_pwr_mode(struct hostapd_iface *iface,
 	    !iface->is_afc_power_event_received) {
 		wpa_printf(MSG_ERROR, "Standard Power mode cant be set without AFC");
 		return -1;
+	}
+
+	if (iface->conf->enable_best_power_mode) {
+		u16 bw, center_freq;
+		u8 best_power_mode = NL80211_REG_NUM_POWER_MODES;
+		bool valid;
+		enum chan_width ch_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
+		u8 center_chan_no = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
+
+		bw = channel_width_to_int(ch_width);
+		center_freq = ieee80211_chan_to_freq(NULL, iface->conf->op_class,
+						     center_chan_no);
+		valid = hostapd_validate_chan_bw_in_pwr_mode(iface,
+							     iface->freq, center_freq,
+							     bw, iface->conf->punct_bitmap,
+							     he_6ghz_pwr_mode);
+		wpa_printf(MSG_DEBUG,
+			   "%s: Power mode %d for Freq %d is valid - %d",
+			   __func__, he_6ghz_pwr_mode, iface->freq, valid);
+
+		if (!valid) {
+			wpa_printf(MSG_ERROR, "Fallback to best power mode");
+			best_power_mode = hostapd_get_best_ap_6ghz_power_mode_for_iface(iface);
+			if (best_power_mode != NL80211_REG_NUM_POWER_MODES) {
+				wpa_printf(MSG_INFO,
+						"%s: Best power mode for Freq %d is %d",
+						__func__, iface->freq, best_power_mode);
+				he_6ghz_pwr_mode = best_power_mode;
+			} else {
+				wpa_printf(MSG_ERROR, "Cannot find power mode");
+				return -1;
+			}
+		}
 	}
 
 	settings.pwr_mode = he_6ghz_pwr_mode;
@@ -2608,6 +2711,50 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 	if (iface->power_mode_6ghz_before_change > -1) {
 		wpa_printf(MSG_ERROR, "Power mode change in progress");
 		return -1;
+	}
+
+	if (is_6ghz_freq(settings.freq_params.freq) && iface->conf->enable_best_power_mode) {
+		bool valid = false;
+		u8 best_power_mode;
+
+		if (settings.power_mode != -1) {
+			valid =
+			    hostapd_validate_chan_bw_in_pwr_mode(iface,
+								 settings.freq_params.freq,
+								 settings.freq_params.center_freq1,
+								 settings.freq_params.bandwidth,
+								 settings.freq_params.punct_bitmap,
+								 settings.power_mode);
+			wpa_printf(MSG_DEBUG,
+				   "%s: Power mode %d for Freq %d is valid - %d",
+				   __func__,
+				   settings.power_mode,
+				   settings.freq_params.freq,
+				   valid);
+		}
+
+		if (!valid) {
+			wpa_printf(MSG_ERROR, "Fallback to best power mode");
+			best_power_mode =
+			    hostapd_get_best_ap_6ghz_power_mode(iface,
+								settings.freq_params.freq,
+								settings.freq_params.center_freq1,
+								settings.freq_params.bandwidth,
+								settings.freq_params.punct_bitmap);
+			if (best_power_mode != NL80211_REG_NUM_POWER_MODES) {
+				wpa_printf(MSG_DEBUG,
+					   "%s: Best power mode for Freq %d is %d",
+					   __func__,
+					   settings.freq_params.freq,
+					   best_power_mode);
+				settings.power_mode = best_power_mode;
+			} else {
+				wpa_printf(MSG_ERROR,
+					   "No Valid power mode for Freq %d",
+					   settings.freq_params.freq);
+				return -1;
+			}
+		}
 	}
 
 	if (settings.power_mode > -1)

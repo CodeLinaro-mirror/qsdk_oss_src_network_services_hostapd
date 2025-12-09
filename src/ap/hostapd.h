@@ -1125,6 +1125,18 @@ u16
 hostapd_get_bonded_chan_center_freq(u16 freq, u16 bw, u16 cen320_freq,
 				    s8 sec_chan_offset);
 
+/**
+ * hostapd_switch_power_mode() - Switch the power mode of the AP interface.
+ *
+ * This function switches the power mode of the AP interface and stores
+ * the target power mode in the iface structure.
+ *
+ * @hapd: Pointer to hostapd_data
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int hostapd_switch_power_mode(struct hostapd_data *hapd);
+
 u16 hostapd_get_punct_bitmap(struct hostapd_data *hapd);
 bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface);
 void hostapd_gen_per_sta_profiles(struct hostapd_data *hapd);

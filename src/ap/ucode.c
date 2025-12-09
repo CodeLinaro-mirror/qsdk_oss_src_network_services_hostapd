@@ -679,6 +679,19 @@ out:
 		return ucv_boolean_new(true);
 	}
 
+	if (is_6ghz_freq(iface->freq) && iface->conf->enable_best_power_mode) {
+		u8 best_power_mode;
+
+		best_power_mode = hostapd_get_best_ap_6ghz_power_mode_for_iface(iface);
+		if (best_power_mode != NL80211_REG_NUM_POWER_MODES) {
+			iface->conf->he_6ghz_reg_pwr_type = best_power_mode;
+			wpa_printf(MSG_INFO,
+				   "%s: Best power mode for Freq %d is %d",
+				   __func__,
+				   iface->freq, best_power_mode);
+		}
+	}
+
 	for (i = 0; i < iface->num_bss; i++) {
 		struct hostapd_data *hapd = iface->bss[i];
 

@@ -1,0 +1,78 @@
+diff a/hostapd/ctrl_iface.c b/hostapd/ctrl_iface.c	(rejected hunks)
+@@ -2514,6 +2514,76 @@ static int hostapd_check_validity_device
+ 	return 0;
+ }
+ 
++/**
++ * hostapd_validate_chan_bw_in_pwr_mode() - Validate the input channel parameters
++ *
++ * This API checks if the input channel parameters are valid in the given
++ * power mode.
++ *
++ * @iface: Pointer to hostapd interface data
++ * @freq: Frequency of the channel
++ * @center_freq: Center frequency of the channel
++ * @bw: Bandwidth of the channel
++ * @pp: Puncturing bitmap
++ * @pwr_type: Power type
++ *
++ * Return: true if valid, false otherwise
++ */
++bool
++hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
++				     u16 center_freq, u16 bw, u16 pp,
++				     u8 pwr_type)
++{
++	u16 start_freq = (bw == 20) ? freq : center_freq - (bw / 2) + 10;
++	u8 num_channels_6ghz, chan_idx, i, num_bw_chans = bw / 20;
++	struct hostapd_channel_data *chan_6ghz = NULL;
++
++	wpa_printf(MSG_INFO,
++		   "Validating power mode: %d, Freq: %d, cf: %d, BW: %d, pp: 0x%x",
++		   pwr_type, iface->freq, center_freq, bw, pp);
++	chan_6ghz = hostapd_iface_get_6ghz_chan_list(iface,
++						     start_freq,
++						     pwr_type,
++						     &num_channels_6ghz,
++						     &chan_idx);
++
++	if (!chan_6ghz) {
++		wpa_printf(MSG_ERROR,
++			   "Error getting 6 GHz chan: power mode: %d freq: %d",
++			   pwr_type, start_freq);
++		return false;
++	}
++
++	if (chan_idx + num_bw_chans > num_channels_6ghz) {
++		wpa_printf(MSG_ERROR,
++			   "Invalid channel index: %d bw: %d num chans: %d",
++			   chan_idx, bw, num_channels_6ghz);
++		return false;
++	}
++
++	for (i = 0; i < num_bw_chans; i++) {
++		if (pp & BIT(i)) {
++			wpa_printf(MSG_INFO,
++				   "Channel idx: %d is punctured. PP: 0x%x", i, pp);
++			chan_6ghz++;
++			continue;
++		}
++
++		if ((chan_6ghz->flag & HOSTAPD_CHAN_DISABLED) ||
++			(chan_6ghz->flag & HOSTAPD_CHAN_NO_IR)) {
++			wpa_printf(MSG_ERROR,
++				   "Freq [%d] is disabled. Flag: 0x%x, power type: %d",
++				   chan_6ghz->freq, chan_6ghz->flag, pwr_type);
++			return false;
++		}
++
++		chan_6ghz++;
++	}
++
++	return true;
++}
++
++
+ static int hostapd_ctrl_iface_set_pwr_mode(struct hostapd_iface *iface,
+ 					   char *pos)
+ {

@@ -1213,6 +1213,14 @@ struct hostapd_config {
 	u8 he_6ghz_rx_ant_pat;
 	u8 he_6ghz_tx_ant_pat;
 	u8 he_6ghz_reg_pwr_type;
+	/*
+	 * This indicates hostapd support for calculation of best power mode
+	 * for the 6 GHz band. This is used to determine whether we have to
+	 * determine the best power mode for the 6 GHz band during channel
+	 * switch, power mode failure, AFC payload based random channel
+	 * selection, etc.
+	 */
+	bool enable_best_power_mode;
 	bool discard_6g_awgn_event;
 
 	int reg_def_cli_eirp_psd;

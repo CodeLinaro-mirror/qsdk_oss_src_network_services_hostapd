@@ -1256,7 +1256,7 @@ void hostapd_event_sta_opmode_changed(struct hostapd_data *hapd, const u8 *addr,
 	}
 }
 
-static int hostapd_switch_power_mode(struct hostapd_data *hapd)
+int hostapd_switch_power_mode(struct hostapd_data *hapd)
 {
 	struct he_6ghz_pwr_mode_settings settings;
 	unsigned int i, num_err =  0;
