@@ -827,6 +827,9 @@ struct hostapd_iface {
 	bool is_no_ir;
 
 	bool is_ch_switch_dfs; /* Channel switch from ACS to DFS */
+	/* 6 GHz AFC information */
+	struct afc_sp_reg_info *afc_rsp_info;
+	bool is_afc_power_event_received;
 
 	struct hostapd_multi_hw_info *multi_hw_info;
 	unsigned int num_multi_hws;
@@ -893,6 +896,7 @@ int hostapd_check_max_sta(struct hostapd_data *hapd);
 void hostapd_switch_color(struct hostapd_data *hapd, u64 bitmap);
 void hostapd_cleanup_cca_params(struct hostapd_data *hapd);
 
+void hostapd_free_afc_data(struct hostapd_iface *iface);
 /* utils.c */
 int hostapd_register_probereq_cb(struct hostapd_data *hapd,
 				 int (*cb)(void *ctx, const u8 *sa,

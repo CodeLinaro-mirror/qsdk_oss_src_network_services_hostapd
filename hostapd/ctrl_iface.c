@@ -2541,6 +2541,12 @@ static int hostapd_ctrl_iface_set_pwr_mode(struct hostapd_iface *iface,
 		return -1;
 	}
 
+	if (he_6ghz_pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_SP &&
+	    !iface->is_afc_power_event_received) {
+		wpa_printf(MSG_ERROR, "Standard Power mode cant be set without AFC");
+		return -1;
+	}
+
 	settings.pwr_mode = he_6ghz_pwr_mode;
 	iface->power_mode_6ghz_before_change = he_6ghz_pwr_mode;
 	wpa_printf(MSG_DEBUG, "Setting user selected 6 GHz power mode: %d\n",
@@ -2587,6 +2593,12 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 	if (iface->num_bss && iface->bss[0]->conf->mld_ap)
 		settings.link_id = iface->bss[0]->mld_link_id;
 #endif /* CONFIG_IEEE80211BE */
+	if (settings.power_mode == HE_REG_INFO_6GHZ_AP_TYPE_SP &&
+	    !iface->is_afc_power_event_received) {
+		wpa_printf(MSG_ERROR, "Standard Power mode cant be set without AFC");
+		return -1;
+	}
+
 	if (iface->power_mode_6ghz_before_change > -1) {
 		wpa_printf(MSG_ERROR, "Power mode change in progress");
 		return -1;

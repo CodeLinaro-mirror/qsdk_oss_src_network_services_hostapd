@@ -2512,6 +2512,91 @@ static void hostapd_event_6ghz_power_mode(struct hostapd_data *hapd,
 	iface->power_mode_6ghz_before_change = -1;
 }
 
+static int hostapd_allocate_afc_rsp_info(struct hostapd_iface *iface,
+					 struct afc_sp_reg_info *afc_rsp_info)
+{
+	struct afc_sp_reg_info *afc_response = NULL;
+	struct afc_freq_obj *afc_freq_info = NULL;
+	struct afc_chan_obj *afc_chan_info = NULL;
+	struct chan_eirp_obj *chan_eirp_info = NULL;
+	u8 i;
+
+	afc_response = os_malloc(sizeof(*afc_response));
+	if (!afc_response) {
+		wpa_printf(MSG_DEBUG, "afc_response allocation failed");
+		return -ENOMEM;
+	}
+
+	os_memcpy(afc_response, afc_rsp_info, sizeof(*afc_response));
+	iface->afc_rsp_info = afc_response;
+	afc_freq_info = os_malloc(afc_rsp_info->num_freq_objs *
+				  sizeof(*afc_freq_info));
+	if (!afc_freq_info) {
+		wpa_printf(MSG_DEBUG, "afc_freq_info allocation failed");
+		os_free(afc_response);
+		iface->afc_rsp_info = NULL;
+		return -ENOMEM;
+	}
+
+	os_memcpy(afc_freq_info, afc_rsp_info->afc_freq_info,
+		  (afc_rsp_info->num_freq_objs *
+		   sizeof(*afc_freq_info)));
+	iface->afc_rsp_info->afc_freq_info = afc_freq_info;
+	afc_chan_info = os_malloc(afc_rsp_info->num_chan_objs *
+				  sizeof(*afc_chan_info));
+	if (!afc_chan_info) {
+		wpa_printf(MSG_DEBUG, "afc_chan_info allocation failed");
+		os_free(afc_freq_info);
+		iface->afc_rsp_info->afc_freq_info = NULL;
+		os_free(afc_response);
+		iface->afc_rsp_info = NULL;
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < afc_response->num_chan_objs; i++) {
+		afc_chan_info[i].global_opclass =
+				afc_rsp_info->afc_chan_info[i].global_opclass;
+		afc_chan_info[i].num_chans =
+				afc_rsp_info->afc_chan_info[i].num_chans;
+		chan_eirp_info =  os_malloc(afc_chan_info[i].num_chans *
+					    sizeof(*chan_eirp_info));
+		if (!chan_eirp_info) {
+			wpa_printf(MSG_DEBUG, "chan_eirp_info allocation failed");
+			os_free(afc_chan_info);
+			afc_chan_info = NULL;
+			os_free(afc_freq_info);
+			iface->afc_rsp_info->afc_freq_info = NULL;
+			os_free(afc_response);
+			iface->afc_rsp_info = NULL;
+			return -ENOMEM;
+		}
+
+		os_memcpy(chan_eirp_info,
+			  afc_rsp_info->afc_chan_info[i].chan_eirp_info,
+			  afc_chan_info[i].num_chans * sizeof(*chan_eirp_info));
+		afc_chan_info[i].chan_eirp_info = chan_eirp_info;
+	}
+
+	iface->afc_rsp_info->afc_chan_info = afc_chan_info;
+
+	return 0;
+}
+
+static void hostapd_event_afc_update_complete(
+		struct hostapd_data *hapd,
+		struct afc_sp_reg_info *afc_rsp_info)
+{
+	struct hostapd_iface *iface = hapd->iface;
+
+	hostapd_free_afc_data(iface);
+	if (hostapd_allocate_afc_rsp_info(iface, afc_rsp_info)) {
+		wpa_printf(MSG_DEBUG, "AFC response memory  allocation failed");
+		return;
+	}
+
+	iface->is_afc_power_event_received = true;
+}
+
 #ifdef CONFIG_OWE
 static int hostapd_notif_update_dh_ie(struct hostapd_data *hapd,
 				      const u8 *peer, const u8 *ie,
@@ -3108,6 +3193,10 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		link_hapd = switch_link_hapd(hapd, data->cu_event.link_id);
 		if (link_hapd)
 			hostapd_event_update_cu_param(link_hapd, &data->cu_event);
+		break;
+	case EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY:
+		hostapd_event_afc_update_complete(hapd,
+						  &data->afc_rsp_info);
 		break;
 	default:
 		wpa_printf(MSG_DEBUG, "Unknown event %d", event);

@@ -2262,9 +2262,10 @@ static void hostapd_set_6ghz_sec_chan(struct hostapd_iface *iface)
 	}
 }
 
-
 static int setup_interface2(struct hostapd_iface *iface)
 {
+	iface->afc_rsp_info = NULL;
+	iface->is_afc_power_event_received = false;
 	iface->wait_channel_update = 0;
 	iface->is_no_ir = false;
 	iface->power_mode_6ghz_before_change = -1;
@@ -3063,7 +3064,44 @@ void hostapd_bss_deinit(struct hostapd_data *hapd)
 	hostapd_bss_link_deinit(hapd);
 	hostapd_cleanup(hapd);
 }
+/**
+ * hostapd_free_chan_obj() - Free the AFC chan object and chan eirp object
+ * information
+ * @afc_chan_info: Pointer to afc_chan_info
+ *
+ * Return: void
+ */
+static void hostapd_free_chan_obj(struct afc_chan_obj *afc_chan_info)
+{
+	if (afc_chan_info->chan_eirp_info)
+		os_free(afc_chan_info->chan_eirp_info);
+}
 
+void hostapd_free_afc_data(struct hostapd_iface *iface)
+{
+	u8 i;
+	struct afc_sp_reg_info *afc_rsp;
+
+	if (!iface->afc_rsp_info)
+		return;
+
+	afc_rsp = iface->afc_rsp_info;
+
+	if (afc_rsp->afc_freq_info)
+		os_free(afc_rsp->afc_freq_info);
+
+	if (!afc_rsp->afc_chan_info)
+		return;
+
+	for (i = 0; i < afc_rsp->num_chan_objs; i++)
+		hostapd_free_chan_obj(&afc_rsp->afc_chan_info[i]);
+
+	if (afc_rsp->afc_chan_info)
+		os_free(afc_rsp->afc_chan_info);
+
+	os_free(afc_rsp);
+	iface->afc_rsp_info = NULL;
+}
 
 void hostapd_interface_deinit(struct hostapd_iface *iface)
 {
@@ -3079,6 +3117,8 @@ void hostapd_interface_deinit(struct hostapd_iface *iface)
 	iface->wait_channel_update = 0;
 	iface->power_mode_6ghz_before_change = -1;
 	iface->is_no_ir = false;
+	hostapd_free_afc_data(iface);
+	iface->is_afc_power_event_received = false;
 
 #ifdef CONFIG_FST
 	if (iface->fst) {
@@ -3164,6 +3204,8 @@ struct hostapd_iface * hostapd_alloc_iface(void)
 		return NULL;
 
 	dl_list_init(&hapd_iface->sta_seen);
+
+	hapd_iface->is_afc_power_event_received = false;
 
 	return hapd_iface;
 }

@@ -2366,6 +2366,7 @@ static void nl80211_reg_rule_max_eirp(u32 start, u32 end, u32 max_eirp,
 			    (u32) chan->freq + 10 <= end) {
 				chan->max_tx_power = max_eirp;
 				chan->psd_values[pwr_mode] = psd;
+				chan->eirp_values[pwr_mode] = max_eirp;
 			}
 		}
 	}

@@ -3501,6 +3501,9 @@ static void qca_nl80211_pasn_auth(struct i802_bss *bss, u8 *data, size_t len)
 		event.pasn_auth.action =
 			PASN_ACTION_DELETE_SECURE_RANGING_CONTEXT;
 		break;
+	case QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT:
+		qca_nl80211_afc_power_update_completed(drv, data, len);
+		break;
 	default:
 		return;
 	}
@@ -3624,6 +3627,369 @@ qca_nl80211_6ghz_pwr_mode_change_completed(struct wpa_driver_nl80211_data *drv,
 }
 
 
+static void compute_num_freq_obj(struct nlattr **attr, u8 *num_freq_obj)
+{
+	u8 nl_len;
+	int rem;
+	struct nlattr *nl;
+	struct nlattr *freq_info[QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_MAX + 1];
+
+	/* Calculate the total number of Frequency range objects received in the
+	 * AFC response
+	 */
+	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_FREQ_RANGE_LIST]) {
+		nla_for_each_nested(nl,
+				    attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_FREQ_RANGE_LIST],
+				    rem) {
+			if (nla_parse(freq_info,
+				      QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_MAX,
+				      nla_data(nl),
+				      nla_len(nl), NULL)) {
+				wpa_printf(MSG_INFO,
+					   "Invalid freq_range_info attribute");
+				return;
+			}
+
+			nl_len = nla_len(nl);
+
+			if (nl_len < AFC_RESP_FREQ_PSD_INFO_INFO_MIN_LEN) {
+				wpa_printf(MSG_INFO,
+					   "Insufficient len %d for Freq PSD",
+					   nl_len);
+				return;
+			}
+			wpa_printf(MSG_DEBUG,
+				   "start_freq = %d low_freq = %d max_psd = %d",
+				   nla_get_u16(freq_info[QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_RANGE_START]),
+				   nla_get_u16(freq_info[QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_RANGE_END]),
+				   nla_get_u32(freq_info[QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_PSD]));
+
+			(*num_freq_obj)++;
+		}
+	}
+}
+
+static void compute_num_chan_obj(struct nlattr **attr,
+				 u8 *num_opclass_obj, u8 *opclass_chan_list,
+				 u8 *total_channels)
+{
+	u8 nl_len, num_channels = 0, i = 0;
+	int rem, iter;
+	struct nlattr *nl, *nl_attr;
+	struct nlattr *opclass_info[QCA_WLAN_VENDOR_ATTR_AFC_OPCLASS_INFO_MAX + 1];
+
+	/* Calculate the total number of opclass objects and corresponding number
+	 * of channels in each opclass object received in the AFC response
+	 */
+	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_OPCLASS_CHAN_LIST]) {
+		nla_for_each_nested(nl, attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_OPCLASS_CHAN_LIST],
+				    rem) {
+			num_channels = 0;
+			nl_len = nla_len(nl);
+
+			if (nl_len < AFC_RESP_OPCLASS_CHAN_EIRP_INFO_MIN_LEN) {
+				wpa_printf(MSG_INFO,
+					   "Insufficient len %d for Opclass/Chan EIRP info",
+					   nl_len);
+				return;
+			}
+
+			if (nla_parse(opclass_info,
+				      QCA_WLAN_VENDOR_ATTR_AFC_OPCLASS_INFO_MAX,
+				      nla_data(nl),
+				      nla_len(nl),
+				      NULL)) {
+				wpa_printf(MSG_INFO,
+					   "Invalid opclass_info attribute");
+				return;
+			}
+
+			nla_for_each_nested(nl_attr,
+				opclass_info[QCA_WLAN_VENDOR_ATTR_AFC_OPCLASS_INFO_CHAN_LIST],
+					iter) {
+				num_channels++;
+			}
+
+			opclass_chan_list[i] = num_channels;
+			i++;
+			(*num_opclass_obj)++;
+			*total_channels += num_channels;
+		}
+	}
+}
+
+static int copy_afc_freq_objs(struct nlattr *nl,
+			      struct afc_freq_obj *afc_freq_info,
+			      u8 *count)
+{
+	struct nlattr *freq_info[QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_MAX + 1];
+	u16 start_freq = 0, end_freq = 0;
+
+	if (nla_parse(freq_info, QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_MAX,
+		      nla_data(nl), nla_len(nl), NULL)) {
+		wpa_printf(MSG_INFO,
+				"Invalid freq_range_info attribute");
+		return -EINVAL;
+	}
+
+	if (freq_info[QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_RANGE_START]) {
+		start_freq =
+		nla_get_u16(freq_info[QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_RANGE_START]);
+	}
+
+	if (freq_info[QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_RANGE_END]) {
+		end_freq =
+		nla_get_u16(freq_info[QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_RANGE_END]);
+	}
+
+	afc_freq_info[*count].low_freq = start_freq;
+	afc_freq_info[*count].high_freq = end_freq;
+
+	if (freq_info[QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_PSD]) {
+		afc_freq_info[*count].max_psd =
+			nla_get_u32(freq_info[QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_PSD]);
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "i = %d start_freq = %d low_freq = %d max_psd = %d",
+		   *count, afc_freq_info[*count].low_freq,
+		   afc_freq_info[*count].high_freq,
+		   afc_freq_info[*count].max_psd);
+	(*count)++;
+
+	return 0;
+}
+
+static int copy_afc_chan_eirp_obj(struct nlattr *nl,
+				  struct chan_eirp_obj *afc_chan_eirp_info,
+				  u8 *count)
+{
+	struct nlattr *chan_info[QCA_WLAN_VENDOR_ATTR_AFC_CHAN_EIRP_INFO_MAX + 1];
+
+	if (nla_parse(chan_info, QCA_WLAN_VENDOR_ATTR_AFC_CHAN_EIRP_INFO_MAX,
+		      nla_data(nl), nla_len(nl), NULL)) {
+		wpa_printf(MSG_INFO, "Invalid afc_eirp_info attribute");
+		return -EINVAL;
+	}
+
+	if (chan_info[QCA_WLAN_VENDOR_ATTR_AFC_CHAN_EIRP_INFO_CHAN_NUM]) {
+		afc_chan_eirp_info[*count].cfi =
+			nla_get_u8(chan_info[QCA_WLAN_VENDOR_ATTR_AFC_CHAN_EIRP_INFO_CHAN_NUM]);
+	}
+
+	if (chan_info[QCA_WLAN_VENDOR_ATTR_AFC_CHAN_EIRP_INFO_EIRP]) {
+		afc_chan_eirp_info[*count].eirp_power =
+			nla_get_u32(chan_info[QCA_WLAN_VENDOR_ATTR_AFC_CHAN_EIRP_INFO_EIRP]);
+	}
+
+	wpa_printf(MSG_DEBUG, "count = %d chan_num = %d eirp = %d",
+		   *count, afc_chan_eirp_info[*count].cfi,
+		   afc_chan_eirp_info[*count].eirp_power);
+	(*count)++;
+
+	return 0;
+}
+
+static int copy_afc_chan_obj(struct nlattr *nl,
+			     struct afc_chan_obj *afc_chan_info,
+			     u8 *opclass_chan_list,
+			     u8 *count)
+{
+	struct nlattr *opclass_info[QCA_WLAN_VENDOR_ATTR_AFC_OPCLASS_INFO_MAX + 1];
+	struct chan_eirp_obj *afc_chan_eirp_info;
+	u8 j;
+	int iter;
+
+	if (nla_parse(opclass_info,
+				QCA_WLAN_VENDOR_ATTR_AFC_OPCLASS_INFO_MAX,
+				nla_data(nl),
+				nla_len(nl),
+				NULL)) {
+		os_free(afc_chan_info);
+		wpa_printf(MSG_INFO, "Invalid afc_chan_info attribute");
+		return -EINVAL;
+	}
+
+	if (opclass_info[QCA_WLAN_VENDOR_ATTR_AFC_OPCLASS_INFO_OPCLASS]) {
+		afc_chan_info[*count].global_opclass =
+			nla_get_u8(opclass_info[QCA_WLAN_VENDOR_ATTR_AFC_OPCLASS_INFO_OPCLASS]);
+	}
+
+	wpa_printf(MSG_DEBUG, "count = %d global_opclass = %d num_chans = %d",
+		   *count, afc_chan_info[*count].global_opclass, opclass_chan_list[*count]);
+	j = 0;
+	afc_chan_eirp_info = os_malloc(opclass_chan_list[*count] *
+				       sizeof(*afc_chan_eirp_info));
+	if (!afc_chan_eirp_info) {
+		wpa_printf(MSG_DEBUG, "afc_chan_eirp_info allocation failed");
+		return -ENOMEM;
+	}
+
+	nla_for_each_nested(nl,
+			    opclass_info[QCA_WLAN_VENDOR_ATTR_AFC_OPCLASS_INFO_CHAN_LIST],
+			    iter) {
+		if (copy_afc_chan_eirp_obj(nl, afc_chan_eirp_info, &j)) {
+			wpa_printf(MSG_DEBUG, "afc_chan_eirp_info copy failed");
+			os_free(afc_chan_eirp_info);
+			return -EINVAL;
+		}
+	}
+
+	afc_chan_info[*count].chan_eirp_info = afc_chan_eirp_info;
+	afc_chan_info[*count].num_chans = j;
+	(*count)++;
+
+	return 0;
+}
+
+#define NUM_6GHZ_OPCLASS 7
+static int
+qca_nl80211_afc_power_update_completed(struct wpa_driver_nl80211_data *drv,
+				       u8 *data, size_t len)
+{
+	union wpa_event_data event;
+	struct afc_sp_reg_info *afc_rsp;
+	struct afc_chan_obj *afc_chan_info = NULL;
+	struct afc_freq_obj *afc_freq_info = NULL;
+	struct nlattr *nl, *attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_MAX + 1];
+	u8 total_channels = 0, num_frange_obj = 0;
+	u8 opclass_chan_list[NUM_6GHZ_OPCLASS];
+	u8 event_type, num_opclass_obj = 0, i;
+	int rem;
+
+	if (!(data && len)) {
+		wpa_printf(MSG_ERROR, "Invalid data length data ptr: %pK ",
+			   data);
+		return -EINVAL;
+	}
+
+	os_memset(&event, 0, sizeof(event));
+	afc_rsp = &event.afc_rsp_info;
+
+	if (!afc_rsp) {
+		wpa_printf(MSG_ERROR,
+			   "Error allocating buffer for AFC response");
+		return -EINVAL;
+	}
+
+	if (nla_parse(attr, QCA_WLAN_VENDOR_ATTR_AFC_EVENT_MAX,
+		      (struct nlattr *)data, len, NULL)) {
+		wpa_printf(MSG_ERROR,
+			   "invalid set AFC config policy attribute\n");
+		return -EINVAL;
+	}
+
+	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_TYPE]) {
+		event_type =
+			nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_TYPE]);
+		if (event_type !=
+			QCA_WLAN_VENDOR_AFC_EVENT_TYPE_POWER_UPDATE_COMPLETE) {
+			wpa_printf(MSG_ERROR, "Invalid AFC event type %d\n",
+				   event_type);
+			return -EINVAL;
+		}
+	}
+
+	compute_num_freq_obj(attr, &num_frange_obj);
+	compute_num_chan_obj(attr, &num_opclass_obj, opclass_chan_list,
+			     &total_channels);
+
+	if (!num_frange_obj) {
+		wpa_printf(MSG_ERROR, "Number of freq objects is zero");
+		return -EINVAL;
+	}
+
+	if (!num_opclass_obj) {
+		wpa_printf(MSG_ERROR, "Number of chan objects is zero");
+		return -EINVAL;
+	}
+
+	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_REQ_ID]) {
+		afc_rsp->resp_id =
+			nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_REQ_ID]);
+	}
+
+	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_EXP_DATE]) {
+		afc_rsp->avail_exp_time_d =
+		nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_EXP_DATE]);
+	}
+
+	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_EXP_TIME]) {
+		afc_rsp->avail_exp_time_t =
+			nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_EXP_TIME]);
+	}
+
+	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_SERVER_RESP_CODE]) {
+		afc_rsp->serv_resp_code =
+			nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_SERVER_RESP_CODE]);
+	}
+
+	wpa_printf(MSG_DEBUG, "event.afc_rsp_info.resp_id = %u",
+		   event.afc_rsp_info.resp_id);
+	/* Update the number of frequency range objects and opclass objects
+	 * to the AFC response structure.
+	 */
+	afc_rsp->num_freq_objs = num_frange_obj;
+	afc_rsp->num_chan_objs = num_opclass_obj;
+
+	i = 0;
+	afc_freq_info = os_malloc(num_frange_obj *
+				  sizeof(*afc_freq_info));
+	if (!afc_freq_info) {
+		wpa_printf(MSG_DEBUG, "afc_freq_info allocation failed");
+		return -ENOMEM;
+	}
+
+	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_FREQ_RANGE_LIST]) {
+		nla_for_each_nested(nl,
+				    attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_FREQ_RANGE_LIST],
+				    rem) {
+			if (i >= num_frange_obj || copy_afc_freq_objs(nl, afc_freq_info, &i)) {
+				wpa_printf(MSG_DEBUG, "afc_freq_info copy failed");
+				os_free(afc_freq_info);
+				return -EINVAL;
+			}
+		}
+
+		afc_rsp->afc_freq_info = afc_freq_info;
+	}
+
+	/* Start parsing and updating the opclass list and corresponding channel
+	 * and EIRP power information.
+	 */
+	i = 0;
+	afc_chan_info = os_malloc(num_opclass_obj * sizeof(*afc_chan_info));
+	if (!afc_chan_info) {
+		wpa_printf(MSG_DEBUG, "afc_chan_info allocation failed");
+		os_free(afc_freq_info);
+		return -ENOMEM;
+	}
+
+	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_OPCLASS_CHAN_LIST]) {
+		nla_for_each_nested(nl,
+				    attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_OPCLASS_CHAN_LIST],
+				    rem) {
+			if (copy_afc_chan_obj(nl, afc_chan_info,
+					      opclass_chan_list, &i)) {
+				wpa_printf(MSG_DEBUG, "afc_chan_info copy failed");
+				os_free(afc_freq_info);
+				os_free(afc_chan_info);
+				return -EINVAL;
+			}
+		}
+
+		afc_rsp->afc_chan_info = afc_chan_info;
+	}
+
+	wpa_supplicant_event(drv->ctx, EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY,
+			     &event);
+	os_free(afc_freq_info);
+	os_free(afc_chan_info);
+
+	return 0;
+}
+
+
 static void nl80211_vendor_event_qca(struct i802_bss *bss,
 				     u32 subcmd, u8 *data, size_t len)
 {
@@ -3671,6 +4037,9 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 #endif /* CONFIG_DRIVER_NL80211_QCA */
 	case QCA_NL80211_VENDOR_SUBCMD_POWER_MODE_CHANGE_COMPLETED:
 		qca_nl80211_6ghz_pwr_mode_change_completed(bss->drv, data, len);
+		break;
+	case QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT:
+		qca_nl80211_afc_power_update_completed(bss->drv, data, len);
 		break;
 	default:
 		wpa_printf(MSG_DEBUG,

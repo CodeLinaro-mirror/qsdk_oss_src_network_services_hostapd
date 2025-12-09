@@ -2626,6 +2626,35 @@ static inline bool he_reg_is_sp(enum he_reg_info_6ghz_ap_type type)
 		type == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP;
 }
 
+struct afc_freq_obj {
+	u32 low_freq;
+	u32 high_freq;
+	s16 max_psd;
+};
+
+struct chan_eirp_obj {
+	u8 cfi;
+	s16 eirp_power;
+};
+
+struct afc_chan_obj {
+	u8 global_opclass;
+	u8 num_chans;
+	struct chan_eirp_obj *chan_eirp_info;
+};
+
+struct afc_sp_reg_info {
+	u32 resp_id;
+	u8 target_status_code;
+	s32 serv_resp_code;
+	u32 avail_exp_time_d;
+	u32 avail_exp_time_t;
+	u8 num_freq_objs;
+	u8 num_chan_objs;
+	struct afc_freq_obj *afc_freq_info;
+	struct afc_chan_obj *afc_chan_info;
+};
+
 #define IEEE80211_HE_6GHZ_OPER_CTRL_REG_INFO     0x38
 #define IEEE80211_HE_6GHZ_OPER_CTRL_REG_INFO_LSB    3
 
