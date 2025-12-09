@@ -19,6 +19,7 @@
 #define BASE_CHAN_5G 32
 #define GET_FREQ_CHAN_5G(chan) (BASE_FREQ_5G + ((chan - BASE_CHAN_5G) * 5))
 
+bool hostapd_is_freq_in_current_hw_info(struct hostapd_iface *iface, int freq);
 void hostapd_dfs_test_mode_csa_timeout(void *eloop_data, void *user_data);
 
 int hostapd_handle_dfs(struct hostapd_iface *iface);

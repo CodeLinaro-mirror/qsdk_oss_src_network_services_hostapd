@@ -3061,6 +3061,8 @@ static void nl80211_radar_event(struct i802_bss *bss, struct nlattr **tb)
 			 * actually for it. */
 			nl80211_process_radar_event(bss_iter, &data,
 						    event_type);
+			if (data.dfs_event.is_dfs_event_on_curr_hw)
+				return;
 
 			hit = true;
 		}

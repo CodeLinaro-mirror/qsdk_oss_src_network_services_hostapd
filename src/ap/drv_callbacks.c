@@ -2351,6 +2351,7 @@ static void hostapd_event_dfs_radar_detected(struct hostapd_data *hapd,
 				   radar->chan_offset, radar->chan_width,
 				   radar->cf1, radar->cf2, radar->radar_bitmap,
 				   radar->chan_width_device, radar->cf_device);
+    radar->is_dfs_event_on_curr_hw = true;
 }
 
 static void hostapd_event_awgn_detected(struct hostapd_data *hapd,
@@ -2369,55 +2370,95 @@ static void hostapd_event_afc_received(struct hostapd_data *hapd)
 static void hostapd_event_dfs_pre_cac_expired(struct hostapd_data *hapd,
 					      struct dfs_event *radar)
 {
+    if (!hostapd_is_freq_in_current_hw_info(hapd->iface, radar->freq)) {
+        wpa_msg(hapd->iface->bss[0]->msg_ctx,
+                MSG_INFO, DFS_EVENT_CAC_COMPLETED
+                "Ignoring since freq info is out of own range");
+        return;
+    }
+
 	wpa_printf(MSG_DEBUG, "DFS Pre-CAC expired on %d MHz", radar->freq);
 	hostapd_dfs_pre_cac_expired(hapd->iface, radar->freq, radar->ht_enabled,
 				    radar->chan_offset, radar->chan_width,
 				    radar->cf1, radar->cf2,
 				    radar->chan_width_device, radar->cf_device);
+    radar->is_dfs_event_on_curr_hw = true;
 }
 
 
 static void hostapd_event_dfs_cac_finished(struct hostapd_data *hapd,
 					   struct dfs_event *radar)
 {
+    if (!hostapd_is_freq_in_current_hw_info(hapd->iface, radar->freq)) {
+        wpa_msg(hapd->iface->bss[0]->msg_ctx,
+                MSG_INFO, DFS_EVENT_CAC_COMPLETED
+                "Ignoring since freq info is out of own range");
+        return;
+    }
+
 	wpa_printf(MSG_DEBUG, "DFS CAC finished on %d MHz", radar->freq);
 	hostapd_dfs_complete_cac(hapd->iface, 1, radar->freq, radar->ht_enabled,
 				 radar->chan_offset, radar->chan_width,
 				 radar->cf1, radar->cf2, radar->is_background,
 				 radar->chan_width_device, radar->cf_device);
+    radar->is_dfs_event_on_curr_hw = true;
 }
 
 
 static void hostapd_event_dfs_cac_aborted(struct hostapd_data *hapd,
 					  struct dfs_event *radar)
 {
+    if (!hostapd_is_freq_in_current_hw_info(hapd->iface, radar->freq)) {
+        wpa_msg(hapd->iface->bss[0]->msg_ctx,
+                MSG_INFO, DFS_EVENT_CAC_COMPLETED
+                "Ignoring since freq info is out of own range");
+        return;
+    }
+
 	wpa_printf(MSG_DEBUG, "DFS CAC aborted on %d MHz", radar->freq);
 	hostapd_dfs_complete_cac(hapd->iface, 0, radar->freq, radar->ht_enabled,
 				 radar->chan_offset, radar->chan_width,
 				 radar->cf1, radar->cf2, radar->is_background,
 				 radar->chan_width_device, radar->cf_device);
+    radar->is_dfs_event_on_curr_hw = true;
 }
 
 
 static void hostapd_event_dfs_nop_finished(struct hostapd_data *hapd,
 					   struct dfs_event *radar)
 {
+    if (!hostapd_is_freq_in_current_hw_info(hapd->iface, radar->freq)) {
+        wpa_msg(hapd->iface->bss[0]->msg_ctx,
+                MSG_INFO, DFS_EVENT_NOP_FINISHED
+                "Ignoring since freq info is out of own range");
+        return;
+    }
+
 	wpa_printf(MSG_DEBUG, "DFS NOP finished on %d MHz", radar->freq);
 	hostapd_dfs_nop_finished(hapd->iface, radar->freq, radar->ht_enabled,
 				 radar->chan_offset, radar->chan_width,
 				 radar->cf1, radar->cf2,
 				 radar->chan_width_device, radar->cf_device);
+    radar->is_dfs_event_on_curr_hw = true;
 }
 
 
 static void hostapd_event_dfs_cac_started(struct hostapd_data *hapd,
 					  struct dfs_event *radar)
 {
+    if (!hostapd_is_freq_in_current_hw_info(hapd->iface, radar->freq)) {
+        wpa_msg(hapd->iface->bss[0]->msg_ctx,
+                MSG_INFO, DFS_EVENT_CAC_START
+                "Ignoring since freq info is out of own range");
+        return;
+    }
+
 	wpa_printf(MSG_DEBUG, "DFS offload CAC started on %d MHz", radar->freq);
 	hostapd_dfs_start_cac(hapd->iface, radar->freq, radar->ht_enabled,
 			      radar->chan_offset, radar->chan_width,
 			      radar->cf1, radar->cf2, radar->is_background,
 			      radar->chan_width_device, radar->cf_device);
+    radar->is_dfs_event_on_curr_hw = true;
 }
 
 #endif /* NEED_AP_MLME */

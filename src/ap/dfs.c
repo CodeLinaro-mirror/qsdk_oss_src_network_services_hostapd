@@ -1246,7 +1246,7 @@ static void hostapd_dfs_update_background_chain(struct hostapd_iface *iface)
 }
 
 
-static bool
+bool
 hostapd_is_freq_in_current_hw_info(struct hostapd_iface *iface, int freq)
 {
 	struct hostapd_channel_data *chan;
@@ -1398,14 +1398,6 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			     int cf1, int cf2, bool is_background,
 			     int chan_width_device, int cf_device)
 {
-	if (!hostapd_is_freq_in_current_hw_info(iface, freq)) {
-		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
-			DFS_EVENT_CAC_COMPLETED
-			"Ignoring since freq=%d info is out of own range",
-			freq);
-		return 0;
-	}
-
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_COMPLETED
 		"success=%d freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d radar_detected=%d"
 		"chan_width_device=%d cf_device=%d",
@@ -1490,14 +1482,6 @@ int hostapd_dfs_pre_cac_expired(struct hostapd_iface *iface, int freq,
 				int cf1, int cf2,
 				int chan_width_device, int cf_device)
 {
-	if (!hostapd_is_freq_in_current_hw_info(iface, freq)) {
-		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
-			DFS_EVENT_PRE_CAC_EXPIRED
-			"Ignoring since freq=%d info is out of own range",
-			freq);
-		return 0;
-	}
-
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_PRE_CAC_EXPIRED
 		"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d"
 		 "chan_width_device=%d cf_device=%d",
@@ -1821,14 +1805,6 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	u16 cur_punct_bits = iface->conf->punct_bitmap;
 	bool device_params_present;
 
-	if (!hostapd_is_freq_in_current_hw_info(iface, freq)) {
-		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
-			DFS_EVENT_RADAR_DETECTED
-			"Ignoring since freq=%d info is out of own range",
-			freq);
-		return 0;
-	}
-
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_RADAR_DETECTED
 		"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d radar_bitmap:%d"
 		"chan_width_device=%d cf_device=%d",
@@ -2066,14 +2042,6 @@ int hostapd_dfs_nop_finished(struct hostapd_iface *iface, int freq,
 			     int cf1, int cf2,
 			     int chan_width_device, int cf_device)
 {
-	if (!hostapd_is_freq_in_current_hw_info(iface, freq)) {
-		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
-			DFS_EVENT_NOP_FINISHED
-			"Ignoring since freq=%d info is out of own range",
-			freq);
-		return 0;
-	}
-
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_NOP_FINISHED
 		"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d chan_width_device=%d cf_device=%d",
 		freq, ht_enabled, chan_offset, chan_width, cf1, cf2, chan_width_device, cf_device);
@@ -2145,13 +2113,6 @@ int hostapd_dfs_start_cac(struct hostapd_iface *iface, int freq,
 	int chwidth;
 	u8 channel_no, cf1_ch_no;
 	bool is_background_event = hostapd_dfs_is_background_event(iface, freq);
-
-	if (!hostapd_is_freq_in_current_hw_info(iface, freq)) {
-		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_START
-			"Ignoring since freq=%d info is out of own range",
-			freq);
-		return 0;
-	}
 
 	if (is_background || is_background_event) {
 		iface->radar_background.cac_started = 1;
