@@ -11657,7 +11657,7 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 		else
 			bss = tx_bss->iface->bss[i];
 
-		if (!bss || !bss->conf || !bss->started ||
+		if (!bss || !bss->conf || !bss->started || !bss->beacon_set_done ||
 		    mbssid_known_bss(i, known_bss, known_bss_len))
 			continue;
 
@@ -11909,9 +11909,10 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		else
 			bss = tx_bss->iface->bss[i];
 
-		if (!bss || !bss->conf || !bss->started ||
+		if (!bss || !bss->conf || !bss->started || !bss->beacon_set_done ||
 		    mbssid_known_bss(i, known_bss, known_bss_len))
 			continue;
+
 		conf = bss->conf;
 		bss_up_ttlm = &bss->mld->ttlm_ctx.upcoming_ttlm.ttlm;
 		bss_est_ttlm = &bss->mld->ttlm_ctx.established_ttlm.ttlm;

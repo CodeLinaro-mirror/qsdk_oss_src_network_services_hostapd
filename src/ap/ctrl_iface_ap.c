@@ -28,6 +28,7 @@
 #include "wnm_ap.h"
 #include "neighbor_db.h"
 #include "../drivers/driver_nl80211.h"
+#include "beacon.h"
 
 static const char * hw_mode_str(enum hostapd_hw_mode mode)
 {
@@ -2005,7 +2006,13 @@ int hostapd_parse_csa_settings(struct hostapd_iface *iface,
 
 int hostapd_ctrl_iface_stop_ap(struct hostapd_data *hapd)
 {
-	return hostapd_drv_stop_ap(hapd);
+	int ret;
+
+	ret = hostapd_drv_stop_ap(hapd);
+	if (ret)
+		return ret;
+
+	return ieee802_11_update_beacon_mbssid(hapd);
 }
 
 
