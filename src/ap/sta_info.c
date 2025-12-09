@@ -329,6 +329,24 @@ void clear_wpa_sm_for_each_partner_link(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 
+#ifdef CONFIG_IEEE80211AX
+static void hostapd_free_scs_data(struct sta_info *sta)
+{
+	int i;
+
+	for (i = 0; i < HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER; i++) {
+		if (sta->scs_req_desc[i]) {
+			os_free(sta->scs_req_desc[i]);
+			sta->scs_req_desc[i] = NULL;
+		}
+	}
+
+	sta->scs_session_count = 0;
+	wpa_printf(MSG_DEBUG, "SCS data freed");
+}
+#endif /* CONFIG_IEEE80211AX */
+
+
 int ap_sta_check_link_sta(struct hostapd_data *hapd,
 			  struct sta_info *sta)
 {
@@ -649,6 +667,11 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	os_free(sta->sae_postponed_commit);
 	forced_memzero(sta->last_tk, WPA_TK_MAX_LEN);
 #endif /* CONFIG_TESTING_OPTIONS */
+
+#ifdef CONFIG_IEEE80211AX
+	if (hapd->conf->scs)
+		hostapd_free_scs_data(sta);
+#endif /* CONFIG_IEEE80211AX */
 
 	wpabuf_free(sta->sae_pw_id);
 
