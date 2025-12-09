@@ -1087,6 +1087,7 @@ struct hostapd_bss_config {
 
 #ifdef CONFIG_IEEE80211AX
 	bool scs;
+	bool mscs;
 #endif /* CONFIG_IEEE80211AX */
 
 	enum qca_wlan_intf_offload_type ppe_vp_type;

@@ -81,6 +81,8 @@ struct type4_params {
 	} ip_params;
 };
 
+#define LOW_BYTE(val)    ((val & 0x000000ff))
+#define HIGH_BYTE(val)   ((val & 0x0000ff00) >> 8)
 
 struct hostapd_dscp_policy {
 	u8 policy_id;  /* Unique Identifier */
@@ -250,6 +252,7 @@ int hostapd_handle_dscp_policy_response(struct hostapd_data *hapd,
 
 #define NFT_UDP_PORT		4500
 
+#define HOSTAPD_QM_DEFAULT_QM_ID 0xFF
 /* QoS MGMT status values */
 enum hostapd_qm_status {
 	HOSTAPD_QM_STATUS_SUCCESS = 0,
@@ -370,10 +373,42 @@ struct hostapd_nft_rule_params {
 	u8 dscp;
 };
 
+struct hostapd_mscs_resp {
+	u8 status;
+	struct hostapd_mscs_desc *mscs;
+};
+
+struct hostapd_user_priority_control {
+	u8 user_priority_bitmap;
+	u8 user_priority_limit:3;
+};
+
+struct hostapd_mscs_ctxt {
+	u8 user_priority_bitmap;
+	u8 user_priority_limit:3;
+	u8 tclas_mask;
+};
+
+struct hostapd_tclas_mask_elem {
+	u8 id;
+	u8 ie_len;
+	u8 id_ext;
+	u8 classifier_type;
+	u8 classifier_mask;
+};
+
+struct hostapd_mscs_desc {
+	u8 req_type;
+	struct hostapd_user_priority_control user_priority_control;
+	u32 stream_timeout;
+	struct hostapd_tclas_mask_elem tclas_mask_elem;
+};
+
 u8 *hostapd_add_scs_ie(u8 *frm, bool scs);
 
 void
 hostapd_handle_robust_av(struct hostapd_data *hapd, const u8 *buf, size_t len);
+void hostapd_handle_mscs(struct hostapd_data *hapd, const u8 *buf, size_t len);
 
 #endif
 
