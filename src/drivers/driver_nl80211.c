@@ -13890,7 +13890,6 @@ static int nl80211_get_pref_freq_list(void *priv,
 	return 0;
 }
 
-
 static int nl80211_set_prob_oper_freq(void *priv, unsigned int freq)
 {
 	struct i802_bss *bss = priv;
@@ -15257,6 +15256,21 @@ fail:
 }
 
 
+static bool nl80211_is_retail_afc_supported(void *priv)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+
+	if (!drv->afc_support)
+		return false;
+
+	if (!drv->afc_retail_support)
+		return false;
+
+	return true;
+}
+
+
 #ifdef CONFIG_DPP
 static int nl80211_dpp_listen(void *priv, bool enable)
 {
@@ -15810,4 +15824,5 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.radio_disable = testing_nl80211_radio_disable,
 #endif /* CONFIG_TESTING_OPTIONS */
 	.get_multi_hw_info = wpa_driver_get_multi_hw_info,
+	.is_retail_afc_supported = nl80211_is_retail_afc_supported,
 };

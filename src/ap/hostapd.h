@@ -832,6 +832,11 @@ struct hostapd_iface {
 	/* 6 GHz AFC information */
 	struct afc_sp_reg_info *afc_rsp_info;
 	bool is_afc_power_event_received;
+	/* After receiving AFC power event in retail mode, this flag is to set to
+	 * true to indicate that the channel change is pending. Channel is changed
+	 * once NL8011_WIPHY_REG_CHANGE event is received.
+	 */
+	bool is_afc_channel_change_pending;
 
 	struct hostapd_multi_hw_info *multi_hw_info;
 	unsigned int num_multi_hws;
@@ -1031,4 +1036,72 @@ u8 hostapd_max_bssid_indicator(struct hostapd_data *hapd);
 int hostapd_allocate_mbssid_idx(struct hostapd_data *hapd);
 int hostapd_get_mbssid_index(u32 *bmap);
 void hostapd_free_mbssid_idx(struct hostapd_data *hapd);
+void hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface,
+					bool iface_enabled);
+/**
+ * hostapd_set_no_ir_state - Set the NO_IR state for the interface
+ * and bring down the corresponding 6 GHz link.
+ * @iface: Pointer to hostapd interface data
+ *
+ * Return: None
+ */
+#ifdef HOSTAPD
+void hostapd_set_no_ir_state(struct hostapd_iface *iface);
+#else
+static inline void
+hostapd_set_no_ir_state(struct hostapd_iface *iface)
+{
+	/* No-op if hostapd is not defined */
+}
+#endif
+void hostapd_no_ir_cleanup(struct hostapd_data *bss);
+
+/**
+ * hostapd_handle_afc_channel_change - Handle retail AFC channel change.
+ *
+ * Following are the steps:
+ * 1. Fetch the updated channel list from the kernel using
+ * NL8011_WIPHY_REG_CHANGE event.
+ * 2. Randomly select a channel from the updated channel list.
+ * 3. Apply best power mode on the selected channel and then set the
+ * channel to the driver using drv_switch_channel.
+ * 4. If channel change fails, move hostapd to NO_IR state.
+ *
+ * @iface: Pointer to hostapd interface data
+ *
+ * Returns: 0 on success, -1 on failure.
+ */
+#ifdef HOSTAPD
+int hostapd_handle_afc_channel_change(struct hostapd_iface *iface);
+#else
+static inline int
+hostapd_handle_afc_channel_change(struct hostapd_iface *iface)
+{
+	/* No-op if hostapd is not defined */
+	return 0;
+}
+#endif
+
+/**
+ * afc_channel_change_timeout - Timeout handler for AFC channel change
+ *
+ * This function is called when the timeout for AFC channel change occurs.
+ * After AFC response is received by the hostapd, it waits for
+ * NL8011_WIPHY_REG_CHANGE event to get the updated channel list. If this
+ * event is not received within the timeout period, this function
+ * is invoked to set the hostapd state to no IR and clean up the AFC data.
+ *
+ * @eloop_ctx: Pointer to hostapd_iface structure
+ * @timeout_ctx: Pointer to timeout context (not used)
+ */
+#ifdef HOSTAPD
+void
+afc_channel_change_timeout(void *eloop_ctx, void *timeout_ctx);
+#else
+static inline void
+afc_channel_change_timeout(void *eloop_ctx, void *timeout_ctx)
+{
+	/* No-op if hostapd is not defined */
+}
+#endif
 #endif /* HOSTAPD_H */

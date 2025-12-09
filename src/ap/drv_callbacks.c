@@ -2583,6 +2583,19 @@ static int hostapd_allocate_afc_rsp_info(struct hostapd_iface *iface,
 	return 0;
 }
 
+void
+afc_channel_change_timeout(void *eloop_ctx, void *timeout_ctx)
+{
+	struct hostapd_iface *iface = eloop_ctx;
+
+	if (!iface->is_afc_channel_change_pending) {
+		wpa_printf(MSG_DEBUG, "AFC channel change already completed");
+		return;
+	}
+	wpa_printf(MSG_DEBUG, "AFC channel change timeout, try channel change once");
+	hostapd_handle_afc_channel_change(iface);
+}
+
 static void hostapd_event_afc_update_complete(
 		struct hostapd_data *hapd,
 		struct afc_sp_reg_info *afc_rsp_info)
@@ -2594,8 +2607,62 @@ static void hostapd_event_afc_update_complete(
 		wpa_printf(MSG_DEBUG, "AFC response memory  allocation failed");
 		return;
 	}
-
 	iface->is_afc_power_event_received = true;
+	if (hostapd_drv_is_retail_afc_supported(hapd)) {
+		iface->is_afc_channel_change_pending = true;
+		/* Wait for NL8011_WIPHY_REG_CHANGE event to get the updated channel list */
+		eloop_register_timeout(5, 0, afc_channel_change_timeout, iface,
+				       NULL);
+	}
+}
+
+void
+hostapd_set_no_ir_state(struct hostapd_iface *iface)
+{
+	hostapd_set_state(iface, HAPD_IFACE_NO_IR);
+	hostapd_interface_update_fils_ubpr(iface, false);
+	iface->is_no_ir = true;
+	hostapd_drv_stop_ap(iface->bss[0]);
+	hostapd_no_ir_cleanup(iface->bss[0]);
+	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, AP_EVENT_NO_IR);
+}
+
+/**
+ * hostapd_event_afc_payload_reset - Reset AFC payload of the hostapd.
+ *
+ * Mark a flag to signal that an AFC channel switch is pending. Once
+ * the NL8011_WIPHY_REG_CHANGE event is received, the channel change
+ * is attempted to best power mode available. If the  NL8011_WIPHY_REG_CHANGE
+ * is not received within the timeout period, afc_channel_change_timeout()
+ * is invoked to take further action.
+ *
+ * @hapd: Pointer to hostapd_data structure
+ * @afc_rsp_info: Pointer to afc_sp_reg_info structure
+ *
+ * Returns: None
+ */
+static void
+hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
+				struct afc_sp_reg_info *afc_rsp_info)
+{
+	struct hostapd_iface *iface = hapd->iface;
+
+	wpa_printf(MSG_DEBUG, "Processing AFC payload reset event");
+	if (!iface->afc_rsp_info) {
+		wpa_printf(MSG_DEBUG, "No AFC payload to reset");
+		return;
+	}
+	/* Clear AFC payload */
+	hostapd_free_afc_data(iface);
+	iface->is_afc_power_event_received = false;
+	if (!hostapd_drv_is_retail_afc_supported(hapd)) {
+		wpa_printf(MSG_DEBUG, "AFC payload reset not supported");
+		return;
+	}
+	iface->is_afc_channel_change_pending = true;
+	/* Wait for NL8011_WIPHY_REG_CHANGE event to get the updated channel list */
+	eloop_register_timeout(5, 0,
+			       afc_channel_change_timeout, iface, NULL);
 }
 
 #ifdef CONFIG_OWE
@@ -3324,6 +3391,9 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 	case EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY:
 		hostapd_event_afc_update_complete(hapd,
 						  &data->afc_rsp_info);
+		break;
+	case EVENT_AFC_PAYLOAD_RESET:
+		hostapd_event_afc_payload_reset(hapd, &data->afc_rsp_info);
 		break;
 #ifdef CONFIG_IEEE80211BE
 	case EVENT_LINK_REMOVAL_STARTED:

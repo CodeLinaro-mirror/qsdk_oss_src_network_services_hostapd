@@ -73,8 +73,6 @@ static void hostapd_switch_color_timeout_handler(void *eloop_data,
 						 void *user_ctx);
 #endif /* CONFIG_IEEE80211AX */
 
-static void hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface,
-					       bool iface_enabled);
 
 int hostapd_for_each_interface(struct hapd_interfaces *interfaces,
 			       int (*cb)(struct hostapd_iface *iface,
@@ -2211,7 +2209,7 @@ static int start_ctrl_iface(struct hostapd_iface *iface)
  * deinitializing the driver and the control interfaces. A subsequent
  * REG_CHANGE event can bring the AP back up.
  */
-static void hostapd_no_ir_cleanup(struct hostapd_data *bss)
+void hostapd_no_ir_cleanup(struct hostapd_data *bss)
 {
 	hostapd_bss_deinit_no_free(bss);
 	hostapd_bss_link_deinit(bss);
@@ -2220,8 +2218,7 @@ static void hostapd_no_ir_cleanup(struct hostapd_data *bss)
 }
 
 
-static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface,
-					      void *ctx)
+static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 {
 	struct hostapd_data *hapd = iface->bss[0];
 	bool all_no_ir, is_6ghz;
@@ -2294,12 +2291,7 @@ static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface,
 				   "NO_IR: All chan in new chanlist are NO_IR, stop AP.");
 		}
 
-		hostapd_set_state(iface, HAPD_IFACE_NO_IR);
-		hostapd_interface_update_fils_ubpr(iface, false);
-		iface->is_no_ir = true;
-		hostapd_drv_stop_ap(iface->bss[0]);
-		hostapd_no_ir_cleanup(iface->bss[0]);
-		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, AP_EVENT_NO_IR);
+		hostapd_set_no_ir_state(iface);
 	} else if (iface->state == HAPD_IFACE_NO_IR) {
 		if (all_no_ir) {
 			wpa_printf(MSG_DEBUG,
@@ -2358,12 +2350,66 @@ static void channel_list_update_timeout(void *eloop_ctx, void *timeout_ctx)
 	setup_interface2(iface);
 }
 
+#ifdef HOSTAPD
+static int hostapd_find_random_chan_and_switch(struct hostapd_iface *iface)
+{
+
+	return 0;
+}
+
+int hostapd_handle_afc_channel_change(struct hostapd_iface *iface)
+{
+	int ret;
+
+	if (iface->state != HAPD_IFACE_ENABLED) {
+		wpa_printf(MSG_ERROR, "iface state: %u, not handling afc channel change\n",
+			   iface->state);
+		return -EOPNOTSUPP;
+	}
+
+	iface->is_afc_channel_change_pending = 0;
+	eloop_cancel_timeout(afc_channel_change_timeout, iface, NULL);
+	ret = hostapd_find_random_chan_and_switch(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "Failed to switch to a new channel, moving to NOIR");
+		hostapd_set_no_ir_state(iface);
+		return -EINVAL;
+	}
+	return 0;
+
+}
+#endif
+
+/**
+ * hostapd_handle_regchannel_update - Handle channel list update.
+ *
+ * Initiate a channel change upon receiving the NL8011_WIPHY_REG_CHANGE event.
+ * If afc_channel_change_pending is set (set only for 6 GHz iface which
+ * received AFC power event), then invoke random channel and switch to it.
+ * If not, then invoke no_ir_channel_list_updated() to handle
+ * NO_IR channel list update.
+ *
+ * @param iface: Pointer to hostapd interface data
+ * @param ctx:   Pointer to context
+ *
+ * Return: 0 on success, negative value on failure
+ */
+static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
+					    void *ctx)
+{
+	if (iface->is_afc_channel_change_pending) {
+		wpa_printf(MSG_DEBUG, "Handling AFC channel change");
+		return hostapd_handle_afc_channel_change(iface);
+	}
+	wpa_printf(MSG_DEBUG, "Handling AFC NOIR");
+	return hostapd_no_ir_channel_list_updated(iface);
+}
 
 void hostapd_channel_list_updated(struct hostapd_iface *iface, int initiator)
 {
 	if (initiator == REGDOM_SET_BY_DRIVER) {
 		hostapd_for_each_interface(iface->interfaces,
-					   hostapd_no_ir_channel_list_updated,
+					   hostapd_handle_regchannel_update,
 					   NULL);
 		return;
 	}
@@ -2518,6 +2564,7 @@ static int setup_interface2(struct hostapd_iface *iface)
 	iface->afc_rsp_info = NULL;
 	iface->is_afc_power_event_received = false;
 	iface->wait_channel_update = 0;
+	iface->is_afc_channel_change_pending = false;
 	iface->is_no_ir = false;
 	iface->power_mode_6ghz_before_change = -1;
 
@@ -3366,6 +3413,7 @@ void hostapd_interface_deinit(struct hostapd_iface *iface)
 
 	eloop_cancel_timeout(channel_list_update_timeout, iface, NULL);
 	iface->wait_channel_update = 0;
+	iface->is_afc_channel_change_pending = 0;
 	iface->power_mode_6ghz_before_change = -1;
 	iface->is_no_ir = false;
 	hostapd_free_afc_data(iface);
@@ -5802,7 +5850,7 @@ void hostapd_ocv_check_csa_sa_query(void *eloop_ctx, void *timeout_ctx)
  * Lower band interfaces coming up: Disable FILS/UBPR for all 6GHz APs if not done
  * already.
  */
-static void
+void
 hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface, bool iface_enabled)
 {
 	int i, j;

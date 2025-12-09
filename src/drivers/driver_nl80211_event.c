@@ -4106,6 +4106,69 @@ qca_nl80211_afc_power_update_completed(struct i802_bss *bss,
 }
 
 
+int
+qca_nl80211_handle_afc_events(struct i802_bss *bss,
+			      u8 *data, size_t len)
+{
+	struct nlattr *attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_MAX + 1];
+	u8 event_type;
+	int received_hw_index;
+
+	if (!(data && len)) {
+		wpa_printf(MSG_ERROR, "Invalid data length data ptr: %pK ",
+			   data);
+		return -EINVAL;
+	}
+
+	if (nla_parse(attr, QCA_WLAN_VENDOR_ATTR_AFC_EVENT_MAX,
+		      (struct nlattr *)data, len, NULL)) {
+		wpa_printf(MSG_ERROR, "invalid set AFC config policy attribute\n");
+		return -EINVAL;
+	}
+
+	received_hw_index = -1;
+	if (!attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_HW_IDX]) {
+		wpa_printf(MSG_ERROR, "AFC event hw index not present\n");
+		return -EINVAL;
+	}
+
+	received_hw_index = nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_HW_IDX]);
+	wpa_printf(MSG_DEBUG, "received_hw_index = %d\n", received_hw_index);
+
+	if (!attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_TYPE]) {
+		wpa_printf(MSG_ERROR, "AFC event type not present\n");
+		return -EINVAL;
+	}
+
+	event_type = nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_TYPE]);
+	switch (event_type) {
+	case QCA_WLAN_VENDOR_AFC_EVENT_TYPE_POWER_UPDATE_COMPLETE:
+		qca_nl80211_afc_power_update_completed(bss, data, len);
+		wpa_printf(MSG_DEBUG, "Handle AFC event of type %d\n",
+			   event_type);
+		break;
+	case QCA_WLAN_VENDOR_AFC_EVENT_TYPE_PAYLOAD_RESET:
+		{
+			union wpa_event_data event;
+
+			os_memset(&event, 0, sizeof(event));
+			event.afc_info.hw_idx = received_hw_index;
+			wpa_supplicant_event(bss->ctx, EVENT_AFC_PAYLOAD_RESET,
+					     &event);
+			wpa_printf(MSG_DEBUG, "Handle AFC event of type %d\n",
+				   event_type);
+		}
+		break;
+	default:
+		wpa_printf(MSG_DEBUG, "Ignore unsupported AFC event %d",
+			   event_type);
+		break;
+	}
+
+	return 0;
+}
+
+
 static void nl80211_vendor_event_qca(struct i802_bss *bss,
 				     u32 subcmd, u8 *data, size_t len)
 {
@@ -4155,7 +4218,7 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 		qca_nl80211_6ghz_pwr_mode_change_completed(bss, data, len);
 		break;
 	case QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT:
-		qca_nl80211_afc_power_update_completed(bss, data, len);
+		qca_nl80211_handle_afc_events(bss, data, len);
 		break;
 	default:
 		wpa_printf(MSG_DEBUG,

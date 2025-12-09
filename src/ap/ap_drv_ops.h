@@ -461,6 +461,20 @@ static inline int hostapd_drv_channel_info(struct hostapd_data *hapd,
 	return hapd->driver->channel_info(hapd->drv_priv, ci);
 }
 
+/**
+ * hostapd_drv_is_retail_afc_supported - Check if retail AFC is supported
+ * @hapd: hostapd data
+ *
+ * Return: True if retail AFC is supported, false otherwise.
+ */
+static inline bool
+hostapd_drv_is_retail_afc_supported(struct hostapd_data *hapd)
+{
+	if (!hapd->driver || !hapd->driver->is_retail_afc_supported)
+		return false;
+	return hapd->driver->is_retail_afc_supported(hapd->drv_priv);
+}
+
 static inline int
 hostapd_drv_send_external_auth_status(struct hostapd_data *hapd,
 				      struct external_auth *params)
