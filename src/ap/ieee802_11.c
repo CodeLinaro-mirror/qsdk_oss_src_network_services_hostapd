@@ -67,6 +67,10 @@
 #include "ttlm.h"
 #include "dscp_policy.h"
 
+#ifdef CONFIG_IEEE80211AX
+#include "robust_av.h"
+#endif
+
 #ifdef CONFIG_FILS
 static struct wpabuf *
 prepare_auth_resp_fils(struct hostapd_data *hapd,
@@ -5963,6 +5967,11 @@ rsnxe_done:
 
 	if (sta && (sta->flags & WLAN_STA_WMM))
 		p = hostapd_eid_wmm(hapd, p, false);
+
+#ifdef CONFIG_IEEE80211AX
+	if (hapd->conf->scs)
+		p = hostapd_add_scs_ie(p, true);
+#endif /* CONFIG_IEEE80211AX */
 
 	if (sta && hapd->conf->enable_dscp_policy_capa)
 		p = hostapd_set_dscp_capabilities(hapd, sta, p);

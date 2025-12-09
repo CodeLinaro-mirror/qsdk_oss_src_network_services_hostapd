@@ -5164,7 +5164,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		else
 			wpa_printf(MSG_ERROR,
 				   "Invalid value for twt_responder_caps");
-
+#ifdef CONFIG_IEEE80211AX
+	} else if (os_strcmp(buf, "enable_scs") == 0) {
+		bss->scs = atoi(pos);
+#endif /* CONFIG_IEEE80211AX */
 	} else if (os_strcmp(buf, "i2r_lmr_policy") == 0) {
 		conf->i2r_lmr_policy = atoi(pos);
 	} else {

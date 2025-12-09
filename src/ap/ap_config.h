@@ -1035,6 +1035,9 @@ struct hostapd_bss_config {
 		TWT_ITWT_BTWT_RTWT_ENABLED,
 	} twt_responder_caps;
 
+#ifdef CONFIG_IEEE80211AX
+	bool scs;
+#endif /* CONFIG_IEEE80211AX */
 };
 
 /**

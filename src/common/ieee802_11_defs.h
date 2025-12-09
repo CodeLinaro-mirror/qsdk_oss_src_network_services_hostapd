@@ -1218,6 +1218,11 @@ struct ieee80211_mgmt {
 					u8 status_code;
 				} STRUCT_PACKED ttlm_teardown;
 				struct {
+					u8 action;
+					u8 dialog_token;
+					u8 variable[];
+				} STRUCT_PACKED robust_av_req;
+				struct {
 					u8 action; /* Protected EHT - 11 */
 					u8 dialog_token;
 					/* Reconfiguration Multi-Link element,
@@ -3423,6 +3428,13 @@ enum edmg_bw_config {
 
 /* DPP Public Action frame identifiers - OUI_WFA */
 #define DPP_OUI_TYPE 0x1A
+
+/*
+ * SCS_WFA_IE_LEN - Set the WFA IE len for SCS based on the below fields.
+ * Element ID (1) + Length (1) + WFA_OUI (3) + OUI Type (1) +
+ * Capabilities length (1) + Capability (1)
+ */
+#define SCS_WFA_IE_LEN	8
 
 /* Robust AV streaming Action field values */
 enum robust_av_streaming_action {

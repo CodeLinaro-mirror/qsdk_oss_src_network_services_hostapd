@@ -429,6 +429,12 @@ static void hostapd_ext_capab_byte(struct hostapd_data *hapd, u8 *pos, int idx,
 	case 6: /* Bits 48-55 */
 		if (hapd->conf->ssid.utf8_ssid)
 			*pos |= 0x01; /* Bit 48 - UTF-8 SSID */
+#ifdef CONFIG_IEEE80211AX
+		if (hapd->conf->scs) {
+			*pos |= 0x08; /* Bit 51 - Robust AV Streaming */
+			*pos |= 0x40; /* Bit 54 - QM SCS */
+		}
+#endif /* CONFIG_IEEE80211AX */
 		break;
 	case 7: /* Bits 56-63 */
 		break;

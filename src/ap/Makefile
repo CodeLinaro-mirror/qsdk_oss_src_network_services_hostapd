@@ -58,6 +58,7 @@ LIB_OBJS= \
 	wps_hostapd.o \
 	x_snoop.o \
 	ttlm.o \
-	dscp_policy.o
+	dscp_policy.o \
+	robust_av.o
 
 include ../lib.rules
