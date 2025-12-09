@@ -114,6 +114,7 @@ const char * event_to_string(enum wpa_event_type event)
 	E2S(PEER_MEASUREMENT_RESULT);
 	E2S(PEER_MEASUREMENT_COMPLETE);
 	E2S(ROAM_STATUS);
+	E2S(AFC_POWER_UPDATE_COMPLETE_NOTIFY);
 	}
 
 	return "UNKNOWN";

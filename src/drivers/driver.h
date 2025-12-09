@@ -77,6 +77,29 @@ enum hostapd_chan_width_attr {
 #define HOSTAPD_DFS_REGION_ETSI	2
 #define HOSTAPD_DFS_REGION_JP	3
 
+/*
+ * Opclass, channel and EIRP information attribute length
+ * Refer kernel doc explanation for attribute
+ * QCA_WLAN_VENDOR_ATTR_AFC_RESP_OPCLASS_CHAN_EIRP_INFO to understand the
+ * minimum length calculation.
+ */
+#define AFC_RESP_OPCLASS_CHAN_EIRP_INFO_MIN_LEN            \
+	NLA_ALIGN((NLA_HDRLEN + sizeof(uint8_t)) +         \
+		  ((3 * NLA_HDRLEN) + sizeof(uint8_t) +    \
+		   sizeof(uint32_t)))
+
+/*
+ * Frequency/PSD information attribute length
+ * Refer kernel doc explanation for attribute
+ * QCA_WLAN_VENDOR_ATTR_AFC_RESP_FREQ_PSD_INFO to understand the minimum length
+ * calculation.
+ */
+#define AFC_RESP_FREQ_PSD_INFO_INFO_MIN_LEN                \
+	NLA_ALIGN((3 * NLA_HDRLEN) +                       \
+		  (2 * sizeof(uint16_t)) +                 \
+		  sizeof(uint32_t))
+
+
 /**
  * enum reg_change_initiator - Regulatory change initiator
  */
@@ -190,6 +213,8 @@ struct hostapd_channel_data {
 	 */
 	u16 punct_bitmap;
 	s8 psd_values[NL80211_REG_NUM_POWER_MODES];
+	/* Per-channel regulatory PSD and EIRP for each 6 GHz power mode. */
+	s8 eirp_values[NL80211_REG_NUM_POWER_MODES];
 };
 
 #define HE_MAC_CAPAB_0		0
@@ -6908,6 +6933,11 @@ enum wpa_event_type {
 	 * EVENT_6GHZ_POWER_MODE_NOTIFY - Notify the AP power mode change
 	 */
 	EVENT_6GHZ_POWER_MODE_NOTIFY,
+
+	/**
+	 * EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY - Notify AFC data is processed
+	 */
+	EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY,
 };
 
 
@@ -7940,6 +7970,8 @@ union wpa_event_data {
 		u8 valid_links;
 		struct t2lm_mapping t2lmap[MAX_NUM_MLD_LINKS];
 	} t2l_map_info;
+
+	struct afc_sp_reg_info afc_rsp_info;
 
 	/**
 	 * struct reconfig_info - Data for EVENT_SETUP_LINK_RECONFIG

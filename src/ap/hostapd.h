@@ -838,6 +838,8 @@ struct hostapd_iface {
 	bool is_no_ir;
 
 	bool is_ch_switch_dfs; /* Channel switch from ACS to DFS */
+	/* 6 GHz AFC information */
+	struct afc_sp_reg_info *afc_rsp_info;
 
 	struct hostapd_multi_hw_info *multi_hw_info;
 	unsigned int num_multi_hws;
@@ -969,6 +971,7 @@ static inline void hostap_afc_disable_channels(struct hostapd_iface *iface)
 }
 #endif /* CONFIG_AFC */
 
+void hostapd_free_afc_data(struct hostapd_iface *iface);
 /* utils.c */
 int hostapd_register_probereq_cb(struct hostapd_data *hapd,
 				 int (*cb)(void *ctx, const u8 *sa,
