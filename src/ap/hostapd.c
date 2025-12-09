@@ -5025,6 +5025,7 @@ hostapd_switch_channel_fallback(struct hostapd_iface *iface,
 	iface->conf->ieee80211be = freq_params->eht_enabled;
 	iface->conf->bandwidth_device = freq_params->bandwidth_device;
 	iface->conf->center_freq_device = freq_params->center_freq_device;
+	iface->conf->punct_bitmap = freq_params->punct_bitmap;
 
 	/*
 	 * cs_params must not be cleared earlier because the freq_params
