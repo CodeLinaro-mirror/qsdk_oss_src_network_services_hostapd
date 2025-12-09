@@ -811,6 +811,108 @@ static void hostapd_qm_prepare_nft_rule(struct hostapd_data *hapd, struct sta_in
 	rule->nf_family = NFPROTO_NETDEV;
 }
 
+static bool hostapd_mscs_flow_exists(struct hostapd_data *hapd,
+				     struct sta_info *sta,
+				     struct hostapd_tclas_elements *new_te)
+{
+	struct hostapd_tclas_elements te = {0};
+	int idx;
+
+	if (!sta || !sta->mscs_ctxt)
+		return false;
+
+	for (idx = 0; idx < sta->mscs_ctxt->available_idx; idx++) {
+	     te = sta->mscs_ctxt->flow_info[idx];
+	     if (!os_memcmp(new_te, &te, sizeof(struct hostapd_tclas_elements)))
+		 return true;
+	}
+
+	return false;
+}
+
+static int hostapd_mscs_add_flow_info(struct sta_info *sta,
+				      struct hostapd_tclas_elements *new_te)
+{
+	u8 available_idx;
+
+	if (!sta)
+		return -EINVAL;
+
+	if (!sta->mscs_ctxt)
+		return -EINVAL;
+
+	available_idx = sta->mscs_ctxt->available_idx;
+
+	if (available_idx >= HOSTAPD_MSCS_MAX_FLOW_ENTRIES)
+	    return -EINVAL;
+
+	os_memcpy(&sta->mscs_ctxt->flow_info[available_idx], new_te,
+		  sizeof(struct hostapd_tclas_elements));
+	sta->mscs_ctxt->available_idx++;
+
+	return 0;
+}
+
+static int hostapd_mscs_add_nft_rule(struct hostapd_data *hapd,
+				     struct sta_info *sta,
+				     struct hostapd_tclas_elements *te)
+{
+	struct hostapd_nft_rule_params rule = {0};
+	u8 tid = te->up;
+
+	if (!sta || !sta->mscs_ctxt) {
+		wpa_printf(MSG_ERROR, "MSCS: Missing context for STA");
+		return -EINVAL;
+	}
+
+	if (hostapd_mscs_flow_exists(hapd, sta, te))
+	    return -EEXIST;
+
+	if (hostapd_mscs_add_flow_info(sta, te)) {
+		wpa_printf(MSG_ERROR, "MSCS: Rule could not be programmed\n");
+		return -EINVAL;
+	}
+
+	os_memset(&rule, 0, sizeof(rule));
+
+	hostapd_qm_prepare_nft_rule(hapd, sta, te, &rule,
+				    tid, HOSTAPD_QOS_MSCS_TAG);
+
+	hostapd_ucode_config_nft_rule(hapd, &rule, true);
+
+	wpa_printf(MSG_INFO, "tid:%u rule valid flag : 0x%x ", tid,
+		   rule.valid_flags);
+
+	return 0;
+}
+
+int hostapd_mscs_delete_all_rules(struct hostapd_data *hapd,
+				       struct sta_info *sta)
+{
+	struct hostapd_tclas_elements te;
+	struct hostapd_nft_rule_params rule = {0};
+	int i = 0;
+
+	if (!sta || !sta->mscs_ctxt)
+	    return -EINVAL;
+
+	for (i = 0; i < sta->mscs_ctxt->available_idx; i++) {
+
+		te = sta->mscs_ctxt->flow_info[i];
+
+		hostapd_qm_prepare_nft_rule(hapd, sta, &te, &rule,
+					    te.up, HOSTAPD_QOS_MSCS_TAG);
+
+		hostapd_ucode_config_nft_rule(hapd, &rule, false);
+		os_memset(&sta->mscs_ctxt->flow_info[i], 0,
+			  sizeof(struct hostapd_tclas_elements));
+	}
+
+	wpa_printf(MSG_INFO, "MSCS: # of rules deleted %u\n", i);
+
+	return 0;
+}
+
 static int hostapd_scs_add_nft_rule(struct hostapd_data *hapd, struct sta_info *sta, int scs_idx)
 {
 	struct hostapd_scs_req_desc_data *scs_req_desc = sta->scs_req_desc[scs_idx];
@@ -1297,6 +1399,7 @@ static int hostapd_process_mscs_req(struct hostapd_data *hapd,
 		ret = hostapd_copy_and_send_mscs_data(hapd, sta, req_type,
 						      dialog_token);
 		sta->mscs_session_exists = false;
+		hostapd_mscs_delete_all_rules(hapd, sta);
 		os_free(sta->mscs_ctxt);
 		sta->mscs_ctxt = NULL;
 		ret = WLAN_STATUS_TCLAS_PROCESSING_TERMINATED;

@@ -112,6 +112,7 @@ struct sta_info;
 #define NFT_UDP_PORT		4500
 
 #define HOSTAPD_QM_DEFAULT_QM_ID 0xFF
+#define HOSTAPD_MSCS_MAX_FLOW_ENTRIES 255
 /* QoS MGMT status values */
 enum hostapd_qm_status {
 	HOSTAPD_QM_STATUS_SUCCESS = 0,
@@ -246,6 +247,8 @@ struct hostapd_mscs_ctxt {
 	u8 user_priority_bitmap;
 	u8 user_priority_limit:3;
 	u8 tclas_mask;
+	u8 available_idx;
+	struct hostapd_tclas_elements flow_info[HOSTAPD_MSCS_MAX_FLOW_ENTRIES];
 };
 
 struct hostapd_tclas_mask_elem {
@@ -268,5 +271,7 @@ u8 *hostapd_add_scs_ie(u8 *frm, bool scs);
 void
 hostapd_handle_robust_av(struct hostapd_data *hapd, const u8 *buf, size_t len);
 void hostapd_handle_mscs(struct hostapd_data *hapd, const u8 *buf, size_t len);
+int hostapd_mscs_delete_all_rules(struct hostapd_data *hapd,
+				  struct sta_info *sta);
 
 #endif

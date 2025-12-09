@@ -345,11 +345,13 @@ static void hostapd_free_scs_data(struct sta_info *sta)
 	wpa_printf(MSG_DEBUG, "SCS data freed");
 }
 
-static void hostapd_free_mscs_data(struct sta_info *sta)
+static void hostapd_free_mscs_data(struct hostapd_data *hapd,
+				   struct sta_info *sta)
 {
 	if (!sta->mscs_ctxt)
 		return;
 
+	hostapd_mscs_delete_all_rules(hapd, sta);
 	sta->mscs_session_exists = false;
 	os_free(sta->mscs_ctxt);
 	sta->mscs_ctxt = NULL;
@@ -687,7 +689,7 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 		hostapd_free_scs_data(sta);
 
 	if (hapd->conf->mscs)
-		hostapd_free_mscs_data(sta);
+		hostapd_free_mscs_data(hapd, sta);
 #endif /* CONFIG_IEEE80211AX */
 
 	wpabuf_free(sta->sae_pw_id);
