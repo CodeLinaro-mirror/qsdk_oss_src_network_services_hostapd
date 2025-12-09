@@ -5167,6 +5167,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 #ifdef CONFIG_IEEE80211AX
 	} else if (os_strcmp(buf, "enable_scs") == 0) {
 		bss->scs = atoi(pos);
+	} else if (os_strcmp(buf, "enable_mscs") == 0) {
+		bss->mscs = atoi(pos);
 #endif /* CONFIG_IEEE80211AX */
 	} else if (os_strcmp(buf, "i2r_lmr_policy") == 0) {
 		conf->i2r_lmr_policy = atoi(pos);

@@ -362,6 +362,8 @@ struct sta_info {
 	struct hostapd_scs_req_desc_data
 		*scs_req_desc[HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER];
 	u8 scs_session_count;
+	struct hostapd_mscs_ctxt *mscs_ctxt;
+	bool mscs_session_exists;
 #endif
 
 	u64 last_known_sta_id_timestamp;

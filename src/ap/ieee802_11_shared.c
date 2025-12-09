@@ -480,6 +480,8 @@ static void hostapd_ext_capab_byte(struct hostapd_data *hapd, u8 *pos, int idx,
 		if (mbssid_complete)
 			*pos |= 0x01; /* Bit 80 - Complete List of NonTxBSSID
 				       * Profiles */
+		if (hapd->conf->mscs)
+			*pos |= 0x20; /* Bit 85 - Mirrored SCS */
 		break;
 	case 11: /* Bits 88-95 */
 #ifdef CONFIG_SAE_PK

@@ -144,6 +144,7 @@ struct hostapd_wmm_rule {
  */
 enum qos_mgmt_type {
 	HOSTAPD_QM_TYPE_SCS,
+	HOSTAPD_QM_TYPE_MSCS,
 	/* Future QM protocols to be added here */
 };
 
@@ -314,7 +315,9 @@ struct qm_req_desc_data {
 #ifdef CONFIG_IEEE80211BE
 	struct qm_qos_attributes qos_attr;
 #endif /* CONFIG_IEEE80211BE */
-
+	u8 user_priority_bitmap;
+	u8 user_priority_limit;
+	u8 tclas_mask;
 };
 
 struct qm_req_data {

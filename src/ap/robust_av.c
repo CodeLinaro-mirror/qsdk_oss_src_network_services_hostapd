@@ -1135,6 +1135,256 @@ error:
 	return ret;
 }
 
+static int hostapd_copy_and_send_mscs_data(struct hostapd_data *hapd,
+		struct sta_info *sta, u8 req_type, const u8 dialog_token)
+{
+	struct qm_req_data qm_req = {0};
+	struct qm_resp_data qm_resp = {0};
+	struct qm_req_desc_data qm_desc_data = {0};
+
+	if (!hapd->driver)
+		return HOSTAPD_QM_STATUS_E_INVAL;
+
+	os_memcpy(qm_req.peer_mac, sta->addr, ETH_ALEN);
+
+	qm_req.qm_type = HOSTAPD_QM_TYPE_MSCS;
+	qm_req.dialog_token = dialog_token;
+	qm_req.num_qm_desc = 1;
+
+	qm_desc_data.qm_id = HOSTAPD_QM_DEFAULT_QM_ID;
+	qm_desc_data.request_type = req_type;
+	qm_desc_data.user_priority_bitmap = sta->mscs_ctxt->user_priority_bitmap;
+	qm_desc_data.user_priority_limit = sta->mscs_ctxt->user_priority_limit;
+	qm_desc_data.tclas_mask = sta->mscs_ctxt->tclas_mask;
+
+	/* Support added to parse one MSCS descriptor
+	 * per MSCS request
+	 */
+	qm_req.qm_req_desc[0] = qm_desc_data;
+	wpa_printf(MSG_DEBUG,
+		   "MSCS: mscs info qm_type 0x%x dialog_token 0x%x num_desc 0x%x\n",
+		   qm_req.qm_type,
+		   qm_req.dialog_token,
+		   qm_req.num_qm_desc);
+
+	wpa_printf(MSG_DEBUG,
+		   "MSCS: mscs info params req %x bmap 0x%x limit 0x%x mask 0x%x\n",
+		   req_type, qm_desc_data.user_priority_bitmap,
+		   qm_desc_data.user_priority_limit, qm_desc_data.tclas_mask);
+
+	return hostapd_drv_set_qos(hapd, &qm_req, &qm_resp);
+}
+
+static const u8 *hostapd_parse_mscs_desc(const u8 *payload,
+		struct hostapd_mscs_desc *mscs)
+{
+	u8 elem_id, elem_id_ext, length;
+
+	if (!payload || !mscs)
+	    return NULL;
+
+	elem_id = *payload++;
+
+	if (elem_id != WLAN_EID_EXTENSION)
+		return NULL;
+
+	length = *payload++;
+
+	if (length < IEEE80211_MSCS_DESC_MIN_LEN)
+		return NULL;
+
+	elem_id_ext = *payload++;
+	if (elem_id_ext != WLAN_EID_EXT_MSCS_DESCRIPTOR) {
+		wpa_printf(MSG_ERROR,
+			   "MSCS:mscs elem %d is not available in this frame !!!\n",
+			   WLAN_EID_EXT_MSCS_DESCRIPTOR);
+		return NULL;
+	}
+
+	mscs->req_type = *payload++;
+	mscs->user_priority_control.user_priority_bitmap = *payload++;
+	mscs->user_priority_control.user_priority_limit = *payload++;
+	os_memcpy(&mscs->stream_timeout, payload, sizeof(uint32_t));
+	payload += sizeof(uint32_t);
+	mscs->tclas_mask_elem.id = *payload++;
+	mscs->tclas_mask_elem.ie_len = *payload++;
+
+	wpa_printf(MSG_DEBUG, "%s:MSCS descriptors parsed successfully\n", __func__);
+	return payload;
+
+}
+
+static const u8 *hostapd_parse_tclas_mask(const u8 *payload,
+		struct hostapd_mscs_desc *mscs)
+{
+	if (!payload || !mscs)
+		return NULL;
+
+	mscs->tclas_mask_elem.id_ext = *payload++;
+	mscs->tclas_mask_elem.classifier_type = *payload++;
+	mscs->tclas_mask_elem.classifier_mask = *payload++;
+
+	return payload;
+
+}
+
+static int hostapd_process_mscs_req(struct hostapd_data *hapd,
+		struct sta_info *sta, const u8 *payload,
+		struct hostapd_mscs_desc *mscs_desc, const u8 dialog_token)
+{
+	int ret = HOSTAPD_QM_STATUS_SUCCESS;
+	int req_type = mscs_desc->req_type;
+
+	if (req_type != QM_ADD_REQ && !sta->mscs_session_exists) {
+		wpa_printf(MSG_ERROR, "MSCS: Session is inactive\n");
+		goto decline;
+	}
+
+	if (req_type == QM_ADD_REQ && sta->mscs_session_exists) {
+		wpa_printf(MSG_ERROR, "MSCS: Session already active\n");
+		goto decline;
+	}
+
+	payload = hostapd_parse_tclas_mask(payload, mscs_desc);
+
+	if (req_type != QM_REMOVE_REQ &&
+		mscs_desc->tclas_mask_elem.id_ext != WLAN_EID_EXT_TCLAS_MASK) {
+		wpa_printf(MSG_ERROR, "MSCS: TCLAS mask absent\n");
+		goto decline;
+	}
+
+	/* Allocate MSCS context if request is ADD */
+	if (req_type == QM_ADD_REQ) {
+		sta->mscs_ctxt =
+			(struct hostapd_mscs_ctxt *)os_zalloc(
+					sizeof(struct hostapd_mscs_ctxt));
+		if (!sta->mscs_ctxt)
+		    goto decline;
+	}
+
+	switch (req_type) {
+	case QM_ADD_REQ:
+	case QM_CHANGE_REQ:
+		sta->mscs_ctxt->user_priority_bitmap =
+			mscs_desc->user_priority_control.user_priority_bitmap;
+		sta->mscs_ctxt->user_priority_limit =
+			mscs_desc->user_priority_control.user_priority_limit;
+		sta->mscs_ctxt->tclas_mask =
+			mscs_desc->tclas_mask_elem.classifier_mask;
+		ret = hostapd_copy_and_send_mscs_data(hapd, sta, req_type,
+			dialog_token);
+		/**
+		 * Set mscs session exists to true if
+		 * driver returns SUCCESS.
+		 * In case of CHANGE_REQ, the session
+		 * would be present already, so it
+		 * is okay to re-write it here.
+		 * If drv returns an ADD failure, delete the
+		 * context.
+		 */
+		if (ret == HOSTAPD_QM_STATUS_SUCCESS)
+			sta->mscs_session_exists = true;
+		else if (req_type == QM_ADD_REQ) {
+			if (!sta->mscs_ctxt)
+				goto decline;
+			os_free(sta->mscs_ctxt);
+			sta->mscs_ctxt = NULL;
+		}
+		break;
+	case QM_REMOVE_REQ:
+		if (!sta->mscs_ctxt)
+		    goto decline;
+		ret = hostapd_copy_and_send_mscs_data(hapd, sta, req_type,
+						      dialog_token);
+		sta->mscs_session_exists = false;
+		os_free(sta->mscs_ctxt);
+		sta->mscs_ctxt = NULL;
+		ret = WLAN_STATUS_TCLAS_PROCESSING_TERMINATED;
+		break;
+	default:
+		goto decline;
+	}
+	return ret;
+
+decline:
+	wpa_printf(MSG_ERROR, "MSCS: Decline Request %d", req_type);
+	return HOSTAPD_QM_STATUS_DECLINED;
+}
+
+static int hostapd_send_mscs_response(struct hostapd_data *hapd,
+		struct sta_info *sta, const u8 *da, u8 dialog_token, int status_code)
+{
+	struct wpabuf *buf;
+	size_t len;
+
+	/** exact needed size:
+	 *  Action frm header (3 bytes) +
+	 *  Status code (2 bytes) +
+	 *  MSCS descriptor
+	 **/
+	len = 5 + sizeof(struct hostapd_mscs_desc);
+	buf = wpabuf_alloc(len);
+	if (!buf) {
+		wpa_printf(MSG_ERROR, "Failed to allocate buffer for MSCS response");
+		return -1;
+	}
+
+	wpabuf_put_u8(buf, WLAN_ACTION_ROBUST_AV_STREAMING);
+	wpabuf_put_u8(buf, ROBUST_AV_MSCS_RESP);
+	wpabuf_put_u8(buf, dialog_token);
+	wpabuf_put_u8(buf, LOW_BYTE(status_code));
+	wpabuf_put_u8(buf, HIGH_BYTE(status_code));
+
+	len = wpabuf_len(buf);
+	if (hostapd_drv_send_action(hapd, hapd->iface->freq, 0, da,
+				    wpabuf_head(buf), len)) {
+		wpa_printf(MSG_ERROR, "MSCS response send action failed");
+		wpabuf_free(buf);
+		return -1;
+	}
+
+	wpa_printf(MSG_INFO, "Successfully sent MSCS response frame len %d\n",
+		   (int)len);
+	wpabuf_free(buf);
+	return 0;
+}
+
+static int hostapd_handle_mscs_req(struct hostapd_data *hapd,
+		const u8 *buf, size_t frame_length)
+{
+	const struct ieee80211_mgmt *mgmt = (const struct ieee80211_mgmt *) buf;
+	struct hostapd_mscs_desc mscs = {0};
+	struct sta_info *sta;
+	const u8 *payload, *payload_start;
+	int ret = 0;
+	u8 dialog_token;
+
+	if (!hapd->conf->mscs) {
+		wpa_printf(MSG_ERROR, "MSCS feature not enabled");
+		return -1;
+	}
+
+	sta = ap_get_sta(hapd, mgmt->sa);
+	if (!sta) {
+		wpa_printf(MSG_ERROR, "%s: STA not found", __func__);
+		return -1;
+	}
+
+	dialog_token = mgmt->u.action.u.robust_av_req.dialog_token;
+	payload_start = mgmt->u.action.u.robust_av_req.variable;
+
+	wpa_hexdump(MSG_DEBUG, "MSCS Request", payload_start, frame_length);
+	wpa_printf(MSG_DEBUG, "frame_len:%zu", frame_length);
+
+	payload = hostapd_parse_mscs_desc(payload_start, &mscs);
+	if (!payload)
+		return -1;
+
+	ret = hostapd_process_mscs_req(hapd, sta, payload, &mscs, dialog_token);
+
+	return hostapd_send_mscs_response(hapd, sta, mgmt->sa, dialog_token,
+					  ret);
+}
 
 static int hostapd_handle_scs_req(struct hostapd_data *hapd, const u8 *buf,
 				  size_t frame_length)
@@ -1231,6 +1481,10 @@ hostapd_handle_robust_av(struct hostapd_data *hapd, const u8 *buf, size_t len)
 	case ROBUST_AV_SCS_REQ:
 		if (hostapd_handle_scs_req(hapd, buf, len))
 			wpa_printf(MSG_ERROR, "SCS Request handling failed");
+		break;
+	case ROBUST_AV_MSCS_REQ:
+		if (hostapd_handle_mscs_req(hapd, buf, len))
+			wpa_printf(MSG_ERROR, "MSCS Request handling failed");
 		break;
 	default:
 		break;

@@ -1037,6 +1037,7 @@ struct hostapd_bss_config {
 
 #ifdef CONFIG_IEEE80211AX
 	bool scs;
+	bool mscs;
 #endif /* CONFIG_IEEE80211AX */
 };
 

@@ -3650,4 +3650,6 @@ struct ieee80211_ttlm_elem {
 	u8 control;
 	u8 optional[];
 } STRUCT_PACKED;
+
+#define IEEE80211_MSCS_DESC_MIN_LEN 8
 #endif /* IEEE802_11_DEFS_H */
