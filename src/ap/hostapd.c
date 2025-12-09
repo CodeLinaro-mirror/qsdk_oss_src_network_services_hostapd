@@ -906,30 +906,8 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 	vlan_deinit(hapd);
 	hostapd_acl_deinit(hapd);
 #ifndef CONFIG_NO_RADIUS
-	if (hostapd_mld_is_first_bss(hapd)) {
-#ifdef CONFIG_IEEE80211BE
-		struct hapd_interfaces *ifaces = hapd->iface->interfaces;
-		size_t i;
-
-		for (i = 0; ifaces && i < ifaces->count; i++) {
-			struct hostapd_iface *iface = ifaces->iface[i];
-			size_t j;
-
-			for (j = 0; iface && j < iface->num_bss; j++) {
-				struct hostapd_data *h = iface->bss[j];
-
-				if (hapd == h)
-					continue;
-				if (h->radius == hapd->radius)
-					h->radius = NULL;
-				if (h->radius_das == hapd->radius_das)
-					h->radius_das = NULL;
-			}
-		}
-#endif /* CONFIG_IEEE80211BE */
-		radius_client_deinit(hapd->radius);
-		radius_das_deinit(hapd->radius_das);
-	}
+	radius_client_deinit(hapd->radius);
+	radius_das_deinit(hapd->radius_das);
 	hapd->radius = NULL;
 	hapd->radius_das = NULL;
 #endif /* CONFIG_NO_RADIUS */
@@ -1779,61 +1757,6 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
 	return 0;
 }
 
-
-#ifndef CONFIG_NO_RADIUS
-static int hostapd_bss_radius_init(struct hostapd_data *hapd)
-{
-	struct hostapd_bss_config *conf;
-
-	if (!hapd)
-		return -1;
-
-	conf = hapd->conf;
-
-	if (hapd->radius) {
-		wpa_printf(MSG_DEBUG,
-			   "Skipping RADIUS client init (already done)");
-		return 0;
-	}
-
-	hapd->radius = radius_client_init(hapd, conf->radius);
-	if (!hapd->radius) {
-		wpa_printf(MSG_ERROR,
-			   "RADIUS client initialization failed.");
-		return -1;
-	}
-
-	if (conf->radius_das_port) {
-		struct radius_das_conf das_conf;
-
-		os_memset(&das_conf, 0, sizeof(das_conf));
-		das_conf.port = conf->radius_das_port;
-		das_conf.nas_identifier = conf->nas_identifier;
-		das_conf.shared_secret = conf->radius_das_shared_secret;
-		das_conf.shared_secret_len =
-			conf->radius_das_shared_secret_len;
-		das_conf.client_addr = &conf->radius_das_client_addr;
-		das_conf.time_window = conf->radius_das_time_window;
-		das_conf.require_event_timestamp =
-			conf->radius_das_require_event_timestamp;
-		das_conf.require_message_authenticator =
-			conf->radius_das_require_message_authenticator;
-		das_conf.ctx = hapd;
-		das_conf.disconnect = hostapd_das_disconnect;
-		das_conf.coa = hostapd_das_coa;
-		hapd->radius_das = radius_das_init(&das_conf);
-		if (!hapd->radius_das) {
-			wpa_printf(MSG_ERROR,
-				   "RADIUS DAS initialization failed.");
-			return -1;
-		}
-	}
-
-	return 0;
-}
-#endif /* CONFIG_NO_RADIUS */
-
-
 /**
  * hostapd_setup_bss - Per-BSS setup (initialization)
  * @hapd: Pointer to BSS data
@@ -1860,10 +1783,6 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon)
 	u8 if_addr[ETH_ALEN];
 	int flush_old_stations = 1;
 	struct hostapd_data *tx_hapd;
-
-	if (!hostapd_mld_is_first_bss(hapd))
-		wpa_printf(MSG_DEBUG,
-			   "MLD: %s: Setting non-first BSS", __func__);
 
 	wpa_printf(MSG_DEBUG, "%s(hapd=%p (%s), first=%d)",
 		   __func__, hapd, conf->iface, first);
@@ -2070,30 +1989,37 @@ setup_mld:
 	}
 #endif /* CONFIG_SQLITE */
 
-	if (hostapd_mld_is_first_bss(hapd)) {
-		if (hostapd_bss_radius_init(hapd))
-			return -1;
-	} else {
-#ifdef CONFIG_IEEE80211BE
-		struct hostapd_data *f_bss;
+	hapd->radius = radius_client_init(hapd, conf->radius);
+	if (!hapd->radius) {
+		wpa_printf(MSG_ERROR,
+			   "RADIUS client initialization failed.");
+		return -1;
+	}
 
-		f_bss = hostapd_mld_get_first_bss(hapd);
-		if (!f_bss)
-			return -1;
+	if (conf->radius_das_port) {
+		struct radius_das_conf das_conf;
 
-		if (!f_bss->radius) {
-			wpa_printf(MSG_DEBUG,
-				   "MLD: First BSS RADIUS client does not exist. Init on its behalf");
-
-			if (hostapd_bss_radius_init(f_bss))
-				return -1;
+		os_memset(&das_conf, 0, sizeof(das_conf));
+		das_conf.port = conf->radius_das_port;
+		das_conf.nas_identifier = conf->nas_identifier;
+		das_conf.shared_secret = conf->radius_das_shared_secret;
+		das_conf.shared_secret_len =
+			conf->radius_das_shared_secret_len;
+		das_conf.client_addr = &conf->radius_das_client_addr;
+		das_conf.time_window = conf->radius_das_time_window;
+		das_conf.require_event_timestamp =
+			conf->radius_das_require_event_timestamp;
+		das_conf.require_message_authenticator =
+			conf->radius_das_require_message_authenticator;
+		das_conf.ctx = hapd;
+		das_conf.disconnect = hostapd_das_disconnect;
+		das_conf.coa = hostapd_das_coa;
+		hapd->radius_das = radius_das_init(&das_conf);
+		if (!hapd->radius_das) {
+			wpa_printf(MSG_ERROR,
+				   "RADIUS DAS initialization failed.");
+ 			return -1;
 		}
-
-		wpa_printf(MSG_DEBUG,
-			   "MLD: Using RADIUS client of the first BSS");
-		hapd->radius = f_bss->radius;
-		hapd->radius_das = f_bss->radius_das;
-#endif /* CONFIG_IEEE80211BE */
 	}
 #endif /* CONFIG_NO_RADIUS */
 
