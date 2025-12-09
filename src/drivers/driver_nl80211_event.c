@@ -1301,6 +1301,7 @@ static void mlme_event_ch_switch(struct wpa_driver_nl80211_data *drv,
 				 struct nlattr *cf2,
 				 struct nlattr *punct_bitmap,
 				 struct nlattr *count,
+				 struct nlattr *power_mode_6ghz,
 				 struct nlattr *bw_device,
 				 struct nlattr *cf_device,
 				 int finished)
@@ -1374,6 +1375,11 @@ static void mlme_event_ch_switch(struct wpa_driver_nl80211_data *drv,
 		data.ch_switch.ch_width_device = convert2width(nla_get_u32(bw_device));
 	if (cf_device)
 		data.ch_switch.cf_device = nla_get_u32(cf_device);
+
+	if (power_mode_6ghz)
+		data.ch_switch.power_mode_6ghz = nla_get_u8(power_mode_6ghz);
+	else
+		data.ch_switch.power_mode_6ghz = NL80211_REG_NUM_POWER_MODES;
 
 	if (link) {
 		data.ch_switch.link_id = nla_get_u8(link);
@@ -4163,6 +4169,24 @@ qca_nl80211_6ghz_pwr_mode_change_completed(struct i802_bss *bss,
 	}
 
 	os_memset(&event, 0, sizeof(event));
+
+	event.ap_6ghz_pwr_mode_event.link_id = NL80211_DRV_LINK_ID_NA;
+	if (tb[QCA_WLAN_VENDOR_ATTR_6GHZ_LINK_ID]) {
+		event.ap_6ghz_pwr_mode_event.link_id =
+		    nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_6GHZ_LINK_ID]);
+
+		if (!nl80211_link_valid(bss->valid_links,
+					event.ap_6ghz_pwr_mode_event.link_id)) {
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: Invalid 6 GHz link ID %d",
+				   event.ap_6ghz_pwr_mode_event.link_id);
+			return;
+		}
+
+		wpa_printf(MSG_DEBUG, "nl80211: 6 GHz event - Link ID %d",
+			   event.ap_6ghz_pwr_mode_event.link_id);
+	}
+
 	event.ap_6ghz_pwr_mode_event.pwr_mode = pwr_mode;
 	wpa_printf(MSG_INFO, "nl80211: 6 GHz power mode changed %u", pwr_mode);
 	wpa_supplicant_event(bss->ctx, EVENT_6GHZ_POWER_MODE_NOTIFY, &event);
@@ -4443,7 +4467,7 @@ qca_nl80211_afc_power_update_completed(struct i802_bss *bss,
 	}
 
 	os_memset(&event, 0, sizeof(event));
-	afc_rsp = &event.afc_rsp_info;
+	afc_rsp = &event.afc_info.afc_rsp_info;
 
 	if (!afc_rsp) {
 		wpa_printf(MSG_ERROR,
@@ -4501,8 +4525,12 @@ qca_nl80211_afc_power_update_completed(struct i802_bss *bss,
 			nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_SERVER_RESP_CODE]);
 	}
 
-	wpa_printf(MSG_DEBUG, "event.afc_rsp_info.resp_id = %u",
-		   event.afc_rsp_info.resp_id);
+	wpa_printf(MSG_DEBUG, "AFC resp_id = %u", afc_rsp->resp_id);
+
+	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_HW_IDX]) {
+		event.afc_info.hw_idx =
+			nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_HW_IDX]);
+	}
 	/* Update the number of frequency range objects and opclass objects
 	 * to the AFC response structure.
 	 */
@@ -4617,6 +4645,7 @@ qca_nl80211_handle_afc_events(struct i802_bss *bss,
 			union wpa_event_data event;
 
 			os_memset(&event, 0, sizeof(event));
+			event.afc_info.hw_idx = received_hw_index;
 			wpa_supplicant_event(bss->ctx, EVENT_AFC_PAYLOAD_RESET,
 					     &event);
 			wpa_printf(MSG_DEBUG, "Handle AFC event of type %d\n",
@@ -6108,6 +6137,7 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 				     tb[NL80211_ATTR_CENTER_FREQ2],
 				     tb[NL80211_ATTR_PUNCT_BITMAP],
 				     tb[NL80211_ATTR_CH_SWITCH_COUNT],
+				     tb[NL80211_ATTR_6G_REG_POWER_MODE],
 				     tb[NL80211_ATTR_CHANNEL_WIDTH_DEVICE],
 				     tb[NL80211_ATTR_CENTER_FREQ_DEVICE],
 				     0);
@@ -6123,6 +6153,7 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 				     tb[NL80211_ATTR_CENTER_FREQ2],
 				     tb[NL80211_ATTR_PUNCT_BITMAP],
 				     NULL,
+				     tb[NL80211_ATTR_6G_REG_POWER_MODE],
 				     tb[NL80211_ATTR_CHANNEL_WIDTH_DEVICE],
 				     tb[NL80211_ATTR_CENTER_FREQ_DEVICE],
 				     1);
