@@ -8260,6 +8260,8 @@ union wpa_event_data {
 	 * struct dfs_event - Data for radar detected events
 	 * @freq: Frequency of the channel in MHz
 	 * @link_id: If >= 0, Link ID of the MLO link
+	 * @is_dfs_event_on_curr_hw: Set to true, if NL80211_CMD_RADAR_DETECT
+	 *					 received on the current hardware
 	 */
 	struct dfs_event {
 		int freq;
@@ -8273,6 +8275,7 @@ union wpa_event_data {
 		bool is_background;
 		enum chan_width chan_width_device;
 		int cf_device;
+		bool is_dfs_event_on_curr_hw;
 	} dfs_event;
 
 	/**
