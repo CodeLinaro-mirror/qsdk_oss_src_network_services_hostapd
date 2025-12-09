@@ -2559,9 +2559,14 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 
 #ifdef CONFIG_IEEE80211BE
 	if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
-		if (hapd->conf->mld_ap)
+		if (hapd->conf->mld_ap) {
+			startpos = tailpos;
 			tailpos = hostapd_eid_eht_ml_beacon(hapd, NULL,
 							    tailpos, false);
+			hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
+						   tailpos-startpos, ELEMID_CU_PARAM_EXT_ML);
+		}
+
 		tailpos = hostapd_eid_eht_capab(hapd, tailpos,
 						IEEE80211_MODE_AP);
 		startpos = tailpos;
