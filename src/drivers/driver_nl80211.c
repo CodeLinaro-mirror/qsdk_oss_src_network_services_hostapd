@@ -5365,7 +5365,7 @@ static int nl80211_put_freq_params(struct nl_msg *msg,
 		     nla_put_u32(msg, NL80211_ATTR_CENTER_FREQ2,
 				 freq->center_freq2)))
 			return -ENOBUFS;
-	} else if (freq->ht_enabled) {
+	} else if (freq->ht_enabled || ((freq->he_enabled || freq->eht_enabled) && is_24ghz)) {
 		enum nl80211_channel_type ct;
 
 		wpa_printf(MSG_DEBUG, "  * sec_channel_offset=%d",
