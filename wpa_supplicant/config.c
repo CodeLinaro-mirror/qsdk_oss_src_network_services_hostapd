@@ -3100,6 +3100,7 @@ static const struct parse_data ssid_fields[] = {
 	{ INT_RANGE(transition_disable, 0, 255) },
 	{ INT_RANGE(sae_pk, 0, 2) },
 	{ INT_RANGE(disable_40mhz_scan, 0, 1) },
+	{ INT_RANGE(beacon_tx_mode, 1, 2) },
 	{ INT_RANGE(disable_eht, 0, 1)},
 	{ INT_RANGE(disable_uhr, 0, 1)},
 	{ INT_RANGE(enable_4addr_mode, 0, 1)},
@@ -3700,6 +3701,7 @@ void wpa_config_set_network_defaults(struct wpa_ssid *ssid)
 	ssid->mac_addr = WPAS_MAC_ADDR_STYLE_NOT_SET;
 	ssid->max_oper_chwidth = DEFAULT_MAX_OPER_CHWIDTH;
 	ssid->rsn_overriding = RSN_OVERRIDING_NOT_SET;
+	ssid->beacon_tx_mode = DEFAULT_BEACON_TX_MODE;
 	ssid->drop_unicast_ip_in_l2_multicast = true;
 }
 

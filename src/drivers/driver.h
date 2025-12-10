@@ -1420,6 +1420,13 @@ struct wpa_driver_associate_params {
 	int disable_40mhz_scan;
 
 	/**
+	 * beacon_tx_mode - Beacon Tx mode
+	 * 1 = STAGGERED beacon tx mode
+	 * 2 = BURST beacon tx mode
+	 */
+	int beacon_tx_mode;
+
+	/**
 	 * disable_eht - Disable EHT for this connection
 	 */
 	int disable_eht;
@@ -1648,6 +1655,13 @@ struct wpa_driver_ap_params {
 	 * beacon_rate_type: Beacon data rate type (legacy/HT/VHT/HE)
 	 */
 	enum beacon_rate_type rate_type;
+
+	/**
+	 * beacon_tx_mode - Beacon Tx mode
+	 * 1 = STAGGERED beacon tx mode
+	 * 2 = BURST beacon tx mode
+	 */
+	int beacon_tx_mode;
 
 	/**
 	 * proberesp - Probe Response template
@@ -2029,6 +2043,7 @@ struct wpa_driver_mesh_join_params {
 	unsigned int flags;
 	bool handle_dfs;
 	int mcast_rate;
+	int beacon_tx_mode;
 };
 
 struct wpa_driver_set_key_params {

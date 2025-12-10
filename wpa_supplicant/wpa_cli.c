@@ -1521,7 +1521,7 @@ static const char *network_fields[] = {
 	"update_identifier",
 #endif /* CONFIG_HS20 */
 	"mac_addr", "pbss", "wps_disabled",
-	"disable_40mhz_scan"
+	"disable_40mhz_scan", "beacon_tx_mode"
 };
 
 

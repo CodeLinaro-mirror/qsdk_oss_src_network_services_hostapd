@@ -3519,6 +3519,15 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 
 		bss->rate_type = rate_type;
 		bss->beacon_rate = val;
+	} else if (os_strcmp(buf, "beacon_tx_mode") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 2) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid beacon_tx_mode %d",
+				   line, val);
+			return 1;
+		}
+		bss->beacon_tx_mode = val;
 	} else if (os_strcmp(buf, "preamble") == 0) {
 		if (atoi(pos))
 			conf->preamble = SHORT_PREAMBLE;

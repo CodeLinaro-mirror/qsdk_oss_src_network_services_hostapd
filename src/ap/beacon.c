@@ -2693,6 +2693,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	params->basic_rates = hapd->basic_rates;
 	params->beacon_rate = hapd->conf->beacon_rate;
 	params->rate_type = hapd->conf->rate_type;
+	params->beacon_tx_mode = hapd->conf->beacon_tx_mode;
 	params->ssid = hapd->conf->ssid.ssid;
 	params->ssid_len = hapd->conf->ssid.ssid_len;
 	if ((hapd->conf->wpa & (WPA_PROTO_WPA | WPA_PROTO_RSN)) ==
