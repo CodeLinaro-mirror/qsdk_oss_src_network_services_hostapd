@@ -1447,6 +1447,11 @@ static int hostapd_cli_cmd_driver_flags2(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, "DRIVER_FLAGS2");
 }
 
+static int hostapd_cli_cmd_channel_bw(struct wpa_ctrl *ctrl,
+					   int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "CHANNEL_BW");
+}
 
 #ifdef CONFIG_DPP
 
@@ -1877,6 +1882,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "=Add/Delete/Show/Clear deny MAC ACL" },
 	{ "poll_sta", hostapd_cli_cmd_poll_sta, hostapd_complete_stations,
 	  "<addr> = poll a STA to check connectivity with a QoS null frame" },
+	{ "channel_bw", hostapd_cli_cmd_channel_bw, NULL,
+	  "= show allowed bandwidth on each channel"},
 	{ "req_beacon", hostapd_cli_cmd_req_beacon, NULL,
 	  "<addr> [req_mode=] <measurement request hexdump>  = send a Beacon report request to a station" },
 	{ "req_link_measurement", hostapd_cli_cmd_req_link_measurement, NULL,

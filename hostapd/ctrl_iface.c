@@ -3327,6 +3327,221 @@ fail:
 }
 
 
+static int hostapd_2ghz_channel_bw(struct hostapd_hw_modes *mode, char *buf,
+				    size_t buflen)
+{
+	int ch, ret, len = 0;
+	char temp_buf[30] = {0};
+
+	for (ch = 0; ch < mode->num_channels; ch++) {
+		struct hostapd_channel_data *chan = &mode->channels[ch];
+		if (chan->flag & HOSTAPD_CHAN_DISABLED)
+			continue;
+		ret = os_snprintf(temp_buf, 30, "Channel[%d]", chan->chan);
+		if (os_snprintf_error(30, ret))
+			return len;
+		ret = os_snprintf(buf + len, buflen - len,
+				  "%-13s : %d - 20MHz HT40%c%c\n",
+				  temp_buf, chan->freq,
+				  (chan->flag & HOSTAPD_CHAN_HT40MINUS)?'-':' ',
+				  (chan->flag & HOSTAPD_CHAN_HT40PLUS)?'+':' ');
+		if (os_snprintf_error(buflen - len, ret))
+			return len;
+		len += ret;
+	}
+	return len;
+}
+
+static int hostapd_get_channel_idx(struct hostapd_hw_modes *mode,
+				    int channel_num)
+{
+	int  j=0;
+
+	for(j = 0; j < mode->num_channels; j++) {
+	       struct hostapd_channel_data *chan = &mode->channels[j];
+	       if(chan->chan == channel_num)
+			return j;
+	}
+	return -1;
+}
+
+static int hostapd_5ghz_vht_80_channel_bw(struct hostapd_hw_modes *mode,
+					  int channel_idx)
+{
+	int k, m, ok, allowed[][4] = {{36, 40, 44, 48}, {52, 56, 60, 64},
+				      {100, 104, 108, 112}, {116, 120, 124, 128},
+				      {132, 136, 140, 144}, {149, 153, 157, 161}};
+	struct hostapd_channel_data *chan = &mode->channels[channel_idx];
+
+	ok = 0;
+	for (k = 0; k < ARRAY_SIZE(allowed); k++) {
+		for(m = 0; m < ARRAY_SIZE(allowed[0]); m++) {
+			if (chan->chan == allowed[k][m]) {
+				ok = 1;
+				break;
+			}
+		 }
+		 if(ok == 1)
+			 break;
+	 }
+
+	if (ok == 0)
+		 return false;
+
+	for(m = 0; m < ARRAY_SIZE(allowed[0]); m++) {
+		channel_idx = hostapd_get_channel_idx(mode, allowed[k][m]);
+		if((channel_idx == -1) || (mode->channels[channel_idx].flag &
+		   HOSTAPD_CHAN_DISABLED))
+			return false;
+	}
+
+	 return true;
+}
+
+static bool hostapd_5ghz_vht_160_channel_bw(struct hostapd_hw_modes *mode,
+					    int channel_idx)
+{
+	int k, m, ok, allowed[][8] = {{36, 40, 44, 48, 52, 56, 60, 64},
+				      {100, 104, 108, 112, 116, 120, 124, 128}};
+	struct hostapd_channel_data *chan = &mode->channels[channel_idx];
+
+	ok = 0;
+	for (k = 0; k < ARRAY_SIZE(allowed); k++) {
+		for(m = 0; m < ARRAY_SIZE(allowed[0]); m++) {
+			if (chan->chan == allowed[k][m]) {
+				ok = 1;
+				break;
+			}
+		}
+
+		if(ok == 1)
+			break;
+	}
+
+	if (ok == 0)
+		return false;
+
+	for(m = 0; m < ARRAY_SIZE(allowed[0]); m++) {
+		channel_idx = hostapd_get_channel_idx(mode, allowed[k][m]);
+		if (channel_idx == -1 || (mode->channels[channel_idx].flag &
+		    HOSTAPD_CHAN_DISABLED))
+			return false;
+	}
+	return true;
+}
+
+static int hostapd_5ghz_ht_40_channel_bw(struct hostapd_hw_modes *mode,
+					 int channel_idx)
+{
+
+	int  k, ok, allowed[] = {36, 44, 52, 60, 100, 108, 116, 124, 132, 140,
+				 149, 157, 184, 192};
+	struct hostapd_channel_data *chan = &mode->channels[channel_idx];
+
+	if (!((chan->flag & HOSTAPD_CHAN_HT40MINUS) ||
+	    (chan->flag & HOSTAPD_CHAN_HT40PLUS)))
+		return 0;
+
+	ok = 0;
+	for (k = 0; k < ARRAY_SIZE(allowed); k++) {
+		if (chan->chan < allowed[k])
+			break;
+		if (chan->chan == allowed[k]) {
+			ok = 1;
+			break;
+		}
+	}
+
+	if (!ok && chan->chan != (allowed[k - 1] + 4))
+		ok = -1;
+
+	if (ok == 1 && (mode->channels[channel_idx + 1].flag &
+	    HOSTAPD_CHAN_DISABLED))
+		ok = -1;
+
+	if (ok != -1) {
+		if( ok == 1)
+			return HOSTAPD_CHAN_HT40PLUS;
+		else
+			return HOSTAPD_CHAN_HT40MINUS;
+	}
+	return 0;
+}
+
+static int hostapd_5ghz_channel_bw(struct hostapd_hw_modes *mode,
+				   char *buf, size_t buflen)
+{
+	int j, ret, ret_val, len = 0;
+	char temp_buf[30] = {0};
+
+	for (j = 0; j < mode->num_channels; j++) {
+		struct hostapd_channel_data *chan = &mode->channels[j];
+		if (chan->flag & HOSTAPD_CHAN_DISABLED)
+			continue;
+
+		ret = os_snprintf(temp_buf, 30, "Channel[%d]", chan->chan);
+		if (os_snprintf_error(30, ret))
+			return len;
+
+		ret = os_snprintf(buf + len, buflen - len, "%-13s : %d - 20MHz ",
+				  temp_buf, chan->freq);
+		if (os_snprintf_error(buflen - len, ret))
+			return len;
+		len += ret;
+
+		ret_val = hostapd_5ghz_ht_40_channel_bw(mode, j);
+		if(ret_val) {
+			ret = os_snprintf(buf + len, buflen - len, "HT40%s ",
+					  ret_val == HOSTAPD_CHAN_HT40PLUS? "+":"-");
+			if (os_snprintf_error(buflen - len, ret))
+				return len;
+			len += ret;
+		}
+
+		if(hostapd_5ghz_vht_80_channel_bw(mode, j)) {
+			ret = os_snprintf(buf + len, buflen - len, "80MHz ");
+			if (os_snprintf_error(buflen - len, ret))
+				return len;
+			len += ret;
+		}
+
+		if((mode->vht_capab & (VHT_CAP_SUPP_CHAN_WIDTH_160MHZ |
+		   VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ)) &&
+		   hostapd_5ghz_vht_160_channel_bw(mode, j)) {
+			ret = os_snprintf(buf + len, buflen - len, "160MHz ");
+			if (os_snprintf_error(buflen - len, ret))
+				return len;
+			len += ret;
+		}
+
+		ret = os_snprintf(buf + len, buflen - len,"\n");
+		if (os_snprintf_error(buflen - len, ret))
+			return len;
+		len += ret;
+	}
+	return len;
+}
+
+static int hostapd_ctrl_iface_channel_bw(struct hostapd_iface *iface,
+					 char *buf, size_t buflen)
+{
+	struct hostapd_data *hapd = iface->bss[0];
+	struct hostapd_hw_modes *mode;
+	int len = 0;
+	u16 num_modes, flags;
+	u8 dfs_domain;
+
+	mode = hostapd_get_hw_feature_data(hapd, &num_modes, &flags,
+					   &dfs_domain);
+
+	if (mode->mode != HOSTAPD_MODE_IEEE80211A)
+		len = hostapd_2ghz_channel_bw(mode, buf, buflen);
+	else
+		len = hostapd_5ghz_channel_bw(mode, buf, buflen);
+
+	return len;
+}
+
 static int hostapd_ctrl_iface_remove_neighbor(struct hostapd_data *hapd,
 					      char *buf)
 {
@@ -4460,6 +4675,10 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		if (radius_server_dac_request(hapd->radius_srv, buf + 12) < 0)
 			reply_len = -1;
 #endif /* RADIUS_SERVER */
+	} else if(os_strcmp(buf, "CHANNEL_BW") == 0) {
+		reply_len = hostapd_ctrl_iface_channel_bw(hapd->iface, reply,
+							  reply_size);
+
 	} else if (os_strncmp(buf, "GET_CAPABILITY ", 15) == 0) {
 		reply_len = hostapd_ctrl_iface_get_capability(
 			hapd, buf + 15, reply, reply_size);
