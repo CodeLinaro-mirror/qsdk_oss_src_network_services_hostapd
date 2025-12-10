@@ -1398,11 +1398,18 @@ struct wpa_driver_associate_params {
 	enum sae_pwe sae_pwe;
 
 	/**
-	  * Disable HE40MHz coexistence scan
-	  */
-	 int disable_40mhz_scan;
+	 * Disable HE40MHz coexistence scan
+	 */
+	int disable_40mhz_scan;
 
-	  /**
+	/**
+	 * Beacon Tx mode - To configure STAGGERED or BURST mode
+	 * 1 = STAGGERED beacon tx mode
+	 * 2 = BURST beacon tx mode
+	 */
+	int beacon_tx_mode;
+
+	/**
 	 * disable_eht - Disable EHT for this connection
 	 */
 	int disable_eht;
@@ -1887,6 +1894,13 @@ struct wpa_driver_ap_params {
 	struct mbssid_data mbssid;
 
 	/**
+	 * Beacon Tx mode - To configure STAGGERED or BURST mode
+	 * 1 = STAGGERED beacon tx mode
+	 * 2 = BURST beacon tx mode
+	 */
+	int beacon_tx_mode;
+
+	/**
 	 * punct_bitmap - Preamble puncturing bitmap
 	 * Each bit corresponds to a 20 MHz subchannel, the lowest bit for the
 	 * channel with the lowest frequency. A bit set to 1 indicates that the
@@ -1971,6 +1985,7 @@ struct wpa_driver_mesh_join_params {
 	unsigned int flags;
 	bool handle_dfs;
 	int mcast_rate;
+	int beacon_tx_mode;
 };
 
 struct wpa_driver_set_key_params {

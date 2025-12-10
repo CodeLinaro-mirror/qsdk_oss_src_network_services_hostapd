@@ -2652,6 +2652,8 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		}
 	}
 
+	params->beacon_tx_mode = hapd->conf->beacon_tx_mode;
+
 #ifdef CONFIG_IEEE80211BE
 	if (hapd->conf->mld_ap && hapd->iconf->ieee80211be &&
 	    !hapd->conf->disable_11be) {

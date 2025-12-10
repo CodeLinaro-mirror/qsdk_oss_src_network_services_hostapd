@@ -45,6 +45,7 @@
 #define DEFAULT_AMPDU_DENSITY -1 /* no change */
 #define DEFAULT_USER_SELECTED_SIM 1
 #define DEFAULT_MAX_OPER_CHWIDTH -1
+#define DEFAULT_BEACON_TX_MODE 0
 
 /* Consider global sae_pwe for SAE mechanism for PWE derivation */
 #define DEFAULT_SAE_PWE SAE_PWE_NOT_SET
@@ -1305,6 +1306,13 @@ struct wpa_ssid {
 	  * disable_40mhz_scan - Disable 40MHz coex scan
 	  */
 	int disable_40mhz_scan;
+
+	/**
+	 * beacon_tx_mode - Beacon Tx mode
+	 * 1 = STAGGERED MODE
+	 * 2 = BURST MODE
+	 */
+	int beacon_tx_mode;
 
 	 /**
 	 * disable_eht - Disable EHT (IEEE 802.11be) for this network

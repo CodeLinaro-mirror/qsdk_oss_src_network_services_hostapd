@@ -1015,6 +1015,7 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid)
 #endif /* CONFIG_HE_OVERRIDES */
 	INT(disable_eht);
 	INT(disable_40mhz_scan);
+	INT(beacon_tx_mode);
 	INT(enable_4addr_mode);
 	INT(max_idle);
 	INT(ssid_protection);
