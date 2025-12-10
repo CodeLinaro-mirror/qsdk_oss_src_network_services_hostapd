@@ -3125,7 +3125,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 		}
 
 		/* Refresh all the partner beacons */
-		hostapd_refresh_other_iface_beacons(phapd->iface);
+		hostapd_refresh_other_iface_beacons(iface);
 	}
 }
 #endif /* CONFIG_IEEE80211BE */
