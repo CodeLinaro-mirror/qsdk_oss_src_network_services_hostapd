@@ -20,6 +20,7 @@ struct ieee80211_vht_capabilities;
 struct ieee80211_mgmt;
 struct radius_sta;
 enum ieee80211_op_mode;
+struct mac_acl_entry;
 enum oper_chan_width;
 struct ieee802_11_elems;
 struct sae_pk;
@@ -62,6 +63,9 @@ void ieee802_11_mgmt_cb(struct hostapd_data *hapd, const u8 *buf, size_t len,
 			u16 stype, int ok);
 void hostapd_2040_coex_action(struct hostapd_data *hapd,
 			      const struct ieee80211_mgmt *mgmt, size_t len);
+
+int hostapd_config_read_maclist(const char *fname,
+				struct mac_acl_entry **acl, int *num);
 #ifdef NEED_AP_MLME
 int ieee802_11_get_mib(struct hostapd_data *hapd, char *buf, size_t buflen);
 int ieee802_11_get_mib_sta(struct hostapd_data *hapd, struct sta_info *sta,
