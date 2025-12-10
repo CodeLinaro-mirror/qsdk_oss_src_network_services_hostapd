@@ -268,6 +268,8 @@ int wpa_supplicant_conf_ap_ht(struct wpa_supplicant *wpa_s,
 			      struct wpa_ssid *ssid,
 			      struct hostapd_config *conf)
 {
+	int he40 = ssid->ht40;
+	bool is_24ghz = false;
 	conf->hw_mode = ieee80211_freq_to_channel_ext(ssid->frequency, 0,
 						      CONF_OPER_CHWIDTH_USE_HT,
 						      &conf->op_class,
@@ -278,6 +280,8 @@ int wpa_supplicant_conf_ap_ht(struct wpa_supplicant *wpa_s,
 		return -1;
 	}
 
+	is_24ghz = conf->hw_mode == HOSTAPD_MODE_IEEE80211G ||
+		   conf->hw_mode == HOSTAPD_MODE_IEEE80211B;
 	/*
 	 * Enable HT20 if the driver supports it, by setting conf->ieee80211n
 	 * and a mask of allowed capabilities within conf->ht_capab.
@@ -353,12 +357,12 @@ int wpa_supplicant_conf_ap_ht(struct wpa_supplicant *wpa_s,
 #endif /* CONFIG_P2P */
 		} else if (!no_ht && mode && mode->ht_capab) {
 			wpa_printf(MSG_DEBUG,
-				   "Enable HT support (p2p_group=%d 11a=%d ht40_hw_capab=%d ssid->ht40=%d)",
+				   "Enable HT support (p2p_group=%d 11a=%d ht40_hw_capab=%d ssid->ht40=%d, he40=%d)",
 				   ssid->p2p_group,
 				   conf->hw_mode == HOSTAPD_MODE_IEEE80211A,
 				   !!(mode->ht_capab &
 				      HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET),
-				   ssid->ht40);
+				   ssid->ht40, he40);
 			conf->ieee80211n = 1;
 
 			if (ssid->ht40 &&
@@ -393,10 +397,15 @@ int wpa_supplicant_conf_ap_ht(struct wpa_supplicant *wpa_s,
 			}
 #endif /* CONFIG_P2P */
 
-			if (!ssid->p2p_group &&
-			    (mode->ht_capab &
-			     HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET)) {
-				conf->secondary_channel = ssid->ht40;
+			if (!ssid->p2p_group) {
+				if (mode->he_capab[wpas_mode_to_ieee80211_mode(
+						   ssid->mode)].phy_cap[HE_PHYCAP_CHANNEL_WIDTH_SET_IDX] &
+				    HE_PHYCAP_CHANNEL_WIDTH_SET_40MHZ_IN_2G && is_24ghz) {
+					conf->secondary_channel = he40;
+				} else if (mode->ht_capab &
+				    HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET) {
+					conf->secondary_channel = ssid->ht40;
+				}
 				wpa_printf(MSG_DEBUG,
 					   "HT secondary channel offset %d for AP",
 					   conf->secondary_channel);

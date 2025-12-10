@@ -3014,6 +3014,56 @@ static int drv_supports_vht(struct wpa_supplicant *wpa_s,
 	return mode->vht_capab != 0;
 }
 
+static void ibss_mesh_setup_2G_he40(struct hostapd_freq_params *freq,
+				    struct hostapd_hw_modes *mode,
+				    struct wpa_supplicant *wpa_s,
+				    const struct wpa_ssid *ssid,
+				    int ieee80211_mode)
+{
+	struct wpa_scan_results *scan_res;
+	int he40plus2G[] = { 2412, 2417, 2422, 2427, 2432, 2437};
+	int i, res;
+	u8 pri_chan, sec_chan;
+
+	freq->vht_enabled = vht_supported(mode);
+	freq->sec_channel_offset = -1;
+
+	if (mode->he_capab[ieee80211_mode].phy_cap[HE_PHYCAP_CHANNEL_WIDTH_SET_IDX] &
+	    HE_PHYCAP_CHANNEL_WIDTH_SET_40MHZ_IN_2G)
+		freq->bandwidth = 40;
+
+	/* Setting channel offset as 1 for channel 1 to 6 and -1 for
+	 * channel 7 to 11
+	 */
+	for (i = 0; i < ARRAY_SIZE(he40plus2G); i++) {
+		if (freq->freq == he40plus2G[i])
+			freq->sec_channel_offset = 1;
+	}
+
+	freq->center_freq1 = freq->freq + freq->sec_channel_offset * 10;
+	freq->center_freq2 = 0;
+
+	if (ssid->disable_40mhz_scan) {
+		wpa_printf(MSG_DEBUG, "IBSSS: 40MHz Coex scan disabled");
+		return;
+	}
+
+	scan_res = wpa_supplicant_get_scan_results(wpa_s, NULL, 0, NULL);
+	if (scan_res == NULL)
+		goto HE20;
+
+	pri_chan = freq->channel;
+	sec_chan = pri_chan + freq->sec_channel_offset * 4;
+	res = check_40mhz_2g4(mode, scan_res, pri_chan, sec_chan);
+	wpa_scan_results_free(scan_res);
+	if (!res)
+		goto HE20;
+	return;
+HE20:
+	freq->sec_channel_offset = 0;
+	freq->bandwidth = 20;
+	freq->center_freq1 = freq->freq + freq->sec_channel_offset * 10;
+}
 
 static bool ibss_mesh_is_80mhz_avail(int channel, struct hostapd_hw_modes *mode, bool dfs_enabled)
 {
@@ -3562,6 +3612,9 @@ void ibss_mesh_setup_freq(struct wpa_supplicant *wpa_s,
 	if (freq->vht_enabled || (freq->ht_enabled && is_24ghz) || is_6ghz)
 		freq->he_enabled = ibss_mesh_can_use_he(wpa_s, ssid, mode,
 							ieee80211_mode);
+	if(is_24ghz)
+		ibss_mesh_setup_2G_he40(freq, mode, wpa_s,
+					ssid, ieee80211_mode);
 	freq->channel = channel;
 	/* Setup higher BW only for 5 and 6 GHz */
 	if (mode->mode == HOSTAPD_MODE_IEEE80211G && ssid->noscan)

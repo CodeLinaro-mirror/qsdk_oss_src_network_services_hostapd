@@ -1302,6 +1302,11 @@ struct wpa_ssid {
 	enum sae_pwe sae_pwe;
 
 	/**
+	  * disable_40mhz_scan - Disable 40MHz coex scan
+	  */
+	int disable_40mhz_scan;
+
+	 /**
 	 * disable_eht - Disable EHT (IEEE 802.11be) for this network
 	 *
 	 * By default, use it if it is available, but this can be configured
