@@ -23,6 +23,7 @@
 #include "mesh_mpm.h"
 #include "mesh_rsn.h"
 #include "notify.h"
+#include "ap/ieee802_11_auth.h"
 
 struct mesh_peer_mgmt_ie {
 	const u8 *proto_id; /* Mesh Peering Protocol Identifier (2 octets) */
@@ -1162,10 +1163,12 @@ void mesh_mpm_action_rx(struct wpa_supplicant *wpa_s,
 	enum plink_event event;
 	struct ieee802_11_elems elems;
 	struct mesh_peer_mgmt_ie peer_mgmt_ie;
+	struct radius_sta rad_info;
 	const u8 *ies;
 	size_t ie_len;
 	int ret;
 	u16 reason = 0;
+	int acl_res;
 
 	if (mgmt->u.action.category != WLAN_ACTION_SELF_PROTECTED)
 		return;
@@ -1213,9 +1216,21 @@ void mesh_mpm_action_rx(struct wpa_supplicant *wpa_s,
 		return;
 	}
 	if (action_field != PLINK_CLOSE) {
+		if (action_field != PLINK_CLOSE) {
+			acl_res = hostapd_allowed_address(hapd, mgmt->sa,
+					(const u8 *) mgmt,
+					len, &rad_info, 0);
+			if (acl_res == HOSTAPD_ACL_REJECT) {
+				wpa_printf(MSG_DEBUG,
+						"MPM: Ignore action frame\n");
+				return;
+
+			}
+		}
+
 		if (!elems.mesh_id || !elems.mesh_config) {
 			wpa_printf(MSG_DEBUG,
-				   "MPM: No Mesh ID or Mesh Configuration element");
+					"MPM: No Mesh ID or Mesh Configuration element");
 			return;
 		}
 

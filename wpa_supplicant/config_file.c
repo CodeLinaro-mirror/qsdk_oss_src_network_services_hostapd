@@ -18,6 +18,9 @@
 #include "common.h"
 #include "config.h"
 #include "base64.h"
+#ifdef CONFIG_MESH
+#include "ap/ap_config.h"
+#endif
 #include "uuid.h"
 #include "common/ieee802_1x_defs.h"
 #include "p2p/p2p.h"
@@ -942,6 +945,9 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid)
 	write_int(f, "mac_addr", ssid->mac_addr, -1);
 #ifdef CONFIG_MESH
 	STR(mesh_basic_rates);
+	 STR(accept_mac_file);
+	 STR(deny_mac_file);
+	 INT_DEF(macaddr_acl, ACCEPT_UNLESS_DENIED);
 	INT_DEF(dot11MeshMaxRetries, DEFAULT_MESH_MAX_RETRIES);
 	INT_DEF(dot11MeshRetryTimeout, DEFAULT_MESH_RETRY_TIMEOUT);
 	INT_DEF(dot11MeshConfirmTimeout, DEFAULT_MESH_CONFIRM_TIMEOUT);

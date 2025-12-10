@@ -21,6 +21,9 @@
 #include "ap/sta_info.h"
 #include "config.h"
 
+#ifdef CONFIG_MESH
+#include "ap/ap_config.h"
+#endif
 
 #if !defined(CONFIG_CTRL_IFACE) && defined(CONFIG_NO_CONFIG_WRITE)
 #define NO_CONFIG_WRITE
@@ -2817,6 +2820,9 @@ static const struct parse_data ssid_fields[] = {
 	{ INT(dot11MeshRetryTimeout) },
 	{ INT(dot11MeshConfirmTimeout) },
 	{ INT(dot11MeshHoldingTimeout) },
+	 { STR(accept_mac_file) },
+	 { STR(deny_mac_file) },
+	 { INT(macaddr_acl) },
 #endif /* CONFIG_MESH */
 	{ INT(wpa_ptk_rekey) },
 	{ INT_RANGE(wpa_deny_ptk0_rekey, 0, 2) },
@@ -3103,6 +3109,8 @@ void wpa_config_free_ssid(struct wpa_ssid *ssid)
 	os_free(ssid->p2p2_client_list);
 	os_free(ssid->bssid_ignore);
 	os_free(ssid->bssid_accept);
+	os_free(ssid->accept_mac_file);
+	os_free(ssid->deny_mac_file);
 #ifdef CONFIG_HT_OVERRIDES
 	os_free(ssid->ht_mcs);
 #endif /* CONFIG_HT_OVERRIDES */
@@ -3544,6 +3552,18 @@ int wpa_config_set(struct wpa_ssid *ssid, const char *var, const char *value,
 			}
 			ret = -1;
 		}
+#ifdef CONFIG_MESH
+		if (os_strcmp(var, "macaddr_acl") == 0) {
+			if (ssid->macaddr_acl != ACCEPT_UNLESS_DENIED &&
+			    ssid->macaddr_acl != DENY_UNLESS_ACCEPTED) {
+				wpa_printf(MSG_ERROR,
+					   "Line %d: unknown macaddr_acl %d",
+					   line, ssid->macaddr_acl);
+				ret = -1;
+			}
+		}
+#endif
+
 #ifdef CONFIG_SAE
 		if (os_strcmp(var, "ssid") == 0 ||
 		    os_strcmp(var, "psk") == 0 ||

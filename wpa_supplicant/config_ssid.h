@@ -595,6 +595,10 @@ struct wpa_ssid {
 	int dot11MeshConfirmTimeout; /* msec */
 	int dot11MeshHoldingTimeout; /* msec */
 
+	 char *accept_mac_file;
+	 char *deny_mac_file;
+	 int macaddr_acl;
+
 	/**
 	 * Mesh network layer-2 forwarding (dot11MeshForwarding)
 	 */

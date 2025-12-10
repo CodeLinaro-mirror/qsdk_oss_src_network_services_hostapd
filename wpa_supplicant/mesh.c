@@ -16,6 +16,7 @@
 #include "common/hw_features_common.h"
 #include "ap/sta_info.h"
 #include "ap/hostapd.h"
+#include "ap/ieee802_11_auth.h"
 #include "ap/ieee802_11.h"
 #include "config_ssid.h"
 #include "config.h"
@@ -505,6 +506,17 @@ static int wpa_supplicant_mesh_init(struct wpa_supplicant *wpa_s,
 		wpa_s->conf->dot11RSNASAERetransPeriod;
 	os_strlcpy(bss->conf->iface, wpa_s->ifname, sizeof(bss->conf->iface));
 
+	bss->conf->macaddr_acl = ssid->macaddr_acl;
+
+	if (ssid->accept_mac_file)
+		hostapd_config_read_maclist(ssid->accept_mac_file,
+				&bss->conf->accept_mac,
+				&bss->conf->num_accept_mac);
+
+	if (ssid->deny_mac_file)
+		hostapd_config_read_maclist(ssid->deny_mac_file,
+				&bss->conf->deny_mac,
+				&bss->conf->num_deny_mac);
 	mconf = mesh_config_create(wpa_s, ssid);
 	if (!mconf)
 		goto out_free;
@@ -587,6 +599,17 @@ void wpa_mesh_notify_peer(struct wpa_supplicant *wpa_s, const u8 *addr,
 			  const u8 *ies, size_t ie_len)
 {
 	struct ieee802_11_elems elems;
+
+	int acl_res;
+	struct hostapd_data *data = wpa_s->ifmsh->bss[0];
+	struct radius_sta rad_info;
+
+	acl_res = hostapd_allowed_address(data, addr, NULL, 0, &rad_info, 0);
+	if (acl_res == HOSTAPD_ACL_REJECT) {
+		wpa_printf(MSG_ERROR, "Ignore new peer notification\n");
+		return;
+
+	}
 
 	wpa_msg(wpa_s, MSG_INFO,
 		"new peer notification for " MACSTR, MAC2STR(addr));
