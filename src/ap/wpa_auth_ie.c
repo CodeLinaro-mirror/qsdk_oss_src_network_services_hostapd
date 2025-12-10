@@ -1493,11 +1493,9 @@ bool wpa_auth_write_fd_rsn_info(struct wpa_authenticator *wpa_auth,
 
 	/* Group Management Cipher Suite Selector (B22..B27) */
 	cipher = 63; /* Default to no cipher suite selected */
-	if (conf->ieee80211w != NO_MGMT_FRAME_PROTECTION) {
+	if (conf->ieee80211w != NO_MGMT_FRAME_PROTECTION &&
+	    conf->group_mgmt_cipher != WPA_CIPHER_AES_128_CMAC) {
 		switch (conf->group_mgmt_cipher) {
-		case WPA_CIPHER_AES_128_CMAC:
-			cipher = RSN_CIPHER_SUITE_AES_128_CMAC & 0xff;
-			break;
 		case WPA_CIPHER_BIP_GMAC_128:
 			cipher = RSN_CIPHER_SUITE_BIP_GMAC_128 & 0xff;
 			break;
