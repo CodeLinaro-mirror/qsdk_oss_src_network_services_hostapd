@@ -1225,6 +1225,8 @@ static int hostapd_config_vht_capab(struct hostapd_config *conf,
 		conf->vht_capab |= VHT_CAP_RX_ANTENNA_PATTERN;
 	if (os_strstr(capab, "[TX-ANTENNA-PATTERN]"))
 		conf->vht_capab |= VHT_CAP_TX_ANTENNA_PATTERN;
+	if (os_strstr(capab, "[EXT-NSS-BW-SUPP]"))
+		conf->vht_capab |= VHT_CAP_EXTENDED_NSS_BW_SUPPORT;
 	return 0;
 }
 #endif /* CONFIG_IEEE80211AC */

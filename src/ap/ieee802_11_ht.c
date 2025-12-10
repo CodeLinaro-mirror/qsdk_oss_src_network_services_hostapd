@@ -127,7 +127,9 @@ no_update:
 u8 * hostapd_eid_ht_operation(struct hostapd_data *hapd, u8 *eid)
 {
 	struct ieee80211_ht_operation *oper;
+	le32 vht_capabilities_info;
 	u8 *pos = eid;
+	u8 chwidth;
 
 	if (!hapd->iconf->ieee80211n || hapd->conf->disable_11n ||
 	    is_6ghz_op_class(hapd->iconf->op_class))
@@ -142,6 +144,13 @@ u8 * hostapd_eid_ht_operation(struct hostapd_data *hapd, u8 *eid)
 	oper->primary_chan = hapd->iconf->channel;
 	oper->operation_mode = host_to_le16(hapd->iface->ht_op_mode);
 	set_ht_param(hapd, oper);
+
+	vht_capabilities_info = host_to_le32(hapd->iface->current_mode->vht_capab);
+	chwidth = hostapd_get_oper_chwidth(hapd->iconf);
+	if (vht_capabilities_info & VHT_CAP_EXTENDED_NSS_BW_SUPPORT
+		&& ((chwidth == CHANWIDTH_160MHZ) || (chwidth == CHANWIDTH_80P80MHZ))) {
+		oper->operation_mode = host_to_le16(hapd->iconf->vht_oper_centr_freq_seg0_idx << 5);
+	}
 
 	pos += sizeof(*oper);
 
