@@ -174,6 +174,7 @@ void ap_list_process_beacon(struct hostapd_iface *iface,
 	struct ap_info *ap;
 	int new_ap = 0;
 	int set_beacon = 0;
+	u32 he_operation;
 
 	if (iface->conf->ap_table_max_size < 1)
 		return;
@@ -209,6 +210,17 @@ void ap_list_process_beacon(struct hostapd_iface *iface,
 		ap->ht_support = 1;
 	else
 		ap->ht_support = 0;
+
+	 if (iface->conf->ieee80211ax &&
+	     elems->he_operation) {
+		 he_operation = *(u32 *)elems->he_operation;
+
+		 if (!(he_operation & HE_OPERATION_BSS_COLOR_DISABLED))
+			 ap->color = (he_operation & HE_OPERATION_BSS_COLOR_MASK) >>
+				     HE_OPERATION_BSS_COLOR_OFFSET;
+		 else
+			 ap->color = 0;
+	}
 
 	os_get_reltime(&ap->last_beacon);
 
@@ -295,6 +307,21 @@ void ap_list_timer(struct hostapd_iface *iface)
 		ieee802_11_update_beacons(iface);
 }
 
+u64 ap_list_get_color(struct hostapd_iface *iface)
+{
+	u64 used_color_bitmap = 0;
+	struct ap_info *ap;
+
+	if (!iface->ap_list)
+		return used_color_bitmap;
+
+	ap = iface->ap_list;
+	while (ap != NULL) {
+		used_color_bitmap |= (u64)1 << ap->color;
+		ap = ap->next;
+	}
+	return used_color_bitmap;
+}
 
 int ap_list_init(struct hostapd_iface *iface)
 {

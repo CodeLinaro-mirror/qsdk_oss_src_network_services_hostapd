@@ -25,6 +25,7 @@ struct ap_info {
 	int channel;
 
 	int ht_support;
+	u8 color;
 
 	struct os_reltime last_beacon;
 };
@@ -40,6 +41,7 @@ void ap_list_process_beacon(struct hostapd_iface *iface,
 int ap_list_init(struct hostapd_iface *iface);
 void ap_list_deinit(struct hostapd_iface *iface);
 void ap_list_timer(struct hostapd_iface *iface);
+u64 ap_list_get_color(struct hostapd_iface *iface);
 #else /* NEED_AP_MLME */
 static inline int ap_list_init(struct hostapd_iface *iface)
 {
@@ -52,6 +54,11 @@ static inline void ap_list_deinit(struct hostapd_iface *iface)
 
 static inline void ap_list_timer(struct hostapd_iface *iface)
 {
+}
+
+static u64 ap_list_get_color(struct hostapd_iface *iface)
+{
+	return 0;
 }
 #endif /* NEED_AP_MLME */
 
