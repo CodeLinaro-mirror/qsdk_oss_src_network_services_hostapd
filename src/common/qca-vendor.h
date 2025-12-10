@@ -19047,6 +19047,7 @@ enum qca_wlan_vendor_attr_ap_suspend {
  * @QCA_TRAFFIC_TYPE_INVALID: Invalid traffic type
  * @QCA_TRAFFIC_TYPE_BROWSING: Traffic type is browsing website
  * @QCA_TRAFFIC_TYPE_APERIODIC_BURSTS: Traffic type is aperiodic bursts
+ * @QCA_TRAFFIC_TYPE_LIVESTREAM: Traffic type is livestream
  */
 enum qca_traffic_type {
 	QCA_TRAFFIC_TYPE_STREAMING = 0,
@@ -19058,6 +19059,7 @@ enum qca_traffic_type {
 	QCA_TRAFFIC_TYPE_INVALID = 6,
 	QCA_TRAFFIC_TYPE_BROWSING = 7,
 	QCA_TRAFFIC_TYPE_APERIODIC_BURSTS = 8,
+	QCA_TRAFFIC_TYPE_LIVESTREAM = 9,
 };
 
 /**
