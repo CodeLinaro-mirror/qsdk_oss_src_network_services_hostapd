@@ -2629,7 +2629,7 @@ static int hostapd_ctrl_iface_color_change(struct hostapd_iface *iface,
 #endif /* CONFIG_IEEE80211AX */
 
 
-static u8 hostapd_maxnss(struct hostapd_data *hapd, struct sta_info *sta)
+u8 hostapd_maxnss(struct hostapd_data *hapd, struct sta_info *sta)
 {
 	u8 *mcs_set = NULL;
 	u16 mcs_map;

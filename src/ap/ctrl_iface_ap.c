@@ -97,6 +97,47 @@ static int hostapd_get_sta_conn_time(struct sta_info *sta,
 	return ret;
 }
 
+static u8 hostapd_htmaxmcs(const u8 *mcs_set)
+{
+	u8 rates[WLAN_SUPP_RATES_MAX];
+	u8 i;
+	u8 j = -1;
+
+	for (i = 0; i < WLAN_SUPP_HT_RATES_MAX; i++) {
+		if (j == WLAN_SUPP_RATES_MAX) {
+			wpa_printf(MSG_INFO,
+				   "HT extended rate set too large; using only %u rates",
+				    j);
+			break;
+		}
+		if (mcs_set[i / 8] & (1 << (i % 8)))
+			rates[++j] = i;
+	}
+	if (j > -1)
+		return rates[j];
+
+	return 0;
+}
+
+
+static u8 hostapd_vhtmaxmcs(u16 rx_vht_mcs_map, u16 tx_vht_mcs_map)
+{
+	u8 rx_max_mcs, tx_max_mcs, max_mcs;
+
+	if (rx_vht_mcs_map && tx_vht_mcs_map) {
+		/* Refer to IEEE P802.11ac/D7.0 Figure 8-401bs
+		 * for VHT MCS Map definition
+		 */
+		rx_max_mcs = rx_vht_mcs_map & 0x03;
+		tx_max_mcs = tx_vht_mcs_map & 0x03;
+		max_mcs = rx_max_mcs < tx_max_mcs ? rx_max_mcs : tx_max_mcs;
+		if (max_mcs < 0x03)
+			return 7 + max_mcs;
+	}
+
+	return 0;
+}
+
 
 static int hostapd_get_sta_info(struct hostapd_data *hapd,
 				struct sta_info *sta,
@@ -497,6 +538,39 @@ static int hostapd_ctrl_iface_sta_mib(struct hostapd_data *hapd,
 			len += ret;
 	}
 #endif /* CONFIG_IEEE80211BE */
+
+	ret = os_snprintf(buf + len, buflen - len, "max_nss=%u\n",
+			hostapd_maxnss(hapd, sta));
+	if (!os_snprintf_error(buflen - len, ret))
+		len += ret;
+
+#ifdef CONFIG_IEEE80211AC
+	if ((sta->flags & WLAN_STA_VHT) && sta->vht_capabilities) {
+		u8 vht_maxmcs = hostapd_vhtmaxmcs(
+				le_to_host16(sta->vht_capabilities->
+					vht_supported_mcs_set.rx_map),
+				le_to_host16(sta->vht_capabilities->
+					vht_supported_mcs_set.tx_map));
+		ret = os_snprintf(buf + len, buflen - len, "max_vhtmcs=%u\n",
+				vht_maxmcs);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+#endif /* CONFIG_IEEE80211AC */
+
+#ifdef CONFIG_IEEE80211N
+	if ((sta->flags & (WLAN_STA_HT | WLAN_STA_VHT)) == WLAN_STA_HT &&
+			sta->ht_capabilities) {
+		u8 ht_maxmcs;
+
+		ht_maxmcs = hostapd_htmaxmcs(sta->ht_capabilities->
+				supported_mcs_set);
+		ret = os_snprintf(buf + len, buflen - len, "max_mcs=%u\n",
+				ht_maxmcs);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+#endif /* CONFIG_IEEE80211N */
 
 	return len;
 }
@@ -1035,6 +1109,20 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 		if (os_snprintf_error(buflen - len, ret))
 			return len;
 		len += ret;
+
+		if (mode) {
+			u16 rxmap = mode->vht_mcs_set[0] |
+				(mode->vht_mcs_set[1] << 8);
+			u16 txmap = mode->vht_mcs_set[4] |
+				(mode->vht_mcs_set[5] << 8);
+
+			ret = os_snprintf(buf + len, buflen - len,
+					"vht_max_mcs=%u\n",
+					hostapd_vhtmaxmcs(rxmap, txmap));
+			if (os_snprintf_error(buflen - len, ret))
+				return len;
+			len += ret;
+		}
 	}
 
 	if (iface->conf->ieee80211n && !hapd->conf->disable_11n) {
@@ -1069,7 +1157,32 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 		if (os_snprintf_error(buflen - len, ret))
 			return len;
 		len += ret;
+
+		if (mode && iface->conf->ieee80211n) {
+			ret = os_snprintf(buf + len, buflen - len,
+					"max_mcs=%u\n",
+					hostapd_htmaxmcs(mode->mcs_set));
+			if (os_snprintf_error(buflen - len, ret))
+				return len;
+			len += ret;
+		}
 	}
+
+	if (mode && mode->rates && mode->num_rates &&
+			mode->num_rates <= WLAN_SUPP_RATES_MAX) {
+		ret = os_snprintf(buf + len, buflen - len,
+				"max_rate=%u\n",
+				mode->rates[mode->num_rates - 1]);
+		if (os_snprintf_error(buflen - len, ret))
+			return len;
+		len += ret;
+	}
+
+	ret = os_snprintf(buf + len, buflen - len, "max_nss=%u\n",
+			hostapd_maxnss(hapd, NULL));
+	if (os_snprintf_error(buflen - len, ret))
+		return len;
+	len += ret;
 
 	for (j = 0; mode && j < mode->num_channels; j++) {
 		if (mode->channels[j].freq == iface->freq) {
