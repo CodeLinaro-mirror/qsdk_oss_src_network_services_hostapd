@@ -4971,11 +4971,12 @@ static void hostapd_switch_color_timeout_handler(void *eloop_data,
 	  * DOT11BSS_COLOR_COLLISION_AP_PERIOD (50 s by default). */
 	delta_t = hapd->last_color_collision.sec -
 		hapd->first_color_collision.sec;
-	if (delta_t < DOT11BSS_COLOR_COLLISION_AP_PERIOD)
+	if (delta_t < DOT11BSS_COLOR_COLLISION_AP_PERIOD && !hapd->no_free_color)
 		return;
 
 	neighbor_color = ap_list_get_color(hapd->iface);
-	 neighbor_color |= hapd->color_collision_bitmap;
+	if (!hapd->no_free_color)
+		 neighbor_color |= hapd->color_collision_bitmap;
 
 	 r = os_random() % HE_OPERATION_BSS_COLOR_MAX - 1;
 	 r++;
@@ -4992,10 +4993,23 @@ static void hostapd_switch_color_timeout_handler(void *eloop_data,
 			   "No free colors left, turning off BSS coloring");
 		hapd->iface->conf->he_op.he_bss_color_disabled = 1;
 		hapd->iface->conf->he_op.he_bss_color = os_random() % 63 + 1;
+		hapd->no_free_color = 1;
 		for (b = 0; b < hapd->iface->num_bss; b++)
 			ieee802_11_set_beacon(hapd->iface->bss[b]);
+
+		 /* Enabling for next check after timeout*/
+		 hapd->iface->conf->he_op.he_bss_color_disabled = 0;
+
+		 /* start timer for DOT11BSS_COLOR_COLLISION_AP_PERIOD, and check free color on timeout */
+		 if (!eloop_is_timeout_registered(hostapd_switch_color_timeout_handler, hapd, NULL))
+			 eloop_register_timeout(DOT11BSS_COLOR_COLLISION_AP_PERIOD, 0,
+					       hostapd_switch_color_timeout_handler, hapd, NULL);
+
 		return;
 	}
+
+ 	if (hapd->no_free_color)
+		 hapd->no_free_color = 0;
 
 	for (b = 0; b < hapd->iface->num_bss; b++) {
 		struct hostapd_data *bss = hapd->iface->bss[b];

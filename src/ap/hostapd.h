@@ -359,6 +359,7 @@ struct hostapd_data {
 
 #ifdef CONFIG_IEEE80211AX
 	bool cca_in_progress;
+	int no_free_color;
 	u8 cca_count;
 	u8 cca_color;
 	unsigned int cca_c_off_beacon;
