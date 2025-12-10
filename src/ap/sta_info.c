@@ -1545,8 +1545,7 @@ static int ap_sta_bind_vlan_helper(struct hostapd_data *hapd,
 	if (sta->vlan_id == old_vlanid)
 		goto skip_counting;
 
-	if (sta->vlan_id > 0 && !vlan &&
-	    !(hapd->iface->drv_flags & WPA_DRIVER_FLAGS_VLAN_OFFLOAD)) {
+	if (sta->vlan_id > 0 && !vlan) {
 		hostapd_logger(vlan_bss, sta->addr, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_DEBUG, "could not find VLAN for "
 			       "binding station to (vlan_id=%d)",
