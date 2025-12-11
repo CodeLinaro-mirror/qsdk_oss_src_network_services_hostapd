@@ -7069,7 +7069,7 @@ hostapd_reg_get_eirp_from_chan_list(struct hostapd_iface *iface, u16 freq,
 				    bool is_client_lookup,
 				    bool is_twice_pwr, s16 *eirp_pwr)
 {
-	struct hostapd_channel_data *chan_6ghz = NULL, *prim_chan;
+	struct hostapd_channel_data *chan_6ghz = NULL;
 	s16 psd_pwr;
 	u16 start_freq = (bw == 20) ? freq : center_freq - (bw / 2) + 10;
 	u8 pwr_type = (is_client_lookup) ? client_type : ap_pwr_type;
@@ -7085,14 +7085,6 @@ hostapd_reg_get_eirp_from_chan_list(struct hostapd_iface *iface, u16 freq,
 		wpa_printf(MSG_ERROR,
 			   "%s Error getting 6 GHz chan: power mode: %d freq: %d",
 			   __func__, pwr_type, start_freq);
-		return -1;
-	}
-	prim_chan = hostapd_iface_get_6ghz_chan_list(iface, freq, pwr_type,
-						     NULL, NULL);
-	if (!prim_chan) {
-		wpa_printf(MSG_ERROR,
-			   "%s Error getting prim 6 GHz chan: power mode: %d freq: %d",
-			   __func__, pwr_type, freq);
 		return -1;
 	}
 
@@ -7182,6 +7174,14 @@ hostapd_reg_get_psd_from_chan_list(struct hostapd_iface *iface, u16 freq,
 		wpa_printf(MSG_ERROR,
 			   "%s Error getting 6 GHz chan: power mode: %d freq: %d",
 			   __func__, pwr_type, start_freq);
+		return -1;
+	}
+	prim_chan = hostapd_iface_get_6ghz_chan_list(iface, freq, pwr_type,
+						     NULL, NULL);
+	if (!prim_chan) {
+		wpa_printf(MSG_ERROR,
+			   "%s Error getting prim 6 GHz chan: power mode: %d freq: %d",
+			   __func__, pwr_type, freq);
 		return -1;
 	}
 

@@ -4395,8 +4395,6 @@ void ibss_mesh_setup_freq(struct wpa_supplicant *wpa_s,
 	if (is_24ghz)
 		ibss_mesh_setup_2G_he40(freq, mode, wpa_s, ssid,
 					ieee80211_mode);
-	if (mode->mode == HOSTAPD_MODE_IEEE80211G && ssid->noscan)
-		ibss_mesh_select_40mhz(wpa_s, ssid, mode, freq, obss_scan, is_6ghz, dfs_enabled);
 
 	if (freq->he_enabled)
 		freq->eht_enabled = ibss_mesh_can_use_eht(wpa_s, ssid, mode,
