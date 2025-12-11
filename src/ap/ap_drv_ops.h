@@ -91,7 +91,8 @@ int hostapd_sta_set_airtime_weight(struct hostapd_data *hapd, const u8 *addr,
 				   unsigned int weight);
 int hostapd_set_country(struct hostapd_data *hapd, const char *country);
 int hostapd_set_tx_queue_params(struct hostapd_data *hapd, int queue, int aifs,
-				int cw_min, int cw_max, int burst_time);
+				int cw_min, int cw_max, int burst_time,
+				int acm, int noack);
 struct hostapd_hw_modes *
 hostapd_get_hw_feature_data(struct hostapd_data *hapd, u16 *num_modes,
 			    u16 *flags, u8 *dfs_domain);

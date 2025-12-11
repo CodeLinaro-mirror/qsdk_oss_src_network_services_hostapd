@@ -1719,6 +1719,61 @@ static int hostapd_get_wmm_params(struct hostapd_data *hapd, char *cmd,
 }
 
 
+static int hostapd_get_tx_queue_params(struct hostapd_data *hapd, char *cmd,
+				       char *buf, size_t buflen)
+{
+	const char *pos;
+	int ret = 0, v = 0, ac = -1;
+	struct hostapd_tx_queue_params *queue;
+
+	if (!hapd->started) {
+		wpa_printf(MSG_ERROR, "Interface is not UP");
+		return -1;
+	}
+
+	/* skip 'tx_queue_' prefix */
+	pos = cmd + 9;
+
+	if (os_strncmp(pos, "data", 4) == 0 &&
+	    pos[4] >= '0' && pos[4] <= '9' && pos[5] == '_') {
+		ac = pos[4] - '0';
+		pos += 6;
+	} else {
+		wpa_printf(MSG_ERROR, "Unknown tx_queue name '%s'", pos);
+		return -1;
+	}
+
+	if (ac < 0 || ac >= NUM_TX_QUEUES) {
+		/* for backwards compatibility, do not trigger failure */
+		wpa_printf(MSG_INFO, "DEPRECATED: '%s' not used", cmd);
+		return 0;
+	}
+
+	queue = &hapd->iface->conf->tx_queue[ac];
+
+	if (os_strcmp(pos, "aifs") == 0) {
+		v = queue->aifs;
+	} else if (os_strcmp(pos, "cwmin") == 0) {
+		v = queue->cwmin;
+	} else if (os_strcmp(pos, "cwmax") == 0) {
+		v = queue->cwmax;
+	} else if (os_strcmp(pos, "burst") == 0) {
+		v = queue->burst;
+	} else if (os_strcmp(pos, "acm") == 0) {
+		v = queue->acm;
+	} else if (os_strcmp(pos, "noack") == 0) {
+		v = queue->noack;
+	} else {
+		wpa_printf(MSG_ERROR, "Unknown tx_queue_ param '%s'", pos);
+		return -1;
+	}
+
+	ret = os_snprintf(buf, buflen, "%d\n", v);
+
+	return ret;
+}
+
+
 static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 				  char *buf, size_t buflen)
 {
@@ -1738,6 +1793,11 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		return res;
 	} else if (os_strncmp(cmd, "wmm_ac_", 7) == 0) {
 		res = hostapd_get_wmm_params(hapd, cmd, buf, buflen);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strncmp(cmd, "tx_queue_", 9) == 0) {
+		res = hostapd_get_tx_queue_params(hapd, cmd, buf, buflen);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;

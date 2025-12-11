@@ -4866,14 +4866,14 @@ struct wpa_config * wpa_config_alloc_empty(const char *ctrl_interface,
 	const struct hostapd_wmm_ac_params ac_vo = /* voice traffic */
 		{ aCWmin - 2, aCWmin - 1, 2, 1504 / 32, 0 };
 	const struct hostapd_tx_queue_params txq_bk =
-		{ 7, ecw2cw(aCWmin), ecw2cw(aCWmax), 0 };
+		{ 7, ecw2cw(aCWmin), ecw2cw(aCWmax), 0, 0, 0 };
 	const struct hostapd_tx_queue_params txq_be =
-		{ 3, ecw2cw(aCWmin), 4 * (ecw2cw(aCWmin) + 1) - 1, 0 };
+		{ 3, ecw2cw(aCWmin), 4 * (ecw2cw(aCWmin) + 1) - 1, 0, 0, 0 };
 	const struct hostapd_tx_queue_params txq_vi =
-		{ 1, (ecw2cw(aCWmin) + 1) / 2 - 1, ecw2cw(aCWmin), 30 };
+		{ 1, (ecw2cw(aCWmin) + 1) / 2 - 1, ecw2cw(aCWmin), 30, 0, 0 };
 	const struct hostapd_tx_queue_params txq_vo =
 		{ 1, (ecw2cw(aCWmin) + 1) / 4 - 1,
-		  (ecw2cw(aCWmin) + 1) / 2 - 1, 15 };
+		  (ecw2cw(aCWmin) + 1) / 2 - 1, 15, 0, 0 };
 
 #undef ecw2cw
 

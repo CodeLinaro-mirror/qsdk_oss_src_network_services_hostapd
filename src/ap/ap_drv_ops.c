@@ -880,7 +880,8 @@ int hostapd_set_country(struct hostapd_data *hapd, const char *country)
 
 
 int hostapd_set_tx_queue_params(struct hostapd_data *hapd, int queue, int aifs,
-				int cw_min, int cw_max, int burst_time)
+				int cw_min, int cw_max, int burst_time,
+				int acm, int noack)
 {
 	int link_id = -1;
 
@@ -894,7 +895,7 @@ int hostapd_set_tx_queue_params(struct hostapd_data *hapd, int queue, int aifs,
 
 	return hapd->driver->set_tx_queue_params(hapd->drv_priv, queue, aifs,
 						 cw_min, cw_max, burst_time,
-						 link_id);
+						 acm, noack, link_id);
 }
 
 
