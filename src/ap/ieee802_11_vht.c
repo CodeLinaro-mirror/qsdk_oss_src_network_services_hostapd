@@ -26,6 +26,7 @@ u8 * hostapd_eid_vht_capabilities(struct hostapd_data *hapd, u8 *eid, u32 nsts)
 	struct ieee80211_vht_capabilities *cap;
 	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
 	u8 *pos = eid;
+	u8 chwidth;
 
 	if (!mode || is_6ghz_op_class(hapd->iconf->op_class))
 		return eid;

@@ -9892,8 +9892,6 @@ static int wpa_driver_nl80211_if_remove(struct i802_bss *bss,
 		wpa_printf(MSG_DEBUG, "nl80211: First BSS - reassign context");
 		bss->in_deinit = 1;
 		nl80211_remove_links(bss);
-		nl80211_destroy_bss(bss);
-		if (!bss->added_if)
 		nlmode = drv->nlmode;
 		if (!bss->start_iface_up)
 			i802_set_iface_flags(bss, 0);

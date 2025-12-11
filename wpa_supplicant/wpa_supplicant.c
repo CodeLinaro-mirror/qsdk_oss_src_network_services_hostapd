@@ -3654,8 +3654,6 @@ void ibss_mesh_setup_freq(struct wpa_supplicant *wpa_s,
 							  ieee80211_mode);
 
 	/* Setup higher BW only for 5 and 6 GHz */
-	if (mode->mode == HOSTAPD_MODE_IEEE80211G && ssid->noscan)
-		ibss_mesh_select_40mhz(wpa_s, ssid, mode, freq, obss_scan, is_6ghz, dfs_enabled);
 	if (mode->mode == HOSTAPD_MODE_IEEE80211A) {
 		ibss_mesh_select_40mhz(wpa_s, ssid, mode, freq, obss_scan,
 				       is_6ghz, dfs_enabled);
