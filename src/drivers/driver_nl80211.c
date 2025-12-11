@@ -8961,7 +8961,7 @@ static int i802_read_sta_data(struct i802_bss *bss,
 
 static int i802_set_tx_queue_params(void *priv, int queue, int aifs,
 				    int cw_min, int cw_max, int burst_time,
-				    int link_id)
+				    int acm, int noack, int link_id)
 {
 	struct i802_bss *bss = priv;
 	struct wpa_driver_nl80211_data *drv = bss->drv;
@@ -9006,7 +9006,9 @@ static int i802_set_tx_queue_params(void *priv, int queue, int aifs,
 			(burst_time * 100 + 16) / 32) ||
 	    nla_put_u16(msg, NL80211_TXQ_ATTR_CWMIN, cw_min) ||
 	    nla_put_u16(msg, NL80211_TXQ_ATTR_CWMAX, cw_max) ||
-	    nla_put_u8(msg, NL80211_TXQ_ATTR_AIFS, aifs))
+	    nla_put_u8(msg, NL80211_TXQ_ATTR_AIFS, aifs) ||
+	    nla_put_u8(msg, NL80211_TXQ_ATTR_ACM, acm) ||
+	    nla_put_u8(msg, NL80211_TXQ_ATTR_NOACK, noack))
 		goto fail;
 
 	nla_nest_end(msg, params);
@@ -9019,8 +9021,9 @@ static int i802_set_tx_queue_params(void *priv, int queue, int aifs,
 
 	res = send_and_recv_cmd(drv, msg);
 	wpa_printf(MSG_DEBUG,
-		   "nl80211: link=%d: TX queue param set: queue=%d aifs=%d cw_min=%d cw_max=%d burst_time=%d --> res=%d",
-		   link_id, queue, aifs, cw_min, cw_max, burst_time, res);
+		   "nl80211: link=%d: TX queue param set: queue=%d aifs=%d cw_min=%d"
+		   "cw_max=%d burst_time=%d acm %d noack %d--> res=%d",
+		   link_id, queue, aifs, cw_min, cw_max, burst_time, acm, noack, res);
 	if (res == 0)
 		return 0;
 	msg = NULL;
