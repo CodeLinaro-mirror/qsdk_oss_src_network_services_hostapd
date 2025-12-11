@@ -264,14 +264,14 @@ struct hostapd_config * hostapd_config_defaults(void)
 	struct hostapd_bss_config *bss;
 	const int aCWmin = 4, aCWmax = 10;
 	const struct hostapd_tx_queue_params txq_bk =
-		{ 7, ecw2cw(aCWmin), ecw2cw(aCWmax), 0 };
+		{ 7, ecw2cw(aCWmin), ecw2cw(aCWmax), 0, 0, 0 };
 	const struct hostapd_tx_queue_params txq_be =
-		{ 3, ecw2cw(aCWmin), 4 * (ecw2cw(aCWmin) + 1) - 1, 0};
+		{ 3, ecw2cw(aCWmin), 4 * (ecw2cw(aCWmin) + 1) - 1, 0, 0, 0};
 	const struct hostapd_tx_queue_params txq_vi =
-		{ 1, (ecw2cw(aCWmin) + 1) / 2 - 1, ecw2cw(aCWmin), 30};
+		{ 1, (ecw2cw(aCWmin) + 1) / 2 - 1, ecw2cw(aCWmin), 30, 0, 0};
 	const struct hostapd_tx_queue_params txq_vo =
 		{ 1, (ecw2cw(aCWmin) + 1) / 4 - 1,
-		  (ecw2cw(aCWmin) + 1) / 2 - 1, 15};
+		  (ecw2cw(aCWmin) + 1) / 2 - 1, 15, 0, 0};
 
 #undef ecw2cw
 
