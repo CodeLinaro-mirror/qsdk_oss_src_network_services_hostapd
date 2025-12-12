@@ -632,6 +632,8 @@ struct hostapd_bss_config {
 
 	u8 qos_map_set[16 + 2 * 21];
 	unsigned int qos_map_set_len;
+	int bss_priority;
+	int bss_priority_status;
 
 	int proxy_arp;
 	int na_mcast_to_ucast;
