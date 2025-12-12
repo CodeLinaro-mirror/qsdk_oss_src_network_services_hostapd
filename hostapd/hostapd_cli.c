@@ -893,8 +893,52 @@ static int hostapd_cli_cmd_set_qos_map_set(struct wpa_ctrl *ctrl,
 }
 
 
+#ifdef CONFIG_INTERWORKING
+static int hostapd_cli_cmd_set_bss_priority(struct wpa_ctrl *ctrl,
+					    int argc, char *argv[])
+{
+	char buf[50];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid 'bss_priority' command - "
+				"one argument <0..3> is needed\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "SET_BSS_PRIORITY %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res))
+		return -1;
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+
+static int hostapd_cli_cmd_set_bss_priority_status(struct wpa_ctrl *ctrl,
+						   int argc, char *argv[])
+{
+	char buf[50];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid 'set_bss_priority_status' command - "
+			"one argument (0-disable 1-enable) is needed\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf),
+			"SET_BSS_PRIORITY_STATUS %s", argv[0]);
+	if (os_snprintf_error(sizeof(buf), res))
+		return -1;
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+#endif /* CONFIG_INTERWORKING */
+
+
 static int hostapd_cli_cmd_send_qos_map_conf(struct wpa_ctrl *ctrl,
-					     int argc, char *argv[])
+		int argc, char *argv[])
 {
 	char buf[50];
 	int res;
@@ -2256,6 +2300,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "send_qos_map_conf", hostapd_cli_cmd_send_qos_map_conf,
 	  hostapd_complete_stations,
 	  "<addr> = send QoS Map Configure frame" },
+	{ "bss_priority", hostapd_cli_cmd_set_bss_priority, NULL,
+	  "set bss_priority 0-bk 1-be 2-vi 3-vo" },
+	{ "set_bss_priority_status", hostapd_cli_cmd_set_bss_priority_status,
+	  NULL, "set enable_bss_priority 0-disable 1-enable" },
 	{ "chan_switch", hostapd_cli_cmd_chan_switch, NULL,
 	  "<cs_count> <freq> [sec_channel_offset=] [center_freq1=]\n"
 	  "  [center_freq2=] [bandwidth=] [bandwidth_device=] \n"

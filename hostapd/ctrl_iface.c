@@ -91,6 +91,8 @@
 #define MAX_ML_RECONF_COUNT 50
 #endif /* CONFIG_IEEE80211BE */
 
+#define QOS_MAP_LEN 16
+
 static void hostapd_ctrl_iface_send(struct hostapd_data *hapd, int level,
 				    enum wpa_msg_type type,
 				    const char *buf, size_t len);
@@ -760,7 +762,83 @@ static int hostapd_ctrl_iface_send_qos_map_conf(struct hostapd_data *hapd,
 	return ret;
 }
 
-#endif /* CONFIG_INTERWORKING */
+
+static int hostapd_ctrl_iface_set_bss_priority(struct hostapd_data *hapd,
+					       const char *cmd)
+{
+	const char *pos = cmd;
+	int val = atoi(pos);
+	int ret;
+	static const u8 qos_map_for_bss_priority[][QOS_MAP_LEN] = {
+		/* bss_priority = 0: DSCP 0–63 mapped via UP2 =>TID2 others unused */
+		{ 255, 255, 255, 255, 0, 63, 255, 255,
+		  255, 255, 255, 255, 255, 255, 255, 255 },
+		/* bss_priority = 1: DSCP 0–63 mapped via UP0 => TID0 */
+		{ 0, 63, 255, 255, 255, 255, 255, 255,
+		  255, 255, 255, 255, 255, 255, 255, 255 },
+		/* bss_priority = 2: DSCP 0–63 mapped via UP4 = TID4 */
+		{ 255, 255, 255, 255, 255, 255, 255, 255,
+		  0, 63, 255, 255, 255, 255, 255, 255 },
+		/* bss_priority = 3: DSCP 0–63 mapped via UP6 = TID6 */
+		{ 255, 255, 255, 255, 255, 255, 255, 255,
+		  255, 255, 255, 255, 0, 63, 255, 255 },
+	};
+
+	if (val < 0 || val >= WMM_AC_NUM) {
+		wpa_printf(MSG_INFO, "invalid value for bss_priority %d", val);
+		return -1;
+	}
+
+	if (!hapd->conf->bss_priority_status) {
+		wpa_printf(MSG_ERROR, "bss_priority_status not set");
+		return -1;
+	}
+
+	ret = hostapd_drv_set_qos_map(hapd, qos_map_for_bss_priority[val],
+				      QOS_MAP_LEN);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "set_qos_map failed");
+		return -1;
+	}
+
+	hapd->conf->bss_priority = val;
+
+	wpa_printf(MSG_DEBUG, "BSS priority set to %d", val);
+
+	return 0;
+}
+
+
+static int hostapd_ctrl_iface_set_bss_priority_status(struct hostapd_data *hapd,
+						      const char *cmd)
+{
+	const char *pos = cmd;
+	int val = atoi(pos);
+	int ret = 0;
+
+	if (val < 0 || val > 1) {
+		wpa_printf(MSG_INFO,
+			   "invalid value for bss_priority_status %d", val);
+		return -1;
+	}
+
+	hapd->conf->bss_priority_status = val;
+
+	if (!hapd->conf->bss_priority_status) {
+		/* If the feature is disabled, restore configured QoS Map Set if any */
+		if (hapd->conf->qos_map_set_len > 0) {
+			ret = hostapd_drv_set_qos_map(hapd,
+						      hapd->conf->qos_map_set,
+						      hapd->conf->qos_map_set_len);
+		} else {
+			/* No custom QoS map configured, clear any existing mapping */
+			ret = hostapd_drv_set_qos_map(hapd, NULL, 0);
+		}
+	}
+
+	return ret;
+}
+
 
 static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 					       const char *cmd)
@@ -818,6 +896,9 @@ static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 
 	return 0;
 }
+
+#endif /* CONFIG_INTERWORKING */
+
 
 static int hostapd_ctrl_send_unsolicited_dscp_req(struct hostapd_data *hapd, const char *cmd)
 {
@@ -6162,6 +6243,12 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 			reply_len = -1;
 	} else if (os_strncmp(buf, "SEND_QOS_MAP_CONF ", 18) == 0) {
 		if (hostapd_ctrl_iface_send_qos_map_conf(hapd, buf + 18))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "SET_BSS_PRIORITY_STATUS ", 23) == 0) {
+		if (hostapd_ctrl_iface_set_bss_priority_status(hapd, buf + 23))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "SET_BSS_PRIORITY ", 16) == 0) {
+		if (hostapd_ctrl_iface_set_bss_priority(hapd, buf + 16))
 			reply_len = -1;
 #endif /* CONFIG_INTERWORKING */
 #ifdef CONFIG_HS20
