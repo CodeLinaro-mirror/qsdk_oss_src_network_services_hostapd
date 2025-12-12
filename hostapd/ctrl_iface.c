@@ -841,6 +841,40 @@ static int hostapd_ctrl_iface_set_bss_priority_status(struct hostapd_data *hapd,
 }
 
 
+static int hostapd_ctrl_iface_get_bss_priority(struct hostapd_data *hapd,
+					       char *buf, size_t buflen)
+{
+	int ret;
+
+	ret = os_snprintf(buf, buflen, "%d\n", hapd->conf->bss_priority);
+
+	if (os_snprintf_error(buflen, ret)) {
+		wpa_printf(MSG_ERROR,
+			   "get_bss_priority: buffer too small (len=%zu)", buflen);
+		return -1;
+	}
+
+	return ret;
+}
+
+
+static int hostapd_ctrl_iface_get_bss_priority_status(struct hostapd_data *hapd,
+		char *buf, size_t buflen)
+{
+	int ret;
+
+	ret = os_snprintf(buf, buflen, "%d\n", hapd->conf->bss_priority_status);
+
+        if (os_snprintf_error(buflen, ret)) {
+                wpa_printf(MSG_ERROR,
+                           "get_bss_priority: buffer too small (len=%zu)", buflen);
+                return -1;
+        }
+
+	return ret;
+}
+
+
 static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 					       const char *cmd)
 {
@@ -6920,6 +6954,12 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "SET_BSS_PRIORITY ", 16) == 0) {
 		if (hostapd_ctrl_iface_set_bss_priority(hapd, buf + 16))
 			reply_len = -1;
+	} else if (os_strncmp(buf, "GET_BSS_PRIORITY_STATUS ", 23) == 0) {
+		reply_len = hostapd_ctrl_iface_get_bss_priority_status(
+				hapd, reply, reply_size);
+	} else if (os_strncmp(buf, "GET_BSS_PRIORITY ", 16) == 0) {
+		reply_len = hostapd_ctrl_iface_get_bss_priority(
+				hapd, reply, reply_size);
 #endif /* CONFIG_INTERWORKING */
 #ifdef CONFIG_HS20
 	} else if (os_strncmp(buf, "HS20_DEAUTH_REQ ", 16) == 0) {
