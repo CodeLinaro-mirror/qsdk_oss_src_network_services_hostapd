@@ -1372,6 +1372,88 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 			return len;
 		len += ret;
 
+		if (bss->conf->supported_rates) {
+			ret = os_snprintf(buf + len, buflen - len,
+					  "supported_rates[%d]=",
+					  (int) i);
+			if (os_snprintf_error(buflen - len, ret))
+				return len;
+			len += ret;
+			for (j = 0; bss->conf->supported_rates[j] >= 0; j++) {
+				ret = os_snprintf(buf + len, buflen - len, "%s%d",
+						  j ? " " : "",
+						  bss->conf->supported_rates[j]);
+				if (os_snprintf_error(buflen - len, ret))
+					return len;
+				len += ret;
+			}
+			ret = os_snprintf(buf + len, buflen - len, "\n");
+			if (os_snprintf_error(buflen - len, ret))
+				return len;
+			len += ret;
+		}
+
+		if (bss->conf->basic_rates) {
+			ret = os_snprintf(buf + len, buflen - len,
+					  "basic_rates[%d]=",
+					  (int) i);
+			if (os_snprintf_error(buflen - len, ret))
+				return len;
+			len += ret;
+			for (j = 0; bss->conf->basic_rates[j] >= 0; j++) {
+				ret = os_snprintf(buf + len, buflen - len, "%s%d",
+						  j ? " " : "",
+						  bss->conf->basic_rates[j]);
+				if (os_snprintf_error(buflen - len, ret))
+					return len;
+				len += ret;
+			}
+			ret = os_snprintf(buf + len, buflen - len, "\n");
+			if (os_snprintf_error(buflen - len, ret))
+				return len;
+			len += ret;
+		}
+
+		if (bss->conf->beacon_rate) {
+			const char *br_type;
+			switch (bss->conf->rate_type) {
+			case BEACON_RATE_HT:
+				br_type = "ht-mcs";
+				break;
+			case BEACON_RATE_VHT:
+				br_type = "vht-mcs";
+				break;
+			case BEACON_RATE_HE:
+				br_type = "he-mcs";
+				break;
+			case BEACON_RATE_EHT:
+				br_type = "eht-mcs";
+				break;
+			default:
+				br_type = "legacy";
+				break;
+			}
+			if (bss->conf->rate_type == BEACON_RATE_LEGACY) {
+				ret = os_snprintf(buf + len, buflen - len,
+						"beacon_rate[%d]=%u.%u Mbps\n",
+						(int) i,
+						bss->conf->beacon_rate / 10,
+						bss->conf->beacon_rate % 10);
+			} else {
+				ret = os_snprintf(buf + len, buflen - len,
+						"beacon_rate[%d]=%s:%u\n",
+						(int) i, br_type,
+						bss->conf->beacon_rate);
+			}
+		} else {
+			ret = os_snprintf(buf + len, buflen - len,
+					  "beacon_rate[%d]=auto\n",
+					  (int) i);
+		}
+		if (os_snprintf_error(buflen - len, ret))
+			return len;
+		len += ret;
+
 #ifdef CONFIG_IEEE80211BE
 		if (bss->conf->mld_ap) {
 			ret = os_snprintf(buf + len, buflen - len,

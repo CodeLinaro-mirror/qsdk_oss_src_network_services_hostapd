@@ -1557,3 +1557,6 @@ void hostapd_remove_acl_mac(struct mac_acl_entry **acl, int *num,
 bool hostapd_config_check_bss_6g(struct hostapd_bss_config *bss);
 
 #endif /* HOSTAPD_CONFIG_H */
+
+bool hostapd_is_beacon_tx_rate_preamble_valid(const struct hostapd_config *iconf,
+                                             const struct hostapd_bss_config *bss);
