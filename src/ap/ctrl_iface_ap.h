@@ -66,6 +66,7 @@ void hostapd_ctrl_iface_acl_clear_list(struct mac_acl_entry **acl,
 				       int *num);
 int hostapd_ctrl_iface_acl_show_mac(struct mac_acl_entry *acl, int num,
 				    char *buf, size_t buflen);
+int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd);
 int hostapd_disassoc_accept_mac(struct hostapd_data *hapd);
 int hostapd_disassoc_deny_mac(struct hostapd_data *hapd);
 u8 hostapd_maxnss(struct hostapd_data *hapd, struct sta_info *sta);

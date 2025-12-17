@@ -2701,6 +2701,217 @@ int hostapd_ctrl_iface_acl_add_mac(struct mac_acl_entry **acl, int *num,
 }
 
 
+#ifdef CONFIG_IEEE80211AX
+int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
+{
+	struct hostapd_multi_mbssid_group *group;
+	struct hostapd_data *tx_hapd, *bss;
+	bool error = false, auto_start = false;
+	u8 current_bss_index, group_size;
+	char *token, *context = NULL;
+	u32 bitmap_stopped = 0, *mbssid_idx_bmap;
+	int ret, i, j, reorder_done_index = -1;
+	size_t num_bss;
+
+	if (!hapd || !hapd->iconf || !hapd->iface || !hapd->conf) {
+		wpa_printf(MSG_ERROR, "Invalid BSS");
+		return -1;
+	}
+
+	if (!hapd->started) {
+		wpa_printf(MSG_ERROR, "%s is not started", hapd->conf->iface);
+		return -1;
+	}
+
+	if (hapd->iconf->mbssid == MBSSID_DISABLED) {
+		wpa_printf(MSG_INFO, "%s is not part of any MBSSID group",
+			   hapd->conf->iface);
+		return -1;
+	}
+
+	if (cmd[0] != '\0') {
+		token = str_token((char *) cmd, " ", &context);
+		if (token) {
+			if (os_strncmp(token, "auto_start", 10) == 0) {
+				auto_start = true;
+			} else {
+				wpa_printf(MSG_ERROR,
+					   "Incorrect command parameter %s",
+					   token);
+				return -1;
+			}
+		}
+	}
+
+	tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
+	if (tx_hapd == hapd) {
+		wpa_printf(MSG_INFO,
+			   "%s is already the transmitted profile of MBSSID group",
+			   hapd->conf->iface);
+		return 0;
+	}
+
+	/* Retrive the MBSSID index bitmap to be updated after changing
+	 * transmitting interface.
+	 */
+	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
+		group_size = hapd->iface->conf->group_size;
+		group = hapd->mbssid_group;
+		if (!group) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid MBSSID group for the provided interface");
+			return -1;
+		}
+
+		mbssid_idx_bmap = &group->mbssid_idx_bmap;
+	} else {
+		group_size = 1 << hostapd_max_bssid_indicator(hapd);
+		mbssid_idx_bmap = &hapd->iface->mbssid_idx_bmap;
+	}
+
+	/* Store the current MBSSID index of the non-transmitted profile which
+	 * is to be the new transmitting profile.
+	 */
+	current_bss_index = hapd->mbssid_idx;
+	num_bss = hostapd_get_mbssid_max_num_bss(hapd);
+
+	/* Stop all non-transmitted profiles from the MBSSID group */
+	for (i = 0; i < num_bss; i++) {
+		if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
+			bss = hostapd_get_multi_group_bss(group, i);
+		else
+			bss = hapd->iface->bss[i];
+
+		if (!bss || !bss->conf || !bss->started ||
+		    !bss->beacon_set_done || bss == tx_hapd)
+			continue;
+
+		ret = hostapd_drv_stop_ap(bss);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "Failed to stop %s link %u",
+				   bss->conf->iface, bss->mld_link_id);
+			goto fail_stop;
+		} else {
+			bitmap_stopped |= BIT(i);
+			wpa_printf(MSG_DEBUG, "Stopped %s link %u",
+				   bss->conf->iface, bss->mld_link_id);
+		}
+	}
+
+	/* Stopped the transmitted profiles of the MBSSID group */
+	ret = hostapd_drv_stop_ap(tx_hapd);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "Failed to stop %s link %u",
+			   tx_hapd->conf->iface, tx_hapd->mld_link_id);
+		goto fail_stop;
+	} else {
+		bitmap_stopped |= BIT(0);
+		wpa_printf(MSG_DEBUG, "Stopped %s link %u",
+			   tx_hapd->conf->iface, tx_hapd->mld_link_id);
+	}
+
+	*mbssid_idx_bmap = 0;
+	/* Rotate the interface array or group BSS list such that the new
+	 * transmitting profile comes to the front, stop rotation once this
+	 * happens. Shift the MBSSID indices for each profile with respect to
+	 * the new transmitting profile.
+	 */
+	for (i = 0; i < num_bss; i++) {
+		if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
+			if (reorder_done_index < 0)
+				bss = hostapd_get_multi_group_bss(group, 0);
+			else
+				bss = hostapd_get_multi_group_bss(group,
+								  i - reorder_done_index);
+		} else {
+			if (reorder_done_index < 0)
+				bss = hapd->iface->bss[0];
+			else
+				bss = hapd->iface->bss[i - reorder_done_index];
+		}
+
+		if (!bss || !bss->conf || !bss->started)
+			continue;
+
+		if (bss->mbssid_idx < current_bss_index)
+			bss->mbssid_idx += group_size;
+
+		bss->mbssid_idx -= current_bss_index;
+		*mbssid_idx_bmap |= BIT(bss->mbssid_idx);
+
+		if (!bss->mbssid_idx) {
+			reorder_done_index = i;
+		} else if (reorder_done_index < 0) {
+			if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
+				dl_list_del(&bss->mbssid_bss);
+				dl_list_add_tail(&group->bss_list, &bss->mbssid_bss);
+			} else {
+				for (j = 0; j < num_bss - 1; j++)
+					hapd->iface->bss[j] = hapd->iface->bss[j + 1];
+				hapd->iface->bss[num_bss - 1] = bss;
+			}
+		}
+	}
+
+	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
+		group->txbss = hapd;
+
+	if (!auto_start)
+		return 0;
+
+	/* Restart all profiles with transmitting profile first */
+	for (i = 0; i < num_bss; i++) {
+		if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
+			bss = hostapd_get_multi_group_bss(group, i);
+		else
+			bss = hapd->iface->bss[i];
+
+		if (!bss || !bss->conf || !bss->started)
+			continue;
+
+		ret = ieee802_11_set_beacon(bss);
+		if (ret) {
+			wpa_printf(MSG_ERROR,
+				   "Failed to start %s link %u after setting new tranmitting profile\n",
+				   bss->conf->iface, bss->mld_link_id);
+			error = true;
+		}
+	}
+
+	if (error)
+		return -1;
+
+	return 0;
+
+fail_stop:
+	/* Failed to stop some profile, restart the already stopped once to
+	 * return the system to original state.
+	 */
+	for (i = 0; i < num_bss; i++) {
+		if (!(bitmap_stopped & BIT(i)))
+			continue;
+
+		if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
+			bss = hostapd_get_multi_group_bss(group, i);
+		else
+			bss = hapd->iface->bss[i];
+
+		if (!bss || !bss->conf || !bss->started)
+			continue;
+
+		ret = ieee802_11_set_beacon(bss);
+		if (ret) {
+			wpa_printf(MSG_ERROR,
+				   "Failed to restart %s link %u\n",
+				   bss->conf->iface, bss->mld_link_id);
+		}
+	}
+
+	return -1;
+}
+#endif /* CONFIG_IEEE80211AX */
+
+
 int hostapd_disassoc_accept_mac(struct hostapd_data *hapd)
 {
 	struct sta_info *sta;
