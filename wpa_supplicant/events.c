@@ -3342,6 +3342,21 @@ static void interworking_process_assoc_resp(struct wpa_supplicant *wpa_s,
 
 static void wpa_supplicant_set_4addr_mode(struct wpa_supplicant *wpa_s)
 {
+	if (!wpa_s) {
+		wpa_printf(MSG_ERROR, "wpa_s is NULL in set_4addr_mode");
+		return;
+	}
+
+	if (!wpa_s->current_ssid) {
+		wpa_printf(MSG_DEBUG, "No current SSID, skipping 4addr mode setup");
+		return;
+	}
+
+	if (!wpa_s->current_ssid->enable_4addr_mode) {
+		wpa_printf(MSG_DEBUG, "4addr mode not enabled in config");
+		return;
+	}
+
 	if (wpa_s->enabled_4addr_mode) {
 		wpa_printf(MSG_DEBUG, "4addr mode already set");
 		return;
@@ -5336,8 +5351,7 @@ static int wpa_supplicant_event_assoc(struct wpa_supplicant *wpa_s,
 	wpa_s->dpp_pfs_fallback = 0;
 #endif /* CONFIG_DPP2 */
 
-	if (wpa_s->current_ssid && wpa_s->current_ssid->enable_4addr_mode)
-		wpa_supplicant_set_4addr_mode(wpa_s);
+	wpa_supplicant_set_4addr_mode(wpa_s);
 
 	/* WAR: Check if all the links configured by user are associated,
 	 * otherwise trigger a scan request in background to re-associate
