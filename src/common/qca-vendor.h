@@ -1705,6 +1705,9 @@ enum qca_radiotap_vendor_ids {
  *
  * @QCA_NL80211_VENDOR_SUBCMD_AFC_RESET: Vendor subcommand to trigger reset of
  * 	AFC expiry timer in firmware.
+ *
+ * @QCA_NL80211_VENDOR_SUBCMD_DERIVE_LINK_BSS_ADDR: Vendor subcommand to set
+ *	vendor based MAC address.
  */
 enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_UNSPEC = 0,
@@ -1993,6 +1996,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_240MHZ_INFO = 508,
 	QCA_NL80211_VENDOR_SUBCMD_DCS_WLAN_INTERFERENCE_COMPUTE = 509,
 	QCA_NL80211_VENDOR_SUBCMD_AFC_FETCH_POWER_EVENT = 510,
+	QCA_NL80211_VENDOR_SUBCMD_DERIVE_LINK_BSS_ADDR = 512,
 };
 
 /* Attributes for the 6 GHz power-mode vendor command and completion event. */
