@@ -618,6 +618,143 @@ static int wpa_cli_cmd_set_bgscan_freq(struct wpa_ctrl *ctrl, int argc,
 }
 
 
+static int parse_long(const char *s, long *res)
+{
+	char *end = NULL;
+	long tmp;
+
+	if (!s || *s == '\0')
+		return -1;
+
+	tmp = strtol(s, &end, 10);
+	if (*end != '\0')
+		return -1;
+
+	*res = tmp;
+
+	return 0;
+}
+
+
+static int validate_simple_params(long short_int, long sig_thr,
+				  long long_int, long btm_queries,
+				  int have_btm)
+{
+	if (short_int <= 0) {
+		printf("Invalid short interval: must be > 0 (seconds)\n");
+		return -1;
+	}
+
+	if (sig_thr >= 0 || sig_thr < -200) {
+		printf("Invalid signal strength threshold: expected negative dBm (e.g., -45)\n");
+		return -1;
+	}
+
+	if (long_int <= 0) {
+		printf("Invalid long interval: must be > 0 (seconds)\n");
+		return -1;
+	}
+
+	if (have_btm && btm_queries < 0) {
+		printf("Invalid send_btm_query: must be >= 0\n");
+		return -1;
+	}
+	return 0;
+}
+
+
+static int wpa_cli_cmd_set_bgscan(struct wpa_ctrl *ctrl, int argc,
+				  char *argv[])
+{
+	long short_int, sig_thr, long_int, btm_queries = 0;
+	char cmd[1024];
+	int have_btm, res;
+	size_t i;
+
+	if (argc < 2) {
+		printf("Invalid SET_BGSCAN command: needs at least two arguments\n"
+		       "(network id and 'clear' or 'simple' with parameters)\n");
+		return -1;
+	}
+
+	/* Validate network contains only digits */
+	for (i = 0; argv[0][i] != '\0'; i++) {
+		if (!isdigit(argv[0][i])) {
+			printf("Invalid network id: must be numeric\n");
+			return -1;
+		}
+	}
+
+	/* Clear bgscan */
+	if (os_strcmp(argv[1], "clear") == 0) {
+		res = os_snprintf(cmd, sizeof(cmd),
+				  "SET_NETWORK %s bgscan \"\"", argv[0]);
+		if (os_snprintf_error(sizeof(cmd), res) || res < 0 ||
+		    (size_t)res >= sizeof(cmd)) {
+			printf("Too long SET_NETWORK command.\n");
+			return -1;
+		}
+		return wpa_ctrl_command(ctrl, cmd);
+	}
+
+	/* Handle only 'simple' module for now */
+	if (os_strcmp(argv[1], "simple") == 0) {
+		if (argc < 5 || argc > 6) {
+			printf("Usage: set_bgscan <netid> simple "
+			       "<short_interval> <signal_thr_dbm> "
+			       "<long_interval> [send_btm_query]\n");
+			return -1;
+		}
+		if (parse_long(argv[2], &short_int) ||
+		    parse_long(argv[3], &sig_thr)   ||
+		    parse_long(argv[4], &long_int)) {
+			printf("Invalid numeric parameter(s) for 'simple'\n");
+			return -1;
+		}
+
+		have_btm = (argc == 6);
+		if (have_btm && parse_long(argv[5], &btm_queries)) {
+			printf("Invalid send_btm_query (must be numeric)\n");
+			return -1;
+		}
+
+		if (validate_simple_params(short_int, sig_thr, long_int,
+		    btm_queries, have_btm) < 0)
+			return -1;
+
+		if (have_btm)
+			res = os_snprintf(cmd, sizeof(cmd),
+					  "SET_NETWORK %s bgscan \"simple:%ld:%ld:%ld:%ld\"",
+					  argv[0], short_int, sig_thr,
+					  long_int, btm_queries);
+		else
+			res = os_snprintf(cmd, sizeof(cmd),
+					  "SET_NETWORK %s bgscan \"simple:%ld:%ld:%ld\"",
+					  argv[0], short_int, sig_thr,
+					  long_int);
+
+		if (os_snprintf_error(sizeof(cmd), res) || res < 0 ||
+		    (size_t)res >= sizeof(cmd)) {
+			printf("Too long SET_NETWORK command.\n");
+			return -1;
+		}
+
+		return wpa_ctrl_command(ctrl, cmd);
+	}
+
+	if (os_strcmp(argv[1], "learn") == 0) {
+		printf("The 'learn' bgscan module is not supported by "
+			"this command yet. TODO: add implementation.\n");
+		return -1;
+	}
+
+	/* Reject unknown modules for now */
+	printf("Unsupported bgscan module '%s'.\n",
+	       argv[1]);
+	return -1;
+}
+
+
 static int wpa_cli_cmd_set(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	char cmd[256];
@@ -4382,6 +4519,9 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	{ "set_bgscan_freq", wpa_cli_cmd_set_bgscan_freq,
 	  wpa_cli_complete_network_id, cli_cmd_flag_none,
 	  "<network id> <freqs|clear> = set per-network bgscan_freq (e.g., 2412,2437 or 2412 2437)" },
+	{ "set_bgscan", wpa_cli_cmd_set_bgscan,
+	  wpa_cli_complete_network_id, cli_cmd_flag_none,
+	  "<network id> <clear|simple <short> <sig_thr_dbm> <long> [btm]> = set per-network bgscan (simple only for now)" },
 	{ NULL, NULL, NULL, cli_cmd_flag_none, NULL }
 };
 
