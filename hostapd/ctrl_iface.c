@@ -2035,8 +2035,25 @@ static int hostapd_ctrl_iface_get_mbssid_attributes(struct hostapd_data *hapd,
 {
 	struct hostapd_data *bss;
 	struct hostapd_multi_mbssid_group *mbssid_group;
+	size_t active_group_cnt = 0;
 	int res, i, j;
 	char *pos, *end;
+
+	if (!hapd) {
+		wpa_printf(MSG_ERROR, "Invalid BSS");
+		return -1;
+	}
+
+	if (!hapd->started) {
+		wpa_printf(MSG_ERROR, "%s is not started", hapd->conf->iface);
+		return -1;
+	}
+
+	if (hapd->iconf->mbssid == MBSSID_DISABLED) {
+		wpa_printf(MSG_ERROR, "%s is not part of any MBSSID group",
+			   hapd->conf->iface);
+		return -1;
+	}
 
 	pos = buf;
 	end = buf + buflen;
@@ -2100,14 +2117,24 @@ static int hostapd_ctrl_iface_get_mbssid_attributes(struct hostapd_data *hapd,
 				return pos - buf;
 			pos += res;
 
+			if (j == 0)
+				active_group_cnt++;
 		}
 		res = os_snprintf(pos, end - pos, "\n");
 		if (os_snprintf_error(end - pos, res))
 			return pos - buf;
 		pos += res;
 	}
-	res = os_snprintf(pos, end - pos, "Max_active_ngroups = %zu\n",
+
+	res = os_snprintf(pos, end - pos, "current_active_ngroups = %zu\n",
+			  active_group_cnt);
+	if (os_snprintf_error(end - pos, res))
+		return pos - buf;
+	pos += res;
+
+	res = os_snprintf(pos, end - pos, "max_ngroups = %zu\n",
 			  hapd->iface->multi_mbssid.num_mbssid_groups);
+
 	if (os_snprintf_error(end - pos, res))
 		return pos - buf;
 	pos += res;
