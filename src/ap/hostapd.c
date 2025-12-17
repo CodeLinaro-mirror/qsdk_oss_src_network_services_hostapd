@@ -300,6 +300,7 @@ static void hostapd_reload_bss(struct hostapd_data *hapd)
 		hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_WARNING,
 			       "Failed to prepare rates table.");
+		return;
 	}
 
 	ieee802_11_set_beacon(hapd);

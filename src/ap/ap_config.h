@@ -1652,5 +1652,8 @@ int hostapd_config_sp_key_mgmt(const struct hostapd_bss_config *conf);
 int hostapd_config_all_key_mgmt(const struct hostapd_bss_config *conf);
 bool hostapd_config_sae_ext_key(const struct hostapd_bss_config *conf);
 bool hostapd_pqc_enabled(const struct hostapd_bss_config *conf);
+bool hostapd_is_beacon_tx_rate_preamble_valid(
+	const struct hostapd_config *iconf,
+	const struct hostapd_bss_config *bss);
 
 #endif /* HOSTAPD_CONFIG_H */

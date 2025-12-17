@@ -1692,6 +1692,9 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 	if (bss->wmm_override && hostapd_config_check_bss_wmm_params(bss))
 		return -1;
 
+	if (!hostapd_is_beacon_tx_rate_preamble_valid(conf, bss))
+		return -1;
+
 	return 0;
 }
 
@@ -2025,4 +2028,34 @@ bool hostapd_pqc_enabled(const struct hostapd_bss_config *conf)
 	}
 
 	return false;
+}
+
+
+bool hostapd_is_beacon_tx_rate_preamble_valid(
+	const struct hostapd_config *iconf,
+	const struct hostapd_bss_config *bss)
+{
+	if (bss->rate_type == BEACON_RATE_HT &&
+	    !(iconf->ieee80211n && !bss->disable_11n)) {
+		wpa_printf(MSG_ERROR,
+			   "HT rate is configured for beacon_rate, but 11n is disabled");
+		return false;
+	} else if (bss->rate_type == BEACON_RATE_VHT &&
+		   !(iconf->ieee80211ac && !bss->disable_11ac)) {
+		wpa_printf(MSG_ERROR,
+			   "VHT rate is configured for beacon_rate, but 11ac is disabled");
+		return false;
+	} else if (bss->rate_type == BEACON_RATE_HE &&
+		   !(iconf->ieee80211ax && !bss->disable_11ax)) {
+		wpa_printf(MSG_ERROR,
+			   "HE rate is configured for beacon_rate, but 11ax is disabled");
+		return false;
+	} else if (bss->rate_type == BEACON_RATE_EHT &&
+		   !(iconf->ieee80211be && !bss->disable_11be)) {
+		wpa_printf(MSG_ERROR,
+			   "EHT rate is configured for beacon_rate, but 11be is disabled");
+		return false;
+	}
+
+	return true;
 }
