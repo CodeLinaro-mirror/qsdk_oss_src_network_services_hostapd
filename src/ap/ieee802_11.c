@@ -11554,11 +11554,6 @@ void ieee802_11_rx_from_unknown(struct hostapd_data *hapd, const u8 *src,
 
 
 
-struct ieee_chan_data {
-	int num_channels;
-	struct hostapd_channel_data *channels;
-};
-
 static u8 *hostapd_add_tpe_info(u8 *eid, enum max_tx_pwr_interpretation tx_pwr_intrpn,
 				u8 tx_pwr_count, s8 *tx_pwr_array,
 				u8 tx_pwr_ext_count, s8 *tx_pwr_ext_array,
@@ -11635,9 +11630,9 @@ static u8 *hostapd_add_tpe_info(u8 *eid, enum max_tx_pwr_interpretation tx_pwr_i
 }
 
 
-static int get_chan_list(struct hostapd_data *hapd, int *non_11be_start_idx,
-			 int *chan_start_idx, int *non_11be_chan_count,
-			 int *total_chan_count, struct ieee_chan_data chan_data)
+int get_chan_list(struct hostapd_data *hapd, int *non_11be_start_idx,
+		  int *chan_start_idx, int *non_11be_chan_count,
+		  int *total_chan_count, struct ieee_chan_data chan_data)
 {
 	u8 seg0 = hostapd_get_oper_centr_freq_seg0_idx(hapd->iconf);
 #ifdef CONFIG_IEEE80211BE
@@ -11746,9 +11741,9 @@ static u8 num_psd_values_to_psd_count(int n_chans)
 	}
 }
 
-static int set_ieee_order_chan_list(struct hostapd_hw_modes *mode,
-				    struct ieee_chan_data *chan_data,
-				    enum nl80211_regulatory_power_modes client_mode)
+int set_ieee_order_chan_list(struct hostapd_hw_modes *mode,
+			     struct ieee_chan_data *chan_data,
+			     enum nl80211_regulatory_power_modes client_mode)
 {
 	static const int ieee_6g_chan[] =  {2,
 					    1, 5, 9, 13, 17, 21, 25, 29,
@@ -12001,20 +11996,7 @@ hostapd_get_eirp_arr_for_bw(struct hostapd_iface *iface, u16 freq,
 	}
 }
 
-/**
- * hostapd_get_eirp_arr_for_6ghz - Get EIRP array for 6 GHz band.
- * @iface: hostapd interface data structure.
- * @freq: Primary channel frequency in MHz.
- * @cen320: Center frequency for 320 MHz operation, if applicable.
- * @chanwidth: Channel width for which EIRP is being calculated.
- * @client_type: Client type for which EIRP is being calculated.
- * @max_eirp_arr: Output array to store maximum EIRP values for each
- * bandwidth.
- * @pwr_mode: Power mode for EIRP calculation.
- * @tx_pwr_intrpn: Interpretation of maximum transmit power.
- *
- */
-static void
+void
 hostapd_get_eirp_arr_for_6ghz(struct hostapd_iface *iface,
 			      u16 freq,
 			      u8 cen320,
@@ -12946,7 +12928,7 @@ fill_psd_power_for_punctured_freq(struct hostapd_data *hapd, u16 freq,
 	return psd_power;
 }
 
-static int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
+int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 			  int chan_start_idx, int non_11be_chan_count,
 			  int total_chan_count, u8 *tx_pwr_count,
 			  s8 *tx_pwr_array, u8 *tx_pwr_ext_count,
@@ -13093,6 +13075,41 @@ free:
 }
 
 
+static u8 *hostapd_append_local_tpe(struct hostapd_data *hapd, u8 *eid)
+{
+	ieee80211_tpe_config_user_params *tpe_conf = &hapd->conf->tpe_ie_config;
+	struct ieee80211_tpe_payload tpe_entry;
+	u8 num_tpe_ext_elem;
+	s8 tpe_11ax_count;
+	u8 index;
+
+	if (!tpe_conf->local_tpe_config)
+		return eid;
+
+	for (index = 0; index < IEEE80211_TPE_LOCAL_CONFIG_MAX; index++) {
+		if (tpe_conf->local_tpe_config & (1 << index)) {
+			num_tpe_ext_elem = tpe_conf->tpe_config[index].num_tpe_ext_elem;
+			tpe_entry = tpe_conf->tpe_config[index].tpe_payload;
+			tpe_11ax_count = hostapd_get_tpe_11ax_count(
+				tpe_entry.tpe_info_intrpt, tpe_entry.tpe_info_cnt);
+
+			if (tpe_11ax_count < 0) {
+				wpa_printf(MSG_ERROR,
+					   "Failed to get TPE 11ax count for index %d",
+					   index);
+				continue;
+			}
+			eid = hostapd_add_tpe_info(
+				eid, tpe_entry.tpe_info_intrpt,
+				tpe_entry.tpe_info_cnt, tpe_entry.local_max_txpwr,
+				num_tpe_ext_elem,
+				&tpe_entry.local_max_txpwr[tpe_11ax_count],
+				tpe_entry.tpe_info_cat);
+		}
+	}
+	return eid;
+}
+
 #ifdef CONFIG_IEEE80211AX
 /**
  * hostapd_add_6g_tpe() - For the given power mode, add the required TPE IEs
@@ -13175,6 +13192,7 @@ static void hostapd_add_6g_tpe(struct hostapd_data *hapd, u8 **eid, u8 pwr_mode)
 					    pwr_mode);
 		break;
 	}
+	*eid = hostapd_append_local_tpe(hapd, *eid);
 }
 #endif /* CONFIG_IEEE80211AX */
 
