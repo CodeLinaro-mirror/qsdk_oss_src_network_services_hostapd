@@ -1061,6 +1061,8 @@ struct hostapd_bss_config {
 
 	enum beacon_rate_type rate_type;
 	unsigned int beacon_rate;
+	/* tpe_ie_config - Per-BSS TPE IE user configuration */
+	ieee80211_tpe_config_user_params tpe_ie_config;
 };
 
 /**

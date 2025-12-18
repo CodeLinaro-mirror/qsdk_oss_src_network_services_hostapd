@@ -3665,5 +3665,68 @@ struct ieee80211_ttlm_elem {
 	u8 optional[];
 } STRUCT_PACKED;
 
+/* Support for 11AX */
+#define IEEE80211_TPE_NUM_POWER_SUPP_IN_11AX 8
+
+/* Extension for 11BE 320 MHz support */
+#define IEEE80211_TPE_NUM_EXT_POWER_SUPP     8
+#define IEEE80211_TPE_NUM_POWER_SUPP_IN_11BE \
+	(IEEE80211_TPE_NUM_POWER_SUPP_IN_11AX + IEEE80211_TPE_NUM_EXT_POWER_SUPP)
+
+/* Max TX power elements supported */
+#ifdef CONFIG_IEEE80211BE
+#define IEEE80211_TPE_NUM_POWER_SUPPORTED \
+	IEEE80211_TPE_NUM_POWER_SUPP_IN_11BE
+#else
+#define IEEE80211_TPE_NUM_POWER_SUPPORTED \
+	IEEE80211_TPE_NUM_POWER_SUPP_IN_11AX
+#endif
+
+/* Max TX power count valid for EIRP interpretation */
+#define IEEE80211_TPE_EIRP_MAX_POWER_COUNT_IN_11AX   3
+
+/* Max TX power count valid for EIRP PSD interpretation */
+#define IEEE80211_TPE_PSD_MAX_POWER_COUNT_IN_11AX    4
+
+#define IEEE80211_TPE_LOCAL_CONFIG_MAX       4
+
+/** struct ieee80211_tpe_payload - TPE IE payload fields */
+struct ieee80211_tpe_payload {
+	/*
+	 * Max Tx Power Information field:
+	 *     B0-B2     B3-B5     B6-B7
+	 *  -------------------------------
+	 *  |   Max   |   Max   |   Max   |
+	 *  |  Tx Pwr |  Tx Pwr |  Tx Pwr |
+	 *  |  Count  |   Intr  |   Cat   |
+	 *  -------------------------------
+	 *  <----------1 octet------------>
+	 */
+	u8 tpe_info_cnt:3;     /* Transmit Power Information: Count */
+	u8 tpe_info_intrpt:3;  /* Transmit Power Information: Interpret */
+	u8 tpe_info_cat:2;     /* Transmit Power Information: Category */
+
+	/* Local Max TxPower for 20,40,80,160,320 MHz */
+	s8 local_max_txpwr[IEEE80211_TPE_NUM_POWER_SUPPORTED];
+} __attribute__((__packed__));
+
+/** struct ieee80211_tpe_ie_config - TPE IE configuration container */
+struct ieee80211_tpe_ie_config {
+	struct	ieee80211_tpe_payload tpe_payload;
+	u8	num_tpe_ext_elem; /* Number of TPE extension elements for 11BE */
+} __attribute__((__packed__));
+
+/** struct ieee80211_tpe_ie_bss_local_config - Per-BSS user TPE configs */
+typedef struct ieee80211_tpe_ie_bss_local_config {
+	/*
+	 * Structure to store the user input TPE IE config.
+	 * Max allowed user config is 4.
+	 */
+	struct ieee80211_tpe_ie_config tpe_config[IEEE80211_TPE_LOCAL_CONFIG_MAX];
+
+	/* Bitmap to index into the user configured TPE IEs */
+	u8 local_tpe_config;
+} ieee80211_tpe_config_user_params;
+
 #define IEEE80211_MSCS_DESC_MIN_LEN 8
 #endif /* IEEE802_11_DEFS_H */

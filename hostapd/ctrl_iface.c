@@ -38,6 +38,7 @@
 #endif /* CONFIG_DPP */
 #include "common/wpa_ctrl.h"
 #include "common/ptksa_cache.h"
+#include "common/hw_features_common.h"
 #include "common/nan_de.h"
 #include "crypto/tls.h"
 #include "drivers/driver.h"
@@ -4785,6 +4786,162 @@ static int hostapd_ctrl_iface_disable_mld(struct hostapd_iface *iface)
 	return 0;
 }
 
+static s8 get_client_mode_frm_pwr_type(struct hostapd_data *hapd,
+				       u8 txpwr_cat,
+				       enum max_tx_pwr_interpretation tx_pwr_intrpn,
+				       u8 *client_mode)
+{
+	u8 pwr_mode = hapd->iconf->he_6ghz_reg_pwr_type;
+
+	if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_SP && hapd->iconf->enable_6ghz_composite_ap)
+		pwr_mode = HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP;
+
+	switch (pwr_mode) {
+	case HE_REG_INFO_6GHZ_AP_TYPE_INDOOR:
+		*client_mode = (txpwr_cat == REG_DEFAULT_CLIENT)
+			? NL80211_REG_REGULAR_CLIENT_LPI
+			: NL80211_REG_SUBORDINATE_CLIENT_LPI;
+		break;
+	case HE_REG_INFO_6GHZ_AP_TYPE_SP:
+		if (txpwr_cat == REG_DEFAULT_CLIENT) {
+			*client_mode = NL80211_REG_REGULAR_CLIENT_SP;
+		} else {
+			wpa_printf(MSG_ERROR, "power mode %d is not supported for intepretation %d",
+				   pwr_mode, tx_pwr_intrpn);
+			return -1;
+		}
+		break;
+	case HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP:
+		if (txpwr_cat == REG_DEFAULT_CLIENT) {
+			*client_mode = NL80211_REG_REGULAR_CLIENT_SP;
+		} else if (tx_pwr_intrpn == LOCAL_EIRP_PSD) {
+			*client_mode = NL80211_REG_SUBORDINATE_CLIENT_SP;
+		} else {
+			wpa_printf(MSG_ERROR, "power mode %d is not supported for intepretation %d",
+				   pwr_mode, tx_pwr_intrpn);
+			return -1;
+		}
+		break;
+	default:
+		wpa_printf(MSG_ERROR, "Invalid power mode: %d", pwr_mode);
+		return -1;
+	}
+	return 0;
+}
+
+static s8 validate_user_eirp_tx_power(struct hostapd_data *hapd, s8 *local_tx_pwr,
+				      u8 local_max_txpwr_count,
+				      u8 ext_tx_pwr_val_count,
+				      enum max_tx_pwr_interpretation tx_pwr_intrpn,
+				      u8 client_mode)
+{
+	s8 max_eirp_pwr[TPE_NUM_POWER_SUPP_IN_11BE] = {0};
+	struct hostapd_iface *iface = hapd->iface;
+	struct hostapd_config *iconf = iface->conf;
+	enum chan_width ch_width;
+	u8 cen320, pwr_type;
+	u16 freq;
+	u8 i = 0;
+
+	pwr_type = iface->conf->he_6ghz_reg_pwr_type;
+	ch_width = hostapd_get_chan_width_from_oper_chan_width(hapd->iconf);
+
+	if (ext_tx_pwr_val_count && ch_width < CHAN_WIDTH_320) {
+		wpa_printf(MSG_ERROR, "Extended tx power is not applicable for current bw");
+		return -1;
+	}
+
+	freq = ieee80211_chan_to_freq(NULL, iconf->op_class, iconf->channel);
+	cen320 = hostapd_get_oper_centr_freq_seg0_idx(iconf);
+	hostapd_get_eirp_arr_for_6ghz(iface,
+				      freq,
+				      cen320,
+				      ch_width,
+				      client_mode,
+				      max_eirp_pwr,
+				      pwr_type,
+				      tx_pwr_intrpn);
+
+	for (i = 0; i < local_max_txpwr_count; i++) {
+		if (local_tx_pwr[i] > max_eirp_pwr[i]) {
+			wpa_printf(MSG_ERROR, "%d is greater than Max EIRP %d",
+				   local_tx_pwr[i], max_eirp_pwr[i]);
+			return -1;
+		}
+	}
+	return 0;
+}
+
+static s8 validate_user_psd_tx_power(struct hostapd_data *hapd,
+				     s8 *local_tx_pwr,
+				     u8 local_max_txpwr_count,
+				     u8 ext_tx_pwr_val_count,
+				     enum max_tx_pwr_interpretation tx_pwr_intrpn,
+				     s8 client_mode)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	s8 max_tx_pwr_ext[MAX_PSD_TPE_EXT_POWER_COUNT] = {0};
+	struct hostapd_hw_modes *mode = iface->current_mode;
+	int non_11be_chan_count = 0, total_chan_count = 0;
+	int non_11be_start_idx = 0, chan_start_idx = 0;
+	u8 pwr_mode = iface->conf->he_6ghz_reg_pwr_type;
+	s8 max_tx_pwr[MAX_PSD_TPE_POWER_COUNT] = {0};
+	u8 tx_pwr_count = 0, tx_pwr_ext_count = 0;
+	struct ieee_chan_data chan_data;
+	s8 i = 0, j = 0, ret;
+	s8 tpe_11ax_count;
+
+	tpe_11ax_count = local_max_txpwr_count - ext_tx_pwr_val_count;
+
+	if (tpe_11ax_count > MAX_PSD_TPE_POWER_COUNT ||
+	    ext_tx_pwr_val_count > MAX_PSD_TPE_EXT_POWER_COUNT) {
+		wpa_printf(MSG_ERROR, "TPE count exceeds maximum allowed");
+		return -1;
+	}
+
+	ret = set_ieee_order_chan_list(mode, &chan_data, client_mode);
+	if (ret)
+		return ret;
+
+	ret = get_chan_list(hapd, &non_11be_start_idx, &chan_start_idx,
+			    &non_11be_chan_count, &total_chan_count, chan_data);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "Unable to get chan list");
+		goto free;
+	}
+
+	ret = get_psd_values(hapd, non_11be_start_idx, chan_start_idx,
+			     non_11be_chan_count, total_chan_count, &tx_pwr_count,
+			     max_tx_pwr, &tx_pwr_ext_count, max_tx_pwr_ext,
+			     client_mode, chan_data, pwr_mode, tx_pwr_intrpn);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "failed to get the PSD values");
+		goto free;
+	}
+
+	for (i = 0; i < tpe_11ax_count; i++) {
+		if (local_tx_pwr[i] > max_tx_pwr[i]) {
+			wpa_printf(MSG_ERROR, "%d is greater than Max PSD %d",
+				   local_tx_pwr[i], max_tx_pwr[i]);
+			ret = -1;
+			goto free;
+		}
+	}
+	if (ext_tx_pwr_val_count) {
+		for (i = tpe_11ax_count; i < local_max_txpwr_count; i++) {
+			if (local_tx_pwr[i] > max_tx_pwr_ext[j]) {
+				wpa_printf(MSG_ERROR, "%d is greater than Max PSD %d",
+					   local_tx_pwr[i], max_tx_pwr_ext[j]);
+				ret = -1;
+				goto free;
+			}
+			j++;
+		}
+	}
+free:
+	os_free(chan_data.channels);
+	return ret;
+}
 
 static int hostapd_ctrl_iface_stop_mld(struct hostapd_data *hapd)
 {
@@ -5492,6 +5649,339 @@ static int hostapd_ctrl_iface_set_channel_usage_element(struct hostapd_data *hap
 
 #endif /* CONFIG_IEEE80211BE */
 
+const char *tx_pwr_intrpn_str(enum max_tx_pwr_interpretation tx_pwr_intrpn)
+{
+	switch (tx_pwr_intrpn) {
+	case LOCAL_EIRP:
+		return "LOCAL_EIRP";
+	case LOCAL_EIRP_PSD:
+		return "LOCAL_EIRP_PSD";
+	case REGULATORY_CLIENT_EIRP:
+		return "REGULATORY_CLIENT_EIRP";
+	case REGULATORY_CLIENT_EIRP_PSD:
+		return "REGULATORY_CLIENT_EIRP_PSD";
+	case REGULATORY_CLIENT_ADDITIONAL_EIRP:
+		return "REGULATORY_CLIENT_ADDITIONAL_EIRP";
+	case REGULATORY_CLIENT_ADDITIONAL_EIRP_PSD:
+		return "REGULATORY_CLIENT_ADDITIONAL_EIRP_PSD";
+	default:
+		return "Unknown";
+	}
+}
+
+static s8 tpe_config_val_assign(struct hostapd_data *hapd,
+				u8 index,
+				const s8 *local_max_txpwr,
+				u8 local_max_txpwr_count,
+				u8 tx_pwr_count,
+				enum max_tx_pwr_interpretation tx_pwr_intrpn,
+				u8 txpwr_cat,
+				u8 ext_tx_pwr_val_count)
+{
+	ieee80211_tpe_config_user_params *tpe_conf = &hapd->conf->tpe_ie_config;
+
+	if (local_max_txpwr_count > IEEE80211_TPE_NUM_POWER_SUPPORTED) {
+		wpa_printf(MSG_ERROR, "Count of Local Tx power values should be within %d",
+			   IEEE80211_TPE_NUM_POWER_SUPPORTED);
+		return -1;
+	}
+
+	if (tpe_conf->local_tpe_config & (1 << index)) {
+		wpa_printf(MSG_INFO,
+			   "CTRL: Overwriting existing TPE config Interpretation: %s\nCategory: %s",
+			   tx_pwr_intrpn_str(tx_pwr_intrpn),
+			   txpwr_cat ? "Subordinate Device" : "Default Device");
+	} else {
+		tpe_conf->local_tpe_config |= 1 << index;
+		wpa_printf(MSG_INFO,
+			   "CTRL: Adding TPE IE with Interpretation: %s\nCategory: %s",
+			   tx_pwr_intrpn_str(tx_pwr_intrpn),
+			   txpwr_cat ? "Subordinate Device" : "Default Device");
+	}
+	tpe_conf->tpe_config[index].tpe_payload.tpe_info_cnt = tx_pwr_count;
+	tpe_conf->tpe_config[index].tpe_payload.tpe_info_intrpt = tx_pwr_intrpn;
+	tpe_conf->tpe_config[index].tpe_payload.tpe_info_cat = txpwr_cat;
+	tpe_conf->tpe_config[index].num_tpe_ext_elem = ext_tx_pwr_val_count;
+
+	/* Copy validated power values into selected config */
+	os_memcpy(tpe_conf->tpe_config[index].tpe_payload.local_max_txpwr,
+		  local_max_txpwr,
+		  local_max_txpwr_count);
+	return 0;
+}
+
+static s8 validate_user_max_tx_pwr(struct hostapd_data *hapd,
+				   s8 *local_max_txpwr,
+				   u8 local_max_txpwr_count,
+				   u8 ext_tx_pwr_val_count,
+				   u8 txpwr_cat,
+				   enum max_tx_pwr_interpretation tx_pwr_intrpn)
+{
+	u8 client_mode;
+	s8 ret;
+
+	ret = get_client_mode_frm_pwr_type(hapd,
+					   txpwr_cat,
+					   tx_pwr_intrpn,
+					   &client_mode);
+	if (ret < 0)
+		return -1;
+
+	if (tx_pwr_intrpn == LOCAL_EIRP)
+		ret = validate_user_eirp_tx_power(hapd,
+						  local_max_txpwr,
+						  local_max_txpwr_count,
+						  ext_tx_pwr_val_count,
+						  tx_pwr_intrpn,
+						  client_mode);
+	else if (tx_pwr_intrpn == LOCAL_EIRP_PSD)
+		ret = validate_user_psd_tx_power(hapd,
+						 local_max_txpwr,
+						 local_max_txpwr_count,
+						 ext_tx_pwr_val_count,
+						 tx_pwr_intrpn,
+						 client_mode);
+
+	return ret;
+}
+
+static s8 validatate_bw_pwr_count(struct hostapd_data *hapd,
+				  u8 local_max_txpwr_count,
+				  enum max_tx_pwr_interpretation tx_pwr_intrpn)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct hostapd_config *iconf = iface->conf;
+	enum chan_width ch_width;
+	u16 bw_step_count = 0;
+	u16 max_bw = 0;
+
+	ch_width = hostapd_get_chan_width_from_oper_chan_width(iconf);
+	max_bw = channel_width_to_int(ch_width);
+
+	if (tx_pwr_intrpn == LOCAL_EIRP) {
+		switch (ch_width) {
+		case CHAN_WIDTH_20:
+			bw_step_count = 1;
+			break;
+		case CHAN_WIDTH_40:
+			bw_step_count = 2;
+			break;
+		case CHAN_WIDTH_80:
+			bw_step_count = 3;
+			break;
+		case CHAN_WIDTH_160:
+			bw_step_count = 4;
+			break;
+		case CHAN_WIDTH_320:
+			bw_step_count = 5;
+			break;
+		default:
+			bw_step_count = 1;
+			break;
+		}
+	} else if (tx_pwr_intrpn == LOCAL_EIRP_PSD) {
+		bw_step_count = max_bw / 20;
+	}
+
+	if (local_max_txpwr_count != bw_step_count) {
+		wpa_printf(MSG_ERROR, " Tx power values(%d) does not match BW channel count(%d) for %s",
+			   local_max_txpwr_count, bw_step_count, tx_pwr_intrpn_str(tx_pwr_intrpn));
+		return -1;
+	}
+
+	return 0;
+}
+
+static s8 validate_user_tpe_val(struct hostapd_data *hapd,
+				u8 *ext_tx_pwr_val_count,
+				u8 tx_pwr_count,
+				u8 txpwr_cat,
+				u8 local_max_txpwr_count,
+				enum max_tx_pwr_interpretation tx_pwr_intrpn)
+{
+	s8 total_tx_pwr_count;
+	s8 tmp_extn_count;
+
+	if (tx_pwr_intrpn < LOCAL_EIRP ||
+	    tx_pwr_intrpn > LOCAL_EIRP_PSD) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid tx power interpretation %d, allowed(%d..%d)",
+			   tx_pwr_intrpn, LOCAL_EIRP, LOCAL_EIRP_PSD);
+		return -1;
+	}
+
+	if (txpwr_cat > REG_SUBORDINATE_CLIENT) {
+		wpa_printf(MSG_ERROR, "Invalid Tx Power Category");
+		return -1;
+	}
+
+	total_tx_pwr_count = hostapd_get_tpe_11ax_count(tx_pwr_intrpn, tx_pwr_count);
+	if (total_tx_pwr_count < 0)
+		return -1;
+
+	tmp_extn_count = local_max_txpwr_count - total_tx_pwr_count;
+	if (tmp_extn_count < 0) {
+		wpa_printf(MSG_ERROR,
+			   "Total Tx Power value count too short (%d, expected %d for %s)",
+			   local_max_txpwr_count, total_tx_pwr_count,
+			   tx_pwr_intrpn_str(tx_pwr_intrpn));
+		return -1;
+	}
+	*ext_tx_pwr_val_count = tmp_extn_count;
+
+	return validatate_bw_pwr_count(hapd, local_max_txpwr_count, tx_pwr_intrpn);
+}
+
+int hostapd_ctrl_iface_set_tpe(struct hostapd_data *hapd, char *cmd)
+{
+	u8 tx_pwr_count, txpwr_cat, index, ext_tx_pwr_val_count;
+	s8 local_max_txpwr[IEEE80211_TPE_NUM_POWER_SUPPORTED];
+	enum max_tx_pwr_interpretation tx_pwr_intrpn;
+	s8 local_max_txpwr_count = 0, ret;
+	char *saveptr, *token;
+	int temp_val;
+
+	if (!is_6ghz_freq(hapd->iface->freq) ||
+	    hapd != hostapd_mbssid_get_tx_bss(hapd)) {
+		wpa_printf(MSG_ERROR, "TPE addition/deletion is allowed only on 6 GHz Tx Vap");
+		return -1;
+	}
+
+	token = strtok_r(cmd, " ", &saveptr);
+	if (!token) {
+		wpa_printf(MSG_ERROR, "Invalid Interpretation");
+		return -1;
+	}
+	tx_pwr_intrpn = atoi(token);
+
+	token = strtok_r(NULL, " ", &saveptr);
+	if (!token) {
+		wpa_printf(MSG_ERROR, "Invalid Tx power count");
+		return -1;
+	}
+	tx_pwr_count = atoi(token);
+
+	token = strtok_r(NULL, " ", &saveptr);
+	if (!token) {
+		wpa_printf(MSG_ERROR, "Invalid client category");
+		return -1;
+	}
+	txpwr_cat = atoi(token);
+
+	index = ((tx_pwr_intrpn << 1) | txpwr_cat);
+	if (index >= IEEE80211_TPE_LOCAL_CONFIG_MAX) {
+		wpa_printf(MSG_ERROR, "Invalid TPE config index: %d", index);
+		return -1;
+	}
+
+	/* Remaining tokens: power values */
+	while ((token = strtok_r(NULL, " ", &saveptr)) != NULL) {
+		if (local_max_txpwr_count > IEEE80211_TPE_NUM_POWER_SUPPORTED) {
+			wpa_printf(MSG_ERROR, "Count of Local Tx power values should be within %d",
+				   IEEE80211_TPE_NUM_POWER_SUPPORTED);
+			return -1;
+		}
+		temp_val = atoi(token);
+
+		if (temp_val < -128 || temp_val > 127) {
+			wpa_printf(MSG_ERROR, "Tx Power value %d out of valid range (-128 to 127)",
+				   temp_val);
+			return -1;
+		}
+		local_max_txpwr[local_max_txpwr_count] = (s8)temp_val;
+		local_max_txpwr_count++;
+	}
+
+	ret = validate_user_tpe_val(hapd,
+				    &ext_tx_pwr_val_count,
+				    tx_pwr_count,
+				    txpwr_cat,
+				    local_max_txpwr_count,
+				    tx_pwr_intrpn);
+	if (ret < 0)
+		return -1;
+
+	ret = validate_user_max_tx_pwr(hapd,
+				       local_max_txpwr,
+				       local_max_txpwr_count,
+				       ext_tx_pwr_val_count,
+				       txpwr_cat,
+				       tx_pwr_intrpn);
+	if (ret < 0)
+		return -1;
+
+	ret = tpe_config_val_assign(hapd,
+				    index,
+				    local_max_txpwr,
+				    local_max_txpwr_count,
+				    tx_pwr_count,
+				    tx_pwr_intrpn,
+				    txpwr_cat,
+				    ext_tx_pwr_val_count);
+	if (ret < 0)
+		return -1;
+
+	/* Update Beacon to reflect new TPE settings */
+	if (ieee802_11_set_beacon(hapd))
+		return -1;
+
+	return 0;
+}
+
+/**
+ * hostapd_ctrl_iface_del_tpe - Remove the Transmit Power Envelope config
+ * @hapd: Pointer to hostapd data structure
+ * @cmd: Pointer to the string containing the interpretation and category
+ *       value to remove
+ *
+ * Return: 0 on success, -1 on failure
+ */
+int hostapd_ctrl_iface_del_tpe(struct hostapd_data *hapd, char *cmd)
+{
+	ieee80211_tpe_config_user_params *tpe_conf = &hapd->conf->tpe_ie_config;
+	enum max_tx_pwr_interpretation tx_pwr_intrpn;
+	char *saveptr, *token;
+	u8 txpwr_cat;
+	u8 index;
+
+	if (!is_6ghz_freq(hapd->iface->freq) ||
+	    hapd != hostapd_mbssid_get_tx_bss(hapd)) {
+		wpa_printf(MSG_ERROR, "TPE addition/deletion is allowed only on 6 GHz Tx Vap");
+		return -1;
+	}
+
+	/* First token: interpretation */
+	token = strtok_r(cmd, " ", &saveptr);
+	if (!token) {
+		wpa_printf(MSG_ERROR, "Invalid Interpretation");
+		return -1;
+	}
+	tx_pwr_intrpn = atoi(token);
+
+	token = strtok_r(NULL, " ", &saveptr);
+	if (!token) {
+		wpa_printf(MSG_ERROR, "Invalid client category");
+		return -1;
+	}
+	txpwr_cat = atoi(token);
+
+	index = ((tx_pwr_intrpn << 1) | txpwr_cat);
+
+	if (!(tpe_conf->local_tpe_config & (1 << index))) {
+		wpa_printf(MSG_ERROR, "TPE IE not present tx_pwr_intrpn: %d txpwr_cat: %d",
+			   tx_pwr_intrpn, txpwr_cat);
+		return -1;
+	}
+	tpe_conf->local_tpe_config &= ~(1 << (index));
+	os_memset(&tpe_conf->tpe_config[index], 0,
+		  sizeof(struct ieee80211_tpe_ie_config));
+
+	/* Update Beacon to reflect new TPE settings */
+	if (ieee802_11_set_beacon(hapd))
+		return -1;
+
+	return 0;
+}
 
 #ifdef CONFIG_NAN_USD
 
@@ -6676,6 +7166,12 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 	} else if (os_strncmp(buf, "SET_DSCP_POLICY ", 16) == 0) {
 		if (hostapd_ctrl_iface_set_dscp_policy(hapd, buf + 16))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "ADD_TPE ", 8) == 0) {
+		if (hostapd_ctrl_iface_set_tpe(hapd, buf + 8))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "DEL_TPE ", 8) == 0) {
+		if (hostapd_ctrl_iface_del_tpe(hapd, buf + 8))
 			reply_len = -1;
 	} else if (os_strncmp(buf, "SEND_UNSOLICITED_DSCP_REQ ", 26) == 0) {
 		if (hostapd_ctrl_send_unsolicited_dscp_req(hapd, buf + 26))
