@@ -1112,6 +1112,7 @@ struct hostapd_bss_config {
 #ifdef CONFIG_IEEE80211AC
 	u16 vht_mcs_nss_set;
 #endif /* CONFIG_IEEE80211AC */
+	u32 ht_mcs_nss_set;
 
 	enum qca_wlan_intf_offload_type ppe_vp_type;
 };
