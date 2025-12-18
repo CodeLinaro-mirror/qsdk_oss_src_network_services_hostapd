@@ -1063,6 +1063,7 @@ struct hostapd_bss_config {
 #ifdef CONFIG_IEEE80211AC
 	u16 vht_mcs_nss_set;
 #endif /* CONFIG_IEEE80211AC */
+	u32 ht_mcs_nss_set;
 
 	enum beacon_rate_type rate_type;
 	unsigned int beacon_rate;

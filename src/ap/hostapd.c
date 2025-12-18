@@ -4551,6 +4551,10 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 				goto fail;
 		}
 #endif /* CONFIG_IEEE80211AC */
+		if (hapd->conf->ht_mcs_nss_set) {
+			if (hostapd_tx_bss_only(hapd, "ht_mcs_nss_set") < 0)
+				goto fail;
+		}
 		/* mbssid index is needed if any of the link from the mbssid group is
 		 * dynamically removed, will use this index for updating the
 		 * non-transmitting profile in beacon

@@ -23,8 +23,10 @@
 
 u8 * hostapd_eid_ht_capabilities(struct hostapd_data *hapd, u8 *eid)
 {
+	struct hostapd_data *tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
 	struct ieee80211_ht_capabilities *cap;
 	u8 *pos = eid;
+	int i;
 
 	if (!hapd->iconf->ieee80211n || !hapd->iface->current_mode ||
 	    hapd->conf->disable_11n || is_6ghz_op_class(hapd->iconf->op_class))
@@ -39,6 +41,16 @@ u8 * hostapd_eid_ht_capabilities(struct hostapd_data *hapd, u8 *eid)
 	cap->a_mpdu_params = hapd->iface->current_mode->a_mpdu_params;
 	os_memcpy(cap->supported_mcs_set, hapd->iface->current_mode->mcs_set,
 		  16);
+
+	if (tx_hapd != hapd)
+		hapd->conf->ht_mcs_nss_set = tx_hapd->conf->ht_mcs_nss_set;
+
+	/* Apply the user specified HT mcs mask (if any) */
+	if (hapd->conf->ht_mcs_nss_set) {
+		u32 mcs_mask = hapd->conf->ht_mcs_nss_set;
+		for (i = 0; i < 4; i++)
+			cap->supported_mcs_set[i] &= (mcs_mask >> (i * 8)) & 0xff;
+	}
 
 	/* TODO: ht_extended_capabilities (now fully disabled) */
 	/* TODO: tx_bf_capability_info (now fully disabled) */
