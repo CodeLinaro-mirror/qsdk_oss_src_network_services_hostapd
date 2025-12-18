@@ -3516,6 +3516,16 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->vendor_vht = atoi(pos);
 	} else if (os_strcmp(buf, "use_sta_nsts") == 0) {
 		bss->use_sta_nsts = atoi(pos);
+	} else if (os_strcmp(buf, "vht_mcs_nss_set") == 0) {
+		char *endptr;
+		unsigned long val = strtoul(pos, &endptr, 16);
+		if (*endptr != '\0' || val > 0xffff) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid vht_mcs_nss_set 0x%lx (allowed 0 to 0xffff)",
+				   line, val);
+			return 1;
+		}
+		bss->vht_mcs_nss_set = (u16) val;
 #endif /* CONFIG_IEEE80211AC */
 #ifdef CONFIG_IEEE80211AX
 	} else if (os_strcmp(buf, "ieee80211ax") == 0) {
