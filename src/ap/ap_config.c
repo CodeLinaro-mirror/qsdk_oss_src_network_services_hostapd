@@ -214,6 +214,11 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->twt_responder_caps = TWT_ITWT_ENABLED;
 	bss->bss_priority = 0;
 	bss->bss_priority_status = 0;
+
+#ifdef CONFIG_IEEE80211AC
+	/* 0 means not set by user; will use hardware supported map by default */
+	bss->vht_mcs_nss_set = 0;
+#endif /* CONFIG_IEEE80211AC */
 }
 
 #ifdef CONFIG_IEEE80211BE
@@ -1528,6 +1533,15 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 		bss->disable_11ac = true;
 		wpa_printf(MSG_ERROR,
 			   "VHT (IEEE 802.11ac) with WPA/WPA2 requires CCMP/GCMP to be enabled, disabling VHT capabilities");
+	}
+
+	if (bss->vht_mcs_nss_set) {
+		if (!conf->ieee80211ac || bss->disable_11ac) {
+			bss->vht_mcs_nss_set = 0;
+			wpa_printf(MSG_ERROR,
+				   "Selective VHT-MCS rejected: VHT not allowed in current mode");
+			return -1;
+		}
 	}
 #endif /* CONFIG_IEEE80211AC */
 

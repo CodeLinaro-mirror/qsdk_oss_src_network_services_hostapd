@@ -1868,6 +1868,12 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			hostapd_disassoc_accept_mac(hapd);
 		} else if (os_strcasecmp(cmd, "ssid") == 0) {
 			hostapd_neighbor_sync_own_report(hapd);
+#ifdef CONFIG_IEEE80211AC
+		} else if (os_strcasecmp(cmd, "vht_mcs_nss_set") == 0) {
+			if (hostapd_tx_bss_only(hapd, "vht_mcs_nss_set") < 0)
+				return -1;
+			return hostapd_reload_bss_only(hapd);
+#endif /* CONFIG_IEEE80211AC */
 		} else if (os_strncmp(cmd, "wme_ac_", 7) == 0 ||
 			   os_strncmp(cmd, "wmm_ac_", 7) == 0) {
 			hapd->iface->conf->he_mu_edca.he_qos_info =
@@ -2050,6 +2056,14 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+#ifdef CONFIG_IEEE80211AC
+	} else if (os_strcmp(cmd, "vht_mcs_nss_set") == 0) {
+		res = os_snprintf(buf, buflen, "vht_mcs_nss_set = 0x%x\n",
+				  hapd->conf->vht_mcs_nss_set);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+#endif /* CONFIG_IEEE80211AC */
 	}
 
 	return -1;
