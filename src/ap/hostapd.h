@@ -1389,7 +1389,6 @@ struct hostapd_data *
 hostapd_get_multi_group_bss(struct hostapd_multi_mbssid_group *group,
                            int bss_idx);
 u8 hostapd_max_bssid_indicator(struct hostapd_data *hapd);
-int hostapd_get_mbssid_index(u32 *bmap);
 void hostapd_free_mbssid_idx(struct hostapd_data *hapd);
 void hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface,
 					bool iface_enabled);
