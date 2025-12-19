@@ -9036,15 +9036,45 @@ size_t hostapd_get_mbssid_max_num_bss(struct hostapd_data *hapd)
 struct hostapd_data *
 hostapd_get_mbssid_bss_by_idx(struct hostapd_data *hapd, size_t idx)
 {
-	if (idx >= hostapd_get_mbssid_max_num_bss(hapd))
+	struct hostapd_data *bss;
+
+	if (!hapd->iface || !hapd->iconf ||
+	    hapd->iconf->mbssid == MBSSID_DISABLED)
 		return NULL;
 
 	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
-		return hostapd_get_multi_group_bss(hapd->mbssid_group, idx);
+		struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
+
+		if (!group)
+			return NULL;
+
+		dl_list_for_each(bss, &group->bss_list, struct hostapd_data,
+				 mbssid_bss) {
+			if (!bss->conf || !bss->started ||
+			    !bss->beacon_set_done)
+				continue;
+
+			if (bss->mbssid_idx == idx)
+				return bss;
+		}
 	} else {
-		return hapd->iface->bss[idx];
+		size_t i = 0;
+
+		for (i = 0; i < hapd->iface->num_bss; i++) {
+			bss = hapd->iface->bss[i];
+
+			if (!bss || !bss->conf || !bss->started ||
+			    !bss->beacon_set_done)
+				continue;
+
+			if (bss->mbssid_idx == idx)
+				return bss;
+		}
 	}
+
+	return NULL;
 }
+
 
 /**
  * is_afc_info_usable() - Check if AFC info is usable
