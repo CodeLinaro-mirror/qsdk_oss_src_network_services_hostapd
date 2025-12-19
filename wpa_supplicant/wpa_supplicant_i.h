@@ -856,6 +856,9 @@ struct wpa_supplicant {
 #ifdef CONFIG_QCN_EXTN
 		unsigned int pending_ch_switch_freq;
 #endif
+		unsigned int max_nss_rx:4;
+		unsigned int max_nss_tx:4;
+		enum chan_width channel_bandwidth;
 	} links[MAX_NUM_MLD_LINKS];
 	u8 *last_con_fail_realm;
 	size_t last_con_fail_realm_len;
