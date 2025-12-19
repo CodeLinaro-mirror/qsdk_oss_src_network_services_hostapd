@@ -266,18 +266,6 @@ void hostapd_free_mbssid_idx(struct hostapd_data *hapd)
 	}
 }
 
-int hostapd_get_mbssid_index(u32 *bmap)
-{
-	int pos = 0;
-	u32 idx_present = *bmap;
-
-	while (idx_present & 1) {
-		idx_present >>= 1;
-		pos++;
-	}
-	return pos;
-}
-
 static int hostapd_get_bss_index(struct hostapd_data *bss)
 {
 	int i;
@@ -288,32 +276,6 @@ static int hostapd_get_bss_index(struct hostapd_data *bss)
 	}
 
 	return -1;
-}
-
-int hostapd_allocate_mbssid_idx(struct hostapd_data *hapd)
-{
-	struct hostapd_iface *iface = hapd->iface;
-	struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
-	int index;
-
-	if (hapd->iconf->mbssid) {
-		if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
-			index = hostapd_get_mbssid_index(&group->mbssid_idx_bmap);
-			if (index < group->num_bss) {
-				/* Set the first unset bit */
-				group->mbssid_idx_bmap |= BIT(index);
-				return index;
-			}
-		} else {
-			index = hostapd_get_mbssid_index(&iface->mbssid_idx_bmap);
-			if (index < iface->num_bss) {
-				/* Set the first unset bit */
-				iface->mbssid_idx_bmap |= BIT(index);
-				return index;
-			}
-		}
-	}
-	return 0;
 }
 
 unsigned int hostapd_mbssid_get_bss_index(struct hostapd_data *hapd)
