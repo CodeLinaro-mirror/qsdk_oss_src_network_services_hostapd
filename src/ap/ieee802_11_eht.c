@@ -2131,7 +2131,7 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 		if ((size_t) (mle_pos - pos) != mle_len) {
 			wpa_printf(MSG_DEBUG,
 				   "MLD: Unexpected MLE length: %ld != %zu",
-				   mle_pos - pos, mle_len);
+				   (long) (mle_pos - pos), mle_len);
 			reject_all = true;
 			goto reject_all_req;
 		}
