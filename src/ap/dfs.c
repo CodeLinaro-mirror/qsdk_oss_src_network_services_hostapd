@@ -1333,16 +1333,7 @@ static int hostapd_dfs_testmode_set_beacon_csa(struct hostapd_iface *iface)
 	struct hostapd_data *hapd = iface->bss[0];
 	struct csa_settings csa_settings;
 	struct hostapd_channel_info info;
-	int secondary_channel;
-	u8 vht_oper_centr_freq_seg0_idx;
-	u8 vht_oper_centr_freq_seg1_idx;
 	int err = 0;
-
-	secondary_channel = iface->conf->secondary_channel;
-	vht_oper_centr_freq_seg0_idx =
-			iface->conf->vht_oper_centr_freq_seg0_idx;
-	vht_oper_centr_freq_seg1_idx =
-			iface->conf->vht_oper_centr_freq_seg1_idx;
 
 	/* Setup CSA request */
 	os_memset(&csa_settings, 0, sizeof(csa_settings));
@@ -1364,10 +1355,10 @@ static int hostapd_dfs_testmode_set_beacon_csa(struct hostapd_iface *iface)
 		.vht.enabled = iface->conf->ieee80211ac,
 		.he.enabled = iface->conf->ieee80211ax,
 		.eht.enabled = iface->conf->ieee80211be,
-		.ht.sec_channel_offset = secondary_channel,
+		.ht.sec_channel_offset = iface->conf->secondary_channel,
 		.oper_chwidth = hostapd_get_oper_chwidth(iface->conf),
-		.center_segment0 = vht_oper_centr_freq_seg0_idx,
-		.center_segment1 = vht_oper_centr_freq_seg1_idx,
+		.center_segment0 = hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
+		.center_segment1 = hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
 		.vht.caps = iface->current_mode->vht_capab,
 		.he.cap = &iface->current_mode->he_capab[IEEE80211_MODE_AP],
 		.eht.cap = &iface->current_mode->eht_capab[IEEE80211_MODE_AP],
