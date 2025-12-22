@@ -453,6 +453,90 @@ static int wpa_cli_cmd_epcs(struct wpa_ctrl *ctrl, int argc,
 }
 #endif /* CONFIG_IEEE80211BE */
 
+static int wpa_cli_cmd_set_scan_freq(struct wpa_ctrl *ctrl, int argc,
+				     char *argv[])
+{
+	char cmd[2048];
+	int res;
+	size_t i;
+
+	if (argc < 2) {
+		printf("Invalid SET_SCAN_FREQ command: needs at least two arguments\n"
+		       "(network id and frequency list or 'clear')\n");
+		return -1;
+	}
+
+	/* Validate network contains only digits */
+	for (i = 0; argv[0][i] != '\0'; i++) {
+		if (!isdigit(argv[0][i])) {
+			printf("Invalid network id: must be numeric\n");
+			return -1;
+		}
+	}
+
+	if (os_strcmp(argv[1], "clear") == 0) {
+		res = os_snprintf(cmd, sizeof(cmd),
+				  "SET_NETWORK %s scan_freq \"\"",
+				  argv[0]);
+		if (os_snprintf_error(sizeof(cmd), res) ||
+		    res < 0 || (size_t)res >= sizeof(cmd)) {
+			printf("Too long SET_NETWORK command.\n");
+			return -1;
+		}
+		return wpa_ctrl_command(ctrl, cmd);
+	}
+
+	/* Validate frequency contains only digits and between the range */
+	for (i = 1; i < (size_t) argc; i++) {
+		char *end = NULL;
+		long freq = strtol(argv[i], &end, 10);
+
+		if (*end != '\0') {
+			printf("Invalid frequency value: %s (not numeric)\n",
+			       argv[i]);
+			return -1;
+		}
+
+		if (!is_valid_freq(freq)) {
+			printf("Invalid frequency: %ld MHz"
+			       "allowed ranges: 2.4GHz 2412–2484, 5GHz 5180–5885, 6GHz 5935–7115\n",
+			       freq);
+			return -1;
+		}
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SET_NETWORK %s scan_freq ",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res) ||
+	    res < 0 || (size_t)res >= sizeof(cmd)) {
+		printf("Too long SET_NETWORK command.\n");
+		return -1;
+	}
+
+	/* Build space-separated list */
+	for (i = 1; i < (size_t) argc; i++) {
+		const char *prefix = (i > 1) ? " " : "";
+		size_t add, left;
+
+		left = sizeof(cmd) - (size_t)res;
+		if (res < 0 || (size_t)res >= sizeof(cmd) || left == 0) {
+			printf("Too long SET_NETWORK command\n");
+			return -1;
+		}
+
+		add = os_snprintf(cmd + (size_t)res,
+				  sizeof(cmd) - (size_t)res,
+				  "%s%s", prefix, argv[i]);
+		if (os_snprintf_error(left, add)) {
+			printf("Too long SET_NETWORK command.\n");
+			return -1;
+		}
+		res += (int)add;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
 
 static int wpa_cli_cmd_set(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
@@ -4212,6 +4296,9 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 #endif /* CONFIG_IEEE80211BE */
 	{ "new_random_mac_address", wpa_cli_cmd_generate_new_mac, NULL,
 	  cli_cmd_flag_none, "= Generate new random MAC address" },
+	{ "set_scan_freq", wpa_cli_cmd_set_scan_freq,
+	  wpa_cli_complete_network_id, cli_cmd_flag_none,
+	  "<network id> <freqs|clear> = set per-network scan_freq (e.g., 2412,2437 or 2412 2437)" },
 	{ NULL, NULL, NULL, cli_cmd_flag_none, NULL }
 };
 

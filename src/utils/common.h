@@ -663,4 +663,18 @@ u8 get_bits_using_bitmask(int val, u8 mask);
 #define WPA_MEM_DEFINED(ptr, len) do { } while (0)
 #endif /* CONFIG_VALGRIND */
 
+static inline bool is_valid_freq(long freq)
+{
+	if (freq >= 2412 && freq <= 2484)
+		return true;
+
+	if (freq >= 5180 && freq <= 5885)
+		return true;
+
+	if (freq >= 5935 && freq <= 7115)
+		return true;
+
+	return false;
+}
+
 #endif /* COMMON_H */
