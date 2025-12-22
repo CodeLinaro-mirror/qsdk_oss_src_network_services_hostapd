@@ -1464,6 +1464,18 @@ struct wpa_ssid {
 	 * disable_pmksa_caching - Whether PMKSA caching is disabled
 	 */
 	bool disable_pmksa_caching;
+
+	/**
+	 * bgscan_freq - Zero-terminated array of minimal background scan
+	 * freqs (MHz)
+	 *
+	 * Used only by bgscan_simple while connected. If configured and
+	 * non-empty for the current network, ALL bgscans are constrained
+	 * to this list.
+	 * If empty or not set, bgscan falls back to normal behavior (which
+	 * may still honor freq_list if configured).
+	 */
+	int *bgscan_freq;
 };
 
 #endif /* CONFIG_SSID_H */

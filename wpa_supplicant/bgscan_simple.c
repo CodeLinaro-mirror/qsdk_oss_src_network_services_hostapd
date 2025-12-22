@@ -88,6 +88,8 @@ static void bgscan_simple_timeout(void *eloop_ctx, void *timeout_ctx)
 	params.ssids[0].ssid = data->ssid->ssid;
 	params.ssids[0].ssid_len = data->ssid->ssid_len;
 	params.freqs = data->ssid->scan_freq;
+	if (data->ssid->bgscan_freq)
+		params.freqs = data->ssid->bgscan_freq;
 
 	/* Add OWE transition mode SSID of the current network */
 	wpa_add_owe_scan_ssid(wpa_s, &params, data->ssid,

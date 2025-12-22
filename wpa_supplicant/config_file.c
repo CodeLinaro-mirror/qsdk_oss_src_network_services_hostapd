@@ -1094,6 +1094,7 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid,
 	write_pasn_groups(f, ssid);
 #endif /* CONFIG_PASN */
 	write_security_profiles(f, ssid);
+	STR(bgscan_freq);
 #undef STR
 #undef INT
 #undef INT_DEF

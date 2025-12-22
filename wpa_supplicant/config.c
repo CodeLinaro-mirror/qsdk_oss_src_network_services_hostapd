@@ -1621,6 +1621,26 @@ static int wpa_config_parse_scan_freq(const struct parse_data *data,
 }
 
 
+static int wpa_config_parse_bgscan_freq(const struct parse_data *data,
+					struct wpa_ssid *ssid, int line,
+					const char *value)
+{
+	int *freqs;
+
+	freqs = wpa_config_parse_int_array(value);
+	if (freqs == NULL)
+		return -1;
+	if (freqs[0] == 0) {
+		os_free(freqs);
+		freqs = NULL;
+	}
+	os_free(ssid->bgscan_freq);
+	ssid->bgscan_freq = freqs;
+
+	return 0;
+}
+
+
 static int wpa_config_parse_freq_list(const struct parse_data *data,
 				      struct wpa_ssid *ssid, int line,
 				      const char *value)
@@ -1687,6 +1707,13 @@ static char * wpa_config_write_scan_freq(const struct parse_data *data,
 					 struct wpa_ssid *ssid)
 {
 	return wpa_config_write_freqs(data, ssid->scan_freq);
+}
+
+
+static char * wpa_config_write_bgscan_freq(const struct parse_data *data,
+					   struct wpa_ssid *ssid)
+{
+	return wpa_config_write_freqs(data, ssid->bgscan_freq);
 }
 
 
@@ -3112,6 +3139,7 @@ static const struct parse_data ssid_fields[] = {
 	{ BOOL(ssid_protection)},
 	{ INT_RANGE(rsn_overriding, 0, 2)},
 	{ BOOL(sae_password_id_change)},
+	{ FUNC(bgscan_freq) },
 #ifdef CONFIG_PMKSA_PRIVACY
 	{ INT_RANGE(pmksa_privacy, 0, 1)},
 #endif /* CONFIG_PMKSA_PRIVACY */
@@ -3311,6 +3339,7 @@ void wpa_config_free_ssid(struct wpa_ssid *ssid)
 	os_free(ssid->scan_freq);
 	os_free(ssid->freq_list);
 	os_free(ssid->bgscan);
+	os_free(ssid->bgscan_freq);
 	os_free(ssid->p2p_client_list);
 	os_free(ssid->p2p2_client_list);
 	os_free(ssid->bssid_ignore);
