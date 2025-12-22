@@ -1037,6 +1037,7 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid)
 		}
 	}
 #endif /* CONFIG_SAE */
+	STR(bgscan_freq);
 #undef STR
 #undef INT
 #undef INT_DEF

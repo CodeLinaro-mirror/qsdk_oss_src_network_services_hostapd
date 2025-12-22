@@ -3707,6 +3707,12 @@ static int wpa_supplicant_ctrl_iface_update_network(
 			wpa_supplicant_reset_bgscan(wpa_s);
 		return 0;
 	}
+	if (os_strcmp(name, "bgscan_freq") == 0) {
+		if (wpa_s->current_ssid == ssid && wpa_s->bgscan &&
+		    wpa_s->wpa_state == WPA_COMPLETED)
+			wpa_supplicant_reset_bgscan(wpa_s);
+		return 0;
+	}
 #endif /* CONFIG_BGSCAN */
 
 	if (os_strcmp(name, "bssid") != 0 &&

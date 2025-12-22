@@ -1389,6 +1389,18 @@ struct wpa_ssid {
 	 * sae_password_id_change - Whether to use changing SAE password IDs
 	 */
 	bool sae_password_id_change;
+
+	/**
+	 * bgscan_freq - Zero-terminated array of minimal background scan
+	 * freqs (MHz)
+	 *
+	 * Used only by bgscan_simple while connected. If configured and
+	 * non-empty for the current network, ALL bgscans are constrained
+	 * to this list.
+	 * If empty or not set, bgscan falls back to normal behavior (which
+	 * may still honor freq_list if configured).
+	 */
+	int *bgscan_freq;
 };
 
 #endif /* CONFIG_SSID_H */
