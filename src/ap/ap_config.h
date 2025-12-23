@@ -1410,6 +1410,8 @@ struct hostapd_config {
 #ifdef CONFIG_QCN_EXTN
 	bool downgrade_320mhz_opclass;
 #endif
+	/* HE BSS color collision AP period (seconds) */
+	u16 he_bss_color_collision_ap_period;
 
 	/* Whether to enable TWT responder in HT and VHT modes */
 	bool ht_vht_twt_responder;
