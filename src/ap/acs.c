@@ -1408,6 +1408,12 @@ static int * acs_request_scan_add_freqs(struct hostapd_iface *iface,
 
 	for (i = 0; i < mode->num_channels; i++) {
 		chan = &mode->channels[i];
+
+#ifdef CONFIG_QCN_EXTN
+		acs_request_scan_add_freqs_extn(chan, &freq);
+		continue;
+#endif
+
 		if ((chan->flag & HOSTAPD_CHAN_DISABLED) ||
 		    ((chan->flag & HOSTAPD_CHAN_RADAR) &&
 		     iface->conf->acs_exclude_dfs))
@@ -1485,6 +1491,10 @@ static int acs_request_scan(struct hostapd_iface *iface)
 		wpa_printf(MSG_DEBUG, "scan triggered with bssid" MACSTR "\n",
 			   MAC2STR(params.bssid));
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	acs_modify_scan_params_extn(iface, &params);
+#endif
 
 	ret = hostapd_driver_scan(iface->bss[0], &params);
 	os_free(params.freqs);
