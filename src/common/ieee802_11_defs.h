@@ -3559,6 +3559,9 @@ enum mscs_description_subelem {
  */
 #define DOT11BSS_COLOR_COLLISION_AP_PERIOD	50
 
+/* Number of beacons until the color change */
+#define HE_BSS_COLOR_CCA_COUNT_DEFAULT  10
+
 /* Protected Vendor-specific QoS Management Action frame identifiers - WFA */
 #define QM_ACTION_VENDOR_TYPE 0x506f9a1a
 #define QM_ACTION_OUI_TYPE 0x1a

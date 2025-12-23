@@ -2431,6 +2431,10 @@ setup_mld:
 		os_snprintf(buf, 128, "%s_%s", CHAIN_NAME, conf->iface);
 		hostapd_ucode_config_nft_chain(hapd, TABLE_NAME, buf, true);
 	}
+
+	hapd->cca_count = (hapd->cca_count > 0) ?
+			   hapd->cca_count :
+			   HE_BSS_COLOR_CCA_COUNT_DEFAULT;
 #endif
 
 	/* If TX BSS is already beaconing, update it with newly added profile
@@ -5085,6 +5089,7 @@ static int hostapd_data_alloc(struct hostapd_iface *hapd_iface,
 	hapd_iface->conf = conf;
 	hapd_iface->num_bss = conf->num_bss;
 
+	hapd->cca_count = HE_BSS_COLOR_CCA_COUNT_DEFAULT;
 	return 0;
 }
 
@@ -6293,7 +6298,6 @@ hostapd_switch_channel_fallback(struct hostapd_iface *iface,
 
 void hostapd_cleanup_cca_params(struct hostapd_data *hapd)
 {
-	hapd->cca_count = 0;
 	hapd->cca_color = 0;
 	hapd->cca_c_off_beacon = 0;
 	hapd->cca_c_off_proberesp = 0;
@@ -6359,12 +6363,10 @@ void hostapd_switch_color_timeout_handler(void *eloop_data,
 	u64 neighbor_color;
 	struct hostapd_data *link_bss;
 
-	 /* CCA can be triggered once the handler constantly receives
-	  * color collision events to for at least
-	  * DOT11BSS_COLOR_COLLISION_AP_PERIOD (50 s by default). */
 	delta_t = hapd->last_color_collision.sec -
 		hapd->first_color_collision.sec;
-	if (delta_t < DOT11BSS_COLOR_COLLISION_AP_PERIOD && !hapd->no_free_color)
+
+	if (delta_t < hapd->iface->conf->he_bss_color_collision_ap_period && !hapd->no_free_color)
 		return;
 
 	neighbor_color = ap_list_get_color(hapd->iface);
@@ -6393,10 +6395,11 @@ void hostapd_switch_color_timeout_handler(void *eloop_data,
 		 /* Enabling for next check after timeout*/
 		 hapd->iface->conf->he_op.he_bss_color_disabled = 0;
 
-		 /* start timer for DOT11BSS_COLOR_COLLISION_AP_PERIOD, and check free color on timeout */
+		 /* start timer for color collision ap period, and check free color on timeout */
 		 if (!eloop_is_timeout_registered(hostapd_switch_color_timeout_handler, hapd, NULL))
-			 eloop_register_timeout(DOT11BSS_COLOR_COLLISION_AP_PERIOD, 0,
-					       hostapd_switch_color_timeout_handler, hapd, NULL);
+			eloop_register_timeout(hapd->iface->conf->he_bss_color_collision_ap_period,
+					       0, hostapd_switch_color_timeout_handler, hapd,
+					       NULL);
 
 		return;
 	}
@@ -6412,7 +6415,6 @@ void hostapd_switch_color_timeout_handler(void *eloop_data,
 		os_memset(&settings, 0, sizeof(settings));
 		hostapd_cleanup_cca_params(bss);
 		bss->cca_color = r;
-		bss->cca_count = 10;
 
 		if (hostapd_fill_cca_settings(bss, &settings)) {
 			hostapd_cleanup_cca_params(bss);
@@ -6467,8 +6469,13 @@ void hostapd_switch_color(struct hostapd_data *hapd, u64 bitmap)
 		return;
 
 	hapd->first_color_collision = now;
+
+	wpa_printf(MSG_INFO,
+		   "Scheduling color-switch timeout: %u + 10 s",
+		   hapd->iface->conf->he_bss_color_collision_ap_period);
+
 	/* 10 s window as margin for persistent color collision reporting */
-	eloop_register_timeout(DOT11BSS_COLOR_COLLISION_AP_PERIOD + 10, 0,
+	eloop_register_timeout(hapd->iface->conf->he_bss_color_collision_ap_period + 10, 0,
 			       hostapd_switch_color_timeout_handler,
 			       hapd, NULL);
 }

@@ -3154,6 +3154,64 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 extern void hostapd_switch_color_timeout_handler(void *eloop_data,
 						 void *user_ctx);
 
+static int hostapd_ctrl_iface_bsscolor_collision_ap_period(struct hostapd_iface *iface,
+							   const char *pos)
+{
+#ifdef NEED_AP_MLME
+	unsigned int i;
+	long period;
+	char *end;
+
+	period = strtol(pos, &end, 10);
+	if (pos == end || period < 50 || period > 255) {
+		wpa_printf(MSG_ERROR,
+			   "bsscolor_collision_ap_period: Invalid period (valid range 50..255)");
+		return -1;
+	}
+
+	iface->conf->he_bss_color_collision_ap_period = (u16)period;
+
+	wpa_printf(MSG_INFO, "COLOR_COLLISION_AP_PERIOD set to %ld",
+		   period);
+
+	for (i = 0; i < iface->num_bss; i++)
+		eloop_replenish_timeout(period, 0, hostapd_switch_color_timeout_handler,
+					iface->bss[i], NULL);
+
+	return 0;
+#else /* NEED_AP_MLME */
+	return -1;
+#endif /* NEED_AP_MLME */
+}
+
+static int hostapd_ctrl_iface_bsscolor_cca_count(struct hostapd_iface *iface,
+						 const char *pos)
+{
+#ifdef NEED_AP_MLME
+	long count;
+	char *end;
+	int i;
+
+	count = strtol(pos, &end, 10);
+	if (pos == end || count < 3 || count > 100) {
+		wpa_printf(MSG_ERROR,
+			   "bsscolor_cca_count: Invalid count (valid range 3..100)");
+		return -1;
+	}
+
+	for (i = 0; i < iface->num_bss; i++) {
+		struct hostapd_data *bss = iface->bss[i];
+		/* Store configured CCA count directly */
+		bss->cca_count = (u8) count;
+	}
+
+	return 0;
+#else /* NEED_AP_MLME */
+	return -1;
+#endif /* NEED_AP_MLME */
+}
+
+
 static int hostapd_ctrl_iface_color_change(struct hostapd_iface *iface,
 					   const char *pos)
 {
@@ -3224,7 +3282,9 @@ static int hostapd_ctrl_iface_color_change(struct hostapd_iface *iface,
 		hostapd_cleanup_cca_params(bss);
 
 		bss->cca_color = color;
-		bss->cca_count = 10;
+		/* Use radio-level default CCA count unless overridden */
+		bss->cca_count = bss->cca_count > 0 ?
+				 bss->cca_count : HE_BSS_COLOR_CCA_COUNT_DEFAULT;
 
 		if (hostapd_fill_cca_settings(bss, &settings)) {
 			wpa_printf(MSG_DEBUG,
@@ -6304,6 +6364,12 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211AX
 	} else if (os_strncmp(buf, "COLOR_CHANGE ", 13) == 0) {
 		if (hostapd_ctrl_iface_color_change(hapd->iface, buf + 13))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "COLOR_COLLISION_AP_PERIOD ", 26) == 0) {
+		if (hostapd_ctrl_iface_bsscolor_collision_ap_period(hapd->iface, buf + 26))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "COLOR_CCA_COUNT ", 16) == 0) {
+		if (hostapd_ctrl_iface_bsscolor_cca_count(hapd->iface, buf + 16))
 			reply_len = -1;
 	} else if (os_strncmp(buf, "SET_6GHZ_PWR_MODE ", 18) == 0) {
 		if (hostapd_ctrl_iface_set_pwr_mode(hapd->iface, buf + 18))

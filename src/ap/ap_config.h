@@ -1393,6 +1393,8 @@ struct hostapd_config {
 #ifdef CONFIG_QCN_EXTN
 	bool downgrade_320mhz_opclass;
 #endif
+	/* HE BSS color collision AP period (seconds) */
+	u16 he_bss_color_collision_ap_period;
 
 	/* Set I2R LMR policy to allow LMR response from ISTA */
 	bool i2r_lmr_policy;
