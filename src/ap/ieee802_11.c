@@ -3731,13 +3731,13 @@ static void handle_auth(struct hostapd_data *hapd,
 	 * MLD MAC address. */
 	if ((!(sta->flags & WLAN_STA_MFP) || !ap_sta_is_authorized(sta)) &&
 	    !sta->added_unassoc && auth_transaction == 1) {
-		ap_sta_free_sta_profile(&sta->mld_info);
-		os_memset(&sta->mld_info, 0, sizeof(sta->mld_info));
 		if (sta->wpa_sm) {
 			wpa_auth_sta_deinit(sta->wpa_sm);
 			sta->wpa_sm = NULL;
 			clear_wpa_sm_for_each_partner_link(hapd, sta);
 		}
+		ap_sta_free_sta_profile(&sta->mld_info);
+		os_memset(&sta->mld_info, 0, sizeof(sta->mld_info));
 
 		if (mld_sta) {
 			u8 link_id = hapd->mld_link_id;
