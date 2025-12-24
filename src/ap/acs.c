@@ -1425,6 +1425,14 @@ static void acs_scan_complete(struct hostapd_iface *iface)
 		goto fail;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (iface->conf->conf_extn.qacs_enable) {
+		if (!acs_process_hostapd_scan_data(iface))
+			acs_study(iface);
+		return;
+	}
+#endif
+
 	if (++iface->acs_num_completed_scans < iface->conf->acs_num_scans) {
 		err = acs_request_scan(iface);
 		if (err && err != -EBUSY) {
