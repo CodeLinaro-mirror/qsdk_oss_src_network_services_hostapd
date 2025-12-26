@@ -377,6 +377,9 @@ struct hostapd_bss_config {
 	enum mfp_options rsn_override_mfp_2;
 	int group_mgmt_cipher;
 	int beacon_prot;
+	int control_frame_prot;
+	int group_control_frame_cipher;
+	int max_cip_padding_delay; /* Configurable max_cip padding delay */
 	/* dot11AssociationSAQueryMaximumTimeout (in TUs) */
 	unsigned int assoc_sa_query_max_timeout;
 	/* dot11AssociationSAQueryRetryTimeout (in TUs) */

@@ -544,6 +544,7 @@ struct wpa_ie_data {
 	size_t num_pmkid;
 	const u8 *pmkid;
 	int mgmt_group_cipher;
+	int ctrl_group_cipher;
 };
 
 

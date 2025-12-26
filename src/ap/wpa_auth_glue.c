@@ -80,6 +80,8 @@ static void hostapd_wpa_auth_config_update(struct hostapd_data *hapd,
 	_conf->prot_range_neg =
 		!!(hapd->iface->drv_flags2 &
 		   WPA_DRIVER_FLAGS2_PROT_RANGE_NEG_AP);
+	_conf->cigtk =
+		!!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK);
 
 #ifdef CONFIG_IEEE80211BE
 	_conf->mld_addr = NULL;
@@ -147,6 +149,8 @@ static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
 	wconf->rsn_override_mfp_2 = conf->rsn_override_mfp_2;
 	wconf->beacon_prot = conf->beacon_prot;
 	wconf->group_mgmt_cipher = conf->group_mgmt_cipher;
+	wconf->control_frame_prot = conf->control_frame_prot;
+	wconf->group_control_frame_cipher = conf->group_control_frame_cipher;
 	wconf->sae_require_mfp = conf->sae_require_mfp;
 	wconf->ssid_protection = conf->ssid_protection;
 	wconf->ssid_len = conf->ssid.ssid_len;

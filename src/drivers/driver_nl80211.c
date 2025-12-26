@@ -6492,6 +6492,12 @@ static int wpa_driver_nl80211_build_sta(struct wpa_driver_nl80211_data *drv,
 			goto fail;
 	}
 
+	if (params->control_mic_pad != CONTROL_MIC_PAD_NOT_SET) {
+		wpa_printf(MSG_DEBUG, " * control_mic_pad = %d\n", params->control_mic_pad);
+		if (nla_put_u8(msg, NL80211_ATTR_CONTROL_MIC_PAD, params->control_mic_pad))
+			goto fail;
+	}
+
 	/* In case we are an AP MLD need to always specify the link ID */
 	if (params->mld_link_id >= 0) {
 		wpa_printf(MSG_DEBUG, "  * mld_link_id=%d",

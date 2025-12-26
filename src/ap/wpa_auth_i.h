@@ -93,6 +93,7 @@ struct wpa_state_machine {
 	unsigned int pending_deinit:1;
 	unsigned int started:1;
 	unsigned int mgmt_frame_prot:1;
+	unsigned int ctrl_frame_prot:1;
 	unsigned int mfpr:1;
 	unsigned int rx_eapol_key_secure:1;
 	unsigned int update_snonce:1;

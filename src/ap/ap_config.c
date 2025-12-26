@@ -218,6 +218,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->vht_mcs_nss_set = 0;
 #endif /* CONFIG_IEEE80211AC */
 	bss->ht_mcs_nss_set = 0;
+	bss->group_control_frame_cipher = WPA_CIPHER_BIP_GMAC_256;
 }
 
 #ifdef CONFIG_IEEE80211BE
