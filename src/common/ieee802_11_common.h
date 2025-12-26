@@ -179,6 +179,7 @@ struct ieee802_11_elems {
 	const u8 *security_profile;
 	const u8 *pqc_parameter;
 	const u8 *mscs_desc;
+	const u8 *cip_pad;
 
 	u8 ssid_len;
 	u8 supp_rates_len;
@@ -269,6 +270,7 @@ struct ieee802_11_elems {
 	unsigned int num_frag_elems;
 	u8 ttlm_num;
 	u8 mscs_desc_len;
+	u8 cip_pad_len;
 };
 
 typedef enum { ParseOK = 0, ParseUnknown = 1, ParseFailed = -1 } ParseRes;

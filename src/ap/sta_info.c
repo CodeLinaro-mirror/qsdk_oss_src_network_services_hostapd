@@ -2607,7 +2607,8 @@ int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_aut
 			    NULL, 0, NULL,
 #endif
 			    sta->flags, 0, 0, 0, 0,
-			    mld_link_addr, mld_link_sta, eml_cap, epp_sta, 0)) {
+			    mld_link_addr, mld_link_sta, eml_cap, epp_sta, 0,
+			    CONTROL_MIC_PAD_NOT_SET)) {
 		hostapd_logger(hapd, sta->addr,
 			       HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_NOTICE,

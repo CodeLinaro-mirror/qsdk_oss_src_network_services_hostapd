@@ -70,6 +70,11 @@
 #include "robust_av.h"
 #include "wpa_auth_i.h"
 
+#define CIPIE_ELEMENT_ID 0
+#define CIPIE_LENGTH 1
+#define CIPIE_ELEMENT_ID_EXTENSION 2
+#define CIPIE_PADDING_DELAY 3
+
 #ifdef CONFIG_FILS
 static struct wpabuf *
 prepare_auth_resp_fils(struct hostapd_data *hapd,
@@ -95,7 +100,8 @@ static void handle_auth(struct hostapd_data *hapd,
 			const struct ieee80211_mgmt *mgmt, size_t len,
 			int rssi, int from_queue);
 static int add_associated_sta(struct hostapd_data *hapd,
-			      struct sta_info *sta, int type);
+				      struct sta_info *sta, int type);
+static struct wpabuf *cip_build_assoc_resp_ie(u8 padding_delay);
 #ifdef CONFIG_IEEE8021X_AUTH
 static struct rsn_pmksa_cache_entry *
 pmksa_cache_search(void *ctx, const u8 *spa, const u8 *pmkid, bool is_ml);
@@ -6432,6 +6438,33 @@ static u16 check_ssid(struct hostapd_data *hapd, struct sta_info *sta,
 	return WLAN_STATUS_SUCCESS;
 }
 
+static u16 check_cip_padding_delay(struct hostapd_data *hapd, struct sta_info *sta,
+			      const u8 *cip_pad, size_t cip_pad_len)
+{
+	if (!cip_pad || cip_pad_len != 1) {
+		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_INFO,
+			       "Missing or malformed CIP Padding");
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
+	}
+
+	u8 control_mic_pad = *cip_pad;
+
+	if ((hapd->conf->max_cip_padding_delay) &&
+	    control_mic_pad > hapd->conf->max_cip_padding_delay) {
+		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_INFO,
+			       "CIP Capabilities: MIC padding delay %u "
+			       "exceeds max allowed %u",
+			       control_mic_pad, hapd->conf->max_cip_padding_delay);
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
+	}
+
+	wpa_printf(MSG_DEBUG, "CIP Capabilities: MIC padding delay %u accepted "
+		   "for "MACSTR" ", control_mic_pad, MAC2STR(sta->addr));
+	sta->control_mic_pad = control_mic_pad;
+	return WLAN_STATUS_SUCCESS;
+}
 
 static u16 check_wmm(struct hostapd_data *hapd, struct sta_info *sta,
 		     const u8 *wmm_ie, size_t wmm_ie_len)
@@ -7316,6 +7349,16 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			       "No WPA/RSN IE in association request");
 		resp = WLAN_STATUS_INVALID_ELEMENT;
 		goto out;
+	}
+
+	sta->control_mic_pad = CONTROL_MIC_PAD_NOT_SET;
+	if (hapd->conf->control_frame_prot &&
+	    (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK) &&
+	    elems->cip_pad) {
+		resp = check_cip_padding_delay(hapd, sta, elems->cip_pad,
+					       elems->cip_pad_len);
+		if (resp != WLAN_STATUS_SUCCESS)
+			return resp;
 	}
 
 	if (hapd->conf->wpa && wpa_ie) {
@@ -8254,7 +8297,8 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 #endif
 					    sta->flags, 0, 0, 0, 0,
 					    mld_link_addr, mld_link_sta,
-					    eml_cap, ap_sta_is_epp(sta), reassoc)) {
+					    eml_cap, ap_sta_is_epp(sta), reassoc,
+					    CONTROL_MIC_PAD_NOT_SET)) {
 				hostapd_logger(hapd, sta->addr,
 					       HOSTAPD_MODULE_IEEE80211,
 					       HOSTAPD_LEVEL_NOTICE,
@@ -8465,8 +8509,8 @@ static int add_associated_sta(struct hostapd_data *hapd,
 			    sta->he_6ghz_capab,
 			    sta->flags | WLAN_STA_ASSOC, sta->qosinfo,
 			    sta->vht_opmode, sta->p2p_ie ? 1 : 0,
-			    set, mld_link_addr, mld_link_sta, eml_cap,
-			    epp_sta, type)) {
+				    set, mld_link_addr, mld_link_sta, eml_cap,
+				    epp_sta, type, sta->control_mic_pad)) {
 		hostapd_logger(hapd, sta->addr,
 			       HOSTAPD_MODULE_IEEE80211, HOSTAPD_LEVEL_NOTICE,
 			       "Could not %s STA to kernel driver",
@@ -8988,6 +9032,23 @@ rsnxe_done:
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+	if (hapd->conf->control_frame_prot &&
+	    (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK) &&
+	    (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_CIP_PADDING_SUPPORT) &&
+	    (sta->control_mic_pad != CONTROL_MIC_PAD_NOT_SET)) {
+		u8 padding_delay = sta->control_mic_pad;
+		struct wpabuf *cip_ie = cip_build_assoc_resp_ie(padding_delay);
+
+		if (cip_ie) {
+			os_memcpy(p, wpabuf_head(cip_ie), wpabuf_len(cip_ie));
+			p += wpabuf_len(cip_ie);
+			send_len += wpabuf_len(cip_ie);
+			wpabuf_free(cip_ie);
+			wpa_printf(MSG_DEBUG, "CIP: Added CIP Capability IE"
+				   "with Padding Delay = %u", padding_delay);
+		}
+	}
+
 	if (hostapd_drv_send_mlme(hapd, reply, send_len, 0, NULL, 0, 0) < 0) {
 		wpa_printf(MSG_INFO, "Failed to send assoc resp: %s",
 			   strerror(errno));
@@ -9267,6 +9328,20 @@ free_entry:
 	return sta;
 }
 #endif
+
+static struct wpabuf *cip_build_assoc_resp_ie(u8 padding_delay)
+{
+	struct wpabuf *ie = wpabuf_alloc(4);
+
+	if (!ie)
+		return NULL;
+	wpabuf_put_u8(ie, WLAN_EID_EXTENSION);
+	wpabuf_put_u8(ie, 2);
+	wpabuf_put_u8(ie, WLAN_EID_EXT_CIP_CAPAB);
+	wpabuf_put_u8(ie, padding_delay);
+
+	return ie;
+}
 
 static void handle_assoc(struct hostapd_data *hapd,
 			 const struct ieee80211_mgmt *mgmt, size_t len,

@@ -56,7 +56,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    u64 flags, u8 qosinfo, u8 vht_opmode,
 		    int supp_p2p_ps,
 		    int set, const u8 *link_addr, bool mld_link_sta,
-		    u16 eml_cap, bool epp_sta, int type);
+		    u16 eml_cap, bool epp_sta, int type, u8 control_mic_pad);
 int hostapd_set_privacy(struct hostapd_data *hapd, int enabled);
 int hostapd_set_generic_elem(struct hostapd_data *hapd, const u8 *elem,
 			     size_t elem_len);

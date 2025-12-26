@@ -480,6 +480,10 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
 		elems->security_profile = pos;
 		elems->security_profile_len = elen;
 		break;
+	case WLAN_EID_EXT_CIP_CAPAB:
+		elems->cip_pad = pos;
+		elems->cip_pad_len = elen;
+		break;
 	default:
 		if (show_errors) {
 			wpa_printf(MSG_MSGDUMP,

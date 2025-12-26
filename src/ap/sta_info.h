@@ -169,6 +169,7 @@ struct sta_info {
 	u8 epp_pmkid_next[PMKID_LEN];
 #endif /* CONFIG_PMKSA_PRIVACY */
 	int ft_over_ds_saquery_status;
+	u8 control_mic_pad;
 
 #ifdef CONFIG_MESH
 	enum mesh_plink_state plink_state;

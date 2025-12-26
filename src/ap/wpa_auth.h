@@ -203,7 +203,9 @@ struct wpa_auth_config {
 	enum mfp_options rsn_override_mfp;
 	enum mfp_options rsn_override_mfp_2;
 	int beacon_prot;
+	int control_frame_prot;
 	int group_mgmt_cipher;
+	int group_control_frame_cipher;
 	int sae_require_mfp;
 #ifdef CONFIG_OCV
 	int ocv; /* Operating Channel Validation */
@@ -303,6 +305,7 @@ struct wpa_auth_config {
 	bool eppke_unauth;
 #endif /* CONFIG_PASN */
 #endif /* CONFIG_ENC_ASSOC */
+	unsigned int cigtk:1;
 
 	int owe_ptk_workaround;
 	u8 transition_disable;

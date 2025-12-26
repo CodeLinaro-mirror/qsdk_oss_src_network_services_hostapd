@@ -601,6 +601,8 @@ static u64 rsnxe_capab(struct wpa_auth_config *conf, int key_mgmt)
 	if (conf->eppke_unauth)
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_UNAUTH_EPPKE);
 #endif /* CONFIG_ENC_ASSOC */
+	if (conf->cigtk)
+		capab |= BIT(WLAN_RSNX_CAPAB_CIGTK);
 
 	return capab;
 }
@@ -1277,6 +1279,12 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 			       "Management frame protection cannot use TKIP");
 		    return WPA_MGMT_FRAME_PROTECTION_VIOLATION;
 	}
+
+	if (wpa_auth->conf.control_frame_prot &&
+	    ieee802_11_rsnx_capab(rsnxe, WLAN_RSNX_CAPAB_CIGTK))
+		sm->ctrl_frame_prot = 1;
+	else
+		sm->ctrl_frame_prot = 0;
 
 	if (wpa_auth->conf.spp_amsdu &&
 	    ieee802_11_rsnx_capab(rsnxe, WLAN_RSNX_CAPAB_SPP_A_MSDU) &&

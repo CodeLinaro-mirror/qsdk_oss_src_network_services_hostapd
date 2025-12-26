@@ -3020,6 +3020,10 @@ struct wpa_driver_capa {
 /** Driver supports NAN Device interface and NAN Synchronization */
 #define WPA_DRIVER_FLAGS2_SUPPORT_NAN			0x0000000080000000ULL
 /** Driver supports P2P assisted DFS */
+/** Driver supports CIGTK */
+#define WPA_DRIVER_FLAGS2_CIGTK			0x0000080000000000ULL
+/** Driver supports CIP Padding Support */
+#define WPA_DRIVER_FLAGS2_CIP_PADDING_SUPPORT	0x0000100000000000ULL
 #define WPA_DRIVER_FLAGS2_P2P_ASSISTED_DFS		0x0000000100000000ULL
 /** Driver supports (Re)Association Request/Response frame encryption */
 #define WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION	0x0000000200000000ULL
@@ -3339,6 +3343,7 @@ struct hostapd_sta_add_params {
 	s8 mld_link_id;
 	const u8 *mld_link_addr;
 	u16 eml_cap;
+	u8 control_mic_pad;
 
 	const struct ieee80211_uhr_capabilities *uhr_capab;
 	size_t uhr_capab_len;
