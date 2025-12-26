@@ -3144,3 +3144,148 @@ nl80211_get_multi_hw_info(struct i802_bss *bss, unsigned int *num_multi_hws)
 
 	return NULL;
 }
+
+struct phy_chainmask_handler_arg {
+	char *buf;
+	size_t buf_len;
+	u32 used_len;
+	u8 radio_index;
+};
+
+static int phy_chainmask_handler(struct nl_msg *msg, void *arg)
+{
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	struct phy_chainmask_handler_arg* result = arg;
+	u32 idx, avail_tx, avail_rx, cfg_tx, cfg_rx;
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	int rem_radios, rem_radio_attr;
+	struct nlattr *radio_attr;
+	struct nlattr *radio;
+	int ret;
+
+	ret = nla_parse(tb, NL80211_ATTR_MAX,
+			genlmsg_attrdata(gnlh, 0),
+			genlmsg_attrlen(gnlh, 0),
+			NULL);
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR, "Failed to parse nl80211 attributes");
+		return NL_SKIP;
+	}
+
+	if (!tb[NL80211_ATTR_WIPHY_RADIOS])
+		goto split_phy;
+
+	nla_for_each_nested(radio, tb[NL80211_ATTR_WIPHY_RADIOS], rem_radios) {
+		idx = 0, avail_tx = 0, avail_rx = 0, cfg_tx = 0, cfg_rx = 0;
+		nla_for_each_nested(radio_attr, radio, rem_radio_attr) {
+			switch (nla_type(radio_attr)) {
+				case NL80211_WIPHY_RADIO_ATTR_INDEX:
+					idx = nla_get_u32(radio_attr);
+					break;
+				case NL80211_WIPHY_RADIO_ATTR_ANTENNA_AVAIL_TX:
+					avail_tx = nla_get_u32(radio_attr);
+					break;
+				case NL80211_WIPHY_RADIO_ATTR_ANTENNA_AVAIL_RX:
+					avail_rx = nla_get_u32(radio_attr);
+					break;
+				case NL80211_WIPHY_RADIO_ATTR_ANTENNA_TX:
+					cfg_tx = nla_get_u32(radio_attr);
+					break;
+				case NL80211_WIPHY_RADIO_ATTR_ANTENNA_RX:
+					cfg_rx = nla_get_u32(radio_attr);
+					break;
+				default:
+					break;
+			}
+		}
+
+		if (result->used_len < result->buf_len && idx == result->radio_index) {
+			int n = os_snprintf(result->buf + result->used_len,
+					   result->buf_len - result->used_len,
+					   "Radio Idx %u:\n"
+					   "  Available Antennas: TX %#x\tRX %#x\n"
+					   "  Configured Antennas: TX %#x\tRX %#x\n",
+					   idx, avail_tx, avail_rx, cfg_tx, cfg_rx);
+			if (n > 0 && n < result->buf_len - result->used_len)
+				result->used_len += (size_t)n;
+			else if (n > 0)
+				result->used_len = result->buf_len - 1;
+		}
+	}
+	goto done;
+
+split_phy:
+	if (result->radio_index == NL80211_WIPHY_RADIO_ID_MAX) {
+		avail_tx = tb[NL80211_ATTR_WIPHY_ANTENNA_AVAIL_TX] ?
+			nla_get_u32(tb[NL80211_ATTR_WIPHY_ANTENNA_AVAIL_TX]) : 0;
+
+		avail_rx = tb[NL80211_ATTR_WIPHY_ANTENNA_AVAIL_RX] ?
+			nla_get_u32(tb[NL80211_ATTR_WIPHY_ANTENNA_AVAIL_RX]) : 0;
+
+		cfg_tx = tb[NL80211_ATTR_WIPHY_ANTENNA_TX] ?
+			 nla_get_u32(tb[NL80211_ATTR_WIPHY_ANTENNA_TX]) : 0;
+
+		cfg_rx = tb[NL80211_ATTR_WIPHY_ANTENNA_RX] ?
+			nla_get_u32(tb[NL80211_ATTR_WIPHY_ANTENNA_RX]) : 0;
+
+		if (result->used_len < result->buf_len) {
+			int n = os_snprintf(result->buf + result->used_len,
+					   result->buf_len - result->used_len,
+					   "Available Antennas: TX %#x\tRX %#x\n"
+					   "Configured Antennas: TX %#x\tRX %#x\n",
+					   avail_tx, avail_rx, cfg_tx, cfg_rx);
+			if (n > 0 && n < result->buf_len - result->used_len)
+				result->used_len += (size_t)n;
+			else if (n > 0)
+				result->used_len = result->buf_len - 1;
+		}
+	}
+
+done:
+	if (result->used_len > 0 && result->used_len < result->buf_len)
+		result->buf[result->used_len] = '\0';
+	else if (result->used_len >= result->buf_len && result->buf_len > 0)
+		result->buf[result->buf_len - 1] = '\0';
+
+	return NL_OK;
+}
+
+int nl80211_get_chain_mask(void *priv, u8 radio_idx, char *buf, size_t buf_len)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int nl_flags = 0;
+	u32 feat;
+	struct phy_chainmask_handler_arg result = {
+		.buf = buf,
+		.buf_len = buf_len,
+		.used_len = 0,
+		.radio_index = radio_idx
+	};
+
+	feat = get_nl80211_protocol_features(drv);
+	if (feat & NL80211_PROTOCOL_FEATURE_SPLIT_WIPHY_DUMP)
+		nl_flags = NLM_F_DUMP;
+
+	msg = nl80211_cmd_msg(bss, nl_flags, NL80211_CMD_GET_WIPHY);
+	if (!msg) {
+		wpa_printf(MSG_ERROR, "Failed to allocate nl80211 message");
+		return -1;
+	}
+
+	if (feat & NL80211_PROTOCOL_FEATURE_SPLIT_WIPHY_DUMP) {
+		if (nla_put_flag(msg, NL80211_ATTR_SPLIT_WIPHY_DUMP)) {
+			wpa_printf(MSG_ERROR, "Failed to set SPLIT_WIPHY_DUMP flag");
+			nlmsg_free(msg);
+			return -1;
+		}
+	}
+
+	if (send_and_recv_resp(drv, msg, phy_chainmask_handler, &result) < 0){
+		wpa_printf(MSG_ERROR, "Failed to send and receive nl80211 message");
+		return -1;
+	}
+	return result.used_len > 0 ? (int) result.used_len : -EOPNOTSUPP;
+}
+

@@ -4910,6 +4910,38 @@ static int hostapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd, char *cm
 	return ret;
 }
 
+
+#ifndef CONFIG_DRIVER_NL80211
+static int hostapd_ctrl_get_chain_mask(struct hostapd_data *hapd,
+                                       char *buf, size_t buflen)
+{
+	wpa_printf(MSG_ERROR, "CONFIG_DRIVER_NL80211 is not set\n");
+	return -1;
+}
+
+#else /*CONFIG_DRIVER_NL80211*/
+static int hostapd_ctrl_get_chain_mask(struct hostapd_data *hapd,
+                                       char *buf, size_t buflen)
+{
+	int ret;
+	u8 radio_idx = NL80211_WIPHY_RADIO_ID_MAX;
+
+	if (!hapd->driver || !hapd->drv_priv || !hapd->started){
+		wpa_printf(MSG_ERROR, "Driver Data/Interface not found\n");
+		return -1;
+	}
+
+	if (hapd->iface && hapd->iface->num_multi_hws && hapd->iface->current_hw_info)
+		radio_idx = hapd->iface->current_hw_info->hw_idx;
+
+	ret = nl80211_get_chain_mask(hapd->drv_priv, radio_idx, buf, buflen);
+	if (ret < 0)
+		return -1;
+
+	return ret;
+}
+#endif /*CONFIG_DRIVER_NL80211*/
+
 static int hostapd_ctrl_iface_link_remove(struct hostapd_data *hapd, char *cmd,
 					  char *buf, size_t buflen)
 {
@@ -6684,6 +6716,8 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		if (hostapd_ctrl_set_tx_rx_chain_mask(hapd, buf+11,
 						     reply, reply_size))
 			reply_len = -1;
+	} else if (os_strcmp(buf, "GET_CHAIN_MASK") == 0) {
+		reply_len = hostapd_ctrl_get_chain_mask(hapd, reply, reply_size);
 	} else if (os_strncmp(buf, "AFC ", 4) == 0) {
 		reply_len = hostapd_afc_handle_cli(hapd, buf + 4,
 						   reply, reply_size);

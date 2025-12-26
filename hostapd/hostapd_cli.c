@@ -1729,6 +1729,11 @@ static int hostapd_cli_cmd_chain_mask(struct wpa_ctrl *ctrl, int argc,
 	return hostapd_cli_cmd(ctrl, "CHAIN_MASK", 2, argc, argv);
 }
 
+static int hostapd_cli_cmd_get_chain_mask(struct wpa_ctrl *ctrl, int argc,
+						char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_CHAIN_MASK");
+}
 
 static int hostapd_cli_cmd_driver_flags(struct wpa_ctrl *ctrl, int argc,
 					char *argv[])
@@ -2442,6 +2447,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	 "<addr>, [reset=], [policy_list=], Send unsolicited DSCP request"},
 	{ "chain_mask", hostapd_cli_cmd_chain_mask, NULL,
 	"<tx chain mask> <rx chain mask>" },
+	{ "get_chain_mask", hostapd_cli_cmd_get_chain_mask, NULL,
+	 "= Get chain mask value of selected interface/link" },
 	{ "afc", hostapd_cli_cmd_afc, NULL,
 	  "[set_afc_chan_sel_config|get_afc_chan_sel_config] <afc_chan_sel_config_value>" },
 	{ "clear_afc_payload", hostapd_cli_cmd_clear_afc_payload, NULL,
