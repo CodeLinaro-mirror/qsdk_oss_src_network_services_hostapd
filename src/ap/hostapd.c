@@ -76,6 +76,55 @@ void hostapd_switch_color_timeout_handler(void *eloop_data,
 					  void *user_ctx);
 #endif /* CONFIG_IEEE80211AX */
 
+static int hostapd_adjust_legacy_beacon_rate(struct hostapd_data *hapd)
+{
+	int i, rate, best, req;
+	int best_low, best_high;
+
+	if (hapd->conf->rate_type != BEACON_RATE_LEGACY ||
+	    !hapd->conf->beacon_rate)
+		return 0;
+
+	req = (int) hapd->conf->beacon_rate;
+	best_high = 0;
+	best_low = 0;
+
+	for (i = 0; i < hapd->num_rates; i++) {
+		if (!(hapd->current_rates[i].flags & HOSTAPD_RATE_BASIC))
+			continue;
+
+		rate = hapd->current_rates[i].rate;
+		if (rate == req) {
+			/* Configured beacon tx rate found in the basic rate */
+			return 0;
+		}
+
+		if (req < rate && (!best_high || rate < best_high))
+			best_high = rate;
+
+		if (req > rate && (!best_low || rate > best_low))
+			best_low = rate;
+	}
+
+	if (!best_low && !best_high) {
+		wpa_printf(MSG_ERROR,
+				"Unable to fit beacon tx rate %d Kbps within the basic rates",
+				req * 100);
+		return -1;
+	}
+
+	best = best_high ? best_high : best_low;
+
+	wpa_printf(MSG_INFO,
+			"Configured beacon tx rate %u Kbps is not in the basic rate set; "
+			"adjusting to %d Kbps (%s basic rate)",
+			req * 100, best * 100,
+			best_high ? "next higher" : "nearest lower");
+	hapd->conf->beacon_rate = best;
+
+	return 0;
+}
+
 /* Prepare per-BSS rates from BSS config and current hw mode */
 static int hostapd_prepare_rates(struct hostapd_data *hapd,
 				 struct hostapd_hw_modes *mode)
@@ -144,6 +193,12 @@ static int hostapd_prepare_rates(struct hostapd_data *hapd,
 	    		   hapd->num_rates, num_basic_rates);
 	    	return -1;
 	}
+
+	/* Legacy beacon_rate Validation: Match beacon_rate with available
+	 * basic rate. If not present in the basic rate set, adjust to the
+	 * nearest valid basic rate; fail if no suitable rate exists.*/
+	if (hostapd_adjust_legacy_beacon_rate(hapd) < 0)
+		return -1;
 
 	return 0;
 }
@@ -361,6 +416,7 @@ static void hostapd_reload_bss(struct hostapd_data *hapd)
 			hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
 					HOSTAPD_LEVEL_WARNING,
 					"Failed to prepare rates table.");
+			return;
 		}
 	}
 
