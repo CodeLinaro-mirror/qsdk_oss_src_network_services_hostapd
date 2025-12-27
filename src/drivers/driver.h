@@ -6179,6 +6179,18 @@ struct wpa_driver_ops {
 	 * Return: Value of set_beacon of driver interface data
 	 */
 	bool (*read_link_set_beacon)(void *priv, u8 mld_link_id);
+
+#ifdef CONFIG_QCN_EXTN
+	/**
+	 * dcs_config - Send the DCS config params to driver in order to configure
+	 * at firmware.
+	 * @priv: Private driver interface data
+	 * @link_id: Link ID of the specified link; -1 for non-MLD
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*dcs_config)(void *priv, u8 link_id,
+			  struct driver_dcs_config *params);
+#endif
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211AX
