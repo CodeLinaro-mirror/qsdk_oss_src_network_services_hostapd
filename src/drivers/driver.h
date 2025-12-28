@@ -2337,6 +2337,10 @@ struct wpa_driver_ap_params {
 	 */
 	struct wpa_driver_ap_ttlm_params ttlm_params;
 
+	/**
+	 * is_cfp_enabled - flag to indicate whether control frame protection is enabled.
+	 */
+	bool is_cfp_enabled;
 };
 
 struct wpa_driver_mesh_bss_params {

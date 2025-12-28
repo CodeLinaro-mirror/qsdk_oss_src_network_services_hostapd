@@ -3309,6 +3309,10 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 	}
 #endif
 
+	if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK &&
+	    hapd->conf->control_frame_prot)
+		params.is_cfp_enabled = true;
+
 set_ap:
 	res = hostapd_drv_set_ap(hapd, &params);
 	if (res)
