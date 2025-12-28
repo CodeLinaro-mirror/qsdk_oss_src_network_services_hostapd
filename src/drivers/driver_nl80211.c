@@ -4006,12 +4006,17 @@ static int wpa_driver_nl80211_set_key(struct i802_bss *bss,
 		goto fail2;
 	if (!key_msg ||
 	    nla_put_u8(key_msg, NL80211_KEY_IDX, key_idx) ||
-	    nla_put_flag(key_msg, wpa_alg_bip(alg) ?
-			 (key_idx == 6 || key_idx == 7 ?
-			  NL80211_KEY_DEFAULT_BEACON :
-			  NL80211_KEY_DEFAULT_MGMT) :
+	    nla_put_flag(key_msg,
+			 (alg == WPA_ALG_BIP_GMAC_256 &&
+			 (key_idx == 0 || key_idx == 1)) ?
+			 NL80211_KEY_DEFAULT_CONTROL :
+			 wpa_alg_bip(alg) ?
+			 ((key_idx == 6 || key_idx == 7) ?
+			 NL80211_KEY_DEFAULT_BEACON :
+			 NL80211_KEY_DEFAULT_MGMT) :
 			 NL80211_KEY_DEFAULT))
 		goto fail;
+
 	if (addr && is_broadcast_ether_addr(addr)) {
 		struct nlattr *types;
 
@@ -8423,7 +8428,7 @@ static int get_key_handler(struct nl_msg *msg, void *arg)
 
 
 static int i802_get_seqnum(const char *iface, void *priv, const u8 *addr,
-			   int idx, int link_id, u8 *seq)
+			   int idx, int link_id, u8 *seq, int get_cigtk_seq_num)
 {
 	struct i802_bss *bss = priv;
 	struct wpa_driver_nl80211_data *drv = bss->drv;
@@ -8436,7 +8441,8 @@ static int i802_get_seqnum(const char *iface, void *priv, const u8 *addr,
 	    (addr && nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, addr)) ||
 	    (link_id != NL80211_DRV_LINK_ID_NA &&
 	     nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id)) ||
-	    nla_put_u8(msg, NL80211_ATTR_KEY_IDX, idx)) {
+	    nla_put_u8(msg, NL80211_ATTR_KEY_IDX, idx) ||
+	    (get_cigtk_seq_num && nla_put_flag(msg, NL80211_ATTR_CIGTK))) {
 		nlmsg_free(msg);
 		return -ENOBUFS;
 	}

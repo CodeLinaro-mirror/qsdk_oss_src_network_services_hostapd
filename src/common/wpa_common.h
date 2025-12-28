@@ -134,6 +134,7 @@ WPA_CIPHER_BIP_CMAC_256)
 #define RSN_KEY_DATA_MULTIBAND_KEYID RSN_SELECTOR(0x00, 0x0f, 0xac, 12)
 #define RSN_KEY_DATA_OCI RSN_SELECTOR(0x00, 0x0f, 0xac, 13)
 #define RSN_KEY_DATA_BIGTK RSN_SELECTOR(0x00, 0x0f, 0xac, 14)
+#define RSN_KEY_DATA_CIGTK RSN_SELECTOR(0x00, 0x0f, 0xac, 15)
 #define RSN_KEY_DATA_MLO_GTK RSN_SELECTOR(0x00, 0x0f, 0xac, 16)
 #define RSN_KEY_DATA_MLO_IGTK RSN_SELECTOR(0x00, 0x0f, 0xac, 17)
 #define RSN_KEY_DATA_MLO_BIGTK RSN_SELECTOR(0x00, 0x0f, 0xac, 18)
@@ -165,6 +166,8 @@ WPA_CIPHER_BIP_CMAC_256)
 #define WPA_IGTK_MAX_LEN 32
 #define WPA_BIGTK_LEN 16
 #define WPA_BIGTK_MAX_LEN 32
+#define WPA_CIGTK_LEN 16
+#define WPA_CIGTK_MAX_LEN 32
 
 
 /* IEEE 802.11, 7.3.2.25.3 RSN Capabilities */
@@ -182,6 +185,7 @@ WPA_CIPHER_BIP_CMAC_256)
 #define WPA_CAPABILITY_EXT_KEY_ID_FOR_UNICAST BIT(13)
 #define WPA_CAPABILITY_OCVC BIT(14)
 /* B15: Reserved */
+#define WPA_CAPABILITY_CFPC BIT(16)
 
 
 /* IEEE 802.11r */
@@ -290,6 +294,12 @@ struct wpa_bigtk {
 	size_t bigtk_len;
 };
 
+
+struct wpa_cigtk {
+	u8 cigtk[WPA_CIGTK_MAX_LEN];
+	size_t cigtk_len;
+};
+
 /* WPA IE version 1
  * 00-50-f2:1 (OUI:OUI type)
  * 0x01 0x00 (version; little endian)
@@ -364,6 +374,13 @@ struct wpa_bigtk_kde {
 	u8 bigtk[WPA_BIGTK_MAX_LEN];
 } STRUCT_PACKED;
 
+#define WPA_CIGTK_KDE_PREFIX_LEN (2 + RSN_PN_LEN)
+struct wpa_cigtk_kde {
+	u8 keyid[2];
+	u8 pn[RSN_PN_LEN];
+	u8 cigtk[WPA_CIGTK_MAX_LEN];
+} STRUCT_PACKED;
+
 #define RSN_MLO_GTK_KDE_PREFIX_LENGTH		(1 + RSN_PN_LEN)
 #define RSN_MLO_GTK_KDE_PREFIX0_KEY_ID_MASK	0x03
 #define RSN_MLO_GTK_KDE_PREFIX0_TX		0x04
@@ -436,6 +453,7 @@ struct rsn_ftie_sha512 {
 #define FTIE_SUBELEM_IGTK 4
 #define FTIE_SUBELEM_OCI 5
 #define FTIE_SUBELEM_BIGTK 6
+#define FTIE_SUBELEM_CIGTK 7
 #define FTIE_SUBELEM_MLO_GTK 8
 #define FTIE_SUBELEM_MLO_IGTK 9
 #define FTIE_SUBELEM_MLO_BIGTK 10
@@ -611,6 +629,8 @@ struct wpa_ft_ies {
 	size_t igtk_len;
 	const u8 *bigtk;
 	size_t bigtk_len;
+	const u8 *cigtk;
+	size_t cigtk_len;
 #ifdef CONFIG_OCV
 	const u8 *oci;
 	size_t oci_len;
@@ -692,6 +712,8 @@ struct wpa_eapol_ie_parse {
 	size_t igtk_len;
 	const u8 *bigtk;
 	size_t bigtk_len;
+	const u8 *cigtk;
+	size_t cigtk_len;
 	const u8 *sae_pw_ids;
 	size_t sae_pw_ids_len;
 	const u8 *mdie;

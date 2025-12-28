@@ -4300,7 +4300,7 @@ struct wpa_driver_ops {
 	 * unicast keys (i.e., addr != %NULL).
 	 */
 	int (*get_seqnum)(const char *ifname, void *priv, const u8 *addr,
-			  int idx, int link_id, u8 *seq);
+			  int idx, int link_id, u8 *seq, int get_cigtk_seq_num);
 
 	/**
 	 * flush - Flush all association stations (AP only)

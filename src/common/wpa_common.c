@@ -3585,6 +3585,14 @@ static int wpa_parse_generic(const u8 *pos, struct wpa_eapol_ie_parse *ie)
 		return 0;
 	}
 
+	if (left > 2 && selector == RSN_KEY_DATA_CIGTK) {
+		ie->cigtk = p;
+		ie->cigtk_len = left;
+		wpa_hexdump_key(MSG_DEBUG, "WPA: CIGTK in EAPOL-Key",
+				pos, dlen);
+		return 0;
+	}
+
 	if (left >= 1 && selector == WFA_KEY_DATA_IP_ADDR_REQ) {
 		ie->ip_addr_req = p;
 		wpa_hexdump(MSG_DEBUG, "WPA: IP Address Request in EAPOL-Key",
