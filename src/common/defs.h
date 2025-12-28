@@ -381,6 +381,14 @@ enum mfp_options {
 #define MGMT_FRAME_PROTECTION_DEFAULT 3
 
 /**
+ * enum cfp_options - Control frame protection (IEEE 802.11w) options
+ */
+enum cfp_options {
+	NO_CONTROL_FRAME_PROTECTION = 0,
+	CONTROL_FRAME_PROTECTION_REQUIRED = 1,
+};
+
+/**
  * enum hostapd_hw_mode - Hardware mode
  */
 enum hostapd_hw_mode {

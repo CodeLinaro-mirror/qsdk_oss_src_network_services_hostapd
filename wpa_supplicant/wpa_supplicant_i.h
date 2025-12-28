@@ -768,6 +768,7 @@ struct wpa_supplicant {
 	int key_mgmt;
 	int wpa_proto;
 	int mgmt_group_cipher;
+	int control_group_cipher;
 	/*
 	 * Allowed key management suites for roaming/initial connection
 	 * when the driver's SME is in use.

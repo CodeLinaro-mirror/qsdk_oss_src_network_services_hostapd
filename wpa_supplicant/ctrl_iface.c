@@ -5008,6 +5008,17 @@ static int wpa_supplicant_ctrl_iface_get_capability(
 		return res;
 	}
 
+	if (os_strcmp(field, "control_frame_prot") == 0) {
+		if ((wpa_s->drv_flags2 &
+		    WPA_DRIVER_FLAGS2_CIGTK))
+			res = os_snprintf(buf, buflen, "supported");
+		else
+			res = os_snprintf(buf, buflen, "not supported");
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	}
+
 #ifdef CONFIG_P2P
 	if (os_strcmp(field, "p2p2") == 0) {
 		if (wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_P2P_FEATURE_V2)

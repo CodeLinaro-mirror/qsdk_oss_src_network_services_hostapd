@@ -4834,6 +4834,7 @@ void wpa_sm_set_config(struct wpa_sm *sm, struct rsn_supp_config *config)
 		sm->wpa_rsc_relaxation = 0;
 		sm->owe_ptk_workaround = 0;
 		sm->beacon_prot = 0;
+		sm->control_frame_prot = 0;
 		sm->force_kdk_derivation = false;
 	}
 }
