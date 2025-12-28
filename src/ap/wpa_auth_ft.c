@@ -2733,6 +2733,59 @@ static u8 * wpa_ft_bigtk_subelem(struct wpa_state_machine *sm, size_t *len)
 }
 
 
+static u8 *wpa_ft_cigtk_subelem(struct wpa_state_machine *sm, size_t *len)
+{
+	u8 *subelem, *pos;
+	struct wpa_authenticator *wpa_auth = sm->wpa_auth;
+	struct wpa_group *gsm = wpa_auth->group;
+	size_t subelem_len;
+	const u8 *kek;
+	size_t kek_len;
+	size_t cigtk_len;
+
+	if (wpa_key_mgmt_fils(sm->wpa_key_mgmt)) {
+		kek = sm->PTK.kek2;
+		kek_len = sm->PTK.kek2_len;
+	} else {
+		kek = sm->PTK.kek;
+		kek_len = sm->PTK.kek_len;
+	}
+
+	cigtk_len = wpa_cipher_key_len(sm->wpa_auth->conf.group_control_frame_cipher);
+
+	/* Sub-elem ID[1] | Length[1] | KeyID[2] | CIPN[6] | Key Length[1] |
+	 * Key[16+8]
+	 */
+
+	subelem_len = 1 + 1 + 2 + 6 + 1 + cigtk_len + 8;
+	subelem = os_zalloc(subelem_len);
+	if (subelem == NULL)
+		return NULL;
+
+	pos = subelem;
+	*pos++ = FTIE_SUBELEM_CIGTK;
+	*pos++ = subelem_len - 2;
+	WPA_PUT_LE16(pos, gsm->GN_cigtk);
+	pos += 2;
+	sm->wpa_auth->cigtk_seq_num = 1;
+	wpa_auth_get_seqnum(sm->wpa_auth, NULL, gsm->GN_cigtk, pos);
+	sm->wpa_auth->cigtk_seq_num = 0;
+	pos += 6;
+	*pos++ = cigtk_len;
+	if (aes_wrap(kek, kek_len, cigtk_len / 8, gsm->CIGTK[gsm->GN_cigtk], pos)) {
+		wpa_printf(MSG_DEBUG,
+			   "FT: CIGTK subelem encryption failed: kek_len=%d",
+			   (int) kek_len);
+		os_free(subelem);
+		return NULL;
+	}
+
+	*len = subelem_len;
+	return subelem;
+}
+
+
+
 static u8 * wpa_ft_process_rdie(struct wpa_state_machine *sm,
 				u8 *pos, u8 *end, u8 id, u8 descr_count,
 				const u8 *ies, size_t ies_len)
@@ -3020,6 +3073,30 @@ u8 * wpa_sm_write_assoc_resp_ies(struct wpa_state_machine *sm, u8 *pos,
 			os_memcpy(subelem + subelem_len, bigtk, bigtk_len);
 			subelem_len += bigtk_len;
 			os_free(bigtk);
+		}
+		if (sm->mgmt_frame_prot && conf->beacon_prot &&
+		    conf->group_control_frame_cipher && sm->ctrl_frame_prot) {
+			u8 *cigtk;
+			size_t cigtk_len;
+			u8 *nbuf;
+
+			cigtk = wpa_ft_cigtk_subelem(sm, &cigtk_len);
+			if (!cigtk) {
+				wpa_printf(MSG_DEBUG,
+						"FT: Failed to add CIGTK subelement");
+				os_free(subelem);
+				return NULL;
+			}
+			nbuf = os_realloc(subelem, subelem_len + cigtk_len);
+			if (!nbuf) {
+				os_free(subelem);
+				os_free(cigtk);
+				return NULL;
+			}
+			subelem = nbuf;
+			os_memcpy(subelem + subelem_len, cigtk, cigtk_len);
+			subelem_len += cigtk_len;
+			os_free(cigtk);
 		}
 #ifdef CONFIG_OCV
 		if (wpa_auth_uses_ocv(sm)) {
