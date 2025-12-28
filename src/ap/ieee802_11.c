@@ -74,6 +74,7 @@
 #define CIPIE_LENGTH 1
 #define CIPIE_ELEMENT_ID_EXTENSION 2
 #define CIPIE_PADDING_DELAY 3
+#define CIP_CAPAB_LEN 4
 
 #ifdef CONFIG_FILS
 static struct wpabuf *
@@ -9331,7 +9332,7 @@ free_entry:
 
 static struct wpabuf *cip_build_assoc_resp_ie(u8 padding_delay)
 {
-	struct wpabuf *ie = wpabuf_alloc(4);
+	struct wpabuf *ie = wpabuf_alloc(CIP_CAPAB_LEN);
 
 	if (!ie)
 		return NULL;

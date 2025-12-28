@@ -3140,6 +3140,8 @@ static const struct parse_data ssid_fields[] = {
 	{ INT_RANGE(rsn_overriding, 0, 2)},
 	{ BOOL(sae_password_id_change)},
 	{ FUNC(bgscan_freq) },
+	{ INT_RANGE(control_frame_protection, 0, 1)},
+	{ INT(cip_padding_delay) },
 #ifdef CONFIG_PMKSA_PRIVACY
 	{ INT_RANGE(pmksa_privacy, 0, 1)},
 #endif /* CONFIG_PMKSA_PRIVACY */
