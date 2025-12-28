@@ -206,7 +206,7 @@ static inline int wpa_drv_get_seqnum(struct wpa_supplicant *wpa_s,
 {
 	if (wpa_s->driver->get_seqnum)
 		return wpa_s->driver->get_seqnum(wpa_s->ifname, wpa_s->drv_priv,
-						 addr, idx, -1, seq);
+						 addr, idx, -1, seq, 0);
 	return -1;
 }
 
