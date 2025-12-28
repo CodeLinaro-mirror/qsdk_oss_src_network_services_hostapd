@@ -40,6 +40,7 @@ struct wpa_sm {
 	struct wpa_igtk igtk;
 	struct wpa_igtk igtk_wnm_sleep;
 	struct wpa_bigtk bigtk;
+	struct wpa_cigtk cigtk;
 	struct wpa_bigtk bigtk_wnm_sleep;
 
 	struct eapol_sm *eapol; /* EAPOL state machine from upper level code */
@@ -74,6 +75,7 @@ struct wpa_sm {
 	int wpa_rsc_relaxation;
 	int owe_ptk_workaround;
 	int beacon_prot;
+	int control_frame_prot;
 	int ext_key_id; /* whether Extended Key ID is enabled */
 	int use_ext_key_id; /* whether Extended Key ID has been detected
 			     * to be used */
@@ -102,6 +104,7 @@ struct wpa_sm {
 	unsigned int group_cipher;
 	unsigned int key_mgmt;
 	unsigned int mgmt_group_cipher;
+	unsigned int control_group_cipher;
 
 	int rsn_enabled; /* Whether RSN is enabled in configuration */
 	int mfp; /* 0 = disabled, 1 = optional, 2 = mandatory */

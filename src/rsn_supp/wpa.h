@@ -116,6 +116,7 @@ enum wpa_sm_conf_params {
 	WPA_PARAM_PROTO,
 	WPA_PARAM_PAIRWISE,
 	WPA_PARAM_GROUP,
+	WPA_PARAM_CIGTK,
 	WPA_PARAM_KEY_MGMT,
 	WPA_PARAM_MGMT_GROUP,
 	WPA_PARAM_RSN_ENABLED,
@@ -169,6 +170,7 @@ struct rsn_supp_config {
 	int owe_ptk_workaround;
 	const u8 *fils_cache_id;
 	int beacon_prot;
+	int control_frame_prot;
 	bool force_kdk_derivation;
 };
 
