@@ -139,6 +139,7 @@ WPA_CIPHER_BIP_CMAC_256)
 #define RSN_KEY_DATA_MLO_IGTK RSN_SELECTOR(0x00, 0x0f, 0xac, 17)
 #define RSN_KEY_DATA_MLO_BIGTK RSN_SELECTOR(0x00, 0x0f, 0xac, 18)
 #define RSN_KEY_DATA_MLO_LINK RSN_SELECTOR(0x00, 0x0f, 0xac, 19)
+#define RSN_KEY_DATA_MLO_CIGTK RSN_SELECTOR(0x00, 0x0f, 0xac, 20)
 #define RSN_KEY_DATA_SAE_PW_IDS RSN_SELECTOR(0x00, 0x0f, 0xac, 25)
 
 #define WFA_KEY_DATA_IP_ADDR_REQ RSN_SELECTOR(0x50, 0x6f, 0x9a, 4)
@@ -407,6 +408,17 @@ struct rsn_mlo_bigtk_kde {
 	u8 bigtk[WPA_BIGTK_MAX_LEN];
 } STRUCT_PACKED;
 
+#define RSN_MLO_CIGTK_KDE_PREFIX_LENGTH		(2 + RSN_PN_LEN + 1)
+#define RSN_MLO_CIGTK_KDE_PREFIX8_LINK_ID_SHIFT	4
+#define RSN_MLO_CIGTK_KDE_PREFIX8_LINK_ID_MASK	0xF0
+
+struct rsn_mlo_cigtk_kde {
+	u8 keyid[2];
+	u8 pn[RSN_PN_LEN];
+	u8 prefix8;
+	u8 cigtk[WPA_CIGTK_MAX_LEN];
+} STRUCT_PACKED;
+
 #define RSN_MLO_LINK_KDE_FIXED_LENGTH		(1 + ETH_ALEN)
 #define RSN_MLO_LINK_KDE_LINK_INFO_INDEX	0
 #define RSN_MLO_LINK_KDE_LI_LINK_ID_SHIFT	0
@@ -457,6 +469,7 @@ struct rsn_ftie_sha512 {
 #define FTIE_SUBELEM_MLO_GTK 8
 #define FTIE_SUBELEM_MLO_IGTK 9
 #define FTIE_SUBELEM_MLO_BIGTK 10
+#define FTIE_SUBELEM_MLO_CIGTK 11
 
 struct rsn_rdie {
 	u8 id;
@@ -650,6 +663,9 @@ struct wpa_ft_ies {
 	u16 valid_mlo_bigtks; /* bitmap of valid link BIGTK subelements */
 	const u8 *mlo_bigtk[MAX_NUM_MLD_LINKS];
 	size_t mlo_bigtk_len[MAX_NUM_MLD_LINKS];
+	u16 valid_mlo_cigtks; /* bitmap of valid link CIGTK subelements */
+	const u8 *mlo_cigtk[MAX_NUM_MLD_LINKS];
+	size_t mlo_cigtk_len[MAX_NUM_MLD_LINKS];
 
 	struct wpabuf *fte_buf;
 };
@@ -776,6 +792,9 @@ struct wpa_eapol_ie_parse {
 	u16 valid_mlo_bigtks; /* bitmap of valid link BIGTK KDEs */
 	const u8 *mlo_bigtk[MAX_NUM_MLD_LINKS];
 	size_t mlo_bigtk_len[MAX_NUM_MLD_LINKS];
+	u16 valid_mlo_cigtks; /* bitmap of valid link CIGTK KDEs */
+	const u8 *mlo_cigtk[MAX_NUM_MLD_LINKS];
+	size_t mlo_cigtk_len[MAX_NUM_MLD_LINKS];
 	u16 valid_mlo_links; /* bitmap of valid MLO link KDEs */
 	const u8 *mlo_link[MAX_NUM_MLD_LINKS];
 	size_t mlo_link_len[MAX_NUM_MLD_LINKS];

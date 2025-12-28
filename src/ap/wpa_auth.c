@@ -4376,7 +4376,7 @@ static u8 * replace_ie(const char *name, const u8 *old_buf, size_t *len, u8 eid,
 void wpa_auth_ml_get_key_info(struct wpa_authenticator *a,
 			      struct wpa_auth_ml_link_key_info *info,
 			      bool mgmt_frame_prot, bool beacon_prot,
-			      bool rekey, int vlan_id)
+			      bool control_frame_prot, bool rekey, int vlan_id)
 {
 	struct wpa_group *gsm = a->group;
 	u8 rsc[WPA_KEY_RSC_LEN];
@@ -4429,8 +4429,21 @@ void wpa_auth_ml_get_key_info(struct wpa_authenticator *a,
 		os_memset(info->bipn, 0, sizeof(info->bipn));
 	else
 		os_memcpy(info->bipn, rsc, sizeof(info->bipn));
-}
 
+       if (!control_frame_prot)
+           return;
+
+       a->cigtk_seq_num = true;
+       info->cigtkidx = gsm->GN_cigtk;
+       info->cigtk = gsm->CIGTK[gsm->GN_cigtk];
+       info->cigtk_len = wpa_cipher_key_len(a->conf.group_control_frame_cipher);
+
+       if (rekey || wpa_auth_get_seqnum(a, NULL, gsm->GN_cigtk, rsc) < 0)
+               os_memset(info->cipn, 0, sizeof(info->cipn));
+       else
+               os_memcpy(info->cipn, rsc, sizeof(info->cipn));
+
+}
 
 static void wpa_auth_get_ml_key_info(struct wpa_authenticator *wpa_auth,
 				     struct wpa_auth_ml_key_info *info,
@@ -4486,6 +4499,15 @@ size_t wpa_auth_ml_group_kdes_len(struct wpa_state_machine *sm, u16 req_links)
 		 * Header + Key ID + BIPN + LinkID + BIGTK */
 		kde_len += KDE_HDR_LEN + WPA_BIGTK_KDE_PREFIX_LEN + 1;
 		kde_len += wpa_cipher_key_len(wpa_auth->conf.group_mgmt_cipher);
+
+		if (!sm->ctrl_frame_prot)
+			continue;
+
+		/* MLO CIGTK KDE
+		 * Header + Key ID + BIPN + LinkID + CIGTK */
+		kde_len += KDE_HDR_LEN + WPA_CIGTK_KDE_PREFIX_LEN + 1;
+		kde_len += wpa_cipher_key_len(wpa_auth->conf.group_control_frame_cipher);
+
 	}
 
 	wpa_printf(MSG_DEBUG, "MLO Group KDEs len = %zu", kde_len);
@@ -4511,6 +4533,7 @@ u8 * wpa_auth_ml_group_kdes(struct wpa_state_machine *sm, u8 *pos,
 	 */
 	ml_key_info.mgmt_frame_prot = sm->mgmt_frame_prot;
 	ml_key_info.beacon_prot = sm->wpa_auth->conf.beacon_prot;
+	ml_key_info.control_frame_prot = sm->wpa_auth->conf.control_frame_prot;
 
 	for (i = 0, link_id = 0; link_id < MAX_NUM_MLD_LINKS; link_id++) {
 		if (!sm->mld_links[link_id].valid)
@@ -4641,6 +4664,50 @@ u8 * wpa_auth_ml_group_kdes(struct wpa_state_machine *sm, u8 *pos,
 		os_memcpy(pos, ml_key_info.links[i].bigtk,
 			  ml_key_info.links[i].igtk_len);
 		pos += ml_key_info.links[i].igtk_len;
+
+	}
+
+
+	if (!sm->ctrl_frame_prot) {
+		wpa_printf(MSG_DEBUG, "RSN: MLO Group KDE len = %zu",
+			   pos - start);
+		return pos;
+	}
+
+
+
+	/* Add MLO CIGTK KDEs */
+	for (i = 0; i < ml_key_info.n_mld_links; i++) {
+		link_id = ml_key_info.links[i].link_id;
+
+		if (!sm->mld_links[link_id].valid ||
+		    !ml_key_info.links[i].cigtk ||
+		    !ml_key_info.links[i].cigtk_len)
+			continue;
+		wpa_printf(MSG_DEBUG, "RSN: MLO CIGTK: link=%u", link_id);
+		wpa_hexdump_key(MSG_DEBUG, "RSN: MLO CIGTK",
+				ml_key_info.links[i].cigtk,
+				ml_key_info.links[i].cigtk_len);
+		*pos++ = WLAN_EID_VENDOR_SPECIFIC;
+		*pos++ = RSN_SELECTOR_LEN + 2 + 1 +
+			 sizeof(ml_key_info.links[i].cipn) +
+			 ml_key_info.links[i].cigtk_len;
+
+		RSN_SELECTOR_PUT(pos, RSN_KEY_DATA_MLO_CIGTK);
+		pos += RSN_SELECTOR_LEN;
+		/* Add the Key ID */
+		*pos++ = ml_key_info.links[i].cigtkidx;
+		*pos++ = 0;
+		/* Add the CIPN */
+		os_memcpy(pos, ml_key_info.links[i].cipn,
+			  sizeof(ml_key_info.links[i].cipn));
+
+		pos += sizeof(ml_key_info.links[i].cipn);
+
+		*pos++ = ml_key_info.links[i].link_id << 4;
+		os_memcpy(pos, ml_key_info.links[i].cigtk,
+			  ml_key_info.links[i].cigtk_len);
+		pos += ml_key_info.links[i].cigtk_len;
 	}
 
 	wpa_printf(MSG_DEBUG, "RSN: MLO Group KDE len = %zu", pos - start);
@@ -6322,6 +6389,8 @@ int wpa_populate_mlo_keys(struct wpa_authenticator *wpa_auth,
 
 	ml_key_info->mgmt_frame_prot = sm->mgmt_frame_prot;
 	ml_key_info->beacon_prot = sm->wpa_auth->conf.beacon_prot;
+	ml_key_info->control_frame_prot = sm->wpa_auth->conf.control_frame_prot;
+
 	wpa_auth_get_ml_key_info(wpa_auth, ml_key_info,
 				 WPA_PTK_GROUP_IDLE, sm->group->vlan_id);
 
