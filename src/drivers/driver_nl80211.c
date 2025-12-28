@@ -7877,6 +7877,10 @@ static int wpa_driver_nl80211_try_connect(
 	    nla_put_u32(msg, NL80211_ATTR_USE_MFP, NL80211_MFP_OPTIONAL))
 		goto fail;
 
+	if (params->control_frame_protection == CONTROL_FRAME_PROTECTION_REQUIRED &&
+	    nla_put_u32(msg, NL80211_ATTR_USE_CFP, NL80211_CFP_REQUIRED))
+		goto fail;
+
 #ifdef CONFIG_SAE
 	if ((wpa_key_mgmt_sae(params->key_mgmt_suite) ||
 	     wpa_key_mgmt_sae(params->allowed_key_mgmts)) &&
@@ -8036,6 +8040,10 @@ static int wpa_driver_nl80211_associate(
 
 	if (params->mgmt_frame_protection == MGMT_FRAME_PROTECTION_REQUIRED &&
 	    nla_put_u32(msg, NL80211_ATTR_USE_MFP, NL80211_MFP_REQUIRED))
+		goto fail;
+
+	if (params->control_frame_protection == CONTROL_FRAME_PROTECTION_REQUIRED &&
+	    nla_put_u32(msg, NL80211_ATTR_USE_CFP, NL80211_CFP_REQUIRED))
 		goto fail;
 
 	if (params->fils_kek) {

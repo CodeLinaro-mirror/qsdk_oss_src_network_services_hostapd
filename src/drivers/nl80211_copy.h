@@ -668,8 +668,8 @@
  *	%NL80211_ATTR_WIPHY_FREQ_OFFSET, %NL80211_ATTR_CONTROL_PORT,
  *	%NL80211_ATTR_CONTROL_PORT_ETHERTYPE,
  *	%NL80211_ATTR_CONTROL_PORT_NO_ENCRYPT,
- *	%NL80211_ATTR_CONTROL_PORT_OVER_NL80211, %NL80211_ATTR_MAC_HINT, and
- *	%NL80211_ATTR_WIPHY_FREQ_HINT.
+ *	%NL80211_ATTR_CONTROL_PORT_OVER_NL80211, %NL80211_ATTR_MAC_HINT,
+ *	%NL80211_ATTR_WIPHY_FREQ_HINT and %NL80211_ATTR_USE_CFP
  *	If included, %NL80211_ATTR_MAC and %NL80211_ATTR_WIPHY_FREQ are
  *	restrictions on BSS selection, i.e., they effectively prevent roaming
  *	within the ESS. %NL80211_ATTR_MAC_HINT and %NL80211_ATTR_WIPHY_FREQ_HINT
@@ -2983,6 +2983,11 @@ enum nl80211_commands {
  * 	attribute containing various QoS-related parameters defined by the
  * 	nl80211_qm_policy.
  *
+ * @NL80211_ATTR_USE_CFP: Whether control frame protection is
+ *	used for the association (&enum nl80211_cfp, represented as a u32);
+ *	this attribute can be used with %NL80211_CMD_ASSOCIATE and
+ *	%NL80211_CMD_CONNECT requests.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3586,6 +3591,8 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_CONTROL_MIC_PAD,
 	NL80211_ATTR_CIGTK,
+
+	NL80211_ATTR_USE_CFP,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -5578,6 +5585,16 @@ enum nl80211_mfp {
 	NL80211_MFP_NO,
 	NL80211_MFP_REQUIRED,
 	NL80211_MFP_OPTIONAL,
+};
+
+/**
+ * enum nl80211_cfp - Control frame protection state
+ * @NL80211_CFP_NO: Control frame protection not used
+ * @NL80211_CFP_REQUIRED: Control frame protection required
+ */
+enum nl80211_cfp {
+	NL80211_CFP_NO,
+	NL80211_CFP_REQUIRED,
 };
 
 enum nl80211_wpa_versions {
