@@ -39,6 +39,7 @@ struct hostapd_mscs_ctxt;
 #define WLAN_STA_AUTH BIT_ULL(0)
 #define WLAN_STA_ASSOC BIT_ULL(1)
 #define WLAN_STA_SPP_AMSDU BIT_ULL(2)
+#define WLAN_STA_CFP BIT_ULL(3)
 #define WLAN_STA_AUTHORIZED BIT_ULL(5)
 #define WLAN_STA_PENDING_POLL BIT_ULL(6) /* pending activity poll not ACKed */
 #define WLAN_STA_SHORT_PREAMBLE BIT_ULL(7)

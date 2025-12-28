@@ -7468,6 +7468,11 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		else
 			sta->flags &= ~WLAN_STA_SPP_AMSDU;
 
+		if (wpa_auth_uses_cfp(sta->wpa_sm))
+			sta->flags |= WLAN_STA_CFP;
+		else
+			sta->flags &= ~WLAN_STA_CFP;
+
 #ifdef CONFIG_PMKSA_PRIVACY
 	/* Per IEEE 802.11bi/D4.0, 12.16.7 (PMKSA caching privacy), when both
 	 * the AP and non-AP STA support PMKSA caching privacy, the non-AP STA
