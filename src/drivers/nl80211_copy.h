@@ -3310,6 +3310,9 @@ enum nl80211_commands {
  * 	attribute containing various QoS-related parameters defined by the
  * 	nl80211_qm_policy.
  *
+ * @NL80211_ATTR_USE_CFP: Whether control frame protection is used for the
+ * 	association (&enum nl80211_cfp, represented as a u32).
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3908,6 +3911,7 @@ enum nl80211_attrs {
 	NL80211_ATTR_NPCA_PRIMARY_FREQ,
 	NL80211_ATTR_NPCA_PUNCT_BITMAP,
 	NL80211_ATTR_CONTROL_MIC_PAD = 393,
+	NL80211_ATTR_USE_CFP = 394,
 	NL80211_ATTR_CIGTK = 396,
 
 	NL80211_ATTR_STA_DUMP_LINK_STATS,
@@ -6051,6 +6055,16 @@ enum nl80211_mfp {
 	NL80211_MFP_NO,
 	NL80211_MFP_REQUIRED,
 	NL80211_MFP_OPTIONAL,
+};
+
+/**
+ * enum nl80211_cfp - Control frame protection state
+ * @NL80211_CFP_NO: Control frame protection not used
+ * @NL80211_CFP_REQUIRED: Control frame protection required
+ */
+enum nl80211_cfp {
+	NL80211_CFP_NO,
+	NL80211_CFP_REQUIRED,
 };
 
 enum nl80211_wpa_versions {
