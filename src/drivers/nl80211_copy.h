@@ -3735,6 +3735,7 @@ enum nl80211_iftype {
  *	previously added station into associated state
  * @NL80211_STA_FLAG_SPP_AMSDU: station supports SPP A-MSDUs
  * @NL80211_STA_FLAG_MAX: highest station flag number currently defined
+ * @NL80211_STA_FLAG_CFP: station uses control frame protection
  * @__NL80211_STA_FLAG_AFTER_LAST: internal use
  */
 enum nl80211_sta_flags {
@@ -3748,6 +3749,7 @@ enum nl80211_sta_flags {
 	NL80211_STA_FLAG_ASSOCIATED,
 	NL80211_STA_FLAG_SPP_AMSDU,
 	NL80211_STA_FLAG_FT_AUTH,
+	NL80211_STA_FLAG_CFP,
 
 	/* keep last */
 	__NL80211_STA_FLAG_AFTER_LAST,

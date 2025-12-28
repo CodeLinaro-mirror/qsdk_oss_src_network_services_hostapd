@@ -28,6 +28,7 @@
 #define WLAN_STA_AUTH BIT(0)
 #define WLAN_STA_ASSOC BIT(1)
 #define WLAN_STA_SPP_AMSDU BIT(2)
+#define WLAN_STA_CFP BIT(3)
 #define WLAN_STA_AUTHORIZED BIT(5)
 #define WLAN_STA_PENDING_POLL BIT(6) /* pending activity poll not ACKed */
 #define WLAN_STA_SHORT_PREAMBLE BIT(7)

@@ -713,6 +713,11 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 		else
 			sta->flags &= ~WLAN_STA_SPP_AMSDU;
 
+		if (wpa_auth_uses_cfp(sta->wpa_sm))
+			sta->flags |= WLAN_STA_CFP;
+		else
+			sta->flags &= ~WLAN_STA_CFP;
+
 #ifdef CONFIG_IEEE80211R_AP
 		if (sta->auth_alg == WLAN_AUTH_FT) {
 			status = wpa_ft_validate_reassoc(sta->wpa_sm, req_ies,

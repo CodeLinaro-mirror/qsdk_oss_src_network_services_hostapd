@@ -1392,6 +1392,10 @@ int wpa_auth_uses_mfp(struct wpa_state_machine *sm)
 	return sm ? sm->mgmt_frame_prot : 0;
 }
 
+int wpa_auth_uses_cfp(struct wpa_state_machine *sm)
+{
+	return sm ? sm->ctrl_frame_prot : 0;
+}
 
 int wpa_auth_uses_spp_amsdu(struct wpa_state_machine *sm)
 {

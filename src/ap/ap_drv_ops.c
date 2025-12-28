@@ -53,6 +53,8 @@ u32 hostapd_sta_flags_to_drv(u32 flags)
 		res |= WPA_STA_SPP_AMSDU;
 	if (flags & WLAN_STA_FT_AUTH)
 		res |= WPA_STA_FT_AUTH;
+	if (flags & WLAN_STA_CFP)
+		res |= WPA_STA_CFP;
 
 	return res;
 }
@@ -344,7 +346,7 @@ int hostapd_set_sta_flags(struct hostapd_data *hapd, struct sta_info *sta)
 	int set_flags, total_flags, flags_and, flags_or;
 	total_flags = hostapd_sta_flags_to_drv(sta->flags);
 	set_flags = WPA_STA_SHORT_PREAMBLE | WPA_STA_WMM | WPA_STA_MFP |
-		WPA_STA_AUTHORIZED;
+		WPA_STA_AUTHORIZED | WPA_STA_CFP;
 
 	/*
 	 * All the station flags other than WPA_STA_SHORT_PREAMBLE are relevant
