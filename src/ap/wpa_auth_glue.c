@@ -680,10 +680,10 @@ static int hostapd_wpa_auth_get_seqnum(void *ctx, const u8 *addr, int idx,
 {
 	struct hostapd_data *hapd = ctx;
 	int link_id = -1;
-
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->conf->mld_ap && idx)
+	if ((get_cigtk_seq_num == 1 && hapd->conf->mld_ap) || (hapd->conf->mld_ap && idx)) {
 		link_id = hapd->mld_link_id;
+	}
 #endif /* CONFIG_IEEE80211BE */
 	return hostapd_get_seqnum(hapd->conf->iface, hapd, addr, idx, link_id,
 				  seq, get_cigtk_seq_num);
@@ -1873,6 +1873,7 @@ static int hostapd_wpa_auth_get_ml_key_info(void *ctx,
 						 &info->links[i],
 						 info->mgmt_frame_prot,
 						 info->beacon_prot,
+						 info->control_frame_prot,
 						 rekey, vlan_id);
 			continue;
 		}
@@ -1885,6 +1886,7 @@ static int hostapd_wpa_auth_get_ml_key_info(void *ctx,
 						 &info->links[i],
 						 info->mgmt_frame_prot,
 						 info->beacon_prot,
+						 info->control_frame_prot,
 						 rekey, vlan_id);
 			link_bss_found = true;
 			break;
