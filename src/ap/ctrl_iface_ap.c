@@ -160,19 +160,36 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 	struct hostap_sta_driver_data data;
 	int ret;
 	int len = 0;
+	unsigned long long rx_error;
 
 	if (hostapd_drv_read_sta_data(hapd, &data, sta->addr) < 0)
 		return 0;
 
+	rx_error = (unsigned long long)data.pn_errors +
+		   (unsigned long long)data.mic_errors +
+		   (unsigned long long)data.decrypt_errors;
 	ret = os_snprintf(buf, buflen, "rx_packets=%lu\ntx_packets=%lu\n"
 			  "rx_bytes=%llu\ntx_bytes=%llu\ninactive_msec=%lu\n"
-			  "signal=%d\n",
+			  "signal=%d\ntx_failed=%lu\nrx_pn_errors=%u\n"
+			  "rx_mic_errors=%u\nrx_decrypt_errors=%u\nrx_errors=%llu\n"
+			  "mgmt_signal=%d\n",
 			  data.rx_packets, data.tx_packets,
 			  data.rx_bytes, data.tx_bytes, data.inactive_msec,
-			  data.signal);
+			  data.signal, data.tx_retry_failed, data.pn_errors,
+			  data.mic_errors, data.decrypt_errors,
+			  rx_error, data.mgmt_signal);
 	if (os_snprintf_error(buflen, ret))
 		return 0;
 	len += ret;
+
+	if (sta->last_rx_mgmt_rate) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  "last_rx_mgmt_rate=%lu\n",
+				  (unsigned long) (sta->last_rx_mgmt_rate / 100));
+		if (os_snprintf_error(buflen - len, ret))
+			return 0;
+		len += ret;
+	}
 
 	ret = os_snprintf(buf + len, buflen - len, "rx_rate_info=%lu",
 			  data.current_rx_rate / 100);

@@ -8660,6 +8660,10 @@ static int get_sta_handler(struct nl_msg *msg, void *arg)
 		[NL80211_STA_INFO_RX_MPDUS] = { .type = NLA_U32 },
 		[NL80211_STA_INFO_FCS_ERROR_COUNT] = { .type = NLA_U32 },
 		[NL80211_STA_INFO_TX_DURATION] = { .type = NLA_U64 },
+		[NL80211_STA_INFO_PN_ERRORS] = {.type = NLA_U32},
+		[NL80211_STA_INFO_MIC_ERRORS] = {.type = NLA_U32},
+		[NL80211_STA_INFO_DECRYPT_ERRORS] = {.type = NLA_U32},
+		[NL80211_STA_INFO_MGMT_SIGNAL] = {.type = NLA_S8 },
 	};
 	struct nlattr *rate[NL80211_RATE_INFO_MAX + 1];
 	static struct nla_policy rate_policy[NL80211_RATE_INFO_MAX + 1] = {
@@ -8771,6 +8775,17 @@ static int get_sta_handler(struct nl_msg *msg, void *arg)
 	if (stats[NL80211_STA_INFO_TX_DURATION])
 		data->tx_airtime =
 			nla_get_u64(stats[NL80211_STA_INFO_TX_DURATION]);
+	if (stats[NL80211_STA_INFO_PN_ERRORS])
+		data->pn_errors =
+			nla_get_u32(stats[NL80211_STA_INFO_PN_ERRORS]);
+	if (stats[NL80211_STA_INFO_MIC_ERRORS])
+		data->mic_errors =
+			nla_get_u32(stats[NL80211_STA_INFO_MIC_ERRORS]);
+	if (stats[NL80211_STA_INFO_MGMT_SIGNAL])
+		data->mgmt_signal = nla_get_s8(stats[NL80211_STA_INFO_MGMT_SIGNAL]);
+	if (stats[NL80211_STA_INFO_DECRYPT_ERRORS])
+		data->decrypt_errors =
+			nla_get_u32(stats[NL80211_STA_INFO_DECRYPT_ERRORS]);
 
 	if (stats[NL80211_STA_INFO_TX_BITRATE] &&
 	    nla_parse_nested(rate, NL80211_RATE_INFO_MAX,
