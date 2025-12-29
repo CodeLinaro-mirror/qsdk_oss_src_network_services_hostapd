@@ -3277,6 +3277,10 @@ struct hostap_sta_driver_data {
 	u8 rx_dcm, tx_dcm;
 	u16 valid_links;
 	unsigned long link_inactive_msec[MAX_NUM_MLD_LINKS];
+	u32 pn_errors;
+	u32 mic_errors;
+	u32 decrypt_errors;
+	s8 mgmt_signal;
 };
 
 struct hostapd_sta_add_params {
