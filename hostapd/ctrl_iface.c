@@ -1924,6 +1924,13 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		return res;
 	} else if (os_strncmp(cmd, "tx_queue_", 9) == 0) {
 		res = hostapd_get_tx_queue_params(hapd, cmd, buf, buflen);
+	} else if (os_strcmp(cmd, "macaddr_acl") == 0) {
+		if (!hapd || !hapd->conf) {
+			wpa_printf(MSG_ERROR, "Invalid hapd or hapd->conf pointer");
+			return -1;
+		}
+
+		res = os_snprintf(buf, buflen, "%d\n", hapd->conf->macaddr_acl);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
