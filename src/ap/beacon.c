@@ -1548,13 +1548,14 @@ static bool parse_ml_probe_req(const struct ieee80211_eht_ml *ml, size_t ml_len,
 
 void handle_probe_req(struct hostapd_data *hapd,
 		      const struct ieee80211_mgmt *mgmt, size_t len,
-		      int ssi_signal)
+		      const struct hostapd_frame_info *fi)
 {
 	struct ieee802_11_elems elems;
 	const u8 *ie;
 	size_t ie_len;
 	size_t i;
 	int noack;
+	int ssi_signal;
 	enum ssid_match_result res;
 	int ret;
 	u16 csa_offs[2];
@@ -1570,9 +1571,11 @@ void handle_probe_req(struct hostapd_data *hapd,
 	struct hostapd_ubus_request req = {
 		.type = HOSTAPD_UBUS_PROBE_REQ,
 		.mgmt_frame = mgmt,
-		.ssi_signal = ssi_signal,
+		.ssi_signal = fi ? fi->ssi_signal : 0,
 		.elems = &elems,
 	};
+
+	ssi_signal = fi ? fi->ssi_signal : 0;
 
 	if (hapd->iconf->rssi_ignore_probe_request && ssi_signal &&
 	    ssi_signal < hapd->iconf->rssi_ignore_probe_request)
@@ -1857,9 +1860,32 @@ void handle_probe_req(struct hostapd_data *hapd,
 			wpa_snprintf_hex(hex, hex_len, (const u8 *) mgmt, len);
 	}
 
-	wpa_msg_ctrl(hapd->msg_ctx, MSG_INFO, RX_PROBE_REQUEST "sa=" MACSTR
-		     " signal=%d%s%s", MAC2STR(mgmt->sa), ssi_signal,
-		     hex ? " buf=" : "", hex ? hex : "");
+	if (fi) {
+		int snr = 0;
+		if (fi->channel && hapd->iface->lowest_nf) {
+			snr = ssi_signal - hapd->iface->lowest_nf;
+			wpa_msg_ctrl(hapd->msg_ctx, MSG_INFO, RX_PROBE_REQUEST "sa=" MACSTR
+				     " signal=%d channel=%u snr=%d%s%s",
+				     MAC2STR(mgmt->sa), ssi_signal, fi->channel,
+				     snr,
+				     hex ? " buf=" : "", hex ? hex : "");
+		} else if (fi->channel) {
+			wpa_msg_ctrl(hapd->msg_ctx, MSG_INFO, RX_PROBE_REQUEST "sa=" MACSTR
+				     " signal=%d channel=%u%s%s",
+				     MAC2STR(mgmt->sa), ssi_signal, fi->channel,
+				     hex ? " buf=" : "", hex ? hex : "");
+		} else {
+			wpa_msg_ctrl(hapd->msg_ctx, MSG_INFO, RX_PROBE_REQUEST "sa=" MACSTR
+				     " signal=%d%s%s",
+				     MAC2STR(mgmt->sa), ssi_signal,
+				     hex ? " buf=" : "", hex ? hex : "");
+		}
+	} else {
+		wpa_msg_ctrl(hapd->msg_ctx, MSG_INFO, RX_PROBE_REQUEST "sa=" MACSTR
+			     " signal=%d%s%s",
+			     MAC2STR(mgmt->sa), ssi_signal,
+			     hex ? " buf=" : "", hex ? hex : "");
+	}
 
 	os_free(hex);
 
