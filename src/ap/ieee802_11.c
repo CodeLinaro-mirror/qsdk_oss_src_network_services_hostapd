@@ -11501,10 +11501,12 @@ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd_probed, u32 frame_type,
 	struct hostapd_data *hapd = hostapd_mbssid_get_tx_bss(hapd_probed);
 	size_t len = 0, bss_index = 1;
 	bool skip_rnr = false;
+	bool rnr_override = true;
 	size_t num_bss;
 
 #ifdef CONFIG_QCN_EXTN
 	skip_rnr = hostapd_skip_rnr_6ghz_colocated_extn(hapd, frame_type);
+	rnr_override = hostapd_rnr_6ghz_override_extn(hapd);
 #endif /* CONFIG_QCN_EXTN */
 
 	if (!hapd->iconf->mbssid || hapd->iface->num_bss <= 1 ||
@@ -11544,7 +11546,7 @@ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd_probed, u32 frame_type,
 				rnr_count, bss_index
 			};
 
-			if (!skip_rnr) {
+			if (!skip_rnr && rnr_override) {
 			    *rnr_len += hostapd_eid_rnr_iface_len(
 					hapd, hostapd_mbssid_get_tx_bss(hapd),
 					&rnr_cur_len, &skip_profiles, false);
@@ -11810,12 +11812,13 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 	struct hostapd_data *hapd = hostapd_mbssid_get_tx_bss(hapd_probed);
 	size_t bss_index = 1, cur_len = 0;
 	u8 elem_index = 0, *rnr_start_eid = rnr_eid;
-	bool skip_rnr = false;
+	bool skip_rnr = false, rnr_override = true;
 	bool add_rnr;
 	size_t num_bss;
 
 #ifdef CONFIG_QCN_EXTN
 	skip_rnr = hostapd_skip_rnr_6ghz_colocated_extn(hapd, frame_stype);
+	rnr_override = hostapd_rnr_6ghz_override_extn(hapd);
 #endif /* CONFIG_QCN_EXTN */
 
 	if (!hapd->iconf->mbssid || hapd->iface->num_bss <= 1 ||
@@ -11867,7 +11870,7 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 			rnr_offset[*rnr_count] = rnr_eid;
 			*rnr_count = *rnr_count + 1;
 			cur_len = 0;
-			if (!skip_rnr) {
+			if (!skip_rnr && rnr_override) {
 			    rnr_eid = hostapd_eid_rnr_iface(
 				      hapd, hostapd_mbssid_get_tx_bss(hapd),
 				      rnr_eid, &cur_len, &skip_profiles, false, frame_stype);
