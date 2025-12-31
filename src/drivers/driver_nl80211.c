@@ -5479,6 +5479,37 @@ static int nl80211_put_freq_params_device(struct wpa_driver_nl80211_data *drv,
 	return 0;
 }
 
+static int nl80211_set_ap_rssi_monitor(struct i802_bss *bss,
+				       struct wpa_driver_ap_params *params)
+{
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	struct nlattr *cqm;
+	int link_id = params->mld_ap ? params->mld_link_id : NL80211_DRV_LINK_ID_NA;
+
+	wpa_printf(MSG_DEBUG, "nl80211: AP RSSI monitor threshold=%d grace_samples=%d link_id=%d",
+		   params->rssi_reject_assoc_rssi, params->rssi_deauth_grace_samples, link_id);
+
+	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_CQM)) ||
+	    !(cqm = nla_nest_start(msg, NL80211_ATTR_CQM)) ||
+	    nla_put_s32(msg, NL80211_ATTR_CQM_RSSI_THOLD, params->rssi_reject_assoc_rssi) ||
+	    nla_put_u32(msg, NL80211_ATTR_CQM_RSSI_HYST, params->rssi_deauth_grace_samples)) {
+		nlmsg_free(msg);
+		return -1;
+	}
+
+	nla_nest_end(msg, cqm);
+
+	/* CRITICAL: Add link ID for MLO per-link configuration */
+	if (link_id != NL80211_DRV_LINK_ID_NA &&
+	    nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id)) {
+		nlmsg_free(msg);
+		return -1;
+	}
+
+	return send_and_recv_cmd(drv, msg);
+}
+
 
 static int nl80211_put_freq_params(struct wpa_driver_nl80211_data *drv,
 				   struct nl_msg *msg,
@@ -6156,6 +6187,13 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 			   ret, strerror(-ret));
 	} else {
 		link->beacon_set = 1;
+
+		if (params->rssi_reject_assoc_rssi) {
+			if (nl80211_set_ap_rssi_monitor(bss, params) < 0) {
+				wpa_printf(MSG_ERROR, "nl80211: Failed to set AP RSSI monitoring");
+				/* Continue anyway - dont fail beacon setup */
+			}
+		}
 		nl80211_set_bss(bss, params->cts_protect, params->preamble,
 				params->short_slot_time, params->ht_opmode,
 				params->isolate, params->basic_rates,
