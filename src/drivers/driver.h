@@ -8112,6 +8112,8 @@ union wpa_event_data {
 	union wpa_event_data_extn event_data_extn;
 };
 
+#define HOSTAPD_STA_NUM_PACKETS_LOST	0xFFFF
+
 /**
  * wpa_supplicant_event - Report a driver event for wpa_supplicant
  * @ctx: Context pointer (wpa_s); this is the ctx variable registered

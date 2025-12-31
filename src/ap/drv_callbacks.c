@@ -1186,6 +1186,49 @@ void hostapd_event_sta_low_ack(struct hostapd_data *hapd, const u8 *addr,
 }
 
 
+void hostapd_event_sta_rssi_low(struct hostapd_data *hapd, const u8 *addr)
+{
+	struct sta_info *sta = ap_get_sta(hapd, addr);
+	int rssi_threshold = 0;
+	const char *source = "disabled";
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_data *orig_hapd = hapd;
+
+	if (!sta && hapd->conf->mld_ap) {
+		hapd = hostapd_find_by_sta(hapd->iface, addr, true, &sta);
+		if (!hapd) {
+			wpa_printf(MSG_DEBUG,
+				   "No partner link BSS found for STA " MACSTR
+				   " - fallback to received context",
+				   MAC2STR(addr));
+			hapd = orig_hapd;
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	/* Get unified RSSI threshold configuration */
+	if (hapd->conf->rssi_reject_assoc_rssi != 0) {
+		rssi_threshold = hapd->conf->rssi_reject_assoc_rssi;
+		source = "BSS override";
+	} else if (hapd->iconf->rssi_reject_assoc_rssi != 0) {
+		rssi_threshold = hapd->iconf->rssi_reject_assoc_rssi;
+		source = "radio fallback";
+	}
+
+	if (!sta || rssi_threshold == 0)
+		return;
+
+	hostapd_logger(hapd, addr, HOSTAPD_MODULE_IEEE80211,
+		       HOSTAPD_LEVEL_INFO,
+		       "RSSI deauth: disconnecting " MACSTR " signal quality below threshold %d dBm (source: %s, SSID: %s)",
+		       MAC2STR(addr), rssi_threshold, source,
+		       wpa_ssid_txt(hapd->conf->ssid.ssid, hapd->conf->ssid.ssid_len));
+
+	hostapd_drv_sta_deauth(hapd, addr, WLAN_REASON_UNSPECIFIED);
+	ap_sta_deauthenticate(hapd, sta, WLAN_REASON_UNSPECIFIED);
+}
+
+
 void hostapd_event_sta_opmode_changed(struct hostapd_data *hapd, const u8 *addr,
 				      enum smps_mode smps_mode,
 				      enum chan_width chan_width, u8 rx_nss)
@@ -3471,8 +3514,19 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 	case EVENT_STATION_LOW_ACK:
 		if (!data)
 			break;
-		hostapd_event_sta_low_ack(hapd, data->low_ack.addr,
-					  data->low_ack.num_packets);
+
+		switch (data->low_ack.num_packets) {
+		case HOSTAPD_STA_NUM_PACKETS_LOST:
+			hostapd_event_sta_rssi_low(hapd, data->low_ack.addr);
+			break;
+		default:
+			/* Generic low ACK (actual packet loss)
+			 * or STA kickout event with num_packets = 10
+			 */
+			hostapd_event_sta_low_ack(hapd, data->low_ack.addr,
+						  data->low_ack.num_packets);
+			break;
+		}
 		break;
 	case EVENT_AUTH:
 		hostapd_notif_auth(hapd, &data->auth);
