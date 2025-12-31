@@ -416,7 +416,7 @@ static void * bgscan_learn_init(struct wpa_supplicant *wpa_s,
 		   data->long_interval);
 
 	if (data->signal_threshold &&
-	    wpa_drv_signal_monitor(wpa_s, data->signal_threshold, 4) < 0) {
+	    wpa_drv_signal_monitor(wpa_s, data->signal_threshold, 4, -1) < 0) {
 		wpa_printf(MSG_ERROR, "bgscan learn: Failed to enable "
 			   "signal strength monitoring");
 	}
@@ -454,7 +454,7 @@ static void bgscan_learn_deinit(void *priv)
 	bgscan_learn_save(data);
 	eloop_cancel_timeout(bgscan_learn_timeout, data, NULL);
 	if (data->signal_threshold)
-		wpa_drv_signal_monitor(data->wpa_s, 0, 0);
+		wpa_drv_signal_monitor(data->wpa_s, 0, 0, -1);
 	os_free(data->fname);
 	dl_list_for_each_safe(bss, n, &data->bss, struct bgscan_learn_bss,
 			      list) {

@@ -5485,10 +5485,13 @@ static int nl80211_set_ap_rssi_monitor(struct i802_bss *bss,
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	struct nl_msg *msg;
 	struct nlattr *cqm;
-	int link_id = params->mld_ap ? params->mld_link_id : NL80211_DRV_LINK_ID_NA;
 
-	wpa_printf(MSG_DEBUG, "nl80211: AP RSSI monitor threshold=%d grace_samples=%d link_id=%d",
-		   params->rssi_reject_assoc_rssi, params->rssi_deauth_grace_samples, link_id);
+	/* Only use link_id if > -1 (MLD) and AP is mult-link; for legacy AP omit it */
+	int use_link_id = (params->mld_ap && bss->valid_links && params->mld_link_id >= 0);
+
+	wpa_printf(MSG_DEBUG, "nl80211: AP RSSI monitor threshold=%d grace_samples=%d link_id=%d valid_links=0x%x bss=%p ifindex=%d",
+		   params->rssi_reject_assoc_rssi, params->rssi_deauth_grace_samples,
+		   params->mld_link_id, bss->valid_links, bss, bss->ifindex);
 
 	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_CQM)) ||
 	    !(cqm = nla_nest_start(msg, NL80211_ATTR_CQM)) ||
@@ -5500,12 +5503,16 @@ static int nl80211_set_ap_rssi_monitor(struct i802_bss *bss,
 
 	nla_nest_end(msg, cqm);
 
-	/* CRITICAL: Add link ID for MLO per-link configuration */
-	if (link_id != NL80211_DRV_LINK_ID_NA &&
-	    nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id)) {
+	/* Only add NL80211_ATTR_MLO_LINK_ID if truly MLO multi-link, not for legacy AP. */
+	if (use_link_id &&
+	    nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, params->mld_link_id)) {
+		wpa_printf(MSG_DEBUG, "Failed nla_put MLO_LINK_ID=%d", params->mld_link_id);
 		nlmsg_free(msg);
 		return -1;
 	}
+
+	if (nla_put_flag(msg, NL80211_ATTR_SOCKET_OWNER))
+		wpa_printf(MSG_DEBUG, "Failed to set NL80211_ATTR_SOCKET_OWNER");
 
 	return send_and_recv_cmd(drv, msg);
 }
@@ -10867,9 +10874,23 @@ static void wpa_driver_nl80211_resume(void *priv)
 }
 
 
-static int nl80211_signal_monitor(void *priv, int threshold, int hysteresis)
+static int nl80211_signal_monitor(void *priv, int threshold, int hysteresis, int link_id)
 {
 	struct i802_bss *bss = priv;
+#if defined(CONFIG_AP)
+	// AP mode (hostapd) and all modes that use the AP NL80211 CQM RSSI config:
+	struct wpa_driver_ap_params params;
+
+	memset(&params, 0, sizeof(params));
+	params.rssi_reject_assoc_rssi = threshold;
+	params.rssi_deauth_grace_samples = hysteresis & 0xFFFF;
+
+	// Per-link control: always populate the link_id if passed
+	params.mld_ap = (link_id >= 0);
+	params.mld_link_id = link_id;
+
+	return nl80211_set_ap_rssi_monitor(bss, &params);
+#else
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	struct nl_msg *msg;
 	struct nlattr *cqm;
@@ -10887,6 +10908,7 @@ static int nl80211_signal_monitor(void *priv, int threshold, int hysteresis)
 	nla_nest_end(msg, cqm);
 
 	return send_and_recv_cmd(drv, msg);
+#endif
 }
 
 

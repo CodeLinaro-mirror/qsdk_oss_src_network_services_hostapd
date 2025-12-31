@@ -517,11 +517,12 @@ static inline void wpa_drv_resume(struct wpa_supplicant *wpa_s)
 }
 
 static inline int wpa_drv_signal_monitor(struct wpa_supplicant *wpa_s,
-					 int threshold, int hysteresis)
+					 int threshold, int hysteresis,
+					 int link_id)
 {
 	if (wpa_s->driver->signal_monitor)
 		return wpa_s->driver->signal_monitor(wpa_s->drv_priv,
-						     threshold, hysteresis);
+						     threshold, hysteresis, link_id);
 	return -1;
 }
 
