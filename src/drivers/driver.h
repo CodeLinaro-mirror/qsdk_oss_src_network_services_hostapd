@@ -8835,6 +8835,8 @@ union wpa_event_data {
 	} ap_6ghz_pwr_mode_event;
 };
 
+#define HOSTAPD_STA_NUM_PACKETS_LOST	0xFFFF
+
 /**
  * wpa_supplicant_event - Report a driver event for wpa_supplicant
  * @ctx: Context pointer (wpa_s); this is the ctx variable registered
