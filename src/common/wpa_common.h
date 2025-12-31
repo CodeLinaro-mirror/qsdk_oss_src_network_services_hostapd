@@ -451,7 +451,7 @@ struct link_data {
 	u8 link_addr[ETH_ALEN];
 	const u8 link_rsnie[255];
 	int link_rsnie_len;
-	const u8 *link_rsnxe;
+	const u8 link_rsnxe[10];
 	int link_rsnxe_len;
 };
 
