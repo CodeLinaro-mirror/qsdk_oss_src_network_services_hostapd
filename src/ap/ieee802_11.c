@@ -106,6 +106,9 @@ static void handle_auth(struct hostapd_data *hapd,
 static int add_associated_sta(struct hostapd_data *hapd,
 			      struct sta_info *sta, int reassoc);
 static struct wpabuf *cip_build_assoc_resp_ie(u8 padding_delay);
+static u16 check_rssi_association(struct hostapd_data *hapd,
+				  const struct ieee80211_mgmt *mgmt,
+				  int rssi, struct sta_info *sta);
 
 
 static u8 * hostapd_eid_multi_ap(struct hostapd_data *hapd, u8 *eid, size_t len)
@@ -6607,6 +6610,92 @@ static struct wpabuf *cip_build_assoc_resp_ie(u8 padding_delay)
 	return ie;
 }
 
+static u16 check_rssi_rejection_timeout(struct sta_info *sta,
+					 const struct ieee80211_mgmt *mgmt)
+{
+	/* Check if client is still in RSSI rejection timeout */
+	if (sta && (sta->rssi_reject_timeout.sec != 0 || sta->rssi_reject_timeout.usec != 0)) {
+		struct os_time now;
+		os_get_time(&now);
+		if (os_time_before(&now, &sta->rssi_reject_timeout)) {
+			wpa_printf(MSG_INFO,
+				   "Client " MACSTR " still in RSSI rejection timeout",
+				   MAC2STR(mgmt->sa));
+			return WLAN_STATUS_DENIED_POOR_CHANNEL_CONDITIONS;
+		} else {
+			/* Timeout expired, clear it */
+			os_memset(&sta->rssi_reject_timeout, 0, sizeof(sta->rssi_reject_timeout));
+		}
+	}
+
+	return WLAN_STATUS_SUCCESS;
+}
+
+static u16 check_rssi_association(struct hostapd_data *hapd,
+				  const struct ieee80211_mgmt *mgmt,
+				  int rssi, struct sta_info *sta)
+{
+	int rssi_threshold = 0;
+	int rssi_timeout = 0;
+	const char *source = "disabled";
+
+	/* Try BSS-specific threshold first */
+	if (hapd->conf->rssi_reject_assoc_rssi != 0) {
+		rssi_threshold = hapd->conf->rssi_reject_assoc_rssi;
+		rssi_timeout = hapd->conf->rssi_reject_assoc_timeout;
+		source = "BSS override";
+		wpa_printf(MSG_DEBUG,
+			   "RSSI monitor: using BSS override threshold=%d dBm",
+			   rssi_threshold);
+	}
+	/* Fall back to radio-wide threshold */
+	else if (hapd->iconf->rssi_reject_assoc_rssi != 0) {
+		rssi_threshold = hapd->iconf->rssi_reject_assoc_rssi;
+		rssi_timeout = hapd->iconf->rssi_reject_assoc_timeout;
+		source = "radio fallback";
+		wpa_printf(MSG_DEBUG,
+			   "RSSI monitor: using radio fallback threshold=%d dBm",
+			   rssi_threshold);
+	}
+
+	/* Check threshold if enabled */
+	if (rssi_threshold != 0 && rssi != 0) {
+		if (rssi < rssi_threshold) {
+			wpa_printf(MSG_INFO,
+				   "RSSI %d dBm below threshold %d dBm - rejecting association from "
+				   MACSTR " (source: %s, SSID: %s)",
+				   rssi, rssi_threshold,
+				   MAC2STR(mgmt->sa), source,
+				   wpa_ssid_txt(hapd->conf->ssid.ssid,
+						hapd->conf->ssid.ssid_len));
+
+			/* Set timeout if configured */
+			if (rssi_timeout > 0 && sta) {
+				os_get_time(&sta->rssi_reject_timeout);
+				sta->rssi_reject_timeout.sec += rssi_timeout;
+				wpa_printf(MSG_DEBUG,
+					   "Set RSSI rejection timeout for " MACSTR " (%d seconds)",
+					   MAC2STR(mgmt->sa), rssi_timeout);
+			}
+
+			return WLAN_STATUS_DENIED_POOR_CHANNEL_CONDITIONS;
+		} else {
+			if (sta) {
+				os_memset(&sta->rssi_reject_timeout, 0,
+					  sizeof(sta->rssi_reject_timeout));
+			}
+
+			wpa_printf(MSG_DEBUG,
+				   "RSSI %d dBm above threshold %d dBm - accepting association from "
+				   MACSTR " (source: %s)",
+				   rssi, rssi_threshold,
+				   MAC2STR(mgmt->sa), source);
+		}
+	}
+
+	return WLAN_STATUS_SUCCESS;
+}
+
 static void handle_assoc(struct hostapd_data *hapd,
 			 const struct ieee80211_mgmt *mgmt, size_t len,
 			 int reassoc, int rssi)
@@ -6685,6 +6774,11 @@ static void handle_assoc(struct hostapd_data *hapd,
 	}
 
 	sta = ap_get_sta(hapd, mgmt->sa);
+
+	resp = check_rssi_rejection_timeout(sta, mgmt);
+	if (resp != WLAN_STATUS_SUCCESS) {
+		goto fail;
+	}
 
 #ifdef CONFIG_IEEE80211BE
 	/*
@@ -6838,6 +6932,11 @@ static void handle_assoc(struct hostapd_data *hapd,
 			       "Too large Listen Interval (%d)",
 			       listen_interval);
 		resp = WLAN_STATUS_ASSOC_DENIED_LISTEN_INT_TOO_LARGE;
+		goto fail;
+	}
+
+	resp = check_rssi_association(hapd, mgmt, rssi, sta);
+	if (resp != WLAN_STATUS_SUCCESS) {
 		goto fail;
 	}
 
