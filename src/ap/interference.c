@@ -369,6 +369,17 @@ static int intf_find_channel_list(struct hostapd_iface *iface, int chan_width,
 	return channel_idx;
 }
 
+
+#ifdef CONFIG_QCN_EXTN
+int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
+				struct hostapd_channel_data ***chandef_list,
+				int *awgn_interference_freqs)
+{
+	return intf_find_channel_list(iface, chan_width, *chandef_list,
+				      awgn_interference_freqs);
+}
+#endif /* CONFIG_QCN_EXTN */
+
 static int convert_chwidth_to_20MHz_nchans(enum chan_width chan_width)
 {
 	int n_chans;

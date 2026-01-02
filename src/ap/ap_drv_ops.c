@@ -868,6 +868,10 @@ int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
 	if (hostapd_set_freq_params(&data, &info))
 		return -1;
 
+#ifdef CONFIG_QCN_EXTN
+	update_chan_params(hapd, data.center_freq1, data.center_freq2, hostapd_get_chan_width_from_oper_chan_width(hapd->iconf));
+#endif
+
 	if (hapd->driver == NULL)
 		return 0;
 	if (hapd->driver->set_freq == NULL)
