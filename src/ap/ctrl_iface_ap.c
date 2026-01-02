@@ -1239,6 +1239,27 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 				return len;
 			len += ret;
 		}
+
+		ret = os_snprintf(buf + len, buflen - len,
+				  "he_bss_color_collision_detection=%d\n",
+				  iconf->he_op.he_bss_color_collision_detection);
+		if (os_snprintf_error(buflen - len, ret))
+			return len;
+		len += ret;
+
+		ret = os_snprintf(buf + len, buflen - len,
+				  "he_bss_color_cca_count=%u\n",
+				  hapd->cca_count);
+		if (os_snprintf_error(buflen - len, ret))
+			return len;
+		len += ret;
+
+		ret = os_snprintf(buf + len, buflen - len,
+				  "he_bss_color_collision_ap_period=%d\n",
+				  hapd->iface->conf->he_bss_color_collision_ap_period);
+		if (os_snprintf_error(buflen - len, ret))
+			return len;
+		len += ret;
 	}
 #endif /* CONFIG_IEEE80211AX */
 

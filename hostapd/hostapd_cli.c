@@ -1269,6 +1269,18 @@ static int hostapd_cli_cmd_color_change(struct wpa_ctrl *ctrl,
 {
 	return hostapd_cli_cmd(ctrl, "COLOR_CHANGE", 1, argc, argv);
 }
+
+static int hostapd_cli_cmd_color_collision_ap_period(struct wpa_ctrl *ctrl,
+						     int argc, char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "COLOR_COLLISION_AP_PERIOD", 1, argc, argv);
+}
+
+static int hostapd_cli_cmd_color_cca_count(struct wpa_ctrl *ctrl,
+					   int argc, char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "COLOR_CCA_COUNT", 1, argc, argv);
+}
 #endif /* CONFIG_IEEE80211AX */
 
 
@@ -2272,6 +2284,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "color_change", hostapd_cli_cmd_color_change, NULL,
 	  "<color> = initiate BSS color change to set the specified color\n"
 	  "Value 0 will disable the color.\n"},
+	{ "color_collision_ap_period", hostapd_cli_cmd_color_collision_ap_period, NULL,
+	  "<seconds> = set BSS color collision AP period" },
+	{ "color_change_announcement_count", hostapd_cli_cmd_color_cca_count, NULL,
+	  "<count> = set BSS color change announcement countdown" },
 #endif /* CONFIG_IEEE80211AX */
 	{ "notify_cw_change", hostapd_cli_cmd_notify_cw_change, NULL,
 	  "<channel_width> = 0 - 20 MHz, 1 - 40 MHz, 2 - 80 MHz, 3 - 160 MHz" },
