@@ -541,10 +541,21 @@ static int radius_client_retransmit(struct radius_client_data *radius,
 not_ready:
 #endif /* CONFIG_RADIUS_TLS */
 
+	if (entry->attempts >= conf->radius_server_retries) {
+		wpa_printf(MSG_INFO, "RADIUS: Removing un-ACKed message due to too many"
+			   " failed retransmit attempts");
+		return 1;
+	}
+
 	entry->next_try = now + entry->next_wait;
 	entry->next_wait *= 2;
-	if (entry->next_wait > RADIUS_CLIENT_MAX_WAIT)
-		entry->next_wait = RADIUS_CLIENT_MAX_WAIT;
+
+	if (entry->next_wait > conf->radius_max_retry_wait) {
+		entry->next_wait = conf->radius_max_retry_wait;
+		entry->next_try = now + entry->next_wait;
+	}
+	wpa_printf(MSG_INFO, "RADIUS: Retry attempts :%d Maximum retry attempts :%d ",
+		   entry->attempts, conf->radius_server_retries);
 
 	return 0;
 }

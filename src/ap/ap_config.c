@@ -25,6 +25,9 @@
 #include "ap_config.h"
 #include "interference.h"
 
+#define RADIUS_CLIENT_MAX_RETRIES 10
+#define RADIUS_CLIENT_MAX_WAIT	120
+
 static void hostapd_config_free_vlan(struct hostapd_bss_config *bss)
 {
 	struct hostapd_vlan *vlan, *prev;
@@ -87,6 +90,8 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 
 	bss->dtim_period = 2;
 
+	bss->radius->radius_server_retries = RADIUS_CLIENT_MAX_RETRIES;
+	bss->radius->radius_max_retry_wait = RADIUS_CLIENT_MAX_WAIT;
 	bss->radius_server_auth_port = 1812;
 	bss->eap_sim_db_timeout = 1;
 	bss->eap_sim_id = 3;
