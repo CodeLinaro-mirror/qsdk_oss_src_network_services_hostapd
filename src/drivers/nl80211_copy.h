@@ -5230,6 +5230,8 @@ enum nl80211_mesh_setup_params {
  * @NL80211_TXQ_ATTR_CWMAX: Maximum contention window [a value of the form
  *	2^n-1 in the range 1..32767]
  * @NL80211_TXQ_ATTR_AIFS: Arbitration interframe space [0..255]
+ * @NL80211_TXQ_ATTR_ACM: Admission Control Mandatory [0,1]
+ * @NL80211_TXQ_ATTR_NOACK: No Acknowledgment [0,1]
  * @__NL80211_TXQ_ATTR_AFTER_LAST: Internal
  * @NL80211_TXQ_ATTR_MAX: Maximum TXQ attribute number
  */
@@ -5240,6 +5242,8 @@ enum nl80211_txq_attr {
 	NL80211_TXQ_ATTR_CWMIN,
 	NL80211_TXQ_ATTR_CWMAX,
 	NL80211_TXQ_ATTR_AIFS,
+	NL80211_TXQ_ATTR_ACM,
+	NL80211_TXQ_ATTR_NOACK,
 
 	/* keep last */
 	__NL80211_TXQ_ATTR_AFTER_LAST,
