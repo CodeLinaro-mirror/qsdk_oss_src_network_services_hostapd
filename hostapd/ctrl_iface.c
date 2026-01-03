@@ -1664,6 +1664,61 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 }
 
 
+static int hostapd_get_wmm_params(struct hostapd_data *hapd, char *cmd,
+				  char *buf, size_t buflen)
+{
+	const char *pos;
+	int ret = 0, v = 0, ac = -1;
+	struct hostapd_wmm_ac_params *current_wmm_param;
+
+	if (!hapd->started) {
+		wpa_printf(MSG_ERROR, "Interface is not UP");
+		return -1;
+	}
+
+	/* skip 'wmm_ac_' prefix */
+	pos = cmd + 7;
+
+	if (os_strncmp(pos, "be_", 3) == 0) {
+		ac = 0;
+		pos += 3;
+	} else if (os_strncmp(pos, "bk_", 3) == 0) {
+		ac = 1;
+		pos += 3;
+	} else if (os_strncmp(pos, "vi_", 3) == 0) {
+		ac = 2;
+		pos += 3;
+	} else if (os_strncmp(pos, "vo_", 3) == 0) {
+		ac = 3;
+		pos += 3;
+	} else {
+		wpa_printf(MSG_ERROR, "Unknown WMM Access Category '%s'", pos);
+		return -1;
+	}
+
+	current_wmm_param = &hapd->conf->wmm_ac_params[ac];
+
+	if (os_strcmp(pos, "aifs") == 0) {
+		v = current_wmm_param->aifs;
+	} else if (os_strcmp(pos, "cwmin") == 0) {
+		v = current_wmm_param->cwmin;
+	} else if (os_strcmp(pos, "cwmax") == 0) {
+		v = current_wmm_param->cwmax;
+	} else if (os_strcmp(pos, "txop_limit") == 0) {
+		v = current_wmm_param->txop_limit;
+	} else if (os_strcmp(pos, "acm") == 0) {
+		v = current_wmm_param->admission_control_mandatory;
+	} else {
+		wpa_printf(MSG_ERROR, "Unknown WMM param '%s'", pos);
+		return -1;
+	}
+
+	ret = os_snprintf(buf, buflen, "%d\n", v);
+
+	return ret;
+}
+
+
 static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 				  char *buf, size_t buflen)
 {
@@ -1678,6 +1733,11 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		return res;
 	} else if (os_strcmp(cmd, "tls_library") == 0) {
 		res = tls_get_library_version(buf, buflen);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strncmp(cmd, "wmm_ac_", 7) == 0) {
+		res = hostapd_get_wmm_params(hapd, cmd, buf, buflen);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;

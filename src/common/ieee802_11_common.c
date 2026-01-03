@@ -1282,21 +1282,21 @@ int hostapd_config_wmm_ac(struct hostapd_wmm_ac_params wmm_ac_params[],
 
 	if (os_strcmp(pos, "aifs") == 0) {
 		v = atoi(val);
-		if (v < 1 || v > 255) {
+		if (v < 1 || v > 15) {
 			wpa_printf(MSG_ERROR, "Invalid AIFS value %d", v);
 			return -1;
 		}
 		ac->aifs = v;
 	} else if (os_strcmp(pos, "cwmin") == 0) {
 		v = atoi(val);
-		if (v < 0 || v > 15) {
+		if (v < 0 || v > 15 || v > ac->cwmax) {
 			wpa_printf(MSG_ERROR, "Invalid cwMin value %d", v);
 			return -1;
 		}
 		ac->cwmin = v;
 	} else if (os_strcmp(pos, "cwmax") == 0) {
 		v = atoi(val);
-		if (v < 0 || v > 15) {
+		if (v < 0 || v > 15 || v < ac->cwmin) {
 			wpa_printf(MSG_ERROR, "Invalid cwMax value %d", v);
 			return -1;
 		}
