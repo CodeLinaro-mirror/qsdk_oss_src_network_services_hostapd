@@ -2468,7 +2468,8 @@ static void hostapd_tx_queue_params(struct hostapd_iface *iface)
 		p = &iface->conf->tx_queue[i];
 
 		if (hostapd_set_tx_queue_params(hapd, i, p->aifs, p->cwmin,
-						p->cwmax, p->burst)) {
+						p->cwmax, p->burst,
+						p->acm, p->noack)) {
 			wpa_printf(MSG_DEBUG, "Failed to set TX queue "
 				   "parameters for queue %d.", i);
 			/* Continue anyway */

@@ -1357,7 +1357,7 @@ static int valid_cw(int cw)
 int hostapd_config_tx_queue(struct hostapd_tx_queue_params tx_queue[],
 			    const char *name, const char *val)
 {
-	int num;
+	int num, v;
 	const char *pos;
 	struct hostapd_tx_queue_params *queue;
 
@@ -1385,28 +1385,54 @@ int hostapd_config_tx_queue(struct hostapd_tx_queue_params tx_queue[],
 	queue = &tx_queue[num];
 
 	if (os_strcmp(pos, "aifs") == 0) {
-		queue->aifs = atoi(val);
-		if (queue->aifs < 0 || queue->aifs > 255) {
+		v = atoi(val);
+		if (v < 0 || v > 15) {
 			wpa_printf(MSG_ERROR, "Invalid AIFS value %d",
 				   queue->aifs);
 			return -1;
 		}
+		queue->aifs = v;
 	} else if (os_strcmp(pos, "cwmin") == 0) {
-		queue->cwmin = atoi(val);
-		if (!valid_cw(queue->cwmin)) {
+		v = atoi(val);
+		if (!valid_cw(v) || v > queue->cwmax) {
 			wpa_printf(MSG_ERROR, "Invalid cwMin value %d",
 				   queue->cwmin);
 			return -1;
 		}
+		queue->cwmin = v;
 	} else if (os_strcmp(pos, "cwmax") == 0) {
-		queue->cwmax = atoi(val);
-		if (!valid_cw(queue->cwmax)) {
+		v = atoi(val);
+		if (!valid_cw(v) ||  v < queue->cwmin) {
 			wpa_printf(MSG_ERROR, "Invalid cwMax value %d",
 				   queue->cwmax);
 			return -1;
 		}
+		queue->cwmax = v;
 	} else if (os_strcmp(pos, "burst") == 0) {
-		queue->burst = hostapd_config_read_int10(val);
+		v = hostapd_config_read_int10(val);
+		/* Burst time is configured in units of 0.1 msec and TXOP
+		 * parameter in 32 usec, so need to convert the value here.
+		 * TXOP parameter is sent as u16. */
+		if (v < 0 || (v * 100 + 16) / 32 > 655350) {
+			wpa_printf(MSG_ERROR, "Invalid burst size value %d",
+					v);
+			return -1;
+		}
+		queue->burst = v;
+	} else if (os_strcmp(pos, "acm") == 0) {
+		v = atoi(val);
+		if (v < 0 || v > 1) {
+			wpa_printf(MSG_ERROR, "Invalid ACM value %d", v);
+			return -1;
+		}
+		queue->acm = v;
+	} else if (os_strcmp(pos, "noack") == 0) {
+		v = atoi(val);
+		if (v < 0 || v > 1) {
+			wpa_printf(MSG_ERROR, "Invalid NoACK value %d", v);
+			return -1;
+		}
+		queue->noack = v;
 	} else {
 		wpa_printf(MSG_ERROR, "Unknown queue field '%s'", pos);
 		return -1;
