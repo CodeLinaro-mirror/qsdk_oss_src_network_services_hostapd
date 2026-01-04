@@ -1577,6 +1577,55 @@ static int hostapd_cli_cmd_update_beacon(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, "UPDATE_BEACON");
 }
 
+static int hostapd_cli_cmd_add_tpe(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[256];
+	int res, i;
+	size_t used;
+
+	if (argc < 4) {
+		printf("Usage: add_tpe <tx_pwr_intrpt> <tx_pwr_cnt> <tx_pwr_cat> <tx_pwr …>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "ADD_TPE %s %s %s",
+			  argv[0], argv[1], argv[2]);
+	if (os_snprintf_error(sizeof(cmd), res))
+		return -1;
+
+	for (i = 3; i < argc; i++) {
+		used = os_strlen(cmd);
+
+		if (sizeof(cmd) - used <= os_strlen(argv[i]) + 2) {
+			printf("Error: Too many arguments, command buffer full\n");
+			return -1;
+		}
+
+		res = os_snprintf(cmd + used, sizeof(cmd) - used, " %s", argv[i]);
+		if (os_snprintf_error(sizeof(cmd) - used, res))
+			return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_del_tpe(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[256];
+	int res;
+
+	if (argc < 2) {
+		printf("Usage: del_tpe <tx_pwr_intrpt> <tx_pwr_cat>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "DEL_TPE %s %s",
+			  argv[0], argv[1]);
+	if (os_snprintf_error(sizeof(cmd), res))
+		return -1;
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
 
 static int hostapd_cli_cmd_stop_ap(struct wpa_ctrl *ctrl, int argc,
 				   char *argv[])
@@ -2324,6 +2373,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "= stop specified AP MLD without affecting other APs/MLDs" },
 	{ "update_beacon", hostapd_cli_cmd_update_beacon, NULL,
 	  "= update Beacon frame contents\n"},
+	{ "add_tpe", hostapd_cli_cmd_add_tpe, NULL,
+	  "add_tpe <tx_pwr_intrpt> <tx_pwr_cnt> <tx_pwr_cat> <tx_pwr …>"},
+	{ "del_tpe", hostapd_cli_cmd_del_tpe, NULL,
+	  "del_tpe <tx_pwr_intrpt> <tx_pwr_cat>" },
 	{ "stop_ap", hostapd_cli_cmd_stop_ap, NULL,
 	  "= stop AP\n"},
 	{ "erp_flush", hostapd_cli_cmd_erp_flush, NULL,

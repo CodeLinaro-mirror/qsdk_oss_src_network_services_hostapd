@@ -1491,6 +1491,19 @@ int hostapd_afc_handle_cli(struct hostapd_data *hapd, char *pos,
 			   char *buf, size_t buflen);
 
 /**
+ * hostapd_get_tpe_11ax_count() - Validate the input Tx power count
+ *
+ * This API checks if the input Tx power count and Interpretation are valid
+ *
+ * @tx_pwr_intrpn: Tx power interpretation
+ * @tx_pwr_count: Tx power count
+ *
+ * Return: Total Tx power count for the given interpretation
+ */
+int
+hostapd_get_tpe_11ax_count(u8 tx_pwr_intrpn, u8 tx_pwr_count);
+
+/**
  * hostapd_validate_chan_bw_in_pwr_mode() - Validate the input channel parameters
  *
  * This API checks if the input channel parameters are valid in the given

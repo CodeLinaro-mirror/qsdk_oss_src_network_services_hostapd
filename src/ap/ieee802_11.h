@@ -343,6 +343,101 @@ void
 get_min_psd_values(struct afc_sp_reg_info *afc_rsp_info, u16 freq, u16 cfreq,
 		   u16 punc_bitmap, u16 bw, s16 *min_psd);
 
+/**
+ * hostapd_get_eirp_arr_for_6ghz - Get EIRP array for 6 GHz band.
+ * @iface: hostapd interface data structure.
+ * @freq: Primary channel frequency in MHz.
+ * @cen320: Center frequency for 320 MHz operation, if applicable.
+ * @chanwidth: Channel width for which EIRP is being calculated.
+ * @client_type: Client type for which EIRP is being calculated.
+ * @max_eirp_arr: Output array to store maximum EIRP values for each
+ * bandwidth.
+ * @pwr_mode: Power mode for EIRP calculation.
+ * @tx_pwr_intrpn: Interpretation of maximum transmit power.
+ *
+ */
+void
+hostapd_get_eirp_arr_for_6ghz(struct hostapd_iface *iface,
+			      u16 freq,
+			      u8 cen320,
+			      enum chan_width chanwidth,
+			      u8 client_type,
+			      s8 *max_eirp_arr,
+			      u8 pwr_mode,
+			      enum max_tx_pwr_interpretation tx_pwr_intrpn);
+
+/**
+ * get_chan_list() - Locate 6 GHz channel ranges in list
+ *
+ * Derives indices and counts for 11ax/11be channel ranges within @chan_data
+ * relative to the operating channel in @hapd.
+ *
+ * @hapd: Hostapd BSS context
+ * @non_11be_start_idx: Output start index of non-11be channels
+ * @chan_start_idx: Output start index of the operating channel window
+ * @non_11be_chan_count: Output count of non-11be channels
+ * @total_chan_count: Output total channels to consider from start index
+ * @chan_data: Ordered channel list to examine
+ *
+ * Return: 0 on success, -1 on invalid indices or list
+ */
+
+int get_chan_list(struct hostapd_data *hapd, int *non_11be_start_idx,
+		  int *chan_start_idx, int *non_11be_chan_count,
+		  int *total_chan_count, struct ieee_chan_data chan_data);
+
+/**
+ * set_ieee_order_chan_list() - Build ordered channel list
+ *
+ * Populates @chan_data with an IEEE-ordered list of channels from @mode,
+ * ordered for processing PSD/EIRP per client regulatory mode.
+ *
+ * @mode: Current hardware mode and channels
+ * @chan_data: Output channel list container (allocated/populated)
+ * @client_mode: Regulatory client mode (LPI/SP/subordinate)
+ *
+ * Return: 0 on success, -1 on failure to build channel list
+ */
+
+int set_ieee_order_chan_list(struct hostapd_hw_modes *mode,
+			     struct ieee_chan_data *chan_data,
+			     enum nl80211_regulatory_power_modes client_mode);
+
+/**
+ * get_psd_values() - Build PSD values for 6 GHz TPE
+ *
+ * Computes per-channel PSD (EIRP/MHz) values for an ordered channel set
+ * and populates the Transmit Power Envelope (TPE) arrays, taking into
+ * account client regulatory mode, AP power mode, puncturing and power
+ * interpretation. The values written to the output arrays are encoded in
+ * 0.5 dB steps (i.e., value = PSD[dBm/MHz] * 2).
+ *
+ * @hapd: Hostapd BSS context
+ * @non_11be_start_idx: Start index in @chan_data for the non-11be range
+ *                      to be exported in @tx_pwr_array
+ * @chan_start_idx: Start index in @chan_data for the total channel range
+ * @non_11be_chan_count: Number of non-11be channels in the range
+ * @total_chan_count: Total number of channels in the range
+ * @tx_pwr_count: Output count corresponding to @tx_pwr_array
+ * @tx_pwr_array: Output PSD values for the non-11be range (0.5 dB units)
+ * @tx_pwr_ext_count: Output count corresponding to @tx_pwr_ext_array
+ * @tx_pwr_ext_array: Output PSD values for the remaining channels
+ *                    (0.5 dB units)
+ * @client_mode: Regulatory client mode (LPI/SP/subordinate)
+ * @chan_data: Ordered channel list container
+ * @pwr_mode: Regulatory AP power mode
+ * @tx_pwr_intrpn: Maximum transmit power interpretation (PSD/EIRP)
+ *
+ * Return: 0 on success, -1 on error
+ */
+int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
+		   int chan_start_idx, int non_11be_chan_count,
+		   int total_chan_count, u8 *tx_pwr_count,
+		   s8 *tx_pwr_array, u8 *tx_pwr_ext_count,
+		   s8 *tx_pwr_ext_array, u8 client_mode, struct ieee_chan_data chan_data,
+		   u8 pwr_mode, enum max_tx_pwr_interpretation tx_pwr_intrpn);
+
+
 void ap_copy_sta_supp_op_classes(struct sta_info *sta,
 				 const u8 *supp_op_classes,
 				 size_t supp_op_classes_len);

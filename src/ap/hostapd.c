@@ -7803,6 +7803,36 @@ hostapd_get_valid_puncture_pattern_arr(u16 bw, u16 *num_pp, u16 *pp_mask)
 }
 
 
+int hostapd_get_tpe_11ax_count(u8 tx_pwr_intrpn, u8 tx_pwr_count)
+{
+	switch (tx_pwr_intrpn) {
+	case LOCAL_EIRP_PSD:
+	case REGULATORY_CLIENT_EIRP_PSD:
+	case REGULATORY_CLIENT_ADDITIONAL_EIRP_PSD:
+		if (tx_pwr_count > IEEE80211_TPE_PSD_MAX_POWER_COUNT_IN_11AX) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid Tx Power count %d, Interpretation %d supports up to %d",
+				   tx_pwr_count, tx_pwr_intrpn,
+				   IEEE80211_TPE_PSD_MAX_POWER_COUNT_IN_11AX);
+			return -1;
+		}
+		return tx_pwr_count ? 1 << (tx_pwr_count - 1) : 1;
+	case LOCAL_EIRP:
+	case REGULATORY_CLIENT_EIRP:
+	case REGULATORY_CLIENT_ADDITIONAL_EIRP:
+		if (tx_pwr_count > IEEE80211_TPE_EIRP_MAX_POWER_COUNT_IN_11AX) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid Tx Power count %d, Interpretation %d supports up to %d",
+				   tx_pwr_count, tx_pwr_intrpn,
+				   IEEE80211_TPE_EIRP_MAX_POWER_COUNT_IN_11AX);
+			return -1;
+		}
+		return tx_pwr_count + 1;
+	default:
+		wpa_printf(MSG_ERROR, "Invalid Tx power interpretation:%d", tx_pwr_intrpn);
+		return -1;
+	}
+}
 /**
  * hostapd_get_eirp_powers() - Get EIRP powers for all AP power modes
  * @iface: Pointer to hostapd_iface
