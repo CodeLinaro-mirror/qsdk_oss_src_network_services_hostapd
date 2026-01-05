@@ -1858,7 +1858,7 @@ int wpa_config_write(const char *name, struct wpa_config *config)
 	if (f == NULL) {
 		wpa_printf(MSG_DEBUG, "Failed to open '%s' for writing", name);
 		os_free(tmp_name);
-		/*if writinging to /var/run/supplicant.conf write fails write it to
+		/*if writing to /var/run/supplicant.conf write fails write it to
 		 * tmp/supplicant.conf
 		 */
 		name = orig_name;

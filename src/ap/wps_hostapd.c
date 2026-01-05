@@ -27,7 +27,9 @@
 #include "beacon.h"
 #include "sta_info.h"
 #include "wps_hostapd.h"
-
+#ifdef CONFIG_DPP2
+#include "dpp_hostapd.h"
+#endif
 
 #ifdef CONFIG_WPS_UPNP
 #include "wps/wps_upnp.h"
@@ -958,6 +960,16 @@ static int hostapd_wps_rf_band_cb(void *ctx)
 }
 
 
+#ifdef CONFIG_DPP2
+static int hostapd_wps_dpp_uri_cb(void *ctx, const char *uri)
+{
+	struct hostapd_data *hapd = ctx;
+
+	return hostapd_dpp_qr_code(hapd, uri);
+}
+#endif
+
+
 static void hostapd_wps_clear_ies(struct hostapd_data *hapd, int deinit_only)
 {
 	wpabuf_free(hapd->wps_beacon_ie);
@@ -1107,6 +1119,9 @@ int hostapd_init_wps(struct hostapd_data *hapd,
 	wps->rf_band_cb = hostapd_wps_rf_band_cb;
 	wps->wps_mbssid_cb = hostapd_wps_mbssid_cb;
 	wps->cb_ctx = hapd;
+#ifdef CONFIG_DPP2
+	wps->wps_dpp_uri_cb = hostapd_wps_dpp_uri_cb;
+#endif
 
 	os_memset(&cfg, 0, sizeof(cfg));
 	wps->wps_state = hapd->conf->wps_state;
@@ -1584,6 +1599,12 @@ static int wps_button_pushed(struct hostapd_data *hapd, void *ctx)
 
 	if (hapd->wps) {
 		data->count++;
+#ifdef CONFIG_DPP2
+		if (hapd->dpp_wps == 1) {
+			hapd->wps->dpp_wps = 1;
+			hapd->dpp_wps = 0;
+		}
+#endif
 		return wps_registrar_button_pushed(hapd->wps->registrar,
 						   data->p2p_dev_addr);
 	}

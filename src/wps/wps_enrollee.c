@@ -395,6 +395,9 @@ static struct wpabuf * wps_build_m7(struct wps_data *wps)
 	    wps_build_registrar_nonce(wps, msg) ||
 	    wps_build_e_snonce2(wps, plain) ||
 	    (wps->wps->ap && wps_build_ap_settings(wps, plain)) ||
+#ifdef CONFIG_DPP2
+	    wps_build_dpp_uri(wps, plain) ||
+#endif
 	    wps_build_key_wrap_auth(wps, plain) ||
 	    wps_build_encr_settings(wps, msg, plain) ||
 	    wps_build_wfa_ext(msg, 0, NULL, 0, 0) ||
@@ -774,6 +777,14 @@ static int wps_process_creds(struct wps_data *wps, const u8 *cred[],
 	if (num_cred == 0) {
 		wpa_printf(MSG_DEBUG, "WPS: No Credential attributes "
 			   "received");
+#ifdef CONFIG_DPP2
+		if (wps->wps->dpp_wps == 1 && (wps->state == RECV_M8))
+		{
+			wpa_printf(MSG_DEBUG, "WPS DPP bypass cred check\n");
+			return 0;
+		}
+#endif
+
 		return -1;
 	}
 

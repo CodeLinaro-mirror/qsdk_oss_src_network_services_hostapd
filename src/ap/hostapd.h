@@ -568,6 +568,7 @@ struct hostapd_data {
 	u8 dpp_allowed_roles;
 	int dpp_qr_mutual;
 	int dpp_auth_ok_on_ack;
+	bool dpp_wps;
 	int dpp_in_response_listen;
 	struct gas_query_ap *gas;
 	struct dpp_pkex *dpp_pkex;
