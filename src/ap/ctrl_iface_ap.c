@@ -27,6 +27,7 @@
 #include "taxonomy.h"
 #include "wnm_ap.h"
 #include "neighbor_db.h"
+#include "../drivers/driver_nl80211.h"
 
 static const char * hw_mode_str(enum hostapd_hw_mode mode)
 {
@@ -205,6 +206,51 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 	ret = os_snprintf(buf + len, buflen - len, "\n");
 	if (!os_snprintf_error(buflen - len, ret))
 		len += ret;
+
+#ifdef CONFIG_DRIVER_NL80211
+	char cm_buf[1024];
+	size_t cm_len = sizeof(cm_buf);
+	int r;
+	u8 radio_idx = NL80211_WIPHY_RADIO_ID_MAX;
+
+	/* Extract only the configured antenna masks for current radio */
+	if (hapd->iface && hapd->iface->num_multi_hws && hapd->iface->current_hw_info)
+		radio_idx = hapd->iface->current_hw_info->hw_idx;
+
+	if (hapd->drv_priv) {
+		r = nl80211_get_chain_mask(hapd->drv_priv, radio_idx, cm_buf, cm_len);
+		if (r >= 0 && r < (int)cm_len) {
+			char *p, *txp, *rxp, *endp;
+			unsigned long tx = 0, rx = 0;
+
+			cm_buf[cm_len - 1] = '\0';
+
+			p = os_strstr(cm_buf, "Configured Antennas:");
+			if (p) {
+				txp = os_strstr(p, "TX ");
+				rxp = os_strstr(p, "RX ");
+				if (txp)
+					tx = strtoul(txp + 3, &endp, 0);
+				if (rxp)
+					rx = strtoul(rxp + 3, &endp, 0);
+
+				ret = os_snprintf(buf + len, buflen - len,
+						  "configured_tx_chain_mask=%#lx\n", tx);
+				if (os_snprintf_error(buflen - len, ret))
+					return len;
+				len += ret;
+
+				ret = os_snprintf(buf + len, buflen - len,
+						  "configured_rx_chain_mask=%#lx\n", rx);
+				if (os_snprintf_error(buflen - len, ret))
+					return len;
+				len += ret;
+			} else {
+				wpa_printf(MSG_DEBUG, "Chain mask info not found in expected format");
+			}
+		}
+	}
+#endif /* CONFIG_DRIVER_NL80211 */
 
 	ret = os_snprintf(buf + len, buflen - len, "tx_rate_info=%lu",
 			  data.current_tx_rate / 100);
