@@ -342,6 +342,10 @@ static struct eap_config * authsrv_eap_config(struct hostapd_data *hapd)
 	cfg->skip_prot_success = hapd->conf->eap_skip_prot_success;
 #endif /* CONFIG_TESTING_OPTIONS */
 
+	/* Propagate the configured identity retry interval to the EAP server. */
+	cfg->identity_request_retry_interval =
+		hapd->conf->identity_request_retry_interval;
+
 	return cfg;
 }
 
