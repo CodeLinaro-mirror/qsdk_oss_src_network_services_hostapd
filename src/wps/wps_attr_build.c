@@ -390,6 +390,28 @@ int wps_build_key_wrap_auth(struct wps_data *wps, struct wpabuf *msg)
 }
 
 
+#ifdef CONFIG_DPP2
+int wps_build_dpp_uri(struct wps_data *wps, struct wpabuf *msg)
+{
+	if (wps && wps->wps && wps->wps->wps_dpp_uri &&
+	    os_strlen(wps->wps->wps_dpp_uri)) {
+		/* Include both DPP_URI_TEMP and DPP_URI attributes
+		 * to maintain backward compatibility
+		 */
+		wpa_printf(MSG_DEBUG, "WPS:  * DPP URI TEMP");
+		wpabuf_put_be16(msg, ATTR_DPP_URI_TEMP);
+		wpabuf_put_be16(msg, os_strlen(wps->wps->wps_dpp_uri));
+		wpabuf_put_data(msg, wps->wps->wps_dpp_uri, os_strlen(wps->wps->wps_dpp_uri));
+		wpa_printf(MSG_DEBUG, "WPS:  * DPP URI");
+		wpabuf_put_be16(msg, ATTR_DPP_URI);
+		wpabuf_put_be16(msg, os_strlen(wps->wps->wps_dpp_uri));
+		wpabuf_put_data(msg, wps->wps->wps_dpp_uri, os_strlen(wps->wps->wps_dpp_uri));
+	}
+	return 0;
+}
+#endif
+
+
 int wps_build_encr_settings(struct wps_data *wps, struct wpabuf *msg,
 			    struct wpabuf *plain)
 {

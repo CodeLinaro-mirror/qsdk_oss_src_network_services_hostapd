@@ -162,6 +162,9 @@ int wps_build_dev_password_id(struct wpabuf *msg, u16 id);
 int wps_build_config_error(struct wpabuf *msg, u16 err);
 int wps_build_authenticator(struct wps_data *wps, struct wpabuf *msg);
 int wps_build_key_wrap_auth(struct wps_data *wps, struct wpabuf *msg);
+#ifdef CONFIG_DPP2
+int wps_build_dpp_uri(struct wps_data *wps, struct wpabuf *msg);
+#endif
 int wps_build_encr_settings(struct wps_data *wps, struct wpabuf *msg,
 			    struct wpabuf *plain);
 int wps_build_version(struct wpabuf *msg);

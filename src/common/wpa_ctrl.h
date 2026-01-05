@@ -182,6 +182,8 @@ extern "C" {
 #define WPS_EVENT_ENROLLEE_SEEN "WPS-ENROLLEE-SEEN "
 
 #define WPS_EVENT_OPEN_NETWORK "WPS-OPEN-NETWORK "
+/*Event to indictae do URI found on DPP_WPS*/
+#define WPS_EVENT_DPP_NO_URI "WPS-DPP-NO-URI "
 /** Result of SCS setup */
 #define WPA_EVENT_SCS_RESULT "CTRL-EVENT-SCS-RESULT "
 /* Event indicating DSCP policy */

@@ -139,8 +139,14 @@ enum wps_attribute {
 	ATTR_802_1X_ENABLED = 0x1062,
 	ATTR_APPSESSIONKEY = 0x1063,
 	ATTR_WEPTRANSMITKEY = 0x1064,
+	/*Maintaining this for backward compatibility
+	 *According to the latest Easymesh spec, correct value for
+	 *the DPP_URI attribute is 0x1BBB
+	 */
+	ATTR_DPP_URI_TEMP = 0x1065, /* _NOT_ defined in the spec */
 	ATTR_REQUESTED_DEV_TYPE = 0x106a,
-	ATTR_EXTENSIBILITY_TEST = 0x10fa /* _NOT_ defined in the spec */
+	ATTR_EXTENSIBILITY_TEST = 0x10fa, /* _NOT_ defined in the spec */
+	ATTR_DPP_URI = 0x1BBB
 };
 
 #define WPS_VENDOR_ID_WFA 14122

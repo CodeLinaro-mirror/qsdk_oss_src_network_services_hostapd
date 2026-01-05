@@ -1626,6 +1626,17 @@ int wps_build_cred(struct wps_data *wps, struct wpabuf *msg)
 	if (wps->wps->registrar->skip_cred_build)
 		goto skip_cred_build;
 
+#ifdef CONFIG_DPP2
+	if ((wps->state == SEND_M8) && wps->wps->dpp_wps &&
+	    wps->wps->wps_dpp_uri && os_strlen(wps->wps->wps_dpp_uri)) {
+		wpa_printf(MSG_DEBUG, "WPS:  * Credential skipped, DPP over WPS");
+		os_free(wps->wps->wps_dpp_uri);
+		wps->wps->wps_dpp_uri = NULL;
+		wps->wps->dpp_wps = 0;
+		goto skip_cred_build;
+	}
+#endif
+
 	wpa_printf(MSG_DEBUG, "WPS:  * Credential");
 	if (wps->use_cred) {
 		os_memcpy(&wps->cred, wps->use_cred, sizeof(wps->cred));
@@ -2373,6 +2384,27 @@ static int wps_process_e_snonce2(struct wps_data *wps, const u8 *e_snonce2)
 }
 
 
+#ifdef CONFIG_DPP2
+static int wps_process_dpp_uri(struct wps_data *wps, const u8 *wps_dpp_uri,
+			       size_t wps_dpp_uri_len)
+{
+	if (wps_dpp_uri == NULL) {
+		wpa_printf(MSG_DEBUG, "WPS: No WPS DPP URI received");
+		return 0;
+	}
+	wpa_hexdump_ascii(MSG_DEBUG, "WPS: WPS DPP URI", wps_dpp_uri,
+			  wps_dpp_uri_len);
+	wps->wps->wps_dpp_uri = os_strdup( (const char *) wps_dpp_uri);
+	if (wps->wps->wps_dpp_uri == NULL) {
+		wpa_printf(MSG_DEBUG, "WPS: No WPS DPP URI saved");
+	}
+	if (wps->wps->wps_dpp_uri_cb)
+		wps->wps->wps_dpp_uri_cb(wps->wps->cb_ctx, (const char *) wps_dpp_uri);
+	return 0;
+}
+#endif
+
+
 static int wps_process_mac_addr(struct wps_data *wps, const u8 *mac_addr)
 {
 	if (mac_addr == NULL) {
@@ -3014,6 +3046,9 @@ static enum wps_process_res wps_process_m7(struct wps_data *wps,
 	if (wps_parse_msg(decrypted, &eattr) < 0 ||
 	    wps_process_key_wrap_auth(wps, decrypted, eattr.key_wrap_auth) ||
 	    wps_process_e_snonce2(wps, eattr.e_snonce2) ||
+#ifdef CONFIG_DPP2
+	    wps_process_dpp_uri(wps, (const u8 *) eattr.wps_dpp_uri, eattr.wps_dpp_uri_len) ||
+#endif
 	    wps_process_ap_settings_r(wps, &eattr)) {
 		wpabuf_clear_free(decrypted);
 		wps->state = SEND_WSC_NACK;
