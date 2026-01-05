@@ -1529,4 +1529,10 @@ bool
 hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
 				     u16 center_freq, u16 bw, u16 pp,
 				     u8 pwr_type);
+
+static inline bool
+hostapd_is_ht_enabled(struct hostapd_data *hapd)
+{
+	return (hapd->iconf->ieee80211n && !hapd->conf->disable_11n);
+}
 #endif /* HOSTAPD_H */

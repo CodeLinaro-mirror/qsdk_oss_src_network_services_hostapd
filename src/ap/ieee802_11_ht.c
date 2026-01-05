@@ -28,8 +28,8 @@ u8 * hostapd_eid_ht_capabilities(struct hostapd_data *hapd, u8 *eid)
 	u8 *pos = eid;
 	int i;
 
-	if (!hapd->iconf->ieee80211n || !hapd->iface->current_mode ||
-	    hapd->conf->disable_11n || is_6ghz_op_class(hapd->iconf->op_class))
+	if (!hostapd_is_ht_enabled(hapd) || !hapd->iface->current_mode ||
+	    is_6ghz_op_class(hapd->iconf->op_class))
 		return eid;
 
 	*pos++ = WLAN_EID_HT_CAP;
@@ -143,7 +143,7 @@ u8 * hostapd_eid_ht_operation(struct hostapd_data *hapd, u8 *eid)
 	u8 *pos = eid;
 	u8 chwidth;
 
-	if (!hapd->iconf->ieee80211n || hapd->conf->disable_11n ||
+	if (!hostapd_is_ht_enabled(hapd) ||
 	    is_6ghz_op_class(hapd->iconf->op_class))
 		return eid;
 
@@ -428,7 +428,7 @@ u16 copy_sta_ht_capab(struct hostapd_data *hapd, struct sta_info *sta,
 	 * frame.
 	 */
 	if (!ht_capab || !(sta->flags & WLAN_STA_WMM) ||
-	    !hapd->iconf->ieee80211n || hapd->conf->disable_11n) {
+	    !hostapd_is_ht_enabled(hapd)) {
 		sta->flags &= ~WLAN_STA_HT;
 		os_free(sta->ht_capabilities);
 		sta->ht_capabilities = NULL;
