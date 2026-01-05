@@ -365,7 +365,7 @@ int hostapd_add_candidate_own(struct hostapd_data *hapd, int pref,
 #ifdef NEED_AP_MLME
 	u16 capab = hostapd_own_capab_info(hapd);
 	bool ht = hostapd_is_ht_enabled(hapd);
-	bool vht = hapd->iconf->ieee80211ac && !hapd->conf->disable_11ac;
+	bool vht = hostapd_is_vht_enabled(hapd);
 	bool he = hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax;
 	bool eht = he && hapd->iconf->ieee80211be && !hapd->conf->disable_11be;
 	struct wpa_ssid_value ssid;
