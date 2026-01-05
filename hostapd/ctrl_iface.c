@@ -4054,7 +4054,7 @@ u8 hostapd_maxnss(struct hostapd_data *hapd, struct sta_info *sta)
 			((!!conf->ieee80211be) << 2) |
 			((!!conf->ieee80211ax) << 3);
 		support_check[MAXNSS_HTMODE_HT_N] = hostapd_is_ht_enabled(hapd);
-		support_check[MAXNSS_HTMODE_VHT_AC] = !hapd->conf->disable_11ac;
+		support_check[MAXNSS_HTMODE_VHT_AC] = hostapd_is_vht_enabled(hapd);
 		support_check[MAXNSS_HTMODE_EHT_BE] = !hapd->conf->disable_11be;
 		support_check[MAXNSS_HTMODE_HE_AX] = !hapd->conf->disable_11ax;
 		mode = hapd->iface->current_mode;
