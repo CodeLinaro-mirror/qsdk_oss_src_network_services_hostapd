@@ -1597,7 +1597,8 @@ hostapd_ctrl_is_freq_in_mode(struct hostapd_hw_modes *mode,
 }
 
 
-static int hostapd_ctrl_check_freq_params(struct hostapd_freq_params *params,
+static int hostapd_ctrl_check_freq_params(struct hostapd_iface *iface,
+					  struct hostapd_freq_params *params,
 					  u16 punct_bitmap)
 {
 	u32 start_freq;
@@ -1760,6 +1761,70 @@ static int hostapd_ctrl_check_freq_params(struct hostapd_freq_params *params,
 		return -1;
 	}
 
+	/* 5 GHz channel sanity: ensure center_freq1 implies a valid
+	 * starting 20 MHz primary channel for 80/160/320 MHz.
+	 * This avoids DFS deriving non-existent start channels (e.g., 92).
+	 */
+	if (IS_5GHZ(params->freq) &&
+	    (params->bandwidth == 80 ||
+	     params->bandwidth == 160 ||
+	     params->bandwidth == 320) &&
+	    (params->vht_enabled ||
+	     params->he_enabled ||
+	     params->eht_enabled)) {
+		u8 seg0_idx = 0;
+		int offset = 0;
+		int start_ch;
+
+		if (!params->center_freq1)
+			return -1;
+
+		if (ieee80211_freq_to_chan(params->center_freq1, &seg0_idx) ==
+		    NUM_HOSTAPD_MODES)
+			return -1;
+
+		switch (params->bandwidth) {
+		case 80:
+			offset = 6;
+			break;
+		case 160:
+			offset = 14;
+			break;
+		case 320:
+			offset = 30;
+			break;
+		}
+
+		start_ch = seg0_idx - offset;
+
+		/* Validate derived start_ch against the current HW's channel list */
+		if (iface && iface->current_mode && start_ch > 0) {
+			bool found = false;
+			int j;
+			for (j = 0; j < iface->current_mode->num_channels; j++) {
+				struct hostapd_channel_data *c =
+							&iface->current_mode->channels[j];
+				if (c->flag & HOSTAPD_CHAN_DISABLED)
+				    continue;
+
+				if (!chan_in_current_hw_info(iface->current_hw_info, c))
+				    continue;
+
+				if (c->chan == start_ch) {
+					found = true;
+					break;
+				}
+			}
+			if (!found) {
+				wpa_printf(MSG_ERROR,
+					   "chanswitch: invalid center_freq1=%d for bandwidth=%d MHz (seg0=%u -> start_ch=%d not present)",
+					   params->center_freq1, params->bandwidth,
+					   seg0_idx, start_ch);
+				return -1;
+			}
+		}
+	}
+
 	if (!punct_bitmap)
 		return 0;
 
@@ -1852,7 +1917,7 @@ int hostapd_parse_csa_settings(struct hostapd_iface *iface,
 		return -1;
 	}
 
-	ret = hostapd_ctrl_check_freq_params(&settings->freq_params,
+	ret = hostapd_ctrl_check_freq_params(iface, &settings->freq_params,
 					     settings->freq_params.punct_bitmap);
 	if (ret) {
 		wpa_printf(MSG_INFO,
