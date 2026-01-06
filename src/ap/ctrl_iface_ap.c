@@ -234,9 +234,16 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 		if (!os_snprintf_error(buflen - len, ret))
 			len += ret;
 	}
+
 	ret = os_snprintf(buf + len, buflen - len, "\n");
 	if (!os_snprintf_error(buflen - len, ret))
 		len += ret;
+
+	ret = os_snprintf(buf + len, buflen - len, "256 QAM support=%s\n",
+			  station_supports_256qam(sta) ? "yes" : "no");
+	if (os_snprintf_error(buflen - len, ret))
+		return 0;
+	len += ret;
 
 	if ((sta->flags & WLAN_STA_VHT) && sta->vht_capabilities) {
 		ret = os_snprintf(buf + len, buflen - len,
