@@ -610,10 +610,13 @@ static int find_6g_enabled_chans(struct hostapd_iface *iface,
  * @chandef_list - array to hold the list of valid available chandef
  * @best_ap_pwr_mode - pointer to best power mode
  */
-static int intf_afc_find_channel_list(struct hostapd_iface *iface,
-				      int *chan_width,
-				      struct hostapd_channel_data **chandef_list,
-				      int *best_ap_pwr_mode)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int intf_afc_find_channel_list(struct hostapd_iface *iface,
+			       int *chan_width,
+			       struct hostapd_channel_data **chandef_list,
+			       int *best_ap_pwr_mode)
 {
 	struct hostapd_hw_modes *mode = iface->current_mode;
 	struct hostapd_channel_data_6ghz *channels_6g_data = &mode->channels_6ghz;
