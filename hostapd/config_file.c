@@ -2710,6 +2710,22 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 #endif /* CONFIG_RADIUS_TLS */
 	} else if (os_strcmp(buf, "radius_retry_primary_interval") == 0) {
 		bss->radius->retry_primary_interval = atoi(pos);
+	} else if (os_strcmp(buf, "radius_server_retries") == 0) {
+		int val = atoi(pos);
+		if ((val < 0) || (val > 10)) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid radius_server_retries %d",
+				   line, val);
+			return 1;
+		}
+		bss->radius->radius_server_retries = val;
+	} else if (os_strcmp(buf, "radius_max_retry_wait") == 0) {
+		int val = atoi(pos);
+		if ((val < 1) || (val > 120)) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid radius_max_retry_wait %d",
+				   line, val);
+			return 1;
+		}
+		bss->radius->radius_max_retry_wait = val;
 	} else if (os_strcmp(buf,
 			     "radius_require_message_authenticator") == 0) {
 		bss->radius_require_message_authenticator = atoi(pos);
