@@ -165,12 +165,10 @@ def _test_ap_bss_add_remove(dev, apdev):
     hostapd.add_bss(apdev[0], ifname2, 'bss-2.conf')
     multi_check(apdev[0], dev, [True, True, True])
 
-    logger.info("Remove the first BSS and re-add it and other BSSs")
+    logger.info("Remove the first BSS and re-add it")
     hostapd.remove_bss(apdev[0], ifname1)
-    multi_check(apdev[0], dev, [False, False, False])
+    multi_check(apdev[0], dev, [False, True, True])
     hostapd.add_bss(apdev[0], ifname1, 'bss-1.conf')
-    hostapd.add_bss(apdev[0], ifname2, 'bss-2.conf')
-    hostapd.add_bss(apdev[0], ifname3, 'bss-3.conf')
     multi_check(apdev[0], dev, [True, True, True])
 
     logger.info("Remove two BSSes and re-add them")
@@ -250,7 +248,7 @@ def test_ap_multi_bss_config(dev, apdev):
     hapd = hostapd.add_iface(apdev[0], 'multi-bss.conf')
     hapd.enable()
     hostapd.remove_bss(apdev[0], ifname1)
-    multi_check(apdev[0], dev, [False, False, False])
+    multi_check(apdev[0], dev, [False, True, True])
 
 def invalid_ap(ap):
     logger.info("Trying to start AP " + ap['ifname'] + " with invalid configuration")
