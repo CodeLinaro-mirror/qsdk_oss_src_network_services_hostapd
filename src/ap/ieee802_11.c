@@ -4845,7 +4845,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
+	if (hostapd_is_eht_enabled(hapd)) {
 		resp = copy_sta_eht_capab(hapd, sta, IEEE80211_MODE_AP,
 					  elems->he_capabilities,
 					  elems->he_capabilities_len,
@@ -4979,7 +4979,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			}
 		}
 		/* Overwrite existing ml info only after SA query procedure */
-		if (!assoc_wpa_sm && hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
+		if (!assoc_wpa_sm && hostapd_is_eht_enabled(hapd)) {
 			resp = hostapd_process_ml_assoc_req(hapd, elems, sta);
 			if (resp != WLAN_STATUS_SUCCESS)
 				return resp;
@@ -5452,7 +5452,7 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 		p = hostapd_eid_spatial_reuse(hapd, p);
 		p = hostapd_eid_he_mu_edca_parameter_set(hapd, p, false);
 		p = hostapd_eid_he_6ghz_band_cap(hapd, p);
-		if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
+		if (hostapd_is_eht_enabled(hapd)) {
 			p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
 			p = hostapd_eid_eht_operation(hapd, p);
 			p = hostapd_eid_vendor_240mhz_extn(hapd, p,
@@ -5948,7 +5948,7 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 		buflen += 5 + sta->dpp_pfs->curve->prime_len;
 #endif /* CONFIG_DPP2 */
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
+	if (hostapd_is_eht_enabled(hapd)) {
 		buflen += hostapd_eid_eht_capab_len(hapd, IEEE80211_MODE_AP);
 		buflen += 3 + sizeof(struct ieee80211_eht_operation);
 		/* Add space to include Channel Usage element */
@@ -6119,7 +6119,7 @@ rsnxe_done:
 #endif /* CONFIG_TESTING_OPTIONS */
 
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
+	if (hostapd_is_eht_enabled(hapd)) {
 		if (hapd->conf->mld_ap)
 			p = hostapd_eid_eht_ml_assoc(hapd, sta, p);
 		p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
@@ -6447,7 +6447,7 @@ static struct sta_info * handle_mlo_translate(struct hostapd_data *hapd,
 	u8 mld_addr[ETH_ALEN];
 	const u8 *pos;
 
-	if (!hapd->iconf->ieee80211be || hapd->conf->disable_11be)
+	if (!hostapd_is_eht_enabled(hapd))
 		return NULL;
 
 	if (reassoc) {
@@ -10664,7 +10664,7 @@ u8 * hostapd_eid_chsw_wrapper(struct hostapd_data *hapd, u8 *eid)
 
 	if (!(hostapd_is_vht_enabled(hapd)) &&
 	    !(hostapd_is_he_enabled(hapd)) &&
-	    !(hapd->iconf->ieee80211be && !hapd->conf->disable_11be))
+	    !(hostapd_is_eht_enabled(hapd)))
 		return eid;
 
 	if (!hapd->cs_freq_params.channel ||
@@ -10692,7 +10692,7 @@ u8 * hostapd_eid_chsw_wrapper(struct hostapd_data *hapd, u8 *eid)
 	eid = hostapd_eid_wb_channel_switch(hapd, eid, chan1, chan2);
 
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
+	if (hostapd_is_eht_enabled(hapd)) {
 		/* Bandwidth Indication For Channel Switch subelement */
 		eid = hostapd_eid_bw_indication(hapd, eid, chan1, chan2);
 	}

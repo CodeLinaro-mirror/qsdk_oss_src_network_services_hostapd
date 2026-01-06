@@ -797,7 +797,7 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 	buflen += he_elem_len(hapd);
 
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
+	if (hostapd_is_eht_enabled(hapd)) {
 
 		buflen += hostapd_eid_eht_capab_len(hapd, IEEE80211_MODE_AP);
 		buflen += 3 + sizeof(struct ieee80211_eht_operation);
@@ -1025,7 +1025,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211AX */
 
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
+	if (hostapd_is_eht_enabled(hapd)) {
 		if (hapd->conf->enable_aal) {
 			ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EN);
 
@@ -2103,7 +2103,7 @@ void sta_track_del(struct hostapd_sta_info *info)
 static u16 hostapd_gen_fils_discovery_phy_index(struct hostapd_data *hapd)
 {
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be)
+	if (hostapd_is_eht_enabled(hapd))
 		return FD_CAP_PHY_INDEX_EHT;
 #endif /* CONFIG_IEEE80211BE */
 
@@ -2538,7 +2538,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	tail_len += he_elem_len(hapd);
 
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
+	if (hostapd_is_eht_enabled(hapd)) {
 		tail_len += hostapd_eid_eht_capab_len(hapd, IEEE80211_MODE_AP);
 		tail_len += 3 + sizeof(struct ieee80211_eht_operation);
 
@@ -2784,7 +2784,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211AX */
 
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
+	if (hostapd_is_eht_enabled(hapd)) {
 		if (hapd->conf->mld_ap) {
 			startpos = tailpos;
 
@@ -3031,8 +3031,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		params->elemid_modified_bmap |= BIT(hostapd_mbssid_get_bss_index(tx_bss));
 
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->conf->mld_ap && hapd->iconf->ieee80211be &&
-	    !hapd->conf->disable_11be) {
+	if (hapd->conf->mld_ap && hostapd_is_eht_enabled(hapd)) {
 		params->mld_ap = true;
 		params->mld_link_id = hapd->mld_link_id;
 	}
