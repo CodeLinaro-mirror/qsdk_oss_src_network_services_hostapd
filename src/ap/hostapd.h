@@ -1316,8 +1316,24 @@ bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface);
 void hostapd_gen_per_sta_profiles(struct hostapd_data *hapd);
 size_t hostapd_eid_eht_ml_reconfig_len(struct hostapd_data *hapd);
 u8 * hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd, u8 *eid);
-int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx,
-		       bool is_link_remove);
+/**
+ * hostapd_remove_bss() - Remove a BSS from the AP interface
+ *
+ * This function removes the BSS identified by the given index.
+ * If the BSS being removed is the first BSS, and no other BSS
+ * is available to take over the driver context,
+ * the entire interface is removed.
+ *
+ * @iface: Pointer to hostapd_iface
+ * @idx: Index of the BSS
+ *
+ * Return: 0 on successful BSS removal,
+ * 	   1 if the BSS removal results in removing the entire
+ * 	   interface (caller should not use the iface or BSS),
+ * 	   -1 on failure.
+ */
+int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx);
+void hostapd_refresh_other_iface_beacons(struct hostapd_iface *hapd_iface);
 void hostapd_refresh_all_iface_beacons(struct hostapd_iface *hapd_iface);
 
 static inline bool ap_pmf_enabled(struct hostapd_bss_config *conf)
