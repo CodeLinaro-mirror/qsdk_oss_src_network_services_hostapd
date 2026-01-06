@@ -211,6 +211,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	/* 0 means not set by user; will use hardware supported map by default */
 	bss->vht_mcs_nss_set = 0;
 #endif /* CONFIG_IEEE80211AC */
+	bss->ht_mcs_nss_set = 0;
 }
 
 #ifdef CONFIG_IEEE80211BE
@@ -1479,6 +1480,15 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 		}
 	}
 #endif /* CONFIG_IEEE80211AC */
+	if (bss->ht_mcs_nss_set) {
+		if (!conf->ieee80211n || bss->disable_11n || !bss->wmm_enabled ||
+		    conf->hw_mode == HOSTAPD_MODE_IEEE80211B) {
+			bss->ht_mcs_nss_set = 0;
+			wpa_printf(MSG_ERROR,
+				   "Selective HT-MCS rejected: HT not allowed in current mode");
+			return -1;
+		}
+	}
 #ifdef CONFIG_IEEE80211AX
 #ifdef CONFIG_WEP
 	if (full_config && conf->ieee80211ax &&

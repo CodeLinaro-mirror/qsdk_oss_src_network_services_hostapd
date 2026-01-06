@@ -3487,6 +3487,16 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line);
 			return 1;
 		}
+	} else if (os_strcmp(buf, "ht_mcs_nss_set") == 0) {
+		char *endptr;
+		unsigned long val = strtoul(pos, &endptr, 16);
+		if (*endptr != '\0' || val > 0xffffffff) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid ht_mcs_nss_set 0x%lx (allowed 0 to 0xffffffff)",
+				   line, val);
+			return 1;
+		}
+		bss->ht_mcs_nss_set = (u32) val;
 	} else if (os_strcmp(buf, "require_ht") == 0) {
 		conf->require_ht = atoi(pos);
 	} else if (os_strcmp(buf, "ht_vht_twt_responder") == 0) {
