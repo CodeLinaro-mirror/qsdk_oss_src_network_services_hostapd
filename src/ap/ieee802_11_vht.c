@@ -20,11 +20,42 @@
 #include "ieee802_11.h"
 #include "dfs.h"
 
+#define VHT_MCS_NOT_SUPPORTED  3
+
+static le16 intersect_vht_mcs_set(le16 hw_vht_mcs_set, u16 usr_vht_mcs_set)
+{
+	le16 mcs_nss_set = 0xffff;
+	u8 nss = 0, hw_max_mcs, usr_max_mcs, out;
+
+	while (hw_vht_mcs_set) {
+		hw_max_mcs = hw_vht_mcs_set & 0x3;
+		usr_max_mcs = usr_vht_mcs_set & 0x3;
+
+		if (hw_max_mcs == VHT_MCS_NOT_SUPPORTED)
+			break;
+
+		if (usr_max_mcs == VHT_MCS_NOT_SUPPORTED)
+			out = VHT_MCS_NOT_SUPPORTED;
+		else
+			out = MIN(hw_max_mcs, usr_max_mcs);
+
+		mcs_nss_set &= ~(0x3 << (nss * 2));
+		mcs_nss_set |= (out & 0x3) << (nss * 2);
+
+		nss++;
+		hw_vht_mcs_set >>= 2;
+		usr_vht_mcs_set >>= 2;
+	}
+
+	return mcs_nss_set;
+}
+
 
 u8 * hostapd_eid_vht_capabilities(struct hostapd_data *hapd, u8 *eid, u32 nsts)
 {
 	struct ieee80211_vht_capabilities *cap;
 	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
+	struct hostapd_data *tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
 	u8 *pos = eid;
 	u8 chwidth;
 
@@ -82,6 +113,18 @@ u8 * hostapd_eid_vht_capabilities(struct hostapd_data *hapd, u8 *eid, u32 nsts)
 
 	/* Supported MCS set comes from hw */
 	os_memcpy(&cap->vht_supported_mcs_set, mode->vht_mcs_set, 8);
+
+	if (tx_hapd != hapd)
+		hapd->conf->vht_mcs_nss_set = tx_hapd->conf->vht_mcs_nss_set;
+
+	if (hapd->conf->vht_mcs_nss_set) {
+		cap->vht_supported_mcs_set.rx_map =
+			intersect_vht_mcs_set(cap->vht_supported_mcs_set.rx_map,
+					      hapd->conf->vht_mcs_nss_set);
+		cap->vht_supported_mcs_set.tx_map =
+			intersect_vht_mcs_set(cap->vht_supported_mcs_set.tx_map,
+					      hapd->conf->vht_mcs_nss_set);
+	}
 
 	pos += sizeof(*cap);
 

@@ -1060,6 +1060,9 @@ struct hostapd_bss_config {
 	bool scs;
 	bool mscs;
 #endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_IEEE80211AC
+	u16 vht_mcs_nss_set;
+#endif /* CONFIG_IEEE80211AC */
 
 	enum beacon_rate_type rate_type;
 	unsigned int beacon_rate;

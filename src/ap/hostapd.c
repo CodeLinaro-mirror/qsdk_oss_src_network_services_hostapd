@@ -234,6 +234,21 @@ struct hostapd_data * hostapd_mbssid_get_tx_bss(struct hostapd_data *hapd)
 	return hapd;
 }
 
+
+int hostapd_tx_bss_only(struct hostapd_data *hapd, const char *op_name)
+{
+	struct hostapd_data *tx = hostapd_mbssid_get_tx_bss(hapd);
+
+	if (tx != hapd) {
+		wpa_printf(MSG_ERROR, "%s not allowed on non-transmitting BSS",
+			   op_name);
+		return -1;
+	}
+
+	return 0;
+}
+
+
 void hostapd_free_mbssid_idx(struct hostapd_data *hapd)
 {
 	struct hostapd_iface *iface = hapd->iface;
@@ -4530,6 +4545,12 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 		hapd->msg_ctx = hapd;
 		hostapd_bss_setup_multi_link(hapd, interfaces);
 		hostapd_mbssid_setup_bss(hapd);
+#ifdef CONFIG_IEEE80211AC
+		if (hapd->conf->vht_mcs_nss_set) {
+			if (hostapd_tx_bss_only(hapd, "vht_mcs_nss_set") < 0)
+				goto fail;
+		}
+#endif /* CONFIG_IEEE80211AC */
 		/* mbssid index is needed if any of the link from the mbssid group is
 		 * dynamically removed, will use this index for updating the
 		 * non-transmitting profile in beacon
