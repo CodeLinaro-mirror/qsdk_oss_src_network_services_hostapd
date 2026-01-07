@@ -10957,6 +10957,55 @@ size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
 	return total_len;
 }
 
+s8 hostapd_get_20mhz_psd_for_rnr(struct hostapd_data *hapd)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	u8 ap_pwr_type = iface->conf->he_6ghz_reg_pwr_type;
+	u16 freq = iface->freq;
+	u8 client_mode;
+	s8 result;
+
+	switch (ap_pwr_type) {
+	case HE_REG_INFO_6GHZ_AP_TYPE_INDOOR:
+		client_mode = NL80211_REG_REGULAR_CLIENT_LPI;
+		break;
+	case HE_REG_INFO_6GHZ_AP_TYPE_SP:
+	case HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP:
+		client_mode = NL80211_REG_REGULAR_CLIENT_SP;
+		break;
+	case HE_REG_INFO_6GHZ_AP_TYPE_VLP:
+		client_mode = NL80211_REG_REGULAR_CLIENT_VLP;
+		break;
+	default:
+		return CHAN_MIN_TX_POWER;
+	}
+
+	if (ap_pwr_type != HE_REG_INFO_6GHZ_AP_TYPE_SP) {
+		s16 reg_psd;
+		int ret;
+
+		ret = hostapd_reg_get_psd_from_chan_list(iface, freq,
+							 freq, CHWIDTH_20,
+							 0, ap_pwr_type,
+							 client_mode, true,
+							 false, &reg_psd);
+		if (ret) {
+			wpa_printf(MSG_WARNING, "Failed to calculate reg PSD for frequency %d",
+				   freq);
+			return CHAN_MIN_TX_POWER;
+		}
+
+		return reg_psd * 2;
+	}
+
+	result = get_sp_psd_for_non_punctured_chan(hapd, freq, client_mode,
+						   ap_pwr_type, REGULATORY_CLIENT_EIRP_PSD);
+
+	if (result != CHAN_MIN_TX_POWER)
+		return result * 2;
+
+	return CHAN_MIN_TX_POWER;
+}
 
 static u8 * hostapd_eid_nr_db(struct hostapd_data *hapd, u8 *eid,
 			      size_t *current_len)
@@ -11003,7 +11052,11 @@ static u8 * hostapd_eid_nr_db(struct hostapd_data *hapd, u8 *eid,
 		/* BSS parameters */
 		*eid++ = nr->bss_parameters;
 		/* 20 MHz PSD */
-		*eid++ = RNR_20_MHZ_PSD_MAX_TXPOWER;
+		if (is_6ghz_op_class(hapd->iface->conf->op_class))
+			*eid++ = hapd->iface->rnr_psd;
+		else
+			*eid++ = RNR_20_MHZ_PSD_MAX_TXPOWER;
+
 		len += RNR_TBTT_INFO_LEN;
 		*size_offset = (eid - size_offset) - 1;
 	}
@@ -11073,7 +11126,12 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 	bss_param |= RNR_BSS_PARAM_CO_LOCATED;
 
 	*eid++ = bss_param;
-	*eid++ = RNR_20_MHZ_PSD_MAX_TXPOWER;
+	/* 20 MHz PSD */
+	if (is_6ghz_op_class(iface->conf->op_class))
+		*eid++ = iface->rnr_psd;
+	else
+		*eid++ = RNR_20_MHZ_PSD_MAX_TXPOWER;
+
 
 #ifdef CONFIG_IEEE80211BE
 	if (ap_mld) {

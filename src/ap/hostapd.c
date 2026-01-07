@@ -3033,6 +3033,7 @@ static int setup_interface2(struct hostapd_iface *iface)
 	iface->is_afc_channel_change_pending = false;
 	iface->is_no_ir = false;
 	iface->power_mode_6ghz_before_change = -1;
+	iface->rnr_psd = CHAN_MIN_TX_POWER;
 
 	if (hostapd_get_hw_features(iface)) {
 		/* Not all drivers support this yet, so continue without hw
@@ -4034,6 +4035,7 @@ void hostapd_interface_deinit(struct hostapd_iface *iface)
 	iface->is_no_ir = false;
 	hostapd_free_afc_data(iface);
 	iface->is_afc_power_event_received = false;
+	iface->rnr_psd = CHAN_MIN_TX_POWER;
 
 #ifdef CONFIG_FST
 	if (iface->fst) {
