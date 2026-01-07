@@ -1159,6 +1159,41 @@ struct hostapd_bss_config {
 	ieee80211_tpe_config_user_params tpe_ie_config;
 	enum rate_type probe_resp_rate_type;
 	u16 probe_resp_rate;
+
+	/**
+	 * rssi_reject_assoc_rssi - Minimum RSSI for association (per-BSS)
+	 *
+	 * This is an override for the per-radio rssi_reject_assoc_rssi in
+	 * struct hostapd_config. If set to 0, falls back to the radio-wide
+	 * threshold. If both are 0, the feature is disabled.
+	 *
+	 * Value in dBm (e.g., -75 means -75 dBm)
+	 */
+	int rssi_reject_assoc_rssi;
+
+	/**
+	 * rssi_reject_assoc_timeout - Timeout for rejected association (per-BSS)
+	 *
+	 * This is the time until which the AP will continue rejecting
+	 * a station, which was initially rejected because of low RSSI. Until
+	 * this time has passed, the AP will continue rejecting the STA
+	 * regardless of the RSSI value in the subsequent Assoc-Request frames
+	 *
+	 * If set to 0, no timeout is enforced, i.e., AP will accept the
+	 * Assoc frame purely based on the RSSI value in the current incoming
+	 * frame (and not dependent on any history)
+	 *
+	 * Falls back to radio-wide timeout if not set.
+	 */
+	int rssi_reject_assoc_timeout;
+
+	/**
+	 * rssi_deauth_grace_samples - Grace samples for RSSI deauth (per-BSS)
+	 *
+	 * Number of consecutive low RSSI samples before triggering deauth.
+	 * Range: 1-100. Falls back to radio-wide setting if not set.
+	 */
+	int rssi_deauth_grace_samples;
 };
 
 /**
@@ -1393,6 +1428,7 @@ struct hostapd_config {
 
 	int rssi_reject_assoc_rssi;
 	int rssi_reject_assoc_timeout;
+	int rssi_deauth_grace_samples;
 	int rssi_ignore_probe_request;
 
 #ifdef CONFIG_AIRTIME_POLICY

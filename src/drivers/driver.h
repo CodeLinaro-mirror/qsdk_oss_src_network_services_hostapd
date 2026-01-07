@@ -2358,6 +2358,25 @@ struct wpa_driver_ap_params {
 	 * is_cfp_enabled - flag to indicate whether control frame protection is enabled.
 	 */
 	bool is_cfp_enabled;
+
+	/**
+	 * rssi_reject_assoc_rssi - RSSI threshold for association rejection
+	 *
+	 * RSSI threshold in dBm below which association requests are rejected.
+	 * Also used as threshold for RSSI-based deauthentication.
+	 * Set to 0 to disable RSSI-based rejection/deauth.
+	 * Example: -75 means reject clients with RSSI below -75 dBm
+	 */
+	int rssi_reject_assoc_rssi;
+
+	/**
+	 * rssi_deauth_grace_samples - Grace samples before RSSI deauth
+	 *
+	 * Number of consecutive low RSSI samples below threshold before
+	 * triggering deauthentication. Range: 1-100.
+	 * Set to 0 to disable RSSI-based deauthentication.
+	 */
+	int rssi_deauth_grace_samples;
 };
 
 struct wpa_driver_mesh_bss_params {

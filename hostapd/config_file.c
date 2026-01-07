@@ -4905,9 +4905,24 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		bss->multi_ap_vlanid = val;
 	} else if (os_strcmp(buf, "rssi_reject_assoc_rssi") == 0) {
-		conf->rssi_reject_assoc_rssi = atoi(pos);
+		int val = atoi(pos);
+		/* Support both per-BSS and per-radio configuration */
+		bss->rssi_reject_assoc_rssi = val;
+		conf->rssi_reject_assoc_rssi = val;
 	} else if (os_strcmp(buf, "rssi_reject_assoc_timeout") == 0) {
-		conf->rssi_reject_assoc_timeout = atoi(pos);
+		int val = atoi(pos);
+		/* Support both per-BSS and per-radio configuration */
+		bss->rssi_reject_assoc_timeout = val;
+		conf->rssi_reject_assoc_timeout = val;
+	} else if (os_strcmp(buf, "rssi_deauth_grace_samples") == 0) {
+		int val = atoi(pos);
+		if (val < 1 || val > 100) {
+			wpa_printf(MSG_ERROR, "Line %d: Invalid rssi_deauth_grace_samples %d (expected 1-100)",
+				   line, val);
+			return 1;
+		}
+		bss->rssi_deauth_grace_samples = val;
+		conf->rssi_deauth_grace_samples = val;
 	} else if (os_strcmp(buf, "rssi_ignore_probe_request") == 0) {
 		conf->rssi_ignore_probe_request = atoi(pos);
 	} else if (os_strcmp(buf, "pbss") == 0) {

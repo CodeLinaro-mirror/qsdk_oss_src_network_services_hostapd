@@ -395,6 +395,14 @@ struct sta_info {
 
 	u64 last_known_sta_id_timestamp;
 
+
+	/**
+	 * rssi_reject_timeout - Time when RSSI rejection expires
+	 *
+	 * If non-zero, indicates when a client rejected due to low RSSI
+	 * may retry association. Used to implement rssi_reject_assoc_timeout.
+	 */
+	struct os_time rssi_reject_timeout;
 	struct wpabuf *sae_pw_id;
 	unsigned int sae_pw_id_counter;
 };
