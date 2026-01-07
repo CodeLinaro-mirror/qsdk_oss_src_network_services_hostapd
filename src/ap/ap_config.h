@@ -1397,9 +1397,11 @@ struct hostapd_config {
 	int afc_chan_sel_config;
 	int cur_chan_eirp;
 	int original_chan_width; /* Original channel width for AFC */
-
 #ifdef CONFIG_QCN_EXTN
 	bool downgrade_320mhz_opclass;
+
+	/* RNR Member of ESS of 2.4/5 GHz colocated BSS param indication */
+	bool rnr_colocated_ess;
 #endif
 	/* HE BSS color collision AP period (seconds) */
 	u16 he_bss_color_collision_ap_period;

@@ -11083,6 +11083,13 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 
 	bss_param |= RNR_BSS_PARAM_CO_LOCATED;
 
+#ifdef CONFIG_QCN_EXTN
+	/* RNR memeber ess colocated indication in bss param */
+	if (hapd->iconf->rnr_colocated_ess &&
+	    is_6ghz_op_class(hapd->iconf->op_class))
+		bss_param |= RNR_BSS_PARAM_MEMBER_CO_LOCATED_ESS;
+#endif /* CONFIG_QCN_EXTN */
+
 	*eid++ = bss_param;
 	*eid++ = RNR_20_MHZ_PSD_MAX_TXPOWER;
 

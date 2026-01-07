@@ -1491,6 +1491,10 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 #endif /* CONFIG_IEEE80211BE */
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	len = hostapd_ctrl_iface_status_extn(hapd, buf, buflen, len);
+#endif /* CONFIG_QCN_EXTN */
+
 	if (hapd->conf->chan_util_avg_period) {
 		ret = os_snprintf(buf + len, buflen - len,
 				  "chan_util_avg=%u\n",

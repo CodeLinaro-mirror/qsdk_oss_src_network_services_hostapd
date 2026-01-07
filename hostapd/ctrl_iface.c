@@ -1761,6 +1761,10 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 		} else if (os_strcasecmp(cmd, "transition_disable") == 0) {
 			wpa_auth_set_transition_disable(hapd->wpa_auth,
 							hapd->conf->transition_disable);
+#ifdef CONFIG_QCN_EXTN
+		} else {
+			ret = hostapd_ctrl_iface_set_extn(hapd, cmd, value);
+#endif /* CONFIG_QCN_EXTN */
 		}
 
 #ifdef CONFIG_TESTING_OPTIONS

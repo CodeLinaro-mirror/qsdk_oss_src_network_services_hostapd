@@ -3053,6 +3053,11 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 
 	hapd->beacon_set_done = 1;
 
+#ifdef CONFIG_QCN_EXTN
+	/* RNR memeber ess colocated indication in bss param */
+	hapd->iconf->rnr_colocated_ess = hostapd_rnr_colocated_ess_indication_extn(hapd);
+#endif /* CONFIG_QCN_EXTN */
+
 	if (ieee802_11_build_ap_params(hapd, &params) < 0)
 		return -1;
 
