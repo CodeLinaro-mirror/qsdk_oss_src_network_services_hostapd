@@ -10920,6 +10920,12 @@ size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
 {
 	size_t total_len = 0, current_len = 0;
 	enum colocation_mode mode = get_colocation_mode(hapd);
+#ifdef CONFIG_QCN_EXTN
+	bool skip_rnr = hostapd_skip_rnr_6ghz_colocated_extn(hapd, type);
+
+	if (skip_rnr && (type == WLAN_FC_STYPE_ACTION))
+		return total_len;
+#endif /* CONFIG_QCN_EXTN */
 
 	switch (type) {
 	case WLAN_FC_STYPE_BEACON:
@@ -10927,6 +10933,11 @@ size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
 			total_len += hostapd_eid_nr_db_len(hapd, &current_len);
 		/* fallthrough */
 	case WLAN_FC_STYPE_PROBE_RESP:
+#ifdef CONFIG_QCN_EXTN
+		if (skip_rnr)
+			break;
+#endif /* CONFIG_QCN_EXTN */
+
 		if (mode == COLOCATED_LOWER_BAND)
 			total_len +=
 				hostapd_eid_rnr_colocation_len(hapd,
@@ -11272,6 +11283,12 @@ u8 * hostapd_eid_rnr(struct hostapd_data *hapd, u8 *eid, u32 type,
 	u8 *eid_start = eid;
 	size_t current_len = 0;
 	enum colocation_mode mode = get_colocation_mode(hapd);
+#ifdef CONFIG_QCN_EXTN
+	bool skip_rnr = hostapd_skip_rnr_6ghz_colocated_extn(hapd, type);
+
+	if (skip_rnr && (type == WLAN_FC_STYPE_ACTION))
+		return eid_start;
+#endif /* CONFIG_QCN_EXTN */
 
 	switch (type) {
 	case WLAN_FC_STYPE_BEACON:
@@ -11279,6 +11296,11 @@ u8 * hostapd_eid_rnr(struct hostapd_data *hapd, u8 *eid, u32 type,
 			eid = hostapd_eid_nr_db(hapd, eid, &current_len);
 		/* fallthrough */
 	case WLAN_FC_STYPE_PROBE_RESP:
+#ifdef CONFIG_QCN_EXTN
+		if (skip_rnr)
+			break;
+#endif /* CONFIG_QCN_EXTN */
+
 		if (mode == COLOCATED_LOWER_BAND)
 			eid = hostapd_eid_rnr_colocation(hapd, eid,
 							 &current_len, type);
@@ -11496,7 +11518,12 @@ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd_probed, u32 frame_type,
 {
 	struct hostapd_data *hapd = hostapd_mbssid_get_tx_bss(hapd_probed);
 	size_t len = 0, bss_index = 1;
+	bool skip_rnr = false;
 	size_t num_bss;
+
+#ifdef CONFIG_QCN_EXTN
+	skip_rnr = hostapd_skip_rnr_6ghz_colocated_extn(hapd, frame_type);
+#endif /* CONFIG_QCN_EXTN */
 
 	if (!hapd->iconf->mbssid || hapd->iface->num_bss <= 1 ||
 	    (frame_type != WLAN_FC_STYPE_BEACON &&
@@ -11535,9 +11562,11 @@ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd_probed, u32 frame_type,
 				rnr_count, bss_index
 			};
 
-			*rnr_len += hostapd_eid_rnr_iface_len(
+			if (!skip_rnr) {
+			    *rnr_len += hostapd_eid_rnr_iface_len(
 					hapd, hostapd_mbssid_get_tx_bss(hapd),
 					&rnr_cur_len, &skip_profiles, false);
+			}
 
 			*rnr_len += hostapd_eid_rnr_mlo_len(
 					hostapd_mbssid_get_tx_bss(hapd), frame_type,
@@ -11799,8 +11828,13 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 	struct hostapd_data *hapd = hostapd_mbssid_get_tx_bss(hapd_probed);
 	size_t bss_index = 1, cur_len = 0;
 	u8 elem_index = 0, *rnr_start_eid = rnr_eid;
+	bool skip_rnr = false;
 	bool add_rnr;
 	size_t num_bss;
+
+#ifdef CONFIG_QCN_EXTN
+	skip_rnr = hostapd_skip_rnr_6ghz_colocated_extn(hapd, frame_stype);
+#endif /* CONFIG_QCN_EXTN */
 
 	if (!hapd->iconf->mbssid || hapd->iface->num_bss <= 1 ||
 	    (frame_stype != WLAN_FC_STYPE_BEACON &&
@@ -11851,9 +11885,11 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 			rnr_offset[*rnr_count] = rnr_eid;
 			*rnr_count = *rnr_count + 1;
 			cur_len = 0;
-			rnr_eid = hostapd_eid_rnr_iface(
-				hapd, hostapd_mbssid_get_tx_bss(hapd),
-				rnr_eid, &cur_len, &skip_profiles, false, frame_stype);
+			if (!skip_rnr) {
+			    rnr_eid = hostapd_eid_rnr_iface(
+				      hapd, hostapd_mbssid_get_tx_bss(hapd),
+				      rnr_eid, &cur_len, &skip_profiles, false, frame_stype);
+			}
 			rnr_eid = hostapd_eid_rnr_mlo(
 				hostapd_mbssid_get_tx_bss(hapd), frame_stype,
 				rnr_eid, &skip_profiles, &cur_len);
