@@ -2941,6 +2941,7 @@ static int configured_fixed_chan_to_freq(struct hostapd_iface *iface)
 		}
 	}
 
+	iface->rnr_psd = CHAN_MIN_TX_POWER;
 	wpa_printf(MSG_INFO, "Could not determine operating frequency");
 	return -1;
 }
@@ -2978,6 +2979,7 @@ static int setup_interface2(struct hostapd_iface *iface)
 	iface->power_mode_6ghz_before_change = -1;
 	hostapd_free_afc_data(iface);
 	iface->is_afc_power_event_received = false;
+	iface->rnr_psd = CHAN_MIN_TX_POWER;
 
 	if (hostapd_get_hw_features(iface)) {
 		/* Not all drivers support this yet, so continue without hw
