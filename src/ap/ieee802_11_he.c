@@ -139,33 +139,45 @@ u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
 	if (!hostapd_conf_he_twt_enabled(hapd))
 		cap->he_mac_capab_info[HE_MAC_CAPAB_0] &= ~HE_MACCAP_TWT_RESPONDER;
 
-	if (hapd->iface->conf->he_phy_capab.he_su_beamformer)
+	if (((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_SU_BEAMFORMER) ?
+	     hapd->conf->he_phy_capab.he_su_beamformer :
+	     hapd->iface->conf->he_phy_capab.he_su_beamformer))
 		cap->he_phy_capab_info[HE_PHYCAP_SU_BEAMFORMER_CAPAB_IDX] |=
 			HE_PHYCAP_SU_BEAMFORMER_CAPAB;
 	else
 		cap->he_phy_capab_info[HE_PHYCAP_SU_BEAMFORMER_CAPAB_IDX] &=
 			~HE_PHYCAP_SU_BEAMFORMER_CAPAB;
 
-	if (hapd->iface->conf->he_phy_capab.he_su_beamformee)
+	if (((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_SU_BEAMFORMEE) ?
+	     hapd->conf->he_phy_capab.he_su_beamformee :
+	     hapd->iface->conf->he_phy_capab.he_su_beamformee))
 		cap->he_phy_capab_info[HE_PHYCAP_SU_BEAMFORMEE_CAPAB_IDX] |=
 			HE_PHYCAP_SU_BEAMFORMEE_CAPAB;
 	else
 		cap->he_phy_capab_info[HE_PHYCAP_SU_BEAMFORMEE_CAPAB_IDX] &=
 			~HE_PHYCAP_SU_BEAMFORMEE_CAPAB;
 
-	if (hapd->iface->conf->he_phy_capab.he_mu_beamformer)
-		cap->he_phy_capab_info[HE_PHYCAP_MU_BEAMFORMER_CAPAB_IDX] |=
-			HE_PHYCAP_MU_BEAMFORMER_CAPAB;
-	else
-		cap->he_phy_capab_info[HE_PHYCAP_MU_BEAMFORMER_CAPAB_IDX] &=
-			~HE_PHYCAP_MU_BEAMFORMER_CAPAB;
+	if (((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_MU_BEAMFORMER) ?
+	 hapd->conf->he_phy_capab.he_mu_beamformer :
+	 hapd->iface->conf->he_phy_capab.he_mu_beamformer)) {
+	cap->he_phy_capab_info[HE_PHYCAP_MU_BEAMFORMER_CAPAB_IDX] |=
+		HE_PHYCAP_MU_BEAMFORMER_CAPAB;
+	} else {
+	cap->he_phy_capab_info[HE_PHYCAP_MU_BEAMFORMER_CAPAB_IDX] &=
+		~HE_PHYCAP_MU_BEAMFORMER_CAPAB;
+	}
 
-	if (hapd->iface->conf->he_phy_capab.he_ul_mumimo == 1)
-		cap->he_phy_capab_info[HE_PHYCAP_UL_MUMIMO_CAPB_IDX] |=
-			HE_PHYCAP_UL_MUMIMO_CAPB;
-	else if (hapd->iface->conf->he_phy_capab.he_ul_mumimo == 0)
+	if (((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_UL_MUMIMO) ?
+	 hapd->conf->he_phy_capab.he_ul_mumimo :
+	 hapd->iface->conf->he_phy_capab.he_ul_mumimo) == 1) {
+	cap->he_phy_capab_info[HE_PHYCAP_UL_MUMIMO_CAPB_IDX] |=
+		HE_PHYCAP_UL_MUMIMO_CAPB;
+	} else if (((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_UL_MUMIMO) ?
+	      hapd->conf->he_phy_capab.he_ul_mumimo :
+	      hapd->iface->conf->he_phy_capab.he_ul_mumimo) == 0) {
 		cap->he_phy_capab_info[HE_PHYCAP_UL_MUMIMO_CAPB_IDX] &=
 			~HE_PHYCAP_UL_MUMIMO_CAPB;
+	}
 
 	pos += ie_size;
 

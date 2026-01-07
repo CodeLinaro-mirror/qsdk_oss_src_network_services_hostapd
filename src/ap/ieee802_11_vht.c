@@ -58,6 +58,7 @@ u8 * hostapd_eid_vht_capabilities(struct hostapd_data *hapd, u8 *eid, u32 nsts)
 	struct hostapd_data *tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
 	u8 *pos = eid;
 	u8 chwidth;
+	u32 vht_capab;
 
 	if (!mode || is_6ghz_op_class(hapd->iconf->op_class))
 		return eid;
@@ -80,8 +81,45 @@ u8 * hostapd_eid_vht_capabilities(struct hostapd_data *hapd, u8 *eid, u32 nsts)
 
 	cap = (struct ieee80211_vht_capabilities *) pos;
 	os_memset(cap, 0, sizeof(*cap));
-	cap->vht_capabilities_info = host_to_le32(
-		hapd->iface->conf->vht_capab);
+
+	vht_capab = hapd->iface->conf->vht_capab;
+
+	if (hapd->conf->vht_capab_mask) {
+		u32 bss_capab = hapd->conf->vht_capab;
+		u32 mask = hapd->conf->vht_capab_mask;
+
+		if (mask & VHT_CAP_BSS_OVR_SU_BEAMFORMER) {
+			vht_capab &= ~VHT_CAP_SU_BEAMFORMER_CAPABLE;
+			vht_capab |= (bss_capab & VHT_CAP_SU_BEAMFORMER_CAPABLE);
+		}
+
+		if (mask & VHT_CAP_BSS_OVR_SU_BEAMFORMEE) {
+			vht_capab &= ~VHT_CAP_SU_BEAMFORMEE_CAPABLE;
+			vht_capab |= (bss_capab & VHT_CAP_SU_BEAMFORMEE_CAPABLE);
+		}
+
+		if (mask & VHT_CAP_BSS_OVR_MU_BEAMFORMER) {
+			vht_capab &= ~VHT_CAP_MU_BEAMFORMER_CAPABLE;
+			vht_capab |= (bss_capab & VHT_CAP_MU_BEAMFORMER_CAPABLE);
+		}
+
+		if (mask & VHT_CAP_BSS_OVR_MU_BEAMFORMEE) {
+			vht_capab &= ~VHT_CAP_MU_BEAMFORMEE_CAPABLE;
+			vht_capab |= (bss_capab & VHT_CAP_MU_BEAMFORMEE_CAPABLE);
+		}
+
+		if (mask & VHT_CAP_BSS_OVR_SOUNDING_DIMENSION) {
+			vht_capab &= ~VHT_CAP_SOUNDING_DIMENSION_MAX;
+			vht_capab |= (bss_capab & VHT_CAP_SOUNDING_DIMENSION_MAX);
+		}
+
+		if (mask & VHT_CAP_BSS_OVR_STS_CAPABILITY) {
+			vht_capab &= ~VHT_CAP_BEAMFORMEE_STS_MAX;
+			vht_capab |= (bss_capab & VHT_CAP_BEAMFORMEE_STS_MAX);
+		}
+	}
+
+	cap->vht_capabilities_info = host_to_le32(vht_capab);
 
 	if (nsts != 0) {
 		u32 hapd_nsts;

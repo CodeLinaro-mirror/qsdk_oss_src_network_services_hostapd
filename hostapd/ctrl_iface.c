@@ -39,6 +39,7 @@
 #include "common/wpa_ctrl.h"
 #include "common/ptksa_cache.h"
 #include "common/hw_features_common.h"
+#include "ap/hw_features.h"
 #include "common/nan_de.h"
 #include "crypto/tls.h"
 #include "drivers/driver.h"
@@ -865,11 +866,11 @@ static int hostapd_ctrl_iface_get_bss_priority_status(struct hostapd_data *hapd,
 
 	ret = os_snprintf(buf, buflen, "%d\n", hapd->conf->bss_priority_status);
 
-        if (os_snprintf_error(buflen, ret)) {
-                wpa_printf(MSG_ERROR,
-                           "get_bss_priority: buffer too small (len=%zu)", buflen);
-                return -1;
-        }
+	if (os_snprintf_error(buflen, ret)) {
+		wpa_printf(MSG_ERROR,
+			   "get_bss_priority: buffer too small (len=%zu)", buflen);
+		return -1;
+	}
 
 	return ret;
 }
@@ -1742,7 +1743,102 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			if (hostapd_tx_bss_only(hapd, "vht_mcs_nss_set") < 0)
 				return -1;
 			return hostapd_reload_bss_only(hapd);
+		} else if (os_strcasecmp(cmd, "bss_vht_mu_beamformer") == 0 ||
+			   os_strcasecmp(cmd, "bss_vht_mu_beamformee") == 0 ||
+			   os_strcasecmp(cmd, "bss_vht_su_beamformer") == 0 ||
+			   os_strcasecmp(cmd, "bss_vht_su_beamformee") == 0 ||
+			   os_strcasecmp(cmd, "bss_vht_sounding_dimension") == 0 ||
+			   os_strcasecmp(cmd, "bss_vht_beamformee_sts") == 0) {
+			if (hostapd_tx_bss_only(hapd, cmd) < 0)
+				return -1;
+			if (hostapd_validate_bss_capab(hapd) < 0)
+				return -1;
+			return hostapd_reload_bss_only(hapd);
 #endif /* CONFIG_IEEE80211AC */
+#ifdef CONFIG_IEEE80211AX
+		} else if (os_strcasecmp(cmd, "bss_he_su_beamformer") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_su_beamformee") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_mu_beamformer") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_mu_beamformee") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_dl_mu_ofdma") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_dl_mu_ofdma_bfer") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_ul_mu_ofdma") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_ul_mumimo") == 0) {
+			if (hostapd_tx_bss_only(hapd, cmd) < 0)
+				return -1;
+			if (hostapd_validate_bss_capab(hapd) < 0)
+				return -1;
+			return hostapd_reload_bss_only(hapd);
+#endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_IEEE80211BE
+		} else if (os_strcasecmp(cmd, "bss_eht_mu_mimo") == 0) {
+			long val = strtol(value, NULL, 0);
+			if (val < 0 || val > 0x7)
+				return -1;
+
+			if (!eht_mu_mask_valid((u8)val)) {
+				wpa_printf(MSG_ERROR,
+					   "Invalid bss_eht_mu_mimo 0x%lx: "
+					   "higher BW requires lower BW support",
+					   val);
+				return -1;
+			}
+
+			hapd->conf->eht_phy_capab.eht_mu_mimo_mask = (u8)val;
+			hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz =
+				(val & 0x1) ? 1 : 0;
+			hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz =
+				(val & 0x2) ? 1 : 0;
+			hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz =
+				(val & 0x4) ? 1 : 0;
+
+			if (hostapd_tx_bss_only(hapd, cmd) < 0)
+				return -1;
+			if (hostapd_validate_bss_capab(hapd) < 0)
+				return -1;
+			return hostapd_reload_bss_only(hapd);
+		} else if (os_strcasecmp(cmd, "bss_eht_mu_bfmr") == 0) {
+			long val = strtol(value, NULL, 0);
+
+			if (val < 0 || val > 0x7)
+				return -1;
+
+			if (!eht_mu_mask_valid((u8)val)) {
+				wpa_printf(MSG_ERROR,
+					   "Invalid bss_eht_mu_bfmr 0x%lx: "
+					   "higher BW requires lower BW support",
+					   val);
+				return -1;
+			}
+
+			hapd->conf->eht_phy_capab.eht_mu_bfmr_mask = (u8)val;
+
+			if (hostapd_tx_bss_only(hapd, cmd) < 0)
+				return -1;
+			if (hostapd_validate_bss_capab(hapd) < 0)
+				return -1;
+			return hostapd_reload_bss_only(hapd);
+		} else if (os_strcasecmp(cmd, "bss_eht_su_beamformer") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_su_beamformee") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_mu_beamformer") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_mu_beamformee") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_dl_mu_ofdma") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_ul_mu_ofdma") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_dl_ofdma_mumimo") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_ul_ofdma_mumimo") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_ulmumimo_80mhz") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_ulmumimo_160mhz") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_ulmumimo_320mhz") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_bfme_ss_80") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_bfme_ss_160") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_bfme_ss_320") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_ltf") == 0) {
+			if (hostapd_tx_bss_only(hapd, cmd) < 0)
+				return -1;
+			if (hostapd_validate_bss_capab(hapd) < 0)
+				return -1;
+			return hostapd_reload_bss_only(hapd);
+#endif /* CONFIG_IEEE80211BE */
 		} else if (os_strcasecmp(cmd, "ht_mcs_nss_set") == 0) {
 			if (hostapd_tx_bss_only(hapd, "ht_mcs_nss_set") < 0)
 				return -1;
@@ -1938,7 +2034,204 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+	} else if (os_strcasecmp(cmd, "bss_vht_mu_beamformer") == 0) {
+		res = os_snprintf(buf, buflen, "bss_vht_mu_beamformer = %d\n",
+				!!(hapd->conf->vht_capab & VHT_CAP_MU_BEAMFORMER_CAPABLE));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_vht_mu_beamformee") == 0) {
+		res = os_snprintf(buf, buflen, "bss_vht_mu_beamformee = %d\n",
+				!!(hapd->conf->vht_capab & VHT_CAP_MU_BEAMFORMEE_CAPABLE));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_vht_su_beamformer") == 0) {
+		res = os_snprintf(buf, buflen, "bss_vht_su_beamformer = %d\n",
+				!!(hapd->conf->vht_capab & VHT_CAP_SU_BEAMFORMER_CAPABLE));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_vht_su_beamformee") == 0) {
+		res = os_snprintf(buf, buflen, "bss_vht_su_beamformee = %d\n",
+				!!(hapd->conf->vht_capab & VHT_CAP_SU_BEAMFORMEE_CAPABLE));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_vht_sounding_dimension") == 0) {
+		int val = (hapd->conf->vht_capab & VHT_CAP_SOUNDING_DIMENSION_MAX)
+			>> VHT_CAP_SOUNDING_DIMENSION_OFFSET;
+		res = os_snprintf(buf, buflen,
+				"bss_vht_sounding_dimension = %d\n", val);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_vht_beamformee_sts") == 0) {
+		int val = (hapd->conf->vht_capab & VHT_CAP_BEAMFORMEE_STS_MAX)
+			>> VHT_CAP_BEAMFORMEE_STS_OFFSET;
+		res = os_snprintf(buf, buflen,
+				"bss_vht_beamformee_sts = %d\n", val);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
 #endif /* CONFIG_IEEE80211AC */
+#ifdef CONFIG_IEEE80211AX
+	} else if (os_strcasecmp(cmd, "bss_he_su_beamformer") == 0) {
+		res = os_snprintf(buf, buflen, "bss_he_su_beamformer = %d\n",
+				hapd->conf->he_phy_capab.he_su_beamformer);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_su_beamformee") == 0) {
+		res = os_snprintf(buf, buflen, "bss_he_su_beamformee = %d\n",
+				hapd->conf->he_phy_capab.he_su_beamformee);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_mu_beamformer") == 0) {
+		res = os_snprintf(buf, buflen, "bss_he_mu_beamformer = %d\n",
+				hapd->conf->he_phy_capab.he_mu_beamformer);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_mu_beamformee") == 0) {
+		res = os_snprintf(buf, buflen, "bss_he_mu_beamformee = %d\n",
+				hapd->conf->he_phy_capab.he_mu_beamformee);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_dl_mu_ofdma") == 0) {
+		res = os_snprintf(buf, buflen, "bss_he_dl_mu_ofdma = %d\n",
+				hapd->conf->he_phy_capab.he_dl_mu_ofdma);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_dl_mu_ofdma_bfer") == 0) {
+		res = os_snprintf(buf, buflen,
+				 "bss_he_dl_mu_ofdma_bfer = %d\n",
+				hapd->conf->he_phy_capab.he_dl_mu_ofdma_bfer);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_ul_mu_ofdma") == 0) {
+		res = os_snprintf(buf, buflen, "bss_he_ul_mu_ofdma = %d\n",
+				hapd->conf->he_phy_capab.he_ul_mu_ofdma);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_ul_mumimo") == 0) {
+		res = os_snprintf(buf, buflen, "bss_he_ul_mumimo = %d\n",
+				hapd->conf->he_phy_capab.he_ul_mumimo);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+#endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_IEEE80211BE
+	} else if (os_strcasecmp(cmd, "bss_eht_su_beamformer") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_su_beamformer = %d\n",
+				hapd->conf->eht_phy_capab.su_beamformer);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_su_beamformee") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_su_beamformee = %d\n",
+				hapd->conf->eht_phy_capab.su_beamformee);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_mu_beamformer") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_mu_beamformer = %d\n",
+				hapd->conf->eht_phy_capab.mu_beamformer);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_mu_beamformee") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_mu_beamformee = %d\n",
+				hapd->conf->eht_phy_capab.mu_beamformee);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_dl_mu_ofdma") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_dl_mu_ofdma = %d\n",
+				hapd->conf->eht_phy_capab.dl_mu_ofdma);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_ul_mu_ofdma") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_ul_mu_ofdma = %d\n",
+				hapd->conf->eht_phy_capab.ul_mu_ofdma);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_dl_ofdma_mumimo") == 0) {
+		res = os_snprintf(buf, buflen,
+				 "bss_eht_dl_ofdma_mumimo = %d\n",
+				hapd->conf->eht_phy_capab.dl_ofdma_mumimo);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_ul_ofdma_mumimo") == 0) {
+		res = os_snprintf(buf, buflen,
+				 "bss_eht_ul_ofdma_mumimo = %d\n",
+				hapd->conf->eht_phy_capab.ul_ofdma_mumimo);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_ulmumimo_80mhz") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_ulmumimo_80mhz = %d\n",
+				hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_ulmumimo_160mhz") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_ulmumimo_160mhz = %d\n",
+				hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_ulmumimo_320mhz") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_ulmumimo_320mhz = %d\n",
+				  hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_mu_bfmr") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_mu_bfmr = 0x%x\n",
+				  hapd->conf->eht_phy_capab.eht_mu_bfmr_mask);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_mu_mimo") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_mu_mimo = 0x%x\n",
+				  hapd->conf->eht_phy_capab.eht_mu_mimo_mask);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_bfme_ss_80") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_bfme_ss_80 = %u\n",
+				  hapd->conf->eht_phy_capab.eht_bfme_ss_80);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_bfme_ss_160") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_bfme_ss_160 = %u\n",
+				  hapd->conf->eht_phy_capab.eht_bfme_ss_160);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_bfme_ss_320") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_bfme_ss_320 = %u\n",
+				  hapd->conf->eht_phy_capab.eht_bfme_ss_320);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_ltf") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_ltf = %d\n",
+				  hapd->conf->eht_ltf);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+#endif /* CONFIG_IEEE80211BE */
 	} else if (os_strcmp(cmd, "ht_mcs_nss_set") == 0) {
 		res = os_snprintf(buf, buflen, "ht_mcs_nss_set = 0x%x\n",
 				  hapd->conf->ht_mcs_nss_set);
@@ -4751,11 +5044,11 @@ static bool hostapd_6ghz_he_320_1_channel_bw(struct hostapd_hw_modes *mode,
 }
 
 static int hostapd_6ghz_channel_bw(struct hostapd_hw_modes *mode,
-                                   char *buf, size_t buflen)
+				   char *buf, size_t buflen)
 {
 	struct hostapd_channel_data *chan = NULL;
-        int j, ret, len = 0, total_valid_chnls = 0;
-        char temp_buf[30] = {0};
+	int j, ret, len = 0, total_valid_chnls = 0;
+	char temp_buf[30] = {0};
 
 	for (j = 0; j < mode->num_channels; j++) {
 		chan = &mode->channels[j];
@@ -4764,55 +5057,55 @@ static int hostapd_6ghz_channel_bw(struct hostapd_hw_modes *mode,
 			++total_valid_chnls;
 	}
 
-        for (j = 0; j < mode->num_channels; j++) {
-                chan = &mode->channels[j];
+	for (j = 0; j < mode->num_channels; j++) {
+		chan = &mode->channels[j];
 
-                if (chan->flag & HOSTAPD_CHAN_DISABLED)
-                        continue;
+		if (chan->flag & HOSTAPD_CHAN_DISABLED)
+			continue;
 
-                ret = os_snprintf(temp_buf, 30, "Channel[%d]", chan->chan);
-                if (os_snprintf_error(30, ret))
-                        return len;
+		ret = os_snprintf(temp_buf, 30, "Channel[%d]", chan->chan);
+		if (os_snprintf_error(30, ret))
+			return len;
 
-                ret = os_snprintf(buf + len, buflen - len, "%-13s : %d - 20MHz ",
-                                  temp_buf, chan->freq);
-                if (os_snprintf_error(buflen - len, ret))
-                        return len;
-                len += ret;
+		ret = os_snprintf(buf + len, buflen - len, "%-13s : %d - 20MHz ",
+				  temp_buf, chan->freq);
+		if (os_snprintf_error(buflen - len, ret))
+			return len;
+		len += ret;
 
 		if (hostapd_6ghz_he_40_channel_bw(mode, j)) {
-                        ret = os_snprintf(buf + len, buflen - len, "40MHz ");
-                        if (os_snprintf_error(buflen - len, ret))
-                                return len;
-                        len += ret;
-                }
+			ret = os_snprintf(buf + len, buflen - len, "40MHz ");
+			if (os_snprintf_error(buflen - len, ret))
+				return len;
+			len += ret;
+		}
 
 		if (hostapd_6ghz_he_80_channel_bw(mode, j)) {
 			ret = os_snprintf(buf + len, buflen - len, "80MHz ");
-                        if (os_snprintf_error(buflen - len, ret))
-                                return len;
+			if (os_snprintf_error(buflen - len, ret))
+				return len;
 			len += ret;
 		}
 
 		if (hostapd_6ghz_he_160_channel_bw(mode, j)) {
-                        ret = os_snprintf(buf + len, buflen - len, "160MHz ");
-                        if (os_snprintf_error(buflen - len, ret))
-                                return len;
-                        len += ret;
-                }
+			ret = os_snprintf(buf + len, buflen - len, "160MHz ");
+			if (os_snprintf_error(buflen - len, ret))
+				return len;
+			len += ret;
+		}
 
 		if (hostapd_6ghz_he_320_channel_bw(mode, j) ||
 		    hostapd_6ghz_he_320_1_channel_bw(mode, j)) {
-                        ret = os_snprintf(buf + len, buflen - len, "320MHz ");
-                        if (os_snprintf_error(buflen - len, ret))
-                                return len;
-                        len += ret;
+			ret = os_snprintf(buf + len, buflen - len, "320MHz ");
+			if (os_snprintf_error(buflen - len, ret))
+				return len;
+			len += ret;
 		}
 
 		ret = os_snprintf(buf + len, buflen - len,"\n");
-                if (os_snprintf_error(buflen - len, ret))
-                        return len;
-                len += ret;
+		if (os_snprintf_error(buflen - len, ret))
+			return len;
+		len += ret;
 	}
 
 	return len;
@@ -5954,7 +6247,7 @@ int hostapd_ctrl_iface_advertise_ttlm(struct hostapd_data *hapd, const char *cmd
 }
 
 static int hostapd_ctrl_iface_set_channel_usage_element(struct hostapd_data *hapd,
-		                                         char *pos)
+							 char *pos)
 {
 	struct channel_usage_config cfg;
 	if (hostapd_parse_channel_usage_settings(pos, &cfg) < 0) {
@@ -7035,8 +7328,8 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		if (hostapd_ctrl_iface_reload_bss(hapd))
 			reply_len = -1;
 	} else if (os_strncmp(buf, "RELOAD_CONFIG_BSS ", 18) == 0) {
-                if (hostapd_reload_config_bss(hapd->iface, hapd->conf->iface, buf+18))
-                        reply_len = -1;
+		if (hostapd_reload_config_bss(hapd->iface, hapd->conf->iface, buf+18))
+			reply_len = -1;
 	} else if (os_strcmp(buf, "RELOAD_CONFIG") == 0) {
 		if (hostapd_reload_config(hapd->iface))
 			reply_len = -1;
@@ -7483,9 +7776,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		if (hostapd_ctrl_iface_link_remove(hapd, buf + 12,
 						   reply, reply_size))
 			reply_len = -1;
-        } else if (os_strncmp(buf, "EPCS ", 5) == 0) {
-                reply_len = hostapd_epcs_handle_cli(hapd, buf + 5,
-                                                    reply, reply_size);
+	} else if (os_strncmp(buf, "EPCS ", 5) == 0) {
+		reply_len = hostapd_epcs_handle_cli(hapd, buf + 5,
+						    reply, reply_size);
 	} else if (os_strncmp(buf, "NEGOTIATED_TTLM ", 16) == 0) {
 		reply_len = hostapd_ctrl_iface_negotiated_ttlm(hapd, buf + 16,
 							       reply, reply_size);

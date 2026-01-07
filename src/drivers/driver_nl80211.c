@@ -5082,14 +5082,16 @@ static int nl80211_put_beacon_rate(struct nl_msg *msg, u64 flags, u64 flags2,
 		    nla_put(msg, NL80211_TXRATE_HT, 0, NULL) ||
 		    (params->freq->vht_enabled &&
 		    nla_put(msg, NL80211_TXRATE_VHT, sizeof(vht_rate),
-		    	    &vht_rate)) ||
+			    &vht_rate)) ||
 		    nla_put(msg, NL80211_TXRATE_HE, sizeof(he_rate),
-		    	    &he_rate) ||
+			    &he_rate) ||
 		    nla_put(msg, NL80211_TXRATE_EHT, sizeof(eht_rate),
-		    	    &eht_rate))
-		    	return -1;
-		wpa_printf(MSG_DEBUG, " * beacon_rate = EHT-MCS %u",
-			   params->beacon_rate);
+			    &eht_rate) ||
+		    (params->eht_ltf >= 0 &&
+		     nla_put_u8(msg, NL80211_TXRATE_EHT_LTF, params->eht_ltf)))
+			return -1;
+		wpa_printf(MSG_DEBUG, " * beacon_rate = EHT-MCS %u (eht_ltf=%d)",
+			   params->beacon_rate, params->eht_ltf);
 		break;
 	}
 
@@ -5425,7 +5427,7 @@ static int nl80211_put_freq_params_device(struct wpa_driver_nl80211_data *drv,
 
 static int nl80211_put_freq_params(struct wpa_driver_nl80211_data *drv,
 				   struct nl_msg *msg,
- 				   const struct hostapd_freq_params *freq)
+				   const struct hostapd_freq_params *freq)
 {
 	enum hostapd_hw_mode hw_mode;
 	int is_24ghz;
@@ -6252,7 +6254,7 @@ static u32 sta_plink_state_nl80211(enum mesh_plink_state state)
 
 
 static int wpa_driver_nl80211_build_sta(struct wpa_driver_nl80211_data *drv,
-				        struct nl_msg *msg,
+					struct nl_msg *msg,
 					struct hostapd_sta_add_params *params)
 {
 	struct nl80211_sta_flag_update upd;

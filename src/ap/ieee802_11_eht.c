@@ -96,6 +96,19 @@ static u8 ieee80211_eht_mcs_set_size(enum hostapd_hw_mode mode, u8 opclass,
 	return sz;
 }
 
+bool eht_mu_mask_valid(u8 mask)
+{
+	if (mask & BIT(2)) {
+		if (!(mask & BIT(1)) || !(mask & BIT(0)))
+			return false;
+	}
+	if (mask & BIT(1)) {
+		if (!(mask & BIT(0)))
+			return false;
+	}
+	return true;
+}
+
 
 size_t hostapd_eid_eht_capab_len(struct hostapd_data *hapd,
 				 enum ieee80211_op_mode opmode)
@@ -164,29 +177,69 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 	if (!is_6ghz_op_class(hapd->iconf->op_class))
 		cap->phy_cap[EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_IDX] &=
 			~EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_MASK;
-	if (!hapd->iface->conf->eht_phy_capab.su_beamformer)
+
+	if (!((hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_SU_BEAMFORMER) ?
+	      hapd->conf->eht_phy_capab.su_beamformer :
+	      hapd->iface->conf->eht_phy_capab.su_beamformer))
 		cap->phy_cap[EHT_PHYCAP_SU_BEAMFORMER_IDX] &=
 			~EHT_PHYCAP_SU_BEAMFORMER;
 
-	if (!hapd->iface->conf->eht_phy_capab.su_beamformee)
+	if (!((hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_SU_BEAMFORMEE) ?
+	      hapd->conf->eht_phy_capab.su_beamformee :
+	      hapd->iface->conf->eht_phy_capab.su_beamformee))
 		cap->phy_cap[EHT_PHYCAP_SU_BEAMFORMEE_IDX] &=
 			~EHT_PHYCAP_SU_BEAMFORMEE;
 
-	if (!hapd->iface->conf->eht_phy_capab.mu_beamformer)
+	if (eht_mu_mask_valid(hapd->conf->eht_phy_capab.eht_mu_bfmr_mask)) {
+		u8 mask = hapd->conf->eht_phy_capab.eht_mu_bfmr_mask;
+
+		if (!(mask & BIT(0)))
+			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
+				~EHT_PHYCAP_MU_BEAMFORMER_MASK;
+	}
+
+	if (!(((hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_MU_BEAMFORMER) ?
+	       hapd->conf->eht_phy_capab.mu_beamformer :
+	       hapd->iface->conf->eht_phy_capab.mu_beamformer))) {
 		cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
 			~EHT_PHYCAP_MU_BEAMFORMER_MASK;
+	}
 
-	if (!hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz)
-		cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
-					~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_80MHZ;
+	if (eht_mu_mask_valid(hapd->conf->eht_phy_capab.eht_mu_mimo_mask)) {
+		u8 mask = hapd->conf->eht_phy_capab.eht_mu_mimo_mask;
 
-	if (!hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz)
-		cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
-					~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_160MHZ;
+		if (!(mask & BIT(0)) ||
+		    !(((hapd->conf->eht_phy_capab_mask &
+			EHT_PHY_BSS_OVR_UL_MU_MIMO_80) ?
+		       hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz :
+		       hapd->iface->conf->eht_phy_capab.
+			       non_ofdma_ulmumimo_80mhz)))
+			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
+				~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_80MHZ;
 
-	if (!hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz)
+		if (!(mask & BIT(1)) ||
+		    !(((hapd->conf->eht_phy_capab_mask &
+			EHT_PHY_BSS_OVR_UL_MU_MIMO_160) ?
+		       hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz :
+		       hapd->iface->conf->eht_phy_capab.
+			       non_ofdma_ulmumimo_160mhz)))
+			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
+				~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_160MHZ;
+
+		if (!(mask & BIT(2)) ||
+		    !(((hapd->conf->eht_phy_capab_mask &
+			EHT_PHY_BSS_OVR_UL_MU_MIMO_320) ?
+		       hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz :
+		       hapd->iface->conf->eht_phy_capab.
+			       non_ofdma_ulmumimo_320mhz)))
+			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
+				~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ;
+	} else {
 		cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
-					~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ;
+			~(EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_80MHZ |
+			  EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_160MHZ |
+			  EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ);
+	}
 
 	pos = cap->optional;
 
@@ -1863,8 +1916,8 @@ hostapd_ml_process_reconf_link(struct hostapd_data *hapd,
 	os_memcpy(link.peer_addr, link_addr, ETH_ALEN);
 
 	/* Parse STA profile, check the IEs, and send ADD_LINK_STA */
-        ieee80211_ml_process_link(lhapd, NULL, assoc_sta, &link, ies, ies_len,
-                                  LINK_PARSE_RECONF, false, set_beacon);
+	ieee80211_ml_process_link(lhapd, NULL, assoc_sta, &link, ies, ies_len,
+				  LINK_PARSE_RECONF, false, set_beacon);
 
 	if (link.status != WLAN_STATUS_SUCCESS)
 		return link.status;
@@ -2897,8 +2950,8 @@ void ieee802_11_rx_protected_eht_action(struct hostapd_data *hapd,
 		break;
 	default:
 		wpa_printf(MSG_DEBUG,
-		   	  "MLD: Unsupported Protected EHT Action %u from " MACSTR
-		   	   " discarded", action, MAC2STR(mgmt->sa));
+			  "MLD: Unsupported Protected EHT Action %u from " MACSTR
+			   " discarded", action, MAC2STR(mgmt->sa));
 		break;
 	}
 }

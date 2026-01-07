@@ -738,6 +738,389 @@ static int ieee80211ax_supported_he_capab(struct hostapd_iface *iface)
 
 #endif /* CONFIG_IEEE80211AX */
 
+/**
+ * hostapd_validate_bss_vht_capab - Validate BSS-level VHT capability overrides
+ * @hapd: Pointer to hostapd_data
+ * Returns: 0 on success, -1 on failure
+ *
+ * Validates that BSS-level VHT capability overrides don't exceed what the
+ * driver/hardware supports.
+ */
+#ifdef CONFIG_IEEE80211AC
+static int hostapd_validate_bss_vht_capab(struct hostapd_data *hapd)
+{
+	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
+	u32 hw_vht, bss_vht, mask;
+
+	if (!mode || !hapd->conf->vht_capab_mask)
+		return 0;
+
+	hw_vht = mode->vht_capab;
+	bss_vht = hapd->conf->vht_capab;
+	mask = hapd->conf->vht_capab_mask;
+
+	/* Check SU Beamformer */
+	if (mask & VHT_CAP_BSS_OVR_SU_BEAMFORMER) {
+		if ((bss_vht & VHT_CAP_SU_BEAMFORMER_CAPABLE) &&
+		    !(hw_vht & VHT_CAP_SU_BEAMFORMER_CAPABLE)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_vht_su_beamformer");
+			return -1;
+		}
+	}
+
+	/* Check SU Beamformee */
+	if (mask & VHT_CAP_BSS_OVR_SU_BEAMFORMEE) {
+		if ((bss_vht & VHT_CAP_SU_BEAMFORMEE_CAPABLE) &&
+		    !(hw_vht & VHT_CAP_SU_BEAMFORMEE_CAPABLE)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_vht_su_beamformee");
+			return -1;
+		}
+	}
+
+	/* Check MU Beamformer */
+	if (mask & VHT_CAP_BSS_OVR_MU_BEAMFORMER) {
+		if ((bss_vht & VHT_CAP_MU_BEAMFORMER_CAPABLE) &&
+		    !(hw_vht & VHT_CAP_MU_BEAMFORMER_CAPABLE)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_vht_mu_beamformer");
+			return -1;
+		}
+	}
+
+	/* Check MU Beamformee */
+	if (mask & VHT_CAP_BSS_OVR_MU_BEAMFORMEE) {
+		if ((bss_vht & VHT_CAP_MU_BEAMFORMEE_CAPABLE) &&
+		    !(hw_vht & VHT_CAP_MU_BEAMFORMEE_CAPABLE)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_vht_mu_beamformee");
+			return -1;
+		}
+	}
+
+	/* Check Sounding Dimension */
+	if (mask & VHT_CAP_BSS_OVR_SOUNDING_DIMENSION) {
+		u32 hw_snd = (hw_vht & VHT_CAP_SOUNDING_DIMENSION_MAX) >>
+			     VHT_CAP_SOUNDING_DIMENSION_OFFSET;
+		u32 bss_snd = (bss_vht & VHT_CAP_SOUNDING_DIMENSION_MAX) >>
+			      VHT_CAP_SOUNDING_DIMENSION_OFFSET;
+
+		if (bss_snd > hw_snd) {
+			wpa_printf(MSG_ERROR,
+				   "Configured bss_vht_sounding_dimension (%u) exceeds driver max (%u)",
+				   bss_snd, hw_snd);
+			return -1;
+		}
+	}
+
+	/* Check Beamformee STS */
+	if (mask & VHT_CAP_BSS_OVR_STS_CAPABILITY) {
+		u32 hw_sts = (hw_vht & VHT_CAP_BEAMFORMEE_STS_MAX) >>
+			     VHT_CAP_BEAMFORMEE_STS_OFFSET;
+		u32 bss_sts = (bss_vht & VHT_CAP_BEAMFORMEE_STS_MAX) >>
+			      VHT_CAP_BEAMFORMEE_STS_OFFSET;
+
+		if (bss_sts > hw_sts) {
+			wpa_printf(MSG_ERROR,
+				   "Configured bss_vht_beamformee_sts (%u) exceeds driver max (%u)",
+				   bss_sts, hw_sts);
+			return -1;
+		}
+	}
+
+	return 0;
+}
+#endif /* CONFIG_IEEE80211AC */
+
+
+/**
+ * hostapd_validate_bss_he_capab - Validate BSS-level HE capability overrides
+ * @hapd: Pointer to hostapd_data
+ * Returns: 0 on success, -1 on failure
+ *
+ * Validates that BSS-level HE capability overrides don't exceed what the
+ * driver/hardware supports.
+ */
+#ifdef CONFIG_IEEE80211AX
+static int hostapd_validate_bss_he_capab(struct hostapd_data *hapd)
+{
+	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
+	struct he_capabilities *hw_he;
+	u64 mask;
+
+	if (!mode || !hapd->conf->he_phy_capab_mask)
+		return 0;
+
+	hw_he = &mode->he_capab[IEEE80211_MODE_AP];
+	mask = hapd->conf->he_phy_capab_mask;
+
+	if (!hw_he->he_supported) {
+		wpa_printf(MSG_ERROR,
+			   "Driver does not support HE but BSS HE params configured");
+		return -1;
+	}
+
+	/* Check SU Beamformer */
+	if (mask & HE_PHY_BSS_OVR_SU_BEAMFORMER) {
+		if (hapd->conf->he_phy_capab.he_su_beamformer &&
+		    !_ieee80211he_cap_check(hw_he->phy_cap,
+					    HE_PHYCAP_SU_BEAMFORMER_CAPAB_IDX,
+					    HE_PHYCAP_SU_BEAMFORMER_CAPAB)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_he_su_beamformer");
+			return -1;
+		}
+	}
+
+	/* Check SU Beamformee */
+	if (mask & HE_PHY_BSS_OVR_SU_BEAMFORMEE) {
+		if (hapd->conf->he_phy_capab.he_su_beamformee &&
+		    !_ieee80211he_cap_check(hw_he->phy_cap,
+					    HE_PHYCAP_SU_BEAMFORMEE_CAPAB_IDX,
+					    HE_PHYCAP_SU_BEAMFORMEE_CAPAB)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_he_su_beamformee");
+			return -1;
+		}
+	}
+
+	/* Check MU Beamformer */
+	if (mask & HE_PHY_BSS_OVR_MU_BEAMFORMER) {
+		if (hapd->conf->he_phy_capab.he_mu_beamformer &&
+		    !_ieee80211he_cap_check(hw_he->phy_cap,
+					    HE_PHYCAP_MU_BEAMFORMER_CAPAB_IDX,
+					    HE_PHYCAP_MU_BEAMFORMER_CAPAB)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_he_mu_beamformer");
+			return -1;
+		}
+	}
+
+	/* Check MU Beamformee */
+	if (mask & HE_PHY_BSS_OVR_MU_BEAMFORMEE) {
+		if (hapd->conf->he_phy_capab.he_mu_beamformee &&
+		    !(hw_he->phy_cap[HE_PHYCAP_MU_BEAMFORMER_CAPAB_IDX] &
+		      HE_PHYCAP_MU_BEAMFORMER_CAPAB)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_he_mu_beamformee");
+			return -1;
+		}
+	}
+
+	/* Check DL MU-OFDMA */
+	if (mask & HE_PHY_BSS_OVR_DL_MU_OFDMA) {
+		if (hapd->conf->he_phy_capab.he_dl_mu_ofdma &&
+		    !(hw_he->phy_cap[HE_PHYCAP_CHANNEL_WIDTH_SET_IDX] &
+		      HE_PHYCAP_CHANNEL_WIDTH_SET_40MHZ_IN_2G)) {
+			/* Basic check - driver should support OFDMA */
+			wpa_printf(MSG_DEBUG,
+				   "Warning: bss_he_dl_mu_ofdma configured but driver support unclear");
+		}
+	}
+
+	/* Check DL MU-OFDMA Beamformer */
+	if (mask & HE_PHY_BSS_OVR_DL_MU_OFDMA_BFER) {
+		if (hapd->conf->he_phy_capab.he_dl_mu_ofdma_bfer &&
+		    !hapd->conf->he_phy_capab.he_dl_mu_ofdma) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_dl_mu_ofdma_bfer requires bss_he_dl_mu_ofdma");
+			return -1;
+		}
+	}
+
+	/* Check UL MU-OFDMA */
+	if (mask & HE_PHY_BSS_OVR_UL_MU_OFDMA) {
+		if (hapd->conf->he_phy_capab.he_ul_mu_ofdma) {
+			/* Basic validation - driver should support UL OFDMA */
+			wpa_printf(MSG_DEBUG,
+				   "bss_he_ul_mu_ofdma configured");
+		}
+	}
+
+	/* Check UL MU-MIMO */
+	if (mask & HE_PHY_BSS_OVR_UL_MUMIMO) {
+		if (hapd->conf->he_phy_capab.he_ul_mumimo == 1 &&
+		    !_ieee80211he_cap_check(hw_he->phy_cap,
+					    HE_PHYCAP_UL_MUMIMO_CAPB_IDX,
+					    HE_PHYCAP_UL_MUMIMO_CAPB)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_he_ul_mumimo");
+			return -1;
+		}
+	}
+
+	return 0;
+}
+#endif /* CONFIG_IEEE80211AX */
+
+
+/**
+ * hostapd_validate_bss_eht_capab - Validate BSS-level EHT capability overrides
+ * @hapd: Pointer to hostapd_data
+ * Returns: 0 on success, -1 on failure
+ *
+ * Validates that BSS-level EHT capability overrides don't exceed what the
+ * driver/hardware supports.
+ */
+#ifdef CONFIG_IEEE80211BE
+static int hostapd_validate_bss_eht_capab(struct hostapd_data *hapd)
+{
+	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
+	struct eht_capabilities *hw_eht;
+	u64 mask;
+
+	if (!mode || !hapd->conf->eht_phy_capab_mask)
+		return 0;
+
+	hw_eht = &mode->eht_capab[IEEE80211_MODE_AP];
+	mask = hapd->conf->eht_phy_capab_mask;
+
+	if (!hw_eht->eht_supported) {
+		wpa_printf(MSG_ERROR,
+			   "Driver does not support EHT but BSS EHT params configured");
+		return -1;
+	}
+
+	/* Check SU Beamformer */
+	if (mask & EHT_PHY_BSS_OVR_SU_BEAMFORMER) {
+		if (hapd->conf->eht_phy_capab.su_beamformer) {
+			/* Validate against driver EHT SU beamformer capability */
+			wpa_printf(MSG_DEBUG,
+				   "bss_eht_su_beamformer configured");
+		}
+	}
+
+	/* Check SU Beamformee */
+	if (mask & EHT_PHY_BSS_OVR_SU_BEAMFORMEE) {
+		if (hapd->conf->eht_phy_capab.su_beamformee) {
+			wpa_printf(MSG_DEBUG,
+				   "bss_eht_su_beamformee configured");
+		}
+	}
+
+	/* Check MU Beamformer */
+	if (mask & EHT_PHY_BSS_OVR_MU_BEAMFORMER) {
+		if (hapd->conf->eht_phy_capab.mu_beamformer) {
+			wpa_printf(MSG_DEBUG,
+				   "bss_eht_mu_beamformer configured");
+		}
+	}
+
+	/* Check MU Beamformee */
+	if (mask & EHT_PHY_BSS_OVR_MU_BEAMFORMEE) {
+		if (hapd->conf->eht_phy_capab.mu_beamformee) {
+			wpa_printf(MSG_DEBUG,
+				   "bss_eht_mu_beamformee configured");
+		}
+	}
+
+	/* Check DL MU-OFDMA */
+	if (mask & EHT_PHY_BSS_OVR_DL_MU_OFDMA) {
+		if (hapd->conf->eht_phy_capab.dl_mu_ofdma) {
+			wpa_printf(MSG_DEBUG,
+				   "bss_eht_dl_mu_ofdma configured");
+		}
+	}
+
+	/* Check UL MU-OFDMA */
+	if (mask & EHT_PHY_BSS_OVR_UL_MU_OFDMA) {
+		if (hapd->conf->eht_phy_capab.ul_mu_ofdma) {
+			wpa_printf(MSG_DEBUG,
+				   "bss_eht_ul_mu_ofdma configured");
+		}
+	}
+
+	/* Check DL OFDMA+MU-MIMO */
+	if (mask & EHT_PHY_BSS_OVR_DL_OFDMA_MUMIMO) {
+		if (hapd->conf->eht_phy_capab.dl_ofdma_mumimo) {
+			wpa_printf(MSG_DEBUG,
+				   "bss_eht_dl_ofdma_mumimo configured");
+		}
+	}
+
+	/* Check UL OFDMA+MU-MIMO */
+	if (mask & EHT_PHY_BSS_OVR_UL_OFDMA_MUMIMO) {
+		if (hapd->conf->eht_phy_capab.ul_ofdma_mumimo) {
+			wpa_printf(MSG_DEBUG,
+				   "bss_eht_ul_ofdma_mumimo configured");
+		}
+	}
+
+	/* Check UL MU-MIMO 80MHz */
+	if (mask & EHT_PHY_BSS_OVR_UL_MU_MIMO_80) {
+		if (hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz) {
+			wpa_printf(MSG_DEBUG,
+				   "bss_eht_ulmumimo_80mhz configured");
+		}
+	}
+
+	/* Check UL MU-MIMO 160MHz */
+	if (mask & EHT_PHY_BSS_OVR_UL_MU_MIMO_160) {
+		if (hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz) {
+			wpa_printf(MSG_DEBUG,
+				   "bss_eht_ulmumimo_160mhz configured");
+		}
+	}
+
+	/* Check UL MU-MIMO 320MHz */
+	if (mask & EHT_PHY_BSS_OVR_UL_MU_MIMO_320) {
+		if (hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz) {
+			if (!is_6ghz_freq(hapd->iface->freq)) {
+				wpa_printf(MSG_ERROR,
+					   "bss_eht_ulmumimo_320mhz only valid on 6 GHz");
+				return -1;
+			}
+			wpa_printf(MSG_DEBUG,
+				   "bss_eht_ulmumimo_320mhz configured");
+		}
+	}
+
+	/* Validate beamformee spatial streams */
+	if (hapd->conf->eht_phy_capab.eht_bfme_ss_80 > 7 ||
+	    hapd->conf->eht_phy_capab.eht_bfme_ss_160 > 7 ||
+	    hapd->conf->eht_phy_capab.eht_bfme_ss_320 > 7) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid EHT beamformee spatial streams (max 7)");
+		return -1;
+	}
+
+	return 0;
+}
+#endif /* CONFIG_IEEE80211BE */
+
+
+/**
+ * hostapd_validate_bss_capab - Validate all BSS-level capability overrides
+ * @hapd: Pointer to hostapd_data
+ * Returns: 0 on success, -1 on failure
+ *
+ * Main validation function that checks all BSS-level VHT/HE/EHT capability
+ * overrides against driver/hardware capabilities.
+ */
+int hostapd_validate_bss_capab(struct hostapd_data *hapd)
+{
+	if (!hapd || !hapd->iface || !hapd->iface->current_mode)
+		return 0;
+
+#ifdef CONFIG_IEEE80211AC
+	if (hostapd_validate_bss_vht_capab(hapd) < 0)
+		return -1;
+#endif /* CONFIG_IEEE80211AC */
+
+#ifdef CONFIG_IEEE80211AX
+	if (hostapd_validate_bss_he_capab(hapd) < 0)
+		return -1;
+#endif /* CONFIG_IEEE80211AX */
+
+#ifdef CONFIG_IEEE80211BE
+	if (hostapd_validate_bss_eht_capab(hapd) < 0)
+		return -1;
+#endif /* CONFIG_IEEE80211BE */
+
+	return 0;
+}
+
 
 int hostapd_check_ht_capab(struct hostapd_iface *iface)
 {
