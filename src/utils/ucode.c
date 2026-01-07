@@ -397,9 +397,20 @@ static void udebug_hexdump_hook(int level, const char *title,
 {
 	char *buf;
 
+	if (!data || !len) {
+		return;
+	}
+
 	udebug_entry_init(&ud_log);
 	udebug_entry_printf(&ud_log, "%s - hexdump:", title);
-	buf = udebug_entry_append(&ud_log, NULL, 3 * len);
+
+	buf = udebug_entry_append(&ud_log, NULL, 3 * len + 1);
+	if (!buf) {
+		udebug_entry_printf(&ud_log, "Hexdump allocation failed");
+		udebug_entry_add(&ud_log);
+		return;
+	}
+
 	for (size_t i = 0; i < len; i++)
 		buf += sprintf(buf, " %02x", *(uint8_t *)(data + i));
 	udebug_entry_add(&ud_log);
