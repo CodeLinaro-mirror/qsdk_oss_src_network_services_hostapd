@@ -268,6 +268,7 @@ struct eap_config {
 #ifdef CONFIG_TESTING_OPTIONS
 	bool skip_prot_success;
 #endif /* CONFIG_TESTING_OPTIONS */
+	int identity_request_retry_interval;
 };
 
 struct eap_session_data {

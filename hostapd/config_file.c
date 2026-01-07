@@ -2726,6 +2726,14 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->radius->radius_max_retry_wait = val;
+	} else if (os_strcmp(buf, "identity_request_retry_interval") == 0) {
+		int val = atoi(pos);
+		if ((val < 0) || (val > 200)) {
+			wpa_printf(MSG_ERROR, "Line %d: Invalid identity_request_retry_interval '%d'",
+				   line, val);
+			return 1;
+		}
+		bss->identity_request_retry_interval = val;
 	} else if (os_strcmp(buf,
 			     "radius_require_message_authenticator") == 0) {
 		bss->radius_require_message_authenticator = atoi(pos);
