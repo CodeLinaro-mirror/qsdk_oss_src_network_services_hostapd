@@ -4583,14 +4583,6 @@ fail:
 	return NULL;
 }
 
-bool hostapd_is_existing_interface(struct hostapd_iface *iface,
-				   struct hostapd_config *new_conf)
-{
-	return (iface->conf->hw_mode == new_conf->hw_mode &&
-		((iface->conf->channel &&
-		iface->conf->channel == new_conf->channel)));
-}
-
 
 /**
  * hostapd_interface_init_bss - Read configuration file and init BSS data
@@ -4621,8 +4613,7 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 		return NULL;
 
 	for (i = 0; i < interfaces->count; i++) {
-		if (os_strcmp(interfaces->iface[i]->phy, phy) == 0 &&
-		    hostapd_is_existing_interface(interfaces->iface[i], conf)) {
+		if (os_strcmp(interfaces->iface[i]->phy, phy) == 0) {
 			iface = interfaces->iface[i];
 			break;
 		}
