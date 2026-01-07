@@ -773,6 +773,10 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 					EHT_ML_MLD_EXT_CAPA_MAX_NUM_REC_LINKS_MASK);
 			wpa_printf(MSG_DEBUG, "MLD: rec_links %u", max_rec_links);
 		}
+
+		if (include_ext_cap & BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+			ext_mld_cap |= BIT(EHT_ML_MLD_EXT_CAPA_EMLSR_ONE_LINK);
+
 		wpa_printf(MSG_DEBUG,
 			   "MLD: Ext MLD Capabilities and Operations=0x%x", ext_mld_cap);
 		wpabuf_put_le16(buf, ext_mld_cap);

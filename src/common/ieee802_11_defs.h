@@ -3193,6 +3193,7 @@ struct ieee80211_eht_capabilities {
 
 #define BASIC_MULTI_LINK_CTRL_EXT_EN			0
 #define BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN		1
+#define BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK	6
 /*
  * STA Control field definitions of Per-STA Profile subelement in Basic
  * Multi-Link element as described in Figure 9-1002n: STA Control field format.
@@ -3264,6 +3265,7 @@ struct eht_ml_basic_common_info {
 
 #define EHT_ML_MLD_EXT_CAPA_MAX_NUM_REC_LINKS_MASK    0x001e
 #define EHT_ML_MLD_EXT_CAPA_MAX_NUM_REC_LINKS_OFFSET  1
+#define EHT_ML_MLD_EXT_CAPA_EMLSR_ONE_LINK	      6
 
  /* RMSL defines */
 #define ML_IE_NO_MAX_REC_LINKS				0

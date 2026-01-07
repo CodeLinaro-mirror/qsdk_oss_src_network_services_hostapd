@@ -803,11 +803,19 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 
 		if (hapd->conf->enable_aal)
 			include_ext_cap = BIT(BASIC_MULTI_LINK_CTRL_EXT_EN);
+		if (hapd->iface->mld_ext_mld_capa &
+		    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+			include_ext_cap |=
+				BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
 		if (params->mld_ap && params->mld_ap->conf->mld_ap) {
 			/* Check for non-Tx BSS conf */
 			if (params->mld_ap->conf->enable_aal)
 				param_ext_cap = BIT(BASIC_MULTI_LINK_CTRL_EXT_EN);
+			if (hapd->iface->mld_ext_mld_capa &
+			    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+				param_ext_cap |=
+					BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
 			buflen += hostapd_eid_eht_ml_beacon_len(
 				params->mld_ap, params->mld_info,
@@ -1022,6 +1030,9 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 			if (bcast_prb_resp)
 				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
 		}
+		if (hapd->iface->mld_ext_mld_capa &
+		    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+			ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
 		if (params->mld_ap && params->mld_ap->conf->mld_ap) {
 			/* Check for non-Tx BSS conf */
@@ -1033,6 +1044,9 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 					p_ext_cap |=
 					BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
 			}
+			if (hapd->iface->mld_ext_mld_capa &
+			    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
 			pos = hostapd_eid_eht_ml_beacon(
 				params->mld_ap, params->mld_info,
@@ -2752,6 +2766,9 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 
 			if (hapd->conf->enable_aal)
 				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
+			if (hapd->iface->mld_ext_mld_capa &
+			    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
 			tailpos = hostapd_eid_eht_ml_beacon(hapd, NULL,
 							    tailpos, false,

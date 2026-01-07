@@ -2983,6 +2983,11 @@ enum nl80211_commands {
  * 	attribute containing various QoS-related parameters defined by the
  * 	nl80211_qm_policy.
  *
+ * @NL80211_ATTR_6GHZ_DEVICE_DEPLOYMENT_TYPE: Attribute denoting the 6 GHz
+ *	device deployment type.
+ *
+ * @NL80211_ATTR_CONTROL_MIC_PAD: Mic padding for control frame protection.
+ *
  * @NL80211_ATTR_USE_CFP: Whether control frame protection is
  *	used for the association (&enum nl80211_cfp, represented as a u32);
  *	this attribute can be used with %NL80211_CMD_ASSOCIATE and
@@ -2990,6 +2995,9 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_CFP: Indicate whether control frame protection is
  *      enabled for the particular vdev.
+ *
+ * @NL80211_ATTR_EXT_MLD_CAPA_AND_OPS: Extended MLD Capabilities and Operations
+ *	(u16)
  *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
@@ -3595,8 +3603,12 @@ enum nl80211_attrs {
 	NL80211_ATTR_CONTROL_MIC_PAD,
 
 	NL80211_ATTR_USE_CFP,
+
 	NL80211_ATTR_CFP,
+
 	NL80211_ATTR_CIGTK,
+
+	NL80211_ATTR_EXT_MLD_CAPA_AND_OPS,
 
 	/* add attributes here, update the policy in nl80211.c */
 

@@ -11608,12 +11608,17 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 		if (bss->conf->mld_ap &&
 		    (bss != hapd || frame_type != WLAN_FC_STYPE_PROBE_RESP)) {
 			ext_cap = 0;
-			/* RMSL value sent in broadcast Probe response case and beacon */
-			if (bss->conf->enable_aal &&
-			    (((frame_type == WLAN_FC_STYPE_PROBE_RESP) &&
-			       bcast_prb_resp) ||
-			     (frame_type == WLAN_FC_STYPE_BEACON)))
-				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
+
+			if (((frame_type == WLAN_FC_STYPE_PROBE_RESP) &&
+			     bcast_prb_resp) || (frame_type == WLAN_FC_STYPE_BEACON)) {
+				/* RMSL value sent in broadcast Probe response case and beacon */
+				if (bss->conf->enable_aal)
+					ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
+
+				if (bss->iface->mld_ext_mld_capa &
+				    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+					ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
+			}
 
 			nontx_profile_len += hostapd_eid_eht_basic_ml_len(
 				bss, NULL, true, false, ext_cap);
@@ -11915,11 +11920,17 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		if (bss->conf->mld_ap &&
 		    (bss != hapd || frame_type != WLAN_FC_STYPE_PROBE_RESP)) {
 			ext_cap = 0;
-			if (bss->conf->enable_aal &&
-			    (((frame_type == WLAN_FC_STYPE_PROBE_RESP) &&
-			       bcast_prb_resp) ||
-			     (frame_type == WLAN_FC_STYPE_BEACON)))
-				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
+
+			if (((frame_type == WLAN_FC_STYPE_PROBE_RESP) &&
+			     bcast_prb_resp) || (frame_type == WLAN_FC_STYPE_BEACON)) {
+				/* RMSL value sent in broadcast Probe response case and beacon */
+				if (bss->conf->enable_aal)
+					ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
+
+				if (bss->iface->mld_ext_mld_capa &
+				    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+					ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
+			}
 
 			eid = hostapd_eid_eht_basic_ml_common(bss, eid, NULL,
 							      true, false, ext_cap);

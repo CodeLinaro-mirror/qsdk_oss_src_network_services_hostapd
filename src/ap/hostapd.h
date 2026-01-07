@@ -789,7 +789,7 @@ struct hostapd_iface {
 	const u8 *extended_capa, *extended_capa_mask;
 	unsigned int extended_capa_len;
 
-	u16 mld_eml_capa, mld_mld_capa;
+	u16 mld_eml_capa, mld_mld_capa, mld_ext_mld_capa;
 
 	unsigned int drv_max_acl_mac_addrs;
 
