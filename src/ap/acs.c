@@ -1178,8 +1178,7 @@ static void acs_adjust_secondary(struct hostapd_iface *iface)
 }
 
 
-static void acs_adjust_center_freq(struct hostapd_iface *iface,
-				   struct hostapd_channel_data *chan)
+static void acs_adjust_center_freq(struct hostapd_iface *iface)
 {
 	int center = 0;
 
@@ -1329,7 +1328,7 @@ static void acs_study(struct hostapd_iface *iface)
 	if (iface->conf->ieee80211ac || iface->conf->ieee80211ax ||
 	    iface->conf->ieee80211be) {
 		acs_adjust_secondary(iface);
-		acs_adjust_center_freq(iface, ideal_chan);
+		acs_adjust_center_freq(iface);
 	}
 
 	err = hostapd_select_hw_mode(iface);
