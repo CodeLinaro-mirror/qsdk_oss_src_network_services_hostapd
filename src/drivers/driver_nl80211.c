@@ -5414,10 +5414,12 @@ static int nl80211_put_beacon_rate(struct nl_msg *msg, u64 flags, u64 flags2,
 		    nla_put(msg, NL80211_TXRATE_HE, sizeof(he_rate),
 			    &he_rate) ||
 		    nla_put(msg, NL80211_TXRATE_EHT, sizeof(eht_rate),
-			    &eht_rate))
+			    &eht_rate) ||
+		    (params->eht_ltf >= 0 &&
+		     nla_put_u8(msg, NL80211_TXRATE_EHT_LTF, params->eht_ltf)))
 			return -1;
-		wpa_printf(MSG_DEBUG, " * beacon_rate = EHT-MCS %u",
-			   params->beacon_rate);
+		wpa_printf(MSG_DEBUG, " * beacon_rate = EHT-MCS %u (eht_ltf=%d)",
+			   params->beacon_rate, params->eht_ltf);
 		break;
 	}
 
