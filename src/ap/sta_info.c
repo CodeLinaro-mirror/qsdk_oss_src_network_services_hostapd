@@ -2127,12 +2127,16 @@ void ap_sta_set_authorized_event(struct hostapd_data *hapd,
 		char ip_addr[100];
 		char vlanid_buf[20];
 		char alg_buf[100];
+		char chan_buf[20];
+		char aid_buf[20];
 
 		dpp_pkhash_buf[0] = '\0';
 		keyid_buf[0] = '\0';
 		ip_addr[0] = '\0';
 		vlanid_buf[0] = '\0';
 		alg_buf[0] = '\0';
+		chan_buf[0] = '\0';
+		aid_buf[0] = '\0';
 
 #ifdef CONFIG_P2P
 		if (wpa_auth_get_ip_addr(sta->wpa_sm, ip_addr_buf) == 0) {
@@ -2175,28 +2179,57 @@ void ap_sta_set_authorized_event(struct hostapd_data *hapd,
 				    " vlanid=%u", sta->vlan_id);
 #endif /* CONFIG_NO_VLAN */
 
+		if (hapd->iface && hapd->iface->conf)
+			os_snprintf(chan_buf, sizeof(chan_buf), " channel=%u",
+				    hapd->iface->conf->channel);
+
+		if (sta->aid)
+			os_snprintf(aid_buf, sizeof(aid_buf), " aid=%u", sta->aid);
+
 		hostapd_ubus_notify_authorized(hapd, sta, auth_alg);
-		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_STA_CONNECTED "%s%s%s%s%s%s",
+		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_STA_CONNECTED "%s%s%s%s%s%s%s%s",
 			buf, ip_addr, keyid_buf, dpp_pkhash_buf, vlanid_buf,
-			alg_buf);
+			alg_buf, chan_buf, aid_buf);
 
 		atf_join_leave_update(hapd->iface, sta, true);
 
 		if (hapd->msg_ctx_parent &&
 		    hapd->msg_ctx_parent != hapd->msg_ctx)
 			wpa_msg_no_global(hapd->msg_ctx_parent, MSG_INFO,
-					  AP_STA_CONNECTED "%s%s%s%s%s%s",
+					  AP_STA_CONNECTED "%s%s%s%s%s%s%s%s",
 					  buf, ip_addr, keyid_buf,
 					  dpp_pkhash_buf, vlanid_buf,
-					  alg_buf);
+					  alg_buf, chan_buf, aid_buf);
 	} else {
-		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_STA_DISCONNECTED "%s", buf);
+		char chan_buf[20];
+		char aid_buf[20];
+		char reason_buf[30];
+		char disconnect_msg[256];
+
+		chan_buf[0] = '\0';
+		aid_buf[0] = '\0';
+		reason_buf[0] = '\0';
+
+		if (hapd->iface && hapd->iface->conf)
+			os_snprintf(chan_buf, sizeof(chan_buf), " channel=%u",
+				    hapd->iface->conf->channel);
+		if (sta->aid)
+			os_snprintf(aid_buf, sizeof(aid_buf), " aid=%u", sta->aid);
+		if (sta->disassoc_reason)
+			os_snprintf(reason_buf, sizeof(reason_buf), " reason=%u",
+				    sta->disassoc_reason);
+
+		os_snprintf(disconnect_msg, sizeof(disconnect_msg),
+			    AP_STA_DISCONNECTED "%s%s%s%s",
+			    buf, chan_buf, aid_buf, reason_buf);
+
+		wpa_msg(hapd->msg_ctx, MSG_INFO, "%s", disconnect_msg);
 		hostapd_ubus_notify(hapd, "disassoc", sta->addr);
 
 		if (hapd->msg_ctx_parent &&
 		    hapd->msg_ctx_parent != hapd->msg_ctx)
-			wpa_msg_no_global(hapd->msg_ctx_parent, MSG_INFO,
-					  AP_STA_DISCONNECTED "%s", buf);
+			wpa_msg_no_global(hapd->msg_ctx_parent, MSG_INFO, "%s",
+					  disconnect_msg);
 	}
 
 	if (hapd->sta_authorized_cb)
