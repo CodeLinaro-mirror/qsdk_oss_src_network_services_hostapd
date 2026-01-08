@@ -1424,6 +1424,12 @@ struct hostapd_config {
 	u8 eht_bw320_offset;
 #endif /* CONFIG_IEEE80211BE */
 
+	int ieee80211bn;
+#ifdef CONFIG_IEEE80211BN
+	enum oper_chan_width uhr_oper_chwidth;
+	u8 uhr_oper_centr_freq_seg0_idx;
+#endif /* CONFIG_IEEE80211BN */
+
 	/* EHT enable/disable config from CHAN_SWITCH */
 #define CH_SWITCH_EHT_ENABLED BIT(0)
 #define CH_SWITCH_EHT_DISABLED BIT(1)
