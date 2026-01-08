@@ -693,6 +693,7 @@ struct last_scan_ssid {
  * core functions.
  */
 struct wpa_supplicant {
+	int no_callback;
 	struct wpa_global *global;
 	struct wpa_radio *radio; /* shared radio context */
 	struct dl_list radio_list; /* list head: struct wpa_radio::ifaces */
@@ -1503,6 +1504,7 @@ struct wpa_supplicant {
 	int dpp_gas_client;
 	int dpp_gas_server;
 	int dpp_gas_dialog_token;
+	bool dpp_wps;
 	u8 dpp_intro_bssid[ETH_ALEN];
 	void *dpp_intro_network;
 	u8 dpp_intro_peer_version;

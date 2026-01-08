@@ -5090,8 +5090,6 @@ int wpas_dpp_controller_start(struct wpa_supplicant *wpa_s, const char *cmd)
 }
 
 
-static void wpas_dpp_chirp_next(void *eloop_ctx, void *timeout_ctx);
-
 static void wpas_dpp_chirp_timeout(void *eloop_ctx, void *timeout_ctx)
 {
 	struct wpa_supplicant *wpa_s = eloop_ctx;
@@ -5296,7 +5294,7 @@ static void wpas_dpp_chirp_scan_res_handler(struct wpa_supplicant *wpa_s,
 }
 
 
-static void wpas_dpp_chirp_next(void *eloop_ctx, void *timeout_ctx)
+void wpas_dpp_chirp_next(void *eloop_ctx, void *timeout_ctx)
 {
 	struct wpa_supplicant *wpa_s = eloop_ctx;
 	int i;

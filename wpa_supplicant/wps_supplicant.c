@@ -34,6 +34,10 @@
 #include "p2p_supplicant.h"
 #include "wps_supplicant.h"
 #include "ubus.h"
+#ifdef CONFIG_DPP2
+#include "common/dpp.h"
+#include "dpp_supplicant.h"
+#endif
 
 
 #ifndef WPS_PIN_SCAN_IGNORE_SEL_REG
@@ -92,6 +96,33 @@ static struct wpabuf * wpas_wps_get_wps_ie(struct wpa_bss *bss)
 }
 
 
+#ifdef CONFIG_DPP2
+static int wps_dpp_chirp(struct wpa_supplicant *wpa_s)
+{
+	struct dpp_bootstrap_info *bi;
+
+	bi = dpp_bootstrap_get_id(wpa_s->dpp, 1);
+	if (!bi) {
+		wpa_printf(MSG_DEBUG,
+			   "DPP: Identified bootstrap info not found");
+		return -1;
+	}
+	wpa_s->dpp_allowed_roles = DPP_CAPAB_ENROLLEE;
+	wpa_s->dpp_qr_mutual = 0;
+	wpa_s->dpp_chirp_bi = bi;
+	wpa_s->dpp_presence_announcement = dpp_build_presence_announcement(bi);
+	if (!wpa_s->dpp_presence_announcement)
+		return -1;
+	wpa_s->dpp_chirp_iter = 3;
+	wpa_s->dpp_chirp_round = 0;
+	wpa_s->dpp_chirp_scan_done = 0;
+	wpa_s->dpp_chirp_listen = 0;
+
+	return eloop_register_timeout(3, 0, wpas_dpp_chirp_next, wpa_s, NULL);
+}
+#endif
+
+
 int wpas_wps_eapol_cb(struct wpa_supplicant *wpa_s)
 {
 	if (wpas_p2p_wps_eapol_cb(wpa_s) > 0)
@@ -123,6 +154,20 @@ int wpas_wps_eapol_cb(struct wpa_supplicant *wpa_s)
 	if (wpa_s->key_mgmt == WPA_KEY_MGMT_WPS && !wpa_s->wps_success)
 		wpa_msg(wpa_s, MSG_INFO, WPS_EVENT_FAIL);
 
+#ifdef CONFIG_DPP2
+	if (wpa_s->wps->dpp_wps == 1) {
+		if (wpa_s->wps->wps_dpp_uri && os_strlen(wpa_s->wps->wps_dpp_uri)) {
+			os_free(wpa_s->wps->wps_dpp_uri);
+			wpa_s->wps->wps_dpp_uri = NULL;
+		}
+		wpa_s->wps->dpp_wps = 0;
+		wpa_printf(MSG_DEBUG, " WPS->DPP: CANCEL WPS\n");
+		wpas_wps_cancel(wpa_s);
+		wps_dpp_chirp(wpa_s);
+		wpa_printf(MSG_DEBUG, " WPS DPP chirp\n");
+		return 0;
+	}
+#endif
 	if (wpa_s->key_mgmt == WPA_KEY_MGMT_WPS && wpa_s->current_ssid &&
 	    !(wpa_s->current_ssid->key_mgmt & WPA_KEY_MGMT_WPS)) {
 		int disabled = wpa_s->current_ssid->disabled;
@@ -944,6 +989,16 @@ static int wpa_supplicant_wps_rf_band(void *ctx)
 }
 
 
+#ifdef CONFIG_DPP2
+static int wpa_wps_dpp_uri(void *ctx, const char *uri)
+{
+	struct wpa_supplicant *wpa_s = ctx;
+
+	return wpas_dpp_qr_code(wpa_s, uri);
+}
+#endif
+
+
 enum wps_request_type wpas_wps_get_req_type(struct wpa_ssid *ssid)
 {
 	if (eap_is_wps_pbc_enrollee(&ssid->eap) ||
@@ -995,6 +1050,7 @@ static void wpas_clear_wps(struct wpa_supplicant *wpa_s)
 		}
 	}
 
+	wpa_s->wps->dpp_wps = 0;
 	wpas_wps_clear_ap_info(wpa_s);
 }
 
@@ -1184,6 +1240,17 @@ int wpas_wps_start_pbc(struct wpa_supplicant *wpa_s, const u8 *bssid,
 		return -1;
 	ssid->temporary = 1;
 	ssid->p2p_group = p2p_group;
+#ifdef CONFIG_DPP2
+	if (wpa_s->dpp_wps == 1) {
+		if (dpp_bootstrap_get_uri(wpa_s->dpp, 1) == NULL) {
+			wpa_printf(MSG_WARNING," DPP WPS is enabled but no DPP URI found");
+			wpa_msg(wpa_s, MSG_INFO, WPS_EVENT_DPP_NO_URI);
+		} else {
+			wpa_s->wps->dpp_wps = 1;
+		}
+		wpa_s->dpp_wps = 0;
+	}
+#endif
 	/*
 	 * When starting a regular WPS process (not P2P group formation)
 	 * the registrar/final station can be either AP or PCP
@@ -1600,6 +1667,9 @@ int wpas_wps_init(struct wpa_supplicant *wpa_s)
 	wps->cred_cb = wpa_supplicant_wps_cred;
 	wps->event_cb = wpa_supplicant_wps_event;
 	wps->rf_band_cb = wpa_supplicant_wps_rf_band;
+#ifdef CONFIG_DPP2
+	wps->wps_dpp_uri_cb = wpa_wps_dpp_uri;
+#endif
 	wps->cb_ctx = wpa_s;
 
 	wps->dev.device_name = wpa_s->conf->device_name;
@@ -1749,6 +1819,17 @@ int wpas_wps_ssid_bss_match(struct wpa_supplicant *wpa_s,
 		wpa_printf(MSG_DEBUG, "   selected based on WPS IE "
 			   "(Active PBC)");
 		wpabuf_free(wps_ie);
+#ifdef CONFIG_DPP2
+		if (wpa_s->wps && wpa_s->wps->wps_dpp_uri &&
+		    os_strlen(wpa_s->wps->wps_dpp_uri)) {
+		    os_free(wpa_s->wps->wps_dpp_uri);
+			wpa_s->wps->wps_dpp_uri = NULL;
+		}
+
+		if (wpa_s->wps && wpa_s->wps->dpp_wps) {
+			wpa_s->wps->wps_dpp_uri = os_strdup(dpp_bootstrap_get_uri(wpa_s->dpp, 1));
+		}
+#endif
 		return 1;
 	}
 

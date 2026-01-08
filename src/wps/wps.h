@@ -842,6 +842,11 @@ struct wps_context {
 	/* Pending messages from UPnP PutWLANResponse */
 	struct upnp_pending_message *upnp_msgs;
 
+#ifdef CONFIG_DPP2
+	char *wps_dpp_uri;
+	int (*wps_dpp_uri_cb)(void *ctx, const char *uri);
+	bool dpp_wps;
+#endif
 	u16 ap_nfc_dev_pw_id;
 	struct wpabuf *ap_nfc_dh_pubkey;
 	struct wpabuf *ap_nfc_dh_privkey;

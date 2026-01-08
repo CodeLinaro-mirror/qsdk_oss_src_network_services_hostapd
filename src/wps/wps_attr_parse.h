@@ -93,6 +93,10 @@ struct wps_parse_attr {
 
 	u16 cred_len[MAX_CRED_COUNT];
 	u16 vendor_ext_len[MAX_WPS_PARSE_VENDOR_EXT];
+#ifdef CONFIG_DPP2
+	const char *wps_dpp_uri;
+	size_t wps_dpp_uri_len;
+#endif
 
 	const u8 *cred[MAX_CRED_COUNT];
 	const u8 *req_dev_type[MAX_REQ_DEV_TYPE_COUNT];

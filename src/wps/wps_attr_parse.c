@@ -583,6 +583,14 @@ static int wps_set_attr(struct wps_parse_attr *attr, u16 type,
 		}
 		attr->ap_channel = pos;
 		break;
+#ifdef CONFIG_DPP2
+	case ATTR_DPP_URI:
+	case ATTR_DPP_URI_TEMP:
+		attr->wps_dpp_uri = (const char *)pos;
+		attr->wps_dpp_uri_len = len;
+	break;
+#endif
+
 	default:
 		wpa_printf(MSG_DEBUG, "WPS: Unsupported attribute type 0x%x "
 			   "len=%u", type, len);
