@@ -1322,6 +1322,7 @@ struct hostapd_config {
 	bool enable_best_power_mode;
 	bool puncture_strict_6ghz;
 	s16 punc_eirp_thres_6ghz;
+	bool discard_6g_incumbent_event;
 
 	int reg_def_cli_eirp_psd;
 	int reg_sub_cli_eirp_psd;

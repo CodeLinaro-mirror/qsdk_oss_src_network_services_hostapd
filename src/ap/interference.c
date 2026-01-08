@@ -10,6 +10,7 @@
 #include "utils/common.h"
 #include "common/hw_features_common.h"
 #include "common/ieee802_11_common.h"
+#include "common/wpa_ctrl.h"
 #include "hostapd.h"
 #include "ap_drv_ops.h"
 #include "beacon.h"
@@ -714,6 +715,18 @@ int hostapd_incumbt_sig_intf_detected(struct hostapd_iface *iface, int freq,
 	wpa_printf(MSG_DEBUG,
 		   "Intf: input freq=%d, chan_width=%d, cf1=%d, cf2=%d, chan_bw_interference_bitmap=0x%x",
 		   freq, chan_width, cf1, cf2, chan_bw_interference_bitmap);
+
+	if (iface->conf->discard_6g_incumbent_event) {
+		if (iface->bss && iface->bss[0] && iface->bss[0]->msg_ctx)
+			wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, INTERFERENCE_DETECTED
+				"type=%s freq=%d chan_width=%d cf1=%d cf2=%d bitmap=0x%x",
+				"AWGN", freq, chan_width, cf1, cf2,
+				chan_bw_interference_bitmap);
+
+		wpa_printf(MSG_DEBUG, "discard_6g_incumbent_event set ignoring"
+			   " AWGN DETECT event from driver");
+		return 0;
+	}
 
 	num_segments = channel_width_to_int(chan_width) / 20;
 	if (!num_segments) {

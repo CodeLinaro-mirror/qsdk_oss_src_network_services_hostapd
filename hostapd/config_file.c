@@ -3952,6 +3952,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->unsol_bcast_probe_resp_interval = val;
+	} else if (os_strcmp(buf, "discard_6g_awgn_event") == 0) {
+		conf->discard_6g_incumbent_event = atoi(pos);
 #ifdef CONFIG_AFC
 	} else if (os_strcmp(buf, "afcd_sock") == 0) {
 		os_free(conf->afc.socket);
