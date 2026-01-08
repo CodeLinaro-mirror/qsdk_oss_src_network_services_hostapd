@@ -6396,6 +6396,14 @@ static int wpa_driver_nl80211_build_sta(struct wpa_driver_nl80211_data *drv,
 				goto fail;
 		}
 
+		if (params->uhr_capab) {
+			wpa_hexdump(MSG_DEBUG, "  * uhr_capab",
+				    params->uhr_capab, params->uhr_capab_len);
+			if (nla_put(msg, NL80211_ATTR_UHR_CAPABILITY,
+				    params->uhr_capab_len, params->uhr_capab))
+				goto fail;
+		}
+
 		if (params->ext_capab) {
 			wpa_hexdump(MSG_DEBUG, "  * ext_capab",
 				    params->ext_capab, params->ext_capab_len);
