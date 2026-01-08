@@ -5100,6 +5100,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->disable_11ax = !!atoi(pos);
 	} else if (os_strcmp(buf, "disable_11be") == 0) {
 		bss->disable_11be = !!atoi(pos);
+	} else if (os_strcmp(buf, "disable_11bn") == 0) {
+		bss->disable_11bn = !!atoi(pos);
 	} else if (os_strcmp(buf, "beacon_tx_mode") == 0) {
 		int val = atoi(pos);
 
