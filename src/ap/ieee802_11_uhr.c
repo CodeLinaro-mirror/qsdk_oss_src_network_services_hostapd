@@ -75,3 +75,19 @@ u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn)
 
 	return pos;
 }
+
+
+void hostapd_get_uhr_capab(const struct ieee80211_uhr_capabilities *src,
+			   struct ieee80211_uhr_capabilities *dest,
+			   size_t len)
+{
+	if (!src || !dest)
+		return;
+
+	if (len > sizeof(*dest))
+		len = sizeof(*dest);
+	/* TODO: mask out unsupported features */
+
+	os_memset(dest, 0, sizeof(*dest));
+	os_memcpy(dest, src, len);
+}

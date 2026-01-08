@@ -5701,10 +5701,11 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 
 #ifdef CONFIG_QCN_EXTN
 					    0, NULL, NULL, NULL, 0, NULL, 0,
-					    NULL, NULL,
+					    NULL, 0, NULL, NULL,
 #else
 
-					    0, NULL, NULL, NULL, 0, NULL, 0, NULL,
+					    0, NULL, NULL, NULL, 0, NULL, 0, NULL, 0,
+					    NULL,
 #endif
 					    sta->flags, 0, 0, 0, 0,
 					    mld_link_addr, mld_link_sta,
@@ -5789,6 +5790,7 @@ static int add_associated_sta(struct hostapd_data *hapd,
 	struct ieee80211_vht_capabilities vht_cap;
 	struct ieee80211_he_capabilities he_cap;
 	struct ieee80211_eht_capabilities eht_cap;
+	struct ieee80211_uhr_capabilities uhr_cap;
 	int set = 1;
 	const u8 *mld_link_addr = NULL;
 	bool mld_link_sta = false;
@@ -5883,6 +5885,12 @@ static int add_associated_sta(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BN
+	if (sta->flags & WLAN_STA_UHR)
+		hostapd_get_uhr_capab(sta->uhr_capab, &uhr_cap,
+				      sta->uhr_capab_len);
+#endif /* CONFIG_IEEE80211BN */
+
 	/*
 	 * Add the station with forced WLAN_STA_ASSOC flag. The sta->flags
 	 * will be set when the ACK frame for the (Re)Association Response frame
@@ -5897,6 +5905,8 @@ static int add_associated_sta(struct hostapd_data *hapd,
 			    sta->flags & WLAN_STA_HE ? sta->he_capab_len : 0,
 			    sta->flags & WLAN_STA_EHT ? &eht_cap : NULL,
 			    sta->flags & WLAN_STA_EHT ? sta->eht_capab_len : 0,
+			    sta->flags & WLAN_STA_UHR ? &uhr_cap : NULL,
+			    sta->flags & WLAN_STA_UHR ? sta->uhr_capab_len : 0,
 
 #ifdef CONFIG_QCN_EXTN
 			    (struct sta_info_extn *)&sta->sta_extn,

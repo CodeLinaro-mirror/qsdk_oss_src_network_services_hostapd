@@ -47,6 +47,8 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    size_t he_capab_len,
 		    const struct ieee80211_eht_capabilities *eht_capab,
 		    size_t eht_capab_len,
+		    const struct ieee80211_uhr_capabilities *uhr_capab,
+		    size_t uhr_capab_len,
 #ifdef CONFIG_QCN_EXTN
 		    struct sta_info_extn *sta_extn,
 #endif
