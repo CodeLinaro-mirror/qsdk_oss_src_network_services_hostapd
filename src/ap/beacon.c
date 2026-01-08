@@ -860,6 +860,12 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 
 	}
 #endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->iconf->ieee80211bn)
+		buflen += 3 + sizeof(struct ieee80211_uhr_capabilities);
+#endif /* CONFIG_IEEE80211BN */
+
 	/* RMSL value would be sent in broadcast Probe response case */
 	if (!(params->req && (!is_6ghz_op_class(hapd->iconf->op_class) ||
 	    hapd_probed->conf->ignore_broadcast_ssid)))
@@ -1090,6 +1096,11 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 							 hapd);
 	}
 #endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->iconf->ieee80211bn)
+		pos = hostapd_eid_uhr_capab(hapd, pos, IEEE80211_MODE_AP);
+#endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_IEEE80211AC
 	if (hapd->conf->vendor_vht)

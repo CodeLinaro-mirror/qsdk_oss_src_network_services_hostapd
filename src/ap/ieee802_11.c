@@ -5458,6 +5458,10 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 			p = hostapd_eid_vendor_240mhz_extn(hapd, p,
 							   IEEE80211_MODE_AP);
 		}
+#ifdef CONFIG_IEEE80211BN
+		if (hapd->iconf->ieee80211bn)
+			p = hostapd_eid_uhr_capab(hapd, p, IEEE80211_MODE_AP);
+#endif /* CONFIG_IEEE80211BN */
 	}
 
 	p = hostapd_eid_ext_capab(hapd, p, false);
@@ -5959,6 +5963,11 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->iconf->ieee80211bn)
+		buflen += 3 + sizeof(struct ieee80211_uhr_capabilities);
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef CONFIG_HOSTAPD_IF
 	buflen += hostapd_if_assoc_resp_tail_len(sta, buflen);
 #endif
@@ -6137,6 +6146,11 @@ rsnxe_done:
 	    WLAN_STATUS_SUCCESS)
 		hostapd_apply_ttlm_mapping_to_driver(hapd, sta);
 #endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->iconf->ieee80211bn)
+		p = hostapd_eid_uhr_capab(hapd, p, IEEE80211_MODE_AP);
+#endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_OWE
 	if (((hapd->conf->wpa_key_mgmt | hapd->conf->rsn_override_key_mgmt |
