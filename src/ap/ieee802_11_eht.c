@@ -1259,7 +1259,7 @@ int hostapd_process_ml_assoc_req_addr(struct hostapd_data *hapd,
 	u16 ml_control;
 
 	if (!mlbuf)
-		return WLAN_STATUS_SUCCESS;
+		return ret;
 
 	ml = (struct ieee80211_eht_ml *) wpabuf_head(mlbuf);
 	ml_len = wpabuf_len(mlbuf);
