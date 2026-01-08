@@ -683,6 +683,12 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 		   cf1, cf2, chan_bw_interference_bitmap);
 
 	if (iface->conf->discard_6g_awgn_event) {
+		if (iface->bss && iface->bss[0] && iface->bss[0]->msg_ctx)
+			wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, INTERFERENCE_DETECTED
+				"type=%s freq=%d chan_width=%d cf1=%d cf2=%d bitmap=0x%x",
+				"AWGN", freq, chan_width, cf1, cf2,
+				chan_bw_interference_bitmap);
+
 		wpa_printf(MSG_DEBUG, "discard_6g_awgn_event set ignoring"
 			   " AWGN DETECT event from driver");
 		return 0;
