@@ -138,12 +138,23 @@ struct wpa_bss {
 
 	/** An array of MLD links, any link found in the RNR is "valid" */
 	u16 valid_links;
+#ifdef CONFIG_QCN_EXTN
+	u8 center_freq1_idx;
+	u8 center_freq2_idx;
+	le16 punc_bitmap;
+#endif
 	struct mld_link {
 		u8 bssid[ETH_ALEN];
 		int freq;
 
 		/* Whether the link is valid but currently disabled */
 		bool disabled;
+#ifdef CONFIG_QCN_EXTN
+		u8 center_freq1_idx;
+		u8 center_freq2_idx;
+		u8 width;
+		le16 punc_bitmap;
+#endif
 	} mld_links[MAX_NUM_MLD_LINKS];
 
 	/* followed by ie_len octets of IEs */

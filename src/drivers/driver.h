@@ -1216,6 +1216,12 @@ struct hostapd_freq_params {
 	 * one edge of the operating bandwidth.
 	 */
 	int center_freq_device;
+#ifdef CONFIG_QCN_EXTN
+	/**
+	 * skip_cac - Indicates whether Channel Availability Check (CAC) should be skipped.
+	 */
+	bool skip_cac;
+#endif
 };
 
 /**

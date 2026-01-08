@@ -43,6 +43,10 @@ void sme_external_auth_trigger(struct wpa_supplicant *wpa_s,
 void sme_external_auth_mgmt_rx(struct wpa_supplicant *wpa_s,
 			       const u8 *auth_frame, size_t len);
 
+#ifdef CONFIG_QCN_EXTN
+void sme_schedule_auth_radio_work(struct wpa_supplicant *wpa_s,
+				  struct wpa_connect_work *cwork);
+#endif
 #else /* CONFIG_SME */
 
 static inline void sme_authenticate(struct wpa_supplicant *wpa_s,

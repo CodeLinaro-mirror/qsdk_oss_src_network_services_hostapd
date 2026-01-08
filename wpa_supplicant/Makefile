@@ -2143,6 +2143,7 @@ endif
 
 ifdef CONFIG_QCN_EXTN
 include ../qcn_extns/Makefile
+OBJS += qcn_extns/wpa_supplicant_rptr_extn.o
 endif
 
 dynamic_eap_methods: $(EAPDYN)

@@ -1165,6 +1165,9 @@ static void wpa_supplicant_scan(void *eloop_ctx, void *timeout_ctx)
 
 	wpa_s->scan_prev_wpa_state = wpa_s->wpa_state;
 	if (wpa_s->wpa_state == WPA_DISCONNECTED ||
+#ifdef CONFIG_QCN_EXTN
+	    wpa_s->wpa_state == WPA_PRE_CONNECT ||
+#endif
 	    wpa_s->wpa_state == WPA_INACTIVE)
 		wpa_supplicant_set_state(wpa_s, WPA_SCANNING);
 

@@ -116,6 +116,9 @@ uc_value_t *uc_wpa_freq_info(uc_vm_t *vm, size_t nargs)
 	int cf1 = ucv_uint64_get(uc_fn_arg(4));
 	int cf2 = ucv_uint64_get(uc_fn_arg(5));
 	int punct_bitmap = ucv_uint64_get(uc_fn_arg(6));
+#ifdef CONFIG_QCN_EXTN
+	bool is_dfs = ucv_boolean_get(uc_fn_arg(7));
+#endif
 	int freq_val, center_idx, center_ofs;
 	enum oper_chan_width chanwidth;
 	enum hostapd_hw_mode hw_mode;
@@ -210,6 +213,9 @@ skip_chan_width:
 	ucv_object_add(ret, "sec_channel", ucv_int64_new(sec_channel));
 	ucv_object_add(ret, "frequency", ucv_int64_new(freq_val));
 	ucv_object_add(ret, "oper_chwidth", ucv_int64_new(chanwidth));
+#ifdef CONFIG_QCN_EXTN
+	ucv_object_add(ret, "is_dfs", ucv_boolean_new(is_dfs));
+#endif
 
 	if (!sec_channel && freq_val < 5900 && !cf1) {
 		ucv_object_add(ret, "center_seg0_idx", ucv_int64_new(seg0_idx));
@@ -270,6 +276,9 @@ skip_chan_width:
 	ucv_object_add(ret, "center_seg0_idx", ucv_int64_new(seg0_idx));
 	ucv_object_add(ret, "center_seg1_idx", ucv_int64_new(seg1_idx));
 	ucv_object_add(ret, "punct_bitmap", ucv_int64_new(punct_bitmap));
+#ifdef CONFIG_QCN_EXTN
+	ucv_object_add(ret, "is_dfs", ucv_boolean_new(is_dfs));
+#endif
 
 	return ret;
 }

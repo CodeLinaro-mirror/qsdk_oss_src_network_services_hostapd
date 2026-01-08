@@ -3315,6 +3315,9 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 			freq.link_id = hapd->mld_link_id;
 #endif /* CONFIG_IEEE80211BE */
 		params.freq = &freq;
+#ifdef CONFIG_QCN_EXTN
+		params.freq->skip_cac = iconf->conf_extn.skip_cac;
+#endif
 	}
 
 #ifdef CONFIG_IEEE80211BE

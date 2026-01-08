@@ -996,9 +996,17 @@ int hostapd_handle_dfs(struct hostapd_iface *iface)
 		/* Get number of used channels, depend on width */
 		n_chans = dfs_get_used_n_chans(iface, &n_chans1, chan_width);
 
+#ifdef CONFIG_QCN_EXTN
 		/* Setup CAC time */
-		iface->dfs_cac_ms = dfs_get_cac_time(iface, start_chan_idx,
-						     n_chans);
+		if (iface->conf->conf_extn.skip_cac) {
+			iface->dfs_cac_ms = 0;
+		} else {
+#endif
+			iface->dfs_cac_ms = dfs_get_cac_time(iface, start_chan_idx,
+							     n_chans);
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif
 
 		/* Check if any of configured channels require DFS */
 		res = dfs_check_chans_radar(iface, start_chan_idx, n_chans);
@@ -1503,12 +1511,19 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 					hostapd_setup_interface_complete(iface, 0);
 				} else if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_CSA) {
 					ieee802_11_set_beacon(hapd);
+#ifdef CONFIG_QCN_EXTN
+					hostapd_cleanup_cs_params(iface->bss[0]);
+#endif
 					hostapd_set_state(iface, HAPD_IFACE_ENABLED);
 					iface->cac_type = 0;
 					hostapd_start_device_cac_background(iface);
 				}
 			}
 		}
+
+#ifdef CONFIG_QCN_EXTN
+		hostapd_csa_bitmap_update_extn(iface, freq);
+#endif
 	} else if (is_background || hostapd_dfs_is_background_event(iface, freq)) {
 		iface->radar_background.cac_started = 0;
 		if (iface->conf->enable_background_radar)

@@ -1663,6 +1663,10 @@ struct wpa_supplicant {
 	u8 num_multi_hws;
 
 	bool scs_reconfigure;
+#ifdef CONFIG_QCN_EXTN
+	struct wpa_connect_work *cache_cwork;
+	int pre_connect_cnt;
+#endif
 };
 
 

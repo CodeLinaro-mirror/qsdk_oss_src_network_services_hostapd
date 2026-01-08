@@ -814,6 +814,9 @@ int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
 		     int he_enabled, bool eht_enabled, bool uhr_enabled,
 		     int sec_channel_offset, int oper_chwidth,
 		     int center_segment0, int center_segment1,
+#ifdef CONFIG_QCN_EXTN
+		     bool skip_cac_rep,
+#endif
 		     int bandwidth_device, int center_freq_device)
 {
 	struct hostapd_freq_params data;
@@ -845,6 +848,10 @@ int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
 
 	data.link_id = -1;
 
+#ifdef CONFIG_QCN_EXTN
+	if (skip_cac_rep)
+		data.skip_cac = 1;
+#endif
 #ifdef CONFIG_IEEE80211BE
 	if (hapd->conf->mld_ap) {
 		data.link_id = hapd->mld_link_id;
@@ -1295,6 +1302,14 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 		return -1;
 	}
 	data.radar_background = radar_background;
+
+#ifdef CONFIG_QCN_EXTN
+	if (iface->conf->conf_extn.ind_rptr) {
+		data.skip_cac = (iface->iface_extn.csa_bitmap && iface->conf->conf_extn.skip_cac);
+	} else {
+		data.skip_cac = iface->conf->conf_extn.skip_cac;
+	}
+#endif
 
 	data.link_id = -1;
 #ifdef CONFIG_IEEE80211BE
