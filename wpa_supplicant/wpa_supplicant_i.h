@@ -1855,6 +1855,10 @@ struct wpa_supplicant {
 	 * interface can be created with the same address when M1 arrives.
 	 */
 	u8 pr_responder_src_addr[ETH_ALEN];
+#ifdef CONFIG_QCN_EXTN
+	struct wpa_connect_work *cache_cwork;
+	int pre_connect_cnt;
+#endif
 };
 
 

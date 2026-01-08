@@ -49,7 +49,7 @@
 #include "interference.h"
 #include "ttlm.h"
 #include "robust_av.h"
-
+#include "../../qcn_extns/cmn.h"
 
 #ifdef CONFIG_FILS
 void hostapd_notify_assoc_fils_finish(struct hostapd_data *hapd,
@@ -1392,6 +1392,12 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 			wpa_msg(hapd->msg_ctx, MSG_INFO, AP_CSA_FINISHED
 				"freq=%d dfs=%d", freq, is_dfs);
 		}
+#ifdef CONFIG_QCN_EXTN
+		if (hapd->iconf->conf_extn.ind_rptr &&
+			((is_dfs && hapd->iconf->conf_extn.skip_cac) || !is_dfs)) {
+				hostapd_csa_bitmap_update_extn(hapd->iface, freq);
+		}
+#endif
 	} else {
 		if (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD) {
 		/* Complete AP configuration for the first bring up. */

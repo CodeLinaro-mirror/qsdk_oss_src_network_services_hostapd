@@ -1391,6 +1391,15 @@ static bool wpas_valid_ml_bss(struct wpa_supplicant *wpa_s, struct wpa_bss *bss)
 {
 	u16 removed_links;
 
+#ifdef CONFIG_QCN_EXTN
+	if (wpa_s->conf->ind_rptr) {
+		wpa_printf(MSG_INFO,
+		"%s: refreshing ML parse for BSS " MACSTR,
+		__func__, MAC2STR(bss->bssid));
+		wpa_bss_parse_basic_ml_element(wpa_s, bss);
+	}
+#endif
+
 	if (!bss->valid_links)
 		return true;
 
@@ -7201,6 +7210,9 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 		event_to_string(event), event);
 #endif /* CONFIG_NO_STDOUT_DEBUG */
 
+#ifdef CONFIG_QCN_EXTN
+	if (wpa_s->conf->rptr_mgr_comm_mode != RPTR_MGR_MODE_COMM_SOCK)
+#endif
 	wpas_ucode_event(wpa_s, event, data);
 	switch (event) {
 	case EVENT_AUTH:

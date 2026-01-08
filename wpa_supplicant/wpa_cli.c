@@ -3727,6 +3727,17 @@ static int wpa_cli_cmd_nan_flush(struct wpa_ctrl *ctrl, int argc,
 
 #endif /* CONFIG_NAN_USD */
 
+#ifdef CONFIG_QCN_EXTN
+static int wpa_cli_cmd_get_freq_list(struct wpa_ctrl *ctrl, int argc,
+					char *argv[])
+{
+	if (argc) {
+		printf("get_freq_list: no arguments expected\n");
+		return -1;
+	}
+	return wpa_ctrl_command(ctrl, "GET_FREQ_LIST");
+}
+#endif
 
 #ifdef CONFIG_NAN
 
@@ -4611,6 +4622,11 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	  "  [session_initiate|session_terminate]\n"
 	  " =enable/disable EPCS session" },
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_QCN_EXTN
+	{ "get_freq_list", wpa_cli_cmd_get_freq_list, NULL,
+	  cli_cmd_flag_none,
+	  "= show configured scan frequency list" },
+#endif
 #ifdef CONFIG_NAN_USD
 	{ "nan_publish", wpa_cli_cmd_nan_publish, NULL,
 	  cli_cmd_flag_none,
