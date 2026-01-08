@@ -11481,11 +11481,9 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 		/* WMM IE */
-		if (bss->conf->wmm_override) {
-			nontx_profile_len += hostapd_eid_wmm_len(bss);
-			if (tx_bss->conf->wmm_enabled && !bss->conf->wmm_enabled)
-				ie_count++;
-		}
+		nontx_profile_len += hostapd_eid_wmm_len(bss);
+		if (tx_bss->conf->wmm_enabled && !bss->conf->wmm_enabled)
+			ie_count++;
 
 		/* TTLM IE */
 		if (frame_type == WLAN_FC_STYPE_PROBE_RESP && tx_bss_ttlm_ctx) {
@@ -11790,16 +11788,14 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 
 		/* WMM IE */
 		startpos = eid;
-		if (bss->conf->wmm_override) {
-			eid = hostapd_eid_wmm(bss, eid, false);
-			hostapd_eid_update_cu_info(bss, &modified_flag, startpos,
-						   eid-startpos, ELEMID_CU_PARAM_WMM);
-			if (modified_flag && elemid_modified_bmap)
-				*elemid_modified_bmap |= BIT(i);
+		eid = hostapd_eid_wmm(bss, eid, false);
+		hostapd_eid_update_cu_info(bss, &modified_flag, startpos,
+				eid-startpos, ELEMID_CU_PARAM_WMM);
+		if (modified_flag && elemid_modified_bmap)
+			*elemid_modified_bmap |= BIT(i);
+		if (tx_bss->conf->wmm_enabled && !bss->conf->wmm_enabled)
+			non_inherit_ie[ie_count++] = WLAN_EID_VENDOR_SPECIFIC;
 
-			if (tx_bss->conf->wmm_enabled && !bss->conf->wmm_enabled)
-				non_inherit_ie[ie_count++] = WLAN_EID_VENDOR_SPECIFIC;
-		}
 		if (ie_count) {
 			*eid++ = WLAN_EID_EXTENSION;
 			*eid++ = 2 + ie_count + 1;
