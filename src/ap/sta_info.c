@@ -1318,7 +1318,7 @@ void set_link_id_for_each_partner_link_sta(struct hostapd_data *hapd,
 			continue;
 
 		lsta = ap_get_sta(lhapd, psta->addr);
-		if (lsta)
+		if (lsta && (psta->mld_assoc_link_id == lsta->mld_assoc_link_id))
 			lsta->mld_assoc_link_id = link_id;
 	}
 #endif /* CONFIG_IEEE80211BE */
@@ -1345,7 +1345,7 @@ int set_for_each_partner_link_sta(struct hostapd_data *hapd,
 			continue;
 
 		lsta = ap_get_sta(lhapd, psta->addr);
-		if (lsta)
+		if (lsta && (psta->mld_assoc_link_id == lsta->mld_assoc_link_id))
 			ret = cb(lhapd, lsta, data);
 		if (ret)
 			return ret;
