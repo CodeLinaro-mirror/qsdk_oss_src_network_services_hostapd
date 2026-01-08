@@ -862,8 +862,10 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hapd->iconf->ieee80211bn)
+	if (hapd->iconf->ieee80211bn) {
 		buflen += 3 + sizeof(struct ieee80211_uhr_capabilities);
+		buflen += 3 + sizeof(struct ieee80211_uhr_operation);
+	}
 #endif /* CONFIG_IEEE80211BN */
 
 	/* RMSL value would be sent in broadcast Probe response case */
@@ -1098,8 +1100,10 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hapd->iconf->ieee80211bn)
+	if (hapd->iconf->ieee80211bn) {
 		pos = hostapd_eid_uhr_capab(hapd, pos, IEEE80211_MODE_AP);
+		pos = hostapd_eid_uhr_operation(hapd, pos, false);
+	}
 #endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_IEEE80211AC
@@ -2610,6 +2614,12 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn)
+		tail_len += (3 + sizeof(struct ieee80211_uhr_operation) -
+			     sizeof(struct ieee80211_uhr_oper_info) - 2);
+#endif /* CONFIG_IEEE80211BN */
+
 	if (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
 	    hapd == hostapd_mbssid_get_tx_bss(hapd))
 		tail_len += 5; /* Multiple BSSID Configuration element */
@@ -2861,6 +2871,11 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 			tailpos = hostapd_add_traffic_ind_elem(hapd, tailpos);
 	}
 #endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn)
+		tailpos = hostapd_eid_uhr_operation(hapd, tailpos, true);
+#endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_IEEE80211AC
 	if (hapd->conf->vendor_vht)
