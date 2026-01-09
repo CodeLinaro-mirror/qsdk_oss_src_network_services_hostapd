@@ -3078,6 +3078,7 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 #endif /* CONFIG_IEEE80211AX */
 
 	hapd->beacon_set_done = 1;
+	hapd->iface->rnr_psd = hostapd_get_20mhz_psd_for_rnr(hapd);
 
 #ifdef CONFIG_QCN_EXTN
 	/* RNR memeber ess colocated indication in bss param */

@@ -559,6 +559,15 @@ int hostapd_configure_epcs(struct hostapd_data *hapd,
 void
 hostapd_free_reconf_sta_add_params(struct hostapd_sta_add_params *params);
 #endif /* CONFIG_IEEE80211BE */
+
+/**
+ * hostapd_get_20mhz_psd_for_rnr - Fetch 20 MHz PSD value for RNR element in 0.5 dBm scale
+ * @hapd: Pointer to hostapd_data structure
+ *
+ * Return: PSD value in dBm/MHz (signed 8-bit), or CHAN_MIN_TX_POWER
+ *         (-64) on error
+ */
+s8 hostapd_get_20mhz_psd_for_rnr(struct hostapd_data *hapd);
 u8 * hostapd_fragment_multi_link_element(struct wpabuf *buf, u8 *pos);
 unsigned int wnm_neighbor_report_get_pref_link_mask(const u8 *neigh_rep,
 						    size_t neigh_rep_len);

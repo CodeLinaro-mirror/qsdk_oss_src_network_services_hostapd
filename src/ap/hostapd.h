@@ -930,6 +930,8 @@ struct hostapd_iface {
 	 * once NL8011_WIPHY_REG_CHANGE event is received.
 	 */
 	bool is_afc_channel_change_pending;
+	/* Cached PSD value for RNR */
+	s8 rnr_psd;
 
 	struct hostapd_iface_extn iface_extn;
 
