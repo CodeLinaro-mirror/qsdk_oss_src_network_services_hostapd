@@ -6286,6 +6286,16 @@ struct wpa_driver_ops {
 	 */
 	int (*dcs_config)(void *priv, u8 link_id,
 			  struct driver_dcs_config *params);
+
+	/**
+	 * dcs_sim - Send the DCS simulation params to driver in order to trigger
+	 * interference.
+	 * @priv: Private driver interface data
+	 * @link_id: Link ID of the specified link; -1 for non-MLD
+	 * @params: dcs sim structure.
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*dcs_sim)(void *priv, u8 link_id, struct driver_dcs_sim *params);
 #endif
 #endif /* CONFIG_IEEE80211BE */
 
