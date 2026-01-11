@@ -217,6 +217,7 @@ struct sta_info {
 	char *identity; /* User-Name from RADIUS */
 	char *radius_cui; /* Chargeable-User-Identity from RADIUS */
 
+	u32 last_rx_mgmt_rate;
 	struct ieee80211_ht_capabilities *ht_capabilities;
 	struct ieee80211_vht_capabilities *vht_capabilities;
 	struct ieee80211_vht_operation *vht_operation;

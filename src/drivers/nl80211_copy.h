@@ -4138,6 +4138,13 @@ enum nl80211_sta_info {
 	NL80211_STA_INFO_CONNECTED_TO_AS,
 	NL80211_STA_INFO_RX_RETRIES,
 
+	/* Fix me: This section should be removed once the
+	 * corresponding changes are merged upstream.*/
+	NL80211_STA_INFO_PN_ERRORS = 58,
+	NL80211_STA_INFO_MIC_ERRORS = 59,
+	NL80211_STA_INFO_DECRYPT_ERRORS = 60,
+	NL80211_STA_INFO_MGMT_SIGNAL = 61,
+
 	/* keep last */
 	__NL80211_STA_INFO_AFTER_LAST,
 	NL80211_STA_INFO_MAX = __NL80211_STA_INFO_AFTER_LAST - 1

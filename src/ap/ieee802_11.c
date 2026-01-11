@@ -7643,6 +7643,12 @@ int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 		return 1;
 	}
 
+	if (fi && fi->datarate) {
+		struct sta_info *rx_sta = ap_get_sta(hapd, mgmt->sa);
+		if (rx_sta)
+			rx_sta->last_rx_mgmt_rate = fi->datarate;
+	}
+
 	if (!is_broadcast_ether_addr(mgmt->bssid) &&
 #ifdef CONFIG_NAN_USD
 	    !nan_de_is_nan_network_id(mgmt->bssid) &&
