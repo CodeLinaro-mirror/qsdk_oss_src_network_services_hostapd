@@ -1954,11 +1954,19 @@ bool hostapd_is_beacon_tx_rate_preamble_valid(const struct hostapd_config *iconf
 			wpa_printf(MSG_ERROR,
 				   "HE rate is configured for beacon_rate, but 11ax is disabled");
 			return false;
-	} else if (bss->rate_type == BEACON_RATE_EHT &&
-		   !(iconf->ieee80211be && !bss->disable_11be)) {
+	} else if (bss->rate_type == BEACON_RATE_EHT) {
+		/* EHT preamble requires 11be enabled */
+		if (!(iconf->ieee80211be && !bss->disable_11be)) {
 			wpa_printf(MSG_ERROR,
 				   "EHT rate is configured for beacon_rate, but 11be is disabled");
 			return false;
+		}
+		/* Disallow EHT MCS 15 when enable_mcs15 is disabled */
+		if (!iconf->enable_mcs15 && bss->beacon_rate == 15) {
+			wpa_printf(MSG_ERROR,
+				   "EHT MCS 15 is configured for beacon_rate, but enable_mcs15 is disabled");
+			return false;
+		}
 	}
 
 	return true;
