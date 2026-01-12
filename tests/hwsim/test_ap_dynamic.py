@@ -631,3 +631,189 @@ def test_ap_reload_bss_only(dev, apdev, params):
 
     dev[0].set_network_quoted(id, "ssid", "test-new-ssid")
     dev[0].connect_network(id)
+
+@remote_compatible
+def test_ap_disable_enable_bss_single(dev, apdev):
+    """DISABLE_BSS and ENABLE_BSS on single BSS"""
+    params = {"ssid": "test-disable-enable"}
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    logger.info("Connect client to BSS")
+    dev[0].connect("test-disable-enable", key_mgmt="NONE", scan_freq="2412")
+    hwsim_utils.test_connectivity(dev[0], hapd)
+    wait_iw_dev_ssid(dev[0], hapd.ifname, params["ssid"])
+    log_iw_dev(dev[0], "after connect")
+
+    logger.info("Disable BSS")
+    if "OK" not in hapd.request("DISABLE_BSS"):
+        raise Exception("DISABLE_BSS command failed")
+
+    # Wait for AP-DISABLED event
+    ev = hapd.wait_event(["AP-DISABLED"], timeout=5)
+    if ev is None:
+        raise Exception("AP-DISABLED event not received")
+    wait_iw_dev_no_ssid(dev[0], hapd.ifname)
+    log_iw_dev(dev[0], "after DISABLE_BSS")
+
+    # Client should be disconnected
+    dev[0].wait_disconnected(timeout=5)
+    logger.info("Client disconnected as expected after DISABLE_BSS")
+
+    # Verify BSS is disabled - client should not be able to connect
+    dev[0].request("RECONNECT")
+    ev = dev[0].wait_event(["CTRL-EVENT-CONNECTED"], timeout=3)
+    if ev is not None:
+        raise Exception("Client connected to disabled BSS unexpectedly")
+    logger.info("Verified BSS is disabled - client cannot connect")
+
+    logger.info("Enable BSS")
+    if "OK" not in hapd.request("ENABLE_BSS"):
+        raise Exception("ENABLE_BSS command failed")
+
+    # Wait for AP-ENABLED event
+    ev = hapd.wait_event(["AP-ENABLED"], timeout=5)
+    if ev is None:
+        raise Exception("AP-ENABLED event not received")
+    wait_iw_dev_ssid(dev[0], hapd.ifname, params["ssid"])
+    log_iw_dev(dev[0], "after ENABLE_BSS")
+
+    # Client should be able to reconnect
+    dev[0].wait_connected(timeout=10)
+    logger.info("Client reconnected successfully after ENABLE_BSS")
+    hwsim_utils.test_connectivity(dev[0], hapd)
+
+    dev[0].request("DISCONNECT")
+    dev[0].wait_disconnected()
+
+@remote_compatible
+def test_ap_disable_bss_tbtt_non_mbssid(dev, apdev):
+    """DISABLE_BSS with TBTT countdown on non-MBSSID BSS"""
+    params = {"ssid": "test-disable-tbtt", "beacon_int": "100"}
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    logger.info("Connect client to BSS")
+    dev[0].connect("test-disable-tbtt", key_mgmt="NONE", scan_freq="2412")
+    hwsim_utils.test_connectivity(dev[0], hapd)
+    wait_iw_dev_ssid(dev[0], hapd.ifname, params["ssid"])
+    log_iw_dev(dev[0], "after connect")
+
+    logger.info("Disable BSS with TBTT countdown of 5")
+    tbtt_count = 5
+    if "OK" not in hapd.request("DISABLE_BSS %d" % tbtt_count):
+        raise Exception("DISABLE_BSS with TBTT failed")
+
+    # Wait only for the final disabled state; implementation may disable
+    # earlier than the nominal half-countdown point, so do not assert
+    # mid-countdown activity here.
+    ev = hapd.wait_event(["AP-DISABLED"], timeout=5)
+    if ev is None:
+        raise Exception("AP-DISABLED event not received after TBTT countdown")
+    wait_iw_dev_no_ssid(dev[0], hapd.ifname)
+    log_iw_dev(dev[0], "after TBTT countdown DISABLE_BSS")
+
+    # Client should be disconnected
+    dev[0].wait_disconnected(timeout=5)
+    logger.info("Client disconnected after TBTT countdown completed")
+
+    # Verify BSS is disabled
+    dev[0].request("RECONNECT")
+    ev = dev[0].wait_event(["CTRL-EVENT-CONNECTED"], timeout=3)
+    if ev is not None:
+        raise Exception("Client connected to disabled BSS unexpectedly")
+
+    logger.info("Enable BSS again")
+    if "OK" not in hapd.request("ENABLE_BSS"):
+        raise Exception("ENABLE_BSS command failed")
+
+    ev = hapd.wait_event(["AP-ENABLED"], timeout=5)
+    if ev is None:
+        raise Exception("AP-ENABLED event not received")
+    wait_iw_dev_ssid(dev[0], hapd.ifname, params["ssid"])
+    log_iw_dev(dev[0], "after ENABLE_BSS")
+
+    dev[0].wait_connected(timeout=10)
+    logger.info("Client reconnected successfully after ENABLE_BSS")
+
+    dev[0].request("DISCONNECT")
+    dev[0].wait_disconnected()
+
+def test_ap_disable_enable_multiple_bss(dev, apdev):
+    """DISABLE_BSS and ENABLE_BSS on multiple BSSes"""
+    try:
+        _test_ap_disable_enable_multiple_bss(dev, apdev)
+    finally:
+        for i in range(2):
+            dev[i].request("SCAN_INTERVAL 5")
+
+def _test_ap_disable_enable_multiple_bss(dev, apdev):
+    for i in range(2):
+        dev[i].flush_scan_cache()
+        dev[i].request("SCAN_INTERVAL 1")
+
+    ifname1 = apdev[0]['ifname']
+    ifname2 = apdev[0]['ifname'] + '-2'
+
+    logger.info("Set up two BSSes")
+    hapd1 = hostapd.add_bss(apdev[0], ifname1, 'bss-1.conf')
+    hapd2 = hostapd.add_bss(apdev[0], ifname2, 'bss-2.conf')
+
+    logger.info("Connect clients to both BSSes")
+    dev[0].connect("bss-1", key_mgmt="NONE", scan_freq="2412")
+    dev[1].connect("bss-2", key_mgmt="NONE", scan_freq="2412")
+    wait_iw_dev_ssid(dev[0], ifname1, "bss-1")
+    wait_iw_dev_ssid(dev[0], ifname2, "bss-2")
+    log_iw_dev(dev[0], "after connect both BSSes")
+
+    logger.info("Disable first BSS")
+    if "OK" not in hapd1.request("DISABLE_BSS"):
+        raise Exception("DISABLE_BSS on first BSS failed")
+
+    ev = hapd1.wait_event(["AP-DISABLED"], timeout=5)
+    if ev is None:
+        raise Exception("AP-DISABLED event not received for first BSS")
+    wait_iw_dev_no_ssid(dev[0], ifname1)
+    log_iw_dev(dev[0], "after DISABLE_BSS bss-1")
+
+    # Second BSS should remain active
+    ev = dev[1].wait_event(["CTRL-EVENT-DISCONNECTED"], timeout=2)
+    if ev is not None:
+        raise Exception("Client 1 unexpectedly disconnected from second BSS")
+    wait_iw_dev_ssid(dev[0], ifname2, "bss-2")
+    logger.info("Client 1 remains connected to second BSS")
+
+    logger.info("Disable second BSS")
+    if "OK" not in hapd2.request("DISABLE_BSS"):
+        raise Exception("DISABLE_BSS on second BSS failed")
+
+    ev = hapd2.wait_event(["AP-DISABLED"], timeout=5)
+    if ev is None:
+        raise Exception("AP-DISABLED event not received for second BSS")
+    wait_iw_dev_no_ssid(dev[0], ifname2)
+    log_iw_dev(dev[0], "after DISABLE_BSS bss-2")
+
+    logger.info("Enable both BSSes")
+    if "OK" not in hapd1.request("ENABLE_BSS"):
+        raise Exception("ENABLE_BSS on first BSS failed")
+    if "OK" not in hapd2.request("ENABLE_BSS"):
+        raise Exception("ENABLE_BSS on second BSS failed")
+
+    ev = hapd1.wait_event(["AP-ENABLED"], timeout=5)
+    if ev is None:
+        raise Exception("AP-ENABLED event not received for first BSS")
+    ev = hapd2.wait_event(["AP-ENABLED"], timeout=5)
+    if ev is None:
+        raise Exception("AP-ENABLED event not received for second BSS")
+    wait_iw_dev_ssid(dev[0], ifname1, "bss-1")
+    wait_iw_dev_ssid(dev[0], ifname2, "bss-2")
+    log_iw_dev(dev[0], "after ENABLE_BSS both")
+
+    logger.info("Reconnect clients")
+    dev[0].request("RECONNECT")
+    dev[1].request("RECONNECT")
+    dev[0].wait_connected(timeout=10)
+    dev[1].wait_connected(timeout=10)
+    logger.info("Both clients reconnected successfully")
+
+    for i in range(2):
+        dev[i].request("DISCONNECT")
+        dev[i].wait_disconnected()
