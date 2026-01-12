@@ -1139,6 +1139,8 @@ int hostapd_link_remove(struct hostapd_data *hapd, u32 count)
 
 void hostapd_free_hapd_data(struct hostapd_data *hapd)
 {
+	const bool skip_unstarted_bss_cleanup = !hapd->started;
+
 	os_free(hapd->probereq_cb);
 	hapd->probereq_cb = NULL;
 	hapd->num_probereq_cb = 0;
@@ -1155,11 +1157,9 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 	hapd->p2p_probe_resp_ie = NULL;
 #endif /* CONFIG_P2P */
 
-	if (!hapd->started) {
-		wpa_printf(MSG_ERROR, "%s: Interface %s wasn't started",
-			   __func__, hapd->conf ? hapd->conf->iface : "N/A");
-		return;
-	}
+	if (skip_unstarted_bss_cleanup)
+		goto remove_if;
+
 	hapd->started = 0;
 	hapd->beacon_set_done = 0;
 
@@ -1190,10 +1190,11 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 
 	authsrv_deinit(hapd);
 
+remove_if:
 	/* For single drv, first bss would have interface_added flag set.
 	 * Don't remove interface now. Driver deinit part will take care
 	 */
-	if (hapd->interface_added && hapd->iface->bss[0] != hapd) {
+	if (!hapd->reenable && hapd->interface_added && hapd->iface->bss[0] != hapd) {
 		hapd->interface_added = 0;
 		if (hostapd_if_remove(hapd, WPA_IF_AP_BSS, hapd->conf->iface)) {
 			wpa_printf(MSG_WARNING,
@@ -1214,11 +1215,14 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 	/* If the interface was not added as well as it is not the first BSS,
 	 * at least the link should be removed here since deinit will take care
 	 * of only the first BSS. */
-	if (hapd->conf->mld_ap && !hapd->interface_added &&
-	    hapd->iface->bss[0] != hapd)
+	if (!hapd->reenable && hapd->conf && hapd->conf->mld_ap &&
+	    !hapd->interface_added && hapd->iface->bss[0] != hapd)
 		hostapd_if_link_remove(hapd, WPA_IF_AP_BSS, hapd->conf->iface,
-				       hapd->mld_link_id);
+					       hapd->mld_link_id);
 #endif /* CONFIG_IEEE80211BE */
+
+	if (skip_unstarted_bss_cleanup)
+		return;
 
 	wpabuf_free(hapd->time_adv);
 	hapd->time_adv = NULL;
@@ -1308,6 +1312,7 @@ static void hostapd_bss_link_deinit(struct hostapd_data *hapd)
 {
 #ifdef CONFIG_IEEE80211BE
 	int i;
+	bool linked;
 
 	if (!hapd->conf || !hapd->conf->mld_ap)
 		return;
@@ -1320,14 +1325,16 @@ static void hostapd_bss_link_deinit(struct hostapd_data *hapd)
 	}
 
 	/* Put all freeing logic above this */
-	if (!hapd->mld || !hapd->mld->num_links)
+	if (!hapd->mld || hapd->reenable)
 		return;
+
+	linked = hapd->link.next && hapd->link.prev;
 
 	/* If not started, not yet linked to the MLD. However, the first
 	 * BSS is always linked since it is linked during driver_init(), and
 	 * hence, need to remove it from the AP MLD.
 	 */
-	if (!hapd->started && hapd->iface->bss[0] != hapd)
+	if (!hapd->started && hapd->iface->bss[0] != hapd && !linked)
 		return;
 
 	/* The first BSS can also be only linked when at least driver_init() is
@@ -5182,6 +5189,34 @@ int hostapd_reload_bss_only(struct hostapd_data *bss)
 	return 0;
 }
 
+int hostapd_disable_bss(struct hostapd_data *hapd)
+{
+	size_t i;
+
+	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_DISABLED);
+
+	/* Stop AP at driver level: no more beacons/tx for this BSS. */
+	hostapd_drv_stop_ap(hapd);
+
+	/* Deinitialize higher-level BSS state but keep netdev/link. */
+	hostapd_bss_deinit_no_free(hapd);
+	hapd->reenable = 1;
+	hostapd_bss_link_deinit(hapd);
+	hostapd_free_hapd_data(hapd);
+	hapd->reenable = 0;
+
+	for (i = 0; i < hapd->iface->num_bss; i++) {
+		if (hapd->iface->bss[i]->started)
+			break;
+	}
+
+	if (i == hapd->iface->num_bss)
+		hostapd_interface_update_fils_ubpr(hapd->iface, false);
+
+	hostapd_refresh_all_iface_beacons(hapd->iface);
+
+	return 0;
+}
 
 int hostapd_disable_iface(struct hostapd_iface *hapd_iface)
 {
