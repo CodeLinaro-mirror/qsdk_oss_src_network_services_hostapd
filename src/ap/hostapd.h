@@ -262,6 +262,15 @@ struct elemid_cu_param {
 	u32 hash;
 };
 
+/**
+ * enum link_reconfigure_type - Used to distinguish the link removal/disable
+ * type
+ */
+enum link_reconfigure_type {
+	HAPD_LINK_REMOVAL, /* Default */
+	HAPD_LINK_DISABLE, /* Disable the link, instead of removal */
+};
+
 #define MAX_CHANNEL_USAGE_ELEMENTS 6
 #define MAX_CHANNEL_ENTRIES_PER_ELEMENT 10
 
@@ -645,6 +654,7 @@ struct hostapd_data {
 
 	u8 eht_mld_link_removal_count;
 	u8 eht_mld_link_removal_inprogress;
+	enum link_reconfigure_type removal_type;
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_NAN_USD
@@ -1034,7 +1044,7 @@ int hostapd_iface_num_sta(struct hostapd_iface *iface);
 int hostapd_enable_iface(struct hostapd_iface *hapd_iface);
 int hostapd_reload_iface(struct hostapd_iface *hapd_iface);
 int hostapd_reload_bss_only(struct hostapd_data *bss);
-int hostapd_disable_bss(struct hostapd_data *hapd);
+int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt);
 int hostapd_enable_bss(struct hostapd_data *hapd);
 int hostapd_disable_iface(struct hostapd_iface *hapd_iface);
 void hostapd_bss_deinit_no_free(struct hostapd_data *hapd);
@@ -1129,7 +1139,8 @@ struct hostapd_data * hostapd_mbssid_get_tx_bss(struct hostapd_data *hapd);
 unsigned int hostapd_mbssid_get_bss_index(struct hostapd_data *hapd);
 struct hostapd_data * hostapd_mld_get_link_bss(struct hostapd_data *hapd,
 					       u8 link_id);
-int hostapd_link_remove(struct hostapd_data *hapd, u32 count);
+int hostapd_link_remove(struct hostapd_data *hapd, u32 count,
+			enum link_reconfigure_type removal_type);
 struct hostapd_data *
 hostapd_interfaces_get_hapd(struct hapd_interfaces *interfaces,
 			    const char *ifname);
