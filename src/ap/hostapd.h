@@ -953,6 +953,7 @@ struct hostapd_iface {
 	/* Multi MBSSID group information */
 	struct hostapd_multi_mbssid multi_mbssid;
 	u32 mbssid_idx_bmap;
+	size_t max_mgmt_frm_sz;
 
 	/* Use assisted DFS functionality from the driver. This is used only
 	 * in wpa_supplicant builds for P2P GO functionality. */
