@@ -3327,6 +3327,14 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 		iface = hapd->iface;
 		interfaces = iface->interfaces;
 
+			/* Only disable the link instead of removing */
+			if (hapd->removal_type == HAPD_LINK_DISABLE) {
+				hostapd_free_link_stas(hapd);
+				hostapd_disable_bss(hapd, 0);
+				phapd = hapd;
+				goto refresh_beacon;
+			}
+
 		/* Save one of the partner bss to update the beacon */
 		for_each_mld_link(phapd, hapd) {
 			if (phapd != hapd) {
@@ -3375,6 +3383,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 				ieee802_11_update_beacon_mbssid(tx_hapd);
 		}
 
+	refresh_beacon:
 		/* Refresh all the partner beacons */
 		if (partner) {
 			if (iface)

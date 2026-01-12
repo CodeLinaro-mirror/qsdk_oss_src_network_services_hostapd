@@ -847,7 +847,8 @@ static bool is_link_reconfigure_allowed(struct hostapd_data *hapd)
 }
 
 
-int hostapd_link_remove(struct hostapd_data *hapd, u32 count)
+int hostapd_link_remove(struct hostapd_data *hapd, u32 count,
+			enum link_reconfigure_type removal_type)
 {
 	struct hostapd_iface *iface = hapd->iface;
 	size_t i;
@@ -865,6 +866,7 @@ int hostapd_link_remove(struct hostapd_data *hapd, u32 count)
 		    wpa_printf(MSG_INFO, "link reconfigure is currently not applicable\n");
 		    return -1;
 	    }
+	    hapd->removal_type = removal_type;
 
 	    /* Check if the link removal is scheduled for tx BSS
 	     * If yes, schedule link removal for all non-tx BSS first
@@ -888,6 +890,7 @@ int hostapd_link_remove(struct hostapd_data *hapd, u32 count)
 				    continue;
 			    bss->eht_mld_link_removal_inprogress = true;
 			    bss->eht_mld_link_removal_count = count;
+			    bss->removal_type = removal_type;
 			    if (hostapd_send_ml_reconfig_link_removal(bss, count)) {
 				    wpa_printf(MSG_DEBUG,
 					       "Failed to send link removal non-tx BSS");
@@ -994,6 +997,7 @@ remove_if:
 	 * of only the first BSS. */
 	if (!hapd->reenable && hapd->conf && hapd->conf->mld_ap &&
 	    !hapd->interface_added && hapd->iface->bss[0] != hapd)
+					    bss->removal_type = removal_type;
 		hostapd_if_link_remove(hapd, WPA_IF_AP_BSS, hapd->conf->iface,
 					       hapd->mld_link_id);
 #endif /* CONFIG_IEEE80211BE */
@@ -5147,10 +5151,19 @@ int hostapd_reload_bss_only(struct hostapd_data *bss)
 	return 0;
 }
 
-int hostapd_disable_bss(struct hostapd_data *hapd)
+int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt)
 {
 	size_t i;
 
+#ifdef CONFIG_IEEE80211BE
+	if (tbtt > 0 && hapd->iface &&
+	    !hostapd_link_remove(hapd, tbtt, HAPD_LINK_DISABLE)) {
+		wpa_printf(MSG_INFO,
+			   "Reconfigure for ML BSS is started, will be disabled after %d TBTT",
+			   tbtt);
+		return 0;
+	}
+#endif /* CONFIG_IEEE80211BE */
 	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_DISABLED);
 
 	/* Stop AP at driver level: no more beacons/tx for this BSS. */
