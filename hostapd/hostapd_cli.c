@@ -1692,6 +1692,13 @@ static int hostapd_cli_cmd_disable_bss(struct wpa_ctrl *ctrl, int argc,
 }
 
 
+static int hostapd_cli_cmd_enable_bss(struct wpa_ctrl *ctrl, int argc,
+				      char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "ENABLE_BSS");
+}
+
+
 static int hostapd_cli_cmd_enable_mld(struct wpa_ctrl *ctrl, int argc,
 				      char *argv[])
 {
@@ -2573,6 +2580,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "= disable hostapd on current interface" },
 	{ "disable_bss", hostapd_cli_cmd_disable_bss, NULL,
 	  "= disable this BSS" },
+	{ "enable_bss", hostapd_cli_cmd_enable_bss, NULL,
+	  "= enable this BSS" },
 	{ "enable_mld", hostapd_cli_cmd_enable_mld, NULL,
 	  "= enable AP MLD to which the interface is affiliated" },
 #ifdef CONFIG_TESTING_OPTIONS
