@@ -2510,6 +2510,16 @@ disable_bss:
 	return 0;
 }
 
+static int hostapd_ctrl_iface_enable_bss(struct hostapd_data *hapd)
+{
+	if (hostapd_enable_bss(hapd) < 0) {
+		wpa_printf(MSG_ERROR, "Enabling of BSS %s failed",
+			   hapd->conf->iface);
+		return -1;
+	}
+	return 0;
+}
+
 static int
 hostapd_ctrl_iface_kick_mismatch_psk_sta_iter(struct hostapd_data *hapd,
 					      struct sta_info *sta, void *ctx)
@@ -7638,6 +7648,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 			reply_len = -1;
 	} else if (os_strcmp(buf, "DISABLE_BSS") == 0) {
 		if (hostapd_ctrl_iface_disable_bss(hapd))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "ENABLE_BSS") == 0) {
+		if (hostapd_ctrl_iface_enable_bss(hapd))
 			reply_len = -1;
 	} else if (os_strcmp(buf, "RELOAD_WPA_PSK") == 0) {
 		if (hostapd_ctrl_iface_reload_wpa_psk(hapd))

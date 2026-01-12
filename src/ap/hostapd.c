@@ -2069,8 +2069,8 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon)
 	is_mesh = hapd->iface->mconf ? true : false;
 #endif
 
-	wpa_printf(MSG_DEBUG, "%s(hapd=%p (%s), first=%d)",
-		   __func__, hapd, conf->iface, first);
+	wpa_printf(MSG_DEBUG, "%s(hapd=%p (%s), first=%d reenable=%u)",
+		   __func__, hapd, conf->iface, first, hapd->reenable);
 
 	/* prepare per-BSS rates early from BSS config and current mode */
 	if (hapd->iface->current_mode) {
@@ -2099,6 +2099,9 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon)
 
 	if (!first || first == -1) {
 		u8 *addr = hapd->own_addr;
+
+		if (hapd->reenable)
+			goto setup_mld;
 
 		if (!is_zero_ether_addr(conf->bssid)) {
 			/* Allocate the configured BSSID. */
@@ -2211,14 +2214,15 @@ setup_mld:
 		}
 #endif /* CONFIG_QCN_EXTN */
 
-		if (hostapd_drv_link_add(hapd, hapd->mld_link_id,
-					 hapd->own_addr)) {
+		if (!hapd->reenable && hostapd_drv_link_add(hapd, hapd->mld_link_id,
+							    hapd->own_addr)) {
 			wpa_printf(MSG_ERROR,
 				   "MLD: Failed to add link %d in MLD %s",
 				   hapd->mld_link_id, hapd->conf->iface);
 			return -1;
 		}
-		hostapd_mld_add_link(hapd);
+		if (!hapd->reenable)
+			hostapd_mld_add_link(hapd);
 		hostapd_validate_update_ml_max_rec_links(hapd);
 	}
 	if (!is_mesh && hapd->iface->current_hw_info &&
@@ -5214,6 +5218,51 @@ int hostapd_disable_bss(struct hostapd_data *hapd)
 		hostapd_interface_update_fils_ubpr(hapd->iface, false);
 
 	hostapd_refresh_all_iface_beacons(hapd->iface);
+
+	return 0;
+}
+
+int hostapd_enable_bss(struct hostapd_data *hapd)
+{
+	struct hostapd_iface *hapd_iface;
+	size_t i;
+
+	if (hapd->started) {
+		wpa_printf(MSG_INFO, "BSS %s already enabled",
+			   hapd->conf->iface);
+		return -1;
+	}
+
+	hapd_iface = hapd->iface;
+	for (i = 0; i < hapd_iface->num_bss; i++) {
+		if (hapd_iface->bss[i]->started)
+			break;
+	}
+
+	wpa_printf(MSG_DEBUG, "Enable BSS %s", hapd->conf->iface);
+
+	/* Configure security parameters for this BSS. */
+	hostapd_set_security_params(hapd->conf, 1);
+	if (hostapd_config_check(hapd->iconf, 1) < 0) {
+		wpa_printf(MSG_ERROR, "Updated BSS configuration is invalid");
+		return -1;
+	}
+
+	hapd->reenable = 1;
+	/* Re-setup this BSS without adding netdev/link again. */
+	if (hostapd_setup_bss(hapd, -1, true)) {
+		hapd->reenable = 0;
+		wpa_printf(MSG_ERROR, "Failed to re-enable BSS %s",
+			   hapd->conf->iface);
+		return -1;
+	}
+
+	hapd->reenable = 0;
+	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
+
+	if (i == hapd_iface->num_bss)
+		hostapd_interface_update_fils_ubpr(hapd_iface, true);
+	hostapd_refresh_all_iface_beacons(hapd_iface);
 
 	return 0;
 }
