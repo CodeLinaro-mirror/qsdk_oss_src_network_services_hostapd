@@ -503,8 +503,10 @@ int get_sta_mlo_interface_info(struct i802_bss *bss);
  * @bss: Pointer to the BSS data
  * @data: Event data
  * @len: Length of the event data
+ * @check_first_bss: Flag to indicate whether to check only for the first BSS
  * Returns: 0 on success, -ve value on failure
  */
-int qca_nl80211_handle_afc_events(struct i802_bss *bss, u8 *data, size_t len);
+int qca_nl80211_handle_afc_events(struct i802_bss *bss, u8 *data, size_t len,
+				  bool check_first_bss);
 
 #endif /* DRIVER_NL80211_H */

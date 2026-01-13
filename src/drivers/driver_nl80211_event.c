@@ -4696,7 +4696,8 @@ qca_nl80211_afc_power_update_completed(struct i802_bss *bss,
 
 int
 qca_nl80211_handle_afc_events(struct i802_bss *bss,
-			      u8 *data, size_t len)
+				      u8 *data, size_t len,
+				      bool check_first_bss)
 {
 	struct nlattr *attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_MAX + 1];
 	u8 event_type;
@@ -4729,6 +4730,18 @@ qca_nl80211_handle_afc_events(struct i802_bss *bss,
 	}
 
 	event_type = nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_TYPE]);
+	if (check_first_bss &&
+	    bss != bss->drv->first_bss) {
+		wpa_printf(MSG_DEBUG,
+			   "Ignore AFC event %d received for hw_idx %d on %s\n",
+			   event_type, received_hw_index, bss->ifname);
+		return 0;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "Handling AFC event %d received for hw_idx %d on %s\n",
+		   event_type, received_hw_index, bss->ifname);
+
 	switch (event_type) {
 	case QCA_WLAN_VENDOR_AFC_EVENT_TYPE_POWER_UPDATE_COMPLETE:
 		qca_nl80211_afc_power_update_completed(bss, data, len);
@@ -4762,7 +4775,7 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 {
 	switch (subcmd) {
 	case QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT:
-		qca_nl80211_handle_afc_events(bss, data, len);
+		qca_nl80211_handle_afc_events(bss, data, len, true);
 		break;
 	case QCA_NL80211_VENDOR_SUBCMD_IFACE_RELOAD:
 		qca_nl80211_iface_reload(bss, data, len);
