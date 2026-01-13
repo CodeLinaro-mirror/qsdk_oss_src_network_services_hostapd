@@ -1905,6 +1905,104 @@ static int hostapd_get_tx_queue_params(struct hostapd_data *hapd, char *cmd,
 	return ret;
 }
 
+static int hostapd_ctrl_iface_get_mbssid_attributes(struct hostapd_data *hapd,
+						    char *buf, size_t buflen)
+{
+	struct hostapd_data *bss;
+	struct hostapd_multi_mbssid_group *mbssid_group;
+	int res, i, j;
+	char *pos, *end;
+
+	pos = buf;
+	end = buf + buflen;
+
+	if ((hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED) ||
+	    (hapd->iconf->mbssid == MBSSID_ENABLED)) {
+		res = os_snprintf(pos, end - pos, "IFACE  BSSID            BSSID_INDEX\n");
+		if (os_snprintf_error(end - pos, res))
+			return pos - buf;
+		pos += res;
+
+		res = os_snprintf(pos, end - pos, "===================================\n");
+		if (os_snprintf_error(end - pos, res))
+			return pos - buf;
+		pos += res;
+
+		for (i = 0; i < hapd->iface->num_bss; i++) {
+			bss = hapd->iface->bss[i];
+			if (!bss)
+				continue;
+
+			res = os_snprintf(pos, end - pos, "%s " MACSTR " " "%s     %zu\n",
+					 bss->conf->iface, MAC2STR(bss->own_addr),
+					 (i == 0) ? "*":" ", bss->mbssid_idx);
+			if (os_snprintf_error(end - pos, res))
+				return pos - buf;
+			pos += res;
+		}
+
+		return pos - buf;
+	}
+
+	/* MULTI_MBSSID_GROUP_ENABLED */
+	res = os_snprintf(pos, end - pos, "IFACE  BSSID            BSSID_INDEX GRP_ID\n");
+	if (os_snprintf_error(end - pos, res))
+		return pos - buf;
+	pos += res;
+
+	res = os_snprintf(pos, end - pos, "===========================================\n");
+	if (os_snprintf_error(end - pos, res))
+		return pos - buf;
+	pos += res;
+
+	for (i = 0; i < hapd->iface->multi_mbssid.num_mbssid_groups; i++) {
+		mbssid_group = hapd->iface->multi_mbssid.group[i];
+
+		if (!mbssid_group)
+			continue;
+
+		for (j = 0; j < mbssid_group->num_bss; j++) {
+			bss = hostapd_get_multi_group_bss(mbssid_group, j);
+			if (!bss)
+				continue;
+
+			res = os_snprintf(pos, end - pos, "%s " MACSTR " " "%s     %zu        %u\n",
+					bss->conf->iface, MAC2STR(bss->own_addr),
+					(bss->mbssid_group->txbss == bss) ? "*":" ",
+					bss->mbssid_idx,
+					bss->mbssid_group->group_id);
+			if (os_snprintf_error(end - pos, res))
+				return pos - buf;
+			pos += res;
+
+		}
+		res = os_snprintf(pos, end - pos, "\n");
+		if (os_snprintf_error(end - pos, res))
+			return pos - buf;
+		pos += res;
+	}
+	res = os_snprintf(pos, end - pos, "Max_active_ngroups = %zu\n",
+			  hapd->iface->multi_mbssid.num_mbssid_groups);
+	if (os_snprintf_error(end - pos, res))
+		return pos - buf;
+	pos += res;
+
+	return pos - buf;
+}
+
+static const char * hostapd_fils_state_to_str(u8 state)
+{
+	switch(state) {
+	case FILS_UBPR_USER_DISABLED:
+		return "Disabled";
+	case FILS_UBPR_FORCE_DISABLED:
+		return "Forced_Disabled";
+	case FILS_UBPR_ENABLED:
+		return "Enabled";
+	default:
+		return "Unknown";
+	}
+}
 
 static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 				  char *buf, size_t buflen)
@@ -1951,6 +2049,41 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 	} else if (os_strcmp(cmd, "ht_mcs_nss_set") == 0) {
 		res = os_snprintf(buf, buflen, "ht_mcs_nss_set = 0x%x\n",
 				  hapd->conf->ht_mcs_nss_set);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcmp(cmd, "unsolicited_probe_resp_state") == 0) {
+		if (hapd->iconf->mbssid == MBSSID_DISABLED) {
+			res = os_snprintf(buf, buflen, "MBSSID is disabled\n");
+			if (os_snprintf_error(buflen, res))
+				return -1;
+			return res;
+		}
+		res = os_snprintf(buf, buflen, "state:%u (%s)\n", hapd->conf->ubpr_state,
+				  hostapd_fils_state_to_str(hapd->conf->ubpr_state));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcmp(cmd, "fils_state") == 0) {
+		if (hapd->iconf->mbssid == MBSSID_DISABLED) {
+			res = os_snprintf(buf, buflen, "MBSSID is disabled\n");
+			if (os_snprintf_error(buflen, res))
+				return -1;
+			return res;
+		}
+		res = os_snprintf(buf, buflen, "state:%u (%s)\n", hapd->conf->fils_state,
+				  hostapd_fils_state_to_str(hapd->conf->fils_state));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcmp(cmd, "mbssid_attributes") == 0) {
+		if (hapd->iconf->mbssid == MBSSID_DISABLED) {
+			res = os_snprintf(buf, buflen, "MBSSID is disabled\n");
+			if (os_snprintf_error(buflen, res))
+				return -1;
+			return res;
+		}
+		res = hostapd_ctrl_iface_get_mbssid_attributes(hapd, buf, buflen);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
