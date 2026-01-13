@@ -162,6 +162,7 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 	int ret;
 	int len = 0;
 	unsigned long long rx_error;
+	int rx_mgmt_snr, rx_data_snr;
 
 	if (hostapd_drv_read_sta_data(hapd, &data, sta->addr) < 0)
 		return 0;
@@ -169,16 +170,18 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 	rx_error = (unsigned long long)data.pn_errors +
 		   (unsigned long long)data.mic_errors +
 		   (unsigned long long)data.decrypt_errors;
+	rx_mgmt_snr = data.mgmt_signal - hapd->iface->lowest_nf;
+	rx_data_snr = data.signal - hapd->iface->lowest_nf;
 	ret = os_snprintf(buf, buflen, "rx_packets=%lu\ntx_packets=%lu\n"
 			  "rx_bytes=%llu\ntx_bytes=%llu\ninactive_msec=%lu\n"
 			  "signal=%d\ntx_failed=%lu\nrx_pn_errors=%u\n"
 			  "rx_mic_errors=%u\nrx_decrypt_errors=%u\nrx_errors=%llu\n"
-			  "mgmt_signal=%d\n",
+			  "mgmt_signal=%d\nrx_data_snr=%d\nrx_mgmt_snr=%d\n",
 			  data.rx_packets, data.tx_packets,
 			  data.rx_bytes, data.tx_bytes, data.inactive_msec,
 			  data.signal, data.tx_retry_failed, data.pn_errors,
 			  data.mic_errors, data.decrypt_errors,
-			  rx_error, data.mgmt_signal);
+			  rx_error, data.mgmt_signal, rx_data_snr, rx_mgmt_snr);
 	if (os_snprintf_error(buflen, ret))
 		return 0;
 	len += ret;
