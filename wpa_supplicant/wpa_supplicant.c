@@ -1240,12 +1240,31 @@ void wpa_supplicant_set_state(struct wpa_supplicant *wpa_s,
 			fils_hlp_sent = 1;
 
 #if defined(CONFIG_CTRL_IFACE) || !defined(CONFIG_NO_STDOUT_DEBUG)
-		wpa_msg(wpa_s, MSG_INFO, WPA_EVENT_CONNECTED "- Connection to "
-			MACSTR " completed [id=%d id_str=%s%s]%s",
-			MAC2STR(wpa_s->bssid),
-			ssid ? ssid->id : -1,
-			ssid && ssid->id_str ? ssid->id_str : "",
-			fils_hlp_sent ? " FILS_HLP_SENT" : "", mld_addr);
+		{
+			char multi_ap_info[100] = "";
+
+			/* Append Multi-AP profile and VLAN ID if available */
+			if (wpa_s->multi_ap_profile > 0 ) {
+				int ret = os_snprintf(multi_ap_info, sizeof(multi_ap_info),
+					    " multi_ap_profile=%d"
+					    " multi_ap_primary_vlanid=%d",
+					    wpa_s->multi_ap_profile,
+					    wpa_s->multi_ap_primary_vlanid);
+				if (ret < 0 || (size_t) ret >= sizeof(multi_ap_info)) {
+					wpa_printf(MSG_WARNING, "Multi-AP info truncated");
+					// Clear buffer to avoid using truncated data
+					multi_ap_info[0] = '\0';
+				}
+			}
+
+			wpa_msg(wpa_s, MSG_INFO, WPA_EVENT_CONNECTED "- Connection to "
+				MACSTR " completed [id=%d id_str=%s%s]%s%s",
+				MAC2STR(wpa_s->bssid),
+				ssid ? ssid->id : -1,
+				ssid && ssid->id_str ? ssid->id_str : "",
+				fils_hlp_sent ? " FILS_HLP_SENT" : "", mld_addr,
+				multi_ap_info);
+		}
 #endif /* CONFIG_CTRL_IFACE || !CONFIG_NO_STDOUT_DEBUG */
 		wpas_clear_temp_disabled(wpa_s, ssid, 1);
 		wpa_s->consecutive_conn_failures = 0;

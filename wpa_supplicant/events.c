@@ -3146,6 +3146,8 @@ static void multi_ap_process_assoc_resp(struct wpa_supplicant *wpa_s,
 	u16 status;
 
 	wpa_s->multi_ap_ie = 0;
+	wpa_s->multi_ap_profile = 0;
+	wpa_s->multi_ap_primary_vlanid = 0;
 
 	if (!ies ||
 	    ieee802_11_parse_elems(ies, ies_len, &elems, 1) == ParseFailed ||
@@ -3162,6 +3164,13 @@ static void multi_ap_process_assoc_resp(struct wpa_supplicant *wpa_s,
 	wpa_s->multi_ap_fronthaul = !!(multi_ap.capability &
 				       MULTI_AP_FRONTHAUL_BSS);
 	wpa_s->multi_ap_ie = 1;
+
+	/* Store Multi-AP profile and primary VLAN ID from association response */
+	wpa_s->multi_ap_profile = multi_ap.profile;
+	wpa_s->multi_ap_primary_vlanid = multi_ap.vlanid;
+
+	wpa_printf(MSG_DEBUG, "Multi-AP: profile=%u primary_vlan_id=%u",
+		   wpa_s->multi_ap_profile, wpa_s->multi_ap_primary_vlanid);
 }
 
 
