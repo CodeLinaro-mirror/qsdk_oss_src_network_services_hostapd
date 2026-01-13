@@ -12090,43 +12090,21 @@ fail:
 	return NULL;
 }
 
-static size_t hostapd_mbssid_ext_capa(struct hostapd_data *bss,
-				      struct hostapd_data *tx_bss, u8 *buf)
-{
-	u8 ext_capa_tx[20], *ext_capa_tx_end, ext_capa[20], *ext_capa_end;
-	size_t ext_capa_len, ext_capa_tx_len;
-
-	ext_capa_tx_end = hostapd_eid_ext_capab(tx_bss, ext_capa_tx,
-						true);
-	ext_capa_tx_len = ext_capa_tx_end - ext_capa_tx;
-	ext_capa_end = hostapd_eid_ext_capab(bss, ext_capa, true);
-	ext_capa_len = ext_capa_end - ext_capa;
-	if (ext_capa_tx_len != ext_capa_len ||
-	    os_memcmp(ext_capa_tx, ext_capa, ext_capa_len) != 0) {
-		os_memcpy(buf, ext_capa, ext_capa_len);
-		return ext_capa_len;
-	}
-
-	return 0;
-}
-
 
 static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 					  u32 frame_type, size_t *bss_index,
 					  const u8 *known_bss,
 					  size_t known_bss_len, size_t num_bss,
-					  bool bcast_prb_resp)
+					  bool bcast_prb_resp, void *params)
 {
 	struct hostapd_data *tx_bss = hostapd_mbssid_get_tx_bss(hapd);
-	struct ttlm_context *tx_bss_ttlm_ctx;
-	size_t len, i, tx_xrate_len;
-	u8 ext_capa[20], buf[100];
 	u8 ext_cap;
+	size_t len, i;
 
 	/* Element ID: 1 octet
 	 * Length: 1 octet
 	 * MaxBSSID Indicator: 1 octet
-	 * Optional Subelements: vatiable
+	 * Optional Subelements: variable
 	 *
 	 * Total fixed length: 3 octets
 	 *
@@ -12134,15 +12112,11 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 	 */
 	len = 1;
 
-	tx_xrate_len = hostapd_eid_ext_supp_rates(tx_bss, buf) - buf;
-	tx_bss_ttlm_ctx = tx_bss->mld ? &tx_bss->mld->ttlm_ctx : NULL;
-
 	for (i = *bss_index; i < num_bss; i++) {
 		struct hostapd_data *bss;
-		const u8 *auth, *rsn = NULL, *rsnx = NULL;
-		size_t nontx_profile_len, auth_len, xrate_len, wmm_len;
-		struct ttlm_info *bss_est_ttlm = NULL, *bss_up_ttlm = NULL;
-		u8 ie_count = 1; /* Always add vendor elements to the non-inheritance list */
+		struct non_inheritance_elem non_inherit_ie;
+		size_t nontx_profile_len, wmm_len;
+		ssize_t optional_ie_len = 0;
 
 		if (tx_bss->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
 			bss = hostapd_get_multi_group_bss(tx_bss->mbssid_group, i);
@@ -12152,9 +12126,6 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 		if (!bss || !bss->conf || !bss->started || !bss->beacon_set_done ||
 		    mbssid_known_bss(i, known_bss, known_bss_len))
 			continue;
-
-		bss_up_ttlm = &bss->mld->ttlm_ctx.upcoming_ttlm.ttlm;
-		bss_est_ttlm = &bss->mld->ttlm_ctx.established_ttlm.ttlm;
 
 		/*
 		 * Sublement ID: 1 octet
@@ -12171,34 +12142,22 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 		    (frame_type == WLAN_FC_STYPE_PROBE_RESP && bss == hapd))
 			nontx_profile_len += bss->conf->ssid.ssid_len;
 
+		/* DTIM period and DTIM Count*/
 		if (frame_type == WLAN_FC_STYPE_BEACON)
 			nontx_profile_len += 2;
 
-		auth = wpa_auth_get_wpa_ie(bss->wpa_auth, &auth_len);
-		if (auth) {
-			rsn = get_ie(auth, auth_len, WLAN_EID_RSN);
-			if (rsn)
-				nontx_profile_len += 2 + rsn[1];
-
-			rsnx = get_ie(auth, auth_len, WLAN_EID_RSNX);
-			if (rsnx)
-				nontx_profile_len += 2 + rsnx[1];
+		/* Optional IE and Non-inheritance IE len after applying inheritence logic*/
+		os_memset(&non_inherit_ie, 0, sizeof(non_inherit_ie));
+		hostapd_eid_mbssid_nontx_optional_ie(bss, params, &non_inherit_ie,
+						     NULL, &optional_ie_len, frame_type);
+		if (optional_ie_len < 0) {
+			wpa_printf(MSG_ERROR,
+				   "Failed to calculate the length for optional elements:%s, frame_type:%u",
+				   bss->conf->iface, frame_type);
+			return 0;
 		}
 
-		nontx_profile_len += hostapd_mbssid_ext_capa(bss, tx_bss,
-							     ext_capa);
-
-		if (!rsn && hostapd_wpa_ie(tx_bss, WLAN_EID_RSN))
-			ie_count++;
-		if (!rsnx && hostapd_wpa_ie(tx_bss, WLAN_EID_RSNX))
-			ie_count++;
-
-		xrate_len = hostapd_eid_ext_supp_rates(bss, buf) - buf;
-
-		if (xrate_len)
-			nontx_profile_len += xrate_len;
-		else if (tx_xrate_len)
-			ie_count++;
+		nontx_profile_len += optional_ie_len;
 
 #ifdef CONFIG_IEEE80211BE
 		/* For ML Probe Response frame, the solicited hapd's MLE will
@@ -12230,27 +12189,10 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 		if (wmm_len <= MBSSID_NON_TX_VENDOR_ELEM_SIZE)
 			nontx_profile_len += wmm_len;
 
-		/* TTLM IE */
-		if (frame_type == WLAN_FC_STYPE_PROBE_RESP && tx_bss_ttlm_ctx) {
-			if ((tx_bss_ttlm_ctx->established_ttlm.ttlm.expected_duration_present ||
-			     tx_bss_ttlm_ctx->upcoming_ttlm.ttlm.mapping_switch_time_present) ||
-			    (bss_est_ttlm->expected_duration_present ||
-			     bss_up_ttlm->mapping_switch_time_present)) {
-				if (bss_up_ttlm->mapping_switch_time_present)
-					nontx_profile_len +=
-						hostapd_get_ttlm_elem_len(bss_up_ttlm);
-				else
-					nontx_profile_len +=
-						hostapd_get_ttlm_elem_len(bss_est_ttlm);
-			}
-		}
-
 		/* User configured vendor elements */
 		if (bss->conf->vendor_elements_len <= MBSSID_NON_TX_VENDOR_ELEM_SIZE - wmm_len)
 			nontx_profile_len += bss->conf->vendor_elements_len;
 
-		if (ie_count)
-			nontx_profile_len += 4 + ie_count + 1;
 
 		if (len + nontx_profile_len > 255)
 			break;
@@ -12268,13 +12210,14 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd_probed, u32 frame_type,
 			      u8 *elem_count, const u8 *known_bss,
 			      size_t known_bss_len, size_t *rnr_len,
-			      bool bcast_prb_resp)
+			      bool bcast_prb_resp, void *params,
+			      bool *is_len_calc_failed)
 {
 	struct hostapd_data *hapd = hostapd_mbssid_get_tx_bss(hapd_probed);
 	size_t len = 0, bss_index = 1;
 	bool skip_rnr = false;
 	bool rnr_override = true;
-	size_t num_bss;
+	size_t num_bss, elem_len = 0;
 
 #ifdef CONFIG_QCN_EXTN
 	skip_rnr = hostapd_skip_rnr_6ghz_colocated_extn(hapd, frame_type);
@@ -12300,11 +12243,19 @@ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd_probed, u32 frame_type,
 	while (bss_index < num_bss) {
 		size_t rnr_count = bss_index;
 
-		len += hostapd_eid_mbssid_elem_len(hapd_probed, frame_type,
+		elem_len = hostapd_eid_mbssid_elem_len(hapd_probed, frame_type,
 						   &bss_index, known_bss,
 						   known_bss_len, num_bss,
-						   bcast_prb_resp);
+						   bcast_prb_resp, params);
+		if (!elem_len) {
+			wpa_printf(MSG_ERROR,
+				   "MBSSID: Unable to calculate the length for:%s, frame_type:%u",
+				   hapd_probed->conf->iface, frame_type);
+			*is_len_calc_failed = true;
+			return 0;
+		}
 
+		len += elem_len;
 
 		if (frame_type == WLAN_FC_STYPE_BEACON)
 			*elem_count += 1;
@@ -12363,35 +12314,27 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 				    size_t *bss_index, u8 elem_count,
 				    const u8 *known_bss, size_t known_bss_len,
 				    u32 *elemid_modified_bmap, size_t num_bss,
-				    bool bcast_prb_resp)
+				    bool bcast_prb_resp, void *params)
 {
 	struct hostapd_data *tx_bss = hostapd_mbssid_get_tx_bss(hapd);
-	struct ttlm_context *tx_bss_ttlm_ctx;
-	size_t i, tx_xrate_len;
-	u8 *eid_len_offset, *max_bssid_indicator_offset;
-	u8 buf[100];
-	u8 *startpos;
+	u8 *eid_len_offset, *max_bssid_indicator_offset, *startpos;
 	u8 ext_cap;
+	size_t i;
 
 	*eid++ = WLAN_EID_MULTIPLE_BSSID;
 	eid_len_offset = eid++;
 	max_bssid_indicator_offset = eid++;
 
-	tx_xrate_len = hostapd_eid_ext_supp_rates(tx_bss, buf) - buf;
-	tx_bss_ttlm_ctx = tx_bss->mld ? &tx_bss->mld->ttlm_ctx : NULL;
-
 	for (i = *bss_index; i < num_bss; i++) {
 		struct hostapd_data *bss;
 		struct hostapd_bss_config *conf;
 		struct hostapd_bss_config *tx_conf = tx_bss->conf;
+		struct non_inheritance_elem non_inherit_ie;
 		u8 *eid_len_pos, *nontx_bss_start = eid;
-		const u8 *auth, *rsn = NULL, *rsnx = NULL;
-		u8 ie_count = 0, non_inherit_ie[4];
-		size_t auth_len = 0, xrate_len, j, wmm_len;
-		u16 capab_info;
+		u16 capab_info, modified_flag = 0;
 		u8 mbssindex = i;
-		u16 modified_flag = 0;
-		struct ttlm_info *bss_est_ttlm = NULL, *bss_up_ttlm = NULL;
+		size_t j, wmm_len;
+		ssize_t optional_ie_len = 0;
 
 		if (tx_bss->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
 			bss = hostapd_get_multi_group_bss(tx_bss->mbssid_group, i);
@@ -12403,8 +12346,6 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 			continue;
 
 		conf = bss->conf;
-		bss_up_ttlm = &bss->mld->ttlm_ctx.upcoming_ttlm.ttlm;
-		bss_est_ttlm = &bss->mld->ttlm_ctx.established_ttlm.ttlm;
 
 		*eid++ = WLAN_MBSSID_SUBELEMENT_NONTRANSMITTED_BSSID_PROFILE;
 		eid_len_pos = eid++;
@@ -12458,62 +12399,10 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 			*eid++ = mbssindex; /* BSSID Index */
 		}
 
-		auth = wpa_auth_get_wpa_ie(bss->wpa_auth, &auth_len);
-		if (auth) {
-			rsn = get_ie(auth, auth_len, WLAN_EID_RSN);
-			if (rsn) {
-				os_memcpy(eid, rsn, 2 + rsn[1]);
-				eid += 2 + rsn[1];
-			}
+		os_memset(&non_inherit_ie, 0, sizeof(non_inherit_ie));
+		eid = hostapd_eid_mbssid_nontx_optional_ie(bss, params, &non_inherit_ie,
+							   eid, &optional_ie_len, frame_type);
 
-			rsnx = get_ie(auth, auth_len, WLAN_EID_RSNX);
-			if (rsnx) {
-				os_memcpy(eid, rsnx, 2 + rsnx[1]);
-				eid += 2 + rsnx[1];
-			}
-		}
-
-		eid += hostapd_mbssid_ext_capa(bss, tx_bss, eid);
-		xrate_len = hostapd_eid_ext_supp_rates(bss, eid) - eid;
-		eid += xrate_len;
-
-		/* TTLM IE */
-		if (frame_type == WLAN_FC_STYPE_PROBE_RESP && tx_bss_ttlm_ctx) {
-			/* if tx bss has non-default ttlm mapping, include ttlm element for non-tx
-			 * bss to avoid TTLM element inheritance. if non-tx vap does not have any
-			 * non-default mapping advertised, default ttlm element is included in this
-			 * case.
-			 * If tx bss does not have any non-default ttlm mapping, then non-tx bss
-			 * will have ttlm element only if its advertising a non-default ttlm
-			 * element.
-			 */
-			if ((tx_bss_ttlm_ctx->established_ttlm.ttlm.expected_duration_present ||
-			     tx_bss_ttlm_ctx->upcoming_ttlm.ttlm.mapping_switch_time_present) ||
-			    (bss_est_ttlm->expected_duration_present ||
-			     bss_up_ttlm->mapping_switch_time_present)) {
-				/* for non-tx bss, add either already established mapping or
-				 * ongoing mapping from its ttlm context. If non-tx bss does not
-				 * have non-default ttlm being advertised, add default ttlm element
-				 * to avoid inheritance.
-				 */
-				if (bss_up_ttlm->mapping_switch_time_present)
-					eid = hostapd_add_ttlm_info_elem(eid,
-									 bss_up_ttlm,
-									 bss);
-				else
-					eid = hostapd_add_ttlm_info_elem(eid,
-									 bss_est_ttlm,
-									 bss);
-			}
-		}
-
-		/* List of Element ID values in increasing order */
-		if (!rsn && hostapd_wpa_ie(tx_bss, WLAN_EID_RSN))
-			non_inherit_ie[ie_count++] = WLAN_EID_RSN;
-		if (tx_xrate_len && !xrate_len)
-			non_inherit_ie[ie_count++] = WLAN_EID_EXT_SUPP_RATES;
-		if (!rsnx && hostapd_wpa_ie(tx_bss, WLAN_EID_RSNX))
-			non_inherit_ie[ie_count++] = WLAN_EID_RSNX;
 #ifdef CONFIG_IEEE80211BE
 		/* For ML Probe Response frame, the solicited hapd's MLE will
 		 * be in the frame body */
@@ -12559,21 +12448,28 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 				eid += wpabuf_len(entry);
 			}
 		}
-
-		/* Vendor elements are not inherited from the TX BSS.
-		 * They are always added to the non-inheritance list
-		 * to prevent inheritance.
-		 */
-		 non_inherit_ie[ie_count++] = WLAN_EID_VENDOR_SPECIFIC;
-
-		if (ie_count) {
+	 	 /*
+	 	 * Non-inheritance Element
+	 	 * IEEE80211_ELEM_HEADER_LEN - 2
+	 	 * Ext tag number: 1
+	 	 * Length of Element ID list: 1
+	 	 * Element ID list - Variable
+	 	 * Length of Element ID Extension list: 1
+	 	 * Element ID Extension List - Variable
+	 	 */
+		if (non_inherit_ie.ext_elem_len || non_inherit_ie.elem_len) {
 			*eid++ = WLAN_EID_EXTENSION;
-			*eid++ = 2 + ie_count + 1;
+			*eid++ = 1 + 1 + non_inherit_ie.elem_len +
+				 1 + non_inherit_ie.ext_elem_len;
 			*eid++ = WLAN_EID_EXT_NON_INHERITANCE;
-			*eid++ = ie_count;
-			os_memcpy(eid, non_inherit_ie, ie_count);
-			eid += ie_count;
-			*eid++ = 0; /* No Element ID Extension List */
+			*eid++ = non_inherit_ie.elem_len;
+			os_memcpy(eid, non_inherit_ie.elem_list,
+				  non_inherit_ie.elem_len);
+			eid += non_inherit_ie.elem_len;
+			*eid++ = non_inherit_ie.ext_elem_len;
+			os_memcpy(eid, non_inherit_ie.ext_elem_list,
+				  non_inherit_ie.ext_elem_len);
+			eid += non_inherit_ie.ext_elem_len;
 		}
 
 		*eid_len_pos = (eid - eid_len_pos) - 1;
@@ -12598,7 +12494,8 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 			u8 **elem_offset,
 			const u8 *known_bss, size_t known_bss_len, u8 *rnr_eid,
 			u8 *rnr_count, u8 **rnr_offset, size_t rnr_len,
-			u32 *elemid_modified_bmap, bool bcast_prb_resp)
+			u32 *elemid_modified_bmap, bool bcast_prb_resp,
+			void *params)
 {
 	struct hostapd_data *hapd = hostapd_mbssid_get_tx_bss(hapd_probed);
 	size_t bss_index = 1, cur_len = 0;
@@ -12648,7 +12545,7 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 					      &bss_index, elem_count,
 					      known_bss, known_bss_len,
 					      elemid_modified_bmap, num_bss,
-					      bcast_prb_resp);
+					      bcast_prb_resp, params);
 
 		if (add_rnr) {
 			struct mbssid_ie_profiles skip_profiles = {

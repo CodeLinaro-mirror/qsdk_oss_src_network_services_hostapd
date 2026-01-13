@@ -597,6 +597,7 @@ ieee802_11_build_ap_params_mbssid(struct hostapd_data *hapd,
 	u8 elem_count = 0, *elem = NULL, **elem_offset = NULL, *end;
 	u8 rnr_elem_count = 0, *rnr_elem = NULL, **rnr_elem_offset = NULL;
 	u32 elemid_modified_bmap = 0;
+	bool is_len_calc_failed = false;
 
 	if (!iface->mbssid_max_interfaces ||
 	    iface->num_bss > iface->mbssid_max_interfaces ||
@@ -606,7 +607,11 @@ ieee802_11_build_ap_params_mbssid(struct hostapd_data *hapd,
 
 	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
 	len = hostapd_eid_mbssid_len(tx_bss, WLAN_FC_STYPE_BEACON, &elem_count,
-				     NULL, 0, &rnr_len, true);
+				     NULL, 0, &rnr_len, true, params,
+				     &is_len_calc_failed);
+
+	if (is_len_calc_failed)
+		goto fail;
 
 	if (iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED && !elem_count)
 		return 0;
@@ -636,7 +641,7 @@ ieee802_11_build_ap_params_mbssid(struct hostapd_data *hapd,
 	end = hostapd_eid_mbssid(tx_bss, elem, elem + len, WLAN_FC_STYPE_BEACON,
 				 elem_count, elem_offset, NULL, 0, rnr_elem,
 				 &rnr_elem_count, rnr_elem_offset, rnr_len,
-				 &elemid_modified_bmap, true);
+				 &elemid_modified_bmap, true, params);
 
 	params->mbssid.mbssid_tx_iface = tx_bss->conf->iface;
 	params->mbssid.mbssid_index = hostapd_mbssid_get_bss_index(hapd);
@@ -1044,6 +1049,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	u8 p_ext_cap = 0;
 	size_t i, mbssid_len;
 	bool bcast_prb_resp = false;
+	bool is_len_calc_failed = false;
 
 	hapd = hostapd_mbssid_get_tx_bss(hapd);
 	epos = pos + len;
@@ -1319,7 +1325,14 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 					    NULL,
 					    params->known_bss,
 					    params->known_bss_len, NULL,
-					    bcast_prb_resp);
+					    bcast_prb_resp, params,
+					    &is_len_calc_failed);
+	if (is_len_calc_failed) {
+		wpa_printf(MSG_ERROR,
+			   "Probe response: Failed to calculate the MBSSID elements length %s",
+			   hapd_probed->conf->iface);
+		return NULL;
+	}
 
 	if (mbssid_len) {
 		u8 *orig_pos = pos;
@@ -1349,7 +1362,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 		pos = hostapd_eid_mbssid(hapd_probed, pos, epos,
 					 WLAN_FC_STYPE_PROBE_RESP, 0,
 					 NULL, params->known_bss, params->known_bss_len,
-					 NULL, NULL, NULL, 0, NULL, bcast_prb_resp);
+					 NULL, NULL, NULL, 0, NULL, bcast_prb_resp, params);
 
 		/* Insert mbssid-ie at specified location */
 		if (hostapd_insert_mbssid_ie(mbssid_offset, mbssid_pos, pos)) {
