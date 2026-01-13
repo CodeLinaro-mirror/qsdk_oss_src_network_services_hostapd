@@ -16948,7 +16948,7 @@ afc_process_power_event(struct nl_msg *msg, void *arg)
 	data = nla_data(tb[NL80211_ATTR_VENDOR_DATA]);
 	len = nla_len(tb[NL80211_ATTR_VENDOR_DATA]);
 	wpa_hexdump(MSG_MSGDUMP, "nl80211: AFC Vendor data", data, len);
-	ret = qca_nl80211_handle_afc_events(bss, data, len);
+	ret = qca_nl80211_handle_afc_events(bss, data, len, false);
 	if (ret)
 		wpa_printf(MSG_DEBUG, "nl80211: Failed to handle AFC event: %d", ret);
 
