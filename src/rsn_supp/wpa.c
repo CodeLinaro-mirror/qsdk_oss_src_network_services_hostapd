@@ -1789,6 +1789,47 @@ static int wpa_supplicant_install_bigtk(struct wpa_sm *sm,
 	return 0;
 }
 
+static int wpa_supplicant_install_cigtk(struct wpa_sm *sm,
+					const struct wpa_cigtk_kde *cigtk,
+					int wnm_sleep)
+{
+	size_t len = wpa_cipher_key_len(sm->control_group_cipher);
+	u16 keyidx = WPA_GET_LE16(cigtk->keyid);
+
+	/* Detect possible key reinstallation */
+	if ((sm->cigtk.cigtk_len == len &&
+		os_memcmp(sm->cigtk.cigtk, cigtk->cigtk,
+			  sm->cigtk.cigtk_len) == 0)) {
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"WPA: Not reinstalling already in-use CIGTK to the driver (keyidx=%d)",
+			keyidx);
+		return  0;
+	}
+
+	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+		"WPA: CIGTK keyid %d pn " COMPACT_MACSTR,
+		keyidx, MAC2STR(cigtk->pn));
+	wpa_hexdump_key(MSG_DEBUG, "WPA: CIGTK", cigtk->cigtk, len);
+	if (keyidx > 1) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"WPA: Invalid CIGTK KeyID %d", keyidx);
+		return -1;
+	}
+	if (wpa_sm_set_key(sm, -1,
+			   wpa_cipher_to_alg(sm->control_group_cipher),
+			   broadcast_ether_addr, keyidx, 0, cigtk->pn,
+			   sizeof(cigtk->pn), cigtk->cigtk, len,
+			   KEY_FLAG_GROUP_RX) < 0) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"WPA: Failed to configure CIGTK to the driver");
+		return -1;
+	}
+
+	sm->cigtk.cigtk_len = len;
+	os_memcpy(sm->cigtk.cigtk, cigtk->cigtk, sm->cigtk.cigtk_len);
+
+	return 0;
+}
 
 static int wpa_supplicant_install_mlo_igtk(struct wpa_sm *sm, u8 link_id,
 					   const struct rsn_mlo_igtk_kde *igtk,
@@ -1991,6 +2032,18 @@ static int ieee80211w_set_keys(struct wpa_sm *sm,
 
 		bigtk = (const struct wpa_bigtk_kde *) ie->bigtk;
 		if (wpa_supplicant_install_bigtk(sm, bigtk, 0) < 0)
+			return -1;
+	}
+
+	if (ie->cigtk && sm->control_frame_prot) {
+		const struct wpa_cigtk_kde *cigtk;
+
+		len = wpa_cipher_key_len(sm->control_group_cipher);
+		if (ie->cigtk_len != WPA_CIGTK_KDE_PREFIX_LEN + len)
+			return -1;
+
+		cigtk = (const struct wpa_cigtk_kde *) ie->cigtk;
+		if (wpa_supplicant_install_cigtk(sm, cigtk, 0) < 0)
 			return -1;
 	}
 
@@ -2869,6 +2922,12 @@ static void wpa_supplicant_process_3_of_4(struct wpa_sm *sm,
 		goto failed;
 	}
 
+	if (!mlo && ie.cigtk && !(key_info & WPA_KEY_INFO_ENCR_KEY_DATA)) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"WPA: CIGTK KDE in unencrypted key data");
+		goto failed;
+	}
+
 	if (!mlo && ie.igtk &&
 	    sm->mgmt_group_cipher != WPA_CIPHER_GTK_NOT_USED &&
 	    wpa_cipher_valid_mgmt_group(sm->mgmt_group_cipher) &&
@@ -2877,6 +2936,17 @@ static void wpa_supplicant_process_3_of_4(struct wpa_sm *sm,
 		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
 			"WPA: Invalid IGTK KDE length %lu",
 			(unsigned long) ie.igtk_len);
+		goto failed;
+	}
+
+	if (!mlo && ie.cigtk &&
+	    sm->control_group_cipher != WPA_CIPHER_GTK_NOT_USED &&
+	    wpa_cipher_valid_mgmt_group(sm->control_group_cipher) &&
+	    ie.cigtk_len != WPA_CIGTK_KDE_PREFIX_LEN +
+	    (unsigned int) wpa_cipher_key_len(sm->control_group_cipher)) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"WPA: Invalid CIGTK KDE length %lu",
+			(unsigned long) ie.cigtk_len);
 		goto failed;
 	}
 
@@ -4492,6 +4562,7 @@ static void wpa_sm_clear_ptk(struct wpa_sm *sm)
 	os_memset(&sm->igtk, 0, sizeof(sm->igtk));
 	os_memset(&sm->igtk_wnm_sleep, 0, sizeof(sm->igtk_wnm_sleep));
 	os_memset(&sm->bigtk, 0, sizeof(sm->bigtk));
+	os_memset(&sm->cigtk, 0, sizeof(sm->cigtk));
 	os_memset(&sm->bigtk_wnm_sleep, 0, sizeof(sm->bigtk_wnm_sleep));
 	sm->tk_set = false;
 	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
@@ -4750,6 +4821,7 @@ void wpa_sm_set_config(struct wpa_sm *sm, struct rsn_supp_config *config)
 		}
 #endif /* CONFIG_FILS */
 		sm->beacon_prot = config->beacon_prot;
+		sm->control_frame_prot = config->control_frame_prot;
 	} else {
 		sm->network_ctx = NULL;
 		sm->allowed_pairwise_cipher = 0;
@@ -5036,6 +5108,9 @@ int wpa_sm_set_param(struct wpa_sm *sm, enum wpa_sm_conf_params param,
 		break;
 	case WPA_PARAM_GROUP:
 		sm->group_cipher = value;
+		break;
+	case WPA_PARAM_CIGTK:
+		sm->control_group_cipher = value;
 		break;
 	case WPA_PARAM_KEY_MGMT:
 		sm->key_mgmt = value;
