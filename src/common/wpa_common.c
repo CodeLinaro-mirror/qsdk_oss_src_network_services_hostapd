@@ -1283,6 +1283,22 @@ static int wpa_ft_parse_ftie(const u8 *ie, size_t ie_len,
 			parse->mlo_bigtk[link_id] = pos;
 			parse->mlo_bigtk_len[link_id] = len;
 			break;
+
+		case FTIE_SUBELEM_MLO_CIGTK:
+			if (len < 2 + 6 + 1 + 1) {
+				wpa_printf(MSG_DEBUG,
+					   "FT: Too short MLO CIGTK in FTE");
+				return -1;
+			}
+			link_id = pos[2 + 6] & 0x0f;
+			wpa_printf(MSG_DEBUG, "FT: MLO CIGTK (Link ID %u)",link_id);
+			if (link_id >= MAX_NUM_MLD_LINKS)
+				break;
+			parse->valid_mlo_cigtks |= BIT(link_id);
+			parse->mlo_cigtk[link_id] = pos;
+			parse->mlo_cigtk_len[link_id] = len;
+			break;
+
 		default:
 			wpa_printf(MSG_DEBUG, "FT: Unknown subelem id %u", id);
 			break;
@@ -3685,6 +3701,22 @@ static int wpa_parse_generic(const u8 *pos, struct wpa_eapol_ie_parse *ie)
 		ie->mlo_bigtk_len[link_id] = left;
 		ret = os_snprintf(title, sizeof(title),
 				  "RSN: Link ID %u - MLO BIGTK KDE in EAPOL-Key",
+				  link_id);
+		if (!os_snprintf_error(sizeof(title), ret))
+			wpa_hexdump_key(MSG_DEBUG, title, pos, dlen);
+		return 0;
+	}
+	if (left >= RSN_MLO_CIGTK_KDE_PREFIX_LENGTH &&
+	    selector == RSN_KEY_DATA_MLO_CIGTK) {
+		link_id = (p[8] & RSN_MLO_CIGTK_KDE_PREFIX8_LINK_ID_MASK) >>
+					RSN_MLO_CIGTK_KDE_PREFIX8_LINK_ID_SHIFT;
+		if (link_id >= MAX_NUM_MLD_LINKS)
+			return 2;
+		ie->valid_mlo_cigtks |= BIT(link_id);
+		ie->mlo_cigtk[link_id] = p;
+		ie->mlo_cigtk_len[link_id] = left;
+		ret = os_snprintf(title, sizeof(title),
+				  "RSN: Link ID %u - MLO CIGTK KDE in EAPOL-Key",
 				  link_id);
 		if (!os_snprintf_error(sizeof(title), ret))
 			wpa_hexdump_key(MSG_DEBUG, title, pos, dlen);

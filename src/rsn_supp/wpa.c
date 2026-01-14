@@ -1946,6 +1946,53 @@ wpa_supplicant_install_mlo_bigtk(struct wpa_sm *sm, u8 link_id,
 	return 0;
 }
 
+static int
+wpa_supplicant_install_mlo_cigtk(struct wpa_sm *sm, u8 link_id,
+                                 const struct rsn_mlo_cigtk_kde *cigtk,
+                                 int wnm_sleep)
+{
+	size_t len = wpa_cipher_key_len(sm->control_group_cipher);
+	u16 keyidx = WPA_GET_LE16(cigtk->keyid);
+
+
+
+	/* Detect possible key reinstallation */
+	if ((sm->mlo.links[link_id].cigtk.cigtk_len == len &&
+		os_memcmp(sm->mlo.links[link_id].cigtk.cigtk, cigtk->cigtk,
+				  sm->mlo.links[link_id].cigtk.cigtk_len) == 0)) {
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"RSN: Not reinstalling already in-use CIGTK to the driver (link_id=%d keyidx=%d)",
+			link_id, keyidx);
+		return  0;
+	}
+	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+		"RSN: MLO Link %u CIGTK keyid %d pn " COMPACT_MACSTR,
+		link_id, keyidx, MAC2STR(cigtk->pn));
+
+	wpa_hexdump_link_key(MSG_DEBUG, link_id, "RSN: CIGTK", cigtk->cigtk,
+			     len);
+	if (keyidx < 0 || keyidx > 1) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"RSN: Invalid MLO Link %d CIGTK KeyID %d", link_id,
+			keyidx);
+		return -1;
+	}
+	if (wpa_sm_set_key(sm, link_id,
+		wpa_cipher_to_alg(sm->control_group_cipher),
+		broadcast_ether_addr, keyidx, 0, cigtk->pn,
+		sizeof(cigtk->pn), cigtk->cigtk, len,
+		KEY_FLAG_GROUP_RX) < 0) {
+			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+					"RSN: Failed to configure MLO Link %d CIGTK to the driver",
+					link_id);
+		return -1;
+        }
+	sm->mlo.links[link_id].cigtk.cigtk_len = len;
+	os_memcpy(sm->mlo.links[link_id].cigtk.cigtk, cigtk->cigtk,
+			  sm->mlo.links[link_id].cigtk.cigtk_len);
+
+	return 0;
+}
 
 static int _mlo_ieee80211w_set_keys(struct wpa_sm *sm, u8 link_id,
 				    struct wpa_eapol_ie_parse *ie)
@@ -1976,6 +2023,18 @@ static int _mlo_ieee80211w_set_keys(struct wpa_sm *sm, u8 link_id,
 			    sm, link_id,
 			    (const struct rsn_mlo_bigtk_kde *)
 			    ie->mlo_bigtk[link_id],
+			    0) < 0)
+			return -1;
+	}
+	if ((ie->mlo_cigtk[link_id] && sm->control_frame_prot)) {
+		len = wpa_cipher_key_len(sm->control_group_cipher);
+		if (ie->mlo_cigtk_len[link_id] !=
+		    RSN_MLO_CIGTK_KDE_PREFIX_LENGTH + len)
+			return -1;
+		if (wpa_supplicant_install_mlo_cigtk(
+			    sm, link_id,
+			    (const struct rsn_mlo_cigtk_kde *)
+			    ie->mlo_cigtk[link_id],
 			    0) < 0)
 			return -1;
 	}
@@ -2696,6 +2755,18 @@ static int wpa_validate_mlo_ieee80211w_kdes(struct wpa_sm *sm,
 		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
 			"RSN MLO: Invalid BIGTK KDE length %lu for link ID %u",
 			(unsigned long) ie->mlo_bigtk_len[link_id], link_id);
+		return -1;
+	}
+
+	if (!sm->control_frame_prot)
+		return 0;
+
+	if (ie->mlo_cigtk[link_id] &&
+	    ie->mlo_cigtk_len[link_id] != RSN_MLO_CIGTK_KDE_PREFIX_LENGTH +
+	    (unsigned int) wpa_cipher_key_len(sm->control_group_cipher)) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"RSN MLO: Invalid CIGTK KDE length %lu for link ID %u",
+			(unsigned long) ie->mlo_cigtk_len[link_id], link_id);
 		return -1;
 	}
 

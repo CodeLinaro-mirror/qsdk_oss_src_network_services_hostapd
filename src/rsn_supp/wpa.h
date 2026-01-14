@@ -186,6 +186,7 @@ struct wpa_sm_link {
 	struct wpa_igtk igtk_wnm_sleep;
 	struct wpa_bigtk bigtk;
 	struct wpa_bigtk bigtk_wnm_sleep;
+	struct wpa_cigtk cigtk;
 };
 
 struct wpa_sm_mlo {
