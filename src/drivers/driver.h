@@ -1455,9 +1455,8 @@ struct wpa_driver_associate_params {
 	enum mfp_options mgmt_frame_protection;
 
 	/**
-	 * control_frame_protection - IEEE 802.11w control frame protection
+	 * control_frame_protection - IEEE control frame protection
 	 */
-
 	enum cfp_options control_frame_protection;
 
 	/**
