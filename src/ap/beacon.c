@@ -1865,19 +1865,21 @@ void handle_probe_req(struct hostapd_data *hapd,
 		if (fi->channel && hapd->iface->lowest_nf) {
 			snr = ssi_signal - hapd->iface->lowest_nf;
 			wpa_msg_ctrl(hapd->msg_ctx, MSG_INFO, RX_PROBE_REQUEST "sa=" MACSTR
-				     " signal=%d channel=%u snr=%d%s%s",
+				     " signal=%d channel=%u snr=%d rate=%u%s%s",
 				     MAC2STR(mgmt->sa), ssi_signal, fi->channel,
-				     snr,
+				     snr, fi->datarate ? fi->datarate : 0,
 				     hex ? " buf=" : "", hex ? hex : "");
 		} else if (fi->channel) {
 			wpa_msg_ctrl(hapd->msg_ctx, MSG_INFO, RX_PROBE_REQUEST "sa=" MACSTR
-				     " signal=%d channel=%u%s%s",
+				     " signal=%d channel=%u rate=%u%s%s",
 				     MAC2STR(mgmt->sa), ssi_signal, fi->channel,
+				     fi->datarate ? fi->datarate : 0,
 				     hex ? " buf=" : "", hex ? hex : "");
 		} else {
 			wpa_msg_ctrl(hapd->msg_ctx, MSG_INFO, RX_PROBE_REQUEST "sa=" MACSTR
-				     " signal=%d%s%s",
+				     " signal=%d rate=%u%s%s",
 				     MAC2STR(mgmt->sa), ssi_signal,
+				     fi->datarate ? fi->datarate : 0,
 				     hex ? " buf=" : "", hex ? hex : "");
 		}
 	} else {
