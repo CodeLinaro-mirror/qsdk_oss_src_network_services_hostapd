@@ -481,6 +481,7 @@
 #define WLAN_EID_DILS 241
 #define WLAN_EID_FRAGMENT 242
 #define WLAN_EID_RSNX 244
+#define WLAN_EID_EXT_CIP_CAPAB 245
 #define WLAN_EID_EXTENSION 255
 
 /* Element ID Extension (EID 255) values */
@@ -625,6 +626,7 @@
 #define WLAN_RSNX_CAPAB_URNM_MFPR 15
 #define WLAN_RSNX_CAPAB_KEK_IN_PASN 18
 #define WLAN_RSNX_CAPAB_SSID_PROTECTION 21
+#define WLAN_RSNX_CAPAB_CIGTK 22
 #define WLAN_RSNX_CAPAB_SAE_PW_ID_CHANGE 34
 
 /* Multiple BSSID element subelements */
@@ -839,6 +841,8 @@
 #define INTERWORKING_ANT_EMERGENCY_SERVICES 5
 #define INTERWORKING_ANT_TEST 6
 #define INTERWORKING_ANT_WILDCARD 15
+
+#define CONTROL_MIC_PAD_NOT_SET 255
 
 /* Advertisement Protocol ID definitions (IEEE Std 802.11-2020, Table 9-237) */
 enum adv_proto_id {

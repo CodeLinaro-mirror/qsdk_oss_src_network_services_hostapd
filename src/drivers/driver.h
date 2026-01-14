@@ -2859,6 +2859,10 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAG2_MLD_LINK_REMOVAL_OFFLOAD 0x0000000100000000ULL
 /** Driver supports TTLM beacon offload */
 #define WPA_DRIVER_FLAGS2_TTLM_BEACON_OFFLOAD  0x0000000200000000ULL
+/** Driver supports CIGTK */
+#define WPA_DRIVER_FLAGS2_CIGTK		       0x0000000400000000ULL
+/** Driver support CIP Padding Support */
+#define WPA_DRIVER_FLAGS2_CIP_PADDING_SUPPORT  0x0000000800000000ULL
 	u64 flags2;
 
 #define FULL_AP_CLIENT_STATE_SUPP(drv_flags) \
@@ -3125,6 +3129,7 @@ struct hostapd_sta_add_params {
 	s8 mld_link_id;
 	const u8 *mld_link_addr;
 	u16 eml_cap;
+	u8 control_mic_pad;
 };
 
 struct ml_reconf_req {

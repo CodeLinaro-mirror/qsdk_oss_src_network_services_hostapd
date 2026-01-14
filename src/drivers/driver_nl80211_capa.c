@@ -652,6 +652,14 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 		capa->flags |= WPA_DRIVER_FLAGS_BEACON_PROTECTION;
 
 	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_CONTROL_FRAME_PROTECTION))
+		capa->flags2 |= WPA_DRIVER_FLAGS2_CIGTK;
+
+	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT))
+		capa->flags2 |= WPA_DRIVER_FLAGS2_CIP_PADDING_SUPPORT;
+
+	if (ext_feature_isset(ext_features, len,
 			      NL80211_EXT_FEATURE_EXT_KEY_ID))
 		capa->flags |= WPA_DRIVER_FLAGS_EXTENDED_KEY_ID;
 

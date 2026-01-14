@@ -128,6 +128,7 @@ struct sta_info {
 	int supported_rates_len;
 	u8 qosinfo; /* Valid when WLAN_STA_WMM is set */
 	int ft_over_ds_saquery_status;
+	u8 control_mic_pad;
 
 #ifdef CONFIG_MESH
 	enum mesh_plink_state plink_state;

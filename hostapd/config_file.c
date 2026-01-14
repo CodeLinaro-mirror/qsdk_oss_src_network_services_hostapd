@@ -2298,6 +2298,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->ieee80211d = atoi(pos);
 	 } else if (os_strcmp(buf, "ext_cap_len") == 0) {
 		 conf->ext_cap_len = atoi(pos);
+	} else if (os_strcmp(buf, "max_cip_padding_delay") == 0) {
+		bss->max_cip_padding_delay = atoi(pos);
 	} else if (os_strcmp(buf, "ieee80211h") == 0) {
 		conf->ieee80211h = atoi(pos);
 	 } else if (os_strcmp(buf, "dfs_test_mode") == 0) {
@@ -3489,6 +3491,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 	} else if (os_strcmp(buf, "beacon_prot") == 0) {
 		bss->beacon_prot = atoi(pos);
+	} else if (os_strcmp(buf, "control_frame_prot") == 0) {
+		bss->control_frame_prot = atoi(pos);
 	} else if (os_strcmp(buf, "assoc_sa_query_max_timeout") == 0) {
 		bss->assoc_sa_query_max_timeout = atoi(pos);
 		if (bss->assoc_sa_query_max_timeout == 0) {

@@ -3582,6 +3582,9 @@ enum nl80211_attrs {
 	NL80211_ATTR_ADVERTISED_TTLM_EXPEC_DUR_UPDATE,
 
 	NL80211_ATTR_QOS_MGMT,
+	NL80211_ATTR_6GHZ_DEVICE_DEPLOYMENT_TYPE,
+
+	NL80211_ATTR_CONTROL_MIC_PAD,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -6785,6 +6788,12 @@ enum nl80211_feature_flags {
  * @NL80211_EXT_FEATURE_BEACON_PROTECTION_CLIENT: The driver supports Beacon
  *	protection as a client only and cannot transmit protected beacons.
  *
+ * @NL80211_EXT_FEATURE_CONTROL_FRAME_PROTECTION: The driver supports Control protection
+ *      and can receive key configuration for CIGTK using key indexes 0 and 1.
+ *
+ * @NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT: The driver supports cip padding delay
+ * 	support.
+ *
  * @NL80211_EXT_FEATURE_CONTROL_PORT_NO_PREAUTH: The driver can disable the
  *	forwarding of preauth frames over the control port. They are then
  *	handled as ordinary data frames.
@@ -6973,6 +6982,8 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_TARGET_AND_HOST_AFC_SUPPORT,
 	NL80211_EXT_FEATURE_RETAIL_AFC_SUPPORT,
 	NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD,
+	NL80211_EXT_FEATURE_CONTROL_FRAME_PROTECTION,
+	NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT,
 
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,
