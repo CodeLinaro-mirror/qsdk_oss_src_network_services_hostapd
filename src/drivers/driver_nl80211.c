@@ -6082,6 +6082,13 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+	if (params->is_cfp_enabled) {
+		wpa_printf(MSG_DEBUG, "nl80211: cfp = %d",
+			   params->is_cfp_enabled);
+		if (nla_put_flag(msg, NL80211_ATTR_CFP))
+			goto fail;
+	}
+
 #ifdef CONFIG_DRIVER_NL80211_QCA
 	if (cmd == NL80211_CMD_NEW_BEACON && params->allowed_freqs)
 		qca_set_allowed_ap_freqs(bss, params->allowed_freqs,

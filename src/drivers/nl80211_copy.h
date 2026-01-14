@@ -2988,6 +2988,9 @@ enum nl80211_commands {
  *	this attribute can be used with %NL80211_CMD_ASSOCIATE and
  *	%NL80211_CMD_CONNECT requests.
  *
+ * @NL80211_ATTR_CFP: Indicate whether control frame protection is
+ *      enabled for the particular vdev.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3590,9 +3593,10 @@ enum nl80211_attrs {
 	NL80211_ATTR_6GHZ_DEVICE_DEPLOYMENT_TYPE,
 
 	NL80211_ATTR_CONTROL_MIC_PAD,
-	NL80211_ATTR_CIGTK,
 
 	NL80211_ATTR_USE_CFP,
+	NL80211_ATTR_CFP,
+	NL80211_ATTR_CIGTK,
 
 	/* add attributes here, update the policy in nl80211.c */
 
