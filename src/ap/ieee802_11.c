@@ -4998,6 +4998,11 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		else
 			sta->flags &= ~WLAN_STA_SPP_AMSDU;
 
+		if (wpa_auth_uses_cfp(sta->wpa_sm))
+			sta->flags |= WLAN_STA_CFP;
+		else
+			sta->flags &= ~WLAN_STA_CFP;
+
 #ifdef CONFIG_IEEE80211R_AP
 		if (sta->auth_alg == WLAN_AUTH_FT) {
 			if (type != LINK_PARSE_REASSOC) {
