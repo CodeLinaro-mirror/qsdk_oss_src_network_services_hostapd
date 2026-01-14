@@ -1233,6 +1233,11 @@ static int wpa_ft_parse_ftie(const u8 *ie, size_t ie_len,
 			parse->bigtk = pos;
 			parse->bigtk_len = len;
 			break;
+		case FTIE_SUBELEM_CIGTK:
+			wpa_printf(MSG_DEBUG, "FT: CIGTK");
+			parse->cigtk = pos;
+			parse->cigtk_len = len;
+			break;
 		case FTIE_SUBELEM_MLO_GTK:
 			if (len < 2 + 1 + 1 + 8) {
 				wpa_printf(MSG_DEBUG,
