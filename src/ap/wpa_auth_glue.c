@@ -654,7 +654,7 @@ static int hostapd_wpa_auth_set_key(void *ctx, int vlan_id, enum wpa_alg alg,
 
 
 static int hostapd_wpa_auth_get_seqnum(void *ctx, const u8 *addr, int idx,
-				       u8 *seq)
+				       u8 *seq, int get_cigtk_seq_num)
 {
 	struct hostapd_data *hapd = ctx;
 	int link_id = -1;
@@ -664,7 +664,7 @@ static int hostapd_wpa_auth_get_seqnum(void *ctx, const u8 *addr, int idx,
 		link_id = hapd->mld_link_id;
 #endif /* CONFIG_IEEE80211BE */
 	return hostapd_get_seqnum(hapd->conf->iface, hapd, addr, idx, link_id,
-				  seq);
+				  seq, get_cigtk_seq_num);
 }
 
 

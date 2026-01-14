@@ -235,10 +235,16 @@ struct wpa_group {
 	bool reject_4way_hs_for_entropy;
 	u8 IGTK[2][WPA_IGTK_MAX_LEN];
 	u8 BIGTK[2][WPA_IGTK_MAX_LEN];
+	u8 CIGTK[2][WPA_CIGTK_MAX_LEN];
 	int GN_igtk, GM_igtk;
 	int GN_bigtk, GM_bigtk;
+	int GN_cigtk, GM_cigtk;
 	bool bigtk_set;
 	bool bigtk_configured;
+	bool cigtk_set;
+	bool cigtk_configured;
+	bool non_tx_control_frame_prot;
+
 	/* Number of references except those in struct wpa_group->next */
 	unsigned int references;
 	unsigned int num_setup_iface;
@@ -275,6 +281,7 @@ struct wpa_authenticator {
 	struct wpa_ft_pmk_cache *ft_pmk_cache;
 
 	bool non_tx_beacon_prot;
+	bool non_tx_control_frame_prot;
 
 #ifdef CONFIG_P2P
 	struct bitfield *ip_pool;
@@ -288,6 +295,7 @@ struct wpa_authenticator {
 	u8 link_id;
 	bool primary_auth;
 #endif /* CONFIG_IEEE80211BE */
+	bool cigtk_seq_num;
 };
 
 

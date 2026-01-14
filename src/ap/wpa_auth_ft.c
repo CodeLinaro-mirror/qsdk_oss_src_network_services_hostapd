@@ -2276,9 +2276,13 @@ void wpa_auth_ft_store_keys(struct wpa_state_machine *sm, const u8 *pmk_r0,
 static inline int wpa_auth_get_seqnum(struct wpa_authenticator *wpa_auth,
 				      const u8 *addr, int idx, u8 *seq)
 {
+	int get_cigtk_seq_num;
+	get_cigtk_seq_num = false;
 	if (wpa_auth->cb->get_seqnum == NULL)
 		return -1;
-	return wpa_auth->cb->get_seqnum(wpa_auth->cb_ctx, addr, idx, seq);
+	if (wpa_auth->cigtk_seq_num)
+		get_cigtk_seq_num = 1;
+	return wpa_auth->cb->get_seqnum(wpa_auth->cb_ctx, addr, idx, seq, get_cigtk_seq_num);
 }
 
 
