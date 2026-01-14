@@ -136,8 +136,10 @@ u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
 	if (!hostapd_conf_he_btwt_enabled(hapd))
 		cap->he_mac_capab_info[HE_MAC_CAPAB_2] &= ~HE_MACCAP_TWT_BROADCAST;
 
-	if (!hostapd_conf_he_twt_enabled(hapd))
+	if (!hostapd_conf_he_twt_enabled(hapd)) {
 		cap->he_mac_capab_info[HE_MAC_CAPAB_0] &= ~HE_MACCAP_TWT_RESPONDER;
+		cap->he_mac_capab_info[HE_MAC_CAPAB_3] &= ~HE_MACCAP_FLEXI_TWT;
+	}
 
 	if (((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_SU_BEAMFORMER) ?
 	     hapd->conf->he_phy_capab.he_su_beamformer :

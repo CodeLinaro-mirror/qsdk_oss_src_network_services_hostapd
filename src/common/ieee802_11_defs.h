@@ -2849,6 +2849,9 @@ struct ieee80211_spatial_reuse {
 /* Mac capabilities for index 2 octet HE_MAC_CAPAB_2 */
 #define HE_MACCAP_TWT_BROADCAST			((u8) BIT(4))
 
+/* Mac capabilities for index 3 octet HE_MAC_CAPAB_3 */
+#define HE_MACCAP_FLEXI_TWT                     ((u8) BIT(6))
+
 #define HE_PHYCAP_CHANNEL_WIDTH_SET_IDX		0
 #define HE_PHYCAP_CHANNEL_WIDTH_MASK		((u8) (BIT(1) | BIT(2) | \
 						      BIT(3) | BIT(4)))
