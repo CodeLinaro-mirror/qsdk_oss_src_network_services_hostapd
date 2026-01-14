@@ -1606,6 +1606,10 @@ void wpa_supplicant_rsn_supp_set_config(struct wpa_supplicant *wpa_s,
 		     WPA_DRIVER_FLAGS2_BEACON_PROTECTION_CLIENT))
 			conf.beacon_prot = ssid->beacon_prot;
 
+		if (ssid->control_frame_protection &&
+		    (wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK))
+			conf.control_frame_prot = ssid->control_frame_protection;
+
 #ifdef CONFIG_PASN
 #ifdef CONFIG_TESTING_OPTIONS
 		conf.force_kdk_derivation = wpa_s->conf->force_kdk_derivation;

@@ -35,11 +35,13 @@
 
 #define SME_AUTH_TIMEOUT 5
 #define SME_ASSOC_TIMEOUT 5
+#define CIP_CAPAB_LEN 4
 
 static void sme_auth_timer(void *eloop_ctx, void *timeout_ctx);
 static void sme_assoc_timer(void *eloop_ctx, void *timeout_ctx);
 static void sme_obss_scan_timeout(void *eloop_ctx, void *timeout_ctx);
 static void sme_stop_sa_query(struct wpa_supplicant *wpa_s);
+static struct wpabuf *cip_build_assoc_req(u8 cip_element_id_ext, u8 padding_delay);
 
 
 #ifdef CONFIG_SAE
@@ -2586,6 +2588,33 @@ mscs_fail:
 		wpa_s->sme.assoc_req_ie_len += 2 + 4 + 1;
 	}
 
+	if ((ssid->control_frame_protection &&
+	    (wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK) &&
+	    (wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_CIP_PADDING_SUPPORT) &&
+	    (ssid->cip_padding_delay > 0))) {
+
+		struct wpabuf *cip_ie = cip_build_assoc_req(
+					WLAN_EID_EXT_CIP_CAPAB,
+					ssid->cip_padding_delay);
+
+		if (!cip_ie) {
+			wpa_printf(MSG_ERROR, "CIP: Failed to build IE");
+			return;
+		}
+
+		if (wpa_s->sme.assoc_req_ie_len + wpabuf_len(cip_ie) >
+		     sizeof(wpa_s->sme.assoc_req_ie)) {
+			wpa_printf(MSG_ERROR, "CIP: Not enough buffer room");
+			wpabuf_free(cip_ie);
+			return;
+		}
+
+		os_memcpy(wpa_s->sme.assoc_req_ie + wpa_s->sme.assoc_req_ie_len,
+			  wpabuf_head(cip_ie), wpabuf_len(cip_ie));
+		wpa_s->sme.assoc_req_ie_len += wpabuf_len(cip_ie);
+		wpabuf_free(cip_ie);
+	}
+
 	params.bssid = bssid;
 	params.ssid = wpa_s->sme.ssid;
 	params.ssid_len = wpa_s->sme.ssid_len;
@@ -2712,6 +2741,10 @@ mscs_fail:
 		" (SSID='%s' freq=%d MHz)", MAC2STR(params.bssid),
 		params.ssid ? wpa_ssid_txt(params.ssid, params.ssid_len) : "",
 		params.freq.freq);
+
+	if ((ssid->control_frame_protection
+	    && (wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK)))
+		params.control_frame_protection = ssid->control_frame_protection;
 
 	wpa_supplicant_set_state(wpa_s, WPA_ASSOCIATING);
 
@@ -2847,6 +2880,21 @@ int sme_update_ft_ies(struct wpa_supplicant *wpa_s, const u8 *md,
 	return 0;
 }
 
+static struct wpabuf *cip_build_assoc_req(u8 cip_element_id_ext, u8 padding_delay)
+{
+	struct wpabuf *ie;
+
+	ie = wpabuf_alloc(CIP_CAPAB_LEN);
+
+	if (!ie)
+		return NULL;
+	wpabuf_put_u8(ie, WLAN_EID_EXTENSION);
+	wpabuf_put_u8(ie, 1 + 1);
+	wpabuf_put_u8(ie, cip_element_id_ext);
+	wpabuf_put_u8(ie, padding_delay);
+
+	return ie;
+}
 
 static void sme_deauth(struct wpa_supplicant *wpa_s, const u8 **link_bssids)
 {

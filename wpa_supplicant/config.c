@@ -2959,6 +2959,8 @@ static const struct parse_data ssid_fields[] = {
 	{ INT_RANGE(rsn_overriding, 0, 2)},
 	{ INT_RANGE(sae_password_id_change, 0, 1)},
 	{ FUNC(bgscan_freq) },
+	{ INT_RANGE(control_frame_protection, 0, 1)},
+	{ INT(cip_padding_delay) },
 };
 
 #undef OFFSET

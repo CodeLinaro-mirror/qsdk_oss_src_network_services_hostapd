@@ -2176,6 +2176,11 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 	}
 
 	wpas_set_mgmt_group_cipher(wpa_s, ssid, &ie);
+	if (ssid->control_frame_protection &&
+	    wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK) {
+		wpa_s->control_group_cipher = WPA_CIPHER_BIP_GMAC_256;
+		wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_CIGTK, wpa_s->control_group_cipher);
+	}
 #ifdef CONFIG_OCV
 	if ((wpa_s->drv_flags & WPA_DRIVER_FLAGS_SME) ||
 	    (wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_OCV))

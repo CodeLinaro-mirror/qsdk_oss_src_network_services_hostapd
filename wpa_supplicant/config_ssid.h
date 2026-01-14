@@ -312,6 +312,15 @@ struct wpa_ssid {
 	int group_mgmt_cipher;
 
 	/**
+	 * group_control_frame_cipher - Bitfield of allowed group management ciphers
+	 *
+	 * BIP_GMAC_256 is used as of now
+	 *
+	 *
+	 */
+	int group_control_frame_cipher;
+
+	/**
 	 * key_mgmt - Bitfield of allowed key management protocols
 	 *
 	 * WPA_KEY_MGMT_*
@@ -1401,6 +1410,21 @@ struct wpa_ssid {
 	 * may still honor freq_list if configured).
 	 */
 	int *bgscan_freq;
+
+        /*
+	 * control_frame_protection - Whether to use control frame protection or
+	 * not.
+	*/
+
+	bool control_frame_protection;
+
+	/**
+	 * cip_padding_delay - configuring the padding delay
+	 *
+	*/
+
+	int cip_padding_delay;
+
 };
 
 #endif /* CONFIG_SSID_H */
