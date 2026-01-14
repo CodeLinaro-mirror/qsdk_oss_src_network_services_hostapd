@@ -216,7 +216,17 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 #ifdef CONFIG_IEEE80211AC
 	/* 0 means not set by user; will use hardware supported map by default */
 	bss->vht_mcs_nss_set = 0;
+	bss->vht_capab = 0;
+	bss->vht_capab_mask = 0;
 #endif /* CONFIG_IEEE80211AC */
+#ifdef CONFIG_IEEE80211AX
+	os_memset(&bss->he_phy_capab, 0, sizeof(bss->he_phy_capab));
+	bss->he_phy_capab_mask = 0;
+#endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_IEEE80211BE
+	os_memset(&bss->eht_phy_capab, 0, sizeof(bss->eht_phy_capab));
+	bss->eht_phy_capab_mask = 0;
+#endif /* CONFIG_IEEE80211BE */
 	bss->ht_mcs_nss_set = 0;
 }
 
@@ -1484,6 +1494,17 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 				   "Selective VHT-MCS rejected: VHT not allowed in current mode");
 			return -1;
 		}
+
+	}
+
+	if (bss->vht_capab_mask) {
+		if (!conf->ieee80211ac || bss->disable_11ac) {
+			bss->vht_capab = 0;
+			bss->vht_capab_mask = 0;
+			wpa_printf(MSG_ERROR,
+				   "BSS VHT capabilities rejected: VHT not allowed in current mode");
+			return -1;
+		}
 	}
 #endif /* CONFIG_IEEE80211AC */
 	if (bss->ht_mcs_nss_set) {
@@ -1513,6 +1534,21 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 		bss->disable_11ax = true;
 		wpa_printf(MSG_ERROR,
 			   "HE (IEEE 802.11ax) with WPA/WPA2 requires CCMP/GCMP to be enabled, disabling HE capabilities");
+	}
+
+	if (bss->he_phy_capab_mask) {
+		if (!conf->ieee80211ax || bss->disable_11ax) {
+			u32 mask = bss->he_phy_capab_mask;
+
+			os_memset(&bss->he_phy_capab, 0,
+				  sizeof(bss->he_phy_capab));
+			bss->he_phy_capab_mask = 0;
+			wpa_printf(MSG_ERROR,
+				   "BSS HE capability overrides (mask=0x%x) rejected: "
+				   "IEEE 802.11ax not allowed",
+				   mask);
+			return -1;
+		}
 	}
 #endif /* CONFIG_IEEE80211AX */
 
@@ -1654,6 +1690,68 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 
 	if (!hostapd_is_beacon_tx_rate_preamble_valid(conf, bss))
 		return -1;
+
+#ifdef CONFIG_IEEE80211BE
+
+	if (bss->eht_phy_capab_mask) {
+		if (!conf->ieee80211be || bss->disable_11be) {
+			u32 mask = bss->eht_phy_capab_mask;
+
+			os_memset(&bss->eht_phy_capab, 0,
+				  sizeof(bss->eht_phy_capab));
+			bss->eht_phy_capab_mask = 0;
+			wpa_printf(MSG_ERROR,
+				   "BSS EHT capability overrides (mask=0x%x) rejected: "
+				   "IEEE 802.11be not allowed",
+				   mask);
+			return -1;
+		}
+	}
+
+	if (bss->eht_phy_capab.eht_bfme_ss_80 > 7) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid bss_eht_bfme_ss_80=%u (valid range 0..7)",
+			   bss->eht_phy_capab.eht_bfme_ss_80);
+		return -1;
+	}
+
+	if (bss->eht_phy_capab.eht_bfme_ss_160 > 7) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid bss_eht_bfme_ss_160=%u (valid range 0..7)",
+			   bss->eht_phy_capab.eht_bfme_ss_160);
+		return -1;
+	}
+
+	if (bss->eht_phy_capab.eht_bfme_ss_320 > 7) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid bss_eht_bfme_ss_320=%u (valid range 0..7)",
+			   bss->eht_phy_capab.eht_bfme_ss_320);
+		return -1;
+	}
+
+	if (!bss->eht_phy_capab.mu_beamformer && bss->eht_phy_capab.eht_mu_bfmr_mask) {
+		wpa_printf(MSG_ERROR,
+			   "bss_eht_mu_bfmr set but MU beamformer capability is not enabled");
+		return -1;
+	}
+
+	if (!bss->eht_phy_capab.non_ofdma_ulmumimo_80mhz &&
+	    !bss->eht_phy_capab.non_ofdma_ulmumimo_160mhz &&
+	    !bss->eht_phy_capab.non_ofdma_ulmumimo_320mhz &&
+	    bss->eht_phy_capab.eht_mu_mimo_mask) {
+		wpa_printf(MSG_ERROR,
+			   "bss_eht_mu_mimo set but UL MU-MIMO capability is not enabled");
+		return -1;
+	}
+
+	if (bss->eht_ltf &&
+	    !(conf->ieee80211be && !bss->disable_11be)) {
+		wpa_printf(MSG_ERROR,
+			   "Selective EHT LTF rejected: EHT not allowed in current mode");
+		bss->eht_ltf = 0;
+		return -1;
+	}
+#endif /* CONFIG_IEEE80211BE */
 
 	return 0;
 }

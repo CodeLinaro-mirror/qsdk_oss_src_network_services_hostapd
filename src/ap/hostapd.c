@@ -172,7 +172,7 @@ static int hostapd_prepare_rates(struct hostapd_data *hapd,
 
 		if (conf->supported_rates &&
 		    !int_array_includes(conf->supported_rates, mode->rates[i]))
-		    	continue;
+			continue;
 
 		rate = &hapd->current_rates[hapd->num_rates];
 		rate->rate = mode->rates[i];
@@ -188,10 +188,10 @@ static int hostapd_prepare_rates(struct hostapd_data *hapd,
 
 	if ((hapd->num_rates == 0 || num_basic_rates == 0) &&
 	    (!hapd->iconf->ieee80211n || !hapd->iconf->require_ht)) {
-	    	wpa_printf(MSG_ERROR,
-	    		   "No rates remaining in supported/basic rate sets (%d,%d).",
-	    		   hapd->num_rates, num_basic_rates);
-	    	return -1;
+		wpa_printf(MSG_ERROR,
+			   "No rates remaining in supported/basic rate sets (%d,%d).",
+			   hapd->num_rates, num_basic_rates);
+		return -1;
 	}
 
 	/* Legacy beacon_rate Validation: Match beacon_rate with available
@@ -2336,7 +2336,7 @@ setup_mld:
 		if (!hapd->radius_das) {
 			wpa_printf(MSG_ERROR,
 				   "RADIUS DAS initialization failed.");
- 			return -1;
+			return -1;
 		}
 	}
 #endif /* CONFIG_NO_RADIUS */
@@ -3040,7 +3040,7 @@ static int setup_interface2(struct hostapd_iface *iface)
 {
 	struct hostapd_multi_hw_info *hw_info;
 	bool is_mesh = false;
-
+	int i;
 #ifdef CONFIG_MESH
 	is_mesh = iface->mconf ? true : false;
 #endif
@@ -3105,6 +3105,14 @@ static int setup_interface2(struct hostapd_iface *iface)
 		ret = hostapd_check_ht_capab(iface);
 		if (ret < 0)
 			goto fail;
+		for (i = 0; i < iface->num_bss; i++) {
+			if (hostapd_validate_bss_capab(iface->bss[i]) < 0) {
+				wpa_printf(MSG_ERROR,
+					   "BSS capability validation failed for %s",
+					   iface->bss[i]->conf->iface);
+				goto fail;
+			}
+		}
 		if (ret == 1) {
 			wpa_printf(MSG_DEBUG, "Interface initialization will "
 				   "be completed in a callback");
@@ -4501,6 +4509,182 @@ static void hostapd_cleanup_unused_mlds(struct hapd_interfaces *interfaces)
 #endif /* CONFIG_IEEE80211BE */
 }
 
+static int hostapd_require_tx_bss(struct hostapd_data *hapd, bool override_set,
+				  const char *op_name)
+{
+	if (!override_set)
+		return 0;
+
+	return hostapd_tx_bss_only(hapd, op_name);
+}
+
+
+static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
+{
+#ifdef CONFIG_IEEE80211AC
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->vht_mcs_nss_set,
+				   "vht_mcs_nss_set") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->vht_capab_mask &
+				   VHT_CAP_BSS_OVR_SU_BEAMFORMER,
+				   "bss_vht_su_beamformer") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->vht_capab_mask &
+				   VHT_CAP_BSS_OVR_SU_BEAMFORMEE,
+				   "bss_vht_su_beamformee") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->vht_capab_mask &
+				   VHT_CAP_BSS_OVR_MU_BEAMFORMER,
+				   "bss_vht_mu_beamformer") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->vht_capab_mask &
+				   VHT_CAP_BSS_OVR_MU_BEAMFORMEE,
+				   "bss_vht_mu_beamformee") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->vht_capab_mask &
+				   VHT_CAP_BSS_OVR_SOUNDING_DIMENSION,
+				   "bss_vht_sounding_dimension") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->vht_capab_mask &
+				   VHT_CAP_BSS_OVR_STS_CAPABILITY,
+				   "bss_vht_beamformee_sts") < 0)
+		return -1;
+#endif /* CONFIG_IEEE80211AC */
+
+#ifdef CONFIG_IEEE80211AX
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_SU_BEAMFORMER,
+				   "bss_he_su_beamformer") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_SU_BEAMFORMEE,
+				   "bss_he_su_beamformee") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_MU_BEAMFORMER,
+				   "bss_he_mu_beamformer") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_MU_BEAMFORMEE,
+				   "bss_he_mu_beamformee") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_DL_MU_OFDMA,
+				   "bss_he_dl_mu_ofdma") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_DL_MU_OFDMA_BFER,
+				   "bss_he_dl_mu_ofdma_bfer") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_UL_MU_OFDMA,
+				   "bss_he_ul_mu_ofdma") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_UL_MUMIMO,
+				   "bss_he_ul_mumimo") < 0)
+		return -1;
+#endif /* CONFIG_IEEE80211AX */
+
+#ifdef CONFIG_IEEE80211BE
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_SU_BEAMFORMER,
+				   "bss_eht_su_beamformer") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_SU_BEAMFORMEE,
+				   "bss_eht_su_beamformee") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_MU_BEAMFORMER,
+				   "bss_eht_mu_beamformer") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_MU_BEAMFORMEE,
+				   "bss_eht_mu_beamformee") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_DL_MU_OFDMA,
+				   "bss_eht_dl_mu_ofdma") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_UL_MU_OFDMA,
+				   "bss_eht_ul_mu_ofdma") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_DL_OFDMA_MUMIMO,
+				   "bss_eht_dl_ofdma_mumimo") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_UL_OFDMA_MUMIMO,
+				   "bss_eht_ul_ofdma_mumimo") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_UL_MU_MIMO_80,
+				   "bss_eht_ulmumimo_80mhz") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_UL_MU_MIMO_160,
+				   "bss_eht_ulmumimo_160mhz") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_UL_MU_MIMO_320,
+				   "bss_eht_ulmumimo_320mhz") < 0)
+		return -1;
+#endif /* CONFIG_IEEE80211BE */
+
+	return 0;
+}
+
 
 /**
  * hostapd_init - Allocate and initialize per-interface data
@@ -4547,12 +4731,9 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 		hapd->msg_ctx = hapd;
 		hostapd_bss_setup_multi_link(hapd, interfaces);
 		hostapd_mbssid_setup_bss(hapd);
-#ifdef CONFIG_IEEE80211AC
-		if (hapd->conf->vht_mcs_nss_set) {
-			if (hostapd_tx_bss_only(hapd, "vht_mcs_nss_set") < 0)
-				goto fail;
-		}
-#endif /* CONFIG_IEEE80211AC */
+		if (hostapd_validate_bss_tx_params(hapd) < 0)
+			goto fail;
+
 		if (hapd->conf->ht_mcs_nss_set) {
 			if (hostapd_tx_bss_only(hapd, "ht_mcs_nss_set") < 0)
 				goto fail;
@@ -4686,6 +4867,16 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 		hostapd_bss_setup_multi_link(hapd, interfaces);
 		hostapd_mbssid_setup_bss(hapd);
 
+		/* Validate BSS capabilities if driver is initialized */
+		if (iface->current_mode &&
+		    hostapd_validate_bss_capab(hapd) < 0) {
+			wpa_printf(MSG_ERROR,
+				   "BSS capability validation failed for %s",
+				   hapd->conf->iface);
+			iface->conf->num_bss--;
+			hostapd_config_free(conf);
+			return NULL;
+		}
 
 		bss_idx = iface->num_bss++;
 		/* mbssid index is needed if any of the link from the mbssid group is
@@ -5320,7 +5511,7 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx,
 
 	/* Remove hostapd_data only if it has already been initialized */
 	if (idx < iface->num_bss) {
- 		struct hostapd_data *hapd = iface->bss[idx];
+		struct hostapd_data *hapd = iface->bss[idx];
 
 #ifdef CONFIG_IEEE80211AX
 		char buf[128] = {0};
@@ -5996,8 +6187,8 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 		else
 			sec_channel_offset = -1;
 
-                chanwidth = chan_op_bw;
-        }
+		chanwidth = chan_op_bw;
+	}
 
 	if (ieee80211_freq_to_channel_ext(
 		    settings->freq_params.freq,
@@ -6423,7 +6614,7 @@ void hostapd_switch_color_timeout_handler(void *eloop_data,
 		return;
 	}
 
- 	if (hapd->no_free_color)
+	if (hapd->no_free_color)
 		 hapd->no_free_color = 0;
 
 	for (b = 0; b < hapd->iface->num_bss; b++) {

@@ -1964,6 +1964,18 @@ struct wpa_driver_ap_params {
 	unsigned int beacon_rate;
 
 	/**
+	 * eht_ltf: EHT LTF size for EHT beacon rate (NL80211_TXRATE_EHT_LTF)
+	 *
+	 * Driver_nl80211 will set NL80211_TXRATE_EHT_LTF when:
+	 * - rate_type == BEACON_RATE_EHT, and
+	 * - eht_ltf >= 0
+	 *
+	 * Value follows nl80211 EHT LTF encoding (NL80211_RATE_INFO_EHT_GI* /
+	 * kernel enum values for NL80211_TXRATE_EHT_LTF).
+	 */
+	int eht_ltf;
+
+	/**
 	 * beacon_rate_type: Beacon data rate type (legacy/HT/VHT/HE)
 	 */
 	enum beacon_rate_type rate_type;
@@ -7726,7 +7738,7 @@ union wpa_event_data {
 	 * @freq: Frequency of the channel in MHz
 	 * @link_id: If >= 0, Link ID of the MLO link
      * @is_dfs_event_on_curr_hw: Set to true, if NL80211_CMD_RADAR_DETECT
-                                is received on the current hardware
+				is received on the current hardware
 	 */
 	struct dfs_event {
 		int freq;
@@ -7740,7 +7752,7 @@ union wpa_event_data {
 		bool is_background;
 		enum chan_width chan_width_device;
 		int cf_device;
-        bool is_dfs_event_on_curr_hw;
+	bool is_dfs_event_on_curr_hw;
 	} dfs_event;
 
 	/**
