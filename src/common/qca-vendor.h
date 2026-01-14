@@ -23413,11 +23413,15 @@ enum qca_wlan_vendor_attr_dcs {
  *    BIT(0): Trigger Continuous Wave Interference Management(CW IM)
  *    BIT(1): Trigger WLAN Interference Management(WLAN IM)
  *    BIT(4): Trigger OBSS Interference Management(OBSS IM)
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_SIM_INTERFERENCE_BITMAP: 32-bit unsigned value to
+ * set the channel bandwidth interference bitmap.
  */
 enum qca_wlan_vendor_attr_dcs_sim {
 	QCA_WLAN_VENDOR_ATTR_DCS_SIM_INVALID = 0,
 	QCA_WLAN_VENDOR_ATTR_DCS_SIM_LINK_ID,
 	QCA_WLAN_VENDOR_ATTR_DCS_SIM_TYPE,
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_INTERFERENCE_BITMAP,
 
 	QCA_WLAN_VENDOR_ATTR_DCS_SIM_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_DCS_SIM_MAX =
