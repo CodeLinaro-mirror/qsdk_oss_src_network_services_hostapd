@@ -220,6 +220,9 @@ struct ieee802_11_elems {
 	u8 ttlm_num;
 	u8 mscs_desc_len;
 	u8 cip_pad_len;
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
+	bool is_mu_cap_war_vendor;
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 };
 
 typedef enum { ParseOK = 0, ParseUnknown = 1, ParseFailed = -1 } ParseRes;

@@ -36,6 +36,7 @@
 #include "taxonomy.h"
 #include "ieee802_11_auth.h"
 #include "dscp_policy.h"
+#include "../../qcn_extns/cmn.h"
 
 #ifdef CONFIG_IEEE80211AX
 #include "robust_av.h"
@@ -1142,7 +1143,20 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211AC
 	if (hostapd_is_vht_enabled(hapd) &&
 	    !is_6ghz_op_class(hapd->iconf->op_class)) {
+
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
+		u8 *vht_start = pos;
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
+
 		pos = hostapd_eid_vht_capabilities(hapd, pos, 0);
+
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
+		if (pos > vht_start)
+			params->mu_cap_war_vht_cap_offset = vht_start;
+		else
+			params->mu_cap_war_vht_cap_offset = NULL;
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
+
 		pos = hostapd_eid_vht_operation(hapd, pos);
 		pos = hostapd_eid_txpower_envelope(hapd, pos);
 	}
@@ -2171,6 +2185,13 @@ void handle_probe_req(struct hostapd_data *hapd,
 			csa_offs[csa_offs_len++] =
 				params.ecsa_pos - (u8 *) params.resp;
 	}
+
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
+	if (is_mu_cap_war_active(hapd) && elems.is_mu_cap_war_vendor &&
+	    is_sta_elems_vht_only(&elems))
+		hostapd_mu_cap_war_update_db_extn(hapd, mgmt->sa,
+						  params.mu_cap_war_vht_cap_offset);
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 
 	ret = hostapd_drv_send_mlme(hostapd_mbssid_get_tx_bss(hapd),
 				    params.resp, params.resp_len, noack,
