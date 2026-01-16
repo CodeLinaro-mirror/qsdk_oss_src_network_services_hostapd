@@ -8541,3 +8541,243 @@ hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
 
 	return true;
 }
+
+static int hostapd_remove_vendor_elements(struct hostapd_bss_config *conf,  struct wpabuf *buf)
+{
+	const u8 *needle = wpabuf_head_u8(buf);
+	size_t needle_len = wpabuf_len(buf);
+	int i;
+
+	for (i = 0; i < conf->vendor_elements_count; i++) {
+		struct wpabuf *entry;
+		const u8 *entry_data;
+		size_t entry_len;
+
+		entry = conf->vendor_elements[i];
+		entry_data = wpabuf_head_u8(entry);
+		entry_len = wpabuf_len(entry);
+
+		if (entry_len == needle_len &&
+		    os_memcmp(entry_data + 2, needle + 2, needle_len) == 0) {
+			conf->vendor_elements_len -= wpabuf_len(conf->vendor_elements[i]);
+			wpabuf_free(entry);
+			os_remove_in_array(conf->vendor_elements, conf->vendor_elements_count,
+					   sizeof(struct wpabuf *), i);
+			conf->vendor_elements_count--;
+			wpa_printf(MSG_DEBUG, "Removed vendor element (new count=%zu)",
+				   conf->vendor_elements_count);
+			return 0;
+		}
+	}
+	wpa_printf(MSG_ERROR, "Vendor elements entry not found count=%zu",
+		   conf->vendor_elements_count);
+	return -1;
+}
+
+
+static bool hostapd_validate_vendor_elements(struct hostapd_bss_config *conf, struct wpabuf *buf)
+{
+	const u8 *data;
+	u8 id;
+	size_t pos = 0, total;
+
+	data = wpabuf_head_u8(buf);
+	total = wpabuf_len(buf);
+
+	while (pos < total) {
+		id = data[pos];
+		if (id != WLAN_EID_VENDOR_SPECIFIC) {
+			wpa_printf(MSG_ERROR, "Invalid vendor ID:%u: Expected:%d",
+				   id, WLAN_EID_VENDOR_SPECIFIC);
+			return false;
+		}
+
+		pos += data[pos + 1] + IEEE80211_ELEM_HEADER_LEN;
+		if (pos > total) {
+			wpa_printf(MSG_ERROR, "Vendor IE Truncated: total=%zu ie_len=%zu",
+				   total, pos);
+			return false;
+		}
+	}
+	return true;
+}
+
+static int hostapd_handle_vendor_elements_remove(struct hostapd_bss_config *conf,
+						 struct wpabuf *buf)
+{
+	struct wpabuf *b;
+	const u8 *data;
+	size_t pos = 0, total;
+
+	if (conf->vendor_elements_count == 0) {
+		wpa_printf(MSG_ERROR, "No vendor elements");
+		return -1;
+	}
+
+	if (!hostapd_validate_vendor_elements(conf, buf)) {
+		wpa_printf(MSG_ERROR, "Vendor elements length mismatch");
+		return -1;
+	}
+
+	data = wpabuf_head_u8(buf);
+	total = wpabuf_len(buf);
+
+	while (pos + IEEE80211_ELEM_HEADER_LEN < total) {
+		size_t ie_total_len = data[pos + 1] + IEEE80211_ELEM_HEADER_LEN;
+
+		b = wpabuf_alloc_copy(&data[pos], ie_total_len);
+		if (!b)
+			return -1;
+
+		if (hostapd_remove_vendor_elements(conf, b) < 0) {
+			wpabuf_free(b);
+			return -1;
+		}
+		wpabuf_free(b);
+		pos += ie_total_len;
+	}
+	return 0;
+}
+
+static int hostapd_handle_vendor_elements_add(struct hostapd_bss_config *conf, struct wpabuf *buf,
+					      bool is_bcn_update_needed)
+{
+	struct wpabuf *b;
+	const u8 *data;
+	size_t pos = 0, total;
+
+	if (conf->vendor_elements_count >= MAX_VENDOR_ELEM_ALLOWED) {
+		wpa_printf(MSG_ERROR, "Vendor elements limit exceeds max_count:%d",
+			   MAX_VENDOR_ELEM_ALLOWED);
+		return -1;
+	}
+
+	/*
+	 * Skip vendor element validation when elements are added via
+	 * the hostapd configuration file.
+	 * Validation is performed only vendor elements are added hostapd cli
+	 * command.
+	 */
+	if (is_bcn_update_needed && !hostapd_validate_vendor_elements(conf, buf)) {
+		wpa_printf(MSG_ERROR, "Vendor elements add failed: length mismatch");
+		return -1;
+	}
+
+	data = wpabuf_head_u8(buf);
+	total = wpabuf_len(buf);
+
+	while (pos + IEEE80211_ELEM_HEADER_LEN < total) {
+		size_t ie_total_len = data[pos + 1]  + IEEE80211_ELEM_HEADER_LEN;
+
+		b = wpabuf_alloc_copy(&data[pos], ie_total_len);
+		if (!b)
+			return -1;
+
+		hostapd_remove_vendor_elements(conf, b);
+		if (conf->vendor_elements_count >= MAX_VENDOR_ELEM_ALLOWED) {
+			wpa_printf(MSG_ERROR, "Vendor elements limit exceeds(%zu) max_count (%d)",
+				   conf->vendor_elements_count, MAX_VENDOR_ELEM_ALLOWED);
+			wpabuf_free(b);
+			return -1;
+		}
+		conf->vendor_elements[conf->vendor_elements_count++] = b;
+		conf->vendor_elements_len += ie_total_len;
+		pos += ie_total_len;
+	}
+	return 0;
+}
+
+int hostapd_handle_vendor_elements_update(struct hostapd_data *hapd,
+					  struct hostapd_bss_config *conf, struct wpabuf *data,
+					  char *cmd, char *val, bool is_bcn_update_needed)
+{
+	struct wpabuf *buf;
+	size_t len;
+	int ret;
+
+	if (!hapd && is_bcn_update_needed) {
+		wpa_printf(MSG_ERROR, "hapd is NULL");
+		return -1;
+	}
+
+	len = os_strlen(val);
+	if (len & 0x01) {
+		wpa_printf(MSG_ERROR, "Invalid length");
+		return -1;
+	}
+
+	if (data) {
+		len = wpabuf_len(data);
+		if (len < MIN_VENDOR_ELEM_LEN) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid vendor element length, Min:%d",
+				   MIN_VENDOR_ELEM_LEN);
+			return -1;
+		}
+
+		buf = wpabuf_dup(data);
+		if (!buf) {
+			wpa_printf(MSG_ERROR, "Failed to duplicate wpabuf");
+			return -1;
+		}
+	} else {
+		len /= 2;
+		if (len < MIN_VENDOR_ELEM_LEN) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid vendor element length, Min:%d", MIN_VENDOR_ELEM_LEN);
+			return -1;
+		}
+
+		buf = wpabuf_alloc(len);
+		if (!buf) {
+			wpa_printf(MSG_ERROR, "Memory allocation failed");
+			return -1;
+		}
+
+		if (hexstr2bin(val, wpabuf_put(buf, len), len)) {
+			wpa_printf(MSG_ERROR, "Invalid hexa string");
+			wpabuf_free(buf);
+			return -1;
+		}
+	}
+
+	if (os_strcmp(cmd, "vendor_elements_add") == 0) {
+		ret = hostapd_handle_vendor_elements_add(conf, buf, is_bcn_update_needed);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "Failed to add vendor elements");
+			wpabuf_free(buf);
+			return -1;
+		}
+	} else if (os_strcmp(cmd, "vendor_elements_remove") == 0) {
+		ret = hostapd_handle_vendor_elements_remove(conf, buf);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "Failed to remove vendor elements");
+			wpabuf_free(buf);
+			return -1;
+		}
+	} else {
+		wpa_printf(MSG_ERROR, "Invalid vendor command");
+		wpabuf_free(buf);
+		return -1;
+	}
+
+	if (is_bcn_update_needed) {
+		if (hapd->beacon_set_done && hapd->started &&
+		    ieee802_11_set_beacon(hapd) < 0) {
+			wpa_printf(MSG_ERROR, "Failed to update beacons with vendor elements");
+			if (os_strcmp(cmd, "vendor_elements_add") == 0) {
+				if (hostapd_handle_vendor_elements_remove(conf, buf) < 0)
+					wpa_printf(MSG_ERROR,
+						   "Rollback: failed to remove vendor elements");
+			} else if (os_strcmp(cmd, "vendor_elements_remove") == 0) {
+				if (hostapd_handle_vendor_elements_add(conf, buf, is_bcn_update_needed) < 0)
+					wpa_printf(MSG_ERROR,
+						   "Rollback: failed to add vendor elements");
+			}
+			wpabuf_free(buf);
+			return -1;
+		}
+	}
+	wpabuf_free(buf);
+	return 0;
+}

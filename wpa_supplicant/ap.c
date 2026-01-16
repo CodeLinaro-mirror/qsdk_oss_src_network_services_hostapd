@@ -846,9 +846,10 @@ no_wps:
 	bss->disassoc_low_ack = wpa_s->conf->disassoc_low_ack;
 
 	if (wpa_s->conf->ap_vendor_elements) {
-		bss->vendor_elements =
-			wpabuf_dup(wpa_s->conf->ap_vendor_elements);
+		hostapd_handle_vendor_elements_update(NULL, bss, wpa_s->conf->ap_vendor_elements,
+						      "vendor_elements_add", NULL, false);
 	}
+
 	if (wpa_s->conf->ap_assocresp_elements) {
 		bss->assocresp_elements =
 			wpabuf_dup(wpa_s->conf->ap_assocresp_elements);
@@ -2148,6 +2149,7 @@ int wpas_ap_pmksa_cache_add_external(struct wpa_supplicant *wpa_s, char *cmd)
 int wpas_ap_update_beacon(struct wpa_supplicant *wpa_s)
 {
 	struct hostapd_data *hapd;
+	size_t i;
 
 	if (!wpa_s->ap_iface)
 		return -1;
@@ -2160,11 +2162,15 @@ int wpas_ap_update_beacon(struct wpa_supplicant *wpa_s)
 			wpabuf_dup(wpa_s->conf->ap_assocresp_elements);
 	}
 
-	wpabuf_free(hapd->conf->vendor_elements);
-	hapd->conf->vendor_elements = NULL;
+	for (i = 0; i < hapd->conf->vendor_elements_count; i++) {
+		wpabuf_free(hapd->conf->vendor_elements[i]);
+		hapd->conf->vendor_elements[i] = NULL;
+	}
+
 	if (wpa_s->conf->ap_vendor_elements) {
-		hapd->conf->vendor_elements =
-			wpabuf_dup(wpa_s->conf->ap_vendor_elements);
+		hostapd_handle_vendor_elements_update(NULL, hapd->conf,
+						      wpa_s->conf->ap_vendor_elements,
+						      "vendor_elements_add", NULL, false);
 	}
 
 	return ieee802_11_set_beacon(hapd);

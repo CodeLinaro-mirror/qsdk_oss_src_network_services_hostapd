@@ -4524,7 +4524,9 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->sae_track_password = atoi(pos);
 #endif /* CONFIG_SAE */
 	} else if (os_strcmp(buf, "vendor_elements") == 0) {
-		if (parse_wpabuf_hex(line, buf, &bss->vendor_elements, pos))
+		if (hostapd_handle_vendor_elements_update(NULL, bss, NULL,
+							  "vendor_elements_add",
+							  pos, false))
 			return 1;
 	} else if (os_strcmp(buf, "assocresp_elements") == 0) {
 		if (parse_wpabuf_hex(line, buf, &bss->assocresp_elements, pos))

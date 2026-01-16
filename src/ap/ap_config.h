@@ -280,6 +280,7 @@ struct airtime_sta_weight {
 };
 
 #define EXT_CAPA_MAX_LEN 15
+#define MAX_VENDOR_ELEM_ALLOWED 10
 
 #ifdef CONFIG_IEEE80211AX
 struct he_phy_capabilities_info {
@@ -743,7 +744,9 @@ struct hostapd_bss_config {
 	char *dump_msk_file;
 #endif /* CONFIG_RADIUS_TEST */
 
-	struct wpabuf *vendor_elements;
+	struct wpabuf *vendor_elements[MAX_VENDOR_ELEM_ALLOWED];
+	size_t vendor_elements_count;
+	size_t vendor_elements_len;
 	struct wpabuf *assocresp_elements;
 
 	unsigned int anti_clogging_threshold;
