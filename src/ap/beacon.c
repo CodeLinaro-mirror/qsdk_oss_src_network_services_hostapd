@@ -780,7 +780,10 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 	if (hapd->iface->fst_ies)
 		buflen += wpabuf_len(hapd->iface->fst_ies);
 #endif /* CONFIG_FST */
-	if (hapd->conf->vendor_elements)
+	/* Use plugin vendor elements if set, otherwise use conf vendor elements */
+	if (hapd->plugin_vendor_elements)
+		buflen += wpabuf_len(hapd->plugin_vendor_elements);
+	else if (hapd->conf->vendor_elements)
 		buflen += wpabuf_len(hapd->conf->vendor_elements);
 #ifdef CONFIG_TESTING_OPTIONS
 	if (hapd->conf->presp_elements)
@@ -1135,7 +1138,12 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	/* Add Estimated Service Parameters (ESP) IE in Probe Response when enabled */
 	pos = hostapd_eid_esp_extn(hapd, pos, epos - pos);
 
-	if (hapd->conf->vendor_elements) {
+	/* Use plugin vendor elements if set, otherwise use conf vendor elements */
+	if (hapd->plugin_vendor_elements) {
+		os_memcpy(pos, wpabuf_head(hapd->plugin_vendor_elements),
+			  wpabuf_len(hapd->plugin_vendor_elements));
+		pos += wpabuf_len(hapd->plugin_vendor_elements);
+	} else if (hapd->conf->vendor_elements) {
 		os_memcpy(pos, wpabuf_head(hapd->conf->vendor_elements),
 			  wpabuf_len(hapd->conf->vendor_elements));
 		pos += wpabuf_len(hapd->conf->vendor_elements);
@@ -2501,7 +2509,10 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	if (hapd->iface->fst_ies)
 		tail_len += wpabuf_len(hapd->iface->fst_ies);
 #endif /* CONFIG_FST */
-	if (hapd->conf->vendor_elements)
+	/* Use plugin vendor elements if set, otherwise use conf vendor elements */
+	if (hapd->plugin_vendor_elements)
+		tail_len += wpabuf_len(hapd->plugin_vendor_elements);
+	else if (hapd->conf->vendor_elements)
 		tail_len += wpabuf_len(hapd->conf->vendor_elements);
 
 #ifdef CONFIG_IEEE80211AC
@@ -2851,7 +2862,12 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	tailpos = hostapd_eid_esp_extn(hapd, tailpos,
 				       tail + tail_len - tailpos);
 
-	if (hapd->conf->vendor_elements) {
+	/* Use plugin vendor elements if set, otherwise use conf vendor elements */
+	if (hapd->plugin_vendor_elements) {
+		os_memcpy(tailpos, wpabuf_head(hapd->plugin_vendor_elements),
+			  wpabuf_len(hapd->plugin_vendor_elements));
+		tailpos += wpabuf_len(hapd->plugin_vendor_elements);
+	} else if (hapd->conf->vendor_elements) {
 		os_memcpy(tailpos, wpabuf_head(hapd->conf->vendor_elements),
 			  wpabuf_len(hapd->conf->vendor_elements));
 		tailpos += wpabuf_len(hapd->conf->vendor_elements);

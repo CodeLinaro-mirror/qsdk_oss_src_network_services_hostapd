@@ -402,6 +402,7 @@ struct hostapd_data {
 	int beacon_set_done;
 	struct wpabuf *wps_beacon_ie;
 	struct wpabuf *wps_probe_resp_ie;
+	struct wpabuf *plugin_vendor_elements; /* Dynamic vendor IEs set by plugin */
 #ifdef CONFIG_WPS
 	unsigned int ap_pin_failures;
 	unsigned int ap_pin_failures_consecutive;
