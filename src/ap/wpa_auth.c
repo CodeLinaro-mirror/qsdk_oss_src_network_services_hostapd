@@ -34,6 +34,7 @@
 #include "pmksa_cache_auth.h"
 #include "wpa_auth_i.h"
 #include "wpa_auth_ie.h"
+#include "hostapd_if/hostapd_if.h"
 
 #define STATE_MACHINE_DATA struct wpa_state_machine
 #define STATE_MACHINE_DEBUG_PREFIX "WPA"
@@ -1036,6 +1037,9 @@ wpa_auth_sta_init(struct wpa_authenticator *wpa_auth, const u8 *addr,
 #ifdef CONFIG_IEEE80211BE
 	sm->mld_assoc_link_id = -1;
 #endif /* CONFIG_IEEE80211BE */
+
+	/* Initialize external M3 gating policy per-STA */
+	sm->externally_triggered_m3 = wpa_auth->conf.externally_triggered_m3;
 
 	return sm;
 }
@@ -5704,6 +5708,16 @@ SM_STEP(WPA_PTK)
 			SM_ENTER(WPA_PTK, PTKSTART);
 		break;
 	case WPA_PTK_PTKCALCNEGOTIATING2:
+#ifdef CONFIG_HOSTAPD_IF
+		hostapd_if_event_eapol_m2_received(wpa_auth->cb_ctx,
+						   wpa_auth_get_spa(sm));
+		/* Gate transition to PTKINITNEGOTIATING if external trigger is required */
+		if (sm->externally_triggered_m3) {
+			wpa_printf(MSG_INFO, "Externally triggered M3\n");
+			/* Hold in PTKCALCNEGOTIATING2 until trigger is received */
+			break;
+		}
+#endif
 		SM_ENTER(WPA_PTK, PTKINITNEGOTIATING);
 		break;
 	case WPA_PTK_PTKINITNEGOTIATING:
@@ -6695,6 +6709,9 @@ static int wpa_group_setkeysdone(struct wpa_authenticator *wpa_auth,
 	group->changed = true;
 	group->wpa_group_state = WPA_GROUP_SETKEYSDONE;
 
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_event_gtk_completion(wpa_auth->cb_ctx);
+#endif
 	if (wpa_group_config_group_keys(wpa_auth, group) < 0) {
 		wpa_group_fatal_failure(wpa_auth, group);
 		return -1;
@@ -7895,7 +7912,6 @@ void wpa_auth_set_transition_disable(struct wpa_authenticator *wpa_auth,
 		wpa_auth->conf.transition_disable = val;
 }
 
-
 #ifdef CONFIG_TESTING_OPTIONS
 
 int wpa_auth_resend_m1(struct wpa_state_machine *sm, int change_anonce,
@@ -8408,7 +8424,6 @@ u8 wpa_sta_sm_get_num_mld_links(struct wpa_state_machine *sm)
 	return 0;
 }
 
-
 #ifdef CONFIG_IEEE80211BE
 /* wpa_select_vlan_wpa_group - Traverse through the wpa_group list and select
  * the one that matches the vlan_id.
@@ -8451,7 +8466,6 @@ void wpa_auth_set_sae_pw_id(struct wpa_state_machine *sm,
 	}
 }
 
-
 bool wpa_auth_get_first_sta_seen(struct wpa_authenticator *wpa_auth, int vlan_id)
 {
 	struct wpa_group *group;
@@ -8461,4 +8475,27 @@ bool wpa_auth_get_first_sta_seen(struct wpa_authenticator *wpa_auth, int vlan_id
 
 	group = wpa_select_vlan_wpa_group(wpa_auth->group, vlan_id);
 	return group->first_sta_seen;
+}
+
+/*
+ * External entry point to resume the 4-way handshake by transitioning from
+ * WPA_PTK_PTKCALCNEGOTIATING2 to PTKINITNEGOTIATING and sending M3.
+ */
+void wpa_auth_trigger_m3(struct wpa_state_machine *sm)
+{
+	if (!sm)
+		return;
+
+	/* Only applicable if externally gated and currently waiting */
+	if (!sm->externally_triggered_m3)
+		return;
+
+	/* Accept the trigger only at the expected state */
+	if (sm->wpa_ptk_state != WPA_PTK_PTKCALCNEGOTIATING2)
+		return;
+
+	wpa_auth_vlogger(sm->wpa_auth, wpa_auth_get_spa(sm), LOGGER_DEBUG,
+			 "External trigger received; resuming to PTKINITNEGOTIATING");
+
+	SM_ENTER(WPA_PTK, PTKINITNEGOTIATING);
 }
