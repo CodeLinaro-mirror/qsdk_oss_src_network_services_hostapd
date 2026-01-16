@@ -515,6 +515,29 @@ int wpa_get_mib_sta(struct wpa_state_machine *sm, char *buf, size_t buflen);
 void wpa_auth_countermeasures_start(struct wpa_authenticator *wpa_auth);
 int wpa_auth_pairwise_set(struct wpa_state_machine *sm);
 int wpa_auth_get_pairwise(struct wpa_state_machine *sm);
+
+/* External key API (full PTK/PMK/GTK get/set) */
+int wpa_auth_get_ptk_full(struct wpa_state_machine *sm,
+			  u8 *kck, size_t *kck_len,
+			  u8 *kek, size_t *kek_len,
+			  u8 *tk, size_t *tk_len);
+int wpa_auth_set_ptk_full(struct wpa_state_machine *sm,
+			  u8 *kck, size_t kck_len,
+			  u8 *kek, size_t kek_len,
+			  u8 *tk, size_t tk_len);
+
+int wpa_auth_get_pmk_full(struct wpa_state_machine *sm,
+			  u8 *pmk, size_t *pmk_len,
+			  u8 *pmkid);
+int wpa_auth_set_pmk_full(struct wpa_state_machine *sm,
+			  u8 *pmk, u8 *pmkid, int pmk_len);
+
+int wpa_auth_get_gtk(struct wpa_authenticator *wpa_auth,
+		     int *gtk_index,
+		     u8 *gtk, size_t *gtk_len);
+int wpa_auth_set_gtk(struct wpa_authenticator *wpa_auth,
+		     int gtk_index,
+		     u8 *gtk, size_t gtk_len);
 const u8 * wpa_auth_get_pmk(struct wpa_state_machine *sm, int *len);
 const u8 * wpa_auth_get_dpp_pkhash(struct wpa_state_machine *sm);
 int wpa_auth_sta_key_mgmt(struct wpa_state_machine *sm);

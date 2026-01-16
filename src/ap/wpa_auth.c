@@ -7070,6 +7070,159 @@ int wpa_auth_get_pairwise(struct wpa_state_machine *sm)
 	return sm->pairwise;
 }
 
+int wpa_auth_get_gtk(struct wpa_authenticator *wpa_auth,
+		int *gtk_index,
+		uint8_t *gtk, size_t *gtk_len)
+{
+	struct wpa_group *group;
+	const int GTK_INDEX_OFFSET = 1;
+
+	if (!wpa_auth)
+		return -1;
+
+	group = wpa_auth->group;
+	*gtk_len = group->GTK_len;
+	*gtk_index = group->GN;
+	os_memcpy(gtk, group->GTK[group->GN - GTK_INDEX_OFFSET], *gtk_len);
+	return 0;
+}
+
+int wpa_auth_set_gtk(struct wpa_authenticator *wpa_auth,
+		int gtk_index,
+		uint8_t *gtk, size_t gtk_len)
+
+{
+	struct wpa_group *group = wpa_auth->group;
+	struct wpa_auth_config *conf = &wpa_auth->conf;
+	const int GTK_INDEX_OFFSET = 1;
+
+	if (gtk_index != GTK_INDEX_OFFSET &&
+	    gtk_index != (GTK_INDEX_OFFSET+1)) {
+		wpa_printf(MSG_ERROR, "ERROR!! invalid GTK index\n");
+		return -1;
+	}
+
+
+	if (wpa_auth_set_key(wpa_auth, 0,
+			     wpa_cipher_to_alg(conf->wpa_group),
+			     broadcast_ether_addr, gtk_index,
+			     gtk, gtk_len,
+			     KEY_FLAG_GROUP_TX_DEFAULT) < 0) {
+		return -1;
+	}
+
+	os_memcpy(group->GTK[gtk_index-GTK_INDEX_OFFSET], gtk, gtk_len);
+	group->GN = gtk_index;
+	if (group->GN == GTK_INDEX_OFFSET)
+		group->GM = GTK_INDEX_OFFSET+1;
+	else
+		group->GM = GTK_INDEX_OFFSET;
+	wpa_printf(MSG_INFO, "GM: %d GN: %d\n", group->GM, group->GN);
+	return 0;
+}
+
+int wpa_auth_get_ptk_full(struct wpa_state_machine *sm,
+		uint8_t *kck, size_t *kck_len,
+		uint8_t *kek, size_t *kek_len,
+		uint8_t *tk, size_t *tk_len)
+{
+	if (!sm)
+		return -1;
+
+	os_memcpy(kck, sm->PTK.kck, sm->PTK.kck_len);
+	*kck_len = sm->PTK.kck_len;
+
+	os_memcpy(kek, sm->PTK.kek, sm->PTK.kek_len);
+	*kek_len = sm->PTK.kek_len;
+
+	os_memcpy(tk, sm->PTK.tk, sm->PTK.tk_len);
+	*tk_len = sm->PTK.tk_len;
+	return 0;
+}
+
+int wpa_auth_set_ptk_full(struct wpa_state_machine *sm,
+		uint8_t *kck, size_t kck_len,
+		uint8_t *kek, size_t kek_len,
+		uint8_t *tk, size_t tk_len)
+{
+
+	if (kck_len && kck_len != wpa_kck_len(sm->wpa_key_mgmt, sm->pmk_len)) {
+		wpa_printf(MSG_ERROR, "ERROR! Incorrect kck_len passed to %s\n",
+				__func__);
+		return -1;
+	}
+	if (kek_len && kek_len != wpa_kek_len(sm->wpa_key_mgmt, sm->pmk_len)) {
+		wpa_printf(MSG_ERROR, "ERROR! Incorrect kek_len passed to %s\n",
+				__func__);
+		return -1;
+	}
+	if (tk_len && tk_len != wpa_cipher_key_len(sm->pairwise)) {
+		wpa_printf(MSG_ERROR, "ERROR! Incorrect tk_len passed to %s\n",
+				__func__);
+		return -1;
+	}
+
+	os_memcpy(sm->PTK.kck, kck, kck_len);
+	sm->PTK.kck_len = kck_len;
+
+	os_memcpy(sm->PTK.kek, kek, kek_len);
+	sm->PTK.kek_len = kek_len;
+
+	os_memcpy(sm->PTK.tk, tk, tk_len);
+	sm->PTK.tk_len = tk_len;
+
+	wpa_auth_set_key(sm->wpa_auth, 0,
+			wpa_cipher_to_alg(sm->pairwise),
+			sm->addr,
+			sm->keyidx_active, sm->PTK.tk,
+			wpa_cipher_key_len(sm->pairwise),
+			KEY_FLAG_PAIRWISE_RX);
+	return 0;
+}
+
+int wpa_auth_get_pmk_full(struct wpa_state_machine *sm,
+			   u8 *pmk, size_t *pmk_len,
+			   u8 *pmkid)
+{
+	if (!sm) {
+		wpa_printf(MSG_ERROR, "ERROR! SM is NULL\n");
+		return -1;
+	}
+	*pmk_len = sm->pmk_len;
+	os_memcpy(pmk, sm->PMK, *pmk_len);
+	os_memcpy(pmkid, sm->pmkid, PMKID_LEN);
+	return 0;
+}
+
+int wpa_auth_set_pmk_full(struct wpa_state_machine *sm,
+		u8 *pmk, u8 *pmkid, int pmk_len)
+{
+	if (!sm || !sm->wpa_auth) {
+		wpa_printf(MSG_DEBUG, "%s: PMK Cache fail sm:%p sm->wpa_auth:%p",
+			__func__, sm, sm ? sm->wpa_auth : NULL);
+		return -1;
+	}
+
+	sm->pmk_len = pmk_len;
+	os_memcpy(sm->PMK, pmk, pmk_len);
+	os_memcpy(sm->pmkid, pmkid, PMKID_LEN);
+
+	switch (sm->auth_alg) {
+	case WLAN_AUTH_SAE:
+		if (wpa_auth_pmksa_add_sae(sm->wpa_auth, sm->addr, pmk, pmk_len,
+					   pmkid, 0, 0, sm->group->vlan_id) < 0)
+			wpa_printf(MSG_DEBUG, "RSN: PMK Cache failed for STA(SAE):"
+				MACSTR, MAC2STR(sm->addr));
+		break;
+	default:
+		if (wpa_auth_pmksa_add(sm, pmk, pmk_len, 0, NULL))
+			wpa_printf(MSG_DEBUG, "RSN: PMK Cache failed for STA:"
+				MACSTR, MAC2STR(sm->addr));
+		break;
+	}
+	return 0;
+}
+
 
 const u8 * wpa_auth_get_pmk(struct wpa_state_machine *sm, int *len)
 {
