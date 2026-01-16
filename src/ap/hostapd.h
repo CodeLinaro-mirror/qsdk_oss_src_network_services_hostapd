@@ -328,6 +328,8 @@ struct hostapd_data {
 	/* Vendor BSSID derivation bookkeeping for non-MBSSID */
 	u8 vendor_bss_index;
 	bool vendor_bss_index_valid;
+
+	struct hostapd_data_extn hapd_extn;
 #endif /* CONFIG_QCN_EXTN */
 
 	/* OpenWrt specific statistics */
