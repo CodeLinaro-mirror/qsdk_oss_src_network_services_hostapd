@@ -1210,6 +1210,17 @@ static void hostapd_gen_probe_resp(struct hostapd_data *hapd,
 					    buflen);
 
 	params->resp_len = pos - (u8 *) params->resp;
+	wpa_printf(MSG_DEBUG,
+		   "Probe response:%s allocated buffer size :%zu actual frame size:%zu max allowed frame size:%zu",
+		   hapd->conf->iface, buflen, params->resp_len, hapd->iface->max_mgmt_frm_sz);
+
+	if (params->resp_len > hapd->iface->max_mgmt_frm_sz) {
+		wpa_printf(MSG_ERROR, "probe response size limit (%zu) exceeded for %s: max allowed size(%zu)",
+			   params->resp_len, hapd->conf->iface, hapd->iface->max_mgmt_frm_sz);
+		os_free(params->resp);
+		params->resp = NULL;
+		params->resp_len = 0;
+	}
 }
 
 
@@ -2069,6 +2080,8 @@ u8 * hostapd_unsol_bcast_probe_resp(struct hostapd_data *hapd,
 	probe_params.mld_info = NULL;
 
 	hostapd_gen_probe_resp(hapd, &probe_params);
+	if (!probe_params.resp)
+		return NULL;
 	ubpr->unsol_bcast_probe_resp_tmpl_len = probe_params.resp_len;
 	return (u8 *) probe_params.resp;
 }
@@ -3085,6 +3098,7 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 	struct hostapd_hw_modes *cmode = iface->current_mode;
 	struct wpabuf *beacon, *proberesp, *assocresp;
 	bool twt_he_responder = false;
+	size_t bcn_len;
 	int res, ret = -1;
 #ifdef CONFIG_DRIVER_NL80211_QCA
 	int i;
@@ -3127,11 +3141,10 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 	    0)
 		goto fail1;
 
-	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
-		size_t bcn_len;
+	bcn_len = params.head_len + params.tail_len + wpabuf_len(beacon) +
+		  params.mbssid.mbssid_elem_len;
 
-		bcn_len = params.head_len + params.tail_len + wpabuf_len(beacon) +
-			  params.mbssid.mbssid_elem_len;
+	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
 		if (bcn_len > hapd->iface->multi_mbssid.max_beacon_size) {
 			if (params.mbssid.mbssid_elem_count > 1) {
 				wpa_printf(MSG_ERROR,
@@ -3150,6 +3163,10 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 				   hapd->iface->multi_mbssid.mbssid_max_ngroups);
 			goto fail2;
 		}
+	} else if (bcn_len > hapd->iface->max_mgmt_frm_sz) {
+		wpa_printf(MSG_ERROR, "Beacon size limit (%zu) exceeded for %s: max allowed size(%zu)",
+			   bcn_len, hapd->conf->iface, hapd->iface->max_mgmt_frm_sz);
+		goto fail2;
 	}
 
 #ifdef CONFIG_IEEE80211BE

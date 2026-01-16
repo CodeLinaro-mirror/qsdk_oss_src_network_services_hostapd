@@ -378,6 +378,7 @@ setup_mld:
 		iface->ema_max_periodicity = capa.ema_max_periodicity;
 		iface->multi_mbssid.mbssid_max_ngroups = capa.mbssid_max_ngroups;
 		iface->multi_mbssid.max_beacon_size = capa.max_beacon_size;
+		iface->max_mgmt_frm_sz = capa.max_beacon_size;
 		wpa_printf(MSG_DEBUG,
 			   "max_ngroups:%d max beacon size:%d\n",
 			   capa.mbssid_max_ngroups, capa.max_beacon_size);

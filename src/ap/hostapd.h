@@ -943,6 +943,7 @@ struct hostapd_iface {
 	/* Multi MBSSID group information */
 	struct hostapd_multi_mbssid multi_mbssid;
 	u32 mbssid_idx_bmap;
+	size_t max_mgmt_frm_sz;
 };
 
 
