@@ -528,8 +528,9 @@ int handle_auth_pasn_resp(struct pasn_data *pasn, const u8 *own_addr,
 	if (!buf)
 		goto fail;
 
-	wpa_pasn_build_auth_header(buf, pasn->bssid, own_addr, peer_addr, 2,
-				   status, pasn->auth_alg == WLAN_AUTH_EPPKE);
+	wpa_pasn_build_auth_header(buf, pasn->bssid, own_addr,
+				   pasn->is_ml_peer ? pasn->reply_addr : pasn->peer_addr,
+				   2, status, pasn->auth_alg == WLAN_AUTH_EPPKE);
 
 	if (status != WLAN_STATUS_SUCCESS)
 		goto done;

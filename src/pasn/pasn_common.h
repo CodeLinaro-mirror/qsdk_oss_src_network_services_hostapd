@@ -142,6 +142,7 @@ struct pasn_data {
 	u16 *comeback_pending_idx;
 	struct wpabuf *frame;
 #ifdef CONFIG_ENC_ASSOC
+	u8 reply_addr[6];
 	bool authorized;
 	bool tk_configured;
 #endif /* CONFIG_ENC_ASSOC */

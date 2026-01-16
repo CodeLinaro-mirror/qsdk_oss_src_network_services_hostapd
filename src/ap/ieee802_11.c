@@ -3302,6 +3302,7 @@ static void hapd_pasn_update_params(struct hostapd_data *hapd,
 	}
 
 #ifdef CONFIG_ENC_ASSOC
+	os_memcpy(pasn->reply_addr, mgmt->sa, ETH_ALEN);
 	pasn->auth_alg = mgmt->u.auth.auth_alg;
 	pasn->authorized = ap_sta_is_authorized(sta);
 #ifdef CONFIG_IEEE80211BE
