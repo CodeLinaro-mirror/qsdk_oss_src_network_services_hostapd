@@ -438,6 +438,9 @@ struct hostapd_bss_config {
 	int wds_sta;
 	int isolate;
 	int start_disabled;
+#ifdef HOSTAPD_EXTERNAL_PLUGIN
+	int external_plugin_enable; /* Enable external plugin for this BSS */
+#endif
 
 	int auth_algs; /* bitfield of allowed IEEE 802.11 authentication
 			* algorithms, WPA_AUTH_ALG_{OPEN,SHARED,LEAP} */

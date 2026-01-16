@@ -2253,6 +2253,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->wds_sta = atoi(pos);
 	} else if (os_strcmp(buf, "start_disabled") == 0) {
 		bss->start_disabled = atoi(pos);
+#ifdef HOSTAPD_EXTERNAL_PLUGIN
+	} else if (os_strcmp(buf, "external_plugin_enable") == 0) {
+		bss->external_plugin_enable = atoi(pos);
+#endif
 	} else if (os_strcmp(buf, "ap_isolate") == 0) {
 		bss->isolate = atoi(pos);
 	} else if (os_strcmp(buf, "ap_max_inactivity") == 0) {

@@ -231,6 +231,11 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->group_control_frame_cipher = WPA_CIPHER_BIP_GMAC_256;
 	/* Default: do not gate EAPOL M3 (can be enabled per-BSS config) */
 	bss->externally_triggered_m3 = 0;
+
+#ifdef HOSTAPD_EXTERNAL_PLUGIN
+	/* Default: external plugin disabled (can be enabled per-BSS config) */
+	bss->external_plugin_enable = 0;
+#endif
 }
 
 #ifdef CONFIG_IEEE80211BE
