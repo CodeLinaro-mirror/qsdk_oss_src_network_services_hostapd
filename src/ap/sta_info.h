@@ -369,6 +369,12 @@ struct sta_info {
 #endif /* CONFIG_IEEE80211BE */
 	u8 skip_kernel_delete;
 
+	/* External plugin-provided tails to append to outgoing management frames */
+	u8 *ext_auth_tail;
+	size_t ext_auth_tail_len;
+	u8 *ext_assoc_tail;
+	size_t ext_assoc_tail_len;
+
 	bool dscp_policy_capable;
 	struct hostapd_dscp_policy **policies;
 	u8 num_dscp_policies;

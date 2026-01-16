@@ -53,6 +53,7 @@
 #include "wnm_ap.h"
 #include "hw_features.h"
 #include "ieee802_11.h"
+#include "hostapd_if/hostapd_if.h"
 #include "dfs.h"
 #include "mbo_ap.h"
 #include "rrm.h"
@@ -435,8 +436,7 @@ static u16 auth_shared_key(struct hostapd_data *hapd, struct sta_info *sta,
 #endif /* CONFIG_NO_RC4 */
 #endif /* CONFIG_WEP */
 
-
-static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
+int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 			   const u8 *dst,
 			   u16 auth_alg, u16 auth_transaction, u16 resp,
 			   const u8 *ies, size_t ies_len, const char *dbg)
@@ -444,6 +444,8 @@ static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 	struct ieee80211_mgmt *reply;
 	u8 *buf;
 	size_t rlen;
+	size_t tail_len = 0;
+	size_t ml_len = 0;
 	int reply_res = WLAN_STATUS_UNSPECIFIED_FAILURE;
 	const u8 *sa = hapd->own_addr;
 	struct wpabuf *ml_resp = NULL;
@@ -458,7 +460,14 @@ static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 
 	rlen = IEEE80211_HDRLEN + sizeof(reply->u.auth) + ies_len;
 	if (ml_resp)
-		rlen += wpabuf_len(ml_resp);
+		ml_len = wpabuf_len(ml_resp);
+	rlen += ml_len;
+
+#ifdef CONFIG_HOSTAPD_IF
+	tail_len = hostapd_if_auth_reply_tail_len(sta, rlen);
+#endif
+	rlen += tail_len;
+
 	buf = os_zalloc(rlen);
 	if (!buf) {
 		wpabuf_free(ml_resp);
@@ -478,14 +487,18 @@ static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 
 	if (ies && ies_len)
 		os_memcpy(reply->u.auth.variable, ies, ies_len);
-
 #ifdef CONFIG_IEEE80211BE
-	if (ml_resp)
+	if (ml_resp) {
+		ml_len = wpabuf_len(ml_resp);
 		os_memcpy(reply->u.auth.variable + ies_len,
-			  wpabuf_head(ml_resp), wpabuf_len(ml_resp));
-
+				wpabuf_head(ml_resp), ml_len);
+	}
 	wpabuf_free(ml_resp);
 #endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_auth_reply_add_tail(sta, ies_len + ml_len, tail_len, reply);
+#endif
 
 	wpa_printf(MSG_DEBUG, "authentication reply: STA=" MACSTR
 		   " auth_alg=%d auth_transaction=%d resp=%d (IE len=%lu) (dbg=%s)",
@@ -531,7 +544,6 @@ static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 
 	return reply_res;
 }
-
 
 #ifdef CONFIG_IEEE80211R_AP
 static void handle_auth_ft_finish(void *ctx, const u8 *dst,
@@ -1291,9 +1303,8 @@ static void sae_set_retransmit_timer(struct hostapd_data *hapd,
 			       auth_sae_retransmit_timer, hapd, sta);
 }
 
-
-static void sae_sme_send_external_auth_status(struct hostapd_data *hapd,
-					      struct sta_info *sta, u16 status)
+void sae_sme_send_external_auth_status(struct hostapd_data *hapd,
+				       struct sta_info *sta, u16 status)
 {
 	struct external_auth params;
 
@@ -1392,7 +1403,7 @@ void sae_accept_sta(struct hostapd_data *hapd, struct sta_info *sta)
 }
 
 
-static int sae_sm_step(struct hostapd_data *hapd, struct sta_info *sta,
+int sae_sm_step(struct hostapd_data *hapd, struct sta_info *sta,
 		       u16 auth_transaction, u16 status_code,
 		       int allow_reuse, int *sta_removed)
 {
@@ -1665,7 +1676,7 @@ static void sae_pick_next_group(struct hostapd_data *hapd, struct sta_info *sta)
 }
 
 
-static int sae_status_success(struct hostapd_data *hapd, u16 status_code)
+int sae_status_success(struct hostapd_data *hapd, u16 status_code)
 {
 	enum sae_pwe sae_pwe = hapd->conf->sae_pwe;
 	int id_in_use;
@@ -2027,6 +2038,15 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 			goto reply;
 		}
 
+#ifdef CONFIG_HOSTAPD_IF
+		/* Link context will be computed inside hostapd_if_notify_auth() */
+		if (hostapd_if_notify_auth(hapd, sta, (const u8 *) mgmt, len,
+				status_code, auth_transaction,
+				allow_reuse, WLAN_AUTH_SAE, dst) ==
+				HOSTAPD_IF_FRAME_PROCESSING_WAIT)
+			return;
+#endif
+
 		resp = sae_sm_step(hapd, sta, auth_transaction,
 				   status_code, allow_reuse, &sta_removed);
 	} else if (auth_transaction == 2) {
@@ -2082,6 +2102,14 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 			sae_password_track_success(hapd, sta);
 			sta->sae->rc = peer_send_confirm;
 		}
+#ifdef CONFIG_HOSTAPD_IF
+		if (hostapd_if_notify_auth(hapd, sta, (const u8 *) mgmt, len,
+					status_code, auth_transaction, 0,
+					WLAN_AUTH_SAE, dst) ==
+					HOSTAPD_IF_FRAME_PROCESSING_WAIT)
+			return;
+#endif
+
 		resp = sae_sm_step(hapd, sta, auth_transaction,
 				   status_code, 0, &sta_removed);
 	} else {
@@ -3840,6 +3868,13 @@ static void handle_auth(struct hostapd_data *hapd,
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_DEBUG,
 			       "authentication OK (open system)");
+#ifdef CONFIG_HOSTAPD_IF
+		if (hostapd_if_notify_auth(hapd, sta, (const u8 *) mgmt, len,
+					WLAN_STATUS_SUCCESS, 2, 0,
+					WLAN_AUTH_OPEN, mgmt->sa) ==
+					HOSTAPD_IF_FRAME_PROCESSING_WAIT)
+			return;
+#endif
 		sta->flags |= WLAN_STA_AUTH;
 		wpa_auth_sm_event(sta->wpa_sm, WPA_AUTH);
 		sta->auth_alg = WLAN_AUTH_OPEN;
@@ -5906,6 +5941,9 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_HOSTAPD_IF
+	buflen += hostapd_if_assoc_resp_tail_len(sta, buflen);
+#endif
 	buf = os_zalloc(buflen);
 	if (!buf) {
 		res = WLAN_STATUS_UNSPECIFIED_FAILURE;
@@ -6183,6 +6221,10 @@ rsnxe_done:
 		p += wpabuf_len(hapd->conf->assocresp_elements);
 	}
 
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_assoc_resp_tail(sta, buflen, p - buf, &p);
+#endif
+
 	send_len += p - reply->u.assoc_resp.variable;
 
 #ifdef CONFIG_FILS
@@ -6264,7 +6306,6 @@ done:
 	os_free(buf);
 	return res;
 }
-
 
 #ifdef CONFIG_OWE
 u8 * owe_assoc_req_process(struct hostapd_data *hapd, struct sta_info *sta,
@@ -6554,7 +6595,6 @@ static void handle_assoc(struct hostapd_data *hapd,
 {
 	u16 capab_info, listen_interval, seq_ctrl, fc;
 	int resp = WLAN_STATUS_SUCCESS;
-	u16 reply_res = WLAN_STATUS_UNSPECIFIED_FAILURE;
 	const u8 *pos;
 	int left, i, ubus_resp;
 	struct sta_info *sta;
@@ -6754,7 +6794,6 @@ static void handle_assoc(struct hostapd_data *hapd,
 			return;
 		}
 	}
-
 	if ((fc & WLAN_FC_RETRY) &&
 	    sta->last_seq_ctrl != WLAN_INVALID_MGMT_SEQ &&
 	    sta->last_seq_ctrl == seq_ctrl &&
@@ -7085,6 +7124,26 @@ static void handle_assoc(struct hostapd_data *hapd,
 		return;
 	}
 #endif /* CONFIG_FILS */
+
+#ifdef CONFIG_HOSTAPD_IF
+	if (hostapd_if_notify_assoc(hapd, sta, (const u8 *) mgmt, len, resp,
+				reassoc, rssi, set_beacon, sa) ==
+				HOSTAPD_IF_FRAME_PROCESSING_WAIT)
+		return;
+#endif
+	initiate_assoc_response(hapd, sta, resp, reassoc, tmp, pos, left,
+			omit_rsnxe, sa, rssi, set_beacon);
+
+}
+
+void
+initiate_assoc_response(struct hostapd_data *hapd, struct sta_info *sta,
+			int resp, int reassoc,
+			uint8_t *tmp, const u8 *pos, int left,
+			int omit_rsnxe, uint8_t *sa, int rssi,
+			bool set_beacon)
+{
+	u16 reply_res = WLAN_STATUS_UNSPECIFIED_FAILURE;
 
 	if (resp >= 0)
 		reply_res = send_assoc_resp(hapd,
@@ -7863,6 +7922,9 @@ static void handle_auth_cb(struct hostapd_data *hapd,
 		goto fail;
 	}
 
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_event_auth_tx_complete(hapd, sta->addr);
+#endif
 	auth_alg = le_to_host16(mgmt->u.auth.auth_alg);
 	auth_transaction = le_to_host16(mgmt->u.auth.auth_transaction);
 	status_code = le_to_host16(mgmt->u.auth.status_code);
@@ -8078,6 +8140,9 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		return;
 	}
 
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_event_assoc_tx_complete(hapd, sta->addr);
+#endif
 	if (reassoc)
 		status = le_to_host16(mgmt->u.reassoc_resp.status_code);
 	else
