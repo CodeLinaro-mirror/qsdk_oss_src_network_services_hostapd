@@ -1516,4 +1516,25 @@ hostapd_get_valid_puncture_pattern_arr(u16 bw, u16 *num_pp, u16 *pp_mask);
  */
 int hostapd_afc_handle_cli(struct hostapd_data *hapd, char *pos,
 			   char *buf, size_t buflen);
+/**
+ * Vendor element format: ID (1 byte), length (1 byte), OUI (3 bytes),
+ * and at least one byte of data.
+ */
+#define MIN_VENDOR_ELEM_LEN 6
+
+/**
+ * hostapd_handle_vendor_elements_update - Add or remove vendor elements
+ * @hapd: Pointer to hostapd data; may be NULL if no beacon update is needed
+ * @conf: Pointer to the BSS configuration to update
+ * @data: Optional buffer containing the vendor elements
+ * @cmd: Vendor element add or remove command
+ * @val: Hexadecimal element data used when @data is NULL
+ * @is_bcn_update_needed: Whether to update the beacon after the change
+ *
+ * Return: 0 on success, -1 on failure
+ */
+int hostapd_handle_vendor_elements_update(
+	struct hostapd_data *hapd, struct hostapd_bss_config *conf,
+	struct wpabuf *data, char *cmd, char *val, bool is_bcn_update_needed);
+
 #endif /* HOSTAPD_H */

@@ -14814,9 +14814,9 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 	for (i = *bss_index; i < num_bss; i++) {
 		struct hostapd_data *bss;
 		const u8 *auth, *rsn = NULL, *rsnx = NULL;
-		size_t nontx_profile_len, auth_len, xrate_len;
+		size_t nontx_profile_len, auth_len, xrate_len, wmm_len;
 		struct ttlm_info *bss_est_ttlm = NULL, *bss_up_ttlm = NULL;
-		u8 ie_count = 0;
+		u8 ie_count = 1; /* Always add vendor elements to the non-inheritance list */
 
 		if (tx_bss->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
 			bss = hostapd_get_multi_group_bss(tx_bss->mbssid_group, i);
@@ -14900,9 +14900,9 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 		/* WMM IE */
-		nontx_profile_len += hostapd_eid_wmm_len(bss);
-		if (tx_bss->conf->wmm_enabled && !bss->conf->wmm_enabled)
-			ie_count++;
+		wmm_len = hostapd_eid_wmm_len(bss);
+		if (wmm_len <= MBSSID_NONTX_VENDOR_ELEM_SIZE)
+			nontx_profile_len += wmm_len;
 
 		/* TTLM IE */
 		if (frame_type == WLAN_FC_STYPE_PROBE_RESP && tx_bss_ttlm_ctx &&
@@ -14916,6 +14916,11 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 			else
 				nontx_profile_len += hostapd_get_ttlm_elem_len(bss_est_ttlm);
 		}
+
+		/* User configured vendor elements */
+		if (bss->conf->vendor_elements_len <=
+		    MBSSID_NONTX_VENDOR_ELEM_SIZE - wmm_len)
+			nontx_profile_len += bss->conf->vendor_elements_len;
 
 		if (ie_count)
 			nontx_profile_len += 4 + ie_count + 1;
@@ -15077,7 +15082,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		u8 *eid_len_pos, *nontx_bss_start = eid;
 		const u8 *auth, *rsn = NULL, *rsnx = NULL;
 		u8 ie_count = 0, non_inherit_ie[4];
-		size_t auth_len = 0, xrate_len;
+		size_t auth_len = 0, xrate_len, j, wmm_len;
 		u16 capab_info;
 		u8 mbssindex;
 #ifdef CONFIG_IEEE80211BE
@@ -15218,18 +15223,33 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 #endif /* CONFIG_IEEE80211BE */
 
 		/* WMM IE */
+		wmm_len = hostapd_eid_wmm_len(bss);
+		if (wmm_len <= MBSSID_NONTX_VENDOR_ELEM_SIZE) {
 #ifdef CONFIG_IEEE80211BE
-		startpos = eid;
+			startpos = eid;
 #endif /* CONFIG_IEEE80211BE */
-		eid = hostapd_eid_wmm(bss, eid, false);
+			eid = hostapd_eid_wmm(bss, eid, false);
 #ifdef CONFIG_IEEE80211BE
-		hostapd_eid_update_cu_info(bss, &modified_flag, startpos,
-					   eid-startpos, ELEMID_CU_PARAM_WMM);
-		if (modified_flag && elemid_modified_bmap)
-			*elemid_modified_bmap |= BIT(i);
+			hostapd_eid_update_cu_info(bss, &modified_flag, startpos,
+						   eid-startpos, ELEMID_CU_PARAM_WMM);
+			if (modified_flag && elemid_modified_bmap)
+				*elemid_modified_bmap |= BIT(i);
 #endif /* CONFIG_IEEE80211BE */
-		if (tx_bss->conf->wmm_enabled && !bss->conf->wmm_enabled)
-			non_inherit_ie[ie_count++] = WLAN_EID_VENDOR_SPECIFIC;
+		}
+
+		/* User configured vendor elements */
+		if (bss->conf->vendor_elements_len <=
+		    MBSSID_NONTX_VENDOR_ELEM_SIZE - wmm_len) {
+			for (j = 0; j < bss->conf->vendor_elements_count; j++) {
+				struct wpabuf *entry = bss->conf->vendor_elements[j];
+
+				os_memcpy(eid, wpabuf_head(entry), wpabuf_len(entry));
+				eid += wpabuf_len(entry);
+			}
+		}
+
+		/* Vendor elements are not inherited from the TX BSS. */
+		non_inherit_ie[ie_count++] = WLAN_EID_VENDOR_SPECIFIC;
 		if (ie_count) {
 			*eid++ = WLAN_EID_EXTENSION;
 			*eid++ = 2 + ie_count + 1;
