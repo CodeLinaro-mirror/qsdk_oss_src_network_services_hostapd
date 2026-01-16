@@ -25,6 +25,7 @@ endif
 CFLAGS += $(EXTRA_CFLAGS)
 CFLAGS += -I$(abspath ../src)
 CFLAGS += -I$(abspath ../src/utils)
+CFLAGS += -I$(abspath ../src/hostapd_if)
 
 export BINDIR ?= /usr/local/bin/
 
@@ -90,6 +91,11 @@ OBJS += ../src/ap/bss_load.o
 OBJS += ../src/ap/neighbor_db.o
 OBJS += ../src/ap/rrm.o
 OBJS += ../src/common/ptksa_cache.o
+# hostapd external interface and mgmt/action lookup
+ifdef CONFIG_HOSTAPD_IF
+OBJS += ../src/hostapd_if/hostapd_if.o
+CFLAGS += -DCONFIG_HOSTAPD_IF
+endif
 
 OBJS_c = hostapd_cli.o
 OBJS_c += ../src/common/wpa_ctrl.o

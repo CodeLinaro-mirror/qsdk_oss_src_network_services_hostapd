@@ -4730,6 +4730,23 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->bridge_multicast_to_unicast = atoi(pos);
 	} else if (os_strcmp(buf, "broadcast_deauth") == 0) {
 		bss->broadcast_deauth = atoi(pos);
+	} else if (os_strcmp(buf, "externally_triggered_m3") == 0) {
+		char *endptr;
+		long val;
+
+	        val = strtol(pos, &endptr, 10);
+
+		if ((*endptr != '\0') || (endptr == pos) ||
+		    (val < 0) || (val > 1)) {
+
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid externally_triggered_m3 %ld"
+				   " (expected 0 or 1): endptr:%p pos:%p %d",
+				   __LINE__, val, endptr, pos, *endptr);
+			return 1;
+		}
+
+		bss->externally_triggered_m3 = (int) val;
 	} else if (os_strcmp(buf, "notify_mgmt_frames") == 0) {
 		bss->notify_mgmt_frames = atoi(pos);
 #ifdef CONFIG_DPP
