@@ -242,13 +242,6 @@
  * [1] http://en.wikipedia.org/wiki/Near_and_far_field
  */
 
-enum bw_type {
-	ACS_BW40,
-	ACS_BW80,
-	ACS_BW160,
-	ACS_BW320_1,
-	ACS_BW320_2,
-};
 
 struct bw_item {
 	int first;
@@ -453,8 +446,10 @@ static bool acs_usable_bw_chan(const struct hostapd_channel_data *chan,
 	return false;
 }
 
-
-static int acs_get_bw_center_chan(int freq, enum bw_type bw)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int acs_get_bw_center_chan(int freq, enum bw_type bw)
 {
 	unsigned int i = 0;
 
