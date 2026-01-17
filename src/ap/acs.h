@@ -12,6 +12,14 @@
 
 #ifdef CONFIG_ACS
 
+enum bw_type {
+	ACS_BW40,
+	ACS_BW80,
+	ACS_BW160,
+	ACS_BW320_1,
+	ACS_BW320_2,
+};
+
 enum hostapd_chan_status acs_init(struct hostapd_iface *iface);
 void acs_cleanup(struct hostapd_iface *iface);
 void acs_cleanup_mode(struct hostapd_hw_modes *mode);
