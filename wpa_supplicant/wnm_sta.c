@@ -1023,6 +1023,7 @@ static int wnm_nei_rep_add_bss(struct wpa_supplicant *wpa_s,
 
 	phy_type = ieee80211_get_phy_type(bss->freq, elems.ht_operation != NULL,
 					  elems.vht_operation != NULL,
+					  elems.he_operation != NULL,
 					  elems.eht_operation != NULL);
 	if (phy_type == PHY_TYPE_UNSPECIFIED) {
 		wpa_printf(MSG_DEBUG,

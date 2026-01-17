@@ -870,7 +870,8 @@ void hostapd_neighbor_set_own_report_for(struct hostapd_data *dest,
 	wpabuf_put_le32(nr, bssid_info);
 	wpabuf_put_u8(nr, op_class);
 	wpabuf_put_u8(nr, channel);
-	wpabuf_put_u8(nr, ieee80211_get_phy_type(src->iface->freq, ht, vht, eht));
+	wpabuf_put_u8(nr, ieee80211_get_phy_type(src->iface->freq, ht, vht, he,
+						 eht));
 
 	/*
 	 * Wide Bandwidth Channel subelement may be needed to allow the
@@ -1016,7 +1017,8 @@ int hostapd_add_candidate_own(struct hostapd_data *hapd, int pref,
 
 	*nei_pos++ = op_class;
 	*nei_pos++ = channel;
-	*nei_pos++ = ieee80211_get_phy_type(hapd->iface->freq, ht, vht, eht);
+	*nei_pos++ = ieee80211_get_phy_type(hapd->iface->freq, ht, vht, he,
+					   eht);
 
 	/* Candidate preference subelement */
 	*nei_pos++ = WNM_NEIGHBOR_BSS_TRANSITION_CANDIDATE;
@@ -1252,7 +1254,7 @@ hostapd_neighbor_set_scan_report(struct hostapd_data *hapd,
 		enum nr_chan_width width;
 		u8 center_freq1_idx = 0, center_freq2_idx = 0;
 		struct wpabuf *nr;
-		int ht = 0, vht = 0, eht = 0;
+		int ht = 0, vht = 0, he = 0, eht = 0;
 		int sec_chan = 0;
 		u8 op_class, chan;
 		u32 info;
@@ -1293,6 +1295,8 @@ hostapd_neighbor_set_scan_report(struct hostapd_data *hapd,
 				vht_width = vht_oper->vht_op_info_chwidth;
 		}
 
+		he = !!elems.he_capabilities || !!elems.he_operation;
+
 		/* Get channel and opmode */
 		if (ieee80211_freq_to_channel_ext(bss->freq, sec_chan,
 						  vht_width, &op_class,
@@ -1304,7 +1308,7 @@ hostapd_neighbor_set_scan_report(struct hostapd_data *hapd,
 
 		eht = hostapd_is_eht_enabled(hapd);
 		/* Get phy type */
-		phy_type = ieee80211_get_phy_type(bss->freq, ht, vht, eht);
+		phy_type = ieee80211_get_phy_type(bss->freq, ht, vht, he, eht);
 		if (phy_type == PHY_TYPE_UNSPECIFIED) {
 			wpa_printf(MSG_DEBUG,
 				   "NR: Cannot determine BSS phy type");
