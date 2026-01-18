@@ -2380,6 +2380,11 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+#ifdef CONFIG_QCN_EXTN
+	} else {
+		res = hostapd_ctrl_iface_get_extn(hapd, cmd, buf, buflen);
+		return res;
+#endif /* CONFIG_QCN_EXTN */
 	}
 
 	return -1;

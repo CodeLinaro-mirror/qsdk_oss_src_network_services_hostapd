@@ -332,6 +332,9 @@ struct hostapd_config * hostapd_config_defaults(void)
 	}
 
 	hostapd_config_defaults_bss(bss);
+#ifdef CONFIG_QCN_EXTN
+	hostapd_config_defaults_bss_extn(bss);
+#endif
 
 	conf->num_bss = 1;
 
