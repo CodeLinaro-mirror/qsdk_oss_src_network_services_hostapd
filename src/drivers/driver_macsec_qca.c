@@ -34,15 +34,17 @@
 #include "pae/ieee802_1x_kay.h"
 #include "driver.h"
 #include "driver_wired_common.h"
+#ifdef HOSTAPD
 #include "ap/sta_info.h"
 #include "ap/ieee802_11_auth.h"
+#include <netlink/netlink.h>
+#include <netlink/genl/genl.h>
+#include <netlink/genl/ctrl.h>
+#endif /* HOSTAPD */
 
 #include "nss_macsec_secy.h"
 #include "nss_macsec_secy_rx.h"
 #include "nss_macsec_secy_tx.h"
-#include <netlink/netlink.h>
-#include <netlink/genl/genl.h>
-#include <netlink/genl/ctrl.h>
 
 #define MAXSC 16
 
@@ -82,6 +84,7 @@ struct macsec_qca_data {
 	bool replay_protect;
 	u32 replay_window;
 
+#ifdef HOSTAPD
 	/* ioctl sock */
 	int ioctl_sock;
 	/* genl sock */
@@ -95,11 +98,13 @@ struct macsec_qca_data {
 	 * point to point connection and once MKA success, the whole port is
 	 * opened and all src mac traffic are encrypted. */
 	u8 authorize_policy;
+#endif /* HOSTAPD */
 
 	struct channel_map receive_channel_map[MAXSC];
 	struct channel_map transmit_channel_map[MAXSC];
 };
 
+#ifdef HOSTAPD
 #define SW_SWITCH_IOCTL_DEV_NAME "/dev/switch_ssdk"
 #define SW_API_ACL_MAC_ENTRY_SET 428
 typedef struct
@@ -182,6 +187,7 @@ macsec_qca_set_sta_acl_policy(void *priv, const u8 *addr, u8 acl_policy)
 
 	return switch_set_mac_rule(drv, &entry);
 }
+#endif /* HOSTAPD */
 
 static int macsec_qca_get_capa(void *priv, struct wpa_driver_capa *capa)
 {
@@ -425,7 +431,7 @@ static void macsec_qca_deinit(void *priv)
 	os_free(drv);
 }
 
-
+#ifdef HOSTAPD
 static int process_genl_event(struct nl_msg *msg, void *arg)
 {
 	struct macsec_qca_data *drv = arg;
@@ -695,6 +701,7 @@ static int macsec_qca_set_param(struct macsec_qca_data *drv, const char *param)
 	}
 	return 0;
 }
+#endif /* HOSTAPD */
 
 static void * macsec_qca_hapd_init(struct hostapd_data *hapd,
 				   struct wpa_init_params *params)
@@ -721,15 +728,19 @@ static void * macsec_qca_hapd_init(struct hostapd_data *hapd,
 		   sizeof(drv->common.ifname));
 	drv->use_pae_group_addr = params->use_pae_group_addr;
 
+#ifdef HOSTAPD
 	if (macsec_qca_set_param(drv, params->driver_params) < 0) {
 		os_free(drv);
 		return NULL;
 	}
+#endif /* HOSTAPD */
 
 	if (macsec_qca_init_sockets(drv, params->own_addr)) {
 		os_free(drv);
 		return NULL;
 	}
+
+#ifdef HOSTAPD
 	if ((drv->authorize_policy == 1) && macsec_qca_init_genl(drv) < 0) {
 		os_free(drv);
 		return NULL;
@@ -741,6 +752,7 @@ static void * macsec_qca_hapd_init(struct hostapd_data *hapd,
 	/* deny all mac address and accept eapol */
 	u8 mac[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 	macsec_qca_set_sta_acl_policy(drv, mac, 0);
+#endif /* HOSTAPD */
 	return drv;
 }
 
@@ -753,6 +765,7 @@ static void macsec_qca_hapd_deinit(void *priv)
 		eloop_unregister_read_sock(drv->common.sock);
 		close(drv->common.sock);
 	}
+#ifdef HOSTAPD
 	if (drv->ioctl_sock >= 0) {
 		u8 mac[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 		macsec_qca_set_sta_acl_policy(drv, mac, 1);
@@ -770,6 +783,7 @@ static void macsec_qca_hapd_deinit(void *priv)
 		nl_cb_put(drv->nl_cb);
 		drv->nl_cb = NULL;
 	}
+#endif /* HOSTAPD */
 	os_free(drv);
 }
 
@@ -813,6 +827,7 @@ static int macsec_qca_send_eapol(void *priv, const u8 *addr,
 	return res;
 }
 
+#ifdef HOSTAPD
 static int
 macsec_qca_sta_set_flags(void *priv, const u8 *addr,
 		      unsigned int total_flags, unsigned int flags_or,
@@ -852,7 +867,7 @@ static int macsec_qca_set_radius_acl_auth(void *priv, const u8 *mac, int accepte
 	wpa_printf(MSG_DEBUG, "%s: accepted %d", __func__, accepted);
 	return macsec_qca_set_sta_acl_policy(priv, mac, accepted);
 }
-
+#endif /* HOSTAPD */
 
 static int macsec_qca_macsec_init(void *priv, struct macsec_init_params *params)
 {
@@ -1497,9 +1512,11 @@ const struct wpa_driver_ops wpa_driver_macsec_qca_ops = {
 	.hapd_init = macsec_qca_hapd_init,
 	.hapd_deinit = macsec_qca_hapd_deinit,
 	.hapd_send_eapol = macsec_qca_send_eapol,
+#ifdef HOSTAPD
 	.sta_set_flags = macsec_qca_sta_set_flags,
 	.set_acl = macsec_qca_set_acl,
 	.set_radius_acl_auth = macsec_qca_set_radius_acl_auth,
+#endif /* HOSTAPD */
 
 	.macsec_init = macsec_qca_macsec_init,
 	.macsec_deinit = macsec_qca_macsec_deinit,
