@@ -1147,7 +1147,8 @@ int main(int argc, char *argv[])
 	hostapd_ucode_init(&interfaces);
 
 #ifdef CONFIG_IEEE80211AX
-	hostapd_config_nft_table(TABLE_NAME, true);
+	if (hostapd_config_nft_table(TABLE_NAME, true))
+		wpa_printf(MSG_ERROR, "Failed to create NFT table");
 
 	for (i = 0; i < interfaces.count; i++) {
 		struct hostapd_iface *iface = interfaces.iface[i];
@@ -1157,14 +1158,20 @@ int main(int argc, char *argv[])
 			char buf[128] = {0};
 
 			hapd = iface->bss[j];
-			if (hapd->conf->scs) {
-				os_snprintf(buf, 128, "%s_%s", CHAIN_NAME,
-					    hapd->conf->iface);
-				hostapd_config_nft_chain(hapd, TABLE_NAME,
-							 buf, true);
+			if (!hapd->conf->scs)
+				continue;
+
+			os_snprintf(buf, 128, "%s_%s", CHAIN_NAME,
+				    hapd->conf->iface);
+			if (hostapd_config_nft_chain(hapd, TABLE_NAME,
+						     buf, true)) {
+				wpa_printf(MSG_WARNING,
+					   "Failed to create NFT chain for %s",
+					   hapd->conf->iface);
 			}
 		}
 	}
+
 #endif
 
 	if (hostapd_global_run(&interfaces, daemonize, pid_file)) {
@@ -1175,7 +1182,8 @@ int main(int argc, char *argv[])
 	ret = 0;
 
 #ifdef CONFIG_IEEE80211AX
-	hostapd_config_nft_table(TABLE_NAME, false);
+	if (hostapd_config_nft_table(TABLE_NAME, false))
+		wpa_printf(MSG_ERROR, "Failed to remove NFT table");
 #endif
 
  out:
