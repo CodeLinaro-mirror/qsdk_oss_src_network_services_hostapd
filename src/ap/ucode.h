@@ -2,6 +2,7 @@
 #define __HOSTAPD_AP_UCODE_H
 
 #include "utils/ucode.h"
+#include "nft.h"
 
 struct hostapd_data;
 #ifdef CONFIG_IEEE80211AX
