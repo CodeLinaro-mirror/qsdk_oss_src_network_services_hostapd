@@ -112,10 +112,13 @@ struct hapd_interfaces {
 	int (*mld_ctrl_iface_init)(struct hostapd_mld *mld);
 	void (*mld_ctrl_iface_deinit)(struct hostapd_mld *mld);
 #endif /* CONFIG_IEEE80211BE */
-
 #ifdef CONFIG_ATF_OFFLOAD
 	struct atf_offload atf;
 #endif
+#ifdef CONFIG_PROCESS_COORDINATION
+	struct proc_coord *pc;
+#endif /* CONFIG_PROCESS_COORDINATION */
+
 };
 
 enum hostapd_chan_status {
