@@ -3803,6 +3803,8 @@ dfs_offload:
 	for (j = 0; j < iface->num_bss; j++)
 		hostapd_neighbor_set_own_report(iface->bss[j]);
 
+	hostapd_interface_update_fils_ubpr(iface, true);
+
 	if (iface->interfaces && iface->interfaces->count > 1)
 		ieee802_11_update_beacons(iface);
 
