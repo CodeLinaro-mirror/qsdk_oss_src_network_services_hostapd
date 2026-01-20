@@ -1158,7 +1158,10 @@ int hostapd_build_beacon_data(struct hostapd_data *hapd,
 void free_beacon_data(struct beacon_data *beacon);
 int hostapd_fill_cca_settings(struct hostapd_data *hapd,
 			      struct cca_settings *settings);
-
+bool hostapd_check_reenable_bss(struct hostapd_iface *iface);
+int hostapd_switch_pending_bss(struct hostapd_iface *iface,
+			       struct csa_settings *settings);
+bool hostapd_enable_pending_bss(struct hostapd_iface *iface);
 #ifdef CONFIG_IEEE80211BE
 
 void hostapd_set_ml_max_rec_links(struct hostapd_data *hapd, u8 ml_max_rec_links);

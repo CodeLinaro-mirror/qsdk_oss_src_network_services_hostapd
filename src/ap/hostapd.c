@@ -347,6 +347,60 @@ hostapd_get_multi_group_bss(struct hostapd_multi_mbssid_group *group,
 	return NULL;
 }
 
+bool hostapd_check_reenable_bss(struct hostapd_iface *iface)
+{
+	int b;
+
+	for (b = 0; b < iface->num_bss; b++) {
+		if (iface->bss[b]->reenable)
+			return true;
+	}
+
+	return false;
+}
+
+int hostapd_switch_pending_bss(struct hostapd_iface *iface,
+				      struct csa_settings *settings)
+{
+	int b, err = 0, num_err = 0;
+
+	for (b = 0; b < iface->num_bss; b++) {
+		struct hostapd_data *hapd = iface->bss[b];
+
+		if (!hapd->reenable)
+			continue;
+
+		err = hostapd_switch_channel(iface->bss[b], settings);
+		if (err)
+			num_err++;
+	}
+
+	return num_err;
+}
+
+
+bool hostapd_enable_pending_bss(struct hostapd_iface *iface)
+{
+	int b;
+
+	for (b = 0; b < iface->num_bss; b++) {
+		struct hostapd_data *hapd = iface->bss[b];
+
+		if (!hapd->reenable)
+			continue;
+
+		if (hostapd_enable_bss(hapd) < 0)
+			wpa_printf(MSG_ERROR, "Enabling of BSS %s failed",
+				   hapd->conf->iface);
+
+		if (hapd->started)
+			hostapd_set_state(iface, HAPD_IFACE_ENABLED);
+	}
+
+	return true;
+}
+
+
 u8 hostapd_max_bssid_indicator(struct hostapd_data *hapd)
 {
 	size_t num_bss_nontx;
@@ -5215,6 +5269,7 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt)
 		return 0;
 	}
 #endif /* CONFIG_IEEE80211BE */
+	hapd->disabled = 1;
 	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_DISABLED);
 
 	/* Stop AP at driver level: no more beacons/tx for this BSS. */
@@ -5226,6 +5281,8 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt)
 	hostapd_bss_link_deinit(hapd);
 	hostapd_free_hapd_data(hapd);
 	hapd->reenable = 0;
+	hostapd_cleanup_cca_params(hapd);
+	hostapd_cleanup_cs_params(hapd);
 
 	for (i = 0; i < hapd->iface->num_bss; i++) {
 		if (hapd->iface->bss[i]->started)
@@ -5243,6 +5300,7 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt)
 int hostapd_enable_bss(struct hostapd_data *hapd)
 {
 	struct hostapd_iface *hapd_iface;
+	int res, b;
 	size_t i;
 
 	if (hapd->started) {
@@ -5259,6 +5317,66 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 
 	wpa_printf(MSG_DEBUG, "Enable BSS %s", hapd->conf->iface);
 
+	if (hapd_iface->cac_started) {
+		hapd->reenable = 1;
+		wpa_printf(MSG_INFO, "CAC in progress, cannot enable BSS");
+		return 0;
+	}
+
+	if (hapd->reenable)
+		goto setup_bss;
+
+	hapd->reenable = 1;
+	for (b = 0; b < hapd->iface->num_bss; b++)
+		if (hapd->iface->bss[b]->started)
+			goto setup_bss;
+#ifdef NEED_AP_MLME
+	if (!is_5ghz_freq(hapd_iface->freq))
+		goto setup_bss;
+
+	/* Handle DFS only if it is not offloaded to the driver */
+	if (!(hapd_iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD)) {
+		/* Check DFS */
+		set_dfs_state_freq(hapd_iface, hapd_iface->freq,
+				   HOSTAPD_CHAN_DFS_USABLE);
+		res = hostapd_handle_dfs(hapd_iface);
+		if (res <= 0) {
+			if (res < 0) {
+				hapd->reenable = 0;
+				wpa_printf(MSG_ERROR,
+					   "DFS handling failed for BSS %s",
+					   hapd->conf->iface);
+				return -1;
+			}
+			return 0;
+		}
+	} else {
+		/* If DFS is offloaded to the driver */
+		res = hostapd_handle_dfs_offload(hapd_iface);
+		if (res <= 0) {
+			if (res < 0) {
+				hapd->reenable = 0;
+				wpa_printf(MSG_ERROR,
+					   "DFS offload handling failed for BSS %s",
+					   hapd->conf->iface);
+				return -1;
+			}
+			return 0;
+		} else {
+			wpa_printf(MSG_DEBUG,
+				   "Proceed with AP/channel setup");
+			/*
+			 * If this is a DFS channel, move to completing
+			 * AP setup.
+			 */
+			if (res == 1)
+				goto setup_bss;
+			/* Otherwise fall through. */
+		}
+	}
+#endif /* NEED_AP_MLME */
+
+setup_bss:
 	/* Configure security parameters for this BSS. */
 	hostapd_set_security_params(hapd->conf, 1);
 	if (hostapd_config_check(hapd->iconf, 1) < 0) {
@@ -5266,7 +5384,6 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 		return -1;
 	}
 
-	hapd->reenable = 1;
 	/* Re-setup this BSS without adding netdev/link again. */
 	if (hostapd_setup_bss(hapd, -1, true)) {
 		hapd->reenable = 0;
@@ -5276,10 +5393,13 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 	}
 
 	hapd->reenable = 0;
+	hapd->disabled = 0;
 	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
 
+	hostapd_neighbor_set_own_report(hapd);
 	if (i == hapd_iface->num_bss)
 		hostapd_interface_update_fils_ubpr(hapd_iface, true);
+
 	hostapd_refresh_all_iface_beacons(hapd_iface);
 
 	return 0;

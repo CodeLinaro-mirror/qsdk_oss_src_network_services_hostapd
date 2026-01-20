@@ -753,7 +753,7 @@ static int dfs_set_valid_channel(struct hostapd_iface *iface, int skip_radar)
 }
 
 
-static int set_dfs_state_freq(struct hostapd_iface *iface, int freq, u32 state)
+int set_dfs_state_freq(struct hostapd_iface *iface, int freq, u32 state)
 {
 	struct hostapd_hw_modes *mode;
 	struct hostapd_channel_data *chan = NULL;
@@ -1202,10 +1202,14 @@ static int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 		return err;
 	}
 
-	for (i = 0; i < iface->num_bss; i++) {
-		err = hostapd_switch_channel(iface->bss[i], &csa_settings);
+	if (hostapd_check_reenable_bss(iface)) {
+		num_err = hostapd_switch_pending_bss(iface, &csa_settings);
+	} else {
+		for (i = 0; i < iface->num_bss; i++) {
+			err = hostapd_switch_channel(iface->bss[i], &csa_settings);
 		if (err)
-			num_err++;
+				num_err++;
+		}
 	}
 
 	if (num_err == iface->num_bss) {
@@ -1435,6 +1439,22 @@ bool hostapd_is_device_params_present(int chan_width, int cf1, int chan_width_de
 }
 
 
+static void hostapd_dfs_enable_pending_bss(struct hostapd_iface *iface)
+{
+	hostapd_enable_pending_bss(iface);
+
+	/* Enabling non-first bss starts CAC in first BSS
+	 * which enables the vif in driver.
+	 * Hence stop first vif incase it is not
+	 * enabled in hostapd.
+	 */
+	if (!iface->bss[0]->started) {
+		ieee802_11_set_beacon(iface->bss[0]);
+		hostapd_drv_stop_ap(iface->bss[0]);
+	}
+}
+
+
 int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			     int ht_enabled, int chan_offset, int chan_width,
 			     int cf1, int cf2, bool is_background,
@@ -1462,8 +1482,12 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			 *    DFS channel.
 			 */
 			if (iface->state != HAPD_IFACE_ENABLED &&
-			    !iface->radar_detected)
-				hostapd_setup_interface_complete(iface, 0);
+			    !iface->radar_detected) {
+				if (hostapd_check_reenable_bss(iface))
+					hostapd_enable_pending_bss(iface);
+				else
+					hostapd_setup_interface_complete(iface, 0);
+			}
 			else
 				iface->cac_started = 0;
 		} else {
@@ -1509,7 +1533,10 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 				if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_BSS) {
 					ieee80211_freq_to_chan(cf1, &seg0);
 					hostapd_set_oper_centr_freq_seg0_idx(iface->conf, seg0);
-					hostapd_setup_interface_complete(iface, 0);
+					if (hostapd_check_reenable_bss(iface))
+						hostapd_dfs_enable_pending_bss(iface);
+					else
+						hostapd_setup_interface_complete(iface, 0);
 				} else if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_CSA) {
 					ieee802_11_set_beacon(hapd);
 #ifdef CONFIG_QCN_EXTN
@@ -1661,7 +1688,12 @@ static int hostapd_dfs_start_channel_switch_cac(struct hostapd_iface *iface)
 	}
 	err = 0;
 
-	hostapd_setup_interface_complete(iface, err);
+
+	if (hostapd_check_reenable_bss(iface))
+		hostapd_enable_pending_bss(iface);
+	else
+		hostapd_setup_interface_complete(iface, err);
+
 	return err;
 }
 
