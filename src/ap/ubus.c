@@ -798,10 +798,7 @@ hostapd_vendor_elements(struct ubus_context *ctx, struct ubus_object *obj,
 {
 	struct blob_attr *tb[__VENDOR_ELEMENTS_MAX];
 	struct hostapd_data *hapd = get_hapd_from_object(obj);
-	struct hostapd_bss_config *bss = hapd->conf;
-	struct wpabuf *elems;
-	const char *pos;
-	size_t len;
+	char *pos;
 
 	blobmsg_parse(ve_policy, __VENDOR_ELEMENTS_MAX, tb,
 		      blob_data(msg), blob_len(msg));
@@ -810,28 +807,11 @@ hostapd_vendor_elements(struct ubus_context *ctx, struct ubus_object *obj,
 		return UBUS_STATUS_INVALID_ARGUMENT;
 
 	pos = blobmsg_data(tb[VENDOR_ELEMENTS]);
-	len = os_strlen(pos);
-	if (len & 0x01)
-			return UBUS_STATUS_INVALID_ARGUMENT;
 
-	len /= 2;
-	if (len == 0) {
-		wpabuf_free(bss->vendor_elements);
-		bss->vendor_elements = NULL;
-		return 0;
-	}
-
-	elems = wpabuf_alloc(len);
-	if (elems == NULL)
-		return 1;
-
-	if (hexstr2bin(pos, wpabuf_put(elems, len), len)) {
-		wpabuf_free(elems);
+	if (hostapd_handle_vendor_elements_update(hapd, hapd->conf, NULL,
+						  "vendor_elements_add",
+						  pos, false))
 		return UBUS_STATUS_INVALID_ARGUMENT;
-	}
-
-	wpabuf_free(bss->vendor_elements);
-	bss->vendor_elements = elems;
 
 	/* update beacons if vendor elements were set successfully */
 	if (ieee802_11_update_beacons(hapd->iface) != 0)

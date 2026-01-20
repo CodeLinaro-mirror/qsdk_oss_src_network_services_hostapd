@@ -1722,6 +1722,9 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 		ret = hostapd_ctrl_iface_set_punc_strict(hapd->iface, value);
 	} else if (os_strcasecmp(cmd, "punc_eirp_thres_6ghz") == 0) {
 		ret = hostapd_ctrl_iface_set_punc_thres(hapd->iface, value);
+	} else if (os_strncmp(cmd, "vendor_elements_", 16) == 0) {
+		ret = hostapd_handle_vendor_elements_update(hapd, hapd->conf, NULL,
+							    cmd, value, true);
 	} else {
 		if (hapd->iface->conf->disable_csa_dfs &&
 		    ((os_strcmp(cmd, "channel") == 0) &&
@@ -1891,6 +1894,27 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 	return ret;
 }
 
+static int hostapd_get_vendor_elements(struct hostapd_data *hapd, char *buf, size_t buflen)
+{
+	char *pos = buf, *end = buf + buflen;
+	size_t count, i;
+	int ret;
+
+	count = hapd->conf->vendor_elements_count;
+
+	for (i = 0; i < count; i++) {
+		struct wpabuf *entry = hapd->conf->vendor_elements[i];
+
+		pos += wpa_snprintf_hex(pos, end - pos, wpabuf_head_u8(entry),
+					wpabuf_len(entry));
+
+		ret = os_snprintf(pos, end - pos, "\n");
+		if (os_snprintf_error(end - pos, ret))
+			return pos - buf;
+		pos += ret;
+	}
+	return pos - buf;
+}
 
 static int hostapd_get_wmm_params(struct hostapd_data *hapd, char *cmd,
 				  char *buf, size_t buflen)
@@ -2342,6 +2366,8 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 	} else if (os_strcmp(cmd, "ht_mcs_nss_set") == 0) {
 		res = os_snprintf(buf, buflen, "ht_mcs_nss_set = 0x%x\n",
 				  hapd->conf->ht_mcs_nss_set);
+	} else if (os_strcmp(cmd, "vendor_elements") == 0) {
+		res = hostapd_get_vendor_elements(hapd, buf, buflen);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;

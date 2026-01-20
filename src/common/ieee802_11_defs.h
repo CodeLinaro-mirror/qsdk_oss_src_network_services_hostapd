@@ -3741,4 +3741,5 @@ typedef struct ieee80211_tpe_ie_bss_local_config {
 } ieee80211_tpe_config_user_params;
 
 #define IEEE80211_MSCS_DESC_MIN_LEN 8
+#define IEEE80211_ELEM_HEADER_LEN 2
 #endif /* IEEE802_11_DEFS_H */

@@ -944,9 +944,7 @@ static void hostapd_dpp_controller_conf_free(struct dpp_controller_conf *conf)
 
 void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 {
-#if defined(CONFIG_WPS) || defined(CONFIG_HS20)
 	size_t i;
-#endif
 
 	if (conf == NULL)
 		return;
@@ -1067,7 +1065,8 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 	os_free(conf->t_c_server_url);
 #endif /* CONFIG_HS20 */
 
-	wpabuf_free(conf->vendor_elements);
+	for (i = 0; i < conf->vendor_elements_count; i++)
+		wpabuf_free(conf->vendor_elements[i]);
 	wpabuf_free(conf->assocresp_elements);
 
 	os_free(conf->sae_groups);

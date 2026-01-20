@@ -1572,4 +1572,28 @@ hostapd_is_eht_enabled(struct hostapd_data *hapd)
 {
 	return (hapd->iconf->ieee80211be && !hapd->conf->disable_11be);
 }
+
+/**
+ * Vendor element format
+ * ID (1 byte), Length (1 byte), OUI (3 bytes), Data (at least 1 byte)
+ */
+#define MIN_VENDOR_ELEM_LEN 6
+
+/**
+ * hostapd_update_vendor_elements - This is to handle user configured vendor
+ *                                  elements addition and removal
+ * @hapd: Pointer to hostapd data structure
+ * @conf: Pointer to hostapd bss config structure
+ * @data: Pointer to wpabuf structure and its only filled in soft ap case
+ * @cmd: User command add or remove
+ * @val: User configured data
+ * @is_bcn_update_needed: Flag to determine whether beacon update should be sent
+ *
+ * Return: 0 for success -1 for failure
+ */
+int
+hostapd_handle_vendor_elements_update(struct hostapd_data *hapd,
+				      struct hostapd_bss_config *conf, struct wpabuf *data,
+				      char *cmd, char *val, bool is_bcn_update_needed);
+
 #endif /* HOSTAPD_H */

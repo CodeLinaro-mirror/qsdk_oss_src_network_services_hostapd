@@ -780,11 +780,13 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 	if (hapd->iface->fst_ies)
 		buflen += wpabuf_len(hapd->iface->fst_ies);
 #endif /* CONFIG_FST */
+
 	/* Use plugin vendor elements if set, otherwise use conf vendor elements */
 	if (hapd->plugin_vendor_elements)
 		buflen += wpabuf_len(hapd->plugin_vendor_elements);
-	else if (hapd->conf->vendor_elements)
-		buflen += wpabuf_len(hapd->conf->vendor_elements);
+	else if (hapd->conf->vendor_elements_count)
+		buflen += hapd->conf->vendor_elements_len;
+
 #ifdef CONFIG_TESTING_OPTIONS
 	if (hapd->conf->presp_elements)
 		buflen += wpabuf_len(hapd->conf->presp_elements);
@@ -894,6 +896,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	u8 *epos;
 	u8 ext_cap = 0;
 	u8 p_ext_cap = 0;
+	size_t i;
 	bool bcast_prb_resp = false;
 
 	hapd = hostapd_mbssid_get_tx_bss(hapd);
@@ -1143,10 +1146,13 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 		os_memcpy(pos, wpabuf_head(hapd->plugin_vendor_elements),
 			  wpabuf_len(hapd->plugin_vendor_elements));
 		pos += wpabuf_len(hapd->plugin_vendor_elements);
-	} else if (hapd->conf->vendor_elements) {
-		os_memcpy(pos, wpabuf_head(hapd->conf->vendor_elements),
-			  wpabuf_len(hapd->conf->vendor_elements));
-		pos += wpabuf_len(hapd->conf->vendor_elements);
+	} else {
+		for (i = 0; i < hapd->conf->vendor_elements_count; i++) {
+			struct wpabuf *entry = hapd->conf->vendor_elements[i];
+
+			os_memcpy(pos, wpabuf_head(entry), wpabuf_len(entry));
+			pos += wpabuf_len(entry);
+		}
 	}
 
 #ifdef CONFIG_TESTING_OPTIONS
@@ -2518,7 +2524,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	u8 *tail = NULL;
 	size_t head_len = 0, tail_len = 0;
 	u8 *resp = NULL;
-	size_t resp_len = 0;
+	size_t i, resp_len = 0;
 #ifdef NEED_AP_MLME
 	u16 capab_info;
 	u8 *pos, *tailpos, *tailend, *csa_pos;
@@ -2549,11 +2555,12 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	if (hapd->iface->fst_ies)
 		tail_len += wpabuf_len(hapd->iface->fst_ies);
 #endif /* CONFIG_FST */
+
 	/* Use plugin vendor elements if set, otherwise use conf vendor elements */
 	if (hapd->plugin_vendor_elements)
 		tail_len += wpabuf_len(hapd->plugin_vendor_elements);
-	else if (hapd->conf->vendor_elements)
-		tail_len += wpabuf_len(hapd->conf->vendor_elements);
+	else if (hapd->conf->vendor_elements_count)
+		tail_len += hapd->conf->vendor_elements_len;
 
 #ifdef CONFIG_IEEE80211AC
 	if (hapd->conf->vendor_vht) {
@@ -2907,10 +2914,13 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		os_memcpy(tailpos, wpabuf_head(hapd->plugin_vendor_elements),
 			  wpabuf_len(hapd->plugin_vendor_elements));
 		tailpos += wpabuf_len(hapd->plugin_vendor_elements);
-	} else if (hapd->conf->vendor_elements) {
-		os_memcpy(tailpos, wpabuf_head(hapd->conf->vendor_elements),
-			  wpabuf_len(hapd->conf->vendor_elements));
-		tailpos += wpabuf_len(hapd->conf->vendor_elements);
+	} else {
+		for (i = 0; i < hapd->conf->vendor_elements_count; i++) {
+			struct wpabuf *entry = hapd->conf->vendor_elements[i];
+
+			os_memcpy(tailpos, wpabuf_head(entry), wpabuf_len(entry));
+			tailpos += wpabuf_len(entry);
+		}
 	}
 
 	tail_len = tailpos > tail ? tailpos - tail : 0;

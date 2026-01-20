@@ -48,6 +48,9 @@ enum link_parse_type {
 };
 
 #define LINK_RECONF_GROUP_KDE_MAX_LEN 255
+/* size in bytes */
+#define MBSSID_NONTX_OPTIONAL_ELEM_SIZE  128
+#define MBSSID_NONTX_VENDOR_ELEM_SIZE  80
 
 struct link_reconf_req_info {
 	struct dl_list list;

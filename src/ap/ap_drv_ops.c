@@ -89,6 +89,7 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 {
 	struct wpabuf *beacon = NULL, *proberesp = NULL, *assocresp = NULL;
 	u8 buf[216], *pos;
+	size_t i;
 
 	*beacon_ret = *proberesp_ret = *assocresp_ret = NULL;
 
@@ -239,11 +240,14 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 		if (add_buf(&beacon, hapd->plugin_vendor_elements) < 0 ||
 		    add_buf(&proberesp, hapd->plugin_vendor_elements) < 0)
 			goto fail;
-	} else if (hapd->conf->vendor_elements) {
-		if (add_buf(&beacon, hapd->conf->vendor_elements) < 0 ||
-		    add_buf(&proberesp, hapd->conf->vendor_elements) < 0)
-			goto fail;
+	} else {
+		for (i = 0; i < hapd->conf->vendor_elements_count; i++) {
+			if (add_buf(&beacon, hapd->conf->vendor_elements[i]) < 0 ||
+			    add_buf(&proberesp, hapd->conf->vendor_elements[i]) < 0)
+				goto fail;
+		}
 	}
+
 #ifdef CONFIG_TESTING_OPTIONS
 	if (add_buf(&proberesp, hapd->conf->presp_elements) < 0)
 		goto fail;
