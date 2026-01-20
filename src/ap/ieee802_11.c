@@ -3778,10 +3778,10 @@ static void handle_auth(struct hostapd_data *hapd,
 			u8 link_id = hapd->mld_link_id;
 
 			ap_sta_set_mld(sta, true);
-			sta->mld_assoc_link_id = link_id;
 			set_link_id_for_each_partner_link_sta(hapd,
 							      sta,
 							      link_id);
+			sta->mld_assoc_link_id = link_id;
 			/*
 			 * Set the MLD address as the station address and the
 			 * station addresses.
