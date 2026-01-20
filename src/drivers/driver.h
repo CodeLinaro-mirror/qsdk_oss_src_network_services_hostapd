@@ -529,6 +529,10 @@ struct hostapd_hw_modes {
 	 */
 	struct hostapd_channel_data *channels;
 
+#ifdef CONFIG_QCN_EXTN
+	struct hostapd_hw_modes_extn mode_extn;
+#endif
+
 	/**
 	 * channels_6ghz - Structure to hold 6 GHz channel information
 	 */
