@@ -3007,7 +3007,6 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 	struct hostapd_iface *iface, **tmp;
 	unsigned int i;
 	struct hapd_interfaces *interfaces;
-	u8 active_links;
 #ifdef CONFIG_WNM_AP
 	u8 bss_term_dur[12];
 	u8 req_mode;
@@ -3047,7 +3046,6 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 
 		iface = hapd->iface;
 		interfaces = iface->interfaces;
-		active_links = hostapd_get_active_links(hapd);
 		/* Save one of the partner bss to update the beacon */
 		for_each_mld_link(phapd, hapd)
 			if (phapd != hapd)
@@ -3086,14 +3084,11 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 
 			ap_for_each_sta(hapd, hostapd_sm_link_reconfigure, phapd);
 
-			hostapd_remove_bss(iface, i, true);
+			hostapd_remove_bss(iface, i);
 		}
 
 		/* Refresh all the partner beacons */
-		hostapd_refresh_all_iface_beacons(phapd->iface);
-		/* update ML Max recommended links */
-		if (active_links < phapd->conf->ml_max_rec_links)
-			hostapd_set_ml_max_rec_links(phapd, active_links);
+		hostapd_refresh_other_iface_beacons(phapd->iface);
 	}
 }
 #endif /* CONFIG_IEEE80211BE */
@@ -3489,7 +3484,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		/* Update beacon to all the interfaces about the
 		 * removal/disable of one of the BSS.
 		 */
-		hostapd_refresh_all_iface_beacons(hapd->iface);
+		hostapd_refresh_other_iface_beacons(hapd->iface);
 		break;
 	case EVENT_DFS_RADAR_DETECTED:
 		if (!data)

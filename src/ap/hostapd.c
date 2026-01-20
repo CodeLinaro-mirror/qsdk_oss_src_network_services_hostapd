@@ -275,6 +275,18 @@ int hostapd_get_mbssid_index(u32 *bmap)
 	return pos;
 }
 
+static int hostapd_get_bss_index(struct hostapd_data *bss)
+{
+	int i;
+
+	for (i = 0; i < bss->iface->num_bss; i++) {
+		if (bss->iface->bss[i] == bss)
+			return i;
+	}
+
+	return -1;
+}
+
 int hostapd_allocate_mbssid_idx(struct hostapd_data *hapd)
 {
 	struct hostapd_iface *iface = hapd->iface;
@@ -4117,6 +4129,29 @@ static void hostapd_mld_ref_dec(struct hostapd_mld *mld)
 	mld->refcount--;
 }
 
+
+int hostapd_parse_link_id(char *buf)
+{
+	char *arg, *sep = os_strchr(buf, ' ');
+	int link_id;
+
+	if (!sep)
+		return -1;
+
+	arg = sep + 1;
+
+	while (*arg == ' ')
+		arg++;
+
+	if (*arg == '\0')
+		return -1;
+
+	link_id = atoi(arg);
+	*sep = '\0';
+
+	return link_id;
+}
+
 #endif /* CONFIG_IEEE80211BE */
 
 static void hostapd_multi_mbssid_remove_bss(struct hostapd_data *hapd)
@@ -5035,7 +5070,7 @@ static void hostapd_deinit_driver(const struct wpa_driver_ops *driver,
 }
 
 
-void hostapd_refresh_all_iface_beacons(struct hostapd_iface *hapd_iface)
+void hostapd_refresh_other_iface_beacons(struct hostapd_iface *hapd_iface)
 {
 	size_t j;
 
@@ -5048,6 +5083,18 @@ void hostapd_refresh_all_iface_beacons(struct hostapd_iface *hapd_iface)
 
 		ieee802_11_update_beacons(hapd_iface->interfaces->iface[j]);
 	}
+}
+
+
+void hostapd_refresh_all_iface_beacons(struct hostapd_iface *hapd_iface)
+{
+	size_t j;
+
+	if (!hapd_iface->interfaces)
+		return;
+
+	for (j = 0; j < hapd_iface->interfaces->count; j++)
+		ieee802_11_update_beacons(hapd_iface->interfaces->iface[j]);
 }
 
 
@@ -5094,7 +5141,7 @@ int hostapd_enable_iface(struct hostapd_iface *hapd_iface)
 		return -1;
 	}
 
-	hostapd_refresh_all_iface_beacons(hapd_iface);
+	hostapd_refresh_other_iface_beacons(hapd_iface);
 
 	return 0;
 }
@@ -5189,7 +5236,7 @@ int hostapd_disable_iface(struct hostapd_iface *hapd_iface)
 		   hapd_iface->bss[0]->conf->iface);
 	hostapd_set_state(hapd_iface, HAPD_IFACE_DISABLED);
 	hostapd_interface_update_fils_ubpr(hapd_iface, false);
-	hostapd_refresh_all_iface_beacons(hapd_iface);
+	hostapd_refresh_other_iface_beacons(hapd_iface);
 	return 0;
 }
 
@@ -5508,8 +5555,7 @@ fail:
 }
 
 
-int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx,
-		       bool is_link_remove)
+int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 {
 	size_t i;
 
@@ -5518,7 +5564,19 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx,
 	/* Remove hostapd_data only if it has already been initialized */
 	if (idx < iface->num_bss) {
 		struct hostapd_data *hapd = iface->bss[idx];
+#ifdef CONFIG_IEEE80211BE
+		struct hostapd_data *phapd = NULL;
+		u8 active_links = 0;
 
+		/* Save one of the partner bss to update the beacon */
+		if (hapd->conf->mld_ap) {
+			for_each_mld_link(phapd, hapd) {
+				if (phapd != hapd && phapd->started)
+					break;
+			}
+		}
+		active_links = hostapd_get_active_links(hapd);
+#endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_IEEE80211AX
 		char buf[128] = {0};
 
@@ -5533,21 +5591,43 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx,
 		hostapd_bss_deinit(hapd);
 		wpa_printf(MSG_DEBUG, "%s: free hapd %p (%s)",
 			   __func__, hapd, hapd->conf->iface);
+
+		if (hapd->iface->bss[0] == hapd) {
+			/*
+			 * If there is no other BSS available to take over the
+			 * driver context (i.e., the driver context is not
+			 * shared), remove the entire interface.
+			 */
+#ifdef CONFIG_IEEE80211BE
+			if (hapd->drv_priv &&
+			    !hapd->driver->is_drv_shared(hapd->drv_priv, hapd->mld_link_id)) {
+				if (hostapd_remove_hapd_iface(iface) == 0)
+					return 1;
+				else
+					return -1;
+			}
+
+			/* If first bss is removed, if_link_remove/hostapd_if_remove
+			 * will not be called in hostapd_remove_bss, hence call
+			 * hostapd_if_remove/hostapd_if_link_remove
+			 * before calling the remove bss if the
+			 * first bss is removed.
+			 */
+			if (hapd->conf->mld_ap) {
+				hostapd_if_link_remove(hapd, WPA_IF_AP_BSS,
+						       hapd->conf->iface,
+						       hapd->mld_link_id);
+			} else
+#endif /* CONFIG_IEEE80211BE */
+				hostapd_if_remove(hapd, WPA_IF_AP_BSS,
+						  hapd->conf->iface);
+		}
+
 		hostapd_config_free_bss(hapd->conf);
 		hapd->conf = NULL;
 #ifdef CONFIG_IEEE80211BE
 		hostapd_mld_ref_dec(hapd->mld);
 #endif /* CONFIG_IEEE80211BE */
-		if (is_link_remove)
-			/* If first bss is removed, if_link_remove will not be
-			 * called in hostapd_remove_bss, hence call
-			 * if_link_remove before calling the remove bss if the
-			 * first bss is removed.
-			 */
-			if (hapd->iface->bss[0] == hapd)
-				hostapd_if_link_remove(hapd, WPA_IF_AP_BSS,
-						       hapd->conf->iface,
-						       hapd->mld_link_id);
 		hostapd_free_mbssid_idx(hapd);
 		hostapd_multi_mbssid_remove_bss(hapd);
 		os_free(hapd);
@@ -5556,6 +5636,12 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx,
 
 		for (i = idx; i < iface->num_bss; i++)
 			iface->bss[i] = iface->bss[i + 1];
+#ifdef CONFIG_IEEE80211BE
+		/* update ML Max recommended links */
+		if (phapd && active_links < phapd->conf->ml_max_rec_links)
+			hostapd_set_ml_max_rec_links(phapd,
+						     active_links);
+#endif /* CONFIG_IEEE80211BE */
 	} else {
 		hostapd_config_free_bss(iface->conf->bss[idx]);
 		iface->conf->bss[idx] = NULL;
@@ -5607,32 +5693,179 @@ int hostapd_remove_hapd_iface(struct hostapd_iface *hapd_iface)
 }
 
 
+static void hostapd_remove_non_tx_bsses(struct hostapd_data *tx_bss)
+{
+	struct hostapd_iface *iface = tx_bss->iface;
+	struct hostapd_multi_mbssid_group *grp;
+	struct hostapd_data *bss, *tmp;
+	size_t k;
+
+	if (iface->conf->mbssid == MBSSID_DISABLED)
+		return;
+
+	wpa_printf(MSG_DEBUG, "Remove non-tx bss for the tx bss %s",
+		   tx_bss->conf->iface);
+
+	if (iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
+		grp = tx_bss->mbssid_group;
+
+		dl_list_for_each_safe(bss, tmp, &grp->bss_list,
+				      struct hostapd_data, mbssid_bss) {
+			if (bss == tx_bss)
+				continue;
+
+			iface->driver_ap_teardown = !(iface->drv_flags &
+						      WPA_DRIVER_FLAGS_AP_TEARDOWN_SUPPORT);
+			hostapd_remove_bss(iface,
+					   hostapd_get_bss_index(bss));
+		}
+	} else {
+		for (k = iface->num_bss - 1; k > 0; k--) {
+			bss = iface->bss[k];
+
+			if (bss == tx_bss)
+				continue;
+
+			iface->driver_ap_teardown = !(iface->drv_flags &
+						      WPA_DRIVER_FLAGS_AP_TEARDOWN_SUPPORT);
+			hostapd_remove_bss(iface, k);
+		}
+	}
+}
+
+
 int hostapd_remove_iface(struct hapd_interfaces *interfaces, char *buf)
 {
-	struct hostapd_iface *hapd_iface;
-	size_t i, j;
+	struct hostapd_iface *hapd_iface, *refresh_ref = NULL;
+	struct hostapd_data *bss = NULL;
+	unsigned int i, j;
+	int ret = -1;
+	bool iface_remove = false;
+#ifdef CONFIG_IEEE80211BE
+	/* Parse optional link ID from input string
+	 * (format: "<iface_name> <link_id>")
+	 * link_id = -1 (No link_id provided)
+	 */
+	int link_id = hostapd_parse_link_id(buf);
+
+	if ((link_id != -1) && (link_id < 0 ||
+				link_id >= MAX_NUM_MLD_LINKS)) {
+		wpa_printf(MSG_ERROR, "Invalid link id %d",
+			   link_id);
+		return -EINVAL;
+	}
+#endif /* CONFIG_IEEE80211BE */
 
 	for (i = 0; i < interfaces->count; i++) {
 		hapd_iface = interfaces->iface[i];
 		if (hapd_iface == NULL)
 			return -1;
-		if (!os_strcmp(hapd_iface->phy, buf) ||
-		    !os_strcmp(hapd_iface->conf->bss[0]->iface, buf)) {
+
+		if (!os_strcmp(hapd_iface->phy, buf)) {
 			wpa_printf(MSG_INFO, "Remove interface '%s'", buf);
-			hostapd_remove_hapd_iface(hapd_iface);
-			return 0;
+
+			ret = hostapd_remove_hapd_iface(hapd_iface);
+			iface_remove = true;
+
+			if (interfaces->count > 0)
+				refresh_ref = interfaces->iface[0];
+
+			goto refresh_beacon;
 		}
 
 		for (j = 0; j < hapd_iface->conf->num_bss; j++) {
-			if (!os_strcmp(hapd_iface->conf->bss[j]->iface, buf)) {
-				hapd_iface->driver_ap_teardown =
-					!(hapd_iface->drv_flags &
-					  WPA_DRIVER_FLAGS_AP_TEARDOWN_SUPPORT);
-				return hostapd_remove_bss(hapd_iface, j, false);
+			if (!os_strcmp(hapd_iface->conf->bss[j]->iface, buf))
+				break;
+		}
+		bss = (j < hapd_iface->num_bss) ? hapd_iface->bss[j] : NULL;
+
+		if (!bss || !bss->conf) {
+#ifdef CONFIG_IEEE80211BE
+			/* If bss or bss->conf is NULL and
+			 * a link_id is provided, the BSS
+			 * may belong to a different interface.
+			 * Check the remaining interfaces.
+			 */
+			if (link_id) {
+				bss = NULL;
+				continue;
+			}
+#endif /* CONFIG_IEEE80211BE */
+			wpa_printf(MSG_INFO,
+				   "REMOVE: '%s' not started yet. Removing config.",
+				   buf);
+			return hostapd_remove_bss(hapd_iface, j);
+		}
+#ifdef CONFIG_IEEE80211BE
+		if (bss->conf->mld_ap && link_id >= 0) {
+			/* If a link ID is provided, fetch the corresponding
+			 * link BSS and proceed with removal; otherwise,
+			 * remove the default link (the first link of the
+			 * MLD AP)
+			 */
+			bss = hostapd_mld_get_link_bss(bss,
+						       (u8) link_id);
+			if (!bss) {
+				wpa_printf(MSG_ERROR,
+					   "MLD: Invalid link ID = %d",
+					   link_id);
+				return -EINVAL;
 			}
 		}
+#endif /* CONFIG_IEEE80211BE */
+		if (bss)
+			break;
 	}
-	return -1;
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid interface name/radio identifier/link id '%s'",
+			   buf);
+		return -EINVAL;
+	}
+
+	/* Remove non-TX BSS if the BSS being removed is
+	 * the TX BSS in a multi-BSS group
+	 */
+	if (bss->iconf->mbssid) {
+		if (bss == hostapd_mbssid_get_tx_bss(bss))
+			hostapd_remove_non_tx_bsses(bss);
+		else {
+			/* When non-tx bss is removed update
+			 * beacons of all interfaces
+			 */
+			iface_remove = true;
+		}
+	}
+
+	if (bss->iface->num_bss == 1) {
+		wpa_printf(MSG_INFO, "Last BSS - Remove interface '%s'", buf);
+
+		ret = hostapd_remove_hapd_iface(bss->iface);
+		iface_remove = true;
+
+		if (interfaces->count > 0)
+			refresh_ref = interfaces->iface[0];
+
+		goto refresh_beacon;
+	}
+
+	bss->iface->driver_ap_teardown = !(bss->iface->drv_flags &
+			WPA_DRIVER_FLAGS_AP_TEARDOWN_SUPPORT);
+	refresh_ref = bss->iface;
+	ret = hostapd_remove_bss(bss->iface, hostapd_get_bss_index(bss));
+
+	if (ret == 1)
+		return 0;
+refresh_beacon:
+	if (ret == 0 && refresh_ref) {
+		if (iface_remove)
+			hostapd_refresh_all_iface_beacons(refresh_ref);
+		else
+			hostapd_refresh_other_iface_beacons(refresh_ref);
+	}
+
+	return ret;
 }
 
 
