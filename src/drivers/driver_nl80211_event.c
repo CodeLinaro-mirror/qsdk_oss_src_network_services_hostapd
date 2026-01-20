@@ -1669,8 +1669,8 @@ mlme_event_mgmt_ttlm_expec_dur_update(struct i802_bss *bss,
 }
 
 
-static void mlme_event_mgmt(struct i802_bss *bss,
-			    struct nlattr *freq, struct nlattr *sig,
+static void mlme_event_mgmt(struct i802_bss *bss, struct nlattr *freq,
+			    struct nlattr *bitrate, struct nlattr *sig,
 			    const u8 *frame, size_t len, struct nlattr *rx_cu_param,
 			    int link_id, struct nlattr *link_removal_param,
 			    struct nlattr *ttlm_expec_dur_update_param)
@@ -1700,6 +1700,10 @@ static void mlme_event_mgmt(struct i802_bss *bss,
 		event.rx_mgmt.freq = nla_get_u32(freq);
 		rx_freq = drv->last_mgmt_freq = event.rx_mgmt.freq;
 	}
+
+	if (bitrate)
+		event.rx_mgmt.datarate = nla_get_u16(bitrate);
+
 	wpa_printf(MSG_DEBUG,
 		   "nl80211: RX frame da=" MACSTR " sa=" MACSTR " bssid=" MACSTR
 		   " freq=%d ssi_signal=%d fc=0x%x seq_ctrl=0x%x stype=%u (%s) len=%u",
@@ -2056,7 +2060,8 @@ nl80211_get_link_id_by_freq(struct i802_bss *bss, unsigned int freq)
 static void mlme_event(struct i802_bss *bss,
 		       enum nl80211_commands cmd, struct nlattr *frame,
 		       struct nlattr *addr, struct nlattr *timed_out,
-		       struct nlattr *freq, struct nlattr *ack,
+		       struct nlattr *freq, struct nlattr *bitrate,
+		       struct nlattr *ack,
 		       struct nlattr *cookie, struct nlattr *sig,
 		       struct nlattr *wmm, struct nlattr *req_ie,
 		       struct nlattr *rx_cu_param, struct nlattr *link,
@@ -2159,7 +2164,7 @@ static void mlme_event(struct i802_bss *bss,
 					   nla_data(frame), nla_len(frame));
 		break;
 	case NL80211_CMD_FRAME:
-		mlme_event_mgmt(bss, freq, sig, nla_data(frame),
+		mlme_event_mgmt(bss, freq, bitrate, sig, nla_data(frame),
 				nla_len(frame), rx_cu_param, link_id,
 				link_removal_param,
 				ttlm_expec_dur_update_param);
@@ -5420,7 +5425,8 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 	case NL80211_CMD_UNPROT_DISASSOCIATE:
 		mlme_event(bss, cmd, tb[NL80211_ATTR_FRAME],
 			   tb[NL80211_ATTR_MAC], tb[NL80211_ATTR_TIMED_OUT],
-			   tb[NL80211_ATTR_WIPHY_FREQ], tb[NL80211_ATTR_ACK],
+			   tb[NL80211_ATTR_WIPHY_FREQ], tb[NL80211_ATTR_BITRATE],
+			   tb[NL80211_ATTR_ACK],
 			   tb[NL80211_ATTR_COOKIE],
 			   tb[NL80211_ATTR_RX_SIGNAL_DBM],
 			   tb[NL80211_ATTR_STA_WME],
@@ -5765,7 +5771,8 @@ int process_bss_event(struct nl_msg *msg, void *arg)
 	case NL80211_CMD_FRAME_TX_STATUS:
 		mlme_event(bss, gnlh->cmd, tb[NL80211_ATTR_FRAME],
 			   tb[NL80211_ATTR_MAC], tb[NL80211_ATTR_TIMED_OUT],
-			   tb[NL80211_ATTR_WIPHY_FREQ], tb[NL80211_ATTR_ACK],
+			   tb[NL80211_ATTR_WIPHY_FREQ], tb[NL80211_ATTR_BITRATE],
+			   tb[NL80211_ATTR_ACK],
 			   tb[NL80211_ATTR_COOKIE],
 			   tb[NL80211_ATTR_RX_SIGNAL_DBM],
 			   tb[NL80211_ATTR_STA_WME], NULL,
