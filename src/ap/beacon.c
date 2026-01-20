@@ -41,6 +41,7 @@
 #endif
 
 #ifdef NEED_AP_MLME
+static int hostapd_insert_mbssid_ie(u8 *mbssid_offset, u8 *mbssid_pos, u8 *pos);
 
 static u8 * hostapd_eid_bss_load(struct hostapd_data *hapd, u8 *eid, size_t len)
 {
@@ -758,13 +759,9 @@ static void hostapd_free_probe_resp_params(struct probe_resp_params *params)
 static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 					   struct probe_resp_params *params)
 {
-	struct hostapd_data *hapd_probed = params->mld_ap ? params->mld_ap :
-		hapd;
 	size_t buflen = 0;
 	u8 include_ext_cap = 0;
 	u8 param_ext_cap = 0;
-	bool bcast_prb_resp = false;
-
 
 	hapd = hostapd_mbssid_get_tx_bss(hapd);
 
@@ -868,16 +865,6 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_IEEE80211BN */
 
-	/* RMSL value would be sent in broadcast Probe response case */
-	if (!(params->req && (!is_6ghz_op_class(hapd->iconf->op_class) ||
-	    hapd_probed->conf->ignore_broadcast_ssid)))
-		bcast_prb_resp = true;
-
-	buflen += hostapd_eid_mbssid_len(hapd_probed, WLAN_FC_STYPE_PROBE_RESP,
-					 NULL,
-					 params->known_bss,
-					 params->known_bss_len, NULL,
-					 bcast_prb_resp);
 	buflen += hostapd_eid_rnr_len(hapd, WLAN_FC_STYPE_PROBE_RESP, true);
 	buflen += hostapd_mbo_ie_len(hapd);
 	buflen += hostapd_eid_owe_trans_len(hapd);
@@ -902,9 +889,10 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 		hapd;
 	u8 *csa_pos;
 	u8 *epos;
+	u8 *mbssid_pos, *mbssid_offset;
 	u8 ext_cap = 0;
 	u8 p_ext_cap = 0;
-	size_t i;
+	size_t i, mbssid_len;
 	bool bcast_prb_resp = false;
 
 	hapd = hostapd_mbssid_get_tx_bss(hapd);
@@ -948,11 +936,9 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	if (is_broadcast_ether_addr(params->resp->da))
 		bcast_prb_resp = true;
 
-	pos = hostapd_eid_mbssid(hapd_probed, pos, epos,
-				 WLAN_FC_STYPE_PROBE_RESP, 0,
-				 NULL, params->known_bss, params->known_bss_len,
-				 NULL, NULL, NULL, 0, NULL,
-				 bcast_prb_resp);
+	/* store the mbssid_ie offset to insert it later */
+	mbssid_offset = pos;
+
 	pos = hostapd_eid_rm_enabled_capab(hapd, pos, epos - pos);
 	pos = hostapd_get_mde(hapd, pos, epos - pos);
 
@@ -1178,7 +1164,95 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_TESTING_OPTIONS */
 
+	params->resp_len = pos - (u8 *) params->resp;
+	mbssid_len = hostapd_eid_mbssid_len(hapd_probed, WLAN_FC_STYPE_PROBE_RESP,
+					    NULL,
+					    params->known_bss,
+					    params->known_bss_len, NULL,
+					    bcast_prb_resp);
+
+	if (mbssid_len) {
+		u8 *orig_pos = pos;
+		size_t used_len = params->resp_len;
+		size_t total_capacity = epos - (u8 *) params->resp;
+
+		if (total_capacity - used_len < mbssid_len) {
+			struct ieee80211_mgmt *new_resp;
+			size_t new_capacity = total_capacity +
+					      (mbssid_len - (total_capacity - used_len));
+
+			new_resp = os_realloc(params->resp, new_capacity);
+			if (!new_resp) {
+				wpa_printf(MSG_ERROR,
+				"Failed to allocate memory required to add MBSSID element");
+				return NULL;
+			}
+
+			params->resp = new_resp;
+			pos = (u8 *) params->resp + used_len;
+			epos = (u8 *) params->resp + new_capacity;
+			mbssid_offset = pos - ((size_t) (orig_pos - mbssid_offset));
+			mbssid_pos = pos;
+		} else {
+			mbssid_pos = pos;
+		}
+		pos = hostapd_eid_mbssid(hapd_probed, pos, epos,
+					 WLAN_FC_STYPE_PROBE_RESP, 0,
+					 NULL, params->known_bss, params->known_bss_len,
+					 NULL, NULL, NULL, 0, NULL, bcast_prb_resp);
+
+		/* Insert mbssid-ie at specified location */
+		if (hostapd_insert_mbssid_ie(mbssid_offset, mbssid_pos, pos)) {
+			wpa_printf(MSG_ERROR, "Failed to insert MBSSID-IE");
+			return NULL;
+		}
+	}
+
 	return pos;
+}
+
+static int hostapd_insert_mbssid_ie(u8 *mbssid_offset, u8 *mbssid_pos, u8 *pos)
+{
+	u8 *mbssid_tmp;
+	size_t mbssid_len, suffix_len;
+
+	if (!mbssid_offset || !pos || !mbssid_pos) {
+		wpa_printf(MSG_ERROR, "mbssid_offset/pos/mbssid_pos is NULL");
+		return -1;
+	}
+
+	mbssid_len = (size_t) (pos - mbssid_pos);
+
+	if (!mbssid_len) {
+		wpa_printf(MSG_ERROR, "mbssid_len is zero");
+		return -1;
+	}
+
+	/* exclude appended MBSSID */
+	suffix_len = (size_t) (mbssid_pos - mbssid_offset);
+
+	if (!suffix_len) {
+		wpa_printf(MSG_ERROR, "suffix_len is zero");
+		return -1;
+	}
+
+	/* Copy appended MBSSID to a temporary buffer */
+	mbssid_tmp = os_zalloc(mbssid_len);
+	if (!mbssid_tmp) {
+		wpa_printf(MSG_ERROR, "Failed to allocate memory");
+		return -1;
+	}
+
+	os_memcpy(mbssid_tmp, mbssid_pos, mbssid_len);
+
+	/* Create space at mbssid_ie by shifting suffix */
+	os_memmove(mbssid_offset + mbssid_len, mbssid_offset, suffix_len);
+
+	/* Copy MBSSID into the gap */
+	os_memcpy(mbssid_offset, mbssid_tmp, mbssid_len);
+	os_free(mbssid_tmp);
+
+	return 0;
 }
 
 
@@ -1230,6 +1304,13 @@ static void hostapd_gen_probe_resp(struct hostapd_data *hapd,
 					    params->resp->u.probe_resp.variable,
 					    buflen);
 
+	if (!pos) {
+		wpa_printf(MSG_ERROR,
+			   "Probe response: Failed to fill probe response elements for %s",
+			   hapd->conf->iface);
+		goto fail;
+	}
+
 	params->resp_len = pos - (u8 *) params->resp;
 	wpa_printf(MSG_DEBUG,
 		   "Probe response:%s allocated buffer size :%zu actual frame size:%zu max allowed frame size:%zu",
@@ -1238,10 +1319,15 @@ static void hostapd_gen_probe_resp(struct hostapd_data *hapd,
 	if (hapd->iface->max_mgmt_frm_sz && (params->resp_len > hapd->iface->max_mgmt_frm_sz)) {
 		wpa_printf(MSG_ERROR, "probe response size limit (%zu) exceeded for %s: max allowed size(%zu)",
 			   params->resp_len, hapd->conf->iface, hapd->iface->max_mgmt_frm_sz);
-		os_free(params->resp);
-		params->resp = NULL;
-		params->resp_len = 0;
+		goto fail;
 	}
+
+	return;
+fail:
+	os_free(params->resp);
+	params->resp = NULL;
+	params->resp_len = 0;
+	return;
 }
 
 
