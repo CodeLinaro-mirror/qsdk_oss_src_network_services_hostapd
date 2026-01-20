@@ -1214,7 +1214,7 @@ static void hostapd_gen_probe_resp(struct hostapd_data *hapd,
 		   "Probe response:%s allocated buffer size :%zu actual frame size:%zu max allowed frame size:%zu",
 		   hapd->conf->iface, buflen, params->resp_len, hapd->iface->max_mgmt_frm_sz);
 
-	if (params->resp_len > hapd->iface->max_mgmt_frm_sz) {
+	if (hapd->iface->max_mgmt_frm_sz && (params->resp_len > hapd->iface->max_mgmt_frm_sz)) {
 		wpa_printf(MSG_ERROR, "probe response size limit (%zu) exceeded for %s: max allowed size(%zu)",
 			   params->resp_len, hapd->conf->iface, hapd->iface->max_mgmt_frm_sz);
 		os_free(params->resp);
@@ -3163,7 +3163,7 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 				   hapd->iface->multi_mbssid.mbssid_max_ngroups);
 			goto fail2;
 		}
-	} else if (bcn_len > hapd->iface->max_mgmt_frm_sz) {
+	} else if (hapd->iface->max_mgmt_frm_sz && (bcn_len > hapd->iface->max_mgmt_frm_sz)) {
 		wpa_printf(MSG_ERROR, "Beacon size limit (%zu) exceeded for %s: max allowed size(%zu)",
 			   bcn_len, hapd->conf->iface, hapd->iface->max_mgmt_frm_sz);
 		goto fail2;
