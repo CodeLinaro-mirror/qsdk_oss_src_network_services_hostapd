@@ -1967,3 +1967,86 @@ int hostapd_ubus_notify_bss_transition_query(
 	return 0;
 #endif
 }
+
+enum {
+	STATUS_STA_STATE,
+	__STATUS_MAX,
+};
+
+static const struct blobmsg_policy status_policy[__STATUS_MAX] = {
+	[STATUS_STA_STATE] = { .name = "state", .type = BLOBMSG_TYPE_STRING },
+};
+
+static void state_status_cb(struct ubus_request *req, int type, struct blob_attr *msg)
+{
+	struct blob_attr *tb[__STATUS_MAX];
+	char **out_state = (char **)req->priv;
+	size_t n;
+	char *copy = NULL;
+
+	if (out_state)
+		*out_state = NULL;
+
+	if (!msg)
+		return;
+
+	blobmsg_parse(status_policy, __STATUS_MAX, tb, blob_data(msg), blob_len(msg));
+
+	if (!tb[STATUS_STA_STATE])
+		return;
+
+	const char *state = blobmsg_get_string(tb[STATUS_STA_STATE]);
+
+	if (!state || state[0] == '\0')
+		return;
+
+	wpa_printf(MSG_INFO, "state of station is %s", state);
+
+	n = strlen(state) + 1;
+	copy = (char *)malloc(n);
+
+	if (!copy)
+		return;
+
+	memcpy(copy, state, n);
+	*out_state = copy;
+}
+
+char *hostapd_ubus_bhsta_state(struct hostapd_iface *iface)
+{
+	uint32_t id;
+	int ret = -1;
+	int hw_idx = 0;
+	char *state = NULL;
+	struct hostapd_data *hapd = iface->bss[0];
+
+	if (iface->current_hw_info)
+		hw_idx = iface->current_hw_info->hw_idx;
+
+	ret = ubus_lookup_id(ctx, "wpa_supplicant", &id);
+	if (ret) {
+		wpa_printf(MSG_INFO, "ubus look up failed %d", ret);
+		return NULL;
+	}
+
+	const char *phy = hostapd_drv_get_radio_name(hapd);
+
+	blob_buf_init(&b, 0);
+	blobmsg_add_string(&b, "phy", phy);
+	blobmsg_add_u32(&b, "radio", hw_idx);
+
+	ret = ubus_invoke(ctx, id, "phy_status", b.head, state_status_cb, &state, 3000);
+	if (ret) {
+		wpa_printf(MSG_DEBUG, "phy_status invoke failed %d", ret);
+		return NULL;
+	}
+
+	if (!state) {
+		wpa_printf(MSG_INFO, "no state received");
+		return NULL;
+	}
+
+	wpa_printf(MSG_INFO, "received state is '%s'", state);
+	return state;
+}
+

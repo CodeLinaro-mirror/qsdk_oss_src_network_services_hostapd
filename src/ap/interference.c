@@ -46,6 +46,29 @@
 #include "eloop.h"
 #include "hw_features.h"
 #include "interference.h"
+#include "ubus.h"
+
+bool hostapd_is_backhaul_sta_conn(struct hostapd_iface *iface)
+{
+	char *state = hostapd_ubus_bhsta_state(iface);
+
+	wpa_printf(MSG_DEBUG, "Backhaul STA state: %s",
+		   state ? state : "NULL");
+
+	if (!state)
+		return false;
+
+	if (state && strcmp(state, "COMPLETED") == 0) {
+		wpa_printf(MSG_DEBUG, "Backhaul STA connected (COMPLETED)");
+		free(state);
+		state = NULL;
+		return true;
+	}
+
+	free(state);
+	state = NULL;
+	return false;
+}
 
 static bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
 {
@@ -682,7 +705,7 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 		   chan_width,
 		   cf1, cf2, chan_bw_interference_bitmap);
 
-	if (iface->conf->discard_6g_awgn_event) {
+	if (iface->conf->discard_6g_awgn_event || hostapd_is_backhaul_sta_conn(iface)) {
 		if (iface->bss && iface->bss[0] && iface->bss[0]->msg_ctx)
 			wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, INTERFERENCE_DETECTED
 				"type=%s freq=%d chan_width=%d cf1=%d cf2=%d bitmap=0x%x",
