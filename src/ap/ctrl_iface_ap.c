@@ -1400,7 +1400,7 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 			if (os_snprintf_error(buflen - len, ret))
 				return len;
 			len += ret;
-			for (j = 0; bss->conf->supported_rates[j] >= 0; j++) {
+			for (j = 0; bss->conf->supported_rates[j] > 0; j++) {
 				ret = os_snprintf(buf + len, buflen - len, "%s%d",
 						  j ? " " : "",
 						  bss->conf->supported_rates[j]);
@@ -1421,7 +1421,7 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 			if (os_snprintf_error(buflen - len, ret))
 				return len;
 			len += ret;
-			for (j = 0; bss->conf->basic_rates[j] >= 0; j++) {
+			for (j = 0; bss->conf->basic_rates[j] > 0; j++) {
 				ret = os_snprintf(buf + len, buflen - len, "%s%d",
 						  j ? " " : "",
 						  bss->conf->basic_rates[j]);
