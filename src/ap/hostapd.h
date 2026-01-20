@@ -717,6 +717,19 @@ struct hostapd_mld {
 #define HOSTAPD_MLD_MAX_REF_COUNT      0xFF
 #endif /* CONFIG_IEEE80211BE */
 
+
+/**
+ * enum cac_completion_type - CAC completion context
+ * @HAPD_CAC_COMPLETE_AFTER_BSS: CAC completed after a regular BSS
+ *                               CAC procedure (non-CSA path).
+ * @HAPD_CAC_COMPLETE_AFTER_CSA: CAC completed after CSA
+ *                               on a DFS target channel.
+ */
+enum cac_completion_type {
+	HAPD_CAC_COMPLETE_AFTER_BSS = 0,
+	HAPD_CAC_COMPLETE_AFTER_CSA = 1,
+};
+
 /**
  * struct hostapd_iface - hostapd per-interface data structure
  */
@@ -801,6 +814,7 @@ struct hostapd_iface {
 	int freq;
 
 	bool radar_detected;
+	enum cac_completion_type cac_type;
 
 	/* Background radar configuration */
 	struct {

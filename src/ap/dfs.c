@@ -1426,6 +1426,8 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			     int cf1, int cf2, bool is_background,
 			     int chan_width_device, int cf_device)
 {
+	struct hostapd_data *hapd = iface->bss[0];
+
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_COMPLETED
 		"success=%d freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d radar_detected=%d"
 		"chan_width_device=%d cf_device=%d",
@@ -1489,16 +1491,25 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			 */
 			if (iface->state != HAPD_IFACE_ENABLED &&
 			    hostapd_is_dfs_chan_available(iface)) {
-				ieee80211_freq_to_chan(cf1, &seg0);
-				hostapd_set_oper_centr_freq_seg0_idx(iface->conf, seg0);
-				hostapd_setup_interface_complete(iface, 0);
 				iface->cac_started = 0;
+				if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_BSS) {
+					ieee80211_freq_to_chan(cf1, &seg0);
+					hostapd_set_oper_centr_freq_seg0_idx(iface->conf, seg0);
+					hostapd_setup_interface_complete(iface, 0);
+				} else if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_CSA) {
+					ieee802_11_set_beacon(hapd);
+					hostapd_set_state(iface, HAPD_IFACE_ENABLED);
+					iface->cac_type = 0;
+					hostapd_start_device_cac_background(iface);
+				}
 			}
 		}
 	} else if (is_background || hostapd_dfs_is_background_event(iface, freq)) {
 		iface->radar_background.cac_started = 0;
 		if (iface->conf->enable_background_radar)
 			hostapd_dfs_update_background_chain(iface);
+	} else {
+		iface->cac_type = 0;
 	}
 
 	iface->radar_detected = false;
@@ -1681,7 +1692,7 @@ hostapd_dfs_background_start_channel_switch(struct hostapd_iface *iface,
 }
 
 
-static int hostapd_dfs_start_channel_switch(struct hostapd_iface *iface)
+int hostapd_dfs_start_channel_switch(struct hostapd_iface *iface)
 {
 	struct hostapd_channel_data *channel;
 	int secondary_channel;

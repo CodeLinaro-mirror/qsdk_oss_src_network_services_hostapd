@@ -2872,6 +2872,8 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_CIGTK		       0x0000000400000000ULL
 /** Driver support CIP Padding Support */
 #define WPA_DRIVER_FLAGS2_CIP_PADDING_SUPPORT  0x0000000800000000ULL
+/** Driver supports sending CSA in the current channel, when new/target channel is DFS*/
+#define WPA_DRIVER_FLAGS2_DFS_CHANNEL_SWITCH   0x0000001000000000ULL
 	u64 flags2;
 
 #define FULL_AP_CLIENT_STATE_SUPP(drv_flags) \
