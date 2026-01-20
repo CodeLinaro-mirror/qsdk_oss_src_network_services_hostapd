@@ -1627,4 +1627,13 @@ hostapd_handle_vendor_elements_update(struct hostapd_data *hapd,
 				      struct hostapd_bss_config *conf, struct wpabuf *data,
 				      char *cmd, char *val, bool is_bcn_update_needed);
 
+int convert_chwidth_to_20MHz_nchans(enum chan_width chan_width);
+
+int find_6g_enabled_chans(struct hostapd_iface *iface,
+			  int chan_width,
+			  struct hostapd_channel_data **chandef_list,
+			  struct hostapd_hw_modes *mode,
+			  struct hostapd_channel_data **chan_6ghz,
+			  int n_chans, int power_type);
+
 #endif /* HOSTAPD_H */

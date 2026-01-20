@@ -340,7 +340,7 @@ int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 	return channel_idx;
 }
 
-static int convert_chwidth_to_20MHz_nchans(enum chan_width chan_width)
+int convert_chwidth_to_20MHz_nchans(enum chan_width chan_width)
 {
 	int n_chans;
 
@@ -409,7 +409,7 @@ static void find_6g_chan_20_40(struct hostapd_iface *iface,
 			       u16 afc_bitmap, int *channel_idx,
 			       struct hostapd_channel_data **chandef_list)
 {
-    int sp_pwr, lpi_pwr, vlp_pwr;
+    int sp_pwr, lpi_pwr, vlp_pwr, eirp_pwr;
     if (!afc_bitmap) {
 	if (!hostapd_validate_chan_bw_in_pwr_mode(iface,
 						  chan->freq, centre_freq,
@@ -421,31 +421,47 @@ static void find_6g_chan_20_40(struct hostapd_iface *iface,
 	    return;
 	}
 
-	if (power_type == NL80211_REG_AP_SP) {
-	    sp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
-					  channel_width, 0,
-					  NL80211_REG_AP_SP, false,
-					  NL80211_REG_NUM_POWER_MODES, false);
-	    lpi_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
-					   channel_width, 0,
-					   NL80211_REG_AP_LPI, false,
-					   NL80211_REG_NUM_POWER_MODES, false);
-	    vlp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
-					   channel_width, 0,
-					   NL80211_REG_AP_VLP, false,
-					   NL80211_REG_NUM_POWER_MODES, false);
-	    if (sp_pwr < lpi_pwr || sp_pwr < vlp_pwr) {
+	sp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+				      channel_width, 0,
+				      NL80211_REG_AP_SP, false,
+				      NL80211_REG_NUM_POWER_MODES, false);
+	lpi_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+				       channel_width, 0,
+				       NL80211_REG_AP_LPI, false,
+				       NL80211_REG_NUM_POWER_MODES, false);
+	vlp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+				       channel_width, 0,
+				       NL80211_REG_AP_VLP, false,
+				       NL80211_REG_NUM_POWER_MODES, false);
+	if ((power_type == NL80211_REG_AP_SP) && (sp_pwr < lpi_pwr || sp_pwr < vlp_pwr)) {
 		wpa_printf(MSG_DEBUG,
 			   "SP eirp %d is less than LPI eirp %d or VLP eirp %d for freq %d bw %d",
 			   sp_pwr, lpi_pwr, vlp_pwr, chan->freq, channel_width);
 		return;
-	    }
+	}
+
+	switch (power_type) {
+	case NL80211_REG_AP_SP:
+		eirp_pwr = sp_pwr;
+		break;
+	case NL80211_REG_AP_LPI:
+		eirp_pwr = lpi_pwr;
+		break;
+	case NL80211_REG_AP_VLP:
+		eirp_pwr = vlp_pwr;
+		break;
+	default:
+		eirp_pwr = 0;
+		break;
 	}
 
 	wpa_printf(MSG_DEBUG,
 		   "AFC: Adding channel %d (%d) to valid chandef list with bw %d puncture pattern 0x%x",
 		   chan->freq, chan->chan, channel_width, chan->punct_bitmap);
 	(*chandef_list)[*channel_idx] = *chan;
+	(*chandef_list)[*channel_idx].punct_bitmap = 0;
+	(*chandef_list)[*channel_idx].psd_power = 0;
+	(*chandef_list)[*channel_idx].eirp_power = eirp_pwr;
 	(*channel_idx)++;
     }
 }
@@ -479,7 +495,7 @@ static void find_6g_chan_gt_40(struct hostapd_iface *iface,
 
 	for (i = 0; i < num_pp; i++) {
 		u16 temp_bitmap;
-		int sp_pwr, lpi_pwr, vlp_pwr;
+		int sp_pwr, lpi_pwr, vlp_pwr, eirp_pwr;
 
 		temp_bitmap = ((afc_bitmap | bw_pp_arr[i]) & pp_mask);
 		if (!is_punct_bitmap_valid(channel_width, pri_chan_pos, temp_bitmap)) {
@@ -499,25 +515,37 @@ static void find_6g_chan_gt_40(struct hostapd_iface *iface,
 		    continue;
 		}
 
-		if (power_type == NL80211_REG_AP_SP) {
-		    sp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
-						  channel_width, temp_bitmap,
-						  NL80211_REG_AP_SP, false,
-						  NL80211_REG_NUM_POWER_MODES, false);
-		    lpi_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
-						   channel_width, 0,
-						   NL80211_REG_AP_LPI, false,
-						   NL80211_REG_NUM_POWER_MODES, false);
-		    vlp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
-						   channel_width, 0,
-						   NL80211_REG_AP_VLP, false,
-						   NL80211_REG_NUM_POWER_MODES, false);
-		    if (sp_pwr < lpi_pwr || sp_pwr < vlp_pwr) {
+		sp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+					      channel_width, temp_bitmap,
+					      NL80211_REG_AP_SP, false,
+					      NL80211_REG_NUM_POWER_MODES, false);
+		lpi_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+					       channel_width, 0,
+					       NL80211_REG_AP_LPI, false,
+					       NL80211_REG_NUM_POWER_MODES, false);
+		vlp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+					       channel_width, 0,
+					       NL80211_REG_AP_VLP, false,
+					       NL80211_REG_NUM_POWER_MODES, false);
+		if (power_type == NL80211_REG_AP_SP && (sp_pwr < lpi_pwr || sp_pwr < vlp_pwr)) {
 			wpa_printf(MSG_DEBUG,
 				   "SP eirp %d is less than LPI eirp %d or VLP eirp %d for freq %d bw %d and PP 0x%x",
 				   sp_pwr, lpi_pwr, vlp_pwr, chan->freq, channel_width, temp_bitmap);
 			continue;
-		    }
+		}
+		switch (power_type) {
+		case NL80211_REG_AP_SP:
+			eirp_pwr = sp_pwr;
+			break;
+		case NL80211_REG_AP_LPI:
+			eirp_pwr = lpi_pwr;
+			break;
+		case NL80211_REG_AP_VLP:
+			eirp_pwr = vlp_pwr;
+			break;
+		default:
+			eirp_pwr = 0;
+			break;
 		}
 
 		wpa_printf(MSG_DEBUG,
@@ -525,16 +553,18 @@ static void find_6g_chan_gt_40(struct hostapd_iface *iface,
 			   chan->freq, chan->chan, channel_width, temp_bitmap);
 		(*chandef_list)[*channel_idx] = *chan;
 		(*chandef_list)[*channel_idx].punct_bitmap = temp_bitmap;
+		(*chandef_list)[*channel_idx].psd_power = 0;
+		(*chandef_list)[*channel_idx].eirp_power = eirp_pwr;
 		(*channel_idx)++;
 	}
 }
 
-static int find_6g_enabled_chans(struct hostapd_iface *iface,
-				 int chan_width,
-				 struct hostapd_channel_data **chandef_list,
-				 struct hostapd_hw_modes *mode,
-				 struct hostapd_channel_data **chan_6ghz,
-				 int n_chans, int power_type)
+int find_6g_enabled_chans(struct hostapd_iface *iface,
+			  int chan_width,
+			  struct hostapd_channel_data **chandef_list,
+			  struct hostapd_hw_modes *mode,
+			  struct hostapd_channel_data **chan_6ghz,
+			  int n_chans, int power_type)
 {
 	int i, channel_idx = 0;
 
@@ -938,6 +968,14 @@ int hostapd_afc_handle_cli(struct hostapd_data *hapd, char *pos,
 		if (!os_snprintf_error(buflen - len, ret))
 			len += ret;
 		ret = len;
+	} else if (os_strncmp(pos, "get_afc_6g_chan_list", 20) == 0) {
+#ifdef CONFIG_QCN_EXTN
+		ret = hostapd_get_6g_chan_list_extn(hapd->iface,
+						    buf, buflen);
+#else
+		ret = -1;
+		wpa_printf(MSG_ERROR, " command is not supported in extension");
+#endif
 	} else {
 		wpa_printf(MSG_ERROR, "invalid afc command");
 		ret = -1;
