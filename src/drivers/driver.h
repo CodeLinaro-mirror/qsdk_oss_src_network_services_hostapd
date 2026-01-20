@@ -3037,6 +3037,8 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_CIGTK			0x0000080000000000ULL
 /** Driver supports CIP Padding Support */
 #define WPA_DRIVER_FLAGS2_CIP_PADDING_SUPPORT	0x0000100000000000ULL
+/** Driver supports CSA on the current channel when the target channel is DFS */
+#define WPA_DRIVER_FLAGS2_DFS_CHANNEL_SWITCH	0x0000200000000000ULL
 #define WPA_DRIVER_FLAGS2_P2P_ASSISTED_DFS		0x0000000100000000ULL
 /** Driver supports (Re)Association Request/Response frame encryption */
 #define WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION	0x0000000200000000ULL
