@@ -748,8 +748,14 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 		capa->flags2 |= WPA_DRIVER_FLAG2_MLD_LINK_REMOVAL_OFFLOAD;
 
 	if (ext_feature_isset(ext_features, len,
-			      NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD))
+			      NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD)) {
 		capa->flags2 |= WPA_DRIVER_FLAGS2_TTLM_BEACON_OFFLOAD;
+		/* TODO: Add driver capability check, by default assume driver supports
+		 * CSA on DFS channel for ath12k driver by checking beacon TTLM offload
+		 * feature enabled for ath12k
+		 */
+		capa->flags2 |= WPA_DRIVER_FLAGS2_DFS_CHANNEL_SWITCH;
+	}
 }
 
 

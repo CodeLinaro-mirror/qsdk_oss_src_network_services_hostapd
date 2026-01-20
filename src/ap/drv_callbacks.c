@@ -1288,6 +1288,71 @@ int hostapd_switch_power_mode(struct hostapd_data *hapd)
 	return ret;
 }
 
+void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
+				  int width, int width_device, int is_dfs0, int is_dfs)
+{
+	int freq = hapd->iface->freq;
+
+	if (hapd->csa_in_progress &&
+	    freq == hapd->cs_freq_params.freq) {
+		if ((is_dfs || is_dfs0) && hostapd_is_dfs_required(hapd->iface) &&
+		    !hostapd_is_dfs_chan_available(hapd->iface) &&
+		    !hapd->iface->cac_started) {
+			if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_DFS_CHANNEL_SWITCH) {
+				hostapd_cleanup_cs_params(hapd);
+				hapd->disable_cu = 1;
+				ieee802_11_set_beacon(hapd);
+				hostapd_set_state(hapd->iface, HAPD_IFACE_DFS);
+				hapd->iface->cac_type = HAPD_CAC_COMPLETE_AFTER_CSA;
+				wpa_printf(MSG_DEBUG, "DFS:Starting CAC after CSA on freq=%d", freq);
+				hostapd_start_dfs_cac(hapd->iface, hapd->iface->conf->hw_mode,
+						     hapd->iface->freq,
+						     hapd->iconf->channel,
+						     hapd->iface->conf->ieee80211n,
+						     hapd->iface->conf->ieee80211ac,
+						     hapd->iface->conf->ieee80211ax,
+						     hapd->iface->conf->ieee80211be,
+						     hapd->iconf->secondary_channel,
+						     convert_to_oper_chan_width(width),
+						     hostapd_get_oper_centr_freq_seg0_idx(hapd->iface->conf),
+						     hostapd_get_oper_centr_freq_seg1_idx(hapd->iface->conf),
+						     false, width_device,
+						     hapd->iconf->center_freq_device);
+			} else {
+				hostapd_disable_iface(hapd->iface);
+				hostapd_enable_iface(hapd->iface);
+			}
+		} else {
+			hapd->iconf->he_6ghz_reg_pwr_type = power_mode_6ghz;
+			hostapd_cleanup_cs_params(hapd);
+			hapd->disable_cu = 1;
+			ieee802_11_set_beacon(hapd);
+			hostapd_start_device_cac_background(hapd->iface);
+			wpa_msg(hapd->msg_ctx, MSG_INFO, AP_CSA_FINISHED
+				"freq=%d dfs=%d", freq, is_dfs);
+		}
+	} else {
+		if (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD) {
+		/* Complete AP configuration for the first bring up. */
+			if (is_dfs0 > 0 &&
+			    hostapd_is_dfs_required(hapd->iface) <= 0 &&
+			    hapd->iface->state != HAPD_IFACE_ENABLED) {
+				/* Fake a CAC start bit to skip setting channel */
+				hapd->iface->cac_started = 1;
+				hostapd_setup_interface_complete(hapd->iface, 0);
+			}
+			wpa_msg(hapd->msg_ctx, MSG_INFO, AP_CSA_FINISHED
+				"freq=%d dfs=%d", freq, is_dfs);
+		} else if (is_dfs &&
+			   hostapd_is_dfs_required(hapd->iface) &&
+			   !hostapd_is_dfs_chan_available(hapd->iface) &&
+			   !hapd->iface->cac_started) {
+			hostapd_disable_iface(hapd->iface);
+			hostapd_enable_iface(hapd->iface);
+		}
+	}
+}
+
 void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 			     int offset, int width, int cf1, int cf2,
 			     u16 punct_bitmap, u8 power_mode_6ghz,
@@ -1485,36 +1550,8 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 	if (!finished)
 		return;
 
-	if (hapd->csa_in_progress &&
-	    freq == hapd->cs_freq_params.freq) {
-		hapd->iconf->he_6ghz_reg_pwr_type = power_mode_6ghz;
-
-		hostapd_cleanup_cs_params(hapd);
-		hapd->disable_cu = 1;
-		ieee802_11_set_beacon(hapd);
-		hostapd_start_device_cac_background(hapd->iface);
-
-		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_CSA_FINISHED
-			"freq=%d dfs=%d", freq, is_dfs);
-	} else if (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD) {
-		/* Complete AP configuration for the first bring up. */
-		if (is_dfs0 > 0 &&
-		    hostapd_is_dfs_required(hapd->iface) <= 0 &&
-		    hapd->iface->state != HAPD_IFACE_ENABLED) {
-			/* Fake a CAC start bit to skip setting channel */
-			hapd->iface->cac_started = 1;
-			hostapd_setup_interface_complete(hapd->iface, 0);
-		}
-		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_CSA_FINISHED
-			"freq=%d dfs=%d", freq, is_dfs);
-	} else if (is_dfs &&
-		   hostapd_is_dfs_required(hapd->iface) &&
-		   !hostapd_is_dfs_chan_available(hapd->iface) &&
-		   !hapd->iface->cac_started) {
-		hostapd_disable_iface(hapd->iface);
-		hostapd_enable_iface(hapd->iface);
-	}
-
+	hostapd_chan_switch_complete(hapd, power_mode_6ghz, width,
+				     width_device, is_dfs0, is_dfs);
 	for (i = 0; i < hapd->iface->num_bss; i++)
 		hostapd_neighbor_set_own_report(hapd->iface->bss[i]);
 
