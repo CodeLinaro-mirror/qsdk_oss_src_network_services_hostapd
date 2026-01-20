@@ -2209,7 +2209,7 @@ reject_all_req:
 	}
 
 send_resp:
-	ret = hostapd_drv_send_mlme(hapd, mgmt, pos_len, 0, NULL, 0, 0);
+	ret = hostapd_drv_send_mlme(hapd, mgmt, pos_len, 0, NULL, 0, 0, 0, 0);
 	os_free(buf);
 
 	if (mld.mld_sta)

@@ -1115,7 +1115,7 @@ static void __send_mgmt_disconnect(const char *ifname,
 		   sta_mac[3], sta_mac[4], sta_mac[5],
 		   reason_code, added_data_len, send_len);
 
-	drv_ret = hostapd_drv_send_mlme(hapd, buf, send_len, 0, NULL, 0, 0);
+	drv_ret = hostapd_drv_send_mlme(hapd, buf, send_len, 0, NULL, 0, 0, 0, 0);
 	os_free(buf);
 	if (drv_ret < 0) {
 		__inbound_error_event(hapd, sta_mac,

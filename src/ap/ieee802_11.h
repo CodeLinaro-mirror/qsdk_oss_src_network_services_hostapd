@@ -30,6 +30,8 @@ struct sae_password_entry;
 struct mld_info;
 struct mld_link_info;
 
+#define BITRATE_5_5_MBPS 55
+
 enum colocation_mode {
 	NO_COLOCATED_6GHZ,
 	STANDALONE_6GHZ,

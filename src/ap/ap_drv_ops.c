@@ -1042,7 +1042,7 @@ int hostapd_drv_set_key(const char *ifname, struct hostapd_data *hapd,
 int hostapd_drv_send_mlme(struct hostapd_data *hapd,
 			  const void *msg, size_t len, int noack,
 			  const u16 *csa_offs, size_t csa_offs_len,
-			  int no_encrypt)
+			  int no_encrypt, u16 rate, u8 rate_type)
 {
 	int link_id = -1;
 
@@ -1053,7 +1053,7 @@ int hostapd_drv_send_mlme(struct hostapd_data *hapd,
 
 	if (!hapd->driver || !hapd->driver->send_mlme || !hapd->drv_priv)
 		return 0;
-	return hapd->driver->send_mlme(hapd->drv_priv, msg, len, noack, 0,
+	return hapd->driver->send_mlme(hapd->drv_priv, msg, len, noack, 0, rate, rate_type,
 				       csa_offs, csa_offs_len, no_encrypt, 0,
 				       link_id);
 }

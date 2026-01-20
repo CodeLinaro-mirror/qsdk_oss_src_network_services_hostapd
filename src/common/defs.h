@@ -451,6 +451,14 @@ enum beacon_rate_type {
 	BEACON_RATE_EHT,
 };
 
+enum rate_type {
+	RATE_LEGACY,
+	RATE_HT,
+	RATE_VHT,
+	RATE_HE,
+	RATE_EHT,
+};
+
 enum eap_proxy_sim_state {
 	SIM_STATE_ERROR,
 };

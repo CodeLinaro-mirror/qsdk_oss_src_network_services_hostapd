@@ -1948,7 +1948,7 @@ static int atheros_set_ap(void *priv, struct wpa_driver_ap_params *params)
 
 
 static int atheros_send_mgmt(void *priv, const u8 *frm, size_t data_len,
-			     int noack, unsigned int freq,
+			     int noack, unsigned int freq, u16 rate, u8 rate_type,
 			     const u16 *csa_offs, size_t csa_offs_len,
 			     int no_encrypt, unsigned int wait, int link_id)
 {
