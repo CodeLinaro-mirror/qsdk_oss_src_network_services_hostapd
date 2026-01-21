@@ -1973,12 +1973,21 @@ void handle_probe_req(struct hostapd_data *hapd,
 		    (bitrate && bitrate < BITRATE_5_5_MBPS)) {
 			rate = bitrate;
 			rate_type = RATE_LEGACY;
+		} else if (hapd->conf->probe_resp_rate_type ||
+			   (hapd->conf->probe_resp_rate >= BITRATE_5_5_MBPS)) {
+			rate = hapd->conf->probe_resp_rate;
+			rate_type = hapd->conf->probe_resp_rate_type;
 		} else {
 			rate = BITRATE_5_5_MBPS;
 			rate_type = RATE_LEGACY;
 		}
-	}
+	} else
 #endif /* CONFIG_MBO */
+	if (hapd->conf->probe_resp_rate_type ||
+	    hapd->conf->probe_resp_rate) {
+		rate = hapd->conf->probe_resp_rate;
+		rate_type = hapd->conf->probe_resp_rate_type;
+	}
 
 	/*
 	 * If this is a broadcast probe request, apply no ack policy to avoid

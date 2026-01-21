@@ -1157,6 +1157,8 @@ struct hostapd_bss_config {
 
 	/* tpe_ie_config - Per-BSS TPE IE user configuration */
 	ieee80211_tpe_config_user_params tpe_ie_config;
+	enum rate_type probe_resp_rate_type;
+	u16 probe_resp_rate;
 };
 
 /**

@@ -3307,6 +3307,35 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line);
 			return 1;
 		}
+	} else if (os_strcmp(buf, "probe_resp_rate") == 0) {
+		int val;
+		u16 rate;
+		u8 rate_type;
+
+		if (os_strncmp(pos, "ht:", 3) == 0) {
+			val = atoi(pos + 3);
+			if (val < 0 || val > 31) {
+				wpa_printf(MSG_ERROR,
+					   "Line %d: invalid probe_resp_rate HT-MCS %d",
+					   line, val);
+				return 1;
+			}
+			rate_type = RATE_HT;
+			rate = val;
+		} else {
+			val = atoi(pos);
+			if (val < 10 || val > 10000) {
+				wpa_printf(MSG_ERROR,
+					   "Line %d: invalid legacy probe_resp_rate %d",
+					   line, val);
+				return 1;
+			}
+			rate_type = RATE_LEGACY;
+			rate = val;
+		}
+
+		bss->probe_resp_rate = rate;
+		bss->probe_resp_rate_type = rate_type;
 	} else if (os_strcmp(buf, "beacon_rate") == 0) {
 		enum beacon_rate_type rate_type = BEACON_RATE_LEGACY;
 		int val;
