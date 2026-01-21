@@ -1419,7 +1419,7 @@ static void ap_sta_disassociate_common(struct hostapd_data *hapd,
 			       WPA_DRIVER_FLAGS_DEAUTH_TX_STATUS ? 2 : 0, 0,
 			       ap_sta_disassoc_cb_timeout, hapd, sta);
 #ifdef CONFIG_HOSTAPD_IF
-	hostapd_if_event_disassoc(hapd, sta->addr, HOSTAPD_IF_DISCONNECT_TO_STA,
+	hostapd_if_event_disassoc(hapd, sta, HOSTAPD_IF_DISCONNECT_TO_STA,
 				  reason, false, 0);
 #endif
 }
@@ -1470,7 +1470,7 @@ static void ap_sta_deauthenticate_common(struct hostapd_data *hapd,
 			       WPA_DRIVER_FLAGS_DEAUTH_TX_STATUS ? 2 : 0, 0,
 			       ap_sta_deauth_cb_timeout, hapd, sta);
 #ifdef CONFIG_HOSTAPD_IF
-	hostapd_if_event_deauth(hapd, sta->addr, HOSTAPD_IF_DISCONNECT_TO_STA,
+	hostapd_if_event_deauth(hapd, sta, HOSTAPD_IF_DISCONNECT_TO_STA,
 			reason, false, 0);
 #endif
 }
