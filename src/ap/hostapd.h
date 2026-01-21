@@ -568,6 +568,7 @@ struct hostapd_data {
 	u8 dpp_allowed_roles;
 	int dpp_qr_mutual;
 	int dpp_auth_ok_on_ack;
+	bool dpp_wps;
 	int dpp_in_response_listen;
 	struct gas_query_ap *gas;
 	struct dpp_pkex *dpp_pkex;
@@ -929,6 +930,8 @@ struct hostapd_iface {
 	 * once NL8011_WIPHY_REG_CHANGE event is received.
 	 */
 	bool is_afc_channel_change_pending;
+	/* Cached PSD value for RNR */
+	s8 rnr_psd;
 
 	struct hostapd_iface_extn iface_extn;
 
@@ -1098,6 +1101,7 @@ void fst_hostapd_fill_iface_obj(struct hostapd_data *hapd,
 #endif /* CONFIG_FST */
 
 int hostapd_set_acl(struct hostapd_data *hapd);
+int hostapd_tx_bss_only(struct hostapd_data *hapd, const char *op_name);
 struct hostapd_data * hostapd_mbssid_get_tx_bss(struct hostapd_data *hapd);
 unsigned int hostapd_mbssid_get_bss_index(struct hostapd_data *hapd);
 struct hostapd_data * hostapd_mld_get_link_bss(struct hostapd_data *hapd,

@@ -204,6 +204,8 @@ struct hostapd_radius_servers {
 	 * force_client_dev - Bind the socket to a specified interface, if set
 	 */
 	char *force_client_dev;
+	int radius_server_retries;
+	int radius_max_retry_wait;
 };
 
 

@@ -25,6 +25,9 @@
 #include "ap_config.h"
 #include "interference.h"
 
+#define RADIUS_CLIENT_MAX_RETRIES 10
+#define RADIUS_CLIENT_MAX_WAIT	120
+
 static void hostapd_config_free_vlan(struct hostapd_bss_config *bss)
 {
 	struct hostapd_vlan *vlan, *prev;
@@ -87,6 +90,8 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 
 	bss->dtim_period = 2;
 
+	bss->radius->radius_server_retries = RADIUS_CLIENT_MAX_RETRIES;
+	bss->radius->radius_max_retry_wait = RADIUS_CLIENT_MAX_WAIT;
 	bss->radius_server_auth_port = 1812;
 	bss->eap_sim_db_timeout = 1;
 	bss->eap_sim_id = 3;
@@ -128,6 +133,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 
 	bss->radius_das_time_window = 300;
 	bss->radius_require_message_authenticator = 1;
+	bss->identity_request_retry_interval = 0;
 
 	bss->anti_clogging_threshold = 5;
 	bss->sae_sync = 3;
@@ -206,6 +212,12 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->twt_responder_caps = TWT_ITWT_ENABLED;
 	bss->bss_priority = 0;
 	bss->bss_priority_status = 0;
+
+#ifdef CONFIG_IEEE80211AC
+	/* 0 means not set by user; will use hardware supported map by default */
+	bss->vht_mcs_nss_set = 0;
+#endif /* CONFIG_IEEE80211AC */
+	bss->ht_mcs_nss_set = 0;
 }
 
 #ifdef CONFIG_IEEE80211BE
@@ -1464,8 +1476,25 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 		wpa_printf(MSG_ERROR,
 			   "VHT (IEEE 802.11ac) with WPA/WPA2 requires CCMP/GCMP to be enabled, disabling VHT capabilities");
 	}
-#endif /* CONFIG_IEEE80211AC */
 
+	if (bss->vht_mcs_nss_set) {
+		if (!conf->ieee80211ac || bss->disable_11ac) {
+			bss->vht_mcs_nss_set = 0;
+			wpa_printf(MSG_ERROR,
+				   "Selective VHT-MCS rejected: VHT not allowed in current mode");
+			return -1;
+		}
+	}
+#endif /* CONFIG_IEEE80211AC */
+	if (bss->ht_mcs_nss_set) {
+		if (!conf->ieee80211n || bss->disable_11n || !bss->wmm_enabled ||
+		    conf->hw_mode == HOSTAPD_MODE_IEEE80211B) {
+			bss->ht_mcs_nss_set = 0;
+			wpa_printf(MSG_ERROR,
+				   "Selective HT-MCS rejected: HT not allowed in current mode");
+			return -1;
+		}
+	}
 #ifdef CONFIG_IEEE80211AX
 #ifdef CONFIG_WEP
 	if (full_config && conf->ieee80211ax &&

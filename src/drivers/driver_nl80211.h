@@ -388,7 +388,7 @@ int wpa_driver_nl80211_capa(struct wpa_driver_nl80211_data *drv);
 struct hostapd_hw_modes *
 nl80211_get_hw_feature_data(void *priv, u16 *num_modes, u16 *flags,
 			    u8 *dfs_domain, u8 pwr_mode);
-
+int nl80211_get_chain_mask(void *priv, u8 radio_idx, char *buf, size_t buf_len);
 int process_global_event(struct nl_msg *msg, void *arg);
 int process_bss_event(struct nl_msg *msg, void *arg);
 

@@ -7643,6 +7643,12 @@ int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 		return 1;
 	}
 
+	if (fi && fi->datarate) {
+		struct sta_info *rx_sta = ap_get_sta(hapd, mgmt->sa);
+		if (rx_sta)
+			rx_sta->last_rx_mgmt_rate = fi->datarate;
+	}
+
 	if (!is_broadcast_ether_addr(mgmt->bssid) &&
 #ifdef CONFIG_NAN_USD
 	    !nan_de_is_nan_network_id(mgmt->bssid) &&
@@ -7673,7 +7679,7 @@ int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 	}
 
 	if (stype == WLAN_FC_STYPE_PROBE_REQ) {
-		handle_probe_req(hapd, mgmt, len, ssi_signal);
+		handle_probe_req(hapd, mgmt, len, fi);
 		ieee80211_clear_critical_flag(hapd);
 		return 1;
 	}
@@ -10920,6 +10926,12 @@ size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
 {
 	size_t total_len = 0, current_len = 0;
 	enum colocation_mode mode = get_colocation_mode(hapd);
+#ifdef CONFIG_QCN_EXTN
+	bool skip_rnr = hostapd_skip_rnr_6ghz_colocated_extn(hapd, type);
+
+	if (skip_rnr && (type == WLAN_FC_STYPE_ACTION))
+		return total_len;
+#endif /* CONFIG_QCN_EXTN */
 
 	switch (type) {
 	case WLAN_FC_STYPE_BEACON:
@@ -10927,6 +10939,11 @@ size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
 			total_len += hostapd_eid_nr_db_len(hapd, &current_len);
 		/* fallthrough */
 	case WLAN_FC_STYPE_PROBE_RESP:
+#ifdef CONFIG_QCN_EXTN
+		if (skip_rnr)
+			break;
+#endif /* CONFIG_QCN_EXTN */
+
 		if (mode == COLOCATED_LOWER_BAND)
 			total_len +=
 				hostapd_eid_rnr_colocation_len(hapd,
@@ -10957,6 +10974,55 @@ size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
 	return total_len;
 }
 
+s8 hostapd_get_20mhz_psd_for_rnr(struct hostapd_data *hapd)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	u8 ap_pwr_type = iface->conf->he_6ghz_reg_pwr_type;
+	u16 freq = iface->freq;
+	u8 client_mode;
+	s8 result;
+
+	switch (ap_pwr_type) {
+	case HE_REG_INFO_6GHZ_AP_TYPE_INDOOR:
+		client_mode = NL80211_REG_REGULAR_CLIENT_LPI;
+		break;
+	case HE_REG_INFO_6GHZ_AP_TYPE_SP:
+	case HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP:
+		client_mode = NL80211_REG_REGULAR_CLIENT_SP;
+		break;
+	case HE_REG_INFO_6GHZ_AP_TYPE_VLP:
+		client_mode = NL80211_REG_REGULAR_CLIENT_VLP;
+		break;
+	default:
+		return CHAN_MIN_TX_POWER;
+	}
+
+	if (ap_pwr_type != HE_REG_INFO_6GHZ_AP_TYPE_SP) {
+		s16 reg_psd;
+		int ret;
+
+		ret = hostapd_reg_get_psd_from_chan_list(iface, freq,
+							 freq, CHWIDTH_20,
+							 0, ap_pwr_type,
+							 client_mode, true,
+							 false, &reg_psd);
+		if (ret) {
+			wpa_printf(MSG_WARNING, "Failed to calculate reg PSD for frequency %d",
+				   freq);
+			return CHAN_MIN_TX_POWER;
+		}
+
+		return reg_psd * 2;
+	}
+
+	result = get_sp_psd_for_non_punctured_chan(hapd, freq, client_mode,
+						   ap_pwr_type, REGULATORY_CLIENT_EIRP_PSD);
+
+	if (result != CHAN_MIN_TX_POWER)
+		return result * 2;
+
+	return CHAN_MIN_TX_POWER;
+}
 
 static u8 * hostapd_eid_nr_db(struct hostapd_data *hapd, u8 *eid,
 			      size_t *current_len)
@@ -11003,7 +11069,11 @@ static u8 * hostapd_eid_nr_db(struct hostapd_data *hapd, u8 *eid,
 		/* BSS parameters */
 		*eid++ = nr->bss_parameters;
 		/* 20 MHz PSD */
-		*eid++ = RNR_20_MHZ_PSD_MAX_TXPOWER;
+		if (is_6ghz_op_class(hapd->iface->conf->op_class))
+			*eid++ = hapd->iface->rnr_psd;
+		else
+			*eid++ = RNR_20_MHZ_PSD_MAX_TXPOWER;
+
 		len += RNR_TBTT_INFO_LEN;
 		*size_offset = (eid - size_offset) - 1;
 	}
@@ -11072,8 +11142,20 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 
 	bss_param |= RNR_BSS_PARAM_CO_LOCATED;
 
+#ifdef CONFIG_QCN_EXTN
+	/* RNR memeber ess colocated indication in bss param */
+	if (hapd->iconf->rnr_colocated_ess &&
+	    is_6ghz_op_class(hapd->iconf->op_class))
+		bss_param |= RNR_BSS_PARAM_MEMBER_CO_LOCATED_ESS;
+#endif /* CONFIG_QCN_EXTN */
+
 	*eid++ = bss_param;
-	*eid++ = RNR_20_MHZ_PSD_MAX_TXPOWER;
+	/* 20 MHz PSD */
+	if (is_6ghz_op_class(iface->conf->op_class))
+		*eid++ = iface->rnr_psd;
+	else
+		*eid++ = RNR_20_MHZ_PSD_MAX_TXPOWER;
+
 
 #ifdef CONFIG_IEEE80211BE
 	if (ap_mld) {
@@ -11272,6 +11354,12 @@ u8 * hostapd_eid_rnr(struct hostapd_data *hapd, u8 *eid, u32 type,
 	u8 *eid_start = eid;
 	size_t current_len = 0;
 	enum colocation_mode mode = get_colocation_mode(hapd);
+#ifdef CONFIG_QCN_EXTN
+	bool skip_rnr = hostapd_skip_rnr_6ghz_colocated_extn(hapd, type);
+
+	if (skip_rnr && (type == WLAN_FC_STYPE_ACTION))
+		return eid_start;
+#endif /* CONFIG_QCN_EXTN */
 
 	switch (type) {
 	case WLAN_FC_STYPE_BEACON:
@@ -11279,6 +11367,11 @@ u8 * hostapd_eid_rnr(struct hostapd_data *hapd, u8 *eid, u32 type,
 			eid = hostapd_eid_nr_db(hapd, eid, &current_len);
 		/* fallthrough */
 	case WLAN_FC_STYPE_PROBE_RESP:
+#ifdef CONFIG_QCN_EXTN
+		if (skip_rnr)
+			break;
+#endif /* CONFIG_QCN_EXTN */
+
 		if (mode == COLOCATED_LOWER_BAND)
 			eid = hostapd_eid_rnr_colocation(hapd, eid,
 							 &current_len, type);
@@ -11452,11 +11545,9 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 		/* WMM IE */
-		if (bss->conf->wmm_override) {
-			nontx_profile_len += hostapd_eid_wmm_len(bss);
-			if (tx_bss->conf->wmm_enabled && !bss->conf->wmm_enabled)
-				ie_count++;
-		}
+		nontx_profile_len += hostapd_eid_wmm_len(bss);
+		if (tx_bss->conf->wmm_enabled && !bss->conf->wmm_enabled)
+			ie_count++;
 
 		/* TTLM IE */
 		if (frame_type == WLAN_FC_STYPE_PROBE_RESP && tx_bss_ttlm_ctx) {
@@ -11496,7 +11587,14 @@ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd_probed, u32 frame_type,
 {
 	struct hostapd_data *hapd = hostapd_mbssid_get_tx_bss(hapd_probed);
 	size_t len = 0, bss_index = 1;
+	bool skip_rnr = false;
+	bool rnr_override = true;
 	size_t num_bss;
+
+#ifdef CONFIG_QCN_EXTN
+	skip_rnr = hostapd_skip_rnr_6ghz_colocated_extn(hapd, frame_type);
+	rnr_override = hostapd_rnr_6ghz_override_extn(hapd);
+#endif /* CONFIG_QCN_EXTN */
 
 	if (!hapd->iconf->mbssid || hapd->iface->num_bss <= 1 ||
 	    (frame_type != WLAN_FC_STYPE_BEACON &&
@@ -11535,9 +11633,11 @@ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd_probed, u32 frame_type,
 				rnr_count, bss_index
 			};
 
-			*rnr_len += hostapd_eid_rnr_iface_len(
+			if (!skip_rnr && rnr_override) {
+			    *rnr_len += hostapd_eid_rnr_iface_len(
 					hapd, hostapd_mbssid_get_tx_bss(hapd),
 					&rnr_cur_len, &skip_profiles, false);
+			}
 
 			*rnr_len += hostapd_eid_rnr_mlo_len(
 					hostapd_mbssid_get_tx_bss(hapd), frame_type,
@@ -11752,16 +11852,14 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 
 		/* WMM IE */
 		startpos = eid;
-		if (bss->conf->wmm_override) {
-			eid = hostapd_eid_wmm(bss, eid, false);
-			hostapd_eid_update_cu_info(bss, &modified_flag, startpos,
-						   eid-startpos, ELEMID_CU_PARAM_WMM);
-			if (modified_flag && elemid_modified_bmap)
-				*elemid_modified_bmap |= BIT(i);
+		eid = hostapd_eid_wmm(bss, eid, false);
+		hostapd_eid_update_cu_info(bss, &modified_flag, startpos,
+				eid-startpos, ELEMID_CU_PARAM_WMM);
+		if (modified_flag && elemid_modified_bmap)
+			*elemid_modified_bmap |= BIT(i);
+		if (tx_bss->conf->wmm_enabled && !bss->conf->wmm_enabled)
+			non_inherit_ie[ie_count++] = WLAN_EID_VENDOR_SPECIFIC;
 
-			if (tx_bss->conf->wmm_enabled && !bss->conf->wmm_enabled)
-				non_inherit_ie[ie_count++] = WLAN_EID_VENDOR_SPECIFIC;
-		}
 		if (ie_count) {
 			*eid++ = WLAN_EID_EXTENSION;
 			*eid++ = 2 + ie_count + 1;
@@ -11799,8 +11897,14 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 	struct hostapd_data *hapd = hostapd_mbssid_get_tx_bss(hapd_probed);
 	size_t bss_index = 1, cur_len = 0;
 	u8 elem_index = 0, *rnr_start_eid = rnr_eid;
+	bool skip_rnr = false, rnr_override = true;
 	bool add_rnr;
 	size_t num_bss;
+
+#ifdef CONFIG_QCN_EXTN
+	skip_rnr = hostapd_skip_rnr_6ghz_colocated_extn(hapd, frame_stype);
+	rnr_override = hostapd_rnr_6ghz_override_extn(hapd);
+#endif /* CONFIG_QCN_EXTN */
 
 	if (!hapd->iconf->mbssid || hapd->iface->num_bss <= 1 ||
 	    (frame_stype != WLAN_FC_STYPE_BEACON &&
@@ -11851,9 +11955,11 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 			rnr_offset[*rnr_count] = rnr_eid;
 			*rnr_count = *rnr_count + 1;
 			cur_len = 0;
-			rnr_eid = hostapd_eid_rnr_iface(
-				hapd, hostapd_mbssid_get_tx_bss(hapd),
-				rnr_eid, &cur_len, &skip_profiles, false, frame_stype);
+			if (!skip_rnr && rnr_override) {
+			    rnr_eid = hostapd_eid_rnr_iface(
+				      hapd, hostapd_mbssid_get_tx_bss(hapd),
+				      rnr_eid, &cur_len, &skip_profiles, false, frame_stype);
+			}
 			rnr_eid = hostapd_eid_rnr_mlo(
 				hostapd_mbssid_get_tx_bss(hapd), frame_stype,
 				rnr_eid, &skip_profiles, &cur_len);

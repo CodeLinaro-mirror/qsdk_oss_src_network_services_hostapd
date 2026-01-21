@@ -2710,6 +2710,30 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 #endif /* CONFIG_RADIUS_TLS */
 	} else if (os_strcmp(buf, "radius_retry_primary_interval") == 0) {
 		bss->radius->retry_primary_interval = atoi(pos);
+	} else if (os_strcmp(buf, "radius_server_retries") == 0) {
+		int val = atoi(pos);
+		if ((val < 0) || (val > 10)) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid radius_server_retries %d",
+				   line, val);
+			return 1;
+		}
+		bss->radius->radius_server_retries = val;
+	} else if (os_strcmp(buf, "radius_max_retry_wait") == 0) {
+		int val = atoi(pos);
+		if ((val < 1) || (val > 120)) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid radius_max_retry_wait %d",
+				   line, val);
+			return 1;
+		}
+		bss->radius->radius_max_retry_wait = val;
+	} else if (os_strcmp(buf, "identity_request_retry_interval") == 0) {
+		int val = atoi(pos);
+		if ((val < 0) || (val > 200)) {
+			wpa_printf(MSG_ERROR, "Line %d: Invalid identity_request_retry_interval '%d'",
+				   line, val);
+			return 1;
+		}
+		bss->identity_request_retry_interval = val;
 	} else if (os_strcmp(buf,
 			     "radius_require_message_authenticator") == 0) {
 		bss->radius_require_message_authenticator = atoi(pos);
@@ -3487,6 +3511,16 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line);
 			return 1;
 		}
+	} else if (os_strcmp(buf, "ht_mcs_nss_set") == 0) {
+		char *endptr;
+		unsigned long val = strtoul(pos, &endptr, 16);
+		if (*endptr != '\0' || val > 0xffffffff) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid ht_mcs_nss_set 0x%lx (allowed 0 to 0xffffffff)",
+				   line, val);
+			return 1;
+		}
+		bss->ht_mcs_nss_set = (u32) val;
 	} else if (os_strcmp(buf, "require_ht") == 0) {
 		conf->require_ht = atoi(pos);
 	} else if (os_strcmp(buf, "ht_vht_twt_responder") == 0) {
@@ -3516,6 +3550,16 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->vendor_vht = atoi(pos);
 	} else if (os_strcmp(buf, "use_sta_nsts") == 0) {
 		bss->use_sta_nsts = atoi(pos);
+	} else if (os_strcmp(buf, "vht_mcs_nss_set") == 0) {
+		char *endptr;
+		unsigned long val = strtoul(pos, &endptr, 16);
+		if (*endptr != '\0' || val > 0xffff) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid vht_mcs_nss_set 0x%lx (allowed 0 to 0xffff)",
+				   line, val);
+			return 1;
+		}
+		bss->vht_mcs_nss_set = (u16) val;
 #endif /* CONFIG_IEEE80211AC */
 #ifdef CONFIG_IEEE80211AX
 	} else if (os_strcmp(buf, "ieee80211ax") == 0) {

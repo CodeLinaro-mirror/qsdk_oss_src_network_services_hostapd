@@ -934,6 +934,47 @@ static int hostapd_cli_cmd_set_bss_priority_status(struct wpa_ctrl *ctrl,
 	return wpa_ctrl_command(ctrl, buf);
 }
 
+
+static int hostapd_cli_cmd_get_bss_priority(struct wpa_ctrl *ctrl,
+					    int argc, char *argv[])
+{
+	char buf[50];
+	int res;
+
+	if (argc != 0) {
+		printf("Invalid 'get_bss_priority' command - "
+				"no argument needed\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "GET_BSS_PRIORITY");
+
+	if (os_snprintf_error(sizeof(buf), res))
+		return -1;
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+static int hostapd_cli_cmd_get_bss_priority_status(struct wpa_ctrl *ctrl,
+		int argc, char *argv[])
+{
+	char buf[50];
+	int res;
+
+	if (argc != 0) {
+		printf("Invalid 'get_bss_priority_status' command - "
+				"no argument needed\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "GET_BSS_PRIORITY_STATUS");
+
+	if (os_snprintf_error(sizeof(buf), res))
+		return -1;
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
 #endif /* CONFIG_INTERWORKING */
 
 
@@ -1834,6 +1875,11 @@ static int hostapd_cli_cmd_chain_mask(struct wpa_ctrl *ctrl, int argc,
 	return hostapd_cli_cmd(ctrl, "CHAIN_MASK", 2, argc, argv);
 }
 
+static int hostapd_cli_cmd_get_chain_mask(struct wpa_ctrl *ctrl, int argc,
+						char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_CHAIN_MASK");
+}
 
 static int hostapd_cli_cmd_driver_flags(struct wpa_ctrl *ctrl, int argc,
 					char *argv[])
@@ -2365,6 +2411,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "set bss_priority 0-bk 1-be 2-vi 3-vo" },
 	{ "set_bss_priority_status", hostapd_cli_cmd_set_bss_priority_status,
 	  NULL, "set enable_bss_priority 0-disable 1-enable" },
+	{ "get_bss_priority", hostapd_cli_cmd_get_bss_priority, NULL,
+	  "get current bss_priority value"},
+	{ "get_bss_priority_status", hostapd_cli_cmd_get_bss_priority_status, NULL,
+	  "get current bss_priority value"},
 	{ "chan_switch", hostapd_cli_cmd_chan_switch, NULL,
 	  "<cs_count> <freq> [sec_channel_offset=] [center_freq1=]\n"
 	  "  [center_freq2=] [bandwidth=] [bandwidth_device=] \n"
@@ -2559,6 +2609,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	 "<addr>, [reset=], [policy_list=], Send unsolicited DSCP request"},
 	{ "chain_mask", hostapd_cli_cmd_chain_mask, NULL,
 	"<tx chain mask> <rx chain mask>" },
+	{ "get_chain_mask", hostapd_cli_cmd_get_chain_mask, NULL,
+	 "= Get chain mask value of selected interface/link" },
 	{ "afc", hostapd_cli_cmd_afc, NULL,
 	  "[set_afc_chan_sel_config|get_afc_chan_sel_config] <afc_chan_sel_config_value>" },
 	{ "clear_afc_payload", hostapd_cli_cmd_clear_afc_payload, NULL,

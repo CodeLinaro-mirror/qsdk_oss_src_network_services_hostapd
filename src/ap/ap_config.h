@@ -1060,9 +1060,14 @@ struct hostapd_bss_config {
 	bool scs;
 	bool mscs;
 #endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_IEEE80211AC
+	u16 vht_mcs_nss_set;
+#endif /* CONFIG_IEEE80211AC */
+	u32 ht_mcs_nss_set;
 
 	enum beacon_rate_type rate_type;
 	unsigned int beacon_rate;
+	int identity_request_retry_interval;
 	/* tpe_ie_config - Per-BSS TPE IE user configuration */
 	ieee80211_tpe_config_user_params tpe_ie_config;
 };
@@ -1393,9 +1398,11 @@ struct hostapd_config {
 	int afc_chan_sel_config;
 	int cur_chan_eirp;
 	int original_chan_width; /* Original channel width for AFC */
-
 #ifdef CONFIG_QCN_EXTN
 	bool downgrade_320mhz_opclass;
+
+	/* RNR Member of ESS of 2.4/5 GHz colocated BSS param indication */
+	bool rnr_colocated_ess;
 #endif
 	/* HE BSS color collision AP period (seconds) */
 	u16 he_bss_color_collision_ap_period;

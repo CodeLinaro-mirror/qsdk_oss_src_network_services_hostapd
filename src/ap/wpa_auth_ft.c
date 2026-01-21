@@ -3191,7 +3191,7 @@ u8 * wpa_sm_write_assoc_resp_ies(struct wpa_state_machine *sm, u8 *pos,
 	struct link_data *assoc_link_data = NULL;
 
 	if (is_mld && auth_alg == WLAN_AUTH_FT) {
-		int pos, link_id, rsnie_pos;
+		int pos, link_id, rsnie_pos, rsnxe_pos;
 
 		assoc_link_data = os_zalloc((sm->n_mld_affiliated_links + 1) * sizeof(struct link_data));
 		if (!assoc_link_data) {
@@ -3216,9 +3216,18 @@ u8 * wpa_sm_write_assoc_resp_ies(struct wpa_state_machine *sm, u8 *pos,
 				os_free(assoc_link_data);
 				return NULL;
 			}
+
+			rsnxe_pos = wpa_write_rsnxe(&sm_link->wpa_auth->conf, (u8 *)assoc_link_data[pos].link_rsnxe,
+						    sizeof(assoc_link_data[pos].link_rsnxe));
+
+			if (rsnxe_pos < 0) {
+				wpa_printf(MSG_DEBUG, "FT: Failed to write link RSNX IE for link %d", link_id);
+				os_free(assoc_link_data);
+				return NULL;
+			}
+
 			assoc_link_data[pos].link_rsnie_len = rsnie_pos;
-			assoc_link_data[pos].link_rsnxe = sm_link->rsnxe;
-			assoc_link_data[pos].link_rsnxe_len = sm_link->rsnxe_len;
+			assoc_link_data[pos].link_rsnxe_len = rsnxe_pos;
 			pos++;
 
 		}

@@ -195,8 +195,6 @@ struct wpa_state_machine {
 		bool rejected;
 		u8 peer_addr[ETH_ALEN];
 		u8 own_addr[ETH_ALEN];
-		const u8 *rsnxe;
-		size_t rsnxe_len;
 		struct wpa_authenticator *wpa_auth;
 	} mld_links[MAX_NUM_MLD_LINKS];
 	bool ft_over_ds_ml;

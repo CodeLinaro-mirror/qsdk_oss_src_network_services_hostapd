@@ -2566,6 +2566,9 @@ int ieee802_1x_init(struct hostapd_data *hapd)
 #ifdef CONFIG_TESTING_OPTIONS
 	conf.eap_skip_prot_success = hapd->conf->eap_skip_prot_success;
 #endif /* CONFIG_TESTING_OPTIONS */
+	if (hapd->conf->identity_request_retry_interval) {
+		conf.identity_request_retry_interval = hapd->conf->identity_request_retry_interval;
+	}
 
 	os_memset(&cb, 0, sizeof(cb));
 	cb.eapol_send = ieee802_1x_eapol_send;

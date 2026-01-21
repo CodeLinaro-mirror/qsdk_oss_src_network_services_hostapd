@@ -841,6 +841,40 @@ static int hostapd_ctrl_iface_set_bss_priority_status(struct hostapd_data *hapd,
 }
 
 
+static int hostapd_ctrl_iface_get_bss_priority(struct hostapd_data *hapd,
+					       char *buf, size_t buflen)
+{
+	int ret;
+
+	ret = os_snprintf(buf, buflen, "%d\n", hapd->conf->bss_priority);
+
+	if (os_snprintf_error(buflen, ret)) {
+		wpa_printf(MSG_ERROR,
+			   "get_bss_priority: buffer too small (len=%zu)", buflen);
+		return -1;
+	}
+
+	return ret;
+}
+
+
+static int hostapd_ctrl_iface_get_bss_priority_status(struct hostapd_data *hapd,
+		char *buf, size_t buflen)
+{
+	int ret;
+
+	ret = os_snprintf(buf, buflen, "%d\n", hapd->conf->bss_priority_status);
+
+        if (os_snprintf_error(buflen, ret)) {
+                wpa_printf(MSG_ERROR,
+                           "get_bss_priority: buffer too small (len=%zu)", buflen);
+                return -1;
+        }
+
+	return ret;
+}
+
+
 static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 					       const char *cmd)
 {
@@ -1668,6 +1702,8 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 #ifdef CONFIG_DPP2
 		dpp_controller_set_params(hapd->iface->interfaces->dpp, value);
 #endif /* CONFIG_DPP2 */
+	} else if (os_strcasecmp(cmd, "dpp_wps") == 0) {
+		hapd->dpp_wps = atoi(value);
 	} else if (os_strcasecmp(cmd, "dpp_init_max_tries") == 0) {
 		hapd->dpp_init_max_tries = atoi(value);
 	} else if (os_strcasecmp(cmd, "dpp_init_retry_time") == 0) {
@@ -1703,6 +1739,16 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			hostapd_disassoc_accept_mac(hapd);
 		} else if (os_strcasecmp(cmd, "ssid") == 0) {
 			hostapd_neighbor_sync_own_report(hapd);
+#ifdef CONFIG_IEEE80211AC
+		} else if (os_strcasecmp(cmd, "vht_mcs_nss_set") == 0) {
+			if (hostapd_tx_bss_only(hapd, "vht_mcs_nss_set") < 0)
+				return -1;
+			return hostapd_reload_bss_only(hapd);
+#endif /* CONFIG_IEEE80211AC */
+		} else if (os_strcasecmp(cmd, "ht_mcs_nss_set") == 0) {
+			if (hostapd_tx_bss_only(hapd, "ht_mcs_nss_set") < 0)
+				return -1;
+			return hostapd_reload_bss_only(hapd);
 		} else if (os_strncmp(cmd, "wme_ac_", 7) == 0 ||
 			   os_strncmp(cmd, "wmm_ac_", 7) == 0) {
 			hapd->parameter_set_count++;
@@ -1717,6 +1763,10 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 		} else if (os_strcasecmp(cmd, "transition_disable") == 0) {
 			wpa_auth_set_transition_disable(hapd->wpa_auth,
 							hapd->conf->transition_disable);
+#ifdef CONFIG_QCN_EXTN
+		} else {
+			ret = hostapd_ctrl_iface_set_extn(hapd, cmd, value);
+#endif /* CONFIG_QCN_EXTN */
 		}
 
 #ifdef CONFIG_TESTING_OPTIONS
@@ -1880,6 +1930,27 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		return res;
 	} else if (os_strncmp(cmd, "tx_queue_", 9) == 0) {
 		res = hostapd_get_tx_queue_params(hapd, cmd, buf, buflen);
+	} else if (os_strcmp(cmd, "macaddr_acl") == 0) {
+		if (!hapd || !hapd->conf) {
+			wpa_printf(MSG_ERROR, "Invalid hapd or hapd->conf pointer");
+			return -1;
+		}
+
+		res = os_snprintf(buf, buflen, "%d\n", hapd->conf->macaddr_acl);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+#ifdef CONFIG_IEEE80211AC
+	} else if (os_strcmp(cmd, "vht_mcs_nss_set") == 0) {
+		res = os_snprintf(buf, buflen, "vht_mcs_nss_set = 0x%x\n",
+				  hapd->conf->vht_mcs_nss_set);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+#endif /* CONFIG_IEEE80211AC */
+	} else if (os_strcmp(cmd, "ht_mcs_nss_set") == 0) {
+		res = os_snprintf(buf, buflen, "ht_mcs_nss_set = 0x%x\n",
+				  hapd->conf->ht_mcs_nss_set);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
@@ -5328,6 +5399,38 @@ static int hostapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd, char *cm
 	return ret;
 }
 
+
+#ifndef CONFIG_DRIVER_NL80211
+static int hostapd_ctrl_get_chain_mask(struct hostapd_data *hapd,
+                                       char *buf, size_t buflen)
+{
+	wpa_printf(MSG_ERROR, "CONFIG_DRIVER_NL80211 is not set\n");
+	return -1;
+}
+
+#else /*CONFIG_DRIVER_NL80211*/
+static int hostapd_ctrl_get_chain_mask(struct hostapd_data *hapd,
+                                       char *buf, size_t buflen)
+{
+	int ret;
+	u8 radio_idx = NL80211_WIPHY_RADIO_ID_MAX;
+
+	if (!hapd->driver || !hapd->drv_priv || !hapd->started){
+		wpa_printf(MSG_ERROR, "Driver Data/Interface not found\n");
+		return -1;
+	}
+
+	if (hapd->iface && hapd->iface->num_multi_hws && hapd->iface->current_hw_info)
+		radio_idx = hapd->iface->current_hw_info->hw_idx;
+
+	ret = nl80211_get_chain_mask(hapd->drv_priv, radio_idx, buf, buflen);
+	if (ret < 0)
+		return -1;
+
+	return ret;
+}
+#endif /*CONFIG_DRIVER_NL80211*/
+
 static int hostapd_ctrl_iface_link_remove(struct hostapd_data *hapd, char *cmd,
 					  char *buf, size_t buflen)
 {
@@ -6920,6 +7023,12 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "SET_BSS_PRIORITY ", 16) == 0) {
 		if (hostapd_ctrl_iface_set_bss_priority(hapd, buf + 16))
 			reply_len = -1;
+	} else if (os_strncmp(buf, "GET_BSS_PRIORITY_STATUS ", 23) == 0) {
+		reply_len = hostapd_ctrl_iface_get_bss_priority_status(
+				hapd, reply, reply_size);
+	} else if (os_strncmp(buf, "GET_BSS_PRIORITY ", 16) == 0) {
+		reply_len = hostapd_ctrl_iface_get_bss_priority(
+				hapd, reply, reply_size);
 #endif /* CONFIG_INTERWORKING */
 #ifdef CONFIG_HS20
 	} else if (os_strncmp(buf, "HS20_DEAUTH_REQ ", 16) == 0) {
@@ -7453,6 +7562,8 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		if (hostapd_ctrl_set_tx_rx_chain_mask(hapd, buf+11,
 						     reply, reply_size))
 			reply_len = -1;
+	} else if (os_strcmp(buf, "GET_CHAIN_MASK") == 0) {
+		reply_len = hostapd_ctrl_get_chain_mask(hapd, reply, reply_size);
 	} else if (os_strncmp(buf, "AFC ", 4) == 0) {
 		reply_len = hostapd_afc_handle_cli(hapd, buf + 4,
 						   reply, reply_size);

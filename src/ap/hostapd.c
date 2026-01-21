@@ -234,6 +234,21 @@ struct hostapd_data * hostapd_mbssid_get_tx_bss(struct hostapd_data *hapd)
 	return hapd;
 }
 
+
+int hostapd_tx_bss_only(struct hostapd_data *hapd, const char *op_name)
+{
+	struct hostapd_data *tx = hostapd_mbssid_get_tx_bss(hapd);
+
+	if (tx != hapd) {
+		wpa_printf(MSG_ERROR, "%s not allowed on non-transmitting BSS",
+			   op_name);
+		return -1;
+	}
+
+	return 0;
+}
+
+
 void hostapd_free_mbssid_idx(struct hostapd_data *hapd)
 {
 	struct hostapd_iface *iface = hapd->iface;
@@ -3033,6 +3048,7 @@ static int setup_interface2(struct hostapd_iface *iface)
 	iface->is_afc_channel_change_pending = false;
 	iface->is_no_ir = false;
 	iface->power_mode_6ghz_before_change = -1;
+	iface->rnr_psd = CHAN_MIN_TX_POWER;
 
 	if (hostapd_get_hw_features(iface)) {
 		/* Not all drivers support this yet, so continue without hw
@@ -4034,6 +4050,7 @@ void hostapd_interface_deinit(struct hostapd_iface *iface)
 	iface->is_no_ir = false;
 	hostapd_free_afc_data(iface);
 	iface->is_afc_power_event_received = false;
+	iface->rnr_psd = CHAN_MIN_TX_POWER;
 
 #ifdef CONFIG_FST
 	if (iface->fst) {
@@ -4530,6 +4547,16 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 		hapd->msg_ctx = hapd;
 		hostapd_bss_setup_multi_link(hapd, interfaces);
 		hostapd_mbssid_setup_bss(hapd);
+#ifdef CONFIG_IEEE80211AC
+		if (hapd->conf->vht_mcs_nss_set) {
+			if (hostapd_tx_bss_only(hapd, "vht_mcs_nss_set") < 0)
+				goto fail;
+		}
+#endif /* CONFIG_IEEE80211AC */
+		if (hapd->conf->ht_mcs_nss_set) {
+			if (hostapd_tx_bss_only(hapd, "ht_mcs_nss_set") < 0)
+				goto fail;
+		}
 		/* mbssid index is needed if any of the link from the mbssid group is
 		 * dynamically removed, will use this index for updating the
 		 * non-transmitting profile in beacon
@@ -4556,14 +4583,6 @@ fail:
 		os_free(hapd_iface);
 	}
 	return NULL;
-}
-
-bool hostapd_is_existing_interface(struct hostapd_iface *iface,
-				   struct hostapd_config *new_conf)
-{
-	return (iface->conf->hw_mode == new_conf->hw_mode &&
-		((iface->conf->channel &&
-		iface->conf->channel == new_conf->channel)));
 }
 
 
@@ -4596,8 +4615,7 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 		return NULL;
 
 	for (i = 0; i < interfaces->count; i++) {
-		if (os_strcmp(interfaces->iface[i]->phy, phy) == 0 &&
-		    hostapd_is_existing_interface(interfaces->iface[i], conf)) {
+		if (os_strcmp(interfaces->iface[i]->phy, phy) == 0) {
 			iface = interfaces->iface[i];
 			break;
 		}

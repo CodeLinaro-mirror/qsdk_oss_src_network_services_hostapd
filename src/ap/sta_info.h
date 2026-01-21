@@ -64,6 +64,10 @@
 #define WLAN_SUPP_RATES_MAX 32
 #define WLAN_SUPP_HT_RATES_MAX 77
 
+#define WLAN_VHT_MCS_NSS 8
+#define WLAN_VHT_EACH_NSS 2
+#define WLAN_VHT_MCS 2
+
 struct hostapd_data;
 
 struct mbo_non_pref_chan_info {
@@ -213,6 +217,7 @@ struct sta_info {
 	char *identity; /* User-Name from RADIUS */
 	char *radius_cui; /* Chargeable-User-Identity from RADIUS */
 
+	u32 last_rx_mgmt_rate;
 	struct ieee80211_ht_capabilities *ht_capabilities;
 	struct ieee80211_vht_capabilities *vht_capabilities;
 	struct ieee80211_vht_operation *vht_operation;
@@ -544,4 +549,5 @@ int hostapd_free_partner_link_stas(struct hostapd_data *hapd,
 
 int skip_prune_for_partner_links(struct hostapd_data *hapd,
 				 struct sta_info *sta);
+bool station_supports_256qam(struct sta_info *sta);
 #endif /* STA_INFO_H */

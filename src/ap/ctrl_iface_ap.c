@@ -27,6 +27,7 @@
 #include "taxonomy.h"
 #include "wnm_ap.h"
 #include "neighbor_db.h"
+#include "../drivers/driver_nl80211.h"
 
 static const char * hw_mode_str(enum hostapd_hw_mode mode)
 {
@@ -160,19 +161,36 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 	struct hostap_sta_driver_data data;
 	int ret;
 	int len = 0;
+	unsigned long long rx_error;
 
 	if (hostapd_drv_read_sta_data(hapd, &data, sta->addr) < 0)
 		return 0;
 
+	rx_error = (unsigned long long)data.pn_errors +
+		   (unsigned long long)data.mic_errors +
+		   (unsigned long long)data.decrypt_errors;
 	ret = os_snprintf(buf, buflen, "rx_packets=%lu\ntx_packets=%lu\n"
 			  "rx_bytes=%llu\ntx_bytes=%llu\ninactive_msec=%lu\n"
-			  "signal=%d\n",
+			  "signal=%d\ntx_failed=%lu\nrx_pn_errors=%u\n"
+			  "rx_mic_errors=%u\nrx_decrypt_errors=%u\nrx_errors=%llu\n"
+			  "mgmt_signal=%d\n",
 			  data.rx_packets, data.tx_packets,
 			  data.rx_bytes, data.tx_bytes, data.inactive_msec,
-			  data.signal);
+			  data.signal, data.tx_retry_failed, data.pn_errors,
+			  data.mic_errors, data.decrypt_errors,
+			  rx_error, data.mgmt_signal);
 	if (os_snprintf_error(buflen, ret))
 		return 0;
 	len += ret;
+
+	if (sta->last_rx_mgmt_rate) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  "last_rx_mgmt_rate=%lu\n",
+				  (unsigned long) (sta->last_rx_mgmt_rate / 100));
+		if (os_snprintf_error(buflen - len, ret))
+			return 0;
+		len += ret;
+	}
 
 	ret = os_snprintf(buf + len, buflen - len, "rx_rate_info=%lu",
 			  data.current_rx_rate / 100);
@@ -206,6 +224,51 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 	if (!os_snprintf_error(buflen - len, ret))
 		len += ret;
 
+#ifdef CONFIG_DRIVER_NL80211
+	char cm_buf[1024];
+	size_t cm_len = sizeof(cm_buf);
+	int r;
+	u8 radio_idx = NL80211_WIPHY_RADIO_ID_MAX;
+
+	/* Extract only the configured antenna masks for current radio */
+	if (hapd->iface && hapd->iface->num_multi_hws && hapd->iface->current_hw_info)
+		radio_idx = hapd->iface->current_hw_info->hw_idx;
+
+	if (hapd->drv_priv) {
+		r = nl80211_get_chain_mask(hapd->drv_priv, radio_idx, cm_buf, cm_len);
+		if (r >= 0 && r < (int)cm_len) {
+			char *p, *txp, *rxp, *endp;
+			unsigned long tx = 0, rx = 0;
+
+			cm_buf[cm_len - 1] = '\0';
+
+			p = os_strstr(cm_buf, "Configured Antennas:");
+			if (p) {
+				txp = os_strstr(p, "TX ");
+				rxp = os_strstr(p, "RX ");
+				if (txp)
+					tx = strtoul(txp + 3, &endp, 0);
+				if (rxp)
+					rx = strtoul(rxp + 3, &endp, 0);
+
+				ret = os_snprintf(buf + len, buflen - len,
+						  "configured_tx_chain_mask=%#lx\n", tx);
+				if (os_snprintf_error(buflen - len, ret))
+					return len;
+				len += ret;
+
+				ret = os_snprintf(buf + len, buflen - len,
+						  "configured_rx_chain_mask=%#lx\n", rx);
+				if (os_snprintf_error(buflen - len, ret))
+					return len;
+				len += ret;
+			} else {
+				wpa_printf(MSG_DEBUG, "Chain mask info not found in expected format");
+			}
+		}
+	}
+#endif /* CONFIG_DRIVER_NL80211 */
+
 	ret = os_snprintf(buf + len, buflen - len, "tx_rate_info=%lu",
 			  data.current_tx_rate / 100);
 	if (os_snprintf_error(buflen - len, ret))
@@ -234,9 +297,16 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 		if (!os_snprintf_error(buflen - len, ret))
 			len += ret;
 	}
+
 	ret = os_snprintf(buf + len, buflen - len, "\n");
 	if (!os_snprintf_error(buflen - len, ret))
 		len += ret;
+
+	ret = os_snprintf(buf + len, buflen - len, "256 QAM support=%s\n",
+			  station_supports_256qam(sta) ? "yes" : "no");
+	if (os_snprintf_error(buflen - len, ret))
+		return 0;
+	len += ret;
 
 	if ((sta->flags & WLAN_STA_VHT) && sta->vht_capabilities) {
 		ret = os_snprintf(buf + len, buflen - len,
@@ -1490,6 +1560,10 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 		}
 #endif /* CONFIG_IEEE80211BE */
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	len = hostapd_ctrl_iface_status_extn(hapd, buf, buflen, len);
+#endif /* CONFIG_QCN_EXTN */
 
 	if (hapd->conf->chan_util_avg_period) {
 		ret = os_snprintf(buf + len, buflen - len,
