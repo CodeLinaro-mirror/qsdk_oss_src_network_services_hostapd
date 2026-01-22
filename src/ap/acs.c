@@ -23,7 +23,6 @@
 #include "ap_config.h"
 #include "hw_features.h"
 #include "acs.h"
-
 #ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
 #endif
@@ -363,6 +362,15 @@ static void acs_fail(struct hostapd_iface *iface)
 	wpa_printf(MSG_ERROR, "ACS: Failed to start");
 	acs_cleanup(iface);
 	hostapd_disable_iface(iface);
+
+	/*
+	 * Check if all ML partner links have completed ACS (either successfully
+	 * or with failure). If so, send the ucode notification.
+	 *
+	 * This handles scenarios with 2 or 3 radios where ACS may complete in
+	 * different orders: (pass, fail, pass), (pass, pass, fail), etc.
+	 */
+	hostapd_ml_acs_check_and_notify(iface, false);
 }
 
 
