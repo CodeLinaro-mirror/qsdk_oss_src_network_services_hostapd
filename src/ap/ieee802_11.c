@@ -5458,8 +5458,10 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 							   IEEE80211_MODE_AP);
 		}
 #ifdef CONFIG_IEEE80211BN
-		if (hapd->iconf->ieee80211bn)
+		if (hapd->iconf->ieee80211bn) {
 			p = hostapd_eid_uhr_capab(hapd, p, IEEE80211_MODE_AP);
+			p = hostapd_eid_uhr_operation(hapd, p, false);
+		}
 #endif /* CONFIG_IEEE80211BN */
 	}
 
@@ -5963,8 +5965,10 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hapd->iconf->ieee80211bn)
+	if (hapd->iconf->ieee80211bn) {
 		buflen += 3 + sizeof(struct ieee80211_uhr_capabilities);
+		buflen += 3 + sizeof(struct ieee80211_uhr_operation);
+	}
 #endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_HOSTAPD_IF
@@ -6145,8 +6149,10 @@ rsnxe_done:
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hapd->iconf->ieee80211bn)
+	if (hapd->iconf->ieee80211bn) {
 		p = hostapd_eid_uhr_capab(hapd, p, IEEE80211_MODE_AP);
+		p = hostapd_eid_uhr_operation(hapd, p, false);
+	}
 #endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_OWE
