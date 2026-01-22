@@ -38,6 +38,14 @@
  */
 #define TX_POWER_NO_CONSTRAINT 64
 
+#ifdef CONFIG_QCN_EXTN
+/* This is required in repeater configurations where the repeater AP is
+ * configured with auto channel triggering ACS. The REP_AP_ACS_TIMEOUT_INTERVAL
+ * is set to 300 seconds post which Repeater STA starts to scan.
+ */
+#define REP_AP_ACS_TIMEOUT_INTERVAL 300
+#endif
+
 enum configured_freq_band {
 	SCAN_FREQ_BAND_2GHZ	= BIT(0),
 	SCAN_FREQ_BAND_5GHZ_LOW	= BIT(1),

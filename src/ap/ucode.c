@@ -1114,4 +1114,20 @@ void hostapd_ucode_chsw_comp_ev_notify(struct hostapd_data *hapd, int freq)
 	ucv_put(wpa_ucode_call(1));
 	ucv_gc(vm);
 }
+
+/* Notify ucode about ACS completed event */
+void hostapd_ucode_notify_acs_completed(struct hostapd_iface *iface, int success)
+{
+	if (wpa_ucode_call_prepare("notify_acs_completed"))
+		return;
+
+	wpa_printf(MSG_INFO, "Notify ACS completed event to ucode: success=%d, channel=%d, freq=%d",
+		   success, iface->conf ? iface->conf->channel : 0, iface->freq);
+	uc_value_push(ucv_get(hostapd_ucode_iface_get_uval(iface)));
+	uc_value_push(ucv_int64_new(success));
+	uc_value_push(ucv_int64_new(iface->conf ? iface->conf->channel : 0));
+	uc_value_push(ucv_int64_new(iface->freq));
+	ucv_put(wpa_ucode_call(4));
+	ucv_gc(vm);
+}
 #endif

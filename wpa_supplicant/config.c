@@ -5997,6 +5997,7 @@ static const struct global_parse_data global_fields[] = {
 #ifdef CONFIG_QCN_EXTN
 	{ INT_KEY_RANGE("athnewind", ind_rptr, 0, 1), 0 },
 	{ INT_KEY_RANGE("rptr_mgr_mode", rptr_mgr_comm_mode, 0, 2), 1 },
+	{ INT(channel), 0 },
 #endif
 	/* NOTE: When adding new parameters here, add_interface() in
 	 * wpa_supplicant/dbus_new_introspect.c may need to be modified to
