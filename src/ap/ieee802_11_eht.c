@@ -811,7 +811,7 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		total_len = sta_info_len + link->resp_sta_profile_len;
 
 		/* Per-STA Profile subelement */
-		wpabuf_put_u8(buf, EHT_ML_SUB_ELEM_PER_STA_PROFILE);
+		wpabuf_put_u8(buf, MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE);
 
 		if (total_len <= 255)
 			wpabuf_put_u8(buf, total_len);
@@ -876,7 +876,8 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 				else
 					slice_len = 255;
 
-				wpabuf_put_u8(buf, EHT_ML_SUB_ELEM_FRAGMENT);
+				wpabuf_put_u8(buf,
+					      MULTI_LINK_SUB_ELEM_ID_FRAGMENT);
 				wpabuf_put_u8(buf, slice_len);
 				wpabuf_put_data(buf, ptr, slice_len);
 
@@ -2284,7 +2285,7 @@ hostapd_parse_link_reconf_req_sta_profile(struct hostapd_data *hapd,
 
 	os_memset(sta_addr, 0, ETH_ALEN);
 
-	if (elem->id != EHT_ML_SUB_ELEM_PER_STA_PROFILE) {
+	if (elem->id != MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE) {
 		wpa_printf(MSG_DEBUG, "MLD: Unexpected subelement (%u) found",
 			   elem->id);
 		ret = 1; /* skip this subelement */
@@ -3004,7 +3005,7 @@ int hostapd_wnm_add_multi_link_sub_elem(struct hostapd_data *hapd,
 		if (len < 4)
 			return -1;
 
-		*pos++ = EHT_ML_SUB_ELEM_PER_STA_PROFILE;
+		*pos++ = MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE;
 		*pos++ = 2;
 
 		/* per-STA link-id */
@@ -3120,7 +3121,7 @@ static size_t hostapd_eid_eht_ml_priority_access(struct hostapd_data *hapd,
 			continue;
 
 		/* Set the Per-STA Profile subelement */
-		wpabuf_put_u8(buf, EHT_ML_SUB_ELEM_PER_STA_PROFILE);
+		wpabuf_put_u8(buf, MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE);
 
 		/* Set the Per-STA Profile length */
 		wpabuf_put_u8(buf, sta_profile_len);
@@ -3929,7 +3930,7 @@ u32 wnm_neighbor_report_get_pref_link_mask(const u8 *neigh_rep,
 					break;
 				ml += 2 + ml_len;
 
-				if (ml_id != EHT_ML_SUB_ELEM_PER_STA_PROFILE ||
+				if (ml_id != MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE ||
 				    ml_len < 2)
 					continue;
 
