@@ -298,6 +298,7 @@ void ap_free_unadded_link_sta(struct hostapd_data *hapd, struct sta_info *sta)
 		os_free(psta->he_capab);
 		os_free(psta->he_6ghz_capab);
 		os_free(psta->eht_capab);
+		os_free(psta->uhr_capab);
 
 #ifdef CONFIG_SAE
 		sae_clear_data(psta->sae);
@@ -648,6 +649,7 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	os_free(sta->he_capab);
 	os_free(sta->he_6ghz_capab);
 	os_free(sta->eht_capab);
+	os_free(sta->uhr_capab);
 
 	hostapd_sta_os_free_extn(&sta->sta_extn);
 

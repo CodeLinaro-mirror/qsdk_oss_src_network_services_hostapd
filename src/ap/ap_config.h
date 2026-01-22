@@ -655,6 +655,7 @@ struct hostapd_bss_config {
 	bool disable_11ac;
 	bool disable_11ax;
 	bool disable_11be;
+	bool disable_11bn;
 
 	/* IEEE 802.11v */
 	int time_advertisement;

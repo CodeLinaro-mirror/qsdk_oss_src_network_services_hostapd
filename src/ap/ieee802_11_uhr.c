@@ -91,3 +91,35 @@ void hostapd_get_uhr_capab(const struct ieee80211_uhr_capabilities *src,
 	os_memset(dest, 0, sizeof(*dest));
 	os_memcpy(dest, src, len);
 }
+
+
+static bool ieee80211_invalid_uhr_cap_size(size_t len)
+{
+	return len < sizeof(struct ieee80211_uhr_capabilities);
+}
+
+
+u16 copy_sta_uhr_capab(struct hostapd_data *hapd, struct sta_info *sta,
+		       const u8 *uhr_capab, size_t uhr_capab_len)
+{
+	if (!hapd->iconf->ieee80211bn || hapd->conf->disable_11bn ||
+	    !uhr_capab ||
+	    ieee80211_invalid_uhr_cap_size(uhr_capab_len)) {
+		sta->flags &= ~WLAN_STA_UHR;
+		os_free(sta->uhr_capab);
+		sta->uhr_capab = NULL;
+		return WLAN_STATUS_SUCCESS;
+	}
+
+	os_free(sta->uhr_capab);
+	sta->uhr_capab = os_memdup(uhr_capab, uhr_capab_len);
+	if (!sta->uhr_capab) {
+		sta->uhr_capab_len = 0;
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
+	}
+
+	sta->flags |= WLAN_STA_UHR;
+	sta->uhr_capab_len = uhr_capab_len;
+
+	return WLAN_STATUS_SUCCESS;
+}
