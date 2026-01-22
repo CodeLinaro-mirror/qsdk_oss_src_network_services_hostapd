@@ -3135,6 +3135,8 @@ struct hostapd_sta_add_params {
 	const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab;
 	const struct ieee80211_eht_capabilities *eht_capab;
 	size_t eht_capab_len;
+	const struct ieee80211_uhr_capabilities *uhr_capab;
+	size_t uhr_capab_len;
 	u32 flags; /* bitmask of WPA_STA_* flags */
 	u32 flags_mask; /* unset bits in flags */
 #ifdef CONFIG_MESH

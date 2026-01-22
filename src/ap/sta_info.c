@@ -2563,10 +2563,11 @@ int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_aut
 
 #ifdef CONFIG_QCN_EXTN
 			    0, NULL, NULL, NULL, 0, NULL, 0,
-			    NULL, NULL,
+			    NULL, 0, NULL, NULL,
 #else
 
 			    0, NULL, NULL, NULL, 0, NULL, 0, NULL,
+			    0, NULL,
 
 #endif
 			    sta->flags, 0, 0, 0, 0,

@@ -147,6 +147,9 @@ void hostapd_get_eht_capab(struct hostapd_data *hapd,
 			   const struct ieee80211_eht_capabilities *src,
 			   struct ieee80211_eht_capabilities *dest,
 			   size_t len);
+void hostapd_get_uhr_capab(const struct ieee80211_uhr_capabilities *src,
+			   struct ieee80211_uhr_capabilities *dest,
+			   size_t len);
 u8 * hostapd_eid_eht_ml_beacon(struct hostapd_data *hapd,
 			       struct mld_info *mld_info,
 			       u8 *eid, bool include_mld_id,
