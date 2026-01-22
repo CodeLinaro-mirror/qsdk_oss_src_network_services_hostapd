@@ -4381,8 +4381,17 @@ void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
 
 	conf = hapd->conf;
 
+#ifndef CONFIG_QCN_EXTN
+
 	if (!hapd->iconf || !conf->mld_ap || !hostapd_is_eht_enabled(hapd))
 		return;
+
+#else
+	if (!hapd->iconf || !conf->mld_ap ||
+	    (!hostapd_is_eht_enabled(hapd) &&
+	     !hostapd_is_repurpose_disabled_11be_extn(conf)))
+		return;
+#endif /* CONFIG_QCN_EXTN */
 
 	for (i = 0; i < interfaces->mld_count; i++) {
 		mld = interfaces->mld[i];
