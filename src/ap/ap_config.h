@@ -1518,6 +1518,10 @@ hostapd_set_oper_chwidth(struct hostapd_config *conf,
 static inline u8
 hostapd_get_oper_centr_freq_seg0_idx(struct hostapd_config *conf)
 {
+#ifdef CONFIG_IEEE80211BN
+	if (conf->ieee80211bn)
+		return conf->uhr_oper_centr_freq_seg0_idx;
+#endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_IEEE80211BE
 	if (conf->ieee80211be)
 		return conf->eht_oper_centr_freq_seg0_idx;
