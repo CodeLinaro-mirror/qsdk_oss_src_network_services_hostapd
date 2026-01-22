@@ -749,12 +749,15 @@ hostapd_switch_chan(struct ubus_context *ctx, struct ubus_object *obj,
 				css.freq_params.vht_enabled,
 				css.freq_params.he_enabled,
 				css.freq_params.eht_enabled,
+				css.freq_params.uhr_enabled,
 				css.freq_params.sec_channel_offset,
 				chwidth, seg0, seg1,
 				iconf->vht_capab,
 				mode ? &mode->he_capab[IEEE80211_MODE_AP] :
 				NULL,
 				mode ? &mode->eht_capab[IEEE80211_MODE_AP] :
+				NULL,
+				mode ? &mode->uhr_capab[IEEE80211_MODE_AP] :
 				NULL,
 				hostapd_get_punct_bitmap(hapd),
 				hapd->iconf->he_6ghz_reg_pwr_type,

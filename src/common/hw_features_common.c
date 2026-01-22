@@ -480,12 +480,14 @@ int hostapd_set_freq_params(struct hostapd_freq_params *data,
 			    int freq, int channel, int enable_edmg,
 			    u8 edmg_channel, int ht_enabled,
 			    int vht_enabled, int he_enabled,
-			    bool eht_enabled, int sec_channel_offset,
+			    bool eht_enabled, bool uhr_enabled,
+			    int sec_channel_offset,
 			    enum oper_chan_width oper_chwidth,
 			    int center_segment0,
 			    int center_segment1, u32 vht_caps,
 			    struct he_capabilities *he_cap,
 			    struct eht_capabilities *eht_cap,
+			    struct uhr_capabilities *uhr_cap,
 			    u16 punct_bitmap,
 			    u8 reg_6g_pwr_mode,
 			    int bandwidth_device, int center_freq_device)
@@ -497,6 +499,8 @@ int hostapd_set_freq_params(struct hostapd_freq_params *data,
 		he_enabled = 0;
 	if (!eht_cap || !eht_cap->eht_supported)
 		eht_enabled = 0;
+	if (!uhr_cap || !uhr_cap->uhr_supported)
+		uhr_enabled = 0;
 	os_memset(data, 0, sizeof(*data));
 	data->mode = mode;
 	data->freq = freq;
@@ -505,6 +509,7 @@ int hostapd_set_freq_params(struct hostapd_freq_params *data,
 	data->vht_enabled = vht_enabled;
 	data->he_enabled = he_enabled;
 	data->eht_enabled = eht_enabled;
+	data->uhr_enabled = uhr_enabled;
 	data->sec_channel_offset = sec_channel_offset;
 	data->center_freq1 = freq + sec_channel_offset * 10;
 	data->center_freq2 = 0;
