@@ -2998,6 +2998,9 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_EXT_MLD_CAPA_AND_OPS: Extended MLD Capabilities and Operations
  *	(u16)
+ * @NL80211_ATTR_UHR_CAPABILITY: UHR Capability information element (from
+ *	association request when used with NL80211_CMD_NEW_STATION). Can be set
+ *	only if %NL80211_STA_FLAG_WME is set.
  *
  * @NL80211_ATTR_BITRATE: This attribute is used with %NL80211_CMD_FRAME to
  * 	send legacy bitrate information of management packets to userspace.
@@ -3614,6 +3617,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_EXT_MLD_CAPA_AND_OPS,
 
 	NL80211_ATTR_BITRATE,
+
+	NL80211_ATTR_UHR_CAPABILITY,
 
 	/* add attributes here, update the policy in nl80211.c */
 
