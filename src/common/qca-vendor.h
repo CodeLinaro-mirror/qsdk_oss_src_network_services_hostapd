@@ -1715,7 +1715,11 @@ enum qca_radiotap_vendor_ids {
  *
  *      The attributes used with this command are defined in
  *      enum qca_wlan_vendor_attr_channel_switch_time which includes both
- *      command and responsee.
+ *      command and response.
+ *
+ * @QCA_NL80211_VENDOR_SUBCMD_REPURPOSE_LINK_INDICATION: Vendor subcommand to
+ *	indicate the repurposed link to driver. The command will be sent only
+ *	if the link is repurposed to 11AC/11AX modes.
  */
 enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_UNSPEC = 0,
@@ -2005,6 +2009,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_AFC_FETCH_POWER_EVENT = 510,
 	QCA_NL80211_VENDOR_SUBCMD_DERIVE_LINK_BSS_ADDR = 512,
 	QCA_NL80211_VENDOR_SUBCMD_GET_CHANNEL_SWITCH_TIME = 515,
+	QCA_NL80211_VENDOR_SUBCMD_REPURPOSE_LINK_INDICATION = 516,
 };
 
 /* Attributes for the 6 GHz power-mode vendor command and completion event. */
