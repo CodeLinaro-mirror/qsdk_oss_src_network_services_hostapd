@@ -7377,7 +7377,7 @@ static void handle_disassoc(struct hostapd_data *hapd,
 	}
 
 #ifdef CONFIG_HOSTAPD_IF
-	hostapd_if_event_disassoc(hapd, sta->addr,
+	hostapd_if_event_disassoc(hapd, sta,
 			HOSTAPD_IF_DISCONNECT_FROM_STA,
 			le_to_host16(mgmt->u.disassoc.reason_code), false, 0);
 	hostapd_if_notify_disassoc(hapd, sta, mgmt, len);
@@ -7417,7 +7417,7 @@ static void handle_deauth(struct hostapd_data *hapd,
 
 #ifdef CONFIG_HOSTAPD_IF
 	/* FROM_STA deauthentication event */
-	hostapd_if_event_deauth(hapd, sta->addr, HOSTAPD_IF_DISCONNECT_FROM_STA,
+	hostapd_if_event_deauth(hapd, sta, HOSTAPD_IF_DISCONNECT_FROM_STA,
 			le_to_host16(mgmt->u.deauth.reason_code), false, 0);
 	hostapd_if_notify_deauth(hapd, sta, mgmt, len);
 #endif
@@ -8413,7 +8413,7 @@ static void handle_deauth_cb(struct hostapd_data *hapd,
 			   "deauth", MAC2STR(sta->addr));
 
 #ifdef CONFIG_HOSTAPD_IF
-	hostapd_if_event_deauth(hapd, sta->addr, HOSTAPD_IF_DISCONNECT_TO_STA,
+	hostapd_if_event_deauth(hapd, sta, HOSTAPD_IF_DISCONNECT_TO_STA,
 			le_to_host16(mgmt->u.deauth.reason_code), true, ok);
 #endif
 	ap_sta_deauth_cb(hapd, sta);
@@ -8441,7 +8441,7 @@ static void handle_disassoc_cb(struct hostapd_data *hapd,
 			   "disassoc", MAC2STR(sta->addr));
 
 #ifdef CONFIG_HOSTAPD_IF
-	hostapd_if_event_disassoc(hapd, sta->addr, HOSTAPD_IF_DISCONNECT_TO_STA,
+	hostapd_if_event_disassoc(hapd, sta, HOSTAPD_IF_DISCONNECT_TO_STA,
 				  le_to_host16(mgmt->u.disassoc.reason_code),
 				  true, ok);
 #endif

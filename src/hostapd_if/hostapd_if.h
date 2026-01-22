@@ -101,14 +101,14 @@ int hostapd_if_set_interfaces(struct hapd_interfaces *interfaces);
  * Event notification wrapper functions
  */
 void hostapd_if_event_deauth(struct hostapd_data *hapd,
-			     const u8 *addr,
+			     struct sta_info *sta,
 			     enum hostapd_if_disconnect_type type,
 			     uint16_t reason_code,
 			     bool is_tx_status,
 			     int tx_status_ok);
 
 void hostapd_if_event_disassoc(struct hostapd_data *hapd,
-			       const u8 *addr,
+			       struct sta_info *sta,
 			       enum hostapd_if_disconnect_type type,
 			       uint16_t reason_code,
 			       bool is_tx_status,

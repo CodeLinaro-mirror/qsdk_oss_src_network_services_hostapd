@@ -1559,29 +1559,38 @@ void hostapd_plugin_register(struct hostapd_external_app_object *plugin)
  * to the plugin
  * Use MLD mac of STA (in addr parameter) in case of 11be STA
  */
-void hostapd_if_event_deauth(struct hostapd_data *hapd, const u8 *addr,
+void hostapd_if_event_deauth(struct hostapd_data *hapd, struct sta_info *sta,
 			     enum hostapd_if_disconnect_type type,
 			     uint16_t reason_code, bool is_tx_status,
 			     int tx_status_ok)
 {
 	struct hostapd_if_event evt;
+	int link_id = -1;
 
 	if (!hostapd_if_is_event_registered(hapd,
 					    HOSTAPD_IF_EVENT_DEAUTH))
 		return;
 
+	if (hapd->conf->mld_ap && hapd->mld)
+		link_id = hapd->mld_link_id;
+
 	os_memset(&evt, 0, sizeof(evt));
 	evt.type = HOSTAPD_IF_EVENT_DEAUTH;
 	os_strlcpy(evt.ifname, hapd->conf->iface,
 		   sizeof(evt.ifname));
-	os_memcpy(evt.sta_mac, addr, sizeof(evt.sta_mac));
+	os_memcpy(evt.sta_mac, sta->addr, sizeof(evt.sta_mac));
+
+	evt.data.deauth_disassoc.link_id = link_id;
+	if (link_id >= 0)
+		os_memcpy(evt.data.deauth_disassoc.link_mac,
+			  sta->mld_info.links[link_id].peer_addr, ETH_ALEN);
 	evt.data.deauth_disassoc.type = type;
 	evt.data.deauth_disassoc.reason_code = reason_code;
 	evt.data.deauth_disassoc.is_tx_status = is_tx_status;
 	evt.data.deauth_disassoc.tx_status_ok = tx_status_ok;
 
-	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR" %d %d %d\n", __func__,
-		__LINE__, hapd->conf->iface, MAC2STR(addr), reason_code,
+	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR" %d %d %d %d\n", __func__,
+		__LINE__, hapd->conf->iface, MAC2STR(sta->addr), link_id, reason_code,
 		is_tx_status, tx_status_ok);
 	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
 }
@@ -1590,30 +1599,39 @@ void hostapd_if_event_deauth(struct hostapd_data *hapd, const u8 *addr,
  * Use MLD mac of STA (in addr parameter) in case of 11be STA
  */
 void hostapd_if_event_disassoc(struct hostapd_data *hapd,
-			       const u8 *addr,
+			       struct sta_info *sta,
 			       enum hostapd_if_disconnect_type type,
 			       uint16_t reason_code,
 			       bool is_tx_status,
 			       int tx_status_ok)
 {
 	struct hostapd_if_event evt;
+	int link_id = -1;
 
 	if (!hostapd_if_is_event_registered(hapd,
 					    HOSTAPD_IF_EVENT_DISASSOC))
 		return;
 
+	if (hapd->conf->mld_ap && hapd->mld)
+		link_id = hapd->mld_link_id;
+
 	os_memset(&evt, 0, sizeof(evt));
 	evt.type = HOSTAPD_IF_EVENT_DISASSOC;
 	os_strlcpy(evt.ifname, hapd->conf->iface,
 		   sizeof(evt.ifname));
-	os_memcpy(evt.sta_mac, addr, sizeof(evt.sta_mac));
+	os_memcpy(evt.sta_mac, sta->addr, sizeof(evt.sta_mac));
+
+	evt.data.deauth_disassoc.link_id = link_id;
+	if (link_id >= 0)
+		os_memcpy(evt.data.deauth_disassoc.link_mac,
+			  sta->mld_info.links[link_id].peer_addr, ETH_ALEN);
 	evt.data.deauth_disassoc.type = type;
 	evt.data.deauth_disassoc.reason_code = reason_code;
 	evt.data.deauth_disassoc.tx_status_ok = tx_status_ok;
 	evt.data.deauth_disassoc.is_tx_status = is_tx_status;
 
-	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR" %d %d %d\n", __func__,
-		__LINE__, hapd->conf->iface, MAC2STR(addr), reason_code,
+	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR" %d %d %d %d\n", __func__,
+		__LINE__, hapd->conf->iface, MAC2STR(sta->addr), link_id, reason_code,
 		is_tx_status, tx_status_ok);
 	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
 }
