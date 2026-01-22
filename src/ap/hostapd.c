@@ -5323,13 +5323,31 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 		return 0;
 	}
 
-	if (hapd->reenable)
+	if (hapd->reenable && hapd_iface->state != HAPD_IFACE_HT_SCAN)
 		goto setup_bss;
 
 	hapd->reenable = 1;
 	for (b = 0; b < hapd->iface->num_bss; b++)
 		if (hapd->iface->bss[b]->started)
 			goto setup_bss;
+
+	if (hapd_iface->state == HAPD_IFACE_HT_SCAN) {
+		if (hapd_iface->scan_cb)
+			return 0;
+	} else {
+		res = hostapd_check_ht_capab(hapd_iface);
+		if (res < 0) {
+			hapd->reenable = 0;
+			wpa_printf(MSG_INFO, "Failed to start HT Scan");
+			return -1;
+		}
+
+		if (res == 1) {
+			wpa_printf(MSG_DEBUG, "Interface initialization will "
+				   "be completed in a callback");
+			return 0;
+		}
+	}
 #ifdef NEED_AP_MLME
 	if (!is_5ghz_freq(hapd_iface->freq))
 		goto setup_bss;
