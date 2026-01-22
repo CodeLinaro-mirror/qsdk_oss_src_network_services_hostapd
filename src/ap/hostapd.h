@@ -1176,8 +1176,24 @@ int hostapd_wnm_add_multi_link_sub_elem(struct hostapd_data *hapd,
 					u8 *links, u8 num_links,
 					u8 *pos, size_t len);
 
+#ifdef CONFIG_QCN_EXTN
+/* for_each_mld_link iterator skips repurposed link. Use this when self is not
+ * repurposed. To loop all links despite of repurpose state, use
+ * for_each_mld_link_include_repurposed iterator
+ */
+#define for_each_mld_link(partner, self) \
+	dl_list_for_each(partner, &self->mld->links, struct hostapd_data, link) \
+		if (hostapd_is_repurpose_disabled_11be_extn(partner->conf)) { \
+			continue; \
+		} else
+
+#define for_each_mld_link_include_repurposed(partner, self) \
+	dl_list_for_each(partner, &self->mld->links, struct hostapd_data, link)
+
+#else /* CONFIG_QCN_EXTN */
 #define for_each_mld_link(partner, self) \
 	dl_list_for_each(partner, &self->mld->links, struct hostapd_data, link)
+#endif /* CONFIG_QCN_EXTN */
 
 #else /* CONFIG_IEEE80211BE */
 
