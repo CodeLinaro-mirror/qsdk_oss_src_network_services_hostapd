@@ -24,6 +24,9 @@
 #include "ucode.h"
 #include "ttlm.h"
 #include "atf/atf_offload.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 
 #define OCE_STA_CFON_ENABLED(hapd) \
 	((hapd->conf->oce & OCE_STA_CFON) && \
@@ -1444,12 +1447,20 @@ hostapd_is_vht_enabled(struct hostapd_data *hapd)
 static inline bool
 hostapd_is_he_enabled(struct hostapd_data *hapd)
 {
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11ax_extn(hapd->conf))
+		return false;
+#endif /* CONFIG_QCN_EXTN */
 	return hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax;
 }
 
 static inline bool
 hostapd_is_eht_enabled(struct hostapd_data *hapd)
 {
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return false;
+#endif /* CONFIG_QCN_EXTN */
 	return hapd->iconf->ieee80211be && !hapd->conf->disable_11be;
 }
 
