@@ -458,6 +458,13 @@ struct eht_capabilities {
 	u8 ppet[EHT_PPE_THRESH_CAPAB_LEN];
 };
 
+/* struct uhr_capabilities - IEEE 802.11bn UHR capabilities */
+struct uhr_capabilities {
+	bool uhr_supported;
+	u8 mac_cap[UHR_MAC_CAPAB_LEN];
+	u8 phy_cap[UHR_PHY_CAPAB_LEN];
+};
+
 #define HOSTAPD_MODE_FLAG_HT_INFO_KNOWN BIT(0)
 #define HOSTAPD_MODE_FLAG_VHT_INFO_KNOWN BIT(1)
 #define HOSTAPD_MODE_FLAG_HE_INFO_KNOWN BIT(2)
@@ -590,6 +597,11 @@ struct hostapd_hw_modes {
 	 * eht_capab - EHT (IEEE 802.11be) capabilities
 	 */
 	struct eht_capabilities eht_capab[IEEE80211_MODE_NUM];
+
+	/**
+	 * uhr_capab - UHR (IEEE 802.11bn) capabilities
+	 */
+	struct uhr_capabilities uhr_capab[IEEE80211_MODE_NUM];
 
 };
 
