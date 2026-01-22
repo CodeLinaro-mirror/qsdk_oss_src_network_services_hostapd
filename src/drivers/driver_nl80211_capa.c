@@ -2059,6 +2059,7 @@ static void phy_info_iftype_copy(struct hostapd_hw_modes *mode,
 	size_t len;
 	struct he_capabilities *he_capab = &mode->he_capab[opmode];
 	struct eht_capabilities *eht_capab = &mode->eht_capab[opmode];
+	struct uhr_capabilities *uhr_capab = &mode->uhr_capab[opmode];
 
 	switch (opmode) {
 	case IEEE80211_MODE_INFRA:
@@ -2165,6 +2166,31 @@ static void phy_info_iftype_copy(struct hostapd_hw_modes *mode,
 		os_memcpy(&eht_capab->ppet,
 			  nla_data(tb[NL80211_BAND_IFTYPE_ATTR_EHT_CAP_PPE]),
 			  len);
+	}
+
+	if (!tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC] ||
+	    !tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY])
+		return;
+
+	uhr_capab->uhr_supported = true;
+
+	if (tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC] &&
+	    nla_len(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC]) >= 5 &&
+	    tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY] &&
+	    nla_len(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY]) >= 1) {
+		const u8 *pos_mac, *pos_phy;
+
+		pos_mac = nla_data(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC]);
+		len = nla_len(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC]);
+		if (len > sizeof(uhr_capab->mac_cap))
+			len = sizeof(uhr_capab->mac_cap);
+		os_memcpy(uhr_capab->mac_cap, pos_mac, len);
+
+		pos_phy = nla_data(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY]);
+		len = nla_len(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY]);
+		if (len > sizeof(uhr_capab->phy_cap))
+			len = sizeof(uhr_capab->phy_cap);
+		os_memcpy(uhr_capab->phy_cap, pos_phy, len);
 	}
 }
 
