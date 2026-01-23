@@ -1271,6 +1271,7 @@ wpas_drv_nan_subscribe(struct wpa_supplicant *wpa_s, const u8 *addr,
 static inline int wpa_drv_mark_ppe_vp_type(struct wpa_supplicant *wpa_s,
 					   int ppe_vp_type)
 {
+#ifdef CONFIG_IEEE80211BE
 	if (!wpa_s->driver->mark_ppe_vp_type)
 		return -1;
 
@@ -1279,7 +1280,9 @@ static inline int wpa_drv_mark_ppe_vp_type(struct wpa_supplicant *wpa_s,
 	return wpa_s->driver->mark_ppe_vp_type(wpa_s->drv_priv,
 			OUI_QCA, QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
 			NULL, 0, 0, NULL,  wpa_s->ifname, ppe_vp_type, true);
-
+#else
+	return -1;
+#endif
 }
 
 static inline int
