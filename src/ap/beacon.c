@@ -2542,6 +2542,154 @@ u8 *hostapd_add_traffic_ind_elem(struct hostapd_data *hapd, u8 *eid)
 	return eid;
 }
 
+int ieee802_11_build_nontx_bss_params(struct hostapd_data *hapd,
+				      struct wpa_driver_ap_params *params)
+{
+	u8 *tail;
+#ifdef NEED_AP_MLME
+	u8 *tailpos, *tailend, *startpos;
+	u16 elemid_modified = 0;
+#endif /* NEED_AP_MLME */
+	size_t tail_len = 0;
+
+#ifdef NEED_AP_MLME
+#define MBSSID_NON_TX_BEACON_TAIL_SIZE 600
+	tail_len = MBSSID_NON_TX_BEACON_TAIL_SIZE;
+
+#ifdef CONFIG_WPS
+	if (hapd->conf->wps_state && hapd->wps_beacon_ie)
+		tail_len += wpabuf_len(hapd->wps_beacon_ie);
+#endif /* CONFIG_WPS */
+
+#ifdef CONFIG_P2P
+	if (hapd->p2p_beacon_ie)
+		tail_len += wpabuf_len(hapd->p2p_beacon_ie);
+#endif /* CONFIG_P2P */
+
+#ifdef CONFIG_FST
+	if (hapd->iface->fst_ies)
+		tail_len += wpabuf_len(hapd->iface->fst_ies);
+#endif /* CONFIG_FST */
+
+	tail_len += hostapd_mbo_ie_len(hapd);
+	tail_len += hostapd_eid_owe_trans_len(hapd);
+	tail_len += hostapd_eid_dpp_cc_len(hapd);
+	tail_len += hostapd_get_rsne_override_len(hapd);
+	tail_len += hostapd_get_rsne_override_2_len(hapd);
+	tail_len += hostapd_get_rsnxe_override_len(hapd);
+	tail_len += hostapd_wfa_cap_ie_len(hapd, NULL);
+
+	tailpos = tail = os_malloc(tail_len);
+	if (tail == NULL) {
+		wpa_printf(MSG_ERROR,
+			   "Failed to allocate beacon tail for non-TX BSS");
+		return -1;
+	}
+
+	tailend = tail + tail_len;
+
+	tailpos = hostapd_eid_supp_rates(hapd, tailpos);
+
+	/* Power Constraint element */
+	tailpos = hostapd_eid_pwr_constraint(hapd, tailpos);
+
+	/* Extended supported rates */
+	tailpos = hostapd_eid_ext_supp_rates(hapd, tailpos);
+
+	tailpos = hostapd_get_rsne(hapd, tailpos, tailend - tailpos);
+	tailpos = hostapd_eid_bss_load(hapd, tailpos, tailend - tailpos);
+	tailpos = hostapd_eid_rm_enabled_capab(hapd, tailpos,
+			tailend - tailpos);
+	tailpos = hostapd_get_mde(hapd, tailpos, tailend - tailpos);
+
+	tailpos = hostapd_eid_ext_capab(hapd, tailpos, false);
+
+	/*
+	 * TODO: Time Advertisement element should only be included in some
+	 * DTIM Beacon frames.
+	 */
+	tailpos = hostapd_eid_time_adv(hapd, tailpos);
+
+	tailpos = hostapd_eid_interworking(hapd, tailpos);
+	tailpos = hostapd_eid_adv_proto(hapd, tailpos);
+	tailpos = hostapd_eid_roaming_consortium(hapd, tailpos);
+
+#ifdef CONFIG_FST
+	if (hapd->iface->fst_ies) {
+		os_memcpy(tailpos, wpabuf_head(hapd->iface->fst_ies),
+				wpabuf_len(hapd->iface->fst_ies));
+		tailpos += wpabuf_len(hapd->iface->fst_ies);
+	}
+#endif /* CONFIG_FST */
+
+	tailpos = hostapd_eid_fils_indic(hapd, tailpos, 0);
+
+	tailpos = hostapd_get_rsnxe(hapd, tailpos, tailend - tailpos);
+#ifdef CONFIG_IEEE80211AX
+	if (hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax) {
+		startpos = tailpos;
+		tailpos = hostapd_eid_he_mu_edca_parameter_set(hapd, tailpos, false);
+#ifdef CONFIG_IEEE80211BE
+		hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
+				tailpos-startpos, ELEMID_CU_PARAM_MU_EDCA);
+#endif
+	}
+#endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap)
+		tailpos = hostapd_add_traffic_ind_elem(hapd, tailpos);
+#endif /* CONFIG_IEEE80211BE */
+
+	/* WPA */
+	tailpos = hostapd_get_wpa_ie(hapd, tailpos, tailend - tailpos);
+
+	tailpos = hostapd_add_wfa_cap_ie(hapd, NULL, tailpos);
+#ifdef CONFIG_WPS
+	if (hapd->conf->wps_state && hapd->wps_beacon_ie) {
+		os_memcpy(tailpos, wpabuf_head(hapd->wps_beacon_ie),
+				wpabuf_len(hapd->wps_beacon_ie));
+		tailpos += wpabuf_len(hapd->wps_beacon_ie);
+	}
+#endif /* CONFIG_WPS */
+
+#ifdef CONFIG_P2P
+	if ((hapd->conf->p2p & P2P_ENABLED) && hapd->p2p_beacon_ie) {
+		os_memcpy(tailpos, wpabuf_head(hapd->p2p_beacon_ie),
+				wpabuf_len(hapd->p2p_beacon_ie));
+		tailpos += wpabuf_len(hapd->p2p_beacon_ie);
+	}
+#endif /* CONFIG_P2P */
+#ifdef CONFIG_P2P_MANAGER
+	if ((hapd->conf->p2p & (P2P_MANAGE | P2P_ENABLED | P2P_GROUP_OWNER)) ==
+			P2P_MANAGE)
+		tailpos = hostapd_eid_p2p_manage(hapd, tailpos);
+#endif /* CONFIG_P2P_MANAGER */
+
+#ifdef CONFIG_HS20
+	tailpos = hostapd_eid_hs20_indication(hapd, tailpos);
+#endif /* CONFIG_HS20 */
+
+	tailpos = hostapd_eid_mbo(hapd, tailpos, tail + tail_len - tailpos);
+	tailpos = hostapd_eid_owe_trans(hapd, tailpos,
+			tail + tail_len - tailpos);
+	tailpos = hostapd_eid_dpp_cc(hapd, tailpos, tail + tail_len - tailpos);
+
+	tailpos = hostapd_get_rsne_override(hapd, tailpos,
+			tail + tail_len - tailpos);
+	tailpos = hostapd_get_rsne_override_2(hapd, tailpos,
+			tail + tail_len - tailpos);
+	tailpos = hostapd_get_rsnxe_override(hapd, tailpos,
+			tail + tail_len - tailpos);
+
+	tail_len = tailpos > tail ? tailpos - tail : 0;
+#endif /* NEED_AP_MLME */
+
+	params->tail = tail;
+	params->tail_len = tail_len;
+	return 0;
+}
+
+
 int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 			       struct wpa_driver_ap_params *params)
 {

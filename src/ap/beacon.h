@@ -36,4 +36,7 @@ const u8 * hostapd_wpa_ie(struct hostapd_data *hapd, u8 eid);
 u8 * hostapd_unsol_bcast_probe_resp(struct hostapd_data *hapd,
 				    struct unsol_bcast_probe_resp *ubpr);
 
+int ieee802_11_build_nontx_bss_params(struct hostapd_data *hapd,
+				      struct wpa_driver_ap_params *params);
+
 #endif /* BEACON_H */
