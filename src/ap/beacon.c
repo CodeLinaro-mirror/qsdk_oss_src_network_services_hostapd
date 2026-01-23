@@ -1925,7 +1925,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 	 * a broadcast probe request frame
 	 */
 	if (res == NO_SSID_MATCH && hapd->iconf->mbssid &&
-	    !(mgmt->da[0] & 0x01)) {
+	    !(mgmt->da[0] & 0x01 || mgmt->bssid[0] & 0x01)) {
 		if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
 			struct hostapd_data *bss;
 			struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
@@ -1956,6 +1956,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 			}
 		}
 	}
+
 	if (res == NO_SSID_MATCH) {
 		if (!(mgmt->da[0] & 0x01)) {
 			wpa_printf(MSG_MSGDUMP, "Probe Request from " MACSTR
