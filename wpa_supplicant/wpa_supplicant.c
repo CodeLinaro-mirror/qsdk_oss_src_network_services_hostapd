@@ -936,6 +936,10 @@ const char * wpa_supplicant_state_txt(enum wpa_states state)
 		return "INTERFACE_DISABLED";
 	case WPA_SCANNING:
 		return "SCANNING";
+#ifdef CONFIG_QCN_EXTN
+	case WPA_PRE_CONNECT:
+		return "PRE_CONNECT";
+#endif
 	case WPA_AUTHENTICATING:
 		return "AUTHENTICATING";
 	case WPA_ASSOCIATING:
@@ -1152,6 +1156,8 @@ void wpa_supplicant_set_state(struct wpa_supplicant *wpa_s,
 		wpa_supplicant_state_txt(wpa_s->wpa_state),
 		wpa_supplicant_state_txt(state));
 
+	wpa_msg_ctrl(wpa_s, MSG_INFO, "%s", wpa_supplicant_state_txt(state));
+
 	if (state == WPA_COMPLETED &&
 	    os_reltime_initialized(&wpa_s->roam_start)) {
 		os_reltime_age(&wpa_s->roam_start, &wpa_s->roam_time);
@@ -1272,6 +1278,9 @@ void wpa_supplicant_set_state(struct wpa_supplicant *wpa_s,
 		sme_sched_obss_scan(wpa_s, 0);
 	}
 	wpa_s->wpa_state = state;
+#ifdef CONFIG_QCN_EXTN
+	if (wpa_s->conf->rptr_mgr_comm_mode != RPTR_MGR_MODE_COMM_SOCK)
+#endif
 	wpas_ucode_update_state(wpa_s);
 
 #ifndef CONFIG_NO_ROBUST_AV

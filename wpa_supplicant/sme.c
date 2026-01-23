@@ -32,10 +32,16 @@
 #include "scan.h"
 #include "sme.h"
 #include "hs20_supplicant.h"
+#include "../qcn_extns/cmn.h"
 
 #define SME_AUTH_TIMEOUT 5
 #define SME_ASSOC_TIMEOUT 5
 #define CIP_CAPAB_LEN 4
+
+#ifdef CONFIG_QCN_EXTN
+/* Pre-connect timeout for Independent Repeater flow */
+#define SME_PRE_CONNECT_TIMEOUT 5
+#endif
 
 static void sme_auth_timer(void *eloop_ctx, void *timeout_ctx);
 static void sme_assoc_timer(void *eloop_ctx, void *timeout_ctx);
@@ -1288,6 +1294,33 @@ static void sme_auth_start_cb(struct wpa_radio_work *work, int deinit)
 	wpas_notify_auth_changed(wpa_s);
 }
 
+#ifdef CONFIG_QCN_EXTN
+/**
+ * sme_schedule_auth_radio_work - Schedule SME authentication radio work
+ * @wpa_s: Pointer to wpa_supplicant interface
+ * @cwork: Cached connect work describing target BSS and SSID
+ *
+ * Cancel any pending pre-connect timeout, schedule a new sme-connect
+ * radio work item for the cached BSS, and clear the pre_connect_cnt
+ * counter used by repeater pre-connection flows.
+ */
+void sme_schedule_auth_radio_work(struct wpa_supplicant *wpa_s,
+				  struct wpa_connect_work *cwork)
+{
+	eloop_cancel_timeout(sme_pre_connect_timer_extn, wpa_s, NULL);
+
+	if (!cwork || !cwork->bss) {
+		wpa_msg(wpa_s, MSG_ERROR, "SME: schedule_auth: NULL cwork/bss; abort\n");
+		return;
+	}
+	if (radio_add_work(wpa_s, cwork->bss->freq, "sme-connect", 1, sme_auth_start_cb, cwork) < 0) {
+		wpa_msg(wpa_s, MSG_ERROR, "SME: radio_add_work failed; free\n");
+		wpas_connect_work_free(cwork);
+	}
+
+	wpa_s->pre_connect_cnt = 0;
+}
+#endif
 
 void sme_authenticate(struct wpa_supplicant *wpa_s,
 		      struct wpa_bss *bss, struct wpa_ssid *ssid)
@@ -1332,6 +1365,9 @@ void sme_authenticate(struct wpa_supplicant *wpa_s,
 	cwork->bss = bss;
 	cwork->ssid = ssid;
 	cwork->sme = 1;
+#ifdef CONFIG_QCN_EXTN
+	wpa_s->cache_cwork = cwork;
+#endif
 
 #ifdef CONFIG_SAE
 	wpa_s->sme.sae.state = SAE_NOTHING;
@@ -1339,9 +1375,23 @@ void sme_authenticate(struct wpa_supplicant *wpa_s,
 	wpa_s->sme.sae_group_index = 0;
 #endif /* CONFIG_SAE */
 
-	if (radio_add_work(wpa_s, bss->freq, "sme-connect", 1,
-			   sme_auth_start_cb, cwork) < 0)
-		wpas_connect_work_free(cwork);
+#ifdef CONFIG_QCN_EXTN
+	if (wpa_s->conf->ind_rptr) {
+		if (wpa_s->conf->rptr_mgr_comm_mode == RPTR_MGR_MODE_COMM_SOCK)
+			wpa_supp_pre_connect_state_handle_extn(wpa_s, bss);
+		else
+			wpa_supplicant_set_state(wpa_s, WPA_PRE_CONNECT);
+
+		eloop_register_timeout(SME_PRE_CONNECT_TIMEOUT, 0, sme_pre_connect_timer_extn,
+				       wpa_s, NULL);
+	} else {
+#endif
+		if (radio_add_work(wpa_s, bss->freq, "sme-connect", 1,
+				   sme_auth_start_cb, cwork) < 0)
+			wpas_connect_work_free(cwork);
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif
 }
 
 
@@ -3195,6 +3245,10 @@ void sme_deinit(struct wpa_supplicant *wpa_s)
 	eloop_cancel_timeout(sme_auth_timer, wpa_s, NULL);
 	eloop_cancel_timeout(sme_obss_scan_timeout, wpa_s, NULL);
 	eloop_cancel_timeout(sme_assoc_comeback_timer, wpa_s, NULL);
+#ifdef CONFIG_QCN_EXTN
+	eloop_cancel_timeout(sme_pre_connect_timer_extn, wpa_s, NULL);
+	wpa_s->pre_connect_cnt = 0;
+#endif
 }
 
 

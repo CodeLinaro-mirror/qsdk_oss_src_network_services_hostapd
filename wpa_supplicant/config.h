@@ -48,6 +48,10 @@
 #define DEFAULT_EXTENDED_KEY_ID 0
 #define DEFAULT_SCAN_RES_VALID_FOR_CONNECT 5
 #define DEFAULT_MLD_CONNECT_BAND_PREF MLD_CONNECT_BAND_PREF_AUTO
+#ifdef CONFIG_QCN_EXTN
+#define RPTR_MGR_MODE_COMM_UBUS 1
+#define RPTR_MGR_MODE_COMM_SOCK 2
+#endif
 
 #include "config_ssid.h"
 #include "wps/wps.h"
@@ -1923,6 +1927,27 @@ struct wpa_config {
 	 * 1: Prefer ranging responder role
 	 */
 	int pr_preferred_role;
+
+ #ifdef CONFIG_QCN_EXTN
+	/* "athnewind" in config: Independent Repeater enable/disable flag
+	 *
+	 * Controls whether AP VAPs are brought up independently of STA VAPs.
+	 * Values:
+	 *  0 - Dependent (AP VAPs come up after STA connects to Root AP)
+	 *  1 - Independent (AP VAPs come up regardless of STA; channel sync after
+	 *      STA connects)
+	 */
+	int ind_rptr;
+
+	/* "rptr_mgr_mode" in config: Repeater manager mode
+	 *
+	 * Selects the management interface used by the repeater manager.
+	 * Values:
+	 *  1 - UBUS mode
+	 *  2 - Socket mode
+	 */
+	int rptr_mgr_comm_mode;
+#endif
 };
 
 

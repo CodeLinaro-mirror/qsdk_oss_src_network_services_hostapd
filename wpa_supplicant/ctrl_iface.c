@@ -19,6 +19,7 @@
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
 #include "common/wpa_ctrl.h"
+#include "../qcn_extns/cmn.h"
 #ifdef CONFIG_DPP
 #include "common/dpp.h"
 #endif /* CONFIG_DPP */
@@ -14340,6 +14341,12 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 		reply_len = wpas_ctrl_iface_epcs(wpa_s, buf+5, reply,
 						 reply_size);
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_QCN_EXTN
+	} else if (os_strcmp(buf, "GET_FREQ_LIST") == 0) {
+		reply_len = wpa_ctrl_get_freq_list_extn(wpa_s, reply, reply_size);
+	} else if (os_strncmp(buf, "CHAN_SW_FINISHED_NOTIFY", 23) == 0) {
+		reply_len = wpa_ctrl_chan_sw_finished_notify_extn(wpa_s, buf+24, reply, reply_size);
+#endif
 	} else {
 		os_memcpy(reply, "UNKNOWN COMMAND\n", 16);
 		reply_len = 16;

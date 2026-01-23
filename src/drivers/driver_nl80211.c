@@ -5605,6 +5605,12 @@ static int nl80211_put_freq_params(struct nl_msg *msg,
 	    nla_put_flag(msg, NL80211_ATTR_RADAR_BACKGROUND))
 		return -ENOBUFS;
 
+#ifdef CONFIG_QCN_EXTN
+	if (freq->skip_cac &&
+	    nla_put_flag(msg, NL80211_ATTR_SKIP_CAC))
+		return -ENOBUFS;
+#endif
+
 	return 0;
 }
 
@@ -12584,7 +12590,7 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 	u32 cu_bmap = BIT(settings->bss_idx);
 
 	wpa_printf(MSG_DEBUG,
-		   "nl80211: Channel switch request (cs_count=%u block_tx=%u freq=%d channel=%d sec_channel_offset=%d width=%d cf1=%d cf2=%d puncturing_bitmap=0x%04x link_id=%d%s%s%s)",
+		   "nl80211: Channel switch request (cs_count=%u block_tx=%u freq=%d channel=%d sec_channel_offset=%d width=%d cf1=%d cf2=%d puncturing_bitmap=0x%04x skip_cac=%d link_id=%d%s%s%s)",
 		   settings->cs_count, settings->block_tx,
 		   settings->freq_params.freq,
 		   settings->freq_params.channel,
@@ -12593,6 +12599,7 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 		   settings->freq_params.center_freq1,
 		   settings->freq_params.center_freq2,
 		   settings->freq_params.punct_bitmap,
+		   settings->freq_params.skip_cac,
 		   settings->link_id,
 		   settings->freq_params.ht_enabled ? " ht" : "",
 		   settings->freq_params.vht_enabled ? " vht" : "",

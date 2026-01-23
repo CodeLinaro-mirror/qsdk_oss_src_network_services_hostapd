@@ -5764,6 +5764,11 @@ static int wpa_config_process_mld_connect_bssid_pref(
 #define INT(f) _INT(f), NULL, NULL
 #define INT_RANGE(f, min, max) #f, wpa_global_config_parse_int_range, \
 	wpa_config_get_int, OFFSET(f), (void *) min, (void *) max
+#ifdef CONFIG_QCN_EXTN
+#define INT_KEY_RANGE(key, field, min, max) key, \
+	wpa_global_config_parse_int_range, wpa_config_get_int, OFFSET(field), \
+	(void *) min, (void *) max
+#endif
 #define BOOL(f) #f, wpa_global_config_parse_bool, wpa_config_get_bool, \
 		OFFSET(f), NULL, NULL
 #define _STR(f) #f, wpa_global_config_parse_str, wpa_config_get_str, OFFSET(f)
@@ -5989,6 +5994,10 @@ static const struct global_parse_data global_fields[] = {
 	{ BOOL(disable_op_classes_80_80_mhz), 0 },
 	{ INT(pr_pasn_type), 0 },
 	{ INT_RANGE(pr_preferred_role, 0, 1), 0},
+#ifdef CONFIG_QCN_EXTN
+	{ INT_KEY_RANGE("athnewind", ind_rptr, 0, 1), 0 },
+	{ INT_KEY_RANGE("rptr_mgr_mode", rptr_mgr_comm_mode, 0, 2), 1 },
+#endif
 	/* NOTE: When adding new parameters here, add_interface() in
 	 * wpa_supplicant/dbus_new_introspect.c may need to be modified to
 	 * increase the size of the iface->xml buffer. */

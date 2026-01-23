@@ -112,6 +112,10 @@ NEED_AES=y
 NEED_MD5=y
 NEED_SHA1=y
 
+ifeq ($(wildcard $(HOSTAPD_SRC_DIR)),)
+CFLAGS += -DCONFIG_HOSTAPD_SRC_DIR
+endif
+
 OBJS += ../src/drivers/drivers.o
 CFLAGS += -DHOSTAPD
 

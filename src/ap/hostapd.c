@@ -3663,6 +3663,9 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 					     hapd->iconf),
 				     hostapd_get_oper_centr_freq_seg1_idx(
 					     hapd->iconf),
+#ifdef CONFIG_QCN_EXTN
+				     false, /* skip_cac_rep */
+#endif
 				     hapd->iconf->bandwidth_device,
 				     hapd->iconf->center_freq_device)) {
 			wpa_printf(MSG_ERROR, "Could not set channel for "
