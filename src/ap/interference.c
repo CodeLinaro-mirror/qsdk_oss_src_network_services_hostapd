@@ -729,7 +729,6 @@ int hostapd_incumbt_sig_intf_detected(struct hostapd_iface *iface, int freq,
 {
 	struct csa_settings settings;
 	struct hostapd_channel_data *chan_data = NULL;
-	struct hostapd_channel_data *chan_temp;
 	struct hostapd_channel_data **available_chandef_list = NULL;
 	int ret = 0;
 	unsigned int i;
@@ -737,7 +736,7 @@ int hostapd_incumbt_sig_intf_detected(struct hostapd_iface *iface, int freq,
 	u32 chan_idx;
 	int num_available_chandefs = 0;
 	u8 channel_switch = 0;
-	enum chan_width new_chan_width;
+	int new_chan_width = chan_width;
 	int new_center_freq;
 	int current_start_freq;
 	int temp_width;
@@ -839,8 +838,25 @@ int hostapd_incumbt_sig_intf_detected(struct hostapd_iface *iface, int freq,
 		}
 
 		if (num_available_chandefs == 0) {
-			wpa_printf(MSG_INFO, "Intf: No available_chandefs");
-			goto exit;
+			wpa_printf(MSG_ERROR,
+				   "AWGN: no available chandefs; trying bandwidth reduction");
+			chan_data = get_chan_data_by_freq(mode, freq);
+			if (!chan_data) {
+				wpa_printf(MSG_ERROR,
+					   "AWGN: current channel not found for freq %d",
+					   freq);
+				goto exit;
+			}
+
+			reduced_chan_width(&new_chan_width, chan_width, freq,
+					   mode, chan_bw_interference_bitmap);
+			if (new_chan_width >= chan_width) {
+				wpa_printf(MSG_ERROR,
+					   "AWGN: bandwidth reduction not possible (cur=%d new=%d)",
+					   chan_width, new_chan_width);
+				goto exit;
+			}
+			goto do_csa;
 		}
 
 		if (os_get_random((u8 *) &_rand, sizeof(_rand)) < 0)
@@ -853,44 +869,25 @@ int hostapd_incumbt_sig_intf_detected(struct hostapd_iface *iface, int freq,
 		wpa_printf(MSG_DEBUG, "Intf: Got random channel %d (%d)",
 			   chan_data->freq, chan_data->chan);
 	} else {
-		/*
-		 * Interference is not present in the primary 20 MHz, so
-		 * reduce bandwidth.
-		 */
-		u8 seg0 = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
-		u8 seg1 = hostapd_get_oper_centr_freq_seg1_idx(iface->conf);
-		enum oper_chan_width oper_chwidth;
-		int j;
-
-		for (j = 0; j < mode->num_channels; j++) {
-			chan_temp = &mode->channels[j];
-			if (chan_temp->freq == freq)
-				chan_data = chan_temp;
-		}
+		chan_data = get_chan_data_by_freq(mode, freq);
 		if (!chan_data) {
-			wpa_printf(MSG_INFO, "Intf: No channel found");
+			wpa_printf(MSG_ERROR,
+				   "AWGN: current channel not found for freq %d",
+				   freq);
 			goto exit;
 		}
 
-		oper_chwidth = chan_width_to_oper_chwidth(chan_width);
-
-		if (chan_width > CHAN_WIDTH_40) {
-			punct_update_legacy_bw(chan_bw_interference_bitmap,
-					       iface->conf->channel,
-					       &oper_chwidth, &seg0, &seg1);
-			if (oper_chwidth == CONF_OPER_CHWIDTH_160MHZ)
-				new_chan_width = CHAN_WIDTH_160;
-			else if (oper_chwidth == CONF_OPER_CHWIDTH_80MHZ)
-				new_chan_width = CHAN_WIDTH_80;
-			else if (seg0 == 0)
-				new_chan_width = CHAN_WIDTH_20;
-			else
-				new_chan_width = CHAN_WIDTH_40;
-		} else {
-			new_chan_width = CHAN_WIDTH_20;
+		reduced_chan_width(&new_chan_width, chan_width, freq,
+				   mode, chan_bw_interference_bitmap);
+		if (new_chan_width >= chan_width) {
+			wpa_printf(MSG_DEBUG,
+				   "AWGN: bandwidth reduction not needed/possible (cur=%d new=%d)",
+				   chan_width, new_chan_width);
+			goto exit;
 		}
 	}
 
+do_csa:
 	if (new_chan_width > CHAN_WIDTH_20) {
 		ret = get_center_freq_6g(chan_data->chan, new_chan_width,
 					 &new_center_freq);
