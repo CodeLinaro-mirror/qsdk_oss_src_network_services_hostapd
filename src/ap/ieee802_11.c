@@ -11639,6 +11639,456 @@ static bool mbssid_known_bss(unsigned int i, const u8 *known_bss,
 	return *known_bss & (u8) (BIT(i % 8));
 }
 
+static bool ieee802_11_mbssid_is_elem_inherited(u8 id, u8 ext_id)
+{
+	switch (id) {
+	case WLAN_EID_EXTENSION:
+		switch (ext_id) {
+		case WLAN_EID_EXT_HE_CAPABILITIES:
+		case WLAN_EID_EXT_HE_OPERATION:
+		case WLAN_EID_EXT_HE_6GHZ_BAND_CAP:
+		case WLAN_EID_EXT_COLOR_CHANGE_ANNOUNCEMENT:
+		case WLAN_EID_EXT_SPATIAL_REUSE:
+		case WLAN_EID_EXT_MAX_CHANNEL_SWITCH_TIME:
+		case WLAN_EID_EXT_MULTIPLE_BSSID_CONFIGURATION:
+		case WLAN_EID_EXT_MULTI_LINK:
+		case WLAN_EID_EXT_EHT_CAPABILITIES:
+		case WLAN_EID_EXT_EHT_OPERATION:
+			break;
+		default:
+			return false;
+		}
+		break;
+	case WLAN_EID_SSID:
+	case WLAN_EID_MULTIPLE_BSSID:
+	case WLAN_EID_TIM:
+	case WLAN_EID_DS_PARAMS:
+	case WLAN_EID_IBSS_PARAMS:
+	case WLAN_EID_COUNTRY:
+	case WLAN_EID_CHANNEL_SWITCH:
+	case WLAN_PA_EXT_CHANNEL_SWITCH_ANNOUNCE:
+	case WLAN_EID_WIDE_BW_CHSWITCH:
+	case WLAN_EID_TRANSMIT_POWER_ENVELOPE:
+	case WLAN_EID_SUPPORTED_OPERATING_CLASSES:
+	case WLAN_EID_IBSS_DFS:
+	case WLAN_EID_ERP_INFO:
+	case WLAN_EID_REDUCED_NEIGHBOR_REPORT:
+	case WLAN_EID_HT_CAP:
+	case WLAN_EID_HT_OPERATION:
+	case WLAN_EID_VHT_CAP:
+	case WLAN_EID_VHT_OPERATION:
+	case WLAN_EID_S1G_BCN_COMPAT:
+	case WLAN_EID_S1G_OPERATION:
+	case WLAN_EID_S1G_CAPABILITIES:
+	case WLAN_EID_QUIET:
+	case WLAN_EID_QUIET_CHANNEL:
+	case WLAN_EID_VENDOR_SPECIFIC:
+	case WLAN_EID_MMIE:
+		break;
+	default:
+		return false;
+	}
+
+	return true;
+}
+
+static u8 * ieee802_11_inheritance_txbss_params(u8 *tx_elem, size_t tx_elem_len, u8 *tx_head,
+						size_t tx_head_len, u8 *nontx_elem,
+						size_t nontx_elem_len, u8 *eid,
+						struct non_inheritance_elem *non_inherit_ie,
+						ssize_t *optional_ie_len, u32 frame_type)
+{
+	const struct element *tx_ie, *nontx_ie;
+	const u8 *data, *nontx_data;
+	u8 id, len, nontx_id, nontx_len, ext_id, nontx_ext_id;
+	u8 *pos = eid, parsed_eid_bmap[32] = { 0 }, parsed_ext_eid_bmap[32] = {0};
+	size_t nontx_prof_len = 0, total_non_inherit_ie_len = 0;
+	bool found_in_nontx_bss;
+
+	if (nontx_elem_len < 2 || tx_elem_len < 2) {
+		wpa_printf(MSG_ERROR, "Invalid length Non_tx:%zu, Tx:%zu",
+			   nontx_elem_len, tx_elem_len);
+		goto fail;
+	}
+
+	/*
+	 * Compare Supported Rates element in the Tx BSS's head and Non‑Tx
+	 * BSS for beacon frames to decide whether to include this element
+	 * in the Non‑Tx MBSSID profile or let it inherit from the Tx BSS.
+	 */
+	if (frame_type == WLAN_FC_STYPE_BEACON) {
+		if (tx_head_len < 2) {
+			wpa_printf(MSG_ERROR, "Invalid length tx_head_len:%zu",
+				   tx_head_len);
+			goto fail;
+		}
+
+		for_each_element(tx_ie, tx_head, tx_head_len) {
+			id = tx_ie->id;
+			len = tx_ie->datalen;
+			data = tx_ie->data;
+			found_in_nontx_bss = false;
+
+			if (2 + len > tx_head_len) {
+				wpa_printf(MSG_ERROR,
+					   "Truncated TX BSS head element len:%u tx_head_len:%zu",
+					    len + 2, tx_head_len);
+				goto fail;
+			}
+
+			if (len <= 0)
+				continue;
+
+			if (id != WLAN_EID_SUPP_RATES)
+				continue;
+
+			for_each_element(nontx_ie, nontx_elem, nontx_elem_len) {
+				nontx_id  = nontx_ie->id;
+				nontx_len = nontx_ie->datalen;
+				nontx_data = nontx_ie->data;
+
+				if (nontx_len <= 0)
+					continue;
+
+				if (2 + nontx_len > nontx_elem_len) {
+					wpa_printf(MSG_ERROR,
+						   "Truncated Non-Tx BSS element len:%u nontx_head_len:%zu",
+						   nontx_len + 2, nontx_elem_len);
+					goto fail;
+				}
+
+				if (id == nontx_id) {
+					parsed_eid_bmap[id / 8] |= BIT(id % 8);
+
+					found_in_nontx_bss = true;
+
+					if (nontx_len == len &&
+					    os_memcmp(data, nontx_data, nontx_len) == 0) {
+						wpa_printf(MSG_DEBUG,
+							   "Element (%u) data matches with Tx BSS",
+							   nontx_id);
+						break;
+					}
+
+					wpa_printf(MSG_DEBUG,
+						   "Element (%u) data doesn't match with Tx BSS",
+						   nontx_id);
+					/*
+					 * The length is computed before constructing the MBSSID
+					 * elements. The allocated memory accounts for optional
+					 * elements where the Non‑Tx BSS has the elements not Tx
+					 * BSS. As a result, the length is not validated during
+					 * the actual MBSSID element construction.
+					 */
+					if (!pos) {
+						if (nontx_len + IEEE80211_ELEM_HEADER_LEN >
+						    MBSSID_NON_TX_OPTIONAL_ELEM_SIZE -
+						    nontx_prof_len) {
+							wpa_printf(MSG_ERROR,
+								   "Inheritance: Unable to add Element (%u) "
+								   "exceeds max limit (%d)",
+								   nontx_id, MBSSID_NON_TX_OPTIONAL_ELEM_SIZE);
+							goto fail;
+						}
+						nontx_prof_len += nontx_len + IEEE80211_ELEM_HEADER_LEN;
+					} else {
+						/* Append in proper order as found in non-Tx tail */
+						os_memcpy(pos, nontx_data - IEEE80211_ELEM_HEADER_LEN,
+							  nontx_len + IEEE80211_ELEM_HEADER_LEN);
+						pos += nontx_len + IEEE80211_ELEM_HEADER_LEN;
+					}
+					break;
+				}
+			}
+
+			if (!found_in_nontx_bss) {
+				if (non_inherit_ie->elem_len + 1 >= MAX_MBSSID_NONINHERIT_ELEM_SIZE) {
+					wpa_printf(MSG_ERROR, "Unable to add Non-inheritance element:%u, reached max limit:%d",
+						   id, MAX_MBSSID_NONINHERIT_ELEM_SIZE);
+					goto fail;
+				}
+				non_inherit_ie->elem_list[non_inherit_ie->elem_len++] = id;
+			}
+			break;
+		}
+	}
+
+	/*
+	 * Compare all elements in the Non‑Tx BSS with those in the Tx BSS's
+	 * tail BSS for beacon frames and with the Tx BSS probe response
+	 * frames to determine whether the element should be included in the
+	 * Non‑Tx MBSSID profile or inherited from the Tx BSS.
+	 */
+	for_each_element(tx_ie, tx_elem, tx_elem_len) {
+		id = tx_ie->id;
+		len = tx_ie->datalen;
+		data = tx_ie->data;
+		found_in_nontx_bss = false;
+
+		if (2 + len > tx_elem_len) {
+			wpa_printf(MSG_ERROR,
+				   "Truncated TX BSS element len:%u tx_elem_len:%zu",
+				   len + 2, tx_elem_len);
+			goto fail;
+		}
+
+		if (len <= 0)
+			continue;
+
+		if (id == WLAN_EID_EXTENSION)
+			ext_id = *(data);
+
+		if (ieee802_11_mbssid_is_elem_inherited(id, ext_id) ||
+		    (id == WLAN_EID_EXT_CAPAB))
+			continue;
+
+		/* Check for duplicates in Non-Tx BSS elements */
+		for_each_element(nontx_ie, nontx_elem, nontx_elem_len) {
+			nontx_id  = nontx_ie->id;
+			nontx_len = nontx_ie->datalen;
+			nontx_data = nontx_ie->data;
+
+			if (nontx_len <= 0)
+				continue;
+
+			if (2 + nontx_len > nontx_elem_len) {
+				wpa_printf(MSG_ERROR,
+					   "Truncated Non-Tx BSS element len:%u nontx_elem_len:%zu",
+					   nontx_len + 2, nontx_elem_len);
+				goto fail;
+			}
+
+			if (id == nontx_id) {
+				if (id == WLAN_EID_EXTENSION) {
+					nontx_ext_id = *(nontx_data);
+					if (ext_id != nontx_ext_id)
+						continue;
+					parsed_ext_eid_bmap[ext_id / 8] |= BIT(ext_id % 8);
+
+				} else {
+					parsed_eid_bmap[id / 8] |= BIT(id % 8);
+				}
+
+				found_in_nontx_bss = true;
+
+				if (nontx_len == len &&
+				    os_memcmp(data, nontx_data, nontx_len) == 0) {
+					wpa_printf(MSG_DEBUG, "Element (%u) data matches with Tx BSS",
+						   nontx_id);
+					break;
+				}
+
+				wpa_printf(MSG_DEBUG, "Element:%u data doesn't match with Tx BSS, "
+					   "include in Non-Tx BSS profile", nontx_id);
+
+				 /* Boundary is validated only during length calculation */
+				if (!pos) {
+					if (nontx_len + IEEE80211_ELEM_HEADER_LEN >
+					    MBSSID_NON_TX_OPTIONAL_ELEM_SIZE -
+					    nontx_prof_len) {
+						wpa_printf(MSG_ERROR,
+							   "Inheritance: Unable to add Element (%u) "
+							   "exceeds max limit (%d)",
+							   nontx_id, MBSSID_NON_TX_OPTIONAL_ELEM_SIZE);
+						goto fail;
+					}
+					nontx_prof_len += nontx_len + IEEE80211_ELEM_HEADER_LEN;
+				} else {
+					/* Append in proper order as found in non-Tx tail */
+					os_memcpy(pos, nontx_data - IEEE80211_ELEM_HEADER_LEN,
+						  nontx_len + IEEE80211_ELEM_HEADER_LEN);
+					pos += nontx_len + IEEE80211_ELEM_HEADER_LEN;
+				}
+				break;
+			}
+		}
+
+		if (!found_in_nontx_bss) {
+			if (((id == WLAN_EID_EXTENSION) && (non_inherit_ie->ext_elem_len + 1 >=
+							    MAX_MBSSID_NONINHERIT_ELEM_SIZE)) ||
+			    ((id != WLAN_EID_EXTENSION) && (non_inherit_ie->elem_len + 1 >=
+							    MAX_MBSSID_NONINHERIT_ELEM_SIZE))) {
+				wpa_printf(MSG_ERROR,
+					   "Failed to add Non-inheritance for id:%u, ext_id:%u "
+					   "exceeds max limit(%d)",
+					   id, ext_id, MAX_MBSSID_NONINHERIT_ELEM_SIZE);
+				goto fail;
+			}
+
+			if (id == WLAN_EID_EXTENSION)
+				non_inherit_ie->ext_elem_list[non_inherit_ie->ext_elem_len++] = ext_id;
+			else
+				non_inherit_ie->elem_list[non_inherit_ie->elem_len++] = id;
+		}
+	}
+
+	/* Check for remaining Element in Non-Tx BSS */
+	for_each_element(nontx_ie, nontx_elem, nontx_elem_len) {
+		nontx_id  = nontx_ie->id;
+		nontx_len = nontx_ie->datalen;
+
+		if (2 + nontx_len > nontx_elem_len) {
+			wpa_printf(MSG_ERROR,
+				   "Truncated Non-Tx BSS element len:%u nontx_elem_len:%zu",
+				   nontx_len + 2, nontx_elem_len);
+			goto fail;
+		}
+
+		if (nontx_len <= 0)
+			continue;
+
+		nontx_data = nontx_ie->data;
+
+		if (nontx_id == WLAN_EID_EXTENSION) {
+			nontx_ext_id = *(nontx_data);
+			if (parsed_ext_eid_bmap[nontx_ext_id / 8] & BIT(nontx_ext_id % 8))
+				continue;
+		} else {
+			if (parsed_eid_bmap[nontx_id / 8] & BIT(nontx_id % 8))
+				continue;
+		}
+
+		if (ieee802_11_mbssid_is_elem_inherited(nontx_id, nontx_ext_id))
+			continue;
+
+		 /* Boundary is validated only during length calculation */
+		if (!pos) {
+			if (nontx_len + IEEE80211_ELEM_HEADER_LEN >
+			    MBSSID_NON_TX_OPTIONAL_ELEM_SIZE - nontx_prof_len) {
+				wpa_printf(MSG_ERROR,
+					   "Inheritance: Failed to add element:%u to Non-Tx BSS, "
+					   "exceeds max limit (%d)",
+					   nontx_id, MBSSID_NON_TX_OPTIONAL_ELEM_SIZE);
+				goto fail;
+			}
+			nontx_prof_len += nontx_len + IEEE80211_ELEM_HEADER_LEN;
+		} else {
+			os_memcpy(pos, nontx_data - IEEE80211_ELEM_HEADER_LEN,
+				  nontx_len + IEEE80211_ELEM_HEADER_LEN);
+			pos += nontx_len + IEEE80211_ELEM_HEADER_LEN;
+		}
+	}
+
+	/*
+	 * Vendor elements are not inherited from the TX BSS.
+	 * They are always added to the non-inheritance list
+	 * to prevent inheritance if there is space.
+	 */
+	if (non_inherit_ie->elem_len + 1 >= MAX_MBSSID_NONINHERIT_ELEM_SIZE) {
+		wpa_printf(MSG_ERROR,
+			   "Failed to add Non-inheritance element:%d to Non-Tx BSS, "
+			   "exceeds max limit (%d)",
+			   WLAN_EID_VENDOR_SPECIFIC, MAX_MBSSID_NONINHERIT_ELEM_SIZE);
+		goto fail;
+
+	}
+	non_inherit_ie->elem_list[non_inherit_ie->elem_len++] = WLAN_EID_VENDOR_SPECIFIC;
+
+	/*
+	 * Non-inheritance Element length
+	 * IEEE80211_ELEM_HEADER_LEN: 2
+	 * Ext tag number: 1
+	 * Length of Element ID list: 1
+	 * Element ID list: Variable
+	 * Length of Element ID Extension list: 1
+	 * Element ID Extension List: Variable
+	 */
+	total_non_inherit_ie_len = IEEE80211_ELEM_HEADER_LEN + 1 +
+				   1 + non_inherit_ie->elem_len +
+				   1 + non_inherit_ie->ext_elem_len;
+
+	if (total_non_inherit_ie_len >
+	    MBSSID_NON_TX_OPTIONAL_ELEM_SIZE - nontx_prof_len) {
+		wpa_printf(MSG_ERROR,
+			   "Unable to add non-inheritance elements in frame type:%u, "
+			   "non_inherit_ie_len:%zu exceeds max limit:%d",
+			   frame_type, total_non_inherit_ie_len, MBSSID_NON_TX_OPTIONAL_ELEM_SIZE);
+		os_memset(non_inherit_ie, 0, sizeof(struct non_inheritance_elem));
+		goto fail;
+	}
+
+	nontx_prof_len += total_non_inherit_ie_len;
+
+	*optional_ie_len = (ssize_t) nontx_prof_len;
+
+	return pos;
+
+fail:
+	wpa_printf(MSG_ERROR, "Inheritance: Insuffient length, frame_type:%u",
+		   frame_type);
+	*optional_ie_len = -1;
+	return NULL;
+}
+
+u8 * hostapd_eid_mbssid_nontx_optional_ie(struct hostapd_data *bss, void *tx_params,
+					  struct non_inheritance_elem *non_inherit_ie,
+					  u8 *eid, ssize_t *nontx_prof_len, u8 frame_type)
+{
+	struct wpa_driver_ap_params nontx_params;
+	struct probe_resp_params nontx_probe_params;
+	u8 *tx_elem, *nontx_elem, *tx_head;
+	size_t tx_elem_len, nontx_elem_len, tx_head_len;
+
+	if (!tx_params) {
+		wpa_printf(MSG_ERROR, "Tx params is NULL");
+		goto fail;
+	}
+
+	if (frame_type == WLAN_FC_STYPE_BEACON) {
+		struct wpa_driver_ap_params *params =
+			(struct wpa_driver_ap_params *)tx_params;
+
+		os_memset(&nontx_params, 0, sizeof(nontx_params));
+		if (ieee802_11_build_nontx_bss_params(bss, &nontx_params) < 0) {
+			wpa_printf(MSG_ERROR, "Failed to build optional elements for Non-Tx BSS %s",
+				   bss->conf->iface);
+			goto fail;
+		}
+
+		tx_elem = params->tail;
+		tx_elem_len = params->tail_len;
+		tx_head = ((struct ieee80211_mgmt *) params->head)->u.beacon.variable;
+		tx_head_len = params->head_len;
+		nontx_elem = nontx_params.tail;
+		nontx_elem_len = nontx_params.tail_len;
+	} else {
+		struct probe_resp_params *probe_params =
+			(struct probe_resp_params *)tx_params;
+
+		os_memset(&nontx_probe_params, 0, sizeof(nontx_probe_params));
+		if (ieee802_11_build_nontx_bss_probe_params(bss, &nontx_probe_params) < 0) {
+			wpa_printf(MSG_ERROR, "Failed to build optional elements for Non-Tx BSS %s",
+				   bss->conf->iface);
+			goto fail;
+
+		}
+
+		tx_elem = probe_params->resp->u.probe_resp.variable;
+		tx_elem_len = probe_params->resp_len;
+		nontx_elem = nontx_probe_params.resp->u.probe_resp.variable;
+		nontx_elem_len = nontx_probe_params.resp_len;
+	}
+
+	eid = ieee802_11_inheritance_txbss_params(tx_elem, tx_elem_len,
+						  tx_head, tx_head_len,
+						  nontx_elem, nontx_elem_len,
+						  eid, non_inherit_ie, nontx_prof_len,
+						  frame_type);
+
+	if (frame_type == WLAN_FC_STYPE_BEACON)
+		os_free(nontx_params.tail);
+	else
+		os_free(nontx_probe_params.resp);
+
+	return eid;
+
+fail:
+	wpa_printf(MSG_ERROR,
+		   "Failed to build optional elements for Non-Tx BSS %s, frame_type:%u",
+		   bss->conf->iface, frame_type);
+	*nontx_prof_len = -1;
+	return NULL;
+}
 
 static size_t hostapd_mbssid_ext_capa(struct hostapd_data *bss,
 				      struct hostapd_data *tx_bss, u8 *buf)
@@ -11777,7 +12227,7 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 
 		/* WMM IE */
 		wmm_len = hostapd_eid_wmm_len(bss);
-		if (wmm_len <= MBSSID_NONTX_VENDOR_ELEM_SIZE)
+		if (wmm_len <= MBSSID_NON_TX_VENDOR_ELEM_SIZE)
 			nontx_profile_len += wmm_len;
 
 		/* TTLM IE */
@@ -11796,7 +12246,7 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 		}
 
 		/* User configured vendor elements */
-		if (bss->conf->vendor_elements_len <= MBSSID_NONTX_VENDOR_ELEM_SIZE - wmm_len)
+		if (bss->conf->vendor_elements_len <= MBSSID_NON_TX_VENDOR_ELEM_SIZE - wmm_len)
 			nontx_profile_len += bss->conf->vendor_elements_len;
 
 		if (ie_count)
@@ -12091,7 +12541,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 
 		/* WMM IE */
 		wmm_len = hostapd_eid_wmm_len(bss);
-		if (wmm_len <= MBSSID_NONTX_VENDOR_ELEM_SIZE) {
+		if (wmm_len <= MBSSID_NON_TX_VENDOR_ELEM_SIZE) {
 			startpos = eid;
 			eid = hostapd_eid_wmm(bss, eid, false);
 			hostapd_eid_update_cu_info(bss, &modified_flag, startpos,
@@ -12101,7 +12551,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		}
 
 		/* User configured vendor elements */
-		if (bss->conf->vendor_elements_len <= MBSSID_NONTX_VENDOR_ELEM_SIZE - wmm_len) {
+		if (bss->conf->vendor_elements_len <= MBSSID_NON_TX_VENDOR_ELEM_SIZE - wmm_len) {
 			for (j = 0; j < bss->conf->vendor_elements_count; j++) {
 				struct wpabuf *entry = bss->conf->vendor_elements[j];
 
