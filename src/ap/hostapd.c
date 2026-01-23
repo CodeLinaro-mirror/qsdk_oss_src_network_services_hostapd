@@ -8730,13 +8730,32 @@ u16 hostapd_get_punct_bitmap(struct hostapd_data *hapd)
 }
 
 
+size_t hostapd_get_mbssid_max_num_bss(struct hostapd_data *hapd)
+{
+	if (!hapd->iconf->mbssid || !hapd->iface)
+		return 0;
+
+	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
+		if (!hapd->mbssid_group)
+			return 0;
+		return hapd->mbssid_group->num_bss;
+	} else {
+		return hapd->iface->num_bss;
+	}
+}
+
+
 struct hostapd_data *
 hostapd_get_mbssid_bss_by_idx(struct hostapd_data *hapd, size_t idx)
 {
-	if (idx < hapd->iface->num_bss)
-		return hapd->iface->bss[idx];
+	if (idx >= hostapd_get_mbssid_max_num_bss(hapd))
+		return NULL;
 
-	return NULL;
+	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
+		return hostapd_get_multi_group_bss(hapd->mbssid_group, idx);
+	} else {
+		return hapd->iface->bss[idx];
+	}
 }
 
 /**
