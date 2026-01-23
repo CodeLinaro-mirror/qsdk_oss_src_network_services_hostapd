@@ -1821,8 +1821,6 @@ static void hostapd_notif_auth(struct hostapd_data *hapd,
 {
 	struct sta_info *sta;
 	u16 status = WLAN_STATUS_SUCCESS;
-	u8 resp_ies[2 + WLAN_AUTH_CHALLENGE_LEN];
-	size_t resp_ies_len = 0;
 
 	sta = ap_get_sta(hapd, rx_auth->peer);
 	if (!sta) {
@@ -1867,7 +1865,7 @@ static void hostapd_notif_auth(struct hostapd_data *hapd,
 
 fail:
 	hostapd_sta_auth(hapd, rx_auth->peer, rx_auth->auth_transaction + 1,
-			 status, resp_ies, resp_ies_len);
+			 status, NULL, 0);
 }
 
 
