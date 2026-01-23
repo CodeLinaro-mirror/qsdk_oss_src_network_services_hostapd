@@ -620,6 +620,28 @@ hostapd_drv_fetch_afc_power_event(struct hostapd_data *hapd, uint8_t radio_idx)
 	return hapd->driver->fetch_afc_power_event(hapd->drv_priv, radio_idx);
 }
 
+#ifdef CONFIG_QCN_EXTN
+static inline void hostapd_notify_link_repurpose(struct hostapd_data *hapd,
+						 const char *context)
+{
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return;
+
+	if (hostapd_drv_notify_link_repurpose_extn(hapd, hapd->mld_link_id)) {
+		wpa_printf(MSG_ERROR,
+			   "MLD:%s Failed to notify link %d of %s as repurposed",
+			   context, hapd->mld_link_id, hapd->conf->iface);
+		return;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "MLD:%s notified link %d of %s as repurposed",
+		   context, hapd->mld_link_id, hapd->conf->iface);
+
+	return;
+}
+#endif /* CONFIG_QCN_EXTN */
+
 struct hostapd_multi_hw_info *
 hostapd_get_multi_hw_info(struct hostapd_data *hapd,
 			  unsigned int *num_multi_hws);
