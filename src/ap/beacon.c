@@ -2554,6 +2554,9 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	u8 *pos, *tailpos, *tailend, *csa_pos;
 	bool complete = false;
 	u8 *startpos;
+	u8 *extcap_elem, *mbssid_cfg_elem;
+	u8 *complete_nontx_prof_list = NULL;
+	u8 *mbssid_cfg_periodicity = NULL;
 	u16 elemid_modified = 0;
 	struct hostapd_data *tx_bss;
 	u8 ext_cap = 0;
@@ -2731,32 +2734,22 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 					   tailpos-startpos, ELEMID_CU_PARAM_HTOP);
 #endif
 
-	if (hapd->iconf->mbssid) {
-		if (((hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) &&
-		    (hapd->mbssid_group->num_bss == 1)) || hapd->iconf->num_bss == 1) {
-			params->mbssid.mbssid_tx_iface = hapd->conf->iface;
-			params->mbssid.mbssid_index = hostapd_mbssid_get_bss_index(hapd);
-			if (hapd->conf->mld_ap)
-				params->mbssid.mbssid_tx_iface_linkid = hapd->mld_link_id;
-			else
-				params->mbssid.mbssid_tx_iface_linkid = -1;
-			complete = true;
-		} else {
-			if (ieee802_11_build_ap_params_mbssid(hapd, params)) {
-				os_free(head);
-				os_free(tail);
-				wpa_printf(MSG_ERROR,
-					   "MBSSID: Failed to set beacon data");
-				return -1;
-			}
-			complete = hapd->iconf->mbssid == MBSSID_ENABLED ||
-				   hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED ||
-				   (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
-				    params->mbssid.mbssid_elem_count == 1);
+	/* Store the bit offset of the Extended Capabilities Complete
+	 * Non-Tx Profile List. Update this offset after building the
+	 * MBSSID IE when elem_count > 1 in Enhanced Multi-BSSID enabled
+	 * case.
+	 */
+	extcap_elem = tailpos;
+	tailpos = hostapd_eid_ext_capab(hapd, tailpos, true);
+
+	if ((hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED) &&
+	    (tailpos - extcap_elem)) {
+		if (extcap_elem + 1 < tailpos) {
+			/* Ensure element length covers byte index 10 */
+			if ((extcap_elem[1] > 10) && (extcap_elem + 2 + 10) < tailpos)
+				complete_nontx_prof_list = extcap_elem + 2 + 10;
 		}
 	}
-
-	tailpos = hostapd_eid_ext_capab(hapd, tailpos, complete);
 
 	/*
 	 * TODO: Time Advertisement element should only be included in some
@@ -2806,8 +2799,22 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	tailpos = hostapd_eid_max_cs_time(hapd, tailpos);
 
 	tailpos = hostapd_get_rsnxe(hapd, tailpos, tailend - tailpos);
-	tailpos = hostapd_eid_mbssid_config(hapd, tailpos,
-					    params->mbssid.mbssid_elem_count);
+
+
+	/* Store the bit offset of the MBSSID Configurations Full Set
+	 * Rx Periodicity  Update this offset after building the
+	 * MBSSID IE in Enhanced Multi-BSSID enabled  case.
+	 */
+	mbssid_cfg_elem = tailpos;
+	tailpos = hostapd_eid_mbssid_config(hapd, tailpos, 0);
+
+	if (tailpos - mbssid_cfg_elem) {
+		if ((mbssid_cfg_elem + 1 < tailpos) &&
+		    (mbssid_cfg_elem + mbssid_cfg_elem[1] + 2 < tailpos)
+		    && (mbssid_cfg_elem[1] >= 3))
+			mbssid_cfg_periodicity = mbssid_cfg_elem + 2 +
+						 mbssid_cfg_elem[1] - 1;
+	}
 
 #ifdef CONFIG_IEEE80211AX
 	if (hostapd_is_he_enabled(hapd)) {
@@ -3098,6 +3105,43 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	}
 
 	params->beacon_tx_mode = hapd->conf->beacon_tx_mode;
+
+	if (hapd->iconf->mbssid) {
+		if (((hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) &&
+		    (hapd->mbssid_group->num_bss == 1)) || hapd->iconf->num_bss == 1) {
+			params->mbssid.mbssid_tx_iface = hapd->conf->iface;
+			params->mbssid.mbssid_index = hostapd_mbssid_get_bss_index(hapd);
+			if (hapd->conf->mld_ap)
+				params->mbssid.mbssid_tx_iface_linkid = hapd->mld_link_id;
+			else
+				params->mbssid.mbssid_tx_iface_linkid = -1;
+			complete = true;
+		} else {
+			if (ieee802_11_build_ap_params_mbssid(hapd, params)) {
+				ieee802_11_free_ap_params(params);
+				wpa_printf(MSG_ERROR,
+					   "MBSSID: Failed to set beacon data");
+				return -1;
+			}
+			complete = hapd->iconf->mbssid == MBSSID_ENABLED ||
+				hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED ||
+				(hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
+				 params->mbssid.mbssid_elem_count == 1);
+		}
+	}
+
+	/*
+	 * Update the these specific bits in extended capablility and
+	 * MBSSID configuration elements after constructing entire MBSSID
+	 * element.
+	 */
+	if ((hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED) &&
+	    complete_nontx_prof_list && !complete)
+		/* Bit 80 - Complete List of NonTxBSSID Profiles */
+		*complete_nontx_prof_list &= ~0x01;
+
+	if (mbssid_cfg_periodicity)
+		*mbssid_cfg_periodicity = params->mbssid.mbssid_elem_count;
 
 	if (hapd->conf->mld_ap && elemid_modified)
 		params->elemid_modified_bmap |= BIT(hostapd_mbssid_get_bss_index(tx_bss));
