@@ -2461,7 +2461,7 @@ static int hostapd_ctrl_iface_disable(struct hostapd_iface *iface)
 }
 
 
-static int hostapd_ctrl_iface_disable_bss(struct hostapd_data *hapd)
+static int hostapd_ctrl_iface_disable_bss(struct hostapd_data *hapd, int tbtt)
 {
 	size_t i;
 
@@ -2490,7 +2490,7 @@ static int hostapd_ctrl_iface_disable_bss(struct hostapd_data *hapd)
 				if (bss == hapd)
 					continue;
 
-				hostapd_disable_bss(bss);
+				hostapd_disable_bss(bss, tbtt);
 			}
 		}
 	} else {
@@ -2500,12 +2500,12 @@ static int hostapd_ctrl_iface_disable_bss(struct hostapd_data *hapd)
 			if (bss == hapd)
 				continue;
 
-			hostapd_disable_bss(bss);
+			hostapd_disable_bss(bss, tbtt);
 		}
 	}
 
 disable_bss:
-	hostapd_disable_bss(hapd);
+	hostapd_disable_bss(hapd, tbtt);
 
 	return 0;
 }
@@ -5976,7 +5976,7 @@ static int hostapd_ctrl_iface_link_remove(struct hostapd_data *hapd, char *cmd,
 		return -1;
 	}
 
-	ret = hostapd_link_remove(hapd, count);
+	ret = hostapd_link_remove(hapd, count, HAPD_LINK_DISABLE);
 	if (ret == 0) {
 		ret = os_snprintf(buf, buflen, "%s\n", "OK");
 		if (os_snprintf_error(buflen, ret))
@@ -7646,8 +7646,17 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strcmp(buf, "ENABLE") == 0) {
 		if (hostapd_ctrl_iface_enable(hapd->iface))
 			reply_len = -1;
-	} else if (os_strcmp(buf, "DISABLE_BSS") == 0) {
-		if (hostapd_ctrl_iface_disable_bss(hapd))
+	} else if (os_strncmp(buf, "DISABLE_BSS", 11) == 0) {
+		int tbtt = -1;
+		const char *pos = buf + 11;
+
+		/* Parse optional argument: DISABLE_BSS [tbtt] */
+		if (*pos == ' ') {
+			pos++;
+			if (*pos)
+				tbtt = atoi(pos);
+		}
+		if (hostapd_ctrl_iface_disable_bss(hapd, tbtt))
 			reply_len = -1;
 	} else if (os_strcmp(buf, "ENABLE_BSS") == 0) {
 		if (hostapd_ctrl_iface_enable_bss(hapd))
