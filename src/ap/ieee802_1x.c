@@ -171,6 +171,11 @@ static void ieee802_1x_ml_set_sta_authorized(struct hostapd_data *hapd,
 		if (!hostapd_is_ml_partner(hapd, tmp_hapd))
 			continue;
 
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(tmp_hapd->conf))
+			continue;
+#endif /* CONFIG_QCN_EXTN */
+
 		link = &sta->mld_info.links[tmp_hapd->mld_link_id];
 		if (!link->valid)
 			continue;

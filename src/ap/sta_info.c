@@ -83,6 +83,13 @@ struct hostapd_ft_over_ds_ml_sta_entry *ap_get_ft_ds_ml_sta(struct hostapd_data 
 		return NULL;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		wpa_printf(MSG_ERROR, "Repurposed BSS can't have ml_sta\n");
+		return NULL;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	if (!sta)
 		return NULL;
 
@@ -464,6 +471,11 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 		if (hapd->conf->mld_ap)
 			ifname_id = sta->wds_ifname_id;
 
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+			aid = sta->aid;
+#endif /* CONFIG_QCN_EXTN */
+
 		if (ap_sta_is_mld(hapd, sta)) {
 			struct hostapd_data *phapd;
 			struct sta_info *psta;
@@ -632,6 +644,12 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 		if (!vlan_bss)
 			vlan_bss = hapd;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf) ||
+	    hostapd_is_repurpose_disabled_11be_extn(vlan_bss->conf))
+		vlan_bss = hapd;
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 	/*
 	 * sta->wpa_sm->group needs to be released before so that
