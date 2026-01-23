@@ -488,8 +488,14 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 	 */
 	driver_acl = hapd->iface->drv_max_acl_mac_addrs > 0;
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap)
 		driver_acl = false;
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 	if (!driver_acl &&
 	    hostapd_check_acl(hapd, addr, NULL) != HOSTAPD_ACL_ACCEPT) {
@@ -505,13 +511,18 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 	 * For each peer link address, check the corresponding association
 	 * local link's ACL configuration whether it is acceptable.
 	 */
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (!driver_acl && hapd->conf->mld_ap) {
 		if (hostapd_check_ml_acl(hapd, sta) != HOSTAPD_ACL_ACCEPT) {
 			reason = WLAN_REASON_UNSPECIFIED;
 			goto fail;
 		}
 	}
-
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 	if (hostapd_ubus_handle_event(hapd, &req)) {
@@ -1054,6 +1065,11 @@ void hostapd_notif_disassoc_mld(struct hostapd_data *assoc_hapd,
 		    !hostapd_is_ml_partner(assoc_hapd, tmp_hapd))
 			continue;
 
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(tmp_hapd->conf))
+			continue;
+#endif
+
 		tmp_sta = ap_get_sta(tmp_hapd, addr);
 		if (tmp_sta)
 			ap_free_sta(tmp_hapd, tmp_sta);
@@ -1103,6 +1119,11 @@ void hostapd_notif_disassoc(struct hostapd_data *hapd, const u8 *addr)
 				if (!hconf->mld_ap ||
 				    !hostapd_is_ml_partner(hapd, h_hapd))
 					continue;
+
+#ifdef CONFIG_QCN_EXTN
+				if (hostapd_is_repurpose_disabled_11be_extn(h_hapd->conf))
+					continue;
+#endif /* CONFIG_QCN_EXTN */
 
 				sta = ap_get_sta(h_hapd, addr);
 				if (sta) {

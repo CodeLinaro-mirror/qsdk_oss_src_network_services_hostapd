@@ -4566,13 +4566,19 @@ static int wpa_ft_send_rrb_auth_resp(struct wpa_state_machine *sm,
 	rlen = 2 + 2 * ETH_ALEN + 2 + resp_ies_len;
 
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (is_mld) {
 		ml_resp = hostapd_ml_auth_resp(hapd);
 		if (!ml_resp)
 			return -1;
 		rlen += wpabuf_len(ml_resp);
 	}
-#endif
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
+#endif /* CONFIG_QCN_EXTN */
 
 	frame = os_malloc(sizeof(*frame) + rlen);
 	if (frame == NULL)

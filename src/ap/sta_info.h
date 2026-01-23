@@ -530,7 +530,14 @@ static inline bool ap_sta_is_mld(struct hostapd_data *hapd,
 				 struct sta_info *sta)
 {
 #ifdef CONFIG_IEEE80211BE
-	return hapd->conf->mld_ap && sta && sta->mld_info.mld_sta;
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
+	return (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta);
+#ifdef CONFIG_QCN_EXTN
+	} else
+		return false;
+#endif /* CONFIG_QCN_EXTN */
 #else /* CONFIG_IEEE80211BE */
 	return false;
 #endif /* CONFIG_IEEE80211BE */
