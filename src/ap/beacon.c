@@ -723,27 +723,6 @@ static size_t he_elem_len(struct hostapd_data *hapd)
 }
 
 
-struct probe_resp_params {
-	const struct ieee80211_mgmt *req;
-	bool is_p2p;
-
-	/* Generated IEs will be included inside an ML element */
-	struct hostapd_data *mld_ap;
-	struct mld_info *mld_info;
-
-	struct ieee80211_mgmt *resp;
-	size_t resp_len;
-	u8 *csa_pos;
-	u8 *ecsa_pos;
-	const u8 *known_bss;
-	u8 known_bss_len;
-
-#ifdef CONFIG_IEEE80211AX
-	u8 *cca_pos;
-#endif /* CONFIG_IEEE80211AX */
-};
-
-
 static void hostapd_free_probe_resp_params(struct probe_resp_params *params)
 {
 #ifdef CONFIG_IEEE80211BE
@@ -892,6 +871,176 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 	buflen += hostapd_esp_ie_len_extn(hapd);
 
 	return buflen;
+}
+
+int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
+					    struct probe_resp_params *nontx_probe_params)
+{
+	u8 *pos, *start_pos, *epos;
+	size_t buflen;
+
+#define MBSSID_NONTX_PROBE_RESP_LEN 600
+	buflen = MBSSID_NONTX_PROBE_RESP_LEN;
+
+#ifdef CONFIG_WPS
+	if (hapd->wps_probe_resp_ie)
+		buflen += wpabuf_len(hapd->wps_probe_resp_ie);
+#endif /* CONFIG_WPS */
+
+#ifdef CONFIG_P2P
+	if (hapd->p2p_probe_resp_ie)
+		buflen += wpabuf_len(hapd->p2p_probe_resp_ie);
+#endif /* CONFIG_P2P */
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
+		/* TTLM IE */
+		if (hapd->mld &&
+		    hapd->mld->ttlm_ctx.established_ttlm.ttlm.expected_duration_present)
+			buflen += hostapd_get_ttlm_elem_len(&hapd->mld->ttlm_ctx.established_ttlm.ttlm);
+		if (hapd->mld &&
+		    hapd->mld->ttlm_ctx.upcoming_ttlm.ttlm.mapping_switch_time_present)
+			buflen += hostapd_get_ttlm_elem_len(&hapd->mld->ttlm_ctx.upcoming_ttlm.ttlm);
+	}
+
+#endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_FST
+	if (hapd->iface->fst_ies)
+		buflen += wpabuf_len(hapd->iface->fst_ies);
+#endif /* CONFIG_FST */
+
+	buflen += hostapd_mbo_ie_len(hapd);
+	buflen += hostapd_eid_owe_trans_len(hapd);
+	buflen += hostapd_eid_dpp_cc_len(hapd);
+	buflen += hostapd_get_rsne_override_len(hapd);
+	buflen += hostapd_get_rsne_override_2_len(hapd);
+	buflen += hostapd_get_rsnxe_override_len(hapd);
+	buflen += hostapd_wfa_cap_ie_len(hapd, NULL);
+	buflen += hostapd_esp_ie_len_extn(hapd);
+
+	nontx_probe_params->resp = os_zalloc(buflen);
+	if (!nontx_probe_params->resp) {
+		nontx_probe_params->resp_len = 0;
+		return -1;
+	}
+
+	start_pos = pos = nontx_probe_params->resp->u.probe_resp.variable;
+	epos = pos + buflen;
+
+	/* Supported rates */
+	pos = hostapd_eid_supp_rates(hapd, pos);
+
+	/* Power Constraint */
+	pos = hostapd_eid_pwr_constraint(hapd, pos);
+
+	/* Extended supported rates */
+	pos = hostapd_eid_ext_supp_rates(hapd, pos);
+
+	/* RSN, BSS Load, RRM capabilities, MDE */
+	pos = hostapd_get_rsne(hapd, pos, epos - pos);
+	pos = hostapd_eid_bss_load(hapd, pos, epos - pos);
+	pos = hostapd_eid_rm_enabled_capab(hapd, pos, epos - pos);
+	pos = hostapd_get_mde(hapd, pos, epos - pos);
+
+	/* Extended capabilities (gate for MBSSID and known BSS list) */
+	pos = hostapd_eid_ext_capab(hapd, pos,
+				    hapd->iconf->mbssid >= MBSSID_ENABLED &&
+				    !nontx_probe_params->known_bss_len);
+
+	/* Time Advertisement & Time Zone */
+	pos = hostapd_eid_time_adv(hapd, pos);
+	pos = hostapd_eid_time_zone(hapd, pos);
+
+	/* Interworking/ANQP */
+	pos = hostapd_eid_interworking(hapd, pos);
+	pos = hostapd_eid_adv_proto(hapd, pos);
+	pos = hostapd_eid_roaming_consortium(hapd, pos);
+
+#ifdef CONFIG_FST
+	if (hapd->iface->fst_ies) {
+		os_memcpy(pos, wpabuf_head(hapd->iface->fst_ies),
+			  wpabuf_len(hapd->iface->fst_ies));
+		pos += wpabuf_len(hapd->iface->fst_ies);
+	}
+#endif /* CONFIG_FST */
+
+	/* FILS indication */
+	pos = hostapd_eid_fils_indic(hapd, pos, 0);
+
+	/* RSNXE */
+	pos = hostapd_get_rsnxe(hapd, pos, epos - pos);
+
+#ifdef CONFIG_IEEE80211AX
+	if (hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax)
+		pos = hostapd_eid_he_mu_edca_parameter_set(hapd, pos, false);
+#endif /* CONFIG_IEEE80211AX */
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
+		if (hapd->mld &&
+		    hapd->mld->ttlm_ctx.established_ttlm.ttlm.expected_duration_present)
+			pos = hostapd_add_ttlm_info_elem(pos,
+							 &hapd->mld->ttlm_ctx.established_ttlm.ttlm,
+							 hapd);
+
+		if (hapd->mld &&
+		    hapd->mld->ttlm_ctx.upcoming_ttlm.ttlm.mapping_switch_time_present)
+			pos = hostapd_add_ttlm_info_elem(pos,
+							 &hapd->mld->ttlm_ctx.upcoming_ttlm.ttlm,
+							 hapd);
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	/* WPA (legacy) */
+	pos = hostapd_get_wpa_ie(hapd, pos, epos - pos);
+
+	/* WFA capability IE */
+	pos = hostapd_add_wfa_cap_ie(hapd, NULL, pos);
+
+#ifdef CONFIG_WPS
+	if (hapd->conf->wps_state && hapd->wps_probe_resp_ie) {
+		os_memcpy(pos, wpabuf_head(hapd->wps_probe_resp_ie),
+			  wpabuf_len(hapd->wps_probe_resp_ie));
+		pos += wpabuf_len(hapd->wps_probe_resp_ie);
+	}
+#endif /* CONFIG_WPS */
+
+#ifdef CONFIG_P2P
+	if ((hapd->conf->p2p & P2P_ENABLED) &&
+	    nontx_probe_params->is_p2p &&
+	    hapd->p2p_probe_resp_ie) {
+		os_memcpy(pos, wpabuf_head(hapd->p2p_probe_resp_ie),
+			  wpabuf_len(hapd->p2p_probe_resp_ie));
+		pos += wpabuf_len(hapd->p2p_probe_resp_ie);
+	}
+#endif /* CONFIG_P2P */
+
+#ifdef CONFIG_P2P_MANAGER
+	if ((hapd->conf->p2p & (P2P_MANAGE | P2P_ENABLED | P2P_GROUP_OWNER)) ==
+	    P2P_MANAGE)
+		pos = hostapd_eid_p2p_manage(hapd, pos);
+#endif /* CONFIG_P2P_MANAGER */
+
+#ifdef CONFIG_HS20
+	pos = hostapd_eid_hs20_indication(hapd, pos);
+#endif /* CONFIG_HS20 */
+
+	/* MBO, OWE transition, DPP channel config */
+	pos = hostapd_eid_mbo(hapd, pos, epos - pos);
+	pos = hostapd_eid_owe_trans(hapd, pos, epos - pos);
+	pos = hostapd_eid_dpp_cc(hapd, pos, epos - pos);
+
+	/* RSN overrides */
+	pos = hostapd_get_rsne_override(hapd, pos, epos - pos);
+	pos = hostapd_get_rsne_override_2(hapd, pos, epos - pos);
+	pos = hostapd_get_rsnxe_override(hapd, pos, epos - pos);
+
+	buflen = pos > start_pos ? pos - start_pos : 0;
+
+	/* Final length */
+	nontx_probe_params->resp_len = pos - (u8 *) nontx_probe_params->resp;
+	return 0;
 }
 
 
