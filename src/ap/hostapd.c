@@ -5793,9 +5793,13 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 
 		/* Save one of the partner bss to update the beacon */
 		if (hapd->conf->mld_ap) {
-			for_each_mld_link(phapd, hapd) {
-				if (phapd != hapd && phapd->started)
-					break;
+			struct hostapd_data *tmp;
+
+			for_each_mld_link(tmp, hapd) {
+				if (tmp == hapd || !tmp->started)
+					continue;
+				phapd = tmp;
+				break;
 			}
 		}
 		active_links = hostapd_get_active_links(hapd);
