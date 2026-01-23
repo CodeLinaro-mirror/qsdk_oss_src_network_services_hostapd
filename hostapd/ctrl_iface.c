@@ -2461,6 +2461,55 @@ static int hostapd_ctrl_iface_disable(struct hostapd_iface *iface)
 }
 
 
+static int hostapd_ctrl_iface_disable_bss(struct hostapd_data *hapd)
+{
+	size_t i;
+
+	if (!hapd->started) {
+		wpa_printf(MSG_INFO, "BSS %s already disabled",
+			   hapd->conf->iface);
+		return -1;
+	}
+
+	if (hapd->iface->conf->mbssid == MBSSID_DISABLED)
+		goto disable_bss;
+
+	if (hapd != hostapd_mbssid_get_tx_bss(hapd))
+		goto disable_bss;
+
+	/* If this is the TX-BSS of an MBSSID setup, disable all
+	 * associated non-TX BSSes first.
+	 */
+	if (hapd->iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
+		struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
+		struct hostapd_data *bss, *tmp;
+
+		if (group) {
+			dl_list_for_each_safe(bss, tmp, &group->bss_list,
+					      struct hostapd_data, mbssid_bss) {
+				if (bss == hapd)
+					continue;
+
+				hostapd_disable_bss(bss);
+			}
+		}
+	} else {
+		for (i = 0; i < hapd->iface->num_bss; i++) {
+			struct hostapd_data *bss = hapd->iface->bss[i];
+
+			if (bss == hapd)
+				continue;
+
+			hostapd_disable_bss(bss);
+		}
+	}
+
+disable_bss:
+	hostapd_disable_bss(hapd);
+
+	return 0;
+}
+
 static int
 hostapd_ctrl_iface_kick_mismatch_psk_sta_iter(struct hostapd_data *hapd,
 					      struct sta_info *sta, void *ctx)
@@ -7586,6 +7635,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 						   reply_size);
 	} else if (os_strcmp(buf, "ENABLE") == 0) {
 		if (hostapd_ctrl_iface_enable(hapd->iface))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "DISABLE_BSS") == 0) {
+		if (hostapd_ctrl_iface_disable_bss(hapd))
 			reply_len = -1;
 	} else if (os_strcmp(buf, "RELOAD_WPA_PSK") == 0) {
 		if (hostapd_ctrl_iface_reload_wpa_psk(hapd))
