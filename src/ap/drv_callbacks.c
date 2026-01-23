@@ -3200,6 +3200,10 @@ static void hostapd_mld_iface_enable(struct hostapd_data *hapd)
 		return;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	hostapd_notify_link_repurpose(first_link, "hostapd_mld_iface_enable");
+#endif /* CONFIG_QCN_EXTN */
+
 	hostapd_iface_enable(first_link);
 
 	/* Add other affiliated links */
@@ -3220,6 +3224,10 @@ static void hostapd_mld_iface_enable(struct hostapd_data *hapd)
 			continue;
 		}
 
+#ifdef CONFIG_QCN_EXTN
+		hostapd_notify_link_repurpose(link_bss,
+					      "hostapd_mld_iface_enable");
+#endif /* CONFIG_QCN_EXTN */
 		hostapd_iface_enable(link_bss);
 	}
 }
