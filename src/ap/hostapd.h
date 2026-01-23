@@ -1035,6 +1035,7 @@ int hostapd_enable_iface(struct hostapd_iface *hapd_iface);
 int hostapd_reload_iface(struct hostapd_iface *hapd_iface);
 int hostapd_reload_bss_only(struct hostapd_data *bss);
 int hostapd_disable_bss(struct hostapd_data *hapd);
+int hostapd_enable_bss(struct hostapd_data *hapd);
 int hostapd_disable_iface(struct hostapd_iface *hapd_iface);
 void hostapd_bss_deinit_no_free(struct hostapd_data *hapd);
 void hostapd_free_hapd_data(struct hostapd_data *hapd);
