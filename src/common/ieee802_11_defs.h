@@ -3383,16 +3383,6 @@ struct eht_ml_basic_common_info {
 #define ML_IE_MAX_SUPPORT_MAX_REC_LINKS			3
 #define ML_IE_MAX_REC_LINKS_INVAL			0xff
 
-#define EHT_PER_STA_CTRL_LINK_ID_MSK                  0x000f
-#define EHT_PER_STA_CTRL_COMPLETE_PROFILE_MSK         0x0010
-#define EHT_PER_STA_CTRL_MAC_ADDR_PRESENT_MSK         0x0020
-#define EHT_PER_STA_CTRL_BEACON_INTERVAL_PRESENT_MSK  0x0040
-#define EHT_PER_STA_CTRL_TSF_OFFSET_PRESENT_MSK       0x0080
-#define EHT_PER_STA_CTRL_DTIM_INFO_PRESENT_MSK        0x0100
-#define EHT_PER_STA_CTRL_NSTR_LINK_PAIR_PRESENT_MSK   0x0200
-#define EHT_PER_STA_CTRL_NSTR_BM_SIZE_MSK             0x0400
-#define EHT_PER_STA_CTRL_BSS_PARAM_CNT_PRESENT_MSK    0x0800
-
 /* IEEE Std 802.11be-2024, Figure 9-1074u - Per-STA Profile subelement format
  * of the Basic Multi-Link element*/
 struct ieee80211_eht_per_sta_profile {
