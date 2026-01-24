@@ -7836,6 +7836,11 @@ static int handle_action(struct hostapd_data *hapd,
 		ieee802_11_rx_protected_eht_action(hapd, sta, mgmt, len);
 		return 1;
 #endif /* CONFIG_IEEE80211BE */
+	default:
+#ifdef CONFIG_QCN_EXTN
+		if (handle_action_extn(hapd, mgmt, len, freq))
+			return 1;
+#endif /* CONFIG_QCN_EXTN */
 	}
 
 	hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,

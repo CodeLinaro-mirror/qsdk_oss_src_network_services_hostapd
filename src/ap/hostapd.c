@@ -1446,6 +1446,9 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 	iface->cac_started = 0;
 	ap_list_deinit(iface);
 	sta_track_deinit(iface);
+#ifdef CONFIG_QCN_EXTN
+	hostapd_uplink_cancel_disconnect_timeout_extn(iface);
+#endif /* CONFIG_QCN_EXTN */
 	airtime_policy_update_deinit(iface);
 
 #ifdef CONFIG_ATF_OFFLOAD
@@ -6987,6 +6990,9 @@ int hostapd_switch_channel(struct hostapd_data *hapd,
 		return -1;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	hostapd_uplink_cancel_disconnect_timeout_extn(hapd->iface);
+#endif /* CONFIG_QCN_EXTN */
 	cur_bandwidth = settings->freq_params.bandwidth;
 	oper_centr_freq0_idx = hostapd_get_oper_centr_freq_seg0_idx(hapd->iconf);
 

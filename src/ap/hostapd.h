@@ -778,6 +778,7 @@ struct hostapd_iface {
 #ifdef CONFIG_QCN_EXTN
 	/* Bitmask of used vendor BSSID indices (non-MBSSID) */
 	u32 vendor_bssid_used_mask;
+	u16 radar_bit_pattern_extn;
 #endif /* CONFIG_QCN_EXTN */
 
 	unsigned int wait_channel_update:1;
