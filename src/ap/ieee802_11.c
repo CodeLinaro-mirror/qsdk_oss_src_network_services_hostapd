@@ -5612,6 +5612,15 @@ out:
 			ap_free_sta(hapd, sta);
 		return -1;
 	}
+	/* if link sta removed and re-added again in reassoc,
+	 * link valid flag set to false during link removal in
+	 * ml_info in sta's sm. if links added successfully set
+	 * link valid true again in sta's wpa_sm for all valid links.
+	 */
+	origin_sta->wpa_sm->mld_links[hapd->mld_link_id].valid =
+			origin_sta->mld_info.links[hapd->mld_link_id].valid;
+	origin_sta->wpa_sm->mld_links[hapd->mld_link_id].rejected = false;
+	origin_sta->wpa_sm->mld_links[hapd->mld_link_id].wpa_auth = origin_sta->wpa_sm->wpa_auth;
 
 	return 0;
 }
