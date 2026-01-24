@@ -4822,7 +4822,13 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		if (resp != WLAN_STATUS_SUCCESS)
 			goto out;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (is_mu_cap_war_active(hapd) && is_sta_vht_only(sta))
+		hostapd_mu_cap_war_client_cap_extn(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211AC */
+
 #ifdef CONFIG_IEEE80211AX
 	if (hostapd_is_he_enabled(hapd)) {
 		resp = copy_sta_he_capab(hapd, sta, IEEE80211_MODE_AP,
@@ -8254,6 +8260,11 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		       HOSTAPD_LEVEL_INFO,
 		       "associated (aid %d)",
 		       sta->aid);
+
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
+	if (is_mu_cap_war_active(hapd) && is_sta_vht_only(sta))
+		hostapd_mu_cap_war_mu_state_changed_extn(hapd);
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 
 	if (sta->flags & WLAN_STA_ASSOC)
 		new_assoc = 0;

@@ -62,6 +62,7 @@
 #include "interference.h"
 #include "robust_av.h"
 #include "atf/atf_offload.h"
+#include "../../qcn_extns/cmn.h"
 
 static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason);
 #ifdef CONFIG_WEP
@@ -1318,6 +1319,10 @@ remove_if:
 	eloop_cancel_timeout(hostapd_ocv_check_csa_sa_query, hapd, NULL);
 #endif /* CONFIG_OCV */
 
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
+	eloop_cancel_timeout(hostapd_mu_cap_war_kickout_timer_extn,
+			     hapd, NULL);
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 #ifdef CONFIG_SAE
 	{
 		struct hostapd_sae_commit_queue *q;
@@ -1427,6 +1432,10 @@ static void hostapd_cleanup(struct hostapd_data *hapd)
 #ifdef CONFIG_HOSTAPD_IF
 	hostapd_if_interface_remove(hapd);
 #endif
+
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
+	hostapd_mu_cap_war_sta_list_flush_extn(hapd);
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 	hostapd_free_hapd_data(hapd);
 }
 
@@ -2536,6 +2545,10 @@ setup_mld:
 			   hapd->cca_count :
 			   HE_BSS_COLOR_CCA_COUNT_DEFAULT;
 #endif
+
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
+	hostapd_mu_cap_war_state_init_extn(hapd);
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 
 	/* If TX BSS is already beaconing, update it with newly added profile
 	 */
@@ -7216,6 +7229,10 @@ void hostapd_periodic_iface(struct hostapd_iface *iface)
 
 #ifndef CONFIG_NO_RADIUS
 		hostapd_acl_expire(hapd);
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
+		if (is_mu_cap_war_active(hapd))
+			hostapd_mu_cap_war_expire_queries(hapd);
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 #endif /* CONFIG_NO_RADIUS */
 	}
 }
