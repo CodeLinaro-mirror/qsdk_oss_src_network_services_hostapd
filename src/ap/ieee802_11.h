@@ -48,9 +48,10 @@ enum link_parse_type {
 };
 
 #define LINK_RECONF_GROUP_KDE_MAX_LEN 255
-/* size in bytes */
-#define MBSSID_NONTX_OPTIONAL_ELEM_SIZE  128
-#define MBSSID_NONTX_VENDOR_ELEM_SIZE  80
+
+#define MBSSID_NON_TX_OPTIONAL_ELEM_SIZE  160
+#define MBSSID_NON_TX_VENDOR_ELEM_SIZE 70
+#define MAX_MBSSID_NONINHERIT_ELEM_SIZE 100
 
 struct link_reconf_req_info {
 	struct dl_list list;
@@ -603,4 +604,18 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 			   u16 auth_alg, u16 auth_transaction, u16 resp,
 			   const u8 *ies, size_t ies_len, const char *dbg);
 int start_unsolicited_sa_query(struct hostapd_data *hapd, struct sta_info *sta);
+
+struct non_inheritance_elem {
+	u8 elem_list[MAX_MBSSID_NONINHERIT_ELEM_SIZE];
+	u8 ext_elem_list[MAX_MBSSID_NONINHERIT_ELEM_SIZE];
+	u8 ext_elem_len;
+	u8 elem_len;
+};
+
+u8 * hostapd_eid_mbssid_nontx_optional_ie(struct hostapd_data *bss,
+					  void *tx_params,
+					  struct non_inheritance_elem *non_inherit_ie,
+					  u8 *eid, ssize_t *nontx_prof_len,
+					  u8 frame_type);
+
 #endif /* IEEE802_11_H */
