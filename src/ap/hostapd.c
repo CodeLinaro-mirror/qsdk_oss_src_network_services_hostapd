@@ -5943,9 +5943,149 @@ fail:
 }
 
 
+static bool hostapd_iface_in_pre_beacon_state(struct hostapd_iface *iface)
+{
+	switch (iface->state) {
+	case HAPD_IFACE_ACS:
+	case HAPD_IFACE_DFS:
+	case HAPD_IFACE_HT_SCAN:
+	case HAPD_IFACE_COUNTRY_UPDATE:
+		return true;
+	default:
+		break;
+	}
+
+	return false;
+}
+
+
+static int hostapd_prepare_successor_pre_beacon(struct hostapd_iface *iface)
+{
+	struct hostapd_data *bss_succ;
+	char force_ifname[IFNAMSIZ];
+	u8 if_addr[ETH_ALEN];
+	u8 *addr;
+#ifdef CONFIG_IEEE80211BE
+	bool iface_added = false;
+#endif /* CONFIG_IEEE80211BE */
+
+	if (iface->num_bss < 2)
+		return -1;
+
+	bss_succ = iface->bss[1];
+	/*
+	 * Nothing to do if there is no successor BSS
+	 * or it already owns driver ctx.
+	 */
+	if (!bss_succ)
+		return -1;
+
+	if (bss_succ->drv_priv != NULL &&
+	    bss_succ->drv_priv != iface->bss[0]->drv_priv)
+		return 0;
+
+	addr = bss_succ->own_addr;
+	wpa_printf(MSG_INFO, "iface is in pre-beacon state, prepare successor BSS");
+	if (!is_zero_ether_addr(bss_succ->conf->bssid)) {
+		os_memcpy(bss_succ->own_addr, bss_succ->conf->bssid, ETH_ALEN);
+
+		if (hostapd_mac_comp(bss_succ->own_addr,
+				     bss_succ->iface->bss[0]->own_addr) == 0) {
+			wpa_printf(MSG_ERROR, "BSS '%s' may not have BSSID set to the MAC address of the radio",
+				   bss_succ->conf->iface);
+			return -1;
+		}
+	} else if (bss_succ->iconf->use_driver_iface_addr) {
+		addr = NULL;
+#ifdef CONFIG_QCN_EXTN
+	} else if (bss_succ->iconf->use_driver_vendor_addr) {
+		addr = NULL;
+#endif /* CONFIG_QCN_EXTN */
+	} else {
+		/* Allocate the next available BSSID. */
+		do {
+			inc_byte_array(bss_succ->own_addr, ETH_ALEN);
+		} while (mac_in_conf(bss_succ->iconf, bss_succ->own_addr));
+	}
+
+#ifdef CONFIG_IEEE80211BE
+	if (bss_succ->conf->mld_ap) {
+		struct hostapd_data *h_hapd;
+
+		h_hapd = hostapd_mld_get_first_bss(bss_succ);
+		if (h_hapd) {
+			bss_succ->drv_priv = h_hapd->drv_priv;
+			bss_succ->interface_added = h_hapd->interface_added;
+			wpa_printf(MSG_DEBUG,
+				   "Setup of non first link (%d) BSS of MLD %s",
+				   bss_succ->mld_link_id, bss_succ->conf->iface);
+			goto setup_mld;
+		}
+
+		iface_added = true;
+		if (!is_zero_ether_addr(bss_succ->conf->mld_addr))
+			addr = bss_succ->conf->mld_addr;
+		else if (bss_succ->iconf->use_driver_iface_addr)
+			addr = NULL;
+		else
+			addr = bss_succ->own_addr;
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	bss_succ->interface_added = 1;
+	if (hostapd_if_add(iface->bss[0], WPA_IF_AP_BSS,
+			   bss_succ->conf->iface, addr, bss_succ,
+			   &bss_succ->drv_priv, force_ifname,
+			   if_addr, bss_succ->conf->bridge[0] ?
+			   bss_succ->conf->bridge : NULL, 1,
+			   bss_succ->conf->ppe_vp_type)) {
+		wpa_printf(MSG_WARNING,
+			   "Failed to add successor BSS (BSSID=" MACSTR ")",
+			   MAC2STR(bss_succ->own_addr));
+		bss_succ->interface_added = 0;
+		return -1;
+	}
+
+	if (!addr)
+		os_memcpy(bss_succ->own_addr, if_addr, ETH_ALEN);
+
+#ifdef CONFIG_IEEE80211BE
+	if (bss_succ->conf->mld_ap) {
+		wpa_printf(MSG_DEBUG, "Setup of first link (%d) BSS of MLD %s",
+			   bss_succ->mld_link_id, bss_succ->conf->iface);
+		os_memcpy(bss_succ->mld->mld_addr, addr ? addr : if_addr,
+			  ETH_ALEN);
+setup_mld:
+		wpa_printf(MSG_DEBUG,
+			   "MLD: Set link_id=%u, mld_addr=" MACSTR
+			   ", own_addr=" MACSTR, bss_succ->mld_link_id,
+			   MAC2STR(bss_succ->mld->mld_addr),
+			   MAC2STR(bss_succ->own_addr));
+		if (hostapd_drv_link_add(bss_succ, bss_succ->mld_link_id,
+					 bss_succ->own_addr)) {
+			wpa_printf(MSG_ERROR,
+				   "MLD: Failed to add link %d in MLD %s",
+				   bss_succ->mld_link_id, bss_succ->conf->iface);
+			if (iface_added)
+				hostapd_if_remove(bss_succ, WPA_IF_AP_BSS,
+						  bss_succ->conf->iface);
+			bss_succ->interface_added = 0;
+			bss_succ->drv_priv = NULL;
+			return -1;
+		}
+		hostapd_mld_add_link(bss_succ);
+		hostapd_validate_update_ml_max_rec_links(bss_succ);
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	return 0;
+}
+
+
 int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 {
 	size_t i;
+	bool successor_prepared = false;
 
 	wpa_printf(MSG_INFO, "Remove BSS '%s'", iface->conf->bss[idx]->iface);
 
@@ -5986,19 +6126,24 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 
 		if (hapd->iface->bss[0] == hapd) {
 			/*
-			 * If there is no other BSS available to take over the
-			 * driver context (i.e., the driver context is not
-			 * shared), remove the entire interface.
+			 * If the First BSS is being removed while the interface is
+			 * in a pre‑beacon state (ACS/DFS/HT scan/country update),
+			 * the driver context may not be fully initialized yet.
+			 * In such cases, successor BSS #1 must be minimally prepared
+			 * so that hostapd’s internal iface model and driver link
+			 * state remain consistent during the transition.
 			 */
-#ifdef CONFIG_IEEE80211BE
-			if (hapd->drv_priv &&
-			    !hapd->driver->is_drv_shared(hapd->drv_priv, hapd->mld_link_id)) {
-				if (hostapd_remove_hapd_iface(iface) == 0)
-					return 1;
-				else
-					return -1;
+			if (hostapd_iface_in_pre_beacon_state(iface) &&
+			    iface->num_bss > 1) {
+				if (hostapd_prepare_successor_pre_beacon(iface) == 0)
+					successor_prepared = true;
+				else {
+					wpa_printf(MSG_ERROR,
+						   "iface is in pre-beacon state & initialization of successor BSS failed. Hence, removing iface");
+					return hostapd_remove_hapd_iface(iface);
+				}
 			}
-
+#ifdef CONFIG_IEEE80211BE
 			/* If first bss is removed, if_link_remove/hostapd_if_remove
 			 * will not be called in hostapd_remove_bss, hence call
 			 * hostapd_if_remove/hostapd_if_link_remove
@@ -6042,6 +6187,16 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 	iface->conf->num_bss--;
 	for (i = idx; i < iface->conf->num_bss; i++)
 		iface->conf->bss[i] = iface->conf->bss[i + 1];
+
+	if (successor_prepared) {
+		wpa_printf(MSG_INFO,
+			   "Complete setup for successor bss of the pre_beacon_state iface");
+		if (hostapd_setup_interface(iface)) {
+			wpa_printf(MSG_ERROR,
+				   "setup for successor bss of the pre_beacon_state iface BSS failed. Hence, removing iface");
+			return hostapd_remove_hapd_iface(iface);
+		}
+	}
 
 	return 0;
 }
@@ -6247,8 +6402,6 @@ int hostapd_remove_iface(struct hapd_interfaces *interfaces, char *buf)
 	refresh_ref = bss->iface;
 	ret = hostapd_remove_bss(bss->iface, hostapd_get_bss_index(bss));
 
-	if (ret == 1)
-		return 0;
 refresh_beacon:
 	if (ret == 0 && refresh_ref) {
 		if (iface_remove)
