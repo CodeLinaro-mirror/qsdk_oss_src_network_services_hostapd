@@ -14113,6 +14113,11 @@ static bool hostapd_mbssid_mld_match(struct hostapd_data *tx_hapd,
 	if (!ml_hapd->conf->mld_ap)
 		return false;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(ml_hapd->conf))
+		return false;
+#endif /* CONFIG_QCN_EXTN */
+
 	if (!tx_hapd->iconf->mbssid || tx_hapd->iface->num_bss <= 1) {
 		if (hostapd_is_ml_partner(tx_hapd, ml_hapd)) {
 			if (match_idx)
@@ -14136,6 +14141,10 @@ static bool hostapd_mbssid_mld_match(struct hostapd_data *tx_hapd,
 			continue;
 
 		if (hostapd_is_ml_partner(bss, ml_hapd)) {
+#ifdef CONFIG_QCN_EXTN
+			if (hostapd_is_repurpose_disabled_11be_extn(bss->conf))
+				continue;
+#endif /* CONFIG_QCN_EXTN */
 			if (match_idx)
 				*match_idx = bss->mbssid_idx;
 			return true;
@@ -14160,7 +14169,13 @@ static bool hostapd_skip_rnr(size_t i, struct mbssid_ie_profiles *skip_profiles,
 	bool reporting_ap_mld = false;
 
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	reporting_ap_mld =
+		(reporting_hapd->conf->mld_ap &&
+		 !hostapd_is_repurpose_disabled_11be_extn(reporting_hapd->conf));
+#else
 	reporting_ap_mld = !!reporting_hapd->conf->mld_ap;
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 	if (!mld_update && skip_profiles &&
@@ -14181,7 +14196,12 @@ static bool hostapd_skip_rnr(size_t i, struct mbssid_ie_profiles *skip_profiles,
 #ifdef CONFIG_IEEE80211BE
 	/* If building for co-location and they are ML partners, no need to
 	 * include since the ML RNR will carry this. */
-	if (!mld_update && hostapd_is_ml_partner(reporting_hapd, bss))
+	if (!mld_update &&
+#ifdef CONFIG_QCN_EXTN
+	    !hostapd_is_repurpose_disabled_11be_extn(reporting_hapd->conf) &&
+	    !hostapd_is_repurpose_disabled_11be_extn(bss->conf) &&
+#endif /* CONFIG_QCN_EXTN */
+	    hostapd_is_ml_partner(reporting_hapd, bss))
 		return true;
 
 	/* If building for ML RNR and they are not ML partners, don't include.
@@ -14234,7 +14254,12 @@ static bool hostapd_rnr_get_bss_info(struct hostapd_data *hapd,
 		return false;
 
 #ifdef CONFIG_IEEE80211BE
-	ap_mld = !!bss->conf->mld_ap;
+#ifdef CONFIG_QCN_EXTN
+	ap_mld = (bss->conf->mld_ap &&
+		  !hostapd_is_repurpose_disabled_11be_extn(bss->conf));
+#else
+	ap_mld = bss->conf->mld_ap;
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 	/* MLD RNR has to be included for the parameter change count */
@@ -14292,7 +14317,12 @@ hostapd_eid_rnr_iface_len(struct hostapd_data *hapd,
 	bool *tbtt_added = NULL;
 
 #ifdef CONFIG_IEEE80211BE
+	#ifdef CONFIG_QCN_EXTN
+	reporting_ap_mld = (reporting_hapd->conf->mld_ap &&
+			    !hostapd_is_repurpose_disabled_11be_extn(reporting_hapd->conf));
+	#else
 	reporting_ap_mld = !!reporting_hapd->conf->mld_ap;
+	#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 repeat_rnr_len:
@@ -14541,8 +14571,12 @@ size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
 	}
 
 	/* For EMA Beacons, MLD neighbor repoting is added as part of
-	 * MBSSID RNR. */
+	 * MBSSID RNR. For repurposed link under MLD, skip adding ML TBTT.
+	 */
 	if (include_mld_params &&
+#ifdef CONFIG_QCN_EXTN
+	    !hostapd_is_repurpose_disabled_11be_extn(hapd->conf) &&
+#endif /* CONFIG_QCN_EXTN */
 	    (type != WLAN_FC_STYPE_BEACON ||
 	     hapd->iconf->mbssid != ENHANCED_MBSSID_ENABLED))
 		total_len += hostapd_eid_rnr_mlo_len(hapd, type, NULL,
@@ -14683,7 +14717,12 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 		return false;
 
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	ap_mld = (bss->conf->mld_ap &&
+		  !hostapd_is_repurpose_disabled_11be_extn(bss->conf));
+#else
 	ap_mld = !!bss->conf->mld_ap;
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 	if (*len + tbtt_info_len > 255 ||
@@ -14809,7 +14848,13 @@ static u8 * hostapd_eid_rnr_iface(struct hostapd_data *hapd,
 		return eid;
 
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	reporting_ap_mld =
+		(reporting_hapd->conf->mld_ap &&
+		 !hostapd_is_repurpose_disabled_11be_extn(reporting_hapd->conf));
+#else
 	reporting_ap_mld = !!reporting_hapd->conf->mld_ap;
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 repeat_rnr:
@@ -15019,8 +15064,12 @@ u8 * hostapd_eid_rnr(struct hostapd_data *hapd, u8 *eid, u32 type,
 	}
 
 	/* For EMA Beacons, MLD neighbor repoting is added as part of
-	 * MBSSID RNR. */
+	 * MBSSID RNR. Skip including MLD TBTT if repurposed to lower mode
+	 */
 	if (include_mld_params &&
+#ifdef CONFIG_QCN_EXTN
+	    !hostapd_is_repurpose_disabled_11be_extn(hapd->conf) &&
+#endif /* CONFIG_QCN_EXTN */
 	    (type != WLAN_FC_STYPE_BEACON ||
 	     hapd->iconf->mbssid != ENHANCED_MBSSID_ENABLED))
 		eid = hostapd_eid_rnr_mlo(hapd, type, eid, NULL, &current_len);
