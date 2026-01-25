@@ -1989,8 +1989,11 @@ int wpas_wps_scan_pbc_overlap(struct wpa_supplicant *wpa_s,
 	wps_ie = wpa_bss_get_vendor_ie_multi(selected, WPS_IE_VENDOR_TYPE);
 	if (wps_ie) {
 		sel_uuid = wps_get_uuid_e(wps_ie);
-		wpa_hexdump(MSG_DEBUG, "WPS: UUID of the selected BSS",
-			    sel_uuid, UUID_LEN);
+		if (sel_uuid == NULL)
+			wpa_printf(MSG_ERROR, "wps_ie parsing failed");
+		else
+			wpa_hexdump(MSG_DEBUG, "WPS: UUID of the selected BSS",
+				    sel_uuid, UUID_LEN);
 	} else {
 		wpa_printf(MSG_DEBUG, "WPS: Selected BSS does not include "
 			   "WPS IE?!");
