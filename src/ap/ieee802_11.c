@@ -9102,7 +9102,8 @@ static u16 get_mask_details(u16 bw)
 }
 
 /**
- * get_lower_bandwidth_puncture_pattern - Extract puncture pattern for a target bandwidth
+ * get_lower_bandwidth_puncture_pattern - Extract puncture pattern for a target
+ * bandwidth.
  * @prifreq: Primary channel center frequency in MHz.
  * @cur_pat: Current puncture bitmap representing inactive sub-channels.
  * @cur_cenfreq: Center frequency of the current bandwidth in MHz.
@@ -9149,9 +9150,13 @@ static u16 get_mask_details(u16 bw)
  * Return: Puncture bitmap representing inactive sub-channels for the given
  * target bandwidth.
  */
-static u16 get_lower_bandwidth_puncture_pattern(u16 prifreq, u16 cur_pat,
-						u16 cur_cenfreq, u16 cur_bw,
-						u16 target_bw)
+
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+u16 get_lower_bandwidth_puncture_pattern(u16 prifreq, u16 cur_pat,
+					 u16 cur_cenfreq, u16 cur_bw,
+					 u16 target_bw)
 {
 	/* @start_20mhz_freq :- Center frequency of the left-most/first 20 MHz
 	 * channel.
@@ -10656,16 +10661,37 @@ static u8 * hostapd_eid_wb_channel_switch(struct hostapd_data *hapd, u8 *eid,
 
 
 #ifdef CONFIG_IEEE80211BE
-/* Bandwidth Indication element that is also used as the Bandwidth Indication
- * For Channel Switch subelement within a Channel Switch Wrapper element. */
+/*
+ * Bandwidth Indication element that is also used as the Bandwidth Indication
+ * For Channel Switch subelement within a Channel Switch Wrapper element.
+ */
 static u8 * hostapd_eid_bw_indication(struct hostapd_data *hapd, u8 *eid,
 				      u8 chan1, u8 chan2)
 {
 	u16 punct_bitmap = hapd->cs_freq_params.punct_bitmap;
 	struct ieee80211_bw_ind_element *bw_ind_elem;
 	size_t elen = 4;
+	int bandwidth = hapd->cs_freq_params.bandwidth;
 
-	if (hapd->cs_freq_params.bandwidth <= 160 && !punct_bitmap)
+	/*
+	 * Special case: non-standard 5 GHz 320 MHz operation. If puncturing
+	 * reduces the effective width to < 160 MHz, skip BW Indication.
+	 * For 160 MHz, update the puncture bitmap to the effective width.
+	 */
+	if (bandwidth == CHWIDTH_320 &&
+	    is_5ghz_freq(hapd->cs_freq_params.freq) &&
+	    punct_bitmap) {
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_handle_5ghz_320mhz_bw_indication_extn(
+			    hapd, &chan1, &chan2, &punct_bitmap,
+			    &bandwidth) < 0)
+			return eid;
+#else /* CONFIG_QCN_EXTN */
+		return eid;
+#endif /* CONFIG_QCN_EXTN */
+	}
+
+	if (bandwidth <= CHWIDTH_160 && !punct_bitmap)
 		return eid;
 
 	if (punct_bitmap)
@@ -10678,8 +10704,8 @@ static u8 * hostapd_eid_bw_indication(struct hostapd_data *hapd, u8 *eid,
 	bw_ind_elem = (struct ieee80211_bw_ind_element *) eid;
 	os_memset(bw_ind_elem, 0, sizeof(struct ieee80211_bw_ind_element));
 
-	switch (hapd->cs_freq_params.bandwidth) {
-	case 320:
+	switch (bandwidth) {
+	case CHWIDTH_320:
 		bw_ind_elem->bw_ind_info.control |= BW_IND_CHANNEL_WIDTH_320MHZ;
 		chan2 = chan1;
 		if (hapd->cs_freq_params.channel < chan1)
@@ -10687,7 +10713,7 @@ static u8 * hostapd_eid_bw_indication(struct hostapd_data *hapd, u8 *eid,
 		else
 			chan1 += 16;
 		break;
-	case 160:
+	case CHWIDTH_160:
 		bw_ind_elem->bw_ind_info.control |= BW_IND_CHANNEL_WIDTH_160MHZ;
 		chan2 = chan1;
 		if (hapd->cs_freq_params.channel < chan1)
@@ -10695,10 +10721,10 @@ static u8 * hostapd_eid_bw_indication(struct hostapd_data *hapd, u8 *eid,
 		else
 			chan1 += 8;
 		break;
-	case 80:
+	case CHWIDTH_80:
 		bw_ind_elem->bw_ind_info.control |= BW_IND_CHANNEL_WIDTH_80MHZ;
 		break;
-	case 40:
+	case CHWIDTH_40:
 		if (hapd->cs_freq_params.sec_channel_offset == 1)
 			bw_ind_elem->bw_ind_info.control |=
 				BW_IND_CHANNEL_WIDTH_40MHZ;
