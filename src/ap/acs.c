@@ -445,8 +445,11 @@ acs_survey_chan_interference_factor(struct hostapd_iface *iface,
 }
 
 
-static bool acs_usable_bw_chan(const struct hostapd_channel_data *chan,
-			       enum bw_type bw)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+bool acs_usable_bw_chan(const struct hostapd_channel_data *chan,
+			enum bw_type bw)
 {
 	unsigned int i = 0;
 
