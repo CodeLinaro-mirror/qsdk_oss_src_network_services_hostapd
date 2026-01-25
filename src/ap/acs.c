@@ -911,8 +911,21 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 			if (!chan2)
 				break;
 
-			if (!chan_bw_allowed(chan2, bw, secondary_channel != -1,
-					     j == 0)) {
+			/*
+			 * For HT40 ACS, allow both HT40+ and HT40- when
+			 * ht40_plus_minus_allowed is enabled in hostapd.conf.
+			 * Previously limited to 2.4 GHz; extend to 5 GHz as well.
+			 */
+			if (bw == 40 && iface->conf->ht40_plus_minus_allowed) {
+				if (!chan_bw_allowed(chan2, 40, 1, 1) &&
+				    !chan_bw_allowed(chan2, 40, 0, 1)) {
+					wpa_printf(MSG_DEBUG,
+						   "ACS: Channel %d: BW %u (HT40+/-) not supported",
+						   chan2->chan, bw);
+					continue;
+				}
+			} else if (!chan_bw_allowed(chan2, bw,
+				   secondary_channel != -1, j == 0)) {
 				wpa_printf(MSG_DEBUG,
 					   "ACS: Channel %d: BW %u is not supported",
 					   chan2->chan, bw);
