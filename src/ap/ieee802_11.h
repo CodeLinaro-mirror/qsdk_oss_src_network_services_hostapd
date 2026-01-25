@@ -525,14 +525,15 @@ u16 copy_sta_uhr_capab(struct hostapd_data *hapd, struct sta_info *sta,
 size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd, u32 frame_type,
 			      u8 *elem_count, const u8 *known_bss,
 			      size_t known_bss_len, size_t *rnr_len,
-			      bool bcast_prb_resp);
+			      bool bcast_prb_resp, void *params,
+			      bool *is_len_calc_failed);
 u8 * hostapd_eid_mbssid(struct hostapd_data *hapd, u8 *eid, u8 *end,
 			unsigned int frame_stype, u8 elem_count,
 			u8 **elem_offset,
 			const u8 *known_bss, size_t known_bss_len, u8 *rnr_eid,
 			u8 *rnr_count, u8 **rnr_offset, size_t rnr_len,
 			u32 *elemid_modified_bmap,
-			bool bcast_prb_resp);
+			bool bcast_prb_resp, void *params);
 void hostapd_eid_update_cu_info(struct hostapd_data *hapd, u16 *elemid_modified,
 				const u8 *eid_pos, size_t eid_len,
 				enum elemid_cu eid_cu);
