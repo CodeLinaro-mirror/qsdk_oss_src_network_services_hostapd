@@ -917,6 +917,15 @@ struct wpa_supplicant {
 	unsigned int manual_scan_use_id:1;
 	unsigned int manual_scan_only_new:1;
 	unsigned int own_scan_requested:1;
+
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * acs_complete: Repeater ACS completion flag for STA scan gating
+	 * When athnewind=1 and acs_complete=0, postpone/skip STA scans
+	 * until repeater AP ACS completes (signaled via external event).
+	 */
+	bool acs_complete;
+#endif
 	unsigned int own_scan_running:1;
 	unsigned int clear_driver_scan_cache:1;
 	unsigned int manual_non_coloc_6ghz:1;

@@ -1947,6 +1947,15 @@ struct wpa_config {
 	 *  2 - Socket mode
 	 */
 	int rptr_mgr_comm_mode;
+
+	/**
+	 * channel: Channel to differentiate between fixed and auto channel
+	 *
+	 * This is required in repeater scenarios to differentiate between
+	 * fixed and auto channels to serialize and prioritize repeater
+	 * AP ACS over repeater STA scan.
+	 */
+	int channel;
 #endif
 };
 

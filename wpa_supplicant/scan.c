@@ -24,6 +24,9 @@
 #include "scan.h"
 #include "mesh.h"
 #include "bssid_ignore.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../qcn_extns/cmn.h"
+#endif
 
 static struct wpabuf * wpa_supplicant_extra_ies(struct wpa_supplicant *wpa_s);
 
@@ -1075,6 +1078,17 @@ static void wpa_supplicant_scan(void *eloop_ctx, void *timeout_ctx)
 		wpa_supplicant_set_state(wpa_s, WPA_DISCONNECTED);
 		return;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	/* Repeater feature: gate STA scans until AP ACS completes */
+	if (wpa_s->conf && wpa_s->conf->ind_rptr && !wpa_s->acs_complete) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"Skip Repeater STA scan as repeater ACS is incomplete");
+		eloop_register_timeout(REP_AP_ACS_TIMEOUT_INTERVAL, 0,
+				       wpa_supplicant_start_sta_scan, wpa_s, NULL);
+		return;
+	}
+#endif
 
 	if (wpa_s->scanning) {
 		/*

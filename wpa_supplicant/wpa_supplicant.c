@@ -713,6 +713,9 @@ static void wpa_supplicant_cleanup(struct wpa_supplicant *wpa_s)
 	eloop_cancel_timeout(wpas_verify_ssid_beacon, wpa_s, NULL);
 	eloop_cancel_timeout(wpas_wfa_capab_tx, wpa_s, NULL);
 	eloop_cancel_timeout(wpas_scan_for_rnr_entries, wpa_s, NULL);
+#ifdef CONFIG_QCN_EXTN
+	eloop_cancel_timeout(wpa_supplicant_start_sta_scan, wpa_s, NULL);
+#endif
 
 	wpas_wps_deinit(wpa_s);
 
@@ -8487,6 +8490,19 @@ struct wpa_supplicant * wpa_supplicant_add_iface(struct wpa_global *global,
 	wpas_ubus_add_bss(wpa_s);
 	wpas_ucode_add_bss(wpa_s);
 
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * If independent repeater is enabled AND auto channel (ACS) is
+	 * configured in the radio, gate repeater STA scan until ACS is
+	 * completed.
+	 */
+	if (wpa_s->conf && wpa_s->conf->ind_rptr && (wpa_s->conf->channel == 0))
+		wpa_s->acs_complete = 0;
+	else
+		wpa_s->acs_complete = 1;
+
+	wpa_printf(MSG_DEBUG, "acs_complete is set to %d",wpa_s->acs_complete);
+#endif
 	return wpa_s;
 }
 

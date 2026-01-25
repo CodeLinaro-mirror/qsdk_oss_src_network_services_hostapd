@@ -6,11 +6,13 @@
 #include "wpa_supplicant_i.h"
 #include "wps_supplicant.h"
 #include "bss.h"
+#include "scan.h"
 #include "ucode.h"
 #include "driver_i.h"
 #include "sme.h"
 #include "config.h"
 #include "../qcn_extns/cmn.h"
+#include "eloop.h"
 
 static struct wpa_global *wpa_global;
 static uc_resource_type_t *global_type, *iface_type;
@@ -122,6 +124,7 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 	u8 i;
 	u8 op_class, channel;
 	int center_freq1 = 0, center_freq2 = 0;
+	int offset_mhz = 0;
 	int sec_chan_offset;
 	s8 hw_idx;
 	bool is_dfs = false;
@@ -152,10 +155,22 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 					       ucv_int64_new(bss->mld_links[i].freq));
 				ucv_object_add(info, "chan_width",
 					       ucv_int64_new(bss->mld_links[i].width));
+
+				/* Reset per-link before computing center freqs */
+				center_freq1 = 0;
+				center_freq2 = 0;
 				ieee80211_freq_to_channel_ext(bss->mld_links[i].freq,
 							      0, 1, &op_class, &channel);
-				if (bss->mld_links[i].width == CHAN_WIDTH_160 ||
-					bss->mld_links[i].width == CHAN_WIDTH_320) {
+
+				if (bss->mld_links[i].freq >= 2412 && bss->mld_links[i].freq <= 2472) {
+					if (bss->mld_links[i].width == CHAN_WIDTH_40) {
+						offset_mhz = (channel <= 7) ? 10 : -10;
+						center_freq1 = bss->mld_links[i].freq + offset_mhz;
+					} else {
+						center_freq1 = bss->mld_links[i].freq;
+					}
+				} else if (bss->mld_links[i].width == CHAN_WIDTH_160 ||
+					   bss->mld_links[i].width == CHAN_WIDTH_320) {
 					center_freq1 = ieee80211_chan_to_freq(NULL, op_class,
 									      bss->mld_links[i].center_freq2_idx);
 				} else {
@@ -205,12 +220,19 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 			ucv_object_add(info, "chan_width",
 				       ucv_int64_new(bss->max_cw));
 			ieee80211_freq_to_channel_ext(bss->freq, 0, 1, &op_class, &channel);
-			if (bss->max_cw == CHAN_WIDTH_160 ||
-				bss->max_cw == CHAN_WIDTH_320) {
+
+			if (bss->freq >= 2412 && bss->freq <= 2472) {
+				if (bss->max_cw == CHAN_WIDTH_40) {
+					offset_mhz = (channel <= 7) ? 10 : -10;
+					center_freq1 = bss->freq + offset_mhz;
+				} else {
+					center_freq1 = bss->freq;
+				}
+			} else if (bss->max_cw == CHAN_WIDTH_160 ||
+				   bss->max_cw == CHAN_WIDTH_320) {
 				center_freq1 = ieee80211_chan_to_freq(NULL, op_class,
 								      bss->center_freq2_idx);
-			}
-			else {
+			} else {
 				center_freq1 = ieee80211_chan_to_freq(NULL, op_class,
 								      bss->center_freq1_idx);
 				center_freq2 = ieee80211_chan_to_freq(NULL, op_class,
@@ -638,6 +660,47 @@ uc_wpas_recvd_ch_sw_comp_ev(uc_vm_t *vm, size_t nargs)
 
 	return ucv_int64_new(ret);
 }
+
+/**
+ * uc_wpas_start_scan_post_acs - API to start STA scan post repeater AP ACS
+ * @vm: ucode VM context invoking the callback
+ * @nargs: Number of ucode arguments passed to the function
+ *
+ * Called from ucode when hostapd send ACS completion event post ACS in its
+ * configured links. The function locates interfaces whose acs_complete flag
+ * is not set and schedules it to start scanning post setting its acs_complete
+ * flag to 1.
+ *
+ * Return: New ucode integer value (currently a placeholder return code).
+ */
+static uc_value_t *
+uc_wpas_start_scan_post_acs(uc_vm_t *vm, size_t nargs)
+{
+	struct wpa_supplicant *wpa_s;
+
+	wpa_printf(MSG_INFO, "%s: Resuming STA scan for all interfaces",
+		   __func__);
+
+	/* Validate global context */
+	if (!wpa_global || !wpa_global->ifaces) {
+		wpa_printf(MSG_ERROR, "%s: wpa_global or ifaces is NULL",
+			   __func__);
+		return ucv_int64_new(-1);
+	}
+
+	for (wpa_s = wpa_global->ifaces; wpa_s; wpa_s = wpa_s->next) {
+		if (wpa_s->conf && wpa_s->conf->ind_rptr &&
+		    (wpa_s->acs_complete == 0)) {
+			wpa_s->acs_complete = 1;
+			wpa_printf(MSG_DEBUG, "%s: Setting acs_complete=1 for %s and resuming scan",
+				   __func__, wpa_s->ifname);
+			eloop_cancel_timeout(wpa_supplicant_start_sta_scan, wpa_s, NULL);
+			wpa_supplicant_req_scan(wpa_s, 0, 0);
+		}
+	}
+
+	return ucv_int64_new(0);
+}
 #endif
 
 int wpas_ucode_init(struct wpa_global *gl)
@@ -650,6 +713,7 @@ int wpas_ucode_init(struct wpa_global *gl)
 		{ "udebug_set", uc_wpa_udebug_set },
 #ifdef CONFIG_QCN_EXTN
 		{ "recvd_ch_sw_comp_ev", uc_wpas_recvd_ch_sw_comp_ev },
+		{ "start_scan_post_acs", uc_wpas_start_scan_post_acs },
 #endif
 	};
 	static const uc_function_list_t iface_fns[] = {
