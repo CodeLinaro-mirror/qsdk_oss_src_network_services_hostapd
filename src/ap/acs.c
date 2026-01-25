@@ -1334,6 +1334,9 @@ static void acs_study(struct hostapd_iface *iface)
 		goto fail;
 	}
 
+	if (!acs_handle_channel_change_extn(iface, ideal_chan, err))
+		return;
+
 	iface->conf->channel = ideal_chan->chan;
 	iface->freq = ideal_chan->freq;
 #ifdef CONFIG_IEEE80211BE
@@ -1357,6 +1360,8 @@ static void acs_study(struct hostapd_iface *iface)
 
 	err = 0;
 fail:
+	if (!acs_handle_channel_change_failed_extn(iface, err))
+		return;
 	/*
 	 * hostapd_setup_interface_complete() will return -1 on failure,
 	 * 0 on success and 0 is HOSTAPD_CHAN_VALID :)
@@ -1576,8 +1581,8 @@ enum hostapd_chan_status acs_init(struct hostapd_iface *iface)
 
 	if (acs_request_scan(iface) < 0)
 		return HOSTAPD_CHAN_INVALID;
-
-	hostapd_set_state(iface, HAPD_IFACE_ACS);
+	if (!iface->iface_extn.dynamic_acs_action)
+		hostapd_set_state(iface, HAPD_IFACE_ACS);
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, ACS_EVENT_STARTED);
 
 	return HOSTAPD_CHAN_ACS;
