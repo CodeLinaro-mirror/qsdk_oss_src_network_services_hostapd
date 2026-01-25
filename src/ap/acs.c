@@ -1509,18 +1509,25 @@ static int acs_request_scan(struct hostapd_iface *iface)
 
 	if (ret == -EBUSY) {
 		iface->acs_num_retries++;
-		if (iface->acs_num_retries >= ACS_SCAN_RETRY_MAX_COUNT) {
+		if (iface->conf->acs_scan_retry_max_count > 0 &&
+		    iface->acs_num_retries >= iface->conf->acs_scan_retry_max_count) {
 			wpa_printf(MSG_ERROR,
 				   "ACS: Failed to request initial scan (all re-attempts failed)");
+			acs_fail(iface);
+			return -1;
+		} else if (iface->conf->acs_scan_retry_max_count < 0) {
+			wpa_printf(MSG_ERROR,
+                                   "ACS: Failed to request initial scan: invalid param: %d",
+				   iface->conf->acs_scan_retry_max_count);
 			acs_fail(iface);
 			return -1;
 		}
 
 		wpa_printf(MSG_INFO,
-			   "Failed to request acs scan ret=%d (%s) - try to scan after %d seconds",
-			   ret, strerror(-ret), ACS_SCAN_RETRY_INTERVAL);
+			   "Failed to request acs scan ret=%d (%s) - try to scan after %u seconds",
+			   ret, strerror(-ret), iface->conf->acs_scan_retry_interval);
 		eloop_cancel_timeout(acs_scan_retry, iface, NULL);
-		eloop_register_timeout(ACS_SCAN_RETRY_INTERVAL, 0,
+		eloop_register_timeout(iface->conf->acs_scan_retry_interval, 0,
 				       acs_scan_retry, iface, NULL);
 		return 0;
 	}

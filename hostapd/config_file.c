@@ -3232,6 +3232,22 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		conf->acs_num_scans = val;
+	} else if (os_strcmp(buf, "acs_scan_retry_interval") == 0) {
+		int val = atoi(pos);
+		if (val < 1 || val > 3600) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid acs_scan_retry_interval %d (expected 0..3600)",
+			line, val);
+			return 1;
+		}
+		conf->acs_scan_retry_interval = val;
+	} else if (os_strcmp(buf, "acs_scan_retry_max_count") == 0) {
+		int val = atoi(pos);
+		if (val < 1 || val > 1000) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid acs_scan_retry_max_count %d (expected 0..1000)",
+					line, val);
+			return 1;
+		}
+		conf->acs_scan_retry_max_count = val;
 	} else if (os_strcmp(buf, "acs_chan_bias") == 0) {
 		if (hostapd_config_parse_acs_chan_bias(conf, pos)) {
 			wpa_printf(MSG_ERROR, "Line %d: invalid acs_chan_bias",
