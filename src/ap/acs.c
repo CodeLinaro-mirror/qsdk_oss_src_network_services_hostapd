@@ -353,6 +353,7 @@ void acs_cleanup(struct hostapd_iface *iface)
 	iface->chans_surveyed = 0;
 	iface->acs_num_completed_scans = 0;
 	iface->acs_num_retries = 0;
+	iface->last_scan_aborted = 0;
 	eloop_cancel_timeout(acs_scan_retry, iface, NULL);
 }
 
@@ -1378,6 +1379,20 @@ static void acs_scan_complete(struct hostapd_iface *iface)
 	int err;
 
 	iface->scan_cb = NULL;
+
+	/* If the last scan was aborted, clear aborted flag and retry ACS scan */
+	if (iface->last_scan_aborted) {
+		wpa_printf(MSG_INFO, "ACS: Previous scan aborted; retrying ACS scan");
+		iface->last_scan_aborted = 0;
+		/* Do not reset acs_num_retries here; allow acs_request_scan to handle EBUSY backoff */
+		err = acs_request_scan(iface);
+		if (err && err != -EBUSY) {
+			wpa_printf(MSG_ERROR, "ACS: Failed to request scan after abort");
+			goto fail;
+		}
+		/* If EBUSY, acs_request_scan schedules retry; if success, wait for next EVENT_SCAN_RESULTS */
+		return;
+	}
 	iface->acs_num_retries = 0;
 
 	wpa_printf(MSG_DEBUG, "ACS: Using survey based algorithm (acs_num_scans=%d)",
