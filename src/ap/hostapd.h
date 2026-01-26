@@ -1038,7 +1038,6 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon);
 void hostapd_bss_deinit(struct hostapd_data *hapd);
 void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
 				  struct hapd_interfaces *interfaces);
-void hostapd_mbssid_setup_bss(struct hostapd_data *hapd);
 void hostapd_new_assoc_sta(struct hostapd_data *hapd, struct sta_info *sta,
 			   int reassoc);
 void hostapd_interface_deinit_free(struct hostapd_iface *iface);
@@ -1391,8 +1390,6 @@ struct hostapd_data *
 hostapd_get_multi_group_bss(struct hostapd_multi_mbssid_group *group,
                            int bss_idx);
 u8 hostapd_max_bssid_indicator(struct hostapd_data *hapd);
-
-int hostapd_allocate_mbssid_idx(struct hostapd_data *hapd);
 int hostapd_get_mbssid_index(u32 *bmap);
 void hostapd_free_mbssid_idx(struct hostapd_data *hapd);
 void hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface,

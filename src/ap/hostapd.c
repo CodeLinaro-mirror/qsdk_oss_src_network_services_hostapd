@@ -73,6 +73,8 @@ static int setup_interface2(struct hostapd_iface *iface);
 static void channel_list_update_timeout(void *eloop_ctx, void *timeout_ctx);
 static void hostapd_interface_setup_failure_handler(void *eloop_ctx,
 						    void *timeout_ctx);
+int hostapd_mbssid_setup_bss(struct hostapd_data *hapd);
+
 #ifdef CONFIG_IEEE80211AX
 void hostapd_switch_color_timeout_handler(void *eloop_data,
 					  void *user_ctx);
@@ -2300,6 +2302,9 @@ setup_mld:
 			   hapd->conf->iface);
 #endif /* CONFIG_IEEE80211BE */
 
+	if (hostapd_mbssid_setup_bss(hapd))
+		return -1;
+
 	if (conf->wmm_enabled < 0)
 		conf->wmm_enabled = hapd->iconf->ieee80211n |
 			hapd->iconf->ieee80211ax;
@@ -4469,17 +4474,17 @@ fail:
 }
 
 
-static void hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
+static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 {
 	struct hostapd_iface *iface = hapd->iface;
 	struct hostapd_multi_mbssid_group *group = NULL, **all_group;
 	size_t i;
 
 	if (!hapd)
-		return;
+		return -1;
 
 	if (hapd->iconf->mbssid != MULTI_MBSSID_GROUP_ENABLED)
-		return;
+		return 0;
 
 	for (i = 0; i < iface->multi_mbssid.num_mbssid_groups; i++) {
 		group = iface->multi_mbssid.group[i];
@@ -4496,7 +4501,7 @@ static void hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 
 		wpa_printf(MSG_DEBUG, "Bss[%s] added to MBSSID group %d",
 			   hapd->conf->iface, hapd->mbssid_group->group_id);
-		return;
+		return 0;
 	}
 
 	group = os_zalloc(sizeof(struct hostapd_multi_mbssid_group));
@@ -4523,23 +4528,34 @@ static void hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 	iface->multi_mbssid.group[iface->multi_mbssid.num_mbssid_groups] = group;
 	iface->multi_mbssid.num_mbssid_groups++;
 
-	return;
+	return 0;
 fail:
 	if (!group)
-		return;
+		return -1;
 
 	wpa_printf(MSG_ERROR, "Failed to add Bss[%s] to MBSSID group %d",
 		   hapd->conf->iface, group->group_id);
 	os_free(group);
 	hapd->mbssid_group = NULL;
+	return -1;
 }
 
-void hostapd_mbssid_setup_bss(struct hostapd_data *hapd)
+int hostapd_mbssid_setup_bss(struct hostapd_data *hapd)
 {
 	struct hostapd_data *tx_bss;
 	size_t num_bss, i;
 
-	hostapd_multi_mbssid_add_bss(hapd);
+	if (hostapd_multi_mbssid_add_bss(hapd)) {
+		wpa_printf(MSG_ERROR, "Failed to set MBSSID parameters for %s",
+			   hapd->conf->iface);
+		return -1;
+	}
+
+	/* mbssid index is needed if any of the link from the mbssid group is
+	 * dynamically removed, will use this index for updating the
+	 * non-transmitting profile in beacon
+	 */
+	 hapd->mbssid_idx = hostapd_allocate_mbssid_idx(hapd);
 
 	/*
 	 * When setting up multi bssid, reserve AIDs for group transmssion
@@ -4547,12 +4563,14 @@ void hostapd_mbssid_setup_bss(struct hostapd_data *hapd)
 	 */
 	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
 	if (tx_bss != hapd)
-		return;
+		return 0;
 
 	num_bss = (1 << hostapd_max_bssid_indicator(tx_bss));
 
 	for (i = 0; i < num_bss; i++)
 		tx_bss->sta_aid[0] |= BIT(i);
+
+	return 0;
 }
 
 static void hostapd_cleanup_unused_mlds(struct hapd_interfaces *interfaces)
@@ -4856,7 +4874,6 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 			goto fail;
 		hapd->msg_ctx = hapd;
 		hostapd_bss_setup_multi_link(hapd, interfaces);
-		hostapd_mbssid_setup_bss(hapd);
 		if (hostapd_validate_bss_tx_params(hapd) < 0)
 			goto fail;
 
@@ -4864,11 +4881,6 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 			if (hostapd_tx_bss_only(hapd, "ht_mcs_nss_set") < 0)
 				goto fail;
 		}
-		/* mbssid index is needed if any of the link from the mbssid group is
-		 * dynamically removed, will use this index for updating the
-		 * non-transmitting profile in beacon
-		 */
-		hapd->mbssid_idx = hostapd_allocate_mbssid_idx(hapd);
 #ifdef CONFIG_HOSTAPD_IF
 		hostapd_if_interface_create(hapd);
 #endif
@@ -4994,7 +5006,6 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 		iface->bss[iface->num_bss] = hapd;
 		hapd->msg_ctx = hapd;
 		hostapd_bss_setup_multi_link(hapd, interfaces);
-		hostapd_mbssid_setup_bss(hapd);
 
 		/* Validate BSS capabilities if driver is initialized */
 		if (iface->current_mode &&
@@ -5008,11 +5019,6 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 		}
 
 		bss_idx = iface->num_bss++;
-		/* mbssid index is needed if any of the link from the mbssid group is
-		 * dynamically removed, will use this index for updating the
-		 * non-transmitting profile in beacon
-		 */
-		hapd->mbssid_idx = hostapd_allocate_mbssid_idx(hapd);
 
 		conf->num_bss--;
 		conf->bss[0] = NULL;
@@ -5600,7 +5606,6 @@ static int hostapd_data_alloc(struct hostapd_iface *hapd_iface,
 		}
 		hapd->msg_ctx = hapd;
 		hostapd_bss_setup_multi_link(hapd, hapd_iface->interfaces);
-		hostapd_mbssid_setup_bss(hapd);
 	}
 
 	hapd_iface->conf = conf;
