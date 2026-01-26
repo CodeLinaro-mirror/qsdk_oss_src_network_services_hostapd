@@ -974,6 +974,7 @@ struct hostapd_iface {
 	struct hostapd_multi_mbssid multi_mbssid;
 	u32 mbssid_idx_bmap;
 	size_t max_mgmt_frm_sz;
+	int last_scan_aborted;
 };
 
 

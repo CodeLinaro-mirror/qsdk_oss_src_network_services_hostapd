@@ -3345,6 +3345,10 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 			hapd = switch_link_scan(hapd,
 						data->scan_info.scan_cookie);
 #endif /* NEED_AP_MLME */
+		/* Latch whether the last scan was aborted to allow ACS logic to react */
+		if (data)
+			hapd->iface->last_scan_aborted = data->scan_info.aborted;
+
 		if (hapd->iface->scan_cb)
 			hapd->iface->scan_cb(hapd->iface);
 #ifdef CONFIG_IEEE80211BE
