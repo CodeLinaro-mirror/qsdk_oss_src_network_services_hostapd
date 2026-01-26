@@ -1321,6 +1321,10 @@ struct hostapd_config {
 		double bias;
 	} *acs_chan_bias;
 	unsigned int num_acs_chan_bias;
+	/* Interval in seconds between ACS scan retries when driver is busy */
+	unsigned int acs_scan_retry_interval;
+	/* Maximum number of ACS scan retry attempts when driver is busy */
+	int acs_scan_retry_max_count;
 #endif /* CONFIG_ACS */
 	int disable_40mhz_scan;
 
