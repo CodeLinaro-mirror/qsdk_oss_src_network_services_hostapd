@@ -329,6 +329,9 @@ hostapd_get_multi_group_bss(struct hostapd_multi_mbssid_group *group,
 {
 	struct hostapd_iface *iface = NULL;
 
+	if (!group)
+		return NULL;
+
 	if (group->txbss)
 		iface = group->txbss->iface;
 	if (!iface)
@@ -415,8 +418,15 @@ u8 hostapd_max_bssid_indicator(struct hostapd_data *hapd)
 	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
 		num_bss_nontx = hapd->iconf->group_size - 1;
 	} else {
-		num_bss_nontx = hapd->iface->num_bss - 1;
+		/* In single wiphy, maximum interfaces supported by each radio are
+		 * added, hence divide by num_multi_hws to get per radio limit */
+		num_bss_nontx = (hapd->iface->mbssid_max_interfaces /
+				 hapd->iface->num_multi_hws) - 1;
+
+		if (hapd->iface->mbssid_max_interfaces % hapd->iface->num_multi_hws)
+			num_bss_nontx++;
 	}
+
 	while (num_bss_nontx > 0) {
 		max_bssid_ind++;
 		num_bss_nontx >>= 1;
@@ -4474,68 +4484,223 @@ fail:
 }
 
 
+u64 hostapd_addr_to_u64(const u8 *addr)
+{
+    u64 result = 0;
+    int i;
+
+    for (i = 0; i < ETH_ALEN; i++) {
+        result = result << 8 | addr[i];
+    }
+
+    return result;
+}
+
+
+static void hostapd_multi_mbssid_set_mbssid_index(struct hostapd_data *hapd,
+						  u8 group_size, u64 bssid_mask,
+						  u32 *mbssid_idx_bmap)
+{
+	struct hostapd_data *tx_hapd;
+	size_t bss_index;
+	u8 bss_index_shift;
+
+	tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
+	if (!tx_hapd || tx_hapd == hapd) {
+		hapd->mbssid_idx = 0;
+		*mbssid_idx_bmap |= BIT(hapd->mbssid_idx);
+
+		if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
+			hapd->mbssid_group->txbss = hapd;
+
+		return;
+	}
+
+	bss_index_shift = hostapd_addr_to_u64(tx_hapd->own_addr) & bssid_mask;
+	bss_index = hostapd_addr_to_u64(hapd->own_addr) & bssid_mask;
+	if (bss_index < bss_index_shift)
+		bss_index += group_size;
+	bss_index -= bss_index_shift;
+
+	hapd->mbssid_idx = bss_index;
+	*mbssid_idx_bmap |= BIT(hapd->mbssid_idx);
+}
+
+
 static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 {
+	u64 addr, bssid_mask = 0, group_mask = 0, prefix_mask = UINT64_MAX;
 	struct hostapd_iface *iface = hapd->iface;
-	struct hostapd_multi_mbssid_group *group = NULL, **all_group;
-	size_t i;
+	struct hostapd_multi_mbssid_group *group = NULL;
+	struct hostapd_multi_mbssid *multi_mbssid = &iface->multi_mbssid;
+	struct hostapd_data *bss = NULL;
+	u8 cnt, max_bssid_indicator, group_index;
+	unsigned int mbssid_max_interfaces;
+	bool bss_added = false;
+	size_t i, j;
 
-	if (!hapd)
+	if (!hapd || !hapd->iconf)
 		return -1;
 
-	if (hapd->iconf->mbssid != MULTI_MBSSID_GROUP_ENABLED)
+	if (hapd->iconf->mbssid == MBSSID_DISABLED)
 		return 0;
 
-	for (i = 0; i < iface->multi_mbssid.num_mbssid_groups; i++) {
-		group = iface->multi_mbssid.group[i];
-		if (group->num_bss == iface->conf->group_size)
-			continue;
-		dl_list_add_tail(&group->bss_list, &hapd->mbssid_bss);
-		/* When a Tx BSS is removed and added again, the first
-		 * BSS added in the group should be set as Tx BSS
-		 */
-		if (group->txbss == NULL)
+	/* In single wiphy, maximum interfaces supported by each radio are
+	 * added, hence divide by num_multi_hws to get per radio limit */
+	mbssid_max_interfaces = iface->mbssid_max_interfaces / iface->num_multi_hws;
+	if (iface->num_bss > mbssid_max_interfaces) {
+		wpa_printf(MSG_ERROR,
+			   "Failed to add %s, driver can only support %u interfaces in MBSSID",
+			   hapd->conf->iface, mbssid_max_interfaces);
+		return -1;
+	}
+
+	max_bssid_indicator = hostapd_max_bssid_indicator(hapd);
+	prefix_mask <<= max_bssid_indicator;
+	bssid_mask = ~prefix_mask;
+
+	addr = hostapd_addr_to_u64(hapd->own_addr);
+
+	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
+		multi_mbssid->num_mbssid_groups = mbssid_max_interfaces /
+						  iface->conf->group_size;
+
+		if (mbssid_max_interfaces % iface->conf->group_size)
+			multi_mbssid->num_mbssid_groups++;
+
+		if (multi_mbssid->num_mbssid_groups > multi_mbssid->mbssid_max_ngroups) {
+			wpa_printf(MSG_ERROR,
+				   "Configured MBSSID group size results in more groups that supported by driver");
+			return -1;
+		}
+
+		/* Calculate group ID mask which will decide the group a new
+		 * interface will get added to */
+		cnt = multi_mbssid->num_mbssid_groups - 1;
+		while (cnt) {
+			group_mask <<= 1;
+			group_mask |= 0x1;
+			cnt >>= 1;
+		}
+
+		group_mask <<= max_bssid_indicator;
+		group_index = (addr & group_mask) >> max_bssid_indicator;
+		prefix_mask &= (~group_mask);
+
+		if (!multi_mbssid->group) {
+			multi_mbssid->group =
+				os_zalloc(sizeof(struct hostapd_multi_mbssid_group *) *
+					  multi_mbssid->num_mbssid_groups);
+			if (!multi_mbssid->group)
+				goto fail;
+		}
+
+		group = multi_mbssid->group[group_index];
+		if (!group) {
+			group = os_zalloc(sizeof(struct hostapd_multi_mbssid_group));
+			if (!group)
+				goto fail;
+
+			multi_mbssid->group[group_index] = group;
+			group->group_id = group_index;
 			group->txbss = hapd;
-		group->num_bss++;
+			dl_list_init(&group->bss_list);
+		}
+
 		hapd->mbssid_group = group;
 
-		wpa_printf(MSG_DEBUG, "Bss[%s] added to MBSSID group %d",
-			   hapd->conf->iface, hapd->mbssid_group->group_id);
+		for (i = 0; i < multi_mbssid->num_mbssid_groups; i++) {
+			if (!multi_mbssid->group[i])
+				continue;
+
+			for (j = 0; j < multi_mbssid->group[i]->num_bss; j++) {
+				bss = hostapd_get_multi_group_bss(multi_mbssid->group[i],
+								  j);
+				if (bss && bss->started)
+					break;
+			}
+		}
+	} else {
+		for (i = 0; i < iface->num_bss; i++) {
+			bss = iface->bss[i];
+			if (bss)
+				break;
+		}
+	}
+
+	if (bss && (hostapd_addr_to_u64(bss->own_addr) & prefix_mask) !=
+		   (addr & prefix_mask)) {
+		wpa_printf(MSG_ERROR,
+			   "New BSS (" MACSTR ") doesn't satisfy prefix requirement for the MBSSID groups",
+			   MAC2STR(hapd->own_addr));
+		return -1;
+	}
+
+	if (hapd->iconf->mbssid != MULTI_MBSSID_GROUP_ENABLED) {
+		hostapd_multi_mbssid_set_mbssid_index(hapd,
+						      1 << max_bssid_indicator,
+						      bssid_mask,
+						      &iface->mbssid_idx_bmap);
 		return 0;
 	}
 
-	group = os_zalloc(sizeof(struct hostapd_multi_mbssid_group));
-	if (!group)
-		goto fail;
-	dl_list_init(&group->bss_list);
-	group->txbss = hapd;
-	group->group_id = iface->multi_mbssid.num_mbssid_groups;
+	/* Add to MBSSID group */
+	group = hapd->mbssid_group;
+	hostapd_multi_mbssid_set_mbssid_index(hapd, 1 << max_bssid_indicator,
+					      bssid_mask,
+					      &group->mbssid_idx_bmap);
 
-	dl_list_add_tail(&group->bss_list, &hapd->mbssid_bss);
+	/* Add new BSS in the order of incrementing BSS indices */
+	dl_list_for_each(bss, &group->bss_list, struct hostapd_data, mbssid_bss) {
+		if (bss->mbssid_idx < hapd->mbssid_idx)
+			continue;
+
+		dl_list_add(bss->mbssid_bss.prev, &hapd->mbssid_bss);
+		bss_added = true;
+		break;
+	}
+
+	if (!bss_added)
+		dl_list_add_tail(&group->bss_list, &hapd->mbssid_bss);
+
+	wpa_printf(MSG_ERROR,
+		   "Bss[%s] added to MBSSID group %d with bss_index:%zu",
+		   hapd->conf->iface, hapd->mbssid_group->group_id,
+		   hapd->mbssid_idx);
+
 	group->num_bss++;
-	hapd->mbssid_group = group;
-
-	wpa_printf(MSG_DEBUG, "Fist bss[%s] added to MBSSID group %d",
-		   hapd->conf->iface, hapd->mbssid_group->group_id);
-
-	all_group = os_realloc_array(iface->multi_mbssid.group,
-				     iface->multi_mbssid.num_mbssid_groups + 1,
-				     sizeof(struct hostapd_multi_mbssid_group *));
-	if (!all_group)
-		goto fail;
-
-	iface->multi_mbssid.group = all_group;
-	iface->multi_mbssid.group[iface->multi_mbssid.num_mbssid_groups] = group;
-	iface->multi_mbssid.num_mbssid_groups++;
-
 	return 0;
 fail:
-	if (!group)
+	wpa_printf(MSG_ERROR, "Failed to add Bss[%s] to MBSSID group",
+		   hapd->conf->iface);
+
+	if (hapd->iconf->mbssid != MULTI_MBSSID_GROUP_ENABLED)
 		return -1;
 
-	wpa_printf(MSG_ERROR, "Failed to add Bss[%s] to MBSSID group %d",
-		   hapd->conf->iface, group->group_id);
-	os_free(group);
+	if (group && !group->num_bss) {
+		for (i = 0; i < multi_mbssid->num_mbssid_groups; i++) {
+			if (multi_mbssid->group[i] &&
+			    multi_mbssid->group[i]->group_id == group->group_id) {
+				multi_mbssid->group[i] = NULL;
+				break;
+			}
+		}
+		os_free(group);
+		group = NULL;
+	}
+
+	if (multi_mbssid->group) {
+		for (i = 0; i < multi_mbssid->num_mbssid_groups; i++) {
+			if (multi_mbssid->group[i])
+				break;
+		}
+
+		if (i == multi_mbssid->num_mbssid_groups) {
+			os_free(multi_mbssid->group);
+			multi_mbssid->group = NULL;
+		}
+	}
+
 	hapd->mbssid_group = NULL;
 	return -1;
 }
@@ -4550,12 +4715,6 @@ int hostapd_mbssid_setup_bss(struct hostapd_data *hapd)
 			   hapd->conf->iface);
 		return -1;
 	}
-
-	/* mbssid index is needed if any of the link from the mbssid group is
-	 * dynamically removed, will use this index for updating the
-	 * non-transmitting profile in beacon
-	 */
-	 hapd->mbssid_idx = hostapd_allocate_mbssid_idx(hapd);
 
 	/*
 	 * When setting up multi bssid, reserve AIDs for group transmssion
