@@ -2706,7 +2706,7 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 {
 	struct hostapd_multi_mbssid_group *group;
 	struct hostapd_data *tx_hapd, *bss;
-	bool error = false, auto_start = false;
+	bool error = false, auto_stop = false, auto_start = false;
 	u8 current_bss_index, group_size;
 	char *token, *context = NULL;
 	u32 bitmap_stopped = 0, *mbssid_idx_bmap;
@@ -2724,15 +2724,16 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 	}
 
 	if (hapd->iconf->mbssid == MBSSID_DISABLED) {
-		wpa_printf(MSG_INFO, "%s is not part of any MBSSID group",
-			   hapd->conf->iface);
+		wpa_printf(MSG_INFO, "%s link %u is not part of any MBSSID group",
+			   hapd->conf->iface, hapd->mld_link_id);
 		return -1;
 	}
 
 	if (cmd[0] != '\0') {
-		token = str_token((char *) cmd, " ", &context);
-		if (token) {
-			if (os_strncmp(token, "auto_start", 10) == 0) {
+		while ((token = str_token((char *) cmd, " ", &context))) {
+			if (os_strncmp(token, "auto_stop", 9) == 0) {
+				auto_stop = true;
+			} else if (os_strncmp(token, "auto_start", 10) == 0) {
 				auto_start = true;
 			} else {
 				wpa_printf(MSG_ERROR,
@@ -2775,39 +2776,47 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 	current_bss_index = hapd->mbssid_idx;
 	num_bss = hostapd_get_mbssid_max_num_bss(hapd);
 
-	/* Stop all non-transmitted profiles from the MBSSID group */
-	for (i = 0; i < num_bss; i++) {
-		if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
-			bss = hostapd_get_multi_group_bss(group, i);
-		else
-			bss = hapd->iface->bss[i];
+	if (auto_stop) {
+		/* Stop all non-transmitted profiles from the MBSSID group */
+		for (i = 0; i < num_bss; i++) {
+			if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
+				bss = hostapd_get_multi_group_bss(group, i);
+			else
+				bss = hapd->iface->bss[i];
 
-		if (!bss || !bss->conf || !bss->started ||
-		    !bss->beacon_set_done || bss == tx_hapd)
-			continue;
+			if (!bss || !bss->conf || !bss->started ||
+			    !bss->beacon_set_done || bss == tx_hapd)
+				continue;
 
-		ret = hostapd_drv_stop_ap(bss);
-		if (ret) {
-			wpa_printf(MSG_ERROR, "Failed to stop %s link %u",
-				   bss->conf->iface, bss->mld_link_id);
-			goto fail_stop;
-		} else {
-			bitmap_stopped |= BIT(i);
-			wpa_printf(MSG_DEBUG, "Stopped %s link %u",
-				   bss->conf->iface, bss->mld_link_id);
+			ret = hostapd_drv_stop_ap(bss);
+			if (ret) {
+				wpa_printf(MSG_ERROR, "Failed to stop %s link %u",
+					   bss->conf->iface, bss->mld_link_id);
+				goto fail_stop;
+			} else {
+				bitmap_stopped |= BIT(i);
+				wpa_printf(MSG_DEBUG, "Stopped %s link %u",
+					   bss->conf->iface, bss->mld_link_id);
+			}
 		}
-	}
 
-	/* Stopped the transmitted profiles of the MBSSID group */
-	ret = hostapd_drv_stop_ap(tx_hapd);
-	if (ret) {
-		wpa_printf(MSG_ERROR, "Failed to stop %s link %u",
-			   tx_hapd->conf->iface, tx_hapd->mld_link_id);
-		goto fail_stop;
-	} else {
-		bitmap_stopped |= BIT(0);
-		wpa_printf(MSG_DEBUG, "Stopped %s link %u",
-			   tx_hapd->conf->iface, tx_hapd->mld_link_id);
+		/* Stop the transmitted profiles of the MBSSID group */
+		if (tx_hapd->beacon_set_done) {
+			ret = hostapd_drv_stop_ap(tx_hapd);
+			if (ret) {
+				wpa_printf(MSG_ERROR, "Failed to stop %s link %u",
+					   tx_hapd->conf->iface, tx_hapd->mld_link_id);
+				goto fail_stop;
+			} else {
+				bitmap_stopped |= BIT(0);
+				wpa_printf(MSG_DEBUG, "Stopped %s link %u",
+					   tx_hapd->conf->iface, tx_hapd->mld_link_id);
+			}
+		}
+	} else if (tx_hapd->beacon_set_done) {
+		wpa_printf(MSG_ERROR,
+			   "Profiles from MBSSID group must be brought down before changing transmitted profile");
+		return -1;
 	}
 
 	*mbssid_idx_bmap = 0;
@@ -2830,7 +2839,7 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 				bss = hapd->iface->bss[i - reorder_done_index];
 		}
 
-		if (!bss || !bss->conf || !bss->started)
+		if (!bss || !bss->conf)
 			continue;
 
 		if (bss->mbssid_idx < current_bss_index)

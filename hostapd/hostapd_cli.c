@@ -2354,12 +2354,12 @@ static int hostapd_cli_cmd_send_unsolicited_scs_resp(struct wpa_ctrl *ctrl,
 
 int hostapd_cli_cmd_set_mbssid_tx(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
-	char cmd[32];
+	char cmd[48];
 	int res, len = 0;
 
-	if (argc > 1) {
+	if (argc > 2) {
 		printf("Invalid command:\n"
-		       "usage: set_mbssid_tx [auto_start]\n");
+		       "usage: set_mbssid_tx [auto_stop] [auto_start]\n");
 		return -1;
 	}
 
@@ -2370,11 +2370,20 @@ int hostapd_cli_cmd_set_mbssid_tx(struct wpa_ctrl *ctrl, int argc, char *argv[])
 	}
 	len += res;
 
-	if (argc == 1) {
+	if (argc >= 1) {
 		res = os_snprintf(cmd + len, sizeof(cmd) - len, " %s", argv[0]);
 		if (os_snprintf_error(sizeof(cmd) - len, res)) {
 			printf("Failed to add input parameter for SET_MBSSID_TX command\n");
 			return -1;
+		}
+		len += res;
+
+		if (argc == 2) {
+			res = os_snprintf(cmd + len, sizeof(cmd) - len, " %s", argv[1]);
+			if (os_snprintf_error(sizeof(cmd) - len, res)) {
+				printf("Failed to add input parameter for SET_MBSSID_TX command\n");
+				return -1;
+			}
 		}
 	}
 
@@ -2704,9 +2713,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  NULL, "<addr> --scsid <scsid> --req_type <req_type> = "
 	  "Send unsolicited SCS response to the STA" },
 	{ "set_mbssid_tx", hostapd_cli_cmd_set_mbssid_tx, NULL,
-	  "[auto_start]\n"
-	  "= Stop all profiles from MBSSID group, set given link as the "
-	  "transmitted profile of the group. Restart all profiles if auto_start"
+	  "[auto_stop] [auto_start]\n"
+	  "= Stop all profiles from MBSSID group if auto_stop option is given, "
+	  "set given link as the transmitted profile of the group. Restart all "
+	  "profiles if auto_start is given"
 	  "is provided\n"},
 #endif /* CONFIG_IEEE80211AX */
 	{ NULL, NULL, NULL, NULL }
