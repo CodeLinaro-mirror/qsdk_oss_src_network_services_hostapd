@@ -3572,6 +3572,11 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+	params->rssi_reject_assoc_rssi = hapd->conf->rssi_reject_assoc_rssi ?
+		hapd->conf->rssi_reject_assoc_rssi : hapd->iconf->rssi_reject_assoc_rssi;
+	params->rssi_deauth_grace_samples = hapd->conf->rssi_deauth_grace_samples ?
+		hapd->conf->rssi_deauth_grace_samples : hapd->iconf->rssi_deauth_grace_samples;
+
 	return 0;
 }
 
