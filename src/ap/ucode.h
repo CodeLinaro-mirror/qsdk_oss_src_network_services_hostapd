@@ -75,6 +75,10 @@ static inline void
 hostapd_ucode_chsw_comp_ev_notify(struct hostapd_data *hapd, int freq)
 {
 }
+static inline void
+hostapd_ucode_notify_acs_completed(struct hostapd_iface *iface, int success)
+{
+}
 #endif
 #ifdef CONFIG_IEEE80211AX
 static inline void hostapd_ucode_config_nft_table(char *table, bool add)
