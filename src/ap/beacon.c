@@ -886,7 +886,7 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 #endif /* CONFIG_P2P */
 
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
+	if (hostapd_is_eht_enabled(hapd)) {
 		/* TTLM IE */
 		if (hapd->mld &&
 		    hapd->mld->ttlm_ctx.established_ttlm.ttlm.expected_duration_present)
@@ -965,12 +965,12 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 	pos = hostapd_get_rsnxe(hapd, pos, epos - pos);
 
 #ifdef CONFIG_IEEE80211AX
-	if (hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax)
+	if (hostapd_is_he_enabled(hapd))
 		pos = hostapd_eid_he_mu_edca_parameter_set(hapd, pos, false);
 #endif /* CONFIG_IEEE80211AX */
 
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->iconf->ieee80211be && !hapd->conf->disable_11be) {
+	if (hostapd_is_eht_enabled(hapd)) {
 		if (hapd->mld &&
 		    hapd->mld->ttlm_ctx.established_ttlm.ttlm.expected_duration_present)
 			pos = hostapd_add_ttlm_info_elem(pos,
@@ -2896,7 +2896,7 @@ int ieee802_11_build_nontx_bss_params(struct hostapd_data *hapd,
 
 	tailpos = hostapd_get_rsnxe(hapd, tailpos, tailend - tailpos);
 #ifdef CONFIG_IEEE80211AX
-	if (hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax) {
+	if (hostapd_is_he_enabled(hapd)) {
 		startpos = tailpos;
 		tailpos = hostapd_eid_he_mu_edca_parameter_set(hapd, tailpos, false);
 #ifdef CONFIG_IEEE80211BE
