@@ -411,6 +411,10 @@ struct hostapd_config * hostapd_config_defaults(void)
 
 	conf->rssi_reject_assoc_rssi = 0;
 	conf->rssi_reject_assoc_timeout = 30;
+	conf->rssi_deauth_grace_samples = 10;
+	bss->rssi_reject_assoc_rssi = 0;
+	bss->rssi_reject_assoc_timeout = 30;
+	bss->rssi_deauth_grace_samples = 10;
 
 #ifdef CONFIG_AIRTIME_POLICY
 	conf->airtime_update_interval = AIRTIME_DEFAULT_UPDATE_INTERVAL;
