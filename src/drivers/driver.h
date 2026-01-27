@@ -4931,6 +4931,8 @@ struct wpa_driver_ops {
 	 * @threshold: Threshold value for signal change events; 0 = disabled
 	 * @hysteresis: Minimum change in signal strength before indicating a
 	 *	new event
+	 * @link_id: If >= 0 indicates the link of the AP MLD for which RSSI
+	 * signal monitor is required
 	 * Returns: 0 on success, -1 on failure (or if not supported)
 	 *
 	 * This function can be used to configure monitoring of signal strength
@@ -4939,7 +4941,7 @@ struct wpa_driver_ops {
 	 * should be generated assuming the signal strength has changed at
 	 * least %hysteresis from the previously indicated signal change event.
 	 */
-	int (*signal_monitor)(void *priv, int threshold, int hysteresis);
+	int (*signal_monitor)(void *priv, int threshold, int hysteresis, int link_id);
 
 	/**
 	 * get_noa - Get current Notice of Absence attribute payload

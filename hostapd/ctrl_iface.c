@@ -1616,6 +1616,29 @@ static int hostapd_ctrl_iface_set_punc_thres(struct hostapd_iface *iface,
 #endif /* NEED_AP_MLME  */
 }
 
+static int hostapd_ctrl_iface_update_rssi_monitor(struct hostapd_data *hapd)
+{
+	int threshold, hysteresis, link_id;
+	int ret;
+
+	if (!hapd->started || !hapd->drv_priv || !hapd->driver ||
+	    !hapd->driver->signal_monitor)
+		return 0;
+
+	threshold = hapd->conf->rssi_reject_assoc_rssi;
+	hysteresis = hapd->conf->rssi_deauth_grace_samples;
+	link_id = hapd->mld_link_id;
+
+	wpa_printf(MSG_INFO, "Updating RSSI monitor: threshold=%d dBm hysteresis=%d link=%d",
+		   threshold, hysteresis, link_id);
+
+	ret = hapd->driver->signal_monitor(hapd->drv_priv, threshold, hysteresis, link_id);
+	if (ret < 0)
+		wpa_printf(MSG_WARNING, "Failed to update RSSI signal monitor, error: %d",
+			   ret);
+
+	return ret;
+}
 
 static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 {
@@ -1730,6 +1753,39 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 	} else if (os_strncmp(cmd, "vendor_elements_", 16) == 0) {
 		ret = hostapd_handle_vendor_elements_update(hapd, hapd->conf, NULL,
 							    cmd, value, true);
+	} else if (os_strcasecmp(cmd, "rssi_reject_assoc_rssi") == 0) {
+		int val = atoi(value);
+		if (val < -95 || val > -1) {
+			wpa_printf(MSG_ERROR, "Invalid RSSI threshold %d (range: -95 to -1)", val);
+			ret = -1;
+		} else {
+			/* Update RSSI threshold for this specific hapd (link or interface-wide) */
+			hapd->conf->rssi_reject_assoc_rssi = val;
+			hapd->iconf->rssi_reject_assoc_rssi = val;
+			wpa_printf(MSG_INFO, "Updated RSSI association rejection threshold to %d dBm (runtime value updated)", val);
+			hostapd_ctrl_iface_update_rssi_monitor(hapd);
+		}
+	} else if (os_strcasecmp(cmd, "rssi_reject_assoc_timeout") == 0) {
+		int val = atoi(value);
+		if (val < 1 || val > 300) {
+			wpa_printf(MSG_ERROR, "Invalid RSSI timeout %d (range: 1 to 300)", val);
+			ret = -1;
+		} else {
+			hapd->conf->rssi_reject_assoc_timeout = val;
+			hapd->iconf->rssi_reject_assoc_timeout = val;
+			wpa_printf(MSG_INFO, "Updated RSSI association timeout to %d seconds", val);
+		}
+	} else if (os_strcasecmp(cmd, "rssi_deauth_grace_samples") == 0) {
+		int val = atoi(value);
+		if (val < 1 || val > 100) {
+			wpa_printf(MSG_ERROR, "Invalid grace samples %d (range: 1 to 100)", val);
+			ret = -1;
+		} else {
+			hapd->conf->rssi_deauth_grace_samples = val;
+			hapd->iconf->rssi_deauth_grace_samples = val;
+			wpa_printf(MSG_INFO, "Updated RSSI deauth grace samples to %d", val);
+			hostapd_ctrl_iface_update_rssi_monitor(hapd);
+		}
 	} else {
 		if (hapd->iface->conf->disable_csa_dfs &&
 		    ((os_strcmp(cmd, "channel") == 0) &&

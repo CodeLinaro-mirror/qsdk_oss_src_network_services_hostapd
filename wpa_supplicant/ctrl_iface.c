@@ -8705,7 +8705,7 @@ static int wpas_ctrl_iface_signal_monitor(struct wpa_supplicant *wpa_s,
 	pos = os_strstr(cmd, "HYSTERESIS=");
 	if (pos)
 		hysteresis = atoi(pos + 11);
-	return wpa_drv_signal_monitor(wpa_s, threshold, hysteresis);
+	return wpa_drv_signal_monitor(wpa_s, threshold, hysteresis, -1);
 }
 
 
