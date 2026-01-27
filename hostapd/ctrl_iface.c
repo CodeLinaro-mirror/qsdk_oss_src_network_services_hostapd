@@ -2100,11 +2100,6 @@ static int hostapd_ctrl_iface_get_mbssid_attributes(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	if (!hapd->started) {
-		wpa_printf(MSG_ERROR, "%s is not started", hapd->conf->iface);
-		return -1;
-	}
-
 	if (hapd->iconf->mbssid == MBSSID_DISABLED) {
 		wpa_printf(MSG_ERROR, "%s is not part of any MBSSID group",
 			   hapd->conf->iface);
