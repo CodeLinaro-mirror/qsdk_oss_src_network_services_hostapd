@@ -2311,8 +2311,8 @@ setup_mld:
 			   "Failed to update radio mask for %s",
 			   hapd->conf->iface);
 #endif /* CONFIG_IEEE80211BE */
-
-	if (hostapd_mbssid_setup_bss(hapd))
+	/* MBSSID setup already done during reenable*/
+	if (!hapd->reenable && hostapd_mbssid_setup_bss(hapd))
 		return -1;
 
 	if (conf->wmm_enabled < 0)
@@ -4545,6 +4545,15 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 	if (hapd->iconf->mbssid == MBSSID_DISABLED)
 		return 0;
 
+	/*Skip mbssid_add_bss if mbssid_group already set*/
+	if( hapd->mbssid_group != NULL ){
+		wpa_printf(MSG_INFO,
+			   "Bss[%s] already part of MBSSID group %d with bss_index:%zu",
+			   hapd->conf->iface, hapd->mbssid_group->group_id,
+			   hapd->mbssid_idx);
+		return 0;
+	}
+
 	/* In single wiphy, maximum interfaces supported by each radio are
 	 * added, hence divide by num_multi_hws to get per radio limit */
 	mbssid_max_interfaces = iface->mbssid_max_interfaces / iface->num_multi_hws;
@@ -4663,7 +4672,7 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 	if (!bss_added)
 		dl_list_add_tail(&group->bss_list, &hapd->mbssid_bss);
 
-	wpa_printf(MSG_ERROR,
+	wpa_printf(MSG_INFO,
 		   "Bss[%s] added to MBSSID group %d with bss_index:%zu",
 		   hapd->conf->iface, hapd->mbssid_group->group_id,
 		   hapd->mbssid_idx);
