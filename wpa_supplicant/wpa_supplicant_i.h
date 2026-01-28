@@ -350,7 +350,9 @@ struct wpa_global {
 
 	struct psk_list_entry *add_psk; /* From group formation */
 
+#ifdef UBUS_SUPPORT
 	struct ubus_object ubus_global;
+#endif /* UBUS_SUPPORT */
 
 #ifdef CONFIG_PROCESS_COORDINATION
 	struct proc_coord *pc;
