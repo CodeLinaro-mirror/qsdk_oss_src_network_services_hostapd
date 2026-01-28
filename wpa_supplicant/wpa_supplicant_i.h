@@ -1605,6 +1605,8 @@ struct wpa_supplicant {
 	unsigned int multi_ap_ie:1;
 	unsigned int multi_ap_backhaul:1;
 	unsigned int multi_ap_fronthaul:1;
+	u8 multi_ap_profile;
+	u16 multi_ap_primary_vlanid;
 
 #ifndef CONFIG_NO_ROBUST_AV
 	struct robust_av_data robust_av;
