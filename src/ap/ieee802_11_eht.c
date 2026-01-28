@@ -1034,13 +1034,13 @@ u8 * hostapd_eid_eht_ml_beacon(struct hostapd_data *hapd,
 
 
 u8 * hostapd_eid_eht_ml_assoc(struct hostapd_data *hapd, struct sta_info *info,
-			      u8 *eid)
+			      u8 *eid, u8 include_ext_cap)
 {
 	if (!ap_sta_is_mld(hapd, info))
 		return eid;
 
 	eid = hostapd_eid_eht_basic_ml_common(hapd, eid, &info->mld_info,
-					      false, true, 0);
+					      false, true, include_ext_cap);
 	ap_sta_free_sta_profile(&info->mld_info);
 	return eid;
 }
