@@ -424,6 +424,8 @@ ssize_t ieee802_11_defrag_mle_subelem(struct wpabuf *mlbuf,
 u8 get_link_id(const u8 *ml_ie);
 const u8 * get_ml_ie(const u8 *ies, size_t len, u8 type);
 const u8 * get_basic_mle_mld_addr(const u8 *buf, size_t len);
+const u8 * get_basic_mle_eml_capa(const u8 *buf, size_t len);
+int get_basic_mle_link_id(const u8 *buf, size_t len);
 
 /**
  * struct hostapd_multi_mbssid_group: hostapd per group MBSSID info
