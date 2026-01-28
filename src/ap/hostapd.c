@@ -2523,10 +2523,6 @@ setup_mld:
 			   HE_BSS_COLOR_CCA_COUNT_DEFAULT;
 #endif
 
-#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
-	hostapd_mu_cap_war_state_init_extn(hapd);
-#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
-
 	/* If TX BSS is already beaconing, update it with newly added profile
 	 */
 	if (start_beacon && tx_hapd && tx_hapd != hapd && tx_hapd->beacon_set_done)
@@ -4057,6 +4053,9 @@ hostapd_alloc_bss_data(struct hostapd_iface *hapd_iface,
 	dl_list_init(&hapd->sae_commit_queue);
 #endif /* CONFIG_SAE */
 	dl_list_init(&hapd->erp_keys);
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
+	hostapd_mu_cap_war_state_init_extn(hapd);
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 
 	if (conf && conf->ieee80211ax)
 		hapd->parameter_set_count = conf->he_mu_edca.he_qos_info & 0xf;
