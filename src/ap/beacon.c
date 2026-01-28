@@ -542,9 +542,20 @@ static u8 * hostapd_eid_max_cs_time(struct hostapd_data *hapd, u8 *eid)
 	 * 0 (1 beacon interval) + time for interface restart + time to
 	 * send a Beacon frame in the new channel (1 beacon interval).
 	 *
-	 * TODO: Use dynamic interface restart time. For now, assume 1 sec.
+	 * Use driver-provided timing if available, otherwise fall back
+	 * to hardcoded values
 	 */
-	switch_time = USEC_TO_TU(250 * 1000) + 2 * hapd->iconf->beacon_int;
+	if (hapd->cs_time > 0) {
+		/* Convert from milliseconds to TU (1 TU = 1024 microseconds) */
+		switch_time = USEC_TO_TU(hapd->cs_time * 1000);
+		wpa_printf(MSG_DEBUG,
+			   "Using driver-provided channel switch time: %u ms (%u TU)",
+			   hapd->cs_time, switch_time);
+	} else {
+		/* Fallback to previous hardcoded behavior (assume 1 second) */
+		switch_time = USEC_TO_TU(250 * 1000) + 2 * hapd->iconf->beacon_int;
+		wpa_printf(MSG_DEBUG, "Using fallback channel switch time: %u TU", switch_time);
+	}
 
 	*eid++ = WLAN_EID_EXTENSION;
 	*eid++ = 4;

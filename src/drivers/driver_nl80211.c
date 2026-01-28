@@ -5377,6 +5377,103 @@ static int nl80211_mbssid(struct nl_msg *msg, struct mbssid_data *params)
 
 #endif /* CONFIG_IEEE80211AX */
 
+static int nl80211_get_channel_switch_time_handler(struct nl_msg *msg, void *arg)
+{
+	u32 *cs_time = arg;
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+
+	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		  genlmsg_attrlen(gnlh, 0), NULL);
+
+	if (tb[NL80211_ATTR_VENDOR_DATA]) {
+		struct nlattr *vendor_tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_MAX + 1];
+		nla_parse(vendor_tb, QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_MAX,
+			  nla_data(tb[NL80211_ATTR_VENDOR_DATA]),
+			  nla_len(tb[NL80211_ATTR_VENDOR_DATA]), NULL);
+		if (vendor_tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_TOTAL])
+			*cs_time = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_TOTAL]);
+	}
+
+	return NL_SKIP;
+}
+
+static int nl80211_get_channel_switch_time(void *priv,
+					   struct hostapd_freq_params *freq,
+					   u32 *cs_time)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret = -1;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Get channel switch time");
+
+	*cs_time = 0;
+
+	msg = nl80211_drv_msg(drv, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -1;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_GET_CHANNEL_SWITCH_TIME)) {
+		nlmsg_free(msg);
+		return -1;
+	}
+
+	if (freq) {
+		struct nlattr *params;
+
+		params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+		if (!params) {
+			nlmsg_free(msg);
+			return -1;
+		}
+
+		if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_FREQ,
+				freq->freq)) {
+			nlmsg_free(msg);
+			return -1;
+		}
+
+		if (freq->bandwidth &&
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_BANDWIDTH,
+				freq->bandwidth)) {
+			nlmsg_free(msg);
+			return -1;
+		}
+
+		if (freq->center_freq1 &&
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ1,
+				freq->center_freq1)) {
+			nlmsg_free(msg);
+			return -1;
+		}
+
+		if (freq->center_freq2 &&
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ2,
+				freq->center_freq2)) {
+			nlmsg_free(msg);
+			return -1;
+		}
+
+		if (freq->punct_bitmap &&
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_PUNCT_BMAP,
+				freq->punct_bitmap)) {
+			nlmsg_free(msg);
+			return -1;
+		}
+
+		nla_nest_end(msg, params);
+	}
+
+	ret = send_and_recv_resp(drv, msg,
+				 nl80211_get_channel_switch_time_handler,
+				 cs_time);
+
+	return ret;
+}
 
 #ifdef CONFIG_DRIVER_NL80211_QCA
 static void qca_set_allowed_ap_freqs(struct i802_bss *bss, const int *freqs,
@@ -17166,6 +17263,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.radio_disable = testing_nl80211_radio_disable,
 #endif /* CONFIG_TESTING_OPTIONS */
 	.get_multi_hw_info = wpa_driver_get_multi_hw_info,
+	.get_channel_switch_time = nl80211_get_channel_switch_time,
 	.is_retail_afc_supported = nl80211_is_retail_afc_supported,
 #ifdef CONFIG_IEEE80211BE
 	.set_epcs_cfg = wpa_driver_set_epcs_cfg,
