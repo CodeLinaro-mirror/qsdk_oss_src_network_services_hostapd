@@ -1351,9 +1351,6 @@ static void acs_study(struct hostapd_iface *iface)
 		goto fail;
 	}
 
-	if (!acs_handle_channel_change_extn(iface, ideal_chan, err))
-		return;
-
 	iface->conf->channel = ideal_chan->chan;
 	iface->freq = ideal_chan->freq;
 #ifdef CONFIG_IEEE80211BE
@@ -1375,6 +1372,10 @@ static void acs_study(struct hostapd_iface *iface)
 		goto fail;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (!acs_handle_channel_change_extn(iface, ideal_chan, err))
+		return;
+#endif
 	err = 0;
 fail:
 	if (!acs_handle_channel_change_failed_extn(iface, err))
