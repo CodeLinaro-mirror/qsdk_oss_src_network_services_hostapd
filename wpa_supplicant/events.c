@@ -3486,6 +3486,74 @@ static int wpa_supplicant_use_own_rsne_params(struct wpa_supplicant *wpa_s,
 	return 0;
 }
 
+/**
+ * wpa_supplicant_check_hop_count - Check hop count in vendor IE
+ * @resp_ies: Association response IEs
+ * @resp_ies_len: Length of association response IEs
+ * Returns: 0 if hop count is valid, -1 if hop count is 255 (should reject)
+ */
+static int wpa_supplicant_check_hop_count(const u8 *resp_ies,
+					   size_t resp_ies_len)
+{
+	const u8 *vendor_ie;
+	u8 hop_count;
+
+	if (!resp_ies || resp_ies_len == 0)
+		return 0;
+
+	/* Search for our custom vendor IE */
+	vendor_ie = get_vendor_ie(resp_ies, resp_ies_len, OUI_QCA);
+	if (!vendor_ie) {
+		/* Vendor IE not present - allow association */
+		return 0;
+	}
+
+	/* Verify the IE is within bounds of resp_ies buffer */
+	if ((size_t)(vendor_ie - resp_ies) + 2 + vendor_ie[1] > resp_ies_len) {
+		wpa_printf(MSG_WARNING, "Hop count vendor IE extends beyond buffer");
+		return 0;
+	}
+
+	/*
+	 * Vendor IE format:
+	 * [0] = Element ID (WLAN_EID_VENDOR_SPECIFIC = 221)
+	 * [1] = Length
+	 * [2-4] = OUI (3 bytes)
+	 * [5] = OUI Type
+	 * [6+] = Payload
+	 *
+	 * The hop count is the first byte of the payload
+	 */
+	if (vendor_ie[1] < 5) {
+		/* IE too short to contain hop count */
+		wpa_printf(MSG_WARNING,
+			   "Hop count vendor IE too short (len=%u)",
+			   vendor_ie[1]);
+		return 0;
+	}
+
+	/* Check if OUI type matches MULTI_AP_OUI_TYPE */
+	if (vendor_ie[5] != MULTI_AP_OUI_TYPE) {
+		wpa_printf(MSG_DEBUG,
+			   "Vendor IE OUI type (0x%02x) doesn't match MAP - skipping hop cnt check",
+			   vendor_ie[5]);
+		return 0;
+	}
+
+	/* Extract hop count from payload (first byte after OUI+Type) */
+	hop_count = vendor_ie[6];
+
+	wpa_printf(MSG_DEBUG, "Hop count from vendor IE: %u", hop_count);
+
+	if (hop_count == 255) {
+		wpa_printf(MSG_INFO,
+			   "Rejecting association: hop count is 255");
+		return -1;
+	}
+
+	return 0;
+}
+
 
 static void wpas_parse_connection_info(struct wpa_supplicant *wpa_s,
 				       unsigned int freq,
@@ -3579,6 +3647,17 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 	if (data->assoc_info.resp_ies) {
 		wpa_hexdump(MSG_DEBUG, "resp_ies", data->assoc_info.resp_ies,
 			    data->assoc_info.resp_ies_len);
+
+		/* Check hop count in vendor IE and reject if it's 255 */
+		if (wpa_supplicant_check_hop_count(data->assoc_info.resp_ies,
+						   data->assoc_info.resp_ies_len) < 0) {
+			wpa_printf(MSG_WARNING, "Association rejected due to invalid hop count");
+			wpa_supplicant_deauthenticate(wpa_s, WLAN_REASON_INVALID_IE);
+			/* Clear any partial association state */
+			wpa_sm_notify_disassoc(wpa_s->wpa);
+			return -1;
+		}
+
 #ifdef CONFIG_TDLS
 		wpa_tdls_assoc_resp_ies(wpa_s->wpa, data->assoc_info.resp_ies,
 					data->assoc_info.resp_ies_len);
