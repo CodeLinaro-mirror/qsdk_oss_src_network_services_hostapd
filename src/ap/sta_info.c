@@ -41,6 +41,7 @@
 #include "vlan.h"
 #include "wps_hostapd.h"
 #include "dscp_policy.h"
+#include "hostapd_if/hostapd_if.h"
 
 static void ap_sta_remove_in_other_bss(struct hostapd_data *hapd,
 				       struct sta_info *sta);
@@ -297,6 +298,7 @@ void ap_free_unadded_link_sta(struct hostapd_data *hapd, struct sta_info *sta)
 		os_free(psta->he_capab);
 		os_free(psta->he_6ghz_capab);
 		os_free(psta->eht_capab);
+		os_free(psta->uhr_capab);
 
 #ifdef CONFIG_SAE
 		sae_clear_data(psta->sae);
@@ -647,6 +649,7 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	os_free(sta->he_capab);
 	os_free(sta->he_6ghz_capab);
 	os_free(sta->eht_capab);
+	os_free(sta->uhr_capab);
 
 	hostapd_sta_os_free_extn(&sta->sta_extn);
 
@@ -1279,7 +1282,7 @@ void set_link_id_for_each_partner_link_sta(struct hostapd_data *hapd,
 			continue;
 
 		lsta = ap_get_sta(lhapd, psta->addr);
-		if (lsta)
+		if (lsta && (psta->mld_assoc_link_id == lsta->mld_assoc_link_id))
 			lsta->mld_assoc_link_id = link_id;
 	}
 }
@@ -1304,7 +1307,7 @@ int set_for_each_partner_link_sta(struct hostapd_data *hapd,
 			continue;
 
 		lsta = ap_get_sta(lhapd, psta->addr);
-		if (lsta)
+		if (lsta && (psta->mld_assoc_link_id == lsta->mld_assoc_link_id))
 			ret = cb(lhapd, lsta, data);
 		if (ret)
 			return ret;
@@ -1417,6 +1420,10 @@ static void ap_sta_disassociate_common(struct hostapd_data *hapd,
 	eloop_register_timeout(hapd->iface->drv_flags &
 			       WPA_DRIVER_FLAGS_DEAUTH_TX_STATUS ? 2 : 0, 0,
 			       ap_sta_disassoc_cb_timeout, hapd, sta);
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_event_disassoc(hapd, sta, HOSTAPD_IF_DISCONNECT_TO_STA,
+				  reason, false, 0);
+#endif
 }
 
 
@@ -1464,6 +1471,10 @@ static void ap_sta_deauthenticate_common(struct hostapd_data *hapd,
 	eloop_register_timeout(hapd->iface->drv_flags &
 			       WPA_DRIVER_FLAGS_DEAUTH_TX_STATUS ? 2 : 0, 0,
 			       ap_sta_deauth_cb_timeout, hapd, sta);
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_event_deauth(hapd, sta, HOSTAPD_IF_DISCONNECT_TO_STA,
+			reason, false, 0);
+#endif
 }
 
 
@@ -1969,6 +1980,10 @@ int ap_check_sa_query_timeout(struct hostapd_data *hapd, struct sta_info *sta)
 		sta->sa_query_trans_id = NULL;
 		sta->sa_query_count = 0;
 		eloop_cancel_timeout(ap_sa_query_timer, hapd, sta);
+#ifdef CONFIG_HOSTAPD_IF
+		hostapd_if_event_sa_query_completion(hapd, sta->addr,
+						HOSTAPD_IF_SAQUERY_STA_INVALID);
+#endif
 		return 1;
 	}
 
@@ -2550,14 +2565,15 @@ int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_aut
 
 #ifdef CONFIG_QCN_EXTN
 			    0, NULL, NULL, NULL, 0, NULL, 0,
-			    NULL, NULL,
+			    NULL, 0, NULL, NULL,
 #else
 
 			    0, NULL, NULL, NULL, 0, NULL, 0, NULL,
+			    0, NULL,
 
 #endif
 			    sta->flags, 0, 0, 0, 0,
-			    mld_link_addr, mld_link_sta, eml_cap, 0)) {
+			    mld_link_addr, mld_link_sta, eml_cap, 0, CONTROL_MIC_PAD_NOT_SET)) {
 		hostapd_logger(hapd, sta->addr,
 			       HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_NOTICE,

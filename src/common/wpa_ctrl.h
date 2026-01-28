@@ -123,6 +123,12 @@ extern "C" {
 /** MLO link STA added through link reconfiguration */
 #define WPA_EVENT_LINK_STA_ADDED "CTRL-EVENT-LINK-STA-ADDED "
 
+#ifdef CONFIG_QCN_EXTN
+/** Ind Rep - WDS STA Pre-connect State */
+#define WPA_EVENT_PRE_CONNECTING "CTRL-EVENT-PRE-CONNECTING "
+#endif
+
+
 /** IP subnet status change notification
  *
  * When using an offloaded roaming mechanism where driver/firmware takes care
@@ -397,6 +403,9 @@ extern "C" {
 #define DFS_EVENT_CAC_COMPLETED "DFS-CAC-COMPLETED "
 #define DFS_EVENT_NOP_FINISHED "DFS-NOP-FINISHED "
 #define DFS_EVENT_PRE_CAC_EXPIRED "DFS-PRE-CAC-EXPIRED "
+
+/* AWGN events */
+#define INTERFERENCE_DETECTED "INTERFERENCE-DETECTED "
 
 #define AP_CSA_FINISHED "AP-CSA-FINISHED "
 

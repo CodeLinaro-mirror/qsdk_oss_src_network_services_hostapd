@@ -28,6 +28,8 @@
 #define WLAN_STA_AUTH BIT(0)
 #define WLAN_STA_ASSOC BIT(1)
 #define WLAN_STA_SPP_AMSDU BIT(2)
+#define WLAN_STA_CFP BIT(3)
+#define WLAN_STA_UHR BIT(4)
 #define WLAN_STA_AUTHORIZED BIT(5)
 #define WLAN_STA_PENDING_POLL BIT(6) /* pending activity poll not ACKed */
 #define WLAN_STA_SHORT_PREAMBLE BIT(7)
@@ -128,6 +130,7 @@ struct sta_info {
 	int supported_rates_len;
 	u8 qosinfo; /* Valid when WLAN_STA_WMM is set */
 	int ft_over_ds_saquery_status;
+	u8 control_mic_pad;
 
 #ifdef CONFIG_MESH
 	enum mesh_plink_state plink_state;
@@ -227,6 +230,8 @@ struct sta_info {
 	struct ieee80211_he_6ghz_band_cap *he_6ghz_capab;
 	struct ieee80211_eht_capabilities *eht_capab;
 	size_t eht_capab_len;
+	struct ieee80211_uhr_capabilities *uhr_capab;
+	size_t uhr_capab_len;
 
 	int sa_query_count; /* number of pending SA Query requests;
 			     * 0 = no SA Query in progress */
@@ -366,6 +371,12 @@ struct sta_info {
 	u8 reply_addr[6];
 #endif /* CONFIG_IEEE80211BE */
 	u8 skip_kernel_delete;
+
+	/* External plugin-provided tails to append to outgoing management frames */
+	u8 *ext_auth_tail;
+	size_t ext_auth_tail_len;
+	u8 *ext_assoc_tail;
+	size_t ext_assoc_tail_len;
 
 	bool dscp_policy_capable;
 	struct hostapd_dscp_policy **policies;

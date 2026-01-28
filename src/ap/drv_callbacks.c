@@ -1,6 +1,7 @@
 /*
  * hostapd / Callback functions for driver wrappers
  * Copyright (c) 2002-2013, Jouni Malinen <j@w1.fi>
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -48,7 +49,7 @@
 #include "interference.h"
 #include "ttlm.h"
 #include "robust_av.h"
-
+#include "../../qcn_extns/cmn.h"
 
 #ifdef CONFIG_FILS
 void hostapd_notify_assoc_fils_finish(struct hostapd_data *hapd,
@@ -713,6 +714,11 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 		else
 			sta->flags &= ~WLAN_STA_SPP_AMSDU;
 
+		if (wpa_auth_uses_cfp(sta->wpa_sm))
+			sta->flags |= WLAN_STA_CFP;
+		else
+			sta->flags &= ~WLAN_STA_CFP;
+
 #ifdef CONFIG_IEEE80211R_AP
 		if (sta->auth_alg == WLAN_AUTH_FT) {
 			status = wpa_ft_validate_reassoc(sta->wpa_sm, req_ies,
@@ -1283,6 +1289,78 @@ int hostapd_switch_power_mode(struct hostapd_data *hapd)
 	return ret;
 }
 
+void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
+				  int width, int width_device, int is_dfs0, int is_dfs)
+{
+	int freq = hapd->iface->freq;
+
+	if (hapd->csa_in_progress &&
+	    freq == hapd->cs_freq_params.freq) {
+		if ((is_dfs || is_dfs0) && hostapd_is_dfs_required(hapd->iface) &&
+		    !hostapd_is_dfs_chan_available(hapd->iface) &&
+		    !hapd->iface->cac_started) {
+			if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_DFS_CHANNEL_SWITCH) {
+				hostapd_cleanup_cs_params(hapd);
+				hapd->disable_cu = 1;
+				ieee802_11_set_beacon(hapd);
+				hostapd_set_state(hapd->iface, HAPD_IFACE_DFS);
+				hapd->iface->cac_type = HAPD_CAC_COMPLETE_AFTER_CSA;
+				wpa_printf(MSG_DEBUG, "DFS:Starting CAC after CSA on freq=%d", freq);
+				hostapd_start_dfs_cac(hapd->iface, hapd->iface->conf->hw_mode,
+						     hapd->iface->freq,
+						     hapd->iconf->channel,
+						     hapd->iface->conf->ieee80211n,
+						     hapd->iface->conf->ieee80211ac,
+						     hapd->iface->conf->ieee80211ax,
+						     hapd->iface->conf->ieee80211be,
+						     hapd->iface->conf->ieee80211bn,
+						     hapd->iconf->secondary_channel,
+						     convert_to_oper_chan_width(width),
+						     hostapd_get_oper_centr_freq_seg0_idx(hapd->iface->conf),
+						     hostapd_get_oper_centr_freq_seg1_idx(hapd->iface->conf),
+						     false, width_device,
+						     hapd->iconf->center_freq_device);
+			} else {
+				hostapd_disable_iface(hapd->iface);
+				hostapd_enable_iface(hapd->iface);
+			}
+		} else {
+			hapd->iconf->he_6ghz_reg_pwr_type = power_mode_6ghz;
+			hostapd_cleanup_cs_params(hapd);
+			hapd->disable_cu = 1;
+			ieee802_11_set_beacon(hapd);
+			hostapd_start_device_cac_background(hapd->iface);
+			wpa_msg(hapd->msg_ctx, MSG_INFO, AP_CSA_FINISHED
+				"freq=%d dfs=%d", freq, is_dfs);
+		}
+#ifdef CONFIG_QCN_EXTN
+		if (hapd->iconf->conf_extn.ind_rptr &&
+			((is_dfs && hapd->iconf->conf_extn.skip_cac) || !is_dfs)) {
+				hostapd_csa_bitmap_update_extn(hapd->iface, freq);
+		}
+#endif
+	} else {
+		if (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD) {
+		/* Complete AP configuration for the first bring up. */
+			if (is_dfs0 > 0 &&
+			    hostapd_is_dfs_required(hapd->iface) <= 0 &&
+			    hapd->iface->state != HAPD_IFACE_ENABLED) {
+				/* Fake a CAC start bit to skip setting channel */
+				hapd->iface->cac_started = 1;
+				hostapd_setup_interface_complete(hapd->iface, 0);
+			}
+			wpa_msg(hapd->msg_ctx, MSG_INFO, AP_CSA_FINISHED
+				"freq=%d dfs=%d", freq, is_dfs);
+		} else if (is_dfs &&
+			   hostapd_is_dfs_required(hapd->iface) &&
+			   !hostapd_is_dfs_chan_available(hapd->iface) &&
+			   !hapd->iface->cac_started) {
+			hostapd_disable_iface(hapd->iface);
+			hostapd_enable_iface(hapd->iface);
+		}
+	}
+}
+
 void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 			     int offset, int width, int cf1, int cf2,
 			     u16 punct_bitmap, u8 power_mode_6ghz,
@@ -1480,35 +1558,8 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 	if (!finished)
 		return;
 
-	if (hapd->csa_in_progress &&
-	    freq == hapd->cs_freq_params.freq) {
-		hapd->iconf->he_6ghz_reg_pwr_type = power_mode_6ghz;
-
-		hostapd_cleanup_cs_params(hapd);
-		hapd->disable_cu = 1;
-		ieee802_11_set_beacon(hapd);
-		hostapd_start_device_cac_background(hapd->iface);
-
-		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_CSA_FINISHED
-			"freq=%d dfs=%d", freq, is_dfs);
-	} else if (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD) {
-		/* Complete AP configuration for the first bring up. */
-		if (is_dfs0 > 0 &&
-		    hostapd_is_dfs_required(hapd->iface) <= 0 &&
-		    hapd->iface->state != HAPD_IFACE_ENABLED) {
-			/* Fake a CAC start bit to skip setting channel */
-			hapd->iface->cac_started = 1;
-			hostapd_setup_interface_complete(hapd->iface, 0);
-		}
-		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_CSA_FINISHED
-			"freq=%d dfs=%d", freq, is_dfs);
-	} else if (is_dfs &&
-		   hostapd_is_dfs_required(hapd->iface) &&
-		   !hostapd_is_dfs_chan_available(hapd->iface) &&
-		   !hapd->iface->cac_started) {
-		hostapd_disable_iface(hapd->iface);
-		hostapd_enable_iface(hapd->iface);
-	}
+	hostapd_chan_switch_complete(hapd, power_mode_6ghz, width,
+				     width_device, is_dfs0, is_dfs);
 
 	for (i = 0; i < hapd->iface->num_bss; i++)
 		hostapd_neighbor_set_own_report(hapd->iface->bss[i]);
@@ -1777,8 +1828,6 @@ static void hostapd_notif_auth(struct hostapd_data *hapd,
 {
 	struct sta_info *sta;
 	u16 status = WLAN_STATUS_SUCCESS;
-	u8 resp_ies[2 + WLAN_AUTH_CHALLENGE_LEN];
-	size_t resp_ies_len = 0;
 
 	sta = ap_get_sta(hapd, rx_auth->peer);
 	if (!sta) {
@@ -1823,7 +1872,7 @@ static void hostapd_notif_auth(struct hostapd_data *hapd,
 
 fail:
 	hostapd_sta_auth(hapd, rx_auth->peer, rx_auth->auth_transaction + 1,
-			 status, resp_ies, resp_ies_len);
+			 status, NULL, 0);
 }
 
 
@@ -2998,11 +3047,10 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 					      struct link_removal_event *ev,
 					      enum wpa_event_type event)
 {
-	struct hostapd_data *phapd;
+	struct hostapd_data *phapd, *tx_hapd;
 	struct hostapd_iface *iface, **tmp;
 	unsigned int i;
 	struct hapd_interfaces *interfaces;
-	u8 active_links;
 #ifdef CONFIG_WNM_AP
 	u8 bss_term_dur[12];
 	u8 req_mode;
@@ -3042,7 +3090,15 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 
 		iface = hapd->iface;
 		interfaces = iface->interfaces;
-		active_links = hostapd_get_active_links(hapd);
+
+			/* Only disable the link instead of removing */
+			if (hapd->removal_type == HAPD_LINK_DISABLE) {
+				hostapd_free_link_stas(hapd);
+				hostapd_disable_bss(hapd, 0);
+				phapd = hapd;
+				goto refresh_beacon;
+			}
+
 		/* Save one of the partner bss to update the beacon */
 		for_each_mld_link(phapd, hapd)
 			if (phapd != hapd)
@@ -3067,7 +3123,6 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 				}
 			}
 		} else {
-			/* Should be updated when MBSSID grouping is enabled */
 			for (i = 0; i < iface->conf->num_bss; i++) {
 				if (iface->bss[i] == hapd)
 					break;
@@ -3081,14 +3136,21 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 
 			ap_for_each_sta(hapd, hostapd_sm_link_reconfigure, phapd);
 
-			hostapd_remove_bss(iface, i, true);
+			/* Store tx_hapd to update MBSSID beacon as hapd will be
+			 * freed by hostapd_remove_bss() */
+			tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
+			if (tx_hapd == hapd)
+				tx_hapd = NULL;
+
+			hostapd_remove_bss(iface, i);
+
+			if (tx_hapd)
+				ieee802_11_update_beacon_mbssid(tx_hapd);
 		}
 
+refresh_beacon:
 		/* Refresh all the partner beacons */
-		hostapd_refresh_all_iface_beacons(phapd->iface);
-		/* update ML Max recommended links */
-		if (active_links < phapd->conf->ml_max_rec_links)
-			hostapd_set_ml_max_rec_links(phapd, active_links);
+		hostapd_refresh_other_iface_beacons(iface);
 	}
 }
 #endif /* CONFIG_IEEE80211BE */
@@ -3481,10 +3543,11 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 #ifdef NEED_AP_MLME
 	case EVENT_INTERFACE_UNAVAILABLE:
 		hostapd_event_iface_unavailable(hapd);
+		ieee802_11_update_beacon_mbssid(hapd);
 		/* Update beacon to all the interfaces about the
 		 * removal/disable of one of the BSS.
 		 */
-		hostapd_refresh_all_iface_beacons(hapd->iface);
+		hostapd_refresh_other_iface_beacons(hapd->iface);
 		break;
 	case EVENT_DFS_RADAR_DETECTED:
 		if (!data)

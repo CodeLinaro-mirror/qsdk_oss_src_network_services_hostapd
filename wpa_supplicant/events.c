@@ -1180,6 +1180,13 @@ static bool wpas_valid_ml_bss(struct wpa_supplicant *wpa_s, struct wpa_bss *bss)
 {
 	u16 removed_links;
 
+	if (wpa_s->conf->ind_rptr) {
+		wpa_printf(MSG_INFO,
+		"%s: refreshing ML parse for BSS " MACSTR,
+		__func__, MAC2STR(bss->bssid));
+		wpa_bss_parse_basic_ml_element(wpa_s, bss);
+	}
+
 	if (!bss->valid_links)
 		return true;
 
@@ -2669,16 +2676,16 @@ static int _wpa_supplicant_event_scan_results(struct wpa_supplicant *wpa_s,
 
 	os_free(wpa_s->last_scan_freqs);
 	wpa_s->last_scan_freqs = NULL;
-	wpa_s->num_last_scan_freqs = 0;
 	if (own_request && data &&
 	    data->scan_info.freqs && data->scan_info.num_freqs) {
-		wpa_s->last_scan_freqs = os_malloc(sizeof(int) *
-						   data->scan_info.num_freqs);
+		wpa_s->last_scan_freqs =
+			os_malloc(sizeof(int) *
+				  (data->scan_info.num_freqs + 1));
 		if (wpa_s->last_scan_freqs) {
 			os_memcpy(wpa_s->last_scan_freqs,
 				  data->scan_info.freqs,
 				  sizeof(int) * data->scan_info.num_freqs);
-			wpa_s->num_last_scan_freqs = data->scan_info.num_freqs;
+			wpa_s->last_scan_freqs[data->scan_info.num_freqs] = 0;
 		}
 	}
 
@@ -3471,6 +3478,66 @@ static int wpa_supplicant_use_own_rsne_params(struct wpa_supplicant *wpa_s,
 }
 
 
+static void wpas_parse_connection_info(struct wpa_supplicant *wpa_s,
+				       unsigned int freq,
+				       const u8 *req_ies, size_t req_ies_len,
+				       const u8 *resp_ies, size_t resp_ies_len)
+{
+	struct ieee802_11_elems req_elems, resp_elems;
+	int max_nss_rx_req, max_nss_rx_resp, max_nss_tx_req, max_nss_tx_resp;
+	struct supported_chan_width sta_supported_chan_width;
+	enum chan_width ap_operation_chan_width;
+
+	wpa_s->connection_set = 0;
+
+	if (!req_ies || !resp_ies ||
+	    ieee802_11_parse_elems(req_ies, req_ies_len, &req_elems, 0) ==
+	    ParseFailed ||
+	    ieee802_11_parse_elems(resp_ies, resp_ies_len, &resp_elems, 0) ==
+	    ParseFailed)
+		return;
+
+	wpa_s->connection_set = 1;
+	wpa_s->connection_ht = req_elems.ht_capabilities &&
+		resp_elems.ht_capabilities;
+
+	/* Do not include subset of VHT on 2.4 GHz vendor extension in
+	 * consideration for reporting VHT association. */
+	wpa_s->connection_vht = req_elems.vht_capabilities &&
+		resp_elems.vht_capabilities &&
+		(!freq || wpas_freq_to_band(freq) != BAND_2_4_GHZ);
+	wpa_s->connection_he = req_elems.he_capabilities &&
+		resp_elems.he_capabilities;
+	wpa_s->connection_eht = req_elems.eht_capabilities &&
+		resp_elems.eht_capabilities;
+	if (req_elems.rrm_enabled)
+		wpa_s->rrm.rrm_used = 1;
+
+	max_nss_rx_req = get_max_nss_capability(&req_elems, 1);
+	max_nss_rx_resp = get_max_nss_capability(&resp_elems, 1);
+	wpa_s->connection_max_nss_rx = MIN(max_nss_rx_resp, max_nss_rx_req);
+
+	max_nss_tx_req = get_max_nss_capability(&req_elems, 0);
+	max_nss_tx_resp = get_max_nss_capability(&resp_elems, 0);
+	wpa_s->connection_max_nss_tx = MIN(max_nss_tx_resp, max_nss_tx_req);
+
+	sta_supported_chan_width = get_supported_channel_width(&req_elems);
+	ap_operation_chan_width = get_operation_channel_width(&resp_elems);
+	if (wpa_s->connection_vht || wpa_s->connection_he ||
+	    wpa_s->connection_eht) {
+		wpa_s->connection_channel_bandwidth =
+			get_sta_operation_chan_width(ap_operation_chan_width,
+						     sta_supported_chan_width);
+	} else if (wpa_s->connection_ht) {
+		wpa_s->connection_channel_bandwidth =
+			ap_operation_chan_width == CHAN_WIDTH_40 ?
+			CHAN_WIDTH_40 : CHAN_WIDTH_20;
+	} else {
+		wpa_s->connection_channel_bandwidth = CHAN_WIDTH_20;
+	}
+}
+
+
 static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 					  union wpa_event_data *data)
 {
@@ -3529,35 +3596,11 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 		wpa_dbg(wpa_s, MSG_DEBUG, "freq=%u MHz",
 			data->assoc_info.freq);
 
-	wpa_s->connection_set = 0;
-	if (data->assoc_info.req_ies && data->assoc_info.resp_ies) {
-		struct ieee802_11_elems req_elems, resp_elems;
-
-		if (ieee802_11_parse_elems(data->assoc_info.req_ies,
-					   data->assoc_info.req_ies_len,
-					   &req_elems, 0) != ParseFailed &&
-		    ieee802_11_parse_elems(data->assoc_info.resp_ies,
-					   data->assoc_info.resp_ies_len,
-					   &resp_elems, 0) != ParseFailed) {
-			wpa_s->connection_set = 1;
-			wpa_s->connection_ht = req_elems.ht_capabilities &&
-				resp_elems.ht_capabilities;
-			/* Do not include subset of VHT on 2.4 GHz vendor
-			 * extension in consideration for reporting VHT
-			 * association. */
-			wpa_s->connection_vht = req_elems.vht_capabilities &&
-				resp_elems.vht_capabilities &&
-				(!data->assoc_info.freq ||
-				 wpas_freq_to_band(data->assoc_info.freq) !=
-				 BAND_2_4_GHZ);
-			wpa_s->connection_he = req_elems.he_capabilities &&
-				resp_elems.he_capabilities;
-			wpa_s->connection_eht = req_elems.eht_capabilities &&
-				resp_elems.eht_capabilities;
-			if (req_elems.rrm_enabled)
-				wpa_s->rrm.rrm_used = 1;
-		}
-	}
+	wpas_parse_connection_info(wpa_s, data->assoc_info.freq,
+				   data->assoc_info.req_ies,
+				   data->assoc_info.req_ies_len,
+				   data->assoc_info.resp_ies,
+				   data->assoc_info.resp_ies_len);
 
 	p = data->assoc_info.req_ies;
 	l = data->assoc_info.req_ies_len;
@@ -3813,7 +3856,7 @@ no_pfs:
 		if (p[0] == WLAN_EID_RSNX && p[1] >= 1)
 			wpa_sm_set_ap_rsnxe(wpa_s->wpa, p, len);
 
-		if (p[0] == WLAN_EID_VENDOR_SPECIFIC && p[1] >= 6 &&
+		if (p[0] == WLAN_EID_VENDOR_SPECIFIC && p[1] >= 5 &&
 		    WPA_GET_BE32(&p[2]) == RSNXE_OVERRIDE_IE_VENDOR_TYPE)
 			wpa_sm_set_ap_rsnxe_override(wpa_s->wpa, p, len);
 
@@ -4083,10 +4126,10 @@ static unsigned int wpas_ml_parse_assoc(struct wpa_supplicant *wpa_s,
 		}
 
 		switch (*pos) {
-		case EHT_ML_SUB_ELEM_PER_STA_PROFILE:
+		case MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE:
 			break;
-		case EHT_ML_SUB_ELEM_FRAGMENT:
-		case EHT_ML_SUB_ELEM_VENDOR:
+		case MULTI_LINK_SUB_ELEM_ID_FRAGMENT:
+		case MULTI_LINK_SUB_ELEM_ID_VENDOR:
 			wpa_printf(MSG_DEBUG,
 				   "MLD: Skip subelement id=%u, len=%zu",
 				   *pos, sub_elem_len);
@@ -4114,44 +4157,44 @@ static unsigned int wpas_ml_parse_assoc(struct wpa_supplicant *wpa_s,
 		pos += 2;
 		ml_len -= 2;
 
-		if (!(ctrl & EHT_PER_STA_CTRL_COMPLETE_PROFILE_MSK)) {
+		if (!(ctrl & BASIC_MLE_STA_CTRL_COMPLETE_PROFILE)) {
 			wpa_printf(MSG_DEBUG,
 				   "MLD: Per STA complete profile expected");
 			goto out;
 		}
 
-		if (!(ctrl & EHT_PER_STA_CTRL_MAC_ADDR_PRESENT_MSK)) {
+		if (!(ctrl & BASIC_MLE_STA_CTRL_PRES_STA_MAC)) {
 			wpa_printf(MSG_DEBUG,
 				   "MLD: Per STA MAC address not present");
 			goto out;
 		}
 
-		if (!(ctrl & EHT_PER_STA_CTRL_TSF_OFFSET_PRESENT_MSK)) {
+		if (!(ctrl & BASIC_MLE_STA_CTRL_PRES_TSF_OFFSET)) {
 			wpa_printf(MSG_DEBUG,
 				   "MLD: Per STA TSF offset not present");
 			goto out;
 		}
 
-		if (!(ctrl & EHT_PER_STA_CTRL_BEACON_INTERVAL_PRESENT_MSK)) {
+		if (!(ctrl & BASIC_MLE_STA_CTRL_PRES_BEACON_INT)) {
 			wpa_printf(MSG_DEBUG,
 				   "MLD: Beacon interval not present");
 			goto out;
 		}
 
-		if (!(ctrl & EHT_PER_STA_CTRL_DTIM_INFO_PRESENT_MSK)) {
+		if (!(ctrl & BASIC_MLE_STA_CTRL_PRES_DTIM_INFO)) {
 			wpa_printf(MSG_DEBUG,
 				   "MLD:  DTIM information not present");
 			goto out;
 		}
 
-		if (ctrl & EHT_PER_STA_CTRL_NSTR_LINK_PAIR_PRESENT_MSK) {
-			if (ctrl & EHT_PER_STA_CTRL_NSTR_BM_SIZE_MSK)
+		if (ctrl & BASIC_MLE_STA_CTRL_PRES_NSTR_LINK_PAIR) {
+			if (ctrl & BASIC_MLE_STA_CTRL_NSTR_BITMAP)
 				nstr_bitmap_len = 2;
 			else
 				nstr_bitmap_len = 1;
 		}
 
-		if (!(ctrl & EHT_PER_STA_CTRL_BSS_PARAM_CNT_PRESENT_MSK)) {
+		if (!(ctrl & BASIC_MLE_STA_CTRL_PRES_BSS_PARAM_COUNT)) {
 			wpa_printf(MSG_DEBUG,
 				   "MLD:  BSS params change count not present");
 			goto out;
@@ -4182,7 +4225,7 @@ static unsigned int wpas_ml_parse_assoc(struct wpa_supplicant *wpa_s,
 			   "MLD: link addr: " MACSTR " nstr BM len=%u",
 			   MAC2STR(pos + 1), nstr_bitmap_len);
 
-		ml_info[i].link_id = ctrl & EHT_PER_STA_CTRL_LINK_ID_MSK;
+		ml_info[i].link_id = ctrl & BASIC_MLE_STA_CTRL_LINK_ID_MASK;
 		os_memcpy(ml_info[i].bssid, pos + 1, ETH_ALEN);
 
 		pos += sta_info_len;
@@ -5220,13 +5263,19 @@ static void wpa_supplicant_event_ibss_auth(struct wpa_supplicant *wpa_s,
 
 
 #ifdef CONFIG_IEEE80211R
-static void ft_rx_action(struct wpa_supplicant *wpa_s, const u8 *data,
-			 size_t len)
+static void ft_rx_action(struct wpa_supplicant *wpa_s, const u8 *da,
+			 const u8 *sa, const u8 *data, size_t len)
 {
 	const u8 *sta_addr, *target_ap_addr;
 	u16 status;
 
 	wpa_hexdump(MSG_MSGDUMP, "FT: RX Action", data, len);
+	if (is_multicast_ether_addr(da)) {
+		wpa_printf(MSG_DEBUG,
+			   "FT: Ignore group-addressed FT Action frame (A1=" MACSTR " A2=" MACSTR ")",
+			   MAC2STR(da), MAC2STR(sa));
+		return;
+	}
 	if (!(wpa_s->drv_flags & WPA_DRIVER_FLAGS_SME))
 		return; /* only SME case supported for now */
 	if (len < 1 + 2 * ETH_ALEN + 2)
@@ -5577,7 +5626,7 @@ static void wpas_event_rx_mgmt_action(struct wpa_supplicant *wpa_s,
 
 #ifdef CONFIG_IEEE80211R
 	if (category == WLAN_ACTION_FT) {
-		ft_rx_action(wpa_s, payload, plen);
+		ft_rx_action(wpa_s, mgmt->da, mgmt->sa, payload, plen);
 		return;
 	}
 #endif /* CONFIG_IEEE80211R */
@@ -5635,6 +5684,15 @@ static void wpas_event_rx_mgmt_action(struct wpa_supplicant *wpa_s,
 	    payload[0] == QOS_QOS_MAP_CONFIG) {
 		const u8 *pos = payload + 1;
 		size_t qlen = plen - 1;
+
+		if (is_multicast_ether_addr(mgmt->da)) {
+			wpa_printf(MSG_DEBUG,
+				   "Interworking: Ignore group-addressed Qos Map Configure frame (A1="
+				   MACSTR " A2=" MACSTR ")",
+				   MAC2STR(mgmt->da), MAC2STR(mgmt->sa));
+			return;
+		}
+
 		wpa_dbg(wpa_s, MSG_DEBUG, "Interworking: Received QoS Map Configure frame from "
 			MACSTR, MAC2STR(mgmt->sa));
 		if (ether_addr_equal(mgmt->sa, wpa_s->bssid) &&
@@ -5657,7 +5715,8 @@ static void wpas_event_rx_mgmt_action(struct wpa_supplicant *wpa_s,
 
 	if (category == WLAN_ACTION_RADIO_MEASUREMENT &&
 	    payload[0] == WLAN_RRM_NEIGHBOR_REPORT_RESPONSE) {
-		wpas_rrm_process_neighbor_rep(wpa_s, payload + 1, plen - 1);
+		wpas_rrm_process_neighbor_rep(wpa_s, mgmt->da, mgmt->sa,
+					      payload + 1, plen - 1);
 		return;
 	}
 
@@ -5704,21 +5763,21 @@ static void wpas_event_rx_mgmt_action(struct wpa_supplicant *wpa_s,
 #ifndef CONFIG_NO_ROBUST_AV
 	if (category == WLAN_ACTION_ROBUST_AV_STREAMING &&
 	    payload[0] == ROBUST_AV_SCS_RESP) {
-		wpas_handle_robust_av_scs_recv_action(wpa_s, mgmt->sa,
+		wpas_handle_robust_av_scs_recv_action(wpa_s, mgmt->da, mgmt->sa,
 						      payload + 1, plen - 1);
 		return;
 	}
 
 	if (category == WLAN_ACTION_ROBUST_AV_STREAMING &&
 	    payload[0] == ROBUST_AV_MSCS_RESP) {
-		wpas_handle_robust_av_recv_action(wpa_s, mgmt->sa,
+		wpas_handle_robust_av_recv_action(wpa_s, mgmt->da, mgmt->sa,
 						  payload + 1, plen - 1);
 		return;
 	}
 
 	if (category == WLAN_ACTION_VENDOR_SPECIFIC_PROTECTED && plen > 4 &&
 	    WPA_GET_BE32(payload) == QM_ACTION_VENDOR_TYPE) {
-		wpas_handle_qos_mgmt_recv_action(wpa_s, mgmt->sa,
+		wpas_handle_qos_mgmt_recv_action(wpa_s, mgmt->da, mgmt->sa,
 						 payload + 4, plen - 4);
 		return;
 	}
@@ -6393,6 +6452,9 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 		event_to_string(event), event);
 #endif /* CONFIG_NO_STDOUT_DEBUG */
 
+#ifdef CONFIG_QCN_EXTN
+	if (wpa_s->conf->rptr_mgr_comm_mode != RPTR_MGR_MODE_COMM_SOCK)
+#endif
 	wpas_ucode_event(wpa_s, event, data);
 	switch (event) {
 	case EVENT_AUTH:

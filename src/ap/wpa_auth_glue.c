@@ -34,6 +34,7 @@
 #include "wpa_auth.h"
 #include "wpa_auth_glue.h"
 #include "wpa_auth_i.h"
+#include "hostapd_if/hostapd_if.h"
 
 static void hostapd_wpa_auth_config_update(struct hostapd_data *hapd,
 					   struct wpa_auth_config *_conf)
@@ -80,6 +81,8 @@ static void hostapd_wpa_auth_config_update(struct hostapd_data *hapd,
 	_conf->prot_range_neg =
 		!!(hapd->iface->drv_flags2 &
 		   WPA_DRIVER_FLAGS2_PROT_RANGE_NEG_AP);
+	_conf->cigtk =
+		!!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK);
 
 #ifdef CONFIG_IEEE80211BE
 	_conf->mld_addr = NULL;
@@ -147,6 +150,8 @@ static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
 	wconf->rsn_override_mfp_2 = conf->rsn_override_mfp_2;
 	wconf->beacon_prot = conf->beacon_prot;
 	wconf->group_mgmt_cipher = conf->group_mgmt_cipher;
+	wconf->control_frame_prot = conf->control_frame_prot;
+	wconf->group_control_frame_cipher = conf->group_control_frame_cipher;
 	wconf->sae_require_mfp = conf->sae_require_mfp;
 	wconf->ssid_protection = conf->ssid_protection;
 	wconf->ssid_len = conf->ssid.ssid_len;
@@ -337,6 +342,9 @@ static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
 	wconf->no_disconnect_on_group_keyerror =
 		conf->bss_max_idle && conf->ap_max_inactivity &&
 		conf->no_disconnect_on_group_keyerror;
+
+	/* Propagate external M3 trigger policy to authenticator */
+	wconf->externally_triggered_m3 = conf->externally_triggered_m3;
 
 	wconf->rsn_override_omit_rsnxe = conf->rsn_override_omit_rsnxe;
 	wconf->spp_amsdu = conf->spp_amsdu &&
@@ -650,17 +658,17 @@ static int hostapd_wpa_auth_set_key(void *ctx, int vlan_id, enum wpa_alg alg,
 
 
 static int hostapd_wpa_auth_get_seqnum(void *ctx, const u8 *addr, int idx,
-				       u8 *seq)
+				       u8 *seq, int get_cigtk_seq_num)
 {
 	struct hostapd_data *hapd = ctx;
 	int link_id = -1;
-
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->conf->mld_ap && idx)
+	if ((get_cigtk_seq_num == 1 && hapd->conf->mld_ap) || (hapd->conf->mld_ap && idx)) {
 		link_id = hapd->mld_link_id;
+	}
 #endif /* CONFIG_IEEE80211BE */
 	return hostapd_get_seqnum(hapd->conf->iface, hapd, addr, idx, link_id,
-				  seq);
+				  seq, get_cigtk_seq_num);
 }
 
 
@@ -1207,7 +1215,7 @@ static int hostapd_wpa_auth_send_ft_action(void *ctx, const u8 *dst,
 	os_memcpy(m->bssid, hapd->own_addr, ETH_ALEN);
 	os_memcpy(&m->u, data, data_len);
 
-	res = hostapd_drv_send_mlme(hapd, (u8 *) m, mlen, 0, NULL, 0, 0);
+	res = hostapd_drv_send_mlme(hapd, (u8 *) m, mlen, 0, NULL, 0, 0, 0, 0);
 	os_free(m);
 	return res;
 }
@@ -1832,6 +1840,7 @@ static int hostapd_wpa_auth_get_ml_key_info(void *ctx,
 						 &info->links[i],
 						 info->mgmt_frame_prot,
 						 info->beacon_prot,
+						 info->control_frame_prot,
 						 rekey, vlan_id);
 			continue;
 		}
@@ -1844,6 +1853,7 @@ static int hostapd_wpa_auth_get_ml_key_info(void *ctx,
 						 &info->links[i],
 						 info->mgmt_frame_prot,
 						 info->beacon_prot,
+						 info->control_frame_prot,
 						 rekey, vlan_id);
 			link_bss_found = true;
 			break;

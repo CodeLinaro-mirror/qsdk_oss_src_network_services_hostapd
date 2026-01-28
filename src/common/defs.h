@@ -291,6 +291,16 @@ enum wpa_states {
 	 */
 	WPA_SCANNING,
 
+#ifdef CONFIG_QCN_EXTN
+	/* WPA_PRE_CONNECT - Specially for Repeater case
+	 *
+	 * This state is specially for Independent Repeater case, where incase
+	 * AP is UP in different channel than Root AP. Rep AP has to switch the
+	 * channel to Root AP channel before Rep STA sends Auth in new channel
+	 */
+	WPA_PRE_CONNECT,
+#endif
+
 	/**
 	 * WPA_AUTHENTICATING - Trying to authenticate with a BSS/SSID
 	 *
@@ -381,6 +391,14 @@ enum mfp_options {
 #define MGMT_FRAME_PROTECTION_DEFAULT 3
 
 /**
+ * enum cfp_options - Control frame protection (IEEE 802.11w) options
+ */
+enum cfp_options {
+	NO_CONTROL_FRAME_PROTECTION = 0,
+	CONTROL_FRAME_PROTECTION_REQUIRED = 1,
+};
+
+/**
  * enum hostapd_hw_mode - Hardware mode
  */
 enum hostapd_hw_mode {
@@ -441,6 +459,14 @@ enum beacon_rate_type {
 	BEACON_RATE_VHT,
 	BEACON_RATE_HE,
 	BEACON_RATE_EHT,
+};
+
+enum rate_type {
+	RATE_LEGACY,
+	RATE_HT,
+	RATE_VHT,
+	RATE_HE,
+	RATE_EHT,
 };
 
 enum eap_proxy_sim_state {

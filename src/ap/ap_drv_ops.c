@@ -53,6 +53,8 @@ u32 hostapd_sta_flags_to_drv(u32 flags)
 		res |= WPA_STA_SPP_AMSDU;
 	if (flags & WLAN_STA_FT_AUTH)
 		res |= WPA_STA_FT_AUTH;
+	if (flags & WLAN_STA_CFP)
+		res |= WPA_STA_CFP;
 
 	return res;
 }
@@ -87,6 +89,7 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 {
 	struct wpabuf *beacon = NULL, *proberesp = NULL, *assocresp = NULL;
 	u8 buf[216], *pos;
+	size_t i;
 
 	*beacon_ret = *proberesp_ret = *assocresp_ret = NULL;
 
@@ -232,9 +235,19 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 		goto fail;
 #endif /* CONFIG_OWE */
 
-	if (add_buf(&beacon, hapd->conf->vendor_elements) < 0 ||
-	    add_buf(&proberesp, hapd->conf->vendor_elements) < 0)
-		goto fail;
+	/* Use plugin vendor elements if set, otherwise use conf vendor elements */
+	if (hapd->plugin_vendor_elements) {
+		if (add_buf(&beacon, hapd->plugin_vendor_elements) < 0 ||
+		    add_buf(&proberesp, hapd->plugin_vendor_elements) < 0)
+			goto fail;
+	} else {
+		for (i = 0; i < hapd->conf->vendor_elements_count; i++) {
+			if (add_buf(&beacon, hapd->conf->vendor_elements[i]) < 0 ||
+			    add_buf(&proberesp, hapd->conf->vendor_elements[i]) < 0)
+				goto fail;
+		}
+	}
+
 #ifdef CONFIG_TESTING_OPTIONS
 	if (add_buf(&proberesp, hapd->conf->presp_elements) < 0)
 		goto fail;
@@ -344,7 +357,7 @@ int hostapd_set_sta_flags(struct hostapd_data *hapd, struct sta_info *sta)
 	int set_flags, total_flags, flags_and, flags_or;
 	total_flags = hostapd_sta_flags_to_drv(sta->flags);
 	set_flags = WPA_STA_SHORT_PREAMBLE | WPA_STA_WMM | WPA_STA_MFP |
-		WPA_STA_AUTHORIZED;
+		WPA_STA_AUTHORIZED | WPA_STA_CFP;
 
 	/*
 	 * All the station flags other than WPA_STA_SHORT_PREAMBLE are relevant
@@ -534,13 +547,15 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    size_t he_capab_len,
 		    const struct ieee80211_eht_capabilities *eht_capab,
 		    size_t eht_capab_len,
+		    const struct ieee80211_uhr_capabilities *uhr_capab,
+		    size_t uhr_capab_len,
 #ifdef CONFIG_QCN_EXTN
 		    struct sta_info_extn *sta_extn,
 #endif
 		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
 		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
 		    int set, const u8 *link_addr, bool mld_link_sta,
-		    u16 eml_cap, int type)
+		    u16 eml_cap, int type, u8 control_mic_pad)
 {
 	struct hostapd_sta_add_params params, *tmp = NULL;
 	struct hostapd_data *assoc_hapd;
@@ -564,6 +579,8 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 	params.he_capab_len = he_capab_len;
 	params.eht_capab = eht_capab;
 	params.eht_capab_len = eht_capab_len;
+	params.uhr_capab = uhr_capab;
+	params.uhr_capab_len = uhr_capab_len;
 	params.he_6ghz_capab = he_6ghz_capab;
 	params.vht_opmode_enabled = !!(flags & WLAN_STA_VHT_OPMODE_ENABLED);
 	params.vht_opmode = vht_opmode;
@@ -572,6 +589,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 	params.support_p2p_ps = supp_p2p_ps;
 	params.set = set;
 	params.mld_link_id = -1;
+	params.control_mic_pad = control_mic_pad;
 
 #ifdef CONFIG_QCN_EXTN
 	hostapd_copy_sta_add_params_extn(&params.params_extn, sta_extn);
@@ -765,12 +783,12 @@ int hostapd_set_ieee8021x(struct hostapd_data *hapd,
 
 
 int hostapd_get_seqnum(const char *ifname, struct hostapd_data *hapd,
-		       const u8 *addr, int idx, int link_id, u8 *seq)
+		       const u8 *addr, int idx, int link_id, u8 *seq, int get_cigtk_seq_num)
 {
 	if (hapd->driver == NULL || hapd->driver->get_seqnum == NULL)
 		return 0;
 	return hapd->driver->get_seqnum(ifname, hapd->drv_priv, addr, idx,
-					link_id, seq);
+					link_id, seq, get_cigtk_seq_num);
 }
 
 
@@ -793,9 +811,12 @@ int hostapd_flush(struct hostapd_data *hapd)
 int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
 		     int freq, int channel, int edmg, u8 edmg_channel,
 		     int ht_enabled, int vht_enabled,
-		     int he_enabled, bool eht_enabled,
+		     int he_enabled, bool eht_enabled, bool uhr_enabled,
 		     int sec_channel_offset, int oper_chwidth,
 		     int center_segment0, int center_segment1,
+#ifdef CONFIG_QCN_EXTN
+		     bool skip_cac_rep,
+#endif
 		     int bandwidth_device, int center_freq_device)
 {
 	struct hostapd_freq_params data;
@@ -804,14 +825,18 @@ int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
 	if (hostapd_set_freq_params(&data, mode, freq, channel, edmg,
 				    edmg_channel, ht_enabled,
 				    vht_enabled, he_enabled, eht_enabled,
-				    sec_channel_offset, oper_chwidth,
+				    uhr_enabled, sec_channel_offset, oper_chwidth,
 				    center_segment0, center_segment1,
 				    cmode ? cmode->vht_capab : 0,
 				    cmode ?
 				    &cmode->he_capab[IEEE80211_MODE_AP] : NULL,
 				    cmode ?
 				    &cmode->eht_capab[IEEE80211_MODE_AP] :
-				    NULL, hostapd_get_punct_bitmap(hapd),
+				    NULL,
+				    cmode ?
+				    &cmode->uhr_capab[IEEE80211_MODE_AP] :
+				    NULL,
+				    hostapd_get_punct_bitmap(hapd),
 				    hapd->iconf->he_6ghz_reg_pwr_type,
 				    bandwidth_device, center_freq_device))
 		return -1;
@@ -823,6 +848,10 @@ int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
 
 	data.link_id = -1;
 
+#ifdef CONFIG_QCN_EXTN
+	if (skip_cac_rep)
+		data.skip_cac = 1;
+#endif
 #ifdef CONFIG_IEEE80211BE
 	if (hapd->conf->mld_ap) {
 		data.link_id = hapd->mld_link_id;
@@ -1032,7 +1061,7 @@ int hostapd_drv_set_key(const char *ifname, struct hostapd_data *hapd,
 int hostapd_drv_send_mlme(struct hostapd_data *hapd,
 			  const void *msg, size_t len, int noack,
 			  const u16 *csa_offs, size_t csa_offs_len,
-			  int no_encrypt)
+			  int no_encrypt, u16 rate, u8 rate_type)
 {
 	int link_id = -1;
 
@@ -1043,7 +1072,7 @@ int hostapd_drv_send_mlme(struct hostapd_data *hapd,
 
 	if (!hapd->driver || !hapd->driver->send_mlme || !hapd->drv_priv)
 		return 0;
-	return hapd->driver->send_mlme(hapd->drv_priv, msg, len, noack, 0,
+	return hapd->driver->send_mlme(hapd->drv_priv, msg, len, noack, 0, rate, rate_type,
 				       csa_offs, csa_offs_len, no_encrypt, 0,
 				       link_id);
 }
@@ -1109,7 +1138,7 @@ int hostapd_drv_wnm_oper(struct hostapd_data *hapd, enum wnm_oper oper,
 #ifdef CONFIG_IEEE80211BE
 static bool hostapd_is_action_frame_link_agnostic(u8 category, u8 sub_category)
 {
-	/* As per IEEE P802.11be/D7.0, 35.3.14 (MLD individually addressed
+	/* As per IEEE Std 802.11be-2024, 35.3.14 (MLD individually addressed
 	 * Management frame delivery), between an AP MLD and a non-AP MLD, the
 	 * following individually addressed MMPDUs shall be intended for an MLD.
 	 */
@@ -1235,7 +1264,7 @@ int hostapd_drv_send_action_forced_addr3(struct hostapd_data *hapd,
 int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 			  enum hostapd_hw_mode mode, int freq,
 			  int channel, int ht_enabled, int vht_enabled,
-			  int he_enabled, bool eht_enabled,
+			  int he_enabled, bool eht_enabled, bool uhr_enabled,
 			  int sec_channel_offset, int oper_chwidth,
 			  int center_segment0, int center_segment1,
 			  bool radar_background,
@@ -1258,12 +1287,13 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 	if (hostapd_set_freq_params(&data, mode, freq, channel, 0, 0,
 				    ht_enabled,
 				    vht_enabled, he_enabled, eht_enabled,
-				    sec_channel_offset,
+				    uhr_enabled, sec_channel_offset,
 				    oper_chwidth, center_segment0,
 				    center_segment1,
 				    cmode->vht_capab,
 				    &cmode->he_capab[IEEE80211_MODE_AP],
 				    &cmode->eht_capab[IEEE80211_MODE_AP],
+				    &cmode->uhr_capab[IEEE80211_MODE_AP],
 				    hostapd_get_punct_bitmap(hapd) |
 				    iface->radar_bit_pattern,
 				    hapd->iconf->he_6ghz_reg_pwr_type,
@@ -1272,6 +1302,14 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 		return -1;
 	}
 	data.radar_background = radar_background;
+
+#ifdef CONFIG_QCN_EXTN
+	if (iface->conf->conf_extn.ind_rptr) {
+		data.skip_cac = (iface->iface_extn.csa_bitmap && iface->conf->conf_extn.skip_cac);
+	} else {
+		data.skip_cac = iface->conf->conf_extn.skip_cac;
+	}
+#endif
 
 	data.link_id = -1;
 #ifdef CONFIG_IEEE80211BE
@@ -1373,7 +1411,8 @@ void hostapd_get_mld_capa(struct hostapd_iface *iface)
 
 	hapd->driver->get_mld_capab(hapd->drv_priv, WPA_IF_AP_BSS,
 				    &iface->mld_eml_capa,
-				    &iface->mld_mld_capa);
+				    &iface->mld_mld_capa,
+				    &iface->mld_ext_mld_capa);
 }
 
 
@@ -1397,8 +1436,7 @@ int hostapd_drv_do_acs(struct hostapd_data *hapd)
 	params.hw_mode = hapd->iface->conf->hw_mode;
 	params.link_id = -1;
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->conf->mld_ap && hapd->iconf->ieee80211be &&
-	    !hapd->conf->disable_11be)
+	if (hapd->conf->mld_ap && hostapd_is_eht_enabled(hapd))
 		params.link_id = hapd->mld_link_id;
 #endif /* CONFIG_IEEE80211BE */
 

@@ -206,7 +206,7 @@ static inline int wpa_drv_get_seqnum(struct wpa_supplicant *wpa_s,
 {
 	if (wpa_s->driver->get_seqnum)
 		return wpa_s->driver->get_seqnum(wpa_s->ifname, wpa_s->drv_priv,
-						 addr, idx, -1, seq);
+						 addr, idx, -1, seq, 0);
 	return -1;
 }
 
@@ -342,7 +342,7 @@ static inline int wpa_drv_send_mlme(struct wpa_supplicant *wpa_s,
 	if (wpa_s->driver->send_mlme)
 		return wpa_s->driver->send_mlme(wpa_s->drv_priv,
 						data, data_len, noack,
-						freq, NULL, 0, 0, wait, -1);
+						freq, 0, 0, NULL, 0, 0, wait, -1);
 	return -1;
 }
 
@@ -1040,6 +1040,18 @@ static inline int wpa_drv_get_ext_capa(struct wpa_supplicant *wpa_s,
 					    &wpa_s->extended_capa_len);
 }
 
+static inline int wpa_drv_get_mld_capa(struct wpa_supplicant *wpa_s,
+				       enum wpa_driver_if_type type,
+				       u16 *mld_eml_capa, u16 *mld_mld_capa,
+				       u16 *mld_ext_mld_capa)
+{
+	if (!wpa_s->driver->get_mld_capab)
+		return -1;
+	return wpa_s->driver->get_mld_capab(wpa_s->drv_priv, type,
+					    mld_eml_capa, mld_mld_capa,
+					    mld_ext_mld_capa);
+}
+
 static inline int wpa_drv_p2p_lo_start(struct wpa_supplicant *wpa_s,
 				       unsigned int channel,
 				       unsigned int period,
@@ -1259,6 +1271,7 @@ wpas_drv_nan_subscribe(struct wpa_supplicant *wpa_s, const u8 *addr,
 static inline int wpa_drv_mark_ppe_vp_type(struct wpa_supplicant *wpa_s,
 					   int ppe_vp_type)
 {
+#ifdef CONFIG_IEEE80211BE
 	if (!wpa_s->driver->mark_ppe_vp_type)
 		return -1;
 
@@ -1267,7 +1280,9 @@ static inline int wpa_drv_mark_ppe_vp_type(struct wpa_supplicant *wpa_s,
 	return wpa_s->driver->mark_ppe_vp_type(wpa_s->drv_priv,
 			OUI_QCA, QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
 			NULL, 0, 0, NULL,  wpa_s->ifname, ppe_vp_type, true);
-
+#else
+	return -1;
+#endif
 }
 
 static inline int

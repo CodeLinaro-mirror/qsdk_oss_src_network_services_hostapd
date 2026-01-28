@@ -112,10 +112,13 @@ struct hapd_interfaces {
 	int (*mld_ctrl_iface_init)(struct hostapd_mld *mld);
 	void (*mld_ctrl_iface_deinit)(struct hostapd_mld *mld);
 #endif /* CONFIG_IEEE80211BE */
-
 #ifdef CONFIG_ATF_OFFLOAD
 	struct atf_offload atf;
 #endif
+#ifdef CONFIG_PROCESS_COORDINATION
+	struct proc_coord *pc;
+#endif /* CONFIG_PROCESS_COORDINATION */
+
 };
 
 enum hostapd_chan_status {
@@ -259,6 +262,15 @@ struct elemid_cu_param {
 	u32 hash;
 };
 
+/**
+ * enum link_reconfigure_type - Used to distinguish the link removal/disable
+ * type
+ */
+enum link_reconfigure_type {
+	HAPD_LINK_REMOVAL, /* Default */
+	HAPD_LINK_DISABLE, /* Disable the link, instead of removal */
+};
+
 #define MAX_CHANNEL_USAGE_ELEMENTS 6
 #define MAX_CHANNEL_ENTRIES_PER_ELEMENT 10
 
@@ -316,6 +328,8 @@ struct hostapd_data {
 	/* Vendor BSSID derivation bookkeeping for non-MBSSID */
 	u8 vendor_bss_index;
 	bool vendor_bss_index_valid;
+
+	struct hostapd_data_extn hapd_extn;
 #endif /* CONFIG_QCN_EXTN */
 
 	/* OpenWrt specific statistics */
@@ -400,8 +414,10 @@ struct hostapd_data {
 	struct wps_context *wps;
 
 	int beacon_set_done;
+	unsigned int reenable:1;
 	struct wpabuf *wps_beacon_ie;
 	struct wpabuf *wps_probe_resp_ie;
+	struct wpabuf *plugin_vendor_elements; /* Dynamic vendor IEs set by plugin */
 #ifdef CONFIG_WPS
 	unsigned int ap_pin_failures;
 	unsigned int ap_pin_failures_consecutive;
@@ -640,6 +656,7 @@ struct hostapd_data {
 
 	u8 eht_mld_link_removal_count;
 	u8 eht_mld_link_removal_inprogress;
+	enum link_reconfigure_type removal_type;
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_NAN_USD
@@ -656,6 +673,7 @@ struct hostapd_data {
 
 	u16 mapping_switch_time;
 	struct channel_usage_config chan_usage_config;
+	void *hostapd_if_data; /* for per-interface/MLD frame_reg_table, opaque */
 };
 
 
@@ -714,6 +732,19 @@ struct hostapd_mld {
 
 #define HOSTAPD_MLD_MAX_REF_COUNT      0xFF
 #endif /* CONFIG_IEEE80211BE */
+
+
+/**
+ * enum cac_completion_type - CAC completion context
+ * @HAPD_CAC_COMPLETE_AFTER_BSS: CAC completed after a regular BSS
+ *                               CAC procedure (non-CSA path).
+ * @HAPD_CAC_COMPLETE_AFTER_CSA: CAC completed after CSA
+ *                               on a DFS target channel.
+ */
+enum cac_completion_type {
+	HAPD_CAC_COMPLETE_AFTER_BSS = 0,
+	HAPD_CAC_COMPLETE_AFTER_CSA = 1,
+};
 
 /**
  * struct hostapd_iface - hostapd per-interface data structure
@@ -789,7 +820,7 @@ struct hostapd_iface {
 	const u8 *extended_capa, *extended_capa_mask;
 	unsigned int extended_capa_len;
 
-	u16 mld_eml_capa, mld_mld_capa;
+	u16 mld_eml_capa, mld_mld_capa, mld_ext_mld_capa;
 
 	unsigned int drv_max_acl_mac_addrs;
 
@@ -799,6 +830,7 @@ struct hostapd_iface {
 	int freq;
 
 	bool radar_detected;
+	enum cac_completion_type cac_type;
 
 	/* Background radar configuration */
 	struct {
@@ -941,6 +973,7 @@ struct hostapd_iface {
 	/* Multi MBSSID group information */
 	struct hostapd_multi_mbssid multi_mbssid;
 	u32 mbssid_idx_bmap;
+	size_t max_mgmt_frm_sz;
 };
 
 
@@ -1013,6 +1046,8 @@ int hostapd_iface_num_sta(struct hostapd_iface *iface);
 int hostapd_enable_iface(struct hostapd_iface *hapd_iface);
 int hostapd_reload_iface(struct hostapd_iface *hapd_iface);
 int hostapd_reload_bss_only(struct hostapd_data *bss);
+int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt);
+int hostapd_enable_bss(struct hostapd_data *hapd);
 int hostapd_disable_iface(struct hostapd_iface *hapd_iface);
 void hostapd_bss_deinit_no_free(struct hostapd_data *hapd);
 void hostapd_free_hapd_data(struct hostapd_data *hapd);
@@ -1104,9 +1139,11 @@ int hostapd_set_acl(struct hostapd_data *hapd);
 int hostapd_tx_bss_only(struct hostapd_data *hapd, const char *op_name);
 struct hostapd_data * hostapd_mbssid_get_tx_bss(struct hostapd_data *hapd);
 unsigned int hostapd_mbssid_get_bss_index(struct hostapd_data *hapd);
+size_t hostapd_get_mbssid_max_num_bss(struct hostapd_data *hapd);
 struct hostapd_data * hostapd_mld_get_link_bss(struct hostapd_data *hapd,
 					       u8 link_id);
-int hostapd_link_remove(struct hostapd_data *hapd, u32 count);
+int hostapd_link_remove(struct hostapd_data *hapd, u32 count,
+			enum link_reconfigure_type removal_type);
 struct hostapd_data *
 hostapd_interfaces_get_hapd(struct hapd_interfaces *interfaces,
 			    const char *ifname);
@@ -1123,7 +1160,10 @@ int hostapd_build_beacon_data(struct hostapd_data *hapd,
 void free_beacon_data(struct beacon_data *beacon);
 int hostapd_fill_cca_settings(struct hostapd_data *hapd,
 			      struct cca_settings *settings);
-
+bool hostapd_check_reenable_bss(struct hostapd_iface *iface);
+int hostapd_switch_pending_bss(struct hostapd_iface *iface,
+			       struct csa_settings *settings);
+bool hostapd_enable_pending_bss(struct hostapd_iface *iface);
 #ifdef CONFIG_IEEE80211BE
 
 void hostapd_set_ml_max_rec_links(struct hostapd_data *hapd, u8 ml_max_rec_links);
@@ -1313,8 +1353,24 @@ bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface);
 void hostapd_gen_per_sta_profiles(struct hostapd_data *hapd);
 size_t hostapd_eid_eht_ml_reconfig_len(struct hostapd_data *hapd);
 u8 * hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd, u8 *eid);
-int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx,
-		       bool is_link_remove);
+/**
+ * hostapd_remove_bss() - Remove a BSS from the AP interface
+ *
+ * This function removes the BSS identified by the given index.
+ * If the BSS being removed is the first BSS, and no other BSS
+ * is available to take over the driver context,
+ * the entire interface is removed.
+ *
+ * @iface: Pointer to hostapd_iface
+ * @idx: Index of the BSS
+ *
+ * Return: 0 on successful BSS removal,
+ * 	   1 if the BSS removal results in removing the entire
+ * 	   interface (caller should not use the iface or BSS),
+ * 	   -1 on failure.
+ */
+int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx);
+void hostapd_refresh_other_iface_beacons(struct hostapd_iface *hapd_iface);
 void hostapd_refresh_all_iface_beacons(struct hostapd_iface *hapd_iface);
 
 static inline bool ap_pmf_enabled(struct hostapd_bss_config *conf)
@@ -1526,4 +1582,55 @@ bool
 hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
 				     u16 center_freq, u16 bw, u16 pp,
 				     u8 pwr_type);
+
+static inline bool
+hostapd_is_ht_enabled(struct hostapd_data *hapd)
+{
+	return (hapd->iconf->ieee80211n && !hapd->conf->disable_11n);
+}
+
+
+static inline bool
+hostapd_is_vht_enabled(struct hostapd_data *hapd)
+{
+	return (hapd->iconf->ieee80211ac && !hapd->conf->disable_11ac);
+}
+
+
+static inline bool
+hostapd_is_he_enabled(struct hostapd_data *hapd)
+{
+	return (hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax);
+}
+
+
+static inline bool
+hostapd_is_eht_enabled(struct hostapd_data *hapd)
+{
+	return (hapd->iconf->ieee80211be && !hapd->conf->disable_11be);
+}
+
+/**
+ * Vendor element format
+ * ID (1 byte), Length (1 byte), OUI (3 bytes), Data (at least 1 byte)
+ */
+#define MIN_VENDOR_ELEM_LEN 6
+
+/**
+ * hostapd_update_vendor_elements - This is to handle user configured vendor
+ *                                  elements addition and removal
+ * @hapd: Pointer to hostapd data structure
+ * @conf: Pointer to hostapd bss config structure
+ * @data: Pointer to wpabuf structure and its only filled in soft ap case
+ * @cmd: User command add or remove
+ * @val: User configured data
+ * @is_bcn_update_needed: Flag to determine whether beacon update should be sent
+ *
+ * Return: 0 for success -1 for failure
+ */
+int
+hostapd_handle_vendor_elements_update(struct hostapd_data *hapd,
+				      struct hostapd_bss_config *conf, struct wpabuf *data,
+				      char *cmd, char *val, bool is_bcn_update_needed);
+
 #endif /* HOSTAPD_H */

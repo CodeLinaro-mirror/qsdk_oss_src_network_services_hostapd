@@ -12,6 +12,7 @@
 #include "robust_av.h"
 #include <libubox/uloop.h>
 #include "sta_info.h"
+#include "../../qcn_extns/cmn.h"
 
 static uc_resource_type_t *global_type, *bss_type, *iface_type;
 static struct hapd_interfaces *interfaces;
@@ -590,6 +591,9 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	uc_value_t *info = uc_fn_arg(0);
 	struct hostapd_config *conf;
 	bool changed = false;
+#ifdef CONFIG_QCN_EXTN
+	bool is_dfs = false, skip_cac_rep = false;
+#endif
 	uint64_t intval;
 	int i, ret;
 
@@ -659,11 +663,21 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	else
 		conf->punct_bitmap = 0;
 
+#ifdef CONFIG_QCN_EXTN
+	is_dfs = ucv_boolean_get(ucv_object_get(info, "is_dfs", NULL));
+	if (!errno && conf->conf_extn.skip_cac)
+		skip_cac_rep = is_dfs;
+#endif
 out:
 	switch (iface->state) {
 	case HAPD_IFACE_ENABLED:
+#ifdef CONFIG_QCN_EXTN
+		if (!skip_cac_rep && (!hostapd_is_dfs_required(iface) ||
+			hostapd_is_dfs_chan_available(iface)))
+#else
 		if (!hostapd_is_dfs_required(iface) ||
 			hostapd_is_dfs_chan_available(iface))
+#endif
 			break;
 		wpa_printf(MSG_INFO, "DFS CAC required on new channel, restart interface");
 		/* fallthrough */
@@ -707,10 +721,14 @@ out:
 				       conf->ieee80211ac,
 				       conf->ieee80211ax,
 				       conf->ieee80211be,
+				       conf->ieee80211bn,
 				       conf->secondary_channel,
 				       hostapd_get_oper_chwidth(conf),
 				       hostapd_get_oper_centr_freq_seg0_idx(conf),
 				       hostapd_get_oper_centr_freq_seg1_idx(conf),
+#ifdef CONFIG_QCN_EXTN
+				       skip_cac_rep,
+#endif
 				       conf->bandwidth_device,
 				       conf->center_freq_device);
 
@@ -732,7 +750,14 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 	struct hostapd_config *conf;
 	struct csa_settings csa = {};
 	uint64_t intval;
-	int i, ret = 0;
+	int ret = 0;
+#ifdef CONFIG_QCN_EXTN
+	bool is_dfs = false;
+	char *wpa_state = NULL;
+	uc_value_t *wpa_state_val;
+#else
+	int i;
+#endif
 
 	if (!iface || ucv_type(info) != UC_OBJECT)
 		return NULL;
@@ -770,8 +795,16 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 	if ((intval = ucv_int64_get(ucv_object_get(info, "power_mode", NULL))) && !errno)
 		csa.power_mode = intval;
 
+#ifdef CONFIG_QCN_EXTN
+	is_dfs = ucv_boolean_get(ucv_object_get(info, "is_dfs", NULL));
+	wpa_state_val = ucv_object_get(info, "wpa_state", NULL);
+	wpa_state = ucv_string_get(wpa_state_val);
+
+	ret = uc_hostapd_iface_switch_channel_extn(iface, is_dfs, wpa_state, &csa);
+#else
 	for (i = 0; i < iface->num_bss; i++)
 		ret = hostapd_switch_channel(iface->bss[i], &csa);
+#endif
 
 	return ucv_boolean_new(!ret);
 }
@@ -1058,3 +1091,43 @@ bool hostapd_ucode_update_radio_mask(char *ifname, u8 hw_idx)
 
 	return true;
 }
+
+#ifdef CONFIG_QCN_EXTN
+/**
+ * hostapd_ucode_chsw_comp_ev_notify - Notify ucode about CSA/CAC completion
+ * @hapd: Pointer to hostapd BSS instance
+ * @freq: Operating frequency (in MHz) on which CSA/CAC has completed
+ *
+ * Send a notification event to the ucode runtime indicating that a channel
+ * switch announcement (CSA) or CAC sequence has completed on this interface.
+ * This is used by repeater logic to resume STA connection flows after the
+ * AP side has finished switching channels.
+ */
+void hostapd_ucode_chsw_comp_ev_notify(struct hostapd_data *hapd, int freq)
+{
+	if (wpa_ucode_call_prepare("notify_chan_switch_compl_event"))
+		return;
+
+	wpa_printf(MSG_INFO, "Notify channel switch completion on all links"
+		   "wpa_supp to resume STA connection Freq = %d", freq);
+	uc_value_push(ucv_int64_new(freq));
+	ucv_put(wpa_ucode_call(1));
+	ucv_gc(vm);
+}
+
+/* Notify ucode about ACS completed event */
+void hostapd_ucode_notify_acs_completed(struct hostapd_iface *iface, int success)
+{
+	if (wpa_ucode_call_prepare("notify_acs_completed"))
+		return;
+
+	wpa_printf(MSG_INFO, "Notify ACS completed event to ucode: success=%d, channel=%d, freq=%d",
+		   success, iface->conf ? iface->conf->channel : 0, iface->freq);
+	uc_value_push(ucv_get(hostapd_ucode_iface_get_uval(iface)));
+	uc_value_push(ucv_int64_new(success));
+	uc_value_push(ucv_int64_new(iface->conf ? iface->conf->channel : 0));
+	uc_value_push(ucv_int64_new(iface->freq));
+	ucv_put(wpa_ucode_call(4));
+	ucv_gc(vm);
+}
+#endif

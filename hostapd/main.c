@@ -20,6 +20,7 @@
 #include "crypto/tls.h"
 #include "common/version.h"
 #include "common/dpp.h"
+#include "common/proc_coord.h"
 #include "drivers/driver.h"
 #include "eap_server/eap.h"
 #include "eap_server/tncs.h"
@@ -33,6 +34,7 @@
 #include "ctrl_iface.h"
 #include "build_features.h"
 #include "ap/robust_av.h"
+#include "hostapd_if/hostapd_if.h"
 
 #include "atf/atf_offload.h"
 
@@ -377,6 +379,7 @@ setup_mld:
 		iface->ema_max_periodicity = capa.ema_max_periodicity;
 		iface->multi_mbssid.mbssid_max_ngroups = capa.mbssid_max_ngroups;
 		iface->multi_mbssid.max_beacon_size = capa.max_beacon_size;
+		iface->max_mgmt_frm_sz = capa.max_beacon_size;
 		wpa_printf(MSG_DEBUG,
 			   "max_ngroups:%d max beacon size:%d\n",
 			   capa.mbssid_max_ngroups, capa.max_beacon_size);
@@ -638,6 +641,9 @@ static void usage(void)
 		"\\\n"
 		"         [-g <global ctrl_iface>] [-G <group>]\\\n"
 		"         [-i <comma-separated list of interface names>]\\\n"
+#ifdef CONFIG_PROCESS_COORDINATION
+		"        [-z<process coordination directory>] \\\n"
+#endif /* CONFIG_PROCESS_COORDINATION */
 		"         <configuration file(s)>\n"
 		"\n"
 		"options:\n"
@@ -663,6 +669,9 @@ static void usage(void)
 		"   -S   start all the interfaces synchronously\n"
 		"   -t   include timestamps in some debug messages\n"
 		"   -v   show hostapd version\n"
+#ifdef CONFIG_PROCESS_COORDINATION
+		"   -z   process coordination directory\n"
+#endif /* CONFIG_PROCESS_COORDINATION */
 		"   -q   show less debug messages (-qq for even less)\n");
 
 	exit(1);
@@ -853,6 +862,9 @@ int main(int argc, char *argv[])
 #ifdef CONFIG_DPP
 	struct dpp_global_config dpp_conf;
 #endif /* CONFIG_DPP */
+#ifdef CONFIG_PROCESS_COORDINATION
+	const char *proc_coord_dir = NULL;
+#endif
 
 	if (os_program_init())
 		return -1;
@@ -894,7 +906,7 @@ int main(int argc, char *argv[])
 	wpa_supplicant_event = hostapd_wpa_event;
 	wpa_supplicant_event_global = hostapd_wpa_event_global;
 	for (;;) {
-		c = getopt(argc, argv, "b:Bde:f:hi:KP:sSTtu:g:G:qv::");
+		c = getopt(argc, argv, "b:Bde:f:hi:KP:sSTtu:g:G:qvz::");
 		if (c < 0)
 			break;
 		switch (c) {
@@ -972,6 +984,11 @@ int main(int argc, char *argv[])
 		case 'q':
 			wpa_debug_level++;
 			break;
+#ifdef CONFIG_PROCESS_COORDINATION
+		case 'z':
+			proc_coord_dir = optarg;
+			break;
+#endif /* CONFIG_PROCESS_COORDINATION */
 		default:
 			usage();
 			break;
@@ -1020,6 +1037,14 @@ int main(int argc, char *argv[])
 	eloop_register_timeout(HOSTAPD_CLEANUP_INTERVAL, 0,
 			       hostapd_periodic, &interfaces, NULL);
 
+#ifdef CONFIG_PROCESS_COORDINATION
+	if (proc_coord_dir) {
+		interfaces.pc = proc_coord_init(proc_coord_dir);
+		if (!interfaces.pc)
+			goto out;
+	}
+#endif /* CONFIG_PROCESS_COORDINATION */
+
 	if (fst_global_init()) {
 		wpa_printf(MSG_ERROR,
 			   "Failed to initialize global FST context");
@@ -1030,6 +1055,14 @@ int main(int argc, char *argv[])
 	if (!fst_global_add_ctrl(fst_ctrl_cli))
 		wpa_printf(MSG_WARNING, "Failed to add CLI FST ctrl");
 #endif /* CONFIG_FST && CONFIG_CTRL_IFACE */
+
+#ifdef CONFIG_HOSTAPD_IF
+	/* Initialize action frame registry before parsing configs */
+	if (hostapd_if_init(&interfaces) < 0) {
+		wpa_printf(MSG_ERROR, "Failed to init action frame registry");
+		goto out;
+	}
+#endif
 
 	/* Allocate and parse configuration for full interface files */
 	for (i = 0; i < interfaces.count; i++) {
@@ -1161,9 +1194,16 @@ int main(int argc, char *argv[])
 	hostapd_global_cleanup_mld(&interfaces);
 	hostapd_ucode_free();
 
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_deinit();
+#endif
 #ifdef CONFIG_DPP
 	dpp_global_deinit(interfaces.dpp);
 #endif /* CONFIG_DPP */
+
+#ifdef CONFIG_PROCESS_COORDINATION
+	proc_coord_deinit(interfaces.pc);
+#endif /* CONFIG_PROCESS_COORDINATION */
 
 	if (interfaces.eloop_initialized)
 		eloop_cancel_timeout(hostapd_periodic, &interfaces, NULL);

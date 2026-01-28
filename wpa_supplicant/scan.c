@@ -24,6 +24,9 @@
 #include "scan.h"
 #include "mesh.h"
 #include "bssid_ignore.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../qcn_extns/cmn.h"
+#endif
 
 static struct wpabuf * wpa_supplicant_extra_ies(struct wpa_supplicant *wpa_s);
 
@@ -706,12 +709,12 @@ static struct wpabuf * wpa_supplicant_ml_probe_ie(int mld_id, u16 links)
 		wpa_printf(MSG_DEBUG, "MLD: Probing links 0x%04x", links);
 
 	for_each_link(links, link_id) {
-		wpabuf_put_u8(extra_ie, EHT_ML_SUB_ELEM_PER_STA_PROFILE);
+		wpabuf_put_u8(extra_ie, MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE);
 
 		/* Subelement length includes only the control */
 		wpabuf_put_u8(extra_ie, 2);
 
-		control = link_id | EHT_PER_STA_CTRL_COMPLETE_PROFILE_MSK;
+		control = link_id | BASIC_MLE_STA_CTRL_COMPLETE_PROFILE;
 
 		wpabuf_put_le16(extra_ie, control);
 	}
@@ -1076,6 +1079,17 @@ static void wpa_supplicant_scan(void *eloop_ctx, void *timeout_ctx)
 		return;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	/* Repeater feature: gate STA scans until AP ACS completes */
+	if (wpa_s->conf && wpa_s->conf->ind_rptr && !wpa_s->acs_complete) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"Skip Repeater STA scan as repeater ACS is incomplete");
+		eloop_register_timeout(REP_AP_ACS_TIMEOUT_INTERVAL, 0,
+				       wpa_supplicant_start_sta_scan, wpa_s, NULL);
+		return;
+	}
+#endif
+
 	if (wpa_s->scanning) {
 		/*
 		 * If we are already in scanning state, we shall reschedule the
@@ -1165,6 +1179,9 @@ static void wpa_supplicant_scan(void *eloop_ctx, void *timeout_ctx)
 
 	wpa_s->scan_prev_wpa_state = wpa_s->wpa_state;
 	if (wpa_s->wpa_state == WPA_DISCONNECTED ||
+#ifdef CONFIG_QCN_EXTN
+	    wpa_s->wpa_state == WPA_PRE_CONNECT ||
+#endif
 	    wpa_s->wpa_state == WPA_INACTIVE)
 		wpa_supplicant_set_state(wpa_s, WPA_SCANNING);
 
@@ -2803,7 +2820,7 @@ static const struct minsnr_bitrate_entry he160_table[] = {
 	{ -1, 1441200 }  /* SNR > 51 */
 };
 
-/* See IEEE P802.11be/D7.0, Table 36-78 - EHT-MCSs for 484+242-tone MRU,
+/* See IEEE Std 802.11be-2024, Table 36-78 - EHT-MCSs for 484+242-tone MRU,
  * NSS,u = 1
  */
 static const struct minsnr_bitrate_entry eht60_table[] = {
@@ -2825,7 +2842,7 @@ static const struct minsnr_bitrate_entry eht60_table[] = {
 	{ -1, 516200 }  /* SNR > 48 */
 };
 
-/* See IEEE P802.11be/D7.0, Table 36-80 - EHT-MCSs for 996+484-tone MRU,
+/* See IEEE Std 802.11be-2024, Table 36-80 - EHT-MCSs for 996+484-tone MRU,
  * NSS,u = 1
  */
 static const struct minsnr_bitrate_entry eht120_table[] = {
@@ -2847,7 +2864,7 @@ static const struct minsnr_bitrate_entry eht120_table[] = {
 	{ -1, 1064700 }  /* SNR > 51 */
 };
 
-/* See IEEE P802.11be/D7.0, Table 36-81 - EHT-MCSs for 996+484+242-tone MRU,
+/* See IEEE Std 802.11be-2024, Table 36-81 - EHT-MCSs for 996+484+242-tone MRU,
  * NSS,u = 1
  */
 static const struct minsnr_bitrate_entry eht140_table[] = {
@@ -2869,7 +2886,7 @@ static const struct minsnr_bitrate_entry eht140_table[] = {
 	{ -1, 1236800 }  /* SNR > 51 */
 };
 
-/* See IEEE P802.11be/D7.0, Table 36-83 - EHT-MCSs for 2x996+484-tone NRU,
+/* See IEEE Std 802.11be-2024, Table 36-83 - EHT-MCSs for 2x996+484-tone NRU,
  * NSS,u = 1
  */
 static const struct minsnr_bitrate_entry eht200_table[] = {
@@ -2891,7 +2908,7 @@ static const struct minsnr_bitrate_entry eht200_table[] = {
 	{ -1, 1785300 }   /* SNR > 54 */
 };
 
-/* See IEEE P802.11be/D7.0, Table 36-84 - EHT-MCSs for 3x996-tone MRU,
+/* See IEEE Std 802.11be-2024, Table 36-84 - EHT-MCSs for 3x996-tone MRU,
  * NSS,u = 1
  */
 static const struct minsnr_bitrate_entry eht240_table[] = {
@@ -2913,7 +2930,7 @@ static const struct minsnr_bitrate_entry eht240_table[] = {
 	{ -1, 2161800 }   /* SNR > 54 */
 };
 
-/* See IEEE P802.11be/D7.0, Table 36-85: EHT-MCSs for 3x996+484-tone MRU,
+/* See IEEE Std 802.11be-2024, Table 36-85: EHT-MCSs for 3x996+484-tone MRU,
  * NSS,u = 1
  */
 static const struct minsnr_bitrate_entry eht280_table[] = {
@@ -2935,7 +2952,8 @@ static const struct minsnr_bitrate_entry eht280_table[] = {
 	{ -1, 2505900 }   /* SNR > 54 */
 };
 
-/* See IEEE P802.11be/D2.0, Table 36-86: EHT-MCSs for 4x996-tone RU, NSS,u = 1
+/* See IEEE Std 802.11be-2024, Table 36-86: EHT-MCSs for 4x996-tone RU,
+ * NSS,u = 1
  */
 static const struct minsnr_bitrate_entry eht320_table[] = {
 	{ 0, 0 },

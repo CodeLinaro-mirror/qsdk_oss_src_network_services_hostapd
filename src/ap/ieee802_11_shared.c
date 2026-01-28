@@ -19,6 +19,7 @@
 #include "wpa_auth.h"
 #include "dpp_hostapd.h"
 #include "ieee802_11.h"
+#include "hostapd_if/hostapd_if.h"
 
 
 static u8 * hostapd_eid_timeout_interval(u8 *pos, u8 type, u32 value)
@@ -140,7 +141,7 @@ void ieee802_11_send_sa_query_req(struct hostapd_data *hapd,
 		end += oci_ie_len;
 	}
 #endif /* CONFIG_OCV */
-	if (hostapd_drv_send_mlme(hapd, mgmt, end - (u8 *) mgmt, 0, NULL, 0, 0)
+	if (hostapd_drv_send_mlme(hapd, mgmt, end - (u8 *) mgmt, 0, NULL, 0, 0, 0, 0)
 	    < 0)
 		wpa_printf(MSG_INFO, "ieee802_11_send_sa_query_req: send failed");
 
@@ -238,7 +239,7 @@ static void ieee802_11_send_sa_query_resp(struct hostapd_data *hapd,
 		end += oci_ie_len;
 	}
 #endif /* CONFIG_OCV */
-	if (hostapd_drv_send_mlme(hapd, resp, end - (u8 *) resp, 0, NULL, 0, 0)
+	if (hostapd_drv_send_mlme(hapd, resp, end - (u8 *) resp, 0, NULL, 0, 0, 0, 0)
 	    < 0)
 		wpa_printf(MSG_INFO, "ieee80211_mgmt_sa_query_request: send failed");
 
@@ -355,6 +356,10 @@ void ieee802_11_sa_query_action(struct hostapd_data *hapd,
 		return;
 	}
 
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_event_sa_query_completion(hapd, sta->addr,
+					     HOSTAPD_IF_SAQUERY_STA_VALID);
+#endif
 #ifdef CONFIG_IEEE80211BE
 	ap_free_unadded_link_sta(hapd, sta);
 #endif /* CONFIG_IEEE80211BE */
@@ -1237,6 +1242,9 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len)
 	if ((hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_SPP_AMSDU) &&
 	    hapd->conf->spp_amsdu)
 		capab |= BIT(WLAN_RSNX_CAPAB_SPP_A_MSDU);
+	if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK &&
+	    hapd->conf->control_frame_prot)
+		capab |= BIT(WLAN_RSNX_CAPAB_CIGTK);
 
 	if (!capab)
 		return eid; /* no supported extended RSN capabilities */
@@ -1330,8 +1338,8 @@ struct sta_info * hostapd_ml_get_assoc_sta(struct hostapd_data *hapd,
 bool hostapd_get_ht_vht_twt_responder(struct hostapd_data *hapd)
 {
 	return hapd->iconf->ht_vht_twt_responder &&
-		((hapd->iconf->ieee80211n && !hapd->conf->disable_11n) ||
-		 (hapd->iconf->ieee80211ac && !hapd->conf->disable_11ac)) &&
+		((hostapd_is_ht_enabled(hapd)) ||
+		 (hostapd_is_vht_enabled(hapd))) &&
 		(hapd->iface->drv_flags2 &
 		 WPA_DRIVER_FLAGS2_HT_VHT_TWT_RESPONDER);
 }

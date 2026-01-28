@@ -1058,6 +1058,9 @@ ifdef CONFIG_IEEE80211BE
 OBJS += ../src/ap/ieee802_11_eht.o
 OBJS += ../src/ap/ttlm.o
 endif
+ifdef CONFIG_IEEE80211BN
+OBJS += ../src/ap/ieee802_11_uhr.o
+endif
 OBJS += ../src/ap/dscp_policy.o
 ifdef CONFIG_WNM_AP
 CFLAGS += -DCONFIG_WNM_AP
@@ -1089,6 +1092,10 @@ OBJS += ../src/eap_server/eap_server_methods.o
 
 ifdef CONFIG_IEEE80211AC
 CFLAGS += -DCONFIG_IEEE80211AC
+endif
+ifdef CONFIG_IEEE80211BN
+CONFIG_IEEE80211BE=y
+CFLAGS += -DCONFIG_IEEE80211BN
 endif
 ifdef CONFIG_IEEE80211BE
 CONFIG_IEEE80211AX=y
@@ -2043,6 +2050,11 @@ OBJS += ../src/utils/json.o
 CFLAGS += -DCONFIG_JSON
 endif
 
+ifdef CONFIG_PROCESS_COORDINATION
+CFLAGS += -DCONFIG_PROCESS_COORDINATION
+OBJS += ../src/common/proc_coord.o
+endif
+
 ifdef CONFIG_MODULE_TESTS
 CFLAGS += -DCONFIG_MODULE_TESTS
 OBJS += wpas_module_tests.o
@@ -2131,6 +2143,7 @@ endif
 
 ifdef CONFIG_QCN_EXTN
 include ../qcn_extns/Makefile
+OBJS += qcn_extns/wpa_supplicant_rptr_extn.o
 endif
 
 dynamic_eap_methods: $(EAPDYN)

@@ -503,6 +503,8 @@ static u32 rsnxe_capab(struct wpa_auth_config *conf, int key_mgmt)
 		capab |= BIT(WLAN_RSNX_CAPAB_SSID_PROTECTION);
 	if (conf->spp_amsdu)
 		capab |= BIT(WLAN_RSNX_CAPAB_SPP_A_MSDU);
+	if (conf->cigtk)
+		capab |= BIT(WLAN_RSNX_CAPAB_CIGTK);
 
 	return capab;
 }
@@ -1138,6 +1140,12 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 		    return WPA_MGMT_FRAME_PROTECTION_VIOLATION;
 	}
 
+	if (wpa_auth->conf.control_frame_prot &&
+	    ieee802_11_rsnx_capab(rsnxe, WLAN_RSNX_CAPAB_CIGTK))
+		sm->ctrl_frame_prot = 1;
+	else
+		sm->ctrl_frame_prot = 0;
+
 	if (wpa_auth->conf.spp_amsdu &&
 	    ieee802_11_rsnx_capab(rsnxe, WLAN_RSNX_CAPAB_SPP_A_MSDU) &&
 	    (ciphers & (WPA_CIPHER_CCMP_256 | WPA_CIPHER_CCMP |
@@ -1384,6 +1392,10 @@ int wpa_auth_uses_mfp(struct wpa_state_machine *sm)
 	return sm ? sm->mgmt_frame_prot : 0;
 }
 
+int wpa_auth_uses_cfp(struct wpa_state_machine *sm)
+{
+	return sm ? sm->ctrl_frame_prot : 0;
+}
 
 int wpa_auth_uses_spp_amsdu(struct wpa_state_machine *sm)
 {
@@ -1409,8 +1421,7 @@ int wpa_auth_uses_ocv(struct wpa_state_machine *sm)
 
 #ifdef CONFIG_OWE
 u8 * wpa_auth_write_assoc_resp_owe(struct wpa_state_machine *sm,
-				   u8 *pos, size_t max_len,
-				   const u8 *req_ies, size_t req_ies_len)
+				   u8 *pos, size_t max_len)
 {
 	int res;
 	struct wpa_auth_config *conf;
@@ -1443,8 +1454,7 @@ u8 * wpa_auth_write_assoc_resp_owe(struct wpa_state_machine *sm,
 #ifdef CONFIG_FILS
 
 u8 * wpa_auth_write_assoc_resp_fils(struct wpa_state_machine *sm,
-				    u8 *pos, size_t max_len,
-				    const u8 *req_ies, size_t req_ies_len)
+				    u8 *pos, size_t max_len)
 {
 	int res;
 

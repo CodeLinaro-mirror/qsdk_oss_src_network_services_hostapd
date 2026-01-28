@@ -8,6 +8,8 @@
 
 #include "includes.h"
 #include <dirent.h>
+#include <errno.h>
+#include <limits.h>
 
 #include "common/wpa_ctrl.h"
 #include "common/ieee802_11_defs.h"
@@ -1635,6 +1637,49 @@ static int hostapd_cli_cmd_disable(struct wpa_ctrl *ctrl, int argc,
 }
 
 
+static int hostapd_cli_cmd_disable_bss(struct wpa_ctrl *ctrl, int argc,
+				   char *argv[])
+{
+	char cmd[256];
+	int res;
+	long tbtt;
+	char *end;
+
+	if (argc == 0)
+		return wpa_ctrl_command(ctrl, "DISABLE_BSS");
+
+	/* Single argument: tbtt number only */
+	if (argc == 1) {
+		errno = 0;
+		end = NULL;
+		tbtt = strtol(argv[0], &end, 10);
+		if (!argv[0][0] || !end || *end != '\0' || tbtt < 0 ||
+		    tbtt > INT_MAX || errno) {
+			printf("Invalid TBTT value '%s'. Must be a non-negative integer.\n",
+			       argv[0]);
+			return -1;
+		}
+
+		res = os_snprintf(cmd, sizeof(cmd), "DISABLE_BSS %ld", tbtt);
+		if (os_snprintf_error(sizeof(cmd), res)) {
+			printf("Too long DISABLE_BSS command.\n");
+			return -1;
+		}
+		return wpa_ctrl_command(ctrl, cmd);
+	}
+
+	printf("Invalid DISABLE_BSS usage. Expect: disable_bss [tbtt]\n");
+	return -1;
+}
+
+
+static int hostapd_cli_cmd_enable_bss(struct wpa_ctrl *ctrl, int argc,
+				      char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "ENABLE_BSS");
+}
+
+
 static int hostapd_cli_cmd_enable_mld(struct wpa_ctrl *ctrl, int argc,
 				      char *argv[])
 {
@@ -2463,6 +2508,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	 "= reload current bss from configuration" },
 	{ "disable", hostapd_cli_cmd_disable, NULL,
 	  "= disable hostapd on current interface" },
+	{ "disable_bss", hostapd_cli_cmd_disable_bss, NULL,
+	  "= disable this BSS [tbtt]" },
+	{ "enable_bss", hostapd_cli_cmd_enable_bss, NULL,
+	  "= enable this BSS" },
 	{ "enable_mld", hostapd_cli_cmd_enable_mld, NULL,
 	  "= enable AP MLD to which the interface is affiliated" },
 	{ "disable_mld", hostapd_cli_cmd_disable_mld, NULL,

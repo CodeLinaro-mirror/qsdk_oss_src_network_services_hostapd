@@ -224,10 +224,10 @@ static void parse_basic_ml(const u8 *ie, size_t len, bool ap,
 		const u8 *fpos;
 		u8 flen;
 
-		if (elem->id == EHT_ML_SUB_ELEM_FRAGMENT)
+		if (elem->id == MULTI_LINK_SUB_ELEM_ID_FRAGMENT)
 			continue;
 
-		if (elem->id != EHT_ML_SUB_ELEM_PER_STA_PROFILE) {
+		if (elem->id != MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE) {
 			wpa_printf(MSG_DEBUG, "Link Info subelement id=%u",
 				   elem->id);
 			wpa_hexdump(MSG_DEBUG, "Link Info subelement data",
@@ -242,7 +242,7 @@ static void parse_basic_ml(const u8 *ie, size_t len, bool ap,
 		flen = elem->datalen;
 		fpos = elem->data + flen;
 		while (flen == 255 && li_end - fpos >= 2 &&
-		       *fpos == EHT_ML_SUB_ELEM_FRAGMENT &&
+		       *fpos == MULTI_LINK_SUB_ELEM_ID_FRAGMENT &&
 		       li_end - fpos >= 2 + fpos[1]) {
 			/* Reassemble truncated subelement */
 			fpos++;
@@ -541,10 +541,10 @@ static void parse_reconfig_ml(const u8 *ie, size_t len,
 		const u8 *fpos;
 		u8 flen;
 
-		if (elem->id == EHT_ML_SUB_ELEM_FRAGMENT)
+		if (elem->id == MULTI_LINK_SUB_ELEM_ID_FRAGMENT)
 			continue;
 
-		if (elem->id != EHT_ML_SUB_ELEM_PER_STA_PROFILE) {
+		if (elem->id != MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE) {
 			wpa_printf(MSG_DEBUG, "Link Info subelement id=%u",
 				   elem->id);
 			wpa_hexdump(MSG_DEBUG, "Link Info subelement data",
@@ -559,7 +559,7 @@ static void parse_reconfig_ml(const u8 *ie, size_t len,
 		flen = elem->datalen;
 		fpos = elem->data + flen;
 		while (flen == 255 && li_end - fpos >= 2 &&
-		       *fpos == EHT_ML_SUB_ELEM_FRAGMENT &&
+		       *fpos == MULTI_LINK_SUB_ELEM_ID_FRAGMENT &&
 		       li_end - fpos >= 2 + fpos[1]) {
 			/* Reassemble truncated subelement */
 			fpos++;
@@ -1136,7 +1136,7 @@ static void process_sae_auth(struct wlantest *wt, struct wlantest_bss *bss,
 		return;
 
 	trans = le_to_host16(mgmt->u.auth.auth_transaction);
-	if (trans != 1)
+	if (trans != WLAN_AUTH_TR_SEQ_SAE_COMMIT)
 		return;
 
 	status = le_to_host16(mgmt->u.auth.status_code);
@@ -1188,7 +1188,8 @@ static void rx_mgmt_auth(struct wlantest *wt, const u8 *data, size_t len)
 
 	if (status == WLAN_STATUS_SUCCESS &&
 	    ((alg == WLAN_AUTH_OPEN && trans == 2) ||
-	     (alg == WLAN_AUTH_SAE && trans == 2 && from_ap))) {
+	     (alg == WLAN_AUTH_SAE && trans == WLAN_AUTH_TR_SEQ_SAE_CONFIRM &&
+	      from_ap))) {
 		if (sta->state == STATE1) {
 			add_note(wt, MSG_DEBUG, "STA " MACSTR
 				 " moved to State 2 with " MACSTR,

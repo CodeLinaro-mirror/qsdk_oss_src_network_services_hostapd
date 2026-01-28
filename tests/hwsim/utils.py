@@ -214,6 +214,91 @@ def get_phy(ap, ifname=None):
             break
     return phy
 
+def iw_dev_ssid(dev, ifname):
+    buf = iw_dev_info(dev, ifname)
+    return iw_dev_ssid_from_info(buf)
+
+def iw_dev(dev):
+    status, buf = dev.cmd_execute(["iw", "dev"])
+    if status != 0:
+        raise Exception("iw dev failed")
+    return buf
+
+def log_iw_dev(dev, note=None, buf=None):
+    if note:
+        logger.info("iw dev: %s", note)
+    if buf is None:
+        try:
+            buf = iw_dev(dev)
+        except Exception as e:
+            logger.info("iw dev: <failed: %s>", str(e))
+            return
+    lines = buf.splitlines()
+    if not lines:
+        logger.info("iw dev: <empty>")
+        return
+    for line in lines:
+        logger.info("iw dev: %s", line)
+
+def iw_dev_info(dev, ifname):
+    status, buf = dev.cmd_execute(["iw", "dev", ifname, "info"])
+    if status != 0:
+        raise Exception("iw dev %s info failed" % ifname)
+    return buf
+
+def iw_dev_ssid_from_info(buf):
+    for line in buf.splitlines():
+        line = line.strip()
+        if line.startswith("ssid "):
+            return line[5:]
+    return None
+
+def log_iw_dev_info(dev, ifname, buf=None):
+    if buf is None:
+        buf = iw_dev_info(dev, ifname)
+    lines = buf.splitlines()
+    if not lines:
+        logger.info("iw dev %s info: <empty>", ifname)
+        return
+    for line in lines:
+        logger.info("iw dev %s info: %s", ifname, line)
+
+def wait_iw_dev_ssid(dev, ifname, ssid, timeout=2):
+    logger.info("iw dev %s info: wait ssid=%s", ifname, ssid)
+    buf = iw_dev_info(dev, ifname)
+    log_iw_dev_info(dev, ifname, buf)
+    start = os.times()[4]
+    while True:
+        cur = iw_dev_ssid_from_info(buf)
+        if cur == ssid:
+            log_iw_dev_info(dev, ifname, buf)
+            logger.info("iw dev %s info: ssid=%s", ifname, cur)
+            return
+        if os.times()[4] > start + timeout:
+            log_iw_dev_info(dev, ifname, buf)
+            raise Exception("iw dev %s info did not report SSID %s (got: %s)" %
+                            (ifname, ssid, str(cur)))
+        time.sleep(0.05)
+        buf = iw_dev_info(dev, ifname)
+
+def wait_iw_dev_no_ssid(dev, ifname, timeout=2):
+    logger.info("iw dev %s info: wait ssid=None", ifname)
+    buf = iw_dev_info(dev, ifname)
+    log_iw_dev_info(dev, ifname, buf)
+    start = os.times()[4]
+    while True:
+        cur = iw_dev_ssid_from_info(buf)
+        if cur is None:
+            log_iw_dev_info(dev, ifname, buf)
+            logger.info("iw dev %s info: ssid=None", ifname)
+            return
+        if os.times()[4] > start + timeout:
+            log_iw_dev_info(dev, ifname, buf)
+            raise Exception("iw dev %s info still reports SSID %s" %
+                            (ifname, cur))
+        time.sleep(0.05)
+        buf = iw_dev_info(dev, ifname)
+
 def parse_ie(buf):
     ret = {}
     data = binascii.unhexlify(buf)

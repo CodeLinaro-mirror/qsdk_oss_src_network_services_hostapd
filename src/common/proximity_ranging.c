@@ -185,7 +185,7 @@ void pr_clear_dev_iks(struct pr_data *pr)
 
 
 void pr_add_dev_ik(struct pr_data *pr, const u8 *dik, const char *password,
-		   const u8 *pmk, bool own)
+		   const u8 *pmk, size_t pmk_len, bool own)
 {
 	struct pr_dev_ik *dev_ik;
 
@@ -197,6 +197,11 @@ void pr_add_dev_ik(struct pr_data *pr, const u8 *dik, const char *password,
 				   sizeof(pr->cfg->global_password));
 			pr->cfg->global_password_valid = true;
 		}
+		return;
+	}
+
+	if (pmk && (pmk_len != 32 && pmk_len != 48 && pmk_len != 64)) {
+		wpa_printf(MSG_INFO, "PR: Unexpected PMK length %zu", pmk_len);
 		return;
 	}
 
@@ -220,7 +225,8 @@ void pr_add_dev_ik(struct pr_data *pr, const u8 *dik, const char *password,
 		dev_ik->password_valid = true;
 	}
 	if (pmk) {
-		os_memcpy(dev_ik->pmk, pmk, WPA_PASN_PMK_LEN);
+		os_memcpy(dev_ik->pmk, pmk, pmk_len);
+		dev_ik->pmk_len = pmk_len;
 		dev_ik->pmk_valid = true;
 	}
 
@@ -457,7 +463,8 @@ static int pr_validate_dira(struct pr_data *pr, struct pr_device *dev,
 			}
 			if (dev_ik->pmk_valid) {
 				os_memcpy(dev->pmk, dev_ik->pmk,
-					  WPA_PASN_PMK_LEN);
+					  dev_ik->pmk_len);
+				dev->pmk_len = dev_ik->pmk_len;
 				dev->pmk_valid = true;
 			}
 			return 0;
@@ -1755,14 +1762,14 @@ static int pr_pasn_initialize(struct pr_data *pr, struct pr_device *dev,
 						       pasn->own_addr,
 						       pasn->peer_addr,
 						       dev->pmk,
-						       WPA_PASN_PMK_LEN,
+						       dev->pmk_len,
 						       pmkid);
 		else
 			pasn_responder_pmksa_cache_add(pr->responder_pmksa,
 						       pasn->own_addr,
 						       pasn->peer_addr,
 						       dev->pmk,
-						       WPA_PASN_PMK_LEN,
+						       dev->pmk_len,
 						       pmkid);
 		pasn->akmp = WPA_KEY_MGMT_SAE;
 	} else {
@@ -2069,7 +2076,7 @@ static int pr_process_pasn_ranging_wrapper(struct pr_data *pr,
 		goto end;
 	}
 
-	if (trans_seq == 2) {
+	if (trans_seq == WLAN_AUTH_TR_SEQ_PASN_AUTH2) {
 		if (!msg.status_ie || !msg.status_ie_len) {
 			wpa_printf(MSG_DEBUG, "PR INFO: * No status attribute");
 			wpabuf_free(buf);
@@ -2157,10 +2164,10 @@ static int pr_process_pasn_ranging_wrapper(struct pr_data *pr,
 		edca_caps_valid = true;
 	}
 
-	if (trans_seq == 1)
+	if (trans_seq == WLAN_AUTH_TR_SEQ_PASN_AUTH1)
 		status = pr_pasn_get_best_op_mode(pr, supp_ranging_role,
 						  &op_mode, &res_op_mode);
-	else if (trans_seq == 2)
+	else if (trans_seq == WLAN_AUTH_TR_SEQ_PASN_AUTH2)
 		status = pr_pasn_get_final_op_mode(pr, supp_ranging_role,
 						   &op_mode, &res_op_mode);
 
@@ -2171,7 +2178,7 @@ static int pr_process_pasn_ranging_wrapper(struct pr_data *pr,
 		goto end;
 	}
 
-	if (trans_seq == 1) {
+	if (trans_seq == WLAN_AUTH_TR_SEQ_PASN_AUTH1) {
 		pr_buf_add_ranging_capa_info(buf, &caps);
 		if (edca_caps_valid)
 			pr_buf_add_edca_capa_info(buf, &edca);
@@ -2185,7 +2192,7 @@ static int pr_process_pasn_ranging_wrapper(struct pr_data *pr,
 	dev->ranging_role = res_op_mode.role;
 	dev->protocol_type = res_op_mode.protocol_type;
 
-	if (trans_seq == 2) {
+	if (trans_seq == WLAN_AUTH_TR_SEQ_PASN_AUTH2) {
 		dev->final_op_channel =
 			res_op_mode.channels.op_class[0].channel[0];
 		dev->final_op_class = res_op_mode.channels.op_class[0].op_class;
@@ -2524,11 +2531,11 @@ int pr_pasn_auth_rx(struct pr_data *pr, const struct ieee80211_mgmt *mgmt,
 	}
 
 	auth_transaction = le_to_host16(mgmt->u.auth.auth_transaction);
-	if (auth_transaction == 1)
+	if (auth_transaction == WLAN_AUTH_TR_SEQ_PASN_AUTH1)
 		return pr_pasn_handle_auth_1(pr, dev, mgmt, len, freq);
-	if (auth_transaction == 2)
+	if (auth_transaction == WLAN_AUTH_TR_SEQ_PASN_AUTH2)
 		return pr_pasn_handle_auth_2(pr, dev, mgmt, len);
-	if (auth_transaction == 3)
+	if (auth_transaction == WLAN_AUTH_TR_SEQ_PASN_AUTH3)
 		return pr_pasn_handle_auth_3(pr, dev, mgmt, len);
 
 	return -1;

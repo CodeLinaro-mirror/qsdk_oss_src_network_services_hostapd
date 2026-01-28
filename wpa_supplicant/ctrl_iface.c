@@ -15,10 +15,12 @@
 #include "utils/eloop.h"
 #include "utils/uuid.h"
 #include "utils/module_tests.h"
+#include "utils/trace.h"
 #include "common/version.h"
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
 #include "common/wpa_ctrl.h"
+#include "../qcn_extns/cmn.h"
 #ifdef CONFIG_DPP
 #include "common/dpp.h"
 #endif /* CONFIG_DPP */
@@ -5000,6 +5002,17 @@ static int wpa_supplicant_ctrl_iface_get_capability(
 		if ((wpa_s->drv_flags & WPA_DRIVER_FLAGS_BEACON_PROTECTION) ||
 		    (wpa_s->drv_flags2 &
 		     WPA_DRIVER_FLAGS2_BEACON_PROTECTION_CLIENT))
+			res = os_snprintf(buf, buflen, "supported");
+		else
+			res = os_snprintf(buf, buflen, "not supported");
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	}
+
+	if (os_strcmp(field, "control_frame_prot") == 0) {
+		if ((wpa_s->drv_flags2 &
+		    WPA_DRIVER_FLAGS2_CIGTK))
 			res = os_snprintf(buf, buflen, "supported");
 		else
 			res = os_snprintf(buf, buflen, "not supported");
@@ -11529,6 +11542,7 @@ static int wpas_ctrl_iface_pasn_deauthenticate(struct wpa_supplicant *wpa_s,
 
 
 #ifdef CONFIG_PR
+
 static int wpas_ctrl_iface_pr_pasn_start(struct wpa_supplicant *wpa_s,
 					 char *cmd)
 {
@@ -11579,12 +11593,8 @@ static int wpas_ctrl_iface_pr_pasn_start(struct wpa_supplicant *wpa_s,
 	return wpas_pr_initiate_pasn_auth(wpa_s, addr, freq, auth_mode, role,
 					  ranging_type, forced_pr_freq);
 }
-#endif /* CONFIG_PR */
 
 
-#ifdef CONFIG_TESTING_OPTIONS
-
-#ifdef CONFIG_PR
 static int wpas_ctrl_iface_pr_set_dik_ctx(struct wpa_supplicant *wpa_s,
 					  char *cmd)
 {
@@ -11594,6 +11604,7 @@ static int wpas_ctrl_iface_pr_set_dik_ctx(struct wpa_supplicant *wpa_s,
 	const char *password = NULL;
 	const u8 *pmk = NULL, *dik = NULL;
 	struct wpabuf *pmk_buf = NULL, *dik_buf = NULL;
+	size_t pmk_len;
 
 	while ((token = str_token(cmd, " ", &context))) {
 		if (os_strcmp(token, "self") == 0) {
@@ -11619,6 +11630,7 @@ static int wpas_ctrl_iface_pr_set_dik_ctx(struct wpa_supplicant *wpa_s,
 			if (!pmk_buf)
 				goto fail;
 			pmk = wpabuf_head_u8(pmk_buf);
+			pmk_len = wpabuf_len(pmk_buf);
 			continue;
 		}
 	}
@@ -11626,16 +11638,18 @@ static int wpas_ctrl_iface_pr_set_dik_ctx(struct wpa_supplicant *wpa_s,
 	if (!dik)
 		goto fail;
 
-	wpas_pr_set_dev_ik(wpa_s, dik, password, pmk, own);
+	wpas_pr_set_dev_ik(wpa_s, dik, password, pmk, pmk_len, own);
 	ret = 0;
 fail:
 	wpabuf_clear_free(dik_buf);
 	wpabuf_clear_free(pmk_buf);
 	return ret;
 }
+
 #endif /* CONFIG_PR */
 
 
+#ifdef CONFIG_TESTING_OPTIONS
 static int wpas_ctrl_iface_pasn_driver(struct wpa_supplicant *wpa_s, char *cmd)
 {
 	char *token, *context = NULL;
@@ -13262,6 +13276,7 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 			reply_len = -1;
 	} else if (os_strncmp(buf, "NOTE ", 5) == 0) {
 		wpa_printf(MSG_INFO, "NOTE: %s", buf + 5);
+		wpa_trace_set_context(buf + 5);
 #ifdef CONFIG_CTRL_IFACE_MIB
 	} else if (os_strcmp(buf, "MIB") == 0) {
 		reply_len = wpa_sm_get_mib(wpa_s->wpa, reply, reply_size);
@@ -14279,15 +14294,13 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 	} else if (os_strncmp(buf, "PR_PASN_START ", 14) == 0) {
 		if (wpas_ctrl_iface_pr_pasn_start(wpa_s, buf + 14) < 0)
 			reply_len = -1;
-#endif /* CONFIG_PR */
-#ifdef CONFIG_TESTING_OPTIONS
-#ifdef CONFIG_PR
 	} else if (os_strncmp(buf, "PR_SET_DIK_CONTEXT ", 19) == 0) {
 		if (wpas_ctrl_iface_pr_set_dik_ctx(wpa_s, buf + 19) < 0)
 			reply_len = -1;
 	} else if (os_strcmp(buf, "PR_CLEAR_DIK_CONTEXT") == 0) {
 		wpas_pr_clear_dev_iks(wpa_s);
 #endif /* CONFIG_PR */
+#ifdef CONFIG_TESTING_OPTIONS
 	} else if (os_strncmp(buf, "PASN_DRIVER ", 12) == 0) {
 		if (wpas_ctrl_iface_pasn_driver(wpa_s, buf + 12) < 0)
 			reply_len = -1;
@@ -14330,6 +14343,12 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 		reply_len = wpas_ctrl_iface_epcs(wpa_s, buf+5, reply,
 						 reply_size);
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_QCN_EXTN
+	} else if (os_strcmp(buf, "GET_FREQ_LIST") == 0) {
+		reply_len = wpa_ctrl_get_freq_list_extn(wpa_s, reply, reply_size);
+	} else if (os_strncmp(buf, "CHAN_SW_FINISHED_NOTIFY", 23) == 0) {
+		reply_len = wpa_ctrl_chan_sw_finished_notify_extn(wpa_s, buf+24, reply, reply_size);
+#endif
 	} else {
 		os_memcpy(reply, "UNKNOWN COMMAND\n", 16);
 		reply_len = 16;

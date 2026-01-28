@@ -3,7 +3,7 @@
  *
  * Copyright (C) 2019, Intel Corporation
  * Copyright (c) 2022, Jouni Malinen <j@w1.fi>
- * Copyright (C) 2022, Qualcomm Innovation Center, Inc.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -16,7 +16,6 @@
 #ifdef CONFIG_SAE
 #include "common/sae.h"
 #endif /* CONFIG_SAE */
-#include "crypto/sha384.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -84,8 +83,9 @@ struct pasn_data {
 	size_t pmk_len;
 	u8 pmk[PMK_LEN_MAX];
 	bool using_pmksa;
+	enum rsn_hash_alg hash_alg;
 
-	u8 hash[SHA384_MAC_LEN];
+	struct wpabuf *auth1;
 
 	struct wpabuf *beacon_rsne_rsnxe;
 	struct wpa_ptk ptk;

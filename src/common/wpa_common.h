@@ -23,10 +23,16 @@
 #define WPA_GMK_LEN 32
 #define WPA_GTK_MAX_LEN 32
 #define WPA_PASN_PMK_LEN 32
-#define WPA_PASN_MAX_MIC_LEN 24
+#define WPA_PASN_MAX_MIC_LEN 32
 #define WPA_MAX_RSNXE_LEN 4
 
 #define OWE_DH_GROUP 19
+
+enum rsn_hash_alg {
+	RSN_HASH_SHA256,
+	RSN_HASH_SHA384,
+	RSN_HASH_SHA512,
+};
 
 #ifdef CONFIG_NO_TKIP
 #define WPA_ALLOWED_PAIRWISE_CIPHERS \
@@ -134,10 +140,12 @@ WPA_CIPHER_BIP_CMAC_256)
 #define RSN_KEY_DATA_MULTIBAND_KEYID RSN_SELECTOR(0x00, 0x0f, 0xac, 12)
 #define RSN_KEY_DATA_OCI RSN_SELECTOR(0x00, 0x0f, 0xac, 13)
 #define RSN_KEY_DATA_BIGTK RSN_SELECTOR(0x00, 0x0f, 0xac, 14)
+#define RSN_KEY_DATA_CIGTK RSN_SELECTOR(0x00, 0x0f, 0xac, 15)
 #define RSN_KEY_DATA_MLO_GTK RSN_SELECTOR(0x00, 0x0f, 0xac, 16)
 #define RSN_KEY_DATA_MLO_IGTK RSN_SELECTOR(0x00, 0x0f, 0xac, 17)
 #define RSN_KEY_DATA_MLO_BIGTK RSN_SELECTOR(0x00, 0x0f, 0xac, 18)
 #define RSN_KEY_DATA_MLO_LINK RSN_SELECTOR(0x00, 0x0f, 0xac, 19)
+#define RSN_KEY_DATA_MLO_CIGTK RSN_SELECTOR(0x00, 0x0f, 0xac, 20)
 #define RSN_KEY_DATA_SAE_PW_IDS RSN_SELECTOR(0x00, 0x0f, 0xac, 25)
 
 #define WFA_KEY_DATA_IP_ADDR_REQ RSN_SELECTOR(0x50, 0x6f, 0x9a, 4)
@@ -165,6 +173,8 @@ WPA_CIPHER_BIP_CMAC_256)
 #define WPA_IGTK_MAX_LEN 32
 #define WPA_BIGTK_LEN 16
 #define WPA_BIGTK_MAX_LEN 32
+#define WPA_CIGTK_LEN 16
+#define WPA_CIGTK_MAX_LEN 32
 
 
 /* IEEE 802.11, 7.3.2.25.3 RSN Capabilities */
@@ -182,6 +192,7 @@ WPA_CIPHER_BIP_CMAC_256)
 #define WPA_CAPABILITY_EXT_KEY_ID_FOR_UNICAST BIT(13)
 #define WPA_CAPABILITY_OCVC BIT(14)
 /* B15: Reserved */
+#define WPA_CAPABILITY_CFPC BIT(16)
 
 
 /* IEEE 802.11r */
@@ -247,7 +258,6 @@ struct wpa_eapol_key {
 #define FILS_ICK_MAX_LEN 48
 #define FILS_FT_MAX_LEN 48
 #define WPA_PASN_KCK_LEN 32
-#define WPA_PASN_MIC_MAX_LEN 24
 #define WPA_LTF_KEYSEED_MAX_LEN 48
 
 /**
@@ -288,6 +298,12 @@ struct wpa_igtk {
 struct wpa_bigtk {
 	u8 bigtk[WPA_BIGTK_MAX_LEN];
 	size_t bigtk_len;
+};
+
+
+struct wpa_cigtk {
+	u8 cigtk[WPA_CIGTK_MAX_LEN];
+	size_t cigtk_len;
 };
 
 /* WPA IE version 1
@@ -364,6 +380,13 @@ struct wpa_bigtk_kde {
 	u8 bigtk[WPA_BIGTK_MAX_LEN];
 } STRUCT_PACKED;
 
+#define WPA_CIGTK_KDE_PREFIX_LEN (2 + RSN_PN_LEN)
+struct wpa_cigtk_kde {
+	u8 keyid[2];
+	u8 pn[RSN_PN_LEN];
+	u8 cigtk[WPA_CIGTK_MAX_LEN];
+} STRUCT_PACKED;
+
 #define RSN_MLO_GTK_KDE_PREFIX_LENGTH		(1 + RSN_PN_LEN)
 #define RSN_MLO_GTK_KDE_PREFIX0_KEY_ID_MASK	0x03
 #define RSN_MLO_GTK_KDE_PREFIX0_TX		0x04
@@ -388,6 +411,17 @@ struct rsn_mlo_bigtk_kde {
 	u8 pn[RSN_PN_LEN];
 	u8 prefix8;
 	u8 bigtk[WPA_BIGTK_MAX_LEN];
+} STRUCT_PACKED;
+
+#define RSN_MLO_CIGTK_KDE_PREFIX_LENGTH		(2 + RSN_PN_LEN + 1)
+#define RSN_MLO_CIGTK_KDE_PREFIX8_LINK_ID_SHIFT	4
+#define RSN_MLO_CIGTK_KDE_PREFIX8_LINK_ID_MASK	0xF0
+
+struct rsn_mlo_cigtk_kde {
+	u8 keyid[2];
+	u8 pn[RSN_PN_LEN];
+	u8 prefix8;
+	u8 cigtk[WPA_CIGTK_MAX_LEN];
 } STRUCT_PACKED;
 
 #define RSN_MLO_LINK_KDE_FIXED_LENGTH		(1 + ETH_ALEN)
@@ -436,9 +470,11 @@ struct rsn_ftie_sha512 {
 #define FTIE_SUBELEM_IGTK 4
 #define FTIE_SUBELEM_OCI 5
 #define FTIE_SUBELEM_BIGTK 6
+#define FTIE_SUBELEM_CIGTK 7
 #define FTIE_SUBELEM_MLO_GTK 8
 #define FTIE_SUBELEM_MLO_IGTK 9
 #define FTIE_SUBELEM_MLO_BIGTK 10
+#define FTIE_SUBELEM_MLO_CIGTK 11
 
 struct rsn_rdie {
 	u8 id;
@@ -544,6 +580,7 @@ struct wpa_ie_data {
 	size_t num_pmkid;
 	const u8 *pmkid;
 	int mgmt_group_cipher;
+	int ctrl_group_cipher;
 };
 
 
@@ -610,6 +647,8 @@ struct wpa_ft_ies {
 	size_t igtk_len;
 	const u8 *bigtk;
 	size_t bigtk_len;
+	const u8 *cigtk;
+	size_t cigtk_len;
 #ifdef CONFIG_OCV
 	const u8 *oci;
 	size_t oci_len;
@@ -629,6 +668,9 @@ struct wpa_ft_ies {
 	u16 valid_mlo_bigtks; /* bitmap of valid link BIGTK subelements */
 	const u8 *mlo_bigtk[MAX_NUM_MLD_LINKS];
 	size_t mlo_bigtk_len[MAX_NUM_MLD_LINKS];
+	u16 valid_mlo_cigtks; /* bitmap of valid link CIGTK subelements */
+	const u8 *mlo_cigtk[MAX_NUM_MLD_LINKS];
+	size_t mlo_cigtk_len[MAX_NUM_MLD_LINKS];
 
 	struct wpabuf *fte_buf;
 };
@@ -691,6 +733,8 @@ struct wpa_eapol_ie_parse {
 	size_t igtk_len;
 	const u8 *bigtk;
 	size_t bigtk_len;
+	const u8 *cigtk;
+	size_t cigtk_len;
 	const u8 *sae_pw_ids;
 	size_t sae_pw_ids_len;
 	const u8 *mdie;
@@ -753,6 +797,9 @@ struct wpa_eapol_ie_parse {
 	u16 valid_mlo_bigtks; /* bitmap of valid link BIGTK KDEs */
 	const u8 *mlo_bigtk[MAX_NUM_MLD_LINKS];
 	size_t mlo_bigtk_len[MAX_NUM_MLD_LINKS];
+	u16 valid_mlo_cigtks; /* bitmap of valid link CIGTK KDEs */
+	const u8 *mlo_cigtk[MAX_NUM_MLD_LINKS];
+	size_t mlo_cigtk_len[MAX_NUM_MLD_LINKS];
 	u16 valid_mlo_links; /* bitmap of valid MLO link KDEs */
 	const u8 *mlo_link[MAX_NUM_MLD_LINKS];
 	size_t mlo_link_len[MAX_NUM_MLD_LINKS];
@@ -788,23 +835,22 @@ int wpa_use_cmac(int akmp);
 int wpa_use_aes_key_wrap(int akmp);
 int fils_domain_name_hash(const char *domain, u8 *hash);
 
-bool pasn_use_sha384(int akmp, int cipher);
 int pasn_pmk_to_ptk(const u8 *pmk, size_t pmk_len,
 		    const u8 *spa, const u8 *bssid,
 		    const u8 *dhss, size_t dhss_len,
 		    struct wpa_ptk *ptk, int akmp, int cipher,
-		    size_t kdk_len, size_t kek_len);
+		    size_t kdk_len, size_t kek_len, enum rsn_hash_alg *alg);
 
-u8 pasn_mic_len(int akmp, int cipher);
+size_t pasn_mic_len(enum rsn_hash_alg alg);
 
-int pasn_mic(const u8 *kck, int akmp, int cipher,
+int pasn_mic(enum rsn_hash_alg alg, const u8 *kck, size_t kck_len,
 	     const u8 *addr1, const u8 *addr2,
 	     const u8 *data, size_t data_len,
 	     const u8 *frame, size_t frame_len, u8 *mic);
 
 int wpa_ltf_keyseed(struct wpa_ptk *ptk, int akmp, int cipher);
 
-int pasn_auth_frame_hash(int akmp, int cipher, const u8 *data, size_t len,
+int pasn_auth_frame_hash(enum rsn_hash_alg alg, const u8 *data, size_t len,
 			 u8 *hash);
 
 void wpa_pasn_build_auth_header(struct wpabuf *buf, const u8 *bssid,
@@ -835,4 +881,6 @@ bool rsn_is_snonce_cookie(const u8 *snonce);
 int rsn_cipher_suite_to_wpa_cipher(u32 cipher);
 int rsn_key_mgmt_to_wpa_akm(u32 akm_suite);
 
+unsigned int wpa_kck_len(int akmp, size_t pmk_len);
+unsigned int wpa_kek_len(int akmp, size_t pmk_len);
 #endif /* WPA_COMMON_H */

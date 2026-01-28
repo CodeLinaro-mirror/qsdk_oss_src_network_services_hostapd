@@ -304,6 +304,7 @@ static void wnm_sleep_mode_exit_success(struct wpa_supplicant *wpa_s,
 
 
 static void ieee802_11_rx_wnmsleep_resp(struct wpa_supplicant *wpa_s,
+					const u8 *da, const u8 *sa,
 					const u8 *frm, int len)
 {
 	/*
@@ -325,6 +326,14 @@ static void ieee802_11_rx_wnmsleep_resp(struct wpa_supplicant *wpa_s,
 	if (!wpa_s->wnmsleep_used) {
 		wpa_printf(MSG_DEBUG,
 			   "WNM: Ignore WNM-Sleep Mode Response frame since WNM-Sleep Mode operation has not been requested");
+		return;
+	}
+
+	if (is_multicast_ether_addr(da)) {
+		wpa_printf(MSG_DEBUG,
+			   "WNM: Ignore group-addressed WNM-Sleep Mode Response frame (A1="
+			   MACSTR " A2=" MACSTR ")",
+			   MAC2STR(da), MAC2STR(sa));
 		return;
 	}
 
@@ -430,6 +439,8 @@ void wnm_btm_reset(struct wpa_supplicant *wpa_s)
 	os_free(wpa_s->wnm_neighbor_report_elements);
 	wpa_s->wnm_neighbor_report_elements = NULL;
 
+	wpa_s->wnm_target_bss = NULL;
+
 	wpa_s->wnm_cand_valid_until.sec = 0;
 	wpa_s->wnm_cand_valid_until.usec = 0;
 
@@ -517,7 +528,7 @@ static void wnm_parse_neighbor_report_multi_link(struct neighbor_report *rep,
 			break;
 		}
 
-		if  (*pos == EHT_ML_SUB_ELEM_PER_STA_PROFILE) {
+		if  (*pos == MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE) {
 			const struct ieee80211_eht_per_sta_profile *sta_prof =
 				(const struct ieee80211_eht_per_sta_profile *)
 				(pos + 2);
@@ -1588,11 +1599,13 @@ static void ieee802_11_rx_bss_trans_mgmt_req(struct wpa_supplicant *wpa_s,
 	disassoc_imminent = wpa_s->wnm_mode & WNM_BSS_TM_REQ_DISASSOC_IMMINENT;
 
 	/*
-	 * Based on IEEE P802.11be/D5.0, when a station is a non-AP MLD with
-	 * more than one affiliated link, the Link Removal Imminent field is
-	 * set to 1, and the BSS Termination Included field is set to 1, only
-	 * one of the links is removed and the other links remain associated.
-	 * Ignore the Disassociation Imminent field in such a case.
+	 * Based on IEEE Std 802.11be-2024, Table 9-538a (BSS Termination
+	 * Included and Link Removal Imminent fields encoding), when a station
+	 * is a non-AP MLD with more than one affiliated link, the Link Removal
+	 * Imminent field is set to 1, and the BSS Termination Included field
+	 * is set to 1, only one of the links is removed and the other links
+	 * remain associated. Ignore the Disassociation Imminent field in such
+	 * a case.
 	 *
 	 * TODO: We should check if the AP has more than one link.
 	 * TODO: We should pass the RX link and use that
@@ -1924,10 +1937,19 @@ static void ieee802_11_rx_wnm_notif_req_wfa(struct wpa_supplicant *wpa_s,
 
 
 static void ieee802_11_rx_wnm_notif_req(struct wpa_supplicant *wpa_s,
-					const u8 *sa, const u8 *frm, int len)
+					const u8 *da, const u8 *sa,
+					const u8 *frm, int len)
 {
 	const u8 *pos, *end;
 	u8 dialog_token, type;
+
+	if (is_multicast_ether_addr(da)) {
+		wpa_printf(MSG_DEBUG,
+			   "WNM: Ignore group-addressed WNM Notification Request frame (A1="
+			   MACSTR " A2=" MACSTR ")",
+			   MAC2STR(da), MAC2STR(sa));
+		return;
+	}
 
 	/* Dialog Token [1] | Type [1] | Subelements */
 
@@ -2037,10 +2059,12 @@ void ieee802_11_rx_wnm_action(struct wpa_supplicant *wpa_s,
 						 !(mgmt->da[0] & 0x01));
 		break;
 	case WNM_SLEEP_MODE_RESP:
-		ieee802_11_rx_wnmsleep_resp(wpa_s, pos, end - pos);
+		ieee802_11_rx_wnmsleep_resp(wpa_s, mgmt->da, mgmt->sa,
+					    pos, end - pos);
 		break;
 	case WNM_NOTIFICATION_REQ:
-		ieee802_11_rx_wnm_notif_req(wpa_s, mgmt->sa, pos, end - pos);
+		ieee802_11_rx_wnm_notif_req(wpa_s, mgmt->da, mgmt->sa,
+					    pos, end - pos);
 		break;
 	case WNM_COLLOCATED_INTERFERENCE_REQ:
 		ieee802_11_rx_wnm_coloc_intf_req(wpa_s, mgmt->sa, pos,

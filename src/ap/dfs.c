@@ -2,6 +2,7 @@
  * DFS - Dynamic Frequency Selection
  * Copyright (c) 2002-2013, Jouni Malinen <j@w1.fi>
  * Copyright (c) 2013-2017, Qualcomm Atheros, Inc.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -752,7 +753,7 @@ static int dfs_set_valid_channel(struct hostapd_iface *iface, int skip_radar)
 }
 
 
-static int set_dfs_state_freq(struct hostapd_iface *iface, int freq, u32 state)
+int set_dfs_state_freq(struct hostapd_iface *iface, int freq, u32 state)
 {
 	struct hostapd_hw_modes *mode;
 	struct hostapd_channel_data *chan = NULL;
@@ -996,9 +997,17 @@ int hostapd_handle_dfs(struct hostapd_iface *iface)
 		/* Get number of used channels, depend on width */
 		n_chans = dfs_get_used_n_chans(iface, &n_chans1, chan_width);
 
+#ifdef CONFIG_QCN_EXTN
 		/* Setup CAC time */
-		iface->dfs_cac_ms = dfs_get_cac_time(iface, start_chan_idx,
-						     n_chans);
+		if (iface->conf->conf_extn.skip_cac) {
+			iface->dfs_cac_ms = 0;
+		} else {
+#endif
+			iface->dfs_cac_ms = dfs_get_cac_time(iface, start_chan_idx,
+							     n_chans);
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif
 
 		/* Check if any of configured channels require DFS */
 		res = dfs_check_chans_radar(iface, start_chan_idx, n_chans);
@@ -1060,7 +1069,7 @@ int hostapd_handle_dfs(struct hostapd_iface *iface)
 		iface, iface->conf->hw_mode, iface->freq, iface->conf->channel,
 		iface->conf->ieee80211n, iface->conf->ieee80211ac,
 		iface->conf->ieee80211ax, iface->conf->ieee80211be,
-		iface->conf->secondary_channel,
+		iface->conf->ieee80211bn, iface->conf->secondary_channel,
 		hostapd_get_oper_chwidth(iface->conf),
 		hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
 		hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
@@ -1172,6 +1181,7 @@ static int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 				      iface->conf->ieee80211ac,
 				      iface->conf->ieee80211ax,
 				      iface->conf->ieee80211be,
+				      iface->conf->ieee80211bn,
 				      secondary_channel,
 				      new_vht_oper_chwidth,
 				      oper_centr_freq_seg0_idx,
@@ -1179,6 +1189,7 @@ static int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 				      cmode->vht_capab,
 				      &cmode->he_capab[ieee80211_mode],
 				      &cmode->eht_capab[ieee80211_mode],
+				      &cmode->uhr_capab[ieee80211_mode],
 				      punct_bitmap | iface->radar_bit_pattern,
 				      iface->conf->he_6ghz_reg_pwr_type,
 				      iface->conf->bandwidth_device,
@@ -1191,10 +1202,14 @@ static int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 		return err;
 	}
 
-	for (i = 0; i < iface->num_bss; i++) {
-		err = hostapd_switch_channel(iface->bss[i], &csa_settings);
+	if (hostapd_check_reenable_bss(iface)) {
+		num_err = hostapd_switch_pending_bss(iface, &csa_settings);
+	} else {
+		for (i = 0; i < iface->num_bss; i++) {
+			err = hostapd_switch_channel(iface->bss[i], &csa_settings);
 		if (err)
-			num_err++;
+				num_err++;
+		}
 	}
 
 	if (num_err == iface->num_bss) {
@@ -1264,6 +1279,7 @@ static void hostapd_dfs_update_background_chain(struct hostapd_iface *iface)
 				  iface->conf->ieee80211ac,
 				  iface->conf->ieee80211ax,
 				  iface->conf->ieee80211be,
+				  iface->conf->ieee80211bn,
 				  sec, hostapd_get_oper_chwidth(iface->conf),
 				  oper_centr_freq_seg0_idx,
 				  oper_centr_freq_seg1_idx, true, 0, 0)) {
@@ -1348,6 +1364,7 @@ static int hostapd_dfs_testmode_set_beacon_csa(struct hostapd_iface *iface)
 				      iface->conf->ieee80211ac,
 				      iface->conf->ieee80211ax,
 				      iface->conf->ieee80211be,
+				      iface->conf->ieee80211bn,
 				      iface->conf->secondary_channel,
 				      hostapd_get_oper_chwidth(iface->conf),
 				      hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
@@ -1355,6 +1372,7 @@ static int hostapd_dfs_testmode_set_beacon_csa(struct hostapd_iface *iface)
 				      iface->current_mode->vht_capab,
 				      &iface->current_mode->he_capab[IEEE80211_MODE_AP],
 				      &iface->current_mode->eht_capab[IEEE80211_MODE_AP],
+				      &iface->current_mode->uhr_capab[IEEE80211_MODE_AP],
 				      hostapd_get_punct_bitmap(iface->bss[0]),
 				      iface->conf->he_6ghz_reg_pwr_type,
 				      iface->conf->bandwidth_device,
@@ -1421,11 +1439,29 @@ bool hostapd_is_device_params_present(int chan_width, int cf1, int chan_width_de
 }
 
 
+static void hostapd_dfs_enable_pending_bss(struct hostapd_iface *iface)
+{
+	hostapd_enable_pending_bss(iface);
+
+	/* Enabling non-first bss starts CAC in first BSS
+	 * which enables the vif in driver.
+	 * Hence stop first vif incase it is not
+	 * enabled in hostapd.
+	 */
+	if (!iface->bss[0]->started) {
+		ieee802_11_set_beacon(iface->bss[0]);
+		hostapd_drv_stop_ap(iface->bss[0]);
+	}
+}
+
+
 int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			     int ht_enabled, int chan_offset, int chan_width,
 			     int cf1, int cf2, bool is_background,
 			     int chan_width_device, int cf_device)
 {
+	struct hostapd_data *hapd = iface->bss[0];
+
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_COMPLETED
 		"success=%d freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d radar_detected=%d"
 		"chan_width_device=%d cf_device=%d",
@@ -1446,8 +1482,12 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			 *    DFS channel.
 			 */
 			if (iface->state != HAPD_IFACE_ENABLED &&
-			    !iface->radar_detected)
-				hostapd_setup_interface_complete(iface, 0);
+			    !iface->radar_detected) {
+				if (hostapd_check_reenable_bss(iface))
+					hostapd_enable_pending_bss(iface);
+				else
+					hostapd_setup_interface_complete(iface, 0);
+			}
 			else
 				iface->cac_started = 0;
 		} else {
@@ -1489,16 +1529,35 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			 */
 			if (iface->state != HAPD_IFACE_ENABLED &&
 			    hostapd_is_dfs_chan_available(iface)) {
-				ieee80211_freq_to_chan(cf1, &seg0);
-				hostapd_set_oper_centr_freq_seg0_idx(iface->conf, seg0);
-				hostapd_setup_interface_complete(iface, 0);
 				iface->cac_started = 0;
+				if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_BSS) {
+					ieee80211_freq_to_chan(cf1, &seg0);
+					hostapd_set_oper_centr_freq_seg0_idx(iface->conf, seg0);
+					if (hostapd_check_reenable_bss(iface))
+						hostapd_dfs_enable_pending_bss(iface);
+					else
+						hostapd_setup_interface_complete(iface, 0);
+				} else if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_CSA) {
+					ieee802_11_set_beacon(hapd);
+#ifdef CONFIG_QCN_EXTN
+					hostapd_cleanup_cs_params(iface->bss[0]);
+#endif
+					hostapd_set_state(iface, HAPD_IFACE_ENABLED);
+					iface->cac_type = 0;
+					hostapd_start_device_cac_background(iface);
+				}
 			}
 		}
+
+#ifdef CONFIG_QCN_EXTN
+		hostapd_csa_bitmap_update_extn(iface, freq);
+#endif
 	} else if (is_background || hostapd_dfs_is_background_event(iface, freq)) {
 		iface->radar_background.cac_started = 0;
 		if (iface->conf->enable_background_radar)
 			hostapd_dfs_update_background_chain(iface);
+	} else {
+		iface->cac_type = 0;
 	}
 
 	iface->radar_detected = false;
@@ -1629,7 +1688,12 @@ static int hostapd_dfs_start_channel_switch_cac(struct hostapd_iface *iface)
 	}
 	err = 0;
 
-	hostapd_setup_interface_complete(iface, err);
+
+	if (hostapd_check_reenable_bss(iface))
+		hostapd_enable_pending_bss(iface);
+	else
+		hostapd_setup_interface_complete(iface, err);
+
 	return err;
 }
 
@@ -1681,7 +1745,7 @@ hostapd_dfs_background_start_channel_switch(struct hostapd_iface *iface,
 }
 
 
-static int hostapd_dfs_start_channel_switch(struct hostapd_iface *iface)
+int hostapd_dfs_start_channel_switch(struct hostapd_iface *iface)
 {
 	struct hostapd_channel_data *channel;
 	int secondary_channel;
@@ -1925,6 +1989,7 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 						     iface->conf->ieee80211ac,
 						     iface->conf->ieee80211ax,
 						     iface->conf->ieee80211be,
+						     iface->conf->ieee80211bn,
 						     iface->conf->secondary_channel,
 						     hostapd_get_oper_chwidth(iface->conf),
 						     hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
@@ -2051,6 +2116,7 @@ void hostapd_start_device_cac_background(struct hostapd_iface *iface)
 			      iface->conf->channel, iface->conf->ieee80211n,
 			      iface->conf->ieee80211ac, iface->conf->ieee80211ax,
 			      iface->conf->ieee80211be,
+			      iface->conf->ieee80211bn,
 			      iface->conf->secondary_channel,
 			      hostapd_get_oper_chwidth(iface->conf),
 			      hostapd_get_oper_centr_freq_seg0_idx(iface->conf),

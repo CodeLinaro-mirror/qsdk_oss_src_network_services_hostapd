@@ -2140,8 +2140,8 @@ static bool get_hexstream(const char *val, struct wpabuf **var,
 
 
 static int hostapd_config_fill(struct hostapd_config *conf,
-			       struct hostapd_bss_config *bss,
-			       const char *buf, char *pos, int line)
+				struct hostapd_bss_config *bss,
+				const char *buf, char *pos, int line)
 {
 	if (os_strcmp(buf, "interface") == 0) {
 		os_strlcpy(conf->bss[0]->iface, pos,
@@ -2253,6 +2253,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->wds_sta = atoi(pos);
 	} else if (os_strcmp(buf, "start_disabled") == 0) {
 		bss->start_disabled = atoi(pos);
+#ifdef HOSTAPD_EXTERNAL_PLUGIN
+	} else if (os_strcmp(buf, "external_plugin_enable") == 0) {
+		bss->external_plugin_enable = atoi(pos);
+#endif
 	} else if (os_strcmp(buf, "ap_isolate") == 0) {
 		bss->isolate = atoi(pos);
 	} else if (os_strcmp(buf, "ap_max_inactivity") == 0) {
@@ -2298,6 +2302,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->ieee80211d = atoi(pos);
 	 } else if (os_strcmp(buf, "ext_cap_len") == 0) {
 		 conf->ext_cap_len = atoi(pos);
+	} else if (os_strcmp(buf, "max_cip_padding_delay") == 0) {
+		bss->max_cip_padding_delay = atoi(pos);
 	} else if (os_strcmp(buf, "ieee80211h") == 0) {
 		conf->ieee80211h = atoi(pos);
 	 } else if (os_strcmp(buf, "dfs_test_mode") == 0) {
@@ -3301,6 +3307,35 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line);
 			return 1;
 		}
+	} else if (os_strcmp(buf, "probe_resp_rate") == 0) {
+		int val;
+		u16 rate;
+		u8 rate_type;
+
+		if (os_strncmp(pos, "ht:", 3) == 0) {
+			val = atoi(pos + 3);
+			if (val < 0 || val > 31) {
+				wpa_printf(MSG_ERROR,
+					   "Line %d: invalid probe_resp_rate HT-MCS %d",
+					   line, val);
+				return 1;
+			}
+			rate_type = RATE_HT;
+			rate = val;
+		} else {
+			val = atoi(pos);
+			if (val < 10 || val > 10000) {
+				wpa_printf(MSG_ERROR,
+					   "Line %d: invalid legacy probe_resp_rate %d",
+					   line, val);
+				return 1;
+			}
+			rate_type = RATE_LEGACY;
+			rate = val;
+		}
+
+		bss->probe_resp_rate = rate;
+		bss->probe_resp_rate_type = rate_type;
 	} else if (os_strcmp(buf, "beacon_rate") == 0) {
 		enum beacon_rate_type rate_type = BEACON_RATE_LEGACY;
 		int val;
@@ -3354,6 +3389,16 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 
 		bss->rate_type = rate_type;
 		bss->beacon_rate = val;
+	} else if (os_strcmp(buf, "bss_eht_ltf") == 0) {
+		int val = atoi(pos);
+
+		if (val < -1 || val > 3) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid bss_eht_ltf %d (expected -1..3)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_ltf = val;
 	} else if (os_strcmp(buf, "preamble") == 0) {
 		if (atoi(pos))
 			conf->preamble = SHORT_PREAMBLE;
@@ -3479,6 +3524,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 	} else if (os_strcmp(buf, "beacon_prot") == 0) {
 		bss->beacon_prot = atoi(pos);
+	} else if (os_strcmp(buf, "control_frame_prot") == 0) {
+		bss->control_frame_prot = atoi(pos);
 	} else if (os_strcmp(buf, "assoc_sa_query_max_timeout") == 0) {
 		bss->assoc_sa_query_max_timeout = atoi(pos);
 		if (bss->assoc_sa_query_max_timeout == 0) {
@@ -3548,6 +3595,52 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->vht_oper_centr_freq_seg1_idx = atoi(pos);
 	} else if (os_strcmp(buf, "vendor_vht") == 0) {
 		bss->vendor_vht = atoi(pos);
+	} else if (os_strcmp(buf, "bss_vht_mu_beamformer") == 0) {
+		if (atoi(pos))
+			bss->vht_capab |= VHT_CAP_MU_BEAMFORMER_CAPABLE;
+		else
+			bss->vht_capab &= ~VHT_CAP_MU_BEAMFORMER_CAPABLE;
+		bss->vht_capab_mask |= VHT_CAP_BSS_OVR_MU_BEAMFORMER;
+	} else if (os_strcmp(buf, "bss_vht_mu_beamformee") == 0) {
+		if (atoi(pos))
+			bss->vht_capab |= VHT_CAP_MU_BEAMFORMEE_CAPABLE;
+		else
+			bss->vht_capab &= ~VHT_CAP_MU_BEAMFORMEE_CAPABLE;
+		bss->vht_capab_mask |= VHT_CAP_BSS_OVR_MU_BEAMFORMEE;
+	} else if (os_strcmp(buf, "bss_vht_su_beamformer") == 0) {
+		if (atoi(pos))
+			bss->vht_capab |= VHT_CAP_SU_BEAMFORMER_CAPABLE;
+		else
+			bss->vht_capab &= ~VHT_CAP_SU_BEAMFORMER_CAPABLE;
+		bss->vht_capab_mask |= VHT_CAP_BSS_OVR_SU_BEAMFORMER;
+	} else if (os_strcmp(buf, "bss_vht_su_beamformee") == 0) {
+		if (atoi(pos))
+			bss->vht_capab |= VHT_CAP_SU_BEAMFORMEE_CAPABLE;
+		else
+			bss->vht_capab &= ~VHT_CAP_SU_BEAMFORMEE_CAPABLE;
+		bss->vht_capab_mask |= VHT_CAP_BSS_OVR_SU_BEAMFORMEE;
+	} else if (os_strcmp(buf, "bss_vht_sounding_dimension") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_vht_sounding_dimension %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->vht_capab &= ~VHT_CAP_SOUNDING_DIMENSION_MAX;
+		bss->vht_capab |= (val << VHT_CAP_SOUNDING_DIMENSION_OFFSET);
+		bss->vht_capab_mask |= VHT_CAP_BSS_OVR_SOUNDING_DIMENSION;
+	} else if (os_strcmp(buf, "bss_vht_beamformee_sts") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_vht_beamformee_sts %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->vht_capab &= ~VHT_CAP_BEAMFORMEE_STS_MAX;
+		bss->vht_capab |= (val << VHT_CAP_BEAMFORMEE_STS_OFFSET);
+		bss->vht_capab_mask |= VHT_CAP_BSS_OVR_STS_CAPABILITY;
 	} else if (os_strcmp(buf, "use_sta_nsts") == 0) {
 		bss->use_sta_nsts = atoi(pos);
 	} else if (os_strcmp(buf, "vht_mcs_nss_set") == 0) {
@@ -3570,10 +3663,42 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->he_phy_capab.he_su_beamformer = atoi(pos);
 	} else if (os_strcmp(buf, "he_su_beamformee") == 0) {
 		conf->he_phy_capab.he_su_beamformee = atoi(pos);
+	} else if (os_strcmp(buf, "bss_he_su_beamformer") == 0) {
+		bss->he_phy_capab.he_su_beamformer = atoi(pos);
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_SU_BEAMFORMER;
+	} else if (os_strcmp(buf, "bss_he_su_beamformee") == 0) {
+		bss->he_phy_capab.he_su_beamformee = atoi(pos);
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_SU_BEAMFORMEE;
+	} else if (os_strcmp(buf, "he_mu_beamformee") == 0) {
+		conf->he_phy_capab.he_mu_beamformee = atoi(pos);
+	} else if (os_strcmp(buf, "bss_he_mu_beamformee") == 0) {
+		bss->he_phy_capab.he_mu_beamformee = atoi(pos);
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_MU_BEAMFORMEE;
+	} else if (os_strcmp(buf, "he_dl_mu_ofdma") == 0) {
+		conf->he_phy_capab.he_dl_mu_ofdma = atoi(pos);
+	} else if (os_strcmp(buf, "bss_he_dl_mu_ofdma") == 0) {
+		bss->he_phy_capab.he_dl_mu_ofdma = atoi(pos);
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_DL_MU_OFDMA;
+	} else if (os_strcmp(buf, "he_dl_mu_ofdma_bfer") == 0) {
+		conf->he_phy_capab.he_dl_mu_ofdma_bfer = atoi(pos);
+	} else if (os_strcmp(buf, "bss_he_dl_mu_ofdma_bfer") == 0) {
+		bss->he_phy_capab.he_dl_mu_ofdma_bfer = atoi(pos);
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_DL_MU_OFDMA_BFER;
+	} else if (os_strcmp(buf, "he_ul_mu_ofdma") == 0) {
+		conf->he_phy_capab.he_ul_mu_ofdma = atoi(pos);
+	} else if (os_strcmp(buf, "bss_he_ul_mu_ofdma") == 0) {
+		bss->he_phy_capab.he_ul_mu_ofdma = atoi(pos);
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_UL_MU_OFDMA;
 	} else if (os_strcmp(buf, "he_mu_beamformer") == 0) {
 		conf->he_phy_capab.he_mu_beamformer = atoi(pos);
+	} else if (os_strcmp(buf, "bss_he_mu_beamformer") == 0) {
+		bss->he_phy_capab.he_mu_beamformer = atoi(pos);
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_MU_BEAMFORMER;
 	} else if (os_strcmp(buf, "he_ul_mumimo") == 0) {
-		 conf->he_phy_capab.he_ul_mumimo = atoi(pos);
+		conf->he_phy_capab.he_ul_mumimo = atoi(pos);
+	} else if (os_strcmp(buf, "bss_he_ul_mumimo") == 0) {
+		bss->he_phy_capab.he_ul_mumimo = atoi(pos);
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_UL_MUMIMO;
 	} else if (os_strcmp(buf, "he_bss_color") == 0) {
 		conf->he_op.he_bss_color = atoi(pos) & 0x3f;
 		conf->he_op.he_bss_color_disabled = 0;
@@ -4428,7 +4553,9 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->sae_track_password = atoi(pos);
 #endif /* CONFIG_SAE */
 	} else if (os_strcmp(buf, "vendor_elements") == 0) {
-		if (parse_wpabuf_hex(line, buf, &bss->vendor_elements, pos))
+		if (hostapd_handle_vendor_elements_update(NULL, bss, NULL,
+							  "vendor_elements_add",
+							  pos, false))
 			return 1;
 	} else if (os_strcmp(buf, "assocresp_elements") == 0) {
 		if (parse_wpabuf_hex(line, buf, &bss->assocresp_elements, pos))
@@ -4638,6 +4765,23 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->bridge_multicast_to_unicast = atoi(pos);
 	} else if (os_strcmp(buf, "broadcast_deauth") == 0) {
 		bss->broadcast_deauth = atoi(pos);
+	} else if (os_strcmp(buf, "externally_triggered_m3") == 0) {
+		char *endptr;
+		long val;
+
+	        val = strtol(pos, &endptr, 10);
+
+		if ((*endptr != '\0') || (endptr == pos) ||
+		    (val < 0) || (val > 1)) {
+
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid externally_triggered_m3 %ld"
+				   " (expected 0 or 1): endptr:%p pos:%p %d",
+				   __LINE__, val, endptr, pos, *endptr);
+			return 1;
+		}
+
+		bss->externally_triggered_m3 = (int) val;
 	} else if (os_strcmp(buf, "notify_mgmt_frames") == 0) {
 		bss->notify_mgmt_frames = atoi(pos);
 #ifdef CONFIG_DPP
@@ -4985,6 +5129,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->disable_11ax = !!atoi(pos);
 	} else if (os_strcmp(buf, "disable_11be") == 0) {
 		bss->disable_11be = !!atoi(pos);
+	} else if (os_strcmp(buf, "disable_11bn") == 0) {
+		bss->disable_11bn = !!atoi(pos);
 	} else if (os_strcmp(buf, "beacon_tx_mode") == 0) {
 		int val = atoi(pos);
 
@@ -5054,8 +5200,42 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->eht_phy_capab.su_beamformer = atoi(pos);
 	} else if (os_strcmp(buf, "eht_su_beamformee") == 0) {
 		conf->eht_phy_capab.su_beamformee = atoi(pos);
+	} else if (os_strcmp(buf, "bss_eht_su_beamformer") == 0) {
+		bss->eht_phy_capab.su_beamformer = atoi(pos);
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_SU_BEAMFORMER;
+	} else if (os_strcmp(buf, "bss_eht_su_beamformee") == 0) {
+		bss->eht_phy_capab.su_beamformee = atoi(pos);
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_SU_BEAMFORMEE;
+	} else if (os_strcmp(buf, "eht_mu_beamformee") == 0) {
+		conf->eht_phy_capab.mu_beamformee = atoi(pos);
+	} else if (os_strcmp(buf, "bss_eht_mu_beamformee") == 0) {
+		bss->eht_phy_capab.mu_beamformee = atoi(pos);
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_MU_BEAMFORMEE;
+	} else if (os_strcmp(buf, "eht_dl_mu_ofdma") == 0) {
+		conf->eht_phy_capab.dl_mu_ofdma = atoi(pos);
+	} else if (os_strcmp(buf, "bss_eht_dl_mu_ofdma") == 0) {
+		bss->eht_phy_capab.dl_mu_ofdma = atoi(pos);
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_DL_MU_OFDMA;
+	} else if (os_strcmp(buf, "eht_ul_mu_ofdma") == 0) {
+		conf->eht_phy_capab.ul_mu_ofdma = atoi(pos);
+	} else if (os_strcmp(buf, "bss_eht_ul_mu_ofdma") == 0) {
+		bss->eht_phy_capab.ul_mu_ofdma = atoi(pos);
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_UL_MU_OFDMA;
+	} else if (os_strcmp(buf, "eht_dl_ofdma_mumimo") == 0) {
+		conf->eht_phy_capab.dl_ofdma_mumimo = atoi(pos);
+	} else if (os_strcmp(buf, "bss_eht_dl_ofdma_mumimo") == 0) {
+		bss->eht_phy_capab.dl_ofdma_mumimo = atoi(pos);
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_DL_OFDMA_MUMIMO;
+	} else if (os_strcmp(buf, "eht_ul_ofdma_mumimo") == 0) {
+		conf->eht_phy_capab.ul_ofdma_mumimo = atoi(pos);
+	} else if (os_strcmp(buf, "bss_eht_ul_ofdma_mumimo") == 0) {
+		bss->eht_phy_capab.ul_ofdma_mumimo = atoi(pos);
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_UL_OFDMA_MUMIMO;
 	} else if (os_strcmp(buf, "eht_mu_beamformer") == 0) {
 		conf->eht_phy_capab.mu_beamformer = atoi(pos);
+	} else if (os_strcmp(buf, "bss_eht_mu_beamformer") == 0) {
+		bss->eht_phy_capab.mu_beamformer = atoi(pos);
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_MU_BEAMFORMER;
 	} else if (os_strcmp(buf, "eht_default_pe_duration") == 0) {
 		conf->eht_default_pe_duration = atoi(pos);
 	} else if (os_strcmp(buf, "punct_bitmap") == 0) {
@@ -5085,10 +5265,64 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->eht_phy_capab.partial_bw_dl_mu_mimo = atoi(pos);
 	} else if (os_strcmp(buf, "eht_ulmumimo_80mhz") == 0) {
 		conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz = atoi(pos);
+	} else if (os_strcmp(buf, "bss_eht_ulmumimo_80mhz") == 0) {
+		bss->eht_phy_capab.non_ofdma_ulmumimo_80mhz = atoi(pos);
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_UL_MU_MIMO_80;
 	} else if (os_strcmp(buf, "eht_ulmumimo_160mhz") == 0) {
 		conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz = atoi(pos);
+	} else if (os_strcmp(buf, "bss_eht_ulmumimo_160mhz") == 0) {
+		bss->eht_phy_capab.non_ofdma_ulmumimo_160mhz = atoi(pos);
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_UL_MU_MIMO_160;
 	} else if (os_strcmp(buf, "eht_ulmumimo_320mhz") == 0) {
 		conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz = atoi(pos);
+	} else if (os_strcmp(buf, "bss_eht_ulmumimo_320mhz") == 0) {
+		bss->eht_phy_capab.non_ofdma_ulmumimo_320mhz = atoi(pos);
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_UL_MU_MIMO_320;
+	} else if (os_strcmp(buf, "bss_eht_mu_bfmr") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_mu_bfmr_mask %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_mu_bfmr_mask = val;
+	} else if (os_strcmp(buf, "bss_eht_mu_mimo") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_mu_mimo %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_mu_mimo_mask = val;
+	} else if (os_strcmp(buf, "bss_eht_bfme_ss_80") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_bfme_ss_80 %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_bfme_ss_80 = val;
+	} else if (os_strcmp(buf, "bss_eht_bfme_ss_160") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_bfme_ss_160 %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_bfme_ss_160 = val;
+	} else if (os_strcmp(buf, "bss_eht_bfme_ss_320") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_bfme_ss_320 %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_bfme_ss_320 = val;
 #ifdef CONFIG_IEEE80211BE
 	} else if (os_strcmp(buf, "enable_aal") == 0) {
 		bss->enable_aal = atoi(pos);
@@ -5265,6 +5499,16 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "ttlm_enable") == 0) {
 		bss->ttlm_enable = atoi(pos);
 #endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_IEEE80211BN
+	} else if (os_strcmp(buf, "ieee80211bn") == 0) {
+		conf->ieee80211bn = atoi(pos);
+	} else if (os_strcmp(buf, "uhr_oper_chwidth") == 0) {
+		conf->uhr_oper_chwidth = atoi(pos);
+	} else if (os_strcmp(buf, "uhr_oper_centr_freq_seg0_idx") == 0) {
+		conf->uhr_oper_centr_freq_seg0_idx = atoi(pos);
+#endif /* CONFIG_IEEE80211BN */
+
 	} else if (os_strcmp(buf, "enable_dscp_policy_capa") == 0) {
 		bss->enable_dscp_policy_capa = atoi(pos);
 	} else if (os_strcmp(buf, "twt_responder_caps") == 0) {
@@ -5284,7 +5528,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "bss_priority") == 0) {
 		bss->bss_priority = atoi(pos);
 	} else if (os_strcmp(buf, "bss_priority_status") == 0) {
-               bss->bss_priority_status = atoi(pos);
+		bss->bss_priority_status = atoi(pos);
 #ifdef CONFIG_QCN_EXTN
 	} else if (os_strcmp(buf, "downgrade_320mhz_opclass") == 0) {
 		int val = atoi(pos);

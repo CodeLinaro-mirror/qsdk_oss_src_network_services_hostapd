@@ -2,6 +2,7 @@
  * ACS - Automatic Channel Selection module
  * Copyright (c) 2011, Atheros Communications
  * Copyright (c) 2013, Qualcomm Atheros, Inc.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -22,6 +23,9 @@
 #include "ap_config.h"
 #include "hw_features.h"
 #include "acs.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../../qcn_extns/cmn.h"
+#endif
 
 /*
  * Automatic Channel Selection
@@ -242,13 +246,6 @@
  * [1] http://en.wikipedia.org/wiki/Near_and_far_field
  */
 
-enum bw_type {
-	ACS_BW40,
-	ACS_BW80,
-	ACS_BW160,
-	ACS_BW320_1,
-	ACS_BW320_2,
-};
 
 struct bw_item {
 	int first;
@@ -365,6 +362,15 @@ static void acs_fail(struct hostapd_iface *iface)
 	wpa_printf(MSG_ERROR, "ACS: Failed to start");
 	acs_cleanup(iface);
 	hostapd_disable_iface(iface);
+
+	/*
+	 * Check if all ML partner links have completed ACS (either successfully
+	 * or with failure). If so, send the ucode notification.
+	 *
+	 * This handles scenarios with 2 or 3 radios where ACS may complete in
+	 * different orders: (pass, fail, pass), (pass, pass, fail), etc.
+	 */
+	hostapd_ml_acs_check_and_notify(iface, false);
 }
 
 
@@ -453,8 +459,10 @@ static bool acs_usable_bw_chan(const struct hostapd_channel_data *chan,
 	return false;
 }
 
-
-static int acs_get_bw_center_chan(int freq, enum bw_type bw)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int acs_get_bw_center_chan(int freq, enum bw_type bw)
 {
 	unsigned int i = 0;
 
@@ -1312,7 +1320,14 @@ static void acs_study(struct hostapd_iface *iface)
 		goto fail;
 	}
 
-	ideal_chan = acs_find_ideal_chan(iface);
+#ifdef CONFIG_QCN_EXTN
+	if (iface->conf->conf_extn.qacs_enable)
+		ideal_chan = qacs_find_ideal_chan(iface);
+	else
+#endif
+
+		ideal_chan = acs_find_ideal_chan(iface);
+
 	if (!ideal_chan) {
 		wpa_printf(MSG_ERROR, "ACS: Failed to compute ideal channel");
 		err = -1;
@@ -1401,6 +1416,12 @@ static int * acs_request_scan_add_freqs(struct hostapd_iface *iface,
 
 	for (i = 0; i < mode->num_channels; i++) {
 		chan = &mode->channels[i];
+
+#ifdef CONFIG_QCN_EXTN
+		acs_request_scan_add_freqs_extn(chan, &freq);
+		continue;
+#endif
+
 		if ((chan->flag & HOSTAPD_CHAN_DISABLED) ||
 		    ((chan->flag & HOSTAPD_CHAN_RADAR) &&
 		     iface->conf->acs_exclude_dfs))
@@ -1478,6 +1499,10 @@ static int acs_request_scan(struct hostapd_iface *iface)
 		wpa_printf(MSG_DEBUG, "scan triggered with bssid" MACSTR "\n",
 			   MAC2STR(params.bssid));
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	acs_modify_scan_params_extn(iface, &params);
+#endif
 
 	ret = hostapd_driver_scan(iface->bss[0], &params);
 	os_free(params.freqs);

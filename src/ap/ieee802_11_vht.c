@@ -51,6 +51,24 @@ static le16 intersect_vht_mcs_set(le16 hw_vht_mcs_set, u16 usr_vht_mcs_set)
 }
 
 
+static struct hostapd_hw_modes *
+mode_for_vht_capab(struct hostapd_data *hapd, struct hostapd_hw_modes *mode)
+{
+	if (mode->mode == HOSTAPD_MODE_IEEE80211G && hapd->conf->vendor_vht &&
+	    mode->vht_capab == 0 && hapd->iface->hw_features) {
+		int i;
+
+		for (i = 0; i < hapd->iface->num_hw_features; i++) {
+			if (hapd->iface->hw_features[i].mode ==
+			    HOSTAPD_MODE_IEEE80211A)
+			    	return &hapd->iface->hw_features[i];
+		}
+	}
+
+	return mode;
+}
+
+
 u8 * hostapd_eid_vht_capabilities(struct hostapd_data *hapd, u8 *eid, u32 nsts)
 {
 	struct ieee80211_vht_capabilities *cap;
@@ -58,30 +76,57 @@ u8 * hostapd_eid_vht_capabilities(struct hostapd_data *hapd, u8 *eid, u32 nsts)
 	struct hostapd_data *tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
 	u8 *pos = eid;
 	u8 chwidth;
+	u32 vht_capab;
 
 	if (!mode || is_6ghz_op_class(hapd->iconf->op_class))
 		return eid;
 
-	if (mode->mode == HOSTAPD_MODE_IEEE80211G && hapd->conf->vendor_vht &&
-	    mode->vht_capab == 0 && hapd->iface->hw_features) {
-		int i;
-
-		for (i = 0; i < hapd->iface->num_hw_features; i++) {
-			if (hapd->iface->hw_features[i].mode ==
-			    HOSTAPD_MODE_IEEE80211A) {
-				mode = &hapd->iface->hw_features[i];
-				break;
-			}
-		}
-	}
+	mode = mode_for_vht_capab(hapd, mode);
 
 	*pos++ = WLAN_EID_VHT_CAP;
 	*pos++ = sizeof(*cap);
 
 	cap = (struct ieee80211_vht_capabilities *) pos;
 	os_memset(cap, 0, sizeof(*cap));
-	cap->vht_capabilities_info = host_to_le32(
-		hapd->iface->conf->vht_capab);
+
+	vht_capab = hapd->iface->conf->vht_capab;
+
+	if (hapd->conf->vht_capab_mask) {
+		u32 bss_capab = hapd->conf->vht_capab;
+		u32 mask = hapd->conf->vht_capab_mask;
+
+		if (mask & VHT_CAP_BSS_OVR_SU_BEAMFORMER) {
+			vht_capab &= ~VHT_CAP_SU_BEAMFORMER_CAPABLE;
+			vht_capab |= (bss_capab & VHT_CAP_SU_BEAMFORMER_CAPABLE);
+		}
+
+		if (mask & VHT_CAP_BSS_OVR_SU_BEAMFORMEE) {
+			vht_capab &= ~VHT_CAP_SU_BEAMFORMEE_CAPABLE;
+			vht_capab |= (bss_capab & VHT_CAP_SU_BEAMFORMEE_CAPABLE);
+		}
+
+		if (mask & VHT_CAP_BSS_OVR_MU_BEAMFORMER) {
+			vht_capab &= ~VHT_CAP_MU_BEAMFORMER_CAPABLE;
+			vht_capab |= (bss_capab & VHT_CAP_MU_BEAMFORMER_CAPABLE);
+		}
+
+		if (mask & VHT_CAP_BSS_OVR_MU_BEAMFORMEE) {
+			vht_capab &= ~VHT_CAP_MU_BEAMFORMEE_CAPABLE;
+			vht_capab |= (bss_capab & VHT_CAP_MU_BEAMFORMEE_CAPABLE);
+		}
+
+		if (mask & VHT_CAP_BSS_OVR_SOUNDING_DIMENSION) {
+			vht_capab &= ~VHT_CAP_SOUNDING_DIMENSION_MAX;
+			vht_capab |= (bss_capab & VHT_CAP_SOUNDING_DIMENSION_MAX);
+		}
+
+		if (mask & VHT_CAP_BSS_OVR_STS_CAPABILITY) {
+			vht_capab &= ~VHT_CAP_BEAMFORMEE_STS_MAX;
+			vht_capab |= (bss_capab & VHT_CAP_BEAMFORMEE_STS_MAX);
+		}
+	}
+
+	cap->vht_capabilities_info = host_to_le32(vht_capab);
 
 	if (nsts != 0) {
 		u32 hapd_nsts;
@@ -214,9 +259,10 @@ u8 * hostapd_eid_vht_operation(struct hostapd_data *hapd, u8 *eid)
 }
 
 
-static int check_valid_vht_mcs(struct hostapd_hw_modes *mode,
+static int check_valid_vht_mcs(struct hostapd_data *hapd,
 			       const u8 *sta_vht_capab)
 {
+	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
 	const struct ieee80211_vht_capabilities *vht_cap;
 	struct ieee80211_vht_capabilities ap_vht_cap;
 	u16 sta_rx_mcs_set, ap_tx_mcs_set;
@@ -224,6 +270,7 @@ static int check_valid_vht_mcs(struct hostapd_hw_modes *mode,
 
 	if (!mode)
 		return 1;
+	mode = mode_for_vht_capab(hapd, mode);
 
 	/*
 	 * Disable VHT caps for STAs for which there is not even a single
@@ -240,10 +287,10 @@ static int check_valid_vht_mcs(struct hostapd_hw_modes *mode,
 	ap_tx_mcs_set = le_to_host16(ap_vht_cap.vht_supported_mcs_set.tx_map);
 
 	for (i = 0; i < VHT_RX_NSS_MAX_STREAMS; i++) {
-		if ((ap_tx_mcs_set & (0x3 << (i * 2))) == 3)
+		if (((ap_tx_mcs_set >> (i * 2)) & 0x3) == 3)
 			continue;
 
-		if ((sta_rx_mcs_set & (0x3 << (i * 2))) == 3)
+		if (((sta_rx_mcs_set >> (i * 2)) & 0x3) == 3)
 			continue;
 
 		return 1;
@@ -260,8 +307,8 @@ u16 copy_sta_vht_capab(struct hostapd_data *hapd, struct sta_info *sta,
 {
 	/* Disable VHT caps for STAs associated to no-VHT BSSes. */
 	if (!vht_capab || !(sta->flags & WLAN_STA_WMM) ||
-	    !hapd->iconf->ieee80211ac || hapd->conf->disable_11ac ||
-	    !check_valid_vht_mcs(hapd->iface->current_mode, vht_capab) ||
+	    !hostapd_is_vht_enabled(hapd) ||
+	    !check_valid_vht_mcs(hapd, vht_capab) ||
 	    !(sta->flags & WLAN_STA_HT)) {
 		sta->flags &= ~WLAN_STA_VHT;
 		os_free(sta->vht_capabilities);
@@ -314,7 +361,7 @@ u16 copy_sta_vendor_vht(struct hostapd_data *hapd, struct sta_info *sta,
 	unsigned int vht_capab_len;
 
 	if (!ie || len < 5 + 2 + sizeof(struct ieee80211_vht_capabilities) ||
-	    hapd->conf->disable_11ac)
+	    !hostapd_is_vht_enabled(hapd))
 		goto no_capab;
 
 	/* The VHT Capabilities element embedded in vendor VHT */

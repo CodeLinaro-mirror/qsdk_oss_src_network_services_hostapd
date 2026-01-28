@@ -280,6 +280,42 @@ struct airtime_sta_weight {
 };
 
 #define EXT_CAPA_MAX_LEN 15
+#define MAX_VENDOR_ELEM_ALLOWED 10
+
+#ifdef CONFIG_IEEE80211AX
+struct he_phy_capabilities_info {
+	bool he_su_beamformer;
+	bool he_su_beamformee;
+	bool he_mu_beamformer;
+	bool he_mu_beamformee;
+	bool he_dl_mu_ofdma;
+	bool he_dl_mu_ofdma_bfer;
+	bool he_ul_mu_ofdma;
+	int he_ul_mumimo;
+};
+#endif /* CONFIG_IEEE80211AX */
+
+#ifdef CONFIG_IEEE80211BE
+struct eht_phy_capabilities_info {
+	bool su_beamformer;
+	bool su_beamformee;
+	bool mu_beamformer;
+	bool mu_beamformee;
+	bool dl_mu_ofdma;
+	bool ul_mu_ofdma;
+	bool dl_ofdma_mumimo;
+	bool ul_ofdma_mumimo;
+	bool partial_bw_dl_mu_mimo;
+	bool non_ofdma_ulmumimo_80mhz;
+	bool non_ofdma_ulmumimo_160mhz;
+	bool non_ofdma_ulmumimo_320mhz;
+	u8 eht_mu_bfmr_mask;     /* bit0: &lt;=80, bit1: 160, bit2: 320 */
+	u8 eht_mu_mimo_mask;     /* bit0: &lt;=80, bit1: 160, bit2: 320 */
+	u8 eht_bfme_ss_80;
+	u8 eht_bfme_ss_160;
+	u8 eht_bfme_ss_320;
+};
+#endif /* CONFIG_IEEE80211BE */
 
 /**
  * struct hostapd_bss_config - Per-BSS configuration
@@ -355,6 +391,46 @@ struct hostapd_bss_config {
 	bool eap_skip_prot_success;
 #endif /* CONFIG_TESTING_OPTIONS */
 
+#ifdef CONFIG_IEEE80211AC
+	u32 vht_capab;
+#define VHT_CAP_BSS_OVR_SU_BEAMFORMER      BIT(0)
+#define VHT_CAP_BSS_OVR_SU_BEAMFORMEE      BIT(1)
+#define VHT_CAP_BSS_OVR_MU_BEAMFORMER      BIT(2)
+#define VHT_CAP_BSS_OVR_MU_BEAMFORMEE      BIT(3)
+#define VHT_CAP_BSS_OVR_SOUNDING_DIMENSION BIT(4)
+#define VHT_CAP_BSS_OVR_STS_CAPABILITY     BIT(5)
+	u32 vht_capab_mask;
+#endif /* CONFIG_IEEE80211AC */
+
+#ifdef CONFIG_IEEE80211AX
+	struct he_phy_capabilities_info he_phy_capab;
+#define HE_PHY_BSS_OVR_MU_BEAMFORMER    BIT(0)
+#define HE_PHY_BSS_OVR_UL_MUMIMO        BIT(1)
+#define HE_PHY_BSS_OVR_SU_BEAMFORMER    BIT(2)
+#define HE_PHY_BSS_OVR_SU_BEAMFORMEE    BIT(3)
+#define HE_PHY_BSS_OVR_MU_BEAMFORMEE    BIT(4)
+#define HE_PHY_BSS_OVR_DL_MU_OFDMA      BIT(5)
+#define HE_PHY_BSS_OVR_DL_MU_OFDMA_BFER BIT(6)
+#define HE_PHY_BSS_OVR_UL_MU_OFDMA      BIT(7)
+	u32 he_phy_capab_mask;
+#endif /* CONFIG_IEEE80211AX */
+
+#ifdef CONFIG_IEEE80211BE
+	struct eht_phy_capabilities_info eht_phy_capab;
+#define EHT_PHY_BSS_OVR_MU_BEAMFORMER   BIT(0)
+#define EHT_PHY_BSS_OVR_UL_MU_MIMO_80   BIT(1)
+#define EHT_PHY_BSS_OVR_UL_MU_MIMO_160  BIT(2)
+#define EHT_PHY_BSS_OVR_UL_MU_MIMO_320  BIT(3)
+#define EHT_PHY_BSS_OVR_SU_BEAMFORMER   BIT(4)
+#define EHT_PHY_BSS_OVR_SU_BEAMFORMEE   BIT(5)
+#define EHT_PHY_BSS_OVR_MU_BEAMFORMEE   BIT(6)
+#define EHT_PHY_BSS_OVR_DL_MU_OFDMA     BIT(7)
+#define EHT_PHY_BSS_OVR_UL_MU_OFDMA     BIT(8)
+#define EHT_PHY_BSS_OVR_DL_OFDMA_MUMIMO BIT(9)
+#define EHT_PHY_BSS_OVR_UL_OFDMA_MUMIMO BIT(10)
+	u32 eht_phy_capab_mask;
+#endif /* CONFIG_IEEE80211BE */
+
 	enum macaddr_acl macaddr_acl;
 	struct mac_acl_entry *accept_mac;
 	int num_accept_mac;
@@ -363,6 +439,9 @@ struct hostapd_bss_config {
 	int wds_sta;
 	int isolate;
 	int start_disabled;
+#ifdef HOSTAPD_EXTERNAL_PLUGIN
+	int external_plugin_enable; /* Enable external plugin for this BSS */
+#endif
 
 	int auth_algs; /* bitfield of allowed IEEE 802.11 authentication
 			* algorithms, WPA_AUTH_ALG_{OPEN,SHARED,LEAP} */
@@ -377,6 +456,9 @@ struct hostapd_bss_config {
 	enum mfp_options rsn_override_mfp_2;
 	int group_mgmt_cipher;
 	int beacon_prot;
+	int control_frame_prot;
+	int group_control_frame_cipher;
+	int max_cip_padding_delay; /* Configurable max_cip padding delay */
 	/* dot11AssociationSAQueryMaximumTimeout (in TUs) */
 	unsigned int assoc_sa_query_max_timeout;
 	/* dot11AssociationSAQueryRetryTimeout (in TUs) */
@@ -573,6 +655,7 @@ struct hostapd_bss_config {
 	bool disable_11ac;
 	bool disable_11ax;
 	bool disable_11be;
+	bool disable_11bn;
 
 	/* IEEE 802.11v */
 	int time_advertisement;
@@ -662,7 +745,9 @@ struct hostapd_bss_config {
 	char *dump_msk_file;
 #endif /* CONFIG_RADIUS_TEST */
 
-	struct wpabuf *vendor_elements;
+	struct wpabuf *vendor_elements[MAX_VENDOR_ELEM_ALLOWED];
+	size_t vendor_elements_count;
+	size_t vendor_elements_len;
 	struct wpabuf *assocresp_elements;
 
 	unsigned int anti_clogging_threshold;
@@ -775,6 +860,7 @@ struct hostapd_bss_config {
 	int broadcast_deauth;
 
 	int notify_mgmt_frames;
+	int externally_triggered_m3;
 
 #ifdef CONFIG_DPP
 	char *dpp_name;
@@ -1068,18 +1154,12 @@ struct hostapd_bss_config {
 	enum beacon_rate_type rate_type;
 	unsigned int beacon_rate;
 	int identity_request_retry_interval;
+	int eht_ltf;
+
 	/* tpe_ie_config - Per-BSS TPE IE user configuration */
 	ieee80211_tpe_config_user_params tpe_ie_config;
-};
-
-/**
- * struct he_phy_capabilities_info - HE PHY capabilities
- */
-struct he_phy_capabilities_info {
-	bool he_su_beamformer;
-	bool he_su_beamformee;
-	bool he_mu_beamformer;
-	int he_ul_mumimo;
+	enum rate_type probe_resp_rate_type;
+	u16 probe_resp_rate;
 };
 
 /**
@@ -1108,19 +1188,6 @@ struct spatial_reuse {
 	u8 srg_obss_pd_max_offset;
 	u8 srg_bss_color_bitmap[8];
 	u8 srg_partial_bssid_bitmap[8];
-};
-
-/**
- * struct eht_phy_capabilities_info - EHT PHY capabilities
- */
-struct eht_phy_capabilities_info {
-	bool su_beamformer;
-	bool su_beamformee;
-	bool mu_beamformer;
-	bool partial_bw_dl_mu_mimo;
-	bool non_ofdma_ulmumimo_80mhz;
-	bool non_ofdma_ulmumimo_160mhz;
-	bool non_ofdma_ulmumimo_320mhz;
 };
 
 /**
@@ -1360,6 +1427,12 @@ struct hostapd_config {
 	u8 eht_bw320_offset;
 #endif /* CONFIG_IEEE80211BE */
 
+	int ieee80211bn;
+#ifdef CONFIG_IEEE80211BN
+	enum oper_chan_width uhr_oper_chwidth;
+	u8 uhr_oper_centr_freq_seg0_idx;
+#endif /* CONFIG_IEEE80211BN */
+
 	/* EHT enable/disable config from CHAN_SWITCH */
 #define CH_SWITCH_EHT_ENABLED BIT(0)
 #define CH_SWITCH_EHT_DISABLED BIT(1)
@@ -1446,6 +1519,10 @@ hostapd_set_oper_chwidth(struct hostapd_config *conf,
 static inline u8
 hostapd_get_oper_centr_freq_seg0_idx(struct hostapd_config *conf)
 {
+#ifdef CONFIG_IEEE80211BN
+	if (conf->ieee80211bn)
+		return conf->uhr_oper_centr_freq_seg0_idx;
+#endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_IEEE80211BE
 	if (conf->ieee80211be)
 		return conf->eht_oper_centr_freq_seg0_idx;
@@ -1588,4 +1665,4 @@ bool hostapd_config_check_bss_6g(struct hostapd_bss_config *bss);
 #endif /* HOSTAPD_CONFIG_H */
 
 bool hostapd_is_beacon_tx_rate_preamble_valid(const struct hostapd_config *iconf,
-                                             const struct hostapd_bss_config *bss);
+					     const struct hostapd_bss_config *bss);

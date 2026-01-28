@@ -573,6 +573,22 @@ def main():
                     if args.stdin_ctrl:
                         set_term_echo(sys.stdin.fileno(), True)
                     sys.exit(1)
+            for ifname in ['/tmp/wpas-wlan5']:
+                wpas = None
+                try:
+                    wpas = WpaSupplicant(global_iface=ifname, monitor=False)
+                    wpas.global_request("NOTE TEST-START " + name)
+                    del wpas
+                except:
+                    logger.exception("Failed to issue TEST-START before " + name + " for " + ifname)
+                    print("FAIL " + name + " - could not start test")
+            try:
+                hapd = HostapdGlobal()
+                hapd.request("NOTE TEST-START " + name)
+                del hapd
+            except Exception as e:
+                logger.exception("Failed to issue TEST-START before " + name + " for hostapd")
+                print("FAIL " + name + " - could not start test")
             skip_reason = None
             try:
                 if is_long_duration_test(t) and not args.long:

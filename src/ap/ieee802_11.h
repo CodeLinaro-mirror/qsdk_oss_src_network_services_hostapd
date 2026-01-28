@@ -30,6 +30,8 @@ struct sae_password_entry;
 struct mld_info;
 struct mld_link_info;
 
+#define BITRATE_5_5_MBPS 55
+
 enum colocation_mode {
 	NO_COLOCATED_6GHZ,
 	STANDALONE_6GHZ,
@@ -46,6 +48,10 @@ enum link_parse_type {
 };
 
 #define LINK_RECONF_GROUP_KDE_MAX_LEN 255
+
+#define MBSSID_NON_TX_OPTIONAL_ELEM_SIZE  160
+#define MBSSID_NON_TX_VENDOR_ELEM_SIZE 70
+#define MAX_MBSSID_NONINHERIT_ELEM_SIZE 100
 
 struct link_reconf_req_info {
 	struct dl_list list;
@@ -94,6 +100,13 @@ static inline int ieee802_11_get_mib_sta(struct hostapd_data *hapd,
 	return 0;
 }
 #endif /* NEED_AP_MLME */
+void
+initiate_assoc_response(struct hostapd_data *hapd, struct sta_info *sta,
+			     int resp, int reassoc,
+			     uint8_t *tmp, const u8 *pos, int left,
+			     int omit_rsnxe, uint8_t *sa, int rssi,
+			     bool set_beacon);
+
 u16 hostapd_own_capab_info(struct hostapd_data *hapd);
 void ap_ht2040_timeout(void *eloop_data, void *user_data);
 u8 * hostapd_eid_ext_capab(struct hostapd_data *hapd, u8 *eid,
@@ -134,6 +147,9 @@ void hostapd_get_he_capab(struct hostapd_data *hapd,
 void hostapd_get_eht_capab(struct hostapd_data *hapd,
 			   const struct ieee80211_eht_capabilities *src,
 			   struct ieee80211_eht_capabilities *dest,
+			   size_t len);
+void hostapd_get_uhr_capab(const struct ieee80211_uhr_capabilities *src,
+			   struct ieee80211_uhr_capabilities *dest,
 			   size_t len);
 u8 * hostapd_eid_eht_ml_beacon(struct hostapd_data *hapd,
 			       struct mld_info *mld_info,
@@ -217,6 +233,12 @@ int auth_sae_init_committed(struct hostapd_data *hapd, struct sta_info *sta);
 void sae_clear_retransmit_timer(struct hostapd_data *hapd,
 				struct sta_info *sta);
 void sae_accept_sta(struct hostapd_data *hapd, struct sta_info *sta);
+int sae_sm_step(struct hostapd_data *hapd, struct sta_info *sta,
+		u16 auth_transaction, u16 status_code, int allow_reuse,
+		int *sta_removed);
+void sae_sme_send_external_auth_status(struct hostapd_data *hapd,
+				       struct sta_info *sta, u16 status);
+int sae_status_success(struct hostapd_data *hapd, u16 status_code);
 #else /* CONFIG_SAE */
 static inline void sae_clear_retransmit_timer(struct hostapd_data *hapd,
 					      struct sta_info *sta)
@@ -490,21 +512,28 @@ size_t hostapd_eid_eht_capab_len(struct hostapd_data *hapd,
 u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 			   enum ieee80211_op_mode opmode);
 u8 * hostapd_eid_eht_operation(struct hostapd_data *hapd, u8 *eid);
+bool eht_mu_mask_valid(u8 mask);
+u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
+			   enum ieee80211_op_mode opmode);
+u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn);
 u16 copy_sta_eht_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		       enum ieee80211_op_mode opmode,
 		       const u8 *he_capab, size_t he_capab_len,
 		       const u8 *eht_capab, size_t eht_capab_len);
+u16 copy_sta_uhr_capab(struct hostapd_data *hapd, struct sta_info *sta,
+		       const u8 *uhr_capab, size_t uhr_capab_len);
 size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd, u32 frame_type,
 			      u8 *elem_count, const u8 *known_bss,
 			      size_t known_bss_len, size_t *rnr_len,
-			      bool bcast_prb_resp);
+			      bool bcast_prb_resp, void *params,
+			      bool *is_len_calc_failed);
 u8 * hostapd_eid_mbssid(struct hostapd_data *hapd, u8 *eid, u8 *end,
 			unsigned int frame_stype, u8 elem_count,
 			u8 **elem_offset,
 			const u8 *known_bss, size_t known_bss_len, u8 *rnr_eid,
 			u8 *rnr_count, u8 **rnr_offset, size_t rnr_len,
 			u32 *elemid_modified_bmap,
-			bool bcast_prb_resp);
+			bool bcast_prb_resp, void *params);
 void hostapd_eid_update_cu_info(struct hostapd_data *hapd, u16 *elemid_modified,
 				const u8 *eid_pos, size_t eid_len,
 				enum elemid_cu eid_cu);
@@ -571,4 +600,23 @@ s8 hostapd_get_20mhz_psd_for_rnr(struct hostapd_data *hapd);
 u8 * hostapd_fragment_multi_link_element(struct wpabuf *buf, u8 *pos);
 unsigned int wnm_neighbor_report_get_pref_link_mask(const u8 *neigh_rep,
 						    size_t neigh_rep_len);
+int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
+			   const u8 *dst,
+			   u16 auth_alg, u16 auth_transaction, u16 resp,
+			   const u8 *ies, size_t ies_len, const char *dbg);
+int start_unsolicited_sa_query(struct hostapd_data *hapd, struct sta_info *sta);
+
+struct non_inheritance_elem {
+	u8 elem_list[MAX_MBSSID_NONINHERIT_ELEM_SIZE];
+	u8 ext_elem_list[MAX_MBSSID_NONINHERIT_ELEM_SIZE];
+	u8 ext_elem_len;
+	u8 elem_len;
+};
+
+u8 * hostapd_eid_mbssid_nontx_optional_ie(struct hostapd_data *bss,
+					  void *tx_params,
+					  struct non_inheritance_elem *non_inherit_ie,
+					  u8 *eid, ssize_t *nontx_prof_len,
+					  u8 frame_type);
+
 #endif /* IEEE802_11_H */

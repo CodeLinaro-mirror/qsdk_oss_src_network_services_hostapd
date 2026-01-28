@@ -40,6 +40,7 @@ int hostapd_dfs_nop_finished(struct hostapd_iface *iface, int freq,
 			     int chan_width_device, int cf_device);
 int hostapd_is_dfs_required(struct hostapd_iface *iface);
 int hostapd_is_dfs_chan_available(struct hostapd_iface *iface);
+int hostapd_dfs_start_channel_switch(struct hostapd_iface *iface);
 int hostapd_dfs_start_cac(struct hostapd_iface *iface, int freq,
 			  int ht_enabled, int chan_offset, int chan_width,
 			  int cf1, int cf2, bool is_background,
@@ -52,4 +53,5 @@ void hostapd_start_device_cac_background(struct hostapd_iface *iface);
 
 enum oper_chan_width convert_to_oper_chan_width(int chan_width);
 
+int set_dfs_state_freq(struct hostapd_iface *iface, int freq, u32 state);
 #endif /* DFS_H */

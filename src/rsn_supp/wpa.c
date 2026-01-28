@@ -36,6 +36,8 @@
 
 static const u8 null_rsc[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
+static const u8 * wpa_sm_get_ap_rsnxe(struct wpa_sm *sm, size_t *len);
+
 
 static void _wpa_hexdump_link(int level, u8 link_id, const char *title,
 			      const void *buf, size_t len, bool key)
@@ -716,9 +718,11 @@ static int wpa_derive_ptk(struct wpa_sm *sm, const unsigned char *src_addr,
 			  const struct wpa_eapol_key *key, struct wpa_ptk *ptk)
 {
 	int ret;
-	const u8 *z = NULL;
-	size_t z_len = 0, kdk_len;
+	const u8 *z = NULL, *ap_rsnxe;
+	size_t z_len = 0, kdk_len, ap_rsnxe_len;
 	int akmp;
+
+	ap_rsnxe = wpa_sm_get_ap_rsnxe(sm, &ap_rsnxe_len);
 
 #ifdef CONFIG_IEEE80211R
 	if (wpa_key_mgmt_ft(sm->key_mgmt))
@@ -744,7 +748,7 @@ static int wpa_derive_ptk(struct wpa_sm *sm, const unsigned char *src_addr,
 
 	if (sm->force_kdk_derivation ||
 	    (sm->secure_ltf &&
-	     ieee802_11_rsnx_capab(sm->ap_rsnxe, WLAN_RSNX_CAPAB_SECURE_LTF)))
+	     ieee802_11_rsnx_capab(ap_rsnxe, WLAN_RSNX_CAPAB_SECURE_LTF)))
 		kdk_len = WPA_KDK_MAX_LEN;
 	else
 		kdk_len = 0;
@@ -761,7 +765,7 @@ static int wpa_derive_ptk(struct wpa_sm *sm, const unsigned char *src_addr,
 
 #ifdef CONFIG_PASN
 	if (sm->secure_ltf &&
-	    ieee802_11_rsnx_capab(sm->ap_rsnxe, WLAN_RSNX_CAPAB_SECURE_LTF))
+	    ieee802_11_rsnx_capab(ap_rsnxe, WLAN_RSNX_CAPAB_SECURE_LTF))
 		ret = wpa_ltf_keyseed(ptk, akmp, sm->pairwise_cipher);
 #endif /* CONFIG_PASN */
 
@@ -1223,6 +1227,10 @@ static int wpa_supplicant_install_ptk(struct wpa_sm *sm,
 	int keylen, rsclen;
 	enum wpa_alg alg;
 	const u8 *key_rsc;
+#ifdef CONFIG_PASN
+	const u8 *ap_rsnxe;
+	size_t ap_rsnxe_len;
+#endif /* CONFIG_PASN */
 
 	if (sm->ptk.installed ||
 	    (sm->ptk.installed_rx && (key_flag & KEY_FLAG_NEXT))) {
@@ -1279,8 +1287,9 @@ static int wpa_supplicant_install_ptk(struct wpa_sm *sm,
 	}
 
 #ifdef CONFIG_PASN
+	ap_rsnxe = wpa_sm_get_ap_rsnxe(sm, &ap_rsnxe_len);
 	if (sm->secure_ltf &&
-	    ieee802_11_rsnx_capab(sm->ap_rsnxe, WLAN_RSNX_CAPAB_SECURE_LTF) &&
+	    ieee802_11_rsnx_capab(ap_rsnxe, WLAN_RSNX_CAPAB_SECURE_LTF) &&
 	    wpa_sm_set_ltf_keyseed(sm, sm->own_addr, sm->bssid,
 				   sm->ptk.ltf_keyseed_len,
 				   sm->ptk.ltf_keyseed) < 0) {
@@ -1789,6 +1798,47 @@ static int wpa_supplicant_install_bigtk(struct wpa_sm *sm,
 	return 0;
 }
 
+static int wpa_supplicant_install_cigtk(struct wpa_sm *sm,
+					const struct wpa_cigtk_kde *cigtk,
+					int wnm_sleep)
+{
+	size_t len = wpa_cipher_key_len(sm->control_group_cipher);
+	u16 keyidx = WPA_GET_LE16(cigtk->keyid);
+
+	/* Detect possible key reinstallation */
+	if ((sm->cigtk.cigtk_len == len &&
+		os_memcmp(sm->cigtk.cigtk, cigtk->cigtk,
+			  sm->cigtk.cigtk_len) == 0)) {
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"WPA: Not reinstalling already in-use CIGTK to the driver (keyidx=%d)",
+			keyidx);
+		return  0;
+	}
+
+	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+		"WPA: CIGTK keyid %d pn " COMPACT_MACSTR,
+		keyidx, MAC2STR(cigtk->pn));
+	wpa_hexdump_key(MSG_DEBUG, "WPA: CIGTK", cigtk->cigtk, len);
+	if (keyidx > 1) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"WPA: Invalid CIGTK KeyID %d", keyidx);
+		return -1;
+	}
+	if (wpa_sm_set_key(sm, -1,
+			   wpa_cipher_to_alg(sm->control_group_cipher),
+			   broadcast_ether_addr, keyidx, 0, cigtk->pn,
+			   sizeof(cigtk->pn), cigtk->cigtk, len,
+			   KEY_FLAG_GROUP_RX) < 0) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"WPA: Failed to configure CIGTK to the driver");
+		return -1;
+	}
+
+	sm->cigtk.cigtk_len = len;
+	os_memcpy(sm->cigtk.cigtk, cigtk->cigtk, sm->cigtk.cigtk_len);
+
+	return 0;
+}
 
 static int wpa_supplicant_install_mlo_igtk(struct wpa_sm *sm, u8 link_id,
 					   const struct rsn_mlo_igtk_kde *igtk,
@@ -1905,6 +1955,53 @@ wpa_supplicant_install_mlo_bigtk(struct wpa_sm *sm, u8 link_id,
 	return 0;
 }
 
+static int
+wpa_supplicant_install_mlo_cigtk(struct wpa_sm *sm, u8 link_id,
+                                 const struct rsn_mlo_cigtk_kde *cigtk,
+                                 int wnm_sleep)
+{
+	size_t len = wpa_cipher_key_len(sm->control_group_cipher);
+	u16 keyidx = WPA_GET_LE16(cigtk->keyid);
+
+
+
+	/* Detect possible key reinstallation */
+	if ((sm->mlo.links[link_id].cigtk.cigtk_len == len &&
+		os_memcmp(sm->mlo.links[link_id].cigtk.cigtk, cigtk->cigtk,
+				  sm->mlo.links[link_id].cigtk.cigtk_len) == 0)) {
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"RSN: Not reinstalling already in-use CIGTK to the driver (link_id=%d keyidx=%d)",
+			link_id, keyidx);
+		return  0;
+	}
+	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+		"RSN: MLO Link %u CIGTK keyid %d pn " COMPACT_MACSTR,
+		link_id, keyidx, MAC2STR(cigtk->pn));
+
+	wpa_hexdump_link_key(MSG_DEBUG, link_id, "RSN: CIGTK", cigtk->cigtk,
+			     len);
+	if (keyidx < 0 || keyidx > 1) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"RSN: Invalid MLO Link %d CIGTK KeyID %d", link_id,
+			keyidx);
+		return -1;
+	}
+	if (wpa_sm_set_key(sm, link_id,
+		wpa_cipher_to_alg(sm->control_group_cipher),
+		broadcast_ether_addr, keyidx, 0, cigtk->pn,
+		sizeof(cigtk->pn), cigtk->cigtk, len,
+		KEY_FLAG_GROUP_RX) < 0) {
+			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+					"RSN: Failed to configure MLO Link %d CIGTK to the driver",
+					link_id);
+		return -1;
+        }
+	sm->mlo.links[link_id].cigtk.cigtk_len = len;
+	os_memcpy(sm->mlo.links[link_id].cigtk.cigtk, cigtk->cigtk,
+			  sm->mlo.links[link_id].cigtk.cigtk_len);
+
+	return 0;
+}
 
 static int _mlo_ieee80211w_set_keys(struct wpa_sm *sm, u8 link_id,
 				    struct wpa_eapol_ie_parse *ie)
@@ -1935,6 +2032,18 @@ static int _mlo_ieee80211w_set_keys(struct wpa_sm *sm, u8 link_id,
 			    sm, link_id,
 			    (const struct rsn_mlo_bigtk_kde *)
 			    ie->mlo_bigtk[link_id],
+			    0) < 0)
+			return -1;
+	}
+	if ((ie->mlo_cigtk[link_id] && sm->control_frame_prot)) {
+		len = wpa_cipher_key_len(sm->control_group_cipher);
+		if (ie->mlo_cigtk_len[link_id] !=
+		    RSN_MLO_CIGTK_KDE_PREFIX_LENGTH + len)
+			return -1;
+		if (wpa_supplicant_install_mlo_cigtk(
+			    sm, link_id,
+			    (const struct rsn_mlo_cigtk_kde *)
+			    ie->mlo_cigtk[link_id],
 			    0) < 0)
 			return -1;
 	}
@@ -1991,6 +2100,18 @@ static int ieee80211w_set_keys(struct wpa_sm *sm,
 
 		bigtk = (const struct wpa_bigtk_kde *) ie->bigtk;
 		if (wpa_supplicant_install_bigtk(sm, bigtk, 0) < 0)
+			return -1;
+	}
+
+	if (ie->cigtk && sm->control_frame_prot) {
+		const struct wpa_cigtk_kde *cigtk;
+
+		len = wpa_cipher_key_len(sm->control_group_cipher);
+		if (ie->cigtk_len != WPA_CIGTK_KDE_PREFIX_LEN + len)
+			return -1;
+
+		cigtk = (const struct wpa_cigtk_kde *) ie->cigtk;
+		if (wpa_supplicant_install_cigtk(sm, cigtk, 0) < 0)
 			return -1;
 	}
 
@@ -2646,6 +2767,18 @@ static int wpa_validate_mlo_ieee80211w_kdes(struct wpa_sm *sm,
 		return -1;
 	}
 
+	if (!sm->control_frame_prot)
+		return 0;
+
+	if (ie->mlo_cigtk[link_id] &&
+	    ie->mlo_cigtk_len[link_id] != RSN_MLO_CIGTK_KDE_PREFIX_LENGTH +
+	    (unsigned int) wpa_cipher_key_len(sm->control_group_cipher)) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"RSN MLO: Invalid CIGTK KDE length %lu for link ID %u",
+			(unsigned long) ie->mlo_cigtk_len[link_id], link_id);
+		return -1;
+	}
+
 	return 0;
 }
 
@@ -2869,6 +3002,12 @@ static void wpa_supplicant_process_3_of_4(struct wpa_sm *sm,
 		goto failed;
 	}
 
+	if (!mlo && ie.cigtk && !(key_info & WPA_KEY_INFO_ENCR_KEY_DATA)) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"WPA: CIGTK KDE in unencrypted key data");
+		goto failed;
+	}
+
 	if (!mlo && ie.igtk &&
 	    sm->mgmt_group_cipher != WPA_CIPHER_GTK_NOT_USED &&
 	    wpa_cipher_valid_mgmt_group(sm->mgmt_group_cipher) &&
@@ -2877,6 +3016,17 @@ static void wpa_supplicant_process_3_of_4(struct wpa_sm *sm,
 		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
 			"WPA: Invalid IGTK KDE length %lu",
 			(unsigned long) ie.igtk_len);
+		goto failed;
+	}
+
+	if (!mlo && ie.cigtk &&
+	    sm->control_group_cipher != WPA_CIPHER_GTK_NOT_USED &&
+	    wpa_cipher_valid_mgmt_group(sm->control_group_cipher) &&
+	    ie.cigtk_len != WPA_CIGTK_KDE_PREFIX_LEN +
+	    (unsigned int) wpa_cipher_key_len(sm->control_group_cipher)) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"WPA: Invalid CIGTK KDE length %lu",
+			(unsigned long) ie.cigtk_len);
 		goto failed;
 	}
 
@@ -4492,6 +4642,7 @@ static void wpa_sm_clear_ptk(struct wpa_sm *sm)
 	os_memset(&sm->igtk, 0, sizeof(sm->igtk));
 	os_memset(&sm->igtk_wnm_sleep, 0, sizeof(sm->igtk_wnm_sleep));
 	os_memset(&sm->bigtk, 0, sizeof(sm->bigtk));
+	os_memset(&sm->cigtk, 0, sizeof(sm->cigtk));
 	os_memset(&sm->bigtk_wnm_sleep, 0, sizeof(sm->bigtk_wnm_sleep));
 	sm->tk_set = false;
 	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
@@ -4750,6 +4901,7 @@ void wpa_sm_set_config(struct wpa_sm *sm, struct rsn_supp_config *config)
 		}
 #endif /* CONFIG_FILS */
 		sm->beacon_prot = config->beacon_prot;
+		sm->control_frame_prot = config->control_frame_prot;
 	} else {
 		sm->network_ctx = NULL;
 		sm->allowed_pairwise_cipher = 0;
@@ -4762,6 +4914,7 @@ void wpa_sm_set_config(struct wpa_sm *sm, struct rsn_supp_config *config)
 		sm->wpa_rsc_relaxation = 0;
 		sm->owe_ptk_workaround = 0;
 		sm->beacon_prot = 0;
+		sm->control_frame_prot = 0;
 		sm->force_kdk_derivation = false;
 	}
 }
@@ -5037,6 +5190,9 @@ int wpa_sm_set_param(struct wpa_sm *sm, enum wpa_sm_conf_params param,
 	case WPA_PARAM_GROUP:
 		sm->group_cipher = value;
 		break;
+	case WPA_PARAM_CIGTK:
+		sm->control_group_cipher = value;
+		break;
 	case WPA_PARAM_KEY_MGMT:
 		sm->key_mgmt = value;
 		break;
@@ -5150,6 +5306,19 @@ static const u8 * wpa_sm_get_ap_rsne(struct wpa_sm *sm, size_t *len)
 
 	*len = sm->ap_rsn_ie_len;
 	return sm->ap_rsn_ie;
+}
+
+
+static const u8 * wpa_sm_get_ap_rsnxe(struct wpa_sm *sm, size_t *len)
+{
+	if (sm->rsn_override != RSN_OVERRIDE_NOT_USED &&
+	    sm->ap_rsnxe_override && sm->ap_rsnxe_override_len) {
+		*len = sm->ap_rsnxe_override_len;
+		return sm->ap_rsnxe_override;
+	}
+
+	*len = sm->ap_rsnxe_len;
+	return sm->ap_rsnxe;
 }
 
 

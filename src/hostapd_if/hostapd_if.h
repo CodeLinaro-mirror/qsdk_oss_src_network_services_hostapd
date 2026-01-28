@@ -1,0 +1,152 @@
+/*
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+#ifndef HOSTAPD_IF_H
+#define HOSTAPD_IF_H
+
+/*
+ * Minimal standalone definitions to avoid relying on full hostapd
+ * headers here. These should align with existing project types when
+ * integrated.
+ */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef unsigned char u8;
+#include <stddef.h>
+#include <stdint.h>
+typedef uint16_t u16;
+
+#include "../../qcn_extns/hostapd_external_interface.h"
+#include "hostapd_if_common.h"
+#include "utils/includes.h"
+#include "utils/common.h"
+#include "utils/bitfield.h"
+#include "common/wpa_ctrl.h"
+#include "ap/hostapd.h"
+
+struct hostapd_data;
+struct sta_info;
+
+/*
+ * Frame processing decision returned to RX handlers
+ */
+enum hostapd_if_frame_processing_decision {
+	HOSTAPD_IF_FRAME_PROCESSING_CONTINUE = 0,
+	HOSTAPD_IF_FRAME_PROCESSING_WAIT = 1
+};
+
+/*
+ * IEEE 802.11 management subtype for Authentication
+ */
+#ifndef WLAN_FC_STYPE_AUTH
+#define WLAN_FC_STYPE_AUTH 11
+#endif
+
+/*
+ * Notify/invoke external application for Authentication and return
+ * processing decision.
+ *
+ * Sidecar notify model:
+ *  - DO_NOTHING: CONTINUE (no plugin call)
+ *  - NOTIFY: CONTINUE (+ plugin->notify_auth)
+ *  - INVOKE: WAIT (+ plugin->invoke_auth)
+ */
+enum hostapd_if_frame_processing_decision
+hostapd_if_notify_auth(struct hostapd_data *hapd,
+		       struct sta_info *sta,
+		       const uint8_t *frame,
+		       uint16_t frame_len,
+		       u16 status_code,
+		       u16 auth_transaction,
+		       u8 allow_reuse,
+		       u16 auth_alg,
+		       const u8 *sa);
+
+void hostapd_if_notify_deauth(struct hostapd_data *hapd,
+			      struct sta_info *sta,
+			      const void *frame,
+			      size_t frame_len);
+
+void hostapd_if_notify_disassoc(struct hostapd_data *hapd,
+				struct sta_info *sta,
+				const void *frame,
+				size_t frame_len);
+
+enum hostapd_if_frame_processing_decision
+hostapd_if_notify_assoc(struct hostapd_data *hapd,
+			struct sta_info *sta,
+			const uint8_t *frame,
+			uint16_t frame_len,
+			u16 status_code,
+			int is_reassoc,
+			int rssi,
+			bool set_beacon,
+			const u8 *sa);
+
+int hostapd_if_init(struct hapd_interfaces *interfaces);
+int hostapd_if_deinit(void);
+
+void hostapd_if_interface_remove(struct hostapd_data *hapd);
+
+int hostapd_if_interface_create(struct hostapd_data *hapd);
+
+int hostapd_if_set_interfaces(struct hapd_interfaces *interfaces);
+
+/*
+ * Event notification wrapper functions
+ */
+void hostapd_if_event_deauth(struct hostapd_data *hapd,
+			     struct sta_info *sta,
+			     enum hostapd_if_disconnect_type type,
+			     uint16_t reason_code,
+			     bool is_tx_status,
+			     int tx_status_ok);
+
+void hostapd_if_event_disassoc(struct hostapd_data *hapd,
+			       struct sta_info *sta,
+			       enum hostapd_if_disconnect_type type,
+			       uint16_t reason_code,
+			       bool is_tx_status,
+			       int tx_status_ok);
+
+void hostapd_if_event_assoc_tx_complete(struct hostapd_data *hapd,
+					const u8 *addr);
+
+void hostapd_if_event_auth_tx_complete(struct hostapd_data *hapd,
+				       const u8 *addr);
+
+void hostapd_if_event_action_completion(struct hostapd_data *hapd,
+					const u8 *addr);
+
+void hostapd_if_event_gtk_completion(struct hostapd_data *hapd);
+
+void hostapd_if_event_eapol_m2_received(struct hostapd_data *hapd,
+					const u8 *addr);
+
+void hostapd_if_event_authorize_completion(struct hostapd_data *hapd,
+					   const u8 *addr,
+					   int authorized);
+
+void hostapd_if_event_sa_query_completion(struct hostapd_data *hapd,
+					  const u8 *addr,
+					  enum hostapd_if_sa_query_status
+					  status);
+
+size_t hostapd_if_auth_reply_tail_len(struct sta_info *sta, size_t current_len);
+void hostapd_if_auth_reply_add_tail(struct sta_info *sta, size_t offset,
+				    size_t tail_len,
+				    struct ieee80211_mgmt *reply);
+void hostapd_if_assoc_resp_tail(struct sta_info *sta, size_t buflen,
+				size_t current_len, u8 **p);
+size_t hostapd_if_assoc_resp_tail_len(struct sta_info *sta, size_t current_len);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
+
+#endif /* HOSTAPD_IF_H */

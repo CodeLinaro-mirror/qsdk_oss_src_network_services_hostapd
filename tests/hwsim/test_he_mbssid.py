@@ -1,6 +1,6 @@
 # Multiple BSSID and enhanced multi-BSS advertisements (EMA)
 # Copyright (c) 2019, The Linux Foundation
-# Copyright (c) 2022, Qualcomm Innovation Center, Inc
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 #
 # This software may be distributed under the terms of the BSD license.
 # See README for more details.
@@ -506,6 +506,273 @@ def test_mbssid_beacon_prot_non_tx_then_tx(dev, apdev, params):
         if beacon_loss1:
             raise Exception("Beacon loss detected on non-TX BSS")
 
+    finally:
+        subprocess.call(['ip', 'link', 'set', 'dev', apdev[0]['ifname'],
+                         'address', apdev[0]['bssid']])
+
+def test_mbssid_disable_bss_tx_then_non_tx(dev, apdev, params):
+    """HE AP MBSSID DISABLE_BSS on TX-BSS disables non-TX BSSes first"""
+    f, fname, ifname = mbssid_create_cfg_file(apdev, params)
+
+    # Create TX-BSS (bss-0) and two non-TX BSSes (bss-1, bss-2)
+    for idx in range(0, 3):
+        mbssid_write_bss_params(f, ifname, idx)
+    f.close()
+    mbssid_dump_config(fname)
+
+    try:
+        hapd, pid = mbssid_start_ap(dev, apdev, params, fname, ifname, None,
+                                    only_start_ap=True)
+
+        # Get handles for all BSSes
+        ifname1 = ifname + '-1'
+        ifname2 = ifname + '-2'
+        hapd1 = hostapd.Hostapd(ifname1)
+        hapd2 = hostapd.Hostapd(ifname2)
+
+        logger.info("Connect clients to all three BSSes")
+        dev[0].connect("bss-0", key_mgmt="NONE", scan_freq="2412")
+        dev[1].connect("bss-1", key_mgmt="NONE", scan_freq="2412")
+        dev[2].connect("bss-2", key_mgmt="NONE", scan_freq="2412")
+        # Association is already verified via wpa_supplicant events; do not
+        # fail the test based on iw timing for MBSSID here.
+        log_iw_dev(dev[0], "after connect all BSSes")
+
+        logger.info("Disable TX-BSS - should disable non-TX BSSes first")
+        if "OK" not in hapd.request("DISABLE_BSS"):
+            raise Exception("DISABLE_BSS on TX-BSS failed")
+
+        # Non-TX BSSes should be disabled first
+        ev1 = hapd1.wait_event(["AP-DISABLED"], timeout=5)
+        ev2 = hapd2.wait_event(["AP-DISABLED"], timeout=5)
+        if ev1 is None or ev2 is None:
+            raise Exception("Non-TX BSSes not disabled")
+        wait_iw_dev_no_ssid(dev[0], ifname1)
+        wait_iw_dev_no_ssid(dev[0], ifname2)
+        logger.info("Non-TX BSSes disabled as expected")
+        log_iw_dev(dev[0], "after disabling non-TX BSSes")
+
+        # Then TX-BSS should be disabled
+        ev = hapd.wait_event(["AP-DISABLED"], timeout=5)
+        if ev is None:
+            raise Exception("TX-BSS not disabled")
+        wait_iw_dev_no_ssid(dev[0], ifname)
+        logger.info("TX-BSS disabled after non-TX BSSes")
+        log_iw_dev(dev[0], "after disabling TX-BSS")
+
+        # All clients should be disconnected
+        dev[0].wait_disconnected(timeout=5)
+        dev[1].wait_disconnected(timeout=5)
+        dev[2].wait_disconnected(timeout=5)
+        logger.info("All clients disconnected")
+
+        logger.info("Enable TX-BSS")
+        if "OK" not in hapd.request("ENABLE_BSS"):
+            raise Exception("ENABLE_BSS on TX-BSS failed")
+
+        ev = hapd.wait_event(["AP-ENABLED"], timeout=5)
+        if ev is None:
+            raise Exception("TX-BSS not re-enabled")
+        wait_iw_dev_ssid(dev[0], ifname, "bss-0")
+
+        # Enable non-TX BSSes
+        logger.info("Enable non-TX BSSes")
+        if "OK" not in hapd1.request("ENABLE_BSS"):
+            raise Exception("ENABLE_BSS on non-TX BSS 1 failed")
+        if "OK" not in hapd2.request("ENABLE_BSS"):
+            raise Exception("ENABLE_BSS on non-TX BSS 2 failed")
+
+        ev1 = hapd1.wait_event(["AP-ENABLED"], timeout=5)
+        ev2 = hapd2.wait_event(["AP-ENABLED"], timeout=5)
+        if ev1 is None or ev2 is None:
+            raise Exception("Non-TX BSSes not re-enabled")
+        wait_iw_dev_ssid(dev[0], ifname1, "bss-1")
+        wait_iw_dev_ssid(dev[0], ifname2, "bss-2")
+        log_iw_dev(dev[0], "after enabling all BSSes")
+
+        logger.info("Reconnect clients")
+        dev[0].request("RECONNECT")
+        dev[1].request("RECONNECT")
+        dev[2].request("RECONNECT")
+        dev[0].wait_connected(timeout=10)
+        dev[1].wait_connected(timeout=10)
+        dev[2].wait_connected(timeout=10)
+        logger.info("All clients reconnected successfully")
+
+        for i in range(3):
+            dev[i].request("DISCONNECT")
+            dev[i].wait_disconnected()
+
+        mbssid_stop_ap(hapd, pid)
+    finally:
+        subprocess.call(['ip', 'link', 'set', 'dev', apdev[0]['ifname'],
+                         'address', apdev[0]['bssid']])
+
+def test_mbssid_disable_bss_tbtt_tx(dev, apdev, params):
+    """HE AP MBSSID DISABLE_BSS with TBTT on TX-BSS"""
+    f, fname, ifname = mbssid_create_cfg_file(apdev, params)
+
+    # Create TX-BSS (bss-0) and two non-TX BSSes (bss-1, bss-2)
+    for idx in range(0, 3):
+        mbssid_write_bss_params(f, ifname, idx)
+    f.close()
+    mbssid_dump_config(fname)
+
+    try:
+        hapd, pid = mbssid_start_ap(dev, apdev, params, fname, ifname, None,
+                                    only_start_ap=True)
+
+        # Get handles for all BSSes
+        ifname1 = ifname + '-1'
+        ifname2 = ifname + '-2'
+        hapd1 = hostapd.Hostapd(ifname1)
+        hapd2 = hostapd.Hostapd(ifname2)
+
+        logger.info("Connect clients to all three BSSes")
+        dev[0].connect("bss-0", key_mgmt="NONE", scan_freq="2412")
+        dev[1].connect("bss-1", key_mgmt="NONE", scan_freq="2412")
+        dev[2].connect("bss-2", key_mgmt="NONE", scan_freq="2412")
+        wait_iw_dev_ssid(dev[0], ifname, "bss-0")
+        wait_iw_dev_ssid(dev[0], ifname1, "bss-1")
+        wait_iw_dev_ssid(dev[0], ifname2, "bss-2")
+        log_iw_dev(dev[0], "after connect all BSSes")
+
+        logger.info("Disable TX-BSS with TBTT countdown of 5")
+        tbtt_count = 5
+        if "OK" not in hapd.request("DISABLE_BSS %d" % tbtt_count):
+            raise Exception("DISABLE_BSS with TBTT on TX-BSS failed")
+
+        # Non-TX BSSes should be disabled immediately (no TBTT countdown)
+        ev1 = hapd1.wait_event(["AP-DISABLED"], timeout=2)
+        ev2 = hapd2.wait_event(["AP-DISABLED"], timeout=2)
+        if ev1 is None or ev2 is None:
+            raise Exception("Non-TX BSSes not disabled immediately")
+        wait_iw_dev_no_ssid(dev[0], ifname1)
+        wait_iw_dev_no_ssid(dev[0], ifname2)
+        logger.info("Non-TX BSSes disabled immediately as expected")
+        log_iw_dev(dev[0], "after disabling non-TX BSSes")
+
+        # Clients on non-TX BSSes should disconnect
+        dev[1].wait_disconnected(timeout=5)
+        dev[2].wait_disconnected(timeout=5)
+        logger.info("Clients on non-TX BSSes disconnected")
+
+        # TX-BSS will be disabled after the TBTT countdown; do not assert
+        # intermediate activity, just wait for the final disabled state.
+        ev = hapd.wait_event(["AP-DISABLED"], timeout=5)
+        if ev is None:
+            raise Exception("TX-BSS not disabled after TBTT countdown")
+        wait_iw_dev_no_ssid(dev[0], ifname)
+        logger.info("TX-BSS disabled after TBTT countdown")
+        log_iw_dev(dev[0], "after TBTT countdown disabling TX-BSS")
+
+        # Client on TX-BSS should now be disconnected
+        dev[0].wait_disconnected(timeout=5)
+        logger.info("Client on TX-BSS disconnected after countdown")
+
+        logger.info("Enable all BSSes")
+        if "OK" not in hapd.request("ENABLE_BSS"):
+            raise Exception("ENABLE_BSS on TX-BSS failed")
+        if "OK" not in hapd1.request("ENABLE_BSS"):
+            raise Exception("ENABLE_BSS on non-TX BSS 1 failed")
+        if "OK" not in hapd2.request("ENABLE_BSS"):
+            raise Exception("ENABLE_BSS on non-TX BSS 2 failed")
+
+        ev = hapd.wait_event(["AP-ENABLED"], timeout=5)
+        ev1 = hapd1.wait_event(["AP-ENABLED"], timeout=5)
+        ev2 = hapd2.wait_event(["AP-ENABLED"], timeout=5)
+        if ev is None or ev1 is None or ev2 is None:
+            raise Exception("Not all BSSes re-enabled")
+        wait_iw_dev_ssid(dev[0], ifname, "bss-0")
+        wait_iw_dev_ssid(dev[0], ifname1, "bss-1")
+        wait_iw_dev_ssid(dev[0], ifname2, "bss-2")
+        log_iw_dev(dev[0], "after enabling all BSSes")
+
+        logger.info("Reconnect all clients")
+        for i in range(3):
+            dev[i].request("RECONNECT")
+            dev[i].wait_connected(timeout=10)
+        logger.info("All clients reconnected successfully")
+
+        for i in range(3):
+            dev[i].request("DISCONNECT")
+            dev[i].wait_disconnected()
+
+        mbssid_stop_ap(hapd, pid)
+    finally:
+        subprocess.call(['ip', 'link', 'set', 'dev', apdev[0]['ifname'],
+                         'address', apdev[0]['bssid']])
+
+def test_mbssid_disable_enable_non_tx_bss(dev, apdev, params):
+    """HE AP MBSSID DISABLE_BSS and ENABLE_BSS on non-TX BSS"""
+    f, fname, ifname = mbssid_create_cfg_file(apdev, params)
+
+    # Create TX-BSS (bss-0) and two non-TX BSSes (bss-1, bss-2)
+    for idx in range(0, 3):
+        mbssid_write_bss_params(f, ifname, idx)
+    f.close()
+    mbssid_dump_config(fname)
+
+    try:
+        hapd, pid = mbssid_start_ap(dev, apdev, params, fname, ifname, None,
+                                    only_start_ap=True)
+
+        # Get handles for all BSSes
+        ifname1 = ifname + '-1'
+        ifname2 = ifname + '-2'
+        hapd1 = hostapd.Hostapd(ifname1)
+        hapd2 = hostapd.Hostapd(ifname2)
+
+        logger.info("Connect clients to all three BSSes")
+        dev[0].connect("bss-0", key_mgmt="NONE", scan_freq="2412")
+        dev[1].connect("bss-1", key_mgmt="NONE", scan_freq="2412")
+        dev[2].connect("bss-2", key_mgmt="NONE", scan_freq="2412")
+        wait_iw_dev_ssid(dev[0], ifname, "bss-0")
+        wait_iw_dev_ssid(dev[0], ifname1, "bss-1")
+        wait_iw_dev_ssid(dev[0], ifname2, "bss-2")
+        log_iw_dev(dev[0], "after connect all BSSes")
+
+        logger.info("Disable non-TX BSS 1")
+        if "OK" not in hapd1.request("DISABLE_BSS"):
+            raise Exception("DISABLE_BSS on non-TX BSS 1 failed")
+
+        ev = hapd1.wait_event(["AP-DISABLED"], timeout=5)
+        if ev is None:
+            raise Exception("Non-TX BSS 1 not disabled")
+        wait_iw_dev_no_ssid(dev[0], ifname1)
+        log_iw_dev(dev[0], "after disabling non-TX BSS 1")
+
+        # TX-BSS and other non-TX BSS should remain active
+        ev = dev[0].wait_event(["CTRL-EVENT-DISCONNECTED"], timeout=2)
+        if ev is not None:
+            raise Exception("Client on TX-BSS unexpectedly disconnected")
+        ev = dev[2].wait_event(["CTRL-EVENT-DISCONNECTED"], timeout=2)
+        if ev is not None:
+            raise Exception("Client on non-TX BSS 2 unexpectedly disconnected")
+        wait_iw_dev_ssid(dev[0], ifname, "bss-0")
+        wait_iw_dev_ssid(dev[0], ifname2, "bss-2")
+        logger.info("TX-BSS and non-TX BSS 2 remain active")
+
+        logger.info("Enable non-TX BSS 1")
+        if "OK" not in hapd1.request("ENABLE_BSS"):
+            raise Exception("ENABLE_BSS on non-TX BSS 1 failed")
+
+        ev = hapd1.wait_event(["AP-ENABLED"], timeout=5)
+        if ev is None:
+            raise Exception("Non-TX BSS 1 not re-enabled")
+        wait_iw_dev_ssid(dev[0], ifname1, "bss-1")
+        log_iw_dev(dev[0], "after enabling non-TX BSS 1")
+
+        logger.info("Reconnect client to non-TX BSS 1")
+        dev[1].request("RECONNECT")
+        dev[1].wait_connected(timeout=10)
+        logger.info("Client reconnected to non-TX BSS 1 successfully")
+
+        for i in range(3):
+            dev[i].request("DISCONNECT")
+            dev[i].wait_disconnected()
+
+        mbssid_stop_ap(hapd, pid)
     finally:
         subprocess.call(['ip', 'link', 'set', 'dev', apdev[0]['ifname'],
                          'address', apdev[0]['bssid']])

@@ -20,6 +20,7 @@
 #include "scan.h"
 #include "bssid_ignore.h"
 #include "bss.h"
+#include "../qcn_extns/cmn.h"
 
 static void wpa_bss_set_hessid(struct wpa_bss *bss)
 {
@@ -606,6 +607,9 @@ static struct wpa_bss * wpa_bss_add(struct wpa_supplicant *wpa_s,
 	os_memcpy(bss->ies, res + 1, res->ie_len + res->beacon_ie_len);
 	wpa_bss_set_hessid(bss);
 
+#ifdef CONFIG_QCN_EXTN
+	wpa_get_bss_channel_oper_info_extn(wpa_s, bss);
+#endif
 	wpa_bss_parse_basic_ml_element(wpa_s, bss);
 
 	if (wpa_s->num_bss + 1 > wpa_s->conf->bss_max_count &&
@@ -909,6 +913,9 @@ wpa_bss_update(struct wpa_supplicant *wpa_s, struct wpa_bss *bss,
 		}
 		dl_list_add(prev, &bss->list_id);
 	}
+#ifdef CONFIG_QCN_EXTN
+	wpa_get_bss_channel_oper_info_extn(wpa_s, bss);
+#endif
 	if (changes & WPA_BSS_IES_CHANGED_FLAG) {
 		wpa_bss_set_hessid(bss);
 
@@ -1745,8 +1752,6 @@ wpa_bss_parse_ml_rnr_ap_info(struct wpa_supplicant *wpa_s,
 			wpa_printf(MSG_DEBUG,
 				   "MLD: Reported link not part of MLD");
 		} else if (!(BIT(link_id) & *seen)) {
-			struct mld_link *l;
-
 			*seen |= BIT(link_id);
 			wpa_printf(MSG_DEBUG, "MLD: mld ID=%u, link ID=%u",
 				   *mld_params, link_id);
@@ -1761,6 +1766,11 @@ wpa_bss_parse_ml_rnr_ap_info(struct wpa_supplicant *wpa_s,
 				}
 			}
 
+#ifdef CONFIG_QCN_EXTN
+			wpa_bss_update_link_rnr_ap_info_extn(wpa_s, bss, pos + 1, ap_info,
+							     mld_params, link_id);
+#else
+			struct mld_link *l;
 			bss->valid_links |= BIT(link_id);
 			l = &bss->mld_links[link_id];
 			os_memcpy(l->bssid, pos + 1, ETH_ALEN);
@@ -1769,6 +1779,7 @@ wpa_bss_parse_ml_rnr_ap_info(struct wpa_supplicant *wpa_s,
 			l->freq = ieee80211_chan_to_freq(NULL,
 							 ap_info->op_class,
 							 ap_info->channel);
+#endif
 		}
 	}
 }
@@ -2162,6 +2173,17 @@ void wpa_bss_parse_basic_ml_element(struct wpa_supplicant *wpa_s,
 	l = &bss->mld_links[link_id];
 	os_memcpy(l->bssid, bss->bssid, ETH_ALEN);
 	l->freq = bss->freq;
+#ifdef CONFIG_QCN_EXTN
+	l->center_freq1_idx = bss->center_freq1_idx;
+	l->center_freq2_idx = bss->center_freq2_idx;
+	l->width = bss->max_cw;
+	l->punc_bitmap = bss->punc_bitmap;
+
+	wpa_printf(MSG_DEBUG, "%s: link_id = %d freq = %d center_freq1_idx = %d"
+		   "center_freq2_idx = %d max_cw = %d punc_bitmap = %d",
+		   __func__, link_id, bss->freq, bss->center_freq1_idx,
+		   bss->center_freq2_idx, bss->max_cw, bss->punc_bitmap);
+#endif
 
 	bss->mld_bss_non_transmitted = false;
 
@@ -2331,7 +2353,7 @@ u16 wpa_bss_parse_reconf_ml_element(struct wpa_supplicant *wpa_s,
 			goto out;
 		}
 
-		if  (*pos == EHT_ML_SUB_ELEM_PER_STA_PROFILE &&
+		if  (*pos == MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE &&
 		     sub_elem_len >= 2) {
 			const struct ieee80211_eht_per_sta_profile *sta_prof =
 				(const struct ieee80211_eht_per_sta_profile *)

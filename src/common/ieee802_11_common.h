@@ -117,6 +117,8 @@ struct ieee802_11_elems {
 	const u8 *pasn_params;
 	const u8 *eht_capabilities;
 	const u8 *eht_operation;
+	const u8 *uhr_capabilities;
+	const u8 *uhr_operation;
 	const u8 *basic_mle;
 	const u8 *probe_req_mle;
 	const u8 *reconf_mle;
@@ -132,6 +134,7 @@ struct ieee802_11_elems {
 	const u8 *proximity_ranging;
 	const struct ieee80211_ttlm_elem *ttlm[IEEE80211_TTLM_MAX_CNT];
 	const u8 *mscs_desc;
+	const u8 *cip_pad;
 
 	u8 ssid_len;
 	u8 supp_rates_len;
@@ -188,7 +191,9 @@ struct ieee802_11_elems {
 	u8 sae_pk_len;
 	u8 pasn_params_len;
 	u8 eht_capabilities_len;
+	u8 uhr_capabilities_len;
 	u8 eht_operation_len;
+	u8 uhr_operation_len;
 	size_t basic_mle_len;
 	size_t probe_req_mle_len;
 	size_t reconf_mle_len;
@@ -214,6 +219,10 @@ struct ieee802_11_elems {
 	unsigned int num_frag_elems;
 	u8 ttlm_num;
 	u8 mscs_desc_len;
+	u8 cip_pad_len;
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
+	bool is_mu_cap_war_vendor;
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 };
 
 typedef enum { ParseOK = 0, ParseUnknown = 1, ParseFailed = -1 } ParseRes;
@@ -268,6 +277,7 @@ int ieee80211_chaninfo_to_channel(unsigned int freq, enum chan_width chanwidth,
 				  int sec_channel, u8 *op_class, u8 *channel);
 int ieee80211_is_dfs(int freq, const struct hostapd_hw_modes *modes,
 		     u16 num_modes);
+bool ieee80211_is_oce_capable(const u8 *frm, int len);
 int is_dfs_global_op_class(u8 op_class);
 bool is_80plus_op_class(u8 op_class);
 enum phy_type ieee80211_get_phy_type(int freq, int ht, int vht);
@@ -408,9 +418,9 @@ int ieee802_edmg_is_allowed(struct ieee80211_edmg_config allowed,
 			    struct ieee80211_edmg_config requested);
 
 struct wpabuf * ieee802_11_defrag(const u8 *data, size_t len, bool ext_elem);
-size_t ieee802_11_defrag_mle_subelem(struct wpabuf *mlbuf,
-				     const u8 *parent_subelem,
-				     size_t *defrag_len);
+ssize_t ieee802_11_defrag_mle_subelem(struct wpabuf *mlbuf,
+				      const u8 *parent_subelem,
+				      size_t *defrag_len);
 u8 get_link_id(const u8 *ml_ie);
 const u8 * get_ml_ie(const u8 *ies, size_t len, u8 type);
 const u8 * get_basic_mle_mld_addr(const u8 *buf, size_t len);
@@ -444,5 +454,23 @@ struct hostapd_multi_mbssid {
 	/* hostapd Per group MBSSID info */
 	struct hostapd_multi_mbssid_group **group;
 };
+
+unsigned int get_max_nss_capability(struct ieee802_11_elems *elems,
+				    bool parse_for_rx);
+
+struct supported_chan_width {
+	bool is_160_supported;
+	bool is_80p80_supported;
+	bool is_320_supported;
+};
+
+struct supported_chan_width
+get_supported_channel_width(struct ieee802_11_elems *elems);
+
+enum chan_width get_operation_channel_width(struct ieee802_11_elems *elems);
+
+enum chan_width get_sta_operation_chan_width(
+	enum chan_width ap_operation_chan_width,
+	struct supported_chan_width sta_supported_width);
 
 #endif /* IEEE802_11_COMMON_H */

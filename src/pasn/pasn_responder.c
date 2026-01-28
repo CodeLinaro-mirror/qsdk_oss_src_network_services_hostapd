@@ -2,7 +2,7 @@
  * PASN responder processing
  *
  * Copyright (C) 2019, Intel Corporation
- * Copyright (C) 2022, Qualcomm Innovation Center, Inc.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -17,6 +17,7 @@
 #include "common/ieee802_11_defs.h"
 #include "crypto/sha384.h"
 #include "crypto/sha256.h"
+#include "crypto/sha512.h"
 #include "crypto/random.h"
 #include "crypto/crypto.h"
 #include "ap/hostapd.h"
@@ -141,6 +142,7 @@ static int pasn_wd_handle_sae_commit(struct pasn_data *pasn,
 		return -1;
 	}
 
+	pasn->sae.akmp = pasn->akmp;
 	if (!pasn->password || !pasn->pt) {
 		wpa_printf(MSG_DEBUG, "PASN: No SAE PT found");
 		return -1;
@@ -293,7 +295,7 @@ static struct wpabuf * pasn_get_fils_wd(struct pasn_data *pasn)
 	wpabuf_put_le16(buf, WLAN_AUTH_FILS_SK);
 
 	/* Authentication Transaction seq# */
-	wpabuf_put_le16(buf, 2);
+	wpabuf_put_le16(buf, WLAN_AUTH_TR_SEQ_PASN_AUTH2);
 
 	/* Status Code */
 	wpabuf_put_le16(buf, WLAN_STATUS_SUCCESS);
@@ -392,8 +394,8 @@ pasn_derive_keys(struct pasn_data *pasn,
 		case WPA_KEY_MGMT_SAE:
 		case WPA_KEY_MGMT_SAE_EXT_KEY:
 			if (pasn->sae.state == SAE_COMMITTED) {
-				pmk_len = PMK_LEN;
-				os_memcpy(pmk, pasn->sae.pmk, PMK_LEN);
+				pmk_len = pasn->sae.pmk_len;
+				os_memcpy(pmk, pasn->sae.pmk, pmk_len);
 				break;
 			}
 #endif /* CONFIG_SAE */
@@ -411,7 +413,8 @@ pasn_derive_keys(struct pasn_data *pasn,
 	ret = pasn_pmk_to_ptk(pmk, pmk_len, peer_addr, own_addr,
 			      wpabuf_head(secret), wpabuf_len(secret),
 			      &pasn->ptk, pasn->akmp,
-			      pasn->cipher, pasn->kdk_len, pasn->kek_len);
+			      pasn->cipher, pasn->kdk_len, pasn->kek_len,
+			      &pasn->hash_alg);
 	if (ret) {
 		wpa_printf(MSG_DEBUG, "PASN: Failed to derive PTK");
 		return -1;
@@ -572,7 +575,7 @@ int handle_auth_pasn_resp(struct pasn_data *pasn, const u8 *own_addr,
 	wpa_pasn_add_extra_ies(buf, pasn->extra_ies, pasn->extra_ies_len);
 
 	/* Add the mic */
-	mic_len = pasn_mic_len(pasn->akmp, pasn->cipher);
+	mic_len = pasn_mic_len(pasn->hash_alg);
 	wpabuf_put_u8(buf, WLAN_EID_MIC);
 	wpabuf_put_u8(buf, mic_len);
 	ptr = wpabuf_put(buf, mic_len);
@@ -622,7 +625,7 @@ int handle_auth_pasn_resp(struct pasn_data *pasn, const u8 *own_addr,
 		data = rsn_ie;
 	}
 
-	ret = pasn_mic(pasn->ptk.kck, pasn->akmp, pasn->cipher,
+	ret = pasn_mic(pasn->hash_alg, pasn->ptk.kck, pasn->ptk.kck_len,
 		       own_addr, peer_addr, data, data_len,
 		       frame, frame_len, mic);
 	os_free(data_buf);
@@ -896,11 +899,11 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 
 	pasn->wrapped_data_format = pasn_params.wrapped_data_format;
 
-	ret = pasn_auth_frame_hash(pasn->akmp, pasn->cipher,
-				   ((const u8 *) mgmt) + IEEE80211_HDRLEN,
-				   len - IEEE80211_HDRLEN, pasn->hash);
-	if (ret) {
-		wpa_printf(MSG_DEBUG, "PASN: Failed to compute hash");
+	wpabuf_free(pasn->auth1);
+	pasn->auth1 = wpabuf_alloc_copy(((const u8 *) mgmt) + IEEE80211_HDRLEN,
+					len - IEEE80211_HDRLEN);
+	if (!pasn->auth1) {
+		wpa_printf(MSG_DEBUG, "PASN: Failed to store a copy of Auth1");
 		status = WLAN_STATUS_UNSPECIFIED_FAILURE;
 		goto send_resp;
 	}
@@ -972,11 +975,11 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 		goto send_resp;
 	}
 
-	ret = pasn_auth_frame_hash(pasn->akmp, pasn->cipher,
-				   ((const u8 *) mgmt) + IEEE80211_HDRLEN,
-				   len - IEEE80211_HDRLEN, pasn->hash);
-	if (ret) {
-		wpa_printf(MSG_DEBUG, "PASN: Failed to compute hash");
+	wpabuf_free(pasn->auth1);
+	pasn->auth1 = wpabuf_alloc_copy(((const u8 *) mgmt) + IEEE80211_HDRLEN,
+					len - IEEE80211_HDRLEN);
+	if (!pasn->auth1) {
+		wpa_printf(MSG_DEBUG, "PASN: Failed to store a copy of Auth1");
 		status = WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
 
@@ -1012,6 +1015,7 @@ int handle_auth_pasn_3(struct pasn_data *pasn, const u8 *own_addr,
 	int ret;
 	u8 *copy = NULL;
 	size_t copy_len, mic_offset;
+	u8 hash[SHA512_MAC_LEN];
 
 	if (ieee802_11_parse_elems(mgmt->u.auth.variable,
 				   len - offsetof(struct ieee80211_mgmt,
@@ -1023,7 +1027,7 @@ int handle_auth_pasn_3(struct pasn_data *pasn, const u8 *own_addr,
 	}
 
 	/* Check that the MIC IE exists. Save it and zero out the memory. */
-	mic_len = pasn_mic_len(pasn->akmp, pasn->cipher);
+	mic_len = pasn_mic_len(pasn->hash_alg);
 	if (!elems.mic || elems.mic_len != mic_len) {
 		wpa_printf(MSG_DEBUG,
 			   "PASN: Invalid MIC. Expecting len=%u", mic_len);
@@ -1062,9 +1066,14 @@ int handle_auth_pasn_3(struct pasn_data *pasn, const u8 *own_addr,
 	if (!copy)
 		goto fail;
 	os_memset(copy + mic_offset, 0, mic_len);
-	ret = pasn_mic(pasn->ptk.kck, pasn->akmp, pasn->cipher,
-		       peer_addr, own_addr,
-		       pasn->hash, mic_len * 2,
+	if (!pasn->auth1 ||
+	    pasn_auth_frame_hash(pasn->hash_alg, wpabuf_head(pasn->auth1),
+				 wpabuf_len(pasn->auth1), hash)) {
+		wpa_printf(MSG_INFO, "PASN: Failed to calculate Auth1 hash");
+		goto fail;
+	}
+	ret = pasn_mic(pasn->hash_alg, pasn->ptk.kck, pasn->ptk.kck_len,
+		       peer_addr, own_addr, hash, mic_len * 2,
 		       copy, copy_len, out_mic);
 	os_free(copy);
 	copy = NULL;

@@ -2959,6 +2959,8 @@ static const struct parse_data ssid_fields[] = {
 	{ INT_RANGE(rsn_overriding, 0, 2)},
 	{ INT_RANGE(sae_password_id_change, 0, 1)},
 	{ FUNC(bgscan_freq) },
+	{ INT_RANGE(control_frame_protection, 0, 1)},
+	{ INT(cip_padding_delay) },
 };
 
 #undef OFFSET
@@ -3312,7 +3314,6 @@ void wpa_config_free(struct wpa_config *config)
 	os_free(config->dpp_extra_conf_req_value);
 	wpabuf_free(config->dik);
 	wpabuf_free(config->wfa_gen_capa_supp);
-	wpabuf_free(config->wfa_gen_capa_cert);
 
 	os_free(config);
 }
@@ -5763,6 +5764,11 @@ static int wpa_config_process_mld_connect_bssid_pref(
 #define INT(f) _INT(f), NULL, NULL
 #define INT_RANGE(f, min, max) #f, wpa_global_config_parse_int_range, \
 	wpa_config_get_int, OFFSET(f), (void *) min, (void *) max
+#ifdef CONFIG_QCN_EXTN
+#define INT_KEY_RANGE(key, field, min, max) key, \
+	wpa_global_config_parse_int_range, wpa_config_get_int, OFFSET(field), \
+	(void *) min, (void *) max
+#endif
 #define BOOL(f) #f, wpa_global_config_parse_bool, wpa_config_get_bool, \
 		OFFSET(f), NULL, NULL
 #define _STR(f) #f, wpa_global_config_parse_str, wpa_config_get_str, OFFSET(f)
@@ -5855,7 +5861,7 @@ static const struct global_parse_data global_fields[] = {
 	{ INT(p2p_go_vht), 0 },
 	{ INT(p2p_go_he), 0 },
 	{ INT(p2p_go_edmg), 0 },
-	{ INT(p2p_disabled), 0 },
+	{ INT(p2p_disabled), CFG_CHANGED_P2P_DISABLED },
 	{ INT_RANGE(p2p_go_ctwindow, 0, 127), 0 },
 	{ INT(p2p_no_group_iface), 0 },
 	{ INT_RANGE(p2p_ignore_shared_freq, 0, 1), 0 },
@@ -5984,12 +5990,15 @@ static const struct global_parse_data global_fields[] = {
 #endif /* CONFIG_TESTING_OPTIONS */
 	{ BOOL(ft_prepend_pmkid), CFG_CHANGED_FT_PREPEND_PMKID },
 	{ INT_RANGE(wfa_gen_capa, 0, 2), 0},
-	{ BIN(wfa_gen_capa_supp), 0 },
-	{ BIN(wfa_gen_capa_cert), 0 },
 	{ INT_RANGE(ppe_vp, 0, 3), 1 },
 	{ BOOL(disable_op_classes_80_80_mhz), 0 },
 	{ INT(pr_pasn_type), 0 },
 	{ INT_RANGE(pr_preferred_role, 0, 1), 0},
+#ifdef CONFIG_QCN_EXTN
+	{ INT_KEY_RANGE("athnewind", ind_rptr, 0, 1), 0 },
+	{ INT_KEY_RANGE("rptr_mgr_mode", rptr_mgr_comm_mode, 0, 2), 1 },
+	{ INT(channel), 0 },
+#endif
 	/* NOTE: When adding new parameters here, add_interface() in
 	 * wpa_supplicant/dbus_new_introspect.c may need to be modified to
 	 * increase the size of the iface->xml buffer. */

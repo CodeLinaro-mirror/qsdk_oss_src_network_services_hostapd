@@ -265,6 +265,10 @@ struct wpa_params {
 	 * show_details - Whether to show config parsing details in debug log
 	 */
 	bool show_details;
+	/**
+	 * proc_coord_dir - Process coordination directory
+	 */
+	const char *proc_coord_dir;
 };
 
 struct p2p_srv_bonjour {
@@ -330,6 +334,9 @@ struct wpa_global {
 	struct psk_list_entry *add_psk; /* From group formation */
 
 	struct ubus_object ubus_global;
+#ifdef CONFIG_PROCESS_COORDINATION
+	struct proc_coord *pc;
+#endif /* CONFIG_PROCESS_COORDINATION */
 };
 
 
@@ -768,6 +775,7 @@ struct wpa_supplicant {
 	int key_mgmt;
 	int wpa_proto;
 	int mgmt_group_cipher;
+	int control_group_cipher;
 	/*
 	 * Allowed key management suites for roaming/initial connection
 	 * when the driver's SME is in use.
@@ -909,6 +917,15 @@ struct wpa_supplicant {
 	unsigned int manual_scan_use_id:1;
 	unsigned int manual_scan_only_new:1;
 	unsigned int own_scan_requested:1;
+
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * acs_complete: Repeater ACS completion flag for STA scan gating
+	 * When athnewind=1 and acs_complete=0, postpone/skip STA scans
+	 * until repeater AP ACS completes (signaled via external event).
+	 */
+	bool acs_complete;
+#endif
 	unsigned int own_scan_running:1;
 	unsigned int clear_driver_scan_cache:1;
 	unsigned int manual_non_coloc_6ghz:1;
@@ -931,8 +948,7 @@ struct wpa_supplicant {
 
 	struct wpa_ssid_value *ssids_from_scan_req;
 	unsigned int num_ssids_from_scan_req;
-	int *last_scan_freqs;
-	unsigned int num_last_scan_freqs;
+	int *last_scan_freqs; /* int_array */
 	unsigned int suitable_network;
 	unsigned int no_suitable_network;
 
@@ -957,6 +973,9 @@ struct wpa_supplicant {
 	/* extended capabilities supported by the driver */
 	const u8 *extended_capa, *extended_capa_mask;
 	unsigned int extended_capa_len;
+
+	/* EML and MLD capabilities supported by the driver */
+	u16 eml_capa, mld_capa;
 
 	int max_scan_ssids;
 	int max_sched_scan_ssids;
@@ -999,6 +1018,9 @@ struct wpa_supplicant {
 	unsigned int connection_he:1;
 	unsigned int connection_eht:1;
 	unsigned int disable_mbo_oce:1;
+	u8 connection_max_nss_rx;
+	u8 connection_max_nss_tx;
+	enum chan_width connection_channel_bandwidth;
 
 	struct os_reltime last_mac_addr_change;
 	enum wpas_mac_addr_style last_mac_addr_style;
@@ -1655,6 +1677,10 @@ struct wpa_supplicant {
 	u8 num_multi_hws;
 
 	bool scs_reconfigure;
+#ifdef CONFIG_QCN_EXTN
+	struct wpa_connect_work *cache_cwork;
+	int pre_connect_cnt;
+#endif
 };
 
 
@@ -1800,6 +1826,7 @@ int wpas_twt_send_teardown(struct wpa_supplicant *wpa_s, u8 flags);
 
 void wpas_rrm_reset(struct wpa_supplicant *wpa_s);
 void wpas_rrm_process_neighbor_rep(struct wpa_supplicant *wpa_s,
+				   const u8 *da, const u8 *sa,
 				   const u8 *report, size_t report_len);
 int wpas_rrm_send_neighbor_rep_request(struct wpa_supplicant *wpa_s,
 				       const struct wpa_ssid_value *ssid,
@@ -2023,8 +2050,8 @@ int wpas_send_mscs_req(struct wpa_supplicant *wpa_s);
 void wpas_populate_mscs_descriptor_ie(struct robust_av_data *robust_av,
 				      struct wpabuf *buf);
 void wpas_handle_robust_av_recv_action(struct wpa_supplicant *wpa_s,
-				       const u8 *src, const u8 *buf,
-				       size_t len);
+				       const u8 *dst, const u8 *src,
+				       const u8 *buf, size_t len);
 void wpas_handle_assoc_resp_mscs(struct wpa_supplicant *wpa_s, const u8 *bssid,
 				 const u8 *ies, size_t ies_len);
 int wpas_send_scs_req(struct wpa_supplicant *wpa_s);
@@ -2032,11 +2059,11 @@ int wpas_scs_reconfigure(struct wpa_supplicant *wpa_s);
 void free_up_tclas_elem(struct scs_desc_elem *elem);
 void free_up_scs_desc(struct scs_robust_av_data *data);
 void wpas_handle_robust_av_scs_recv_action(struct wpa_supplicant *wpa_s,
-					   const u8 *src, const u8 *buf,
-					   size_t len);
+					   const u8 *dst, const u8 *src,
+					   const u8 *buf, size_t len);
 void wpas_scs_deinit(struct wpa_supplicant *wpa_s);
 void wpas_handle_qos_mgmt_recv_action(struct wpa_supplicant *wpa_s,
-				      const u8 *src,
+				      const u8 *dst, const u8 *src,
 				      const u8 *buf, size_t len);
 void wpas_dscp_deinit(struct wpa_supplicant *wpa_s);
 int wpas_send_dscp_response(struct wpa_supplicant *wpa_s,

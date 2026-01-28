@@ -2,6 +2,7 @@
  * hostapd / IEEE 802.11ax HE
  * Copyright (c) 2016-2017, Qualcomm Atheros, Inc.
  * Copyright (c) 2019 John Crispin <john@phrozen.org>
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -71,7 +72,8 @@ static int ieee80211_invalid_he_cap_size(const u8 *buf, size_t len)
 	u8 ppe_thres_hdr;
 
 	cap = (struct ieee80211_he_capabilities *) buf;
-	cap_len = sizeof(*cap) - sizeof(cap->optional);
+	cap_len = sizeof(cap->he_mac_capab_info) +
+		  sizeof(cap->he_phy_capab_info);
 	if (len < cap_len)
 		return 1;
 
@@ -104,6 +106,7 @@ u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
 	const struct he_capabilities *he_capab;
 	u8 *pos = eid;
 	u8 ie_size = 0, mcs_nss_size, ppet_size;
+	u8 *epos;
 
 	if (!mode)
 		return eid;
@@ -127,45 +130,60 @@ u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
 		  HE_MAX_MAC_CAPAB_SIZE);
 	os_memcpy(cap->he_phy_capab_info, he_capab->phy_cap,
 		  HE_MAX_PHY_CAPAB_SIZE);
-	os_memcpy(cap->optional, he_capab->mcs, mcs_nss_size);
+	epos = (u8 *) &cap->he_basic_supported_mcs_set;
+	os_memcpy(epos, he_capab->mcs, mcs_nss_size);
+	epos += mcs_nss_size;
 
 	if (ppet_size)
-		os_memcpy(&cap->optional[mcs_nss_size], he_capab->ppet,
-			  ppet_size);
+		os_memcpy(epos, he_capab->ppet, ppet_size);
 
 	if (!hostapd_conf_he_btwt_enabled(hapd))
 		cap->he_mac_capab_info[HE_MAC_CAPAB_2] &= ~HE_MACCAP_TWT_BROADCAST;
 
-	if (!hostapd_conf_he_twt_enabled(hapd))
+	if (!hostapd_conf_he_twt_enabled(hapd)) {
 		cap->he_mac_capab_info[HE_MAC_CAPAB_0] &= ~HE_MACCAP_TWT_RESPONDER;
+		cap->he_mac_capab_info[HE_MAC_CAPAB_3] &= ~HE_MACCAP_FLEXI_TWT;
+	}
 
-	if (hapd->iface->conf->he_phy_capab.he_su_beamformer)
+	if (((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_SU_BEAMFORMER) ?
+	     hapd->conf->he_phy_capab.he_su_beamformer :
+	     hapd->iface->conf->he_phy_capab.he_su_beamformer))
 		cap->he_phy_capab_info[HE_PHYCAP_SU_BEAMFORMER_CAPAB_IDX] |=
 			HE_PHYCAP_SU_BEAMFORMER_CAPAB;
 	else
 		cap->he_phy_capab_info[HE_PHYCAP_SU_BEAMFORMER_CAPAB_IDX] &=
 			~HE_PHYCAP_SU_BEAMFORMER_CAPAB;
 
-	if (hapd->iface->conf->he_phy_capab.he_su_beamformee)
+	if (((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_SU_BEAMFORMEE) ?
+	     hapd->conf->he_phy_capab.he_su_beamformee :
+	     hapd->iface->conf->he_phy_capab.he_su_beamformee))
 		cap->he_phy_capab_info[HE_PHYCAP_SU_BEAMFORMEE_CAPAB_IDX] |=
 			HE_PHYCAP_SU_BEAMFORMEE_CAPAB;
 	else
 		cap->he_phy_capab_info[HE_PHYCAP_SU_BEAMFORMEE_CAPAB_IDX] &=
 			~HE_PHYCAP_SU_BEAMFORMEE_CAPAB;
 
-	if (hapd->iface->conf->he_phy_capab.he_mu_beamformer)
-		cap->he_phy_capab_info[HE_PHYCAP_MU_BEAMFORMER_CAPAB_IDX] |=
-			HE_PHYCAP_MU_BEAMFORMER_CAPAB;
-	else
-		cap->he_phy_capab_info[HE_PHYCAP_MU_BEAMFORMER_CAPAB_IDX] &=
-			~HE_PHYCAP_MU_BEAMFORMER_CAPAB;
+	if (((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_MU_BEAMFORMER) ?
+	 hapd->conf->he_phy_capab.he_mu_beamformer :
+	 hapd->iface->conf->he_phy_capab.he_mu_beamformer)) {
+	cap->he_phy_capab_info[HE_PHYCAP_MU_BEAMFORMER_CAPAB_IDX] |=
+		HE_PHYCAP_MU_BEAMFORMER_CAPAB;
+	} else {
+	cap->he_phy_capab_info[HE_PHYCAP_MU_BEAMFORMER_CAPAB_IDX] &=
+		~HE_PHYCAP_MU_BEAMFORMER_CAPAB;
+	}
 
-	if (hapd->iface->conf->he_phy_capab.he_ul_mumimo == 1)
-		cap->he_phy_capab_info[HE_PHYCAP_UL_MUMIMO_CAPB_IDX] |=
-			HE_PHYCAP_UL_MUMIMO_CAPB;
-	else if (hapd->iface->conf->he_phy_capab.he_ul_mumimo == 0)
+	if (((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_UL_MUMIMO) ?
+	 hapd->conf->he_phy_capab.he_ul_mumimo :
+	 hapd->iface->conf->he_phy_capab.he_ul_mumimo) == 1) {
+	cap->he_phy_capab_info[HE_PHYCAP_UL_MUMIMO_CAPB_IDX] |=
+		HE_PHYCAP_UL_MUMIMO_CAPB;
+	} else if (((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_UL_MUMIMO) ?
+	      hapd->conf->he_phy_capab.he_ul_mumimo :
+	      hapd->iface->conf->he_phy_capab.he_ul_mumimo) == 0) {
 		cap->he_phy_capab_info[HE_PHYCAP_UL_MUMIMO_CAPB_IDX] &=
 			~HE_PHYCAP_UL_MUMIMO_CAPB;
+	}
 
 	pos += ie_size;
 
@@ -475,14 +493,15 @@ static int check_valid_he_mcs(struct hostapd_data *hapd, const u8 *sta_he_capab,
 {
 	u16 sta_rx_mcs_set, ap_tx_mcs_set;
 	u8 mcs_count = 0;
-	const u16 *ap_mcs_set, *sta_mcs_set;
+	const u16 *ap_mcs_set;
+	const u8 *sta_mcs_set;
 	int i;
 
 	if (!hapd->iface->current_mode)
 		return 1;
 	ap_mcs_set = (u16 *) hapd->iface->current_mode->he_capab[opmode].mcs;
-	sta_mcs_set = (u16 *) ((const struct ieee80211_he_capabilities *)
-			       sta_he_capab)->optional;
+	sta_mcs_set = (const u8 *) &((const struct ieee80211_he_capabilities *)
+			sta_he_capab)->he_basic_supported_mcs_set;
 
 	/*
 	 * Disable HE capabilities for STAs for which there is not even a single
@@ -506,7 +525,7 @@ static int check_valid_he_mcs(struct hostapd_data *hapd, const u8 *sta_he_capab,
 		int j;
 
 		/* AP Tx MCS map vs. STA Rx MCS map */
-		sta_rx_mcs_set = WPA_GET_LE16((const u8 *) &sta_mcs_set[i * 2]);
+		sta_rx_mcs_set = WPA_GET_LE16(&sta_mcs_set[i * 4]);
 		ap_tx_mcs_set = WPA_GET_LE16((const u8 *)
 					     &ap_mcs_set[(i * 2) + 1]);
 
@@ -533,7 +552,7 @@ u16 copy_sta_he_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		      size_t he_capab_len)
 {
 	if (!he_capab || !(sta->flags & WLAN_STA_WMM) ||
-	    !hapd->iconf->ieee80211ax || hapd->conf->disable_11ax ||
+	    !hostapd_is_he_enabled(hapd) ||
 	    !check_valid_he_mcs(hapd, he_capab, opmode) ||
 	    ieee80211_invalid_he_cap_size(he_capab, he_capab_len) ||
 	    he_capab_len > sizeof(struct ieee80211_he_capabilities)) {
@@ -562,8 +581,7 @@ u16 copy_sta_he_capab(struct hostapd_data *hapd, struct sta_info *sta,
 u16 copy_sta_he_6ghz_capab(struct hostapd_data *hapd, struct sta_info *sta,
 			   const u8 *he_6ghz_capab)
 {
-	if (!he_6ghz_capab || !hapd->iconf->ieee80211ax ||
-	    hapd->conf->disable_11ax ||
+	if (!he_6ghz_capab || !hostapd_is_he_enabled(hapd) ||
 	    !is_6ghz_op_class(hapd->iconf->op_class) ||
 	    !(sta->flags & WLAN_STA_HE)) {
 		sta->flags &= ~WLAN_STA_6GHZ;
@@ -594,7 +612,7 @@ int hostapd_get_he_twt_responder(struct hostapd_data *hapd,
 
 	if (!hapd->iface->current_mode ||
 	    !hapd->iface->current_mode->he_capab[mode].he_supported ||
-	    !hapd->iconf->ieee80211ax || hapd->conf->disable_11ax)
+	    !hostapd_is_he_enabled(hapd))
 		return 0;
 
 	mac_cap = hapd->iface->current_mode->he_capab[mode].mac_cap;

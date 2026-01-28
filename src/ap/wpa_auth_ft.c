@@ -2276,9 +2276,13 @@ void wpa_auth_ft_store_keys(struct wpa_state_machine *sm, const u8 *pmk_r0,
 static inline int wpa_auth_get_seqnum(struct wpa_authenticator *wpa_auth,
 				      const u8 *addr, int idx, u8 *seq)
 {
+	int get_cigtk_seq_num;
+	get_cigtk_seq_num = false;
 	if (wpa_auth->cb->get_seqnum == NULL)
 		return -1;
-	return wpa_auth->cb->get_seqnum(wpa_auth->cb_ctx, addr, idx, seq);
+	if (wpa_auth->cigtk_seq_num)
+		get_cigtk_seq_num = 1;
+	return wpa_auth->cb->get_seqnum(wpa_auth->cb_ctx, addr, idx, seq, get_cigtk_seq_num);
 }
 
 
@@ -2422,6 +2426,52 @@ static int wpa_add_per_link_ft_mlo_bigtk_subelem(struct wpa_authenticator *wpa_a
 	return 0;
 }
 
+static int wpa_add_per_link_ft_mlo_cigtk_subelem(struct wpa_authenticator *wpa_auth,
+                                                 u8 **pos, u8 link_id,
+                                                 struct wpa_state_machine *sm)
+{
+	u8 *subelem = *pos;
+	struct wpa_group *gsm = wpa_auth->group;
+	size_t subelem_len, cigtk_len, kek_len;
+	const u8 *cigtk, *kek;
+
+	if (!gsm)
+		return -1;
+
+	if (wpa_key_mgmt_fils(sm->wpa_key_mgmt)) {
+		kek = sm->PTK.kek2;
+		kek_len = sm->PTK.kek2_len;
+	} else {
+		kek = sm->PTK.kek;
+		kek_len = sm->PTK.kek_len;
+	}
+
+	cigtk_len = wpa_cipher_key_len(wpa_auth->conf.group_control_frame_cipher);
+
+	cigtk = gsm->CIGTK[gsm->GN_cigtk];
+
+	/* Sub-elem ID[1] | Length[1] | KeyID[2] | IPN[6] | LINK INFO[1] |
+	*  Key Length[1] | Key[16+8]
+	*/
+	subelem_len = 12 + cigtk_len + 8;
+
+	subelem[0] = FTIE_SUBELEM_MLO_CIGTK;
+	subelem[1] = subelem_len - 2;
+	WPA_PUT_LE16(&subelem[2], gsm->GN_cigtk);
+	wpa_auth_get_seqnum(wpa_auth, NULL, gsm->GN_cigtk, subelem + 4);
+	subelem[10] = link_id;
+	subelem[11] = cigtk_len;
+	if (aes_wrap(kek, kek_len, cigtk_len / 8, cigtk, subelem + 12)) {
+		wpa_printf(MSG_DEBUG,
+				   "FT: CIGTK subelem encryption failed: kek_len=%d",
+				   (int) kek_len);
+		return -1;
+	}
+
+	*pos += subelem_len;
+	return 0;
+}
+
 int wpa_add_ft_mlo_subelems(struct wpa_state_machine *sm, u8 *pos)
 {
 	int link_id, ret = 0;
@@ -2440,6 +2490,8 @@ int wpa_add_ft_mlo_subelems(struct wpa_state_machine *sm, u8 *pos)
 				ret = wpa_add_per_link_ft_mlo_igtk_subelem(wpa_auth, &pos, link_id, sm);
 			if (!ret && sm->mgmt_frame_prot && wpa_auth->conf.beacon_prot)
 				ret = wpa_add_per_link_ft_mlo_bigtk_subelem(wpa_auth, &pos, link_id, sm);
+			if (!ret && sm->ctrl_frame_prot && wpa_auth->conf.control_frame_prot)
+				ret = wpa_add_per_link_ft_mlo_cigtk_subelem(wpa_auth, &pos, link_id, sm);
 		}
 		if (ret)
 			return ret;
@@ -2503,6 +2555,23 @@ static size_t wpa_add_to_mlo_ft_bigtk_subelem_length(struct wpa_state_machine *s
 	return len;
 }
 
+static size_t wpa_add_to_mlo_ft_cigtk_subelem_length(struct wpa_state_machine *sm,
+						     struct wpa_authenticator *wpa_auth)
+{
+	size_t len = 0;
+
+	if (sm->ctrl_frame_prot && wpa_auth->conf.control_frame_prot) {
+		len = 2; /* Sub element id and length */
+		len += 2; /* Key-idx */
+		len += 6; /* CIPN */
+		len++; /* Link info */
+		len++; /* CIGTK key length */
+		len += wpa_cipher_key_len(wpa_auth->conf.group_control_frame_cipher) + 8;
+	}
+
+	return len;
+}
+
 size_t wpa_ft_mlo_subelems_len(struct wpa_state_machine *sm)
 {
 	int link_id;
@@ -2516,6 +2585,7 @@ size_t wpa_ft_mlo_subelems_len(struct wpa_state_machine *sm)
 			len += wpa_add_to_mlo_ft_gtk_subelem_length(wpa_auth);
 			len += wpa_add_to_mlo_ft_igtk_subelem_length(sm, wpa_auth);
 			len += wpa_add_to_mlo_ft_bigtk_subelem_length(sm, wpa_auth);
+			len += wpa_add_to_mlo_ft_cigtk_subelem_length(sm, wpa_auth);
 		}
 	}
 	wpa_printf(MSG_DEBUG, "MLO-FT-Group-subelems length %zu", len);
@@ -2727,6 +2797,59 @@ static u8 * wpa_ft_bigtk_subelem(struct wpa_state_machine *sm, size_t *len)
 	*len = subelem_len;
 	return subelem;
 }
+
+
+static u8 *wpa_ft_cigtk_subelem(struct wpa_state_machine *sm, size_t *len)
+{
+	u8 *subelem, *pos;
+	struct wpa_authenticator *wpa_auth = sm->wpa_auth;
+	struct wpa_group *gsm = wpa_auth->group;
+	size_t subelem_len;
+	const u8 *kek;
+	size_t kek_len;
+	size_t cigtk_len;
+
+	if (wpa_key_mgmt_fils(sm->wpa_key_mgmt)) {
+		kek = sm->PTK.kek2;
+		kek_len = sm->PTK.kek2_len;
+	} else {
+		kek = sm->PTK.kek;
+		kek_len = sm->PTK.kek_len;
+	}
+
+	cigtk_len = wpa_cipher_key_len(sm->wpa_auth->conf.group_control_frame_cipher);
+
+	/* Sub-elem ID[1] | Length[1] | KeyID[2] | CIPN[6] | Key Length[1] |
+	 * Key[16+8]
+	 */
+
+	subelem_len = 1 + 1 + 2 + 6 + 1 + cigtk_len + 8;
+	subelem = os_zalloc(subelem_len);
+	if (subelem == NULL)
+		return NULL;
+
+	pos = subelem;
+	*pos++ = FTIE_SUBELEM_CIGTK;
+	*pos++ = subelem_len - 2;
+	WPA_PUT_LE16(pos, gsm->GN_cigtk);
+	pos += 2;
+	sm->wpa_auth->cigtk_seq_num = 1;
+	wpa_auth_get_seqnum(sm->wpa_auth, NULL, gsm->GN_cigtk, pos);
+	sm->wpa_auth->cigtk_seq_num = 0;
+	pos += 6;
+	*pos++ = cigtk_len;
+	if (aes_wrap(kek, kek_len, cigtk_len / 8, gsm->CIGTK[gsm->GN_cigtk], pos)) {
+		wpa_printf(MSG_DEBUG,
+			   "FT: CIGTK subelem encryption failed: kek_len=%d",
+			   (int) kek_len);
+		os_free(subelem);
+		return NULL;
+	}
+
+	*len = subelem_len;
+	return subelem;
+}
+
 
 
 static u8 * wpa_ft_process_rdie(struct wpa_state_machine *sm,
@@ -3016,6 +3139,30 @@ u8 * wpa_sm_write_assoc_resp_ies(struct wpa_state_machine *sm, u8 *pos,
 			os_memcpy(subelem + subelem_len, bigtk, bigtk_len);
 			subelem_len += bigtk_len;
 			os_free(bigtk);
+		}
+		if (sm->mgmt_frame_prot && conf->beacon_prot &&
+		    conf->group_control_frame_cipher && sm->ctrl_frame_prot) {
+			u8 *cigtk;
+			size_t cigtk_len;
+			u8 *nbuf;
+
+			cigtk = wpa_ft_cigtk_subelem(sm, &cigtk_len);
+			if (!cigtk) {
+				wpa_printf(MSG_DEBUG,
+						"FT: Failed to add CIGTK subelement");
+				os_free(subelem);
+				return NULL;
+			}
+			nbuf = os_realloc(subelem, subelem_len + cigtk_len);
+			if (!nbuf) {
+				os_free(subelem);
+				os_free(cigtk);
+				return NULL;
+			}
+			subelem = nbuf;
+			os_memcpy(subelem + subelem_len, cigtk, cigtk_len);
+			subelem_len += cigtk_len;
+			os_free(cigtk);
 		}
 #ifdef CONFIG_OCV
 		if (wpa_auth_uses_ocv(sm)) {

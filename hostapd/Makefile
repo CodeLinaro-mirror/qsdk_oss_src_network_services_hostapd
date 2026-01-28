@@ -25,6 +25,7 @@ endif
 CFLAGS += $(EXTRA_CFLAGS)
 CFLAGS += -I$(abspath ../src)
 CFLAGS += -I$(abspath ../src/utils)
+CFLAGS += -I$(abspath ../src/hostapd_if)
 
 export BINDIR ?= /usr/local/bin/
 
@@ -90,6 +91,11 @@ OBJS += ../src/ap/bss_load.o
 OBJS += ../src/ap/neighbor_db.o
 OBJS += ../src/ap/rrm.o
 OBJS += ../src/common/ptksa_cache.o
+# hostapd external interface and mgmt/action lookup
+ifdef CONFIG_HOSTAPD_IF
+OBJS += ../src/hostapd_if/hostapd_if.o
+CFLAGS += -DCONFIG_HOSTAPD_IF
+endif
 
 OBJS_c = hostapd_cli.o
 OBJS_c += ../src/common/wpa_ctrl.o
@@ -105,6 +111,10 @@ NEED_RC4=y
 NEED_AES=y
 NEED_MD5=y
 NEED_SHA1=y
+
+ifeq ($(wildcard $(HOSTAPD_SRC_DIR)),)
+CFLAGS += -DCONFIG_HOSTAPD_SRC_DIR
+endif
 
 OBJS += ../src/drivers/drivers.o
 CFLAGS += -DHOSTAPD
@@ -374,6 +384,12 @@ endif
 
 ifdef CONFIG_IEEE80211AC
 CFLAGS += -DCONFIG_IEEE80211AC
+endif
+
+ifdef CONFIG_IEEE80211BN
+CONFIG_IEEE80211BE=y
+CFLAGS += -DCONFIG_IEEE80211BN
+OBJS += ../src/ap/ieee802_11_uhr.o
 endif
 
 ifdef CONFIG_IEEE80211BE
@@ -1443,6 +1459,11 @@ endif
 
 ifdef CONFIG_NO_TKIP
 CFLAGS += -DCONFIG_NO_TKIP
+endif
+
+ifdef CONFIG_PROCESS_COORDINATION
+CFLAGS += -DCONFIG_PROCESS_COORDINATION
+OBJS += ../src/common/proc_coord.o
 endif
 
 $(DESTDIR)$(BINDIR)/%: %

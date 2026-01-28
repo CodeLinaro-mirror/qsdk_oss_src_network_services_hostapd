@@ -47,13 +47,15 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    size_t he_capab_len,
 		    const struct ieee80211_eht_capabilities *eht_capab,
 		    size_t eht_capab_len,
+		    const struct ieee80211_uhr_capabilities *uhr_capab,
+		    size_t uhr_capab_len,
 #ifdef CONFIG_QCN_EXTN
 		    struct sta_info_extn *sta_extn,
 #endif
 		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
 		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
 		    int set, const u8 *link_addr, bool mld_link_sta,
-		    u16 eml_cap, int type);
+		    u16 eml_cap, int type, u8 control_mic_pad);
 int hostapd_set_privacy(struct hostapd_data *hapd, int enabled);
 int hostapd_set_generic_elem(struct hostapd_data *hapd, const u8 *elem,
 			     size_t elem_len);
@@ -75,13 +77,16 @@ int hostapd_drv_ml_reconfig_link_remove(struct hostapd_data *hapd, enum wpa_driv
 int hostapd_set_ieee8021x(struct hostapd_data *hapd,
 			  struct wpa_bss_params *params);
 int hostapd_get_seqnum(const char *ifname, struct hostapd_data *hapd,
-		       const u8 *addr, int idx, int link_id, u8 *seq);
+		       const u8 *addr, int idx, int link_id, u8 *seq, int get_cigtk_seq_num);
 int hostapd_flush(struct hostapd_data *hapd);
 int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
 		     int freq, int channel, int edmg, u8 edmg_channel,
 		     int ht_enabled, int vht_enabled, int he_enabled,
-		     bool eht_enabled, int sec_channel_offset, int oper_chwidth,
-		     int center_segment0, int center_segment1,
+		     bool eht_enabled, bool uhr_enabled, int sec_channel_offset,
+		     int oper_chwidth, int center_segment0, int center_segment1,
+#ifdef CONFIG_QCN_EXTN
+		     bool skip_cac_rep,
+#endif
 		     int bandwidth_device, int center_freq_device);
 int hostapd_set_rts(struct hostapd_data *hapd, int rts);
 int hostapd_set_frag(struct hostapd_data *hapd, int frag);
@@ -114,7 +119,7 @@ int hostapd_drv_set_key(const char *ifname,
 int hostapd_drv_send_mlme(struct hostapd_data *hapd,
 			  const void *msg, size_t len, int noack,
 			  const u16 *csa_offs, size_t csa_offs_len,
-			  int no_encrypt);
+			  int no_encrypt, u16 rate, u8 rate_type);
 int hostapd_drv_sta_deauth(struct hostapd_data *hapd,
 			   const u8 *addr, int reason);
 int hostapd_drv_sta_disassoc(struct hostapd_data *hapd,
@@ -150,7 +155,7 @@ int hostapd_add_tspec(struct hostapd_data *hapd, const u8 *addr,
 int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 			  enum hostapd_hw_mode mode, int freq,
 			  int channel, int ht_enabled, int vht_enabled,
-			  int he_enabled, bool eht_enabled,
+			  int he_enabled, bool eht_enabled, bool uhr_enabled,
 			  int sec_channel_offset, int oper_chwidth,
 			  int center_segment0, int center_segment1,
 			  bool radar_background,

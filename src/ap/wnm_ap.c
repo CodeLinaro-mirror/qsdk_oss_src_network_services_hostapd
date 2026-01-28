@@ -903,7 +903,7 @@ static void ieee802_11_rx_wnm_event_report(struct hostapd_data *hapd,
 	switch (report_ie->type) {
 #ifdef CONFIG_IEEE80211AX
 	case WNM_EVENT_TYPE_BSS_COLOR_COLLISION:
-		if (!hapd->iconf->ieee80211ax || hapd->conf->disable_11ax)
+		if (!hostapd_is_he_enabled(hapd))
 			return;
 		if (report_ie->len <
 		    fixed_field_len + tsf_len + 8) {
@@ -919,7 +919,7 @@ static void ieee802_11_rx_wnm_event_report(struct hostapd_data *hapd,
 		hostapd_switch_color(hapd->iface->bss[0], bitmap);
 		break;
 	case WNM_EVENT_TYPE_BSS_COLOR_IN_USE:
-		if (!hapd->iconf->ieee80211ax || hapd->conf->disable_11ax)
+		if (!hostapd_is_he_enabled(hapd))
 			return;
 		if (report_ie->len < fixed_field_len + tsf_len + 1) {
 			wpa_printf(MSG_DEBUG,
@@ -1033,7 +1033,7 @@ int wnm_send_disassoc_imminent(struct hostapd_data *hapd,
 	hapd->openwrt_stats.wnm.bss_transition_request_tx++;
 	wpa_printf(MSG_DEBUG, "WNM: Send BSS Transition Management Request frame to indicate imminent disassociation (disassoc_timer=%d) to "
 		   MACSTR, disassoc_timer, MAC2STR(sta->addr));
-	if (hostapd_drv_send_mlme(hapd, buf, pos - buf, 0, NULL, 0, 0) < 0) {
+	if (hostapd_drv_send_mlme(hapd, buf, pos - buf, 0, NULL, 0, 0, 0, 0) < 0) {
 		wpa_printf(MSG_DEBUG, "Failed to send BSS Transition "
 			   "Management Request frame");
 		return -1;
@@ -1107,7 +1107,7 @@ int wnm_send_ess_disassoc_imminent(struct hostapd_data *hapd,
 	os_memcpy(pos, url, url_len);
 	pos += url_len;
 
-	if (hostapd_drv_send_mlme(hapd, buf, pos - buf, 0, NULL, 0, 0) < 0) {
+	if (hostapd_drv_send_mlme(hapd, buf, pos - buf, 0, NULL, 0, 0, 0, 0) < 0) {
 		wpa_printf(MSG_DEBUG, "Failed to send BSS Transition "
 			   "Management Request frame");
 		return -1;
@@ -1196,7 +1196,7 @@ int wnm_send_bss_tm_req(struct hostapd_data *hapd, struct sta_info *sta,
 				  mbo_len);
 	}
 
-	if (hostapd_drv_send_mlme(hapd, buf, pos - buf, 0, NULL, 0, 0) < 0) {
+	if (hostapd_drv_send_mlme(hapd, buf, pos - buf, 0, NULL, 0, 0, 0, 0) < 0) {
 		wpa_printf(MSG_DEBUG,
 			   "Failed to send BSS Transition Management Request frame");
 		os_free(buf);
@@ -1249,7 +1249,7 @@ int wnm_send_bss_tm_req(struct hostapd_data *hapd, struct sta_info *sta,
 	if (disassoc_timer && sta) {
 #ifdef CONFIG_IEEE80211BE
 		/* Link removal is scheduled only when the Link Removal Imminent
-		 * field is set to 1 in BTM as per IEEE P802.11be/D7.0,
+		 * field is set to 1 in BTM as per IEEE Std 802.11be-2024,
 		 * 9.6.13.9 (BSS Transition Management Request frame format);
 		 * else schedule full disconnection.
 		 */
@@ -1309,7 +1309,7 @@ int wnm_send_coloc_intf_req(struct hostapd_data *hapd, struct sta_info *sta,
 	wpa_printf(MSG_DEBUG, "WNM: Sending Collocated Interference Request to "
 		   MACSTR " (dialog_token=%u auto_report=%u timeout=%u)",
 		   MAC2STR(sta->addr), dialog_token, auto_report, timeout);
-	if (hostapd_drv_send_mlme(hapd, buf, pos - buf, 0, NULL, 0, 0) < 0) {
+	if (hostapd_drv_send_mlme(hapd, buf, pos - buf, 0, NULL, 0, 0, 0, 0) < 0) {
 		wpa_printf(MSG_DEBUG,
 			   "WNM: Failed to send Collocated Interference Request frame");
 		return -1;

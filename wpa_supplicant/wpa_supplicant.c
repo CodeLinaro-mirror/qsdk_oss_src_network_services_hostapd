@@ -43,6 +43,7 @@
 #include "common/gas_server.h"
 #include "common/dpp.h"
 #include "common/ptksa_cache.h"
+#include "common/proc_coord.h"
 #include "p2p/p2p.h"
 #include "fst/fst.h"
 #include "bssid_ignore.h"
@@ -516,7 +517,6 @@ static struct wpabuf * wpas_wfa_gen_capab_attr(struct wpa_supplicant *wpa_s)
 	size_t gen_len, supp_len;
 	const u8 *supp;
 	u8 supp_buf[1];
-	bool add_cert;
 
 	if (wpa_s->conf->wfa_gen_capa == WFA_GEN_CAPA_DISABLED)
 		return NULL;
@@ -539,14 +539,7 @@ static struct wpabuf * wpas_wfa_gen_capab_attr(struct wpa_supplicant *wpa_s)
 		supp = wpabuf_head(wpa_s->conf->wfa_gen_capa_supp);
 	}
 
-	add_cert = wpa_s->conf->wfa_gen_capa_cert &&
-		wpabuf_len(wpa_s->conf->wfa_gen_capa_cert) == supp_len;
-
 	gen_len = 1 + supp_len;
-	if (add_cert) {
-		gen_len++;
-		gen_len += wpabuf_len(wpa_s->conf->wfa_gen_capa_cert);
-	}
 
 	attr = wpabuf_alloc(2 + gen_len);
 	if (!attr)
@@ -556,11 +549,6 @@ static struct wpabuf * wpas_wfa_gen_capab_attr(struct wpa_supplicant *wpa_s)
 	wpabuf_put_u8(attr, gen_len);
 	wpabuf_put_u8(attr, supp_len);
 	wpabuf_put_data(attr, supp, supp_len);
-	if (add_cert) {
-		wpabuf_put_u8(attr,
-			      wpabuf_len(wpa_s->conf->wfa_gen_capa_cert));
-		wpabuf_put_buf(attr, wpa_s->conf->wfa_gen_capa_cert);
-	}
 
 	return attr;
 }
@@ -725,6 +713,9 @@ static void wpa_supplicant_cleanup(struct wpa_supplicant *wpa_s)
 	eloop_cancel_timeout(wpas_verify_ssid_beacon, wpa_s, NULL);
 	eloop_cancel_timeout(wpas_wfa_capab_tx, wpa_s, NULL);
 	eloop_cancel_timeout(wpas_scan_for_rnr_entries, wpa_s, NULL);
+#ifdef CONFIG_QCN_EXTN
+	eloop_cancel_timeout(wpa_supplicant_start_sta_scan, wpa_s, NULL);
+#endif
 
 	wpas_wps_deinit(wpa_s);
 
@@ -948,6 +939,10 @@ const char * wpa_supplicant_state_txt(enum wpa_states state)
 		return "INTERFACE_DISABLED";
 	case WPA_SCANNING:
 		return "SCANNING";
+#ifdef CONFIG_QCN_EXTN
+	case WPA_PRE_CONNECT:
+		return "PRE_CONNECT";
+#endif
 	case WPA_AUTHENTICATING:
 		return "AUTHENTICATING";
 	case WPA_ASSOCIATING:
@@ -1164,6 +1159,8 @@ void wpa_supplicant_set_state(struct wpa_supplicant *wpa_s,
 		wpa_supplicant_state_txt(wpa_s->wpa_state),
 		wpa_supplicant_state_txt(state));
 
+	wpa_msg_ctrl(wpa_s, MSG_INFO, "%s", wpa_supplicant_state_txt(state));
+
 	if (state == WPA_COMPLETED &&
 	    os_reltime_initialized(&wpa_s->roam_start)) {
 		os_reltime_age(&wpa_s->roam_start, &wpa_s->roam_time);
@@ -1284,6 +1281,9 @@ void wpa_supplicant_set_state(struct wpa_supplicant *wpa_s,
 		sme_sched_obss_scan(wpa_s, 0);
 	}
 	wpa_s->wpa_state = state;
+#ifdef CONFIG_QCN_EXTN
+	if (wpa_s->conf->rptr_mgr_comm_mode != RPTR_MGR_MODE_COMM_SOCK)
+#endif
 	wpas_ucode_update_state(wpa_s);
 
 #ifndef CONFIG_NO_ROBUST_AV
@@ -1850,6 +1850,7 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 #endif /* CONFIG_SAE */
 	const u8 *bss_wpa, *bss_rsn, *bss_rsnx;
 	bool wmm;
+	struct rsn_pmksa_cache_entry *pmksa;
 
 	if (bss) {
 		bss_wpa = wpa_bss_get_vendor_ie(bss, WPA_IE_VENDOR_TYPE);
@@ -2162,6 +2163,26 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		return -1;
 	}
 
+	/* There might be a PMKSA cache entry for the target AP, but the current
+	 * connection is trying to use PSK (which does not use PMKSA caching) or
+	 * an AKM that does not match the one that was used to generate the
+	 * selected PMKSA entry. The previously selected PMKSA cache entry needs
+	 * to be cleared in such cases to avoid indicating an incorrect PMKID
+	 * and exchange that would likely end up failing with the AP attempting
+	 * to use a different PMK. This is not really supposed to happen in
+	 * normal use cases, but it is possible that some corner cases of the AP
+	 * changing its configuration might trigger a failure due to mismatching
+	 * PMK. */
+	pmksa = pmksa_cache_get_current(wpa_s->wpa);
+	if (pmksa &&
+	    (wpa_key_mgmt_wpa_psk_no_sae(wpa_s->key_mgmt) ||
+	     (pmksa->akmp && pmksa->akmp != wpa_s->key_mgmt))) {
+		wpa_printf(MSG_DEBUG,
+			   "RSN: Disable PMKSA caching due to incompatible AKMP (PMKSA: 0x%x, selected: 0x%x)",
+			   pmksa->akmp, wpa_s->key_mgmt);
+		pmksa_cache_clear_current(wpa_s->wpa);
+	}
+
 	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_KEY_MGMT, wpa_s->key_mgmt);
 	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_PAIRWISE,
 			 wpa_s->pairwise_cipher);
@@ -2176,6 +2197,11 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 	}
 
 	wpas_set_mgmt_group_cipher(wpa_s, ssid, &ie);
+	if (ssid->control_frame_protection &&
+	    wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK) {
+		wpa_s->control_group_cipher = WPA_CIPHER_BIP_GMAC_256;
+		wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_CIGTK, wpa_s->control_group_cipher);
+	}
 #ifdef CONFIG_OCV
 	if ((wpa_s->drv_flags & WPA_DRIVER_FLAGS_SME) ||
 	    (wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_OCV))
@@ -3570,11 +3596,13 @@ skip_80mhz:
 				    freq->channel, ssid->enable_edmg,
 				    ssid->edmg_channel, freq->ht_enabled,
 				    freq->vht_enabled, freq->he_enabled,
-				    freq->eht_enabled,
+				    freq->eht_enabled, freq->uhr_enabled,
 				    freq->sec_channel_offset,
 				    chwidth, seg0, seg1, vht_caps,
 				    &mode->he_capab[ieee80211_mode],
-				    &mode->eht_capab[ieee80211_mode], 0,
+				    &mode->eht_capab[ieee80211_mode],
+				    &mode->uhr_capab[ieee80211_mode],
+				    0,
 				    freq->he_6ghz_reg_pwr_type,
 				    freq->bandwidth_device,
 				    freq->center_freq_device) != 0)
@@ -7978,6 +8006,8 @@ static int wpa_supplicant_init_iface(struct wpa_supplicant *wpa_s,
 
 	capa_res = wpa_drv_get_capa(wpa_s, &capa);
 	if (capa_res == 0) {
+		u16 eml_capa, mld_capa, ext_mld_capa;
+
 		wpa_s->drv_capa_known = 1;
 		wpa_s->drv_flags = capa.flags;
 		wpa_s->drv_flags2 = capa.flags2;
@@ -8020,6 +8050,12 @@ static int wpa_supplicant_init_iface(struct wpa_supplicant *wpa_s,
 		    wpa_s->extended_capa_len >= 3 &&
 		    wpa_s->extended_capa[2] & 0x40)
 			wpa_s->multi_bss_support = 1;
+
+		if (wpa_drv_get_mld_capa(wpa_s, WPA_IF_STATION,
+					 &eml_capa, &mld_capa, &ext_mld_capa) == 0) {
+			wpa_s->eml_capa = eml_capa;
+			wpa_s->mld_capa = mld_capa;
+		}
 	} else {
 		wpa_s->drv_max_probe_req_ie_len = 1500;
 	}
@@ -8454,6 +8490,19 @@ struct wpa_supplicant * wpa_supplicant_add_iface(struct wpa_global *global,
 	wpas_ubus_add_bss(wpa_s);
 	wpas_ucode_add_bss(wpa_s);
 
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * If independent repeater is enabled AND auto channel (ACS) is
+	 * configured in the radio, gate repeater STA scan until ACS is
+	 * completed.
+	 */
+	if (wpa_s->conf && wpa_s->conf->ind_rptr && (wpa_s->conf->channel == 0))
+		wpa_s->acs_complete = 0;
+	else
+		wpa_s->acs_complete = 1;
+
+	wpa_printf(MSG_DEBUG, "acs_complete is set to %d",wpa_s->acs_complete);
+#endif
 	return wpa_s;
 }
 
@@ -8758,6 +8807,16 @@ struct wpa_global * wpa_supplicant_init(struct wpa_params *params)
 
 	random_init(params->entropy_file);
 
+#ifdef CONFIG_PROCESS_COORDINATION
+	if (params->proc_coord_dir) {
+		global->pc = proc_coord_init(params->proc_coord_dir);
+		if (!global->pc) {
+			wpa_supplicant_deinit(global);
+			return NULL;
+		}
+	}
+#endif /* CONFIG_PROCESS_COORDINATION */
+
 	global->ctrl_iface = wpa_supplicant_global_ctrl_iface_init(global);
 	if (global->ctrl_iface == NULL) {
 		wpa_supplicant_deinit(global);
@@ -8881,6 +8940,10 @@ void wpa_supplicant_deinit(struct wpa_global *global)
 
 	random_deinit();
 
+#ifdef CONFIG_PROCESS_COORDINATION
+	proc_coord_deinit(global->pc);
+#endif /* CONFIG_PROCESS_COORDINATION */
+
 	eloop_destroy();
 
 	if (global->params.pid_file) {
@@ -8963,6 +9026,11 @@ void wpa_supplicant_update_config(struct wpa_supplicant *wpa_s)
 	if (wpa_s->conf->changed_parameters & CFG_CHANGED_FT_PREPEND_PMKID)
 		wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_FT_PREPEND_PMKID,
 				 wpa_s->conf->ft_prepend_pmkid);
+
+#ifdef CONFIG_P2P
+	if (wpa_s->conf->changed_parameters & CFG_CHANGED_P2P_DISABLED)
+		wpas_p2p_disabled_changed(wpa_s);
+#endif /* CONFIG_P2P */
 
 #ifdef CONFIG_BGSCAN
 	/*

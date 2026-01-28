@@ -216,8 +216,26 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 #ifdef CONFIG_IEEE80211AC
 	/* 0 means not set by user; will use hardware supported map by default */
 	bss->vht_mcs_nss_set = 0;
+	bss->vht_capab = 0;
+	bss->vht_capab_mask = 0;
 #endif /* CONFIG_IEEE80211AC */
+#ifdef CONFIG_IEEE80211AX
+	os_memset(&bss->he_phy_capab, 0, sizeof(bss->he_phy_capab));
+	bss->he_phy_capab_mask = 0;
+#endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_IEEE80211BE
+	os_memset(&bss->eht_phy_capab, 0, sizeof(bss->eht_phy_capab));
+	bss->eht_phy_capab_mask = 0;
+#endif /* CONFIG_IEEE80211BE */
 	bss->ht_mcs_nss_set = 0;
+	bss->group_control_frame_cipher = WPA_CIPHER_BIP_GMAC_256;
+	/* Default: do not gate EAPOL M3 (can be enabled per-BSS config) */
+	bss->externally_triggered_m3 = 0;
+
+#ifdef HOSTAPD_EXTERNAL_PLUGIN
+	/* Default: external plugin disabled (can be enabled per-BSS config) */
+	bss->external_plugin_enable = 0;
+#endif
 }
 
 #ifdef CONFIG_IEEE80211BE
@@ -314,6 +332,9 @@ struct hostapd_config * hostapd_config_defaults(void)
 	}
 
 	hostapd_config_defaults_bss(bss);
+#ifdef CONFIG_QCN_EXTN
+	hostapd_config_defaults_bss_extn(bss);
+#endif
 
 	conf->num_bss = 1;
 
@@ -923,9 +944,7 @@ static void hostapd_dpp_controller_conf_free(struct dpp_controller_conf *conf)
 
 void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 {
-#if defined(CONFIG_WPS) || defined(CONFIG_HS20)
 	size_t i;
-#endif
 
 	if (conf == NULL)
 		return;
@@ -1046,7 +1065,8 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 	os_free(conf->t_c_server_url);
 #endif /* CONFIG_HS20 */
 
-	wpabuf_free(conf->vendor_elements);
+	for (i = 0; i < conf->vendor_elements_count; i++)
+		wpabuf_free(conf->vendor_elements[i]);
 	wpabuf_free(conf->assocresp_elements);
 
 	os_free(conf->sae_groups);
@@ -1484,6 +1504,17 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 				   "Selective VHT-MCS rejected: VHT not allowed in current mode");
 			return -1;
 		}
+
+	}
+
+	if (bss->vht_capab_mask) {
+		if (!conf->ieee80211ac || bss->disable_11ac) {
+			bss->vht_capab = 0;
+			bss->vht_capab_mask = 0;
+			wpa_printf(MSG_ERROR,
+				   "BSS VHT capabilities rejected: VHT not allowed in current mode");
+			return -1;
+		}
 	}
 #endif /* CONFIG_IEEE80211AC */
 	if (bss->ht_mcs_nss_set) {
@@ -1513,6 +1544,21 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 		bss->disable_11ax = true;
 		wpa_printf(MSG_ERROR,
 			   "HE (IEEE 802.11ax) with WPA/WPA2 requires CCMP/GCMP to be enabled, disabling HE capabilities");
+	}
+
+	if (bss->he_phy_capab_mask) {
+		if (!conf->ieee80211ax || bss->disable_11ax) {
+			u32 mask = bss->he_phy_capab_mask;
+
+			os_memset(&bss->he_phy_capab, 0,
+				  sizeof(bss->he_phy_capab));
+			bss->he_phy_capab_mask = 0;
+			wpa_printf(MSG_ERROR,
+				   "BSS HE capability overrides (mask=0x%x) rejected: "
+				   "IEEE 802.11ax not allowed",
+				   mask);
+			return -1;
+		}
 	}
 #endif /* CONFIG_IEEE80211AX */
 
@@ -1644,6 +1690,13 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 			bss->ml_max_rec_links = ML_IE_DEF_MAX_REC_LINKS;
 	}
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_IEEE80211BN
+	if (full_config && conf->ieee80211bn && !conf->ieee80211be) {
+		wpa_printf(MSG_ERROR,
+			   "Cannot set ieee80211bn without ieee80211be");
+		return -1;
+	}
+#endif
 
 	/* Do not advertise SPP A-MSDU support if not using CCMP/GCMP */
 	if (full_config && bss->spp_amsdu &&
@@ -1654,6 +1707,68 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 
 	if (!hostapd_is_beacon_tx_rate_preamble_valid(conf, bss))
 		return -1;
+
+#ifdef CONFIG_IEEE80211BE
+
+	if (bss->eht_phy_capab_mask) {
+		if (!conf->ieee80211be || bss->disable_11be) {
+			u32 mask = bss->eht_phy_capab_mask;
+
+			os_memset(&bss->eht_phy_capab, 0,
+				  sizeof(bss->eht_phy_capab));
+			bss->eht_phy_capab_mask = 0;
+			wpa_printf(MSG_ERROR,
+				   "BSS EHT capability overrides (mask=0x%x) rejected: "
+				   "IEEE 802.11be not allowed",
+				   mask);
+			return -1;
+		}
+	}
+
+	if (bss->eht_phy_capab.eht_bfme_ss_80 > 7) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid bss_eht_bfme_ss_80=%u (valid range 0..7)",
+			   bss->eht_phy_capab.eht_bfme_ss_80);
+		return -1;
+	}
+
+	if (bss->eht_phy_capab.eht_bfme_ss_160 > 7) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid bss_eht_bfme_ss_160=%u (valid range 0..7)",
+			   bss->eht_phy_capab.eht_bfme_ss_160);
+		return -1;
+	}
+
+	if (bss->eht_phy_capab.eht_bfme_ss_320 > 7) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid bss_eht_bfme_ss_320=%u (valid range 0..7)",
+			   bss->eht_phy_capab.eht_bfme_ss_320);
+		return -1;
+	}
+
+	if (!bss->eht_phy_capab.mu_beamformer && bss->eht_phy_capab.eht_mu_bfmr_mask) {
+		wpa_printf(MSG_ERROR,
+			   "bss_eht_mu_bfmr set but MU beamformer capability is not enabled");
+		return -1;
+	}
+
+	if (!bss->eht_phy_capab.non_ofdma_ulmumimo_80mhz &&
+	    !bss->eht_phy_capab.non_ofdma_ulmumimo_160mhz &&
+	    !bss->eht_phy_capab.non_ofdma_ulmumimo_320mhz &&
+	    bss->eht_phy_capab.eht_mu_mimo_mask) {
+		wpa_printf(MSG_ERROR,
+			   "bss_eht_mu_mimo set but UL MU-MIMO capability is not enabled");
+		return -1;
+	}
+
+	if (bss->eht_ltf &&
+	    !(conf->ieee80211be && !bss->disable_11be)) {
+		wpa_printf(MSG_ERROR,
+			   "Selective EHT LTF rejected: EHT not allowed in current mode");
+		bss->eht_ltf = 0;
+		return -1;
+	}
+#endif /* CONFIG_IEEE80211BE */
 
 	return 0;
 }
@@ -1954,11 +2069,19 @@ bool hostapd_is_beacon_tx_rate_preamble_valid(const struct hostapd_config *iconf
 			wpa_printf(MSG_ERROR,
 				   "HE rate is configured for beacon_rate, but 11ax is disabled");
 			return false;
-	} else if (bss->rate_type == BEACON_RATE_EHT &&
-		   !(iconf->ieee80211be && !bss->disable_11be)) {
+	} else if (bss->rate_type == BEACON_RATE_EHT) {
+		/* EHT preamble requires 11be enabled */
+		if (!(iconf->ieee80211be && !bss->disable_11be)) {
 			wpa_printf(MSG_ERROR,
 				   "EHT rate is configured for beacon_rate, but 11be is disabled");
 			return false;
+		}
+		/* Disallow EHT MCS 15 when enable_mcs15 is disabled */
+		if (!iconf->enable_mcs15 && bss->beacon_rate == 15) {
+			wpa_printf(MSG_ERROR,
+				   "EHT MCS 15 is configured for beacon_rate, but enable_mcs15 is disabled");
+			return false;
+		}
 	}
 
 	return true;

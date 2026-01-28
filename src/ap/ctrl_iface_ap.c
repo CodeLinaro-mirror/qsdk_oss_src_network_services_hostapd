@@ -28,6 +28,7 @@
 #include "wnm_ap.h"
 #include "neighbor_db.h"
 #include "../drivers/driver_nl80211.h"
+#include "beacon.h"
 
 static const char * hw_mode_str(enum hostapd_hw_mode mode)
 {
@@ -162,6 +163,7 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 	int ret;
 	int len = 0;
 	unsigned long long rx_error;
+	int rx_mgmt_snr, rx_data_snr;
 
 	if (hostapd_drv_read_sta_data(hapd, &data, sta->addr) < 0)
 		return 0;
@@ -169,16 +171,18 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 	rx_error = (unsigned long long)data.pn_errors +
 		   (unsigned long long)data.mic_errors +
 		   (unsigned long long)data.decrypt_errors;
+	rx_mgmt_snr = data.mgmt_signal - hapd->iface->lowest_nf;
+	rx_data_snr = data.signal - hapd->iface->lowest_nf;
 	ret = os_snprintf(buf, buflen, "rx_packets=%lu\ntx_packets=%lu\n"
 			  "rx_bytes=%llu\ntx_bytes=%llu\ninactive_msec=%lu\n"
 			  "signal=%d\ntx_failed=%lu\nrx_pn_errors=%u\n"
 			  "rx_mic_errors=%u\nrx_decrypt_errors=%u\nrx_errors=%llu\n"
-			  "mgmt_signal=%d\n",
+			  "mgmt_signal=%d\nrx_data_snr=%d\nrx_mgmt_snr=%d\n",
 			  data.rx_packets, data.tx_packets,
 			  data.rx_bytes, data.tx_bytes, data.inactive_msec,
 			  data.signal, data.tx_retry_failed, data.pn_errors,
 			  data.mic_errors, data.decrypt_errors,
-			  rx_error, data.mgmt_signal);
+			  rx_error, data.mgmt_signal, rx_data_snr, rx_mgmt_snr);
 	if (os_snprintf_error(buflen, ret))
 		return 0;
 	len += ret;
@@ -636,6 +640,20 @@ static int hostapd_ctrl_iface_sta_mib(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_IEEE80211AX */
 
+#ifdef CONFIG_IEEE80211BN
+	if ((sta->flags & WLAN_STA_UHR) && sta->uhr_capab) {
+		res = os_snprintf(buf + len, buflen - len, "uhr_capab=");
+		if (!os_snprintf_error(buflen - len, res))
+			len += res;
+		len += wpa_snprintf_hex(buf + len, buflen - len,
+					(const u8 *) sta->uhr_capab,
+					sta->uhr_capab_len);
+		res = os_snprintf(buf + len, buflen - len, "\n");
+		if (!os_snprintf_error(buflen - len, res))
+			len += res;
+	}
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef CONFIG_IEEE80211BE
 	if ((sta->flags & WLAN_STA_EHT) && sta->eht_capab) {
 		res = os_snprintf(buf + len, buflen - len, "eht_capab=");
@@ -906,7 +924,7 @@ static int p2p_manager_disconnect(struct hostapd_data *hapd, u16 stype,
 	*pos++ = minor_reason_code;
 
 	ret = hostapd_drv_send_mlme(hapd, mgmt, pos - (u8 *) mgmt, 0, NULL, 0,
-				    0);
+				    0, 0, 0);
 	os_free(mgmt);
 
 	return ret < 0 ? -1 : 0;
@@ -949,7 +967,7 @@ int hostapd_ctrl_iface_deauthenticate(struct hostapd_data *hapd,
 		if (hostapd_drv_send_mlme(hapd, (u8 *) &mgmt,
 					  IEEE80211_HDRLEN +
 					  sizeof(mgmt.u.deauth),
-					  0, NULL, 0, !encrypt) < 0)
+					  0, NULL, 0, !encrypt, 0, 0) < 0)
 			return -1;
 		return 0;
 	}
@@ -1014,7 +1032,7 @@ int hostapd_ctrl_iface_disassociate(struct hostapd_data *hapd,
 		if (hostapd_drv_send_mlme(hapd, (u8 *) &mgmt,
 					  IEEE80211_HDRLEN +
 					  sizeof(mgmt.u.deauth),
-					  0, NULL, 0, !encrypt) < 0)
+					  0, NULL, 0, !encrypt, 0, 0) < 0)
 			return -1;
 		return 0;
 	}
@@ -1181,15 +1199,12 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 			  iface->conf->channel,
 			  iface->conf->enable_edmg,
 			  iface->conf->edmg_channel,
-			  iface->conf->ieee80211n && !hapd->conf->disable_11n ?
+			  hostapd_is_ht_enabled(hapd) ?
 			  iface->conf->secondary_channel : 0,
-			  iface->conf->ieee80211n && !hapd->conf->disable_11n,
-			  iface->conf->ieee80211ac &&
-			  !hapd->conf->disable_11ac,
-			  iface->conf->ieee80211ax &&
-			  !hapd->conf->disable_11ax,
-			  iface->conf->ieee80211be &&
-			  !hapd->conf->disable_11be,
+			  hostapd_is_ht_enabled(hapd),
+			  hostapd_is_vht_enabled(hapd),
+			  hostapd_is_he_enabled(hapd),
+			  hostapd_is_eht_enabled(hapd),
 			  iface->conf->beacon_int,
 			  hapd->conf->dtim_period);
 	if (os_snprintf_error(buflen - len, ret))
@@ -1197,7 +1212,7 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 	len += ret;
 
 #ifdef CONFIG_IEEE80211BE
-	if (iface->conf->ieee80211be && !hapd->conf->disable_11be) {
+	if (hostapd_is_eht_enabled(hapd)) {
 		ret = os_snprintf(buf + len, buflen - len,
 				  "eht_oper_chwidth=%d\n"
 				  "eht_oper_centr_freq_seg0_idx=%d\n",
@@ -1286,7 +1301,7 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211AX
-	if (iface->conf->ieee80211ax && !hapd->conf->disable_11ax) {
+	if (hostapd_is_he_enabled(hapd)) {
 		ret = os_snprintf(buf + len, buflen - len,
 				  "he_oper_chwidth=%d\n"
 				  "he_oper_centr_freq_seg0_idx=%d\n"
@@ -1333,7 +1348,7 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 	}
 #endif /* CONFIG_IEEE80211AX */
 
-	if (iface->conf->ieee80211ac && !hapd->conf->disable_11ac) {
+	if (hostapd_is_vht_enabled(hapd)) {
 		ret = os_snprintf(buf + len, buflen - len,
 				  "vht_oper_chwidth=%d\n"
 				  "vht_oper_centr_freq_seg0_idx=%d\n"
@@ -1348,7 +1363,7 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 		len += ret;
 	}
 
-	if (iface->conf->ieee80211ac && !hapd->conf->disable_11ac && mode) {
+	if (hostapd_is_vht_enabled(hapd) && mode) {
 		u16 rxmap = WPA_GET_LE16(&mode->vht_mcs_set[0]);
 		u16 txmap = WPA_GET_LE16(&mode->vht_mcs_set[4]);
 
@@ -1375,7 +1390,7 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 		}
 	}
 
-	if (iface->conf->ieee80211n && !hapd->conf->disable_11n) {
+	if (hostapd_is_ht_enabled(hapd)) {
 		ret = os_snprintf(buf + len, buflen - len,
 				  "ht_caps_info=%04x\n",
 				  hapd->iconf->ht_capab);
@@ -1384,7 +1399,7 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 		len += ret;
 	}
 #ifdef CONFIG_CTRL_IFACE_MIB
-	if (iface->conf->ieee80211n && !hapd->conf->disable_11n && mode) {
+	if (hostapd_is_ht_enabled(hapd) && mode) {
 		len = hostapd_write_ht_mcs_bitmask(buf, buflen, len,
 						   mode->mcs_set);
 	}
@@ -1470,7 +1485,7 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 			if (os_snprintf_error(buflen - len, ret))
 				return len;
 			len += ret;
-			for (j = 0; bss->conf->supported_rates[j] >= 0; j++) {
+			for (j = 0; bss->conf->supported_rates[j] > 0; j++) {
 				ret = os_snprintf(buf + len, buflen - len, "%s%d",
 						  j ? " " : "",
 						  bss->conf->supported_rates[j]);
@@ -1491,7 +1506,7 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 			if (os_snprintf_error(buflen - len, ret))
 				return len;
 			len += ret;
-			for (j = 0; bss->conf->basic_rates[j] >= 0; j++) {
+			for (j = 0; bss->conf->basic_rates[j] > 0; j++) {
 				ret = os_snprintf(buf + len, buflen - len, "%s%d",
 						  j ? " " : "",
 						  bss->conf->basic_rates[j]);
@@ -1610,6 +1625,9 @@ int hostapd_parse_freq_params(const char *pos,
 	SET_FREQ_PARAM(punct_bitmap);
 	SET_FREQ_PARAM(bandwidth_device);
 	SET_FREQ_PARAM(center_freq_device);
+#ifdef CONFIG_QCN_EXTN
+	SET_FREQ_PARAM(skip_cac);
+#endif
 	params->ht_enabled = !!os_strstr(pos, " ht");
 	params->vht_enabled = !!os_strstr(pos, " vht");
 	params->eht_enabled = !!os_strstr(pos, " eht");
@@ -1697,7 +1715,8 @@ static int hostapd_ctrl_check_freq_params(struct hostapd_iface *iface,
 		}
 	} else { /* Non-6 GHz channel */
 		/* An EHT STA is also an HE STA as defined in
-		 * IEEE P802.11be/D5.0, 4.3.16a. */
+		 * IEEE Std 802.11be-2024, 4.3.16a (Extremely high throughput
+		 * (EHT) STA). */
 		if (params->he_enabled || params->eht_enabled) {
 			params->he_enabled = 1;
 			/* An HE STA is also a VHT STA if operating in the 5 GHz
@@ -2005,7 +2024,13 @@ int hostapd_parse_csa_settings(struct hostapd_iface *iface,
 
 int hostapd_ctrl_iface_stop_ap(struct hostapd_data *hapd)
 {
-	return hostapd_drv_stop_ap(hapd);
+	int ret;
+
+	ret = hostapd_drv_stop_ap(hapd);
+	if (ret)
+		return ret;
+
+	return ieee802_11_update_beacon_mbssid(hapd);
 }
 
 

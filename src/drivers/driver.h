@@ -431,6 +431,7 @@ struct hostapd_channel_data {
 
 #define HE_MAC_CAPAB_0		0
 #define HE_MAC_CAPAB_2		2
+#define HE_MAC_CAPAB_3		3
 #define HE_MAX_MAC_CAPAB_SIZE	6
 #define HE_MAX_PHY_CAPAB_SIZE	11
 #define HE_MAX_MCS_CAPAB_SIZE	12
@@ -455,6 +456,13 @@ struct eht_capabilities {
 	u8 phy_cap[EHT_PHY_CAPAB_LEN];
 	u8 mcs[EHT_MCS_NSS_CAPAB_LEN];
 	u8 ppet[EHT_PPE_THRESH_CAPAB_LEN];
+};
+
+/* struct uhr_capabilities - IEEE 802.11bn UHR capabilities */
+struct uhr_capabilities {
+	bool uhr_supported;
+	u8 mac_cap[UHR_MAC_CAPAB_LEN];
+	u8 phy_cap[UHR_PHY_CAPAB_LEN];
 };
 
 #define HOSTAPD_MODE_FLAG_HT_INFO_KNOWN BIT(0)
@@ -528,6 +536,10 @@ struct hostapd_hw_modes {
 	 */
 	struct hostapd_channel_data *channels;
 
+#ifdef CONFIG_QCN_EXTN
+	struct hostapd_hw_modes_extn mode_extn;
+#endif
+
 	/**
 	 * channels_6ghz - Structure to hold 6 GHz channel information
 	 */
@@ -585,6 +597,11 @@ struct hostapd_hw_modes {
 	 * eht_capab - EHT (IEEE 802.11be) capabilities
 	 */
 	struct eht_capabilities eht_capab[IEEE80211_MODE_NUM];
+
+	/**
+	 * uhr_capab - UHR (IEEE 802.11bn) capabilities
+	 */
+	struct uhr_capabilities uhr_capab[IEEE80211_MODE_NUM];
 
 };
 
@@ -1160,6 +1177,11 @@ struct hostapd_freq_params {
 	bool eht_enabled;
 
 	/**
+	 * uhr_enabled - Whether UHR is enabled
+	 */
+	bool uhr_enabled;
+
+	/**
 	 * punct_bitmap - Preamble puncturing bitmap
 	 * Each bit corresponds to a 20 MHz subchannel, the lowest bit for the
 	 * channel with the lowest frequency. A bit set to 1 indicates that the
@@ -1194,6 +1216,12 @@ struct hostapd_freq_params {
 	 * one edge of the operating bandwidth.
 	 */
 	int center_freq_device;
+#ifdef CONFIG_QCN_EXTN
+	/**
+	 * skip_cac - Indicates whether Channel Availability Check (CAC) should be skipped.
+	 */
+	bool skip_cac;
+#endif
 };
 
 /**
@@ -1452,6 +1480,11 @@ struct wpa_driver_associate_params {
 	 * mgmt_frame_protection - IEEE 802.11w management frame protection
 	 */
 	enum mfp_options mgmt_frame_protection;
+
+	/**
+	 * control_frame_protection - IEEE control frame protection
+	 */
+	enum cfp_options control_frame_protection;
 
 	/**
 	 * passphrase - RSN passphrase for PSK
@@ -1964,6 +1997,18 @@ struct wpa_driver_ap_params {
 	unsigned int beacon_rate;
 
 	/**
+	 * eht_ltf: EHT LTF size for EHT beacon rate (NL80211_TXRATE_EHT_LTF)
+	 *
+	 * Driver_nl80211 will set NL80211_TXRATE_EHT_LTF when:
+	 * - rate_type == BEACON_RATE_EHT, and
+	 * - eht_ltf >= 0
+	 *
+	 * Value follows nl80211 EHT LTF encoding (NL80211_RATE_INFO_EHT_GI* /
+	 * kernel enum values for NL80211_TXRATE_EHT_LTF).
+	 */
+	int eht_ltf;
+
+	/**
 	 * beacon_rate_type: Beacon data rate type (legacy/HT/VHT/HE)
 	 */
 	enum beacon_rate_type rate_type;
@@ -2332,6 +2377,10 @@ struct wpa_driver_ap_params {
 	 */
 	struct wpa_driver_ap_ttlm_params ttlm_params;
 
+	/**
+	 * is_cfp_enabled - flag to indicate whether control frame protection is enabled.
+	 */
+	bool is_cfp_enabled;
 };
 
 struct wpa_driver_mesh_bss_params {
@@ -2846,6 +2895,12 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAG2_MLD_LINK_REMOVAL_OFFLOAD 0x0000000100000000ULL
 /** Driver supports TTLM beacon offload */
 #define WPA_DRIVER_FLAGS2_TTLM_BEACON_OFFLOAD  0x0000000200000000ULL
+/** Driver supports CIGTK */
+#define WPA_DRIVER_FLAGS2_CIGTK		       0x0000000400000000ULL
+/** Driver support CIP Padding Support */
+#define WPA_DRIVER_FLAGS2_CIP_PADDING_SUPPORT  0x0000000800000000ULL
+/** Driver supports sending CSA in the current channel, when new/target channel is DFS*/
+#define WPA_DRIVER_FLAGS2_DFS_CHANNEL_SWITCH   0x0000001000000000ULL
 	u64 flags2;
 
 #define FULL_AP_CLIENT_STATE_SUPP(drv_flags) \
@@ -3091,6 +3146,8 @@ struct hostapd_sta_add_params {
 	const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab;
 	const struct ieee80211_eht_capabilities *eht_capab;
 	size_t eht_capab_len;
+	const struct ieee80211_uhr_capabilities *uhr_capab;
+	size_t uhr_capab_len;
 	u32 flags; /* bitmask of WPA_STA_* flags */
 	u32 flags_mask; /* unset bits in flags */
 #ifdef CONFIG_MESH
@@ -3112,6 +3169,7 @@ struct hostapd_sta_add_params {
 	s8 mld_link_id;
 	const u8 *mld_link_addr;
 	u16 eml_cap;
+	u8 control_mic_pad;
 };
 
 struct ml_reconf_req {
@@ -3170,6 +3228,7 @@ struct wpa_bss_params {
 #define WPA_STA_ASSOCIATED BIT(6)
 #define WPA_STA_SPP_AMSDU BIT(7)
 #define WPA_STA_FT_AUTH BIT(8)
+#define WPA_STA_CFP BIT(9)
 
 enum tdls_oper {
 	TDLS_DISCOVERY_REQ,
@@ -4056,7 +4115,7 @@ struct wpa_driver_ops {
 	 * Returns: 0 on success, -1 on failure
 	 */
 	int (*send_mlme)(void *priv, const u8 *data, size_t data_len,
-			 int noack, unsigned int freq, const u16 *csa_offs,
+			 int noack, unsigned int freq, u16 rate, u8 rate_type, const u16 *csa_offs,
 			 size_t csa_offs_len, int no_encrypt,
 			 unsigned int wait, int link_id);
 
@@ -4295,7 +4354,7 @@ struct wpa_driver_ops {
 	 * unicast keys (i.e., addr != %NULL).
 	 */
 	int (*get_seqnum)(const char *ifname, void *priv, const u8 *addr,
-			  int idx, int link_id, u8 *seq);
+			  int idx, int link_id, u8 *seq, int get_cigtk_seq_num);
 
 	/**
 	 * flush - Flush all association stations (AP only)
@@ -5743,10 +5802,12 @@ struct wpa_driver_ops {
 	 * @type: Interface type for which to get MLD capabilities
 	 * @eml_capa: EML capabilities
 	 * @mld_capa_and_ops: MLD Capabilities and Operations
+	 * @ext_mld_capa_and_ops: Extension MLD Capabilities and Operations
 	 * Returns: 0 on success or -1 on failure
 	 */
 	int (*get_mld_capab)(void *priv, enum wpa_driver_if_type type,
-			     u16 *eml_capa, u16 *mld_capa_and_ops);
+			     u16 *eml_capa, u16 *mld_capa_and_ops,
+			     u16 *ext_mld_capa_and_ops);
 
 	/**
 	 * p2p_lo_start - Start offloading P2P listen to device
@@ -6179,6 +6240,18 @@ struct wpa_driver_ops {
 	 * Return: Value of set_beacon of driver interface data
 	 */
 	bool (*read_link_set_beacon)(void *priv, u8 mld_link_id);
+
+#ifdef CONFIG_QCN_EXTN
+	/**
+	 * dcs_config - Send the DCS config params to driver in order to configure
+	 * at firmware.
+	 * @priv: Private driver interface data
+	 * @link_id: Link ID of the specified link; -1 for non-MLD
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*dcs_config)(void *priv, u8 link_id,
+			  struct driver_dcs_config *params);
+#endif
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211AX
@@ -7726,7 +7799,7 @@ union wpa_event_data {
 	 * @freq: Frequency of the channel in MHz
 	 * @link_id: If >= 0, Link ID of the MLO link
      * @is_dfs_event_on_curr_hw: Set to true, if NL80211_CMD_RADAR_DETECT
-                                is received on the current hardware
+				is received on the current hardware
 	 */
 	struct dfs_event {
 		int freq;
@@ -7740,7 +7813,7 @@ union wpa_event_data {
 		bool is_background;
 		enum chan_width chan_width_device;
 		int cf_device;
-        bool is_dfs_event_on_curr_hw;
+	bool is_dfs_event_on_curr_hw;
 	} dfs_event;
 
 	/**

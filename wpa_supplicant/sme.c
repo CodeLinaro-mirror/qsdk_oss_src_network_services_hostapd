@@ -32,14 +32,22 @@
 #include "scan.h"
 #include "sme.h"
 #include "hs20_supplicant.h"
+#include "../qcn_extns/cmn.h"
 
 #define SME_AUTH_TIMEOUT 5
 #define SME_ASSOC_TIMEOUT 5
+#define CIP_CAPAB_LEN 4
+
+#ifdef CONFIG_QCN_EXTN
+/* Pre-connect timeout for Independent Repeater flow */
+#define SME_PRE_CONNECT_TIMEOUT 5
+#endif
 
 static void sme_auth_timer(void *eloop_ctx, void *timeout_ctx);
 static void sme_assoc_timer(void *eloop_ctx, void *timeout_ctx);
 static void sme_obss_scan_timeout(void *eloop_ctx, void *timeout_ctx);
 static void sme_stop_sa_query(struct wpa_supplicant *wpa_s);
+static struct wpabuf *cip_build_assoc_req(u8 cip_element_id_ext, u8 padding_delay);
 
 
 #ifdef CONFIG_SAE
@@ -1286,6 +1294,33 @@ static void sme_auth_start_cb(struct wpa_radio_work *work, int deinit)
 	wpas_notify_auth_changed(wpa_s);
 }
 
+#ifdef CONFIG_QCN_EXTN
+/**
+ * sme_schedule_auth_radio_work - Schedule SME authentication radio work
+ * @wpa_s: Pointer to wpa_supplicant interface
+ * @cwork: Cached connect work describing target BSS and SSID
+ *
+ * Cancel any pending pre-connect timeout, schedule a new sme-connect
+ * radio work item for the cached BSS, and clear the pre_connect_cnt
+ * counter used by repeater pre-connection flows.
+ */
+void sme_schedule_auth_radio_work(struct wpa_supplicant *wpa_s,
+				  struct wpa_connect_work *cwork)
+{
+	eloop_cancel_timeout(sme_pre_connect_timer_extn, wpa_s, NULL);
+
+	if (!cwork || !cwork->bss) {
+		wpa_msg(wpa_s, MSG_ERROR, "SME: schedule_auth: NULL cwork/bss; abort\n");
+		return;
+	}
+	if (radio_add_work(wpa_s, cwork->bss->freq, "sme-connect", 1, sme_auth_start_cb, cwork) < 0) {
+		wpa_msg(wpa_s, MSG_ERROR, "SME: radio_add_work failed; free\n");
+		wpas_connect_work_free(cwork);
+	}
+
+	wpa_s->pre_connect_cnt = 0;
+}
+#endif
 
 void sme_authenticate(struct wpa_supplicant *wpa_s,
 		      struct wpa_bss *bss, struct wpa_ssid *ssid)
@@ -1330,6 +1365,9 @@ void sme_authenticate(struct wpa_supplicant *wpa_s,
 	cwork->bss = bss;
 	cwork->ssid = ssid;
 	cwork->sme = 1;
+#ifdef CONFIG_QCN_EXTN
+	wpa_s->cache_cwork = cwork;
+#endif
 
 #ifdef CONFIG_SAE
 	wpa_s->sme.sae.state = SAE_NOTHING;
@@ -1337,9 +1375,23 @@ void sme_authenticate(struct wpa_supplicant *wpa_s,
 	wpa_s->sme.sae_group_index = 0;
 #endif /* CONFIG_SAE */
 
-	if (radio_add_work(wpa_s, bss->freq, "sme-connect", 1,
-			   sme_auth_start_cb, cwork) < 0)
-		wpas_connect_work_free(cwork);
+#ifdef CONFIG_QCN_EXTN
+	if (wpa_s->conf->ind_rptr) {
+		if (wpa_s->conf->rptr_mgr_comm_mode == RPTR_MGR_MODE_COMM_SOCK)
+			wpa_supp_pre_connect_state_handle_extn(wpa_s, bss);
+		else
+			wpa_supplicant_set_state(wpa_s, WPA_PRE_CONNECT);
+
+		eloop_register_timeout(SME_PRE_CONNECT_TIMEOUT, 0, sme_pre_connect_timer_extn,
+				       wpa_s, NULL);
+	} else {
+#endif
+		if (radio_add_work(wpa_s, bss->freq, "sme-connect", 1,
+				   sme_auth_start_cb, cwork) < 0)
+			wpas_connect_work_free(cwork);
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif
 }
 
 
@@ -1699,7 +1751,7 @@ static int sme_sae_auth(struct wpa_supplicant *wpa_s, u16 auth_transaction,
 	wpa_dbg(wpa_s, MSG_DEBUG, "SME: SAE authentication transaction %u "
 		"status code %u", auth_transaction, status_code);
 
-	if (auth_transaction == 1 &&
+	if (auth_transaction == WLAN_AUTH_TR_SEQ_SAE_COMMIT &&
 	    status_code == WLAN_STATUS_ANTI_CLOGGING_TOKEN_REQ &&
 	    wpa_s->sme.sae.state == SAE_COMMITTED &&
 	    ((external && wpa_s->sme.ext_auth_wpa_ssid) ||
@@ -1808,7 +1860,7 @@ static int sme_sae_auth(struct wpa_supplicant *wpa_s, u16 auth_transaction,
 		return 0;
 	}
 
-	if (auth_transaction == 1 &&
+	if (auth_transaction == WLAN_AUTH_TR_SEQ_SAE_COMMIT &&
 	    status_code == WLAN_STATUS_FINITE_CYCLIC_GROUP_NOT_SUPPORTED &&
 	    wpa_s->sme.sae.state == SAE_COMMITTED &&
 	    ((external && wpa_s->sme.ext_auth_wpa_ssid) ||
@@ -1836,7 +1888,7 @@ static int sme_sae_auth(struct wpa_supplicant *wpa_s, u16 auth_transaction,
 		return 0;
 	}
 
-	if (auth_transaction == 1 &&
+	if (auth_transaction == WLAN_AUTH_TR_SEQ_SAE_COMMIT &&
 	    status_code == WLAN_STATUS_UNKNOWN_PASSWORD_IDENTIFIER) {
 		const u8 *bssid = sa ? sa : wpa_s->pending_bssid;
 		struct wpa_ssid *ssid = wpa_s->current_ssid;
@@ -1875,7 +1927,7 @@ static int sme_sae_auth(struct wpa_supplicant *wpa_s, u16 auth_transaction,
 		return -2;
 	}
 
-	if (auth_transaction == 1) {
+	if (auth_transaction == WLAN_AUTH_TR_SEQ_SAE_COMMIT) {
 		u16 res;
 
 		groups = wpa_s->conf->sae_groups;
@@ -1949,7 +2001,7 @@ static int sme_sae_auth(struct wpa_supplicant *wpa_s, u16 auth_transaction,
 			sme_external_auth_send_sae_confirm(wpa_s, sa);
 		}
 		return 0;
-	} else if (auth_transaction == 2) {
+	} else if (auth_transaction == WLAN_AUTH_TR_SEQ_SAE_CONFIRM) {
 		if (status_code != WLAN_STATUS_SUCCESS)
 			return -1;
 		wpa_dbg(wpa_s, MSG_DEBUG, "SME SAE confirm");
@@ -2104,6 +2156,11 @@ void sme_event_auth(struct wpa_supplicant *wpa_s, union wpa_event_data *data)
 				   data->auth.ies_len, 0, data->auth.peer,
 				   &ie_offset);
 		if (res < 0) {
+			if (data->auth.auth_transaction ==
+			    WLAN_AUTH_TR_SEQ_SAE_CONFIRM &&
+			    data->auth.status_code ==
+			    WLAN_STATUS_CHALLENGE_FAIL)
+				wpas_notify_sae_password_mismatch(wpa_s);
 			wpas_connection_failed(wpa_s, wpa_s->pending_bssid,
 					       NULL);
 			wpa_supplicant_set_state(wpa_s, WPA_DISCONNECTED);
@@ -2586,6 +2643,33 @@ mscs_fail:
 		wpa_s->sme.assoc_req_ie_len += 2 + 4 + 1;
 	}
 
+	if ((ssid->control_frame_protection &&
+	    (wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK) &&
+	    (wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_CIP_PADDING_SUPPORT) &&
+	    (ssid->cip_padding_delay > 0))) {
+
+		struct wpabuf *cip_ie = cip_build_assoc_req(
+					WLAN_EID_EXT_CIP_CAPAB,
+					ssid->cip_padding_delay);
+
+		if (!cip_ie) {
+			wpa_printf(MSG_ERROR, "CIP: Failed to build IE");
+			return;
+		}
+
+		if (wpa_s->sme.assoc_req_ie_len + wpabuf_len(cip_ie) >
+		     sizeof(wpa_s->sme.assoc_req_ie)) {
+			wpa_printf(MSG_ERROR, "CIP: Not enough buffer room");
+			wpabuf_free(cip_ie);
+			return;
+		}
+
+		os_memcpy(wpa_s->sme.assoc_req_ie + wpa_s->sme.assoc_req_ie_len,
+			  wpabuf_head(cip_ie), wpabuf_len(cip_ie));
+		wpa_s->sme.assoc_req_ie_len += wpabuf_len(cip_ie);
+		wpabuf_free(cip_ie);
+	}
+
 	params.bssid = bssid;
 	params.ssid = wpa_s->sme.ssid;
 	params.ssid_len = wpa_s->sme.ssid_len;
@@ -2712,6 +2796,10 @@ mscs_fail:
 		" (SSID='%s' freq=%d MHz)", MAC2STR(params.bssid),
 		params.ssid ? wpa_ssid_txt(params.ssid, params.ssid_len) : "",
 		params.freq.freq);
+
+	if ((ssid->control_frame_protection
+	    && (wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK)))
+		params.control_frame_protection = ssid->control_frame_protection;
 
 	wpa_supplicant_set_state(wpa_s, WPA_ASSOCIATING);
 
@@ -2847,6 +2935,21 @@ int sme_update_ft_ies(struct wpa_supplicant *wpa_s, const u8 *md,
 	return 0;
 }
 
+static struct wpabuf *cip_build_assoc_req(u8 cip_element_id_ext, u8 padding_delay)
+{
+	struct wpabuf *ie;
+
+	ie = wpabuf_alloc(CIP_CAPAB_LEN);
+
+	if (!ie)
+		return NULL;
+	wpabuf_put_u8(ie, WLAN_EID_EXTENSION);
+	wpabuf_put_u8(ie, 1 + 1);
+	wpabuf_put_u8(ie, cip_element_id_ext);
+	wpabuf_put_u8(ie, padding_delay);
+
+	return ie;
+}
 
 static void sme_deauth(struct wpa_supplicant *wpa_s, const u8 **link_bssids)
 {
@@ -3143,6 +3246,10 @@ void sme_deinit(struct wpa_supplicant *wpa_s)
 	eloop_cancel_timeout(sme_auth_timer, wpa_s, NULL);
 	eloop_cancel_timeout(sme_obss_scan_timeout, wpa_s, NULL);
 	eloop_cancel_timeout(sme_assoc_comeback_timer, wpa_s, NULL);
+#ifdef CONFIG_QCN_EXTN
+	eloop_cancel_timeout(sme_pre_connect_timer_extn, wpa_s, NULL);
+	wpa_s->pre_connect_cnt = 0;
+#endif
 }
 
 

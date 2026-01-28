@@ -48,6 +48,10 @@
 #define DEFAULT_EXTENDED_KEY_ID 0
 #define DEFAULT_SCAN_RES_VALID_FOR_CONNECT 5
 #define DEFAULT_MLD_CONNECT_BAND_PREF MLD_CONNECT_BAND_PREF_AUTO
+#ifdef CONFIG_QCN_EXTN
+#define RPTR_MGR_MODE_COMM_UBUS 1
+#define RPTR_MGR_MODE_COMM_SOCK 2
+#endif
 
 #include "config_ssid.h"
 #include "wps/wps.h"
@@ -481,6 +485,7 @@ struct wpa_dev_ik {
 #define CFG_CHANGED_DISABLE_BTM BIT(19)
 #define CFG_CHANGED_BGSCAN BIT(20)
 #define CFG_CHANGED_FT_PREPEND_PMKID BIT(21)
+#define CFG_CHANGED_P2P_DISABLED BIT(22)
 
 /**
  * struct wpa_config - wpa_supplicant configuration data
@@ -1905,15 +1910,6 @@ struct wpa_config {
 	struct wpabuf *wfa_gen_capa_supp;
 
 	/**
-	 * wfa_gen_capa_cert: Certified Generations (hexdump of a bit field)
-	 *
-	 * This has the same format as wfa_gen_capa_supp. This is an optional
-	 * field, but if included, shall have the same length as
-	 * wfa_gen_capa_supp.
-	 */
-	struct wpabuf *wfa_gen_capa_cert;
-
-	/**
 	 * disable_op_classes_80_80_mhz - Disable advertisement of 80+80 MHz
 	 * channel capabilities in the Supported Operating Classes element
 	 *
@@ -1931,6 +1927,36 @@ struct wpa_config {
 	 * 1: Prefer ranging responder role
 	 */
 	int pr_preferred_role;
+
+ #ifdef CONFIG_QCN_EXTN
+	/* "athnewind" in config: Independent Repeater enable/disable flag
+	 *
+	 * Controls whether AP VAPs are brought up independently of STA VAPs.
+	 * Values:
+	 *  0 - Dependent (AP VAPs come up after STA connects to Root AP)
+	 *  1 - Independent (AP VAPs come up regardless of STA; channel sync after
+	 *      STA connects)
+	 */
+	int ind_rptr;
+
+	/* "rptr_mgr_mode" in config: Repeater manager mode
+	 *
+	 * Selects the management interface used by the repeater manager.
+	 * Values:
+	 *  1 - UBUS mode
+	 *  2 - Socket mode
+	 */
+	int rptr_mgr_comm_mode;
+
+	/**
+	 * channel: Channel to differentiate between fixed and auto channel
+	 *
+	 * This is required in repeater scenarios to differentiate between
+	 * fixed and auto channels to serialize and prioritize repeater
+	 * AP ACS over repeater STA scan.
+	 */
+	int channel;
+#endif
 };
 
 

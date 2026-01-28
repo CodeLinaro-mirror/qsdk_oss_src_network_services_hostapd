@@ -1,7 +1,7 @@
 /*
  * PASN common processing
  *
- * Copyright (C) 2024, Qualcomm Innovation Center, Inc.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -35,6 +35,7 @@ void pasn_data_deinit(struct pasn_data *pasn)
 	os_free(pasn->rsnxe_ie);
 	wpabuf_free(pasn->frame);
 	os_free(pasn->pasn_groups);
+	wpabuf_free(pasn->auth1);
 	bin_clear_free(pasn, sizeof(struct pasn_data));
 }
 

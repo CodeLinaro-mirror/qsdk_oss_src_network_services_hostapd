@@ -82,6 +82,7 @@ struct wiphy_info_data {
 	unsigned int update_ft_ies_supported:1;
 	unsigned int has_key_mgmt:1;
 	unsigned int has_key_mgmt_iftype:1;
+	unsigned int support_ap_scan:1;
 };
 
 
@@ -652,6 +653,14 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 		capa->flags |= WPA_DRIVER_FLAGS_BEACON_PROTECTION;
 
 	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_CONTROL_FRAME_PROTECTION))
+		capa->flags2 |= WPA_DRIVER_FLAGS2_CIGTK;
+
+	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT))
+		capa->flags2 |= WPA_DRIVER_FLAGS2_CIP_PADDING_SUPPORT;
+
+	if (ext_feature_isset(ext_features, len,
 			      NL80211_EXT_FEATURE_EXT_KEY_ID))
 		capa->flags |= WPA_DRIVER_FLAGS_EXTENDED_KEY_ID;
 
@@ -740,8 +749,14 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 		capa->flags2 |= WPA_DRIVER_FLAG2_MLD_LINK_REMOVAL_OFFLOAD;
 
 	if (ext_feature_isset(ext_features, len,
-			      NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD))
+			      NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD)) {
 		capa->flags2 |= WPA_DRIVER_FLAGS2_TTLM_BEACON_OFFLOAD;
+		/* TODO: Add driver capability check, by default assume driver supports
+		 * CSA on DFS channel for ath12k driver by checking beacon TTLM offload
+		 * feature enabled for ath12k
+		 */
+		capa->flags2 |= WPA_DRIVER_FLAGS2_DFS_CHANNEL_SWITCH;
+	}
 }
 
 
@@ -810,6 +825,9 @@ static void wiphy_info_feature_flags(struct wiphy_info_data *info,
 
 	if (flags & NL80211_FEATURE_FULL_AP_CLIENT_STATE)
 		capa->flags |= WPA_DRIVER_FLAGS_FULL_AP_CLIENT_STATE;
+
+	if (flags & NL80211_FEATURE_AP_SCAN)
+		info->support_ap_scan = 1;
 }
 
 
@@ -913,9 +931,14 @@ static void wiphy_info_extended_capab(struct wpa_driver_nl80211_data *drv,
 				nla_get_u16(tb1[NL80211_ATTR_MLD_CAPA_AND_OPS]);
 		}
 
+		if (tb1[NL80211_ATTR_EXT_MLD_CAPA_AND_OPS])
+			capa->ext_mld_capa_and_ops =
+				nla_get_u16(tb1[NL80211_ATTR_EXT_MLD_CAPA_AND_OPS]);
+
 		wpa_printf(MSG_DEBUG,
-			   "nl80211: EML Capability: 0x%x MLD Capability: 0x%x",
-			   capa->eml_capa, capa->mld_capa_and_ops);
+			   "nl80211: EML Capability: 0x%x MLD Capability: 0x%x Extension MLD Capability: 0x%x",
+			   capa->eml_capa, capa->mld_capa_and_ops,
+			   capa->ext_mld_capa_and_ops);
 
 		drv->num_iface_capa++;
 		if (drv->num_iface_capa == NL80211_IFTYPE_MAX)
@@ -1616,6 +1639,7 @@ int wpa_driver_nl80211_capa(struct wpa_driver_nl80211_data *drv)
 	if (info.set_qos_map_supported)
 		drv->capa.flags |= WPA_DRIVER_FLAGS_QOS_MAPPING;
 	drv->have_low_prio_scan = info.have_low_prio_scan;
+	drv->support_ap_scan = info.support_ap_scan;
 
 	/*
 	 * If the driver doesn't support data TX status, we won't get TX
@@ -2040,6 +2064,7 @@ static void phy_info_iftype_copy(struct hostapd_hw_modes *mode,
 	size_t len;
 	struct he_capabilities *he_capab = &mode->he_capab[opmode];
 	struct eht_capabilities *eht_capab = &mode->eht_capab[opmode];
+	struct uhr_capabilities *uhr_capab = &mode->uhr_capab[opmode];
 
 	switch (opmode) {
 	case IEEE80211_MODE_INFRA:
@@ -2146,6 +2171,31 @@ static void phy_info_iftype_copy(struct hostapd_hw_modes *mode,
 		os_memcpy(&eht_capab->ppet,
 			  nla_data(tb[NL80211_BAND_IFTYPE_ATTR_EHT_CAP_PPE]),
 			  len);
+	}
+
+	if (!tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC] ||
+	    !tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY])
+		return;
+
+	uhr_capab->uhr_supported = true;
+
+	if (tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC] &&
+	    nla_len(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC]) >= 5 &&
+	    tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY] &&
+	    nla_len(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY]) >= 1) {
+		const u8 *pos_mac, *pos_phy;
+
+		pos_mac = nla_data(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC]);
+		len = nla_len(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC]);
+		if (len > sizeof(uhr_capab->mac_cap))
+			len = sizeof(uhr_capab->mac_cap);
+		os_memcpy(uhr_capab->mac_cap, pos_mac, len);
+
+		pos_phy = nla_data(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY]);
+		len = nla_len(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY]);
+		if (len > sizeof(uhr_capab->phy_cap))
+			len = sizeof(uhr_capab->phy_cap);
+		os_memcpy(uhr_capab->phy_cap, pos_phy, len);
 	}
 }
 

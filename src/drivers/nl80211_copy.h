@@ -668,8 +668,8 @@
  *	%NL80211_ATTR_WIPHY_FREQ_OFFSET, %NL80211_ATTR_CONTROL_PORT,
  *	%NL80211_ATTR_CONTROL_PORT_ETHERTYPE,
  *	%NL80211_ATTR_CONTROL_PORT_NO_ENCRYPT,
- *	%NL80211_ATTR_CONTROL_PORT_OVER_NL80211, %NL80211_ATTR_MAC_HINT, and
- *	%NL80211_ATTR_WIPHY_FREQ_HINT.
+ *	%NL80211_ATTR_CONTROL_PORT_OVER_NL80211, %NL80211_ATTR_MAC_HINT,
+ *	%NL80211_ATTR_WIPHY_FREQ_HINT and %NL80211_ATTR_USE_CFP
  *	If included, %NL80211_ATTR_MAC and %NL80211_ATTR_WIPHY_FREQ are
  *	restrictions on BSS selection, i.e., they effectively prevent roaming
  *	within the ESS. %NL80211_ATTR_MAC_HINT and %NL80211_ATTR_WIPHY_FREQ_HINT
@@ -2983,6 +2983,28 @@ enum nl80211_commands {
  * 	attribute containing various QoS-related parameters defined by the
  * 	nl80211_qm_policy.
  *
+ * @NL80211_ATTR_6GHZ_DEVICE_DEPLOYMENT_TYPE: Attribute denoting the 6 GHz
+ *	device deployment type.
+ *
+ * @NL80211_ATTR_CONTROL_MIC_PAD: Mic padding for control frame protection.
+ *
+ * @NL80211_ATTR_USE_CFP: Whether control frame protection is
+ *	used for the association (&enum nl80211_cfp, represented as a u32);
+ *	this attribute can be used with %NL80211_CMD_ASSOCIATE and
+ *	%NL80211_CMD_CONNECT requests.
+ *
+ * @NL80211_ATTR_CFP: Indicate whether control frame protection is
+ *      enabled for the particular vdev.
+ *
+ * @NL80211_ATTR_EXT_MLD_CAPA_AND_OPS: Extended MLD Capabilities and Operations
+ *	(u16)
+ * @NL80211_ATTR_UHR_CAPABILITY: UHR Capability information element (from
+ *	association request when used with NL80211_CMD_NEW_STATION). Can be set
+ *	only if %NL80211_STA_FLAG_WME is set.
+ *
+ * @NL80211_ATTR_BITRATE: This attribute is used with %NL80211_CMD_FRAME to
+ * 	send legacy bitrate information of management packets to userspace.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3582,6 +3604,24 @@ enum nl80211_attrs {
 	NL80211_ATTR_ADVERTISED_TTLM_EXPEC_DUR_UPDATE,
 
 	NL80211_ATTR_QOS_MGMT,
+#ifdef CONFIG_QCN_EXTN
+	NL80211_ATTR_SKIP_CAC,
+#endif
+	NL80211_ATTR_6GHZ_DEVICE_DEPLOYMENT_TYPE,
+
+	NL80211_ATTR_CONTROL_MIC_PAD,
+
+	NL80211_ATTR_USE_CFP,
+
+	NL80211_ATTR_CFP,
+
+	NL80211_ATTR_CIGTK,
+
+	NL80211_ATTR_EXT_MLD_CAPA_AND_OPS,
+
+	NL80211_ATTR_BITRATE,
+
+	NL80211_ATTR_UHR_CAPABILITY,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -3731,6 +3771,7 @@ enum nl80211_iftype {
  *	previously added station into associated state
  * @NL80211_STA_FLAG_SPP_AMSDU: station supports SPP A-MSDUs
  * @NL80211_STA_FLAG_MAX: highest station flag number currently defined
+ * @NL80211_STA_FLAG_CFP: station uses control frame protection
  * @__NL80211_STA_FLAG_AFTER_LAST: internal use
  */
 enum nl80211_sta_flags {
@@ -3744,6 +3785,7 @@ enum nl80211_sta_flags {
 	NL80211_STA_FLAG_ASSOCIATED,
 	NL80211_STA_FLAG_SPP_AMSDU,
 	NL80211_STA_FLAG_FT_AUTH,
+	NL80211_STA_FLAG_CFP,
 
 	/* keep last */
 	__NL80211_STA_FLAG_AFTER_LAST,
@@ -4302,6 +4344,10 @@ enum nl80211_mpath_info {
  *	capabilities element
  * @NL80211_BAND_IFTYPE_ATTR_EHT_CAP_PPE: EHT PPE thresholds information as
  *	defined in EHT capabilities element
+ * @NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC: UHR MAC capabilities as in UHR
+ *	capabilities element
+ * @NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY: UHR PHY capabilities as in UHR
+ *	capabilities element
  * @__NL80211_BAND_IFTYPE_ATTR_AFTER_LAST: internal use
  * @NL80211_BAND_IFTYPE_ATTR_MAX: highest band attribute currently defined
  */
@@ -4319,6 +4365,8 @@ enum nl80211_band_iftype_attr {
 	NL80211_BAND_IFTYPE_ATTR_EHT_CAP_PHY,
 	NL80211_BAND_IFTYPE_ATTR_EHT_CAP_MCS_SET,
 	NL80211_BAND_IFTYPE_ATTR_EHT_CAP_PPE,
+	NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC,
+	NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY,
 
 	/* keep last */
 	__NL80211_BAND_IFTYPE_ATTR_AFTER_LAST,
@@ -5574,6 +5622,16 @@ enum nl80211_mfp {
 	NL80211_MFP_OPTIONAL,
 };
 
+/**
+ * enum nl80211_cfp - Control frame protection state
+ * @NL80211_CFP_NO: Control frame protection not used
+ * @NL80211_CFP_REQUIRED: Control frame protection required
+ */
+enum nl80211_cfp {
+	NL80211_CFP_NO,
+	NL80211_CFP_REQUIRED,
+};
+
 enum nl80211_wpa_versions {
 	NL80211_WPA_VERSION_1 = 1 << 0,
 	NL80211_WPA_VERSION_2 = 1 << 1,
@@ -5635,6 +5693,7 @@ enum nl80211_key_attributes {
 	NL80211_KEY_DEFAULT_TYPES,
 	NL80211_KEY_MODE,
 	NL80211_KEY_DEFAULT_BEACON,
+	NL80211_KEY_DEFAULT_CONTROL,
 
 	/* keep last */
 	__NL80211_KEY_AFTER_LAST,
@@ -6785,6 +6844,12 @@ enum nl80211_feature_flags {
  * @NL80211_EXT_FEATURE_BEACON_PROTECTION_CLIENT: The driver supports Beacon
  *	protection as a client only and cannot transmit protected beacons.
  *
+ * @NL80211_EXT_FEATURE_CONTROL_FRAME_PROTECTION: The driver supports Control protection
+ *      and can receive key configuration for CIGTK using key indexes 0 and 1.
+ *
+ * @NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT: The driver supports cip padding delay
+ * 	support.
+ *
  * @NL80211_EXT_FEATURE_CONTROL_PORT_NO_PREAUTH: The driver can disable the
  *	forwarding of preauth frames over the control port. They are then
  *	handled as ordinary data frames.
@@ -6973,6 +7038,8 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_TARGET_AND_HOST_AFC_SUPPORT,
 	NL80211_EXT_FEATURE_RETAIL_AFC_SUPPORT,
 	NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD,
+	NL80211_EXT_FEATURE_CONTROL_FRAME_PROTECTION,
+	NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT,
 
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,
