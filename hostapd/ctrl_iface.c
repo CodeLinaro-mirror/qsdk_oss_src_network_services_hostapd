@@ -6226,7 +6226,7 @@ static int hostapd_ctrl_iface_link_remove(struct hostapd_data *hapd, char *cmd)
 		return -1;
 	}
 
-	return hostapd_link_remove(hapd, count, HAPD_LINK_DISABLE);
+	return hostapd_link_remove(hapd, count, HAPD_LINK_REMOVAL);
 }
 
 
