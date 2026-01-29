@@ -283,6 +283,32 @@ int hostapd_for_each_interface(struct hapd_interfaces *interfaces,
 }
 
 
+static int hostapd_for_each_iface_on_phy(struct hapd_interfaces *interfaces,
+					 const char *phy_name,
+					 int (*cb)(struct hostapd_iface *iface,
+						   void *ctx), void *ctx)
+{
+	size_t i;
+	int ret;
+
+	for (i = 0; i < interfaces->count; i++) {
+		struct hostapd_iface *iface = interfaces->iface[i];
+		const char *name;
+
+		if (!iface || !iface->num_bss || !iface->bss[0])
+			continue;
+		name = hostapd_drv_get_radio_name(iface->bss[0]);
+		if (!name || os_strcmp(name, phy_name) != 0)
+			continue;
+		ret = cb(iface, ctx);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+
 struct hostapd_data * hostapd_mbssid_get_tx_bss(struct hostapd_data *hapd)
 {
 	if (hapd->iconf->mbssid) {
@@ -4282,14 +4308,19 @@ hostapd_run_pending_repeater_afc_power_sync(struct hostapd_iface *iface,
 void hostapd_channel_list_updated(struct hostapd_iface *iface, int initiator)
 {
 	if (initiator == REGDOM_SET_BY_DRIVER) {
-		hostapd_for_each_interface(iface->interfaces,
-					   hostapd_handle_regchannel_update,
-					   NULL);
+		const char *phy_name = hostapd_drv_get_radio_name(iface->bss[0]);
+
+		if (!phy_name)
+			return;
+
+		wpa_printf(MSG_DEBUG, "Reg change event received for phy %s through %s",
+			   phy_name, iface->phy);
+		hostapd_for_each_iface_on_phy(iface->interfaces, phy_name,
+					      hostapd_handle_regchannel_update, NULL);
 #ifdef HOSTAPD
-		hostapd_for_each_interface
-				(iface->interfaces,
-				 hostapd_run_pending_repeater_afc_power_sync,
-				 NULL);
+		hostapd_for_each_iface_on_phy(iface->interfaces, phy_name,
+					      hostapd_run_pending_repeater_afc_power_sync,
+					      NULL);
 #endif
 		return;
 	}

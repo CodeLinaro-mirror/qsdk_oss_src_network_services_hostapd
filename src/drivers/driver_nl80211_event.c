@@ -6162,6 +6162,13 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 			break;
 
 		nl80211_reg_change_event(drv, tb);
+		/* All BSSes on this wiphy share drv->ctx (first_bss->hapd)
+		 * so every BSS would fire an identical wpa_supplicant_event.
+		 * Stop the BSS loop after the first to avoid duplicate
+		 * processing. */
+		if (cmd == NL80211_CMD_WIPHY_REG_CHANGE &&
+		    (drv->capa.flags & WPA_DRIVER_FLAGS_SELF_MANAGED_REGULATORY))
+			*event_handled = true;
 		break;
 	case NL80211_CMD_REG_BEACON_HINT:
 		nl80211_reg_beacon_hint_event(drv, tb);
