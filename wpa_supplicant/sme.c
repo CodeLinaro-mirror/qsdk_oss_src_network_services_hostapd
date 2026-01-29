@@ -1377,10 +1377,10 @@ void sme_authenticate(struct wpa_supplicant *wpa_s,
 
 #ifdef CONFIG_QCN_EXTN
 	if (wpa_s->conf->ind_rptr) {
-		if (wpa_s->conf->rptr_mgr_comm_mode == RPTR_MGR_MODE_COMM_SOCK)
+		if (wpa_s->conf->rptr_mgr_comm_mode == RPTR_MGR_MODE_COMM_SOCK) {
 			wpa_supp_pre_connect_state_handle_extn(wpa_s, bss);
-		else
-			wpa_supplicant_set_state(wpa_s, WPA_PRE_CONNECT);
+		}
+		wpa_supplicant_set_state(wpa_s, WPA_PRE_CONNECT);
 
 		eloop_register_timeout(SME_PRE_CONNECT_TIMEOUT, 0, sme_pre_connect_timer_extn,
 				       wpa_s, NULL);
