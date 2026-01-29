@@ -7233,6 +7233,12 @@ int process_global_event(struct nl_msg *msg, void *arg)
 
 		processed = true;
 		do_process_drv_event(bss, gnlh->cmd, tb);
+		/* All BSSes on a self-managed wiphy share the same regulatory
+		 * event handling. Stop after the first dispatch to avoid duplicate
+		 * processing of a single WIPHY_REG_CHANGE event. */
+		if (gnlh->cmd == NL80211_CMD_WIPHY_REG_CHANGE &&
+		    (drv->capa.flags & WPA_DRIVER_FLAGS_SELF_MANAGED_REGULATORY))
+			break;
 		/* There are two types of events that may need to be delivered
 		 * to multiple interfaces:
 		 * 1. Events for a wiphy, as it can have multiple interfaces.
