@@ -1598,6 +1598,11 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 		WPA_EVENT_CHANNEL_SWITCH_STARTED,
 		freq, ht, offset, channel_width_to_string(width),
 		cf1, cf2, is_dfs0, is_dfs, punct_bitmap, width_device, cf_device, power_mode_6ghz);
+
+#ifdef CONFIG_QCN_EXTN
+	update_chan_params(hapd, cf1, cf2, hostapd_get_chan_width_from_oper_chan_width(hapd->iconf));
+#endif
+
 	if (!finished)
 		return;
 

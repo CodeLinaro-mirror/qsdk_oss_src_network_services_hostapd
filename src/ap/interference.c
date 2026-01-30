@@ -249,7 +249,10 @@ static int is_interference_in_chanlist(int freq_start, int freq_end,
  * @chan_width - channel width to be checked
  * @chandef_list - pointer array to hold the list of valid available chandef
  */
-static int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 				       struct hostapd_channel_data ***chandef_list,
 				       int *awgn_interference_freqs)
 {

@@ -7037,6 +7037,13 @@ enum wpa_event_type {
 	 * EVENT_ESP_UPDATE - Notification about ESP airtime fraction update event
 	 */
 	EVENT_ESP_UPDATE,
+
+#ifdef CONFIG_QCN_EXTN
+	/**
+	 * EVENT_DCS_INTF - Notification event for DCS interference from driver
+	 */
+	EVENT_DCS_INTF,
+#endif
 };
 
 
