@@ -3009,6 +3009,16 @@ static int setup_interface(struct hostapd_iface *iface)
 	if (hostapd_validate_bssid_configuration(iface))
 		return -1;
 
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * Update acs_success to 1 if fixed channel is configured
+	 */
+	if (hapd->iface && hapd->iface->conf &&
+	    hapd->iface->conf->conf_extn.ind_rptr &&
+	    hapd->iface->conf->channel)
+		hapd->iface->iface_extn.acs_success = 1;
+#endif /* CONFIG_QCN_EXTN */
+
 	/*
 	 * Initialize control interfaces early to allow external monitoring of
 	 * channel setup operations that may take considerable amount of time
