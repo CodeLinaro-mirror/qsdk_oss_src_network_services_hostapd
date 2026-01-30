@@ -6172,8 +6172,14 @@ rsnxe_done:
 
 #ifdef CONFIG_IEEE80211BE
 	if (hostapd_is_eht_enabled(hapd)) {
+		u8 ext_cap = 0;
+
+		if (hapd->iface->mld_ext_mld_capa &
+		    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+			ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
+
 		if (hapd->conf->mld_ap)
-			p = hostapd_eid_eht_ml_assoc(hapd, sta, p);
+			p = hostapd_eid_eht_ml_assoc(hapd, sta, p, ext_cap);
 		p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
 		p = hostapd_eid_eht_operation(hapd, p);
 		p = hostapd_eid_vendor_240mhz_extn(hapd, p,
