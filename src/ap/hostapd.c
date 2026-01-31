@@ -231,7 +231,7 @@ struct hostapd_data * hostapd_mbssid_get_tx_bss(struct hostapd_data *hapd)
 {
 	if (hapd->iconf->mbssid) {
 		if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
-			return hapd->mbssid_group->txbss;
+			return hapd->mbssid_group? hapd->mbssid_group->txbss : hapd;
 		else
 			return hapd->iface->bss[0];
 	}
