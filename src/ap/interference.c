@@ -70,7 +70,10 @@ bool hostapd_is_backhaul_sta_conn(struct hostapd_iface *iface)
 	return false;
 }
 
-static bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
 {
 	int chan_disabled = 1;
 	int i;
@@ -88,13 +91,16 @@ static bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
 }
 
 /*
- * intf_awgn_chan_range_available - check whether the channel can operate
+ * intf_chan_range_available_6g - check whether the channel can operate
  * in the given bandwidth in 6Ghz
  * @first_chan_idx - channel index of the first 20Mhz channel in a segment
  * @num_chans - number of 20Mhz channels needed for the operating bandwidth
  */
-static int intf_awgn_chan_range_available(struct hostapd_hw_modes *mode,
-                                         int first_chan_idx, int num_chans)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int intf_chan_range_available_6g(struct hostapd_hw_modes *mode,
+				 int first_chan_idx, int num_chans)
 {
 	struct hostapd_channel_data *first_chan = NULL;
 	int allowed_40_6g[] = {1, 9, 17, 25, 33, 41, 49, 57, 65, 73, 81, 89, 97, 105,
@@ -189,8 +195,6 @@ static int is_in_chanlist(struct hostapd_iface *iface,
 	return freq_range_list_includes(&iface->conf->acs_ch_list, chan->chan);
 }
 
-#define BASE_6G_FREQ 5950
-
 int get_centre_freq_6g(int chan_idx, int chan_width, int *centre_freq)
 {
 	if (!centre_freq)
@@ -259,7 +263,7 @@ int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 	struct hostapd_hw_modes *mode = iface->current_mode;
 	struct hostapd_channel_data *chan;
 	int i, channel_idx = 0, n_chans;
-	int new_centre_freq;
+	int bw, new_centre_freq;
 	int new_start_freq;
 	int new_end_freq;
 	int ret;
@@ -298,7 +302,7 @@ int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 		}
 
 		/* Skip incompatible chandefs */
-		if (!intf_awgn_chan_range_available(mode, i, n_chans)) {
+		if (!is_chan_range_available(mode, i, n_chans)) {
 			wpa_printf(MSG_DEBUG,
 				   "AWGN: range not available for %d (%d)",
 				   chan->freq, chan->chan);
@@ -312,8 +316,7 @@ int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 			continue;
 		}
 
-		ret = get_centre_freq_6g(chan->chan, chan_width,
-					 &new_centre_freq);
+		ret = get_centre_freq(chan, chan_width, &new_centre_freq);
 		if (ret) {
 			wpa_printf(MSG_ERROR,
 				   "AWGN : couldn't find centre freq for chan : %d"
@@ -321,8 +324,10 @@ int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 			return 0;
 		}
 
-               new_start_freq = (new_centre_freq - channel_width_to_int(chan_width) / 2) + 10;
-               new_end_freq = (new_centre_freq + channel_width_to_int(chan_width) / 2) - 10;
+		bw = channel_width_to_int(chan_width == CHAN_WIDTH_20_NOHT ?
+					  CHAN_WIDTH_20 : chan_width);
+		new_start_freq = (new_centre_freq - bw / 2) + 10;
+		new_end_freq = (new_centre_freq + bw / 2) - 10;
 
                if (is_interference_in_chanlist(new_start_freq, new_end_freq,
                                                    awgn_interference_freqs)) {
