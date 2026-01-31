@@ -69,7 +69,10 @@ enum chan_seg {
 };
 
 
-static bool intf_is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
 {
 	struct hostapd_channel_data *chan;
 	int i;
@@ -84,25 +87,30 @@ static bool intf_is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
 }
 
 
+static const int * get_allowed_channel_array(int num_chans,
+					      unsigned int *size);
+
+
 /*
- * chan_range_available - Check whether the channel can operate in the given
+ * intf_chan_range_available_6g - Check whether the channel can operate in the given
  * bandwidth in 6 GHz
  * @first_chan_idx - Channel index of the first 20 MHz channel in a segment
  * @num_chans - Number of 20 MHz channels needed for the operating bandwidth
- * @allowed_arr - Range of channels allowed in the given bandwidth
- * @allowed_arr_size - Number of channels allowed in the given bandwidth
  * Returns: Whether the channel can operation in the given bandwidth
  */
-static bool chan_range_available(struct hostapd_hw_modes *mode,
-				 unsigned int first_chan_idx,
-				 unsigned int num_chans,
-				 const int *allowed_arr,
-				 unsigned int allowed_arr_size)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int intf_chan_range_available_6g(struct hostapd_hw_modes *mode,
+				 int first_chan_idx, int num_chans)
 {
 	struct hostapd_channel_data *first_chan;
+	const int *allowed_arr;
+	unsigned int allowed_arr_size;
 	unsigned int i;
 
 	first_chan = &mode->channels[first_chan_idx];
+	allowed_arr = get_allowed_channel_array(num_chans, &allowed_arr_size);
 
 	if (!chan_pri_allowed(first_chan)) {
 		wpa_printf(MSG_DEBUG, "Intf: Primary channel %d not allowed",
@@ -128,7 +136,7 @@ static bool chan_range_available(struct hostapd_hw_modes *mode,
 	 * are enabled.
 	 */
 	for (i = 1; i < num_chans; i++) {
-		if (intf_is_chan_disabled(mode, first_chan->chan + i * 4))
+		if (is_chan_disabled(mode, first_chan->chan + i * 4))
 			return false;
 	}
 
@@ -167,7 +175,6 @@ static int is_in_chanlist(struct hostapd_iface *iface,
 
 	return freq_range_list_includes(&iface->conf->acs_ch_list, chan->chan);
 }
-
 
 static int get_center_freq_6g(int chan_idx, enum chan_width chan_width,
 			      int *center_freq)
@@ -216,6 +223,15 @@ static int get_center_freq_6g(int chan_idx, enum chan_width chan_width,
 
 	return 0;
 }
+
+
+#ifdef CONFIG_QCN_EXTN
+int get_centre_freq_6g(int chan_idx, int chan_width, int *center_freq)
+{
+	return get_center_freq_6g(chan_idx, (enum chan_width) chan_width,
+				  center_freq);
+}
+#endif /* CONFIG_QCN_EXTN */
 
 
 static bool is_interference_in_chanlist(int freq_start, int freq_end,
@@ -278,9 +294,7 @@ static int intf_find_channel_list(struct hostapd_iface *iface, int chan_width,
 				  const int *interference_freqs)
 {
 	struct hostapd_hw_modes *mode = iface->current_mode;
-	int new_center_freq, new_start_freq, new_end_freq;
-	const int *allowed_arr = NULL;
-	unsigned int allowed_arr_size = 0;
+	int bw, new_center_freq, new_start_freq, new_end_freq;
 	struct hostapd_channel_data *chan;
 	int i;
 	unsigned int channel_idx = 0, n_chans;
@@ -309,8 +323,6 @@ static int intf_find_channel_list(struct hostapd_iface *iface, int chan_width,
 		break;
 	}
 
-	allowed_arr = get_allowed_channel_array(n_chans, &allowed_arr_size);
-
 	for (i = 0; i < mode->num_channels; i++) {
 		chan = &mode->channels[i];
 
@@ -321,15 +333,15 @@ static int intf_find_channel_list(struct hostapd_iface *iface, int chan_width,
 			continue;
 		}
 
+#ifdef CONFIG_QCN_EXTN
 		/* Skip incompatible chandefs */
-		if (!chan_range_available(mode, i, n_chans,
-					  allowed_arr, allowed_arr_size)) {
+		if (!is_chan_range_available(mode, i, n_chans)) {
 			wpa_printf(MSG_DEBUG,
 				   "Intf: Range not available for chan %d (%d)",
 				   chan->freq, chan->chan);
 			continue;
 		}
-
+#endif
 		if (!is_in_chanlist(iface, chan)) {
 			wpa_printf(MSG_DEBUG,
 				   "Intf: Channel %d (%d) not in chanlist",
@@ -337,8 +349,7 @@ static int intf_find_channel_list(struct hostapd_iface *iface, int chan_width,
 			continue;
 		}
 
-		ret = get_center_freq_6g(chan->chan, chan_width,
-					 &new_center_freq);
+		ret = get_centre_freq(chan, chan_width, &new_center_freq);
 		if (ret) {
 			wpa_printf(MSG_INFO,
 				   "Intf: Couldn't find center freq for chan %d chan_width %d",
@@ -346,10 +357,10 @@ static int intf_find_channel_list(struct hostapd_iface *iface, int chan_width,
 			return 0;
 		}
 
-		new_start_freq = (new_center_freq -
-				  channel_width_to_int(chan_width) / 2) + 10;
-		new_end_freq = (new_center_freq +
-				channel_width_to_int(chan_width) / 2) - 10;
+		bw = channel_width_to_int(chan_width == CHAN_WIDTH_20_NOHT ?
+					  CHAN_WIDTH_20 : chan_width);
+		new_start_freq = (new_center_freq - bw / 2) + 10;
+		new_end_freq = (new_center_freq + bw / 2) - 10;
 
 		if (is_interference_in_chanlist(new_start_freq, new_end_freq,
 						interference_freqs)) {
@@ -713,7 +724,6 @@ static enum chan_width downgrade_bandwidth(enum chan_width chan_width)
 		return CHAN_WIDTH_20_NOHT;
 	}
 }
-
 
 /*
  * hostapd_incumbt_sig_intf_detected - Incumbent signal interference is detected
