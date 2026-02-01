@@ -4271,7 +4271,7 @@ static u8 * hostapd_gen_sta_profile(struct ieee80211_mgmt *link_data,
 
 void hostapd_gen_per_sta_profiles(struct hostapd_data *hapd)
 {
-	bool tx_vap = hapd == hostapd_mbssid_get_tx_bss(hapd);
+	bool tx_vap;
 	size_t link_data_len, sta_profile_len;
 	size_t own_data_len, fixed;
 	struct probe_resp_params link_params;
@@ -4305,6 +4305,9 @@ void hostapd_gen_per_sta_profiles(struct hostapd_data *hapd)
 	if (own_data_len < fixed)
 		goto fail;
 	own_data_len -= fixed;
+
+	/* tx_vap becomes true only if this hapd is the TX BSS */
+	tx_vap = (hapd == hostapd_mbssid_get_tx_bss(hapd));
 
 	for_each_mld_link(link_bss, hapd) {
 		if (link_bss == hapd || !link_bss->started)
