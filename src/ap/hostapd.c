@@ -1227,7 +1227,8 @@ remove_if:
 	/* For single drv, first bss would have interface_added flag set.
 	 * Don't remove interface now. Driver deinit part will take care
 	 */
-	if (!hapd->reenable && hapd->interface_added && hapd->iface->bss[0] != hapd) {
+	if (!hapd->reenable && hapd->interface_added && hapd->iface->bss[0] != hapd &&
+	    hapd->drv_priv != hapd->iface->bss[0]->drv_priv) {
 		hapd->interface_added = 0;
 		if (hostapd_if_remove(hapd, WPA_IF_AP_BSS, hapd->conf->iface)) {
 			wpa_printf(MSG_WARNING,
@@ -1249,7 +1250,8 @@ remove_if:
 	 * at least the link should be removed here since deinit will take care
 	 * of only the first BSS. */
 	if (!hapd->reenable && hapd->conf && hapd->conf->mld_ap &&
-	    !hapd->interface_added && hapd->iface->bss[0] != hapd)
+	    !hapd->interface_added && hapd->iface->bss[0] != hapd &&
+	    hapd->drv_priv != hapd->iface->bss[0]->drv_priv)
 		hostapd_if_link_remove(hapd, WPA_IF_AP_BSS, hapd->conf->iface,
 					       hapd->mld_link_id);
 #endif /* CONFIG_IEEE80211BE */
