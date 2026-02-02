@@ -203,7 +203,11 @@ static void hostapd_cli_msg_cb(char *msg, size_t len)
 
 static int _wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd, int print)
 {
+#ifdef CONFIG_QCN_EXTN
+	char buf[16384];
+#else
 	char buf[4096];
+#endif /* CONFIG_QCN_EXTN */
 	size_t len;
 	int ret;
 
@@ -243,7 +247,11 @@ static
 int hostapd_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd,
 		    int min_args, int argc, char *argv[])
 {
+#ifdef CONFIG_QCN_EXTN
+	char buf[16384];
+#else
 	char buf[4096];
+#endif /* CONFIG_QCN_EXTN */
 
 	if (argc < min_args) {
 		printf("Invalid %s command - at least %d argument%s required.\n",
@@ -779,7 +787,12 @@ static int hostapd_cli_cmd_get_config(struct wpa_ctrl *ctrl, int argc,
 static int wpa_ctrl_command_sta(struct wpa_ctrl *ctrl, const char *cmd,
 				char *addr, size_t addr_len, int print)
 {
-	char buf[4096], *pos;
+#ifdef CONFIG_QCN_EXTN
+	char buf[16384];
+#else
+	char buf[4096];
+#endif /* CONFIG_QCN_EXTN */
+	char *pos;
 	size_t len;
 	int ret;
 
@@ -2830,7 +2843,11 @@ static void hostapd_cli_recv_pending(struct wpa_ctrl *ctrl, int in_read,
 	if (ctrl_conn == NULL)
 		return;
 	while (wpa_ctrl_pending(ctrl)) {
+#ifdef CONFIG_QCN_EXTN
+		char buf[16384];
+#else
 		char buf[4096];
+#endif /* CONFIG_QCN_EXTN */
 		size_t len = sizeof(buf) - 1;
 		if (wpa_ctrl_recv(ctrl, buf, &len) == 0) {
 			buf[len] = '\0';
