@@ -6163,6 +6163,17 @@ struct wpa_driver_ops {
 	struct hostapd_multi_hw_info *
 	(*get_multi_hw_info)(void *priv, unsigned int *num_multi_hws);
 
+	/**
+	 * get_channel_switch_time - Get estimated channel switch timing from driver
+	 * @priv: Private driver interface data
+	 * @freq: target channel frequeny data
+	 * @cs_time: Pointer to store channel switch time (ms)
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*get_channel_switch_time)(void *priv,
+				       struct hostapd_freq_params *freq,
+				       u32 *cs_time);
+
 #ifdef CONFIG_IEEE80211BE
 	/**
 	 * ml_reconfig_link_remove - Send Reconfig Multi-Link element to driver

@@ -3847,6 +3847,7 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 	u8 chan;
 	unsigned int num_err = 0;
 	int err = 0;
+	struct hostapd_data *hapd = iface->bss[0];
 
 	ret = hostapd_parse_csa_settings(iface, pos, &settings);
 	if (ret)
@@ -4024,6 +4025,15 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 		wpa_printf(MSG_DEBUG, "chanswitch interface %s : cancel radar handling timer",
 			   iface->conf->bss[0]->iface);
 		eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout, iface, NULL);
+	}
+
+	if (hapd->driver && hapd->driver->get_channel_switch_time) {
+		if (hapd->driver->get_channel_switch_time(hapd->drv_priv,
+							  &settings.freq_params,
+							  &hapd->cs_time) == 0)
+			wpa_printf(MSG_DEBUG,
+				   "channel switch time from driver: %u",
+				   hapd->cs_time);
 	}
 
 	for (i = 0; i < iface->num_bss; i++) {
