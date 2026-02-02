@@ -723,6 +723,13 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 		return 0;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (dcs_get_bw_reduction_ctrl_extn(iface->conf, DCS_AWGN_INTF) == false) {
+		wpa_printf(MSG_DEBUG, "DCS Bandwidth reduction is not set");
+		channel_switch = 1;
+	}
+#endif
+
 	/* check whether interference has occurred in primary 20Mhz channel */
 	if (!chan_bw_interference_bitmap || (chan_bw_interference_bitmap & SEG_PRI20))
 		channel_switch = 1;
