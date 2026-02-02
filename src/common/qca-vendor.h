@@ -23366,6 +23366,9 @@ enum qca_wlan_vendor_attr_channel_switch_time {
  * channel utilization percentage allowed. If the combined TX and RX channel
  * utilization exceeds this configured maximum CU, treats the condition as WLAN
  * interference.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_BITMAP: 32-bit unsigned value to
+ * set/get the interference bitmap.
  */
 enum qca_wlan_vendor_attr_dcs {
 	QCA_WLAN_VENDOR_ATTR_DCS_INVALID = 0,
@@ -23380,6 +23383,7 @@ enum qca_wlan_vendor_attr_dcs {
 	QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_DETECTION_WINDOW = 9,
 	QCA_WLAN_VENDOR_ATTR_DCS_COCHANNEL_INTERFERENCE_THRESHOLD = 10,
 	QCA_WLAN_VENDOR_ATTR_DCS_MAX_CU = 11,
+	QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_BITMAP = 12,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_DCS_AFTER_LAST,
