@@ -736,6 +736,7 @@ int hostapd_incumbt_sig_intf_detected(struct hostapd_iface *iface, int freq,
 	u32 _rand;
 	u32 chan_idx;
 	int num_available_chandefs = 0;
+	u8 channel_switch = 0;
 	enum chan_width new_chan_width;
 	int new_center_freq;
 	int current_start_freq;
@@ -771,6 +772,15 @@ int hostapd_incumbt_sig_intf_detected(struct hostapd_iface *iface, int freq,
 			   chan_width);
 		return -1;
 	}
+#ifdef CONFIG_QCN_EXTN
+	if (dcs_get_bw_reduction_ctrl_extn(iface->conf, DCS_AWGN_INTF) == false) {
+		wpa_printf(MSG_DEBUG, "DCS Bandwidth reduction is not set");
+		channel_switch = 1;
+	}
+#endif
+
+	if (!chan_bw_interference_bitmap)
+		channel_switch = 1;
 
 	/* Determine which 20 MHz segment contains the primary channel */
 	for (i = 0; i < num_segments; i++) {
@@ -782,8 +792,9 @@ int hostapd_incumbt_sig_intf_detected(struct hostapd_iface *iface, int freq,
 	}
 
 	/* Check whether interference has occurred in primary 20 MHz channel */
-	if (primary_chan_bit >= 0 &&
-	    (chan_bw_interference_bitmap & BIT(primary_chan_bit))) {
+	if (channel_switch ||
+	    (primary_chan_bit >= 0 &&
+	    (chan_bw_interference_bitmap & BIT(primary_chan_bit)))) {
 		available_chandef_list = os_calloc(
 			mode->num_channels,
 			sizeof(struct hostapd_channel_data *));
