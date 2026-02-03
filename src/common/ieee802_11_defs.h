@@ -1253,6 +1253,12 @@ struct ieee80211_mgmt {
 					 * Basic Multi-Link element (optional) */
 					u8 variable[];
 				} STRUCT_PACKED link_reconf_resp;
+#ifdef CONFIG_QCN_EXTN
+				struct {
+					u8 action;
+					u8 variable[];
+				} STRUCT_PACKED spectrum_mgmt;
+#endif
 			} u;
 		} STRUCT_PACKED action;
 	} u;

@@ -3019,6 +3019,11 @@ static int nl80211_action_subscribe_ap(struct i802_bss *bss)
 	/* RRM Neighbor Report Request */
 	if (nl80211_register_action_frame(bss, (u8 *) "\x05\x04", 2) < 0)
 		ret = -1;
+#ifdef CONFIG_QCN_EXTN
+	/* uplink csa */
+	if (nl80211_register_action_frame(bss, (u8 *) "\x00\x04", 2) < 0)
+		ret = -1;
+#endif
 	/* FT Action frames */
 	if (nl80211_register_action_frame(bss, (u8 *) "\x06", 1) < 0)
 		ret = -1;

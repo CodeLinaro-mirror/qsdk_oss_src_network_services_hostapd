@@ -7044,6 +7044,15 @@ enum wpa_event_type {
 	 */
 	EVENT_MSCS_FLOW_RECEIVED,
 
+#ifdef CONFIG_QCN_EXTN
+	/**
+	 * EVENT_DFS_UPLINK_CHANNEL_SELECTED - notify backhaul station
+	 * about the channel selected due to radar detection in
+	 * fronthaul
+	 */
+	EVENT_DFS_UPLINK_CHANNEL_SELECTED,
+#endif
+
 	/**
 	 * EVENT_ESP_UPDATE - Notification about ESP airtime fraction update event
 	 */

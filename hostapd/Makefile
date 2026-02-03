@@ -189,6 +189,9 @@ OBJS += ../src/eapol_auth/eapol_auth_sm.o
 ifdef CONFIG_UBUS
 CFLAGS += -DUBUS_SUPPORT
 OBJS += ../src/ap/ubus.o
+ifdef CONFIG_QCN_EXTN
+OBJS += qcn_extns/ubus_extn.o
+endif
 LIBS += -lubus
 NEED_ULOOP:=y
 endif
