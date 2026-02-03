@@ -2138,12 +2138,14 @@ static int hostapd_ctrl_iface_get_mbssid_attributes(struct hostapd_data *hapd,
 			pos += res;
 		}
 
-		res = os_snprintf(pos, end - pos,
-				  "mbssid_idx_bmap = 0x%x\n",
-				  hapd->iface->mbssid_idx_bmap);
-		if (os_snprintf_error(end - pos, res))
-			return pos - buf;
-		pos += res;
+		if (hapd->iface->num_bss) {
+			res = os_snprintf(pos, end - pos,
+					  "mbssid_idx_bmap = 0x%x\n",
+					  hapd->iface->mbssid_idx_bmap);
+			if (os_snprintf_error(end - pos, res))
+				return pos - buf;
+			pos += res;
+		}
 
 		return pos - buf;
 	}
@@ -2185,12 +2187,14 @@ static int hostapd_ctrl_iface_get_mbssid_attributes(struct hostapd_data *hapd,
 				active_group_cnt++;
 		}
 
-		res = os_snprintf(pos, end - pos,
-				  "mbssid_idx_bmap = 0x%x\n",
-				  mbssid_group->mbssid_idx_bmap);
-		if (os_snprintf_error(end - pos, res))
-			return pos - buf;
-		pos += res;
+		if (mbssid_group->num_bss) {
+			res = os_snprintf(pos, end - pos,
+					  "mbssid_idx_bmap = 0x%x\n",
+					  mbssid_group->mbssid_idx_bmap);
+			if (os_snprintf_error(end - pos, res))
+				return pos - buf;
+			pos += res;
+		}
 
 		res = os_snprintf(pos, end - pos, "\n");
 		if (os_snprintf_error(end - pos, res))
