@@ -2718,11 +2718,6 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 		return -1;
 	}
 
-	if (!hapd->started) {
-		wpa_printf(MSG_ERROR, "%s is not started", hapd->conf->iface);
-		return -1;
-	}
-
 	if (hapd->iconf->mbssid == MBSSID_DISABLED) {
 		wpa_printf(MSG_INFO, "%s link %u is not part of any MBSSID group",
 			   hapd->conf->iface, hapd->mld_link_id);
