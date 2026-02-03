@@ -1551,7 +1551,24 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 		wpa_printf(MSG_ERROR,
 			   "HE (IEEE 802.11ax) with WPA/WPA2 requires CCMP/GCMP to be enabled, disabling HE capabilities");
 	}
+#endif /* CONFIG_IEEE80211AX */
 
+#ifdef CONFIG_IEEE80211BE
+	if (full_config && !bss->disable_11be && bss->disable_11ax) {
+		bss->disable_11be = true;
+		bss->mld_ap = 0;
+		wpa_printf(MSG_INFO,
+			   "Disabling IEEE 802.11be as IEEE 802.11ax is disabled for this BSS");
+	}
+
+	if ((!conf->ieee80211be || bss->disable_11be) && bss->mld_ap) {
+		wpa_printf(MSG_INFO,
+			   "Cannot enable mld_ap when IEEE 802.11be is disabled");
+		return -1;
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_IEEE80211AX
 	if (bss->he_phy_capab_mask) {
 		if (!conf->ieee80211ax || bss->disable_11ax) {
 			u32 mask = bss->he_phy_capab_mask;
@@ -1652,13 +1669,6 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 #endif /* CONFIG_FILS */
 
 #ifdef CONFIG_IEEE80211BE
-	if (full_config && !bss->disable_11be && bss->disable_11ax) {
-		bss->disable_11be = true;
-		bss->mld_ap = 0;
-		wpa_printf(MSG_INFO,
-			   "Disabling IEEE 802.11be as IEEE 802.11ax is disabled for this BSS");
-	}
-
 	if (full_config && conf->ieee80211be && !bss->disable_11be &&
 	    !bss->beacon_prot && ap_pmf_enabled(bss)) {
 		bss->beacon_prot = 1;
@@ -1682,12 +1692,6 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 		}
 	}
 
-
-	if ((!conf->ieee80211be || bss->disable_11be) && bss->mld_ap) {
-		wpa_printf(MSG_INFO,
-			   "Cannot enable mld_ap when IEEE 802.11be is disabled");
-		return -1;
-	}
 
 	if (bss->mld_ap) {
 		/* set ML Max rec links to default, if it is not configured */
