@@ -1462,8 +1462,10 @@ static int * acs_request_scan_add_freqs(struct hostapd_iface *iface,
 		chan = &mode->channels[i];
 
 #ifdef CONFIG_QCN_EXTN
-		acs_request_scan_add_freqs_extn(chan, &freq);
-		continue;
+		if (iface->conf->conf_extn.qacs_enable) {
+			acs_request_scan_add_freqs_extn(chan, &freq);
+			continue;
+		}
 #endif
 
 		if ((chan->flag & HOSTAPD_CHAN_DISABLED) ||
@@ -1545,7 +1547,8 @@ static int acs_request_scan(struct hostapd_iface *iface)
 	}
 
 #ifdef CONFIG_QCN_EXTN
-	acs_modify_scan_params_extn(iface, &params);
+	if (iface->conf->conf_extn.qacs_enable)
+		acs_modify_scan_params_extn(iface, &params);
 #endif
 
 	ret = hostapd_driver_scan(iface->bss[0], &params);
