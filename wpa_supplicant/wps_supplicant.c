@@ -1049,8 +1049,9 @@ static void wpas_clear_wps(struct wpa_supplicant *wpa_s)
 			wpa_config_remove_network(wpa_s->conf, id);
 		}
 	}
-
+#ifdef CONFIG_DPP2
 	wpa_s->wps->dpp_wps = 0;
+#endif
 	wpas_wps_clear_ap_info(wpa_s);
 }
 
