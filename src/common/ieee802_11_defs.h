@@ -3768,6 +3768,10 @@ struct ieee80211_uhr_operation {
 	/* UHR Operations Parameters - variable */
 } STRUCT_PACKED;
 
+/* Figure 9-aa7: UHR MAC Capabilities Information field format */
+#define UHR_MACCAP_DPS_SUPP			BIT(0)
+#define UHR_MACCAP_DPS_ASSIST			BIT(1)
+
 /* DBE Operation Parameters field
  * IEEE P802.11bn/D1.4, Figure 9-aa6
  */

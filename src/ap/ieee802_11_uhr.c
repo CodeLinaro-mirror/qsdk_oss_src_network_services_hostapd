@@ -65,6 +65,12 @@ u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 	cap = (struct ieee80211_uhr_capabilities *) pos;
 	os_memcpy(cap->mac, uhr_cap->mac, sizeof(cap->mac));
 	os_memcpy(cap->phy, uhr_cap->phy, sizeof(cap->phy));
+
+	/* Driver supports DPS Assist Support but disabled by user. */
+	if ((uhr_cap->mac[0] & UHR_MACCAP_DPS_ASSIST) &&
+	    hapd->conf->dps_assist == FEATURE_DISABLED)
+		cap->mac[0] &= ~UHR_MACCAP_DPS_ASSIST;
+
 	pos += sizeof(*cap);
 
 	if (opmode == IEEE80211_MODE_AP &&
