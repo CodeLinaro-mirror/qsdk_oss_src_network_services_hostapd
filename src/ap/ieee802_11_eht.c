@@ -193,9 +193,18 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 	if (eht_mu_mask_valid(hapd->conf->eht_phy_capab.eht_mu_bfmr_mask)) {
 		u8 mask = hapd->conf->eht_phy_capab.eht_mu_bfmr_mask;
 
-		if (!(mask & BIT(0)))
+		if (!(mask & BIT(0))) {
 			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
-				~EHT_PHYCAP_MU_BEAMFORMER_MASK;
+				~EHT_PHYCAP_MU_BEAMFORMER_80MHZ;
+		}
+		if (!(mask & BIT(1))) {
+			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
+				~EHT_PHYCAP_MU_BEAMFORMER_160MHZ;
+		}
+		if (!(mask & BIT(2))) {
+			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
+				~EHT_PHYCAP_MU_BEAMFORMER_320MHZ;
+		}
 	}
 
 	if (!(((hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_MU_BEAMFORMER) ?
@@ -208,37 +217,18 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 	if (eht_mu_mask_valid(hapd->conf->eht_phy_capab.eht_mu_mimo_mask)) {
 		u8 mask = hapd->conf->eht_phy_capab.eht_mu_mimo_mask;
 
-		if (!(mask & BIT(0)) ||
-		    !(((hapd->conf->eht_phy_capab_mask &
-			EHT_PHY_BSS_OVR_UL_MU_MIMO_80) ?
-		       hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz :
-		       hapd->iface->conf->eht_phy_capab.
-			       non_ofdma_ulmumimo_80mhz)))
+		if (!(mask & BIT(0))) {
 			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
 				~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_80MHZ;
-
-		if (!(mask & BIT(1)) ||
-		    !(((hapd->conf->eht_phy_capab_mask &
-			EHT_PHY_BSS_OVR_UL_MU_MIMO_160) ?
-		       hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz :
-		       hapd->iface->conf->eht_phy_capab.
-			       non_ofdma_ulmumimo_160mhz)))
+		}
+		if (!(mask & BIT(1))) {
 			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
 				~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_160MHZ;
-
-		if (!(mask & BIT(2)) ||
-		    !(((hapd->conf->eht_phy_capab_mask &
-			EHT_PHY_BSS_OVR_UL_MU_MIMO_320) ?
-		       hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz :
-		       hapd->iface->conf->eht_phy_capab.
-			       non_ofdma_ulmumimo_320mhz)))
+		}
+		if (!(mask & BIT(2))) {
 			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
 				~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ;
-	} else {
-		cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
-			~(EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_80MHZ |
-			  EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_160MHZ |
-			  EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ);
+		}
 	}
 
 	pos = cap->optional;
