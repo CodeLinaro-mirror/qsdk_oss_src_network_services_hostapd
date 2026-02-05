@@ -3550,7 +3550,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 			break;
 
 		switch (data->low_ack.num_packets) {
-		case HOSTAPD_STA_NUM_PACKETS_LOST:
+		case HOSTAPD_DEAUTH_ALL:
 			hostapd_event_sta_rssi_low(hapd, data->low_ack.addr);
 			break;
 		default:
