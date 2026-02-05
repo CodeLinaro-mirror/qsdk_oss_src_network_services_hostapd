@@ -226,6 +226,12 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 #ifdef CONFIG_IEEE80211BE
 	os_memset(&bss->eht_phy_capab, 0, sizeof(bss->eht_phy_capab));
 	bss->eht_phy_capab_mask = 0;
+	bss->eht_phy_capab.non_ofdma_ulmumimo_80mhz = 1;
+	bss->eht_phy_capab.non_ofdma_ulmumimo_160mhz = 1;
+	bss->eht_phy_capab.non_ofdma_ulmumimo_320mhz = 1;
+	bss->eht_phy_capab.eht_mu_bfmr_mask = 0x7;
+	bss->eht_phy_capab.eht_mu_mimo_mask = 0x7;
+	bss->eht_phy_capab.mu_beamformer = 1;
 #endif /* CONFIG_IEEE80211BE */
 	bss->ht_mcs_nss_set = 0;
 	bss->group_control_frame_cipher = WPA_CIPHER_BIP_GMAC_256;
@@ -431,6 +437,10 @@ struct hostapd_config * hostapd_config_defaults(void)
 #ifdef CONFIG_IEEE80211BE
 	/* set ML max rec links as Invalid */
 	bss->ml_max_rec_links = ML_IE_MAX_REC_LINKS_INVAL;
+	conf->eht_phy_capab.mu_beamformer = true;
+	conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz = true;
+	conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz = true;
+	conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz = true;
 	hostapd_set_default_epcs_params(bss);
 #endif /* CONFIG_IEEE80211BE */
 
