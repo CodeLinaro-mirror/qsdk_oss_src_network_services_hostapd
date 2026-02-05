@@ -3262,6 +3262,10 @@ struct ieee80211_uhr_operation {
 	u16 dps_oper_param; /*DPS Operation Parameters*/
 } STRUCT_PACKED;
 
+/* Figure 9-aa7: UHR MAC Capabilities Information field format */
+#define UHR_MACCAP_DPS_SUPP			BIT(0)
+#define UHR_MACCAP_DPS_ASSIST			BIT(1)
+
 #define UHR_MAC_CAPAB_LEN	5
 #define UHR_PHY_CAPAB_LEN	1
 /* Figure 9-aa4: UHR Capabilities element format P802.11bn_D1.0 section 9.4.2.aa2 */

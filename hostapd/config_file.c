@@ -5538,6 +5538,15 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->uhr_oper_chwidth = atoi(pos);
 	} else if (os_strcmp(buf, "uhr_oper_centr_freq_seg0_idx") == 0) {
 		conf->uhr_oper_centr_freq_seg0_idx = atoi(pos);
+	} else if (os_strcmp(buf, "dps_assist") == 0) {
+		int val;
+		val = atoi(pos);
+		if (val < FEATURE_DISABLED || val > FEATURE_ENABLED) {
+			wpa_printf(MSG_ERROR,
+				   "Invallid value for dps_assist");
+			return 1;
+		}
+		bss->dps_assist = val;
 #endif /* CONFIG_IEEE80211BN */
 
 	} else if (os_strcmp(buf, "enable_dscp_policy_capa") == 0) {
