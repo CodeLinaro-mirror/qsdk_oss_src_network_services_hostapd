@@ -11,8 +11,7 @@
 
 struct wpa_supplicant;
 struct wpa_global;
-
-#include "wps_supplicant.h"
+struct wps_credential;
 
 #ifdef UBUS_SUPPORT
 #include <libubus.h>
@@ -39,7 +38,7 @@ static inline void wpas_ubus_free_bss(struct wpa_supplicant *wpa_s)
 {
 }
 
-static inline void wpas_ubus_notify(struct wpa_supplicant *wpa_s, struct wps_credential *cred)
+static inline void wpas_ubus_notify(struct wpa_supplicant *wpa_s, const struct wps_credential *cred)
 {
 }
 

@@ -1,6 +1,7 @@
 #ifndef __HOSTAPD_UTILS_UCODE_H
 #define __HOSTAPD_UTILS_UCODE_H
 
+#ifdef UCODE_SUPPORT
 #include "utils/includes.h"
 #include "utils/common.h"
 #include <ucode/lib.h>
@@ -26,5 +27,5 @@ uc_value_t *uc_wpa_printf(uc_vm_t *vm, size_t nargs);
 uc_value_t *uc_wpa_getpid(uc_vm_t *vm, size_t nargs);
 uc_value_t *uc_wpa_sha1(uc_vm_t *vm, size_t nargs);
 uc_value_t *uc_wpa_freq_info(uc_vm_t *vm, size_t nargs);
-
+#endif /* UCODE_SUPPORT */
 #endif
