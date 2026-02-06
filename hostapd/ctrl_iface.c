@@ -2474,6 +2474,9 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 	} else if (os_strcmp(cmd, "ht_mcs_nss_set") == 0) {
 		res = os_snprintf(buf, buflen, "ht_mcs_nss_set = 0x%x\n",
 				  hapd->conf->ht_mcs_nss_set);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
 	} else if (os_strcmp(cmd, "vendor_elements") == 0) {
 		res = hostapd_get_vendor_elements(hapd, buf, buflen);
 		if (os_snprintf_error(buflen, res))
