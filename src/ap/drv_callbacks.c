@@ -3456,6 +3456,20 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 }
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BN
+static void hostapd_update_ap_powersave(struct hostapd_data *hapd,
+					struct ap_powersave_event *ap_ps_event)
+{
+	if (ap_ps_event->dps_assist_updated) {
+		hapd->conf->dps_assist = ap_ps_event->dps_assist;
+		/* Update beacon with updated DPS Assist Support Bit */
+		if (ieee802_11_update_beacons(hapd->iface))
+			wpa_printf(MSG_ERROR,
+				   "Failed to update beacons with DPS Assist Support Bit");
+	}
+}
+#endif /* CONFIG_IEEE80211BN */
+
 
 void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		       union wpa_event_data *data)
@@ -3938,6 +3952,11 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		hostapd_process_mscs_flow(hapd, data->tclas_flow_event.tclas,
 				data->tclas_flow_event.addr, data->tclas_flow_event.tid);
 		break;
+#ifdef CONFIG_IEEE80211BN
+	case EVENT_UPDATE_AP_POWERSAVE:
+		hostapd_update_ap_powersave(hapd, &data->ap_powersave_event);
+		break;
+#endif /* CONFIG_IEEE80211BN */
 	default:
 		if (!hostapd_wpa_event_extn(ctx, event, data))
 			break;

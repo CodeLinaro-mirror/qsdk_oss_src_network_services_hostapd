@@ -1771,6 +1771,7 @@ enum nl80211_commands {
 	NL80211_CMD_ERP,
 
 	NL80211_CMD_QOS_MGMT,
+	NL80211_CMD_AP_POWER_SAVE,
 
 	/* add new commands above here */
 

@@ -7557,6 +7557,13 @@ enum wpa_event_type {
 	 * sent.
 	 */
 	EVENT_LINK_REMOVAL_STARTED,
+	/**
+	 * EVENT_UPDATE_AP_POWERSAVE - Received a AP Power Save update event
+	 *
+	 * This event is used by the driver to notify the usersapce about
+	 * enablement/disablement of AP Power Save feature.
+	 */
+	EVENT_UPDATE_AP_POWERSAVE,
 
 	/**
 	 * EVENT_LINK_REMOVAL_COMPLETED - Update link scheduled for removal
@@ -8724,6 +8731,14 @@ union wpa_event_data {
 	 * This field is used for extension events
 	 */
 	union wpa_event_data_extn event_data_extn;
+
+	/**
+	 * Data for AP Power Save update
+	 */
+	struct ap_powersave_event {
+		bool dps_assist_updated;
+		int dps_assist;
+	} ap_powersave_event;
 
 	/**
 	 * struct reconfig_info - Data for EVENT_SETUP_LINK_RECONFIG

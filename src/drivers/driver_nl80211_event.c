@@ -201,6 +201,7 @@ static const char * nl80211_command_to_string(enum nl80211_commands cmd)
 	C2S(NL80211_CMD_START_PD)
 	C2S(NL80211_CMD_STOP_PD)
 	C2S(NL80211_CMD_NAN_SET_NON_EVAC_CHANNELS)
+	C2S(NL80211_CMD_AP_POWER_SAVE)
 
 	/* Yet to upstream */
 	C2S(NL80211_CMD_UPDATE_HE_MUEDCA_PARAMS)
@@ -6069,6 +6070,30 @@ process_incumbt_intf_event:
 	wpa_supplicant_event(bss->ctx, EVENT_INCUMBT_SIG_INTF_DETECTED, &data);
 }
 
+#ifdef CONFIG_IEEE80211BN
+static void nl80211_ap_powersave_update_event(struct i802_bss *bss,
+						struct nlattr **tb)
+{
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	union wpa_event_data data;
+	bool powersave_update = false;
+
+	os_memset(&data, 0, sizeof(data));
+
+	if (tb[NL80211_ATTR_DPS_ASSIST]) {
+		powersave_update = true;
+		data.ap_powersave_event.dps_assist_updated = true;
+		data.ap_powersave_event.dps_assist =
+			nla_get_u8(tb[NL80211_ATTR_DPS_ASSIST]);
+	}
+
+	if (!powersave_update)
+		return;
+
+	wpa_supplicant_event(drv->ctx, EVENT_UPDATE_AP_POWERSAVE, &data);
+}
+#endif /* CONFIG_IEEE80211BN */
+
 
 static void nl80211_start_ap(struct i802_bss *bss, struct nlattr **tb)
 {
@@ -6153,6 +6178,11 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 	case NL80211_CMD_QOS_MGMT:
 		nl80211_process_mscs_event(bss, tb);
 		break;
+#ifdef CONFIG_IEEE80211BN
+	case NL80211_CMD_AP_POWER_SAVE:
+		nl80211_ap_powersave_update_event(bss, tb);
+		break;
+#endif /* CONFIG_IEEE80211BN */
 	case NL80211_CMD_TRIGGER_SCAN:
 		wpa_dbg(bss->ctx, MSG_DEBUG, "nl80211: Scan trigger");
 		drv->scan_state = SCAN_STARTED;
