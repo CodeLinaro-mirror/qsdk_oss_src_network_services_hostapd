@@ -122,6 +122,7 @@ const char * event_to_string(enum wpa_event_type event)
 #ifdef CONFIG_QCN_EXTN
 	E2S(DCS_INTF);
 #endif
+	E2S(UPDATE_AP_POWERSAVE);
 	}
 
 	return "UNKNOWN";

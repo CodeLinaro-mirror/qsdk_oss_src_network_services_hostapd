@@ -1630,6 +1630,8 @@ enum nl80211_commands {
 
 	NL80211_CMD_QOS_MGMT,
 
+	NL80211_CMD_AP_POWER_SAVE,
+
 	/* add new commands above here */
 
 	/* used to define NL80211_CMD_MAX below */

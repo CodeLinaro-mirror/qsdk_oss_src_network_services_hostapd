@@ -199,6 +199,7 @@ static const char * nl80211_command_to_string(enum nl80211_commands cmd)
 	C2S(NL80211_CMD_LINK_REMOVAL_COMPLETED)
 	C2S(NL80211_CMD_ERP)
 	C2S(NL80211_CMD_QOS_MGMT)
+	C2S(NL80211_CMD_AP_POWER_SAVE)
 	C2S(__NL80211_CMD_AFTER_LAST)
 	}
 #undef C2S
@@ -5319,6 +5320,31 @@ static void nl80211_ttlm_update_event(struct i802_bss *bss, struct nlattr **tb)
 #endif /* CONFIG_IEEE80211BE */
 
 
+#ifdef CONFIG_IEEE80211BN
+static void nl80211_ap_powersave_update_event(struct i802_bss *bss,
+					   struct nlattr **tb)
+{
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	union wpa_event_data data;
+	bool powersave_update = false;
+
+	os_memset(&data, 0, sizeof(data));
+
+	if (tb[NL80211_ATTR_DPS_ASSIST]) {
+		powersave_update = true;
+		data.ap_powersave_event.dps_assist_updated = true;
+		data.ap_powersave_event.dps_assist =
+					nla_get_u8(tb[NL80211_ATTR_DPS_ASSIST]);
+	}
+
+	if (!powersave_update)
+		return;
+
+	wpa_supplicant_event(drv->ctx, EVENT_UPDATE_AP_POWERSAVE, &data);
+}
+#endif /* CONFIG_IEEE80211BN */
+
+
 static void do_process_drv_event(struct i802_bss *bss, int cmd,
 				 struct nlattr **tb)
 {
@@ -5628,6 +5654,11 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 	case NL80211_CMD_QOS_MGMT:
 		nl80211_process_mscs_event(bss, tb);
 		break;
+#ifdef CONFIG_IEEE80211BN
+	case NL80211_CMD_AP_POWER_SAVE:
+		nl80211_ap_powersave_update_event(bss, tb);
+		break;
+#endif /* CONFIG_IEEE80211BN */
 	default:
 		wpa_dbg(drv->ctx, MSG_DEBUG, "nl80211: Ignored unknown event "
 			"(cmd=%d)", cmd);
