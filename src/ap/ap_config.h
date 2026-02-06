@@ -21,6 +21,9 @@
 #include "fst/fst.h"
 #include "vlan.h"
 #include "../../qcn_extns/cmn.h"
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+#include "../../qcn_extns/hostapd_if_plugin.h"
+#endif
 
 enum macaddr_acl {
 	ACCEPT_UNLESS_DENIED = 0,
@@ -1203,6 +1206,9 @@ struct hostapd_bss_config {
 	 * 0 and 1 are used to enable and disable support.
 	 */
 	int dps_assist;
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+	struct hostapd_config_plugin plugin;
+#endif
 };
 
 /**
