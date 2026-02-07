@@ -11387,6 +11387,9 @@ s8 hostapd_get_20mhz_psd_for_rnr(struct hostapd_data *hapd)
 	u8 client_mode;
 	s8 result;
 
+	if (!is_6ghz_freq(freq))
+		return CHAN_MIN_TX_POWER;
+
 	switch (ap_pwr_type) {
 	case HE_REG_INFO_6GHZ_AP_TYPE_INDOOR:
 		client_mode = NL80211_REG_REGULAR_CLIENT_LPI;
