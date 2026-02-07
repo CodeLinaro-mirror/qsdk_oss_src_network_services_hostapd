@@ -3577,7 +3577,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		params->elemid_modified_bmap |= BIT(hostapd_mbssid_get_bss_index(tx_bss));
 
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->conf->mld_ap) {
+	if (hapd->conf->mld_ap && hostapd_is_eht_enabled(hapd)) {
 		params->mld_ap = true;
 		params->mld_link_id = hapd->mld_link_id;
 	}
