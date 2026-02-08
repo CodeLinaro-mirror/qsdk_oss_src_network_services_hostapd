@@ -1518,6 +1518,14 @@ int hostapd_intf_afc_received(struct hostapd_iface *iface)
 		return -1;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (!(iface->conf->conf_extn.dcs_conf.dcs_random_chan_bitmap &
+	      DCS_AFC_INTF)) {
+		hostapd_trigger_dynamic_acs(iface->bss[0], CHANNEL_CHANGE_CSA);
+		return 0;
+	}
+#endif
+
 	chan_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
 	wpa_printf(MSG_DEBUG, "chan_width=%d", chan_width);
 
