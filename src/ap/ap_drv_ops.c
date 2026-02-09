@@ -1311,7 +1311,8 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 	if (iface->conf->conf_extn.ind_rptr) {
 		data.skip_cac = (iface->iface_extn.csa_bitmap && iface->conf->conf_extn.skip_cac);
 	} else {
-		data.skip_cac = iface->conf->conf_extn.skip_cac;
+		data.skip_cac = (iface->cac_type != HAPD_CAC_COMPLETE_AFTER_CSA) &&
+				 iface->conf->conf_extn.skip_cac;
 	}
 #endif
 
