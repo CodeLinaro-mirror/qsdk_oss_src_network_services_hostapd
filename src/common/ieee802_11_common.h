@@ -253,6 +253,10 @@ struct hostapd_wmm_ac_params {
 
 int hostapd_config_wmm_ac(struct hostapd_wmm_ac_params wmm_ac_params[],
 			  const char *name, const char *val);
+#ifdef CONFIG_QCN_EXTN
+int hostapd_config_he_mu_edca(struct ieee80211_he_mu_edca_parameter_set *params,
+			      const char *name, const char *val);
+#endif /* CONFIG_QCN_EXTN */
 
 struct hostapd_tx_queue_params {
 	int aifs;

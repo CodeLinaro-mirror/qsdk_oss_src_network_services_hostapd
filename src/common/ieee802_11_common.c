@@ -1355,6 +1355,88 @@ int hostapd_config_wmm_ac(struct hostapd_wmm_ac_params wmm_ac_params[],
 	return 0;
 }
 
+#ifdef CONFIG_QCN_EXTN
+int hostapd_config_he_mu_edca(struct ieee80211_he_mu_edca_parameter_set *params,
+		const char *name, const char *val)
+{
+	int v = atoi(val);
+	u8 *ac_param = NULL;
+	const char *pos;
+
+	/* 1. Identify which AC (Access Category) buffer to modify */
+	if (os_strncmp(name, "be", 2) == 0) {
+		ac_param = params->he_mu_ac_be_param;
+		pos = name + 2;
+	} else if (os_strncmp(name, "bk", 2) == 0) {
+		ac_param = params->he_mu_ac_bk_param;
+		pos = name + 2;
+	} else if (os_strncmp(name, "vi", 2) == 0) {
+		ac_param = params->he_mu_ac_vi_param;
+		pos = name + 2;
+	} else if (os_strncmp(name, "vo", 2) == 0) {
+		ac_param = params->he_mu_ac_vo_param;
+		pos = name + 2;
+	} else {
+		wpa_printf(MSG_ERROR, "HE MU EDCA: Unknown AC in '%s'", name);
+		return -1;
+	}
+
+	/* Skip underscore if present (e.g., "vo_aifsn" -> "aifsn") */
+	if (*pos == '_')
+		pos++;
+
+	/* Update the specific field within the 3-byte array
+	 * Byte 0: [ ACI (2) | ACM (1) | AIFSN (4) ]
+	 * Byte 1: [ ECWmax (4) | ECWmin (4) ]
+	 */
+
+	if (os_strcmp(pos, "aifsn") == 0) {
+		if (v < 0 || v > 15) {
+			wpa_printf(MSG_ERROR, "EDCA: Invalid AIFSN value %d (must be 0-15)", v);
+			return -1;
+		}
+		ac_param[0] &= ~0x0F;
+		ac_param[0] |= (v & 0x0F);
+	}
+	else if (os_strcmp(pos, "ecwmin") == 0) {
+		u8 cur_ecwmax = (ac_param[1] >> 4) & 0x0F;
+		if (v < 0 || v > 15 || v > cur_ecwmax) {
+			wpa_printf(MSG_ERROR, "EDCA: Invalid ECWmin value %d (must be 0-15)", v);
+			return -1;
+		}
+		ac_param[1] &= ~0x0F;
+		ac_param[1] |= (v & 0x0F);
+	}
+	else if (os_strcmp(pos, "ecwmax") == 0) {
+		u8 cur_ecwmin = ac_param[1] & 0x0F;
+		if (v < 0 || v > 15 || v < cur_ecwmin) {
+			wpa_printf(MSG_ERROR, "EDCA: Invalid ECWmax value %d (must be 0-15)", v);
+			return -1;
+		}
+		ac_param[1] &= ~0xF0;
+		ac_param[1] |= ((v << 4) & 0xF0);
+	}
+	else if (os_strcmp(pos, "timer") == 0) {
+		if (v < 0 || v > 255) {
+			wpa_printf(MSG_ERROR, "EDCA: Invalid timer value %d (must be 0-255)", v);
+			return -1;
+		}
+		ac_param[2] = (u8)v;
+	}
+	else if (os_strcmp(pos, "acm") == 0) {
+		if (v)
+			ac_param[0] |= 0x10;
+		else
+			ac_param[0] &= ~0x10;
+	}
+	else {
+		wpa_printf(MSG_ERROR, "EDCA: Unknown parameter '%s'", pos);
+		return -1;
+	}
+
+	return 0;
+}
+#endif /* CONFIG_QCN_EXTN */
 
 /* convert floats with one decimal place to value*10 int, i.e.,
  * "1.5" will return 15

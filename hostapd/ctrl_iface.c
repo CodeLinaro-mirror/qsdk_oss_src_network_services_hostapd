@@ -7877,6 +7877,65 @@ static int hostapd_ctrl_iface_set_muedca_mode(struct hostapd_data *hapd, char *c
 
 	return 0;
 }
+
+int hostapd_ctrl_iface_set_he_muedca(struct hostapd_data *hapd, char *buf)
+{
+	char *ac = NULL, *param = NULL, *value = NULL, *token = NULL;
+	char *saveptr = NULL;
+	char combined_name[64];
+	size_t max_len = 256;
+	size_t buf_len;
+	int res;
+
+	if (!buf)
+		return -1;
+
+	buf_len = strnlen(buf, max_len);
+	if (buf_len >= max_len || buf_len < 5) {
+		wpa_printf(MSG_ERROR, "EDCA: Invalid input length");
+		return -1;
+	}
+
+	/* Parse exactly: <ac> <param> <value> */
+	ac = strtok_r(buf, " ", &saveptr);
+	param = strtok_r(NULL, " ", &saveptr);
+	value = strtok_r(NULL, " ", &saveptr);
+	token = strtok_r(NULL, " ", &saveptr);
+
+	if (!ac || !param || !value || token) {
+		wpa_printf(MSG_ERROR, "EDCA: usage <ac> <param> <value>");
+		return -1;
+	}
+
+	if (os_strlen(ac) < 2 || os_strlen(ac) > 10) {
+		wpa_printf(MSG_ERROR, "EDCA: Invalid AC format or name too long");
+		return -1;
+	}
+	if (os_strlen(param) > 30) {
+		wpa_printf(MSG_ERROR, "EDCA: Invalid param format or name too long");
+		return -1;
+	}
+
+	/* Construct Combined Name (e.g., "vo_aifsn") */
+	res = os_snprintf(combined_name, sizeof(combined_name), "%s_%s", ac, param);
+
+	if (os_snprintf_error(sizeof(combined_name), res)) {
+		wpa_printf(MSG_ERROR, "EDCA: Combined name buffer overflow");
+		return -1;
+	}
+
+	if (hostapd_config_he_mu_edca(&hapd->iconf->he_mu_edca, combined_name, value) < 0) {
+		wpa_printf(MSG_ERROR, "EDCA: Configuration failed (invalid value?)");
+		return -1;
+	}
+
+	if (ieee802_11_update_beacons(hapd->iface) < 0) {
+		wpa_printf(MSG_ERROR, "EDCA: Failed to update beacons with new parameters");
+		return -1;
+	}
+
+	return 0;
+}
 #endif /* CONFIG_QCN_EXTN */
 
 static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
@@ -8613,6 +8672,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 	} else if (os_strncmp(buf, "SET_EDCA_MODE ", 14) == 0) {
 		if (hostapd_ctrl_iface_set_muedca_mode(hapd, buf + 14) < 0)
+			reply_len = -1;
+	} else if (os_strncmp(buf, "SET_EDCA ", 9) == 0) {
+		if (hostapd_ctrl_iface_set_he_muedca(hapd, buf + 9) < 0)
 			reply_len = -1;
 #endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_IEEE80211AX
