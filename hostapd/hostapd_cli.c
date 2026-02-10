@@ -2713,7 +2713,7 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "get_chain_mask", hostapd_cli_cmd_get_chain_mask, NULL,
 	 "= Get chain mask value of selected interface/link" },
 	{ "afc", hostapd_cli_cmd_afc, NULL,
-	  "[set_afc_chan_sel_config|get_afc_chan_sel_config] <afc_chan_sel_config_value>" },
+	  "[set_afc_chan_sel_config|get_afc_chan_sel_config|get_afc_6g_chan_list] <afc_chan_sel_config_value>" },
 	{ "clear_afc_payload", hostapd_cli_cmd_clear_afc_payload, NULL,
 	  "= Clear AFC payload stored in driver and firmware\n"},
 	{ "reset_afc", hostapd_cli_cmd_reset_afc, NULL,
