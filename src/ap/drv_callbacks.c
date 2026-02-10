@@ -2794,10 +2794,23 @@ static void hostapd_event_afc_update_complete(
 	struct afc_sp_reg_info *afc_rsp_info = &afc_info->afc_rsp_info;
 	struct hostapd_iface *iface = NULL;
 	int i;
+	const char *phy_name = hostapd_drv_get_radio_name(hapd);
 
+	if (!phy_name)
+		return;
+
+	wpa_printf(MSG_DEBUG, "AFC response event received for phy %s through %s",
+		   phy_name, hapd->iface->phy);
 	for (i = 0; i < hapd->iface->interfaces->count; i++) {
 		struct hostapd_iface *h_iface = hapd->iface->interfaces->iface[i];
+		const char *h_phy_name;
 
+		h_phy_name = hostapd_drv_get_radio_name(h_iface->bss[0]);
+		if (!h_phy_name || os_strcmp(h_phy_name, phy_name) != 0)
+			continue;
+
+		wpa_printf(MSG_DEBUG, "AFC Response event for iface %s in phy %s",
+			   h_iface->phy, h_phy_name);
 		if (!h_iface->current_hw_info)
 			continue;
 		if (h_iface->current_hw_info->hw_idx != afc_info->hw_idx)
@@ -2817,6 +2830,7 @@ static void hostapd_event_afc_update_complete(
 	}
 	iface->is_afc_power_event_received = true;
 
+	hapd = iface->bss[0];
 	if (hapd->driver && hapd->driver->is_only_afc_power_fetch &&
 	    hapd->drv_priv) {
 		bool is_only_afc_power_fetch =
@@ -2867,10 +2881,23 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 {
 	struct hostapd_iface *iface = NULL;
 	int i;
+	const char *phy_name = hostapd_drv_get_radio_name(hapd);
 
+	if (!phy_name)
+		return;
+
+	wpa_printf(MSG_DEBUG, "AFC Reset event received for phy %s through %s",
+		   phy_name, hapd->iface->phy);
 	for (i = 0; i < hapd->iface->interfaces->count; i++) {
 		struct hostapd_iface *h_iface = hapd->iface->interfaces->iface[i];
+		const char *h_phy_name;
 
+		h_phy_name = hostapd_drv_get_radio_name(h_iface->bss[0]);
+		if (!h_phy_name || os_strcmp(h_phy_name, phy_name) != 0)
+			continue;
+
+		wpa_printf(MSG_DEBUG, "AFC Reset event for iface %s in phy %s",
+			   h_iface->phy, h_phy_name);
 		if (!h_iface->current_hw_info)
 			continue;
 		if (h_iface->current_hw_info->hw_idx != afc_info->hw_idx)
@@ -2891,7 +2918,7 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 	/* Clear AFC payload */
 	hostapd_free_afc_data(iface);
 	iface->is_afc_power_event_received = false;
-	if (!hostapd_drv_is_retail_afc_supported(hapd)) {
+	if (!hostapd_drv_is_retail_afc_supported(iface->bss[0])) {
 		wpa_printf(MSG_DEBUG, "AFC payload reset not supported");
 		return;
 	}
