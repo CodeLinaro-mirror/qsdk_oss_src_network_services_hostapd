@@ -144,6 +144,7 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 {
 	struct hostapd_hw_modes *mode;
 	struct eht_capabilities *eht_cap;
+	struct hostapd_data *tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
 	struct ieee80211_eht_capabilities *cap;
 	size_t mcs_nss_len, ppe_thresh_len;
 	u8 *pos = eid, *length_pos;
@@ -178,6 +179,13 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 		cap->phy_cap[EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_IDX] &=
 			~EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_MASK;
 
+
+	/* For non-transmitting BSSs in MBSSID, inherit BSS-level overrides
+	 * from the transmitting BSS */
+	if (tx_hapd != hapd && tx_hapd->conf->eht_phy_capab_mask) {
+		hapd->conf->eht_phy_capab = tx_hapd->conf->eht_phy_capab;
+		hapd->conf->eht_phy_capab_mask = tx_hapd->conf->eht_phy_capab_mask;
+	}
 	if (!((hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_SU_BEAMFORMER) ?
 	      hapd->conf->eht_phy_capab.su_beamformer :
 	      hapd->iface->conf->eht_phy_capab.su_beamformer))
@@ -231,6 +239,41 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 		}
 	}
 
+
+	/* Apply BSS-level beamformee spatial streams overrides */
+	if (hapd->conf->eht_phy_capab_mask &
+	    (EHT_PHY_BSS_OVR_BFME_SS_80 | EHT_PHY_BSS_OVR_BFME_SS_160 |
+	     EHT_PHY_BSS_OVR_BFME_SS_320)) {
+		u16 phy = WPA_GET_LE16(&cap->phy_cap[EHT_PHY_BFMEE_SS_80MHZ_IDX]);
+
+		if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_BFME_SS_80) {
+			u8 ss_80 = hapd->conf->eht_phy_capab.eht_bfme_ss_80;
+
+			phy &= ~EHT_PHY_BFMEE_SS_80MHZ_MASK;
+			phy |= ((u16) ss_80 << EHT_PHY_BFMEE_SS_80MHZ_SHIFT) &
+				EHT_PHY_BFMEE_SS_80MHZ_MASK;
+		}
+
+		if (hapd->conf->eht_phy_capab_mask &
+		    EHT_PHY_BSS_OVR_BFME_SS_160) {
+			u8 ss_160 = hapd->conf->eht_phy_capab.eht_bfme_ss_160;
+
+			phy &= ~EHT_PHY_BFMEE_SS_160MHZ_MASK;
+			phy |= ((u16) ss_160 << EHT_PHY_BFMEE_SS_160MHZ_SHIFT) &
+				EHT_PHY_BFMEE_SS_160MHZ_MASK;
+		}
+
+		if (hapd->conf->eht_phy_capab_mask &
+		    EHT_PHY_BSS_OVR_BFME_SS_320) {
+			u8 ss_320 = hapd->conf->eht_phy_capab.eht_bfme_ss_320;
+
+			phy &= ~EHT_PHY_BFMEE_SS_320MHZ_MASK;
+			phy |= ((u16) ss_320 << EHT_PHY_BFMEE_SS_320MHZ_SHIFT) &
+				EHT_PHY_BFMEE_SS_320MHZ_MASK;
+		}
+
+		WPA_PUT_LE16(&cap->phy_cap[EHT_PHY_BFMEE_SS_80MHZ_IDX], phy);
+	}
 	pos = cap->optional;
 
 	mcs_nss_len = ieee80211_eht_mcs_set_size(mode->mode,

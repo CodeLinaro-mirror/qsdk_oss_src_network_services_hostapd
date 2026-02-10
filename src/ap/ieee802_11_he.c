@@ -103,6 +103,7 @@ u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
 {
 	struct ieee80211_he_capabilities *cap;
 	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
+	struct hostapd_data *tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
 	const struct he_capabilities *he_capab;
 	u8 *pos = eid;
 	u8 ie_size = 0, mcs_nss_size, ppet_size;
@@ -143,6 +144,13 @@ u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
 	if (!hostapd_conf_he_twt_enabled(hapd)) {
 		cap->he_mac_capab_info[HE_MAC_CAPAB_0] &= ~HE_MACCAP_TWT_RESPONDER;
 		cap->he_mac_capab_info[HE_MAC_CAPAB_3] &= ~HE_MACCAP_FLEXI_TWT;
+	}
+
+	/* For non-transmitting BSSs in MBSSID, inherit BSS-level overrides
+	 * from the transmitting BSS */
+	if (tx_hapd != hapd && tx_hapd->conf->he_phy_capab_mask) {
+		hapd->conf->he_phy_capab = tx_hapd->conf->he_phy_capab;
+		hapd->conf->he_phy_capab_mask = tx_hapd->conf->he_phy_capab_mask;
 	}
 
 	if (((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_SU_BEAMFORMER) ?
