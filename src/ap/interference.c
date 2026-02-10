@@ -779,6 +779,9 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 				wpa_printf(MSG_ERROR,
 					   "AWGN: bandwidth reduction not possible (cur=%d new=%d)",
 					   chan_width, new_chan_width);
+
+				/* Bring down the vap since all channels are blocked for switch */
+				hostapd_drv_stop_ap(iface->bss[0]);
 				goto exit;
 			}
 			goto do_csa;
@@ -818,6 +821,9 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 			wpa_printf(MSG_DEBUG,
 				   "AWGN: bandwidth reduction not needed/possible (cur=%d new=%d)",
 				   chan_width, new_chan_width);
+
+			/* Bring down the vap since all channels are blocked for switch */
+			hostapd_drv_stop_ap(iface->bss[0]);
 			goto exit;
 		}
 	}
