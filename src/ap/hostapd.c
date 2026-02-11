@@ -7633,6 +7633,9 @@ hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface, bool iface_enabl
 			if (!iface_6g->bss[j] || !iface_6g->bss[j]->started)
 				continue;
 
+			if (!iface_6g->bss[j]->beacon_set_done)
+				continue;
+
 			/* fils/ubpr force disabling is not preferred for this BSS */
 			if (!iface_6g->bss[j]->conf->force_disable_in_band_discovery)
 				continue;
