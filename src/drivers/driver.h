@@ -8181,7 +8181,15 @@ union wpa_event_data {
 	union wpa_event_data_extn event_data_extn;
 };
 
-#define HOSTAPD_STA_NUM_PACKETS_LOST	0xFFFF
+#define HOSTAPD_OP_DEAUTH        0x8000   /* 10xxxx... */
+#define HOSTAPD_OP_DISASSOC      0xC000   /* 11xxxx... */
+
+#define HOSTAPD_PAYLOAD_MASK     0x3FFF   /* lower 14 bits */
+
+/* 0xBFFF */
+#define HOSTAPD_DEAUTH_ALL       (HOSTAPD_OP_DEAUTH   | HOSTAPD_PAYLOAD_MASK)
+/* 0xFFFF */
+#define HOSTAPD_DISASSOC_ALL     (HOSTAPD_OP_DISASSOC | HOSTAPD_PAYLOAD_MASK)
 
 /**
  * wpa_supplicant_event - Report a driver event for wpa_supplicant
