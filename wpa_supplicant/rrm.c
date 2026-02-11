@@ -756,6 +756,7 @@ int wpas_get_op_chan_phy(int freq, const u8 *ies, size_t ies_len,
 	struct ieee80211_he_6ghz_oper_info *he_oper_6g = NULL;
 	struct ieee80211_ht_operation *ht_oper = NULL;
 	struct ieee80211_vht_operation *vht_oper = NULL;
+	struct ieee80211_eht_operation *eht_op = NULL;
 	u8 seg0, seg1, pos = 0;
 
 	ie = get_ie(ies, ies_len, WLAN_EID_HT_OPERATION);
@@ -887,7 +888,7 @@ int wpas_get_op_chan_phy(int freq, const u8 *ies, size_t ies_len,
 	}
 
 	*phy_type = ieee80211_get_phy_type(freq, ht_oper != NULL,
-					   vht_oper != NULL);
+					   vht_oper != NULL, eht_op != NULL);
 	if (*phy_type == PHY_TYPE_UNSPECIFIED) {
 		wpa_printf(MSG_DEBUG, "Cannot determine phy type");
 		return -1;

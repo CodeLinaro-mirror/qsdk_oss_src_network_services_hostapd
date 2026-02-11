@@ -897,6 +897,7 @@ static int wnm_nei_rep_add_bss(struct wpa_supplicant *wpa_s,
 	u32 info;
 	struct ieee80211_ht_operation *ht_oper = NULL;
 	struct ieee80211_vht_operation *vht_oper = NULL;
+	struct ieee80211_eht_operation *eht_op = NULL;
 
 	ie = wpa_bss_get_ie(bss, WLAN_EID_HT_OPERATION);
 	if (ie && ie[1] >= 2) {
@@ -919,6 +920,10 @@ static int wnm_nei_rep_add_bss(struct wpa_supplicant *wpa_s,
 			vht = vht_oper->vht_op_info_chwidth;
 	}
 
+	ie = wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_EHT_OPERATION);
+	if (ie && ie[1] >=2)
+		eht_op = (struct ieee80211_eht_operation *) (ie + 3);
+
 	if (ieee80211_freq_to_channel_ext(bss->freq, sec_chan, vht, &op_class,
 					  &chan) == NUM_HOSTAPD_MODES) {
 		wpa_printf(MSG_DEBUG,
@@ -927,7 +932,7 @@ static int wnm_nei_rep_add_bss(struct wpa_supplicant *wpa_s,
 	}
 
 	phy_type = ieee80211_get_phy_type(bss->freq, (ht_oper != NULL),
-					  (vht_oper != NULL));
+					  (vht_oper != NULL), (eht_op != NULL));
 	if (phy_type == PHY_TYPE_UNSPECIFIED) {
 		wpa_printf(MSG_DEBUG,
 			   "WNM: Cannot determine BSS phy type for Neighbor Report");

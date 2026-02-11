@@ -280,7 +280,7 @@ int ieee80211_is_dfs(int freq, const struct hostapd_hw_modes *modes,
 bool ieee80211_is_oce_capable(const u8 *frm, int len);
 int is_dfs_global_op_class(u8 op_class);
 bool is_80plus_op_class(u8 op_class);
-enum phy_type ieee80211_get_phy_type(int freq, int ht, int vht);
+enum phy_type ieee80211_get_phy_type(int freq, int ht, int vht, int eht);
 
 int supp_rates_11b_only(struct ieee802_11_elems *elems);
 int mb_ies_info_by_ies(struct mb_ies_info *info, const u8 *ies_buf,
