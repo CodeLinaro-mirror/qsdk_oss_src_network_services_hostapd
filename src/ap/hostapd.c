@@ -3638,38 +3638,41 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 		}
 #endif /* CONFIG_IEEE80211AX */
 
-		hostapd_apply_6ghz_dynamic_puncturing(iface);
-
 		if (is_6ghz_freq(iface->freq) && iface->conf->enable_best_power_mode) {
 			u8 best_power_mode;
 			enum chan_width ch_width;
 			u8 center_chan_no;
 			u16 center_freq;
 
-			ch_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
-			center_chan_no = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
-			center_freq = ieee80211_chan_to_freq(NULL, iface->conf->op_class,
+			if (!iface->is_afc_power_event_received) {
+			    bool sp_available = hostapd_is_sp_chans_available(iface);
+
+			    if (sp_available) {
+				int ret;
+
+				wpa_printf(MSG_DEBUG,
+					   "SP channels available in 6 GHz band for best power mode operation, fetching from driver");
+				ret = hostapd_fetch_afc_power_event(hapd);
+				if (ret)
+				    wpa_printf(MSG_DEBUG,
+					       "Failed to fetch AFC power event from driver");
+				/* Proceed with best power mode calculation */
+			    } else {
+				wpa_printf(MSG_DEBUG,
+					   "No SP channels available in 6 GHz band for best power mode operation");
+			    }
+			}
+			ch_width = hostapd_get_chan_width_from_oper_chan_width(
+				iface->conf);
+			center_chan_no = hostapd_get_oper_centr_freq_seg0_idx(
+				iface->conf);
+			center_freq = ieee80211_chan_to_freq(NULL,
+							     iface->conf->op_class,
 							     center_chan_no);
-			best_power_mode = hostapd_get_best_ap_6ghz_power_mode_for_iface(iface);
+			hostapd_apply_6ghz_dynamic_puncturing(iface);
+			best_power_mode =
+				hostapd_get_best_ap_6ghz_power_mode_for_iface(iface);
 			if (best_power_mode != NL80211_REG_NUM_POWER_MODES) {
-				if (!iface->is_afc_power_event_received) {
-				    bool sp_available = hostapd_is_sp_chans_available(iface);
-
-				    if (sp_available) {
-					int ret;
-
-					wpa_printf(MSG_DEBUG,
-						   "SP channels available in 6 GHz band for best power mode operation, fetching from driver");
-					ret = hostapd_fetch_afc_power_event(hapd);
-					if (ret)
-					    wpa_printf(MSG_DEBUG,
-						       "Failed to fetch AFC power event from driver");
-					/* Proceed with best power mode calculation */
-				    } else {
-					wpa_printf(MSG_DEBUG,
-						   "No SP channels available in 6 GHz band for best power mode operation");
-				    }
-				}
 				iface->conf->he_6ghz_reg_pwr_type = best_power_mode;
 				wpa_printf(MSG_INFO,
 					   "%s: Best power mode for Freq %d is %d",
