@@ -5876,6 +5876,12 @@ static int wpa_driver_nl80211_dcs_config(void *priv, u8 link_id,
 {
 	return wpa_driver_nl80211_dcs_config_extn(priv, link_id, params);
 }
+
+static int wpa_driver_nl80211_dcs_sim(void *priv, u8 link_id,
+				      struct driver_dcs_sim *params)
+{
+	return wpa_driver_nl80211_dcs_sim_extn(priv, link_id, params);
+}
 #endif
 #endif
 
@@ -17344,6 +17350,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.read_link_set_beacon = wpa_driver_read_link_set_beacon,
 #ifdef CONFIG_QCN_EXTN
 	.dcs_config = wpa_driver_nl80211_dcs_config,
+	.dcs_sim = wpa_driver_nl80211_dcs_sim,
 #endif
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_IEEE80211AX
