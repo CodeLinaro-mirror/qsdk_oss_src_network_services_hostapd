@@ -308,6 +308,19 @@ struct channel_usage_config {
 	struct channel_usage_elem elems[MAX_CHANNEL_USAGE_ELEMENTS];
 };
 
+enum hostapd_reenable_mode {
+	/* Normal operation */
+	REENABLE_NONE = 0,
+	/* Reuse existing iface/link: skip add/remove */
+	REENABLE_REUSE_LINK = 1,
+	/* HT scan in progress; defer enable */
+	REENABLE_HT_SCAN = 2,
+	/* CAC in progress; defer enable */
+	REENABLE_CAC = 3,
+	/* Interface teardown in progress */
+	REENABLE_DEINIT = 4,
+};
+
 /**
  * struct hostapd_data - hostapd per-BSS data structure
  */
@@ -414,7 +427,7 @@ struct hostapd_data {
 	struct wps_context *wps;
 
 	int beacon_set_done;
-	unsigned int reenable:1;
+	u8 reenable;
 	struct wpabuf *wps_beacon_ie;
 	struct wpabuf *wps_probe_resp_ie;
 	struct wpabuf *plugin_vendor_elements; /* Dynamic vendor IEs set by plugin */
