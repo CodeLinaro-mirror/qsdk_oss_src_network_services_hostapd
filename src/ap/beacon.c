@@ -802,8 +802,9 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 
 		if (hapd->conf->enable_aal)
 			include_ext_cap = BIT(BASIC_MULTI_LINK_CTRL_EXT_EN);
-		if (hapd->iface->mld_ext_mld_capa &
-		    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+		if (hapd->conf->single_link_emlsr &&
+		    (hapd->iface->mld_ext_mld_capa &
+		     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 			include_ext_cap |=
 				BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
@@ -811,8 +812,9 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 			/* Check for non-Tx BSS conf */
 			if (params->mld_ap->conf->enable_aal)
 				param_ext_cap = BIT(BASIC_MULTI_LINK_CTRL_EXT_EN);
-			if (hapd->iface->mld_ext_mld_capa &
-			    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+			if (params->mld_ap->conf->single_link_emlsr &&
+			    (params->mld_ap->iface->mld_ext_mld_capa &
+			     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 				param_ext_cap |=
 					BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
@@ -1211,8 +1213,9 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 			if (bcast_prb_resp)
 				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
 		}
-		if (hapd->iface->mld_ext_mld_capa &
-		    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+		if (hapd->conf->single_link_emlsr &&
+		    (hapd->iface->mld_ext_mld_capa &
+		     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 			ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
 		if (params->mld_ap && params->mld_ap->conf->mld_ap) {
@@ -1225,8 +1228,9 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 					p_ext_cap |=
 					BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
 			}
-			if (hapd->iface->mld_ext_mld_capa &
-			    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+			if (params->mld_ap->conf->single_link_emlsr &&
+			    (params->mld_ap->iface->mld_ext_mld_capa &
+			     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
 			pos = hostapd_eid_eht_ml_beacon(
@@ -3293,8 +3297,9 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 
 			if (hapd->conf->enable_aal)
 				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
-			if (hapd->iface->mld_ext_mld_capa &
-			    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+			if (hapd->conf->single_link_emlsr &&
+			    (hapd->iface->mld_ext_mld_capa &
+			     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
 			tailpos = hostapd_eid_eht_ml_beacon(hapd, NULL,

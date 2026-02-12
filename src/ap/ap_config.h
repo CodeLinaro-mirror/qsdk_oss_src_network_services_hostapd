@@ -1084,6 +1084,7 @@ struct hostapd_bss_config {
 	bool enable_aal;
 	u8 ml_max_rec_links;
 
+	bool single_link_emlsr;
 #ifdef CONFIG_TESTING_OPTIONS
 	/*
 	 * If set indicate the AP as disabled in the RNR element included in the

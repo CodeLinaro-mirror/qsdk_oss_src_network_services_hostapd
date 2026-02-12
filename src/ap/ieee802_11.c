@@ -6183,8 +6183,9 @@ rsnxe_done:
 	if (hostapd_is_eht_enabled(hapd)) {
 		u8 ext_cap = 0;
 
-		if (hapd->iface->mld_ext_mld_capa &
-		    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+		if (hapd->conf->single_link_emlsr &&
+		    (hapd->iface->mld_ext_mld_capa &
+		     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 			ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
 		if (hapd->conf->mld_ap)
@@ -12351,8 +12352,9 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 				if (bss->conf->enable_aal)
 					ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
 
-				if (bss->iface->mld_ext_mld_capa &
-				    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+				if (bss->conf->single_link_emlsr &&
+				    (bss->iface->mld_ext_mld_capa &
+				     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 					ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 			}
 
@@ -12589,8 +12591,9 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 				if (bss->conf->enable_aal)
 					ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
 
-				if (bss->iface->mld_ext_mld_capa &
-				    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+				if (bss->conf->single_link_emlsr &&
+				    (bss->iface->mld_ext_mld_capa &
+				     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 					ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 			}
 
