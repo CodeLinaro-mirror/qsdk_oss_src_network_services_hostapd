@@ -866,6 +866,9 @@ int main(int argc, char *argv[])
 #ifdef CONFIG_PROCESS_COORDINATION
 	const char *proc_coord_dir = NULL;
 #endif
+#ifdef CONFIG_HOSTAPD_IF
+	bool plugin_enable = false;
+#endif
 
 	if (os_program_init())
 		return -1;
@@ -907,13 +910,18 @@ int main(int argc, char *argv[])
 	wpa_supplicant_event = hostapd_wpa_event;
 	wpa_supplicant_event_global = hostapd_wpa_event_global;
 	for (;;) {
-		c = getopt(argc, argv, "b:Bde:f:hi:KP:sSTtu:g:G:qvz::");
+		c = getopt(argc, argv, "b:Bde:f:hHi:KP:sSTtu:g:G:qvz::");
 		if (c < 0)
 			break;
 		switch (c) {
 		case 'h':
 			usage();
 			break;
+#ifdef CONFIG_HOSTAPD_IF
+		case 'H':
+			plugin_enable = true;
+			break;
+#endif
 		case 'd':
 			debug++;
 			if (wpa_debug_level > 0)
@@ -1065,7 +1073,7 @@ int main(int argc, char *argv[])
 
 #ifdef CONFIG_HOSTAPD_IF
 	/* Initialize action frame registry before parsing configs */
-	if (hostapd_if_init(&interfaces) < 0) {
+	if (hostapd_if_init(&interfaces, plugin_enable) < 0) {
 		wpa_printf(MSG_ERROR, "Failed to init action frame registry");
 		goto out;
 	}
