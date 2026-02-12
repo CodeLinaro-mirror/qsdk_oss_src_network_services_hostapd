@@ -757,6 +757,11 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 	}
 
 #ifdef CONFIG_QCN_EXTN
+	if (!(iface->conf->conf_extn.dcs_conf.dcs_random_chan_bitmap & DCS_AWGN_INTF)) {
+		hostapd_trigger_dynamic_acs(iface->bss[0], CHANNEL_CHANGE_CSA);
+		return 0;
+	}
+
 	if (dcs_get_bw_reduction_ctrl_extn(iface->conf, DCS_AWGN_INTF) == false) {
 		wpa_printf(MSG_DEBUG, "DCS Bandwidth reduction is not set");
 		channel_switch = 1;
