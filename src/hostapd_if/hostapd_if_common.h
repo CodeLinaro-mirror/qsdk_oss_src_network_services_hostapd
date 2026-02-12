@@ -18,6 +18,11 @@ struct action_field {
 	bool is_wild_card;     /* true = wildcard (catch-all within category) */
 };
 
+enum hostapd_if_eloop_type {
+	HOSTAPD_IF_ELOOP_ROUTING,
+	HOSTAPD_IF_ELOOP_DIRECT_CALL
+};
+
 enum hostapd_if_disconnect_type {
 	HOSTAPD_IF_DISCONNECT_FROM_STA = 0,
 	HOSTAPD_IF_DISCONNECT_TO_STA = 1

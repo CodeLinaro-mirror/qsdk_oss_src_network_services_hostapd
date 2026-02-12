@@ -330,36 +330,52 @@ void hostapd_if_register_event(void *ifname_ctx,
 }
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
-void hostapd_if_plugin_ctor(void);
+enum hostapd_if_eloop_type hostapd_if_plugin_init(void *);
+void hostapd_if_plugin_deinit(void);
 #endif
 
+const bool global_plugin_enable = false;
+bool hostapd_if_plugin_enable = global_plugin_enable;
 /*
  * Call this once at startup (from hostapd_if_init)
  */
-int hostapd_if_init(struct hapd_interfaces *interfaces)
+int hostapd_if_init(struct hapd_interfaces *interfaces, bool plugin_enable)
 {
+	enum hostapd_if_eloop_type eloop_type = HOSTAPD_IF_ELOOP_ROUTING;
 	wpa_printf(MSG_ERROR, "%s", __func__);
 	hostapd_if_ifaces = interfaces;
 
+#ifdef CONFIG_QCN_EXTN
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 #ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
-	hostapd_if_plugin_ctor();
+	hostapd_if_plugin_enable = (plugin_enable || global_plugin_enable);
+	if (hostapd_if_plugin_enable)
+		eloop_type = hostapd_if_plugin_init(interfaces);
 #endif
-	if (hostapd_if_eloop_init() < 0)
+	if (hostapd_if_eloop_init(eloop_type) < 0)
 		return -1;
+#endif
 #endif
 
 	return 0;
 }
 
+#ifdef CONFIG_QCN_EXTN
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 void hostapd_if_eloop_deinit(void);
+#endif
 #endif
 
 int hostapd_if_deinit(void)
 {
+#ifdef CONFIG_QCN_EXTN
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 	hostapd_if_eloop_deinit();
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+	if (hostapd_if_plugin_enable)
+		hostapd_if_plugin_deinit();
+#endif
+#endif
 #endif
 	return 0;
 }
