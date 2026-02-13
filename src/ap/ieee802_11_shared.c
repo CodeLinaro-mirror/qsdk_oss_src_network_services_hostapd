@@ -546,6 +546,10 @@ u8 * hostapd_eid_ext_capab(struct hostapd_data *hapd, u8 *eid,
 			*pos &= ~0x08;
 		if (i == 2 && !hapd->iconf->mbssid)
 			*pos &= ~0x40;
+		/* Clear bit 78 if twt responder support is disabled */
+		if (i == 9 && !hostapd_get_he_twt_responder(hapd, IEEE80211_MODE_AP) &&
+		    !hostapd_get_ht_vht_twt_responder(hapd))
+			*pos &= ~0x40;
 	}
 
 	while (len > 0 && eid[1 + len] == 0) {
