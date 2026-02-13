@@ -2183,7 +2183,12 @@ void hostapd_if_trigger_eapol_m3_dump_params(char *ifname, uint8_t *sta_mac)
 
 size_t hostapd_if_auth_reply_tail_len(struct sta_info *sta, size_t current_len)
 {
-	size_t tail_len = sta->ext_auth_tail_len;
+	size_t tail_len;
+
+	if (!sta)
+		return 0;
+
+	tail_len = sta->ext_auth_tail_len;
 
 	if (!sta->ext_auth_tail || !tail_len) {
 		wpa_printf(MSG_MSGDUMP, "%s: No tail %p %zu", __func__,
@@ -2205,7 +2210,7 @@ void hostapd_if_auth_reply_add_tail(struct sta_info *sta, size_t offset,
 				    struct ieee80211_mgmt *reply)
 {
 	/* Append external additional IEs, if any (always supported) */
-	if (!tail_len || !sta->ext_auth_tail)
+	if (!tail_len || !sta || !sta->ext_auth_tail)
 		return;
 
 	os_memcpy(reply->u.auth.variable + offset, sta->ext_auth_tail,
@@ -2215,9 +2220,13 @@ void hostapd_if_auth_reply_add_tail(struct sta_info *sta, size_t offset,
 void hostapd_if_assoc_resp_tail(struct sta_info *sta, size_t buflen,
 				size_t current_len, u8 **p)
 {
-	size_t tail_len = sta->ext_assoc_tail_len;
+	size_t tail_len;
 	u8 *pos = *p;
 
+	if (!sta)
+		return;
+
+	tail_len = sta->ext_assoc_tail_len;
 	if (!sta->ext_assoc_tail || !tail_len) {
 		wpa_printf(MSG_MSGDUMP, "%s: No tail %p %zu", __func__,
 			sta->ext_assoc_tail, tail_len);
@@ -2238,8 +2247,12 @@ void hostapd_if_assoc_resp_tail(struct sta_info *sta, size_t buflen,
 
 size_t hostapd_if_assoc_resp_tail_len(struct sta_info *sta, size_t current_len)
 {
-	size_t tail_len = sta->ext_assoc_tail_len;
+	size_t tail_len;
 
+	if (!sta)
+		return 0;
+
+	tail_len = sta->ext_assoc_tail_len;
 	if (!sta->ext_assoc_tail || !tail_len) {
 		wpa_printf(MSG_MSGDUMP, "%s: No tail %p %zu", __func__,
 			sta->ext_assoc_tail, tail_len);
