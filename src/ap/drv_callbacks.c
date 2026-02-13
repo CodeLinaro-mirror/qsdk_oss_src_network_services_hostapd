@@ -3181,6 +3181,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 
 		if (iface->num_bss == 1) {
 
+			ap_for_each_sta(hapd, hostapd_sm_link_reconfigure, phapd);
 			hostapd_free_link_stas(hapd);
 
 			for (i = 0; i < interfaces->count; i++) {
