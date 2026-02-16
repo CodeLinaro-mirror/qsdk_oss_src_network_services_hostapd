@@ -265,8 +265,8 @@ static u8 * hostapd_fill_subband_triplets(struct hostapd_data *hapd, u8 *pos,
 }
 
 
-static u8 * hostapd_eid_country(struct hostapd_data *hapd, u8 *eid,
-				int max_len)
+u8 * hostapd_eid_country(struct hostapd_data *hapd, u8 *eid,
+			 int max_len)
 {
 	u8 *pos = eid;
 	u8 *end = eid + max_len;
@@ -740,6 +740,39 @@ static size_t he_elem_len(struct hostapd_data *hapd)
 	return len;
 }
 
+size_t hostapd_eid_country_len(struct hostapd_data *hapd)
+{
+	struct hostapd_hw_modes *mode;
+	size_t len;
+	int i, enabled_channels = 0;
+
+	if (!hapd->iconf->ieee80211d || hapd->iface->current_mode == NULL)
+		return 0;
+
+	mode = hapd->iface->current_mode;
+
+	/* Element ID (1) + Length (1) + Country String (3) = 5 */
+	len = 5;
+
+	/* Add Operating Triplet for 6 GHz: Extension ID + Op Class + Coverage */
+	if (is_6ghz_op_class(hapd->iconf->op_class))
+		len += 3;
+
+	/* Count the enabled (non-disabled) channels */
+	for (i = 0; i < mode->num_channels; i++) {
+		if (!(mode->channels[i].flag & HOSTAPD_CHAN_DISABLED))
+			enabled_channels++;
+	}
+
+	/* Estimate subband triplets: 3 bytes per channel group */
+	/* Worst case: each enabled channel is a separate group */
+	len += enabled_channels * 3;
+
+	/* Padding for alignment */
+	if (len & 1)
+		len += 1;
+	return len;
+}
 
 static void hostapd_free_probe_resp_params(struct probe_resp_params *params)
 {
