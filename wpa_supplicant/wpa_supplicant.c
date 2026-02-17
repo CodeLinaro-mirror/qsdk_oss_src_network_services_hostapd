@@ -2701,6 +2701,10 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 
 	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_SAE_PW_ID_CHANGE,
 			 ssid->sae_password_id && ssid->sae_password_id_change);
+#ifdef CONFIG_PMKSA_PRIVACY
+	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_PMKSA_CACHING_PRIVACY,
+			 ssid->pmksa_privacy);
+#endif /* CONFIG_PMKSA_PRIVACY */
 
 	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_SECURITY_PROFILE_ACTIVE,
 			 wpas_security_profile_active(wpa_s) ? 1 : 0);
