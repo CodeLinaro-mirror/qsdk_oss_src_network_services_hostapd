@@ -6874,7 +6874,14 @@ static void handle_assoc(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_MBO */
 
-	if (hapd->conf->wpa && check_sa_query(hapd, sta, reassoc, pos, left)) {
+	/* Skip SA Query for EPPKE */
+#ifdef CONFIG_ENC_ASSOC
+	if (hapd->conf->wpa && !sta->epp_sta &&
+	    check_sa_query(hapd, sta, reassoc, pos, left)) {
+#else
+	if (hapd->conf->wpa &&
+	    check_sa_query(hapd, sta, reassoc, pos, left)) {
+#endif /* CONFIG_ENC_ASSOC */
 		resp = WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY;
 		goto fail;
 	}
