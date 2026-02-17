@@ -6994,8 +6994,17 @@ static bool hapd_is_known_sta(struct hostapd_data *hapd, struct sta_info *sta,
 
 static bool check_sa_query(struct hostapd_data *hapd, struct sta_info *sta,
 			   int reassoc, const u8 *ies, size_t ies_len,
-			   bool enc_assoc)
+			   bool enc_assoc, struct sta_info *current_sta)
 {
+	struct hostapd_data *assoc_hapd;
+	struct sta_info *assoc_sta;
+
+	assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd);
+	if (assoc_sta) {
+		sta = assoc_sta;
+		hapd = assoc_hapd;
+	}
+
 	if ((sta->flags &
 	     (WLAN_STA_ASSOC | WLAN_STA_MFP | WLAN_STA_AUTHORIZED)) !=
 	    (WLAN_STA_ASSOC | WLAN_STA_MFP | WLAN_STA_AUTHORIZED))
@@ -7027,6 +7036,8 @@ static bool check_sa_query(struct hostapd_data *hapd, struct sta_info *sta,
 		 */
 		if (sta->sa_query_count == 0)
 			ap_sta_start_sa_query(hapd, sta);
+
+		current_sta->sa_query_triggered_sta = sta;
 
 		return true;
 	}
@@ -7066,7 +7077,7 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 				continue;
 			lsta = ap_get_sta(bss, sta->addr);
 			if (lsta && check_sa_query(bss, lsta, type, ies, ies_len,
-						 false))
+						 false, sta))
 				return true;
 		}
 	}
@@ -9780,7 +9791,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 
 	if (hapd->conf->wpa &&
 	    check_sa_query(hapd, sta, reassoc, pos, left,
-			   fc & WLAN_FC_PROTECTED)) {
+			   fc & WLAN_FC_PROTECTED, sta)) {
 		resp = WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY;
 		goto fail;
 	}
