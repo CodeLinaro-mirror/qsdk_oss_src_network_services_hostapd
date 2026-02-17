@@ -40,9 +40,15 @@ u8 * hostapd_eid_assoc_comeback_time(struct hostapd_data *hapd,
 	u32 timeout, tu;
 	struct os_reltime now, passed;
 	u8 type = WLAN_TIMEOUT_ASSOC_COMEBACK;
+	struct sta_info *temp_sta = NULL;
+
+	if (sta->sa_query_triggered_sta)
+		temp_sta = sta->sa_query_triggered_sta;
+	else
+		temp_sta = sta;
 
 	os_get_reltime(&now);
-	os_reltime_sub(&now, &sta->sa_query_start, &passed);
+	os_reltime_sub(&now, &temp_sta->sa_query_start, &passed);
 	tu = (passed.sec * 1000000 + passed.usec) / 1024;
 	if (hapd->conf->assoc_sa_query_max_timeout > tu)
 		timeout = hapd->conf->assoc_sa_query_max_timeout - tu;
@@ -51,6 +57,7 @@ u8 * hostapd_eid_assoc_comeback_time(struct hostapd_data *hapd,
 	if (timeout < hapd->conf->assoc_sa_query_max_timeout)
 		timeout++; /* add some extra time for local timers */
 
+	sta->sa_query_triggered_sta = NULL;
 #ifdef CONFIG_TESTING_OPTIONS
 	if (hapd->conf->test_assoc_comeback_type != -1)
 		type = hapd->conf->test_assoc_comeback_type;
