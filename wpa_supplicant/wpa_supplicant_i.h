@@ -1851,6 +1851,15 @@ struct wpa_supplicant {
 	u8 smd_prep_dialog_token;
 	unsigned int smd_st_requested:1; /* ST roam requested via ROAM <bssid> ST */
 	u8 smd_st_exec_path;             /* exec_path: 0=via serving AP, 1=via target AP */
+#ifdef CONFIG_NAN
+	u32 nan_drv_flags;
+	struct nan_data *nan;
+	struct nan_cluster_config nan_config;
+#endif /* CONFIG_NAN */
+#ifdef CONFIG_ENC_ASSOC
+	bool assoc_resp_encrypted; /* Whether (Re)Association Response frame
+				    * is encrypted. */
+#endif /* CONFIG_ENC_ASSOC */
 };
 
 
