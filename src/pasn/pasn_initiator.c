@@ -611,6 +611,20 @@ static void wpas_pasn_add_mle(struct pasn_data *pasn, struct wpabuf *buf)
 }
 
 
+static u8 * pasn_prepend_auth_alg(u16 auth_alg, const u8 *buf, size_t len)
+{
+	u8 *new_buf = os_malloc(len + 2);
+
+	if (!new_buf)
+		return NULL;
+
+	WPA_PUT_LE16(new_buf, auth_alg);
+	os_memcpy(new_buf + 2, buf, len);
+
+	return new_buf;
+}
+
+
 struct wpabuf * wpas_pasn_build_auth_1(struct pasn_data *pasn,
 				       const struct wpabuf *comeback,
 				       bool verify, bool full_hdr)
@@ -618,6 +632,9 @@ struct wpabuf * wpas_pasn_build_auth_1(struct pasn_data *pasn,
 	struct wpabuf *buf, *pubkey = NULL, *wrapped_data_buf = NULL;
 	const u8 *pmkid;
 	u8 wrapped_data;
+	const u8 *data;
+	size_t data_len;
+	u8 *copy = NULL;
 
 	wpa_printf(MSG_DEBUG, "PASN: Building frame 1");
 
@@ -697,9 +714,22 @@ struct wpabuf * wpas_pasn_build_auth_1(struct pasn_data *pasn,
 
 	wpas_pasn_add_mle(pasn, buf);
 
+	if (full_hdr) {
+		data = wpabuf_head_u8(buf) + IEEE80211_HDRLEN;
+		data_len = wpabuf_len(buf) - IEEE80211_HDRLEN;
+	} else {
+		copy = pasn_prepend_auth_alg(pasn->auth_alg,
+					     wpabuf_head_u8(buf),
+					     wpabuf_len(buf));
+		if (!copy)
+			goto fail;
+		data = copy;
+		data_len = wpabuf_len(buf) + 2;
+	}
+
 	wpabuf_free(pasn->auth1);
-	pasn->auth1 = wpabuf_alloc_copy(wpabuf_head_u8(buf) + IEEE80211_HDRLEN,
-					wpabuf_len(buf) - IEEE80211_HDRLEN);
+	pasn->auth1 = wpabuf_alloc_copy(data, data_len);
+
 	if (!pasn->auth1) {
 		wpa_printf(MSG_DEBUG, "PASN: Failed to store a copy of Auth1");
 		goto fail;
@@ -709,6 +739,7 @@ struct wpabuf * wpas_pasn_build_auth_1(struct pasn_data *pasn,
 
 	wpabuf_free(wrapped_data_buf);
 	wpabuf_free(pubkey);
+	os_free(copy);
 
 	wpa_printf(MSG_DEBUG, "PASN: Frame 1: Success");
 	return buf;
@@ -717,6 +748,7 @@ fail:
 	wpabuf_free(wrapped_data_buf);
 	wpabuf_free(pubkey);
 	wpabuf_free(buf);
+	os_free(copy);
 	return NULL;
 }
 
@@ -732,6 +764,7 @@ struct wpabuf * wpas_pasn_build_auth_3(struct pasn_data *pasn, bool full_hdr)
 	u8 wrapped_data;
 	int ret;
 	u8 hash[SHA512_MAC_LEN];
+	u8 *copy = NULL;
 
 	wpa_printf(MSG_DEBUG, "PASN: Building frame 3");
 
@@ -783,8 +816,19 @@ struct wpabuf * wpas_pasn_build_auth_3(struct pasn_data *pasn, bool full_hdr)
 
 	os_memset(ptr, 0, mic_len);
 
-	data = wpabuf_head_u8(buf) + IEEE80211_HDRLEN;
-	data_len = wpabuf_len(buf) - IEEE80211_HDRLEN;
+	if (full_hdr) {
+		data = wpabuf_head_u8(buf) + IEEE80211_HDRLEN;
+		data_len = wpabuf_len(buf) - IEEE80211_HDRLEN;
+	} else {
+		copy = pasn_prepend_auth_alg(pasn->auth_alg,
+					     wpabuf_head_u8(buf),
+					     wpabuf_len(buf));
+		if (!copy)
+			goto fail;
+		data = copy;
+		data_len = wpabuf_len(buf) + 2;
+	}
+
 
 	if (!pasn->auth1 ||
 	    pasn_auth_frame_hash(pasn->hash_alg, wpabuf_head(pasn->auth1),
@@ -811,6 +855,7 @@ struct wpabuf * wpas_pasn_build_auth_3(struct pasn_data *pasn, bool full_hdr)
 	os_memcpy(ptr, mic, mic_len);
 
 	pasn->trans_seq++;
+	os_free(copy);
 
 	wpa_printf(MSG_DEBUG, "PASN: frame 3: Success");
 	return buf;
@@ -818,6 +863,7 @@ fail:
 	pasn->status = WLAN_STATUS_UNSPECIFIED_FAILURE;
 	wpabuf_free(wrapped_data_buf);
 	wpabuf_free(buf);
+	os_free(copy);
 	return NULL;
 }
 
