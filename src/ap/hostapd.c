@@ -63,6 +63,7 @@
 #include "robust_av.h"
 #include "atf/atf_offload.h"
 #include "../../qcn_extns/cmn.h"
+#include "nft.h"
 
 static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason);
 #ifdef CONFIG_WEP
@@ -2525,7 +2526,7 @@ setup_mld:
 
 	if (hapd->conf->scs) {
 		os_snprintf(buf, 128, "%s_%s", CHAIN_NAME, conf->iface);
-		hostapd_ucode_config_nft_chain(hapd, TABLE_NAME, buf, true);
+		hostapd_config_nft_chain(hapd, TABLE_NAME, buf, true);
 	}
 
 	hapd->cca_count = (hapd->cca_count > 0) ?
@@ -6138,8 +6139,8 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 		if (hapd && hapd->conf && hapd->conf->scs) {
 			os_snprintf(buf, sizeof(buf), "%s_%s", CHAIN_NAME,
 				    hapd->conf->iface);
-			hostapd_ucode_config_nft_chain(hapd, TABLE_NAME, buf,
-						       false);
+			hostapd_config_nft_chain(hapd, TABLE_NAME, buf,
+						 false);
 		}
 #endif
 
