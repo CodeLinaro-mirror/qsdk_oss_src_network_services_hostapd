@@ -24,6 +24,9 @@
 #include "airtime_policy.h"
 #include "ap_config.h"
 #include "interference.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 
 #define RADIUS_CLIENT_MAX_RETRIES 10
 #define RADIUS_CLIENT_MAX_WAIT	120
@@ -1580,9 +1583,21 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+#if defined(CONFIG_IEEE80211BE) && defined(CONFIG_QCN_EXTN)
+	if (full_config && hostapd_config_check_bss_repurpose_mode_extn(conf, bss)) {
+		wpa_printf(MSG_ERROR, "Repurpose mode validation failed");
+		return -1;
+	}
+#endif /* CONFIG_IEEE80211BE && CONFIG_QCN_EXTN */
+
 #ifdef CONFIG_IEEE80211AX
 	if (bss->he_phy_capab_mask) {
+#ifdef CONFIG_QCN_EXTN
+		if (!conf->ieee80211ax || bss->disable_11ax ||
+		    hostapd_is_repurpose_disabled_11ax_extn(bss)) {
+#else
 		if (!conf->ieee80211ax || bss->disable_11ax) {
+#endif /* CONFIG_QCN_EXTN */
 			u32 mask = bss->he_phy_capab_mask;
 
 			os_memset(&bss->he_phy_capab, 0,
@@ -1665,8 +1680,14 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 #endif /* CONFIG_SAE_PK */
 
 #ifdef CONFIG_FILS
+#ifdef CONFIG_QCN_EXTN
+	if (full_config && bss->fils_discovery_max_int &&
+	    (!conf->ieee80211ax || bss->disable_11ax ||
+	     hostapd_is_repurpose_disabled_11ax_extn(bss))) {
+#else
 	if (full_config && bss->fils_discovery_max_int &&
 	    (!conf->ieee80211ax || bss->disable_11ax)) {
+#endif /* CONFIG_QCN_EXTN */
 		wpa_printf(MSG_ERROR,
 			   "Currently IEEE 802.11ax support is mandatory to enable FILS discovery transmission.");
 		return -1;
@@ -1681,8 +1702,14 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 #endif /* CONFIG_FILS */
 
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	if (full_config && conf->ieee80211be && !bss->disable_11be &&
+	    !hostapd_is_repurpose_disabled_11be_extn(bss) &&
+	    !bss->beacon_prot && ap_pmf_enabled(bss)) {
+#else
 	if (full_config && conf->ieee80211be && !bss->disable_11be &&
 	    !bss->beacon_prot && ap_pmf_enabled(bss)) {
+#endif /* CONFIG_QCN_EXTN */
 		bss->beacon_prot = 1;
 		wpa_printf(MSG_INFO,
 			   "Enabling beacon protection as IEEE 802.11be is enabled for this BSS");
@@ -1705,13 +1732,18 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 	}
 
 
+#ifdef CONFIG_QCN_EXTN
+	if (bss->mld_ap && !hostapd_is_repurpose_disabled_11be_extn(bss)) {
+#else
 	if (bss->mld_ap) {
+#endif /* CONFIG_QCN_EXTN */
 		/* set ML Max rec links to default, if it is not configured */
 		if (bss->enable_aal &&
 		    (bss->ml_max_rec_links == ML_IE_MAX_REC_LINKS_INVAL))
 			bss->ml_max_rec_links = ML_IE_DEF_MAX_REC_LINKS;
 	}
 #endif /* CONFIG_IEEE80211BE */
+
 #ifdef CONFIG_IEEE80211BN
 	if (full_config && conf->ieee80211bn && !conf->ieee80211be) {
 		wpa_printf(MSG_ERROR,
@@ -1733,7 +1765,12 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 #ifdef CONFIG_IEEE80211BE
 
 	if (bss->eht_phy_capab_mask) {
+#ifdef CONFIG_QCN_EXTN
+		if (!conf->ieee80211be || bss->disable_11be ||
+		    hostapd_is_repurpose_disabled_11be_extn(bss)) {
+#else
 		if (!conf->ieee80211be || bss->disable_11be) {
+#endif /* CONFIG_QCN_EXTN */
 			u32 mask = bss->eht_phy_capab_mask;
 
 			os_memset(&bss->eht_phy_capab, 0,
@@ -1783,8 +1820,14 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 		return -1;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (bss->eht_ltf &&
+	    !(conf->ieee80211be && !bss->disable_11be &&
+	      !hostapd_is_repurpose_disabled_11be_extn(bss))) {
+#else
 	if (bss->eht_ltf &&
 	    !(conf->ieee80211be && !bss->disable_11be)) {
+#endif /* CONFIG_QCN_EXTN */
 		wpa_printf(MSG_ERROR,
 			   "Selective EHT LTF rejected: EHT not allowed in current mode");
 		bss->eht_ltf = 0;
@@ -2086,14 +2129,25 @@ bool hostapd_is_beacon_tx_rate_preamble_valid(const struct hostapd_config *iconf
 			wpa_printf(MSG_ERROR,
 				   "VHT rate is configured for beacon_rate, but 11ac is disabled");
 			return false;
-	} else if (bss->rate_type == BEACON_RATE_HE &&
-		   !(iconf->ieee80211ax && !bss->disable_11ax)) {
+	} else if (bss->rate_type == BEACON_RATE_HE) {
+#ifdef CONFIG_QCN_EXTN
+		if (!(iconf->ieee80211ax && !bss->disable_11ax &&
+		      !hostapd_is_repurpose_disabled_11ax_extn(bss))) {
+#else
+		if (!(iconf->ieee80211ax && !bss->disable_11ax)) {
+#endif /* CONFIG_QCN_EXTN */
 			wpa_printf(MSG_ERROR,
 				   "HE rate is configured for beacon_rate, but 11ax is disabled");
 			return false;
+		}
 	} else if (bss->rate_type == BEACON_RATE_EHT) {
-		/* EHT preamble requires 11be enabled */
+		/* EHT preamible requires 11be enabled */
+#ifdef CONFIG_QCN_EXTN
+		if (!(iconf->ieee80211be && !bss->disable_11be &&
+		      !hostapd_is_repurpose_disabled_11be_extn(bss))) {
+#else
 		if (!(iconf->ieee80211be && !bss->disable_11be)) {
+#endif /* CONFIG_QCN_EXTN */
 			wpa_printf(MSG_ERROR,
 				   "EHT rate is configured for beacon_rate, but 11be is disabled");
 			return false;
