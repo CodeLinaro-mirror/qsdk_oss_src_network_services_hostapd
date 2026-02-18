@@ -232,6 +232,8 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->eht_phy_capab.eht_mu_bfmr_mask = 0x7;
 	bss->eht_phy_capab.eht_mu_mimo_mask = 0x7;
 	bss->eht_phy_capab.mu_beamformer = 1;
+
+	bss->single_link_emlsr = false;
 #endif /* CONFIG_IEEE80211BE */
 	bss->ht_mcs_nss_set = 0;
 	bss->group_control_frame_cipher = WPA_CIPHER_BIP_GMAC_256;
