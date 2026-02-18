@@ -11505,13 +11505,13 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 	bool ap_mld = false;
 	u8 *eid = *pos;
 
-#ifdef CONFIG_IEEE80211BE
-	ap_mld = !!hapd->conf->mld_ap;
-#endif /* CONFIG_IEEE80211BE */
-
 	if (!bss || !bss->conf || !bss->started ||
 	    !bss->beacon_set_done || bss == reporting_hapd)
 		return false;
+
+#ifdef CONFIG_IEEE80211BE
+	ap_mld = !!bss->conf->mld_ap;
+#endif /* CONFIG_IEEE80211BE */
 
 	if (hostapd_skip_rnr(i, skip_profiles, ap_mld, tbtt_info_len,
 			     mld_update, reporting_hapd, bss, &match_idx))
