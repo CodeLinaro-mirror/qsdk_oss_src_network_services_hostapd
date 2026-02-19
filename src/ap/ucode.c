@@ -1106,6 +1106,82 @@ bool hostapd_ucode_update_radio_mask(char *ifname, u8 hw_idx)
 	return true;
 }
 
+int hostapd_ucode_get_sta_channel_per_band(struct hostapd_iface *iface,
+					   int band,
+					   struct hostapd_freq_params *freq)
+{
+	uc_value_t *ret, *info;
+	int64_t val;
+
+	if (!iface || !freq)
+		return -EINVAL;
+	if (!vm)
+		return -ENODEV;
+
+	if (wpa_ucode_call_prepare("get_sta_channel_per_band"))
+		return -ENOENT;
+
+	uc_value_push(ucv_get(hostapd_ucode_iface_get_uval(iface)));
+	uc_value_push(ucv_int64_new(band));
+	ret = wpa_ucode_call(2);
+
+	if (!ret)
+		return -ENODATA;
+
+	if (ucv_type(ret) != UC_OBJECT) {
+		ucv_put(ret);
+		return -ENODATA;
+	}
+
+	info = ucv_object_get(ret, "channel", NULL);
+	if (!info)
+		info = ucv_object_get(ret, "channel_info", NULL);
+
+	if (!info) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: No channel info in response", __func__);
+		ucv_put(ret);
+		return -ENODATA;
+	}
+
+	if (ucv_type(info) != UC_OBJECT) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: Invalid channel info type", __func__);
+		ucv_put(ret);
+		return -ENODATA;
+	}
+
+	os_memset(freq, 0, sizeof(*freq));
+
+	val = ucv_int64_get(ucv_object_get(info, "frequency", NULL));
+	if (!errno)
+		freq->freq = val;
+
+	val = ucv_int64_get(ucv_object_get(info, "sec_channel_offset", NULL));
+	if (!errno)
+		freq->sec_channel_offset = val;
+
+	val = ucv_int64_get(ucv_object_get(info, "center_freq1", NULL));
+	if (!errno)
+		freq->center_freq1 = val;
+
+	val = ucv_int64_get(ucv_object_get(info, "center_freq2", NULL));
+	if (!errno)
+		freq->center_freq2 = val;
+
+	val = ucv_int64_get(ucv_object_get(info, "bandwidth", NULL));
+	if (!errno)
+		freq->bandwidth = val;
+
+	val = ucv_int64_get(ucv_object_get(info, "punct_bitmap", NULL));
+	if (!errno)
+		freq->punct_bitmap = val;
+
+	ucv_put(ret);
+	ucv_gc(vm);
+	return 0;
+}
+
 #ifdef CONFIG_QCN_EXTN
 /**
  * hostapd_ucode_chsw_comp_ev_notify - Notify ucode about CSA/CAC completion
