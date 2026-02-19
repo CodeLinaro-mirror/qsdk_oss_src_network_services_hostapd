@@ -781,6 +781,11 @@ int hostapd_reload_config(struct hostapd_iface *iface)
 			    !iface->bss[j]->conf->mld_ap)
 				continue;
 
+#ifdef CONFIG_QCN_EXTN
+			if (hostapd_is_repurpose_disabled_11be_extn(iface->bss[j]->conf))
+				continue;
+#endif /* CONFIG_QCN_EXTN */
+
 			for_each_mld_link(link, iface->bss[j]) {
 				if (link->iface == other) {
 					mld_partner_found = true;
@@ -7916,7 +7921,11 @@ void hostapd_mld_interface_freed(struct hostapd_data *hapd)
 	if (!hapd || !hapd->conf->mld_ap)
 		return;
 
+#ifdef CONFIG_QCN_EXTN
+	for_each_mld_link_include_repurposed(link_bss, hapd)
+#else
 	for_each_mld_link(link_bss, hapd)
+#endif
 		link_bss->drv_priv = NULL;
 }
 

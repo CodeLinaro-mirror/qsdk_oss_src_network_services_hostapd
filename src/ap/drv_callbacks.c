@@ -2620,7 +2620,11 @@ static void hostapd_event_update_muedca_params(struct hostapd_data *hapd,
 	int i;
 
 	if (hapd->conf->mld_ap) {
+#ifdef CONFIG_QCN_EXTN
+		for_each_mld_link_include_repurposed(selected_hapd, hapd) {
+#else
 		for_each_mld_link(selected_hapd, hapd) {
+#endif /* CONFIG_QCN_EXTN */
 			if (!selected_hapd->iface ||
 			    !selected_hapd->iface->current_hw_info)
 				continue;
@@ -3283,7 +3287,11 @@ static void hostapd_mld_iface_enable(struct hostapd_data *hapd)
 	hostapd_iface_enable(first_link);
 
 	/* Add other affiliated links */
+#ifdef CONFIG_QCN_EXTN
+	for_each_mld_link_include_repurposed(link_bss, first_link) {
+#else
 	for_each_mld_link(link_bss, first_link) {
+#endif /* CONFIG_QCN_EXTN */
 		if (link_bss == first_link)
 			continue;
 
@@ -3305,7 +3313,11 @@ static void hostapd_mld_iface_disable(struct hostapd_data *hapd)
 {
 	struct hostapd_data *link_bss;
 
+#ifdef CONFIG_QCN_EXTN
+	for_each_mld_link_include_repurposed(link_bss, hapd)
+#else
 	for_each_mld_link(link_bss, hapd)
+#endif /* CONFIG_QCN_EXTN */
 		hostapd_iface_disable(link_bss);
 }
 
@@ -3848,7 +3860,11 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		}
 		if (data->iface_reload.link_id == 0xFF) {
 			/* If link id is invalid reload all bss of the mld interface */
+#ifdef CONFIG_QCN_EXTN
+			for_each_mld_link_include_repurposed(phapd, hapd) {
+#else
 			for_each_mld_link(phapd, hapd) {
+#endif /* CONFIG_QCN_EXTN */
 				if (hostapd_reload_bss_only(phapd) < 0) {
 					wpa_printf(MSG_ERROR, "Reloading of BSS failed");
 					continue;

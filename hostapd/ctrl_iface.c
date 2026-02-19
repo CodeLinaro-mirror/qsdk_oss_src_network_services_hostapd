@@ -8518,7 +8518,11 @@ static int hostapd_mld_ctrl_iface_receive_process(struct hostapd_mld *mld,
 			goto out;
 		}
 
+#ifdef CONFIG_QCN_EXTN
+		for_each_mld_link_include_repurposed(link_itr, link_hapd) {
+#else
 		for_each_mld_link(link_itr, link_hapd) {
+#endif /* CONFIG_QCN_EXTN */
 			if (link_itr->mld_link_id == link_id) {
 				found = true;
 				break;
