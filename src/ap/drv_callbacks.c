@@ -2092,6 +2092,9 @@ static struct hostapd_data * get_hapd_bssid(struct hostapd_iface *iface,
 #endif /* CONFIG_IEEE80211BE */
 
 		hapd = iface->bss[i];
+		if (!hapd)
+			continue;
+
 		if (ether_addr_equal(bssid, hapd->own_addr))
 			return hapd;
 
