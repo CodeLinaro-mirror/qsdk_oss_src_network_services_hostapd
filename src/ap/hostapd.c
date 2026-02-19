@@ -2717,9 +2717,18 @@ void hostapd_no_ir_cleanup(struct hostapd_data *bss)
 	hostapd_bss_deinit_no_free(bss);
 	hostapd_bss_link_deinit(bss);
 	hostapd_free_hapd_data(bss);
-	hostapd_cleanup_iface_partial(bss->iface);
 }
 
+static bool hostapd_is_6ghz_chan_txable(const struct hostapd_channel_data *c)
+{
+	if (c->flag & HOSTAPD_CHAN_NO_IR)
+		return false;
+
+	if (c->flag & HOSTAPD_CHAN_DISABLED)
+		return false;
+
+	return true;
+}
 
 static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 {
@@ -2741,12 +2750,16 @@ static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 			}
 
 			for (j = 0; j < mode->num_channels; j++) {
-				if (!(mode->channels[j].flag &
-				      HOSTAPD_CHAN_NO_IR))
-					all_no_ir = false;
+				if (!is_6ghz_freq(mode->channels[j].freq))
+					continue;
 
-				if (is_6ghz_freq(mode->channels[j].freq))
-					is_6ghz = true;
+				is_6ghz = true;
+				if (!hostapd_is_6ghz_chan_txable(&mode->channels[j]))
+					continue;
+
+				all_no_ir = false;
+				break;
+
 			}
 			break;
 		}
@@ -2770,8 +2783,20 @@ static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 				return 0;
 			}
 
-			if (!(chan->flag & HOSTAPD_CHAN_NO_IR))
+			if (hostapd_is_6ghz_chan_txable(chan))
 				return 0;
+
+			/* Other Valid channels present. Dont Stop AP if retail AFC is supported
+			 * Allow Channel Selection to choose a new channel.
+			 */
+			if (hostapd_drv_is_retail_afc_supported(iface->bss[0]) &&
+			    iface->conf->enable_best_power_mode) {
+				wpa_printf(MSG_DEBUG,
+					   "NO_IR: Enable retail AFC channel selection");
+				iface->is_afc_channel_change_pending = true;
+				return 0;
+			}
+
 			wpa_printf(MSG_DEBUG,
 				   "NO_IR: The current channel has NO_IR flag now, stop AP.");
 		} else {
@@ -2787,7 +2812,7 @@ static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 			return 0;
 		}
 
-		if (!iface->conf->acs) {
+		if (iface->freq) {
 			struct hostapd_channel_data *chan;
 
 			chan = hw_get_channel_freq(iface->current_mode->mode,
@@ -2802,16 +2827,20 @@ static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 
 			/* If the last operating channel is NO_IR, trigger ACS.
 			 */
-			if (chan->flag & HOSTAPD_CHAN_NO_IR) {
+			if (!hostapd_is_6ghz_chan_txable(chan)) {
 				iface->freq = 0;
 				iface->conf->channel = 0;
-				if (acs_init(iface) != HOSTAPD_CHAN_ACS)
-					wpa_printf(MSG_ERROR,
-						   "NO_IR: Could not start ACS");
-				return 0;
+				if (!iface->conf->acs) {
+					if (acs_init(iface) != HOSTAPD_CHAN_ACS)
+						wpa_printf(MSG_ERROR,
+							   "NO_IR: Could not start ACS");
+					return 0;
+				}
 			}
 		}
 
+		wpa_printf(MSG_DEBUG,
+			   "NO_IR: Re-enabling interface after channel list update");
 		setup_interface2(iface);
 	}
 
@@ -2944,7 +2973,7 @@ static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 	}
 
 	ret = hostapd_select_hw_mode(iface);
-	if (ret) {
+	if (ret && !iface->is_no_ir) {
 		wpa_printf(MSG_ERROR, "Failed to select hardware mode (%d)", ret);
 		return ret;
 	}
@@ -2955,13 +2984,20 @@ static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 		return ret;
 	}
 
-	if (iface->is_afc_channel_change_pending) {
-		wpa_printf(MSG_DEBUG, "Handling AFC channel change");
-		return hostapd_handle_afc_channel_change(iface);
+	wpa_printf(MSG_DEBUG, "Handling NOIR Channel List Update");
+	ret = hostapd_no_ir_channel_list_updated(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "Failed to handle NO IR Chan List Update (%d)", ret);
+		return ret;
 	}
 
-	wpa_printf(MSG_DEBUG, "Handling AFC NOIR");
-	return hostapd_no_ir_channel_list_updated(iface);
+	if (iface->is_afc_channel_change_pending) {
+		wpa_printf(MSG_DEBUG, "Handling AFC channel change");
+		ret = hostapd_handle_afc_channel_change(iface);
+	}
+
+	return ret;
 }
 
 void hostapd_channel_list_updated(struct hostapd_iface *iface, int initiator)

@@ -2853,12 +2853,29 @@ static void hostapd_event_afc_update_complete(
 void
 hostapd_set_no_ir_state(struct hostapd_iface *iface)
 {
+	int j;
+
 	hostapd_set_state(iface, HAPD_IFACE_NO_IR);
 	hostapd_interface_update_fils_ubpr(iface, false);
 	iface->is_no_ir = true;
-	hostapd_drv_stop_ap(iface->bss[0]);
-	hostapd_no_ir_cleanup(iface->bss[0]);
-	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, AP_EVENT_NO_IR);
+
+	wpa_printf(MSG_DEBUG, "%s: AFC NO_IR", __func__);
+	for (j = 0; j < iface->num_bss; j++) {
+		struct hostapd_data *hapd = iface->bss[j];
+
+		hostapd_cleanup_cs_params(hapd);
+
+		/* Stop beaconing for first BSS as hostapd_no_ir_cleanup does not
+		 * call stop AP for first Link
+		 **/
+		if (j == 0)
+			hostapd_drv_stop_ap(hapd);
+
+		hostapd_no_ir_cleanup(hapd);
+		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_NO_IR);
+	}
+
+	hostapd_cleanup_iface_partial(iface);
 }
 
 /**
