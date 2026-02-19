@@ -4677,7 +4677,7 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 		wpa_printf(MSG_ERROR,
 			   "New BSS (" MACSTR ") doesn't satisfy prefix requirement for the MBSSID groups",
 			   MAC2STR(hapd->own_addr));
-		return -1;
+		goto fail;
 	}
 
 	if (hapd->iconf->mbssid != MULTI_MBSSID_GROUP_ENABLED) {
