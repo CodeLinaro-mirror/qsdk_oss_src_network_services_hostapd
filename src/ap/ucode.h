@@ -32,9 +32,13 @@ void hostapd_ucode_add_bss(struct hostapd_data *hapd);
 void hostapd_ucode_free_bss(struct hostapd_data *hapd);
 void hostapd_ucode_reload_bss(struct hostapd_data *hapd);
 bool hostapd_ucode_update_radio_mask(char *ifname, u8 hw_idx);
+
 #ifdef CONFIG_QCN_EXTN
 void hostapd_ucode_chsw_comp_ev_notify(struct hostapd_data *hapd, int freq);
 void hostapd_ucode_notify_acs_completed(struct hostapd_iface *iface, int success);
+int hostapd_ucode_get_sta_channel_per_band(struct hostapd_iface *iface,
+					   int band,
+					   struct hostapd_freq_params *freq);
 #endif
 
 #ifdef CONFIG_IEEE80211AX
@@ -78,6 +82,13 @@ hostapd_ucode_chsw_comp_ev_notify(struct hostapd_data *hapd, int freq)
 static inline void
 hostapd_ucode_notify_acs_completed(struct hostapd_iface *iface, int success)
 {
+}
+static inline int
+hostapd_ucode_get_sta_channel_per_band(struct hostapd_iface *iface,
+				       int band,
+				       struct hostapd_freq_params *freq)
+{
+        return -EINVAL;
 }
 #endif
 #ifdef CONFIG_IEEE80211AX
