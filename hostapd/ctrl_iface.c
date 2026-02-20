@@ -1776,28 +1776,6 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 							    cmd, value, true);
 	} else if (os_strcasecmp(cmd, "assocresp_elements") == 0) {
 		ret = hostapd_ctrl_iface_update_assocresp_elements(hapd, value);
-	} else if (os_strcasecmp(cmd, "rssi_reject_assoc_rssi") == 0) {
-		int val = atoi(value);
-		if (val < -95 || val > -1) {
-			wpa_printf(MSG_ERROR, "Invalid RSSI threshold %d (range: -95 to -1)", val);
-			ret = -1;
-		} else {
-			/* Update RSSI threshold for this specific hapd (link or interface-wide) */
-			hapd->conf->rssi_reject_assoc_rssi = val;
-			hapd->iconf->rssi_reject_assoc_rssi = val;
-			wpa_printf(MSG_INFO, "Updated RSSI association rejection threshold to %d dBm (runtime value updated)", val);
-			hostapd_ctrl_iface_update_rssi_monitor(hapd);
-		}
-	} else if (os_strcasecmp(cmd, "rssi_reject_assoc_timeout") == 0) {
-		int val = atoi(value);
-		if (val < 1 || val > 300) {
-			wpa_printf(MSG_ERROR, "Invalid RSSI timeout %d (range: 1 to 300)", val);
-			ret = -1;
-		} else {
-			hapd->conf->rssi_reject_assoc_timeout = val;
-			hapd->iconf->rssi_reject_assoc_timeout = val;
-			wpa_printf(MSG_INFO, "Updated RSSI association timeout to %d seconds", val);
-		}
 	} else if (os_strcasecmp(cmd, "rssi_deauth_grace_samples") == 0) {
 		int val = atoi(value);
 		if (val < 1 || val > 100) {
@@ -1825,6 +1803,8 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			hostapd_disassoc_deny_mac(hapd);
 		} else if (os_strcasecmp(cmd, "accept_mac_file") == 0) {
 			hostapd_disassoc_accept_mac(hapd);
+		} else if (os_strcasecmp(cmd, "rssi_reject_assoc_rssi") == 0) {
+			hostapd_ctrl_iface_update_rssi_monitor(hapd);
 		} else if (os_strcasecmp(cmd, "ssid") == 0) {
 			hostapd_neighbor_sync_own_report(hapd);
 #ifdef CONFIG_IEEE80211AC
@@ -2618,6 +2598,20 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 			return res;
 		}
 		res = hostapd_ctrl_iface_get_mbssid_attributes(hapd, buf, buflen);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	}
+	else if (os_strcasecmp(cmd, "rssi_reject_assoc_timeout" ) == 0) {
+		res = os_snprintf(buf, buflen, "rssi_reject_assoc_timeout= %d\n",
+				  hapd->iconf->rssi_reject_assoc_timeout);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	}
+	else if (os_strcasecmp(cmd, "rssi_reject_assoc_rssi" ) == 0) {
+		res = os_snprintf(buf, buflen, "rssi_reject_assoc_rssi= %d\n",
+				  hapd->iconf->rssi_reject_assoc_rssi);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
