@@ -1773,6 +1773,8 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_240MHZ_INFO = 508,
 	QCA_NL80211_VENDOR_SUBCMD_AFC_FETCH_POWER_EVENT = 510,
 	QCA_NL80211_VENDOR_SUBCMD_DERIVE_LINK_BSS_ADDR = 512,
+	QCA_NL80211_VENDOR_SUBCMD_WLAN_HOME_OFFCHAN_TX_RX = 513,
+	QCA_NL80211_VENDOR_SUBCMD_WLAN_CTL_TABLE = 514,
 	QCA_NL80211_VENDOR_SUBCMD_GET_CHANNEL_SWITCH_TIME = 515,
 	QCA_NL80211_VENDOR_SUBCMD_REPURPOSE_LINK_INDICATION = 516,
 	QCA_NL80211_VENDOR_SUBCMD_DCS_SIM = 517,
@@ -14383,6 +14385,23 @@ enum qca_vendor_wlan_sta_guard_interval {
  * attributes representing the beacon miss data for the affiliated AP(s) in STA
  * mode. This uses attributes defined in
  * enum qca_wlan_vendor_attr_beacon_miss_stat.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_LINK_ID:  u8 attribute.
+ * Mandatory attribute when interface is configured in Multi-Link Operation
+ * (MLO). This attribute must not be included in non-MLO scenarios. Possible
+ * values are 0 to 14.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_STA_INFO_MAX_RSSI: s8 attribute.
+ * Maximum received signal strength indicator (RSSI) value observed after association
+ * for the station.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_STA_INFO_MIN_RSSI: s8 attribute.
+ * Minimum received signal strength indicator (RSSI) value observed after association
+ * for the station.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_STA_INFO_PS_STATE: u8 attribute.
+ * Indicates the current power‑save state of the station as reported by
+ * firmware (ON, OFF, or DISABLED). Possible values are 0, 1 or 2.
  */
 enum qca_wlan_vendor_attr_get_sta_info {
 	QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_INVALID = 0,
@@ -14445,6 +14464,11 @@ enum qca_wlan_vendor_attr_get_sta_info {
 	QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_BW_PKT_COUNT = 57,
 	QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_CCA_STAT = 58,
 	QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_BEACON_MISS_STAT = 59,
+	QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_LINK_ID = 60,
+	QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAX_RSSI = 61,
+	QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MIN_RSSI = 62,
+	QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_PS_STATE = 63,
+
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_AFTER_LAST,

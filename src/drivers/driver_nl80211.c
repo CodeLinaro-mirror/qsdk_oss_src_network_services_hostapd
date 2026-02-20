@@ -9256,11 +9256,83 @@ int nl80211_get_link_signal(struct i802_bss *bss, const u8 *bssid,
 }
 
 
+static int get_sta_info_handler(struct nl_msg *msg, void *arg)
+{
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	struct nlattr *vdata[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAX + 1];
+	struct hostap_sta_driver_data *data = arg;
+
+	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		  genlmsg_attrlen(gnlh, 0), NULL);
+
+	if (!tb[NL80211_ATTR_VENDOR_DATA]) {
+		wpa_printf(MSG_ERROR, "nl80211: No vendor data in RSSI stats");
+		return NL_SKIP;
+	}
+
+	nla_parse_nested(vdata, QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAX,
+			 tb[NL80211_ATTR_VENDOR_DATA], NULL);
+
+	if (vdata[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAX_RSSI])
+		data->max_rssi = (s8) nla_get_s8(
+			vdata[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAX_RSSI]);
+
+	if (vdata[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MIN_RSSI])
+		data->min_rssi = (s8) nla_get_s8(
+				vdata[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MIN_RSSI]);
+
+	if (vdata[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_PS_STATE])
+		data->ps_state = nla_get_u8(vdata[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_PS_STATE]);
+
+	return NL_OK;
+}
+
+
+static int nl80211_get_sta_info(struct i802_bss *bss,
+				  struct hostap_sta_driver_data *data,
+				  int link_id, const u8 *addr)
+{
+	struct nl_msg *msg;
+	struct nlattr *nl_data;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+
+	msg = nl80211_bss_msg(bss, NLM_F_DUMP, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -ENOBUFS;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_GET_STA_INFO)) {
+		nlmsg_free(msg);
+		return -ENOBUFS;
+	}
+
+	nl_data = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!nl_data) {
+		nlmsg_free(msg);
+		return -ENOBUFS;
+	}
+
+	if((addr && nla_put(msg, QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAC,
+				ETH_ALEN, addr)) ||
+	   nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_LINK_ID, link_id)) {
+		nlmsg_free(msg);
+		return -ENOBUFS;
+	}
+
+	nla_nest_end(msg, nl_data);
+
+	return send_and_recv_resp(drv, msg, get_sta_info_handler, data);
+}
+
+
 static int i802_read_sta_data(struct i802_bss *bss,
 			      struct hostap_sta_driver_data *data,
 			      const u8 *addr)
 {
 	struct nl_msg *msg;
+	int ret, link_id;
 
 	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_GET_STATION)) ||
 	    nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, addr)) {
@@ -9268,7 +9340,21 @@ static int i802_read_sta_data(struct i802_bss *bss,
 		return -ENOBUFS;
 	}
 
-	return send_and_recv_resp(bss->drv, msg, get_sta_handler, data);
+	ret = send_and_recv_resp(bss->drv, msg, get_sta_handler, data);
+	if (ret < 0)
+		return ret;
+
+	if (data->parse_link_sta_data && data->valid_links) {
+		for_each_link(data->valid_links, link_id) {
+			if (nl80211_get_sta_info(bss, data, link_id, addr))
+				return -ENOBUFS;
+		}
+	} else {
+		if (nl80211_get_sta_info(bss, data, 0, addr))
+			return -ENOBUFS;
+	}
+
+	return ret;
 }
 
 
