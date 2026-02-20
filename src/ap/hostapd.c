@@ -259,10 +259,12 @@ void hostapd_free_mbssid_idx(struct hostapd_data *hapd)
 	struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
 
 	if (iface->conf->mbssid != MBSSID_DISABLED) {
-		if (iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
-			group->mbssid_idx_bmap &= ~BIT(hapd->mbssid_idx);
-		else
+		if (iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
+			if (group)
+				group->mbssid_idx_bmap &= ~BIT(hapd->mbssid_idx);
+		} else {
 			iface->mbssid_idx_bmap &= ~BIT(hapd->mbssid_idx);
+		}
 	}
 }
 
@@ -943,6 +945,9 @@ static bool hostapd_validate_link_removal_ttlm(struct hostapd_data *hapd)
 
 		if (hapd->iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
 			struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
+
+			if (!group)
+				goto check_hapd;
 
 			dl_list_for_each(bss, &group->bss_list, struct hostapd_data, mbssid_bss) {
 				if (bss == hapd)

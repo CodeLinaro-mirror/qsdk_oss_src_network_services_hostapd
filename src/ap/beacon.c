@@ -2054,17 +2054,19 @@ void handle_probe_req(struct hostapd_data *hapd,
 			struct hostapd_data *bss;
 			struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
 
-			dl_list_for_each(bss, &group->bss_list,
-					 struct hostapd_data, mbssid_bss) {
-				if (bss == hapd)
-					continue;
-				res = ssid_match(bss, elems.ssid,
-						 elems.ssid_len, elems.ssid_list,
-						 elems.ssid_list_len,
-						 elems.short_ssid_list,
-						 elems.short_ssid_list_len);
-				if (res != NO_SSID_MATCH)
-					break;
+			if (group) {
+				dl_list_for_each(bss, &group->bss_list,
+						 struct hostapd_data, mbssid_bss) {
+					if (bss == hapd)
+						continue;
+					res = ssid_match(bss, elems.ssid,
+							 elems.ssid_len, elems.ssid_list,
+							 elems.ssid_list_len,
+							 elems.short_ssid_list,
+							 elems.short_ssid_list_len);
+					if (res != NO_SSID_MATCH)
+						break;
+				}
 			}
 		} else {
 			for (i = 0; i < hapd->iface->num_bss; i++) {
@@ -3577,7 +3579,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		params->elemid_modified_bmap |= BIT(hostapd_mbssid_get_bss_index(tx_bss));
 
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->conf->mld_ap && hostapd_is_eht_enabled(hapd)) {
+	if (hapd->conf->mld_ap) {
 		params->mld_ap = true;
 		params->mld_link_id = hapd->mld_link_id;
 	}
