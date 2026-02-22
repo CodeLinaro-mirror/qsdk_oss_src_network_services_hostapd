@@ -75,6 +75,7 @@
 #include "ap/ttlm.h"
 #include "../src/drivers/driver_nl80211.h"
 #include "ap/dscp_policy.h"
+#include "ap/interference.h"
 
 #ifdef CONFIG_ATF_OFFLOAD
 #include "atf/atf_offload_config.h"
@@ -3978,6 +3979,14 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 	ret = hostapd_parse_csa_settings(iface, pos, &settings);
 	if (ret)
 		return ret;
+
+#ifdef CONFIG_QCN_EXTN
+	if (!settings.freq_params.rptr_mgr && hostapd_is_backhaul_sta_conn(iface)) {
+		wpa_printf(MSG_ERROR,
+			   "chanswitch: backhaul STA connected, aborting channel switch");
+		return -1;
+	}
+#endif
 
 	settings.link_id = -1;
 #ifdef CONFIG_IEEE80211BE

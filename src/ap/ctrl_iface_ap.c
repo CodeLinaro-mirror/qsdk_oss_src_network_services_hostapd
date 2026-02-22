@@ -1627,6 +1627,7 @@ int hostapd_parse_freq_params(const char *pos,
 	SET_FREQ_PARAM(center_freq_device);
 #ifdef CONFIG_QCN_EXTN
 	SET_FREQ_PARAM(skip_cac);
+	SET_FREQ_PARAM(rptr_mgr);
 #endif
 	params->ht_enabled = !!os_strstr(pos, " ht");
 	params->vht_enabled = !!os_strstr(pos, " vht");
