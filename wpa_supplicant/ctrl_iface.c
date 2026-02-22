@@ -6056,7 +6056,7 @@ static void wpa_supplicant_ctrl_iface_bss_flush(
 	int flush_age = atoi(cmd);
 
 	if (flush_age == 0)
-		wpa_bss_flush(wpa_s);
+		wpa_bss_flush(wpa_s, 0);
 	else
 		wpa_bss_flush_by_age(wpa_s, flush_age);
 }
@@ -9192,7 +9192,7 @@ static void wpa_supplicant_ctrl_iface_flush(struct wpa_supplicant *wpa_s)
 	os_memset(&wpa_s->robust_av, 0, sizeof(struct robust_av_data));
 #endif /* CONFIG_NO_ROBUST_AV */
 
-	wpa_bss_flush(wpa_s);
+	wpa_bss_flush(wpa_s, 0);
 	if (!dl_list_empty(&wpa_s->bss)) {
 		wpa_printf(MSG_DEBUG,
 			   "BSS table not empty after flush: %u entries, current_bss=%p bssid="

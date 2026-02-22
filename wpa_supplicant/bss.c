@@ -1194,8 +1194,9 @@ int wpa_bss_init(struct wpa_supplicant *wpa_s)
 /**
  * wpa_bss_flush - Flush all unused BSS entries
  * @wpa_s: Pointer to wpa_supplicant data
+ * all_bss: flush all the bss entries including used
  */
-void wpa_bss_flush(struct wpa_supplicant *wpa_s)
+void wpa_bss_flush(struct wpa_supplicant *wpa_s, bool all_bss)
 {
 	struct wpa_bss *bss, *n;
 
@@ -1205,8 +1206,10 @@ void wpa_bss_flush(struct wpa_supplicant *wpa_s)
 		return; /* BSS table not yet initialized */
 
 	dl_list_for_each_safe(bss, n, &wpa_s->bss, struct wpa_bss, list) {
-		if (wpa_bss_in_use(wpa_s, bss))
-			continue;
+		if (!all_bss) {
+			if (wpa_bss_in_use(wpa_s, bss))
+				continue;
+		}
 		wpa_bss_remove(wpa_s, bss, __func__);
 	}
 }
@@ -1218,7 +1221,7 @@ void wpa_bss_flush(struct wpa_supplicant *wpa_s)
  */
 void wpa_bss_deinit(struct wpa_supplicant *wpa_s)
 {
-	wpa_bss_flush(wpa_s);
+	wpa_bss_flush(wpa_s, 0);
 }
 
 

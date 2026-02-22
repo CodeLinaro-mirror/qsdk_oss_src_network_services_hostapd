@@ -601,7 +601,7 @@ void wpas_clear_disabled_interface(void *eloop_ctx, void *timeout_ctx)
 	if (wpa_s->wpa_state != WPA_INTERFACE_DISABLED)
 		return;
 	wpa_dbg(wpa_s, MSG_DEBUG, "Clear cached state on disabled interface");
-	wpa_bss_flush(wpa_s);
+	wpa_bss_flush(wpa_s, 0);
 }
 
 

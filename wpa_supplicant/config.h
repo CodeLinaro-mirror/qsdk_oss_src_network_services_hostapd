@@ -1956,6 +1956,13 @@ struct wpa_config {
 	 * AP ACS over repeater STA scan.
 	 */
 	int channel;
+
+	/**
+	 * uplink_csa: if uplink_csa is enabled, on Radar detection sends uplink
+	 * CSA action frame to Root to insist it to trigger CSA.
+	 * If uplink_csa is disabled, do STA deauth
+	 */
+	int uplink_csa;
 #endif
 };
 
