@@ -3684,10 +3684,7 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 
 	hapd->beacon_set_done = 1;
 
-	if (ieee802_11_update_beacon_mbssid(hapd)) {
-		hapd->beacon_set_done = 0;
-		return -1;
-	}
+	ieee802_11_update_beacon_mbssid(hapd);
 
 	hapd->iface->rnr_psd = hostapd_get_20mhz_psd_for_rnr(hapd);
 
@@ -4392,25 +4389,25 @@ fail:
 #endif /* CONFIG_IEEE80211BE */
 
 
-int ieee802_11_update_beacon_mbssid(struct hostapd_data *hapd)
+void ieee802_11_update_beacon_mbssid(struct hostapd_data *hapd)
 {
 	struct hostapd_data *tx_hapd;
 	int ret;
 
 	if (!hapd || !hapd->iconf || hapd->iconf->mbssid == MBSSID_DISABLED)
-		return 0;
+		return;
 
 	tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
 	if (!tx_hapd || tx_hapd == hapd || !tx_hapd->started ||
-	    !tx_hapd->beacon_set_done)
-		return 0;
+	    !tx_hapd->beacon_set_done || tx_hapd->csa_in_progress ||
+	    tx_hapd->cca_in_progress)
+		return;
 
 	ret = __ieee802_11_set_beacon(tx_hapd);
 	if (ret)
-		wpa_printf(MSG_ERROR,
+		wpa_printf(MSG_WARNING,
 			   "failed to update beacon for transmitted profile %s",
 			   tx_hapd->conf->iface);
-	return ret;
 }
 
 
