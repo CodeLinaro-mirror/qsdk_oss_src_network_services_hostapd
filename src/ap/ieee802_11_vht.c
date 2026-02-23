@@ -363,7 +363,7 @@ u16 copy_sta_vendor_vht(struct hostapd_data *hapd, struct sta_info *sta,
 	unsigned int vht_capab_len;
 
 	if (!ie || len < 5 + 2 + sizeof(struct ieee80211_vht_capabilities) ||
-	    !hostapd_is_vht_enabled(hapd))
+	    hapd->conf->disable_11ac)
 		goto no_capab;
 
 	/* The VHT Capabilities element embedded in vendor VHT */
