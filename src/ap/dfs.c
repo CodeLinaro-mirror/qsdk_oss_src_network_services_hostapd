@@ -1816,21 +1816,6 @@ int hostapd_dfs_start_channel_switch(struct hostapd_iface *iface)
 			hostapd_enable_iface(iface);
 			return 0;
 		}
-
-		if (channel_type == DFS_ANY_CHANNEL) {
-			iface->conf->punct_bitmap = 0;
-			iface->freq = channel->freq;
-			iface->conf->channel = channel->chan;
-			iface->conf->secondary_channel = secondary_channel;
-			hostapd_set_oper_centr_freq_seg0_idx(
-				iface->conf, oper_centr_freq_seg0_idx);
-			hostapd_set_oper_centr_freq_seg1_idx(
-				iface->conf, oper_centr_freq_seg1_idx);
-
-			hostapd_disable_iface(iface);
-			hostapd_enable_iface(iface);
-			return 0;
-		}
 	}
 
 	return hostapd_dfs_request_channel_switch(iface, channel->chan,
