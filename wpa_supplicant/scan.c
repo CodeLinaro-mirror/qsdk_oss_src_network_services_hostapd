@@ -4540,6 +4540,14 @@ cont:
 		ret = wpa_drv_scan(wpa_s, &scan);
 
 		if (ret) {
+			/* Reset missing_link_scan flag if scan trigger fails.
+			 * missing_link_scan is reset only when scan results event
+			 * is received. Until that, it eloops in scan rnr result process
+			 * and doesn't deauth, stays in old(less) link connection
+			 */
+			if (ret == -EBUSY)
+				wpa_s->missing_link_scan = false;
+
 			if (wpa_s->wpa_state == WPA_SCANNING)
 				wpa_supplicant_set_state(wpa_s,
 							 wpa_s->scan_prev_wpa_state);

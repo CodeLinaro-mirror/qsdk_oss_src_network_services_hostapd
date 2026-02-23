@@ -63,6 +63,7 @@
 #include "robust_av.h"
 #include "atf/atf_offload.h"
 #include "../../qcn_extns/cmn.h"
+#include "nft.h"
 
 static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason);
 #ifdef CONFIG_WEP
@@ -259,10 +260,12 @@ void hostapd_free_mbssid_idx(struct hostapd_data *hapd)
 	struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
 
 	if (iface->conf->mbssid != MBSSID_DISABLED) {
-		if (iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
-			group->mbssid_idx_bmap &= ~BIT(hapd->mbssid_idx);
-		else
+		if (iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
+			if (group)
+				group->mbssid_idx_bmap &= ~BIT(hapd->mbssid_idx);
+		} else {
 			iface->mbssid_idx_bmap &= ~BIT(hapd->mbssid_idx);
+		}
 	}
 }
 
@@ -943,6 +946,9 @@ static bool hostapd_validate_link_removal_ttlm(struct hostapd_data *hapd)
 
 		if (hapd->iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
 			struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
+
+			if (!group)
+				goto check_hapd;
 
 			dl_list_for_each(bss, &group->bss_list, struct hostapd_data, mbssid_bss) {
 				if (bss == hapd)
@@ -2520,7 +2526,7 @@ setup_mld:
 
 	if (hapd->conf->scs) {
 		os_snprintf(buf, 128, "%s_%s", CHAIN_NAME, conf->iface);
-		hostapd_ucode_config_nft_chain(hapd, TABLE_NAME, buf, true);
+		hostapd_config_nft_chain(hapd, TABLE_NAME, buf, true);
 	}
 
 	hapd->cca_count = (hapd->cca_count > 0) ?
@@ -3653,7 +3659,6 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 		}
 #endif /* CONFIG_MESH */
 
-		hostapd_apply_6ghz_dynamic_puncturing(iface);
 		if (is_6ghz_freq(iface->freq) && iface->conf->enable_best_power_mode) {
 			u8 best_power_mode;
 			enum chan_width ch_width;
@@ -3682,6 +3687,7 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 			center_chan_no = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
 			center_freq = ieee80211_chan_to_freq(NULL, iface->conf->op_class,
 							     center_chan_no);
+			hostapd_apply_6ghz_dynamic_puncturing(iface);
 			best_power_mode = hostapd_get_best_ap_6ghz_power_mode_for_iface(iface);
 			if (best_power_mode != NL80211_REG_NUM_POWER_MODES) {
 				iface->conf->he_6ghz_reg_pwr_type = best_power_mode;
@@ -6133,8 +6139,8 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 		if (hapd && hapd->conf && hapd->conf->scs) {
 			os_snprintf(buf, sizeof(buf), "%s_%s", CHAIN_NAME,
 				    hapd->conf->iface);
-			hostapd_ucode_config_nft_chain(hapd, TABLE_NAME, buf,
-						       false);
+			hostapd_config_nft_chain(hapd, TABLE_NAME, buf,
+						 false);
 		}
 #endif
 

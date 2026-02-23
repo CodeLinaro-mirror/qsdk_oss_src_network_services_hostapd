@@ -6183,8 +6183,9 @@ rsnxe_done:
 	if (hostapd_is_eht_enabled(hapd)) {
 		u8 ext_cap = 0;
 
-		if (hapd->iface->mld_ext_mld_capa &
-		    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+		if (hapd->conf->single_link_emlsr &&
+		    (hapd->iface->mld_ext_mld_capa &
+		     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 			ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
 		if (hapd->conf->mld_ap)
@@ -11093,9 +11094,11 @@ static bool hostapd_skip_rnr(size_t i, struct mbssid_ie_profiles *skip_profiles,
 	    i >= skip_profiles->start && i < skip_profiles->end)
 		return true;
 
-	/* No need to report if length is for normal TBTT and the BSS is
-	 * affiliated with an AP MLD. MLD TBTT will include this. */
-	if (tbtt_info_len == RNR_TBTT_INFO_LEN && ap_mld)
+	/* No need to report if length is for normal TBTT and both the reporting
+	 * AP and neighbor AP are affiliated with an AP MLD. MLD TBTT will
+	 * include this. */
+	if (tbtt_info_len == RNR_TBTT_INFO_LEN && ap_mld &&
+	    reporting_hapd->conf->mld_ap)
 		return true;
 
 	/* No need to report if length is for MLD TBTT and the BSS is not
@@ -11198,9 +11201,10 @@ repeat_rnr_len:
 	total_tbtt_count += tbtt_count;
 
 	/* If building for co-location, re-build again but this time include
-	 * ML TBTTs.
+	 * ML TBTTs if the reporting AP is affiliated with an AP MLD.
 	 */
-	if (!mld_update && tbtt_info_len == RNR_TBTT_INFO_LEN) {
+	if (!mld_update && tbtt_info_len == RNR_TBTT_INFO_LEN &&
+	    reporting_hapd->conf->mld_ap) {
 		tbtt_info_len = RNR_TBTT_INFO_MLD_LEN;
 
 		/* If no TBTT was found, adjust the len and total_len since it
@@ -11387,6 +11391,9 @@ s8 hostapd_get_20mhz_psd_for_rnr(struct hostapd_data *hapd)
 	u8 client_mode;
 	s8 result;
 
+	if (!is_6ghz_freq(freq))
+		return CHAN_MIN_TX_POWER;
+
 	switch (ap_pwr_type) {
 	case HE_REG_INFO_6GHZ_AP_TYPE_INDOOR:
 		client_mode = NL80211_REG_REGULAR_CLIENT_LPI;
@@ -11501,13 +11508,13 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 	bool ap_mld = false;
 	u8 *eid = *pos;
 
-#ifdef CONFIG_IEEE80211BE
-	ap_mld = !!hapd->conf->mld_ap;
-#endif /* CONFIG_IEEE80211BE */
-
 	if (!bss || !bss->conf || !bss->started ||
 	    !bss->beacon_set_done || bss == reporting_hapd)
 		return false;
+
+#ifdef CONFIG_IEEE80211BE
+	ap_mld = !!bss->conf->mld_ap;
+#endif /* CONFIG_IEEE80211BE */
 
 	if (hostapd_skip_rnr(i, skip_profiles, ap_mld, tbtt_info_len,
 			     mld_update, reporting_hapd, bss, &match_idx))
@@ -11563,7 +11570,8 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 
 
 #ifdef CONFIG_IEEE80211BE
-	if (ap_mld) {
+	/* Include the MLD parameters only when TBTT length is for ML RNR */
+	if (ap_mld && tbtt_info_len == RNR_TBTT_INFO_MLD_LEN) {
 		u8 param_ch = 0;
 		/* If BSS is not a partner of the reporting_hapd or
 		 * it is one of the nontransmitted hapd,
@@ -11681,9 +11689,10 @@ repeat_rnr:
 	total_tbtt_count += tbtt_count;
 
 	/* If building for co-location, re-build again but this time include
-	 * ML TBTTs.
+	 * ML TBTTs if the reporting AP is affiliated with an AP MLD.
 	 */
-	if (!mld_update && tbtt_info_len == RNR_TBTT_INFO_LEN) {
+	if (!mld_update && tbtt_info_len == RNR_TBTT_INFO_LEN &&
+	    reporting_hapd->conf->mld_ap) {
 		tbtt_info_len = RNR_TBTT_INFO_MLD_LEN;
 		goto repeat_rnr;
 	}
@@ -12351,8 +12360,9 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 				if (bss->conf->enable_aal)
 					ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
 
-				if (bss->iface->mld_ext_mld_capa &
-				    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+				if (bss->conf->single_link_emlsr &&
+				    (bss->iface->mld_ext_mld_capa &
+				     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 					ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 			}
 
@@ -12589,8 +12599,9 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 				if (bss->conf->enable_aal)
 					ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
 
-				if (bss->iface->mld_ext_mld_capa &
-				    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+				if (bss->conf->single_link_emlsr &&
+				    (bss->iface->mld_ext_mld_capa &
+				     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 					ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 			}
 

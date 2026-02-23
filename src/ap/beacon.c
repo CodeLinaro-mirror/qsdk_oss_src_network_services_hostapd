@@ -281,9 +281,8 @@ static u8 * hostapd_eid_country(struct hostapd_data *hapd, u8 *eid,
 	os_memcpy(pos, hapd->iconf->country, 3); /* e.g., 'US ' */
 	pos += 3;
 
-	/* Force the third octet of the country string to indicate
-	 * Global Operating Class (Table E-4) */
-	force_global = true;
+	/* The 6 GHz band uses global operating classes */
+	force_global = is_6ghz_op_class(hapd->iconf->op_class);
 
 #ifdef CONFIG_MBO
 	/* Wi-Fi Agile Muiltiband AP is required to use a global operating
@@ -802,8 +801,9 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 
 		if (hapd->conf->enable_aal)
 			include_ext_cap = BIT(BASIC_MULTI_LINK_CTRL_EXT_EN);
-		if (hapd->iface->mld_ext_mld_capa &
-		    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+		if (hapd->conf->single_link_emlsr &&
+		    (hapd->iface->mld_ext_mld_capa &
+		     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 			include_ext_cap |=
 				BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
@@ -811,8 +811,9 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 			/* Check for non-Tx BSS conf */
 			if (params->mld_ap->conf->enable_aal)
 				param_ext_cap = BIT(BASIC_MULTI_LINK_CTRL_EXT_EN);
-			if (hapd->iface->mld_ext_mld_capa &
-			    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+			if (params->mld_ap->conf->single_link_emlsr &&
+			    (params->mld_ap->iface->mld_ext_mld_capa &
+			     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 				param_ext_cap |=
 					BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
@@ -1211,8 +1212,9 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 			if (bcast_prb_resp)
 				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
 		}
-		if (hapd->iface->mld_ext_mld_capa &
-		    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+		if (hapd->conf->single_link_emlsr &&
+		    (hapd->iface->mld_ext_mld_capa &
+		     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 			ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
 		if (params->mld_ap && params->mld_ap->conf->mld_ap) {
@@ -1225,8 +1227,9 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 					p_ext_cap |=
 					BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
 			}
-			if (hapd->iface->mld_ext_mld_capa &
-			    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+			if (params->mld_ap->conf->single_link_emlsr &&
+			    (params->mld_ap->iface->mld_ext_mld_capa &
+			     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
 			pos = hostapd_eid_eht_ml_beacon(
@@ -2054,17 +2057,19 @@ void handle_probe_req(struct hostapd_data *hapd,
 			struct hostapd_data *bss;
 			struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
 
-			dl_list_for_each(bss, &group->bss_list,
-					 struct hostapd_data, mbssid_bss) {
-				if (bss == hapd)
-					continue;
-				res = ssid_match(bss, elems.ssid,
-						 elems.ssid_len, elems.ssid_list,
-						 elems.ssid_list_len,
-						 elems.short_ssid_list,
-						 elems.short_ssid_list_len);
-				if (res != NO_SSID_MATCH)
-					break;
+			if (group) {
+				dl_list_for_each(bss, &group->bss_list,
+						 struct hostapd_data, mbssid_bss) {
+					if (bss == hapd)
+						continue;
+					res = ssid_match(bss, elems.ssid,
+							 elems.ssid_len, elems.ssid_list,
+							 elems.ssid_list_len,
+							 elems.short_ssid_list,
+							 elems.short_ssid_list_len);
+					if (res != NO_SSID_MATCH)
+						break;
+				}
 			}
 		} else {
 			for (i = 0; i < hapd->iface->num_bss; i++) {
@@ -3291,8 +3296,9 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 
 			if (hapd->conf->enable_aal)
 				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
-			if (hapd->iface->mld_ext_mld_capa &
-			    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+			if (hapd->conf->single_link_emlsr &&
+			    (hapd->iface->mld_ext_mld_capa &
+			     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 
 			tailpos = hostapd_eid_eht_ml_beacon(hapd, NULL,
@@ -3577,7 +3583,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		params->elemid_modified_bmap |= BIT(hostapd_mbssid_get_bss_index(tx_bss));
 
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->conf->mld_ap && hostapd_is_eht_enabled(hapd)) {
+	if (hapd->conf->mld_ap) {
 		params->mld_ap = true;
 		params->mld_link_id = hapd->mld_link_id;
 	}

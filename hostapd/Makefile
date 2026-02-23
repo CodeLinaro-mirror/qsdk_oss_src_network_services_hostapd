@@ -408,6 +408,7 @@ ifdef CONFIG_IEEE80211AX
 CFLAGS += -DCONFIG_IEEE80211AX
 OBJS += ../src/ap/ieee802_11_he.o
 OBJS += ../src/ap/robust_av.o
+OBJS += ../src/ap/nft.o
 endif
 
 ifdef CONFIG_MBO
