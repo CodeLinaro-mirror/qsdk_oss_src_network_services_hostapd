@@ -287,7 +287,6 @@ struct he_phy_capabilities_info {
 	bool he_su_beamformer;
 	bool he_su_beamformee;
 	bool he_mu_beamformer;
-	bool he_mu_beamformee;
 	bool he_dl_mu_ofdma;
 	bool he_dl_mu_ofdma_bfer;
 	bool he_ul_mu_ofdma;
@@ -300,7 +299,6 @@ struct eht_phy_capabilities_info {
 	bool su_beamformer;
 	bool su_beamformee;
 	bool mu_beamformer;
-	bool mu_beamformee;
 	bool dl_mu_ofdma;
 	bool ul_mu_ofdma;
 	bool dl_ofdma_mumimo;
@@ -396,9 +394,8 @@ struct hostapd_bss_config {
 #define VHT_CAP_BSS_OVR_SU_BEAMFORMER      BIT(0)
 #define VHT_CAP_BSS_OVR_SU_BEAMFORMEE      BIT(1)
 #define VHT_CAP_BSS_OVR_MU_BEAMFORMER      BIT(2)
-#define VHT_CAP_BSS_OVR_MU_BEAMFORMEE      BIT(3)
-#define VHT_CAP_BSS_OVR_SOUNDING_DIMENSION BIT(4)
-#define VHT_CAP_BSS_OVR_STS_CAPABILITY     BIT(5)
+#define VHT_CAP_BSS_OVR_SOUNDING_DIMENSION BIT(3)
+#define VHT_CAP_BSS_OVR_STS_CAPABILITY     BIT(4)
 	u32 vht_capab_mask;
 #endif /* CONFIG_IEEE80211AC */
 
@@ -408,26 +405,24 @@ struct hostapd_bss_config {
 #define HE_PHY_BSS_OVR_UL_MUMIMO        BIT(1)
 #define HE_PHY_BSS_OVR_SU_BEAMFORMER    BIT(2)
 #define HE_PHY_BSS_OVR_SU_BEAMFORMEE    BIT(3)
-#define HE_PHY_BSS_OVR_MU_BEAMFORMEE    BIT(4)
-#define HE_PHY_BSS_OVR_DL_MU_OFDMA      BIT(5)
-#define HE_PHY_BSS_OVR_DL_MU_OFDMA_BFER BIT(6)
-#define HE_PHY_BSS_OVR_UL_MU_OFDMA      BIT(7)
+#define HE_PHY_BSS_OVR_DL_MU_OFDMA      BIT(4)
+#define HE_PHY_BSS_OVR_DL_MU_OFDMA_BFER BIT(5)
+#define HE_PHY_BSS_OVR_UL_MU_OFDMA      BIT(6)
 	u32 he_phy_capab_mask;
 #endif /* CONFIG_IEEE80211AX */
 
 #ifdef CONFIG_IEEE80211BE
 	struct eht_phy_capabilities_info eht_phy_capab;
 #define EHT_PHY_BSS_OVR_MU_BEAMFORMER   BIT(0)
-#define EHT_PHY_BSS_OVR_UL_MU_MIMO_80   BIT(1)
-#define EHT_PHY_BSS_OVR_UL_MU_MIMO_160  BIT(2)
-#define EHT_PHY_BSS_OVR_UL_MU_MIMO_320  BIT(3)
 #define EHT_PHY_BSS_OVR_SU_BEAMFORMER   BIT(4)
 #define EHT_PHY_BSS_OVR_SU_BEAMFORMEE   BIT(5)
-#define EHT_PHY_BSS_OVR_MU_BEAMFORMEE   BIT(6)
 #define EHT_PHY_BSS_OVR_DL_MU_OFDMA     BIT(7)
 #define EHT_PHY_BSS_OVR_UL_MU_OFDMA     BIT(8)
 #define EHT_PHY_BSS_OVR_DL_OFDMA_MUMIMO BIT(9)
 #define EHT_PHY_BSS_OVR_UL_OFDMA_MUMIMO BIT(10)
+#define EHT_PHY_BSS_OVR_BFME_SS_80      BIT(11)
+#define EHT_PHY_BSS_OVR_BFME_SS_160     BIT(12)
+#define EHT_PHY_BSS_OVR_BFME_SS_320     BIT(13)
 	u32 eht_phy_capab_mask;
 #endif /* CONFIG_IEEE80211BE */
 

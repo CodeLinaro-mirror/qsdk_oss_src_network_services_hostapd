@@ -4894,12 +4894,6 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 
 	if (hostapd_require_tx_bss(hapd,
 				   hapd->conf->vht_capab_mask &
-				   VHT_CAP_BSS_OVR_MU_BEAMFORMEE,
-				   "bss_vht_mu_beamformee") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->vht_capab_mask &
 				   VHT_CAP_BSS_OVR_SOUNDING_DIMENSION,
 				   "bss_vht_sounding_dimension") < 0)
 		return -1;
@@ -4928,12 +4922,6 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 				   hapd->conf->he_phy_capab_mask &
 				   HE_PHY_BSS_OVR_MU_BEAMFORMER,
 				   "bss_he_mu_beamformer") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->he_phy_capab_mask &
-				   HE_PHY_BSS_OVR_MU_BEAMFORMEE,
-				   "bss_he_mu_beamformee") < 0)
 		return -1;
 
 	if (hostapd_require_tx_bss(hapd,
@@ -4982,12 +4970,6 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 
 	if (hostapd_require_tx_bss(hapd,
 				   hapd->conf->eht_phy_capab_mask &
-				   EHT_PHY_BSS_OVR_MU_BEAMFORMEE,
-				   "bss_eht_mu_beamformee") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->eht_phy_capab_mask &
 				   EHT_PHY_BSS_OVR_DL_MU_OFDMA,
 				   "bss_eht_dl_mu_ofdma") < 0)
 		return -1;
@@ -5008,24 +4990,6 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 				   hapd->conf->eht_phy_capab_mask &
 				   EHT_PHY_BSS_OVR_UL_OFDMA_MUMIMO,
 				   "bss_eht_ul_ofdma_mumimo") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->eht_phy_capab_mask &
-				   EHT_PHY_BSS_OVR_UL_MU_MIMO_80,
-				   "bss_eht_ulmumimo_80mhz") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->eht_phy_capab_mask &
-				   EHT_PHY_BSS_OVR_UL_MU_MIMO_160,
-				   "bss_eht_ulmumimo_160mhz") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->eht_phy_capab_mask &
-				   EHT_PHY_BSS_OVR_UL_MU_MIMO_320,
-				   "bss_eht_ulmumimo_320mhz") < 0)
 		return -1;
 #endif /* CONFIG_IEEE80211BE */
 
