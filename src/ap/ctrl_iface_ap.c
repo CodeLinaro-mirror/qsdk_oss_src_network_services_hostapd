@@ -2061,7 +2061,8 @@ int hostapd_ctrl_iface_stop_ap(struct hostapd_data *hapd)
 	if (ret)
 		return ret;
 
-	return ieee802_11_update_beacon_mbssid(hapd);
+	ieee802_11_update_beacon_mbssid(hapd);
+	return 0;
 }
 
 

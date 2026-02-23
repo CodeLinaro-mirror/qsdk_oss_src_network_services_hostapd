@@ -45,7 +45,7 @@ void ieee802_11_set_beacon_per_bss_only(struct hostapd_data *hapd);
 int ieee802_11_set_beacon(struct hostapd_data *hapd);
 int ieee802_11_set_beacons(struct hostapd_iface *iface);
 int ieee802_11_update_beacons(struct hostapd_iface *iface);
-int ieee802_11_update_beacon_mbssid(struct hostapd_data *hapd);
+void ieee802_11_update_beacon_mbssid(struct hostapd_data *hapd);
 int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 			       struct wpa_driver_ap_params *params);
 void ieee802_11_free_ap_params(struct wpa_driver_ap_params *params);
