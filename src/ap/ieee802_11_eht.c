@@ -198,7 +198,7 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 		cap->phy_cap[EHT_PHYCAP_SU_BEAMFORMEE_IDX] &=
 			~EHT_PHYCAP_SU_BEAMFORMEE;
 
-	if (eht_mu_mask_valid(hapd->conf->eht_phy_capab.eht_mu_bfmr_mask)) {
+	if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_MU_BFMR_MASK) {
 		u8 mask = hapd->conf->eht_phy_capab.eht_mu_bfmr_mask;
 
 		if (!(mask & BIT(0))) {
@@ -222,21 +222,31 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 			~EHT_PHYCAP_MU_BEAMFORMER_MASK;
 	}
 
-	if (eht_mu_mask_valid(hapd->conf->eht_phy_capab.eht_mu_mimo_mask)) {
-		u8 mask = hapd->conf->eht_phy_capab.eht_mu_mimo_mask;
+	{
+		int val80, val160, val320;
 
-		if (!(mask & BIT(0))) {
+		if (hapd->conf->eht_phy_capab_mask &
+		    EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO) {
+			u8 m = hapd->conf->eht_phy_capab.eht_mu_mimo_mask;
+
+			val80  = (m & BIT(0)) ? 1 : 0;
+			val160 = (m & BIT(1)) ? 1 : 0;
+			val320 = (m & BIT(2)) ? 1 : 0;
+		} else {
+			val80  = hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz;
+			val160 = hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz;
+			val320 = hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz;
+		}
+
+		if (val80 == 0)
 			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
 				~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_80MHZ;
-		}
-		if (!(mask & BIT(1))) {
+		if (val160 == 0)
 			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
 				~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_160MHZ;
-		}
-		if (!(mask & BIT(2))) {
+		if (val320 == 0)
 			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
 				~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ;
-		}
 	}
 
 
