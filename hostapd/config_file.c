@@ -5291,6 +5291,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->eht_phy_capab.eht_mu_bfmr_mask = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_MU_BFMR_MASK;
 	} else if (os_strcmp(buf, "bss_eht_mu_mimo") == 0) {
 		int val = atoi(pos);
 		if (val < 0 || val > 7) {
@@ -5300,6 +5301,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->eht_phy_capab.eht_mu_mimo_mask = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO;
 	} else if (os_strcmp(buf, "bss_eht_bfme_ss_80") == 0) {
 		int val = atoi(pos);
 		if (val < 0 || val > 7) {
