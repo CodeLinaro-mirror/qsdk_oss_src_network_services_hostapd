@@ -6306,6 +6306,15 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 			goto fail;
 	}
 
+#ifdef CONFIG_IEEE80211BN
+	if (!params->dps_assist) {
+		wpa_printf(MSG_DEBUG, "nl80211: disable DPS Assist");
+		if (nla_put_u8(msg, NL80211_ATTR_DPS_ASSIST,
+			       params->dps_assist))
+			goto fail;
+	}
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef CONFIG_DRIVER_NL80211_QCA
 	if (cmd == NL80211_CMD_NEW_BEACON && params->allowed_freqs)
 		qca_set_allowed_ap_freqs(bss, params->allowed_freqs,

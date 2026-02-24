@@ -315,6 +315,10 @@ struct eht_phy_capabilities_info {
 };
 #endif /* CONFIG_IEEE80211BE */
 
+#define DRIVER_DEFINED		-1
+#define FEATURE_DISABLED	0
+#define FEATURE_ENABLED		1
+
 /**
  * struct hostapd_bss_config - Per-BSS configuration
  */
@@ -1190,6 +1194,15 @@ struct hostapd_bss_config {
 	 * Range: 1-100. Falls back to radio-wide setting if not set.
 	 */
 	int rssi_deauth_grace_samples;
+
+	/**
+	 * dps_assist - DPS Assist Support
+	 *
+	 * This is an override for per-BSS support for DPS Assist for AP.
+	 * If set to -1, fallback to driver support. If driver support is set,
+	 * 0 and 1 are used to enable and disable support.
+	 */
+	int dps_assist;
 };
 
 /**

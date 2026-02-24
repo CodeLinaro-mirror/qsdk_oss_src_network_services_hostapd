@@ -2403,6 +2403,8 @@ struct wpa_driver_ap_params {
 	 * Set to 0 to disable RSSI-based deauthentication.
 	 */
 	int rssi_deauth_grace_samples;
+
+	int dps_assist;
 };
 
 struct wpa_driver_mesh_bss_params {

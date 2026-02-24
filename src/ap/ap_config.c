@@ -244,6 +244,10 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	/* Default: external plugin disabled (can be enabled per-BSS config) */
 	bss->external_plugin_enable = 0;
 #endif
+
+#ifdef CONFIG_IEEE80211BN
+	bss->dps_assist = DRIVER_DEFINED;
+#endif /* CONFIG_IEEE80211BN */
 }
 
 #ifdef CONFIG_IEEE80211BE

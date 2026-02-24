@@ -3927,7 +3927,13 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 		}
 	}
 #endif
-
+#ifdef CONFIG_IEEE80211BN
+	/* If driver support is enabled and user wants to disable feature then
+	 * we need to disable in driver
+	 */
+	if (hapd->conf->dps_assist == FEATURE_DISABLED)
+		params.dps_assist = FEATURE_DISABLED;
+#endif
 	if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK &&
 	    hapd->conf->control_frame_prot)
 		params.is_cfp_enabled = true;
