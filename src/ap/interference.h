@@ -40,6 +40,9 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq,
 
 int hostapd_intf_afc_received(struct hostapd_iface *iface);
 
+bool hostapd_is_backhaul_sta_conn(struct hostapd_iface *iface);
+
+
 /*
  * hostapd_afc_chan_sel_cond - enum to set channel selction config
  * values, which will use to validate afc request

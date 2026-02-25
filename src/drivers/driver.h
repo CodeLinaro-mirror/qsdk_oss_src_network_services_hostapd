@@ -1224,6 +1224,8 @@ struct hostapd_freq_params {
 	 * skip_cac - Indicates whether Channel Availability Check (CAC) should be skipped.
 	 */
 	bool skip_cac;
+	/* Flag to indicate if the chan_switch request is coming from rptr_mgr */
+	bool rptr_mgr;
 #endif
 };
 
