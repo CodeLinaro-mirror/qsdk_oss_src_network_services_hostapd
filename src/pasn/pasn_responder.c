@@ -623,7 +623,7 @@ int handle_auth_pasn_resp(struct pasn_data *pasn, const u8 *own_addr,
 		data = rsn_ie;
 	}
 
-	ret = pasn_mic(pasn->hash_alg, pasn->ptk.kck,
+	ret = pasn_mic(pasn->hash_alg, pasn->ptk.kck, pasn->ptk.kck_len,
 		       own_addr, peer_addr, data, data_len,
 		       frame, frame_len, mic);
 	os_free(data_buf);

@@ -1348,7 +1348,7 @@ int wpa_pasn_auth_rx(struct pasn_data *pasn, const u8 *data, size_t len,
 
 	if (pasn->beacon_rsne_rsnxe) {
 		/* Verify the MIC */
-		ret = pasn_mic(pasn->hash_alg, pasn->ptk.kck,
+		ret = pasn_mic(pasn->hash_alg, pasn->ptk.kck, pasn->ptk.kck_len,
 			       pasn->peer_addr, pasn->own_addr,
 			       wpabuf_head(pasn->beacon_rsne_rsnxe),
 			       wpabuf_len(pasn->beacon_rsne_rsnxe),
@@ -1383,7 +1383,7 @@ int wpa_pasn_auth_rx(struct pasn_data *pasn, const u8 *data, size_t len,
 				rsne_rsnxe, rsne_rsnxe_len);
 
 		/* Verify the MIC */
-		ret = pasn_mic(pasn->hash_alg, pasn->ptk.kck,
+		ret = pasn_mic(pasn->hash_alg, pasn->ptk.kck, pasn->ptk.kck_len,
 			       pasn->peer_addr, pasn->own_addr,
 			       rsne_rsnxe,
 			       rsne_rsnxe_len,
