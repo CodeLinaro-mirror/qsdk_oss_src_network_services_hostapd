@@ -1064,7 +1064,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	bool is_len_calc_failed = false;
 
 	hapd = hostapd_mbssid_get_tx_bss(hapd);
-	epos = pos + len;
+	epos = (u8 *) params->resp + len;
 
 	*pos++ = WLAN_EID_SSID;
 	*pos++ = hapd->conf->ssid.ssid_len;

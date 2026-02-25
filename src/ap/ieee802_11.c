@@ -12171,6 +12171,7 @@ u8 * hostapd_eid_mbssid_nontx_optional_ie(struct hostapd_data *bss, void *tx_par
 	struct probe_resp_params nontx_probe_params;
 	u8 *tx_elem, *nontx_elem, *tx_head;
 	size_t tx_elem_len, nontx_elem_len, tx_head_len;
+	size_t fixed_param_len;
 
 	if (!tx_params) {
 		wpa_printf(MSG_ERROR, "Tx params is NULL");
@@ -12179,7 +12180,9 @@ u8 * hostapd_eid_mbssid_nontx_optional_ie(struct hostapd_data *bss, void *tx_par
 
 	if (frame_type == WLAN_FC_STYPE_BEACON) {
 		struct wpa_driver_ap_params *params =
-			(struct wpa_driver_ap_params *)tx_params;
+			(struct wpa_driver_ap_params *) tx_params;
+		struct ieee80211_mgmt *mgmt =
+			(struct ieee80211_mgmt *) params->head;
 
 		os_memset(&nontx_params, 0, sizeof(nontx_params));
 		if (ieee802_11_build_nontx_bss_params(bss, &nontx_params) < 0) {
@@ -12188,15 +12191,21 @@ u8 * hostapd_eid_mbssid_nontx_optional_ie(struct hostapd_data *bss, void *tx_par
 			goto fail;
 		}
 
+		/*
+		 * head_len = IEEE80211 header + fixed fields + variable-sized elements
+		 * Extract fixed params length to derive variable elements length.
+		 */
+		fixed_param_len = (size_t) ((u8 *) mgmt->u.beacon.variable -
+					    (u8 *) mgmt);
 		tx_elem = params->tail;
 		tx_elem_len = params->tail_len;
-		tx_head = ((struct ieee80211_mgmt *) params->head)->u.beacon.variable;
-		tx_head_len = params->head_len;
+		tx_head = mgmt->u.beacon.variable;
+		tx_head_len = params->head_len - fixed_param_len;
 		nontx_elem = nontx_params.tail;
 		nontx_elem_len = nontx_params.tail_len;
 	} else {
 		struct probe_resp_params *probe_params =
-			(struct probe_resp_params *)tx_params;
+			(struct probe_resp_params *) tx_params;
 
 		os_memset(&nontx_probe_params, 0, sizeof(nontx_probe_params));
 		if (ieee802_11_build_nontx_bss_probe_params(bss, &nontx_probe_params) < 0) {
@@ -12206,10 +12215,16 @@ u8 * hostapd_eid_mbssid_nontx_optional_ie(struct hostapd_data *bss, void *tx_par
 
 		}
 
+		/*
+		 * resp_len = IEE80211 header + fixed fields + variable-sized elements
+		 * Extract fixed params length to derive variable elements length.
+		 */
+		fixed_param_len = (size_t) ((u8 *) probe_params->resp->u.probe_resp.variable -
+					    (u8 *) probe_params->resp);
 		tx_elem = probe_params->resp->u.probe_resp.variable;
-		tx_elem_len = probe_params->resp_len;
+		tx_elem_len = probe_params->resp_len - fixed_param_len;
 		nontx_elem = nontx_probe_params.resp->u.probe_resp.variable;
-		nontx_elem_len = nontx_probe_params.resp_len;
+		nontx_elem_len = nontx_probe_params.resp_len - fixed_param_len;
 	}
 
 	eid = ieee802_11_inheritance_txbss_params(tx_elem, tx_elem_len,
