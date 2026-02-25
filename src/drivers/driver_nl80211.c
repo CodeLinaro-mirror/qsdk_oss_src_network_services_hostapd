@@ -4485,14 +4485,6 @@ retry:
 			goto fail;
 	}
 
-#ifdef CONFIG_ENC_ASSOC
-	if (params->epp_sta) {
-		wpa_printf(MSG_DEBUG, "  * EPP STA");
-		if (nla_put_flag(msg, NL80211_ATTR_EPP_PEER))
-			goto fail;
-	}
-#endif /* CONFIG_ENC_ASSOC */
-
 	ret = send_and_recv_cmd(drv, msg);
 	msg = NULL;
 	if (ret) {
@@ -6572,6 +6564,14 @@ static int wpa_driver_nl80211_sta_add(void *priv,
 	ret = wpa_driver_nl80211_build_sta(drv, msg, params);
 	if (ret)
 		goto fail;
+
+#ifdef CONFIG_ENC_ASSOC
+	if (params->epp_sta) {
+		wpa_printf(MSG_DEBUG, "  * EPP STA");
+		if (nla_put_flag(msg, NL80211_ATTR_EPP_PEER))
+			goto fail;
+	}
+#endif /* CONFIG_ENC_ASSOC */
 
 	ret = send_and_recv_cmd(drv, msg);
 	msg = NULL;

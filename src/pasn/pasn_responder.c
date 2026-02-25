@@ -1086,6 +1086,7 @@ int handle_auth_pasn_3(struct pasn_data *pasn, const u8 *own_addr,
 	int ret;
 	u8 *copy = NULL;
 	size_t copy_len, mic_offset;
+	u8 hash[64];
 
 	if (ieee802_11_parse_elems(mgmt->u.auth.variable,
 				   len - offsetof(struct ieee80211_mgmt,
@@ -1141,10 +1142,9 @@ int handle_auth_pasn_3(struct pasn_data *pasn, const u8 *own_addr,
 	if (!copy)
 		goto fail;
 	os_memset(copy + mic_offset, 0, mic_len);
-	ret = pasn_mic(pasn->ptk.kck, pasn->akmp, pasn->cipher,
-		       peer_addr, own_addr,
-		       pasn->hash, mic_len * 2,
-		       copy, copy_len, out_mic);
+
+	ret = pasn_mic(pasn->hash_alg, pasn->ptk.kck, pasn->ptk.kck_len,
+		       pasn->own_addr, pasn->peer_addr, hash, mic_len * 2, copy, copy_len, mic);
 	os_free(copy);
 	copy = NULL;
 

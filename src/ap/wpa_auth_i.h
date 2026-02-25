@@ -206,6 +206,7 @@ struct wpa_state_machine {
 
 	struct wpabuf *sae_pw_id;
 	unsigned int sae_pw_id_counter;
+	enum rsn_hash_alg hash_alg;
 };
 
 

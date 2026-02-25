@@ -692,6 +692,7 @@ static struct wpabuf * wpas_pasn_build_auth_3(struct pasn_data *pasn)
 	u8 *ptr;
 	u8 wrapped_data;
 	int ret;
+	 u8 hash[64];
 
 	wpa_printf(MSG_DEBUG, "PASN: Building frame 3");
 
@@ -738,9 +739,10 @@ static struct wpabuf * wpas_pasn_build_auth_3(struct pasn_data *pasn)
 	data = wpabuf_head_u8(buf) + IEEE80211_HDRLEN;
 	data_len = wpabuf_len(buf) - IEEE80211_HDRLEN;
 
-	ret = pasn_mic(pasn->ptk.kck, pasn->akmp, pasn->cipher,
-		       pasn->own_addr, pasn->peer_addr,
-		       pasn->hash, mic_len * 2, data, data_len, mic);
+	ret = pasn_mic(pasn->hash_alg, pasn->ptk.kck, pasn->ptk.kck_len,
+               pasn->own_addr, pasn->peer_addr,
+               hash, mic_len * 2, data, data_len, mic);
+
 	if (ret) {
 		wpa_printf(MSG_DEBUG, "PASN: frame 3: Failed MIC calculation");
 		goto fail;

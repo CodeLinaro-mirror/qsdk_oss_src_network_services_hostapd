@@ -540,6 +540,14 @@ void clear_wpa_sm_for_each_partner_link(struct hostapd_data *hapd,
 void set_valid_for_each_partner_link_sta(struct hostapd_data *hapd,
                                            struct sta_info *psta,
                                            int valid);
+static inline bool ap_sta_is_epp(const struct sta_info *sta)
+{
+#ifdef CONFIG_ENC_ASSOC
+        return sta && sta->epp_sta;
+#else /* CONFIG_ENC_ASSOC */
+        return false;
+#endif /* CONFIG_ENC_ASSOC */
+}
 
 int hostapd_free_partner_link_stas(struct hostapd_data *hapd,
 				   struct sta_info *sta,

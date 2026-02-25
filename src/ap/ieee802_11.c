@@ -3597,7 +3597,7 @@ static void handle_auth(struct hostapd_data *hapd,
 #endif /* CONFIG_PASN */
 #ifdef CONFIG_ENC_ASSOC
 	      (auth_alg == WLAN_AUTH_EPPKE &&
-	       auth_transaction == WLAN_AUTH_TR_SEQ_PASN_AUTH3) ||
+	       auth_transaction == 3) ||
 #endif /* CONFIG_ENC_ASSOC */
 	      (auth_alg == WLAN_AUTH_SHARED_KEY && auth_transaction == 3))) {
 		wpa_printf(MSG_INFO, "Unknown authentication transaction number (%d)",
@@ -5656,7 +5656,7 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 	u16 eml_cap = 0;
 	bool epp_sta = 0;
 #ifdef CONFIG_ENC_ASSOC
-	epp_sta = sta->epp_sta
+	epp_sta = sta->epp_sta;
 #endif
 
 	if (!hapd->conf->mld_ap)

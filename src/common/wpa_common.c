@@ -1913,19 +1913,15 @@ err:
  *	SHA384.
  * Returns: 0 on success, -1 on failure
  */
-int pasn_auth_frame_hash(enum rsn_hash_alg alg, const u8 *data, size_t len,
+int pasn_auth_frame_hash(int akmp, int cipher, const u8 *data, size_t len,
 			 u8 *hash)
 {
-	switch (alg) {
-	case RSN_HASH_SHA384:
+	if (pasn_use_sha384(akmp, cipher)) {
 		wpa_printf(MSG_DEBUG, "PASN: Frame hash using SHA-384");
 		return sha384_vector(1, &data, &len, hash);
-	case RSN_HASH_SHA256:
+	} else {
 		wpa_printf(MSG_DEBUG, "PASN: Frame hash using SHA-256");
 		return sha256_vector(1, &data, &len, hash);
-	default:
-		wpa_printf(MSG_ERROR, "PASN: Unsupported alg=%d", alg);
-		return -1;
 	}
 }
 
