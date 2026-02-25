@@ -1065,6 +1065,11 @@ struct hostapd_bss_config {
 	unsigned int beacon_rate;
 	/* tpe_ie_config - Per-BSS TPE IE user configuration */
 	ieee80211_tpe_config_user_params tpe_ie_config;
+#ifdef CONFIG_ENC_ASSOC
+	unsigned int assoc_frame_encryption:1;
+	unsigned int pmksa_caching_privacy:1;
+	unsigned int eap_using_authentication_frames:1;
+#endif /* CONFIG_ENC_ASSOC  */
 };
 
 /**

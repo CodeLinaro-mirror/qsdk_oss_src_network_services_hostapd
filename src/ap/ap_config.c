@@ -206,6 +206,12 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->twt_responder_caps = TWT_ITWT_ENABLED;
 	bss->bss_priority = 0;
 	bss->bss_priority_status = 0;
+
+#ifdef CONFIG_ENC_ASSOC
+	bss->assoc_frame_encryption = 0;
+	bss->pmksa_caching_privacy = 0;
+	bss->eap_using_authentication_frames = 0;
+#endif /* CONFIG_ENC_ASSOC */
 }
 
 #ifdef CONFIG_IEEE80211BE
