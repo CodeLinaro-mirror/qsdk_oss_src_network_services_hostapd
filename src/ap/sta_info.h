@@ -384,6 +384,9 @@ struct sta_info {
 
 	struct wpabuf *sae_pw_id;
 	unsigned int sae_pw_id_counter;
+#ifdef CONFIG_ENC_ASSOC
+	bool epp_sta; /* Indicates if the station is an EPP peer */
+#endif /* CONFIG_ENC_ASSOC */
 };
 
 

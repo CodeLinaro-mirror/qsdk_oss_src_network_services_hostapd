@@ -329,6 +329,14 @@ void clear_wpa_sm_for_each_partner_link(struct hostapd_data *hapd,
 
 #endif /* CONFIG_IEEE80211BE */
 
+static inline bool ap_sta_is_epp(const struct sta_info *sta)
+{
+#ifdef CONFIG_ENC_ASSOC
+	return sta && sta->epp_sta;
+#else /* CONFIG_ENC_ASSOC */
+	return false;
+#endif /* CONFIG_ENC_ASSOC */
+}
 
 #ifdef CONFIG_IEEE80211AX
 static void hostapd_free_scs_data(struct sta_info *sta)

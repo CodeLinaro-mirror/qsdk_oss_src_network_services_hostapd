@@ -1138,6 +1138,8 @@ static const u8 * auth_skip_fixed_fields(struct hostapd_data *hapd,
 	case WLAN_AUTH_OPEN:
 	case WLAN_AUTH_FT:
 		return pos;
+	case WLAN_AUTH_EPPKE:
+		return pos;
 #ifdef CONFIG_SAE
 	case WLAN_AUTH_SAE:
 		if (auth_transaction == 1) {
