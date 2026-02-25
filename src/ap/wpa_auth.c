@@ -1034,6 +1034,21 @@ void wpa_auth_set_sta_ft_over_ds_ml(struct wpa_state_machine *sm, bool status)
 	sm->ft_over_ds_ml = status;
 }
 
+#ifdef CONFIG_ENC_ASSOC
+void wpa_store_eppke_pmk_ptk_sm(struct wpa_state_machine *sm,
+				const struct wpa_ptk *ptk, const u8 *pmk,
+				size_t pmk_len)
+{
+	os_memcpy(&sm->PTK, ptk, sizeof(struct wpa_ptk));
+	os_memcpy(sm->PMK, pmk, pmk_len);
+	sm->pmk_len = pmk_len;
+	sm->PTK_valid = true;
+	sm->pairwise_set = true;
+	sm->hash_alg = ptk->hash_alg;
+}
+#endif /* CONFIG_ENC_ASSOC */
+
+
 int wpa_auth_sta_associated(struct wpa_authenticator *wpa_auth,
 			    struct wpa_state_machine *sm)
 {
