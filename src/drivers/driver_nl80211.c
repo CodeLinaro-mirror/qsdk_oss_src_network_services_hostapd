@@ -4485,6 +4485,14 @@ retry:
 			goto fail;
 	}
 
+#ifdef CONFIG_ENC_ASSOC
+	if (params->epp_sta) {
+		wpa_printf(MSG_DEBUG, "  * EPP STA");
+		if (nla_put_flag(msg, NL80211_ATTR_EPP_PEER))
+			goto fail;
+	}
+#endif /* CONFIG_ENC_ASSOC */
+
 	ret = send_and_recv_cmd(drv, msg);
 	msg = NULL;
 	if (ret) {
