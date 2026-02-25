@@ -6886,6 +6886,14 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 				data->dfs_event.freq);
 			wpas_ap_event_dfs_radar_detected(wpa_s,
 							 &data->dfs_event);
+			/* On Radar detection, if uplink_csa is not enabled
+			 * flush all the scan bss cache and deauth the STA
+			 */
+			if (!wpa_s->conf->uplink_csa) {
+				wpa_bss_flush(wpa_s, 1);
+				wpa_supplicant_deauthenticate(wpa_s,
+						WLAN_REASON_DEAUTH_LEAVING);
+			}
 		}
 		break;
 	case EVENT_DFS_NOP_FINISHED:
