@@ -573,7 +573,7 @@ int handle_auth_pasn_resp(struct pasn_data *pasn, const u8 *own_addr,
 	wpa_pasn_add_extra_ies(buf, pasn->extra_ies, pasn->extra_ies_len);
 
 	/* Add the mic */
-	mic_len = pasn_mic_len(pasn->akmp, pasn->cipher);
+	mic_len = pasn_mic_len(pasn->hash_alg);
 	wpabuf_put_u8(buf, WLAN_EID_MIC);
 	wpabuf_put_u8(buf, mic_len);
 	ptr = wpabuf_put(buf, mic_len);
@@ -623,7 +623,7 @@ int handle_auth_pasn_resp(struct pasn_data *pasn, const u8 *own_addr,
 		data = rsn_ie;
 	}
 
-	ret = pasn_mic(pasn->ptk.kck, pasn->akmp, pasn->cipher,
+	ret = pasn_mic(pasn->hash_alg, pasn->ptk.kck,
 		       own_addr, peer_addr, data, data_len,
 		       frame, frame_len, mic);
 	os_free(data_buf);
@@ -1024,7 +1024,7 @@ int handle_auth_pasn_3(struct pasn_data *pasn, const u8 *own_addr,
 	}
 
 	/* Check that the MIC IE exists. Save it and zero out the memory. */
-	mic_len = pasn_mic_len(pasn->akmp, pasn->cipher);
+	mic_len = pasn_mic_len(pasn->hash_alg);
 	if (!elems.mic || elems.mic_len != mic_len) {
 		wpa_printf(MSG_DEBUG,
 			   "PASN: Invalid MIC. Expecting len=%u", mic_len);

@@ -726,7 +726,7 @@ static struct wpabuf * wpas_pasn_build_auth_3(struct pasn_data *pasn)
 	wpa_pasn_add_extra_ies(buf, pasn->extra_ies, pasn->extra_ies_len);
 
 	/* Add the MIC */
-	mic_len = pasn_mic_len(pasn->akmp, pasn->cipher);
+	mic_len = pasn_mic_len(pasn->hash_alg);
 	wpabuf_put_u8(buf, WLAN_EID_MIC);
 	wpabuf_put_u8(buf, mic_len);
 	ptr = wpabuf_put(buf, mic_len);
@@ -1184,7 +1184,7 @@ int wpa_pasn_auth_rx(struct pasn_data *pasn, const u8 *data, size_t len,
 	}
 
 	/* Check that the MIC IE exists. Save it and zero out the memory */
-	mic_len = pasn_mic_len(pasn->akmp, pasn->cipher);
+	mic_len = pasn_mic_len(pasn->hash_alg);
 	if (status == WLAN_STATUS_SUCCESS) {
 		if (!elems.mic || elems.mic_len != mic_len) {
 			wpa_printf(MSG_DEBUG,
@@ -1348,7 +1348,7 @@ int wpa_pasn_auth_rx(struct pasn_data *pasn, const u8 *data, size_t len,
 
 	if (pasn->beacon_rsne_rsnxe) {
 		/* Verify the MIC */
-		ret = pasn_mic(pasn->ptk.kck, pasn->akmp, pasn->cipher,
+		ret = pasn_mic(pasn->hash_alg, pasn->ptk.kck,
 			       pasn->peer_addr, pasn->own_addr,
 			       wpabuf_head(pasn->beacon_rsne_rsnxe),
 			       wpabuf_len(pasn->beacon_rsne_rsnxe),
@@ -1383,7 +1383,7 @@ int wpa_pasn_auth_rx(struct pasn_data *pasn, const u8 *data, size_t len,
 				rsne_rsnxe, rsne_rsnxe_len);
 
 		/* Verify the MIC */
-		ret = pasn_mic(pasn->ptk.kck, pasn->akmp, pasn->cipher,
+		ret = pasn_mic(pasn->hash_alg, pasn->ptk.kck,
 			       pasn->peer_addr, pasn->own_addr,
 			       rsne_rsnxe,
 			       rsne_rsnxe_len,
