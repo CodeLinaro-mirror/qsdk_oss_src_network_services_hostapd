@@ -742,6 +742,10 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 	if (ext_feature_isset(ext_features, len,
 			      NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD))
 		capa->flags2 |= WPA_DRIVER_FLAGS2_TTLM_BEACON_OFFLOAD;
+
+	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION))
+		capa->flags2 |= WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION;
 }
 
 
