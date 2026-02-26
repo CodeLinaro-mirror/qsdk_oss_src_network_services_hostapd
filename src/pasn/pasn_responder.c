@@ -1011,6 +1011,29 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 					pmkid = rsn_data.pmkid;
 				}
 
+#ifdef CONFIG_PMKSA_PRIVACY
+				if (mgmt->u.auth.auth_alg == WLAN_AUTH_EPPKE &&
+				    pasn->pmksa_caching_privacy &&
+				    ieee802_11_rsnx_capab_len(elems.rsnxe, elems.rsnxe_len,
+							      WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY)) {
+					/* Per IEEE802.11bi/D3.0, 12.16.7 PMKSA
+					 * caching privacy, For a different PMKID
+					 * indicated in a frame to ensure privacy,
+					 * the MAC/MLD address in the frame is
+					 * randomized to avoid tracking based on
+					 * the MAC address. Hence when PMKID Privacy
+					 * is turned on, perform PMK fetch based on
+					 * PMKID match alone. When PMKID Privacy is
+					 * off, in order to find a matching PMK,
+					 * station is expected to keep the MAC/MLD
+					 * address same for ML/Non-ML Association
+					 * respectively
+					 */
+					pmksa = pasn->pmksa_cache_search(pasn->cb_ctx,
+									 NULL, pmkid,
+									 pasn->is_ml_peer);
+				} else
+#endif /* CONFIG_PMKSA_PRIVACY */
 				pmksa = pmksa_cache_auth_get(pasn->pmksa,
 							     peer_addr,
 							     pmkid);
