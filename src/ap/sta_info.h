@@ -383,6 +383,7 @@ struct sta_info {
 	u8 num_dscp_policies;
 	u8 unsolicited_dialog_token;
 	struct dscp_policy_state dscp_state;
+	struct sta_info *sa_query_triggered_sta;
 	bool dscp_reset;
 	bool ft_re_add;
 	u16 max_idle_period; /* if nonzero, the granted BSS max idle period in
