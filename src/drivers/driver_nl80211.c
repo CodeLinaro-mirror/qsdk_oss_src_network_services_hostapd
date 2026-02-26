@@ -1151,8 +1151,17 @@ add:
 	/* if not add it by deleting the older wiphy */
 	if (!found) {
 		list = &bss->drv->wiphy_list;
-		if (list->next && list->prev)
+		if (list->next && list->prev) {
+			/* Wiphy indices change sometimes for the same BSSes.
+			 * Here bss->drv->wiphy_list is moved from old
+			 * wiphy_data list (&w->drvs) to new. As bss->drv is
+			 * same for all BSSes on a wiphy, this move affects all.
+			 * Corresponding check is added to
+			 * nl80211_put_wiphy_data_ap() not delete this node if
+			 * it was already moved this way.
+			 */
 			dl_list_del(list);
+		}
 		dl_list_add(&w->drvs, &bss->drv->wiphy_list);
 	}
 
@@ -1181,8 +1190,23 @@ static void nl80211_put_wiphy_data_ap(struct i802_bss *bss)
 		}
 	}
 	/* if not remove it */
-	if (!found)
-		dl_list_del(&bss->drv->wiphy_list);
+	if (!found) {
+		bool wiphy_found = false;
+		struct wpa_driver_nl80211_data *drv;
+
+		dl_list_for_each(drv, &w->drvs, struct wpa_driver_nl80211_data,
+				 wiphy_list) {
+			if (drv == bss->drv) {
+				wiphy_found = true;
+				break;
+			}
+		}
+
+		if (wiphy_found)
+			dl_list_del(&bss->drv->wiphy_list);
+		else
+			wpa_printf(MSG_DEBUG, "Drv wiphy node was already moved to wiphy index %d", bss->drv->wiphy_idx);
+	}
 
 	if (!dl_list_empty(&w->bsss))
 		return;
