@@ -323,11 +323,20 @@ bool hostapd_check_reenable_bss(struct hostapd_iface *iface)
 	int b;
 
 	for (b = 0; b < iface->num_bss; b++) {
-		if (iface->bss[b]->reenable)
+		if (iface->bss[b]->reenable == REENABLE_REUSE_LINK ||
+		    iface->bss[b]->reenable == REENABLE_HT_SCAN ||
+		    iface->bss[b]->reenable == REENABLE_CAC)
 			return true;
 	}
 
 	return false;
+}
+
+static inline bool hapd_reenable_pending(const struct hostapd_data *hapd)
+{
+	return hapd->reenable == REENABLE_REUSE_LINK ||
+		hapd->reenable == REENABLE_HT_SCAN ||
+		hapd->reenable == REENABLE_CAC;
 }
 
 int hostapd_switch_pending_bss(struct hostapd_iface *iface,
@@ -338,7 +347,7 @@ int hostapd_switch_pending_bss(struct hostapd_iface *iface,
 	for (b = 0; b < iface->num_bss; b++) {
 		struct hostapd_data *hapd = iface->bss[b];
 
-		if (!hapd->reenable)
+		if (!hapd_reenable_pending(hapd))
 			continue;
 
 		err = hostapd_switch_channel(iface->bss[b], settings);
@@ -357,7 +366,7 @@ bool hostapd_enable_pending_bss(struct hostapd_iface *iface)
 	for (b = 0; b < iface->num_bss; b++) {
 		struct hostapd_data *hapd = iface->bss[b];
 
-		if (!hapd->reenable)
+		if (!hapd_reenable_pending(hapd))
 			continue;
 
 		if (hostapd_enable_bss(hapd) < 0)
@@ -781,6 +790,11 @@ int hostapd_reload_config(struct hostapd_iface *iface)
 			    !iface->bss[j]->conf->mld_ap)
 				continue;
 
+#ifdef CONFIG_QCN_EXTN
+			if (hostapd_is_repurpose_disabled_11be_extn(iface->bss[j]->conf))
+				continue;
+#endif /* CONFIG_QCN_EXTN */
+
 			for_each_mld_link(link, iface->bss[j]) {
 				if (link->iface == other) {
 					mld_partner_found = true;
@@ -1196,7 +1210,12 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 	hapd->p2p_probe_resp_ie = NULL;
 #endif /* CONFIG_P2P */
 
-	if (skip_unstarted_bss_cleanup)
+	/* Skip unstarted cleanup unless reenable/deinit state requires it. */
+	if (!hapd->started && hapd->reenable == REENABLE_NONE)
+		return;
+
+	if (!hapd->started &&
+	    hapd->reenable == REENABLE_DEINIT)
 		goto remove_if;
 
 	hapd->started = 0;
@@ -1233,7 +1252,9 @@ remove_if:
 	/* For single drv, first bss would have interface_added flag set.
 	 * Don't remove interface now. Driver deinit part will take care
 	 */
-	if (!hapd->reenable && hapd->interface_added && hapd->iface->bss[0] != hapd &&
+	if (hapd->reenable != REENABLE_REUSE_LINK &&
+	    hapd->interface_added &&
+	    hapd->iface->bss[0] != hapd &&
 	    hapd->drv_priv != hapd->iface->bss[0]->drv_priv) {
 		hapd->interface_added = 0;
 		if (hostapd_if_remove(hapd, WPA_IF_AP_BSS, hapd->conf->iface)) {
@@ -1255,11 +1276,12 @@ remove_if:
 	/* If the interface was not added as well as it is not the first BSS,
 	 * at least the link should be removed here since deinit will take care
 	 * of only the first BSS. */
-	if (!hapd->reenable && hapd->conf && hapd->conf->mld_ap &&
+	if (hapd->reenable != REENABLE_REUSE_LINK && hapd->conf &&
+	    hapd->conf->mld_ap &&
 	    !hapd->interface_added && hapd->iface->bss[0] != hapd &&
 	    hapd->drv_priv != hapd->iface->bss[0]->drv_priv)
 		hostapd_if_link_remove(hapd, WPA_IF_AP_BSS, hapd->conf->iface,
-					       hapd->mld_link_id);
+				       hapd->mld_link_id);
 #endif /* CONFIG_IEEE80211BE */
 
 	if (skip_unstarted_bss_cleanup)
@@ -1370,7 +1392,7 @@ static void hostapd_bss_link_deinit(struct hostapd_data *hapd)
 	}
 
 	/* Put all freeing logic above this */
-	if (!hapd->mld || hapd->reenable)
+	if (!hapd->mld || hapd_reenable_pending(hapd))
 		return;
 
 	linked = hapd->link.next && hapd->link.prev;
@@ -2152,7 +2174,7 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon)
 	if (!first || first == -1) {
 		u8 *addr = hapd->own_addr;
 
-		if (hapd->reenable)
+		if (hapd_reenable_pending(hapd))
 			goto setup_mld;
 
 		if (!is_zero_ether_addr(conf->bssid)) {
@@ -2266,14 +2288,15 @@ setup_mld:
 		}
 #endif /* CONFIG_QCN_EXTN */
 
-		if (!hapd->reenable && hostapd_drv_link_add(hapd, hapd->mld_link_id,
-							    hapd->own_addr)) {
+		if (!hapd_reenable_pending(hapd) &&
+		    hostapd_drv_link_add(hapd, hapd->mld_link_id,
+					 hapd->own_addr)) {
 			wpa_printf(MSG_ERROR,
 				   "MLD: Failed to add link %d in MLD %s",
 				   hapd->mld_link_id, hapd->conf->iface);
 			return -1;
 		}
-		if (!hapd->reenable)
+		if (!hapd_reenable_pending(hapd))
 			hostapd_mld_add_link(hapd);
 		hostapd_validate_update_ml_max_rec_links(hapd);
 	}
@@ -2285,7 +2308,8 @@ setup_mld:
 			   hapd->conf->iface);
 #endif /* CONFIG_IEEE80211BE */
 	/* MBSSID setup already done during reenable*/
-	if (!hapd->reenable && hostapd_mbssid_setup_bss(hapd))
+	if (!hapd_reenable_pending(hapd) &&
+	    hostapd_mbssid_setup_bss(hapd))
 		return -1;
 
 	if (conf->wmm_enabled < 0)
@@ -2717,9 +2741,18 @@ void hostapd_no_ir_cleanup(struct hostapd_data *bss)
 	hostapd_bss_deinit_no_free(bss);
 	hostapd_bss_link_deinit(bss);
 	hostapd_free_hapd_data(bss);
-	hostapd_cleanup_iface_partial(bss->iface);
 }
 
+static bool hostapd_is_6ghz_chan_txable(const struct hostapd_channel_data *c)
+{
+	if (c->flag & HOSTAPD_CHAN_NO_IR)
+		return false;
+
+	if (c->flag & HOSTAPD_CHAN_DISABLED)
+		return false;
+
+	return true;
+}
 
 static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 {
@@ -2741,12 +2774,16 @@ static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 			}
 
 			for (j = 0; j < mode->num_channels; j++) {
-				if (!(mode->channels[j].flag &
-				      HOSTAPD_CHAN_NO_IR))
-					all_no_ir = false;
+				if (!is_6ghz_freq(mode->channels[j].freq))
+					continue;
 
-				if (is_6ghz_freq(mode->channels[j].freq))
-					is_6ghz = true;
+				is_6ghz = true;
+				if (!hostapd_is_6ghz_chan_txable(&mode->channels[j]))
+					continue;
+
+				all_no_ir = false;
+				break;
+
 			}
 			break;
 		}
@@ -2770,8 +2807,20 @@ static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 				return 0;
 			}
 
-			if (!(chan->flag & HOSTAPD_CHAN_NO_IR))
+			if (hostapd_is_6ghz_chan_txable(chan))
 				return 0;
+
+			/* Other Valid channels present. Dont Stop AP if retail AFC is supported
+			 * Allow Channel Selection to choose a new channel.
+			 */
+			if (hostapd_drv_is_retail_afc_supported(iface->bss[0]) &&
+			    iface->conf->enable_best_power_mode) {
+				wpa_printf(MSG_DEBUG,
+					   "NO_IR: Enable retail AFC channel selection");
+				iface->is_afc_channel_change_pending = true;
+				return 0;
+			}
+
 			wpa_printf(MSG_DEBUG,
 				   "NO_IR: The current channel has NO_IR flag now, stop AP.");
 		} else {
@@ -2787,7 +2836,7 @@ static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 			return 0;
 		}
 
-		if (!iface->conf->acs) {
+		if (iface->freq) {
 			struct hostapd_channel_data *chan;
 
 			chan = hw_get_channel_freq(iface->current_mode->mode,
@@ -2802,16 +2851,20 @@ static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 
 			/* If the last operating channel is NO_IR, trigger ACS.
 			 */
-			if (chan->flag & HOSTAPD_CHAN_NO_IR) {
+			if (!hostapd_is_6ghz_chan_txable(chan)) {
 				iface->freq = 0;
 				iface->conf->channel = 0;
-				if (acs_init(iface) != HOSTAPD_CHAN_ACS)
-					wpa_printf(MSG_ERROR,
-						   "NO_IR: Could not start ACS");
-				return 0;
+				if (!iface->conf->acs) {
+					if (acs_init(iface) != HOSTAPD_CHAN_ACS)
+						wpa_printf(MSG_ERROR,
+							   "NO_IR: Could not start ACS");
+					return 0;
+				}
 			}
 		}
 
+		wpa_printf(MSG_DEBUG,
+			   "NO_IR: Re-enabling interface after channel list update");
 		setup_interface2(iface);
 	}
 
@@ -2944,7 +2997,7 @@ static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 	}
 
 	ret = hostapd_select_hw_mode(iface);
-	if (ret) {
+	if (ret && !iface->is_no_ir) {
 		wpa_printf(MSG_ERROR, "Failed to select hardware mode (%d)", ret);
 		return ret;
 	}
@@ -2955,13 +3008,20 @@ static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 		return ret;
 	}
 
-	if (iface->is_afc_channel_change_pending) {
-		wpa_printf(MSG_DEBUG, "Handling AFC channel change");
-		return hostapd_handle_afc_channel_change(iface);
+	wpa_printf(MSG_DEBUG, "Handling NOIR Channel List Update");
+	ret = hostapd_no_ir_channel_list_updated(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "Failed to handle NO IR Chan List Update (%d)", ret);
+		return ret;
 	}
 
-	wpa_printf(MSG_DEBUG, "Handling AFC NOIR");
-	return hostapd_no_ir_channel_list_updated(iface);
+	if (iface->is_afc_channel_change_pending) {
+		wpa_printf(MSG_DEBUG, "Handling AFC channel change");
+		ret = hostapd_handle_afc_channel_change(iface);
+	}
+
+	return ret;
 }
 
 void hostapd_channel_list_updated(struct hostapd_iface *iface, int initiator)
@@ -3638,11 +3698,10 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 				 * If this is a DFS channel, move to completing
 				 * AP setup.
 				 */
-				if (res_dfs_offload == 1)
-					goto dfs_offload;
-				/* Otherwise fall through. */
+					if (res_dfs_offload == 1)
+						goto dfs_offload;
+				}
 			}
-		}
 #endif /* NEED_AP_MLME */
 
 		if (iface->radar_bit_pattern) {
@@ -4174,6 +4233,9 @@ void hostapd_interface_deinit(struct hostapd_iface *iface)
 	for (j = (int) iface->num_bss - 1; j >= 0; j--) {
 		if (!iface->bss)
 			break;
+		if (iface->bss[j] &&
+		    iface->bss[j]->reenable != REENABLE_DEINIT)
+			iface->bss[j]->reenable = REENABLE_DEINIT;
 		hostapd_bss_deinit(iface->bss[j]);
 	}
 
@@ -4381,8 +4443,17 @@ void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
 
 	conf = hapd->conf;
 
+#ifndef CONFIG_QCN_EXTN
+
 	if (!hapd->iconf || !conf->mld_ap || !hostapd_is_eht_enabled(hapd))
 		return;
+
+#else
+	if (!hapd->iconf || !conf->mld_ap ||
+	    (!hostapd_is_eht_enabled(hapd) &&
+	     !hostapd_is_repurpose_disabled_11be_extn(conf)))
+		return;
+#endif /* CONFIG_QCN_EXTN */
 
 	for (i = 0; i < interfaces->mld_count; i++) {
 		mld = interfaces->mld[i];
@@ -4627,7 +4698,7 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 		wpa_printf(MSG_ERROR,
 			   "New BSS (" MACSTR ") doesn't satisfy prefix requirement for the MBSSID groups",
 			   MAC2STR(hapd->own_addr));
-		return -1;
+		goto fail;
 	}
 
 	if (hapd->iconf->mbssid != MULTI_MBSSID_GROUP_ENABLED) {
@@ -4844,12 +4915,6 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 
 	if (hostapd_require_tx_bss(hapd,
 				   hapd->conf->vht_capab_mask &
-				   VHT_CAP_BSS_OVR_MU_BEAMFORMEE,
-				   "bss_vht_mu_beamformee") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->vht_capab_mask &
 				   VHT_CAP_BSS_OVR_SOUNDING_DIMENSION,
 				   "bss_vht_sounding_dimension") < 0)
 		return -1;
@@ -4878,12 +4943,6 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 				   hapd->conf->he_phy_capab_mask &
 				   HE_PHY_BSS_OVR_MU_BEAMFORMER,
 				   "bss_he_mu_beamformer") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->he_phy_capab_mask &
-				   HE_PHY_BSS_OVR_MU_BEAMFORMEE,
-				   "bss_he_mu_beamformee") < 0)
 		return -1;
 
 	if (hostapd_require_tx_bss(hapd,
@@ -4932,12 +4991,6 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 
 	if (hostapd_require_tx_bss(hapd,
 				   hapd->conf->eht_phy_capab_mask &
-				   EHT_PHY_BSS_OVR_MU_BEAMFORMEE,
-				   "bss_eht_mu_beamformee") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->eht_phy_capab_mask &
 				   EHT_PHY_BSS_OVR_DL_MU_OFDMA,
 				   "bss_eht_dl_mu_ofdma") < 0)
 		return -1;
@@ -4958,24 +5011,6 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 				   hapd->conf->eht_phy_capab_mask &
 				   EHT_PHY_BSS_OVR_UL_OFDMA_MUMIMO,
 				   "bss_eht_ul_ofdma_mumimo") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->eht_phy_capab_mask &
-				   EHT_PHY_BSS_OVR_UL_MU_MIMO_80,
-				   "bss_eht_ulmumimo_80mhz") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->eht_phy_capab_mask &
-				   EHT_PHY_BSS_OVR_UL_MU_MIMO_160,
-				   "bss_eht_ulmumimo_160mhz") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->eht_phy_capab_mask &
-				   EHT_PHY_BSS_OVR_UL_MU_MIMO_320,
-				   "bss_eht_ulmumimo_320mhz") < 0)
 		return -1;
 #endif /* CONFIG_IEEE80211BE */
 
@@ -5449,10 +5484,9 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt)
 
 	/* Deinitialize higher-level BSS state but keep netdev/link. */
 	hostapd_bss_deinit_no_free(hapd);
-	hapd->reenable = 1;
+	hapd->reenable = REENABLE_REUSE_LINK;
 	hostapd_bss_link_deinit(hapd);
 	hostapd_free_hapd_data(hapd);
-	hapd->reenable = 0;
 	hostapd_cleanup_cca_params(hapd);
 	hostapd_cleanup_cs_params(hapd);
 
@@ -5469,10 +5503,110 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt)
 	return 0;
 }
 
+enum bss_enable_state {
+	ENABLE_BSS_OK,
+	ENABLE_BSS_DEFER,
+	ENABLE_BSS_SETUP,
+	ENABLE_BSS_ERROR,
+};
+
+/* Decide whether HT scan is needed or enable should be deferred. */
+static enum bss_enable_state
+hostapd_enable_bss_handle_ht_scan(struct hostapd_data *hapd)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	int res, b;
+
+	for (b = 0; b < iface->num_bss; b++)
+		if (iface->bss[b]->started)
+			return ENABLE_BSS_SETUP;
+
+	if (iface->state != HAPD_IFACE_HT_SCAN) {
+		res = hostapd_check_ht_capab(iface);
+		if (res < 0) {
+			hapd->reenable = REENABLE_NONE;
+			wpa_printf(MSG_INFO, "Failed to start HT Scan");
+			return ENABLE_BSS_ERROR;
+		}
+
+		if (res == 1) {
+			hapd->reenable = REENABLE_HT_SCAN;
+			wpa_printf(MSG_DEBUG, "Interface initialization will "
+				   "be completed in a callback");
+			return ENABLE_BSS_DEFER;
+		}
+	}
+
+	return ENABLE_BSS_OK;
+}
+
+/* Handle CAC/DFS once HT scan has completed. */
+static enum bss_enable_state
+hostapd_enable_bss_handle_cac(struct hostapd_data *hapd)
+{
+#ifdef NEED_AP_MLME
+	struct hostapd_iface *iface = hapd->iface;
+	int res;
+
+	if (!is_5ghz_freq(iface->freq))
+		return ENABLE_BSS_SETUP;
+
+	/* Handle DFS only if it is not offloaded to the driver */
+	if (!(iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD)) {
+		/* Check DFS */
+		set_dfs_state_freq(iface, iface->freq,
+				   HOSTAPD_CHAN_DFS_USABLE);
+		res = hostapd_handle_dfs(iface);
+		if (res <= 0) {
+			if (res < 0) {
+				hapd->reenable = REENABLE_NONE;
+				wpa_printf(MSG_ERROR,
+					   "DFS handling failed for BSS %s",
+					   hapd->conf->iface);
+				return ENABLE_BSS_ERROR;
+			}
+
+			/*
+			 * CAC/DFS continuation is expected only if CAC was actually
+			 * started; otherwise proceed with BSS setup.
+			 */
+			if (!iface->cac_started)
+				return ENABLE_BSS_SETUP;
+			hapd->reenable = REENABLE_CAC;
+			return ENABLE_BSS_DEFER;
+		}
+	} else {
+		/* If DFS is offloaded to the driver */
+		res = hostapd_handle_dfs_offload(iface);
+		if (res <= 0) {
+			if (res < 0) {
+				hapd->reenable = REENABLE_NONE;
+				wpa_printf(MSG_ERROR,
+					   "DFS offload handling failed for BSS %s",
+					   hapd->conf->iface);
+				return ENABLE_BSS_ERROR;
+			}
+			hapd->reenable = REENABLE_CAC;
+			return ENABLE_BSS_DEFER;
+		}
+
+		wpa_printf(MSG_DEBUG, "Proceed with AP/channel setup");
+		/*
+		 * If this is a DFS channel, move to completing
+		 * AP setup.
+		 */
+			if (res == 1)
+				return ENABLE_BSS_SETUP;
+		}
+#endif /* NEED_AP_MLME */
+
+	return ENABLE_BSS_SETUP;
+}
+
 int hostapd_enable_bss(struct hostapd_data *hapd)
 {
 	struct hostapd_iface *hapd_iface;
-	int res, b;
+	enum bss_enable_state enable_state;
 	size_t i;
 
 	if (hapd->started) {
@@ -5489,82 +5623,41 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 
 	wpa_printf(MSG_DEBUG, "Enable BSS %s", hapd->conf->iface);
 
+	/* Enable flow: HT scan -> CAC/DFS -> setup_bss. */
 	if (hapd_iface->cac_started) {
-		hapd->reenable = 1;
+		hapd->reenable = REENABLE_CAC;
 		wpa_printf(MSG_INFO, "CAC in progress, cannot enable BSS");
 		return 0;
 	}
 
-	if (hapd->reenable && hapd_iface->state != HAPD_IFACE_HT_SCAN)
+	/* HT scan in progress: defer enable until scan completes. */
+	if (hapd_iface->state == HAPD_IFACE_HT_SCAN &&
+	    hapd_iface->scan_cb && !hapd->started) {
+		hapd->reenable = REENABLE_HT_SCAN;
+		wpa_printf(MSG_INFO, "HT scan in progress, cannot enable BSS");
+		return 0;
+	}
+
+	if (hapd->reenable == REENABLE_HT_SCAN)
+		goto handle_cac;
+
+	if (hapd->reenable == REENABLE_CAC)
 		goto setup_bss;
 
-	hapd->reenable = 1;
-	for (b = 0; b < hapd->iface->num_bss; b++)
-		if (hapd->iface->bss[b]->started)
-			goto setup_bss;
-
-	if (hapd_iface->state == HAPD_IFACE_HT_SCAN) {
-		if (hapd_iface->scan_cb)
-			return 0;
-	} else {
-		res = hostapd_check_ht_capab(hapd_iface);
-		if (res < 0) {
-			hapd->reenable = 0;
-			wpa_printf(MSG_INFO, "Failed to start HT Scan");
-			return -1;
-		}
-
-		if (res == 1) {
-			wpa_printf(MSG_DEBUG, "Interface initialization will "
-				   "be completed in a callback");
-			return 0;
-		}
-	}
-#ifdef NEED_AP_MLME
-	if (!is_5ghz_freq(hapd_iface->freq))
+	enable_state = hostapd_enable_bss_handle_ht_scan(hapd);
+	if (enable_state == ENABLE_BSS_DEFER)
+		return 0;
+	if (enable_state == ENABLE_BSS_ERROR)
+		return -1;
+	if (enable_state == ENABLE_BSS_SETUP)
 		goto setup_bss;
 
-	/* Handle DFS only if it is not offloaded to the driver */
-	if (!(hapd_iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD)) {
-		/* Check DFS */
-		set_dfs_state_freq(hapd_iface, hapd_iface->freq,
-				   HOSTAPD_CHAN_DFS_USABLE);
-		res = hostapd_handle_dfs(hapd_iface);
-		if (res <= 0) {
-			if (res < 0) {
-				hapd->reenable = 0;
-				wpa_printf(MSG_ERROR,
-					   "DFS handling failed for BSS %s",
-					   hapd->conf->iface);
-				return -1;
-			}
-			return 0;
-		}
-	} else {
-		/* If DFS is offloaded to the driver */
-		res = hostapd_handle_dfs_offload(hapd_iface);
-		if (res <= 0) {
-			if (res < 0) {
-				hapd->reenable = 0;
-				wpa_printf(MSG_ERROR,
-					   "DFS offload handling failed for BSS %s",
-					   hapd->conf->iface);
-				return -1;
-			}
-			return 0;
-		} else {
-			wpa_printf(MSG_DEBUG,
-				   "Proceed with AP/channel setup");
-			/*
-			 * If this is a DFS channel, move to completing
-			 * AP setup.
-			 */
-			if (res == 1)
-				goto setup_bss;
-			/* Otherwise fall through. */
-		}
-	}
-#endif /* NEED_AP_MLME */
+handle_cac:
+	enable_state = hostapd_enable_bss_handle_cac(hapd);
+	if (enable_state == ENABLE_BSS_DEFER)
+		return 0;
+	if (enable_state == ENABLE_BSS_ERROR)
+		return -1;
 
 setup_bss:
 	/* Configure security parameters for this BSS. */
@@ -5576,13 +5669,13 @@ setup_bss:
 
 	/* Re-setup this BSS without adding netdev/link again. */
 	if (hostapd_setup_bss(hapd, -1, true)) {
-		hapd->reenable = 0;
+		hapd->reenable = REENABLE_NONE;
 		wpa_printf(MSG_ERROR, "Failed to re-enable BSS %s",
 			   hapd->conf->iface);
 		return -1;
 	}
 
-	hapd->reenable = 0;
+	hapd->reenable = REENABLE_NONE;
 	hapd->disabled = 0;
 	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
 
@@ -7871,7 +7964,11 @@ void hostapd_mld_interface_freed(struct hostapd_data *hapd)
 	if (!hapd || !hapd->conf->mld_ap)
 		return;
 
+#ifdef CONFIG_QCN_EXTN
+	for_each_mld_link_include_repurposed(link_bss, hapd)
+#else
 	for_each_mld_link(link_bss, hapd)
+#endif
 		link_bss->drv_priv = NULL;
 }
 

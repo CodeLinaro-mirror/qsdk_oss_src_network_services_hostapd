@@ -3148,6 +3148,20 @@ struct ieee80211_eht_operation {
 #define EHT_PHYCAP_SU_BEAMFORMEE_IDX		0
 #define EHT_PHYCAP_SU_BEAMFORMEE		((u8) BIT(6))
 
+/* Beamformee SS fields for BSS capability override (IEEE 802.11be) */
+/* These are separate from QCN 240MHz extension definitions */
+#define EHT_PHY_BFMEE_SS_80MHZ_IDX		0
+#define EHT_PHY_BFMEE_SS_80MHZ_MASK		0x0380  /* Bits 7-9 */
+#define EHT_PHY_BFMEE_SS_80MHZ_SHIFT		7
+
+#define EHT_PHY_BFMEE_SS_160MHZ_IDX		0
+#define EHT_PHY_BFMEE_SS_160MHZ_MASK		0x1C00  /* Bits 10-12 */
+#define EHT_PHY_BFMEE_SS_160MHZ_SHIFT		10
+
+#define EHT_PHY_BFMEE_SS_320MHZ_IDX		0
+#define EHT_PHY_BFMEE_SS_320MHZ_MASK		0xE000  /* Bits 13-15 */
+#define EHT_PHY_BFMEE_SS_320MHZ_SHIFT		13
+
 #define EHT_PHYCAP_PPE_THRESHOLD_PRESENT_IDX	5
 #define EHT_PHYCAP_PPE_THRESHOLD_PRESENT	((u8) BIT(3))
 

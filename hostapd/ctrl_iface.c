@@ -1810,34 +1810,56 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 				return -1;
 			return hostapd_reload_bss_only(hapd);
 		} else if (os_strcasecmp(cmd, "bss_vht_mu_beamformer") == 0 ||
-			   os_strcasecmp(cmd, "bss_vht_mu_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_vht_su_beamformer") == 0 ||
 			   os_strcasecmp(cmd, "bss_vht_su_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_vht_sounding_dimension") == 0 ||
 			   os_strcasecmp(cmd, "bss_vht_beamformee_sts") == 0) {
+			/* Save old values for rollback on failure */
+			u32 old_vht_capab = hapd->conf->vht_capab;
+			u32 old_vht_capab_mask = hapd->conf->vht_capab_mask;
+
 			if (hostapd_tx_bss_only(hapd, cmd) < 0)
 				return -1;
 			if (hostapd_validate_bss_capab(hapd) < 0)
-				return -1;
-			return hostapd_reload_bss_only(hapd);
+				goto vht_rollback;
+			if (hostapd_reload_bss_only(hapd) < 0)
+				goto vht_rollback;
+			return 0;
+vht_rollback:
+			hapd->conf->vht_capab = old_vht_capab;
+			hapd->conf->vht_capab_mask = old_vht_capab_mask;
+			return -1;
 #endif /* CONFIG_IEEE80211AC */
 #ifdef CONFIG_IEEE80211AX
 		} else if (os_strcasecmp(cmd, "bss_he_su_beamformer") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_su_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_mu_beamformer") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_mu_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_dl_mu_ofdma") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_dl_mu_ofdma_bfer") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_ul_mu_ofdma") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_ul_mumimo") == 0) {
+			/* Save old values for rollback on failure */
+			struct he_phy_capabilities_info old_he_phy_capab = hapd->conf->he_phy_capab;
+			u32 old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
+
 			if (hostapd_tx_bss_only(hapd, cmd) < 0)
 				return -1;
 			if (hostapd_validate_bss_capab(hapd) < 0)
-				return -1;
-			return hostapd_reload_bss_only(hapd);
+				goto he_rollback;
+			if (hostapd_reload_bss_only(hapd) < 0)
+				goto he_rollback;
+			return 0;
+he_rollback:
+			hapd->conf->he_phy_capab = old_he_phy_capab;
+			hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
+			return -1;
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
 		} else if (os_strcasecmp(cmd, "bss_eht_mu_mimo") == 0) {
+			/* Save old values for rollback on failure */
+			struct eht_phy_capabilities_info old_eht_phy_capab =
+				hapd->conf->eht_phy_capab;
+			u32 old_eht_phy_capab_mask = hapd->conf->eht_phy_capab_mask;
 			long val = strtol(value, NULL, 0);
 			if (val < 0 || val > 0x7)
 				return -1;
@@ -1859,11 +1881,21 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 				(val & 0x4) ? 1 : 0;
 
 			if (hostapd_tx_bss_only(hapd, cmd) < 0)
-				return -1;
+				goto eht_mu_mimo_rollback;
 			if (hostapd_validate_bss_capab(hapd) < 0)
-				return -1;
-			return hostapd_reload_bss_only(hapd);
+				goto eht_mu_mimo_rollback;
+			if (hostapd_reload_bss_only(hapd) < 0)
+				goto eht_mu_mimo_rollback;
+			return 0;
+eht_mu_mimo_rollback:
+			hapd->conf->eht_phy_capab = old_eht_phy_capab;
+			hapd->conf->eht_phy_capab_mask = old_eht_phy_capab_mask;
+			return -1;
 		} else if (os_strcasecmp(cmd, "bss_eht_mu_bfmr") == 0) {
+			/* Save old values for rollback on failure */
+			struct eht_phy_capabilities_info old_eht_phy_capab =
+				hapd->conf->eht_phy_capab;
+			u32 old_eht_phy_capab_mask = hapd->conf->eht_phy_capab_mask;
 			long val = strtol(value, NULL, 0);
 
 			if (val < 0 || val > 0x7)
@@ -1880,30 +1912,92 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			hapd->conf->eht_phy_capab.eht_mu_bfmr_mask = (u8)val;
 
 			if (hostapd_tx_bss_only(hapd, cmd) < 0)
-				return -1;
+				goto eht_mu_bfmr_rollback;
 			if (hostapd_validate_bss_capab(hapd) < 0)
+				goto eht_mu_bfmr_rollback;
+			if (hostapd_reload_bss_only(hapd) < 0)
+				goto eht_mu_bfmr_rollback;
+			return 0;
+eht_mu_bfmr_rollback:
+			hapd->conf->eht_phy_capab = old_eht_phy_capab;
+			hapd->conf->eht_phy_capab_mask = old_eht_phy_capab_mask;
+			return -1;
+		} else if (os_strcasecmp(cmd, "bss_eht_bfme_ss_80") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_bfme_ss_160") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_bfme_ss_320") == 0) {
+			/* Save old values for rollback on failure */
+			struct eht_phy_capabilities_info old_eht_phy_capab = hapd->conf->eht_phy_capab;
+			u32 old_eht_phy_capab_mask = hapd->conf->eht_phy_capab_mask;
+			int val = (int) strtol(value, NULL, 0);
+
+			if (val < 0 || val > 7)
 				return -1;
-			return hostapd_reload_bss_only(hapd);
+
+			if (os_strcasecmp(cmd, "bss_eht_bfme_ss_80") == 0) {
+				hapd->conf->eht_phy_capab.eht_bfme_ss_80 = val;
+				wpa_printf(MSG_INFO, "SET: eht_bfme_ss_80=%d at %p", val, &hapd->conf->eht_phy_capab.eht_bfme_ss_80);
+				hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_BFME_SS_80;
+				/* Enable SU beamformee when SS is set to non-zero */
+				if (val > 0) {
+					hapd->conf->eht_phy_capab.su_beamformee = 1;
+					hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_SU_BEAMFORMEE;
+				}
+			} else if (os_strcasecmp(cmd, "bss_eht_bfme_ss_160") == 0) {
+				hapd->conf->eht_phy_capab.eht_bfme_ss_160 = val;
+				wpa_printf(MSG_INFO, "SET: eht_bfme_ss_160=%d at %p", val, &hapd->conf->eht_phy_capab.eht_bfme_ss_160);
+				hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_BFME_SS_160;
+				/* Enable SU beamformee when SS is set to non-zero */
+				if (val > 0) {
+					hapd->conf->eht_phy_capab.su_beamformee = 1;
+					hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_SU_BEAMFORMEE;
+				}
+			} else if (os_strcasecmp(cmd, "bss_eht_bfme_ss_320") == 0) {
+				hapd->conf->eht_phy_capab.eht_bfme_ss_320 = val;
+				wpa_printf(MSG_INFO, "SET: eht_bfme_ss_320=%d at %p", val, &hapd->conf->eht_phy_capab.eht_bfme_ss_320);
+				hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_BFME_SS_320;
+				/* Enable SU beamformee when SS is set to non-zero */
+				if (val > 0) {
+					hapd->conf->eht_phy_capab.su_beamformee = 1;
+					hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_SU_BEAMFORMEE;
+				}
+			}
+
+			if (hostapd_tx_bss_only(hapd, cmd) < 0)
+				goto eht_bfme_ss_rollback;
+
+			if (hostapd_validate_bss_capab(hapd) < 0)
+				goto eht_bfme_ss_rollback;
+
+			if (hostapd_reload_bss_only(hapd) < 0)
+				goto eht_bfme_ss_rollback;
+			return 0;
+eht_bfme_ss_rollback:
+			hapd->conf->eht_phy_capab = old_eht_phy_capab;
+			hapd->conf->eht_phy_capab_mask = old_eht_phy_capab_mask;
+			return -1;
 		} else if (os_strcasecmp(cmd, "bss_eht_su_beamformer") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_su_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_mu_beamformer") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_mu_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_dl_mu_ofdma") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_ul_mu_ofdma") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_dl_ofdma_mumimo") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_ul_ofdma_mumimo") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_ulmumimo_80mhz") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_ulmumimo_160mhz") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_ulmumimo_320mhz") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_bfme_ss_80") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_bfme_ss_160") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_bfme_ss_320") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_ltf") == 0) {
+			/* Save old values for rollback on failure */
+			struct eht_phy_capabilities_info old_eht_generic_capab = hapd->conf->eht_phy_capab;
+			u32 old_eht_generic_capab_mask = hapd->conf->eht_phy_capab_mask;
+
 			if (hostapd_tx_bss_only(hapd, cmd) < 0)
 				return -1;
 			if (hostapd_validate_bss_capab(hapd) < 0)
-				return -1;
-			return hostapd_reload_bss_only(hapd);
+				goto eht_generic_rollback;
+			if (hostapd_reload_bss_only(hapd) < 0)
+				goto eht_generic_rollback;
+			return 0;
+eht_generic_rollback:
+			hapd->conf->eht_phy_capab = old_eht_generic_capab;
+			hapd->conf->eht_phy_capab_mask = old_eht_generic_capab_mask;
+			return -1;
 #endif /* CONFIG_IEEE80211BE */
 		} else if (os_strcasecmp(cmd, "ht_mcs_nss_set") == 0) {
 			if (hostapd_tx_bss_only(hapd, "ht_mcs_nss_set") < 0)
@@ -2279,12 +2373,6 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
-	} else if (os_strcasecmp(cmd, "bss_vht_mu_beamformee") == 0) {
-		res = os_snprintf(buf, buflen, "bss_vht_mu_beamformee = %d\n",
-				!!(hapd->conf->vht_capab & VHT_CAP_MU_BEAMFORMEE_CAPABLE));
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
 	} else if (os_strcasecmp(cmd, "bss_vht_su_beamformer") == 0) {
 		res = os_snprintf(buf, buflen, "bss_vht_su_beamformer = %d\n",
 				!!(hapd->conf->vht_capab & VHT_CAP_SU_BEAMFORMER_CAPABLE));
@@ -2333,12 +2421,6 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
-	} else if (os_strcasecmp(cmd, "bss_he_mu_beamformee") == 0) {
-		res = os_snprintf(buf, buflen, "bss_he_mu_beamformee = %d\n",
-				hapd->conf->he_phy_capab.he_mu_beamformee);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
 	} else if (os_strcasecmp(cmd, "bss_he_dl_mu_ofdma") == 0) {
 		res = os_snprintf(buf, buflen, "bss_he_dl_mu_ofdma = %d\n",
 				hapd->conf->he_phy_capab.he_dl_mu_ofdma);
@@ -2384,12 +2466,6 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
-	} else if (os_strcasecmp(cmd, "bss_eht_mu_beamformee") == 0) {
-		res = os_snprintf(buf, buflen, "bss_eht_mu_beamformee = %d\n",
-				hapd->conf->eht_phy_capab.mu_beamformee);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
 	} else if (os_strcasecmp(cmd, "bss_eht_dl_mu_ofdma") == 0) {
 		res = os_snprintf(buf, buflen, "bss_eht_dl_mu_ofdma = %d\n",
 				hapd->conf->eht_phy_capab.dl_mu_ofdma);
@@ -2416,24 +2492,6 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
-	} else if (os_strcasecmp(cmd, "bss_eht_ulmumimo_80mhz") == 0) {
-		res = os_snprintf(buf, buflen, "bss_eht_ulmumimo_80mhz = %d\n",
-				hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
-	} else if (os_strcasecmp(cmd, "bss_eht_ulmumimo_160mhz") == 0) {
-		res = os_snprintf(buf, buflen, "bss_eht_ulmumimo_160mhz = %d\n",
-				hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
-	} else if (os_strcasecmp(cmd, "bss_eht_ulmumimo_320mhz") == 0) {
-		res = os_snprintf(buf, buflen, "bss_eht_ulmumimo_320mhz = %d\n",
-				  hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
 	} else if (os_strcasecmp(cmd, "bss_eht_mu_bfmr") == 0) {
 		res = os_snprintf(buf, buflen, "bss_eht_mu_bfmr = 0x%x\n",
 				  hapd->conf->eht_phy_capab.eht_mu_bfmr_mask);
@@ -2443,6 +2501,24 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 	} else if (os_strcasecmp(cmd, "bss_eht_mu_mimo") == 0) {
 		res = os_snprintf(buf, buflen, "bss_eht_mu_mimo = 0x%x\n",
 				  hapd->conf->eht_phy_capab.eht_mu_mimo_mask);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "eht_ulmumimo_80mhz") == 0) {
+		res = os_snprintf(buf, buflen, "eht_ulmumimo_80mhz = %d\n",
+				  hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "eht_ulmumimo_160mhz") == 0) {
+		res = os_snprintf(buf, buflen, "eht_ulmumimo_160mhz = %d\n",
+				  hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "eht_ulmumimo_320mhz") == 0) {
+		res = os_snprintf(buf, buflen, "eht_ulmumimo_320mhz = %d\n",
+				  hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
@@ -8518,7 +8594,11 @@ static int hostapd_mld_ctrl_iface_receive_process(struct hostapd_mld *mld,
 			goto out;
 		}
 
+#ifdef CONFIG_QCN_EXTN
+		for_each_mld_link_include_repurposed(link_itr, link_hapd) {
+#else
 		for_each_mld_link(link_itr, link_hapd) {
+#endif /* CONFIG_QCN_EXTN */
 			if (link_itr->mld_link_id == link_id) {
 				found = true;
 				break;

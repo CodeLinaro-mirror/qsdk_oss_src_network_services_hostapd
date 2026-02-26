@@ -803,15 +803,6 @@ static int hostapd_validate_bss_vht_capab(struct hostapd_data *hapd)
 	}
 
 	/* Check MU Beamformee */
-	if (mask & VHT_CAP_BSS_OVR_MU_BEAMFORMEE) {
-		if ((bss_vht & VHT_CAP_MU_BEAMFORMEE_CAPABLE) &&
-		    !(hw_vht & VHT_CAP_MU_BEAMFORMEE_CAPABLE)) {
-			wpa_printf(MSG_ERROR,
-				   "Driver does not support bss_vht_mu_beamformee");
-			return -1;
-		}
-	}
-
 	/* Check Sounding Dimension */
 	if (mask & VHT_CAP_BSS_OVR_SOUNDING_DIMENSION) {
 		u32 hw_snd = (hw_vht & VHT_CAP_SOUNDING_DIMENSION_MAX) >>
@@ -911,16 +902,6 @@ static int hostapd_validate_bss_he_capab(struct hostapd_data *hapd)
 	}
 
 	/* Check MU Beamformee */
-	if (mask & HE_PHY_BSS_OVR_MU_BEAMFORMEE) {
-		if (hapd->conf->he_phy_capab.he_mu_beamformee &&
-		    !(hw_he->phy_cap[HE_PHYCAP_MU_BEAMFORMER_CAPAB_IDX] &
-		      HE_PHYCAP_MU_BEAMFORMER_CAPAB)) {
-			wpa_printf(MSG_ERROR,
-				   "Driver does not support bss_he_mu_beamformee");
-			return -1;
-		}
-	}
-
 	/* Check DL MU-OFDMA */
 	if (mask & HE_PHY_BSS_OVR_DL_MU_OFDMA) {
 		if (hapd->conf->he_phy_capab.he_dl_mu_ofdma &&
@@ -1021,13 +1002,6 @@ static int hostapd_validate_bss_eht_capab(struct hostapd_data *hapd)
 	}
 
 	/* Check MU Beamformee */
-	if (mask & EHT_PHY_BSS_OVR_MU_BEAMFORMEE) {
-		if (hapd->conf->eht_phy_capab.mu_beamformee) {
-			wpa_printf(MSG_DEBUG,
-				   "bss_eht_mu_beamformee configured");
-		}
-	}
-
 	/* Check DL MU-OFDMA */
 	if (mask & EHT_PHY_BSS_OVR_DL_MU_OFDMA) {
 		if (hapd->conf->eht_phy_capab.dl_mu_ofdma) {
@@ -1060,35 +1034,6 @@ static int hostapd_validate_bss_eht_capab(struct hostapd_data *hapd)
 		}
 	}
 
-	/* Check UL MU-MIMO 80MHz */
-	if (mask & EHT_PHY_BSS_OVR_UL_MU_MIMO_80) {
-		if (hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz) {
-			wpa_printf(MSG_DEBUG,
-				   "bss_eht_ulmumimo_80mhz configured");
-		}
-	}
-
-	/* Check UL MU-MIMO 160MHz */
-	if (mask & EHT_PHY_BSS_OVR_UL_MU_MIMO_160) {
-		if (hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz) {
-			wpa_printf(MSG_DEBUG,
-				   "bss_eht_ulmumimo_160mhz configured");
-		}
-	}
-
-	/* Check UL MU-MIMO 320MHz */
-	if (mask & EHT_PHY_BSS_OVR_UL_MU_MIMO_320) {
-		if (hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz) {
-			if (!is_6ghz_freq(hapd->iface->freq)) {
-				wpa_printf(MSG_ERROR,
-					   "bss_eht_ulmumimo_320mhz only valid on 6 GHz");
-				return -1;
-			}
-			wpa_printf(MSG_DEBUG,
-				   "bss_eht_ulmumimo_320mhz configured");
-		}
-	}
-
 	/* Validate beamformee spatial streams */
 	if (hapd->conf->eht_phy_capab.eht_bfme_ss_80 > 7 ||
 	    hapd->conf->eht_phy_capab.eht_bfme_ss_160 > 7 ||
@@ -1096,6 +1041,20 @@ static int hostapd_validate_bss_eht_capab(struct hostapd_data *hapd)
 		wpa_printf(MSG_ERROR,
 			   "Invalid EHT beamformee spatial streams (max 7)");
 		return -1;
+	}
+	if (hapd->conf->eht_phy_capab.eht_bfme_ss_80 ||
+	    hapd->conf->eht_phy_capab.eht_bfme_ss_160 ||
+	    hapd->conf->eht_phy_capab.eht_bfme_ss_320) {
+		bool su_bfmee =
+			(mask & EHT_PHY_BSS_OVR_SU_BEAMFORMEE) ?
+			hapd->conf->eht_phy_capab.su_beamformee :
+			hapd->iface->conf->eht_phy_capab.su_beamformee;
+
+		if (!su_bfmee) {
+			wpa_printf(MSG_ERROR,
+				   "EHT BFME SS configured while SU beamformee disabled");
+			return -1;
+		}
 	}
 
 	return 0;
