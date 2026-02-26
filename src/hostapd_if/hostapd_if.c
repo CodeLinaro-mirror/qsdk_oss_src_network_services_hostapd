@@ -1682,7 +1682,8 @@ void hostapd_if_event_auth_tx_complete(struct hostapd_data *hapd,
  * Use MLD mac of STA (in addr parameter) in case of 11be STA
  */
 void hostapd_if_event_assoc_tx_complete(struct hostapd_data *hapd,
-					const u8 *addr)
+					const u8 *addr, int ok, uint16_t status,
+					uint16_t aid)
 {
 	struct hostapd_if_event evt;
 
@@ -1695,6 +1696,9 @@ void hostapd_if_event_assoc_tx_complete(struct hostapd_data *hapd,
 	os_strlcpy(evt.ifname, hapd->conf->iface,
 		   sizeof(evt.ifname));
 	os_memcpy(evt.sta_mac, addr, sizeof(evt.sta_mac));
+	evt.data.assoc_resp_completion.ok = ok;
+	evt.data.assoc_resp_completion.status = status;
+	evt.data.assoc_resp_completion.aid = aid;
 
 	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR"\n", __func__, __LINE__,
 		hapd->conf->iface, MAC2STR(addr));

@@ -8640,13 +8640,14 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		return;
 	}
 
-#ifdef CONFIG_HOSTAPD_IF
-	hostapd_if_event_assoc_tx_complete(hapd, sta->addr);
-#endif
 	if (reassoc)
 		status = le_to_host16(mgmt->u.reassoc_resp.status_code);
 	else
 		status = le_to_host16(mgmt->u.assoc_resp.status_code);
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_event_assoc_tx_complete(hapd, sta->addr, ok, status,
+					   sta->aid);
+#endif
 
 	if (!ok) {
 		hostapd_logger(hapd, mgmt->da, HOSTAPD_MODULE_IEEE80211,
