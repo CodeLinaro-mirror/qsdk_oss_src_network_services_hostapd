@@ -54,4 +54,5 @@ void hostapd_start_device_cac_background(struct hostapd_iface *iface);
 enum oper_chan_width convert_to_oper_chan_width(int chan_width);
 
 int set_dfs_state_freq(struct hostapd_iface *iface, int freq, u32 state);
+bool hostapd_is_cac_required(struct hostapd_iface *iface);
 #endif /* DFS_H */
