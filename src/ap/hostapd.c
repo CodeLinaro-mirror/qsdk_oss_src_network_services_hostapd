@@ -386,7 +386,7 @@ u8 hostapd_max_bssid_indicator(struct hostapd_data *hapd)
 	size_t num_bss_nontx;
 	u8 max_bssid_ind = 0;
 
-	if (!hapd->iconf->mbssid || hapd->iface->num_bss <= 1)
+	if (!hapd->iconf->mbssid)
 		return 0;
 
 	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
