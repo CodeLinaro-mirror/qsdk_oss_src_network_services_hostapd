@@ -1139,6 +1139,23 @@ static int hostapd_ctrl_iface_coloc_intf_req(struct hostapd_data *hapd,
 
 #endif /* CONFIG_WNM_AP */
 
+static int hostapd_ctrl_iface_update_assocresp_elements(
+	struct hostapd_data *hapd, const char *value)
+{
+	struct wpabuf *new_elems;
+
+	if (!value)
+		return -1;
+
+	new_elems = wpabuf_parse_bin(value);
+	if (!new_elems)
+		return -1;
+
+	wpabuf_free(hapd->conf->assocresp_elements);
+	hapd->conf->assocresp_elements = new_elems;
+
+	return 0;
+}
 
 static int hostapd_ctrl_iface_get_key_mgmt(struct hostapd_data *hapd,
 					   char *buf, size_t buflen)
@@ -1754,6 +1771,8 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 	} else if (os_strncmp(cmd, "vendor_elements_", 16) == 0) {
 		ret = hostapd_handle_vendor_elements_update(hapd, hapd->conf, NULL,
 							    cmd, value, true);
+	} else if (os_strcasecmp(cmd, "assocresp_elements") == 0) {
+		ret = hostapd_ctrl_iface_update_assocresp_elements(hapd, value);
 	} else if (os_strcasecmp(cmd, "rssi_reject_assoc_rssi") == 0) {
 		int val = atoi(value);
 		if (val < -95 || val > -1) {
