@@ -570,6 +570,7 @@ int wpa_auth_sta_set_vlan(struct wpa_state_machine *sm,
 			  struct wpa_authenticator *wpa_auth, int vlan_id);
 void wpa_auth_eapol_key_tx_status(struct wpa_authenticator *wpa_auth,
 				  struct wpa_state_machine *sm, int ack);
+bool wpa_auth_ap_sta_support_pmkid_privacy(struct wpa_state_machine *sm);
 
 u8 wpa_sta_sm_get_num_mld_links(struct wpa_state_machine *sm);
 
@@ -679,10 +680,13 @@ u8 * wpa_auth_eid_key_delivery(u8 *eid, size_t max_len,
 			       struct wpa_state_machine *sm,
 			       bool is_ml);
 u8 * wpa_auth_write_assoc_resp_eppke(struct wpa_state_machine *sm,
-				     u8 *pos, size_t max_len, bool is_ml);
+				     u8 *pos, size_t max_len, bool is_ml,
+				     const u8 *pmkid);
 void wpa_store_eppke_pmk_ptk_sm(struct wpa_state_machine *sm,
 				const struct wpa_ptk *ptk, const u8 *pmk,
 				size_t pmk_len);
+int wpa_auth_epp_derive_new_pmkid(const u8 *pmkidanonce, const u8 *pmkidsnonce,
+				   u8 *pmkid, int akmp, size_t pmk_len);
 
 int wpa_auth_resend_m1(struct wpa_state_machine *sm, int change_anonce,
 		       void (*cb)(void *ctx1, void *ctx2),

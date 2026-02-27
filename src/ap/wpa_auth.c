@@ -8315,7 +8315,8 @@ u8 * wpa_auth_eid_key_delivery(u8 *eid, size_t max_len,
 
 
 u8 * wpa_auth_write_assoc_resp_eppke(struct wpa_state_machine *sm,
-				     u8 *pos, size_t max_len, bool is_ml)
+				     u8 *pos, size_t max_len, bool is_ml,
+				     const u8 *pmkid)
 {
 	int res;
 	u8 *end = pos + max_len;
@@ -8323,7 +8324,7 @@ u8 * wpa_auth_write_assoc_resp_eppke(struct wpa_state_machine *sm,
 	if (!sm)
 		return pos;
 
-	res = wpa_write_rsn_ie(&sm->wpa_auth->conf, pos, max_len, NULL);
+	res = wpa_write_rsn_ie(&sm->wpa_auth->conf, pos, max_len, pmkid);
 	if (res < 0)
 		return pos;
 	pos += res;
@@ -8333,6 +8334,31 @@ u8 * wpa_auth_write_assoc_resp_eppke(struct wpa_state_machine *sm,
 }
 
 #endif /* CONFIG_ENC_ASSOC */
+
+
+#ifdef CONFIG_PMKSA_PRIVACY
+int wpa_auth_epp_derive_new_pmkid(const u8 *pmkidanonce, const u8 *pmkidsnonce,
+				   u8 *pmkid, int akmp, size_t pmk_len)
+{
+	return rsn_pmkid_privacy(pmkidanonce, pmkidsnonce, pmkid, akmp, pmk_len);
+}
+
+
+bool wpa_auth_ap_sta_support_pmkid_privacy(struct wpa_state_machine *sm)
+{
+	struct wpa_auth_config *conf;
+
+	if (!sm)
+		return false;
+
+	conf = &sm->wpa_auth->conf;
+
+	return (conf->assoc_frame_encryption &&
+		ieee802_11_rsnx_capab(sm->rsnxe,
+				      WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY));
+
+}
+#endif /* CONFIG_PMKSA_PRIVACY */
 
 
 void wpa_reset_assoc_sm_info(struct wpa_state_machine *assoc_sm,

@@ -230,6 +230,10 @@ static int pasn_wd_handle_sae_confirm(struct pasn_data *pasn,
 	if (!pasn->sae.akmp)
 		pasn->sae.akmp = WPA_KEY_MGMT_SAE;
 
+#ifdef CONFIG_PMKSA_PRIVACY
+	if (pasn->auth_alg == WLAN_AUTH_EPPKE)
+		os_memcpy(pasn->epp_pmkid_cur, pasn->sae.pmkid, PMKID_LEN);
+#endif /* CONFIG_PMKSA_PRIVACY */
 	pmksa_cache_auth_add(pasn->pmksa, pasn->sae.pmk, pasn->sae.pmk_len,
 			     pasn->sae.pmkid, NULL, 0, pasn->own_addr,
 			     peer_addr, 0, NULL, pasn->sae.akmp);
@@ -1032,6 +1036,9 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 					pmksa = pasn->pmksa_cache_search(pasn->cb_ctx,
 									 NULL, pmkid,
 									 pasn->is_ml_peer);
+					if (pmksa)
+						os_memcpy(pasn->epp_pmkid_cur, pmkid, PMKID_LEN);
+
 				} else
 #endif /* CONFIG_PMKSA_PRIVACY */
 				pmksa = pmksa_cache_auth_get(pasn->pmksa,
