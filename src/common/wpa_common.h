@@ -583,6 +583,8 @@ static inline int rsn_pmkid_suite_b_192(const u8 *kck, size_t kck_len,
 	return -1;
 }
 #endif /* CONFIG_SUITEB192 */
+int rsn_pmkid_privacy(const u8 *pmkidanonce, const u8 *pmkidsnonce, u8 *pmkid,
+		      int akmp, size_t pmk_len);
 
 const char * wpa_cipher_txt(int cipher);
 const char * wpa_key_mgmt_txt(int key_mgmt, int proto);
