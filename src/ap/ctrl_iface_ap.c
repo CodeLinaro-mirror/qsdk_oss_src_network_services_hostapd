@@ -1589,6 +1589,15 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 		len += ret;
 	}
 
+	if (iface->max_mgmt_frm_sz) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  "max_mgmt_frame_size=%zu\n",
+				  iface->max_mgmt_frm_sz);
+		if (os_snprintf_error(buflen - len, ret))
+			return len;
+		len += ret;
+	}
+
 	return len;
 }
 
