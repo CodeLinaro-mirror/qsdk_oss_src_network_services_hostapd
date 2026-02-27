@@ -3655,7 +3655,7 @@ static void handle_auth_pasn(struct hostapd_data *hapd, struct sta_info *sta,
 
 #endif
 							    sta->flags, 0, 0, 0, 0,
-							    mld_link_addr, mld_link_sta, eml_cap, sta->epp_sta
+							    mld_link_addr, mld_link_sta, eml_cap, 0,sta->epp_sta
 							    )) {
 						hostapd_logger(hapd, sta->addr,
 							       HOSTAPD_MODULE_IEEE80211,
