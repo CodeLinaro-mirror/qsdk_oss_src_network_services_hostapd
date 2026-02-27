@@ -3362,12 +3362,109 @@ static void hapd_pasn_update_params(struct hostapd_data *hapd,
 }
 
 
+#ifdef CONFIG_ENC_ASSOC
+bool ap_find_and_delete_stale_association_by_addr(struct hostapd_data *hapd,
+						  const u8 *addr,
+						  bool is_mld_addr,
+						  bool *drv_sta_create,
+						  bool is_mle_in_auth,
+						  const u8 *sa)
+{
+	struct hostapd_data *tmp_hapd;
+	bool found = false;
+
+	if (!addr || is_zero_ether_addr(addr) || !hapd->conf->mld_ap)
+		return found;
+
+	for_each_mld_link(tmp_hapd, hapd) {
+
+		struct sta_info *tmp_sta;
+
+		for (tmp_sta = tmp_hapd->sta_list; tmp_sta; tmp_sta = tmp_sta->next) {
+			struct mld_info *mld_info = &tmp_sta->mld_info;
+			int i;
+
+			/* Check if there is an existing STA with 'addr' */
+			if (!ether_addr_equal(tmp_sta->addr, addr))
+				goto check_link_stations;
+
+			if (is_mld_addr) {
+				if (tmp_hapd != hapd) {
+					wpa_printf(MSG_DEBUG, "Found an existing STA " MACSTR,
+						   MAC2STR(addr));
+					ap_free_sta(tmp_hapd, tmp_sta);
+					*drv_sta_create = true;
+					found = true;
+					break;
+				}
+
+				/*Found a sta on current hapd that is already authorized*/
+				if (tmp_hapd == hapd && ap_sta_is_authorized(tmp_sta)) {
+					hostapd_drv_sta_remove(tmp_hapd, tmp_sta->addr);
+					tmp_sta->flags &= ~(WLAN_STA_ASSOC | WLAN_STA_AUTHORIZED);
+					tmp_sta->added_unassoc = 0;
+					/* It is possible that the station may
+					 * have tried to re-associate using
+					 * different association link address
+					 * keeping the MLD address same. In such
+					 * a case, allow the assoc link
+					 * address to be modified.
+					 */
+					wpa_printf(MSG_DEBUG, "Found an existing STA " MACSTR
+						   " on current hapd", MAC2STR(addr));
+					os_memset(&mld_info, 0, sizeof(mld_info));
+					if (tmp_sta->wpa_sm) {
+						wpa_auth_sta_deinit(tmp_sta->wpa_sm);
+						tmp_sta->wpa_sm = NULL;
+						clear_wpa_sm_for_each_partner_link(hapd, tmp_sta);
+					}
+					ap_sta_free_sta_profile(mld_info);
+					if (is_mle_in_auth) {
+						ap_sta_set_mld(tmp_sta, true);
+						if (sa)
+							os_memcpy(tmp_sta->mld_info.links[tmp_sta->mld_assoc_link_id].peer_addr,
+								  sa, ETH_ALEN);
+					} else
+						ap_sta_set_mld(tmp_sta, false);
+
+					*drv_sta_create = true;
+					found = true;
+					break;
+				}
+			} else {
+				wpa_printf(MSG_DEBUG, "Found an existing STA with " MACSTR,
+					    MAC2STR(addr));
+				ap_free_sta(tmp_hapd, tmp_sta);
+				found = true;
+				break;
+			}
+check_link_stations:
+			/* Check if there is an existing link STA with 'addr' */
+			for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+				if (!mld_info->links[i].valid ||
+				    !ether_addr_equal(mld_info->links[i].peer_addr, addr))
+					continue;
+
+				wpa_printf(MSG_DEBUG, "Found an existing link STA " MACSTR,
+					   MAC2STR(addr));
+				ap_free_sta(tmp_hapd, tmp_sta);
+				found = true;
+				break;
+			}
+		}
+	}
+
+	return found;
+}
+#endif /* CONFIG_ENC_ASSOC */
+
+
 static void handle_auth_pasn(struct hostapd_data *hapd, struct sta_info *sta,
 			     const struct ieee80211_mgmt *mgmt, size_t len,
 			     u16 trans_seq, u16 status)
 {
 	int ret;
-#ifdef CONFIG_P2P
+#if defined(CONFIG_P2P) || defined(CONFIG_ENC_ASSOC)
 	struct ieee802_11_elems elems;
 
 	if (len < 24) {
@@ -3384,6 +3481,9 @@ static void handle_auth_pasn(struct hostapd_data *hapd, struct sta_info *sta,
 		return;
 	}
 
+#endif /* #if defined(CONFIG_P2P) || defined(CONFIG_ENC_ASSOC) */
+
+#ifdef CONFIG_P2P
 	if ((hapd->conf->p2p & (P2P_ENABLED | P2P_GROUP_OWNER)) ==
 	    (P2P_ENABLED | P2P_GROUP_OWNER) &&
 	    hapd->p2p && elems.p2p2_ie && elems.p2p2_ie_len) {
@@ -3479,6 +3579,93 @@ static void handle_auth_pasn(struct hostapd_data *hapd, struct sta_info *sta,
 					sta->addr,
 					pasn_get_cipher(sta->pasn),
 					pasn_get_akmp(sta->pasn));
+
+#ifdef CONFIG_ENC_ASSOC
+			/* A successful EPPKE authentication indicates that it is a
+			 * genuine STA in possession of a passphrase or a valid PMK
+			 * If MLD or Assoc link address of the current association
+			 * matches with the MLD or link peer addresses of an existing
+			 * connection, it is the same station with which the AP has a
+			 * valid security Association. In this case, delete the older
+			 * association
+			 */
+			if (sta->epp_sta) {
+				bool drv_sta_create = false, is_mle_in_auth = false;
+
+				if (elems.basic_mle && elems.basic_mle_len)
+					is_mle_in_auth = true;
+
+				/* Look for an existing association using STA MLD
+				 * address if ML Association or STA MAC address
+				 * if Non-ML association
+				 */
+				wpa_printf(MSG_DEBUG, "Try to find a stale association "
+					   "using STA %s address " MACSTR,
+					   is_mle_in_auth ? "MLD" : "MAC", MAC2STR(sta->addr));
+				if (ap_find_and_delete_stale_association_by_addr(hapd,
+										 sta->addr,
+										 true,
+										 &drv_sta_create,
+										 is_mle_in_auth,
+										 mgmt->sa)) {
+				} else if (ap_sta_is_mld(hapd, sta)) {
+					const u8 *current_assoc_link_addr =
+						sta->mld_info.links[sta->mld_assoc_link_id].peer_addr;
+					wpa_printf(MSG_DEBUG, "Try to find a stale association using "
+						   "current assoc link address " MACSTR,
+						   MAC2STR(current_assoc_link_addr));
+					/* If current Assoc link address is same as MLD address,
+					 * then skip below, since then it is same as above
+					 * check to look for any stale association with MLD address
+					 */
+					if (os_memcmp(current_assoc_link_addr, sta->addr, ETH_ALEN)) {
+						/* Find stale association using Association link address */
+						ap_find_and_delete_stale_association_by_addr(hapd,
+											     current_assoc_link_addr,
+											     false,
+											     &drv_sta_create,
+											     is_mle_in_auth,
+											     mgmt->sa);
+					}
+				}
+				if (drv_sta_create) {
+					const u8 *mld_link_addr = NULL;
+					bool mld_link_sta = false;
+					u16 eml_cap = 0;
+
+					if (ap_sta_is_mld(hapd, sta)) {
+						u8 mld_link_id = hapd->mld_link_id;
+
+						mld_link_sta = sta->mld_assoc_link_id != mld_link_id;
+						mld_link_addr = sta->mld_info.links[mld_link_id].peer_addr;
+						eml_cap = sta->mld_info.common_info.eml_capa;
+					}
+
+					if (hostapd_sta_add(hapd, sta->addr, 0, 0,
+							    sta->supported_rates,
+							    sta->supported_rates_len,
+
+#ifdef CONFIG_QCN_EXTN
+							    0, NULL, NULL, NULL, 0, NULL, 0,
+							    NULL, NULL,
+#else
+
+							    0, NULL, NULL, NULL, 0, NULL, 0, NULL,
+
+#endif
+							    sta->flags, 0, 0, 0, 0,
+							    mld_link_addr, mld_link_sta, eml_cap, sta->epp_sta
+							    )) {
+						hostapd_logger(hapd, sta->addr,
+							       HOSTAPD_MODULE_IEEE80211,
+							       HOSTAPD_LEVEL_NOTICE,
+							       "Could not add STA to kernel driver");
+						return;
+					}
+					sta->added_unassoc = 1;
+				}
+			}
+#endif /* CONFIG_ENC_ASSOC */
 		}
 		if (!ap_sta_is_epp(sta) ||
 		    (ret < 0 &&
