@@ -17,6 +17,7 @@
 #include "hostapd.h"
 #include "ieee802_1x.h"
 #include "wpa_auth.h"
+#include "wpa_auth_i.h"
 #include "ieee802_11.h"
 #include "sta_info.h"
 #include "wps_hostapd.h"
@@ -1932,6 +1933,124 @@ int hostapd_parse_csa_settings(struct hostapd_iface *iface,
 int hostapd_ctrl_iface_stop_ap(struct hostapd_data *hapd)
 {
 	return hostapd_drv_stop_ap(hapd);
+}
+
+int hostapd_ctrl_iface_dump_tk(struct hostapd_data *hapd, const char *cmd,
+			       char *buf, size_t buflen)
+{
+	u8 addr[ETH_ALEN];
+	struct sta_info *sta;
+	int key_idx;
+	const char *pos;
+	struct wpa_state_machine *sm;
+	size_t tk_len;
+	u8 tk[WPA_TK_MAX_LEN]; /* Temporal Key (TK) */
+	int ret;
+
+	/* Verify hapd is valid */
+	if (!hapd) {
+		wpa_printf(MSG_ERROR, "DUMP_TK: Invalid hapd pointer");
+		return -1;
+	}
+	
+
+	wpa_printf(MSG_ERROR,"DBGDBG %s %d \n",__func__,__LINE__);
+
+
+	/* Parse MAC address - format: <sta_addr> <key_idx> */
+	if (hwaddr_aton(cmd, addr)) {
+		wpa_printf(MSG_ERROR, "DUMP_TK: Invalid STA address");
+		return os_snprintf(buf, buflen, "FAIL-INVALID-MAC\n");
+	}
+
+	wpa_hexdump(MSG_ERROR,"DBGDBG addrress is ",addr,6);
+	
+	/* Skip past MAC address by locating the first space delimiter */
+	pos = os_strchr(cmd, ' ');
+	if (!pos) {
+		wpa_printf(MSG_ERROR, "DUMP_TK: Missing key index");
+		return os_snprintf(buf, buflen, "FAIL-MISSING-KEY-IDX\n");
+	}
+	pos++;
+	while (*pos == ' ')
+		pos++;
+
+	if (*pos == '\0') {
+		wpa_printf(MSG_ERROR, "DUMP_TK: Missing key index");
+		return os_snprintf(buf, buflen, "FAIL-MISSING-KEY-IDX\n");
+	}
+
+	/* Parse key index */
+	key_idx = atoi(pos);
+	if (key_idx < 0 || key_idx > 3) {
+		wpa_printf(MSG_ERROR, "DUMP_TK: Invalid key index %d", key_idx);
+		return os_snprintf(buf, buflen, "FAIL-INVALID-KEY-IDX\n");
+	}
+
+	wpa_printf(MSG_ERROR,"DBGDBG key_idx = %d %s %d \n",key_idx,__func__,__LINE__);
+
+	/* Note: key_idx is currently not used as PTK uses index 0.
+	 * Parameter is reserved for future use with group keys. */
+	 wpa_printf(MSG_ERROR,"DBGDBG %s %d \n",__func__,__LINE__);
+	/* Look up station */
+	sta = ap_get_sta(hapd, addr);
+	if (!sta) {
+		wpa_printf(MSG_DEBUG, "DUMP_TK: Station " MACSTR " not found",
+			   MAC2STR(addr));
+		return os_snprintf(buf, buflen, "FAIL-STA-NOT-FOUND\n");
+	}
+	 wpa_printf(MSG_ERROR,"DBGDBG %s %d \n",__func__,__LINE__);
+
+#ifdef CONFIG_ENC_ASSOC
+	if (sta->epp_sta) {
+		/* Get key from pasn data */
+		struct pasn_data *pasn;
+		struct hostapd_data *assoc_hapd;
+		struct sta_info *assoc_sta;
+
+		if ((assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd)))
+			pasn = assoc_sta->pasn;
+		else
+			pasn = sta->pasn;
+
+		if (!pasn) {
+			wpa_printf(MSG_DEBUG, "DUMP_TK: No PASN data for " MACSTR,
+				   MAC2STR(addr));
+			return os_snprintf(buf, buflen, "FAIL-NO-PASN-DATA\n");
+		}
+		tk_len = pasn->ptk.tk_len;
+		os_memcpy(tk, pasn->ptk.tk, tk_len);
+	
+	} else 
+#endif /* CONFIG_ENC_ASSOC */
+	{
+		/* Get key from WPA state machine */
+		sm = sta->wpa_sm;
+		if (!sm) {
+			wpa_printf(MSG_DEBUG, "DUMP_TK: No WPA state machine for " MACSTR,
+				   MAC2STR(addr));
+			return os_snprintf(buf, buflen, "FAIL-NO-WPA-SM\n");
+		}
+	 	wpa_printf(MSG_ERROR,"DBGDBG %s %d \n",__func__,__LINE__);
+		tk_len = sm->PTK.tk_len;
+		os_memcpy(tk, sm->PTK.tk, tk_len);
+	}
+	/* Get TK length and verify it's installed */
+	if (tk_len == 0) {
+		wpa_printf(MSG_DEBUG, "DUMP_TK: No TK installed for " MACSTR,
+			   MAC2STR(addr));
+		return os_snprintf(buf, buflen, "FAIL-NO-TK\n");
+	}
+	 wpa_printf(MSG_ERROR,"DBGDBG %s %d \n",__func__,__LINE__);
+	/* Return TK in hex format with newline */
+	ret = wpa_snprintf_hex(buf, buflen, tk, tk_len);
+	if (ret > 0 && (size_t) ret < buflen - 1) {
+		buf[ret] = '\n';
+		buf[ret + 1] = '\0';
+		ret++;
+	}
+
+	return ret;
 }
 
 

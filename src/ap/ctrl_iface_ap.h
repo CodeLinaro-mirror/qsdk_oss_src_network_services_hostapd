@@ -31,6 +31,8 @@ int hostapd_ctrl_iface_disassociate(struct hostapd_data *hapd,
 int hostapd_ctrl_iface_signature(struct hostapd_data *hapd,
 				 const char *txtaddr,
 				 char *buf, size_t buflen);
+int hostapd_ctrl_iface_dump_tk(struct hostapd_data *hapd, const char *cmd,
+			       char *buf, size_t buflen);
 int hostapd_ctrl_iface_poll_sta(struct hostapd_data *hapd,
 				const char *txtaddr);
 int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,

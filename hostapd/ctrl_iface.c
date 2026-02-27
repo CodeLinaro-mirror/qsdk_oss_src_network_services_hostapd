@@ -6854,8 +6854,11 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 #ifdef CONFIG_TAXONOMY
 	} else if (os_strncmp(buf, "SIGNATURE ", 10) == 0) {
 		reply_len = hostapd_ctrl_iface_signature(hapd, buf + 10,
-							 reply, reply_size);
+							reply, reply_size);
 #endif /* CONFIG_TAXONOMY */
+	} else if (os_strncmp(buf, "DUMP_TK ", 8) == 0) {
+		reply_len = hostapd_ctrl_iface_dump_tk(hapd, buf + 8,
+						       reply, reply_size);
 	} else if (os_strncmp(buf, "POLL_STA ", 9) == 0) {
 		if (hostapd_ctrl_iface_poll_sta(hapd, buf + 9))
 			reply_len = -1;

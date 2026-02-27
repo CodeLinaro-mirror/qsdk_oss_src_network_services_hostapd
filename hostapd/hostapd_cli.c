@@ -773,6 +773,27 @@ static int hostapd_cli_cmd_get_config(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, "GET_CONFIG");
 }
 
+static int hostapd_cli_cmd_dump_tk(struct wpa_ctrl *ctrl, int argc,
+				   char *argv[])
+{
+	char buf[300];
+	int res;
+
+	if (argc != 2) {
+		printf("Invalid DUMP_TK command: needs two arguments "
+		       "(STA address and key index)\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "DUMP_TK %s %s", argv[0], argv[1]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("Too long DUMP_TK command.\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
 
 static int wpa_ctrl_command_sta(struct wpa_ctrl *ctrl, const char *cmd,
 				char *addr, size_t addr_len, int print)
@@ -2332,6 +2353,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "= send BSS Transition Management Request" },
 	{ "get_config", hostapd_cli_cmd_get_config, NULL,
 	  "= show current configuration" },
+	{ "dump_tk", hostapd_cli_cmd_dump_tk, NULL,
+	  "<addr> <key_idx> = dump TK for station (debug only)" },
 	{ "help", hostapd_cli_cmd_help, hostapd_cli_complete_help,
 	  "= show this usage help" },
 	{ "interface", hostapd_cli_cmd_interface, hostapd_complete_interface,
