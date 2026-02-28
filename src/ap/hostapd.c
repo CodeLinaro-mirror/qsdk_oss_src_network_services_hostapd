@@ -3169,6 +3169,12 @@ static int configured_fixed_chan_to_freq(struct hostapd_iface *iface)
 	return -1;
 }
 
+#ifdef CONFIG_QCN_EXTN
+int configured_fixed_chan_to_freq_helper(struct hostapd_iface *iface)
+{
+	return configured_fixed_chan_to_freq(iface);
+}
+#endif
 
 static void hostapd_set_6ghz_sec_chan(struct hostapd_iface *iface)
 {
@@ -5861,7 +5867,6 @@ static int hostapd_data_alloc(struct hostapd_iface *hapd_iface,
 	return 0;
 }
 
-
 int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 {
 	struct hostapd_config *conf = NULL;
@@ -5912,6 +5917,10 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 					hapd_iface);
 				goto fail;
 			}
+
+#ifdef CONFIG_QCN_EXTN
+			hostapd_iface_set_supplicant_channel_extn(hapd_iface);
+#endif
 
 			if (hostapd_setup_interface(hapd_iface)) {
 				/* Deinit link for the first bss */

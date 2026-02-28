@@ -1675,4 +1675,19 @@ int find_6g_enabled_chans(struct hostapd_iface *iface,
 			  struct hostapd_channel_data **chan_6ghz,
 			  int n_chans, int power_type);
 
+#ifdef CONFIG_QCN_EXTN
+/**
+ * configured_fixed_chan_to_freq_helper - Helper to convert configured
+ * channel to frequency
+ * @iface: Pointer to hostapd_iface structure
+ *
+ * This is a wrapper function for configured_fixed_chan_to_freq() to support
+ * vendor-specific extensions (QCN_EXTN). It determines the operating frequency
+ * based on the configured channel.
+ *
+ * Returns: 0 on success, -1 on failure
+ */
+int configured_fixed_chan_to_freq_helper(struct hostapd_iface *iface);
+#endif
+
 #endif /* HOSTAPD_H */
