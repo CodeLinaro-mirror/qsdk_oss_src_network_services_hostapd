@@ -7984,6 +7984,11 @@ u8 hostapd_get_active_links(struct hostapd_data *hapd)
 	if (!hapd || !hapd->conf->mld_ap)
 		return 0;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return 0;
+#endif /* CONFIG_QCN_EXTN */
+
 	for_each_mld_link(link_bss, hapd) {
 		if (link_bss == hapd || !link_bss->started)
 			continue;

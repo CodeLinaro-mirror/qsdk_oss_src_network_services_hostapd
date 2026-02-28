@@ -311,12 +311,21 @@ u16 hostapd_critical_update_capab(struct hostapd_data *hapd)
 	if (!hapd)
 		return capab;
 
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap && hapd->rx_cu_param.critical_flag)
 		capab |= WLAN_CAPABILITY_PBCC;
-
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->iconf && hapd->iconf->mbssid) {
 		for (i = 1; i < hapd->iface->num_bss; i++) {
 			bss = hapd->iface->bss[i];
+#ifdef CONFIG_QCN_EXTN
+			if (bss && hostapd_is_repurpose_disabled_11be_extn(bss->conf))
+				continue;
+#endif /* CONFIG_QCN_EXTN */
 			if (bss && bss->conf->mld_ap && bss->rx_cu_param.critical_flag)
 				capab |= WLAN_CAPABILITY_CHANNEL_AGILITY;
 		}
@@ -1087,6 +1096,9 @@ static int auth_sae_send_commit(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211BE
 	u8 link_id = hapd->mld_link_id;
 
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta && sta->mld_auth) {
 		dst = sta->reply_addr;
 		/*
@@ -1097,6 +1109,10 @@ static int auth_sae_send_commit(struct hostapd_data *hapd,
 		if (sta->unadded_sta)
 			dst = sta->mld_info.links[link_id].peer_addr;
 	}
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 #endif /* CONFIG_IEEE80211BE */
 
 	data = auth_build_sae_commit(hapd, sta, update, status_code);
@@ -1141,6 +1157,10 @@ static int auth_sae_send_confirm(struct hostapd_data *hapd,
 
 #ifdef CONFIG_IEEE80211BE
 	u8 link_id = hapd->mld_link_id;
+
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta && sta->mld_auth) {
 		dst = sta->reply_addr;
 		if (sta->unadded_sta) {
@@ -1153,6 +1173,9 @@ static int auth_sae_send_confirm(struct hostapd_data *hapd,
 			dst = sta->mld_info.links[link_id].peer_addr;
 		}
 	}
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 	data = auth_build_sae_confirm(hapd, sta);
@@ -1807,11 +1830,17 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta) {
 		if (sta->unadded_sta) {
 			dst = sta->mld_info.links[link_id].peer_addr;
 		}
 	}
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 
@@ -3488,9 +3517,15 @@ static void handle_auth(struct hostapd_data *hapd,
 	else
 		sa = mgmt->sa;
 
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap &&
 	    hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED)
 		skip_acl = true;
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 	auth_alg = le_to_host16(mgmt->u.auth.auth_alg);
@@ -4024,6 +4059,11 @@ static u32 hostapd_get_aid_word(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211BE
 	u32 aid_word = 0;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return hapd->sta_aid[i];
+#endif /* CONFIG_QCN_EXTN */
+
 	/* Do not assign an AID that is in use on any of the affiliated links
 	 * when finding an AID for a non-AP MLD. */
 	if (hapd->conf->mld_ap && sta->mld_info.mld_sta) {
@@ -4042,6 +4082,13 @@ static u32 hostapd_get_aid_word(struct hostapd_data *hapd,
 					   "MLD: Failed to get link BSS for AID");
 				continue;
 			}
+#ifdef CONFIG_QCN_EXTN
+			if (hostapd_is_repurpose_disabled_11be_extn(link_bss->conf)) {
+				wpa_printf(MSG_DEBUG,
+					   "MLD: dont consider aid word from repurposed link");
+				continue;
+			}
+#endif /* CONFIG_QCN_EXTN */
 			link_bss = hostapd_mbssid_get_tx_bss(link_bss);
 			aid_word |= link_bss->sta_aid[i];
 		}
@@ -4071,6 +4118,11 @@ int hostapd_get_wds_mld_sta_uid(struct hostapd_data *hapd, struct sta_info *sta)
 	link_bss = hostapd_mld_get_first_bss(hapd);
 	if (!link_bss)
 		link_bss = hapd;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(link_bss->conf))
+		link_bss = hapd;
+#endif
 
 	for (i = 0; i < AID_WORDS; i++) {
 		if (link_bss->wds_sta_uid[i] == (u32) -1)
@@ -5683,6 +5735,11 @@ bool hostapd_is_multiple_link_mld(struct hostapd_data *hapd)
 	if (!hapd->conf->mld_ap)
 		return false;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return false;
+#endif /* CONFIG_QCN_EXTN */
+
 	if (!hapd->iface || !hapd->iface->interfaces ||
 	    hapd->iface->interfaces->count <= 1)
 		return false;
@@ -5720,6 +5777,11 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 
 	if (!hapd->conf->mld_ap)
 		return 0;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return 0;
+#endif /* CONFIG_QCN_EXTN */
 
 	if (tx_link_status == WLAN_STATUS_SUCCESS && sta->mld_info.mld_sta) {
 		u8 mld_link_id = hapd->mld_link_id;
@@ -6213,10 +6275,17 @@ rsnxe_done:
 		p = hostapd_eid_channel_usage(hapd, p, buf + buflen - p);
 	}
 
-	if (hapd->conf->ttlm_enable && sta &&
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
+	if (hapd->conf->mld_ap &&
+	    hapd->conf->ttlm_enable && sta &&
 	    sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info.ttlm_resp_type ==
 	    WLAN_STATUS_SUCCESS)
 		hostapd_apply_ttlm_mapping_to_driver(hapd, sta);
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
@@ -6580,6 +6649,12 @@ hostapd_mlie_to_get_mld_addr_from_assoc(struct hostapd_data *hapd,
 
 	if (!hapd->mld)
 		return NULL;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return NULL;
+#endif /* CONFIG_QCN_EXTN */
+
 	pos = reassoc ? mgmt->u.reassoc_req.variable : mgmt->u.assoc_req.variable;
 	if (!pos)
 		return NULL;
@@ -6617,6 +6692,11 @@ get_sta_from_ft_ds_list(struct hostapd_data *hapd,
 
 	if (!hapd->mld)
 		return NULL;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return NULL;
+#endif /* CONFIG_QCN_EXTN */
 
 	sta_mld = hostapd_mlie_to_get_mld_addr_from_assoc(hapd, mgmt, len, reassoc);
 	if (!sta_mld)
@@ -6928,7 +7008,11 @@ static void handle_assoc(struct hostapd_data *hapd,
 			int acl_res;
 			struct radius_sta info;
 
-			if (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta) {
+			if (hapd->conf->mld_ap &&
+#ifdef CONFIG_QCN_EXTN
+			    !hostapd_is_repurpose_disabled_11be_extn(hapd->conf) &&
+#endif /* CONFIG_QCN_EXTN */
+			    sta && sta->mld_info.mld_sta) {
 				acl_res = ieee802_11_allowed_address(hapd, sta->addr,
 								     (const u8 *) mgmt,
 								     len, &info);
@@ -7241,6 +7325,9 @@ static void handle_assoc(struct hostapd_data *hapd,
 #endif /* CONFIG_FILS */
 
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap) {
 		wpa_printf(MSG_INFO, "STA " MACSTR " for acl checking",
 			   MAC2STR(sta->addr));
@@ -7249,6 +7336,9 @@ static void handle_assoc(struct hostapd_data *hapd,
 			goto fail;
 		}
 	}
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 	ubus_resp = hostapd_ubus_handle_event(hapd, &req);
 	if (ubus_resp) {
@@ -7923,6 +8013,11 @@ static void ieee80211_clear_critical_flag(struct hostapd_data *hapd)
 
 	if (!hapd->conf->mld_ap)
 		return;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return;
+#endif /* CONFIG_QCN_EXTN */
 	/*clear mbssid bss critical flags*/
 	if (hapd->iconf->mbssid) {
 		for (i = 0; i < hapd->iface->num_bss; i++) {
@@ -8022,6 +8117,9 @@ int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 #endif /* CONFIG_MESH */
 #ifdef CONFIG_IEEE80211BE
 	    !(hapd->conf->mld_ap &&
+#ifdef CONFIG_QCN_EXTN
+	      !hostapd_is_repurpose_disabled_11be_extn(hapd->conf) &&
+#endif /* CONFIG_QCN_EXTN */
 	      ether_addr_equal(hapd->mld->mld_addr, mgmt->bssid)) &&
 #endif /* CONFIG_IEEE80211BE */
 	    !ether_addr_equal(mgmt->bssid, hapd->own_addr)) {
@@ -8046,6 +8144,9 @@ int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 	     stype != WLAN_FC_STYPE_ACTION) &&
 #ifdef CONFIG_IEEE80211BE
 	    !(hapd->conf->mld_ap &&
+#ifdef CONFIG_QCN_EXTN
+	      !hostapd_is_repurpose_disabled_11be_extn(hapd->conf) &&
+#endif /* CONFIG_QCN_EXTN */
 	      ether_addr_equal(hapd->mld->mld_addr, mgmt->bssid)) &&
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_NAN_USD
@@ -8454,12 +8555,19 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		sta->pending_wds_enable = 0;
 		sta->flags |= WLAN_STA_WDS;
 		set_wds_sta_flag(hapd, sta);
-		if (hapd->conf->mld_ap && hostapd_get_wds_mld_sta_uid(hapd, sta) < 0) {
+#ifdef CONFIG_QCN_EXTN
+		if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
+		if (hapd->conf->mld_ap &&
+		    hostapd_get_wds_mld_sta_uid(hapd, sta) < 0) {
 			wpa_printf(MSG_DEBUG, "No room for uid"
 				   "to enable 4-address WDS mode for STA "
 				   MACSTR, MAC2STR(sta->addr));
 			return;
 		}
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif /* CONFIG_QCN_EXTN */
 	}
 
 	/* WPS not supported on backhaul BSS. Disable 4addr mode on fronthaul */
@@ -8475,6 +8583,11 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 			aid = sta->wds_mld_uid;
 		else
 			aid = sta->aid;
+
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+			aid = sta->aid;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_DEBUG, "Reenable 4-address WDS mode for STA "
 			   MACSTR " (aid %u)",
@@ -8866,7 +8979,12 @@ void ieee802_11_rx_from_unknown(struct hostapd_data *hapd, const u8 *src,
 		if (!hapd->conf->wds_sta)
 			return;
 
+#ifdef CONFIG_QCN_EXTN
+		if (hapd->conf->mld_ap &&
+		    !hostapd_is_repurpose_disabled_11be_extn(hapd->conf) && wds) {
+#else
 		if (hapd->conf->mld_ap && wds) {
+#endif /* CONFIG_QCN_EXTN */
 			if (hostapd_get_wds_mld_sta_uid(hapd, sta) < 0) {
 				wpa_printf(MSG_DEBUG, "No room for uid"
 					   "to enable 4-address WDS mode for STA "
@@ -12442,6 +12560,9 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211BE
 		/* For ML Probe Response frame, the solicited hapd's MLE will
 		 * be in the frame body */
+#ifdef CONFIG_QCN_EXTN
+		if (!hostapd_is_repurpose_disabled_11be_extn(bss->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 		if (bss->conf->mld_ap &&
 		    (bss != hapd || frame_type != WLAN_FC_STYPE_PROBE_RESP)) {
 			ext_cap = 0;
@@ -12463,6 +12584,9 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 			if (bss->eht_mld_link_removal_inprogress)
 				nontx_profile_len += hostapd_eid_eht_ml_reconfig_len(bss);
 		}
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 		/* WMM IE */
@@ -12575,6 +12699,11 @@ void hostapd_eid_update_cu_info(struct hostapd_data *hapd, u16 *elemid_modified,
 	if (!hapd->conf->mld_ap)
 		return;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return;
+#endif /* CONFIG_QCN_EXTN */
+
 	if (!eid_pos || (eid_len == 0) || (eid_len > 255))
 		return;
 	if (eid_cu >= ELEMID_CU_PARAM_MAX)
@@ -12681,6 +12810,10 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 #ifdef CONFIG_IEEE80211BE
 		/* For ML Probe Response frame, the solicited hapd's MLE will
 		 * be in the frame body */
+#ifdef CONFIG_QCN_EXTN
+		if (!hostapd_is_repurpose_disabled_11be_extn(bss->conf)) {
+#endif /* CONFIG_QCN_EXTN */
+
 		if (bss->conf->mld_ap &&
 		    (bss != hapd || frame_type != WLAN_FC_STYPE_PROBE_RESP)) {
 			ext_cap = 0;
@@ -12702,6 +12835,9 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 			if (bss->eht_mld_link_removal_inprogress)
 				eid = hostapd_eid_eht_reconf_ml(bss, eid);
 		}
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 		/* WMM IE */

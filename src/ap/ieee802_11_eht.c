@@ -696,6 +696,11 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 	u8 max_simul_links, active_links, max_rec_links;
 	u16 ext_mld_cap;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return pos;
+#endif /* CONFIG_QCN_EXTN */
+
 	/*
 	 * As the Multi-Link element can exceed the size of 255 bytes need to
 	 * first build it and then handle fragmentation.
@@ -836,6 +841,14 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 			continue;
 		}
 
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(link_bss->conf)) {
+			wpa_printf(MSG_DEBUG,
+				   "Skip the repurposed link from link info");
+			continue;
+		}
+#endif /* CONFIG_QCN_EXTN */
+
 		/* BSS Parameters Change Count (1) for (Re)Association Response
 		 * frames */
 		if (include_bpcc)
@@ -939,6 +952,11 @@ size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 	if (!hapd->conf->mld_ap)
 		return 0;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return 0;
+#endif /* CONFIG_QCN_EXTN */
+
 	/* Include WLAN_EID_EXT_MULTI_LINK (1) */
 	len = 1;
 	/* control field */
@@ -971,6 +989,14 @@ size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 				   "MLD: Couldn't find link BSS - skip it");
 			continue;
 		}
+
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(link_bss->conf)) {
+			wpa_printf(MSG_ERROR,
+				   "MLD: repurposed link can't have ML elem");
+			continue;
+		}
+#endif /* CONFIG_QCN_EXTN */
 
 		/* BSS Parameters Change Count (1) for (Re)Association Response
 		 * frames */
@@ -1276,6 +1302,11 @@ const u8 * hostapd_process_ml_auth(struct hostapd_data *hapd,
 	if (!hapd->conf->mld_ap)
 		return NULL;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return NULL;
+#endif /* CONFIG_QCN_EXTN */
+
 	len -= offsetof(struct ieee80211_mgmt, u.auth.variable);
 
 	pos = auth_skip_fixed_fields(hapd, mgmt, len);
@@ -1329,6 +1360,15 @@ static int hostapd_mld_validate_assoc_info(struct hostapd_data *hapd,
 			return -1;
 		}
 
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(other_hapd->conf)) {
+			wpa_printf(MSG_DEBUG,
+				   "MLD: repurposed link=%d not allowed in ml assoc",
+				   link_id);
+			return -1;
+		}
+#endif /* CONFIG_QCN_EXTN */
+
 		os_memcpy(info->links[link_id].local_addr, other_hapd->own_addr,
 			  ETH_ALEN);
 	}
@@ -1351,6 +1391,13 @@ int hostapd_process_ml_assoc_req_addr(struct hostapd_data *hapd,
 
 	if (!mlbuf)
 		return ret;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		wpa_printf(MSG_DEBUG, "MLD: ml assoc req on non-ml BSS");
+		goto out;
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	ml = (struct ieee80211_eht_ml *) wpabuf_head(mlbuf);
 	ml_len = wpabuf_len(mlbuf);
@@ -1786,6 +1833,12 @@ void hostapd_link_reconf_resp_tx_status(struct hostapd_data *hapd,
 				lsta = ap_get_sta(lhapd,
 						  req_list->sta_mld_addr);
 
+#ifdef CONFIG_QCN_EXTN
+			if (lhapd &&
+			    hostapd_is_repurpose_disabled_11be_extn(lhapd->conf))
+				lsta = NULL;
+#endif /* CONFIG_QCN_EXTN */
+
 			if (lsta)
 				ap_free_sta(lhapd, lsta);
 		}
@@ -1808,6 +1861,14 @@ void hostapd_link_reconf_resp_tx_status(struct hostapd_data *hapd,
 				   link_id);
 			continue;
 		}
+
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(lhapd->conf)) {
+			wpa_printf(MSG_INFO,
+				   "MLD: Link (%u) hapd repurposed", link_id);
+			continue;
+		}
+#endif /* CONFIG_QCN_EXTN */
 
 		lsta = ap_get_sta(lhapd, mgmt->da);
 		if (!lsta) {
@@ -1947,6 +2008,15 @@ hostapd_ml_process_reconf_link(struct hostapd_data *hapd,
 	if (!lhapd) /* This cannot be NULL */
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(lhapd->conf)) {
+		wpa_printf(MSG_ERROR,
+			   "link %u is repurposed, hence cant process ml reconf",
+			   link_id);
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	os_memset(&link, 0, sizeof(link));
 
 	link.valid = 1;
@@ -2005,7 +2075,12 @@ hostapd_reject_all_reconf_req(struct hostapd_data *hapd, u8 *pos,
 
 		if (info->status == WLAN_STATUS_SUCCESS) {
 			lhapd = hostapd_mld_get_link_bss(hapd, info->link_id);
+#ifdef CONFIG_QCN_EXTN
+			if (lhapd &&
+			    !hostapd_is_repurpose_disabled_11be_extn(lhapd->conf))
+#else /* CONFIG_QCN_EXTN */
 			if (lhapd)
+#endif /* CONFIG_QCN_EXTN */
 				lsta = ap_get_sta(lhapd,
 						  req_list->sta_mld_addr);
 
@@ -2099,6 +2174,11 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 			lhapd = hostapd_mld_get_link_bss(hapd, info->link_id);
 			if (!lhapd)
 				continue;
+
+#ifdef CONFIG_QCN_EXTN
+			if (hostapd_is_repurpose_disabled_11be_extn(lhapd->conf))
+				continue;
+#endif /* CONFIG_QCN_EXTN */
 
 			link->valid = true;
 
@@ -2425,6 +2505,16 @@ hostapd_parse_link_reconf_req_sta_profile(struct hostapd_data *hapd,
 		goto add_to_list;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(lhapd->conf)) {
+		wpa_printf(MSG_DEBUG,
+			   "MLD: Link %d can't be used for reconfig", link_id);
+		lhapd = NULL;
+		ret = 1;
+		goto add_to_list;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	lsta = ap_get_sta(lhapd, req->sta_mld_addr);
 
 	if (reconf_type == EHT_RECONF_TYPE_DELETE_LINK) {
@@ -2722,6 +2812,11 @@ hostapd_validate_link_reconf_req(struct hostapd_data *hapd,
 				lsta = ap_get_sta(lhapd,
 						  req_list->sta_mld_addr);
 
+#ifdef CONFIG_QCN_EXTN
+			if (lhapd && hostapd_is_repurpose_disabled_11be_extn(lhapd->conf))
+				lsta = NULL;
+#endif /* CONFIG_QCN_EXTN */
+
 			if (lsta)
 				ap_free_sta(lhapd, lsta);
 		} else {
@@ -2962,6 +3057,11 @@ void ieee802_11_rx_protected_eht_action(struct hostapd_data *hapd,
 	if (!hapd->conf->mld_ap)
 		return;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return;
+#endif /* CONFIG_QCN_EXTN */
+
 	payload = ((const u8 *) mgmt) + IEEE80211_HDRLEN + 1;
 	action = *payload++;
 
@@ -3147,6 +3247,11 @@ static size_t hostapd_eid_eht_ml_priority_access(struct hostapd_data *hapd,
 
 		if (!other_hapd->conf->mld_ap)
 			continue;
+
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(other_hapd->conf))
+			continue;
+#endif /* CONFIG_QCN_EXTN */
 
 		link = &mld_info->links[other_hapd->mld_link_id];
 

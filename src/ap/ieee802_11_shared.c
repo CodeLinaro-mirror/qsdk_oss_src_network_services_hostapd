@@ -1330,6 +1330,15 @@ struct sta_info * hostapd_ml_get_assoc_sta(struct hostapd_data *hapd,
 		return sta;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(other_hapd->conf)) {
+		wpa_printf(MSG_DEBUG,
+			   "MLD: Link %u in lower mode, can't be assoc link",
+			   sta->mld_assoc_link_id);
+		return sta;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	/*
 	 * Iterate over the stations and find the one with the matching link ID
 	 * and association ID.
