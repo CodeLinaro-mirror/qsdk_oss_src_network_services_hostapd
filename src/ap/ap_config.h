@@ -427,6 +427,8 @@ struct hostapd_bss_config {
 #define EHT_PHY_BSS_OVR_BFME_SS_80      BIT(11)
 #define EHT_PHY_BSS_OVR_BFME_SS_160     BIT(12)
 #define EHT_PHY_BSS_OVR_BFME_SS_320     BIT(13)
+#define EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO BIT(14)
+#define EHT_PHY_BSS_OVR_MU_BFMR_MASK        BIT(15)
 	u32 eht_phy_capab_mask;
 #endif /* CONFIG_IEEE80211BE */
 

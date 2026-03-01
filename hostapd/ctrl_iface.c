@@ -1893,12 +1893,7 @@ he_rollback:
 			}
 
 			hapd->conf->eht_phy_capab.eht_mu_mimo_mask = (u8)val;
-			hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz =
-				(val & 0x1) ? 1 : 0;
-			hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz =
-				(val & 0x2) ? 1 : 0;
-			hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz =
-				(val & 0x4) ? 1 : 0;
+			hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO;
 
 			if (hostapd_tx_bss_only(hapd, cmd) < 0)
 				goto eht_mu_mimo_rollback;
@@ -1930,6 +1925,7 @@ eht_mu_mimo_rollback:
 			}
 
 			hapd->conf->eht_phy_capab.eht_mu_bfmr_mask = (u8)val;
+			hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_MU_BFMR_MASK;
 
 			if (hostapd_tx_bss_only(hapd, cmd) < 0)
 				goto eht_mu_bfmr_rollback;
@@ -2526,18 +2522,27 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		return res;
 	} else if (os_strcasecmp(cmd, "eht_ulmumimo_80mhz") == 0) {
 		res = os_snprintf(buf, buflen, "eht_ulmumimo_80mhz = %d\n",
+				  (hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO) ?
+				  !!(hapd->conf->eht_phy_capab.eht_mu_mimo_mask & BIT(0)) :
 				  hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
 	} else if (os_strcasecmp(cmd, "eht_ulmumimo_160mhz") == 0) {
 		res = os_snprintf(buf, buflen, "eht_ulmumimo_160mhz = %d\n",
+				  (hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO) ?
+				  !!(hapd->conf->eht_phy_capab.eht_mu_mimo_mask & BIT(1)) :
 				  hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
 	} else if (os_strcasecmp(cmd, "eht_ulmumimo_320mhz") == 0) {
 		res = os_snprintf(buf, buflen, "eht_ulmumimo_320mhz = %d\n",
+				  (hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO) ?
+				  !!(hapd->conf->eht_phy_capab.eht_mu_mimo_mask & BIT(2)) :
 				  hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz);
 		if (os_snprintf_error(buflen, res))
 			return -1;
