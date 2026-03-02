@@ -1651,3 +1651,13 @@ int hostapd_drv_set_qos(struct hostapd_data *hapd, struct qm_req_data *qm_req,
 
 	return hapd->driver->set_qos(hapd->drv_priv, qm_req, qm_resp);
 }
+
+#ifdef CONFIG_QCN_EXTN
+int hostapd_drv_set_muedca_mode(struct hostapd_data *hapd, int mode, int radio_idx)
+{
+	if (!hapd->driver || !hapd->driver->set_muedca_mode)
+		return -1;
+
+	return hapd->driver->set_muedca_mode(hapd->drv_priv, mode, radio_idx);
+}
+#endif /* CONFIG_QCN_EXTN */

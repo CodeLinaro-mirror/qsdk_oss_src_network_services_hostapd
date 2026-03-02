@@ -17193,6 +17193,50 @@ error:
 	return ret;
 }
 
+#ifdef CONFIG_QCN_EXTN
+/*
+ * nl80211_set_muedca_mode - Set edca mode
+ * @priv: Pointer to i802_bss
+ * @mode: edca mode to set
+ * @radio_idx: Radio index
+ *
+ * Return: 0 on success,-ve value on failure
+ */
+int nl80211_set_muedca_mode(void *priv, int mode, int radio_idx)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret;
+
+	wpa_printf(MSG_INFO,
+		   "nl80211: MUEDCA: ifname=%s ifindex=%d wiphy_idx=%d mode=%u radio_idx=%d",
+		   bss->ifname, bss->ifindex, drv->wiphy_idx, mode, radio_idx);
+
+	msg = nl80211_drv_msg(drv, 0, NL80211_CMD_SET_WIPHY);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put_u32(msg, NL80211_ATTR_WIPHY, drv->wiphy_idx) ||
+	    nla_put_u8(msg, NL80211_ATTR_HE_MUEDCA_MODE, mode)) {
+		nlmsg_free(msg);
+		return -ENOBUFS;
+	}
+
+	/* If radio_idx < 0 => apply to ALL radios (omit WIPHY_RADIO_INDEX) */
+	if (radio_idx >= 0) {
+		if (nla_put_u8(msg, NL80211_ATTR_WIPHY_RADIO_INDEX, (u8) radio_idx)) {
+			nlmsg_free(msg);
+			return -ENOBUFS;
+		}
+	}
+	ret = send_and_recv_resp(drv, msg, NULL, NULL);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "nl80211: Failed to set MU-EDCA mode (ret=%d)", ret);
+	}
+	return ret;
+}
+#endif /* CONFIG_QCN_EXTN */
 
 const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.name = "nl80211",
@@ -17394,4 +17438,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #ifdef CONFIG_IEEE80211AX
 	.rule_config_notify = nl80211_vendor_cmd_rule_config_notify,
 #endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_QCN_EXTN
+	.set_muedca_mode = nl80211_set_muedca_mode,
+#endif /* CONFIG_QCN_EXTN */
 };
