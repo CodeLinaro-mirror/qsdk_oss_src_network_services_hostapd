@@ -5160,8 +5160,6 @@ static void wpas_dpp_chirp_start(struct wpa_supplicant *wpa_s)
 		    3000, wpas_dpp_chirp_tx_status, 0) < 0)
 		wpas_dpp_chirp_stop(wpa_s, 0);
 
-	if (eloop_register_timeout(3, 0, wpas_dpp_chirp_timeout, wpa_s, NULL) < 0)
-		wpas_dpp_chirp_stop(wpa_s, 0);
 	wpabuf_free(announce);
 }
 
