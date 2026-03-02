@@ -410,6 +410,9 @@ setup_mld:
 				   hapd->mld_link_id, hapd->conf->iface);
 			return -1;
 		}
+#ifdef CONFIG_QCN_EXTN
+		hostapd_notify_link_repurpose(hapd, "hostapd_driver_init");
+#endif /* CONFIG_QCN_EXTN */
 		hostapd_mld_add_link(hapd);
 		hostapd_validate_update_ml_max_rec_links(hapd);
 	}
