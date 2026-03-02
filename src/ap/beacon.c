@@ -37,6 +37,7 @@
 #include "ieee802_11_auth.h"
 #include "dscp_policy.h"
 #include "../../qcn_extns/cmn.h"
+#include <assert.h>
 
 #ifdef CONFIG_IEEE80211AX
 #include "robust_av.h"
@@ -891,7 +892,7 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 					    struct probe_resp_params *nontx_probe_params)
 {
-	u8 *pos, *start_pos, *epos;
+	u8 *pos, *epos;
 	size_t buflen;
 
 #define MBSSID_NONTX_PROBE_RESP_LEN 600
@@ -940,8 +941,8 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	start_pos = pos = nontx_probe_params->resp->u.probe_resp.variable;
-	epos = pos + buflen;
+	pos = nontx_probe_params->resp->u.probe_resp.variable;
+	epos = (u8 *)nontx_probe_params->resp + buflen;
 
 	/* Supported rates */
 	pos = hostapd_eid_supp_rates(hapd, pos);
@@ -1051,10 +1052,15 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 	pos = hostapd_get_rsne_override_2(hapd, pos, epos - pos);
 	pos = hostapd_get_rsnxe_override(hapd, pos, epos - pos);
 
-	buflen = pos > start_pos ? pos - start_pos : 0;
-
 	/* Final length */
 	nontx_probe_params->resp_len = pos - (u8 *) nontx_probe_params->resp;
+	if (nontx_probe_params->resp_len > buflen) {
+		wpa_printf(MSG_ERROR,
+			   "Non-Tx Probe params build failed %s: built size exceeds allocation"
+			   "(alloc=%zu used=%zu)", hapd->conf->iface, buflen,
+			   nontx_probe_params->resp_len);
+		assert(0);
+	}
 	return 0;
 }
 
