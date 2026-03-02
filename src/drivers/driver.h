@@ -6697,6 +6697,10 @@ struct wpa_driver_ops {
 	 * Returns: true if the driver supports retail AFC, false otherwise
 	 */
 	bool (*is_retail_afc_supported)(void *priv);
+
+#ifdef CONFIG_QCN_EXTN
+	int (*set_muedca_mode)(void *priv, int mode, int radio_idx);
+#endif
 	/**
 	 * set_qos - Send QoS management request data to driver and get back
 	 * 	     response data filled from driver.

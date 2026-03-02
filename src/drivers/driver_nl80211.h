@@ -508,5 +508,8 @@ int get_sta_mlo_interface_info(struct i802_bss *bss);
  */
 int qca_nl80211_handle_afc_events(struct i802_bss *bss, u8 *data, size_t len,
 				  bool check_first_bss);
+#ifdef CONFIG_QCN_EXTN
+int nl80211_set_muedca_mode(void *priv, int mode, int radio_idx);
+#endif
 
 #endif /* DRIVER_NL80211_H */

@@ -37,5 +37,8 @@ hostapd_global_ctrl_iface_deinit(struct hapd_interfaces *interface)
 {
 }
 #endif /* CONFIG_NO_CTRL_IFACE */
+#ifdef CONFIG_QCN_EXTN
+extern int hostapd_drv_set_muedca_mode(struct hostapd_data *hapd, int mode, int radio_idx);
+#endif /* CONFIG_QCN_EXTN */
 
 #endif /* CTRL_IFACE_H */
