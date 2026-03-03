@@ -6536,6 +6536,24 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 	}
 #endif
 
+#ifdef CONFIG_ENC_ASSOC
+       if (phapd && hapd && (sta->auth_alg == WLAN_AUTH_EPPKE ||
+                             sta->auth_alg == WLAN_AUTH_802_1X) &&
+           wpa_auth_ap_sta_support_assoc_enc(sta->wpa_sm)) {
+               assoc_rsn_len = wpa_write_rsn_ie(&phapd->wpa_auth->conf,
+                                                assoc_rsne, sizeof(assoc_rsne),
+                                                NULL);
+               link_rsn_len = wpa_write_rsn_ie(&hapd->wpa_auth->conf, link_rsne,
+                                               sizeof(link_rsne),
+                                               NULL);
+               if ((assoc_rsn_len != link_rsn_len) ||
+                   (os_memcmp(assoc_rsne, link_rsne, assoc_rsn_len) != 0)) {
+                       os_memcpy(p, link_rsne, link_rsn_len);
+                       p += link_rsn_len;
+               }
+       }
+#endif /* CONFIG_ENC_ASSOC */
+
 	if (hapd->iconf->ieee80211ac && !hapd->conf->disable_11ac) {
 		p = hostapd_eid_vht_capabilities(hapd, p, 0);
 		p = hostapd_eid_vht_operation(hapd, p);
