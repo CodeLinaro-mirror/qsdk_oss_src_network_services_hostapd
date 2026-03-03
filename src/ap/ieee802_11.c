@@ -15760,7 +15760,8 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 	for (i = *bss_index; i < num_bss; i++) {
 		struct hostapd_data *bss;
 		struct non_inheritance_elem non_inherit_ie;
-		size_t nontx_profile_len, wmm_len;
+		size_t rem_vendor_elem_size;
+		size_t nontx_profile_len, wmm_len, j;
 		ssize_t optional_ie_len = 0;
 
 		if (tx_bss->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
@@ -15837,15 +15838,36 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
+		rem_vendor_elem_size = MBSSID_NON_TX_VENDOR_ELEM_SIZE(bss);
+
 		/* WMM IE */
 		wmm_len = hostapd_eid_wmm_len(bss);
-		if (wmm_len <= MBSSID_NON_TX_VENDOR_ELEM_SIZE(bss))
-			nontx_profile_len += wmm_len;
+		if (wmm_len > rem_vendor_elem_size) {
+			wpa_printf(MSG_DEBUG,
+				   "WMM vendor element size: %zu exceeds available space: %zu",
+				   wmm_len, rem_vendor_elem_size);
+			return 0;
+		}
+
+		nontx_profile_len += wmm_len;
+		rem_vendor_elem_size -= wmm_len;
 
 		/* User configured vendor elements */
-		if (bss->conf->vendor_elements_len <=
-		    MBSSID_NON_TX_VENDOR_ELEM_SIZE(bss) - wmm_len)
-			nontx_profile_len += bss->conf->vendor_elements_len;
+		for (j = 0; j < bss->conf->vendor_elements_count; j++) {
+			struct wpabuf *entry = bss->conf->vendor_elements[j];
+
+			if (wpabuf_len(entry) <= rem_vendor_elem_size) {
+				nontx_profile_len += wpabuf_len(entry);
+				rem_vendor_elem_size -= wpabuf_len(entry);
+			} else {
+				wpa_printf(MSG_DEBUG,
+					   "Vendor element size:%zu exceeds available space:%zu ",
+					   wpabuf_len(entry), rem_vendor_elem_size);
+				wpa_hexdump(MSG_DEBUG, "Vendor element: ",
+					    wpabuf_head_u8(entry), wpabuf_len(entry));
+				return 0;
+			}
+		}
 
 		if (len + nontx_profile_len > 255)
 			break;
@@ -16020,6 +16042,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 #ifdef CONFIG_IEEE80211BE
 		u16 modified_flag = 0;
 #endif /* CONFIG_IEEE80211BE */
+		size_t rem_vendor_elem_size;
 		size_t j, wmm_len;
 		ssize_t optional_ie_len = 0;
 
@@ -16121,9 +16144,11 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
+		rem_vendor_elem_size = MBSSID_NON_TX_VENDOR_ELEM_SIZE(bss);
+
 		/* WMM IE */
 		wmm_len = hostapd_eid_wmm_len(bss);
-		if (wmm_len <= MBSSID_NON_TX_VENDOR_ELEM_SIZE(bss)) {
+		if (wmm_len) {
 #ifdef CONFIG_IEEE80211BE
 			startpos = eid;
 #endif /* CONFIG_IEEE80211BE */
@@ -16134,18 +16159,18 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 			if (modified_flag && elemid_modified_bmap)
 				*elemid_modified_bmap |= BIT(i);
 #endif /* CONFIG_IEEE80211BE */
+			rem_vendor_elem_size -= wmm_len;
 		}
 
 		/* User configured vendor elements */
-		if (bss->conf->vendor_elements_len <=
-		    MBSSID_NON_TX_VENDOR_ELEM_SIZE(bss) - wmm_len) {
-			for (j = 0; j < bss->conf->vendor_elements_count; j++) {
-				struct wpabuf *entry = bss->conf->vendor_elements[j];
+		for (j = 0; j < bss->conf->vendor_elements_count; j++) {
+			struct wpabuf *entry = bss->conf->vendor_elements[j];
 
-				os_memcpy(eid, wpabuf_head(entry), wpabuf_len(entry));
-				eid += wpabuf_len(entry);
-			}
+			os_memcpy(eid, wpabuf_head(entry), wpabuf_len(entry));
+			eid += wpabuf_len(entry);
+			rem_vendor_elem_size -= wpabuf_len(entry);
 		}
+		conf->available_vendor_elem_size = rem_vendor_elem_size;
 
 		/*
 		 * Non-inheritance Element

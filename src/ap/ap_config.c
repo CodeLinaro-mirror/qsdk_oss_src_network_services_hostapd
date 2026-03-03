@@ -27,6 +27,7 @@
 #ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/cmn.h"
 #endif /* CONFIG_QCN_EXTN */
+#include "ieee802_11.h"
 
 static void hostapd_config_free_vlan(struct hostapd_bss_config *bss)
 {
@@ -258,6 +259,9 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 #ifdef CONFIG_IEEE80211BN
 	bss->dps_assist = DRIVER_DEFINED;
 #endif /* CONFIG_IEEE80211BN */
+
+	/* This max size includes wmm and user configured vendor elements */
+	bss->available_vendor_elem_size = MBSSID_NON_TX_DEF_VENDOR_ELEM_SIZE;
 }
 
 #ifdef CONFIG_IEEE80211BE
