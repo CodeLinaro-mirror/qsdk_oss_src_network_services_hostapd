@@ -2904,6 +2904,7 @@ hostapd_set_no_ir_state(struct hostapd_iface *iface)
 	}
 
 	hostapd_cleanup_iface_partial(iface);
+	hostapd_refresh_other_iface_beacons(iface);
 }
 
 /**
