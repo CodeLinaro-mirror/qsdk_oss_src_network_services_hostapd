@@ -9911,9 +9911,12 @@ static int hostapd_handle_vendor_elements_remove(struct hostapd_bss_config *conf
 	return 0;
 }
 
-static int hostapd_handle_vendor_elements_add(struct hostapd_bss_config *conf, struct wpabuf *buf,
+static int hostapd_handle_vendor_elements_add(struct hostapd_data *hapd,
+					      struct hostapd_bss_config *conf,
+					      struct wpabuf *buf,
 					      bool is_bcn_update_needed)
 {
+	struct hostapd_data *tx_hapd;
 	struct wpabuf *b;
 	const u8 *data;
 	size_t pos = 0, total;
@@ -9924,6 +9927,20 @@ static int hostapd_handle_vendor_elements_add(struct hostapd_bss_config *conf, s
 		return -1;
 	}
 
+	data = wpabuf_head_u8(buf);
+	total = wpabuf_len(buf);
+
+	if (hapd) {
+		tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
+		if (tx_hapd && (tx_hapd != hapd) &&
+		    (total > conf->available_vendor_elem_size)) {
+			wpa_printf(MSG_ERROR,
+				   "Vendor element size(%zu) exceeds available space(%zu) ",
+				   total, conf->available_vendor_elem_size);
+			return -1;
+		}
+	}
+
 	/*
 	 * Skip vendor element validation when elements are added via
 	 * the hostapd configuration file.
@@ -9931,12 +9948,9 @@ static int hostapd_handle_vendor_elements_add(struct hostapd_bss_config *conf, s
 	 * command.
 	 */
 	if (is_bcn_update_needed && !hostapd_validate_vendor_elements(conf, buf)) {
-		wpa_printf(MSG_ERROR, "Vendor elements add failed: length mismatch");
+		wpa_printf(MSG_ERROR, "Vendor elements add: Validation failed");
 		return -1;
 	}
-
-	data = wpabuf_head_u8(buf);
-	total = wpabuf_len(buf);
 
 	while (pos + IEEE80211_ELEM_HEADER_LEN < total) {
 		size_t ie_total_len = data[pos + 1]  + IEEE80211_ELEM_HEADER_LEN;
@@ -10014,7 +10028,7 @@ int hostapd_handle_vendor_elements_update(struct hostapd_data *hapd,
 	}
 
 	if (os_strcmp(cmd, "vendor_elements_add") == 0) {
-		ret = hostapd_handle_vendor_elements_add(conf, buf, is_bcn_update_needed);
+		ret = hostapd_handle_vendor_elements_add(hapd, conf, buf, is_bcn_update_needed);
 		if (ret) {
 			wpa_printf(MSG_ERROR, "Failed to add vendor elements");
 			wpabuf_free(buf);
@@ -10042,7 +10056,7 @@ int hostapd_handle_vendor_elements_update(struct hostapd_data *hapd,
 					wpa_printf(MSG_ERROR,
 						   "Rollback: failed to remove vendor elements");
 			} else if (os_strcmp(cmd, "vendor_elements_remove") == 0) {
-				if (hostapd_handle_vendor_elements_add(conf, buf, is_bcn_update_needed) < 0)
+				if (hostapd_handle_vendor_elements_add(hapd, conf, buf, is_bcn_update_needed) < 0)
 					wpa_printf(MSG_ERROR,
 						   "Rollback: failed to add vendor elements");
 			}

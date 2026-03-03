@@ -753,6 +753,7 @@ struct hostapd_bss_config {
 	struct wpabuf *vendor_elements[MAX_VENDOR_ELEM_ALLOWED];
 	size_t vendor_elements_count;
 	size_t vendor_elements_len;
+	size_t available_vendor_elem_size;
 	struct wpabuf *assocresp_elements;
 
 	unsigned int anti_clogging_threshold;

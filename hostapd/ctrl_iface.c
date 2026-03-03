@@ -2077,6 +2077,7 @@ eht_generic_rollback:
 
 static int hostapd_get_vendor_elements(struct hostapd_data *hapd, char *buf, size_t buflen)
 {
+	struct hostapd_data *tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
 	char *pos = buf, *end = buf + buflen;
 	size_t count, i;
 	int ret;
@@ -2094,6 +2095,15 @@ static int hostapd_get_vendor_elements(struct hostapd_data *hapd, char *buf, siz
 			return pos - buf;
 		pos += ret;
 	}
+
+	if (hapd != tx_hapd) {
+		ret = os_snprintf(pos, end - pos, "Available vendor elements size: %zu\n",
+				  hapd->conf->available_vendor_elem_size);
+		if (os_snprintf_error(end - pos, ret))
+			return pos - buf;
+		pos += ret;
+	}
+
 	return pos - buf;
 }
 
