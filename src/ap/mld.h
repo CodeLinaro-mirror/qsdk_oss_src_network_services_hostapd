@@ -44,6 +44,7 @@ struct mld_peer_epcs_info {
 
 struct mld_link_info {
 	u8 valid:1;
+	u8 rejected:1;
 	u8 nstr_bitmap_len:2;
 	u8 local_addr[ETH_ALEN];
 	u8 peer_addr[ETH_ALEN];

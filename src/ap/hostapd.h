@@ -950,6 +950,9 @@ struct hostapd_iface {
 	u64 drv_flags2;
 	unsigned int drv_rrm_flags;
 
+	/* Maximum number of stations supported by driver (AP mode) */
+	unsigned int drv_max_stations;
+
 	/*
 	 * A bitmap of supported protocols for probe response offload. See
 	 * struct wpa_driver_capa in driver.h
