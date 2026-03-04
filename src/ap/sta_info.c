@@ -292,7 +292,12 @@ void ap_free_unadded_link_sta(struct hostapd_data *hapd, struct sta_info *sta)
 
 		rsn_preauth_free_station(phapd, psta);
 
-		eloop_cancel_timeout(ap_handle_timer, phapd, sta);
+		eloop_cancel_timeout(ap_handle_timer, phapd, psta);
+		eloop_cancel_timeout(ap_handle_session_timer, phapd, psta);
+		eloop_cancel_timeout(ap_handle_session_warning_timer, phapd, psta);
+		ap_sta_clear_disconnect_timeouts(phapd, psta);
+		ap_sta_clear_assoc_timeout(phapd, psta);
+		sae_clear_retransmit_timer(phapd, psta);
 
 		os_free(psta->challenge);
 		wpabuf_free(psta->wps_ie);
