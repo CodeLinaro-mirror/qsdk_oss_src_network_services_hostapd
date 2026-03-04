@@ -9034,6 +9034,24 @@ void wpa_auth_set_ml_info(struct wpa_state_machine *sm,
 }
 
 
+void wpa_auth_set_ml_link_rejected(struct wpa_state_machine *sm, u8 link_id,
+				   bool rejected)
+{
+#ifdef CONFIG_IEEE80211BE
+	struct mld_link *link;
+
+	if (!sm || link_id >= MAX_NUM_MLD_LINKS)
+		return;
+
+	link = &sm->mld_links[link_id];
+	if (!link->valid)
+		return;
+
+	link->rejected = rejected;
+#endif /* CONFIG_IEEE80211BE */
+}
+
+
 bool wpa_auth_sm_known_sta_identification(struct wpa_state_machine *sm,
 					  const u8 *timestamp,
 					  const u8 *mic, size_t mic_len)

@@ -381,6 +381,7 @@ setup_mld:
 		iface->extended_capa_mask = capa.extended_capa_mask;
 		iface->extended_capa_len = capa.extended_capa_len;
 		iface->drv_max_acl_mac_addrs = capa.max_acl_mac_addrs;
+		iface->drv_max_stations = capa.max_stations;
 
 		/*
 		 * Override extended capa with per-interface type (AP), if

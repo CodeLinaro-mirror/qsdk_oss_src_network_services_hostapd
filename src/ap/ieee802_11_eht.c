@@ -1737,9 +1737,15 @@ static int hostapd_mld_validate_assoc_info(struct hostapd_data *hapd,
 
 		other_hapd = hostapd_mld_get_link_bss(hapd, link_id);
 		if (!other_hapd) {
-			wpa_printf(MSG_DEBUG, "MLD: Invalid link ID=%u",
+			/**
+			 * STA requested a link ID that does not exist in this AP MLD.
+			 * Per IEEE 802.11be, do not fail the entire association; instead
+			 * allow association to proceed and reject this link explicitly in
+			 * per-link response handling.
+			 */
+			wpa_printf(MSG_DEBUG, "MLD: Unsupported link ID=%u; will reject per-link",
 				   link_id);
-			return -1;
+			continue;
 		}
 
 #ifdef CONFIG_QCN_EXTN

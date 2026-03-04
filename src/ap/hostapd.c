@@ -703,6 +703,11 @@ int hostapd_check_max_sta(struct hostapd_data *hapd)
 	    hostapd_iface_num_sta(hapd->iface) >= hapd->iconf->max_num_sta)
 		return 1;
 
+	/* Driver capability enforcement: respect drv_max_stations if set */
+	if (hapd->iface->drv_max_stations &&
+	    hostapd_iface_num_sta(hapd->iface) >= hapd->iface->drv_max_stations)
+		return 1;
+
 	return 0;
 }
 
@@ -5682,6 +5687,7 @@ int hostapd_setup_interface(struct hostapd_iface *iface)
 
 	if (!iface->conf)
 		return -1;
+
 	ret = setup_interface(iface);
 	if (ret) {
 		wpa_printf(MSG_ERROR, "%s: Unable to setup interface.",

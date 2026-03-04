@@ -4487,9 +4487,20 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 
 	if (!(wpa_s->valid_links & BIT(link_id)) &&
 	    !(associated_hw_bmap & BIT(hw_idx))) {
-		if (wpa_is_bss_freq_present_in_conf(wpa_s, bss->freq) &&
-		    !wpa_bssid_ignore_is_listed(wpa_s, bss->bssid))
+		/*
+		 * Skip links that were explicitly rejected by the AP MLD in
+		 * the (Re)Association Response.  These are not "missing"
+		 * partner links — the AP refused them, so do not trigger a
+		 * reconnect to chase them.
+		 */
+		if (wpa_s->ap_rejected_links & BIT(link_id)) {
+			wpa_printf(MSG_DEBUG,
+				   "MLO: skip RNR link %u - rejected by AP MLD",
+				   link_id);
+		} else if (wpa_is_bss_freq_present_in_conf(wpa_s, bss->freq) &&
+			   !wpa_bssid_ignore_is_listed(wpa_s, bss->bssid)) {
 			non_assoc_links |= BIT(link_id);
+		}
 	}
 
 	changes = wpa_bss_compare_res(bss, res);
@@ -4566,6 +4577,13 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 					if (wpa_bssid_ignore_is_listed(wpa_s, bssid))
 						goto cont;
 
+					/* Skip AP-rejected links */
+					if (wpa_s->ap_rejected_links & BIT(link_id)) {
+						wpa_printf(MSG_DEBUG,
+							   "MLO: skip RNR partner link %u - rejected by AP MLD",
+							   link_id);
+						goto cont;
+					}
 					if (wpa_is_bss_freq_present_in_conf(wpa_s, partner_freq)) {
 						non_assoc_links |= BIT(link_id);
 					} else {

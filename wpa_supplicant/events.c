@@ -357,6 +357,7 @@ void wpas_reset_mlo_info(struct wpa_supplicant *wpa_s)
 		return;
 
 	wpa_s->valid_links = 0;
+	wpa_s->ap_rejected_links = 0;
 	wpa_s->mlo_assoc_link_id = 0;
 	os_memset(wpa_s->ap_mld_addr, 0, ETH_ALEN);
 	for (i = 0; i < MAX_NUM_MLD_LINKS; i++)
@@ -5267,6 +5268,52 @@ static void wpa_supplicant_event_assoc(struct wpa_supplicant *wpa_s,
 		wpa_supplicant_deauthenticate(wpa_s,
 					      WLAN_REASON_DEAUTH_LEAVING);
 		return;
+	}
+
+	/*
+	 * Parse per-link status from the (Re)Association Response Multi-Link
+	 * element.  On a successful association the TX link is accepted but
+	 * individual partner links may have been rejected by the AP MLD.
+	 * Log each rejected link and verify that valid_links (populated by
+	 * wpa_drv_get_mlo_info above) does not include any rejected link.
+	 */
+	if (wpa_s->valid_links && data && data->assoc_info.resp_ies) {
+		struct ieee802_11_elems elems;
+		struct ml_sta_link_info ml_info[MAX_NUM_MLD_LINKS];
+		unsigned int n_links, j;
+
+		if (ieee802_11_parse_elems(data->assoc_info.resp_ies,
+					   data->assoc_info.resp_ies_len,
+					   &elems, 0) != ParseFailed) {
+			n_links = wpas_ml_parse_assoc(wpa_s, &elems, ml_info);
+			for (j = 1; j < n_links; j++) {
+				u8 lid = ml_info[j].link_id;
+
+				if (ml_info[j].status == WLAN_STATUS_SUCCESS)
+					continue;
+				wpa_msg(wpa_s, MSG_INFO,
+					"MLO: partner link %u rejected by AP MLD "
+					"(status=%u)", lid,
+					ml_info[j].status);
+				/*
+				 * Record the rejection so that post-assoc RNR scan
+				 * logic does not treat this link as a "missing"
+				 * partner link and trigger a spurious reconnect.
+				 */
+				wpa_s->ap_rejected_links |= BIT(lid);
+				/*
+				 * Ensure the rejected link is not in valid_links.
+				 * The driver should already have excluded it, but
+				 * guard against driver inconsistencies.
+				 */
+				if (wpa_s->valid_links & BIT(lid)) {
+					wpa_msg(wpa_s, MSG_WARNING,
+						"MLO: driver kept rejected link %u "
+						"in valid_links, removing", lid);
+					wpa_s->valid_links &= ~BIT(lid);
+				}
+			}
+		}
 	}
 
 	if (ft_completed &&
