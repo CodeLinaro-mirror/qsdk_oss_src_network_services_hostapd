@@ -5667,11 +5667,7 @@ out:
 	 * ml_info in sta's sm. if links added successfully set
 	 * link valid true again in sta's wpa_sm for all valid links.
 	 */
-	origin_sta->wpa_sm->mld_links[hapd->mld_link_id].valid =
-			origin_sta->mld_info.links[hapd->mld_link_id].valid;
-	origin_sta->wpa_sm->mld_links[hapd->mld_link_id].rejected = false;
-	origin_sta->wpa_sm->mld_links[hapd->mld_link_id].wpa_auth = origin_sta->wpa_sm->wpa_auth;
-
+	wpa_auth_set_ml_info_link(origin_sta->wpa_sm,  &origin_sta->mld_info, hapd->mld_link_id);
 	return 0;
 }
 
