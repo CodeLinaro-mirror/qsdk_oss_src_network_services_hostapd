@@ -580,10 +580,27 @@ static uc_value_t *
 uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 {
 	struct hostapd_iface *iface = uc_fn_thisval("hostapd.iface");
+	uc_value_t *info = uc_fn_arg(0);
+#ifdef CONFIG_QCN_EXTN
+	uc_value_t *wpa_state_val;
+	char *wpa_state = NULL;
+#endif
 	int i;
 
-	if (!iface)
+	if (!iface || ucv_type(info) != UC_OBJECT)
 		return NULL;
+
+#ifdef CONFIG_QCN_EXTN
+	wpa_state_val = ucv_object_get(info, "wpa_state", NULL);
+	wpa_state = ucv_string_get(wpa_state_val);
+	if (wpa_state) {
+		os_strlcpy(iface->iface_extn.sta_wpa_state, wpa_state,
+				sizeof(iface->iface_extn.sta_wpa_state));
+	}
+
+	if (iface->conf->conf_extn.ind_rptr)
+		return NULL;
+#endif
 
 	if (iface->state != HAPD_IFACE_ENABLED)
 		uc_hostapd_disable_iface(iface);
@@ -607,6 +624,8 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	bool changed = false;
 #ifdef CONFIG_QCN_EXTN
 	bool is_dfs = false, skip_cac_rep = false;
+	uc_value_t *wpa_state_val;
+	char *wpa_state = NULL;
 #endif
 	uint64_t intval;
 	int i, ret;
@@ -622,6 +641,17 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	if (ucv_type(info) != UC_OBJECT)
 		return NULL;
 
+#ifdef CONFIG_QCN_EXTN
+	wpa_state_val = ucv_object_get(info, "wpa_state", NULL);
+	wpa_state = ucv_string_get(wpa_state_val);
+	if (wpa_state) {
+		os_strlcpy(iface->iface_extn.sta_wpa_state, wpa_state,
+				sizeof(iface->iface_extn.sta_wpa_state));
+	}
+
+	if (iface->conf->conf_extn.ind_rptr)
+		return NULL;
+#endif
 #define UPDATE_VAL(field, name)							\
 	if ((intval = ucv_int64_get(ucv_object_get(info, name, NULL))) &&	\
 		!errno && intval != conf->field) do {				\
@@ -813,8 +843,13 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 	is_dfs = ucv_boolean_get(ucv_object_get(info, "is_dfs", NULL));
 	wpa_state_val = ucv_object_get(info, "wpa_state", NULL);
 	wpa_state = ucv_string_get(wpa_state_val);
+	if (wpa_state) {
+		os_strlcpy(iface->iface_extn.sta_wpa_state, wpa_state,
+				sizeof(iface->iface_extn.sta_wpa_state));
+	}
 
-	ret = uc_hostapd_iface_switch_channel_extn(iface, is_dfs, wpa_state, &csa);
+	ret = uc_hostapd_iface_switch_channel_extn(iface, is_dfs,
+					iface->iface_extn.sta_wpa_state, &csa);
 #else
 	for (i = 0; i < iface->num_bss; i++)
 		ret = hostapd_switch_channel(iface->bss[i], &csa);
