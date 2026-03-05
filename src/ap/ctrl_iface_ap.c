@@ -1520,7 +1520,8 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 			len += ret;
 		}
 
-		if (bss->conf->beacon_rate) {
+		if (bss->conf->rate_type != BEACON_RATE_LEGACY ||
+		    bss->conf->beacon_rate) {
 			const char *br_type;
 			switch (bss->conf->rate_type) {
 			case BEACON_RATE_HT:
