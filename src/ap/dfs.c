@@ -356,6 +356,12 @@ static int dfs_find_channel(struct hostapd_iface *iface,
 			continue;
 		}
 
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_dfs_skip_wradar_chan_extn(iface, mode, chan, i,
+						      n_chans))
+			continue;
+#endif /* CONFIG_QCN_EXTN */
+
 		if (!is_in_chanlist(iface, chan)) {
 			wpa_printf(MSG_DEBUG,
 				   "DFS: channel %d (%d) not in chanlist",
