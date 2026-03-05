@@ -26,6 +26,9 @@
 #include "ap/ieee802_11.h"
 #include "config_file.h"
 
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+#include "../qcn_extns/hostapd_if_plugin.h"
+#endif
 
 #ifndef CONFIG_NO_VLAN
 static int hostapd_config_read_vlan_file(struct hostapd_bss_config *bss,
@@ -5580,6 +5583,11 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else {
 		if (!hostapd_config_fill_extn(conf, bss, buf, pos, line))
 			return 0;
+
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+		if (!hostapd_config_fill_plugin(bss, buf, pos))
+			return 0;
+#endif
 
 		wpa_printf(MSG_ERROR,
 			   "Line %d: unknown configuration item '%s'",

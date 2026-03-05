@@ -83,6 +83,9 @@
 
 #ifdef CONFIG_PROCESS_COORDINATION
 #include "common/proc_coord.h"
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+#include "../qcn_extns/hostapd_if_plugin.h"
+#endif
 #endif
 
 #define HOSTAPD_CLI_DUP_VALUE_MAX_LEN 256
@@ -7815,6 +7818,11 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "DISASSOCIATE ", 13) == 0) {
 		if (hostapd_ctrl_iface_disassociate(hapd, buf + 13))
 			reply_len = -1;
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+	} else if (os_strncmp(buf, "CONFIGURE-PLUGIN ", 17) == 0) {
+		reply_len = hostapd_ctrl_iface_configure_plugin(hapd, buf + 17,
+							       reply, reply_size);
+#endif
 #ifdef CONFIG_TAXONOMY
 	} else if (os_strncmp(buf, "SIGNATURE ", 10) == 0) {
 		reply_len = hostapd_ctrl_iface_signature(hapd, buf + 10,
