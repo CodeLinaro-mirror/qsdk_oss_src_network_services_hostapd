@@ -3,6 +3,7 @@
 
 #include "utils/ucode.h"
 #include "robust_av.h"
+#include "nft.h"
 
 struct hostapd_data;
 #ifdef CONFIG_IEEE80211AX

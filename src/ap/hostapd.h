@@ -1024,6 +1024,7 @@ struct mld_peer_epcs_info {
 	enum peer_epcs_state state;
 	u8 self_gen_dialog_token;
 	bool timer_started;
+	u64 rule_handle;
 };
 
 

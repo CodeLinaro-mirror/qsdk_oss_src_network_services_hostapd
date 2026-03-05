@@ -3431,7 +3431,9 @@ int hostapd_configure_epcs(struct hostapd_data *hapd,
 		rule.mark = (EPCS_QM_ID << 8) | HOSTAPD_QOS_SCS_TAG;
 		rule.nf_family = NFPROTO_NETDEV;
 		memcpy(rule.dmac, sta->addr, ETH_ALEN);
-		hostapd_ucode_config_nft_rule(hapd, &rule, false);
+		rule.handle = sta->mld_info.epcs.rule_handle;
+		sta->mld_info.epcs.rule_handle = 0;
+		hostapd_config_nft_rule(&rule, false);
 		hostapd_drv_rule_config_notify(hapd, sta->addr);
 	}
 
@@ -3463,8 +3465,9 @@ int hostapd_configure_epcs(struct hostapd_data *hapd,
 		rule.valid_flags |= NFT_RULE_PARAM_DMAC;
 		rule.mark = (EPCS_QM_ID << 8) | HOSTAPD_QOS_SCS_TAG;
 		rule.nf_family = NFPROTO_NETDEV;
-		hostapd_ucode_config_nft_rule(hapd, &rule, true);
+		hostapd_config_nft_rule(&rule, true);
 		hostapd_drv_rule_config_notify(hapd, sta->addr);
+		sta->mld_info.epcs.rule_handle = rule.handle;
 	}
 
 	return 0;
