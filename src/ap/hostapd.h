@@ -1390,11 +1390,19 @@ u8 * hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd, u8 *eid);
  * hostapd_remove_bss() - Remove a BSS from the AP interface
  *
  * This function removes the BSS identified by the given index.
+ * If the first BSS is removed while the interface is still in a
+ * pre-beacon state (e.g., ACS, DFS, HT scan, or country update),
+ * the driver context may not yet be fully initialized.
+ * In such cases, the successor BSS (BSS #1) must be minimally
+ * initialized. If this initialization fails, the entire interface
+ * is removed.
  *
  * @iface: Pointer to hostapd_iface
  * @idx: Index of the BSS
  *
  * Return: 0 on successful BSS removal,
+ * 	   1 if the BSS removal results in removing the entire
+ * 	   interface (caller should not use the iface or BSS),
  * 	   -1 on failure.
  */
 int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx);

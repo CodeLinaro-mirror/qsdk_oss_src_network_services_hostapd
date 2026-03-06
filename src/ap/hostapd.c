@@ -6257,7 +6257,10 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 				else {
 					wpa_printf(MSG_ERROR,
 						   "iface is in pre-beacon state & initialization of successor BSS failed. Hence, removing iface");
-					return hostapd_remove_hapd_iface(iface);
+					if (hostapd_remove_hapd_iface(iface) == 0)
+						return 1;
+					else
+						return -1;
 				}
 			}
 #ifdef CONFIG_IEEE80211BE
