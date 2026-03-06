@@ -846,37 +846,36 @@ int wpas_get_op_chan_phy(int freq, const u8 *ies, size_t ies_len,
 	ie = get_ie_ext(ies, ies_len, WLAN_EID_EXT_EHT_OPERATION);
 	if (ie && ie[1] >= 1 + IEEE80211_EHT_OP_MIN_LEN) {
 		struct ieee80211_eht_operation *eht_op;
-		u8 eht_width;
 
 		eht_op = (struct ieee80211_eht_operation *)(ie + 3);
+		if (eht_op->oper_params & EHT_OPER_INFO_PRESENT) {
+			u8 eht_width = eht_op->oper_info.control;
 
-		if (eht_op->oper_params & EHT_OPER_INFO_PRESENT)
-			eht_width = eht_op->oper_info.control;
-		else
-			eht_width = EHT_OPER_CHANNEL_WIDTH_20MHZ;
+			wpa_printf(MSG_DEBUG, "EHT operation width: %d", eht_width);
 
-		wpa_printf(MSG_DEBUG, "EHT operation width: %d", eht_width);
-		switch (eht_width) {
-		case EHT_OPER_CHANNEL_WIDTH_20MHZ:
-			vht = CONF_OPER_CHWIDTH_USE_HT;
-			break;
-		case EHT_OPER_CHANNEL_WIDTH_40MHZ:
-			sec_chan = 1;
-			vht = CONF_OPER_CHWIDTH_USE_HT;
-			break;
-		case EHT_OPER_CHANNEL_WIDTH_80MHZ:
-			vht = CONF_OPER_CHWIDTH_80MHZ;
-			break;
-		case EHT_OPER_CHANNEL_WIDTH_160MHZ:
-			vht = CONF_OPER_CHWIDTH_160MHZ;
-			break;
-		case EHT_OPER_CHANNEL_WIDTH_320MHZ:
-			vht = CONF_OPER_CHWIDTH_320MHZ;
-			break;
-		default:
-			vht = CONF_OPER_CHWIDTH_USE_HT;
-			break;
+			switch (eht_width) {
+			case EHT_OPER_CHANNEL_WIDTH_20MHZ:
+				vht = CONF_OPER_CHWIDTH_USE_HT;
+				break;
+			case EHT_OPER_CHANNEL_WIDTH_40MHZ:
+				sec_chan = 1;
+				vht = CONF_OPER_CHWIDTH_USE_HT;
+				break;
+			case EHT_OPER_CHANNEL_WIDTH_80MHZ:
+				vht = CONF_OPER_CHWIDTH_80MHZ;
+				break;
+			case EHT_OPER_CHANNEL_WIDTH_160MHZ:
+				vht = CONF_OPER_CHWIDTH_160MHZ;
+				break;
+			case EHT_OPER_CHANNEL_WIDTH_320MHZ:
+				vht = CONF_OPER_CHWIDTH_320MHZ;
+				break;
+			default:
+				vht = CONF_OPER_CHWIDTH_USE_HT;
+				break;
+			}
 		}
+
 		wpa_printf(MSG_DEBUG, "vht from EHT operation info: %d", vht);
 	}
 
