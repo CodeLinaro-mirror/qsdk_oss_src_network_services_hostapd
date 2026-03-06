@@ -8427,6 +8427,51 @@ void wpa_auth_sta_radius_psk_resp(struct wpa_state_machine *sm, bool success)
 }
 
 
+void wpa_auth_set_ml_info_link(struct wpa_state_machine *sm,
+			       struct mld_info *info, u8 link_id)
+{
+#ifdef CONFIG_IEEE80211BE
+	struct mld_link_info *link;
+	struct mld_link *sm_link;
+	struct wpa_get_link_auth_ctx ctx;
+
+	if (!info || !sm || !sm->wpa_auth)
+		return;
+
+	if (link_id >= MAX_NUM_MLD_LINKS) {
+		wpa_printf(MSG_ERROR, "Invalid link ID %u", link_id);
+		return;
+	}
+
+	link = &info->links[link_id];
+	sm_link = &sm->mld_links[link_id];
+
+	sm_link->valid = link->valid;
+	sm_link->rejected = false;
+	if (!link->valid)
+		return;
+
+	os_memcpy(sm_link->peer_addr, link->peer_addr, ETH_ALEN);
+	os_memcpy(sm_link->own_addr, link->local_addr, ETH_ALEN);
+
+	ctx.addr = link->local_addr;
+	ctx.mld_addr = NULL;
+	ctx.link_id = -1;
+	ctx.wpa_auth = NULL;
+	wpa_auth_for_each_auth(sm->wpa_auth,
+			       wpa_get_link_sta_auth, &ctx);
+	if (ctx.wpa_auth)
+		sm_link->wpa_auth = ctx.wpa_auth;
+
+	if (!sm_link->wpa_auth)
+		wpa_printf(MSG_ERROR,
+			   "Unable to find authenticator object for ML STA "
+			   MACSTR " on link id %d with local addr " MACSTR, MAC2STR(sm->addr),
+			   link_id, MAC2STR(link->local_addr));
+#endif /* CONFIG_IEEE80211BE */
+}
+
+
 void wpa_auth_set_ml_info(struct wpa_state_machine *sm,
 			  u8 mld_assoc_link_id, struct mld_info *info)
 {
@@ -8482,7 +8527,7 @@ void wpa_auth_set_ml_info(struct wpa_state_machine *sm,
 			wpa_printf(MSG_ERROR,
 				   "Unable to find authenticator object for ML STA "
 				   MACSTR " on link id %d",
-				   MAC2STR(sm->wpa_auth->mld_addr),
+				   MAC2STR(sm->addr),
 				   link_id);
 	}
 #endif /* CONFIG_IEEE80211BE */

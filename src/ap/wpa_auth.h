@@ -732,6 +732,8 @@ void wpa_auth_set_ocv_override_freq(struct wpa_authenticator *wpa_auth,
 
 void wpa_auth_sta_radius_psk_resp(struct wpa_state_machine *sm, bool success);
 
+void wpa_auth_set_ml_info_link(struct wpa_state_machine *sm,
+			       struct mld_info *info, u8 link_id);
 void wpa_auth_set_ml_info(struct wpa_state_machine *sm,
 			  u8 mld_assoc_link_id, struct mld_info *info);
 void wpa_auth_reset_ml_link_info(struct wpa_state_machine *sm, u8 mld_assoc_link_id);
