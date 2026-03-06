@@ -5846,6 +5846,9 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 			if (bss->mld_link_id != i)
 				continue;
 
+			if(!bss->started)
+				continue;
+
 			link_bss_found = true;
 			break;
 		}
