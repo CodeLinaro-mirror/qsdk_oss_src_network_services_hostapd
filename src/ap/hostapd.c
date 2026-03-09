@@ -2269,6 +2269,10 @@ int hostapd_setup_bss(struct hostapd_data *hapd, bool first,
 				addr = hapd->conf->mld_addr;
 			else if (hapd->iconf->use_driver_iface_addr)
 				addr = NULL;
+#ifdef CONFIG_QCN_EXTN
+			else if (hapd->iconf->use_driver_vendor_addr)
+				addr = NULL;
+#endif /* CONFIG_QCN_EXTN */
 			else
 				addr = hapd->own_addr;
 		}
@@ -2318,8 +2322,8 @@ int hostapd_setup_bss(struct hostapd_data *hapd, bool first,
 setup_mld:
 	if (hapd->conf->mld_ap && !first) {
 		wpa_printf(MSG_DEBUG,
-			   "MLD: Set link_id=%u, mld_addr=" MACSTR
-			   ", own_addr=" MACSTR,
+			   "MLD: Set %s link_id=%u, mld_addr=" MACSTR
+			   ", own_addr=" MACSTR, hapd->conf->iface,
 			   hapd->mld_link_id, MAC2STR(hapd->mld->mld_addr),
 			   MAC2STR(hapd->own_addr));
 
@@ -6428,8 +6432,9 @@ static int hostapd_prepare_successor_pre_beacon(struct hostapd_iface *iface)
 			  ETH_ALEN);
 setup_mld:
 		wpa_printf(MSG_DEBUG,
-			   "MLD: Set link_id=%u, mld_addr=" MACSTR
-			   ", own_addr=" MACSTR, bss_succ->mld_link_id,
+			   "MLD: Set %s link_id=%u, mld_addr=" MACSTR
+			   ", own_addr=" MACSTR, bss_succ->conf->iface,
+			   bss_succ->mld_link_id,
 			   MAC2STR(bss_succ->mld->mld_addr),
 			   MAC2STR(bss_succ->own_addr));
 		if (hostapd_drv_link_add(bss_succ, bss_succ->mld_link_id,
