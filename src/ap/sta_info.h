@@ -82,6 +82,8 @@ struct hostapd_mscs_ctxt;
 #define WLAN_VHT_EACH_NSS 2
 #define WLAN_VHT_MCS 2
 
+#define WLAN_ASSOC_REQ_MIN_INTERVAL_MS 150
+
 struct hostapd_data;
 
 struct mbo_non_pref_chan_info {
@@ -323,6 +325,9 @@ struct sta_info {
 	/* valid only if session_timeout_set == 1 */
 	struct os_reltime session_timeout;
 
+	/* Timestamp of last received Association Request from this STA */
+	struct os_reltime last_assoc_req_rx_time;
+
 	/* Last Authentication/(Re)Association Request/Action frame sequence
 	 * control */
 	u16 last_seq_ctrl;
@@ -560,6 +565,12 @@ bool ap_sta_set_authorized(struct hostapd_data *hapd,
 static inline int ap_sta_is_authorized(struct sta_info *sta)
 {
 	return sta->flags & WLAN_STA_AUTHORIZED;
+}
+
+static inline void ap_sta_reset_assoc_req_rx_times(struct sta_info *sta)
+{
+	os_memset(&sta->last_assoc_req_rx_time, 0,
+		  sizeof(sta->last_assoc_req_rx_time));
 }
 
 void ap_sta_deauth_cb(struct hostapd_data *hapd, struct sta_info *sta);
