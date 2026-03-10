@@ -7084,8 +7084,6 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 	int ret;
 	enum oper_chan_width chanwidth;
 	u8 chan, old_reg_6ghz_power_mode;
-	u8 oper_centr_freq0_idx = 0;
-	u8 oper_centr_freq1_idx = 0;
 	int sec_channel_offset = settings->freq_params.sec_channel_offset;
 
 	os_memset(&old_freq, 0, sizeof(old_freq));
@@ -7093,30 +7091,52 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 		return -1;
 
 	chanwidth = hostapd_chan_width_from_freq_params(&settings->freq_params);
-
-	if (iface->radar_bit_pattern) {
+#ifdef CONFIG_IEEE80211BE
+	if (hostapd_is_eht_enabled(hapd)) {
 		enum oper_chan_width chan_op_bw = chanwidth;
+		u8 oper_centr_freq0_idx = 0, oper_centr_freq1_idx = 0, pri_chan = 0;
 
 		ieee80211_freq_to_chan(settings->freq_params.center_freq1,
 				       &oper_centr_freq0_idx);
 		ieee80211_freq_to_chan(settings->freq_params.center_freq2,
 				       &oper_centr_freq1_idx);
+		ieee80211_freq_to_chan(settings->freq_params.freq,
+				       &pri_chan);
 
 		punct_update_legacy_bw(settings->freq_params.punct_bitmap,
-				       iface->conf->channel,
+				       pri_chan,
 				       &chan_op_bw,
 				       &oper_centr_freq0_idx,
 				       &oper_centr_freq1_idx);
 
-		if (oper_centr_freq0_idx == 0)
+		/* Downgrade the EHT 320 MHz BW to legacy 160 MHz BW and
+		 * calculate the correspoding 160 MHz center freq for later
+		 * ECSA opclass calculation which needs legacy BW and
+		 * secondary channel offset.
+		 */
+		if (chan_op_bw == CONF_OPER_CHWIDTH_320MHZ) {
+			chan_op_bw = CONF_OPER_CHWIDTH_160MHZ;
+
+			if (pri_chan < oper_centr_freq0_idx)
+				oper_centr_freq0_idx -= 16;
+			else
+				oper_centr_freq0_idx += 16;
+		}
+
+		chanwidth = chan_op_bw;
+		if (oper_centr_freq0_idx == 0 || oper_centr_freq0_idx == pri_chan)
 			sec_channel_offset = 0;
-		else if (oper_centr_freq0_idx > iface->conf->channel)
+		else if (oper_centr_freq0_idx > pri_chan)
 			sec_channel_offset = 1;
 		else
 			sec_channel_offset = -1;
 
-		chanwidth = chan_op_bw;
+		wpa_printf(MSG_DEBUG,
+			   "Updated Legacy BW %d chan1 %d chan2 %d sec_chan %d",
+			   chan_op_bw, oper_centr_freq0_idx, oper_centr_freq1_idx,
+			   sec_channel_offset);
 	}
+#endif /* CONFIG_IEEE80211BE */
 
 	if (ieee80211_freq_to_channel_ext(
 		    settings->freq_params.freq,
@@ -7158,39 +7178,6 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 
 	if (ret)
 		return ret;
-
-	if (iface->radar_bit_pattern) {
-		settings->freq_params.center_freq1 = ieee80211_chan_to_freq(NULL,
-									    hapd->iface->cs_oper_class,
-									    oper_centr_freq0_idx);
-		if (settings->freq_params.center_freq1 == -1)
-			settings->freq_params.center_freq1 = 0;
-		settings->freq_params.center_freq2 = ieee80211_chan_to_freq(NULL,
-									    hapd->iface->cs_oper_class,
-									    oper_centr_freq1_idx);
-		if (settings->freq_params.center_freq2 == -1)
-			settings->freq_params.center_freq2 = 0;
-
-		settings->freq_params.sec_channel_offset = sec_channel_offset;
-
-		if (chanwidth == CONF_OPER_CHWIDTH_80MHZ)
-			settings->freq_params.bandwidth = 80;
-		else if (chanwidth == CONF_OPER_CHWIDTH_160MHZ ||
-			 chanwidth == CONF_OPER_CHWIDTH_80P80MHZ)
-			settings->freq_params.bandwidth = 160;
-		else if (chanwidth == CONF_OPER_CHWIDTH_320MHZ)
-			settings->freq_params.bandwidth = 320;
-		else if (settings->freq_params.sec_channel_offset)
-			settings->freq_params.bandwidth = 40;
-		else
-			settings->freq_params.bandwidth = 20;
-		wpa_printf(MSG_DEBUG,
-			   "Fill csa beacon with updated bw:%d cf1:%d cf2:%d oper class:%d ch:%d",
-			   chanwidth,
-			   settings->freq_params.center_freq1,
-			   settings->freq_params.center_freq2,
-			   hapd->iface->cs_oper_class, chan);
-	}
 
 	/* set channel switch parameters for csa ie */
 	hapd->cs_freq_params = settings->freq_params;
@@ -7271,8 +7258,6 @@ int hostapd_switch_channel(struct hostapd_data *hapd,
 			   struct csa_settings *settings)
 {
 	int ret;
-	int oper_centr_freq0_idx;
-	int cur_bandwidth;
 	struct hostapd_data *link_bss;
 
 	if (!(hapd->iface->drv_flags & WPA_DRIVER_FLAGS_AP_CSA)) {
@@ -7283,8 +7268,6 @@ int hostapd_switch_channel(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 	hostapd_uplink_cancel_disconnect_timeout_extn(hapd->iface);
 #endif /* CONFIG_QCN_EXTN */
-	cur_bandwidth = settings->freq_params.bandwidth;
-	oper_centr_freq0_idx = hostapd_get_oper_centr_freq_seg0_idx(hapd->iconf);
 
 	ret = hostapd_fill_csa_settings(hapd, settings);
 	if (ret)
@@ -7293,8 +7276,6 @@ int hostapd_switch_channel(struct hostapd_data *hapd,
 	if (hapd->iface->radar_bit_pattern) {
 		hapd->iface->conf->punct_bitmap =  hapd->iface->conf->punct_bitmap |
 						   hapd->iface->radar_bit_pattern;
-		settings->freq_params.bandwidth = cur_bandwidth;
-		settings->freq_params.center_freq1 = GET_FREQ_CHAN_5G(oper_centr_freq0_idx);
 	}
 
 	ret = hostapd_drv_switch_channel(hapd, settings);
