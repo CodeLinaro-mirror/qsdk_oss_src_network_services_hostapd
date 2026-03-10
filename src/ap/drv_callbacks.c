@@ -2496,7 +2496,15 @@ static void hostapd_event_iface_unavailable(struct hostapd_data *hapd)
 static void hostapd_event_dfs_radar_detected(struct hostapd_data *hapd,
 					     struct dfs_event *radar)
 {
+
 	wpa_printf(MSG_DEBUG, "DFS radar detected on %d MHz", radar->freq);
+	if (!hostapd_is_freq_in_current_hw_info(hapd->iface, radar->freq)) {
+		wpa_printf(MSG_INFO,
+			   "Ignoring since freq %d is out of own range",
+			   radar->freq);
+		return;
+	}
+
 	hostapd_dfs_radar_detected(hapd->iface, radar->freq, radar->ht_enabled,
 				   radar->chan_offset, radar->chan_width,
 				   radar->cf1, radar->cf2, radar->radar_bitmap,
