@@ -413,8 +413,8 @@ int smd_neighbor_update_init(struct hostapd_data *hapd)
 		return -1;
 
 	ctx->hapd = hapd;
-	ctx->expire_sec = SMD_NEIGHBOR_ENTRY_EXPIRE_SEC;
-	ctx->pull_period_sec = SMD_NEIGHBOR_PULL_PERIOD_SEC;
+	ctx->expire_sec = hapd->conf->smd_neighbor_expiry_time;
+	ctx->pull_period_sec = hapd->conf->smd_neighbor_pull_interval;
 	ctx->pull_retry_max = SMD_NEIGHBOR_PULL_RETRY_MAX;
 	dl_list_init(&ctx->entries);
 

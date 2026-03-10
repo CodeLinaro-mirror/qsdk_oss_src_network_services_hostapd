@@ -28,6 +28,7 @@
 #include "../qcn_extns/cmn.h"
 #endif /* CONFIG_QCN_EXTN */
 #include "ieee802_11.h"
+#include "uhr_neighbor_update.h"
 
 #define RADIUS_CLIENT_MAX_RETRIES 10
 #define RADIUS_CLIENT_MAX_WAIT	120
@@ -116,6 +117,14 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->assoc_sa_query_max_timeout = 1000;
 	bss->assoc_sa_query_retry_timeout = 201;
 	bss->group_mgmt_cipher = WPA_CIPHER_AES_128_CMAC;
+
+#ifdef CONFIG_IEEE80211BN
+	/* SMD Neighbor Update defaults */
+	bss->smd_neighbor_update_enabled = 0;
+	bss->smd_neighbor_expiry_time = SMD_NEIGHBOR_ENTRY_EXPIRE_SEC;
+	bss->smd_neighbor_pull_interval = SMD_NEIGHBOR_PULL_PERIOD_SEC;
+#endif
+
 #ifdef EAP_SERVER_FAST
 	 /* both anonymous and authenticated provisioning */
 	bss->eap_fast_prov = 3;

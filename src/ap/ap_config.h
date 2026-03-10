@@ -1384,6 +1384,11 @@ struct hostapd_bss_config {
 
        /* SMD partner APs for roaming */
        struct smd_partner_entry *smd_partners;
+
+	/* SMD Neighbor Update */
+	int smd_neighbor_update_enabled;
+	int smd_neighbor_expiry_time;    /* Entry expiry time in seconds */
+	int smd_neighbor_pull_interval;  /* Pull request interval in seconds */
 #endif /* CONFIG_IEEE80211BN */
 
 	/* is_cmn_param - flag to identify MBSSID common parameter */
