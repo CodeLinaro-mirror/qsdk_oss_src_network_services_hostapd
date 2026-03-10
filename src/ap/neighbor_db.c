@@ -335,6 +335,76 @@ static void hostapd_neighbor_add_op_capab_subelements(struct hostapd_data *hapd,
 	}
 }
 
+#ifdef CONFIG_IEEE80211BN
+/**
+ * hostapd_neighbor_add_11bn_subelements - Add 11BN mandatory subelements
+ * @hapd: hostapd data
+ * @nr: Neighbor report buffer
+ *
+ * Adds mandatory neighbor report subelements as required by IEEE 802.11bn
+ */
+static void hostapd_neighbor_add_11bn_subelements(struct hostapd_data *hapd,
+						  struct wpabuf *nr)
+{
+	u8 buf[256];
+	u8 *pos, *end;
+	size_t len;
+
+	if (!hapd->iconf->ieee80211bn)
+		return;
+
+	/* BSS Load */
+	if (hapd->conf->bss_load_update_period) {
+		wpabuf_put_u8(nr, WNM_NEIGHBOR_BSS_LOAD);
+		wpabuf_put_u8(nr, 5);
+		wpabuf_put_le16(nr, hapd->num_sta);
+		wpabuf_put_u8(nr, hapd->iface->channel_utilization);
+		wpabuf_put_le16(nr, 0); /* Available Admission Capacity */
+	}
+
+	/* UHR Operation */
+	pos = buf;
+	end = hostapd_eid_uhr_operation(hapd, pos, false);
+	len = end - pos;
+	if (len > 3) { /* EID + Len + ExtID */
+		wpabuf_put_u8(nr, WNM_NEIGHBOR_UHR_OPER);
+		wpabuf_put_u8(nr, len - 3);
+		wpabuf_put_data(nr, pos + 3, len - 3);
+	}
+
+	/* UHR Capabilities */
+	pos = buf;
+	end = hostapd_eid_uhr_capab(hapd, pos, IEEE80211_MODE_AP);
+	len = end - pos;
+	if (len > 3) { /* EID + Len + ExtID */
+		wpabuf_put_u8(nr, WNM_NEIGHBOR_UHR_CAPAB);
+		wpabuf_put_u8(nr, len - 3);
+		wpabuf_put_data(nr, pos + 3, len - 3);
+	}
+
+	/* Supported Rates */
+	pos = buf;
+	end = hostapd_eid_supp_rates(hapd, pos);
+	len = end - pos;
+	if (len > 2) { /* EID + Len */
+		wpabuf_put_u8(nr, WNM_NEIGHBOR_SUPP_RATES);
+		wpabuf_put_u8(nr, len - 2);
+		wpabuf_put_data(nr, pos + 2, len - 2);
+	}
+
+	/* SMD Information TBD */
+
+	/* Basic Multi-Link (MLD only) */
+	if (hostapd_is_multiple_link_mld(hapd)) {
+		wpabuf_put_u8(nr, WNM_NEIGHBOR_MULTI_LINK);
+		wpabuf_put_u8(nr, 9);
+		wpabuf_put_le16(nr, MULTI_LINK_CONTROL_TYPE_BASIC);
+		wpabuf_put_u8(nr, 6); /* Common Info Length */
+		wpabuf_put_data(nr, hapd->mld->mld_addr, ETH_ALEN);
+	}
+}
+#endif /* CONFIG_IEEE80211BN */
+
 void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
 {
 #ifdef NEED_AP_MLME
@@ -383,6 +453,11 @@ void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
 		bssid_info |= NEI_REP_BSSID_INFO_HE;
 	if (eht)
 		bssid_info |= NEI_REP_BSSID_INFO_EHT;
+#ifdef CONFIG_IEEE80211BN
+	/* Set UHR bit if this is a UHR AP */
+	if (hapd->iconf->ieee80211bn)
+		bssid_info |= NEI_REP_BSSID_INFO_UHR;
+#endif /* CONFIG_IEEE80211BN */
 	/* TODO: Set NEI_REP_BSSID_INFO_MOBILITY_DOMAIN if MDE is set */
 
 	hostapd_get_oper_chan_info_of_bss(hapd, &oper_chwidth,
@@ -419,7 +494,7 @@ void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
 	 * Neighbor Report element size = BSSID + BSSID info + op_class + chan +
 	 * phy type + wide bandwidth channel subelement.
 	 */
-	nr = wpabuf_alloc(ETH_ALEN + 4 + 1 + 1 + 1 + 5);
+	nr = wpabuf_alloc(ETH_ALEN + 4 + 1 + 1 + 1 + 5 + 512);
 	if (!nr)
 		return;
 
@@ -441,6 +516,9 @@ void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
 	wpabuf_put_u8(nr, center_freq2_idx);
 
 	hostapd_neighbor_add_op_capab_subelements(hapd, nr, ht, vht, he, eht);
+#ifdef CONFIG_IEEE80211BN
+	hostapd_neighbor_add_11bn_subelements(hapd, nr);
+#endif /* CONFIG_IEEE80211BN */
 
 	hostapd_neighbor_set(hapd, hapd->own_addr, &ssid, nr, hapd->iconf->lci,
 			     hapd->iconf->civic, hapd->iconf->stationary_ap, 0);

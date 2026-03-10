@@ -2220,8 +2220,14 @@ enum bss_trans_mgmt_reason {
 #define WNM_NEIGHBOR_BSS_TERMINATION_DURATION    4
 #define WNM_NEIGHBOR_BEARING                     5
 #define WNM_NEIGHBOR_WIDE_BW_CHAN                6
+#define WNM_NEIGHBOR_BSS_LOAD                   11
+#define WNM_NEIGHBOR_UHR_CAPAB                  13
+#define WNM_NEIGHBOR_UHR_OPER                   14
+#define WNM_NEIGHBOR_SMD_INFO                   15
+#define WNM_NEIGHBOR_TX_POWER_INDICATION        16
 #define WNM_NEIGHBOR_MEASUREMENT_REPORT         39
 #define WNM_NEIGHBOR_HT_CAPAB                   45
+#define WNM_NEIGHBOR_SUPP_RATES                 54
 #define WNM_NEIGHBOR_HT_OPER                    61
 #define WNM_NEIGHBOR_SEC_CHAN_OFFSET            62
 #define WNM_NEIGHBOR_MEASUREMENT_PILOT          66
@@ -2863,6 +2869,8 @@ enum phy_type {
 #define NEI_REP_BSSID_INFO_COLOCATED_WITH_6GHZ BIT(20)
 #define NEI_REP_BSSID_INFO_EHT BIT(21)
 #define NEI_REP_BSSID_INFO_DMG_POSITIONING BIT(22)
+#define NEI_REP_BSSID_INFO_SAME_SMD BIT(23)
+#define NEI_REP_BSSID_INFO_UHR BIT(24)
 
 /*
  * IEEE Std 802.11-2020, Table 9-175 - HT/VHT Operation Information
