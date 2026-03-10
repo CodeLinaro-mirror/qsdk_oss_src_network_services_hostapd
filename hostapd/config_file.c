@@ -6456,6 +6456,12 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->dps_assist = val;
+	} else if (os_strcmp(buf, "smd_neighbor_update") == 0) {
+		bss->smd_neighbor_update_enabled = atoi(pos);
+	} else if (os_strcmp(buf, "smd_neighbor_expiry_time") == 0) {
+		bss->smd_neighbor_expiry_time = atoi(pos);
+	} else if (os_strcmp(buf, "smd_neighbor_pull_interval") == 0) {
+		bss->smd_neighbor_pull_interval = atoi(pos);
 	} else if (os_strcmp(buf, "uhr_adv_notification_interval") == 0) {
 		int val = atoi(pos);
 

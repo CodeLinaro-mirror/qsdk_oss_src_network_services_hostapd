@@ -28,6 +28,7 @@
 #include "../qcn_extns/cmn.h"
 #endif /* CONFIG_QCN_EXTN */
 #include "ieee802_11.h"
+#include "uhr_neighbor_update.h"
 
 static void hostapd_config_free_vlan(struct hostapd_bss_config *bss)
 {
@@ -268,6 +269,11 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->dps_assist = DRIVER_DEFINED;
 
 	/* UHR intervals are represented as TUs */
+	/* SMD Neighbor Update defaults */
+	bss->smd_neighbor_update_enabled = 0;
+	bss->smd_neighbor_expiry_time = SMD_NEIGHBOR_ENTRY_EXPIRE_SEC;
+	bss->smd_neighbor_pull_interval = SMD_NEIGHBOR_PULL_PERIOD_SEC;
+
 	bss->uhr_params_update.adv_notification_interval = 7;
 	bss->uhr_params_update.update_in_tim_interval = 10;
 #endif /* CONFIG_IEEE80211BN */
