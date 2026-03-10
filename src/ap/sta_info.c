@@ -2151,6 +2151,8 @@ const u8 * ap_sta_wpa_get_dpp_pkhash(struct hostapd_data *hapd,
 bool ap_sta_set_authorized_flag(struct hostapd_data *hapd, struct sta_info *sta,
 				int authorized)
 {
+	ap_sta_reset_assoc_req_rx_times(sta);
+
 	if (!!authorized == !!(sta->flags & WLAN_STA_AUTHORIZED))
 		return false;
 
@@ -2379,6 +2381,7 @@ void ap_sta_disconnect(struct hostapd_data *hapd, struct sta_info *sta,
 	    hapd->iface->current_mode->mode == HOSTAPD_MODE_IEEE80211AD) {
 		/* Deauthentication is not used in DMG/IEEE 802.11ad;
 		 * disassociate the STA instead. */
+		ap_sta_reset_assoc_req_rx_times(sta);
 		ap_sta_disassociate_common(hapd, sta, reason);
 		return;
 	}
