@@ -21,6 +21,10 @@ struct uhr_oui_ctx;
 #define UHR_IAP_SUFFIX_REQUEST   0x06
 #define UHR_IAP_SUFFIX_RESPONSE  0x07
 
+/* SMD Neighbor Update OUI Suffixes */
+#define UHR_IAP_SUFFIX_NEIGHBOR_UPDATE 0x08
+#define UHR_IAP_SUFFIX_NEIGHBOR_FETCH  0x09
+
 /* ETH_P_OUI value */
 #ifndef ETH_P_OUI
 #define ETH_P_OUI 0x88B7
