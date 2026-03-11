@@ -4637,6 +4637,9 @@ enum qca_wlan_vendor_attr_config {
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS = 143,
 
+	/* 8-bit unsigned value used to configure VAP submodes. */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE = 144,
+
 	/* 8-bit unsigned value, used in AP mode only, to indicate whether
 	 * AP_VLAN multicast hardware encryption offload handling is enabled for
 	 * dynamic VLAN operation.
