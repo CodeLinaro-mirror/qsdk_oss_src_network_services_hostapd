@@ -1039,6 +1039,7 @@ static bool is_link_reconfigure_allowed(struct hostapd_data *hapd)
 	struct hostapd_data *link_bss, *bss;
 	size_t i;
 	u8 list_len;
+	u8 num_repurposed_links = 0;
 
 	if (!hapd->mld->num_links) {
 		wpa_printf(MSG_ERROR, "mld_ap is NOT set\n");
@@ -1050,6 +1051,11 @@ static bool is_link_reconfigure_allowed(struct hostapd_data *hapd)
 		return false;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	num_repurposed_links =
+		hostapd_get_repurposed_links_bitmap_extn(hapd, NULL);
+#endif /* CONFIG_QCN_EXTN */
+
 	list_len = dl_list_len(&mld->links);
 	if (!list_len || list_len == 1) {
 		wpa_printf(MSG_INFO,
@@ -1057,6 +1063,18 @@ static bool is_link_reconfigure_allowed(struct hostapd_data *hapd)
 			   list_len);
 		return false;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	/* Above check ensures overall num links under mld. Does not consider if
+	 * mld has repurposed links. Do not allow reconfig on this link if it is
+	 * the only ML enabled/non-repurposed link under the MLD
+	 */
+	if ((list_len - num_repurposed_links) == 1) {
+		wpa_printf(MSG_INFO,
+			   "Do not allow reconfig as this is the only non-repurposed link under MLD");
+		return false;
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	if (iface->conf->mbssid != MBSSID_DISABLED &&
 	    hapd == hostapd_mbssid_get_tx_bss(hapd)) {
@@ -1076,6 +1094,23 @@ static bool is_link_reconfigure_allowed(struct hostapd_data *hapd)
 					wpa_printf(MSG_INFO, "link reconfigure is currently not applicable for this list:%u\n", list_len);
 					return false;
 				}
+#ifdef CONFIG_QCN_EXTN
+				/* Each VAP in the MBSSID group is either
+				 * repurposed or not repurposed. So, no need of
+				 * explicit repurpose state check on non-tx vap.
+				 * Ensure, the non-tx vap is not the only 11be
+				 * or non-repurposed link its MLD.
+				 */
+				num_repurposed_links =
+					hostapd_get_repurposed_links_bitmap_extn
+						(bss, NULL);
+
+				if ((list_len - num_repurposed_links) <= 1) {
+					wpa_printf(MSG_INFO,
+						   "link reconfigure is not allowed on non tx vap as thats the only non-repurposed link");
+					return false;
+				}
+#endif /* CONFIG_QCN_EXTN */
 			}
 		} else {
 			for (i = 1; i < hapd->iface->num_bss; i++) {
@@ -1089,6 +1124,17 @@ static bool is_link_reconfigure_allowed(struct hostapd_data *hapd)
 					wpa_printf(MSG_INFO, "link reconfigure is currently not applicable for this list:%u\n", list_len);
 					return false;
 				}
+#ifdef CONFIG_QCN_EXTN
+				num_repurposed_links =
+					hostapd_get_repurposed_links_bitmap_extn
+						(bss, NULL);
+
+				if ((list_len - num_repurposed_links) <= 1) {
+					wpa_printf(MSG_INFO,
+						   "link reconfigure is not allowed on non tx vap as thats the only non-repurposed link");
+					return false;
+				}
+#endif /* CONFIG_QCN_EXTN */
 			}
 		}
 	}
@@ -1123,6 +1169,49 @@ int hostapd_link_remove(struct hostapd_data *hapd, u32 count,
 	wpa_printf(MSG_DEBUG,
 		   "MLD: Remove link_id=%u in %u beacons",
 		   hapd->mld_link_id, count);
+
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		goto non_repurpose_link_remove;
+
+	/* disable_bss loops non-tx BSSes from the ctrl iface handler, hence
+	 * skip looping here */
+	if (removal_type == HAPD_LINK_REMOVAL &&
+	    iface->conf->mbssid != MBSSID_DISABLED &&
+	    hapd == hostapd_mbssid_get_tx_bss(hapd)) {
+		if (iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
+			struct hostapd_data *bss;
+			struct hostapd_multi_mbssid_group *group = hapd->mbssid_group;
+
+			dl_list_for_each(bss, &group->bss_list,
+					 struct hostapd_data, mbssid_bss) {
+				if (bss != hapd) {
+					if (hostapd_link_remove_repurposed_bss_extn
+							(bss, removal_type)) {
+						wpa_printf(MSG_ERROR,
+							   "Failed to remove repurposed non-tx BSS");
+						return -EINVAL;
+					}
+				}
+			}
+		} else {
+			for (i = 1; i < hapd->iface->num_bss; i++) {
+				struct hostapd_data *bss = hapd->iface->bss[i];
+
+				if (hostapd_link_remove_repurposed_bss_extn
+						(bss, removal_type)) {
+					wpa_printf(MSG_ERROR,
+						   "Failed to remove repurposed non-tx bss");
+					return -EINVAL;
+				}
+			}
+		}
+	}
+
+	return hostapd_link_remove_repurposed_bss_extn(hapd, removal_type);
+
+non_repurpose_link_remove:
+#endif /* CONFIG_QCN_EXTN */
 
 	hapd->eht_mld_link_removal_count = count;
 
@@ -6352,6 +6441,9 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 		struct hostapd_data *phapd = NULL;
 		u8 active_links = 0;
 
+#ifdef CONFIG_QCN_EXTN
+		if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 		/* Save one of the partner bss to update the beacon */
 		if (hapd->conf->mld_ap) {
 			struct hostapd_data *tmp;
@@ -6364,6 +6456,10 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 			}
 		}
 		active_links = hostapd_get_active_links(hapd);
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif /* CONFIG_QCN_EXTN */
+
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_IEEE80211AX
 		char buf[128] = {0};
