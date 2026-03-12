@@ -7237,6 +7237,7 @@ void hostapd_cleanup_cs_params(struct hostapd_data *hapd)
 	hapd->csa_in_progress = 0;
 	hapd->cs_c_off_ecsa_beacon = 0;
 	hapd->cs_c_off_ecsa_proberesp = 0;
+	hapd->iface->cac_type = 0;
 }
 
 
