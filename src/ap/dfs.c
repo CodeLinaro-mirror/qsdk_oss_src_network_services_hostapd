@@ -1547,6 +1547,23 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 				if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_BSS) {
 					ieee80211_freq_to_chan(cf1, &seg0);
 					hostapd_set_oper_centr_freq_seg0_idx(iface->conf, seg0);
+					/*
+					 * Only notify Rptr STA, if this CAC was directly triggered
+					 * by ACS selecting a DFS channel at initial startup.
+					 * acs_dfs_cac_pending is a one-shot flag: set only in
+					 * hostapd_acs_completed() for DFS channel, cleared here.
+					 */
+#ifdef CONFIG_QCN_EXTN
+					if (iface->iface_extn.acs_dfs_cac_pending) {
+						iface->iface_extn.acs_dfs_cac_pending = false;
+#endif
+						wpa_printf(MSG_DEBUG,
+							"ACS-selected DFS channel CAC"
+							"completed on %d MHz — notify Rptr STA", freq);
+						hostapd_ml_acs_check_and_notify(iface, true);
+#ifdef CONFIG_QCN_EXTN
+					}
+#endif
 					if (hostapd_check_reenable_bss(iface))
 						hostapd_dfs_enable_pending_bss(iface);
 					else
@@ -2406,4 +2423,58 @@ int hostapd_is_dfs_overlap(struct hostapd_iface *iface, enum chan_width width,
 		   res ? "yes" : "no");
 
 	return res;
+}
+
+/*
+ * Determine whether CAC is still required for the ACS-selected/configured
+ * channel/bandwidth, using DFS helpers similar to hostapd_handle_dfs().
+ *
+ * Returns true only if DFS is enabled and at least one of the channels
+ * in the configured bandwidth is not DFS_AVAILABLE, i.e., CAC not yet
+ * completed (and not skipped via background/pre-CAC).
+ */
+bool hostapd_is_cac_required(struct hostapd_iface *iface)
+{
+	int chan_width;
+	int n_chans, n_chans1, seg1;
+	int start_chan_idx;
+	int res;
+
+	/* If DFS is not enabled at all, CAC is never required. */
+	if (!iface->current_mode || !iface->conf)
+		return false;
+
+	if (!(iface->drv_flags & WPA_DRIVER_FLAGS_RADAR))
+		return false;
+
+	if (!iface->conf->ieee80211h)
+		return false;
+
+	chan_width = hostapd_get_oper_chwidth(iface->conf);
+
+	/* Get number of used 20 MHz channels based on width */
+	n_chans = dfs_get_used_n_chans(iface, &seg1, chan_width);
+
+	/* Get starting channel index for current config */
+	start_chan_idx = dfs_get_start_chan_idx(iface, &n_chans1, chan_width,
+                                                iface->conf->channel, false);
+	if (start_chan_idx < 0)
+		return false;
+
+	/*
+	 * dfs_check_chans_available():
+	 * - returns non-zero if ALL channels in [start_chan_idx, n_chans)
+	 *   are DFS_AVAILABLE
+	 * - returns 0 if some channel requires CAC.
+	 */
+	res = dfs_check_chans_available(iface, start_chan_idx, n_chans);
+	if (res) {
+		wpa_printf(MSG_DEBUG, "DFS: channels in the configured bw"
+							" are DFS_AVAILABLE");
+	} else {
+		wpa_printf(MSG_DEBUG, "DFS: channels in the configured bw"
+							" required CAC");
+	}
+
+	return !res;
 }
