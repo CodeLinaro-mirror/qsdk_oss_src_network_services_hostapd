@@ -150,6 +150,9 @@ u8 * hostapd_eid_he_mu_edca_parameter_set(struct hostapd_data *hapd, u8 *eid,
 					  bool is_epcs);
 u8 * hostapd_eid_spatial_reuse(struct hostapd_data *hapd, u8 *eid);
 u8 * hostapd_eid_he_6ghz_band_cap(struct hostapd_data *hapd, u8 *eid);
+#ifdef CONFIG_IEEE80211BN
+u8 * hostapd_eid_smd_ie(struct hostapd_data *hapd, u8 *eid);
+#endif /* CONFIG_IEEE80211BN */
 
 int hostapd_ht_operation_update(struct hostapd_iface *iface);
 void ieee802_11_send_sa_query_req(struct hostapd_data *hapd,
