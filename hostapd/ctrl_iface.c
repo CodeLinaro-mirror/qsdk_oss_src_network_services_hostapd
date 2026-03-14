@@ -4167,6 +4167,13 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 			return -1;
 		}
 
+		if (hostapd_dfs_csa_target_has_unavailable_channel(iface, &settings.freq_params,
+								   bandwidth)) {
+			wpa_printf(MSG_ERROR,
+				   "chanswitch: target DFS channel(s) unavailable");
+			return -1;
+		}
+
 		if (iface->conf->disable_csa_dfs == 1) {
 			wpa_printf(MSG_DEBUG, "chanswitch interface %s : cancel radar handling timer",
 				   iface->conf->bss[0]->iface);
