@@ -1047,6 +1047,14 @@ int hostapd_handle_dfs(struct hostapd_iface *iface)
 		}
 	} while (res);
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_ignorecac_handle_dfs_extn(iface, start_chan_idx, n_chans)) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: IGNORECAC=1 continue without CAC iface state=%s (%d)",
+			   hostapd_state_text(iface->state), iface->state);
+		return 1;
+	}
+#endif /* CONFIG_QCN_EXTN */
 	/* Finally start CAC */
 	hostapd_set_state(iface, HAPD_IFACE_DFS);
 	wpa_printf(MSG_DEBUG, "DFS start CAC on %d MHz%s", iface->freq,

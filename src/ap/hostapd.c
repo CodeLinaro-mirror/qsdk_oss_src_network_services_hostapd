@@ -3820,9 +3820,16 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 	u8 *prev_addr;
 	int delay_apply_cfg = 0;
 	int res_dfs_offload = 0;
+#ifdef CONFIG_QCN_EXTN
+	bool skip_cac_start = false;
+#endif
 
 	if (err)
 		goto fail;
+
+#ifdef CONFIG_QCN_EXTN
+	hostapd_ignorecac_init_iface_extn(iface);
+#endif /* CONFIG_QCN_EXTN */
 
 	hostapd_ubus_add_iface(iface);
 	wpa_printf(MSG_DEBUG, "Completing interface initialization");
@@ -3883,6 +3890,15 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 				}
 			}
 #endif /* NEED_AP_MLME */
+
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_ignorecac_should_skip_cac_extn(iface)) {
+			skip_cac_start = true;
+			wpa_printf(MSG_DEBUG,
+				   "%s: skip_cac_start set to true",
+				   __func__);
+		}
+#endif /* CONFIG_QCN_EXTN */
 
 		if (iface->radar_bit_pattern) {
 			hapd->iconf->punct_bitmap |=
@@ -3964,7 +3980,7 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 				     hostapd_get_oper_centr_freq_seg1_idx(
 					     hapd->iconf),
 #ifdef CONFIG_QCN_EXTN
-				     false, /* skip_cac_rep */
+				     skip_cac_start,
 #endif
 				     hapd->iconf->bandwidth_device,
 				     hapd->iconf->center_freq_device)) {
@@ -7612,6 +7628,10 @@ int hostapd_switch_channel(struct hostapd_data *hapd,
 		hapd->iface->conf->punct_bitmap =  hapd->iface->conf->punct_bitmap |
 						   hapd->iface->radar_bit_pattern;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	hostapd_ignorecac_switch_channel_extn(hapd, settings);
+#endif /* CONFIG_QCN_EXTN */
 
 	ret = hostapd_drv_switch_channel(hapd, settings);
 	free_beacon_data(&settings->beacon_csa);

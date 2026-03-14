@@ -1366,6 +1366,12 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 		    !hostapd_is_dfs_chan_available(hapd->iface) &&
 		    !hapd->iface->cac_started) {
 			if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_DFS_CHANNEL_SWITCH) {
+#ifdef CONFIG_QCN_EXTN
+				if (hostapd_ignorecac_chan_switch_complete_extn(
+					    hapd, power_mode_6ghz, width,
+					    width_device, is_dfs))
+					return;
+#endif /* CONFIG_QCN_EXTN */
 				hostapd_cleanup_cs_params(hapd);
 				hapd->disable_cu = 1;
 				hostapd_set_state(hapd->iface, HAPD_IFACE_DFS);
