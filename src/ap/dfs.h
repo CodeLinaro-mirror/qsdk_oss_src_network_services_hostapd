@@ -55,4 +55,7 @@ enum oper_chan_width convert_to_oper_chan_width(int chan_width);
 
 int set_dfs_state_freq(struct hostapd_iface *iface, int freq, u32 state);
 bool hostapd_is_cac_required(struct hostapd_iface *iface);
+bool hostapd_dfs_csa_target_has_unavailable_channel(struct hostapd_iface *iface,
+						    struct hostapd_freq_params *freq_params,
+						    enum chan_width width);
 #endif /* DFS_H */
