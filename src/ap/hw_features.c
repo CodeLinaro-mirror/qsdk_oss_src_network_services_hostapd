@@ -560,6 +560,7 @@ static int ieee80211n_check_40mhz(struct hostapd_iface *iface)
 		wpa_printf(MSG_DEBUG, "scan triggered with bssid" MACSTR "\n",
 			   MAC2STR(params.bssid));
 	}
+	eloop_cancel_timeout(ap_ht40_scan_retry, iface, NULL);
 
 	ret = hostapd_driver_scan(iface->bss[0], &params);
 	os_free(params.freqs);
@@ -569,7 +570,6 @@ static int ieee80211n_check_40mhz(struct hostapd_iface *iface)
 			   "Failed to request a scan of neighboring BSSes ret=%d (%s) - try to scan again",
 			   ret, strerror(-ret));
 		iface->num_ht40_scan_tries = 1;
-		eloop_cancel_timeout(ap_ht40_scan_retry, iface, NULL);
 		eloop_register_timeout(1, 0, ap_ht40_scan_retry, iface, NULL);
 		return 1;
 	}
