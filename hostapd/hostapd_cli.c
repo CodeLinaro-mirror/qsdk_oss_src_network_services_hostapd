@@ -1266,7 +1266,7 @@ static char ** hostapd_complete_set(const char *str, int pos)
 		"ext_mgmt_frame_handling", "ext_eapol_frame_io",
 #endif /* CONFIG_TESTING_OPTIONS */
 #ifdef CONFIG_MBO
-		"mbo_assoc_disallow",
+		"mbo_assoc_disallow", "mbo_trans_reason", "mbo_assoc_retry",
 #endif /* CONFIG_MBO */
 		"deny_mac_file", "accept_mac_file",
 	};

@@ -1743,6 +1743,32 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 		 * TODO: Need to configure drivers that do AP MLME offload with
 		 * disallowing station logic.
 		 */
+	} else if (os_strcmp(cmd, "mbo_trans_reason") == 0) {
+		int val;
+
+		if (!hapd->conf->mbo_enabled)
+			return -1;
+
+		val = atoi(value);
+		if (val < 0 || val > MBO_TRANSITION_REASON_MAX) {
+			wpa_printf(MSG_ERROR, "Invalid mbo_trans_reason %d (expected 0..%d)", val, MBO_TRANSITION_REASON_MAX);
+			return -1;
+		}
+
+		hapd->mbo_trans_reason = (u8)val;
+	} else if (os_strcmp(cmd, "mbo_assoc_retry") == 0) {
+		int val;
+
+		if (!hapd->conf->mbo_enabled)
+			return -1;
+
+		val = atoi(value);
+		if (val < 0 || val > 65535) {
+			wpa_printf(MSG_ERROR, "Invalid mbo_assoc_retry %d (expected 0..65535)", val);
+			return -1;
+		}
+
+		hapd->mbo_assoc_retry = (u16)val;
 #endif /* CONFIG_MBO */
 #ifdef CONFIG_DPP
 	} else if (os_strcasecmp(cmd, "dpp_configurator_params") == 0) {
@@ -2379,6 +2405,20 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+#ifdef CONFIG_MBO
+	} else if (os_strcmp(cmd, "mbo_trans_reason") == 0) {
+		res = os_snprintf(buf, buflen, "mbo_trans_reason = %d\n",
+				  hapd->mbo_trans_reason);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcmp(cmd, "mbo_assoc_retry") == 0) {
+		res = os_snprintf(buf, buflen, "mbo_assoc_retry = %d\n",
+				  hapd->mbo_assoc_retry);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+#endif /* CONFIG_MBO */
 #ifdef CONFIG_IEEE80211AC
 	} else if (os_strcmp(cmd, "vht_mcs_nss_set") == 0) {
 		res = os_snprintf(buf, buflen, "vht_mcs_nss_set = 0x%x\n",

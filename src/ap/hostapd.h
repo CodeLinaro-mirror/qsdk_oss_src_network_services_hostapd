@@ -576,6 +576,8 @@ struct hostapd_data {
 
 #ifdef CONFIG_MBO
 	unsigned int mbo_assoc_disallow;
+	u8 mbo_trans_reason;
+	u16 mbo_assoc_retry;
 #endif /* CONFIG_MBO */
 
 	struct dl_list nr_db;
