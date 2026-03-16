@@ -1520,7 +1520,8 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 			len += ret;
 		}
 
-		if (bss->conf->beacon_rate) {
+		if (bss->conf->rate_type != BEACON_RATE_LEGACY ||
+		    bss->conf->beacon_rate) {
 			const char *br_type;
 			switch (bss->conf->rate_type) {
 			case BEACON_RATE_HT:
@@ -1589,6 +1590,15 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 		len += ret;
 	}
 
+	if (iface->max_mgmt_frm_sz) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  "max_mgmt_frame_size=%zu\n",
+				  iface->max_mgmt_frm_sz);
+		if (os_snprintf_error(buflen - len, ret))
+			return len;
+		len += ret;
+	}
+
 	return len;
 }
 
@@ -1627,6 +1637,7 @@ int hostapd_parse_freq_params(const char *pos,
 	SET_FREQ_PARAM(center_freq_device);
 #ifdef CONFIG_QCN_EXTN
 	SET_FREQ_PARAM(skip_cac);
+	SET_FREQ_PARAM(rptr_mgr);
 #endif
 	params->ht_enabled = !!os_strstr(pos, " ht");
 	params->vht_enabled = !!os_strstr(pos, " vht");
@@ -2030,7 +2041,8 @@ int hostapd_ctrl_iface_stop_ap(struct hostapd_data *hapd)
 	if (ret)
 		return ret;
 
-	return ieee802_11_update_beacon_mbssid(hapd);
+	ieee802_11_update_beacon_mbssid(hapd);
+	return 0;
 }
 
 
@@ -2715,11 +2727,6 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 
 	if (!hapd || !hapd->iconf || !hapd->iface || !hapd->conf) {
 		wpa_printf(MSG_ERROR, "Invalid BSS");
-		return -1;
-	}
-
-	if (!hapd->started) {
-		wpa_printf(MSG_ERROR, "%s is not started", hapd->conf->iface);
 		return -1;
 	}
 

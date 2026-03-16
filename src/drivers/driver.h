@@ -667,6 +667,8 @@ struct hostapd_multi_hw_info {
  * of TSF of the BSS specified by %tsf_bssid.
  * @tsf_bssid: The BSS that %parent_tsf TSF time refers to.
  * @beacon_newer: Whether the Beacon frame data is known to be newer
+ * @mlo_tput_accumulated: Whether the scan result throughput is accumulated
+ * (used during scan result processing)
  * @ie_len: length of the following IE field in octets
  * @beacon_ie_len: length of the following Beacon IE field in octets
  *
@@ -701,6 +703,7 @@ struct wpa_scan_res {
 	u64 parent_tsf;
 	u8 tsf_bssid[ETH_ALEN];
 	bool beacon_newer;
+	bool mlo_tput_accumulated;
 	size_t ie_len;
 	size_t beacon_ie_len;
 	/* Followed by ie_len + beacon_ie_len octets of IE data */
@@ -1221,6 +1224,8 @@ struct hostapd_freq_params {
 	 * skip_cac - Indicates whether Channel Availability Check (CAC) should be skipped.
 	 */
 	bool skip_cac;
+	/* Flag to indicate if the chan_switch request is coming from rptr_mgr */
+	bool rptr_mgr;
 #endif
 };
 
@@ -2381,6 +2386,27 @@ struct wpa_driver_ap_params {
 	 * is_cfp_enabled - flag to indicate whether control frame protection is enabled.
 	 */
 	bool is_cfp_enabled;
+
+	/**
+	 * rssi_reject_assoc_rssi - RSSI threshold for association rejection
+	 *
+	 * RSSI threshold in dBm below which association requests are rejected.
+	 * Also used as threshold for RSSI-based deauthentication.
+	 * Set to 0 to disable RSSI-based rejection/deauth.
+	 * Example: -75 means reject clients with RSSI below -75 dBm
+	 */
+	int rssi_reject_assoc_rssi;
+
+	/**
+	 * rssi_deauth_grace_samples - Grace samples before RSSI deauth
+	 *
+	 * Number of consecutive low RSSI samples below threshold before
+	 * triggering deauthentication. Range: 1-100.
+	 * Set to 0 to disable RSSI-based deauthentication.
+	 */
+	int rssi_deauth_grace_samples;
+
+	int dps_assist;
 };
 
 struct wpa_driver_mesh_bss_params {
@@ -4912,6 +4938,8 @@ struct wpa_driver_ops {
 	 * @threshold: Threshold value for signal change events; 0 = disabled
 	 * @hysteresis: Minimum change in signal strength before indicating a
 	 *	new event
+	 * @link_id: If >= 0 indicates the link of the AP MLD for which RSSI
+	 * signal monitor is required
 	 * Returns: 0 on success, -1 on failure (or if not supported)
 	 *
 	 * This function can be used to configure monitoring of signal strength
@@ -4920,7 +4948,7 @@ struct wpa_driver_ops {
 	 * should be generated assuming the signal strength has changed at
 	 * least %hysteresis from the previously indicated signal change event.
 	 */
-	int (*signal_monitor)(void *priv, int threshold, int hysteresis);
+	int (*signal_monitor)(void *priv, int threshold, int hysteresis, int link_id);
 
 	/**
 	 * get_noa - Get current Notice of Absence attribute payload
@@ -6139,6 +6167,17 @@ struct wpa_driver_ops {
 	struct hostapd_multi_hw_info *
 	(*get_multi_hw_info)(void *priv, unsigned int *num_multi_hws);
 
+	/**
+	 * get_channel_switch_time - Get estimated channel switch timing from driver
+	 * @priv: Private driver interface data
+	 * @freq: target channel frequeny data
+	 * @cs_time: Pointer to store channel switch time (ms)
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*get_channel_switch_time)(void *priv,
+				       struct hostapd_freq_params *freq,
+				       u32 *cs_time);
+
 #ifdef CONFIG_IEEE80211BE
 	/**
 	 * ml_reconfig_link_remove - Send Reconfig Multi-Link element to driver
@@ -6251,6 +6290,16 @@ struct wpa_driver_ops {
 	 */
 	int (*dcs_config)(void *priv, u8 link_id,
 			  struct driver_dcs_config *params);
+
+	/**
+	 * dcs_sim - Send the DCS simulation params to driver in order to trigger
+	 * interference.
+	 * @priv: Private driver interface data
+	 * @link_id: Link ID of the specified link; -1 for non-MLD
+	 * @params: dcs sim structure.
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*dcs_sim)(void *priv, u8 link_id, struct driver_dcs_sim *params);
 #endif
 #endif /* CONFIG_IEEE80211BE */
 
@@ -7009,10 +7058,34 @@ enum wpa_event_type {
 	 */
 	EVENT_MSCS_FLOW_RECEIVED,
 
+#ifdef CONFIG_QCN_EXTN
+	/**
+	 * EVENT_DFS_UPLINK_CHANNEL_SELECTED - notify backhaul station
+	 * about the channel selected due to radar detection in
+	 * fronthaul
+	 */
+	EVENT_DFS_UPLINK_CHANNEL_SELECTED,
+#endif
+
 	/**
 	 * EVENT_ESP_UPDATE - Notification about ESP airtime fraction update event
 	 */
 	EVENT_ESP_UPDATE,
+
+#ifdef CONFIG_QCN_EXTN
+	/**
+	 * EVENT_DCS_INTF - Notification event for DCS interference from driver
+	 */
+	EVENT_DCS_INTF,
+#endif
+
+	/**
+	 * EVENT_UPDATE_AP_POWERSAVE - Received a AP Power Save update event
+	 *
+	 * This event is used by the driver to notify the usersapce about
+	 * enablement/disablement of AP Power Save feature.
+	 */
+	EVENT_UPDATE_AP_POWERSAVE
 };
 
 
@@ -8128,7 +8201,25 @@ union wpa_event_data {
 	 * This field is used for extension events
 	 */
 	union wpa_event_data_extn event_data_extn;
+
+	/**
+	 * Data for AP Power Save update
+	 */
+	struct ap_powersave_event {
+		bool dps_assist_updated;
+		int dps_assist;
+	} ap_powersave_event;
 };
+
+#define HOSTAPD_OP_DEAUTH        0x8000   /* 10xxxx... */
+#define HOSTAPD_OP_DISASSOC      0xC000   /* 11xxxx... */
+
+#define HOSTAPD_PAYLOAD_MASK     0x3FFF   /* lower 14 bits */
+
+/* 0xBFFF */
+#define HOSTAPD_DEAUTH_ALL       (HOSTAPD_OP_DEAUTH   | HOSTAPD_PAYLOAD_MASK)
+/* 0xFFFF */
+#define HOSTAPD_DISASSOC_ALL     (HOSTAPD_OP_DISASSOC | HOSTAPD_PAYLOAD_MASK)
 
 /**
  * wpa_supplicant_event - Report a driver event for wpa_supplicant

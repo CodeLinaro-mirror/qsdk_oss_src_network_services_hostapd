@@ -22,7 +22,9 @@
 #include "ucode.h"
 #include "ttlm.h"
 #include "atf/atf_offload.h"
-
+#ifdef CONFIG_QCN_EXTN
+#include "../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 
 #define OCE_STA_CFON_ENABLED(hapd) \
 	((hapd->conf->oce & OCE_STA_CFON) && \
@@ -308,6 +310,19 @@ struct channel_usage_config {
 	struct channel_usage_elem elems[MAX_CHANNEL_USAGE_ELEMENTS];
 };
 
+enum hostapd_reenable_mode {
+	/* Normal operation */
+	REENABLE_NONE = 0,
+	/* Reuse existing iface/link: skip add/remove */
+	REENABLE_REUSE_LINK = 1,
+	/* HT scan in progress; defer enable */
+	REENABLE_HT_SCAN = 2,
+	/* CAC in progress; defer enable */
+	REENABLE_CAC = 3,
+	/* Interface teardown in progress */
+	REENABLE_DEINIT = 4,
+};
+
 /**
  * struct hostapd_data - hostapd per-BSS data structure
  */
@@ -414,7 +429,7 @@ struct hostapd_data {
 	struct wps_context *wps;
 
 	int beacon_set_done;
-	unsigned int reenable:1;
+	u8 reenable;
 	struct wpabuf *wps_beacon_ie;
 	struct wpabuf *wps_probe_resp_ie;
 	struct wpabuf *plugin_vendor_elements; /* Dynamic vendor IEs set by plugin */
@@ -778,6 +793,7 @@ struct hostapd_iface {
 #ifdef CONFIG_QCN_EXTN
 	/* Bitmask of used vendor BSSID indices (non-MBSSID) */
 	u32 vendor_bssid_used_mask;
+	u16 radar_bit_pattern_extn;
 #endif /* CONFIG_QCN_EXTN */
 
 	unsigned int wait_channel_update:1;
@@ -974,6 +990,8 @@ struct hostapd_iface {
 	struct hostapd_multi_mbssid multi_mbssid;
 	u32 mbssid_idx_bmap;
 	size_t max_mgmt_frm_sz;
+	u32 cs_time;
+	int last_scan_aborted;
 };
 
 
@@ -1006,6 +1024,7 @@ struct mld_peer_epcs_info {
 	enum peer_epcs_state state;
 	u8 self_gen_dialog_token;
 	bool timer_started;
+	u64 rule_handle;
 };
 
 
@@ -1173,8 +1192,24 @@ int hostapd_wnm_add_multi_link_sub_elem(struct hostapd_data *hapd,
 					u8 *links, u8 num_links,
 					u8 *pos, size_t len);
 
+#ifdef CONFIG_QCN_EXTN
+/* for_each_mld_link iterator skips repurposed link. Use this when self is not
+ * repurposed. To loop all links despite of repurpose state, use
+ * for_each_mld_link_include_repurposed iterator
+ */
+#define for_each_mld_link(partner, self) \
+	dl_list_for_each(partner, &self->mld->links, struct hostapd_data, link) \
+		if (hostapd_is_repurpose_disabled_11be_extn(partner->conf)) { \
+			continue; \
+		} else
+
+#define for_each_mld_link_include_repurposed(partner, self) \
+	dl_list_for_each(partner, &self->mld->links, struct hostapd_data, link)
+
+#else /* CONFIG_QCN_EXTN */
 #define for_each_mld_link(partner, self) \
 	dl_list_for_each(partner, &self->mld->links, struct hostapd_data, link)
+#endif /* CONFIG_QCN_EXTN */
 
 #else /* CONFIG_IEEE80211BE */
 
@@ -1356,16 +1391,11 @@ u8 * hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd, u8 *eid);
  * hostapd_remove_bss() - Remove a BSS from the AP interface
  *
  * This function removes the BSS identified by the given index.
- * If the BSS being removed is the first BSS, and no other BSS
- * is available to take over the driver context,
- * the entire interface is removed.
  *
  * @iface: Pointer to hostapd_iface
  * @idx: Index of the BSS
  *
  * Return: 0 on successful BSS removal,
- * 	   1 if the BSS removal results in removing the entire
- * 	   interface (caller should not use the iface or BSS),
  * 	   -1 on failure.
  */
 int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx);
@@ -1596,6 +1626,10 @@ hostapd_is_vht_enabled(struct hostapd_data *hapd)
 static inline bool
 hostapd_is_he_enabled(struct hostapd_data *hapd)
 {
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11ax_extn(hapd->conf))
+		return false;
+#endif /* CONFIG_QCN_EXTN */
 	return (hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax);
 }
 
@@ -1603,6 +1637,10 @@ hostapd_is_he_enabled(struct hostapd_data *hapd)
 static inline bool
 hostapd_is_eht_enabled(struct hostapd_data *hapd)
 {
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return false;
+#endif /* CONFIG_QCN_EXTN */
 	return (hapd->iconf->ieee80211be && !hapd->conf->disable_11be);
 }
 
@@ -1628,5 +1666,29 @@ int
 hostapd_handle_vendor_elements_update(struct hostapd_data *hapd,
 				      struct hostapd_bss_config *conf, struct wpabuf *data,
 				      char *cmd, char *val, bool is_bcn_update_needed);
+
+int convert_chwidth_to_20MHz_nchans(enum chan_width chan_width);
+
+int find_6g_enabled_chans(struct hostapd_iface *iface,
+			  int chan_width,
+			  struct hostapd_channel_data **chandef_list,
+			  struct hostapd_hw_modes *mode,
+			  struct hostapd_channel_data **chan_6ghz,
+			  int n_chans, int power_type);
+
+#ifdef CONFIG_QCN_EXTN
+/**
+ * configured_fixed_chan_to_freq_helper - Helper to convert configured
+ * channel to frequency
+ * @iface: Pointer to hostapd_iface structure
+ *
+ * This is a wrapper function for configured_fixed_chan_to_freq() to support
+ * vendor-specific extensions (QCN_EXTN). It determines the operating frequency
+ * based on the configured channel.
+ *
+ * Returns: 0 on success, -1 on failure
+ */
+int configured_fixed_chan_to_freq_helper(struct hostapd_iface *iface);
+#endif
 
 #endif /* HOSTAPD_H */

@@ -330,36 +330,52 @@ void hostapd_if_register_event(void *ifname_ctx,
 }
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
-void hostapd_if_plugin_ctor(void);
+enum hostapd_if_eloop_type hostapd_if_plugin_init(void *);
+void hostapd_if_plugin_deinit(void);
 #endif
 
+const bool global_plugin_enable = false;
+bool hostapd_if_plugin_enable = global_plugin_enable;
 /*
  * Call this once at startup (from hostapd_if_init)
  */
-int hostapd_if_init(struct hapd_interfaces *interfaces)
+int hostapd_if_init(struct hapd_interfaces *interfaces, bool plugin_enable)
 {
+	enum hostapd_if_eloop_type eloop_type = HOSTAPD_IF_ELOOP_ROUTING;
 	wpa_printf(MSG_ERROR, "%s", __func__);
 	hostapd_if_ifaces = interfaces;
 
+#ifdef CONFIG_QCN_EXTN
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 #ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
-	hostapd_if_plugin_ctor();
+	hostapd_if_plugin_enable = (plugin_enable || global_plugin_enable);
+	if (hostapd_if_plugin_enable)
+		eloop_type = hostapd_if_plugin_init(interfaces);
 #endif
-	if (hostapd_if_eloop_init() < 0)
+	if (hostapd_if_eloop_init(eloop_type) < 0)
 		return -1;
+#endif
 #endif
 
 	return 0;
 }
 
+#ifdef CONFIG_QCN_EXTN
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 void hostapd_if_eloop_deinit(void);
+#endif
 #endif
 
 int hostapd_if_deinit(void)
 {
+#ifdef CONFIG_QCN_EXTN
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 	hostapd_if_eloop_deinit();
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+	if (hostapd_if_plugin_enable)
+		hostapd_if_plugin_deinit();
+#endif
+#endif
 #endif
 	return 0;
 }
@@ -2183,7 +2199,12 @@ void hostapd_if_trigger_eapol_m3_dump_params(char *ifname, uint8_t *sta_mac)
 
 size_t hostapd_if_auth_reply_tail_len(struct sta_info *sta, size_t current_len)
 {
-	size_t tail_len = sta->ext_auth_tail_len;
+	size_t tail_len;
+
+	if (!sta)
+		return 0;
+
+	tail_len = sta->ext_auth_tail_len;
 
 	if (!sta->ext_auth_tail || !tail_len) {
 		wpa_printf(MSG_MSGDUMP, "%s: No tail %p %zu", __func__,
@@ -2205,7 +2226,7 @@ void hostapd_if_auth_reply_add_tail(struct sta_info *sta, size_t offset,
 				    struct ieee80211_mgmt *reply)
 {
 	/* Append external additional IEs, if any (always supported) */
-	if (!tail_len || !sta->ext_auth_tail)
+	if (!tail_len || !sta || !sta->ext_auth_tail)
 		return;
 
 	os_memcpy(reply->u.auth.variable + offset, sta->ext_auth_tail,
@@ -2215,9 +2236,13 @@ void hostapd_if_auth_reply_add_tail(struct sta_info *sta, size_t offset,
 void hostapd_if_assoc_resp_tail(struct sta_info *sta, size_t buflen,
 				size_t current_len, u8 **p)
 {
-	size_t tail_len = sta->ext_assoc_tail_len;
+	size_t tail_len;
 	u8 *pos = *p;
 
+	if (!sta)
+		return;
+
+	tail_len = sta->ext_assoc_tail_len;
 	if (!sta->ext_assoc_tail || !tail_len) {
 		wpa_printf(MSG_MSGDUMP, "%s: No tail %p %zu", __func__,
 			sta->ext_assoc_tail, tail_len);
@@ -2238,8 +2263,12 @@ void hostapd_if_assoc_resp_tail(struct sta_info *sta, size_t buflen,
 
 size_t hostapd_if_assoc_resp_tail_len(struct sta_info *sta, size_t current_len)
 {
-	size_t tail_len = sta->ext_assoc_tail_len;
+	size_t tail_len;
 
+	if (!sta)
+		return 0;
+
+	tail_len = sta->ext_assoc_tail_len;
 	if (!sta->ext_assoc_tail || !tail_len) {
 		wpa_printf(MSG_MSGDUMP, "%s: No tail %p %zu", __func__,
 			sta->ext_assoc_tail, tail_len);

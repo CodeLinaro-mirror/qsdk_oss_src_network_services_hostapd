@@ -841,6 +841,10 @@ int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
 				    bandwidth_device, center_freq_device))
 		return -1;
 
+#ifdef CONFIG_QCN_EXTN
+	update_chan_params(hapd, data.center_freq1, data.center_freq2, hostapd_get_chan_width_from_oper_chan_width(hapd->iconf));
+#endif
+
 	if (hapd->driver == NULL)
 		return 0;
 	if (hapd->driver->set_freq == NULL)
@@ -1305,9 +1309,12 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 
 #ifdef CONFIG_QCN_EXTN
 	if (iface->conf->conf_extn.ind_rptr) {
-		data.skip_cac = (iface->iface_extn.csa_bitmap && iface->conf->conf_extn.skip_cac);
+		data.skip_cac = ((iface->iface_extn.csa_bitmap ||
+				 iface->iface_extn.dfs_available_from_sta) &&
+				 iface->conf->conf_extn.skip_cac);
 	} else {
-		data.skip_cac = iface->conf->conf_extn.skip_cac;
+		data.skip_cac = (iface->cac_type != HAPD_CAC_COMPLETE_AFTER_CSA) &&
+				 iface->conf->conf_extn.skip_cac;
 	}
 #endif
 
@@ -1436,7 +1443,7 @@ int hostapd_drv_do_acs(struct hostapd_data *hapd)
 	params.hw_mode = hapd->iface->conf->hw_mode;
 	params.link_id = -1;
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->conf->mld_ap && hostapd_is_eht_enabled(hapd))
+	if (hapd->conf->mld_ap)
 		params.link_id = hapd->mld_link_id;
 #endif /* CONFIG_IEEE80211BE */
 

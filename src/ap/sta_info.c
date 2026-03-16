@@ -80,6 +80,13 @@ struct hostapd_ft_over_ds_ml_sta_entry *ap_get_ft_ds_ml_sta(struct hostapd_data 
 		return NULL;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		wpa_printf(MSG_ERROR, "Repurposed BSS can't have ml_sta\n");
+		return NULL;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	if (!sta)
 		return NULL;
 
@@ -285,7 +292,12 @@ void ap_free_unadded_link_sta(struct hostapd_data *hapd, struct sta_info *sta)
 
 		rsn_preauth_free_station(phapd, psta);
 
-		eloop_cancel_timeout(ap_handle_timer, phapd, sta);
+		eloop_cancel_timeout(ap_handle_timer, phapd, psta);
+		eloop_cancel_timeout(ap_handle_session_timer, phapd, psta);
+		eloop_cancel_timeout(ap_handle_session_warning_timer, phapd, psta);
+		ap_sta_clear_disconnect_timeouts(phapd, psta);
+		ap_sta_clear_assoc_timeout(phapd, psta);
+		sae_clear_retransmit_timer(phapd, psta);
 
 		os_free(psta->challenge);
 		wpabuf_free(psta->wps_ie);
@@ -436,6 +448,11 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 			aid = sta->wds_mld_uid;
 		else
 			aid = sta->aid;
+
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+			aid = sta->aid;
+#endif /* CONFIG_QCN_EXTN */
 
 		if (ap_sta_is_mld(hapd, sta)) {
 			for_each_mld_link(phapd, hapd) {
@@ -591,6 +608,12 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 		if (!vlan_bss)
 			vlan_bss = hapd;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf) ||
+	    hostapd_is_repurpose_disabled_11be_extn(vlan_bss->conf))
+		vlan_bss = hapd;
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 	/*
 	 * sta->wpa_sm->group needs to be released before so that
@@ -2407,7 +2430,7 @@ int ap_sta_flags_txt(u32 flags, char *buf, size_t buflen)
 
 	buf[0] = '\0';
 	res = os_snprintf(buf, buflen,
-			  "%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",
+			  "%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",
 			  (flags & WLAN_STA_AUTH ? "[AUTH]" : ""),
 			  (flags & WLAN_STA_ASSOC ? "[ASSOC]" : ""),
 			  (flags & WLAN_STA_AUTHORIZED ? "[AUTHORIZED]" : ""),
@@ -2428,6 +2451,7 @@ int ap_sta_flags_txt(u32 flags, char *buf, size_t buflen)
 			  (flags & WLAN_STA_VHT ? "[VHT]" : ""),
 			  (flags & WLAN_STA_HE ? "[HE]" : ""),
 			  (flags & WLAN_STA_EHT ? "[EHT]" : ""),
+			  (flags & WLAN_STA_UHR ? "[UHR]" : ""),
 			  (flags & WLAN_STA_6GHZ ? "[6GHZ]" : ""),
 			  (flags & WLAN_STA_VENDOR_VHT ? "[VENDOR_VHT]" : ""),
 			  (flags & WLAN_STA_SPP_AMSDU ? "[SPP-A-MSDU]" : ""),

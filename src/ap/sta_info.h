@@ -383,6 +383,7 @@ struct sta_info {
 	u8 num_dscp_policies;
 	u8 unsolicited_dialog_token;
 	struct dscp_policy_state dscp_state;
+	struct sta_info *sa_query_triggered_sta;
 	bool dscp_reset;
 	bool ft_re_add;
 	u16 max_idle_period; /* if nonzero, the granted BSS max idle period in
@@ -398,6 +399,14 @@ struct sta_info {
 
 	u64 last_known_sta_id_timestamp;
 
+
+	/**
+	 * rssi_reject_timeout - Time when RSSI rejection expires
+	 *
+	 * If non-zero, indicates when a client rejected due to low RSSI
+	 * may retry association. Used to implement rssi_reject_assoc_timeout.
+	 */
+	struct os_time rssi_reject_timeout;
 	struct wpabuf *sae_pw_id;
 	unsigned int sae_pw_id_counter;
 };
@@ -522,7 +531,14 @@ static inline bool ap_sta_is_mld(struct hostapd_data *hapd,
 				 struct sta_info *sta)
 {
 #ifdef CONFIG_IEEE80211BE
-	return hapd->conf->mld_ap && sta && sta->mld_info.mld_sta;
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
+	return (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta);
+#ifdef CONFIG_QCN_EXTN
+	} else
+		return false;
+#endif /* CONFIG_QCN_EXTN */
 #else /* CONFIG_IEEE80211BE */
 	return false;
 #endif /* CONFIG_IEEE80211BE */

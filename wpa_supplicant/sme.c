@@ -832,6 +832,7 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 	if (wpa_s->wpa_proto == WPA_PROTO_WPA) {
 		wpa_ie = os_memdup(wpa_s->sme.assoc_req_ie,
 				   wpa_s->sme.assoc_req_ie_len);
+		omit_rsnxe = 1;
 		if (wpa_ie) {
 			wpa_dbg(wpa_s, MSG_DEBUG, "WPA: Storing WPA IE");
 
@@ -880,8 +881,8 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 		    wpa_sm_has_ft_keys(wpa_s->wpa, md)) {
 			wpa_dbg(wpa_s, MSG_DEBUG, "SME: Trying to use FT "
 				"over-the-air");
-			omit_rsnxe = !wpa_bss_get_rsnxe(wpa_s, bss, ssid,
-							false);
+			omit_rsnxe |= !wpa_bss_get_rsnxe(wpa_s, bss, ssid,
+							 false);
 			params.auth_alg = WPA_AUTH_ALG_FT;
 			params.ie = wpa_s->sme.ft_ies;
 			params.ie_len = wpa_s->sme.ft_ies_len;
@@ -1377,10 +1378,10 @@ void sme_authenticate(struct wpa_supplicant *wpa_s,
 
 #ifdef CONFIG_QCN_EXTN
 	if (wpa_s->conf->ind_rptr) {
-		if (wpa_s->conf->rptr_mgr_comm_mode == RPTR_MGR_MODE_COMM_SOCK)
+		if (wpa_s->conf->rptr_mgr_comm_mode == RPTR_MGR_MODE_COMM_SOCK) {
 			wpa_supp_pre_connect_state_handle_extn(wpa_s, bss);
-		else
-			wpa_supplicant_set_state(wpa_s, WPA_PRE_CONNECT);
+		}
+		wpa_supplicant_set_state(wpa_s, WPA_PRE_CONNECT);
 
 		eloop_register_timeout(SME_PRE_CONNECT_TIMEOUT, 0, sme_pre_connect_timer_extn,
 				       wpa_s, NULL);
@@ -2020,9 +2021,19 @@ static int sme_sae_auth(struct wpa_supplicant *wpa_s, u16 auth_transaction,
 		wpa_s_clear_sae_rejected(wpa_s);
 
 		if (external) {
+			const u8 *connected_addr = wpa_s->valid_links ?
+				wpa_s->ap_mld_addr : wpa_s->bssid;
+			const u8 *src = wpa_s->sme.ext_ml_auth ?
+				wpa_s->sme.ext_auth_ap_mld_addr :
+				wpa_s->sme.ext_auth_bssid;
+
+			wpa_s->ext_auth_to_same_bss =
+				wpa_s->wpa_state > WPA_ASSOCIATED &&
+				ether_addr_equal(src, connected_addr);
+
 			/* Report success to driver */
 			sme_send_external_auth_status(wpa_s,
-						      WLAN_STATUS_SUCCESS);
+					WLAN_STATUS_SUCCESS);
 		}
 
 		return 1;

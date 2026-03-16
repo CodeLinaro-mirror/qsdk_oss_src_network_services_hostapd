@@ -6056,7 +6056,7 @@ static void wpa_supplicant_ctrl_iface_bss_flush(
 	int flush_age = atoi(cmd);
 
 	if (flush_age == 0)
-		wpa_bss_flush(wpa_s);
+		wpa_bss_flush(wpa_s, 0);
 	else
 		wpa_bss_flush_by_age(wpa_s, flush_age);
 }
@@ -7954,7 +7954,8 @@ static void p2p_ctrl_flush(struct wpa_supplicant *wpa_s)
 #ifdef CONFIG_TESTING_OPTIONS
 	os_free(wpa_s->get_pref_freq_list_override);
 	wpa_s->get_pref_freq_list_override = NULL;
-	p2p_set_invitation_op_freq(wpa_s->global->p2p, -1);
+	if (wpa_s->global->p2p)
+		p2p_set_invitation_op_freq(wpa_s->global->p2p, -1);
 #endif /* CONFIG_TESTING_OPTIONS */
 
 	wpas_p2p_stop_find(wpa_s);
@@ -8705,7 +8706,7 @@ static int wpas_ctrl_iface_signal_monitor(struct wpa_supplicant *wpa_s,
 	pos = os_strstr(cmd, "HYSTERESIS=");
 	if (pos)
 		hysteresis = atoi(pos + 11);
-	return wpa_drv_signal_monitor(wpa_s, threshold, hysteresis);
+	return wpa_drv_signal_monitor(wpa_s, threshold, hysteresis, -1);
 }
 
 
@@ -9192,7 +9193,7 @@ static void wpa_supplicant_ctrl_iface_flush(struct wpa_supplicant *wpa_s)
 	os_memset(&wpa_s->robust_av, 0, sizeof(struct robust_av_data));
 #endif /* CONFIG_NO_ROBUST_AV */
 
-	wpa_bss_flush(wpa_s);
+	wpa_bss_flush(wpa_s, 0);
 	if (!dl_list_empty(&wpa_s->bss)) {
 		wpa_printf(MSG_DEBUG,
 			   "BSS table not empty after flush: %u entries, current_bss=%p bssid="

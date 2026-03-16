@@ -35,6 +35,7 @@
 #include "build_features.h"
 #include "ap/robust_av.h"
 #include "hostapd_if/hostapd_if.h"
+#include "ap/nft.h"
 
 #include "atf/atf_offload.h"
 
@@ -409,6 +410,9 @@ setup_mld:
 				   hapd->mld_link_id, hapd->conf->iface);
 			return -1;
 		}
+#ifdef CONFIG_QCN_EXTN
+		hostapd_notify_link_repurpose(hapd, "hostapd_driver_init");
+#endif /* CONFIG_QCN_EXTN */
 		hostapd_mld_add_link(hapd);
 		hostapd_validate_update_ml_max_rec_links(hapd);
 	}
@@ -865,6 +869,9 @@ int main(int argc, char *argv[])
 #ifdef CONFIG_PROCESS_COORDINATION
 	const char *proc_coord_dir = NULL;
 #endif
+#ifdef CONFIG_HOSTAPD_IF
+	bool plugin_enable = false;
+#endif
 
 	if (os_program_init())
 		return -1;
@@ -906,13 +913,18 @@ int main(int argc, char *argv[])
 	wpa_supplicant_event = hostapd_wpa_event;
 	wpa_supplicant_event_global = hostapd_wpa_event_global;
 	for (;;) {
-		c = getopt(argc, argv, "b:Bde:f:hi:KP:sSTtu:g:G:qvz::");
+		c = getopt(argc, argv, "b:Bde:f:hHi:KP:sSTtu:g:G:qvz::");
 		if (c < 0)
 			break;
 		switch (c) {
 		case 'h':
 			usage();
 			break;
+#ifdef CONFIG_HOSTAPD_IF
+		case 'H':
+			plugin_enable = true;
+			break;
+#endif
 		case 'd':
 			debug++;
 			if (wpa_debug_level > 0)
@@ -1034,6 +1046,12 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
+	/* Initialize NFT netlink socket */
+	if (nft_init() < 0) {
+		wpa_printf(MSG_ERROR, "Failed to initialize NFT");
+		goto out;
+	}
+
 	eloop_register_timeout(HOSTAPD_CLEANUP_INTERVAL, 0,
 			       hostapd_periodic, &interfaces, NULL);
 
@@ -1058,7 +1076,7 @@ int main(int argc, char *argv[])
 
 #ifdef CONFIG_HOSTAPD_IF
 	/* Initialize action frame registry before parsing configs */
-	if (hostapd_if_init(&interfaces) < 0) {
+	if (hostapd_if_init(&interfaces, plugin_enable) < 0) {
 		wpa_printf(MSG_ERROR, "Failed to init action frame registry");
 		goto out;
 	}
@@ -1140,7 +1158,8 @@ int main(int argc, char *argv[])
 	hostapd_ucode_init(&interfaces);
 
 #ifdef CONFIG_IEEE80211AX
-	hostapd_ucode_config_nft_table(TABLE_NAME, true);
+	if (hostapd_config_nft_table(TABLE_NAME, true))
+		wpa_printf(MSG_ERROR, "Failed to create NFT table");
 
 	for (i = 0; i < interfaces.count; i++) {
 		struct hostapd_iface *iface = interfaces.iface[i];
@@ -1150,14 +1169,20 @@ int main(int argc, char *argv[])
 			char buf[128] = {0};
 
 			hapd = iface->bss[j];
-			if (hapd->conf->scs) {
-				os_snprintf(buf, 128, "%s_%s", CHAIN_NAME,
-					    hapd->conf->iface);
-				hostapd_ucode_config_nft_chain(hapd, TABLE_NAME,
-							       buf, true);
+			if (!hapd->conf->scs)
+				continue;
+
+			os_snprintf(buf, 128, "%s_%s", CHAIN_NAME,
+				    hapd->conf->iface);
+			if (hostapd_config_nft_chain(hapd, TABLE_NAME,
+						     buf, true)) {
+				wpa_printf(MSG_WARNING,
+					   "Failed to create NFT chain for %s",
+					   hapd->conf->iface);
 			}
 		}
 	}
+
 #endif
 
 	if (hostapd_global_run(&interfaces, daemonize, pid_file)) {
@@ -1168,7 +1193,8 @@ int main(int argc, char *argv[])
 	ret = 0;
 
 #ifdef CONFIG_IEEE80211AX
-	hostapd_ucode_config_nft_table(TABLE_NAME, false);
+	if (hostapd_config_nft_table(TABLE_NAME, false))
+		wpa_printf(MSG_ERROR, "Failed to remove NFT table");
 #endif
 
  out:
@@ -1209,6 +1235,9 @@ int main(int argc, char *argv[])
 		eloop_cancel_timeout(hostapd_periodic, &interfaces, NULL);
 	hostapd_global_deinit(pid_file, interfaces.eloop_initialized);
 	os_free(pid_file);
+
+	/* Deinitialize NFT netlink socket */
+	nft_deinit();
 
 	wpa_debug_close_syslog();
 	if (log_file)

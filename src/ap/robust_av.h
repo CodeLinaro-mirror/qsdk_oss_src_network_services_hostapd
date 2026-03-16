@@ -96,26 +96,13 @@ struct sta_info;
 #define NFT_MAX_RULE_COUNT	(HOSTAPD_SCS_MAX_TCLAS_ELEMENTS_PER_DESCRIPTOR * \
 				 HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER * 2)
 #define NFT_RULE_MAX_WEIGHT	8
-#define NFT_RULE_PARAM_SADDR    (1 << 0)
-#define NFT_RULE_PARAM_DADDR    (1 << 1)
-#define NFT_RULE_PARAM_SPORT    (1 << 2)
-#define NFT_RULE_PARAM_DPORT    (1 << 3)
-#define NFT_RULE_PARAM_PROTO    (1 << 4)
-#define NFT_RULE_PARAM_MARK     (1 << 5)
-#define NFT_RULE_PARAM_HANDLE   (1 << 6)
-#define NFT_RULE_PARAM_DMAC     (1 << 7)
-#define NFT_RULE_PARAM_ESP      (1 << 8)
-#define NFT_RULE_PARAM_SPI      (1 << 9)
-#define NFT_RULE_PARAM_DSCP     (1 << 10)
-
-#define NFT_RULE_PARAM_UDP_ENCAP_ESP (1 << 11)
-#define NFT_RULE_PARAM_UDP_ENCAP_ESP_SPI (1 << 12)
-
-#define NFT_UDP_PORT		4500
 
 #define HOSTAPD_MSCS_WLAN_EID_SUBELEMENT 0
 #define HOSTAPD_QM_DEFAULT_QM_ID 0xFF
 #define HOSTAPD_MSCS_MAX_FLOW_ENTRIES 255
+
+#define HOSTAPD_MAX_RULES_PER_TCLAS 2
+
 /* QoS MGMT status values */
 enum hostapd_qm_status {
 	HOSTAPD_QM_STATUS_SUCCESS = 0,
@@ -158,6 +145,8 @@ struct hostapd_tclas_elements {
 		struct hostapd_tclas4_params type4_params;
 		struct hostapd_tclas10_params type10_params;
 	} tclas_elem;
+	u8 num_rules;
+	u64 rule_handle[HOSTAPD_MAX_RULES_PER_TCLAS];
 };
 
 struct hostapd_scs_qos_attributes {
@@ -214,27 +203,6 @@ struct hostapd_scs_resp_data {
 	u8 num_scs_desc;
 	struct hostapd_scs_resp_desc_data
 			scs_resp_desc[HOSTAPD_SCS_MAX_DESCPRIPTORS_PER_REQUEST];
-};
-
-struct hostapd_nft_rule_params {
-	u8 ip_family;
-	u8 nf_family;
-	char table[32];
-	char chain[32];
-	u32 valid_flags;
-	u8 saddr6[16];
-	u8 daddr6[16];
-	u32 saddr4;
-	u32 daddr4;
-	u16 sport;
-	u16 dport;
-	u8 proto;
-	u32 mark;
-	u64 rule_pos;
-	u8 dmac[ETH_ALEN];
-	u32 esp_spi;
-	u8 dscp;
-	u8 weight;
 };
 
 struct hostapd_mscs_resp {

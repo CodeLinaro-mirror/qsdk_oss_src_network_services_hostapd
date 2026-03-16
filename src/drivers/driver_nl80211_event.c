@@ -199,6 +199,7 @@ static const char * nl80211_command_to_string(enum nl80211_commands cmd)
 	C2S(NL80211_CMD_LINK_REMOVAL_COMPLETED)
 	C2S(NL80211_CMD_ERP)
 	C2S(NL80211_CMD_QOS_MGMT)
+	C2S(NL80211_CMD_AP_POWER_SAVE)
 	C2S(__NL80211_CMD_AFTER_LAST)
 	}
 #undef C2S
@@ -298,6 +299,10 @@ static void mlme_event_assoc(struct wpa_driver_nl80211_data *drv,
 	}
 
 	status = le_to_host16(mgmt->u.assoc_resp.status_code);
+
+	if (TEST_FAIL_TAG("denied-unspec"))
+		status = WLAN_STATUS_ASSOC_DENIED_UNSPEC;
+
 	if (status != WLAN_STATUS_SUCCESS) {
 		os_memset(&event, 0, sizeof(event));
 		event.assoc_reject.bssid = mgmt->bssid;
@@ -4371,7 +4376,8 @@ qca_nl80211_afc_power_update_completed(struct i802_bss *bss,
 
 int
 qca_nl80211_handle_afc_events(struct i802_bss *bss,
-			      u8 *data, size_t len)
+			      u8 *data, size_t len,
+			      bool check_first_bss)
 {
 	struct nlattr *attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_MAX + 1];
 	u8 event_type;
@@ -4404,6 +4410,18 @@ qca_nl80211_handle_afc_events(struct i802_bss *bss,
 	}
 
 	event_type = nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_TYPE]);
+	if (check_first_bss &&
+	    bss != bss->drv->first_bss) {
+		wpa_printf(MSG_DEBUG,
+			   "Ignore AFC event %d received for hw_idx %d on %s\n",
+			   event_type, received_hw_index, bss->ifname);
+		return 0;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "Handling AFC event %d received for hw_idx %d on %s\n",
+		   event_type, received_hw_index, bss->ifname);
+
 	switch (event_type) {
 	case QCA_WLAN_VENDOR_AFC_EVENT_TYPE_POWER_UPDATE_COMPLETE:
 		qca_nl80211_afc_power_update_completed(bss, data, len);
@@ -4481,7 +4499,7 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 		qca_nl80211_6ghz_pwr_mode_change_completed(bss, data, len);
 		break;
 	case QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT:
-		qca_nl80211_handle_afc_events(bss, data, len);
+		qca_nl80211_handle_afc_events(bss, data, len, true);
 		break;
 	case QCA_NL80211_VENDOR_SUBCMD_IFACE_RELOAD:
 		qca_nl80211_iface_reload(bss, data, len);
@@ -5306,6 +5324,31 @@ static void nl80211_ttlm_update_event(struct i802_bss *bss, struct nlattr **tb)
 #endif /* CONFIG_IEEE80211BE */
 
 
+#ifdef CONFIG_IEEE80211BN
+static void nl80211_ap_powersave_update_event(struct i802_bss *bss,
+					   struct nlattr **tb)
+{
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	union wpa_event_data data;
+	bool powersave_update = false;
+
+	os_memset(&data, 0, sizeof(data));
+
+	if (tb[NL80211_ATTR_DPS_ASSIST]) {
+		powersave_update = true;
+		data.ap_powersave_event.dps_assist_updated = true;
+		data.ap_powersave_event.dps_assist =
+					nla_get_u8(tb[NL80211_ATTR_DPS_ASSIST]);
+	}
+
+	if (!powersave_update)
+		return;
+
+	wpa_supplicant_event(drv->ctx, EVENT_UPDATE_AP_POWERSAVE, &data);
+}
+#endif /* CONFIG_IEEE80211BN */
+
+
 static void do_process_drv_event(struct i802_bss *bss, int cmd,
 				 struct nlattr **tb)
 {
@@ -5615,6 +5658,11 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 	case NL80211_CMD_QOS_MGMT:
 		nl80211_process_mscs_event(bss, tb);
 		break;
+#ifdef CONFIG_IEEE80211BN
+	case NL80211_CMD_AP_POWER_SAVE:
+		nl80211_ap_powersave_update_event(bss, tb);
+		break;
+#endif /* CONFIG_IEEE80211BN */
 	default:
 		wpa_dbg(drv->ctx, MSG_DEBUG, "nl80211: Ignored unknown event "
 			"(cmd=%d)", cmd);

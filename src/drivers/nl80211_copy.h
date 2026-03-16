@@ -1630,6 +1630,8 @@ enum nl80211_commands {
 
 	NL80211_CMD_QOS_MGMT,
 
+	NL80211_CMD_AP_POWER_SAVE,
+
 	/* add new commands above here */
 
 	/* used to define NL80211_CMD_MAX below */
@@ -3622,6 +3624,12 @@ enum nl80211_attrs {
 	NL80211_ATTR_BITRATE,
 
 	NL80211_ATTR_UHR_CAPABILITY,
+
+	NL80211_ATTR_DISABLE_UHR,
+
+	NL80211_ATTR_PCIE,
+	NL80211_ATTR_DCVS,
+	NL80211_ATTR_DPS_ASSIST,
 
 	/* add attributes here, update the policy in nl80211.c */
 

@@ -280,7 +280,7 @@ int ieee80211_is_dfs(int freq, const struct hostapd_hw_modes *modes,
 bool ieee80211_is_oce_capable(const u8 *frm, int len);
 int is_dfs_global_op_class(u8 op_class);
 bool is_80plus_op_class(u8 op_class);
-enum phy_type ieee80211_get_phy_type(int freq, int ht, int vht);
+enum phy_type ieee80211_get_phy_type(int freq, int ht, int vht, int eht);
 
 int supp_rates_11b_only(struct ieee802_11_elems *elems);
 int mb_ies_info_by_ies(struct mb_ies_info *info, const u8 *ies_buf,
@@ -424,6 +424,8 @@ ssize_t ieee802_11_defrag_mle_subelem(struct wpabuf *mlbuf,
 u8 get_link_id(const u8 *ml_ie);
 const u8 * get_ml_ie(const u8 *ies, size_t len, u8 type);
 const u8 * get_basic_mle_mld_addr(const u8 *buf, size_t len);
+const u8 * get_basic_mle_eml_capa(const u8 *buf, size_t len);
+int get_basic_mle_link_id(const u8 *buf, size_t len);
 
 /**
  * struct hostapd_multi_mbssid_group: hostapd per group MBSSID info

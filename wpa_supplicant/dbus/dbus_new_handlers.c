@@ -2729,7 +2729,7 @@ DBusMessage * wpas_dbus_handler_flush_bss(DBusMessage *message,
 			      DBUS_TYPE_INVALID);
 
 	if (age == 0)
-		wpa_bss_flush(wpa_s);
+		wpa_bss_flush(wpa_s, 0);
 	else
 		wpa_bss_flush_by_age(wpa_s, age);
 

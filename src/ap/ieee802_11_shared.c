@@ -40,9 +40,15 @@ u8 * hostapd_eid_assoc_comeback_time(struct hostapd_data *hapd,
 	u32 timeout, tu;
 	struct os_reltime now, passed;
 	u8 type = WLAN_TIMEOUT_ASSOC_COMEBACK;
+	struct sta_info *temp_sta = NULL;
+
+	if (sta->sa_query_triggered_sta)
+		temp_sta = sta->sa_query_triggered_sta;
+	else
+		temp_sta = sta;
 
 	os_get_reltime(&now);
-	os_reltime_sub(&now, &sta->sa_query_start, &passed);
+	os_reltime_sub(&now, &temp_sta->sa_query_start, &passed);
 	tu = (passed.sec * 1000000 + passed.usec) / 1024;
 	if (hapd->conf->assoc_sa_query_max_timeout > tu)
 		timeout = hapd->conf->assoc_sa_query_max_timeout - tu;
@@ -51,6 +57,7 @@ u8 * hostapd_eid_assoc_comeback_time(struct hostapd_data *hapd,
 	if (timeout < hapd->conf->assoc_sa_query_max_timeout)
 		timeout++; /* add some extra time for local timers */
 
+	sta->sa_query_triggered_sta = NULL;
 #ifdef CONFIG_TESTING_OPTIONS
 	if (hapd->conf->test_assoc_comeback_type != -1)
 		type = hapd->conf->test_assoc_comeback_type;
@@ -546,6 +553,10 @@ u8 * hostapd_eid_ext_capab(struct hostapd_data *hapd, u8 *eid,
 			*pos &= ~0x08;
 		if (i == 2 && !hapd->iconf->mbssid)
 			*pos &= ~0x40;
+		/* Clear bit 78 if twt responder support is disabled */
+		if (i == 9 && !hostapd_get_he_twt_responder(hapd, IEEE80211_MODE_AP) &&
+		    !hostapd_get_ht_vht_twt_responder(hapd))
+			*pos &= ~0x40;
 	}
 
 	while (len > 0 && eid[1 + len] == 0) {
@@ -902,10 +913,11 @@ u8 * hostapd_eid_mbo(struct hostapd_data *hapd, u8 *eid, size_t len)
 	    !OCE_STA_CFON_ENABLED(hapd) && !OCE_AP_ENABLED(hapd))
 		return eid;
 
-	if (hapd->conf->mbo_enabled && hapd->conf->oce & OCE_AP) {
+	if (hapd->conf->mbo_enabled) {
 		*mbo_pos++ = MBO_ATTR_ID_AP_CAPA_IND;
 		*mbo_pos++ = 1;
-		 if (hapd->conf->mbo_ap_cap_ind & MBO_AP_CAPA_CELL_AWARE)
+		 if ((hapd->conf->oce & OCE_AP) &&
+		     (hapd->conf->mbo_ap_cap_ind & MBO_AP_CAPA_CELL_AWARE))
 			 *mbo_pos++ = MBO_AP_CAPA_CELL_AWARE;
 		 else
 			 *mbo_pos++ = 0;
@@ -1317,6 +1329,15 @@ struct sta_info * hostapd_ml_get_assoc_sta(struct hostapd_data *hapd,
 			   sta->mld_assoc_link_id);
 		return sta;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(other_hapd->conf)) {
+		wpa_printf(MSG_DEBUG,
+			   "MLD: Link %u in lower mode, can't be assoc link",
+			   sta->mld_assoc_link_id);
+		return sta;
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	/*
 	 * Iterate over the stations and find the one with the matching link ID

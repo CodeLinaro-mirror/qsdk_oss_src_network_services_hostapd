@@ -21,6 +21,9 @@
 #include "fst/fst.h"
 #include "vlan.h"
 #include "../../qcn_extns/cmn.h"
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+#include "../../qcn_extns/hostapd_if_plugin.h"
+#endif
 
 enum macaddr_acl {
 	ACCEPT_UNLESS_DENIED = 0,
@@ -287,7 +290,6 @@ struct he_phy_capabilities_info {
 	bool he_su_beamformer;
 	bool he_su_beamformee;
 	bool he_mu_beamformer;
-	bool he_mu_beamformee;
 	bool he_dl_mu_ofdma;
 	bool he_dl_mu_ofdma_bfer;
 	bool he_ul_mu_ofdma;
@@ -300,7 +302,6 @@ struct eht_phy_capabilities_info {
 	bool su_beamformer;
 	bool su_beamformee;
 	bool mu_beamformer;
-	bool mu_beamformee;
 	bool dl_mu_ofdma;
 	bool ul_mu_ofdma;
 	bool dl_ofdma_mumimo;
@@ -316,6 +317,10 @@ struct eht_phy_capabilities_info {
 	u8 eht_bfme_ss_320;
 };
 #endif /* CONFIG_IEEE80211BE */
+
+#define DRIVER_DEFINED		-1
+#define FEATURE_DISABLED	0
+#define FEATURE_ENABLED		1
 
 /**
  * struct hostapd_bss_config - Per-BSS configuration
@@ -396,9 +401,8 @@ struct hostapd_bss_config {
 #define VHT_CAP_BSS_OVR_SU_BEAMFORMER      BIT(0)
 #define VHT_CAP_BSS_OVR_SU_BEAMFORMEE      BIT(1)
 #define VHT_CAP_BSS_OVR_MU_BEAMFORMER      BIT(2)
-#define VHT_CAP_BSS_OVR_MU_BEAMFORMEE      BIT(3)
-#define VHT_CAP_BSS_OVR_SOUNDING_DIMENSION BIT(4)
-#define VHT_CAP_BSS_OVR_STS_CAPABILITY     BIT(5)
+#define VHT_CAP_BSS_OVR_SOUNDING_DIMENSION BIT(3)
+#define VHT_CAP_BSS_OVR_STS_CAPABILITY     BIT(4)
 	u32 vht_capab_mask;
 #endif /* CONFIG_IEEE80211AC */
 
@@ -408,26 +412,26 @@ struct hostapd_bss_config {
 #define HE_PHY_BSS_OVR_UL_MUMIMO        BIT(1)
 #define HE_PHY_BSS_OVR_SU_BEAMFORMER    BIT(2)
 #define HE_PHY_BSS_OVR_SU_BEAMFORMEE    BIT(3)
-#define HE_PHY_BSS_OVR_MU_BEAMFORMEE    BIT(4)
-#define HE_PHY_BSS_OVR_DL_MU_OFDMA      BIT(5)
-#define HE_PHY_BSS_OVR_DL_MU_OFDMA_BFER BIT(6)
-#define HE_PHY_BSS_OVR_UL_MU_OFDMA      BIT(7)
+#define HE_PHY_BSS_OVR_DL_MU_OFDMA      BIT(4)
+#define HE_PHY_BSS_OVR_DL_MU_OFDMA_BFER BIT(5)
+#define HE_PHY_BSS_OVR_UL_MU_OFDMA      BIT(6)
 	u32 he_phy_capab_mask;
 #endif /* CONFIG_IEEE80211AX */
 
 #ifdef CONFIG_IEEE80211BE
 	struct eht_phy_capabilities_info eht_phy_capab;
 #define EHT_PHY_BSS_OVR_MU_BEAMFORMER   BIT(0)
-#define EHT_PHY_BSS_OVR_UL_MU_MIMO_80   BIT(1)
-#define EHT_PHY_BSS_OVR_UL_MU_MIMO_160  BIT(2)
-#define EHT_PHY_BSS_OVR_UL_MU_MIMO_320  BIT(3)
 #define EHT_PHY_BSS_OVR_SU_BEAMFORMER   BIT(4)
 #define EHT_PHY_BSS_OVR_SU_BEAMFORMEE   BIT(5)
-#define EHT_PHY_BSS_OVR_MU_BEAMFORMEE   BIT(6)
 #define EHT_PHY_BSS_OVR_DL_MU_OFDMA     BIT(7)
 #define EHT_PHY_BSS_OVR_UL_MU_OFDMA     BIT(8)
 #define EHT_PHY_BSS_OVR_DL_OFDMA_MUMIMO BIT(9)
 #define EHT_PHY_BSS_OVR_UL_OFDMA_MUMIMO BIT(10)
+#define EHT_PHY_BSS_OVR_BFME_SS_80      BIT(11)
+#define EHT_PHY_BSS_OVR_BFME_SS_160     BIT(12)
+#define EHT_PHY_BSS_OVR_BFME_SS_320     BIT(13)
+#define EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO BIT(14)
+#define EHT_PHY_BSS_OVR_MU_BFMR_MASK        BIT(15)
 	u32 eht_phy_capab_mask;
 #endif /* CONFIG_IEEE80211BE */
 
@@ -1084,6 +1088,7 @@ struct hostapd_bss_config {
 	bool enable_aal;
 	u8 ml_max_rec_links;
 
+	bool single_link_emlsr;
 #ifdef CONFIG_TESTING_OPTIONS
 	/*
 	 * If set indicate the AP as disabled in the RNR element included in the
@@ -1159,6 +1164,53 @@ struct hostapd_bss_config {
 	ieee80211_tpe_config_user_params tpe_ie_config;
 	enum rate_type probe_resp_rate_type;
 	u16 probe_resp_rate;
+
+	/**
+	 * rssi_reject_assoc_rssi - Minimum RSSI for association (per-BSS)
+	 *
+	 * This is an override for the per-radio rssi_reject_assoc_rssi in
+	 * struct hostapd_config. If set to 0, falls back to the radio-wide
+	 * threshold. If both are 0, the feature is disabled.
+	 *
+	 * Value in dBm (e.g., -75 means -75 dBm)
+	 */
+	int rssi_reject_assoc_rssi;
+
+	/**
+	 * rssi_reject_assoc_timeout - Timeout for rejected association (per-BSS)
+	 *
+	 * This is the time until which the AP will continue rejecting
+	 * a station, which was initially rejected because of low RSSI. Until
+	 * this time has passed, the AP will continue rejecting the STA
+	 * regardless of the RSSI value in the subsequent Assoc-Request frames
+	 *
+	 * If set to 0, no timeout is enforced, i.e., AP will accept the
+	 * Assoc frame purely based on the RSSI value in the current incoming
+	 * frame (and not dependent on any history)
+	 *
+	 * Falls back to radio-wide timeout if not set.
+	 */
+	int rssi_reject_assoc_timeout;
+
+	/**
+	 * rssi_deauth_grace_samples - Grace samples for RSSI deauth (per-BSS)
+	 *
+	 * Number of consecutive low RSSI samples before triggering deauth.
+	 * Range: 1-100. Falls back to radio-wide setting if not set.
+	 */
+	int rssi_deauth_grace_samples;
+
+	/**
+	 * dps_assist - DPS Assist Support
+	 *
+	 * This is an override for per-BSS support for DPS Assist for AP.
+	 * If set to -1, fallback to driver support. If driver support is set,
+	 * 0 and 1 are used to enable and disable support.
+	 */
+	int dps_assist;
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+	struct hostapd_config_plugin plugin;
+#endif
 };
 
 /**
@@ -1320,6 +1372,10 @@ struct hostapd_config {
 		double bias;
 	} *acs_chan_bias;
 	unsigned int num_acs_chan_bias;
+	/* Interval in seconds between ACS scan retries when driver is busy */
+	unsigned int acs_scan_retry_interval;
+	/* Maximum number of ACS scan retry attempts when driver is busy */
+	int acs_scan_retry_max_count;
 #endif /* CONFIG_ACS */
 	int disable_40mhz_scan;
 
@@ -1393,6 +1449,7 @@ struct hostapd_config {
 
 	int rssi_reject_assoc_rssi;
 	int rssi_reject_assoc_timeout;
+	int rssi_deauth_grace_samples;
 	int rssi_ignore_probe_request;
 
 #ifdef CONFIG_AIRTIME_POLICY

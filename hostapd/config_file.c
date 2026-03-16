@@ -26,6 +26,9 @@
 #include "ap/ieee802_11.h"
 #include "config_file.h"
 
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+#include "../qcn_extns/hostapd_if_plugin.h"
+#endif
 
 #ifndef CONFIG_NO_VLAN
 static int hostapd_config_read_vlan_file(struct hostapd_bss_config *bss,
@@ -3232,6 +3235,22 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		conf->acs_num_scans = val;
+	} else if (os_strcmp(buf, "acs_scan_retry_interval") == 0) {
+		int val = atoi(pos);
+		if (val < 1 || val > 3600) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid acs_scan_retry_interval %d (expected 0..3600)",
+			line, val);
+			return 1;
+		}
+		conf->acs_scan_retry_interval = val;
+	} else if (os_strcmp(buf, "acs_scan_retry_max_count") == 0) {
+		int val = atoi(pos);
+		if (val < 1 || val > 1000) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid acs_scan_retry_max_count %d (expected 0..1000)",
+					line, val);
+			return 1;
+		}
+		conf->acs_scan_retry_max_count = val;
 	} else if (os_strcmp(buf, "acs_chan_bias") == 0) {
 		if (hostapd_config_parse_acs_chan_bias(conf, pos)) {
 			wpa_printf(MSG_ERROR, "Line %d: invalid acs_chan_bias",
@@ -3601,12 +3620,6 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		else
 			bss->vht_capab &= ~VHT_CAP_MU_BEAMFORMER_CAPABLE;
 		bss->vht_capab_mask |= VHT_CAP_BSS_OVR_MU_BEAMFORMER;
-	} else if (os_strcmp(buf, "bss_vht_mu_beamformee") == 0) {
-		if (atoi(pos))
-			bss->vht_capab |= VHT_CAP_MU_BEAMFORMEE_CAPABLE;
-		else
-			bss->vht_capab &= ~VHT_CAP_MU_BEAMFORMEE_CAPABLE;
-		bss->vht_capab_mask |= VHT_CAP_BSS_OVR_MU_BEAMFORMEE;
 	} else if (os_strcmp(buf, "bss_vht_su_beamformer") == 0) {
 		if (atoi(pos))
 			bss->vht_capab |= VHT_CAP_SU_BEAMFORMER_CAPABLE;
@@ -3669,11 +3682,6 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "bss_he_su_beamformee") == 0) {
 		bss->he_phy_capab.he_su_beamformee = atoi(pos);
 		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_SU_BEAMFORMEE;
-	} else if (os_strcmp(buf, "he_mu_beamformee") == 0) {
-		conf->he_phy_capab.he_mu_beamformee = atoi(pos);
-	} else if (os_strcmp(buf, "bss_he_mu_beamformee") == 0) {
-		bss->he_phy_capab.he_mu_beamformee = atoi(pos);
-		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_MU_BEAMFORMEE;
 	} else if (os_strcmp(buf, "he_dl_mu_ofdma") == 0) {
 		conf->he_phy_capab.he_dl_mu_ofdma = atoi(pos);
 	} else if (os_strcmp(buf, "bss_he_dl_mu_ofdma") == 0) {
@@ -4903,9 +4911,24 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		bss->multi_ap_vlanid = val;
 	} else if (os_strcmp(buf, "rssi_reject_assoc_rssi") == 0) {
-		conf->rssi_reject_assoc_rssi = atoi(pos);
+		int val = atoi(pos);
+		/* Support both per-BSS and per-radio configuration */
+		bss->rssi_reject_assoc_rssi = val;
+		conf->rssi_reject_assoc_rssi = val;
 	} else if (os_strcmp(buf, "rssi_reject_assoc_timeout") == 0) {
-		conf->rssi_reject_assoc_timeout = atoi(pos);
+		int val = atoi(pos);
+		/* Support both per-BSS and per-radio configuration */
+		bss->rssi_reject_assoc_timeout = val;
+		conf->rssi_reject_assoc_timeout = val;
+	} else if (os_strcmp(buf, "rssi_deauth_grace_samples") == 0) {
+		int val = atoi(pos);
+		if (val < 1 || val > 100) {
+			wpa_printf(MSG_ERROR, "Line %d: Invalid rssi_deauth_grace_samples %d (expected 1-100)",
+				   line, val);
+			return 1;
+		}
+		bss->rssi_deauth_grace_samples = val;
+		conf->rssi_deauth_grace_samples = val;
 	} else if (os_strcmp(buf, "rssi_ignore_probe_request") == 0) {
 		conf->rssi_ignore_probe_request = atoi(pos);
 	} else if (os_strcmp(buf, "pbss") == 0) {
@@ -5204,11 +5227,6 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "bss_eht_su_beamformee") == 0) {
 		bss->eht_phy_capab.su_beamformee = atoi(pos);
 		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_SU_BEAMFORMEE;
-	} else if (os_strcmp(buf, "eht_mu_beamformee") == 0) {
-		conf->eht_phy_capab.mu_beamformee = atoi(pos);
-	} else if (os_strcmp(buf, "bss_eht_mu_beamformee") == 0) {
-		bss->eht_phy_capab.mu_beamformee = atoi(pos);
-		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_MU_BEAMFORMEE;
 	} else if (os_strcmp(buf, "eht_dl_mu_ofdma") == 0) {
 		conf->eht_phy_capab.dl_mu_ofdma = atoi(pos);
 	} else if (os_strcmp(buf, "bss_eht_dl_mu_ofdma") == 0) {
@@ -5263,19 +5281,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->eht_phy_capab.partial_bw_dl_mu_mimo = atoi(pos);
 	} else if (os_strcmp(buf, "eht_ulmumimo_80mhz") == 0) {
 		conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz = atoi(pos);
-	} else if (os_strcmp(buf, "bss_eht_ulmumimo_80mhz") == 0) {
-		bss->eht_phy_capab.non_ofdma_ulmumimo_80mhz = atoi(pos);
-		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_UL_MU_MIMO_80;
 	} else if (os_strcmp(buf, "eht_ulmumimo_160mhz") == 0) {
 		conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz = atoi(pos);
-	} else if (os_strcmp(buf, "bss_eht_ulmumimo_160mhz") == 0) {
-		bss->eht_phy_capab.non_ofdma_ulmumimo_160mhz = atoi(pos);
-		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_UL_MU_MIMO_160;
 	} else if (os_strcmp(buf, "eht_ulmumimo_320mhz") == 0) {
 		conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz = atoi(pos);
-	} else if (os_strcmp(buf, "bss_eht_ulmumimo_320mhz") == 0) {
-		bss->eht_phy_capab.non_ofdma_ulmumimo_320mhz = atoi(pos);
-		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_UL_MU_MIMO_320;
 	} else if (os_strcmp(buf, "bss_eht_mu_bfmr") == 0) {
 		int val = atoi(pos);
 		if (val < 0 || val > 7) {
@@ -5285,6 +5294,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->eht_phy_capab.eht_mu_bfmr_mask = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_MU_BFMR_MASK;
 	} else if (os_strcmp(buf, "bss_eht_mu_mimo") == 0) {
 		int val = atoi(pos);
 		if (val < 0 || val > 7) {
@@ -5294,6 +5304,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->eht_phy_capab.eht_mu_mimo_mask = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO;
 	} else if (os_strcmp(buf, "bss_eht_bfme_ss_80") == 0) {
 		int val = atoi(pos);
 		if (val < 0 || val > 7) {
@@ -5303,6 +5314,12 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->eht_phy_capab.eht_bfme_ss_80 = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_BFME_SS_80;
+		if (val > 0) {
+			/* Enforce SU beamformee when BFME SS is configured */
+			bss->eht_phy_capab.su_beamformee = 1;
+			bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_SU_BEAMFORMEE;
+		}
 	} else if (os_strcmp(buf, "bss_eht_bfme_ss_160") == 0) {
 		int val = atoi(pos);
 		if (val < 0 || val > 7) {
@@ -5312,6 +5329,12 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->eht_phy_capab.eht_bfme_ss_160 = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_BFME_SS_160;
+		if (val > 0) {
+			/* Enforce SU beamformee when BFME SS is configured */
+			bss->eht_phy_capab.su_beamformee = 1;
+			bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_SU_BEAMFORMEE;
+		}
 	} else if (os_strcmp(buf, "bss_eht_bfme_ss_320") == 0) {
 		int val = atoi(pos);
 		if (val < 0 || val > 7) {
@@ -5321,6 +5344,12 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->eht_phy_capab.eht_bfme_ss_320 = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_BFME_SS_320;
+		if (val > 0) {
+			/* Enforce SU beamformee when BFME SS is configured */
+			bss->eht_phy_capab.su_beamformee = 1;
+			bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_SU_BEAMFORMEE;
+		}
 #ifdef CONFIG_IEEE80211BE
 	} else if (os_strcmp(buf, "enable_aal") == 0) {
 		bss->enable_aal = atoi(pos);
@@ -5496,6 +5525,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->is_epcs_enabled = atoi(pos);
 	} else if (os_strcmp(buf, "ttlm_enable") == 0) {
 		bss->ttlm_enable = atoi(pos);
+	} else if (os_strcmp(buf, "single_link_emlsr") == 0) {
+		bss->single_link_emlsr = atoi(pos);
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
@@ -5505,6 +5536,15 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->uhr_oper_chwidth = atoi(pos);
 	} else if (os_strcmp(buf, "uhr_oper_centr_freq_seg0_idx") == 0) {
 		conf->uhr_oper_centr_freq_seg0_idx = atoi(pos);
+	} else if (os_strcmp(buf, "dps_assist") == 0) {
+		int val;
+		val = atoi(pos);
+		if (val < FEATURE_DISABLED || val > FEATURE_ENABLED) {
+			wpa_printf(MSG_ERROR,
+				   "Invallid value for dps_assist");
+			return 1;
+		}
+		bss->dps_assist = val;
 #endif /* CONFIG_IEEE80211BN */
 
 	} else if (os_strcmp(buf, "enable_dscp_policy_capa") == 0) {
@@ -5543,6 +5583,11 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else {
 		if (!hostapd_config_fill_extn(conf, bss, buf, pos, line))
 			return 0;
+
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+		if (!hostapd_config_fill_plugin(bss, buf, pos))
+			return 0;
+#endif
 
 		wpa_printf(MSG_ERROR,
 			   "Line %d: unknown configuration item '%s'",

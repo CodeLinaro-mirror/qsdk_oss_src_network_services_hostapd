@@ -447,6 +447,8 @@ void wpa_supplicant_mark_disassoc(struct wpa_supplicant *wpa_s)
 
 	wpabuf_free(wpa_s->pending_eapol_rx);
 	wpa_s->pending_eapol_rx = NULL;
+	wpa_s->ext_auth_to_same_bss = false;
+
 }
 
 
@@ -1456,7 +1458,7 @@ static bool wpa_scan_res_ok(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 	if ((sae_pwe == SAE_PWE_HASH_TO_ELEMENT ||
 	     ssid->sae_password_id) &&
 	    sae_pwe != SAE_PWE_FORCE_HUNT_AND_PECK &&
-	    wpa_key_mgmt_sae(ssid->key_mgmt) && bss_key_mgmt_sae &&
+	    wpa_key_mgmt_only_sae(ssid->key_mgmt) && bss_key_mgmt_sae &&
 	    !(rsnxe_capa & BIT(WLAN_RSNX_CAPAB_SAE_H2E))) {
 		if (debug_print)
 			wpa_dbg(wpa_s, MSG_DEBUG,
@@ -3153,6 +3155,8 @@ static void multi_ap_process_assoc_resp(struct wpa_supplicant *wpa_s,
 	u16 status;
 
 	wpa_s->multi_ap_ie = 0;
+	wpa_s->multi_ap_profile = 0;
+	wpa_s->multi_ap_primary_vlanid = 0;
 
 	if (!ies ||
 	    ieee802_11_parse_elems(ies, ies_len, &elems, 1) == ParseFailed ||
@@ -3169,6 +3173,13 @@ static void multi_ap_process_assoc_resp(struct wpa_supplicant *wpa_s,
 	wpa_s->multi_ap_fronthaul = !!(multi_ap.capability &
 				       MULTI_AP_FRONTHAUL_BSS);
 	wpa_s->multi_ap_ie = 1;
+
+	/* Store Multi-AP profile and primary VLAN ID from association response */
+	wpa_s->multi_ap_profile = multi_ap.profile;
+	wpa_s->multi_ap_primary_vlanid = multi_ap.vlanid;
+
+	wpa_printf(MSG_DEBUG, "Multi-AP: profile=%u primary_vlan_id=%u",
+		   wpa_s->multi_ap_profile, wpa_s->multi_ap_primary_vlanid);
 }
 
 
@@ -3477,6 +3488,74 @@ static int wpa_supplicant_use_own_rsne_params(struct wpa_supplicant *wpa_s,
 	return 0;
 }
 
+/**
+ * wpa_supplicant_check_hop_count - Check hop count in vendor IE
+ * @resp_ies: Association response IEs
+ * @resp_ies_len: Length of association response IEs
+ * Returns: 0 if hop count is valid, -1 if hop count is 255 (should reject)
+ */
+static int wpa_supplicant_check_hop_count(const u8 *resp_ies,
+					   size_t resp_ies_len)
+{
+	const u8 *vendor_ie;
+	u8 hop_count;
+
+	if (!resp_ies || resp_ies_len == 0)
+		return 0;
+
+	/* Search for our custom vendor IE */
+	vendor_ie = get_vendor_ie(resp_ies, resp_ies_len, OUI_QCA);
+	if (!vendor_ie) {
+		/* Vendor IE not present - allow association */
+		return 0;
+	}
+
+	/* Verify the IE is within bounds of resp_ies buffer */
+	if ((size_t)(vendor_ie - resp_ies) + 2 + vendor_ie[1] > resp_ies_len) {
+		wpa_printf(MSG_WARNING, "Hop count vendor IE extends beyond buffer");
+		return 0;
+	}
+
+	/*
+	 * Vendor IE format:
+	 * [0] = Element ID (WLAN_EID_VENDOR_SPECIFIC = 221)
+	 * [1] = Length
+	 * [2-4] = OUI (3 bytes)
+	 * [5] = OUI Type
+	 * [6+] = Payload
+	 *
+	 * The hop count is the first byte of the payload
+	 */
+	if (vendor_ie[1] < 5) {
+		/* IE too short to contain hop count */
+		wpa_printf(MSG_WARNING,
+			   "Hop count vendor IE too short (len=%u)",
+			   vendor_ie[1]);
+		return 0;
+	}
+
+	/* Check if OUI type matches MULTI_AP_OUI_TYPE */
+	if (vendor_ie[5] != MULTI_AP_OUI_TYPE) {
+		wpa_printf(MSG_DEBUG,
+			   "Vendor IE OUI type (0x%02x) doesn't match MAP - skipping hop cnt check",
+			   vendor_ie[5]);
+		return 0;
+	}
+
+	/* Extract hop count from payload (first byte after OUI+Type) */
+	hop_count = vendor_ie[6];
+
+	wpa_printf(MSG_DEBUG, "Hop count from vendor IE: %u", hop_count);
+
+	if (hop_count == 255) {
+		wpa_printf(MSG_INFO,
+			   "Rejecting association: hop count is 255");
+		return -1;
+	}
+
+	return 0;
+}
+
 
 static void wpas_parse_connection_info(struct wpa_supplicant *wpa_s,
 				       unsigned int freq,
@@ -3570,6 +3649,17 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 	if (data->assoc_info.resp_ies) {
 		wpa_hexdump(MSG_DEBUG, "resp_ies", data->assoc_info.resp_ies,
 			    data->assoc_info.resp_ies_len);
+
+		/* Check hop count in vendor IE and reject if it's 255 */
+		if (wpa_supplicant_check_hop_count(data->assoc_info.resp_ies,
+						   data->assoc_info.resp_ies_len) < 0) {
+			wpa_printf(MSG_WARNING, "Association rejected due to invalid hop count");
+			wpa_supplicant_deauthenticate(wpa_s, WLAN_REASON_INVALID_IE);
+			/* Clear any partial association state */
+			wpa_sm_notify_disassoc(wpa_s->wpa);
+			return -1;
+		}
+
 #ifdef CONFIG_TDLS
 		wpa_tdls_assoc_resp_ies(wpa_s->wpa, data->assoc_info.resp_ies,
 					data->assoc_info.resp_ies_len);
@@ -4666,6 +4756,7 @@ static void wpa_supplicant_event_assoc(struct wpa_supplicant *wpa_s,
 	}
 
 	wpa_s->last_eapol_matches_bssid = 0;
+	wpa_s->ext_auth_to_same_bss = false;
 
 #ifdef CONFIG_TESTING_OPTIONS
 	if (wpa_s->rsne_override_eapol) {
@@ -6877,6 +6968,14 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 				data->dfs_event.freq);
 			wpas_ap_event_dfs_radar_detected(wpa_s,
 							 &data->dfs_event);
+			/* On Radar detection, if uplink_csa is not enabled
+			 * flush all the scan bss cache and deauth the STA
+			 */
+			if (!wpa_s->conf->uplink_csa) {
+				wpa_bss_flush(wpa_s, 1);
+				wpa_supplicant_deauthenticate(wpa_s,
+						WLAN_REASON_DEAUTH_LEAVING);
+			}
 		}
 		break;
 	case EVENT_DFS_NOP_FINISHED:

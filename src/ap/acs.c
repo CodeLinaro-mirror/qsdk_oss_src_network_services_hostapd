@@ -353,6 +353,7 @@ void acs_cleanup(struct hostapd_iface *iface)
 	iface->chans_surveyed = 0;
 	iface->acs_num_completed_scans = 0;
 	iface->acs_num_retries = 0;
+	iface->last_scan_aborted = 0;
 	eloop_cancel_timeout(acs_scan_retry, iface, NULL);
 }
 
@@ -445,8 +446,11 @@ acs_survey_chan_interference_factor(struct hostapd_iface *iface,
 }
 
 
-static bool acs_usable_bw_chan(const struct hostapd_channel_data *chan,
-			       enum bw_type bw)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+bool acs_usable_bw_chan(const struct hostapd_channel_data *chan,
+			enum bw_type bw)
 {
 	unsigned int i = 0;
 
@@ -911,8 +915,21 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 			if (!chan2)
 				break;
 
-			if (!chan_bw_allowed(chan2, bw, secondary_channel != -1,
-					     j == 0)) {
+			/*
+			 * For HT40 ACS, allow both HT40+ and HT40- when
+			 * ht40_plus_minus_allowed is enabled in hostapd.conf.
+			 * Previously limited to 2.4 GHz; extend to 5 GHz as well.
+			 */
+			if (bw == 40 && iface->conf->ht40_plus_minus_allowed) {
+				if (!chan_bw_allowed(chan2, 40, 1, 1) &&
+				    !chan_bw_allowed(chan2, 40, 0, 1)) {
+					wpa_printf(MSG_DEBUG,
+						   "ACS: Channel %d: BW %u (HT40+/-) not supported",
+						   chan2->chan, bw);
+					continue;
+				}
+			} else if (!chan_bw_allowed(chan2, bw,
+				   secondary_channel != -1, j == 0)) {
 				wpa_printf(MSG_DEBUG,
 					   "ACS: Channel %d: BW %u is not supported",
 					   chan2->chan, bw);
@@ -1355,8 +1372,14 @@ static void acs_study(struct hostapd_iface *iface)
 		goto fail;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (!acs_handle_channel_change_extn(iface, ideal_chan, err))
+		return;
+#endif
 	err = 0;
 fail:
+	if (!acs_handle_channel_change_failed_extn(iface, err))
+		return;
 	/*
 	 * hostapd_setup_interface_complete() will return -1 on failure,
 	 * 0 on success and 0 is HOSTAPD_CHAN_VALID :)
@@ -1378,6 +1401,20 @@ static void acs_scan_complete(struct hostapd_iface *iface)
 	int err;
 
 	iface->scan_cb = NULL;
+
+	/* If the last scan was aborted, clear aborted flag and retry ACS scan */
+	if (iface->last_scan_aborted) {
+		wpa_printf(MSG_INFO, "ACS: Previous scan aborted; retrying ACS scan");
+		iface->last_scan_aborted = 0;
+		/* Do not reset acs_num_retries here; allow acs_request_scan to handle EBUSY backoff */
+		err = acs_request_scan(iface);
+		if (err && err != -EBUSY) {
+			wpa_printf(MSG_ERROR, "ACS: Failed to request scan after abort");
+			goto fail;
+		}
+		/* If EBUSY, acs_request_scan schedules retry; if success, wait for next EVENT_SCAN_RESULTS */
+		return;
+	}
 	iface->acs_num_retries = 0;
 
 	wpa_printf(MSG_DEBUG, "ACS: Using survey based algorithm (acs_num_scans=%d)",
@@ -1388,6 +1425,14 @@ static void acs_scan_complete(struct hostapd_iface *iface)
 		wpa_printf(MSG_ERROR, "ACS: Failed to get survey data");
 		goto fail;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (iface->conf->conf_extn.qacs_enable) {
+		if (!acs_process_hostapd_scan_data(iface))
+			acs_study(iface);
+		return;
+	}
+#endif
 
 	if (++iface->acs_num_completed_scans < iface->conf->acs_num_scans) {
 		err = acs_request_scan(iface);
@@ -1418,8 +1463,10 @@ static int * acs_request_scan_add_freqs(struct hostapd_iface *iface,
 		chan = &mode->channels[i];
 
 #ifdef CONFIG_QCN_EXTN
-		acs_request_scan_add_freqs_extn(chan, &freq);
-		continue;
+		if (iface->conf->conf_extn.qacs_enable) {
+			acs_request_scan_add_freqs_extn(chan, &freq);
+			continue;
+		}
 #endif
 
 		if ((chan->flag & HOSTAPD_CHAN_DISABLED) ||
@@ -1501,7 +1548,8 @@ static int acs_request_scan(struct hostapd_iface *iface)
 	}
 
 #ifdef CONFIG_QCN_EXTN
-	acs_modify_scan_params_extn(iface, &params);
+	if (iface->conf->conf_extn.qacs_enable)
+		acs_modify_scan_params_extn(iface, &params);
 #endif
 
 	ret = hostapd_driver_scan(iface->bss[0], &params);
@@ -1509,18 +1557,25 @@ static int acs_request_scan(struct hostapd_iface *iface)
 
 	if (ret == -EBUSY) {
 		iface->acs_num_retries++;
-		if (iface->acs_num_retries >= ACS_SCAN_RETRY_MAX_COUNT) {
+		if (iface->conf->acs_scan_retry_max_count > 0 &&
+		    iface->acs_num_retries >= iface->conf->acs_scan_retry_max_count) {
 			wpa_printf(MSG_ERROR,
 				   "ACS: Failed to request initial scan (all re-attempts failed)");
+			acs_fail(iface);
+			return -1;
+		} else if (iface->conf->acs_scan_retry_max_count < 0) {
+			wpa_printf(MSG_ERROR,
+                                   "ACS: Failed to request initial scan: invalid param: %d",
+				   iface->conf->acs_scan_retry_max_count);
 			acs_fail(iface);
 			return -1;
 		}
 
 		wpa_printf(MSG_INFO,
-			   "Failed to request acs scan ret=%d (%s) - try to scan after %d seconds",
-			   ret, strerror(-ret), ACS_SCAN_RETRY_INTERVAL);
+			   "Failed to request acs scan ret=%d (%s) - try to scan after %u seconds",
+			   ret, strerror(-ret), iface->conf->acs_scan_retry_interval);
 		eloop_cancel_timeout(acs_scan_retry, iface, NULL);
-		eloop_register_timeout(ACS_SCAN_RETRY_INTERVAL, 0,
+		eloop_register_timeout(iface->conf->acs_scan_retry_interval, 0,
 				       acs_scan_retry, iface, NULL);
 		return 0;
 	}
@@ -1576,8 +1631,8 @@ enum hostapd_chan_status acs_init(struct hostapd_iface *iface)
 
 	if (acs_request_scan(iface) < 0)
 		return HOSTAPD_CHAN_INVALID;
-
-	hostapd_set_state(iface, HAPD_IFACE_ACS);
+	if (!iface->iface_extn.dynamic_acs_action)
+		hostapd_set_state(iface, HAPD_IFACE_ACS);
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, ACS_EVENT_STARTED);
 
 	return HOSTAPD_CHAN_ACS;

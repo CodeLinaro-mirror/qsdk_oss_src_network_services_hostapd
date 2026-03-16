@@ -553,6 +553,11 @@ static void nl80211_deliver_pending_events(void *eloop_ctx, void *data)
 
 	wpa_printf(MSG_DEBUG, "nl80211: Delivering pending events");
 
+	dl_list_init(&pending_events);
+
+	if (dl_list_empty(&global->pending_events))
+		return;
+
 	global->pending_events.next->prev = &pending_events;
 	global->pending_events.prev->next = &pending_events;
 	pending_events.next = global->pending_events.next;
@@ -1146,8 +1151,17 @@ add:
 	/* if not add it by deleting the older wiphy */
 	if (!found) {
 		list = &bss->drv->wiphy_list;
-		if (list->next && list->prev)
+		if (list->next && list->prev) {
+			/* Wiphy indices change sometimes for the same BSSes.
+			 * Here bss->drv->wiphy_list is moved from old
+			 * wiphy_data list (&w->drvs) to new. As bss->drv is
+			 * same for all BSSes on a wiphy, this move affects all.
+			 * Corresponding check is added to
+			 * nl80211_put_wiphy_data_ap() not delete this node if
+			 * it was already moved this way.
+			 */
 			dl_list_del(list);
+		}
 		dl_list_add(&w->drvs, &bss->drv->wiphy_list);
 	}
 
@@ -1176,8 +1190,23 @@ static void nl80211_put_wiphy_data_ap(struct i802_bss *bss)
 		}
 	}
 	/* if not remove it */
-	if (!found)
-		dl_list_del(&bss->drv->wiphy_list);
+	if (!found) {
+		bool wiphy_found = false;
+		struct wpa_driver_nl80211_data *drv;
+
+		dl_list_for_each(drv, &w->drvs, struct wpa_driver_nl80211_data,
+				 wiphy_list) {
+			if (drv == bss->drv) {
+				wiphy_found = true;
+				break;
+			}
+		}
+
+		if (wiphy_found)
+			dl_list_del(&bss->drv->wiphy_list);
+		else
+			wpa_printf(MSG_DEBUG, "Drv wiphy node was already moved to wiphy index %d", bss->drv->wiphy_idx);
+	}
 
 	if (!dl_list_empty(&w->bsss))
 		return;
@@ -3019,6 +3048,11 @@ static int nl80211_action_subscribe_ap(struct i802_bss *bss)
 	/* RRM Neighbor Report Request */
 	if (nl80211_register_action_frame(bss, (u8 *) "\x05\x04", 2) < 0)
 		ret = -1;
+#ifdef CONFIG_QCN_EXTN
+	/* uplink csa */
+	if (nl80211_register_action_frame(bss, (u8 *) "\x00\x04", 2) < 0)
+		ret = -1;
+#endif
 	/* FT Action frames */
 	if (nl80211_register_action_frame(bss, (u8 *) "\x06", 1) < 0)
 		ret = -1;
@@ -5377,6 +5411,103 @@ static int nl80211_mbssid(struct nl_msg *msg, struct mbssid_data *params)
 
 #endif /* CONFIG_IEEE80211AX */
 
+static int nl80211_get_channel_switch_time_handler(struct nl_msg *msg, void *arg)
+{
+	u32 *cs_time = arg;
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+
+	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		  genlmsg_attrlen(gnlh, 0), NULL);
+
+	if (tb[NL80211_ATTR_VENDOR_DATA]) {
+		struct nlattr *vendor_tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_MAX + 1];
+		nla_parse(vendor_tb, QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_MAX,
+			  nla_data(tb[NL80211_ATTR_VENDOR_DATA]),
+			  nla_len(tb[NL80211_ATTR_VENDOR_DATA]), NULL);
+		if (vendor_tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_TOTAL])
+			*cs_time = nla_get_u32(vendor_tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_TOTAL]);
+	}
+
+	return NL_SKIP;
+}
+
+static int nl80211_get_channel_switch_time(void *priv,
+					   struct hostapd_freq_params *freq,
+					   u32 *cs_time)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret = -1;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Get channel switch time");
+
+	*cs_time = 0;
+
+	msg = nl80211_drv_msg(drv, 0, NL80211_CMD_VENDOR);
+	if (!msg)
+		return -1;
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_GET_CHANNEL_SWITCH_TIME)) {
+		nlmsg_free(msg);
+		return -1;
+	}
+
+	if (freq) {
+		struct nlattr *params;
+
+		params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+		if (!params) {
+			nlmsg_free(msg);
+			return -1;
+		}
+
+		if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_FREQ,
+				freq->freq)) {
+			nlmsg_free(msg);
+			return -1;
+		}
+
+		if (freq->bandwidth &&
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_BANDWIDTH,
+				freq->bandwidth)) {
+			nlmsg_free(msg);
+			return -1;
+		}
+
+		if (freq->center_freq1 &&
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ1,
+				freq->center_freq1)) {
+			nlmsg_free(msg);
+			return -1;
+		}
+
+		if (freq->center_freq2 &&
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ2,
+				freq->center_freq2)) {
+			nlmsg_free(msg);
+			return -1;
+		}
+
+		if (freq->punct_bitmap &&
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_PUNCT_BMAP,
+				freq->punct_bitmap)) {
+			nlmsg_free(msg);
+			return -1;
+		}
+
+		nla_nest_end(msg, params);
+	}
+
+	ret = send_and_recv_resp(drv, msg,
+				 nl80211_get_channel_switch_time_handler,
+				 cs_time);
+
+	return ret;
+}
 
 #ifdef CONFIG_DRIVER_NL80211_QCA
 static void qca_set_allowed_ap_freqs(struct i802_bss *bss, const int *freqs,
@@ -5479,6 +5610,44 @@ static int nl80211_put_freq_params_device(struct wpa_driver_nl80211_data *drv,
 		   "  * bandwidth_device=%d  * center_freq_device=%d\n",
 		   freq->bandwidth_device, freq->center_freq_device);
 	return 0;
+}
+
+static int nl80211_set_ap_rssi_monitor(struct i802_bss *bss,
+				       struct wpa_driver_ap_params *params)
+{
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	struct nlattr *cqm;
+
+	/* Only use link_id if > -1 (MLD) and AP is mult-link; for legacy AP omit it */
+	int use_link_id = (params->mld_ap && bss->valid_links && params->mld_link_id >= 0);
+
+	wpa_printf(MSG_DEBUG, "nl80211: AP RSSI monitor threshold=%d grace_samples=%d link_id=%d valid_links=0x%x bss=%p ifindex=%d",
+		   params->rssi_reject_assoc_rssi, params->rssi_deauth_grace_samples,
+		   params->mld_link_id, bss->valid_links, bss, bss->ifindex);
+
+	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_CQM)) ||
+	    !(cqm = nla_nest_start(msg, NL80211_ATTR_CQM)) ||
+	    nla_put_s32(msg, NL80211_ATTR_CQM_RSSI_THOLD, params->rssi_reject_assoc_rssi) ||
+	    nla_put_u32(msg, NL80211_ATTR_CQM_RSSI_HYST, params->rssi_deauth_grace_samples)) {
+		nlmsg_free(msg);
+		return -1;
+	}
+
+	nla_nest_end(msg, cqm);
+
+	/* Only add NL80211_ATTR_MLO_LINK_ID if truly MLO multi-link, not for legacy AP. */
+	if (use_link_id &&
+	    nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, params->mld_link_id)) {
+		wpa_printf(MSG_DEBUG, "Failed nla_put MLO_LINK_ID=%d", params->mld_link_id);
+		nlmsg_free(msg);
+		return -1;
+	}
+
+	if (nla_put_flag(msg, NL80211_ATTR_SOCKET_OWNER))
+		wpa_printf(MSG_DEBUG, "Failed to set NL80211_ATTR_SOCKET_OWNER");
+
+	return send_and_recv_cmd(drv, msg);
 }
 
 
@@ -5735,6 +5904,12 @@ static int wpa_driver_nl80211_dcs_config(void *priv, u8 link_id,
 					 struct driver_dcs_config *params)
 {
 	return wpa_driver_nl80211_dcs_config_extn(priv, link_id, params);
+}
+
+static int wpa_driver_nl80211_dcs_sim(void *priv, u8 link_id,
+				      struct driver_dcs_sim *params)
+{
+	return wpa_driver_nl80211_dcs_sim_extn(priv, link_id, params);
 }
 #endif
 #endif
@@ -6155,6 +6330,15 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 			goto fail;
 	}
 
+#ifdef CONFIG_IEEE80211BN
+	if (!params->dps_assist) {
+		wpa_printf(MSG_DEBUG, "nl80211: disable DPS Assist");
+		if (nla_put_u8(msg, NL80211_ATTR_DPS_ASSIST,
+			       params->dps_assist))
+			goto fail;
+	}
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef CONFIG_DRIVER_NL80211_QCA
 	if (cmd == NL80211_CMD_NEW_BEACON && params->allowed_freqs)
 		qca_set_allowed_ap_freqs(bss, params->allowed_freqs,
@@ -6172,6 +6356,13 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 			   ret, strerror(-ret));
 	} else {
 		link->beacon_set = 1;
+
+		if (params->rssi_reject_assoc_rssi) {
+			if (nl80211_set_ap_rssi_monitor(bss, params) < 0) {
+				wpa_printf(MSG_ERROR, "nl80211: Failed to set AP RSSI monitoring");
+				/* Continue anyway - dont fail beacon setup */
+			}
+		}
 		nl80211_set_bss(bss, params->cts_protect, params->preamble,
 				params->short_slot_time, params->ht_opmode,
 				params->isolate, params->basic_rates,
@@ -10853,9 +11044,23 @@ static void wpa_driver_nl80211_resume(void *priv)
 }
 
 
-static int nl80211_signal_monitor(void *priv, int threshold, int hysteresis)
+static int nl80211_signal_monitor(void *priv, int threshold, int hysteresis, int link_id)
 {
 	struct i802_bss *bss = priv;
+#if defined(CONFIG_AP)
+	// AP mode (hostapd) and all modes that use the AP NL80211 CQM RSSI config:
+	struct wpa_driver_ap_params params;
+
+	memset(&params, 0, sizeof(params));
+	params.rssi_reject_assoc_rssi = threshold;
+	params.rssi_deauth_grace_samples = hysteresis & 0xFFFF;
+
+	// Per-link control: always populate the link_id if passed
+	params.mld_ap = (link_id >= 0);
+	params.mld_link_id = link_id;
+
+	return nl80211_set_ap_rssi_monitor(bss, &params);
+#else
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	struct nl_msg *msg;
 	struct nlattr *cqm;
@@ -10873,6 +11078,7 @@ static int nl80211_signal_monitor(void *priv, int threshold, int hysteresis)
 	nla_nest_end(msg, cqm);
 
 	return send_and_recv_cmd(drv, msg);
+#endif
 }
 
 
@@ -12709,7 +12915,7 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 	if (!beacon_csa)
 		goto fail;
 
-	ret = set_beacon_data(msg, &settings->beacon_csa, true);
+	ret = set_beacon_data(msg, &settings->beacon_csa, false);
 	if (ret)
 		goto error;
 
@@ -12872,7 +13078,7 @@ static int nl80211_switch_color(void *priv, struct cca_settings *settings)
 		goto error;
 	}
 
-	ret = set_beacon_data(msg, &settings->beacon_cca, true);
+	ret = set_beacon_data(msg, &settings->beacon_cca, false);
 	if (ret)
 		goto error;
 
@@ -16888,7 +17094,7 @@ afc_process_power_event(struct nl_msg *msg, void *arg)
 	data = nla_data(tb[NL80211_ATTR_VENDOR_DATA]);
 	len = nla_len(tb[NL80211_ATTR_VENDOR_DATA]);
 	wpa_hexdump(MSG_MSGDUMP, "nl80211: AFC Vendor data", data, len);
-	ret = qca_nl80211_handle_afc_events(bss, data, len);
+	ret = qca_nl80211_handle_afc_events(bss, data, len, false);
 	if (ret)
 		wpa_printf(MSG_DEBUG, "nl80211: Failed to handle AFC event: %d", ret);
 
@@ -17166,6 +17372,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.radio_disable = testing_nl80211_radio_disable,
 #endif /* CONFIG_TESTING_OPTIONS */
 	.get_multi_hw_info = wpa_driver_get_multi_hw_info,
+	.get_channel_switch_time = nl80211_get_channel_switch_time,
 	.is_retail_afc_supported = nl80211_is_retail_afc_supported,
 #ifdef CONFIG_IEEE80211BE
 	.set_epcs_cfg = wpa_driver_set_epcs_cfg,
@@ -17181,6 +17388,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.read_link_set_beacon = wpa_driver_read_link_set_beacon,
 #ifdef CONFIG_QCN_EXTN
 	.dcs_config = wpa_driver_nl80211_dcs_config,
+	.dcs_sim = wpa_driver_nl80211_dcs_sim,
 #endif
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_IEEE80211AX

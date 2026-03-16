@@ -107,6 +107,9 @@ static void handle_auth(struct hostapd_data *hapd,
 static int add_associated_sta(struct hostapd_data *hapd,
 			      struct sta_info *sta, int reassoc);
 static struct wpabuf *cip_build_assoc_resp_ie(u8 padding_delay);
+static u16 check_rssi_association(struct hostapd_data *hapd,
+				  const struct ieee80211_mgmt *mgmt,
+				  int rssi, struct sta_info *sta);
 
 
 static u8 * hostapd_eid_multi_ap(struct hostapd_data *hapd, u8 *eid, size_t len)
@@ -308,12 +311,21 @@ u16 hostapd_critical_update_capab(struct hostapd_data *hapd)
 	if (!hapd)
 		return capab;
 
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap && hapd->rx_cu_param.critical_flag)
 		capab |= WLAN_CAPABILITY_PBCC;
-
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->iconf && hapd->iconf->mbssid) {
 		for (i = 1; i < hapd->iface->num_bss; i++) {
 			bss = hapd->iface->bss[i];
+#ifdef CONFIG_QCN_EXTN
+			if (bss && hostapd_is_repurpose_disabled_11be_extn(bss->conf))
+				continue;
+#endif /* CONFIG_QCN_EXTN */
 			if (bss && bss->conf->mld_ap && bss->rx_cu_param.critical_flag)
 				capab |= WLAN_CAPABILITY_CHANNEL_AGILITY;
 		}
@@ -1084,6 +1096,9 @@ static int auth_sae_send_commit(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211BE
 	u8 link_id = hapd->mld_link_id;
 
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta && sta->mld_auth) {
 		dst = sta->reply_addr;
 		/*
@@ -1094,6 +1109,10 @@ static int auth_sae_send_commit(struct hostapd_data *hapd,
 		if (sta->unadded_sta)
 			dst = sta->mld_info.links[link_id].peer_addr;
 	}
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 #endif /* CONFIG_IEEE80211BE */
 
 	data = auth_build_sae_commit(hapd, sta, update, status_code);
@@ -1138,6 +1157,10 @@ static int auth_sae_send_confirm(struct hostapd_data *hapd,
 
 #ifdef CONFIG_IEEE80211BE
 	u8 link_id = hapd->mld_link_id;
+
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta && sta->mld_auth) {
 		dst = sta->reply_addr;
 		if (sta->unadded_sta) {
@@ -1150,6 +1173,9 @@ static int auth_sae_send_confirm(struct hostapd_data *hapd,
 			dst = sta->mld_info.links[link_id].peer_addr;
 		}
 	}
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 	data = auth_build_sae_confirm(hapd, sta);
@@ -1804,11 +1830,17 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta) {
 		if (sta->unadded_sta) {
 			dst = sta->mld_info.links[link_id].peer_addr;
 		}
 	}
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 
@@ -3485,9 +3517,15 @@ static void handle_auth(struct hostapd_data *hapd,
 	else
 		sa = mgmt->sa;
 
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap &&
 	    hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED)
 		skip_acl = true;
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 	auth_alg = le_to_host16(mgmt->u.auth.auth_alg);
@@ -3503,10 +3541,10 @@ static void handle_auth(struct hostapd_data *hapd,
 		challenge = &mgmt->u.auth.variable[2];
 
 	wpa_printf(MSG_DEBUG, "authentication: STA=" MACSTR " auth_alg=%d "
-		   "auth_transaction=%d status_code=%d wep=%d%s "
+		   "auth_transaction=%d status_code=%d protected=%d%s "
 		   "seq_ctrl=0x%x%s%s ml sta %d",
 		   MAC2STR(sa), auth_alg, auth_transaction,
-		   status_code, !!(fc & WLAN_FC_ISWEP),
+		   status_code, !!(fc & WLAN_FC_PROTECTED),
 		   challenge ? " challenge" : "",
 		   seq_ctrl, (fc & WLAN_FC_RETRY) ? " retry" : "",
 		   from_queue ? " (from queue)" : "", mld_sta);
@@ -3897,7 +3935,7 @@ static void handle_auth(struct hostapd_data *hapd,
 #ifndef CONFIG_NO_RC4
 	case WLAN_AUTH_SHARED_KEY:
 		resp = auth_shared_key(hapd, sta, auth_transaction, challenge,
-				       fc & WLAN_FC_ISWEP);
+				       fc & WLAN_FC_PROTECTED);
 		if (resp != 0)
 			wpa_printf(MSG_DEBUG,
 				   "auth_shared_key() failed: status=%d", resp);
@@ -4021,6 +4059,11 @@ static u32 hostapd_get_aid_word(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211BE
 	u32 aid_word = 0;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return hapd->sta_aid[i];
+#endif /* CONFIG_QCN_EXTN */
+
 	/* Do not assign an AID that is in use on any of the affiliated links
 	 * when finding an AID for a non-AP MLD. */
 	if (hapd->conf->mld_ap && sta->mld_info.mld_sta) {
@@ -4039,6 +4082,13 @@ static u32 hostapd_get_aid_word(struct hostapd_data *hapd,
 					   "MLD: Failed to get link BSS for AID");
 				continue;
 			}
+#ifdef CONFIG_QCN_EXTN
+			if (hostapd_is_repurpose_disabled_11be_extn(link_bss->conf)) {
+				wpa_printf(MSG_DEBUG,
+					   "MLD: dont consider aid word from repurposed link");
+				continue;
+			}
+#endif /* CONFIG_QCN_EXTN */
 			link_bss = hostapd_mbssid_get_tx_bss(link_bss);
 			aid_word |= link_bss->sta_aid[i];
 		}
@@ -4068,6 +4118,11 @@ int hostapd_get_wds_mld_sta_uid(struct hostapd_data *hapd, struct sta_info *sta)
 	link_bss = hostapd_mld_get_first_bss(hapd);
 	if (!link_bss)
 		link_bss = hapd;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(link_bss->conf))
+		link_bss = hapd;
+#endif
 
 	for (i = 0; i < AID_WORDS; i++) {
 		if (link_bss->wds_sta_uid[i] == (u32) -1)
@@ -4676,8 +4731,18 @@ static bool hapd_is_known_sta(struct hostapd_data *hapd, struct sta_info *sta,
 }
 
 static bool check_sa_query(struct hostapd_data *hapd, struct sta_info *sta,
-			   int reassoc, const u8 *ies, size_t ies_len)
+			   int reassoc, const u8 *ies, size_t ies_len,
+			   struct sta_info *current_sta)
 {
+	struct hostapd_data *assoc_hapd;
+	struct sta_info *assoc_sta;
+
+	assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd);
+	if (assoc_sta) {
+		sta = assoc_sta;
+		hapd = assoc_hapd;
+	}
+
 	if ((sta->flags &
 	     (WLAN_STA_ASSOC | WLAN_STA_MFP | WLAN_STA_AUTHORIZED)) !=
 	    (WLAN_STA_ASSOC | WLAN_STA_MFP | WLAN_STA_AUTHORIZED))
@@ -4698,6 +4763,8 @@ static bool check_sa_query(struct hostapd_data *hapd, struct sta_info *sta,
 		 */
 		if (sta->sa_query_count == 0)
 			ap_sta_start_sa_query(hapd, sta);
+
+		current_sta->sa_query_triggered_sta = sta;
 
 		return true;
 	}
@@ -4736,8 +4803,9 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 			if (bss == hapd)
 				continue;
 			lsta = ap_get_sta(bss, sta->addr);
-			if (lsta && check_sa_query(bss, lsta, type, ies, ies_len))
+			if (lsta && check_sa_query(bss, lsta, type, ies, ies_len, sta))
 				return true;
+
 		}
 	}
 	return false;
@@ -5646,7 +5714,12 @@ out:
 			ap_free_sta(hapd, sta);
 		return -1;
 	}
-
+	/* if link sta removed and re-added again in reassoc,
+	 * link valid flag set to false during link removal in
+	 * ml_info in sta's sm. if links added successfully set
+	 * link valid true again in sta's wpa_sm for all valid links.
+	 */
+	wpa_auth_set_ml_info_link(origin_sta->wpa_sm,  &origin_sta->mld_info, hapd->mld_link_id);
 	return 0;
 }
 
@@ -5657,6 +5730,11 @@ bool hostapd_is_multiple_link_mld(struct hostapd_data *hapd)
 
 	if (!hapd->conf->mld_ap)
 		return false;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return false;
+#endif /* CONFIG_QCN_EXTN */
 
 	if (!hapd->iface || !hapd->iface->interfaces ||
 	    hapd->iface->interfaces->count <= 1)
@@ -5695,6 +5773,11 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 
 	if (!hapd->conf->mld_ap)
 		return 0;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return 0;
+#endif /* CONFIG_QCN_EXTN */
 
 	if (tx_link_status == WLAN_STATUS_SUCCESS && sta->mld_info.mld_sta) {
 		u8 mld_link_id = hapd->mld_link_id;
@@ -5757,6 +5840,9 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 				continue;
 
 			if (bss->mld_link_id != i)
+				continue;
+
+			if(!bss->started)
 				continue;
 
 			link_bss_found = true;
@@ -6169,8 +6255,15 @@ rsnxe_done:
 
 #ifdef CONFIG_IEEE80211BE
 	if (hostapd_is_eht_enabled(hapd)) {
+		u8 ext_cap = 0;
+
+		if (hapd->conf->single_link_emlsr &&
+		    (hapd->iface->mld_ext_mld_capa &
+		     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
+			ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
+
 		if (hapd->conf->mld_ap)
-			p = hostapd_eid_eht_ml_assoc(hapd, sta, p);
+			p = hostapd_eid_eht_ml_assoc(hapd, sta, p, ext_cap);
 		p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
 		p = hostapd_eid_eht_operation(hapd, p);
 		p = hostapd_eid_vendor_240mhz_extn(hapd, p,
@@ -6181,10 +6274,17 @@ rsnxe_done:
 		p = hostapd_eid_channel_usage(hapd, p, buf + buflen - p);
 	}
 
-	if (hapd->conf->ttlm_enable && sta &&
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
+	if (hapd->conf->mld_ap &&
+	    hapd->conf->ttlm_enable && sta &&
 	    sta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info.ttlm_resp_type ==
 	    WLAN_STATUS_SUCCESS)
 		hostapd_apply_ttlm_mapping_to_driver(hapd, sta);
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
@@ -6548,6 +6648,12 @@ hostapd_mlie_to_get_mld_addr_from_assoc(struct hostapd_data *hapd,
 
 	if (!hapd->mld)
 		return NULL;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return NULL;
+#endif /* CONFIG_QCN_EXTN */
+
 	pos = reassoc ? mgmt->u.reassoc_req.variable : mgmt->u.assoc_req.variable;
 	if (!pos)
 		return NULL;
@@ -6585,6 +6691,11 @@ get_sta_from_ft_ds_list(struct hostapd_data *hapd,
 
 	if (!hapd->mld)
 		return NULL;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return NULL;
+#endif /* CONFIG_QCN_EXTN */
 
 	sta_mld = hostapd_mlie_to_get_mld_addr_from_assoc(hapd, mgmt, len, reassoc);
 	if (!sta_mld)
@@ -6661,6 +6772,92 @@ static struct wpabuf *cip_build_assoc_resp_ie(u8 padding_delay)
 	wpabuf_put_u8(ie, padding_delay);
 
 	return ie;
+}
+
+static u16 check_rssi_rejection_timeout(struct sta_info *sta,
+					 const struct ieee80211_mgmt *mgmt)
+{
+	/* Check if client is still in RSSI rejection timeout */
+	if (sta && (sta->rssi_reject_timeout.sec != 0 || sta->rssi_reject_timeout.usec != 0)) {
+		struct os_time now;
+		os_get_time(&now);
+		if (os_time_before(&now, &sta->rssi_reject_timeout)) {
+			wpa_printf(MSG_INFO,
+				   "Client " MACSTR " still in RSSI rejection timeout",
+				   MAC2STR(mgmt->sa));
+			return WLAN_STATUS_DENIED_POOR_CHANNEL_CONDITIONS;
+		} else {
+			/* Timeout expired, clear it */
+			os_memset(&sta->rssi_reject_timeout, 0, sizeof(sta->rssi_reject_timeout));
+		}
+	}
+
+	return WLAN_STATUS_SUCCESS;
+}
+
+static u16 check_rssi_association(struct hostapd_data *hapd,
+				  const struct ieee80211_mgmt *mgmt,
+				  int rssi, struct sta_info *sta)
+{
+	int rssi_threshold = 0;
+	int rssi_timeout = 0;
+	const char *source = "disabled";
+
+	/* Try BSS-specific threshold first */
+	if (hapd->conf->rssi_reject_assoc_rssi != 0) {
+		rssi_threshold = hapd->conf->rssi_reject_assoc_rssi;
+		rssi_timeout = hapd->conf->rssi_reject_assoc_timeout;
+		source = "BSS override";
+		wpa_printf(MSG_DEBUG,
+			   "RSSI monitor: using BSS override threshold=%d dBm",
+			   rssi_threshold);
+	}
+	/* Fall back to radio-wide threshold */
+	else if (hapd->iconf->rssi_reject_assoc_rssi != 0) {
+		rssi_threshold = hapd->iconf->rssi_reject_assoc_rssi;
+		rssi_timeout = hapd->iconf->rssi_reject_assoc_timeout;
+		source = "radio fallback";
+		wpa_printf(MSG_DEBUG,
+			   "RSSI monitor: using radio fallback threshold=%d dBm",
+			   rssi_threshold);
+	}
+
+	/* Check threshold if enabled */
+	if (rssi_threshold != 0 && rssi != 0) {
+		if (rssi < rssi_threshold) {
+			wpa_printf(MSG_INFO,
+				   "RSSI %d dBm below threshold %d dBm - rejecting association from "
+				   MACSTR " (source: %s, SSID: %s)",
+				   rssi, rssi_threshold,
+				   MAC2STR(mgmt->sa), source,
+				   wpa_ssid_txt(hapd->conf->ssid.ssid,
+						hapd->conf->ssid.ssid_len));
+
+			/* Set timeout if configured */
+			if (rssi_timeout > 0 && sta) {
+				os_get_time(&sta->rssi_reject_timeout);
+				sta->rssi_reject_timeout.sec += rssi_timeout;
+				wpa_printf(MSG_DEBUG,
+					   "Set RSSI rejection timeout for " MACSTR " (%d seconds)",
+					   MAC2STR(mgmt->sa), rssi_timeout);
+			}
+
+			return WLAN_STATUS_DENIED_POOR_CHANNEL_CONDITIONS;
+		} else {
+			if (sta) {
+				os_memset(&sta->rssi_reject_timeout, 0,
+					  sizeof(sta->rssi_reject_timeout));
+			}
+
+			wpa_printf(MSG_DEBUG,
+				   "RSSI %d dBm above threshold %d dBm - accepting association from "
+				   MACSTR " (source: %s)",
+				   rssi, rssi_threshold,
+				   MAC2STR(mgmt->sa), source);
+		}
+	}
+
+	return WLAN_STATUS_SUCCESS;
 }
 
 static void handle_assoc(struct hostapd_data *hapd,
@@ -6742,6 +6939,11 @@ static void handle_assoc(struct hostapd_data *hapd,
 
 	sta = ap_get_sta(hapd, mgmt->sa);
 
+	resp = check_rssi_rejection_timeout(sta, mgmt);
+	if (resp != WLAN_STATUS_SUCCESS) {
+		goto fail;
+	}
+
 #ifdef CONFIG_IEEE80211BE
 	/*
 	 * It is possible that the association frame is from an associated
@@ -6805,7 +7007,11 @@ static void handle_assoc(struct hostapd_data *hapd,
 			int acl_res;
 			struct radius_sta info;
 
-			if (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta) {
+			if (hapd->conf->mld_ap &&
+#ifdef CONFIG_QCN_EXTN
+			    !hostapd_is_repurpose_disabled_11be_extn(hapd->conf) &&
+#endif /* CONFIG_QCN_EXTN */
+			    sta && sta->mld_info.mld_sta) {
 				acl_res = ieee802_11_allowed_address(hapd, sta->addr,
 								     (const u8 *) mgmt,
 								     len, &info);
@@ -6897,6 +7103,11 @@ static void handle_assoc(struct hostapd_data *hapd,
 		goto fail;
 	}
 
+	resp = check_rssi_association(hapd, mgmt, rssi, sta);
+	if (resp != WLAN_STATUS_SUCCESS) {
+		goto fail;
+	}
+
 #ifdef CONFIG_MBO
 	if (hapd->conf->mbo_enabled && hapd->mbo_assoc_disallow) {
 		resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
@@ -6912,7 +7123,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_MBO */
 
-	if (hapd->conf->wpa && check_sa_query(hapd, sta, reassoc, pos, left)) {
+	if (hapd->conf->wpa && check_sa_query(hapd, sta, reassoc, pos, left, sta)) {
 		resp = WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY;
 		goto fail;
 	}
@@ -7113,6 +7324,9 @@ static void handle_assoc(struct hostapd_data *hapd,
 #endif /* CONFIG_FILS */
 
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap) {
 		wpa_printf(MSG_INFO, "STA " MACSTR " for acl checking",
 			   MAC2STR(sta->addr));
@@ -7121,6 +7335,9 @@ static void handle_assoc(struct hostapd_data *hapd,
 			goto fail;
 		}
 	}
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 	ubus_resp = hostapd_ubus_handle_event(hapd, &req);
 	if (ubus_resp) {
@@ -7580,7 +7797,7 @@ static int handle_action(struct hostapd_data *hapd,
 	}
 
 	if (sta && (sta->flags & WLAN_STA_MFP) &&
-	    !(mgmt->frame_control & host_to_le16(WLAN_FC_ISWEP)) &&
+	    !(mgmt->frame_control & host_to_le16(WLAN_FC_PROTECTED)) &&
 	    robust_action_frame(mgmt->u.action.category)) {
 		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_DEBUG,
@@ -7737,6 +7954,11 @@ static int handle_action(struct hostapd_data *hapd,
 		ieee802_11_rx_protected_eht_action(hapd, sta, mgmt, len);
 		return 1;
 #endif /* CONFIG_IEEE80211BE */
+	default:
+#ifdef CONFIG_QCN_EXTN
+		if (handle_action_extn(hapd, mgmt, len, freq))
+			return 1;
+#endif /* CONFIG_QCN_EXTN */
 	}
 
 	hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
@@ -7790,6 +8012,11 @@ static void ieee80211_clear_critical_flag(struct hostapd_data *hapd)
 
 	if (!hapd->conf->mld_ap)
 		return;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return;
+#endif /* CONFIG_QCN_EXTN */
 	/*clear mbssid bss critical flags*/
 	if (hapd->iconf->mbssid) {
 		for (i = 0; i < hapd->iface->num_bss; i++) {
@@ -7889,6 +8116,9 @@ int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 #endif /* CONFIG_MESH */
 #ifdef CONFIG_IEEE80211BE
 	    !(hapd->conf->mld_ap &&
+#ifdef CONFIG_QCN_EXTN
+	      !hostapd_is_repurpose_disabled_11be_extn(hapd->conf) &&
+#endif /* CONFIG_QCN_EXTN */
 	      ether_addr_equal(hapd->mld->mld_addr, mgmt->bssid)) &&
 #endif /* CONFIG_IEEE80211BE */
 	    !ether_addr_equal(mgmt->bssid, hapd->own_addr)) {
@@ -7913,6 +8143,9 @@ int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 	     stype != WLAN_FC_STYPE_ACTION) &&
 #ifdef CONFIG_IEEE80211BE
 	    !(hapd->conf->mld_ap &&
+#ifdef CONFIG_QCN_EXTN
+	      !hostapd_is_repurpose_disabled_11be_extn(hapd->conf) &&
+#endif /* CONFIG_QCN_EXTN */
 	      ether_addr_equal(hapd->mld->mld_addr, mgmt->bssid)) &&
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_NAN_USD
@@ -8321,12 +8554,19 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		sta->pending_wds_enable = 0;
 		sta->flags |= WLAN_STA_WDS;
 		set_wds_sta_flag(hapd, sta);
-		if (hapd->conf->mld_ap && hostapd_get_wds_mld_sta_uid(hapd, sta) < 0) {
+#ifdef CONFIG_QCN_EXTN
+		if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
+		if (hapd->conf->mld_ap &&
+		    hostapd_get_wds_mld_sta_uid(hapd, sta) < 0) {
 			wpa_printf(MSG_DEBUG, "No room for uid"
 				   "to enable 4-address WDS mode for STA "
 				   MACSTR, MAC2STR(sta->addr));
 			return;
 		}
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif /* CONFIG_QCN_EXTN */
 	}
 
 	/* WPS not supported on backhaul BSS. Disable 4addr mode on fronthaul */
@@ -8342,6 +8582,11 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 			aid = sta->wds_mld_uid;
 		else
 			aid = sta->aid;
+
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+			aid = sta->aid;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_DEBUG, "Reenable 4-address WDS mode for STA "
 			   MACSTR " (aid %u)",
@@ -8733,7 +8978,12 @@ void ieee802_11_rx_from_unknown(struct hostapd_data *hapd, const u8 *src,
 		if (!hapd->conf->wds_sta)
 			return;
 
+#ifdef CONFIG_QCN_EXTN
+		if (hapd->conf->mld_ap &&
+		    !hostapd_is_repurpose_disabled_11be_extn(hapd->conf) && wds) {
+#else
 		if (hapd->conf->mld_ap && wds) {
+#endif /* CONFIG_QCN_EXTN */
 			if (hostapd_get_wds_mld_sta_uid(hapd, sta) < 0) {
 				wpa_printf(MSG_DEBUG, "No room for uid"
 					   "to enable 4-address WDS mode for STA "
@@ -9102,7 +9352,8 @@ static u16 get_mask_details(u16 bw)
 }
 
 /**
- * get_lower_bandwidth_puncture_pattern - Extract puncture pattern for a target bandwidth
+ * get_lower_bandwidth_puncture_pattern - Extract puncture pattern for a target
+ * bandwidth.
  * @prifreq: Primary channel center frequency in MHz.
  * @cur_pat: Current puncture bitmap representing inactive sub-channels.
  * @cur_cenfreq: Center frequency of the current bandwidth in MHz.
@@ -9149,9 +9400,13 @@ static u16 get_mask_details(u16 bw)
  * Return: Puncture bitmap representing inactive sub-channels for the given
  * target bandwidth.
  */
-static u16 get_lower_bandwidth_puncture_pattern(u16 prifreq, u16 cur_pat,
-						u16 cur_cenfreq, u16 cur_bw,
-						u16 target_bw)
+
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+u16 get_lower_bandwidth_puncture_pattern(u16 prifreq, u16 cur_pat,
+					 u16 cur_cenfreq, u16 cur_bw,
+					 u16 target_bw)
 {
 	/* @start_20mhz_freq :- Center frequency of the left-most/first 20 MHz
 	 * channel.
@@ -10366,18 +10621,20 @@ static u8 *hostapd_append_local_tpe(struct hostapd_data *hapd,
  *
  * Return: void
  *
- * For an AP, operating in LPI or VLP power mode, the TPEs to be advertised
+ * For an AP, operating in LPI, the TPEs to be advertised
  * in the beacon are
  * TPE1: Max Tx Pwr Category = Default,
  *	 Max Tx Pwr Interpretation = Regulatory Client EIRP PSD
  * TPE2: Max Tx Pwr Category = Subordinate,
  *	 Max Tx Pwr Interpretation = Regulatory Client EIRP PSD
- * For an AP, operating in SP power mode, the TPEs to be advertised in the
- * beacon are
+ *
+ * For an AP operating in SP / VLP power mode, Subordinate client category is
+ * not valid. So, the TPEs to be advertised in the beacon are
  * TPE1: Max Tx Pwr Category = Default,
  *	 Max Tx Pwr Interpretation = Regulatory Client EIRP PSD
  * TPE2: Max Tx Pwr Category = Default,
  *	 Max Tx Pwr Interpretation = Regulatory Client EIRP
+ *
  * For a composite AP, the TPEs to be advertised in the beacon are
  * TPE1: Max Tx Pwr Category = Default,
  *	 Max Tx Pwr Interpretation =
@@ -10398,18 +10655,26 @@ static u8 *hostapd_append_local_tpe(struct hostapd_data *hapd,
  */
 static void hostapd_add_6g_tpe(struct hostapd_data *hapd, u8 **eid, u8 pwr_mode)
 {
-	if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_SP && hapd->iconf->enable_6ghz_composite_ap)
+	if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_SP &&
+	    hapd->iconf->enable_6ghz_composite_ap)
 		pwr_mode = HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP;
 
 	switch(pwr_mode) {
 	case HE_REG_INFO_6GHZ_AP_TYPE_INDOOR:
-	case HE_REG_INFO_6GHZ_AP_TYPE_VLP:
 		*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_REGULAR_CLIENT_LPI,
 					   *eid, REG_DEFAULT_CLIENT,
 					   REGULATORY_CLIENT_EIRP_PSD, pwr_mode);
 		*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_SUBORDINATE_CLIENT_LPI,
 					   *eid, REG_SUBORDINATE_CLIENT,
 					   REGULATORY_CLIENT_EIRP_PSD, pwr_mode);
+		break;
+	case HE_REG_INFO_6GHZ_AP_TYPE_VLP:
+		*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_REGULAR_CLIENT_VLP,
+					   *eid, REG_DEFAULT_CLIENT,
+					   REGULATORY_CLIENT_EIRP_PSD, pwr_mode);
+		*eid = hostapd_add_eirp_tpe(hapd, NL80211_REG_REGULAR_CLIENT_VLP,
+					    *eid, REG_DEFAULT_CLIENT,
+					    REGULATORY_CLIENT_EIRP, pwr_mode);
 		break;
 	case HE_REG_INFO_6GHZ_AP_TYPE_SP:
 		*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_REGULAR_CLIENT_SP,
@@ -10656,16 +10921,37 @@ static u8 * hostapd_eid_wb_channel_switch(struct hostapd_data *hapd, u8 *eid,
 
 
 #ifdef CONFIG_IEEE80211BE
-/* Bandwidth Indication element that is also used as the Bandwidth Indication
- * For Channel Switch subelement within a Channel Switch Wrapper element. */
+/*
+ * Bandwidth Indication element that is also used as the Bandwidth Indication
+ * For Channel Switch subelement within a Channel Switch Wrapper element.
+ */
 static u8 * hostapd_eid_bw_indication(struct hostapd_data *hapd, u8 *eid,
 				      u8 chan1, u8 chan2)
 {
 	u16 punct_bitmap = hapd->cs_freq_params.punct_bitmap;
 	struct ieee80211_bw_ind_element *bw_ind_elem;
 	size_t elen = 4;
+	int bandwidth = hapd->cs_freq_params.bandwidth;
 
-	if (hapd->cs_freq_params.bandwidth <= 160 && !punct_bitmap)
+	/*
+	 * Special case: non-standard 5 GHz 320 MHz operation. If puncturing
+	 * reduces the effective width to < 160 MHz, skip BW Indication.
+	 * For 160 MHz, update the puncture bitmap to the effective width.
+	 */
+	if (bandwidth == CHWIDTH_320 &&
+	    is_5ghz_freq(hapd->cs_freq_params.freq) &&
+	    punct_bitmap) {
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_handle_5ghz_320mhz_bw_indication_extn(
+			    hapd, &chan1, &chan2, &punct_bitmap,
+			    &bandwidth) < 0)
+			return eid;
+#else /* CONFIG_QCN_EXTN */
+		return eid;
+#endif /* CONFIG_QCN_EXTN */
+	}
+
+	if (bandwidth <= CHWIDTH_160 && !punct_bitmap)
 		return eid;
 
 	if (punct_bitmap)
@@ -10678,8 +10964,8 @@ static u8 * hostapd_eid_bw_indication(struct hostapd_data *hapd, u8 *eid,
 	bw_ind_elem = (struct ieee80211_bw_ind_element *) eid;
 	os_memset(bw_ind_elem, 0, sizeof(struct ieee80211_bw_ind_element));
 
-	switch (hapd->cs_freq_params.bandwidth) {
-	case 320:
+	switch (bandwidth) {
+	case CHWIDTH_320:
 		bw_ind_elem->bw_ind_info.control |= BW_IND_CHANNEL_WIDTH_320MHZ;
 		chan2 = chan1;
 		if (hapd->cs_freq_params.channel < chan1)
@@ -10687,7 +10973,7 @@ static u8 * hostapd_eid_bw_indication(struct hostapd_data *hapd, u8 *eid,
 		else
 			chan1 += 16;
 		break;
-	case 160:
+	case CHWIDTH_160:
 		bw_ind_elem->bw_ind_info.control |= BW_IND_CHANNEL_WIDTH_160MHZ;
 		chan2 = chan1;
 		if (hapd->cs_freq_params.channel < chan1)
@@ -10695,10 +10981,10 @@ static u8 * hostapd_eid_bw_indication(struct hostapd_data *hapd, u8 *eid,
 		else
 			chan1 += 8;
 		break;
-	case 80:
+	case CHWIDTH_80:
 		bw_ind_elem->bw_ind_info.control |= BW_IND_CHANNEL_WIDTH_80MHZ;
 		break;
-	case 40:
+	case CHWIDTH_40:
 		if (hapd->cs_freq_params.sec_channel_offset == 1)
 			bw_ind_elem->bw_ind_info.control |=
 				BW_IND_CHANNEL_WIDTH_40MHZ;
@@ -10890,6 +11176,11 @@ static bool hostapd_mbssid_mld_match(struct hostapd_data *tx_hapd,
 	if (!ml_hapd->conf->mld_ap)
 		return false;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(ml_hapd->conf))
+		return false;
+#endif /* CONFIG_QCN_EXTN */
+
 	if (!tx_hapd->iconf->mbssid || tx_hapd->iface->num_bss <= 1) {
 		if (hostapd_is_ml_partner(tx_hapd, ml_hapd)) {
 			if (match_idx)
@@ -10913,6 +11204,10 @@ static bool hostapd_mbssid_mld_match(struct hostapd_data *tx_hapd,
 			continue;
 
 		if (hostapd_is_ml_partner(bss, ml_hapd)) {
+#ifdef CONFIG_QCN_EXTN
+			if (hostapd_is_repurpose_disabled_11be_extn(bss->conf))
+				continue;
+#endif /* CONFIG_QCN_EXTN */
 			if (match_idx)
 				*match_idx = bss->mbssid_idx;
 			return true;
@@ -10934,13 +11229,26 @@ static bool hostapd_skip_rnr(size_t i, struct mbssid_ie_profiles *skip_profiles,
 			     struct hostapd_data *reporting_hapd,
 			     struct hostapd_data *bss, u8 *match_idx)
 {
+	bool reporting_ap_mld = false;
+
+#ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	reporting_ap_mld =
+		(reporting_hapd->conf->mld_ap &&
+		 !hostapd_is_repurpose_disabled_11be_extn(reporting_hapd->conf));
+#else
+	reporting_ap_mld = !!reporting_hapd->conf->mld_ap;
+#endif /* CONFIG_QCN_EXTN */
+#endif /* CONFIG_IEEE80211BE */
+
 	if (!mld_update && skip_profiles &&
 	    i >= skip_profiles->start && i < skip_profiles->end)
 		return true;
 
-	/* No need to report if length is for normal TBTT and the BSS is
-	 * affiliated with an AP MLD. MLD TBTT will include this. */
-	if (tbtt_info_len == RNR_TBTT_INFO_LEN && ap_mld)
+	/* No need to report if length is for normal TBTT and both the reporting
+	 * AP and neighbor AP are affiliated with an AP MLD. MLD TBTT will
+	 * include this. */
+	if (tbtt_info_len == RNR_TBTT_INFO_LEN && ap_mld && reporting_ap_mld)
 		return true;
 
 	/* No need to report if length is for MLD TBTT and the BSS is not
@@ -10951,7 +11259,12 @@ static bool hostapd_skip_rnr(size_t i, struct mbssid_ie_profiles *skip_profiles,
 #ifdef CONFIG_IEEE80211BE
 	/* If building for co-location and they are ML partners, no need to
 	 * include since the ML RNR will carry this. */
-	if (!mld_update && hostapd_is_ml_partner(reporting_hapd, bss))
+	if (!mld_update &&
+#ifdef CONFIG_QCN_EXTN
+	    !hostapd_is_repurpose_disabled_11be_extn(reporting_hapd->conf) &&
+	    !hostapd_is_repurpose_disabled_11be_extn(bss->conf) &&
+#endif /* CONFIG_QCN_EXTN */
+	    hostapd_is_ml_partner(reporting_hapd, bss))
 		return true;
 
 	/* If building for ML RNR and they are not ML partners, don't include.
@@ -10993,6 +11306,16 @@ hostapd_eid_rnr_iface_len(struct hostapd_data *hapd,
 	size_t i, start;
 	u8 tbtt_info_len = mld_update ? RNR_TBTT_INFO_MLD_LEN :
 		RNR_TBTT_INFO_LEN;
+	bool reporting_ap_mld = false;
+
+#ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	reporting_ap_mld = (reporting_hapd->conf->mld_ap &&
+			    !hostapd_is_repurpose_disabled_11be_extn(reporting_hapd->conf));
+#else
+	reporting_ap_mld = !!reporting_hapd->conf->mld_ap;
+#endif /* CONFIG_QCN_EXTN */
+#endif /* CONFIG_IEEE80211BE */
 
 repeat_rnr_len:
 	start = 0;
@@ -11018,7 +11341,12 @@ repeat_rnr_len:
 				continue;
 
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+			ap_mld = (bss->conf->mld_ap &&
+				  !hostapd_is_repurpose_disabled_11be_extn(bss->conf));
+#else
 			ap_mld = bss->conf->mld_ap;
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 			if (bss == reporting_hapd)
@@ -11043,9 +11371,10 @@ repeat_rnr_len:
 	total_tbtt_count += tbtt_count;
 
 	/* If building for co-location, re-build again but this time include
-	 * ML TBTTs.
+	 * ML TBTTs if the reporting AP is affiliated with an AP MLD.
 	 */
-	if (!mld_update && tbtt_info_len == RNR_TBTT_INFO_LEN) {
+	if (!mld_update && tbtt_info_len == RNR_TBTT_INFO_LEN &&
+	    reporting_ap_mld) {
 		tbtt_info_len = RNR_TBTT_INFO_MLD_LEN;
 
 		/* If no TBTT was found, adjust the len and total_len since it
@@ -11214,8 +11543,12 @@ size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
 	}
 
 	/* For EMA Beacons, MLD neighbor repoting is added as part of
-	 * MBSSID RNR. */
+	 * MBSSID RNR. For repurposed link under MLD, skip adding ML TBTT.
+	 */
 	if (include_mld_params &&
+#ifdef CONFIG_QCN_EXTN
+	    !hostapd_is_repurpose_disabled_11be_extn(hapd->conf) &&
+#endif /* CONFIG_QCN_EXTN */
 	    (type != WLAN_FC_STYPE_BEACON ||
 	     hapd->iconf->mbssid != ENHANCED_MBSSID_ENABLED))
 		total_len += hostapd_eid_rnr_mlo_len(hapd, type, NULL,
@@ -11231,6 +11564,9 @@ s8 hostapd_get_20mhz_psd_for_rnr(struct hostapd_data *hapd)
 	u16 freq = iface->freq;
 	u8 client_mode;
 	s8 result;
+
+	if (!is_6ghz_freq(freq))
+		return CHAN_MIN_TX_POWER;
 
 	switch (ap_pwr_type) {
 	case HE_REG_INFO_6GHZ_AP_TYPE_INDOOR:
@@ -11346,13 +11682,18 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 	bool ap_mld = false;
 	u8 *eid = *pos;
 
-#ifdef CONFIG_IEEE80211BE
-	ap_mld = !!hapd->conf->mld_ap;
-#endif /* CONFIG_IEEE80211BE */
-
 	if (!bss || !bss->conf || !bss->started ||
 	    !bss->beacon_set_done || bss == reporting_hapd)
 		return false;
+
+#ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	ap_mld = (bss->conf->mld_ap &&
+		  !hostapd_is_repurpose_disabled_11be_extn(bss->conf));
+#else
+	ap_mld = !!bss->conf->mld_ap;
+#endif /* CONFIG_QCN_EXTN */
+#endif /* CONFIG_IEEE80211BE */
 
 	if (hostapd_skip_rnr(i, skip_profiles, ap_mld, tbtt_info_len,
 			     mld_update, reporting_hapd, bss, &match_idx))
@@ -11408,7 +11749,8 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 
 
 #ifdef CONFIG_IEEE80211BE
-	if (ap_mld) {
+	/* Include the MLD parameters only when TBTT length is for ML RNR */
+	if (ap_mld && tbtt_info_len == RNR_TBTT_INFO_MLD_LEN) {
 		u8 param_ch = 0;
 		/* If BSS is not a partner of the reporting_hapd or
 		 * it is one of the nontransmitted hapd,
@@ -11472,6 +11814,7 @@ static u8 * hostapd_eid_rnr_iface(struct hostapd_data *hapd,
 	u8 tbtt_count, total_tbtt_count = 0, op_class, channel;
 	u8 tbtt_info_len = mld_update ? RNR_TBTT_INFO_MLD_LEN :
 		RNR_TBTT_INFO_LEN;
+	bool reporting_ap_mld = false;
 
 	if (!(iface->drv_flags & WPA_DRIVER_FLAGS_AP_CSA) || !iface->freq)
 		return eid;
@@ -11491,6 +11834,16 @@ static u8 * hostapd_eid_rnr_iface(struct hostapd_data *hapd,
 					  &op_class, &channel) ==
 	    NUM_HOSTAPD_MODES)
 		return eid;
+
+#ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	reporting_ap_mld =
+		(reporting_hapd->conf->mld_ap &&
+		 !hostapd_is_repurpose_disabled_11be_extn(reporting_hapd->conf));
+#else
+	reporting_ap_mld = !!reporting_hapd->conf->mld_ap;
+#endif /* CONFIG_QCN_EXTN */
+#endif /* CONFIG_IEEE80211BE */
 
 repeat_rnr:
 	start = 0;
@@ -11526,9 +11879,10 @@ repeat_rnr:
 	total_tbtt_count += tbtt_count;
 
 	/* If building for co-location, re-build again but this time include
-	 * ML TBTTs.
+	 * ML TBTTs if the reporting AP is affiliated with an AP MLD.
 	 */
-	if (!mld_update && tbtt_info_len == RNR_TBTT_INFO_LEN) {
+	if (!mld_update && tbtt_info_len == RNR_TBTT_INFO_LEN &&
+	    reporting_ap_mld) {
 		tbtt_info_len = RNR_TBTT_INFO_MLD_LEN;
 		goto repeat_rnr;
 	}
@@ -11641,8 +11995,12 @@ u8 * hostapd_eid_rnr(struct hostapd_data *hapd, u8 *eid, u32 type,
 	}
 
 	/* For EMA Beacons, MLD neighbor repoting is added as part of
-	 * MBSSID RNR. */
+	 * MBSSID RNR. Skip including MLD TBTT if repurposed to lower mode
+	 */
 	if (include_mld_params &&
+#ifdef CONFIG_QCN_EXTN
+	    !hostapd_is_repurpose_disabled_11be_extn(hapd->conf) &&
+#endif /* CONFIG_QCN_EXTN */
 	    (type != WLAN_FC_STYPE_BEACON ||
 	     hapd->iconf->mbssid != ENHANCED_MBSSID_ENABLED))
 		eid = hostapd_eid_rnr_mlo(hapd, type, eid, NULL, &current_len);
@@ -12052,6 +12410,7 @@ u8 * hostapd_eid_mbssid_nontx_optional_ie(struct hostapd_data *bss, void *tx_par
 	struct probe_resp_params nontx_probe_params;
 	u8 *tx_elem, *nontx_elem, *tx_head;
 	size_t tx_elem_len, nontx_elem_len, tx_head_len;
+	size_t fixed_param_len;
 
 	if (!tx_params) {
 		wpa_printf(MSG_ERROR, "Tx params is NULL");
@@ -12060,7 +12419,9 @@ u8 * hostapd_eid_mbssid_nontx_optional_ie(struct hostapd_data *bss, void *tx_par
 
 	if (frame_type == WLAN_FC_STYPE_BEACON) {
 		struct wpa_driver_ap_params *params =
-			(struct wpa_driver_ap_params *)tx_params;
+			(struct wpa_driver_ap_params *) tx_params;
+		struct ieee80211_mgmt *mgmt =
+			(struct ieee80211_mgmt *) params->head;
 
 		os_memset(&nontx_params, 0, sizeof(nontx_params));
 		if (ieee802_11_build_nontx_bss_params(bss, &nontx_params) < 0) {
@@ -12069,15 +12430,21 @@ u8 * hostapd_eid_mbssid_nontx_optional_ie(struct hostapd_data *bss, void *tx_par
 			goto fail;
 		}
 
+		/*
+		 * head_len = IEEE80211 header + fixed fields + variable-sized elements
+		 * Extract fixed params length to derive variable elements length.
+		 */
+		fixed_param_len = (size_t) ((u8 *) mgmt->u.beacon.variable -
+					    (u8 *) mgmt);
 		tx_elem = params->tail;
 		tx_elem_len = params->tail_len;
-		tx_head = ((struct ieee80211_mgmt *) params->head)->u.beacon.variable;
-		tx_head_len = params->head_len;
+		tx_head = mgmt->u.beacon.variable;
+		tx_head_len = params->head_len - fixed_param_len;
 		nontx_elem = nontx_params.tail;
 		nontx_elem_len = nontx_params.tail_len;
 	} else {
 		struct probe_resp_params *probe_params =
-			(struct probe_resp_params *)tx_params;
+			(struct probe_resp_params *) tx_params;
 
 		os_memset(&nontx_probe_params, 0, sizeof(nontx_probe_params));
 		if (ieee802_11_build_nontx_bss_probe_params(bss, &nontx_probe_params) < 0) {
@@ -12087,10 +12454,16 @@ u8 * hostapd_eid_mbssid_nontx_optional_ie(struct hostapd_data *bss, void *tx_par
 
 		}
 
+		/*
+		 * resp_len = IEE80211 header + fixed fields + variable-sized elements
+		 * Extract fixed params length to derive variable elements length.
+		 */
+		fixed_param_len = (size_t) ((u8 *) probe_params->resp->u.probe_resp.variable -
+					    (u8 *) probe_params->resp);
 		tx_elem = probe_params->resp->u.probe_resp.variable;
-		tx_elem_len = probe_params->resp_len;
+		tx_elem_len = probe_params->resp_len - fixed_param_len;
 		nontx_elem = nontx_probe_params.resp->u.probe_resp.variable;
-		nontx_elem_len = nontx_probe_params.resp_len;
+		nontx_elem_len = nontx_probe_params.resp_len - fixed_param_len;
 	}
 
 	eid = ieee802_11_inheritance_txbss_params(tx_elem, tx_elem_len,
@@ -12186,6 +12559,9 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211BE
 		/* For ML Probe Response frame, the solicited hapd's MLE will
 		 * be in the frame body */
+#ifdef CONFIG_QCN_EXTN
+		if (!hostapd_is_repurpose_disabled_11be_extn(bss->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 		if (bss->conf->mld_ap &&
 		    (bss != hapd || frame_type != WLAN_FC_STYPE_PROBE_RESP)) {
 			ext_cap = 0;
@@ -12196,8 +12572,9 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 				if (bss->conf->enable_aal)
 					ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
 
-				if (bss->iface->mld_ext_mld_capa &
-				    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+				if (bss->conf->single_link_emlsr &&
+				    (bss->iface->mld_ext_mld_capa &
+				     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 					ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 			}
 
@@ -12206,6 +12583,9 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 			if (bss->eht_mld_link_removal_inprogress)
 				nontx_profile_len += hostapd_eid_eht_ml_reconfig_len(bss);
 		}
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 		/* WMM IE */
@@ -12318,6 +12698,11 @@ void hostapd_eid_update_cu_info(struct hostapd_data *hapd, u16 *elemid_modified,
 	if (!hapd->conf->mld_ap)
 		return;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return;
+#endif /* CONFIG_QCN_EXTN */
+
 	if (!eid_pos || (eid_len == 0) || (eid_len > 255))
 		return;
 	if (eid_cu >= ELEMID_CU_PARAM_MAX)
@@ -12424,6 +12809,10 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 #ifdef CONFIG_IEEE80211BE
 		/* For ML Probe Response frame, the solicited hapd's MLE will
 		 * be in the frame body */
+#ifdef CONFIG_QCN_EXTN
+		if (!hostapd_is_repurpose_disabled_11be_extn(bss->conf)) {
+#endif /* CONFIG_QCN_EXTN */
+
 		if (bss->conf->mld_ap &&
 		    (bss != hapd || frame_type != WLAN_FC_STYPE_PROBE_RESP)) {
 			ext_cap = 0;
@@ -12434,8 +12823,9 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 				if (bss->conf->enable_aal)
 					ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN);
 
-				if (bss->iface->mld_ext_mld_capa &
-				    BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK))
+				if (bss->conf->single_link_emlsr &&
+				    (bss->iface->mld_ext_mld_capa &
+				     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 					ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 			}
 
@@ -12444,6 +12834,9 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 			if (bss->eht_mld_link_removal_inprogress)
 				eid = hostapd_eid_eht_reconf_ml(bss, eid);
 		}
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 		/* WMM IE */

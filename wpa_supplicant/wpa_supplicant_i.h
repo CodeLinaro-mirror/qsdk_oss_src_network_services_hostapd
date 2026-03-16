@@ -1608,6 +1608,8 @@ struct wpa_supplicant {
 	unsigned int multi_ap_ie:1;
 	unsigned int multi_ap_backhaul:1;
 	unsigned int multi_ap_fronthaul:1;
+	u8 multi_ap_profile;
+	u16 multi_ap_primary_vlanid;
 
 #ifndef CONFIG_NO_ROBUST_AV
 	struct robust_av_data robust_av;
@@ -1680,6 +1682,9 @@ struct wpa_supplicant {
 	u8 num_multi_hws;
 
 	bool scs_reconfigure;
+	bool ext_auth_to_same_bss; /* Whether external authentication has been
+				    * completed successfully with the BSS that
+				    * we are already associated with. */  
 #ifdef CONFIG_QCN_EXTN
 	struct wpa_connect_work *cache_cwork;
 	int pre_connect_cnt;

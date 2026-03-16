@@ -65,7 +65,7 @@ static int init_wpa(struct arg_ctx *ctx)
 static void deinit_wpa(struct arg_ctx *ctx)
 {
 	wnm_btm_reset(&ctx->wpa_s);
-	wpa_bss_flush(&ctx->wpa_s);
+	wpa_bss_flush(&ctx->wpa_s, 0);
 }
 
 

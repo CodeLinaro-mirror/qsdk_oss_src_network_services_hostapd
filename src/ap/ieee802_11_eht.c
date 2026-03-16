@@ -144,6 +144,7 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 {
 	struct hostapd_hw_modes *mode;
 	struct eht_capabilities *eht_cap;
+	struct hostapd_data *tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
 	struct ieee80211_eht_capabilities *cap;
 	size_t mcs_nss_len, ppe_thresh_len;
 	u8 *pos = eid, *length_pos;
@@ -178,6 +179,13 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 		cap->phy_cap[EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_IDX] &=
 			~EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_MASK;
 
+
+	/* For non-transmitting BSSs in MBSSID, inherit BSS-level overrides
+	 * from the transmitting BSS */
+	if (tx_hapd != hapd && tx_hapd->conf->eht_phy_capab_mask) {
+		hapd->conf->eht_phy_capab = tx_hapd->conf->eht_phy_capab;
+		hapd->conf->eht_phy_capab_mask = tx_hapd->conf->eht_phy_capab_mask;
+	}
 	if (!((hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_SU_BEAMFORMER) ?
 	      hapd->conf->eht_phy_capab.su_beamformer :
 	      hapd->iface->conf->eht_phy_capab.su_beamformer))
@@ -190,12 +198,21 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 		cap->phy_cap[EHT_PHYCAP_SU_BEAMFORMEE_IDX] &=
 			~EHT_PHYCAP_SU_BEAMFORMEE;
 
-	if (eht_mu_mask_valid(hapd->conf->eht_phy_capab.eht_mu_bfmr_mask)) {
+	if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_MU_BFMR_MASK) {
 		u8 mask = hapd->conf->eht_phy_capab.eht_mu_bfmr_mask;
 
-		if (!(mask & BIT(0)))
+		if (!(mask & BIT(0))) {
 			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
-				~EHT_PHYCAP_MU_BEAMFORMER_MASK;
+				~EHT_PHYCAP_MU_BEAMFORMER_80MHZ;
+		}
+		if (!(mask & BIT(1))) {
+			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
+				~EHT_PHYCAP_MU_BEAMFORMER_160MHZ;
+		}
+		if (!(mask & BIT(2))) {
+			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
+				~EHT_PHYCAP_MU_BEAMFORMER_320MHZ;
+		}
 	}
 
 	if (!(((hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_MU_BEAMFORMER) ?
@@ -205,42 +222,68 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 			~EHT_PHYCAP_MU_BEAMFORMER_MASK;
 	}
 
-	if (eht_mu_mask_valid(hapd->conf->eht_phy_capab.eht_mu_mimo_mask)) {
-		u8 mask = hapd->conf->eht_phy_capab.eht_mu_mimo_mask;
+	{
+		int val80, val160, val320;
 
-		if (!(mask & BIT(0)) ||
-		    !(((hapd->conf->eht_phy_capab_mask &
-			EHT_PHY_BSS_OVR_UL_MU_MIMO_80) ?
-		       hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz :
-		       hapd->iface->conf->eht_phy_capab.
-			       non_ofdma_ulmumimo_80mhz)))
+		if (hapd->conf->eht_phy_capab_mask &
+		    EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO) {
+			u8 m = hapd->conf->eht_phy_capab.eht_mu_mimo_mask;
+
+			val80  = (m & BIT(0)) ? 1 : 0;
+			val160 = (m & BIT(1)) ? 1 : 0;
+			val320 = (m & BIT(2)) ? 1 : 0;
+		} else {
+			val80  = hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz;
+			val160 = hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz;
+			val320 = hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz;
+		}
+
+		if (val80 == 0)
 			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
 				~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_80MHZ;
-
-		if (!(mask & BIT(1)) ||
-		    !(((hapd->conf->eht_phy_capab_mask &
-			EHT_PHY_BSS_OVR_UL_MU_MIMO_160) ?
-		       hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz :
-		       hapd->iface->conf->eht_phy_capab.
-			       non_ofdma_ulmumimo_160mhz)))
+		if (val160 == 0)
 			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
 				~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_160MHZ;
-
-		if (!(mask & BIT(2)) ||
-		    !(((hapd->conf->eht_phy_capab_mask &
-			EHT_PHY_BSS_OVR_UL_MU_MIMO_320) ?
-		       hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz :
-		       hapd->iface->conf->eht_phy_capab.
-			       non_ofdma_ulmumimo_320mhz)))
+		if (val320 == 0)
 			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
 				~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ;
-	} else {
-		cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
-			~(EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_80MHZ |
-			  EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_160MHZ |
-			  EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ);
 	}
 
+
+	/* Apply BSS-level beamformee spatial streams overrides */
+	if (hapd->conf->eht_phy_capab_mask &
+	    (EHT_PHY_BSS_OVR_BFME_SS_80 | EHT_PHY_BSS_OVR_BFME_SS_160 |
+	     EHT_PHY_BSS_OVR_BFME_SS_320)) {
+		u16 phy = WPA_GET_LE16(&cap->phy_cap[EHT_PHY_BFMEE_SS_80MHZ_IDX]);
+
+		if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_BFME_SS_80) {
+			u8 ss_80 = hapd->conf->eht_phy_capab.eht_bfme_ss_80;
+
+			phy &= ~EHT_PHY_BFMEE_SS_80MHZ_MASK;
+			phy |= ((u16) ss_80 << EHT_PHY_BFMEE_SS_80MHZ_SHIFT) &
+				EHT_PHY_BFMEE_SS_80MHZ_MASK;
+		}
+
+		if (hapd->conf->eht_phy_capab_mask &
+		    EHT_PHY_BSS_OVR_BFME_SS_160) {
+			u8 ss_160 = hapd->conf->eht_phy_capab.eht_bfme_ss_160;
+
+			phy &= ~EHT_PHY_BFMEE_SS_160MHZ_MASK;
+			phy |= ((u16) ss_160 << EHT_PHY_BFMEE_SS_160MHZ_SHIFT) &
+				EHT_PHY_BFMEE_SS_160MHZ_MASK;
+		}
+
+		if (hapd->conf->eht_phy_capab_mask &
+		    EHT_PHY_BSS_OVR_BFME_SS_320) {
+			u8 ss_320 = hapd->conf->eht_phy_capab.eht_bfme_ss_320;
+
+			phy &= ~EHT_PHY_BFMEE_SS_320MHZ_MASK;
+			phy |= ((u16) ss_320 << EHT_PHY_BFMEE_SS_320MHZ_SHIFT) &
+				EHT_PHY_BFMEE_SS_320MHZ_MASK;
+		}
+
+		WPA_PUT_LE16(&cap->phy_cap[EHT_PHY_BFMEE_SS_80MHZ_IDX], phy);
+	}
 	pos = cap->optional;
 
 	mcs_nss_len = ieee80211_eht_mcs_set_size(mode->mode,
@@ -663,6 +706,11 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 	u8 max_simul_links, active_links, max_rec_links;
 	u16 ext_mld_cap;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return pos;
+#endif /* CONFIG_QCN_EXTN */
+
 	/*
 	 * As the Multi-Link element can exceed the size of 255 bytes need to
 	 * first build it and then handle fragmentation.
@@ -803,6 +851,14 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 			continue;
 		}
 
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(link_bss->conf)) {
+			wpa_printf(MSG_DEBUG,
+				   "Skip the repurposed link from link info");
+			continue;
+		}
+#endif /* CONFIG_QCN_EXTN */
+
 		/* BSS Parameters Change Count (1) for (Re)Association Response
 		 * frames */
 		if (include_bpcc)
@@ -906,6 +962,11 @@ size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 	if (!hapd->conf->mld_ap)
 		return 0;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return 0;
+#endif /* CONFIG_QCN_EXTN */
+
 	/* Include WLAN_EID_EXT_MULTI_LINK (1) */
 	len = 1;
 	/* control field */
@@ -938,6 +999,14 @@ size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 				   "MLD: Couldn't find link BSS - skip it");
 			continue;
 		}
+
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(link_bss->conf)) {
+			wpa_printf(MSG_ERROR,
+				   "MLD: repurposed link can't have ML elem");
+			continue;
+		}
+#endif /* CONFIG_QCN_EXTN */
 
 		/* BSS Parameters Change Count (1) for (Re)Association Response
 		 * frames */
@@ -1034,13 +1103,13 @@ u8 * hostapd_eid_eht_ml_beacon(struct hostapd_data *hapd,
 
 
 u8 * hostapd_eid_eht_ml_assoc(struct hostapd_data *hapd, struct sta_info *info,
-			      u8 *eid)
+			      u8 *eid, u8 include_ext_cap)
 {
 	if (!ap_sta_is_mld(hapd, info))
 		return eid;
 
 	eid = hostapd_eid_eht_basic_ml_common(hapd, eid, &info->mld_info,
-					      false, true, 0);
+					      false, true, include_ext_cap);
 	ap_sta_free_sta_profile(&info->mld_info);
 	return eid;
 }
@@ -1243,6 +1312,11 @@ const u8 * hostapd_process_ml_auth(struct hostapd_data *hapd,
 	if (!hapd->conf->mld_ap)
 		return NULL;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return NULL;
+#endif /* CONFIG_QCN_EXTN */
+
 	len -= offsetof(struct ieee80211_mgmt, u.auth.variable);
 
 	pos = auth_skip_fixed_fields(hapd, mgmt, len);
@@ -1296,6 +1370,15 @@ static int hostapd_mld_validate_assoc_info(struct hostapd_data *hapd,
 			return -1;
 		}
 
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(other_hapd->conf)) {
+			wpa_printf(MSG_DEBUG,
+				   "MLD: repurposed link=%d not allowed in ml assoc",
+				   link_id);
+			return -1;
+		}
+#endif /* CONFIG_QCN_EXTN */
+
 		os_memcpy(info->links[link_id].local_addr, other_hapd->own_addr,
 			  ETH_ALEN);
 	}
@@ -1318,6 +1401,13 @@ int hostapd_process_ml_assoc_req_addr(struct hostapd_data *hapd,
 
 	if (!mlbuf)
 		return ret;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		wpa_printf(MSG_DEBUG, "MLD: ml assoc req on non-ml BSS");
+		goto out;
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	ml = (struct ieee80211_eht_ml *) wpabuf_head(mlbuf);
 	ml_len = wpabuf_len(mlbuf);
@@ -1753,6 +1843,12 @@ void hostapd_link_reconf_resp_tx_status(struct hostapd_data *hapd,
 				lsta = ap_get_sta(lhapd,
 						  req_list->sta_mld_addr);
 
+#ifdef CONFIG_QCN_EXTN
+			if (lhapd &&
+			    hostapd_is_repurpose_disabled_11be_extn(lhapd->conf))
+				lsta = NULL;
+#endif /* CONFIG_QCN_EXTN */
+
 			if (lsta)
 				ap_free_sta(lhapd, lsta);
 		}
@@ -1775,6 +1871,14 @@ void hostapd_link_reconf_resp_tx_status(struct hostapd_data *hapd,
 				   link_id);
 			continue;
 		}
+
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(lhapd->conf)) {
+			wpa_printf(MSG_INFO,
+				   "MLD: Link (%u) hapd repurposed", link_id);
+			continue;
+		}
+#endif /* CONFIG_QCN_EXTN */
 
 		lsta = ap_get_sta(lhapd, mgmt->da);
 		if (!lsta) {
@@ -1914,6 +2018,15 @@ hostapd_ml_process_reconf_link(struct hostapd_data *hapd,
 	if (!lhapd) /* This cannot be NULL */
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(lhapd->conf)) {
+		wpa_printf(MSG_ERROR,
+			   "link %u is repurposed, hence cant process ml reconf",
+			   link_id);
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	os_memset(&link, 0, sizeof(link));
 
 	link.valid = 1;
@@ -1972,7 +2085,12 @@ hostapd_reject_all_reconf_req(struct hostapd_data *hapd, u8 *pos,
 
 		if (info->status == WLAN_STATUS_SUCCESS) {
 			lhapd = hostapd_mld_get_link_bss(hapd, info->link_id);
+#ifdef CONFIG_QCN_EXTN
+			if (lhapd &&
+			    !hostapd_is_repurpose_disabled_11be_extn(lhapd->conf))
+#else /* CONFIG_QCN_EXTN */
 			if (lhapd)
+#endif /* CONFIG_QCN_EXTN */
 				lsta = ap_get_sta(lhapd,
 						  req_list->sta_mld_addr);
 
@@ -2066,6 +2184,11 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 			lhapd = hostapd_mld_get_link_bss(hapd, info->link_id);
 			if (!lhapd)
 				continue;
+
+#ifdef CONFIG_QCN_EXTN
+			if (hostapd_is_repurpose_disabled_11be_extn(lhapd->conf))
+				continue;
+#endif /* CONFIG_QCN_EXTN */
 
 			link->valid = true;
 
@@ -2392,6 +2515,16 @@ hostapd_parse_link_reconf_req_sta_profile(struct hostapd_data *hapd,
 		goto add_to_list;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(lhapd->conf)) {
+		wpa_printf(MSG_DEBUG,
+			   "MLD: Link %d can't be used for reconfig", link_id);
+		lhapd = NULL;
+		ret = 1;
+		goto add_to_list;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	lsta = ap_get_sta(lhapd, req->sta_mld_addr);
 
 	if (reconf_type == EHT_RECONF_TYPE_DELETE_LINK) {
@@ -2689,6 +2822,11 @@ hostapd_validate_link_reconf_req(struct hostapd_data *hapd,
 				lsta = ap_get_sta(lhapd,
 						  req_list->sta_mld_addr);
 
+#ifdef CONFIG_QCN_EXTN
+			if (lhapd && hostapd_is_repurpose_disabled_11be_extn(lhapd->conf))
+				lsta = NULL;
+#endif /* CONFIG_QCN_EXTN */
+
 			if (lsta)
 				ap_free_sta(lhapd, lsta);
 		} else {
@@ -2929,6 +3067,11 @@ void ieee802_11_rx_protected_eht_action(struct hostapd_data *hapd,
 	if (!hapd->conf->mld_ap)
 		return;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return;
+#endif /* CONFIG_QCN_EXTN */
+
 	payload = ((const u8 *) mgmt) + IEEE80211_HDRLEN + 1;
 	action = *payload++;
 
@@ -3115,6 +3258,11 @@ static size_t hostapd_eid_eht_ml_priority_access(struct hostapd_data *hapd,
 		if (!other_hapd->conf->mld_ap)
 			continue;
 
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(other_hapd->conf))
+			continue;
+#endif /* CONFIG_QCN_EXTN */
+
 		link = &mld_info->links[other_hapd->mld_link_id];
 
 		if (!link || !link->valid)
@@ -3283,7 +3431,9 @@ int hostapd_configure_epcs(struct hostapd_data *hapd,
 		rule.mark = (EPCS_QM_ID << 8) | HOSTAPD_QOS_SCS_TAG;
 		rule.nf_family = NFPROTO_NETDEV;
 		memcpy(rule.dmac, sta->addr, ETH_ALEN);
-		hostapd_ucode_config_nft_rule(hapd, &rule, false);
+		rule.handle = sta->mld_info.epcs.rule_handle;
+		sta->mld_info.epcs.rule_handle = 0;
+		hostapd_config_nft_rule(&rule, false);
 		hostapd_drv_rule_config_notify(hapd, sta->addr);
 	}
 
@@ -3315,8 +3465,9 @@ int hostapd_configure_epcs(struct hostapd_data *hapd,
 		rule.valid_flags |= NFT_RULE_PARAM_DMAC;
 		rule.mark = (EPCS_QM_ID << 8) | HOSTAPD_QOS_SCS_TAG;
 		rule.nf_family = NFPROTO_NETDEV;
-		hostapd_ucode_config_nft_rule(hapd, &rule, true);
+		hostapd_config_nft_rule(&rule, true);
 		hostapd_drv_rule_config_notify(hapd, sta->addr);
+		sta->mld_info.epcs.rule_handle = rule.handle;
 	}
 
 	return 0;

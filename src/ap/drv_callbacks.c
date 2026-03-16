@@ -488,8 +488,14 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 	 */
 	driver_acl = hapd->iface->drv_max_acl_mac_addrs > 0;
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap)
 		driver_acl = false;
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 	if (!driver_acl &&
 	    hostapd_check_acl(hapd, addr, NULL) != HOSTAPD_ACL_ACCEPT) {
@@ -505,13 +511,18 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 	 * For each peer link address, check the corresponding association
 	 * local link's ACL configuration whether it is acceptable.
 	 */
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (!driver_acl && hapd->conf->mld_ap) {
 		if (hostapd_check_ml_acl(hapd, sta) != HOSTAPD_ACL_ACCEPT) {
 			reason = WLAN_REASON_UNSPECIFIED;
 			goto fail;
 		}
 	}
-
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 	if (hostapd_ubus_handle_event(hapd, &req)) {
@@ -1054,6 +1065,11 @@ void hostapd_notif_disassoc_mld(struct hostapd_data *assoc_hapd,
 		    !hostapd_is_ml_partner(assoc_hapd, tmp_hapd))
 			continue;
 
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(tmp_hapd->conf))
+			continue;
+#endif
+
 		tmp_sta = ap_get_sta(tmp_hapd, addr);
 		if (tmp_sta)
 			ap_free_sta(tmp_hapd, tmp_sta);
@@ -1103,6 +1119,11 @@ void hostapd_notif_disassoc(struct hostapd_data *hapd, const u8 *addr)
 				if (!hconf->mld_ap ||
 				    !hostapd_is_ml_partner(hapd, h_hapd))
 					continue;
+
+#ifdef CONFIG_QCN_EXTN
+				if (hostapd_is_repurpose_disabled_11be_extn(h_hapd->conf))
+					continue;
+#endif /* CONFIG_QCN_EXTN */
 
 				sta = ap_get_sta(h_hapd, addr);
 				if (sta) {
@@ -1184,6 +1205,49 @@ void hostapd_event_sta_low_ack(struct hostapd_data *hapd, const u8 *addr,
 		       "disconnected due to excessive missing ACKs");
 	hostapd_drv_sta_disassoc(hapd, addr, reason);
 	ap_sta_disassociate(hapd, sta, reason);
+}
+
+
+void hostapd_event_sta_rssi_low(struct hostapd_data *hapd, const u8 *addr)
+{
+	struct sta_info *sta = ap_get_sta(hapd, addr);
+	int rssi_threshold = 0;
+	const char *source = "disabled";
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_data *orig_hapd = hapd;
+
+	if (!sta && hapd->conf->mld_ap) {
+		hapd = hostapd_find_by_sta(hapd->iface, addr, true, &sta);
+		if (!hapd) {
+			wpa_printf(MSG_DEBUG,
+				   "No partner link BSS found for STA " MACSTR
+				   " - fallback to received context",
+				   MAC2STR(addr));
+			hapd = orig_hapd;
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	/* Get unified RSSI threshold configuration */
+	if (hapd->conf->rssi_reject_assoc_rssi != 0) {
+		rssi_threshold = hapd->conf->rssi_reject_assoc_rssi;
+		source = "BSS override";
+	} else if (hapd->iconf->rssi_reject_assoc_rssi != 0) {
+		rssi_threshold = hapd->iconf->rssi_reject_assoc_rssi;
+		source = "radio fallback";
+	}
+
+	if (!sta || rssi_threshold == 0)
+		return;
+
+	hostapd_logger(hapd, addr, HOSTAPD_MODULE_IEEE80211,
+		       HOSTAPD_LEVEL_INFO,
+		       "RSSI deauth: disconnecting " MACSTR " signal quality below threshold %d dBm (source: %s, SSID: %s)",
+		       MAC2STR(addr), rssi_threshold, source,
+		       wpa_ssid_txt(hapd->conf->ssid.ssid, hapd->conf->ssid.ssid_len));
+
+	hostapd_drv_sta_deauth(hapd, addr, WLAN_REASON_UNSPECIFIED);
+	ap_sta_deauthenticate(hapd, sta, WLAN_REASON_UNSPECIFIED);
 }
 
 
@@ -1555,6 +1619,11 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 		WPA_EVENT_CHANNEL_SWITCH_STARTED,
 		freq, ht, offset, channel_width_to_string(width),
 		cf1, cf2, is_dfs0, is_dfs, punct_bitmap, width_device, cf_device, power_mode_6ghz);
+
+#ifdef CONFIG_QCN_EXTN
+	update_chan_params(hapd, cf1, cf2, hostapd_get_chan_width_from_oper_chan_width(hapd->iconf));
+#endif
+
 	if (!finished)
 		return;
 
@@ -2044,6 +2113,9 @@ static struct hostapd_data * get_hapd_bssid(struct hostapd_iface *iface,
 #endif /* CONFIG_IEEE80211BE */
 
 		hapd = iface->bss[i];
+		if (!hapd)
+			continue;
+
 		if (ether_addr_equal(bssid, hapd->own_addr))
 			return hapd;
 
@@ -2569,7 +2641,11 @@ static void hostapd_event_update_muedca_params(struct hostapd_data *hapd,
 	int i;
 
 	if (hapd->conf->mld_ap) {
+#ifdef CONFIG_QCN_EXTN
+		for_each_mld_link_include_repurposed(selected_hapd, hapd) {
+#else
 		for_each_mld_link(selected_hapd, hapd) {
+#endif /* CONFIG_QCN_EXTN */
 			if (!selected_hapd->iface ||
 			    !selected_hapd->iface->current_hw_info)
 				continue;
@@ -2746,10 +2822,23 @@ static void hostapd_event_afc_update_complete(
 	struct afc_sp_reg_info *afc_rsp_info = &afc_info->afc_rsp_info;
 	struct hostapd_iface *iface = NULL;
 	int i;
+	const char *phy_name = hostapd_drv_get_radio_name(hapd);
 
+	if (!phy_name)
+		return;
+
+	wpa_printf(MSG_DEBUG, "AFC response event received for phy %s through %s",
+		   phy_name, hapd->iface->phy);
 	for (i = 0; i < hapd->iface->interfaces->count; i++) {
 		struct hostapd_iface *h_iface = hapd->iface->interfaces->iface[i];
+		const char *h_phy_name;
 
+		h_phy_name = hostapd_drv_get_radio_name(h_iface->bss[0]);
+		if (!h_phy_name || os_strcmp(h_phy_name, phy_name) != 0)
+			continue;
+
+		wpa_printf(MSG_DEBUG, "AFC Response event for iface %s in phy %s",
+			   h_iface->phy, h_phy_name);
 		if (!h_iface->current_hw_info)
 			continue;
 		if (h_iface->current_hw_info->hw_idx != afc_info->hw_idx)
@@ -2769,6 +2858,7 @@ static void hostapd_event_afc_update_complete(
 	}
 	iface->is_afc_power_event_received = true;
 
+	hapd = iface->bss[0];
 	if (hapd->driver && hapd->driver->is_only_afc_power_fetch &&
 	    hapd->drv_priv) {
 		bool is_only_afc_power_fetch =
@@ -2791,12 +2881,29 @@ static void hostapd_event_afc_update_complete(
 void
 hostapd_set_no_ir_state(struct hostapd_iface *iface)
 {
+	int j;
+
 	hostapd_set_state(iface, HAPD_IFACE_NO_IR);
 	hostapd_interface_update_fils_ubpr(iface, false);
 	iface->is_no_ir = true;
-	hostapd_drv_stop_ap(iface->bss[0]);
-	hostapd_no_ir_cleanup(iface->bss[0]);
-	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, AP_EVENT_NO_IR);
+
+	wpa_printf(MSG_DEBUG, "%s: AFC NO_IR", __func__);
+	for (j = 0; j < iface->num_bss; j++) {
+		struct hostapd_data *hapd = iface->bss[j];
+
+		hostapd_cleanup_cs_params(hapd);
+
+		/* Stop beaconing for first BSS as hostapd_no_ir_cleanup does not
+		 * call stop AP for first Link
+		 **/
+		if (j == 0)
+			hostapd_drv_stop_ap(hapd);
+
+		hostapd_no_ir_cleanup(hapd);
+		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_NO_IR);
+	}
+
+	hostapd_cleanup_iface_partial(iface);
 }
 
 /**
@@ -2819,10 +2926,23 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 {
 	struct hostapd_iface *iface = NULL;
 	int i;
+	const char *phy_name = hostapd_drv_get_radio_name(hapd);
 
+	if (!phy_name)
+		return;
+
+	wpa_printf(MSG_DEBUG, "AFC Reset event received for phy %s through %s",
+		   phy_name, hapd->iface->phy);
 	for (i = 0; i < hapd->iface->interfaces->count; i++) {
 		struct hostapd_iface *h_iface = hapd->iface->interfaces->iface[i];
+		const char *h_phy_name;
 
+		h_phy_name = hostapd_drv_get_radio_name(h_iface->bss[0]);
+		if (!h_phy_name || os_strcmp(h_phy_name, phy_name) != 0)
+			continue;
+
+		wpa_printf(MSG_DEBUG, "AFC Reset event for iface %s in phy %s",
+			   h_iface->phy, h_phy_name);
 		if (!h_iface->current_hw_info)
 			continue;
 		if (h_iface->current_hw_info->hw_idx != afc_info->hw_idx)
@@ -2843,7 +2963,7 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 	/* Clear AFC payload */
 	hostapd_free_afc_data(iface);
 	iface->is_afc_power_event_received = false;
-	if (!hostapd_drv_is_retail_afc_supported(hapd)) {
+	if (!hostapd_drv_is_retail_afc_supported(iface->bss[0])) {
 		wpa_printf(MSG_DEBUG, "AFC payload reset not supported");
 		return;
 	}
@@ -3106,6 +3226,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 
 		if (iface->num_bss == 1) {
 
+			ap_for_each_sta(hapd, hostapd_sm_link_reconfigure, phapd);
 			hostapd_free_link_stas(hapd);
 
 			for (i = 0; i < interfaces->count; i++) {
@@ -3150,7 +3271,8 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 
 refresh_beacon:
 		/* Refresh all the partner beacons */
-		hostapd_refresh_other_iface_beacons(iface);
+		if (interfaces->count > 0)
+			hostapd_refresh_all_iface_beacons(interfaces->iface[0]);
 	}
 }
 #endif /* CONFIG_IEEE80211BE */
@@ -3183,10 +3305,18 @@ static void hostapd_mld_iface_enable(struct hostapd_data *hapd)
 		return;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	hostapd_notify_link_repurpose(first_link, "hostapd_mld_iface_enable");
+#endif /* CONFIG_QCN_EXTN */
+
 	hostapd_iface_enable(first_link);
 
 	/* Add other affiliated links */
+#ifdef CONFIG_QCN_EXTN
+	for_each_mld_link_include_repurposed(link_bss, first_link) {
+#else
 	for_each_mld_link(link_bss, first_link) {
+#endif /* CONFIG_QCN_EXTN */
 		if (link_bss == first_link)
 			continue;
 
@@ -3199,6 +3329,10 @@ static void hostapd_mld_iface_enable(struct hostapd_data *hapd)
 			continue;
 		}
 
+#ifdef CONFIG_QCN_EXTN
+		hostapd_notify_link_repurpose(link_bss,
+					      "hostapd_mld_iface_enable");
+#endif /* CONFIG_QCN_EXTN */
 		hostapd_iface_enable(link_bss);
 	}
 }
@@ -3208,7 +3342,11 @@ static void hostapd_mld_iface_disable(struct hostapd_data *hapd)
 {
 	struct hostapd_data *link_bss;
 
+#ifdef CONFIG_QCN_EXTN
+	for_each_mld_link_include_repurposed(link_bss, hapd)
+#else
 	for_each_mld_link(link_bss, hapd)
+#endif /* CONFIG_QCN_EXTN */
 		hostapd_iface_disable(link_bss);
 }
 
@@ -3306,6 +3444,22 @@ static void hostapd_event_update_expec_dur(struct hostapd_data *hapd,
 			ttlm_expec_dur_event->expec_dur;
 }
 
+
+#ifdef CONFIG_IEEE80211BN
+static void hostapd_update_ap_powersave(struct hostapd_data *hapd,
+					struct ap_powersave_event *ap_ps_event)
+{
+	if (ap_ps_event->dps_assist_updated) {
+		hapd->conf->dps_assist = ap_ps_event->dps_assist;
+		/* Update beacon with updated DPS Assist Support Bit */
+		if (ieee802_11_update_beacons(hapd->iface))
+			wpa_printf(MSG_ERROR,
+				   "Failed to update beacons with DPS Assist Support Bit");
+	}
+}
+#endif /* CONFIG_IEEE80211BN */
+
+
 void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		       union wpa_event_data *data)
 {
@@ -3345,6 +3499,10 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 			hapd = switch_link_scan(hapd,
 						data->scan_info.scan_cookie);
 #endif /* NEED_AP_MLME */
+		/* Latch whether the last scan was aborted to allow ACS logic to react */
+		if (data)
+			hapd->iface->last_scan_aborted = data->scan_info.aborted;
+
 		if (hapd->iface->scan_cb)
 			hapd->iface->scan_cb(hapd->iface);
 #ifdef CONFIG_IEEE80211BE
@@ -3496,8 +3654,19 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 	case EVENT_STATION_LOW_ACK:
 		if (!data)
 			break;
-		hostapd_event_sta_low_ack(hapd, data->low_ack.addr,
-					  data->low_ack.num_packets);
+
+		switch (data->low_ack.num_packets) {
+		case HOSTAPD_DEAUTH_ALL:
+			hostapd_event_sta_rssi_low(hapd, data->low_ack.addr);
+			break;
+		default:
+			/* Generic low ACK (actual packet loss)
+			 * or STA kickout event with num_packets = 10
+			 */
+			hostapd_event_sta_low_ack(hapd, data->low_ack.addr,
+						  data->low_ack.num_packets);
+			break;
+		}
 		break;
 	case EVENT_AUTH:
 		hostapd_notif_auth(hapd, &data->auth);
@@ -3736,7 +3905,11 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		}
 		if (data->iface_reload.link_id == 0xFF) {
 			/* If link id is invalid reload all bss of the mld interface */
+#ifdef CONFIG_QCN_EXTN
+			for_each_mld_link_include_repurposed(phapd, hapd) {
+#else
 			for_each_mld_link(phapd, hapd) {
+#endif /* CONFIG_QCN_EXTN */
 				if (hostapd_reload_bss_only(phapd) < 0) {
 					wpa_printf(MSG_ERROR, "Reloading of BSS failed");
 					continue;
@@ -3761,6 +3934,11 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		hostapd_process_mscs_flow(hapd, data->tclas_flow_event.tclas,
 				data->tclas_flow_event.addr, data->tclas_flow_event.tid);
 		break;
+#ifdef CONFIG_IEEE80211BN
+	case EVENT_UPDATE_AP_POWERSAVE:
+		hostapd_update_ap_powersave(hapd, &data->ap_powersave_event);
+		break;
+#endif /* CONFIG_IEEE80211BN */
 	default:
 		if (!hostapd_wpa_event_extn(ctx, event, data))
 			break;

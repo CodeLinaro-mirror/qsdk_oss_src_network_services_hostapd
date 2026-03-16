@@ -75,6 +75,7 @@
 #include "ap/ttlm.h"
 #include "../src/drivers/driver_nl80211.h"
 #include "ap/dscp_policy.h"
+#include "ap/interference.h"
 
 #ifdef CONFIG_ATF_OFFLOAD
 #include "atf/atf_offload_config.h"
@@ -82,6 +83,9 @@
 
 #ifdef CONFIG_PROCESS_COORDINATION
 #include "common/proc_coord.h"
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+#include "../qcn_extns/hostapd_if_plugin.h"
+#endif
 #endif
 
 #define HOSTAPD_CLI_DUP_VALUE_MAX_LEN 256
@@ -1138,6 +1142,23 @@ static int hostapd_ctrl_iface_coloc_intf_req(struct hostapd_data *hapd,
 
 #endif /* CONFIG_WNM_AP */
 
+static int hostapd_ctrl_iface_update_assocresp_elements(
+	struct hostapd_data *hapd, const char *value)
+{
+	struct wpabuf *new_elems;
+
+	if (!value)
+		return -1;
+
+	new_elems = wpabuf_parse_bin(value);
+	if (!new_elems)
+		return -1;
+
+	wpabuf_free(hapd->conf->assocresp_elements);
+	hapd->conf->assocresp_elements = new_elems;
+
+	return 0;
+}
 
 static int hostapd_ctrl_iface_get_key_mgmt(struct hostapd_data *hapd,
 					   char *buf, size_t buflen)
@@ -1616,6 +1637,29 @@ static int hostapd_ctrl_iface_set_punc_thres(struct hostapd_iface *iface,
 #endif /* NEED_AP_MLME  */
 }
 
+static int hostapd_ctrl_iface_update_rssi_monitor(struct hostapd_data *hapd)
+{
+	int threshold, hysteresis, link_id;
+	int ret;
+
+	if (!hapd->started || !hapd->drv_priv || !hapd->driver ||
+	    !hapd->driver->signal_monitor)
+		return 0;
+
+	threshold = hapd->conf->rssi_reject_assoc_rssi;
+	hysteresis = hapd->conf->rssi_deauth_grace_samples;
+	link_id = hapd->mld_link_id;
+
+	wpa_printf(MSG_INFO, "Updating RSSI monitor: threshold=%d dBm hysteresis=%d link=%d",
+		   threshold, hysteresis, link_id);
+
+	ret = hapd->driver->signal_monitor(hapd->drv_priv, threshold, hysteresis, link_id);
+	if (ret < 0)
+		wpa_printf(MSG_WARNING, "Failed to update RSSI signal monitor, error: %d",
+			   ret);
+
+	return ret;
+}
 
 static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 {
@@ -1730,6 +1774,41 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 	} else if (os_strncmp(cmd, "vendor_elements_", 16) == 0) {
 		ret = hostapd_handle_vendor_elements_update(hapd, hapd->conf, NULL,
 							    cmd, value, true);
+	} else if (os_strcasecmp(cmd, "assocresp_elements") == 0) {
+		ret = hostapd_ctrl_iface_update_assocresp_elements(hapd, value);
+	} else if (os_strcasecmp(cmd, "rssi_reject_assoc_rssi") == 0) {
+		int val = atoi(value);
+		if (val < -95 || val > -1) {
+			wpa_printf(MSG_ERROR, "Invalid RSSI threshold %d (range: -95 to -1)", val);
+			ret = -1;
+		} else {
+			/* Update RSSI threshold for this specific hapd (link or interface-wide) */
+			hapd->conf->rssi_reject_assoc_rssi = val;
+			hapd->iconf->rssi_reject_assoc_rssi = val;
+			wpa_printf(MSG_INFO, "Updated RSSI association rejection threshold to %d dBm (runtime value updated)", val);
+			hostapd_ctrl_iface_update_rssi_monitor(hapd);
+		}
+	} else if (os_strcasecmp(cmd, "rssi_reject_assoc_timeout") == 0) {
+		int val = atoi(value);
+		if (val < 1 || val > 300) {
+			wpa_printf(MSG_ERROR, "Invalid RSSI timeout %d (range: 1 to 300)", val);
+			ret = -1;
+		} else {
+			hapd->conf->rssi_reject_assoc_timeout = val;
+			hapd->iconf->rssi_reject_assoc_timeout = val;
+			wpa_printf(MSG_INFO, "Updated RSSI association timeout to %d seconds", val);
+		}
+	} else if (os_strcasecmp(cmd, "rssi_deauth_grace_samples") == 0) {
+		int val = atoi(value);
+		if (val < 1 || val > 100) {
+			wpa_printf(MSG_ERROR, "Invalid grace samples %d (range: 1 to 100)", val);
+			ret = -1;
+		} else {
+			hapd->conf->rssi_deauth_grace_samples = val;
+			hapd->iconf->rssi_deauth_grace_samples = val;
+			wpa_printf(MSG_INFO, "Updated RSSI deauth grace samples to %d", val);
+			hostapd_ctrl_iface_update_rssi_monitor(hapd);
+		}
 	} else {
 		if (hapd->iface->conf->disable_csa_dfs &&
 		    ((os_strcmp(cmd, "channel") == 0) &&
@@ -1754,34 +1833,56 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 				return -1;
 			return hostapd_reload_bss_only(hapd);
 		} else if (os_strcasecmp(cmd, "bss_vht_mu_beamformer") == 0 ||
-			   os_strcasecmp(cmd, "bss_vht_mu_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_vht_su_beamformer") == 0 ||
 			   os_strcasecmp(cmd, "bss_vht_su_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_vht_sounding_dimension") == 0 ||
 			   os_strcasecmp(cmd, "bss_vht_beamformee_sts") == 0) {
+			/* Save old values for rollback on failure */
+			u32 old_vht_capab = hapd->conf->vht_capab;
+			u32 old_vht_capab_mask = hapd->conf->vht_capab_mask;
+
 			if (hostapd_tx_bss_only(hapd, cmd) < 0)
 				return -1;
 			if (hostapd_validate_bss_capab(hapd) < 0)
-				return -1;
-			return hostapd_reload_bss_only(hapd);
+				goto vht_rollback;
+			if (hostapd_reload_bss_only(hapd) < 0)
+				goto vht_rollback;
+			return 0;
+vht_rollback:
+			hapd->conf->vht_capab = old_vht_capab;
+			hapd->conf->vht_capab_mask = old_vht_capab_mask;
+			return -1;
 #endif /* CONFIG_IEEE80211AC */
 #ifdef CONFIG_IEEE80211AX
 		} else if (os_strcasecmp(cmd, "bss_he_su_beamformer") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_su_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_mu_beamformer") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_mu_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_dl_mu_ofdma") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_dl_mu_ofdma_bfer") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_ul_mu_ofdma") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_ul_mumimo") == 0) {
+			/* Save old values for rollback on failure */
+			struct he_phy_capabilities_info old_he_phy_capab = hapd->conf->he_phy_capab;
+			u32 old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
+
 			if (hostapd_tx_bss_only(hapd, cmd) < 0)
 				return -1;
 			if (hostapd_validate_bss_capab(hapd) < 0)
-				return -1;
-			return hostapd_reload_bss_only(hapd);
+				goto he_rollback;
+			if (hostapd_reload_bss_only(hapd) < 0)
+				goto he_rollback;
+			return 0;
+he_rollback:
+			hapd->conf->he_phy_capab = old_he_phy_capab;
+			hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
+			return -1;
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
 		} else if (os_strcasecmp(cmd, "bss_eht_mu_mimo") == 0) {
+			/* Save old values for rollback on failure */
+			struct eht_phy_capabilities_info old_eht_phy_capab =
+				hapd->conf->eht_phy_capab;
+			u32 old_eht_phy_capab_mask = hapd->conf->eht_phy_capab_mask;
 			long val = strtol(value, NULL, 0);
 			if (val < 0 || val > 0x7)
 				return -1;
@@ -1795,19 +1896,24 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			}
 
 			hapd->conf->eht_phy_capab.eht_mu_mimo_mask = (u8)val;
-			hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz =
-				(val & 0x1) ? 1 : 0;
-			hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz =
-				(val & 0x2) ? 1 : 0;
-			hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz =
-				(val & 0x4) ? 1 : 0;
+			hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO;
 
 			if (hostapd_tx_bss_only(hapd, cmd) < 0)
-				return -1;
+				goto eht_mu_mimo_rollback;
 			if (hostapd_validate_bss_capab(hapd) < 0)
-				return -1;
-			return hostapd_reload_bss_only(hapd);
+				goto eht_mu_mimo_rollback;
+			if (hostapd_reload_bss_only(hapd) < 0)
+				goto eht_mu_mimo_rollback;
+			return 0;
+eht_mu_mimo_rollback:
+			hapd->conf->eht_phy_capab = old_eht_phy_capab;
+			hapd->conf->eht_phy_capab_mask = old_eht_phy_capab_mask;
+			return -1;
 		} else if (os_strcasecmp(cmd, "bss_eht_mu_bfmr") == 0) {
+			/* Save old values for rollback on failure */
+			struct eht_phy_capabilities_info old_eht_phy_capab =
+				hapd->conf->eht_phy_capab;
+			u32 old_eht_phy_capab_mask = hapd->conf->eht_phy_capab_mask;
 			long val = strtol(value, NULL, 0);
 
 			if (val < 0 || val > 0x7)
@@ -1822,32 +1928,95 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			}
 
 			hapd->conf->eht_phy_capab.eht_mu_bfmr_mask = (u8)val;
+			hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_MU_BFMR_MASK;
 
 			if (hostapd_tx_bss_only(hapd, cmd) < 0)
-				return -1;
+				goto eht_mu_bfmr_rollback;
 			if (hostapd_validate_bss_capab(hapd) < 0)
+				goto eht_mu_bfmr_rollback;
+			if (hostapd_reload_bss_only(hapd) < 0)
+				goto eht_mu_bfmr_rollback;
+			return 0;
+eht_mu_bfmr_rollback:
+			hapd->conf->eht_phy_capab = old_eht_phy_capab;
+			hapd->conf->eht_phy_capab_mask = old_eht_phy_capab_mask;
+			return -1;
+		} else if (os_strcasecmp(cmd, "bss_eht_bfme_ss_80") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_bfme_ss_160") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_bfme_ss_320") == 0) {
+			/* Save old values for rollback on failure */
+			struct eht_phy_capabilities_info old_eht_phy_capab = hapd->conf->eht_phy_capab;
+			u32 old_eht_phy_capab_mask = hapd->conf->eht_phy_capab_mask;
+			int val = (int) strtol(value, NULL, 0);
+
+			if (val < 0 || val > 7)
 				return -1;
-			return hostapd_reload_bss_only(hapd);
+
+			if (os_strcasecmp(cmd, "bss_eht_bfme_ss_80") == 0) {
+				hapd->conf->eht_phy_capab.eht_bfme_ss_80 = val;
+				wpa_printf(MSG_INFO, "SET: eht_bfme_ss_80=%d at %p", val, &hapd->conf->eht_phy_capab.eht_bfme_ss_80);
+				hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_BFME_SS_80;
+				/* Enable SU beamformee when SS is set to non-zero */
+				if (val > 0) {
+					hapd->conf->eht_phy_capab.su_beamformee = 1;
+					hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_SU_BEAMFORMEE;
+				}
+			} else if (os_strcasecmp(cmd, "bss_eht_bfme_ss_160") == 0) {
+				hapd->conf->eht_phy_capab.eht_bfme_ss_160 = val;
+				wpa_printf(MSG_INFO, "SET: eht_bfme_ss_160=%d at %p", val, &hapd->conf->eht_phy_capab.eht_bfme_ss_160);
+				hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_BFME_SS_160;
+				/* Enable SU beamformee when SS is set to non-zero */
+				if (val > 0) {
+					hapd->conf->eht_phy_capab.su_beamformee = 1;
+					hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_SU_BEAMFORMEE;
+				}
+			} else if (os_strcasecmp(cmd, "bss_eht_bfme_ss_320") == 0) {
+				hapd->conf->eht_phy_capab.eht_bfme_ss_320 = val;
+				wpa_printf(MSG_INFO, "SET: eht_bfme_ss_320=%d at %p", val, &hapd->conf->eht_phy_capab.eht_bfme_ss_320);
+				hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_BFME_SS_320;
+				/* Enable SU beamformee when SS is set to non-zero */
+				if (val > 0) {
+					hapd->conf->eht_phy_capab.su_beamformee = 1;
+					hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_SU_BEAMFORMEE;
+				}
+			}
+
+			if (hostapd_tx_bss_only(hapd, cmd) < 0)
+				goto eht_bfme_ss_rollback;
+
+			if (hostapd_validate_bss_capab(hapd) < 0)
+				goto eht_bfme_ss_rollback;
+
+			if (hostapd_reload_bss_only(hapd) < 0)
+				goto eht_bfme_ss_rollback;
+			return 0;
+eht_bfme_ss_rollback:
+			hapd->conf->eht_phy_capab = old_eht_phy_capab;
+			hapd->conf->eht_phy_capab_mask = old_eht_phy_capab_mask;
+			return -1;
 		} else if (os_strcasecmp(cmd, "bss_eht_su_beamformer") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_su_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_mu_beamformer") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_mu_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_dl_mu_ofdma") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_ul_mu_ofdma") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_dl_ofdma_mumimo") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_ul_ofdma_mumimo") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_ulmumimo_80mhz") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_ulmumimo_160mhz") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_ulmumimo_320mhz") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_bfme_ss_80") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_bfme_ss_160") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_bfme_ss_320") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_ltf") == 0) {
+			/* Save old values for rollback on failure */
+			struct eht_phy_capabilities_info old_eht_generic_capab = hapd->conf->eht_phy_capab;
+			u32 old_eht_generic_capab_mask = hapd->conf->eht_phy_capab_mask;
+
 			if (hostapd_tx_bss_only(hapd, cmd) < 0)
 				return -1;
 			if (hostapd_validate_bss_capab(hapd) < 0)
-				return -1;
-			return hostapd_reload_bss_only(hapd);
+				goto eht_generic_rollback;
+			if (hostapd_reload_bss_only(hapd) < 0)
+				goto eht_generic_rollback;
+			return 0;
+eht_generic_rollback:
+			hapd->conf->eht_phy_capab = old_eht_generic_capab;
+			hapd->conf->eht_phy_capab_mask = old_eht_generic_capab_mask;
+			return -1;
 #endif /* CONFIG_IEEE80211BE */
 		} else if (os_strcasecmp(cmd, "ht_mcs_nss_set") == 0) {
 			if (hostapd_tx_bss_only(hapd, "ht_mcs_nss_set") < 0)
@@ -2082,12 +2251,14 @@ static int hostapd_ctrl_iface_get_mbssid_attributes(struct hostapd_data *hapd,
 			pos += res;
 		}
 
-		res = os_snprintf(pos, end - pos,
-				  "mbssid_idx_bmap = 0x%x\n",
-				  hapd->iface->mbssid_idx_bmap);
-		if (os_snprintf_error(end - pos, res))
-			return pos - buf;
-		pos += res;
+		if (hapd->iface->num_bss) {
+			res = os_snprintf(pos, end - pos,
+					  "mbssid_idx_bmap = 0x%x\n",
+					  hapd->iface->mbssid_idx_bmap);
+			if (os_snprintf_error(end - pos, res))
+				return pos - buf;
+			pos += res;
+		}
 
 		return pos - buf;
 	}
@@ -2129,12 +2300,14 @@ static int hostapd_ctrl_iface_get_mbssid_attributes(struct hostapd_data *hapd,
 				active_group_cnt++;
 		}
 
-		res = os_snprintf(pos, end - pos,
-				  "mbssid_idx_bmap = 0x%x\n",
-				  mbssid_group->mbssid_idx_bmap);
-		if (os_snprintf_error(end - pos, res))
-			return pos - buf;
-		pos += res;
+		if (mbssid_group->num_bss) {
+			res = os_snprintf(pos, end - pos,
+					  "mbssid_idx_bmap = 0x%x\n",
+					  mbssid_group->mbssid_idx_bmap);
+			if (os_snprintf_error(end - pos, res))
+				return pos - buf;
+			pos += res;
+		}
 
 		res = os_snprintf(pos, end - pos, "\n");
 		if (os_snprintf_error(end - pos, res))
@@ -2219,12 +2392,6 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
-	} else if (os_strcasecmp(cmd, "bss_vht_mu_beamformee") == 0) {
-		res = os_snprintf(buf, buflen, "bss_vht_mu_beamformee = %d\n",
-				!!(hapd->conf->vht_capab & VHT_CAP_MU_BEAMFORMEE_CAPABLE));
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
 	} else if (os_strcasecmp(cmd, "bss_vht_su_beamformer") == 0) {
 		res = os_snprintf(buf, buflen, "bss_vht_su_beamformer = %d\n",
 				!!(hapd->conf->vht_capab & VHT_CAP_SU_BEAMFORMER_CAPABLE));
@@ -2273,12 +2440,6 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
-	} else if (os_strcasecmp(cmd, "bss_he_mu_beamformee") == 0) {
-		res = os_snprintf(buf, buflen, "bss_he_mu_beamformee = %d\n",
-				hapd->conf->he_phy_capab.he_mu_beamformee);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
 	} else if (os_strcasecmp(cmd, "bss_he_dl_mu_ofdma") == 0) {
 		res = os_snprintf(buf, buflen, "bss_he_dl_mu_ofdma = %d\n",
 				hapd->conf->he_phy_capab.he_dl_mu_ofdma);
@@ -2324,12 +2485,6 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
-	} else if (os_strcasecmp(cmd, "bss_eht_mu_beamformee") == 0) {
-		res = os_snprintf(buf, buflen, "bss_eht_mu_beamformee = %d\n",
-				hapd->conf->eht_phy_capab.mu_beamformee);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
 	} else if (os_strcasecmp(cmd, "bss_eht_dl_mu_ofdma") == 0) {
 		res = os_snprintf(buf, buflen, "bss_eht_dl_mu_ofdma = %d\n",
 				hapd->conf->eht_phy_capab.dl_mu_ofdma);
@@ -2356,24 +2511,6 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
-	} else if (os_strcasecmp(cmd, "bss_eht_ulmumimo_80mhz") == 0) {
-		res = os_snprintf(buf, buflen, "bss_eht_ulmumimo_80mhz = %d\n",
-				hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
-	} else if (os_strcasecmp(cmd, "bss_eht_ulmumimo_160mhz") == 0) {
-		res = os_snprintf(buf, buflen, "bss_eht_ulmumimo_160mhz = %d\n",
-				hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
-	} else if (os_strcasecmp(cmd, "bss_eht_ulmumimo_320mhz") == 0) {
-		res = os_snprintf(buf, buflen, "bss_eht_ulmumimo_320mhz = %d\n",
-				  hapd->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
 	} else if (os_strcasecmp(cmd, "bss_eht_mu_bfmr") == 0) {
 		res = os_snprintf(buf, buflen, "bss_eht_mu_bfmr = 0x%x\n",
 				  hapd->conf->eht_phy_capab.eht_mu_bfmr_mask);
@@ -2383,6 +2520,33 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 	} else if (os_strcasecmp(cmd, "bss_eht_mu_mimo") == 0) {
 		res = os_snprintf(buf, buflen, "bss_eht_mu_mimo = 0x%x\n",
 				  hapd->conf->eht_phy_capab.eht_mu_mimo_mask);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "eht_ulmumimo_80mhz") == 0) {
+		res = os_snprintf(buf, buflen, "eht_ulmumimo_80mhz = %d\n",
+				  (hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO) ?
+				  !!(hapd->conf->eht_phy_capab.eht_mu_mimo_mask & BIT(0)) :
+				  hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_80mhz);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "eht_ulmumimo_160mhz") == 0) {
+		res = os_snprintf(buf, buflen, "eht_ulmumimo_160mhz = %d\n",
+				  (hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO) ?
+				  !!(hapd->conf->eht_phy_capab.eht_mu_mimo_mask & BIT(1)) :
+				  hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_160mhz);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "eht_ulmumimo_320mhz") == 0) {
+		res = os_snprintf(buf, buflen, "eht_ulmumimo_320mhz = %d\n",
+				  (hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO) ?
+				  !!(hapd->conf->eht_phy_capab.eht_mu_mimo_mask & BIT(2)) :
+				  hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
@@ -2414,6 +2578,9 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 	} else if (os_strcmp(cmd, "ht_mcs_nss_set") == 0) {
 		res = os_snprintf(buf, buflen, "ht_mcs_nss_set = 0x%x\n",
 				  hapd->conf->ht_mcs_nss_set);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
 	} else if (os_strcmp(cmd, "vendor_elements") == 0) {
 		res = hostapd_get_vendor_elements(hapd, buf, buflen);
 		if (os_snprintf_error(buflen, res))
@@ -3778,6 +3945,50 @@ static int hostapd_ctrl_iface_set_pwr_mode(struct hostapd_iface *iface,
 #endif /* NEED_AP_MLME */
 }
 
+static void hostapd_get_channel_switch_time(struct hostapd_iface *iface,
+					    struct hostapd_freq_params *freq_params)
+{
+	struct hostapd_data *hapd = NULL;
+	unsigned int i;
+	int ret;
+
+	if (iface->bss == NULL || iface->num_bss == 0)
+		return;
+
+	iface->cs_time = 0;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		if (iface->bss[i]->driver == NULL ||
+		    iface->bss[i]->drv_priv == NULL)
+			continue;
+
+		hapd = iface->bss[i];
+		break;
+	}
+
+	if (hapd == NULL) {
+		wpa_printf(MSG_DEBUG,
+			   "No valid BSS with driver found for channel switch time query");
+		return;
+	}
+
+	if (hapd->driver->get_channel_switch_time) {
+		ret = hapd->driver->get_channel_switch_time(hapd->drv_priv,
+							    freq_params,
+							    &iface->cs_time);
+		if (ret == 0) {
+			wpa_printf(MSG_DEBUG,
+				   "channel switch time from driver: %u",
+				   iface->cs_time);
+		} else {
+			wpa_printf(MSG_WARNING,
+				   "Failed to get channel switch time from driver: %d",
+				   ret);
+			/* Reset to safe default */
+			iface->cs_time = 0;
+		}
+	}
+}
 
 static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 					  char *pos)
@@ -3796,8 +4007,29 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 	if (ret)
 		return ret;
 
+#ifdef CONFIG_QCN_EXTN
+	if (!settings.freq_params.rptr_mgr && hostapd_is_backhaul_sta_conn(iface)) {
+		wpa_printf(MSG_ERROR,
+			   "chanswitch: backhaul STA connected, aborting channel switch");
+		return -1;
+	}
+#endif
+
 	settings.link_id = -1;
 #ifdef CONFIG_IEEE80211BE
+	/* Reject if EHT is disabled in channel switch settings but the
+	 * interface has a BSS affiliated with an AP MLD where EHT is mandatory
+	 * to be enabled. */
+	if (!settings.freq_params.eht_enabled) {
+		for (i = 0; i < iface->num_bss; i++) {
+			if (iface->bss[i]->conf->mld_ap) {
+				wpa_printf(MSG_INFO,
+					   "Do not allow EHT to be disabled when the interface has an ML BSS");
+				return -1;
+			}
+		}
+	}
+
 	if (iface->num_bss && iface->bss[0]->conf->mld_ap)
 		settings.link_id = iface->bss[0]->mld_link_id;
 #endif /* CONFIG_IEEE80211BE */
@@ -3969,6 +4201,8 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 			   iface->conf->bss[0]->iface);
 		eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout, iface, NULL);
 	}
+
+	hostapd_get_channel_switch_time(iface, &settings.freq_params);
 
 	for (i = 0; i < iface->num_bss; i++) {
 
@@ -6020,7 +6254,7 @@ static int hostapd_ctrl_iface_link_remove(struct hostapd_data *hapd, char *cmd,
 		return -1;
 	}
 
-	ret = hostapd_link_remove(hapd, count, HAPD_LINK_DISABLE);
+	ret = hostapd_link_remove(hapd, count, HAPD_LINK_REMOVAL);
 	if (ret == 0) {
 		ret = os_snprintf(buf, buflen, "%s\n", "OK");
 		if (os_snprintf_error(buflen, ret))
@@ -7584,6 +7818,11 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "DISASSOCIATE ", 13) == 0) {
 		if (hostapd_ctrl_iface_disassociate(hapd, buf + 13))
 			reply_len = -1;
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+	} else if (os_strncmp(buf, "CONFIGURE-PLUGIN ", 17) == 0) {
+		reply_len = hostapd_ctrl_iface_configure_plugin(hapd, buf + 17,
+							       reply, reply_size);
+#endif
 #ifdef CONFIG_TAXONOMY
 	} else if (os_strncmp(buf, "SIGNATURE ", 10) == 0) {
 		reply_len = hostapd_ctrl_iface_signature(hapd, buf + 10,
@@ -8273,7 +8512,11 @@ static void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 	struct sockaddr_storage from;
 	socklen_t fromlen = sizeof(from);
 	char *reply, *pos = buf;
+#ifdef CONFIG_QCN_EXTN
+	const int reply_size = 16384;
+#else
 	const int reply_size = 4096;
+#endif /* CONFIG_QCN_EXTN */
 	int reply_len;
 	int level = MSG_DEBUG;
 #ifdef CONFIG_CTRL_IFACE_UDP
@@ -8392,7 +8635,11 @@ static int hostapd_mld_ctrl_iface_receive_process(struct hostapd_mld *mld,
 			goto out;
 		}
 
+#ifdef CONFIG_QCN_EXTN
+		for_each_mld_link_include_repurposed(link_itr, link_hapd) {
+#else
 		for_each_mld_link(link_itr, link_hapd) {
+#endif /* CONFIG_QCN_EXTN */
 			if (link_itr->mld_link_id == link_id) {
 				found = true;
 				break;
@@ -8452,7 +8699,11 @@ static void hostapd_mld_ctrl_iface_receive(int sock, void *eloop_ctx,
 	struct sockaddr_storage from;
 	socklen_t fromlen = sizeof(from);
 	char *reply, *pos = buf;
+#ifdef CONFIG_QCN_EXTN
+	const size_t reply_size = 16384;
+#else
 	const size_t reply_size = 4096;
+#endif /* CONFIG_QCN_EXTN */
 	int reply_len;
 	int level = MSG_DEBUG;
 
@@ -9358,7 +9609,11 @@ static void hostapd_global_ctrl_iface_receive(int sock, void *eloop_ctx,
 	socklen_t fromlen = sizeof(from);
 	char *reply;
 	int reply_len;
+#ifdef CONFIG_QCN_EXTN
+	const int reply_size = 16384;
+#else
 	const int reply_size = 4096;
+#endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_CTRL_IFACE_UDP
 	unsigned char lcookie[CTRL_IFACE_COOKIE_LEN];
 #endif /* CONFIG_CTRL_IFACE_UDP */

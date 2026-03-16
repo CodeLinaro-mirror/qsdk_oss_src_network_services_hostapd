@@ -2,14 +2,13 @@
  * AWGN - Additive white Gaussian Noise
  * Copyright (c) 2002-2013, Jouni Malinen <j@w1.fi>
  * Copyright (c) 2013-2017, Qualcomm Atheros, Inc.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
  */
 
 /*
- * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
- *
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted (subject to the limitations in the disclaimer below) provided that
  * the following conditions are met:
@@ -70,7 +69,10 @@ bool hostapd_is_backhaul_sta_conn(struct hostapd_iface *iface)
 	return false;
 }
 
-static bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
 {
 	int chan_disabled = 1;
 	int i;
@@ -88,13 +90,16 @@ static bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
 }
 
 /*
- * intf_awgn_chan_range_available - check whether the channel can operate
+ * intf_chan_range_available_6g - check whether the channel can operate
  * in the given bandwidth in 6Ghz
  * @first_chan_idx - channel index of the first 20Mhz channel in a segment
  * @num_chans - number of 20Mhz channels needed for the operating bandwidth
  */
-static int intf_awgn_chan_range_available(struct hostapd_hw_modes *mode,
-                                         int first_chan_idx, int num_chans)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int intf_chan_range_available_6g(struct hostapd_hw_modes *mode,
+				 int first_chan_idx, int num_chans)
 {
 	struct hostapd_channel_data *first_chan = NULL;
 	int allowed_40_6g[] = {1, 9, 17, 25, 33, 41, 49, 57, 65, 73, 81, 89, 97, 105,
@@ -189,8 +194,6 @@ static int is_in_chanlist(struct hostapd_iface *iface,
 	return freq_range_list_includes(&iface->conf->acs_ch_list, chan->chan);
 }
 
-#define BASE_6G_FREQ 5950
-
 int get_centre_freq_6g(int chan_idx, int chan_width, int *centre_freq)
 {
 	if (!centre_freq)
@@ -249,14 +252,17 @@ static int is_interference_in_chanlist(int freq_start, int freq_end,
  * @chan_width - channel width to be checked
  * @chandef_list - pointer array to hold the list of valid available chandef
  */
-static int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 				       struct hostapd_channel_data ***chandef_list,
 				       int *awgn_interference_freqs)
 {
 	struct hostapd_hw_modes *mode = iface->current_mode;
 	struct hostapd_channel_data *chan;
 	int i, channel_idx = 0, n_chans;
-	int new_centre_freq;
+	int bw, new_centre_freq;
 	int new_start_freq;
 	int new_end_freq;
 	int ret;
@@ -295,7 +301,7 @@ static int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_wid
 		}
 
 		/* Skip incompatible chandefs */
-		if (!intf_awgn_chan_range_available(mode, i, n_chans)) {
+		if (!is_chan_range_available(mode, i, n_chans)) {
 			wpa_printf(MSG_DEBUG,
 				   "AWGN: range not available for %d (%d)",
 				   chan->freq, chan->chan);
@@ -309,8 +315,7 @@ static int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_wid
 			continue;
 		}
 
-		ret = get_centre_freq_6g(chan->chan, chan_width,
-					 &new_centre_freq);
+		ret = get_centre_freq(chan, chan_width, &new_centre_freq);
 		if (ret) {
 			wpa_printf(MSG_ERROR,
 				   "AWGN : couldn't find centre freq for chan : %d"
@@ -318,8 +323,10 @@ static int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_wid
 			return 0;
 		}
 
-               new_start_freq = (new_centre_freq - channel_width_to_int(chan_width) / 2) + 10;
-               new_end_freq = (new_centre_freq + channel_width_to_int(chan_width) / 2) - 10;
+		bw = channel_width_to_int(chan_width == CHAN_WIDTH_20_NOHT ?
+					  CHAN_WIDTH_20 : chan_width);
+		new_start_freq = (new_centre_freq - bw / 2) + 10;
+		new_end_freq = (new_centre_freq + bw / 2) - 10;
 
                if (is_interference_in_chanlist(new_start_freq, new_end_freq,
                                                    awgn_interference_freqs)) {
@@ -337,7 +344,7 @@ static int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_wid
 	return channel_idx;
 }
 
-static int convert_chwidth_to_20MHz_nchans(enum chan_width chan_width)
+int convert_chwidth_to_20MHz_nchans(enum chan_width chan_width)
 {
 	int n_chans;
 
@@ -406,7 +413,7 @@ static void find_6g_chan_20_40(struct hostapd_iface *iface,
 			       u16 afc_bitmap, int *channel_idx,
 			       struct hostapd_channel_data **chandef_list)
 {
-    int sp_pwr, lpi_pwr, vlp_pwr;
+    int sp_pwr, lpi_pwr, vlp_pwr, eirp_pwr;
     if (!afc_bitmap) {
 	if (!hostapd_validate_chan_bw_in_pwr_mode(iface,
 						  chan->freq, centre_freq,
@@ -418,31 +425,47 @@ static void find_6g_chan_20_40(struct hostapd_iface *iface,
 	    return;
 	}
 
-	if (power_type == NL80211_REG_AP_SP) {
-	    sp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
-					  channel_width, 0,
-					  NL80211_REG_AP_SP, false,
-					  NL80211_REG_NUM_POWER_MODES, false);
-	    lpi_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
-					   channel_width, 0,
-					   NL80211_REG_AP_LPI, false,
-					   NL80211_REG_NUM_POWER_MODES, false);
-	    vlp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
-					   channel_width, 0,
-					   NL80211_REG_AP_VLP, false,
-					   NL80211_REG_NUM_POWER_MODES, false);
-	    if (sp_pwr < lpi_pwr || sp_pwr < vlp_pwr) {
+	sp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+				      channel_width, 0,
+				      NL80211_REG_AP_SP, false,
+				      NL80211_REG_NUM_POWER_MODES, false);
+	lpi_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+				       channel_width, 0,
+				       NL80211_REG_AP_LPI, false,
+				       NL80211_REG_NUM_POWER_MODES, false);
+	vlp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+				       channel_width, 0,
+				       NL80211_REG_AP_VLP, false,
+				       NL80211_REG_NUM_POWER_MODES, false);
+	if ((power_type == NL80211_REG_AP_SP) && (sp_pwr < lpi_pwr || sp_pwr < vlp_pwr)) {
 		wpa_printf(MSG_DEBUG,
 			   "SP eirp %d is less than LPI eirp %d or VLP eirp %d for freq %d bw %d",
 			   sp_pwr, lpi_pwr, vlp_pwr, chan->freq, channel_width);
 		return;
-	    }
+	}
+
+	switch (power_type) {
+	case NL80211_REG_AP_SP:
+		eirp_pwr = sp_pwr;
+		break;
+	case NL80211_REG_AP_LPI:
+		eirp_pwr = lpi_pwr;
+		break;
+	case NL80211_REG_AP_VLP:
+		eirp_pwr = vlp_pwr;
+		break;
+	default:
+		eirp_pwr = 0;
+		break;
 	}
 
 	wpa_printf(MSG_DEBUG,
 		   "AFC: Adding channel %d (%d) to valid chandef list with bw %d puncture pattern 0x%x",
 		   chan->freq, chan->chan, channel_width, chan->punct_bitmap);
 	(*chandef_list)[*channel_idx] = *chan;
+	(*chandef_list)[*channel_idx].punct_bitmap = 0;
+	(*chandef_list)[*channel_idx].psd_power = 0;
+	(*chandef_list)[*channel_idx].eirp_power = eirp_pwr;
 	(*channel_idx)++;
     }
 }
@@ -476,7 +499,7 @@ static void find_6g_chan_gt_40(struct hostapd_iface *iface,
 
 	for (i = 0; i < num_pp; i++) {
 		u16 temp_bitmap;
-		int sp_pwr, lpi_pwr, vlp_pwr;
+		int sp_pwr, lpi_pwr, vlp_pwr, eirp_pwr;
 
 		temp_bitmap = ((afc_bitmap | bw_pp_arr[i]) & pp_mask);
 		if (!is_punct_bitmap_valid(channel_width, pri_chan_pos, temp_bitmap)) {
@@ -496,25 +519,37 @@ static void find_6g_chan_gt_40(struct hostapd_iface *iface,
 		    continue;
 		}
 
-		if (power_type == NL80211_REG_AP_SP) {
-		    sp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
-						  channel_width, temp_bitmap,
-						  NL80211_REG_AP_SP, false,
-						  NL80211_REG_NUM_POWER_MODES, false);
-		    lpi_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
-						   channel_width, 0,
-						   NL80211_REG_AP_LPI, false,
-						   NL80211_REG_NUM_POWER_MODES, false);
-		    vlp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
-						   channel_width, 0,
-						   NL80211_REG_AP_VLP, false,
-						   NL80211_REG_NUM_POWER_MODES, false);
-		    if (sp_pwr < lpi_pwr || sp_pwr < vlp_pwr) {
+		sp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+					      channel_width, temp_bitmap,
+					      NL80211_REG_AP_SP, false,
+					      NL80211_REG_NUM_POWER_MODES, false);
+		lpi_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+					       channel_width, 0,
+					       NL80211_REG_AP_LPI, false,
+					       NL80211_REG_NUM_POWER_MODES, false);
+		vlp_pwr = hostapd_get_eirp_pwr(iface, chan->freq, centre_freq,
+					       channel_width, 0,
+					       NL80211_REG_AP_VLP, false,
+					       NL80211_REG_NUM_POWER_MODES, false);
+		if (power_type == NL80211_REG_AP_SP && (sp_pwr < lpi_pwr || sp_pwr < vlp_pwr)) {
 			wpa_printf(MSG_DEBUG,
 				   "SP eirp %d is less than LPI eirp %d or VLP eirp %d for freq %d bw %d and PP 0x%x",
 				   sp_pwr, lpi_pwr, vlp_pwr, chan->freq, channel_width, temp_bitmap);
 			continue;
-		    }
+		}
+		switch (power_type) {
+		case NL80211_REG_AP_SP:
+			eirp_pwr = sp_pwr;
+			break;
+		case NL80211_REG_AP_LPI:
+			eirp_pwr = lpi_pwr;
+			break;
+		case NL80211_REG_AP_VLP:
+			eirp_pwr = vlp_pwr;
+			break;
+		default:
+			eirp_pwr = 0;
+			break;
 		}
 
 		wpa_printf(MSG_DEBUG,
@@ -522,16 +557,18 @@ static void find_6g_chan_gt_40(struct hostapd_iface *iface,
 			   chan->freq, chan->chan, channel_width, temp_bitmap);
 		(*chandef_list)[*channel_idx] = *chan;
 		(*chandef_list)[*channel_idx].punct_bitmap = temp_bitmap;
+		(*chandef_list)[*channel_idx].psd_power = 0;
+		(*chandef_list)[*channel_idx].eirp_power = eirp_pwr;
 		(*channel_idx)++;
 	}
 }
 
-static int find_6g_enabled_chans(struct hostapd_iface *iface,
-				 int chan_width,
-				 struct hostapd_channel_data **chandef_list,
-				 struct hostapd_hw_modes *mode,
-				 struct hostapd_channel_data **chan_6ghz,
-				 int n_chans, int power_type)
+int find_6g_enabled_chans(struct hostapd_iface *iface,
+			  int chan_width,
+			  struct hostapd_channel_data **chandef_list,
+			  struct hostapd_hw_modes *mode,
+			  struct hostapd_channel_data **chan_6ghz,
+			  int n_chans, int power_type)
 {
 	int i, channel_idx = 0;
 
@@ -610,10 +647,13 @@ static int find_6g_enabled_chans(struct hostapd_iface *iface,
  * @chandef_list - array to hold the list of valid available chandef
  * @best_ap_pwr_mode - pointer to best power mode
  */
-static int intf_afc_find_channel_list(struct hostapd_iface *iface,
-				      int *chan_width,
-				      struct hostapd_channel_data **chandef_list,
-				      int *best_ap_pwr_mode)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int intf_afc_find_channel_list(struct hostapd_iface *iface,
+			       int *chan_width,
+			       struct hostapd_channel_data **chandef_list,
+			       int *best_ap_pwr_mode)
 {
 	struct hostapd_hw_modes *mode = iface->current_mode;
 	struct hostapd_channel_data_6ghz *channels_6g_data = &mode->channels_6ghz;
@@ -683,7 +723,6 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 {
 	struct csa_settings settings;
 	struct hostapd_channel_data *chan_data = NULL;
-	struct hostapd_channel_data *chan_temp = NULL;
 	struct hostapd_channel_data **available_chandef_list = NULL;
 	int ret;
 	unsigned int i;
@@ -691,7 +730,7 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 	u32 chan_idx;
 	int num_available_chandefs = 0;
 	u8 channel_switch = 0;
-	int new_chan_width;
+	int new_chan_width = chan_width;
 	int new_centre_freq;
 	int current_start_freq;
 	int temp_width;
@@ -716,6 +755,18 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 			   " AWGN DETECT event from driver");
 		return 0;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (!(iface->conf->conf_extn.dcs_conf.dcs_random_chan_bitmap & DCS_AWGN_INTF)) {
+		hostapd_trigger_dynamic_acs(iface->bss[0], CHANNEL_CHANGE_CSA);
+		return 0;
+	}
+
+	if (dcs_get_bw_reduction_ctrl_extn(iface->conf, DCS_AWGN_INTF) == false) {
+		wpa_printf(MSG_DEBUG, "DCS Bandwidth reduction is not set");
+		channel_switch = 1;
+	}
+#endif
 
 	/* check whether interference has occurred in primary 20Mhz channel */
 	if (!chan_bw_interference_bitmap || (chan_bw_interference_bitmap & SEG_PRI20))
@@ -752,8 +803,28 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 		}
 
 		if (num_available_chandefs == 0) {
-			wpa_printf(MSG_ERROR, "AWGN: no available_chandefs");
-			goto exit;
+			wpa_printf(MSG_ERROR,
+				   "AWGN: no available chandefs; trying bandwidth reduction");
+			chan_data = get_chan_data_by_freq(mode, freq);
+			if (!chan_data) {
+				wpa_printf(MSG_ERROR,
+					   "AWGN: current channel not found for freq %d",
+					   freq);
+				goto exit;
+			}
+
+			reduced_chan_width(&new_chan_width, chan_width, freq,
+					   mode, chan_bw_interference_bitmap);
+			if (new_chan_width >= chan_width) {
+				wpa_printf(MSG_ERROR,
+					   "AWGN: bandwidth reduction not possible (cur=%d new=%d)",
+					   chan_width, new_chan_width);
+
+				/* Bring down the vap since all channels are blocked for switch */
+				hostapd_drv_stop_ap(iface->bss[0]);
+				goto exit;
+			}
+			goto do_csa;
 		}
 
 		if (os_get_random((u8 *)&_rand, sizeof(_rand)) < 0) {
@@ -776,45 +847,40 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 		wpa_printf(MSG_DEBUG, "AWGN: got random channel %d (%d)",
 			   chan_data->freq, chan_data->chan);
 	} else {
-		/* interference is not present in the primary 20Mhz, so reduce bandwidth*/
-		for (i = 0; i < mode->num_channels; i++) {
-			chan_temp = &mode->channels[i];
-			if (chan_temp->freq == freq)
-				chan_data = chan_temp;
-		}
+		chan_data = get_chan_data_by_freq(mode, freq);
 		if (!chan_data) {
-			wpa_printf(MSG_ERROR, "AWGN : no channel found");
-			goto exit;
-		}
-
-		if ((chan_width > CHAN_WIDTH_160) &&
-		    !(chan_bw_interference_bitmap & SEG_SEC80) &&
-		    !(chan_bw_interference_bitmap & SEG_SEC40) &&
-		    !(chan_bw_interference_bitmap & SEG_SEC20))
-			new_chan_width = CHAN_WIDTH_160;
-		else if ((chan_width > CHAN_WIDTH_80) &&
-		    !(chan_bw_interference_bitmap & SEG_SEC40) &&
-		    !(chan_bw_interference_bitmap & SEG_SEC20))
-			new_chan_width = CHAN_WIDTH_80;
-		else if (chan_width > CHAN_WIDTH_40 &&
-			 !(chan_bw_interference_bitmap & SEG_SEC20))
-			new_chan_width = CHAN_WIDTH_40;
-		else
-			new_chan_width = CHAN_WIDTH_20;
-	}
-
-	if (new_chan_width > CHAN_WIDTH_20) {
-		ret = get_centre_freq_6g(chan_data->chan, new_chan_width,
-					 &new_centre_freq);
-		if (ret) {
 			wpa_printf(MSG_ERROR,
-				   "AWGN : couldn't find centre freq for chan : %d"
-				   " chan_width : %d", chan_data->chan, new_chan_width);
+				   "AWGN: current channel not found for freq %d",
+				   freq);
 			goto exit;
 		}
-	} else {
-		new_centre_freq = chan_data->freq;
+
+		reduced_chan_width(&new_chan_width, chan_width, freq,
+				   mode, chan_bw_interference_bitmap);
+		if (new_chan_width >= chan_width) {
+			wpa_printf(MSG_DEBUG,
+				   "AWGN: bandwidth reduction not needed/possible (cur=%d new=%d)",
+				   chan_width, new_chan_width);
+
+			/* Bring down the vap since all channels are blocked for switch */
+			hostapd_drv_stop_ap(iface->bss[0]);
+			goto exit;
+		}
 	}
+
+do_csa:
+		if (new_chan_width > CHAN_WIDTH_20) {
+			ret = get_centre_freq_6g(chan_data->chan, new_chan_width,
+						 &new_centre_freq);
+			if (ret) {
+				wpa_printf(MSG_ERROR,
+					   "AWGN : couldn't find centre freq for chan : %d"
+					   " chan_width : %d", chan_data->chan, new_chan_width);
+				goto exit;
+			}
+		} else {
+			new_centre_freq = chan_data->freq;
+		}
 
 	os_memset(&settings, 0, sizeof(settings));
 	settings.cs_count = 5;
@@ -917,6 +983,14 @@ int hostapd_afc_handle_cli(struct hostapd_data *hapd, char *pos,
 		if (!os_snprintf_error(buflen - len, ret))
 			len += ret;
 		ret = len;
+	} else if (os_strncmp(pos, "get_afc_6g_chan_list", 20) == 0) {
+#ifdef CONFIG_QCN_EXTN
+		ret = hostapd_get_6g_chan_list_extn(hapd->iface,
+						    buf, buflen);
+#else
+		ret = -1;
+		wpa_printf(MSG_ERROR, " command is not supported in extension");
+#endif
 	} else {
 		wpa_printf(MSG_ERROR, "invalid afc command");
 		ret = -1;
@@ -1496,6 +1570,14 @@ int hostapd_intf_afc_received(struct hostapd_iface *iface)
 		wpa_printf(MSG_ERROR, "AFC: AFC trigger cannot be processed");
 		return -1;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (!(iface->conf->conf_extn.dcs_conf.dcs_random_chan_bitmap &
+	      DCS_AFC_INTF)) {
+		hostapd_trigger_dynamic_acs(iface->bss[0], CHANNEL_CHANGE_CSA);
+		return 0;
+	}
+#endif
 
 	chan_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
 	wpa_printf(MSG_DEBUG, "chan_width=%d", chan_width);

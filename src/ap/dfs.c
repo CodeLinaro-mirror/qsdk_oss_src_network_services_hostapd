@@ -779,9 +779,12 @@ int set_dfs_state_freq(struct hostapd_iface *iface, int freq, u32 state)
 }
 
 
-static int set_dfs_state(struct hostapd_iface *iface, int freq, int ht_enabled,
-			 int chan_offset, int chan_width, int cf1,
-			 int cf2, u32 state, u16 radar_bitmap)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int set_dfs_state(struct hostapd_iface *iface, int freq, int ht_enabled,
+		  int chan_offset, int chan_width, int cf1,
+		  int cf2, u32 state, u16 radar_bitmap)
 {
 	int n_chans = 1, i;
 	struct hostapd_hw_modes *mode;
@@ -1128,7 +1131,10 @@ int hostapd_is_dfs_chan_available(struct hostapd_iface *iface)
 }
 
 
-static int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 					      int channel, int freq,
 					      int secondary_channel,
 					      u8 current_vht_oper_chwidth,
@@ -1143,6 +1149,14 @@ static int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 	unsigned int i;
 	unsigned int num_err = 0;
 	u8 op_class, chan;
+
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_send_uplink_csa_extn(iface, channel, freq, secondary_channel,
+				current_vht_oper_chwidth, oper_centr_freq_seg0_idx,
+				oper_centr_freq_seg1_idx, punct_bitmap)) {
+		return 0;
+	}
+#endif
 
 	wpa_printf(MSG_DEBUG, "DFS will switch to a new channel %d", channel);
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_NEW_CHANNEL
@@ -1802,21 +1816,6 @@ int hostapd_dfs_start_channel_switch(struct hostapd_iface *iface)
 			hostapd_enable_iface(iface);
 			return 0;
 		}
-
-		if (channel_type == DFS_ANY_CHANNEL) {
-			iface->conf->punct_bitmap = 0;
-			iface->freq = channel->freq;
-			iface->conf->channel = channel->chan;
-			iface->conf->secondary_channel = secondary_channel;
-			hostapd_set_oper_centr_freq_seg0_idx(
-				iface->conf, oper_centr_freq_seg0_idx);
-			hostapd_set_oper_centr_freq_seg1_idx(
-				iface->conf, oper_centr_freq_seg1_idx);
-
-			hostapd_disable_iface(iface);
-			hostapd_enable_iface(iface);
-			return 0;
-		}
 	}
 
 	return hostapd_dfs_request_channel_switch(iface, channel->chan,
@@ -2009,6 +2008,10 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	/* Switch channel with random channel selection for invalid puncturing pattern */
 	iface->radar_bit_pattern = 0;
 	iface->conf->punct_bitmap = cur_punct_bits;
+
+#ifdef CONFIG_QCN_EXTN
+	iface->radar_bit_pattern_extn = radar_bitmap_oper;
+#endif
 
 	if (hostapd_dfs_background_start_channel_switch(iface, freq)) {
 		if (!radar_bitmap) {

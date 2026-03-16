@@ -91,6 +91,13 @@ u8 * hostapd_eid_vht_capabilities(struct hostapd_data *hapd, u8 *eid, u32 nsts)
 
 	vht_capab = hapd->iface->conf->vht_capab;
 
+	/* For non-transmitting BSSs in MBSSID, inherit BSS-level overrides
+	 * from the transmitting BSS */
+	if (tx_hapd != hapd && tx_hapd->conf->vht_capab_mask) {
+		hapd->conf->vht_capab = tx_hapd->conf->vht_capab;
+		hapd->conf->vht_capab_mask = tx_hapd->conf->vht_capab_mask;
+	}
+
 	if (hapd->conf->vht_capab_mask) {
 		u32 bss_capab = hapd->conf->vht_capab;
 		u32 mask = hapd->conf->vht_capab_mask;
@@ -108,11 +115,6 @@ u8 * hostapd_eid_vht_capabilities(struct hostapd_data *hapd, u8 *eid, u32 nsts)
 		if (mask & VHT_CAP_BSS_OVR_MU_BEAMFORMER) {
 			vht_capab &= ~VHT_CAP_MU_BEAMFORMER_CAPABLE;
 			vht_capab |= (bss_capab & VHT_CAP_MU_BEAMFORMER_CAPABLE);
-		}
-
-		if (mask & VHT_CAP_BSS_OVR_MU_BEAMFORMEE) {
-			vht_capab &= ~VHT_CAP_MU_BEAMFORMEE_CAPABLE;
-			vht_capab |= (bss_capab & VHT_CAP_MU_BEAMFORMEE_CAPABLE);
 		}
 
 		if (mask & VHT_CAP_BSS_OVR_SOUNDING_DIMENSION) {
@@ -361,7 +363,7 @@ u16 copy_sta_vendor_vht(struct hostapd_data *hapd, struct sta_info *sta,
 	unsigned int vht_capab_len;
 
 	if (!ie || len < 5 + 2 + sizeof(struct ieee80211_vht_capabilities) ||
-	    !hostapd_is_vht_enabled(hapd))
+	    hapd->conf->disable_11ac)
 		goto no_capab;
 
 	/* The VHT Capabilities element embedded in vendor VHT */

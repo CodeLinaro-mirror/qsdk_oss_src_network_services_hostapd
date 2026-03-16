@@ -21,7 +21,7 @@
 #define WLAN_FC_RETRY		0x0800
 #define WLAN_FC_PWRMGT		0x1000
 #define WLAN_FC_MOREDATA	0x2000
-#define WLAN_FC_ISWEP		0x4000
+#define WLAN_FC_PROTECTED	0x4000
 #define WLAN_FC_HTC		0x8000
 
 #define WLAN_FC_S1G_BEACON_NEXT_TBTT	0x0100
@@ -1253,6 +1253,12 @@ struct ieee80211_mgmt {
 					 * Basic Multi-Link element (optional) */
 					u8 variable[];
 				} STRUCT_PACKED link_reconf_resp;
+#ifdef CONFIG_QCN_EXTN
+				struct {
+					u8 action;
+					u8 variable[];
+				} STRUCT_PACKED spectrum_mgmt;
+#endif
 			} u;
 		} STRUCT_PACKED action;
 	} u;
@@ -2723,6 +2729,7 @@ enum phy_type {
 	PHY_TYPE_S1G = 11,
 	PHY_TYPE_CDMG = 12,
 	PHY_TYPE_CMMG = 13,
+	PHY_TYPE_EHT = 15,
 };
 
 /* IEEE Std 802.11-2024, 9.4.2.35 - Neighbor Report element */
@@ -3141,6 +3148,20 @@ struct ieee80211_eht_operation {
 #define EHT_PHYCAP_SU_BEAMFORMEE_IDX		0
 #define EHT_PHYCAP_SU_BEAMFORMEE		((u8) BIT(6))
 
+/* Beamformee SS fields for BSS capability override (IEEE 802.11be) */
+/* These are separate from QCN 240MHz extension definitions */
+#define EHT_PHY_BFMEE_SS_80MHZ_IDX		0
+#define EHT_PHY_BFMEE_SS_80MHZ_MASK		0x0380  /* Bits 7-9 */
+#define EHT_PHY_BFMEE_SS_80MHZ_SHIFT		7
+
+#define EHT_PHY_BFMEE_SS_160MHZ_IDX		0
+#define EHT_PHY_BFMEE_SS_160MHZ_MASK		0x1C00  /* Bits 10-12 */
+#define EHT_PHY_BFMEE_SS_160MHZ_SHIFT		10
+
+#define EHT_PHY_BFMEE_SS_320MHZ_IDX		0
+#define EHT_PHY_BFMEE_SS_320MHZ_MASK		0xE000  /* Bits 13-15 */
+#define EHT_PHY_BFMEE_SS_320MHZ_SHIFT		13
+
 #define EHT_PHYCAP_PPE_THRESHOLD_PRESENT_IDX	5
 #define EHT_PHYCAP_PPE_THRESHOLD_PRESENT	((u8) BIT(3))
 
@@ -3255,6 +3276,10 @@ struct ieee80211_uhr_operation {
 	u16 dps_oper_param; /*DPS Operation Parameters*/
 } STRUCT_PACKED;
 
+/* Figure 9-aa7: UHR MAC Capabilities Information field format */
+#define UHR_MACCAP_DPS_SUPP			BIT(0)
+#define UHR_MACCAP_DPS_ASSIST			BIT(1)
+
 #define UHR_MAC_CAPAB_LEN	5
 #define UHR_PHY_CAPAB_LEN	1
 /* Figure 9-aa4: UHR Capabilities element format P802.11bn_D1.0 section 9.4.2.aa2 */
@@ -3340,6 +3365,12 @@ struct eht_ml_basic_common_info {
 	 */
 	u8 variable[];
 } STRUCT_PACKED;
+
+/* Length of the EML Capabilities field in the Common Info field (in octets) */
+#define EHT_ML_EML_CAPA_LEN  2
+
+/* Length of the Link ID Info field in the Common Info field (in octets) */
+#define EHT_ML_LINK_ID_LEN  1
 
 #define EHT_ML_LINK_ID_MSK   0x0f
 
