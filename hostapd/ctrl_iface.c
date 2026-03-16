@@ -5213,8 +5213,11 @@ static int hostapd_2ghz_channel_bw(struct hostapd_hw_modes *mode, char *buf,
 	return len;
 }
 
-static int hostapd_get_channel_idx(struct hostapd_hw_modes *mode,
-				    int channel_num)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int hostapd_get_channel_idx(struct hostapd_hw_modes *mode,
+			    int channel_num)
 {
 	int  j=0;
 
@@ -5376,6 +5379,15 @@ static int hostapd_5ghz_channel_bw(struct hostapd_hw_modes *mode,
 				return len;
 			len += ret;
 		}
+
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_5ghz_eht_320_channel_bw_extn(mode, j)) {
+			ret = os_snprintf(buf + len, buflen - len, "320MHz ");
+			if (os_snprintf_error(buflen - len, ret))
+				return len;
+			len += ret;
+		}
+#endif
 
 		ret = os_snprintf(buf + len, buflen - len,"\n");
 		if (os_snprintf_error(buflen - len, ret))
