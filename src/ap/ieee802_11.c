@@ -3469,7 +3469,8 @@ static void handle_auth(struct hostapd_data *hapd,
 {
 	u16 auth_alg, auth_transaction, status_code;
 	u16 resp = WLAN_STATUS_SUCCESS;
-	struct sta_info *sta = NULL;
+	struct sta_info *sta = NULL, *osta = NULL;
+	struct hostapd_data *ohapd;
 	int res, reply_res, ubus_resp;
 	u16 fc;
 	const u8 *challenge = NULL;
@@ -3759,6 +3760,23 @@ static void handle_auth(struct hostapd_data *hapd,
 		}
 	}
 
+	if (auth_alg != WLAN_AUTH_FT) {
+		osta = ap_sta_get_from_obss(hapd, sa, &ohapd);
+
+		if (osta && hostapd_is_ml_partner(hapd, ohapd))
+			osta = NULL;
+		/* Delete the station from other BSS immediately if its not MFP or not authorized yet */
+		if (osta && (!(osta->flags & WLAN_STA_MFP) || !ap_sta_is_authorized(osta))) {
+			wpa_printf(MSG_DEBUG, "Delete STA "MACSTR" from driver on %s as STA "
+				   "is not authorized and trying to associate in new bss %s",
+				   MAC2STR(osta->addr), ohapd->conf->iface, hapd->conf->iface);
+			hostapd_drv_sta_deauth(ohapd, osta->addr, WLAN_REASON_PREV_AUTH_NOT_VALID);
+			ap_sta_remove_link_sta(ohapd, osta, false);
+			ap_free_sta(ohapd, osta);
+			osta = NULL;
+		}
+	}
+
 	sta = ap_get_sta(hapd, sa);
 	if (sta) {
 		sta->flags &= ~WLAN_STA_PENDING_FILS_ERP;
@@ -3893,7 +3911,7 @@ static void handle_auth(struct hostapd_data *hapd,
 	    !(sta->added_unassoc) && auth_alg != WLAN_AUTH_PASN) {
 		res = ap_sta_check_link_sta(hapd, sta);
 		if (!res) {
-			if (ap_sta_re_add(hapd, sta, 1) < 0) {
+			if (ap_sta_re_add(hapd, sta, 1, osta) < 0) {
 				resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
 				goto fail;
 			}
@@ -3908,7 +3926,7 @@ static void handle_auth(struct hostapd_data *hapd,
 	    ap_sta_is_authorized(sta) &&
 	    !(sta->added_unassoc) &&
 	    (sta->skip_kernel_delete)) {
-		if (ap_sta_re_add(hapd, sta, 1) < 0) {
+		if (ap_sta_re_add(hapd, sta, 1, NULL) < 0) {
 			resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
 			goto fail;
 		}
@@ -7130,6 +7148,60 @@ static void handle_assoc(struct hostapd_data *hapd,
 		goto fail;
 	}
 #endif /* CONFIG_MBO */
+	if (sta && sta->auth_alg != WLAN_AUTH_FT) {
+		struct hostapd_data *ohapd, *assoc_hapd;
+		struct sta_info *osta = ap_sta_get_from_obss(hapd, sta->addr, &ohapd);
+		/* If sta with same address is present in another BSS/MLD, handle it */
+		/* TODO: handle sta roaming cases within links of a ML BSS */
+		if (osta && !hostapd_is_ml_partner(hapd, ohapd) &&
+		    (osta->flags & WLAN_STA_MFP) && ap_sta_is_authorized(osta)) {
+			wpa_printf(MSG_DEBUG, "Association request received from STA "MACSTR
+			 	  " but sta is already associated in %s",
+				  MAC2STR(sta->addr), ohapd->conf->iface);
+			/* for an ML STA do SA procedure in Assoc link sta  */
+			if (ap_sta_is_mld(ohapd, osta)) {
+				osta = hostapd_ml_get_assoc_sta(ohapd, osta, &assoc_hapd);
+				ohapd = assoc_hapd;
+			}
+			if (check_sa_query(ohapd, osta, reassoc, pos, left, sta)) {
+				wpa_printf(MSG_DEBUG, "SA query triggered for "MACSTR" on %s",
+					   MAC2STR(osta->addr), ohapd->conf->iface);
+				resp = WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY;
+				goto fail;
+			} else if (osta->sa_query_timed_out) {
+				u8 link_id = hapd->mld_link_id;
+				bool mld_link_sta = sta->mld_assoc_link_id != link_id;
+				const u8 *mld_link_addr = sta->mld_info.links[link_id].peer_addr;
+				u16 eml_cap = sta->mld_info.common_info.eml_capa;
+
+				wpa_printf(MSG_DEBUG, "SA query timedout for "MACSTR" on %s, "
+					   "delete it", MAC2STR(osta->addr), ohapd->conf->iface);
+				ap_sta_cleanup_all(ohapd, osta);
+				/* Add the cached sta to driver now */
+				sta->flags &= ~(WLAN_STA_ASSOC | WLAN_STA_AUTHORIZED);
+				sta->unadded_sta = false;
+				if (sta->pending_drv_add &&
+				    hostapd_sta_add(hapd, sta->addr, 0, 0,
+						    sta->supported_rates,
+						    sta->supported_rates_len,
+						    0, NULL, NULL, NULL, 0, NULL, 0, NULL, 0,
+#ifdef CONFIG_QCN_EXTN
+						    NULL,
+#endif
+						    NULL, sta->flags, 0, 0, 0, 0,
+						    mld_link_addr, mld_link_sta,
+						    eml_cap, reassoc,
+						    CONTROL_MIC_PAD_NOT_SET)) {
+					hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+						       HOSTAPD_LEVEL_NOTICE,
+						       "Could not add STA to kernel driver");
+					resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
+					goto fail;
+				}
+				sta->pending_drv_add = false;
+			}
+		}
+	}
 
 	if (hapd->conf->wpa && check_sa_query(hapd, sta, reassoc, pos, left, sta)) {
 		resp = WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY;
