@@ -3897,6 +3897,14 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		hostapd_event_6ghz_power_mode(hapd,
 					      data->ap_6ghz_pwr_mode_event.pwr_mode);
 		break;
+	case EVENT_TPC_EIRP_NOTIFY:
+		hapd = switch_link_hapd(hapd, data->tpc_eirp_event.link_id);
+		if (!hapd)
+			break;
+		hapd->tpc_eirp_dbm = data->tpc_eirp_event.tpc_dbm;
+		hapd->tpc_eirp_valid = true;
+		ieee802_11_set_beacon(hapd);
+		break;
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
 	case EVENT_LINK_REMOVAL_STARTED:

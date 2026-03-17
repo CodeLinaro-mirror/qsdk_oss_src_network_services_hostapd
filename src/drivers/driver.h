@@ -7540,6 +7540,11 @@ enum wpa_event_type {
 	EVENT_6GHZ_POWER_MODE_NOTIFY,
 
 	/**
+	 * EVENT_TPC_EIRP_NOTIFY - Notify AP TPC EIRP update
+	 */
+	EVENT_TPC_EIRP_NOTIFY,
+
+	/**
 	 * EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY - Notify AFC data is processed
 	 */
 	EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY,
@@ -8897,6 +8902,11 @@ union wpa_event_data {
 		u8 pwr_mode;
 		int link_id;
 	} ap_6ghz_pwr_mode_event;
+
+	struct tpc_eirp_event {
+		s32 tpc_dbm;
+		int link_id;
+	} tpc_eirp_event;
 };
 
 #define HOSTAPD_OP_DEAUTH        0x8000   /* 10xxxx... */

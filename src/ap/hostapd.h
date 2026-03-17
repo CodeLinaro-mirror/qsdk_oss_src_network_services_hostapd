@@ -391,6 +391,8 @@ struct hostapd_data {
 	struct dl_list erp_keys; /* struct eap_server_erp_key */
 
 	int parameter_set_count;
+	bool tpc_eirp_valid;
+	s32 tpc_eirp_dbm;
 
 	/* Previous WMM element information */
 	struct hostapd_wmm_ac_params prev_wmm[WMM_AC_NUM];
