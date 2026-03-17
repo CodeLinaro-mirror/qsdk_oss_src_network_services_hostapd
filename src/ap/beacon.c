@@ -2303,6 +2303,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 	if (hapd->conf->mld_ap && elems.probe_req_mle &&
 	    parse_ml_probe_req((struct ieee80211_eht_ml *) elems.probe_req_mle,
 			       elems.probe_req_mle_len, &mld_id, &links)) {
+		params.is_ml_probe = true;
 		hostapd_fill_probe_resp_ml_params(hapd, &params, mgmt,
 						  mld_id, links);
 	}

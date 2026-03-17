@@ -34,6 +34,7 @@ struct probe_resp_params {
 #if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
 	const u8 *mu_cap_war_vht_cap_offset;
 #endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
+	bool is_ml_probe;
 };
 
 int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
