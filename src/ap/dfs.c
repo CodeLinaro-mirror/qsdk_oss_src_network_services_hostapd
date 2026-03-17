@@ -1587,7 +1587,8 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 		iface->radar_background.cac_started = 0;
 		if (iface->conf->enable_background_radar)
 			hostapd_dfs_update_background_chain(iface);
-	} else {
+	} else if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_CSA) {
+		iface->cac_started = 0;
 		iface->cac_type = 0;
 	}
 
