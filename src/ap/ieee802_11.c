@@ -12101,7 +12101,7 @@ static bool mbssid_known_bss(unsigned int i, const u8 *known_bss,
 	return *known_bss & (u8) (BIT(i % 8));
 }
 
-static bool ieee802_11_mbssid_is_elem_inherited(u8 id, u8 ext_id)
+static bool ieee802_11_mbssid_is_elem_inherited(u8 id, u8 ext_id, bool is_non_tx)
 {
 	switch (id) {
 	case WLAN_EID_EXTENSION:
@@ -12145,6 +12145,8 @@ static bool ieee802_11_mbssid_is_elem_inherited(u8 id, u8 ext_id)
 	case WLAN_EID_QUIET:
 	case WLAN_EID_QUIET_CHANNEL:
 	case WLAN_EID_VENDOR_SPECIFIC:
+		if (is_non_tx == true)
+			return false;
 	case WLAN_EID_MMIE:
 		break;
 	default:
@@ -12164,6 +12166,7 @@ static u8 * ieee802_11_inheritance_txbss_params(u8 *tx_elem, size_t tx_elem_len,
 	const struct element *tx_ie, *nontx_ie;
 	const u8 *data, *nontx_data;
 	u8 id, len, nontx_id, nontx_len, ext_id, nontx_ext_id;
+	bool tx_vendor_ie = false;
 	u8 *pos = eid, parsed_eid_bmap[32] = { 0 }, parsed_ext_eid_bmap[32] = {0};
 	size_t nontx_prof_len = 0, total_non_inherit_ie_len = 0;
 	bool found_in_nontx_bss;
@@ -12299,10 +12302,17 @@ static u8 * ieee802_11_inheritance_txbss_params(u8 *tx_elem, size_t tx_elem_len,
 		if (len <= 0)
 			continue;
 
-		if (id == WLAN_EID_EXTENSION)
+		if (id == WLAN_EID_EXTENSION) {
 			ext_id = *(data);
+		} else if (id == WLAN_EID_VENDOR_SPECIFIC) {
+			/* vendor IEs from tx-vap non-inheritable. so skip
+			 * checking entirely.
+			 */
+			tx_vendor_ie = true;
+			continue;
+		}
 
-		if (ieee802_11_mbssid_is_elem_inherited(id, ext_id) ||
+		if (ieee802_11_mbssid_is_elem_inherited(id, ext_id, false) ||
 		    (id == WLAN_EID_EXT_CAPAB))
 			continue;
 
@@ -12408,12 +12418,15 @@ static u8 * ieee802_11_inheritance_txbss_params(u8 *tx_elem, size_t tx_elem_len,
 			nontx_ext_id = *(nontx_data);
 			if (parsed_ext_eid_bmap[nontx_ext_id / 8] & BIT(nontx_ext_id % 8))
 				continue;
-		} else {
+			/* Vendors IEs are non-inheritable, So Add all non-tx BSS
+			 * vendor IEs into non-tx MBSSID profile
+			 */
+		} else if (nontx_id != WLAN_EID_VENDOR_SPECIFIC) {
 			if (parsed_eid_bmap[nontx_id / 8] & BIT(nontx_id % 8))
 				continue;
 		}
 
-		if (ieee802_11_mbssid_is_elem_inherited(nontx_id, nontx_ext_id))
+		if (ieee802_11_mbssid_is_elem_inherited(nontx_id, nontx_ext_id, true))
 			continue;
 
 		 /* Boundary is validated only during length calculation */
@@ -12447,7 +12460,8 @@ static u8 * ieee802_11_inheritance_txbss_params(u8 *tx_elem, size_t tx_elem_len,
 		goto fail;
 
 	}
-	non_inherit_ie->elem_list[non_inherit_ie->elem_len++] = WLAN_EID_VENDOR_SPECIFIC;
+	if (tx_vendor_ie == true)
+		non_inherit_ie->elem_list[non_inherit_ie->elem_len++] = WLAN_EID_VENDOR_SPECIFIC;
 
 	/*
 	 * Non-inheritance Element length
