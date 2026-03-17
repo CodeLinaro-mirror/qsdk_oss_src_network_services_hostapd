@@ -852,8 +852,8 @@ static bool is_link_reconfigure_allowed(struct hostapd_data *hapd)
 		return false;
 	}
 
-	if (hapd->disabled) {
-		wpa_printf(MSG_ERROR, "AP MLD is already disabled\n");
+	if (hapd->disabled || !hapd->beacon_set_done) {
+		wpa_printf(MSG_ERROR, "AP MLD is already disabled or stopped\n");
 		return false;
 	}
 
@@ -891,8 +891,9 @@ static bool is_link_reconfigure_allowed(struct hostapd_data *hapd)
 					 struct hostapd_data, mbssid_bss) {
 				if (bss == hapd)
 					continue;
-				if (!bss->conf->mld_ap || bss->disabled)
-					return false;
+				if (!bss->conf->mld_ap || bss->disabled ||
+				    !bss->beacon_set_done)
+					continue;
 				mld = bss->mld;
 
 				list_len = dl_list_len(&mld->links);
@@ -921,8 +922,9 @@ static bool is_link_reconfigure_allowed(struct hostapd_data *hapd)
 		} else {
 			for (i = 1; i < hapd->iface->num_bss; i++) {
 				bss = hapd->iface->bss[i];
-				if (!bss->conf->mld_ap || bss->disabled)
-					return false;
+				if (!bss->conf->mld_ap || bss->disabled ||
+				    !bss->beacon_set_done)
+					continue;
 				mld = bss->mld;
 
 				list_len = dl_list_len(&mld->links);
@@ -1035,6 +1037,10 @@ non_repurpose_link_remove:
 			    if (bss == hapd ||
 				 hostapd_mbssid_get_tx_bss(bss) != hapd)
 				    continue;
+			    if (!bss->conf->mld_ap || bss->disabled ||
+				bss->eht_mld_link_removal_inprogress ||
+				!bss->beacon_set_done)
+				    continue;
 			    if (!bss->started || !is_link_reconfigure_allowed(bss))
 				    return -1;
 		    }
@@ -1043,6 +1049,10 @@ non_repurpose_link_remove:
 
 			    if (bss == hapd ||
 				 hostapd_mbssid_get_tx_bss(bss) != hapd)
+				    continue;
+			    if (!bss->conf->mld_ap || bss->disabled ||
+				bss->eht_mld_link_removal_inprogress ||
+				!bss->beacon_set_done)
 				    continue;
 			    bss->eht_mld_link_removal_inprogress = true;
 			    bss->eht_mld_link_removal_count = count;
