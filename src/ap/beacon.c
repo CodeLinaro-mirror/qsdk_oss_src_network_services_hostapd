@@ -39,6 +39,9 @@
 #include "../../qcn_extns/cmn.h"
 #include <assert.h>
 
+#define HOSTAPD_TPC_REPORT_IE_LEN			2
+#define HOSTAPD_TPC_REPORT_LINK_MARGIN_UNKNOWN		0
+
 #ifdef CONFIG_IEEE80211AX
 #include "robust_av.h"
 #endif
@@ -199,6 +202,41 @@ static u8 * hostapd_eid_pwr_constraint(struct hostapd_data *hapd, u8 *eid)
 		*pos++ = hapd->iconf->local_pwr_constraint;
 
 	return pos;
+}
+
+static bool hostapd_tpc_report_allowed(struct hostapd_data *hapd)
+{
+	size_t i;
+
+	if (hapd->iconf->ieee80211h)
+		return true;
+
+	for (i = 0; i < RRM_CAPABILITIES_IE_LEN; i++) {
+		if (hapd->conf->radio_measurements[i])
+			return true;
+	}
+
+	return false;
+}
+
+static size_t hostapd_tpc_report_len(struct hostapd_data *hapd)
+{
+	if (!hapd->tpc_eirp_valid || !hostapd_tpc_report_allowed(hapd))
+		return 0;
+	return sizeof(struct tpc_report);
+}
+
+static u8 * hostapd_eid_tpc_report(struct hostapd_data *hapd, u8 *eid)
+{
+	if (!hapd->tpc_eirp_valid || !hostapd_tpc_report_allowed(hapd))
+		return eid;
+
+	*eid++ = WLAN_EID_TPC_REPORT;
+	*eid++ = HOSTAPD_TPC_REPORT_IE_LEN;
+	*eid++ = (u8) (s8) hapd->tpc_eirp_dbm;
+	*eid++ = HOSTAPD_TPC_REPORT_LINK_MARGIN_UNKNOWN;
+
+	return eid;
 }
 
 
@@ -882,6 +920,7 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 	buflen += hostapd_get_rsne_override_2_len(hapd);
 	buflen += hostapd_get_rsnxe_override_len(hapd);
 	buflen += hostapd_wfa_cap_ie_len(hapd, NULL);
+	buflen += hostapd_tpc_report_len(hapd);
 
 	/* Estimated Service Parameters (ESP) IE */
 	buflen += hostapd_esp_ie_len_extn(hapd);
@@ -1099,6 +1138,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 
 	/* Power Constraint element */
 	pos = hostapd_eid_pwr_constraint(hapd, pos);
+	pos = hostapd_eid_tpc_report(hapd, pos);
 
 	/* CSA element */
 	csa_pos = hostapd_eid_csa(hapd, pos);
@@ -2897,6 +2937,7 @@ int ieee802_11_build_nontx_bss_params(struct hostapd_data *hapd,
 	tail_len += hostapd_get_rsne_override_2_len(hapd);
 	tail_len += hostapd_get_rsnxe_override_len(hapd);
 	tail_len += hostapd_wfa_cap_ie_len(hapd, NULL);
+	tail_len += hostapd_tpc_report_len(hapd);
 
 	tailpos = tail = os_malloc(tail_len);
 	if (tail == NULL) {
@@ -2911,6 +2952,7 @@ int ieee802_11_build_nontx_bss_params(struct hostapd_data *hapd,
 
 	/* Power Constraint element */
 	tailpos = hostapd_eid_pwr_constraint(hapd, tailpos);
+	tailpos = hostapd_eid_tpc_report(hapd, tailpos);
 
 	/* Extended supported rates */
 	tailpos = hostapd_eid_ext_supp_rates(hapd, tailpos);
@@ -3117,6 +3159,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	tail_len += hostapd_get_rsne_override_2_len(hapd);
 	tail_len += hostapd_get_rsnxe_override_len(hapd);
 	tail_len += hostapd_wfa_cap_ie_len(hapd, NULL);
+	tail_len += hostapd_tpc_report_len(hapd);
 
 	tailpos = tail = os_malloc(tail_len);
 	if (head == NULL || tail == NULL) {
@@ -3172,6 +3215,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 
 	/* Power Constraint element */
 	tailpos = hostapd_eid_pwr_constraint(hapd, tailpos);
+	tailpos = hostapd_eid_tpc_report(hapd, tailpos);
 
 	/* CSA IE */
 	csa_pos = hostapd_eid_csa(hapd, tailpos);
