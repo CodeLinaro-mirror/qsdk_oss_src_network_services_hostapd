@@ -23,6 +23,7 @@
 #include "ieee802_11.h"
 #include "beacon.h"
 #include "hw_features.h"
+#include "dfs.h"
 #ifdef CONFIG_QCN_EXTN
 #include "ucode.h"
 #include "../../qcn_extns/cmn.h"
@@ -1593,7 +1594,33 @@ int hostapd_acs_completed(struct hostapd_iface *iface, int err)
 		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
 			ACS_EVENT_COMPLETED "freq=%d channel=%d",
 			iface->freq, iface->conf->channel);
-		hostapd_ml_acs_check_and_notify(iface, true);
+		/*
+		 * - Non-DFS channels, or DFS where all subchannels are
+		 *   DFS_AVAILABLE (including pre-CAC/background CAC),
+		 *   notify wpa_supp to start STA scan.
+		 * - DFS channels/BW where any subchannel is not
+		 *   DFS_AVAILABLE require CAC, we set the pending flag
+		 *   and notify post CAC.
+		 */
+		if (hostapd_is_dfs_required(iface)) {
+			if (hostapd_is_cac_required(iface)) {
+				wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
+					"ACS: channel/BW with CAC still required,"
+					" set the flag and notify post CAC");
+#ifdef CONFIG_QCN_EXTN
+				iface->iface_extn.acs_dfs_cac_pending = true;
+#endif
+			} else {
+				wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
+					"ACS: with CAC already done, notify now");
+				hostapd_ml_acs_check_and_notify(iface, true);
+			}
+		} else {
+			wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
+				"ACS: non-DFS channel/BW: AP will start immediately,"
+				" notify now");
+			hostapd_ml_acs_check_and_notify(iface, true);
+		}
 		break;
 	case HOSTAPD_CHAN_ACS:
 		wpa_printf(MSG_ERROR, "ACS error - reported complete, but no result available");

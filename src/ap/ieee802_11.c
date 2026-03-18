@@ -6081,8 +6081,11 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 	if (hostapd_is_eht_enabled(hapd)) {
 		buflen += hostapd_eid_eht_capab_len(hapd, IEEE80211_MODE_AP);
 		buflen += 3 + sizeof(struct ieee80211_eht_operation);
-		/* Add space to include Channel Usage element */
-		buflen += hostapd_eid_channel_usage_len(hapd);
+		if (hapd->chan_usage_config.num_elems > 0) {
+			/* Add Country element if Channel Usage is added */
+			buflen += hostapd_eid_country_len(hapd);
+			buflen += hostapd_eid_channel_usage_len(hapd);
+		}
 		if (hapd->iconf->punct_bitmap)
 			buflen += EHT_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
 		hostapd_modify_buflen_for_240mhz_extn(&buflen, hapd);
@@ -6270,8 +6273,13 @@ rsnxe_done:
 						   IEEE80211_MODE_AP);
 		hostapd_get_epcs_capab(hapd, sta);
 
-		/* Append Channel Usage element to Association response */
-		p = hostapd_eid_channel_usage(hapd, p, buf + buflen - p);
+		/* Add Country element if Channel Usage element is present */
+		if (hapd->chan_usage_config.num_elems > 0 &&
+		    hapd->iconf->ieee80211d &&
+		    hapd->iface->current_mode != NULL) {
+			p = hostapd_eid_country(hapd, p, buf + buflen - p);
+			p = hostapd_eid_channel_usage(hapd, p, buf + buflen - p);
+		}
 	}
 
 #ifdef CONFIG_QCN_EXTN
@@ -12078,7 +12086,8 @@ static u8 * ieee802_11_inheritance_txbss_params(u8 *tx_elem, size_t tx_elem_len,
 						size_t tx_head_len, u8 *nontx_elem,
 						size_t nontx_elem_len, u8 *eid,
 						struct non_inheritance_elem *non_inherit_ie,
-						ssize_t *optional_ie_len, u32 frame_type)
+						ssize_t *optional_ie_len, u32 frame_type,
+						struct hostapd_data *bss)
 {
 	const struct element *tx_ie, *nontx_ie;
 	const u8 *data, *nontx_data;
@@ -12164,12 +12173,13 @@ static u8 * ieee802_11_inheritance_txbss_params(u8 *tx_elem, size_t tx_elem_len,
 					 */
 					if (!pos) {
 						if (nontx_len + IEEE80211_ELEM_HEADER_LEN >
-						    MBSSID_NON_TX_OPTIONAL_ELEM_SIZE -
+						    MBSSID_NON_TX_OPTIONAL_ELEM_SIZE(bss) -
 						    nontx_prof_len) {
 							wpa_printf(MSG_ERROR,
 								   "Inheritance: Unable to add Element (%u) "
 								   "exceeds max limit (%d)",
-								   nontx_id, MBSSID_NON_TX_OPTIONAL_ELEM_SIZE);
+								   nontx_id,
+								   MBSSID_NON_TX_OPTIONAL_ELEM_SIZE(bss));
 							goto fail;
 						}
 						nontx_prof_len += nontx_len + IEEE80211_ELEM_HEADER_LEN;
@@ -12266,12 +12276,13 @@ static u8 * ieee802_11_inheritance_txbss_params(u8 *tx_elem, size_t tx_elem_len,
 				 /* Boundary is validated only during length calculation */
 				if (!pos) {
 					if (nontx_len + IEEE80211_ELEM_HEADER_LEN >
-					    MBSSID_NON_TX_OPTIONAL_ELEM_SIZE -
+					    MBSSID_NON_TX_OPTIONAL_ELEM_SIZE(bss) -
 					    nontx_prof_len) {
 						wpa_printf(MSG_ERROR,
 							   "Inheritance: Unable to add Element (%u) "
 							   "exceeds max limit (%d)",
-							   nontx_id, MBSSID_NON_TX_OPTIONAL_ELEM_SIZE);
+							   nontx_id,
+							   MBSSID_NON_TX_OPTIONAL_ELEM_SIZE(bss));
 						goto fail;
 					}
 					nontx_prof_len += nontx_len + IEEE80211_ELEM_HEADER_LEN;
@@ -12336,11 +12347,11 @@ static u8 * ieee802_11_inheritance_txbss_params(u8 *tx_elem, size_t tx_elem_len,
 		 /* Boundary is validated only during length calculation */
 		if (!pos) {
 			if (nontx_len + IEEE80211_ELEM_HEADER_LEN >
-			    MBSSID_NON_TX_OPTIONAL_ELEM_SIZE - nontx_prof_len) {
+			    MBSSID_NON_TX_OPTIONAL_ELEM_SIZE(bss) - nontx_prof_len) {
 				wpa_printf(MSG_ERROR,
 					   "Inheritance: Failed to add element:%u to Non-Tx BSS, "
 					   "exceeds max limit (%d)",
-					   nontx_id, MBSSID_NON_TX_OPTIONAL_ELEM_SIZE);
+					   nontx_id, MBSSID_NON_TX_OPTIONAL_ELEM_SIZE(bss));
 				goto fail;
 			}
 			nontx_prof_len += nontx_len + IEEE80211_ELEM_HEADER_LEN;
@@ -12380,11 +12391,12 @@ static u8 * ieee802_11_inheritance_txbss_params(u8 *tx_elem, size_t tx_elem_len,
 				   1 + non_inherit_ie->ext_elem_len;
 
 	if (total_non_inherit_ie_len >
-	    MBSSID_NON_TX_OPTIONAL_ELEM_SIZE - nontx_prof_len) {
+	    MBSSID_NON_TX_OPTIONAL_ELEM_SIZE(bss) - nontx_prof_len) {
 		wpa_printf(MSG_ERROR,
 			   "Unable to add non-inheritance elements in frame type:%u, "
 			   "non_inherit_ie_len:%zu exceeds max limit:%d",
-			   frame_type, total_non_inherit_ie_len, MBSSID_NON_TX_OPTIONAL_ELEM_SIZE);
+			   frame_type, total_non_inherit_ie_len,
+			   MBSSID_NON_TX_OPTIONAL_ELEM_SIZE(bss));
 		os_memset(non_inherit_ie, 0, sizeof(struct non_inheritance_elem));
 		goto fail;
 	}
@@ -12470,7 +12482,7 @@ u8 * hostapd_eid_mbssid_nontx_optional_ie(struct hostapd_data *bss, void *tx_par
 						  tx_head, tx_head_len,
 						  nontx_elem, nontx_elem_len,
 						  eid, non_inherit_ie, nontx_prof_len,
-						  frame_type);
+						  frame_type, bss);
 
 	if (frame_type == WLAN_FC_STYPE_BEACON)
 		os_free(nontx_params.tail);
@@ -12590,11 +12602,12 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 
 		/* WMM IE */
 		wmm_len = hostapd_eid_wmm_len(bss);
-		if (wmm_len <= MBSSID_NON_TX_VENDOR_ELEM_SIZE)
+		if (wmm_len <= MBSSID_NON_TX_VENDOR_ELEM_SIZE(bss))
 			nontx_profile_len += wmm_len;
 
 		/* User configured vendor elements */
-		if (bss->conf->vendor_elements_len <= MBSSID_NON_TX_VENDOR_ELEM_SIZE - wmm_len)
+		if (bss->conf->vendor_elements_len <=
+		    MBSSID_NON_TX_VENDOR_ELEM_SIZE(bss) - wmm_len)
 			nontx_profile_len += bss->conf->vendor_elements_len;
 
 
@@ -12841,7 +12854,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 
 		/* WMM IE */
 		wmm_len = hostapd_eid_wmm_len(bss);
-		if (wmm_len <= MBSSID_NON_TX_VENDOR_ELEM_SIZE) {
+		if (wmm_len <= MBSSID_NON_TX_VENDOR_ELEM_SIZE(bss)) {
 			startpos = eid;
 			eid = hostapd_eid_wmm(bss, eid, false);
 			hostapd_eid_update_cu_info(bss, &modified_flag, startpos,
@@ -12851,7 +12864,8 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		}
 
 		/* User configured vendor elements */
-		if (bss->conf->vendor_elements_len <= MBSSID_NON_TX_VENDOR_ELEM_SIZE - wmm_len) {
+		if (bss->conf->vendor_elements_len <=
+		    MBSSID_NON_TX_VENDOR_ELEM_SIZE(bss) - wmm_len) {
 			for (j = 0; j < bss->conf->vendor_elements_count; j++) {
 				struct wpabuf *entry = bss->conf->vendor_elements[j];
 
@@ -12859,7 +12873,8 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 				eid += wpabuf_len(entry);
 			}
 		}
-	 	 /*
+
+		/*
 	 	 * Non-inheritance Element
 	 	 * IEEE80211_ELEM_HEADER_LEN - 2
 	 	 * Ext tag number: 1

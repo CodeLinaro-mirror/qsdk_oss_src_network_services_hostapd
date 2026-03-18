@@ -3531,7 +3531,10 @@ static bool ibss_mesh_select_80_160mhz(struct wpa_supplicant *wpa_s,
 			if (freq->freq >= bw320[j] &&
 			    freq->freq <= bw320[j + 1]) {
 				chwidth = CONF_OPER_CHWIDTH_320MHZ;
-				seg0 = ibss_get_center_320mhz(freq->channel);
+				if (ssid->ccfs)
+					seg0 = ssid->ccfs;
+				else
+					seg0 = ibss_get_center_320mhz(freq->channel);
 				break;
 			}
 		}

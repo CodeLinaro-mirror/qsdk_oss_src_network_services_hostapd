@@ -49,9 +49,23 @@ enum link_parse_type {
 
 #define LINK_RECONF_GROUP_KDE_MAX_LEN 255
 
-#define MBSSID_NON_TX_OPTIONAL_ELEM_SIZE  160
-#define MBSSID_NON_TX_VENDOR_ELEM_SIZE 70
+#define MBSSID_NON_TX_DEF_OPTIONAL_ELEM_SIZE 160
+#define MBSSID_NON_TX_DEF_VENDOR_ELEM_SIZE 70
 #define MAX_MBSSID_NONINHERIT_ELEM_SIZE 100
+
+#ifdef CONFIG_QCN_EXTN
+#define MBSSID_NON_TX_OPTIONAL_ELEM_SIZE(bss)             \
+	((bss)->conf->bss_extn.nontx_optional_elem_size)
+
+#define MBSSID_NON_TX_VENDOR_ELEM_SIZE(bss)               \
+	((bss)->conf->bss_extn.nontx_vendor_elem_size)
+#else
+#define MBSSID_NON_TX_OPTIONAL_ELEM_SIZE(bss)             \
+	(MBSSID_NON_TX_DEF_OPTIONAL_ELEM_SIZE)
+
+#define MBSSID_NON_TX_VENDOR_ELEM_SIZE(bss)               \
+	(MBSSID_NON_TX_DEF_VENDOR_ELEM_SIZE)
+#endif
 
 struct link_reconf_req_info {
 	struct dl_list list;
@@ -222,6 +236,8 @@ u8 * hostapd_eid_time_adv(struct hostapd_data *hapd, u8 *eid);
 size_t hostapd_eid_channel_usage_len(struct hostapd_data *hapd);
 u8 * hostapd_eid_channel_usage(struct hostapd_data *hapd, u8 *eid,
 								size_t limit);
+u8 * hostapd_eid_country(struct hostapd_data *hapd, u8 *eid, int max_len);
+size_t hostapd_eid_country_len(struct hostapd_data *hapd);
 u8 * hostapd_eid_time_zone(struct hostapd_data *hapd, u8 *eid);
 int hostapd_update_time_adv(struct hostapd_data *hapd);
 void hostapd_client_poll_ok(struct hostapd_data *hapd, const u8 *addr);

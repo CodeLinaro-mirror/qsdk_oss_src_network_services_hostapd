@@ -829,6 +829,9 @@ static int hostapd_config_bss(struct hostapd_config *conf, const char *ifname)
 	conf->last_bss = bss;
 
 	hostapd_config_defaults_bss(bss);
+#ifdef CONFIG_QCN_EXTN
+	hostapd_config_defaults_bss_extn(bss);
+#endif
 	os_strlcpy(bss->iface, ifname, sizeof(bss->iface));
 	os_memcpy(bss->ssid.vlan, bss->iface, IFNAMSIZ + 1);
 
