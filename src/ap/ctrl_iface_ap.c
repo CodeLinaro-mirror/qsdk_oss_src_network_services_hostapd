@@ -113,6 +113,192 @@ static int hostapd_get_sta_conn_time(struct sta_info *sta,
 	return ret;
 }
 
+
+u8 hostapd_tx_maxnss(struct hostapd_data *hapd, struct sta_info *sta)
+{
+	u8 nss = 0;
+	u8 tx_nss = 1;
+	u8 mcs_count;
+	u16 tx_mcs_set;
+	int i, j;
+	const u16 *ap_mcs_set = NULL;
+	const u8 *mcs_set = NULL;
+	struct hostapd_config *conf = hapd->iface->conf;
+	struct hostapd_hw_modes *mode = NULL;
+	u8 support_check[MAXNSS_HTMODE_MAX] = {};
+	u8 htmode = MAXNSS_HTMODE_UNSET;
+
+	if (sta) {
+		htmode =  (!!(sta->flags & WLAN_STA_HT)) |
+			((!!(sta->flags & WLAN_STA_VHT)) << 1) |
+			((!!(sta->flags & WLAN_STA_EHT)) << 2) |
+			((!!(sta->flags & WLAN_STA_HE)) << 3);
+		support_check[MAXNSS_HTMODE_HT_N] = !!sta->ht_capabilities;
+		support_check[MAXNSS_HTMODE_VHT_AC] = !!sta->vht_capabilities;
+		support_check[MAXNSS_HTMODE_EHT_BE] = !!sta->eht_capab;
+		support_check[MAXNSS_HTMODE_HE_AX] = !!sta->he_capab;
+	} else {
+		htmode = (!!conf->ieee80211ac) |
+			((!!conf->ieee80211n) << 1) |
+			((!!conf->ieee80211be) << 2) |
+			((!!conf->ieee80211ax) << 3);
+		support_check[MAXNSS_HTMODE_HT_N] = hostapd_is_ht_enabled(hapd);
+		support_check[MAXNSS_HTMODE_VHT_AC] = hostapd_is_vht_enabled(hapd);
+		support_check[MAXNSS_HTMODE_EHT_BE] = hostapd_is_eht_enabled(hapd);
+		support_check[MAXNSS_HTMODE_HE_AX] = hostapd_is_he_enabled(hapd);
+		mode = hapd->iface->current_mode;
+	}
+	htmode |= htmode >> 1;
+	htmode |= htmode >> 2;
+	htmode |= htmode >> 4;
+	htmode++;
+	htmode = htmode >> 1;
+	if (!(htmode < MAXNSS_HTMODE_MAX) || !support_check[htmode] || (!sta && !mode))
+		return tx_nss;
+
+	switch (htmode) {
+		case MAXNSS_HTMODE_HT_N:
+			/* HT does not carry separate TX NSS in supported_mcs_set; assume RX */
+			mcs_set = (sta) ? sta->ht_capabilities->supported_mcs_set : mode->mcs_set;
+			return (!!mcs_set[0])  + (!!mcs_set[1]) + (!!mcs_set[2]) + (!!mcs_set[3]);
+		case MAXNSS_HTMODE_VHT_AC:
+			tx_mcs_set = (sta) ?
+				le_to_host16(sta->vht_capabilities->vht_supported_mcs_set.tx_map) :
+				(mode->vht_mcs_set[4] | (mode->vht_mcs_set[5] << 8));
+			for (i = VHT_RX_NSS_MAX_STREAMS - 1; i >= 0; i--) {
+				if (((tx_mcs_set >> (2 * i)) & 0x03) != 0x03)
+					return i + 1;
+			}
+			return tx_nss;
+		case MAXNSS_HTMODE_EHT_BE:
+			mcs_count = 1;
+			mcs_set = (sta) ? sta->eht_capab->optional : mode->eht_capab[1].mcs;
+			switch (conf->eht_oper_chwidth) {
+				case CONF_OPER_CHWIDTH_320MHZ:
+					mcs_count++;
+					/* fall through */
+				case CONF_OPER_CHWIDTH_80P80MHZ:
+				case CONF_OPER_CHWIDTH_160MHZ:
+					mcs_count++;
+					break;
+				default:
+					break;
+			}
+			for (i = 0; i < mcs_count * EHT_PHYCAP_MCS_NSS_LEN_20MHZ_PLUS; i++) {
+				nss = (mcs_set[i] & 0x000F);
+				if (nss > tx_nss)
+					tx_nss = nss;
+			}
+			return tx_nss;
+		case MAXNSS_HTMODE_HE_AX:
+			mcs_count = 0;
+			ap_mcs_set =   (sta) ?  (u16 *) sta->he_capab->optional :
+				(u16 *) mode->he_capab[1].mcs;
+			switch (conf->he_oper_chwidth) {
+				case CONF_OPER_CHWIDTH_80P80MHZ:
+					mcs_count = 3;
+					break;
+				case CONF_OPER_CHWIDTH_160MHZ:
+					mcs_count = 2;
+					break;
+				default:
+					mcs_count = 1;
+					break;
+			}
+			/* For each width, TX map follows RX map; select TX map index */
+			for (i = 0; i < mcs_count; i++) {
+				tx_mcs_set = WPA_GET_LE16((const u8 *)&ap_mcs_set[(i * 2) + 1]);
+				for (j = HE_NSS_MAX_STREAMS - 1; j >= 0; j--) {
+					if (((tx_mcs_set >> (2 * j)) & 0x03) != 0x03)
+						return j + 1;
+				}
+			}
+			/* Fallback to <= 80 MHz basic TX map */
+			if (sta && sta->he_capab) {
+				tx_mcs_set = le_to_host16(sta->he_capab->he_basic_supported_mcs_set.tx_map);
+			} else if (mode) {
+				/* mode->he_capab[AP].mcs holds basic maps */
+				tx_mcs_set = WPA_GET_LE16(mode->he_capab[1].mcs);
+			} else {
+				return tx_nss;
+			}
+			for (j = HE_NSS_MAX_STREAMS - 1; j >= 0; j--) {
+				if (((tx_mcs_set >> (2 * j)) & 0x03) != 0x03)
+					return j + 1;
+			}
+			/* fall through */
+		default:
+			return tx_nss;
+	}
+	return tx_nss;
+}
+
+
+static int hostapd_get_sta_phy_mode(struct sta_info *sta,
+				    struct hostapd_data *hapd,
+				    char *buf, size_t buflen)
+{
+	int ret, len = 0;
+	enum oper_chan_width chwidth;
+
+	ret = os_snprintf(buf, buflen,
+			  "max_STA_phymode=");
+	if (os_snprintf_error(buflen, ret))
+		return 0;
+	len += ret;
+
+	if (sta->flags & WLAN_STA_EHT) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  "[11BE]");
+	} else if (sta->flags & WLAN_STA_HE) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  "[11AX]");
+	} else if (sta->flags & WLAN_STA_VHT) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  "[11AC]");
+	} else if (sta->flags & WLAN_STA_HT) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  "[11N]");
+	} else {
+		/* Legacy association */
+		ret = os_snprintf(buf + len, buflen - len,
+				  "[NULL]");
+	}
+	if (os_snprintf_error(buflen - len, ret))
+		return len;
+	len += ret;
+
+	chwidth = hostapd_get_oper_chwidth(hapd->iconf);
+	switch (chwidth) {
+	case CONF_OPER_CHWIDTH_USE_HT:
+		ret = os_snprintf(buf + len, buflen - len,
+				  "[%s]",
+				  hapd->iconf->secondary_channel ? "40" : "20");
+		break;
+	case CONF_OPER_CHWIDTH_80MHZ:
+		ret = os_snprintf(buf + len, buflen - len,
+				  "[80]");
+		break;
+	case CONF_OPER_CHWIDTH_160MHZ:
+		ret = os_snprintf(buf + len, buflen - len,
+				  "[160]");
+		break;
+	case CONF_OPER_CHWIDTH_320MHZ:
+		ret = os_snprintf(buf + len, buflen - len,
+				  "[320]");
+		break;
+	default:
+		ret = os_snprintf(buf + len, buflen - len,
+				  "[20]");
+	}
+	if (os_snprintf_error(buflen - len, ret))
+		return len;
+	len += ret;
+
+	return len;
+}
+
+
 static u8 hostapd_htmaxmcs(const u8 *mcs_set)
 {
 	u8 rates[WLAN_SUPP_RATES_MAX];
@@ -196,7 +382,69 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 		len += ret;
 	}
 
-	ret = os_snprintf(buf + len, buflen - len, "rx_rate_info=%lu",
+	if (hapd->iconf) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  "channel=%u\nOperating_class=%u\n",
+				  hapd->iconf->channel,
+				  hapd->iconf->op_class);
+		if (os_snprintf_error(buflen - len, ret))
+			return 0;
+		len += ret;
+	}
+
+	if (hapd->iface) {
+		if (is_6ghz_freq(hapd->iface->freq))
+			ret = os_snprintf(buf + len, buflen - len,
+					  "band=6GHz\n");
+		else if (is_5ghz_freq(hapd->iface->freq))
+			ret = os_snprintf(buf + len, buflen - len,
+					  "band=5GHz\n");
+		else if (is_24ghz_freq(hapd->iface->freq))
+			ret = os_snprintf(buf + len, buflen - len,
+					  "band=2.4GHz\n");
+		else
+			ret = os_snprintf(buf + len, buflen - len,
+					  "band=NA\n");
+		if (os_snprintf_error(buflen - len, ret))
+			return 0;
+		len += ret;
+	}
+
+	ret = os_snprintf(buf + len, buflen - len,
+			  "MLO=%s\nmax_tx_power=%u\nmin_tx_power=%u\n",
+			  (sta->flags & WLAN_STA_EHT) ? "yes" : "no",
+			  sta->max_tx_power,
+			  sta->min_tx_power);
+	if (os_snprintf_error(buflen - len, ret))
+		return 0;
+	len += ret;
+
+	ret = os_snprintf(buf + len, buflen - len,
+			  "mu_capable=%s\n",
+			  (hapd->iconf->he_phy_capab.he_su_beamformee ||
+			  (hapd->iconf->vht_capab & VHT_CAP_MU_BEAMFORMEE_CAPABLE)) ?
+			  "yes" : "no");
+	if (os_snprintf_error(buflen - len, ret))
+		return 0;
+	len += ret;
+
+	ret = os_snprintf(buf + len, buflen - len,
+			  "ERP=%u\n", ieee802_11_erp_info(hapd));
+	if (os_snprintf_error(buflen - len, ret))
+		return 0;
+	len += ret;
+
+	ret = os_snprintf(buf + len, buflen - len,
+			  "HT_capability=%s\nVHT_capability=%s\n",
+			  hostapd_is_ht_enabled(hapd) ? "yes" : "no",
+			  hostapd_is_vht_enabled(hapd) ? "yes" : "no");
+	if (os_snprintf_error(buflen - len, ret))
+		return 0;
+	len += ret;
+
+	len += hostapd_get_sta_phy_mode(sta, hapd, buf + len, buflen - len);
+
+	ret = os_snprintf(buf + len, buflen - len, "\nrx_rate_info=%lu",
 			  data.current_rx_rate / 100);
 	if (os_snprintf_error(buflen - len, ret))
 		return len;
@@ -761,8 +1009,13 @@ static int hostapd_ctrl_iface_sta_mib(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
-	ret = os_snprintf(buf + len, buflen - len, "max_nss=%u\n",
-			hostapd_maxnss(hapd, sta));
+	ret = os_snprintf(buf + len, buflen - len, "max_rx_nss=%u\n",
+			  hostapd_maxnss(hapd, sta));
+	if (!os_snprintf_error(buflen - len, ret))
+		len += ret;
+
+	ret = os_snprintf(buf + len, buflen - len, "max_tx_nss=%u\n",
+			  hostapd_tx_maxnss(hapd, sta));
 	if (!os_snprintf_error(buflen - len, ret))
 		len += ret;
 
