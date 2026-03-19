@@ -680,8 +680,7 @@ u8 * wpa_auth_eid_key_delivery(u8 *eid, size_t max_len,
 			       struct wpa_state_machine *sm,
 			       bool is_ml);
 u8 * wpa_auth_write_assoc_resp_eppke(struct wpa_state_machine *sm,
-				     u8 *pos, size_t max_len, bool is_ml,
-				     const u8 *pmkid);
+				     u8 *pos, size_t max_len, bool is_ml);
 void wpa_store_eppke_pmk_ptk_sm(struct wpa_state_machine *sm,
 				const struct wpa_ptk *ptk, const u8 *pmk,
 				size_t pmk_len);
