@@ -73,7 +73,7 @@ static u8 * hostapd_eid_bss_load(struct hostapd_data *hapd, u8 *eid, size_t len)
 }
 
 
-static u8 ieee802_11_erp_info(struct hostapd_data *hapd)
+u8 ieee802_11_erp_info(struct hostapd_data *hapd)
 {
 	u8 erp = 0;
 
