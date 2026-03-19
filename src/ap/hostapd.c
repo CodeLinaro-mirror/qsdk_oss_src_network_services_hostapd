@@ -9117,15 +9117,12 @@ hostapd_switch_channel_fallback(struct hostapd_iface *iface,
 	case 80:
 		if (freq_params->center_freq2) {
 			bw = CONF_OPER_CHWIDTH_80P80MHZ;
-			iface->conf->vht_capab |=
-				VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ;
 		} else {
 			bw = CONF_OPER_CHWIDTH_80MHZ;
 		}
 		break;
 	case 160:
 		bw = CONF_OPER_CHWIDTH_160MHZ;
-		iface->conf->vht_capab |= VHT_CAP_SUPP_CHAN_WIDTH_160MHZ;
 		break;
 	case 320:
 		bw = CONF_OPER_CHWIDTH_320MHZ;
