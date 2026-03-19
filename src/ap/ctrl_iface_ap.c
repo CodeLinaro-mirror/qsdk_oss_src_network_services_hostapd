@@ -1943,7 +1943,7 @@ int hostapd_ctrl_iface_dump_tk(struct hostapd_data *hapd, const char *cmd,
 	int key_idx;
 	const char *pos;
 	struct wpa_state_machine *sm;
-	size_t tk_len;
+	size_t tk_len = 0;
 	u8 tk[WPA_TK_MAX_LEN]; /* Temporal Key (TK) */
 	int ret;
 
@@ -1953,9 +1953,6 @@ int hostapd_ctrl_iface_dump_tk(struct hostapd_data *hapd, const char *cmd,
 		return -1;
 	}
 	
-
-	wpa_printf(MSG_ERROR,"DBGDBG %s %d \n",__func__,__LINE__);
-
 
 	/* Parse MAC address - format: <sta_addr> <key_idx> */
 	if (hwaddr_aton(cmd, addr)) {
@@ -1987,11 +1984,6 @@ int hostapd_ctrl_iface_dump_tk(struct hostapd_data *hapd, const char *cmd,
 		return os_snprintf(buf, buflen, "FAIL-INVALID-KEY-IDX\n");
 	}
 
-	wpa_printf(MSG_ERROR,"DBGDBG key_idx = %d %s %d \n",key_idx,__func__,__LINE__);
-
-	/* Note: key_idx is currently not used as PTK uses index 0.
-	 * Parameter is reserved for future use with group keys. */
-	 wpa_printf(MSG_ERROR,"DBGDBG %s %d \n",__func__,__LINE__);
 	/* Look up station */
 	sta = ap_get_sta(hapd, addr);
 	if (!sta) {
@@ -1999,28 +1991,46 @@ int hostapd_ctrl_iface_dump_tk(struct hostapd_data *hapd, const char *cmd,
 			   MAC2STR(addr));
 		return os_snprintf(buf, buflen, "FAIL-STA-NOT-FOUND\n");
 	}
-	 wpa_printf(MSG_ERROR,"DBGDBG %s %d \n",__func__,__LINE__);
 
 #ifdef CONFIG_ENC_ASSOC
 	if (sta->epp_sta) {
 		/* Get key from pasn data */
 		struct pasn_data *pasn;
 		struct hostapd_data *assoc_hapd;
-		struct sta_info *assoc_sta;
+		struct sta_info *assoc_sta =
+			hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd);
 
-		if ((assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd)))
-			pasn = assoc_sta->pasn;
-		else
-			pasn = sta->pasn;
+		switch (sta->auth_alg) {
+		case WLAN_AUTH_EPPKE:
+			if (assoc_sta)
+				pasn = assoc_sta->pasn;
+			else
+				pasn = sta->pasn;
 
-		if (!pasn) {
-			wpa_printf(MSG_DEBUG, "DUMP_TK: No PASN data for " MACSTR,
-				   MAC2STR(addr));
-			return os_snprintf(buf, buflen, "FAIL-NO-PASN-DATA\n");
+			if (!pasn) {
+				wpa_printf(MSG_DEBUG, "DUMP_TK: No PASN data for " MACSTR,
+					   MAC2STR(addr));
+				return os_snprintf(buf, buflen, "FAIL-NO-PASN-DATA\n");
+			}
+			tk_len = pasn->ptk.tk_len;
+			os_memcpy(tk, pasn->ptk.tk, tk_len);
+			break;
+#ifdef CONFIG_IEEE8021X_AUTH
+		case WLAN_AUTH_802_1X:
+			if (assoc_sta) {
+				tk_len = assoc_sta->eap_auth_data.ptk.tk_len;
+				os_memcpy(tk, assoc_sta->eap_auth_data.ptk.tk, tk_len);
+			} else {
+				tk_len = sta->eap_auth_data.ptk.tk_len;
+				os_memcpy(tk, sta->eap_auth_data.ptk.tk, tk_len);
+			}
+			break;
+#endif /* CONFIG_IEEE8021X_AUTH */
+		default:
+			wpa_printf(MSG_ERROR, "Unsupported Auth algo "
+				   "for an EPP station");
+			return -1;
 		}
-		tk_len = pasn->ptk.tk_len;
-		os_memcpy(tk, pasn->ptk.tk, tk_len);
-	
 	} else 
 #endif /* CONFIG_ENC_ASSOC */
 	{
@@ -2031,7 +2041,6 @@ int hostapd_ctrl_iface_dump_tk(struct hostapd_data *hapd, const char *cmd,
 				   MAC2STR(addr));
 			return os_snprintf(buf, buflen, "FAIL-NO-WPA-SM\n");
 		}
-	 	wpa_printf(MSG_ERROR,"DBGDBG %s %d \n",__func__,__LINE__);
 		tk_len = sm->PTK.tk_len;
 		os_memcpy(tk, sm->PTK.tk, tk_len);
 	}
@@ -2041,7 +2050,6 @@ int hostapd_ctrl_iface_dump_tk(struct hostapd_data *hapd, const char *cmd,
 			   MAC2STR(addr));
 		return os_snprintf(buf, buflen, "FAIL-NO-TK\n");
 	}
-	 wpa_printf(MSG_ERROR,"DBGDBG %s %d \n",__func__,__LINE__);
 	/* Return TK in hex format with newline */
 	ret = wpa_snprintf_hex(buf, buflen, tk, tk_len);
 	if (ret > 0 && (size_t) ret < buflen - 1) {
