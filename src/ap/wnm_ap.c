@@ -508,7 +508,10 @@ static int ieee802_11_send_bss_trans_mgmt_request(struct hostapd_data *hapd,
 	u8 req_mode = 0;
 
 #ifdef CONFIG_MBO
+	size_t extra_len = 0, mbo_attrs_len = 0, mbo_ie_len;
+	u8 mbo_attrs[16];
 	u8 *nr_pos;
+	u8 *end;
 	struct hostapd_neighbor_entry *nr;
 	struct wpabuf *nrbuf = NULL;
 	if (hapd->conf->mbo_enabled) {
@@ -520,12 +523,20 @@ static int ieee802_11_send_bss_trans_mgmt_request(struct hostapd_data *hapd,
 		nrbuf = wpabuf_alloc(nr_len);
 		if (nrbuf == NULL)
 			return -1;
-	}
-#endif
-	mgmt = os_zalloc(sizeof(*mgmt) + nr_len);
 
-	if (mgmt == NULL)
+		/* MBO element (6 bytes) + MBO attributes (10 bytes) */
+		extra_len = 16;
+	}
+	mgmt = os_zalloc(sizeof(*mgmt) + nr_len + extra_len);
+#else
+	mgmt = os_zalloc(sizeof(*mgmt) + nr_len);
+#endif
+	if (mgmt == NULL) {
+#ifdef CONFIG_MBO
+		wpabuf_free(nrbuf);
+#endif
 		return -1;
+	}
 
 	sta = ap_get_sta(hapd, addr);
 	own_addr = wnm_ap_get_own_addr(hapd, sta);
@@ -572,6 +583,36 @@ static int ieee802_11_send_bss_trans_mgmt_request(struct hostapd_data *hapd,
 		 os_memcpy(pos, nrbuf->buf, nr_len);
 		 pos += nr_len;
 		 wpabuf_free(nrbuf);
+
+		 /* Build and append MBO IE */
+		 mbo_attrs[mbo_attrs_len++] = MBO_ATTR_ID_TRANSITION_REASON;
+		 mbo_attrs[mbo_attrs_len++] = 1;
+		 mbo_attrs[mbo_attrs_len++] = hapd->mbo_trans_reason;
+
+		 if (hapd->mbo_assoc_retry) {
+			 mbo_attrs[mbo_attrs_len++] = MBO_ATTR_ID_ASSOC_RETRY_DELAY;
+			 mbo_attrs[mbo_attrs_len++] = 2;
+			 WPA_PUT_LE16(&mbo_attrs[mbo_attrs_len], hapd->mbo_assoc_retry);
+			 mbo_attrs_len += 2;
+		 }
+
+		 if (hapd->conf->mbo_cell_data_conn_pref >= 0 &&
+		     sta && sta->cell_capa) {
+			 mbo_attrs[mbo_attrs_len++] = MBO_ATTR_ID_CELL_DATA_PREF;
+			 mbo_attrs[mbo_attrs_len++] = 1;
+			 mbo_attrs[mbo_attrs_len++] = (u8)hapd->conf->mbo_cell_data_conn_pref;
+		 }
+
+		 if (mbo_attrs_len) {
+			 end = (u8 *) mgmt + sizeof(*mgmt) + nr_len + extra_len;
+			 mbo_ie_len = mbo_add_ie(pos, end - pos,
+						 mbo_attrs, mbo_attrs_len);
+			 if (!mbo_ie_len) {
+				 os_free(mgmt);
+				 return -1;
+			 }
+			 pos += mbo_ie_len;
+		 }
 	 }
 #endif
 
