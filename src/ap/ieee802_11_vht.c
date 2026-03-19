@@ -151,19 +151,18 @@ u8 * hostapd_eid_vht_capabilities(struct hostapd_data *hapd, u8 *eid, u32 nsts)
 	 */
 	hostapd_repurpose_update_vht_capabilities_extn(hapd, &chwidth, cap);
 #endif /* CONFIG_QCN_EXTN */
-	if (((host_to_le32(mode->vht_capab)) & VHT_CAP_EXTENDED_NSS_BW_SUPPORT)
-		&& ((chwidth == CHANWIDTH_160MHZ) || (chwidth == CHANWIDTH_80P80MHZ))) {
-		cap->vht_capabilities_info |= VHT_CAP_EXTENDED_NSS_BW_SUPPORT;
-		cap->vht_capabilities_info &= ~(host_to_le32(VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ));
-		cap->vht_capabilities_info &= ~(host_to_le32(VHT_CAP_SUPP_CHAN_WIDTH_160MHZ));
-		cap->vht_capabilities_info &= ~(host_to_le32(VHT_CAP_SUPP_CHAN_WIDTH_MASK));
-	} else {
-		cap->vht_capabilities_info &= ~VHT_CAP_EXTENDED_NSS_BW_SUPPORT_MASK;
 
-		if (chwidth == CHANWIDTH_160MHZ)
-			cap->vht_capabilities_info |= VHT_CAP_SUPP_CHAN_WIDTH_160MHZ;
-		else if (chwidth == CHANWIDTH_80P80MHZ)
-			cap->vht_capabilities_info |= VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ;
+	if (!(mode->vht_capab & VHT_CAP_EXTENDED_NSS_BW_SUPPORT)) {
+		u32 cur_caps = le_to_host32(cap->vht_capabilities_info);
+
+		if (!(cur_caps & VHT_CAP_SUPP_CHAN_WIDTH_MASK)) {
+			if (chwidth == CHANWIDTH_160MHZ)
+				cap->vht_capabilities_info |=
+					host_to_le32(VHT_CAP_SUPP_CHAN_WIDTH_160MHZ);
+			else if (chwidth == CHANWIDTH_80P80MHZ)
+				cap->vht_capabilities_info |=
+					host_to_le32(VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ);
+		}
 	}
 
 	/* Supported MCS set comes from hw */
