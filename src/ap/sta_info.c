@@ -351,7 +351,7 @@ void set_wpa_sm_for_each_partner_link(struct hostapd_data *hapd,
 			continue;
 
 		lsta = ap_get_sta(lhapd, psta->addr);
-		if (lsta)
+		if (lsta && (psta->mld_assoc_link_id == lsta->mld_assoc_link_id))
 			lsta->wpa_sm = wpa_sm;
 	}
 }
@@ -2574,10 +2574,8 @@ void ap_sta_remove_link_sta(struct hostapd_data *hapd,
 			if(check_authorized && ap_sta_is_authorized(tmp_sta))
 				continue;
 
-			if (ap_sta_is_mld(tmp_hapd, tmp_sta)) {
-				ap_free_sta(tmp_hapd, tmp_sta);
-				break;
-			}
+			ap_free_sta(tmp_hapd, tmp_sta);
+			break;
 		}
 	}
 }
