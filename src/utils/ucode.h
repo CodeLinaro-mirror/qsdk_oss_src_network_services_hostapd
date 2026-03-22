@@ -9,6 +9,23 @@
 
 #define HOSTAPD_UC_PATH	"/usr/share/hostap/"
 
+typedef enum {
+	VAP_TYPE_STA = 0,
+	VAP_TYPE_MESH = 1
+} vap_type_t;
+
+static inline const char *vap_type_to_string(vap_type_t vap_type)
+{
+	switch (vap_type) {
+	case VAP_TYPE_STA:
+		return "STA";
+	case VAP_TYPE_MESH:
+		return "MESH";
+	default:
+		return "UNKNOWN";
+	}
+}
+
 extern uc_value_t *uc_registry;
 uc_vm_t *wpa_ucode_create_vm(void);
 int wpa_ucode_run(const char *script);
