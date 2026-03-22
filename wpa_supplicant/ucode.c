@@ -130,10 +130,17 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 	int sec_chan_offset;
 	s8 hw_idx;
 	bool is_dfs = false;
+	vap_type_t vap_type;
 
 	val = wpa_ucode_registry_get(iface_registry, wpa_s->ucode.idx);
 	if (!val)
 		return;
+
+#ifdef CONFIG_MESH
+	vap_type = wpa_s->ifmsh ? VAP_TYPE_MESH : VAP_TYPE_STA;
+#else
+	vap_type = VAP_TYPE_STA;
+#endif
 
 	if (wpa_s->cache_cwork && wpa_s->cache_cwork->bss) {
 		bss = wpa_s->cache_cwork->bss;
@@ -153,6 +160,7 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 				uc_value_push(ucv_get(ucv_string_new(state)));
 				info = ucv_object_new(vm);
 				uc_value_push(ucv_get(info));
+				uc_value_push(ucv_get(ucv_int64_new(vap_type)));
 				ucv_object_add(info, "frequency",
 					       ucv_int64_new(bss->mld_links[i].freq));
 				ucv_object_add(info, "chan_width",
@@ -201,7 +209,7 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 					   center_freq1, center_freq2, bss->mld_links[i].width, is_dfs,
 					   bss->mld_links[i].punc_bitmap, sec_chan_offset);
 				wpa_s->pre_connect_cnt++;
-				ucv_put(wpa_ucode_call(5));
+				ucv_put(wpa_ucode_call(6));
 				ucv_gc(vm);
 			}
 		} else {
@@ -217,6 +225,7 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 			uc_value_push(ucv_get(ucv_string_new(state)));
 			info = ucv_object_new(vm);
 			uc_value_push(ucv_get(info));
+			uc_value_push(ucv_get(ucv_int64_new(vap_type)));
 			ucv_object_add(info, "frequency",
 				       ucv_int64_new(bss->freq));
 			ucv_object_add(info, "chan_width",
@@ -260,7 +269,7 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 				   __func__, state, wpa_s->ifname, bss->freq, center_freq1,
 				   center_freq2, bss->max_cw, is_dfs, bss->punc_bitmap, sec_chan_offset);
 			wpa_s->pre_connect_cnt++;
-			ucv_put(wpa_ucode_call(5));
+			ucv_put(wpa_ucode_call(6));
 			ucv_gc(vm);
 		}
 	}
@@ -272,6 +281,7 @@ void wpas_ucode_update_state(struct wpa_supplicant *wpa_s)
 {
 	const char *state;
 	uc_value_t *val;
+	vap_type_t vap_type;
 
 	wpa_printf(MSG_INFO, "%s: radio_bitmap:%d", __func__,wpa_s->ucode.radio_bitmap);
 
@@ -290,16 +300,17 @@ void wpas_ucode_update_state(struct wpa_supplicant *wpa_s)
 		return;
 
 	state = wpa_supplicant_state_txt(wpa_s->wpa_state);
+#ifdef CONFIG_MESH
+	vap_type = wpa_s->ifmsh ? VAP_TYPE_MESH : VAP_TYPE_STA;
+#else
+	vap_type = VAP_TYPE_STA;
+#endif
 	uc_value_push(ucv_get(ucv_string_new(wpa_s->ifname)));
 	uc_value_push(ucv_get(ucv_int64_new(wpa_s->ucode.radio_bitmap)));
 	uc_value_push(ucv_get(val));
 	uc_value_push(ucv_get(ucv_string_new(state)));
-#ifdef CONFIG_QCN_EXTN
-	uc_value_push(ucv_get(ucv_int64_new(wpa_s->conf->ind_rptr)));
+	uc_value_push(ucv_get(ucv_int64_new(vap_type)));
 	ucv_put(wpa_ucode_call(5));
-#else
-	ucv_put(wpa_ucode_call(4));
-#endif
 	ucv_gc(vm);
 }
 
@@ -307,6 +318,7 @@ void wpas_ucode_event(struct wpa_supplicant *wpa_s, int event, union wpa_event_d
 {
 	uc_value_t *val;
 	s8 hw_idx;
+	vap_type_t vap_type;
 #ifdef CONFIG_QCN_EXTN
 	bool is_dfs = false;
 	const char *wpa_state = NULL;
@@ -322,6 +334,11 @@ void wpas_ucode_event(struct wpa_supplicant *wpa_s, int event, union wpa_event_d
 	if (wpa_ucode_call_prepare("event"))
 		return;
 
+#ifdef CONFIG_MESH
+	vap_type = wpa_s->ifmsh ? VAP_TYPE_MESH : VAP_TYPE_STA;
+#else
+	vap_type = VAP_TYPE_STA;
+#endif
 	uc_value_push(ucv_get(ucv_string_new(wpa_s->ifname)));
 
 	hw_idx = wpa_get_hw_idx_by_freq(wpa_s, data->ch_switch.freq);
@@ -335,6 +352,7 @@ void wpas_ucode_event(struct wpa_supplicant *wpa_s, int event, union wpa_event_d
 	uc_value_push(ucv_get(ucv_string_new(event_to_string(event))));
 	val = ucv_object_new(vm);
 	uc_value_push(ucv_get(val));
+	uc_value_push(ucv_get(ucv_int64_new(vap_type)));
 #ifdef CONFIG_QCN_EXTN
 	is_dfs = ieee80211_is_dfs(data->ch_switch.freq, NULL, 0);
 	wpa_state = wpa_supplicant_state_txt(wpa_s->wpa_state);
@@ -359,7 +377,7 @@ void wpas_ucode_event(struct wpa_supplicant *wpa_s, int event, union wpa_event_d
 	wpa_printf(MSG_INFO, "%s: freq = %d is_dfs = %d wpa_state = %s", __func__,
 		data->ch_switch.freq, is_dfs, wpa_state);
 #endif
-	ucv_put(wpa_ucode_call(5));
+	ucv_put(wpa_ucode_call(6));
 	ucv_gc(vm);
 }
 

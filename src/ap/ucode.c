@@ -591,6 +591,12 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 		return NULL;
 
 #ifdef CONFIG_QCN_EXTN
+	iface->iface_extn.vap_type = ucv_int64_get(ucv_object_get(info, "vap_type", NULL));
+	if (!errno) {
+		wpa_printf(MSG_DEBUG, "%s: VAP type: %s", __func__,
+				vap_type_to_string(iface->iface_extn.vap_type));
+	}
+
 	wpa_state_val = ucv_object_get(info, "wpa_state", NULL);
 	wpa_state = ucv_string_get(wpa_state_val);
 	if (wpa_state) {
@@ -642,6 +648,12 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 		return NULL;
 
 #ifdef CONFIG_QCN_EXTN
+	iface->iface_extn.vap_type = ucv_int64_get(ucv_object_get(info, "vap_type", NULL));
+	if (!errno) {
+		wpa_printf(MSG_DEBUG, "%s: VAP type: %s", __func__,
+				vap_type_to_string(iface->iface_extn.vap_type));
+	}
+
 	wpa_state_val = ucv_object_get(info, "wpa_state", NULL);
 	wpa_state = ucv_string_get(wpa_state_val);
 	if (wpa_state) {
@@ -805,6 +817,13 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 
 	if (!iface || ucv_type(info) != UC_OBJECT)
 		return NULL;
+#ifdef CONFIG_QCN_EXTN
+	iface->iface_extn.vap_type = ucv_int64_get(ucv_object_get(info, "vap_type", NULL));
+	if (!errno) {
+		wpa_printf(MSG_DEBUG, "%s: VAP type: %s", __func__,
+				vap_type_to_string(iface->iface_extn.vap_type));
+	}
+#endif
 
 	conf = iface->conf;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "csa_count", NULL))) && !errno)
