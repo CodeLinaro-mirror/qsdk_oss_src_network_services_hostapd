@@ -4618,6 +4618,9 @@ void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
 	}
 
 	if (hapd->mld) {
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(conf)) {
+#endif /* CONFIG_QCN_EXTN */
 		struct ttlm_context *ttlm = &hapd->mld->ttlm_ctx;
 		struct ttlm_info *info;
 
@@ -4638,6 +4641,9 @@ void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
 				info->ieee_link_map_tid[i] |=
 					BIT(hapd->mld_link_id);
 		}
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 		return;
 	}
 
