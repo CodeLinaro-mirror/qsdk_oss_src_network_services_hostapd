@@ -5653,10 +5653,10 @@ int ieee80211_ml_process_link(struct hostapd_data *hapd,
 		}
 	}
 
-	sta->flags = (origin_sta->flags & WLAN_STA_AUTH);
+	sta->flags = origin_sta->flags & WLAN_STA_AUTH;
 
 	if (type == LINK_PARSE_RECONF)
-		sta->flags |= (origin_sta->flags & WLAN_STA_ASSOC);
+		sta->flags |= (origin_sta->flags & (WLAN_STA_ASSOC | WLAN_STA_MFP));
 
 	sta->mld_assoc_link_id = origin_sta->mld_assoc_link_id;
 	sta->sa_query_timed_out = origin_sta->sa_query_timed_out;
