@@ -2318,8 +2318,8 @@ static int hostapd_ctrl_iface_get_mbssid_attributes(struct hostapd_data *hapd,
 		return pos - buf;
 	pos += res;
 
-	res = os_snprintf(pos, end - pos, "max_ngroups = %zu\n",
-			  hapd->iface->multi_mbssid.num_mbssid_groups);
+	res = os_snprintf(pos, end - pos, "max_ngroups = %zu\nmbssid_group_size = %u\n",
+			  hapd->iface->multi_mbssid.num_mbssid_groups, hapd->iconf->group_size);
 
 	if (os_snprintf_error(end - pos, res))
 		return pos - buf;
