@@ -8304,6 +8304,11 @@ void hostapd_set_ml_max_rec_links(struct hostapd_data *hapd, u8 ml_max_rec_links
 	if (!hapd || !hapd->conf->mld_ap)
 		return;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return;
+#endif /* CONFIG_QCN_EXTN */
+
 	if (ml_max_rec_links == ML_IE_RSVD_MAX_REC_LINKS)
 		ml_max_rec_links = ML_IE_NO_MAX_REC_LINKS;
 
@@ -8340,6 +8345,11 @@ void hostapd_validate_update_ml_max_rec_links(struct hostapd_data *hapd)
 
 	if (!hapd || !hapd->conf->mld_ap)
 		return;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return;
+#endif /* CONFIG_QCN_EXTN */
 
 	for_each_mld_link(link_bss, hapd) {
 		if (link_bss == hapd)
