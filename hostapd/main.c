@@ -38,6 +38,9 @@
 #include "ap/nft.h"
 
 #include "atf/atf_offload.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../../qcn_extns/cmn.h"
+#endif
 
 struct hapd_global {
 	void **drv_priv;
@@ -313,6 +316,14 @@ pre_setup_mld:
 	if (hostapd_drv_mark_ppe_vp_type(hapd))
 		wpa_printf(MSG_ERROR, "ppe_vp vendor command failed: %s",
 			   hapd->conf->iface);
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_drv_mark_vap_submode(hapd, conf->bss_extn.vap_submode)) {
+		wpa_printf(MSG_ERROR, "vap_submode vendor command failed: %s",
+			   hapd->conf->iface);
+		return -1;
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	/*
 	 * This is the first interface added to the AP MLD, so have the
