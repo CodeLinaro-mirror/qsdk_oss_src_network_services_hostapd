@@ -404,6 +404,8 @@ struct hostapd_data {
 	struct dl_list erp_keys; /* struct eap_server_erp_key */
 
 	int parameter_set_count;
+	bool tpc_eirp_valid;
+	s32 tpc_eirp_dbm;
 
 	/* Time Advertisement */
 	u8 time_update_counter;

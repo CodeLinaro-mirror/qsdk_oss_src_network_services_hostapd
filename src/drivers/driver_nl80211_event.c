@@ -21,6 +21,9 @@
 #include "driver_nl80211.h"
 #include "ap/robust_av.h"
 
+#define QCA_NL80211_TPC_EIRP_DBM_MIN	(-128)
+#define QCA_NL80211_TPC_EIRP_DBM_MAX	127
+
 static void
 nl80211_control_port_frame_tx_status(struct i802_bss *bss,
 				     const u8 *frame, size_t len,
@@ -3967,6 +3970,53 @@ qca_nl80211_6ghz_pwr_mode_change_completed(struct i802_bss *bss,
 	wpa_supplicant_event(bss->ctx, EVENT_6GHZ_POWER_MODE_NOTIFY, &event);
 }
 
+static int qca_nl80211_tpc_eirp_event(struct i802_bss *bss, u8 *data, size_t len)
+{
+	struct nlattr *attr[QCA_WLAN_VENDOR_ATTR_TPC_EIRP_EVENT_MAX + 1];
+	union wpa_event_data event;
+	s32 tpc_dbm;
+
+	if (!(data && len)) {
+		wpa_printf(MSG_ERROR, "Invalid data length data ptr: %pK ", data);
+		return -EINVAL;
+	}
+
+	if (nla_parse(attr, QCA_WLAN_VENDOR_ATTR_TPC_EIRP_EVENT_MAX,
+		      (struct nlattr *)data, len, NULL)) {
+		wpa_printf(MSG_ERROR, "invalid TPC EIRP event attributes");
+		return -EINVAL;
+	}
+
+	if (!attr[QCA_WLAN_VENDOR_ATTR_TPC_EIRP_EVENT_EIRP_DBM]) {
+		wpa_printf(MSG_ERROR, "TPC EIRP event missing EIRP attribute");
+		return -EINVAL;
+	}
+
+	tpc_dbm = nla_get_s32(attr[QCA_WLAN_VENDOR_ATTR_TPC_EIRP_EVENT_EIRP_DBM]);
+	if (tpc_dbm > QCA_NL80211_TPC_EIRP_DBM_MAX)
+		tpc_dbm = QCA_NL80211_TPC_EIRP_DBM_MAX;
+	else if (tpc_dbm < QCA_NL80211_TPC_EIRP_DBM_MIN)
+		tpc_dbm = QCA_NL80211_TPC_EIRP_DBM_MIN;
+
+	os_memset(&event, 0, sizeof(event));
+	event.tpc_eirp_event.link_id = NL80211_DRV_LINK_ID_NA;
+	if (attr[QCA_WLAN_VENDOR_ATTR_TPC_EIRP_EVENT_LINK_ID]) {
+		event.tpc_eirp_event.link_id =
+			nla_get_u8(attr[QCA_WLAN_VENDOR_ATTR_TPC_EIRP_EVENT_LINK_ID]);
+		if (!nl80211_link_valid(bss->valid_links,
+					event.tpc_eirp_event.link_id)) {
+			wpa_printf(MSG_ERROR, "nl80211: Invalid TPC link ID %d",
+				   event.tpc_eirp_event.link_id);
+			return -EINVAL;
+		}
+	}
+
+	event.tpc_eirp_event.tpc_dbm = tpc_dbm;
+	wpa_supplicant_event(bss->ctx, EVENT_TPC_EIRP_NOTIFY, &event);
+
+	return 0;
+}
+
 
 static void compute_num_freq_obj(struct nlattr **attr, u8 *num_freq_obj)
 {
@@ -4503,6 +4553,9 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 		break;
 	case QCA_NL80211_VENDOR_SUBCMD_IFACE_RELOAD:
 		qca_nl80211_iface_reload(bss, data, len);
+		break;
+	case QCA_NL80211_VENDOR_SUBCMD_TPC_EIRP_EVENT:
+		qca_nl80211_tpc_eirp_event(bss, data, len);
 		break;
 	default:
 		if (!nl80211_vendor_event_qca_extn(bss, subcmd, data, len))
