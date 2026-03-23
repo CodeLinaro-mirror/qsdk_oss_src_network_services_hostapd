@@ -1476,9 +1476,6 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 	iface->cac_started = 0;
 	ap_list_deinit(iface);
 	sta_track_deinit(iface);
-#ifdef CONFIG_QCN_EXTN
-	hostapd_uplink_cancel_disconnect_timeout_extn(iface);
-#endif /* CONFIG_QCN_EXTN */
 	airtime_policy_update_deinit(iface);
 
 #ifdef CONFIG_ATF_OFFLOAD
@@ -5299,6 +5296,9 @@ void hostapd_interface_deinit_free(struct hostapd_iface *iface)
 	wpa_printf(MSG_DEBUG, "%s: num_bss=%u conf->num_bss=%u",
 		   __func__, (unsigned int) iface->num_bss,
 		   (unsigned int) iface->conf->num_bss);
+#ifdef CONFIG_QCN_EXTN
+	hostapd_uplink_cancel_disconnect_timeout_extn(iface);
+#endif /* CONFIG_QCN_EXTN */
 	driver = iface->bss[0]->driver;
 	drv_priv = iface->bss[0]->drv_priv;
 	hostapd_ubus_free_iface(iface);
