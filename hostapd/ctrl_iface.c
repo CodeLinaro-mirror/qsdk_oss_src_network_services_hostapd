@@ -1658,6 +1658,9 @@ static int hostapd_ctrl_iface_get_config(struct hostapd_data *hapd,
 		pos += ret;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_IEEE80211BE
 	if (hapd->conf->mld_ap && hapd->conf->enable_aal) {
 		ret = os_snprintf(pos, end - pos, "ml_max_rec_links=%d\n",
@@ -1667,6 +1670,9 @@ static int hostapd_ctrl_iface_get_config(struct hostapd_data *hapd,
 		pos += ret;
 	}
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	return pos - buf;
 }
@@ -6949,6 +6955,15 @@ static int hostapd_ctrl_iface_conf_ml_rec_links(struct hostapd_data *hapd,
 			   hapd->conf->mld_ap, hapd->conf->enable_aal);
 		return -1;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		wpa_printf(MSG_ERROR,
+			   "MLD or AAL is not enabled (MLD enable %d AAL enable %d)",
+			   hapd->conf->mld_ap, hapd->conf->enable_aal);
+		return -1;
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	if (links_val > ML_IE_MAX_SUPPORT_MAX_REC_LINKS) {
 		wpa_printf(MSG_ERROR,
