@@ -6474,11 +6474,23 @@ static int hostapd_ctrl_iface_negotiated_ttlm_request(struct hostapd_data *hapd,
 	u8 addr[ETH_ALEN];
 	u8 tid_num = 0;
 	u16 link_map = 0;
+#ifdef CONFIG_QCN_EXTN
+	u16 repurposed_links = 0;
+#endif /* CONFIG_QCN_EXTN */
 
 	if (!hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
 		return -1;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		wpa_printf(MSG_ERROR, "TTLM negotiation not allowed in repurposed mode");
+		return -1;
+	}
+
+	hostapd_get_repurposed_links_bitmap_extn(hapd, &repurposed_links);
+#endif /* CONFIG_QCN_EXTN */
 
 	input = os_strdup(cmd);
 	if (!input)
@@ -6590,6 +6602,14 @@ static int hostapd_ctrl_iface_negotiated_ttlm_request(struct hostapd_data *hapd,
 		for (i = 0; i < ttlm_dir->num_tids; i++) {
 			tid_num = ttlm_dir->map_tid_to_links[i].tid;
 			link_map = ttlm_dir->map_tid_to_links[i].link_map;
+#ifdef CONFIG_QCN_EXTN
+			if (repurposed_links & link_map) {
+				wpa_printf(MSG_ERROR,
+					   "TTLM: TID %u maps to repurposed link(s) 0x%x",
+					   tid_num, link_map & repurposed_links);
+				goto fail;
+			}
+#endif /* CONFIG_QCN_EXTN */
 			ongoing_ttlm->ttlm_info[ttlm_dir->direction].ieee_link_map_tid[tid_num] =
 				link_map;
 		}
@@ -6632,6 +6652,14 @@ static int hostapd_ctrl_iface_negotiated_ttlm_teardown(struct hostapd_data *hapd
 		return -1;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		wpa_printf(MSG_ERROR,
+			   "TTLM teardown on repurposed link");
+		return -1;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	if (hwaddr_aton(cmd, addr)) {
 		wpa_printf(MSG_ERROR, "Invalid STA MAC address");
 		return -1;
@@ -6667,11 +6695,23 @@ static int hostapd_ctrl_iface_negotiated_ttlm_response(struct hostapd_data *hapd
 	u8 addr[ETH_ALEN];
 	u8 tid_num = 0;
 	u16 link_map = 0;
+#ifdef CONFIG_QCN_EXTN
+	u16 repurposed_links = 0;
+#endif /* CONFIG_QCN_EXTN */
 
 	if (!hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
 		return -1;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		wpa_printf(MSG_ERROR,
+			   "TTLM negotiation on repurposed BSS");
+		return -1;
+	}
+	hostapd_get_repurposed_links_bitmap_extn(hapd, &repurposed_links);
+#endif /* CONFIG_QCN_EXTN */
 
 	input = os_strdup(cmd);
 	if (!input)
@@ -6745,6 +6785,14 @@ static int hostapd_ctrl_iface_negotiated_ttlm_response(struct hostapd_data *hapd
 					ttlm_dir->map_tid_to_links[i].tid = atoi(tid_str);
 					ttlm_dir->map_tid_to_links[i].link_map =
 						strtol(map_str, NULL, 0);
+#ifdef CONFIG_QCN_EXTN
+					if (ttlm_dir->map_tid_to_links[i].link_map &
+					    repurposed_links) {
+						wpa_printf(MSG_ERROR,
+							   "TTLM: repurpose links enabled");
+						goto fail;
+					}
+#endif /* CONFIG_QCN_EXTN */
 				}
 			}
 		}
@@ -6885,6 +6933,9 @@ int hostapd_ctrl_iface_advertise_ttlm(struct hostapd_data *hapd,
 	struct ttlm_info *ttlm;
 	struct hostapd_data *link_bss;
 	u16 removal_links = 0;
+#ifdef CONFIG_QCN_EXTN
+	u16 repurposed_links = 0;
+#endif /* CONFIG_QCN_EXTN */
 	u16 ieee_link_map;
 	const char *pos;
 	int ret;
@@ -6933,6 +6984,10 @@ int hostapd_ctrl_iface_advertise_ttlm(struct hostapd_data *hapd,
 		if (link_bss->eht_mld_link_removal_count)
 			removal_links |= BIT(link_bss->mld_link_id);
 	}
+#ifdef CONFIG_QCN_EXTN
+	hostapd_get_repurposed_links_bitmap_extn(hapd, &repurposed_links);
+#endif /* CONFIG_QCN_EXTN */
+
 	if (removal_links & ieee_link_map) {
 		wpa_printf(MSG_ERROR,
 			   "TTLM: Cannot map to link under removal process, removal_links:%x provisioned_links:%x",
@@ -6940,6 +6995,15 @@ int hostapd_ctrl_iface_advertise_ttlm(struct hostapd_data *hapd,
 		ret = -1;
 		goto out;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (repurposed_links & ieee_link_map) {
+		wpa_printf(MSG_ERROR,
+			   "TTLM: Cannot map tid to repurposed links");
+		ret = -1;
+		goto out;
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	pos = os_strstr(cmd, " map_switch_time=");
 	if (!pos) {
