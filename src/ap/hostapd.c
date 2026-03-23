@@ -2639,11 +2639,18 @@ int hostapd_set_acl(struct hostapd_data *hapd)
 		return 0;
 
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	/* Allow ACL to be configured if BSS is a repurposed link under AP MLD */
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap) {
 		wpa_printf(MSG_DEBUG,
 			   "Kernel doesn't support offloaded ACL for AP MLD. Use hostapd based ACL instead.");
 		return 0;
 	}
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 	if (conf->macaddr_acl == DENY_UNLESS_ACCEPTED) {
