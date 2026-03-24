@@ -350,6 +350,9 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 	int len = 0;
 	unsigned long long rx_error;
 	int rx_mgmt_snr, rx_data_snr;
+#ifdef CONFIG_IEEE80211BE
+	bool ttlm_active = hostapd_is_ttlm_active(sta);
+#endif /* CONFIG_IEEE80211BE */
 
 	if (hostapd_drv_read_sta_data(hapd, &data, sta->addr) < 0)
 		return 0;
@@ -433,6 +436,14 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 	if (os_snprintf_error(buflen - len, ret))
 		return 0;
 	len += ret;
+
+#ifdef CONFIG_IEEE80211BE
+	ret = os_snprintf(buf + len, buflen - len,
+			  "ttlm_active=%s\n", ttlm_active ? "yes" : "no");
+	if (os_snprintf_error(buflen - len, ret))
+		return 0;
+	len += ret;
+#endif /* CONFIG_IEEE80211BE */
 
 	ret = os_snprintf(buf + len, buflen - len,
 			  "HT_capability=%s\nVHT_capability=%s\n",
