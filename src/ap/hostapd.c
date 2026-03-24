@@ -3845,6 +3845,18 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 		for (j = 0; hapd->iconf->mbssid && j < iface->num_bss; j++) {
 			hapd = iface->bss[j];
 			if (hostapd_start_beacon(hapd, true)) {
+				/*
+				 * Start cleanup from num_bss - 1 (not just j)
+				 * so that BSSs above j which were already set
+				 * up by hostapd_setup_bss() but not yet
+				 * reached by hostapd_start_beacon() are also
+				 * cleaned up. Without this, their wpa_auth
+				 * allocations are leaked and tx_bss_auth
+				 * pointers become dangling references into
+				 * freed memory, causing use-after-free crashes
+				 * (e.g. when the GTK rekey eloop timer fires).
+				 */
+				j = iface->num_bss - 1;
 				for (;;) {
 					hapd = iface->bss[j];
 					hostapd_bss_deinit_no_free(hapd);
