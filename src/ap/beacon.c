@@ -3790,6 +3790,15 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 		return -1;
 	}
 
+	/* If CAC is followed by DFS CSA, update the partner-link RNR entry with
+	 * the new 5 GHz channel. Only allow beacon templates for partner links.
+	 */
+	if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_CSA &&
+	    iface->state == HAPD_IFACE_DFS) {
+		wpa_printf(MSG_DEBUG, "Skipping beacon update while CSA CAC is in progress");
+		return 0;
+	}
+
 	if (hapd->csa_in_progress) {
 		wpa_printf(MSG_ERROR, "Cannot set beacons during CSA period");
 		return -1;

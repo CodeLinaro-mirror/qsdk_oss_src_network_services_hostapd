@@ -1366,9 +1366,9 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 			if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_DFS_CHANNEL_SWITCH) {
 				hostapd_cleanup_cs_params(hapd);
 				hapd->disable_cu = 1;
-				ieee802_11_set_beacon(hapd);
 				hostapd_set_state(hapd->iface, HAPD_IFACE_DFS);
 				hapd->iface->cac_type = HAPD_CAC_COMPLETE_AFTER_CSA;
+				ieee802_11_set_beacon(hapd);
 				wpa_printf(MSG_DEBUG, "DFS:Starting CAC after CSA on freq=%d", freq);
 				hostapd_start_dfs_cac(hapd->iface, hapd->iface->conf->hw_mode,
 						     hapd->iface->freq,
