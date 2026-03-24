@@ -407,6 +407,33 @@ static void hostapd_clear_old(struct hostapd_iface *iface)
 }
 
 
+void hostapd_clear_local_tpe_bss(struct hostapd_data *hapd)
+{
+	ieee80211_tpe_config_user_params *tpe_conf;
+
+	if (!hapd || !hapd->conf)
+		return;
+
+	tpe_conf = &hapd->conf->tpe_ie_config;
+	if (!tpe_conf->local_tpe_config)
+		return;
+
+	os_memset(tpe_conf, 0, sizeof(*tpe_conf));
+}
+
+
+void hostapd_clear_local_tpe(struct hostapd_iface *iface)
+{
+	size_t i;
+
+	if (!iface)
+		return;
+
+	for (i = 0; i < iface->num_bss; i++)
+		hostapd_clear_local_tpe_bss(iface->bss[i]);
+}
+
+
 static int hostapd_iface_conf_changed(struct hostapd_config *newconf,
 				      struct hostapd_config *oldconf)
 {
@@ -956,6 +983,8 @@ int hostapd_link_remove(struct hostapd_data *hapd, u32 count,
 void hostapd_free_hapd_data(struct hostapd_data *hapd)
 {
 	const bool skip_unstarted_bss_cleanup = !hapd->started;
+
+	hostapd_clear_local_tpe_bss(hapd);
 
 	os_free(hapd->probereq_cb);
 	hapd->probereq_cb = NULL;
@@ -3148,6 +3177,7 @@ static int setup_interface2(struct hostapd_iface *iface)
 	hostapd_free_afc_data(iface);
 	iface->is_afc_power_event_received = false;
 	iface->rnr_psd = CHAN_MIN_TX_POWER;
+	hostapd_clear_local_tpe(iface);
 
 	if (hostapd_get_hw_features(iface)) {
 		/* Not all drivers support this yet, so continue without hw
@@ -7147,6 +7177,7 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 	int ret;
 	enum oper_chan_width chanwidth;
 	u8 chan, old_reg_6ghz_power_mode;
+	u8 tpe_config = 0;
 	int sec_channel_offset;
 	u8 oper_centr_freq0_idx = 0, oper_centr_freq1_idx = 0;
 
@@ -7238,6 +7269,11 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 	if (settings->power_mode >= 0)
 		iface->conf->he_6ghz_reg_pwr_type = settings->power_mode;
 
+	if (hapd->conf->tpe_ie_config.local_tpe_config) {
+		tpe_config =  hapd->conf->tpe_ie_config.local_tpe_config;
+		hapd->conf->tpe_ie_config.local_tpe_config = 0;
+	}
+
 	ret = hostapd_build_beacon_data(hapd, &settings->beacon_after);
 	if (settings->beacon_after.elemid_modified_bmap)
 		settings->beacon_after_cu = 1;
@@ -7250,6 +7286,9 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 				       &old_freq, NULL) < 0)
 		wpa_printf(MSG_INFO,
 			   "Failed to switch back to old frequency after preparing beacon data for CSA");
+
+	if (tpe_config)
+		hapd->conf->tpe_ie_config.local_tpe_config = tpe_config;
 
 	if (ret)
 		return ret;
