@@ -282,8 +282,9 @@ u8 * hostapd_eid_country(struct hostapd_data *hapd, u8 *eid,
 	os_memcpy(pos, hapd->iconf->country, 3); /* e.g., 'US ' */
 	pos += 3;
 
-	/* The 6 GHz band uses global operating classes */
-	force_global = is_6ghz_op_class(hapd->iconf->op_class);
+	/* Force the third octet of the country string to indicate
+	 * Global Operating Class (Table E-4) */
+	force_global = true;
 
 #ifdef CONFIG_MBO
 	/* Wi-Fi Agile Muiltiband AP is required to use a global operating
