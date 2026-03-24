@@ -6002,6 +6002,16 @@ static int wpa_config_process_mld_connect_bssid_pref(
 #endif /* CONFIG_TESTING_OPTIONS */
 
 
+#ifdef CONFIG_QCN_EXTN
+static int wpa_config_process_CSwOpts(const struct global_parse_data *data,
+				      struct wpa_config *config, int line,
+				      const char *pos)
+{
+	return wpa_config_process_cswopts_extn(config, line, pos);
+}
+#endif /* CONFIG_QCN_EXTN */
+
+
 #ifdef OFFSET
 #undef OFFSET
 #endif /* OFFSET */
@@ -6255,6 +6265,7 @@ static const struct global_parse_data global_fields[] = {
 	{ INT(channel), 0 },
 	{ INT_KEY_RANGE("uplink_csa", uplink_csa, 0, 1), 0 },
 	{ INT_KEY_RANGE("rcsa", rcsa, 0, 1), 0 },
+	{ FUNC_NO_VAR(CSwOpts), 0 },
 	WPA_GLOBAL_FIELDS_EXTN
 #endif /* CONFIG_QCN_EXTN */
 	{ BOOL(security_profiles), 0},
