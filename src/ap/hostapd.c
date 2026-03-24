@@ -4591,6 +4591,34 @@ static void hostapd_multi_mbssid_set_mbssid_index(struct hostapd_data *hapd,
 	*mbssid_idx_bmap |= BIT(hapd->mbssid_idx);
 }
 
+#ifdef CONFIG_QCN_EXTN
+static bool hostapd_has_mesh_vap_in_group(struct hostapd_data *hapd,
+					  struct hostapd_multi_mbssid *multi_mbssid)
+{
+	struct hostapd_data *bss;
+
+	if (!hapd || !hapd->conf)
+		return false;
+
+	if (hapd->iconf->mbssid != MULTI_MBSSID_GROUP_ENABLED)
+		return false;
+
+	if (!multi_mbssid->group || (multi_mbssid->num_mbssid_groups < 1) ||
+	    !multi_mbssid->group[multi_mbssid->num_mbssid_groups - 1])
+		return false;
+
+	bss = hostapd_get_multi_group_bss(multi_mbssid->group[multi_mbssid->num_mbssid_groups - 1], 0);
+	if (bss && (bss->conf->bss_extn.vap_submode ==
+		    QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MESH)) {
+		wpa_printf(MSG_DEBUG,
+			   "Found existing mesh VAP: %s in group %zu",
+			   bss->conf->iface, (multi_mbssid->num_mbssid_groups - 1));
+		return true;
+	}
+
+	return false;
+}
+#endif
 
 static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 {
@@ -4611,7 +4639,7 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 		return 0;
 
 	/*Skip mbssid_add_bss if mbssid_group already set*/
-	if( hapd->mbssid_group != NULL ){
+	if (hapd->mbssid_group != NULL) {
 		wpa_printf(MSG_INFO,
 			   "Bss[%s] already part of MBSSID group %d with bss_index:%zu",
 			   hapd->conf->iface, hapd->mbssid_group->group_id,
@@ -4636,30 +4664,74 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 	addr = hostapd_addr_to_u64(hapd->own_addr);
 
 	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
-		multi_mbssid->num_mbssid_groups = mbssid_max_interfaces /
-						  iface->conf->group_size;
+		if (!multi_mbssid->group) {
+			multi_mbssid->num_mbssid_groups = mbssid_max_interfaces /
+							  iface->conf->group_size;
 
-		if (mbssid_max_interfaces % iface->conf->group_size)
-			multi_mbssid->num_mbssid_groups++;
+			if (mbssid_max_interfaces % iface->conf->group_size)
+				multi_mbssid->num_mbssid_groups++;
 
-		if (multi_mbssid->num_mbssid_groups > multi_mbssid->mbssid_max_ngroups) {
+#ifdef CONFIG_QCN_EXTN
+			if (hapd->conf->bss_extn.vap_submode ==
+			    QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MESH) {
+				/* If mesh vap is the 1st vap to come up increment, adjust
+				 * the num_mbssid_group to include mesh group and assign
+				 * the last group for mesh vap */
+				multi_mbssid->num_mbssid_groups++;
+
+				group_index = multi_mbssid->num_mbssid_groups - 1;
+
+				wpa_printf(MSG_INFO,
+					   "Mesh vap detected: %s, assigning to last group %d",
+					   hapd->conf->iface, group_index);
+
+				prefix_mask = UINT64_MAX << max_bssid_indicator;
+			}
+#endif
+			if (multi_mbssid->num_mbssid_groups > multi_mbssid->mbssid_max_ngroups) {
+				wpa_printf(MSG_ERROR,
+					   "Configured MBSSID group size results in more groups that supported by driver");
+				return -1;
+			}
+		}
+
+#ifdef CONFIG_QCN_EXTN
+		/* Check if current VAP is mesh or if mesh VAP already exists in groups */
+		if (hapd->conf->bss_extn.vap_submode == QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MESH &&
+		    hostapd_has_mesh_vap_in_group(hapd, multi_mbssid)) {
 			wpa_printf(MSG_ERROR,
-				   "Configured MBSSID group size results in more groups that supported by driver");
+				   "Failed to add %s: Mesh vap MBSSID group exists already",
+				   hapd->conf->iface);
 			return -1;
 		}
 
-		/* Calculate group ID mask which will decide the group a new
-		 * interface will get added to */
-		cnt = multi_mbssid->num_mbssid_groups - 1;
-		while (cnt) {
-			group_mask <<= 1;
-			group_mask |= 0x1;
-			cnt >>= 1;
-		}
+		if (hapd->conf->bss_extn.vap_submode !=
+		    QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MESH) {
+			/* Calculate group ID mask which will decide the group a new
+			 * interface will get added to */
+#endif
+			cnt = multi_mbssid->num_mbssid_groups - 1;
 
-		group_mask <<= max_bssid_indicator;
-		group_index = (addr & group_mask) >> max_bssid_indicator;
-		prefix_mask &= (~group_mask);
+#ifdef CONFIG_QCN_EXTN
+			/* If mesh MBSSID group is already present, we need to exclude
+			 * it in below group assignment logic, as AP vaps should not be
+			 * added to the mesh MBSSID group */
+			if (hostapd_has_mesh_vap_in_group(hapd, multi_mbssid))
+				cnt = cnt - 1;
+#endif
+			while (cnt) {
+				group_mask <<= 1;
+				group_mask |= 0x1;
+				cnt >>= 1;
+			}
+
+			group_mask <<= max_bssid_indicator;
+			group_index = (addr & group_mask) >> max_bssid_indicator;
+
+			prefix_mask &= (~group_mask);
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif
 
 		if (!multi_mbssid->group) {
 			multi_mbssid->group =
@@ -4668,6 +4740,38 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 			if (!multi_mbssid->group)
 				goto fail;
 		}
+#ifdef CONFIG_QCN_EXTN
+		else if (hapd->conf->bss_extn.vap_submode ==
+			   QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MESH) {
+			/* If mesh VAP is being added and group array was allocated before
+			 * mesh VAP existed, we need to reallocate to accommodate the new
+			 * last group for mesh VAP. This handles the case where AP VAPs
+			 * are brought up first, then mesh VAP is added later.
+			 */
+			struct hostapd_multi_mbssid_group **new_group;
+
+			new_group = os_realloc_array(multi_mbssid->group,
+						     multi_mbssid->num_mbssid_groups + 1,
+						     sizeof(struct hostapd_multi_mbssid_group *));
+
+			if (!new_group) {
+				wpa_printf(MSG_ERROR,
+					   "Failed to allocate MBSSID group for mesh VAP");
+				return -1;
+			}
+			/* Update the num_mbssid_group to include the mesh group and
+			 * update the group_index and prefix mask for mesh vap */
+			multi_mbssid->num_mbssid_groups++;
+			group_index = multi_mbssid->num_mbssid_groups - 1;
+			wpa_printf(MSG_INFO,
+				   "Mesh vap detected: %s, assigning to last group %d",
+				   hapd->conf->iface, group_index);
+
+			prefix_mask = UINT64_MAX << max_bssid_indicator;
+			multi_mbssid->group = new_group;
+			multi_mbssid->group[multi_mbssid->num_mbssid_groups - 1] = NULL;
+		}
+#endif
 
 		group = multi_mbssid->group[group_index];
 		if (!group) {
@@ -4690,7 +4794,12 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 			for (j = 0; j < multi_mbssid->group[i]->num_bss; j++) {
 				bss = hostapd_get_multi_group_bss(multi_mbssid->group[i],
 								  j);
-				if (bss && bss->started)
+				if (bss && bss->started
+#ifdef CONFIG_QCN_EXTN
+				    && (bss->conf->bss_extn.vap_submode !=
+					QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MESH)
+#endif
+				    )
 					break;
 			}
 		}
@@ -4702,8 +4811,11 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 		}
 	}
 
-	if (bss && (hostapd_addr_to_u64(bss->own_addr) & prefix_mask) !=
-		   (addr & prefix_mask)) {
+	if (bss &&
+#ifdef CONFIG_QCN_EXTN
+	    (hapd->conf->bss_extn.vap_submode != QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MESH) &&
+#endif
+	    (hostapd_addr_to_u64(bss->own_addr) & prefix_mask) != (addr & prefix_mask)) {
 		wpa_printf(MSG_ERROR,
 			   "New BSS (" MACSTR ") doesn't satisfy prefix requirement for the MBSSID groups",
 			   MAC2STR(hapd->own_addr));
