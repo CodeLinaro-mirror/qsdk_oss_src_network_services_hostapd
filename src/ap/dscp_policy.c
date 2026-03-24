@@ -627,7 +627,7 @@ static int hostapd_parse_query_elements(struct hostapd_dscp_policy *query, u8 at
 		attr_count++;
 		break;
 	case QM_ATTR_DOMAIN_NAME:
-		if (attr_len < 1) {
+		if (attr_len < 1 || attr_len > 255) {
 			wpa_printf(MSG_ERROR,
 				   "DAP: Received domain name attribute with insufficient length %d",
 				   attr_len);
@@ -1041,6 +1041,8 @@ int policy_matches_query(struct dscp_context *ctx)
 			return 0;
 		for (size_t j = 0; j < max_policies; j++) {
 			policy = ctx->sta->policies[j];
+			if (!policy)
+				continue;
 			ctx->req_policy[ctx->num_req_policies++] = policy;
 		}
 		return ctx->num_req_policies;
@@ -1051,6 +1053,8 @@ int policy_matches_query(struct dscp_context *ctx)
 
 		for (size_t j = 0; j < ctx->sta->num_dscp_policies; j++) {
 			policy = ctx->sta->policies[j];
+			if (!policy)
+				continue;
 			bool match = false;
 
 			/* Match port range */
@@ -1316,9 +1320,9 @@ void invalidate_policy_by_id(struct sta_info *sta, u8 policy_id)
 	u8 i;
 
 	for (i = 0; i < sta->num_dscp_policies; i++) {
-		if (sta->policies[i]->policy_id == policy_id) {
+		if (sta->policies[i] && sta->policies[i]->policy_id == policy_id) {
 			wpa_printf(MSG_DEBUG, "DSCP: Invalidating policy %u", policy_id);
-			os_free(sta->policies[i]);
+			free_dscp_policy(sta->policies[i]);
 			sta->policies[i] = NULL;
 			break;
 		}
@@ -1448,7 +1452,8 @@ int hostapd_handle_dscp_policy_response(struct hostapd_data *hapd, struct sta_in
 		u16 status = WPA_GET_LE16(pos);
 		pos += 2;
 		for (u8 i = 0; i < sta->num_dscp_policies; i++) {
-			if (sta->policies[i]->policy_id == policy_id) {
+			if (sta->policies[i] &&
+			    sta->policies[i]->policy_id == policy_id) {
 				policy = sta->policies[i];
 				break;
 			}
