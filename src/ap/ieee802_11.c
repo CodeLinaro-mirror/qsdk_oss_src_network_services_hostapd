@@ -5725,11 +5725,8 @@ out:
 		ieee80211_ml_build_assoc_resp(hapd, phapd, sta, link);
 
 	wpa_printf(MSG_DEBUG, "MLD: link: status=%u", status);
-	if (status != WLAN_STATUS_SUCCESS) {
-		wpa_release_link_auth_ref(origin_sta->wpa_sm,
-					  hapd->mld_link_id, true);
-		if (sta)
-			ap_free_sta(hapd, sta);
+	if (status != WLAN_STATUS_SUCCESS && sta) {
+		ap_free_sta(hapd, sta);
 		return -1;
 	}
 	/* if link sta removed and re-added again in reassoc,
@@ -5885,6 +5882,11 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 				    reassoc ? LINK_PARSE_REASSOC :
 				    LINK_PARSE_ASSOC, offload, set_beacon))
 				ret = -1;
+		}
+
+		if (link->status != WLAN_STATUS_SUCCESS) {
+			wpa_release_link_auth_ref(sta->wpa_sm,
+						  bss->mld_link_id, true);
 		}
 	}
 #endif /* CONFIG_IEEE80211BE */
