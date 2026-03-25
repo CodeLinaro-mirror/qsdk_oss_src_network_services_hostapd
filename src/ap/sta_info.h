@@ -398,7 +398,7 @@ struct sta_info {
 #endif
 
 	u64 last_known_sta_id_timestamp;
-
+	bool pending_drv_add;
 
 	/**
 	 * rssi_reject_timeout - Time when RSSI rejection expires
@@ -523,7 +523,7 @@ void ap_sta_delayed_1x_auth_fail_disconnect(struct hostapd_data *hapd,
 int ap_sta_pending_delayed_1x_auth_fail_disconnect(struct hostapd_data *hapd,
 						   struct sta_info *sta);
 int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta,
-		  int check_authorized);
+		  int check_authorized, struct sta_info *osta);
 
 void ap_free_sta_pasn(struct hostapd_data *hapd, struct sta_info *sta);
 
@@ -577,4 +577,8 @@ int hostapd_free_partner_link_stas(struct hostapd_data *hapd,
 int skip_prune_for_partner_links(struct hostapd_data *hapd,
 				 struct sta_info *sta);
 bool station_supports_256qam(struct sta_info *sta);
+struct sta_info *ap_sta_get_from_obss(struct hostapd_data *hapd,
+				      const u8 *addr,
+				      struct hostapd_data **ohapd);
+void ap_sta_cleanup_all(struct hostapd_data *hapd, struct sta_info *sta);
 #endif /* STA_INFO_H */

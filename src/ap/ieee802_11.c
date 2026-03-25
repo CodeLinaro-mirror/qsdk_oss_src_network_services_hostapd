@@ -3469,7 +3469,8 @@ static void handle_auth(struct hostapd_data *hapd,
 {
 	u16 auth_alg, auth_transaction, status_code;
 	u16 resp = WLAN_STATUS_SUCCESS;
-	struct sta_info *sta = NULL;
+	struct sta_info *sta = NULL, *osta = NULL;
+	struct hostapd_data *ohapd;
 	int res, reply_res, ubus_resp;
 	u16 fc;
 	const u8 *challenge = NULL;
@@ -3759,6 +3760,23 @@ static void handle_auth(struct hostapd_data *hapd,
 		}
 	}
 
+	if (auth_alg != WLAN_AUTH_FT) {
+		osta = ap_sta_get_from_obss(hapd, sa, &ohapd);
+
+		if (osta && hostapd_is_ml_partner(hapd, ohapd))
+			osta = NULL;
+		/* Delete the station from other BSS immediately if its not MFP or not authorized yet */
+		if (osta && (!(osta->flags & WLAN_STA_MFP) || !ap_sta_is_authorized(osta))) {
+			wpa_printf(MSG_DEBUG, "Delete STA "MACSTR" from driver on %s as STA "
+				   "is not authorized and trying to associate in new bss %s",
+				   MAC2STR(osta->addr), ohapd->conf->iface, hapd->conf->iface);
+			hostapd_drv_sta_deauth(ohapd, osta->addr, WLAN_REASON_PREV_AUTH_NOT_VALID);
+			ap_sta_remove_link_sta(ohapd, osta, false);
+			ap_free_sta(ohapd, osta);
+			osta = NULL;
+		}
+	}
+
 	sta = ap_get_sta(hapd, sa);
 	if (sta) {
 		sta->flags &= ~WLAN_STA_PENDING_FILS_ERP;
@@ -3893,7 +3911,7 @@ static void handle_auth(struct hostapd_data *hapd,
 	    !(sta->added_unassoc) && auth_alg != WLAN_AUTH_PASN) {
 		res = ap_sta_check_link_sta(hapd, sta);
 		if (!res) {
-			if (ap_sta_re_add(hapd, sta, 1) < 0) {
+			if (ap_sta_re_add(hapd, sta, 1, osta) < 0) {
 				resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
 				goto fail;
 			}
@@ -3908,7 +3926,7 @@ static void handle_auth(struct hostapd_data *hapd,
 	    ap_sta_is_authorized(sta) &&
 	    !(sta->added_unassoc) &&
 	    (sta->skip_kernel_delete)) {
-		if (ap_sta_re_add(hapd, sta, 1) < 0) {
+		if (ap_sta_re_add(hapd, sta, 1, NULL) < 0) {
 			resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
 			goto fail;
 		}
@@ -7130,6 +7148,60 @@ static void handle_assoc(struct hostapd_data *hapd,
 		goto fail;
 	}
 #endif /* CONFIG_MBO */
+	if (sta && sta->auth_alg != WLAN_AUTH_FT) {
+		struct hostapd_data *ohapd, *assoc_hapd;
+		struct sta_info *osta = ap_sta_get_from_obss(hapd, sta->addr, &ohapd);
+		/* If sta with same address is present in another BSS/MLD, handle it */
+		/* TODO: handle sta roaming cases within links of a ML BSS */
+		if (osta && !hostapd_is_ml_partner(hapd, ohapd) &&
+		    (osta->flags & WLAN_STA_MFP) && ap_sta_is_authorized(osta)) {
+			wpa_printf(MSG_DEBUG, "Association request received from STA "MACSTR
+			 	  " but sta is already associated in %s",
+				  MAC2STR(sta->addr), ohapd->conf->iface);
+			/* for an ML STA do SA procedure in Assoc link sta  */
+			if (ap_sta_is_mld(ohapd, osta)) {
+				osta = hostapd_ml_get_assoc_sta(ohapd, osta, &assoc_hapd);
+				ohapd = assoc_hapd;
+			}
+			if (check_sa_query(ohapd, osta, reassoc, pos, left, sta)) {
+				wpa_printf(MSG_DEBUG, "SA query triggered for "MACSTR" on %s",
+					   MAC2STR(osta->addr), ohapd->conf->iface);
+				resp = WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY;
+				goto fail;
+			} else if (osta->sa_query_timed_out) {
+				u8 link_id = hapd->mld_link_id;
+				bool mld_link_sta = sta->mld_assoc_link_id != link_id;
+				const u8 *mld_link_addr = sta->mld_info.links[link_id].peer_addr;
+				u16 eml_cap = sta->mld_info.common_info.eml_capa;
+
+				wpa_printf(MSG_DEBUG, "SA query timedout for "MACSTR" on %s, "
+					   "delete it", MAC2STR(osta->addr), ohapd->conf->iface);
+				ap_sta_cleanup_all(ohapd, osta);
+				/* Add the cached sta to driver now */
+				sta->flags &= ~(WLAN_STA_ASSOC | WLAN_STA_AUTHORIZED);
+				sta->unadded_sta = false;
+				if (sta->pending_drv_add &&
+				    hostapd_sta_add(hapd, sta->addr, 0, 0,
+						    sta->supported_rates,
+						    sta->supported_rates_len,
+						    0, NULL, NULL, NULL, 0, NULL, 0, NULL, 0,
+#ifdef CONFIG_QCN_EXTN
+						    NULL,
+#endif
+						    NULL, sta->flags, 0, 0, 0, 0,
+						    mld_link_addr, mld_link_sta,
+						    eml_cap, reassoc,
+						    CONTROL_MIC_PAD_NOT_SET)) {
+					hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+						       HOSTAPD_LEVEL_NOTICE,
+						       "Could not add STA to kernel driver");
+					resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
+					goto fail;
+				}
+				sta->pending_drv_add = false;
+			}
+		}
+	}
 
 	if (hapd->conf->wpa && check_sa_query(hapd, sta, reassoc, pos, left, sta)) {
 		resp = WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY;
@@ -12029,7 +12101,7 @@ static bool mbssid_known_bss(unsigned int i, const u8 *known_bss,
 	return *known_bss & (u8) (BIT(i % 8));
 }
 
-static bool ieee802_11_mbssid_is_elem_inherited(u8 id, u8 ext_id)
+static bool ieee802_11_mbssid_is_elem_inherited(u8 id, u8 ext_id, bool is_non_tx)
 {
 	switch (id) {
 	case WLAN_EID_EXTENSION:
@@ -12073,6 +12145,8 @@ static bool ieee802_11_mbssid_is_elem_inherited(u8 id, u8 ext_id)
 	case WLAN_EID_QUIET:
 	case WLAN_EID_QUIET_CHANNEL:
 	case WLAN_EID_VENDOR_SPECIFIC:
+		if (is_non_tx == true)
+			return false;
 	case WLAN_EID_MMIE:
 		break;
 	default:
@@ -12092,6 +12166,7 @@ static u8 * ieee802_11_inheritance_txbss_params(u8 *tx_elem, size_t tx_elem_len,
 	const struct element *tx_ie, *nontx_ie;
 	const u8 *data, *nontx_data;
 	u8 id, len, nontx_id, nontx_len, ext_id, nontx_ext_id;
+	bool tx_vendor_ie = false;
 	u8 *pos = eid, parsed_eid_bmap[32] = { 0 }, parsed_ext_eid_bmap[32] = {0};
 	size_t nontx_prof_len = 0, total_non_inherit_ie_len = 0;
 	bool found_in_nontx_bss;
@@ -12227,10 +12302,17 @@ static u8 * ieee802_11_inheritance_txbss_params(u8 *tx_elem, size_t tx_elem_len,
 		if (len <= 0)
 			continue;
 
-		if (id == WLAN_EID_EXTENSION)
+		if (id == WLAN_EID_EXTENSION) {
 			ext_id = *(data);
+		} else if (id == WLAN_EID_VENDOR_SPECIFIC) {
+			/* vendor IEs from tx-vap non-inheritable. so skip
+			 * checking entirely.
+			 */
+			tx_vendor_ie = true;
+			continue;
+		}
 
-		if (ieee802_11_mbssid_is_elem_inherited(id, ext_id) ||
+		if (ieee802_11_mbssid_is_elem_inherited(id, ext_id, false) ||
 		    (id == WLAN_EID_EXT_CAPAB))
 			continue;
 
@@ -12336,12 +12418,15 @@ static u8 * ieee802_11_inheritance_txbss_params(u8 *tx_elem, size_t tx_elem_len,
 			nontx_ext_id = *(nontx_data);
 			if (parsed_ext_eid_bmap[nontx_ext_id / 8] & BIT(nontx_ext_id % 8))
 				continue;
-		} else {
+			/* Vendors IEs are non-inheritable, So Add all non-tx BSS
+			 * vendor IEs into non-tx MBSSID profile
+			 */
+		} else if (nontx_id != WLAN_EID_VENDOR_SPECIFIC) {
 			if (parsed_eid_bmap[nontx_id / 8] & BIT(nontx_id % 8))
 				continue;
 		}
 
-		if (ieee802_11_mbssid_is_elem_inherited(nontx_id, nontx_ext_id))
+		if (ieee802_11_mbssid_is_elem_inherited(nontx_id, nontx_ext_id, true))
 			continue;
 
 		 /* Boundary is validated only during length calculation */
@@ -12375,7 +12460,8 @@ static u8 * ieee802_11_inheritance_txbss_params(u8 *tx_elem, size_t tx_elem_len,
 		goto fail;
 
 	}
-	non_inherit_ie->elem_list[non_inherit_ie->elem_len++] = WLAN_EID_VENDOR_SPECIFIC;
+	if (tx_vendor_ie == true)
+		non_inherit_ie->elem_list[non_inherit_ie->elem_len++] = WLAN_EID_VENDOR_SPECIFIC;
 
 	/*
 	 * Non-inheritance Element length

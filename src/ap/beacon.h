@@ -65,5 +65,6 @@ u8 * hostapd_unsol_bcast_probe_resp(struct hostapd_data *hapd,
 
 int ieee802_11_build_nontx_bss_params(struct hostapd_data *hapd,
 				      struct wpa_driver_ap_params *params);
+u8 ieee802_11_erp_info(struct hostapd_data *hapd);
 
 #endif /* BEACON_H */

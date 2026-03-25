@@ -1476,9 +1476,6 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 	iface->cac_started = 0;
 	ap_list_deinit(iface);
 	sta_track_deinit(iface);
-#ifdef CONFIG_QCN_EXTN
-	hostapd_uplink_cancel_disconnect_timeout_extn(iface);
-#endif /* CONFIG_QCN_EXTN */
 	airtime_policy_update_deinit(iface);
 
 #ifdef CONFIG_ATF_OFFLOAD
@@ -5299,6 +5296,9 @@ void hostapd_interface_deinit_free(struct hostapd_iface *iface)
 	wpa_printf(MSG_DEBUG, "%s: num_bss=%u conf->num_bss=%u",
 		   __func__, (unsigned int) iface->num_bss,
 		   (unsigned int) iface->conf->num_bss);
+#ifdef CONFIG_QCN_EXTN
+	hostapd_uplink_cancel_disconnect_timeout_extn(iface);
+#endif /* CONFIG_QCN_EXTN */
 	driver = iface->bss[0]->driver;
 	drv_priv = iface->bss[0]->drv_priv;
 	hostapd_ubus_free_iface(iface);
@@ -6272,7 +6272,10 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 				else {
 					wpa_printf(MSG_ERROR,
 						   "iface is in pre-beacon state & initialization of successor BSS failed. Hence, removing iface");
-					return hostapd_remove_hapd_iface(iface);
+					if (hostapd_remove_hapd_iface(iface) == 0)
+						return 1;
+					else
+						return -1;
 				}
 			}
 #ifdef CONFIG_IEEE80211BE
@@ -7237,6 +7240,7 @@ void hostapd_cleanup_cs_params(struct hostapd_data *hapd)
 	hapd->csa_in_progress = 0;
 	hapd->cs_c_off_ecsa_beacon = 0;
 	hapd->cs_c_off_ecsa_proberesp = 0;
+	hapd->iface->cac_type = 0;
 }
 
 

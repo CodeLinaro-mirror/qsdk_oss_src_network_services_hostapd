@@ -351,7 +351,7 @@ void set_wpa_sm_for_each_partner_link(struct hostapd_data *hapd,
 			continue;
 
 		lsta = ap_get_sta(lhapd, psta->addr);
-		if (lsta)
+		if (lsta && (psta->mld_assoc_link_id == lsta->mld_assoc_link_id))
 			lsta->wpa_sm = wpa_sm;
 	}
 }
@@ -1210,6 +1210,39 @@ static void ap_sta_assoc_timeout(void *eloop_ctx, void *timeout_ctx)
 		ap_free_sta(hapd, sta);
 }
 
+struct sta_info *ap_sta_get_from_obss(struct hostapd_data *hapd, const u8 *addr,
+				      struct hostapd_data **ohapd)
+{
+	int i, j;
+	struct hostapd_data *hapd_ptr;
+	struct sta_info *osta;
+
+	if (ohapd)
+		*ohapd = NULL;
+
+	/*
+	 *mesh interface will not have iface->interfaces
+	 */
+	if (!hapd || !hapd->iface || !hapd->iface->interfaces)
+		return NULL;
+
+	for (i = 0; i < hapd->iface->interfaces->count; i++)
+		for (j = 0; j < hapd->iface->interfaces->iface[i]->num_bss; j++) {
+			hapd_ptr = hapd->iface->interfaces->iface[i]->bss[j];
+			if (!hapd_ptr || !hapd_ptr->started || hapd == hapd_ptr)
+				continue;
+
+			osta = ap_get_sta(hapd_ptr, addr);
+			if (osta) {
+				if (ohapd)
+					*ohapd = hapd_ptr;
+				return osta;
+			}
+
+
+		}
+	return NULL;
+}
 
 struct sta_info * ap_sta_add(struct hostapd_data *hapd, const u8 *addr)
 {
@@ -1377,7 +1410,9 @@ static void ap_sta_remove_in_other_bss(struct hostapd_data *hapd,
 		if (bss == hapd || bss == NULL)
 			continue;
 		sta2 = ap_get_sta(bss, sta->addr);
-		if (!sta2)
+		/* Authorized MFP STAs need special handling before disconnect */
+		if (!sta2 || ((sta2->flags & WLAN_STA_MFP) &&
+			      ap_sta_is_authorized(sta2)))
 			continue;
 
 		wpa_printf(MSG_DEBUG, "%s: disconnect old STA " MACSTR
@@ -2539,21 +2574,30 @@ void ap_sta_remove_link_sta(struct hostapd_data *hapd,
 			if(check_authorized && ap_sta_is_authorized(tmp_sta))
 				continue;
 
-			if (ap_sta_is_mld(tmp_hapd, tmp_sta)) {
-				ap_free_sta(tmp_hapd, tmp_sta);
-				break;
-			}
+			ap_free_sta(tmp_hapd, tmp_sta);
+			break;
 		}
 	}
 }
 #endif /* CONFIG_IEEE80211BE */
 
 
-int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_authorized)
+int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_authorized,
+		 struct sta_info *osta)
 {
 	const u8 *mld_link_addr = NULL;
 	bool mld_link_sta = false;
 	u16 eml_cap = 0;
+
+	if (osta) {
+		if ((osta->flags & WLAN_STA_MFP) && ap_sta_is_authorized(osta)) {
+			wpa_printf(MSG_DEBUG, "Skip re-adding STA "MACSTR" to driver on %s as STA"
+				  " is already found on another bss", MAC2STR(sta->addr),
+				  hapd->conf->iface);
+			sta->pending_drv_add = true;
+			return 0;
+		}
+	}
 
 	/*
 	 * If a station that is already associated to the AP, is trying to
@@ -2606,6 +2650,7 @@ int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_aut
 	}
 
 	sta->added_unassoc = 1;
+	sta->pending_drv_add = false;
 	sta->skip_kernel_delete = false;
 	return 0;
 }
@@ -2625,3 +2670,24 @@ void ap_sta_free_sta_profile(struct mld_info *info)
 	}
 }
 #endif /* CONFIG_IEEE80211BE */
+void ap_sta_cleanup_all(struct hostapd_data *hapd, struct sta_info *sta)
+{
+	struct hostapd_data *lhapd;
+	struct sta_info *lsta;
+
+	if (!sta)
+		return;
+
+	if (ap_sta_is_mld(hapd, sta)) {
+		for_each_mld_link(lhapd, hapd) {
+			if (hapd == lhapd)
+				continue;
+			lsta = ap_get_sta(lhapd, sta->addr);
+			if (lsta && ap_sta_is_mld(lhapd, lsta) &&
+			    lsta->mld_assoc_link_id == hapd->mld_link_id)
+				ap_free_sta(lhapd, lsta);
+
+		}
+	}
+	ap_free_sta(hapd, sta);
+}

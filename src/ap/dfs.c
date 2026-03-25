@@ -1587,7 +1587,8 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 		iface->radar_background.cac_started = 0;
 		if (iface->conf->enable_background_radar)
 			hostapd_dfs_update_background_chain(iface);
-	} else {
+	} else if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_CSA) {
+		iface->cac_started = 0;
 		iface->cac_type = 0;
 	}
 
@@ -2477,4 +2478,99 @@ bool hostapd_is_cac_required(struct hostapd_iface *iface)
 	}
 
 	return !res;
+}
+
+static bool dfs_has_unavailable_channel(struct hostapd_iface *iface,
+					int start_chan_idx,
+					int n_chans)
+{
+	struct hostapd_channel_data *channel;
+	struct hostapd_hw_modes *mode;
+	int i;
+
+	mode = iface->current_mode;
+
+	for (i = 0; i < n_chans; i++) {
+		channel = &mode->channels[start_chan_idx + i];
+		if ((channel->flag & HOSTAPD_CHAN_DFS_MASK) ==
+				HOSTAPD_CHAN_DFS_UNAVAILABLE)
+			return true;
+	}
+
+	return false;
+}
+
+bool hostapd_dfs_csa_target_has_unavailable_channel(struct hostapd_iface *iface,
+						    struct hostapd_freq_params *freq_params,
+						    enum chan_width width)
+{
+	int start_freq;
+	int n_chans;
+	u8 start_chan_num;
+	struct hostapd_hw_modes *mode;
+	struct hostapd_channel_data *chan;
+
+	if (!iface)
+		return true;
+
+	mode = iface->current_mode;
+
+	switch (width) {
+	case CHAN_WIDTH_40:
+		n_chans = 2;
+		start_freq = freq_params->center_freq1 - 10;
+		break;
+	case CHAN_WIDTH_80:
+		n_chans = 4;
+		start_freq = freq_params->center_freq1 - 30;
+		break;
+	case CHAN_WIDTH_80P80:
+		n_chans = 4;
+		start_freq = freq_params->center_freq1 - 30;
+		break;
+	case CHAN_WIDTH_160:
+		n_chans = 8;
+		start_freq = freq_params->center_freq1 - 70;
+		break;
+	case CHAN_WIDTH_320:
+		n_chans = 16;
+		start_freq = freq_params->center_freq1 - 150;
+		break;
+	default:
+		n_chans = 1;
+		start_freq = freq_params->freq;
+		break;
+	}
+
+	if (ieee80211_freq_to_chan(start_freq, &start_chan_num) ==
+			NUM_HOSTAPD_MODES)
+		return true;
+
+	chan = hw_get_channel_chan(mode, start_chan_num, NULL);
+	if (!chan)
+		return true;
+
+	if (dfs_has_unavailable_channel(iface, chan - mode->channels, n_chans)) {
+		wpa_printf(MSG_DEBUG, "DFS: CSA target includes NOL channel(s) (pri)");
+		return true;
+	}
+
+	if (width == CHAN_WIDTH_80P80 && freq_params->center_freq2) {
+		start_freq = freq_params->center_freq2 - 30;
+		if (ieee80211_freq_to_chan(start_freq, &start_chan_num) ==
+				NUM_HOSTAPD_MODES)
+			return true;
+
+		chan = hw_get_channel_chan(mode, start_chan_num, NULL);
+		if (!chan)
+			return true;
+
+		if (dfs_has_unavailable_channel(iface, chan - mode->channels,
+						n_chans)) {
+			wpa_printf(MSG_DEBUG, "DFS: CSA target includes NOL channel(s) (seg1)");
+			return true;
+		}
+	}
+
+	return false;
 }

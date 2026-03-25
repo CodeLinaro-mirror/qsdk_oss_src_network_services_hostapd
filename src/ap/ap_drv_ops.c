@@ -1312,9 +1312,17 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 		data.skip_cac = ((iface->iface_extn.csa_bitmap ||
 				 iface->iface_extn.dfs_available_from_sta) &&
 				 iface->conf->conf_extn.skip_cac);
+		wpa_printf(MSG_INFO, "Ind Rptr: skip_cac = %d csa_bitmap = %d"
+			   " dfs_available_from_sta = %d conf_extn.skip_cac = %d",
+			   data.skip_cac, iface->iface_extn.csa_bitmap,
+			   iface->iface_extn.dfs_available_from_sta,
+			   iface->conf->conf_extn.skip_cac);
 	} else {
 		data.skip_cac = (iface->cac_type != HAPD_CAC_COMPLETE_AFTER_CSA) &&
 				 iface->conf->conf_extn.skip_cac;
+		wpa_printf(MSG_INFO, "Dep Rptr: skip_cac = %d cac_type = %d"
+			   " conf_extn.skip_cac = %d", data.skip_cac, iface->cac_type,
+			   iface->conf->conf_extn.skip_cac);
 	}
 #endif
 

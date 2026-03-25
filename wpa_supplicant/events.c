@@ -6971,7 +6971,7 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			/* On Radar detection, if uplink_csa is not enabled
 			 * flush all the scan bss cache and deauth the STA
 			 */
-			if (!wpa_s->conf->uplink_csa) {
+			if (!wpa_s->conf->uplink_csa && !wpa_s->ifmsh) {
 				wpa_bss_flush(wpa_s, 1);
 				wpa_supplicant_deauthenticate(wpa_s,
 						WLAN_REASON_DEAUTH_LEAVING);
