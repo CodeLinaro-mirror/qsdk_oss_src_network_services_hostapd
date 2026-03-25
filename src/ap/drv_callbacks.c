@@ -3697,7 +3697,6 @@ static void hostapd_update_ap_powersave(struct hostapd_data *hapd,
 }
 #endif /* CONFIG_IEEE80211BN */
 
-
 void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		       union wpa_event_data *data)
 {
