@@ -925,6 +925,33 @@ bool is_sta_ttlm_capable(struct sta_info *sta)
 }
 
 
+bool hostapd_is_ttlm_active(struct sta_info *sta)
+{
+	struct ttlm_prev_negotiated_info *negotiated_ttlm;
+
+	if (!is_sta_ttlm_capable(sta))
+		return false;
+
+	negotiated_ttlm = &sta->mld_info.tid_map_info.ttlm_prev_negotiated_info;
+
+	if (negotiated_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].direction ==
+	    TTLM_DIRECTION_BIDI)
+		return !negotiated_ttlm->ttlm_info[TTLM_DIRECTION_BIDI].default_link_mapping;
+
+	if (negotiated_ttlm->ttlm_info[TTLM_DIRECTION_DL].direction ==
+	    TTLM_DIRECTION_DL &&
+	    !negotiated_ttlm->ttlm_info[TTLM_DIRECTION_DL].default_link_mapping)
+		return true;
+
+	if (negotiated_ttlm->ttlm_info[TTLM_DIRECTION_UL].direction ==
+	    TTLM_DIRECTION_UL &&
+	    !negotiated_ttlm->ttlm_info[TTLM_DIRECTION_UL].default_link_mapping)
+		return true;
+
+	return false;
+}
+
+
 int hostapd_handle_ttlm_resp(struct hostapd_data *hapd, struct sta_info *sta,
 			     const u8 *buf, size_t len)
 {
@@ -1119,6 +1146,10 @@ int hostapd_handle_ttlm_assoc_req(struct hostapd_data *hapd, const struct ieee80
 			neg = &lsta->mld_info.tid_map_info.ttlm_ongoing_negotiation_info;
 			os_memset(neg, 0, sizeof(*neg));
 			neg->ttlm_resp_type = -1;
+			for (dir = 0; dir < TTLM_DIRECTION_MAX; dir++) {
+				neg->ttlm_info[dir].direction = dir;
+				neg->ttlm_info[dir].default_link_mapping = 1;
+			}
 		}
 	}
 
