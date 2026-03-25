@@ -1469,6 +1469,7 @@ static int wpa_try_alt_snonce(struct wpa_state_machine *sm, u8 *data,
 	os_memcpy(&sm->PTK, &PTK, sizeof(PTK));
 	forced_memzero(&PTK, sizeof(PTK));
 	sm->PTK_valid = true;
+	sm->hash_alg = sm->PTK.hash_alg;
 
 	ret = 0;
 fail:
@@ -1652,7 +1653,7 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 
 	wpa_hexdump(MSG_MSGDUMP, "WPA: RX EAPOL data", data, data_len);
 
-	mic_len = wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len);
+	mic_len = wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len, sm->hash_alg);
 	keyhdrlen = sizeof(*key) + mic_len + 2;
 
 	if (data_len < sizeof(*hdr) + keyhdrlen) {
@@ -2080,7 +2081,7 @@ void __wpa_send_eapol(struct wpa_authenticator *wpa_auth,
 	int i;
 	u8 *key_mic, *key_data;
 
-	mic_len = wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len);
+	mic_len = wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len, sm->hash_alg);
 	keyhdrlen = sizeof(*key) + mic_len + 2;
 
 	len = sizeof(struct ieee802_1x_hdr) + keyhdrlen;
@@ -2264,7 +2265,7 @@ void __wpa_send_eapol(struct wpa_authenticator *wpa_auth,
 		}
 
 		if (wpa_eapol_key_mic(sm->PTK.kck, sm->PTK.kck_len,
-				      sm->wpa_key_mgmt, version,
+				      sm->wpa_key_mgmt, sm->hash_alg, version,
 				      (u8 *) hdr, len, key_mic) < 0) {
 			os_free(hdr);
 			return;
@@ -2364,7 +2365,7 @@ static int wpa_verify_key_mic(int akmp, size_t pmk_len, struct wpa_ptk *PTK,
 	u16 key_info;
 	int ret = 0;
 	u8 mic[WPA_EAPOL_KEY_MIC_MAX_LEN], *mic_pos;
-	size_t mic_len = wpa_mic_len(akmp, pmk_len);
+	size_t mic_len = wpa_mic_len(akmp, pmk_len, PTK->hash_alg);
 
 	if (data_len < sizeof(*hdr) + sizeof(*key))
 		return -1;
@@ -2375,7 +2376,7 @@ static int wpa_verify_key_mic(int akmp, size_t pmk_len, struct wpa_ptk *PTK,
 	key_info = WPA_GET_BE16(key->key_info);
 	os_memcpy(mic, mic_pos, mic_len);
 	os_memset(mic_pos, 0, mic_len);
-	if (wpa_eapol_key_mic(PTK->kck, PTK->kck_len, akmp,
+	if (wpa_eapol_key_mic(PTK->kck, PTK->kck_len, akmp, PTK->hash_alg,
 			      key_info & WPA_KEY_INFO_TYPE_MASK,
 			      data, data_len, mic_pos) ||
 	    os_memcmp_const(mic, mic_pos, mic_len) != 0)
@@ -3807,7 +3808,7 @@ SM_STATE(WPA_PTK, PTKCALCNEGOTIATING)
 	sm->update_snonce = false;
 	os_memset(&PTK, 0, sizeof(PTK));
 
-	mic_len = wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len);
+	mic_len = wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len, sm->hash_alg);
 
 	derive_kdk = sm->wpa_auth->conf.secure_ltf &&
 		ieee802_11_rsnx_capab(sm->rsnxe, WLAN_RSNX_CAPAB_SECURE_LTF);
@@ -4172,6 +4173,7 @@ SM_STATE(WPA_PTK, PTKCALCNEGOTIATING)
 	os_memcpy(&sm->PTK, &PTK, sizeof(PTK));
 	forced_memzero(&PTK, sizeof(PTK));
 	sm->PTK_valid = true;
+	sm->hash_alg = sm->PTK.hash_alg;
 out:
 	forced_memzero(pmk_r0, sizeof(pmk_r0));
 	forced_memzero(pmk_r1, sizeof(pmk_r1));
@@ -5452,8 +5454,8 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 
 	wpa_send_eapol(sm->wpa_auth, sm,
 		       (secure ? WPA_KEY_INFO_SECURE : 0) |
-		       (wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len) ?
-			WPA_KEY_INFO_MIC : 0) |
+		       (wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len,
+				    sm->hash_alg) ? WPA_KEY_INFO_MIC : 0) |
 		       WPA_KEY_INFO_ACK | WPA_KEY_INFO_INSTALL |
 		       WPA_KEY_INFO_KEY_TYPE,
 		       _rsc, sm->ANonce, kde, pos - kde, 0, encr);
@@ -5482,7 +5484,7 @@ static int wpa_auth_validate_ml_kdes_m4(struct wpa_state_machine *sm)
 	 * Note: last_rx_eapol_key length fields have already been validated in
 	 * wpa_receive().
 	 */
-	mic_len = wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len);
+	mic_len = wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len, sm->hash_alg);
 
 	hdr = (const struct ieee802_1x_hdr *) sm->last_rx_eapol_key;
 	key = (const struct wpa_eapol_key *) (hdr + 1);
@@ -5858,8 +5860,8 @@ SM_STATE(WPA_PTK_GROUP, REKEYNEGOTIATING)
 
 	wpa_send_eapol(sm->wpa_auth, sm,
 		       WPA_KEY_INFO_SECURE |
-		       (wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len) ?
-			WPA_KEY_INFO_MIC : 0) |
+		       (wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len,
+				    sm->hash_alg) ? WPA_KEY_INFO_MIC : 0) |
 		       WPA_KEY_INFO_ACK |
 		       (!sm->Pair ? WPA_KEY_INFO_INSTALL : 0),
 		       rsc, NULL, kde, kde_len, gsm->GN, 1);
@@ -5884,7 +5886,7 @@ SM_STATE(WPA_PTK_GROUP, REKEYESTABLISHED)
 	sm->EAPOLKeyReceived = false;
 
 #ifdef CONFIG_OCV
-	mic_len = wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len);
+	mic_len = wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len, sm->hash_alg);
 
 	/*
 	 * Note: last_rx_eapol_key length fields have already been validated in
@@ -8026,6 +8028,21 @@ void wpa_auth_set_auth_alg(struct wpa_state_machine *sm, u16 auth_alg)
 }
 
 
+void wpa_auth_set_hash_alg_sae_ext_key(struct wpa_state_machine *sm,
+				       size_t pmk_len)
+{
+	if (!sm)
+		return;
+
+	if (pmk_len == 32)
+		sm->hash_alg = RSN_HASH_SHA256;
+	else if (pmk_len == 48)
+		sm->hash_alg = RSN_HASH_SHA384;
+	else if (pmk_len == 64)
+		sm->hash_alg = RSN_HASH_SHA512;
+}
+
+
 void wpa_auth_set_rsn_selection(struct wpa_state_machine *sm, const u8 *ie,
 				size_t len)
 {
@@ -8269,8 +8286,8 @@ int wpa_auth_resend_m3(struct wpa_state_machine *sm,
 
 	wpa_send_eapol(sm->wpa_auth, sm,
 		       (secure ? WPA_KEY_INFO_SECURE : 0) |
-		       (wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len) ?
-			WPA_KEY_INFO_MIC : 0) |
+		       (wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len,
+				    sm->hash_alg) ? WPA_KEY_INFO_MIC : 0) |
 		       WPA_KEY_INFO_ACK | WPA_KEY_INFO_INSTALL |
 		       WPA_KEY_INFO_KEY_TYPE,
 		       _rsc, sm->ANonce, kde, pos - kde, 0, encr);
@@ -8336,8 +8353,8 @@ int wpa_auth_resend_group_m1(struct wpa_state_machine *sm,
 
 	wpa_send_eapol(sm->wpa_auth, sm,
 		       WPA_KEY_INFO_SECURE |
-		       (wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len) ?
-			WPA_KEY_INFO_MIC : 0) |
+		       (wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len,
+				    sm->hash_alg) ? WPA_KEY_INFO_MIC : 0) |
 		       WPA_KEY_INFO_ACK |
 		       (!sm->Pair ? WPA_KEY_INFO_INSTALL : 0),
 		       rsc, NULL, kde, kde_len, gsm->GN, 1);
@@ -8551,7 +8568,7 @@ bool wpa_auth_sm_known_sta_identification(struct wpa_state_machine *sm,
 		return false;
 	}
 
-	exp_mic_len = wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len);
+	exp_mic_len = wpa_mic_len(sm->wpa_key_mgmt, sm->pmk_len, sm->hash_alg);
 	if (mic_len != exp_mic_len) {
 		wpa_printf(MSG_DEBUG,
 			   "RSN: MIC length mismatch in Known STA Identification (received %zu, expected %zu)",
@@ -8569,7 +8586,7 @@ bool wpa_auth_sm_known_sta_identification(struct wpa_state_machine *sm,
 		ver = WPA_KEY_INFO_TYPE_HMAC_MD5_RC4;
 
 	if (wpa_eapol_key_mic(sm->PTK.kck, sm->PTK.kck_len, sm->wpa_key_mgmt,
-			      ver, timestamp, 8, exp_mic) ||
+			      sm->hash_alg, ver, timestamp, 8, exp_mic) ||
 	    os_memcmp_const(mic, exp_mic, exp_mic_len) != 0) {
 		wpa_printf(MSG_DEBUG,
 			   "RSN: Invalid MIC in Known STA Identification");
