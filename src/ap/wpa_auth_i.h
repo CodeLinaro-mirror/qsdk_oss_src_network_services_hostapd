@@ -69,6 +69,7 @@ struct wpa_state_machine {
 	*/
 	bool ANonce_generated;
 	u8 keyidx_active;
+	enum rsn_hash_alg hash_alg;
 	bool use_ext_key_id;
 	bool PTK_valid;
 	bool pairwise_set;
