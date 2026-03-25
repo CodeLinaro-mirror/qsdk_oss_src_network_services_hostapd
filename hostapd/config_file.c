@@ -4915,14 +4915,31 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->multi_ap_vlanid = val;
 	} else if (os_strcmp(buf, "rssi_reject_assoc_rssi") == 0) {
 		int val = atoi(pos);
-		/* Support both per-BSS and per-radio configuration */
-		bss->rssi_reject_assoc_rssi = val;
-		conf->rssi_reject_assoc_rssi = val;
+		if (val < -95 || val > -1) {
+			wpa_printf(MSG_ERROR, "Invalid RSSI threshold %d"
+				   "(range: -95 to -1)", val);
+			return -1;
+		} else {
+			/* Update RSSI threshold for this specific hapd (link or interface-wide) */
+			bss->rssi_reject_assoc_rssi = val;
+			conf->rssi_reject_assoc_rssi = val;
+			wpa_printf(MSG_INFO, "Updated RSSI association "
+				   "rejection threshold to %d dBm "
+				   "(runtime value updated)",val);
+		}
 	} else if (os_strcmp(buf, "rssi_reject_assoc_timeout") == 0) {
 		int val = atoi(pos);
-		/* Support both per-BSS and per-radio configuration */
-		bss->rssi_reject_assoc_timeout = val;
-		conf->rssi_reject_assoc_timeout = val;
+		if (val < 1 || val > 300) {
+			wpa_printf(MSG_ERROR, "Invalid RSSI timeout %d "
+				   "(range: 1 to 300)", val);
+			return -1;
+		} else {
+			/* Support both per-BSS and per-radio configuration */
+			bss->rssi_reject_assoc_timeout = val;
+			conf->rssi_reject_assoc_timeout = val;
+			wpa_printf(MSG_INFO, "Updated RSSI association timeout"
+				   " to %d seconds", val);
+		}
 	} else if (os_strcmp(buf, "rssi_deauth_grace_samples") == 0) {
 		int val = atoi(pos);
 		if (val < 1 || val > 100) {
