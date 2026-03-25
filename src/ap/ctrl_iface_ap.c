@@ -373,6 +373,14 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 		return 0;
 	len += ret;
 
+	ret = os_snprintf(buf + len, buflen - len,
+			  "max_rssi=%d\nmin_rssi=%d\nps_state=%d\n",
+			  data.max_rssi, data.min_rssi,
+			  data.ps_state);
+	if (os_snprintf_error(buflen - len, ret))
+		return len;
+	len += ret;
+
 	if (sta->last_rx_mgmt_rate) {
 		ret = os_snprintf(buf + len, buflen - len,
 				  "last_rx_mgmt_rate=%lu\n",
@@ -648,7 +656,78 @@ void check_and_add_uniibands(band_info_t uniiband)
 	}
 }
 
+static int is_wpa_oui(const u8 *ie)
+{
+	if (ie[1] < 4)
+		return 0;
+	return (WPA_GET_BE32(&ie[2]) == WPA_IE_VENDOR_TYPE);
+}
 
+static int is_wmm_oui(const u8 *ie)
+{
+	if (ie[1] < 4)
+		return 0;
+	return (WPA_GET_BE32(&ie[2]) == WMM_IE_VENDOR_TYPE);
+}
+
+static int print_sta_ies_compact(const u8 *ies, size_t ies_len,
+				 char *buf, size_t buflen)
+{
+	const u8 *pos = ies;
+	size_t left = ies_len;
+	int len = 0;
+	int ret;
+
+	if (!ies || ies_len == 0)
+		return 0;
+
+	ret = os_snprintf(buf + len, buflen - len, "IEs=");
+	if (os_snprintf_error(buflen - len, ret))
+		return len;
+	len += ret;
+
+	while (left >= 2) {
+		u8 id = pos[0];
+		u8 elen = pos[1];
+
+		if (2 + elen > left)
+			break;
+
+		switch (id) {
+		case WLAN_EID_VENDOR_SPECIFIC:
+			if (is_wpa_oui(pos)) {
+				ret = os_snprintf(buf + len, buflen - len,
+						  "[WPA]");
+				if (!os_snprintf_error(buflen - len, ret))
+					len += ret;
+			} else if (is_wmm_oui(pos)) {
+				ret = os_snprintf(buf + len, buflen - len,
+						  "[WME]");
+				if (!os_snprintf_error(buflen - len, ret))
+					len += ret;
+			}
+			break;
+		case WLAN_EID_RSN:
+			ret = os_snprintf(buf + len, buflen - len,
+					  "[RSN]");
+			if (!os_snprintf_error(buflen - len, ret))
+				len += ret;
+			break;
+		default:
+			break;
+		}
+
+		pos += 2 + elen;
+		left -= 2 + elen;
+	}
+
+	ret = os_snprintf(buf + len, buflen - len, "\n");
+	if (os_snprintf_error(buflen - len, ret))
+		return len;
+	len += ret;
+
+	return len;
+}
 static int hostapd_ctrl_iface_sta_mib(struct hostapd_data *hapd,
 				      struct sta_info *sta,
 				      char *buf, size_t buflen)
@@ -1059,6 +1138,17 @@ static int hostapd_ctrl_iface_sta_mib(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_IEEE80211BE*/
 
+
+#ifdef CONFIG_TAXONOMY
+	if (sta->assoc_ie_taxonomy) {
+		const u8 *ies = wpabuf_head(sta->assoc_ie_taxonomy);
+		size_t ies_len = wpabuf_len(sta->assoc_ie_taxonomy);
+		int res;
+		res = print_sta_ies_compact(ies, ies_len, buf + len, buflen - len);
+		if (res > 0)
+			len += res;
+	}
+#endif /* CONFIG_TAXONOMY */
 	return len;
 }
 

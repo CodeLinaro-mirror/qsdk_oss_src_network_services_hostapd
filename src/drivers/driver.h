@@ -3151,6 +3151,9 @@ struct hostap_sta_driver_data {
 	u32 mic_errors;
 	u32 decrypt_errors;
 	s8 mgmt_signal;
+	s8 max_rssi;
+	s8 min_rssi;
+	u8 ps_state;
 };
 
 struct hostapd_sta_add_params {
