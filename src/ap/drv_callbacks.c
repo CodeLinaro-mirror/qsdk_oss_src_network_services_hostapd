@@ -2696,7 +2696,7 @@ static void hostapd_event_update_muedca_params(struct hostapd_data *hapd,
 		hapd->parameter_set_count++;
 
 	/* Update beacon with updated MU-EDCA parameters */
-	if (ieee802_11_update_beacons(hapd->iface))
+	if (ieee802_11_set_beacon(hapd))
 		wpa_printf(MSG_DEBUG,
 			   "Failed to update beacons with MU-EDCA parameters");
 }
