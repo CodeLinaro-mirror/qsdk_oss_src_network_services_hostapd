@@ -1192,7 +1192,7 @@ static void acs_adjust_secondary(struct hostapd_iface *iface)
 		return;
 
 	wpa_printf(MSG_DEBUG,
-		   "ACS: Adjusting HT/VHT/HE/EHT secondary frequency");
+		   "ACS: Adjusting HT/VHT/HE/EHT/UHR secondary frequency");
 
 	for (i = 0; bw_desc[ACS_BW40][i].first != -1; i++) {
 		if (iface->freq == bw_desc[ACS_BW40][i].first)
@@ -1358,7 +1358,7 @@ static void acs_study(struct hostapd_iface *iface)
 #endif /* CONFIG_IEEE80211BE */
 
 	if (iface->conf->ieee80211ac || iface->conf->ieee80211ax ||
-	    iface->conf->ieee80211be) {
+	    iface->conf->ieee80211be || iface->conf->ieee80211bn) {
 		acs_adjust_secondary(iface);
 		acs_adjust_center_freq(iface);
 	}
