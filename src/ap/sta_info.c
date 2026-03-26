@@ -265,15 +265,19 @@ void ap_free_unadded_link_sta(struct hostapd_data *hapd, struct sta_info *sta)
 {
 	struct hostapd_data *phapd;
 	struct sta_info *psta;
+	u8 addr[ETH_ALEN];
 
 	if (!ap_sta_is_mld(hapd, sta))
 		return;
 
+	os_memcpy(addr, sta->addr, ETH_ALEN);
+
 	for_each_mld_link(phapd, hapd) {
-		psta = ap_get_sta(phapd, sta->addr);
+		psta = ap_get_sta(phapd, addr);
 		if (!(psta && psta->unadded_sta))
 			continue;
-		wpa_printf(MSG_DEBUG, "Remove unadded parter sta: "MACSTR"\n", MAC2STR(sta->addr));
+		wpa_printf(MSG_DEBUG, "Remove unadded parter sta: "MACSTR" for linkid=%u\n",
+			   MAC2STR(addr), phapd->mld_link_id);
 
 		accounting_sta_stop(phapd, psta);
 		ap_sta_ip6addr_del(phapd, psta);
