@@ -5893,10 +5893,8 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 				ret = -1;
 		}
 
-		if (link->status != WLAN_STATUS_SUCCESS) {
-			wpa_release_link_auth_ref(sta->wpa_sm,
-						  bss->mld_link_id, true);
-		}
+		if (link->status != WLAN_STATUS_SUCCESS)
+			wpa_release_link_auth_ref(sta->wpa_sm, i, true);
 	}
 #endif /* CONFIG_IEEE80211BE */
 
