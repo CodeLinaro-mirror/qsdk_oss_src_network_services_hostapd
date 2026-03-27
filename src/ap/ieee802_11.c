@@ -8489,7 +8489,7 @@ static void hostapd_ml_handle_assoc_cb(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 }
 
-static void set_wds_sta_flag(struct hostapd_data *hapd, struct
+static void set_sta_flag_to_partner_links(struct hostapd_data *hapd, struct
 			     sta_info *sta)
 {
 	struct sta_info *psta;
@@ -8503,7 +8503,10 @@ static void set_wds_sta_flag(struct hostapd_data *hapd, struct
 			psta = ap_get_sta(phapd, sta->addr);
 			if (psta) {
 				psta->wds_mld_uid = aid;
-				psta->flags |= WLAN_STA_WDS;
+				psta->flags = ((psta->flags & ~WLAN_STA_WDS) |
+						(sta->flags & WLAN_STA_WDS));
+				psta->flags = ((psta->flags & ~WLAN_STA_MULTI_AP) |
+						(sta->flags & WLAN_STA_MULTI_AP));
 			}
 		}
 	}
@@ -8644,7 +8647,7 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 			   MAC2STR(sta->addr));
 		sta->pending_wds_enable = 0;
 		sta->flags |= WLAN_STA_WDS;
-		set_wds_sta_flag(hapd, sta);
+		set_sta_flag_to_partner_links(hapd, sta);
 #ifdef CONFIG_QCN_EXTN
 		if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
 #endif /* CONFIG_QCN_EXTN */
@@ -8669,10 +8672,17 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		char ifname_wds[IFNAMSIZ + 1];
 		int aid;
 
-		if (hapd->conf->mld_ap)
+		if (hapd->conf->mld_ap) {
+			if (hostapd_get_wds_mld_sta_uid(hapd, sta) < 0) {
+				wpa_printf(MSG_DEBUG, "No room for uid"
+						"to enable 4-address WDS mode for STA "
+						MACSTR, MAC2STR(sta->addr));
+				return;
+			}
 			aid = sta->wds_mld_uid;
-		else
+		} else {
 			aid = sta->aid;
+		}
 
 #ifdef CONFIG_QCN_EXTN
 		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
@@ -8682,6 +8692,7 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG, "Reenable 4-address WDS mode for STA "
 			   MACSTR " (aid %u)",
 			   MAC2STR(sta->addr), aid);
+		set_sta_flag_to_partner_links(hapd, sta);
 		ret = hostapd_set_wds_sta(hapd, ifname_wds, sta->addr,
 					  aid, 1);
 		if (!ret)
@@ -9110,7 +9121,7 @@ void ieee802_11_rx_from_unknown(struct hostapd_data *hapd, const u8 *src,
 					"mode for STA with id %u flags 0x%x", aid, sta->flags);
 
 			sta->flags |= WLAN_STA_WDS;
-			set_wds_sta_flag(hapd, sta);
+			set_sta_flag_to_partner_links(hapd, sta);
 			ret = hostapd_set_wds_sta(hapd, ifname_wds,
 						  sta->addr, aid, 1);
 			if (!ret)
