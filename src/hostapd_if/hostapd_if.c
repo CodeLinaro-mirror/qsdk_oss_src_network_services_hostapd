@@ -168,6 +168,7 @@ static struct sta_info *__get_sta(const char *ifname,
         struct hostapd_data *bss;
         unsigned int i, j;
 	struct sta_info *sta;
+	 *hapd = NULL;
 
         for (i = 0; i < hostapd_if_ifaces->count; i++) {
                 iface = hostapd_if_ifaces->iface[i];
@@ -838,9 +839,10 @@ void __hostapd_if_assoc_response(char *ifname, uint8_t *sta_mac,
 
 	sta = __get_sta(ifname, sta_mac, ctx->rx_link_id, false, &hapd);
 	if (!sta) {
-		__inbound_error_event(hapd, sta_mac,
-				HOSTAPD_IF_ASSOC_RESPONSE_ERROR,
-				__func__, __LINE__);
+		if (hapd)
+			__inbound_error_event(hapd, sta_mac,
+					HOSTAPD_IF_ASSOC_RESPONSE_ERROR,
+					__func__, __LINE__);
 		wpa_printf(MSG_ERROR,
 			   "hostapd_if: assoc_response - STA " MACSTR " not found on %s",
 			   MAC2STR(sta_mac), ifname);
@@ -944,9 +946,10 @@ void __hostapd_if_auth_response(char *ifname, uint8_t *sta_mac,
 
 	sta = __get_sta(ifname, sta_mac, ctx->rx_link_id, false, &hapd);
 	if (!sta) {
-		__inbound_error_event(hapd, sta_mac,
-				HOSTAPD_IF_AUTH_RESPONSE_ERROR,
-				__func__, __LINE__);
+		if (hapd)
+			__inbound_error_event(hapd, sta_mac,
+					HOSTAPD_IF_AUTH_RESPONSE_ERROR,
+					__func__, __LINE__);
 		wpa_printf(MSG_ERROR,
 			   "hostapd_if: auth_response - STA " MACSTR " not found on %s",
 			   MAC2STR(sta_mac), ifname);
