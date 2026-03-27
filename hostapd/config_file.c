@@ -4950,7 +4950,18 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->rssi_deauth_grace_samples = val;
 		conf->rssi_deauth_grace_samples = val;
 	} else if (os_strcmp(buf, "rssi_ignore_probe_request") == 0) {
-		conf->rssi_ignore_probe_request = atoi(pos);
+		int val = atoi(pos);
+		if (val < -95 || val > -1) {
+			wpa_printf(MSG_ERROR, "Invalid RSSI threshold %d "
+				   "(range: -95 to -1)", val);
+			return 1;
+		} else {
+			/* Support only per-radio configuration */
+			conf->rssi_ignore_probe_request = val;
+			wpa_printf(MSG_INFO, "Updated RSSI probe rejection "
+				   "threshold to %d dBm(runtime value updated)",
+				   val);
+		}
 	} else if (os_strcmp(buf, "pbss") == 0) {
 		bss->pbss = atoi(pos);
 	} else if (os_strcmp(buf, "transition_disable") == 0) {
