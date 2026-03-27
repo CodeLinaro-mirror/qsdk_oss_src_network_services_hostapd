@@ -1140,8 +1140,11 @@ int hostapd_drv_wnm_oper(struct hostapd_data *hapd, enum wnm_oper oper,
 
 
 #ifdef CONFIG_IEEE80211BE
-static bool hostapd_is_action_frame_link_agnostic(u8 category, u8 sub_category)
+static bool hostapd_is_action_frame_link_agnostic(const u8 *data, size_t len)
 {
+	u8 category = data[0];
+	u8 sub_category = data[1];
+
 	/* As per IEEE Std 802.11be-2024, 35.3.14 (MLD individually addressed
 	 * Management frame delivery), between an AP MLD and a non-AP MLD, the
 	 * following individually addressed MMPDUs shall be intended for an MLD.
@@ -1170,6 +1173,15 @@ static bool hostapd_is_action_frame_link_agnostic(u8 category, u8 sub_category)
 		default:
 			return false;
 		}
+	case WLAN_ACTION_VENDOR_SPECIFIC_PROTECTED:
+		if (len < 6)
+			return false;
+
+		if (WPA_GET_BE32(&data[1]) == QM_ACTION_VENDOR_TYPE &&
+		    data[5] == QM_DSCP_POLICY_REQ)
+			return true;
+		return false;
+
 	/* TODO: Handle EHT/EPCS related action frames once the support is
 	 * added. */
 	default:
@@ -1235,7 +1247,7 @@ static int hapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 		} else {
 #endif /* CONFIG_QCN_EXTN */
 
-		if (!hostapd_is_action_frame_link_agnostic(data[0], data[1]))
+		if (!hostapd_is_action_frame_link_agnostic(data, len))
 			link_id = hapd->mld_link_id;
 #ifdef CONFIG_QCN_EXTN
 		}
