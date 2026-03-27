@@ -12604,6 +12604,9 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 					  bool bcast_prb_resp, void *params)
 {
 	struct hostapd_data *tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+	struct probe_resp_params *probe_params = NULL;
+	bool is_ml_probe = false;
+
 	u8 ext_cap;
 	size_t len, i;
 
@@ -12617,6 +12620,11 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 	 * 1 octet in len for the MaxBSSID Indicator field.
 	 */
 	len = 1;
+
+	if (frame_type == WLAN_FC_STYPE_PROBE_RESP && params) {
+		probe_params = (struct probe_resp_params *) params;
+		is_ml_probe = probe_params->is_ml_probe;
+	}
 
 	for (i = *bss_index; i < num_bss; i++) {
 		struct hostapd_data *bss;
@@ -12672,7 +12680,8 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 		if (!hostapd_is_repurpose_disabled_11be_extn(bss->conf)) {
 #endif /* CONFIG_QCN_EXTN */
 		if (bss->conf->mld_ap &&
-		    (bss != hapd || frame_type != WLAN_FC_STYPE_PROBE_RESP)) {
+		    (bss != hapd || frame_type != WLAN_FC_STYPE_PROBE_RESP ||
+		     !is_ml_probe)) {
 			ext_cap = 0;
 
 			if (((frame_type == WLAN_FC_STYPE_PROBE_RESP) &&
@@ -12836,6 +12845,8 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 				    bool bcast_prb_resp, void *params)
 {
 	struct hostapd_data *tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+	struct probe_resp_params *probe_params = NULL;
+	bool is_ml_probe = false;
 	u8 *eid_len_offset, *max_bssid_indicator_offset, *startpos;
 	u8 ext_cap;
 	size_t i;
@@ -12843,6 +12854,11 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 	*eid++ = WLAN_EID_MULTIPLE_BSSID;
 	eid_len_offset = eid++;
 	max_bssid_indicator_offset = eid++;
+
+	if (frame_type == WLAN_FC_STYPE_PROBE_RESP && params) {
+		probe_params = (struct probe_resp_params *) params;
+		is_ml_probe = probe_params->is_ml_probe;
+	}
 
 	for (i = *bss_index; i < num_bss; i++) {
 		struct hostapd_data *bss;
@@ -12924,7 +12940,8 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 #endif /* CONFIG_QCN_EXTN */
 
 		if (bss->conf->mld_ap &&
-		    (bss != hapd || frame_type != WLAN_FC_STYPE_PROBE_RESP)) {
+		    (bss != hapd || frame_type != WLAN_FC_STYPE_PROBE_RESP ||
+		     !is_ml_probe)) {
 			ext_cap = 0;
 
 			if (((frame_type == WLAN_FC_STYPE_PROBE_RESP) &&
