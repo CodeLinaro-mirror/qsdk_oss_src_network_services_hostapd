@@ -1846,6 +1846,9 @@ static void phy_info_freq(struct hostapd_hw_modes *mode,
 			tb_freq[NL80211_FREQUENCY_ATTR_DFS_CAC_TIME]);
 	}
 
+	if (tb_freq[NL80211_FREQUENCY_ATTR_NOL_HISTORY])
+		chan->nolhistory = true;
+
 	chan->wmm_rules_valid = 0;
 	if (tb_freq[NL80211_FREQUENCY_ATTR_WMM]) {
 		static struct nla_policy wmm_policy[NL80211_WMMR_MAX + 1] = {
@@ -1922,6 +1925,7 @@ static struct nla_policy freq_policy[NL80211_FREQUENCY_ATTR_MAX + 1] = {
 	[NL80211_FREQUENCY_ATTR_NO_80MHZ] = { .type = NLA_FLAG },
 	[NL80211_FREQUENCY_ATTR_NO_160MHZ] = { .type = NLA_FLAG },
 	[NL80211_FREQUENCY_ATTR_NO_320MHZ] = { .type = NLA_FLAG },
+	[NL80211_FREQUENCY_ATTR_NOL_HISTORY] = { .type = NLA_FLAG },
 	[NL80211_FREQUENCY_ATTR_PSD] = { .type = NLA_S8 },
 
 };
