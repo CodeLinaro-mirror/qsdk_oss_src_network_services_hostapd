@@ -606,44 +606,54 @@ out:
 
 #ifdef CONFIG_QCN_EXTN
 /**
- * uc_wpas_recvd_ch_sw_comp_ev - Handle ucode channel switch completion event
+ * uc_wpas_recvd_ch_sw_result_ev - Handle ucode channel switch result event
  * @vm: ucode VM context invoking the callback
  * @nargs: Number of ucode arguments passed to the function
  *
  * Called from ucode when hostapd/wpa_supplicant reports channel switch
- * completion. The function locates interfaces waiting in WPA_PRE_CONNECT
+ * result. The function locates interfaces waiting in WPA_PRE_CONNECT
  * state with cached connect work and schedules SME authentication radio
  * work on the matching frequency.
  *
  * Return: New ucode integer value (currently a placeholder return code).
  */
 static uc_value_t *
-uc_wpas_recvd_ch_sw_comp_ev(uc_vm_t *vm, size_t nargs)
+uc_wpas_recvd_ch_sw_result_ev(uc_vm_t *vm, size_t nargs)
 {
 	struct wpa_supplicant *wpa_s = NULL;
 	uc_value_t *freq_arg = NULL;
+	uc_value_t *ret_arg = NULL;
 	int freq = 0;
 	int ret = -1;
+	int chsw_ret = 0;
 
 	/* Validate global context */
 	if (!wpa_global || !wpa_global->ifaces) {
-		wpa_printf(MSG_ERROR, "Recv chan sw compl: wpa_global or ifaces is NULL");
+		wpa_printf(MSG_ERROR, "Recv chan sw result: wpa_global or ifaces is NULL");
 		return ucv_int64_new(ret);
 	}
 
 	/* Validate arguments */
 	if (nargs < 1) {
-		wpa_printf(MSG_ERROR, "Recv chan sw compl: missing frequency argument");
+		wpa_printf(MSG_ERROR, "Recv chan sw result: missing frequency argument");
 		return ucv_int64_new(ret);
 	}
 
 	freq_arg = uc_fn_arg(0);
 	if (!freq_arg) {
-		wpa_printf(MSG_ERROR, "Recv chan sw compl: NULL frequency argument");
+		wpa_printf(MSG_ERROR, "Recv chan sw result: NULL frequency argument");
 		return ucv_int64_new(ret);
 	}
 	freq = ucv_int64_get(freq_arg);
-	wpa_printf(MSG_INFO, "Recv chan sw compl: freq=%d", freq);
+
+	ret_arg = uc_fn_arg(1);
+	if (!ret_arg) {
+		wpa_printf(MSG_ERROR, "Recv chan sw result: NULL return argument");
+		return ucv_int64_new(ret);
+	}
+	chsw_ret = ucv_int64_get(ret_arg);
+
+	wpa_printf(MSG_INFO, "Recv chan sw result: freq=%d ret=%d", freq, chsw_ret);
 
 	for (wpa_s = wpa_global->ifaces; wpa_s; wpa_s = wpa_s->next) {
 		if (!wpa_s)
@@ -651,25 +661,37 @@ uc_wpas_recvd_ch_sw_comp_ev(uc_vm_t *vm, size_t nargs)
 		if (wpa_s->wpa_state != WPA_PRE_CONNECT)
 			continue;
 		if (!wpa_s->cache_cwork)
-                       continue;
+			continue;
 		if (!wpa_s->cache_cwork->bss)
-		       continue;
+			continue;
 
 		wpa_printf(MSG_INFO,
-			   "Recv chan sw compl: ifname=%s state=%d bss_freq=%d target_freq=%d",
+			   "Recv chan sw result: ifname=%s state=%d bss_freq=%d target_freq=%d",
 			   wpa_s->ifname, wpa_s->wpa_state,
 			   wpa_s->cache_cwork->bss->freq, freq);
+
+		/* On failure, reset pre_connect_cnt and trigger a fresh scan */
+		if (chsw_ret) {
+			wpa_printf(MSG_INFO,
+				   "Recv chan sw result: failure ret=%d, triggering scan for ifname=%s",
+				   chsw_ret, wpa_s->ifname);
+			wpa_s->pre_connect_cnt = 0;
+			/* Flush outdated BSS entries so the next scan uses fresh results */
+			wpa_bss_flush(wpa_s, 0);
+			wpa_supplicant_req_scan(wpa_s, 0, 0);
+			break;
+		}
 
 		if (wpa_s->pre_connect_cnt > 0) {
 			wpa_s->pre_connect_cnt--;
 
 			wpa_printf(MSG_INFO,
-				   "Recv chan sw compl: ifname=%s pre_connect_cnt now=%d",
+				   "Recv chan sw result: ifname=%s pre_connect_cnt now=%d",
 				   wpa_s->ifname, wpa_s->pre_connect_cnt);
 
 			if (wpa_s->pre_connect_cnt == 0) {
 				wpa_printf(MSG_INFO,
-					   "Recv chan sw compl: Scheduling auth for ifname=%s",
+					   "Recv chan sw result: Scheduling auth for ifname=%s",
 					   wpa_s->ifname);
 				sme_schedule_auth_radio_work(wpa_s, wpa_s->cache_cwork);
 				ret = 0;
@@ -732,7 +754,7 @@ int wpas_ucode_init(struct wpa_global *gl)
 		{ "remove_iface", uc_wpas_remove_iface },
 		{ "udebug_set", uc_wpa_udebug_set },
 #ifdef CONFIG_QCN_EXTN
-		{ "recvd_ch_sw_comp_ev", uc_wpas_recvd_ch_sw_comp_ev },
+		{ "recvd_ch_sw_result_ev", uc_wpas_recvd_ch_sw_result_ev },
 		{ "start_scan_post_acs", uc_wpas_start_scan_post_acs },
 #endif
 	};
