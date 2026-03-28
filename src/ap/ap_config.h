@@ -1594,6 +1594,10 @@ static inline void
 hostapd_set_oper_centr_freq_seg0_idx(struct hostapd_config *conf,
 				     u8 oper_centr_freq_seg0_idx)
 {
+#ifdef CONFIG_IEEE80211BN
+	if (conf->ieee80211bn)
+		conf->uhr_oper_centr_freq_seg0_idx = oper_centr_freq_seg0_idx;
+#endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_IEEE80211BE
 	if (conf->ieee80211be)
 		conf->eht_oper_centr_freq_seg0_idx = oper_centr_freq_seg0_idx;
