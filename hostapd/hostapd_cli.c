@@ -2404,6 +2404,38 @@ int hostapd_cli_cmd_set_mbssid_tx(struct wpa_ctrl *ctrl, int argc, char *argv[])
 }
 #endif /* CONFIG_IEEE80211AX */
 
+#ifdef CONFIG_QCN_EXTN
+static int hostapd_cli_cmd_set_muedca_mode(struct wpa_ctrl *ctrl,
+					   int argc, char *argv[])
+{
+	char buf[128];
+	int res;
+
+	if (argc != 1 && argc != 3) {
+		printf("Invalid 'set_edca_mode' command - usage: <0|1|2> [radio <n>]\n");
+		return -1;
+	}
+
+	if (argc == 3 && os_strcasecmp(argv[1], "radio") != 0) {
+		printf("Invalid argument '%s' - expected 'radio'\n", argv[1]);
+		return -1;
+	}
+
+	if (argc == 1) {
+		res = os_snprintf(buf, sizeof(buf), "SET_EDCA_MODE %s", argv[0]);
+	} else {
+		res = os_snprintf(buf, sizeof(buf), "SET_EDCA_MODE %s %s %s",
+				  argv[0], argv[1], argv[2]);
+	}
+
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+#endif /* CONFIG_QCN_EXTN */
 
 struct hostapd_cli_cmd {
 	const char *cmd;
@@ -2732,6 +2764,12 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "profiles if auto_start is given"
 	  "is provided\n"},
 #endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_QCN_EXTN
+	{ "set_edca_mode", hostapd_cli_cmd_set_muedca_mode, NULL,
+	  "<mode> [radio <n>] = set MU-EDCA mode\n"
+	  "mode: 0=user, 1=host, 2=firmware (default)\n"
+	  "radio: optional radio index (omit for all radios)" },
+#endif /* CONFIG_QCN_EXTN */
 	{ NULL, NULL, NULL, NULL }
 };
 

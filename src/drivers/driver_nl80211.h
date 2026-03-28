@@ -487,5 +487,8 @@ void nl80211_free_sta_driver_link_data(struct hostap_sta_driver_data *data);
  */
 int qca_nl80211_handle_afc_events(struct i802_bss *bss, u8 *data, size_t len,
 				  bool check_first_bss);
+#ifdef CONFIG_QCN_EXTN
+int nl80211_set_muedca_mode(void *priv, int mode, int radio_idx);
+#endif /* CONFIG_QCN_EXTN */
 
 #endif /* DRIVER_NL80211_H */

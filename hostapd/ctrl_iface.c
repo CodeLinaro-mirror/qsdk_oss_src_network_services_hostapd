@@ -76,6 +76,7 @@
 #include "../src/drivers/driver_nl80211.h"
 #include "ap/dscp_policy.h"
 #include "ap/interference.h"
+#include <limits.h>
 
 #ifdef CONFIG_ATF_OFFLOAD
 #include "atf/atf_offload_config.h"
@@ -7790,6 +7791,94 @@ static int hostapd_ctrl_iface_proc_coord_test(struct hostapd_data *hapd,
 #endif /* CONFIG_PROCESS_COORDINATION */
 #endif /* CONFIG_TESTING_OPTIONS */
 
+#ifdef CONFIG_QCN_EXTN
+static int hapd_parse_int_edca(const char *name, const char *s,
+			  int min, int max, int *out, char **next)
+{
+	long v;
+	char *end;
+	const char *arg = name ? name : "value";
+
+	if (!s || !*s) {
+		wpa_printf(MSG_ERROR, "EDCA: %s is empty", arg);
+		return -1;
+	}
+
+	if (s[0] < '0' || s[0] > '9') {
+		wpa_printf(MSG_ERROR,
+			   "EDCA: %s must start with digit",
+			   arg);
+		return -1;
+	}
+
+	errno = 0;
+	v = strtol(s, &end, 10);
+
+	if (s == end || errno == ERANGE || v < min || v > max) {
+		wpa_printf(MSG_ERROR,
+			   "EDCA: %s is out of range",
+			   arg);
+		return -1;
+	}
+
+	if ((end - s) > 1 && s[0] == '0') {
+		wpa_printf(MSG_ERROR,
+			   "EDCA: Invalid %s '%s' (no leading zeros)",
+			   arg, s);
+		return -1;
+	}
+
+	*out = (int) v;
+	if (next)
+		*next = end;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_set_muedca_mode(struct hostapd_data *hapd, char *cmd)
+{
+	char *pos;
+	int mode;
+	int radio_idx = -1;
+
+	if (hapd_parse_int_edca("mode", cmd, 0, 2, &mode, &pos) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "EDCA: Invalid usage, expected: <mode 0|1|2>");
+		return -1;
+	}
+
+	/* Optional part: " radio <n>" */
+	if (*pos != '\0') {
+		if (*pos != ' ' || os_strncmp(pos + 1, "radio ", 6) != 0) {
+			wpa_printf(MSG_ERROR,
+				   "EDCA: Invalid usage, expected: <mode 0|1|2> [radio <n>]");
+			return -1;
+		}
+
+		if (hapd_parse_int_edca("radio", pos + 7, 0,
+				   NL80211_WIPHY_RADIO_ID_MAX - 1,
+				   &radio_idx, &pos) < 0) {
+			wpa_printf(MSG_ERROR, "EDCA: Invalid radio index");
+			return -1;
+		}
+
+		if (*pos != '\0') {
+			wpa_printf(MSG_ERROR,
+				   "EDCA: Invalid usage, expected: <mode 0|1|2> [radio <n>]");
+			return -1;
+		}
+	}
+
+	wpa_printf(MSG_INFO, "EDCA: set MU-EDCA mode=%d radio=%d", mode, radio_idx);
+
+	if (hostapd_drv_set_muedca_mode(hapd, mode, radio_idx) < 0) {
+		wpa_printf(MSG_ERROR, "EDCA: driver set MU-EDCA mode failed");
+		return -1;
+	}
+
+	return 0;
+}
+#endif /* CONFIG_QCN_EXTN */
 
 static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 					      char *buf, char *reply,
@@ -8522,6 +8611,11 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "RESET_AFC", 9) == 0) {
 		if (hostapd_ctrl_iface_reset_afc(hapd, buf + 9))
 			reply_len = -1;
+#ifdef CONFIG_QCN_EXTN
+	} else if (os_strncmp(buf, "SET_EDCA_MODE ", 14) == 0) {
+		if (hostapd_ctrl_iface_set_muedca_mode(hapd, buf + 14) < 0)
+			reply_len = -1;
+#endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_IEEE80211AX
 	} else if (os_strncmp(buf, "DUMP_SCS_LIST ", 14) == 0) {
 		reply_len = hostapd_ctrl_iface_dump_scs_list(hapd, buf + 14,

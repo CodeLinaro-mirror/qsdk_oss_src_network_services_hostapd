@@ -3004,6 +3004,9 @@ enum nl80211_commands {
  *	association request when used with NL80211_CMD_NEW_STATION). Can be set
  *	only if %NL80211_STA_FLAG_WME is set.
  *
+ * @NL80211_ATTR_HE_MUEDCA_MODE: Attribute that denotes the mode of seeting MU
+ *	EDCA parameters(See enum nl80211_muedca_mode).
+ *
  * @NL80211_ATTR_BITRATE: This attribute is used with %NL80211_CMD_FRAME to
  * 	send legacy bitrate information of management packets to userspace.
  *
@@ -3630,6 +3633,7 @@ enum nl80211_attrs {
 	NL80211_ATTR_PCIE,
 	NL80211_ATTR_DCVS,
 	NL80211_ATTR_DPS_ASSIST,
+	NL80211_ATTR_HE_MUEDCA_MODE,
 
 	/* add attributes here, update the policy in nl80211.c */
 
