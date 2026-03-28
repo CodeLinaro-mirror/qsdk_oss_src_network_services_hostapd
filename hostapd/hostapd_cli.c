@@ -2435,6 +2435,27 @@ static int hostapd_cli_cmd_set_muedca_mode(struct wpa_ctrl *ctrl,
 
 	return wpa_ctrl_command(ctrl, buf);
 }
+
+static int hostapd_cli_cmd_set_he_mu_edca(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[256];
+	int res;
+
+	if (argc != 3) {
+		printf("Invalid usage: set_edca <ac> <param> <value>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SET_EDCA %s %s %s",
+			  argv[0], argv[1], argv[2]);
+
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
 #endif /* CONFIG_QCN_EXTN */
 
 struct hostapd_cli_cmd {
@@ -2769,6 +2790,11 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<mode> [radio <n>] = set MU-EDCA mode\n"
 	  "mode: 0=user, 1=host, 2=firmware (default)\n"
 	  "radio: optional radio index (omit for all radios)" },
+	{ "set_edca", hostapd_cli_cmd_set_he_mu_edca, NULL,
+	  "<ac> <param> <value> = set HE MU EDCA parameters"
+	  "<ac>: Access category (be, bk, vi, vo)\n"
+	  "<param>: Parameter name (aifsn, ecwmin, ecwmax, timer, acm)\n"
+	  "<value>: Parameter value\n" },
 #endif /* CONFIG_QCN_EXTN */
 	{ NULL, NULL, NULL, NULL }
 };
