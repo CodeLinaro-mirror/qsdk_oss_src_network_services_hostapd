@@ -2974,6 +2974,50 @@ int hostapd_handle_afc_channel_change(struct hostapd_iface *iface)
 }
 #endif
 
+static int configured_fixed_chan_to_freq(struct hostapd_iface *iface)
+{
+	int freq, i, j;
+
+	if (!iface->conf->channel)
+		return 0;
+	if (iface->conf->op_class) {
+		freq = ieee80211_chan_to_freq(NULL, iface->conf->op_class,
+					      iface->conf->channel);
+		if (freq < 0) {
+			wpa_printf(MSG_INFO,
+				   "Could not convert op_class %u channel %u to operating frequency",
+				   iface->conf->op_class, iface->conf->channel);
+			return -1;
+		}
+		iface->freq = freq;
+		return 0;
+	}
+
+	/* Old configurations using only 2.4/5/60 GHz bands may not specify the
+	 * op_class parameter. Select a matching channel from the configured
+	 * mode using the channel parameter for these cases.
+	 */
+	for (j = 0; j < iface->num_hw_features; j++) {
+		struct hostapd_hw_modes *mode = &iface->hw_features[j];
+
+		if (iface->conf->hw_mode != HOSTAPD_MODE_IEEE80211ANY &&
+		    iface->conf->hw_mode != mode->mode)
+			continue;
+		for (i = 0; i < mode->num_channels; i++) {
+			struct hostapd_channel_data *chan = &mode->channels[i];
+
+			if (chan->chan == iface->conf->channel &&
+			    !is_6ghz_freq(chan->freq)) {
+				iface->freq = chan->freq;
+				return 0;
+			}
+		}
+	}
+
+	wpa_printf(MSG_INFO, "Could not determine operating frequency");
+	return -1;
+}
+
 /**
  * hostapd_handle_regchannel_update - Handle channel list update.
  *
@@ -2997,6 +3041,15 @@ static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 	if (ret) {
 		wpa_printf(MSG_ERROR, "Failed to get hardware features (%d)", ret);
 		return ret;
+	}
+
+	if (!iface->freq) {
+		ret = configured_fixed_chan_to_freq(iface);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "Configured channel is not valid (%d)",
+				   ret);
+			return ret;
+		}
 	}
 
 	ret = hostapd_select_hw_mode(iface);
@@ -3127,50 +3180,6 @@ static int setup_interface(struct hostapd_iface *iface)
 	return setup_interface2(iface);
 }
 
-
-static int configured_fixed_chan_to_freq(struct hostapd_iface *iface)
-{
-	int freq, i, j;
-
-	if (!iface->conf->channel)
-		return 0;
-	if (iface->conf->op_class) {
-		freq = ieee80211_chan_to_freq(NULL, iface->conf->op_class,
-					      iface->conf->channel);
-		if (freq < 0) {
-			wpa_printf(MSG_INFO,
-				   "Could not convert op_class %u channel %u to operating frequency",
-				   iface->conf->op_class, iface->conf->channel);
-			return -1;
-		}
-		iface->freq = freq;
-		return 0;
-	}
-
-	/* Old configurations using only 2.4/5/60 GHz bands may not specify the
-	 * op_class parameter. Select a matching channel from the configured
-	 * mode using the channel parameter for these cases.
-	 */
-	for (j = 0; j < iface->num_hw_features; j++) {
-		struct hostapd_hw_modes *mode = &iface->hw_features[j];
-
-		if (iface->conf->hw_mode != HOSTAPD_MODE_IEEE80211ANY &&
-		    iface->conf->hw_mode != mode->mode)
-			continue;
-		for (i = 0; i < mode->num_channels; i++) {
-			struct hostapd_channel_data *chan = &mode->channels[i];
-
-			if (chan->chan == iface->conf->channel &&
-			    !is_6ghz_freq(chan->freq)) {
-				iface->freq = chan->freq;
-				return 0;
-			}
-		}
-	}
-
-	wpa_printf(MSG_INFO, "Could not determine operating frequency");
-	return -1;
-}
 
 #ifdef CONFIG_QCN_EXTN
 int configured_fixed_chan_to_freq_helper(struct hostapd_iface *iface)
