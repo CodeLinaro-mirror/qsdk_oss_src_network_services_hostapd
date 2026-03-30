@@ -9023,6 +9023,14 @@ fail:
 	if (auth_alg == WLAN_AUTH_SAE && auth_transaction == 1)
 		success_status = sae_status_success(hapd, status_code);
 #endif /* CONFIG_SAE */
+#ifdef CONFIG_IEEE8021X_AUTH
+	if (auth_alg == WLAN_AUTH_802_1X &&
+	    status_code == WLAN_STATUS_802_1_X_AUTH_SUCCESS) {
+		sta->flags |= WLAN_STA_AUTH;
+		sta->auth_alg = WLAN_AUTH_802_1X;
+		success_status = true;
+	}
+#endif  /* CONFIG_IEEE8021X_AUTH */
 	if (!success_status && sta->added_unassoc) {
 		hostapd_drv_sta_remove(hapd, sta->addr);
 		sta->added_unassoc = 0;
@@ -9248,7 +9256,8 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 	    sta->auth_alg == WLAN_AUTH_FILS_SK_PFS ||
 	    sta->auth_alg == WLAN_AUTH_FILS_PK ||
 	    sta->auth_alg == WLAN_AUTH_FT ||
-	    sta->auth_alg == WLAN_AUTH_EPPKE) {
+	    sta->auth_alg == WLAN_AUTH_EPPKE ||
+	    sta->auth_alg == WLAN_AUTH_802_1X) {
 		/*
 		 * Open, static WEP, FT protocol, or FILS; no separate
 		 * authorization step.
