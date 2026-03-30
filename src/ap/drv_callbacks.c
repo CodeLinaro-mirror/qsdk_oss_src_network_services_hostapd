@@ -1358,6 +1358,8 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 {
 	int freq = hapd->iface->freq;
 
+	hostapd_clear_local_tpe(hapd->iface);
+
 	if (hapd->csa_in_progress &&
 	    freq == hapd->cs_freq_params.freq) {
 		if ((is_dfs || is_dfs0) && hostapd_is_dfs_required(hapd->iface) &&
@@ -2726,6 +2728,8 @@ static void hostapd_event_6ghz_power_mode(struct hostapd_data *hapd,
 		wpa_printf(MSG_ERROR, "Failed to get operating hw mac id");
 		hostapd_disable_iface(iface);
 	}
+
+	hostapd_clear_local_tpe(hapd->iface);
 
 	if (ieee802_11_update_beacons(hapd->iface))
 		wpa_printf(MSG_DEBUG,
