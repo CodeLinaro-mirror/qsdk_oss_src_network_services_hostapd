@@ -29,6 +29,7 @@ struct sae_pt;
 struct sae_password_entry;
 struct mld_info;
 struct mld_link_info;
+struct rsn_pmksa_cache_entry;
 
 enum colocation_mode {
 	NO_COLOCATED_6GHZ,
@@ -562,4 +563,9 @@ hostapd_free_reconf_sta_add_params(struct hostapd_sta_add_params *params);
 u8 * hostapd_fragment_multi_link_element(struct wpabuf *buf, u8 *pos);
 unsigned int wnm_neighbor_report_get_pref_link_mask(const u8 *neigh_rep,
 						    size_t neigh_rep_len);
+
+void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
+			    u8 type, u16 auth_transaction, u16 status,
+			    struct rsn_pmksa_cache_entry *cached_pmk,
+			    const u8 *eap_req, size_t eap_req_len);
 #endif /* IEEE802_11_H */

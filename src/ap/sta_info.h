@@ -81,6 +81,21 @@ struct pending_eapol_rx {
 	enum frame_encryption encrypted;
 };
 
+struct eap_over_auth_data {
+	int akm;
+	int cipher;
+	u16 group;
+	u16 auth_transaction;
+	u8 snonce[WPA_NONCE_LEN];
+	u8 anonce[WPA_NONCE_LEN];
+	u8 *rsnxe;
+	size_t pmk_len;
+	struct wpa_ptk ptk;
+	size_t rsnxe_len;
+	struct crypto_ecdh *ecdh;
+	struct wpabuf *dhss;
+};
+
 #define EHT_ML_MAX_STA_PROF_LEN 1024
 struct mld_info {
 	bool mld_sta;
@@ -392,6 +407,9 @@ struct sta_info {
 			       * PMKID caching Privacy is on */
 	u8 epp_pmkid_next[PMKID_LEN];
 #endif /* CONFIG_PMKSA_PRIVACY */
+#ifdef CONFIG_IEEE8021X_AUTH
+	struct eap_over_auth_data eap_auth_data;
+#endif /* CONFIG_IEEE8021X_AUTH */
 };
 
 
@@ -560,4 +578,18 @@ int hostapd_free_partner_link_stas(struct hostapd_data *hapd,
 
 int skip_prune_for_partner_links(struct hostapd_data *hapd,
 				 struct sta_info *sta);
+
+
+static inline bool ap_sta_support_enc_assoc(struct hostapd_data *hapd,
+					    const u8 *rsnxe, size_t rsnxe_len)
+{
+#ifdef CONFIG_ENC_ASSOC
+		return (hapd->conf->assoc_frame_encryption &&
+			ieee802_11_rsnx_capab_len(rsnxe,
+						  rsnxe_len,
+						  WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION));
+#else /* CONFIG_ENC_ASSOC */
+	return false;
+#endif /* CONFIG_ENC_ASSOC */
+}
 #endif /* STA_INFO_H */
