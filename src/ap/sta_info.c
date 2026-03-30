@@ -101,10 +101,6 @@ struct hostapd_ft_over_ds_ml_sta_entry *ap_get_ft_ds_ml_sta(struct hostapd_data 
 
 bool station_supports_256qam(struct sta_info *sta)
 {
-
-	if (!sta->ht_capabilities)
-		return false;
-
 	if (sta->vht_capabilities) {
 		uint16_t rx_map = sta->vht_capabilities->vht_supported_mcs_set.rx_map;
 		for (int i = 0; i < WLAN_VHT_MCS_NSS; i++) {
