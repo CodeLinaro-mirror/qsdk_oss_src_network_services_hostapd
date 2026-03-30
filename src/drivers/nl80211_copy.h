@@ -3030,6 +3030,8 @@ enum nl80211_commands {
  *	the current channel and the expected time of the first beacon
  *	transmitted by the AP in the new channel, expressed in TUs.
  *
+ * @NL80211_ATTR_STA_DFS_EN: whether STA_DFS_EN is enabled (u8, 0 or 1)
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3659,6 +3661,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_BEACON_TX_SYNC_SUPPORT,
 
 	NL80211_ATTR_MAX_CH_SWITCH_TIME,
+
+	NL80211_ATTR_STA_DFS_EN,
 
 	/* add attributes here, update the policy in nl80211.c */
 
