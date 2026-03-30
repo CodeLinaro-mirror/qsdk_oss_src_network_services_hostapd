@@ -607,7 +607,14 @@ static void send_8021x_auth_reply(struct hostapd_data *hapd,
 				  u16 auth_transaction, u16 resp,
 				  struct wpabuf *ies)
 {
-	send_auth_reply(hapd, sta, sta->addr, WLAN_AUTH_802_1X,
+	const u8 *dst = sta->addr;
+
+#ifdef CONFIG_IEEE80211BE
+	if (ap_sta_is_mld(hapd, sta))
+		dst = sta->reply_addr;
+#endif /*CONFIG_IEEE80211BE */
+
+	send_auth_reply(hapd, sta, dst, WLAN_AUTH_802_1X,
 			auth_transaction, resp, wpabuf_head(ies),
 			wpabuf_len(ies), "send-8021x-auth-reply");
 
