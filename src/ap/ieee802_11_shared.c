@@ -367,13 +367,13 @@ void ieee802_11_sa_query_action(struct hostapd_data *hapd,
 	hostapd_if_event_sa_query_completion(hapd, sta->addr,
 					     HOSTAPD_IF_SAQUERY_STA_VALID);
 #endif
-#ifdef CONFIG_IEEE80211BE
-	ap_free_unadded_link_sta(hapd, sta);
-#endif /* CONFIG_IEEE80211BE */
 	hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 		       HOSTAPD_LEVEL_DEBUG,
 		       "Reply to pending SA Query received");
 	ap_sta_stop_sa_query(hapd, sta);
+#ifdef CONFIG_IEEE80211BE
+	ap_free_unadded_link_sta(hapd, sta);
+#endif /* CONFIG_IEEE80211BE */
 }
 
 
