@@ -3341,6 +3341,8 @@ enum nl80211_commands {
  * @NL80211_ATTR_SMD_STA_DL_DATA_FWD: Flag attribute to indicate driver supports
  *	SMD DL DATA forward feature.
  *
+ * @NL80211_ATTR_STA_DFS_EN: whether STA_DFS_EN is enabled (u8, 0 or 1)
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -4008,6 +4010,7 @@ enum nl80211_attrs {
 	NL80211_ATTR_SMD_DISCOVERY_TARGETS,
 	NL80211_ATTR_SMD_AP,
 	NL80211_ATTR_SMD_PARAMS,
+	NL80211_ATTR_STA_DFS_EN,
 
 	NL80211_ATTR_MAX_CH_SWITCH_TIME,
 
