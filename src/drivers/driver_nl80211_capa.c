@@ -1591,6 +1591,10 @@ static void qca_nl80211_get_features(struct wpa_driver_nl80211_data *drv)
 		drv->capa.flags2 |= WPA_DRIVER_FLAGS2_SECURITY_PROFILE;
 	}
 
+	if (check_feature(QCA_WLAN_VENDOR_FEATURE_SUPPORT_PMKSA_CACHING_PRIVACY,
+			  &info))
+		drv->capa.flags2 |= WPA_DRIVER_FLAGS2_PMKSA_PRIVACY;
+
 	os_free(info.flags);
 }
 
