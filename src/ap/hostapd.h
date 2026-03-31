@@ -1227,6 +1227,11 @@ static inline bool hostapd_mld_is_first_bss(struct hostapd_data *hapd)
 #define for_each_mld_link(partner, self) \
 	if (false)
 
+#ifdef CONFIG_QCN_EXTN
+#define for_each_mld_link_include_repurposed(partner, self) \
+	if (false)
+#endif /* CONFIG_QCN_EXTN */
+
 #endif /* CONFIG_IEEE80211BE */
 
 #define SP_AP_AND_CLIENT_POWER_DIFF            6
