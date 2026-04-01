@@ -247,7 +247,10 @@ static int hostapd_get_sta_phy_mode(struct sta_info *sta,
 		return 0;
 	len += ret;
 
-	if (sta->flags & WLAN_STA_EHT) {
+	if (sta->flags & WLAN_STA_UHR) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  "[11BN]");
+	} else if (sta->flags & WLAN_STA_EHT) {
 		ret = os_snprintf(buf + len, buflen - len,
 				  "[11BE]");
 	} else if (sta->flags & WLAN_STA_HE) {
