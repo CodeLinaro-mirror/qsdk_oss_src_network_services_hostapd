@@ -10215,7 +10215,15 @@ s8 hostapd_get_6ghz_best_pp(struct hostapd_iface *iface, u16 freq,
 	if (initial_sp_eirp == CHAN_MIN_TX_POWER)
 		out_pp = PUNCTURE_INVALID;
 
-	if (iface->conf->punc_eirp_thres_6ghz != CHAN_MIN_TX_POWER) {
+	if (iface->conf->punc_eirp_thres_6ghz == CHAN_MIN_TX_POWER) {
+		/*
+		 * Threshold unset: skip puncturing if initial SP EIRP is
+		 * already valid (> minimum). Try puncturing only when
+		 * initial SP EIRP is not valid.
+		 */
+		if (initial_sp_eirp > CHAN_MIN_TX_POWER)
+			return 0;
+	} else {
 		if (initial_sp_eirp > iface->conf->punc_eirp_thres_6ghz) {
 			wpa_printf(MSG_INFO,
 				   "AFC: Initial SP EIRP %d is greater than threshold %d",
