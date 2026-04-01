@@ -10628,12 +10628,13 @@ int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 	struct hostapd_iface *iface = hapd->iface;
 	u16 punct_bitmap = iface->conf->punct_bitmap;
 	u16 non_be_chan_index_map = 0;
-	int is_different_psd = 0, non11be_chan_pos = non_11be_start_idx - chan_start_idx;
+	int non11be_chan_pos = non_11be_start_idx - chan_start_idx;
 	s16 start_chan_psd = RNR_20_MHZ_PSD_NO_POWER, chan_psd = RNR_20_MHZ_PSD_NO_POWER;
 	int i = 0, j = 0;
 	s16 primary_20mhz_psd = RNR_20_MHZ_PSD_NO_POWER;
 	u8 pwr_type = iface->conf->he_6ghz_reg_pwr_type;
 	bool is_composite_ap_sp = false;
+	bool is_different_psd = false;
 	bool fill_psd_for_sp = false;
 
 	if (!tx_pwr_array || ((total_chan_count - non_11be_chan_count) && !tx_pwr_ext_array))
@@ -10661,8 +10662,8 @@ int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 						&primary_20mhz_psd);
 		*tx_pwr_array = chan_psd * 2;
 		tx_pwr_array++;
-		if (!is_different_psd && (start_chan_psd != chan_psd))
-			is_different_psd = 1;
+		if (start_chan_psd != chan_psd)
+			is_different_psd = true;
 	}
 #ifdef CONFIG_IEEE80211BE
 	/* For 11be the TPE extension parameter added if the bw is 320MHZ or if
@@ -10699,9 +10700,13 @@ int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 		*tx_pwr_ext_array = chan_psd * 2;
 		tx_pwr_ext_array++;
 		*tx_pwr_ext_count += 1;
-		if (!is_different_psd && (start_chan_psd != chan_psd))
-			is_different_psd = 1;
+		if (start_chan_psd != chan_psd)
+			is_different_psd = true;
 	}
+#endif
+#ifdef CONFIG_QCN_EXTN
+	if (!hapd->conf->bss_extn.tpe_common_psd)
+		is_different_psd = true;
 #endif
 	if (!is_different_psd) {
 		*tx_pwr_count = 0;
