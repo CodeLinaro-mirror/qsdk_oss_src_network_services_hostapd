@@ -404,6 +404,10 @@ u8 * hostapd_eid_eht_operation(struct hostapd_data *hapd, u8 *eid)
 		break;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (hapd->iconf->conf_extn.eht_config_ccfs0)
+		seg0 = 0;
+#endif
 	oper->oper_info.ccfs0 = seg0;
 	oper->oper_info.ccfs1 = seg1;
 
