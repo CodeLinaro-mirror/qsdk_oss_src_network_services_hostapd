@@ -19,6 +19,7 @@
  */
 
 #define OUI_QCA 0x001374
+#define OUI_QCA_MULTI_AP 0x0013741b
 
 #ifndef BIT
 #define BIT(x) (1U << (x))
