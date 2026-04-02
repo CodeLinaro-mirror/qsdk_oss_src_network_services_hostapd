@@ -23,7 +23,10 @@
 #include "beacon.h"
 #include "eloop.h"
 #include "ieee802_11.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#include "../../qcn_extns/dfs_extn.h"
+#endif
 #include "hw_features.h"
 
 #define IEEE80211_DFS_MIN_CAC_TIME_MS  60000
@@ -49,8 +52,11 @@ static int dfs_get_precac_channel_by_state(struct hostapd_iface *iface,
 					   u8 *centr_freq_seg0_idx,
 					   u8 *centr_freq_seg1_idx,
 					   u8 *current_vht_oper_chwidth);
+
+#ifndef CONFIG_QCN_EXTN
 static int dfs_get_start_chan_idx(struct hostapd_iface *iface, int *seg1_start,
 				  int chan_width, int channel_no, bool is_offloaded_cac);
+#endif
 /*
  * dfs_is_agile_cac_enabled - Check whether Agile CAC is enabled.
  *
@@ -248,7 +254,10 @@ void dfs_reset_punc_bitmap_src(struct hostapd_iface *iface,
 	}
 }
 
-static int dfs_get_used_n_chans(struct hostapd_iface *iface, int *seg1,
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int dfs_get_used_n_chans(struct hostapd_iface *iface, int *seg1,
 				int chan_width)
 {
 	int n_chans = 1;
@@ -661,7 +670,8 @@ int hostapd_dfs_agile_cac_switch(struct hostapd_iface *iface)
  */
 static int dfs_find_channel(struct hostapd_iface *iface,
 			    struct hostapd_channel_data **ret_chan,
-			    int idx, enum dfs_channel_type type)
+			    int idx, enum dfs_channel_type type,
+			    unsigned int flags)
 {
 	struct hostapd_hw_modes *mode;
 	struct hostapd_channel_data *chan;
@@ -729,6 +739,11 @@ static int dfs_find_channel(struct hostapd_iface *iface,
 				   chan->freq, chan->chan);
 			continue;
 		}
+
+#ifdef CONFIG_QCN_EXTN
+		if (dfs_chan_skip_by_flags_extn(iface, chan, flags))
+			continue;
+#endif
 
 		if (chan->max_tx_power < iface->conf->min_tx_power)
 			continue;
@@ -936,7 +951,10 @@ static int dfs_get_precac_channel_by_state(struct hostapd_iface *iface,
 
 
 /* Return start channel idx we will use for mode->channels[idx] */
-static int dfs_get_start_chan_idx(struct hostapd_iface *iface, int *seg1_start,
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int dfs_get_start_chan_idx(struct hostapd_iface *iface, int *seg1_start,
 				  int chan_width, int channel_no, bool is_offloaded_cac)
 {
 	struct hostapd_hw_modes *mode;
@@ -1108,6 +1126,7 @@ dfs_get_valid_channel(struct hostapd_iface *iface,
 		      u8 *oper_centr_freq_seg1_idx,
 		      enum dfs_channel_type type)
 {
+	unsigned int flags = DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH;
 	struct hostapd_hw_modes *mode;
 	struct hostapd_channel_data *chan = NULL;
 	struct hostapd_channel_data *chan2 = NULL;
@@ -1117,6 +1136,10 @@ dfs_get_valid_channel(struct hostapd_iface *iface,
 	bool is_mesh = false;
 	int i;
 	u32 _rand;
+
+#ifdef CONFIG_QCN_EXTN
+	flags = dfs_get_ch_flags_extn(iface->conf->conf_extn.cswopts);
+#endif
 
 #ifdef CONFIG_MESH
 	is_mesh = iface->mconf;
@@ -1135,7 +1158,7 @@ dfs_get_valid_channel(struct hostapd_iface *iface,
 		return NULL;
 
 	/* Get the count first */
-	num_available_chandefs = dfs_find_channel(iface, NULL, 0, type);
+	num_available_chandefs = dfs_find_channel(iface, NULL, 0, type, flags);
 	wpa_printf(MSG_DEBUG, "DFS: num_available_chandefs=%d",
 		   num_available_chandefs);
 	if (num_available_chandefs == 0)
@@ -1158,7 +1181,7 @@ dfs_get_valid_channel(struct hostapd_iface *iface,
 	chan_idx = _rand % num_available_chandefs;
 	wpa_printf(MSG_DEBUG, "DFS: Picked random entry from the list: %d/%d",
 		   chan_idx, num_available_chandefs);
-	dfs_find_channel(iface, &chan, chan_idx, type);
+	dfs_find_channel(iface, &chan, chan_idx, type, flags);
 	if (!chan) {
 		wpa_printf(MSG_DEBUG, "DFS: no random channel found");
 		return NULL;
@@ -1188,7 +1211,7 @@ dfs_get_valid_channel(struct hostapd_iface *iface,
 		for (i = 0; i < num_available_chandefs - 1; i++) {
 			/* start from chan_idx + 1, end when chan_idx - 1 */
 			chan_idx2 = (chan_idx + 1 + i) % num_available_chandefs;
-			dfs_find_channel(iface, &chan2, chan_idx2, type);
+			dfs_find_channel(iface, &chan2, chan_idx2, type, flags);
 			if (chan2 && abs(chan2->chan - chan->chan) > 12) {
 				/* two channels are not adjacent */
 				sec_chan_idx_80p80 = chan2->chan;
@@ -1916,7 +1939,8 @@ int hostapd_dfs_count_precac_channels(struct hostapd_iface *iface)
 	int num_usable;
 
 	/* dfs_find_channel with ret_chan=NULL and idx=0 returns the count of matching channels */
-	num_usable = dfs_find_channel(iface, NULL, 0, DFS_NO_CAC_YET);
+	num_usable = dfs_find_channel(iface, NULL, 0, DFS_NO_CAC_YET,
+				      DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
 	wpa_printf(MSG_DEBUG, "PRECAC_Found %d channels that need PreCAC", num_usable);
 
 	return num_usable;
@@ -1932,14 +1956,16 @@ hostapd_dfs_get_next_precac_channel(struct hostapd_iface *iface,
 	int total, idx;
 
 	wpa_printf(MSG_INFO, "PRECAC_Performing Precac on the DFS Channel list");
-	total = dfs_find_channel(iface, NULL, 0, DFS_NO_CAC_YET);
+	total = dfs_find_channel(iface, NULL, 0, DFS_NO_CAC_YET,
+				 DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
 	if (total == 0) {
 		wpa_printf(MSG_INFO, "PRECAC_No DFS_USABLE channels remain");
 		return NULL;
 	}
 
 	for (idx = 0; idx < total; idx++) {
-		dfs_find_channel(iface, &chan, idx, DFS_NO_CAC_YET);
+		dfs_find_channel(iface, &chan, idx, DFS_NO_CAC_YET,
+				 DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
 		if (!chan)
 			continue;
 		if (dfs_is_home_chan(iface, chan)) {
@@ -2108,12 +2134,14 @@ static bool dfs_rcac_try_half_bw(struct hostapd_iface *iface,
 	else if (half_bw == 40)
 		iface->conf->secondary_channel = orig_secondary_channel;
 
-	total = dfs_find_channel(iface, NULL, 0, DFS_ANY_CHANNEL);
+	total = dfs_find_channel(iface, NULL, 0, DFS_ANY_CHANNEL,
+				 DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
 
 	for (i = 0; i < total; i++) {
 		struct hostapd_channel_data *c = NULL;
 
-		dfs_find_channel(iface, &c, i, DFS_ANY_CHANNEL);
+		dfs_find_channel(iface, &c, i, DFS_ANY_CHANNEL,
+				 DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
 		if (!c ||
 		    (c->freq >= home_start && c->freq <= home_end))
 			continue;
@@ -2156,7 +2184,8 @@ static void hostapd_agile_cac_update(struct hostapd_iface *iface)
 	int home_center = (hostapd_get_oper_centr_freq_seg0_idx(iface->conf) * 5) + 5000;
 	int home_start = home_center - home_bw / 2 + 10;
 	int home_end = home_center + home_bw / 2 - 10;
-	int total = dfs_find_channel(iface, NULL, 0, DFS_ANY_CHANNEL);
+	int total = dfs_find_channel(iface, NULL, 0, DFS_ANY_CHANNEL,
+				     DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
 	int i;
 	enum oper_chan_width orig_oper_chwidth;
 
@@ -2169,7 +2198,8 @@ static void hostapd_agile_cac_update(struct hostapd_iface *iface)
 	for (i = 0; i < total; i++) {
 		struct hostapd_channel_data *c = NULL;
 
-		dfs_find_channel(iface, &c, i, DFS_ANY_CHANNEL);
+		dfs_find_channel(iface, &c, i, DFS_ANY_CHANNEL,
+				 DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
 		if (!c ||
 		    (c->freq >= home_start && c->freq <= home_end) ||
 		    c->chan == iface->radar_background.channel)

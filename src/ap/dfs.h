@@ -12,6 +12,10 @@
 /* Wait duration between radar detection and channel switch*/
 #define HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR 500000
 
+/* DFS_RANDOM_CH_FLAG bits passed to dfs_get_valid_channel() */
+#define DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH   0x00000001 /* exclude current operating channel */
+#define DFS_RANDOM_CH_FLAG_NO_DFS_CH        0x00000002 /* exclude DFS channels */
+
 /*identify freq using channel number*/
 #define BASE_FREQ_5G 5160
 #define BASE_CHAN_5G 32
