@@ -12,6 +12,19 @@
 /* Wait duration between radar detection and channel switch*/
 #define HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR 500000
 
+/* DFS_RANDOM_CH_FLAG bits passed to dfs_get_valid_channel() */
+#define DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH   0x00000001 /* exclude current operating channel */
+#define DFS_RANDOM_CH_FLAG_NO_DFS_CH        0x00000002 /* exclude DFS channels */
+
+#ifdef CONFIG_QCN_EXTN
+/* Helpers shared with qcn_extns/dfs_extn.c for channel-range filtering. */
+int dfs_get_used_n_chans(struct hostapd_iface *iface, int *seg1,
+				 int chan_width);
+int dfs_get_start_chan_idx(struct hostapd_iface *iface, int *seg1_start,
+				   int chan_width, int channel_no,
+				   bool is_offloaded_cac);
+#endif
+
 /*identify freq using channel number*/
 #define BASE_FREQ_5G 5160
 #define BASE_CHAN_5G 32
