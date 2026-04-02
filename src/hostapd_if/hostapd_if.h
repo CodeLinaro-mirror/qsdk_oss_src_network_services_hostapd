@@ -97,6 +97,9 @@ int hostapd_if_interface_create(struct hostapd_data *hapd);
 
 int hostapd_if_set_interfaces(struct hapd_interfaces *interfaces);
 
+void hostapd_if_eapol_rx(struct hostapd_data *hapd, const u8 *sa,
+			 const u8 *data, u16 data_len);
+
 /*
  * Event notification wrapper functions
  */
