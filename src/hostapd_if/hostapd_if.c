@@ -11,6 +11,7 @@
 #include "ap/hostapd.h"
 #include "ap/sta_info.h"
 #include "ap/ieee802_11.h"
+#include "ap/ieee802_1x.h"
 #include "ap/ap_drv_ops.h"
 #include "ap/wpa_auth.h"
 #include "ap/beacon.h"
@@ -812,6 +813,25 @@ void hostapd_if_notify_deauth(struct hostapd_data *hapd,
 #endif
 }
 
+void hostapd_if_eapol_rx(struct hostapd_data *hapd, const u8 *sa,
+			 const u8 *data, u16 data_len)
+{
+	int link_id = -1;
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf && hapd->conf->mld_ap)
+		link_id = hapd->mld_link_id;
+#endif
+#ifdef HOSTAPD_EXTERNAL_PLUGIN
+	if (hostapd_if_plugin && hostapd_if_plugin->eapol_rx) {
+		wpa_printf(MSG_DEBUG, "%s: executing EAPOL RX through plugin",
+			   __func__);
+		hostapd_if_plugin->eapol_rx(hapd->conf->iface, link_id, sa,
+					    (u8 *) data, data_len);
+	}
+#endif
+}
+
 /*
  * External app resumes Association flow:
  * Compose and send (Re)Association Response using ctx->status_code
@@ -1549,6 +1569,43 @@ __hostapd_if_start_sa_query_exit:
 	return;
 }
 
+/*
+ * Resume EAPOL transmission from plugin.
+ * Use MLD mac of STA in case of 11be STA.
+ */
+void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
+			   uint8_t type, uint8_t *data, uint16_t data_len)
+{
+	struct hostapd_data *hapd = NULL;
+	struct sta_info *sta;
+
+	wpa_printf(MSG_MSGDUMP,
+		   "%s: %s, " MACSTR " link_id=%d type=%u data_len=%u\n",
+		   __func__, ifname, MAC2STR(sta_mac), link_id, type, data_len);
+	wpa_hexdump(MSG_EXCESSIVE, "hostapd_if_eapol_tx data",
+		    data, data_len);
+
+	sta = __get_sta(ifname, sta_mac, link_id, false, &hapd);
+	if (!sta) {
+		if (hapd)
+			__inbound_error_event(hapd, sta_mac,
+				      HOSTAPD_IF_EAPOL_TX_ERROR,
+				      __func__, __LINE__);
+		wpa_printf(MSG_ERROR,
+			   "hostapd_if: eapol_tx - STA " MACSTR " not found on %s",
+			   MAC2STR(sta_mac), ifname);
+
+		goto  __hostapd_if_eapol_tx_exit;
+	}
+
+	ieee802_1x_send(hapd, sta, type, data, data_len);
+
+ __hostapd_if_eapol_tx_exit:
+	os_free((void *)data);
+	return;
+}
+
+
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 void hostapd_plugin_register(struct hostapd_external_app_object *plugin)
 {
@@ -2057,6 +2114,33 @@ int hostapd_if_trigger_eapol_m3_validate_inputs(char *ifname,
 			   __func__, ifname, sta_mac);
 		return -1;
 	}
+	return 0;
+}
+
+int hostapd_if_eapol_tx_validate_inputs(char *ifname, uint8_t *sta_mac,
+					int link_id, uint8_t *data,
+					uint16_t data_len)
+{
+	static const size_t HOSTAPD_IF_MAX_EAP_DATA = 1500;
+	if (!ifname || !sta_mac || (!data && data_len)) {
+		wpa_printf(MSG_ERROR, "hostapd_if_eapol_tx: Invalid parameters");
+		return -1;
+	}
+
+	if (link_id < -1 || link_id >= MAX_MLO_LINKS) {
+		wpa_printf(MSG_ERROR,
+			   "hostapd_if_eapol_tx: Invalid link_id %d",
+			   link_id);
+		return -1;
+	}
+
+	if (data_len > HOSTAPD_IF_MAX_EAP_DATA) {
+		wpa_printf(MSG_ERROR,
+			   "hostapd_if_eapol_tx: Data length %hu exceeds maximum %zu",
+			   data_len, HOSTAPD_IF_MAX_EAP_DATA);
+		return -1;
+	}
+
 	return 0;
 }
 
