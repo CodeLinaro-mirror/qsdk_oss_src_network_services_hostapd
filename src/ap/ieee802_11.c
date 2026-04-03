@@ -4973,10 +4973,10 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn) {
+	if (hostapd_is_uhr_enabled(hapd)) {
 		resp = copy_sta_uhr_capab(hapd, sta,
-					  elems->uhr_capabilities,
-					  elems->uhr_capabilities_len);
+				  elems->uhr_capabilities,
+				  elems->uhr_capabilities_len);
 		if (resp != WLAN_STATUS_SUCCESS)
 			goto out;
 	}
@@ -5573,7 +5573,7 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 							   IEEE80211_MODE_AP);
 		}
 #ifdef CONFIG_IEEE80211BN
-		if (hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn) {
+		if (hostapd_is_uhr_enabled(hapd)) {
 			p = hostapd_eid_uhr_capab(hapd, p, IEEE80211_MODE_AP);
 			p = hostapd_eid_uhr_operation(hapd, p, false);
 		}
@@ -6111,7 +6111,7 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn) {
+	if (hostapd_is_uhr_enabled(hapd)) {
 		buflen += 3 + sizeof(struct ieee80211_uhr_capabilities);
 		buflen += 3 + sizeof(struct ieee80211_uhr_operation);
 	}
@@ -6314,7 +6314,7 @@ rsnxe_done:
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn) {
+	if (hostapd_is_uhr_enabled(hapd)) {
 		p = hostapd_eid_uhr_capab(hapd, p, IEEE80211_MODE_AP);
 		p = hostapd_eid_uhr_operation(hapd, p, false);
 	}

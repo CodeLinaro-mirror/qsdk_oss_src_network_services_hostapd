@@ -939,7 +939,7 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn) {
+	if (hostapd_is_uhr_enabled(hapd)) {
 		buflen += 3 + sizeof(struct ieee80211_uhr_capabilities);
 		buflen += 3 + sizeof(struct ieee80211_uhr_operation);
 	}
@@ -1364,7 +1364,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn) {
+	if (hostapd_is_uhr_enabled(hapd)) {
 		pos = hostapd_eid_uhr_capab(hapd, pos, IEEE80211_MODE_AP);
 		pos = hostapd_eid_uhr_operation(hapd, pos, false);
 	}
@@ -3176,9 +3176,9 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn)
+	if (hostapd_is_uhr_enabled(hapd))
 		tail_len += (3 + sizeof(struct ieee80211_uhr_operation) -
-			     sizeof(struct ieee80211_uhr_oper_info) - 2);
+		     sizeof(struct ieee80211_uhr_oper_info) - 2);
 #endif /* CONFIG_IEEE80211BN */
 
 	if (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
@@ -3441,7 +3441,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn)
+	if (hostapd_is_uhr_enabled(hapd))
 		tailpos = hostapd_eid_uhr_operation(hapd, tailpos, true);
 #endif /* CONFIG_IEEE80211BN */
 
