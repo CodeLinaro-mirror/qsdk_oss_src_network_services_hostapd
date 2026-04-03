@@ -2749,7 +2749,7 @@ int hostapd_set_acl(struct hostapd_data *hapd)
 }
 
 
-static int hostapd_set_ctrl_sock_iface(struct hostapd_data *hapd)
+int hostapd_set_ctrl_sock_iface(struct hostapd_data *hapd)
 {
 #ifdef CONFIG_IEEE80211BE
 	int ret;
@@ -6592,7 +6592,7 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 }
 
 
-static void hostapd_remove_non_tx_bsses(struct hostapd_data *tx_bss)
+void hostapd_remove_non_tx_bsses(struct hostapd_data *tx_bss)
 {
 	struct hostapd_iface *iface = tx_bss->iface;
 	struct hostapd_multi_mbssid_group *grp;
