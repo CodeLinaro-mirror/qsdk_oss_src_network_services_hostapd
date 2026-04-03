@@ -1045,6 +1045,7 @@ struct hostapd_data *
 hostapd_alloc_bss_data(struct hostapd_iface *hapd_iface,
 		       struct hostapd_config *conf,
 		       struct hostapd_bss_config *bss);
+int hostapd_set_ctrl_sock_iface(struct hostapd_data *hapd);
 int hostapd_setup_interface(struct hostapd_iface *iface);
 int hostapd_setup_interface_complete(struct hostapd_iface *iface, int err);
 void hostapd_set_own_neighbor_report(struct hostapd_data *hapd);
@@ -1627,6 +1628,8 @@ bool
 hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
 				     u16 center_freq, u16 bw, u16 pp,
 				     u8 pwr_type);
+
+void hostapd_remove_non_tx_bsses(struct hostapd_data *tx_bss);
 
 static inline bool
 hostapd_is_ht_enabled(struct hostapd_data *hapd)
