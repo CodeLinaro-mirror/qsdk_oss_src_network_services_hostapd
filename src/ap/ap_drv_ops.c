@@ -1220,12 +1220,26 @@ static int hapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 		sta = ap_get_sta(hapd, dst);
 
 		if (ap_sta_is_mld(hapd, sta)) {
-			own_addr = hapd->mld->mld_addr;
-			bssid = own_addr;
+			if (hapd->mld) {
+				own_addr = hapd->mld->mld_addr;
+				bssid = own_addr;
+			}
 		}
+
+#ifdef CONFIG_QCN_EXTN
+		/* If the link BSS is repurposed to lower modes, populate
+		 * link id as the frame can't be link agnostic.
+		 */
+		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+			link_id = hapd->mld_link_id;
+		} else {
+#endif /* CONFIG_QCN_EXTN */
 
 		if (!hostapd_is_action_frame_link_agnostic(data[0], data[1]))
 			link_id = hapd->mld_link_id;
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 	}
 
