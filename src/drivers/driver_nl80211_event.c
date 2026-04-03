@@ -3234,16 +3234,22 @@ static void nl80211_radar_event(struct i802_bss *bss, struct nlattr **tb)
 			bss_iter, data.dfs_event.freq);
 		/* If a link match is found, exit the loop after the handler is
 		 * called */
-		if (data.dfs_event.link_id != NL80211_DRV_LINK_ID_NA)
-			return nl80211_process_radar_event(bss_iter, &data,
-							   event_type);
+		if (data.dfs_event.link_id != NL80211_DRV_LINK_ID_NA) {
+			nl80211_process_radar_event(bss_iter, &data,
+						    event_type);
+			if (data.dfs_event.is_dfs_event_on_curr_hw)
+				return;
+		}
 		if (data.dfs_event.link_id == NL80211_DRV_LINK_ID_NA) {
 			/* For non-MLO operation, frequency should still match
 			 */
 			if (!bss_iter->valid_links &&
-			    bss_iter->links[0].freq == data.dfs_event.freq)
-				return nl80211_process_radar_event(
-					bss_iter, &data, event_type);
+			    bss_iter->links[0].freq == data.dfs_event.freq) {
+				nl80211_process_radar_event(bss_iter, &data,
+							    event_type);
+				if (data.dfs_event.is_dfs_event_on_curr_hw)
+					return;
+			}
 		}
 
 		/* For event like NL80211_RADAR_NOP_FINISHED, frequency
@@ -3267,6 +3273,8 @@ static void nl80211_radar_event(struct i802_bss *bss, struct nlattr **tb)
 			 * actually for it. */
 			nl80211_process_radar_event(bss_iter, &data,
 						    event_type);
+			if (data.dfs_event.is_dfs_event_on_curr_hw)
+				return;
 
 			hit = true;
 		}
