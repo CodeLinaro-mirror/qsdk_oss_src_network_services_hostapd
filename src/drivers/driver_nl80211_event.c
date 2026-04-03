@@ -2966,7 +2966,8 @@ static void nl80211_process_radar_event(struct i802_bss *bss,
 }
 
 
-static void nl80211_radar_event(struct i802_bss *bss, struct nlattr **tb)
+static void nl80211_radar_event(struct i802_bss *bss, struct nlattr **tb,
+				bool *event_handled)
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	union wpa_event_data data;
@@ -3041,16 +3042,26 @@ static void nl80211_radar_event(struct i802_bss *bss, struct nlattr **tb)
 			bss_iter, data.dfs_event.freq);
 		/* If a link match is found, exit the loop after the handler is
 		 * called */
-		if (data.dfs_event.link_id != NL80211_DRV_LINK_ID_NA)
-			return nl80211_process_radar_event(bss_iter, &data,
-							   event_type);
+		if (data.dfs_event.link_id != NL80211_DRV_LINK_ID_NA) {
+			nl80211_process_radar_event(bss_iter, &data,
+						    event_type);
+			if (data.dfs_event.is_dfs_event_on_curr_hw) {
+				*event_handled = true;
+				return;
+			}
+		}
 		if (data.dfs_event.link_id == NL80211_DRV_LINK_ID_NA) {
 			/* For non-MLO operation, frequency should still match
 			 */
 			if (!bss_iter->valid_links &&
-			    bss_iter->links[0].freq == data.dfs_event.freq)
-				return nl80211_process_radar_event(
+			    bss_iter->links[0].freq == data.dfs_event.freq) {
+				nl80211_process_radar_event(
 					bss_iter, &data, event_type);
+				if (data.dfs_event.is_dfs_event_on_curr_hw) {
+					*event_handled = true;
+					return;
+				}
+			}
 		}
 
 		/* For event like NL80211_RADAR_NOP_FINISHED, frequency
@@ -3074,8 +3085,10 @@ static void nl80211_radar_event(struct i802_bss *bss, struct nlattr **tb)
 			 * actually for it. */
 			nl80211_process_radar_event(bss_iter, &data,
 						    event_type);
-			if (data.dfs_event.is_dfs_event_on_curr_hw)
+			if (data.dfs_event.is_dfs_event_on_curr_hw) {
+				*event_handled = true;
 				return;
+			}
 
 			hit = true;
 		}
@@ -5403,7 +5416,8 @@ static void nl80211_ap_powersave_update_event(struct i802_bss *bss,
 
 
 static void do_process_drv_event(struct i802_bss *bss, int cmd,
-				 struct nlattr **tb)
+				 struct nlattr **tb,
+				 bool *event_handled)
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	int external_scan_event = 0;
@@ -5412,6 +5426,7 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 	wpa_printf(MSG_DEBUG, "nl80211: Drv Event %d (%s) received for %s",
 		   cmd, nl80211_command_to_string(cmd), bss->ifname);
 
+	*event_handled = false;
 	if (bss->valid_links && !bss->active_links) {
 		wpa_printf(MSG_ERROR, "nl80211: Ignoring BSS Event %d (%s) received for %s",
 			   cmd, nl80211_command_to_string(cmd),
@@ -5636,7 +5651,7 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 		mlme_event_ft_event(drv, tb);
 		break;
 	case NL80211_CMD_RADAR_DETECT:
-		nl80211_radar_event(bss, tb);
+		nl80211_radar_event(bss, tb, event_handled);
 		break;
 	case NL80211_CMD_STOP_AP:
 		nl80211_stop_ap(bss, tb);
@@ -5797,6 +5812,7 @@ int process_global_event(struct nl_msg *msg, void *arg)
 	dl_list_for_each_safe(drv, tmp, &global->interfaces,
 			      struct wpa_driver_nl80211_data, list) {
 		unsigned int unique_drv_id = drv->unique_drv_id;
+		bool event_handled = false;
 
 		for (bss = drv->first_bss; bss; bss = bss->next) {
 			if (wiphy_idx_set)
@@ -5807,7 +5823,8 @@ int process_global_event(struct nl_msg *msg, void *arg)
 			    (wdev_id_set && bss->wdev_id_set &&
 			     wdev_id == bss->wdev_id)) {
 				processed = true;
-				do_process_drv_event(bss, gnlh->cmd, tb);
+				do_process_drv_event(bss, gnlh->cmd, tb,
+					             &event_handled);
 				/* There are two types of events that may need
 				 * to be delivered to multiple interfaces:
 				 * 1. Events for a wiphy, as it can have
@@ -5819,6 +5836,13 @@ int process_global_event(struct nl_msg *msg, void *arg)
 				 * to a specific interface or wdev. */
 				if (ifidx != -1 || wdev_id_set)
 					return NL_SKIP;
+
+				/* Terminate early for global events if atleast one
+				 * bss has handled it appropriately
+				 */
+				if (event_handled)
+					break;
+
 				/* The driver instance could have been removed,
 				 * e.g., due to NL80211_CMD_RADAR_DETECT event,
 				 * so need to stop the loop if that has
