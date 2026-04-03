@@ -2457,6 +2457,14 @@ setup_mld:
 	}
 #endif /* CONFIG_QCN_EXTN */
 
+#ifdef CONFIG_IEEE80211BN
+	if (hostapd_is_uhr_enabled(hapd) &&
+	    ARRAY_SIZE(hapd->sta_aid) > 1) {
+		/* Reserve AIDs 56 to 63 in UHR for Critical Update */
+		hapd->sta_aid[1] |= 0xFF000000;
+	}
+#endif /* CONFIG_IEEE80211BN */
+
 	if (conf->wmm_enabled < 0)
 		conf->wmm_enabled = hapd->iconf->ieee80211n |
 			hapd->iconf->ieee80211ax;
