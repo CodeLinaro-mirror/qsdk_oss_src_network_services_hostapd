@@ -211,14 +211,30 @@ static int hostapd_radius_acl_query(struct hostapd_data *hapd, const u8 *addr,
 int hostapd_check_acl(struct hostapd_data *hapd, const u8 *addr,
 		      struct vlan_description *vlan_id)
 {
-
+	int in_accept, in_deny;
 #ifdef CONFIG_WPS
-	 /* According to WPS spec 2.0, disable MAC address filtering
-	  * if WPS is enabled on the AP.
-	  */
-	 if (hapd->conf->wps_state)
+	/* According to WPS spec 2.0, disable MAC address filtering
+	 * if WPS is enabled on the AP.
+	 */
+	if (hapd->conf->wps_state)
 		 return HOSTAPD_ACL_ACCEPT;
 #endif /*CONFIG_WPS */
+
+	if (hapd->conf->macaddr_acl == ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST) {
+		in_accept = hostapd_maclist_found(hapd->conf->accept_mac,
+						  hapd->conf->num_accept_mac,
+						  addr, vlan_id);
+		if (!in_accept)
+			return HOSTAPD_ACL_REJECT;
+
+		in_deny = hostapd_maclist_found(hapd->conf->deny_mac,
+						hapd->conf->num_deny_mac,
+						addr, vlan_id);
+		if (in_deny)
+			return HOSTAPD_ACL_REJECT;
+
+		return HOSTAPD_ACL_ACCEPT;
+	}
 
 	if (hostapd_maclist_found(hapd->conf->accept_mac,
 				  hapd->conf->num_accept_mac, addr, vlan_id))
