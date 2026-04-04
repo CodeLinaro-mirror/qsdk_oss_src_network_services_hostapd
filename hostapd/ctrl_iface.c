@@ -2388,6 +2388,18 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+	} else if (os_strcmp(cmd, "acl_deny_wait_time") == 0) {
+		res = os_snprintf(buf, buflen, "%u\n",
+				  hapd->conf->acl_deny_wait_time);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcmp(cmd, "acl_deny_allow_time") == 0) {
+		res = os_snprintf(buf, buflen, "%u\n",
+				  hapd->conf->acl_deny_allow_time);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
 #ifdef CONFIG_MBO
 	} else if (os_strcmp(cmd, "mbo_trans_reason") == 0) {
 		res = os_snprintf(buf, buflen, "mbo_trans_reason = %d\n",
