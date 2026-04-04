@@ -200,6 +200,98 @@ static int hostapd_radius_acl_query(struct hostapd_data *hapd, const u8 *addr,
 }
 #endif /* CONFIG_NO_RADIUS */
 
+/**
+ * hostapd_check_acl_deny_with_timed_allow - Check ACL with timed allow window
+ * @hapd: hostapd BSS data
+ * @addr: MAC address of the STA
+ * @vlan_id:  vlan id
+ * Returns: HOSTAPD_ACL_ACCEPT or HOSTAPD_ACL_REJECT
+ *
+ * Mode 4: STAs not in the deny list are always accepted.
+ * STAs in the deny list go through a two-phase timer:
+ *   Phase 1 (deny):  reject for acl_deny_wait_time seconds.
+ *   Phase 2 (allow): accept for acl_deny_allow_time seconds.
+ * The timer starts on the STA's first connection attempt after being
+ * blacklisted. After the allow phase expires, the next connection attempt
+ * resets the entry back to Phase 1.
+ */
+static int hostapd_check_acl_deny_with_timed_allow(struct hostapd_data *hapd,
+						   const u8 *addr,
+						   struct vlan_description *vlan_id)
+{
+	struct acl_timed_deny_entry *entry;
+	struct os_reltime now;
+	unsigned int deny_duration, allow_duration;
+	bool deny_phase_expired, allow_phase_expired;
+
+	/* Check if STA is in the deny list */
+	if (!hostapd_maclist_found(hapd->conf->deny_mac,
+				   hapd->conf->num_deny_mac, addr, vlan_id))
+		return HOSTAPD_ACL_ACCEPT;
+
+	os_get_reltime(&now);
+	deny_duration = hapd->conf->acl_deny_wait_time;
+	allow_duration = hapd->conf->acl_deny_allow_time;
+
+	/* Search for existing timing state for this STA */
+	for (entry = hapd->conf->acl_timed_deny_list; entry;
+	     entry = entry->next) {
+		if (ether_addr_equal(entry->addr, addr))
+			break;
+	}
+
+	if (!entry) {
+		/* First connection attempt: create entry and start deny
+		 * phase */
+		entry = os_zalloc(sizeof(*entry));
+		if (!entry)
+			return HOSTAPD_ACL_REJECT;
+
+		os_memcpy(entry->addr, addr, ETH_ALEN);
+		entry->phase_start = now;
+		entry->in_allow_phase = false;
+		entry->next = hapd->conf->acl_timed_deny_list;
+		hapd->conf->acl_timed_deny_list = entry;
+
+		wpa_printf(MSG_DEBUG,
+			   "ACL: " MACSTR " entered deny phase (%u s)",
+			   MAC2STR(addr), deny_duration);
+		return HOSTAPD_ACL_REJECT;
+	}
+
+	/* Entry exists - check current phase and timing */
+	if (!entry->in_allow_phase) {
+		/* Currently in deny phase */
+		deny_phase_expired = os_reltime_expired(&now, &entry->phase_start,
+							deny_duration);
+
+		if (!deny_phase_expired)
+			return HOSTAPD_ACL_REJECT;
+
+		/* Deny phase complete - transition to allow phase */
+		entry->in_allow_phase = true;
+		entry->phase_start = now;
+		wpa_printf(MSG_DEBUG,
+			   "ACL: " MACSTR " entered allow phase (%u s)",
+			   MAC2STR(addr), allow_duration);
+		return HOSTAPD_ACL_ACCEPT;
+	}
+
+	/* Currently in allow phase */
+	allow_phase_expired = os_reltime_expired(&now, &entry->phase_start,
+						 allow_duration);
+
+	if (!allow_phase_expired)
+		return HOSTAPD_ACL_ACCEPT;
+
+	/* Allow phase complete - restart deny phase */
+	entry->phase_start = now;
+	entry->in_allow_phase = false;
+	wpa_printf(MSG_DEBUG,
+		   "ACL: " MACSTR " re-entered deny phase (%u s)",
+		   MAC2STR(addr), deny_duration);
+	return HOSTAPD_ACL_REJECT;
+}
 
 /**
  * hostapd_check_acl - Check a specified STA against accept/deny ACLs
@@ -235,6 +327,10 @@ int hostapd_check_acl(struct hostapd_data *hapd, const u8 *addr,
 
 		return HOSTAPD_ACL_ACCEPT;
 	}
+
+	if (hapd->conf->macaddr_acl == DENY_WITH_TIMED_ALLOW_WINDOW)
+		return hostapd_check_acl_deny_with_timed_allow(hapd, addr,
+							       vlan_id);
 
 	if (hostapd_maclist_found(hapd->conf->accept_mac,
 				  hapd->conf->num_accept_mac, addr, vlan_id))

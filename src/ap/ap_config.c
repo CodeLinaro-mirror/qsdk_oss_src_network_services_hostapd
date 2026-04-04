@@ -100,6 +100,8 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->rsn_pairwise = 0;
 
 	bss->max_num_sta = MAX_STA_COUNT;
+	bss->acl_deny_wait_time = 60;
+	bss->acl_deny_allow_time = 30;
 
 	bss->dtim_period = 2;
 
@@ -984,6 +986,7 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 	os_free(conf->erp_domain);
 	os_free(conf->accept_mac);
 	os_free(conf->deny_mac);
+	hostapd_config_free_acl_timed_list(conf);
 	os_free(conf->nas_identifier);
 	if (conf->radius) {
 		hostapd_config_free_radius(conf->radius->auth_servers,
@@ -2190,6 +2193,23 @@ void hostapd_remove_acl_mac(struct mac_acl_entry **acl, int *num,
 			i++;
 		}
 	}
+}
+
+
+void hostapd_config_free_acl_timed_list(struct hostapd_bss_config *conf)
+{
+	struct acl_timed_deny_entry *entry, *tmp;
+
+	if (!conf)
+		return;
+
+	entry = conf->acl_timed_deny_list;
+	while (entry) {
+		tmp = entry->next;
+		os_free(entry);
+		entry = tmp;
+	}
+	conf->acl_timed_deny_list = NULL;
 }
 
 
