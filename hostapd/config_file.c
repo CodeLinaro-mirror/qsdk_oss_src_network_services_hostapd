@@ -2235,7 +2235,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 
 		if (acl != ACCEPT_UNLESS_DENIED &&
 		    acl != DENY_UNLESS_ACCEPTED &&
-		    acl != USE_EXTERNAL_RADIUS_AUTH) {
+		    acl != USE_EXTERNAL_RADIUS_AUTH &&
+		    acl != ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST) {
 			wpa_printf(MSG_ERROR, "Line %d: unknown macaddr_acl %d",
 				   line, acl);
 			return 1;
