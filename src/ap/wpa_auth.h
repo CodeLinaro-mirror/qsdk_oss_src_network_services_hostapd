@@ -300,6 +300,11 @@ struct wpa_auth_config {
 	unsigned int eap_using_authentication_frames:1;
 #endif /* CONFIG_ENC_ASSOC */
 
+#ifdef CONFIG_PASN
+	/* Whether to allow PASN-UNAUTH */
+	int pasn_noauth;
+#endif /* CONFIG_PASN */
+
 	int owe_ptk_workaround;
 	u8 transition_disable;
 #ifdef CONFIG_DPP2
