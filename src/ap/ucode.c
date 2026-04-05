@@ -1238,24 +1238,30 @@ int hostapd_ucode_get_sta_channel_per_band(struct hostapd_iface *iface,
 
 #ifdef CONFIG_QCN_EXTN
 /**
- * hostapd_ucode_chsw_comp_ev_notify - Notify ucode about CSA/CAC completion
+ * hostapd_ucode_chsw_result_ev_notify - Notify ucode about CSA/CAC result
  * @hapd: Pointer to hostapd BSS instance
- * @freq: Operating frequency (in MHz) on which CSA/CAC has completed
+ * @freq: Operating frequency (in MHz) on which CSA/CAC was requested
+ * @ret:  Channel switch result (0 on success, otherwise failure)
  *
  * Send a notification event to the ucode runtime indicating that a channel
  * switch announcement (CSA) or CAC sequence has completed on this interface.
- * This is used by repeater logic to resume STA connection flows after the
- * AP side has finished switching channels.
+ * This is used by repeater logic to resume or restart STA connection flows
+ * after the AP side has attempted to switch channels. The @ret parameter
+ * allows ucode to distinguish between successful completion and failure.
  */
-void hostapd_ucode_chsw_comp_ev_notify(struct hostapd_data *hapd, int freq)
+void hostapd_ucode_chsw_result_ev_notify(struct hostapd_data *hapd, int freq,
+					 int ret)
 {
-	if (wpa_ucode_call_prepare("notify_chan_switch_compl_event"))
+	if (wpa_ucode_call_prepare("notify_chan_switch_result_event"))
 		return;
 
-	wpa_printf(MSG_INFO, "Notify channel switch completion on all links"
-		   "wpa_supp to resume STA connection Freq = %d", freq);
+	wpa_printf(MSG_INFO,
+		   "Notify channel switch result on all links"
+		   "wpa_supp to handle STA connection Freq = %d ret = %d",
+		   freq, ret);
 	uc_value_push(ucv_int64_new(freq));
-	ucv_put(wpa_ucode_call(1));
+	uc_value_push(ucv_int64_new(ret));
+	ucv_put(wpa_ucode_call(2));
 	ucv_gc(vm);
 }
 
