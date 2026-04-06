@@ -2500,6 +2500,43 @@ static bool dfs_has_unavailable_channel(struct hostapd_iface *iface,
 	return false;
 }
 
+#ifdef CONFIG_QCN_EXTN
+struct hostapd_channel_data *
+dfs_downgrade_bandwidth_helper(struct hostapd_iface *iface, int *secondary_channel,
+			       u8 *oper_centr_freq_seg0_idx,
+			       u8 *oper_centr_freq_seg1_idx,
+			       int *channel_type)
+{
+	enum dfs_channel_type type = *channel_type;
+	struct hostapd_channel_data *channel;
+
+	channel = dfs_downgrade_bandwidth(iface, secondary_channel,
+					  oper_centr_freq_seg0_idx,
+					  oper_centr_freq_seg1_idx,
+					  &type);
+	*channel_type = type;
+
+	return channel;
+}
+
+struct hostapd_channel_data *
+dfs_get_valid_channel_helper(struct hostapd_iface *iface,
+			     int *secondary_channel,
+			     u8 *oper_centr_freq_seg0_idx,
+			     u8 *oper_centr_freq_seg1_idx,
+			     int type)
+{
+	return dfs_get_valid_channel(iface, secondary_channel,
+				     oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx,
+				     (enum dfs_channel_type) type);
+}
+
+int hostapd_dfs_start_channel_switch_cac_helper(struct hostapd_iface *iface)
+{
+	return hostapd_dfs_start_channel_switch_cac(iface);
+}
+#endif
+
 bool hostapd_dfs_csa_target_has_unavailable_channel(struct hostapd_iface *iface,
 						    struct hostapd_freq_params *freq_params,
 						    enum chan_width width)
