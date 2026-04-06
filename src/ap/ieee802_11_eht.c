@@ -109,7 +109,6 @@ bool eht_mu_mask_valid(u8 mask)
 	return true;
 }
 
-
 size_t hostapd_eid_eht_capab_len(struct hostapd_data *hapd,
 				 enum ieee80211_op_mode opmode)
 {
@@ -283,6 +282,133 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 		}
 
 		WPA_PUT_LE16(&cap->phy_cap[EHT_PHY_BFMEE_SS_80MHZ_IDX], phy);
+	}
+
+	if (hapd->conf->eht_phy_capab_mask &
+	    EHT_PHY_BSS_OVR_NDP_4X_EHT_LTF_AND_320NSGI) {
+		if (hapd->conf->eht_phy_capab.eht_ndp_4x_eht_ltf_and_320nsgi)
+			cap->phy_cap[EHT_PHYCAP_NDP_4X_EHT_LTF_AND_320NSGI_IDX] |=
+				EHT_PHYCAP_NDP_4X_EHT_LTF_AND_320NSGI;
+		else
+			cap->phy_cap[EHT_PHYCAP_NDP_4X_EHT_LTF_AND_320NSGI_IDX] &=
+				~EHT_PHYCAP_NDP_4X_EHT_LTF_AND_320NSGI;
+	}
+
+	if (hapd->conf->eht_phy_capab_mask &
+	    (EHT_PHY_BSS_OVR_NUM_SD_LT80 | EHT_PHY_BSS_OVR_NUM_SD_160 |
+	     EHT_PHY_BSS_OVR_NUM_SD_320)) {
+		u8 num_sd_lt80;
+		u8 num_sd_160;
+		u8 num_sd_320;
+		bool su_bfmr =
+			((hapd->conf->eht_phy_capab_mask &
+			  EHT_PHY_BSS_OVR_SU_BEAMFORMER) ?
+			 hapd->conf->eht_phy_capab.su_beamformer :
+			 hapd->iface->conf->eht_phy_capab.su_beamformer);
+
+		num_sd_lt80 =
+			(cap->phy_cap[EHT_PHYCAP_NUM_SD_LT80_IDX] &
+			 EHT_PHYCAP_NUM_SD_LT80_MASK) >>
+			EHT_PHYCAP_NUM_SD_LT80_SHIFT;
+		num_sd_160 =
+			(cap->phy_cap[EHT_PHYCAP_NUM_SD_160_IDX] &
+			 EHT_PHYCAP_NUM_SD_160_MASK) >>
+			EHT_PHYCAP_NUM_SD_160_SHIFT;
+		num_sd_320 =
+			((cap->phy_cap[EHT_PHYCAP_NUM_SD_320_LOW_IDX] &
+			  EHT_PHYCAP_NUM_SD_320_LOW_MASK) >>
+			 EHT_PHYCAP_NUM_SD_320_LOW_SHIFT) |
+			(((cap->phy_cap[EHT_PHYCAP_NUM_SD_320_HIGH_IDX] &
+			   EHT_PHYCAP_NUM_SD_320_HIGH_MASK) >>
+			  EHT_PHYCAP_NUM_SD_320_HIGH_SHIFT) << 2);
+
+		if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_NUM_SD_LT80)
+			num_sd_lt80 = hapd->conf->eht_phy_capab.eht_num_sd_lt80;
+		if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_NUM_SD_160)
+			num_sd_160 = hapd->conf->eht_phy_capab.eht_num_sd_160;
+		if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_NUM_SD_320)
+			num_sd_320 = hapd->conf->eht_phy_capab.eht_num_sd_320;
+
+		if (!su_bfmr) {
+			num_sd_lt80 = 0;
+			num_sd_160 = 0;
+			num_sd_320 = 0;
+		}
+
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_LT80_IDX] &=
+			~EHT_PHYCAP_NUM_SD_LT80_MASK;
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_LT80_IDX] |=
+			(num_sd_lt80 << EHT_PHYCAP_NUM_SD_LT80_SHIFT) &
+			EHT_PHYCAP_NUM_SD_LT80_MASK;
+
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_160_IDX] &=
+			~EHT_PHYCAP_NUM_SD_160_MASK;
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_160_IDX] |=
+			(num_sd_160 << EHT_PHYCAP_NUM_SD_160_SHIFT) &
+			EHT_PHYCAP_NUM_SD_160_MASK;
+
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_320_LOW_IDX] &=
+			~EHT_PHYCAP_NUM_SD_320_LOW_MASK;
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_320_LOW_IDX] |=
+			(num_sd_320 << EHT_PHYCAP_NUM_SD_320_LOW_SHIFT) &
+			EHT_PHYCAP_NUM_SD_320_LOW_MASK;
+
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_320_HIGH_IDX] &=
+			~EHT_PHYCAP_NUM_SD_320_HIGH_MASK;
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_320_HIGH_IDX] |=
+			((num_sd_320 >> 2) << EHT_PHYCAP_NUM_SD_320_HIGH_SHIFT) &
+			EHT_PHYCAP_NUM_SD_320_HIGH_MASK;
+	}
+
+	if (hapd->conf->eht_phy_capab_mask &
+	    EHT_PHY_BSS_OVR_4X_EHT_LTF_AND_800NS_GI) {
+		if (hapd->conf->eht_phy_capab.eht_4x_eht_ltf_and_800ns_gi)
+			cap->phy_cap[EHT_PHYCAP_4X_EHT_LTF_AND_800NS_GI_IDX] |=
+				EHT_PHYCAP_4X_EHT_LTF_AND_800NS_GI;
+		else
+			cap->phy_cap[EHT_PHYCAP_4X_EHT_LTF_AND_800NS_GI_IDX] &=
+				~EHT_PHYCAP_4X_EHT_LTF_AND_800NS_GI;
+	}
+
+	if (hapd->conf->eht_phy_capab_mask &
+	    EHT_PHY_BSS_OVR_RX_1024_AND_4096_QAM_LS_242_TONE_RU) {
+		if (hapd->conf->eht_phy_capab
+			    .eht_rx_1024_and_4096_qam_ls_242_tone_ru)
+			cap->phy_cap
+				[EHT_PHYCAP_RX_1024_AND_4096_QAM_LS_242_TONE_RU_IDX] |=
+				EHT_PHYCAP_RX_1024_AND_4096_QAM_LS_242_TONE_RU;
+		else
+			cap->phy_cap
+				[EHT_PHYCAP_RX_1024_AND_4096_QAM_LS_242_TONE_RU_IDX] &=
+				~EHT_PHYCAP_RX_1024_AND_4096_QAM_LS_242_TONE_RU;
+	}
+
+	if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_DL_OFDMA_TXBF) {
+		if (hapd->conf->eht_phy_capab.eht_dl_ofdma_txbf)
+			cap->phy_cap[EHT_PHYCAP_TRIG_MU_BF_PART_BW_FB_IDX] |=
+				EHT_PHYCAP_TRIG_MU_BF_PART_BW_FB;
+		else
+			cap->phy_cap[EHT_PHYCAP_TRIG_MU_BF_PART_BW_FB_IDX] &=
+				~EHT_PHYCAP_TRIG_MU_BF_PART_BW_FB;
+	}
+
+	if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_SUP_MCS15_IN_MRU) {
+		cap->phy_cap[EHT_PHYCAP_SUP_MCS15_IN_MRU_IDX] &=
+			~EHT_PHYCAP_SUP_MCS15_IN_MRU_MASK;
+		cap->phy_cap[EHT_PHYCAP_SUP_MCS15_IN_MRU_IDX] |=
+			(hapd->conf->eht_phy_capab.eht_sup_mcs15_in_mru <<
+			 EHT_PHYCAP_SUP_MCS15_IN_MRU_SHIFT) &
+			EHT_PHYCAP_SUP_MCS15_IN_MRU_MASK;
+	}
+
+	if (hapd->conf->eht_phy_capab_mask &
+	    EHT_PHY_BSS_OVR_MCS14_DUP_IN_6GHZ) {
+		if (hapd->conf->eht_phy_capab.eht_mcs14_dup_in_6ghz)
+			cap->phy_cap[EHT_PHYCAP_MCS14_DUP_IN_6GHZ_IDX] |=
+				EHT_PHYCAP_MCS14_DUP_IN_6GHZ;
+		else
+			cap->phy_cap[EHT_PHYCAP_MCS14_DUP_IN_6GHZ_IDX] &=
+				~EHT_PHYCAP_MCS14_DUP_IN_6GHZ;
 	}
 	pos = cap->optional;
 

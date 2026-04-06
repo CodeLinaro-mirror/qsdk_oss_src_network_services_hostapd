@@ -108,6 +108,17 @@ u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
 	u8 *pos = eid;
 	u8 ie_size = 0, mcs_nss_size, ppet_size;
 	u8 *epos;
+	bool su_beamformee;
+	bool chanwidth_gt80;
+	u8 bfee_sts_lteq80;
+	u8 bfee_sts_gt80;
+	u8 multi_tid_aggr;
+	u8 multi_tid_aggr_tx;
+	u8 max_ampdu_len_exp;
+	u8 fragmentation;
+	u8 max_frag_msdu;
+	u8 min_frag_size;
+	u8 max_nc;
 
 	if (!mode)
 		return eid;
@@ -153,6 +164,179 @@ u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
 		hapd->conf->he_phy_capab_mask = tx_hapd->conf->he_phy_capab_mask;
 	}
 
+	if (hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_MULTI_TID_AGGR) {
+		multi_tid_aggr = hapd->conf->he_phy_capab.he_multi_tid_aggr;
+
+		cap->he_mac_capab_info[HE_MACCAP_MULTI_TID_AGGR_RX_IDX] &=
+			~HE_MACCAP_MULTI_TID_AGGR_RX_MASK;
+		cap->he_mac_capab_info[HE_MACCAP_MULTI_TID_AGGR_RX_IDX] |=
+			(multi_tid_aggr << HE_MACCAP_MULTI_TID_AGGR_RX_SHIFT) &
+			HE_MACCAP_MULTI_TID_AGGR_RX_MASK;
+	}
+
+	if (hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_MAX_AMPDU_LEN_EXP) {
+		max_ampdu_len_exp = hapd->conf->he_phy_capab.he_max_ampdu_len_exp;
+
+		cap->he_mac_capab_info[HE_MACCAP_MAX_AMPDU_LEN_EXP_IDX] &=
+			~HE_MACCAP_MAX_AMPDU_LEN_EXP_MASK;
+		cap->he_mac_capab_info[HE_MACCAP_MAX_AMPDU_LEN_EXP_IDX] |=
+			(max_ampdu_len_exp << HE_MACCAP_MAX_AMPDU_LEN_EXP_SHIFT) &
+			HE_MACCAP_MAX_AMPDU_LEN_EXP_MASK;
+	}
+
+	if (hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_FRAGMENTATION) {
+		fragmentation = hapd->conf->he_phy_capab.he_fragmentation;
+
+		cap->he_mac_capab_info[HE_MACCAP_FRAGMENTATION_IDX] &=
+			~HE_MACCAP_FRAGMENTATION_MASK;
+		cap->he_mac_capab_info[HE_MACCAP_FRAGMENTATION_IDX] |=
+			(fragmentation << HE_MACCAP_FRAGMENTATION_SHIFT) &
+			HE_MACCAP_FRAGMENTATION_MASK;
+	}
+
+	if (hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_MAX_FRAG_MSDU) {
+		max_frag_msdu = hapd->conf->he_phy_capab.he_max_frag_msdu;
+
+		cap->he_mac_capab_info[HE_MACCAP_MAX_FRAG_MSDU_IDX] &=
+			~HE_MACCAP_MAX_FRAG_MSDU_MASK;
+		cap->he_mac_capab_info[HE_MACCAP_MAX_FRAG_MSDU_IDX] |=
+			(max_frag_msdu << HE_MACCAP_MAX_FRAG_MSDU_SHIFT) &
+			HE_MACCAP_MAX_FRAG_MSDU_MASK;
+	}
+
+	if (hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_MIN_FRAG_SIZE) {
+		min_frag_size = hapd->conf->he_phy_capab.he_min_frag_size;
+
+		cap->he_mac_capab_info[HE_MACCAP_MIN_FRAG_SIZE_IDX] &=
+			~HE_MACCAP_MIN_FRAG_SIZE_MASK;
+		cap->he_mac_capab_info[HE_MACCAP_MIN_FRAG_SIZE_IDX] |=
+			(min_frag_size << HE_MACCAP_MIN_FRAG_SIZE_SHIFT) &
+			HE_MACCAP_MIN_FRAG_SIZE_MASK;
+	}
+
+	if (hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_OMI) {
+		if (hapd->conf->he_phy_capab.he_omi)
+			cap->he_mac_capab_info[HE_MACCAP_OMI_IDX] |=
+				HE_MACCAP_OMI;
+		else
+			cap->he_mac_capab_info[HE_MACCAP_OMI_IDX] &=
+				~HE_MACCAP_OMI;
+	}
+
+	if (hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_BSR_SUPPORT) {
+		if (hapd->conf->he_phy_capab.he_bsr_support)
+			cap->he_mac_capab_info[HE_MACCAP_BSR_IDX] |=
+				HE_MACCAP_BSR;
+		else
+			cap->he_mac_capab_info[HE_MACCAP_BSR_IDX] &=
+				~HE_MACCAP_BSR;
+	}
+
+	if (hapd->conf->he_phy_capab_mask &
+	    HE_PHY_BSS_OVR_AMSDU_IN_AMPDU_SUPRT) {
+		if (hapd->conf->he_phy_capab.he_amsdu_in_ampdu_suprt)
+			cap->he_mac_capab_info[HE_MACCAP_AMSDU_IN_AMPDU_IDX] |=
+				HE_MACCAP_AMSDU_IN_AMPDU;
+		else
+			cap->he_mac_capab_info[HE_MACCAP_AMSDU_IN_AMPDU_IDX] &=
+				~HE_MACCAP_AMSDU_IN_AMPDU;
+	}
+
+	if (hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_MULTI_TID_AGGR_TX) {
+		multi_tid_aggr_tx = hapd->conf->he_phy_capab.he_multi_tid_aggr_tx;
+
+		cap->he_mac_capab_info[HE_MACCAP_MULTI_TID_AGGR_TX_LO_IDX] &=
+			~HE_MACCAP_MULTI_TID_AGGR_TX_LO_MASK;
+		cap->he_mac_capab_info[HE_MACCAP_MULTI_TID_AGGR_TX_HI_IDX] &=
+			~HE_MACCAP_MULTI_TID_AGGR_TX_HI_MASK;
+
+		if (multi_tid_aggr_tx & 0x1)
+			cap->he_mac_capab_info[HE_MACCAP_MULTI_TID_AGGR_TX_LO_IDX] |=
+				HE_MACCAP_MULTI_TID_AGGR_TX_LO_MASK;
+
+		cap->he_mac_capab_info[HE_MACCAP_MULTI_TID_AGGR_TX_HI_IDX] |=
+			(multi_tid_aggr_tx >> 1) &
+			HE_MACCAP_MULTI_TID_AGGR_TX_HI_MASK;
+	}
+
+	if (hapd->conf->he_phy_capab_mask &
+	    HE_PHY_BSS_OVR_SU_PPDU_1X_LTF_800NS_GI) {
+		if (hapd->conf->he_phy_capab.he_su_ppdu_1x_ltf_800ns_gi)
+			cap->he_phy_capab_info
+				[HE_PHYCAP_SU_PPDU_1X_LTF_800NS_GI_IDX] |=
+				HE_PHYCAP_SU_PPDU_1X_LTF_800NS_GI;
+		else
+			cap->he_phy_capab_info
+				[HE_PHYCAP_SU_PPDU_1X_LTF_800NS_GI_IDX] &=
+				~HE_PHYCAP_SU_PPDU_1X_LTF_800NS_GI;
+	}
+
+	if (hapd->conf->he_phy_capab_mask &
+	    HE_PHY_BSS_OVR_NDP_4X_LTF_3200NS_GI) {
+		if (hapd->conf->he_phy_capab.he_ndp_4x_ltf_3200ns_gi)
+			cap->he_phy_capab_info[HE_PHYCAP_NDP_4X_LTF_3200NS_GI_IDX] |=
+				HE_PHYCAP_NDP_4X_LTF_3200NS_GI;
+		else
+			cap->he_phy_capab_info[HE_PHYCAP_NDP_4X_LTF_3200NS_GI_IDX] &=
+				~HE_PHYCAP_NDP_4X_LTF_3200NS_GI;
+	}
+
+	if (hapd->conf->he_phy_capab_mask &
+	    HE_PHY_BSS_OVR_SU_MU_PPDU_4X_LTF_800NS_GI) {
+		if (hapd->conf->he_phy_capab.he_su_mu_ppdu_4x_ltf_800ns_gi)
+			cap->he_phy_capab_info
+				[HE_PHYCAP_SU_MU_PPDU_4X_LTF_800NS_GI_IDX] |=
+				HE_PHYCAP_SU_MU_PPDU_4X_LTF_800NS_GI;
+		else
+			cap->he_phy_capab_info
+				[HE_PHYCAP_SU_MU_PPDU_4X_LTF_800NS_GI_IDX] &=
+				~HE_PHYCAP_SU_MU_PPDU_4X_LTF_800NS_GI;
+	}
+
+	if (hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_MAX_NC_SUPRT) {
+		max_nc = hapd->conf->he_phy_capab.he_max_nc;
+
+		cap->he_phy_capab_info[HE_PHYCAP_MAX_NC_IDX] &=
+			~HE_PHYCAP_MAX_NC_MASK;
+		cap->he_phy_capab_info[HE_PHYCAP_MAX_NC_IDX] |=
+			(max_nc << HE_PHYCAP_MAX_NC_SHIFT) &
+			HE_PHYCAP_MAX_NC_MASK;
+	}
+
+	if (hapd->conf->he_phy_capab_mask &
+	    HE_PHY_BSS_OVR_ER_SU_PPDU_1X_LTF_800NS_GI) {
+		if (hapd->conf->he_phy_capab.he_er_su_ppdu_1x_ltf_800ns_gi)
+			cap->he_phy_capab_info
+				[HE_PHYCAP_ER_SU_PPDU_1X_LTF_800NS_GI_IDX] |=
+				HE_PHYCAP_ER_SU_PPDU_1X_LTF_800NS_GI;
+		else
+			cap->he_phy_capab_info
+				[HE_PHYCAP_ER_SU_PPDU_1X_LTF_800NS_GI_IDX] &=
+				~HE_PHYCAP_ER_SU_PPDU_1X_LTF_800NS_GI;
+	}
+
+	if (hapd->conf->he_phy_capab_mask &
+	    HE_PHY_BSS_OVR_ER_SU_PPDU_4X_LTF_800NS_GI) {
+		if (hapd->conf->he_phy_capab.he_er_su_ppdu_4x_ltf_800ns_gi)
+			cap->he_phy_capab_info
+				[HE_PHYCAP_ER_SU_PPDU_4X_LTF_800NS_GI_IDX] |=
+				HE_PHYCAP_ER_SU_PPDU_4X_LTF_800NS_GI;
+		else
+			cap->he_phy_capab_info
+				[HE_PHYCAP_ER_SU_PPDU_4X_LTF_800NS_GI_IDX] &=
+				~HE_PHYCAP_ER_SU_PPDU_4X_LTF_800NS_GI;
+	}
+
+	if (hapd->conf->he_phy_capab_mask &
+	    HE_PHY_BSS_OVR_1024QAM_LT242RU_RX_ENABLE) {
+		if (hapd->conf->he_phy_capab.he_1024qam_lt242ru_rx_enable)
+			cap->he_phy_capab_info[HE_PHYCAP_RX_1024QAM_LT242RU_IDX] |=
+				HE_PHYCAP_RX_1024QAM_LT242RU;
+		else
+			cap->he_phy_capab_info[HE_PHYCAP_RX_1024QAM_LT242RU_IDX] &=
+				~HE_PHYCAP_RX_1024QAM_LT242RU;
+	}
+
 	if (((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_SU_BEAMFORMER) ?
 	     hapd->conf->he_phy_capab.he_su_beamformer :
 	     hapd->iface->conf->he_phy_capab.he_su_beamformer))
@@ -162,14 +346,59 @@ u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
 		cap->he_phy_capab_info[HE_PHYCAP_SU_BEAMFORMER_CAPAB_IDX] &=
 			~HE_PHYCAP_SU_BEAMFORMER_CAPAB;
 
-	if (((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_SU_BEAMFORMEE) ?
-	     hapd->conf->he_phy_capab.he_su_beamformee :
-	     hapd->iface->conf->he_phy_capab.he_su_beamformee))
+	su_beamformee =
+		((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_SU_BEAMFORMEE) ?
+		 hapd->conf->he_phy_capab.he_su_beamformee :
+		 hapd->iface->conf->he_phy_capab.he_su_beamformee);
+
+	if (su_beamformee)
 		cap->he_phy_capab_info[HE_PHYCAP_SU_BEAMFORMEE_CAPAB_IDX] |=
 			HE_PHYCAP_SU_BEAMFORMEE_CAPAB;
 	else
 		cap->he_phy_capab_info[HE_PHYCAP_SU_BEAMFORMEE_CAPAB_IDX] &=
 			~HE_PHYCAP_SU_BEAMFORMEE_CAPAB;
+
+	/*
+	 * HE BFEE STS fields are only valid when SU BFEE is enabled.
+	 * For >80 MHz, advertise non-zero only if the width set supports it.
+	 */
+	if ((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_BFEE_STS_LTEQ80) ||
+	    (hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_BFEE_STS_GT80)) {
+		bfee_sts_lteq80 =
+			(hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_BFEE_STS_LTEQ80) ?
+			hapd->conf->he_phy_capab.he_bfee_sts_lteq80 :
+			((cap->he_phy_capab_info[HE_PHYCAP_BFEE_STS_LTEQ80_IDX] &
+			  HE_PHYCAP_BFEE_STS_LTEQ80_MASK) >>
+			 HE_PHYCAP_BFEE_STS_LTEQ80_SHIFT);
+
+		bfee_sts_gt80 =
+			(hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_BFEE_STS_GT80) ?
+			hapd->conf->he_phy_capab.he_bfee_sts_gt80 :
+			((cap->he_phy_capab_info[HE_PHYCAP_BFEE_STS_GT80_IDX] &
+			  HE_PHYCAP_BFEE_STS_GT80_MASK) >>
+			 HE_PHYCAP_BFEE_STS_GT80_SHIFT);
+
+		cap->he_phy_capab_info[HE_PHYCAP_BFEE_STS_LTEQ80_IDX] &=
+			~HE_PHYCAP_BFEE_STS_LTEQ80_MASK;
+		cap->he_phy_capab_info[HE_PHYCAP_BFEE_STS_GT80_IDX] &=
+			~HE_PHYCAP_BFEE_STS_GT80_MASK;
+
+		chanwidth_gt80 =
+			!!(cap->he_phy_capab_info[HE_PHYCAP_CHANNEL_WIDTH_SET_IDX] &
+			   (HE_PHYCAP_CHANNEL_WIDTH_SET_160MHZ_IN_5G |
+			    HE_PHYCAP_CHANNEL_WIDTH_SET_80PLUS80MHZ_IN_5G));
+
+		if (su_beamformee) {
+			cap->he_phy_capab_info[HE_PHYCAP_BFEE_STS_LTEQ80_IDX] |=
+				(bfee_sts_lteq80 << HE_PHYCAP_BFEE_STS_LTEQ80_SHIFT) &
+				HE_PHYCAP_BFEE_STS_LTEQ80_MASK;
+			if (chanwidth_gt80) {
+				cap->he_phy_capab_info[HE_PHYCAP_BFEE_STS_GT80_IDX] |=
+					(bfee_sts_gt80 << HE_PHYCAP_BFEE_STS_GT80_SHIFT) &
+					HE_PHYCAP_BFEE_STS_GT80_MASK;
+			}
+		}
+	}
 
 	if (((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_MU_BEAMFORMER) ?
 	 hapd->conf->he_phy_capab.he_mu_beamformer :
@@ -230,7 +459,9 @@ u8 * hostapd_eid_he_operation(struct hostapd_data *hapd, u8 *eid)
 		params |= (hapd->iface->conf->he_op.he_rts_threshold <<
 			   HE_OPERATION_RTS_THRESHOLD_OFFSET);
 
-	if (hapd->iface->conf->he_op.he_er_su_disable)
+	if ((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_ER_SU_DISABLE) ?
+	    hapd->conf->he_phy_capab.he_er_su_disable :
+	    hapd->iface->conf->he_op.he_er_su_disable)
 		params |= HE_OPERATION_ER_SU_DISABLE;
 
 	if (hapd->iface->conf->he_op.he_bss_color_disabled ||

@@ -729,6 +729,14 @@ static int ieee80211be_supported_eht_capab(struct hostapd_iface *iface)
 {
 	return iface->current_mode->eht_capab[IEEE80211_MODE_AP].eht_supported;
 }
+
+static int _ieee80211eht_cap_check(const u8 *hw, u32 offset, u8 bits)
+{
+	if (bits & hw[offset])
+		return 1;
+
+	return 0;
+}
 #endif /* CONFIG_IEEE80211BE */
 
 
@@ -867,6 +875,17 @@ static int hostapd_validate_bss_he_capab(struct hostapd_data *hapd)
 	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
 	struct he_capabilities *hw_he;
 	u64 mask;
+	bool su_beamformee;
+	bool supports_gt80;
+	u8 hw_bfee_sts_lteq80;
+	u8 hw_bfee_sts_gt80;
+	u8 hw_multi_tid_aggr;
+	u8 hw_multi_tid_aggr_tx;
+	u8 hw_max_ampdu_len_exp;
+	u8 hw_fragmentation;
+	u8 hw_max_frag_msdu;
+	u8 hw_min_frag_size;
+	u8 hw_max_nc;
 
 	if (!mode || !hapd->conf->he_phy_capab_mask)
 		return 0;
@@ -877,6 +896,273 @@ static int hostapd_validate_bss_he_capab(struct hostapd_data *hapd)
 	if (!hw_he->he_supported) {
 		wpa_printf(MSG_ERROR,
 			   "Driver does not support HE but BSS HE params configured");
+		return -1;
+	}
+
+	hw_multi_tid_aggr =
+		(hw_he->mac_cap[HE_MACCAP_MULTI_TID_AGGR_RX_IDX] &
+		 HE_MACCAP_MULTI_TID_AGGR_RX_MASK) >>
+		HE_MACCAP_MULTI_TID_AGGR_RX_SHIFT;
+	hw_max_ampdu_len_exp =
+		(hw_he->mac_cap[HE_MACCAP_MAX_AMPDU_LEN_EXP_IDX] &
+		 HE_MACCAP_MAX_AMPDU_LEN_EXP_MASK) >>
+		HE_MACCAP_MAX_AMPDU_LEN_EXP_SHIFT;
+	hw_fragmentation =
+		(hw_he->mac_cap[HE_MACCAP_FRAGMENTATION_IDX] &
+		 HE_MACCAP_FRAGMENTATION_MASK) >>
+		HE_MACCAP_FRAGMENTATION_SHIFT;
+	hw_max_frag_msdu =
+		(hw_he->mac_cap[HE_MACCAP_MAX_FRAG_MSDU_IDX] &
+		 HE_MACCAP_MAX_FRAG_MSDU_MASK) >>
+		HE_MACCAP_MAX_FRAG_MSDU_SHIFT;
+	hw_min_frag_size =
+		(hw_he->mac_cap[HE_MACCAP_MIN_FRAG_SIZE_IDX] &
+		 HE_MACCAP_MIN_FRAG_SIZE_MASK) >>
+		HE_MACCAP_MIN_FRAG_SIZE_SHIFT;
+	hw_multi_tid_aggr_tx =
+		((hw_he->mac_cap[HE_MACCAP_MULTI_TID_AGGR_TX_LO_IDX] &
+		  HE_MACCAP_MULTI_TID_AGGR_TX_LO_MASK) ? 1 : 0) |
+		((hw_he->mac_cap[HE_MACCAP_MULTI_TID_AGGR_TX_HI_IDX] &
+		  HE_MACCAP_MULTI_TID_AGGR_TX_HI_MASK) << 1);
+	hw_max_nc = (hw_he->phy_cap[HE_PHYCAP_MAX_NC_IDX] &
+		     HE_PHYCAP_MAX_NC_MASK) >>
+		    HE_PHYCAP_MAX_NC_SHIFT;
+
+	if (mask & HE_PHY_BSS_OVR_MULTI_TID_AGGR) {
+		if (hapd->conf->he_phy_capab.he_multi_tid_aggr >
+		    hw_multi_tid_aggr) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_multi_tid_aggr exceeds driver capability (%u > %u)",
+				   hapd->conf->he_phy_capab.he_multi_tid_aggr,
+				   hw_multi_tid_aggr);
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_MULTI_TID_AGGR_TX) {
+		if (hapd->conf->he_phy_capab.he_multi_tid_aggr_tx >
+		    hw_multi_tid_aggr_tx) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_multi_tid_aggr_tx exceeds driver capability (%u > %u)",
+				   hapd->conf->he_phy_capab.he_multi_tid_aggr_tx,
+				   hw_multi_tid_aggr_tx);
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_MAX_AMPDU_LEN_EXP) {
+		if (hapd->conf->he_phy_capab.he_max_ampdu_len_exp >
+		    hw_max_ampdu_len_exp) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_max_ampdu_len_exp exceeds driver capability (%u > %u)",
+				   hapd->conf->he_phy_capab.he_max_ampdu_len_exp,
+				   hw_max_ampdu_len_exp);
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_MAX_FRAG_MSDU) {
+		if (hapd->conf->he_phy_capab.he_max_frag_msdu >
+		    hw_max_frag_msdu) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_max_frag_msdu exceeds driver capability (%u > %u)",
+				   hapd->conf->he_phy_capab.he_max_frag_msdu,
+				   hw_max_frag_msdu);
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_FRAGMENTATION) {
+		if (hapd->conf->he_phy_capab.he_fragmentation > 3) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_fragmentation has invalid value %u (expected 0..3)",
+				   hapd->conf->he_phy_capab.he_fragmentation);
+			return -1;
+		}
+		if (hapd->conf->he_phy_capab.he_fragmentation >
+		    hw_fragmentation) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_fragmentation exceeds driver capability (%u > %u)",
+				   hapd->conf->he_phy_capab.he_fragmentation,
+				   hw_fragmentation);
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_AMSDU_IN_AMPDU_SUPRT) {
+		if (hapd->conf->he_phy_capab.he_amsdu_in_ampdu_suprt > 1) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_amsdu_in_ampdu_suprt has invalid value %u (expected 0..1)",
+				   hapd->conf->he_phy_capab.he_amsdu_in_ampdu_suprt);
+			return -1;
+		}
+		if (hapd->conf->he_phy_capab.he_amsdu_in_ampdu_suprt &&
+		    !_ieee80211he_cap_check(hw_he->mac_cap,
+					    HE_MACCAP_AMSDU_IN_AMPDU_IDX,
+					    HE_MACCAP_AMSDU_IN_AMPDU)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_he_amsdu_in_ampdu_suprt");
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_BSR_SUPPORT) {
+		if (hapd->conf->he_phy_capab.he_bsr_support > 1) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_bsr_support has invalid value %u (expected 0..1)",
+				   hapd->conf->he_phy_capab.he_bsr_support);
+			return -1;
+		}
+		if (hapd->conf->he_phy_capab.he_bsr_support &&
+		    !_ieee80211he_cap_check(hw_he->mac_cap,
+					    HE_MACCAP_BSR_IDX,
+					    HE_MACCAP_BSR)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_he_bsr_support");
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_MIN_FRAG_SIZE) {
+		if (hapd->conf->he_phy_capab.he_min_frag_size > 3) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_min_frag_size has invalid value %u (expected 0..3)",
+				   hapd->conf->he_phy_capab.he_min_frag_size);
+			return -1;
+		}
+		if (hapd->conf->he_phy_capab.he_min_frag_size <
+		    hw_min_frag_size) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_min_frag_size is below driver minimum capability (%u < %u)",
+				   hapd->conf->he_phy_capab.he_min_frag_size,
+				   hw_min_frag_size);
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_OMI) {
+		if (hapd->conf->he_phy_capab.he_omi > 1) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_omi has invalid value %u (expected 0..1)",
+				   hapd->conf->he_phy_capab.he_omi);
+			return -1;
+		}
+		if (hapd->conf->he_phy_capab.he_omi &&
+		    !_ieee80211he_cap_check(hw_he->mac_cap,
+					    HE_MACCAP_OMI_IDX,
+					    HE_MACCAP_OMI)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_he_omi");
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_SU_PPDU_1X_LTF_800NS_GI) {
+		if (hapd->conf->he_phy_capab.he_su_ppdu_1x_ltf_800ns_gi &&
+		    !_ieee80211he_cap_check(
+			    hw_he->phy_cap,
+			    HE_PHYCAP_SU_PPDU_1X_LTF_800NS_GI_IDX,
+			    HE_PHYCAP_SU_PPDU_1X_LTF_800NS_GI)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_he_su_ppdu_1x_ltf_800ns_gi");
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_SU_MU_PPDU_4X_LTF_800NS_GI) {
+		if (hapd->conf->he_phy_capab.he_su_mu_ppdu_4x_ltf_800ns_gi > 1) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_su_mu_ppdu_4x_ltf_800ns_gi has invalid value %u (expected 0..1)",
+				   hapd->conf->he_phy_capab.he_su_mu_ppdu_4x_ltf_800ns_gi);
+			return -1;
+		}
+		if (hapd->conf->he_phy_capab.he_su_mu_ppdu_4x_ltf_800ns_gi &&
+		    !_ieee80211he_cap_check(
+			    hw_he->phy_cap,
+			    HE_PHYCAP_SU_MU_PPDU_4X_LTF_800NS_GI_IDX,
+			    HE_PHYCAP_SU_MU_PPDU_4X_LTF_800NS_GI)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_he_su_mu_ppdu_4x_ltf_800ns_gi");
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_NDP_4X_LTF_3200NS_GI) {
+		if (hapd->conf->he_phy_capab.he_ndp_4x_ltf_3200ns_gi > 1) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_ndp_4x_ltf_3200ns_gi has invalid value %u (expected 0..1)",
+				   hapd->conf->he_phy_capab.he_ndp_4x_ltf_3200ns_gi);
+			return -1;
+		}
+		if (hapd->conf->he_phy_capab.he_ndp_4x_ltf_3200ns_gi &&
+		    !_ieee80211he_cap_check(
+			    hw_he->phy_cap,
+			    HE_PHYCAP_NDP_4X_LTF_3200NS_GI_IDX,
+			    HE_PHYCAP_NDP_4X_LTF_3200NS_GI)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_he_ndp_4x_ltf_3200ns_gi");
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_ER_SU_PPDU_1X_LTF_800NS_GI) {
+		if (hapd->conf->he_phy_capab.he_er_su_ppdu_1x_ltf_800ns_gi > 1) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_er_su_ppdu_1x_ltf_800ns_gi has invalid value %u (expected 0..1)",
+				   hapd->conf->he_phy_capab.he_er_su_ppdu_1x_ltf_800ns_gi);
+			return -1;
+		}
+		if (hapd->conf->he_phy_capab.he_er_su_ppdu_1x_ltf_800ns_gi &&
+		    !_ieee80211he_cap_check(
+			    hw_he->phy_cap,
+			    HE_PHYCAP_ER_SU_PPDU_1X_LTF_800NS_GI_IDX,
+			    HE_PHYCAP_ER_SU_PPDU_1X_LTF_800NS_GI)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_he_er_su_ppdu_1x_ltf_800ns_gi");
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_ER_SU_PPDU_4X_LTF_800NS_GI) {
+		if (hapd->conf->he_phy_capab.he_er_su_ppdu_4x_ltf_800ns_gi > 1) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_er_su_ppdu_4x_ltf_800ns_gi has invalid value %u (expected 0..1)",
+				   hapd->conf->he_phy_capab.he_er_su_ppdu_4x_ltf_800ns_gi);
+			return -1;
+		}
+		if (hapd->conf->he_phy_capab.he_er_su_ppdu_4x_ltf_800ns_gi &&
+		    !_ieee80211he_cap_check(
+			    hw_he->phy_cap,
+			    HE_PHYCAP_ER_SU_PPDU_4X_LTF_800NS_GI_IDX,
+			    HE_PHYCAP_ER_SU_PPDU_4X_LTF_800NS_GI)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_he_er_su_ppdu_4x_ltf_800ns_gi");
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_1024QAM_LT242RU_RX_ENABLE) {
+		if (hapd->conf->he_phy_capab.he_1024qam_lt242ru_rx_enable > 1) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_1024qam_lt242ru_rx_enable has invalid value %u (expected 0..1)",
+				   hapd->conf->he_phy_capab.he_1024qam_lt242ru_rx_enable);
+			return -1;
+		}
+		if (hapd->conf->he_phy_capab.he_1024qam_lt242ru_rx_enable &&
+		    !_ieee80211he_cap_check(hw_he->phy_cap,
+					    HE_PHYCAP_RX_1024QAM_LT242RU_IDX,
+					    HE_PHYCAP_RX_1024QAM_LT242RU)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_he_1024qam_lt242ru_rx_enable");
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_ER_SU_DISABLE &&
+	    hapd->conf->he_phy_capab.he_er_su_disable > 1) {
+		wpa_printf(MSG_ERROR,
+			   "bss_he_er_su_disable has invalid value %u (expected 0..1)",
+			   hapd->conf->he_phy_capab.he_er_su_disable);
 		return -1;
 	}
 
@@ -900,6 +1186,79 @@ static int hostapd_validate_bss_he_capab(struct hostapd_data *hapd)
 					    HE_PHYCAP_SU_BEAMFORMEE_CAPAB)) {
 			wpa_printf(MSG_ERROR,
 				   "Driver does not support bss_he_su_beamformee");
+			return -1;
+		}
+	}
+
+	su_beamformee =
+		((mask & HE_PHY_BSS_OVR_SU_BEAMFORMEE) ?
+		 hapd->conf->he_phy_capab.he_su_beamformee :
+		 hapd->iface->conf->he_phy_capab.he_su_beamformee);
+
+	supports_gt80 = !!(hw_he->phy_cap[HE_PHYCAP_CHANNEL_WIDTH_SET_IDX] &
+			   (HE_PHYCAP_CHANNEL_WIDTH_SET_160MHZ_IN_5G |
+			    HE_PHYCAP_CHANNEL_WIDTH_SET_80PLUS80MHZ_IN_5G));
+
+	hw_bfee_sts_lteq80 =
+		(hw_he->phy_cap[HE_PHYCAP_BFEE_STS_LTEQ80_IDX] &
+		 HE_PHYCAP_BFEE_STS_LTEQ80_MASK) >>
+		HE_PHYCAP_BFEE_STS_LTEQ80_SHIFT;
+	hw_bfee_sts_gt80 =
+		(hw_he->phy_cap[HE_PHYCAP_BFEE_STS_GT80_IDX] &
+		 HE_PHYCAP_BFEE_STS_GT80_MASK) >>
+		HE_PHYCAP_BFEE_STS_GT80_SHIFT;
+
+	if (mask & HE_PHY_BSS_OVR_BFEE_STS_LTEQ80) {
+		if (!su_beamformee &&
+		    hapd->conf->he_phy_capab.he_bfee_sts_lteq80) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_bfee_sts_lteq80 requires bss_he_su_beamformee");
+			return -1;
+		}
+		if (hapd->conf->he_phy_capab.he_bfee_sts_lteq80 >
+		    hw_bfee_sts_lteq80) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_bfee_sts_lteq80 exceeds driver capability (%u > %u)",
+				   hapd->conf->he_phy_capab.he_bfee_sts_lteq80,
+				   hw_bfee_sts_lteq80);
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_BFEE_STS_GT80) {
+		if (!su_beamformee &&
+		    hapd->conf->he_phy_capab.he_bfee_sts_gt80) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_bfee_sts_gt80 requires bss_he_su_beamformee");
+			return -1;
+		}
+		if (!supports_gt80 &&
+		    hapd->conf->he_phy_capab.he_bfee_sts_gt80) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_bfee_sts_gt80 requires >80MHz channel width support");
+			return -1;
+		}
+		if (hapd->conf->he_phy_capab.he_bfee_sts_gt80 >
+		    hw_bfee_sts_gt80) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_bfee_sts_gt80 exceeds driver capability (%u > %u)",
+				   hapd->conf->he_phy_capab.he_bfee_sts_gt80,
+				   hw_bfee_sts_gt80);
+			return -1;
+		}
+	}
+
+	if (mask & HE_PHY_BSS_OVR_MAX_NC_SUPRT) {
+		if (!su_beamformee && hapd->conf->he_phy_capab.he_max_nc) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_max_nc_suprt requires bss_he_su_beamformee");
+			return -1;
+		}
+		if (hapd->conf->he_phy_capab.he_max_nc > hw_max_nc) {
+			wpa_printf(MSG_ERROR,
+				   "bss_he_max_nc_suprt exceeds driver capability (%u > %u)",
+				   hapd->conf->he_phy_capab.he_max_nc,
+				   hw_max_nc);
 			return -1;
 		}
 	}
@@ -978,6 +1337,11 @@ static int hostapd_validate_bss_eht_capab(struct hostapd_data *hapd)
 	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
 	struct eht_capabilities *hw_eht;
 	u64 mask;
+	bool su_bfmr;
+	u8 hw_num_sd_lt80;
+	u8 hw_num_sd_160;
+	u8 hw_num_sd_320;
+	u8 hw_sup_mcs15_in_mru;
 
 	if (!mode || !hapd->conf->eht_phy_capab_mask)
 		return 0;
@@ -1068,6 +1432,203 @@ static int hostapd_validate_bss_eht_capab(struct hostapd_data *hapd)
 		if (!su_bfmee) {
 			wpa_printf(MSG_ERROR,
 				   "EHT BFME SS configured while SU beamformee disabled");
+			return -1;
+		}
+	}
+
+	if (mask & EHT_PHY_BSS_OVR_NDP_4X_EHT_LTF_AND_320NSGI) {
+		if (hapd->conf->eht_phy_capab.eht_ndp_4x_eht_ltf_and_320nsgi > 1) {
+			wpa_printf(MSG_ERROR,
+				   "bss_eht_ndp_4x_eht_ltf_and_320nsgi has invalid value %u (expected 0..1)",
+				   hapd->conf->eht_phy_capab.eht_ndp_4x_eht_ltf_and_320nsgi);
+			return -1;
+		}
+		if (hapd->conf->eht_phy_capab.eht_ndp_4x_eht_ltf_and_320nsgi &&
+		    !_ieee80211eht_cap_check(
+			    hw_eht->phy_cap,
+			    EHT_PHYCAP_NDP_4X_EHT_LTF_AND_320NSGI_IDX,
+			    EHT_PHYCAP_NDP_4X_EHT_LTF_AND_320NSGI)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_eht_ndp_4x_eht_ltf_and_320nsgi");
+			return -1;
+		}
+	}
+
+	su_bfmr = (mask & EHT_PHY_BSS_OVR_SU_BEAMFORMER) ?
+		  hapd->conf->eht_phy_capab.su_beamformer :
+		  hapd->iface->conf->eht_phy_capab.su_beamformer;
+
+	hw_num_sd_lt80 =
+		(hw_eht->phy_cap[EHT_PHYCAP_NUM_SD_LT80_IDX] &
+		 EHT_PHYCAP_NUM_SD_LT80_MASK) >>
+		EHT_PHYCAP_NUM_SD_LT80_SHIFT;
+	hw_num_sd_160 =
+		(hw_eht->phy_cap[EHT_PHYCAP_NUM_SD_160_IDX] &
+		 EHT_PHYCAP_NUM_SD_160_MASK) >>
+		EHT_PHYCAP_NUM_SD_160_SHIFT;
+	hw_num_sd_320 =
+		((hw_eht->phy_cap[EHT_PHYCAP_NUM_SD_320_LOW_IDX] &
+		  EHT_PHYCAP_NUM_SD_320_LOW_MASK) >>
+		 EHT_PHYCAP_NUM_SD_320_LOW_SHIFT) |
+		(((hw_eht->phy_cap[EHT_PHYCAP_NUM_SD_320_HIGH_IDX] &
+		   EHT_PHYCAP_NUM_SD_320_HIGH_MASK) >>
+		  EHT_PHYCAP_NUM_SD_320_HIGH_SHIFT) << 2);
+
+	if (mask & EHT_PHY_BSS_OVR_NUM_SD_LT80) {
+		if (hapd->conf->eht_phy_capab.eht_num_sd_lt80 > 7) {
+			wpa_printf(MSG_ERROR,
+				   "bss_eht_num_sd_lt80 has invalid value %u (expected 0..7)",
+				   hapd->conf->eht_phy_capab.eht_num_sd_lt80);
+			return -1;
+		}
+		if (!su_bfmr && hapd->conf->eht_phy_capab.eht_num_sd_lt80) {
+			wpa_printf(MSG_ERROR,
+				   "bss_eht_num_sd_lt80 requires bss_eht_su_beamformer");
+			return -1;
+		}
+		if (hapd->conf->eht_phy_capab.eht_num_sd_lt80 > hw_num_sd_lt80) {
+			wpa_printf(MSG_ERROR,
+				   "bss_eht_num_sd_lt80 exceeds driver capability (%u > %u)",
+				   hapd->conf->eht_phy_capab.eht_num_sd_lt80,
+				   hw_num_sd_lt80);
+			return -1;
+		}
+	}
+
+	if (mask & EHT_PHY_BSS_OVR_NUM_SD_160) {
+		if (hapd->conf->eht_phy_capab.eht_num_sd_160 > 7) {
+			wpa_printf(MSG_ERROR,
+				   "bss_eht_num_sd_160 has invalid value %u (expected 0..7)",
+				   hapd->conf->eht_phy_capab.eht_num_sd_160);
+			return -1;
+		}
+		if (!su_bfmr && hapd->conf->eht_phy_capab.eht_num_sd_160) {
+			wpa_printf(MSG_ERROR,
+				   "bss_eht_num_sd_160 requires bss_eht_su_beamformer");
+			return -1;
+		}
+		if (hapd->conf->eht_phy_capab.eht_num_sd_160 > hw_num_sd_160) {
+			wpa_printf(MSG_ERROR,
+				   "bss_eht_num_sd_160 exceeds driver capability (%u > %u)",
+				   hapd->conf->eht_phy_capab.eht_num_sd_160,
+				   hw_num_sd_160);
+			return -1;
+		}
+	}
+
+	if (mask & EHT_PHY_BSS_OVR_NUM_SD_320) {
+		if (hapd->conf->eht_phy_capab.eht_num_sd_320 > 7) {
+			wpa_printf(MSG_ERROR,
+				   "bss_eht_num_sd_320 has invalid value %u (expected 0..7)",
+				   hapd->conf->eht_phy_capab.eht_num_sd_320);
+			return -1;
+		}
+		if (!su_bfmr && hapd->conf->eht_phy_capab.eht_num_sd_320) {
+			wpa_printf(MSG_ERROR,
+				   "bss_eht_num_sd_320 requires bss_eht_su_beamformer");
+			return -1;
+		}
+		if (hapd->conf->eht_phy_capab.eht_num_sd_320 > hw_num_sd_320) {
+			wpa_printf(MSG_ERROR,
+				   "bss_eht_num_sd_320 exceeds driver capability (%u > %u)",
+				   hapd->conf->eht_phy_capab.eht_num_sd_320,
+				   hw_num_sd_320);
+			return -1;
+		}
+	}
+
+	if (mask & EHT_PHY_BSS_OVR_4X_EHT_LTF_AND_800NS_GI) {
+		if (hapd->conf->eht_phy_capab.eht_4x_eht_ltf_and_800ns_gi > 1) {
+			wpa_printf(MSG_ERROR,
+				   "bss_eht_4x_eht_ltf_and_800ns_gi has invalid value %u (expected 0..1)",
+				   hapd->conf->eht_phy_capab.eht_4x_eht_ltf_and_800ns_gi);
+			return -1;
+		}
+		if (hapd->conf->eht_phy_capab.eht_4x_eht_ltf_and_800ns_gi &&
+		    !_ieee80211eht_cap_check(
+			    hw_eht->phy_cap,
+			    EHT_PHYCAP_4X_EHT_LTF_AND_800NS_GI_IDX,
+			    EHT_PHYCAP_4X_EHT_LTF_AND_800NS_GI)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_eht_4x_eht_ltf_and_800ns_gi");
+			return -1;
+		}
+	}
+
+	if (mask & EHT_PHY_BSS_OVR_RX_1024_AND_4096_QAM_LS_242_TONE_RU) {
+		if (hapd->conf->eht_phy_capab
+			    .eht_rx_1024_and_4096_qam_ls_242_tone_ru > 1) {
+			wpa_printf(MSG_ERROR,
+				   "bss_eht_rx_1024_and_4096_qam_ls_242_tone_ru has invalid value %u (expected 0..1)",
+				   hapd->conf->eht_phy_capab
+					   .eht_rx_1024_and_4096_qam_ls_242_tone_ru);
+			return -1;
+		}
+		if (hapd->conf->eht_phy_capab
+			    .eht_rx_1024_and_4096_qam_ls_242_tone_ru &&
+		    !_ieee80211eht_cap_check(
+			    hw_eht->phy_cap,
+			    EHT_PHYCAP_RX_1024_AND_4096_QAM_LS_242_TONE_RU_IDX,
+			    EHT_PHYCAP_RX_1024_AND_4096_QAM_LS_242_TONE_RU)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_eht_rx_1024_and_4096_qam_ls_242_tone_ru");
+			return -1;
+		}
+	}
+
+	if (mask & EHT_PHY_BSS_OVR_DL_OFDMA_TXBF) {
+		if (hapd->conf->eht_phy_capab.eht_dl_ofdma_txbf > 1) {
+			wpa_printf(MSG_ERROR,
+				   "bss_eht_dl_ofdma_txbf has invalid value %u (expected 0..1)",
+				   hapd->conf->eht_phy_capab.eht_dl_ofdma_txbf);
+			return -1;
+		}
+		if (hapd->conf->eht_phy_capab.eht_dl_ofdma_txbf &&
+		    !_ieee80211eht_cap_check(
+			    hw_eht->phy_cap,
+			    EHT_PHYCAP_TRIG_MU_BF_PART_BW_FB_IDX,
+			    EHT_PHYCAP_TRIG_MU_BF_PART_BW_FB)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_eht_dl_ofdma_txbf");
+			return -1;
+		}
+	}
+
+	hw_sup_mcs15_in_mru =
+		(hw_eht->phy_cap[EHT_PHYCAP_SUP_MCS15_IN_MRU_IDX] &
+		 EHT_PHYCAP_SUP_MCS15_IN_MRU_MASK) >>
+		EHT_PHYCAP_SUP_MCS15_IN_MRU_SHIFT;
+
+	if (mask & EHT_PHY_BSS_OVR_SUP_MCS15_IN_MRU) {
+		if (hapd->conf->eht_phy_capab.eht_sup_mcs15_in_mru > 1) {
+			wpa_printf(MSG_ERROR,
+				   "bss_eht_sup_mcs15_in_mru has invalid value %u (expected 0..1)",
+				   hapd->conf->eht_phy_capab.eht_sup_mcs15_in_mru);
+			return -1;
+		}
+		if (hapd->conf->eht_phy_capab.eht_sup_mcs15_in_mru >
+		    hw_sup_mcs15_in_mru) {
+			wpa_printf(MSG_ERROR,
+				   "bss_eht_sup_mcs15_in_mru exceeds driver capability (%u > %u)",
+				   hapd->conf->eht_phy_capab.eht_sup_mcs15_in_mru,
+				   hw_sup_mcs15_in_mru);
+			return -1;
+		}
+	}
+
+	if (mask & EHT_PHY_BSS_OVR_MCS14_DUP_IN_6GHZ) {
+		if (hapd->conf->eht_phy_capab.eht_mcs14_dup_in_6ghz > 1) {
+			wpa_printf(MSG_ERROR,
+				   "bss_eht_mcs14_dup_in_6ghz has invalid value %u (expected 0..1)",
+				   hapd->conf->eht_phy_capab.eht_mcs14_dup_in_6ghz);
+			return -1;
+		}
+		if (hapd->conf->eht_phy_capab.eht_mcs14_dup_in_6ghz &&
+		    !_ieee80211eht_cap_check(hw_eht->phy_cap,
+					     EHT_PHYCAP_MCS14_DUP_IN_6GHZ_IDX,
+					     EHT_PHYCAP_MCS14_DUP_IN_6GHZ)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_eht_mcs14_dup_in_6ghz");
 			return -1;
 		}
 	}
