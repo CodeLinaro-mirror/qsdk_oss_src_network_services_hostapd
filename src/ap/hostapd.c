@@ -1066,9 +1066,11 @@ static bool is_link_reconfigure_allowed(struct hostapd_data *hapd)
 	struct hostapd_data *link_bss, *bss;
 	size_t i;
 	u8 list_len;
+#ifdef CONFIG_QCN_EXTN
 	u8 num_repurposed_links = 0;
+#endif /* CONFIG_QCN_EXTN */
 
-	if (!hapd->mld->num_links) {
+	if (!hapd->mld || !hapd->mld->num_links) {
 		wpa_printf(MSG_ERROR, "mld_ap is NOT set\n");
 		return false;
 	}
