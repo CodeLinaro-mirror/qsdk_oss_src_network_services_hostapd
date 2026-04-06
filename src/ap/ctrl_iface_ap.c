@@ -344,6 +344,651 @@ static u8 hostapd_vhtmaxmcs(u16 rx_vht_mcs_map, u16 tx_vht_mcs_map)
 }
 
 
+static unsigned int hostapd_mcs_map_max_nss(u16 mcs_map,
+					    unsigned int max_streams)
+{
+	unsigned int i;
+
+	for (i = max_streams; i >= 1; i--) {
+		if (((mcs_map >> ((i - 1) * MCS_MAP_BITS_PER_NSS)) &
+		    MCS_MAP_NSS_MASK) != MCS_MAP_NSS_MASK)
+			return i;
+	}
+
+	return 0;
+}
+
+
+static u16 hostapd_mcs_map_intersection(u16 ap_map, u16 sta_map,
+					unsigned int max_streams)
+{
+	u16 result = 0;
+	u16 ap, sta, val;
+	unsigned int i;
+
+	for (i = 0; i < max_streams; i++) {
+		ap = (ap_map >> (MCS_MAP_BITS_PER_NSS * i)) & MCS_MAP_NSS_MASK;
+		sta = (sta_map >> (MCS_MAP_BITS_PER_NSS * i)) & MCS_MAP_NSS_MASK;
+
+		if (ap == MCS_MAP_NSS_MASK || sta == MCS_MAP_NSS_MASK)
+			val = MCS_MAP_NSS_MASK;
+		else
+			val = ap < sta ? ap : sta;
+
+		result |= val << (MCS_MAP_BITS_PER_NSS * i);
+	}
+
+	return result;
+}
+
+
+static unsigned int hostapd_max_legacy_rate(struct hostapd_data *hapd,
+					    struct sta_info *sta)
+{
+	unsigned int max_rate = 0;
+	int i;
+
+	if (sta && sta->supported_rates_len > 0) {
+		for (i = 0; i < sta->supported_rates_len; i++) {
+			unsigned int rate = sta->supported_rates[i] & IEEE80211_RATE_VAL_MASK;
+
+			if (rate > max_rate)
+				max_rate = rate;
+		}
+		return max_rate * IEEE80211_RATE_UNIT_KBPS;
+	}
+
+	if (hapd->iface && hapd->iface->current_mode &&
+	    hapd->iface->current_mode->num_rates > 0)
+		return hapd->iface->current_mode->rates[
+			hapd->iface->current_mode->num_rates - 1] * HOSTAPD_MODE_RATE_UNIT_KBPS;
+
+	return 0;
+}
+
+
+static unsigned int hostapd_ht_max_mcs_nss(struct hostapd_data *hapd,
+					   struct sta_info *sta,
+					   unsigned int *nss)
+{
+	const u8 *ap_mcs, *sta_mcs;
+	unsigned int max_mcs = 0, max_nss = 0, stream;
+	int bit;
+	u8 supported;
+
+	if (!hapd->iface || !hapd->iface->current_mode || !sta ||
+	    !sta->ht_capabilities)
+		return 0;
+
+	ap_mcs = hapd->iface->current_mode->mcs_set;
+	sta_mcs = sta->ht_capabilities->supported_mcs_set;
+
+	for (stream = 0; stream < 4; stream++) {
+		supported = ap_mcs[stream] & sta_mcs[stream];
+
+		for (bit = 7; bit >= 0; bit--) {
+			if (supported & BIT(bit)) {
+				max_mcs = stream * 8 + bit;
+				max_nss = stream + 1;
+				break;
+			}
+		}
+	}
+
+	if (nss)
+		*nss = max_nss;
+
+	return max_mcs;
+}
+
+
+static unsigned int hostapd_vht_max_mcs_nss(struct hostapd_data *hapd,
+					    struct sta_info *sta,
+					    unsigned int *nss)
+{
+	struct hostapd_hw_modes *mode;
+	u16 ap_map, sta_map, map;
+	unsigned int max_nss;
+
+	if (!hapd->iface || !sta || !sta->vht_capabilities)
+		return 0;
+
+	mode = hapd->iface->current_mode;
+	if (!mode)
+		return 0;
+
+	ap_map = WPA_GET_LE16(&mode->vht_mcs_set[4]);
+	sta_map = le_to_host16(sta->vht_capabilities->vht_supported_mcs_set.rx_map);
+	map = hostapd_mcs_map_intersection(ap_map, sta_map, VHT_RX_NSS_MAX_STREAMS);
+	max_nss = hostapd_mcs_map_max_nss(map, VHT_RX_NSS_MAX_STREAMS);
+	if (nss)
+		*nss = max_nss;
+	if (!max_nss)
+		return 0;
+
+	switch ((map >> ((max_nss - 1) * MCS_MAP_BITS_PER_NSS)) & MCS_MAP_NSS_MASK) {
+	case 0:
+		return VHT_MCS_MAP_0_7_MAX_MCS;
+	case 1:
+		return VHT_MCS_MAP_0_8_MAX_MCS;
+	case 2:
+		return VHT_MCS_MAP_0_9_MAX_MCS;
+	default:
+		return MCS_MAP_NOT_SUPP;
+	}
+}
+
+
+static unsigned int hostapd_he_max_mcs_nss(struct hostapd_data *hapd,
+					   struct sta_info *sta,
+					   unsigned int *nss)
+{
+	struct hostapd_hw_modes *mode;
+	struct he_capabilities *ap_he;
+	const u16 *ap_mcs;
+	const u8 *sta_mcs;
+	u16 map = 0;
+	unsigned int max_nss = 0;
+	int mcs_count, i;
+
+	if (!hapd->iface || !sta || !sta->he_capab)
+		return 0;
+
+	mode = hapd->iface->current_mode;
+	if (!mode)
+		return 0;
+
+	ap_he = &mode->he_capab[IEEE80211_MODE_AP];
+	ap_mcs = (const u16 *) ap_he->mcs;
+	sta_mcs = (const u8 *) &sta->he_capab->he_basic_supported_mcs_set;
+
+	switch (hostapd_get_oper_chwidth(hapd->iconf)) {
+	case CONF_OPER_CHWIDTH_80P80MHZ:
+		mcs_count = HOSTAPD_HE_MCS_MAP_COUNT_80P80;
+		break;
+	case CONF_OPER_CHWIDTH_160MHZ:
+		mcs_count = HOSTAPD_HE_MCS_MAP_COUNT_160;
+		break;
+	default:
+		mcs_count = HOSTAPD_HE_MCS_MAP_COUNT_20_40_80;
+		break;
+	}
+
+	for (i = 0; i < mcs_count; i++) {
+		map = hostapd_mcs_map_intersection(le_to_host16(ap_mcs[i]),
+						  WPA_GET_LE16(&sta_mcs[i * sizeof(u16)]),
+						  HE_NSS_MAX_STREAMS);
+		max_nss = hostapd_mcs_map_max_nss(map, HE_NSS_MAX_STREAMS);
+		if (max_nss)
+			break;
+	}
+
+	if (nss)
+		*nss = max_nss;
+	if (!max_nss)
+		return 0;
+
+	switch ((map >> ((max_nss - 1) * MCS_MAP_BITS_PER_NSS)) & MCS_MAP_NSS_MASK) {
+	case 0:
+		return HE_MCS_MAP_0_7_MAX_MCS;
+	case 1:
+		return HE_MCS_MAP_0_9_MAX_MCS;
+	case 2:
+		return HE_MCS_MAP_0_11_MAX_MCS;
+	default:
+		return MCS_MAP_NOT_SUPP;
+	}
+}
+
+
+static unsigned int hostapd_eht_max_mcs_nss(struct hostapd_data *hapd,
+					    struct sta_info *sta,
+					    unsigned int *nss)
+{
+	struct hostapd_hw_modes *mode;
+	struct eht_capabilities *ap_eht;
+	const u8 *ap_mcs, *sta_mcs;
+	unsigned int max_nss = 0;
+	int sets = HOSTAPD_EHT_MCS_NSS_SETS_20MHZ_PLUS;
+	int offset;
+	u8 val;
+
+	if (!hapd->iface || !sta || !sta->eht_capab || !sta->he_capab)
+		return 0;
+
+	mode = hapd->iface->current_mode;
+	if (!mode)
+		return 0;
+
+	ap_eht = &mode->eht_capab[IEEE80211_MODE_AP];
+	ap_mcs = ap_eht->mcs;
+	sta_mcs = sta->eht_capab->optional;
+
+	switch (hostapd_get_oper_chwidth(hapd->iconf)) {
+	case CONF_OPER_CHWIDTH_320MHZ:
+		sets = HOSTAPD_EHT_MCS_NSS_SETS_320MHZ;
+		break;
+	case CONF_OPER_CHWIDTH_80P80MHZ:
+	case CONF_OPER_CHWIDTH_160MHZ:
+		sets = HOSTAPD_EHT_MCS_NSS_SETS_160_OR_80P80;
+		break;
+	default:
+		sets = HOSTAPD_EHT_MCS_NSS_SETS_20MHZ_PLUS;
+		break;
+	}
+
+	for (offset = 0; offset < sets * EHT_PHYCAP_MCS_NSS_LEN_20MHZ_PLUS;
+	     offset++) {
+		val = ap_mcs[offset] < sta_mcs[offset] ? ap_mcs[offset] :
+			sta_mcs[offset];
+		if ((val & 0x0f) > max_nss)
+			max_nss = val & 0x0f;
+		if (((val >> 4) & 0x0f) > max_nss)
+			max_nss = (val >> 4) & 0x0f;
+	}
+
+	if (nss)
+		*nss = max_nss;
+	if (!max_nss)
+		return 0;
+
+	for (offset = sets * EHT_PHYCAP_MCS_NSS_LEN_20MHZ_PLUS - 1; offset >= 0;
+	     offset--) {
+		val = ap_mcs[offset] < sta_mcs[offset] ? ap_mcs[offset] :
+			sta_mcs[offset];
+		if ((val >> 4) >= max_nss)
+			return HOSTAPD_EHT_MAX_MCS_13;
+		if ((val & 0x0f) >= max_nss)
+			return HOSTAPD_EHT_MAX_MCS_11;
+	}
+
+	return HOSTAPD_EHT_MAX_MCS_9;
+}
+
+
+static unsigned int hostapd_max_phy_rate_kbps(struct hostapd_data *hapd,
+					      struct sta_info *sta)
+{
+	unsigned int nss = 0, mcs, width;
+	unsigned int nsd;
+	unsigned int nbpsc;
+	unsigned int code_num;
+	unsigned int code_den;
+	unsigned int tsym_tenths_us;
+	unsigned long long bits_per_symbol;
+	unsigned long long kbps;
+
+	if (!hapd || !sta || !hapd->iface || !hapd->iface->current_mode)
+		return 0;
+
+	width = hostapd_get_oper_chwidth(hapd->iconf);
+
+	if ((sta->flags & WLAN_STA_EHT) && sta->eht_capab) {
+		tsym_tenths_us = HOSTAPD_PHY_RATE_TSYM_HE_EHT_TENTHS_US;
+
+		mcs = hostapd_eht_max_mcs_nss(hapd, sta, &nss);
+		if (!mcs || !nss)
+			return 0;
+
+		switch (width) {
+		case CONF_OPER_CHWIDTH_320MHZ:
+			nsd = HOSTAPD_PHY_RATE_NSD_320MHZ_EHT;
+			break;
+		case CONF_OPER_CHWIDTH_160MHZ:
+		case CONF_OPER_CHWIDTH_80P80MHZ:
+			nsd = HOSTAPD_PHY_RATE_NSD_160MHZ_HE_EHT;
+			break;
+		case CONF_OPER_CHWIDTH_80MHZ:
+			nsd = HOSTAPD_PHY_RATE_NSD_80MHZ_HE_EHT;
+			break;
+		case CONF_OPER_CHWIDTH_USE_HT:
+			nsd = hapd->iconf->secondary_channel ?
+				HOSTAPD_PHY_RATE_NSD_40MHZ_HE_EHT :
+				HOSTAPD_PHY_RATE_NSD_20MHZ_HE_EHT;
+			break;
+		default:
+			nsd = HOSTAPD_PHY_RATE_NSD_20MHZ_HE_EHT;
+			break;
+		}
+
+		switch (mcs) {
+		case 0:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_BPSK;
+			code_num = HOSTAPD_PHY_RATE_CODE_1_2_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_2;
+			break;
+		case 1:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_QPSK;
+			code_num = HOSTAPD_PHY_RATE_CODE_1_2_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_2;
+			break;
+		case 2:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_QPSK;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 3:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_16QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_1_2_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_2;
+			break;
+		case 4:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_16QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 5:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_64QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_2_3_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_3;
+			break;
+		case 6:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_64QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 7:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_64QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_5_6_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_6;
+			break;
+		case 8:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_256QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 9:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_256QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_5_6_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_6;
+			break;
+		case 10:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_1024QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 11:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_1024QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_5_6_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_6;
+			break;
+		case 12:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_4096QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 13:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_4096QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_5_6_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_6;
+			break;
+		default:
+			return 0;
+		}
+
+		bits_per_symbol = (unsigned long long) nsd * nbpsc * code_num;
+		kbps = bits_per_symbol * HOSTAPD_PHY_RATE_TENTHS_US_TO_KBPS_SCALE;
+		kbps /= (unsigned long long) code_den * tsym_tenths_us;
+		kbps = (unsigned int) ((kbps + 50 )/ 100) * 100;
+
+		return kbps * nss;
+	}
+
+	if ((sta->flags & WLAN_STA_HE) && sta->he_capab) {
+		tsym_tenths_us = HOSTAPD_PHY_RATE_TSYM_HE_EHT_TENTHS_US;
+
+		mcs = hostapd_he_max_mcs_nss(hapd, sta, &nss);
+		if (!nss)
+			return 0;
+
+		switch (width) {
+		case CONF_OPER_CHWIDTH_160MHZ:
+		case CONF_OPER_CHWIDTH_80P80MHZ:
+			nsd = HOSTAPD_PHY_RATE_NSD_160MHZ_HE_EHT;
+			break;
+		case CONF_OPER_CHWIDTH_80MHZ:
+			nsd = HOSTAPD_PHY_RATE_NSD_80MHZ_HE_EHT;
+			break;
+		case CONF_OPER_CHWIDTH_USE_HT:
+			nsd = hapd->iconf->secondary_channel ?
+				HOSTAPD_PHY_RATE_NSD_40MHZ_HE_EHT :
+				HOSTAPD_PHY_RATE_NSD_20MHZ_HE_EHT;
+			break;
+		default:
+			nsd = HOSTAPD_PHY_RATE_NSD_20MHZ_HE_EHT;
+			break;
+		}
+
+		switch (mcs) {
+		case 0:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_BPSK;
+			code_num = HOSTAPD_PHY_RATE_CODE_1_2_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_2;
+			break;
+		case 1:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_QPSK;
+			code_num = HOSTAPD_PHY_RATE_CODE_1_2_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_2;
+			break;
+		case 2:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_QPSK;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 3:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_16QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_1_2_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_2;
+			break;
+		case 4:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_16QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 5:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_64QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_2_3_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_3;
+			break;
+		case 6:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_64QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 7:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_64QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_5_6_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_6;
+			break;
+		case 8:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_256QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 9:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_256QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_5_6_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_6;
+			break;
+		case 10:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_1024QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 11:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_1024QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_5_6_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_6;
+			break;
+		default:
+			return 0;
+		}
+
+		bits_per_symbol = (unsigned long long) nsd * nbpsc * code_num * nss;
+		kbps = bits_per_symbol * HOSTAPD_PHY_RATE_TENTHS_US_TO_KBPS_SCALE;
+		kbps /= (unsigned long long) code_den * tsym_tenths_us;
+		kbps = (unsigned int) ((kbps + 50 )/ 100) * 100;
+
+		return kbps;
+	}
+
+	if ((sta->flags & WLAN_STA_VHT) && sta->vht_capabilities) {
+		tsym_tenths_us = HOSTAPD_PHY_RATE_TSYM_HT_VHT_TENTHS_US;
+
+		mcs = hostapd_vht_max_mcs_nss(hapd, sta, &nss);
+		if (!mcs || !nss)
+			return 0;
+
+		switch (width) {
+		case CONF_OPER_CHWIDTH_160MHZ:
+		case CONF_OPER_CHWIDTH_80P80MHZ:
+			nsd = HOSTAPD_PHY_RATE_NSD_160MHZ_VHT;
+			break;
+		case CONF_OPER_CHWIDTH_80MHZ:
+			nsd = HOSTAPD_PHY_RATE_NSD_80MHZ_VHT;
+			break;
+		case CONF_OPER_CHWIDTH_USE_HT:
+			nsd = hapd->iconf->secondary_channel ?
+				HOSTAPD_PHY_RATE_NSD_40MHZ_HT_VHT :
+				HOSTAPD_PHY_RATE_NSD_20MHZ_HT_VHT;
+			break;
+		default:
+			nsd = HOSTAPD_PHY_RATE_NSD_20MHZ_HT_VHT;
+			break;
+		}
+
+		switch (mcs) {
+		case 0:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_BPSK;
+			code_num = HOSTAPD_PHY_RATE_CODE_1_2_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_2;
+			break;
+		case 1:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_QPSK;
+			code_num = HOSTAPD_PHY_RATE_CODE_1_2_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_2;
+			break;
+		case 2:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_QPSK;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 3:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_16QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_1_2_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_2;
+			break;
+		case 4:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_16QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 5:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_64QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_2_3_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_3;
+			break;
+		case 6:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_64QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 7:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_64QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_5_6_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_6;
+			break;
+		case 8:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_256QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 9:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_256QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_5_6_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_6;
+			break;
+		default:
+			return 0;
+		}
+
+		bits_per_symbol = (unsigned long long) nsd * nbpsc * code_num * nss;
+		kbps = bits_per_symbol * HOSTAPD_PHY_RATE_TENTHS_US_TO_KBPS_SCALE;
+		kbps /= (unsigned long long) code_den * tsym_tenths_us;
+		kbps = (unsigned int) ((kbps + 50 )/ 100) * 100;
+
+		return kbps;
+	}
+
+	if ((sta->flags & WLAN_STA_HT) && sta->ht_capabilities) {
+		tsym_tenths_us = HOSTAPD_PHY_RATE_TSYM_HT_VHT_TENTHS_US;
+
+		mcs = hostapd_ht_max_mcs_nss(hapd, sta, &nss);
+		if (!nss)
+			return 0;
+
+		nsd = (width == CONF_OPER_CHWIDTH_USE_HT &&
+		       hapd->iconf->secondary_channel) ?
+			HOSTAPD_PHY_RATE_NSD_40MHZ_HT_VHT :
+			HOSTAPD_PHY_RATE_NSD_20MHZ_HT_VHT;
+
+		switch (mcs % 8) {
+		case 0:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_BPSK;
+			code_num = HOSTAPD_PHY_RATE_CODE_1_2_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_2;
+			break;
+		case 1:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_QPSK;
+			code_num = HOSTAPD_PHY_RATE_CODE_1_2_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_2;
+			break;
+		case 2:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_QPSK;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 3:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_16QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_1_2_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_2;
+			break;
+		case 4:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_16QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 5:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_64QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_2_3_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_3;
+			break;
+		case 6:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_64QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_3_4_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_4;
+			break;
+		case 7:
+			nbpsc = HOSTAPD_PHY_RATE_NBPSC_64QAM;
+			code_num = HOSTAPD_PHY_RATE_CODE_5_6_NUMERATOR;
+			code_den = HOSTAPD_PHY_RATE_CODE_DENOMINATOR_6;
+			break;
+		default:
+			return 0;
+		}
+
+		bits_per_symbol = (unsigned long long) nsd * nbpsc * code_num * nss;
+		kbps = bits_per_symbol * HOSTAPD_PHY_RATE_TENTHS_US_TO_KBPS_SCALE;
+		kbps /= (unsigned long long) code_den * tsym_tenths_us;
+		kbps = (unsigned int) ((kbps + 50 )/ 100) * 100;
+
+		return kbps;
+	}
+
+	return hostapd_max_legacy_rate(hapd, sta);
+}
+
+
 static int hostapd_get_sta_info(struct hostapd_data *hapd,
 				struct sta_info *sta,
 				char *buf, size_t buflen)
@@ -1114,6 +1759,11 @@ static int hostapd_ctrl_iface_sta_mib(struct hostapd_data *hapd,
 
 	ret = os_snprintf(buf + len, buflen - len, "max_tx_nss=%u\n",
 			  hostapd_tx_maxnss(hapd, sta));
+	if (!os_snprintf_error(buflen - len, ret))
+		len += ret;
+
+	ret = os_snprintf(buf + len, buflen - len, "maxphyrate=%u\n",
+			  hostapd_max_phy_rate_kbps(hapd, sta));
 	if (!os_snprintf_error(buflen - len, ret))
 		len += ret;
 
