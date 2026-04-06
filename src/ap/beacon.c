@@ -668,8 +668,10 @@ static u8 * hostapd_eid_supported_op_classes(struct hostapd_data *hapd, u8 *eid)
 	*eid++ = WLAN_EID_SUPPORTED_OPERATING_CLASSES;
 	*eid++ = 2;
 
+#ifdef CONFIG_QCN_EXTN
 	hostapd_modify_supported_op_class_for_240mhz_extn(hapd->iface->freq,
-		hostapd_get_oper_chwidth(hapd->iconf), &op_class);
+							  chwidth, &op_class);
+#endif /* CONFIG_QCN_EXTN */
 
 	/* Current Operating Class */
 	*eid++ = op_class;
