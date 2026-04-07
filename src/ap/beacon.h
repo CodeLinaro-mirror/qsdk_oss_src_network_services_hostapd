@@ -32,9 +32,6 @@ struct probe_resp_params {
 	u8 *cca_pos;
 #endif /* CONFIG_IEEE80211AX */
 
-#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
-	const u8 *mu_cap_war_vht_cap_offset;
-#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 	bool is_ml_probe;
 };
 
