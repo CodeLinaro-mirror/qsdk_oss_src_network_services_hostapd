@@ -123,6 +123,7 @@ const char * event_to_string(enum wpa_event_type event)
 	E2S(ESP_UPDATE);
 #ifdef CONFIG_QCN_EXTN
 	E2S(DCS_INTF);
+	E2S(DFS_RCSA_TX);
 #endif
 	E2S(UPDATE_AP_POWERSAVE);
 	}
