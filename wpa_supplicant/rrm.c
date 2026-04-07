@@ -751,7 +751,7 @@ static int * wpas_beacon_request_freqs(struct wpa_supplicant *wpa_s,
 int wpas_get_op_chan_phy(int freq, const u8 *ies, size_t ies_len,
 			 u8 *op_class, u8 *chan, u8 *phy_type)
 {
-	int sec_chan = 0, chanwidth = 0;
+	int sec_chan = 0, chanwidth;
 	struct ieee802_11_elems elems;
 	struct ieee80211_ht_operation *ht_oper;
 
@@ -776,7 +776,7 @@ int wpas_get_op_chan_phy(int freq, const u8 *ies, size_t ies_len,
 	}
 
 	if (ieee80211_chaninfo_to_channel(freq, chanwidth, sec_chan, op_class,
-					  chan) == NUM_HOSTAPD_MODES) {
+					  chan) != 0) {
 		wpa_printf(MSG_DEBUG,
 			   "Cannot determine operating class and channel");
 		return -1;
