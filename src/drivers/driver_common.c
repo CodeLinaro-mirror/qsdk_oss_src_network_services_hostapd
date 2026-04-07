@@ -122,6 +122,7 @@ const char * event_to_string(enum wpa_event_type event)
 	E2S(MODIFY_LINK_STA);
 #ifdef CONFIG_QCN_EXTN
 	E2S(DFS_UPLINK_CHANNEL_SELECTED);
+	E2S(DFS_RCSA_TX);
 #endif
 	E2S(AFC_RECEIVED);
 	E2S(IFACE_RELOAD);

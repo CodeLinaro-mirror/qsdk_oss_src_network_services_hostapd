@@ -7643,6 +7643,12 @@ enum wpa_event_type {
 	 * fronthaul
 	 */
 	EVENT_DFS_UPLINK_CHANNEL_SELECTED,
+
+	/**
+	* EVENT_DFS_RCSA_TX - notify backhaul station
+	* about Transmission of RCSA to Root
+	*/
+	EVENT_DFS_RCSA_TX,
 #endif
 
 	/**

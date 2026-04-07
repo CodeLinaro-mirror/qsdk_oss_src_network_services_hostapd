@@ -7755,10 +7755,11 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			wpas_ap_event_dfs_radar_detected(wpa_s,
 							 &data->dfs_event);
 #ifdef CONFIG_QCN_EXTN
-			/* On Radar detection, if uplink_csa is not enabled
+			/* On Radar detection, if uplink_csa/rcsa is not enabled
 			 * flush all the scan bss cache and deauth the STA
 			 */
-			if (!wpa_s->conf->uplink_csa && !wpa_s->ifmsh) {
+			if (!wpa_s->conf->uplink_csa && !wpa_s->conf->rcsa
+			    && !wpa_s->ifmsh) {
 				wpa_bss_flush(wpa_s, 1);
 				wpa_supplicant_deauthenticate(wpa_s,
 						WLAN_REASON_DEAUTH_LEAVING);
