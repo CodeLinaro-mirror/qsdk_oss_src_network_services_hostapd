@@ -2050,12 +2050,16 @@ err:
 int pasn_auth_frame_hash(int akmp, int cipher, const u8 *data, size_t len,
 			 u8 *hash)
 {
-	if (pasn_use_sha384(akmp, cipher)) {
+	switch (alg) {
+	case RSN_HASH_SHA384:
 		wpa_printf(MSG_DEBUG, "PASN: Frame hash using SHA-384");
 		return sha384_vector(1, &data, &len, hash);
-	} else {
+	case RSN_HASH_SHA256:
 		wpa_printf(MSG_DEBUG, "PASN: Frame hash using SHA-256");
 		return sha256_vector(1, &data, &len, hash);
+	default:
+		wpa_printf(MSG_ERROR, "PASN: Unsupported alg=%d", alg);
+		return -1;
 	}
 }
 

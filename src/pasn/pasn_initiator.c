@@ -740,8 +740,7 @@ static struct wpabuf * wpas_pasn_build_auth_3(struct pasn_data *pasn)
 	data_len = wpabuf_len(buf) - IEEE80211_HDRLEN;
 
 	if (!pasn->auth1 ||
-	    pasn_auth_frame_hash(pasn->akmp, pasn->cipher,
-				 wpabuf_head(pasn->auth1),
+	    pasn_auth_frame_hash(pasn->hash_alg, wpabuf_head(pasn->auth1),
 				 wpabuf_len(pasn->auth1), hash)) {
 		wpa_printf(MSG_INFO, "PASN: Failed to calculate Auth1 hash");
 		goto fail;

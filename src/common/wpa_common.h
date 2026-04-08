@@ -829,7 +829,7 @@ int pasn_mic(enum rsn_hash_alg alg, const u8 *kck, size_t kck_len,
 
 int wpa_ltf_keyseed(struct wpa_ptk *ptk, int akmp, int cipher);
 
-int pasn_auth_frame_hash(int akmp, int cipher, const u8 *data, size_t len,
+int pasn_auth_frame_hash(enum rsn_hash_alg alg, const u8 *data, size_t len,
 			 u8 *hash);
 
 void wpa_pasn_build_auth_header(struct wpabuf *buf, const u8 *bssid,
