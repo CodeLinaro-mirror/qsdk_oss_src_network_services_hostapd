@@ -2051,9 +2051,16 @@ int pasn_auth_frame_hash(int akmp, int cipher, const u8 *data, size_t len,
 			 u8 *hash)
 {
 	switch (alg) {
+#ifdef CONFIG_SHA512
+	case RSN_HASH_SHA512:
+		wpa_printf(MSG_DEBUG, "PASN: Frame hash using SHA-512");
+		return sha512_vector(1, &data, &len, hash);
+#endif /* CONFIG_SHA512 */
+#ifdef CONFIG_SHA384
 	case RSN_HASH_SHA384:
 		wpa_printf(MSG_DEBUG, "PASN: Frame hash using SHA-384");
 		return sha384_vector(1, &data, &len, hash);
+#endif /* CONFIG_SHA384 */
 	case RSN_HASH_SHA256:
 		wpa_printf(MSG_DEBUG, "PASN: Frame hash using SHA-256");
 		return sha256_vector(1, &data, &len, hash);
