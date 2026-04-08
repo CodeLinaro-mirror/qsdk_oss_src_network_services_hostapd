@@ -594,6 +594,9 @@ int handle_auth_pasn_resp(struct pasn_data *pasn, const u8 *own_addr,
 				   pasn->is_ml_peer ? pasn->reply_addr : pasn->peer_addr,
 				   2, status, pasn->auth_alg == WLAN_AUTH_EPPKE);
 
+	if (status == WLAN_STATUS_FINITE_CYCLIC_GROUP_NOT_SUPPORTED)
+		wpa_pasn_add_own_supported_groups(buf, pasn->pasn_groups);
+
 	if (status != WLAN_STATUS_SUCCESS)
 		goto done;
 
@@ -656,6 +659,8 @@ int handle_auth_pasn_resp(struct pasn_data *pasn, const u8 *own_addr,
 		pasn->prepare_data_element(pasn->cb_ctx, peer_addr);
 
 	wpa_pasn_add_extra_ies(buf, pasn->extra_ies, pasn->extra_ies_len);
+
+	wpa_pasn_add_own_supported_groups(buf, pasn->pasn_groups);
 
 #ifdef CONFIG_ENC_ASSOC
 	if (pasn->auth_alg == WLAN_AUTH_EPPKE && pasn->is_ml_peer) {
