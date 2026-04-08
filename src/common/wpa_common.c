@@ -1767,6 +1767,8 @@ err:
 size_t pasn_mic_len(enum rsn_hash_alg alg)
 {
 	switch (alg) {
+	case RSN_HASH_SHA512:
+		return 32;
 	case RSN_HASH_SHA384:
 		return 24;
 	case RSN_HASH_SHA256:
@@ -1966,9 +1968,10 @@ int pasn_mic(enum rsn_hash_alg alg, const u8 *kck, size_t kck_len,
 	     const u8 *frame, size_t frame_len, u8 *mic)
 {
 	u8 *buf;
-	u8 hash[SHA384_MAC_LEN];
+	u8 hash[SHA512_MAC_LEN];
 	size_t buf_len = 2 * ETH_ALEN + data_len + frame_len;
 	int ret = -1;
+	size_t mic_len;
 
 	if (!kck) {
 		wpa_printf(MSG_ERROR, "PASN: No KCK for MIC calculation");
@@ -2008,28 +2011,36 @@ int pasn_mic(enum rsn_hash_alg alg, const u8 *kck, size_t kck_len,
 	wpa_hexdump_key(MSG_DEBUG, "PASN: MIC: KCK", kck, kck_len);
 	wpa_hexdump_key(MSG_DEBUG, "PASN: MIC: buf", buf, buf_len);
 
+	mic_len = pasn_mic_len(alg);
+
 	switch (alg) {
+#ifdef CONFIG_SHA512
+	case RSN_HASH_SHA512:
+		wpa_printf(MSG_DEBUG, "PASN: MIC using HMAC-SHA512");
+		if (hmac_sha512(kck, WPA_PASN_KCK_LEN, buf, buf_len, hash))
+			goto err;
+		break;
+#endif /* CONFIG_SHA512 */
+#ifdef CONFIG_SHA384
 	case RSN_HASH_SHA384:
 		wpa_printf(MSG_DEBUG, "PASN: MIC using HMAC-SHA384");
 		if (hmac_sha384(kck, WPA_PASN_KCK_LEN, buf, buf_len, hash))
 			goto err;
-
-		os_memcpy(mic, hash, 24);
-		wpa_hexdump_key(MSG_DEBUG, "PASN: MIC: mic: ", mic, 24);
 		break;
+#endif /* CONFIG_SHA384 */
 	case RSN_HASH_SHA256:
 		wpa_printf(MSG_DEBUG, "PASN: MIC using HMAC-SHA256");
 		if (hmac_sha256(kck, WPA_PASN_KCK_LEN, buf, buf_len, hash))
 			goto err;
-
-		os_memcpy(mic, hash, 16);
-		wpa_hexdump_key(MSG_DEBUG, "PASN: MIC: mic: ", mic, 16);
 		break;
 	default:
 		wpa_printf(MSG_ERROR,
 			   "PASN: Unsupported alg=%d for MIC calculation", alg);
 		goto err;
 	}
+
+	os_memcpy(mic, hash, mic_len);
+	wpa_hexdump_key(MSG_DEBUG, "PASN: MIC", mic, mic_len);
 
 	ret = 0;
 err:
