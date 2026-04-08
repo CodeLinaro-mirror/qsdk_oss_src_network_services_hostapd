@@ -997,6 +997,8 @@ struct hostapd_iface {
 	size_t max_mgmt_frm_sz;
 	u32 cs_time;
 	int last_scan_aborted;
+	bool csa_pending_on_cac_abort;
+	struct csa_settings csa_settings;
 };
 
 
@@ -1089,6 +1091,7 @@ void hostapd_chan_switch_config(struct hostapd_data *hapd,
 				struct hostapd_freq_params *freq_params);
 int hostapd_switch_channel(struct hostapd_data *hapd,
 			   struct csa_settings *settings);
+int hostapd_abort_dfs_cac(struct hostapd_data *hapd);
 int hostapd_force_channel_switch(struct hostapd_iface *iface,
 				 struct csa_settings *settings);
 void

@@ -984,6 +984,9 @@
  *	while operating on this channel.
  *	%NL80211_ATTR_RADAR_EVENT is used to inform about the type of the
  *	event.
+ *	Can also be sent from userspace to request a CAC abort by setting
+ *	%NL80211_ATTR_RADAR_EVENT to %NL80211_RADAR_CAC_ABORTED. The kernel will
+ *	then send this same event back to confirm the abort.
  *
  * @NL80211_CMD_GET_PROTOCOL_FEATURES: Get global nl80211 protocol features,
  *	i.e. features for the nl80211 protocol rather than device features.
@@ -2278,6 +2281,9 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_RADAR_EVENT: Type of radar event for notification to userspace,
  *	contains a value of enum nl80211_radar_event (u32).
+ *	Can also be sent from userspace with value %NL80211_RADAR_CAC_ABORTED to
+ *	request a CAC abort when a channel switch is triggered during an ongoing
+ *	CAC.
  *
  * @NL80211_ATTR_EXT_CAPA: 802.11 extended capabilities that the kernel driver
  *	has and handles. The format is the same as the IE contents. See
@@ -7249,6 +7255,9 @@ enum nl80211_smps_mode {
  *	the channel is now available.
  * @NL80211_RADAR_CAC_ABORTED: Channel Availability Check has been aborted, no
  *	change to the channel status.
+ *	When sent by userspace via %NL80211_CMD_RADAR_DETECT, requests an abort
+ *	of the ongoing CAC. The kernel aborts the CAC and notifies userspace
+ *	with this event upon completion.
  * @NL80211_RADAR_NOP_FINISHED: The Non-Occupancy Period for this channel is
  *	over, channel becomes usable.
  * @NL80211_RADAR_PRE_CAC_EXPIRED: Channel Availability Check done on this

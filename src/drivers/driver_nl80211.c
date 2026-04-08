@@ -12880,6 +12880,51 @@ static int set_beacon_data(struct nl_msg *msg, struct beacon_data *settings,
 }
 
 
+static int nl80211_abort_cac(void *priv, int link_id)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret;
+
+	wpa_printf(MSG_DEBUG, "nl80211: abort CAC");
+
+	if (!(drv->capa.flags & WPA_DRIVER_FLAGS_RADAR)) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Driver does not support radar detection");
+		return -1;
+	}
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_RADAR_DETECT);
+	if (!msg) {
+		nlmsg_free(msg);
+		return -1;
+	}
+
+	if (nla_put_u32(msg, NL80211_ATTR_RADAR_EVENT, NL80211_RADAR_CAC_ABORTED)) {
+		nlmsg_free(msg);
+		return -1;
+	}
+
+	if (nl80211_link_valid(bss->valid_links, link_id)) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Radar detection (CAC) on link_id=%d",
+			   link_id);
+
+		if (nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id)) {
+			nlmsg_free(msg);
+			return -1;
+		}
+	}
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret == 0)
+		return 0;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Failed to abort CAC: %d (%s)", ret, strerror(-ret));
+	return -1;
+}
+
 static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 {
 	struct nl_msg *msg;
@@ -17529,4 +17574,5 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #ifdef CONFIG_QCN_EXTN
 	.set_muedca_mode = nl80211_set_muedca_mode,
 #endif /* CONFIG_QCN_EXTN */
+	.abort_cac = nl80211_abort_cac,
 };

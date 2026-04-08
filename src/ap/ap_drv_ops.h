@@ -348,6 +348,21 @@ static inline const char * hostapd_drv_get_radio_name(struct hostapd_data *hapd)
 	return hapd->driver->get_radio_name(hapd->drv_priv);
 }
 
+static inline int hostapd_drv_abort_cac(struct hostapd_data *hapd)
+{
+	int link_id = -1;
+
+	if (!hapd->driver->abort_cac)
+		return -1;
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap)
+		link_id = hapd->mld_link_id;
+#endif /* CONFIG_IEEE80211BE */
+
+	return hapd->driver->abort_cac(hapd->drv_priv, link_id);
+}
+
 static inline int hostapd_drv_switch_channel(struct hostapd_data *hapd,
 					     struct csa_settings *settings)
 {

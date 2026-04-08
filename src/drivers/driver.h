@@ -6342,6 +6342,7 @@ struct wpa_driver_ops {
 #ifdef CONFIG_QCN_EXTN
 	int (*set_muedca_mode)(void *priv, int mode, int radio_idx);
 #endif /* CONFIG_QCN_EXTN */
+	int (*abort_cac)(void *priv, int link_id);
 };
 
 /**
