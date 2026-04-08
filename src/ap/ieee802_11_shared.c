@@ -1289,7 +1289,7 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 
 	if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK &&
 	    hapd->conf->control_frame_prot)
-		capab |= BIT(WLAN_RSNX_CAPAB_CIGTK);
+		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
 
 	capab &= capab_mask;
 

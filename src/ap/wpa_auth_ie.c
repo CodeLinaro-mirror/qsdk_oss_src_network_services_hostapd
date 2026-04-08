@@ -602,7 +602,7 @@ static u64 rsnxe_capab(struct wpa_auth_config *conf, int key_mgmt)
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_UNAUTH_EPPKE);
 #endif /* CONFIG_ENC_ASSOC */
 	if (conf->cigtk)
-		capab |= BIT(WLAN_RSNX_CAPAB_CIGTK);
+		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
 
 	return capab;
 }

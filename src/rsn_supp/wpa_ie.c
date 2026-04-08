@@ -694,7 +694,7 @@ u64 wpa_sm_get_rsnxe_capab(struct wpa_sm *sm)
 		capab |= BIT(WLAN_RSNX_CAPAB_802_1X_IN_AUTH_FRAMES);
 #endif /* CONFIG_IEEE8021X_AUTH */
 	if (sm->control_frame_prot)
-		capab |= BIT(WLAN_RSNX_CAPAB_CIGTK);
+		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
 
 	return capab;
 }
