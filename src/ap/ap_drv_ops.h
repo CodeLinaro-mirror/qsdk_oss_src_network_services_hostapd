@@ -151,6 +151,7 @@ int hostapd_sta_auth(struct hostapd_data *hapd, const u8 *addr,
 		     u16 seq, u16 status, const u8 *ie, size_t len);
 int hostapd_sta_assoc(struct hostapd_data *hapd, const u8 *addr,
 		      int reassoc, u16 status, const u8 *ie, size_t len);
+int hostapd_stop_background_cac(struct hostapd_data *hapd);
 int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 			  enum hostapd_hw_mode mode, int freq,
 			  int channel, int ht_enabled, int vht_enabled,
