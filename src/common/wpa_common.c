@@ -1704,6 +1704,9 @@ int pasn_pmk_to_ptk(const u8 *pmk, size_t pmk_len,
 	*alg = pasn_use_sha384(akmp, cipher) ? RSN_HASH_SHA384 :
 		RSN_HASH_SHA256;
 
+	*alg = pasn_use_sha384(akmp, cipher) ? RSN_HASH_SHA384 :
+		RSN_HASH_SHA256;
+
 	if (pasn_use_sha384(akmp, cipher)) {
 		wpa_printf(MSG_DEBUG, "PASN: PTK derivation using SHA384");
 
