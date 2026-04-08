@@ -5443,6 +5443,13 @@ struct wpa_driver_ops {
 	int (*start_dfs_cac)(void *priv, struct hostapd_freq_params *freq);
 
 	/**
+	 * stop_background_cac - Stop an ongoing background CAC
+	 * @priv: Private driver interface data
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*stop_background_cac)(void *priv);
+
+	/**
 	 * stop_ap - Removes beacon from AP
 	 * @priv: Private driver interface data
 	 * @link_id: Link ID of the specified link; -1 for non-MLD

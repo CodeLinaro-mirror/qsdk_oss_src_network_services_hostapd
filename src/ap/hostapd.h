@@ -871,6 +871,7 @@ struct hostapd_iface {
 		int freq;
 		int centr_freq_seg0_idx;
 		int centr_freq_seg1_idx;
+		enum oper_chan_width chwidth;
 		/* Main chain is on temporary channel during
 		 * CAC detection on radar offchain.
 		 */
@@ -878,6 +879,11 @@ struct hostapd_iface {
 		/* CAC started on radar offchain */
 		unsigned int cac_started:1;
 	} radar_background;
+
+	/*
+	 * User-configured RCAC channel
+	 */
+	int user_rcac_channel;
 
 	u16 hw_flags;
 
