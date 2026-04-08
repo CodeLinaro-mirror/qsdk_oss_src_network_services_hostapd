@@ -474,9 +474,9 @@ static int wpa_write_rsne_override_2(struct wpa_auth_config *conf, u8 *buf,
 }
 
 
-static u32 rsnxe_capab(struct wpa_auth_config *conf, int key_mgmt)
+static u64 rsnxe_capab(struct wpa_auth_config *conf, int key_mgmt)
 {
-	u32 capab = 0;
+	u64 capab = 0;
 
 	if (wpa_key_mgmt_sae(key_mgmt) &&
 	    (conf->sae_pwe == SAE_PWE_HASH_TO_ELEMENT ||
@@ -504,7 +504,7 @@ static u32 rsnxe_capab(struct wpa_auth_config *conf, int key_mgmt)
 	if (conf->spp_amsdu)
 		capab |= BIT(WLAN_RSNX_CAPAB_SPP_A_MSDU);
 	if (conf->cigtk)
-		capab |= BIT(WLAN_RSNX_CAPAB_CIGTK);
+		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
 
 	return capab;
 }
@@ -513,7 +513,7 @@ static u32 rsnxe_capab(struct wpa_auth_config *conf, int key_mgmt)
 int wpa_write_rsnxe(struct wpa_auth_config *conf, u8 *buf, size_t len)
 {
 	u8 *pos = buf;
-	u32 capab = 0, tmp;
+	u64 capab = 0, tmp;
 	size_t flen;
 
 	capab = rsnxe_capab(conf, conf->wpa_key_mgmt);
@@ -545,7 +545,7 @@ static int wpa_write_rsnxe_override(struct wpa_auth_config *conf, u8 *buf,
 				    size_t len)
 {
 	u8 *pos = buf;
-	u32 capab, tmp;
+	u64 capab, tmp;
 	size_t flen;
 
 	capab = rsnxe_capab(conf, conf->rsn_override_key_mgmt |
