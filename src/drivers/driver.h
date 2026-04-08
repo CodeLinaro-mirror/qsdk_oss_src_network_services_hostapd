@@ -6740,6 +6740,7 @@ struct wpa_driver_ops {
 	 */
 	int (*fetch_afc_power_event)(void *priv, u8 radio_idx);
 
+	int (*abort_cac)(void *priv, int link_id);
 #ifdef CONFIG_IEEE80211BE
 	/**
 	 * read_link_set_beacon - read the value of set_beacon of link from
