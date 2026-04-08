@@ -5923,10 +5923,6 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 #endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_IEEE80211BN
-	} else if (os_strcmp(buf, "uhr_oper_chwidth") == 0) {
-		conf->uhr_oper_chwidth = atoi(pos);
-	} else if (os_strcmp(buf, "uhr_oper_centr_freq_seg0_idx") == 0) {
-		conf->uhr_oper_centr_freq_seg0_idx = atoi(pos);
 	} else if (os_strcmp(buf, "dps_assist") == 0) {
 		int val;
 		val = atoi(pos);
