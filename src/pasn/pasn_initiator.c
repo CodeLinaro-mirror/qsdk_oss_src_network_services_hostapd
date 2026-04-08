@@ -969,7 +969,6 @@ static int wpas_pasn_send_auth_1(struct pasn_data *pasn, const u8 *own_addr,
 {
 	struct wpabuf *frame;
 	int ret;
-	u8 hash[SHA512_MAC_LEN];
 
 	pasn->ecdh = crypto_ecdh_init(group);
 	if (!pasn->ecdh) {

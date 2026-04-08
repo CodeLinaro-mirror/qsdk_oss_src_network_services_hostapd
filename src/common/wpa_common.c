@@ -2035,13 +2035,6 @@ int pasn_mic(enum rsn_hash_alg alg, const u8 *kck, size_t kck_len,
 		return -1;
 	}
 
-	if (kck_len != WPA_PASN_KCK_LEN) {
-		wpa_printf(MSG_ERROR,
-			   "PASN: Unexpected KCK length %zu for MIC calculation",
-			   kck_len);
-		return -1;
-	}
-
 	if (!data || !data_len) {
 		wpa_printf(MSG_ERROR, "PASN: invalid data for MIC calculation");
 		return -1;
@@ -2115,7 +2108,7 @@ err:
  *	SHA384.
  * Returns: 0 on success, -1 on failure
  */
-int pasn_auth_frame_hash(int akmp, int cipher, const u8 *data, size_t len,
+int pasn_auth_frame_hash(enum rsn_hash_alg alg, const u8 *data, size_t len,
 			 u8 *hash)
 {
 	switch (alg) {

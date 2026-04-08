@@ -1161,11 +1161,6 @@ int handle_auth_pasn_3(struct pasn_data *pasn, const u8 *own_addr,
 		goto fail;
 	}
 
-#ifdef CONFIG_ENC_ASSOC
-	if (pasn->auth_alg == WLAN_AUTH_EPPKE && pasn->is_ml_peer)
-		own_addr = pasn->mld_addr;
-#endif /* CONFIG_ENC_ASSOC */
-
 	/* Verify the MIC */
 	copy_len = len - offsetof(struct ieee80211_mgmt, u.auth);
 	mic_offset = elems.mic - (const u8 *) &mgmt->u.auth;
@@ -1178,14 +1173,20 @@ int handle_auth_pasn_3(struct pasn_data *pasn, const u8 *own_addr,
 	os_memset(copy + mic_offset, 0, mic_len);
 
 	if (!pasn->auth1 ||
-	    pasn_auth_frame_hash(pasn->akmp, pasn->cipher,
-				 wpabuf_head(pasn->auth1),
-				 wpabuf_len(pasn->auth1), hash)) {
+            pasn_auth_frame_hash(pasn->hash_alg, wpabuf_head(pasn->auth1),
+                                 wpabuf_len(pasn->auth1), hash)) {
 		wpa_printf(MSG_INFO, "PASN: Failed to calculate Auth1 hash");
 		goto fail;
 	}
+#ifdef CONFIG_ENC_ASSOC
+        if (pasn->auth_alg == WLAN_AUTH_EPPKE &&
+            pasn->is_ml_peer)
+                own_addr = pasn->mld_addr;
+#endif /* CONFIG_ENC_ASSOC */
+
+	wpa_hexdump_key(MSG_DEBUG, "PASN: MIC: copy:frame", copy, copy_len);
 	ret = pasn_mic(pasn->hash_alg, pasn->ptk.kck, pasn->ptk.kck_len,
-		       pasn->own_addr, pasn->peer_addr, hash, mic_len * 2, copy, copy_len, out_mic);
+		       peer_addr, own_addr, hash, mic_len * 2, copy, copy_len, out_mic);
 	os_free(copy);
 	copy = NULL;
 
