@@ -17,6 +17,7 @@
 #include "common/ieee802_11_defs.h"
 #include "common/dragonfly.h"
 #include "crypto/sha384.h"
+#include "crypto/sha512.h"
 #include "crypto/crypto.h"
 #include "crypto/random.h"
 #include "eap_common/eap_defs.h"
@@ -588,7 +589,6 @@ static struct wpabuf * wpas_pasn_build_auth_1(struct pasn_data *pasn,
 	struct wpabuf *buf, *pubkey = NULL, *wrapped_data_buf = NULL;
 	const u8 *pmkid;
 	u8 wrapped_data;
-	int ret;
 
 	wpa_printf(MSG_DEBUG, "PASN: Building frame 1");
 
@@ -658,12 +658,11 @@ static struct wpabuf * wpas_pasn_build_auth_1(struct pasn_data *pasn,
 
 	wpa_pasn_add_extra_ies(buf, pasn->extra_ies, pasn->extra_ies_len);
 
-	ret = pasn_auth_frame_hash(pasn->akmp, pasn->cipher,
-				   wpabuf_head_u8(buf) + IEEE80211_HDRLEN,
-				   wpabuf_len(buf) - IEEE80211_HDRLEN,
-				   pasn->hash);
-	if (ret) {
-		wpa_printf(MSG_DEBUG, "PASN: Failed to compute hash");
+	wpabuf_free(pasn->auth1);
+	pasn->auth1 = wpabuf_alloc_copy(wpabuf_head_u8(buf) + IEEE80211_HDRLEN,
+					wpabuf_len(buf) - IEEE80211_HDRLEN);
+	if (!pasn->auth1) {
+		wpa_printf(MSG_DEBUG, "PASN: Failed to store a copy of Auth1");
 		goto fail;
 	}
 
@@ -740,6 +739,14 @@ static struct wpabuf * wpas_pasn_build_auth_3(struct pasn_data *pasn)
 	data = wpabuf_head_u8(buf) + IEEE80211_HDRLEN;
 	data_len = wpabuf_len(buf) - IEEE80211_HDRLEN;
 
+	if (!pasn->auth1 ||
+	    pasn_auth_frame_hash(pasn->akmp, pasn->cipher,
+				 wpabuf_head(pasn->auth1),
+				 wpabuf_len(pasn->auth1), hash)) {
+		wpa_printf(MSG_INFO, "PASN: Failed to calculate Auth1 hash");
+		goto fail;
+	}
+
 	ret = pasn_mic(pasn->hash_alg, pasn->ptk.kck, pasn->ptk.kck_len,
                pasn->own_addr, pasn->peer_addr,
                hash, mic_len * 2, data, data_len, mic);
@@ -787,7 +794,9 @@ void wpa_pasn_reset(struct pasn_data *pasn)
 
 	forced_memzero(pasn->pmk, sizeof(pasn->pmk));
 	forced_memzero(&pasn->ptk, sizeof(pasn->ptk));
-	forced_memzero(&pasn->hash, sizeof(pasn->hash));
+
+	wpabuf_free(pasn->auth1);
+	pasn->auth1 = NULL;
 
 	wpabuf_free(pasn->beacon_rsne_rsnxe);
 	pasn->beacon_rsne_rsnxe = NULL;
@@ -961,6 +970,7 @@ static int wpas_pasn_send_auth_1(struct pasn_data *pasn, const u8 *own_addr,
 {
 	struct wpabuf *frame;
 	int ret;
+	u8 hash[SHA512_MAC_LEN];
 
 	pasn->ecdh = crypto_ecdh_init(group);
 	if (!pasn->ecdh) {
