@@ -2069,22 +2069,30 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 #endif
 
 	if (hostapd_dfs_background_start_channel_switch(iface, freq)) {
-		if (!radar_bitmap) {
-			/* Frequency hopping radar detected while operating, switch the channel.*/
+		/*
+		 * radar_bitmap == 0 is reported for full-band radar events,
+		 * so treat this as radar affecting the current operating
+		 * bandwidth.
+		 */
+		if (!radar_bitmap && !iface->conf->disable_csa_dfs)
 			return hostapd_dfs_start_channel_switch(iface);
-		}
 
-		if (radar_bitmap_oper) {
-			if (!iface->conf->disable_csa_dfs) {
-				/* Radar detected while operating, switch the channel. */
-				return hostapd_dfs_start_channel_switch(iface);
-			} else if (!eloop_is_timeout_registered(hostapd_dfs_radar_handling_timeout,
-								iface, NULL)) {
+		/* Radar detected on non-operating portion. No action needed. */
+		if (radar_bitmap && !radar_bitmap_oper)
+			return 0;
+
+		if (iface->conf->disable_csa_dfs) {
+			if (!eloop_is_timeout_registered(hostapd_dfs_radar_handling_timeout,
+							 iface, NULL)) {
 				eloop_register_timeout(0, HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR,
 						       hostapd_dfs_radar_handling_timeout,
 						       iface, NULL);
 			}
+			return 0;
 		}
+
+		/* Radar detected while operating, switch the channel. */
+		return hostapd_dfs_start_channel_switch(iface);
 	}
 
 	return 0;
