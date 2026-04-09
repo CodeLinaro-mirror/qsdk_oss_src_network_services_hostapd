@@ -1392,7 +1392,7 @@ int hostapd_config_he_mu_edca(struct ieee80211_he_mu_edca_parameter_set *params,
 
 	if (os_strcmp(pos, "aifsn") == 0) {
 		if (v < 0 || v > 15) {
-			wpa_printf(MSG_ERROR, "EDCA: Invalid AIFSN value %d (must be 0-15)", v);
+			wpa_printf(MSG_ERROR, "MU-EDCA: Invalid AIFSN value %d (must be 0-15)", v);
 			return -1;
 		}
 		ac_param[0] &= ~0x0F;
@@ -1401,7 +1401,7 @@ int hostapd_config_he_mu_edca(struct ieee80211_he_mu_edca_parameter_set *params,
 	else if (os_strcmp(pos, "ecwmin") == 0) {
 		u8 cur_ecwmax = (ac_param[1] >> 4) & 0x0F;
 		if (v < 0 || v > 15 || v > cur_ecwmax) {
-			wpa_printf(MSG_ERROR, "EDCA: Invalid ECWmin value %d (must be 0-15)", v);
+			wpa_printf(MSG_ERROR, "MU-EDCA: Invalid ECWmin value %d (must be 0-15)", v);
 			return -1;
 		}
 		ac_param[1] &= ~0x0F;
@@ -1410,7 +1410,7 @@ int hostapd_config_he_mu_edca(struct ieee80211_he_mu_edca_parameter_set *params,
 	else if (os_strcmp(pos, "ecwmax") == 0) {
 		u8 cur_ecwmin = ac_param[1] & 0x0F;
 		if (v < 0 || v > 15 || v < cur_ecwmin) {
-			wpa_printf(MSG_ERROR, "EDCA: Invalid ECWmax value %d (must be 0-15)", v);
+			wpa_printf(MSG_ERROR, "MU-EDCA: Invalid ECWmax value %d (must be 0-15)", v);
 			return -1;
 		}
 		ac_param[1] &= ~0xF0;
@@ -1418,7 +1418,7 @@ int hostapd_config_he_mu_edca(struct ieee80211_he_mu_edca_parameter_set *params,
 	}
 	else if (os_strcmp(pos, "timer") == 0) {
 		if (v < 0 || v > 255) {
-			wpa_printf(MSG_ERROR, "EDCA: Invalid timer value %d (must be 0-255)", v);
+			wpa_printf(MSG_ERROR, "MU-EDCA: Invalid timer value %d (must be 0-255)", v);
 			return -1;
 		}
 		ac_param[2] = (u8)v;
@@ -1430,7 +1430,7 @@ int hostapd_config_he_mu_edca(struct ieee80211_he_mu_edca_parameter_set *params,
 			ac_param[0] &= ~0x10;
 	}
 	else {
-		wpa_printf(MSG_ERROR, "EDCA: Unknown parameter '%s'", pos);
+		wpa_printf(MSG_ERROR, "MU-EDCA: Unknown parameter '%s'", pos);
 		return -1;
 	}
 
