@@ -6906,6 +6906,9 @@ static void handle_assoc(struct hostapd_data *hapd,
 	struct sta_info *sta;
 	u8 *tmp = NULL;
 	u8 *sa;
+#ifdef CONFIG_HOSTAPD_IF
+	int res;
+#endif
 #ifdef CONFIG_FILS
 	int delay_assoc = 0;
 #endif /* CONFIG_FILS */
@@ -7120,6 +7123,26 @@ static void handle_assoc(struct hostapd_data *hapd,
 			       seq_ctrl);
 		return;
 	}
+
+	if (sta && !reassoc) {
+		struct os_reltime now, age;
+
+		os_get_reltime(&now);
+
+		if (sta->last_assoc_req_rx_time.sec != 0 ||
+		    sta->last_assoc_req_rx_time.usec != 0) {
+			os_reltime_sub(&now, &sta->last_assoc_req_rx_time, &age);
+			if (os_reltime_in_ms(&age) < WLAN_ASSOC_REQ_MIN_INTERVAL_MS) {
+				wpa_printf(MSG_DEBUG,
+					   "Dropping association from " MACSTR
+					   " within %d ms of last (age=%d ms)",
+					   MAC2STR(mgmt->sa), WLAN_ASSOC_REQ_MIN_INTERVAL_MS,
+					   os_reltime_in_ms(&age));
+				return;
+			}
+		}
+	}
+
 	sta->last_seq_ctrl = seq_ctrl;
 	sta->last_subtype = reassoc ? WLAN_FC_STYPE_REASSOC_REQ :
 		WLAN_FC_STYPE_ASSOC_REQ;
@@ -7513,9 +7536,15 @@ static void handle_assoc(struct hostapd_data *hapd,
 #endif /* CONFIG_FILS */
 
 #ifdef CONFIG_HOSTAPD_IF
-	if (hostapd_if_notify_assoc(hapd, sta, (const u8 *) mgmt, len, resp,
-				reassoc, rssi, set_beacon, sa) ==
-				HOSTAPD_IF_FRAME_PROCESSING_WAIT)
+	res = hostapd_if_notify_assoc(hapd, sta, (const u8 *)mgmt, len,
+				      resp, reassoc, rssi, set_beacon,
+				      sa);
+#endif
+	if (sta && !reassoc)
+		os_get_reltime(&sta->last_assoc_req_rx_time);
+
+#ifdef CONFIG_HOSTAPD_IF
+	if (res == HOSTAPD_IF_FRAME_PROCESSING_WAIT)
 		return;
 #endif
 	initiate_assoc_response(hapd, sta, resp, reassoc, tmp, pos, left,
@@ -7537,6 +7566,9 @@ initiate_assoc_response(struct hostapd_data *hapd, struct sta_info *sta,
 					    sta,
 					    sa, resp, reassoc,
 					    pos, left, rssi, omit_rsnxe);
+
+	if (sta && (resp < 0 || reply_res != WLAN_STATUS_SUCCESS))
+		ap_sta_reset_assoc_req_rx_times(sta);
 
 	if (set_beacon)
 		ieee802_11_update_beacons(hapd->iface);
@@ -8577,6 +8609,8 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		/* The STA is added only in case of SUCCESS */
 		if (status == WLAN_STATUS_SUCCESS)
 			hostapd_drv_sta_remove(hapd, sta->addr);
+
+		ap_sta_reset_assoc_req_rx_times(sta);
 
 		goto handle_ml;
 	}
