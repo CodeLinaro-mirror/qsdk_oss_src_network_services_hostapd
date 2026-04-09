@@ -618,10 +618,26 @@ int handle_auth_pasn_resp(struct pasn_data *pasn, const u8 *own_addr,
 #endif /* CONFIG_FILS */
 	}
 
-	if (wpa_pasn_add_rsne(buf, pmkid,
-			      pasn->akmp, pasn->cipher) < 0)
-		goto fail;
+#ifdef CONFIG_ENC_ASSOC
+	if (pasn->auth_alg == WLAN_AUTH_EPPKE) {
+		int res;
 
+		res = wpa_write_eppke_rsne(pasn->rsn_ie, pasn->rsn_ie_len,
+					   wpabuf_mhead_u8(buf) + wpabuf_len(buf),
+					   (wpabuf_size(buf) - wpabuf_len(buf)),
+					   pmkid, pasn->akmp, pasn->cipher,
+					   pasn->ieee80211w);
+		if (res < 0)
+			goto fail;
+
+		wpabuf_put(buf, res);
+	} else
+#endif /* CONFIG_ENC_ASSOC */
+	{
+		if (wpa_pasn_add_rsne(buf, pmkid,
+				      pasn->akmp, pasn->cipher) < 0)
+			goto fail;
+	}
 	/* No need to derive PMK if PMKSA is given */
 	if (!pmksa)
 		wrapped_data_buf = pasn_get_wrapped_data(pasn);

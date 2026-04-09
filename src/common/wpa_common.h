@@ -859,5 +859,9 @@ int wpa_auth_802_1x_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const u8 *spa,
 			       int akmp, int cipher, const u8 *dhss,
 			       size_t dhss_len, struct wpa_ptk *ptk,
 			       size_t kdk_len);
+int wpa_write_eppke_rsne(const u8 *wpa_ie, size_t wpa_ie_len,
+			 u8 *buf, size_t len,
+			 const u8 *pmkid, int akmp,
+			 int pairwise_cipher, enum mfp_options mfp);
 
 #endif /* WPA_COMMON_H */
