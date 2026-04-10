@@ -1452,7 +1452,11 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 		hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_WARNING,
 			       "ignore channel switch since the interface is not yet ready");
+#ifdef CONFIG_QCN_EXTN
+		goto out;
+#else
 		return;
+#endif
 	}
 
 	/* Check if any of configured channels require DFS */
@@ -1464,7 +1468,11 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 		hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_WARNING,
 			       "driver switched to bad channel!");
+#ifdef CONFIG_QCN_EXTN
+		goto out;
+#else
 		return;
+#endif
 	}
 
 	switch (width) {
@@ -1492,7 +1500,11 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 	 * hw_mode for all following operations to cover the cases where the
 	 * driver changed the operating band. */
 	if (finished && hostapd_csa_update_hwmode(hapd->iface))
+#ifdef CONFIG_QCN_EXTN
+		goto out;
+#else
 		return;
+#endif
 
 	switch (hapd->iface->current_mode->mode) {
 	case HOSTAPD_MODE_IEEE80211A:
@@ -1627,7 +1639,11 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 #endif
 
 	if (!finished)
+#ifdef CONFIG_QCN_EXTN
+		goto out;
+#else
 		return;
+#endif
 
 	hostapd_chan_switch_complete(hapd, power_mode_6ghz, width,
 				     width_device, is_dfs0, is_dfs);
@@ -1660,6 +1676,15 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 	}
 #endif /* CONFIG_OCV */
 #endif /* NEED_AP_MLME */
+
+#ifdef CONFIG_QCN_EXTN
+out:
+	if (hapd && hapd->iface && hapd->iface->iface_extn.dcs_in_progress) {
+		const char *reason = finished ? "CSA finished" : "CSA error/early exit";
+		hostapd_dcs_restore_extn(hapd->iface, reason);
+		return;
+	}
+#endif
 }
 
 
