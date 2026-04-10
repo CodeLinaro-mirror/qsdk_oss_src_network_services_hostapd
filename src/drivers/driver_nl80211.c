@@ -2689,6 +2689,7 @@ skip_wifi_status:
 	bss->valid_links = 0;
 	bss->active_links = 0;
 	bss->flink = &bss->links[0];
+	bss->flink->ctx = ctx;
 	os_memcpy(bss->flink->addr, bss->addr, ETH_ALEN);
 
 	return bss;
@@ -10168,6 +10169,7 @@ static int wpa_driver_nl80211_if_add(void *priv, enum wpa_driver_if_type type,
 
 		new_bss->flink->freq = drv->first_bss->flink->freq;
 		new_bss->ctx = bss_ctx;
+		new_bss->flink->ctx = bss_ctx;
 		new_bss->added_if = added;
 
 		/* Set interface mode to NL80211_IFTYPE_AP */
