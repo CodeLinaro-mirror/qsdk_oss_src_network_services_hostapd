@@ -227,6 +227,11 @@ int hostapd_get_hw_features(struct hostapd_iface *iface)
 			   hw_info->end_freq);
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (iface->conf && is_6ghz_op_class(iface->conf->op_class))
+		hostapd_get_6ghz_thresh_priority_freq_extn(iface);
+#endif /* CONFIG_QCN_EXTN */
+
 	return 0;
 }
 
