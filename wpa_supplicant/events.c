@@ -6617,6 +6617,11 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 	case EVENT_LINK_RECONFIG:
 		wpas_link_reconfig(wpa_s);
 		break;
+	case EVENT_MODIFY_LINK_STA:
+		if (wpa_s->wpa_state == WPA_COMPLETED && wpa_s->valid_links &&
+		    !wpa_s->current_ssid->disable_reconfig)
+			wpas_scan_for_rnr_entries(wpa_s, NULL);
+		break;
 	case EVENT_MICHAEL_MIC_FAILURE:
 		wpa_supplicant_event_michael_mic_failure(wpa_s, data);
 		break;

@@ -4614,8 +4614,11 @@ void wpas_scan_for_rnr_entries(void *eloop_ctx, void *timeout_ctx)
 	wpa_scan_results_free(scan_res);
 
 exit:
-	if (ret)
+	if (ret) {
+		eloop_cancel_timeout(wpas_scan_for_rnr_entries,
+				     wpa_s, NULL);
 		eloop_register_timeout(5, 0,
 				       wpas_scan_for_rnr_entries,
 				       wpa_s, NULL);
+	}
 }
