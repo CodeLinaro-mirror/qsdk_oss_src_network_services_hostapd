@@ -1351,26 +1351,32 @@ static void acs_study(struct hostapd_iface *iface)
 		goto fail;
 	}
 
-	iface->conf->channel = ideal_chan->chan;
-	iface->freq = ideal_chan->freq;
+#ifdef CONFIG_QCN_EXTN
+	if (!iface->iface_extn.dynamic_acs_action) {
+#endif
+		iface->conf->channel = ideal_chan->chan;
+		iface->freq = ideal_chan->freq;
 #ifdef CONFIG_IEEE80211BE
-	iface->conf->punct_bitmap = ideal_chan->punct_bitmap;
+		iface->conf->punct_bitmap = ideal_chan->punct_bitmap;
 #endif /* CONFIG_IEEE80211BE */
 
-	if (iface->conf->ieee80211ac || iface->conf->ieee80211ax ||
-	    iface->conf->ieee80211be || iface->conf->ieee80211bn) {
-		acs_adjust_secondary(iface);
-		acs_adjust_center_freq(iface);
-	}
+		if (iface->conf->ieee80211ac || iface->conf->ieee80211ax ||
+		    iface->conf->ieee80211be || iface->conf->ieee80211bn) {
+			acs_adjust_secondary(iface);
+			acs_adjust_center_freq(iface);
+		}
 
-	err = hostapd_select_hw_mode(iface);
-	if (err) {
-		wpa_printf(MSG_ERROR,
-			   "ACS: Could not (err: %d) select hw_mode for freq=%d channel=%d",
-			err, iface->freq, iface->conf->channel);
-		err = -1;
-		goto fail;
+		err = hostapd_select_hw_mode(iface);
+		if (err) {
+			wpa_printf(MSG_ERROR,
+				   "ACS: Could not (err: %d) select hw_mode for freq=%d channel=%d",
+				err, iface->freq, iface->conf->channel);
+			err = -1;
+			goto fail;
+		}
+#ifdef CONFIG_QCN_EXTN
 	}
+#endif
 
 #ifdef CONFIG_QCN_EXTN
 	if (!acs_handle_channel_change_extn(iface, ideal_chan, err))
