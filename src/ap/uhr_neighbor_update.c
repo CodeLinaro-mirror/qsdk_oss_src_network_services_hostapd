@@ -37,6 +37,73 @@ static bool smd_neighbor_update_validate_rx_addr(struct hostapd_data *hapd,
 				    ether_addr_equal(dst_addr, hapd->own_addr));
 }
 
+static struct smd_neighbor_update_entry *
+smd_neighbor_update_get_entry(struct smd_neighbor_update_ctx *ctx,
+			      const u8 *bssid)
+{
+	struct smd_neighbor_update_entry *e;
+
+	if (!ctx || !bssid)
+		return NULL;
+
+	dl_list_for_each(e, &ctx->entries, struct smd_neighbor_update_entry, list) {
+		if (ether_addr_equal(e->bssid, bssid))
+			return e;
+	}
+	return NULL;
+}
+
+static struct smd_neighbor_update_entry *
+smd_neighbor_update_add_entry(struct smd_neighbor_update_ctx *ctx,
+			      const u8 *bssid)
+{
+	struct smd_neighbor_update_entry *e;
+
+	if (!ctx || !bssid)
+		return NULL;
+
+	e = smd_neighbor_update_get_entry(ctx, bssid);
+	if (e)
+		return e;
+
+	e = os_zalloc(sizeof(*e));
+	if (!e)
+		return NULL;
+
+	os_memcpy(e->bssid, bssid, ETH_ALEN);
+	os_get_time(&e->last_update);
+	dl_list_add(&ctx->entries, &e->list);
+
+	return e;
+}
+
+static void smd_neighbor_update_set_timestamp(struct smd_neighbor_update_ctx *ctx,
+					      const u8 *bssid)
+{
+	struct smd_neighbor_update_entry *e;
+
+	e = smd_neighbor_update_add_entry(ctx, bssid);
+	if (!e)
+		return;
+
+	os_get_time(&e->last_update);
+	e->pull_retry_count = 0;
+}
+
+
+static void smd_neighbor_update_free_entry(struct smd_neighbor_update_ctx *ctx,
+					   const u8 *bssid)
+{
+	struct smd_neighbor_update_entry *e;
+
+	e = smd_neighbor_update_get_entry(ctx, bssid);
+	if (!e)
+		return;
+
+	dl_list_del(&e->list);
+	os_free(e);
+}
+
 static int smd_neighbor_update_build_tlv(struct hostapd_data *hapd,
 					 enum smd_neighbor_update_type update_type,
 					 struct wpabuf **tlv)
@@ -136,6 +203,7 @@ static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 
 	if (update_type == SMD_NEIGHBOR_UPDATE_REMOVE_AP) {
 		hostapd_neighbor_remove(hapd, bssid, &ssid);
+		smd_neighbor_update_free_entry(ctx, bssid);
 		wpa_printf(MSG_DEBUG,
 			   "SMD Neighbor: Removed " MACSTR " (from " MACSTR ")",
 			   MAC2STR(bssid), MAC2STR(src_addr));
@@ -164,6 +232,7 @@ static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 		return -1;
 	}
 
+	smd_neighbor_update_set_timestamp(ctx, bssid);
 	wpabuf_free(nr);
 
 	wpa_printf(MSG_DEBUG,
@@ -175,6 +244,50 @@ static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 
 	return 0;
 }
+
+static void smd_neighbor_update_timer(void *eloop_ctx, void *timeout_ctx)
+{
+	struct smd_neighbor_update_ctx *ctx = eloop_ctx;
+	struct smd_neighbor_update_entry *e, *prev;
+	struct os_time now;
+	struct os_time diff;
+
+	if (!ctx)
+		return;
+
+	os_get_time(&now);
+
+	dl_list_for_each_safe(e, prev, &ctx->entries,
+			      struct smd_neighbor_update_entry, list) {
+		os_time_sub(&now, &e->last_update, &diff);
+		if (diff.sec < 0)
+			continue;
+		if ((unsigned int) diff.sec < ctx->expire_sec)
+			continue;
+
+		if (e->pull_retry_count >= ctx->pull_retry_max) {
+			wpa_printf(MSG_DEBUG,
+				   "SMD Neighbor: Expired " MACSTR
+				   " (age=%ld sec) - removing after %u retries",
+				   MAC2STR(e->bssid), diff.sec, e->pull_retry_count);
+			hostapd_neighbor_remove(ctx->hapd, e->bssid, NULL);
+			smd_neighbor_update_free_entry(ctx, e->bssid);
+			continue;
+		}
+
+		e->pull_retry_count++;
+		wpa_printf(MSG_DEBUG,
+			   "SMD Neighbor: Expired " MACSTR
+			   " (age=%ld sec) - pull retry %u/%u",
+			   MAC2STR(e->bssid), diff.sec, e->pull_retry_count,
+			   ctx->pull_retry_max);
+		smd_neighbor_update_send_pull_ucast(ctx->hapd, e->bssid);
+	}
+
+	eloop_register_timeout(ctx->pull_period_sec, 0,
+			       smd_neighbor_update_timer, ctx, NULL);
+}
+
 
 static void smd_neighbor_update_rx_frame(struct smd_neighbor_update_ctx *ctx,
 					 const u8 *src_addr, const u8 *dst_addr,
@@ -275,6 +388,16 @@ int smd_neighbor_update_send(struct hostapd_data *hapd,
 	return ret;
 }
 
+int smd_neighbor_update_send_pull_ucast(struct hostapd_data *hapd,
+				 const u8 *dst_addr)
+{
+	if (!hapd || !hapd->smd_neighbor_update_ctx || !dst_addr)
+		return -1;
+
+	/* TBD: send pull request via the transport mechanism. */
+	return 0;
+}
+
 int smd_neighbor_update_init(struct hostapd_data *hapd)
 {
 	struct smd_neighbor_update_ctx *ctx;
@@ -290,10 +413,17 @@ int smd_neighbor_update_init(struct hostapd_data *hapd)
 		return -1;
 
 	ctx->hapd = hapd;
+	ctx->expire_sec = SMD_NEIGHBOR_ENTRY_EXPIRE_SEC;
+	ctx->pull_period_sec = SMD_NEIGHBOR_PULL_PERIOD_SEC;
+	ctx->pull_retry_max = SMD_NEIGHBOR_PULL_RETRY_MAX;
 	dl_list_init(&ctx->entries);
 
 	hapd->smd_neighbor_update_ctx = ctx;
 
+	eloop_register_timeout(ctx->pull_period_sec, 0,
+			       smd_neighbor_update_timer, ctx, NULL);
+
+	/* Announce presence */
 	smd_neighbor_update_send(hapd, SMD_NEIGHBOR_UPDATE_NEW_AP);
 	return 0;
 }
@@ -309,6 +439,8 @@ void smd_neighbor_update_deinit(struct hostapd_data *hapd)
 	ctx = hapd->smd_neighbor_update_ctx;
 	if (!ctx)
 		return;
+
+	eloop_cancel_timeout(smd_neighbor_update_timer, ctx, NULL);
 
 	dl_list_for_each_safe(e, prev, &ctx->entries,
 			      struct smd_neighbor_update_entry, list) {
