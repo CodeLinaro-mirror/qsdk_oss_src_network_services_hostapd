@@ -385,6 +385,7 @@ u8 hostapd_max_bssid_indicator(struct hostapd_data *hapd)
 {
 	size_t num_bss_nontx;
 	u8 max_bssid_ind = 0;
+	unsigned int num_hws;
 
 	if (!hapd->iconf->mbssid)
 		return 0;
@@ -392,12 +393,13 @@ u8 hostapd_max_bssid_indicator(struct hostapd_data *hapd)
 	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
 		num_bss_nontx = hapd->iconf->group_size - 1;
 	} else {
+		num_hws = hapd->iface->num_multi_hws ? hapd->iface->num_multi_hws : 1;
 		/* In single wiphy, maximum interfaces supported by each radio are
 		 * added, hence divide by num_multi_hws to get per radio limit */
 		num_bss_nontx = (hapd->iface->mbssid_max_interfaces /
-				 hapd->iface->num_multi_hws) - 1;
+				 num_hws) - 1;
 
-		if (hapd->iface->mbssid_max_interfaces % hapd->iface->num_multi_hws)
+		if (hapd->iface->mbssid_max_interfaces % num_hws)
 			num_bss_nontx++;
 	}
 
@@ -4773,6 +4775,7 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 	unsigned int mbssid_max_interfaces;
 	bool bss_added = false;
 	size_t i, j;
+	unsigned int num_hws;
 
 	if (!hapd || !hapd->iconf)
 		return -1;
@@ -4791,7 +4794,8 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 
 	/* In single wiphy, maximum interfaces supported by each radio are
 	 * added, hence divide by num_multi_hws to get per radio limit */
-	mbssid_max_interfaces = iface->mbssid_max_interfaces / iface->num_multi_hws;
+	num_hws = iface->num_multi_hws ? iface->num_multi_hws : 1;
+	mbssid_max_interfaces = iface->mbssid_max_interfaces / num_hws;
 	if (iface->num_bss > mbssid_max_interfaces) {
 		wpa_printf(MSG_ERROR,
 			   "Failed to add %s, driver can only support %u interfaces in MBSSID",
