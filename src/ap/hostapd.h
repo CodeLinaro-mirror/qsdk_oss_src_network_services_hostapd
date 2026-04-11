@@ -61,6 +61,7 @@ struct mesh_conf;
 
 struct hostapd_iface;
 struct hostapd_mld;
+struct smd_neighbor_update_ctx;
 
 struct hapd_interfaces {
 	int (*reload_config)(struct hostapd_iface *iface);
@@ -729,6 +730,10 @@ struct hostapd_data {
 	u16 mapping_switch_time;
 	struct channel_usage_config chan_usage_config;
 	void *hostapd_if_data; /* for per-interface/MLD frame_reg_table, opaque */
+
+#ifdef CONFIG_IEEE80211BN
+	struct smd_neighbor_update_ctx *smd_neighbor_update_ctx;
+#endif /* CONFIG_IEEE80211BN */
 
 #if defined(CONFIG_INTERWORKING) || defined(CONFIG_DPP)
 	bool gas_serv_initialized;
