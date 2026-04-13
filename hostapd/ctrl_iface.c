@@ -4428,6 +4428,9 @@ static int hostapd_ctrl_iface_color_change(struct hostapd_iface *iface,
 		if (ret)
 			hostapd_cleanup_cca_params(bss);
 
+#ifdef CONFIG_QCN_EXTN
+		if (!hostapd_is_repurpose_disabled_11be_extn(bss->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 		if (!ret && bss->conf->mld_ap) {
 			/* Generate per sta profiles for affiliated APs */
 			for_each_mld_link(link_bss, bss) {
@@ -4436,6 +4439,9 @@ static int hostapd_ctrl_iface_color_change(struct hostapd_iface *iface,
 				hostapd_gen_per_sta_profiles(link_bss);
 			}
 		}
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif /* CONFIG_QCN_EXTN */
 
 		free_beacon_data(&settings.beacon_cca);
 		free_beacon_data(&settings.beacon_after);
