@@ -1810,12 +1810,26 @@ enum mbo_transition_reject_reason {
 #define MBO_ANQP_SUBTYPE_CELL_CONN_PREF 2
 #define MAX_MBO_ANQP_SUBTYPE MBO_ANQP_SUBTYPE_CELL_CONN_PREF
 
-/* OCE v0.0.10, 4.2.1: OCE Capability Indication Attribute */
+/* Wi-Fi Optimized Connectivity Specification v2.0, Section 4.2.1:
+ * OCE Capability Indication Attribute.
+ * OCE_SPEC_VERSION: 2 = spec v2.x, 1 = spec v1.x */
+#ifndef OCE_SPEC_VERSION
+#define OCE_SPEC_VERSION 2
+#endif /* OCE_SPEC_VERSION */
+
 #define OCE_RELEASE 1
 #define OCE_RELEASE_MASK (BIT(0) | BIT(1) | BIT(2))
+#if OCE_SPEC_VERSION >= 2
+#define OCE_IS_STA_CFON           BIT(3)
+#define OCE_IS_11B_AP_PRESENT     BIT(4)
+#define OCE_IS_FILS_HLP_ENABLED   BIT(5)
+#define OCE_IS_NON_OCE_AP_PRESENT BIT(6)
+#else /* OCE_SPEC_VERSION < 2 */
+/* OCE v0.0.10, 4.2.1: OCE Capability Indication Attribute */
 #define OCE_IS_STA_CFON BIT(3)
 #define OCE_IS_NON_OCE_AP_PRESENT BIT(4)
 #define OCE_IS_11B_AP_PRESENT BIT(5)
+#endif /* OCE_SPEC_VERSION >= 2 */
 
 /* Wi-Fi Direct (P2P) */
 

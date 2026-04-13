@@ -26,12 +26,16 @@
 #include "../qcn_extns/cmn.h"
 #endif /* CONFIG_QCN_EXTN */
 
+#ifdef CONFIG_MBO
 #define OCE_STA_CFON_ENABLED(hapd) \
 	((hapd->conf->oce & OCE_STA_CFON) && \
 	 (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_OCE_STA_CFON))
 #define OCE_AP_ENABLED(hapd) \
 	(hapd->conf->oce & OCE_AP)
-
+#else
+#define OCE_STA_CFON_ENABLED(hapd) 0
+#define OCE_AP_ENABLED(hapd)       0
+#endif /* CONFIG_MBO */
 #define TABLE_NAME "wifi_qos_table"
 #define CHAIN_NAME "wifi_qos_chain"
 
@@ -580,6 +584,10 @@ struct hostapd_data {
 	u8 mbo_trans_reason;
 	u16 mbo_assoc_retry;
 #endif /* CONFIG_MBO */
+	/* OCE: cached channel survey results for OCE Capability Indication */
+	bool non_oce_ap_present;
+	bool ap_11b_present;
+
 
 	struct dl_list nr_db;
 	struct dl_list bcn_report_db;

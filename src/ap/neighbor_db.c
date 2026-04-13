@@ -15,6 +15,8 @@
 #include "ieee802_11.h"
 #include "neighbor_db.h"
 #include "ap_drv_ops.h"
+#include "beacon.h"
+#include "utils/eloop.h"
 
 struct hostapd_neighbor_entry *
 hostapd_neighbor_get(struct hostapd_data *hapd, const u8 *bssid,
@@ -668,12 +670,12 @@ hostapd_neighbor_set_scan_report(struct hostapd_data *hapd,
 		if (ieee802_11_parse_elems((u8 *) (bss + 1), bss->ie_len,
 					   &elems, 0) == ParseFailed ||
 		    freq != bss->freq ||
-		    (ssid->ssid_len &&
-		     (ssid->ssid_len != elems.ssid_len ||
-		      os_memcmp(ssid->ssid, elems.ssid, ssid->ssid_len))))
+		    (bss_ssid.ssid_len &&
+		     (bss_ssid.ssid_len != elems.ssid_len ||
+		      os_memcmp(bss_ssid.ssid, elems.ssid, bss_ssid.ssid_len))))
 			continue;
 
-		if (!ssid->ssid_len && elems.ssid_len) {
+		if (!bss_ssid.ssid_len && elems.ssid_len) {
 			os_memcpy(bss_ssid.ssid, elems.ssid, elems.ssid_len);
 			bss_ssid.ssid_len = elems.ssid_len;
 		}
@@ -772,6 +774,67 @@ hostapd_neighbor_set_scan_report(struct hostapd_data *hapd,
 }
 #endif /* NEED_AP_MLME */
 
+
+#ifdef NEED_AP_MLME
+/*
+ * hostapd_oce_update_channel_info - Scan cached driver results and update
+ * OCE Capability Indication bits in hapd:
+ *   non_oce_ap_present: set if any AP on the operating channel lacks
+ *                           the OCE Capability Indication attribute (BIT(6))
+ *   ap_11b_present:     set if any 2.4 GHz AP on the operating channel
+ *                           lacks the ERP element (BIT(4))
+ *
+ * Called from hostapd_neighbor_set_ifaces_scan_report() after the neighbor
+ * DB is rebuilt from scan results.
+ */
+static void hostapd_oce_update_channel_info(struct hostapd_data *hapd)
+{
+	struct wpa_scan_results *scan_res;
+	int i;
+
+	hapd->non_oce_ap_present = 0;
+	hapd->ap_11b_present = 0;
+
+	scan_res = hostapd_driver_get_scan_results(hapd);
+	if (!scan_res) {
+		wpa_printf(MSG_DEBUG, "OCE channel info: no scan results");
+		return;
+	}
+
+	for (i = 0; i < scan_res->num; i++) {
+		struct wpa_scan_res *bss = scan_res->res[i];
+		struct ieee802_11_elems elems;
+
+		/* Only consider APs on our operating channel */
+		if (bss->freq != hapd->iface->freq)
+			continue;
+
+		/* Skip our own BSS */
+		if (ether_addr_equal(bss->bssid, hapd->own_addr))
+			continue;
+
+		if (ieee802_11_parse_elems((u8 *) (bss + 1), bss->ie_len,
+					   &elems, 0) == ParseFailed)
+			continue;
+
+		/* 11b-only per OCE spec: 2.4 GHz AP without ERP element */
+		if (is_24ghz_freq(bss->freq) && !elems.erp_info)
+			hapd->ap_11b_present = 1;
+
+		/* Non-OCE: no MBO-OCE IE with OCE Capability Indication */
+		if (!elems.mbo || !ieee80211_is_oce_capable(elems.mbo,
+							    elems.mbo_len))
+			hapd->non_oce_ap_present = 1;
+	}
+
+	wpa_scan_results_free(scan_res);
+
+	wpa_printf(MSG_DEBUG,
+		   "OCE channel info: non_oce_ap_present=%d 11b_ap_present=%d",
+		   hapd->non_oce_ap_present, hapd->ap_11b_present);
+}
+#endif /* NEED_AP_MLME */
+
 int hostapd_neighbor_set_ifaces_scan_report(struct hostapd_data *hapd,
 					    const struct wpa_ssid_value *ssid,
 					    u32 bands)
@@ -803,6 +866,13 @@ int hostapd_neighbor_set_ifaces_scan_report(struct hostapd_data *hapd,
 		if (ret)
 			return -1;
 	}
+
+	/* OCE 4.3.1/4.3.2: update channel info bits from driver scan cache */
+	if (OCE_AP_ENABLED(hapd))
+		hostapd_oce_update_channel_info(hapd);
+
+	/* Restore the AP's own neighbor report entry (cleared above) */
+	hostapd_neighbor_set_own_report(hapd);
 
 	if (!bands)
 		return 0;

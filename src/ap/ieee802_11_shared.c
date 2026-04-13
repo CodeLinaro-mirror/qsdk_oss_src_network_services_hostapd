@@ -911,7 +911,7 @@ u8 * hostapd_eid_mbo_rssi_assoc_rej(struct hostapd_data *hapd, u8 *eid,
 
 u8 * hostapd_eid_mbo(struct hostapd_data *hapd, u8 *eid, size_t len)
 {
-	u8 mbo[9], *mbo_pos = mbo;
+	u8 mbo[12], *mbo_pos = mbo;
 	u8 *pos = eid;
 
 	if (!hapd->conf->mbo_enabled &&
@@ -940,10 +940,33 @@ u8 * hostapd_eid_mbo(struct hostapd_data *hapd, u8 *eid, size_t len)
 		ctrl = OCE_RELEASE;
 		if (OCE_STA_CFON_ENABLED(hapd) && !OCE_AP_ENABLED(hapd))
 			ctrl |= OCE_IS_STA_CFON;
+		if (OCE_AP_ENABLED(hapd)) {
+			if (hapd->non_oce_ap_present)
+				ctrl |= OCE_IS_NON_OCE_AP_PRESENT;
+			if (hapd->ap_11b_present)
+				ctrl |= OCE_IS_11B_AP_PRESENT;
+		}
 
 		*mbo_pos++ = OCE_ATTR_ID_CAPA_IND;
 		*mbo_pos++ = 1;
 		*mbo_pos++ = ctrl;
+
+		/* Use regulatory max tx power of the current channel —
+		 * same value reported by "iw dev" as txpower. */
+		if (OCE_AP_ENABLED(hapd) && hapd->iface->current_mode &&
+		    hapd->iface->current_mode->mode != HOSTAPD_MODE_IEEE80211B) {
+			struct hostapd_hw_modes *mode = hapd->iface->current_mode;
+			int i;
+
+			for (i = 0; i < mode->num_channels; i++) {
+				if (mode->channels[i].freq == hapd->iface->freq) {
+					*mbo_pos++ = OCE_ATTR_ID_TRANSMIT_POWER;
+					*mbo_pos++ = 1;
+					*mbo_pos++ = mode->channels[i].max_tx_power;
+					break;
+				}
+			}
+		}
 	}
 
 	pos += mbo_add_ie(pos, len, mbo, mbo_pos - mbo);
@@ -970,6 +993,13 @@ u8 hostapd_mbo_ie_len(struct hostapd_data *hapd)
 
 	/* OCE capability indication attribute (3) */
 	if (OCE_STA_CFON_ENABLED(hapd) || OCE_AP_ENABLED(hapd))
+		len += 3;
+
+	/* OCE transmit power attribute (3) — included when channel is known
+	 * and not operating in 802.11b-only mode */
+	if ((OCE_STA_CFON_ENABLED(hapd) || OCE_AP_ENABLED(hapd)) &&
+	    hapd->iface->current_mode &&
+	    hapd->iface->current_mode->mode != HOSTAPD_MODE_IEEE80211B)
 		len += 3;
 
 	return len;
