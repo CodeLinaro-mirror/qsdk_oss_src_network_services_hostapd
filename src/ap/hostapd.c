@@ -4826,6 +4826,13 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 	addr = hostapd_addr_to_u64(hapd->own_addr);
 
 	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
+
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_validate_mbssid_group_size_extn(hapd)) {
+			wpa_printf(MSG_ERROR, "Invalid group size");
+			return -1;
+		}
+#endif
 		if (!multi_mbssid->group) {
 			multi_mbssid->num_mbssid_groups = mbssid_max_interfaces /
 							  iface->conf->group_size;
