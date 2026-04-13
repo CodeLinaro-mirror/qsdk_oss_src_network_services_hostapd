@@ -3504,15 +3504,16 @@ static int wpa_supplicant_check_hop_count(const u8 *resp_ies,
 		return 0;
 
 	/* Search for our custom vendor IE */
-	vendor_ie = get_vendor_ie(resp_ies, resp_ies_len, OUI_QCA);
+	vendor_ie = get_vendor_ie(resp_ies, resp_ies_len, OUI_QCA_MULTI_AP);
 	if (!vendor_ie) {
 		/* Vendor IE not present - allow association */
+		wpa_printf(MSG_ERROR, "Hop count vendor IE not present in assoc response, allow assoc");
 		return 0;
 	}
 
 	/* Verify the IE is within bounds of resp_ies buffer */
 	if ((size_t)(vendor_ie - resp_ies) + 2 + vendor_ie[1] > resp_ies_len) {
-		wpa_printf(MSG_WARNING, "Hop count vendor IE extends beyond buffer");
+		wpa_printf(MSG_ERROR, "Hop count vendor IE extends beyond buffer, ignore IE");
 		return 0;
 	}
 
@@ -3528,17 +3529,13 @@ static int wpa_supplicant_check_hop_count(const u8 *resp_ies,
 	 */
 	if (vendor_ie[1] < 5) {
 		/* IE too short to contain hop count */
-		wpa_printf(MSG_WARNING,
-			   "Hop count vendor IE too short (len=%u)",
-			   vendor_ie[1]);
+		wpa_printf(MSG_ERROR, "Hop count vendor IE too short (len=%u)", vendor_ie[1]);
 		return 0;
 	}
 
 	/* Check if OUI type matches MULTI_AP_OUI_TYPE */
 	if (vendor_ie[5] != MULTI_AP_OUI_TYPE) {
-		wpa_printf(MSG_DEBUG,
-			   "Vendor IE OUI type (0x%02x) doesn't match MAP - skipping hop cnt check",
-			   vendor_ie[5]);
+		wpa_printf(MSG_DEBUG, "Vendor IE OUI type (0x%02x) doesn't match MAP - skipping hop cnt check", vendor_ie[5]);
 		return 0;
 	}
 
@@ -3548,8 +3545,7 @@ static int wpa_supplicant_check_hop_count(const u8 *resp_ies,
 	wpa_printf(MSG_DEBUG, "Hop count from vendor IE: %u", hop_count);
 
 	if (hop_count == 255) {
-		wpa_printf(MSG_INFO,
-			   "Rejecting association: hop count is 255");
+		wpa_printf(MSG_ERROR, "Rejecting association: hop count is 255");
 		return -1;
 	}
 
