@@ -35,7 +35,8 @@ void hostapd_ucode_reload_bss(struct hostapd_data *hapd);
 bool hostapd_ucode_update_radio_mask(char *ifname, u8 hw_idx);
 
 #ifdef CONFIG_QCN_EXTN
-void hostapd_ucode_chsw_comp_ev_notify(struct hostapd_data *hapd, int freq);
+void hostapd_ucode_chsw_result_ev_notify(struct hostapd_data *hapd,
+					 int freq, int ret);
 void hostapd_ucode_notify_acs_completed(struct hostapd_iface *iface, int success);
 int hostapd_ucode_get_sta_channel_per_band(struct hostapd_iface *iface,
 					   int band,
@@ -77,7 +78,8 @@ static inline bool hostapd_ucode_update_radio_mask(char *ifname, u8 hw_idx)
 }
 #ifdef CONFIG_QCN_EXTN
 static inline void
-hostapd_ucode_chsw_comp_ev_notify(struct hostapd_data *hapd, int freq)
+hostapd_ucode_chsw_result_ev_notify(struct hostapd_data *hapd,
+				    int freq, int ret)
 {
 }
 static inline void
