@@ -1133,9 +1133,20 @@ int hostapd_handle_ttlm_assoc_req(struct hostapd_data *hapd, const struct ieee80
 	int retval;
 	enum ttlm_resp_type resp_type = TTLM_RESP_TYPE_SUCCESS;
 	u8 i;
+#ifdef CONFIG_QCN_EXTN
+	u16 repurposed_links = 0;
+#endif /* CONFIG_QCN_EXTN */
 
 	if (!hapd->conf->mld_ap)
 		return -1;
+
+#ifdef CONFIG_QCN_EXTN
+	/* TTLM not applicable on repurposed link BSS */
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return -1;
+
+	hostapd_get_repurposed_links_bitmap_extn(hapd, &repurposed_links);
+#endif /* CONFIG_QCN_EXTN */
 
 	/* initialize all partner stas */
 	for_each_mld_link(lhapd, hapd) {
@@ -1251,6 +1262,41 @@ int hostapd_handle_ttlm_assoc_req(struct hostapd_data *hapd, const struct ieee80
 	 * negotiated mapping is homogeneous, allow the negotiation. If any of these condition fails
 	 * add default TTLM element in assoc response frame.
 	 */
+
+#ifdef CONFIG_QCN_EXTN
+	if (resp_type == TTLM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING)
+		goto copy_info;
+
+	if (!repurposed_links)
+		goto copy_info;
+
+	/* If requested negotiation includes repurposed links, deny the req */
+	for (dir = 0; dir < TTLM_DIRECTION_MAX; dir++) {
+		struct ttlm_info *ttlm = &ongoing_ttlm->ttlm_info[dir];
+		int tid;
+
+		if (ttlm->direction == TTLM_DIRECTION_INVALID)
+			continue;
+
+		if (ttlm->default_link_mapping)
+			continue;
+
+		for (tid = 0; tid < NUM_MAX_TIDS; tid++) {
+			if (ttlm->ieee_link_map_tid[tid] & repurposed_links) {
+				copy_established_ttlm_to_ongoing(ongoing_ttlm, mld);
+				resp_type = TTLM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING;
+				wpa_printf(MSG_ERROR,
+					   "Deny assoc ttlm as repurposed link requested");
+				break;
+			}
+		}
+
+		/* skip checking remaining directions even if one fails */
+		if (resp_type == TTLM_RESP_TYPE_DENIED_TID_TO_LINK_MAPPING)
+			break;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 copy_info:
 	ongoing_ttlm->ttlm_resp_type = resp_type;
 	hostapd_copy_configured_ttlm_to_sta_info(sta, hapd, ongoing_ttlm, 0);
@@ -1337,6 +1383,9 @@ void hostapd_handle_ttlm_req(struct hostapd_data *hapd, struct sta_info *sta,
 	size_t ie_len;
 	int retval, i;
 	u16 enabled_links_bitmap = 0;
+#ifdef CONFIG_QCN_EXTN
+	u16 repurposed_links = 0;
+#endif /* CONFIG_QCN_EXTN */
 
 	if (!hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
@@ -1389,6 +1438,18 @@ void hostapd_handle_ttlm_req(struct hostapd_data *hapd, struct sta_info *sta,
 		os_free(ongoing_ttlm);
 		return;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	hostapd_get_repurposed_links_bitmap_extn(hapd, &repurposed_links);
+
+	if (repurposed_links & enabled_links_bitmap) {
+		wpa_printf(MSG_ERROR,
+			   "Reject as TTLM req has repurposed links 0x%x",
+			   repurposed_links & enabled_links_bitmap);
+		os_free(ongoing_ttlm);
+		return;
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	/* cancel disassoc timer */
 	for_each_mld_link(lhapd, hapd) {
