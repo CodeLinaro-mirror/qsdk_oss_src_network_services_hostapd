@@ -2759,6 +2759,48 @@ const u8 * get_ie_ext(const u8 *ies, size_t len, u8 ext)
 }
 
 
+int ieee80211_parse_mlo_link_info_ie(const u8 *ies, size_t len,
+				     u16 *link_id_bitmap)
+{
+	const u8 *ie;
+
+	if (!link_id_bitmap)
+		return -1;
+
+	*link_id_bitmap = 0;
+
+	ie = get_ie_ext(ies, len, WLAN_EID_EXT_MLO_LINK_INFO);
+	if (!ie)
+		return -1;
+
+	if (ie[1] < 3) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: short ML link info IE len=%u", __func__, ie[1]);
+		return -1;
+	}
+
+	*link_id_bitmap = WPA_GET_LE16(ie + 3);
+	wpa_printf(MSG_DEBUG, "%s: parsed link_id_bitmap=0x%04x",
+		   __func__, *link_id_bitmap);
+
+	return 0;
+}
+
+
+int ieee80211_get_link_id_from_bitmap(u16 link_id_bitmap)
+{
+	int link_id = 0;
+
+	if (!link_id_bitmap)
+		return -1;
+
+	while (!(link_id_bitmap & BIT(link_id)))
+		link_id++;
+
+	return link_id;
+}
+
+
 const u8 * get_vendor_ie(const u8 *ies, size_t len, u32 vendor_type)
 {
 	const struct element *elem;
