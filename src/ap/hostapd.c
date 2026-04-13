@@ -7533,6 +7533,9 @@ int hostapd_switch_channel(struct hostapd_data *hapd,
 	}
 
 	hapd->csa_in_progress = 1;
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap) {
 		/* Generate per sta profiles for affiliated APs */
 		for_each_mld_link(link_bss, hapd) {
@@ -7541,6 +7544,10 @@ int hostapd_switch_channel(struct hostapd_data *hapd,
 			hostapd_gen_per_sta_profiles(link_bss);
 		}
 	}
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	return 0;
 }
 
@@ -7805,6 +7812,9 @@ void hostapd_switch_color_timeout_handler(void *eloop_data, void *user_ctx)
 		free_beacon_data(&settings.beacon_after);
 		os_free(settings.ubpr.unsol_bcast_probe_resp_tmpl);
 
+#ifdef CONFIG_QCN_EXTN
+		if (!hostapd_is_repurpose_disabled_11be_extn(bss->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 		if (!ret && bss->conf->mld_ap) {
 			/* Generate per sta profiles for affiliated APs */
 			for_each_mld_link(link_bss, bss) {
@@ -7813,7 +7823,9 @@ void hostapd_switch_color_timeout_handler(void *eloop_data, void *user_ctx)
 				hostapd_gen_per_sta_profiles(link_bss);
 			}
 		}
-
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif /* CONFIG_QCN_EXTN */
 	}
 }
 
