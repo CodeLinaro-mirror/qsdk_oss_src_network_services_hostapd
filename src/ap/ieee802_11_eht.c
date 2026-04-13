@@ -3857,6 +3857,13 @@ int hostapd_epcs_handle_cli(struct hostapd_data *hapd, char *pos,
 	u8 peer_mld_addr[ETH_ALEN];
 	struct wlan_epcs_info epcs_info = {0};
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		wpa_printf(MSG_DEBUG, "EPCS: command on repurposed link");
+		return -1;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	if (os_strncmp(pos, "session_initiate ", 17) == 0) {
 		epcs_info.action_code = WLAN_PROT_EHT_EPCS_ENABLE_REQUEST;
 		if (!hwaddr_aton((pos + 17), peer_mld_addr))
