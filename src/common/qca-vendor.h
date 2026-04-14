@@ -4315,6 +4315,22 @@ enum qca_wlan_vendor_attr_config {
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX = 150,
 
+	/* u16 attribute to query 6 GHz VLP priority threshold frequency in MHz.
+	 * This GET-only attribute can be queried using
+	 * QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION.
+	 *
+	 * Userspace includes this attribute as a selector in the GET request.
+	 * SET requests are not supported. The driver replies with the threshold
+	 * frequency for the given radio.
+	 *
+	 * This is intended for userspace ACS and the value is a single cutoff
+	 * frequency. A userspace ACS implementation may use it as a scoring
+	 * boundary for 6 GHz channel ranking by penalizing channels below the
+	 * threshold, thereby preferring channels above it when operating in
+	 * VLP mode.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_6GHZ_VLP_PRIORITY_THRESH_FREQ = 151,
+
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_MAX =

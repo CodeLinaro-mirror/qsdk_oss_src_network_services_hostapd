@@ -108,7 +108,7 @@ static bool ieee80211_invalid_uhr_cap_size(size_t len)
 u16 copy_sta_uhr_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		       const u8 *uhr_capab, size_t uhr_capab_len)
 {
-	if (!hapd->iconf->ieee80211bn || hapd->conf->disable_11bn ||
+	if (!hostapd_is_uhr_enabled(hapd) ||
 	    !uhr_capab ||
 	    ieee80211_invalid_uhr_cap_size(uhr_capab_len)) {
 		sta->flags &= ~WLAN_STA_UHR;

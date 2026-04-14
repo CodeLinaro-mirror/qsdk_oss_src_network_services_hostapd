@@ -4973,10 +4973,10 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn) {
+	if (hostapd_is_uhr_enabled(hapd)) {
 		resp = copy_sta_uhr_capab(hapd, sta,
-					  elems->uhr_capabilities,
-					  elems->uhr_capabilities_len);
+				  elems->uhr_capabilities,
+				  elems->uhr_capabilities_len);
 		if (resp != WLAN_STATUS_SUCCESS)
 			goto out;
 	}
@@ -5582,7 +5582,7 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 							   IEEE80211_MODE_AP);
 		}
 #ifdef CONFIG_IEEE80211BN
-		if (hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn) {
+		if (hostapd_is_uhr_enabled(hapd)) {
 			p = hostapd_eid_uhr_capab(hapd, p, IEEE80211_MODE_AP);
 			p = hostapd_eid_uhr_operation(hapd, p, false);
 		}
@@ -6120,7 +6120,7 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn) {
+	if (hostapd_is_uhr_enabled(hapd)) {
 		buflen += 3 + sizeof(struct ieee80211_uhr_capabilities);
 		buflen += 3 + sizeof(struct ieee80211_uhr_operation);
 	}
@@ -6323,7 +6323,7 @@ rsnxe_done:
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn) {
+	if (hostapd_is_uhr_enabled(hapd)) {
 		p = hostapd_eid_uhr_capab(hapd, p, IEEE80211_MODE_AP);
 		p = hostapd_eid_uhr_operation(hapd, p, false);
 	}
@@ -7201,10 +7201,17 @@ static void handle_assoc(struct hostapd_data *hapd,
 				resp = WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY;
 				goto fail;
 			} else if (osta->sa_query_timed_out) {
-				u8 link_id = hapd->mld_link_id;
-				bool mld_link_sta = sta->mld_assoc_link_id != link_id;
-				const u8 *mld_link_addr = sta->mld_info.links[link_id].peer_addr;
-				u16 eml_cap = sta->mld_info.common_info.eml_capa;
+				bool mld_link_sta = false;
+				const u8 *mld_link_addr = NULL;
+				u16 eml_cap = 0;
+				if (ap_sta_is_mld(hapd, sta)) {
+					mld_link_sta = sta->mld_assoc_link_id != hapd->mld_link_id;
+					mld_link_addr = sta->mld_info.links[hapd->mld_link_id].peer_addr;
+					eml_cap = sta->mld_info.common_info.eml_capa;
+					wpa_printf(MSG_DEBUG,"ml sta "MACSTR" mld_assoc_link_id:%d mld_link_id:%d \n",
+						   MAC2STR(sta->addr), sta->mld_assoc_link_id,
+						   hapd->mld_link_id);
+				}
 
 				wpa_printf(MSG_DEBUG, "SA query timedout for "MACSTR" on %s, "
 					   "delete it", MAC2STR(osta->addr), ohapd->conf->iface);

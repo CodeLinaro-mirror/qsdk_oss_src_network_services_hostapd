@@ -1663,6 +1663,12 @@ hostapd_is_eht_enabled(struct hostapd_data *hapd)
 	return (hapd->iconf->ieee80211be && !hapd->conf->disable_11be);
 }
 
+static inline bool
+hostapd_is_uhr_enabled(struct hostapd_data *hapd)
+{
+	return (hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn);
+}
+
 /**
  * Vendor element format
  * ID (1 byte), Length (1 byte), OUI (3 bytes), Data (at least 1 byte)
