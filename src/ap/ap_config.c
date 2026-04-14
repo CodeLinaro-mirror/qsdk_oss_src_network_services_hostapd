@@ -1925,6 +1925,16 @@ int hostapd_config_check(struct hostapd_config *conf, int full_config)
 			return -1;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (full_config && conf->use_driver_vendor_addr &&
+	    conf->mbssid != MBSSID_DISABLED &&
+	    !is_6ghz_op_class(conf->op_class)) {
+		wpa_printf(MSG_ERROR,
+			   "Driver vendor address allocation is supported for MBSSID mode only in 6 GHz");
+		return -1;
+	}
+#endif
+
 	return 0;
 }
 
