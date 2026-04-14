@@ -6349,7 +6349,7 @@ static int hostapd_ctrl_iface_negotiated_ttlm_request(struct hostapd_data *hapd,
 	u16 repurposed_links = 0;
 #endif /* CONFIG_QCN_EXTN */
 
-	if (!hapd->conf->ttlm_enable) {
+	if (!hapd->conf || !hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
 		return -1;
 	}
@@ -6518,7 +6518,7 @@ static int hostapd_ctrl_iface_negotiated_ttlm_teardown(struct hostapd_data *hapd
 	struct sta_info *sta;
 	u8 addr[ETH_ALEN];
 
-	if (!hapd->conf->ttlm_enable) {
+	if (!hapd->conf || !hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
 		return -1;
 	}
@@ -6570,7 +6570,7 @@ static int hostapd_ctrl_iface_negotiated_ttlm_response(struct hostapd_data *hapd
 	u16 repurposed_links = 0;
 #endif /* CONFIG_QCN_EXTN */
 
-	if (!hapd->conf->ttlm_enable) {
+	if (!hapd->conf || !hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
 		return -1;
 	}
@@ -6810,10 +6810,10 @@ int hostapd_ctrl_iface_advertise_ttlm(struct hostapd_data *hapd, const char *cmd
 #endif /* CONFIG_QCN_EXTN */
 	u16 ieee_link_map;
 	const char *pos;
-	int ret;
+	int ret = -1;
 	u8 i;
 
-	if (!hapd->conf->ttlm_enable) {
+	if (!hapd->conf || !hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM support is not enabled");
 		return -1;
 	}
@@ -6873,7 +6873,7 @@ int hostapd_ctrl_iface_advertise_ttlm(struct hostapd_data *hapd, const char *cmd
 
 	pos = os_strstr(cmd, " map_switch_time=");
 	if (!pos)
-		return -1;
+		goto free_conf;
 	pos += 17;
 	ttlm->mapping_switch_time = atoi(pos);
 	if (ttlm->mapping_switch_time)
@@ -6881,13 +6881,13 @@ int hostapd_ctrl_iface_advertise_ttlm(struct hostapd_data *hapd, const char *cmd
 
 	if (ttlm->mapping_switch_time > 0xFFFF) {
 		wpa_printf(MSG_ERROR, "TTLM: Mapping switch time cannot be greater than 0xFFFF");
-		return -1;
+		goto free_conf;
 	}
 
 	pos = os_strstr(cmd, " expected_dur=");
 	if (!pos) {
 		wpa_printf(MSG_ERROR, "TTLM: Expected duration cannot be NULL");
-		return -1;
+		goto free_conf;
 	}
 	pos += 14;
 	ttlm->expected_duration = atoi(pos);
@@ -6895,16 +6895,16 @@ int hostapd_ctrl_iface_advertise_ttlm(struct hostapd_data *hapd, const char *cmd
 		ttlm->expected_duration_present = true;
 	} else {
 		wpa_printf(MSG_ERROR, "TTLM: Expected duration cannot be 0");
-		return -1;
+		goto free_conf;
 	}
 	if (ttlm->expected_duration > 0xFFFFFF) {
 		wpa_printf(MSG_ERROR, "TTLM: Expected duration cannot be greater than 0xFFFFFF");
-		return -1;
+		goto free_conf;
 	}
 
 	pos = os_strstr(cmd, " link_mapping_size=");
 	if (!pos)
-		return -1;
+		goto free_conf;
 	pos += 19;
 	ttlm->link_mapping_size = atoi(pos);
 
@@ -6919,6 +6919,8 @@ int hostapd_ctrl_iface_advertise_ttlm(struct hostapd_data *hapd, const char *cmd
 		   ttlm->expected_duration, ttlm->link_mapping_size);
 
 	ret = hostapd_send_advertised_ttlm(hapd, ttlm_conf);
+
+free_conf:
 	os_free(ttlm_conf);
 
 	return ret;
