@@ -6496,7 +6496,7 @@ static int hostapd_ctrl_iface_negotiated_ttlm_request(struct hostapd_data *hapd,
 	u16 repurposed_links = 0;
 #endif /* CONFIG_QCN_EXTN */
 
-	if (!hapd->conf->ttlm_enable) {
+	if (!hapd->conf || !hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
 		return -1;
 	}
@@ -6665,7 +6665,7 @@ static int hostapd_ctrl_iface_negotiated_ttlm_teardown(struct hostapd_data *hapd
 	struct sta_info *sta;
 	u8 addr[ETH_ALEN];
 
-	if (!hapd->conf->ttlm_enable) {
+	if (!hapd->conf || !hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
 		return -1;
 	}
@@ -6717,7 +6717,7 @@ static int hostapd_ctrl_iface_negotiated_ttlm_response(struct hostapd_data *hapd
 	u16 repurposed_links = 0;
 #endif /* CONFIG_QCN_EXTN */
 
-	if (!hapd->conf->ttlm_enable) {
+	if (!hapd->conf || !hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
 		return -1;
 	}
@@ -6959,7 +6959,7 @@ int hostapd_ctrl_iface_advertise_ttlm(struct hostapd_data *hapd,
 	int ret;
 	u8 i;
 
-	if (!hapd->conf->ttlm_enable) {
+	if (!hapd->conf || !hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM support is not enabled");
 		ret = -1;
 		goto out;
