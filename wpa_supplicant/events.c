@@ -5675,6 +5675,10 @@ void wpa_supplicant_update_channel_list(struct wpa_supplicant *wpa_s,
 
 		was_6ghz_enabled = ifs->is_6ghz_enabled;
 		ifs->is_6ghz_enabled = wpas_is_6ghz_supported(ifs, true);
+#ifdef CONFIG_QCN_EXTN
+		if (ifs->is_6ghz_enabled)
+			wpas_query_hw_blocklist_extn(ifs);
+#endif
 
 		/* Restart PNO/sched_scan with updated channel list */
 		if (ifs->pno) {
@@ -7540,6 +7544,10 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			wpas_setup_link_reconfig(wpa_s, &data->reconfig_info);
 		break;
 	default:
+#ifdef CONFIG_QCN_EXTN
+		if (!wpa_supplicant_event_extn(wpa_s, event, data))
+			break;
+#endif
 		wpa_msg(wpa_s, MSG_INFO, "Unknown event %d", event);
 		break;
 	}
