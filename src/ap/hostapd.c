@@ -2433,6 +2433,16 @@ setup_mld:
 	    hostapd_mbssid_setup_bss(hapd))
 		return -1;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hapd->iconf->mbssid != MBSSID_DISABLED &&
+	    hostapd_validate_mbssid_group_repurpose_mode_extn(hapd)){
+		wpa_printf(MSG_ERROR,
+			   "hapd:%s Mismatch in repurpose mode Failed to setup bss",
+			   hapd->conf->iface);
+		return -1;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	if (conf->wmm_enabled < 0)
 		conf->wmm_enabled = hapd->iconf->ieee80211n |
 			hapd->iconf->ieee80211ax;
