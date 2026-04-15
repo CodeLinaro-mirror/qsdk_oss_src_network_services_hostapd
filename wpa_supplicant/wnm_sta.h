@@ -49,9 +49,14 @@ struct neighbor_report {
 #ifdef CONFIG_MBO
 	unsigned int drv_mbo_reject:1;
 #endif /* CONFIG_MBO */
+
+	unsigned int smd_capable:1;
+	unsigned int smd_same_domain:1;
 	struct measurement_pilot *meas_pilot;
 	struct multiple_bssid *mul_bssid;
 	int freq;
+	u8 smd_id[ETH_ALEN];
+	u8 smd_ptk_mode;
 };
 
 

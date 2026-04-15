@@ -1349,4 +1349,12 @@ static inline int wpa_drv_trigger_smd_discovery(struct wpa_supplicant *wpa_s,
 						    num_neighbors);
 }
 
+static inline int wpa_drv_uhr_reconfig_req(struct wpa_supplicant *wpa_s,
+					   const struct wpa_driver_uhr_reconfig_params *params)
+{
+	if (!wpa_s->driver->uhr_reconfig_req)
+		return -1;
+	return wpa_s->driver->uhr_reconfig_req(wpa_s->drv_priv, params);
+}
+
 #endif /* DRIVER_I_H */

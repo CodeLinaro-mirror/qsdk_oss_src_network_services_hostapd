@@ -1802,6 +1802,16 @@ struct wpa_supplicant {
 	u8 smd_me_initial_ap_mld_addr[ETH_ALEN];
 	struct os_time smd_me_association_time;
 
+	struct dl_list smd_groups;
+
+	int smd_state;
+
+	u8 smd_previous_id[ETH_ALEN];
+	unsigned int smd_in_transition:1;
+
+	/* Preparation-phase context */
+	struct dl_list smd_targets; /* struct wpa_smd_prepared_target::list */
+	u8 smd_prep_dialog_token;
 };
 
 
