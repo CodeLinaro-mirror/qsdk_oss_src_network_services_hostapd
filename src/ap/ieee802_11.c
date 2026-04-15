@@ -15425,13 +15425,13 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 	/* RNR memeber ess colocated indication in bss param */
 	if (hapd->iconf->rnr_colocated_ess &&
-	    is_6ghz_op_class(hapd->iconf->op_class))
+	    is_6ghz_op_class(op_class))
 		bss_param |= RNR_BSS_PARAM_MEMBER_CO_LOCATED_ESS;
 #endif /* CONFIG_QCN_EXTN */
 
 	*eid++ = bss_param;
 	/* 20 MHz PSD */
-	if (is_6ghz_op_class(iface->conf->op_class))
+	if (is_6ghz_op_class(op_class))
 		*eid++ = iface->rnr_psd;
 	else
 		*eid++ = RNR_20_MHZ_PSD_MAX_TXPOWER;
