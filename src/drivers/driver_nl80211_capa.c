@@ -18,6 +18,9 @@
 #include "common/qca-vendor-attr.h"
 #include "common/brcm_vendor.h"
 #include "driver_nl80211.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../../qcn_extns/cmn.h"
+#endif
 
 
 static int protocol_feature_handler(struct nl_msg *msg, void *arg)
@@ -1187,6 +1190,11 @@ static int wiphy_info_handler(struct nl_msg *msg, void *arg)
 					drv->connect_ext_vendor_cmd_avail = 1;
 					break;
 #endif /* CONFIG_DRIVER_NL80211_QCA */
+#ifdef CONFIG_QCN_EXTN
+				default:
+					wiphy_info_qca_vendor_command_extn(drv, vinfo);
+					break;
+#endif /* CONFIG_QCN_EXTN */
 				}
 #ifdef CONFIG_DRIVER_NL80211_BRCM
 			} else if (vinfo->vendor_id == OUI_BRCM) {

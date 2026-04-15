@@ -217,6 +217,9 @@ struct wpa_driver_nl80211_data {
 	unsigned int device_bw:1;
 	unsigned int afc_support:1;
 	unsigned int afc_retail_support:1;
+#ifdef CONFIG_QCN_EXTN
+	unsigned int vendor_6ghz_hw_blocked_chans_support:1;
+#endif
 
 	u8 extra_bss_membership_selectors[8];
 

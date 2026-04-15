@@ -124,6 +124,7 @@ const char * event_to_string(enum wpa_event_type event)
 #ifdef CONFIG_QCN_EXTN
 	E2S(DCS_INTF);
 	E2S(DFS_RCSA_TX);
+	E2S(HW_BLOCKED_CHANS_NOTIFY);
 #endif
 	E2S(UPDATE_AP_POWERSAVE);
 	}

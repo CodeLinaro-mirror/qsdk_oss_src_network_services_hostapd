@@ -6300,6 +6300,22 @@ struct wpa_driver_ops {
 
 #ifdef CONFIG_QCN_EXTN
 	/**
+	 * fetch_hw_blocked_chans - Request driver cached HW blocked channels.
+	 * @priv: Private driver interface data
+	 * @radio_idx: Radio index; -1 for all radios
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*fetch_hw_blocked_chans)(void *priv, int radio_idx);
+
+	/*
+	 * is_6ghz_hw_blocked_chans_supported - Check if driver supports HW blocked channels
+	 * vendor event/query in 6 GHz.
+	 * @priv: Private driver interface data
+	 * Returns: true if supported, false otherwise
+	 */
+	bool (*is_6ghz_hw_blocked_chans_supported)(void *priv);
+
+	/**
 	 * dcs_config - Send the DCS config params to driver in order to configure
 	 * at firmware.
 	 * @priv: Private driver interface data
@@ -7118,6 +7134,11 @@ enum wpa_event_type {
 	 * EVENT_DCS_INTF - Notification event for DCS interference from driver
 	 */
 	EVENT_DCS_INTF,
+
+	/**
+	 * EVENT_HW_BLOCKED_CHANS_NOTIFY - HW blocked channel information received
+	 */
+	EVENT_HW_BLOCKED_CHANS_NOTIFY,
 #endif
 
 	/**

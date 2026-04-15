@@ -17566,6 +17566,9 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #ifdef CONFIG_QCN_EXTN
 	.dcs_config = wpa_driver_nl80211_dcs_config,
 	.dcs_sim = wpa_driver_nl80211_dcs_sim,
+	.fetch_hw_blocked_chans = nl80211_fetch_hw_blocked_chans_extn,
+	.is_6ghz_hw_blocked_chans_supported =
+		nl80211_is_6ghz_hw_blocked_chans_supported_extn,
 #endif
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_IEEE80211AX

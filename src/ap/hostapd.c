@@ -1621,6 +1621,9 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 	iface->current_hw_info = NULL;
 	iface->csa_pending_on_cac_abort = false;
 	os_memset(&iface->csa_settings, 0, sizeof(struct csa_settings));
+#ifdef CONFIG_QCN_EXTN
+	hostapd_iface_deinit_extn(iface);
+#endif /* CONFIG_QCN_EXTN */
 }
 
 
@@ -4724,6 +4727,7 @@ struct hostapd_iface * hostapd_alloc_iface(void)
 	hapd_iface->is_afc_power_event_received = false;
 
 #ifdef CONFIG_QCN_EXTN
+	hostapd_iface_init_extn(hapd_iface);
 	hapd_iface->vendor_bssid_used_mask = 0;
 #endif /* CONFIG_QCN_EXTN */
 
