@@ -12936,6 +12936,9 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		capab_info = hostapd_own_capab_info(bss);
 		*eid++ = WLAN_EID_NONTRANSMITTED_BSSID_CAPA;
 		*eid++ = sizeof(capab_info);
+#ifdef CONFIG_QCN_EXTN
+		if (!hostapd_is_repurpose_disabled_11be_extn(bss->conf))
+#endif /* CONFIG_QCN_EXTN */
 		if (bss->conf->mld_ap && bss->rx_cu_param.critical_flag)
 			capab_info |= WLAN_CAPABILITY_PBCC;
 
