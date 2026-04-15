@@ -2236,7 +2236,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		if (acl != ACCEPT_UNLESS_DENIED &&
 		    acl != DENY_UNLESS_ACCEPTED &&
 		    acl != USE_EXTERNAL_RADIUS_AUTH &&
-		    acl != ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST) {
+		    acl != ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST &&
+		    acl != DENY_WITH_TIMED_ALLOW_WINDOW) {
 			wpa_printf(MSG_ERROR, "Line %d: unknown macaddr_acl %d",
 				   line, acl);
 			return 1;
@@ -2256,6 +2257,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line, pos);
 			return 1;
 		}
+	} else if (os_strcmp(buf, "acl_deny_wait_time") == 0) {
+		bss->acl_deny_wait_time = atoi(pos);
+	} else if (os_strcmp(buf, "acl_deny_allow_time") == 0) {
+		bss->acl_deny_allow_time = atoi(pos);
 	} else if (os_strcmp(buf, "wds_sta") == 0) {
 		bss->wds_sta = atoi(pos);
 	} else if (os_strcmp(buf, "start_disabled") == 0) {

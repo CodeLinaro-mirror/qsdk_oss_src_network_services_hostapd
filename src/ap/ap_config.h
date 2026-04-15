@@ -29,7 +29,23 @@ enum macaddr_acl {
 	ACCEPT_UNLESS_DENIED = 0,
 	DENY_UNLESS_ACCEPTED = 1,
 	USE_EXTERNAL_RADIUS_AUTH = 2,
-	ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST = 3
+	ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST = 3,
+	DENY_WITH_TIMED_ALLOW_WINDOW = 4
+};
+
+/**
+ * struct acl_timed_deny_entry - Per-STA state for DENY_WITH_TIMED_ALLOW_WINDOW
+ *
+ * @next: Pointer to next entry in the acl_timed_deny linked list
+ * @addr: MAC address of the station for which the timed state is saved
+ * @phase_start: Timestamp when phase 1 began
+ * @in_allow_phase: Current phase indicator (0=deny phase, 1=allow phase)
+ */
+struct acl_timed_deny_entry {
+	struct acl_timed_deny_entry *next;
+	u8 addr[ETH_ALEN];
+	struct os_reltime phase_start;
+	bool in_allow_phase;
 };
 
 /**
@@ -441,6 +457,12 @@ struct hostapd_bss_config {
 	int num_accept_mac;
 	struct mac_acl_entry *deny_mac;
 	int num_deny_mac;
+	/* deny phase duration (seconds) */
+	unsigned int acl_deny_wait_time;
+	/* allow phase duration (seconds) */
+	unsigned int acl_deny_allow_time;
+	/* per-STA state */
+	struct acl_timed_deny_entry *acl_timed_deny_list;
 	int wds_sta;
 	int isolate;
 	int start_disabled;
@@ -1721,6 +1743,7 @@ int hostapd_add_acl_maclist(struct mac_acl_entry **acl, int *num,
 			    int vlan_id, const u8 *addr);
 void hostapd_remove_acl_mac(struct mac_acl_entry **acl, int *num,
 			    const u8 *addr);
+void hostapd_config_free_acl_timed_list(struct hostapd_bss_config *conf);
 bool hostapd_config_check_bss_6g(struct hostapd_bss_config *bss);
 
 #endif /* HOSTAPD_CONFIG_H */
