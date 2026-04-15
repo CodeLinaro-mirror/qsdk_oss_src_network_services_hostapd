@@ -489,6 +489,26 @@ int hostapd_check_ml_acl(struct hostapd_data *hapd, struct sta_info *sta)
 			continue;
 
 		acl_res = hostapd_check_acl(tmp_hapd, sta->addr, NULL);
+		acl_res_linkaddr = hostapd_check_acl(tmp_hapd, link->peer_addr, NULL);
+
+		/* For DENY_WITH_TIMED_ALLOW_WINDOW mode, hostapd_check_acl()
+		 * already returns the final decision based on deny list and
+		 * timing state. Reject if any MAC is rejected. */
+		if (hapd->conf->macaddr_acl == DENY_WITH_TIMED_ALLOW_WINDOW) {
+			if (acl_res == HOSTAPD_ACL_REJECT) {
+				wpa_printf(MSG_INFO,
+					   "STA " MACSTR " not allowed to connect (timed deny)",
+					   MAC2STR(sta->addr));
+				return HOSTAPD_ACL_REJECT;
+			}
+			if (acl_res_linkaddr == HOSTAPD_ACL_REJECT) {
+				wpa_printf(MSG_INFO,
+					   "link addr " MACSTR " not allowed to connect (timed deny)",
+					   MAC2STR(link->peer_addr));
+				return HOSTAPD_ACL_REJECT;
+			}
+			continue;
+		}
 
 		if (hapd->conf->macaddr_acl == ACCEPT_UNLESS_DENIED &&
 		    acl_res != HOSTAPD_ACL_ACCEPT) {
@@ -498,7 +518,6 @@ int hostapd_check_ml_acl(struct hostapd_data *hapd, struct sta_info *sta)
 			return HOSTAPD_ACL_REJECT;
 		}
 
-		acl_res_linkaddr = hostapd_check_acl(tmp_hapd, link->peer_addr, NULL);
 		if (hapd->conf->macaddr_acl == ACCEPT_UNLESS_DENIED &&
 		    acl_res_linkaddr != HOSTAPD_ACL_ACCEPT) {
 			wpa_printf(MSG_INFO, "link addr" MACSTR
