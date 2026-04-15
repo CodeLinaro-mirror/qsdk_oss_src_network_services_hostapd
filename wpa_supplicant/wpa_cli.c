@@ -436,6 +436,32 @@ static int wpa_cli_cmd_mlo_signal_poll(struct wpa_ctrl *ctrl, int argc, char *ar
 	return wpa_ctrl_command(ctrl, "MLO_SIGNAL_POLL");
 }
 
+#ifdef CONFIG_IEEE80211BN
+static int wpa_cli_cmd_smd_domain(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "SMD_DOMAINS");
+}
+
+static int wpa_cli_cmd_smd_groups(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "SMD_GROUPS");
+}
+
+static int wpa_cli_cmd_smd_st_execute(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "SMD_EXECUTE", 1, argc, argv);
+}
+
+static int wpa_cli_cmd_smd_st_prepare(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "SMD_PREPARE", 1, argc, argv);
+}
+
+static int wpa_cli_cmd_smd_cancel_prepare(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "SMD_CANCEL_PREPARE", 1, argc, argv);
+}
+#endif /* CONFIG_IEEE80211BN */
 
 static int wpa_cli_cmd_setup_link_reconfig(struct wpa_ctrl *ctrl, int argc,
 					   char *argv[])
@@ -4527,6 +4553,23 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	{ "mlo_signal_poll", wpa_cli_cmd_mlo_signal_poll, NULL,
 	  cli_cmd_flag_none,
 	  "= get mlo signal parameters" },
+#ifdef CONFIG_IEEE80211BN
+	{ "smd_domains", wpa_cli_cmd_smd_domain, NULL,
+	  cli_cmd_flag_none,
+	  "= list discovered SMD domains"},
+	{ "smd_groups", wpa_cli_cmd_smd_groups, NULL,
+	  cli_cmd_flag_none,
+	  "= show SMD group topoligy with members" },
+	 { "smd_prepare", wpa_cli_cmd_smd_st_prepare, NULL,
+	   cli_cmd_flag_none,
+	   "= initiate SMD BSS ST preparation request with SMD capable AP (currently associated with) = SMD_PREPARE <bssid> [NO_DL_SN] [NO_UL_SN] [SCS=<list>] [ADD_LINKS=<bitmask>] [DEL_LINKS=<bitmask>]" },
+	 { "smd_execute", wpa_cli_cmd_smd_st_execute, NULL,
+	   cli_cmd_flag_none,
+	   "= initiate SMD BSS ST execution request with SMD capable AP (either current or target AP) = SMD_EXECUTE <bssid> [EXEC_PATH=<0|1>] [DL_TID_BITMAP=<bitmap>]" },
+         { "smd_cancel_prepare", wpa_cli_cmd_smd_cancel_prepare, NULL,
+           cli_cmd_flag_none,
+           "= cancel a pending SMD ST preparation for a given target = SMD_CANCEL_PREPARE <bssid>" },
+#endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_NAN_USD
 	{ "nan_publish", wpa_cli_cmd_nan_publish, NULL,
 	  cli_cmd_flag_none,
