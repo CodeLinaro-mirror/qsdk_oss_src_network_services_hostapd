@@ -7641,6 +7641,13 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 
 	settings->freq_params.channel = chan;
 
+#ifdef CONFIG_QCN_EXTN
+	ret = hostapd_validate_hw_blocklist_for_freq_params_extn(
+		iface, &settings->freq_params, settings->power_mode, "channel switch");
+	if (ret)
+		return ret;
+#endif /* CONFIG_QCN_EXTN */
+
 	ret = hostapd_change_config_freq(iface->bss[0], iface->conf,
 					 &settings->freq_params,
 					 &old_freq);
@@ -9256,6 +9263,19 @@ s16 hostapd_get_eirp_pwr(struct hostapd_iface *iface, u16 freq, u16 center_freq,
 				      CHAN_MIN_TX_POWER;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_hw_blocklisted_combo_extn(
+		    iface, freq, center_freq, bw, in_punc_pattern,
+		    ap_pwr_type)) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: skip blocked combo freq=%u center=%u bw=%u pp=0x%x pwr_mode=%u",
+			   __func__, freq, center_freq, bw,
+			   in_punc_pattern, ap_pwr_type);
+		return is_twice_pwr ? CHAN_MIN_TWICE_TX_POWER :
+					      CHAN_MIN_TX_POWER;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	if (ap_pwr_type == NL80211_REG_AP_SP)
 		ret = hostapd_get_sp_eirp(iface, freq, center_freq, bw,
 					  in_punc_pattern,
@@ -10070,6 +10090,16 @@ hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
 			   freq, bw, pwr_type);
 		return false;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_hw_blocklisted_combo_extn(
+		    iface, freq, center_freq, bw, pp, pwr_type)) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: blocked combo freq=%u center=%u bw=%u pp=0x%x pwr_mode=%u",
+			   __func__, freq, center_freq, bw, pp, pwr_type);
+		return false;
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	return true;
 }

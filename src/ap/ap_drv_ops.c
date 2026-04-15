@@ -842,6 +842,11 @@ int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
 		return -1;
 
 #ifdef CONFIG_QCN_EXTN
+	if (hostapd_validate_hw_blocklist_for_freq_params_extn(
+		    hapd->iface, &data, data.he_6ghz_reg_pwr_type,
+		    "set_freq"))
+		return -1;
+
 	update_chan_params(hapd, data.center_freq1, data.center_freq2, hostapd_get_chan_width_from_oper_chan_width(hapd->iconf));
 #endif
 
