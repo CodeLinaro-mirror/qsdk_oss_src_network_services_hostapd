@@ -69,6 +69,7 @@
 #include "dpp_supplicant.h"
 #include "pr_supplicant.h"
 #include "nan_supplicant.h"
+#include "smd.h"
 #ifdef CONFIG_MESH
 #include "ap/ap_config.h"
 #include "ap/hostapd.h"
@@ -707,6 +708,10 @@ static void wpa_supplicant_cleanup(struct wpa_supplicant *wpa_s)
 	wpas_pasn_auth_stop(wpa_s);
 #endif /* CONFIG_PASN */
 
+#ifdef CONFIG_IEEE80211BN
+	smd_groups_deinit(wpa_s);
+	smd_targets_deinit(wpa_s);
+#endif
 	wpa_bss_deinit(wpa_s);
 
 	wpa_supplicant_cancel_delayed_sched_scan(wpa_s);
@@ -7779,6 +7784,10 @@ wpa_supplicant_alloc(struct wpa_supplicant *parent)
 	dl_list_init(&wpa_s->mesh_external_pmksa_cache);
 #endif /* CONFIG_MESH */
 #endif /* CONFIG_PMKSA_CACHE_EXTERNAL */
+#ifdef CONFIG_IEEE80211BN
+	dl_list_init(&wpa_s->smd_targets);
+	dl_list_init(&wpa_s->smd_groups);
+#endif
 
 #ifdef CONFIG_QCN_EXTN
 	wpas_iface_init_extn(wpa_s);
@@ -9014,6 +9023,9 @@ static int wpa_supplicant_init_iface(struct wpa_supplicant *wpa_s,
 		   iface->ctrl_interface ? iface->ctrl_interface : "N/A",
 		   iface->bridge_ifname ? iface->bridge_ifname : "N/A");
 
+#ifdef CONFIG_IEEE80211BN
+	smd_groups_init(wpa_s);
+#endif
 	if (iface->confname) {
 #ifdef CONFIG_BACKEND_FILE
 		const char *prefix = wpa_s->global->params.conf_file_prefix;

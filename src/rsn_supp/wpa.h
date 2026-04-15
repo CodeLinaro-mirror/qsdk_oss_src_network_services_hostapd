@@ -750,4 +750,8 @@ bool wpa_sm_pmksa_privacy_supported(struct wpa_sm *sm);
 
 void wpa_sm_set_802_1x_auth_caps(struct wpa_sm *sm, u64 flags2);
 
+void wpa_sm_notify_smd_transition_complete(struct wpa_sm *sm,
+					   const u8 *target_addr);
+void wpa_sm_smd_notify_ptk_installed(struct wpa_sm *sm,
+				     const u8 *target_addr);
 #endif /* WPA_H */
