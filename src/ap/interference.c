@@ -1033,6 +1033,7 @@ do_csa:
 	settings.freq_params.vht_enabled = iface->conf->ieee80211ac;
 	settings.freq_params.he_enabled = iface->conf->ieee80211ax;
 	settings.freq_params.eht_enabled = iface->conf->ieee80211be;
+	settings.freq_params.uhr_enabled = iface->conf->ieee80211bn;
 	settings.power_mode = -1;
 
 	if (is_6ghz_freq(settings.freq_params.freq) &&
@@ -1209,6 +1210,7 @@ static void set_csa_param(struct csa_settings *settings,
 	settings->freq_params.vht_enabled = iface->conf->ieee80211ac;
 	settings->freq_params.he_enabled = iface->conf->ieee80211ax;
 	settings->freq_params.eht_enabled = iface->conf->ieee80211be;
+	settings->freq_params.uhr_enabled = iface->conf->ieee80211bn;
 	settings->power_mode = -1;
 
 	if (is_6ghz_freq(settings->freq_params.freq) &&

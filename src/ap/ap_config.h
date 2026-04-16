@@ -1635,6 +1635,10 @@ struct hostapd_config {
 #define CH_SWITCH_EHT_ENABLED BIT(0)
 #define CH_SWITCH_EHT_DISABLED BIT(1)
 	unsigned int ch_switch_eht_config;
+
+#define CH_SWITCH_UHR_ENABLED BIT(0)
+#define CH_SWITCH_UHR_DISABLED BIT(1)
+	unsigned int ch_switch_uhr_config;
 	int disable_csa_dfs;
 
 	enum mbssid {
