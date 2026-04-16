@@ -336,6 +336,13 @@ int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 			continue;
 		}
 
+#ifdef CONFIG_QCN_EXTN
+		if (!hostapd_hwbl_validate_6ghz(iface, chan, bw,
+						new_centre_freq, 0,
+						iface->conf->he_6ghz_reg_pwr_type))
+			continue;
+#endif
+
 		wpa_printf(MSG_DEBUG, "AWGN: Adding channel %d (%d) to valid chandef list",
 			   chan->freq, chan->chan);
 		(*chandef_list)[channel_idx] = chan;
@@ -813,7 +820,7 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 				goto exit;
 			}
 
-			reduced_chan_width(&new_chan_width, chan_width, freq,
+			reduced_chan_width(iface, &new_chan_width, chan_width, freq,
 					   mode, chan_bw_interference_bitmap);
 			if (new_chan_width >= chan_width) {
 				wpa_printf(MSG_ERROR,
@@ -855,7 +862,7 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 			goto exit;
 		}
 
-		reduced_chan_width(&new_chan_width, chan_width, freq,
+		reduced_chan_width(iface, &new_chan_width, chan_width, freq,
 				   mode, chan_bw_interference_bitmap);
 		if (new_chan_width >= chan_width) {
 			wpa_printf(MSG_DEBUG,
