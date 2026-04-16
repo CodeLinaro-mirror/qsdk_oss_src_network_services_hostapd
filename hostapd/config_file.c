@@ -2258,9 +2258,27 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 	} else if (os_strcmp(buf, "acl_deny_wait_time") == 0) {
-		bss->acl_deny_wait_time = atoi(pos);
+		int val = atoi(pos);
+		if (val < SOFTBLOCK_WAIT_TIME_MIN ||
+		    val > SOFTBLOCK_WAIT_TIME_MAX) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid acl_deny_wait_time %d (must be %d-%d)",
+				   line, val, SOFTBLOCK_WAIT_TIME_MIN,
+				   SOFTBLOCK_WAIT_TIME_MAX);
+			return 1;
+		}
+		bss->acl_deny_wait_time = val;
 	} else if (os_strcmp(buf, "acl_deny_allow_time") == 0) {
-		bss->acl_deny_allow_time = atoi(pos);
+		int val = atoi(pos);
+		if (val < SOFTBLOCK_ALLOW_TIME_MIN ||
+		    val > SOFTBLOCK_ALLOW_TIME_MAX) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid acl_deny_allow_time %d (must be %d-%d)",
+				   line, val, SOFTBLOCK_ALLOW_TIME_MIN,
+				   SOFTBLOCK_ALLOW_TIME_MAX);
+			return 1;
+		}
+		bss->acl_deny_allow_time = val;
 	} else if (os_strcmp(buf, "wds_sta") == 0) {
 		bss->wds_sta = atoi(pos);
 	} else if (os_strcmp(buf, "start_disabled") == 0) {
