@@ -510,6 +510,26 @@ int hostapd_check_ml_acl(struct hostapd_data *hapd, struct sta_info *sta)
 			continue;
 		}
 
+		/* For ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST mode, hostapd_check_acl()
+		 * already returns the final decision. Reject if any MAC is rejected.
+		 * All MACs (MLD address and link addresses) must be in whitelist
+		 * AND not in blacklist. */
+		if (hapd->conf->macaddr_acl == ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST) {
+			if (acl_res == HOSTAPD_ACL_REJECT) {
+				wpa_printf(MSG_INFO,
+					   "STA " MACSTR " not allowed to connect (whitelist check failed)",
+					   MAC2STR(sta->addr));
+				return HOSTAPD_ACL_REJECT;
+			}
+			if (acl_res_linkaddr == HOSTAPD_ACL_REJECT) {
+				wpa_printf(MSG_INFO,
+					   "link addr " MACSTR " not allowed to connect (whitelist check failed)",
+					   MAC2STR(link->peer_addr));
+				return HOSTAPD_ACL_REJECT;
+			}
+			continue;
+		}
+
 		if (hapd->conf->macaddr_acl == ACCEPT_UNLESS_DENIED &&
 		    acl_res != HOSTAPD_ACL_ACCEPT) {
 			wpa_printf(MSG_INFO, "STA " MACSTR
