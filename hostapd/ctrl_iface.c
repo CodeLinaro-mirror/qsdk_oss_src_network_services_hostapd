@@ -7712,6 +7712,19 @@ static int hostapd_ctrl_iface_dump_scs_list(struct hostapd_data *hapd,
 	if (hwaddr_aton(cmd, addr))
 		return -1;
 
+#ifdef CONFIG_QCN_EXTN
+	/* Get STA by looping all links of the AP MLD including the
+	 * repurposed links
+	 */
+	if (hapd->conf->mld_ap) {
+		for_each_mld_link_include_repurposed(temp_hapd, hapd) {
+			sta = ap_get_sta(temp_hapd, addr);
+			if (sta)
+				break;
+		}
+	} else
+		sta = ap_get_sta(temp_hapd, addr);
+#else /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap) {
 		for_each_mld_link(temp_hapd, hapd) {
 			sta = ap_get_sta(temp_hapd, addr);
@@ -7720,6 +7733,7 @@ static int hostapd_ctrl_iface_dump_scs_list(struct hostapd_data *hapd,
 		}
 	} else
 		sta = ap_get_sta(temp_hapd, addr);
+#endif /* CONFIG_QCN_EXTN */
 
 	if (!sta) {
 		wpa_printf(MSG_ERROR,
@@ -7763,6 +7777,19 @@ static int hostapd_ctrl_iface_dump_scs_info(struct hostapd_data *hapd,
 		return -1;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	/* Get STA by looping all links of the AP MLD including the
+	 * repurposed links
+	 */
+	if (hapd->conf->mld_ap) {
+		for_each_mld_link_include_repurposed(temp_hapd, hapd) {
+			sta = ap_get_sta(temp_hapd, addr);
+			if (sta)
+				break;
+		}
+	} else
+		sta = ap_get_sta(temp_hapd, addr);
+#else /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap) {
 		for_each_mld_link(temp_hapd, hapd) {
 			sta = ap_get_sta(temp_hapd, addr);
@@ -7771,6 +7798,7 @@ static int hostapd_ctrl_iface_dump_scs_info(struct hostapd_data *hapd,
 		}
 	} else
 		sta = ap_get_sta(temp_hapd, addr);
+#endif /* CONFIG_QCN_EXTN */
 
 	if (!sta) {
 		wpa_printf(MSG_ERROR,
@@ -7820,6 +7848,16 @@ static int hostapd_ctrl_iface_send_scs_resp(struct hostapd_data *hapd,
 		return -1;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (hapd->conf->mld_ap) {
+		for_each_mld_link_include_repurposed(temp_hapd, hapd) {
+			sta = ap_get_sta(temp_hapd, addr);
+			if (sta)
+				break;
+		}
+	} else
+		sta = ap_get_sta(temp_hapd, addr);
+#else /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap) {
 		for_each_mld_link(temp_hapd, hapd) {
 			sta = ap_get_sta(temp_hapd, addr);
@@ -7828,6 +7866,7 @@ static int hostapd_ctrl_iface_send_scs_resp(struct hostapd_data *hapd,
 		}
 	} else
 		sta = ap_get_sta(temp_hapd, addr);
+#endif /* CONFIG_QCN_EXTN */
 
 	if (!sta) {
 		wpa_printf(MSG_ERROR, "STA not found for Unsolicited response");
