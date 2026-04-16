@@ -500,8 +500,11 @@ struct wpa_state_machine *
 wpa_auth_sta_init(struct wpa_authenticator *wpa_auth, const u8 *addr,
 		  const u8 *p2p_dev_addr);
 void wpa_auth_set_sta_ft_over_ds_ml(struct wpa_state_machine *sm, bool status);
+int wpa_auth_sta_associated_start_sm(struct wpa_authenticator *wpa_auth,
+				     struct wpa_state_machine *sm);
 int wpa_auth_sta_associated(struct wpa_authenticator *wpa_auth,
-			    struct wpa_state_machine *sm);
+			    struct wpa_state_machine *sm,
+			    bool wpa_initialize);
 void wpa_auth_sta_no_wpa(struct wpa_state_machine *sm);
 void wpa_auth_sta_deinit(struct wpa_state_machine *sm);
 void wpa_receive(struct wpa_authenticator *wpa_auth,
@@ -535,7 +538,9 @@ int wpa_auth_get_pmk_full(struct wpa_state_machine *sm,
 			  u8 *pmk, size_t *pmk_len,
 			  u8 *pmkid);
 int wpa_auth_set_pmk_full(struct wpa_state_machine *sm,
-			  u8 *pmk, u8 *pmkid, int pmk_len);
+			  u8 *pmk, u8 *pmkid, int pmk_len,
+			  int session_timeout,
+			  struct eapol_state_machine *eapol);
 
 int wpa_auth_get_gtk(struct wpa_authenticator *wpa_auth,
 		     int *gtk_index,

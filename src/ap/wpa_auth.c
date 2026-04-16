@@ -1078,7 +1078,8 @@ void wpa_auth_set_sta_ft_over_ds_ml(struct wpa_state_machine *sm, bool status)
 }
 
 int wpa_auth_sta_associated(struct wpa_authenticator *wpa_auth,
-			    struct wpa_state_machine *sm)
+			    struct wpa_state_machine *sm,
+			    bool wpa_initialize)
 {
 	if (!wpa_auth || !wpa_auth->conf.wpa || !sm)
 		return -1;
@@ -1110,6 +1111,18 @@ int wpa_auth_sta_associated(struct wpa_authenticator *wpa_auth,
 		sm->ReAuthenticationRequest = true;
 		return wpa_sm_step(sm);
 	}
+
+	if (!wpa_initialize)
+		return -1;
+
+	return wpa_auth_sta_associated_start_sm(wpa_auth, sm);
+}
+
+int wpa_auth_sta_associated_start_sm(struct wpa_authenticator *wpa_auth,
+				     struct wpa_state_machine *sm)
+{
+	if (!wpa_auth || !sm)
+		return -1;
 
 	wpa_auth_logger(wpa_auth, wpa_auth_get_spa(sm), LOGGER_DEBUG,
 			"start authentication");
@@ -7233,8 +7246,9 @@ int wpa_auth_get_pmk_full(struct wpa_state_machine *sm,
 	return 0;
 }
 
-int wpa_auth_set_pmk_full(struct wpa_state_machine *sm,
-		u8 *pmk, u8 *pmkid, int pmk_len)
+int wpa_auth_set_pmk_full(struct wpa_state_machine *sm, u8 *pmk, u8 *pmkid,
+			  int pmk_len, int session_timeout,
+			  struct eapol_state_machine *eapol)
 {
 	if (!sm || !sm->wpa_auth) {
 		wpa_printf(MSG_DEBUG, "%s: PMK Cache fail sm:%p sm->wpa_auth:%p",
@@ -7246,18 +7260,16 @@ int wpa_auth_set_pmk_full(struct wpa_state_machine *sm,
 	os_memcpy(sm->PMK, pmk, pmk_len);
 	os_memcpy(sm->pmkid, pmkid, PMKID_LEN);
 
-	switch (sm->auth_alg) {
-	case WLAN_AUTH_SAE:
-		if (wpa_auth_pmksa_add_sae(sm->wpa_auth, sm->addr, pmk, pmk_len,
-					   pmkid, 0, 0, sm->group->vlan_id) < 0)
-			wpa_printf(MSG_DEBUG, "RSN: PMK Cache failed for STA(SAE):"
-				MACSTR, MAC2STR(sm->addr));
-		break;
-	default:
-		if (wpa_auth_pmksa_add(sm, pmk, pmk_len, 0, NULL))
-			wpa_printf(MSG_DEBUG, "RSN: PMK Cache failed for STA:"
-				MACSTR, MAC2STR(sm->addr));
-		break;
+	sm->pmksa = pmksa_cache_auth_add(sm->wpa_auth->pmksa, pmk,
+					 pmk_len, NULL, NULL, 0,
+					 wpa_auth_get_aa(sm),
+					 wpa_auth_get_spa(sm),
+					 session_timeout, eapol,
+					 sm->wpa_key_mgmt);
+	if (!sm->pmksa) {
+		wpa_printf(MSG_ERROR, "RSN: PMK Cache failed for STA:"
+			   MACSTR, MAC2STR(sm->addr));
+		return -1;
 	}
 	return 0;
 }
