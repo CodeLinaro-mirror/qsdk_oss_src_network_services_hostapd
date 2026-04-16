@@ -2342,6 +2342,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->disable_csa_dfs = atoi(pos);
 	} else if (os_strcmp(buf, "use_ru_puncture_dfs") == 0) {
 		conf->use_ru_puncture_dfs = atoi(pos);
+	} else if (os_strcmp(buf, "dfs_disable_auto_unpunc") == 0) {
+		conf->dfs_disable_auto_unpunc = atoi(pos);
 	} else if (os_strcmp(buf, "enable_6ghz_composite_ap") == 0) {
 		conf->enable_6ghz_composite_ap = atoi(pos);
 	} else if (os_strcmp(buf, "enable_mcs15") == 0) {

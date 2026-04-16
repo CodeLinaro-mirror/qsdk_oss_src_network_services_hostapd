@@ -1553,6 +1553,9 @@ struct hostapd_config {
 	bool channel_usage;
 	bool peer_to_peer_twt;
 	int use_ru_puncture_dfs;
+
+	/* Add support to control auto-unpuncture of radar puncture channels */
+	int dfs_disable_auto_unpunc;
 	int ccfs;
 	int bandwidth_device;
 	int center_freq_device;
