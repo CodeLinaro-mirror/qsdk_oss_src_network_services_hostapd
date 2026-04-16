@@ -2464,6 +2464,20 @@ static int hostapd_cli_cmd_set_he_mu_edca(struct wpa_ctrl *ctrl, int argc, char 
 }
 #endif /* CONFIG_QCN_EXTN */
 
+/**
+ * hostapd_cli_cmd_use_ru_puncture_dfs - Send runtime RU puncture DFS command
+ * @ctrl: Pointer to the control interface connection
+ * @argc: Number of command arguments
+ * @argv: Command argument array
+ *
+ * Return: hostapd CLI command status.
+ */
+static int hostapd_cli_cmd_use_ru_puncture_dfs(struct wpa_ctrl *ctrl,
+					       int argc, char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "USE_RU_PUNCTURE_DFS", 1, argc, argv);
+}
+
 struct hostapd_cli_cmd {
 	const char *cmd;
 	int (*handler)(struct wpa_ctrl *ctrl, int argc, char *argv[]);
@@ -2802,6 +2816,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<param>: Parameter name (aifsn, ecwmin, ecwmax, timer, acm)\n"
 	  "<value>: Parameter value\n" },
 #endif /* CONFIG_QCN_EXTN */
+	{ "use_ru_puncture_dfs", hostapd_cli_cmd_use_ru_puncture_dfs, NULL,
+	  "<1/0> = enable/disable Puncturing feature for DFS channels" },
 	{ NULL, NULL, NULL, NULL }
 };
 
