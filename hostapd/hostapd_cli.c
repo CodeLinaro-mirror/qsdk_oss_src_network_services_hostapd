@@ -254,6 +254,8 @@ int hostapd_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd,
 #else
 	char buf[4096];
 #endif /* CONFIG_QCN_EXTN */
+	{ "use_ru_puncture_dfs", hostapd_cli_cmd_use_ru_puncture_dfs, NULL,
+	  "<1/0> = enable/disable Puncturing feature for DFS channels" },
 
 	if (argc < min_args) {
 		printf("Invalid %s command - at least %d argument%s required.\n",
@@ -2628,6 +2630,20 @@ static int hostapd_cli_cmd_set_he_max_ampdu_len_exp(struct wpa_ctrl *ctrl,
 	}
 
 	return wpa_ctrl_command(ctrl, cmd);
+}
+
+/**
+ * hostapd_cli_cmd_use_ru_puncture_dfs - Send runtime RU puncture DFS command
+ * @ctrl: Pointer to the control interface connection
+ * @argc: Number of command arguments
+ * @argv: Command argument array
+ *
+ * Return: hostapd CLI command status.
+ */
+static int hostapd_cli_cmd_use_ru_puncture_dfs(struct wpa_ctrl *ctrl,
+					       int argc, char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "USE_RU_PUNCTURE_DFS", 1, argc, argv);
 }
 
 static int hostapd_cli_cmd_get_he_max_ampdu_len_exp(struct wpa_ctrl *ctrl,
