@@ -6367,17 +6367,26 @@ static int hostapd_ctrl_iface_negotiated_ttlm_request(struct hostapd_data *hapd,
 	u16 repurposed_links = 0;
 #endif /* CONFIG_QCN_EXTN */
 
+#ifdef CONFIG_QCN_EXTN
+	if (hapd->conf && hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		struct hostapd_data *link_hapd;
+
+		link_hapd = hostapd_get_non_repurposed_link_of_mld_extn(hapd);
+		if (!link_hapd) {
+			wpa_printf(MSG_ERROR,
+				   "TTLM: Failed to get non-repurposed link");
+			return -1;
+		}
+		hapd = link_hapd;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	if (!hapd->conf || !hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
 		return -1;
 	}
 
 #ifdef CONFIG_QCN_EXTN
-	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
-		wpa_printf(MSG_ERROR, "TTLM negotiation not allowed in repurposed mode");
-		return -1;
-	}
-
 	hostapd_get_repurposed_links_bitmap_extn(hapd, &repurposed_links);
 #endif /* CONFIG_QCN_EXTN */
 
@@ -6536,18 +6545,25 @@ static int hostapd_ctrl_iface_negotiated_ttlm_teardown(struct hostapd_data *hapd
 	struct sta_info *sta;
 	u8 addr[ETH_ALEN];
 
+#ifdef CONFIG_QCN_EXTN
+	if (hapd->conf && hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		struct hostapd_data *link_hapd;
+
+		link_hapd = hostapd_get_non_repurposed_link_of_mld_extn(hapd);
+		if (!link_hapd) {
+			wpa_printf(MSG_ERROR,
+				   "TTLM failed to find non-repurposed link");
+			return -1;
+		}
+		hapd = link_hapd;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	if (!hapd->conf || !hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
 		return -1;
 	}
 
-#ifdef CONFIG_QCN_EXTN
-	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
-		wpa_printf(MSG_ERROR,
-			   "TTLM teardown on repurposed link");
-		return -1;
-	}
-#endif /* CONFIG_QCN_EXTN */
 
 	if (hwaddr_aton(cmd, addr)) {
 		wpa_printf(MSG_ERROR, "Invalid STA MAC address");
@@ -6588,17 +6604,24 @@ static int hostapd_ctrl_iface_negotiated_ttlm_response(struct hostapd_data *hapd
 	u16 repurposed_links = 0;
 #endif /* CONFIG_QCN_EXTN */
 
+#ifdef CONFIG_QCN_EXTN
+	if (hapd->conf && hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		lhapd = hostapd_get_non_repurposed_link_of_mld_extn(hapd);
+		if (!lhapd) {
+			wpa_printf(MSG_ERROR,
+				   "TTLM failed to find non-repurposed link");
+			return -1;
+		}
+		hapd = lhapd;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	if (!hapd->conf || !hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM negotiation support is disabled");
 		return -1;
 	}
 
 #ifdef CONFIG_QCN_EXTN
-	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
-		wpa_printf(MSG_ERROR,
-			   "TTLM negotiation on repurposed BSS");
-		return -1;
-	}
 	hostapd_get_repurposed_links_bitmap_extn(hapd, &repurposed_links);
 #endif /* CONFIG_QCN_EXTN */
 
@@ -6830,6 +6853,18 @@ int hostapd_ctrl_iface_advertise_ttlm(struct hostapd_data *hapd, const char *cmd
 	const char *pos;
 	int ret = -1;
 	u8 i;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hapd->conf && hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		link_bss = hostapd_get_non_repurposed_link_of_mld_extn(hapd);
+		if (!link_bss) {
+			wpa_printf(MSG_ERROR,
+				   "Failed to find the non-repurposed link");
+			return -1;
+		}
+		hapd = link_bss;
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	if (!hapd->conf || !hapd->conf->ttlm_enable) {
 		wpa_printf(MSG_ERROR, "TTLM support is not enabled");
