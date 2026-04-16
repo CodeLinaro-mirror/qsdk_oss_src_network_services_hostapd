@@ -2656,7 +2656,9 @@ int hostapd_parse_freq_params(const char *pos,
 #endif
 	params->ht_enabled = !!os_strstr(pos, " ht");
 	params->vht_enabled = !!os_strstr(pos, " vht");
-	params->eht_enabled = !!os_strstr(pos, " eht");
+	params->uhr_enabled = !!os_strstr(pos, " uhr");
+	params->eht_enabled = !!os_strstr(pos, " eht") ||
+		params->uhr_enabled;
 	params->he_enabled = !!os_strstr(pos, " he") ||
 		params->eht_enabled;
 #undef SET_FREQ_PARAM
@@ -2947,9 +2949,9 @@ static int hostapd_ctrl_check_freq_params(struct hostapd_iface *iface,
 	if (!punct_bitmap)
 		return 0;
 
-	if (!params->eht_enabled) {
+	if (!(params->uhr_enabled || params->eht_enabled)) {
 		wpa_printf(MSG_ERROR,
-			   "Preamble puncturing supported only in EHT");
+			   "Preamble puncturing supported only in EHT and UHR");
 		return -1;
 	}
 

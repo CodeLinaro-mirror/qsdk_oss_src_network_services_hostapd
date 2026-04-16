@@ -8130,12 +8130,13 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 		    &hapd->iface->cs_oper_class,
 		    &chan) == NUM_HOSTAPD_MODES) {
 		wpa_printf(MSG_DEBUG,
-			   "invalid frequency for channel switch (freq=%d, sec_channel_offset=%d, vht_enabled=%d, he_enabled=%d, eht_enabled=%d)",
+			   "invalid frequency for channel switch (freq=%d, sec_channel_offset=%d, vht_enabled=%d, he_enabled=%d, eht_enabled=%d, uhr_enabled=%d)",
 			   settings->freq_params.freq,
 			   sec_channel_offset,
 			   settings->freq_params.vht_enabled,
 			   settings->freq_params.he_enabled,
-			   settings->freq_params.eht_enabled);
+			   settings->freq_params.eht_enabled,
+			   settings->freq_params.uhr_enabled);
 		return -1;
 	}
 
@@ -8230,6 +8231,11 @@ void hostapd_cleanup_cs_params(struct hostapd_data *hapd)
 void hostapd_chan_switch_config(struct hostapd_data *hapd,
 				struct hostapd_freq_params *freq_params)
 {
+	if (freq_params->uhr_enabled)
+		hapd->iconf->ch_switch_uhr_config |= CH_SWITCH_UHR_ENABLED;
+	else
+		hapd->iconf->ch_switch_uhr_config |= CH_SWITCH_UHR_DISABLED;
+
 	if (freq_params->eht_enabled)
 		hapd->iconf->ch_switch_eht_config |= CH_SWITCH_EHT_ENABLED;
 	else
@@ -8247,7 +8253,8 @@ void hostapd_chan_switch_config(struct hostapd_data *hapd,
 
 	hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
 		       HOSTAPD_LEVEL_INFO,
-		       "CHAN_SWITCH EHT config 0x%x HE config 0x%x VHT config 0x%x",
+		       "CHAN_SWITCH UHR config 0x%x EHT config 0x%x HE config 0x%x VHT config 0x%x",
+		       hapd->iconf->ch_switch_uhr_config,
 		       hapd->iconf->ch_switch_eht_config,
 		       hapd->iconf->ch_switch_he_config,
 		       hapd->iconf->ch_switch_vht_config);
