@@ -67,6 +67,10 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 		       u16 auth_alg,
 		       const u8 *sa);
 
+enum hostapd_if_frame_processing_decision
+hostapd_if_frame_fwd_decision(struct hostapd_data *hapd,u16 auth_alg,
+			      enum hostapd_if_frame_reg_type frame_type);
+
 void hostapd_if_notify_deauth(struct hostapd_data *hapd,
 			      struct sta_info *sta,
 			      const void *frame,

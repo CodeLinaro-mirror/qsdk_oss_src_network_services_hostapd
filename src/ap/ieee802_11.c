@@ -3483,6 +3483,8 @@ static void handle_auth(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211BE
 	bool mld_sta = false;
 #endif /* CONFIG_IEEE80211BE */
+	int ft_auth_resp;
+	bool deferred_auth_response = false;
 	struct hostapd_ubus_request req = {
 		.type = HOSTAPD_UBUS_AUTH_REQ,
 		.mgmt_frame = mgmt,
@@ -3992,12 +3994,27 @@ static void handle_auth(struct hostapd_data *hapd,
 			}
 #endif /* CONFIG_IEEE80211BE */
 		}
-		wpa_ft_process_auth(sta->wpa_sm,
-				    auth_transaction, mgmt->u.auth.variable,
-				    len - IEEE80211_HDRLEN -
-				    sizeof(mgmt->u.auth),
-				    handle_auth_ft_finish, hapd);
+#ifdef CONFIG_HOSTAPD_IF
+		if (hostapd_if_frame_fwd_decision(hapd,auth_alg,
+						  HOSTAPD_IF_FRAME_TYPE_AUTH)) {
+			deferred_auth_response = true;
+		}
+#endif
+		ft_auth_resp = wpa_ft_process_auth(sta->wpa_sm,
+						   auth_transaction,
+						   mgmt->u.auth.variable,
+						   (len - IEEE80211_HDRLEN -
+						   sizeof(mgmt->u.auth)),
+						   handle_auth_ft_finish, hapd,
+						   deferred_auth_response);
 		/* handle_auth_ft_finish() callback will complete auth. */
+		if (ft_auth_resp >= 0) {
+#ifdef CONFIG_HOSTAPD_IF
+			hostapd_if_notify_auth(hapd, sta, (const u8 *) mgmt,
+					       len, (u16) ft_auth_resp, 1, 0,
+					       auth_alg, mgmt->sa);
+#endif
+		}
 		return;
 #endif /* CONFIG_IEEE80211R_AP */
 #ifdef CONFIG_SAE

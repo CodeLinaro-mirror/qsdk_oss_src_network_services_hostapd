@@ -380,6 +380,13 @@ void wpa_ft_pmk_cache_inc_refcount(struct wpa_ft_pmk_cache *cache);
 void wpa_ft_install_ptk(struct wpa_state_machine *sm, int retry);
 int wpa_ft_store_pmk_fils(struct wpa_state_machine *sm, const u8 *pmk_r0,
 			  const u8 *pmk_r0_name);
+int wpa_ft_store_pmk_r1(struct wpa_authenticator *wpa_auth,
+			const u8 *spa, const u8 *pmk_r1,
+			size_t pmk_r1_len, const u8 *pmk_r1_name,
+			int pairwise, const struct vlan_description *vlan,
+			int expires_in, int session_timeout, const u8 *identity,
+			size_t identity_len, const u8 *radius_cui,
+			size_t radius_cui_len);
 #endif /* CONFIG_IEEE80211R_AP */
 
 static inline const u8 *wpa_auth_get_aa(const struct wpa_state_machine *sm)
