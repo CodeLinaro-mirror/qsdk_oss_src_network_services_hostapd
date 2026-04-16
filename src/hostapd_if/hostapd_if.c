@@ -14,6 +14,7 @@
 #include "ap/ieee802_1x.h"
 #include "ap/ap_drv_ops.h"
 #include "ap/wpa_auth.h"
+#include "ap/wpa_auth_i.h"
 #include "ap/beacon.h"
 #include "ap/ap_mlme.h"
 #include "eapol_auth/eapol_auth_sm.h"
@@ -488,6 +489,39 @@ __get_frame_decision(enum hostapd_if_frame_policy *policy,
 	}
 }
 
+static enum hostapd_if_frame_processing_decision
+hostapd_if_notify_get_policy_decision(struct hostapd_data *hapd, u16 auth_alg,
+				      enum hostapd_if_frame_policy *policy,
+				      enum hostapd_if_frame_reg_type frame_type)
+{
+	bool invoke_supported = true;
+	struct frame_reg_table *table;
+	enum hostapd_if_frame_processing_decision decision =
+		HOSTAPD_IF_FRAME_PROCESSING_CONTINUE;
+
+	*policy = HOSTAPD_IF_FRAME_DO_NOTHING;
+	table = (struct frame_reg_table *) hapd->hostapd_if_data;
+	if (!table)
+		return decision;
+
+#ifdef CONFIG_FILS
+	if (auth_alg == WLAN_AUTH_FILS_SK ||
+	    auth_alg == WLAN_AUTH_FILS_SK_PFS ||
+	    auth_alg == WLAN_AUTH_FILS_PK)
+		invoke_supported = false;
+#endif /* CONFIG_FILS */
+
+	*policy = table->mgmt[frame_type];
+
+	wpa_printf(MSG_DEBUG, "%s: policy-before:%d invoke_supported: %d",
+		   __func__, *policy, invoke_supported);
+	decision = __get_frame_decision(policy, invoke_supported);
+	wpa_printf(MSG_DEBUG, "%s: policy-after:%d decision: %d",
+		__func__, *policy, decision);
+
+	return decision;
+}
+
 enum hostapd_if_frame_processing_decision
 hostapd_if_notify_auth(struct hostapd_data *hapd,
 		       struct sta_info *sta,
@@ -499,33 +533,13 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 		       u16 auth_alg,
 		       const u8 *sa)
 {
-	bool invoke_supported = true;
-	struct frame_reg_table *table;
-	enum hostapd_if_frame_policy policy =
-		HOSTAPD_IF_FRAME_DO_NOTHING;
-	enum hostapd_if_frame_processing_decision decision =
-		HOSTAPD_IF_FRAME_PROCESSING_CONTINUE;
+	enum hostapd_if_frame_policy policy;
+	enum hostapd_if_frame_processing_decision decision;
 	struct hostapd_if_frame_ctx ctx_req;
 
-	table = (struct frame_reg_table *) hapd->hostapd_if_data;
-	if (!table)
-		return decision;
-
-#ifdef CONFIG_IEEE80211R_AP
-	if (auth_alg == WLAN_AUTH_FT)
-		/*
-		 * FT will be supported only in the next phase
-		 */
-		invoke_supported = false;
-#endif /* CONFIG_IEEE80211R_AP */
-#ifdef CONFIG_FILS
-	if (auth_alg == WLAN_AUTH_FILS_SK ||
-	    auth_alg == WLAN_AUTH_FILS_SK_PFS ||
-	    auth_alg == WLAN_AUTH_FILS_PK)
-		invoke_supported = false;
-#endif /* CONFIG_FILS */
-
-	policy = table->mgmt[HOSTAPD_IF_FRAME_TYPE_AUTH];
+	decision =
+	hostapd_if_notify_get_policy_decision(hapd, auth_alg, &policy,
+					      HOSTAPD_IF_FRAME_TYPE_AUTH);
 
 	/*
 	 * Initialize and populate context structure
@@ -555,12 +569,6 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 	os_memcpy(ctx_req.data.auth_req.sta_assoc_link_mac,
 		  sa, ETH_ALEN);
 
-	wpa_printf(MSG_DEBUG, "%s: policy-before:%d invoke_supported: %d",
-		__func__, policy, invoke_supported);
-	decision = __get_frame_decision(&policy, invoke_supported);
-	wpa_printf(MSG_DEBUG, "%s: policy-after:%d decision: %d",
-		__func__, policy, decision);
-
 	if (policy == HOSTAPD_IF_FRAME_NOTIFY) {
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 		if (hostapd_if_plugin && hostapd_if_plugin->notify_auth) {
@@ -586,6 +594,15 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 	}
 
 	return decision;
+}
+
+enum hostapd_if_frame_processing_decision
+hostapd_if_frame_fwd_decision(struct hostapd_data *hapd, u16 auth_alg,
+			      enum hostapd_if_frame_reg_type frame_type)
+{
+	enum hostapd_if_frame_policy policy;
+	return hostapd_if_notify_get_policy_decision(hapd, auth_alg, &policy,
+						     frame_type);
 }
 
 /*
@@ -622,13 +639,6 @@ hostapd_if_notify_assoc(struct hostapd_data *hapd,
 	if (!table)
 		return decision;
 
-#ifdef CONFIG_IEEE80211R_AP
-	if (sta->auth_alg == WLAN_AUTH_FT)
-		/*
-		 * FT will be supported only in the next phase
-		 */
-		invoke_supported = false;
-#endif /* CONFIG_IEEE80211R_AP */
 #ifdef CONFIG_FILS
 	if (sta->auth_alg == WLAN_AUTH_FILS_SK ||
 	    sta->auth_alg == WLAN_AUTH_FILS_SK_PFS ||
@@ -1020,6 +1030,37 @@ void __hostapd_if_auth_response(char *ifname, uint8_t *sta_mac,
 		__send_sae_auth_response(hapd, sta, ctx);
 		break;
 #endif /* CONFIG_SAE */
+	case WLAN_AUTH_FT: {
+		struct hostapd_if_pmk_r1 *r1 = ctx->data.auth_resp.pmk_r1;
+		uint16_t status_code;
+
+		if (r1) {
+			wpa_ft_store_pmk_r1(hapd->wpa_auth,
+					    wpa_auth_get_spa(sta->wpa_sm),
+					    r1->pmk_r1, r1->pmk_r1_len,
+					    r1->pmk_r1_name, r1->pairwise, NULL,
+					    r1->expires_in, r1->session_timeout,
+					    (r1->identity_len ?
+					     r1->identity : NULL),
+					    r1->identity_len,
+					    (r1->radius_cui_len ?
+					     r1->radius_cui : NULL),
+					    r1->radius_cui_len);
+			status_code = ctx->status_code;
+		} else {
+			/*
+			 * If external APP set the status code as SUCCESS
+			 * without passing a valid PMK-R1, override it
+			 * to INVALID_PMKID
+			 */
+			if (ctx->status_code == WLAN_STATUS_SUCCESS)
+				status_code = WLAN_STATUS_INVALID_PMKID;
+			else
+				status_code = ctx->status_code;
+		}
+		ft_finish_pull(sta->wpa_sm, status_code);
+		break;
+	}
 	default:
 		wpa_printf(MSG_ERROR, "%s: ERROR! Unsupported algorithm\n",
 			__func__);
