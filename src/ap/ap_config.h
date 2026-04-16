@@ -1655,6 +1655,9 @@ struct hostapd_config {
 	int use_ru_puncture_dfs;
 	int original_chan_width; /* Original channel width for AFC */
 	int ccfs;
+
+	/* Add support to control auto-unpuncture of radar puncture channels */
+	int dfs_disable_auto_unpunc;
 	int afc_chan_sel_config;
 	int cur_chan_eirp;
 	int bandwidth_device;
