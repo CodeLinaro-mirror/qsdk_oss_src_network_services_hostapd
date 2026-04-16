@@ -270,7 +270,7 @@ static int auth_init(struct wpa *wpa)
 
 	wpa_auth_sm_event(wpa->auth, WPA_ASSOC);
 
-	wpa_auth_sta_associated(wpa->auth_group, wpa->auth);
+	wpa_auth_sta_associated(wpa->auth_group, wpa->auth, true);
 
 	return 0;
 }

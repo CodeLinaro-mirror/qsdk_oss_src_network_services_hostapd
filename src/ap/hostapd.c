@@ -6950,7 +6950,8 @@ void hostapd_new_assoc_sta(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 
 	/* Start IEEE 802.1X authentication process for new stations */
-	ieee802_1x_new_station(hapd, sta);
+	if (!hapd->conf->plugin_eap_offload)
+		ieee802_1x_new_station(hapd, sta);
 
 #ifdef CONFIG_ENC_ASSOC
 		if (ap_sta_is_epp(sta) && sta->wpa_sm) {
@@ -7001,7 +7002,12 @@ void hostapd_new_assoc_sta(struct hostapd_data *hapd, struct sta_info *sta,
 		     WPA_DRIVER_FLAGS2_4WAY_HANDSHAKE_AP_PSK)) {
 		/* The 4-way handshake offloaded case will have this handled
 		 * based on the port authorized event. */
-		wpa_auth_sta_associated(hapd->wpa_auth, sta->wpa_sm);
+
+		/*
+		 * Do not initalize the state machine if EAP offload is enabled
+		 */
+		wpa_auth_sta_associated(hapd->wpa_auth, sta->wpa_sm,
+					!hapd->conf->plugin_eap_offload);
 	}
 
 	if (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_WIRED) {
