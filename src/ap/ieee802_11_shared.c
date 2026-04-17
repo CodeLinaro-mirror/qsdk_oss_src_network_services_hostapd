@@ -1216,7 +1216,7 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len)
 {
 	u8 *pos = eid;
 	bool sae_pk = false;
-	u32 capab = 0, tmp;
+	u64 capab = 0, tmp;
 	size_t flen;
 
 	if (!(hapd->conf->wpa & WPA_PROTO_RSN))
@@ -1256,7 +1256,7 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len)
 		capab |= BIT(WLAN_RSNX_CAPAB_SPP_A_MSDU);
 	if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK &&
 	    hapd->conf->control_frame_prot)
-		capab |= BIT(WLAN_RSNX_CAPAB_CIGTK);
+		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
 
 	if (!capab)
 		return eid; /* no supported extended RSN capabilities */
