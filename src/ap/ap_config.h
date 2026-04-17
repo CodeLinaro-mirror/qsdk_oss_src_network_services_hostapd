@@ -33,6 +33,14 @@ enum macaddr_acl {
 	DENY_WITH_TIMED_ALLOW_WINDOW = 4
 };
 
+/* DENY_WITH_TIMED_ALLOW_WINDOW timing constraints (in seconds) */
+#define SOFTBLOCK_WAIT_TIME_DEFAULT 10
+#define SOFTBLOCK_WAIT_TIME_MIN 0
+#define SOFTBLOCK_WAIT_TIME_MAX 100
+#define SOFTBLOCK_ALLOW_TIME_DEFAULT 15
+#define SOFTBLOCK_ALLOW_TIME_MIN 0
+#define SOFTBLOCK_ALLOW_TIME_MAX 100
+
 /**
  * struct acl_timed_deny_entry - Per-STA state for DENY_WITH_TIMED_ALLOW_WINDOW
  *

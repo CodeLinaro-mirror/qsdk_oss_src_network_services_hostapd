@@ -90,8 +90,8 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->rsn_pairwise = 0;
 
 	bss->max_num_sta = MAX_STA_COUNT;
-	bss->acl_deny_wait_time = 60;
-	bss->acl_deny_allow_time = 30;
+	bss->acl_deny_wait_time = SOFTBLOCK_WAIT_TIME_DEFAULT;
+	bss->acl_deny_allow_time = SOFTBLOCK_ALLOW_TIME_DEFAULT;
 
 	bss->dtim_period = 2;
 
