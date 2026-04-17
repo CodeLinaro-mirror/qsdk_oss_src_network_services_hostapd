@@ -450,6 +450,10 @@ int hostapd_add_candidate_own(struct hostapd_data *hapd, int pref,
 	*nei_pos++ = center_freq2_idx;
 
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	/* Skip Basic multi-link subelement if BSS is repurposed */
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	/* Basic multi-link subelement */
 	if (hapd->conf->mld_ap) {
 		int len;
@@ -463,6 +467,9 @@ int hostapd_add_candidate_own(struct hostapd_data *hapd, int pref,
 
 		nei_pos += len;
 	}
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 	nei_rep[1] = nei_pos - nei_rep - 2;
