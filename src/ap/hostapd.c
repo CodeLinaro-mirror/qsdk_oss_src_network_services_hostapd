@@ -2896,10 +2896,125 @@ static bool hostapd_is_6ghz_chan_txable(const struct hostapd_channel_data *c)
 	return true;
 }
 
+/**
+ * hostapd_enable_no_ir_bss_members - Enable selected BSS members under NO-IR
+ * @iface: Pointer to hostapd interface context
+ * @cat: BSS category selector
+ * Return : -1 if failed to enable bsss
+ */
+static int hostapd_enable_no_ir_bss_members(struct hostapd_iface *iface,
+					    enum hostapd_bss_category cat)
+{
+	int i;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		struct hostapd_data *hapd = iface->bss[i];
+		int ret = 0;
+
+		if (!hapd || !hapd->started)
+			continue;
+
+		if (!hostapd_is_bss_in_category(hapd, cat))
+			continue;
+
+		ret = hostapd_enable_bss(hapd);
+		if (ret) {
+			wpa_printf(MSG_ERROR,
+				   "Failed to re-enable %s link %u after setting new transmitting profile",
+				   hapd->conf->iface, hapd->mld_link_id);
+			/* Continue attempting to enable remaining BSSes */
+		}
+	}
+	return 0;
+}
+
+bool hostapd_is_bss_in_category(struct hostapd_data *hapd,
+				enum hostapd_bss_category cat)
+{
+	struct hostapd_data *tx_bss;
+
+	WPA_ASSERT(cat < CAT_MAX);
+	switch (cat) {
+		case CAT_ALL_BSS:
+			return true;
+
+		case CAT_TX_BSS:
+			tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+			return tx_bss && hapd == tx_bss;
+
+		case CAT_NON_TX_BSS:
+			tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+			return tx_bss && hapd != tx_bss;
+
+		case CAT_MAX:
+		default:
+			/*
+			 * Fail-safe: do not disable anything on unexpected input.
+			 * WPA_ASSERT() may be compiled out in some builds.
+			 */
+			return false;
+	}
+}
+
+/* hostapd_enable_no_ir_mbssids - Enable Tx BSS members
+ * when at least on channel in the iface can be used for Tx (non NO_IR)
+ * @cat: BSS category selector
+ * Return : -1 if failed to enable bsss
+ */
+static int hostapd_enable_no_ir_mbssids(struct hostapd_iface *iface)
+{
+	int ret;
+
+	ret = hostapd_enable_no_ir_bss_members(iface, CAT_TX_BSS);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "Failed to re-enable for TX BSS");
+		return -1;
+	}
+	ret = hostapd_enable_no_ir_bss_members(iface, CAT_NON_TX_BSS);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "Failed to re-enable for NON TX BSS");
+		return -1;
+	}
+
+	return 0;
+
+}
+
+/* hostapd_enable_no_ir_nonmbssids - Enable Non Tx BSS members under NO-IR
+ * @cat: BSS category selector
+ * Return : -1 if failed to enable bsss
+ */
+static int hostapd_enable_no_ir_nonmbssids(struct hostapd_iface *iface)
+{
+	int ret;
+
+	ret = hostapd_enable_no_ir_bss_members(iface, CAT_ALL_BSS);
+	return ret;
+}
+
+/* hostapd_enable_no_ir_bsses - Enable BSS members under NO-IR
+ * @cat: BSS category selector
+ * Return : -1 if failed to enable bsss
+ */
+static int hostapd_enable_no_ir_bsses(struct hostapd_iface *iface)
+{
+	int ret = 0;
+
+	hostapd_set_state(iface, HAPD_IFACE_ENABLED);
+	if (iface->conf->mbssid != MBSSID_DISABLED)
+		ret = hostapd_enable_no_ir_mbssids(iface);
+	else
+		ret = hostapd_enable_no_ir_nonmbssids(iface);
+
+	return ret;
+}
+
 static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 {
 	bool all_no_ir, is_6ghz;
-	int i, j;
+	int i, j, ret = 0;
 	struct hostapd_hw_modes *mode = NULL;
 
 	all_no_ir = true;
@@ -3007,10 +3122,13 @@ static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 
 		wpa_printf(MSG_DEBUG,
 			   "NO_IR: Re-enabling interface after channel list update");
-		setup_interface2(iface);
+		if (!hostapd_check_reenable_bss(iface))
+			setup_interface2(iface);
+		else
+			ret = hostapd_enable_no_ir_bsses(iface);
 	}
 
-	return 0;
+	return ret;
 }
 
 

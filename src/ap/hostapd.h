@@ -1716,4 +1716,23 @@ int find_6g_enabled_chans(struct hostapd_iface *iface,
 int configured_fixed_chan_to_freq_helper(struct hostapd_iface *iface);
 #endif
 
+enum hostapd_bss_category {
+	CAT_ALL_BSS,      /* All started BSSes */
+	CAT_TX_BSS,       /* TX BSS only */
+	CAT_NON_TX_BSS,   /* Non‑TX BSSes only */
+
+	CAT_MAX
+};
+
+/**
+ * hostapd_is_bss_in_category - Decide whether a BSS should be disabled
+ * @hapd: Pointer to hostapd BSS context
+ * @cat: BSS disable category selector
+ *
+ * Return: %true if the BSS should be disabled for the given category,
+ *         %false otherwise.
+ */
+bool hostapd_is_bss_in_category(struct hostapd_data *hapd,
+				enum hostapd_bss_category cat);
+
 #endif /* HOSTAPD_H */
