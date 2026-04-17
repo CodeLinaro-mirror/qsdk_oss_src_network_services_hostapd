@@ -11,6 +11,7 @@
 #include "utils/common.h"
 #include "common/ieee802_11_defs.h"
 #include "common/sae.h"
+#include "common/wpa_ctrl.h"
 #include "common/hw_features_common.h"
 #include "eapol_auth/eapol_auth_sm.h"
 #include "fst/fst_ctrl_iface.h"
@@ -3833,7 +3834,7 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 			if (!bss || !bss->conf || !bss->started || bss == tx_hapd)
 				continue;
 
-			ret = hostapd_disable_bss(bss, 0);
+			ret = hostapd_disable_bss(bss, 0, AP_EVENT_DISABLED);
 			if (ret) {
 				wpa_printf(MSG_ERROR, "Failed to disable %s link %u",
 					   bss->conf->iface, bss->mld_link_id);
@@ -3847,7 +3848,7 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 
 		/* Stop the transmitted profiles of the MBSSID group */
 		if (tx_hapd->beacon_set_done) {
-			ret = hostapd_disable_bss(tx_hapd, 0);
+			ret = hostapd_disable_bss(tx_hapd, 0, AP_EVENT_DISABLED);
 			if (ret) {
 				wpa_printf(MSG_ERROR, "Failed to disable %s link %u",
 					   tx_hapd->conf->iface, tx_hapd->mld_link_id);

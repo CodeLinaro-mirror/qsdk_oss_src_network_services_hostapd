@@ -2805,7 +2805,7 @@ static int hostapd_ctrl_iface_disable_bss(struct hostapd_data *hapd, int tbtt)
 				if (bss == hapd)
 					continue;
 
-				hostapd_disable_bss(bss, tbtt);
+				hostapd_disable_bss(bss, tbtt, AP_EVENT_DISABLED);
 			}
 		}
 	} else {
@@ -2815,12 +2815,12 @@ static int hostapd_ctrl_iface_disable_bss(struct hostapd_data *hapd, int tbtt)
 			if (bss == hapd)
 				continue;
 
-			hostapd_disable_bss(bss, tbtt);
+			hostapd_disable_bss(bss, tbtt, AP_EVENT_DISABLED);
 		}
 	}
 
 disable_bss:
-	hostapd_disable_bss(hapd, tbtt);
+	hostapd_disable_bss(hapd, tbtt, AP_EVENT_DISABLED);
 
 	return 0;
 }

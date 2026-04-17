@@ -2918,30 +2918,151 @@ static void hostapd_event_afc_update_complete(
 	}
 }
 
+/*
+  * The TBTT count to be passed as an argument to a function
+  * to disable a BSS when it is part of an MLD (Multi Link Device)
+  */
+#define MLO_DIS_BSS_TBTT_COUNT 5
+
+/*
+ * The TBTT count to be passed as an argument to a function
+ *  to disable a BSS when it is a single link BSS.
+ */
+#define SLO_DIS_BSS_TBTT_COUNT 0
+
+/**
+ * hostapd_get_disabling_tbtt_count - Get TBTT grace count before BSS disable
+ * @hapd: Pointer to hostapd BSS context
+ *
+ * Determine the number of Target Beacon Transmission Time (TBTT) intervals
+ * to wait before disabling the given BSS.
+ *
+ * This helper is used by NO-IR and regulatory handling paths that need to
+ * disable a BSS gracefully instead of immediately tearing it down.
+ * The returned TBTT count is passed to hostapd_disable_bss() to delay the
+ * actual disable operation by the specified number of beacon intervals.
+ *
+ * For Single-Link Operation (SLO) or legacy BSSes, the BSS can be disabled
+ * immediately since there is no multi-link dependency. In this case,
+ * SLO_DIS_BSS_TBTT_COUNT (typically 0) is returned, resulting in an
+ * immediate disable.
+ *
+ * For Multi-Link Operation (MLO) APs, a non-zero TBTT grace
+ * count (MLO_DIS_BSS_TBTT_COUNT) is returned. This allows:
+ *   - Associated MLO stations to receive beacon updates indicating link or
+ *     BSS disable,
+ *   - Proper propagation of link disable information across the MLD, and
+ *   - Orderly teardown of links before the transmitting BSS is disabled.
+ *
+ * Returns the number of Target Beacon Transmission Time (TBTT) intervals
+ * to wait before disabling a BSS.
+ */
+static int hostapd_get_disabling_tbtt_count(struct hostapd_data *hapd)
+{
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap)
+		return MLO_DIS_BSS_TBTT_COUNT;
+#endif
+	return SLO_DIS_BSS_TBTT_COUNT;
+}
+
+
+/**
+ * hostapd_disable_single_bss_no_ir - Disable a single BSS in NO-IR condition
+ * @hapd: Pointer to hostapd BSS context
+ */
+static void hostapd_disable_single_bss_no_ir(struct hostapd_data *hapd)
+{
+	int ret, tbtt_count;
+
+	if (!hapd || !hapd->started)
+		return;
+
+	tbtt_count = hostapd_get_disabling_tbtt_count(hapd);
+	wpa_printf(MSG_DEBUG,
+			"%s: Disabling %s BSS %s with TBTT=%d",
+			__func__,
+#ifdef CONFIG_IEEE80211BE
+			hapd->conf->mld_ap ? "MLO" : "SLO/legacy",
+#else
+			"SLO/legacy",
+#endif
+			hapd->conf->iface, tbtt_count);
+	hostapd_cleanup_cs_params(hapd);
+
+	ret = hostapd_disable_bss(hapd, tbtt_count, AP_EVENT_NO_IR);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "Failed to disable %s",
+				hapd->conf->iface);
+		hostapd_drv_stop_ap(hapd);
+		hostapd_no_ir_cleanup(hapd);
+	}
+}
+
+/**
+ * hostapd_disable_no_ir_bss_members - Disable selected BSS members under NO-IR
+ * @iface: Pointer to hostapd interface context
+ * @cat: BSS disable category selector
+ */
+static void hostapd_disable_no_ir_bss_members(struct hostapd_iface *iface,
+					      enum hostapd_bss_category cat)
+{
+	int i;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		struct hostapd_data *hapd = iface->bss[i];
+
+		if (!hapd || !hapd->started)
+			continue;
+
+		if (!hostapd_is_bss_in_category(hapd, cat))
+			continue;
+
+		hostapd_disable_single_bss_no_ir(hapd);
+	}
+}
+
+
+/**
+ * hostapd_disable_no_ir_mbssids - Disable MBSSID BSSes under
+ * when all channels in the iface have become NO_IR
+ * @iface: Pointer to hostapd interface context
+ */
+static void hostapd_disable_no_ir_mbssids(struct hostapd_iface *iface)
+{
+	/*
+	 * Order of disabling BSSes is important:
+	 * first disable non‑TX BSSes, then disable the TX BSS last.
+	 */
+	hostapd_disable_no_ir_bss_members(iface, CAT_NON_TX_BSS);
+	hostapd_disable_no_ir_bss_members(iface, CAT_TX_BSS);
+}
+
+
+/**
+ * hostapd_disable_no_ir_non_mbssids - Disable all BSSes
+ * when all channels in the iface have become NO_IR
+ * @iface: Pointer to hostapd interface context
+ *
+ */
+static void hostapd_disable_no_ir_non_mbssids(struct hostapd_iface *iface)
+{
+	hostapd_disable_no_ir_bss_members(iface, CAT_ALL_BSS);
+}
+
 void
 hostapd_set_no_ir_state(struct hostapd_iface *iface)
 {
-	int j;
-
 	hostapd_set_state(iface, HAPD_IFACE_NO_IR);
 	hostapd_interface_update_fils_ubpr(iface, false);
 	iface->is_no_ir = true;
 
 	wpa_printf(MSG_DEBUG, "%s: AFC NO_IR", __func__);
-	for (j = 0; j < iface->num_bss; j++) {
-		struct hostapd_data *hapd = iface->bss[j];
 
-		hostapd_cleanup_cs_params(hapd);
-
-		/* Stop beaconing for first BSS as hostapd_no_ir_cleanup does not
-		 * call stop AP for first Link
-		 **/
-		if (j == 0)
-			hostapd_drv_stop_ap(hapd);
-
-		hostapd_no_ir_cleanup(hapd);
-		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_NO_IR);
-	}
+	if (iface->conf->mbssid != MBSSID_DISABLED)
+		hostapd_disable_no_ir_mbssids(iface);
+	else
+		hostapd_disable_no_ir_non_mbssids(iface);
 
 	hostapd_cleanup_iface_partial(iface);
 	hostapd_refresh_other_iface_beacons(iface);
@@ -3255,7 +3376,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 			/* Only disable the link instead of removing */
 			if (hapd->removal_type == HAPD_LINK_DISABLE) {
 				hostapd_free_link_stas(hapd);
-				hostapd_disable_bss(hapd, 0);
+				hostapd_disable_bss(hapd, 0, AP_EVENT_DISABLED);
 				phapd = hapd;
 				goto refresh_beacon;
 			}
