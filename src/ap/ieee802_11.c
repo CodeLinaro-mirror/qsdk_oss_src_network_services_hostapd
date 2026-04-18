@@ -7911,7 +7911,11 @@ static int robust_action_frame(u8 category)
 
 static int handle_action(struct hostapd_data *hapd,
 			 const struct ieee80211_mgmt *mgmt, size_t len,
-			 unsigned int freq)
+			 unsigned int freq
+#ifdef CONFIG_QCN_EXTN
+			 , const struct handle_action_extn_args *extn_args
+#endif /* CONFIG_QCN_EXTN */
+			 )
 {
 	struct sta_info *sta;
 	u8 *action __maybe_unused;
@@ -8004,6 +8008,16 @@ static int handle_action(struct hostapd_data *hapd,
 		if (len >= IEEE80211_HDRLEN + 2 &&
 		    mgmt->u.action.u.public_action.action ==
 		    WLAN_PA_20_40_BSS_COEX) {
+#ifdef CONFIG_QCN_EXTN
+			/*
+			 * Skip 20/40 coex action frames from weak/distant
+			 * stations whose signal level is below the configured
+			 * obss_rx_snr_threshold.
+			 */
+			if (hostapd_2040_coex_action_snr_below_threshold_extn(
+				    hapd, extn_args->rssi))
+				return 1;
+#endif /* CONFIG_QCN_EXTN */
 			hostapd_2040_coex_action(hapd, mgmt, len);
 			return 1;
 		}
@@ -8340,7 +8354,16 @@ int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 		break;
 	case WLAN_FC_STYPE_ACTION:
 		wpa_printf(MSG_DEBUG, "mgmt::action");
+#ifdef CONFIG_QCN_EXTN
+		{
+			struct handle_action_extn_args extn_args = {
+				.rssi = ssi_signal,
+			};
+			ret = handle_action(hapd, mgmt, len, freq, &extn_args);
+		}
+#else
 		ret = handle_action(hapd, mgmt, len, freq);
+#endif /* CONFIG_QCN_EXTN */
 		break;
 	default:
 		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
