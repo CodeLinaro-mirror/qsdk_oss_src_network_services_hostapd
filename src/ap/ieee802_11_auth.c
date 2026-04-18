@@ -306,9 +306,9 @@ int hostapd_check_acl(struct hostapd_data *hapd, const u8 *addr,
 	int in_accept, in_deny;
 #ifdef CONFIG_WPS
 	/* According to WPS spec 2.0, disable MAC address filtering
-	 * if WPS is enabled on the AP.
+	 * if WPS is active on the AP.
 	 */
-	if (hapd->conf->wps_state)
+	if (hapd->wps_stats.pbc_status == WPS_PBC_STATUS_ACTIVE)
 		 return HOSTAPD_ACL_ACCEPT;
 #endif /*CONFIG_WPS */
 
