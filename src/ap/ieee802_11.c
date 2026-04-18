@@ -7402,6 +7402,14 @@ static void handle_assoc(struct hostapd_data *hapd,
 			set_beacon = true;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * Record the SNR of the (Re)Association Request frame so that
+	 * update_sta_ht() can decide whether to honour the station's
+	 * HT 40 MHz Intolerant indication.
+	 */
+	sta->sta_extn.assoc_snr = hostapd_rssi_to_snr_extn(hapd, rssi);
+#endif /* CONFIG_QCN_EXTN */
 	if (update_ht_state(hapd, sta) > 0)
 		set_beacon = true;
 
