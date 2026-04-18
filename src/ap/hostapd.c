@@ -5885,8 +5885,10 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt, const char *event)
 			break;
 	}
 
-	if (i == hapd->iface->num_bss)
+	if (i == hapd->iface->num_bss) {
+		hapd->iface->cac_type = 0;
 		hostapd_interface_update_fils_ubpr(hapd->iface, false);
+	}
 
 	hostapd_refresh_all_iface_beacons(hapd->iface);
 
@@ -7625,7 +7627,6 @@ void hostapd_cleanup_cs_params(struct hostapd_data *hapd)
 	hapd->csa_in_progress = 0;
 	hapd->cs_c_off_ecsa_beacon = 0;
 	hapd->cs_c_off_ecsa_proberesp = 0;
-	hapd->iface->cac_type = 0;
 }
 
 
