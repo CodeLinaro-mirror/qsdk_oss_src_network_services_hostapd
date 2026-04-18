@@ -32,9 +32,17 @@ void get_pri_sec_chan(struct wpa_scan_res *bss, int *pri_chan, int *sec_chan);
 int check_40mhz_5g(struct wpa_scan_results *scan_res,
 		   struct hostapd_channel_data *pri_chan,
 		   struct hostapd_channel_data *sec_chan);
+#ifdef CONFIG_QCN_EXTN
+struct check_40mhz_2g4_extn_args;
+#endif /* CONFIG_QCN_EXTN */
+
 int check_40mhz_2g4(struct hostapd_hw_modes *mode,
 		    struct wpa_scan_results *scan_res, int pri_chan,
-		    int sec_chan);
+		    int sec_chan
+#ifdef CONFIG_QCN_EXTN
+		    , const struct check_40mhz_2g4_extn_args *extn_args
+#endif /* CONFIG_QCN_EXTN */
+		    );
 void punct_update_legacy_bw(u16 bitmap, u8 pri_chan,
 			    enum oper_chan_width *width, u8 *seg0, u8 *seg1);
 int hostapd_set_freq_params(struct hostapd_freq_params *data,
