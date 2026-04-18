@@ -169,12 +169,15 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 				/* Reset per-link before computing center freqs */
 				center_freq1 = 0;
 				center_freq2 = 0;
+				op_class = 0;
+				channel = 0;
+				sec_chan_offset = 0;
 				ieee80211_freq_to_channel_ext(bss->mld_links[i].freq,
 							      0, 1, &op_class, &channel);
 
 				if (bss->mld_links[i].freq >= 2412 && bss->mld_links[i].freq <= 2472) {
 					if (bss->mld_links[i].width == CHAN_WIDTH_40) {
-						offset_mhz = (channel <= 7) ? 10 : -10;
+						offset_mhz = (bss->mld_links[i].freq <= 2442) ? 10 : -10;
 						center_freq1 = bss->mld_links[i].freq + offset_mhz;
 					} else {
 						center_freq1 = bss->mld_links[i].freq;
@@ -234,7 +237,7 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 
 			if (bss->freq >= 2412 && bss->freq <= 2472) {
 				if (bss->max_cw == CHAN_WIDTH_40) {
-					offset_mhz = (channel <= 7) ? 10 : -10;
+					offset_mhz = (channel <= 2442) ? 10 : -10;
 					center_freq1 = bss->freq + offset_mhz;
 				} else {
 					center_freq1 = bss->freq;
