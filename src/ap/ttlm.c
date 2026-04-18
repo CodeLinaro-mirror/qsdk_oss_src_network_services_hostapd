@@ -358,6 +358,9 @@ void hostapd_ttlm_handle_expected_duration_expiry(struct ttlm_context *ttlm_ctx,
 	ttlm_ctx->established_ttlm.ttlm.default_link_mapping = 1;
 	ttlm_ctx->established_ttlm.disabled_link_bitmap = 0;
 	ttlm_ctx->established_ttlm.ttlm.link_mapping_size = 0;
+#ifdef CONFIG_QCN_EXTN
+	ttlm_ctx->established_t2lm_ed_modified_in_case_of_cac = false;
+#endif /* CONFIG_QCN_EXTN */
 	wpa_printf(MSG_INFO, "TTLM: Set established mapping to default mapping");
 }
 
@@ -444,7 +447,7 @@ hostapd_offload_set_adv_ttlm_mbssid_enhanced(struct hostapd_data *hapd)
 }
 
 
-static int
+int
 hostapd_offload_set_advertised_ttlm(struct hostapd_data *hapd,
 				    struct mlo_ttlm_ie *upcoming_ttlm,
 				    struct drv_adv_ttlm_params *upcoming_ttlm_params,

@@ -3634,12 +3634,16 @@ static void hostapd_event_update_expec_dur(struct hostapd_data *hapd,
 {
 	struct ttlm_context *ttlm_ctx = &hapd->mld->ttlm_ctx;
 
-	if (ttlm_ctx->established_ttlm.ttlm.expected_duration_present)
-		ttlm_ctx->established_ttlm.ttlm.expected_duration =
-			ttlm_expec_dur_event->expec_dur;
-	else if (ttlm_ctx->upcoming_ttlm.ttlm.expected_duration_present)
+	if (ttlm_ctx->established_ttlm.ttlm.expected_duration_present) {
+#ifdef CONFIG_QCN_EXTN
+		if (!ttlm_ctx->established_t2lm_ed_modified_in_case_of_cac)
+#endif /* CONFIG_QCN_EXTN */
+			ttlm_ctx->established_ttlm.ttlm.expected_duration =
+				ttlm_expec_dur_event->expec_dur;
+	} else if (ttlm_ctx->upcoming_ttlm.ttlm.expected_duration_present) {
 		ttlm_ctx->upcoming_ttlm.ttlm.expected_duration =
 			ttlm_expec_dur_event->expec_dur;
+	}
 }
 
 

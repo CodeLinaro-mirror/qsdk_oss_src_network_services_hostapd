@@ -93,10 +93,15 @@ struct mlo_ttlm_ie {
  * @upcoming_ttlm: Indicates the new broadcast TTLM IE advertised by the AP in
  *                 beacon/probe response frames. STA needs to use this mapping
  *                 when expected duration in the established TTLM is expires.
+ * @established_t2lm_ed_modified_in_case_of_cac: Indicates established expected
+ *                 duration was updated due to CAC.
  */
 struct ttlm_context {
 	struct mlo_ttlm_ie established_ttlm;
 	struct mlo_ttlm_ie upcoming_ttlm;
+#ifdef CONFIG_QCN_EXTN
+	bool established_t2lm_ed_modified_in_case_of_cac;
+#endif /* CONFIG_QCN_EXTN */
 };
 
 /**
@@ -250,6 +255,10 @@ int hostapd_fill_ttlm_params(struct ttlm_info *upcoming_info,
 			     struct ttlm_info *established_info,
 			     struct drv_adv_ttlm_params *upcoming_ttlm_params,
 			     struct drv_adv_ttlm_params *established_ttlm_params);
+int hostapd_offload_set_advertised_ttlm(struct hostapd_data *hapd,
+					struct mlo_ttlm_ie *upcoming_ttlm,
+					struct drv_adv_ttlm_params *upcoming_ttlm_params,
+					struct drv_adv_ttlm_params *established_ttlm_params);
 int hostapd_offload_set_adv_ttlm_mbssid_enhanced(struct hostapd_data *hapd);
 int hostapd_offload_set_adv_ttlm_multi_mbssid(struct hostapd_data *hapd);
 #endif /* TTLM_H */

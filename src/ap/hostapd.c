@@ -7721,6 +7721,9 @@ int hostapd_switch_channel(struct hostapd_data *hapd,
 
 #ifdef CONFIG_QCN_EXTN
 	hostapd_uplink_cancel_disconnect_timeout_extn(hapd->iface);
+#ifdef CONFIG_IEEE80211BE
+	hostapd_ttlm_restore_default_mapping_for_5g_cac(hapd, settings);
+#endif /* CONFIG_IEEE80211BE */
 #endif /* CONFIG_QCN_EXTN */
 
 	ret = hostapd_fill_csa_settings(hapd, settings);
