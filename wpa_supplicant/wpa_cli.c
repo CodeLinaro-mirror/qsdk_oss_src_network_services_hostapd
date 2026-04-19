@@ -22,6 +22,9 @@
 #include "utils/list.h"
 #include "common/version.h"
 #include "common/ieee802_11_defs.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../qcn_extns/wpa_cli_extn.h"
+#endif /* CONFIG_QCN_EXTN */
 #ifdef ANDROID
 #include <cutils/properties.h>
 #endif /* ANDROID */
@@ -848,6 +851,9 @@ static char ** wpa_cli_complete_set(const char *str, int pos)
 		"relative_rssi", "relative_band_adjust",
 		"extended_key_id",
 		"disable_op_classes_80_80_mhz",
+#ifdef CONFIG_QCN_EXTN
+		WPA_CLI_CMD_FIELDS_EXTN
+#endif /* CONFIG_QCN_EXTN */
 	};
 	int i, num_fields = ARRAY_SIZE(fields);
 
@@ -949,7 +955,10 @@ static char ** wpa_cli_complete_get(const char *str, int pos)
 		"p2p_search_delay", "mac_addr", "rand_addr_lifetime",
 		"preassoc_mac_addr", "key_mgmt_offload", "passive_scan",
 		"reassoc_same_bss_optim", "extended_key_id",
-		"disable_op_classes_80_80_mhz"
+		"disable_op_classes_80_80_mhz",
+#ifdef CONFIG_QCN_EXTN
+		WPA_CLI_CMD_FIELDS_EXTN
+#endif /* CONFIG_QCN_EXTN */
 	};
 	int i, num_fields = ARRAY_SIZE(fields);
 

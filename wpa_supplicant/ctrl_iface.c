@@ -998,6 +998,14 @@ static int wpa_supplicant_ctrl_iface_set(struct wpa_supplicant *wpa_s,
 		wpa_s->urnm_mfpr_x20 = !!atoi(value);
 #endif /* CONFIG_PASN */
 	} else {
+#ifdef CONFIG_QCN_EXTN
+		bool is_extn_cmd;
+
+		ret = wpas_ctrl_iface_set_extn(wpa_s, cmd, value, &is_extn_cmd);
+		if (is_extn_cmd)
+			return ret;
+#endif /* CONFIG_QCN_EXTN */
+
 		value[-1] = '=';
 		ret = wpa_config_process_global(
 			wpa_s->conf, cmd, -1,
@@ -1057,6 +1065,14 @@ static int wpa_supplicant_ctrl_iface_get(struct wpa_supplicant *wpa_s,
 		res = os_snprintf(buf, buflen, "%d", wpa_s->last_tk_key_idx);
 #endif /* CONFIG_TESTING_OPTIONS */
 	} else {
+#ifdef CONFIG_QCN_EXTN
+		bool is_extn_cmd;
+
+		res = wpas_ctrl_iface_get_extn(wpa_s, cmd, buf, buflen, &is_extn_cmd);
+		if (is_extn_cmd)
+			return res;
+#endif /* CONFIG_QCN_EXTN */
+
 		res = wpa_config_get_value(cmd, wpa_s->conf, buf, buflen);
 	}
 
