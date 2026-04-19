@@ -828,6 +828,11 @@ static struct wpabuf * wpa_supplicant_extra_ies(struct wpa_supplicant *wpa_s)
 		    wpabuf_resize(&extra_ie, wpabuf_len(buf)) == 0)
 			wpabuf_put_buf(extra_ie, buf);
 	}
+#ifdef CONFIG_QCN_EXTN
+#ifdef CONFIG_SME
+	wpas_add_qcn_ie_probe_req_extn(wpa_s, &extra_ie);
+#endif /* CONFIG_SME */
+#endif /* CONFIG_QCN_EXTN */
 
 	return extra_ie;
 }

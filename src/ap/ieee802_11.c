@@ -4987,6 +4987,9 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		if (resp != WLAN_STATUS_SUCCESS)
 			goto out;
 
+#ifdef CONFIG_QCN_EXTN
+		hostapd_drv_set_peer_he_mcs_12_13_cap_extn(hapd, &elems->elems_extn);
+#endif /* CONFIG_QCN_EXTN */
 		if (hapd->iconf->require_he && !(sta->flags & WLAN_STA_HE)) {
 			hostapd_logger(hapd, sta->addr,
 				       HOSTAPD_MODULE_IEEE80211,

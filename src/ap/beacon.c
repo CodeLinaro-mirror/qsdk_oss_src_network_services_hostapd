@@ -1017,6 +1017,9 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 	buflen += hostapd_get_rsnxe_override_len(hapd);
 	buflen += hostapd_wfa_cap_ie_len(hapd, NULL);
 	buflen += hostapd_esp_ie_len_extn(hapd);
+#ifdef CONFIG_QCN_EXTN
+	buflen += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
+#endif /* CONFIG_QCN_EXTN */
 
 	nontx_probe_params->resp = os_zalloc(buflen);
 	if (!nontx_probe_params->resp) {
@@ -1134,6 +1137,9 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 	pos = hostapd_get_rsne_override(hapd, pos, epos - pos);
 	pos = hostapd_get_rsne_override_2(hapd, pos, epos - pos);
 	pos = hostapd_get_rsnxe_override(hapd, pos, epos - pos);
+#ifdef CONFIG_QCN_EXTN
+	pos = hostapd_eid_qcn_vendor_ie_extn(hapd, pos, IEEE80211_MODE_AP);
+#endif /* CONFIG_QCN_EXTN */
 
 	/* Final length */
 	nontx_probe_params->resp_len = pos - (u8 *) nontx_probe_params->resp;
@@ -3170,6 +3176,9 @@ int ieee802_11_build_nontx_bss_params(struct hostapd_data *hapd,
 	tail_len += hostapd_get_rsnxe_override_len(hapd);
 	tail_len += hostapd_wfa_cap_ie_len(hapd, NULL);
 	tail_len += hostapd_tpc_report_len(hapd);
+#ifdef CONFIG_QCN_EXTN
+	tail_len += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
+#endif /* CONFIG_QCN_EXTN */
 
 	tailpos = tail = os_malloc(tail_len);
 	if (tail == NULL) {
@@ -3279,6 +3288,9 @@ int ieee802_11_build_nontx_bss_params(struct hostapd_data *hapd,
 			tail + tail_len - tailpos);
 	tailpos = hostapd_get_rsnxe_override(hapd, tailpos,
 			tail + tail_len - tailpos);
+#ifdef CONFIG_QCN_EXTN
+	tailpos = hostapd_eid_qcn_vendor_ie_extn(hapd, tailpos, IEEE80211_MODE_AP);
+#endif /* CONFIG_QCN_EXTN */
 
 	tail_len = tailpos > tail ? tailpos - tail : 0;
 #endif /* NEED_AP_MLME */
