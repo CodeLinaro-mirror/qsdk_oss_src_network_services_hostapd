@@ -24,6 +24,9 @@
 #include "ubus.h"
 #include "ucode.h"
 #include "nan/nan.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 
 extern const char *const wpa_supplicant_version;
 extern const char *const wpa_supplicant_license;
@@ -1882,6 +1885,7 @@ struct wpa_supplicant {
 #ifdef CONFIG_QCN_EXTN
 	struct wpa_connect_work *cache_cwork;
 	int pre_connect_cnt;
+	struct wpa_supplicant_extn wpas_extn;
 #endif
 };
 

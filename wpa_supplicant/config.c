@@ -20,6 +20,9 @@
 #include "fst/fst.h"
 #include "ap/sta_info.h"
 #include "config.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_MESH
 #include "ap/ap_config.h"
@@ -5173,6 +5176,9 @@ struct wpa_config * wpa_config_alloc_empty(const char *ctrl_interface,
 	if (driver_param)
 		config->driver_param = os_strdup(driver_param);
 	config->gas_rand_addr_lifetime = DEFAULT_RAND_ADDR_LIFETIME;
+#ifdef CONFIG_QCN_EXTN
+	wpa_config_alloc_empty_extn(config);
+#endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_TESTING_OPTIONS
 	config->mld_connect_band_pref = DEFAULT_MLD_CONNECT_BAND_PREF;
@@ -6248,7 +6254,8 @@ static const struct global_parse_data global_fields[] = {
 	{ INT_KEY_RANGE("rptr_mgr_mode", rptr_mgr_comm_mode, 0, 2), 1 },
 	{ INT(channel), 0 },
 	{ INT_KEY_RANGE("uplink_csa", uplink_csa, 0, 1), 0 },
-#endif
+	WPA_GLOBAL_FIELDS_EXTN
+#endif /* CONFIG_QCN_EXTN */
 	{ BOOL(security_profiles), 0},
 	/* NOTE: When adding new parameters here, add_interface() in
 	 * wpa_supplicant/dbus_new_introspect.c may need to be modified to
