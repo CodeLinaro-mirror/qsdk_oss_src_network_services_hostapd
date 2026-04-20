@@ -8137,8 +8137,6 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 		if (hostapd_is_eht_enabled(hapd)) {
 			p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
 			p = hostapd_eid_eht_operation(hapd, p);
-			p = hostapd_eid_vendor_240mhz_extn(hapd, p,
-							   IEEE80211_MODE_AP);
 		}
 	}
 
@@ -8753,7 +8751,6 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 		}
 		if (hapd->iconf->punct_bitmap)
 			buflen += EHT_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
-		hostapd_modify_buflen_for_240mhz_extn(&buflen, hapd);
 		if (ap_sta_is_mld(hapd, sta)) {
 			buflen += hostapd_eid_eht_ml_tid_to_link_map_len(hapd);
 		buflen += hostapd_eid_eht_basic_ml_len(hapd, sta,
@@ -8774,6 +8771,9 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 #ifdef CONFIG_HOSTAPD_IF
 	buflen += hostapd_if_assoc_resp_tail_len(sta, buflen);
 #endif
+#ifdef CONFIG_QCN_EXTN
+	buflen += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
+#endif /* CONFIG_QCN_EXTN */
 	buf = os_zalloc(buflen);
 	if (!buf) {
 		res = WLAN_STATUS_UNSPECIFIED_FAILURE;
@@ -8958,8 +8958,6 @@ rsnxe_done:
 			p = hostapd_eid_eht_ml_assoc(hapd, sta, p, ext_cap);
 		p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
 		p = hostapd_eid_eht_operation(hapd, p);
-		p = hostapd_eid_vendor_240mhz_extn(hapd, p,
-						   IEEE80211_MODE_AP);
 		hostapd_get_epcs_capab(hapd, sta);
 
 		/* Add Country element if Channel Usage element is present */

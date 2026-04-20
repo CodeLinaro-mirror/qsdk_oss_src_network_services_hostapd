@@ -963,8 +963,6 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 			buflen += hostapd_eid_eht_ml_tid_to_link_map_len(
 				hapd);
 
-		hostapd_modify_buflen_for_240mhz_extn(&buflen, hapd);
-
 		/* TTLM IE */
 		if (hapd->mld &&
 		    hapd->mld->ttlm_ctx.established_ttlm.ttlm.expected_duration_present)
@@ -994,6 +992,9 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 	buflen += hostapd_get_rsnxe_override_len(hapd);
 	buflen += hostapd_wfa_cap_ie_len(hapd, NULL);
 	buflen += hostapd_tpc_report_len(hapd);
+#ifdef CONFIG_QCN_EXTN
+	buflen += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
+#endif /* CONFIG_QCN_EXTN */
 
 	/* Estimated Service Parameters (ESP) IE */
 	buflen += hostapd_esp_ie_len_extn(hapd);
@@ -1391,8 +1392,6 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 
 		if (hapd->conf->mld_ap)
 			pos = hostapd_eid_eht_ml_tid_to_link_map(hapd, pos);
-		pos = hostapd_eid_vendor_240mhz_extn(hapd, pos,
-						     IEEE80211_MODE_AP);
 
 		/* TTLM IE */
 		if (hapd->mld &&
@@ -1462,6 +1461,9 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	pos = hostapd_get_rsne_override_2(hapd, pos, epos - pos);
 	pos = hostapd_get_rsnxe_override(hapd, pos, epos - pos);
 
+#ifdef CONFIG_QCN_EXTN
+	pos = hostapd_eid_qcn_vendor_ie_extn(hapd, pos, IEEE80211_MODE_AP);
+#endif /* CONFIG_QCN_EXTN */
 	/* Add Estimated Service Parameters (ESP) IE in Probe Response when enabled */
 	pos = hostapd_eid_esp_extn(hapd, pos, epos - pos);
 
@@ -3404,8 +3406,6 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		if (hapd->iconf->punct_bitmap)
 			tail_len += EHT_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
 
-		hostapd_modify_buflen_for_240mhz_extn(&tail_len, hapd);
-
 		/*
 		 * TODO: Multi-Link element has variable length and can be
 		 * long based on the common info and number of per
@@ -3442,6 +3442,9 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	tail_len += hostapd_get_rsnxe_override_len(hapd);
 	tail_len += hostapd_wfa_cap_ie_len(hapd, NULL);
 	tail_len += hostapd_tpc_report_len(hapd);
+#ifdef CONFIG_QCN_EXTN
+	tail_len += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
+#endif /* CONFIG_QCN_EXTN */
 
 	tailpos = tail = os_malloc(tail_len);
 	if (head == NULL || tail == NULL) {
@@ -3682,8 +3685,6 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 								     tailpos);
 		tailpos = hostapd_eid_channel_usage(hapd, tailpos, tailend - tailpos);
 
-		tailpos = hostapd_eid_vendor_240mhz_extn(hapd, tailpos,
-							 IEEE80211_MODE_AP);
 		if (hapd->conf->mld_ap)
 			tailpos = hostapd_add_traffic_ind_elem(hapd, tailpos);
 	}
@@ -3763,7 +3764,9 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 					      tail + tail_len - tailpos);
 	tailpos = hostapd_get_rsnxe_override(hapd, tailpos,
 					     tail + tail_len - tailpos);
-
+#ifdef CONFIG_QCN_EXTN
+	tailpos = hostapd_eid_qcn_vendor_ie_extn(hapd, tailpos, IEEE80211_MODE_AP);
+#endif /* CONFIG_QCN_EXTN */
 	tailpos = hostapd_eid_esp_extn(hapd, tailpos,
 				       tail + tail_len - tailpos);
 
