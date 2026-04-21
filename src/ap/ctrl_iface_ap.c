@@ -3260,9 +3260,25 @@ static int hostapd_parse_candidate_partner_links(struct hostapd_data *hapd,
 	struct hostapd_data *partner_link;
 	const char *tmp, *end;
 	u8 *nei_rep_pos = nei_rep;
+#ifdef CONFIG_QCN_EXTN
+	u16 repurposed_links = 0;
+#endif /* CONFIG_QCN_EXTN */
 	int rem_nei_len = nei_rep_len;
 	int len = 0;
 	int pref;
+
+#ifdef CONFIG_QCN_EXTN
+	/* If BSS is repurposed link of the AP MLD, then user triggered the
+	 * command on wrong link. Do not add the partner links in this case.
+	 */
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		wpa_printf(MSG_DEBUG,
+			   "Skip parse candidate partners as BSS is repurposed");
+		return len;
+	}
+	if (hapd->conf->mld_ap)
+		hostapd_get_repurposed_links_bitmap_extn(hapd, &repurposed_links);
+#endif /* CONFIG_QCN_EXTN */
 
 	tmp = os_strstr(pos, " partner_link_pref=");
 	if (tmp) {
@@ -3304,6 +3320,15 @@ static int hostapd_parse_candidate_partner_links(struct hostapd_data *hapd,
 			tmp = os_strchr(pos, ',');
 			if (tmp && (!end || tmp < end)) {
 				pos = tmp + 1;
+				/* check if atoi(pos) is the link id of
+				 * repurposed link, if so, return error as we
+				 * have request with invalid link
+				 */
+				if (BIT(atoi(pos)) & repurposed_links) {
+					wpa_printf(MSG_ERROR,
+						   "link set has repurposed link, fail");
+					return -1;
+				}
 				link_set[i] = atoi(pos);
 				num_links++;
 			} else {
