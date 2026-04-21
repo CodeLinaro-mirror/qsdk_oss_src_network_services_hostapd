@@ -1408,6 +1408,14 @@ static void acs_scan_complete(struct hostapd_iface *iface)
 
 	iface->scan_cb = NULL;
 
+#ifdef CONFIG_QCN_EXTN
+	if (!acs_scan_event_expected_extn(iface)) {
+		wpa_printf(MSG_DEBUG, "state %s, Ignore acs scan event",
+				hostapd_state_text(iface->state));
+		return;
+	}
+#endif
+
 	/* If the last scan was aborted, clear aborted flag and retry ACS scan */
 	if (iface->last_scan_aborted) {
 		wpa_printf(MSG_INFO, "ACS: Previous scan aborted; retrying ACS scan");
