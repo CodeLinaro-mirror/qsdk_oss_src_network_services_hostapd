@@ -2735,7 +2735,8 @@ static void hostapd_event_6ghz_power_mode(struct hostapd_data *hapd,
 	struct hostapd_iface *iface = hapd->iface;
 	int ret;
 
-	if (he_6ghz_power_mode != iface->power_mode_6ghz_before_change) {
+	if (iface->power_mode_6ghz_before_change > -1 &&
+	    he_6ghz_power_mode != iface->power_mode_6ghz_before_change) {
 		wpa_printf(MSG_ERROR, "Invalid power mode sent by the target");
 		return;
 	}
