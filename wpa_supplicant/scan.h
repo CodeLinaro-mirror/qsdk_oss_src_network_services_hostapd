@@ -44,6 +44,15 @@
  * is set to 300 seconds post which Repeater STA starts to scan.
  */
 #define REP_AP_ACS_TIMEOUT_INTERVAL 300
+
+/* This is required in repeater configurations with CSwOpts 0x2 option enabled
+ * to disconnect the repeater STA and allow independent repeater to trigger
+ * CSA to non-DFS channel when the RootAP's CSA target channel is DFS.
+ *
+ * The REP_AP_CSA_TIMEOUT_INTERVAL is set to 10 seconds post which Repeater
+ * STA starts to scan.
+ */
+#define REP_AP_CSA_TIMEOUT_INTERVAL 10
 #endif
 
 enum configured_freq_band {
