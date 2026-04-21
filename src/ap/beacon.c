@@ -3293,7 +3293,8 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	 * case.
 	 */
 	extcap_elem = tailpos;
-	tailpos = hostapd_eid_ext_capab(hapd, tailpos, true);
+	tailpos = hostapd_eid_ext_capab(hapd, tailpos,
+					hapd->iconf->mbssid != MBSSID_DISABLED);
 
 	if ((hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED) &&
 	    (tailpos - extcap_elem)) {
