@@ -21,6 +21,7 @@
 #include "ap_drv_ops.h"
 #ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#include "common/hw_features_common.h"
 #endif /* CONFIG_QCN_EXTN */
 
 
@@ -41,6 +42,9 @@ u8 * hostapd_eid_ht_capabilities(struct hostapd_data *hapd, u8 *eid)
 	cap = (struct ieee80211_ht_capabilities *) pos;
 	os_memset(cap, 0, sizeof(*cap));
 	cap->ht_capabilities_info = host_to_le16(hapd->iconf->ht_capab);
+#ifdef CONFIG_QCN_EXTN
+	hostapd_repurpose_update_ht_capabilities_extn(hapd, cap);
+#endif /* CONFIG_QCN_EXTN */
 	cap->a_mpdu_params = hapd->iface->current_mode->a_mpdu_params;
 	os_memcpy(cap->supported_mcs_set, hapd->iface->current_mode->mcs_set,
 		  16);
@@ -130,6 +134,19 @@ static void set_ht_param(struct hostapd_data *hapd,
 no_update:
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_QCN_EXTN
+	/* If the BSS is a repurposed BSS where the advertised vht chwidth is
+	 * 20 Mhz with ccsf1 = 0, ccsf0 = pri channel, then do not indicate
+	 * secondary channel information
+	 */
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf) &&
+	    hostapd_get_repurpose_width_extn(hapd) == 20) {
+		wpa_printf(MSG_DEBUG,
+			   "Repurpose: HT OP: repurpose width is 20MHz, so do not add sec channel info");
+		return;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	if (secondary_channel == 1)
 		oper->ht_param |= HT_INFO_HT_PARAM_SECONDARY_CHNL_ABOVE |
 			HT_INFO_HT_PARAM_STA_CHNL_WIDTH;
@@ -163,6 +180,17 @@ u8 * hostapd_eid_ht_operation(struct hostapd_data *hapd, u8 *eid)
 	if (hapd->iface->current_mode && hapd->iface->current_mode->vht_capab)
 		vht_capabilities_info = host_to_le32(hapd->iface->current_mode->vht_capab);
 	chwidth = hostapd_get_oper_chwidth(hapd->iconf);
+#ifdef CONFIG_QCN_EXTN
+	/* if the BSS is repurposed, the operation mode derived here should
+	 * corresspond to the repurposed BSS's chwidth and freq offset.
+	 */
+	if (hostapd_repurpose_update_ht_operation_mode_extn(hapd,
+							    vht_capabilities_info,
+							    oper)) {
+		wpa_printf(MSG_DEBUG,
+			   "Repurpose: updated ht operation mode");
+	} else
+#endif /* CONFIG_QCN_EXTN */
 	if (vht_capabilities_info & VHT_CAP_EXTENDED_NSS_BW_SUPPORT
 		&& ((chwidth == CHANWIDTH_160MHZ) || (chwidth == CHANWIDTH_80P80MHZ))) {
 		oper->operation_mode = host_to_le16(hapd->iconf->vht_oper_centr_freq_seg0_idx << 5);
