@@ -3785,6 +3785,7 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 #endif /* CONFIG_DRIVER_NL80211_QCA */
 #ifdef CONFIG_IEEE80211BE
 	bool beacon_set = false;
+	u8 num_repurposed_links = 0;
 #endif /* CONFIG_IEEE80211BE */
 
 	if (!hapd->drv_priv) {
@@ -3865,6 +3866,12 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 		beacon_set = ieee802_11_is_link_beacon_set(hapd);
 #endif
 
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211BE)
+	if (hapd->conf->mld_ap)
+		num_repurposed_links =
+			hostapd_get_repurposed_links_bitmap_extn(hapd, NULL);
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211BE */
+
 	params.beacon_ies = beacon;
 	params.proberesp_ies = proberesp;
 	params.assocresp_ies = assocresp;
@@ -3941,17 +3948,27 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 	}
 
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif /* CONFIG_QCN_EXTN */
 	if ((hapd->conf->mld_ap) && (hapd->conf->enable_aal)) {
-		if (hapd->mld->num_links >= hapd->conf->ml_max_rec_links)
+		if ((hapd->mld->num_links - num_repurposed_links) >=
+		    hapd->conf->ml_max_rec_links)
 			params.ml_max_rec_links = hapd->conf->ml_max_rec_links;
 		else
-			params.ml_max_rec_links = hapd->mld->num_links;
+			params.ml_max_rec_links = (hapd->mld->num_links -
+						   num_repurposed_links);
 
 		if (params.ml_max_rec_links == ML_IE_RSVD_MAX_REC_LINKS)
 			params.ml_max_rec_links = ML_IE_NO_MAX_REC_LINKS;
 	} else {
 		params.ml_max_rec_links = ML_IE_MAX_REC_LINKS_INVAL;
 	}
+#ifdef CONFIG_QCN_EXTN
+	} else {
+		params.ml_max_rec_links = ML_IE_MAX_REC_LINKS_INVAL;
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 	params.allowed_freqs = NULL;

@@ -1734,15 +1734,17 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 
 
 #ifdef CONFIG_QCN_EXTN
-	if (bss->mld_ap && !hostapd_is_repurpose_disabled_11be_extn(bss)) {
-#else
-	if (bss->mld_ap) {
+	if (!hostapd_is_repurpose_disabled_11be_extn(bss)) {
 #endif /* CONFIG_QCN_EXTN */
+	if (bss->mld_ap) {
 		/* set ML Max rec links to default, if it is not configured */
 		if (bss->enable_aal &&
 		    (bss->ml_max_rec_links == ML_IE_MAX_REC_LINKS_INVAL))
 			bss->ml_max_rec_links = ML_IE_DEF_MAX_REC_LINKS;
 	}
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
