@@ -117,6 +117,8 @@ static inline int ieee802_11_get_mib_sta(struct hostapd_data *hapd,
 	return 0;
 }
 #endif /* NEED_AP_MLME */
+struct wpa_state_machine *get_wpa_sm_from_ft_ds_list(struct hostapd_data *hapd,
+						     uint8_t *sta_mld_addr);
 void
 initiate_assoc_response(struct hostapd_data *hapd, struct sta_info *sta,
 			     int resp, int reassoc,

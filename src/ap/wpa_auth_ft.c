@@ -30,7 +30,6 @@
 #include "pmksa_cache_auth.h"
 #include "sta_info.h"
 #include "hostapd.h"
-#include "hostapd_if/hostapd_if.h"
 
 #ifdef CONFIG_IEEE80211R_AP
 
@@ -4505,6 +4504,7 @@ static int wpa_ft_rrb_rx_request(struct wpa_authenticator *wpa_auth,
 	bool is_ml = false;
 	struct ieee802_11_elems elems;
 	const u8 *mld_mac;
+	bool deferred_auth;
 
 	if (ieee802_11_parse_elems(body, len, &elems, 1) == ParseFailed) {
 		wpa_printf(MSG_DEBUG,
@@ -4547,8 +4547,18 @@ static int wpa_ft_rrb_rx_request(struct wpa_authenticator *wpa_auth,
 	sm->ft_pending_cb_ctx = sm;
 	os_memcpy(sm->ft_pending_current_ap, current_ap, ETH_ALEN);
 	sm->ft_pending_pull_left_retries = sm->wpa_auth->conf.rkh_pull_retries;
+	deferred_auth = 0;
+	if (wpa_auth->cb->frame_fwd_decision)
+		deferred_auth = wpa_auth->cb->frame_fwd_decision(wpa_auth->cb_ctx,
+								 WLAN_AUTH_FT);
 	res = wpa_ft_process_auth_req(sm, body, len, &resp_ies,
-				      &resp_ies_len, false);
+				      &resp_ies_len, deferred_auth);
+	if (wpa_auth->cb->notify_remote_auth &&
+	    wpa_auth->cb->notify_remote_auth(wpa_auth->cb_ctx, sm->addr, body,
+					     len, res < 0 ? 0 : res, is_ml)) {
+		wpa_printf(MSG_DEBUG, "waiting for ext-APP to respond to FT_PACKET\n");
+		return 0;
+	}
 	if (res < 0) {
 		wpa_printf(MSG_DEBUG, "FT: No immediate response available - wait for pull response");
 		return 0;
