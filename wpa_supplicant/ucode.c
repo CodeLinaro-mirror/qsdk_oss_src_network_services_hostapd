@@ -380,7 +380,16 @@ void wpas_ucode_event(struct wpa_supplicant *wpa_s, int event, union wpa_event_d
 #ifdef CONFIG_QCN_EXTN
 	wpa_printf(MSG_INFO, "%s: freq = %d is_dfs = %d wpa_state = %s mcst = %u", __func__,
 		   data->ch_switch.freq, is_dfs, wpa_state, data->ch_switch.mcst);
+
+	if (wpa_s->conf->ind_rptr && is_dfs &&
+	    IS_CSH_IGNORE_CSA_DFS_ENABLED(wpa_s->conf->cswopts) &&
+	    wpa_s->wpa_state != WPA_PRE_CONNECT) {
+		wpa_s->hold_scan_csa = true;
+		wpa_supplicant_deauthenticate(wpa_s,
+					      WLAN_REASON_DEAUTH_LEAVING);
+	}
 #endif
+
 	ucv_put(wpa_ucode_call(6));
 	ucv_gc(vm);
 }
@@ -662,6 +671,24 @@ uc_wpas_recvd_ch_sw_result_ev(uc_vm_t *vm, size_t nargs)
 	for (wpa_s = wpa_global->ifaces; wpa_s; wpa_s = wpa_s->next) {
 		if (!wpa_s)
 			continue;
+		/*
+		 * Non-DFS channel change on the Repeater AP side: clear the
+		 * hold flag and kick off a fresh scan so the STA can follow
+		 * the AP to its new channel.  Skip the WPA_PRE_CONNECT path
+		 * for this interface.
+		 */
+		if (wpa_s->wpa_state != WPA_PRE_CONNECT &&
+		    IS_CSH_IGNORE_CSA_DFS_ENABLED(wpa_s->conf->cswopts) &&
+		    wpa_s->hold_scan_csa) {
+			wpa_printf(MSG_INFO,
+				   "%s: Resuming STA scan on %s after Repeater AP non-DFS channel change",
+				   __func__, wpa_s->ifname);
+			wpa_s->hold_scan_csa = false;
+			eloop_cancel_timeout(wpa_supplicant_start_sta_scan, wpa_s, NULL);
+			wpa_supplicant_req_scan(wpa_s, 0, 0);
+			continue;
+		}
+
 		if (wpa_s->wpa_state != WPA_PRE_CONNECT)
 			continue;
 		if (!wpa_s->cache_cwork)
