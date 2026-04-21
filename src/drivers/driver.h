@@ -361,6 +361,13 @@ struct hostapd_channel_data {
 	 */
 	int flag;
 
+#ifdef CONFIG_QCN_EXTN
+	/**
+	 * extn - Extensiom hostapd channel data
+	 */
+	struct hostapd_channel_data_extn extn;
+#endif
+
 	/**
 	 * allowed_bw - Allowed channel width bitmask
 	 *
@@ -428,11 +435,6 @@ struct hostapd_channel_data {
 	 * eirp_power - EIRP power
 	 */
 	s8 eirp_power;
-
-#ifdef CONFIG_QCN_EXTN
-	struct hostapd_channel_data_extn extn;
-#endif
-
 };
 
 #define HE_MAC_CAPAB_0		0
