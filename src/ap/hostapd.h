@@ -701,6 +701,8 @@ struct hostapd_sta_info {
 	u8 addr[ETH_ALEN];
 	struct os_reltime last_seen;
 	int ssi_signal;
+	struct os_reltime probe_first_low_rssi_seen;
+	int probe_delay_count;
 #ifdef CONFIG_TAXONOMY
 	struct wpabuf *probe_ie_taxonomy;
 #endif /* CONFIG_TAXONOMY */

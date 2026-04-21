@@ -1482,6 +1482,8 @@ struct hostapd_config {
 	int rssi_reject_assoc_timeout;
 	int rssi_deauth_grace_samples;
 	int rssi_ignore_probe_request;
+	int rssi_probe_delay_time_window;
+	int rssi_probe_delay_req_count;
 
 #ifdef CONFIG_AIRTIME_POLICY
 	enum {
