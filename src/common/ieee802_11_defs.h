@@ -3934,6 +3934,15 @@ enum ieee80211_pqc_content_presence {
 	PQC_CONTENT_VENDOR_SPECIFIC = 221,
 };
 
+/* Table 9-bb13: Encoding of the Mode ID field (9.4.2.362) */
+#define UHR_PARAMS_UPDATE_MODE_ID_NPCA		1
+/* TODO: Add Mode ID macros for DPS(0), DUO(2), P-EDCA(3), DBE(4), AP PUO(5), ELR(6) */
+
+/* Mode Tuple field bits (Figure 9-aa67) */
+#define UHR_MODE_TUPLE_MODE_ID_MASK		0x3F
+#define UHR_MODE_TUPLE_MODE_ENABLE		BIT(6)
+#define UHR_MODE_TUPLE_MODE_UPDATE		BIT(7)
+
 #ifdef _MSC_VER
 #pragma pack(pop)
 #endif /* _MSC_VER */
