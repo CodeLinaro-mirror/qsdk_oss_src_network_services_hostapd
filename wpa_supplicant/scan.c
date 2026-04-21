@@ -4441,6 +4441,12 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 
 	changes = wpa_bss_compare_res(bss, res);
 	bss = wpa_bss_update(wpa_s, bss, res, fetch_time, true);
+	if (!wpa_is_6ghz_power_mode_match(wpa_s, bss)) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"RNR 6 GHz Power Mode mismatch - Ignore");
+		return ret;
+	}
+
 	mbssid_idx = wpa_bss_get_mbssid_idx(bss);
 	i = 0;
 	/* NOTE: Any changes in rnr ie len calculation or fetching the ap info
@@ -4482,7 +4488,16 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 							"MLD: Reported link not part of current MLD");
 				} else {
 					struct wpa_scan_results *scan_res;
+					struct wpa_bss *pbss =
+						wpa_bss_get_bssid(wpa_s, data);
 					int partner_freq = ieee80211_chan_to_freq(NULL, ap_info->op_class, ap_info->channel);
+
+					if (pbss &&
+					    !wpa_is_6ghz_power_mode_match(wpa_s, pbss)) {
+						wpa_dbg(wpa_s, MSG_DEBUG,
+							"ML RNR 6 GHz Power Mode mismatch - Ignore");
+						goto cont;
+					}
 
 					hw_idx = wpa_get_hw_idx_by_freq(wpa_s, partner_freq);
 

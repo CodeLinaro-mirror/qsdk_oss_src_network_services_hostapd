@@ -17,6 +17,26 @@ struct hostapd_channel_data * hw_get_channel_chan(struct hostapd_hw_modes *mode,
 struct hostapd_channel_data *
 hw_mode_get_channel(struct hostapd_hw_modes *mode, int freq, int *chan);
 
+/**
+ * hw_mode_get_6ghz_power_mode_channel() - Find the 6 GHz channel data for the given freq
+ * @hw_features: Pointer to HW features
+ * @num_hw_features: Number of HW features present
+ * @freq: Frequency in MHz
+ * @pwr_type: Power type
+ * @num_channels_6ghz: Output pointer to number of 6 GHz channels
+ * @chan_idx: Output pointer to channel index for the given frequency
+ * @fallback: Whether to get base 6 GHz channel data if power mode channel are not
+ * present
+ *
+ * Return: Pointer to hostapd_channel_data
+ */
+struct hostapd_channel_data *
+hw_mode_get_6ghz_power_mode_channel(struct hostapd_hw_modes *hw_features,
+				    int num_hw_features,
+				    u16 freq, u8 pwr_type,
+				    u8 *num_channels_6ghz, u8 *chan_idx,
+				    bool fallback);
+
 struct hostapd_channel_data *
 hw_get_channel_freq(enum hostapd_hw_mode mode, int freq, int *chan,
 		    struct hostapd_hw_modes *hw_features, int num_hw_features);
