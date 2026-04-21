@@ -360,6 +360,13 @@ struct hostapd_channel_data {
 	 */
 	int flag;
 
+#ifdef CONFIG_QCN_EXTN
+	/**
+	 * extn - Extensiom hostapd channel data
+	 */
+	struct hostapd_channel_data_extn extn;
+#endif
+
 	/**
 	 * allowed_bw - Allowed channel width bitmask
 	 *
