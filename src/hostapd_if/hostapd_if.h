@@ -108,6 +108,10 @@ void hostapd_if_interface_remove(struct hostapd_data *hapd);
 int hostapd_if_interface_create(struct hostapd_data *hapd);
 
 int hostapd_if_set_interfaces(struct hapd_interfaces *interfaces);
+enum hostapd_if_frame_processing_decision
+hostapd_if_notify_remote_auth(struct hostapd_data *hapd, uint8_t *sta_mac,
+			      const uint8_t *ies, uint16_t ies_len,
+			      uint16_t status_code, bool is_ml);
 
 void hostapd_if_eapol_rx(struct hostapd_data *hapd, const u8 *sa,
 			 const u8 *data, u16 data_len);

@@ -632,6 +632,42 @@ hostapd_if_frame_fwd_decision(struct hostapd_data *hapd, u16 auth_alg,
 						     frame_type);
 }
 
+enum hostapd_if_frame_processing_decision
+hostapd_if_notify_remote_auth(struct hostapd_data *hapd, uint8_t *sta_mac,
+			      const uint8_t *ies, uint16_t ies_len,
+			      uint16_t status_code, bool is_ml)
+{
+	enum hostapd_if_frame_policy policy;
+	enum hostapd_if_frame_processing_decision decision;
+	struct hostapd_if_frame_ctx ctx_req;
+
+	decision = hostapd_if_notify_get_policy_decision(hapd, 0, &policy,
+							 HOSTAPD_IF_FRAME_TYPE_REMOTE_AUTH);
+
+	os_memset(&ctx_req, 0, sizeof(ctx_req));
+	ctx_req.status_code = status_code;
+
+	ctx_req.rx_link_id = hapd->mld_link_id;
+	ctx_req.data.remote_auth_req.is_ml_sta = is_ml;
+
+#ifdef HOSTAPD_EXTERNAL_PLUGIN
+	if (!hostapd_if_plugin || !hostapd_if_plugin->notify_remote_auth)
+		return HOSTAPD_IF_FRAME_PROCESSING_CONTINUE;
+
+	if (policy == HOSTAPD_IF_FRAME_NOTIFY) {
+		hostapd_if_plugin->notify_remote_auth(hapd->conf->iface,
+						      sta_mac, ies, ies_len,
+						      &ctx_req);
+	} else if (policy == HOSTAPD_IF_FRAME_INVOKE) {
+		hostapd_if_plugin->invoke_remote_auth(hapd->conf->iface,
+						      sta_mac, ies, ies_len,
+						      &ctx_req);
+	}
+#endif
+
+	return decision;
+}
+
 /*
  * Notify/invoke external application for Association and return
  * processing decision.
@@ -1260,6 +1296,111 @@ __hostapd_if_auth_response_exit:
 	 */
 	if (ctx->data.auth_resp.additional_ies)
 		os_free((void *)ctx->data.auth_resp.additional_ies);
+	os_free((void *)ctx);
+}
+
+/*
+ * External app resumes FT over-DS remote authentication flow:
+ * Compose and send remote authentication response using ctx->status_code.
+ *
+ * ifname: Interface name
+ * sta_mac: MAC address of the STA
+ * ctx: Frame context containing status code and remote auth response data
+ */
+void __hostapd_if_remote_auth_response(char *ifname, uint8_t *sta_mac,
+				       struct hostapd_if_frame_ctx *ctx)
+{
+	struct hostapd_data *hapd;
+	struct wpa_state_machine *wpa_sm;
+
+	wpa_printf(MSG_MSGDUMP,
+		   "%s: %s, " MACSTR " status=%u\n",
+		   __func__, ifname, MAC2STR(sta_mac), ctx->status_code);
+
+	/*
+	 * Get the appropriate hapd using link_id from context
+	 */
+	hapd = __hostapd_get_link_iface(ifname, ctx->rx_link_id);
+	if (!hapd) {
+		wpa_printf(MSG_ERROR,
+			   "hostapd_if: remote_auth_response - "
+			   "interface %s not found with link-id %d",
+			   ifname, ctx->rx_link_id);
+		goto __hostapd_if_remote_auth_response_exit;
+	}
+
+	if (ctx->data.remote_auth_resp.is_ml_sta) {
+		/*
+		 * Get the wpa_state_machine from FT over-DS list
+		 */
+		wpa_sm = get_wpa_sm_from_ft_ds_list(hapd, sta_mac);
+	} else {
+		struct sta_info *sta;
+
+		sta = ap_get_sta(hapd, sta_mac);
+		if (sta)
+			wpa_sm = sta->wpa_sm;
+		else
+			wpa_sm = NULL;
+	}
+
+	if (!wpa_sm) {
+		__inbound_error_event(hapd, sta_mac,
+				HOSTAPD_IF_AUTH_RESPONSE_ERROR,
+				__func__, __LINE__);
+		wpa_printf(MSG_ERROR,
+			   "hostapd_if: remote_auth_response - "
+			   "wpa_sm not found for STA " MACSTR " on %s",
+			   MAC2STR(sta_mac), ifname);
+		goto __hostapd_if_remote_auth_response_exit;
+	}
+
+	/*
+	 * Resume FT over-DS authentication.
+	 * If the plugin provided a PMK-R1, store it in hostapd's cache first.
+	 * If no PMK-R1 was provided but the plugin signalled SUCCESS, override
+	 * the status to INVALID_PMKID so the STA gets a proper rejection.
+	 */
+	{
+		struct hostapd_if_pmk_r1 *r1 =
+			ctx->data.remote_auth_resp.pmk_r1;
+		uint16_t status_code;
+
+		if (r1) {
+			wpa_ft_store_pmk_r1(
+				hapd->wpa_auth,
+				sta_mac,
+				r1->pmk_r1,
+				r1->pmk_r1_len,
+				r1->pmk_r1_name,
+				r1->pairwise,
+				NULL,
+				r1->expires_in,
+				r1->session_timeout,
+				r1->identity_len ? r1->identity : NULL,
+				r1->identity_len,
+				r1->radius_cui_len ? r1->radius_cui : NULL,
+				r1->radius_cui_len);
+			status_code = ctx->status_code;
+		} else {
+			/*
+			 * If external APP set the status code as SUCCESS
+			 * without passing a valid PMK-R1, override it
+			 * to INVALID_PMKID
+			 */
+			if (ctx->status_code == WLAN_STATUS_SUCCESS)
+				status_code = WLAN_STATUS_INVALID_PMKID;
+			else
+				status_code = ctx->status_code;
+		}
+		ft_finish_pull(wpa_sm, status_code);
+	}
+
+__hostapd_if_remote_auth_response_exit:
+	/*
+	 * Free ctx handed in from plugin
+	 */
+	os_free(ctx->data.remote_auth_resp.pmk_r1);
 	os_free((void *)ctx);
 }
 
@@ -2581,7 +2722,6 @@ int hostapd_if_eapol_tx_validate_inputs(char *ifname, uint8_t *sta_mac,
 			   data_len, HOSTAPD_IF_MAX_EAP_DATA);
 		return -1;
 	}
-
 	return 0;
 }
 
@@ -2594,10 +2734,20 @@ int hostapd_if_set_authorized_validate_inputs(char *ifname, uint8_t *sta_mac,
 			   __func__, ifname, sta_mac, authorized);
 		return -1;
 	}
-
 	return 0;
 }
 
+int hostapd_if_remote_auth_response_validate_inputs(char *ifname,
+						    uint8_t *sta_mac,
+						    struct hostapd_if_frame_ctx *ctx)
+{
+	if (!ifname || !sta_mac || !ctx) {
+		wpa_printf(MSG_ERROR, "%s: ERROR! NULL parameters %p:%p:%p\n",
+			   __func__, ifname, sta_mac, ctx);
+		return -1;
+	}
+	return 0;
+}
 
 int hostapd_if_send_frame_validate_inputs(char *ifname, int link_id,
 					  uint8_t *frame, uint16_t frame_len)
@@ -2799,6 +2949,14 @@ void hostapd_if_eapol_key_tx_dump_params(char *ifname, uint8_t *sta_mac, uint8_t
 	wpa_hexdump(MSG_EXCESSIVE,
 		    __func__,
 		    frame, frame_len);
+}
+
+void hostapd_if_remote_auth_response_dump_params(char *ifname, uint8_t *sta_mac,
+						 struct hostapd_if_frame_ctx *ctx)
+{
+	wpa_printf(MSG_MSGDUMP,
+		   "%s: %s, " MACSTR " status=%u\n",
+		   __func__, ifname, MAC2STR(sta_mac), ctx->status_code);
 }
 
 size_t hostapd_if_auth_reply_tail_len(struct sta_info *sta, size_t current_len)
