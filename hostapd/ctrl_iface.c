@@ -891,7 +891,8 @@ static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 {
 	u8 addr[ETH_ALEN];
 	struct hostapd_dscp_policy policy;
-	struct sta_info *sta;
+	struct sta_info *sta, *assoc_sta;
+	struct hostapd_data *lhapd, *assoc_hapd = hapd;
 	const char *params;
 	char *reset_str;
 
@@ -905,8 +906,33 @@ static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 		return -1;
 
 	sta = ap_get_sta(hapd, addr);
+#ifdef CONFIG_IEEE80211BE
+	/* To find link STA when MLD addr is provided */
+	if (!sta && hapd->conf->mld_ap) {
+		for_each_mld_link(lhapd, hapd) {
+			sta = ap_get_sta(lhapd, addr);
+			if (sta) {
+				assoc_hapd = lhapd;
+				break;
+			}
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
 	if (!sta) {
 		wpa_printf(MSG_DEBUG, "DSCP: STA " MACSTR " not capable", MAC2STR(addr));
+		return -1;
+	}
+
+	assoc_sta = sta;
+#ifdef CONFIG_IEEE80211BE
+	if (ap_sta_is_mld(assoc_hapd, sta))
+		assoc_sta = hostapd_ml_get_assoc_sta(assoc_hapd, sta, &lhapd);
+#endif /* CONFIG_IEEE80211BE */
+
+	if (!assoc_sta) {
+		wpa_printf(MSG_DEBUG,
+			   "DSCP: Assoc STA not found for " MACSTR,
+			   MAC2STR(addr));
 		return -1;
 	}
 
@@ -916,13 +942,13 @@ static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 
 	reset_str = os_strstr(params, "reset=");
 	if (reset_str) {
-		sta->dscp_reset = atoi(reset_str + 6);
+		assoc_sta->dscp_reset = atoi(reset_str + 6);
 		wpa_printf(MSG_DEBUG, "DSCP: Reset flag set to %d for STA " MACSTR,
-			   sta->dscp_reset, MAC2STR(addr));
+			   assoc_sta->dscp_reset, MAC2STR(addr));
 		return 0;
 	}
 
-	if (parse_dscp_policy_string(sta, &policy, params) < 0)
+	if (parse_dscp_policy_string(assoc_sta, &policy, params) < 0)
 		return -1;
 
 	if (validate_dscp_policy(&policy) < 0)
@@ -931,9 +957,9 @@ static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 	if (build_frame_classifier(&policy) < 0)
 		return -1;
 
-	if (add_dscp_policy_to_sta(sta, &policy) < 0) {
+	if (add_dscp_policy_to_sta(assoc_sta, &policy) < 0) {
 		wpa_printf(MSG_WARNING, "DSCP: Failed to add policy for STA " MACSTR,
-			   MAC2STR(sta->addr));
+			   MAC2STR(addr));
 		return -1;
 	}
 
@@ -949,6 +975,7 @@ static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 static int hostapd_ctrl_send_unsolicited_dscp_req(struct hostapd_data *hapd, const char *cmd)
 {
 	struct sta_info *sta;
+	struct hostapd_data *lhapd, *assoc_hapd = hapd;
 	u8 addr[ETH_ALEN];
 	int reset = 0;
 	int policy_ids[10];
@@ -1003,10 +1030,24 @@ static int hostapd_ctrl_send_unsolicited_dscp_req(struct hostapd_data *hapd, con
 		return -1;
 
 	sta = ap_get_sta(hapd, addr);
-	if (!sta)
+#ifdef CONFIG_IEEE80211BE
+	if (!sta && hapd->conf->mld_ap) {
+		for_each_mld_link(lhapd, hapd) {
+			sta = ap_get_sta(lhapd, addr);
+			if (sta) {
+				assoc_hapd = lhapd;
+				break;
+			}
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+	if (!sta) {
+		wpa_printf(MSG_DEBUG, "DSCP: STA " MACSTR " not capable", MAC2STR(addr));
 		return -1;
+	}
 
-	hostapd_send_unsolicited_dscp_policy_request(hapd, sta, reset, policy_ids, num_policies);
+	hostapd_send_unsolicited_dscp_policy_request(assoc_hapd, sta, reset,
+						     policy_ids, num_policies);
 	return 0;
 }
 

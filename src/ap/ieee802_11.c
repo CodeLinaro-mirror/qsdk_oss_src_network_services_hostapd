@@ -7818,6 +7818,8 @@ static void hostapd_dscp_action(struct hostapd_data *hapd,
 				const u8 *pos, const u8 *end,
 				bool protected)
 {
+	struct hostapd_data *assoc_hapd = hapd;
+	struct sta_info *assoc_sta = sta;
 	u8 subtype;
 
 	if (end - pos < 1) {
@@ -7825,13 +7827,26 @@ static void hostapd_dscp_action(struct hostapd_data *hapd,
 		return;
 	}
 
+#ifdef CONFIG_IEEE80211BE
+	if (ap_sta_is_mld(hapd, sta)) {
+		assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd);
+		if (!assoc_sta) {
+			wpa_printf(MSG_DEBUG,
+				   "DSCP Action: Assoc STA not found");
+			return;
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+
 	subtype = *pos++;
 	switch (subtype) {
 	case QM_DSCP_POLICY_QUERY:
-		hostapd_handle_dscp_policy_query(hapd, sta, pos, end - pos);
+		hostapd_handle_dscp_policy_query(assoc_hapd, assoc_sta, pos,
+						 end - pos);
 		break;
 	case QM_DSCP_POLICY_RESP:
-		hostapd_handle_dscp_policy_response(hapd, sta, pos, end - pos);
+		hostapd_handle_dscp_policy_response(assoc_hapd, assoc_sta, pos,
+						    end - pos);
 		break;
 	default:
 		wpa_printf(MSG_DEBUG, "QM Action: Unknown subtype %u", subtype);

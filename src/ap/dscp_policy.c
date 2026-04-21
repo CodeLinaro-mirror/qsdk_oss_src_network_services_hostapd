@@ -530,23 +530,41 @@ void hostapd_send_unsolicited_dscp_policy_request(struct hostapd_data *hapd,
 {
 	struct wpabuf *frame = NULL, *elem;
 	struct hostapd_dscp_policy *policy;
+	struct sta_info *assoc_sta = sta;
+	struct hostapd_data *assoc_hapd = hapd;
 	u8 dialog_token;
 	size_t i;
 	size_t frame_len;
 	bool more = false;
 
-	if (!hapd || !sta || !sta->dscp_policy_capable)
+	if (!hapd || !sta)
 		return;
 
-	dialog_token = get_next_unsolicited_dialog_token(sta);
-	frame = start_new_dscp_frame(hapd, sta, dialog_token, reset, more);
-	if (!frame)
+#ifdef CONFIG_IEEE80211BE
+	if (ap_sta_is_mld(hapd, sta)) {
+		assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd);
+		if (!assoc_sta) {
+			wpa_printf(MSG_DEBUG,
+				   "Assoc STA not found in DSCP request send");
+			return;
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+	if (!assoc_sta->dscp_policy_capable)
 		return;
+
+	dialog_token = get_next_unsolicited_dialog_token(assoc_sta);
+	frame = start_new_dscp_frame(assoc_hapd, assoc_sta, dialog_token, reset,
+				     more);
+	if (!frame) {
+		wpa_printf(MSG_INFO, "DSCP frame is NULL\n");
+		return;
+	}
 
 	frame_len = wpabuf_len(frame);
 
 	for (i = 0; i < num_policies; i++) {
-		policy = hostapd_get_dscp_policy_by_id(sta, policy_ids[i]);
+		policy = hostapd_get_dscp_policy_by_id(assoc_sta, policy_ids[i]);
 		if (!policy)
 			continue;
 
@@ -576,18 +594,19 @@ void hostapd_send_unsolicited_dscp_policy_request(struct hostapd_data *hapd,
 	}
 
 	if (frame && wpabuf_len(frame) > 5) {
-		if (hostapd_drv_send_action(hapd, hapd->iface->freq, 0, sta->addr,
-					    wpabuf_head(frame), wpabuf_len(frame))) {
+		if (hostapd_drv_send_action(assoc_hapd, assoc_hapd->iface->freq, 0,
+					    assoc_sta->addr, wpabuf_head(frame),
+					    wpabuf_len(frame))) {
 			wpa_printf(MSG_DEBUG, "DSCP: Failed to send policy request to " MACSTR,
-				   MAC2STR(sta->addr));
+				   MAC2STR(assoc_sta->addr));
 		}
 	}
 
 	wpabuf_free(frame);
 
-	sta->dscp_state.offset = i;
-	sta->dscp_state.last_dialog_token = dialog_token;
-	sta->dscp_state.pending_more = more;
+	assoc_sta->dscp_state.offset = i;
+	assoc_sta->dscp_state.last_dialog_token = dialog_token;
+	assoc_sta->dscp_state.pending_more = more;
 }
 
 
@@ -1242,7 +1261,8 @@ int hostapd_handle_dscp_policy_query(struct hostapd_data *hapd, struct sta_info 
 	}
 
 	if (!sta->dscp_policy_capable) {
-		wpa_printf(MSG_DEBUG, "DSCP: STA " MACSTR " not capable", MAC2STR(sta->addr));
+		wpa_printf(MSG_DEBUG, "DSCP: STA " MACSTR " not capable",
+			   MAC2STR(sta->addr));
 		return -1;
 	}
 
@@ -1264,14 +1284,16 @@ int hostapd_handle_dscp_policy_query(struct hostapd_data *hapd, struct sta_info 
 
 	dialog_token = ctx.dialog_token;
 
-	resp = build_dscp_policy_request(hapd, sta, &ctx, offset, &used, dialog_token, &more);
+	resp = build_dscp_policy_request(hapd, sta, &ctx,
+					 offset, &used, dialog_token, &more);
 	if (!resp)
 		goto cleanup;
 
-	if (hostapd_drv_send_action(hapd, hapd->iface->freq, 0, sta->addr,
-				    wpabuf_head(resp), wpabuf_len(resp))) {
-
-		wpa_printf(MSG_DEBUG, "DSCP: Failed to send policy request to " MACSTR, MAC2STR(sta->addr));
+	if (hostapd_drv_send_action(hapd, hapd->iface->freq, 0,
+				    sta->addr, wpabuf_head(resp),
+				    wpabuf_len(resp))) {
+		wpa_printf(MSG_DEBUG, "DSCP: Failed to send policy request to " MACSTR,
+			   MAC2STR(sta->addr));
 		wpabuf_free(resp);
 		goto cleanup;
 	}
@@ -1391,16 +1413,21 @@ void hostapd_send_next_dscp_policy_batch(struct hostapd_data *hapd,
 	if (!hapd || !sta || !sta->policies || sta->num_dscp_policies == 0)
 		return;
 
+	if (!sta->dscp_policy_capable)
+		return;
+
 	dialog_token = get_next_unsolicited_dialog_token(sta);
 
-	frame = hostapd_build_dscp_policy_request_from_offset(hapd, sta, dialog_token,
+	frame = hostapd_build_dscp_policy_request_from_offset(hapd, sta,
+							      dialog_token,
 							      0, start_offset,
 							      &next_offset, &more);
 	if (!frame)
 		return;
 
-	if (hostapd_drv_send_action(hapd, hapd->iface->freq, 0, sta->addr,
-				    wpabuf_head(frame), wpabuf_len(frame)) < 0) {
+	if (hostapd_drv_send_action(hapd, hapd->iface->freq, 0,
+				    sta->addr, wpabuf_head(frame),
+				    wpabuf_len(frame)) < 0) {
 		wpa_printf(MSG_WARNING, "DSCP: Failed to send next policy frame to " MACSTR,
 			   MAC2STR(sta->addr));
 	}
@@ -1419,12 +1446,14 @@ int hostapd_handle_dscp_policy_response(struct hostapd_data *hapd, struct sta_in
 	const u8 *pos = data, *end = data + len;
 	u8 dialog_token;
 	u8 response_control;
+	u8 count = 0;
 
 	if (!hapd->conf->enable_dscp_policy_capa)
 		return -1;
 
 	if (!sta->dscp_policy_capable) {
-		wpa_printf(MSG_DEBUG, "DSCP: STA " MACSTR " not capable", MAC2STR(sta->addr));
+		wpa_printf(MSG_DEBUG, "DSCP: STA " MACSTR " not capable",
+			   MAC2STR(sta->addr));
 		return -1;
 	}
 
@@ -1445,12 +1474,15 @@ int hostapd_handle_dscp_policy_response(struct hostapd_data *hapd, struct sta_in
 		return 0;
 	}
 
+	if (pos < end)
+		count = *pos++;
+
 	/* Process status duples */
-	while (pos + 3 <= end) {
+	while (count-- && pos + 2 <= end) {
 		struct hostapd_dscp_policy *policy = NULL;
 		u8 policy_id = *pos++;
-		u16 status = WPA_GET_LE16(pos);
-		pos += 2;
+		u8 status = *pos++;
+
 		for (u8 i = 0; i < sta->num_dscp_policies; i++) {
 			if (sta->policies[i] &&
 			    sta->policies[i]->policy_id == policy_id) {
@@ -1483,7 +1515,8 @@ int hostapd_handle_dscp_policy_response(struct hostapd_data *hapd, struct sta_in
 	/* If More bit is set, STA wants more policies */
 	if ((response_control & 0x01) && sta->dscp_state.pending_more) {
 		wpa_printf(MSG_DEBUG, "DSCP: STA requested additional policy batch");
-		hostapd_send_next_dscp_policy_batch(hapd, sta, sta->dscp_state.offset);
+		hostapd_send_next_dscp_policy_batch(hapd, sta,
+						    sta->dscp_state.offset);
 	}
 
 	return 0;
