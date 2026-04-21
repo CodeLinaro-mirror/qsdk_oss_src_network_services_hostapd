@@ -3717,6 +3717,68 @@ void ibss_mesh_setup_freq(struct wpa_supplicant *wpa_s,
 }
 
 
+bool wpa_is_6ghz_power_mode_match(struct wpa_supplicant *wpa_s,
+				  struct wpa_bss *bss)
+{
+	const u8* ie = wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_HE_OPERATION);
+	struct ieee80211_he_operation *heop;
+	struct ieee80211_he_6ghz_oper_info *he_oper_6g;
+	u8 he_reg_info;
+	u8 pos = 9;
+	struct hostapd_channel_data *chan;
+
+	if (!is_6ghz_freq(bss->freq))
+		return true;
+
+	if (!ie || ie[1] < 6)
+		return true;
+
+	heop = (struct ieee80211_he_operation *)(&ie[3]);
+	if (!(heop->he_oper_params & HE_OPERATION_6GHZ_OPER_INFO))
+		return true;
+
+	if (heop->he_oper_params & HE_OPERATION_VHT_OPER_INFO)
+		pos += 3;
+
+	if (heop->he_oper_params & HE_OPERATION_COHOSTED_BSS)
+		pos += 1;
+
+	he_oper_6g = (struct ieee80211_he_6ghz_oper_info *)(ie + pos);
+	he_reg_info = (he_oper_6g->control &
+		       HE_6GHZ_OPER_INFO_CTRL_REG_INFO_MASK) >>
+		       HE_6GHZ_OPER_INFO_CTRL_REG_INFO_SHIFT;
+
+	if (he_reg_info == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP)
+		he_reg_info = HE_REG_INFO_6GHZ_AP_TYPE_SP;
+
+	if (he_reg_info < NL80211_REG_AP_LPI ||
+	    he_reg_info > NL80211_REG_AP_VLP)
+		return false;
+
+	chan = hw_mode_get_6ghz_power_mode_channel(wpa_s->hw.modes,
+						   wpa_s->hw.num_modes,
+						   bss->freq,
+						   he_reg_info,
+						   NULL, NULL, true);
+	if (!chan) {
+		wpa_printf(MSG_ERROR,
+			   "Channel Not found for Freq %d Pwr Mode %d",
+			   bss->freq, he_reg_info);
+		return false;
+	}
+
+	if (chan->flag & HOSTAPD_CHAN_DISABLED) {
+		wpa_printf(MSG_ERROR,
+			   "Channel Disabled for Freq %d Pwr Mode %d Flag 0x%x",
+			   bss->freq, he_reg_info, chan->flag);
+		return false;
+	}
+
+	wpa_printf(MSG_DEBUG, "AP power type: %d Valid", he_reg_info);
+
+	return true;
+}
+
 #ifdef CONFIG_FILS
 static size_t wpas_add_fils_hlp_req(struct wpa_supplicant *wpa_s, u8 *ie_buf,
 				    size_t ie_buf_len)

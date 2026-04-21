@@ -412,6 +412,19 @@ int wpas_valid_bss_ssid(struct wpa_supplicant *wpa_s, struct wpa_bss *test_bss,
 void wpas_connect_work_free(struct wpa_connect_work *cwork);
 void wpas_connect_work_done(struct wpa_supplicant *wpa_s);
 
+
+/**
+ * wpa_is_6ghz_power_mode_match - Check whether BSS power mode is supported
+ * @wpa_s: Pointer to wpa_supplicant context representing the station
+ * @bss: BSS entry (generally represent root ap)
+ *
+ * Check whether the 6 GHz operating power mode advertised by the given BSS
+ * matches the power mode capabilities/configuration supported by the station.
+ *
+ * Return: true if the BSS power mode is compatible/supported, false otherwise.
+ */
+bool wpa_is_6ghz_power_mode_match(struct wpa_supplicant *wpa_s, struct wpa_bss *bss);
+
 struct wpa_external_work {
 	unsigned int id;
 	char type[100];

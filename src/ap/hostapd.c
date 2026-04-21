@@ -8395,44 +8395,10 @@ struct hostapd_channel_data *
 hostapd_iface_get_6ghz_chan_list(struct hostapd_iface *iface, u16 freq,
 				 u8 pwr_type, u8 *num_channels_6ghz, u8 *chan_idx)
 {
-	struct hostapd_hw_modes *mode = NULL;
-	struct hostapd_channel_data *pwr_mode_chan_list;
-	int i;
-	u8 num_6ghz_chans;
-
-	if (!iface->num_hw_features) {
-		wpa_printf(MSG_ERROR, "No hw features");
-		return NULL;
-	}
-
-	for (i = 0; i < iface->num_hw_features; i++) {
-		if (iface->hw_features[i].is_6ghz) {
-			mode = &iface->hw_features[i];
-			break;
-		}
-	}
-
-	if (!mode) {
-		wpa_printf(MSG_ERROR, "No 6 GHz mode");
-		return NULL;
-	}
-
-	num_6ghz_chans = mode->channels_6ghz.num_channels_6ghz[pwr_type];
-	pwr_mode_chan_list = mode->channels_6ghz.chans_6ghz[pwr_type];
-
-	if (num_channels_6ghz)
-		*num_channels_6ghz = num_6ghz_chans;
-
-	for (i = 0; i < num_6ghz_chans; i++) {
-		if (pwr_mode_chan_list[i].freq == freq) {
-			if (chan_idx)
-				*chan_idx = i;
-
-			return &pwr_mode_chan_list[i];
-		}
-	}
-
-	return NULL;
+	return hw_mode_get_6ghz_power_mode_channel(iface->hw_features,
+						   iface->num_hw_features,
+						   freq, pwr_type, num_channels_6ghz,
+						   chan_idx, false);
 }
 
 

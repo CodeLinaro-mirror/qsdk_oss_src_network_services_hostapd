@@ -58,6 +58,83 @@ hw_mode_get_channel(struct hostapd_hw_modes *mode, int freq, int *chan)
 	return NULL;
 }
 
+struct hostapd_channel_data *
+hw_mode_get_chan_and_fill_chan_idx(struct hostapd_hw_modes *mode,
+				   int freq,
+				   int *chan, u8 *chan_idx)
+{
+	int i;
+
+	for (i = 0; i < mode->num_channels; i++) {
+		struct hostapd_channel_data *ch = &mode->channels[i];
+
+		if (ch->freq == freq) {
+			if (chan)
+				*chan = ch->chan;
+			if(chan_idx)
+				*chan_idx = i;
+			return ch;
+		}
+	}
+
+	return NULL;
+}
+
+struct hostapd_channel_data *
+hw_mode_get_6ghz_power_mode_channel(struct hostapd_hw_modes *hw_features,
+				    int num_hw_features,
+				    u16 freq, u8 pwr_type,
+				    u8 *num_channels_6ghz, u8 *chan_idx,
+				    bool fallback)
+{
+	struct hostapd_hw_modes *mode = NULL;
+	struct hostapd_channel_data *pwr_mode_chan_list;
+	int i;
+	u8 num_6ghz_chans;
+
+	if (!num_hw_features) {
+		wpa_printf(MSG_ERROR, "No hw features");
+		return NULL;
+	}
+
+	for (i = 0; i < num_hw_features; i++) {
+		if (hw_features[i].is_6ghz) {
+			mode = &hw_features[i];
+			break;
+		}
+	}
+
+	if (!mode) {
+		wpa_printf(MSG_ERROR, "No 6 GHz mode");
+		return NULL;
+	}
+
+	num_6ghz_chans = mode->channels_6ghz.num_channels_6ghz[pwr_type];
+	pwr_mode_chan_list = mode->channels_6ghz.chans_6ghz[pwr_type];
+
+	if (num_channels_6ghz)
+		*num_channels_6ghz = num_6ghz_chans;
+
+	for (i = 0; i < num_6ghz_chans; i++) {
+		if (pwr_mode_chan_list[i].freq == freq) {
+			if (chan_idx)
+				*chan_idx = i;
+
+			return &pwr_mode_chan_list[i];
+		}
+	}
+
+	if (!fallback)
+		return NULL;
+
+	/* For drivers that do not support 6Ghz power mode channels
+	 * (LP/VLP/SP etc) do a search in the iface mode channel list.
+	 */
+	if (num_channels_6ghz)
+		*num_channels_6ghz = mode->num_channels;
+
+	return hw_mode_get_chan_and_fill_chan_idx(mode, freq, NULL, chan_idx);
+}
 
 struct hostapd_channel_data *
 hw_get_channel_freq(enum hostapd_hw_mode mode, int freq, int *chan,

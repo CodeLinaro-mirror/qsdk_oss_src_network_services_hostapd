@@ -1725,6 +1725,12 @@ struct wpa_ssid * wpa_scan_res_match(struct wpa_supplicant *wpa_s,
 		return NULL;
 	}
 
+	if (!wpa_is_6ghz_power_mode_match(wpa_s, bss)) {
+		if (debug_print)
+			wpa_dbg(wpa_s, MSG_DEBUG, "   skip - 6 GHz Power Mode mismatch");
+		return NULL;
+	}
+
 	for (ssid = group; ssid; ssid = only_first_ssid ? NULL : ssid->pnext) {
 		if (wpa_scan_res_ok(wpa_s, ssid, match_ssid, match_ssid_len,
 				    bss, bssid_ignore_count, debug_print, link))
