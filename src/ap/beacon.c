@@ -1032,6 +1032,7 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 			if (hapd->iconf->npca_punct_bitmap)
 				buflen += IEEE80211_UHR_NPCA_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
 		}
+		buflen += hostapd_eid_uhr_params_update_len(hapd, false);
 	}
 	buflen += hostapd_smd_ie_len(hapd);
 #endif /* CONFIG_IEEE80211BN */
@@ -1112,6 +1113,11 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 	buflen += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
 #endif /* CONFIG_QCN_EXTN */
+
+#ifdef CONFIG_IEEE80211BN
+	if (hostapd_is_uhr_enabled(hapd))
+		buflen += hostapd_eid_uhr_params_update_len(hapd, false);
+#endif /* CONFIG_IEEE80211BE */
 
 	nontx_probe_params->resp = os_zalloc(buflen);
 	if (!nontx_probe_params->resp) {
@@ -1238,6 +1244,11 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 	pos = hostapd_eid_qcn_vendor_ie_extn(hapd, pos, IEEE80211_MODE_AP);
 #endif /* CONFIG_QCN_EXTN */
+
+#ifdef CONFIG_IEEE80211BN
+	if (hostapd_is_uhr_enabled(hapd))
+		pos = hostapd_eid_uhr_params_update(hapd, pos, false);
+#endif /* CONFIG_IEEE80211BN */
 
 	/* Final length */
 	nontx_probe_params->resp_len = pos - (u8 *) nontx_probe_params->resp;
@@ -1478,6 +1489,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	if (hostapd_is_uhr_enabled(hapd)) {
 		pos = hostapd_eid_uhr_capab(hapd, pos, IEEE80211_MODE_AP);
 		pos = hostapd_eid_uhr_operation(hapd, pos, false);
+		pos = hostapd_eid_uhr_params_update(hapd, pos, false);
 	}
 #endif /* CONFIG_IEEE80211BN */
 	pos = hostapd_eid_security_profile(hapd, pos);

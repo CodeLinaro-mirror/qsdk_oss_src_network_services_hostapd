@@ -326,6 +326,32 @@ enum hostapd_reenable_mode {
 	REENABLE_DEINIT = 4,
 };
 
+#ifdef CONFIG_IEEE80211BN
+/* UHR Enhanced Critical Update (ECU) state machine states
+ * as per IEEE 802.11bn section 37.30.2.2.
+ */
+enum uhr_ecu_state {
+
+	/* ECU(Enhanced Critical Update) is not started */
+	UHR_ECU_IDLE,
+
+	/* ECU started, advance notification interval going on */
+	UHR_ECU_ADVANCE_NOTIFY,
+
+	/* ECU crossed advance notification interval */
+	UHR_ECU_POST_ADVANCE_NOTIFY,
+
+	/* ECU update indication included in TIM element */
+	UHR_ECU_UPDATE_IND_IN_TIM,
+
+};
+
+struct hostapd_uhr_ecu {
+	enum uhr_ecu_state state;
+	u8 uhr_params_update_countdown;
+};
+#endif /* CONFIG_IEEE80211BN */
+
 /**
  * struct hostapd_data - hostapd per-BSS data structure
  */
@@ -507,6 +533,10 @@ struct hostapd_data {
 	struct os_reltime last_color_collision;
 	u64 color_collision_bitmap;
 #endif /* CONFIG_IEEE80211AX */
+
+#ifdef CONFIG_IEEE80211BN
+	struct hostapd_uhr_ecu uhr_ecu;
+#endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_P2P
 	struct p2p_data *p2p;

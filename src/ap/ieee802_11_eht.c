@@ -2323,6 +2323,10 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 	 */
 	len = IEEE80211_HDRLEN + 3 + 1 + count * 3;
 	kde_len = mle_len = 0;
+#ifdef CONFIG_IEEE80211BN
+	if (hostapd_is_uhr_enabled(hapd))
+		len += hostapd_eid_uhr_params_update_len(hapd, true);
+#endif /* CONFIG_IEEE80211BN */
 
 	if (req_list->links_add_ok) {
 		kde_len = wpa_auth_ml_group_kdes_len(
@@ -2484,6 +2488,11 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 		pos += mle_len;
 		pos_len += mle_len;
 	}
+
+#ifdef CONFIG_IEEE80211BN
+	if (hostapd_is_uhr_enabled(hapd))
+		pos = hostapd_eid_uhr_params_update(hapd, pos, true);
+#endif /* CONFIG_IEEE80211BN */
 
 reject_all_req:
 	if (reject_all) {
