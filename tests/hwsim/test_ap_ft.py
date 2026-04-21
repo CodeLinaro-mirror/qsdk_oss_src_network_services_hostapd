@@ -140,7 +140,7 @@ def run_roams(dev, apdev, hapd0, hapd1, ssid, passphrase, over_ds=False,
               roam_with_reassoc=False, also_non_ft=False, only_one_way=False,
               wait_before_roam=0, return_after_initial=False, ieee80211w="1",
               sae_transition=False, beacon_prot=False, sae_ext_key=False,
-              check_ssid=False, gtk_rekey=False):
+              check_ssid=False, gtk_rekey=False, vlan_id=None):
     logger.info("Connect to first AP")
 
     copts = {}
@@ -225,6 +225,13 @@ def run_roams(dev, apdev, hapd0, hapd1, ssid, passphrase, over_ds=False,
         ev = dev.wait_event(["RSN: Group rekeying completed"], timeout=2)
         if ev is None:
             raise Exception("GTK rekey timed out after initial association")
+    if vlan_id:
+        sta = hapd1ap.get_sta(dev.own_addr())
+        if not (sta and "vlan_id" in sta):
+            raise Exception("VLAN information not in STA output (hapd1ap)")
+        vlanid = int(sta["vlan_id"])
+        if vlanid != vlan_id:
+            raise Exception("Unexpected vlan_id %d (hapd1ap)" % vlanid)
     if return_after_initial:
         return ap2['bssid']
 
@@ -265,6 +272,13 @@ def run_roams(dev, apdev, hapd0, hapd1, ssid, passphrase, over_ds=False,
                 hwsim_utils.test_connectivity_iface(dev, hapd2ap, conndev)
             else:
                 hwsim_utils.test_connectivity(dev, hapd2ap)
+        if vlan_id:
+            sta = hapd2ap.get_sta(dev.own_addr())
+            if not (sta and "vlan_id" in sta):
+                raise Exception("VLAN information not in STA output (hapd2ap)")
+            vlanid = int(sta["vlan_id"])
+            if vlanid != vlan_id:
+                raise Exception("Unexpected vlan_id %d (hapd2ap)" % vlanid)
 
         if gtk_rekey:
             ev = dev.wait_event(["RSN: Group rekeying completed"], timeout=2)
@@ -301,6 +315,13 @@ def run_roams(dev, apdev, hapd0, hapd1, ssid, passphrase, over_ds=False,
                 hwsim_utils.test_connectivity_iface(dev, hapd1ap, conndev)
             else:
                 hwsim_utils.test_connectivity(dev, hapd1ap)
+        if vlan_id:
+            sta = hapd1ap.get_sta(dev.own_addr())
+            if not (sta and "vlan_id" in sta):
+                raise Exception("VLAN information not in STA output (hapd1ap)")
+            vlanid = int(sta["vlan_id"])
+            if vlanid != vlan_id:
+                raise Exception("Unexpected vlan_id %d (hapd1ap)" % vlanid)
 
 def test_ap_ft(dev, apdev):
     """WPA2-PSK-FT AP"""
@@ -388,25 +409,12 @@ def test_ap_ft_vlan(dev, apdev):
     params['accept_mac_file'] = filename
     hapd1 = hostapd.add_ap(apdev[1], params)
 
-    run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, conndev="brvlan1")
+    run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, conndev="brvlan1",
+	      vlan_id=1)
     if "[WPA2-FT/PSK-CCMP]" not in dev[0].request("SCAN_RESULTS"):
         raise Exception("Scan results missing RSN element info")
     if filename.startswith('/tmp/'):
         os.unlink(filename)
-
-    sta = hapd0.get_sta(dev[0].own_addr())
-    if not (sta and "vlan_id" in sta):
-        raise Exception("VLAN information not in STA output")
-    vlan_id = int(sta["vlan_id"])
-    if vlan_id != 1:
-        raise Exception("Unexpected vlan_id %d" % vlan_id)
-
-    sta = hapd1.get_sta(dev[0].own_addr())
-    if not (sta and "vlan_id" in sta):
-        raise Exception("VLAN information not in STA output")
-    vlan_id = int(sta["vlan_id"])
-    if vlan_id != 1:
-        raise Exception("Unexpected vlan_id %d" % vlan_id)
 
 def test_ap_ft_vlan_disconnected(dev, apdev):
     """WPA2-PSK-FT AP with VLAN and local key generation"""
@@ -479,23 +487,9 @@ def test_ap_ft_vlan_psk_file(dev, apdev, params):
 
     run_roams(dev[0], apdev, hapd0, hapd1, ssid, "vlan-passphrase",
               conndev="brvlan1", force_initial_conn_to_first_ap=True,
-              test_connectivity=False)
+              test_connectivity=False, vlan_id=1)
     run_roams(dev[1], apdev, hapd0, hapd1, ssid, "default-passphrase",
               force_initial_conn_to_first_ap=True)
-
-    sta = hapd0.get_sta(dev[0].own_addr())
-    if not (sta and "vlan_id" in sta):
-        raise Exception("VLAN information not in STA output (hapd0)")
-    vlan_id = int(sta["vlan_id"])
-    if vlan_id != 1:
-        raise Exception("Unexpected vlan_id %d (hapd0)" % vlan_id)
-
-    sta = hapd1.get_sta(dev[0].own_addr())
-    if not (sta and "vlan_id" in sta):
-        raise Exception("VLAN information not in STA output (hapd1)")
-    vlan_id = int(sta["vlan_id"])
-    if vlan_id != 1:
-        raise Exception("Unexpected vlan_id %d (hapd1)" % vlan_id)
 
     sta = hapd0.get_sta(dev[1].own_addr())
     if "vlan_id" in sta:
