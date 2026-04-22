@@ -70,7 +70,7 @@
 #define WLAN_VHT_EACH_NSS 2
 #define WLAN_VHT_MCS 2
 
-#define WLAN_ASSOC_REQ_MIN_INTERVAL_MS 150
+#define WLAN_ASSOC_REQ_MIN_INTERVAL_MS 650
 
 struct hostapd_data;
 
