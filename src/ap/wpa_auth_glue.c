@@ -89,6 +89,9 @@ static void hostapd_wpa_auth_config_update(struct hostapd_data *hapd,
 	_conf->link_id = -1;
 	_conf->first_link_auth = NULL;
 
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+#endif
 	if (hapd->conf->mld_ap) {
 		struct hostapd_data *lhapd;
 
@@ -103,6 +106,9 @@ static void hostapd_wpa_auth_config_update(struct hostapd_data *hapd,
 				_conf->first_link_auth = lhapd->wpa_auth;
 		}
 	}
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif
 #endif /* CONFIG_IEEE80211BE */
 }
 
