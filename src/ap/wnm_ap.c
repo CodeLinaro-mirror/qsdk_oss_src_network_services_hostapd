@@ -495,9 +495,81 @@ static void ieee802_11_rx_wnmsleep_req(struct hostapd_data *hapd,
 }
 
 
+static size_t wnm_candidate_list_nr_len(struct hostapd_data *hapd,
+					const u8 *pos, const u8 *end)
+{
+	size_t nr_len = 0;
+
+	while (end - pos >= 2) {
+		u8 id = *pos++;
+		u8 elen = *pos++;
+		struct hostapd_neighbor_entry *nr;
+
+		if (pos + elen > end) {
+			wpa_printf(MSG_DEBUG,
+				   "WNM: Truncated BSS TM candidate list");
+			break;
+		}
+
+		if (id == WLAN_EID_NEIGHBOR_REPORT && elen >= 13) {
+			nr = hostapd_neighbor_get(hapd, pos, NULL);
+			if (nr && nr->nr)
+				nr_len += wpabuf_len(nr->nr) + 2;
+		}
+
+		pos += elen;
+	}
+
+	return nr_len;
+}
+
+
+static int wnm_candidate_list_to_nr_buf(struct hostapd_data *hapd,
+					const u8 *pos, const u8 *end,
+					struct wpabuf *nrbuf)
+{
+	while (end - pos >= 2) {
+		u8 id = *pos++;
+		u8 elen = *pos++;
+		u8 *nr_pos;
+		struct hostapd_neighbor_entry *nr;
+
+		if (pos + elen > end) {
+			wpa_printf(MSG_DEBUG,
+				   "WNM: Truncated BSS TM candidate list");
+			return -1;
+		}
+
+		if (id == WLAN_EID_NEIGHBOR_REPORT && elen >= 13) {
+			nr = hostapd_neighbor_get(hapd, pos, NULL);
+			if (nr && nr->nr) {
+				if (wpabuf_tailroom(nrbuf) <
+				    wpabuf_len(nr->nr) + 2)
+					return -1;
+
+				wpabuf_put_u8(nrbuf,
+					      WLAN_EID_NEIGHBOR_REPORT);
+				nr_pos = (u8 *) wpabuf_put(nrbuf, 1);
+				if (hostapd_prepare_neighbor_buf(hapd, pos,
+								 nrbuf) < 0)
+					return -1;
+				*nr_pos = ((u8 *) wpabuf_put(nrbuf, 0) -
+					   nr_pos - 1);
+			}
+		}
+
+		pos += elen;
+	}
+
+	return 0;
+}
+
+
 static int ieee802_11_send_bss_trans_mgmt_request(struct hostapd_data *hapd,
 						  const u8 *addr,
-						  u8 dialog_token)
+						  u8 dialog_token,
+						  const u8 *query_cand_list,
+						  size_t query_cand_list_len)
 {
 	struct ieee80211_mgmt *mgmt;
 	const u8 *own_addr;
@@ -506,24 +578,43 @@ static int ieee802_11_send_bss_trans_mgmt_request(struct hostapd_data *hapd,
 	u8 *pos;
 	int res;
 	u8 req_mode = 0;
+	u8 *nr_pos;
+	struct hostapd_neighbor_entry *nr;
+	struct wpabuf *nrbuf = NULL;
+	int include_nr = 0;
 
 #ifdef CONFIG_MBO
 	size_t extra_len = 0, mbo_attrs_len = 0, mbo_ie_len;
 	u8 mbo_attrs[16];
-	u8 *nr_pos;
 	u8 *end;
-	struct hostapd_neighbor_entry *nr;
-	struct wpabuf *nrbuf = NULL;
-	if (hapd->conf->mbo_enabled) {
-		dl_list_for_each(nr, &hapd->nr_db, struct hostapd_neighbor_entry,
-				list)
-			/* ID and length */
-			nr_len += wpabuf_len(nr->nr) + 1 + 1;
+
+	if (hapd->conf->mbo_enabled)
+		include_nr = 1;
+#endif
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->conf->smd.enabled)
+		include_nr = 1;
+#endif
+
+	if (include_nr) {
+		if (query_cand_list && query_cand_list_len) {
+			nr_len = wnm_candidate_list_nr_len(
+				hapd, query_cand_list,
+				query_cand_list + query_cand_list_len);
+		} else {
+			dl_list_for_each(nr, &hapd->nr_db,
+					 struct hostapd_neighbor_entry, list)
+				/* ID and length */
+				nr_len += wpabuf_len(nr->nr) + 1 + 1;
+		}
 
 		nrbuf = wpabuf_alloc(nr_len);
 		if (nrbuf == NULL)
 			return -1;
+	}
 
+#ifdef CONFIG_MBO
+	if (hapd->conf->mbo_enabled) {
 		/* MBO element (6 bytes) + MBO attributes (10 bytes) */
 		extra_len = 16;
 	}
@@ -532,9 +623,7 @@ static int ieee802_11_send_bss_trans_mgmt_request(struct hostapd_data *hapd,
 	mgmt = os_zalloc(sizeof(*mgmt) + nr_len);
 #endif
 	if (mgmt == NULL) {
-#ifdef CONFIG_MBO
 		wpabuf_free(nrbuf);
-#endif
 		return -1;
 	}
 
@@ -549,10 +638,8 @@ static int ieee802_11_send_bss_trans_mgmt_request(struct hostapd_data *hapd,
 	mgmt->u.action.category = WLAN_ACTION_WNM;
 	mgmt->u.action.u.bss_tm_req.action = WNM_BSS_TRANS_MGMT_REQ;
 	mgmt->u.action.u.bss_tm_req.dialog_token = dialog_token;
-#ifdef CONFIG_MBO
-	if (hapd->conf->mbo_enabled)
+	if (include_nr)
 		req_mode |= WNM_BSS_TM_REQ_PREF_CAND_LIST_INCLUDED;
-#endif
 	mgmt->u.action.u.bss_tm_req.req_mode = req_mode;
 	mgmt->u.action.u.bss_tm_req.disassoc_timer = host_to_le16(0);
 	mgmt->u.action.u.bss_tm_req.validity_interval = 1;
@@ -566,24 +653,37 @@ static int ieee802_11_send_bss_trans_mgmt_request(struct hostapd_data *hapd,
 		   mgmt->u.action.u.bss_tm_req.req_mode,
 		   le_to_host16(mgmt->u.action.u.bss_tm_req.disassoc_timer),
 		   mgmt->u.action.u.bss_tm_req.validity_interval);
-#ifdef CONFIG_MBO
-	 if (hapd->conf->mbo_enabled) {
-		 dl_list_for_each(nr, &hapd->nr_db, struct hostapd_neighbor_entry,
-				  list) {
-			 wpabuf_put_u8(nrbuf, WLAN_EID_NEIGHBOR_REPORT);
-			/* Length to be filled */
-			 nr_pos = (u8 *)wpabuf_put(nrbuf, 1);
-			 if (hostapd_prepare_neighbor_buf(hapd, nr->bssid,
-							  nrbuf) < 0) {
-				 res = -1;
+	if (include_nr) {
+		if (query_cand_list && query_cand_list_len) {
+			if (wnm_candidate_list_to_nr_buf(
+				    hapd, query_cand_list,
+				    query_cand_list + query_cand_list_len,
+				    nrbuf) < 0)
+				res = -1;
+		} else {
+			dl_list_for_each(nr, &hapd->nr_db,
+					 struct hostapd_neighbor_entry,
+					 list) {
+				wpabuf_put_u8(nrbuf,
+					      WLAN_EID_NEIGHBOR_REPORT);
+				/* Length to be filled */
+				nr_pos = (u8 *) wpabuf_put(nrbuf, 1);
+				if (hostapd_prepare_neighbor_buf(
+					    hapd, nr->bssid, nrbuf) < 0) {
+					res = -1;
+				}
+				/* Fill in the length field */
+				*nr_pos = ((u8 *) wpabuf_put(nrbuf, 0) -
+					   nr_pos - 1);
 			}
-			 /* Fill in the length field */
-			 *nr_pos = ((u8 *)wpabuf_put(nrbuf, 0) - nr_pos - 1);
-		 }
-		 os_memcpy(pos, nrbuf->buf, nr_len);
-		 pos += nr_len;
-		 wpabuf_free(nrbuf);
+		}
+		os_memcpy(pos, nrbuf->buf, nr_len);
+		pos += nr_len;
+		wpabuf_free(nrbuf);
+	}
 
+#ifdef CONFIG_MBO
+	if (hapd->conf->mbo_enabled) {
 		 /* Build and append MBO IE */
 		 mbo_attrs[mbo_attrs_len++] = MBO_ATTR_ID_TRANSITION_REASON;
 		 mbo_attrs[mbo_attrs_len++] = 1;
@@ -676,8 +776,20 @@ static void ieee802_11_rx_bss_trans_mgmt_query(struct hostapd_data *hapd,
 		MAC2STR(addr), reason, hex ? " neighbor=" : "", hex);
 	os_free(hex);
 
-	if (!hostapd_ubus_notify_bss_transition_query(hapd, addr, dialog_token, reason, pos, end - pos))
-		ieee802_11_send_bss_trans_mgmt_request(hapd, addr, dialog_token);
+	if (!hostapd_ubus_notify_bss_transition_query(hapd, addr, dialog_token, reason, pos, end - pos)) {
+		const u8 *query_list = NULL;
+		size_t query_list_len = 0;
+
+#ifdef CONFIG_IEEE80211BN
+		if (hapd->conf->smd.enabled &&
+		    reason == WNM_TRANSITION_REASON_ST_NEIGHBORHOOD_DISCOVERY) {
+			query_list = pos;
+			query_list_len = end - pos;
+		}
+#endif
+		ieee802_11_send_bss_trans_mgmt_request(hapd, addr, dialog_token,
+						       query_list, query_list_len);
+	}
 }
 
 
