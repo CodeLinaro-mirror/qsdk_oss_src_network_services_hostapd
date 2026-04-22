@@ -1515,10 +1515,6 @@ struct hostapd_config {
 #endif /* CONFIG_IEEE80211BE */
 
 	int ieee80211bn;
-#ifdef CONFIG_IEEE80211BN
-	enum oper_chan_width uhr_oper_chwidth;
-	u8 uhr_oper_centr_freq_seg0_idx;
-#endif /* CONFIG_IEEE80211BN */
 
 	/* EHT enable/disable config from CHAN_SWITCH */
 #define CH_SWITCH_EHT_ENABLED BIT(0)
@@ -1606,10 +1602,6 @@ hostapd_set_oper_chwidth(struct hostapd_config *conf,
 static inline u8
 hostapd_get_oper_centr_freq_seg0_idx(struct hostapd_config *conf)
 {
-#ifdef CONFIG_IEEE80211BN
-	if (conf->ieee80211bn)
-		return conf->uhr_oper_centr_freq_seg0_idx;
-#endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_IEEE80211BE
 	if (conf->ieee80211be)
 		return conf->eht_oper_centr_freq_seg0_idx;
@@ -1625,10 +1617,6 @@ static inline void
 hostapd_set_oper_centr_freq_seg0_idx(struct hostapd_config *conf,
 				     u8 oper_centr_freq_seg0_idx)
 {
-#ifdef CONFIG_IEEE80211BN
-	if (conf->ieee80211bn)
-		conf->uhr_oper_centr_freq_seg0_idx = oper_centr_freq_seg0_idx;
-#endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_IEEE80211BE
 	if (conf->ieee80211be)
 		conf->eht_oper_centr_freq_seg0_idx = oper_centr_freq_seg0_idx;
