@@ -2476,6 +2476,18 @@ static int wpa_supplicant_ctrl_iface_status(struct wpa_supplicant *wpa_s,
 		pos += ret;
 	}
 
+	if (wpa_s->multi_ap_ie && wpa_s->multi_ap_profile > 0 &&
+	    wpa_s->current_ssid && wpa_s->current_ssid->multi_ap_backhaul_sta) {
+		ret = os_snprintf(pos, end - pos,
+				  "multi_ap_profile=%d\n"
+				  "multi_ap_primary_vlanid=%d\n",
+				  wpa_s->multi_ap_profile,
+				  wpa_s->multi_ap_primary_vlanid);
+		if (os_snprintf_error(end - pos, ret))
+			return pos - buf;
+		pos += ret;
+	}
+
 #ifdef CONFIG_HS20
 	if (wpa_s->current_bss &&
 	    (hs20 = wpa_bss_get_vendor_ie(wpa_s->current_bss,
