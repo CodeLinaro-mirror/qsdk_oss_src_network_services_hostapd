@@ -150,7 +150,7 @@ static void ieee802_1x_ml_set_sta_authorized(struct hostapd_data *hapd,
 					     bool authorized)
 {
 #ifdef CONFIG_IEEE80211BE
-	unsigned int i;
+	struct hostapd_data *tmp_hapd;
 
 	if (!hostapd_is_multiple_link_mld(hapd))
 		return;
@@ -162,13 +162,11 @@ static void ieee802_1x_ml_set_sta_authorized(struct hostapd_data *hapd,
 	if (authorized && hapd->mld_link_id != sta->mld_assoc_link_id)
 		return;
 
-	for (i = 0; i < hapd->iface->interfaces->count; i++) {
+	for_each_mld_link(tmp_hapd, hapd) {
 		struct sta_info *tmp_sta;
 		struct mld_link_info *link;
-		struct hostapd_data *tmp_hapd =
-			hapd->iface->interfaces->iface[i]->bss[0];
 
-		if (!hostapd_is_ml_partner(hapd, tmp_hapd))
+		if (tmp_hapd == hapd)
 			continue;
 
 #ifdef CONFIG_QCN_EXTN
@@ -180,23 +178,16 @@ static void ieee802_1x_ml_set_sta_authorized(struct hostapd_data *hapd,
 		if (!link->valid)
 			continue;
 
-		for (tmp_sta = tmp_hapd->sta_list; tmp_sta;
-		     tmp_sta = tmp_sta->next) {
-			if (tmp_sta == sta ||
-			    tmp_sta->mld_assoc_link_id !=
-			    sta->mld_assoc_link_id ||
-			    tmp_sta->aid != sta->aid)
-				continue;
+		tmp_sta = ap_get_sta(tmp_hapd, sta->addr);
+		if (!tmp_sta || tmp_sta->mld_assoc_link_id != sta->mld_assoc_link_id ||
+		    tmp_sta->aid != sta->aid)
+			continue;
 
-			if (!ether_addr_equal(
-				    tmp_sta->mld_info.common_info.mld_addr,
-				    sta->mld_info.common_info.mld_addr))
-				continue;
+		if (!ether_addr_equal(tmp_sta->mld_info.common_info.mld_addr,
+				      sta->mld_info.common_info.mld_addr))
+			continue;
 
-			ieee802_1x_set_authorized(tmp_hapd, tmp_sta,
-						  authorized, true);
-			break;
-		}
+		ieee802_1x_set_authorized(tmp_hapd, tmp_sta, authorized, true);
 	}
 #endif /* CONFIG_IEEE80211BE */
 }
