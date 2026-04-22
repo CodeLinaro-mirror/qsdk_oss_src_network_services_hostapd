@@ -3761,10 +3761,7 @@ static void handle_auth(struct hostapd_data *hapd,
 	}
 
 	if (auth_alg != WLAN_AUTH_FT) {
-		osta = ap_sta_get_from_obss(hapd, sa, &ohapd);
-
-		if (osta && hostapd_is_ml_partner(hapd, ohapd))
-			osta = NULL;
+		osta = ap_sta_get_from_obss(hapd, sa, mgmt->sa, &ohapd);
 		/* Delete the station from other BSS immediately if its not MFP or not authorized yet */
 		if (osta && (!(osta->flags & WLAN_STA_MFP) || !ap_sta_is_authorized(osta))) {
 			wpa_printf(MSG_DEBUG, "Delete STA "MACSTR" from driver on %s as STA "
@@ -3775,6 +3772,7 @@ static void handle_auth(struct hostapd_data *hapd,
 			ap_free_sta(ohapd, osta);
 			osta = NULL;
 		}
+
 	}
 
 	sta = ap_get_sta(hapd, sa);
@@ -3909,15 +3907,15 @@ static void handle_auth(struct hostapd_data *hapd,
 	    (!(sta->flags & WLAN_STA_MFP) || !ap_sta_is_authorized(sta)) &&
 	    !(hapd->conf->mesh & MESH_ENABLED) &&
 	    !(sta->added_unassoc) && auth_alg != WLAN_AUTH_PASN) {
-		res = ap_sta_check_link_sta(hapd, sta);
-		if (!res) {
-			if (ap_sta_re_add(hapd, sta, 1, osta) < 0) {
+		res = ap_sta_check_link_sta(hapd, sta, mgmt->sa);
+		if (!res && !osta) {
+			if (ap_sta_re_add(hapd, sta, 1) < 0) {
 				resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
 				goto fail;
 			}
 		}
 #ifdef CONFIG_IEEE80211BE
-		if (res)
+		else
 			sta->unadded_sta = true;
 #endif /* CONFIG_IEEE80211BE */
 	}
@@ -3926,7 +3924,7 @@ static void handle_auth(struct hostapd_data *hapd,
 	    ap_sta_is_authorized(sta) &&
 	    !(sta->added_unassoc) &&
 	    (sta->skip_kernel_delete)) {
-		if (ap_sta_re_add(hapd, sta, 1, NULL) < 0) {
+		if (ap_sta_re_add(hapd, sta, 1) < 0) {
 			resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
 			goto fail;
 		}
@@ -6896,6 +6894,76 @@ static u16 check_rssi_association(struct hostapd_data *hapd,
 	return WLAN_STATUS_SUCCESS;
 }
 
+static int
+handle_assoc_sa_query_timeout_ml_setup(struct hostapd_data *hapd,
+				       struct sta_info *sta,
+				       const struct ieee80211_mgmt *mgmt,
+				       const u8 *pos, int left,
+				       u8 *mld_addr,
+				       bool do_drv_add, int reassoc)
+{
+	struct ieee802_11_elems elems;
+	bool mld_link_sta = false;
+	const u8 *mld_link_addr = NULL;
+	u16 eml_cap = 0;
+
+	if (ap_sta_is_authorized(sta))
+		ap_sta_set_authorized(hapd, sta, 0);
+
+	sta->flags &= ~WLAN_STA_ASSOC;
+	sta->unadded_sta = false;
+	ap_sta_set_sa_query_timeout(hapd, sta, 0);
+
+	if (ieee802_11_parse_elems(pos, left, &elems, 1) == ParseFailed) {
+		wpa_printf(MSG_DEBUG, "handle_assoc: failed to parse IEs");
+		return -1;
+	}
+
+	if (!hostapd_process_ml_assoc_req_addr(hapd, elems.basic_mle,
+					       elems.basic_mle_len, mld_addr)) {
+		u8 link_id = hapd->mld_link_id;
+
+		wpa_printf(MSG_DEBUG, "Allowing reassociation of MLD STA " MACSTR
+			   " after SA Query timeout", MAC2STR(mld_addr));
+		sta->mld_info.mld_sta = true;
+		set_link_id_for_each_partner_link_sta(hapd, sta, link_id);
+		sta->mld_assoc_link_id = link_id;
+		os_memcpy(sta->mld_info.common_info.mld_addr, mld_addr, ETH_ALEN);
+		os_memcpy(sta->mld_info.links[link_id].peer_addr, mgmt->sa, ETH_ALEN);
+		os_memcpy(sta->mld_info.links[link_id].local_addr,
+			  hapd->own_addr, ETH_ALEN);
+		mld_link_sta = sta->mld_assoc_link_id != link_id;
+		mld_link_addr = sta->mld_info.links[link_id].peer_addr;
+		eml_cap = sta->mld_info.common_info.eml_capa;
+	} else {
+		wpa_printf(MSG_DEBUG, "Allowing reassociation of MLD STA as legacy"
+			   " STA " MACSTR " after timed out SA Query procedure",
+			   MAC2STR(mgmt->sa));
+		memset(&sta->mld_info, 0x00, sizeof(sta->mld_info));
+	}
+
+	if (!do_drv_add)
+		return 0;
+
+	if (hostapd_sta_add(hapd, sta->addr, 0, 0,
+			    sta->supported_rates, sta->supported_rates_len,
+			    0, NULL, NULL, NULL, 0, NULL, 0, NULL, 0,
+#ifdef CONFIG_QCN_EXTN
+			    NULL,
+#endif
+			    NULL, sta->flags, 0, 0, 0, 0,
+			    mld_link_addr, mld_link_sta,
+			    eml_cap, reassoc, CONTROL_MIC_PAD_NOT_SET)) {
+		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_NOTICE,
+			       "Could not add STA to kernel driver");
+		return -1;
+	}
+	sta->pending_drv_add = false;
+	sta->added_unassoc = 1;
+	return 0;
+}
+
 static void handle_assoc(struct hostapd_data *hapd,
 			 const struct ieee80211_mgmt *mgmt, size_t len,
 			 int reassoc, int rssi)
@@ -6904,7 +6972,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 	int resp = WLAN_STATUS_SUCCESS;
 	const u8 *pos;
 	int left, i, ubus_resp;
-	struct sta_info *sta;
+	struct sta_info *sta, *tmp_sta;
 	u8 *tmp = NULL;
 	u8 *sa;
 #ifdef CONFIG_HOSTAPD_IF
@@ -6916,6 +6984,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 	int omit_rsnxe = 0;
 	bool set_beacon = false;
 	u8 mld_addr[ETH_ALEN] = {0};
+	struct hostapd_data *assoc_hapd;
 
 	if (len < IEEE80211_HDRLEN + (reassoc ? sizeof(mgmt->u.reassoc_req) :
 				      sizeof(mgmt->u.assoc_req))) {
@@ -6990,21 +7059,16 @@ static void handle_assoc(struct hostapd_data *hapd,
 	 * addresses. In such a case, try to find the station based on the AP
 	 * MLD MAC address.
 	 */
-	if (!sta) {
-		struct hostapd_data *assoc_hapd;
 
-		sta = handle_mlo_translate(hapd, mgmt, len, reassoc,
-					   &assoc_hapd, mld_addr);
-
-		if (sta && sta->sa_query_timed_out) {
-			/* Allow link address to be changed if an SA query
-			 * procedure has expired. */
-			u8 _link = hapd->mld_link_id;
-
-			os_memcpy(sta->mld_info.links[_link].peer_addr,
-				  mgmt->sa, ETH_ALEN);
-		}
-	}
+	/* STA should always be with MLD address, certain legacy sta can roam
+ 	 * back as MLO station with different MLD address, earlier legacy STA address
+ 	 * can now become link address. We need to fetch STA always with MLD address
+ 	 * in case of MLD. Hence fetch and override the old sta object
+ 	 */
+	tmp_sta = handle_mlo_translate(hapd, mgmt, len, reassoc,
+				   &assoc_hapd, mld_addr);
+	if (tmp_sta)
+		sta = tmp_sta;
 
 #endif /* CONFIG_IEEE80211BE */
 
@@ -7182,65 +7246,39 @@ static void handle_assoc(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_MBO */
 	if (sta && sta->auth_alg != WLAN_AUTH_FT) {
-		struct hostapd_data *ohapd, *assoc_hapd;
-		struct sta_info *osta = ap_sta_get_from_obss(hapd, sta->addr, &ohapd);
-		/* If sta with same address is present in another BSS/MLD, handle it */
-		/* TODO: handle sta roaming cases within links of a ML BSS */
-		if (osta && !hostapd_is_ml_partner(hapd, ohapd) &&
-		    (osta->flags & WLAN_STA_MFP) && ap_sta_is_authorized(osta)) {
+		struct hostapd_data *ohapd;
+		struct sta_info *osta;
+
+		osta = ap_sta_get_from_obss(hapd, sta->addr, mgmt->sa, &ohapd);
+		if (!osta) {
+			osta = ap_sta_get_by_link_addr(hapd, mgmt->sa, sta);
+			ohapd = hapd;
+		}
+		if (osta && (osta->flags & WLAN_STA_MFP) && ap_sta_is_authorized(osta)) {
 			wpa_printf(MSG_DEBUG, "Association request received from STA "MACSTR
-			 	  " but sta is already associated in %s",
+				  " but sta is already associated in %s",
 				  MAC2STR(sta->addr), ohapd->conf->iface);
 			/* for an ML STA do SA procedure in Assoc link sta  */
-			if (ap_sta_is_mld(ohapd, osta)) {
-				osta = hostapd_ml_get_assoc_sta(ohapd, osta, &assoc_hapd);
-				ohapd = assoc_hapd;
-			}
 			if (check_sa_query(ohapd, osta, reassoc, pos, left, sta)) {
 				wpa_printf(MSG_DEBUG, "SA query triggered for "MACSTR" on %s",
 					   MAC2STR(osta->addr), ohapd->conf->iface);
 				resp = WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY;
 				goto fail;
 			} else if (osta->sa_query_timed_out) {
-				bool mld_link_sta = false;
-				const u8 *mld_link_addr = NULL;
-				u16 eml_cap = 0;
-				if (ap_sta_is_mld(hapd, sta)) {
-					mld_link_sta = sta->mld_assoc_link_id != hapd->mld_link_id;
-					mld_link_addr = sta->mld_info.links[hapd->mld_link_id].peer_addr;
-					eml_cap = sta->mld_info.common_info.eml_capa;
-					wpa_printf(MSG_DEBUG,"ml sta "MACSTR" mld_assoc_link_id:%d mld_link_id:%d \n",
-						   MAC2STR(sta->addr), sta->mld_assoc_link_id,
-						   hapd->mld_link_id);
-				}
-
-				wpa_printf(MSG_DEBUG, "SA query timedout for "MACSTR" on %s, "
+				wpa_printf(MSG_DEBUG, "SA query timed out for " MACSTR " on %s, "
 					   "delete it", MAC2STR(osta->addr), ohapd->conf->iface);
-				ap_sta_cleanup_all(ohapd, osta);
-				/* Add the cached sta to driver now */
-				sta->flags &= ~(WLAN_STA_ASSOC | WLAN_STA_AUTHORIZED);
-				sta->unadded_sta = false;
-				if (sta->pending_drv_add &&
-				    hostapd_sta_add(hapd, sta->addr, 0, 0,
-						    sta->supported_rates,
-						    sta->supported_rates_len,
-						    0, NULL, NULL, NULL, 0, NULL, 0, NULL, 0,
-#ifdef CONFIG_QCN_EXTN
-						    NULL,
-#endif
-						    NULL, sta->flags, 0, 0, 0, 0,
-						    mld_link_addr, mld_link_sta,
-						    eml_cap, reassoc,
-						    CONTROL_MIC_PAD_NOT_SET)) {
-					hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
-						       HOSTAPD_LEVEL_NOTICE,
-						       "Could not add STA to kernel driver");
+				ap_sta_cleanup_all(ohapd, osta, sta);
+				sta->wpa_sm = NULL;
+
+				if (handle_assoc_sa_query_timeout_ml_setup(
+					    hapd, sta, mgmt, pos, left, mld_addr,
+					    true, reassoc) < 0) {
 					resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
 					goto fail;
 				}
-				sta->pending_drv_add = false;
 			}
 		}
+
 	}
 
 	if (hapd->conf->wpa && check_sa_query(hapd, sta, reassoc, pos, left, sta)) {
@@ -7288,51 +7326,18 @@ static void handle_assoc(struct hostapd_data *hapd,
 	if ((sta->flags & WLAN_STA_MFP) &&
 	     sta->sa_query_timed_out &&
 	     sta->mld_info.mld_sta) {
-		struct ieee802_11_elems elems;
-
+		wpa_printf(MSG_DEBUG, "SA Query timed out for current STA "
+			   MACSTR ", resetting ML info", MAC2STR(sta->addr));
 		wpa_auth_sta_deinit(sta->wpa_sm);
 		sta->wpa_sm = NULL;
 		SET_EACH_PARTNER_STA_OBJ(hapd, sta, wpa_sm, NULL);
 		ap_sta_remove_link_sta(hapd, sta, 0);
 		hostapd_drv_sta_remove(hapd, sta->addr);
-		sta->flags &= ~(WLAN_STA_ASSOC | WLAN_STA_AUTHORIZED);
-		sta->unadded_sta = false;
-		ap_sta_set_sa_query_timeout(hapd, sta, 0);
 
-		if (ieee802_11_parse_elems(pos, left, &elems, 1) == ParseFailed) {
-			wpa_printf(MSG_DEBUG, "FT: Failed to parse elements");
+		if (handle_assoc_sa_query_timeout_ml_setup(
+			    hapd, sta, mgmt, pos, left, mld_addr,
+			    false, reassoc) < 0)
 			goto fail;
-		}
-
-		if (!hostapd_process_ml_assoc_req_addr(hapd, elems.basic_mle,
-						       elems.basic_mle_len,
-						       mld_addr)) {
-			u8 link_id = hapd->mld_link_id;
-
-			wpa_printf(MSG_DEBUG, "Allowing reassocation of MLD STA "
-				   MACSTR " after SA Query time out", MAC2STR(mld_addr));
-			sta->mld_info.mld_sta = true;
-			set_link_id_for_each_partner_link_sta(hapd,
-							      sta,
-							      link_id);
-			sta->mld_assoc_link_id = link_id;
-
-			/*
-			 * Set the MLD address as the station address and the
-			 * station addresses.
-			 */
-			os_memcpy(sta->mld_info.common_info.mld_addr, mld_addr,
-					ETH_ALEN);
-			os_memcpy(sta->mld_info.links[link_id].peer_addr,
-					mgmt->sa, ETH_ALEN);
-			os_memcpy(sta->mld_info.links[link_id].local_addr,
-					hapd->own_addr, ETH_ALEN);
-		} else {
-			wpa_printf(MSG_DEBUG, "Allowing reassocation of MLD STA as legacy"
-				   " STA " MACSTR " after timed out SA Query procedure",
-				   MAC2STR(mgmt->sa));
-			memset(&sta->mld_info, 0x00, sizeof(sta->mld_info));
-		}
 	}
 
 	/* followed by SSID and Supported rates; and HT capabilities if 802.11n

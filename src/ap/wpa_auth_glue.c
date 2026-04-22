@@ -1398,7 +1398,7 @@ static int hostapd_wpa_auth_add_sta_ft(void *ctx, const u8 *sta_addr)
 		wpa_printf(MSG_DEBUG,
 			   "FT: Remove and re-add driver STA entry after successful FT authentication");
 		sta->ft_re_add = true;
-		return ap_sta_re_add(hapd, sta, 0, NULL);
+		return ap_sta_re_add(hapd, sta, 0);
 	}
 
 	return 0;
