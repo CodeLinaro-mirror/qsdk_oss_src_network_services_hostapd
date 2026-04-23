@@ -31,13 +31,15 @@ typedef uint16_t u16;
 
 struct hostapd_data;
 struct sta_info;
+struct ieee80211_mgmt;
 
 /*
  * Frame processing decision returned to RX handlers
  */
 enum hostapd_if_frame_processing_decision {
 	HOSTAPD_IF_FRAME_PROCESSING_CONTINUE = 0,
-	HOSTAPD_IF_FRAME_PROCESSING_WAIT = 1
+	HOSTAPD_IF_FRAME_PROCESSING_WAIT = 1,
+	HOSTAPD_IF_FRAME_PROCESSING_OFFLOAD = 2
 };
 
 /*
@@ -80,6 +82,12 @@ void hostapd_if_notify_disassoc(struct hostapd_data *hapd,
 				struct sta_info *sta,
 				const void *frame,
 				size_t frame_len);
+
+enum hostapd_if_frame_processing_decision
+hostapd_if_notify_action(struct hostapd_data *hapd,
+			 struct sta_info *sta,
+			 const struct ieee80211_mgmt *mgmt,
+			 size_t frame_len);
 
 enum hostapd_if_frame_processing_decision
 hostapd_if_notify_assoc(struct hostapd_data *hapd,
