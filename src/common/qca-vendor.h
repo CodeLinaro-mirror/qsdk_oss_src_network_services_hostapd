@@ -23491,6 +23491,11 @@ enum qca_wlan_vendor_attr_config_esp_param {
  * @QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MBSSID_GRP_SIZE: 8-bit unsigned value.
  * Number of VAPs in the MBSSID group.
  * BSS IDs are expected to be in range [0..group_size-1].
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MBSSID_ENABLED: Flag attribute, set if
+ * the radio has multiple BSSID (MBSSID) enabled. This is required to generate
+ * MAC addresses which adhere to MBSSID rules. This is required when MBSSID
+ * grouping is not available or not configured.
  */
 enum qca_wlan_vendor_attr_mac_config {
 	QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_RADIO_INDEX = 1,
@@ -23500,6 +23505,7 @@ enum qca_wlan_vendor_attr_mac_config {
 	QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_FLAGS,
 	QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MBSSID_GRP_ID,
 	QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MBSSID_GRP_SIZE,
+	QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MBSSID_ENABLED,
 
 	QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MAX =
