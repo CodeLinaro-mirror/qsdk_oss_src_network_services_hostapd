@@ -11207,10 +11207,17 @@ int hostapd_config_read_maclist(const char *fname,
 				struct mac_acl_entry **acl, int *num)
 {
 	FILE *f;
-	char buf[128], *pos;
+	char buf[128], *pos, *mask_pos;
 	int line = 0;
 	u8 addr[ETH_ALEN];
+	u8 mask[ETH_ALEN];
 	int vlan_id;
+	bool has_mask;
+	int mask_idx;
+	const char *mask_start;
+	static const u8 exact_mask[ETH_ALEN] =
+		{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+	char mask_str[18];
 
 	f = fopen(fname, "r");
 	if (!f) {
@@ -11242,8 +11249,7 @@ int hostapd_config_read_maclist(const char *fname,
 		}
 
 		if (hwaddr_aton(pos, addr)) {
-			wpa_printf(MSG_ERROR, "Invalid MAC address '%s' at "
-				   "line %d in '%s'", pos, line, fname);
+			wpa_printf(MSG_ERROR, "Invalid MAC address '%s", pos);
 			fclose(f);
 			return -1;
 		}
@@ -11252,19 +11258,80 @@ int hostapd_config_read_maclist(const char *fname,
 			hostapd_remove_acl_mac(acl, num, addr);
 			continue;
 		}
+
+		/* Initialize mask to exact match by default */
+		os_memcpy(mask, exact_mask, ETH_ALEN);
+		has_mask = false;
 		vlan_id = 0;
+
+		/* Skip past the MAC address */
 		pos = buf;
 		while (*pos != '\0' && *pos != ' ' && *pos != '\t')
 			pos++;
+
+		/* Skip whitespace */
 		while (*pos == ' ' || *pos == '\t')
 			pos++;
-		if (*pos != '\0')
-			vlan_id = atoi(pos);
+
+		/* Check if next token is a mask (contains colons) or VLAN ID (numeric) */
+		if (*pos != '\0') {
+			mask_pos = pos;
+			/* Check if this looks like a MAC address (has colons) */
+			if (os_strchr(mask_pos, ':') != NULL) {
+				/* Try to parse as mask */
+				mask_idx = 0;
+				mask_start = mask_pos;
+				/* Extract mask string */
+				while (*mask_pos != '\0' && *mask_pos != ' ' &&
+				       *mask_pos != '\t' && mask_idx < 17) {
+					mask_str[mask_idx++] = *mask_pos++;
+				}
+				mask_str[mask_idx] = '\0';
+
+				/* Validate that we stopped at a delimiter, not buffer limit */
+				if (mask_idx >= 17 && *mask_pos != '\0' &&
+				    *mask_pos != ' ' && *mask_pos != '\t') {
+					wpa_printf(MSG_ERROR,
+						   "MAC mask too long (exceeds 17 chars) ");
+					fclose(f);
+					return -1;
+				}
+
+				/* Validate mask has correct length for MAC address */
+				if (mask_idx != 17) {
+					wpa_printf(MSG_ERROR,
+						   "MAC mask has incorrect length (%d, expected 17) ",
+						    mask_idx);
+					fclose(f);
+					return -1;
+				}
+				if (hwaddr_aton(mask_str, mask) == 0) {
+					has_mask = true;
+					pos = mask_pos;
+					/* Skip whitespace after mask */
+					while (*pos == ' ' || *pos == '\t')
+						pos++;
+				} else {
+					wpa_printf(MSG_ERROR,
+						   "Invalid MAC mask '%s' (from position '%s')",
+						   mask_str, mask_start);
+					fclose(f);
+					return -1;
+				}
+			}
+			/* Parse VLAN ID if present */
+			if (*pos != '\0')
+				vlan_id = atoi(pos);
+		}
 
 		if (hostapd_add_acl_maclist(acl, num, vlan_id, addr) < 0) {
 			fclose(f);
 			return -1;
 		}
+
+		/* Set the mask for the newly added entry */
+		if (has_mask && *acl)
+			os_memcpy((*acl)[*num - 1].mask, mask, ETH_ALEN);
 	}
 
 	fclose(f);

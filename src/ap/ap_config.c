@@ -1195,17 +1195,88 @@ void hostapd_config_free(struct hostapd_config *conf)
 
 
 /**
- * hostapd_maclist_found - Find a MAC address from a list
+ * hostapd_maclist_found_with_mask - Find a MAC address using mask-aware search
  * @list: MAC address list
  * @num_entries: Number of addresses in the list
  * @addr: Address to search for
  * @vlan_id: Buffer for returning VLAN ID or %NULL if not needed
  * Returns: 1 if address is in the list or 0 if not.
  *
- * Perform a binary search for given MAC address from a pre-sorted list.
+ * Performs linear search with support for MAC address masking.
+ * For each entry, applies the mask and compares:
+ * - Exact match when mask is ff:ff:ff:ff:ff:ff
+ * - Masked match when mask has some bits cleared
  */
-int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
-			  const u8 *addr, struct vlan_description *vlan_id)
+static int hostapd_maclist_found_with_mask(struct mac_acl_entry *list,
+					   int num_entries, const u8 *addr,
+					   struct vlan_description *vlan_id)
+{
+	int i, j;
+	bool match;
+	u8 addr_masked;
+	u8 list_masked;
+	static const u8 exact_mask[ETH_ALEN] =
+		{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+
+	for (i = 0; i < num_entries; i++) {
+		/* Check if this entry uses exact match (all-ones mask) */
+		if (os_memcmp(list[i].mask, exact_mask, ETH_ALEN) == 0) {
+			/* Exact match - compare all bytes */
+			if (os_memcmp(list[i].addr, addr, ETH_ALEN) == 0) {
+				wpa_printf(MSG_DEBUG, "ACL: MATCH FOUND (exact) - " MACSTR,
+					   MAC2STR(addr));
+				if (vlan_id)
+					*vlan_id = list[i].vlan_id;
+				return 1;
+			}
+		} else {
+			/* Masked match - apply mask and compare */
+			match = true;
+			for (j = 0; j < ETH_ALEN; j++) {
+				addr_masked = addr[j] & list[i].mask[j];
+				list_masked = list[i].addr[j] & list[i].mask[j];
+				if (addr_masked != list_masked) {
+					wpa_printf(MSG_DEBUG,
+						   "ACL: Byte %d mismatch: addr=0x%02x & mask=0x%02x = 0x%02x, "
+						   "list=0x%02x & mask=0x%02x = 0x%02x",
+						   j, addr[j], list[i].mask[j], addr_masked,
+						   list[i].addr[j], list[i].mask[j], list_masked);
+					match = false;
+					break;
+				}
+			}
+			if (match) {
+				wpa_printf(MSG_DEBUG, "ACL: MATCH FOUND (masked) - " MACSTR
+					   " matches " MACSTR " with mask " MACSTR,
+					   MAC2STR(addr), MAC2STR(list[i].addr),
+					   MAC2STR(list[i].mask));
+				if (vlan_id)
+					*vlan_id = list[i].vlan_id;
+				return 1;
+			}
+		}
+	}
+
+	wpa_printf(MSG_DEBUG, "ACL: No match found for " MACSTR, MAC2STR(addr));
+	return 0;
+}
+
+
+/**
+ * hostapd_maclist_found_binary - Find a MAC address using binary search
+ * @list: MAC address list (must be sorted)
+ * @num_entries: Number of addresses in the list
+ * @addr: Address to search for
+ * @vlan_id: Buffer for returning VLAN ID or %NULL if not needed
+ * Returns: 1 if address is in the list or 0 if not.
+ *
+ * Performs binary search for exact MAC address match.
+ * This is the original implementation - fast O(log n) search.
+ * Should only be used when all entries have exact masks.
+ */
+static int hostapd_maclist_found_binary(struct mac_acl_entry *list,
+					int num_entries, const u8 *addr,
+					struct vlan_description *vlan_id)
 {
 	int start, end, middle, res;
 
@@ -1220,6 +1291,7 @@ int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
 				*vlan_id = list[middle].vlan_id;
 			return 1;
 		}
+
 		if (res < 0)
 			start = middle + 1;
 		else
@@ -1227,6 +1299,51 @@ int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
 	}
 
 	return 0;
+}
+
+
+/**
+ * hostapd_maclist_found - Find a MAC address from a list
+ * @list: MAC address list
+ * @num_entries: Number of addresses in the list
+ * @addr: Address to search for
+ * @vlan_id: Buffer for returning VLAN ID or %NULL if not needed
+ * Returns: 1 if address is in the list or 0 if not.
+ *
+ * Intelligently selects the optimal search algorithm:
+ * - Binary search O(log n) when all entries have exact masks
+ * - Linear search O(n) when any entry has a custom mask
+ * This provides optimal performance for existing configurations
+ * while supporting the new masking feature.
+ */
+int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
+			  const u8 *addr, struct vlan_description *vlan_id)
+{
+	int i;
+	bool has_masked_entries = false;
+	static const u8 exact_mask[ETH_ALEN] =
+		{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+
+	if (num_entries == 0)
+		return 0;
+
+	/* Check if list contains any masked entries */
+	for (i = 0; i < num_entries; i++) {
+		if (os_memcmp(list[i].mask, exact_mask, ETH_ALEN) != 0) {
+			has_masked_entries = true;
+			wpa_printf(MSG_DEBUG, "ACL: Masked entries detected at index %d", i);
+			break;
+		}
+	}
+
+	/* Delegate to appropriate search algorithm */
+	if (has_masked_entries) {
+		return hostapd_maclist_found_with_mask(list, num_entries, addr,
+						       vlan_id);
+	} else {
+		return hostapd_maclist_found_binary(list, num_entries, addr,
+						    vlan_id);
+	}
 }
 
 
@@ -2084,6 +2201,8 @@ int hostapd_add_acl_maclist(struct mac_acl_entry **acl, int *num,
 
 	*acl = newacl;
 	os_memcpy((*acl)[*num].addr, addr, ETH_ALEN);
+	/* Initialize mask to all-ones (exact match by default) */
+	os_memset((*acl)[*num].mask, 0xff, ETH_ALEN);
 	os_memset(&(*acl)[*num].vlan_id, 0, sizeof((*acl)[*num].vlan_id));
 	(*acl)[*num].vlan_id.untagged = vlan_id;
 	(*acl)[*num].vlan_id.notempty = !!vlan_id;
