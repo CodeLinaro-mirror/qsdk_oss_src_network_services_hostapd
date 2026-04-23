@@ -8289,6 +8289,12 @@ static int handle_action(struct hostapd_data *hapd,
 		sta->last_subtype = WLAN_FC_STYPE_ACTION;
 	}
 
+#ifdef CONFIG_HOSTAPD_IF
+	if (hostapd_if_notify_action(hapd, sta, mgmt, len) ==
+	    HOSTAPD_IF_FRAME_PROCESSING_OFFLOAD)
+		return 1;
+#endif
+
 	switch (mgmt->u.action.category) {
 #ifdef CONFIG_IEEE80211R_AP
 	case WLAN_ACTION_FT:
