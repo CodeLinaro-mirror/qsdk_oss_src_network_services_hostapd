@@ -494,4 +494,6 @@ int qca_nl80211_handle_afc_events(struct i802_bss *bss, u8 *data, size_t len,
 int nl80211_set_muedca_mode(void *priv, int mode, int radio_idx);
 #endif /* CONFIG_QCN_EXTN */
 
+int hostapd_validate_monitor_iface(const char *ifname, int *ifindex);
+
 #endif /* DRIVER_NL80211_H */

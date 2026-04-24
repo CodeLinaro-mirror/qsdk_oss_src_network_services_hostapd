@@ -1647,6 +1647,9 @@ struct hostapd_config {
 
 	/* Set I2R LMR policy to allow LMR response from ISTA */
 	bool i2r_lmr_policy;
+
+	/* Monitor interface name */
+	char monitor_iface_name[IFNAMSIZ + 1];
 };
 
 
