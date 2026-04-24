@@ -69,6 +69,7 @@
 #include "wpa_auth_i.h"
 #include "ttlm.h"
 #include "dscp_policy.h"
+#include "ap/ctrl_iface_ap.h"
 
 #define CIPIE_ELEMENT_ID 0
 #define CIPIE_LENGTH 1
@@ -4398,6 +4399,64 @@ static u16 copy_supp_rates(struct hostapd_data *hapd, struct sta_info *sta,
 	return WLAN_STATUS_SUCCESS;
 }
 
+/**
+ * hostapd_check_assoc_pureg_rates - Validate station supported rates for pure-G BSS
+ * @hapd: Pointer to the hostapd BSS context
+ * @sta: Pointer to the sta_info structure
+ *
+ * The function checks if the @sta supports at least 24 Kbps rate
+ * (this is the minimum 802.11g mode rate).
+ * If the minimum 802.11g mode rate is supported then the function returns true.
+ * Else false.
+ *
+ * Return: true if the station is allowed to associate, false if the
+ *         association must be rejected due to insufficient supported rates.
+ */
+#ifdef CONFIG_QCN_EXTN
+
+#define MIN_PUREG_RATE		24       /* In Kbps unit */
+#define TWICE_MIN_PUREG_RATE	(MIN_PUREG_RATE * 2)
+
+static bool hostapd_check_assoc_pureg_rates(struct hostapd_data *hapd,
+					    struct sta_info *sta)
+{
+	int i;
+	u8 max_rate;
+
+	if (!hapd || !hapd->iconf || !hapd->iface || !hapd->iface->current_mode || !sta)
+		return true;
+
+	if (hapd->iface->current_mode->mode != HOSTAPD_MODE_IEEE80211G ||
+	    !hapd->conf->bss_extn.pureg_bss)
+		return true;
+
+	max_rate = 0;
+	for (i = 0; i < sta->supported_rates_len; i++) {
+		u8 rate;
+
+		rate = sta->supported_rates[i] & IEEE80211_RATE_VAL_MASK;
+		if (rate > max_rate)
+			max_rate = rate;
+	}
+
+	if (max_rate >= TWICE_MIN_PUREG_RATE)
+		return true;
+
+	hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+		       HOSTAPD_LEVEL_INFO,
+		       "Station does not support pureg rates (max=%u.%u Mbps), "
+		       "Reject association.", max_rate / 2, (max_rate & 1) ? 5 : 0);
+
+	return false;
+}
+#else
+static inline bool hostapd_check_assoc_pureg_rates(struct hostapd_data *hapd,
+						   struct sta_info *sta)
+{
+	return true;
+}
+#endif /* CONFIG_QCN_EXTN */
+
 
 #ifdef CONFIG_OWE
 
@@ -7363,6 +7422,12 @@ static void handle_assoc(struct hostapd_data *hapd,
 			       reassoc ? LINK_PARSE_REASSOC : LINK_PARSE_ASSOC);
 	if (resp != WLAN_STATUS_SUCCESS)
 		goto fail;
+
+	if (!hostapd_check_assoc_pureg_rates(hapd, sta)) {
+		resp = WLAN_STATUS_ASSOC_DENIED_RATES;
+		goto fail;
+	}
+
 #ifdef CONFIG_IEEE80211R_AP
 	if (reassoc && sta->auth_alg == WLAN_AUTH_FT)
 		omit_rsnxe = !get_ie(pos, left, WLAN_EID_RSNX);
