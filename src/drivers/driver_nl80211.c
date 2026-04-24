@@ -5560,6 +5560,38 @@ err:
 }
 #endif /* CONFIG_DRIVER_NL80211_QCA */
 
+static void nl80211_set_dynamic_vlan(struct i802_bss *bss, bool dynamic_vlan)
+{
+	struct nl_msg *msg;
+	struct nlattr *params;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	int ret;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Set AP dynamic VLAN %d", dynamic_vlan);
+
+	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR)) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION) ||
+	    !(params = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA)) ||
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_DYNAMIC_VLAN,
+		       !!dynamic_vlan))
+		goto err;
+
+	nla_nest_end(msg, params);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to set AP dynamic VLAN: %d (%s)",
+			   ret, strerror(-ret));
+	return;
+
+err:
+	nlmsg_free(msg);
+}
+
+
 static int nl80211_put_freq_params_device(struct wpa_driver_nl80211_data *drv,
 					  struct nl_msg *msg,
 					  const struct hostapd_freq_params *freq)
@@ -6378,6 +6410,10 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 				NL80211_DRV_LINK_ID_NA);
 		nl80211_set_multicast_to_unicast(bss,
 						 params->multicast_to_unicast);
+
+		if (cmd == NL80211_CMD_NEW_BEACON)
+			nl80211_set_dynamic_vlan(bss, params->dynamic_vlan);
+
 		if (beacon_set && params->freq &&
 		    params->freq->bandwidth != link->bandwidth) {
 			wpa_printf(MSG_DEBUG,

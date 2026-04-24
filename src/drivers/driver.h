@@ -2195,6 +2195,11 @@ struct wpa_driver_ap_params {
 	int pbss;
 
 	/**
+	 * dynamic_vlan - Whether dynamic VLAN is enabled for this AP
+	 */
+	bool dynamic_vlan;
+
+	/**
 	 * multicast_to_unicast - Whether to use multicast_to_unicast
 	 *
 	 * If this is non-zero, the AP is requested to perform multicast to

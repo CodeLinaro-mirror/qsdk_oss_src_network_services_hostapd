@@ -4371,6 +4371,11 @@ enum qca_wlan_vendor_attr_config {
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE = 144,
 
+	/* 8-bit unsigned value to enable/disable dynamic VLAN handling
+	 * for AP mode.
+	 * 1 - Enable, 0 - Disable.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_DYNAMIC_VLAN = 145,
 
 	/* 8-bit unsigned value. Used to specify the HW Radio Index of a wiphy
 	 * device that is being configured. This attribute may be included in

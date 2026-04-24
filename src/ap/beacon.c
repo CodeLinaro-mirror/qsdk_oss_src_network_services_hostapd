@@ -3933,6 +3933,8 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 #endif /* CONFIG_HS20 */
 	params->multicast_to_unicast = hapd->conf->multicast_to_unicast;
 	params->pbss = hapd->conf->pbss;
+	params->dynamic_vlan =
+		hapd->conf->ssid.dynamic_vlan != DYNAMIC_VLAN_DISABLED;
 
 	if (hapd->conf->ftm_responder) {
 		if (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_FTM_RESPONDER) {
