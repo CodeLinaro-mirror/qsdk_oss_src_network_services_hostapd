@@ -373,12 +373,13 @@ void wpas_ucode_event(struct wpa_supplicant *wpa_s, int event, union wpa_event_d
 #ifdef CONFIG_QCN_EXTN
 		ucv_object_add(val, "is_dfs", ucv_boolean_new(is_dfs));
 		ucv_object_add(val, "wpa_state", ucv_string_new(wpa_state));
+		ucv_object_add(val, "mcst", ucv_int64_new(data->ch_switch.mcst));
 #endif
 	}
 
 #ifdef CONFIG_QCN_EXTN
-	wpa_printf(MSG_INFO, "%s: freq = %d is_dfs = %d wpa_state = %s", __func__,
-		data->ch_switch.freq, is_dfs, wpa_state);
+	wpa_printf(MSG_INFO, "%s: freq = %d is_dfs = %d wpa_state = %s mcst = %u", __func__,
+		   data->ch_switch.freq, is_dfs, wpa_state, data->ch_switch.mcst);
 #endif
 	ucv_put(wpa_ucode_call(6));
 	ucv_gc(vm);

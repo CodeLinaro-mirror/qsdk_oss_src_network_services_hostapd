@@ -1224,6 +1224,11 @@ struct hostapd_freq_params {
 	bool skip_cac;
 	/* Flag to indicate if the chan_switch request is coming from rptr_mgr */
 	bool rptr_mgr;
+
+	/**
+	 * mcst - Indicates the on-going channel switch time.
+	 */
+	u32 mcst;
 #endif
 };
 
@@ -3648,6 +3653,9 @@ struct csa_settings {
 	bool beacon_after_cu;
 	unsigned int bss_idx;
 	int power_mode;
+#ifdef CONFIG_QCN_EXTN
+	u32 mcst;
+#endif
 };
 
 /**

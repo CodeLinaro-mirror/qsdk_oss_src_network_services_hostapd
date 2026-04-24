@@ -118,6 +118,7 @@ uc_value_t *uc_wpa_freq_info(uc_vm_t *vm, size_t nargs)
 	int punct_bitmap = ucv_uint64_get(uc_fn_arg(6));
 #ifdef CONFIG_QCN_EXTN
 	bool is_dfs = ucv_boolean_get(uc_fn_arg(7));
+	int mcst = ucv_uint64_get(uc_fn_arg(8));
 #endif
 	int freq_val, center_idx, center_ofs;
 	enum oper_chan_width chanwidth;
@@ -215,6 +216,7 @@ skip_chan_width:
 	ucv_object_add(ret, "oper_chwidth", ucv_int64_new(chanwidth));
 #ifdef CONFIG_QCN_EXTN
 	ucv_object_add(ret, "is_dfs", ucv_boolean_new(is_dfs));
+	ucv_object_add(ret, "mcst", ucv_int64_new(mcst));
 #endif
 
 	if (!sec_channel && freq_val < 5900 && !cf1) {
@@ -278,6 +280,7 @@ skip_chan_width:
 	ucv_object_add(ret, "punct_bitmap", ucv_int64_new(punct_bitmap));
 #ifdef CONFIG_QCN_EXTN
 	ucv_object_add(ret, "is_dfs", ucv_boolean_new(is_dfs));
+	ucv_object_add(ret, "mcst", ucv_int64_new(mcst));
 #endif
 
 	return ret;
