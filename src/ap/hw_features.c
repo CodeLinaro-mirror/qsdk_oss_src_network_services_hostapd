@@ -312,12 +312,21 @@ static int ieee80211n_check_40mhz_2g4(struct hostapd_iface *iface,
 				      struct wpa_scan_results *scan_res)
 {
 	int pri_chan, sec_chan;
+#ifdef CONFIG_QCN_EXTN
+	struct check_40mhz_2g4_extn_args extn_args = {
+		.threshold = iface->conf->conf_extn.obss_snr_threshold,
+	};
+#endif /* CONFIG_QCN_EXTN */
 
 	pri_chan = iface->conf->channel;
 	sec_chan = pri_chan + iface->conf->secondary_channel * 4;
 
 	return check_40mhz_2g4(iface->current_mode, scan_res, pri_chan,
-			       sec_chan);
+			       sec_chan
+#ifdef CONFIG_QCN_EXTN
+			       , &extn_args
+#endif /* CONFIG_QCN_EXTN */
+			       );
 }
 
 

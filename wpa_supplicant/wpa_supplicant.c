@@ -3102,7 +3102,11 @@ static void ibss_mesh_setup_2G_he40(struct hostapd_freq_params *freq,
 
 	pri_chan = freq->channel;
 	sec_chan = pri_chan + freq->sec_channel_offset * 4;
-	res = check_40mhz_2g4(mode, scan_res, pri_chan, sec_chan);
+	res = check_40mhz_2g4(mode, scan_res, pri_chan, sec_chan
+#ifdef CONFIG_QCN_EXTN
+			      , NULL
+#endif /* CONFIG_QCN_EXTN */
+			      );
 	wpa_scan_results_free(scan_res);
 	if (!res)
 		goto HE20;

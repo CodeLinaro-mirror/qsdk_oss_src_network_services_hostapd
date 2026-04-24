@@ -14,6 +14,9 @@
 #include "ieee802_11_defs.h"
 #include "ieee802_11_common.h"
 #include "hw_features_common.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 
 
 struct hostapd_channel_data * hw_get_channel_chan(struct hostapd_hw_modes *mode,
@@ -298,7 +301,11 @@ static int check_20mhz_bss(struct wpa_scan_res *bss, int pri_freq, int start,
 
 int check_40mhz_2g4(struct hostapd_hw_modes *mode,
 		    struct wpa_scan_results *scan_res, int pri_chan,
-		    int sec_chan)
+		    int sec_chan
+#ifdef CONFIG_QCN_EXTN
+		    , const struct check_40mhz_2g4_extn_args *extn_args
+#endif /* CONFIG_QCN_EXTN */
+		    )
 {
 	int pri_freq, sec_freq;
 	int affected_start, affected_end;
@@ -320,6 +327,11 @@ int check_40mhz_2g4(struct hostapd_hw_modes *mode,
 		int pri = bss->freq;
 		int sec = pri;
 		struct ieee802_11_elems elems;
+
+#ifdef CONFIG_QCN_EXTN
+		if (check_40mhz_2g4_bss_snr_below_threshold_extn(bss, extn_args))
+			continue;
+#endif /* CONFIG_QCN_EXTN */
 
 		/* Check for overlapping 20 MHz BSS */
 		if (check_20mhz_bss(bss, pri_freq, affected_start,
