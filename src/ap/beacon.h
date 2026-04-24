@@ -15,6 +15,7 @@ struct ieee80211_mgmt;
 struct probe_resp_params {
 	const struct ieee80211_mgmt *req;
 	bool is_p2p;
+	bool force_bcast_resp_oce_non6ghz;
 
 	/* Generated IEs will be included inside an ML element */
 	struct hostapd_data *mld_ap;
