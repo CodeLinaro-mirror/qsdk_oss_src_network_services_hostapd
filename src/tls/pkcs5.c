@@ -368,7 +368,7 @@ pkcs5_crypto_init_pbes2(struct pkcs5_params *params, const char *passwd)
 		return NULL;
 
 	wpa_hexdump_ascii_key(MSG_DEBUG, "PKCS #5: PBES2 password for PBKDF2",
-			      passwd, os_strlen(passwd));
+			      (const u8 *) passwd, os_strlen(passwd));
 	wpa_hexdump(MSG_DEBUG, "PKCS #5: PBES2 salt for PBKDF2",
 		    params->salt, params->salt_len);
 	wpa_printf(MSG_DEBUG, "PKCS #5: PBES2 PBKDF2 iterations: %u",
