@@ -375,6 +375,19 @@ static inline int hostapd_drv_switch_channel(struct hostapd_data *hapd,
 }
 
 static inline int
+hostapd_drv_update_monitor_channel(struct hostapd_data *hapd, int ifindex,
+				    const struct hostapd_freq_params *freq_params)
+{
+	if (hapd->driver == NULL ||
+	    hapd->driver->update_monitor_channel == NULL ||
+	    hapd->drv_priv == NULL)
+		return -1;
+
+	return hapd->driver->update_monitor_channel(hapd->drv_priv, ifindex,
+						    freq_params);
+}
+
+static inline int
 hostapd_drv_set_6ghz_pwr_mode(struct hostapd_data *hapd,
 			      struct he_6ghz_pwr_mode_settings *settings)
 {

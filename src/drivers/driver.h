@@ -5386,6 +5386,17 @@ struct wpa_driver_ops {
 	int (*switch_channel)(void *priv, struct csa_settings *settings);
 
 	/**
+	 * update_monitor_channel - Set channel for a monitor interface
+	 * using NL80211_CMD_SET_CHANNEL
+	 * @priv: Private driver interface data
+	 * @ifindex: Interface index of the monitor interface
+	 * @freq_params: New channel frequency parameters
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*update_monitor_channel)(void *priv, int ifindex,
+				      const struct hostapd_freq_params *freq_params);
+
+	/**
 	 * set_6ghz_pwr_mode - Set the 6 GHz power mode
 	 * @priv: Private driver interface data
 	 * @@settings: Settings for 6GHz power mode

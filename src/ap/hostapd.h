@@ -2006,5 +2006,7 @@ u16 dfs_filter_punc_bitmap_by_src(struct hostapd_iface *iface,
 void dfs_reset_punc_bitmap_src(struct hostapd_iface *iface,
 			       u16 punct_bitmap);
 int hostapd_setup_monitor_iface(struct hostapd_iface *iface);
+int hostapd_update_monitor_channel(struct hostapd_data *hapd,
+				   const struct hostapd_freq_params *freq_params);
 
 #endif /* HOSTAPD_H */

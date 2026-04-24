@@ -869,6 +869,14 @@ int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+	/*
+	 * Only the first AP interface triggers the monitor update to avoid
+	 * redundant calls.
+	 */
+	if (hapd == hapd->iface->bss[0])
+		if (hostapd_update_monitor_channel(hapd, &data))
+			return -1;
+
 	return hapd->driver->set_freq(hapd->drv_priv, &data);
 }
 
@@ -1398,6 +1406,9 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 	if (hapd->conf->mld_ap)
 		data.link_id = hapd->mld_link_id;
 #endif /* CONFIG_IEEE80211BE */
+
+	if (!radar_background && hostapd_update_monitor_channel(hapd, &data))
+		return -1;
 
 	res = hapd->driver->start_dfs_cac(hapd->drv_priv, &data);
 	if (!res) {
