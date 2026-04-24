@@ -3230,6 +3230,7 @@ fail:
 	BIGNUM *priv = NULL;
 	const EC_GROUP *ec_group;
 	EC_POINT *pub = NULL;
+	int nid;
 
 	nid = crypto_ec_group_2_nid(group);
 	if (nid < 0) {

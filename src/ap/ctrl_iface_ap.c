@@ -302,6 +302,7 @@ static int hostapd_get_sta_phy_mode(struct sta_info *sta,
 }
 
 
+#ifdef CONFIG_CTRL_IFACE_MIB
 static u8 hostapd_htmaxmcs(const u8 *mcs_set)
 {
 	u8 rates[WLAN_SUPP_RATES_MAX];
@@ -342,6 +343,7 @@ static u8 hostapd_vhtmaxmcs(u16 rx_vht_mcs_map, u16 tx_vht_mcs_map)
 
 	return 0;
 }
+#endif /* CONFIG_CTRL_IFACE_MIB */
 
 
 static int hostapd_get_sta_info(struct hostapd_data *hapd,
@@ -670,6 +672,7 @@ void check_and_add_uniibands(band_info_t uniiband)
 	}
 }
 
+#ifdef CONFIG_TAXONOMY
 static int is_wpa_oui(const u8 *ie)
 {
 	if (ie[1] < 4)
@@ -742,6 +745,7 @@ static int print_sta_ies_compact(const u8 *ies, size_t ies_len,
 
 	return len;
 }
+#endif /* CONFIG_TAXONOMY */
 static int hostapd_ctrl_iface_sta_mib(struct hostapd_data *hapd,
 				      struct sta_info *sta,
 				      char *buf, size_t buflen)
@@ -1740,6 +1744,7 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 		len += ret;
 
 		if (mode) {
+#ifdef CONFIG_CTRL_IFACE_MIB
 			u16 rxmap = mode->vht_mcs_set[0] |
 				(mode->vht_mcs_set[1] << 8);
 			u16 txmap = mode->vht_mcs_set[4] |
@@ -1751,6 +1756,7 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 			if (os_snprintf_error(buflen - len, ret))
 				return len;
 			len += ret;
+#endif /* CONFIG_CTRL_IFACE_MIB */
 		}
 	}
 
@@ -1787,6 +1793,7 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 			return len;
 		len += ret;
 
+#ifdef CONFIG_CTRL_IFACE_MIB
 		if (mode && iface->conf->ieee80211n) {
 			ret = os_snprintf(buf + len, buflen - len,
 					"max_mcs=%u\n",
@@ -1795,6 +1802,7 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 				return len;
 			len += ret;
 		}
+#endif /* CONFIG_CTRL_IFACE_MIB */
 	}
 
 	if (mode && mode->rates && mode->num_rates &&
