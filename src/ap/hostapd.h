@@ -1850,4 +1850,42 @@ enum hostapd_bss_category {
 bool hostapd_is_bss_in_category(struct hostapd_data *hapd,
 				enum hostapd_bss_category cat);
 
+/**
+ * dfs_get_subchannel_count() - Get the total subchannel count for a given bandwidth
+ * @bandwidth: Channel width enum value
+ *
+ * Return: Number of 20 MHz subchannels in the given bandwidth, or 0 if invalid.
+ */
+int dfs_get_subchannel_count(int bandwidth);
+
+/**
+ * dfs_get_punc_src_chan() - Resolve channel for puncture update
+ * @iface: Pointer to hostapd interface
+ * @primary_freq: Primary operating frequency in MHz
+ * @bit: 20 MHz subchannel bit position
+ *
+ * Return: Pointer to channel data for the given bit, or %NULL if unavailable.
+ */
+struct hostapd_channel_data *
+dfs_get_punc_subchan(struct hostapd_iface *iface,
+		     int primary_freq, int bit);
+
+/**
+ * hostapd_update_puncture_source() - Update puncture source per 20 MHz
+ * subchannel
+ * @iface: Pointer to hostapd interface
+ * @primary_freq: Primary operating frequency in MHz
+ * @bandwidth: Channel width enum value
+ * @new_punct_bitmap: New puncture bitmap to apply
+ * @source: Puncture source being updated
+ *
+ * Update the per-channel puncture source for the given puncture bitmap.
+ *
+ * Return: 0 on success, -1 on validation failure.
+ */
+int dfs_update_puncture_source(struct hostapd_iface *iface,
+			       int primary_freq, int bandwidth,
+			       u16 new_punct_bitmap,
+			       enum dfs_chan_puncture_source source);
+
 #endif /* HOSTAPD_H */

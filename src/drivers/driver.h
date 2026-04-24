@@ -58,6 +58,18 @@ struct nan_publish_params;
 
 #define HOSTAPD_CHAN_PSD 0x00200000
 
+/**
+ * enum dfs_chan_puncture_source - Source of channel puncturing
+ * @DFS_CHAN_PUNC_NONE: Channel is not punctured
+ * @DFS_CHAN_PUNC_RADAR: Channel is punctured due to radar detection
+ * @DFS_CHAN_PUNC_USER: Channel is punctured due to user request
+ */
+enum dfs_chan_puncture_source {
+	DFS_CHAN_PUNC_NONE,
+	DFS_CHAN_PUNC_RADAR,
+	DFS_CHAN_PUNC_USER,
+};
+
 /* Allowed bandwidth mask */
 enum hostapd_chan_width_attr {
 	HOSTAPD_CHAN_WIDTH_10   = BIT(0),
@@ -424,6 +436,12 @@ struct hostapd_channel_data {
 	 * punct_bitmap - RU puncturing bitmap
 	 */
 	u16 punct_bitmap;
+
+	/**
+	 * puncture_source - Puncture source for this 20 MHz channel
+	 * dfs_chan_puncture_source puncture source state
+	 */
+	enum dfs_chan_puncture_source puncture_source;
 
 	/**
 	 * psd_power - PSD power

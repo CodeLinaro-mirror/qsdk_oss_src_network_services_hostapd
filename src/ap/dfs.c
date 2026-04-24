@@ -62,6 +62,91 @@ static bool dfs_use_radar_background(struct hostapd_iface *iface)
 		iface->conf->enable_background_radar;
 }
 
+int dfs_get_subchannel_count(int bandwidth)
+{
+	switch (bandwidth) {
+	case CHAN_WIDTH_20_NOHT:
+	case CHAN_WIDTH_20:
+		return 1;
+	case CHAN_WIDTH_40:
+		return 2;
+	case CHAN_WIDTH_80:
+	case CHAN_WIDTH_80P80:
+		return 4;
+	case CHAN_WIDTH_160:
+		return 8;
+	case CHAN_WIDTH_320:
+		return 16;
+	default:
+		return 0;
+	}
+}
+
+struct hostapd_channel_data *
+dfs_get_punc_subchan(struct hostapd_iface *iface,
+		     int primary_freq, int bit)
+{
+	if (!iface->current_mode)
+		return NULL;
+
+	return hw_mode_get_channel(iface->current_mode,
+				   primary_freq + bit * 20, NULL);
+}
+
+/**
+ * dfs_update_punc_src_chan() - Update the puncture source into hostapd
+ *				channel_data structure
+ * @chan: Pointer to channel data
+ * @new_punct_bitmap: New puncture bitmap from puncture source
+ * @bit: 20 MHz subchannel bit position
+ * @source: Puncture source to be set
+ *
+ * If the user has already punctured the channel it will be marked as USER,
+ * even if future radar appears on the channel.
+ *
+ * Return: None.
+ */
+static void dfs_update_subchan_punc_src(struct hostapd_channel_data *chan,
+					u16 new_punct_bitmap, int bit,
+					enum dfs_chan_puncture_source source)
+{
+	if (new_punct_bitmap & BIT(bit)) {
+		if (chan->puncture_source != DFS_CHAN_PUNC_USER)
+			chan->puncture_source = source;
+		return;
+	}
+
+	chan->puncture_source = DFS_CHAN_PUNC_NONE;
+}
+
+int dfs_update_puncture_source(struct hostapd_iface *iface,
+			       int primary_freq, int bandwidth,
+			       u16 new_punct_bitmap,
+			       enum dfs_chan_puncture_source source)
+{
+	struct hostapd_channel_data *chan;
+	int bit;
+	int subchannel_count;
+
+	subchannel_count = dfs_get_subchannel_count(bandwidth);
+	if (!subchannel_count) {
+		wpa_printf(MSG_ERROR,
+			   "DFS: puncture source update failed (bw=%d)",
+			   bandwidth);
+		return -1;
+	}
+
+	for (bit = 0; bit < subchannel_count; bit++) {
+		chan = dfs_get_punc_subchan(iface, primary_freq, bit);
+		if (!chan)
+			continue;
+
+		dfs_update_subchan_punc_src(chan, new_punct_bitmap,
+					    bit, source);
+	}
+
+	return 0;
+}
 
 static int dfs_get_used_n_chans(struct hostapd_iface *iface, int *seg1,
 				int chan_width)
@@ -2428,6 +2513,15 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 							      radar_bitmap,
 							      chan_width_device,
 							      cf_device);
+
+	if (iface->conf->use_ru_puncture_dfs) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: Update puncture source for Radar puncture bitmap=0x%04x",
+			   radar_bitmap_oper | iface->radar_bit_pattern);
+		dfs_update_puncture_source(iface, iface->freq, chan_width,
+					   radar_bitmap_oper | iface->radar_bit_pattern,
+					   DFS_CHAN_PUNC_RADAR);
+	}
 
 	iface->radar_detected = true;
 
