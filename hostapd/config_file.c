@@ -4986,6 +4986,30 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   "threshold to %d dBm(runtime value updated)",
 				   val);
 		}
+	} else if (os_strcmp(buf, "rssi_probe_delay_time_window") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 300) {
+			wpa_printf(MSG_ERROR, "Invalid RSSI probe delay time window %d "
+				   "(range: 0 to 300 seconds)", val);
+			return 1;
+		} else {
+			/* Support only per-radio configuration */
+			conf->rssi_probe_delay_time_window = val;
+			wpa_printf(MSG_INFO, "Updated RSSI probe delay time window "
+				   "to %d seconds", val);
+		}
+	} else if (os_strcmp(buf, "rssi_probe_delay_req_count") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 1000) {
+			wpa_printf(MSG_ERROR, "Invalid RSSI probe delay request count %d "
+				   "(range: 0 to 1000)", val);
+			return 1;
+		} else {
+			/* Support only per-radio configuration */
+			conf->rssi_probe_delay_req_count = val;
+			wpa_printf(MSG_INFO, "Updated RSSI probe delay request count "
+				   "to %d", val);
+		}
 	} else if (os_strcmp(buf, "pbss") == 0) {
 		bss->pbss = atoi(pos);
 	} else if (os_strcmp(buf, "transition_disable") == 0) {

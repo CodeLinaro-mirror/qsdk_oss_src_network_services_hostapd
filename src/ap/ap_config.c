@@ -426,6 +426,8 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->rssi_reject_assoc_rssi = 0;
 	conf->rssi_reject_assoc_timeout = 30;
 	conf->rssi_deauth_grace_samples = 10;
+	conf->rssi_probe_delay_time_window = 0;
+	conf->rssi_probe_delay_req_count = 0;
 	bss->rssi_reject_assoc_rssi = 0;
 	bss->rssi_reject_assoc_timeout = 30;
 	bss->rssi_deauth_grace_samples = 10;

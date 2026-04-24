@@ -41,6 +41,7 @@
 
 #define HOSTAPD_TPC_REPORT_IE_LEN			2
 #define HOSTAPD_TPC_REPORT_LINK_MARGIN_UNKNOWN		0
+#define PROBE_DELAY_DEFAULT_MAX_STA			10
 
 #ifdef CONFIG_IEEE80211AX
 #include "robust_av.h"
@@ -1972,6 +1973,99 @@ static bool parse_ml_probe_req(const struct ieee80211_eht_ml *ml, size_t ml_len,
 #endif /* CONFIG_IEEE80211BE */
 
 
+static bool probe_rssi_check_suppression(struct hostapd_data *hapd, const u8 *sa,
+				int ssi_signal)
+{
+	struct hostapd_sta_info *info;
+	struct os_reltime now, diff;
+	int elapsed_sec;
+
+	/*
+	 * Ensure the tracking table has capacity for the probe-delay
+	 * feature even when track_sta_max_num was not explicitly set.
+	 */
+	if (!hapd->iconf->track_sta_max_num)
+		hapd->iconf->track_sta_max_num = PROBE_DELAY_DEFAULT_MAX_STA;
+
+	wpa_printf(MSG_DEBUG,
+		   "Probe delay evaluating " MACSTR
+		   ": signal=%d thresh=%d W=%d s N=%d",
+		   MAC2STR(sa), ssi_signal,
+		   hapd->iconf->rssi_ignore_probe_request,
+		   hapd->iconf->rssi_probe_delay_time_window,
+		   hapd->iconf->rssi_probe_delay_req_count);
+
+	if (ap_get_sta(hapd, sa)) {
+		info = sta_track_get(hapd->iface, sa);
+		wpa_printf(MSG_DEBUG,
+			   "Probe delay: STA already associated, allowing");
+		if (info) {
+			info->probe_first_low_rssi_seen.sec = 0;
+			info->probe_first_low_rssi_seen.usec = 0;
+			info->probe_delay_count = 0;
+		}
+		return false;
+	}
+
+	/*
+	 * sta_track_add() is called here (not in handle_probe_req()) so
+	 * that suppressed probes are still recorded in the tracking list.
+	 */
+	sta_track_add(hapd->iface, sa, ssi_signal);
+
+	info = sta_track_get(hapd->iface, sa);
+	if (!info)
+		return false;
+
+	os_get_reltime(&now);
+
+	if (info->probe_first_low_rssi_seen.sec == 0 &&
+	    info->probe_first_low_rssi_seen.usec == 0) {
+		info->probe_first_low_rssi_seen = now;
+		info->probe_delay_count = 1;
+		wpa_printf(MSG_DEBUG,
+			   "Probe delay: suppressing probe from "
+			   MACSTR " (new entry, count=1)", MAC2STR(sa));
+		return true;
+	}
+
+	os_reltime_sub(&now, &info->probe_first_low_rssi_seen, &diff);
+	elapsed_sec = (int)diff.sec;
+
+	if (elapsed_sec > hapd->iconf->rssi_probe_delay_time_window) {
+		info->probe_first_low_rssi_seen = now;
+		info->probe_delay_count = 1;
+		wpa_printf(MSG_DEBUG,
+			   "Probe delay: suppressing probe from " MACSTR
+			   " (window expired, elapsed=%d s > W=%d s, reset count=1)",
+			   MAC2STR(sa), elapsed_sec,
+			   hapd->iconf->rssi_probe_delay_time_window);
+		return true;
+	}
+
+	info->probe_delay_count++;
+
+	if (info->probe_delay_count > hapd->iconf->rssi_probe_delay_req_count) {
+		wpa_printf(MSG_DEBUG,
+			   "Probe delay: allowing probe from " MACSTR
+			   " (count=%d > N=%d, elapsed=%d s <= W=%d s)",
+			   MAC2STR(sa), info->probe_delay_count,
+			   hapd->iconf->rssi_probe_delay_req_count,
+			   elapsed_sec,
+			   hapd->iconf->rssi_probe_delay_time_window);
+		return false;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "Probe delay: suppressing probe from " MACSTR
+		   " (count=%d <= N=%d, elapsed=%d s <= W=%d s)",
+		   MAC2STR(sa), info->probe_delay_count,
+		   hapd->iconf->rssi_probe_delay_req_count,
+		   elapsed_sec,
+		   hapd->iconf->rssi_probe_delay_time_window);
+	return true;
+}
+
 void handle_probe_req(struct hostapd_data *hapd,
 		      const struct ieee80211_mgmt *mgmt, size_t len,
 		      const struct hostapd_frame_info *fi)
@@ -2013,8 +2107,15 @@ void handle_probe_req(struct hostapd_data *hapd,
 #endif
 
 	if (hapd->iconf->rssi_ignore_probe_request && ssi_signal &&
-	    ssi_signal < hapd->iconf->rssi_ignore_probe_request)
-		return;
+	    ssi_signal < hapd->iconf->rssi_ignore_probe_request) {
+		if ((hapd->iconf->rssi_probe_delay_time_window) &&
+		    (hapd->iconf->rssi_probe_delay_req_count)) {
+			if (probe_rssi_check_suppression(hapd, mgmt->sa, ssi_signal))
+				return;
+		} else {
+			return;
+		}
+	}
 
 	if (len < IEEE80211_HDRLEN)
 		return;

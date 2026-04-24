@@ -2725,6 +2725,20 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+	}
+	else if (os_strcasecmp(cmd, "rssi_probe_delay_time_window") == 0) {
+		res = os_snprintf(buf, buflen, "rssi_probe_delay_time_window= %d\n",
+				  hapd->iconf->rssi_probe_delay_time_window);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	}
+	else if (os_strcasecmp(cmd, "rssi_probe_delay_req_count") == 0) {
+		res = os_snprintf(buf, buflen, "rssi_probe_delay_req_count= %d\n",
+				  hapd->iconf->rssi_probe_delay_req_count);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
 #ifdef CONFIG_QCN_EXTN
 	} else {
 		res = hostapd_ctrl_iface_get_extn(hapd, cmd, buf, buflen);
