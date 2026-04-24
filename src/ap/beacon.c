@@ -1799,6 +1799,75 @@ void sta_track_expire(struct hostapd_iface *iface, int force)
 }
 
 
+#ifdef CONFIG_MBO
+static bool oce_probe_req_is_suppressed(struct hostapd_data *hapd,
+					const u8 *mbo, size_t mbo_len)
+{
+	const u8 *pos;
+	size_t len;
+
+	if (!mbo || mbo_len < 4)
+		return false;
+
+	/* Skip WFA OUI (3) + OUI type (1) */
+	pos = mbo + 4;
+	len = mbo_len - 4;
+
+	while (len >= 2) {
+		u8 attr_id = pos[0];
+		u8 attr_len = pos[1];
+		const u8 *attr;
+
+		pos += 2;
+		len -= 2;
+
+		if (attr_len > len) {
+			wpa_printf(MSG_DEBUG,
+				   "OCE: malformed Probe Suppression attribute: attr_len=%u > remaining len=%zu",
+				   attr_len, len);
+			break;
+		}
+
+		attr = pos;
+
+		if (attr_id == OCE_ATTR_ID_PROBE_SUPPRESSION_BSSIDS) {
+			size_t i;
+
+			for (i = 0; i + ETH_ALEN <= attr_len; i += ETH_ALEN) {
+				const u8 *bssid = attr + i;
+
+				/* Wildcard */
+				if (is_broadcast_ether_addr(bssid))
+					return true;
+
+				if (os_memcmp(bssid, hapd->own_addr, ETH_ALEN) == 0)
+					return true;
+			}
+		} else if (attr_id == OCE_ATTR_ID_PROBE_SUPPRESSION_SSIDS) {
+			size_t i;
+			u32 ap_short_ssid = hapd->conf->ssid.short_ssid;
+
+			for (i = 0; i + sizeof(u32) <= attr_len; i += sizeof(u32)) {
+				u32 short_ssid = WPA_GET_LE32(attr + i);
+
+				/* Wildcard */
+				if (short_ssid == 0xffffffff)
+					return true;
+
+				if (short_ssid == ap_short_ssid)
+					return true;
+			}
+		}
+
+		pos += attr_len;
+		len -= attr_len;
+	}
+
+	return false;
+}
+#endif /* CONFIG_MBO */
+
+
 static struct hostapd_sta_info * sta_track_get(struct hostapd_iface *iface,
 					       const u8 *addr)
 {
@@ -2458,6 +2527,15 @@ void handle_probe_req(struct hostapd_data *hapd,
 	params.is_p2p = !!elems.p2p;
 	params.known_bss = elems.mbssid_known_bss;
 	params.known_bss_len = elems.mbssid_known_bss_len;
+
+#ifdef CONFIG_MBO
+	if ((hapd->conf->oce & OCE_AP) &&
+	    is_broadcast_ether_addr(mgmt->da) &&
+	    ieee80211_is_oce_capable(elems.mbo, elems.mbo_len)) {
+		if (oce_probe_req_is_suppressed(hapd, elems.mbo, elems.mbo_len))
+			return;
+	}
+#endif /* CONFIG_MBO */
 
 	hostapd_gen_probe_resp(hapd, &params);
 
