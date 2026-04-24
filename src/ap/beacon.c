@@ -1569,8 +1569,12 @@ static void hostapd_gen_probe_resp(struct hostapd_data *hapd,
 	 * Std 802.11ax-2021, 26.17.2.3.2. Broadcast address is also used for
 	 * the Probe Response frame template for the unsolicited (i.e., not as
 	 * a response to a specific request) case. */
-	if (params->req && (!is_6ghz_op_class(hapd->iconf->op_class) ||
-			    hapd_probed->conf->ignore_broadcast_ssid))
+	/* Wi-Fi Optimized Connectivity Specification v2.0, Section 3.6:
+	 * use broadcast Probe Response for OCE-capable STAs on non-6 GHz. */
+	if (params->req && params->force_bcast_resp_oce_non6ghz)
+		os_memset(params->resp->da, 0xff, ETH_ALEN);
+	else if (params->req && (!is_6ghz_op_class(hapd->iconf->op_class) ||
+				 hapd_probed->conf->ignore_broadcast_ssid))
 		os_memcpy(params->resp->da, params->req->sa, ETH_ALEN);
 	else
 		os_memset(params->resp->da, 0xff, ETH_ALEN);
@@ -2534,6 +2538,11 @@ void handle_probe_req(struct hostapd_data *hapd,
 	    ieee80211_is_oce_capable(elems.mbo, elems.mbo_len)) {
 		if (oce_probe_req_is_suppressed(hapd, elems.mbo, elems.mbo_len))
 			return;
+
+		/* Wi-Fi Optimized Connectivity Specification v2.0, Section 3.6:
+		 * respond with a broadcast Probe Response on non-6 GHz bands. */
+		if (!is_6ghz_op_class(hapd->iconf->op_class))
+			params.force_bcast_resp_oce_non6ghz = true;
 	}
 #endif /* CONFIG_MBO */
 
