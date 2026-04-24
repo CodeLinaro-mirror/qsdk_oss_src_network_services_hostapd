@@ -330,6 +330,15 @@ static int dfs_find_channel(struct hostapd_iface *iface,
 	for (i = 0; i < mode->num_channels; i++) {
 		chan = &mode->channels[i];
 
+#ifdef CONFIG_QCN_EXTN
+		if (!chan_pri_allowed_extn(chan)) {
+			wpa_printf(MSG_DEBUG,
+				   "DFS: Skipping channel %d (%d) not in primary chan list",
+				   chan->freq, chan->chan);
+			continue;
+		}
+#endif
+
 		if (!chan_in_current_hw_info(iface->current_hw_info, chan)) {
 			wpa_printf(MSG_DEBUG,
 				   "DFS: channel %d (%d) is not under current hardware index",
