@@ -19,6 +19,9 @@
 #include "ieee802_11.h"
 #include "hw_features.h"
 #include "ap_drv_ops.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 
 
 u8 * hostapd_eid_ht_capabilities(struct hostapd_data *hapd, u8 *eid)
@@ -528,8 +531,18 @@ static void update_sta_ht(struct hostapd_data *hapd, struct sta_info *sta)
 			   hapd->iface->num_sta_ht_20mhz);
 	}
 
-	if (ht_capab & HT_CAP_INFO_40MHZ_INTOLERANT)
+	if (ht_capab & HT_CAP_INFO_40MHZ_INTOLERANT) {
+#ifdef CONFIG_QCN_EXTN
+		/*
+		 * Skip ht40_intolerant_add() for stations whose assoc frame
+		 * SNR is below obss_rx_snr_threshold. Such stations are too
+		 * weak/distant to reliably cause 40 MHz interference and
+		 * should not force the AP to fall back to 20 MHz operation.
+		 */
+		if (!hostapd_ht40_intolerant_snr_below_threshold_extn(hapd, sta))
+#endif /* CONFIG_QCN_EXTN */
 		ht40_intolerant_add(hapd->iface, sta);
+	}
 }
 
 
