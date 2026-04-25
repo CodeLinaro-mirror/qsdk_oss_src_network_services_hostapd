@@ -1459,6 +1459,11 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 #endif
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_handle_csa_target_unavailable_extn(hapd, freq, finished))
+		return;
+#endif /* CONFIG_QCN_EXTN */
+
 	/* Check if any of configured channels require DFS */
 	is_dfs0 = hostapd_is_dfs_required(hapd->iface);
 	hapd->iface->freq = freq;
