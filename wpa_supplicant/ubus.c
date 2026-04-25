@@ -13,6 +13,8 @@
 #include "utils/wpabuf.h"
 #include "common/ieee802_11_defs.h"
 #include "wpa_supplicant_i.h"
+#include "driver_i.h"
+#include "bss.h"
 #include "wps_supplicant.h"
 #include "ubus.h"
 
@@ -79,6 +81,163 @@ static void wpas_ubus_ref_dec(void)
 	uloop_fd_delete(&ctx->sock);
 	ubus_free(ctx);
 	ctx = NULL;
+}
+
+enum {
+	HOSTAPD_PHY_AP_STATUS_RUNNING,
+	__HOSTAPD_PHY_AP_STATUS_MAX,
+};
+
+static const struct blobmsg_policy hostapd_phy_ap_status_policy[] = {
+	[HOSTAPD_PHY_AP_STATUS_RUNNING] = { "running", BLOBMSG_TYPE_BOOL },
+};
+
+struct wpas_hostapd_phy_ap_status {
+	bool valid;
+	bool running;
+};
+
+static void
+wpas_hostapd_phy_ap_status_cb(struct ubus_request *req, int type,
+			      struct blob_attr *msg)
+{
+	struct wpas_hostapd_phy_ap_status *status = req->priv;
+	struct blob_attr *tb[__HOSTAPD_PHY_AP_STATUS_MAX];
+
+	if (!status)
+		return;
+
+	status->valid = false;
+	status->running = false;
+
+	if (!msg)
+		return;
+
+	blobmsg_parse(hostapd_phy_ap_status_policy,
+		      __HOSTAPD_PHY_AP_STATUS_MAX, tb, blob_data(msg),
+		      blob_len(msg));
+
+	if (tb[HOSTAPD_PHY_AP_STATUS_RUNNING])
+		status->running =
+			blobmsg_get_bool(tb[HOSTAPD_PHY_AP_STATUS_RUNNING]);
+
+	status->valid = true;
+}
+
+static int
+wpas_ubus_get_phy_radio(struct wpa_supplicant *wpa_s, const char **phy,
+			int *radio)
+{
+	int freq = 0;
+
+	if (!wpa_s || !phy || !radio)
+		return -1;
+
+	*phy = wpa_driver_get_radio_name(wpa_s);
+	if ((!*phy || !(*phy)[0]) && wpa_s->radio && wpa_s->radio->name[0])
+		*phy = wpa_s->radio->name;
+	if (!*phy || !(*phy)[0])
+		return -1;
+
+	if (wpa_s->current_ssid && wpa_s->current_ssid->frequency > 0)
+		freq = wpa_s->current_ssid->frequency;
+	if (!freq && wpa_s->assoc_freq > 0)
+		freq = wpa_s->assoc_freq;
+
+	if (freq > 0) {
+		*radio = wpa_get_hw_idx_by_freq(wpa_s, freq);
+		if (*radio >= 0)
+			return 0;
+	}
+
+	if (wpa_s->num_multi_hws <= 1) {
+		*radio = 0;
+		return 0;
+	}
+
+	return -1;
+}
+
+int wpas_ubus_has_hostapd_iface_same_radio(struct wpa_supplicant *wpa_s)
+{
+	struct wpas_hostapd_phy_ap_status status;
+	const char *phy = NULL;
+	bool temporary_ctx = false;
+	uint32_t id;
+	int radio;
+	int ret;
+
+	if (!ctx)
+		temporary_ctx = true;
+
+	if (!wpas_ubus_init()) {
+		wpa_printf(MSG_DEBUG,
+			   "ubus: failed to connect while checking hostapd AP presence");
+		return -1;
+	}
+
+	ret = wpas_ubus_get_phy_radio(wpa_s, &phy, &radio);
+	if (ret < 0) {
+		wpa_printf(MSG_DEBUG,
+			   "ubus: could not resolve phy/radio for %s",
+			   wpa_s ? wpa_s->ifname : "unknown");
+		ret = -1;
+		goto out;
+	}
+
+	ret = ubus_lookup_id(ctx, "hostapd", &id);
+	if (ret == UBUS_STATUS_NOT_FOUND) {
+		wpa_printf(MSG_DEBUG,
+			   "ubus: hostapd root object not present for phy %s radio %d",
+			   phy, radio);
+		ret = 0;
+		goto out;
+	}
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "ubus: failed to look up hostapd root object for phy %s radio %d (ret=%d)",
+			   phy, radio, ret);
+		ret = -1;
+		goto out;
+	}
+
+	os_memset(&status, 0, sizeof(status));
+	blob_buf_init(&b, 0);
+	blobmsg_add_string(&b, "phy", phy);
+	blobmsg_add_u32(&b, "radio", radio);
+
+	ret = ubus_invoke(ctx, id, "phy_ap_status", b.head,
+			  wpas_hostapd_phy_ap_status_cb, &status, 3000);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "ubus: phy_ap_status failed for phy %s radio %d (ret=%d)",
+			   phy, radio, ret);
+		ret = -1;
+		goto out;
+	}
+
+	if (!status.valid) {
+		wpa_printf(MSG_DEBUG,
+			   "ubus: phy_ap_status returned no data for phy %s radio %d",
+			   phy, radio);
+		ret = -1;
+		goto out;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "ubus: phy %s radio %d hostapd AP running=%d",
+		   phy, radio, status.running);
+
+	ret = status.running ? 1 : 0;
+
+out:
+	if (temporary_ctx && !ctx_ref && ctx) {
+		uloop_fd_delete(&ctx->sock);
+		ubus_free(ctx);
+		ctx = NULL;
+	}
+
+	return ret;
 }
 
 static int
