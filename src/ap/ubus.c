@@ -677,6 +677,93 @@ static void switch_chan_fallback_cb(void *eloop_data, void *user_ctx)
 	hostapd_switch_channel_fallback(iface, freq_params);
 }
 
+int hostapd_ubus_mesh_switch_channel(struct hostapd_iface *iface,
+				     struct csa_settings *settings)
+{
+	struct hostapd_data *hapd;
+	const char *phy;
+	uint32_t id;
+	int ret;
+
+	if (!ctx || !iface || !settings || !iface->bss || iface->num_bss == 0)
+		return 0;
+
+	hapd = iface->bss[0];
+	phy = hostapd_drv_get_radio_name(hapd);
+	if (!phy || !phy[0]) {
+		wpa_printf(MSG_INFO,
+			   "%s: unable to determine radio name for %s",
+			   __func__, hapd->conf->iface);
+		return -1;
+	}
+
+	ret = ubus_lookup_id(ctx, "wpa_supplicant", &id);
+	if (ret == UBUS_STATUS_NOT_FOUND) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: wpa_supplicant not found, no mesh interface present on %s",
+			   __func__, phy);
+		return 0;
+	}
+	if (ret) {
+		wpa_printf(MSG_INFO,
+			   "%s: failed to find wpa_supplicant ubus object for %s (ret=%d)",
+			   __func__, phy, ret);
+		return -1;
+	}
+
+	blob_buf_init(&b, 0);
+	blobmsg_add_string(&b, "phy", phy);
+	if (iface->current_hw_info)
+		blobmsg_add_u32(&b, "radio", iface->current_hw_info->hw_idx);
+	blobmsg_add_u32(&b, "frequency", settings->freq_params.freq);
+	blobmsg_add_u32(&b, "csa_count", settings->cs_count);
+	blobmsg_add_u32(&b, "ap_beacon_int", iface->conf->beacon_int);
+	blobmsg_add_u8(&b, "block_tx", !!settings->block_tx);
+	blobmsg_add_u32(&b, "bandwidth", settings->freq_params.bandwidth);
+	blobmsg_add_u32(&b, "sec_chan_offset",
+			settings->freq_params.sec_channel_offset);
+	blobmsg_add_u8(&b, "ht", !!settings->freq_params.ht_enabled);
+	blobmsg_add_u8(&b, "vht", !!settings->freq_params.vht_enabled);
+	blobmsg_add_u8(&b, "he", !!settings->freq_params.he_enabled);
+	blobmsg_add_u8(&b, "eht", !!settings->freq_params.eht_enabled);
+	blobmsg_add_u8(&b, "uhr", !!settings->freq_params.uhr_enabled);
+
+	if (settings->freq_params.center_freq1)
+		blobmsg_add_u32(&b, "center_freq1",
+				settings->freq_params.center_freq1);
+	if (settings->freq_params.center_freq2)
+		blobmsg_add_u32(&b, "center_freq2",
+				settings->freq_params.center_freq2);
+	if (settings->freq_params.punct_bitmap)
+		blobmsg_add_u32(&b, "punct_bitmap",
+				settings->freq_params.punct_bitmap);
+	if (settings->power_mode >= 0)
+		blobmsg_add_u32(&b, "power_mode", settings->power_mode);
+	if (settings->freq_params.bandwidth_device)
+		blobmsg_add_u32(&b, "bandwidth_device",
+				settings->freq_params.bandwidth_device);
+	if (settings->freq_params.center_freq_device)
+		blobmsg_add_u32(&b, "center_freq_device",
+				settings->freq_params.center_freq_device);
+
+	ret = ubus_invoke(ctx, id, "mesh_switch_chan", b.head,
+			  NULL, NULL, 500);
+	if (ret == UBUS_STATUS_NOT_FOUND) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: mesh_switch_chan method not found, no mesh interface on %s",
+			   __func__, phy);
+		return 0;
+	}
+	if (ret) {
+		wpa_printf(MSG_INFO,
+			   "%s: mesh_switch_chan failed for %s (ret=%d)",
+			   __func__, phy, ret);
+		return -1;
+	}
+
+	return 0;
+}
+
 #ifdef NEED_AP_MLME
 static int
 hostapd_switch_chan(struct ubus_context *ctx, struct ubus_object *obj,
@@ -778,6 +865,9 @@ hostapd_switch_chan(struct ubus_context *ctx, struct ubus_object *obj,
 				hapd->iconf->he_6ghz_reg_pwr_type,
 				iconf->bandwidth_device,
 				iconf->center_freq_device);
+
+	/* Trigger mesh CSA before AP channel switch if mesh VAP present */
+	hostapd_ubus_mesh_switch_channel(hapd->iface, &css);
 
 	for (i = 0; i < hapd->iface->num_bss; i++) {
 		struct hostapd_data *bss = hapd->iface->bss[i];

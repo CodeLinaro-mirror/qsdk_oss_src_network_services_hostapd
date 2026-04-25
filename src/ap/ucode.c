@@ -880,6 +880,7 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 	struct csa_settings csa = {};
 	uint64_t intval;
 	int ret = 0;
+	bool mesh_origin = false;
 #ifdef CONFIG_QCN_EXTN
 	bool is_dfs = false;
 	char *wpa_state = NULL;
@@ -933,6 +934,12 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 		csa.freq_params.punct_bitmap = intval;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "power_mode", NULL))) && !errno)
 		csa.power_mode = intval;
+
+	mesh_origin = ucv_boolean_get(ucv_object_get(info, "mesh_origin", NULL));
+	if (!mesh_origin) {
+		hostapd_ubus_mesh_switch_channel(iface, &csa);
+	}
+
 #ifdef CONFIG_QCN_EXTN
 	if ((intval = ucv_int64_get(ucv_object_get(info, "mcst", NULL))) && !errno)
 		csa.mcst = intval;

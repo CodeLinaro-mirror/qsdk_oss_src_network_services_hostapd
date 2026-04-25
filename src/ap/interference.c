@@ -996,6 +996,9 @@ do_csa:
 		}
 	}
 
+	/* Trigger mesh CSA before AP channel switch if mesh VAP present */
+	hostapd_ubus_mesh_switch_channel(iface, &settings);
+
 	for (i = 0; i < iface->num_bss; i++) {
 		/* Save CHAN_SWITCH VHT and HE config */
 		hostapd_chan_switch_config(iface->bss[i],
@@ -1677,6 +1680,10 @@ int hostapd_intf_afc_received(struct hostapd_iface *iface)
 	}
 
 	set_csa_param(&settings, chan_data, iface, new_chan_width, new_centre_freq);
+
+	/* Trigger mesh CSA before AP channel switch if mesh VAP present */
+	hostapd_ubus_mesh_switch_channel(iface, &settings);
+
 	for (i = 0; i < iface->num_bss; i++) {
 		/* Save CHAN_SWITCH VHT and HE config */
 		hostapd_chan_switch_config(iface->bss[i], &settings.freq_params);

@@ -23,6 +23,7 @@
 #include "beacon.h"
 #include "eloop.h"
 #include "ieee802_11.h"
+#include "ubus.h"
 #ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
 #include "../../qcn_extns/dfs_extn.h"
@@ -1890,6 +1891,11 @@ int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 		return err;
 	}
 
+	/* If mesh VAP present, trigger mesh CSA prior to AP channel switch.
+	 * Constraint: CSA beacon must be transmitted within ~550 ms of
+	 * radar detection. Cannot wait for mesh TBTT (1000 TU). */
+	hostapd_ubus_mesh_switch_channel(iface, &csa_settings);
+
 	if (hostapd_check_reenable_bss(iface)) {
 		num_err = hostapd_switch_pending_bss(iface, &csa_settings);
 	} else {
@@ -2371,6 +2377,9 @@ static int hostapd_dfs_testmode_set_beacon_csa(struct hostapd_iface *iface)
 		return -1;
 	}
 
+	/* Trigger mesh CSA before AP channel switch if mesh VAP present */
+	hostapd_ubus_mesh_switch_channel(iface, &csa_settings);
+
 	for (int i = 0; i < iface->num_bss; i++) {
 		err = hostapd_switch_channel(iface->bss[i], &csa_settings);
 		if (err) {
@@ -2452,6 +2461,9 @@ static void hostapd_deferred_csa_dispatch(struct hostapd_iface *iface)
 
 	if (!iface->num_bss || !iface->bss)
 		return;
+
+	/* Trigger mesh CSA before AP channel switch if mesh VAP present */
+	hostapd_ubus_mesh_switch_channel(iface, &iface->csa_settings);
 
 	for (i = 0; i < iface->num_bss; i++) {
 		hostapd_chan_switch_config(iface->bss[i], freq_params);

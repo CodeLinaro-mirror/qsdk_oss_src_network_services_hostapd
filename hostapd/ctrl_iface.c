@@ -67,6 +67,7 @@
 #include "ap/rrm.h"
 #include "ap/dpp_hostapd.h"
 #include "ap/dfs.h"
+#include "ap/ubus.h"
 #include "ap/nan_usd_ap.h"
 #include "wps/wps_defs.h"
 #include "wps/wps.h"
@@ -4958,6 +4959,9 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 
 	if (iface->cac_started)
 		return hostapd_abort_cac_for_channel_switch(iface, &settings);
+
+	/* Trigger mesh CSA before AP channel switch if mesh VAP present */
+	hostapd_ubus_mesh_switch_channel(iface, &settings);
 
 	if (iface->conf->disable_csa_dfs == 1) {
 		wpa_printf(MSG_DEBUG, "chanswitch interface %s : cancel radar handling timer",
