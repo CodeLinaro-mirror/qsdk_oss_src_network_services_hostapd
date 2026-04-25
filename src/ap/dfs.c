@@ -2488,9 +2488,29 @@ bool hostapd_is_cac_required(struct hostapd_iface *iface)
 	return !res;
 }
 
+static bool dfs_is_subchan_punctured(int chan_freq, u16 punct_bitmap,
+				     int center_freq, int half_width)
+{
+	int start_freq;
+	int chan_bit_pos;
+
+	if (!punct_bitmap)
+		return false;
+
+	start_freq = center_freq - half_width;
+	chan_bit_pos = (chan_freq - start_freq) / 20;
+	if (chan_bit_pos < 0 || chan_bit_pos >= 16)
+		return false;
+
+	return !!(punct_bitmap & BIT(chan_bit_pos));
+}
+
 static bool dfs_has_unavailable_channel(struct hostapd_iface *iface,
 					int start_chan_idx,
-					int n_chans)
+					int n_chans,
+					u16 punct_bitmap,
+					int center_freq,
+					int half_width)
 {
 	struct hostapd_channel_data *channel;
 	struct hostapd_hw_modes *mode;
@@ -2500,6 +2520,9 @@ static bool dfs_has_unavailable_channel(struct hostapd_iface *iface,
 
 	for (i = 0; i < n_chans; i++) {
 		channel = &mode->channels[start_chan_idx + i];
+		if (dfs_is_subchan_punctured(channel->freq, punct_bitmap,
+					     center_freq, half_width))
+			continue;
 		if ((channel->flag & HOSTAPD_CHAN_DFS_MASK) ==
 				HOSTAPD_CHAN_DFS_UNAVAILABLE)
 			return true;
@@ -2514,6 +2537,7 @@ bool hostapd_dfs_csa_target_has_unavailable_channel(struct hostapd_iface *iface,
 {
 	int start_freq;
 	int n_chans;
+	int half_width;
 	u8 start_chan_num;
 	struct hostapd_hw_modes *mode;
 	struct hostapd_channel_data *chan;
@@ -2526,26 +2550,32 @@ bool hostapd_dfs_csa_target_has_unavailable_channel(struct hostapd_iface *iface,
 	switch (width) {
 	case CHAN_WIDTH_40:
 		n_chans = 2;
+		half_width = 20;
 		start_freq = freq_params->center_freq1 - 10;
 		break;
 	case CHAN_WIDTH_80:
 		n_chans = 4;
+		half_width = 40;
 		start_freq = freq_params->center_freq1 - 30;
 		break;
 	case CHAN_WIDTH_80P80:
 		n_chans = 4;
+		half_width = 40;
 		start_freq = freq_params->center_freq1 - 30;
 		break;
 	case CHAN_WIDTH_160:
 		n_chans = 8;
+		half_width = 80;
 		start_freq = freq_params->center_freq1 - 70;
 		break;
 	case CHAN_WIDTH_320:
 		n_chans = 16;
+		half_width = 160;
 		start_freq = freq_params->center_freq1 - 150;
 		break;
 	default:
 		n_chans = 1;
+		half_width = 10;
 		start_freq = freq_params->freq;
 		break;
 	}
@@ -2558,7 +2588,11 @@ bool hostapd_dfs_csa_target_has_unavailable_channel(struct hostapd_iface *iface,
 	if (!chan)
 		return true;
 
-	if (dfs_has_unavailable_channel(iface, chan - mode->channels, n_chans)) {
+	if (dfs_has_unavailable_channel(iface, chan - mode->channels, n_chans,
+					freq_params->punct_bitmap,
+					freq_params->center_freq1 ?
+					freq_params->center_freq1 : freq_params->freq,
+					half_width)) {
 		wpa_printf(MSG_DEBUG, "DFS: CSA target includes NOL channel(s) (pri)");
 		return true;
 	}
@@ -2574,7 +2608,10 @@ bool hostapd_dfs_csa_target_has_unavailable_channel(struct hostapd_iface *iface,
 			return true;
 
 		if (dfs_has_unavailable_channel(iface, chan - mode->channels,
-						n_chans)) {
+						n_chans,
+						freq_params->punct_bitmap,
+						freq_params->center_freq2,
+						half_width)) {
 			wpa_printf(MSG_DEBUG, "DFS: CSA target includes NOL channel(s) (seg1)");
 			return true;
 		}
