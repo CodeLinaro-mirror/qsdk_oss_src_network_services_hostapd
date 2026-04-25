@@ -7401,7 +7401,11 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 
 	chanwidth = hostapd_chan_width_from_freq_params(&settings->freq_params);
 #ifdef CONFIG_IEEE80211BE
-	if (hostapd_is_eht_enabled(hapd)) {
+	/* When Switching to an 11BE channel, adjust the legacy BW and center
+	 * frequencies accordingly
+	 */
+	if (chanwidth == CONF_OPER_CHWIDTH_320MHZ ||
+	    settings->freq_params.punct_bitmap) {
 		enum oper_chan_width chan_op_bw = chanwidth;
 		u8 oper_centr_freq0_idx = 0, oper_centr_freq1_idx = 0, pri_chan = 0;
 
