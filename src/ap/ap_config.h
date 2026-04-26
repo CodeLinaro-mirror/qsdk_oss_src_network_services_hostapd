@@ -308,6 +308,13 @@ struct airtime_sta_weight {
 	u8 addr[ETH_ALEN];
 };
 
+#ifdef CONFIG_IEEE80211BN
+struct smd_partner_entry {
+	u8 mac_addr[ETH_ALEN];
+	struct smd_partner_entry *next;
+};
+#endif /* CONFIG_IEEE80211BN */
+
 #define EXT_CAPA_MAX_LEN 15
 #define MAX_VENDOR_ELEM_ALLOWED 10
 
@@ -1365,6 +1372,23 @@ struct hostapd_bss_config {
 	u16 vht_mcs_nss_set;
 #endif /* CONFIG_IEEE80211AC */
 	u32 ht_mcs_nss_set;
+
+#ifdef CONFIG_IEEE80211BN
+	/* AP side SMD configuration */
+	struct {
+		int enabled;
+		u8 smd_identifier[ETH_ALEN];
+		u8 smd_prep_timeout;
+		u32 uhr_dl_drain_duration_tu;
+		struct {
+			bool dl_data_fwd;
+			u8 max_prep_target_apmlds;
+			bool smd_type;
+			bool ptk_mode;
+		} caps;
+	} smd;
+	struct smd_partner_entry *smd_partners;
+#endif /* CONFIG_IEEE80211BN */
 
 	enum qca_wlan_intf_offload_type ppe_vp_type;
 };

@@ -1052,6 +1052,21 @@ struct wpa_driver_scan_params {
 };
 
 /**
+ * struct wpa_smd_params - SMD parameters passed to the driver
+ */
+struct wpa_smd_params {
+	int enabled;
+	u8 smd_identifier[ETH_ALEN];
+	u8 smd_timeout;
+	struct {
+		bool dl_data_fwd;
+		u8 max_prep_target_apmlds;
+		bool smd_type;
+		bool ptk_mode;
+	} caps;
+};
+
+/**
  * struct wpa_driver_auth_params - Authentication parameters
  * Data for struct wpa_driver_ops::authenticate().
  */
@@ -2467,6 +2482,10 @@ struct wpa_driver_ap_params {
 	int rssi_deauth_grace_samples;
 
 	int dps_assist;
+
+#ifdef CONFIG_IEEE80211BN
+	struct wpa_smd_params smd;
+#endif /* CONFIG_IEEE80211BN */
 };
 
 struct wpa_driver_mesh_bss_params {
