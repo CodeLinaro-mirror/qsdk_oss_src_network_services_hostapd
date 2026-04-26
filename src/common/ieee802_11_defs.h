@@ -542,6 +542,22 @@
 #define WLAN_EID_EXT_PASN_ENCRYPTED_DATA 140
 #define WLAN_EID_EXT_UHR_OPERATION 151
 #define WLAN_EID_EXT_UHR_CAPABILITIES 152
+#define WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS 155
+
+#define WLAN_EID_EXT_SMD 154
+/* SMD Information Element length: EID (1) + Len (1) + ExtID (1) +
+ * SMD Identifier (ETH_ALEN) + Capabilities (1) + Timeout (2) */
+#define SMD_IE_LEN (2 + 1 + ETH_ALEN + 1 + 2)
+
+#ifdef CONFIG_IEEE80211BN
+/* UHR Reconfiguration Multi-Link Control field */
+#define UHR_RECONF_ML_CONTROL_TYPE_MASK                 0x0007
+#define UHR_RECONF_ML_CONTROL_TYPE_RECONF               2
+
+/* UHR Reconfiguration Presence Bitmap (bits 4-15 of ML Control, shifted >> 4) */
+#define UHR_RECONF_ML_CTRL_PRES_TARGET_AP_MLD_ADDR      BIT(4)
+
+#endif /* CONFIG_IEEE80211BN */
 
 /* Extended Capabilities field */
 #define WLAN_EXT_CAPAB_20_40_COEX 0
@@ -3131,6 +3147,8 @@ struct ieee80211_he_mu_edca_parameter_set {
 #define RNR_BSS_PARAM_MEMBER_CO_LOCATED_ESS         BIT(4)
 #define RNR_BSS_PARAM_UNSOLIC_PROBE_RESP_ACTIVE     BIT(5)
 #define RNR_BSS_PARAM_CO_LOCATED                    BIT(6)
+/* IEEE Std 802.11-2025 11bn */
+#define RNR_BSS_PARAM_MEMBER_OF_SMD		    BIT(7)
 /* Maximum transmit power in Y/2 dBm (-127..126); setting -128 indicates
  * no power is configured for that corresponding 20 MHz channel */
 #define RNR_20_MHZ_PSD_NO_POWER			   -128
