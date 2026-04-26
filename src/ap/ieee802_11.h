@@ -536,6 +536,10 @@ int get_tx_parameters(struct sta_info *sta, int ap_max_chanwidth,
 void auth_sae_process_commit(void *eloop_ctx, void *user_ctx);
 u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 		       u64 capab_mask);
+const u8 * auth_skip_fixed_fields(struct hostapd_data *hapd,
+				  const struct ieee80211_mgmt *mgmt,
+				  size_t len);
+u8 * hostapd_eid_smd(struct hostapd_data *hapd, u8 *eid);
 size_t hostapd_security_profile_len(struct hostapd_data *hapd);
 u8 * hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid);
 u16 check_ext_capab(struct hostapd_data *hapd, struct sta_info *sta,
@@ -634,6 +638,8 @@ void hostapd_get_uhr_capab(struct hostapd_data *hapd,
 			   const struct ieee80211_uhr_capabilities *src,
 			   struct ieee80211_uhr_capabilities *dest,
 			   size_t len);
+int add_associated_sta(struct hostapd_data *hapd, struct sta_info *sta,
+			       int type);
 
 #ifdef CONFIG_IEEE80211BE
 void hostapd_epcs_timeout_handler(void *eloop_ctx, void *timeout_ctx);

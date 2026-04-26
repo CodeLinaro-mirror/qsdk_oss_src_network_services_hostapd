@@ -1900,6 +1900,15 @@ struct wpa_supplicant {
 	int pre_connect_cnt;
 	struct wpa_supplicant_extn wpas_extn;
 #endif
+	bool smd_capable;
+	u8 smd_id[ETH_ALEN];
+	u8 smd_ptk_mode;
+	u8 smd_kdk[PMK_LEN];
+	size_t smd_kdk_len;
+	unsigned int smd_kdk_valid:1;
+	unsigned int smd_me_associated:1;
+	u8 smd_me_initial_ap_mld_addr[ETH_ALEN];
+	struct os_time smd_me_association_time;
 };
 
 

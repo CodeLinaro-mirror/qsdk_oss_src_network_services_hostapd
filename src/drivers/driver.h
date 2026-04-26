@@ -1164,6 +1164,8 @@ struct wpa_driver_auth_params {
 	 * The MLD AP address
 	 */
 	const u8 *ap_mld_addr;
+
+	struct wpa_smd_params smd;
 };
 
 /**
@@ -1890,6 +1892,8 @@ struct wpa_driver_associate_params {
 	 * in case the target AP supports security profiles.
 	 */
 	bool security_profile_active;
+
+	struct wpa_smd_params smd;
 };
 
 enum hide_ssid {

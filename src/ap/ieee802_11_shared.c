@@ -724,6 +724,36 @@ u8 * hostapd_eid_time_adv(struct hostapd_data *hapd, u8 *eid)
 }
 
 
+#ifdef CONFIG_IEEE80211BN
+u8 *hostapd_eid_smd(struct hostapd_data *hapd, u8 *eid)
+{
+	u8 smd_cap_byte = 0;
+
+	if (!hapd->conf->smd.enabled ||
+	    !(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_SMD))
+		return eid;
+
+	*eid++ = WLAN_EID_EXTENSION;
+	*eid++ = SMD_IE_LEN - 2;
+	*eid++ = WLAN_EID_EXT_SMD;
+	os_memcpy(eid, hapd->conf->smd.smd_identifier, ETH_ALEN);
+	eid += ETH_ALEN;
+	if (hapd->conf->smd.caps.dl_data_fwd)
+		smd_cap_byte |= BIT(0);
+	smd_cap_byte |=
+		(hapd->conf->smd.caps.max_prep_target_apmlds & 0x07) << 1;
+	if (hapd->conf->smd.caps.smd_type)
+		smd_cap_byte |= BIT(4);
+	if (hapd->conf->smd.caps.ptk_mode)
+		smd_cap_byte |= BIT(5);
+	*eid++ = smd_cap_byte;
+	*eid++ = hapd->conf->smd.smd_prep_timeout;
+
+	return eid;
+}
+#endif /* CONFIG_IEEE80211BN */
+
+
 u8 * hostapd_eid_time_zone(struct hostapd_data *hapd, u8 *eid)
 {
 	size_t len;
