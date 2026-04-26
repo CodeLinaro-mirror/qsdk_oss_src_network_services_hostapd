@@ -10801,6 +10801,12 @@ static int hostapd_action_vs(struct hostapd_data *hapd,
 		return 0;
 #endif /* CONFIG_ROBUST_AV */
 	default:
+#ifdef CONFIG_QCN_EXTN
+		if (!handle_action_vs_extn(hapd, sta, mgmt, len, freq,
+					   protected) == 0)
+			return 0;
+#endif /* CONFIG_QCN_EXTN */
+
 		wpa_printf(MSG_DEBUG,
 			   "Ignore unknown Vendor Specific Action frame OUI/type %08x%s",
 			   oui_type, protected ? " (protected)" : "");
