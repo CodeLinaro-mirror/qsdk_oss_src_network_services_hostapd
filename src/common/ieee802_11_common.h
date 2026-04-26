@@ -180,6 +180,8 @@ struct ieee802_11_elems {
 	const u8 *pqc_parameter;
 	const u8 *mscs_desc;
 	const u8 *cip_pad;
+	const u8 *smd;
+	const u8 *smd_bsstransparams;
 
 	u8 ssid_len;
 	u8 supp_rates_len;
@@ -259,6 +261,8 @@ struct ieee802_11_elems {
 	u16 per_link_sta_capability;
 	u8 security_profile_len;
 	size_t pqc_parameter_len;
+	u8 smd_len;
+	u8 smd_bsstransparams_len;
 
 	struct mb_ies_info mb_ies;
 
@@ -420,6 +424,11 @@ int ieee80211_get_center_freq(int ctrl_freq, u32 bw);
 
 int ieee802_11_parse_candidate_list(const char *pos, void *non_pref_chan,
 				    u8 *nei_rep, size_t nei_rep_len);
+
+u8 *wpas_build_smd_ie(const u8 *smd_id, u8 ptk_mode, u8 capabilities,
+			      u16 timeout, size_t *ie_len);
+int wpas_parse_smd_ie(const u8 *smd_ie, size_t smd_ie_len, u8 *smd_id,
+			      u8 *ptk_mode, u8 *capabilities, u16 *timeout);
 
 int ieee802_11_ext_capab(const u8 *ie, unsigned int capab);
 bool ieee802_11_rsnx_capab_len(const u8 *rsnxe, size_t rsnxe_len,

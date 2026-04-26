@@ -3101,6 +3101,10 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_CIGTK			0x0000080000000000ULL
 	/** Driver supports synchronized beacon transmission across radios/links */
 	#define WPA_DRIVER_FLAGS2_BEACON_TX_SYNC      0x0000400000000000ULL
+	/** Driver supports SMD in station/AP mode */
+	#define WPA_DRIVER_FLAGS2_SMD                  0x0000800000000000ULL
+	/** Driver supports SMD DL data forwarding during seamless transitions */
+	#define WPA_DRIVER_FLAGS2_SMD_DL_DATA_FWD     0x0001000000000000ULL
 /** Driver supports CIP Padding Support */
 #define WPA_DRIVER_FLAGS2_CIP_PADDING_SUPPORT	0x0000100000000000ULL
 /** Driver supports CSA on the current channel when the target channel is DFS */
