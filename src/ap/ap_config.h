@@ -1374,6 +1374,7 @@ struct hostapd_config {
 	u8 acs_freq_list_present;
 	int acs_exclude_dfs;
 	int acs_enable_bw_downgrade;
+	int acs_dfs_available_only;
 	u8 min_tx_power;
 	enum hostapd_hw_mode hw_mode; /* HOSTAPD_MODE_IEEE80211A, .. */
 	bool hw_mode_set;
