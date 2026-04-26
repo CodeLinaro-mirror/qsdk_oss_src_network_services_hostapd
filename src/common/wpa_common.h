@@ -260,6 +260,9 @@ struct wpa_eapol_key {
 #define FILS_FT_MAX_LEN 48
 #define WPA_PASN_KCK_LEN 32
 #define WPA_LTF_KEYSEED_MAX_LEN 48
+#ifdef CONFIG_IEEE80211BN
+#define WPA_SMD_KDK_MAX_LEN 32
+#endif /* CONFIG_IEEE80211BN */
 
 /**
  * struct wpa_ptk - WPA Pairwise Transient Key
@@ -282,6 +285,10 @@ struct wpa_ptk {
 	size_t ptk_len;
 	size_t ltf_keyseed_len;
 	enum rsn_hash_alg hash_alg;
+#ifdef CONFIG_IEEE80211BN
+	u8 smd_kdk[WPA_SMD_KDK_MAX_LEN]; /* SMD Key Derivation Key */
+	size_t smd_kdk_len;
+#endif /* CONFIG_IEEE80211BN */
 	int installed; /* 1 if key has already been installed to driver */
 	bool installed_rx; /* whether TK has been installed as the next TK
 			    * for temporary RX-only use in the driver */
@@ -523,7 +530,8 @@ int wpa_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const char *label,
 		   const u8 *addr1, const u8 *addr2,
 		   const u8 *nonce1, const u8 *nonce2,
 		   struct wpa_ptk *ptk, int akmp, int cipher,
-		   const u8 *z, size_t z_len, size_t kdk_len);
+		   const u8 *z, size_t z_len, size_t kdk_len,
+		   const u8 *smd_id);
 int fils_rmsk_to_pmk(int akmp, const u8 *rmsk, size_t rmsk_len,
 		     const u8 *snonce, const u8 *anonce, const u8 *dh_ss,
 		     size_t dh_ss_len, u8 *pmk, size_t *pmk_len);

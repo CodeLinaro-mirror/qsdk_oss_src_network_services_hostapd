@@ -102,11 +102,126 @@ static void pasn_fils_auth_resp(struct hostapd_data *hapd,
 #endif /* CONFIG_FILS */
 #endif /* CONFIG_PASN */
 
+#ifdef CONFIG_IEEE80211BN
+
+/**
+ * hostapd_parse_smd_ie - Parse SMD Information Element from authentication
+ * @hapd: hostapd data
+ * @sta: Station info
+ * @ies: IEs buffer
+ * @ies_len: Length of IEs buffer
+ *
+ * Parse and store SMD IE information from station's authentication request.
+ */
+void hostapd_parse_smd_ie(struct hostapd_data * hapd, struct sta_info *sta, const u8 *ies,
+				 size_t ies_len)
+{
+	const u8 *smd_ie;
+	const u8 *pos;
+	u8 smd_cap_byte;
+
+	if (!sta || !ies)
+		return;
+
+	/* Check if AP supports SMD and SMD is enabled in configuration */
+	if (!hapd->conf->smd.enabled) {
+		wpa_printf(MSG_DEBUG, "SMD IE Parse: SMD not enabled in AP configuration for " MACSTR,
+			   MAC2STR(sta->addr));
+		return;
+	}
+
+	if (!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_SMD)) {
+		wpa_printf(MSG_DEBUG, "SMD IE Parse: Driver does not support SMD for " MACSTR,
+			   MAC2STR(sta->addr));
+		return;
+	}
+
+	/* Initialize SMD info */
+	os_memset(&sta->smd_info, 0, sizeof(sta->smd_info));
+
+	/* Look for SMD Information Element (Extension element) */
+	smd_ie = get_ie_ext(ies, ies_len, WLAN_EID_EXT_SMD);
+	if (!smd_ie) {
+		wpa_printf(MSG_DEBUG, "SMD IE: Not found in auth request from "
+			   MACSTR, MAC2STR(sta->addr));
+		return;
+	}
+
+	/* SMD IE format after Element ID Extension:
+	 * SMD Identifier: 6 octets
+	 * SMD Capabilities: 1 octet
+	 * Timeout Value: 1 octet (units of 64 TUs)
+	 * Total minimum length: 8 octets (+ 2 for EID and Len, + 1 for Ext ID)
+	 */
+	if (smd_ie[1] < 1 + 6 + 1 + 1) {
+		wpa_printf(MSG_DEBUG,
+			   "SMD IE: Invalid length %u from " MACSTR,
+			   smd_ie[1], MAC2STR(sta->addr));
+		return;
+	}
+
+	pos = smd_ie + 3; /* Skip Element ID, Length, and Extension ID */
+
+	/* SMD Identifier (6 octets) */
+	os_memcpy(sta->smd_info.smd_identifier, pos, ETH_ALEN);
+	pos += ETH_ALEN;
+
+	/* SMD Capabilities (1 octet)
+	 * B0: DL Data Forwarding
+	 * B1-B3: Max Number Of Prepared Target AP MLDs
+	 * B4: SMD Type
+	 * B5: PTK Mode
+	 * B6: Neighboring AP Probing Support
+	 * B7: Reserved
+	 */
+	smd_cap_byte = *pos++;
+	sta->smd_info.caps.dl_data_fwd = !!(smd_cap_byte & BIT(0));
+	sta->smd_info.caps.max_prep_target_apmlds = (smd_cap_byte >> 1) & 0x07;
+	sta->smd_info.caps.smd_type = !!(smd_cap_byte & BIT(4));
+	sta->smd_info.caps.ptk_mode = !!(smd_cap_byte & BIT(5));
+
+	/* Timeout Value (1 octet, units of 64 TUs) */
+	sta->smd_info.smd_timeout = *pos++;
+
+	sta->smd_info.smd_sta = true;
+
+	wpa_printf(MSG_INFO,
+		   "SMD IE: Parsed from " MACSTR " - ID: " MACSTR
+		   ", DL Fwd: %d, Max Peer AP MLDs: %u, Type: %d, PTK Mode: %d, Timeout: %u TU",
+		   MAC2STR(sta->addr),
+		   MAC2STR(sta->smd_info.smd_identifier),
+		   sta->smd_info.caps.dl_data_fwd,
+		   sta->smd_info.caps.max_prep_target_apmlds,
+		   sta->smd_info.caps.smd_type,
+		   sta->smd_info.caps.ptk_mode,
+		   sta->smd_info.smd_timeout);
+	return;
+}
+
+
+/**
+ * hostapd_eid_smd_ie_response - Add SMD IE to authentication or association response
+ * @hapd: BSS data
+ * @sta: Station info
+ * @eid: Pointer to current position in buffer
+ * Returns: Pointer to next position in buffer
+ */
+static u8 * hostapd_eid_smd_ie_response(struct hostapd_data *hapd,
+					struct sta_info *sta, u8 *eid)
+{
+	if (!hapd->conf->smd.enabled || !sta || !sta->smd_info.smd_sta)
+		return eid;
+
+	if (!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_SMD))
+		return eid;
+
+	return hostapd_eid_smd(hapd, eid);
+}
+#endif /* CONFIG_IEEE80211BN */
+
 static void handle_auth(struct hostapd_data *hapd,
 			const struct ieee80211_mgmt *mgmt, size_t len,
 			int rssi, int from_queue);
-static int add_associated_sta(struct hostapd_data *hapd,
-			      struct sta_info *sta, int reassoc);
 static struct wpabuf *cip_build_assoc_resp_ie(u8 padding_delay);
 static u16 check_rssi_association(struct hostapd_data *hapd,
 				  const struct ieee80211_mgmt *mgmt,
@@ -463,6 +578,7 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 	int reply_res = WLAN_STATUS_UNSPECIFIED_FAILURE;
 	const u8 *sa = hapd->own_addr;
 	struct wpabuf *ml_resp = NULL;
+	struct wpabuf *smd_resp = NULL;
 
 #ifdef CONFIG_IEEE80211BE
 	if (ap_sta_is_mld(hapd, sta) && sta->mld_auth) {
@@ -472,10 +588,31 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BN
+        /* Add SMD IE if both AP and STA support SMD */
+        if (hapd->conf->smd.enabled && sta && sta->smd_info.smd_sta) {
+                u8 smd_buf[SMD_IE_LEN];
+                u8 *smd_end = hostapd_eid_smd(hapd, smd_buf);
+                size_t smd_len = smd_end - smd_buf;
+
+                if (smd_len > 0) {
+                        smd_resp = wpabuf_alloc(smd_len);
+                        if (!smd_resp) {
+                                wpabuf_free(ml_resp);
+                                return -1;
+                        }
+                        wpabuf_put_data(smd_resp, smd_buf, smd_len);
+                }
+        }
+#endif /* CONFIG_IEEE80211BN */
+
 	rlen = IEEE80211_HDRLEN + sizeof(reply->u.auth) + ies_len;
 	if (ml_resp)
 		ml_len = wpabuf_len(ml_resp);
 	rlen += ml_len;
+
+        if (smd_resp)
+                rlen += wpabuf_len(smd_resp);
 
 #ifdef CONFIG_HOSTAPD_IF
 	tail_len = hostapd_if_auth_reply_tail_len(sta, rlen);
@@ -506,9 +643,17 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 		ml_len = wpabuf_len(ml_resp);
 		os_memcpy(reply->u.auth.variable + ies_len,
 				wpabuf_head(ml_resp), ml_len);
+#ifdef CONFIG_IEEE80211BN
+		/* SMD requires ML as mandatory */
+		if (smd_resp)
+			os_memcpy(reply->u.auth.variable + ies_len + wpabuf_len(ml_resp),
+				  wpabuf_head(smd_resp), wpabuf_len(smd_resp));
+#endif /* CONFIG_IEEE80211BN */
 	}
-	wpabuf_free(ml_resp);
 #endif /* CONFIG_IEEE80211BE */
+
+        wpabuf_free(ml_resp);
+        wpabuf_free(smd_resp);
 
 #ifdef CONFIG_HOSTAPD_IF
 	hostapd_if_auth_reply_add_tail(sta, ies_len + ml_len, tail_len, reply);
@@ -3879,6 +4024,28 @@ static void handle_auth(struct hostapd_data *hapd,
 	sta->auth_rssi = rssi;
 #endif /* CONFIG_MBO */
 
+#ifdef CONFIG_IEEE80211BN
+	/* Parse SMD IE if present in authentication request */
+	if (auth_transaction == 1) {
+		const u8 *pos;
+
+		pos = auth_skip_fixed_fields(hapd, mgmt,
+					     len - offsetof(struct ieee80211_mgmt, u.auth.variable));
+		if (pos)
+			hostapd_parse_smd_ie(hapd, sta, pos,
+					     (int)len - (pos - mgmt->u.auth.variable));
+
+		/* Transfer SMD info to wpa_state_machine if it exists */
+		if (sta->wpa_sm && sta->smd_info.smd_sta) {
+			wpa_printf(MSG_DEBUG,
+				   "SMD: Transferring SMD info to wpa_state_machine for "
+				   MACSTR " after authentication",
+				   MAC2STR(sta->addr));
+			wpa_auth_set_smd_info(sta->wpa_sm, sta);
+		}
+	}
+#endif /* CONFIG_IEEE80211BN */
+
 	res = ieee802_11_set_radius_info(hapd, sta, res, &rad_info);
 	if (res) {
 		wpa_printf(MSG_DEBUG, "ieee802_11_set_radius_info() failed");
@@ -5777,6 +5944,14 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 	p = hostapd_eid_qcn_vendor_ie_extn(hapd, p, IEEE80211_MODE_AP);
 #endif /* CONFIG_QCN_EXTN */
 
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->conf->smd.enabled) {
+		struct sta_info *sta = ap_get_sta(hapd, link->peer_addr);
+		if (sta && sta->smd_info.smd_sta)
+			p = hostapd_eid_smd_ie_response(hapd, sta, p);
+	}
+#endif
+
 	if (hapd->conf->assocresp_elements &&
 	    (size_t) (buf + buflen - p) >=
 	    wpabuf_len(hapd->conf->assocresp_elements)) {
@@ -6108,7 +6283,7 @@ static void send_deauth(struct hostapd_data *hapd, const u8 *addr,
 }
 
 
-static int add_associated_sta(struct hostapd_data *hapd,
+int add_associated_sta(struct hostapd_data *hapd,
 			      struct sta_info *sta, int type)
 {
 	struct ieee80211_ht_capabilities ht_cap;
@@ -6126,7 +6301,7 @@ static int add_associated_sta(struct hostapd_data *hapd,
 	if (ap_sta_is_mld(hapd, sta)) {
 		u8 mld_link_id = hapd->mld_link_id;
 
-		mld_link_sta = sta->mld_assoc_link_id != mld_link_id;
+		mld_link_sta = (sta->mld_assoc_link_id != mld_link_id);
 		mld_link_addr = sta->mld_info.links[mld_link_id].peer_addr;
 
 		if (hapd->mld_link_id != sta->mld_assoc_link_id)
@@ -6235,8 +6410,9 @@ static int add_associated_sta(struct hostapd_data *hapd,
 
 #ifdef CONFIG_QCN_EXTN
 			    (struct sta_info_extn *)&sta->sta_extn,
+#else
+			    NULL,
 #endif
-
 			    sta->he_6ghz_capab,
 			    sta->flags | WLAN_STA_ASSOC, sta->qosinfo,
 			    sta->vht_opmode, sta->p2p_ie ? 1 : 0,
@@ -6306,6 +6482,12 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 	if (hostapd_is_uhr_enabled(hapd)) {
 		buflen += 3 + sizeof(struct ieee80211_uhr_capabilities);
 		buflen += 3 + sizeof(struct ieee80211_uhr_operation);
+	}
+	/* Add SMD IE if both AP and STA support SMD */
+	if (hapd->conf->smd.enabled && sta && sta->smd_info.smd_sta) {
+		wpa_printf(MSG_DEBUG,
+			   "SMD: Len: %d of SMD IEs", SMD_IE_LEN);
+		buflen += SMD_IE_LEN;
 	}
 #endif /* CONFIG_IEEE80211BN */
 
@@ -6684,6 +6866,14 @@ rsnxe_done:
 		os_free(ttlm_elem);
 	}
 #endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_IEEE80211BN
+	/* Add SMD IE to association response if both AP and STA support SMD */
+	if (hapd->conf->smd.enabled && sta && sta->smd_info.smd_sta) {
+		p = hostapd_eid_smd_ie_response(hapd, sta, p);
+		send_len += SMD_IE_LEN;
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 	if (hapd->conf->control_frame_prot &&
 	    (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK) &&
@@ -7665,6 +7855,25 @@ static void handle_assoc(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211R_AP */
 	if (hapd->conf->rsn_override_omit_rsnxe)
 		omit_rsnxe = 1;
+
+#ifdef CONFIG_IEEE80211BN
+	/* Parse SMD IE if present in association request */
+	hostapd_parse_smd_ie(hapd, sta, pos, left);
+
+	/*
+	 * Transfer SMD info to wpa_state_machine after parsing.
+	 * This ensures the WPA authenticator has access to SMD parameters
+	 * for PTK derivation and other security operations.
+	 */
+	if (sta->wpa_sm && sta->smd_info.smd_sta) {
+		wpa_printf(MSG_DEBUG,
+			   "SMD: Transferring SMD info to wpa_state_machine for "
+			   MACSTR " after association",
+			   MAC2STR(sta->addr));
+		wpa_auth_set_smd_info(sta->wpa_sm, sta);
+	}
+
+#endif /* CONFIG_IEEE80211BN */
 
 	if (hostapd_get_aid(hapd, sta) < 0) {
 		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,

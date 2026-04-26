@@ -3667,8 +3667,15 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_MAX_CH_SWITCH_TIME,
 
+	NL80211_ATTR_SMD_ENABLED,
+	NL80211_ATTR_SMD_PTK_MODE,
+	NL80211_ATTR_SMD_KDK,
+	NL80211_ATTR_DH_PARAMS,
+	NL80211_ATTR_SMD_IDENTIFIER,
 	NL80211_ATTR_SMD_DISCOVERY_TARGETS,
 	NL80211_ATTR_SMD_SUPPORT,
+	NL80211_ATTR_SMD_AP,
+	NL80211_ATTR_SMD_PARAMS,
 	NL80211_ATTR_SMD_STA_DL_DATA_FWD,
 
 	/* add attributes here, update the policy in nl80211.c */
@@ -8923,6 +8930,48 @@ enum nl80211_smd_discovery_target_attrs {
         __NL80211_SMD_DISCOVERY_TARGET_AFTER_LAST,
         NL80211_SMD_DISCOVERY_TARGET_MAX =
                 __NL80211_SMD_DISCOVERY_TARGET_AFTER_LAST - 1
+};
+
+/**
+ * enum nl80211_smd_params_attrs - SMD parameters attributes
+ *
+ * Used with %NL80211_ATTR_SMD_PARAMS nested attribute in
+ * %NL80211_CMD_START_AP to configure SMD (Seamless Multiband Device)
+ * parameters as defined in IEEE 802.11bn.
+ *
+ * @NL80211_SMD_PARAMS_ATTR_UNSPEC: (reserved)
+ *
+ * @NL80211_SMD_PARAMS_ATTR_IDENTIFIER: SMD Identifier, a 6-byte MAC address
+ *     that uniquely identifies the SMD (required).
+ *
+ * @NL80211_SMD_PARAMS_ATTR_TIMEOUT: Timeout value in TU (Time Units, 1 TU = 1024 us).
+ *     This indicates the timeout between the ST preparation response and ST
+ *     execution request. u16 attribute (required).
+ *
+ * @NL80211_SMD_PARAMS_ATTR_DL_DATA_FWD: Flag attribute indicating if DL data
+ *     forwarding from current AP MLD to target AP MLD is supported.
+ *
+ * @NL80211_SMD_PARAMS_ATTR_MAX_PEER_APMLDS: Maximum number of prepared target
+ *     AP MLDs. u8 attribute, valid range 0-7 (required).
+ *
+ * @NL80211_SMD_PARAMS_ATTR_TYPE: SMD Type field. u8 attribute:
+ *     0 = per-AP MLD MAC SAE, 1 = per-SMD MAC SAE (required).
+ *
+ * @NL80211_SMD_PARAMS_ATTR_PTK_MODE: PTK Mode field. u8 attribute:
+ *     0 = Per-SMD PTK, 1 = Per-AP MLD PTK (required).
+ */
+enum nl80211_smd_params_attrs {
+        NL80211_SMD_PARAMS_ATTR_UNSPEC,
+        NL80211_SMD_PARAMS_ATTR_IDENTIFIER,
+        NL80211_SMD_PARAMS_ATTR_TIMEOUT,
+        NL80211_SMD_PARAMS_ATTR_DL_DATA_FWD,
+        NL80211_SMD_PARAMS_ATTR_MAX_PEER_APMLDS,
+        NL80211_SMD_PARAMS_ATTR_TYPE,
+        NL80211_SMD_PARAMS_ATTR_PTK_MODE,
+
+        /* keep last */
+        __NL80211_SMD_PARAMS_ATTR_LAST,
+        NL80211_SMD_PARAMS_ATTR_MAX = __NL80211_SMD_PARAMS_ATTR_LAST - 1
 };
 
 #endif /* __LINUX_NL80211_H */

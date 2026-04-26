@@ -754,14 +754,70 @@ static int wpa_derive_ptk(struct wpa_sm *sm, const unsigned char *src_addr,
 	else
 		kdk_len = 0;
 
-	ret = wpa_pmk_to_ptk(sm->pmk, sm->pmk_len, "Pairwise key expansion",
-			     sm->own_addr, wpa_sm_get_auth_addr(sm), sm->snonce,
-			     key->key_nonce, ptk, akmp,
-			     sm->pairwise_cipher, z, z_len,
-			     kdk_len);
-	if (ret) {
-		wpa_printf(MSG_ERROR, "WPA: PTK derivation failed");
-		return ret;
+	if (sm->smd_enabled) {
+		wpa_printf(MSG_DEBUG, "WPA: Using SMD-aware PTK derivation (mode=%d)",
+			   sm->smd_ptk_mode);
+
+		wpa_printf(MSG_DEBUG,
+				"WPA: SMD PTK derivation AA=" MACSTR,
+				MAC2STR(wpa_sm_get_auth_addr(sm)));
+
+		/* Per-AP MLD PTK mode - derive SMD_KDK */
+		if (sm->smd_ptk_mode == 1) {
+			kdk_len = sm->pmk_len;  /* KDK length = PMK length per spec */
+			wpa_printf(MSG_DEBUG,
+				"SMD: Setting kdk_len=%zu for Per-AP MLD PTK mode",
+				kdk_len);
+		} else {
+			/* Per-SMD PTK mode - no KDK derivation */
+			kdk_len = 0;
+			wpa_printf(MSG_DEBUG,
+				"SMD: Setting kdk_len=0 for Per-SMD PTK mode");
+		}
+
+		ret = wpa_pmk_to_ptk(sm->pmk, sm->pmk_len, "Pairwise key expansion",
+				sm->own_addr, wpa_sm_get_auth_addr(sm), sm->snonce,
+				key->key_nonce, ptk, akmp,
+				sm->pairwise_cipher, z, z_len,
+				kdk_len, sm->smd_id);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "WPA: SMD PTK Derivation failed");
+			return ret;
+		}
+
+		if (sm->smd_ptk_mode == 1 && ptk->kdk_len > 0) {
+			if (ptk->kdk_len > sizeof(sm->smd_kdk)) {
+				wpa_printf(MSG_ERROR,
+					   "WPA: SMD_KDK too large (%zu > %zu)",
+					   ptk->kdk_len, sizeof(sm->smd_kdk));
+				return -1;
+			}
+
+			/* To protect from rekey */
+			os_memcpy(sm->smd_kdk, ptk->kdk, ptk->kdk_len);
+			sm->smd_kdk_len = ptk->kdk_len;
+			wpa_hexdump_key(MSG_DEBUG, "WPA: SMD_KDK Derived",
+					sm->smd_kdk, sm->smd_kdk_len);
+		}
+
+		wpa_printf(MSG_INFO, "WPA: Per-SMD PTK Derived successfully (mode=%d)",
+			   sm->smd_ptk_mode);
+		wpa_hexdump_key(MSG_DEBUG, "WPA: SMD PTK-KCK",
+				ptk->kck, ptk->kck_len);
+		wpa_hexdump_key(MSG_DEBUG, "WPA: SMD PTK-KEK",
+				ptk->kek, ptk->kek_len);
+		wpa_hexdump_key(MSG_DEBUG, "WPA: SMD PTK-TK",
+				ptk->tk, ptk->tk_len);
+	} else {
+		ret = wpa_pmk_to_ptk(sm->pmk, sm->pmk_len, "Pairwise key expansion",
+				sm->own_addr, wpa_sm_get_auth_addr(sm), sm->snonce,
+				key->key_nonce, ptk, akmp,
+				sm->pairwise_cipher, z, z_len,
+				kdk_len, NULL);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "WPA: PTK derivation failed");
+			return ret;
+		}
 	}
 
 #ifdef CONFIG_PASN
@@ -1311,8 +1367,10 @@ static int wpa_supplicant_install_ptk(struct wpa_sm *sm,
 		sm->ptk.installed_rx = true;
 	} else {
 		/* TK is not needed anymore in supplicant */
-		os_memset(sm->ptk.tk, 0, WPA_TK_MAX_LEN);
-		sm->ptk.tk_len = 0;
+		if (!(sm->smd_enabled && sm->smd_ptk_mode == 0)) {
+			os_memset(sm->ptk.tk, 0, WPA_TK_MAX_LEN);
+			sm->ptk.tk_len = 0;
+		}
 		sm->ptk.installed = 1;
 		sm->tk_set = true;
 	}
@@ -4753,7 +4811,13 @@ void wpa_sm_notify_disassoc(struct wpa_sm *sm)
 	eloop_cancel_timeout(wpa_sm_start_preauth, sm, NULL);
 	eloop_cancel_timeout(wpa_sm_rekey_ptk, sm, NULL);
 	rsn_preauth_deinit(sm);
-	pmksa_cache_clear_current(sm);
+
+	if (sm->smd_enabled && sm->cur_pmksa && sm->cur_pmksa->smd_enabled) {
+		wpa_printf(MSG_DEBUG, "RSN: Preserving SMD PMKSA on disconnect");
+	} else {
+		pmksa_cache_clear_current(sm);
+	}
+
 	if (wpa_sm_get_state(sm) == WPA_4WAY_HANDSHAKE)
 		sm->dot11RSNA4WayHandshakeFailures++;
 #ifdef CONFIG_TDLS
@@ -4843,13 +4907,51 @@ void wpa_sm_set_pmk_from_pmksa(struct wpa_sm *sm)
 				sm->cur_pmksa->pmk, sm->cur_pmksa->pmk_len);
 		sm->pmk_len = sm->cur_pmksa->pmk_len;
 		os_memcpy(sm->pmk, sm->cur_pmksa->pmk, sm->pmk_len);
+
+		if (sm->cur_pmksa->smd_enabled) {
+			sm->smd_enabled = 1;
+			os_memcpy(sm->smd_id, sm->cur_pmksa->smd_id, ETH_ALEN);
+			sm->smd_ptk_mode = sm->cur_pmksa->smd_ptk_mode;
+			wpa_printf(MSG_DEBUG, "WPA: Restored SMD Context from PMKSA - ID " MACSTR
+				   " PTK Mode %u", MAC2STR(sm->smd_id), sm->smd_ptk_mode);
+
+		}
 	} else {
 		wpa_printf(MSG_DEBUG, "WPA: No current PMKSA - clear PMK");
 		sm->pmk_len = 0;
 		os_memset(sm->pmk, 0, PMK_LEN_MAX);
+		sm->smd_enabled = 0;
+		os_memset(sm->smd_id, 0, ETH_ALEN);
+		sm->smd_ptk_mode = 0;
 	}
 }
 
+
+void wpa_sm_set_smd_params(struct wpa_sm *sm, const u8 *smd_id,
+			   u8 smd_ptk_mode, const u8 *initial_ap_mld_addr)
+{
+	if (sm == NULL)
+		return;
+
+	if (smd_id) {
+		sm->smd_enabled = 1;
+		os_memcpy(sm->smd_id, smd_id, ETH_ALEN);
+		sm->smd_ptk_mode = smd_ptk_mode;
+		if (initial_ap_mld_addr)
+			os_memcpy(sm->smd_me_initial_ap_mld_addr,
+				  initial_ap_mld_addr, ETH_ALEN);
+		wpa_printf(MSG_DEBUG, "WPA: SMD parameter set - ID " MACSTR
+		   	   " PTK mode %u AP MLD " MACSTR "",
+			   MAC2STR(sm->smd_id), sm->smd_ptk_mode,
+			   MAC2STR(sm->smd_me_initial_ap_mld_addr));
+	} else {
+		sm->smd_enabled = 0;
+		os_memset(sm->smd_id, 0, ETH_ALEN);
+		sm->smd_ptk_mode = 0;
+		os_memset(sm->smd_me_initial_ap_mld_addr, 0, ETH_ALEN);
+		wpa_printf(MSG_DEBUG, "WPA: SMD parameter cleared");
+	}
+}
 
 /**
  * wpa_sm_set_fast_reauth - Set fast reauthentication (EAP) enabled/disabled

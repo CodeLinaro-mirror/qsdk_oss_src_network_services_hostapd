@@ -335,6 +335,10 @@ struct wpa_auth_config {
 	u8 sae_pw_id_key[32];
 	int externally_triggered_m3;
 	int plugin_eapol_key_offload;
+
+	int smd_capable;
+	u8 smd_domain_id[ETH_ALEN];
+	int smd_ptk_mode;
 };
 
 typedef enum {
@@ -633,6 +637,10 @@ void wpa_auth_eapol_key_tx_status(struct wpa_authenticator *wpa_auth,
 				  struct wpa_state_machine *sm, int ack);
 
 u8 wpa_sta_sm_get_num_mld_links(struct wpa_state_machine *sm);
+
+#ifdef CONFIG_IEEE80211BN
+void wpa_auth_set_smd_info(struct wpa_state_machine *sm, struct sta_info *sta);
+#endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_IEEE80211R_AP
 u8 * wpa_sm_write_assoc_resp_ies(struct wpa_state_machine *sm, u8 *pos,

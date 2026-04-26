@@ -206,6 +206,9 @@ void wpa_sm_notify_disassoc(struct wpa_sm *sm);
 void wpa_sm_set_pmk(struct wpa_sm *sm, const u8 *pmk, size_t pmk_len,
 		    const u8 *pmkid, const u8 *bssid);
 void wpa_sm_set_pmk_from_pmksa(struct wpa_sm *sm);
+void wpa_sm_set_smd_params(struct wpa_sm *sm, const u8 *smd_id,
+			   u8 smd_ptk_mode,
+			   const u8 *initial_ap_mld_addr);
 void wpa_sm_set_fast_reauth(struct wpa_sm *sm, int fast_reauth);
 void wpa_sm_set_scard_ctx(struct wpa_sm *sm, void *scard_ctx);
 void wpa_sm_set_config(struct wpa_sm *sm, struct rsn_supp_config *config);
@@ -315,6 +318,12 @@ static inline void wpa_sm_set_pmk(struct wpa_sm *sm, const u8 *pmk,
 }
 
 static inline void wpa_sm_set_pmk_from_pmksa(struct wpa_sm *sm)
+{
+}
+
+static inline void wpa_sm_set_smd_params(struct wpa_sm *sm, const u8 *smd_id,
+					 u8 smd_ptk_mode,
+					 const u8 *initial_ap_mld_addr)
 {
 }
 
@@ -685,5 +694,4 @@ struct wpabuf * wpa_sm_known_sta_identification(struct wpa_sm *sm, const u8 *aa,
 						u64 timestamp);
 int wpa_sm_install_mlo_group_keys(struct wpa_sm *sm, const u8 *key_data,
 				  size_t key_data_len, u16 added_links_bitmap);
-
 #endif /* WPA_H */

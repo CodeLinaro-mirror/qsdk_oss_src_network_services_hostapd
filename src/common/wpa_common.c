@@ -486,13 +486,15 @@ int wpa_eapol_key_mic(const u8 *key, size_t key_len, int akmp,
  * @akmp: Negotiated AKM
  * @cipher: Negotiated pairwise cipher
  * @kdk_len: The length in octets that should be derived for KDK
+ * @z: Optional Z.x data (may be %NULL if not used)
+ * @smd_id: SMD Identifier (6 Octets) for Per-SMD PTK Derivation
  * Returns: 0 on success, -1 on failure
  *
  * IEEE Std 802.11i-2004 - 8.5.1.2 Pairwise key hierarchy
  * PTK = PRF-X(PMK, "Pairwise key expansion",
  *             Min(AA, SA) || Max(AA, SA) ||
  *             Min(ANonce, SNonce) || Max(ANonce, SNonce)
- *             [ || Z.x ])
+ *             [ || Z.x ] [ || SMD_ID ])
  *
  * The optional Z.x component is used only with DPP and that part is not defined
  * in IEEE 802.11.
@@ -501,10 +503,11 @@ int wpa_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const char *label,
 		   const u8 *addr1, const u8 *addr2,
 		   const u8 *nonce1, const u8 *nonce2,
 		   struct wpa_ptk *ptk, int akmp, int cipher,
-		   const u8 *z, size_t z_len, size_t kdk_len)
+		   const u8 *z, size_t z_len, size_t kdk_len,
+		   const u8 *smd_id)
 {
 #define MAX_Z_LEN 66 /* with NIST P-521 */
-	u8 data[2 * ETH_ALEN + 2 * WPA_NONCE_LEN + MAX_Z_LEN];
+	u8 data[2 * ETH_ALEN + 2 * WPA_NONCE_LEN + MAX_Z_LEN + ETH_ALEN];
 	size_t data_len = 2 * ETH_ALEN + 2 * WPA_NONCE_LEN;
 	u8 tmp[WPA_KCK_MAX_LEN + WPA_KEK_MAX_LEN + WPA_TK_MAX_LEN +
 		WPA_KDK_MAX_LEN];
@@ -548,6 +551,15 @@ int wpa_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const char *label,
 		os_memcpy(data + 2 * ETH_ALEN + 2 * WPA_NONCE_LEN, z, z_len);
 		data_len += z_len;
 	}
+
+#ifdef CONFIG_IEEE80211BN
+	if (smd_id) {
+		os_memcpy(data + data_len, smd_id, ETH_ALEN);
+		data_len += ETH_ALEN;
+		wpa_hexdump(MSG_DEBUG, "WPA: SMD Identifier in PTK derivation",
+			    smd_id, ETH_ALEN);
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 	if (kdk_len > WPA_KDK_MAX_LEN) {
 		wpa_printf(MSG_ERROR,
@@ -667,6 +679,10 @@ int wpa_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const char *label,
 			     ptk_len) < 0)
 			return -1;
 	}
+
+#ifdef CONFIG_IEEE80211BN
+	/* TODO: IEEE 802.11bn-D1.2 §37.15.4.2 Per-AP MLD PTK mode key derivation */
+#endif /* CONFIG_IEEE80211BN */
 
 	wpa_printf(MSG_DEBUG, "WPA: PTK derivation - A1=" MACSTR " A2=" MACSTR,
 		   MAC2STR(addr1), MAC2STR(addr2));

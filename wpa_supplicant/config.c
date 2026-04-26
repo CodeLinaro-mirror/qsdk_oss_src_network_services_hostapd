@@ -441,8 +441,46 @@ static int wpa_config_parse_bssid_hint(const struct parse_data *data,
 	return 0;
 }
 
+static int wpa_config_parse_smd_id(const struct parse_data *data,
+                                   struct wpa_ssid *ssid, int line,
+                                   const char *value)
+{
+        if (value[0] == '\0' || os_strcmp(value, "\"\"") == 0) {
+                os_memset(ssid->smd_id, 0, ETH_ALEN);
+                wpa_printf(MSG_MSGDUMP, "SMD ID cleared");
+                return 0;
+        }
+        if (hwaddr_aton(value, ssid->smd_id)) {
+                wpa_printf(MSG_ERROR, "Line %d: Invalid SMD ID '%s'.",
+                           line, value);
+                return -1;
+        }
+        wpa_hexdump(MSG_MSGDUMP, "SMD ID", ssid->smd_id, ETH_ALEN);
+        return 0;
+}
 
 #ifndef NO_CONFIG_WRITE
+static char * wpa_config_write_smd_id(const struct parse_data *data,
+                                      struct wpa_ssid *ssid)
+{
+        char *value;
+        int res;
+
+        if (is_zero_ether_addr(ssid->smd_id))
+                return NULL;
+
+        value = os_malloc(20);
+        if (value == NULL)
+                return NULL;
+        res = os_snprintf(value, 20, MACSTR, MAC2STR(ssid->smd_id));
+        if (os_snprintf_error(20, res)) {
+                os_free(value);
+                return NULL;
+        }
+        value[20 - 1] = '\0';
+        return value;
+}
+
 static char * wpa_config_write_bssid_hint(const struct parse_data *data,
 					  struct wpa_ssid *ssid)
 {
@@ -2964,6 +3002,9 @@ static const struct parse_data ssid_fields[] = {
 	{ FUNC(bgscan_freq) },
 	{ INT_RANGE(control_frame_protection, 0, 1)},
 	{ INT(cip_padding_delay) },
+        { INT_RANGE(smd_enabled, 0, 1)},
+        { FUNC(smd_id)},
+        { INT_RANGE(smd_ptk_mode, 0, 1)},
 };
 
 #undef OFFSET

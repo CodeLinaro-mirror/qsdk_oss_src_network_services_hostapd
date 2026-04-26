@@ -2342,6 +2342,19 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_SAE_PW_ID_CHANGE,
 			 ssid->sae_password_id && ssid->sae_password_id_change);
 
+	if (wpa_s->smd_capable && bss && bss->smd_capable) {
+		os_memcpy(wpa_s->smd_id, bss->smd_identifier, ETH_ALEN);
+		os_memcpy(wpa_s->smd_me_initial_ap_mld_addr, bss->bssid, ETH_ALEN);
+		wpa_sm_set_smd_params(wpa_s->wpa, wpa_s->smd_id,
+				      wpa_s->smd_ptk_mode,
+				      wpa_s->smd_me_initial_ap_mld_addr);
+
+		wpa_printf(MSG_DEBUG, "SMD: Applied SMD-ME parameters - "
+			   "ID=" MACSTR " mode=%d initial_ap_mld=" MACSTR " (commit pending)",
+			   MAC2STR(wpa_s->smd_id), wpa_s->smd_ptk_mode,
+			   MAC2STR(wpa_s->smd_me_initial_ap_mld_addr));
+	}
+
 	if (!skip_default_rsne) {
 		if (wpa_sm_set_assoc_wpa_ie_default(wpa_s->wpa, wpa_ie,
 						    wpa_ie_len)) {
@@ -2378,8 +2391,18 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 
 			if (wpa_supplicant_get_psk(wpa_s, bss, ssid,
 						   psk) == 0) {
-				wpa_sm_set_pmk(wpa_s->wpa, psk, PMK_LEN, NULL,
-					       NULL);
+				if (wpa_s->smd_capable && bss->smd_capable) {
+					wpa_printf(MSG_DEBUG, "SMD: Setting PMK with SMD Context (PSK)");
+					wpa_sm_set_smd_params(wpa_s->wpa, wpa_s->smd_id,
+							      wpa_s->smd_ptk_mode,
+							      wpa_s->smd_me_initial_ap_mld_addr);
+					wpa_printf(MSG_DEBUG, "SMD: Set SMD params before PSK PMKSA creation - ID="
+						   MACSTR " mode=%u", MAC2STR(wpa_s->smd_id), wpa_s->smd_ptk_mode);
+					wpa_sm_set_pmk(wpa_s->wpa, psk, PMK_LEN, NULL,
+						       bss->bssid);
+				} else {
+					wpa_sm_set_pmk(wpa_s->wpa, psk, PMK_LEN, NULL, NULL);
+				}
 				psk_set = 1;
 			}
 			forced_memzero(psk, sizeof(psk));
@@ -2924,6 +2947,22 @@ void wpa_supplicant_associate(struct wpa_supplicant *wpa_s,
 		return;
 	}
 #endif /* CONFIG_IBSS_RSN */
+
+	/* Apply SMD configuration from network block to wpa_supplicant context */
+	if (ssid->smd_enabled) {
+		wpa_s->smd_capable = true;
+		os_memcpy(wpa_s->smd_id, ssid->smd_id, ETH_ALEN);
+		wpa_s->smd_ptk_mode = ssid->smd_ptk_mode;
+		wpa_printf(MSG_DEBUG,
+			   "SMD: Enabled from network config - smd_capable=%d smd_id="
+			   MACSTR " smd_ptk_mode=%u",
+			   wpa_s->smd_capable, MAC2STR(wpa_s->smd_id),
+			   wpa_s->smd_ptk_mode);
+	} else {
+		wpa_s->smd_capable = false;
+		os_memset(wpa_s->smd_id, 0, ETH_ALEN);
+		wpa_s->smd_ptk_mode = 0;
+	}
 
 	if (ssid->mode == WPAS_MODE_AP || ssid->mode == WPAS_MODE_P2P_GO ||
 	    ssid->mode == WPAS_MODE_P2P_GROUP_FORMATION) {
@@ -5693,6 +5732,22 @@ void wpa_supplicant_select_network(struct wpa_supplicant *wpa_s,
 
 	if (ssid)
 		wpas_clear_temp_disabled(wpa_s, ssid, 1);
+
+	/* Apply SMD configuration from network block to wpa_supplicant context */
+	if (ssid && ssid->smd_enabled) {
+		wpa_s->smd_capable = true;
+		os_memcpy(wpa_s->smd_id, ssid->smd_id, ETH_ALEN);
+		wpa_s->smd_ptk_mode = ssid->smd_ptk_mode;
+		wpa_printf(MSG_DEBUG,
+			   "SMD: Enabled from network config - smd_capable=%d smd_id="
+			   MACSTR " smd_ptk_mode=%u",
+			   wpa_s->smd_capable, MAC2STR(wpa_s->smd_id),
+			   wpa_s->smd_ptk_mode);
+	} else {
+		wpa_s->smd_capable = false;
+		os_memset(wpa_s->smd_id, 0, ETH_ALEN);
+		wpa_s->smd_ptk_mode = 0;
+	}
 
 	/*
 	 * Mark all other networks disabled or mark all networks enabled if no

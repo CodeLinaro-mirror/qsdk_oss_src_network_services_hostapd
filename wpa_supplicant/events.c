@@ -3351,7 +3351,18 @@ static int wpa_supplicant_use_own_rsne_params(struct wpa_supplicant *wpa_s,
 			return -1;
 		}
 
-		wpa_sm_set_pmk(wpa_s->wpa, ssid->psk, PMK_LEN, NULL, NULL);
+
+		if (wpa_s->smd_capable) {
+			wpa_printf(MSG_DEBUG, "SMD: Setting PMK with SMD context");
+			wpa_sm_set_smd_params(wpa_s->wpa, wpa_s->smd_id,
+					      wpa_s->smd_ptk_mode,
+					      wpa_s->smd_me_initial_ap_mld_addr);
+			wpa_sm_set_pmk(wpa_s->wpa, ssid->psk, PMK_LEN, NULL,
+				       data->assoc_info.addr);
+		} else {
+			wpa_sm_set_pmk(wpa_s->wpa, ssid->psk, PMK_LEN, NULL, NULL);
+		}
+
 		if (wpa_s->conf->key_mgmt_offload &&
 		    (wpa_s->drv_flags & WPA_DRIVER_FLAGS_KEY_MGMT_OFFLOAD) &&
 		    wpa_drv_set_key(wpa_s, -1, 0, NULL, 0, 0, NULL, 0,
@@ -3686,6 +3697,41 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 							data->assoc_info.resp_ies_len);
 #endif /* CONFIG_QCN_EXTN */
 	}
+
+	{
+		struct ieee802_11_elems elems;
+		if (ieee802_11_parse_elems(data->assoc_info.resp_ies,
+					   data->assoc_info.resp_ies_len, &elems,
+					   0) != ParseFailed) {
+			if (elems.smd && elems.smd_len >= 10) {
+				u8 smd_id[6];
+				u8 ptk_mode, capabilities;
+				u16 timeout;
+
+				if (wpas_parse_smd_ie(elems.smd, elems.smd_len,
+						     smd_id, &ptk_mode,
+						     &capabilities, &timeout) == 0) {
+					wpa_printf(MSG_DEBUG, "SMD: Parsed IE from assoc response: "
+						   "SMD_ID=" MACSTR " PTK_mode=%u capabilities=0x%02x timeout=%u",
+						   MAC2STR(smd_id), ptk_mode, capabilities, timeout);
+
+					if (wpa_s->current_bss) {
+						os_memcpy(wpa_s->current_bss->smd_identifier, smd_id, 6);
+						wpa_s->current_bss->smd_capabilities = capabilities;
+						wpa_s->current_bss->smd_timeout = timeout;
+						wpa_s->current_bss->smd_ptk_mode = ptk_mode;
+					}
+
+					wpa_msg(wpa_s, MSG_INFO, "SMD-ASSOC-ESTABLISHED SMD_ID=" MACSTR
+						" PTK_mode=%u", MAC2STR(smd_id), ptk_mode);
+				} else {
+					wpa_printf(MSG_WARNING, "SMD: Failed to parse SMD IE from assoc response");
+				}
+			}
+
+		}
+	}
+
 	if (data->assoc_info.beacon_ies)
 		wpa_hexdump(MSG_DEBUG, "beacon_ies",
 			    data->assoc_info.beacon_ies,

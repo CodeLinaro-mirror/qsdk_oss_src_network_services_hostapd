@@ -1714,11 +1714,26 @@ struct wpa_supplicant {
 	bool ext_auth_to_same_bss; /* Whether external authentication has been
 				    * completed successfully with the BSS that
 				    * we are already associated with. */  
+
 #ifdef CONFIG_QCN_EXTN
 	struct wpa_connect_work *cache_cwork;
 	int pre_connect_cnt;
 	struct wpa_supplicant_extn wpas_extn;
 #endif
+
+	bool smd_capable;
+	u8 smd_id[ETH_ALEN];
+	u8 smd_ptk_mode;
+
+	/* SMD_KDK for Per-AP MLD PTK mode (REQ-SEC-PTK-AP-002/003) */
+	u8 smd_kdk[PMK_LEN];		/* SMD Key Derivation Key */
+	size_t smd_kdk_len;		/* SMD_KDK length */
+	unsigned int smd_kdk_valid:1;	/* SMD_KDK validity flag */
+
+	unsigned int smd_me_associated:1;
+	u8 smd_me_initial_ap_mld_addr[ETH_ALEN];
+	struct os_time smd_me_association_time;
+
 };
 
 

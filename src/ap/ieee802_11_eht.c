@@ -1378,7 +1378,7 @@ sae_confirm_skip_fixed_fields(struct hostapd_data *hapd,
 #endif /* CONFIG_SAE */
 
 
-static const u8 * auth_skip_fixed_fields(struct hostapd_data *hapd,
+const u8 * auth_skip_fixed_fields(struct hostapd_data *hapd,
 					 const struct ieee80211_mgmt *mgmt,
 					 size_t len)
 {

@@ -4428,6 +4428,88 @@ nl80211_put_bss_membership_selectors(struct wpa_driver_nl80211_data *drv,
 		       selectors_len, selectors);
 }
 
+#ifdef CONFIG_IEEE80211BN
+static int nl80211_put_smd_params(struct nl_msg *msg,
+                                  const struct wpa_smd_params *params)
+{
+       struct nlattr *smd_params;
+
+       if (!params || !params->enabled)
+               return 0;
+
+       wpa_printf(MSG_DEBUG, "nl80211: Setting SMD AP parameters");
+
+       /* Set SMD AP flag */
+       if (nla_put_flag(msg, NL80211_ATTR_SMD_AP)) {
+               wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD AP flag");
+               return -1;
+       }
+
+       /* Create nested SMD parameters attribute */
+       smd_params = nla_nest_start(msg, NL80211_ATTR_SMD_PARAMS);
+       if (!smd_params) {
+               wpa_printf(MSG_ERROR, "nl80211: Failed to create SMD params nest");
+               return -1;
+       }
+
+       /* SMD Identifier (6-byte MAC address) */
+       if (nla_put(msg, NL80211_SMD_PARAMS_ATTR_IDENTIFIER, ETH_ALEN,
+                   params->smd_identifier)) {
+               wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD identifier");
+               return -1;
+       }
+       wpa_printf(MSG_DEBUG, "nl80211: SMD Identifier: " MACSTR,
+                  MAC2STR(params->smd_identifier));
+
+       /* SMD Timeout (u16) */
+       if (nla_put_u16(msg, NL80211_SMD_PARAMS_ATTR_TIMEOUT,
+                       params->smd_timeout)) {
+               wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD timeout");
+               return -1;
+       }
+       wpa_printf(MSG_DEBUG, "nl80211: SMD Timeout: %u TU",
+                  params->smd_timeout);
+
+       /* DL Data Forwarding (flag) */
+       if (params->caps.dl_data_fwd) {
+               if (nla_put_flag(msg, NL80211_SMD_PARAMS_ATTR_DL_DATA_FWD)) {
+                       wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD DL data fwd");
+                       return -1;
+               }
+               wpa_printf(MSG_DEBUG, "nl80211: SMD DL Data Forwarding: enabled");
+       }
+
+       /* Max Number of Peer AP MLDs (u8, 0-7) */
+       if (nla_put_u8(msg, NL80211_SMD_PARAMS_ATTR_MAX_PEER_APMLDS,
+                      params->caps.max_prep_target_apmlds)) {
+               wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD max peer AP MLDs");
+               return -1;
+       }
+       wpa_printf(MSG_DEBUG, "nl80211: SMD Max Peer AP MLDs: %u",
+                  params->caps.max_prep_target_apmlds);
+
+       /* SMD Type (u8) */
+       if (nla_put_u8(msg, NL80211_SMD_PARAMS_ATTR_TYPE,
+                      params->caps.smd_type ? 1 : 0)) {
+               wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD type");
+               return -1;
+       }
+       wpa_printf(MSG_DEBUG, "nl80211: SMD Type: %u", params->caps.smd_type);
+
+       /* PTK Mode (u8) */
+       if (nla_put_u8(msg, NL80211_SMD_PARAMS_ATTR_PTK_MODE,
+                      params->caps.ptk_mode ? 1 : 0)) {
+               wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD PTK mode");
+               return -1;
+       }
+       wpa_printf(MSG_DEBUG, "nl80211: SMD PTK Mode: %u", params->caps.ptk_mode);
+
+       nla_nest_end(msg, smd_params);
+
+       wpa_printf(MSG_DEBUG, "nl80211: SMD parameters set successfully");
+       return 0;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 static int wpa_driver_nl80211_authenticate(
 	struct i802_bss *bss, struct wpa_driver_auth_params *params)
@@ -4544,6 +4626,21 @@ retry:
 			    params->ap_mld_addr))
 			goto fail;
 	}
+
+#ifdef CONFIG_IEEE80211BN
+      /* STA: send nested SMD_PARAMS (no SMD_AP flag for STA path) */
+	if (params->smd.enabled &&
+	    nla_put_flag(msg, NL80211_ATTR_SMD_AP)) {
+		wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD AP flag");
+		goto fail;
+	}
+
+	/* Set SMD parameters if configured */
+	if (nl80211_put_smd_params(msg, &params->smd) < 0) {
+		wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD params");
+		goto fail;
+	}
+#endif
 
 	ret = send_and_recv_cmd(drv, msg);
 	msg = NULL;
@@ -6399,6 +6496,12 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 			       params->dps_assist))
 			goto fail;
 	}
+
+       /* Set SMD parameters if configured */
+       if (nl80211_put_smd_params(msg, &params->smd) < 0) {
+               wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD params");
+               goto fail;
+       }
 #endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_DRIVER_NL80211_QCA
@@ -8401,6 +8504,19 @@ static int wpa_driver_nl80211_associate(
 			    params->fils_nonces_len, params->fils_nonces))
 			goto fail;
 	}
+
+	/* STA: send nested SMD_PARAMS in association (no SMD_AP flag) */
+#ifdef CONFIG_IEEE80211BN
+	if (params->smd.enabled &&
+	    nla_put_flag(msg, NL80211_ATTR_SMD_AP)) {
+		wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD AP flag");
+		goto fail;
+	}
+	if (nl80211_put_smd_params(msg, &params->smd) < 0) {
+		wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD params for assoc");
+		goto fail;
+	}
+#endif
 
 	if (!TEST_FAIL_TAG("assoc")) {
 		if (nla_put_flag(msg, NL80211_ATTR_SOCKET_OWNER))

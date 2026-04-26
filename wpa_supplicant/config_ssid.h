@@ -1425,6 +1425,26 @@ struct wpa_ssid {
 
 	int cip_padding_delay;
 
+        /**
+         * smd_enabled - Whether SMD (Seamless Mobility Domain) is enabled
+         * 0 = SMD disabled (default)
+         * 1 = SMD enabled
+         */
+        int smd_enabled;
+
+        /**
+         * smd_id - SMD ID (Seamless Mobility Domain Identifier)
+         * 6-byte identifier for the SMD
+         */
+        u8 smd_id[ETH_ALEN];
+
+
+	/**
+	 * smd_ptk_mode - SMD PTK mode for Seamless Mobility Domain
+	 * 0 = Per-SMD PTK (Mode 0) - default
+	 * 1 = Per-AP MLD PTK (Mode 1)
+	 */
+	int smd_ptk_mode;
 };
 
 #endif /* CONFIG_SSID_H */

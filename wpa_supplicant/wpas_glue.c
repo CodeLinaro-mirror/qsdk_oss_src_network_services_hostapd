@@ -1554,6 +1554,12 @@ int wpa_supplicant_init_wpa(struct wpa_supplicant *wpa_s)
 		wpa_s->ptksa = NULL;
 		return -1;
 	}
+
+	if (wpa_s->smd_capable && !is_zero_ether_addr(wpa_s->smd_id)) {
+		wpa_sm_set_smd_params(wpa_s->wpa, wpa_s->smd_id,
+				      wpa_s->smd_ptk_mode,
+				      wpa_s->smd_me_initial_ap_mld_addr);
+	}
 #endif /* CONFIG_NO_WPA */
 
 	return 0;

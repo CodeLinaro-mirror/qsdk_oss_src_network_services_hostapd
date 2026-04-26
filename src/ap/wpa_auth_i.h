@@ -16,6 +16,25 @@
 
 struct wpa_group;
 
+#ifdef CONFIG_IEEE80211BN
+/* SMD Capabilities structure for wpa_state_machine */
+struct wpa_smd_caps {
+	bool dl_data_fwd; /* DL Data Forwarding capability */
+	u8 max_prep_target_apmlds; /* Max Number Of Prepared Target AP MLDs */
+	bool smd_type; /* SMD Type field */
+	bool ptk_mode; /* PTK Mode field */
+};
+
+/* SMD information for wpa_state_machine, mirrored from sta_info */
+struct wpa_smd_info {
+	bool smd_sta; /* Station supports SMD */
+	u8 smd_identifier[ETH_ALEN]; /* SMD Identifier from STA */
+	u8 smd_timeout; /* Timeout Value, units of 64 TUs */
+	struct wpa_smd_caps caps; /* SMD capabilities */
+};
+#endif /* CONFIG_IEEE80211BN */
+
+
 struct wpa_state_machine {
 	struct wpa_authenticator *wpa_auth;
 	struct wpa_group *group;
@@ -107,6 +126,12 @@ struct wpa_state_machine {
 	unsigned int is_wnmsleep:1;
 	unsigned int pmkid_set:1;
 	unsigned int spp_amsdu:1;
+
+	unsigned int smd_enabled:1;
+	u8 smd_id[ETH_ALEN];
+	u8 smd_ptk_mode;
+	u8 smd_kdk[PMK_LEN_MAX];
+	size_t smd_kdk_len;
 
 	unsigned int ptkstart_without_success;
 
@@ -207,6 +232,11 @@ struct wpa_state_machine {
 	struct wpabuf *sae_pw_id;
 	unsigned int sae_pw_id_counter;
 	bool externally_triggered_m3;
+
+#ifdef CONFIG_IEEE80211BN
+	struct wpa_smd_info smd_info; /* SMD information for this station */
+#endif /* CONFIG_IEEE80211BN */
+
 };
 
 

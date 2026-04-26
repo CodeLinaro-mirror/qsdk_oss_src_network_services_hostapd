@@ -774,6 +774,22 @@ static int wpa_supplicant_ctrl_iface_set(struct wpa_supplicant *wpa_s,
 		wpa_s->disable_sa_query = !!atoi(value);
 	} else if (os_strcasecmp(cmd, "ignore_sae_h2e_only") == 0) {
 		wpa_s->ignore_sae_h2e_only = !!atoi(value);
+	} else if (os_strcasecmp(cmd, "smd_enabled") ==0) {
+		wpa_s->smd_capable = !!atoi(value);
+		wpa_printf(MSG_DEBUG, "SMD: smd_enabled set to %d", wpa_s->smd_capable);
+	} else if (os_strcasecmp(cmd, "smd_id") == 0) {
+		if (hwaddr_aton(value, wpa_s->smd_id) < 0) {
+			wpa_printf(MSG_ERROR, "SMD: Invalid smd_id format");
+			ret = -1;
+		} else {
+			wpa_printf(MSG_DEBUG, "SMD: smd_id set to " MACSTR,
+				   MAC2STR(wpa_s->smd_id));
+
+		}
+	} else if (os_strcasecmp(cmd, "smd_ptk_mode") == 0) {
+		wpa_s->smd_ptk_mode = atoi(value);
+		wpa_printf(MSG_DEBUG, "SMD: smd_ptk_mode set to %d",
+			   wpa_s->smd_ptk_mode);
 	} else if (os_strcasecmp(cmd, "extra_sae_rejected_groups") == 0) {
 		char *pos;
 
@@ -3325,6 +3341,13 @@ static int wpa_supplicant_ctrl_iface_scan_result(
 		pos += ret;
 	}
 
+	if (bss->smd_capable) {
+		ret = os_snprintf(pos, end - pos, "[SMD]");
+		if (os_snprintf_error(end - pos, ret))
+			return -1;
+		pos += ret;
+	}
+
 	ret = os_snprintf(pos, end - pos, "\t%s",
 			  wpa_ssid_txt(bss->ssid, bss->ssid_len));
 	if (os_snprintf_error(end - pos, ret))
@@ -5532,6 +5555,31 @@ static int print_bss_info(struct wpa_supplicant *wpa_s, struct wpa_bss *bss,
 		os_get_reltime(&now);
 		ret = os_snprintf(pos, end - pos, "age=%d\n",
 				  (int) (now.sec - bss->last_update.sec));
+		if (os_snprintf_error(end - pos, ret))
+			return 0;
+		pos += ret;
+	}
+
+	if (bss->smd_capable) {
+		ret = os_snprintf(pos, end - pos, "smd_capable=1\n");
+		if (os_snprintf_error(end - pos, ret))
+			return 0;
+		pos += ret;
+
+		ret = os_snprintf(pos, end - pos, "smd_identifier=" MACSTR "\n",
+				  MAC2STR(bss->smd_identifier));
+		if (os_snprintf_error(end - pos, ret))
+			return 0;
+		pos += ret;
+
+		ret = os_snprintf(pos, end - pos, "smd_capabilities=0x%02x\n",
+				  bss->smd_capabilities);
+		if (os_snprintf_error(end - pos, ret))
+			return 0;
+		pos += ret;
+
+		ret = os_snprintf(pos, end - pos, "smd_timeout=%u\n",
+				  bss->smd_timeout);
 		if (os_snprintf_error(end - pos, ret))
 			return 0;
 		pos += ret;
