@@ -1317,4 +1317,15 @@ static inline int wpa_drv_set_epcs_cfg(struct wpa_supplicant *wpa_s,
 					   epcs_cfg_value);
 }
 #endif /* CONFIG_IEEE80211BE */
+
+static inline int wpa_drv_trigger_smd_discovery(struct wpa_supplicant *wpa_s,
+						const struct wpa_driver_smd_neighbor *neighbors,
+						size_t num_neighbors)
+{
+	if (!wpa_s->driver->trigger_smd_discovery)
+		return -1;
+	return wpa_s->driver->trigger_smd_discovery(wpa_s->drv_priv, neighbors,
+						    num_neighbors);
+}
+
 #endif /* DRIVER_I_H */

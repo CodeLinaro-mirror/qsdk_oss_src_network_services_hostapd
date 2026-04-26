@@ -157,6 +157,33 @@ struct wpa_bss {
 #endif
 	} mld_links[MAX_NUM_MLD_LINKS];
 
+	bool smd_capable;
+	u8 smd_identifier[ETH_ALEN];
+	u8 smd_capabilities;
+	u8 smd_ptk_mode;
+	/* smd_timeout: preparation timeout in units of 64 TUs (1 octet per
+	 * IEEE 802.11bn-D1.2 SMD IE format, section 9.4.2.323)
+	 */
+	u8 smd_timeout;
+
+	bool smd_dl_forwarding;
+	u8 smd_max_targets;
+	bool smd_type;
+	bool smd_from_beacon;
+
+	/* RNR-derived SMD inference fields: populated from the Reduced
+	 * Neighbor Report element when the kernel indicates the BSS is
+	 * SMD-capable.  rnr_smd_inference_present gates the others.
+	 * rnr_same_smd_bit indicates the neighbor belongs to the same SMD
+	 * domain.  rnr_ap_mld_id and rnr_short_ssid identify the AP MLD
+	 * and SSID for target selection during SMD BSS Transition
+	 * (IEEE 802.11bn-D1.2 section 37.5).
+	 */
+	bool rnr_smd_inference_present;
+	bool rnr_same_smd_bit;
+	u8 rnr_ap_mld_id;
+	u32 rnr_short_ssid;
+
 	/* followed by ie_len octets of IEs */
 	/* followed by beacon_ie_len octets of IEs */
 	u8 ies[];
