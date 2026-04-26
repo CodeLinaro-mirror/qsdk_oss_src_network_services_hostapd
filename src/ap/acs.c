@@ -943,6 +943,12 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 			    iface->conf->acs_exclude_dfs)
 				break;
 
+			if (iface->conf->acs_dfs_available_only &&
+			    (chan2->flag & HOSTAPD_CHAN_RADAR) &&
+			    (chan2->flag & HOSTAPD_CHAN_DFS_MASK) !=
+			    HOSTAPD_CHAN_DFS_AVAILABLE)
+				break;
+
 			if (chan2->max_tx_power < iface->conf->min_tx_power)
 				break;
 
@@ -1548,6 +1554,12 @@ static int * acs_request_scan_add_freqs(struct hostapd_iface *iface,
 		if ((chan->flag & HOSTAPD_CHAN_DISABLED) ||
 		    ((chan->flag & HOSTAPD_CHAN_RADAR) &&
 		     iface->conf->acs_exclude_dfs))
+			continue;
+
+		if (iface->conf->acs_dfs_available_only &&
+		    (chan->flag & HOSTAPD_CHAN_RADAR) &&
+		    (chan->flag & HOSTAPD_CHAN_DFS_MASK) !=
+		    HOSTAPD_CHAN_DFS_AVAILABLE)
 			continue;
 
 		if (!is_in_chanlist(iface, chan))
