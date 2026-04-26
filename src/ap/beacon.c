@@ -657,6 +657,67 @@ static u8 * hostapd_eid_supported_op_classes(struct hostapd_data *hapd, u8 *eid)
 	return eid;
 }
 
+#ifdef CONFIG_IEEE80211BN
+/**
+ * hostapd_eid_smd_ie - Add SMD Information Element
+ * @hapd: BSS data
+ * @eid: Pointer to the current position in the buffer
+ * Returns: Pointer to the next position in the buffer
+ */
+static u8 * hostapd_eid_smd_ie(struct hostapd_data *hapd, u8 *eid)
+{
+	u8 *pos = eid;
+	u8 smd_cap_byte;
+
+	if (!hapd->conf->smd.enabled)
+		return eid;
+
+	if (!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_SMD))
+		return eid;
+
+	*pos++ = WLAN_EID_EXTENSION;
+	*pos++ = SMD_IE_LEN - 2; /* Ext ID + SMD ID + Capabilities + Timeout */
+	*pos++ = WLAN_EID_EXT_SMD; /* Element ID Extension */
+
+	/* SMD Identifier (6 octets) - 48-bit MAC address */
+	os_memcpy(pos, hapd->conf->smd.smd_identifier, ETH_ALEN);
+	pos += ETH_ALEN;
+
+	/* SMD Capabilities (1 octet)
+	 * B0: DL Data Forwarding
+	 * B1-B3: Max Number Of Prepared Target AP MLDs
+	 * B4: SMD Type
+	 * B5: PTK Mode
+	 * B6: Neighboring AP Probing Support
+	 * B7: Reserved
+	 */
+	smd_cap_byte = 0;
+	if (hapd->conf->smd.caps.dl_data_fwd)
+		smd_cap_byte |= BIT(0);
+	smd_cap_byte |= (hapd->conf->smd.caps.max_prep_target_apmlds & 0x07) << 1;
+	if (hapd->conf->smd.caps.smd_type)
+		smd_cap_byte |= BIT(4);
+	if (hapd->conf->smd.caps.ptk_mode)
+		smd_cap_byte |= BIT(5);
+	*pos++ = smd_cap_byte;
+
+	/* Timeout Value (1 octet) - in units of 64 TUs */
+	*pos++ = (u8)hapd->conf->smd.smd_prep_timeout;
+
+	return pos;
+}
+
+static size_t hostapd_smd_ie_len(struct hostapd_data *hapd)
+{
+	if (!hapd->conf->smd.enabled)
+		return 0;
+
+	if (!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_SMD))
+		return 0;
+
+	return SMD_IE_LEN;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 static int
 ieee802_11_build_ap_params_mbssid(struct hostapd_data *hapd,
@@ -957,6 +1018,7 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 		buflen += 3 + sizeof(struct ieee80211_uhr_capabilities);
 		buflen += 3 + sizeof(struct ieee80211_uhr_operation);
 	}
+	buflen += hostapd_smd_ie_len(hapd);
 #endif /* CONFIG_IEEE80211BN */
 
 	buflen += hostapd_eid_rnr_len(hapd, WLAN_FC_STYPE_PROBE_RESP, true);
@@ -1471,6 +1533,11 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 	pos = hostapd_eid_qcn_vendor_ie_extn(hapd, pos, IEEE80211_MODE_AP);
 #endif /* CONFIG_QCN_EXTN */
+#ifdef CONFIG_IEEE80211BN
+	/* SMD Information element */
+	pos = hostapd_eid_smd_ie(hapd, pos);
+#endif /* CONFIG_IEEE80211BN */
+
 	/* Add Estimated Service Parameters (ESP) IE in Probe Response when enabled */
 	pos = hostapd_eid_esp_extn(hapd, pos, epos - pos);
 
@@ -3240,6 +3307,10 @@ int ieee802_11_build_nontx_bss_params(struct hostapd_data *hapd,
 	tail_len += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
 #endif /* CONFIG_QCN_EXTN */
 
+#ifdef CONFIG_IEEE80211BN
+	tail_len += hostapd_smd_ie_len(hapd);
+#endif /* CONFIG_IEEE80211BN */
+
 	tailpos = tail = os_malloc(tail_len);
 	if (tail == NULL) {
 		wpa_printf(MSG_ERROR,
@@ -3796,6 +3867,11 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 	tailpos = hostapd_eid_qcn_vendor_ie_extn(hapd, tailpos, IEEE80211_MODE_AP);
 #endif /* CONFIG_QCN_EXTN */
+#ifdef CONFIG_IEEE80211BN
+	/* SMD Information element */
+	tailpos = hostapd_eid_smd_ie(hapd, tailpos);
+#endif /* CONFIG_IEEE80211BN */
+
 	tailpos = hostapd_eid_esp_extn(hapd, tailpos,
 				       tail + tail_len - tailpos);
 
@@ -4212,6 +4288,21 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 #endif /* CONFIG_IEEE80211BE */
 	params.disable_cu = hapd->disable_cu;
 	hapd->disable_cu = 0;
+
+#ifdef CONFIG_IEEE80211BN
+	/* Populate SMD parameters from hapd->conf into params structure */
+	if (hapd->conf->smd.enabled) {
+		params.smd.enabled = hapd->conf->smd.enabled;
+		os_memcpy(params.smd.smd_identifier,
+			  hapd->conf->smd.smd_identifier, ETH_ALEN);
+		params.smd.smd_timeout = hapd->conf->smd.smd_prep_timeout;
+		params.smd.caps.dl_data_fwd = hapd->conf->smd.caps.dl_data_fwd;
+		params.smd.caps.max_prep_target_apmlds =
+			hapd->conf->smd.caps.max_prep_target_apmlds;
+		params.smd.caps.smd_type = hapd->conf->smd.caps.smd_type;
+		params.smd.caps.ptk_mode = hapd->conf->smd.caps.ptk_mode;
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 	if (cmode &&
 	    hostapd_set_freq_params(&freq, iconf->hw_mode, iface->freq,

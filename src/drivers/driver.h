@@ -1055,6 +1055,39 @@ struct wpa_driver_scan_params {
 };
 
 /**
+ * smd_enabled - Whether this AP is part of an SMD
+ * smd - SMD configuration
+ * This structure mirrors the SMD configuration from hostapd_bss_config
+ * and is populated by the AP layer before being passed to the driver.
+ */
+struct wpa_smd_params {
+        /**
+         * enabled - Whether SMD is enabled for this AP
+         */
+        int enabled;
+
+        /**
+         * smd_identifier - SMD Identifier (6-byte MAC address)
+         */
+        u8 smd_identifier[ETH_ALEN];
+
+        /**
+         * smd_timeout - SMD Preparation Timeout, units of 64 TUs
+         */
+        u8 smd_timeout;
+
+        /**
+         * caps - SMD capabilities
+         */
+        struct {
+                bool dl_data_fwd; /* DL Data Forwarding */
+                u8 max_prep_target_apmlds; /* Max Number Of Prepared Target AP MLDs (0-7) */
+                bool smd_type; /* SMD Type (0 or 1) */
+                bool ptk_mode; /* PTK Mode (0 or 1) */
+        } caps;
+};
+
+/**
  * struct wpa_driver_auth_params - Authentication parameters
  * Data for struct wpa_driver_ops::authenticate().
  */
@@ -2442,6 +2475,10 @@ struct wpa_driver_ap_params {
 	int rssi_deauth_grace_samples;
 
 	int dps_assist;
+
+#ifdef CONFIG_IEEE80211BN
+	struct wpa_smd_params smd;
+#endif /* CONFIG_IEEE80211BN */
 };
 
 struct wpa_driver_mesh_bss_params {
