@@ -956,6 +956,11 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 			if (!chan_pri_allowed(chan2))
 				continue;
 
+#ifdef CONFIG_QCN_EXTN
+			if (!chan_pri_allowed_extn(chan2))
+				 continue;
+#endif
+
 			if (!is_in_chanlist(iface, chan2))
 				continue;
 
