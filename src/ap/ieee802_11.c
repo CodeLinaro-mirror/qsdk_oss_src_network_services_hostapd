@@ -8009,6 +8009,10 @@ static int hostapd_action_vs(struct hostapd_data *hapd,
 		hostapd_dscp_action(hapd, sta, pos, end, protected);
 		return 0;
 	default:
+		if (!handle_action_vs_extn(hapd, sta, mgmt, len, freq,
+					   protected) == 0)
+			return 0;
+
 		wpa_printf(MSG_DEBUG,
 			   "Ignore unknown Vendor Specific Action frame OUI/type %08x%s",
 			   oui_type, protected ? " (protected)" : "");
