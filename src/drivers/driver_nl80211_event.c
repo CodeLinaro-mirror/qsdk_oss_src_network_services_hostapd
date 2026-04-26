@@ -216,6 +216,7 @@ static const char * nl80211_command_to_string(enum nl80211_commands cmd)
 	C2S(NL80211_CMD_ERP)
 	C2S(NL80211_CMD_QOS_MGMT)
 	C2S(__NL80211_CMD_AFTER_LAST)
+	C2S(NL80211_CMD_TRIGGER_SMD_DISCOVERY)
 	}
 #undef C2S
 

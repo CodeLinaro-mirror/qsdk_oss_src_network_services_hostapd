@@ -728,6 +728,21 @@ struct wpa_scan_res {
 	bool mlo_tput_accumulated;
 	size_t ie_len;
 	size_t beacon_ie_len;
+	bool smd_capable;
+	u8 smd_identifier[ETH_ALEN];
+	u8 smd_capabilities;
+	u16 smd_timeout;
+	bool smd_dl_forwarding;
+	u8 smd_max_targets;
+	bool smd_type;
+	bool smd_ptk_mode;
+	bool smd_from_beacon;
+
+	bool rnr_smd_inference_present;
+	bool rnr_same_smd_bit;
+	u8 rnr_ap_mld_id;
+	u32 rnr_short_ssid;
+
 	/* Followed by ie_len + beacon_ie_len octets of IE data */
 };
 
@@ -772,6 +787,39 @@ struct wpa_interface_info {
 struct wpa_driver_scan_ssid {
 	const u8 *ssid;
 	size_t ssid_len;
+};
+
+/**
+ * struct wpa_driver_smd_neighbor - SMD neighbor discovery target
+ *
+ * Represents a neighbor AP that is part of an SMD domain, extracted from
+ * RNR (Reduced Neighbor Report) elements for directed discovery.
+ */
+struct wpa_driver_smd_neighbor {
+	/**
+	 * short_ssid - Short SSID of target AP
+	 */
+	u32 short_ssid;
+
+	/**
+	 * freq - Operating frequency in MHz
+	 */
+	u32 freq;
+
+	/**
+	 * u8 op_class - Operating Class
+	 */
+	u8 op_class;
+
+	/**
+	 * u8 bssid - BSSID of target AP (optional, may be all 0s)
+	 */
+	u8 bssid[ETH_ALEN];
+
+	/**
+	 * ap_mld_id - AP MLD ID (optional, 0 if not present)
+	 */
+	u8 ap_mld_id;
 };
 
 struct t2lm_mapping {
@@ -5714,6 +5762,22 @@ struct wpa_driver_ops {
 	 * sched_scan is supported.
 	 */
 	int (*stop_sched_scan)(void *priv);
+
+	/**
+	 * trigger_smd_discovery = Trigger SMD neighbor discovery
+	 * @priv: Private driver interface data
+	 * @neighbors: Array of SMD neighbor targets to discover
+	 * @num_neighbors: Number of neighbors in the array
+	 * Returns: 0 on success, -1 on failure
+	 *
+	 * This function triggers directed discovery for SMD neighbors identified
+	 * from RNR elements. The driver should issue
+	 * NL80211_CMD_TRIGGER_SMD_DISCOVERY to the kernel with the target
+	 * list for efficient directed scanning.
+	 */
+	int (*trigger_smd_discovery)(void *priv,
+				     const struct wpa_driver_smd_neighbor *neighbors,
+				     size_t num_neighbors);
 
 	/**
 	 * poll_client - Probe (null data or such) the given station
