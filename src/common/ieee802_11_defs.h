@@ -575,6 +575,8 @@
 /* SMD Information Element length: EID (1) + Len (1) + ExtID (1) +
  * SMD Identifier (ETH_ALEN) + Capabilities (1) + Timeout (1) */
 #define SMD_IE_LEN (2 + 1 + ETH_ALEN + 1 + 1)
+/* Bit 5 of the Capabilities byte: PTK-per-AP mode */
+#define SMD_IE_CAPA_PTK_MODE BIT(5)
 
 #ifdef CONFIG_IEEE80211BN
 /* UHR Reconfiguration Multi-Link Control field */
