@@ -320,8 +320,6 @@ void smd_btm_enhance_preference(struct wpa_supplicant *wpa_s,
 				struct neighbor_report *neighbor,
 				struct wpa_bss *bss);
 
-int smd_parse_neighbor_smd_info(struct neighbor_report *neighbor,
-				const u8 *ie, size_t ie_len);
 
 int smd_process_rrm_neighbor_report(struct wpa_supplicant *wpa_s,
 				    const u8 *bssid,
