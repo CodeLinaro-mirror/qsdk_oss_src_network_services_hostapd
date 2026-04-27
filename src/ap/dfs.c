@@ -2200,9 +2200,15 @@ int hostapd_dfs_nop_finished(struct hostapd_iface *iface, int freq,
 	else
 		set_dfs_state(iface, freq, ht_enabled, chan_offset, chan_width,
 			      cf1, cf2, HOSTAPD_CHAN_DFS_USABLE,0);
-
 	if (iface->state == HAPD_IFACE_DFS && !iface->cac_started) {
 		/* Handle cases where all channels were initially unavailable */
+#ifdef CONFIG_QCN_EXTN
+		if (!iface->conf->conf_extn.autorecovery_after_nol_vapdown) {
+			wpa_msg(iface->bss[0]->msg_ctx, MSG_DEBUG,
+				"autorecovery_after_nol_vapdown disabled, skipping DFS recovery");
+			return 0;
+		}
+#endif
 		hostapd_handle_dfs(iface);
 	} else if (dfs_use_radar_background(iface) &&
 			iface->radar_background.channel == -1) {
