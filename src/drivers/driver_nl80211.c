@@ -17176,6 +17176,95 @@ failed:
 
 
 #ifdef CONFIG_IEEE80211BE
+/**
+ * wpa_driver_nl80211_uhr_mode_update - Send UHR mode update (NPCA) per link
+ *
+ * Sends NL80211_CMD_UHR_MODE_UPDATE with per-link NPCA parameters.
+ * The NL80211_ATTR_UHR_MODE_UPDATE_PARAMS attribute is a nested array
+ * where each element contains per-link attributes.
+ */
+static int wpa_driver_nl80211_uhr_mode_update(void *priv,
+					      struct npca_link_config *links,
+					      int num_links)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	struct nlattr *params_attr, *link_attr;
+	int i, ret;
+
+	if (!links || num_links <= 0) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: uhr_mode_update: no links specified");
+		return -1;
+	}
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_UHR_MODE_UPDATE);
+	if (!msg)
+		goto failed;
+
+	/* NL80211_ATTR_UHR_MODE_UPDATE_PARAMS is a nested array of per-link
+	 * configurations */
+	params_attr = nla_nest_start(msg, NL80211_ATTR_UHR_MODE_UPDATE_PARAMS);
+	if (!params_attr)
+		goto failed;
+
+	for (i = 0; i < num_links; i++) {
+		/*
+		 * Use a proper netlink nested-array entry index for each per-link
+		 * element. The kernel iterates these entries with nla_for_each_nested()
+		 * and then parses the nested payload, so each element needs to be a
+		 * distinct nested container.
+		 */
+		link_attr = nla_nest_start(msg, i + 1);
+		if (!link_attr)
+			goto failed;
+
+		if (nla_put_u8(msg, NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID,
+			       (u8)links[i].link_id))
+			goto failed;
+
+		if (nla_put_u8(msg, NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE,
+			       links[i].npca_enable))
+			goto failed;
+
+		if (links[i].npca_switch_delay &&
+		    nla_put_u8(msg,
+			       NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY,
+			       links[i].npca_switch_delay))
+			goto failed;
+
+		if (links[i].npca_switchback_delay &&
+		    nla_put_u8(msg,
+			       NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY,
+			       links[i].npca_switchback_delay))
+			goto failed;
+
+		nla_nest_end(msg, link_attr);
+	}
+
+	nla_nest_end(msg, params_attr);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: uhr_mode_update failed. ret=%d (%s)",
+			   ret, strerror(-ret));
+		return ret;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: uhr_mode_update sent for %d link(s)", num_links);
+	return 0;
+
+failed:
+	nlmsg_free(msg);
+	return -1;
+}
+#endif /* CONFIG_IEEE80211BE */
+
+
+#ifdef CONFIG_IEEE80211BE
 static int wpa_driver_nl80211_set_ttlm_link_mapping(void *priv, enum wpa_driver_if_type type,
 						    struct driver_ttlm_info *params,
 						    const u8 *addr)
@@ -18187,6 +18276,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.is_retail_afc_supported = nl80211_is_retail_afc_supported,
 #ifdef CONFIG_IEEE80211BE
 	.set_epcs_cfg = wpa_driver_set_epcs_cfg,
+	.uhr_mode_update = wpa_driver_nl80211_uhr_mode_update,
 	.set_ttlm_link_mapping = wpa_driver_nl80211_set_ttlm_link_mapping,
 	.set_advertised_ttlm_params = wpa_driver_nl80211_set_advertised_ttlm_params,
 	.ml_reconf = wpa_driver_nl80211_ml_reconf,

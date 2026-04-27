@@ -454,6 +454,27 @@ static int wpa_cli_cmd_epcs(struct wpa_ctrl *ctrl, int argc,
 	}
 	return wpa_cli_cmd(ctrl, "EPCS", 1, argc, argv);
 }
+
+/**
+ * wpa_cli_cmd_npca - Handle npca wpa_cli command
+ *
+ * Usage:
+ *   npca <0|1> [link_id=<id> [switch_delay=<d>]
+ *                      [switchback_delay=<d>]] ...
+ *
+ * Enables or disables NPCA on all MLO links that support it.
+ * Optional per-link overrides can be specified with link_id= tokens.
+ */
+static int wpa_cli_cmd_npca(struct wpa_ctrl *ctrl, int argc,
+				   char *argv[])
+{
+	if (argc < 1) {
+		printf("Invalid NPCA command: needs at least 1 argument "
+		       "(0 or 1 to disable/enable)\n");
+		return -1;
+	}
+	return wpa_cli_cmd(ctrl, "NPCA", 1, argc, argv);
+}
 #endif /* CONFIG_IEEE80211BE */
 
 static int wpa_cli_cmd_set_scan_freq(struct wpa_ctrl *ctrl, int argc,
@@ -4529,6 +4550,10 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	  cli_cmd_flag_none,
 	  "  [session_initiate|session_teardown]\n"
 	  " =enable/disable EPCS session" },
+	{ "npca", wpa_cli_cmd_npca, NULL,
+	  cli_cmd_flag_none,
+	  "  <0|1> [link_id=<id> [switch_delay=<d>] [switchback_delay=<d>]] ...\n"
+	  " =enable(1)/disable(0) NPCA on all MLO links with optional per-link config" },
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_QCN_EXTN
 	{ "get_freq_list", wpa_cli_cmd_get_freq_list, NULL,
