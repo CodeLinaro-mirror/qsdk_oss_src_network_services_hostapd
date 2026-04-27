@@ -6992,6 +6992,14 @@ enum wpa_event_type {
 	EVENT_SETUP_LINK_RECONFIG,
 
 	/**
+	 * EVENT_MODIFY_LINK_STA - Driver indicates STA link modification
+	 *
+	 * Trigger a supplicant-side check for additional simultaneous links
+	 * via scan+RNR evaluation and disconnect if expectations match.
+	 */
+	EVENT_MODIFY_LINK_STA,
+
+	/**
 	 * EVENT_RX_CRITICAL_UPDATE - Updated critical parameters received
 	 * this event is emitted when updated critical parameters from driver
 	 * are received. updated critical parameters need to be updated in

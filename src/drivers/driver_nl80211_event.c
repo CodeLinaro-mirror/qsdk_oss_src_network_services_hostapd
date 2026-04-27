@@ -5691,6 +5691,14 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 	case NL80211_CMD_ASSOC_MLO_RECONF:
 		mlme_event_link_addition(bss, nla_data(frame), nla_len(frame));
 		break;
+	case NL80211_CMD_MODIFY_LINK_STA:
+		/*
+		 * Driver notified link modification for associated MLD STA.
+		 * Forward this to core so supplicant can re-evaluate RNR/links
+		 * and take action (e.g., disconnect) if expectations change.
+		 */
+		wpa_supplicant_event(drv->ctx, EVENT_MODIFY_LINK_STA, NULL);
+		break;
 	case NL80211_CMD_UPDATE_HE_MUEDCA_PARAMS:
 		nl80211_update_muedca_params_event(drv, tb);
 		break;
