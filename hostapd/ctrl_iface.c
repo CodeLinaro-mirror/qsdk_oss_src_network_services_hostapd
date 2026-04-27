@@ -8537,6 +8537,60 @@ static int hostapd_ctrl_iface_dfs_disable_auto_unpunc(struct hostapd_data *hapd,
 	return 0;
 }
 
+/**
+ * hostapd_ctrl_iface_puncture_sources - List channels with puncture sources
+ * @hapd: Pointer to hostapd BSS data
+ * @reply: Buffer to store the response text
+ * @reply_size: Size of @reply buffer in bytes
+ *
+ * Build a textual list of channels whose puncture source is USER or RADAR
+ * and return it through the control interface reply buffer.
+ *
+ * Return: Length of the generated reply on success, -1 on failure.
+ */
+static int hostapd_ctrl_iface_puncture_sources(struct hostapd_data *hapd,
+					       char *reply, size_t reply_size)
+{
+	struct hostapd_iface *iface;
+	struct hostapd_hw_modes *mode;
+	int i;
+	int res;
+	char *pos;
+
+	iface = hapd ? hapd->iface : NULL;
+	mode = iface ? iface->current_mode : NULL;
+	if (!mode) {
+		wpa_printf(MSG_ERROR, "Invalid iface/current_mode pointer");
+		return -1;
+	}
+
+	pos = reply;
+	for (i = 0; i < mode->num_channels; i++) {
+		struct hostapd_channel_data *chan;
+
+		chan = &mode->channels[i];
+		if (chan->puncture_source == DFS_CHAN_PUNC_NONE)
+			continue;
+
+		res = os_snprintf(pos, reply + reply_size - pos, "%d(%s) ",
+				  chan->chan,
+				  chan->puncture_source == DFS_CHAN_PUNC_USER ?
+				  "USER" : "RADAR");
+		if (os_snprintf_error(reply + reply_size - pos, res))
+			return -1;
+
+		pos += res;
+	}
+
+	res = os_snprintf(pos, reply + reply_size - pos, "\n");
+	if (os_snprintf_error(reply + reply_size - pos, res))
+		return -1;
+
+	pos += res;
+
+	return pos - reply;
+}
+
 static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 					      char *buf, char *reply,
 					      int reply_size,
@@ -9322,6 +9376,8 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "DFS_DISABLE_AUTO_UNPUNC ", 24) == 0) {
 		if (hostapd_ctrl_iface_dfs_disable_auto_unpunc(hapd, buf + 24))
 			reply_len = -1;
+	} else if (os_strcmp(buf, "GET_PUNCTURE_SOURCES") == 0) {
+		reply_len = hostapd_ctrl_iface_puncture_sources(hapd, reply, reply_size);
 	} else {
 		if (!hostapd_ctrl_iface_receive_process_extn(hapd, buf, reply,
 							     reply_size,
