@@ -540,6 +540,16 @@ hostapd_drv_register_frame(struct hostapd_data *hapd, u16 type,
 }
 #endif /* CONFIG_TESTING_OPTIONS */
 
+
+static inline int hostapd_drv_get_wiphy_idx(struct hostapd_data *hapd)
+{
+	if (!hapd->driver || !hapd->drv_priv || !hapd->driver->get_wiphy_idx)
+		return -1;
+
+	return hapd->driver->get_wiphy_idx(hapd->drv_priv);
+}
+
+
 #ifdef CONFIG_IEEE80211BE
 
 static inline int hostapd_drv_link_add(struct hostapd_data *hapd,

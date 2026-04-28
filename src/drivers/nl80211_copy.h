@@ -3010,6 +3010,10 @@ enum nl80211_commands {
  * @NL80211_ATTR_BITRATE: This attribute is used with %NL80211_CMD_FRAME to
  * 	send legacy bitrate information of management packets to userspace.
  *
+ * @NL80211_ATTR_BEACON_TX_SYNC_SUPPORT: Flag attribute indicating that HW
+ *	will transmit beacons for all bands at the same time (burst mode) if
+ *	the beacon intervals are the same.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3634,6 +3638,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_DCVS,
 	NL80211_ATTR_DPS_ASSIST,
 	NL80211_ATTR_HE_MUEDCA_MODE,
+
+	NL80211_ATTR_BEACON_TX_SYNC_SUPPORT,
 
 	/* add attributes here, update the policy in nl80211.c */
 
