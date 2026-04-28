@@ -3096,6 +3096,10 @@ enum nl80211_commands {
  * @NL80211_ATTR_BITRATE: This attribute is used with %NL80211_CMD_FRAME to
  *	send legacy bitrate information of management packets to userspace.
  *
+ * @NL80211_ATTR_BEACON_TX_SYNC_SUPPORT: Flag attribute indicating that HW
+ *	will transmit beacons for all bands at the same time (burst mode) if
+ *	the beacon intervals are the same.
+ *
  * @NL80211_ATTR_WIPHY_RADIO_INDEX: (int) Integer attribute denoting the index
  *	of the radio in interest. Internally a value of -1 is used to
  *	indicate that the radio id is not given in user-space. This means
@@ -3983,6 +3987,8 @@ enum nl80211_attrs {
 #endif
 
 	/* add attributes here, update the policy in nl80211.c */
+
+	NL80211_ATTR_BEACON_TX_SYNC_SUPPORT,
 
 	__NL80211_ATTR_AFTER_LAST,
 	NUM_NL80211_ATTR = __NL80211_ATTR_AFTER_LAST,

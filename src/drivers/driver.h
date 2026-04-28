@@ -3094,6 +3094,8 @@ struct wpa_driver_capa {
 /** Driver supports P2P assisted DFS */
 /** Driver supports CIGTK */
 #define WPA_DRIVER_FLAGS2_CIGTK			0x0000080000000000ULL
+	/** Driver supports synchronized beacon transmission across radios/links */
+	#define WPA_DRIVER_FLAGS2_BEACON_TX_SYNC      0x0000400000000000ULL
 /** Driver supports CIP Padding Support */
 #define WPA_DRIVER_FLAGS2_CIP_PADDING_SUPPORT	0x0000100000000000ULL
 /** Driver supports CSA on the current channel when the target channel is DFS */
@@ -4439,6 +4441,14 @@ struct wpa_driver_ops {
 	 * Returns: Interface index
 	 */
 	unsigned int (*get_ifindex)(void *priv);
+
+	/**
+	 * get_wiphy_idx - Get wiphy index for the radio
+	 * @priv: private driver interface data
+	 *
+	 * Returns: wiphy index, or -1 on failure
+	 */
+	int (*get_wiphy_idx)(void *priv);
 
 	/**
 	 * is_only_afc_power_fetch - Check if only AFC power fetch is required
