@@ -2229,6 +2229,10 @@ enum bss_trans_mgmt_reason {
 #define WNM_NEIGHBOR_MULTIPLE_BSSID             71
 #define WNM_NEIGHBOR_VHT_CAPAB                 191
 #define WNM_NEIGHBOR_VHT_OPER                  192
+#define WNM_NEIGHBOR_HE_CAPAB                  193
+#define WNM_NEIGHBOR_HE_OPER                   194
+#define WNM_NEIGHBOR_EHT_CAPAB                 199
+#define WNM_NEIGHBOR_EHT_OPER                  200
 #define WNM_NEIGHBOR_MULTI_LINK                201
 
 /* QoS action */
