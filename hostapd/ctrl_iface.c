@@ -4121,6 +4121,11 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 	unsigned int num_err = 0;
 	int err = 0;
 
+	if (hostapd_csa_in_progress(iface)) {
+		wpa_printf(MSG_ERROR, "CSA Request skipped, a Channel switch is already in progress");
+		return -1;
+	}
+
 	ret = hostapd_parse_csa_settings(iface, pos, &settings);
 	if (ret)
 		return ret;
