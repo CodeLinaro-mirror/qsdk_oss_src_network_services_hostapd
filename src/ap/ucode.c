@@ -113,8 +113,8 @@ char *hostapd_ucode_get_ifname(int id, char *ifname) {
         for (i = 0; i < interfaces->count; i++) {
                 struct hostapd_iface *iface = interfaces->iface[i];
                 if (iface->ucode.radio_id == id) {
-                        wpa_printf(MSG_INFO, "remove iface %s\n", iface->conf->bss[0]->iface);
-                        return iface->conf->bss[0]->iface;
+                        wpa_printf(MSG_INFO, "remove iface %s\n", iface->phy);
+                        return iface->phy;
                 }
         }
 	return NULL;
