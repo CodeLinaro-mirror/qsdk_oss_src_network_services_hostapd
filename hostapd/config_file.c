@@ -4160,6 +4160,17 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->he_6ghz_rx_ant_pat = atoi(pos);
 	} else if (os_strcmp(buf, "he_6ghz_tx_ant_pat") == 0) {
 		conf->he_6ghz_tx_ant_pat = atoi(pos);
+	} else if (os_strcmp(buf, "he_6ghz_min_rate") == 0) {
+		int val = atoi(pos);
+
+		if (val < 1 || val > 206) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid he_6ghz_min_rate %d (valid range: 1-206)",
+				   line, val);
+			return 1;
+		}
+
+		conf->he_6ghz_min_rate = (u8) val;
 	} else if (os_strcmp(buf, "unsol_bcast_probe_resp_interval") == 0) {
 		int val = atoi(pos);
 

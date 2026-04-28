@@ -1505,6 +1505,7 @@ struct hostapd_config {
 	u8 he_6ghz_rx_ant_pat;
 	u8 he_6ghz_tx_ant_pat;
 	u8 he_6ghz_reg_pwr_type;
+	u8 he_6ghz_min_rate;
 	/*
 	 * This indicates hostapd support for calculation of best power mode
 	 * for the 6 GHz band. This is used to determine whether we have to
