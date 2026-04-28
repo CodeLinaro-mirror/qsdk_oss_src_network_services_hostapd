@@ -66,14 +66,18 @@ hostapd_ucode_update_bss_list(struct hostapd_iface *iface, uc_value_t *if_bss, u
 {
 	uc_value_t *list;
 	int i;
+	char ifname[IFNAMSIZ + 10]; /* extra room for ":<phy>" suffix */
 
 	list = ucv_array_new(vm);
 	for (i = 0; iface->bss && i < iface->num_bss; i++) {
 		struct hostapd_data *hapd = iface->bss[i];
 		uc_value_t *val = hostapd_ucode_bss_get_uval(hapd);
 
+		os_snprintf(ifname, sizeof(ifname), "%s:%s",
+			    hapd->conf->iface, iface->phy);
+
 		ucv_array_set(list, i, ucv_get(ucv_string_new(hapd->conf->iface)));
-		ucv_object_add(bss, hapd->conf->iface, ucv_get(val));
+		ucv_object_add(bss, ifname, ucv_get(val));
 	}
 	ucv_object_add(if_bss, iface->phy, ucv_get(list));
 }
@@ -172,19 +176,12 @@ static uc_value_t *
 uc_hostapd_remove_iface(uc_vm_t *vm, size_t nargs)
 {
 	uc_value_t *iface = uc_fn_arg(0);
-	uc_value_t *radio_id = uc_fn_arg(1);
 	char *ifname;
-	int id;
 
 	if (ucv_type(iface) != UC_STRING)
 		return NULL;
 
-         if (ucv_type(radio_id) != UC_INTEGER)
-                wpa_printf(MSG_ERROR, "failed to fetch radio_id");
-
-        id = ucv_int64_get(radio_id);
-
-	ifname = hostapd_ucode_get_ifname(id, ucv_string_get(iface));
+	ifname = ucv_string_get(iface);
 
 	if (ifname) {
 		wpa_printf(MSG_INFO, "removing interface %s", ifname);
@@ -349,31 +346,13 @@ out:
 	return ucv_int64_new(ret);
 }
 
-static void
-hostapd_remove_iface_bss_conf(struct hostapd_config *iconf,
-			      struct hostapd_bss_config *conf)
-{
-	int i;
-
-	for (i = 0; i < iconf->num_bss; i++)
-		if (iconf->bss[i] == conf)
-			break;
-
-	if (i == iconf->num_bss)
-		return;
-
-	for (i++; i < iconf->num_bss; i++)
-		iconf->bss[i - 1] = iconf->bss[i];
-	iconf->num_bss--;
-}
-
-
 static uc_value_t *
 uc_hostapd_bss_delete(uc_vm_t *vm, size_t nargs)
 {
 	struct hostapd_data *hapd = uc_fn_thisval("hostapd.bss");
 	struct hostapd_iface *iface;
-	int i, idx;
+	int idx, ret;
+	bool refresh_all = false;
 
 	if (!hapd)
 		return NULL;
@@ -391,20 +370,74 @@ uc_hostapd_bss_delete(uc_vm_t *vm, size_t nargs)
 	if (idx == iface->num_bss)
 		return NULL;
 
-	for (i = idx + 1; i < iface->num_bss; i++)
-		iface->bss[i - 1] = iface->bss[i];
+	/*
+	 * Mirror the MBSSID handling from hostapd_remove_iface():
+	 * - If the TX BSS is being deleted, first remove all its associated
+	 *   non-TX BSSes, then re-locate the TX BSS index in the (now
+	 *   shorter) iface->bss[] array.
+	 * - If a non-TX BSS is being deleted, all iface beacons must be
+	 *   refreshed afterwards so the remaining BSSes advertise the
+	 *   updated MBSSID set.
+	 */
+	if (hapd->iconf->mbssid) {
+		if (hapd == hostapd_mbssid_get_tx_bss(hapd)) {
+			hostapd_remove_non_tx_bsses(hapd);
+			/* Re-find idx: non-TX removals may have shifted the array */
+			for (idx = 0; idx < iface->num_bss; idx++)
+				if (iface->bss[idx] == hapd)
+					break;
+			if (idx == iface->num_bss)
+				return NULL;
+		} else {
+			/* Non-TX BSS removal requires a full beacon refresh */
+			refresh_all = true;
+		}
+	}
 
-	iface->num_bss--;
+	/*
+	 * hostapd_remove_bss() internally calls hostapd_bss_deinit() and
+	 * handles additional cleanup missing from the previous open-coded path:
+	 *   - hostapd_mld_ref_dec()            (MLD reference counting)
+	 *   - hostapd_free_mbssid_idx()         (MBSSID index release)
+	 *   - hostapd_multi_mbssid_remove_bss() (MBSSID group cleanup)
+	 *   - NFT chain removal for SCS
+	 *   - pre-beacon-state successor BSS preparation
+	 *   - ML max-recommended-links update
+	 *
+	 * hostapd_drv_stop_ap() must still be called here because
+	 * hostapd_remove_bss() does not call it.
+	 *
+	 * driver_ap_teardown controls whether the low-level station flush is
+	 * skipped (matching the behaviour in hostapd_remove_iface()).
+	 *
+	 * After hostapd_remove_bss() has shifted iface->bss[], update the
+	 * new first BSS so the driver knows which BSS is now primary.
+	 */
+	iface->driver_ap_teardown = !(iface->drv_flags &
+				      WPA_DRIVER_FLAGS_AP_TEARDOWN_SUPPORT);
 
-	iface->bss[0]->interface_added = 0;
-	hostapd_drv_set_first_bss(iface->bss[0]);
-	hapd->interface_added = 1;
+	ret = hostapd_remove_bss(iface, idx);
+	if (ret < 0)
+		return NULL;
+	if (ret == 1) {
+		hostapd_ucode_update_interfaces();
+		ucv_gc(vm);
+		return NULL;
+	}
 
-	hostapd_drv_stop_ap(hapd);
-	hostapd_bss_deinit(hapd);
-	hostapd_remove_iface_bss_conf(iface->conf, hapd->conf);
-	hostapd_config_free_bss(hapd->conf);
-	os_free(hapd);
+	if (iface->num_bss > 0) {
+		iface->bss[0]->interface_added = 0;
+		hostapd_drv_set_first_bss(iface->bss[0]);
+	}
+
+	/*
+	 * Refresh beacons on peer interfaces so they reflect the updated BSS
+	 * set, mirroring the refresh_beacon logic in hostapd_remove_iface().
+	 */
+	if (refresh_all)
+		hostapd_refresh_all_iface_beacons(iface);
+	else
+		hostapd_refresh_other_iface_beacons(iface);
 
 	hostapd_ucode_update_interfaces();
 
@@ -424,6 +457,8 @@ uc_hostapd_iface_add_bss(uc_vm_t *vm, size_t nargs)
 	uc_value_t *index = uc_fn_arg(1);
 	unsigned int idx = 0;
 	uc_value_t *ret = NULL;
+	struct hostapd_bss_config **tmp_bss;
+	struct hostapd_data **temp_bss;
 
 	if (!iface || ucv_type(file) != UC_STRING)
 		goto out;
@@ -436,46 +471,73 @@ uc_hostapd_iface_add_bss(uc_vm_t *vm, size_t nargs)
 		goto out;
 
 	bss = conf->bss[idx];
+
+	/*
+	 * Add the new BSS config to iface->conf->bss[] BEFORE calling
+	 * hostapd_setup_bss().  Inside hostapd_setup_bss(), when the iface is
+	 * already enabled, ieee802_11_set_beacon(tx_hapd) is called to update
+	 * the TX BSS beacon so it includes the new non-TX BSS MBSSID profile.
+	 * That beacon rebuild iterates iface->conf->bss[], so the new entry
+	 * must be present at that point; otherwise the MBSSID element is built
+	 * without the new non-TX BSS profile and the beacon/probe-response
+	 * frame will be missing those 78 bytes.
+	 */
+	tmp_bss = os_realloc_array(iface->conf->bss,
+					    iface->conf->num_bss + 1,
+					    sizeof(*iface->conf->bss));
+	if (!tmp_bss)
+		goto out;
+	iface->conf->bss = tmp_bss;
+	iface->conf->bss[iface->conf->num_bss] = bss;
+	iface->conf->num_bss++;
+	iface->conf->last_bss = bss;
+
 	hapd = hostapd_alloc_bss_data(iface, iface->conf, bss);
 	if (!hapd)
-		goto out;
+		goto remove_bss_conf;
 
 	hapd->driver = iface->bss[0]->driver;
 	hapd->drv_priv = iface->bss[0]->drv_priv;
+
+	hostapd_bss_setup_multi_link(hapd, iface->interfaces);
+
+	if (hostapd_set_ctrl_sock_iface(hapd))
+		goto free_hapd;
+
 	if (interfaces->ctrl_iface_init &&
 	    interfaces->ctrl_iface_init(hapd) < 0)
 		goto free_hapd;
 
+	temp_bss = os_realloc_array(iface->bss, iface->num_bss + 1,
+				      sizeof(*iface->bss));
+	if (!temp_bss)
+		goto deinit_ctrl;
+	iface->bss = temp_bss;
+	iface->bss[iface->num_bss++] = hapd;
+
 	if (iface->state == HAPD_IFACE_ENABLED &&
 	    hostapd_setup_bss(hapd, -1, true))
-		goto deinit_ctrl;
-
-	iface->bss = os_realloc_array(iface->bss, iface->num_bss + 1,
-				      sizeof(*iface->bss));
-	if (iface->bss)
-		iface->bss[iface->num_bss++] = hapd;
-	else
-		goto deinit_ctrl;
-
-	iface->conf->bss = os_realloc_array(iface->conf->bss,
-					    iface->conf->num_bss + 1,
-					    sizeof(*iface->conf->bss));
-	if (iface->conf->bss)
-		iface->conf->bss[iface->conf->num_bss] = bss;
-	else
-		goto deinit_ctrl;
+		goto remove_bss;
 
 	conf->bss[idx] = NULL;
 	ret = hostapd_ucode_bss_get_uval(hapd);
 	hostapd_ucode_update_interfaces();
 	goto out;
 
+remove_bss:
+	iface->num_bss--;
+	iface->bss[iface->num_bss] = NULL;
 deinit_ctrl:
 	if (interfaces->ctrl_iface_deinit)
 		interfaces->ctrl_iface_deinit(hapd);
 free_hapd:
 	hostapd_free_hapd_data(hapd);
 	os_free(hapd);
+remove_bss_conf:
+	iface->conf->num_bss--;
+	iface->conf->bss[iface->conf->num_bss] = NULL;
+	iface->conf->last_bss = iface->conf->num_bss ?
+		iface->conf->bss[iface->conf->num_bss - 1] : NULL;
 out:
 	hostapd_config_free(conf);
 	return ret;
@@ -992,12 +1054,17 @@ void hostapd_ucode_free_iface(struct hostapd_iface *iface)
 void hostapd_ucode_add_bss(struct hostapd_data *hapd)
 {
 	uc_value_t *val;
+	char ifname[IFNAMSIZ + 10]; /* extra room for ":<phy>" suffix */
 
 	if (wpa_ucode_call_prepare("bss_add"))
 		return;
 
 	val = hostapd_ucode_bss_get_uval(hapd);
-	uc_value_push(ucv_get(ucv_string_new(hapd->conf->iface)));
+
+	os_snprintf(ifname, sizeof(ifname), "%s:%s",
+		    hapd->conf->iface, hapd->iface->phy);
+
+	uc_value_push(ucv_get(ucv_string_new(ifname)));
 	uc_value_push(ucv_get(val));
 	ucv_put(wpa_ucode_call(2));
 	ucv_gc(vm);
@@ -1006,12 +1073,17 @@ void hostapd_ucode_add_bss(struct hostapd_data *hapd)
 void hostapd_ucode_reload_bss(struct hostapd_data *hapd)
 {
 	uc_value_t *val;
+	char ifname[IFNAMSIZ + 10]; /* extra room for ":<phy>" suffix */
 
 	if (wpa_ucode_call_prepare("bss_reload"))
 		return;
 
 	val = hostapd_ucode_bss_get_uval(hapd);
-	uc_value_push(ucv_get(ucv_string_new(hapd->conf->iface)));
+
+	os_snprintf(ifname, sizeof(ifname), "%s:%s",
+		    hapd->conf->iface, hapd->iface->phy);
+
+	uc_value_push(ucv_get(ucv_string_new(ifname)));
 	uc_value_push(ucv_get(val));
 	ucv_put(wpa_ucode_call(2));
 	ucv_gc(vm);
