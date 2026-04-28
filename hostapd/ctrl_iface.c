@@ -4968,6 +4968,12 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 		}
 	}
 
+	if (iface->conf->disable_csa_dfs == 1) {
+		wpa_printf(MSG_DEBUG, "chanswitch interface %s : cancel radar handling timer",
+			   iface->conf->bss[0]->iface);
+		eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout, iface, NULL);
+	}
+
 	hostapd_get_channel_switch_time(iface, &settings.freq_params);
 
 	if (iface->cac_started)
@@ -4975,13 +4981,6 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 
 	/* Trigger mesh CSA before AP channel switch if mesh VAP present */
 	hostapd_ubus_mesh_switch_channel(iface, &settings);
-
-	if (iface->conf->disable_csa_dfs == 1) {
-		wpa_printf(MSG_DEBUG, "chanswitch interface %s : cancel radar handling timer",
-			   iface->conf->bss[0]->iface);
-		eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout, iface, NULL);
-	}
-
 	for (i = 0; i < iface->num_bss; i++) {
 
 		/* Save CHAN_SWITCH VHT, HE, and EHT config */
