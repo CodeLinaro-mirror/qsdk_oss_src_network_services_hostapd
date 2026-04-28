@@ -414,8 +414,8 @@ setup_mld:
 		hapd->eht_mld_bss_param_change = 1;
 
 		wpa_printf(MSG_DEBUG,
-			   "MLD: Set link_id=%u, mld_addr=" MACSTR
-			   ", own_addr=" MACSTR,
+			   "MLD: Set %s link_id=%u, mld_addr=" MACSTR
+			   ", own_addr=" MACSTR, hapd->conf->iface,
 			   hapd->mld_link_id, MAC2STR(hapd->mld->mld_addr),
 			   MAC2STR(hapd->own_addr));
 
