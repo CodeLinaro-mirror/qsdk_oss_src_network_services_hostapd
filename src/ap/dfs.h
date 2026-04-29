@@ -67,4 +67,19 @@ int hostapd_dfs_count_precac_channels(struct hostapd_iface *iface);
 int hostapd_dfs_start_precac(struct hostapd_iface *iface);
 int hostapd_dfs_precac_restart_after_radar(struct hostapd_iface *iface,
 					   int radar_freq);
+/**
+ * dfs_find_bw_reduced_channel - Try to reduce bandwidth on same channel
+ * @iface: Pointer to interface data
+ * @secondary_channel: Pointer to secondary channel offset (output)
+ * @oper_centr_freq_seg0_idx: Pointer to center freq seg0 (output)
+ * @oper_centr_freq_seg1_idx: Pointer to center freq seg1 (output)
+ * Returns: Channel data pointer on success, NULL on failure
+ */
+
+struct hostapd_channel_data *
+dfs_find_bw_reduced_channel(struct hostapd_iface *iface,
+			   int *secondary_channel,
+			   u8 *oper_centr_freq_seg0_idx,
+			   u8 *oper_centr_freq_seg1_idx);
+
 #endif /* DFS_H */
