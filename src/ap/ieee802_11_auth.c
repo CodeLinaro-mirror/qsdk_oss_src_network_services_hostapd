@@ -510,22 +510,31 @@ int hostapd_check_ml_acl(struct hostapd_data *hapd, struct sta_info *sta)
 			continue;
 		}
 
-		/* For ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST mode, hostapd_check_acl()
-		 * already returns the final decision. Reject if any MAC is rejected.
-		 * All MACs (MLD address and link addresses) must be in whitelist
-		 * AND not in blacklist. */
+		/* For ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST mode, track if any
+		 * link is accepted. Also check if address is in blacklist on any link. */
 		if (hapd->conf->macaddr_acl == ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST) {
-			if (acl_res == HOSTAPD_ACL_REJECT) {
+			/* Check if MLD address is in blacklist on this link */
+			if (hostapd_maclist_found(tmp_hapd->conf->deny_mac,
+						  tmp_hapd->conf->num_deny_mac,
+						  sta->addr, NULL)) {
 				wpa_printf(MSG_INFO,
-					   "STA " MACSTR " not allowed to connect (whitelist check failed)",
-					   MAC2STR(sta->addr));
+					   "STA " MACSTR " in blacklist on link %d",
+					   MAC2STR(sta->addr), tmp_hapd->mld_link_id);
 				return HOSTAPD_ACL_REJECT;
 			}
-			if (acl_res_linkaddr == HOSTAPD_ACL_REJECT) {
+			/* Check if link address is in blacklist on this link */
+			if (hostapd_maclist_found(tmp_hapd->conf->deny_mac,
+						  tmp_hapd->conf->num_deny_mac,
+						  link->peer_addr, NULL)) {
 				wpa_printf(MSG_INFO,
-					   "link addr " MACSTR " not allowed to connect (whitelist check failed)",
-					   MAC2STR(link->peer_addr));
+					   "link addr " MACSTR " in blacklist on link %d",
+					   MAC2STR(link->peer_addr), tmp_hapd->mld_link_id);
 				return HOSTAPD_ACL_REJECT;
+			}
+			/* If either MLD address or link address is in whitelist, mark it */
+			if (acl_res == HOSTAPD_ACL_ACCEPT ||
+			    acl_res_linkaddr == HOSTAPD_ACL_ACCEPT) {
+				accept = 1;
 			}
 			continue;
 		}
@@ -555,7 +564,8 @@ int hostapd_check_ml_acl(struct hostapd_data *hapd, struct sta_info *sta)
 
         }
 
-	if (hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED && !accept) {
+	if ((hapd->conf->macaddr_acl == ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST ||
+	     hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED) && !accept) {
 		wpa_printf(MSG_INFO, "STA " MACSTR " not accepted on any link",
 			   MAC2STR(sta->addr));
 		return HOSTAPD_ACL_REJECT;
