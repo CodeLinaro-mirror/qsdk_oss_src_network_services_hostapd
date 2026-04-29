@@ -2151,8 +2151,6 @@ const u8 * ap_sta_wpa_get_dpp_pkhash(struct hostapd_data *hapd,
 bool ap_sta_set_authorized_flag(struct hostapd_data *hapd, struct sta_info *sta,
 				int authorized)
 {
-	ap_sta_reset_assoc_req_rx_times(sta);
-
 	if (!!authorized == !!(sta->flags & WLAN_STA_AUTHORIZED))
 		return false;
 
@@ -2171,6 +2169,8 @@ bool ap_sta_set_authorized_flag(struct hostapd_data *hapd, struct sta_info *sta,
 		if (mld_assoc_link_id != -2)
 			hostapd_prune_associations(hapd, sta->addr,
 						   mld_assoc_link_id);
+		ap_sta_reset_assoc_req_rx_times(sta);
+
 	} else {
 		sta->flags &= ~WLAN_STA_AUTHORIZED;
 	}
