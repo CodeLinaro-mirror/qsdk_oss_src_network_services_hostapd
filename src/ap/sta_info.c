@@ -74,12 +74,6 @@ struct hostapd_ft_over_ds_ml_sta_entry *ap_get_ft_ds_ml_sta(struct hostapd_data 
 {
 	struct hostapd_ft_over_ds_ml_sta_entry *item;
 
-	if (!hapd->mld) {
-		wpa_printf(MSG_ERROR, "NULL Pointer %s:%d\n",
-			   __func__, __LINE__);
-		return NULL;
-	}
-
 #ifdef CONFIG_QCN_EXTN
 	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
 		wpa_printf(MSG_ERROR, "Repurposed BSS can't have ml_sta\n");
