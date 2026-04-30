@@ -660,7 +660,7 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 					  elems.rsnxe ? elems.rsnxe_len + 2 : 0,
 					  elems.mdie, elems.mdie_len,
 					  elems.owe_dh, elems.owe_dh_len, NULL,
-					  ap_sta_is_mld(hapd, sta), NULL);
+					  ap_sta_is_mld(hapd, sta), NULL, false);
 		reason = WLAN_REASON_INVALID_IE;
 		status = WLAN_STATUS_INVALID_ELEMENT;
 		switch (res) {
