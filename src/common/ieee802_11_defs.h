@@ -3286,9 +3286,10 @@ struct ieee80211_uhr_operation {
 #define UHR_MACCAP_DPS_SUPP			BIT(0)
 #define UHR_MACCAP_DPS_ASSIST			BIT(1)
 
-#define UHR_MAC_CAPAB_LEN	5
-#define UHR_PHY_CAPAB_LEN	1
-/* Figure 9-aa4: UHR Capabilities element format P802.11bn_D1.0 section 9.4.2.aa2 */
+#define UHR_MAC_CAPAB_LEN	6
+#define UHR_PHY_CAPAB_LEN	5
+
+/* Figure 9-aa8: UHR Capabilities element format P802.11bn_D1.4 section 9.4.2.356 */
 struct ieee80211_uhr_capabilities {
 	/* UHR MAC Capabilities Information */
 	u8 mac_cap[UHR_MAC_CAPAB_LEN];

@@ -2180,9 +2180,9 @@ static void phy_info_iftype_copy(struct hostapd_hw_modes *mode,
 	uhr_capab->uhr_supported = true;
 
 	if (tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC] &&
-	    nla_len(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC]) >= 5 &&
+	    nla_len(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC]) >= UHR_MAC_CAPAB_LEN &&
 	    tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY] &&
-	    nla_len(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY]) >= 1) {
+	    nla_len(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY]) >= UHR_PHY_CAPAB_LEN) {
 		const u8 *pos_mac, *pos_phy;
 
 		pos_mac = nla_data(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC]);
