@@ -397,8 +397,8 @@ static void hostapd_free_mscs_data(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211AX */
 
 
-int ap_sta_check_link_sta(struct hostapd_data *hapd,
-			  struct sta_info *sta)
+int ap_sta_check_link_sta(struct hostapd_data *hapd, struct sta_info *sta,
+			  const u8 *link_addr)
 {
 #ifdef CONFIG_IEEE80211BE
 	struct hostapd_data *bss;
@@ -415,6 +415,17 @@ int ap_sta_check_link_sta(struct hostapd_data *hapd,
 			return 1;
 		}
 	}
+	/* STA could have arrived with link address and MLD address swap */
+	lsta = ap_sta_get_by_link_addr(hapd, link_addr, sta);
+	if (lsta && lsta != sta) {
+		if (!ap_sta_is_authorized(lsta)) {
+			hostapd_drv_sta_deauth(hapd, lsta->addr, WLAN_REASON_PREV_AUTH_NOT_VALID);
+			ap_sta_remove_link_sta(hapd, lsta, false);
+			ap_free_sta(hapd, lsta);
+		} else
+			return 1;
+	}
+
 	return 0;
 #else
 	return 0;
@@ -1210,12 +1221,44 @@ static void ap_sta_assoc_timeout(void *eloop_ctx, void *timeout_ctx)
 		ap_free_sta(hapd, sta);
 }
 
-struct sta_info *ap_sta_get_from_obss(struct hostapd_data *hapd, const u8 *addr,
+struct sta_info *ap_sta_get_by_link_addr(struct hostapd_data *hapd, const u8 *link_addr,
+					 struct sta_info *curr_sta)
+{
+	struct sta_info *sta;
+
+	if (!hapd || !link_addr)
+		return NULL;
+
+	/* link_addr is the station's primary (MLD/legacy) address */
+	sta = ap_get_sta(hapd, link_addr);
+	if (sta && sta != curr_sta)
+		return sta;
+
+	/* Checking on current link STA is alone enough, others would have entry
+ 	 * in other hapd and would be found from ap_sta_get_from_obss. This is mainly
+ 	 * for SLO station whose MLD and link MAC would be different
+ 	 */
+	for (sta = hapd->sta_list; sta; sta = sta->next) {
+		if (!sta->mld_info.mld_sta)
+			continue;
+		if (!sta->mld_info.links[hapd->mld_link_id].valid)
+			continue;
+		if (ether_addr_equal(sta->mld_info.links[hapd->mld_link_id].peer_addr,
+				     link_addr) && sta != curr_sta)
+			return sta;
+	}
+
+	return NULL;
+}
+
+struct sta_info *ap_sta_get_from_obss(struct hostapd_data *hapd, const u8 *mld_addr,
+				      const u8 *link_addr,
 				      struct hostapd_data **ohapd)
 {
-	int i, j;
-	struct hostapd_data *hapd_ptr;
+	int i, j, k;
+	struct hostapd_data *hapd_ptr, *assoc_hapd;
 	struct sta_info *osta;
+	struct sta_info *assoc_sta;
 
 	if (ohapd)
 		*ohapd = NULL;
@@ -1226,22 +1269,80 @@ struct sta_info *ap_sta_get_from_obss(struct hostapd_data *hapd, const u8 *addr,
 	if (!hapd || !hapd->iface || !hapd->iface->interfaces)
 		return NULL;
 
-	for (i = 0; i < hapd->iface->interfaces->count; i++)
+	for (i = 0; i < hapd->iface->interfaces->count; i++) {
 		for (j = 0; j < hapd->iface->interfaces->iface[i]->num_bss; j++) {
 			hapd_ptr = hapd->iface->interfaces->iface[i]->bss[j];
 			if (!hapd_ptr || !hapd_ptr->started || hapd == hapd_ptr)
 				continue;
 
-			osta = ap_get_sta(hapd_ptr, addr);
+			osta = ap_get_sta(hapd_ptr, mld_addr);
 			if (osta) {
 				if (ohapd)
 					*ohapd = hapd_ptr;
-				return osta;
+				goto fetch_assoc_sta;
 			}
 
+			/*
+			 * For MLD stations, also check if the MLD address
+			 * matches any per-link peer address, and if the assoc
+			 * link address matches either the MLD address or any
+			 * per-link peer address of an existing station.
+			 * Skip the link-address search when link_addr equals
+			 * mld_addr (legacy/non-MLD station).
+			 */
+			if (!ether_addr_equal(mld_addr, link_addr)) {
 
+				osta = ap_get_sta(hapd_ptr, link_addr);
+				if (osta) {
+					if (ohapd)
+						*ohapd = hapd_ptr;
+					goto fetch_assoc_sta;
+				}
+			}
+
+			for (osta = hapd_ptr->sta_list; osta;
+			     osta = osta->next) {
+				bool found = false;
+
+				if (osta->mld_info.mld_sta) {
+					for (k = 0; k < MAX_NUM_MLD_LINKS; k++) {
+						if (!osta->mld_info.links[k].valid)
+							continue;
+						if (ether_addr_equal(
+							osta->mld_info.links[k].peer_addr,
+							mld_addr)) {
+							found = true;
+							break;
+						}
+						if (!ether_addr_equal(mld_addr,
+								      link_addr) &&
+						    ether_addr_equal(
+							osta->mld_info.links[k].peer_addr,
+							link_addr)) {
+								found = true;
+								break;
+						}
+					}
+				}
+
+				if (found) {
+					if (ohapd)
+						*ohapd = hapd_ptr;
+					goto fetch_assoc_sta;
+				}
+			}
 		}
+	}
 	return NULL;
+
+fetch_assoc_sta:
+	/* STA found could be link STA find the assoc STA */
+	if (ap_sta_is_mld(*ohapd, osta)) {
+		assoc_sta = hostapd_ml_get_assoc_sta(*ohapd, osta, &assoc_hapd);
+		*ohapd = assoc_hapd;
+		osta = assoc_sta;
+	}
+	return osta;
 }
 
 struct sta_info * ap_sta_add(struct hostapd_data *hapd, const u8 *addr)
@@ -2585,22 +2686,11 @@ void ap_sta_remove_link_sta(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 
-int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_authorized,
-		 struct sta_info *osta)
+int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_authorized)
 {
 	const u8 *mld_link_addr = NULL;
 	bool mld_link_sta = false;
 	u16 eml_cap = 0;
-
-	if (osta) {
-		if ((osta->flags & WLAN_STA_MFP) && ap_sta_is_authorized(osta)) {
-			wpa_printf(MSG_DEBUG, "Skip re-adding STA "MACSTR" to driver on %s as STA"
-				  " is already found on another bss", MAC2STR(sta->addr),
-				  hapd->conf->iface);
-			sta->pending_drv_add = true;
-			return 0;
-		}
-	}
 
 	/*
 	 * If a station that is already associated to the AP, is trying to
@@ -2673,24 +2763,29 @@ void ap_sta_free_sta_profile(struct mld_info *info)
 	}
 }
 #endif /* CONFIG_IEEE80211BE */
-void ap_sta_cleanup_all(struct hostapd_data *hapd, struct sta_info *sta)
+void ap_sta_cleanup_all(struct hostapd_data *ohapd, struct sta_info *osta,
+			struct sta_info *curr_sta)
 {
 	struct hostapd_data *lhapd;
 	struct sta_info *lsta;
 
-	if (!sta)
+	if (!osta)
 		return;
 
-	if (ap_sta_is_mld(hapd, sta)) {
-		for_each_mld_link(lhapd, hapd) {
-			if (hapd == lhapd)
+	hostapd_drv_sta_remove(ohapd, osta->addr);
+	if (ap_sta_is_mld(ohapd, osta)) {
+		for_each_mld_link(lhapd, ohapd) {
+			lsta = ap_get_sta(lhapd, osta->addr);
+
+			if (lsta == curr_sta)
 				continue;
-			lsta = ap_get_sta(lhapd, sta->addr);
+
 			if (lsta && ap_sta_is_mld(lhapd, lsta) &&
-			    lsta->mld_assoc_link_id == hapd->mld_link_id)
+			    lsta->mld_assoc_link_id == ohapd->mld_link_id)
 				ap_free_sta(lhapd, lsta);
 
 		}
+	} else if (osta != curr_sta) {
+		ap_free_sta(ohapd, osta);
 	}
-	ap_free_sta(hapd, sta);
 }
