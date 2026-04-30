@@ -6402,7 +6402,11 @@ static int hostapd_ctrl_iface_stop_mld(struct hostapd_data *hapd)
 		return -1;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	for_each_mld_link_include_repurposed(link, hapd) {
+#else /* CONFIG_QCN_EXTN */
 	for_each_mld_link(link, hapd) {
+#endif /* CONFIG_QCN_EXTN */
 		ret = hostapd_drv_stop_ap(link);
 		if (ret) {
 			wpa_printf(MSG_ERROR, "Failed to stop %s link %u",
