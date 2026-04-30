@@ -7956,13 +7956,11 @@ void hostapd_switch_color_timeout_handler(void *eloop_data,
 	if (!hapd->no_free_color)
 		 neighbor_color |= hapd->color_collision_bitmap;
 
-	 r = os_random() % HE_OPERATION_BSS_COLOR_MAX - 1;
-	 r++;
-	 for (i = 1; i < HE_OPERATION_BSS_COLOR_MAX; i++) {
-		 if ((neighbor_color & (1 << r)) == 0)
+	r = os_random() % HE_OPERATION_BSS_COLOR_MAX;
+	for (i = 0; i < HE_OPERATION_BSS_COLOR_MAX; i++) {
+		if (r && !(neighbor_color & (1ULL << r)))
 			break;
-		r = r % HE_OPERATION_BSS_COLOR_MAX - 1;
-		r++;
+		r = (r + 1) % HE_OPERATION_BSS_COLOR_MAX;
 	}
 
 	if (i == HE_OPERATION_BSS_COLOR_MAX) {
