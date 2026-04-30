@@ -33,6 +33,9 @@ struct rsn_pmksa_cache_entry;
 
 #define BITRATE_5_5_MBPS 55
 
+#define INCLUDE_ELEMENT_IN_BEACON        BIT(0)
+#define INCLUDE_ELEMENT_IN_PROBE_RESP    BIT(1)
+
 struct ieee_chan_data {
 	int num_channels;
 	struct hostapd_channel_data *channels;
