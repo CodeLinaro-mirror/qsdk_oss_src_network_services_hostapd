@@ -127,6 +127,14 @@ struct hapd_interfaces {
 	struct proc_coord *pc;
 #endif /* CONFIG_PROCESS_COORDINATION */
 
+#ifdef CONFIG_MQTT
+	/*
+	 * Single global MQTT connection for the entire hostapd instance.
+	 * Shared by all interfaces and BSSes.  Initialised on the first
+	 * interface setup if mqtt_enabled=1; deinitialized on teardown.
+	 */
+	struct mqtt_eloop_ctx *mqtt_ctx;
+#endif /* CONFIG_MQTT */
 };
 
 enum hostapd_chan_status {

@@ -5552,6 +5552,15 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 
 		conf->atf_strict_sched = val;
 #endif /* CONFIG_ATF_OFFLOAD */
+#ifdef CONFIG_MQTT
+	} else if (os_strcmp(buf, "mqtt_enabled") == 0) {
+		conf->mqtt_enabled = atoi(pos);
+	} else if (os_strcmp(buf, "mqtt_broker_host") == 0) {
+		os_free(conf->mqtt_broker_host);
+		conf->mqtt_broker_host = os_strdup(pos);
+	} else if (os_strcmp(buf, "mqtt_broker_port") == 0) {
+		conf->mqtt_broker_port = atoi(pos);
+#endif /* CONFIG_MQTT */
 #ifdef CONFIG_MACSEC
 	} else if (os_strcmp(buf, "macsec_policy") == 0) {
 		int macsec_policy = atoi(pos);

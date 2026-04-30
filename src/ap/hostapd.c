@@ -39,6 +39,9 @@
 #include "nan_usd_ap.h"
 #include "gas_query_ap.h"
 #include "hw_features.h"
+#ifdef CONFIG_MQTT
+#include "hostapd_mqtt.h"
+#endif /* CONFIG_MQTT */
 #include "hostapd_if/hostapd_if.h"
 #include "wpa_auth_glue.h"
 #include "ap_drv_ops.h"
@@ -1456,6 +1459,22 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 
 	hapd->started = 0;
 	hapd->beacon_set_done = 0;
+
+#ifdef CONFIG_MQTT
+	/*
+	 * Teardown the global MQTT connection when the primary BSS (first BSS
+	 * of the first interface) is freed.  This is the last teardown point
+	 * where hapd_interfaces is still valid and the connection is no longer
+	 * needed by any remaining BSS.
+	 */
+	if (hapd->iface && hapd->iface->interfaces &&
+	    hapd->iface->interfaces->count > 0 &&
+	    hapd->iface->interfaces->iface[0] == hapd->iface &&
+	    hapd->iface->num_bss > 0 &&
+	    hapd->iface->bss[0] == hapd) {
+		hostapd_mqtt_deinit(hapd->iface->interfaces);
+	}
+#endif /* CONFIG_MQTT */
 
 	wpa_printf(MSG_DEBUG, "%s(%s)", __func__, hapd->conf->iface);
 #ifdef CONFIG_IEEE80211BN
@@ -5301,6 +5320,16 @@ dfs_offload:
 
 	if (iface->interfaces && iface->interfaces->count > 1)
 		ieee802_11_update_beacons(iface);
+
+#ifdef CONFIG_MQTT
+	/*
+	 * Create the global MQTT connection on the first interface setup.
+	 * hostapd_mqtt_init() is idempotent and no-ops if mqtt_enabled=0 or
+	 * the connection already exists (guards against re-entry on config
+	 * reload or multiple interface setups).
+	 */
+	hostapd_mqtt_init(iface);
+#endif /* CONFIG_MQTT */
 
 	atf_offload_send_feature_params(hapd);
 	return 0;
