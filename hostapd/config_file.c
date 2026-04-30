@@ -5570,7 +5570,17 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line, "ext_capa", pos))
 			return 1;
 	} else if (os_strcmp(buf, "rnr") == 0) {
-		bss->rnr = atoi(pos);
+		int val = atoi(pos);
+
+		if (val < 0 ||
+		    val > (INCLUDE_ELEMENT_IN_BEACON |
+			   INCLUDE_ELEMENT_IN_PROBE_RESP)) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid RNR frame selection value. Valid values: 0 to 3");
+			return 1;
+		}
+
+		bss->rnr = val;
 	} else if (os_strcmp(buf, "ssid_protection") == 0) {
 		int val = atoi(pos);
 

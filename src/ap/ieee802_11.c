@@ -12287,6 +12287,22 @@ static size_t hostapd_eid_rnr_mlo_len(struct hostapd_data *hapd, u32 type,
 }
 
 
+static bool hostapd_add_rnr_non_colocated(struct hostapd_data *hapd, u32 type)
+{
+	if (!hapd->conf->rnr)
+		return false;
+
+	switch (type) {
+		case WLAN_FC_STYPE_BEACON:
+			return (hapd->conf->rnr & INCLUDE_ELEMENT_IN_BEACON);
+		case WLAN_FC_STYPE_PROBE_RESP:
+			return (hapd->conf->rnr & INCLUDE_ELEMENT_IN_PROBE_RESP);
+		default:
+			return false;
+	}
+}
+
+
 size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
 			   bool include_mld_params)
 {
@@ -12301,8 +12317,6 @@ size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
 
 	switch (type) {
 	case WLAN_FC_STYPE_BEACON:
-		if (hapd->conf->rnr)
-			total_len += hostapd_eid_nr_db_len(hapd, &current_len);
 		/* fallthrough */
 	case WLAN_FC_STYPE_PROBE_RESP:
 #ifdef CONFIG_QCN_EXTN
@@ -12341,6 +12355,9 @@ size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
 	     hapd->iconf->mbssid != ENHANCED_MBSSID_ENABLED))
 		total_len += hostapd_eid_rnr_mlo_len(hapd, type, NULL,
 						     &current_len);
+
+	if (hostapd_add_rnr_non_colocated(hapd, type))
+		total_len += hostapd_eid_nr_db_len(hapd, &current_len);
 
 	return total_len;
 }
@@ -12806,8 +12823,6 @@ u8 * hostapd_eid_rnr(struct hostapd_data *hapd, u8 *eid, u32 type,
 
 	switch (type) {
 	case WLAN_FC_STYPE_BEACON:
-		if (hapd->conf->rnr)
-			eid = hostapd_eid_nr_db(hapd, eid, &current_len);
 		/* fallthrough */
 	case WLAN_FC_STYPE_PROBE_RESP:
 #ifdef CONFIG_QCN_EXTN
@@ -12844,6 +12859,9 @@ u8 * hostapd_eid_rnr(struct hostapd_data *hapd, u8 *eid, u32 type,
 	    (type != WLAN_FC_STYPE_BEACON ||
 	     hapd->iconf->mbssid != ENHANCED_MBSSID_ENABLED))
 		eid = hostapd_eid_rnr_mlo(hapd, type, eid, NULL, &current_len);
+
+	if (hostapd_add_rnr_non_colocated(hapd, type))
+		eid = hostapd_eid_nr_db(hapd, eid, &current_len);
 
 	if (eid == eid_start + 2)
 		return eid_start;
