@@ -6264,7 +6264,7 @@ static int hostapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd, char *cm
 	u8 dfs_domain;
 	struct hostapd_hw_modes *modes;
 
-	if (!hapd->started) {
+	if ((!hapd->started) || (hapd->iface->state != HAPD_IFACE_ENABLED)) {
 		wpa_printf(MSG_ERROR, "Interface is not UP.\n");
 		return ret;
 	}
@@ -6281,7 +6281,7 @@ static int hostapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd, char *cm
 		return ret;
 	}
 
-	if (hapd->iface->num_multi_hws)
+	if (hapd->iface->num_multi_hws && hapd->iface->current_hw_info)
 		radio_idx = hapd->iface->current_hw_info->hw_idx;
 
 	/* Set tx_ant and rx_ant values to max so that driver
