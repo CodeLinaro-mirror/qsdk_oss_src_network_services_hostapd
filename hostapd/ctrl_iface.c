@@ -6232,7 +6232,7 @@ static int hostapd_ctrl_iface_stop_mld(struct hostapd_data *hapd)
 		return -1;
 	}
 
-	for_each_mld_link(link, hapd) {
+	for_each_mld_link_include_repurposed(link, hapd) {
 		ret = hostapd_drv_stop_ap(link);
 		if (ret) {
 			wpa_printf(MSG_ERROR, "Failed to stop %s link %u",
