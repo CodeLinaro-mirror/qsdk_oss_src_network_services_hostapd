@@ -2499,7 +2499,7 @@ void handle_auth_fils(struct hostapd_data *hapd, struct sta_info *sta,
 				  elems.rsnxe ? elems.rsnxe - 2 : NULL,
 				  elems.rsnxe ? elems.rsnxe_len + 2 : 0,
 				  elems.mdie, elems.mdie_len, NULL, 0, NULL,
-				  ap_sta_is_mld(hapd, sta));
+				  ap_sta_is_mld(hapd, sta), false);
 	resp = wpa_res_to_status_code(res);
 	if (resp != WLAN_STATUS_SUCCESS)
 		goto fail;
@@ -4648,7 +4648,7 @@ u16 owe_process_rsn_ie(struct hostapd_data *hapd,
 	res = wpa_validate_wpa_ie(hapd->wpa_auth, sta->wpa_sm,
 				  hapd->iface->freq, rsn_ie, rsn_ie_len,
 				  NULL, 0, NULL, 0, owe_dh, owe_dh_len, NULL,
-				  ap_sta_is_mld(hapd, sta));
+				  ap_sta_is_mld(hapd, sta), false);
 	status = wpa_res_to_status_code(res);
 	if (status != WLAN_STATUS_SUCCESS)
 		goto end;
@@ -4841,6 +4841,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 	size_t wpa_ie_len;
 	const u8 *p2p_dev_addr = NULL;
 	const struct element *elem;
+	bool pmk_cache_based_sae;
 
 	for_each_element(elem, ies, ies_len) {
 		memcpy(sta->vendor_oui, elem->data, 3);
@@ -5156,7 +5157,8 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 					  elems->mdie, elems->mdie_len,
 					  elems->owe_dh, elems->owe_dh_len,
 					  assoc_wpa_sm,
-					  ap_sta_is_mld(hapd, sta));
+					  ap_sta_is_mld(hapd, sta),
+					  hapd->conf->external_pmk_cache);
 		resp = wpa_res_to_status_code(res);
 		if (resp != WLAN_STATUS_SUCCESS)
 			goto out;
@@ -5221,8 +5223,10 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		    sta->sae->state == SAE_ACCEPTED)
 			wpa_auth_add_sae_pmkid(sta->wpa_sm, sta->sae->pmkid);
 
-		if (wpa_auth_uses_sae(sta->wpa_sm) &&
-		    sta->auth_alg == WLAN_AUTH_OPEN) {
+		pmk_cache_based_sae = (wpa_auth_uses_sae(sta->wpa_sm) &&
+				      sta->auth_alg == WLAN_AUTH_OPEN);
+
+		if (pmk_cache_based_sae && !hapd->conf->external_pmk_cache) {
 			struct rsn_pmksa_cache_entry *sa;
 			sa = wpa_auth_sta_get_pmksa(sta->wpa_sm);
 			if (!sa || !wpa_key_mgmt_sae(sa->akmp)) {
@@ -5238,7 +5242,8 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			if (wpa_key_mgmt_sae_ext_key(sa->akmp))
 				wpa_auth_set_hash_alg_sae_ext_key(
 					sta->wpa_sm, sa->pmk_len);
-		} else if (wpa_auth_uses_sae(sta->wpa_sm) &&
+		} else if (!pmk_cache_based_sae &&
+			   wpa_auth_uses_sae(sta->wpa_sm) &&
 			   sta->auth_alg != WLAN_AUTH_SAE &&
 			   !(sta->auth_alg == WLAN_AUTH_FT &&
 			     wpa_auth_uses_ft_sae(sta->wpa_sm))) {

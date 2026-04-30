@@ -892,6 +892,16 @@ void __hostapd_if_assoc_response(char *ifname, uint8_t *sta_mac,
 	if (hapd->conf->rsn_override_omit_rsnxe)
 		omit_rsnxe = 1;
 
+	if (ctx->data.assoc_resp.pmk.pmk) {
+		wpa_auth_set_pmk_full(sta->wpa_sm,
+				      ctx->data.assoc_resp.pmk.pmk,
+				      ctx->data.assoc_resp.pmk.pmkid,
+				      ctx->data.assoc_resp.pmk.pmk_len, 0,
+				      NULL);
+		os_free(ctx->data.assoc_resp.pmk.pmk);
+		os_free(ctx->data.assoc_resp.pmk.pmkid);
+	}
+
 	initiate_assoc_response(hapd, sta, ctx->status_code,
 				ctx->data.assoc_resp.is_reassoc,
 				NULL, NULL, 0,
@@ -2007,6 +2017,16 @@ int hostapd_if_assoc_response_validate_inputs(
 	if (!ifname || !sta_mac || !ctx) {
 		wpa_printf(MSG_ERROR, "%s: ERROR! NULL parameters %p:%p:%p\n",
 				__func__, ifname, sta_mac, ctx);
+		return -1;
+	}
+
+	if (ctx->data.assoc_resp.pmk.pmk &&
+	    (!ctx->data.assoc_resp.pmk.pmkid ||
+	     !ctx->data.assoc_resp.pmk.pmk_len)) {
+		wpa_printf(MSG_ERROR, "%s: ERROR! Invalid PMK provided "
+			   "%p %p %zu\n", __func__, ctx->data.assoc_resp.pmk.pmk,
+			   ctx->data.assoc_resp.pmk.pmkid,
+			   ctx->data.assoc_resp.pmk.pmk_len);
 		return -1;
 	}
 

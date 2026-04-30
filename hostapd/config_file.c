@@ -4798,6 +4798,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->bridge_multicast_to_unicast = atoi(pos);
 	} else if (os_strcmp(buf, "broadcast_deauth") == 0) {
 		bss->broadcast_deauth = atoi(pos);
+	} else if (os_strcmp(buf, "external_pmk_cache") == 0) {
+		bss->external_pmk_cache = atoi(pos);
 	} else if (os_strcmp(buf, "externally_triggered_m3") == 0) {
 		char *endptr;
 		long val;
