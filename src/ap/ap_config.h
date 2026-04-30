@@ -1779,6 +1779,20 @@ struct hostapd_config {
 	u16 npca_punct_bitmap;
 	u8 npca_primary_chan_offset;
 #endif /* CONFIG_IEEE80211BN */
+
+#ifdef CONFIG_MQTT
+	/*
+	 * Global MQTT settings — one connection per hostapd instance.
+	 * Set in the interface config block (before any bss= line).
+	 *
+	 * mqtt_enabled=1          enable MQTT on startup
+	 * mqtt_broker_host=<h>    broker hostname or IP (default: localhost)
+	 * mqtt_broker_port=<p>    broker TCP port (default: 1883)
+	 */
+	int   mqtt_enabled;
+	char *mqtt_broker_host;
+	int   mqtt_broker_port;
+#endif /* CONFIG_MQTT */
 };
 
 
