@@ -115,7 +115,8 @@ void hostapd_if_event_disassoc(struct hostapd_data *hapd,
 			       int tx_status_ok);
 
 void hostapd_if_event_assoc_tx_complete(struct hostapd_data *hapd,
-					const u8 *addr);
+					const u8 *addr, int ok, uint16_t status,
+					uint16_t aid);
 
 void hostapd_if_event_auth_tx_complete(struct hostapd_data *hapd,
 				       const u8 *addr);
