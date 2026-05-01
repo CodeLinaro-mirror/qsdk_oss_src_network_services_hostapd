@@ -208,6 +208,8 @@ int hostapd_get_hw_features(struct hostapd_iface *iface)
 			   __func__);
 	}
 
+	hostapd_update_primary_chanlist_flags(iface->bss[0]);
+
 	multi_hw_info = hostapd_get_multi_hw_info(hapd, &num_multi_hws);
 	if (!multi_hw_info)
 		return 0;
