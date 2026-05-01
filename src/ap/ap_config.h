@@ -1131,8 +1131,8 @@ struct hostapd_bss_config {
 
 #ifdef CONFIG_QCN_EXTN
 	/*
-	 * Override index used to derive vendor BSSID for
-	 * non-MBSSID cases when 'use_driver_vendor_addr=1'.
+	 * Override index used to derive vendor BSSID for when
+	 * 'use_driver_vendor_addr=1'.
 	 * -1 means not set and hostapd will use the interface
 	 * BSS index available.
 	 */
