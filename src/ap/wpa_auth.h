@@ -350,6 +350,7 @@ struct wpa_auth_config {
 	size_t security_profile_len;
 	bool pqc_enabled;
 	int externally_triggered_m3;
+	int plugin_eapol_key_offload;
 };
 
 typedef enum {
@@ -558,7 +559,7 @@ int wpa_auth_set_pmk_full(struct wpa_state_machine *sm,
 			  u8 *pmk, u8 *pmkid, int pmk_len,
 			  int session_timeout,
 			  struct eapol_state_machine *eapol);
-
+void wpa_auth_set_sm_ptk_done(struct wpa_state_machine *sm);
 int wpa_auth_get_gtk(struct wpa_authenticator *wpa_auth,
 		     int *gtk_index,
 		     u8 *gtk, size_t *gtk_len);

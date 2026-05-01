@@ -7,6 +7,7 @@
 
 #include "utils/common.h"
 #include "utils/bitfield.h"
+#include "common/eapol_common.h"
 #include "common/wpa_ctrl.h"
 #include "ap/hostapd.h"
 #include "ap/sta_info.h"
@@ -1005,6 +1006,26 @@ hostapd_if_notify_action(struct hostapd_data *hapd,
 }
 
 
+void hostapd_if_eapol_key_rx(struct hostapd_data *hapd, const u8 *sa,
+			     const u8 *data, u16 data_len)
+{
+	int link_id = -1;
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf && hapd->conf->mld_ap)
+		link_id = hapd->mld_link_id;
+#endif
+#ifdef HOSTAPD_EXTERNAL_PLUGIN
+	if (hostapd_if_plugin && hostapd_if_plugin->eapol_key_rx) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: executing EAPOL-Key RX through plugin",
+			   __func__);
+		hostapd_if_plugin->eapol_key_rx(hapd->conf->iface, link_id, sa,
+						(u8 *) data, data_len);
+	}
+#endif
+}
+
 /*
  * External app resumes Association flow:
  * Compose and send (Re)Association Response using ctx->status_code
@@ -1704,16 +1725,15 @@ __hostapd_if_set_pmk_exit:
 void __hostapd_if_set_ptk(char *ifname, uint8_t *sta_mac,
 			  uint8_t *kck, size_t kck_len,
 			  uint8_t *kek, size_t kek_len,
-			  uint8_t *tk, size_t tk_len)
+			  uint8_t *tk, size_t tk_len,
+			  bool authorized)
 {
 	struct hostapd_data *hapd;
 	struct sta_info *sta;
 
 	wpa_printf(MSG_MSGDUMP,
-		   "%s: %s, " MACSTR " kck_len=%zu kek_len=%zu "
-		   "tk_len=%zu\n",
-		   __func__, ifname, MAC2STR(sta_mac),
-		   kck_len, kek_len, tk_len);
+		   "%s: %s, " MACSTR " kck_len=%zu kek_len=%zu tk_len=%zu authorized=%d\n",
+		   __func__, ifname, MAC2STR(sta_mac), kck_len, kek_len, tk_len, authorized);
 
 	wpa_hexdump_key(MSG_EXCESSIVE,
 			"hostapd_if_set_ptk kck",
@@ -1750,6 +1770,11 @@ void __hostapd_if_set_ptk(char *ifname, uint8_t *sta_mac,
 
 	wpa_auth_set_ptk_full(sta->wpa_sm, kck, kck_len,
 			      kek, kek_len, tk, tk_len);
+	wpa_auth_set_sm_ptk_done(sta->wpa_sm);
+
+	if (authorized)
+		ieee802_1x_set_sta_authorized(hapd, sta, 1);
+
 __hostapd_if_set_ptk_exit:
 	os_free((void *)kck);
 	os_free((void *)kek);
@@ -1834,6 +1859,48 @@ __hostapd_if_start_sa_query_exit:
 	return;
 }
 
+
+void __hostapd_if_eapol_key_tx(char *ifname,  uint8_t *sta_mac, uint8_t link_id,
+		uint8_t *frame, uint16_t frame_len)
+{
+	struct hostapd_data *hapd = NULL;
+	struct sta_info *sta = NULL;
+	u32 flags = 0;
+	int encrypt = 0;
+
+	wpa_printf(MSG_MSGDUMP,
+			"%s: %s, link_id=%d frame_len=%u\n",
+			__func__, ifname, link_id, (unsigned int) frame_len);
+
+	wpa_hexdump(MSG_EXCESSIVE,
+			"hostapd_if_eapol_key_tx frame",
+			frame, frame_len);
+
+	sta = __get_sta(ifname, sta_mac, link_id, false, &hapd);
+	if (!sta) {
+		if (hapd)
+			__inbound_error_event(hapd, sta_mac,
+					HOSTAPD_IF_EAPOL_KEY_TX_ERROR,
+					__func__, __LINE__);
+		wpa_printf(MSG_ERROR,
+				"hostapd_if: eapol_tx - STA " MACSTR " not found on %s",
+				MAC2STR(sta_mac), ifname);
+
+		goto __hostapd_if_eapol_key_tx_exit;
+	}
+
+	hostapd_sta_flags_to_drv(sta->flags);
+	if (wpa_auth_pairwise_set(sta->wpa_sm))
+		encrypt = 1;
+
+	hostapd_drv_hapd_send_eapol(hapd, sta->addr, frame, frame_len, encrypt,
+			flags, link_id);
+
+__hostapd_if_eapol_key_tx_exit:
+	os_free((void *) frame);
+}
+
+
 /*
  * Resume EAPOL transmission from plugin.
  * Use MLD mac of STA in case of 11be STA.
@@ -1868,6 +1935,31 @@ void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
  __hostapd_if_eapol_tx_exit:
 	os_free((void *)data);
 	return;
+}
+
+
+void __hostapd_if_set_authorized(char *ifname, uint8_t *sta_mac, int authorized)
+{
+	struct hostapd_data *hapd = NULL;
+	struct sta_info *sta;
+
+	wpa_printf(MSG_MSGDUMP, "%s: %s, " MACSTR " authorized=%d\n",
+		   __func__, ifname, MAC2STR(sta_mac), authorized);
+
+	sta = __get_sta(ifname, sta_mac, -1, false, &hapd);
+	if (!sta) {
+		if (hapd) {
+			__inbound_error_event(hapd, sta_mac,
+					      HOSTAPD_IF_SET_AUTHORIZED_ERROR,
+					      __func__, __LINE__);
+		}
+		wpa_printf(MSG_ERROR,
+			   "hostapd_if: set_authorized - STA " MACSTR " not found on %s",
+			   MAC2STR(sta_mac), ifname);
+		return;
+	}
+
+	ieee802_1x_set_sta_authorized(hapd, sta, !!authorized);
 }
 
 void __hostapd_if_send_frame(char *ifname, int tx_link_id, uint8_t *frame, uint16_t frame_len)
@@ -2369,14 +2461,15 @@ int hostapd_if_set_pmk_validate_inputs(char *ifname, uint8_t *sta_mac,
 int hostapd_if_set_ptk_validate_inputs(char *ifname, uint8_t *sta_mac,
 				       uint8_t *kck, size_t kck_len,
 				       uint8_t *kek, size_t kek_len,
-				       uint8_t *tk, size_t tk_len)
+				       uint8_t *tk, size_t tk_len,
+				       bool authorized)
 {
 	if (!ifname || !sta_mac || !kck || kck_len == 0 || !kek ||
 			kek_len == 0 || !tk || tk_len == 0) {
 		wpa_printf(MSG_ERROR,
-			   "%s: ERROR! NULL/invalid parameters ifname=%p sta_mac=%p kck=%p kck_len=%zu kek=%p kek_len=%zu tk=%p tk_len=%zu",
+			   "%s: ERROR: NULL/invalid parameters ifname=%p sta_mac=%p kck=%p kck_len=%zu kek=%p kek_len=%zu tk=%p tk_len=%zu authorized=%d",
 			   __func__, ifname, sta_mac, kck, kck_len,
-			   kek, kek_len, tk, tk_len);
+			   kek, kek_len, tk, tk_len, authorized);
 		return -1;
 	}
 	return 0;
@@ -2455,6 +2548,19 @@ int hostapd_if_eapol_tx_validate_inputs(char *ifname, uint8_t *sta_mac,
 	return 0;
 }
 
+int hostapd_if_set_authorized_validate_inputs(char *ifname, uint8_t *sta_mac,
+					      int authorized)
+{
+	if (!ifname || !sta_mac || (authorized != 0 && authorized != 1)) {
+		wpa_printf(MSG_ERROR,
+			   "%s: ERROR: invalid parameters ifname=%p sta_mac=%p authorized=%d",
+			   __func__, ifname, sta_mac, authorized);
+		return -1;
+	}
+
+	return 0;
+}
+
 
 int hostapd_if_send_frame_validate_inputs(char *ifname, int link_id,
 					  uint8_t *frame, uint16_t frame_len)
@@ -2464,6 +2570,22 @@ int hostapd_if_send_frame_validate_inputs(char *ifname, int link_id,
 			   "%s: ERROR! invalid parameters ifname=%p link_id=%u frame=%p frame_len=%u",
 			   __func__, ifname, link_id, frame,
 			   (unsigned int) frame_len);
+		return -1;
+	}
+
+	return 0;
+}
+
+
+int hostapd_if_eapol_key_tx_validate_inputs(char *ifname, uint8_t *sta_mac, uint8_t link_id,
+					    uint8_t *frame,
+					    uint16_t frame_len)
+{
+	if (!ifname || !sta_mac || !frame || frame_len <= ETH_HLEN ||
+	    (link_id != 0xff && link_id > 0xf)) {
+		wpa_printf(MSG_ERROR,
+			   "%s: ERROR: invalid parameters ifname=%p link_id=%u frame=%p frame_len=%u",
+			   __func__, ifname, link_id, frame, frame_len);
 		return -1;
 	}
 
@@ -2562,13 +2684,14 @@ void hostapd_if_set_pmk_dump_params(char *ifname, uint8_t *sta_mac,
 void hostapd_if_set_ptk_dump_params(char *ifname, uint8_t *sta_mac,
 				    uint8_t *kck, size_t kck_len,
 				    uint8_t *kek, size_t kek_len,
-				    uint8_t *tk, size_t tk_len)
+				    uint8_t *tk, size_t tk_len,
+				    bool authorized)
 {
 	wpa_printf(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " kck_len=%zu kek_len=%zu "
-		   "tk_len=%zu\n",
+		   "tk_len=%zu authorized=%d\n",
 		   __func__, ifname, MAC2STR(sta_mac),
-		   kck_len, kek_len, tk_len);
+		   kck_len, kek_len, tk_len, authorized);
 
 	wpa_hexdump_key(MSG_EXCESSIVE,
 			__func__,
@@ -2603,6 +2726,13 @@ void hostapd_if_start_sa_query_dump_params(char *ifname, uint8_t *sta_mac, int l
 		   __func__, ifname, MAC2STR(sta_mac), link_id);
 }
 
+void hostapd_if_set_authorized_dump_params(char *ifname, uint8_t *sta_mac,
+					   int authorized)
+{
+	wpa_printf(MSG_MSGDUMP, "%s: %s, " MACSTR " authorized=%d\n",
+		   __func__, ifname, MAC2STR(sta_mac), authorized);
+}
+
 void hostapd_if_trigger_eapol_m3_dump_params(char *ifname, uint8_t *sta_mac)
 {
 	wpa_printf(MSG_MSGDUMP,
@@ -2617,6 +2747,21 @@ void hostapd_if_send_frame_dump_params(char *ifname, int tx_link_id,
 		   __func__, ifname, tx_link_id, (unsigned int) frame_len);
 
 	wpa_hexdump(MSG_EXCESSIVE, __func__, frame, frame_len);
+}
+
+void hostapd_if_eapol_key_tx_dump_params(char *ifname, uint8_t *sta_mac, uint8_t link_id,
+					 uint8_t *frame,
+					 uint16_t frame_len)
+{
+	int tx_link_id = (link_id == 0xff) ? -1 : link_id;
+
+	wpa_printf(MSG_MSGDUMP,
+		   "%s: %s, link_id=%d frame_len=%u\n",
+		   __func__, ifname, tx_link_id, (unsigned int) frame_len);
+
+	wpa_hexdump(MSG_EXCESSIVE,
+		    __func__,
+		    frame, frame_len);
 }
 
 size_t hostapd_if_auth_reply_tail_len(struct sta_info *sta, size_t current_len)
