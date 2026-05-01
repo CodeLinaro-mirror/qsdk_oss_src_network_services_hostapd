@@ -1157,10 +1157,21 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	epos = (u8 *) params->resp + len;
 
 	*pos++ = WLAN_EID_SSID;
-	*pos++ = hapd->conf->ssid.ssid_len;
-	os_memcpy(pos, hapd->conf->ssid.ssid,
-		  hapd->conf->ssid.ssid_len);
-	pos += hapd->conf->ssid.ssid_len;
+
+	if (hapd->conf->ignore_broadcast_ssid && hapd != hapd_probed) {
+		if (hapd->conf->ignore_broadcast_ssid == 2) {
+			*pos++ = hapd->conf->ssid.ssid_len;
+			os_memset(pos, 0, hapd->conf->ssid.ssid_len);
+			pos += hapd->conf->ssid.ssid_len;
+		} else {
+			*pos++ = 0; /* empty SSID */
+		}
+	} else {
+		*pos++ = hapd->conf->ssid.ssid_len;
+		os_memcpy(pos, hapd->conf->ssid.ssid,
+				hapd->conf->ssid.ssid_len);
+		pos += hapd->conf->ssid.ssid_len;
+	}
 
 	/* Supported rates */
 	pos = hostapd_eid_supp_rates(hapd, pos);
