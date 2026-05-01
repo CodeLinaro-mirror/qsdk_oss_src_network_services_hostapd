@@ -5816,9 +5816,18 @@ set:
 	if (scan)
 		ret = hostapd_neighbor_set_ifaces_scan_report(hapd, &ssid,
 							      bands);
-	else
+	else {
 		ret = hostapd_neighbor_set(hapd, bssid, &ssid, nr, lci, civic,
 					   stationary, bss_parameters);
+		if (ret)
+			goto fail;
+
+		/* Update beacon to include the new neighbor in RNR */
+		if (ieee802_11_set_beacon(hapd))
+			wpa_printf(MSG_WARNING,
+				   "CTRL: SET_NEIGHBOR: set beacon for " MACSTR " failed",
+				   MAC2STR(hapd->own_addr));
+	}
 
 fail:
 	wpabuf_free(nr);
@@ -6335,6 +6344,7 @@ static int hostapd_ctrl_iface_remove_neighbor(struct hostapd_data *hapd,
 	struct wpa_ssid_value *ssidp = NULL;
 	u8 bssid[ETH_ALEN];
 	char *tmp;
+	int ret;
 
 	if (hwaddr_aton(buf, bssid)) {
 		wpa_printf(MSG_ERROR, "CTRL: REMOVE_NEIGHBOR: Bad BSSID");
@@ -6351,7 +6361,17 @@ static int hostapd_ctrl_iface_remove_neighbor(struct hostapd_data *hapd,
 		}
 	}
 
-	return hostapd_neighbor_remove(hapd, bssid, ssidp);
+	ret = hostapd_neighbor_remove(hapd, bssid, ssidp);
+	if (ret)
+		return ret;
+
+	/* Update beacon to remove the neighbor in RNR */
+	if (ieee802_11_set_beacon(hapd))
+		wpa_printf(MSG_WARNING,
+			   "CTRL: REMOVE_NEIGHBOR: set beacon for " MACSTR " failed",
+			   MAC2STR(hapd->own_addr));
+
+	return 0;
 }
 
 static int hostapd_ctrl_iface_send_neighbor(struct hostapd_data *hapd,
