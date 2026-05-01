@@ -971,6 +971,7 @@ struct hostapd_bss_config {
 	int externally_triggered_m3;
 	int plugin_eap_offload;
 	int external_pmk_cache;
+	int plugin_eapol_key_offload;
 
 #ifdef CONFIG_DPP
 	char *dpp_name;

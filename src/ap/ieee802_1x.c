@@ -1186,6 +1186,13 @@ void ieee802_1x_receive(struct hostapd_data *hapd, const u8 *sa, const u8 *buf,
 	    hdr->type == IEEE802_1X_TYPE_EAPOL_KEY &&
 	    (key->type == EAPOL_KEY_TYPE_WPA ||
 	     key->type == EAPOL_KEY_TYPE_RSN)) {
+#ifdef CONFIG_HOSTAPD_IF
+		if (hapd->conf->plugin_eapol_key_offload) {
+			hostapd_if_eapol_key_rx(hapd, sa, (const u8 *) hdr,
+						sizeof(*hdr) + datalen);
+			return;
+		}
+#endif /* CONFIG_HOSTAPD_IF */
 		wpa_receive(hapd->wpa_auth, sta->wpa_sm, (u8 *) hdr,
 			    sizeof(*hdr) + datalen);
 		return;

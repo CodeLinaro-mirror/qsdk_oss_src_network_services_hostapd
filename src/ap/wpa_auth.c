@@ -852,6 +852,13 @@ struct wpa_authenticator * wpa_init(const u8 *addr,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+	if (conf->plugin_eapol_key_offload) {
+		wpa_printf(MSG_INFO, "EAPOL-KEY Plugin Offload enabled. Force turn-off rekey related configs\n");
+		conf->wpa_group_rekey = 0;
+		conf->wpa_strict_rekey = 0;
+		conf->wpa_ptk_rekey = 0;
+	}
+
 #ifdef CONFIG_IEEE80211R_AP
 	/* if MLD share FT PMK cache across link BSS
 	 * refcount is used to check and free the cache during link BSS's deinit.
@@ -7274,6 +7281,14 @@ int wpa_auth_set_pmk_full(struct wpa_state_machine *sm, u8 *pmk, u8 *pmkid,
 	return 0;
 }
 
+
+void wpa_auth_set_sm_ptk_done (struct wpa_state_machine *sm) {
+
+	if (sm) {
+		sm->wpa_ptk_state = WPA_PTK_PTKINITDONE;
+		sm->pairwise_set = true;
+	}
+}
 
 const u8 * wpa_auth_get_pmk(struct wpa_state_machine *sm, int *len)
 {
