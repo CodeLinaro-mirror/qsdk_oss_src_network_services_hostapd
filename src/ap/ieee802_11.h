@@ -175,17 +175,13 @@ void hostapd_get_uhr_capab(const struct ieee80211_uhr_capabilities *src,
 			   struct ieee80211_uhr_capabilities *dest,
 			   size_t len);
 int add_associated_sta(struct hostapd_data *hapd,
-                       struct sta_info *sta, int reassoc);
+		       struct sta_info *sta, int reassoc);
 u8 * hostapd_eid_eht_ml_beacon(struct hostapd_data *hapd,
 			       struct mld_info *mld_info,
 			       u8 *eid, bool include_mld_id,
 			       u8 include_ext_cap);
 u8 * hostapd_eid_eht_ml_assoc(struct hostapd_data *hapd, struct sta_info *info,
 			      u8 *eid, u8 include_ext_cap);
-u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
-				     u8 *eid, struct mld_info *mld_info,
-				     bool include_mld_id, bool include_bpcc,
-				     u8 include_ext_cap);
 size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 				    struct sta_info *info,
 				    bool include_mld_id, bool include_pbcc,
@@ -194,10 +190,17 @@ size_t hostapd_eid_eht_ml_beacon_len(struct hostapd_data *hapd,
 				     struct mld_info *info,
 				     bool include_mld_id,
 				     u8 include_ext_cap);
+size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd, struct mld_info *info,
+			      bool include_mld_id, bool include_bpcc,
+			      u8 include_ext_cap);
+u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
+				     u8 *eid, struct mld_info *mld_info,
+				     bool include_mld_id, bool include_bpcc,
+				     u8 include_ext_cap, bool is_smd);
 struct wpabuf * hostapd_ml_auth_resp(struct hostapd_data *hapd);
 const u8 * auth_skip_fixed_fields(struct hostapd_data *hapd,
-                                  const struct ieee80211_mgmt *mgmt,
-                                  size_t len);
+				  const struct ieee80211_mgmt *mgmt,
+				  size_t len);
 const u8 * hostapd_process_ml_auth(struct hostapd_data *hapd,
 				   const struct ieee80211_mgmt *mgmt,
 				   size_t len);
@@ -239,6 +242,9 @@ bool hostapd_get_ht_vht_twt_responder(struct hostapd_data *hapd);
 void hostapd_wfa_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		       const u8 *pos, const u8 *end);
 u8 * hostapd_eid_cca(struct hostapd_data *hapd, u8 *eid);
+/* IE validation for link reconfiguration */
+int check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
+                   const u8 *ies, size_t ies_len, enum link_parse_type type);
 void hostapd_tx_status(struct hostapd_data *hapd, const u8 *addr,
 		       const u8 *buf, size_t len, int ack);
 void ieee802_11_rx_from_unknown(struct hostapd_data *hapd, const u8 *src,
