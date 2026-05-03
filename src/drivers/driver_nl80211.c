@@ -7506,6 +7506,8 @@ static u32 sta_flags_nl80211(int flags)
 		f |= BIT(NL80211_STA_FLAG_FT_AUTH);
 	if (flags & WPA_STA_CFP)
 		f |= BIT(NL80211_STA_FLAG_CFP);
+	if (flags & WPA_STA_SMD)
+		f |= BIT(NL80211_STA_FLAG_SMD);
 
 	return f;
 }
@@ -7825,10 +7827,76 @@ static int wpa_driver_nl80211_build_sta(struct wpa_driver_nl80211_data *drv,
 			goto fail;
 	}
 
+	if (params->set && params->smd_sta) {
+		wpa_printf(MSG_DEBUG, "  * SMD enabled:%d", params->smd_sta);
+		if (nla_put_u8(msg, NL80211_ATTR_PEER_SMD_ENABLED, params->smd_sta))
+			goto fail;
+
+		wpa_printf(MSG_DEBUG, "  * SMD dl data forwarding:%d", params->dl_data_fwd);
+		if (nla_put_u8(msg, NL80211_ATTR_PEER_SMD_DL_DATA_FWD, params->dl_data_fwd))
+			goto fail;
+
+		if (params->smd_mac_addr) {
+			wpa_printf(MSG_DEBUG, " * SMD MAC address: " MACSTR, MAC2STR(params->smd_mac_addr));
+			if (nla_put(msg, NL80211_ATTR_PEER_SMD_MAC_ADDR, ETH_ALEN, params->smd_mac_addr))
+				goto fail;
+		}
+	}
+
 	ret = 0;
 fail:
 	return ret;
 }
+
+#ifdef CONFIG_IEEE80211BN
+static int wpa_driver_nl80211_smd_roam(void *priv, struct hostapd_smd_roam_params *params)
+{
+	struct i802_bss *bss = priv;
+	struct nl_msg *msg;
+	struct nlattr *macs_nest, *entry;
+	size_t i;
+
+	msg = nl80211_cmd_msg(bss, 0, NL80211_CMD_SMD_ROAM);
+	if (!msg)
+		return -1;
+
+	if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, bss->ifindex) ||
+	    nla_put_u32(msg, NL80211_ATTR_SMD_ROLE, params->role) ||
+	    nla_put_u32(msg, NL80211_ATTR_SMD_TYPE, params->type))
+		goto fail;
+
+	if (params->dl_sn_not_transferred &&
+	    nla_put_flag(msg, NL80211_ATTR_SMD_DL_SN_NOT_TRANSFERRED))
+		goto fail;
+
+	if (params->ul_sn_not_transferred &&
+	    nla_put_flag(msg, NL80211_ATTR_SMD_UL_SN_NOT_TRANSFERRED))
+		goto fail;
+
+	if (nla_put_u32(msg, NL80211_ATTR_SMD_DL_DRAIN_TIME, params->dl_drain_time))
+		goto fail;
+
+	macs_nest = nla_nest_start(msg, NL80211_ATTR_SMD_STA_LINK_MACS);
+	if (!macs_nest)
+		goto fail;
+
+	for (i = 0; i < params->n_macs; i++) {
+		entry = nla_nest_start(msg, i + 1);
+		if (!entry)
+			goto fail;
+		if (nla_put(msg, NL80211_ATTR_SMD_STA_LINK_MAC, ETH_ALEN, params->mac[i]))
+			goto fail;
+		nla_nest_end(msg, entry);
+	}
+
+	nla_nest_end(msg, macs_nest);
+
+	return send_and_recv_cmd(bss->drv, msg);
+fail:
+	nlmsg_free(msg);
+	return -1;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 static int wpa_driver_nl80211_sta_add(void *priv,
 				      struct hostapd_sta_add_params *params)
@@ -8380,6 +8448,8 @@ static int wpa_driver_nl80211_sta_set_flags(void *priv, const u8 *addr,
 	     nla_put_flag(msg, NL80211_STA_FLAG_TDLS_PEER)) ||
 	    ((total_flags & WPA_STA_FT_AUTH) &&
 	     nla_put_flag(msg, NL80211_STA_FLAG_FT_AUTH)) ||
+	    ((total_flags & WPA_STA_SMD) &&
+	     nla_put_flag(msg, NL80211_STA_FLAG_SMD)) ||
 	    ((total_flags & WPA_STA_CFP) &&
 	     nla_put_flag(msg, NL80211_STA_FLAG_CFP)))
 		goto fail;
@@ -8389,6 +8459,7 @@ static int wpa_driver_nl80211_sta_set_flags(void *priv, const u8 *addr,
 	os_memset(&upd, 0, sizeof(upd));
 	upd.mask = sta_flags_nl80211(flags_or | ~flags_and);
 	upd.set = sta_flags_nl80211(flags_or);
+	wpa_printf(MSG_DEBUG, "mask: %x, set: %x", upd.mask, upd.set);
 	if (nla_put(msg, NL80211_ATTR_STA_FLAGS2, sizeof(upd), &upd))
 		goto fail;
 
@@ -18985,6 +19056,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #ifdef CONFIG_IEEE80211BN
 	.trigger_smd_discovery = wpa_driver_nl80211_trigger_smd_discovery,
 	.uhr_reconfig_req = wpa_driver_nl80211_uhr_reconfig_req,
+	.smd_roam = wpa_driver_nl80211_smd_roam,
 #endif /* CONFIG_IEEE80211BN */
 	.get_scan_results = wpa_driver_nl80211_get_scan_results,
 	.abort_scan = wpa_driver_nl80211_abort_scan,

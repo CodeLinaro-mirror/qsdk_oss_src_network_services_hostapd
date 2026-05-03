@@ -4035,8 +4035,11 @@ enum nl80211_iftype {
  *	that support %NL80211_FEATURE_FULL_AP_CLIENT_STATE to transition a
  *	previously added station into associated state
  * @NL80211_STA_FLAG_SPP_AMSDU: station supports SPP A-MSDUs
- * @NL80211_STA_FLAG_MAX: highest station flag number currently defined
  * @NL80211_STA_FLAG_CFP: station uses control frame protection
+ * @NL80211_STA_FLAG_SMD: station participates in Shared Multi-band Device
+ *	(SMD) operation; set when the station has been identified as an SMD
+ *	peer and is subject to SMD roaming coordination
+ * @NL80211_STA_FLAG_MAX: highest station flag number currently defined
  * @__NL80211_STA_FLAG_AFTER_LAST: internal use
  */
 enum nl80211_sta_flags {
@@ -4051,6 +4054,7 @@ enum nl80211_sta_flags {
 	NL80211_STA_FLAG_SPP_AMSDU,
 	NL80211_STA_FLAG_FT_AUTH,
 	NL80211_STA_FLAG_CFP,
+	NL80211_STA_FLAG_SMD,
 
 	/* keep last */
 	__NL80211_STA_FLAG_AFTER_LAST,
