@@ -777,6 +777,7 @@ static inline bool sec_prof_is_sae(int p)
 #define WLAN_ACTION_PROTECTED_FTM 34
 #define WLAN_ACTION_EHT 36
 #define WLAN_ACTION_PROTECTED_EHT 37
+/* IEEE Std 802.11bn-D1.3, Table 9-51 (Action field) */
 #define WLAN_ACTION_PROTECTED_UHR 43
 #define WLAN_ACTION_VENDOR_SPECIFIC_PROTECTED 126
 #define WLAN_ACTION_VENDOR_SPECIFIC 127
@@ -908,6 +909,11 @@ static inline bool sec_prof_is_sae(int p)
 #define WLAN_PROT_EHT_LINK_RECONFIG_NOTIFY 10
 #define WLAN_PROT_EHT_LINK_RECONFIG_REQUEST 11
 #define WLAN_PROT_EHT_LINK_RECONFIG_RESPONSE 12
+
+/* Protected UHR Action field values (IEEE Std 802.11bn_D1.3, Table 9-658ba) */
+#define WLAN_PROT_UHR_LINK_RECONFIG_REQUEST 0
+#define WLAN_PROT_UHR_LINK_RECONFIG_RESPONSE 1
+#define WLAN_PROT_UHR_LINK_RECONFIG_NOTIFY 2
 
 /* Radio Measurement capabilities (from RM Enabled Capabilities element)
  * IEEE Std 802.11-2020, 9.4.2.44, Table 9-179 */
@@ -1362,6 +1368,20 @@ struct ieee80211_mgmt {
 					u8 subtype;
 					u8 variable[0];
 				} STRUCT_PACKED naf;
+				struct {
+					u8 action; /* Protected UHR */
+					u8 dialog_token;
+					u8 type;
+					u8 variable[];
+				} STRUCT_PACKED uhr_link_reconf_req;
+				struct {
+					u8 action; /* Protected UHR */
+					u8 dialog_token;
+					u8 type;
+					u8 count;
+					u8 variable[];
+				} STRUCT_PACKED uhr_link_reconf_resp;
+
 #ifdef CONFIG_QCN_EXTN
 				struct {
 					u8 action;
