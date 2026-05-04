@@ -680,6 +680,7 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 		hapd->beacon_set_done = 0;
 	}
 
+	iface->cac_type = 0;
 	return NULL;
 }
 
