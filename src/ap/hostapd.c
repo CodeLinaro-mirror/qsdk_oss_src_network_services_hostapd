@@ -6060,7 +6060,7 @@ setup_bss:
 	}
 
 	/* Re-setup this BSS without adding netdev/link again. */
-	if (hostapd_setup_bss(hapd, -1, true)) {
+	if (hostapd_setup_bss(hapd, false, true)) {
 		hapd->reenable = REENABLE_NONE;
 		wpa_printf(MSG_ERROR, "Failed to re-enable BSS %s",
 			   hapd->conf->iface);
