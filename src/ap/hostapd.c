@@ -2243,7 +2243,7 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
 /**
  * hostapd_setup_bss - Per-BSS setup (initialization)
  * @hapd: Pointer to BSS data
- * @first: Whether this BSS is the first BSS of an interface; -1 = not first,
+ * @first: Whether this BSS is the first BSS of an interface; false = not first,
  *	but interface may exist
  * @start_beacon: Whether Beacon frame template should be configured and
  *	transmission of Beaconf rames started at this time. This is used when
@@ -2257,7 +2257,7 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
  * initialized. Most of the modules that are initialized here will be
  * deinitialized in hostapd_cleanup().
  */
-int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon)
+int hostapd_setup_bss(struct hostapd_data *hapd, bool first, bool start_beacon)
 {
 	struct hostapd_bss_config *conf = hapd->conf;
 	u8 ssid[SSID_MAX_LEN + 1];
@@ -2300,7 +2300,7 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon)
 	}
 	hapd->started = 1;
 
-	if (!first || first == -1) {
+	if (!first) {
 		u8 *addr = hapd->own_addr;
 
 		if (hapd_reenable_pending(hapd))
@@ -2367,7 +2367,7 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon)
 				   conf->iface, addr, hapd,
 				   &hapd->drv_priv, force_ifname, if_addr,
 				   conf->bridge[0] ? conf->bridge : NULL,
-				   first == -1, hapd->conf->ppe_vp_type)) {
+				   1, hapd->conf->ppe_vp_type)) {
 			wpa_printf(MSG_ERROR, "Failed to add BSS (BSSID="
 				   MACSTR ")", MAC2STR(hapd->own_addr));
 			hapd->interface_added = 0;
@@ -2404,7 +2404,7 @@ int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon)
 
 #ifdef CONFIG_IEEE80211BE
 setup_mld:
-	if (hapd->conf->mld_ap && (!first || first == -1)) {
+	if (hapd->conf->mld_ap && !first) {
 		wpa_printf(MSG_DEBUG,
 			   "MLD: Set %s link_id=%u, mld_addr=" MACSTR
 			   ", own_addr=" MACSTR, hapd->conf->iface,
@@ -5990,7 +5990,7 @@ setup_bss:
 	}
 
 	/* Re-setup this BSS without adding netdev/link again. */
-	if (hostapd_setup_bss(hapd, -1, true)) {
+	if (hostapd_setup_bss(hapd, false, true)) {
 		hapd->reenable = REENABLE_NONE;
 		wpa_printf(MSG_ERROR, "Failed to re-enable BSS %s",
 			   hapd->conf->iface);
@@ -6257,7 +6257,7 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 
 			if (start_ctrl_iface_bss(hapd) < 0 ||
 			    (hapd_iface->state == HAPD_IFACE_ENABLED &&
-			     hostapd_setup_bss(hapd, -1, true))) {
+			     hostapd_setup_bss(hapd, false, true))) {
 				hostapd_bss_link_deinit(hapd);
 				hostapd_cleanup(hapd);
 				hapd_iface->bss[hapd_iface->num_bss - 1] = NULL;

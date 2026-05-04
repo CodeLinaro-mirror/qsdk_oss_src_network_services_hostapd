@@ -516,7 +516,7 @@ uc_hostapd_iface_add_bss(uc_vm_t *vm, size_t nargs)
 	iface->bss[iface->num_bss++] = hapd;
 
 	if (iface->state == HAPD_IFACE_ENABLED &&
-	    hostapd_setup_bss(hapd, -1, true))
+	    hostapd_setup_bss(hapd, false, true))
 		goto remove_bss;
 
 	conf->bss[idx] = NULL;
