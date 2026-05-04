@@ -347,6 +347,11 @@ static void ieee80211n_check_scan(struct hostapd_iface *iface)
 	 * allowed per IEEE Std 802.11-2012, 10.15.3.2 */
 
 	iface->scan_cb = NULL;
+	if (iface->state != HAPD_IFACE_HT_SCAN) {
+		wpa_printf(MSG_DEBUG, "state %s, Ignore scan event",
+			   hostapd_state_text(iface->state));
+		return;
+	}
 
 	scan_res = hostapd_driver_get_scan_results(iface->bss[0]);
 	if (scan_res == NULL) {
