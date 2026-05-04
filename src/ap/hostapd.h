@@ -30,8 +30,7 @@
 	((hapd->conf->oce & OCE_STA_CFON) && \
 	 (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_OCE_STA_CFON))
 #define OCE_AP_ENABLED(hapd) \
-	((hapd->conf->oce & OCE_AP) && \
-	 (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_OCE_AP))
+	(hapd->conf->oce & OCE_AP)
 
 #define TABLE_NAME "wifi_qos_table"
 #define CHAIN_NAME "wifi_qos_chain"
