@@ -5903,7 +5903,7 @@ int hostapd_reload_bss_only(struct hostapd_data *bss)
 	return 0;
 }
 
-int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt)
+int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt, const char *event)
 {
 	size_t i;
 
@@ -5917,7 +5917,7 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt)
 	}
 #endif /* CONFIG_IEEE80211BE */
 	hapd->disabled = 1;
-	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_DISABLED);
+	wpa_msg(hapd->msg_ctx, MSG_INFO, "%s", event);
 
 	/* Stop AP at driver level: no more beacons/tx for this BSS. */
 	hostapd_drv_stop_ap(hapd);

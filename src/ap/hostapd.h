@@ -1071,7 +1071,7 @@ int hostapd_iface_num_sta(struct hostapd_iface *iface);
 int hostapd_enable_iface(struct hostapd_iface *hapd_iface);
 int hostapd_reload_iface(struct hostapd_iface *hapd_iface);
 int hostapd_reload_bss_only(struct hostapd_data *bss);
-int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt);
+int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt, const char *event);
 int hostapd_enable_bss(struct hostapd_data *hapd);
 int hostapd_disable_iface(struct hostapd_iface *hapd_iface);
 void hostapd_clear_local_tpe_bss(struct hostapd_data *hapd);
