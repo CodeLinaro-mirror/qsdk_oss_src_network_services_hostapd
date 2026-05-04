@@ -8704,7 +8704,7 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 	if (sta->auth_alg == WLAN_AUTH_FT) {
 		sta->ft_re_add = false;
 #ifdef CONFIG_IEEE80211R_AP
-		if (reassoc && !sta->vlan_id)
+		if (reassoc)
 			wpa_ft_push_roam_notification(hapd->wpa_auth, sta->addr);
 #endif
 	}
