@@ -689,8 +689,6 @@ uc_wpas_recvd_ch_sw_result_ev(uc_vm_t *vm, size_t nargs)
 			continue;
 		}
 
-		if (wpa_s->wpa_state != WPA_PRE_CONNECT)
-			continue;
 		if (!wpa_s->cache_cwork)
 			continue;
 		if (!wpa_s->cache_cwork->bss)
