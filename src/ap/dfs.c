@@ -1758,7 +1758,9 @@ static int hostapd_dfs_start_channel_switch_cac(struct hostapd_iface *iface)
 	u8 op_class, chan;
 
 	/* Radar detected during active CAC */
+#ifndef CONFIG_QCN_EXTN
 	iface->cac_started = 0;
+#endif
 #ifdef CONFIG_IEEE80211BE
 	iface->conf->punct_bitmap = 0;
 #endif /* CONFIG_IEEE80211BE */
@@ -1778,6 +1780,16 @@ static int hostapd_dfs_start_channel_switch_cac(struct hostapd_iface *iface)
 		}
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_send_rcsa_extn(iface, channel->chan, channel->freq, secondary_channel,
+				    hostapd_get_oper_chwidth(iface->conf),
+				    oper_centr_freq_seg0_idx,
+				    oper_centr_freq_seg1_idx, 0)) {
+		iface->cac_started = 0;
+		return 0;
+	}
+	iface->cac_started = 0;
+#endif
 	wpa_printf(MSG_DEBUG, "DFS will switch to a new channel %d",
 		   channel->chan);
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_NEW_CHANNEL
