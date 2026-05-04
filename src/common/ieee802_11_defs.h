@@ -2819,7 +2819,7 @@ struct ieee80211_he_6ghz_oper_info {
 /* IEEE Std 802.11ax-2021, Figure 9-788l - Control field format */
 #define HE_6GHZ_OPER_INFO_CTRL_CHAN_WIDTH_MASK	(BIT(0) | BIT(1))
 #define HE_6GHZ_OPER_INFO_CTRL_DUP_BEACON	BIT(2)
-#define HE_6GHZ_OPER_INFO_CTRL_REG_INFO_MASK	(BIT(3) | BIT(4) | BIT(5))
+#define HE_6GHZ_OPER_INFO_CTRL_REG_INFO_MASK  (BIT(3) | BIT(4) | BIT(5) | BIT(6))
 #define HE_6GHZ_OPER_INFO_CTRL_REG_INFO_SHIFT	3
 
 /* IEEE Std 802.11ax-2021, 9.4.2.263 HE 6 GHz Band Capabilities element */
