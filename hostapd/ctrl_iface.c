@@ -4138,7 +4138,16 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 			   " state, aborting channel switch");
 		return -1;
 	}
-#endif
+
+	if (!hostapd_is_chan_in_primary_list(iface,
+					     (u16)settings.freq_params.freq)) {
+		wpa_printf(MSG_ERROR,
+			   "chanswitch: freq %d not in primary channel list,"
+			   " rejecting channel switch",
+			   settings.freq_params.freq);
+		return -1;
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	settings.link_id = -1;
 #ifdef CONFIG_IEEE80211BE
