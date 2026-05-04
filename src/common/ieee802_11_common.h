@@ -313,6 +313,9 @@ const u8 * get_ie(const u8 *ies, size_t len, u8 eid);
 const u8 * get_ie_pos(const u8 *ies, size_t len, u8 eid, u8 idx);
 const u8 * get_ie_ext(const u8 *ies, size_t len, u8 ext);
 const u8 * get_vendor_ie(const u8 *ies, size_t len, u32 vendor_type);
+int ieee80211_parse_mlo_link_info_ie(const u8 *ies, size_t len,
+				     u16 *link_id_bitmap);
+int ieee80211_get_link_id_from_bitmap(u16 link_id_bitmap);
 
 size_t mbo_add_ie(u8 *buf, size_t len, const u8 *attr, size_t attr_len);
 

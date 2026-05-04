@@ -2091,6 +2091,37 @@ switch_link_hapd(struct hostapd_data *hapd, int link_id)
 	return hapd;
 }
 
+struct hostapd_data *
+get_link_hapd(struct hostapd_data *hapd, const u8 *ies, size_t len,
+	      int *link_id)
+{
+	struct hostapd_data *link_hapd;
+	u16 link_id_bitmap = 0;
+	int parsed_link_id;
+
+	if (link_id)
+		*link_id = -1;
+
+	if (!hapd || !hapd->conf || !hapd->conf->mld_ap || !ies || len < 3)
+		return NULL;
+
+	if (ieee80211_parse_mlo_link_info_ie(ies, len, &link_id_bitmap) < 0)
+		return NULL;
+
+	parsed_link_id = ieee80211_get_link_id_from_bitmap(link_id_bitmap);
+	if (parsed_link_id < 0)
+		return NULL;
+
+	link_hapd = switch_link_hapd(hapd, parsed_link_id);
+	if (!link_hapd || !link_hapd->iface ||
+			link_hapd->mld_link_id != parsed_link_id)
+		return NULL;
+
+	if (link_id)
+		*link_id = parsed_link_id;
+
+	return link_hapd;
+}
 
 static struct hostapd_data *
 switch_link_scan(struct hostapd_data *hapd, u64 scan_cookie)
