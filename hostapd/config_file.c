@@ -4953,9 +4953,9 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 	} else if (os_strcmp(buf, "rssi_reject_assoc_timeout") == 0) {
 		int val = atoi(pos);
-		if (val < 1 || val > 300) {
+		if (val < 1 || val > 255) {
 			wpa_printf(MSG_ERROR, "Invalid RSSI timeout %d "
-				   "(range: 1 to 300)", val);
+				   "(range: 1 to 255)", val);
 			return -1;
 		} else {
 			/* Support both per-BSS and per-radio configuration */

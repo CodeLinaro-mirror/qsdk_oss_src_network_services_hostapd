@@ -6162,7 +6162,17 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 #ifdef CONFIG_MBO
 	if (status_code == WLAN_STATUS_DENIED_POOR_CHANNEL_CONDITIONS &&
 	    rssi != 0) {
-		int delta = hapd->iconf->rssi_reject_assoc_rssi - rssi;
+		int threshold;
+		int delta;
+
+		threshold = hapd->conf->rssi_reject_assoc_rssi ?
+			hapd->conf->rssi_reject_assoc_rssi :
+			hapd->iconf->rssi_reject_assoc_rssi;
+		delta = threshold - rssi;
+		if (delta < 0)
+			delta = 0;
+		if (delta > 127)
+			delta = 127;
 
 		p = hostapd_eid_mbo_rssi_assoc_rej(hapd, p, buf + buflen - p,
 						   delta);
