@@ -1871,11 +1871,59 @@ static int hostapd_rcac_complete(struct hostapd_iface *iface, int success,
 	return 0;
 }
 
+/*
+ * hostapd_dfs_unpunc_cacdone_subchans - Initiate a channel switch request to
+ * unpuncture the channels that have successfully completed the Puncturing CAC process.
+ *
+ * @iface: hostapd interface data
+ * @freq: primary channel frequency
+ * @channel: primary channel number
+ * @secondary_channel: HT secondary channel offset
+ * @chan_width: configured channel width
+ * @cf1: center frequency segment 0
+ * @cf2: center frequency segment 1
+ * @unpuncture_bitmap: The bitmap containing channels to be unpunctured.
+ *
+ * Update the puncturing pattern by removing the bits corresponding to channels
+ * that need to be unpunctured. Use the resulting updated puncture pattern,
+ * which contains only the bits that remain in the punctured state, and send
+ * this to the driver as part of the CSA.
+ *
+ * Return: 0 on success or a negative error code on failure
+ */
+static int hostapd_dfs_unpunc_cacdone_subchans(struct hostapd_iface *iface,
+					       int freq, int channel,
+					       int secondary_channel,
+					       int chan_width, int cf1,
+					       int cf2, u16 unpuncture_bitmap)
+{
+	u8 centr_chan1;
+	u8 centr_chan2;
+	enum oper_chan_width oper_chan_width;
+	u16 puncture_bitmap;
+
+	puncture_bitmap = iface->radar_bit_pattern &
+			  ~unpuncture_bitmap;
+	iface->radar_bit_pattern = puncture_bitmap;
+
+	oper_chan_width = convert_to_oper_chan_width(chan_width);
+	if (cf1)
+		ieee80211_freq_to_chan(cf1, &centr_chan1);
+	if (cf2)
+		ieee80211_freq_to_chan(cf2, &centr_chan2);
+
+	return hostapd_dfs_request_channel_switch(iface, channel, freq,
+						  secondary_channel,
+						  oper_chan_width,
+						  centr_chan1, centr_chan2,
+						  puncture_bitmap);
+}
 
 int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			     int ht_enabled, int chan_offset, int chan_width,
-			     int cf1, int cf2, bool is_background,
-			     int chan_width_device, int cf_device)
+			     int cf1, int cf2, u16 unpunc_bitmap,
+			     bool is_background, int chan_width_device,
+			     int cf_device)
 {
 	struct hostapd_data *hapd = iface->bss[0];
 
@@ -1994,6 +2042,18 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 					iface->cac_type = 0;
 					ieee802_11_set_beacon(hapd);
 					hostapd_start_device_cac_background(iface);
+				}
+			} else {
+				if (unpunc_bitmap && iface->conf->use_ru_puncture_dfs) {
+					int channel = iface->conf->channel;
+					const int sec_offset = 1;
+
+					return hostapd_dfs_unpunc_cacdone_subchans(iface, freq,
+										   channel,
+										   sec_offset,
+										   chan_width,
+										   cf1, cf2,
+										   unpunc_bitmap);
 				}
 			}
 		}

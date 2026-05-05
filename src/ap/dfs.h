@@ -21,10 +21,44 @@ bool hostapd_is_freq_in_current_hw_info(struct hostapd_iface *iface, int freq);
 
 int hostapd_handle_dfs(struct hostapd_iface *iface);
 
+/**
+ * hostapd_dfs_complete_cac - Handle DFS CAC completion
+ * @iface: Pointer to hostapd interface
+ * @success: CAC completion status
+ * @freq: Frequency
+ * @ht_enabled: HT enabled flag
+ * @chan_offset: Channel offset
+ * @chan_width: Channel width
+ * @cf1: Center frequency 1
+ * @cf2: Center frequency 2
+ * @unpunc_bitmap: Bitmap identifying radar-affected subchannels on which CAC has completed.
+ *     This bitmap is used to track which subchannels are no longer in DFS state and
+ *     need to be unpunctured.
+ * @is_background: Background CAC flag
+ * @chan_width_device: Device channel width
+ * @cf_device: Device center frequency
+ *
+ * Completion handling for the following CAC types:
+ *
+ * 1) Home channel CAC
+ *    (a) Regular CAC running over the entire bandwidth of the channel.
+ *        This generally occurs before starting any transmission on the home channel.
+ *    (b) Puncture / Un-puncture CAC.
+ *        This typically runs on one or two 20 MHz subchannels while the
+ *        remaining subchannels continue normal transmission and reception.
+ *
+ * 2) Agile CAC / Pre-CAC
+ *    CAC is performed on an Agile channel while the home channel is either
+ *    undergoing CAC or in ISM (In-Service Monitoring).
+ *
+ * In the case of Puncture/Un-puncture CAC, the @unpunc_bitmap indicates
+ * the subchannels on which CAC has been completed.
+ */
 int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			     int ht_enabled, int chan_offset, int chan_width,
-			     int cf1, int cf2, bool is_background,
-			     int chan_width_device, int cf_device);
+			     int cf1, int cf2, u16 unpunc_bitmap,
+			     bool is_background, int chan_width_device,
+			     int cf_device);
 int hostapd_dfs_pre_cac_expired(struct hostapd_iface *iface, int freq,
 				int ht_enabled, int chan_offset, int chan_width,
 				int cf1, int cf2,

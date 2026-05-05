@@ -2645,7 +2645,8 @@ static void hostapd_event_dfs_cac_finished(struct hostapd_data *hapd,
 	wpa_printf(MSG_DEBUG, "DFS CAC finished on %d MHz", radar->freq);
 	hostapd_dfs_complete_cac(hapd->iface, 1, radar->freq, radar->ht_enabled,
 				 radar->chan_offset, radar->chan_width,
-				 radar->cf1, radar->cf2, radar->is_background,
+				 radar->cf1, radar->cf2, radar->radar_bitmap,
+				 radar->is_background,
 				 radar->chan_width_device, radar->cf_device);
     radar->is_dfs_event_on_curr_hw = true;
 }
@@ -2664,7 +2665,8 @@ static void hostapd_event_dfs_cac_aborted(struct hostapd_data *hapd,
 	wpa_printf(MSG_DEBUG, "DFS CAC aborted on %d MHz", radar->freq);
 	hostapd_dfs_complete_cac(hapd->iface, 0, radar->freq, radar->ht_enabled,
 				 radar->chan_offset, radar->chan_width,
-				 radar->cf1, radar->cf2, radar->is_background,
+				 radar->cf1, radar->cf2, radar->radar_bitmap,
+				 radar->is_background,
 				 radar->chan_width_device, radar->cf_device);
     radar->is_dfs_event_on_curr_hw = true;
 }
