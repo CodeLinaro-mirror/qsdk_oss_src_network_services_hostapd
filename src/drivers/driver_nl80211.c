@@ -5912,6 +5912,13 @@ static int wpa_driver_nl80211_dcs_sim(void *priv, u8 link_id,
 {
 	return wpa_driver_nl80211_dcs_sim_extn(priv, link_id, params);
 }
+
+static int wpa_driver_nl80211_set_cbs(void *priv,
+				      const struct cbs_params_extn *params,
+				      int *freq_list)
+{
+	return wpa_driver_nl80211_cbs_trigger_scan(priv, params, freq_list);
+}
 #endif
 #endif
 
@@ -17566,6 +17573,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #ifdef CONFIG_QCN_EXTN
 	.dcs_config = wpa_driver_nl80211_dcs_config,
 	.dcs_sim = wpa_driver_nl80211_dcs_sim,
+	.set_cbs = wpa_driver_nl80211_set_cbs,
 	.fetch_hw_blocked_chans = nl80211_fetch_hw_blocked_chans_extn,
 	.is_6ghz_hw_blocked_chans_supported =
 		nl80211_is_6ghz_hw_blocked_chans_supported_extn,
