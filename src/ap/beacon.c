@@ -993,6 +993,10 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BN */
 
 	buflen += hostapd_mbo_ie_len(hapd);
+#ifdef CONFIG_MBO
+	if (OCE_AP_ENABLED(hapd) && hapd->conf->oce_ess_report_enabled)
+		buflen += 4; /* ESS Report element: EID(1)+Len(1)+EID_EXT(1)+ESS_Info(1) */
+#endif /* CONFIG_MBO */
 	buflen += hostapd_eid_owe_trans_len(hapd);
 	buflen += hostapd_eid_dpp_cc_len(hapd);
 	buflen += hostapd_get_rsne_override_len(hapd);
@@ -1048,6 +1052,10 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 #endif /* CONFIG_FST */
 
 	buflen += hostapd_mbo_ie_len(hapd);
+#ifdef CONFIG_MBO
+	if (OCE_AP_ENABLED(hapd) && hapd->conf->oce_ess_report_enabled)
+		buflen += 4; /* ESS Report element: EID(1)+Len(1)+EID_EXT(1)+ESS_Info(1) */
+#endif /* CONFIG_MBO */
 	buflen += hostapd_eid_owe_trans_len(hapd);
 	buflen += hostapd_eid_dpp_cc_len(hapd);
 	buflen += hostapd_get_rsne_override_len(hapd);
@@ -1167,6 +1175,9 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 #endif /* CONFIG_HS20 */
 
 	/* MBO, OWE transition, DPP channel config */
+#ifdef CONFIG_MBO
+	pos = hostapd_eid_ess_report(hapd, pos, epos - pos);
+#endif /* CONFIG_MBO */
 	pos = hostapd_eid_mbo(hapd, pos, epos - pos);
 	pos = hostapd_eid_owe_trans(hapd, pos, epos - pos);
 	pos = hostapd_eid_dpp_cc(hapd, pos, epos - pos);
@@ -1478,6 +1489,9 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	pos = hostapd_eid_hs20_indication(hapd, pos);
 #endif /* CONFIG_HS20 */
 
+#ifdef CONFIG_MBO
+	pos = hostapd_eid_ess_report(hapd, pos, epos - pos);
+#endif /* CONFIG_MBO */
 	pos = hostapd_eid_mbo(hapd, pos, epos - pos);
 	pos = hostapd_eid_owe_trans(hapd, pos, epos - pos);
 	pos = hostapd_eid_dpp_cc(hapd, pos, epos - pos);
@@ -1912,6 +1926,10 @@ static bool oce_probe_req_is_suppressed(struct hostapd_data *hapd,
 
 		if (attr_id == OCE_ATTR_ID_PROBE_SUPPRESSION_BSSIDS) {
 			size_t i;
+
+			/* Length=0 is an explicit wildcard: suppress for all BSSIDs */
+			if (attr_len == 0)
+				return true;
 
 			for (i = 0; i + ETH_ALEN <= attr_len; i += ETH_ALEN) {
 				const u8 *bssid = attr + i;
@@ -2618,7 +2636,15 @@ void handle_probe_req(struct hostapd_data *hapd,
 	if ((hapd->conf->oce & OCE_AP) &&
 	    is_broadcast_ether_addr(mgmt->da) &&
 	    ieee80211_is_oce_capable(elems.mbo, elems.mbo_len)) {
-		if (oce_probe_req_is_suppressed(hapd, elems.mbo, elems.mbo_len))
+		/*
+		 * OCE spec v2.0 section 3.5.1: if MaxChannelTime >= beacon interval,
+		 * the STA can hear the next beacon — no probe response needed.
+		 * MaxChannelTime is FILS Request Parameters element byte[1].
+		 */
+		if (oce_probe_req_is_suppressed(hapd, elems.mbo, elems.mbo_len) ||
+		    (elems.fils_req_params && elems.fils_req_params_len >= 2 &&
+		    elems.fils_req_params[1] != 255 &&
+		    (u16) elems.fils_req_params[1] >= hapd->iconf->beacon_int))
 			return;
 
 		/* Wi-Fi Optimized Connectivity Specification v2.0, Section 3.6:
@@ -3237,6 +3263,10 @@ int ieee802_11_build_nontx_bss_params(struct hostapd_data *hapd,
 #endif /* CONFIG_FST */
 
 	tail_len += hostapd_mbo_ie_len(hapd);
+#ifdef CONFIG_MBO
+	if (OCE_AP_ENABLED(hapd) && hapd->conf->oce_ess_report_enabled)
+		tail_len += 4; /* ESS Report element: EID(1)+Len(1)+EID_EXT(1)+ESS_Info(1) */
+#endif /* CONFIG_MBO */
 	tail_len += hostapd_eid_owe_trans_len(hapd);
 	tail_len += hostapd_eid_dpp_cc_len(hapd);
 	tail_len += hostapd_get_rsne_override_len(hapd);
@@ -3345,6 +3375,10 @@ int ieee802_11_build_nontx_bss_params(struct hostapd_data *hapd,
 	tailpos = hostapd_eid_hs20_indication(hapd, tailpos);
 #endif /* CONFIG_HS20 */
 
+#ifdef CONFIG_MBO
+	tailpos = hostapd_eid_ess_report(hapd, tailpos,
+					 tail + tail_len - tailpos);
+#endif /* CONFIG_MBO */
 	tailpos = hostapd_eid_mbo(hapd, tailpos, tail + tail_len - tailpos);
 	tailpos = hostapd_eid_owe_trans(hapd, tailpos,
 			tail + tail_len - tailpos);
@@ -3466,6 +3500,10 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	tail_len += hostapd_security_profile_len(hapd);
 
 	tail_len += hostapd_mbo_ie_len(hapd);
+#ifdef CONFIG_MBO
+	if (OCE_AP_ENABLED(hapd) && hapd->conf->oce_ess_report_enabled)
+		tail_len += 4; /* ESS Report element: EID(1)+Len(1)+EID_EXT(1)+ESS_Info(1) */
+#endif /* CONFIG_MBO */
 	tail_len += hostapd_eid_owe_trans_len(hapd);
 	tail_len += hostapd_eid_dpp_cc_len(hapd);
 	tail_len += hostapd_get_rsne_override_len(hapd);
@@ -3784,6 +3822,10 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	tailpos = hostapd_eid_hs20_indication(hapd, tailpos);
 #endif /* CONFIG_HS20 */
 
+#ifdef CONFIG_MBO
+	tailpos = hostapd_eid_ess_report(hapd, tailpos,
+					 tail + tail_len - tailpos);
+#endif /* CONFIG_MBO */
 	tailpos = hostapd_eid_mbo(hapd, tailpos, tail + tail_len - tailpos);
 	tailpos = hostapd_eid_owe_trans(hapd, tailpos,
 					tail + tail_len - tailpos);
