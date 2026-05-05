@@ -3266,19 +3266,11 @@ struct ieee80211_npca_info {
 	u16 npca_disabled_subchan_bitmap;
 } STRUCT_PACKED;
 
-/* UHR Operation Information field format described in P802.11bn_D1.0 section 9.4.2.aa1 */
-struct ieee80211_uhr_oper_info {
-	struct ieee80211_npca_info npca_info;
-	struct ieee80211_p_edca_info p_edca_info;
-	struct ieee80211_dbe_info dbe_info;
-} STRUCT_PACKED;
-
-/* Figure 9-aa1: UHR Operation element format described in P802.11bn_D1.0 section 9.4.2.aa1 */
+/* Figure 9-aa1: UHR Operation element format described in P802.11bn_D1.4 section 9.4.2.355.1 */
 struct ieee80211_uhr_operation {
 	u16 uhr_oper_params;   /*UHR Operation Parameters*/
 	u8 basic_uhr_mcs_nss_set[4];
-	struct ieee80211_uhr_oper_info uhr_info;
-	u16 dps_oper_param; /*DPS Operation Parameters*/
+	u8 variable[];
 } STRUCT_PACKED;
 
 /* Figure 9-aa7: UHR MAC Capabilities Information field format */

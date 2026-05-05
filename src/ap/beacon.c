@@ -3280,8 +3280,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 
 #ifdef CONFIG_IEEE80211BN
 	if (hostapd_is_uhr_enabled(hapd))
-		tail_len += (3 + sizeof(struct ieee80211_uhr_operation) -
-		     sizeof(struct ieee80211_uhr_oper_info) - 2);
+		tail_len += (3 + sizeof(struct ieee80211_uhr_operation));
 #endif /* CONFIG_IEEE80211BN */
 
 	if (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&

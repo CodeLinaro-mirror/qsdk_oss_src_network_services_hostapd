@@ -67,18 +67,15 @@ u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn)
 	/* TODO: Fill in appropriate UHR-MCS max NSS information */
 	oper->basic_uhr_mcs_nss_set[0] = 0x11;
 	pos += sizeof(struct ieee80211_uhr_operation);
-	if (is_bcn)
-		pos -= sizeof(oper->uhr_info) - sizeof(oper->dps_oper_param);
 
-	*length_pos = pos - (eid + 2);
+	if (is_bcn) {
+		*length_pos = pos - (eid + 2);
+		return pos;
+	}
 
 	/* TODO: Handle UHR operation parameters */
 
-	if (is_bcn)
-		return pos;
-
-	/* TODO: Handle npca_info, p_edca_info and dbe_info here */
-
+	*length_pos = pos - (eid + 2);
 	return pos;
 }
 
