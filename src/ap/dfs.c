@@ -1584,12 +1584,12 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 					else
 						hostapd_setup_interface_complete(iface, 0);
 				} else if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_CSA) {
-					ieee802_11_set_beacon(hapd);
 #ifdef CONFIG_QCN_EXTN
 					hostapd_cleanup_cs_params(iface->bss[0]);
 #endif
 					hostapd_set_state(iface, HAPD_IFACE_ENABLED);
 					iface->cac_type = 0;
+					ieee802_11_set_beacon(hapd);
 					hostapd_start_device_cac_background(iface);
 				}
 			}
