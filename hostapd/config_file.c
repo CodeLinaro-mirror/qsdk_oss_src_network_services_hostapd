@@ -4424,6 +4424,41 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		 bss->mbo_ap_cap_ind = atoi(pos);
 	} else if (os_strcmp(buf, "oce") == 0) {
 		bss->oce = atoi(pos);
+	} else if (os_strcmp(buf, "oce_ip_subnet_id") == 0) {
+		if (strlen(pos) != 12 ||
+		    hexstr2bin(pos, bss->oce_ip_subnet_id, 6) < 0) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid oce_ip_subnet_id '%s' (use 12 hex chars)",
+				   line, pos);
+			return 1;
+		}
+		bss->oce_ip_subnet_id_set = true;
+	} else if (os_strcmp(buf, "oce_ess_report") == 0) {
+		bss->oce_ess_report_enabled = (bool)atoi(pos);
+	} else if (os_strcmp(buf, "oce_ess_edge") == 0) {
+		bss->oce_ess_edge = atoi(pos);
+	} else if (os_strcmp(buf, "oce_ess_rssi_threshold") == 0) {
+		int val = atoi(pos);
+		if (val != -1 && (val < -100 || val > -38)) {
+			wpa_printf(MSG_ERROR,
+				   "oce_ess_rssi_threshold must be in [-100, -38] or -1 (no recommendation)");
+			return 1;
+		}
+		bss->oce_ess_rssi_threshold = val;
+	} else if (os_strcmp(buf, "oce_dl_availcap") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 15) {
+			wpa_printf(MSG_ERROR, "oce_dl_availcap must be in [0, 15]");
+			return 1;
+		}
+		bss->oce_dl_availcap = val;
+	} else if (os_strcmp(buf, "oce_ul_availcap") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 15) {
+			wpa_printf(MSG_ERROR, "oce_ul_availcap must be in [0, 15]");
+			return 1;
+		}
+		bss->oce_ul_availcap = val;
 	} else if (os_strcmp(buf, "mbo_cell_data_conn_pref") == 0) {
 		bss->mbo_cell_data_conn_pref = atoi(pos);
 #endif /* CONFIG_MBO */
