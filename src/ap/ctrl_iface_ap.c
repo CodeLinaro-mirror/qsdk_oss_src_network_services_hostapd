@@ -3973,7 +3973,8 @@ int hostapd_disassoc_accept_mac(struct hostapd_data *hapd)
 	struct vlan_description vlan_id;
 	bool disconnect_sta;
 
-	if (hapd->conf->macaddr_acl != DENY_UNLESS_ACCEPTED)
+	if ((hapd->conf->macaddr_acl != DENY_UNLESS_ACCEPTED) &&
+	    (hapd->conf->macaddr_acl != ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST))
 		return 0;
 
 	for (sta = hapd->sta_list; sta; sta = sta->next) {

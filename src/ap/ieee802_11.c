@@ -3521,8 +3521,15 @@ static void handle_auth(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
 #endif /* CONFIG_QCN_EXTN */
+
+	/* For MLO APs with DENY_UNLESS_ACCEPTED or
+	 * ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST modes, skip the initial
+	 * single-link ACL check and defer to hostapd_check_ml_acl()
+	 * which properly checks all partner links.
+	 */
 	if (hapd->conf->mld_ap &&
-	    hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED)
+	    (hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED ||
+	     hapd->conf->macaddr_acl == ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST))
 		skip_acl = true;
 #ifdef CONFIG_QCN_EXTN
 	}
