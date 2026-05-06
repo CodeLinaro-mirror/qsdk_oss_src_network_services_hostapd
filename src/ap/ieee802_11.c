@@ -14701,10 +14701,11 @@ static bool hostapd_nr_bssid_is_colocated(struct hostapd_data *hapd,
 }
 
 static size_t hostapd_eid_nr_db_len(struct hostapd_data *hapd,
-				    size_t *current_len)
+				    size_t *current_len, u8 *num_rnr)
 {
 	struct hostapd_neighbor_entry *nr;
 	size_t total_len = 0, len = *current_len;
+	u8 max_rnr = hapd->conf->rnr_ie_allowed;
 
 	dl_list_for_each(nr, &hapd->nr_db, struct hostapd_neighbor_entry,
 			 list) {
@@ -14721,8 +14722,13 @@ static size_t hostapd_eid_nr_db_len(struct hostapd_data *hapd,
 		/* Start a new element */
 		if (!len ||
 		    len + RNR_TBTT_HEADER_LEN + RNR_TBTT_INFO_LEN > 255) {
+			if (max_rnr > 0 && num_rnr && *num_rnr >= max_rnr)
+				break;
+
 			len = RNR_HEADER_LEN;
 			total_len += RNR_HEADER_LEN;
+			if (num_rnr)
+				(*num_rnr)++;
 		}
 
 		len += RNR_TBTT_HEADER_LEN + RNR_TBTT_INFO_LEN;
@@ -14936,7 +14942,7 @@ hostapd_eid_rnr_iface_len(struct hostapd_data *hapd,
 			  struct hostapd_data *reporting_hapd,
 			  size_t *current_len,
 			  struct mbssid_ie_profiles *skip_profiles,
-			  bool mld_update)
+			  bool mld_update, u8 *num_rnr)
 {
 	struct hostapd_iface *iface = hapd->iface;
 	size_t total_len = 0, len = *current_len;
@@ -14948,6 +14954,7 @@ hostapd_eid_rnr_iface_len(struct hostapd_data *hapd,
 	bool have_pending_group;
 	u8 pending_op_class = 0, pending_channel = 0;
 	bool *tbtt_added = NULL;
+	u8 max_rnr = reporting_hapd->conf->rnr_ie_allowed;
 
 #ifdef CONFIG_IEEE80211BE
 	#ifdef CONFIG_QCN_EXTN
@@ -14995,8 +15002,16 @@ repeat_rnr_len:
 
 		if (!len ||
 		    len + RNR_TBTT_HEADER_LEN + tbtt_info_len > 255) {
+			if (max_rnr > 0 && num_rnr && *num_rnr >= max_rnr) {
+				*current_len = len;
+				return total_len;
+			}
+
 			len = RNR_HEADER_LEN;
 			total_len += RNR_HEADER_LEN;
+			tbtt_count = 0;
+			if (num_rnr)
+				(*num_rnr)++;
 		}
 
 		len += RNR_TBTT_HEADER_LEN;
@@ -15122,7 +15137,8 @@ enum colocation_mode get_colocation_mode(struct hostapd_data *hapd)
 
 
 static size_t hostapd_eid_rnr_colocation_len(struct hostapd_data *hapd,
-					     size_t *current_len)
+					     size_t *current_len,
+					     u8 *num_rnr)
 {
 	struct hostapd_iface *iface;
 	size_t len = 0;
@@ -15147,7 +15163,8 @@ static size_t hostapd_eid_rnr_colocation_len(struct hostapd_data *hapd,
 			continue;
 
 		len += hostapd_eid_rnr_iface_len(iface->bss[0], hapd,
-						 current_len, NULL, false);
+						 current_len, NULL, false,
+						 num_rnr);
 	}
 
 	return len;
@@ -15156,7 +15173,7 @@ static size_t hostapd_eid_rnr_colocation_len(struct hostapd_data *hapd,
 
 static size_t hostapd_eid_rnr_mlo_len(struct hostapd_data *hapd, u32 type,
 				      struct mbssid_ie_profiles *skip_profiles,
-				      size_t *current_len)
+				      size_t *current_len, u8 *num_rnr)
 {
 	size_t len = 0;
 #ifdef CONFIG_IEEE80211BE
@@ -15179,7 +15196,7 @@ static size_t hostapd_eid_rnr_mlo_len(struct hostapd_data *hapd, u32 type,
 
 		len += hostapd_eid_rnr_iface_len(iface->bss[0], hapd,
 						 current_len, skip_profiles,
-						 true);
+						 true, num_rnr);
 	}
 #endif /* CONFIG_IEEE80211BE */
 
@@ -15208,6 +15225,7 @@ size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
 {
 	size_t total_len = 0, current_len = 0;
 	enum colocation_mode mode = get_colocation_mode(hapd);
+	u8 num_rnr = 0;
 #ifdef CONFIG_QCN_EXTN
 	bool skip_rnr = hostapd_skip_rnr_6ghz_colocated_extn(hapd, type);
 
@@ -15226,20 +15244,22 @@ size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
 		if (mode == COLOCATED_LOWER_BAND)
 			total_len +=
 				hostapd_eid_rnr_colocation_len(hapd,
-							       &current_len);
+							       &current_len,
+							       &num_rnr);
 
 		if (hapd->conf->rnr && hapd->iface->num_bss > 1 &&
 		    !hapd->iconf->mbssid)
 			total_len += hostapd_eid_rnr_iface_len(hapd, hapd,
 							       &current_len,
-							       NULL, false);
-
+							       NULL, false,
+							       &num_rnr);
 		break;
 	case WLAN_FC_STYPE_ACTION:
 		if (hapd->iface->num_bss > 1 && mode == STANDALONE_6GHZ)
 			total_len += hostapd_eid_rnr_iface_len(hapd, hapd,
 							       &current_len,
-							       NULL, false);
+							       NULL, false,
+							       &num_rnr);
 		break;
 	}
 
@@ -15253,10 +15273,11 @@ size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
 	    (type != WLAN_FC_STYPE_BEACON ||
 	     hapd->iconf->mbssid != ENHANCED_MBSSID_ENABLED))
 		total_len += hostapd_eid_rnr_mlo_len(hapd, type, NULL,
-						     &current_len);
+						     &current_len,
+						     &num_rnr);
 
 	if (hostapd_add_rnr_non_colocated(hapd, type))
-		total_len += hostapd_eid_nr_db_len(hapd, &current_len);
+		total_len += hostapd_eid_nr_db_len(hapd, &current_len, &num_rnr);
 
 	return total_len;
 }
@@ -15315,11 +15336,12 @@ s8 hostapd_get_20mhz_psd_for_rnr(struct hostapd_data *hapd)
 }
 
 static u8 * hostapd_eid_nr_db(struct hostapd_data *hapd, u8 *eid,
-			      size_t *current_len)
+			      size_t *current_len, u8 *num_rnr)
 {
 	struct hostapd_neighbor_entry *nr;
 	size_t len = *current_len;
 	u8 *size_offset = (eid - len) + 1;
+	u8 max_rnr = hapd->conf->rnr_ie_allowed;
 
 	dl_list_for_each(nr, &hapd->nr_db, struct hostapd_neighbor_entry,
 			 list) {
@@ -15336,9 +15358,14 @@ static u8 * hostapd_eid_nr_db(struct hostapd_data *hapd, u8 *eid,
 		/* Start a new element */
 		if (!len ||
 		    len + RNR_TBTT_HEADER_LEN + RNR_TBTT_INFO_LEN > 255) {
+			if (max_rnr > 0 && num_rnr && *num_rnr >= max_rnr)
+				break;
+
 			*eid++ = WLAN_EID_REDUCED_NEIGHBOR_REPORT;
 			size_offset = eid++;
 			len = RNR_HEADER_LEN;
+			if (num_rnr)
+				(*num_rnr)++;
 		}
 
 		/* TBTT Information Header subfield (2 octets) */
@@ -15520,7 +15547,8 @@ static u8 * hostapd_eid_rnr_iface(struct hostapd_data *hapd,
 				  struct hostapd_data *reporting_hapd,
 				  u8 *eid, size_t *current_len,
 				  struct mbssid_ie_profiles *skip_profiles,
-				  bool mld_update, u32 type)
+				  bool mld_update, u32 type,
+				  u8 *num_rnr)
 {
 	struct hostapd_iface *iface = hapd->iface;
 	size_t i;
@@ -15534,6 +15562,7 @@ static u8 * hostapd_eid_rnr_iface(struct hostapd_data *hapd,
 	bool have_pending_group;
 	u8 pending_op_class = 0, pending_channel = 0;
 	bool *tbtt_added = NULL;
+	u8 max_rnr = reporting_hapd->conf->rnr_ie_allowed;
 
 	if (!(iface->drv_flags & WPA_DRIVER_FLAGS_AP_CSA) || !iface->freq)
 		return eid;
@@ -15585,10 +15614,18 @@ repeat_rnr:
 
 		if (!len ||
 		    len + RNR_TBTT_HEADER_LEN + tbtt_info_len > 255) {
+			if (max_rnr > 0 && num_rnr && *num_rnr >= max_rnr) {
+				*current_len = len;
+				return eid;
+			}
+
 			eid_start = eid;
 			*eid++ = WLAN_EID_REDUCED_NEIGHBOR_REPORT;
 			size_offset = eid++;
 			len = RNR_HEADER_LEN;
+			tbtt_count = 0;
+			if (num_rnr)
+				(*num_rnr)++;
 		}
 
 		for (i = 0; i < iface->num_bss; i++) {
@@ -15657,7 +15694,8 @@ repeat_rnr:
 
 
 static u8 * hostapd_eid_rnr_colocation(struct hostapd_data *hapd, u8 *eid,
-				       size_t *current_len, u32 type)
+				       size_t *current_len, u32 type,
+				       u8 *num_rnr)
 {
 	struct hostapd_iface *iface;
 	size_t i;
@@ -15681,7 +15719,8 @@ static u8 * hostapd_eid_rnr_colocation(struct hostapd_data *hapd, u8 *eid,
 			continue;
 
 		eid = hostapd_eid_rnr_iface(iface->bss[0], hapd, eid,
-					    current_len, NULL, false, type);
+					    current_len, NULL, false, type,
+					    num_rnr);
 	}
 
 	return eid;
@@ -15691,7 +15730,7 @@ static u8 * hostapd_eid_rnr_colocation(struct hostapd_data *hapd, u8 *eid,
 static u8 * hostapd_eid_rnr_mlo(struct hostapd_data *hapd, u32 type,
 				u8 *eid,
 				struct mbssid_ie_profiles *skip_profiles,
-				size_t *current_len)
+				size_t *current_len, u8 *num_rnr)
 {
 #ifdef CONFIG_IEEE80211BE
 	struct hostapd_iface *iface;
@@ -15712,7 +15751,8 @@ static u8 * hostapd_eid_rnr_mlo(struct hostapd_data *hapd, u32 type,
 			continue;
 
 		eid = hostapd_eid_rnr_iface(iface->bss[0], hapd, eid,
-					    current_len, skip_profiles, true, type);
+					    current_len, skip_profiles, true,
+					    type, num_rnr);
 	}
 #endif /* CONFIG_IEEE80211BE */
 
@@ -15723,7 +15763,7 @@ static u8 * hostapd_eid_rnr_mlo(struct hostapd_data *hapd, u32 type,
 u8 * hostapd_eid_rnr(struct hostapd_data *hapd, u8 *eid, u32 type,
 		     bool include_mld_params)
 {
-	u8 *eid_start = eid;
+	u8 *eid_start = eid, num_rnr = 0;
 	size_t current_len = 0;
 	enum colocation_mode mode = get_colocation_mode(hapd);
 #ifdef CONFIG_QCN_EXTN
@@ -15743,18 +15783,20 @@ u8 * hostapd_eid_rnr(struct hostapd_data *hapd, u8 *eid, u32 type,
 #endif /* CONFIG_QCN_EXTN */
 		if (mode == COLOCATED_LOWER_BAND)
 			eid = hostapd_eid_rnr_colocation(hapd, eid,
-							 &current_len, type);
+							 &current_len, type,
+							 &num_rnr);
 
 		if (hapd->conf->rnr && hapd->iface->num_bss > 1 &&
 		    !hapd->iconf->mbssid)
 			eid = hostapd_eid_rnr_iface(hapd, hapd, eid,
-						    &current_len, NULL, false, type);
-
+						    &current_len, NULL, false,
+						    type, &num_rnr);
 		break;
 	case WLAN_FC_STYPE_ACTION:
 		if (hapd->iface->num_bss > 1 && mode == STANDALONE_6GHZ)
 			eid = hostapd_eid_rnr_iface(hapd, hapd, eid,
-						    &current_len, NULL, false, type);
+						    &current_len, NULL, false,
+						    type, &num_rnr);
 		break;
 	default:
 		return eid_start;
@@ -15769,10 +15811,11 @@ u8 * hostapd_eid_rnr(struct hostapd_data *hapd, u8 *eid, u32 type,
 #endif /* CONFIG_QCN_EXTN */
 	    (type != WLAN_FC_STYPE_BEACON ||
 	     hapd->iconf->mbssid != ENHANCED_MBSSID_ENABLED))
-		eid = hostapd_eid_rnr_mlo(hapd, type, eid, NULL, &current_len);
+		eid = hostapd_eid_rnr_mlo(hapd, type, eid, NULL, &current_len,
+					  &num_rnr);
 
 	if (hostapd_add_rnr_non_colocated(hapd, type))
-		eid = hostapd_eid_nr_db(hapd, eid, &current_len);
+		eid = hostapd_eid_nr_db(hapd, eid, &current_len, &num_rnr);
 
 	if (eid == eid_start + 2)
 		return eid_start;
@@ -16509,12 +16552,13 @@ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd_probed, u32 frame_type,
 			if (!skip_rnr && rnr_override) {
 				*rnr_len += hostapd_eid_rnr_iface_len(
 				hapd, hostapd_mbssid_get_tx_bss(hapd),
-				&rnr_cur_len, &skip_profiles, false);
+					&rnr_cur_len, &skip_profiles, false,
+					NULL);
 			}
 
 			*rnr_len += hostapd_eid_rnr_mlo_len(
 				hostapd_mbssid_get_tx_bss(hapd), frame_type,
-				&skip_profiles, &rnr_cur_len);
+					&skip_profiles, &rnr_cur_len, NULL);
 		}
 	}
 
@@ -16847,11 +16891,12 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 			if (!skip_rnr && rnr_override) {
 				rnr_eid = hostapd_eid_rnr_iface(
 					hapd, hostapd_mbssid_get_tx_bss(hapd),
-					rnr_eid, &cur_len, &skip_profiles, false, frame_stype);
+					rnr_eid, &cur_len, &skip_profiles, false,
+					frame_stype, NULL);
 			}
 			rnr_eid = hostapd_eid_rnr_mlo(
 				hostapd_mbssid_get_tx_bss(hapd), frame_stype,
-				rnr_eid, &skip_profiles, &cur_len);
+				rnr_eid, &skip_profiles, &cur_len, NULL);
 		}
 	}
 
@@ -16862,9 +16907,10 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 
 		if (get_colocation_mode(hapd) == COLOCATED_LOWER_BAND)
 			rnr_eid = hostapd_eid_rnr_colocation(hapd, rnr_eid,
-							     &cur_len, frame_stype);
+							     &cur_len, frame_stype,
+							     NULL);
 		if (hostapd_add_rnr_non_colocated(hapd, frame_stype))
-			rnr_eid = hostapd_eid_nr_db(hapd, rnr_eid, &cur_len);
+			rnr_eid = hostapd_eid_nr_db(hapd, rnr_eid, &cur_len, NULL);
 	}
 
 	return eid;
