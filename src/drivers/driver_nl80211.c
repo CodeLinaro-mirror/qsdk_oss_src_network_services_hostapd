@@ -3577,7 +3577,7 @@ static void wpa_driver_nl80211_deinit(struct i802_bss *bss)
 	eloop_cancel_timeout(wpa_driver_nl80211_send_rfkill, drv, drv->ctx);
 	rfkill_deinit(drv->rfkill);
 
-	eloop_cancel_timeout(wpa_driver_nl80211_scan_timeout, drv, drv->ctx);
+	eloop_cancel_timeout(wpa_driver_nl80211_scan_timeout, drv, ELOOP_ALL_CTX);
 
 	if (!bss->start_iface_up)
 		(void) i802_set_iface_flags(bss, 0);
