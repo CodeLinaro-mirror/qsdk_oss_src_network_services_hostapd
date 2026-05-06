@@ -5584,8 +5584,6 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 		if (hostapd_is_eht_enabled(hapd)) {
 			p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
 			p = hostapd_eid_eht_operation(hapd, p);
-			p = hostapd_eid_vendor_240mhz_extn(hapd, p,
-							   IEEE80211_MODE_AP);
 		}
 #ifdef CONFIG_IEEE80211BN
 		if (hostapd_is_uhr_enabled(hapd)) {
@@ -5598,6 +5596,9 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 	p = hostapd_eid_ext_capab(hapd, p, false);
 	p = hostapd_eid_mbo(hapd, p, buf + buflen - p);
 	p = hostapd_eid_wmm(hapd, p, false);
+#ifdef CONFIG_QCN_EXTN
+	p = hostapd_eid_qcn_vendor_ie_extn(hapd, p, IEEE80211_MODE_AP);
+#endif /* CONFIG_QCN_EXTN */
 
 	if (hapd->conf->assocresp_elements &&
 	    (size_t) (buf + buflen - p) >=
@@ -6121,7 +6122,6 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 		}
 		if (hapd->iconf->punct_bitmap)
 			buflen += EHT_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
-		hostapd_modify_buflen_for_240mhz_extn(&buflen, hapd);
 	}
 #endif /* CONFIG_IEEE80211BE */
 
@@ -6135,6 +6135,9 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 #ifdef CONFIG_HOSTAPD_IF
 	buflen += hostapd_if_assoc_resp_tail_len(sta, buflen);
 #endif
+#ifdef CONFIG_QCN_EXTN
+	buflen += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
+#endif /* CONFIG_QCN_EXTN */
 	buf = os_zalloc(buflen);
 	if (!buf) {
 		res = WLAN_STATUS_UNSPECIFIED_FAILURE;
@@ -6312,8 +6315,6 @@ rsnxe_done:
 			p = hostapd_eid_eht_ml_assoc(hapd, sta, p, ext_cap);
 		p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
 		p = hostapd_eid_eht_operation(hapd, p);
-		p = hostapd_eid_vendor_240mhz_extn(hapd, p,
-						   IEEE80211_MODE_AP);
 		hostapd_get_epcs_capab(hapd, sta);
 
 		/* Add Country element if Channel Usage element is present */
@@ -6345,6 +6346,9 @@ rsnxe_done:
 	}
 #endif /* CONFIG_IEEE80211BN */
 
+#ifdef CONFIG_QCN_EXTN
+	p = hostapd_eid_qcn_vendor_ie_extn(hapd, p, IEEE80211_MODE_AP);
+#endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_OWE
 	if (((hapd->conf->wpa_key_mgmt | hapd->conf->rsn_override_key_mgmt |
 	      hapd->conf->rsn_override_key_mgmt_2) & WPA_KEY_MGMT_OWE) &&
