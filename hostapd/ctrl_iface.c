@@ -6094,6 +6094,15 @@ static s8 get_client_mode_frm_pwr_type(struct hostapd_data *hapd,
 			? NL80211_REG_REGULAR_CLIENT_LPI
 			: NL80211_REG_SUBORDINATE_CLIENT_LPI;
 		break;
+	case HE_REG_INFO_6GHZ_AP_TYPE_VLP:
+		if (txpwr_cat == REG_DEFAULT_CLIENT) {
+			*client_mode = NL80211_REG_REGULAR_CLIENT_VLP;
+		} else {
+			wpa_printf(MSG_ERROR, "power mode %d is not supported for intepretation %d",
+				   pwr_mode, tx_pwr_intrpn);
+			return -1;
+		}
+		break;
 	case HE_REG_INFO_6GHZ_AP_TYPE_SP:
 		if (txpwr_cat == REG_DEFAULT_CLIENT) {
 			*client_mode = NL80211_REG_REGULAR_CLIENT_SP;
