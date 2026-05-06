@@ -1483,6 +1483,30 @@ static void hostapd_dfs_enable_pending_bss(struct hostapd_iface *iface)
 	}
 }
 
+static void hostapd_deferred_csa_dispatch(struct hostapd_iface *iface)
+{
+	struct hostapd_freq_params *freq_params;
+	int i, err;
+	u8 num_err = 0;
+
+	freq_params = &iface->csa_settings.freq_params;
+
+	if (!iface->num_bss || !iface->bss)
+		return;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		hostapd_chan_switch_config(iface->bss[i], freq_params);
+
+		err = hostapd_switch_channel(iface->bss[i], &iface->csa_settings);
+		if (err)
+			num_err++;
+	}
+
+	if (num_err) {
+		wpa_printf(MSG_WARNING, "Failed to schedule CSA - trying fallback");
+		hostapd_switch_channel_fallback(iface, freq_params);
+	}
+}
 
 int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			     int ht_enabled, int chan_offset, int chan_width,
@@ -1608,6 +1632,14 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 	}
 
 	iface->radar_detected = false;
+
+	if (hapd->iface->csa_pending_on_cac_abort &&
+	    freq == iface->freq) {
+		hostapd_deferred_csa_dispatch(hapd->iface);
+		hapd->iface->csa_pending_on_cac_abort = false;
+		os_memset(&hapd->iface->csa_settings, 0, sizeof(struct csa_settings));
+	}
+
 	return 0;
 }
 
