@@ -8544,7 +8544,7 @@ hostapd_iface_get_6ghz_chan_list(struct hostapd_iface *iface, u16 freq,
 	return hw_mode_get_6ghz_power_mode_channel(iface->hw_features,
 						   iface->num_hw_features,
 						   freq, pwr_type, num_channels_6ghz,
-						   chan_idx, false);
+						   chan_idx, true);
 }
 
 
