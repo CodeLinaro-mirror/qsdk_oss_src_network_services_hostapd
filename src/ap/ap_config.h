@@ -1175,6 +1175,7 @@ struct hostapd_bss_config {
 	u8 ext_capa[EXT_CAPA_MAX_LEN];
 
 	u8 rnr;
+	u8 rnr_ie_allowed;
 	int beacon_tx_mode;
 	char *config_id;
 
