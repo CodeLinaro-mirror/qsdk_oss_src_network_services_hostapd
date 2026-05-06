@@ -33,4 +33,8 @@ int hostapd_neighbor_set_ifaces_scan_report(struct hostapd_data *hapd,
 					    const struct wpa_ssid_value *ssid,
 					    u32 bands);
 
+void hostapd_oce_survey_timer(void *eloop_ctx, void *timeout_ctx);
+void hostapd_oce_survey_timer_start(struct hostapd_iface *iface);
+void hostapd_oce_survey_timer_cancel(struct hostapd_iface *iface);
+
 #endif /* NEIGHBOR_DB_H */

@@ -1598,6 +1598,8 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 	eloop_cancel_timeout(channel_list_update_timeout, iface, NULL);
 #ifdef NEED_AP_MLME
 	hostapd_stop_setup_timers(iface);
+	/* OCE 4.3.1/4.3.2: cancel periodic survey timer and clear scan_cb */
+	hostapd_oce_survey_timer_cancel(iface);
 #endif /* NEED_AP_MLME */
 	if (iface->current_mode)
 		acs_cleanup(iface);
@@ -2238,7 +2240,6 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
 
 	hostapd_ubus_add_bss(hapd);
 	hostapd_ucode_add_bss(hapd);
-
 	return 0;
 }
 
@@ -4241,6 +4242,9 @@ dfs_offload:
 	for (j = 0; j < iface->num_bss; j++)
 		hostapd_neighbor_set_own_report(iface->bss[j]);
 
+	/* OCE 4.3.1/4.3.2: start periodic channel survey timer */
+	hostapd_oce_survey_timer_start(iface);
+
 	hostapd_interface_update_fils_ubpr(iface, true);
 
 	if (iface->interfaces && iface->interfaces->count > 1)
@@ -6159,6 +6163,10 @@ int hostapd_disable_iface(struct hostapd_iface *hapd_iface)
 #ifdef NEED_AP_MLME
 	for (j = 0; j < hapd_iface->num_bss; j++)
 		hostapd_cleanup_cs_params(hapd_iface->bss[j]);
+
+	/* OCE 4.3.1/4.3.2: cancel survey timer before BSS teardown so a
+	 * late EVENT_SCAN_RESULTS cannot fire into a deinitialized BSS */
+	hostapd_oce_survey_timer_cancel(hapd_iface);
 #endif /* NEED_AP_MLME */
 
 	/* same as hostapd_interface_deinit without deinitializing ctrl-iface */

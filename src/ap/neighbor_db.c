@@ -903,7 +903,157 @@ int hostapd_neighbor_set_ifaces_scan_report(struct hostapd_data *hapd,
 				return -1;
 		}
 	}
-#endif /* NEED_AP_MLME */
 
+#endif /* NEED_AP_MLME */
 	return 0;
 }
+
+
+#ifdef NEED_AP_MLME
+/*
+ * OCE 4.3.1/4.3.2: Periodic channel survey update
+ *
+ * Every OCE_SURVEY_INTERVAL seconds the AP triggers a scan on the
+ * operating channel, then on EVENT_SCAN_RESULTS reads the fresh driver
+ * cache, updates the OCE Capability Indication bits, and pushes the
+ * updated IE into beacons for every BSS on the interface.
+ *
+ * Timer context is struct hostapd_iface so a single timer covers all
+ * BSSes on the radio.  scan_cb is only set while the scan is in flight;
+ * it is cleared before the next timer fires so there is no conflict with
+ * HT40 coex or ACS scans (those only run at startup, before
+ * hapd->started is set).
+ */
+#define OCE_SURVEY_INTERVAL 60  /* seconds between scans */
+
+static void hostapd_oce_survey_scan_cb(struct hostapd_iface *iface)
+{
+	size_t i;
+
+	iface->scan_cb = NULL;
+
+	wpa_printf(MSG_DEBUG,
+		   "OCE survey: scan complete on %s, updating %zu BSS(es)",
+		   iface->bss[0]->conf->iface, iface->num_bss);
+
+	for (i = 0; i < iface->num_bss; i++) {
+		struct hostapd_data *hapd = iface->bss[i];
+
+		if (!hapd || !hapd->started || !OCE_AP_ENABLED(hapd))
+			continue;
+
+		/* Rebuild RNR DB + update OCE channel info bits */
+		{
+			struct wpa_ssid_value empty_ssid;
+			os_memset(&empty_ssid, 0, sizeof(empty_ssid));
+			hostapd_neighbor_set_ifaces_scan_report(
+				hapd, &empty_ssid,
+				WPA_SETBAND_2G | WPA_SETBAND_5G | WPA_SETBAND_6G);
+		}
+
+		/* Push updated OCE Capability Indication IE into beacons */
+		ieee802_11_set_beacon(hapd);
+	}
+
+	wpa_printf(MSG_DEBUG, "OCE survey: periodic update complete on %s",
+		   iface->bss[0]->conf->iface);
+}
+
+void hostapd_oce_survey_timer(void *eloop_ctx, void *timeout_ctx)
+{
+	struct hostapd_iface *iface = eloop_ctx;
+	struct hostapd_data *hapd = iface->bss[0];
+	struct wpa_driver_scan_params params;
+	int ret;
+	size_t k;
+	int any_up = 0;
+
+	/* Skip if no OCE-enabled BSS on this radio is up */
+	for (k = 0; k < iface->num_bss; k++) {
+		if (iface->bss[k] && iface->bss[k]->started &&
+		    OCE_AP_ENABLED(iface->bss[k])) {
+			any_up = 1;
+			break;
+		}
+	}
+	if (!any_up)
+		goto reschedule;
+
+	/* Do not start a scan if one is already in progress */
+	if (iface->scan_cb) {
+		wpa_printf(MSG_DEBUG,
+			   "OCE survey: scan already in progress on %s, skipping",
+			   hapd->conf->iface);
+		goto reschedule;
+	}
+
+	os_memset(&params, 0, sizeof(params));
+
+	/* Scan only the operating channel */
+	params.freqs = os_calloc(2, sizeof(int));
+	if (!params.freqs)
+		goto reschedule;
+	params.freqs[0] = iface->freq;
+	params.freqs[1] = 0;
+
+	wpa_printf(MSG_DEBUG, "OCE survey: triggering scan on %s (freq %d)",
+		   hapd->conf->iface, iface->freq);
+
+	ret = hostapd_driver_scan(hapd, &params);
+	os_free(params.freqs);
+
+	if (ret == 0) {
+		iface->scan_cb = hostapd_oce_survey_scan_cb;
+	} else {
+		wpa_printf(MSG_DEBUG,
+			   "OCE survey: scan trigger failed (%d) on %s, rescheduling",
+			   ret, hapd->conf->iface);
+	}
+
+reschedule:
+	eloop_register_timeout(OCE_SURVEY_INTERVAL, 0,
+			       hostapd_oce_survey_timer, iface, NULL);
+}
+
+
+void hostapd_oce_survey_timer_start(struct hostapd_iface *iface)
+{
+	size_t i;
+	int any_oce = 0;
+
+	if (!iface->num_bss)
+		return;
+
+#ifdef CONFIG_IEEE80211BE
+	/* Skip until a clean per-link model is available. */
+	if (iface->bss[0]->conf->mld_ap)
+		return;
+#endif /* CONFIG_IEEE80211BE */
+
+	/* Start the timer if any BSS on this radio has OCE enabled */
+	for (i = 0; i < iface->num_bss; i++) {
+		if (iface->bss[i] && OCE_AP_ENABLED(iface->bss[i])) {
+			any_oce = 1;
+			break;
+		}
+	}
+	if (!any_oce)
+		return;
+
+	wpa_printf(MSG_DEBUG,
+		   "OCE survey: scheduling periodic survey every %d s on %s",
+		   OCE_SURVEY_INTERVAL, iface->bss[0]->conf->iface);
+
+	eloop_cancel_timeout(hostapd_oce_survey_timer, iface, NULL);
+	eloop_register_timeout(OCE_SURVEY_INTERVAL, 0,
+			       hostapd_oce_survey_timer, iface, NULL);
+}
+
+
+void hostapd_oce_survey_timer_cancel(struct hostapd_iface *iface)
+{
+	eloop_cancel_timeout(hostapd_oce_survey_timer, iface, NULL);
+	if (iface->scan_cb == hostapd_oce_survey_scan_cb)
+		iface->scan_cb = NULL;
+}
+#endif /* NEED_AP_MLME */
