@@ -994,6 +994,11 @@ struct hostapd_iface {
 	 * once NL8011_WIPHY_REG_CHANGE event is received.
 	 */
 	bool is_afc_channel_change_pending;
+	/* Connected repeater defers AFC power sync until the updated
+	 * channel list/regulatory view is received through
+	 * CHANNEL_LIST_CHANGED.
+	 */
+	bool is_afc_repeater_power_sync_pending;
 	/* Cached PSD value for RNR */
 	s8 rnr_psd;
 
@@ -1410,6 +1415,90 @@ hostapd_get_bonded_chan_center_freq(u16 freq, u16 bw, u16 cen320_freq,
  * Return: 0 on success, -1 on failure.
  */
 int hostapd_switch_power_mode(struct hostapd_data *hapd);
+
+/**
+ * enum hostapd_afc_power_sync_result - AFC power sync result
+ * @HOSTAPD_AFC_PWR_SYNC_NOOP: No change was required
+ * @HOSTAPD_AFC_PWR_SYNC_UPDATED: Power mode update was triggered
+ * @HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT: Current channel tuple is invalid in
+ * the current power mode
+ * @HOSTAPD_AFC_PWR_SYNC_ERROR: Power sync failed
+ */
+enum hostapd_afc_power_sync_result {
+	HOSTAPD_AFC_PWR_SYNC_NOOP,
+	HOSTAPD_AFC_PWR_SYNC_UPDATED,
+	HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT,
+	HOSTAPD_AFC_PWR_SYNC_ERROR,
+};
+
+/**
+ * hostapd_sync_current_afc_power_mode() - Sync AFC power mode on current tuple
+ * @iface: Pointer to hostapd interface data
+ * @ignore_best_mode_config: Ignore the best-power-mode knob and evaluate the
+ * current channel tuple unconditionally
+ *
+ * Re-evaluate the best 6 GHz AP power mode for the currently operating
+ * channel after fresh AFC data is available. This helper is intentionally
+ * limited to power-mode-only updates on the existing operating tuple.
+ *
+ * Return:
+ * * %HOSTAPD_AFC_PWR_SYNC_NOOP when no update is needed
+ * * %HOSTAPD_AFC_PWR_SYNC_UPDATED when a power update is started
+ * * %HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT when the current tuple cannot
+ *   operate in the current power mode
+ * * %HOSTAPD_AFC_PWR_SYNC_ERROR on internal failure
+ */
+#ifdef HOSTAPD
+enum hostapd_afc_power_sync_result
+hostapd_sync_current_afc_power_mode(struct hostapd_iface *iface,
+                                    bool ignore_best_mode_config);
+#else
+static inline enum hostapd_afc_power_sync_result
+hostapd_sync_current_afc_power_mode(struct hostapd_iface *iface,
+                                    bool ignore_best_mode_config)
+{
+	return HOSTAPD_AFC_PWR_SYNC_NOOP;
+}
+#endif
+
+/**
+ * hostapd_iface_has_connected_backhaul_sta() - Check backhaul STA state
+ * @iface: Pointer to hostapd interface data
+ *
+ * Check whether the interface is operating as a repeater with an associated
+ * backhaul STA. Connected repeaters keep the current channel on AFC power
+ * update and perform only current-channel power sync.
+ *
+ * Return: true when a backhaul STA is connected, false otherwise.
+ */
+#ifdef HOSTAPD
+bool hostapd_iface_has_connected_backhaul_sta(struct hostapd_iface *iface);
+#else
+static inline bool
+hostapd_iface_has_connected_backhaul_sta(struct hostapd_iface *iface)
+{
+	return false;
+}
+#endif
+
+/**
+ * hostapd_disconnect_backhaul_sta() - Disconnect associated backhaul STA
+ * @iface: Pointer to hostapd interface data
+ *
+ * Resolve the backhaul STA interface name through ubus and issue DISCONNECT
+ * through the wpa_supplicant control interface. This is used when the current
+ * 6 GHz channel tuple is no longer valid after AFC data is updated.
+ *
+ * Return: 0 on success, non-zero on failure.
+ */
+#ifdef HOSTAPD
+int hostapd_disconnect_backhaul_sta(struct hostapd_iface *iface);
+#else
+static inline int hostapd_disconnect_backhaul_sta(struct hostapd_iface *iface)
+{
+	return -1;
+}
+#endif
 
 u16 hostapd_get_punct_bitmap(struct hostapd_data *hapd);
 bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface);
