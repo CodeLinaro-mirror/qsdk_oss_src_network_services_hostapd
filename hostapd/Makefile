@@ -90,6 +90,7 @@ OBJS += ../src/ap/beacon.o
 OBJS += ../src/ap/bss_load.o
 OBJS += ../src/ap/neighbor_db.o
 OBJS += ../src/ap/rrm.o
+OBJS += ../src/common/wpa_ctrl.o
 OBJS += ../src/common/ptksa_cache.o
 # hostapd external interface and mgmt/action lookup
 ifdef CONFIG_HOSTAPD_IF

@@ -70,6 +70,18 @@ void hostapd_ubus_notify_authorized(struct hostapd_data *hapd, struct sta_info *
 				    const char *auth_alg);
 char *hostapd_ubus_bhsta_state(struct hostapd_iface *iface);
 
+/**
+ * hostapd_ubus_bhsta_ifname() - Get backhaul STA interface name
+ * @iface: Pointer to hostapd interface data
+ *
+ * Query ubus for the backhaul STA status associated with the AP interface and
+ * return the backhaul STA interface name. The returned string is dynamically
+ * allocated and must be freed by the caller.
+ *
+ * Return: Backhaul STA interface name on success, NULL on failure.
+ */
+char *hostapd_ubus_bhsta_ifname(struct hostapd_iface *iface);
+
 #else
 
 struct hostapd_ubus_bss {};
@@ -152,6 +164,11 @@ hostapd_ubus_notify_authorized(struct hostapd_data *hapd, struct sta_info *sta,
 }
 
 static inline char *hostapd_ubus_bhsta_state(struct hostapd_iface *iface)
+{
+	return NULL;
+}
+
+static inline char *hostapd_ubus_bhsta_ifname(struct hostapd_iface *iface)
 {
 	return NULL;
 }
