@@ -1068,7 +1068,7 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 struct hostapd_iface *
 hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 			   const char *config_fname, int debug);
-int hostapd_setup_bss(struct hostapd_data *hapd, int first, bool start_beacon);
+int hostapd_setup_bss(struct hostapd_data *hapd, bool first, bool start_beacon);
 void hostapd_bss_deinit(struct hostapd_data *hapd);
 void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
 				  struct hapd_interfaces *interfaces);
