@@ -10875,49 +10875,89 @@ static u8 *hostapd_append_local_tpe(struct hostapd_data *hapd,
  */
 static void hostapd_add_6g_tpe(struct hostapd_data *hapd, u8 **eid, u8 pwr_mode)
 {
+#ifdef CONFIG_QCN_EXTN
+	enum tpe_tx_pwr_interp_unit pwr_interp_conf;
+
+	pwr_interp_conf = hapd->conf->bss_extn.tpe_tx_pwr_interp;
+	if (pwr_interp_conf < TPE_REG_EIRP_PSD || pwr_interp_conf > TPE_REG_EIRP)
+		pwr_interp_conf = TPE_REG_EIRP_PSD;
+#endif
+
 	if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_SP &&
 	    hapd->iconf->enable_6ghz_composite_ap)
 		pwr_mode = HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP;
 
 	switch(pwr_mode) {
 	case HE_REG_INFO_6GHZ_AP_TYPE_INDOOR:
-		*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_REGULAR_CLIENT_LPI,
-					   *eid, REG_DEFAULT_CLIENT,
-					   REGULATORY_CLIENT_EIRP_PSD, pwr_mode);
-		*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_SUBORDINATE_CLIENT_LPI,
-					   *eid, REG_SUBORDINATE_CLIENT,
-					   REGULATORY_CLIENT_EIRP_PSD, pwr_mode);
+#ifdef CONFIG_QCN_EXTN
+		if (pwr_interp_conf == TPE_REG_EIRP_PSD) {
+#endif
+			*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_REGULAR_CLIENT_LPI,
+						   *eid, REG_DEFAULT_CLIENT,
+						   REGULATORY_CLIENT_EIRP_PSD, pwr_mode);
+			*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_SUBORDINATE_CLIENT_LPI,
+						   *eid, REG_SUBORDINATE_CLIENT,
+						   REGULATORY_CLIENT_EIRP_PSD, pwr_mode);
+#ifdef CONFIG_QCN_EXTN
+		} else if (pwr_interp_conf == TPE_REG_EIRP) {
+			*eid = hostapd_add_eirp_tpe(hapd, NL80211_REG_REGULAR_CLIENT_LPI,
+						    *eid, REG_DEFAULT_CLIENT,
+						    REGULATORY_CLIENT_EIRP, pwr_mode);
+			*eid = hostapd_add_eirp_tpe(hapd, NL80211_REG_SUBORDINATE_CLIENT_LPI,
+						    *eid, REG_SUBORDINATE_CLIENT,
+						    REGULATORY_CLIENT_EIRP, pwr_mode);
+		}
+#endif
 		break;
 	case HE_REG_INFO_6GHZ_AP_TYPE_VLP:
-		*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_REGULAR_CLIENT_VLP,
-					   *eid, REG_DEFAULT_CLIENT,
-					   REGULATORY_CLIENT_EIRP_PSD, pwr_mode);
+#ifdef CONFIG_QCN_EXTN
+		if (pwr_interp_conf == TPE_REG_EIRP_PSD)
+#endif
+			*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_REGULAR_CLIENT_VLP,
+						   *eid, REG_DEFAULT_CLIENT,
+						   REGULATORY_CLIENT_EIRP_PSD, pwr_mode);
 		*eid = hostapd_add_eirp_tpe(hapd, NL80211_REG_REGULAR_CLIENT_VLP,
 					    *eid, REG_DEFAULT_CLIENT,
 					    REGULATORY_CLIENT_EIRP, pwr_mode);
 		break;
 	case HE_REG_INFO_6GHZ_AP_TYPE_SP:
-		*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_REGULAR_CLIENT_SP,
-					   *eid, REG_DEFAULT_CLIENT,
-					   REGULATORY_CLIENT_EIRP_PSD, pwr_mode);
+#ifdef CONFIG_QCN_EXTN
+		if (pwr_interp_conf == TPE_REG_EIRP_PSD)
+#endif
+			*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_REGULAR_CLIENT_SP,
+						   *eid, REG_DEFAULT_CLIENT,
+						   REGULATORY_CLIENT_EIRP_PSD, pwr_mode);
 		*eid = hostapd_add_eirp_tpe(hapd, NL80211_REG_REGULAR_CLIENT_SP,
 					    *eid, REG_DEFAULT_CLIENT,
 					    REGULATORY_CLIENT_EIRP, pwr_mode);
 		break;
 	case HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP:
-		*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_REGULAR_CLIENT_SP,
-					   *eid, REG_DEFAULT_CLIENT,
-					   REGULATORY_CLIENT_EIRP_PSD, pwr_mode);
+#ifdef CONFIG_QCN_EXTN
+		if (pwr_interp_conf == TPE_REG_EIRP_PSD)
+#endif
+			*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_REGULAR_CLIENT_SP,
+						   *eid, REG_DEFAULT_CLIENT,
+						   REGULATORY_CLIENT_EIRP_PSD, pwr_mode);
 		*eid = hostapd_add_eirp_tpe(hapd, NL80211_REG_REGULAR_CLIENT_SP,
 					    *eid, REG_DEFAULT_CLIENT,
 					    REGULATORY_CLIENT_EIRP, pwr_mode);
-		*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_SUBORDINATE_CLIENT_SP,
-					   *eid, REG_SUBORDINATE_CLIENT,
-					   REGULATORY_CLIENT_EIRP_PSD, pwr_mode);
-		*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_REGULAR_CLIENT_SP,
-					   *eid, REG_DEFAULT_CLIENT,
-					   REGULATORY_CLIENT_ADDITIONAL_EIRP_PSD,
-					   pwr_mode);
+#ifdef CONFIG_QCN_EXTN
+		if (pwr_interp_conf == TPE_REG_EIRP_PSD) {
+#endif
+			*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_SUBORDINATE_CLIENT_SP,
+						   *eid, REG_SUBORDINATE_CLIENT,
+						   REGULATORY_CLIENT_EIRP_PSD, pwr_mode);
+			*eid = hostapd_add_psd_tpe(hapd, NL80211_REG_REGULAR_CLIENT_SP,
+						   *eid, REG_DEFAULT_CLIENT,
+						   REGULATORY_CLIENT_ADDITIONAL_EIRP_PSD,
+						   pwr_mode);
+#ifdef CONFIG_QCN_EXTN
+		} else if (pwr_interp_conf == TPE_REG_EIRP) {
+			*eid = hostapd_add_eirp_tpe(hapd, NL80211_REG_SUBORDINATE_CLIENT_SP,
+						    *eid, REG_SUBORDINATE_CLIENT,
+						    REGULATORY_CLIENT_EIRP, pwr_mode);
+		}
+#endif
 		*eid = hostapd_add_eirp_tpe(hapd, NL80211_REG_REGULAR_CLIENT_SP,
 					    *eid, REG_DEFAULT_CLIENT,
 					    REGULATORY_CLIENT_ADDITIONAL_EIRP,
