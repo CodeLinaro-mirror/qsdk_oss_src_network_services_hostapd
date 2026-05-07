@@ -3058,6 +3058,20 @@ enum qca_wlan_vendor_scan_priority {
  * @QCA_WLAN_VENDOR_ATTR_SCAN_SKIP_CHANNEL_RECENCY_PERIOD: Optional (u32). Skip
  *	scanning channels which are scanned recently within configured time
  *	(in ms).
+ * @QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN: Optional (nested attribute). To enable
+ * and config Split scan. Split scan is a Continuous Background Scan which splits single
+ * scan into multiple smaller scans by with included rest times in between.
+ * This is an AP mode scan, to scan the whole channel without degrading service
+ * quality by adding rest time and wait time in between the scans. The AP sends
+ * configured values from Application to driver, and the driver takes care of
+ * algorithm to schedule the split scans and rest times.
+ * Its sub-attributes are mentioned in enum qca_wlan_vendor_attr_split_scan_params.
+ * @QCA_WLAN_VENDOR_ATTR_SCAN_RESTTIME: Optional u32 rest time in milliseconds
+ * 	This represents the time to wait between scans on different channels.
+ * @QCA_WLAN_VENDOR_ATTR_SCAN_WAITTIME: Optional u32 wait time in milliseconds
+ * 	This is added for a continous background scan feature. This represents
+ * 	the time to wait after scanning all channels and
+ * 	before starting over again next scan.
  */
 enum qca_wlan_vendor_attr_scan {
 	QCA_WLAN_VENDOR_ATTR_SCAN_INVALID_PARAM = 0,
@@ -3077,9 +3091,43 @@ enum qca_wlan_vendor_attr_scan {
 	QCA_WLAN_VENDOR_ATTR_SCAN_PAD = 14,
 	QCA_WLAN_VENDOR_ATTR_SCAN_LINK_ID = 15,
 	QCA_WLAN_VENDOR_ATTR_SCAN_SKIP_CHANNEL_RECENCY_PERIOD = 16,
+	QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN = 17,
+	QCA_WLAN_VENDOR_ATTR_SCAN_RESTTIME = 18,
+	QCA_WLAN_VENDOR_ATTR_SCAN_WAITTIME = 19,
 	QCA_WLAN_VENDOR_ATTR_SCAN_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_SCAN_MAX =
 	QCA_WLAN_VENDOR_ATTR_SCAN_AFTER_LAST - 1
+};
+
+/**
+ * enum qca_wlan_vendor_attr_split_scan_params - These sub-attributes are added for
+ * the Split Scan feature. This feature allows to split scan into multiple dwell
+ * splits with included rest times in between.
+ * These attr are nested inside QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN used under
+ * the vendor sub-cmd QCA_NL80211_VENDOR_SUBCMD_TRIGGER_SCAN.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN_DWELL: u32 dwell split value in milliseconds
+ * 	This is the dwell split time in milliseconds on a foreign channel for one
+ * 	single scan. For example, if total dwell time of 200msec is split into
+ * 	two split scans. Then the ATTR_SPLIT_SCAN_DWELL value will be 100msec.
+ * @QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN_DWELLREST: u32 dwell rest time in milliseconds
+ * 	Minimum time to rest before issuing the next consecutive
+ * 	scan on the same channel.
+ * @QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN_TYPE: u8 type of the split scan to run
+ * 	 0: disable/cancel the split scan,
+ * 	 1: run split scan only once in the backgorund,
+ * 	 2: run split scan continously in the background.
+ */
+enum qca_wlan_vendor_attr_split_scan_params {
+	QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN_DWELL = 1,
+	QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN_DWELLREST = 2,
+	QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN_TYPE = 3,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN_MAX =
+	QCA_WLAN_VENDOR_ATTR_SPLIT_SCAN_AFTER_LAST - 1
 };
 
 /**
@@ -3089,10 +3137,14 @@ enum qca_wlan_vendor_attr_scan {
  * @VENDOR_SCAN_STATUS_NEW_RESULTS: implies the vendor scan is successful with
  *	new scan results
  * @VENDOR_SCAN_STATUS_ABORTED: implies the vendor scan was aborted in-between
+ * @VENDOR_SPLIT_SCAN_COMPLETE_PER_CHANNEL: implies the vendor split scan is
+ * 	completed for a given channel frequency represented by attribute
+ * 	QCA_WLAN_VENDOR_ATTR_SCAN_FREQUENCIES.
  */
 enum scan_status {
 	VENDOR_SCAN_STATUS_NEW_RESULTS,
 	VENDOR_SCAN_STATUS_ABORTED,
+	VENDOR_SPLIT_SCAN_COMPLETE_PER_CHANNEL,
 	VENDOR_SCAN_STATUS_MAX,
 };
 
