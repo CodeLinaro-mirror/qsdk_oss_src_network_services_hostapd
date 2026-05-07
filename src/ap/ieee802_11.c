@@ -10645,6 +10645,50 @@ fill_psd_power_for_punctured_freq(struct hostapd_data *hapd, u16 freq,
 	return psd_power;
 }
 
+static int compute_chan_psd_common(struct hostapd_data *hapd, int i,
+				   struct ieee_chan_data chan_data,
+				   u16 punct_bitmap, int j, bool fill_psd_for_sp,
+				   int client_mode, int pwr_mode,
+				   enum max_tx_pwr_interpretation tx_pwr_intrpn,
+				   s16 *primary_20mhz_psd)
+{
+	if ((punct_bitmap & BIT(j)) && fill_psd_for_sp) {
+		u16 punc_freq = chan_data.channels[i].freq;
+
+		return fill_psd_power_for_punctured_freq(hapd, punc_freq,
+							 client_mode, pwr_mode,
+							 tx_pwr_intrpn,
+							 *primary_20mhz_psd);
+	}
+
+	return get_psd_for_chan_idx(hapd, i, chan_data, client_mode,
+				    pwr_mode, tx_pwr_intrpn, primary_20mhz_psd);
+}
+
+#ifdef CONFIG_QCN_EXTN
+static bool set_punct_psd_override(struct hostapd_data *hapd, u16 punct_bitmap,
+				   int j, s16 *chan_psd)
+{
+	bool is_punc_chn_txpwr;
+
+	is_punc_chn_txpwr = hapd->conf->bss_extn.tpe_punct_channel_tx_pwr;
+	if ((punct_bitmap & BIT(j)) && is_punc_chn_txpwr) {
+		*chan_psd = RNR_20_MHZ_PSD_NO_POWER / 2;
+
+		return true;
+	}
+
+	return false;
+}
+#else
+static inline bool set_punct_psd_override(struct hostapd_data *hapd,
+					  u16 punct_bitmap, int j, int *chan_psd)
+{
+	return false;
+}
+#endif
+
+
 int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 			  int chan_start_idx, int non_11be_chan_count,
 			  int total_chan_count, u8 *tx_pwr_count,
@@ -10711,19 +10755,15 @@ int get_psd_values(struct hostapd_data *hapd, int non_11be_start_idx,
 		if (non_be_chan_index_map & BIT(j)) { /* filled in 11ax TPE*/
 			continue;
 		}
-		if (punct_bitmap & BIT(j) && fill_psd_for_sp) {
-			u16 punc_freq = chan_data.channels[i].freq;
+		if (!set_punct_psd_override(hapd, punct_bitmap, j, &chan_psd))
+			chan_psd = compute_chan_psd_common(hapd, i, chan_data,
+							   punct_bitmap, j,
+							   fill_psd_for_sp,
+							   client_mode,
+							   pwr_mode,
+							   tx_pwr_intrpn,
+							   &primary_20mhz_psd);
 
-			chan_psd = fill_psd_power_for_punctured_freq(hapd, punc_freq,
-								     client_mode,
-								     pwr_mode,
-								     tx_pwr_intrpn,
-								     primary_20mhz_psd);
-		} else {
-			chan_psd = get_psd_for_chan_idx(hapd, i, chan_data, client_mode,
-							pwr_mode, tx_pwr_intrpn,
-							&primary_20mhz_psd);
-		}
 		*tx_pwr_ext_array = chan_psd * 2;
 		tx_pwr_ext_array++;
 		*tx_pwr_ext_count += 1;
