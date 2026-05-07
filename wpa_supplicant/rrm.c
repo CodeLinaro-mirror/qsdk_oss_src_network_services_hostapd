@@ -753,11 +753,9 @@ int wpas_get_op_chan_phy(int freq, const u8 *ies, size_t ies_len,
 {
 	const u8 *ie;
 	int sec_chan = 0, vht = 0;
-	struct ieee80211_he_6ghz_oper_info *he_oper_6g = NULL;
 	struct ieee80211_ht_operation *ht_oper = NULL;
 	struct ieee80211_vht_operation *vht_oper = NULL;
-	struct ieee80211_eht_operation *eht_op = NULL;
-	u8 seg0, seg1, pos = 0;
+	u8 seg0, seg1;
 
 	ie = get_ie(ies, ies_len, WLAN_EID_HT_OPERATION);
 	if (ie && ie[1] >= sizeof(struct ieee80211_ht_operation)) {
@@ -799,86 +797,6 @@ int wpas_get_op_chan_phy(int freq, const u8 *ies, size_t ies_len,
 			break;
 		}
 	}
-	ie = get_ie_ext(ies, ies_len, WLAN_EID_EXT_HE_OPERATION);
-	if (ie && ie[1] >= sizeof(struct ieee80211_he_operation)) {
-		const struct ieee80211_he_operation *he_oper =
-			(const struct ieee80211_he_operation *)(ie + 3);
-		if (he_oper->he_oper_params & HE_OPERATION_VHT_OPER_INFO)
-			pos = pos + 3;
-
-		if (he_oper->he_oper_params & HE_OPERATION_COHOSTED_BSS)
-			pos = pos + 1;
-
-		/*Overwite the chanwidth as below only for 6G */
-		if ((he_oper->he_oper_params & HE_OPERATION_6GHZ_OPER_INFO) &&
-		    (is_6ghz_freq(freq))) {
-			u8 he_oper_chwidth;
-
-			pos = pos + 9;
-			he_oper_6g = (struct ieee80211_he_6ghz_oper_info *)(ie + pos);
-			he_oper_chwidth =
-				he_oper_6g->control & HE_6GHZ_OPER_INFO_CTRL_CHAN_WIDTH_MASK;
-			wpa_printf(MSG_DEBUG, "HE 6G operation width: %d",
-				   he_oper_chwidth);
-
-			switch (he_oper_chwidth) {
-			case IEEE80211_6GHZ_OP_CHWIDTH_20:
-				vht = CONF_OPER_CHWIDTH_USE_HT;
-				break;
-			case IEEE80211_6GHZ_OP_CHWIDTH_40:
-				sec_chan = 1;
-				vht = CONF_OPER_CHWIDTH_USE_HT;
-				break;
-			case IEEE80211_6GHZ_OP_CHWIDTH_80:
-				vht = CONF_OPER_CHWIDTH_80MHZ;
-				break;
-			case IEEE80211_6GHZ_OP_CHWIDTH_160_80_80:
-				vht = CONF_OPER_CHWIDTH_160MHZ;
-				break;
-			default:
-				vht = CONF_OPER_CHWIDTH_USE_HT;
-			}
-			wpa_printf(MSG_DEBUG, "vht from HE 6G operation info: %d",
-				   vht);
-		}
-	}
-
-	ie = get_ie_ext(ies, ies_len, WLAN_EID_EXT_EHT_OPERATION);
-	if (ie && ie[1] >= 1 + IEEE80211_EHT_OP_MIN_LEN) {
-		struct ieee80211_eht_operation *eht_op;
-		u8 eht_width;
-
-		eht_op = (struct ieee80211_eht_operation *)(ie + 3);
-
-		if (eht_op->oper_params & EHT_OPER_INFO_PRESENT)
-			eht_width = eht_op->oper_info.control;
-		else
-			eht_width = EHT_OPER_CHANNEL_WIDTH_20MHZ;
-
-		wpa_printf(MSG_DEBUG, "EHT operation width: %d", eht_width);
-		switch (eht_width) {
-		case EHT_OPER_CHANNEL_WIDTH_20MHZ:
-			vht = CONF_OPER_CHWIDTH_USE_HT;
-			break;
-		case EHT_OPER_CHANNEL_WIDTH_40MHZ:
-			sec_chan = 1;
-			vht = CONF_OPER_CHWIDTH_USE_HT;
-			break;
-		case EHT_OPER_CHANNEL_WIDTH_80MHZ:
-			vht = CONF_OPER_CHWIDTH_80MHZ;
-			break;
-		case EHT_OPER_CHANNEL_WIDTH_160MHZ:
-			vht = CONF_OPER_CHWIDTH_160MHZ;
-			break;
-		case EHT_OPER_CHANNEL_WIDTH_320MHZ:
-			vht = CONF_OPER_CHWIDTH_320MHZ;
-			break;
-		default:
-			vht = CONF_OPER_CHWIDTH_USE_HT;
-			break;
-		}
-		wpa_printf(MSG_DEBUG, "vht from EHT operation info: %d", vht);
-	}
 
 	if (ieee80211_freq_to_channel_ext(freq, sec_chan, vht, op_class,
 					  chan) == NUM_HOSTAPD_MODES) {
@@ -888,7 +806,7 @@ int wpas_get_op_chan_phy(int freq, const u8 *ies, size_t ies_len,
 	}
 
 	*phy_type = ieee80211_get_phy_type(freq, ht_oper != NULL,
-					   vht_oper != NULL, eht_op != NULL);
+					   vht_oper != NULL, 0);
 	if (*phy_type == PHY_TYPE_UNSPECIFIED) {
 		wpa_printf(MSG_DEBUG, "Cannot determine phy type");
 		return -1;
