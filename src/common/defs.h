@@ -305,6 +305,15 @@ enum wpa_states {
 #endif
 
 	/**
+	 * WPA_STACACING - Specially for Station mode
+	 *
+	 * This state is entered when wpa_supplicant has found a suitable BSS,
+	 * but Station DFS requires CAC completion before any transmission on DFS
+	 * channel(s).
+	 */
+	WPA_STACACING,
+
+	/**
 	 * WPA_AUTHENTICATING - Trying to authenticate with a BSS/SSID
 	 *
 	 * This state is entered when wpa_supplicant has found a suitable BSS
