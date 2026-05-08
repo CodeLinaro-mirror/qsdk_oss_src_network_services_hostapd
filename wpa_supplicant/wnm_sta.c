@@ -916,6 +916,11 @@ static int wnm_nei_rep_add_bss(struct wpa_supplicant *wpa_s,
 		else if (sec_chan_offset ==
 			 HT_INFO_HT_PARAM_SECONDARY_CHNL_BELOW)
 			sec_chan = -1;
+	} else if (chanwidth == CHAN_WIDTH_40) {
+		/* 6 GHz BSSes have no HT operation IE; derive sec_chan from
+		 * the channel width so that ieee80211_freq_to_channel_ext()
+		 * selects op_class 132 (40 MHz) instead of 131 (20 MHz). */
+		sec_chan = 1;
 	}
 
 	if (ieee80211_chaninfo_to_channel(bss->freq, chanwidth, sec_chan,
