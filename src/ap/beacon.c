@@ -4169,28 +4169,19 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 
 	params->beacon_tx_mode = hapd->conf->beacon_tx_mode;
 
-	if (hapd->iconf->mbssid) {
-		if (((hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) &&
-		    (hapd->mbssid_group->num_bss == 1)) || hapd->iconf->num_bss == 1) {
-			params->mbssid.mbssid_tx_iface = hapd->conf->iface;
-			params->mbssid.mbssid_index = hostapd_mbssid_get_bss_index(hapd);
-			if (hapd->conf->mld_ap)
-				params->mbssid.mbssid_tx_iface_linkid = hapd->mld_link_id;
-			else
-				params->mbssid.mbssid_tx_iface_linkid = -1;
-			complete = true;
-		} else {
-			if (ieee802_11_build_ap_params_mbssid(hapd, params)) {
-				ieee802_11_free_ap_params(params);
-				wpa_printf(MSG_ERROR,
-					   "MBSSID: Failed to set beacon data");
-				return -1;
-			}
-			complete = hapd->iconf->mbssid == MBSSID_ENABLED ||
-				hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED ||
-				(hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
-				 params->mbssid.mbssid_elem_count == 1);
+	if (hapd->iconf->mbssid &&
+	    (hapd->iconf->mbssid != MULTI_MBSSID_GROUP_ENABLED ||
+	     hapd->mbssid_group)) {
+		if (ieee802_11_build_ap_params_mbssid(hapd, params)) {
+			ieee802_11_free_ap_params(params);
+			wpa_printf(MSG_ERROR,
+				   "MBSSID: Failed to set beacon data");
+			return -1;
 		}
+		complete = hapd->iconf->mbssid == MBSSID_ENABLED ||
+			   hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED ||
+			   (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
+			    params->mbssid.mbssid_elem_count == 1);
 	}
 
 	/*
