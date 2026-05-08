@@ -7278,6 +7278,13 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 	}
 
 #ifdef CONFIG_IEEE80211BN
+	if (params->uhr_cap &&
+	    nla_put(msg, NL80211_ATTR_UHR_CAPABILITY,
+		    /* nl80211 wants it without the extended element header */
+		    params->uhr_cap[1] - 1,
+		     params->uhr_cap + 3))
+		goto fail;
+
 	if (!params->dps_assist) {
 		wpa_printf(MSG_DEBUG, "nl80211: disable DPS Assist");
 		if (nla_put_u8(msg, NL80211_ATTR_DPS_ASSIST,
