@@ -7842,6 +7842,79 @@ int hostapd_force_channel_switch(struct hostapd_iface *iface,
 }
 
 
+/**
+ * hostapd_abort_cac_for_channel_switch - Abort an ongoing CAC to perform a
+ *                                        channel switch
+ * @iface: Pointer to the hostapd interface on which CAC is running
+ * @settings: Channel switch settings containing the target channel parameters
+ *            (frequency, CSA count, block-TX flag, beacon data, etc.) to be
+ *            applied once the CAC is aborted
+ *
+ * Called when a channel switch is requested while a Channel Availability Check
+ * (CAC) is already in progress on @iface.  The function inspects every BSS on
+ * the interface to determine whether at least one is part of a Multi-Link
+ * Operation (MLO) setup:
+ *
+ * - MLO path (at least one MLD AP found):
+ *   Sets the @csa_pending_on_cac_abort flag on the interface and saves the
+ *   pending channel-switch settings so that hostapd_deferred_csa_dispatch()
+ *   can schedule the Channel Switch Announcement (CSA) once the driver
+ *   confirms the CAC abort via the DFS CAC-aborted event or CAC complete via
+ *   DFS CAC-finished event (CAC completed in the Kernel before processing the
+ *   CAC abort command). For co-located SLO APs, the CSA beacon template
+ *   is sent to the firmware together with the MLD AP so that all APs switch
+ *   channels simultaneously.
+ *
+ * - SLO-only path (no MLD AP found):
+ *   Bypasses CSA and immediately forces a channel switch on all BSS instances
+ *   by calling hostapd_force_channel_switch(), which disables and re-enables
+ *   the interface on the new channel.
+ *
+ * Return: 0 on success; negative error code on failure.
+ */
+int hostapd_abort_cac_for_channel_switch(struct hostapd_iface *iface,
+					 struct csa_settings *settings)
+{
+	struct hostapd_data *hapd = NULL;
+	int i, ret;
+
+	if (!iface->num_bss || !iface->bss)
+		return -1;
+
+	if (iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD)
+		goto force_chan_switch;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		if (!iface->bss[i]->driver || !iface->bss[i]->drv_priv)
+			continue;
+
+		if (hostapd_is_multiple_link_mld(iface->bss[i])) {
+			hapd = iface->bss[i];
+			break;
+		}
+	}
+
+	if (hapd) {
+		iface->csa_pending_on_cac_abort = true;
+		os_memcpy(&iface->csa_settings, settings, sizeof(struct csa_settings));
+		wpa_printf(MSG_DEBUG,
+			   "CAC is in progress - switching channel using CSA by aborting the CAC");
+
+		ret = hostapd_drv_abort_cac(hapd);
+		if (ret == 0)
+			return ret;
+
+		wpa_printf(MSG_DEBUG, "Aborting CAC failed");
+		hapd->iface->csa_pending_on_cac_abort = false;
+		os_memset(&hapd->iface->csa_settings, 0, sizeof(struct csa_settings));
+	}
+
+force_chan_switch:
+	wpa_printf(MSG_DEBUG, "CAC is in progress - switching channel without CSA");
+	return hostapd_force_channel_switch(iface, settings);
+}
+
+
 void
 hostapd_switch_channel_fallback(struct hostapd_iface *iface,
 				const struct hostapd_freq_params *freq_params)
