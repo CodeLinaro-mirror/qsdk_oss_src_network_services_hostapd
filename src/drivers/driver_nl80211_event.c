@@ -1396,6 +1396,7 @@ static void mlme_event_ch_switch(struct wpa_driver_nl80211_data *drv,
 				 struct nlattr *punct_bitmap,
 				 struct nlattr *count,
 				 struct nlattr *power_mode_6ghz,
+				 struct nlattr *mcst,
 				 struct nlattr *bw_device,
 				 struct nlattr *cf_device,
 				 int finished)
@@ -1474,6 +1475,10 @@ static void mlme_event_ch_switch(struct wpa_driver_nl80211_data *drv,
 		data.ch_switch.power_mode_6ghz = nla_get_u8(power_mode_6ghz);
 	else
 		data.ch_switch.power_mode_6ghz = NL80211_REG_NUM_POWER_MODES;
+	if (mcst)
+		data.ch_switch.mcst = nla_get_u32(mcst);
+	else
+		data.ch_switch.mcst = 0;
 
 	if (link) {
 		data.ch_switch.link_id = nla_get_u8(link);
@@ -6355,6 +6360,7 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 				     tb[NL80211_ATTR_PUNCT_BITMAP],
 				     tb[NL80211_ATTR_CH_SWITCH_COUNT],
 				     tb[NL80211_ATTR_6G_REG_POWER_MODE],
+				     0,
 				     tb[NL80211_ATTR_CHANNEL_WIDTH_DEVICE],
 				     tb[NL80211_ATTR_CENTER_FREQ_DEVICE],
 				     0);
@@ -6371,6 +6377,7 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 				     tb[NL80211_ATTR_PUNCT_BITMAP],
 				     NULL,
 				     tb[NL80211_ATTR_6G_REG_POWER_MODE],
+				     0,
 				     tb[NL80211_ATTR_CHANNEL_WIDTH_DEVICE],
 				     tb[NL80211_ATTR_CENTER_FREQ_DEVICE],
 				     1);
