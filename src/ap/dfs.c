@@ -1003,6 +1003,9 @@ int hostapd_handle_dfs(struct hostapd_iface *iface)
 	}
 
 	iface->cac_started = 0;
+#ifdef CONFIG_QCN_EXTN
+	iface->iface_extn.cac_abort = 0;
+#endif
 
 	do {
 		/* Get start (first) channel for current configuration */
@@ -1531,9 +1534,14 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_COMPLETED
 		"success=%d freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d radar_detected=%d"
-		"chan_width_device=%d cf_device=%d",
+		" chan_width_device=%d cf_device=%d cac_started=%d",
 		success, freq, ht_enabled, chan_offset, chan_width, cf1, cf2,
-		iface->radar_detected, chan_width_device, cf_device);
+		iface->radar_detected, chan_width_device, cf_device, iface->cac_started);
+
+#ifdef CONFIG_QCN_EXTN
+	/* Set cac_abort flag when CAC fails (success=0) */
+	iface->iface_extn.cac_abort = !success;
+#endif
 
 	if (success) {
 		u8 seg0;
@@ -1977,9 +1985,9 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_RADAR_DETECTED
 		"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d radar_bitmap:%d"
-		" chan_width_device=%d cf_device=%d",
+		" chan_width_device=%d cf_device=%d cac_started=%d",
 		freq, ht_enabled, chan_offset, chan_width, cf1, cf2, radar_bitmap,
-		chan_width_device, cf_device);
+		chan_width_device, cf_device, iface->cac_started);
 
 	radar_bitmap_oper = radar_bitmap;
 	device_params_present = hostapd_is_device_params_present(chan_width,
@@ -2061,6 +2069,9 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 				   iface->radar_bit_pattern);
 
 			iface->cac_started = 0;
+#ifdef CONFIG_QCN_EXTN
+			iface->iface_extn.cac_abort = 0;
+#endif
 			return hostapd_start_dfs_cac(iface, iface->conf->hw_mode,
 						     iface->freq, iface->conf->channel,
 						     iface->conf->ieee80211n,
@@ -2317,6 +2328,9 @@ int hostapd_dfs_start_cac(struct hostapd_iface *iface, int freq,
 		 * DFS channel. Clear it for this new CAC process. */
 		hostapd_set_state(iface, HAPD_IFACE_DFS);
 		iface->cac_started = 1;
+#ifdef CONFIG_QCN_EXTN
+		iface->iface_extn.cac_abort = 0;
+#endif
 
 		/* Clear radar_detected in case it is for the previous
 		 * frequency. Also remove disabled link's information in RNR
