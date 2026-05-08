@@ -890,7 +890,7 @@ static int wnm_nei_rep_add_bss(struct wpa_supplicant *wpa_s,
 			       u8 pref)
 {
 	u8 op_class, chan;
-	int sec_chan = 0, chanwidth = 0;
+	int sec_chan = 0, chanwidth;
 	struct ieee802_11_elems elems;
 	struct ieee80211_ht_operation *ht_oper;
 	enum phy_type phy_type;
@@ -918,16 +918,16 @@ static int wnm_nei_rep_add_bss(struct wpa_supplicant *wpa_s,
 			sec_chan = -1;
 	}
 
-	if (ieee80211_freq_to_channel_ext(bss->freq, sec_chan, chanwidth,
-					  &op_class, &chan) ==
-	    NUM_HOSTAPD_MODES) {
+	if (ieee80211_chaninfo_to_channel(bss->freq, chanwidth, sec_chan,
+					  &op_class, &chan) != 0) {
 		wpa_printf(MSG_DEBUG,
 			   "WNM: Cannot determine operating class and channel");
 		return -2;
 	}
 
 	phy_type = ieee80211_get_phy_type(bss->freq, elems.ht_operation != NULL,
-					  elems.vht_operation != NULL, 0);
+					  elems.vht_operation != NULL,
+					  elems.eht_operation != NULL);
 	if (phy_type == PHY_TYPE_UNSPECIFIED) {
 		wpa_printf(MSG_DEBUG,
 			   "WNM: Cannot determine BSS phy type for Neighbor Report");
