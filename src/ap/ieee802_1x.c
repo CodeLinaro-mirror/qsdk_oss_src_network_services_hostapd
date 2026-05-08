@@ -49,8 +49,8 @@ static bool ieee802_1x_finished(struct hostapd_data *hapd,
 				bool logoff);
 
 
-static void ieee802_1x_send(struct hostapd_data *hapd, struct sta_info *sta,
-			    u8 type, const u8 *data, size_t datalen)
+void ieee802_1x_send(struct hostapd_data *hapd, struct sta_info *sta,
+		     u8 type, const u8 *data, size_t datalen)
 {
 	u8 *buf;
 	struct ieee802_1x_hdr *xhdr;
@@ -1212,6 +1212,13 @@ void ieee802_1x_receive(struct hostapd_data *hapd, const u8 *sa, const u8 *buf,
 			   "IEEE 802.1X: Discard unencrypted EAPOL message - encryption was expected");
 		return;
 	}
+
+#ifdef CONFIG_HOSTAPD_IF
+	if(hapd->conf->plugin_eap_offload) {
+		hostapd_if_eapol_rx(hapd, sa, buf, len);
+		return;
+	}
+#endif /* CONFIG_HOSTAPD_IF */
 
 	if (!sta->eapol_sm) {
 		sta->eapol_sm = ieee802_1x_alloc_eapol_sm(hapd, sta);
