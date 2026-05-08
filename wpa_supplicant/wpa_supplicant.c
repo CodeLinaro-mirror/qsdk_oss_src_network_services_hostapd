@@ -8082,6 +8082,21 @@ static struct wpa_radio_work * radio_work_get_next_work(struct wpa_radio *radio)
 			continue;
 		}
 		/*
+		 * Allow parallel scan across interfaces sharing the same wiphy
+		 * when the driver advertises parallel hardware scan support.
+		 */
+		if (radio_work_is_scan(active_work) &&
+		    radio_work_is_scan(tmp) &&
+		    active_work->wpa_s != tmp->wpa_s &&
+		    (active_work->wpa_s->drv_flags2 &
+		     WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN)) {
+			wpa_dbg(active_work->wpa_s, MSG_DEBUG,
+				"Allow parallel scan for %s alongside %s",
+				tmp->wpa_s->ifname,
+				active_work->wpa_s->ifname);
+			return tmp;
+		}
+		/*
 		 * Check that the radio works are distinct and
 		 * on different bands.
 		 */
@@ -8130,8 +8145,24 @@ static void radio_start_next_work(void *eloop_ctx, void *timeout_ctx)
 
 	if (!(wpa_s &&
 	      wpa_s->drv_flags & WPA_DRIVER_FLAGS_OFFCHANNEL_SIMULTANEOUS)) {
-		if (work->started)
-			return; /* already started and still in progress */
+		if (work->started) {
+			/*
+			 * Allow a concurrent scan to start alongside an already
+			 * running scan when the driver supports parallel HW scan
+			 * and the next work is a scan on a different interface.
+			 */
+			if (radio_work_is_scan(work) &&
+			    (wpa_s->drv_flags2 &
+			     WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN) &&
+			    radio->num_active_works <
+			    dl_list_len(&radio->ifaces)) {
+				work = radio_work_get_next_work(radio);
+				if (!work)
+					return;
+			} else {
+				return; /* already started and still in progress */
+			}
+		}
 
 		if (wpa_s && external_scan_running(wpa_s->radio)) {
 			wpa_printf(MSG_DEBUG, "Delay radio work start until externally triggered scan completes");
@@ -8161,6 +8192,9 @@ static void radio_start_next_work(void *eloop_ctx, void *timeout_ctx)
 
 	if ((wpa_s->drv_flags & WPA_DRIVER_FLAGS_OFFCHANNEL_SIMULTANEOUS) &&
 	    radio->num_active_works < MAX_ACTIVE_WORKS)
+		radio_work_check_next(wpa_s);
+	else if ((wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN) &&
+		 radio->num_active_works < dl_list_len(&radio->ifaces))
 		radio_work_check_next(wpa_s);
 }
 
@@ -8351,6 +8385,13 @@ int radio_add_work(struct wpa_supplicant *wpa_s, unsigned int freq,
 		   && radio->num_active_works < MAX_ACTIVE_WORKS) {
 		wpa_dbg(wpa_s, MSG_DEBUG,
 			"Try to schedule a radio work (num_active_works=%u)",
+			radio->num_active_works);
+		radio_work_check_next(wpa_s);
+	} else if ((wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN) &&
+		   radio_work_is_scan(work) &&
+		   radio->num_active_works < dl_list_len(&radio->ifaces)) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"Try to schedule parallel scan work (num_active_works=%u)",
 			radio->num_active_works);
 		radio_work_check_next(wpa_s);
 	}

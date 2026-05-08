@@ -783,6 +783,10 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 			      NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION)) {
 		capa->flags2 |= WPA_DRIVER_FLAGS2_EPPKE;
 	}
+
+	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_PARALLEL_HW_SCAN))
+		capa->flags2 |= WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN;
 }
 
 
