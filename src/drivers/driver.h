@@ -2578,6 +2578,12 @@ struct wpa_driver_ap_params {
 
 #ifdef CONFIG_IEEE80211BN
 	struct wpa_smd_params smd;
+
+	/**
+	 * uhr_cap - Full UHR capabilities element, includes the extended
+	 * element header
+	 */
+	u8 *uhr_cap;
 #endif /* CONFIG_IEEE80211BN */
 
 	/* Num common parameter to add in qca_vendor command */

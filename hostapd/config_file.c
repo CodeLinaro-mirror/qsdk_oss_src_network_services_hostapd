@@ -6129,6 +6129,26 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		bss->dps_assist = val;
 #endif /* CONFIG_IEEE80211BN */
+#ifdef CONFIG_IEEE80211BN
+	} else if (os_strcmp(buf, "uhr_adv_notification_interval") == 0) {
+		int val = atoi(pos);
+		if (val < 1 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: uhr_adv_notification_interval must be 1-7",
+				   line);
+			return 1;
+		}
+		bss->uhr_params_update.adv_notification_interval = (u8) val;
+	} else if (os_strcmp(buf, "uhr_update_in_tim_interval") == 0) {
+		int val = atoi(pos);
+		if (val < 1 || val > 31) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: uhr_update_in_tim_interval must be 1-31",
+				   line);
+			return 1;
+		}
+		bss->uhr_params_update.update_in_tim_interval = (u8) val;
+#endif /* CONFIG_IEEE80211BN */
 
 	} else if (os_strcmp(buf, "enable_dscp_policy_capa") == 0) {
 		bss->enable_dscp_policy_capa = atoi(pos);
