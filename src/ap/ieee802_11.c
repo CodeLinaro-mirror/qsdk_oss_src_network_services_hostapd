@@ -5023,6 +5023,25 @@ static bool hostapd_deny_non_ht_assoc(struct hostapd_data *hapd,
 	return false;
 }
 
+static bool hostapd_deny_non_vht_assoc(struct hostapd_data *hapd,
+				       struct sta_info *sta)
+{
+	bool require_vht;
+
+	if (!hapd->iconf->ieee80211ac)
+		return false;
+
+	require_vht = hapd->iconf->require_vht;
+#ifdef CONFIG_QCN_EXTN
+	if (hapd->conf->bss_extn.pure11ac_bss.is_overridden)
+		require_vht |= hapd->conf->bss_extn.pure11ac_bss.value;
+#endif
+	if (require_vht && !(sta->flags & WLAN_STA_VHT))
+		return true;
+
+	return false;
+}
+
 static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			     const u8 *ies, size_t ies_len,
 			     struct ieee802_11_elems *elems,
@@ -5086,8 +5105,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			goto out;
 	}
 
-	if (hapd->iconf->ieee80211ac && hapd->iconf->require_vht &&
-	    !(sta->flags & WLAN_STA_VHT)) {
+	if (hostapd_deny_non_vht_assoc(hapd, sta)) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_INFO, "Station does not support "
 			       "mandatory VHT PHY - reject association");
