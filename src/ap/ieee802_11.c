@@ -5042,6 +5042,25 @@ static bool hostapd_deny_non_vht_assoc(struct hostapd_data *hapd,
 	return false;
 }
 
+static bool hostapd_deny_non_he_assoc(struct hostapd_data *hapd,
+				      struct sta_info *sta)
+{
+	bool require_he;
+
+	if (!hostapd_is_he_enabled(hapd))
+		return false;
+
+	require_he = hapd->iconf->require_he;
+#ifdef CONFIG_QCN_EXTN
+	if (hapd->conf->bss_extn.pure11ax_bss.is_overridden)
+		require_he |= hapd->conf->bss_extn.pure11ax_bss.value;
+#endif
+	if (require_he && !(sta->flags & WLAN_STA_HE))
+		return true;
+
+	return false;
+}
+
 static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			     const u8 *ies, size_t ies_len,
 			     struct ieee802_11_elems *elems,
@@ -5137,7 +5156,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 #ifdef CONFIG_QCN_EXTN
 		hostapd_drv_set_peer_he_mcs_12_13_cap_extn(hapd, &elems->elems_extn);
 #endif /* CONFIG_QCN_EXTN */
-		if (hapd->iconf->require_he && !(sta->flags & WLAN_STA_HE)) {
+		if (hostapd_deny_non_he_assoc(hapd, sta)) {
 			hostapd_logger(hapd, sta->addr,
 				       HOSTAPD_MODULE_IEEE80211,
 				       HOSTAPD_LEVEL_INFO,
