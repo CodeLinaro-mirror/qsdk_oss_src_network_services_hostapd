@@ -898,6 +898,7 @@ struct hostapd_bss_config {
 	int notify_mgmt_frames;
 	int externally_triggered_m3;
 	int plugin_eap_offload;
+	int external_pmk_cache;
 
 #ifdef CONFIG_DPP
 	char *dpp_name;

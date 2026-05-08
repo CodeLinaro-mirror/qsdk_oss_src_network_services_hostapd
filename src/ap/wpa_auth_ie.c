@@ -827,7 +827,8 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 		    const u8 *rsnxe, size_t rsnxe_len,
 		    const u8 *mdie, size_t mdie_len,
 		    const u8 *owe_dh, size_t owe_dh_len,
-		    struct wpa_state_machine *assoc_sm, bool is_ml)
+		    struct wpa_state_machine *assoc_sm, bool is_ml,
+		    bool external_pmk_cache)
 {
 	struct wpa_auth_config *conf = &wpa_auth->conf;
 	struct wpa_ie_data data;
@@ -1326,7 +1327,7 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 		 * can be used regardless of which PMKID(s) are indicated in the
 		 * (Re)Association Request frame. */
 		if (!ap_sae_offload && data.num_pmkid && !sm->pmksa &&
-		    sm->auth_alg == WLAN_AUTH_OPEN) {
+		    !external_pmk_cache && sm->auth_alg == WLAN_AUTH_OPEN) {
 			wpa_auth_vlogger(wpa_auth, sm->addr, LOGGER_DEBUG,
 					 "No PMKSA cache entry found for SAE");
 			return WPA_INVALID_PMKID;
