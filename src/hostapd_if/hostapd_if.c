@@ -16,6 +16,8 @@
 #include "ap/wpa_auth.h"
 #include "ap/beacon.h"
 #include "ap/ap_mlme.h"
+#include "eapol_auth/eapol_auth_sm.h"
+#include "eapol_auth/eapol_auth_sm_i.h"
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 #include "../qcn_extns/hostapd_external_interface.h"
@@ -1384,10 +1386,13 @@ int hostapd_if_get_gtk(char *ifname, int link_id, int *gtk_idx,
  */
 void __hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 			  uint8_t *pmk, size_t pmk_len,
-			  uint8_t *pmkid)
+			  uint8_t *pmkid, int session_timeout,
+			  struct dot1x_ctx *ctx, bool dot1x_done)
 {
 	struct hostapd_data *hapd;
 	struct sta_info *sta;
+	struct eapol_state_machine *eapol = NULL;
+	struct wpa_state_machine *wpa_sm = NULL;
 
 	wpa_printf(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " pmk_len=%zu\n",
@@ -1423,14 +1428,62 @@ void __hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 		goto __hostapd_if_set_pmk_exit;
 	}
 
-	/*
-	 * wpa_auth_set_pmk_full currently returns -1; do not gate
-	 * on its return
-	 */
-	wpa_auth_set_pmk_full(sta->wpa_sm, pmk, pmkid, (int) pmk_len);
+	wpa_sm = sta->wpa_sm;
+
+	if (dot1x_done && ctx) {
+		eapol = os_zalloc(sizeof(*eapol));
+		if (!eapol) {
+			wpa_printf(MSG_ERROR,
+				   "hostapd_if: set_pmk - failed to allocate EAPOL state for STA "
+				   MACSTR " on %s",
+				   MAC2STR(sta_mac), ifname);
+			goto __hostapd_if_set_pmk_exit;
+		}
+		eapol->sta = sta;
+		if (ctx->identity && ctx->identity_len) {
+			eapol->identity =
+				(u8 *) dup_binstr(ctx->identity,
+						ctx->identity_len);
+			if (eapol->identity)
+				eapol->identity_len = ctx->identity_len;
+		}
+		if (ctx->cui && ctx->cui_len)
+			eapol->radius_cui =
+				wpabuf_alloc_copy(ctx->cui,
+						ctx->cui_len);
+		eapol->acct_multi_session_id = ctx->multi_session_id;
+	}
+
+	if (wpa_auth_set_pmk_full(wpa_sm, pmk, pmkid, (int) pmk_len,
+				  session_timeout, eapol)) {
+		__inbound_error_event(hapd, sta_mac, HOSTAPD_IF_SET_PMK_ERROR,
+				      __func__, __LINE__);
+		goto __hostapd_if_set_pmk_exit;
+	}
+
+	if (dot1x_done && ctx) {
+		ieee802_1x_new_station(hapd, sta);
+		wpa_auth_sta_associated_start_sm(hapd->wpa_auth, wpa_sm);
+	}
+
 __hostapd_if_set_pmk_exit:
 	os_free((void *)pmk);
 	os_free((void *)pmkid);
+	if (ctx) {
+		if (ctx->identity)
+			os_free(ctx->identity);
+		if (ctx->cui)
+			os_free(ctx->cui);
+		os_free(ctx);
+	}
+	if (eapol) {
+		if (eapol->identity)
+			os_free(eapol->identity);
+		if (eapol->radius_cui)
+			wpabuf_free(eapol->radius_cui);
+		os_free(eapol);
+	}
+
 }
 
 /*
@@ -2375,5 +2428,3 @@ size_t hostapd_if_assoc_resp_tail_len(struct sta_info *sta, size_t current_len)
 
 	return tail_len;
 }
-
-

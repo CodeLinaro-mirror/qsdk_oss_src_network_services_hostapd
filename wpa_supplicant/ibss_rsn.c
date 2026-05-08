@@ -505,7 +505,7 @@ static int ibss_rsn_auth_init(struct ibss_rsn *ibss_rsn,
 	if (wpa_auth_sm_event(peer->auth, WPA_ASSOC))
 		return -1;
 
-	if (wpa_auth_sta_associated(ibss_rsn->auth_group, peer->auth))
+	if (wpa_auth_sta_associated(ibss_rsn->auth_group, peer->auth, true))
 		return -1;
 
 	return 0;
