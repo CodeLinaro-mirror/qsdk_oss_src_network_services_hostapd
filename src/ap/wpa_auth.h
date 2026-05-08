@@ -617,12 +617,13 @@ u8 * wpa_sm_write_assoc_resp_ies(struct wpa_state_machine *sm, u8 *pos,
 				 size_t max_len, int auth_alg,
 				 const u8 *req_ies, size_t req_ies_len,
 				 int omit_rsnxe, bool reassoc, int vlan_id);
-void wpa_ft_process_auth(struct wpa_state_machine *sm,
-			 u16 auth_transaction, const u8 *ies, size_t ies_len,
-			 void (*cb)(void *ctx, const u8 *dst,
-				    u16 auth_transaction, u16 resp,
-				    const u8 *ies, size_t ies_len),
-			 void *ctx);
+int wpa_ft_process_auth(struct wpa_state_machine *sm,
+			u16 auth_transaction, const u8 *ies, size_t ies_len,
+			void (*cb)(void *ctx, const u8 *dst,
+				   u16 auth_transaction, u16 resp,
+				   const u8 *ies, size_t ies_len),
+			void *ctx, bool deferred_auth_resp);
+void ft_finish_pull(struct wpa_state_machine *sm, uint16_t external_app_status);
 int wpa_ft_validate_reassoc(struct wpa_state_machine *sm, const u8 *ies,
 			    size_t ies_len, struct mld_info *mld_info);
 int wpa_ft_action_rx(struct wpa_state_machine *sm, const u8 *data,

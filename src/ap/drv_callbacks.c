@@ -1961,7 +1961,7 @@ static void hostapd_notif_auth(struct hostapd_data *hapd,
 		wpa_ft_process_auth(sta->wpa_sm,
 				    rx_auth->auth_transaction, rx_auth->ies,
 				    rx_auth->ies_len,
-				    hostapd_notify_auth_ft_finish, hapd);
+				    hostapd_notify_auth_ft_finish, hapd, false);
 		return;
 	}
 #endif /* CONFIG_IEEE80211R_AP */

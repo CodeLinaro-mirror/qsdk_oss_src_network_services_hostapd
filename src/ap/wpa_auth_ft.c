@@ -30,6 +30,7 @@
 #include "pmksa_cache_auth.h"
 #include "sta_info.h"
 #include "hostapd.h"
+#include "hostapd_if/hostapd_if.h"
 
 #ifdef CONFIG_IEEE80211R_AP
 
@@ -45,7 +46,6 @@ static int wpa_ft_send_rrb_auth_resp(struct wpa_state_machine *sm,
 				     const u8 *sta_sa_addr, u16 status,
 				     const u8 *resp_ies, size_t resp_ies_len,
 				     bool is_mld);
-static void ft_finish_pull(struct wpa_state_machine *sm);
 static void wpa_ft_expire_pull(void *eloop_ctx, void *timeout_ctx);
 static void wpa_ft_rrb_seq_timeout(void *eloop_ctx, void *timeout_ctx);
 
@@ -1509,14 +1509,13 @@ static int wpa_ft_fetch_pmk_r0(struct wpa_authenticator *wpa_auth,
 }
 
 
-static int wpa_ft_store_pmk_r1(struct wpa_authenticator *wpa_auth,
-			       const u8 *spa, const u8 *pmk_r1,
-			       size_t pmk_r1_len,
-			       const u8 *pmk_r1_name, int pairwise,
-			       const struct vlan_description *vlan,
-			       int expires_in, int session_timeout,
-			       const u8 *identity, size_t identity_len,
-			       const u8 *radius_cui, size_t radius_cui_len)
+int wpa_ft_store_pmk_r1(struct wpa_authenticator *wpa_auth,
+			const u8 *spa, const u8 *pmk_r1,
+			size_t pmk_r1_len, const u8 *pmk_r1_name,
+			int pairwise, const struct vlan_description *vlan,
+			int expires_in, int session_timeout, const u8 *identity,
+			size_t identity_len, const u8 *radius_cui,
+			size_t radius_cui_len)
 {
 	struct wpa_ft_pmk_cache *cache = wpa_auth->ft_pmk_cache;
 	int max_expires_in = wpa_auth->conf.r1_max_key_lifetime;
@@ -2026,7 +2025,7 @@ static void wpa_ft_expire_pull(void *eloop_ctx, void *timeout_ctx)
 
 	/* cancel multiple timeouts */
 	eloop_cancel_timeout(wpa_ft_expire_pull, sm, NULL);
-	ft_finish_pull(sm);
+	ft_finish_pull(sm, WLAN_STATUS_SUCCESS);
 }
 
 
@@ -3706,9 +3705,20 @@ static int wpa_ft_local_derive_pmk_r1(struct wpa_authenticator *wpa_auth,
 	return 0;
 }
 
+static int wpa_auth_ft_set_pending_req_ies(struct wpa_state_machine *sm,
+					   const u8 *ies, size_t ies_len)
+{
+	wpabuf_free(sm->ft_pending_req_ies);
+	sm->ft_pending_req_ies = wpabuf_alloc_copy(ies, ies_len);
+	if (!sm->ft_pending_req_ies)
+		return -1;
+	return 0;
+}
+
 static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 				   const u8 *ies, size_t ies_len,
-				   u8 **resp_ies, size_t *resp_ies_len)
+				   u8 **resp_ies, size_t *resp_ies_len,
+				   bool deferred_auth_response)
 {
 	struct rsn_mdie *mdie;
 	u8 pmk_r1[PMK_LEN_MAX], pmk_r1_name[WPA_PMK_NAME_LEN];
@@ -3791,6 +3801,15 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 
 	wpa_hexdump(MSG_DEBUG, "FT: Requested PMKR0Name",
 		    parse.rsn_pmkid, WPA_PMK_NAME_LEN);
+
+	if (deferred_auth_response) {
+		if (wpa_auth_ft_set_pending_req_ies(sm, ies, ies_len))
+			retval = WLAN_STATUS_REFUSED_AP_OUT_OF_MEMORY;
+		else
+			/* Pending auth response call from external app */
+			retval = -1;
+		goto out;
+	}
 
 	if (conf->ft_psk_generate_local &&
 	    wpa_key_mgmt_ft_psk(sm->wpa_key_mgmt)) {
@@ -4027,13 +4046,12 @@ out:
 	return retval;
 }
 
-
-void wpa_ft_process_auth(struct wpa_state_machine *sm,
-			 u16 auth_transaction, const u8 *ies, size_t ies_len,
-			 void (*cb)(void *ctx, const u8 *dst,
-				    u16 auth_transaction, u16 status,
-				    const u8 *ies, size_t ies_len),
-			 void *ctx)
+int wpa_ft_process_auth(struct wpa_state_machine *sm,
+			u16 auth_transaction, const u8 *ies, size_t ies_len,
+			void (*cb)(void *ctx, const u8 *dst,
+				   u16 auth_transaction, u16 status,
+				   const u8 *ies, size_t ies_len),
+			void *ctx, bool deferred_auth_response)
 {
 	u16 status;
 	u8 *resp_ies;
@@ -4043,7 +4061,7 @@ void wpa_ft_process_auth(struct wpa_state_machine *sm,
 	if (sm == NULL) {
 		wpa_printf(MSG_DEBUG, "FT: Received authentication frame, but "
 			   "WPA SM not available");
-		return;
+		return -1;
 	}
 
 	sm->ft_over_ds_ml = false;
@@ -4056,10 +4074,11 @@ void wpa_ft_process_auth(struct wpa_state_machine *sm,
 	sm->ft_pending_auth_transaction = auth_transaction;
 	sm->ft_pending_pull_left_retries = sm->wpa_auth->conf.rkh_pull_retries;
 	res = wpa_ft_process_auth_req(sm, ies, ies_len, &resp_ies,
-				      &resp_ies_len);
-	if (res < 0) {
+				      &resp_ies_len,
+				      deferred_auth_response);
+	if ((res < 0) || deferred_auth_response) {
 		wpa_printf(MSG_DEBUG, "FT: Callback postponed until response is available");
-		return;
+		return (res < 0) ? 0 : res;
 	}
 	status = res;
 
@@ -4070,6 +4089,7 @@ void wpa_ft_process_auth(struct wpa_state_machine *sm,
 	wpa_hexdump(MSG_DEBUG, "FT: Response IEs", resp_ies, resp_ies_len);
 	cb(ctx, sm->addr, auth_transaction + 1, status, resp_ies, resp_ies_len);
 	os_free(resp_ies);
+	return status;
 }
 
 
@@ -4528,7 +4548,7 @@ static int wpa_ft_rrb_rx_request(struct wpa_authenticator *wpa_auth,
 	os_memcpy(sm->ft_pending_current_ap, current_ap, ETH_ALEN);
 	sm->ft_pending_pull_left_retries = sm->wpa_auth->conf.rkh_pull_retries;
 	res = wpa_ft_process_auth_req(sm, body, len, &resp_ies,
-				      &resp_ies_len);
+				      &resp_ies_len, false);
 	if (res < 0) {
 		wpa_printf(MSG_DEBUG, "FT: No immediate response available - wait for pull response");
 		return 0;
@@ -5023,7 +5043,7 @@ out:
 }
 
 
-static void ft_finish_pull(struct wpa_state_machine *sm)
+void ft_finish_pull(struct wpa_state_machine *sm, uint16_t external_app_status)
 {
 	int res;
 	u8 *resp_ies;
@@ -5033,9 +5053,15 @@ static void ft_finish_pull(struct wpa_state_machine *sm)
 	if (!sm->ft_pending_cb || !sm->ft_pending_req_ies)
 		return;
 
-	res = wpa_ft_process_auth_req(sm, wpabuf_head(sm->ft_pending_req_ies),
-				      wpabuf_len(sm->ft_pending_req_ies),
-				      &resp_ies, &resp_ies_len);
+	if (external_app_status) {
+		resp_ies = NULL;
+		resp_ies_len = 0;
+		res = external_app_status;
+	} else {
+		res = wpa_ft_process_auth_req(sm, wpabuf_head(sm->ft_pending_req_ies),
+					      wpabuf_len(sm->ft_pending_req_ies),
+					      &resp_ies, &resp_ies_len, false);
+	}
 	if (res < 0) {
 		/* this loop is broken by ft_pending_pull_left_retries */
 		wpa_printf(MSG_DEBUG,
@@ -5125,7 +5151,7 @@ static int wpa_ft_rrb_rx_resp(struct wpa_authenticator *wpa_auth,
 		eloop_cancel_timeout(wpa_ft_expire_pull, ctx.sm, NULL);
 		if (nak)
 			ctx.sm->ft_pending_pull_left_retries = 0;
-		ft_finish_pull(ctx.sm);
+		ft_finish_pull(ctx.sm, WLAN_STATUS_SUCCESS);
 	}
 
 out:
