@@ -4195,6 +4195,7 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 
 #ifdef CONFIG_QCN_EXTN
 	dcs_enable_init(hapd, iface->conf->conf_extn.dcs_conf.enable_bitmap);
+	hostapd_set_he_mcs_12_13_cap_extn(hapd);
 #endif
 	/*
 	 * WPS UPnP module can be initialized only when the "upnp_iface" is up.

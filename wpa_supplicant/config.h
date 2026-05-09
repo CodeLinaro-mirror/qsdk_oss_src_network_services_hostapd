@@ -1929,6 +1929,14 @@ struct wpa_config {
 	int pr_preferred_role;
 
  #ifdef CONFIG_QCN_EXTN
+
+	/*
+	 * conf_extn - QCN extension configuration parameters.
+	 * This structure is populated during config parsing and carries
+	 * vendor-specific configuration parameters.
+	 */
+	struct wpa_config_extn conf_extn;
+
 	/* "athnewind" in config: Independent Repeater enable/disable flag
 	 *
 	 * Controls whether AP VAPs are brought up independently of STA VAPs.

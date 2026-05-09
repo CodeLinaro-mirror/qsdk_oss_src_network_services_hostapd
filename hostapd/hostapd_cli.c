@@ -1269,6 +1269,9 @@ static char ** hostapd_complete_set(const char *str, int pos)
 		"mbo_assoc_disallow", "mbo_trans_reason", "mbo_assoc_retry",
 #endif /* CONFIG_MBO */
 		"deny_mac_file", "accept_mac_file",
+#ifdef CONFIG_QCN_EXTN
+		HOSTAPD_CLI_CMD_FIELDS_EXTN
+#endif /* CONFIG_QCN_EXTN */
 	};
 	int i, num_fields = ARRAY_SIZE(fields);
 
@@ -1314,6 +1317,9 @@ static char ** hostapd_complete_get(const char *str, int pos)
 	int arg = get_cmd_arg_num(str, pos);
 	const char *fields[] = {
 		"version", "tls_library",
+#ifdef CONFIG_QCN_EXTN
+		HOSTAPD_CLI_CMD_FIELDS_EXTN
+#endif /* CONFIG_QCN_EXTN */
 	};
 	int i, num_fields = ARRAY_SIZE(fields);
 
