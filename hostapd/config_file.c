@@ -3229,6 +3229,11 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->acs_exclude_6ghz_non_psc = atoi(pos);
 	} else if (os_strcmp(buf, "enable_background_radar") == 0) {
 		conf->enable_background_radar = atoi(pos);
+	} else if (os_strcmp(buf, "bgcac_en") == 0) {
+		conf->bgcac_en = atoi(pos);
+		/* bgcac_en=1 also implies enable_background_radar */
+		if (conf->bgcac_en)
+			conf->enable_background_radar = 1;
 	} else if (os_strcmp(buf, "min_tx_power") == 0) {
 		int val = atoi(pos);
 
