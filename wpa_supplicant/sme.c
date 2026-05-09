@@ -2681,6 +2681,9 @@ mscs_fail:
 		wpabuf_free(cip_ie);
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	wpas_add_qcn_ie_assoc_req_extn(wpa_s);
+#endif /* CONFIG_QCN_EXTN */
 	params.bssid = bssid;
 	params.ssid = wpa_s->sme.ssid;
 	params.ssid_len = wpa_s->sme.ssid_len;

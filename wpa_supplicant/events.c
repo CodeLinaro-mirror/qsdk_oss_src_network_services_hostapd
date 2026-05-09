@@ -3679,11 +3679,18 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 
 		multi_ap_process_assoc_resp(wpa_s, data->assoc_info.resp_ies,
 					    data->assoc_info.resp_ies_len);
+#ifdef CONFIG_QCN_EXTN
+		wpas_drv_set_peer_he_mcs_12_13_cap_extn(wpa_s,
+							data->assoc_info.freq,
+							data->assoc_info.resp_ies,
+							data->assoc_info.resp_ies_len);
+#endif /* CONFIG_QCN_EXTN */
 	}
 	if (data->assoc_info.beacon_ies)
 		wpa_hexdump(MSG_DEBUG, "beacon_ies",
 			    data->assoc_info.beacon_ies,
 			    data->assoc_info.beacon_ies_len);
+
 	if (data->assoc_info.freq)
 		wpa_dbg(wpa_s, MSG_DEBUG, "freq=%u MHz",
 			data->assoc_info.freq);
