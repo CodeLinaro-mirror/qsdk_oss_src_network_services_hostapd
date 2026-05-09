@@ -1888,4 +1888,48 @@ int dfs_update_puncture_source(struct hostapd_iface *iface,
 			       u16 new_punct_bitmap,
 			       enum dfs_chan_puncture_source source);
 
+/**
+ * dfs_is_puncture_bitmap_bit_user() - Check whether a puncture bit is
+ *                                     user-punctured
+ * @iface: Pointer to hostapd interface
+ * @bit: 20 MHz subchannel bit position
+ *
+ * Return: 1 if the bit maps to a user-punctured channel, 0 otherwise.
+ */
+int dfs_is_puncture_bitmap_bit_user(struct hostapd_iface *iface,
+				    int bit);
+
+/**
+ * dfs_is_puncture_bitmap_bit_radar() - Check whether a puncture bit is
+ *                                      radar-punctured
+ * @iface: Pointer to hostapd interface
+ * @bit: 20 MHz subchannel bit position
+ *
+ * Return: 1 if the bit maps to a radar-punctured channel, 0 otherwise.
+ */
+int dfs_is_puncture_bitmap_bit_radar(struct hostapd_iface *iface,
+				     int bit);
+
+/**
+ * dfs_filter_punc_bitmap_by_src() - Filter bitmap by puncture source
+ * @iface: Pointer to hostapd interface
+ * @punct_bitmap: Puncture bitmap to filter
+ * @source: Puncture source to match
+ *
+ * Return: Bitmap containing only bits that map to channels with @source.
+ */
+u16 dfs_filter_punc_bitmap_by_src(struct hostapd_iface *iface,
+				  u16 punct_bitmap,
+				  enum dfs_chan_puncture_source source);
+
+/**
+ * dfs_reset_punc_bitmap_src() - Reset puncture source for bitmap
+ * @iface: Pointer to hostapd interface
+ * @punct_bitmap: Puncture bitmap whose bits should be reset
+ *
+ * Reset the puncture source of channels mapped by set bits in @punct_bitmap
+ * to %HOSTAPD_CHAN_PUNC_NONE.
+ */
+void dfs_reset_punc_bitmap_src(struct hostapd_iface *iface,
+			       u16 punct_bitmap);
 #endif /* HOSTAPD_H */
