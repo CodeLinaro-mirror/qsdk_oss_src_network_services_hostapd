@@ -1179,6 +1179,12 @@ int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 				oper_centr_freq_seg1_idx, punct_bitmap)) {
 		return 0;
 	}
+
+	if (!hostapd_send_rcsa_extn(iface, channel, freq, secondary_channel,
+				    current_vht_oper_chwidth,
+				    oper_centr_freq_seg0_idx,
+				    oper_centr_freq_seg1_idx, punct_bitmap))
+		return 0;
 #endif
 
 	wpa_printf(MSG_DEBUG, "DFS will switch to a new channel %d", channel);

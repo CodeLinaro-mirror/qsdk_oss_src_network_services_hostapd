@@ -6005,6 +6005,7 @@ static const struct global_parse_data global_fields[] = {
 	{ INT_KEY_RANGE("rptr_mgr_mode", rptr_mgr_comm_mode, 0, 2), 1 },
 	{ INT(channel), 0 },
 	{ INT_KEY_RANGE("uplink_csa", uplink_csa, 0, 1), 0 },
+	{ INT_KEY_RANGE("rcsa", rcsa, 0, 1), 0 },
 	WPA_GLOBAL_FIELDS_EXTN
 #endif /* CONFIG_QCN_EXTN */
 	/* NOTE: When adding new parameters here, add_interface() in
