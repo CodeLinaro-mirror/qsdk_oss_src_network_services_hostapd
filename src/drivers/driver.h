@@ -7871,6 +7871,7 @@ union wpa_event_data {
 	 * @cf2: Center frequency 2
 	 * @link_id: Link ID of the MLO link
 	 * @punct_bitmap: Puncturing bitmap
+	 * @mcst: Max Channel Switch Time
 	 */
 	struct ch_switch {
 		int count;
@@ -7885,6 +7886,7 @@ union wpa_event_data {
 		u32 ch_width_device;
 		u32 cf_device;
 		u8 power_mode_6ghz;
+		u32 mcst;
 	} ch_switch;
 
 	/**
