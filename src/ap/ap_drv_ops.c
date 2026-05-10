@@ -1304,6 +1304,10 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 	struct hostapd_freq_params data;
 	int res;
 	struct hostapd_hw_modes *cmode = iface->current_mode;
+#ifdef CONFIG_QCN_EXTN
+	bool is_dfs = false;
+	enum chan_width chanwidth;
+#endif
 
 	if (!hapd->driver || !hapd->driver->start_dfs_cac || !cmode)
 		return 0;
@@ -1334,21 +1338,44 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 	data.radar_background = radar_background;
 
 #ifdef CONFIG_QCN_EXTN
+	chanwidth = hostapd_oper_chwidth_to_chanwidth_extn(oper_chwidth,
+							   sec_channel_offset);
+	is_dfs = ieee80211_is_dfs(freq, NULL, 0);
+	if (!is_dfs && channel_width_to_int(chanwidth) == 160)
+		is_dfs = ieee80211_is_dfs(freq + 80, NULL, 0);
+
 	if (iface->conf->conf_extn.ind_rptr) {
 		data.skip_cac = ((iface->iface_extn.csa_bitmap ||
 				 iface->iface_extn.dfs_available_from_sta) &&
 				 iface->conf->conf_extn.skip_cac);
+		if (!data.skip_cac &&
+		    hostapd_mcst_allows_skip_cac_extn(iface->mcst,
+						      iface->conf->beacon_int,
+						      is_dfs)) {
+			/* Skip CAC for DFS based on MCST - PreCAC case */
+			data.skip_cac = 1;
+		}
+
 		wpa_printf(MSG_INFO, "Ind Rptr: skip_cac = %d csa_bitmap = %d"
-			   " dfs_available_from_sta = %d conf_extn.skip_cac = %d",
+			   " dfs_available_from_sta = %d conf_extn.skip_cac = %d mcst = %u",
 			   data.skip_cac, iface->iface_extn.csa_bitmap,
 			   iface->iface_extn.dfs_available_from_sta,
-			   iface->conf->conf_extn.skip_cac);
+			   iface->conf->conf_extn.skip_cac,
+			   iface->mcst);
 	} else {
 		data.skip_cac = (iface->cac_type != HAPD_CAC_COMPLETE_AFTER_CSA) &&
 				 iface->conf->conf_extn.skip_cac;
+		if (!data.skip_cac &&
+		    hostapd_mcst_allows_skip_cac_extn(iface->mcst,
+						      iface->conf->beacon_int,
+						      is_dfs)) {
+			/* Skip CAC for DFS based on MCST - PreCAC case */
+			data.skip_cac = 1;
+		}
+
 		wpa_printf(MSG_INFO, "Dep Rptr: skip_cac = %d cac_type = %d"
-			   " conf_extn.skip_cac = %d", data.skip_cac, iface->cac_type,
-			   iface->conf->conf_extn.skip_cac);
+			   " conf_extn.skip_cac = %d mcst = %u", data.skip_cac,
+			   iface->cac_type, iface->conf->conf_extn.skip_cac, iface->mcst);
 	}
 #endif
 

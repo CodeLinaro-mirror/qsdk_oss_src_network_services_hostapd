@@ -857,6 +857,9 @@ struct hostapd_iface {
 	int num_hw_features;
 	struct hostapd_hw_modes *current_mode;
 	int freq;
+#ifdef CONFIG_QCN_EXTN
+	u32 mcst;
+#endif
 
 	bool radar_detected;
 	enum cac_completion_type cac_type;

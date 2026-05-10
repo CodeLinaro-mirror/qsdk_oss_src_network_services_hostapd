@@ -920,8 +920,12 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 		csa.freq_params.punct_bitmap = intval;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "power_mode", NULL))) && !errno)
 		csa.power_mode = intval;
-
 #ifdef CONFIG_QCN_EXTN
+	if ((intval = ucv_int64_get(ucv_object_get(info, "mcst", NULL))) && !errno)
+		csa.mcst = intval;
+	csa.freq_params.mcst = csa.mcst;
+	iface->mcst = csa.mcst;
+
 	is_dfs = ucv_boolean_get(ucv_object_get(info, "is_dfs", NULL));
 	wpa_state_val = ucv_object_get(info, "wpa_state", NULL);
 	wpa_state = ucv_string_get(wpa_state_val);
