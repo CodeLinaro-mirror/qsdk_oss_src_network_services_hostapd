@@ -2306,6 +2306,96 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
 	return 0;
 }
 
+static void hostapd_inherit_mbssid_cmn_params(struct hostapd_data *dest_hapd,
+					      struct hostapd_data *src_hapd)
+{
+	dest_hapd->iconf->beacon_int = src_hapd->iconf->beacon_int;
+	dest_hapd->conf->vht_capab = src_hapd->conf->vht_capab;
+	dest_hapd->conf->vht_mcs_nss_set = src_hapd->conf->vht_mcs_nss_set;
+	dest_hapd->conf->he_phy_capab.he_su_beamformer =
+		src_hapd->conf->he_phy_capab.he_su_beamformer;
+	dest_hapd->conf->he_phy_capab.he_su_beamformee =
+		src_hapd->conf->he_phy_capab.he_su_beamformee;
+	dest_hapd->conf->he_phy_capab.he_dl_mu_ofdma =
+		src_hapd->conf->he_phy_capab.he_dl_mu_ofdma;
+	dest_hapd->conf->he_phy_capab.he_dl_mu_ofdma_bfer =
+		src_hapd->conf->he_phy_capab.he_dl_mu_ofdma_bfer;
+	dest_hapd->conf->he_phy_capab.he_ul_mu_ofdma =
+		src_hapd->conf->he_phy_capab.he_ul_mu_ofdma;
+	dest_hapd->conf->he_phy_capab.he_mu_beamformer =
+		src_hapd->conf->he_phy_capab.he_mu_beamformer;
+	dest_hapd->conf->he_phy_capab.he_ul_mumimo =
+		src_hapd->conf->he_phy_capab.he_ul_mumimo;
+	dest_hapd->iconf->he_op.he_basic_mcs_nss_set =
+		src_hapd->iconf->he_op.he_basic_mcs_nss_set;
+	dest_hapd->iconf->he_op.he_rts_threshold =
+		src_hapd->iconf->he_op.he_rts_threshold;
+	dest_hapd->conf->spp_amsdu = src_hapd->conf->spp_amsdu;
+	dest_hapd->iconf->he_op.he_twt_responder =
+		src_hapd->iconf->he_op.he_twt_responder;
+	dest_hapd->iconf->he_6ghz_max_ampdu_len_exp =
+		src_hapd->iconf->he_6ghz_max_ampdu_len_exp;
+	dest_hapd->iconf->he_op.he_er_su_disable =
+		src_hapd->iconf->he_op.he_er_su_disable;
+	dest_hapd->conf->eht_phy_capab.su_beamformer =
+		src_hapd->conf->eht_phy_capab.su_beamformer;
+	dest_hapd->conf->eht_phy_capab.su_beamformee =
+		src_hapd->conf->eht_phy_capab.su_beamformee;
+	dest_hapd->conf->eht_phy_capab.mu_beamformer =
+		src_hapd->conf->eht_phy_capab.mu_beamformer;
+	dest_hapd->conf->eht_phy_capab.dl_mu_ofdma =
+		src_hapd->conf->eht_phy_capab.dl_mu_ofdma;
+	dest_hapd->conf->eht_phy_capab.ul_mu_ofdma =
+		src_hapd->conf->eht_phy_capab.ul_mu_ofdma;
+	dest_hapd->conf->eht_phy_capab.dl_ofdma_mumimo =
+		src_hapd->conf->eht_phy_capab.dl_ofdma_mumimo;
+	dest_hapd->conf->eht_phy_capab.ul_ofdma_mumimo =
+		src_hapd->conf->eht_phy_capab.ul_ofdma_mumimo;
+	dest_hapd->conf->eht_phy_capab.eht_bfme_ss_80 =
+		src_hapd->conf->eht_phy_capab.eht_bfme_ss_80;
+	dest_hapd->conf->eht_phy_capab.eht_bfme_ss_160 =
+		src_hapd->conf->eht_phy_capab.eht_bfme_ss_160;
+	dest_hapd->conf->eht_phy_capab.eht_bfme_ss_320 =
+		src_hapd->conf->eht_phy_capab.eht_bfme_ss_320;
+	dest_hapd->conf->eht_ltf = src_hapd->conf->eht_ltf;
+	dest_hapd->iconf->enable_mcs15 = src_hapd->iconf->enable_mcs15;
+	dest_hapd->iconf->ecsa_ie_only = src_hapd->iconf->ecsa_ie_only;
+
+	wpa_printf(MSG_DEBUG,
+		   "MBSSID common parameters are successfully inherited for %s from %s",
+		   dest_hapd->conf->iface, src_hapd->conf->iface);
+}
+
+static void hostapd_sync_mbssid_cmn_params(struct hostapd_data *hapd)
+{
+	struct hostapd_data *bss, *tx_hapd;
+	size_t num_bss, i;
+
+	tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
+	if (!tx_hapd)
+		return;
+
+	if (hapd != tx_hapd) {
+		hostapd_inherit_mbssid_cmn_params(hapd, tx_hapd);
+		return;
+	}
+
+	num_bss = hostapd_get_mbssid_max_num_bss(hapd);
+
+	for (i = 0; i < num_bss; i++) {
+		if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
+			bss = hostapd_get_multi_group_bss(tx_hapd->mbssid_group, i);
+		else
+			bss = hapd->iface->bss[i];
+
+		if (!bss || !bss->conf || !bss->started || bss == tx_hapd)
+			continue;
+
+		hostapd_inherit_mbssid_cmn_params(tx_hapd, bss);
+		break;
+	}
+}
+
 /**
  * hostapd_setup_bss - Per-BSS setup (initialization)
  * @hapd: Pointer to BSS data
@@ -2516,6 +2606,9 @@ setup_mld:
 	if (!hapd_reenable_pending(hapd) &&
 	    hostapd_mbssid_setup_bss(hapd))
 		return -1;
+
+	if (hapd->iconf->mbssid)
+		hostapd_sync_mbssid_cmn_params(hapd);
 
 #ifdef CONFIG_QCN_EXTN
 	if (hapd->iconf->mbssid != MBSSID_DISABLED &&
