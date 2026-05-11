@@ -237,6 +237,13 @@ struct sta_info {
 	struct sta_info *sa_query_triggered_sta;
 	bool dscp_reset;
 #endif
+#ifdef CONFIG_IEEE80211BE
+	u16 link_addr_conflict_bitmap; /* bitmap of partner link indices (bit k
+					* set when link k's per-link address
+					* conflicted with an existing MFP STA
+					* during association; re-walk only those
+					* links on SA Query timeout comeback) */
+#endif
 	bool ft_re_add;
 
 	u16 auth_alg;
