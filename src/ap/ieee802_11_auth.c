@@ -424,14 +424,14 @@ int hostapd_allowed_address(struct hostapd_data *hapd, const u8 *addr,
 		/* No entry in the cache - query external RADIUS server */
 		query = os_zalloc(sizeof(*query));
 		if (!query) {
-			wpa_printf(MSG_ERROR, "malloc for query data failed");
+			wpa_printf(MSG_ERROR, "ACL : malloc for query data failed");
 			return HOSTAPD_ACL_REJECT;
 		}
 		os_get_reltime(&query->timestamp);
 		os_memcpy(query->addr, addr, ETH_ALEN);
 		if (hostapd_radius_acl_query(hapd, addr, query)) {
 			wpa_printf(MSG_DEBUG,
-				   "Failed to send Access-Request for ACL query.");
+				   "ACL : Failed to send Access-Request for ACL query.");
 			hostapd_acl_query_free(query);
 			return HOSTAPD_ACL_REJECT;
 		}
@@ -439,7 +439,7 @@ int hostapd_allowed_address(struct hostapd_data *hapd, const u8 *addr,
 		query->auth_msg = os_memdup(msg, len);
 		if (!query->auth_msg) {
 			wpa_printf(MSG_ERROR,
-				   "Failed to allocate memory for auth frame.");
+				   "ACL : Failed to allocate memory for auth frame.");
 			hostapd_acl_query_free(query);
 			return HOSTAPD_ACL_REJECT;
 		}
@@ -472,7 +472,7 @@ int hostapd_check_ml_acl(struct hostapd_data *hapd, struct sta_info *sta)
 
 	if (!ap_sta_is_mld(hapd, sta)) {
 		if (hostapd_check_acl(hapd, sta->addr, NULL) != HOSTAPD_ACL_ACCEPT) {
-			wpa_printf(MSG_INFO, "STA " MACSTR " not allowed to connect",
+			wpa_printf(MSG_INFO, "ACL : STA " MACSTR " not allowed to connect",
 				   MAC2STR(sta->addr));
 			return HOSTAPD_ACL_REJECT;
 		}
@@ -497,13 +497,13 @@ int hostapd_check_ml_acl(struct hostapd_data *hapd, struct sta_info *sta)
 		if (hapd->conf->macaddr_acl == DENY_WITH_TIMED_ALLOW_WINDOW) {
 			if (acl_res == HOSTAPD_ACL_REJECT) {
 				wpa_printf(MSG_INFO,
-					   "STA " MACSTR " not allowed to connect (timed deny)",
+					   "ACL : STA " MACSTR " not allowed to connect (timed deny)",
 					   MAC2STR(sta->addr));
 				return HOSTAPD_ACL_REJECT;
 			}
 			if (acl_res_linkaddr == HOSTAPD_ACL_REJECT) {
 				wpa_printf(MSG_INFO,
-					   "link addr " MACSTR " not allowed to connect (timed deny)",
+					   "ACL : link addr " MACSTR " not allowed to connect (timed deny)",
 					   MAC2STR(link->peer_addr));
 				return HOSTAPD_ACL_REJECT;
 			}
@@ -518,7 +518,7 @@ int hostapd_check_ml_acl(struct hostapd_data *hapd, struct sta_info *sta)
 						  tmp_hapd->conf->num_deny_mac,
 						  sta->addr, NULL)) {
 				wpa_printf(MSG_INFO,
-					   "STA " MACSTR " in blacklist on link %d",
+					   "ACL : STA " MACSTR " in blacklist on link %d",
 					   MAC2STR(sta->addr), tmp_hapd->mld_link_id);
 				return HOSTAPD_ACL_REJECT;
 			}
@@ -527,13 +527,14 @@ int hostapd_check_ml_acl(struct hostapd_data *hapd, struct sta_info *sta)
 						  tmp_hapd->conf->num_deny_mac,
 						  link->peer_addr, NULL)) {
 				wpa_printf(MSG_INFO,
-					   "link addr " MACSTR " in blacklist on link %d",
+					   "ACL : link addr " MACSTR " in blacklist on link %d",
 					   MAC2STR(link->peer_addr), tmp_hapd->mld_link_id);
 				return HOSTAPD_ACL_REJECT;
 			}
 			/* If either MLD address or link address is in whitelist, mark it */
 			if (acl_res == HOSTAPD_ACL_ACCEPT ||
 			    acl_res_linkaddr == HOSTAPD_ACL_ACCEPT) {
+				wpa_printf(MSG_DEBUG, "ACL : MLD addr or link addr found in whitelist on link %d", tmp_hapd->mld_link_id);
 				accept = 1;
 			}
 			continue;
@@ -541,7 +542,7 @@ int hostapd_check_ml_acl(struct hostapd_data *hapd, struct sta_info *sta)
 
 		if (hapd->conf->macaddr_acl == ACCEPT_UNLESS_DENIED &&
 		    acl_res != HOSTAPD_ACL_ACCEPT) {
-			wpa_printf(MSG_INFO, "STA " MACSTR
+			wpa_printf(MSG_INFO, "ACL : STA " MACSTR
 				   " not allowed to connect",
 				   MAC2STR(sta->addr));
 			return HOSTAPD_ACL_REJECT;
@@ -549,7 +550,7 @@ int hostapd_check_ml_acl(struct hostapd_data *hapd, struct sta_info *sta)
 
 		if (hapd->conf->macaddr_acl == ACCEPT_UNLESS_DENIED &&
 		    acl_res_linkaddr != HOSTAPD_ACL_ACCEPT) {
-			wpa_printf(MSG_INFO, "link addr" MACSTR
+			wpa_printf(MSG_INFO, "ACL : link addr" MACSTR
 				   " not allowed to connect",
 				   MAC2STR(link->peer_addr));
 			return HOSTAPD_ACL_REJECT;
@@ -558,6 +559,7 @@ int hostapd_check_ml_acl(struct hostapd_data *hapd, struct sta_info *sta)
 		if (hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED &&
 		    (acl_res_linkaddr != HOSTAPD_ACL_REJECT ||
 		     acl_res != HOSTAPD_ACL_REJECT)) {
+			wpa_printf(MSG_DEBUG, "ACL : Accepted via link addr or MLD addr on link %d", tmp_hapd->mld_link_id);
 			accept = 1;
 			break;
 		}
@@ -566,7 +568,7 @@ int hostapd_check_ml_acl(struct hostapd_data *hapd, struct sta_info *sta)
 
 	if ((hapd->conf->macaddr_acl == ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST ||
 	     hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED) && !accept) {
-		wpa_printf(MSG_INFO, "STA " MACSTR " not accepted on any link",
+		wpa_printf(MSG_INFO, "ACL : STA " MACSTR " not accepted on any link",
 			   MAC2STR(sta->addr));
 		return HOSTAPD_ACL_REJECT;
 	}
