@@ -44,6 +44,8 @@
 #define IEEE80211_MAX_MGMT_LEN_NO_FCS 2300
 #endif
 
+#define  HOSTAPD_INVALID_RSSI -128
+
 static struct hapd_interfaces *hostapd_if_ifaces;
 
 /*
@@ -1430,6 +1432,250 @@ int hostapd_if_get_gtk(char *ifname, int link_id, int *gtk_idx,
 }
 
 /*
+ * Helper function to populate radio information structure
+ */
+static void populate_radio_info(struct hostapd_if_radio_info *radio, struct hostapd_data *hapd,
+				struct sta_info *sta, const struct hostap_sta_driver_data *data,
+				int driver_data_valid, bool is_mld)
+{
+	int freq = hapd->iface->freq;
+	enum hostapd_if_band band;
+
+	/* Populate frequency and channel */
+	radio->freq = freq;
+	radio->channel = hapd->iconf->channel;
+
+	/* Determine band */
+	if (hapd->iface->current_mode) {
+		switch (hapd->iface->current_mode->mode) {
+		case HOSTAPD_MODE_IEEE80211B:
+		case HOSTAPD_MODE_IEEE80211G:
+			band = HOSTAPD_IF_BAND_2GHZ;
+			break;
+		case HOSTAPD_MODE_IEEE80211A:
+			if (is_6ghz_freq(freq))
+				band = HOSTAPD_IF_BAND_6GHZ;
+			else
+				band = HOSTAPD_IF_BAND_5GHZ;
+			break;
+		case HOSTAPD_MODE_IEEE80211AD:
+			band = HOSTAPD_IF_BAND_60GHZ;
+			break;
+		default:
+			band = HOSTAPD_IF_BAND_UNKNOWN;
+			return;
+		}
+	} else {
+		band = HOSTAPD_IF_BAND_UNKNOWN;
+	}
+	radio->band = band;
+
+	/* Populate signal strength from driver data */
+	radio->rssi = driver_data_valid ? (int8_t)data->signal : HOSTAPD_INVALID_RSSI;
+
+	/* Compute capability flags */
+	radio->cap_flags = 0;
+
+	if (hapd->iface->current_mode) {
+
+		/* Check OFDM support */
+		if (hapd->iface->current_mode->mode != HOSTAPD_MODE_IEEE80211B)
+			radio->cap_flags |= HOSTAPD_IF_STA_CAP_OFDM;
+
+		/* Check 11g support (2.4 GHz OFDM) */
+		if (hapd->iface->current_mode->mode == HOSTAPD_MODE_IEEE80211G)
+			radio->cap_flags |= HOSTAPD_IF_STA_CAP_11G;
+	}
+
+	/* Check HT support */
+	if (sta->flags & WLAN_STA_HT) {
+		radio->cap_flags |= HOSTAPD_IF_STA_CAP_HT | HOSTAPD_IF_STA_CAP_11N;
+	}
+
+	/* Check HT40 support */
+	if (sta->ht_capabilities &&
+	    (sta->ht_capabilities->ht_capabilities_info &
+	     HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET))
+		radio->cap_flags |= HOSTAPD_IF_STA_CAP_HT40;
+
+	/* Check VHT support */
+	if (sta->flags & WLAN_STA_VHT)
+		radio->cap_flags |= HOSTAPD_IF_STA_CAP_VHT;
+
+	/* Check HE support */
+	if (sta->flags & WLAN_STA_HE)
+		radio->cap_flags |= HOSTAPD_IF_STA_CAP_HE;
+
+	/* Check EHT support */
+	if (sta->flags & WLAN_STA_EHT)
+		radio->cap_flags |= HOSTAPD_IF_STA_CAP_EHT;
+
+	/* Check 6 GHz support */
+	if (sta->flags & WLAN_STA_6GHZ)
+		radio->cap_flags |= HOSTAPD_IF_STA_CAP_6GHZ;
+
+	/* Check MLD support */
+	if (is_mld)
+		radio->cap_flags |= HOSTAPD_IF_STA_CAP_MLD;
+}
+
+
+/*
+ * Get station information
+ * Use MLD mac of STA in case of 11be STA
+ */
+int hostapd_if_get_sta_info(char *ifname, uint8_t *sta_mac, struct hostapd_if_sta_info *info)
+{
+	struct hostapd_data *hapd;
+	struct sta_info *sta;
+	struct hostap_sta_driver_data data;
+	int ret;
+
+	if (!ifname || !sta_mac || !info) {
+		wpa_printf(MSG_ERROR,
+			   "%s: ERROR! NULL parameters ifname=%p sta_mac=%p"
+			   " info=%p", __func__, ifname, sta_mac, info);
+		return -EINVAL;
+	}
+
+	wpa_printf(MSG_DEBUG, "%s: %s, " MACSTR, __func__, ifname, MAC2STR(sta_mac));
+
+	/* Initialize output structure */
+	os_memset(info, 0, sizeof(*info));
+
+	/* Find the station */
+	sta = __get_sta(ifname, sta_mac, -1, false, &hapd);
+	if (!sta) {
+		wpa_printf(MSG_ERROR,
+			   "%s: STA " MACSTR " not found on %s",
+			   __func__, MAC2STR(sta_mac), ifname);
+		return -ENOENT;
+	}
+
+	/* Get driver data (RSSI, rates, etc.) */
+	os_memset(&data, 0, sizeof(data));
+	ret = hostapd_drv_read_sta_data(hapd, &data, sta->addr);
+	if (ret < 0) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: Failed to read driver data for " MACSTR,
+			   __func__, MAC2STR(sta->addr));
+		/* Continue anyway - we can still populate from sta_info */
+	}
+
+	info->ht_caps_len = 0;
+
+	/* Copy HT capabilities */
+	if (sta->ht_capabilities) {
+		info->ht_caps_len = sizeof(struct ieee80211_ht_capabilities);
+		if (info->ht_caps_len > HOSTAPD_IF_HT_CAP_MAX_LEN)
+			info->ht_caps_len = HOSTAPD_IF_HT_CAP_MAX_LEN;
+		os_memcpy(info->ht_caps, sta->ht_capabilities,
+			  info->ht_caps_len);
+	} else {
+	}
+
+	info->vht_caps_len = 0;
+
+	/* Copy VHT capabilities */
+	if (sta->vht_capabilities) {
+		info->vht_caps_len = sizeof(struct ieee80211_vht_capabilities);
+		if (info->vht_caps_len > HOSTAPD_IF_VHT_CAP_MAX_LEN)
+			info->vht_caps_len = HOSTAPD_IF_VHT_CAP_MAX_LEN;
+		os_memcpy(info->vht_caps, sta->vht_capabilities, info->vht_caps_len);
+	}
+
+	info->he_caps_len = 0;
+
+	/* Copy HE capabilities */
+	if (sta->he_capab && sta->he_capab_len > 0) {
+		info->he_caps_len = sta->he_capab_len;
+		if (info->he_caps_len > HOSTAPD_IF_HE_CAP_MAX_LEN)
+			info->he_caps_len = HOSTAPD_IF_HE_CAP_MAX_LEN;
+		os_memcpy(info->he_caps, sta->he_capab, info->he_caps_len);
+	}
+
+	info->eht_caps_len = 0;
+
+	/* Copy EHT capabilities */
+	if (sta->eht_capab && sta->eht_capab_len > 0) {
+		info->eht_caps_len = sta->eht_capab_len;
+		if (info->eht_caps_len > HOSTAPD_IF_EHT_CAP_MAX_LEN)
+			info->eht_caps_len = HOSTAPD_IF_EHT_CAP_MAX_LEN;
+		os_memcpy(info->eht_caps, sta->eht_capab, info->eht_caps_len);
+	}
+
+	/* Populate radio/channel/signal information based on MLD status */
+#ifdef CONFIG_IEEE80211BE
+	if (ap_sta_is_mld(hapd, sta)) {
+		int i;
+
+		/* MLD station: populate per-link information */
+		info->is_mld_sta = true;
+		os_memcpy(info->u.mld_info.mld_addr,
+			  sta->mld_info.common_info.mld_addr, ETH_ALEN);
+		info->u.mld_info.eml_capa = sta->mld_info.common_info.eml_capa;
+		info->u.mld_info.mld_capa = sta->mld_info.common_info.mld_capa;
+
+		/* Copy per-link information including radio/signal/cap_flags */
+		info->u.mld_info.num_links = 0;
+		int max_links = (MAX_NUM_MLD_LINKS < MAX_MLO_LINKS) ? MAX_NUM_MLD_LINKS : MAX_MLO_LINKS;
+		for (i = 0; i < max_links; i++) {
+			struct hostapd_data *link_hapd;
+
+			if (!sta->mld_info.links[i].valid)
+				continue;
+
+			/* Get link-specific BSS */
+			link_hapd = hostapd_mld_get_link_bss(hapd, i);
+			if (!link_hapd) {
+				wpa_printf(MSG_WARNING,
+					   "%s: No BSS found for link_id %d, "
+					   "skipping", __func__, i);
+				continue;
+			}
+
+			/*
+			 * Now populate the link information at index i
+			 * (which is the link_id)
+			 */
+			os_memcpy(info->u.mld_info.links[i].local_addr,
+				  sta->mld_info.links[i].local_addr, ETH_ALEN);
+			os_memcpy(info->u.mld_info.links[i].peer_addr,
+				  sta->mld_info.links[i].peer_addr, ETH_ALEN);
+
+			/* Populate radio info for this link */
+			populate_radio_info(&info->u.mld_info.links[i].radio, link_hapd, sta, &data,
+					    (ret == 0), true);
+
+			/*
+			 * Mark link as valid only after successful population
+			 */
+			info->u.mld_info.links[i].valid = true;
+			info->u.mld_info.num_links++;
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "%s: Successfully retrieved MLD info for " MACSTR " (num_links=%d)",
+			   __func__, MAC2STR(sta_mac), info->u.mld_info.num_links);
+	} else
+#endif /* CONFIG_IEEE80211BE */
+	{
+		/* Non-MLD station: populate single-link information */
+		populate_radio_info(&info->u.non_mld, hapd, sta, &data, (ret == 0), false);
+
+		wpa_printf(MSG_DEBUG,
+			   "%s: Successfully retrieved non-MLD info for " MACSTR
+			   " (freq=%d, band=%d, rssi=%d, cap_flags=0x%x)",
+			   __func__, MAC2STR(sta_mac), info->u.non_mld.freq,
+			   info->u.non_mld.band, info->u.non_mld.rssi,
+			   info->u.non_mld.cap_flags);
+	}
+
+	return 0;
+}
+
+
+/*
  * ASYNC set hooks: route plugin requests to WPA authenticator
  */
 /*
@@ -1726,6 +1972,7 @@ void hostapd_plugin_register(struct hostapd_external_app_object *plugin)
 	plugin->get_pmk = hostapd_if_get_pmk;
 	plugin->get_ptk = hostapd_if_get_ptk;
 	plugin->get_gtk = hostapd_if_get_gtk;
+	plugin->get_sta_info = hostapd_if_get_sta_info;
 
 	/*
 	 * ASYNC southbound operations wired to async serializers
