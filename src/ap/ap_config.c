@@ -65,6 +65,9 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 		{ aCWmin - 2, aCWmin - 1, 2, 1504 / 32, 0 };
 
 	dl_list_init(&bss->anqp_elem);
+#if CONFIG_MBO
+	bss->oce_tx_power = -128; /* -128 = not set, use regulatory max */
+#endif
 
 	bss->logger_syslog_level = HOSTAPD_LEVEL_INFO;
 	bss->logger_stdout_level = HOSTAPD_LEVEL_INFO;
