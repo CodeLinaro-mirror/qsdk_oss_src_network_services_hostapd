@@ -879,6 +879,7 @@ struct hostapd_bss_config {
 	bool oce_ess_report_enabled;
 	int oce_ess_edge;
 	int oce_ess_rssi_threshold;
+	int oce_tx_power; /* -128 = use regulatory max */
 	/* OCE Reduced WAN Metrics (Attr 103): 0-15 */
 	int oce_dl_availcap;
 	int oce_ul_availcap;

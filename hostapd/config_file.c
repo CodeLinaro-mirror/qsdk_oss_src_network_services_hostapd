@@ -4445,6 +4445,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->oce_ess_rssi_threshold = val;
+	} else if (os_strcmp(buf, "oce_tx_power") == 0) {
+		bss->oce_tx_power = atoi(pos);
 	} else if (os_strcmp(buf, "oce_dl_availcap") == 0) {
 		int val = atoi(pos);
 		if (val < 0 || val > 15) {
