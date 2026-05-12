@@ -1114,7 +1114,10 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
  * option (survey, BSS, spectral, ...). chan->interference factor must be
  * summable (i.e., must be always greater than zero).
  */
-static struct hostapd_channel_data *
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+struct hostapd_channel_data *
 acs_find_ideal_chan(struct hostapd_iface *iface)
 {
 	struct hostapd_channel_data *ideal_chan = NULL,
