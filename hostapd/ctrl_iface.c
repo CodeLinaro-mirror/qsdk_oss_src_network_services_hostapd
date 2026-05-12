@@ -910,7 +910,11 @@ static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211BE
 	/* To find link STA when MLD addr is provided */
 	if (!sta && hapd->conf->mld_ap) {
+#ifdef CONFIG_QCN_EXTN
+		for_each_mld_link_include_repurposed(lhapd, hapd) {
+#else /* CONFIG_QCN_EXTN */
 		for_each_mld_link(lhapd, hapd) {
+#endif /* CONFIG_QCN_EXTN */
 			sta = ap_get_sta(lhapd, addr);
 			if (sta) {
 				assoc_hapd = lhapd;
@@ -1181,7 +1185,11 @@ static int hostapd_ctrl_send_unsolicited_dscp_req(struct hostapd_data *hapd, con
 	sta = ap_get_sta(hapd, addr);
 #ifdef CONFIG_IEEE80211BE
 	if (!sta && hapd->conf->mld_ap) {
+#ifdef CONFIG_QCN_EXTN
+		for_each_mld_link_include_repurposed(lhapd, hapd) {
+#else /* CONFIG_QCN_EXTN */
 		for_each_mld_link(lhapd, hapd) {
+#endif /* CONFIG_QCN_EXTN */
 			sta = ap_get_sta(lhapd, addr);
 			if (sta) {
 				assoc_hapd = lhapd;
