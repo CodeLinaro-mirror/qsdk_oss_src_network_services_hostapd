@@ -1329,6 +1329,14 @@ int hostapd_switch_power_mode(struct hostapd_data *hapd)
 	settings.pwr_mode = hapd->iface->power_mode_6ghz_before_change;
 	settings.link_id = -1;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_validate_current_6ghz_hw_blocklist_extn(
+		    hapd->iface, settings.pwr_mode, "power mode switch")) {
+		hapd->iface->power_mode_6ghz_before_change = -1;
+		return -1;
+	}
+#endif
+
 	for (i = 0; i < hapd->iface->num_bss; i++) {
 #ifdef CONFIG_IEEE80211BE
 		if (hapd->iface->bss[i]->conf->mld_ap)
