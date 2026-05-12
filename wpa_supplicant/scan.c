@@ -4497,13 +4497,6 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 						wpa_bss_get_bssid(wpa_s, data);
 					int partner_freq = ieee80211_chan_to_freq(NULL, ap_info->op_class, ap_info->channel);
 
-					if (pbss &&
-					    !wpa_is_6ghz_power_mode_match(wpa_s, pbss)) {
-						wpa_dbg(wpa_s, MSG_DEBUG,
-							"ML RNR 6 GHz Power Mode mismatch - Ignore");
-						goto cont;
-					}
-
 					hw_idx = wpa_get_hw_idx_by_freq(wpa_s, partner_freq);
 
 					if (hw_idx < 0)
@@ -4519,6 +4512,13 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 						non_assoc_links |= BIT(link_id);
 					} else {
 						wpa_printf(MSG_DEBUG, "ML Partner freq %d is not part of our scan list ignore this link", partner_freq);
+						goto cont;
+					}
+
+					if (pbss &&
+					    !wpa_is_6ghz_power_mode_match(wpa_s, pbss)) {
+						wpa_dbg(wpa_s, MSG_DEBUG,
+							"ML RNR 6 GHz Power Mode mismatch - Ignore");
 						goto cont;
 					}
 
