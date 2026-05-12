@@ -4509,17 +4509,17 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 					if (scan_res == NULL)
 						goto cont;
 
+					if (scan_res && !scan_res->num) {
+						freqs[j] = partner_freq;
+						j++;
+					}
+
 					pbss = wpa_bss_get_bssid(wpa_s, bssid);
 					if (pbss && !wpa_is_6ghz_power_mode_match(wpa_s, pbss)) {
 						wpa_dbg(wpa_s, MSG_DEBUG,
 							"ML RNR 6 GHz Power Mode mismatch - Ignore");
 						non_assoc_links &= ~BIT(link_id);
 						goto cont;
-					}
-
-					if (scan_res && !scan_res->num) {
-						freqs[j] = partner_freq;
-						j++;
 					}
 				}
 
