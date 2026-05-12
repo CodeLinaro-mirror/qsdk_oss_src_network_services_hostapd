@@ -7852,24 +7852,14 @@ int hostapd_force_channel_switch(struct hostapd_iface *iface,
  *            applied once the CAC is aborted
  *
  * Called when a channel switch is requested while a Channel Availability Check
- * (CAC) is already in progress on @iface.  The function inspects every BSS on
- * the interface to determine whether at least one is part of a Multi-Link
- * Operation (MLO) setup:
- *
- * - MLO path (at least one MLD AP found):
- *   Sets the @csa_pending_on_cac_abort flag on the interface and saves the
- *   pending channel-switch settings so that hostapd_deferred_csa_dispatch()
- *   can schedule the Channel Switch Announcement (CSA) once the driver
- *   confirms the CAC abort via the DFS CAC-aborted event or CAC complete via
- *   DFS CAC-finished event (CAC completed in the Kernel before processing the
- *   CAC abort command). For co-located SLO APs, the CSA beacon template
- *   is sent to the firmware together with the MLD AP so that all APs switch
- *   channels simultaneously.
- *
- * - SLO-only path (no MLD AP found):
- *   Bypasses CSA and immediately forces a channel switch on all BSS instances
- *   by calling hostapd_force_channel_switch(), which disables and re-enables
- *   the interface on the new channel.
+ * (CAC) is already in progress on @iface. It sets the
+ * @csa_pending_on_cac_abort flag on the interface and saves the pending
+ * channel-switch settings so that hostapd_deferred_csa_dispatch() can schedule
+ * the Channel Switch Announcement (CSA) once the driver confirms the CAC abort
+ * via the DFS CAC-aborted event or CAC complete via DFS CAC-finished event
+ * (CAC completed in the Kernel before processing the CAC abort command). For
+ * co-located SLO APs, the CSA beacon template is sent to the firmware together
+ * with the MLD AP so that all APs switch channels simultaneously.
  *
  * Return: 0 on success; negative error code on failure.
  */
@@ -7889,10 +7879,8 @@ int hostapd_abort_cac_for_channel_switch(struct hostapd_iface *iface,
 		if (!iface->bss[i]->driver || !iface->bss[i]->drv_priv)
 			continue;
 
-		if (hostapd_is_multiple_link_mld(iface->bss[i])) {
-			hapd = iface->bss[i];
-			break;
-		}
+		hapd = iface->bss[i];
+		break;
 	}
 
 	if (hapd) {
