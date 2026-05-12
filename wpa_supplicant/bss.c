@@ -1396,7 +1396,7 @@ const u8 * wpa_bss_get_ie_beacon(const struct wpa_bss *bss, u8 ie)
  */
 const u8 * wpa_bss_get_ie_pos(const struct wpa_bss *bss, u8 ie, u8 idx)
 {
-        return get_ie_pos(wpa_bss_ie_ptr(bss), bss->ie_len, ie, idx);
+        return get_ie_pos(wpa_bss_ie_ptr(bss), (bss->ie_len + bss->beacon_ie_len) , ie, idx);
 }
 
 /**
