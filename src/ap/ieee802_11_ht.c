@@ -41,10 +41,12 @@ u8 * hostapd_eid_ht_capabilities(struct hostapd_data *hapd, u8 *eid)
 
 	cap = (struct ieee80211_ht_capabilities *) pos;
 	os_memset(cap, 0, sizeof(*cap));
-	cap->ht_capabilities_info = host_to_le16(hapd->iconf->ht_capab);
+	cap->ht_capabilities_info = hapd->iconf->ht_capab;
 #ifdef CONFIG_QCN_EXTN
 	hostapd_repurpose_update_ht_capabilities_extn(hapd, cap);
+	hostapd_override_ht_capabilities_extn(hapd, cap);
 #endif /* CONFIG_QCN_EXTN */
+	cap->ht_capabilities_info = host_to_le16(cap->ht_capabilities_info);
 	cap->a_mpdu_params = hapd->iface->current_mode->a_mpdu_params;
 	os_memcpy(cap->supported_mcs_set, hapd->iface->current_mode->mcs_set,
 		  16);
