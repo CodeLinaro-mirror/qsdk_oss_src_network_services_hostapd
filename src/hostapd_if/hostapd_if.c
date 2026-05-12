@@ -2154,6 +2154,43 @@ void hostapd_if_event_assoc_tx_complete(struct hostapd_data *hapd,
 /*
  * Use MLD mac of STA (in addr parameter) in case of 11be STA
  */
+void hostapd_if_event_dot1x_complete(struct hostapd_data *hapd,
+				     const u8 *addr,
+				     const u8 *identity,
+				     size_t identity_len,
+				     int success)
+{
+	struct hostapd_if_event evt;
+	size_t copy_len = 0;
+
+	if (!hostapd_if_is_event_registered(hapd, HOSTAPD_IF_EVENT_DOT1X_COMPLETE))
+		return;
+
+	os_memset(&evt, 0, sizeof(evt));
+	evt.type = HOSTAPD_IF_EVENT_DOT1X_COMPLETE;
+	os_strlcpy(evt.ifname, hapd->conf->iface, sizeof(evt.ifname));
+	os_memcpy(evt.sta_mac, addr, sizeof(evt.sta_mac));
+
+	if (identity && identity_len) {
+		copy_len = identity_len;
+		if (copy_len > MAX_RADIUS_CUI_LEN)
+			copy_len = MAX_RADIUS_CUI_LEN;
+
+		os_memcpy(evt.data.dot1x_completion.identity, identity,
+			  copy_len);
+	}
+
+	evt.data.dot1x_completion.identity_len = copy_len;
+	evt.data.dot1x_completion.success = success;
+
+	wpa_printf(MSG_MSGDUMP, "%s: %d %s " MACSTR " %d %zu\n", __func__,
+		   __LINE__, hapd->conf->iface, MAC2STR(addr), success, copy_len);
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+}
+
+/*
+ * Use MLD mac of STA (in addr parameter) in case of 11be STA
+ */
 void hostapd_if_event_action_completion(struct hostapd_data *hapd,
 					const u8 *addr)
 {
@@ -2851,3 +2888,6 @@ size_t hostapd_if_assoc_resp_tail_len(struct sta_info *sta, size_t current_len)
 
 	return tail_len;
 }
+
+
+

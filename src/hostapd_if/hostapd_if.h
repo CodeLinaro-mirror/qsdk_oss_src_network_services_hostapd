@@ -136,6 +136,12 @@ void hostapd_if_event_assoc_tx_complete(struct hostapd_data *hapd,
 					const u8 *addr, int ok, uint16_t status,
 					uint16_t aid);
 
+void hostapd_if_event_dot1x_complete(struct hostapd_data *hapd,
+				     const u8 *addr,
+				     const u8 *identity,
+				     size_t identity_len,
+				     int success);
+
 void hostapd_if_event_auth_tx_complete(struct hostapd_data *hapd,
 				       const u8 *addr);
 
