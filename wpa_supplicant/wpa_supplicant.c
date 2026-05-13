@@ -3780,6 +3780,14 @@ bool wpa_is_6ghz_power_mode_match(struct wpa_supplicant *wpa_s,
 
 	wpa_printf(MSG_DEBUG, "AP power type: %d Valid", he_reg_info);
 
+#ifdef CONFIG_QCN_EXTN
+	if (!wpas_is_6ghz_hwbl_link_ok_extn(wpa_s, bss)) {
+		wpa_printf(MSG_DEBUG,
+			   "AP 6 GHz BSS freq %d HW blocklisted", bss->freq);
+		return false;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	return true;
 }
 
