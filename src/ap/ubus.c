@@ -1988,64 +1988,110 @@ int hostapd_ubus_notify_bss_transition_query(
 
 enum {
 	STATUS_STA_STATE,
+	STATUS_STA_IFNAME,
 	__STATUS_MAX,
 };
 
 static const struct blobmsg_policy status_policy[__STATUS_MAX] = {
 	[STATUS_STA_STATE] = { .name = "state", .type = BLOBMSG_TYPE_STRING },
+	[STATUS_STA_IFNAME] = { .name = "ifname", .type = BLOBMSG_TYPE_STRING },
 };
+
+struct hostapd_bhsta_status {
+	char *state;
+	char *ifname;
+};
+
+/**
+ * hostapd_ubus_strdup_attr() - Duplicate ubus string attribute
+ * @attr: ubus blob attribute containing a string
+ *
+ * Read a string value from the ubus blob attribute and return a heap-allocated
+ * copy. Empty strings are treated as absent values. The returned string must be
+ * freed by the caller.
+ *
+ * Return: Duplicated string on success, NULL when the attribute is absent,
+ * empty, or memory allocation fails.
+ */
+static char *hostapd_ubus_strdup_attr(struct blob_attr *attr)
+{
+	const char *value;
+	size_t n;
+	char *copy;
+
+	if (!attr)
+		return NULL;
+
+	value = blobmsg_get_string(attr);
+	if (!value || value[0] == '\0')
+		return NULL;
+
+	n = strlen(value) + 1;
+	copy = malloc(n);
+	if (!copy)
+		return NULL;
+
+	memcpy(copy, value, n);
+	return copy;
+}
 
 static void state_status_cb(struct ubus_request *req, int type, struct blob_attr *msg)
 {
 	struct blob_attr *tb[__STATUS_MAX];
-	char **out_state = (char **)req->priv;
-	size_t n;
-	char *copy = NULL;
+	struct hostapd_bhsta_status *status = req->priv;
 
-	if (out_state)
-		*out_state = NULL;
+	wpa_printf(MSG_DEBUG,
+		   "Backhaul STA status callback: type=%d msg=%s status=%s",
+		   type, msg ? "present" : "NULL",
+		   status ? "present" : "NULL");
 
-	if (!msg)
+	if (status) {
+		status->state = NULL;
+		status->ifname = NULL;
+	}
+
+	if (!msg) {
+		wpa_printf(MSG_INFO, "Backhaul STA status callback: empty response");
 		return;
+	}
 
 	blobmsg_parse(status_policy, __STATUS_MAX, tb, blob_data(msg), blob_len(msg));
 
-	if (!tb[STATUS_STA_STATE])
+	if (!status) {
+		wpa_printf(MSG_ERROR,
+			   "Backhaul STA status callback missing private status");
 		return;
+	}
 
-	const char *state = blobmsg_get_string(tb[STATUS_STA_STATE]);
-
-	if (!state || state[0] == '\0')
-		return;
-
-	wpa_printf(MSG_INFO, "state of station is %s", state);
-
-	n = strlen(state) + 1;
-	copy = (char *)malloc(n);
-
-	if (!copy)
-		return;
-
-	memcpy(copy, state, n);
-	*out_state = copy;
+	status->state = hostapd_ubus_strdup_attr(tb[STATUS_STA_STATE]);
+	status->ifname = hostapd_ubus_strdup_attr(tb[STATUS_STA_IFNAME]);
+	wpa_printf(MSG_INFO, "Backhaul STA status: state=%s ifname=%s",
+		   status->state ? status->state : "NULL",
+		   status->ifname ? status->ifname : "NULL");
 }
 
-char *hostapd_ubus_bhsta_state(struct hostapd_iface *iface)
+static int hostapd_ubus_get_bhsta_status(struct hostapd_iface *iface,
+					 struct hostapd_bhsta_status *status)
 {
 	uint32_t id;
 	int ret = -1;
 	int hw_idx = 0;
-	char *state = NULL;
-	struct hostapd_data *hapd = iface->bss[0];
+	struct hostapd_data *hapd;
+
+	if (!iface || !status)
+		return -1;
+
+	hapd = iface->bss[0];
+
+	status->state = NULL;
+	status->ifname = NULL;
 
 	if (iface->current_hw_info)
 		hw_idx = iface->current_hw_info->hw_idx;
 
 	ret = ubus_lookup_id(ctx, "wpa_supplicant", &id);
-	if (ret) {
-		wpa_printf(MSG_INFO, "ubus look up failed %d", ret);
-		return NULL;
-	}
+	if (ret)
+		return ret;
 
 	const char *phy = hostapd_drv_get_radio_name(hapd);
 
@@ -2053,18 +2099,39 @@ char *hostapd_ubus_bhsta_state(struct hostapd_iface *iface)
 	blobmsg_add_string(&b, "phy", phy);
 	blobmsg_add_u32(&b, "radio", hw_idx);
 
-	ret = ubus_invoke(ctx, id, "phy_status", b.head, state_status_cb, &state, 3000);
-	if (ret) {
-		wpa_printf(MSG_DEBUG, "phy_status invoke failed %d", ret);
-		return NULL;
-	}
+	ret = ubus_invoke(ctx, id, "phy_status", b.head, state_status_cb, status, 3000);
+	if (ret)
+		return ret;
 
-	if (!state) {
-		wpa_printf(MSG_INFO, "no state received");
-		return NULL;
-	}
+	if (!status->state && !status->ifname)
+		return -1;
 
-	wpa_printf(MSG_INFO, "received state is '%s'", state);
-	return state;
+	return 0;
 }
 
+char *hostapd_ubus_bhsta_state(struct hostapd_iface *iface)
+{
+	struct hostapd_bhsta_status status;
+
+	if (hostapd_ubus_get_bhsta_status(iface, &status))
+		return NULL;
+
+	free(status.ifname);
+	if (!status.state)
+		return NULL;
+
+	return status.state;
+}
+
+char *hostapd_ubus_bhsta_ifname(struct hostapd_iface *iface)
+{
+	struct hostapd_bhsta_status status;
+
+	if (hostapd_ubus_get_bhsta_status(iface, &status))
+		return NULL;
+
+	free(status.state);
+	if (!status.ifname)
+		return NULL;
+	return status.ifname;
+}

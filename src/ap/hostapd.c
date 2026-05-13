@@ -3239,6 +3239,101 @@ static int hostapd_find_random_chan_and_switch(struct hostapd_iface *iface)
 	return 0;
 }
 
+/**
+ * hostapd_is_current_afc_tuple_valid() - Validate current tuple in power mode
+ * @iface: Pointer to hostapd interface data
+ * @power_mode: 6 GHz AP power mode to validate
+ *
+ * Validate the currently operating 6 GHz channel, bandwidth, and puncturing
+ * tuple against the requested AP power mode.
+ *
+ * Return: true when the current tuple is valid, false otherwise.
+ */
+static bool hostapd_is_current_afc_tuple_valid(struct hostapd_iface *iface,
+					       u8 power_mode)
+{
+	enum chan_width ch_width;
+	u8 center_chan_no;
+	u16 center_freq;
+	u16 bw;
+
+	ch_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
+	center_chan_no = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
+	center_freq = ieee80211_chan_to_freq(NULL, iface->conf->op_class,
+					     center_chan_no);
+	bw = channel_width_to_int(ch_width);
+
+	return hostapd_validate_chan_bw_in_pwr_mode(iface, iface->freq,
+						     center_freq, bw,
+						     iface->conf->punct_bitmap,
+						     power_mode);
+}
+
+enum hostapd_afc_power_sync_result
+hostapd_sync_current_afc_power_mode(struct hostapd_iface *iface,
+				    bool ignore_best_mode_config)
+{
+	struct hostapd_data *hapd;
+	u8 best_power_mode;
+	u8 current_power_mode;
+
+	if (!iface || !iface->bss || !iface->bss[0])
+		return HOSTAPD_AFC_PWR_SYNC_ERROR;
+
+	if (!is_6ghz_freq(iface->freq))
+		return HOSTAPD_AFC_PWR_SYNC_NOOP;
+
+	if (!ignore_best_mode_config && !iface->conf->enable_best_power_mode)
+		return HOSTAPD_AFC_PWR_SYNC_NOOP;
+
+	if (iface->state != HAPD_IFACE_ENABLED)
+		return HOSTAPD_AFC_PWR_SYNC_NOOP;
+
+	if (iface->power_mode_6ghz_before_change > -1 ||
+	    hostapd_csa_in_progress(iface))
+		return HOSTAPD_AFC_PWR_SYNC_NOOP;
+
+	hapd = iface->bss[0];
+	current_power_mode = iface->conf->he_6ghz_reg_pwr_type;
+
+	hostapd_apply_6ghz_dynamic_puncturing(iface);
+	best_power_mode = hostapd_get_best_ap_6ghz_power_mode_for_iface(iface);
+	wpa_printf(MSG_INFO,
+		   "AFC repeater power sync: iface=%s freq=%d current=%u best=%u punct=0x%x",
+		   iface->phy, iface->freq, current_power_mode, best_power_mode,
+		   iface->conf->punct_bitmap);
+
+	if (best_power_mode == NL80211_REG_AP_SP &&
+	    hostapd_is_current_afc_tuple_valid(iface, NL80211_REG_AP_SP)) {
+		if (current_power_mode == NL80211_REG_AP_SP)
+			return HOSTAPD_AFC_PWR_SYNC_NOOP;
+
+		wpa_printf(MSG_INFO,
+			   "AFC repeater power sync: switch iface=%s freq=%d mode=%u->%u",
+			   iface->phy, iface->freq, current_power_mode,
+			   NL80211_REG_AP_SP);
+		iface->power_mode_6ghz_before_change = NL80211_REG_AP_SP;
+		if (hostapd_switch_power_mode(hapd)) {
+			wpa_printf(MSG_ERROR,
+				   "AFC repeater power sync: switch failed iface=%s freq=%d mode=%u",
+				   iface->phy, iface->freq, NL80211_REG_AP_SP);
+			return HOSTAPD_AFC_PWR_SYNC_ERROR;
+		}
+
+		return HOSTAPD_AFC_PWR_SYNC_UPDATED;
+	}
+
+	if (!hostapd_is_current_afc_tuple_valid(iface, current_power_mode)) {
+		wpa_printf(MSG_ERROR,
+			   "AFC repeater power sync: current tuple invalid iface=%s freq=%d mode=%u punct=0x%x",
+			   iface->phy, iface->freq, current_power_mode,
+			   iface->conf->punct_bitmap);
+		return HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT;
+	}
+
+	return HOSTAPD_AFC_PWR_SYNC_NOOP;
+}
+
 int hostapd_handle_afc_channel_change(struct hostapd_iface *iface)
 {
 	int ret;
@@ -3259,6 +3354,82 @@ int hostapd_handle_afc_channel_change(struct hostapd_iface *iface)
 	}
 	return 0;
 
+}
+
+bool hostapd_iface_has_connected_backhaul_sta(struct hostapd_iface *iface)
+{
+	if (!iface)
+		return false;
+
+	if (!hostapd_is_backhaul_sta_conn(iface))
+		return false;
+
+	return true;
+}
+
+int hostapd_disconnect_backhaul_sta(struct hostapd_iface *iface)
+{
+	char ctrl_path[128];
+	char reply[32];
+	char *ifname;
+	size_t reply_len;
+	struct wpa_ctrl *ctrl;
+	int ret;
+
+	if (!iface) {
+		wpa_printf(MSG_ERROR, "Backhaul STA disconnect failed: iface is NULL");
+		return -1;
+	}
+
+	ifname = hostapd_ubus_bhsta_ifname(iface);
+	if (!ifname) {
+		wpa_printf(MSG_ERROR,
+			   "Backhaul STA disconnect failed: missing ifname iface=%s",
+			   iface->phy);
+		return -1;
+	}
+
+	ret = os_snprintf(ctrl_path, sizeof(ctrl_path),
+			  "/var/run/wpa_supplicant/%s", ifname);
+	if (os_snprintf_error(sizeof(ctrl_path), ret)) {
+		wpa_printf(MSG_ERROR,
+			   "Backhaul STA disconnect failed: ctrl path too long ifname=%s",
+			   ifname);
+		free(ifname);
+		return -1;
+	}
+
+	ctrl = wpa_ctrl_open(ctrl_path);
+	if (!ctrl) {
+		wpa_printf(MSG_ERROR,
+			   "Backhaul STA disconnect failed: cannot open %s",
+			   ctrl_path);
+		free(ifname);
+		return -1;
+	}
+
+	reply_len = sizeof(reply) - 1;
+	ret = wpa_ctrl_request(ctrl, "DISCONNECT", 10, reply, &reply_len, NULL);
+	wpa_ctrl_close(ctrl);
+	free(ifname);
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR,
+			   "Backhaul STA disconnect failed: control request failed");
+		return -1;
+	}
+
+	reply[reply_len] = '\0';
+	if (os_strncmp(reply, "FAIL", 4) == 0) {
+		wpa_printf(MSG_ERROR,
+			   "Backhaul STA disconnect failed: supplicant rejected request");
+		return -1;
+	}
+
+	if (ret)
+		return ret;
+
+	wpa_printf(MSG_INFO, "Backhaul STA disconnect requested");
+	return 0;
 }
 #endif
 
@@ -3368,12 +3539,72 @@ static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 	return ret;
 }
 
+#ifdef HOSTAPD
+static int
+hostapd_run_pending_repeater_afc_power_sync(struct hostapd_iface *iface,
+					    void *ctx)
+{
+	enum hostapd_afc_power_sync_result sync_result;
+
+	(void) ctx;
+
+	if (!iface || !iface->is_afc_repeater_power_sync_pending)
+		return 0;
+
+	iface->is_afc_repeater_power_sync_pending = false;
+
+	if (!hostapd_iface_has_connected_backhaul_sta(iface)) {
+		wpa_printf(MSG_INFO,
+			   "AFC repeater power sync skipped: backhaul STA not connected iface=%s",
+			   iface->phy);
+		return 0;
+	}
+
+	sync_result = hostapd_sync_current_afc_power_mode(iface, true);
+	switch (sync_result) {
+	case HOSTAPD_AFC_PWR_SYNC_UPDATED:
+		wpa_printf(MSG_INFO,
+			   "AFC repeater power sync complete: update started iface=%s",
+			   iface->phy);
+		break;
+	case HOSTAPD_AFC_PWR_SYNC_NOOP:
+		wpa_printf(MSG_INFO,
+			   "AFC repeater power sync complete: no update needed iface=%s",
+			   iface->phy);
+		break;
+	case HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT:
+		wpa_printf(MSG_ERROR,
+			   "AFC repeater power sync failed: disconnect backhaul STA iface=%s",
+			   iface->phy);
+		if (hostapd_disconnect_backhaul_sta(iface))
+			wpa_printf(MSG_ERROR,
+				   "AFC repeater power sync failed: backhaul disconnect failed iface=%s",
+				   iface->phy);
+		break;
+	case HOSTAPD_AFC_PWR_SYNC_ERROR:
+	default:
+		wpa_printf(MSG_ERROR,
+			   "AFC repeater power sync failed: internal error iface=%s",
+			   iface->phy);
+		break;
+	}
+
+	return 0;
+}
+#endif
+
 void hostapd_channel_list_updated(struct hostapd_iface *iface, int initiator)
 {
 	if (initiator == REGDOM_SET_BY_DRIVER) {
 		hostapd_for_each_interface(iface->interfaces,
 					   hostapd_handle_regchannel_update,
 					   NULL);
+#ifdef HOSTAPD
+		hostapd_for_each_interface
+				(iface->interfaces,
+				 hostapd_run_pending_repeater_afc_power_sync,
+				 NULL);
+#endif
 		return;
 	}
 
@@ -3504,6 +3735,7 @@ static int setup_interface2(struct hostapd_iface *iface)
 #endif
 	iface->wait_channel_update = 0;
 	iface->is_afc_channel_change_pending = false;
+	iface->is_afc_repeater_power_sync_pending = false;
 	iface->is_no_ir = false;
 	iface->power_mode_6ghz_before_change = -1;
 	iface->rnr_psd = CHAN_MIN_TX_POWER;
@@ -4562,6 +4794,7 @@ void hostapd_interface_deinit(struct hostapd_iface *iface)
 	eloop_cancel_timeout(channel_list_update_timeout, iface, NULL);
 	iface->wait_channel_update = 0;
 	iface->is_afc_channel_change_pending = 0;
+	iface->is_afc_repeater_power_sync_pending = 0;
 	iface->power_mode_6ghz_before_change = -1;
 	iface->is_no_ir = false;
 	hostapd_free_afc_data(iface);
@@ -4734,6 +4967,7 @@ struct hostapd_iface * hostapd_alloc_iface(void)
 	dl_list_init(&hapd_iface->sta_seen);
 
 	hapd_iface->is_afc_power_event_received = false;
+	hapd_iface->is_afc_repeater_power_sync_pending = false;
 
 #ifdef CONFIG_QCN_EXTN
 	hostapd_iface_init_extn(hapd_iface);

@@ -2922,6 +2922,7 @@ static void hostapd_event_afc_update_complete(
 {
 	struct afc_sp_reg_info *afc_rsp_info = &afc_info->afc_rsp_info;
 	struct hostapd_iface *iface = NULL;
+	bool is_connected_repeater;
 	int i;
 	const char *phy_name = hostapd_drv_get_radio_name(hapd);
 
@@ -2960,13 +2961,22 @@ static void hostapd_event_afc_update_complete(
 	iface->is_afc_power_event_received = true;
 
 	hapd = iface->bss[0];
+	is_connected_repeater = hostapd_iface_has_connected_backhaul_sta(iface);
+	if (is_connected_repeater) {
+		wpa_printf(MSG_INFO,
+			   "AFC repeater power sync pending: iface=%s freq=%d",
+			   iface->phy, iface->freq);
+		iface->is_afc_repeater_power_sync_pending = true;
+		return;
+	}
+
 	if (hapd->driver && hapd->driver->is_only_afc_power_fetch &&
 	    hapd->drv_priv) {
 		bool is_only_afc_power_fetch =
 			hapd->driver->is_only_afc_power_fetch(hapd->drv_priv);
 
 		if (is_only_afc_power_fetch) {
-			wpa_printf(MSG_DEBUG, "AFC info fetch completed, no channel change requested\n");
+			hostapd_sync_current_afc_power_mode(iface, false);
 			return;
 		}
 	}
@@ -3186,6 +3196,7 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 	/* Clear AFC payload */
 	hostapd_free_afc_data(iface);
 	iface->is_afc_power_event_received = false;
+	iface->is_afc_repeater_power_sync_pending = false;
 	if (!hostapd_drv_is_retail_afc_supported(iface->bss[0])) {
 		wpa_printf(MSG_DEBUG, "AFC payload reset not supported");
 		return;
