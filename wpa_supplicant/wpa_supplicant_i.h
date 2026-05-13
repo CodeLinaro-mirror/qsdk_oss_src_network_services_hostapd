@@ -782,6 +782,9 @@ struct wpa_supplicant {
 		struct wpa_bss *bss;
 		bool disabled;
 		struct wpabuf *ies;
+#ifdef CONFIG_QCN_EXTN
+		unsigned int pending_ch_switch_freq;
+#endif
 	} links[MAX_NUM_MLD_LINKS];
 	u8 *last_con_fail_realm;
 	size_t last_con_fail_realm_len;

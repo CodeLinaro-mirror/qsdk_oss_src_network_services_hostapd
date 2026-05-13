@@ -6895,7 +6895,16 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			data->ch_switch.cf2,
 			data->ch_switch.mcst);
 		if (event == EVENT_LINK_CH_SWITCH_STARTED)
+#ifdef CONFIG_QCN_EXTN
+		{
+			wpa_s->links[data->ch_switch.link_id].pending_ch_switch_freq =
+				data->ch_switch.freq;
+#endif
 			break;
+#ifdef CONFIG_QCN_EXTN
+		} else
+			wpa_s->links[data->ch_switch.link_id].pending_ch_switch_freq = 0;
+#endif
 
 		wpa_s->links[data->ch_switch.link_id].freq =
 			data->ch_switch.freq;
@@ -6926,7 +6935,16 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			data->ch_switch.cf2,
 			data->ch_switch.mcst);
 		if (event == EVENT_CH_SWITCH_STARTED)
+#ifdef CONFIG_QCN_EXTN
+		{
+			wpa_s->links[data->ch_switch.link_id].pending_ch_switch_freq =
+				data->ch_switch.freq;
+#endif
 			break;
+#ifdef CONFIG_QCN_EXTN
+		} else
+			wpa_s->links[data->ch_switch.link_id].pending_ch_switch_freq = 0;
+#endif
 
 		wpa_s->assoc_freq = data->ch_switch.freq;
 		wpa_s->current_ssid->frequency = data->ch_switch.freq;
