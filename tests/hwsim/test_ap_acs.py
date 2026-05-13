@@ -82,6 +82,7 @@ def test_ap_acs(dev, apdev):
     force_prev_ap_on_24g(apdev[0])
     params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
     params['channel'] = '0'
+    params['qacs_enable'] = '0'
     hapd = hostapd.add_ap(apdev[0], params, wait_enabled=False)
     wait_acs(hapd)
 
@@ -96,6 +97,7 @@ def test_ap_acs_chanlist(dev, apdev):
     force_prev_ap_on_24g(apdev[0])
     params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
     params['channel'] = '0'
+    params['qacs_enable'] = '0'
     params['chanlist'] = '1 6 11'
     hapd = hostapd.add_ap(apdev[0], params, wait_enabled=False)
     wait_acs(hapd)
@@ -118,6 +120,7 @@ def run_ap_acs_freqlist(dev, apdev, freqlist):
     force_prev_ap_on_24g(apdev[0])
     params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
     params['channel'] = '0'
+    params['qacs_enable'] = '0'
     params['freqlist'] = ','.join([str(x) for x in freqlist])
     hapd = hostapd.add_ap(apdev[0], params, wait_enabled=False)
     wait_acs(hapd)
@@ -133,6 +136,7 @@ def test_ap_acs_invalid_chanlist(dev, apdev):
     force_prev_ap_on_24g(apdev[0])
     params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
     params['channel'] = '0'
+    params['qacs_enable'] = '0'
     params['chanlist'] = '15-18'
     hapd = hostapd.add_ap(apdev[0], params, no_enable=True)
     res = hapd.request("ENABLE")
@@ -176,6 +180,7 @@ def run_ap_acs_40mhz(dev, apdev, ht_capab, he=False, allow20=False):
     force_prev_ap_on_24g(apdev[0])
     params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
     params['channel'] = '0'
+    params['qacs_enable'] = '0'
     params['ht_capab'] = ht_capab
     if he:
         params['ieee80211ax'] = '1'
@@ -201,6 +206,7 @@ def test_ap_acs_40mhz_minus(dev, apdev):
     force_prev_ap_on_24g(apdev[0])
     params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
     params['channel'] = '0'
+    params['qacs_enable'] = '0'
     params['ht_capab'] = '[HT40-]'
     params['acs_num_scans'] = '1'
     params['chanlist'] = '1 11'
@@ -228,6 +234,7 @@ def test_ap_acs_5ghz(dev, apdev):
         params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
         params['hw_mode'] = 'a'
         params['channel'] = '0'
+        params['qacs_enable'] = '0'
         params['country_code'] = 'US'
         hapd = hostapd.add_ap(apdev[0], params, wait_enabled=False)
         wait_acs(hapd)
@@ -248,6 +255,7 @@ def test_ap_acs_5ghz_40mhz(dev, apdev):
         params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
         params['hw_mode'] = 'a'
         params['channel'] = '0'
+        params['qacs_enable'] = '0'
         params['ht_capab'] = '[HT40+]'
         params['country_code'] = 'US'
         hapd = hostapd.add_ap(apdev[0], params, wait_enabled=False)
@@ -273,6 +281,7 @@ def test_ap_acs_vht(dev, apdev):
         params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
         params['hw_mode'] = 'a'
         params['channel'] = '0'
+        params['qacs_enable'] = '0'
         params['ht_capab'] = '[HT40+]'
         params['country_code'] = 'US'
         params['ieee80211ac'] = '1'
@@ -300,6 +309,7 @@ def test_ap_acs_vht40(dev, apdev):
         params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
         params['hw_mode'] = 'a'
         params['channel'] = '0'
+        params['qacs_enable'] = '0'
         params['ht_capab'] = '[HT40+]'
         params['country_code'] = 'US'
         params['ieee80211ac'] = '1'
@@ -329,6 +339,7 @@ def test_ap_acs_vht80p80(dev, apdev):
         params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
         params['hw_mode'] = 'a'
         params['channel'] = '0'
+        params['qacs_enable'] = '0'
         params['ht_capab'] = '[HT40+]'
         params['country_code'] = 'US'
         params['ieee80211ac'] = '1'
@@ -353,6 +364,7 @@ def test_ap_acs_vht160(dev, apdev):
         params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
         params['hw_mode'] = 'a'
         params['channel'] = '0'
+        params['qacs_enable'] = '0'
         params['ht_capab'] = '[HT40+]'
         params["vht_capab"] = "[VHT160]"
         params['country_code'] = 'ZA'
@@ -385,6 +397,7 @@ def test_ap_acs_vht160_scan_disable(dev, apdev):
     params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
     params['hw_mode'] = 'a'
     params['channel'] = '0'
+    params['qacs_enable'] = '0'
     params['ht_capab'] = '[HT40+]'
     params['country_code'] = 'ZA'
     params['ieee80211ac'] = '1'
@@ -401,6 +414,7 @@ def test_ap_acs_bias(dev, apdev):
     force_prev_ap_on_24g(apdev[0])
     params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
     params['channel'] = '0'
+    params['qacs_enable'] = '0'
     params['acs_chan_bias'] = '1:0.8 3:1.2 6:0.7 11:0.8'
     hapd = hostapd.add_ap(apdev[0], params, wait_enabled=False)
     wait_acs(hapd)
@@ -416,6 +430,7 @@ def test_ap_acs_survey(dev, apdev):
     force_prev_ap_on_24g(apdev[0])
     params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
     params['channel'] = 'acs_survey'
+    params['qacs_enable'] = '0'
     params['acs_num_scans'] = '1'
     hapd = hostapd.add_ap(apdev[0], params, wait_enabled=False)
     wait_acs(hapd)
@@ -432,6 +447,7 @@ def test_ap_acs_errors(dev, apdev):
     force_prev_ap_on_24g(apdev[0])
     params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
     params['channel'] = '0'
+    params['qacs_enable'] = '0'
     params['acs_num_scans'] = '2'
     params['chanlist'] = '1'
     hapd = hostapd.add_ap(apdev[0], params, no_enable=True)
@@ -468,6 +484,7 @@ def test_ap_acs_dfs(dev, apdev):
         params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
         params['hw_mode'] = 'a'
         params['channel'] = '0'
+        params['qacs_enable'] = '0'
         params['ht_capab'] = '[HT40+]'
         params['country_code'] = 'US'
         params['ieee80211d'] = '1'
@@ -512,6 +529,7 @@ def test_ap_acs_exclude_dfs(dev, apdev, params):
         params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
         params['hw_mode'] = 'a'
         params['channel'] = '0'
+        params['qacs_enable'] = '0'
         params['ht_capab'] = '[HT40+]'
         params['country_code'] = 'US'
         params['ieee80211d'] = '1'
@@ -549,6 +567,7 @@ def test_ap_acs_vht160_dfs(dev, apdev):
         params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
         params['hw_mode'] = 'a'
         params['channel'] = '0'
+        params['qacs_enable'] = '0'
         params['ht_capab'] = '[HT40+]'
         params['country_code'] = 'US'
         params['ieee80211ac'] = '1'
@@ -591,6 +610,7 @@ def test_ap_acs_hw_mode_any(dev, apdev):
     force_prev_ap_on_24g(apdev[0])
     params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
     params['channel'] = '0'
+    params['qacs_enable'] = '0'
     params['hw_mode'] = 'any'
     hapd = hostapd.add_ap(apdev[0], params, wait_enabled=False)
     wait_acs(hapd)
@@ -609,6 +629,7 @@ def test_ap_acs_hw_mode_any_5ghz(dev, apdev):
         params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
         params['hw_mode'] = 'any'
         params['channel'] = '0'
+        params['qacs_enable'] = '0'
         params['country_code'] = 'US'
         params['acs_chan_bias'] = '36:0.7 40:0.7 44:0.7 48:0.7'
         hapd = hostapd.add_ap(apdev[0], params, wait_enabled=False)
@@ -630,6 +651,7 @@ def test_ap_acs_with_fallback_to_20(dev, apdev):
     hostapd.add_ap(apdev[1], params)
     params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
     params['channel'] = '0'
+    params['qacs_enable'] = '0'
     params['acs_chan_bias'] = '6:0.1'
     params['ht_capab'] = '[HT40+]'
     hapd = hostapd.add_ap(apdev[0], params, wait_enabled=False)
@@ -650,6 +672,7 @@ def test_ap_acs_rx_during(dev, apdev):
     force_prev_ap_on_24g(apdev[0])
     params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
     params['channel'] = '0'
+    params['qacs_enable'] = '0'
     params['chanlist'] = '1 6 11'
     hapd = hostapd.add_ap(apdev[0], params, wait_enabled=False)
 
@@ -694,6 +717,7 @@ def test_ap_acs_he_24g(dev, apdev):
 
     params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
     params['channel'] = '0'
+    params['qacs_enable'] = '0'
     params['ieee80211ax'] = '1'
     params['ht_capab'] = '[HT40+]'
     hapd = hostapd.add_ap(apdev[0], params, wait_enabled=False)
@@ -716,6 +740,7 @@ def test_ap_acs_he_24g_overlap(dev, apdev):
 
     params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
     params['channel'] = '0'
+    params['qacs_enable'] = '0'
     params['ieee80211ax'] = '1'
     params['ht_capab'] = '[HT40+]'
     hapd = hostapd.add_ap(apdev[0], params, wait_enabled=False)
@@ -735,6 +760,7 @@ def test_ap_acs_chan14(dev, apdev):
         params = hostapd.wpa2_params(ssid="test-acs", passphrase="12345678")
         params['hw_mode'] = 'g'
         params['channel'] = '0'
+        params['qacs_enable'] = '0'
         params['country_code'] = 'JP'
         params['acs_chan_bias'] = '14:0.01'
         hapd = hostapd.add_ap(apdev[0], params, wait_enabled=False)
@@ -772,6 +798,7 @@ def run_ap_acs_eht320(dev, apdev, bw32_offset):
         params["ieee80211ax"] = "1"
         params["ieee80211be"] = "1"
         params['channel'] = '0'
+        params['qacs_enable'] = '0'
         params['op_class'] = '137'
         params['eht_bw320_offset'] = str(bw32_offset)
         params['ieee80211w'] = '2'
@@ -828,6 +855,7 @@ def test_ap_acs_exclude_6g_non_psc(dev, apdev, params):
         params["ieee80211ax"] = "1"
         params["ieee80211be"] = "1"
         params['channel'] = '0'
+        params['qacs_enable'] = '0'
         params['op_class'] = '133'
         params['country_code'] = 'CA'
         params['acs_num_scans'] = '1'
