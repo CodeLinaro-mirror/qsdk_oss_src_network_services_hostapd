@@ -3781,7 +3781,6 @@ static int hostapd_epcs_authorize_mac_using_cli(struct hostapd_data *hapd,
 						char *pos)
 {
 	u8 peer_mld_addr[ETH_ALEN];
-	char *mldaddr_pos = pos;
 
 	if (hwaddr_aton(pos, peer_mld_addr))
 		return -1;
@@ -3794,10 +3793,9 @@ static int hostapd_epcs_authorize_mac_using_cli(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	return hostapd_ctrl_iface_acl_add_mac(
-			&hapd->mld->epcs_authorized_mac,
-			&hapd->mld->num_epcs_authorized_mac,
-			mldaddr_pos);
+	return hostapd_add_acl_maclist(&hapd->mld->epcs_authorized_mac,
+				       &hapd->mld->num_epcs_authorized_mac,
+				       0, peer_mld_addr);
 }
 
 static int hostapd_epcs_deauthorize_mac_using_cli(struct hostapd_data *hapd,
@@ -3806,7 +3804,6 @@ static int hostapd_epcs_deauthorize_mac_using_cli(struct hostapd_data *hapd,
 	u8 peer_mld_addr[ETH_ALEN];
 	struct sta_info *sta;
 	struct wlan_epcs_info epcs_info;
-	char *mldaddr_pos = pos;
 
 	if (hwaddr_aton(pos, peer_mld_addr))
 		return -1;
@@ -3826,10 +3823,9 @@ static int hostapd_epcs_deauthorize_mac_using_cli(struct hostapd_data *hapd,
 							  sta, false);
 	}
 
-	if (hostapd_ctrl_iface_acl_del_mac(&hapd->mld->epcs_authorized_mac,
-					   &hapd->mld->num_epcs_authorized_mac,
-					   mldaddr_pos))
-		return -1;
+	hostapd_remove_acl_mac(&hapd->mld->epcs_authorized_mac,
+			       &hapd->mld->num_epcs_authorized_mac,
+			       peer_mld_addr);
 
 	return 0;
 }

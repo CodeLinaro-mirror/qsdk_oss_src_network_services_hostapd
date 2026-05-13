@@ -1712,13 +1712,9 @@ int ap_ctrl_iface_acl_add_mac(struct wpa_supplicant *wpa_s,
 	hapd->conf->macaddr_acl = acl_type;
 
 	if (acl_type == ACCEPT_UNLESS_DENIED)
-		return hostapd_ctrl_iface_acl_add_mac(&hapd->conf->deny_mac,
-						      &hapd->conf->num_deny_mac,
-						      buf);
+		return hostapd_ctrl_iface_acl_add_mac(hapd->conf, false, buf);
 	if (acl_type == DENY_UNLESS_ACCEPTED)
-		return hostapd_ctrl_iface_acl_add_mac(
-			&hapd->conf->accept_mac,
-			&hapd->conf->num_accept_mac, buf);
+		return hostapd_ctrl_iface_acl_add_mac(hapd->conf, true, buf);
 
 	return -1;
 }
@@ -1740,13 +1736,9 @@ int ap_ctrl_iface_acl_del_mac(struct wpa_supplicant *wpa_s,
 	hapd->conf->macaddr_acl = acl_type;
 
 	if (acl_type == ACCEPT_UNLESS_DENIED)
-		return hostapd_ctrl_iface_acl_del_mac(&hapd->conf->deny_mac,
-						      &hapd->conf->num_deny_mac,
-						      buf);
+		return hostapd_ctrl_iface_acl_del_mac(hapd->conf, false, buf);
 	if (acl_type == DENY_UNLESS_ACCEPTED)
-		return hostapd_ctrl_iface_acl_del_mac(
-			&hapd->conf->accept_mac, &hapd->conf->num_accept_mac,
-			buf);
+		return hostapd_ctrl_iface_acl_del_mac(hapd->conf, true, buf);
 
 	return -1;
 }
@@ -1766,13 +1758,11 @@ int ap_ctrl_iface_acl_show_mac(struct wpa_supplicant *wpa_s,
 		return -1;
 
 	if (acl_type == ACCEPT_UNLESS_DENIED)
-		return hostapd_ctrl_iface_acl_show_mac(hapd->conf->deny_mac,
-						       hapd->conf->num_deny_mac,
+		return hostapd_ctrl_iface_acl_show_mac(hapd->conf, false,
 						       buf, buflen);
 	if (acl_type == DENY_UNLESS_ACCEPTED)
-		return hostapd_ctrl_iface_acl_show_mac(
-			hapd->conf->accept_mac,	hapd->conf->num_accept_mac,
-			buf, buflen);
+		return hostapd_ctrl_iface_acl_show_mac(hapd->conf, true,
+						       buf, buflen);
 
 	return -1;
 }
@@ -1793,11 +1783,9 @@ void ap_ctrl_iface_acl_clear_list(struct wpa_supplicant *wpa_s,
 	hapd->conf->macaddr_acl = acl_type;
 
 	if (acl_type == ACCEPT_UNLESS_DENIED)
-		hostapd_ctrl_iface_acl_clear_list(&hapd->conf->deny_mac,
-						  &hapd->conf->num_deny_mac);
+		hostapd_ctrl_iface_acl_clear_list(hapd->conf, false);
 	else if (acl_type == DENY_UNLESS_ACCEPTED)
-		hostapd_ctrl_iface_acl_clear_list(&hapd->conf->accept_mac,
-						  &hapd->conf->num_accept_mac);
+		hostapd_ctrl_iface_acl_clear_list(hapd->conf, true);
 }
 
 
@@ -1979,9 +1967,15 @@ int wpa_supplicant_ap_mac_addr_filter(struct wpa_supplicant *wpa_s,
 	os_free(conf->accept_mac);
 	conf->accept_mac = NULL;
 	conf->num_accept_mac = 0;
+	os_free(conf->accept_mac_masked);
+	conf->accept_mac_masked = NULL;
+	conf->num_accept_mac_masked = 0;
 	os_free(conf->deny_mac);
 	conf->deny_mac = NULL;
 	conf->num_deny_mac = 0;
+	os_free(conf->deny_mac_masked);
+	conf->deny_mac_masked = NULL;
+	conf->num_deny_mac_masked = 0;
 
 	if (addr == NULL) {
 		conf->macaddr_acl = ACCEPT_UNLESS_DENIED;

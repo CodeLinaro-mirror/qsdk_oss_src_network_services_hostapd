@@ -8863,25 +8863,20 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "ACCEPT_ACL ", 11) == 0) {
 		if (os_strncmp(buf + 11, "ADD_MAC ", 8) == 0) {
 			if (hostapd_ctrl_iface_acl_add_mac(
-				    &hapd->conf->accept_mac,
-				    &hapd->conf->num_accept_mac, buf + 19) ||
+				    hapd->conf, true, buf + 19) ||
 			    hostapd_set_acl(hapd))
 				reply_len = -1;
 		} else if (os_strncmp((buf + 11), "DEL_MAC ", 8) == 0) {
 			if (hostapd_ctrl_iface_acl_del_mac(
-				    &hapd->conf->accept_mac,
-				    &hapd->conf->num_accept_mac, buf + 19) ||
+				    hapd->conf, true, buf + 19) ||
 			    hostapd_set_acl(hapd) ||
 			    hostapd_disassoc_accept_mac(hapd))
 				reply_len = -1;
 		} else if (os_strcmp(buf + 11, "SHOW") == 0) {
 			reply_len = hostapd_ctrl_iface_acl_show_mac(
-				hapd->conf->accept_mac,
-				hapd->conf->num_accept_mac, reply, reply_size);
+				hapd->conf, true, reply, reply_size);
 		} else if (os_strcmp(buf + 11, "CLEAR") == 0) {
-			hostapd_ctrl_iface_acl_clear_list(
-				&hapd->conf->accept_mac,
-				&hapd->conf->num_accept_mac);
+			hostapd_ctrl_iface_acl_clear_list(hapd->conf, true);
 			if (hostapd_set_acl(hapd) ||
 			    hostapd_disassoc_accept_mac(hapd))
 				reply_len = -1;
@@ -8891,25 +8886,20 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "DENY_ACL ", 9) == 0) {
 		if (os_strncmp(buf + 9, "ADD_MAC ", 8) == 0) {
 			if (hostapd_ctrl_iface_acl_add_mac(
-				    &hapd->conf->deny_mac,
-				    &hapd->conf->num_deny_mac, buf + 17) ||
+				    hapd->conf, false, buf + 17) ||
 			    hostapd_set_acl(hapd) ||
 			    hostapd_disassoc_deny_mac(hapd))
 				reply_len = -1;
 		} else if (os_strncmp(buf + 9, "DEL_MAC ", 8) == 0) {
 			if (hostapd_ctrl_iface_acl_del_mac(
-				    &hapd->conf->deny_mac,
-				    &hapd->conf->num_deny_mac, buf + 17) ||
+				    hapd->conf, false, buf + 17) ||
 			    hostapd_set_acl(hapd))
 				reply_len = -1;
 		} else if (os_strcmp(buf + 9, "SHOW") == 0) {
 			reply_len = hostapd_ctrl_iface_acl_show_mac(
-				hapd->conf->deny_mac,
-				hapd->conf->num_deny_mac, reply, reply_size);
+				hapd->conf, false, reply, reply_size);
 		} else if (os_strcmp(buf + 9, "CLEAR") == 0) {
-			hostapd_ctrl_iface_acl_clear_list(
-				&hapd->conf->deny_mac,
-				&hapd->conf->num_deny_mac);
+			hostapd_ctrl_iface_acl_clear_list(hapd->conf, false);
 			if (hostapd_set_acl(hapd))
 				reply_len = -1;
 		} else {

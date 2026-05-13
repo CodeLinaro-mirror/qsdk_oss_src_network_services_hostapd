@@ -119,13 +119,14 @@ int hostapd_ctrl_iface_ess_disassoc(struct hostapd_data *hapd,
 				    const char *cmd);
 int hostapd_ctrl_iface_bss_tm_req(struct hostapd_data *hapd,
 				  const char *cmd);
-int hostapd_ctrl_iface_acl_add_mac(struct mac_acl_entry **acl, int *num,
-				   const char *cmd);
-int hostapd_ctrl_iface_acl_del_mac(struct mac_acl_entry **acl, int *num,
-				   const char *txtaddr);
-void hostapd_ctrl_iface_acl_clear_list(struct mac_acl_entry **acl,
-				       int *num);
-int hostapd_ctrl_iface_acl_show_mac(struct mac_acl_entry *acl, int num,
+int hostapd_ctrl_iface_acl_add_mac(struct hostapd_bss_config *conf,
+				   bool accept, const char *cmd);
+int hostapd_ctrl_iface_acl_del_mac(struct hostapd_bss_config *conf,
+				   bool accept, const char *txtaddr);
+void hostapd_ctrl_iface_acl_clear_list(struct hostapd_bss_config *conf,
+					bool accept);
+int hostapd_ctrl_iface_acl_show_mac(struct hostapd_bss_config *conf,
+				    bool accept,
 				    char *buf, size_t buflen);
 int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd);
 int hostapd_disassoc_accept_mac(struct hostapd_data *hapd);
