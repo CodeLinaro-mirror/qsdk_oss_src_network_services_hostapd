@@ -7707,6 +7707,11 @@ enum wpa_event_type {
 	 * EVENT_HW_BLOCKED_CHANS_NOTIFY - HW blocked channel information received
 	 */
 	EVENT_HW_BLOCKED_CHANS_NOTIFY,
+
+	/**
+	 * EVENT_SCAN_RESULTS_EXTN - Notification event for Extension scan results from driver
+	 */
+	EVENT_SCAN_RESULTS_EXTN,
 #endif
 };
 
