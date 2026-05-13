@@ -2749,6 +2749,16 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+	} else if (os_strcmp(cmd, "use_ru_puncture_dfs") == 0) {
+		if (!hapd || !hapd->iconf) {
+			wpa_printf(MSG_ERROR, "Invalid hapd or hapd->iconf pointer");
+			return -1;
+		}
+
+		res = os_snprintf(buf, buflen, "%d\n", hapd->iconf->use_ru_puncture_dfs);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
 #ifdef CONFIG_QCN_EXTN
 	} else {
 		res = hostapd_ctrl_iface_get_extn(hapd, cmd, buf, buflen);
@@ -8196,6 +8206,35 @@ int hostapd_ctrl_iface_set_he_muedca(struct hostapd_data *hapd, char *buf)
 }
 #endif /* CONFIG_QCN_EXTN */
 
+/**
+ * hostapd_ctrl_iface_use_ru_puncture_dfs - Handle runtime RU puncture DFS set
+ * @hapd: Pointer to hostapd BSS data
+ * @cmd: NUL-terminated string containing the requested enable value
+ *
+ * Parse and apply the runtime control interface value for
+ * use_ru_puncture_dfs.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int hostapd_ctrl_iface_use_ru_puncture_dfs(struct hostapd_data *hapd,
+						  char *cmd)
+{
+	int value;
+
+	value = atoi(cmd);
+	if (value < 0 || value > 1) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid use_ru_puncture_dfs value: %d (must be 0 or 1)",
+			   value);
+		return -1;
+	}
+
+	hapd->iconf->use_ru_puncture_dfs = value;
+	wpa_printf(MSG_INFO, "use_ru_puncture_dfs set to %d", value);
+
+	return 0;
+}
+
 static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 					      char *buf, char *reply,
 					      int reply_size,
@@ -8961,6 +9000,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 			reply_len = -1;
 #endif /* CONFIG_PROCESS_COORDINATION */
 #endif /* CONFIG_TESTING_OPTIONS */
+	} else if (os_strncmp(buf, "USE_RU_PUNCTURE_DFS ", 20) == 0) {
+		if (hostapd_ctrl_iface_use_ru_puncture_dfs(hapd, buf + 20))
+			reply_len = -1;
 	} else {
 		if (!hostapd_ctrl_iface_receive_process_extn(hapd, buf, reply,
 							     reply_size,
@@ -10600,5 +10642,4 @@ static void hostapd_ctrl_iface_send(struct hostapd_data *hapd, int level,
 			NULL, level, buf, len);
 	}
 }
-
 #endif /* CONFIG_NATIVE_WINDOWS */
