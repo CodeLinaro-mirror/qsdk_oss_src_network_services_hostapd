@@ -909,9 +909,47 @@ u8 * hostapd_eid_mbo_rssi_assoc_rej(struct hostapd_data *hapd, u8 *eid,
 }
 
 
+u8 * hostapd_eid_ess_report(struct hostapd_data *hapd, u8 *eid, size_t len)
+{
+	u8 ess_info;
+	int rssi = hapd->conf->oce_ess_rssi_threshold;
+	u8 rssi_encoded;
+
+	if (!OCE_AP_ENABLED(hapd) || !hapd->conf->oce_ess_report_enabled)
+		return eid;
+
+	if (len < 4)
+		return eid;
+
+	/* 802.11be-2024 Section 9.4.2.255:
+	 * 0-62 = -100 to -38 dBm, 63 = no recommendation
+	 */
+	rssi_encoded = (rssi == -1) ? 63 : (u8)(rssi + 100);
+
+	/*
+	 * 802.11be-2024 Section 9.4.2.255:
+	 * ESS Information field
+	 *   Bit 0: Planned ESS
+	 *   Bit 1: Edge Of ESS
+	 *   Bits 2-7: Recommended BSS Transition RSSI Threshold (6 bits)
+	 */
+	ess_info = BIT(0); /* Planned ESS = 1 */
+	if (hapd->conf->oce_ess_edge)
+		ess_info |= BIT(1);
+	ess_info |= (rssi_encoded & 0x3F) << 2;
+
+	*eid++ = WLAN_EID_EXTENSION;
+	*eid++ = 2; /* Element ID Extension + ESS Information */
+	*eid++ = WLAN_EID_EXT_ESS_REPORT;
+	*eid++ = ess_info;
+
+	return eid;
+}
+
+
 u8 * hostapd_eid_mbo(struct hostapd_data *hapd, u8 *eid, size_t len)
 {
-	u8 mbo[12], *mbo_pos = mbo;
+	u8 mbo[23], *mbo_pos = mbo;
 	u8 *pos = eid;
 
 	if (!hapd->conf->mbo_enabled &&
@@ -945,6 +983,8 @@ u8 * hostapd_eid_mbo(struct hostapd_data *hapd, u8 *eid, size_t len)
 				ctrl |= OCE_IS_NON_OCE_AP_PRESENT;
 			if (hapd->ap_11b_present)
 				ctrl |= OCE_IS_11B_AP_PRESENT;
+			if (hapd->conf->fils_hlp_wait_time)
+				ctrl |= OCE_IS_FILS_HLP_ENABLED;
 		}
 
 		*mbo_pos++ = OCE_ATTR_ID_CAPA_IND;
@@ -966,6 +1006,23 @@ u8 * hostapd_eid_mbo(struct hostapd_data *hapd, u8 *eid, size_t len)
 					break;
 				}
 			}
+		}
+
+		/* OCE Reduced WAN Metrics attribute (Attr 103) */
+		if (OCE_AP_ENABLED(hapd) &&
+		    (hapd->conf->oce_dl_availcap || hapd->conf->oce_ul_availcap)) {
+			*mbo_pos++ = OCE_ATTR_ID_REDUCED_WAN_METRICS;
+			*mbo_pos++ = 1;
+			*mbo_pos++ = (u8)(((hapd->conf->oce_dl_availcap & 0x0f) << 4) |
+					   (hapd->conf->oce_ul_availcap & 0x0f));
+		}
+
+		/* OCE IP Subnet Identifier attribute (Attr 108) */
+		if (OCE_AP_ENABLED(hapd) && hapd->conf->oce_ip_subnet_id_set) {
+			*mbo_pos++ = OCE_ATTR_ID_IP_SUBNET_IDENTIFIER;
+			*mbo_pos++ = 6;
+			for (int i = 5; i >= 0; i--)
+				*mbo_pos++ = hapd->conf->oce_ip_subnet_id[i];
 		}
 	}
 
@@ -1001,6 +1058,15 @@ u8 hostapd_mbo_ie_len(struct hostapd_data *hapd)
 	    hapd->iface->current_mode &&
 	    hapd->iface->current_mode->mode != HOSTAPD_MODE_IEEE80211B)
 		len += 3;
+
+	if (OCE_AP_ENABLED(hapd)) {
+		/* OCE Reduced WAN Metrics attribute (3) */
+		if (hapd->conf->oce_dl_availcap || hapd->conf->oce_ul_availcap)
+			len += 3;
+		/* OCE IP Subnet Identifier attribute (8 = 2 header + 6 value) */
+		if (hapd->conf->oce_ip_subnet_id_set)
+			len += 8;
+	}
 
 	return len;
 }
@@ -1139,7 +1205,14 @@ u8 * hostapd_eid_fils_indic(struct hostapd_data *hapd, u8 *eid, int hessid)
 		/* B3..B5: Number of Realm Identifiers */
 		fils_info |= realms << 3;
 	}
-	/* TODO: B6: FILS IP Address Configuration */
+	/* B6: FILS IP Address Configuration — set only when a DHCP server is
+	 * configured for HLP, which is the actual indicator that the AP can
+	 * perform FILS IP address assignment. fils_hlp_wait_time is a timing
+	 * parameter with a non-zero default and must not be used as the gate. */
+
+	if (hapd->conf->dhcp_server.af == AF_INET &&
+	    hapd->conf->dhcp_server.u.v4.s_addr != 0)
+		fils_info |= BIT(6);
 	if (hapd->conf->fils_cache_id_set)
 		fils_info |= BIT(7);
 	if (hessid && !is_zero_ether_addr(hapd->conf->hessid))

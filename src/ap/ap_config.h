@@ -872,6 +872,16 @@ struct hostapd_bss_config {
 	  */
 	 unsigned int mbo_ap_cap_ind;
 	int mbo_cell_data_conn_pref;
+	/* OCE IP Subnet Identifier attribute (Attr 108) */
+	u8 oce_ip_subnet_id[6];
+	bool oce_ip_subnet_id_set;
+	/* OCE ESS Report element (EID 97) */
+	bool oce_ess_report_enabled;
+	int oce_ess_edge;
+	int oce_ess_rssi_threshold;
+	/* OCE Reduced WAN Metrics (Attr 103): 0-15 */
+	int oce_dl_availcap;
+	int oce_ul_availcap;
 #endif /* CONFIG_MBO */
 
 	int ftm_responder;

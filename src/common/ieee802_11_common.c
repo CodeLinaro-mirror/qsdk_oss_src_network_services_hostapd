@@ -325,7 +325,8 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
 		elems->assoc_delay_info = pos;
 		break;
 	case WLAN_EID_EXT_FILS_REQ_PARAMS:
-		if (elen < 3)
+		/* Minimum 2 bytes: FILS Information + Max Channel Time */
+		if (elen < 2)
 			break;
 		elems->fils_req_params = pos;
 		elems->fils_req_params_len = elen;
