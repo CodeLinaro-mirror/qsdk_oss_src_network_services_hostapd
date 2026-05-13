@@ -12038,6 +12038,37 @@ static int nl80211_set_p2p_powersave(void *priv, int legacy_ps, int opp_ps,
 }
 
 
+static int nl80211_stop_background_radar_detection(void *priv)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Stop background radar detection (NL80211_CMD_STOP_BGRADAR_DETECT)");
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_STOP_BGRADAR_DETECT);
+	if (!msg)
+		return -ENOBUFS;
+
+	if (bss->valid_links) {
+		u8 link_id = nl80211_get_link_id_from_link(bss, bss->flink);
+		wpa_printf(MSG_DEBUG, "nl80211: Stop background radar detection on link_id=%d", link_id);
+		if (nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id)) {
+			nlmsg_free(msg);
+			return -ENOBUFS;
+		}
+	}
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Failed to stop background radar detection: %d (%s)",
+			   ret, strerror(-ret));
+	return ret;
+}
+
+
 static int nl80211_start_radar_detection(void *priv,
 					 struct hostapd_freq_params *freq)
 {
@@ -17446,6 +17477,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.poll_client = nl80211_poll_client,
 	.set_p2p_powersave = nl80211_set_p2p_powersave,
 	.start_dfs_cac = nl80211_start_radar_detection,
+	.stop_background_cac = nl80211_stop_background_radar_detection,
 	.stop_ap = wpa_driver_nl80211_stop_ap,
 #ifdef CONFIG_TDLS
 	.send_tdls_mgmt = nl80211_send_tdls_mgmt,

@@ -40,6 +40,21 @@ dfs_downgrade_bandwidth(struct hostapd_iface *iface, int *secondary_channel,
 			u8 *oper_centr_freq_seg1_idx,
 			enum dfs_channel_type *channel_type);
 
+static void hostapd_dfs_update_background_chain(struct hostapd_iface *iface);
+
+/*
+ * dfs_is_agile_cac_enabled - Check whether Agile CAC is enabled.
+ *
+ * This is the single gate for the entire Agile CAC flow, which covers
+ * both RCAC and PreCAC sub-paths.
+ *
+ * bgcac_en=1 in the hostapd config selects this entire flow.  All code
+ * guarded by dfs_is_agile_cac_enabled() applies to both RCAC and PreCAC.
+ */
+static inline bool dfs_is_agile_cac_enabled(const struct hostapd_iface *iface)
+{
+	return iface && iface->conf && iface->conf->bgcac_en;
+}
 
 static bool dfs_use_radar_background(struct hostapd_iface *iface)
 {
@@ -305,6 +320,131 @@ static bool is_skip_unii1_dfs_switch_applicable(struct hostapd_iface *iface,
 	}
 
 	return false;
+}
+
+/*
+ * dfs_agile_cac_get_rcac_channel - Get RCAC channel parameters of the interface
+ * @iface: Pointer to the hostapd interface
+ * @channel: Output - primary channel number of the RCAC channel
+ * @freq: Output - primary frequency (MHz) of the RCAC channel
+ * @secondary_channel: Output - secondary channel offset (+1/-1/0)
+ * @centr_freq_seg0_idx: Output - VHT/HE center frequency segment 0 index
+ * @centr_freq_seg1_idx: Output - VHT/HE center frequency segment 1 index
+ * @chwidth: Output - operating channel width (enum oper_chan_width)
+ *
+ * Fills in all channel parameters from iface->radar_background, which is
+ * populated by hostapd_start_rcac_on_channel() /
+ * hostapd_dfs_update_background_chain().
+ *
+ * Returns 0 on success, -1 if RCAC is not ready (not enabled, still running,
+ * or no channel configured).
+ */
+static int dfs_agile_cac_get_rcac_channel(struct hostapd_iface *iface,
+					  int *channel, int *freq,
+					  int *secondary_channel,
+					  u8 *centr_freq_seg0_idx,
+					  u8 *centr_freq_seg1_idx,
+					  u8 *chwidth)
+{
+	struct hostapd_channel_data *chan = hw_mode_get_channel(iface->current_mode,
+								iface->radar_background.freq,
+								NULL);
+
+	if (!dfs_use_radar_background(iface)) {
+		wpa_printf(MSG_DEBUG, "DFS: Failed to select an RCAC channel - background radar not enabled");
+		return -1;
+	}
+
+	if (iface->radar_background.channel <= 0 || iface->radar_background.freq <= 0) {
+		wpa_printf(MSG_DEBUG, "DFS: Failed to select an RCAC channel -  no RCAC channel configured");
+		return -1;
+	}
+
+	if (!chan || ((chan->flag & HOSTAPD_CHAN_RADAR) &&
+		(chan->flag & HOSTAPD_CHAN_DFS_MASK) != HOSTAPD_CHAN_DFS_AVAILABLE)) {
+		wpa_printf(MSG_WARNING,
+			   "DFS: RCAC not yet complete (background CAC still in progress) on chan %d",
+			   iface->radar_background.channel);
+		return -1;
+	}
+	wpa_printf(MSG_DEBUG,
+		   "DFS: RCAC chan %d is %s - allowing seamless switch",
+		   iface->radar_background.channel,
+		   (chan->flag & HOSTAPD_CHAN_RADAR) ?
+		   "DFS_AVAILABLE" : "non-DFS");
+
+	*channel = iface->radar_background.channel;
+	*freq = iface->radar_background.freq;
+	*secondary_channel = iface->radar_background.secondary_channel;
+	*centr_freq_seg0_idx = iface->radar_background.centr_freq_seg0_idx;
+	*centr_freq_seg1_idx = iface->radar_background.centr_freq_seg1_idx;
+	*chwidth = (iface->radar_background.channel > 0) ?
+		iface->radar_background.chwidth :
+		hostapd_get_oper_chwidth(iface->conf);
+
+	return 0;
+}
+
+
+/*
+ * hostapd_dfs_agile_cac_switch - Switch home channel to a pre-cleared DFS channel
+ *
+ *   dfs_agile_cac_get_rcac_channel
+ *
+ * This function is called either by user request (via hostapd_cli switch_to_rcac)
+ * or automatically when radar is detected on the home channel.
+ *
+ * Returns 0 on success, -1 on failure.
+ */
+int hostapd_dfs_agile_cac_switch(struct hostapd_iface *iface)
+{
+	int freq, channel, secondary_channel;
+	u8 centr_freq_seg0_idx;
+	u8 centr_freq_seg1_idx;
+	u8 current_vht_oper_chwidth;
+
+	if (hostapd_csa_in_progress(iface)) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: Changing the home channel to agile-CACed channel skipped - CSA already in progress");
+		return 0;
+	}
+
+	if (iface->cac_started) {
+		wpa_printf(MSG_WARNING,
+			   "DFS: Changing the home channel to agile-CACed channel rejected - home channel CAC in progress");
+		return -1;
+	}
+
+	if (dfs_agile_cac_get_rcac_channel(iface, &channel, &freq,
+					   &secondary_channel,
+					   &centr_freq_seg0_idx,
+					   &centr_freq_seg1_idx,
+					   &current_vht_oper_chwidth) < 0)
+		return -1;
+
+	if (current_vht_oper_chwidth != hostapd_get_oper_chwidth(iface->conf)) {
+		wpa_printf(MSG_INFO,
+			   "DFS: RCAC switch with BW change: RCAC BW (%d) -> home BW (%d) (half-BW RCAC)",
+			   current_vht_oper_chwidth,
+			   hostapd_get_oper_chwidth(iface->conf));
+	}
+
+	wpa_printf(MSG_INFO,
+		   "DFS: RCAC switch to chan %d (%d MHz), seg0=%d, sec=%d",
+		   channel, freq, centr_freq_seg0_idx, secondary_channel);
+
+	iface->conf->channel = channel;
+	iface->freq = freq;
+	iface->conf->secondary_channel = secondary_channel;
+	hostapd_set_oper_centr_freq_seg0_idx(iface->conf, centr_freq_seg0_idx);
+	hostapd_set_oper_centr_freq_seg1_idx(iface->conf, centr_freq_seg1_idx);
+	hostapd_set_oper_chwidth(iface->conf, current_vht_oper_chwidth);
+
+	return hostapd_dfs_request_channel_switch(iface, channel, freq,
+						  secondary_channel,
+						  current_vht_oper_chwidth,
+						  centr_freq_seg0_idx,
+						  centr_freq_seg1_idx, 0);
 }
 
 /*
@@ -1099,7 +1239,7 @@ int hostapd_handle_dfs(struct hostapd_iface *iface)
 		hostapd_get_oper_chwidth(iface->conf),
 		hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
 		hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
-		dfs_use_radar_background(iface),
+		dfs_is_agile_cac_enabled(iface) ? false : dfs_use_radar_background(iface),
 		iface->conf->bandwidth_device, iface->conf->center_freq_device);
 
 	if (res) {
@@ -1107,7 +1247,7 @@ int hostapd_handle_dfs(struct hostapd_iface *iface)
 		return -1;
 	}
 
-	if (dfs_use_radar_background(iface)) {
+	if (!dfs_is_agile_cac_enabled(iface) && dfs_use_radar_background(iface)) {
 		/* Cache background radar parameters. */
 		iface->radar_background.channel = iface->conf->channel;
 		iface->radar_background.secondary_channel =
@@ -1290,6 +1430,165 @@ int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 }
 
 
+
+/*
+ * dfs_try_user_rcac_channel - Start RCAC on the user-configured channel.
+ *
+ * Always uses home channel BW. If the channel is unavailable at home BW
+ * (e.g. NOL sub-channel), returns false to fall back to random channel
+ * selection which will try half-BW automatically if needed.
+ *
+ * Returns true if RCAC was started successfully, false to fall back to
+ * random channel selection.
+ */
+static bool dfs_try_user_rcac_channel(struct hostapd_iface *iface,
+				      int home_bw)
+{
+	int home_center = (hostapd_get_oper_centr_freq_seg0_idx(iface->conf) * 5) + 5000;
+	int home_start = home_center - home_bw / 2 + 10;
+	int home_end = home_center + home_bw / 2 - 10;
+	int user_freq = ieee80211_chan_to_freq(NULL, 81, iface->user_rcac_channel);
+	bool started;
+
+	if (user_freq > 0 && user_freq >= home_start && user_freq <= home_end) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: user-pinned RCAC channel %d overlaps with home block - skipping",
+			   iface->user_rcac_channel);
+		return false;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "DFS: trying user-configured RCAC channel %d bw=%d MHz",
+		   iface->user_rcac_channel, home_bw);
+
+	started = (hostapd_start_rcac_on_channel(iface, iface->user_rcac_channel,
+						  home_bw) == 0);
+	if (!started)
+		wpa_printf(MSG_WARNING,
+			   "DFS: failed to start user-configured RCAC on chan %d; falling back to Random Channel Selection",
+			   iface->user_rcac_channel);
+	return started;
+}
+
+/*
+ * dfs_rcac_try_half_bw - Try RCAC at half the home bandwidth.
+ * @iface: Pointer to hostapd interface
+ * @home_bw: Home channel bandwidth in MHz (40/80/160)
+ * @orig_oper_chwidth: Original channel width, restored after channel search
+ *
+ * Searches for a DFS_NO_CAC_YET channel (DFS_ANY_CHANNEL as fallback) at
+ * home_bw / 2, excluding the home channel range and the active RCAC channel.
+ * Supported half-BW values: 20, 40, 80 MHz.
+ *
+ * Returns: true if half-BW RCAC started, false if no suitable channel found.
+ */
+static bool dfs_rcac_try_half_bw(struct hostapd_iface *iface,
+				     int home_bw,
+				     enum oper_chan_width orig_oper_chwidth)
+{
+	int half_bw = home_bw / 2;
+	int orig_secondary_channel = iface->conf->secondary_channel;
+	int home_center_freq = (hostapd_get_oper_centr_freq_seg0_idx(iface->conf) * 5) + 5000;
+	int home_start = home_center_freq - (home_bw / 2) + 10;
+	int home_end   = home_center_freq + (home_bw / 2) - 10;
+	enum oper_chan_width half_width;
+	int total = dfs_find_channel(iface, NULL, 0, DFS_ANY_CHANNEL);
+	int i;
+
+	wpa_printf(MSG_DEBUG,
+		   "DFS: dfs_rcac_try_half_bw: home_bw=%d half_bw=%d sec_chan=%d",
+		   home_bw, half_bw, iface->conf->secondary_channel);
+
+	switch (half_bw) {
+	case 20: half_width = CONF_OPER_CHWIDTH_USE_HT; break;
+	case 40: half_width = CONF_OPER_CHWIDTH_USE_HT; break;
+	case 80: half_width = CONF_OPER_CHWIDTH_80MHZ; break;
+	default: return false;
+	}
+
+	hostapd_set_oper_chwidth(iface->conf, half_width);
+	if (half_bw == 20)
+		iface->conf->secondary_channel = 0;
+	else if (half_bw == 40)
+		iface->conf->secondary_channel = orig_secondary_channel;
+
+	for (i = 0; i < total; i++) {
+		struct hostapd_channel_data *c = NULL;
+
+		dfs_find_channel(iface, &c, i, DFS_ANY_CHANNEL);
+		if (!c ||
+		    (c->freq >= home_start && c->freq <= home_end))
+			continue;
+		if (hostapd_start_rcac_on_channel(iface, c->chan, half_bw) == 0) {
+			hostapd_set_oper_chwidth(iface->conf, orig_oper_chwidth);
+			iface->conf->secondary_channel = orig_secondary_channel;
+			wpa_printf(MSG_DEBUG,
+				   "DFS: half-BW RCAC: starting %d MHz RCAC on chan %d "
+				   "(all %d MHz blocks have NOL channels)",
+				   half_bw, c->chan, home_bw);
+			return true;
+		}
+	}
+
+	hostapd_set_oper_chwidth(iface->conf, orig_oper_chwidth);
+	iface->conf->secondary_channel = orig_secondary_channel;
+
+	wpa_printf(MSG_WARNING,
+		   "DFS: half-BW RCAC: no %d MHz channel available",
+		   half_bw);
+	return false;
+}
+
+/*
+ * hostapd_agile_cac_update - Agile CAC channel selection and start.
+ *
+ * Selects an RCAC channel at home BW and starts background
+ * CAC
+ *
+ * Channel selection priority:
+ *   1. User-pinned channel (SET_RCAC_FREQ)
+ *   2. Random DFS_ANY_CHANNEL at home BW (handles mixed blocks)
+ *   3. Half-BW fallback
+ *   4. dfs_downgrade_bandwidth() as last resort
+ */
+static void hostapd_agile_cac_update(struct hostapd_iface *iface)
+{
+	int home_bw = channel_width_to_int(
+		hostapd_get_chan_width_from_oper_chan_width(iface->conf));
+	int home_center = (hostapd_get_oper_centr_freq_seg0_idx(iface->conf) * 5) + 5000;
+	int home_start = home_center - home_bw / 2 + 10;
+	int home_end = home_center + home_bw / 2 - 10;
+	int total = dfs_find_channel(iface, NULL, 0, DFS_ANY_CHANNEL);
+	int i;
+	enum oper_chan_width orig_oper_chwidth;
+
+	if (iface->user_rcac_channel > 0 &&
+	    dfs_try_user_rcac_channel(iface, home_bw))
+		return;
+
+	orig_oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+
+	for (i = 0; i < total; i++) {
+		struct hostapd_channel_data *c = NULL;
+
+		dfs_find_channel(iface, &c, i, DFS_ANY_CHANNEL);
+		if (!c ||
+		    (c->freq >= home_start && c->freq <= home_end) ||
+		    c->chan == iface->radar_background.channel)
+			continue;
+		if (hostapd_start_rcac_on_channel(iface, c->chan, home_bw) == 0)
+			return;
+	}
+
+	/* Try half-BW if no full-BW block is available */
+	if (dfs_rcac_try_half_bw(iface, home_bw, orig_oper_chwidth))
+		return;
+
+	wpa_printf(MSG_DEBUG, "DFS: Agile CAC: no channel available");
+	iface->radar_background.channel = -1;
+}
+
+
 static void hostapd_dfs_update_background_chain(struct hostapd_iface *iface)
 {
 	int sec = 0;
@@ -1297,6 +1596,11 @@ static void hostapd_dfs_update_background_chain(struct hostapd_iface *iface)
 	struct hostapd_channel_data *channel;
 	u8 oper_centr_freq_seg0_idx = 0;
 	u8 oper_centr_freq_seg1_idx = 0;
+
+	if (dfs_is_agile_cac_enabled(iface)) {
+		hostapd_agile_cac_update(iface);
+		return;
+	}
 
 	/*
 	 * Allow selection of DFS channel in ETSI to comply with
@@ -1453,7 +1757,7 @@ fail:
 static int
 hostapd_dfs_start_channel_switch_background(struct hostapd_iface *iface)
 {
-	u8 current_vht_oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+	u8 current_vht_oper_chwidth;
 
 	iface->conf->channel = iface->radar_background.channel;
 	iface->freq = iface->radar_background.freq;
@@ -1463,8 +1767,14 @@ hostapd_dfs_start_channel_switch_background(struct hostapd_iface *iface)
 		iface->conf, iface->radar_background.centr_freq_seg0_idx);
 	hostapd_set_oper_centr_freq_seg1_idx(
 		iface->conf, iface->radar_background.centr_freq_seg1_idx);
+	if (dfs_is_agile_cac_enabled(iface) && iface->radar_background.chwidth) {
+		hostapd_set_oper_chwidth(iface->conf,
+					 iface->radar_background.chwidth);
+	}
+	current_vht_oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
 
-	hostapd_dfs_update_background_chain(iface);
+	if (!dfs_is_agile_cac_enabled(iface))
+		hostapd_dfs_update_background_chain(iface);
 
 	return hostapd_dfs_request_channel_switch(
 		iface, iface->conf->channel, iface->freq,
@@ -1522,6 +1832,43 @@ static void hostapd_deferred_csa_dispatch(struct hostapd_iface *iface)
 	}
 }
 
+/**
+ * hostapd_rcac_complete - Handle QCA Agile CAC (RCAC/PreCAC) completion
+ * @iface: Pointer to hostapd interface data
+ * @success: 1 if CAC completed successfully, 0 if aborted/failed
+ * @freq: Frequency on which background CAC was performed
+ * @ht_enabled, @chan_offset, @chan_width, @cf1, @cf2: Channel parameters
+ * @chan_width_device, @cf_device: Device-reported channel parameters
+ *
+ * Handles the completion (success or abort) of a background CAC event for
+ * both RCAC and PreCAC modes
+ *
+ * Returns 0
+ */
+static int hostapd_rcac_complete(struct hostapd_iface *iface, int success,
+				 int freq, int ht_enabled, int chan_offset,
+				 int chan_width, int cf1, int cf2,
+				 int chan_width_device, int cf_device)
+{
+	if (!success) {
+		if (freq > 0 && iface->radar_background.freq > 0 &&
+		    freq != iface->radar_background.freq) {
+			wpa_printf(MSG_DEBUG,
+				   "DFS: RCAC abort for old freq %d MHz (current RCAC freq %d MHz) - ignoring",
+				   freq, iface->radar_background.freq);
+			iface->radar_detected = false;
+			return 0;
+		}
+
+	}
+
+	iface->radar_background.cac_started = 0;
+	iface->radar_detected = false;
+
+	return 0;
+}
+
+
 int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			     int ht_enabled, int chan_offset, int chan_width,
 			     int cf1, int cf2, bool is_background,
@@ -1575,13 +1922,23 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			 * to a new DFS channel.
 			 */
 			if (is_background || hostapd_dfs_is_background_event(iface, freq)) {
-				iface->radar_background.cac_started = 0;
-				if (!iface->radar_background.temp_ch)
-					return 0;
+				if (!dfs_is_agile_cac_enabled(iface)) {
+					iface->radar_background.cac_started = 0;
+					if (!iface->radar_background.temp_ch)
+						return 0;
 
-				iface->radar_background.temp_ch = 0;
-				if (iface->conf->enable_background_radar)
-					return hostapd_dfs_start_channel_switch_background(iface);
+					iface->radar_background.temp_ch = 0;
+					if (iface->conf->enable_background_radar)
+						return hostapd_dfs_start_channel_switch_background(iface);
+				} else {
+					return hostapd_rcac_complete(iface, success,
+								     freq, ht_enabled,
+								     chan_offset,
+								     chan_width, cf1,
+								     cf2,
+								     chan_width_device,
+								     cf_device);
+				}
 			}
 
 			/*
@@ -1637,6 +1994,10 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 		hostapd_csa_bitmap_update_extn(iface, freq);
 #endif
 	} else if (is_background || hostapd_dfs_is_background_event(iface, freq)) {
+		if (dfs_is_agile_cac_enabled(iface))
+			return hostapd_rcac_complete(iface, success, freq, ht_enabled,
+						     chan_offset, chan_width, cf1, cf2,
+						     chan_width_device, cf_device);
 		iface->radar_background.cac_started = 0;
 		if (iface->conf->enable_background_radar)
 			hostapd_dfs_update_background_chain(iface);
@@ -1810,9 +2171,15 @@ hostapd_dfs_background_start_channel_switch(struct hostapd_iface *iface,
 	if (hostapd_dfs_is_background_event(iface, freq)) {
 		/*
 		 * Radar pattern is reported on the background chain.
-		 * Just select a new random channel according to the
-		 * regulations for monitoring.
+		 * Clear the background state and select a new random channel.
 		 */
+		if (dfs_is_agile_cac_enabled(iface)) {
+			if (iface->user_rcac_channel == iface->radar_background.channel)
+				iface->user_rcac_channel = 0;
+			iface->radar_background.cac_started = 0;
+			iface->radar_background.channel = -1;
+			iface->radar_background.freq = 0;
+		}
 		hostapd_dfs_update_background_chain(iface);
 		return 0;
 	}
@@ -1830,7 +2197,8 @@ hostapd_dfs_background_start_channel_switch(struct hostapd_iface *iface,
 		 * Background channel not available yet. Perform CAC on the
 		 * main chain.
 		 */
-		iface->radar_background.temp_ch = 1;
+		if (!dfs_is_agile_cac_enabled(iface))
+			iface->radar_background.temp_ch = 1;
 		return -1;
 	}
 
@@ -2122,6 +2490,306 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	return 0;
 }
 
+/*
+ * rcac_update_background_state - Update radar_background state after RCAC start
+ * @iface: Pointer to hostapd interface
+ * @chan: Primary channel number
+ * @freq: Primary channel frequency in MHz
+ * @sec: Secondary channel direction (1=HT40+, -1=HT40-, 0=none)
+ * @seg0: Center frequency segment 0 channel index
+ * @seg1: Center frequency segment 1 channel index (0 for non-80P80)
+ * @oper_width: Operating channel width enum
+ */
+static void rcac_update_background_state(struct hostapd_iface *iface,
+					 int chan, int freq, int sec,
+					 u8 seg0, u8 seg1,
+					 enum oper_chan_width oper_width)
+{
+	iface->radar_background.channel = chan;
+	iface->radar_background.freq = freq;
+	iface->radar_background.secondary_channel = sec;
+	iface->radar_background.centr_freq_seg0_idx = seg0;
+	iface->radar_background.centr_freq_seg1_idx = seg1;
+	iface->radar_background.chwidth = oper_width;
+}
+
+/*
+ * rcac_compute_chan_params - Compute oper_width, seg0, sec for RCAC
+ * @chan: Primary channel number
+ * @bw_mhz: Bandwidth in MHz (20, 40, 80, 160)
+ * @oper_width: Output: oper_chan_width enum
+ * @seg0: Output: center frequency segment 0 channel index
+ * @sec: Output: secondary channel direction (1=HT40+, -1=HT40-, 0=none)
+ *
+ * Returns 0 on success, -1 if bw_mhz is unsupported.
+ */
+static int rcac_compute_chan_params(int chan, int bw_mhz,
+				    enum oper_chan_width *oper_width,
+				    u8 *seg0, int *sec)
+{
+	int block_start;
+
+	switch (bw_mhz) {
+	case 20:
+		*oper_width = CONF_OPER_CHWIDTH_USE_HT;
+		*seg0 = chan;
+		*sec = 0;
+		break;
+	case 40:
+		*oper_width = CONF_OPER_CHWIDTH_USE_HT;
+		/* Determine HT40+ or HT40- based on channel position in pair */
+		if ((chan % 8) == 0 || (chan % 8) == 1) {
+			/* Upper channel of pair (e.g. 40, 48, 56...) → HT40- */
+			*seg0 = chan - 2;
+			*sec = -1;
+		} else {
+			/* Lower channel of pair → HT40+ */
+			*seg0 = chan + 2;
+			*sec = 1;
+		}
+		break;
+	case 80: {
+		static const int allowed_80[] = { 36, 52, 100, 116, 132, 149, 165 };
+		unsigned int k;
+		bool valid = false;
+
+		for (k = 0; k < ARRAY_SIZE(allowed_80); k++) {
+			if (chan >= allowed_80[k] && chan < allowed_80[k] + 16) {
+				block_start = allowed_80[k];
+				valid = true;
+				break;
+			}
+		}
+		if (!valid) {
+			wpa_printf(MSG_ERROR, "DFS: channel %d not in valid 80 MHz block", chan);
+			return -1;
+		}
+		*oper_width = CONF_OPER_CHWIDTH_80MHZ;
+		*seg0 = block_start + 6;
+		*sec = ((chan - block_start) % 8 == 0) ? 1 : -1;
+		break;
+	}
+	case 160: {
+		static const int allowed_160[] = { 36, 100, 149 };
+		unsigned int k;
+		bool valid = false;
+
+		for (k = 0; k < ARRAY_SIZE(allowed_160); k++) {
+			if (chan >= allowed_160[k] && chan < allowed_160[k] + 32) {
+				block_start = allowed_160[k];
+				valid = true;
+				break;
+			}
+		}
+		if (!valid) {
+			wpa_printf(MSG_ERROR,
+				   "DFS: channel %d is not in a valid 160 MHz block",
+				   chan);
+			return -1;
+		}
+		*oper_width = CONF_OPER_CHWIDTH_160MHZ;
+		*seg0 = block_start + 14;
+		*sec = ((chan - block_start) % 8 == 0) ? 1 : -1;
+		break;
+	}
+	default:
+		wpa_printf(MSG_ERROR,
+			   "DFS: unsupported bandwidth %d MHz for RCAC", bw_mhz);
+		return -1;
+	}
+
+	return 0;
+}
+
+/*
+ * rcac_block_has_dfs - Check if a channel block contains any DFS sub-channel
+ * @mode: Hardware mode
+ * @base_freq: Base frequency of the block
+ * @bw_mhz: Bandwidth in MHz
+ *
+ * Returns true if at least one DFS sub-channel exists in the block.
+ */
+static bool rcac_block_has_dfs(struct hostapd_hw_modes *mode,
+				int base_freq, int bw_mhz)
+{
+	int n_sub = bw_mhz / 20;
+	int i;
+
+	for (i = 0; i < n_sub; i++) {
+		int f = base_freq + i * 20;
+		struct hostapd_channel_data *sub = hw_mode_get_channel(mode, f, NULL);
+
+		if (sub && (sub->flag & HOSTAPD_CHAN_RADAR))
+			return true;
+	}
+	return false;
+}
+/**
+ * rcac_block_has_nol - Check if any sub-channel in the block is in NOL
+ * @mode: Hardware mode
+ * @base_freq: Base frequency of the block (primary channel freq)
+ * @bw_mhz: Bandwidth in MHz
+ * @primary_chan: Primary channel number (for log message)
+ *
+ * Returns true if any DFS sub-channel is in NOL (DFS_UNAVAILABLE).
+ */
+static bool rcac_block_has_nol(struct hostapd_hw_modes *mode,
+				int base_freq, int bw_mhz, int primary_chan)
+{
+	int n_sub = bw_mhz / 20;
+	int s;
+
+	for (s = 0; s < n_sub; s++) {
+		int f = base_freq + s * 20;
+		struct hostapd_channel_data *sub = hw_mode_get_channel(mode, f, NULL);
+
+		if (!sub || (sub->flag & HOSTAPD_CHAN_DISABLED) ||
+		    ((sub->flag & HOSTAPD_CHAN_RADAR) &&
+		     (sub->flag & HOSTAPD_CHAN_DFS_MASK) == HOSTAPD_CHAN_DFS_UNAVAILABLE)) {
+			wpa_printf(MSG_DEBUG,
+				   "DFS: block %d/%d MHz has unusable sub-channel at %d MHz - rejecting block",
+				   primary_chan, bw_mhz, f);
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * hostapd_start_rcac_on_channel - Start background CAC on a specific channel
+ * @iface: Pointer to hostapd interface
+ * @chan: Channel number (e.g. 100 for 5500 MHz)
+ * @bw_mhz: Bandwidth in MHz (20, 40, 80, 160)
+ *
+ * Starts background radar CAC (RCAC) on the given channel without using
+ * EHT device-bandwidth parameters.  This is the correct path for non-EHT
+ * APs that support the nl80211 radar-background flag.
+ *
+ * Returns 0 on success, -1 on failure.
+ */
+int hostapd_start_rcac_on_channel(struct hostapd_iface *iface, int chan,
+				  int bw_mhz)
+{
+	struct hostapd_hw_modes *mode;
+	struct hostapd_channel_data *channel = NULL;
+	int home_bw;
+	int sec = 0;
+	int block_base_freq;
+	u8 seg0 = 0, seg1 = 0;
+	int i;
+	enum oper_chan_width oper_width;
+
+	if (!iface || !iface->current_mode)
+		return -1;
+
+	if (!(iface->drv_flags2 & WPA_DRIVER_FLAGS2_RADAR_BACKGROUND)) {
+		wpa_printf(MSG_ERROR,
+			   "DFS: driver does not support background radar");
+		return -1;
+	}
+
+	if (!dfs_is_agile_cac_enabled(iface)) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: QCA Agile CAC not enabled in driver; refusing RCAC start");
+		return -1;
+	}
+
+	if (iface->radar_background.cac_started) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: background CAC already in progress");
+		return -1;
+	}
+
+	home_bw = channel_width_to_int(
+		hostapd_get_chan_width_from_oper_chan_width(iface->conf));
+	if (bw_mhz != home_bw && bw_mhz != home_bw / 2) {
+		wpa_printf(MSG_ERROR,
+			   "DFS: SET_RCAC_FREQ rejected - BW %d MHz is not compatible with home channel BW %d MHz (must be same or half)",
+			   bw_mhz, home_bw);
+		return -1;
+	}
+
+	mode = iface->current_mode;
+
+	for (i = 0; i < mode->num_channels; i++) {
+		if (mode->channels[i].chan == chan) {
+			channel = &mode->channels[i];
+			break;
+		}
+	}
+
+	if (!channel || (channel->flag & HOSTAPD_CHAN_DISABLED)) {
+		wpa_printf(MSG_ERROR,
+			   "DFS: channel %d not found or disabled", chan);
+		return -1;
+	}
+
+	if ((channel->flag & HOSTAPD_CHAN_RADAR) &&
+	    (channel->flag & HOSTAPD_CHAN_DFS_MASK) == HOSTAPD_CHAN_DFS_UNAVAILABLE) {
+		wpa_printf(MSG_WARNING,
+			   "DFS: channel %d is in NOP (Non-Occupancy Period) - "
+			   "falling back to RCS; will retry when NOP expires",
+			   chan);
+		return -1;
+	}
+
+	if (rcac_compute_chan_params(chan, bw_mhz, &oper_width, &seg0, &sec) < 0)
+		return -1;
+
+	block_base_freq = (seg0 * 5 + 5000) - bw_mhz / 2 + 10;
+
+	if (rcac_block_has_nol(mode, block_base_freq, bw_mhz, chan))
+		return -1;
+
+	wpa_printf(MSG_INFO,
+		   "DFS: starting background CAC on channel %d (%d MHz), bw=%d MHz, seg0=%d sec=%d",
+		   chan, channel->freq, bw_mhz, seg0, sec);
+
+	if (!(channel->flag & HOSTAPD_CHAN_RADAR) &&
+	    !rcac_block_has_dfs(mode, block_base_freq, bw_mhz)) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: channel %d block has no DFS sub-channels - "
+			   "updating state only (no CAC needed)",
+			   chan);
+		goto set_state;
+	}
+
+	if ((channel->flag & HOSTAPD_CHAN_RADAR) &&
+	    (channel->flag & HOSTAPD_CHAN_DFS_MASK) == HOSTAPD_CHAN_DFS_AVAILABLE) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: channel %d already DFS_AVAILABLE",
+			   chan);
+		goto set_state;
+	}
+
+	hostapd_stop_background_cac(iface->bss[0]);
+
+	if (hostapd_start_dfs_cac(iface, iface->conf->hw_mode,
+				  channel->freq, chan,
+				  iface->conf->ieee80211n,
+				  iface->conf->ieee80211ac,
+				  iface->conf->ieee80211ax,
+				  iface->conf->ieee80211be,
+				  iface->conf->ieee80211bn,
+				  sec, oper_width, seg0, seg1,
+				  true, 0, 0)) {
+		wpa_printf(MSG_ERROR,
+			   "DFS: failed to start background CAC on channel %d",
+			   chan);
+		iface->radar_background.cac_started = 0;
+		iface->radar_background.channel = -1;
+		return -1;
+	}
+
+set_state:
+
+	rcac_update_background_state(iface, chan, channel->freq,
+				     sec, seg0, seg1, oper_width);
+
+	return 0;
+}
+
+
 void hostapd_start_device_cac_background(struct hostapd_iface *iface)
 {
 	int width, start_chan, start_chan_idx = -1, n_chans = 1, i;
@@ -2223,6 +2891,47 @@ void hostapd_start_device_cac_background(struct hostapd_iface *iface)
 		hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
 	iface->radar_background.centr_freq_seg1_idx =
 		hostapd_get_oper_centr_freq_seg1_idx(iface->conf);
+}
+
+
+/**
+ * hostapd_start_background_cac - Runtime entry point to start Agile CAC.
+ *
+ * Called when bgcac_en is enabled at runtime (SET bgcac_en 1) or via the
+ * explicit BGCAC_START command.
+ *
+ * Returns 0 on success (or if CAC is already running), -1 if background
+ * radar is not supported or bgcac_en is not set.
+ */
+int hostapd_start_background_cac(struct hostapd_iface *iface)
+{
+	if (!iface || !iface->conf)
+		return -1;
+
+	if (!iface->conf->bgcac_en || !iface->conf->enable_background_radar) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: hostapd_start_background_cac: bgcac_en not set");
+		return -1;
+	}
+
+	if (!dfs_use_radar_background(iface)) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: hostapd_start_background_cac: background radar not supported");
+		return -1;
+	}
+
+	if (iface->radar_background.cac_started) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: hostapd_start_background_cac: already running");
+		return 0;
+	}
+
+	wpa_printf(MSG_INFO, "DFS: starting Agile CAC (bgcac_en=1)");
+
+
+	hostapd_dfs_update_background_chain(iface);
+
+	return iface->radar_background.cac_started ? 0 : -1;
 }
 
 
@@ -2634,6 +3343,71 @@ int hostapd_dfs_start_channel_switch_cac_helper(struct hostapd_iface *iface)
 	return hostapd_dfs_start_channel_switch_cac(iface);
 }
 #endif
+/**
+ * hostapd_restart_agile_cac_after_ch_switch - Restart Agile CAC after home
+ * channel change.
+ *@iface: Pointer to hostapd interface
+ *
+ * Resets background radar state and clears the  user-pinned RCAC channel
+ * if it matches the new home channel.  Then restarts RCAC channel selection
+ * via hostapd_dfs_update_background_chain().
+ * No-op if agile CAC is not enabled.
+ */
+void hostapd_restart_agile_cac_after_ch_switch(struct hostapd_iface *iface)
+{
+
+	if (!iface || !dfs_is_agile_cac_enabled(iface))
+		return;
+
+	iface->radar_background.cac_started = 0;
+	iface->radar_background.channel = -1;
+	iface->radar_background.freq = 0;
+
+	if (iface->user_rcac_channel == iface->conf->channel) {
+        wpa_printf(MSG_DEBUG,
+                   "DFS: user-pinned RCAC channel %d is now home - clearing pin",
+                   iface->user_rcac_channel);
+        iface->user_rcac_channel = 0;
+    }
+
+    hostapd_dfs_update_background_chain(iface);
+}
+
+
+/**
+ * hostapd_abort_background_cac - Abort an ongoing background CAC
+ * @iface: Pointer to hostapd interface data
+ *
+ * Aborts the ongoing background CAC by sending NL80211_CMD_STOP_BGRADAR_DETECT
+ * directly to the driver via hostapd_stop_background_cac().
+ */
+void hostapd_abort_background_cac(struct hostapd_iface *iface)
+{
+	struct hostapd_data *hapd;
+
+	if (!iface)
+		return;
+
+	if (!iface->radar_background.cac_started &&
+			iface->radar_background.freq <= 0)
+		return;
+
+	hapd = iface->bss[0];
+
+	wpa_printf(MSG_DEBUG,
+		   "DFS: Aborting background CAC on channel %d (%d MHz)",
+		   iface->radar_background.channel,
+		   iface->radar_background.freq);
+
+	if (hostapd_stop_background_cac(hapd) != 0)
+		wpa_printf(MSG_WARNING,
+			   "DFS: Failed to abort background CAC");
+
+	iface->radar_background.cac_started = 0;
+	iface->radar_background.channel = -1;
+	iface->radar_background.freq = 0;
+}
+
 
 bool hostapd_dfs_csa_target_has_unavailable_channel(struct hostapd_iface *iface,
 						    struct hostapd_freq_params *freq_params,

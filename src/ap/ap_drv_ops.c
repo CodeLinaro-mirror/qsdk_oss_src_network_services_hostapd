@@ -1296,6 +1296,15 @@ int hostapd_drv_send_action_forced_addr3(struct hostapd_data *hapd,
 }
 
 
+int hostapd_stop_background_cac(struct hostapd_data *hapd)
+{
+	if (!hapd->driver || !hapd->driver->stop_background_cac ||
+	    !hapd->drv_priv)
+		return -1;
+	return hapd->driver->stop_background_cac(hapd->drv_priv);
+}
+
+
 int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 			  enum hostapd_hw_mode mode, int freq,
 			  int channel, int ht_enabled, int vht_enabled,
