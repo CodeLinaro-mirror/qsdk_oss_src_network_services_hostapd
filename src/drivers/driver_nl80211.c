@@ -919,6 +919,19 @@ struct nl_msg * nl80211_bss_msg(struct i802_bss *bss, int flags, uint8_t cmd)
 }
 
 
+static struct nl_msg *
+nl80211_bss_msg_size(struct i802_bss *bss, int flags, uint8_t cmd,
+		     size_t attr_len)
+{
+	size_t nlmsg_len;
+
+	nlmsg_len = nlmsg_total_size(GENL_HDRLEN + nla_total_size(sizeof(u32)) +
+				     attr_len);
+	return nl80211_ifindex_msg_build(bss->drv, nlmsg_alloc_size(nlmsg_len),
+					 bss->ifindex, flags, cmd);
+}
+
+
 struct wiphy_idx_data {
 	int wiphy_idx;
 	enum nl80211_iftype nlmode;
@@ -6156,6 +6169,533 @@ static int wpa_driver_nl80211_set_cbs(void *priv,
 #endif
 #endif
 
+size_t nl80211_attr_len(size_t len)
+{
+	return nla_total_size(len);
+}
+
+size_t nl80211_attr_len_u8(void)
+{
+	return nl80211_attr_len(sizeof(u8));
+}
+
+size_t nl80211_attr_len_u16(void)
+{
+	return nl80211_attr_len(sizeof(u16));
+}
+
+size_t nl80211_attr_len_u32(void)
+{
+	return nl80211_attr_len(sizeof(u32));
+}
+
+size_t nl80211_attr_len_flag(void)
+{
+	return nl80211_attr_len(0);
+}
+
+static size_t
+nl80211_put_beacon_rate_len(u64 flags, u64 flags2,
+			    struct wpa_driver_ap_params *params)
+{
+	size_t rate_len = 0;
+	struct nl80211_txrate_vht vht_rate;
+	struct nl80211_txrate_he he_rate;
+	struct nl80211_txrate_eht eht_rate;
+
+	if (!params->freq ||
+	    (params->beacon_rate == 0 &&
+	     params->rate_type == BEACON_RATE_LEGACY))
+		return 0;
+
+	/* Len for nest_start NL80211_ATTR_TX_RATES */
+	rate_len = nl80211_attr_len(0);
+	switch (params->freq->mode) {
+	case HOSTAPD_MODE_IEEE80211B:
+	case HOSTAPD_MODE_IEEE80211G:
+	case HOSTAPD_MODE_IEEE80211A:
+	case HOSTAPD_MODE_IEEE80211AD:
+		/* Len for nest_start NL80211_BAND_XX*/
+		rate_len += nl80211_attr_len(0);
+		break;
+	default:
+		return 0;
+	}
+
+
+	switch (params->rate_type) {
+	case BEACON_RATE_LEGACY:
+		if (flags & WPA_DRIVER_FLAGS_BEACON_RATE_LEGACY) {
+			/* Len for NL80211_TXRATE_LEGACY */
+			rate_len += nl80211_attr_len_u8();
+
+			/* Len for NL80211_TXRATE_HT */
+			rate_len += nl80211_attr_len(0);
+			if (params->freq->vht_enabled)
+				rate_len += nl80211_attr_len(sizeof(vht_rate));
+		}
+		break;
+	case BEACON_RATE_HT:
+		if (flags & WPA_DRIVER_FLAGS_BEACON_RATE_HT) {
+			/* Len for NL80211_TXRATE_LEGACY */
+			rate_len += nl80211_attr_len(0);
+
+			/* Len for NL80211_TXRATE_HT */
+			rate_len += nl80211_attr_len_u8();
+			if (params->freq->vht_enabled)
+				rate_len += nl80211_attr_len(sizeof(vht_rate));
+		}
+		break;
+	case BEACON_RATE_VHT:
+		if (flags & WPA_DRIVER_FLAGS_BEACON_RATE_VHT) {
+			/* Len for NL80211_TXRATE_LEGACY */
+			rate_len += nl80211_attr_len(0);
+
+			/* Len for NL80211_TXRATE_HT */
+			rate_len += nl80211_attr_len(0);
+			rate_len += nl80211_attr_len(sizeof(vht_rate));
+		}
+		break;
+	case BEACON_RATE_HE:
+		if (flags2 & WPA_DRIVER_FLAGS2_BEACON_RATE_HE) {
+			/* Len for NL80211_TXRATE_LEGACY */
+			rate_len += nl80211_attr_len(0);
+
+			/* Len for NL80211_TXRATE_HT */
+			rate_len += nl80211_attr_len(0);
+			if (params->freq->vht_enabled)
+				rate_len += nl80211_attr_len(sizeof(vht_rate));
+			rate_len += nl80211_attr_len(sizeof(he_rate));
+		}
+		break;
+	case BEACON_RATE_EHT:
+		if (flags2 & WPA_DRIVER_FLAGS2_BEACON_RATE_EHT) {
+			/* Len for NL80211_TXRATE_LEGACY */
+			rate_len += nl80211_attr_len(0);
+
+			/* Len for NL80211_TXRATE_HT */
+			rate_len += nl80211_attr_len(0);
+			if (params->freq->vht_enabled)
+				rate_len += nl80211_attr_len(sizeof(vht_rate));
+			rate_len += nl80211_attr_len(sizeof(he_rate));
+			rate_len += nl80211_attr_len(sizeof(eht_rate));
+			if (params->eht_ltf >= 0)
+				rate_len += nl80211_attr_len_u8();
+		}
+		break;
+	}
+
+	return rate_len;
+}
+
+
+static size_t
+nl80211_put_freq_params_len(struct i802_bss *bss,
+			    const struct hostapd_freq_params *freq)
+{
+	enum hostapd_hw_mode hw_mode;
+	int is_24ghz;
+	size_t len;
+	u8 channel;
+
+	len = nl80211_attr_len_u32();
+	hw_mode = ieee80211_freq_to_chan(freq->freq, &channel);
+	is_24ghz = hw_mode == HOSTAPD_MODE_IEEE80211G ||
+		hw_mode == HOSTAPD_MODE_IEEE80211B;
+
+	if (freq->vht_enabled ||
+	    ((freq->he_enabled || freq->eht_enabled) && !is_24ghz)) {
+		len += nl80211_attr_len_u32();
+		len += nl80211_attr_len_u32();
+		if (freq->center_freq2)
+			len += nl80211_attr_len_u32();
+		if (freq->eht_enabled && freq->punct_bitmap &&
+		    bss->drv->puncturing)
+			len += nl80211_attr_len_u32();
+	} else if (freq->ht_enabled ||
+		   ((freq->he_enabled || freq->eht_enabled) && is_24ghz)) {
+		len += nl80211_attr_len_u32();
+	} else if (freq->edmg.channels && freq->edmg.bw_config) {
+		len += nl80211_attr_len_u8();
+		len += nl80211_attr_len_u8();
+	} else {
+		len += nl80211_attr_len_u32();
+	}
+
+	if (freq->center_freq_device && freq->bandwidth_device) {
+		len += nl80211_attr_len_u32();
+		len += nl80211_attr_len_u32();
+	}
+
+	if (freq->radar_background)
+		len += nl80211_attr_len_flag();
+#ifdef CONFIG_QCN_EXTN
+	if (freq->skip_cac)
+		len += nl80211_attr_len_flag();
+#endif /* CONFIG_QCN_EXTN */
+
+	return len;
+}
+
+
+#ifdef CONFIG_SAE
+static size_t nl80211_put_sae_pwe_len(enum sae_pwe pwe)
+{
+	if (pwe == SAE_PWE_FORCE_HUNT_AND_PECK)
+		return 0;
+
+	if (pwe == SAE_PWE_HUNT_AND_PECK ||
+	    pwe == SAE_PWE_HASH_TO_ELEMENT ||
+	    pwe == SAE_PWE_BOTH)
+		return nl80211_attr_len_u8();
+
+	return 0;
+}
+#endif /* CONFIG_SAE */
+
+
+#ifdef CONFIG_FILS
+static size_t
+nl80211_fils_discovery_len(struct i802_bss *bss,
+			   struct wpa_driver_ap_params *params)
+{
+	size_t len;
+
+	if (!bss->drv->fils_discovery)
+		return 0;
+
+	len = nl80211_attr_len_u32() + nl80211_attr_len_u32();
+	if (params->fd_frame_tmpl)
+		len += nl80211_attr_len(params->fd_frame_tmpl_len);
+
+	return nl80211_attr_len(len);
+}
+#endif /* CONFIG_FILS */
+
+
+#ifdef CONFIG_IEEE80211AX
+static size_t
+nl80211_unsol_bcast_probe_resp_len(struct i802_bss *bss,
+				   struct unsol_bcast_probe_resp *ubpr)
+{
+	size_t len;
+
+	if (!bss->drv->unsol_bcast_probe_resp)
+		return 0;
+
+	len = nl80211_attr_len_u32();
+	if (ubpr->unsol_bcast_probe_resp_tmpl)
+		len += nl80211_attr_len(ubpr->unsol_bcast_probe_resp_tmpl_len);
+
+	return nl80211_attr_len(len);
+}
+
+
+static size_t nl80211_mbssid_and_rnr_elems_len(u8 count, size_t len, u8 **offset)
+{
+	size_t attrs_len = 0;
+	u8 i;
+
+	if (!count || !len || !offset || !*offset)
+		return 0;
+
+	for (i = 0; i < count - 1; i++)
+		attrs_len += nl80211_attr_len(offset[i + 1] - offset[i]);
+
+	attrs_len += nl80211_attr_len(*offset + len - offset[i]);
+
+	return nl80211_attr_len(attrs_len);
+}
+
+
+static size_t nl80211_mbssid_len(struct mbssid_data *params)
+{
+	size_t len;
+	size_t config_len;
+
+	if (!params->mbssid_tx_iface)
+		return 0;
+
+	config_len = nl80211_attr_len_u8() + nl80211_attr_len_u32();
+
+	if (params->mbssid_tx_iface_linkid >= 0)
+		config_len += nl80211_attr_len_u8();
+
+	if (params->ema)
+		config_len += nl80211_attr_len_flag();
+
+	len = nl80211_attr_len(config_len);
+
+	len += nl80211_mbssid_and_rnr_elems_len(params->mbssid_elem_count,
+						params->mbssid_elem_len,
+						params->mbssid_elem_offset);
+
+	if (params->ema)
+		len += nl80211_mbssid_and_rnr_elems_len(params->rnr_elem_count,
+							params->rnr_elem_len,
+							params->rnr_elem_offset);
+
+	return len;
+}
+#endif /* CONFIG_IEEE80211AX */
+
+
+#ifdef CONFIG_IEEE80211BE
+static size_t
+wpa_set_offload_adv_ttlm_params_len(
+	const struct drv_adv_ttlm_params *est_ttlm,
+	const struct drv_adv_ttlm_params *up_ttlm,
+	bool send_default_mapping)
+{
+	size_t len;
+	u8 link_map_size_arr[2];
+	u16 switch_time_arr[2];
+	u16 link_map_arr[2];
+	u32 duration_arr[2];
+	u8 num_ttlm_ie = 0;
+
+	if (est_ttlm->expected_duration_present || send_default_mapping)
+		num_ttlm_ie++;
+
+	if (up_ttlm->mapping_switch_time_present ||
+	    up_ttlm->expected_duration_present)
+		num_ttlm_ie++;
+
+	if (!num_ttlm_ie)
+		return 0;
+
+	len = nl80211_attr_len_u8();
+	len += nl80211_attr_len(sizeof(link_map_size_arr));
+	len += nl80211_attr_len(sizeof(switch_time_arr));
+	len += nl80211_attr_len(sizeof(duration_arr));
+	len += nl80211_attr_len(sizeof(link_map_arr));
+
+	return nl80211_attr_len(len);
+}
+#endif /* CONFIG_IEEE80211BE */
+
+static size_t
+wpa_driver_nl80211_set_ap_nlmsg_len(struct i802_bss *bss,
+				    struct wpa_driver_ap_params *params,
+				    int flags, u8 cmd, enum nl80211_wpa_versions ver)
+{
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	size_t len = 0;
+	int num_suites;
+	u32 suite;
+	u32 suites[20];
+
+	len += nl80211_attr_len(params->head_len);
+	len += nl80211_attr_len(params->tail_len);
+
+	if (params->beacon_int > 0)
+		len += nl80211_attr_len_u32();
+
+	len += nl80211_put_beacon_rate_len(drv->capa.flags, drv->capa.flags2,
+					   params);
+
+	if (params->dtim_period > 0)
+		len += nl80211_attr_len_u32();
+
+	len += nl80211_attr_len(params->ssid_len);
+
+	if (params->beacon_tx_mode)
+		len += nl80211_attr_len_u32();
+
+	if (params->mld_ap)
+		len += nl80211_attr_len_u8();
+
+	if (params->proberesp && params->proberesp_len)
+		len += nl80211_attr_len(params->proberesp_len);
+
+	if (params->hide_ssid == NO_SSID_HIDING ||
+	    params->hide_ssid == HIDDEN_SSID_ZERO_LEN ||
+	    params->hide_ssid == HIDDEN_SSID_ZERO_CONTENTS)
+		len += nl80211_attr_len_u32();
+
+	if (params->privacy)
+		len += nl80211_attr_len_flag();
+
+	if ((params->auth_algs & (WPA_AUTH_ALG_OPEN | WPA_AUTH_ALG_SHARED)) !=
+	    (WPA_AUTH_ALG_OPEN | WPA_AUTH_ALG_SHARED))
+		len += nl80211_attr_len_u32();
+
+	if (ver)
+		len += nl80211_attr_len_u32();
+
+	num_suites = wpa_key_mgmt_to_suites(params->key_mgmt_suites,
+					    suites, ARRAY_SIZE(suites));
+	if (num_suites && ((unsigned int) num_suites <= drv->capa.max_num_akms))
+		len += nl80211_attr_len(num_suites * sizeof(u32));
+
+	if (wpa_key_mgmt_wpa_psk_no_sae(params->key_mgmt_suites) &&
+	    (drv->capa.flags2 & WPA_DRIVER_FLAGS2_4WAY_HANDSHAKE_AP_PSK) &&
+	    params->psk_len)
+		len += nl80211_attr_len(params->psk_len);
+
+	if (wpa_key_mgmt_sae(params->key_mgmt_suites) &&
+	    (drv->capa.flags2 & WPA_DRIVER_FLAGS2_SAE_OFFLOAD_AP) &&
+	    params->sae_password)
+		len += nl80211_attr_len(os_strlen(params->sae_password));
+
+	len += nl80211_attr_len_flag();
+	len += nl80211_attr_len_u16();
+	if (drv->capa.flags2 & WPA_DRIVER_FLAGS2_CONTROL_PORT_RX) {
+		len += nl80211_attr_len_flag();
+		len += nl80211_attr_len_flag();
+	}
+
+	if (params->key_mgmt_suites & WPA_KEY_MGMT_IEEE8021X_NO_WPA &&
+	    (!params->pairwise_ciphers ||
+	     params->pairwise_ciphers & (WPA_CIPHER_WEP104 | WPA_CIPHER_WEP40)))
+		len += nl80211_attr_len_flag();
+
+	if (drv->device_ap_sme) {
+		if (params->key_mgmt_suites & (WPA_KEY_MGMT_SAE |
+					       WPA_KEY_MGMT_SAE_EXT_KEY))
+			len += nl80211_attr_len_flag();
+
+		if (nl80211_attr_supported(drv, NL80211_ATTR_AP_SETTINGS_FLAGS))
+			len += nl80211_attr_len_u32();
+	}
+
+	num_suites = wpa_cipher_to_cipher_suites(params->pairwise_ciphers,
+						 suites, ARRAY_SIZE(suites));
+	if (num_suites)
+		len += nl80211_attr_len(num_suites * sizeof(u32));
+
+	suite = wpa_cipher_to_cipher_suite(params->group_cipher);
+	if (suite)
+		len += nl80211_attr_len_u32();
+
+	if (params->beacon_ies)
+		len += nl80211_attr_len(wpabuf_len(params->beacon_ies));
+
+	if (params->proberesp_ies)
+		len += nl80211_attr_len(wpabuf_len(params->proberesp_ies));
+
+	if (params->assocresp_ies)
+		len += nl80211_attr_len(wpabuf_len(params->assocresp_ies));
+
+	if (drv->capa.flags & WPA_DRIVER_FLAGS_INACTIVITY_TIMER)
+		len += nl80211_attr_len_u16();
+
+#ifdef CONFIG_P2P
+	if (params->p2p_go_ctwindow > 0 && drv->p2p_go_ctwindow_supported)
+		len += nl80211_attr_len_u8();
+#endif /* CONFIG_P2P */
+
+	if (params->pbss)
+		len += nl80211_attr_len_flag();
+
+	if (params->ftm_responder &&
+	    (drv->capa.flags & WPA_DRIVER_FLAGS_FTM_RESPONDER)) {
+		size_t ftm_len = nl80211_attr_len(0); /* Len for nest_start */
+
+		ftm_len += nl80211_attr_len_flag();
+
+		if (params->lci)
+			ftm_len += nl80211_attr_len(wpabuf_len(params->lci));
+
+		if (params->civic)
+			ftm_len += nl80211_attr_len(wpabuf_len(params->civic));
+
+		len += ftm_len;
+	}
+
+	if (params->freq)
+		len += nl80211_put_freq_params_len(bss, params->freq);
+
+#ifdef CONFIG_IEEE80211AX
+	if (params->he_spr_ctrl) {
+		size_t spr_len = nl80211_attr_len_u8();
+
+		if (params->he_spr_ctrl & SPATIAL_REUSE_NON_SRG_OFFSET_PRESENT)
+			spr_len += nl80211_attr_len_u8();
+
+		if (params->he_spr_ctrl & SPATIAL_REUSE_SRG_INFORMATION_PRESENT) {
+			spr_len += nl80211_attr_len_u8();
+			spr_len += nl80211_attr_len_u8();
+			spr_len += nl80211_attr_len(
+				sizeof(params->he_spr_bss_color_bitmap));
+			spr_len += nl80211_attr_len(
+				sizeof(params->he_spr_partial_bssid_bitmap));
+		}
+		len += nl80211_attr_len(spr_len);
+	}
+
+	if (params->freq && params->freq->he_enabled &&
+	    nl80211_attr_supported(drv, NL80211_ATTR_HE_BSS_COLOR)) {
+		size_t color_len = nl80211_attr_len_u8();
+
+		if (params->he_bss_color_disabled)
+			color_len += nl80211_attr_len_flag();
+
+		if (params->he_bss_color_partial)
+			color_len += nl80211_attr_len_flag();
+
+		if (!params->he_bss_color_collision_detection)
+			color_len += nl80211_attr_len_flag();
+
+		len += nl80211_attr_len(color_len);
+	}
+
+	if (params->twt_responder)
+		len += nl80211_attr_len_flag();
+
+	len += nl80211_unsol_bcast_probe_resp_len(bss, &params->ubpr);
+	len += nl80211_mbssid_len(&params->mbssid);
+#endif /* CONFIG_IEEE80211AX */
+
+	if (params->freq && is_6ghz_freq(params->freq->freq))
+		len += nl80211_attr_len_u8();
+
+#ifdef CONFIG_SAE
+	if (wpa_key_mgmt_sae(params->key_mgmt_suites))
+		len += nl80211_put_sae_pwe_len(params->sae_pwe);
+#endif /* CONFIG_SAE */
+
+#ifdef CONFIG_FILS
+	len += nl80211_fils_discovery_len(bss, params);
+#endif /* CONFIG_FILS */
+
+	if (bss->valid_links &&
+	    (params->elemid_added_bmap || params->elemid_modified_bmap) &&
+	    !params->disable_cu) {
+		/* Len for nest_start */
+		len += nl80211_attr_len(0);
+
+		len += nl80211_attr_len_u32() + nl80211_attr_len_u32();
+	}
+
+	if (params->ml_max_rec_links != ML_IE_MAX_REC_LINKS_INVAL)
+		len += nl80211_attr_len_u8();
+
+#ifdef CONFIG_IEEE80211BE
+	if (cmd == NL80211_CMD_NEW_BEACON) {
+		struct wpa_driver_ap_ttlm_params *ttlm_param =
+			&params->ttlm_params;
+
+		len += wpa_set_offload_adv_ttlm_params_len(&ttlm_param->est_ttlm,
+							   &ttlm_param->up_ttlm,
+							   ttlm_param->send_default_mapping);
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	if (params->is_cfp_enabled)
+		len += nl80211_attr_len_flag();
+
+#ifdef CONFIG_IEEE80211BN
+	if (!params->dps_assist)
+		len += nl80211_attr_len_u8();
+#endif /* CONFIG_IEEE80211BN */
+
+	/* Len for NL80211_ATTR_SOCKET_OWNER */
+	len += nl80211_attr_len_flag();
+
+	return len;
+}
+
 static int nl80211_set_multi_bss_param(struct i802_bss *bss,
 				       struct wpa_driver_ap_params *params)
 {
@@ -6364,8 +6904,24 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 	wpa_printf(MSG_DEBUG, "nl80211: beacon_tx_mode=%d", params->beacon_tx_mode);
 	wpa_printf(MSG_DEBUG, "nl80211: ssid=%s",
 		   wpa_ssid_txt(params->ssid, params->ssid_len));
-	if (!(msg = nl80211_bss_msg(bss, 0, cmd)) ||
-	    nla_put(msg, NL80211_ATTR_BEACON_HEAD, params->head_len,
+
+	ver = wpa_ver_supported(drv, params->key_mgmt_suites,
+				params->wpa_version);
+
+	if (params->mbssid.ema) {
+		msg = nl80211_bss_msg_size(
+				bss, 0, cmd,
+				wpa_driver_nl80211_set_ap_nlmsg_len(bss, params, 0, cmd, ver));
+	} else {
+		msg = nl80211_bss_msg(bss, 0, cmd);
+	}
+
+	if (!msg) {
+		wpa_printf(MSG_ERROR, "nl80211: msg is NULL");
+		goto fail;
+	}
+
+	if (nla_put(msg, NL80211_ATTR_BEACON_HEAD, params->head_len,
 		    params->head) ||
 	    nla_put(msg, NL80211_ATTR_BEACON_TAIL, params->tail_len,
 		    params->tail) ||
@@ -6438,8 +6994,6 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 			goto fail;
 	}
 
-	ver = wpa_ver_supported(drv, params->key_mgmt_suites,
-				params->wpa_version);
 	wpa_printf(MSG_DEBUG, "nl80211: wpa_version=0x%x", ver);
 	if (ver &&
 	    nla_put_u32(msg, NL80211_ATTR_WPA_VERSIONS, ver))
