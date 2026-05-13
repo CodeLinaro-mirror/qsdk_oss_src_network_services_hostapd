@@ -1609,6 +1609,20 @@ static int hostapd_cli_cmd_enable(struct wpa_ctrl *ctrl, int argc,
 }
 
 
+static int hostapd_cli_cmd_switch_to_rcac(struct wpa_ctrl *ctrl, int argc,
+					  char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "switch_to_rcac");
+}
+
+
+static int hostapd_cli_cmd_bgcac_start(struct wpa_ctrl *ctrl, int argc,
+				       char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "bgcac_start");
+}
+
+
 static int hostapd_cli_cmd_reload(struct wpa_ctrl *ctrl, int argc,
 				  char *argv[])
 {
@@ -2623,6 +2637,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "  = send vendor driver command" },
 	{ "enable", hostapd_cli_cmd_enable, NULL,
 	  "= enable hostapd on current interface" },
+	{ "switch_to_rcac", hostapd_cli_cmd_switch_to_rcac, NULL,
+	  "= switch AP to the pre-cleared RCAC channel" },
+	{ "bgcac_start", hostapd_cli_cmd_bgcac_start, NULL,
+	  "= start background CAC (Agile CAC)" },
 	{ "reload", hostapd_cli_cmd_reload, NULL,
 	  "= reload configuration for current interface" },
 	{ "reload_bss", hostapd_cli_cmd_reload_bss, NULL,

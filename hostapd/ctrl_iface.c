@@ -34,6 +34,7 @@
 #include "common/version.h"
 #include "common/ieee802_11_defs.h"
 #include "common/ctrl_iface_common.h"
+#include "common/ieee802_11_common.h"
 #ifdef CONFIG_DPP
 #include "common/dpp.h"
 #endif /* CONFIG_DPP */
@@ -1709,6 +1710,166 @@ static int hostapd_ctrl_iface_update_rssi_monitor(struct hostapd_data *hapd)
 	return ret;
 }
 
+#ifdef NEED_AP_MLME
+/*
+ * hostapd_ctrl_iface_get_rcac_freq - Get current RCAC channel info
+ *
+ * Returns RCAC channel, frequency, bandwidth and status (ongoing/done/unavailable).
+ * Only uses radar_background parameters — device-width params are not relevant
+ * for RCAC which uses the operating bandwidth.
+ */
+static int hostapd_ctrl_iface_get_rcac_freq(struct hostapd_data *hapd,
+					    char *buf, size_t buflen)
+{
+	const struct hostapd_iface *iface = hapd->iface;
+	const char *status;
+	int freq = 0, chan = 0, bw = 0, res;
+	u8 chan_num;
+
+	if (!iface->conf->bgcac_en) {
+		return os_snprintf(buf, buflen, "bgcac_en=0\n");
+	}
+
+	if (iface->radar_background.cac_started) {
+		status = "ongoing";
+		freq = iface->radar_background.freq;
+	} else if (iface->radar_background.channel != -1 &&
+		   iface->radar_background.freq > 0) {
+		status = "done";
+		freq = iface->radar_background.freq;
+	} else {
+		status = "unavailable";
+	}
+
+	if (freq > 0) {
+		switch (iface->radar_background.chwidth) {
+		case CONF_OPER_CHWIDTH_USE_HT:
+			bw = iface->radar_background.secondary_channel ? 40 : 20;
+			break;
+		case CONF_OPER_CHWIDTH_80MHZ:
+			bw = 80;
+			break;
+		case CONF_OPER_CHWIDTH_160MHZ:
+			bw = 160;
+			break;
+		default:
+			bw = 0;
+			break;
+		}
+
+		if (ieee80211_freq_to_chan(freq, &chan_num) != NUM_HOSTAPD_MODES)
+			chan = chan_num;
+	}
+
+	res = os_snprintf(buf, buflen, "channel=%d freq=%d bw=%d status=%s\n",
+			  chan, freq, bw, status);
+	if (os_snprintf_error(buflen, res))
+		return -1;
+	return res;
+}
+#endif /* NEED_AP_MLME */
+
+#ifdef NEED_AP_MLME
+/**
+ * hostapd_ctrl_iface_set_rcac_freq - Parse and apply SET_RCAC_FREQ arguments
+ * @hapd: Pointer to hostapd data
+ * @pos: Argument string after "SET_RCAC_FREQ " prefix
+ *
+ * Format: set_rcac_freq channel <chan> [<bw>]
+ * Returns: 0 on success, -1 on failure
+ *
+ * Validates that the requested BW is either the same as the home channel BW
+ * or exactly half of it (e.g., home=80 → RCAC BW must be 80 or 40 MHz).
+ */
+static int hostapd_ctrl_iface_set_rcac_freq(struct hostapd_data *hapd,
+					    const char *pos)
+{
+	int chan = 0, freq = 0;
+	int home_bw;
+	int home_center;
+	int home_start;
+	int home_end;
+
+	chan = atoi(pos);
+
+	if (chan <= 0) {
+		wpa_printf(MSG_ERROR,
+			   "SET rcac_freq: missing/invalid channel");
+		return -1;
+	}
+
+	if (chan >= 36 && chan <= 177)
+		freq = 5000 + 5 * chan;
+	else
+		freq = -1;
+
+	if (freq < 0) {
+		wpa_printf(MSG_ERROR,
+			   "SET rcac_freq: cannot convert channel %d to freq",
+			   chan);
+		return -1;
+	}
+
+	switch (hostapd_get_oper_chwidth(hapd->iface->conf)) {
+	case CONF_OPER_CHWIDTH_USE_HT:
+		home_bw = hapd->iface->conf->secondary_channel ? 40 : 20;
+		break;
+	case CONF_OPER_CHWIDTH_80MHZ:
+		home_bw = 80;
+		break;
+	case CONF_OPER_CHWIDTH_160MHZ:
+		home_bw = 160;
+		break;
+	default:
+		home_bw = 80;
+		break;
+	}
+
+	home_center = (hostapd_get_oper_centr_freq_seg0_idx(hapd->iface->conf) * 5) + 5000;
+	home_start = home_center - home_bw / 2 + 10;
+	home_end = home_center + home_bw / 2 - 10;
+
+	wpa_printf(MSG_DEBUG,
+		   "SET rcac_freq: overlap check freq=%d home_start=%d home_end=%d",
+		   freq, home_start, home_end);
+
+	if (freq >= home_start && freq <= home_end) {
+		wpa_printf(MSG_ERROR,
+			   "SET rcac_freq: channel %d overlaps with home channel block - rejected",
+			   chan);
+		return -1;
+	}
+
+	if (!hapd->iface->conf->enable_background_radar) {
+		wpa_printf(MSG_ERROR,
+			   "SET rcac_freq: background radar not enabled (enable_background_radar=0)");
+		return -1;
+	}
+
+	wpa_printf(MSG_INFO, "RCAC config: channel=%d freq=%d MHz bw=%d (home BW)",
+		   chan, freq, home_bw);
+
+	hapd->iface->user_rcac_channel = chan;
+
+	if (hapd->iface->radar_background.cac_started) {
+		hostapd_abort_background_cac(hapd->iface);
+		wpa_printf(MSG_INFO,
+			   "SET rcac_freq: aborted RCAC on old channel; starting immediately on channel %d (%d MHz)",
+			   chan, home_bw);
+	}
+
+	if (hostapd_start_rcac_on_channel(hapd->iface, chan, home_bw) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "SET rcac_freq: failed to start RCAC on channel %d",
+			   chan);
+		hapd->iface->user_rcac_channel = 0;
+		return -1;
+	}
+	return 0;
+}
+#endif /* NEED_AP_MLME */
+
+
 static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 {
 	char *value;
@@ -1839,6 +2000,34 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 	} else if (os_strcasecmp(cmd, "dpp_resp_retry_time") == 0) {
 		hapd->dpp_resp_retry_time = atoi(value);
 #endif /* CONFIG_DPP */
+#ifdef NEED_AP_MLME
+	} else if (os_strcasecmp(cmd, "bgcac_en") == 0) {
+		int val;
+		char *end = NULL;
+
+		val = strtol(value, &end, 10);
+		if (value == end || (val != 0 && val != 1)) {
+			wpa_printf(MSG_ERROR, "Invalid bgcac_en value: %s (use 0 or 1)", value);
+			return -1;
+		}
+		hapd->iface->conf->bgcac_en = val;
+		/* bgcac_en requires enable_background_radar as prerequisite */
+		if (val)
+			hapd->iface->conf->enable_background_radar = 1;
+		wpa_printf(MSG_INFO, "Background CAC %s",
+			   val ? "enabled" : "disabled");
+		if (!val) {
+			hostapd_abort_background_cac(hapd->iface);
+			hapd->iface->radar_background.channel = -1;
+			hapd->iface->radar_background.cac_started = 0;
+			hapd->iface->user_rcac_channel = 0;
+			wpa_printf(MSG_INFO, "DFS: Agile CAC disabled - background CAC abort CSA issued");
+		}
+	} else if (os_strcasecmp(cmd, "rcac_freq") == 0) {
+		if (hostapd_ctrl_iface_set_rcac_freq(hapd, value) < 0)
+			return -1;
+		return 0;
+#endif /* NEED_AP_MLME */
 	} else if (os_strcasecmp(cmd, "setband") == 0) {
 		ret = hostapd_ctrl_iface_set_band(hapd, value);
 	} else if (os_strcasecmp(cmd, "puncture_strict_6ghz") == 0) {
@@ -2436,6 +2625,17 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+#ifdef NEED_AP_MLME
+	} else if (os_strcmp(cmd, "bgcac_en") == 0) {
+		int enabled = hapd->iface->conf ?
+			hapd->iface->conf->bgcac_en : 0;
+		res = os_snprintf(buf, buflen, "%d\n", enabled);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcmp(cmd, "rcac_freq") == 0) {
+		return hostapd_ctrl_iface_get_rcac_freq(hapd, buf, buflen);
+#endif /* NEED_AP_MLME */
 	} else if (os_strcmp(cmd, "macaddr_acl") == 0) {
 		if (!hapd || !hapd->conf) {
 			wpa_printf(MSG_ERROR, "Invalid hapd or hapd->conf pointer");
@@ -8580,6 +8780,20 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "VENDOR ", 7) == 0) {
 		reply_len = hostapd_ctrl_iface_vendor(hapd, buf + 7, reply,
 						      reply_size);
+	} else if (os_strcmp(buf, "switch_to_rcac") == 0) {
+#ifdef NEED_AP_MLME
+		if (hostapd_dfs_agile_cac_switch(hapd->iface) < 0)
+			reply_len = -1;
+#else /* NEED_AP_MLME */
+		reply_len = -1;
+#endif /* NEED_AP_MLME */
+	} else if (os_strcmp(buf, "bgcac_start") == 0) {
+#ifdef NEED_AP_MLME
+		if (hostapd_start_background_cac(hapd->iface) < 0)
+			reply_len = -1;
+#else /* NEED_AP_MLME */
+		reply_len = -1;
+#endif /* NEED_AP_MLME */
 	} else if (os_strcmp(buf, "ERP_FLUSH") == 0) {
 		ieee802_1x_erp_flush(hapd);
 #ifdef RADIUS_SERVER
