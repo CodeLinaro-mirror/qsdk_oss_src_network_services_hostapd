@@ -6692,6 +6692,10 @@ wpa_supplicant_alloc(struct wpa_supplicant *parent)
 #endif /* CONFIG_MESH */
 #endif /* CONFIG_PMKSA_CACHE_EXTERNAL */
 
+#ifdef CONFIG_QCN_EXTN
+	wpas_iface_init_extn(wpa_s);
+#endif /* CONFIG_QCN_EXTN */
+
 	return wpa_s;
 }
 
@@ -8074,6 +8078,10 @@ static int wpa_supplicant_init_iface(struct wpa_supplicant *wpa_s,
 				wpa_s->hw_capab |= BIT(CAPAB_HT);
 		}
 		wpa_s->support_6ghz = wpas_is_6ghz_supported(wpa_s, false);
+#ifdef CONFIG_QCN_EXTN
+		if (wpa_s->support_6ghz)
+			wpas_query_hw_blocklist_extn(wpa_s);
+#endif /* CONFIG_QCN_EXTN */
 	}
 
 	multi_hw_info = wpa_get_multi_hw_info(wpa_s, &num_multi_hws);
@@ -8414,6 +8422,9 @@ static void wpa_supplicant_deinit_iface(struct wpa_supplicant *wpa_s,
 	hostapd_free_multi_hw_info(wpa_s->multi_hw_info);
 	wpa_s->multi_hw_info = NULL;
 	wpa_s->num_multi_hws = 0;
+#ifdef CONFIG_QCN_EXTN
+	wpas_iface_deinit_extn(wpa_s);
+#endif /* CONFIG_QCN_EXTN */
 	os_free(wpa_s->ssids_from_scan_req);
 	os_free(wpa_s->last_scan_freqs);
 
