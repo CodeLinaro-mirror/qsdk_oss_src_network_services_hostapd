@@ -6341,6 +6341,16 @@ struct wpa_driver_ops {
 	 * Returns: 0 on success, -1 on failure
 	 */
 	int (*dcs_sim)(void *priv, u8 link_id, struct driver_dcs_sim *params);
+	/**
+	 * set_cbs - Send the CBS params to driver in order to trigger scan.
+	 * @priv: Private driver interface data
+	 * @params: CBS params structure.
+	 * @freq_list: Frequency list for scan trigger.
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*set_cbs)(void *priv,
+		       const struct cbs_params_extn *params,
+		       int *freq_list);
 #endif
 #endif /* CONFIG_IEEE80211BE */
 
