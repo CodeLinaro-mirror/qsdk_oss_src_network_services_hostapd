@@ -1701,6 +1701,12 @@ static void hostapd_fill_probe_resp_ml_params(struct hostapd_data *hapd,
 			}
 		}
 		params->mld_ap = hapd;
+	} else {
+		/* If ML probe request was sent to a non-TX BSSID without AP MLD ID,
+		 * include the TX ML IEs in the ML probe response body.
+		*/
+		if (hapd != hostapd_mbssid_get_tx_bss(hapd))
+			params->mld_ap = hapd;
 	}
 
 	for_each_mld_link(link, hapd) {
