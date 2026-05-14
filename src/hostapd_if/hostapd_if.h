@@ -113,6 +113,17 @@ hostapd_if_notify_remote_auth(struct hostapd_data *hapd, uint8_t *sta_mac,
 			      const uint8_t *ies, uint16_t ies_len,
 			      uint16_t status_code, bool is_ml);
 
+int hostapd_if_pull_pmk_r1(struct hostapd_data *hapd, uint8_t *sta_mac,
+			   uint8_t *pmk_r1_name, uint8_t *pmk_r1,
+			   size_t *pmk_r1_len, int *pairwise,
+			   int *session_timeout, const uint8_t **identity,
+			   size_t *identity_len, const uint8_t **radius_cui,
+			   size_t *radius_cui_len);
+
+int hostapd_if_pull_pmk(struct hostapd_data *hapd, uint8_t *sta_mac,
+			uint8_t *pmk, size_t *pmk_len, uint8_t *pmkid,
+			int *session_timeout);
+
 void hostapd_if_eapol_rx(struct hostapd_data *hapd, const u8 *sa,
 			 const u8 *data, u16 data_len);
 

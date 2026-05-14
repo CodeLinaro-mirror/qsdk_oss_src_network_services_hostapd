@@ -668,6 +668,59 @@ hostapd_if_notify_remote_auth(struct hostapd_data *hapd, uint8_t *sta_mac,
 	return decision;
 }
 
+int hostapd_if_pull_pmk_r1(struct hostapd_data *hapd, uint8_t *sta_mac,
+			   uint8_t *pmk_r1_name, uint8_t *pmk_r1,
+			   size_t *pmk_r1_len, int *pairwise,
+			   int *session_timeout, const uint8_t **identity,
+			   size_t *identity_len, const uint8_t **radius_cui,
+			   size_t *radius_cui_len)
+{
+	uint8_t *hapd_if_identity, *hapd_if_radius_cui;
+
+	if (!hostapd_if_plugin || !hostapd_if_plugin->pull_pmk_r1)
+		return -1;
+
+	hapd_if_identity = os_zalloc(MAX_RADIUS_CUI_LEN);
+	hapd_if_radius_cui = os_zalloc(MAX_RADIUS_CUI_LEN);
+
+	if (!hapd_if_identity || !hapd_if_radius_cui) {
+		wpa_printf(MSG_ERROR, "Failed to allocate memory in pull_pmk_r1\n");
+		goto hostapd_if_pull_pmk_r1_fail;
+	}
+
+	if (hostapd_if_plugin->pull_pmk_r1(hapd->conf->iface, sta_mac,pmk_r1_name, pmk_r1, pmk_r1_len,
+				       pairwise,
+				       session_timeout, hapd_if_identity,
+				       identity_len, hapd_if_radius_cui,
+				       radius_cui_len)) {
+		goto hostapd_if_pull_pmk_r1_fail;
+	}
+
+	*identity = hapd_if_identity;
+	*radius_cui = hapd_if_radius_cui;
+	return 0;
+
+hostapd_if_pull_pmk_r1_fail:
+	if (hapd_if_identity)
+		os_free(hapd_if_identity);
+
+	if (hapd_if_radius_cui)
+		os_free(hapd_if_radius_cui);
+
+	return -1;
+}
+
+int hostapd_if_pull_pmk(struct hostapd_data *hapd, uint8_t *sta_mac,
+			uint8_t *pmk, size_t *pmk_len, uint8_t *pmkid,
+			int *session_timeout)
+{
+	if ((!hostapd_if_plugin) || (!hostapd_if_plugin->pull_pmk))
+		return -1;
+
+	return hostapd_if_plugin->pull_pmk(hapd->conf->iface, sta_mac, pmk,
+					   pmk_len, pmkid, session_timeout);
+}
+
 /*
  * Notify/invoke external application for Association and return
  * processing decision.
