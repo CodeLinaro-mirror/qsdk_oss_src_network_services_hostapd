@@ -745,7 +745,10 @@ static int is_common_24ghz_chan(int chan)
 
 
 #ifdef CONFIG_IEEE80211BE
-static void acs_update_puncturing_bitmap(struct hostapd_iface *iface,
+#ifndef CONFIG_QCN_EXTN
+static
+#endif /* CONFIG_QCN_EXTN */
+void acs_update_puncturing_bitmap(struct hostapd_iface *iface,
 					 struct hostapd_hw_modes *mode, u32 bw,
 					 int n_chans,
 					 struct hostapd_channel_data *chan,
@@ -1077,6 +1080,10 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 		}
 
 		if (acs_usable_chan(chan) &&
+#ifdef CONFIG_QCN_EXTN
+		    acs_hwbl_chan_ok_extn(iface, mode, bw, bw320_offset, n_chans,
+					  chan, factor) &&
+#endif /* CONFIG_QCN_EXTN */
 		    (!*ideal_chan || factor < *ideal_factor)) {
 			/* Reset puncturing bitmap for the previous ideal
 			 * channel */
@@ -1098,7 +1105,12 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 		}
 
 		/* This channel would at least be usable */
-		if (!(*rand_chan)) {
+		if (!(*rand_chan)
+#ifdef CONFIG_QCN_EXTN
+		    && acs_hwbl_chan_ok_extn(iface, mode, bw, bw320_offset,
+					     n_chans, chan, factor)
+#endif /* CONFIG_QCN_EXTN */
+		    ) {
 			*rand_chan = chan;
 			ideal_bw320_offset = bw320_offset;
 		}
