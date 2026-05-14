@@ -6619,6 +6619,10 @@ rsnxe_done:
 
 	p = hostapd_eid_mbo(hapd, p, buf + buflen - p);
 
+#ifdef CONFIG_QCN_EXTN
+	hostapd_update_assoc_resp_with_hop_count_extn(hapd);
+#endif
+
 	if (hapd->conf->assocresp_elements &&
 	    (size_t) (buf + buflen - p) >=
 	    wpabuf_len(hapd->conf->assocresp_elements)) {
