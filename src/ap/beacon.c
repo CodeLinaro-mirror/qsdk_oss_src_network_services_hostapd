@@ -1140,6 +1140,9 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 #ifdef CONFIG_MBO
 	pos = hostapd_eid_ess_report(hapd, pos, epos - pos);
 #endif /* CONFIG_MBO */
+#ifdef CONFIG_MBO
+	pos = hostapd_eid_ap_channel_report(hapd, pos, epos - pos);
+#endif /* CONFIG_MBO */
 	pos = hostapd_eid_mbo(hapd, pos, epos - pos);
 	pos = hostapd_eid_owe_trans(hapd, pos, epos - pos);
 	pos = hostapd_eid_dpp_cc(hapd, pos, epos - pos);
@@ -1447,6 +1450,9 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 
 #ifdef CONFIG_MBO
 	pos = hostapd_eid_ess_report(hapd, pos, epos - pos);
+#endif /* CONFIG_MBO */
+#ifdef CONFIG_MBO
+	pos = hostapd_eid_ap_channel_report(hapd, pos, epos - pos);
 #endif /* CONFIG_MBO */
 	pos = hostapd_eid_mbo(hapd, pos, epos - pos);
 	pos = hostapd_eid_owe_trans(hapd, pos, epos - pos);
@@ -3322,6 +3328,10 @@ int ieee802_11_build_nontx_bss_params(struct hostapd_data *hapd,
 	tailpos = hostapd_eid_ess_report(hapd, tailpos,
 					 tail + tail_len - tailpos);
 #endif /* CONFIG_MBO */
+#ifdef CONFIG_MBO
+	tailpos = hostapd_eid_ap_channel_report(hapd, tailpos,
+			  tail + tail_len - tailpos);
+#endif /* CONFIG_MBO */
 	tailpos = hostapd_eid_mbo(hapd, tailpos, tail + tail_len - tailpos);
 	tailpos = hostapd_eid_owe_trans(hapd, tailpos,
 			tail + tail_len - tailpos);
@@ -3444,6 +3454,10 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		tail_len += 4; /* ESS Report element: EID(1)+Len(1)+EID_EXT(1)+ESS_Info(1) */
 #endif /* CONFIG_MBO */
 	tail_len += hostapd_eid_owe_trans_len(hapd);
+#ifdef CONFIG_MBO
+	if (OCE_AP_ENABLED(hapd))
+		tail_len += 20; /* AP Channel Report IEs (EID 51) */
+#endif /* CONFIG_MBO */
 	tail_len += hostapd_eid_dpp_cc_len(hapd);
 	tail_len += hostapd_get_rsne_override_len(hapd);
 	tail_len += hostapd_get_rsne_override_2_len(hapd);
@@ -3750,6 +3764,10 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 #ifdef CONFIG_MBO
 	tailpos = hostapd_eid_ess_report(hapd, tailpos,
 					 tail + tail_len - tailpos);
+#endif /* CONFIG_MBO */
+#ifdef CONFIG_MBO
+	tailpos = hostapd_eid_ap_channel_report(hapd, tailpos,
+				  tail + tail_len - tailpos);
 #endif /* CONFIG_MBO */
 	tailpos = hostapd_eid_mbo(hapd, tailpos, tail + tail_len - tailpos);
 	tailpos = hostapd_eid_owe_trans(hapd, tailpos,

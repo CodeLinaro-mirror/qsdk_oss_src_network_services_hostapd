@@ -274,6 +274,8 @@ u8 * hostapd_eid_mbo(struct hostapd_data *hapd, u8 *eid, size_t len);
 u8 hostapd_mbo_ie_len(struct hostapd_data *hapd);
 u8 * hostapd_eid_ess_report(struct hostapd_data *hapd, u8 *eid,
 			    size_t len);
+u8 * hostapd_eid_ap_channel_report(struct hostapd_data *hapd, u8 *eid,
+				   size_t len);
 
 u8 * hostapd_eid_mbo_rssi_assoc_rej(struct hostapd_data *hapd, u8 *eid,
 				    size_t len, int delta);
@@ -289,6 +291,12 @@ static inline u8 * hostapd_eid_mbo(struct hostapd_data *hapd, u8 *eid,
 static inline u8 hostapd_mbo_ie_len(struct hostapd_data *hapd)
 {
 	return 0;
+}
+
+static inline u8 * hostapd_eid_ap_channel_report(struct hostapd_data *hapd,
+						  u8 *eid, size_t len)
+{
+	return eid;
 }
 
 #endif /* CONFIG_MBO */

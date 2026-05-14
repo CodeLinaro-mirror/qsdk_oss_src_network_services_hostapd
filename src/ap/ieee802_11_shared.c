@@ -19,6 +19,7 @@
 #include "wpa_auth.h"
 #include "dpp_hostapd.h"
 #include "ieee802_11.h"
+#include "neighbor_db.h"
 #include "hostapd_if/hostapd_if.h"
 
 
@@ -909,6 +910,138 @@ u8 * hostapd_eid_mbo_rssi_assoc_rej(struct hostapd_data *hapd, u8 *eid,
 }
 
 
+
+
+
+u8 * hostapd_eid_ap_channel_report(struct hostapd_data *hapd, u8 *eid,
+				   size_t len)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct hostapd_neighbor_entry *nr;
+	/* op_class -> channel map: at most 16 distinct op_classes, 8 channels each */
+#define AP_CHAN_RPT_MAX_CLASSES 16
+#define AP_CHAN_RPT_MAX_CHANS   8
+	u8 op_classes[AP_CHAN_RPT_MAX_CLASSES];
+	u8 channels[AP_CHAN_RPT_MAX_CLASSES][AP_CHAN_RPT_MAX_CHANS];
+	u8 nchan[AP_CHAN_RPT_MAX_CLASSES];
+	int nclasses = 0;
+	size_t i, j, k;
+	u8 *start = eid;
+
+	if (!OCE_AP_ENABLED(hapd))
+		return eid;
+
+	os_memset(op_classes, 0, sizeof(op_classes));
+	os_memset(nchan, 0, sizeof(nchan));
+
+	/* Collect (op_class, channel) pairs from all co-located ifaces */
+	for (i = 0; i < iface->interfaces->count; i++) {
+		struct hostapd_iface *other = iface->interfaces->iface[i];
+		u8 oc, ch;
+		int found = 0;
+
+		if (!other || !other->freq || !other->num_bss ||
+		    !other->bss[0] || !other->bss[0]->started)
+			continue;
+
+		if (other == iface)
+			continue;
+
+		if (ieee80211_freq_to_channel_ext(
+			    other->freq,
+			    other->conf->secondary_channel,
+			    hostapd_get_oper_chwidth(other->conf),
+			    &oc, &ch) == NUM_HOSTAPD_MODES)
+			continue;
+
+		/* Find or add this op_class */
+		for (k = 0; k < (size_t)nclasses; k++) {
+			if (op_classes[k] == oc) {
+				found = 1;
+				break;
+			}
+		}
+		if (!found) {
+			if (nclasses >= AP_CHAN_RPT_MAX_CLASSES)
+				continue;
+			k = nclasses++;
+			op_classes[k] = oc;
+			nchan[k] = 0;
+		}
+
+		/* Add channel if not already present */
+		for (j = 0; j < nchan[k]; j++) {
+			if (channels[k][j] == ch)
+				break;
+		}
+		if (j == nchan[k] && nchan[k] < AP_CHAN_RPT_MAX_CHANS)
+			channels[k][nchan[k]++] = ch;
+	}
+
+	/*
+	 * Also collect channels from discovered neighbors (scan results).
+	 * Walk nr_db of all co-located ifaces so that SET_NEIGHBOR entries
+	 * added to any BSS are visible regardless of which hapd builds the
+	 * beacon.
+	 */
+	for (i = 0; i < iface->interfaces->count; i++) {
+		struct hostapd_iface *other = iface->interfaces->iface[i];
+
+		if (!other || !other->num_bss || !other->bss[0])
+			continue;
+
+		dl_list_for_each(nr, &other->bss[0]->nr_db,
+				 struct hostapd_neighbor_entry, list) {
+			u8 nr_oc, nr_ch;
+			int nr_found = 0;
+
+			if (!nr->nr || wpabuf_len(nr->nr) < 13)
+				continue;
+
+			/* NR element: BSSID(6)+info(4)+op_class(1)+ch(1)+phy(1) */
+			nr_oc = ((const u8 *) wpabuf_head(nr->nr))[10];
+			nr_ch = ((const u8 *) wpabuf_head(nr->nr))[11];
+
+			if (!nr_oc || !nr_ch)
+				continue;
+
+			for (k = 0; k < (size_t)nclasses; k++) {
+				if (op_classes[k] == nr_oc) {
+					nr_found = 1;
+					break;
+				}
+			}
+			if (!nr_found) {
+				if (nclasses >= AP_CHAN_RPT_MAX_CLASSES)
+					continue;
+				k = nclasses++;
+				op_classes[k] = nr_oc;
+				nchan[k] = 0;
+			}
+			for (j = 0; j < nchan[k]; j++) {
+				if (channels[k][j] == nr_ch)
+					break;
+			}
+			if (j == nchan[k] && nchan[k] < AP_CHAN_RPT_MAX_CHANS)
+				channels[k][nchan[k]++] = nr_ch;
+		}
+	}
+
+	/* Build one AP Channel Report IE per op_class */
+	for (k = 0; k < (size_t)nclasses; k++) {
+		size_t ie_len = 2 + 1 + nchan[k]; /* EID + len + op_class + channels */
+
+		if ((size_t)(eid - start) + ie_len > len)
+			break;
+		*eid++ = WLAN_EID_AP_CHANNEL_REPORT;
+		*eid++ = 1 + nchan[k]; /* op_class + channel list */
+		*eid++ = op_classes[k];
+		for (j = 0; j < nchan[k]; j++)
+			*eid++ = channels[k][j];
+	}
+
+	return eid;
+}
 u8 * hostapd_eid_ess_report(struct hostapd_data *hapd, u8 *eid, size_t len)
 {
 	u8 ess_info;
@@ -1002,7 +1135,10 @@ u8 * hostapd_eid_mbo(struct hostapd_data *hapd, u8 *eid, size_t len)
 				if (mode->channels[i].freq == hapd->iface->freq) {
 					*mbo_pos++ = OCE_ATTR_ID_TRANSMIT_POWER;
 					*mbo_pos++ = 1;
-					*mbo_pos++ = mode->channels[i].max_tx_power;
+					if (hapd->conf->oce_tx_power != -128)
+						*mbo_pos++ = (u8)(s8)hapd->conf->oce_tx_power;
+					else
+						*mbo_pos++ = mode->channels[i].max_tx_power;
 					break;
 				}
 			}

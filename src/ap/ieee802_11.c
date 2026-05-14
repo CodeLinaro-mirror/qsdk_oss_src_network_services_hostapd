@@ -11595,6 +11595,32 @@ int hostapd_config_read_maclist(const char *fname,
 	return 0;
 }
 
+
+
+static bool hostapd_nr_bssid_is_colocated(struct hostapd_data *hapd,
+					  const u8 *bssid)
+{
+	struct hapd_interfaces *ifaces = hapd->iface->interfaces;
+	size_t i, b;
+
+	if (!ifaces)
+		return false;
+
+	for (i = 0; i < ifaces->count; i++) {
+		struct hostapd_iface *other = ifaces->iface[i];
+
+		if (!other)
+			continue;
+		for (b = 0; b < other->num_bss; b++) {
+			if (other->bss[b] &&
+			    os_memcmp(bssid, other->bss[b]->own_addr,
+				      ETH_ALEN) == 0)
+				return true;
+		}
+	}
+	return false;
+}
+
 static size_t hostapd_eid_nr_db_len(struct hostapd_data *hapd,
 				    size_t *current_len)
 {
@@ -11607,6 +11633,10 @@ static size_t hostapd_eid_nr_db_len(struct hostapd_data *hapd,
 			continue;
 
 		if (nr->short_ssid == hapd->conf->ssid.short_ssid)
+			continue;
+
+		/* Skip co-located BSSes — counted by hostapd_eid_rnr_colocation_len() */
+		if (hostapd_nr_bssid_is_colocated(hapd, nr->bssid))
 			continue;
 
 		/* Start a new element */
@@ -11898,6 +11928,24 @@ enum colocation_mode get_colocation_mode(struct hostapd_data *hapd)
 	if (is_6ghz)
 		return STANDALONE_6GHZ;
 
+	/*
+	 * OCE: treat 5G AP with co-located 2.4G BSS as COLOCATED_LOWER_BAND
+	 * so that hostapd_eid_rnr_colocation_len/colocation includes them.
+	 */
+	if (!is_6ghz && OCE_AP_ENABLED(hapd)) {
+		for (i = 0; i < hapd->iface->interfaces->count; i++) {
+			struct hostapd_iface *iface =
+				hapd->iface->interfaces->iface[i];
+
+			if (!iface || iface == hapd->iface || !iface->conf ||
+			    iface->state == HAPD_IFACE_DISABLED)
+				continue;
+			/* Include all co-located BSSes (same or different channel) */
+			if (!is_6ghz_op_class(iface->conf->op_class))
+				return COLOCATED_LOWER_BAND;
+		}
+	}
+
 	return NO_COLOCATED_6GHZ;
 }
 
@@ -11916,8 +11964,15 @@ static size_t hostapd_eid_rnr_colocation_len(struct hostapd_data *hapd,
 		iface = hapd->iface->interfaces->iface[i];
 
 		if (!iface || iface == hapd->iface ||
-		    iface->state != HAPD_IFACE_ENABLED ||
-		    !is_6ghz_op_class(iface->conf->op_class))
+		    iface->state != HAPD_IFACE_ENABLED)
+			continue;
+
+		/* Standard: 6GHz co-location. OCE: ALL co-located BSSes */
+		if (!is_6ghz_op_class(iface->conf->op_class) &&
+		    !OCE_AP_ENABLED(hapd))
+			continue;
+
+		if (!iface->num_bss || !iface->bss[0] || !iface->bss[0]->started)
 			continue;
 
 		len += hostapd_eid_rnr_iface_len(iface->bss[0], hapd,
@@ -11994,6 +12049,7 @@ size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
 			total_len += hostapd_eid_rnr_iface_len(hapd, hapd,
 							       &current_len,
 							       NULL, false);
+
 		break;
 	case WLAN_FC_STYPE_ACTION:
 		if (hapd->iface->num_bss > 1 && mode == STANDALONE_6GHZ)
@@ -12084,6 +12140,10 @@ static u8 * hostapd_eid_nr_db(struct hostapd_data *hapd, u8 *eid,
 			continue;
 
 		if (nr->short_ssid == hapd->conf->ssid.short_ssid)
+			continue;
+
+		/* Skip co-located BSSes — included by hostapd_eid_rnr_colocation() */
+		if (hostapd_nr_bssid_is_colocated(hapd, nr->bssid))
 			continue;
 
 		/* Start a new element */
@@ -12370,8 +12430,15 @@ static u8 * hostapd_eid_rnr_colocation(struct hostapd_data *hapd, u8 *eid,
 		iface = hapd->iface->interfaces->iface[i];
 
 		if (!iface || iface == hapd->iface ||
-		    iface->state != HAPD_IFACE_ENABLED ||
-		    !is_6ghz_op_class(iface->conf->op_class))
+		    iface->state != HAPD_IFACE_ENABLED)
+			continue;
+
+		/* Standard: 6GHz. OCE: ALL co-located BSSes */
+		if (!is_6ghz_op_class(iface->conf->op_class) &&
+		    !OCE_AP_ENABLED(hapd))
+			continue;
+
+		if (!iface->num_bss || !iface->bss[0] || !iface->bss[0]->started)
 			continue;
 
 		eid = hostapd_eid_rnr_iface(iface->bss[0], hapd, eid,
@@ -12446,6 +12513,7 @@ u8 * hostapd_eid_rnr(struct hostapd_data *hapd, u8 *eid, u32 type,
 		    !hapd->iconf->mbssid)
 			eid = hostapd_eid_rnr_iface(hapd, hapd, eid,
 						    &current_len, NULL, false, type);
+
 		break;
 	case WLAN_FC_STYPE_ACTION:
 		if (hapd->iface->num_bss > 1 && mode == STANDALONE_6GHZ)
