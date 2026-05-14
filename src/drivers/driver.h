@@ -6346,11 +6346,13 @@ struct wpa_driver_ops {
 	 * @priv: Private driver interface data
 	 * @params: CBS params structure.
 	 * @freq_list: Frequency list for scan trigger.
+	 * @link_id: Link ID of the specified link; -1 for non-MLD
 	 * Returns: 0 on success, -1 on failure
 	 */
 	int (*set_cbs)(void *priv,
 		       const struct cbs_params_extn *params,
-		       int *freq_list);
+		       int *freq_list,
+		       int link_id);
 #endif
 #endif /* CONFIG_IEEE80211BE */
 
