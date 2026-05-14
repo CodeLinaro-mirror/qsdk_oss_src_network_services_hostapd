@@ -12180,6 +12180,60 @@ static int nl80211_start_radar_detection(void *priv,
 	return -1;
 }
 
+static int nl80211_notify_radar(void *priv,
+				struct hostapd_freq_params *freq,
+				u16 radar_bitmap)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret;
+
+	if (!freq) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Missing frequency parameters for radar notification");
+		return -1;
+	}
+
+	if (!(drv->capa.flags & WPA_DRIVER_FLAGS_RADAR)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Driver does not support radar notifications");
+		return -1;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Notify radar %d MHz bw=%d cf1=%d cf2=%d bitmap=0x%04x link_id=%d",
+		   freq->freq, freq->bandwidth, freq->center_freq1,
+		   freq->center_freq2, radar_bitmap, freq->link_id);
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_NOTIFY_RADAR);
+	if (!msg || nl80211_put_freq_params(msg, freq, bss) < 0 ||
+	    nla_put_u16(msg, NL80211_ATTR_RADAR_BITMAP, radar_bitmap)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to build radar notification message");
+		nlmsg_free(msg);
+		return -1;
+	}
+
+	if (nl80211_link_valid(bss->valid_links, freq->link_id) &&
+	    nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, freq->link_id)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to add MLO link ID to radar notification message");
+		nlmsg_free(msg);
+		return -1;
+	}
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Failed to notify radar: %d (%s)",
+			   ret, strerror(-ret));
+		return -1;
+	}
+
+	return 0;
+}
+
 #ifdef CONFIG_TDLS
 
 static int nl80211_add_peer_capab(struct nl_msg *msg,
@@ -17769,4 +17823,5 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.set_muedca_mode = nl80211_set_muedca_mode,
 #endif /* CONFIG_QCN_EXTN */
 	.abort_cac = nl80211_abort_cac,
+	.notify_radar = nl80211_notify_radar,
 };

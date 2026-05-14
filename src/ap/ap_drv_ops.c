@@ -1282,6 +1282,15 @@ int hostapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 				    NULL);
 }
 
+int hostapd_drv_notify_radar(struct hostapd_data *hapd,
+			     struct hostapd_freq_params *freq,
+			     u16 radar_bitmap)
+{
+	if (!hapd->driver || !hapd->driver->notify_radar || !hapd->drv_priv)
+		return -1;
+
+	return hapd->driver->notify_radar(hapd->drv_priv, freq, radar_bitmap);
+}
 
 int hostapd_drv_send_action_addr3_ap(struct hostapd_data *hapd,
 				     unsigned int freq,
