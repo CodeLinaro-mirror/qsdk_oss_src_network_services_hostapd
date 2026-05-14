@@ -3714,6 +3714,15 @@ static int wpa_auth_ft_set_pending_req_ies(struct wpa_state_machine *sm,
 	return 0;
 }
 
+static void __pmk_pulled_free(bool pmk_pulled, const u8 *identity,
+			      const u8 *radius_cui)
+{
+	if (!pmk_pulled)
+		return;
+	os_free((u8 *)identity);
+	os_free((u8 *)radius_cui);
+}
+
 static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 				   const u8 *ies, size_t ies_len,
 				   u8 **resp_ies, size_t *resp_ies_len,
@@ -3733,6 +3742,7 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 	size_t identity_len = 0, radius_cui_len = 0;
 	size_t pmk_r1_len, kdk_len, len, bmle_len;
 	int retval = WLAN_STATUS_UNSPECIFIED_FAILURE;
+	bool pmk_pulled = false;
 
 	*resp_ies = NULL;
 	*resp_ies_len = 0;
@@ -3860,6 +3870,30 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 		}
 	}
 
+	if (sm->wpa_auth->cb->pull_pmk_r1 &&
+	    sm->wpa_auth->cb->pull_pmk_r1(sm->wpa_auth->cb_ctx, sm->addr,
+					  pmk_r1_name, pmk_r1, &pmk_r1_len,
+					  &pairwise, &session_timeout,
+					  &identity, &identity_len, &radius_cui,
+					  &radius_cui_len) == 0) {
+		pmk_pulled = true;
+		wpa_printf(MSG_DEBUG, "FT: Found PMKR1Name hostapd-if cache\n");
+		os_memcpy(sm->r1_key_holder, sm->wpa_auth->conf.r1_key_holder,
+			  sizeof(sm->r1_key_holder));
+		/*
+		 * Store it in PMK-R1 Cache as well
+		 */
+		wpa_ft_store_pmk_r1(sm->wpa_auth, sm->addr, pmk_r1,
+				    pmk_r1_len, pmk_r1_name, pairwise,
+				    NULL, 0, session_timeout,
+				    identity_len ? identity : NULL,
+				    identity_len,
+				    radius_cui_len ? radius_cui : NULL,
+				    radius_cui_len);
+		os_memset(&vlan, 0, sizeof(vlan));
+		goto pmk_r1_derived;
+	}
+
 	wpa_printf(MSG_DEBUG,
 		   "FT: No PMK-R1 available in local cache for the requested PMKR1Name");
 	if (wpa_ft_local_derive_pmk_r1(sm->wpa_auth, sm,
@@ -3985,12 +4019,14 @@ pmk_r1_derived:
 		wpa_auth_add_sta_ft(sm->wpa_auth, sm->addr);
 		if (wpa_ft_set_vlan(sm->wpa_auth, wpa_auth_get_spa(sm), &vlan) < 0) {
 			wpa_printf(MSG_DEBUG, "FT: Failed to configure VLAN");
+			__pmk_pulled_free(pmk_pulled, identity, radius_cui);
 			return WLAN_STATUS_UNSPECIFIED_FAILURE;
 		}
 		if (wpa_ft_set_identity(sm->wpa_auth, wpa_auth_get_spa(sm),
 					identity, identity_len) < 0 ||
 				wpa_ft_set_radius_cui(sm->wpa_auth, wpa_auth_get_spa(sm),
 					radius_cui, radius_cui_len) < 0) {
+			__pmk_pulled_free(pmk_pulled, identity, radius_cui);
 			wpa_printf(MSG_DEBUG, "FT: Failed to configure identity/CUI");
 			return WLAN_STATUS_UNSPECIFIED_FAILURE;
 		}
@@ -4042,6 +4078,7 @@ fail:
 	*resp_ies = NULL;
 out:
 	wpa_ft_parse_ies_free(&parse);
+	__pmk_pulled_free(pmk_pulled, identity, radius_cui);
 	return retval;
 }
 
