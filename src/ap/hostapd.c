@@ -5675,6 +5675,120 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 				   HE_PHY_BSS_OVR_UL_MUMIMO,
 				   "bss_he_ul_mumimo") < 0)
 		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_BFEE_STS_LTEQ80,
+				   "bss_he_bfee_sts_lteq80") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_BFEE_STS_GT80,
+				   "bss_he_bfee_sts_gt80") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_MULTI_TID_AGGR,
+				   "bss_he_multi_tid_aggr") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_MULTI_TID_AGGR_TX,
+				   "bss_he_multi_tid_aggr_tx") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_MAX_AMPDU_LEN_EXP,
+				   "bss_he_max_ampdu_len_exp") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_SU_PPDU_1X_LTF_800NS_GI,
+				   "bss_he_su_ppdu_1x_ltf_800ns_gi") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_SU_MU_PPDU_4X_LTF_800NS_GI,
+				   "bss_he_su_mu_ppdu_4x_ltf_800ns_gi") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_MAX_FRAG_MSDU,
+				   "bss_he_max_frag_msdu") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_MIN_FRAG_SIZE,
+				   "bss_he_min_frag_size") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_OMI,
+				   "bss_he_omi") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_NDP_4X_LTF_3200NS_GI,
+				   "bss_he_ndp_4x_ltf_3200ns_gi") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_FRAGMENTATION,
+				   "bss_he_fragmentation") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_AMSDU_IN_AMPDU_SUPRT,
+				   "bss_he_amsdu_in_ampdu_suprt") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_MAX_NC_SUPRT,
+				   "bss_he_max_nc_suprt") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_ER_SU_DISABLE,
+				   "bss_he_er_su_disable") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_ER_SU_PPDU_1X_LTF_800NS_GI,
+				   "bss_he_er_su_ppdu_1x_ltf_800ns_gi") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_ER_SU_PPDU_4X_LTF_800NS_GI,
+				   "bss_he_er_su_ppdu_4x_ltf_800ns_gi") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_1024QAM_LT242RU_RX_ENABLE,
+				   "bss_he_1024qam_lt242ru_rx_enable") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->he_phy_capab_mask &
+				   HE_PHY_BSS_OVR_BSR_SUPPORT,
+				   "bss_he_bsr_support") < 0)
+		return -1;
 #endif /* CONFIG_IEEE80211AX */
 
 #ifdef CONFIG_IEEE80211BE
@@ -5718,6 +5832,60 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 				   hapd->conf->eht_phy_capab_mask &
 				   EHT_PHY_BSS_OVR_UL_OFDMA_MUMIMO,
 				   "bss_eht_ul_ofdma_mumimo") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_NDP_4X_EHT_LTF_AND_320NSGI,
+				   "bss_eht_ndp_4x_eht_ltf_and_320nsgi") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_NUM_SD_LT80,
+				   "bss_eht_num_sd_lt80") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_NUM_SD_160,
+				   "bss_eht_num_sd_160") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_NUM_SD_320,
+				   "bss_eht_num_sd_320") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_4X_EHT_LTF_AND_800NS_GI,
+				   "bss_eht_4x_eht_ltf_and_800ns_gi") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_RX_1024_AND_4096_QAM_LS_242_TONE_RU,
+				   "bss_eht_rx_1024_and_4096_qam_ls_242_tone_ru") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_DL_OFDMA_TXBF,
+				   "bss_eht_dl_ofdma_txbf") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_SUP_MCS15_IN_MRU,
+				   "bss_eht_sup_mcs15_in_mru") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_MCS14_DUP_IN_6GHZ,
+				   "bss_eht_mcs14_dup_in_6ghz") < 0)
 		return -1;
 #endif /* CONFIG_IEEE80211BE */
 

@@ -2422,7 +2422,873 @@ int hostapd_cli_cmd_set_mbssid_tx(struct wpa_ctrl *ctrl, int argc, char *argv[])
 
 	return wpa_ctrl_command(ctrl, cmd);
 }
+
 #endif /* CONFIG_IEEE80211AX */
+
+#ifdef CONFIG_IEEE80211AX
+
+static int hostapd_cli_cmd_set_he_bfee_sts(struct wpa_ctrl *ctrl, int argc,
+					   char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 2) {
+		printf("Invalid usage: set_he_bfee_sts <lteq80 0-7> <gt80 0-7>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_he_bfee_sts %s %s",
+			  argv[0], argv[1]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_bfee_sts(struct wpa_ctrl *ctrl, int argc,
+					   char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_bfee_sts\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_bfee_sts");
+}
+
+static int hostapd_cli_cmd_set_he_multi_tid_aggr(struct wpa_ctrl *ctrl,
+						  int argc, char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_multi_tid_aggr <0-7>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_he_multi_tid_aggr %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_multi_tid_aggr(struct wpa_ctrl *ctrl,
+						  int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_multi_tid_aggr\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_multi_tid_aggr");
+}
+
+static int hostapd_cli_cmd_set_he_multi_tid_aggr_tx(struct wpa_ctrl *ctrl,
+						     int argc, char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_multi_tid_aggr_tx <0-7>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_he_multi_tid_aggr_tx %s",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_multi_tid_aggr_tx(struct wpa_ctrl *ctrl,
+						     int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_multi_tid_aggr_tx\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_multi_tid_aggr_tx");
+}
+
+static int hostapd_cli_cmd_set_he_max_ampdu_len_exp(struct wpa_ctrl *ctrl,
+						     int argc, char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_max_ampdu_len_exp <0-3>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_he_max_ampdu_len_exp %s",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_max_ampdu_len_exp(struct wpa_ctrl *ctrl,
+						     int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_max_ampdu_len_exp\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_max_ampdu_len_exp");
+}
+
+static int hostapd_cli_cmd_set_he_su_ppdu_1x_ltf_800ns_gi(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[80];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_su_ppdu_1x_ltf_800ns_gi <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_he_su_ppdu_1x_ltf_800ns_gi %s",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_su_ppdu_1x_ltf_800ns_gi(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_su_ppdu_1x_ltf_800ns_gi\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_su_ppdu_1x_ltf_800ns_gi");
+}
+
+static int hostapd_cli_cmd_set_he_su_mu_ppdu_4x_ltf_800ns_gi(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[80];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_su_mu_ppdu_4x_ltf_800ns_gi <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd),
+			  "set_he_su_mu_ppdu_4x_ltf_800ns_gi %s",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_su_mu_ppdu_4x_ltf_800ns_gi(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_su_mu_ppdu_4x_ltf_800ns_gi\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_su_mu_ppdu_4x_ltf_800ns_gi");
+}
+
+static int hostapd_cli_cmd_set_he_max_frag_msdu(struct wpa_ctrl *ctrl,
+						 int argc, char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_max_frag_msdu <0-7>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_he_max_frag_msdu %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_max_frag_msdu(struct wpa_ctrl *ctrl,
+						 int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_max_frag_msdu\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_max_frag_msdu");
+}
+
+static int hostapd_cli_cmd_set_he_min_frag_size(struct wpa_ctrl *ctrl,
+						 int argc, char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_min_frag_size <0-3>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_he_min_frag_size %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_min_frag_size(struct wpa_ctrl *ctrl,
+						 int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_min_frag_size\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_min_frag_size");
+}
+
+static int hostapd_cli_cmd_set_he_omi(struct wpa_ctrl *ctrl, int argc,
+				      char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_omi <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_he_omi %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_omi(struct wpa_ctrl *ctrl, int argc,
+				      char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_omi\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_omi");
+}
+
+static int hostapd_cli_cmd_set_he_ndp_4x_ltf_3200ns_gi(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[80];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_ndp_4x_ltf_3200ns_gi <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_he_ndp_4x_ltf_3200ns_gi %s",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_ndp_4x_ltf_3200ns_gi(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_ndp_4x_ltf_3200ns_gi\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_ndp_4x_ltf_3200ns_gi");
+}
+
+static int hostapd_cli_cmd_set_he_fragmentation(struct wpa_ctrl *ctrl, int argc,
+						char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_fragmentation <0-3>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_he_fragmentation %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_fragmentation(struct wpa_ctrl *ctrl, int argc,
+						char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_fragmentation\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_fragmentation");
+}
+
+static int hostapd_cli_cmd_set_he_amsdu_in_ampdu_suprt(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[80];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_amsdu_in_ampdu_suprt <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_he_amsdu_in_ampdu_suprt %s",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_amsdu_in_ampdu_suprt(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_amsdu_in_ampdu_suprt\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_amsdu_in_ampdu_suprt");
+}
+
+static int hostapd_cli_cmd_set_he_subfee_sts_suprt(struct wpa_ctrl *ctrl,
+						   int argc, char *argv[])
+{
+	char cmd[96];
+	int res;
+
+	if (argc != 2) {
+		printf("Invalid usage: set_he_subfee_sts_suprt <lteq80 0-7> <gt80 0-7>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_he_subfee_sts_suprt %s %s",
+			  argv[0], argv[1]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_subfee_sts_suprt(struct wpa_ctrl *ctrl,
+						   int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_subfee_sts_suprt\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_subfee_sts_suprt");
+}
+
+static int hostapd_cli_cmd_set_he_max_nc_suprt(struct wpa_ctrl *ctrl, int argc,
+					       char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_max_nc_suprt <0-7>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_he_max_nc_suprt %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_max_nc_suprt(struct wpa_ctrl *ctrl, int argc,
+					       char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_max_nc_suprt\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_max_nc_suprt");
+}
+
+static int hostapd_cli_cmd_set_he_er_su_disable(struct wpa_ctrl *ctrl, int argc,
+						char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_er_su_disable <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_he_er_su_disable %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_er_su_disable(struct wpa_ctrl *ctrl, int argc,
+						char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_er_su_disable\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_er_su_disable");
+}
+
+static int hostapd_cli_cmd_set_he_er_su_ppdu_1x_ltf_800ns_gi(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[96];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_er_su_ppdu_1x_ltf_800ns_gi <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd),
+			  "set_he_er_su_ppdu_1x_ltf_800ns_gi %s",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_er_su_ppdu_1x_ltf_800ns_gi(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_er_su_ppdu_1x_ltf_800ns_gi\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_er_su_ppdu_1x_ltf_800ns_gi");
+}
+
+static int hostapd_cli_cmd_set_he_er_su_ppdu_4x_ltf_800ns_gi(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[96];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_er_su_ppdu_4x_ltf_800ns_gi <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd),
+			  "set_he_er_su_ppdu_4x_ltf_800ns_gi %s",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_er_su_ppdu_4x_ltf_800ns_gi(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_er_su_ppdu_4x_ltf_800ns_gi\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_er_su_ppdu_4x_ltf_800ns_gi");
+}
+
+static int hostapd_cli_cmd_set_he_1024qam_lt242ru_rx_enable(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[96];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_1024qam_lt242ru_rx_enable <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd),
+			  "set_he_1024qam_lt242ru_rx_enable %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_1024qam_lt242ru_rx_enable(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_1024qam_lt242ru_rx_enable\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_1024qam_lt242ru_rx_enable");
+}
+
+static int hostapd_cli_cmd_set_he_full_bw_ul_mumimo(struct wpa_ctrl *ctrl,
+						    int argc, char *argv[])
+{
+	char cmd[80];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_full_bw_ul_mumimo <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_he_full_bw_ul_mumimo %s",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_full_bw_ul_mumimo(struct wpa_ctrl *ctrl,
+						    int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_full_bw_ul_mumimo\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_full_bw_ul_mumimo");
+}
+
+static int hostapd_cli_cmd_set_he_bsr_support(struct wpa_ctrl *ctrl, int argc,
+					      char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_he_bsr_support <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_he_bsr_support %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_he_bsr_support(struct wpa_ctrl *ctrl, int argc,
+					      char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_he_bsr_support\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_he_bsr_support");
+}
+#endif /* CONFIG_IEEE80211AX */
+
+#ifdef CONFIG_IEEE80211BE
+static int hostapd_cli_cmd_set_eht_ndp_4x_eht_ltf_and_320nsgi(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[96];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_eht_ndp_4x_eht_ltf_and_320nsgi <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd),
+			  "set_eht_ndp_4x_eht_ltf_and_320nsgi %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_eht_ndp_4x_eht_ltf_and_320nsgi(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_eht_ndp_4x_eht_ltf_and_320nsgi\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_eht_ndp_4x_eht_ltf_and_320nsgi");
+}
+
+static int hostapd_cli_cmd_set_eht_num_sd(struct wpa_ctrl *ctrl, int argc,
+					  char *argv[])
+{
+	char cmd[96];
+	int res;
+
+	if (argc != 3) {
+		printf("Invalid usage: set_eht_num_sd <lt80 0-7> <160 0-7> <320 0-7>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_eht_num_sd %s %s %s",
+			  argv[0], argv[1], argv[2]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_eht_num_sd(struct wpa_ctrl *ctrl, int argc,
+					  char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_eht_num_sd\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_eht_num_sd");
+}
+
+static int hostapd_cli_cmd_set_eht_4x_eht_ltf_and_800ns_gi(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[96];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_eht_4x_eht_ltf_and_800ns_gi <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_eht_4x_eht_ltf_and_800ns_gi %s",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_eht_4x_eht_ltf_and_800ns_gi(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_eht_4x_eht_ltf_and_800ns_gi\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_eht_4x_eht_ltf_and_800ns_gi");
+}
+
+static int hostapd_cli_cmd_set_eht_rx_1024_and_4096_qam_ls_242_tone_ru(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[128];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_eht_rx_1024_and_4096_qam_ls_242_tone_ru <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd),
+			  "set_eht_rx_1024_and_4096_qam_ls_242_tone_ru %s",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_eht_rx_1024_and_4096_qam_ls_242_tone_ru(
+	struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_eht_rx_1024_and_4096_qam_ls_242_tone_ru\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl,
+				"get_eht_rx_1024_and_4096_qam_ls_242_tone_ru");
+}
+
+static int hostapd_cli_cmd_set_eht_dl_ofdma_txbf(struct wpa_ctrl *ctrl,
+						 int argc, char *argv[])
+{
+	char cmd[80];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_eht_dl_ofdma_txbf <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_eht_dl_ofdma_txbf %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_eht_dl_ofdma_txbf(struct wpa_ctrl *ctrl,
+						 int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_eht_dl_ofdma_txbf\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_eht_dl_ofdma_txbf");
+}
+
+static int hostapd_cli_cmd_set_eht_sup_mcs15_in_mru(struct wpa_ctrl *ctrl,
+						    int argc, char *argv[])
+{
+	char cmd[80];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_eht_sup_mcs15_in_mru <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_eht_sup_mcs15_in_mru %s",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_eht_sup_mcs15_in_mru(struct wpa_ctrl *ctrl,
+						    int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_eht_sup_mcs15_in_mru\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_eht_sup_mcs15_in_mru");
+}
+
+static int hostapd_cli_cmd_set_eht_mcs14_dup_in_6ghz(struct wpa_ctrl *ctrl,
+						     int argc, char *argv[])
+{
+	char cmd[80];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_eht_mcs14_dup_in_6ghz <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_eht_mcs14_dup_in_6ghz %s",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_eht_mcs14_dup_in_6ghz(struct wpa_ctrl *ctrl,
+						     int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_eht_mcs14_dup_in_6ghz\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_eht_mcs14_dup_in_6ghz");
+}
+#endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_QCN_EXTN
 static int hostapd_cli_cmd_set_muedca_mode(struct wpa_ctrl *ctrl,
@@ -2822,7 +3688,149 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "set given link as the transmitted profile of the group. Restart all "
 	  "profiles if auto_start is given"
 	  "is provided\n"},
+	{ "set_he_bfee_sts", hostapd_cli_cmd_set_he_bfee_sts, NULL,
+	  "<lteq80 0-7> <gt80 0-7> = set HE SU beamformee STS support" },
+	{ "get_he_bfee_sts", hostapd_cli_cmd_get_he_bfee_sts, NULL,
+	  "= get HE SU beamformee STS support as: 0x<lteq80> 0x<gt80>" },
+	{ "set_he_multi_tid_aggr", hostapd_cli_cmd_set_he_multi_tid_aggr, NULL,
+	  "<0-7> = set HE Multi-TID aggregation RX support" },
+	{ "get_he_multi_tid_aggr", hostapd_cli_cmd_get_he_multi_tid_aggr, NULL,
+	  "= get HE Multi-TID aggregation RX support" },
+	{ "set_he_multi_tid_aggr_rx", hostapd_cli_cmd_set_he_multi_tid_aggr,
+	  NULL, "<0-7> = set HE Multi-TID aggregation RX support" },
+	{ "get_he_multi_tid_aggr_rx", hostapd_cli_cmd_get_he_multi_tid_aggr,
+	  NULL, "= get HE Multi-TID aggregation RX support" },
+	{ "set_he_multi_tid_aggr_tx", hostapd_cli_cmd_set_he_multi_tid_aggr_tx,
+	  NULL, "<0-7> = set HE Multi-TID aggregation TX support" },
+	{ "get_he_multi_tid_aggr_tx", hostapd_cli_cmd_get_he_multi_tid_aggr_tx,
+	  NULL, "= get HE Multi-TID aggregation TX support" },
+	{ "set_he_max_ampdu_len_exp", hostapd_cli_cmd_set_he_max_ampdu_len_exp,
+	  NULL, "<0-3> = set HE max AMPDU length exponent extension" },
+	{ "get_he_max_ampdu_len_exp", hostapd_cli_cmd_get_he_max_ampdu_len_exp,
+	  NULL, "= get HE max AMPDU length exponent extension" },
+	{ "set_he_su_ppdu_1x_ltf_800ns_gi",
+	  hostapd_cli_cmd_set_he_su_ppdu_1x_ltf_800ns_gi, NULL,
+	  "<0|1> = set HE SU PPDU 1x LTF 800ns GI support" },
+	{ "get_he_su_ppdu_1x_ltf_800ns_gi",
+	  hostapd_cli_cmd_get_he_su_ppdu_1x_ltf_800ns_gi, NULL,
+	  "= get HE SU PPDU 1x LTF 800ns GI support" },
+	{ "set_he_su_mu_ppdu_4x_ltf_800ns_gi",
+	  hostapd_cli_cmd_set_he_su_mu_ppdu_4x_ltf_800ns_gi, NULL,
+	  "<0|1> = set HE SU/MU PPDU 4x LTF 800ns GI support" },
+	{ "get_he_su_mu_ppdu_4x_ltf_800ns_gi",
+	  hostapd_cli_cmd_get_he_su_mu_ppdu_4x_ltf_800ns_gi, NULL,
+	  "= get HE SU/MU PPDU 4x LTF 800ns GI support" },
+	{ "set_he_max_frag_msdu", hostapd_cli_cmd_set_he_max_frag_msdu, NULL,
+	  "<0-7> = set HE max fragmented MSDUs" },
+	{ "get_he_max_frag_msdu", hostapd_cli_cmd_get_he_max_frag_msdu, NULL,
+	  "= get HE max fragmented MSDUs" },
+	{ "set_he_min_frag_size", hostapd_cli_cmd_set_he_min_frag_size, NULL,
+	  "<0-3> = set HE minimum fragment size" },
+	{ "get_he_min_frag_size", hostapd_cli_cmd_get_he_min_frag_size, NULL,
+	  "= get HE minimum fragment size" },
+	{ "set_he_omi", hostapd_cli_cmd_set_he_omi, NULL,
+	  "<0|1> = set HE OMI capability" },
+	{ "get_he_omi", hostapd_cli_cmd_get_he_omi, NULL,
+	  "= get HE OMI capability" },
+	{ "set_he_ndp_4x_ltf_3200ns_gi",
+	  hostapd_cli_cmd_set_he_ndp_4x_ltf_3200ns_gi, NULL,
+	  "<0|1> = set HE NDP 4x LTF 3200ns GI support" },
+	{ "get_he_ndp_4x_ltf_3200ns_gi",
+	  hostapd_cli_cmd_get_he_ndp_4x_ltf_3200ns_gi, NULL,
+	  "= get HE NDP 4x LTF 3200ns GI support" },
+	{ "set_he_fragmentation", hostapd_cli_cmd_set_he_fragmentation, NULL,
+	  "<0-3> = set HE fragmentation support level" },
+	{ "get_he_fragmentation", hostapd_cli_cmd_get_he_fragmentation, NULL,
+	  "= get HE fragmentation support level" },
+	{ "set_he_amsdu_in_ampdu_suprt",
+	  hostapd_cli_cmd_set_he_amsdu_in_ampdu_suprt, NULL,
+	  "<0|1> = set HE AMSDU in AMPDU support" },
+	{ "get_he_amsdu_in_ampdu_suprt",
+	  hostapd_cli_cmd_get_he_amsdu_in_ampdu_suprt, NULL,
+	  "= get HE AMSDU in AMPDU support" },
+	{ "set_he_subfee_sts_suprt",
+	  hostapd_cli_cmd_set_he_subfee_sts_suprt, NULL,
+	  "<lteq80 0-7> <gt80 0-7> = set HE subfee STS support" },
+	{ "get_he_subfee_sts_suprt",
+	  hostapd_cli_cmd_get_he_subfee_sts_suprt, NULL,
+	  "= get HE subfee STS support as: 0x<lteq80> 0x<gt80>" },
+	{ "set_he_max_nc_suprt", hostapd_cli_cmd_set_he_max_nc_suprt, NULL,
+	  "<0-7> = set HE max NC support" },
+	{ "get_he_max_nc_suprt", hostapd_cli_cmd_get_he_max_nc_suprt, NULL,
+	  "= get HE max NC support" },
+	{ "set_he_er_su_disable", hostapd_cli_cmd_set_he_er_su_disable, NULL,
+	  "<0|1> = set HE ER SU disable" },
+	{ "get_he_er_su_disable", hostapd_cli_cmd_get_he_er_su_disable, NULL,
+	  "= get HE ER SU disable" },
+	{ "set_he_er_su_ppdu_1x_ltf_800ns_gi",
+	  hostapd_cli_cmd_set_he_er_su_ppdu_1x_ltf_800ns_gi, NULL,
+	  "<0|1> = set HE ER SU PPDU 1x LTF 800ns GI support" },
+	{ "get_he_er_su_ppdu_1x_ltf_800ns_gi",
+	  hostapd_cli_cmd_get_he_er_su_ppdu_1x_ltf_800ns_gi, NULL,
+	  "= get HE ER SU PPDU 1x LTF 800ns GI support" },
+	{ "set_he_er_su_ppdu_4x_ltf_800ns_gi",
+	  hostapd_cli_cmd_set_he_er_su_ppdu_4x_ltf_800ns_gi, NULL,
+	  "<0|1> = set HE ER SU PPDU 4x LTF 800ns GI support" },
+	{ "get_he_er_su_ppdu_4x_ltf_800ns_gi",
+	  hostapd_cli_cmd_get_he_er_su_ppdu_4x_ltf_800ns_gi, NULL,
+	  "= get HE ER SU PPDU 4x LTF 800ns GI support" },
+	{ "set_he_1024qam_lt242ru_rx_enable",
+	  hostapd_cli_cmd_set_he_1024qam_lt242ru_rx_enable, NULL,
+	  "<0|1> = set HE RX 1024QAM for <242-tone RU support" },
+	{ "get_he_1024qam_lt242ru_rx_enable",
+	  hostapd_cli_cmd_get_he_1024qam_lt242ru_rx_enable, NULL,
+	  "= get HE RX 1024QAM for <242-tone RU support" },
+	{ "set_he_full_bw_ul_mumimo",
+	  hostapd_cli_cmd_set_he_full_bw_ul_mumimo, NULL,
+	  "<0|1> = set HE full BW UL MU-MIMO support" },
+	{ "get_he_full_bw_ul_mumimo",
+	  hostapd_cli_cmd_get_he_full_bw_ul_mumimo, NULL,
+	  "= get HE full BW UL MU-MIMO support" },
+	{ "set_he_bsr_support", hostapd_cli_cmd_set_he_bsr_support, NULL,
+	  "<0|1> = set HE BSR support" },
+	{ "get_he_bsr_support", hostapd_cli_cmd_get_he_bsr_support, NULL,
+	  "= get HE BSR support" },
 #endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_IEEE80211BE
+	{ "set_eht_ndp_4x_eht_ltf_and_320nsgi",
+	  hostapd_cli_cmd_set_eht_ndp_4x_eht_ltf_and_320nsgi, NULL,
+	  "<0|1> = set EHT NDP 4x EHT-LTF and 320ns GI support" },
+	{ "get_eht_ndp_4x_eht_ltf_and_320nsgi",
+	  hostapd_cli_cmd_get_eht_ndp_4x_eht_ltf_and_320nsgi, NULL,
+	  "= get EHT NDP 4x EHT-LTF and 320ns GI support" },
+	{ "set_eht_num_sd", hostapd_cli_cmd_set_eht_num_sd, NULL,
+	  "<lt80 0-7> <160 0-7> <320 0-7> = set EHT number of sounding dimensions" },
+	{ "get_eht_num_sd", hostapd_cli_cmd_get_eht_num_sd, NULL,
+	  "= get EHT number of sounding dimensions as: 0x<lt80> 0x<160> 0x<320>" },
+	{ "set_eht_4x_eht_ltf_and_800ns_gi",
+	  hostapd_cli_cmd_set_eht_4x_eht_ltf_and_800ns_gi, NULL,
+	  "<0|1> = set EHT 4x EHT-LTF and 800ns GI support" },
+	{ "get_eht_4x_eht_ltf_and_800ns_gi",
+	  hostapd_cli_cmd_get_eht_4x_eht_ltf_and_800ns_gi, NULL,
+	  "= get EHT 4x EHT-LTF and 800ns GI support" },
+	{ "set_eht_rx_1024_and_4096_qam_ls_242_tone_ru",
+	  hostapd_cli_cmd_set_eht_rx_1024_and_4096_qam_ls_242_tone_ru, NULL,
+	  "<0|1> = set EHT RX 1024/4096-QAM for <242-tone RU support" },
+	{ "get_eht_rx_1024_and_4096_qam_ls_242_tone_ru",
+	  hostapd_cli_cmd_get_eht_rx_1024_and_4096_qam_ls_242_tone_ru, NULL,
+	  "= get EHT RX 1024/4096-QAM for <242-tone RU support" },
+	{ "set_eht_dl_ofdma_txbf", hostapd_cli_cmd_set_eht_dl_ofdma_txbf, NULL,
+	  "<0|1> = set EHT DL OFDMA TX beamforming support" },
+	{ "get_eht_dl_ofdma_txbf", hostapd_cli_cmd_get_eht_dl_ofdma_txbf, NULL,
+	  "= get EHT DL OFDMA TX beamforming support" },
+	{ "set_eht_sup_mcs15_in_mru",
+	  hostapd_cli_cmd_set_eht_sup_mcs15_in_mru, NULL,
+	  "<0|1> = set EHT MCS15 support in MRU" },
+	{ "get_eht_sup_mcs15_in_mru",
+	  hostapd_cli_cmd_get_eht_sup_mcs15_in_mru, NULL,
+	  "= get EHT MCS15 support in MRU" },
+	{ "set_eht_mcs14_dup_in_6ghz",
+	  hostapd_cli_cmd_set_eht_mcs14_dup_in_6ghz, NULL,
+	  "<0|1> = set EHT MCS14 duplicate support in 6GHz" },
+	{ "get_eht_mcs14_dup_in_6ghz",
+	  hostapd_cli_cmd_get_eht_mcs14_dup_in_6ghz, NULL,
+	  "= get EHT MCS14 duplicate support in 6GHz" },
+#endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_QCN_EXTN
 	{ "set_edca_mode", hostapd_cli_cmd_set_muedca_mode, NULL,
 	  "<mode> [radio <n>] = set MU-EDCA mode\n"

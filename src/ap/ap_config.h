@@ -320,6 +320,25 @@ struct he_phy_capabilities_info {
 	bool he_dl_mu_ofdma_bfer;
 	bool he_ul_mu_ofdma;
 	int he_ul_mumimo;
+	u8 he_bfee_sts_lteq80;
+	u8 he_bfee_sts_gt80;
+	u8 he_multi_tid_aggr;
+	u8 he_multi_tid_aggr_tx;
+	u8 he_max_ampdu_len_exp;
+	u8 he_su_ppdu_1x_ltf_800ns_gi;
+	u8 he_su_mu_ppdu_4x_ltf_800ns_gi;
+	u8 he_fragmentation;
+	u8 he_max_frag_msdu;
+	u8 he_min_frag_size;
+	u8 he_amsdu_in_ampdu_suprt;
+	u8 he_omi;
+	u8 he_ndp_4x_ltf_3200ns_gi;
+	u8 he_max_nc;
+	u8 he_er_su_disable;
+	u8 he_er_su_ppdu_1x_ltf_800ns_gi;
+	u8 he_er_su_ppdu_4x_ltf_800ns_gi;
+	u8 he_1024qam_lt242ru_rx_enable;
+	u8 he_bsr_support;
 };
 #endif /* CONFIG_IEEE80211AX */
 
@@ -341,6 +360,15 @@ struct eht_phy_capabilities_info {
 	u8 eht_bfme_ss_80;
 	u8 eht_bfme_ss_160;
 	u8 eht_bfme_ss_320;
+	u8 eht_ndp_4x_eht_ltf_and_320nsgi;
+	u8 eht_num_sd_lt80;
+	u8 eht_num_sd_160;
+	u8 eht_num_sd_320;
+	u8 eht_4x_eht_ltf_and_800ns_gi;
+	u8 eht_rx_1024_and_4096_qam_ls_242_tone_ru;
+	u8 eht_dl_ofdma_txbf;
+	u8 eht_sup_mcs15_in_mru;
+	u8 eht_mcs14_dup_in_6ghz;
 };
 #endif /* CONFIG_IEEE80211BE */
 
@@ -441,6 +469,25 @@ struct hostapd_bss_config {
 #define HE_PHY_BSS_OVR_DL_MU_OFDMA      BIT(4)
 #define HE_PHY_BSS_OVR_DL_MU_OFDMA_BFER BIT(5)
 #define HE_PHY_BSS_OVR_UL_MU_OFDMA      BIT(6)
+#define HE_PHY_BSS_OVR_BFEE_STS_LTEQ80  BIT(7)
+#define HE_PHY_BSS_OVR_BFEE_STS_GT80    BIT(8)
+#define HE_PHY_BSS_OVR_MULTI_TID_AGGR   BIT(9)
+#define HE_PHY_BSS_OVR_MULTI_TID_AGGR_TX BIT(10)
+#define HE_PHY_BSS_OVR_MAX_AMPDU_LEN_EXP BIT(11)
+#define HE_PHY_BSS_OVR_SU_PPDU_1X_LTF_800NS_GI BIT(12)
+#define HE_PHY_BSS_OVR_SU_MU_PPDU_4X_LTF_800NS_GI BIT(13)
+#define HE_PHY_BSS_OVR_MAX_FRAG_MSDU BIT(14)
+#define HE_PHY_BSS_OVR_MIN_FRAG_SIZE BIT(15)
+#define HE_PHY_BSS_OVR_OMI BIT(16)
+#define HE_PHY_BSS_OVR_NDP_4X_LTF_3200NS_GI BIT(17)
+#define HE_PHY_BSS_OVR_FRAGMENTATION BIT(18)
+#define HE_PHY_BSS_OVR_AMSDU_IN_AMPDU_SUPRT BIT(19)
+#define HE_PHY_BSS_OVR_MAX_NC_SUPRT BIT(20)
+#define HE_PHY_BSS_OVR_ER_SU_DISABLE BIT(21)
+#define HE_PHY_BSS_OVR_ER_SU_PPDU_1X_LTF_800NS_GI BIT(22)
+#define HE_PHY_BSS_OVR_ER_SU_PPDU_4X_LTF_800NS_GI BIT(23)
+#define HE_PHY_BSS_OVR_1024QAM_LT242RU_RX_ENABLE BIT(24)
+#define HE_PHY_BSS_OVR_BSR_SUPPORT BIT(25)
 	u32 he_phy_capab_mask;
 #endif /* CONFIG_IEEE80211AX */
 
@@ -458,6 +505,15 @@ struct hostapd_bss_config {
 #define EHT_PHY_BSS_OVR_BFME_SS_320     BIT(13)
 #define EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO BIT(14)
 #define EHT_PHY_BSS_OVR_MU_BFMR_MASK        BIT(15)
+#define EHT_PHY_BSS_OVR_NDP_4X_EHT_LTF_AND_320NSGI BIT(16)
+#define EHT_PHY_BSS_OVR_NUM_SD_LT80 BIT(17)
+#define EHT_PHY_BSS_OVR_NUM_SD_160 BIT(18)
+#define EHT_PHY_BSS_OVR_NUM_SD_320 BIT(19)
+#define EHT_PHY_BSS_OVR_4X_EHT_LTF_AND_800NS_GI BIT(20)
+#define EHT_PHY_BSS_OVR_RX_1024_AND_4096_QAM_LS_242_TONE_RU BIT(21)
+#define EHT_PHY_BSS_OVR_DL_OFDMA_TXBF BIT(22)
+#define EHT_PHY_BSS_OVR_SUP_MCS15_IN_MRU BIT(23)
+#define EHT_PHY_BSS_OVR_MCS14_DUP_IN_6GHZ BIT(24)
 	u32 eht_phy_capab_mask;
 #endif /* CONFIG_IEEE80211BE */
 

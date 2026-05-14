@@ -2103,7 +2103,30 @@ vht_rollback:
 			   os_strcasecmp(cmd, "bss_he_dl_mu_ofdma") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_dl_mu_ofdma_bfer") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_ul_mu_ofdma") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_ul_mumimo") == 0) {
+			   os_strcasecmp(cmd, "bss_he_ul_mumimo") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_full_bw_ul_mumimo") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_bfee_sts_lteq80") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_bfee_sts_gt80") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_subfee_sts_lteq80") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_subfee_sts_gt80") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_multi_tid_aggr") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_multi_tid_aggr_tx") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_max_ampdu_len_exp") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_su_ppdu_1x_ltf_800ns_gi") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_su_mu_ppdu_4x_ltf_800ns_gi") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_max_frag_msdu") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_min_frag_size") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_omi") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_ndp_4x_ltf_3200ns_gi") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_fragmentation") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_amsdu_in_ampdu_suprt") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_amsdu_in_ampdu_supp") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_max_nc_suprt") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_er_su_disable") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_er_su_ppdu_1x_ltf_800ns_gi") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_er_su_ppdu_4x_ltf_800ns_gi") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_1024qam_lt242ru_rx_enable") == 0 ||
+			   os_strcasecmp(cmd, "bss_he_bsr_support") == 0) {
 			/* Save old values for rollback on failure */
 			struct he_phy_capabilities_info old_he_phy_capab = hapd->conf->he_phy_capab;
 			u32 old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
@@ -2244,6 +2267,16 @@ eht_bfme_ss_rollback:
 			   os_strcasecmp(cmd, "bss_eht_ul_mu_ofdma") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_dl_ofdma_mumimo") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_ul_ofdma_mumimo") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_ndp_4x_eht_ltf_and_320nsgi") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_num_sd_lt80") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_num_sd_160") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_num_sd_320") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_4x_eht_ltf_and_800ns_gi") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_rx_1024_and_4096_qam_ls_242_tone_ru") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_dl_ofdma_txbf") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_sup_mcs15_in_mru") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_mcs15_supp") == 0 ||
+			   os_strcasecmp(cmd, "bss_eht_mcs14_dup_in_6ghz") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_ltf") == 0) {
 			/* Save old values for rollback on failure */
 			struct eht_phy_capabilities_info old_eht_generic_capab = hapd->conf->eht_phy_capab;
@@ -2758,6 +2791,94 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_bfee_sts_lteq80") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "bss_he_bfee_sts_lteq80 = %u\n",
+				  hapd->conf->he_phy_capab.he_bfee_sts_lteq80);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_bfee_sts_gt80") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "bss_he_bfee_sts_gt80 = %u\n",
+				  hapd->conf->he_phy_capab.he_bfee_sts_gt80);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_subfee_sts_lteq80") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "bss_he_subfee_sts_lteq80 = %u\n",
+				  hapd->conf->he_phy_capab.he_bfee_sts_lteq80);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_subfee_sts_gt80") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "bss_he_subfee_sts_gt80 = %u\n",
+				  hapd->conf->he_phy_capab.he_bfee_sts_gt80);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_fragmentation") == 0) {
+		res = os_snprintf(buf, buflen, "bss_he_fragmentation = %u\n",
+				  hapd->conf->he_phy_capab.he_fragmentation);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_amsdu_in_ampdu_suprt") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_amsdu_in_ampdu_supp") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "%s = %u\n", cmd,
+				  hapd->conf->he_phy_capab.he_amsdu_in_ampdu_suprt);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_max_nc_suprt") == 0) {
+		res = os_snprintf(buf, buflen, "bss_he_max_nc_suprt = %u\n",
+				  hapd->conf->he_phy_capab.he_max_nc);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_er_su_disable") == 0) {
+		res = os_snprintf(buf, buflen, "bss_he_er_su_disable = %u\n",
+				  hapd->conf->he_phy_capab.he_er_su_disable);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_er_su_ppdu_1x_ltf_800ns_gi") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "bss_he_er_su_ppdu_1x_ltf_800ns_gi = %u\n",
+				  hapd->conf->he_phy_capab.he_er_su_ppdu_1x_ltf_800ns_gi);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_er_su_ppdu_4x_ltf_800ns_gi") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "bss_he_er_su_ppdu_4x_ltf_800ns_gi = %u\n",
+				  hapd->conf->he_phy_capab.he_er_su_ppdu_4x_ltf_800ns_gi);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_1024qam_lt242ru_rx_enable") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "bss_he_1024qam_lt242ru_rx_enable = %u\n",
+				  hapd->conf->he_phy_capab.he_1024qam_lt242ru_rx_enable);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_full_bw_ul_mumimo") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "bss_he_full_bw_ul_mumimo = %d\n",
+				  hapd->conf->he_phy_capab.he_ul_mumimo);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_he_bsr_support") == 0) {
+		res = os_snprintf(buf, buflen, "bss_he_bsr_support = %u\n",
+				  hapd->conf->he_phy_capab.he_bsr_support);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
 	} else if (os_strcasecmp(cmd, "bss_eht_su_beamformer") == 0) {
@@ -2858,6 +2979,67 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 	} else if (os_strcasecmp(cmd, "bss_eht_bfme_ss_320") == 0) {
 		res = os_snprintf(buf, buflen, "bss_eht_bfme_ss_320 = %u\n",
 				  hapd->conf->eht_phy_capab.eht_bfme_ss_320);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_ndp_4x_eht_ltf_and_320nsgi") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "bss_eht_ndp_4x_eht_ltf_and_320nsgi = %u\n",
+				  hapd->conf->eht_phy_capab
+					  .eht_ndp_4x_eht_ltf_and_320nsgi);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_num_sd_lt80") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_num_sd_lt80 = %u\n",
+				  hapd->conf->eht_phy_capab.eht_num_sd_lt80);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_num_sd_160") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_num_sd_160 = %u\n",
+				  hapd->conf->eht_phy_capab.eht_num_sd_160);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_num_sd_320") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_num_sd_320 = %u\n",
+				  hapd->conf->eht_phy_capab.eht_num_sd_320);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_4x_eht_ltf_and_800ns_gi") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "bss_eht_4x_eht_ltf_and_800ns_gi = %u\n",
+				  hapd->conf->eht_phy_capab.eht_4x_eht_ltf_and_800ns_gi);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_rx_1024_and_4096_qam_ls_242_tone_ru") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "bss_eht_rx_1024_and_4096_qam_ls_242_tone_ru = %u\n",
+				  hapd->conf->eht_phy_capab
+					  .eht_rx_1024_and_4096_qam_ls_242_tone_ru);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_dl_ofdma_txbf") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_dl_ofdma_txbf = %u\n",
+				  hapd->conf->eht_phy_capab.eht_dl_ofdma_txbf);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_sup_mcs15_in_mru") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_mcs15_supp") == 0) {
+		res = os_snprintf(buf, buflen, "%s = %u\n", cmd,
+				  hapd->conf->eht_phy_capab.eht_sup_mcs15_in_mru);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_mcs14_dup_in_6ghz") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "bss_eht_mcs14_dup_in_6ghz = %u\n",
+				  hapd->conf->eht_phy_capab.eht_mcs14_dup_in_6ghz);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
@@ -8258,6 +8440,1301 @@ static int hostapd_ctrl_iface_proc_coord_test(struct hostapd_data *hapd,
 #endif /* CONFIG_PROCESS_COORDINATION */
 #endif /* CONFIG_TESTING_OPTIONS */
 
+#ifdef CONFIG_IEEE80211AX
+static int hostapd_ctrl_iface_set_he_bfee_sts(struct hostapd_data *hapd,
+					      char *cmd)
+{
+	char *pos, *end;
+	long lteq80, gt80;
+	bool su_beamformee;
+	struct he_phy_capabilities_info old_he_phy_capab;
+	u32 old_he_phy_capab_mask;
+
+	if (!cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	lteq80 = strtol(cmd, &end, 10);
+	if (cmd == end || errno == ERANGE || lteq80 < 0 || lteq80 > 7)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end == '\0')
+		goto usage;
+
+	pos = end;
+	errno = 0;
+	gt80 = strtol(pos, &end, 10);
+	if (pos == end || errno == ERANGE || gt80 < 0 || gt80 > 7)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end != '\0')
+		goto usage;
+
+	if (hostapd_tx_bss_only(hapd, "set_he_bfee_sts") < 0)
+		return -1;
+
+	su_beamformee =
+		((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_SU_BEAMFORMEE) ?
+		 hapd->conf->he_phy_capab.he_su_beamformee :
+		 hapd->iface->conf->he_phy_capab.he_su_beamformee);
+
+	if ((lteq80 || gt80) && !su_beamformee) {
+		wpa_printf(MSG_ERROR,
+			   "set_he_bfee_sts requires SU beamformee support");
+		return -1;
+	}
+
+	old_he_phy_capab = hapd->conf->he_phy_capab;
+	old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
+
+	hapd->conf->he_phy_capab.he_bfee_sts_lteq80 = (u8) lteq80;
+	hapd->conf->he_phy_capab.he_bfee_sts_gt80 = (u8) gt80;
+	hapd->conf->he_phy_capab_mask |= HE_PHY_BSS_OVR_BFEE_STS_LTEQ80 |
+					 HE_PHY_BSS_OVR_BFEE_STS_GT80;
+
+	if (hostapd_validate_bss_capab(hapd) < 0)
+		goto rollback;
+
+	if (hostapd_reload_bss_only(hapd) < 0)
+		goto rollback;
+
+	return 0;
+
+rollback:
+	hapd->conf->he_phy_capab = old_he_phy_capab;
+	hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
+	return -1;
+
+usage:
+	wpa_printf(MSG_ERROR,
+		   "Usage: set_he_bfee_sts <lteq80 0-7> <gt80 0-7>");
+	return -1;
+}
+
+static int hostapd_ctrl_iface_get_he_bfee_sts(struct hostapd_data *hapd,
+					      char *reply, int reply_size)
+{
+	int res;
+
+	res = os_snprintf(reply, reply_size, "0x%x 0x%x\n",
+			  hapd->conf->he_phy_capab.he_bfee_sts_lteq80,
+			  hapd->conf->he_phy_capab.he_bfee_sts_gt80);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+
+static int hostapd_ctrl_iface_set_he_multi_tid_aggr(struct hostapd_data *hapd,
+						     char *cmd)
+{
+	char *end;
+	long value;
+	struct he_phy_capabilities_info old_he_phy_capab;
+	u32 old_he_phy_capab_mask;
+
+	if (!cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	value = strtol(cmd, &end, 10);
+	if (cmd == end || errno == ERANGE || value < 0 || value > 7)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end != '\0')
+		goto usage;
+
+	if (hostapd_tx_bss_only(hapd, "set_he_multi_tid_aggr") < 0)
+		return -1;
+
+	old_he_phy_capab = hapd->conf->he_phy_capab;
+	old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
+
+	hapd->conf->he_phy_capab.he_multi_tid_aggr = (u8) value;
+	hapd->conf->he_phy_capab_mask |= HE_PHY_BSS_OVR_MULTI_TID_AGGR;
+
+	if (hostapd_validate_bss_capab(hapd) < 0)
+		goto rollback;
+
+	if (hostapd_reload_bss_only(hapd) < 0)
+		goto rollback;
+
+	return 0;
+
+rollback:
+	hapd->conf->he_phy_capab = old_he_phy_capab;
+	hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
+	return -1;
+
+usage:
+	wpa_printf(MSG_ERROR, "Usage: set_he_multi_tid_aggr <value 0-7>");
+	return -1;
+}
+
+static int hostapd_ctrl_iface_get_he_multi_tid_aggr(struct hostapd_data *hapd,
+						     char *reply,
+						     int reply_size)
+{
+	int res;
+
+	res = os_snprintf(reply, reply_size, "0x%x\n",
+			  hapd->conf->he_phy_capab.he_multi_tid_aggr);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+
+static int hostapd_ctrl_iface_set_he_multi_tid_aggr_tx(
+	struct hostapd_data *hapd, char *cmd)
+{
+	char *end;
+	long value;
+	struct he_phy_capabilities_info old_he_phy_capab;
+	u32 old_he_phy_capab_mask;
+
+	if (!cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	value = strtol(cmd, &end, 10);
+	if (cmd == end || errno == ERANGE || value < 0 || value > 7)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end != '\0')
+		goto usage;
+
+	if (hostapd_tx_bss_only(hapd, "set_he_multi_tid_aggr_tx") < 0)
+		return -1;
+
+	old_he_phy_capab = hapd->conf->he_phy_capab;
+	old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
+
+	hapd->conf->he_phy_capab.he_multi_tid_aggr_tx = (u8) value;
+	hapd->conf->he_phy_capab_mask |= HE_PHY_BSS_OVR_MULTI_TID_AGGR_TX;
+
+	if (hostapd_validate_bss_capab(hapd) < 0)
+		goto rollback;
+
+	if (hostapd_reload_bss_only(hapd) < 0)
+		goto rollback;
+
+	return 0;
+
+rollback:
+	hapd->conf->he_phy_capab = old_he_phy_capab;
+	hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
+	return -1;
+
+usage:
+	wpa_printf(MSG_ERROR, "Usage: set_he_multi_tid_aggr_tx <value 0-7>");
+	return -1;
+}
+
+static int hostapd_ctrl_iface_get_he_multi_tid_aggr_tx(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	int res;
+
+	res = os_snprintf(reply, reply_size, "0x%x\n",
+			  hapd->conf->he_phy_capab.he_multi_tid_aggr_tx);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+
+static int hostapd_ctrl_iface_set_he_max_ampdu_len_exp(
+	struct hostapd_data *hapd, char *cmd)
+{
+	char *end;
+	long value;
+	struct he_phy_capabilities_info old_he_phy_capab;
+	u32 old_he_phy_capab_mask;
+
+	if (!cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	value = strtol(cmd, &end, 10);
+	if (cmd == end || errno == ERANGE || value < 0 || value > 3)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end != '\0')
+		goto usage;
+
+	if (hostapd_tx_bss_only(hapd, "set_he_max_ampdu_len_exp") < 0)
+		return -1;
+
+	old_he_phy_capab = hapd->conf->he_phy_capab;
+	old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
+
+	hapd->conf->he_phy_capab.he_max_ampdu_len_exp = (u8) value;
+	hapd->conf->he_phy_capab_mask |= HE_PHY_BSS_OVR_MAX_AMPDU_LEN_EXP;
+
+	if (hostapd_validate_bss_capab(hapd) < 0)
+		goto rollback;
+
+	if (hostapd_reload_bss_only(hapd) < 0)
+		goto rollback;
+
+	return 0;
+
+rollback:
+	hapd->conf->he_phy_capab = old_he_phy_capab;
+	hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
+	return -1;
+
+usage:
+	wpa_printf(MSG_ERROR, "Usage: set_he_max_ampdu_len_exp <value 0-3>");
+	return -1;
+}
+
+static int hostapd_ctrl_iface_get_he_max_ampdu_len_exp(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	int res;
+
+	res = os_snprintf(reply, reply_size, "0x%x\n",
+			  hapd->conf->he_phy_capab.he_max_ampdu_len_exp);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+
+static int hostapd_ctrl_iface_set_he_su_ppdu_1x_ltf_800ns_gi(
+	struct hostapd_data *hapd, char *cmd)
+{
+	char *end;
+	long value;
+	struct he_phy_capabilities_info old_he_phy_capab;
+	u32 old_he_phy_capab_mask;
+
+	if (!cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	value = strtol(cmd, &end, 10);
+	if (cmd == end || errno == ERANGE || value < 0 || value > 1)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end != '\0')
+		goto usage;
+
+	if (hostapd_tx_bss_only(hapd, "set_he_su_ppdu_1x_ltf_800ns_gi") < 0)
+		return -1;
+
+	old_he_phy_capab = hapd->conf->he_phy_capab;
+	old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
+
+	hapd->conf->he_phy_capab.he_su_ppdu_1x_ltf_800ns_gi = (u8) value;
+	hapd->conf->he_phy_capab_mask |=
+		HE_PHY_BSS_OVR_SU_PPDU_1X_LTF_800NS_GI;
+
+	if (hostapd_validate_bss_capab(hapd) < 0)
+		goto rollback;
+
+	if (hostapd_reload_bss_only(hapd) < 0)
+		goto rollback;
+
+	return 0;
+
+rollback:
+	hapd->conf->he_phy_capab = old_he_phy_capab;
+	hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
+	return -1;
+
+usage:
+	wpa_printf(MSG_ERROR,
+		   "Usage: set_he_su_ppdu_1x_ltf_800ns_gi <value 0|1>");
+	return -1;
+}
+
+static int hostapd_ctrl_iface_get_he_su_ppdu_1x_ltf_800ns_gi(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	int res;
+
+	res = os_snprintf(reply, reply_size, "0x%x\n",
+			  hapd->conf->he_phy_capab.he_su_ppdu_1x_ltf_800ns_gi);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+
+static int hostapd_ctrl_iface_set_he_su_mu_ppdu_4x_ltf_800ns_gi(
+	struct hostapd_data *hapd, char *cmd)
+{
+	char *end;
+	long value;
+	struct he_phy_capabilities_info old_he_phy_capab;
+	u32 old_he_phy_capab_mask;
+
+	if (!cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	value = strtol(cmd, &end, 10);
+	if (cmd == end || errno == ERANGE || value < 0 || value > 1)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end != '\0')
+		goto usage;
+
+	if (hostapd_tx_bss_only(hapd, "set_he_su_mu_ppdu_4x_ltf_800ns_gi") < 0)
+		return -1;
+
+	old_he_phy_capab = hapd->conf->he_phy_capab;
+	old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
+
+	hapd->conf->he_phy_capab.he_su_mu_ppdu_4x_ltf_800ns_gi = (u8) value;
+	hapd->conf->he_phy_capab_mask |=
+		HE_PHY_BSS_OVR_SU_MU_PPDU_4X_LTF_800NS_GI;
+
+	if (hostapd_validate_bss_capab(hapd) < 0)
+		goto rollback;
+
+	if (hostapd_reload_bss_only(hapd) < 0)
+		goto rollback;
+
+	return 0;
+
+rollback:
+	hapd->conf->he_phy_capab = old_he_phy_capab;
+	hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
+	return -1;
+
+usage:
+	wpa_printf(MSG_ERROR,
+		   "Usage: set_he_su_mu_ppdu_4x_ltf_800ns_gi <value 0|1>");
+	return -1;
+}
+
+static int hostapd_ctrl_iface_get_he_su_mu_ppdu_4x_ltf_800ns_gi(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	int res;
+
+	res = os_snprintf(reply, reply_size, "0x%x\n",
+			  hapd->conf->he_phy_capab.he_su_mu_ppdu_4x_ltf_800ns_gi);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+
+static int hostapd_ctrl_iface_set_he_max_frag_msdu(struct hostapd_data *hapd,
+						   char *cmd)
+{
+	char *end;
+	long value;
+	struct he_phy_capabilities_info old_he_phy_capab;
+	u32 old_he_phy_capab_mask;
+
+	if (!cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	value = strtol(cmd, &end, 10);
+	if (cmd == end || errno == ERANGE || value < 0 || value > 7)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end != '\0')
+		goto usage;
+
+	if (hostapd_tx_bss_only(hapd, "set_he_max_frag_msdu") < 0)
+		return -1;
+
+	old_he_phy_capab = hapd->conf->he_phy_capab;
+	old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
+
+	hapd->conf->he_phy_capab.he_max_frag_msdu = (u8) value;
+	hapd->conf->he_phy_capab_mask |= HE_PHY_BSS_OVR_MAX_FRAG_MSDU;
+
+	if (hostapd_validate_bss_capab(hapd) < 0)
+		goto rollback;
+
+	if (hostapd_reload_bss_only(hapd) < 0)
+		goto rollback;
+
+	return 0;
+
+rollback:
+	hapd->conf->he_phy_capab = old_he_phy_capab;
+	hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
+	return -1;
+
+usage:
+	wpa_printf(MSG_ERROR, "Usage: set_he_max_frag_msdu <value 0-7>");
+	return -1;
+}
+
+static int hostapd_ctrl_iface_get_he_max_frag_msdu(struct hostapd_data *hapd,
+						   char *reply,
+						   int reply_size)
+{
+	int res;
+
+	res = os_snprintf(reply, reply_size, "0x%x\n",
+			  hapd->conf->he_phy_capab.he_max_frag_msdu);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+
+static int hostapd_ctrl_iface_set_he_min_frag_size(struct hostapd_data *hapd,
+						   char *cmd)
+{
+	char *end;
+	long value;
+	struct he_phy_capabilities_info old_he_phy_capab;
+	u32 old_he_phy_capab_mask;
+
+	if (!cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	value = strtol(cmd, &end, 10);
+	if (cmd == end || errno == ERANGE || value < 0 || value > 3)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end != '\0')
+		goto usage;
+
+	if (hostapd_tx_bss_only(hapd, "set_he_min_frag_size") < 0)
+		return -1;
+
+	old_he_phy_capab = hapd->conf->he_phy_capab;
+	old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
+
+	hapd->conf->he_phy_capab.he_min_frag_size = (u8) value;
+	hapd->conf->he_phy_capab_mask |= HE_PHY_BSS_OVR_MIN_FRAG_SIZE;
+
+	if (hostapd_validate_bss_capab(hapd) < 0)
+		goto rollback;
+
+	if (hostapd_reload_bss_only(hapd) < 0)
+		goto rollback;
+
+	return 0;
+
+rollback:
+	hapd->conf->he_phy_capab = old_he_phy_capab;
+	hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
+	return -1;
+
+usage:
+	wpa_printf(MSG_ERROR, "Usage: set_he_min_frag_size <value 0-3>");
+	return -1;
+}
+
+static int hostapd_ctrl_iface_get_he_min_frag_size(struct hostapd_data *hapd,
+						   char *reply,
+						   int reply_size)
+{
+	int res;
+
+	res = os_snprintf(reply, reply_size, "0x%x\n",
+			  hapd->conf->he_phy_capab.he_min_frag_size);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+
+static int hostapd_ctrl_iface_set_he_omi(struct hostapd_data *hapd, char *cmd)
+{
+	char *end;
+	long value;
+	struct he_phy_capabilities_info old_he_phy_capab;
+	u32 old_he_phy_capab_mask;
+
+	if (!cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	value = strtol(cmd, &end, 10);
+	if (cmd == end || errno == ERANGE || value < 0 || value > 1)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end != '\0')
+		goto usage;
+
+	if (hostapd_tx_bss_only(hapd, "set_he_omi") < 0)
+		return -1;
+
+	old_he_phy_capab = hapd->conf->he_phy_capab;
+	old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
+
+	hapd->conf->he_phy_capab.he_omi = (u8) value;
+	hapd->conf->he_phy_capab_mask |= HE_PHY_BSS_OVR_OMI;
+
+	if (hostapd_validate_bss_capab(hapd) < 0)
+		goto rollback;
+
+	if (hostapd_reload_bss_only(hapd) < 0)
+		goto rollback;
+
+	return 0;
+
+rollback:
+	hapd->conf->he_phy_capab = old_he_phy_capab;
+	hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
+	return -1;
+
+usage:
+	wpa_printf(MSG_ERROR, "Usage: set_he_omi <value 0|1>");
+	return -1;
+}
+
+static int hostapd_ctrl_iface_get_he_omi(struct hostapd_data *hapd,
+					 char *reply, int reply_size)
+{
+	int res;
+
+	res = os_snprintf(reply, reply_size, "0x%x\n",
+			  hapd->conf->he_phy_capab.he_omi);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+
+static int hostapd_ctrl_iface_set_he_ndp_4x_ltf_3200ns_gi(
+	struct hostapd_data *hapd, char *cmd)
+{
+	char *end;
+	long value;
+	struct he_phy_capabilities_info old_he_phy_capab;
+	u32 old_he_phy_capab_mask;
+
+	if (!cmd)
+		return -1;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	value = strtol(cmd, &end, 10);
+	if (cmd == end || errno == ERANGE || value < 0 || value > 1)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end != '\0')
+		goto usage;
+
+	if (hostapd_tx_bss_only(hapd, "set_he_ndp_4x_ltf_3200ns_gi") < 0)
+		return -1;
+
+	old_he_phy_capab = hapd->conf->he_phy_capab;
+	old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
+
+	hapd->conf->he_phy_capab.he_ndp_4x_ltf_3200ns_gi = (u8) value;
+	hapd->conf->he_phy_capab_mask |= HE_PHY_BSS_OVR_NDP_4X_LTF_3200NS_GI;
+
+	if (hostapd_validate_bss_capab(hapd) < 0)
+		goto rollback;
+
+	if (hostapd_reload_bss_only(hapd) < 0)
+		goto rollback;
+
+	return 0;
+
+rollback:
+	hapd->conf->he_phy_capab = old_he_phy_capab;
+	hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
+	return -1;
+
+usage:
+	wpa_printf(MSG_ERROR,
+		   "Usage: set_he_ndp_4x_ltf_3200ns_gi <value 0|1>");
+	return -1;
+}
+
+static int hostapd_ctrl_iface_get_he_ndp_4x_ltf_3200ns_gi(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	int res;
+
+	res = os_snprintf(reply, reply_size, "0x%x\n",
+			  hapd->conf->he_phy_capab.he_ndp_4x_ltf_3200ns_gi);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+
+static int hostapd_ctrl_iface_set_he_u8_field(struct hostapd_data *hapd,
+					      char *cmd, const char *op_name,
+					      const char *usage, u8 *field,
+					      u32 mask_bit, long min,
+					      long max)
+{
+	char *end;
+	long value;
+	struct he_phy_capabilities_info old_he_phy_capab;
+	u32 old_he_phy_capab_mask;
+
+	if (!cmd)
+		goto usage_err;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	value = strtol(cmd, &end, 10);
+	if (cmd == end || errno == ERANGE || value < min || value > max)
+		goto usage_err;
+
+	while (*end == ' ')
+		end++;
+	if (*end != '\0')
+		goto usage_err;
+
+	if (hostapd_tx_bss_only(hapd, op_name) < 0)
+		return -1;
+
+	old_he_phy_capab = hapd->conf->he_phy_capab;
+	old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
+
+	*field = (u8) value;
+	hapd->conf->he_phy_capab_mask |= mask_bit;
+
+	if (hostapd_validate_bss_capab(hapd) < 0)
+		goto rollback;
+
+	if (hostapd_reload_bss_only(hapd) < 0)
+		goto rollback;
+
+	return 0;
+
+rollback:
+	hapd->conf->he_phy_capab = old_he_phy_capab;
+	hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
+	return -1;
+
+usage_err:
+	wpa_printf(MSG_ERROR, "%s", usage);
+	return -1;
+}
+
+static int hostapd_ctrl_iface_get_u8_hex(char *reply, int reply_size, u8 value)
+{
+	int res;
+
+	res = os_snprintf(reply, reply_size, "0x%x\n", value);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+
+static int hostapd_ctrl_iface_set_he_fragmentation(struct hostapd_data *hapd,
+						   char *cmd)
+{
+	return hostapd_ctrl_iface_set_he_u8_field(
+		hapd, cmd, "set_he_fragmentation",
+		"Usage: set_he_fragmentation <value 0-3>",
+		&hapd->conf->he_phy_capab.he_fragmentation,
+		HE_PHY_BSS_OVR_FRAGMENTATION, 0, 3);
+}
+
+static int hostapd_ctrl_iface_get_he_fragmentation(struct hostapd_data *hapd,
+						   char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_u8_hex(
+		reply, reply_size, hapd->conf->he_phy_capab.he_fragmentation);
+}
+
+static int hostapd_ctrl_iface_set_he_amsdu_in_ampdu_suprt(
+	struct hostapd_data *hapd, char *cmd)
+{
+	return hostapd_ctrl_iface_set_he_u8_field(
+		hapd, cmd, "set_he_amsdu_in_ampdu_suprt",
+		"Usage: set_he_amsdu_in_ampdu_suprt <value 0|1>",
+		&hapd->conf->he_phy_capab.he_amsdu_in_ampdu_suprt,
+		HE_PHY_BSS_OVR_AMSDU_IN_AMPDU_SUPRT, 0, 1);
+}
+
+static int hostapd_ctrl_iface_get_he_amsdu_in_ampdu_suprt(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_u8_hex(
+		reply, reply_size,
+		hapd->conf->he_phy_capab.he_amsdu_in_ampdu_suprt);
+}
+
+static int hostapd_ctrl_iface_set_he_subfee_sts_suprt(
+	struct hostapd_data *hapd, char *cmd)
+{
+	char *pos, *end;
+	long lteq80, gt80;
+	bool su_beamformee;
+	struct he_phy_capabilities_info old_he_phy_capab;
+	u32 old_he_phy_capab_mask;
+
+	if (!cmd)
+		goto usage;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	lteq80 = strtol(cmd, &end, 10);
+	if (cmd == end || errno == ERANGE || lteq80 < 0 || lteq80 > 7)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end == '\0')
+		goto usage;
+
+	pos = end;
+	errno = 0;
+	gt80 = strtol(pos, &end, 10);
+	if (pos == end || errno == ERANGE || gt80 < 0 || gt80 > 7)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end != '\0')
+		goto usage;
+
+	if (hostapd_tx_bss_only(hapd, "set_he_subfee_sts_suprt") < 0)
+		return -1;
+
+	su_beamformee =
+		((hapd->conf->he_phy_capab_mask & HE_PHY_BSS_OVR_SU_BEAMFORMEE) ?
+		 hapd->conf->he_phy_capab.he_su_beamformee :
+		 hapd->iface->conf->he_phy_capab.he_su_beamformee);
+
+	if ((lteq80 || gt80) && !su_beamformee) {
+		wpa_printf(MSG_ERROR,
+			   "set_he_subfee_sts_suprt requires SU beamformee support");
+		return -1;
+	}
+
+	old_he_phy_capab = hapd->conf->he_phy_capab;
+	old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
+
+	hapd->conf->he_phy_capab.he_bfee_sts_lteq80 = (u8) lteq80;
+	hapd->conf->he_phy_capab.he_bfee_sts_gt80 = (u8) gt80;
+	hapd->conf->he_phy_capab_mask |= HE_PHY_BSS_OVR_BFEE_STS_LTEQ80 |
+					 HE_PHY_BSS_OVR_BFEE_STS_GT80;
+
+	if (hostapd_validate_bss_capab(hapd) < 0)
+		goto rollback;
+
+	if (hostapd_reload_bss_only(hapd) < 0)
+		goto rollback;
+
+	return 0;
+
+rollback:
+	hapd->conf->he_phy_capab = old_he_phy_capab;
+	hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
+	return -1;
+
+usage:
+	wpa_printf(MSG_ERROR,
+		   "Usage: set_he_subfee_sts_suprt <lteq80 0-7> <gt80 0-7>");
+	return -1;
+}
+
+static int hostapd_ctrl_iface_get_he_subfee_sts_suprt(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_he_bfee_sts(hapd, reply, reply_size);
+}
+
+static int hostapd_ctrl_iface_set_he_max_nc_suprt(struct hostapd_data *hapd,
+						  char *cmd)
+{
+	return hostapd_ctrl_iface_set_he_u8_field(
+		hapd, cmd, "set_he_max_nc_suprt",
+		"Usage: set_he_max_nc_suprt <value 0-7>",
+		&hapd->conf->he_phy_capab.he_max_nc, HE_PHY_BSS_OVR_MAX_NC_SUPRT,
+		0, 7);
+}
+
+static int hostapd_ctrl_iface_get_he_max_nc_suprt(struct hostapd_data *hapd,
+						  char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_u8_hex(
+		reply, reply_size, hapd->conf->he_phy_capab.he_max_nc);
+}
+
+static int hostapd_ctrl_iface_set_he_er_su_disable(struct hostapd_data *hapd,
+						   char *cmd)
+{
+	return hostapd_ctrl_iface_set_he_u8_field(
+		hapd, cmd, "set_he_er_su_disable",
+		"Usage: set_he_er_su_disable <value 0|1>",
+		&hapd->conf->he_phy_capab.he_er_su_disable,
+		HE_PHY_BSS_OVR_ER_SU_DISABLE, 0, 1);
+}
+
+static int hostapd_ctrl_iface_get_he_er_su_disable(struct hostapd_data *hapd,
+						   char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_u8_hex(
+		reply, reply_size, hapd->conf->he_phy_capab.he_er_su_disable);
+}
+
+static int hostapd_ctrl_iface_set_he_er_su_ppdu_1x_ltf_800ns_gi(
+	struct hostapd_data *hapd, char *cmd)
+{
+	return hostapd_ctrl_iface_set_he_u8_field(
+		hapd, cmd, "set_he_er_su_ppdu_1x_ltf_800ns_gi",
+		"Usage: set_he_er_su_ppdu_1x_ltf_800ns_gi <value 0|1>",
+		&hapd->conf->he_phy_capab.he_er_su_ppdu_1x_ltf_800ns_gi,
+		HE_PHY_BSS_OVR_ER_SU_PPDU_1X_LTF_800NS_GI, 0, 1);
+}
+
+static int hostapd_ctrl_iface_get_he_er_su_ppdu_1x_ltf_800ns_gi(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_u8_hex(
+		reply, reply_size,
+		hapd->conf->he_phy_capab.he_er_su_ppdu_1x_ltf_800ns_gi);
+}
+
+static int hostapd_ctrl_iface_set_he_er_su_ppdu_4x_ltf_800ns_gi(
+	struct hostapd_data *hapd, char *cmd)
+{
+	return hostapd_ctrl_iface_set_he_u8_field(
+		hapd, cmd, "set_he_er_su_ppdu_4x_ltf_800ns_gi",
+		"Usage: set_he_er_su_ppdu_4x_ltf_800ns_gi <value 0|1>",
+		&hapd->conf->he_phy_capab.he_er_su_ppdu_4x_ltf_800ns_gi,
+		HE_PHY_BSS_OVR_ER_SU_PPDU_4X_LTF_800NS_GI, 0, 1);
+}
+
+static int hostapd_ctrl_iface_get_he_er_su_ppdu_4x_ltf_800ns_gi(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_u8_hex(
+		reply, reply_size,
+		hapd->conf->he_phy_capab.he_er_su_ppdu_4x_ltf_800ns_gi);
+}
+
+static int hostapd_ctrl_iface_set_he_1024qam_lt242ru_rx_enable(
+	struct hostapd_data *hapd, char *cmd)
+{
+	return hostapd_ctrl_iface_set_he_u8_field(
+		hapd, cmd, "set_he_1024qam_lt242ru_rx_enable",
+		"Usage: set_he_1024qam_lt242ru_rx_enable <value 0|1>",
+		&hapd->conf->he_phy_capab.he_1024qam_lt242ru_rx_enable,
+		HE_PHY_BSS_OVR_1024QAM_LT242RU_RX_ENABLE, 0, 1);
+}
+
+static int hostapd_ctrl_iface_get_he_1024qam_lt242ru_rx_enable(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_u8_hex(
+		reply, reply_size,
+		hapd->conf->he_phy_capab.he_1024qam_lt242ru_rx_enable);
+}
+
+static int hostapd_ctrl_iface_set_he_full_bw_ul_mumimo(
+	struct hostapd_data *hapd, char *cmd)
+{
+	char *end;
+	long value;
+	struct he_phy_capabilities_info old_he_phy_capab;
+	u32 old_he_phy_capab_mask;
+
+	if (!cmd)
+		goto usage;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	value = strtol(cmd, &end, 10);
+	if (cmd == end || errno == ERANGE || value < 0 || value > 1)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end != '\0')
+		goto usage;
+
+	if (hostapd_tx_bss_only(hapd, "set_he_full_bw_ul_mumimo") < 0)
+		return -1;
+
+	old_he_phy_capab = hapd->conf->he_phy_capab;
+	old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
+
+	hapd->conf->he_phy_capab.he_ul_mumimo = (int) value;
+	hapd->conf->he_phy_capab_mask |= HE_PHY_BSS_OVR_UL_MUMIMO;
+
+	if (hostapd_validate_bss_capab(hapd) < 0)
+		goto rollback;
+
+	if (hostapd_reload_bss_only(hapd) < 0)
+		goto rollback;
+
+	return 0;
+
+rollback:
+	hapd->conf->he_phy_capab = old_he_phy_capab;
+	hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
+	return -1;
+
+usage:
+	wpa_printf(MSG_ERROR, "Usage: set_he_full_bw_ul_mumimo <value 0|1>");
+	return -1;
+}
+
+static int hostapd_ctrl_iface_get_he_full_bw_ul_mumimo(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	int res;
+
+	res = os_snprintf(reply, reply_size, "0x%x\n",
+			  hapd->conf->he_phy_capab.he_ul_mumimo);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+
+static int hostapd_ctrl_iface_set_he_bsr_support(struct hostapd_data *hapd,
+						 char *cmd)
+{
+	return hostapd_ctrl_iface_set_he_u8_field(
+		hapd, cmd, "set_he_bsr_support",
+		"Usage: set_he_bsr_support <value 0|1>",
+		&hapd->conf->he_phy_capab.he_bsr_support,
+		HE_PHY_BSS_OVR_BSR_SUPPORT, 0, 1);
+}
+
+static int hostapd_ctrl_iface_get_he_bsr_support(struct hostapd_data *hapd,
+						 char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_u8_hex(
+		reply, reply_size, hapd->conf->he_phy_capab.he_bsr_support);
+}
+#endif /* CONFIG_IEEE80211AX */
+
+#ifdef CONFIG_IEEE80211BE
+static int hostapd_ctrl_iface_set_eht_u8_field(struct hostapd_data *hapd,
+					       char *cmd,
+					       const char *op_name,
+					       const char *usage, u8 *field,
+					       u32 mask_bit, long min,
+					       long max)
+{
+	char *end;
+	long value;
+	struct eht_phy_capabilities_info old_eht_phy_capab;
+	u32 old_eht_phy_capab_mask;
+
+	if (!cmd)
+		goto usage_err;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	value = strtol(cmd, &end, 10);
+	if (cmd == end || errno == ERANGE || value < min || value > max)
+		goto usage_err;
+
+	while (*end == ' ')
+		end++;
+	if (*end != '\0')
+		goto usage_err;
+
+	if (hostapd_tx_bss_only(hapd, op_name) < 0)
+		return -1;
+
+	old_eht_phy_capab = hapd->conf->eht_phy_capab;
+	old_eht_phy_capab_mask = hapd->conf->eht_phy_capab_mask;
+
+	*field = (u8) value;
+	hapd->conf->eht_phy_capab_mask |= mask_bit;
+
+	if (hostapd_validate_bss_capab(hapd) < 0)
+		goto rollback;
+
+	if (hostapd_reload_bss_only(hapd) < 0)
+		goto rollback;
+
+	return 0;
+
+rollback:
+	hapd->conf->eht_phy_capab = old_eht_phy_capab;
+	hapd->conf->eht_phy_capab_mask = old_eht_phy_capab_mask;
+	return -1;
+
+usage_err:
+	wpa_printf(MSG_ERROR, "%s", usage);
+	return -1;
+}
+
+static int hostapd_ctrl_iface_get_eht_u8_hex(char *reply, int reply_size,
+					     u8 value)
+{
+	int res;
+
+	res = os_snprintf(reply, reply_size, "0x%x\n", value);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+
+static int hostapd_ctrl_iface_set_eht_ndp_4x_eht_ltf_and_320nsgi(
+	struct hostapd_data *hapd, char *cmd)
+{
+	return hostapd_ctrl_iface_set_eht_u8_field(
+		hapd, cmd, "set_eht_ndp_4x_eht_ltf_and_320nsgi",
+		"Usage: set_eht_ndp_4x_eht_ltf_and_320nsgi <value 0|1>",
+		&hapd->conf->eht_phy_capab.eht_ndp_4x_eht_ltf_and_320nsgi,
+		EHT_PHY_BSS_OVR_NDP_4X_EHT_LTF_AND_320NSGI, 0, 1);
+}
+
+static int hostapd_ctrl_iface_get_eht_ndp_4x_eht_ltf_and_320nsgi(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_eht_u8_hex(
+		reply, reply_size,
+		hapd->conf->eht_phy_capab.eht_ndp_4x_eht_ltf_and_320nsgi);
+}
+
+static int hostapd_ctrl_iface_set_eht_num_sd(struct hostapd_data *hapd,
+					     char *cmd)
+{
+	char *pos, *end;
+	long lt80, bw160, bw320;
+	struct eht_phy_capabilities_info old_eht_phy_capab;
+	u32 old_eht_phy_capab_mask;
+
+	if (!cmd)
+		goto usage;
+
+	while (*cmd == ' ')
+		cmd++;
+
+	errno = 0;
+	lt80 = strtol(cmd, &end, 10);
+	if (cmd == end || errno == ERANGE || lt80 < 0 || lt80 > 7)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end == '\0')
+		goto usage;
+
+	pos = end;
+	errno = 0;
+	bw160 = strtol(pos, &end, 10);
+	if (pos == end || errno == ERANGE || bw160 < 0 || bw160 > 7)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end == '\0')
+		goto usage;
+
+	pos = end;
+	errno = 0;
+	bw320 = strtol(pos, &end, 10);
+	if (pos == end || errno == ERANGE || bw320 < 0 || bw320 > 7)
+		goto usage;
+
+	while (*end == ' ')
+		end++;
+	if (*end != '\0')
+		goto usage;
+
+	if (hostapd_tx_bss_only(hapd, "set_eht_num_sd") < 0)
+		return -1;
+
+	old_eht_phy_capab = hapd->conf->eht_phy_capab;
+	old_eht_phy_capab_mask = hapd->conf->eht_phy_capab_mask;
+
+	hapd->conf->eht_phy_capab.eht_num_sd_lt80 = (u8) lt80;
+	hapd->conf->eht_phy_capab.eht_num_sd_160 = (u8) bw160;
+	hapd->conf->eht_phy_capab.eht_num_sd_320 = (u8) bw320;
+	hapd->conf->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_NUM_SD_LT80 |
+					  EHT_PHY_BSS_OVR_NUM_SD_160 |
+					  EHT_PHY_BSS_OVR_NUM_SD_320;
+
+	if (hostapd_validate_bss_capab(hapd) < 0)
+		goto rollback;
+
+	if (hostapd_reload_bss_only(hapd) < 0)
+		goto rollback;
+
+	return 0;
+
+rollback:
+	hapd->conf->eht_phy_capab = old_eht_phy_capab;
+	hapd->conf->eht_phy_capab_mask = old_eht_phy_capab_mask;
+	return -1;
+
+usage:
+	wpa_printf(MSG_ERROR, "Usage: set_eht_num_sd <lt80 0-7> <160 0-7> <320 0-7>");
+	return -1;
+}
+
+static int hostapd_ctrl_iface_get_eht_num_sd(struct hostapd_data *hapd,
+					     char *reply, int reply_size)
+{
+	int res;
+
+	res = os_snprintf(reply, reply_size, "0x%x 0x%x 0x%x\n",
+			  hapd->conf->eht_phy_capab.eht_num_sd_lt80,
+			  hapd->conf->eht_phy_capab.eht_num_sd_160,
+			  hapd->conf->eht_phy_capab.eht_num_sd_320);
+	if (os_snprintf_error(reply_size, res))
+		return -1;
+
+	return res;
+}
+
+static int hostapd_ctrl_iface_set_eht_4x_eht_ltf_and_800ns_gi(
+	struct hostapd_data *hapd, char *cmd)
+{
+	return hostapd_ctrl_iface_set_eht_u8_field(
+		hapd, cmd, "set_eht_4x_eht_ltf_and_800ns_gi",
+		"Usage: set_eht_4x_eht_ltf_and_800ns_gi <value 0|1>",
+		&hapd->conf->eht_phy_capab.eht_4x_eht_ltf_and_800ns_gi,
+		EHT_PHY_BSS_OVR_4X_EHT_LTF_AND_800NS_GI, 0, 1);
+}
+
+static int hostapd_ctrl_iface_get_eht_4x_eht_ltf_and_800ns_gi(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_eht_u8_hex(
+		reply, reply_size,
+		hapd->conf->eht_phy_capab.eht_4x_eht_ltf_and_800ns_gi);
+}
+
+static int hostapd_ctrl_iface_set_eht_rx_1024_and_4096_qam_ls_242_tone_ru(
+	struct hostapd_data *hapd, char *cmd)
+{
+	return hostapd_ctrl_iface_set_eht_u8_field(
+		hapd, cmd, "set_eht_rx_1024_and_4096_qam_ls_242_tone_ru",
+		"Usage: set_eht_rx_1024_and_4096_qam_ls_242_tone_ru <value 0|1>",
+		&hapd->conf->eht_phy_capab.eht_rx_1024_and_4096_qam_ls_242_tone_ru,
+		EHT_PHY_BSS_OVR_RX_1024_AND_4096_QAM_LS_242_TONE_RU, 0, 1);
+}
+
+static int hostapd_ctrl_iface_get_eht_rx_1024_and_4096_qam_ls_242_tone_ru(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_eht_u8_hex(
+		reply, reply_size,
+		hapd->conf->eht_phy_capab
+			.eht_rx_1024_and_4096_qam_ls_242_tone_ru);
+}
+
+static int hostapd_ctrl_iface_set_eht_dl_ofdma_txbf(
+	struct hostapd_data *hapd, char *cmd)
+{
+	return hostapd_ctrl_iface_set_eht_u8_field(
+		hapd, cmd, "set_eht_dl_ofdma_txbf",
+		"Usage: set_eht_dl_ofdma_txbf <value 0|1>",
+		&hapd->conf->eht_phy_capab.eht_dl_ofdma_txbf,
+		EHT_PHY_BSS_OVR_DL_OFDMA_TXBF, 0, 1);
+}
+
+static int hostapd_ctrl_iface_get_eht_dl_ofdma_txbf(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_eht_u8_hex(
+		reply, reply_size, hapd->conf->eht_phy_capab.eht_dl_ofdma_txbf);
+}
+
+static int hostapd_ctrl_iface_set_eht_sup_mcs15_in_mru(
+	struct hostapd_data *hapd, char *cmd)
+{
+	return hostapd_ctrl_iface_set_eht_u8_field(
+		hapd, cmd, "set_eht_sup_mcs15_in_mru",
+		"Usage: set_eht_sup_mcs15_in_mru <value 0|1>",
+		&hapd->conf->eht_phy_capab.eht_sup_mcs15_in_mru,
+		EHT_PHY_BSS_OVR_SUP_MCS15_IN_MRU, 0, 1);
+}
+
+static int hostapd_ctrl_iface_get_eht_sup_mcs15_in_mru(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_eht_u8_hex(
+		reply, reply_size, hapd->conf->eht_phy_capab.eht_sup_mcs15_in_mru);
+}
+
+static int hostapd_ctrl_iface_set_eht_mcs14_dup_in_6ghz(
+	struct hostapd_data *hapd, char *cmd)
+{
+	return hostapd_ctrl_iface_set_eht_u8_field(
+		hapd, cmd, "set_eht_mcs14_dup_in_6ghz",
+		"Usage: set_eht_mcs14_dup_in_6ghz <value 0|1>",
+		&hapd->conf->eht_phy_capab.eht_mcs14_dup_in_6ghz,
+		EHT_PHY_BSS_OVR_MCS14_DUP_IN_6GHZ, 0, 1);
+}
+
+static int hostapd_ctrl_iface_get_eht_mcs14_dup_in_6ghz(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_eht_u8_hex(
+		reply, reply_size, hapd->conf->eht_phy_capab.eht_mcs14_dup_in_6ghz);
+}
+#endif /* CONFIG_IEEE80211BE */
+
 #ifdef CONFIG_QCN_EXTN
 static int hapd_parse_int_edca(const char *name, const char *s,
 			  int min, int max, int *out, char **next)
@@ -9180,6 +10657,192 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "RESET_AFC", 9) == 0) {
 		if (hostapd_ctrl_iface_reset_afc(hapd, buf + 9))
 			reply_len = -1;
+#ifdef CONFIG_IEEE80211AX
+	} else if (os_strncasecmp(buf, "set_he_bfee_sts ", 16) == 0) {
+		if (hostapd_ctrl_iface_set_he_bfee_sts(hapd, buf + 16) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_bfee_sts") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_bfee_sts(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_multi_tid_aggr ", 22) == 0) {
+		if (hostapd_ctrl_iface_set_he_multi_tid_aggr(hapd, buf + 22) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_multi_tid_aggr") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_multi_tid_aggr(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_multi_tid_aggr_rx ", 25) == 0) {
+		if (hostapd_ctrl_iface_set_he_multi_tid_aggr(hapd, buf + 25) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_multi_tid_aggr_rx") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_multi_tid_aggr(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_multi_tid_aggr_tx ", 25) == 0) {
+		if (hostapd_ctrl_iface_set_he_multi_tid_aggr_tx(hapd, buf + 25) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_multi_tid_aggr_tx") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_multi_tid_aggr_tx(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_max_ampdu_len_exp ", 25) == 0) {
+		if (hostapd_ctrl_iface_set_he_max_ampdu_len_exp(hapd, buf + 25) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_max_ampdu_len_exp") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_max_ampdu_len_exp(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_su_ppdu_1x_ltf_800ns_gi ", 31) == 0) {
+		if (hostapd_ctrl_iface_set_he_su_ppdu_1x_ltf_800ns_gi(
+			    hapd, buf + 31) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_su_ppdu_1x_ltf_800ns_gi") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_su_ppdu_1x_ltf_800ns_gi(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_su_mu_ppdu_4x_ltf_800ns_gi ", 34) == 0) {
+		if (hostapd_ctrl_iface_set_he_su_mu_ppdu_4x_ltf_800ns_gi(
+			    hapd, buf + 34) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_su_mu_ppdu_4x_ltf_800ns_gi") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_su_mu_ppdu_4x_ltf_800ns_gi(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_max_frag_msdu ", 21) == 0) {
+		if (hostapd_ctrl_iface_set_he_max_frag_msdu(hapd, buf + 21) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_max_frag_msdu") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_max_frag_msdu(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_min_frag_size ", 21) == 0) {
+		if (hostapd_ctrl_iface_set_he_min_frag_size(hapd, buf + 21) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_min_frag_size") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_min_frag_size(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_omi ", 11) == 0) {
+		if (hostapd_ctrl_iface_set_he_omi(hapd, buf + 11) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_omi") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_omi(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_ndp_4x_ltf_3200ns_gi ", 28) == 0) {
+		if (hostapd_ctrl_iface_set_he_ndp_4x_ltf_3200ns_gi(
+			    hapd, buf + 28) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_ndp_4x_ltf_3200ns_gi") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_ndp_4x_ltf_3200ns_gi(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_fragmentation ", 21) == 0) {
+		if (hostapd_ctrl_iface_set_he_fragmentation(hapd, buf + 21) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_fragmentation") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_fragmentation(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_amsdu_in_ampdu_suprt ", 28) == 0) {
+		if (hostapd_ctrl_iface_set_he_amsdu_in_ampdu_suprt(
+			    hapd, buf + 28) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_amsdu_in_ampdu_suprt") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_amsdu_in_ampdu_suprt(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_subfee_sts_suprt ", 24) == 0) {
+		if (hostapd_ctrl_iface_set_he_subfee_sts_suprt(
+			    hapd, buf + 24) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_subfee_sts_suprt") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_subfee_sts_suprt(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_max_nc_suprt ", 20) == 0) {
+		if (hostapd_ctrl_iface_set_he_max_nc_suprt(hapd, buf + 20) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_max_nc_suprt") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_max_nc_suprt(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_er_su_disable ", 21) == 0) {
+		if (hostapd_ctrl_iface_set_he_er_su_disable(hapd, buf + 21) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_er_su_disable") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_er_su_disable(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_er_su_ppdu_1x_ltf_800ns_gi ", 34) == 0) {
+		if (hostapd_ctrl_iface_set_he_er_su_ppdu_1x_ltf_800ns_gi(
+			    hapd, buf + 34) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_er_su_ppdu_1x_ltf_800ns_gi") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_er_su_ppdu_1x_ltf_800ns_gi(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_er_su_ppdu_4x_ltf_800ns_gi ", 34) == 0) {
+		if (hostapd_ctrl_iface_set_he_er_su_ppdu_4x_ltf_800ns_gi(
+			    hapd, buf + 34) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_er_su_ppdu_4x_ltf_800ns_gi") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_er_su_ppdu_4x_ltf_800ns_gi(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_1024qam_lt242ru_rx_enable ", 33) == 0) {
+		if (hostapd_ctrl_iface_set_he_1024qam_lt242ru_rx_enable(
+			    hapd, buf + 33) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_1024qam_lt242ru_rx_enable") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_1024qam_lt242ru_rx_enable(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_full_bw_ul_mumimo ", 25) == 0) {
+		if (hostapd_ctrl_iface_set_he_full_bw_ul_mumimo(
+			    hapd, buf + 25) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_full_bw_ul_mumimo") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_full_bw_ul_mumimo(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_he_bsr_support ", 19) == 0) {
+		if (hostapd_ctrl_iface_set_he_bsr_support(hapd, buf + 19) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_he_bsr_support") == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_bsr_support(
+			hapd, reply, reply_size);
+#endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_IEEE80211BE
+	} else if (os_strncasecmp(buf, "set_eht_ndp_4x_eht_ltf_and_320nsgi ", 35) == 0) {
+		if (hostapd_ctrl_iface_set_eht_ndp_4x_eht_ltf_and_320nsgi(
+			    hapd, buf + 35) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_eht_ndp_4x_eht_ltf_and_320nsgi") == 0) {
+		reply_len = hostapd_ctrl_iface_get_eht_ndp_4x_eht_ltf_and_320nsgi(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_eht_num_sd ", 15) == 0) {
+		if (hostapd_ctrl_iface_set_eht_num_sd(hapd, buf + 15) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_eht_num_sd") == 0) {
+		reply_len = hostapd_ctrl_iface_get_eht_num_sd(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_eht_4x_eht_ltf_and_800ns_gi ", 32) == 0) {
+		if (hostapd_ctrl_iface_set_eht_4x_eht_ltf_and_800ns_gi(
+			    hapd, buf + 32) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_eht_4x_eht_ltf_and_800ns_gi") == 0) {
+		reply_len = hostapd_ctrl_iface_get_eht_4x_eht_ltf_and_800ns_gi(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_eht_rx_1024_and_4096_qam_ls_242_tone_ru ", 44) == 0) {
+		if (hostapd_ctrl_iface_set_eht_rx_1024_and_4096_qam_ls_242_tone_ru(
+			    hapd, buf + 44) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_eht_rx_1024_and_4096_qam_ls_242_tone_ru") == 0) {
+		reply_len = hostapd_ctrl_iface_get_eht_rx_1024_and_4096_qam_ls_242_tone_ru(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_eht_dl_ofdma_txbf ", 22) == 0) {
+		if (hostapd_ctrl_iface_set_eht_dl_ofdma_txbf(hapd, buf + 22) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_eht_dl_ofdma_txbf") == 0) {
+		reply_len = hostapd_ctrl_iface_get_eht_dl_ofdma_txbf(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_eht_sup_mcs15_in_mru ", 25) == 0) {
+		if (hostapd_ctrl_iface_set_eht_sup_mcs15_in_mru(
+			    hapd, buf + 25) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_eht_sup_mcs15_in_mru") == 0) {
+		reply_len = hostapd_ctrl_iface_get_eht_sup_mcs15_in_mru(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_eht_mcs14_dup_in_6ghz ", 26) == 0) {
+		if (hostapd_ctrl_iface_set_eht_mcs14_dup_in_6ghz(
+			    hapd, buf + 26) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_eht_mcs14_dup_in_6ghz") == 0) {
+		reply_len = hostapd_ctrl_iface_get_eht_mcs14_dup_in_6ghz(
+			hapd, reply, reply_size);
+#endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_QCN_EXTN
 	} else if (os_strncmp(buf, "SET_EDCA_MODE ", 14) == 0) {
 		if (hostapd_ctrl_iface_set_muedca_mode(hapd, buf + 14) < 0)
