@@ -9336,6 +9336,11 @@ rsnxe_done:
 #endif /* CONFIG_P2P_MANAGER */
 
 	p = hostapd_eid_mbo(hapd, p, end - p);
+
+#ifdef CONFIG_QCN_EXTN
+	hostapd_update_assoc_resp_with_hop_count_extn(hapd);
+#endif
+
 	p = hostapd_eid_wfa_capab(hapd, sta, p);
 
 	if (hapd->conf->assocresp_elements &&

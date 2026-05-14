@@ -2885,10 +2885,6 @@ void sme_authenticate(struct wpa_supplicant *wpa_s,
 	cwork->bss = bss;
 	cwork->ssid = ssid;
 	cwork->sme = 1;
-#ifdef CONFIG_QCN_EXTN
-	wpa_s->cache_cwork = cwork;
-#endif
-
 #ifdef CONFIG_SAE
 	wpa_s->sme.sae.state = SAE_NOTHING;
 	wpa_s->sme.sae.send_confirm = 0;
@@ -2900,6 +2896,7 @@ void sme_authenticate(struct wpa_supplicant *wpa_s,
 		if (wpa_s->conf->rptr_mgr_comm_mode == RPTR_MGR_MODE_COMM_SOCK) {
 			wpa_supp_pre_connect_state_handle_extn(wpa_s, bss);
 		}
+		wpa_s->cache_cwork = cwork;
 		wpa_supplicant_set_state(wpa_s, WPA_PRE_CONNECT);
 
 		eloop_register_timeout(SME_PRE_CONNECT_TIMEOUT, 0, sme_pre_connect_timer_extn,
