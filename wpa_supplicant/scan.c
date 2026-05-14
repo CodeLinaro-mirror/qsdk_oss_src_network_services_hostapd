@@ -1563,6 +1563,10 @@ scan:
 		wpas_p2p_scan_freqs(wpa_s, &params, true);
 #endif /* CONFIG_P2P */
 
+	if (!is_zero_ether_addr(wpa_s->ml_probe_bssid) &&
+	    (wpa_s->scan_req == MANUAL_SCAN_REQ))
+		params.link_id = wpa_s->ml_probe_tx_link;
+
 	ret = wpa_supplicant_trigger_scan(wpa_s, scan_params, false, false);
 
 	if (ret && wpa_s->last_scan_req == MANUAL_SCAN_REQ && params.freqs &&
@@ -1597,6 +1601,7 @@ scan:
 
 	wpa_s->ml_probe_mld_id = -1;
 	wpa_s->ml_probe_links = 0;
+	wpa_s->ml_probe_tx_link = -1;
 	os_memset(wpa_s->ml_probe_bssid, 0, sizeof(wpa_s->ml_probe_bssid));
 }
 

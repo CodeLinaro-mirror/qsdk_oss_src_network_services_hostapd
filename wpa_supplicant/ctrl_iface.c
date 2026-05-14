@@ -12717,14 +12717,17 @@ static int wpas_ctrl_iface_epcs(struct wpa_supplicant *wpa_s, char *pos,
 }
 #endif /* CONFIG_IEEE80211BE */
 
-#ifdef CONFIG_TESTING_OPTIONS
 static int wpas_ctrl_ml_probe(struct wpa_supplicant *wpa_s, char *cmd)
 {
 	char *token, *context = NULL;
 	u8 bssid[ETH_ALEN];
 	int mld_id = -1, link_id = -1;
+	u16 links_mask = 0;
+	u8 tx_link = 0;
 	struct wpa_bss *bss;
 	int *freqs;
+	bool tx_link_set = false;
+	bool select_no_link_id = false;
 
 	os_memset(bssid, 0, sizeof(bssid));
 
@@ -12736,7 +12739,36 @@ static int wpas_ctrl_ml_probe(struct wpa_supplicant *wpa_s, char *cmd)
 			mld_id = atoi(token + 7);
 		} else if (os_strncmp(token, "link_id=", 8) == 0) {
 			link_id = atoi(token + 8);
+
+			if (link_id == -1) {
+				links_mask = 0;
+				select_no_link_id = true;
+				continue;
+			}
+
+			if (link_id < 0 || link_id >= MAX_NUM_MLD_LINKS) {
+				wpa_printf(MSG_INFO, "CTRL: Invalid link_id %d", link_id);
+				return -1;
+			}
+
+			if (!select_no_link_id)
+				links_mask |= BIT(link_id);
+		} else if (os_strncmp(token, "tx_link=", 8) == 0) {
+			tx_link = atoi(token + 8);
+
+			if (tx_link < 0 || tx_link >= MAX_NUM_MLD_LINKS) {
+				wpa_printf(MSG_INFO, "CTRL: Invalid tx_link token: %d", tx_link);
+				return -1;
+			}
+			tx_link_set = true;
 		}
+	}
+
+	if (tx_link_set && (links_mask & BIT(tx_link))) {
+		wpa_printf(MSG_INFO,
+			   "CTRL: Invalid ML probe: link_id selection overlaps with tx_link %u",
+			   tx_link);
+		return -1;
 	}
 
 	if (is_zero_ether_addr(bssid)) {
@@ -12777,8 +12809,8 @@ static int wpas_ctrl_ml_probe(struct wpa_supplicant *wpa_s, char *cmd)
 
 	os_memcpy(wpa_s->ml_probe_bssid, bssid, ETH_ALEN);
 	wpa_s->ml_probe_mld_id = mld_id;
-	if (link_id >= 0)
-		wpa_s->ml_probe_links = BIT(link_id);
+	wpa_s->ml_probe_links = links_mask;
+	wpa_s->ml_probe_tx_link = tx_link;
 
 	wpa_s->normal_scans = 0;
 	wpa_s->scan_req = MANUAL_SCAN_REQ;
@@ -12788,8 +12820,6 @@ static int wpas_ctrl_ml_probe(struct wpa_supplicant *wpa_s, char *cmd)
 
 	return 0;
 }
-#endif /* CONFIG_TESTING_OPTIONS */
-
 
 #ifdef CONFIG_NAN_USD
 
@@ -14073,13 +14103,13 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 	} else if (os_strcmp(buf, "TWT_TEARDOWN") == 0) {
 		if (wpas_ctrl_iface_send_twt_teardown(wpa_s, ""))
 			reply_len = -1;
-	} else if (os_strncmp(buf, "ML_PROBE_REQ ", 13) == 0) {
-		if (wpas_ctrl_ml_probe(wpa_s, buf + 13))
-			reply_len = -1;
 	} else if (os_strncmp(buf, "TEST_RSNXE_DATA ", 16) == 0) {
 		if (wpas_ctrl_test_rsnxe_data(wpa_s, buf + 16) < 0)
 			reply_len = -1;
 #endif /* CONFIG_TESTING_OPTIONS */
+	} else if (os_strncmp(buf, "ML_PROBE_REQ ", 13) == 0) {
+		if (wpas_ctrl_ml_probe(wpa_s, buf + 13))
+			reply_len = -1;
 	} else if (os_strncmp(buf, "VENDOR_ELEM_ADD ", 16) == 0) {
 		if (wpas_ctrl_vendor_elem_add(wpa_s, buf + 16) < 0)
 			reply_len = -1;

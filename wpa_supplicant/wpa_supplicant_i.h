@@ -977,6 +977,7 @@ struct wpa_supplicant {
 	u8 ml_probe_bssid[ETH_ALEN];
 	int ml_probe_mld_id;
 	u16 ml_probe_links;
+	u8 ml_probe_tx_link;
 
 	u64 drv_flags;
 	u64 drv_flags2;
