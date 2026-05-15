@@ -1230,6 +1230,7 @@ struct wpa_supplicant {
 	unsigned int mesh_vht_enabled:1;
 	unsigned int mesh_he_enabled:1;
 	unsigned int mesh_eht_enabled:1;
+	unsigned int mesh_uhr_enabled:1;
 	struct wpa_driver_mesh_join_params *mesh_params;
 #ifdef CONFIG_PMKSA_CACHE_EXTERNAL
 	/* struct external_pmksa_cache::list */
