@@ -389,6 +389,13 @@ struct sta_info {
 	u8 unsolicited_dialog_token;
 	struct dscp_policy_state dscp_state;
 	struct sta_info *sa_query_triggered_sta;
+#ifdef CONFIG_IEEE80211BE
+	u16 link_addr_conflict_bitmap; /* bitmap of partner link indices (bit k
+					* set when link k's per-link address
+					* conflicted with an existing MFP STA
+					* during association; re-walk only those
+					* links on SA Query timeout comeback) */
+#endif
 	bool dscp_reset;
 	bool ft_re_add;
 	u16 max_idle_period; /* if nonzero, the granted BSS max idle period in

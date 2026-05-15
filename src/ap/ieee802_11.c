@@ -4895,6 +4895,8 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 {
 	struct hostapd_data *bss;
 	struct sta_info *lsta;
+	int i, j, k;
+	bool triggered = false;
 
 	if (sta->unadded_sta &&
 	    (sta->flags & WLAN_STA_AUTH)) {
@@ -4904,10 +4906,101 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 			lsta = ap_get_sta(bss, sta->addr);
 			if (lsta && check_sa_query(bss, lsta, type, ies, ies_len, sta))
 				return true;
-
 		}
 	}
-	return false;
+
+	/*
+	 * Check per-link MAC addresses of the incoming station's partner
+	 * links (all links except the assoc link) against all STAs across
+	 * all BSSes on all interfaces.  This is independent of the
+	 * unadded_sta state — a per-link address conflict can arise for any
+	 * incoming MLD STA.
+	 *
+	 * All partner links are checked even after the first conflict is
+	 * found, because each link address may conflict with a different
+	 * existing station.  SA Query is initiated for every such station;
+	 * the caller rejects the association temporarily if at least one
+	 * SA Query was triggered.
+	 *
+	 * STA entries are keyed by MLD address, so for each BSS we walk its
+	 * sta_list and compare the per-link peer_addr stored at
+	 * hapd_ptr->mld_link_id — the link index that BSS owns.
+	 */
+	if (!ap_sta_is_mld(hapd, sta))
+		return false;
+
+	for (k = 0; k < MAX_NUM_MLD_LINKS; k++) {
+		struct hostapd_data *hapd_ptr;
+		struct sta_info *osta;
+		const u8 *link_addr;
+		bool found;
+
+		/* Only check partner links, not the assoc link */
+		if (k == hapd->mld_link_id)
+			continue;
+		if (!sta->mld_info.links[k].valid)
+			continue;
+
+		link_addr = sta->mld_info.links[k].peer_addr;
+		found = false;
+
+		for (i = 0; i < hapd->iface->interfaces->count && !found; i++) {
+			for (j = 0; j < hapd->iface->interfaces->iface[i]->num_bss && !found; j++) {
+				hapd_ptr = hapd->iface->interfaces->iface[i]->bss[j];
+				if (!hapd_ptr || !hapd_ptr->started)
+					continue;
+
+				/* Fast path: link_addr is the station's
+				 * primary address */
+				osta = ap_get_sta(hapd_ptr, link_addr);
+
+				/* STA entries are keyed by MLD address;
+				 * if not found above, compare the per-link
+				 * peer_addr at hapd_ptr's own link ID —
+				 * no need to scan all link indices. */
+				if (!osta && hapd_ptr->conf->mld_ap) {
+					struct sta_info *tmp;
+
+					for (tmp = hapd_ptr->sta_list;
+					     tmp; tmp = tmp->next) {
+						if (!tmp->mld_info.mld_sta)
+							continue;
+						if (!tmp->mld_info.links[hapd_ptr->mld_link_id].valid)
+							continue;
+						if (ether_addr_equal(
+							tmp->mld_info.links[hapd_ptr->mld_link_id].peer_addr,
+							link_addr)) {
+							osta = tmp;
+							break;
+						}
+					}
+				}
+
+				if (osta) {
+					wpa_printf(MSG_DEBUG,
+						   "MLD: partner link %d addr "
+						   MACSTR " conflicts with STA "
+						   MACSTR " on BSS %s",
+						   k, MAC2STR(link_addr),
+						   MAC2STR(osta->addr),
+						   hapd_ptr->conf->iface);
+
+					if (check_sa_query(hapd_ptr, osta,
+							   type, ies, ies_len,
+							   sta)) {
+						triggered = true;
+						sta->link_addr_conflict_bitmap |= BIT(k);
+					}
+
+					/* One conflicting STA per link address
+					 * is sufficient; move on to the next
+					 * partner link. */
+					found = true;
+				}
+			}
+		}
+	}
+	return triggered;
 }
 #endif /* CONFIG_IEEE80211BE */
 
@@ -6999,6 +7092,96 @@ static u16 check_rssi_association(struct hostapd_data *hapd,
 	return WLAN_STATUS_SUCCESS;
 }
 
+#ifdef CONFIG_IEEE80211BE
+static void
+handle_link_addr_conflict_sa_query_timeout(struct hostapd_data *hapd,
+					   struct sta_info *sta)
+{
+	int i, j, k;
+
+	if (!ap_sta_is_mld(hapd, sta)) {
+		sta->link_addr_conflict_bitmap = 0;
+		return;
+	}
+
+	/*
+	 * Only re-walk the partner links whose bit is set in
+	 * link_addr_conflict_bitmap — those are the links where a per-link
+	 * address conflict was detected during the previous association
+	 * attempt.  For each such link, find the conflicting station and, if
+	 * its SA Query has now timed out, clean it up so the new association
+	 * can proceed.  Partner links of the incoming STA are re-added
+	 * automatically by check_assoc_ies() / ieee80211_ml_process_link().
+	 */
+	for (k = 0; k < MAX_NUM_MLD_LINKS; k++) {
+		struct hostapd_data *hapd_ptr, *assoc_hapd;
+		struct sta_info *osta, *assoc_sta;
+		const u8 *link_addr;
+
+		if (!(sta->link_addr_conflict_bitmap & BIT(k)))
+			continue;
+
+		/* Clear the bit regardless of outcome below */
+		sta->link_addr_conflict_bitmap &= ~BIT(k);
+
+		link_addr = sta->mld_info.links[k].peer_addr;
+
+		for (i = 0; i < hapd->iface->interfaces->count; i++) {
+			for (j = 0; j < hapd->iface->interfaces->iface[i]->num_bss; j++) {
+				struct sta_info *tmp;
+
+				hapd_ptr = hapd->iface->interfaces->iface[i]->bss[j];
+				if (!hapd_ptr || !hapd_ptr->started)
+					continue;
+
+				osta = ap_get_sta(hapd_ptr, link_addr);
+				if (!osta && hapd_ptr->conf->mld_ap) {
+					for (tmp = hapd_ptr->sta_list;
+					     tmp; tmp = tmp->next) {
+						if (!tmp->mld_info.mld_sta)
+							continue;
+						if (!tmp->mld_info.links[hapd_ptr->mld_link_id].valid)
+							continue;
+						if (ether_addr_equal(
+							tmp->mld_info.links[hapd_ptr->mld_link_id].peer_addr,
+							link_addr)) {
+							osta = tmp;
+							break;
+						}
+					}
+				}
+
+				if (!osta)
+					continue;
+
+				/* Resolve to the assoc-link STA */
+				assoc_sta = hostapd_ml_get_assoc_sta(
+					hapd_ptr, osta, &assoc_hapd);
+				if (assoc_sta) {
+					osta = assoc_sta;
+					hapd_ptr = assoc_hapd;
+				}
+
+				if (!osta->sa_query_timed_out)
+					continue;
+
+				wpa_printf(MSG_DEBUG,
+					   "MLD: partner link %d addr " MACSTR
+					   " conflict: SA Query timed out for STA "
+					   MACSTR " on BSS %s, cleaning up",
+					   k, MAC2STR(link_addr),
+					   MAC2STR(osta->addr),
+					   hapd_ptr->conf->iface);
+
+				hostapd_drv_sta_deauth(hapd_ptr, osta->addr,
+						       WLAN_REASON_PREV_AUTH_NOT_VALID);
+				ap_sta_cleanup_all(hapd_ptr, osta, sta);
+			}
+		}
+	}
+}
+#endif
+
 static int
 handle_assoc_sa_query_timeout_ml_setup(struct hostapd_data *hapd,
 				       struct sta_info *sta,
@@ -7445,6 +7628,10 @@ static void handle_assoc(struct hostapd_data *hapd,
 			goto fail;
 	}
 
+#ifdef CONFIG_IEEE80211BE
+	if (sta->link_addr_conflict_bitmap)
+		handle_link_addr_conflict_sa_query_timeout(hapd, sta);
+#endif
 	/* followed by SSID and Supported rates; and HT capabilities if 802.11n
 	 * is used */
 	resp = check_assoc_ies(hapd, sta, pos, left,
