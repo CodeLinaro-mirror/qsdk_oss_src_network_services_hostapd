@@ -4316,7 +4316,7 @@ static void wpas_parse_connection_info(struct wpa_supplicant *wpa_s,
 	sta_supported_chan_width = get_supported_channel_width(&req_elems);
 	ap_operation_chan_width = get_operation_channel_width(&resp_elems);
 	if (wpa_s->connection_vht || wpa_s->connection_he ||
-	    wpa_s->connection_eht) {
+	    wpa_s->connection_eht || wpa_s->connection_uhr) {
 		wpa_s->connection_channel_bandwidth =
 			get_sta_operation_chan_width(ap_operation_chan_width,
 						     sta_supported_chan_width);
