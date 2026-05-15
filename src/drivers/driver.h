@@ -3249,6 +3249,8 @@ struct wpa_driver_capa {
 	size_t max_probe_req_ie_len;
 	u8 mbssid_max_ngroups;
 	unsigned int max_beacon_size;
+	/* Indicates whether STA DFS is enabled */
+	u8 sta_dfs_en;
 
 	/* EDCA based ranging capabilities */
 	u8 max_tx_antenna;

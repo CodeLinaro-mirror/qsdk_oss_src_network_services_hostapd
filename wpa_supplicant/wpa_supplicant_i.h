@@ -1101,6 +1101,7 @@ struct wpa_supplicant {
 	unsigned int max_remain_on_chan;
 	unsigned int max_stations;
 	unsigned int max_num_akms;
+	bool sta_dfs_en;
 
 	int pending_mic_error_report;
 	int pending_mic_error_pairwise;
