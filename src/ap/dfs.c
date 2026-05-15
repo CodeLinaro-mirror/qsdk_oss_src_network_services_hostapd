@@ -1495,7 +1495,7 @@ static bool dfs_rcac_try_half_bw(struct hostapd_iface *iface,
 	int home_start = home_center_freq - (home_bw / 2) + 10;
 	int home_end   = home_center_freq + (home_bw / 2) - 10;
 	enum oper_chan_width half_width;
-	int total = dfs_find_channel(iface, NULL, 0, DFS_ANY_CHANNEL);
+	int total;
 	int i;
 
 	wpa_printf(MSG_DEBUG,
@@ -1514,6 +1514,8 @@ static bool dfs_rcac_try_half_bw(struct hostapd_iface *iface,
 		iface->conf->secondary_channel = 0;
 	else if (half_bw == 40)
 		iface->conf->secondary_channel = orig_secondary_channel;
+
+	total = dfs_find_channel(iface, NULL, 0, DFS_ANY_CHANNEL);
 
 	for (i = 0; i < total; i++) {
 		struct hostapd_channel_data *c = NULL;
@@ -2045,6 +2047,18 @@ int hostapd_dfs_pre_cac_expired(struct hostapd_iface *iface, int freq,
 
 	set_dfs_state(iface, freq, ht_enabled, chan_offset, chan_width,
 		      cf1, cf2, HOSTAPD_CHAN_DFS_USABLE,0);
+
+	if (dfs_is_agile_cac_enabled(iface) &&
+	    !iface->radar_background.cac_started &&
+	    iface->radar_background.freq > 0 &&
+	    iface->radar_background.freq == freq) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: PRE_CAC_EXPIRED for RCAC channel %d MHz - restarting RCAC",
+			   freq);
+		iface->radar_background.channel = -1;
+		iface->radar_background.freq = 0;
+		hostapd_dfs_update_background_chain(iface);
+	}
 
 	return 0;
 }
