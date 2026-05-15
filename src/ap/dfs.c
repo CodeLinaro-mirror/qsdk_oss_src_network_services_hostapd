@@ -1374,6 +1374,13 @@ void hostapd_dfs_radar_handling_timeout(void *eloop_data, void *user_data)
 {
 	struct hostapd_iface *iface = eloop_data;
 
+	if (hostapd_csa_in_progress(iface)) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: radar handling timeout expired,"
+			   "but CSA in progress - ignore");
+		return;
+	}
+
 	wpa_printf(MSG_INFO, "Disabling interface %s since no channel"
 		   " switch is initiated within radar handling timeout",
 		   iface->conf->bss[0]->iface);
@@ -2106,6 +2113,13 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			return 0;
 
 		if (iface->conf->disable_csa_dfs) {
+			if (hostapd_csa_in_progress(iface)) {
+				wpa_printf(MSG_DEBUG,
+					   "DFS: radar detected, but CSA"
+					   "already in progress - skip timeout");
+				return 0;
+			}
+
 			if (!eloop_is_timeout_registered(hostapd_dfs_radar_handling_timeout,
 							 iface, NULL)) {
 				eloop_register_timeout(0, HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR,
