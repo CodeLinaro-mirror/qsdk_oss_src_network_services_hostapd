@@ -7134,6 +7134,7 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 		}
 #endif
 
+		hapd->reenable = REENABLE_DEINIT;
 		hostapd_bss_deinit(hapd);
 		wpa_printf(MSG_DEBUG, "%s: free hapd %p (%s)",
 			   __func__, hapd, hapd->conf->iface);
