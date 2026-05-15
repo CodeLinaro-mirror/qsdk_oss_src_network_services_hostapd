@@ -3790,6 +3790,27 @@ static bool ibss_mesh_can_use_eht(struct wpa_supplicant *wpa_s,
 }
 
 
+#ifdef CONFIG_IEEE80211BN
+static bool ibss_mesh_can_use_uhr(struct wpa_supplicant *wpa_s,
+				  const struct wpa_ssid *ssid,
+				  const struct hostapd_hw_modes *mode,
+				  int ieee80211_mode)
+{
+	if (ssid->mode != WPAS_MODE_MESH || !ssid->uhr)
+		return false;
+
+	switch(mode->mode) {
+	case HOSTAPD_MODE_IEEE80211G:
+	case HOSTAPD_MODE_IEEE80211B:
+	case HOSTAPD_MODE_IEEE80211A:
+		return mode->uhr_capab[ieee80211_mode].uhr_supported;
+	default:
+		return false;
+	}
+}
+#endif /* CONFIG_IEEE80211BN */
+
+
 static void ibss_mesh_select_40mhz(struct wpa_supplicant *wpa_s,
 				   const struct wpa_ssid *ssid,
 				   struct hostapd_hw_modes *mode,
@@ -4245,6 +4266,11 @@ void ibss_mesh_setup_freq(struct wpa_supplicant *wpa_s,
 	if (freq->he_enabled)
 		freq->eht_enabled = ibss_mesh_can_use_eht(wpa_s, ssid, mode,
 							  ieee80211_mode);
+#ifdef CONFIG_IEEE80211BN
+	if (freq->eht_enabled)
+		freq->uhr_enabled = ibss_mesh_can_use_uhr(wpa_s, ssid, mode,
+							  ieee80211_mode);
+#endif /* CONFIG_IEEE80211BN */
 
 	/* Setup higher BW only for 5 and 6 GHz */
 	if (mode->mode == HOSTAPD_MODE_IEEE80211A) {
@@ -4254,6 +4280,7 @@ void ibss_mesh_setup_freq(struct wpa_supplicant *wpa_s,
 						ieee80211_mode, is_6ghz, dfs_enabled)) {
 			freq->he_enabled = freq->vht_enabled = false;
 			freq->eht_enabled = freq->he_enabled;
+			freq->uhr_enabled = freq->eht_enabled;
 		}
 
 	}
