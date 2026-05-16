@@ -452,6 +452,14 @@ struct wpa_auth_callbacks {
 			   int *session_timeout,
 			   const u8 **identity, size_t *identity_len,
 			   const u8 **radius_cui, size_t *radius_cui_len);
+#ifdef CONFIG_QCN_EXTN
+	void (*test_plugin_store_pmk_r1)(void *ctx, const u8 *spa,
+					 const u8 *pmk_r1, size_t pmk_r1_len,
+					 const u8 *pmk_r1_name, int pairwise,
+					 int expires_in, int session_timeout,
+					 const u8 *identity, size_t identity_len,
+					 const u8 *radius_cui, size_t radius_cui_len);
+#endif /* CONFIG_QCN_EXTN */
 	int (*notify_remote_auth)(void *ctx, const u8 *sta_addr,
 				  const u8 *ies, u16 ies_len,
 				  u16 status_code, bool is_ml);
@@ -658,6 +666,8 @@ int wpa_ft_fetch_pmk_r1(struct wpa_authenticator *wpa_auth,
 			const u8 **radius_cui, size_t *radius_cui_len,
 			int *session_timeout);
 void wpa_ft_push_roam_notification(struct wpa_authenticator *wpa_auth, const u8 *addr);
+void wpa_ft_clear_pmk_r1(struct wpa_authenticator *wpa_auth, const u8 *spa,
+			 const u8 *pmk_r1_name);
 
 #endif /* CONFIG_IEEE80211R_AP */
 
