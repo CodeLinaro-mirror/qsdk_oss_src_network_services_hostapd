@@ -624,12 +624,15 @@ static u16 validate_security_profile_common(
 	const char *auth_context,
 	struct security_profile_entry_ap *profile_matched)
 {
-
 	u8 *addr;
 
 	addr = sta->addr;
 
 	struct ieee802_11_elems elems;
+
+	if ((ieee802_11_parse_elems(ies, ies_len, &elems, 1) != ParseFailed)) {
+		wpa_printf(MSG_ERROR,"Parse Success %s %d \n",__func__,__LINE__);
+	}
 
 	/* Skip validation if no Security Profiles are configured */
 	if (!hapd->conf->security_profiles)
@@ -2331,8 +2334,6 @@ static int check_sae_rejected_groups(struct hostapd_data *hapd,
 
 	return 0;
 }
-
-
 static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 			    const struct ieee80211_mgmt *mgmt, size_t len,
 			    u16 auth_transaction, u16 status_code)
@@ -2577,6 +2578,23 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 		if (check_sae_rejected_groups(hapd, sta->sae)) {
 			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 			goto reply;
+		}
+
+		if (hapd->conf->security_profiles) {
+			const u8 *pos;
+			size_t remaining_len, ies_len;
+
+			remaining_len = len - offsetof(struct ieee80211_mgmt, u.auth.variable);
+			pos = skip_ml_auth_fixed_fields(hapd, mgmt, len);
+
+			if (pos) {
+				ies_len = remaining_len - (pos - mgmt->u.auth.variable);
+				resp = validate_security_profile_common(hapd, sta, pos, ies_len,
+									"SAE", NULL);
+
+				if (resp != WLAN_STATUS_SUCCESS)
+					goto reply;
+			}
 		}
 
 		if (!token && use_anti_clogging(hapd) && !allow_reuse) {
@@ -3028,7 +3046,7 @@ void handle_auth_fils(struct hostapd_data *hapd, struct sta_info *sta,
 				  elems.rsnxe ? elems.rsnxe - 2 : NULL,
 				  elems.rsnxe ? elems.rsnxe_len + 2 : 0,
 				  elems.mdie, elems.mdie_len, NULL, 0, NULL,
-				  ap_sta_is_mld(hapd, sta), false);
+				  ap_sta_is_mld(hapd, sta), false, NULL);
 	resp = wpa_res_to_status_code(res);
 	if (resp != WLAN_STATUS_SUCCESS)
 		goto fail;
@@ -3120,6 +3138,12 @@ void handle_auth_fils(struct hostapd_data *hapd, struct sta_info *sta,
 			goto fail;
 #endif /* CONFIG_NO_RADIUS */
 		}
+	}
+
+	if (hapd->conf->security_profiles) {
+		resp = validate_security_profile_common(hapd, sta, pos, len, "FILS", NULL);
+		if (!resp)
+			goto fail;
 	}
 
 fail:
@@ -3946,6 +3970,36 @@ static void handle_auth_pasn(struct hostapd_data *hapd, struct sta_info *sta,
 		hapd_initialize_pasn(hapd, sta);
 
 		hapd_pasn_update_params(hapd, sta, mgmt, len);
+
+		/* UHR Security Profile validation during PASN frame 1.
+		 * Spec: if the first Authentication frame includes RSNE, RSNXE,
+		 * and a Security Profile element the AP must verify it matches
+		 * an advertised profile; reject with
+		 * REJECTED_INVALID_SECURITY_PROFILE on mismatch.
+		 */
+		if (hapd->conf->security_profiles) {
+			const u8 *var = mgmt->u.auth.variable;
+			size_t var_len = ((const u8 *) mgmt) + len - var;
+
+			if (validate_security_profile_common(hapd, sta,
+								 var, var_len, "PASN", NULL)) {
+
+				wpa_printf(MSG_INFO,
+						"UHR: Rejecting PASN auth from "
+						MACSTR
+						" - Security Profile mismatch",
+						MAC2STR(sta->addr));
+				send_auth_reply(hapd, sta, sta->addr,
+						le_to_host16(mgmt->u.auth.auth_alg),
+						WLAN_AUTH_TR_SEQ_PASN_AUTH2,
+						WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE,
+						NULL, 0,
+						"pasn-sec-profile-reject");
+				ap_free_sta(hapd, sta);
+				return;
+			}
+		}
+
 		ret = handle_auth_pasn_1(sta->pasn, hapd->own_addr, sta->addr,
 					 mgmt, len, false);
 		wpabuf_free(sta->pasn->frame);
@@ -4489,7 +4543,6 @@ static void handle_auth(struct hostapd_data *hapd,
 			goto fail;
 		}
 	}
-
 	switch (auth_alg) {
 	case WLAN_AUTH_OPEN:
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
@@ -4556,6 +4609,15 @@ static void handle_auth(struct hostapd_data *hapd,
 			deferred_auth_response = true;
 		}
 #endif
+
+		if (hapd->conf->security_profiles) {
+			if (validate_security_profile_common(hapd, sta, mgmt->u.auth.variable,
+							     len - IEEE80211_HDRLEN - sizeof(mgmt->u.auth),
+							     "FT", NULL)) {
+				resp = WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE; 
+				goto fail;
+			}
+		}
 		ft_auth_resp = wpa_ft_process_auth(sta->wpa_sm,
 						   auth_transaction,
 						   mgmt->u.auth.variable,
@@ -4609,6 +4671,13 @@ static void handle_auth(struct hostapd_data *hapd,
 				 status_code);
 		return;
 #endif /* CONFIG_PASN */
+	}
+
+	if (hapd->conf->security_profiles) {
+		if (validate_security_profile_common(hapd, sta, mgmt->u.auth.variable,
+						     len - IEEE80211_HDRLEN - sizeof(mgmt->u.auth),
+						     "OTHER_Security Profiles", NULL))
+			goto fail;
 	}
 
  fail:
@@ -5279,7 +5348,7 @@ u16 owe_process_rsn_ie(struct hostapd_data *hapd,
 	res = wpa_validate_wpa_ie(hapd->wpa_auth, sta->wpa_sm,
 				  hapd->iface->freq, rsn_ie, rsn_ie_len,
 				  NULL, 0, NULL, 0, owe_dh, owe_dh_len, NULL,
-				  ap_sta_is_mld(hapd, sta), false);
+				  ap_sta_is_mld(hapd, sta), false, NULL);
 	status = wpa_res_to_status_code(res);
 	if (status != WLAN_STATUS_SUCCESS)
 		goto end;
@@ -5862,6 +5931,31 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		}
 	}
 #endif /* CONFIG_IEEE80211BE */
+		struct security_profile_entry_ap matched_profile;
+		bool security_profile_matched = false;
+
+		os_memset(&matched_profile, 0, sizeof(matched_profile));
+
+		bool is_assoc_link = true;
+
+		is_assoc_link = (hapd->mld_link_id == sta->mld_assoc_link_id);
+
+		if ((hapd->conf->security_profiles && is_assoc_link)
+		    || (hapd->conf->security_profiles && !(ap_sta_is_mld(hapd,sta)))) {
+
+			resp = validate_security_profile_common(hapd, sta,
+								ies, ies_len,
+								type == LINK_PARSE_REASSOC ?
+								"Reassoc" : "Assoc", &matched_profile);
+			if (resp != WLAN_STATUS_SUCCESS) {
+				resp = WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE;
+				goto out;
+			}
+			wpa_printf(MSG_DEBUG,
+				   "UHR: (Re)Assoc Security Profile validated "
+				   "for " MACSTR, MAC2STR(sta->addr));
+			security_profile_matched = true;
+		}
 
 #ifdef CONFIG_IEEE80211BN
 	if (hostapd_is_uhr_enabled(hapd)) {
@@ -6048,10 +6142,28 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 					  elems->owe_dh, elems->owe_dh_len,
 					  assoc_wpa_sm,
 					  ap_sta_is_mld(hapd, sta),
-					  hapd->conf->external_pmk_cache);
+					  hapd->conf->external_pmk_cache,
+					  security_profile_matched ?
+					  &matched_profile : NULL);
 		resp = wpa_res_to_status_code(res);
 		if (resp != WLAN_STATUS_SUCCESS)
 			goto out;
+
+	/* For non-encrypted assoc frames, the spec requires the Security
+	 * Profile element in message 3 of the 4-way handshake.  Set the
+	 * flag now so wpa_send_eapol_m3() includes it.  For encrypted
+	 * assoc (EPPKE or 802.1X with assoc-frame-encryption) the IE goes
+	 * in the assoc response instead, so the flag is left clear.
+	 * SAE is idempotent here — the flag was already set at auth commit.
+	 */
+#ifdef CONFIG_ENC_ASSOC
+	if (security_profile_matched &&
+	    !((sta->auth_alg == WLAN_AUTH_EPPKE ||
+	       sta->auth_alg == WLAN_AUTH_802_1X) &&
+	      wpa_auth_ap_sta_support_assoc_enc(sta->wpa_sm))) {
+		sta->wpa_sm->security_profile_indication = 1;
+	}
+#endif
 
 		if (wpa_auth_uses_mfp(sta->wpa_sm))
 			sta->flags |= WLAN_STA_MFP;
