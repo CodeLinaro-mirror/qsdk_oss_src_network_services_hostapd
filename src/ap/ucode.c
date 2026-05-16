@@ -1342,6 +1342,23 @@ void hostapd_ucode_chsw_result_ev_notify(struct hostapd_data *hapd, int freq,
 	ucv_gc(vm);
 }
 
+/**
+ * hostapd_ucode_notify_acs_start - Notify ucode about ACS start event
+ * @iface: Hostapd Interface
+ */
+void hostapd_ucode_notify_acs_start(struct hostapd_iface *iface)
+{
+	if (wpa_ucode_call_prepare("notify_acs_start"))
+		return;
+
+	iface->iface_extn.acs_success = 0;
+	iface->iface_extn.acs_failed = 0;
+	wpa_printf(MSG_INFO, "Notify ACS start event to ucode");
+	uc_value_push(ucv_get(hostapd_ucode_iface_get_uval(iface)));
+	ucv_put(wpa_ucode_call(1));
+	ucv_gc(vm);
+}
+
 /* Notify ucode about ACS completed event */
 void hostapd_ucode_notify_acs_completed(struct hostapd_iface *iface, int success)
 {
