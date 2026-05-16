@@ -25,6 +25,7 @@
 #include "../qcn_extns/hostapd_external_interface.h"
 #endif
 #include "hostapd_if.h"
+#include "radius/radius.h"
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 #include "../qcn_extns/hostapd_if_eloop.h"
 #endif
@@ -46,6 +47,7 @@
 #endif
 
 #define  HOSTAPD_INVALID_RSSI -128
+#define  RADIUS_MSG_TYPE_INVALID ((uint32_t)-1)
 
 static struct hapd_interfaces *hostapd_if_ifaces;
 
@@ -2590,6 +2592,119 @@ void hostapd_if_event_assoc_tx_complete(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR"\n", __func__, __LINE__,
 		hapd->conf->iface, MAC2STR(addr));
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+}
+
+void hostapd_if_notify_radius_send_event(struct hostapd_data *hapd,
+					 const u8 *addr, void *radius_msg,
+					 uint32_t msg_type)
+{
+	struct hostapd_if_event evt;
+	const u8 *attrs = NULL;
+	size_t attrs_len = 0;
+	struct radius_hdr *hdr;
+	struct wpabuf *buf;
+	struct radius_msg *msg;
+
+	if (!hapd || !radius_msg)
+		return;
+
+	if (!hostapd_if_is_event_registered(hapd,
+					    HOSTAPD_IF_EVENT_RADIUS_SEND))
+		return;
+
+	msg = radius_msg;
+	buf = radius_msg_get_buf(msg);
+	hdr = radius_msg_get_hdr(msg);
+	if (buf && wpabuf_len(buf) > sizeof(struct radius_hdr)) {
+		attrs = wpabuf_head_u8(buf) + sizeof(struct radius_hdr);
+		attrs_len = wpabuf_len(buf) - sizeof(struct radius_hdr);
+	}
+
+	os_memset(&evt, 0, sizeof(evt));
+	evt.type = HOSTAPD_IF_EVENT_RADIUS_SEND;
+	os_strlcpy(evt.ifname, hapd->conf->iface, sizeof(evt.ifname));
+	if (addr)
+		os_memcpy(evt.sta_mac, addr, sizeof(evt.sta_mac));
+	evt.data.radius_msg.attrs = attrs;
+	evt.data.radius_msg.attrs_len = attrs_len;
+	evt.data.radius_msg.hdr_code = hdr->code;
+	evt.data.radius_msg.msg_type = msg_type;
+
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+}
+
+void hostapd_if_notify_radius_receive_event(struct hostapd_data *hapd, const u8 *addr,
+					    void *msg_ptr,
+					    const void *hdr_ptr,
+					    uint32_t msg_type)
+{
+	struct radius_msg *msg = (struct radius_msg *)msg_ptr;
+	const struct radius_hdr *hdr = (const struct radius_hdr *)hdr_ptr;
+	struct hostapd_if_event evt;
+	const u8 *attrs = NULL;
+	size_t attrs_len = 0;
+	struct wpabuf *msgbuf;
+
+	if (!hapd || !msg)
+		return;
+
+	if (!hostapd_if_is_event_registered(hapd,
+					    HOSTAPD_IF_EVENT_RADIUS_RECEIVE))
+		return;
+
+	msgbuf = radius_msg_get_buf(msg);
+	if (msgbuf && wpabuf_len(msgbuf) > sizeof(struct radius_hdr)) {
+		attrs = wpabuf_head_u8(msgbuf) + sizeof(struct radius_hdr);
+		attrs_len = wpabuf_len(msgbuf) - sizeof(struct radius_hdr);
+	}
+
+	os_memset(&evt, 0, sizeof(evt));
+	evt.type = HOSTAPD_IF_EVENT_RADIUS_RECEIVE;
+	os_strlcpy(evt.ifname, hapd->conf->iface, sizeof(evt.ifname));
+	if (addr && !is_zero_ether_addr(addr))
+		os_memcpy(evt.sta_mac, addr, sizeof(evt.sta_mac));
+	evt.data.radius_msg.attrs = attrs;
+	evt.data.radius_msg.attrs_len = attrs_len;
+	evt.data.radius_msg.hdr_code = hdr->code;
+	evt.data.radius_msg.msg_type = msg_type;
+
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+}
+
+void hostapd_if_notify_radius_coa_event(struct hostapd_data *hapd, const u8 *addr,
+					void *msg_ptr, u8 hdr_code)
+{
+	struct radius_msg *msg = (struct radius_msg *)msg_ptr;
+	struct hostapd_if_event evt;
+	const u8 *attrs = NULL;
+	size_t attrs_len = 0;
+	struct wpabuf *msgbuf;
+
+	if (!hapd || !msg)
+		return;
+
+	if (!hostapd_if_is_event_registered(hapd,
+					    HOSTAPD_IF_EVENT_RADIUS_COA))
+		return;
+
+	msgbuf = radius_msg_get_buf(msg);
+	if (msgbuf && wpabuf_len(msgbuf) > sizeof(struct radius_hdr)) {
+		attrs = wpabuf_head_u8(msgbuf) + sizeof(struct radius_hdr);
+		attrs_len = wpabuf_len(msgbuf) - sizeof(struct radius_hdr);
+	}
+
+	os_memset(&evt, 0, sizeof(evt));
+	evt.type = HOSTAPD_IF_EVENT_RADIUS_COA;
+	os_strlcpy(evt.ifname, hapd->conf->iface, sizeof(evt.ifname));
+	if (addr)
+		os_memcpy(evt.sta_mac, addr, sizeof(evt.sta_mac));
+	evt.data.radius_msg.attrs = attrs;
+	evt.data.radius_msg.attrs_len = attrs_len;
+	evt.data.radius_msg.hdr_code = hdr_code;
+	// No valid msg_type for COA event
+	evt.data.radius_msg.msg_type = RADIUS_MSG_TYPE_INVALID;
+
 	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
 }
 
