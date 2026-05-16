@@ -7261,6 +7261,48 @@ int fils_process_assoc_resp(struct wpa_sm *sm, const u8 *resp, size_t len)
 			goto fail;
 	}
 
+	if (sm->security_profile_active) {
+		const u8 *assoc_sp = elems.security_profile_ie;
+		size_t assoc_sp_len = elems.security_profile_ie_len;
+
+		if (sm->ap_security_profile_ie &&
+		    sm->ap_security_profile_ie_len > 2) {
+			if (!assoc_sp || assoc_sp_len == 0) {
+				wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+					"ENC_ASSOC: Security Profile element present in Beacon/ProbeResp but absent in (Re)Association Response");
+				wpa_hexdump(MSG_DEBUG,
+					    "ENC_ASSOC: Security Profile element in Beacon/ProbeResp",
+					    sm->ap_security_profile_ie,
+					    sm->ap_security_profile_ie_len);
+				goto fail;
+			}
+			if (sm->ap_security_profile_ie_len - 2 != assoc_sp_len ||
+			    os_memcmp(sm->ap_security_profile_ie + 2,
+				      assoc_sp,
+				      assoc_sp_len) != 0) {
+				wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+					"ENC_ASSOC: Security Profile element mismatch between Beacon/ProbeResp and (Re)Association Response");
+				wpa_hexdump(MSG_DEBUG,
+					    "ENC_ASSOC: Security Profile element in Beacon/ProbeResp",
+					    sm->ap_security_profile_ie,
+					    sm->ap_security_profile_ie_len);
+				wpa_hexdump(MSG_DEBUG,
+					    "ENC_ASSOC: Security Profile element in (Re)Association Response",
+					    assoc_sp, assoc_sp_len);
+				goto fail;
+			}
+			wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+				"ENC_ASSOC: Security Profile element in (Re)Association Response matches Beacon/ProbeResp");
+		} else if (assoc_sp && assoc_sp_len > 0) {
+			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+				"ENC_ASSOC: Security Profile element present in (Re)Association Response but absent in Beacon/ProbeResp");
+			wpa_hexdump(MSG_DEBUG,
+				    "ENC_ASSOC: Security Profile element in (Re)Association Response",
+				    assoc_sp, assoc_sp_len);
+			goto fail;
+		}
+	}
+
 	/* TODO: FILS Public Key */
 
 	if (!elems.fils_key_confirm) {
