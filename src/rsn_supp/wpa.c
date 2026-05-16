@@ -2480,6 +2480,51 @@ static int wpa_supplicant_validate_ie(struct wpa_sm *sm,
 		}
 	}
 
+	if (sm->security_profile_active) {
+		const u8 *msg3_sp = ie->security_profile_ie;
+		size_t msg3_sp_len = ie->security_profile_ie_len;
+		int sp_fail = 0;
+		const char *sp_fail_reason = NULL;
+
+		if (sm->ap_security_profile_ie &&
+		    sm->ap_security_profile_ie_len > 0) {
+			if (!msg3_sp || msg3_sp_len == 0) {
+				sp_fail = 1;
+				sp_fail_reason =
+					"Security Profile: element present in Beacon/ProbeResp but absent in EAPOL-Key msg 3/4";
+			} else if (msg3_sp_len !=
+				   sm->ap_security_profile_ie_len ||
+				   os_memcmp(msg3_sp,
+					     sm->ap_security_profile_ie,
+					     sm->ap_security_profile_ie_len)
+				   != 0) {
+				sp_fail = 1;
+				sp_fail_reason =
+					"Security Profile: element in EAPOL-Key msg 3/4 does not match Beacon/ProbeResp";
+			} else {
+				wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+					"Security Profile: element in EAPOL-Key msg 3/4 matches Beacon/ProbeResp");
+			}
+		} else if (msg3_sp && msg3_sp_len > 0) {
+			sp_fail = 1;
+			sp_fail_reason =
+				"Security Profile: element present in EAPOL-Key msg 3/4 but absent in Beacon/ProbeResp";
+		}
+
+		if (sp_fail) {
+			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING, "%s",
+				sp_fail_reason);
+			wpa_hexdump(MSG_DEBUG,
+				    "Security Profile element in Beacon/ProbeResp",
+				    sm->ap_security_profile_ie,
+				    sm->ap_security_profile_ie_len);
+			wpa_hexdump(MSG_DEBUG,
+				    "Security Profile element in EAPOL-Key msg 3/4",
+				    msg3_sp, msg3_sp_len);
+			return -1;
+		}
+	}
+
 #ifdef CONFIG_IEEE80211R
 	if (wpa_key_mgmt_ft(sm->key_mgmt) &&
 	    wpa_supplicant_validate_ie_ft(sm, src_addr, ie) < 0)
