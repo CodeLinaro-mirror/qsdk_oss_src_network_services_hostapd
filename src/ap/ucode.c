@@ -712,6 +712,7 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 		return NULL;
 
 	if (!info) {
+		conf = iface->conf;
 		iface->freq = 0;
 		goto out;
 	}
