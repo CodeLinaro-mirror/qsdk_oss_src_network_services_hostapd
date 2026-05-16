@@ -882,6 +882,23 @@ struct wpa_supplicant {
 	u8 rsnxe[257];
 	size_t rsnxe_len;
 
+	/*
+	 * Security Profile element support (802.11bn D1.4, 9.4.2.364, 37.32).
+	 *
+	 * selected_security_profile_num: profile number chosen from the
+	 *   intersection of the AP's Security Profile Bitmap and the STA's
+	 *   supported profiles. -1 means no profile selected (feature inactive).
+	 *
+	 * security_profile_ie / security_profile_ie_len: pre-built Security
+	 *   Profile element for the selected profile, built once in
+	 *   wpa_supplicant_set_suites() after RSNE and RSNXE are finalised.
+	 *   Appended to auth and assoc frames by sme_send_authentication() and
+	 *   sme_associate() respectively.
+	 */
+	int selected_security_profile_num;
+	u8 security_profile_ie[32];
+	size_t security_profile_ie_len;
+
 	struct scard_data *scard;
 	char imsi[20];
 	int mnc_len;

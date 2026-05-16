@@ -631,6 +631,7 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 #endif /* CONFIG_MBO */
 	int omit_rsnxe = 0;
 	u16 missing_links = 0;
+	u8 *auth_ie_buf = NULL;
 
 	if (bss == NULL) {
 		wpa_msg(wpa_s, MSG_ERROR, "SME: No scan result available for "
@@ -1297,6 +1298,51 @@ no_fils:
 	}
 
 
+	/*
+	 * Security Profile element — auth frame inclusion (802.11bn D1.4,
+	 * 37.32, 9.4.2.364).
+	 *
+	 * When the Security Profile element was selected and built in
+	 * wpa_supplicant_set_suites(), include it in the Authentication frame
+	 * IEs (params.ie / params.ie_len → NL80211_ATTR_IE) for auth
+	 * algorithms that use it:
+	 *
+	 *   WPA_AUTH_ALG_EPPKE  — EPPKE (AKM 29) authentication
+	 *   WPA_AUTH_ALG_802_1X — 802.1X-in-auth-frames (37.32, Table 9-bb14)
+	 */
+	if (wpa_s->security_profile_ie_len > 0 &&
+	    (params.auth_alg == WPA_AUTH_ALG_EPPKE ||
+	     params.auth_alg == WPA_AUTH_ALG_802_1X)) {
+		if (params.ie && params.ie_len > 0) {
+			size_t combined_len = params.ie_len +
+				wpa_s->security_profile_ie_len;
+
+			auth_ie_buf = os_malloc(combined_len);
+			if (!auth_ie_buf) {
+				wpa_msg(wpa_s, MSG_ERROR,
+					"SME: Failed to allocate buffer for auth frame IEs");
+				wpas_connection_failed(wpa_s, bss->bssid, NULL);
+				wpa_supplicant_mark_disassoc(wpa_s);
+				wpabuf_free(resp);
+				wpas_connect_work_done(wpa_s);
+				return;
+			}
+			os_memcpy(auth_ie_buf, params.ie, params.ie_len);
+			os_memcpy(auth_ie_buf + params.ie_len,
+				  wpa_s->security_profile_ie,
+				  wpa_s->security_profile_ie_len);
+			params.ie = auth_ie_buf;
+			params.ie_len = combined_len;
+		} else {
+			params.ie = wpa_s->security_profile_ie;
+			params.ie_len = wpa_s->security_profile_ie_len;
+		}
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"SME: Including Security Profile element in auth frame (alg=0x%x profile=%d)",
+			params.auth_alg,
+			wpa_s->selected_security_profile_num);
+	}
+
 	wpa_s->sme.auth_alg = params.auth_alg;
 	if (wpa_drv_authenticate(wpa_s, &params) < 0) {
 		wpa_msg(wpa_s, MSG_INFO, "SME: Authentication request to the "
@@ -1304,6 +1350,7 @@ no_fils:
 		wpas_connection_failed(wpa_s, bss->bssid, NULL);
 		wpa_supplicant_mark_disassoc(wpa_s);
 		wpabuf_free(resp);
+		os_free(auth_ie_buf);
 		wpas_connect_work_done(wpa_s);
 		return;
 	}
@@ -1317,6 +1364,7 @@ no_fils:
 	 */
 
 	wpabuf_free(resp);
+	os_free(auth_ie_buf);
 }
 
 
@@ -2778,6 +2826,25 @@ mscs_fail:
 			  wpabuf_head(cip_ie), wpabuf_len(cip_ie));
 		wpa_s->sme.assoc_req_ie_len += wpabuf_len(cip_ie);
 		wpabuf_free(cip_ie);
+	}
+
+	/*
+	 * Security Profile element — assoc frame inclusion (37.32):
+	 * Include unconditionally when a profile has been selected (unlike the
+	 * auth frame, inclusion here does not depend on RSNE presence).
+	 * The element was pre-built in wpa_supplicant_set_suites() from the
+	 * same wpa_sm state as the RSNE and RSNXE, guaranteeing consistency.
+	 */
+	if (wpa_s->security_profile_ie_len > 0 &&
+	    wpa_s->security_profile_ie_len <=
+	    sizeof(wpa_s->sme.assoc_req_ie) - wpa_s->sme.assoc_req_ie_len) {
+		os_memcpy(wpa_s->sme.assoc_req_ie + wpa_s->sme.assoc_req_ie_len,
+			  wpa_s->security_profile_ie,
+			  wpa_s->security_profile_ie_len);
+		wpa_s->sme.assoc_req_ie_len += wpa_s->security_profile_ie_len;
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"SME: Appended Security Profile element to assoc frame IEs (profile=%d)",
+			wpa_s->selected_security_profile_num);
 	}
 
 #ifdef CONFIG_QCN_EXTN
