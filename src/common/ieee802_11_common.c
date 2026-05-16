@@ -461,6 +461,15 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
 		elems->cip_pad = pos;
 		elems->cip_pad_len = elen;
 		break;
+	case WLAN_EID_EXT_SECURITY_PROFILE:
+		/* 802.11bn D1.4, 9.4.2.364: Security Profile element.
+		 * Minimum: EID_EXT(1) + ReducedRSNCaps(1) + SecProfInd(1) = 3
+		 * bytes already consumed as ext_id; elen covers the rest
+		 * starting from Reduced RSN Capabilities. */
+		if (elen < 2)
+			break;
+		elems->security_profile_ie = pos - 1; /* include ext_id byte */
+		elems->security_profile_ie_len = elen + 1;
 	case WLAN_EID_EXT_SMD:
 		if (elen < (ETH_ALEN + 1 + sizeof(u8))) {
 			if (show_errors) {
