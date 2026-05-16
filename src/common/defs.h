@@ -52,6 +52,7 @@
 #define WPA_KEY_MGMT_SAE_EXT_KEY BIT(26)
 #define WPA_KEY_MGMT_FT_SAE_EXT_KEY BIT(27)
 #define WPA_KEY_MGMT_IEEE8021X_SHA384 BIT(28)
+#define WPA_KEY_MGMT_EPPKE BIT(29)
 
 
 #define WPA_KEY_MGMT_FT (WPA_KEY_MGMT_FT_PSK | \
@@ -214,6 +215,8 @@ static inline int wpa_key_mgmt_cross_akm(int akm)
 #define WPA_AUTH_ALG_SAE BIT(4)
 #define WPA_AUTH_ALG_FILS BIT(5)
 #define WPA_AUTH_ALG_FILS_SK_PFS BIT(6)
+#define WPA_AUTH_ALG_EPPKE BIT(7)
+#define WPA_AUTH_ALG_802_1X BIT(8)
 
 static inline int wpa_auth_alg_fils(int alg)
 {
