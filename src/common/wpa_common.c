@@ -3748,6 +3748,19 @@ static int wpa_parse_generic(const u8 *pos, struct wpa_eapol_ie_parse *ie)
 		return 0;
 	}
 
+	if (left >= 1 && selector == RSN_KEY_DATA_UHR_SECURITY) {
+		/* KDE data: EID_Ext(1) + body */
+		ie->security_profile_ie = p;
+		ie->security_profile_ie_len = left > 1 ? left : 0;
+		wpa_printf(MSG_ERROR,
+			   "UHR: Found UHR Security KDE in EAPOL-Key (left=%zu body_len=%zu)",
+			   left, ie->security_profile_ie_len);
+		wpa_hexdump(MSG_ERROR, "UHR: UHR Security KDE data", p, left);
+		wpa_hexdump(MSG_ERROR, "UHR: UHR Security KDE in EAPOL-Key",
+			    pos, dlen);
+		return 0;
+	}
+
 	if (left >= 1 && selector == WFA_KEY_DATA_IP_ADDR_REQ) {
 		ie->ip_addr_req = p;
 		wpa_hexdump(MSG_DEBUG, "WPA: IP Address Request in EAPOL-Key",
