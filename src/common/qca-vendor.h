@@ -2609,6 +2609,11 @@ enum qca_wlan_vendor_acs_hw_mode {
  * early (using QCA_WLAN_VENDOR_ATTR_P2P_SET_GO_CANCEL_ONE_SHOT_NOA), without
  * waiting for the originally configured NoA duration to expire.
  *
+ * @QCA_WLAN_VENDOR_FEATURE_SECURITY_PROFILE_STA: Flag indicates that the device
+ * supports Security Profile element handling in STA mode. Supplicant should
+ * enable Security Profile element use only when the driver indicates this
+ * feature flag.
+ *
  * @NUM_QCA_WLAN_VENDOR_FEATURES: Number of assigned feature bits
  */
 enum qca_wlan_vendor_features {
@@ -2649,6 +2654,8 @@ enum qca_wlan_vendor_features {
 	QCA_WLAN_VENDOR_FEATURE_SUPPORT_P2P_ASSISTED_DFS = 34,
 	QCA_WLAN_VENDOR_FEATURE_SUPPORT_P2P_GO_CANCEL_ONE_SHOT_NOA = 35,
 	QCA_WLAN_VENDOR_FEATURE_SUPPORT_P2P_GC_KEEP_AWAKE_DURING_ONE_SHOT_NOA = 36,
+	QCA_WLAN_VENDOR_FEATURE_SUPPORT_PMKSA_CACHING_PRIVACY = 37,
+	QCA_WLAN_VENDOR_FEATURE_SECURITY_PROFILE_STA = 38,
 	NUM_QCA_WLAN_VENDOR_FEATURES /* keep last */
 };
 
@@ -20189,10 +20196,24 @@ enum qca_wlan_vendor_attr_audio_transport_switch {
  * is available only when the driver indicates support for
  * @QCA_WLAN_VENDOR_FEATURE_RSN_OVERRIDE_STA.
  *
+ * @QCA_CONNECT_EXT_FEATURE_EXT_AUTH_EPPKE: Flag attribute. This indicates
+ * supplicant support for EPPKE authentication via external auth. The driver
+ * can offload EPPKE authentication to supplicant via
+ * QCA_NL80211_VENDOR_SUBCMD_EXTERNAL_AUTH only if this flag is enabled.
+ *
+ * @QCA_CONNECT_EXT_FEATURE_SECURITY_PROFILE: Flag attribute. This indicates
+ * supplicant support for Security Profile element handling. The driver shall
+ * enable Security Profile element handling in the (re)association attempts
+ * only if this flag is indicated. This functionality is available only when
+ * the driver indicates support for
+ * @QCA_WLAN_VENDOR_FEATURE_SECURITY_PROFILE_STA.
+ *
  * @NUM_QCA_WLAN_VENDOR_FEATURES: Number of assigned feature bits.
  */
 enum qca_wlan_connect_ext_features {
 	QCA_CONNECT_EXT_FEATURE_RSNO	= 0,
+	QCA_CONNECT_EXT_FEATURE_EXT_AUTH_EPPKE = 1,
+	QCA_CONNECT_EXT_FEATURE_SECURITY_PROFILE = 2,
 	NUM_QCA_CONNECT_EXT_FEATURES /* keep last */
 };
 
