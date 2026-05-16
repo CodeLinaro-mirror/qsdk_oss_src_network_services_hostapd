@@ -3065,6 +3065,9 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_DFS_CHANNEL_SWITCH   0x0000001000000000ULL
 /** Driver supports synchronized beacon transmission across radios/links */
 #define WPA_DRIVER_FLAGS2_BEACON_TX_SYNC       0x0000002000000000ULL
+/** Driver supports Security Profile element (802.11bn D1.4, 9.4.2.364, 37.32)
+ *  handling */
+#define WPA_DRIVER_FLAGS2_SECURITY_PROFILE     0x0000004000000000ULL
 /** Driver supports SMD in station/AP mode */
 #define WPA_DRIVER_FLAGS2_SMD			0x0000020000000000ULL
 /** Driver supports SMD DL data forwarding during seamless transitions */
