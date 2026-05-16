@@ -4655,6 +4655,7 @@ void wpa_sm_deinit(struct wpa_sm *sm)
 	os_free(sm->ap_rsne_override);
 	os_free(sm->ap_rsne_override_2);
 	os_free(sm->ap_rsnxe_override);
+	os_free(sm->ap_security_profile_ie);
 	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
 		os_free(sm->mlo.links[i].ap_rsne);
 		os_free(sm->mlo.links[i].ap_rsnxe);
@@ -5403,6 +5404,9 @@ int wpa_sm_set_param(struct wpa_sm *sm, enum wpa_sm_conf_params param,
 	case WPA_PARAM_SAE_PW_ID_CHANGE:
 		sm->sae_pw_id_change = !!value;
 		break;
+	case WPA_PARAM_SECURITY_PROFILE_ACTIVE:
+		sm->security_profile_active = !!value;
+		break;
 	default:
 		break;
 	}
@@ -5982,6 +5986,43 @@ int wpa_sm_set_ap_rsnxe_override(struct wpa_sm *sm, const u8 *ie, size_t len)
 			return -1;
 
 		sm->ap_rsnxe_override_len = len;
+	}
+
+	return 0;
+}
+
+
+/**
+ * wpa_sm_set_ap_security_profile_ie - Set AP Security Profile element from Beacon/ProbeResp
+ * @sm: Pointer to WPA state machine data from wpa_sm_init()
+ * @ie: Pointer to IE data (starting from id), or NULL to clear
+ * @len: IE length
+ * Returns: 0 on success, -1 on failure
+ *
+ * Inform WPA state machine about the Security Profile element used in
+ * Beacon / Probe Response frame.  The copy is stored in
+ * sm->ap_security_profile_ie and compared against the element received in
+ * EAPOL-Key msg 3/4 and encrypted (Re)Association Response frames.
+ */
+int wpa_sm_set_ap_security_profile_ie(struct wpa_sm *sm, const u8 *ie, size_t len)
+{
+	if (!sm)
+		return -1;
+
+	os_free(sm->ap_security_profile_ie);
+	if (!ie || len == 0) {
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"RSN: Clearing AP Security Profile element");
+		sm->ap_security_profile_ie = NULL;
+		sm->ap_security_profile_ie_len = 0;
+	} else {
+		wpa_hexdump(MSG_DEBUG, "RSN: Set AP Security Profile element",
+			    ie, len);
+		sm->ap_security_profile_ie = os_memdup(ie, len);
+		if (!sm->ap_security_profile_ie)
+			return -1;
+
+		sm->ap_security_profile_ie_len = len;
 	}
 
 	return 0;
