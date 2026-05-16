@@ -1088,6 +1088,11 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 				   chan->chan, factor);
 		}
 
+#ifdef CONFIG_QCN_EXTN
+		acs_update_total_interference_factor_extn(iface, mode, bw,
+					     bw320_offset, n_chans, chan, factor);
+#endif /* CONFIG_QCN_EXTN */
+
 		if (acs_usable_chan(chan) &&
 #ifdef CONFIG_QCN_EXTN
 		    acs_hwbl_chan_ok_extn(iface, mode, bw, bw320_offset, n_chans,
@@ -1220,6 +1225,9 @@ bw_selected:
 	for (i = 0; i < iface->num_hw_features; i++) {
 		mode = &iface->hw_features[i];
 		if (!hostapd_hw_skip_mode(iface, mode)) {
+#ifdef CONFIG_QCN_EXTN
+			acs_reset_chan_ranks(mode);
+#endif /* CONFIG_QCN_EXTN */
 			do {
 				acs_find_ideal_chan_mode(iface, mode, n_chans, bw,
 							 &rand_chan, &ideal_chan,
@@ -1232,6 +1240,9 @@ bw_selected:
 				acs_update_bw_downgrade_config(iface, bw);
 				wpa_printf(MSG_DEBUG, "ACS: Finding ideal channel for downgraded bandwidth %d MHz", bw);
 			} while(1);
+#ifdef CONFIG_QCN_EXTN
+			acs_rank_channels(mode);
+#endif /* CONFIG_QCN_EXTN */
 		}
 	}
 
@@ -1518,8 +1529,10 @@ static void acs_scan_complete(struct hostapd_iface *iface)
 	if (iface->conf->conf_extn.qacs_enable) {
 		if (!acs_process_hostapd_scan_data(iface))
 			acs_study(iface);
+
 		return;
-	}
+	} else
+		acs_process_hostapd_scan_data(iface);
 #endif
 
 	if (++iface->acs_num_completed_scans < iface->conf->acs_num_scans) {
