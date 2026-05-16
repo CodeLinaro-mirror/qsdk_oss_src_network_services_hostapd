@@ -231,6 +231,7 @@ struct wpa_state_machine {
 
 	struct wpabuf *sae_pw_id;
 	unsigned int sae_pw_id_counter;
+	int security_profile_indication;
 	bool externally_triggered_m3;
 
 #ifdef CONFIG_IEEE80211BN

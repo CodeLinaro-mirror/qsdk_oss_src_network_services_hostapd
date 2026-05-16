@@ -701,6 +701,9 @@
 /* 16-119: Reserved */
 #define SECURITY_PROFILE_NUM_MAX		119
 
+/* Security Profile Indication field (Figure 9-yyy, IEEE 802.11bn D1.4) */
+#define SECURITY_PROFILE_INDICATION_BITMAP_LEN_MASK	0x0f
+
 /* Reduced RSN Capabilities field bits (Figure 9-aa71) */
 #define REDUCED_RSN_CAPS_EXT_KEY_ID	BIT(0)
 #define REDUCED_RSN_CAPS_OCVC		BIT(1)
