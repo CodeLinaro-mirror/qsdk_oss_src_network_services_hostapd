@@ -8247,6 +8247,12 @@ static int nl80211_connect_ext(struct i802_bss *bss,
 		connect_ext_feature_set(features, QCA_CONNECT_EXT_FEATURE_RSNO);
 	}
 
+	if (params->security_profile_active) {
+		wpa_printf(MSG_DEBUG, "- Security Profile element support");
+		connect_ext_feature_set(features,
+					QCA_CONNECT_EXT_FEATURE_SECURITY_PROFILE);
+	}
+
 	if (nla_put(msg, QCA_WLAN_VENDOR_ATTR_CONNECT_EXT_FEATURES,
 		    sizeof(features), features))
 		goto fail;
