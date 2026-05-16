@@ -1904,6 +1904,15 @@ struct wpa_driver_associate_params {
 	 */
 	enum wpa_p2p_mode p2p_mode;
 
+	/**
+	 * security_profile_active - Whether Security Profile element is active
+	 *
+	 * True when the Security Profile element (IEEE 802.11bn) functionality
+	 * is enabled for this connection.  Drivers that handle the Security
+	 * Profile element themselves (e.g., for driver-SME) can use this flag
+	 * to know whether to parse, validate, and apply the element.
+	 */
+	bool security_profile_active;
 	struct wpa_smd_params smd;
 };
 
