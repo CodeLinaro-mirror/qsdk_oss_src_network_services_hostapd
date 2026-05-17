@@ -6273,7 +6273,7 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 	u8 *p;
 	u16 res = WLAN_STATUS_SUCCESS;
 
-	buflen = sizeof(struct ieee80211_mgmt) + 1024;
+	buflen = sizeof(struct ieee80211_mgmt) + 2048;
 #ifdef CONFIG_FILS
 	if (sta && sta->fils_hlp_resp)
 		buflen += wpabuf_len(sta->fils_hlp_resp);
