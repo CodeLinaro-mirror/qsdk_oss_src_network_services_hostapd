@@ -2715,19 +2715,19 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 					ieee802_11_set_beacon(hapd);
 					hostapd_start_device_cac_background(iface);
 				}
-			} else {
-				if (unpunc_bitmap && iface->conf->use_ru_puncture_dfs &&
-				    !iface->conf->dfs_disable_auto_unpunc) {
-					int channel = iface->conf->channel;
-					const int sec_offset = 1;
+			}
 
-					return hostapd_dfs_unpunc_cacdone_subchans(iface, freq,
-										   channel,
-										   sec_offset,
-										   chan_width,
-										   cf1, cf2,
-										   unpunc_bitmap);
-				}
+			if (unpunc_bitmap && iface->conf->use_ru_puncture_dfs &&
+			    !iface->conf->dfs_disable_auto_unpunc) {
+				int channel = iface->conf->channel;
+				const int sec_offset = 1;
+
+				return hostapd_dfs_unpunc_cacdone_subchans(iface, freq,
+									   channel,
+									   sec_offset,
+									   chan_width,
+									   cf1, cf2,
+									   unpunc_bitmap);
 			}
 		}
 
