@@ -1672,6 +1672,9 @@ hostapd_set_oper_chwidth(struct hostapd_config *conf,
 		conf->he_oper_chwidth = oper_chwidth;
 #endif /* CONFIG_IEEE80211AX */
 	conf->vht_oper_chwidth = oper_chwidth;
+#ifdef CONFIG_QCN_EXTN
+	hostapd_set_repurpose_oper_chwidth_extn(conf, oper_chwidth);
+#endif /* CONFIG_QCN_EXTN */
 }
 
 static inline u8

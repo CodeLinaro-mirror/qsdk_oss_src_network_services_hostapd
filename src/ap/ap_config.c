@@ -2055,6 +2055,13 @@ int hostapd_config_check(struct hostapd_config *conf, int full_config)
 		return -1;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (full_config && !hostapd_config_check_repurpose_width_extn(conf)) {
+		wpa_printf(MSG_ERROR, "Wrong repurpose width configurations");
+		return -1;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	for (i = 0; i < conf->num_bss; i++) {
 		if (hostapd_config_check_bss(conf->bss[i], conf, full_config))
 			return -1;
