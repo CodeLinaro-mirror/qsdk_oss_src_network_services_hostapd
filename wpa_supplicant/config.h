@@ -1978,6 +1978,18 @@ struct wpa_config {
 	 * If rcsa is disabled, do STA deauth
 	 */
 	int rcsa;
+
+	/**
+	 * cswopts: Channel Switch Options bitmap
+	 * Bit 0 (0x1): Random non DFS channel selection
+	 * Bit 1 (0x2): Ignore CSA from Root AP on DFS
+	 * Bit 2 (0x4): CAC before joining Root AP
+	 * Bit 3 (0x8): Repeater AP propagates CSA received from RootAP
+	 * Bit 4 (0x10): Send RCSA on radar detection
+	 * Bit 5 (0x20): Process RCSA from downstream
+	 * Bit 6 (0x40): Apriori next channel propagation
+	 */
+	unsigned int cswopts;
 #endif
 };
 

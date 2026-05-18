@@ -997,6 +997,10 @@ static int wpa_supplicant_ctrl_iface_set(struct wpa_supplicant *wpa_s,
 	} else if (os_strcasecmp(cmd, "urnm_mfpr_x20") == 0) {
 		wpa_s->urnm_mfpr_x20 = !!atoi(value);
 #endif /* CONFIG_PASN */
+#ifdef CONFIG_QCN_EXTN
+	} else if (os_strcasecmp(cmd, "CSwOpts") == 0) {
+		ret = wpa_supplicant_ctrl_iface_set_cswopts_extn(wpa_s, value);
+#endif /* CONFIG_QCN_EXTN */
 	} else {
 #ifdef CONFIG_QCN_EXTN
 		bool is_extn_cmd;
@@ -1064,6 +1068,11 @@ static int wpa_supplicant_ctrl_iface_get(struct wpa_supplicant *wpa_s,
 	} else if (os_strcasecmp(cmd, "last_tk_key_idx") == 0) {
 		res = os_snprintf(buf, buflen, "%d", wpa_s->last_tk_key_idx);
 #endif /* CONFIG_TESTING_OPTIONS */
+#ifdef CONFIG_QCN_EXTN
+	} else if (os_strcasecmp(cmd, "CSwOpts") == 0) {
+		res = os_snprintf(buf, buflen, "CSwOpts=0x%x\n",
+				  wpa_s->conf->cswopts);
+#endif /* CONFIG_QCN_EXTN */
 	} else {
 #ifdef CONFIG_QCN_EXTN
 		bool is_extn_cmd;
