@@ -2716,7 +2716,8 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 					hostapd_start_device_cac_background(iface);
 				}
 			} else {
-				if (unpunc_bitmap && iface->conf->use_ru_puncture_dfs) {
+				if (unpunc_bitmap && iface->conf->use_ru_puncture_dfs &&
+				    !iface->conf->dfs_disable_auto_unpunc) {
 					int channel = iface->conf->channel;
 					const int sec_offset = 1;
 

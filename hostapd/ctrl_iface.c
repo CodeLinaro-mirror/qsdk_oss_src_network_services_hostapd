@@ -3165,6 +3165,16 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+	} else if (os_strcmp(cmd, "dfs_disable_auto_unpunc") == 0) {
+		if (!hapd || !hapd->iconf) {
+			wpa_printf(MSG_ERROR, "Invalid hapd or hapd->iconf pointer");
+			return -1;
+		}
+
+		res = os_snprintf(buf, buflen, "%d\n", hapd->iconf->dfs_disable_auto_unpunc);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
 #ifdef CONFIG_QCN_EXTN
 	} else {
 		res = hostapd_ctrl_iface_get_extn(hapd, cmd, buf, buflen);
@@ -9999,6 +10009,35 @@ static int hostapd_ctrl_iface_use_ru_puncture_dfs(struct hostapd_data *hapd,
 	return 0;
 }
 
+/**
+ * hostapd_ctrl_iface_dfs_disable_auto_unpunc - Set auto-unpuncture runtime flag
+ * @hapd: Pointer to hostapd BSS data
+ * @cmd: NUL-terminated string containing the requested enable value
+ *
+ * Parse and apply the runtime control interface value for
+ * dfs_disable_auto_unpunc.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int hostapd_ctrl_iface_dfs_disable_auto_unpunc(struct hostapd_data *hapd,
+						      char *cmd)
+{
+	int value;
+
+	value = atoi(cmd);
+	if (value < 0 || value > 1) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid dfs_disable_auto_unpunc value: %d (must be 0 or 1)",
+			   value);
+		return -1;
+	}
+
+	hapd->iconf->dfs_disable_auto_unpunc = value;
+	wpa_printf(MSG_INFO, "dfs_disable_auto_unpunc set to %d", value);
+
+	return 0;
+}
+
 static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 					      char *buf, char *reply,
 					      int reply_size,
@@ -10956,6 +10995,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 #endif /* CONFIG_TESTING_OPTIONS */
 	} else if (os_strncmp(buf, "USE_RU_PUNCTURE_DFS ", 20) == 0) {
 		if (hostapd_ctrl_iface_use_ru_puncture_dfs(hapd, buf + 20))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "DFS_DISABLE_AUTO_UNPUNC ", 24) == 0) {
+		if (hostapd_ctrl_iface_dfs_disable_auto_unpunc(hapd, buf + 24))
 			reply_len = -1;
 	} else {
 		if (!hostapd_ctrl_iface_receive_process_extn(hapd, buf, reply,

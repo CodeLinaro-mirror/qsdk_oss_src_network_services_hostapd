@@ -3358,6 +3358,20 @@ static int hostapd_cli_cmd_use_ru_puncture_dfs(struct wpa_ctrl *ctrl,
 	return hostapd_cli_cmd(ctrl, "USE_RU_PUNCTURE_DFS", 1, argc, argv);
 }
 
+/**
+ * hostapd_cli_cmd_dfs_disable_auto_unpunc - Send auto-unpuncture CLI command
+ * @ctrl: Pointer to the control interface connection
+ * @argc: Number of command arguments
+ * @argv: Command argument array
+ *
+ * Return: hostapd CLI command status.
+ */
+static int hostapd_cli_cmd_dfs_disable_auto_unpunc(struct wpa_ctrl *ctrl,
+						   int argc, char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "DFS_DISABLE_AUTO_UNPUNC", 1, argc, argv);
+}
+
 struct hostapd_cli_cmd {
 	const char *cmd;
 	int (*handler)(struct wpa_ctrl *ctrl, int argc, char *argv[]);
@@ -3844,6 +3858,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 #endif /* CONFIG_QCN_EXTN */
 	{ "use_ru_puncture_dfs", hostapd_cli_cmd_use_ru_puncture_dfs, NULL,
 	  "<1/0> = enable/disable Puncturing feature for DFS channels" },
+	{ "dfs_disable_auto_unpunc", hostapd_cli_cmd_dfs_disable_auto_unpunc, NULL,
+	  "<0|1> = disable/enable automatic unpuncturing of DFS channels after CAC" },
 	{ NULL, NULL, NULL, NULL }
 };
 
