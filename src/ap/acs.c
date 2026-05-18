@@ -1332,8 +1332,10 @@ static int acs_study_bss_based(struct hostapd_iface *iface)
 	return 0;
 }
 
-
-static int acs_study_options(struct hostapd_iface *iface)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int acs_study_options(struct hostapd_iface *iface)
 {
 	if (acs_study_survey_based(iface) == 0)
 		return 0;
