@@ -5330,6 +5330,16 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line);
 			return 1;
 		}
+	} else if (os_strcmp(buf, "mld_link_id") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val >= MAX_NUM_MLD_LINKS) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid mld_link_id %d (valid: 0-%d)",
+				   line, val, MAX_NUM_MLD_LINKS - 1);
+			return 1;
+		}
+		bss->mld_link_id = val;
 	} else if (os_strcmp(buf, "eht_bw320_offset") == 0) {
 		conf->eht_bw320_offset = atoi(pos);
 	} else if (os_strcmp(buf, "eht_part_dl_mu_mimo") == 0) {

@@ -4569,6 +4569,41 @@ static int hostapd_bss_alloc_link_id(struct hostapd_data *hapd)
 	if (!hapd->mld->free_links)
 		return -1;
 
+	/* Reject mixed allocation modes within the same MLD */
+	if (hapd->conf->mld_link_id >= 0 &&
+	    hapd->mld->free_links != 0x7FFF && !hapd->mld->link_id_mode) {
+		wpa_printf(MSG_ERROR,
+			   "AP MLD: %s: iface=%s requests configured link ID but MLD uses sequential allocation",
+			   hapd->mld->name, hapd->conf->iface);
+		return -1;
+	}
+	if (hapd->conf->mld_link_id < 0 && hapd->mld->link_id_mode) {
+		wpa_printf(MSG_ERROR,
+			   "AP MLD: %s: iface=%s requests sequential link ID but MLD uses configured allocation",
+			   hapd->mld->name, hapd->conf->iface);
+		return -1;
+	}
+
+	/* Honor user-configured link ID if set */
+	if (hapd->conf->mld_link_id >= 0) {
+		int cfg_id = hapd->conf->mld_link_id;
+
+		if (!(hapd->mld->free_links & BIT(cfg_id))) {
+			wpa_printf(MSG_ERROR,
+				   "AP MLD: %s: configured mld_link_id %d is not available (free_links=0x%x) for iface=%s",
+				   hapd->mld->name, cfg_id,
+				   hapd->mld->free_links, hapd->conf->iface);
+			return -1;
+		}
+		wpa_printf(MSG_DEBUG,
+			   "AP MLD: %s: Using configured mld_link_id=%d for iface=%s",
+			   hapd->mld->name, cfg_id, hapd->conf->iface);
+		hapd->mld_link_id = cfg_id;
+		hapd->mld->free_links &= ~BIT(hapd->mld_link_id);
+		hapd->mld->link_id_mode = 1;
+		return 0;
+	}
+
 	hapd->mld_link_id = ffs(hapd->mld->free_links) - 1;
 	hapd->mld->free_links &= ~BIT(hapd->mld_link_id);
 	wpa_printf(MSG_DEBUG, "AP MLD: %s: Link ID %d assigned.",
