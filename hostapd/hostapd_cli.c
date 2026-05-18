@@ -1312,6 +1312,17 @@ static int hostapd_cli_cmd_get(struct wpa_ctrl *ctrl, int argc, char *argv[])
 }
 
 
+static int hostapd_cli_cmd_puncture_sources(struct wpa_ctrl *ctrl, int argc,
+					    char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid puncture_sources command: no arguments expected\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "GET_PUNCTURE_SOURCES");
+}
+
 static char ** hostapd_complete_get(const char *str, int pos)
 {
 	int arg = get_cmd_arg_num(str, pos);
@@ -3466,6 +3477,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<name> <value> = set runtime variables" },
 	{ "get", hostapd_cli_cmd_get, hostapd_complete_get,
 	  "<name> = get runtime info" },
+	{ "get_puncture_sources", hostapd_cli_cmd_puncture_sources, NULL,
+	  "= show channels with puncture source USER/RADAR" },
 	{ "set_qos_map_set", hostapd_cli_cmd_set_qos_map_set, NULL,
 	  "<arg,arg,...> = set QoS Map set element" },
 	{ "send_qos_map_conf", hostapd_cli_cmd_send_qos_map_conf,
