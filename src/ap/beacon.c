@@ -1080,7 +1080,7 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 	if (hostapd_is_uhr_enabled(hapd)) {
 		buflen += hostapd_eid_uhr_capab_len(hapd, IEEE80211_MODE_AP);
 		buflen += 3 + IEEE80211_UHR_OPER_MAX_SIZE;
-		buflen += hostapd_eid_uhr_params_update_len(hapd, false);
+		buflen += hostapd_eid_uhr_params_update_len(hapd, false, false);
 	}
 	buflen += hostapd_smd_ie_len(hapd);
 #endif /* CONFIG_IEEE80211BN */

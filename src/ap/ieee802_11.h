@@ -644,9 +644,9 @@ u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 			   enum ieee80211_op_mode opmode);
 u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool beacon);
 u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
-				   bool skip_post_phase);
+				   bool skip_post_phase, bool from_user);
 size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,
-					 bool skip_post_phase);
+					 bool no_post_phase, bool from_user);
 int hostapd_npca_primary_chan_to_subchan_idx(struct hostapd_data *hapd,
 					     const char *val_str);
 u16 copy_sta_uhr_capab(struct hostapd_data *hapd, struct sta_info *sta,
