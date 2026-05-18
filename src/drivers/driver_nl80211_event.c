@@ -4352,9 +4352,14 @@ qca_nl80211_afc_power_update_completed(struct i802_bss *bss,
 			nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_REQ_ID]);
 	}
 
+	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_STATUS_CODE]) {
+		afc_rsp->target_status_code =
+			nla_get_u8(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_STATUS_CODE]);
+	}
+
 	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_EXP_DATE]) {
 		afc_rsp->avail_exp_time_d =
-		nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_EXP_DATE]);
+			nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_EXP_DATE]);
 	}
 
 	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_EXP_TIME]) {
