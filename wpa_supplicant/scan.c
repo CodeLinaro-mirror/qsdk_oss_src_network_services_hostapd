@@ -1085,12 +1085,25 @@ static void wpa_supplicant_scan(void *eloop_ctx, void *timeout_ctx)
 	}
 
 #ifdef CONFIG_QCN_EXTN
-	/* Repeater feature: gate STA scans until AP ACS completes */
+	/* Repeater feature: gate STA scan until
+	 * (1) AP ACS completes or
+	 * (2) AP CSA (for CSwOpts 0x2) completes
+	 */
 	if (wpa_s->conf && wpa_s->conf->ind_rptr && !wpa_s->acs_complete) {
 		wpa_dbg(wpa_s, MSG_DEBUG,
 			"Skip Repeater STA scan as repeater ACS is incomplete");
 		eloop_register_timeout(REP_AP_ACS_TIMEOUT_INTERVAL, 0,
-				       wpa_supplicant_start_sta_scan, wpa_s, NULL);
+				       wpa_supplicant_start_sta_scan,
+				       wpa_s, NULL);
+		return;
+	}
+
+	if (IS_CSH_IGNORE_CSA_DFS_ENABLED(wpa_s->conf->cswopts) && wpa_s->hold_scan_csa) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"Skip Repeater STA scan until repeater moves to a non-DFS channel");
+		eloop_register_timeout(REP_AP_CSA_TIMEOUT_INTERVAL, 0,
+				       wpa_supplicant_start_sta_scan,
+				       wpa_s, NULL);
 		return;
 	}
 #endif

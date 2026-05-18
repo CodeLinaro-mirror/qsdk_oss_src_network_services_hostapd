@@ -947,6 +947,14 @@ struct wpa_supplicant {
 	 * until repeater AP ACS completes (signaled via external event).
 	 */
 	bool acs_complete;
+
+	/**
+	 * hold_scan_csa: Repeater CSA scan-hold flag for STA scan gating
+	 * When CSwOpts 0x2 is set and the AP is moving to a DFS channel,
+	 * postpone/skip STA scans until the AP CSA completes and the
+	 * repeater moves to a non-DFS channel (signaled via external event).
+	 */
+	bool hold_scan_csa;
 #endif
 	unsigned int own_scan_running:1;
 	unsigned int clear_driver_scan_cache:1;
