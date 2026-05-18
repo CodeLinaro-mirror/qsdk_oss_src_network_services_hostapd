@@ -304,12 +304,13 @@ static u8 * uhr_put_npca_mode_tuple(u8 *pos,
 
 
 size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,
-					 bool skip_post_phase)
+					 bool skip_post_phase,
+					 bool from_user)
 {
 	const struct hostapd_bss_config *conf = hapd->conf;
 	size_t len;
 
-	if (hapd->uhr_ecu.state == UHR_ECU_IDLE)
+	if (!from_user && hapd->uhr_ecu.state == UHR_ECU_IDLE)
 		return 0;
 
 	/*
@@ -339,13 +340,13 @@ size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,
 
 
 u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
-				   bool skip_post_phase)
+				   bool skip_post_phase, bool from_user)
 {
 	const struct hostapd_bss_config *conf = hapd->conf;
 	u8 *pos = eid;
 	u8 *length_pos;
 
-	if (hapd->uhr_ecu.state == UHR_ECU_IDLE)
+	if (!from_user && hapd->uhr_ecu.state == UHR_ECU_IDLE)
 		return eid;
 
 	if (skip_post_phase &&
