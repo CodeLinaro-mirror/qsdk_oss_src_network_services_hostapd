@@ -3071,6 +3071,8 @@ struct wpa_driver_capa {
 	u8  mbssid_max_ngroups;
 	/* Maximum supported beacon size */
 	unsigned int max_beacon_size;
+	/* Indicates whether STA DFS is enabled */
+	u8 sta_dfs_en;
 
 	/* EDCA based ranging capabilities */
 	u8 edca_format_and_bw;
