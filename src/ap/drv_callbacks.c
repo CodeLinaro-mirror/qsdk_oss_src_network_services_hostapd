@@ -2469,9 +2469,12 @@ static struct hostapd_channel_data * hostapd_get_mode_channel(
 }
 
 
-static void hostapd_update_nf(struct hostapd_iface *iface,
-			      struct hostapd_channel_data *chan,
-			      struct freq_survey *survey)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+void hostapd_update_nf(struct hostapd_iface *iface,
+		       struct hostapd_channel_data *chan,
+		       struct freq_survey *survey)
 {
 	if (!iface->chans_surveyed) {
 		chan->min_nf = survey->nf;
@@ -2508,6 +2511,11 @@ static void hostapd_single_channel_get_survey(struct hostapd_iface *iface,
 		   survey->freq,
 		   (unsigned long int) survey->channel_time,
 		   (unsigned long int) survey->channel_time_busy);
+
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_cbs_handle_single_channel_survey(iface, chan, survey))
+		return;
+#endif
 
 	if (survey->channel_time > iface->last_channel_time &&
 	    survey->channel_time > survey->channel_time_busy) {

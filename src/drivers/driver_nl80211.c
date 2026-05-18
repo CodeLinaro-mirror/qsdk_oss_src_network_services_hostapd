@@ -5915,9 +5915,10 @@ static int wpa_driver_nl80211_dcs_sim(void *priv, u8 link_id,
 
 static int wpa_driver_nl80211_set_cbs(void *priv,
 				      const struct cbs_params_extn *params,
-				      int *freq_list)
+				      int *freq_list, int link_id)
 {
-	return wpa_driver_nl80211_cbs_trigger_scan(priv, params, freq_list);
+	return wpa_driver_nl80211_cbs_trigger_scan(priv, params, freq_list,
+						   link_id);
 }
 #endif
 #endif
