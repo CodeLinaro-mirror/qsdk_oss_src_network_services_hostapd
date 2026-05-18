@@ -157,6 +157,97 @@ int dfs_update_puncture_source(struct hostapd_iface *iface,
 	return 0;
 }
 
+/**
+ * dfs_is_puncture_bitmap_bit_source() - Check puncture source for one bit
+ * @iface: Pointer to hostapd interface
+ * @bit: 20 MHz subchannel bit position
+ * @source: Puncture source to match
+ *
+ * Return: 1 if the bit maps to a channel with the requested puncture source,
+ * 0 otherwise.
+ */
+static int
+dfs_is_puncture_bitmap_bit_source(struct hostapd_iface *iface, int bit,
+				  enum dfs_chan_puncture_source source)
+{
+	struct hostapd_channel_data *chan;
+
+	chan = dfs_get_punc_subchan(iface, iface->freq, bit);
+	if (!chan)
+		return 0;
+
+	return chan->puncture_source == source;
+}
+
+int dfs_is_puncture_bitmap_bit_user(struct hostapd_iface *iface, int bit)
+{
+	return dfs_is_puncture_bitmap_bit_source(iface, bit,
+						 DFS_CHAN_PUNC_USER);
+}
+
+int dfs_is_puncture_bitmap_bit_radar(struct hostapd_iface *iface, int bit)
+{
+	return dfs_is_puncture_bitmap_bit_source(iface, bit,
+						 DFS_CHAN_PUNC_RADAR);
+}
+
+u16 dfs_filter_punc_bitmap_by_src(struct hostapd_iface *iface,
+				  u16 punct_bitmap,
+				  enum dfs_chan_puncture_source source)
+{
+	u16 filtered_punct_bitmap = 0;
+	int bit;
+
+	for (bit = 0; bit < sizeof(punct_bitmap) * 8; bit++) {
+		if (!(punct_bitmap & BIT(bit)))
+			continue;
+
+		if (dfs_is_puncture_bitmap_bit_source(iface, bit, source))
+			filtered_punct_bitmap |= BIT(bit);
+	}
+
+	return filtered_punct_bitmap;
+}
+
+/**
+ * dfs_get_dfs_punctured_bitmap() - Get radar-punctured subchannels still in radar state
+ * @iface: Pointer to hostapd interface
+ * @unpuncture_bitmap: Bitmap containing subchannels to be unpunctured
+ *
+ * Identifies which subchannels are still in radar-punctured state, excluding the
+ * subchannels that are being unpunctured (specified in @unpuncture_bitmap).
+ * This function filters out the channels marked for unpuncturing from the full
+ * radar-punctured set to return only the subchannels that must remain punctured
+ * because they are radar-affected.
+ *
+ * Return: Bitmap of radar-punctured subchannels that must remain punctured
+ *         (excludes subchannels specified in @unpuncture_bitmap)
+ */
+static u16 dfs_get_dfs_punctured_bitmap(struct hostapd_iface *iface,
+					u16 unpuncture_bitmap)
+{
+	return dfs_filter_punc_bitmap_by_src(iface, unpuncture_bitmap,
+					     DFS_CHAN_PUNC_RADAR);
+}
+
+void dfs_reset_punc_bitmap_src(struct hostapd_iface *iface,
+			       u16 punct_bitmap)
+{
+	struct hostapd_channel_data *chan;
+	int bit;
+
+	for (bit = 0; bit < sizeof(punct_bitmap) * 8; bit++) {
+		if (!(punct_bitmap & BIT(bit)))
+			continue;
+
+		chan = dfs_get_punc_subchan(iface, iface->freq, bit);
+		if (!chan)
+			continue;
+
+		chan->puncture_source = DFS_CHAN_PUNC_NONE;
+	}
+}
+
 static int dfs_get_used_n_chans(struct hostapd_iface *iface, int *seg1,
 				int chan_width)
 {
@@ -2456,6 +2547,8 @@ static int hostapd_rcac_complete(struct hostapd_iface *iface, int success,
  * which contains only the bits that remain in the punctured state, and send
  * this to the driver as part of the CSA.
  *
+ * Reset the puncture source status for any channel that is being unpunctured.
+ *
  * Return: 0 on success or a negative error code on failure
  */
 static int hostapd_dfs_unpunc_cacdone_subchans(struct hostapd_iface *iface,
@@ -2468,9 +2561,13 @@ static int hostapd_dfs_unpunc_cacdone_subchans(struct hostapd_iface *iface,
 	u8 centr_chan2;
 	enum oper_chan_width oper_chan_width;
 	u16 puncture_bitmap;
+	u16 radar_unpunc_bitmap;
 
+	radar_unpunc_bitmap = dfs_get_dfs_punctured_bitmap(iface,
+							   unpuncture_bitmap);
+	dfs_reset_punc_bitmap_src(iface, unpuncture_bitmap);
 	puncture_bitmap = iface->radar_bit_pattern &
-			  ~unpuncture_bitmap;
+			  ~radar_unpunc_bitmap;
 	iface->radar_bit_pattern = puncture_bitmap;
 
 	oper_chan_width = convert_to_oper_chan_width(chan_width);
@@ -3643,6 +3740,8 @@ int hostapd_dfs_nop_finished(struct hostapd_iface *iface, int freq,
 			     int cf1, int cf2,
 			     int chan_width_device, int cf_device)
 {
+	struct hostapd_channel_data *chan;
+
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_NOP_FINISHED
 		"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d chan_width_device=%d cf_device=%d",
 		freq, ht_enabled, chan_offset, chan_width, cf1, cf2, chan_width_device, cf_device);
@@ -3658,6 +3757,15 @@ int hostapd_dfs_nop_finished(struct hostapd_iface *iface, int freq,
 	else
 		set_dfs_state(iface, freq, ht_enabled, chan_offset, chan_width,
 			      cf1, cf2, HOSTAPD_CHAN_DFS_USABLE,0);
+
+	chan = hw_mode_get_channel(iface->current_mode, freq, NULL);
+	if (chan && chan->puncture_source != DFS_CHAN_PUNC_NONE) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: Ignore NOL expiry on %d MHz as the chan is punctured, Source = %d",
+			   freq, chan->puncture_source);
+		return 0;
+	}
+
 	if (iface->state == HAPD_IFACE_DFS && !iface->cac_started) {
 		/* Handle cases where all channels were initially unavailable */
 #ifdef CONFIG_QCN_EXTN
