@@ -1126,6 +1126,35 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
  * option (survey, BSS, spectral, ...). chan->interference factor must be
  * summable (i.e., must be always greater than zero).
  */
+static void acs_update_bw_downgrade_config(struct hostapd_iface *iface, u32 bw)
+{
+	switch (bw) {
+	case 20:
+		hostapd_set_oper_chwidth(iface->conf, CONF_OPER_CHWIDTH_USE_HT);
+		iface->conf->secondary_channel = 0;
+		break;
+	case 40:
+		hostapd_set_oper_chwidth(iface->conf, CONF_OPER_CHWIDTH_USE_HT);
+		if (!iface->conf->secondary_channel)
+			iface->conf->secondary_channel = 1;
+		break;
+	case 80:
+		hostapd_set_oper_chwidth(iface->conf, CONF_OPER_CHWIDTH_80MHZ);
+		break;
+	case 160:
+		hostapd_set_oper_chwidth(iface->conf, CONF_OPER_CHWIDTH_160MHZ);
+		break;
+	case 320:
+		hostapd_set_oper_chwidth(iface->conf, CONF_OPER_CHWIDTH_320MHZ);
+		break;
+	default:
+		wpa_printf(MSG_DEBUG,
+			   "ACS: Unsupported bandwidth downgrade target %u MHz",
+			   bw);
+		break;
+	}
+}
+
 #ifndef CONFIG_QCN_EXTN
 static
 #endif
@@ -1175,12 +1204,26 @@ bw_selected:
 	wpa_printf(MSG_DEBUG,
 		   "ACS: Survey analysis for selected bandwidth %d MHz", bw);
 
+	ideal_chan = NULL;
+	rand_chan = NULL;
+	ideal_factor = 0;
+
 	for (i = 0; i < iface->num_hw_features; i++) {
 		mode = &iface->hw_features[i];
-		if (!hostapd_hw_skip_mode(iface, mode))
-			acs_find_ideal_chan_mode(iface, mode, n_chans, bw,
-						 &rand_chan, &ideal_chan,
-						 &ideal_factor);
+		if (!hostapd_hw_skip_mode(iface, mode)) {
+			do {
+				acs_find_ideal_chan_mode(iface, mode, n_chans, bw,
+							 &rand_chan, &ideal_chan,
+							 &ideal_factor);
+				if (ideal_chan || bw <= 20 || !iface->conf->acs_enable_bw_downgrade)
+					break;
+				wpa_printf(MSG_DEBUG, "ACS: Failed for bandwidth %d MHz", bw);
+				n_chans /= 2;
+				bw = num_chan_to_bw(n_chans);
+				acs_update_bw_downgrade_config(iface, bw);
+				wpa_printf(MSG_DEBUG, "ACS: Finding ideal channel for downgraded bandwidth %d MHz", bw);
+			} while(1);
+		}
 	}
 
 	if (ideal_chan) {
