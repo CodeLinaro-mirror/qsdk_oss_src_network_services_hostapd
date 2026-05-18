@@ -62,4 +62,9 @@ bool hostapd_is_cac_required(struct hostapd_iface *iface);
 bool hostapd_dfs_csa_target_has_unavailable_channel(struct hostapd_iface *iface,
 						    struct hostapd_freq_params *freq_params,
 						    enum chan_width width);
+void hostapd_dfs_start_background_cac_deferred(struct hostapd_iface *iface);
+int hostapd_dfs_count_precac_channels(struct hostapd_iface *iface);
+int hostapd_dfs_start_precac(struct hostapd_iface *iface);
+int hostapd_dfs_precac_restart_after_radar(struct hostapd_iface *iface,
+					   int radar_freq);
 #endif /* DFS_H */
