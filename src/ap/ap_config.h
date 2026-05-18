@@ -1369,6 +1369,7 @@ struct hostapd_config {
 	int acs_exclude_6ghz_non_psc;
 	int enable_background_radar;
 	int bgcac_en;
+	bool dfs_bw_reduce_en;
 	enum {
 		LONG_PREAMBLE = 0,
 		SHORT_PREAMBLE = 1

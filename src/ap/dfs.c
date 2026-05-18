@@ -1042,6 +1042,150 @@ dfs_get_valid_channel(struct hostapd_iface *iface,
 	return chan;
 }
 
+static int dfs_get_next_lower_chwidth(u8 chwidth)
+{
+	switch (chwidth) {
+	case CONF_OPER_CHWIDTH_320MHZ:
+		return CONF_OPER_CHWIDTH_160MHZ;
+	case CONF_OPER_CHWIDTH_160MHZ:
+		return CONF_OPER_CHWIDTH_80MHZ;
+	case CONF_OPER_CHWIDTH_80P80MHZ:
+		return CONF_OPER_CHWIDTH_80MHZ;
+	case CONF_OPER_CHWIDTH_80MHZ:
+		return CONF_OPER_CHWIDTH_USE_HT;
+	default:
+		return -1;
+	}
+}
+
+struct hostapd_channel_data *
+dfs_find_bw_reduced_channel(struct hostapd_iface *iface,
+			   int *secondary_channel,
+			   u8 *oper_centr_freq_seg0_idx,
+			   u8 *oper_centr_freq_seg1_idx)
+{
+	struct hostapd_hw_modes *mode;
+	struct hostapd_channel_data *chan = NULL;
+	int i, channel;
+	int seg1_start;
+	u8 current_chwidth;
+	u8 target_chwidth;
+	int n_chans, n_chans1;
+	int first_chan_idx;
+	u8 saved_seg0_idx;
+	u8 temp_seg0_idx, temp_seg1_idx;
+
+	wpa_printf(MSG_DEBUG, "DFS: Trying bandwidth reduction");
+
+	if (!iface->conf->dfs_bw_reduce_en) {
+		wpa_printf(MSG_DEBUG, "DFS: BW reduction disabled");
+		return NULL;
+	}
+
+	mode = iface->current_mode;
+	channel = iface->conf->channel;
+	current_chwidth = hostapd_get_oper_chwidth(iface->conf);
+
+	for (i = 0; i < mode->num_channels; i++) {
+		if (mode->channels[i].chan == channel) {
+			chan = &mode->channels[i];
+			break;
+		}
+	}
+
+	if (!chan) {
+		wpa_printf(MSG_ERROR, "DFS: Current channel %d not found",
+			   channel);
+		return NULL;
+	}
+
+	if ((chan->flag & HOSTAPD_CHAN_DFS_MASK) ==
+	     HOSTAPD_CHAN_DFS_UNAVAILABLE) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: Primary channel %d in NOL, cannot reduce BW",
+			   channel);
+		return NULL;
+	}
+
+	if (current_chwidth == CONF_OPER_CHWIDTH_USE_HT) {
+		if (iface->conf->secondary_channel) {
+			*secondary_channel = 0;
+			*oper_centr_freq_seg0_idx = 0;
+			*oper_centr_freq_seg1_idx = 0;
+			wpa_printf(MSG_INFO,
+				   "DFS: BW reduction successful - Ch %d, 20 MHz",
+				   channel);
+			return chan;
+		}
+		wpa_printf(MSG_DEBUG,
+			   "DFS: Already at minimum BW (20 MHz)");
+		return NULL;
+	}
+
+	target_chwidth = dfs_get_next_lower_chwidth(current_chwidth);
+	if (target_chwidth < 0) {
+		wpa_printf(MSG_ERROR, "DFS: Unknown bandwidth");
+		return NULL;
+	}
+
+	/* Save original seg0_idx — will be temporarily overwritten
+	 * in the loop to compute correct first channel for each
+	 * target BW anchored to our primary channel
+	 */
+	saved_seg0_idx = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
+
+	while (1) {
+		n_chans = dfs_get_used_n_chans(iface, &n_chans1, target_chwidth);
+
+		/* Temporarily set target BW and recompute seg0_idx so that
+		 * dfs_get_start_chan_idx returns the correct first channel.
+		 */
+		temp_seg0_idx = 0;
+		temp_seg1_idx = 0;
+		hostapd_set_oper_chwidth(iface->conf, target_chwidth);
+		dfs_adjust_center_freq(iface, chan,
+				       *secondary_channel, -1,
+				       &temp_seg0_idx,
+				       &temp_seg1_idx);
+		hostapd_set_oper_centr_freq_seg0_idx(iface->conf, temp_seg0_idx);
+
+		first_chan_idx = dfs_get_start_chan_idx(iface, &seg1_start,
+							target_chwidth,
+							channel, false);
+
+		/* Restore original BW and seg0_idx */
+		hostapd_set_oper_chwidth(iface->conf, current_chwidth);
+		hostapd_set_oper_centr_freq_seg0_idx(iface->conf, saved_seg0_idx);
+		if (first_chan_idx < 0)
+			break;
+
+		if (dfs_chan_range_available(mode, first_chan_idx,
+					     n_chans, DFS_AVAILABLE)) {
+			if (target_chwidth == CONF_OPER_CHWIDTH_USE_HT)
+				*secondary_channel = (channel < temp_seg0_idx) ? 1 : -1;
+
+			hostapd_set_oper_chwidth(iface->conf, target_chwidth);
+			dfs_adjust_center_freq(iface, chan,
+					       *secondary_channel, -1,
+						oper_centr_freq_seg0_idx,
+						oper_centr_freq_seg1_idx);
+
+			wpa_printf(MSG_INFO,
+				   "DFS: BW reduction successful - Ch %d, target BW %d",
+				   channel, target_chwidth);
+			return chan;
+		}
+
+		target_chwidth = dfs_get_next_lower_chwidth(target_chwidth);
+		if (target_chwidth < 0)
+			break;
+	}
+	wpa_printf(MSG_DEBUG,
+		   "DFS: No valid reduced BW found for channel %d", channel);
+	return NULL;
+
+}
+
 
 static int dfs_set_valid_channel(struct hostapd_iface *iface, int skip_radar)
 {
@@ -2833,6 +2977,31 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 #endif
 
 	if (hostapd_dfs_background_start_channel_switch(iface, freq)) {
+		if (iface->conf->dfs_bw_reduce_en) {
+			struct hostapd_channel_data *channel = NULL;
+			int secondary_channel;
+			u8 oper_centr_freq_seg0_idx = 0;
+			u8 oper_centr_freq_seg1_idx = 0;
+
+			channel = dfs_find_bw_reduced_channel(iface,
+							      &secondary_channel,
+							      &oper_centr_freq_seg0_idx,
+							      &oper_centr_freq_seg1_idx);
+			if (channel) {
+				wpa_printf(MSG_INFO,
+					   "DFS: Radar detected, BW reduction successful - Ch %d",
+					    channel->chan);
+				return hostapd_dfs_request_channel_switch(
+							iface, channel->chan,
+							channel->freq,
+							secondary_channel,
+							hostapd_get_oper_chwidth(iface->conf),
+							oper_centr_freq_seg0_idx,
+							oper_centr_freq_seg1_idx,
+							hostapd_get_punct_bitmap(iface->bss[0]));
+			}
+		}
+
 		/*
 		 * radar_bitmap == 0 is reported for full-band radar events,
 		 * so treat this as radar affecting the current operating

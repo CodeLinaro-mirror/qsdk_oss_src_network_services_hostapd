@@ -1868,6 +1868,23 @@ static int hostapd_ctrl_iface_set_rcac_freq(struct hostapd_data *hapd,
 	return 0;
 }
 #endif /* NEED_AP_MLME */
+static int hostapd_set_bw_reduce_en(struct hostapd_data *hapd, const char *value)
+{
+	int val;
+	char *end = NULL;
+
+	val = strtol(value, &end, 10);
+	if (value == end || (val != 0 && val != 1)) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid bw_reduce_en value: %s (use 0 or 1)",
+			   value);
+		return -1;
+	}
+	hapd->iface->conf->dfs_bw_reduce_en = val;
+	wpa_printf(MSG_INFO, "DFS Bandwidth Reduction %s",
+		   val ? "enabled" : "disabled");
+	return 0;
+}
 
 
 static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
@@ -2312,6 +2329,8 @@ eht_generic_rollback:
 		} else if (os_strcasecmp(cmd, "transition_disable") == 0) {
 			wpa_auth_set_transition_disable(hapd->wpa_auth,
 							hapd->conf->transition_disable);
+		} else if (os_strcasecmp(cmd, "dfs_bw_reduce_en") == 0) {
+			ret = hostapd_set_bw_reduce_en(hapd, value);
 #ifdef CONFIG_QCN_EXTN
 		} else {
 			ret = hostapd_ctrl_iface_set_extn(hapd, cmd, value);
@@ -3114,6 +3133,11 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 	else if (os_strcasecmp(cmd, "rssi_ignore_probe_request") == 0) {
 		res = os_snprintf(buf, buflen, "rssi_ignore_probe_request= %d\n",
 				  hapd->iconf->rssi_ignore_probe_request);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "dfs_bw_reduce_en") == 0) {
+		res = os_snprintf(buf, buflen, "%d\n", hapd->iface->conf->dfs_bw_reduce_en);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;

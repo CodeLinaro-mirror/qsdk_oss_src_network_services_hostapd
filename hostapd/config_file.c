@@ -3210,6 +3210,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 	} else if (os_strcmp(buf, "edmg_channel") == 0) {
 		conf->edmg_channel = atoi(pos);
+	} else if (os_strcmp(buf, "dfs_bw_reduce_en") == 0) {
+		conf->dfs_bw_reduce_en = atoi(pos);
 	} else if (os_strcmp(buf, "enable_edmg") == 0) {
 		conf->enable_edmg = atoi(pos);
 	} else if (os_strcmp(buf, "chanlist") == 0) {
