@@ -520,8 +520,12 @@ struct hostapd_bss_config {
 	enum macaddr_acl macaddr_acl;
 	struct mac_acl_entry *accept_mac;
 	int num_accept_mac;
+	struct mac_acl_entry *accept_mac_masked;
+	int num_accept_mac_masked;
 	struct mac_acl_entry *deny_mac;
 	int num_deny_mac;
+	struct mac_acl_entry *deny_mac_masked;
+	int num_deny_mac_masked;
 	/* deny phase duration (seconds) */
 	unsigned int acl_deny_wait_time;
 	/* allow phase duration (seconds) */
@@ -1794,6 +1798,8 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf);
 void hostapd_config_free(struct hostapd_config *conf);
 int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
 			  const u8 *addr, struct vlan_description *vlan_id);
+int hostapd_acl_maclist_found(struct hostapd_bss_config *conf, bool accept,
+			      const u8 *addr, struct vlan_description *vlan_id);
 const u8 * hostapd_get_psk(const struct hostapd_bss_config *conf,
 			   const u8 *addr, const u8 *p2p_dev_addr,
 			   const u8 *prev_psk, int *vlan_id);
@@ -1815,8 +1821,23 @@ int hostapd_setup_sae_pt(struct hostapd_bss_config *conf);
 int hostapd_acl_comp(const void *a, const void *b);
 int hostapd_add_acl_maclist(struct mac_acl_entry **acl, int *num,
 			    int vlan_id, const u8 *addr);
+int hostapd_add_acl_maclist_masked(struct mac_acl_entry **acl, int *num,
+				   int vlan_id, const u8 *addr,
+				   const u8 *mask);
 void hostapd_remove_acl_mac(struct mac_acl_entry **acl, int *num,
 			    const u8 *addr);
+void hostapd_remove_all_masked_entries_for_addr(struct mac_acl_entry **acl,
+						int *num, const u8 *addr);
+void hostapd_remove_acl_mac_masked_pair(struct mac_acl_entry **acl, int *num,
+					const u8 *addr, const u8 *mask);
+int hostapd_acl_add_entry(struct mac_acl_entry **exact_acl, int *num_exact,
+			  struct mac_acl_entry **masked_acl, int *num_masked,
+			  int vlan_id, const u8 *addr, const u8 *mask);
+void hostapd_acl_del_entry(struct mac_acl_entry **exact_acl, int *num_exact,
+			   struct mac_acl_entry **masked_acl, int *num_masked,
+			   const u8 *addr);
+void hostapd_acl_clear(struct mac_acl_entry **exact_acl, int *num_exact,
+		       struct mac_acl_entry **masked_acl, int *num_masked);
 void hostapd_config_free_acl_timed_list(struct hostapd_bss_config *conf);
 bool hostapd_config_check_bss_6g(struct hostapd_bss_config *bss);
 

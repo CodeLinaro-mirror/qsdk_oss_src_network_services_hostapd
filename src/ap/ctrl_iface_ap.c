@@ -3679,117 +3679,157 @@ fail:
 #endif /* CONFIG_WNM_AP */
 
 
-int hostapd_ctrl_iface_acl_del_mac(struct mac_acl_entry **acl, int *num,
-				   const char *txtaddr)
+int hostapd_ctrl_iface_acl_del_mac(struct hostapd_bss_config *conf,
+				   bool accept, const char *txtaddr)
 {
+	struct mac_acl_entry **exact_acl, **masked_acl;
+	int *num_exact, *num_masked;
 	u8 addr[ETH_ALEN];
 	u8 mask[ETH_ALEN];
 	const char *pos;
 	bool has_mask = false;
-	int i;
+	static const u8 exact_mask_val[ETH_ALEN] =
+				{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
-	if (!(*num))
+	if (accept) {
+		exact_acl  = &conf->accept_mac;
+		num_exact  = &conf->num_accept_mac;
+		masked_acl = &conf->accept_mac_masked;
+		num_masked = &conf->num_accept_mac_masked;
+	} else {
+		exact_acl  = &conf->deny_mac;
+		num_exact  = &conf->num_deny_mac;
+		masked_acl = &conf->deny_mac_masked;
+		num_masked = &conf->num_deny_mac_masked;
+	}
+
+	if (!(*num_exact) && !(*num_masked))
 		return 0;
 
 	if (hwaddr_aton(txtaddr, addr))
 		return -1;
 
-	/* Check if mask parameter is provided */
+	/* Check if a specific mask is provided */
 	pos = os_strchr(txtaddr, ' ');
 	if (pos) {
 		pos++;
-		/* Skip any spaces */
 		while (*pos == ' ')
 			pos++;
-		/* Try to parse mask */
-		if (hwaddr_aton(pos, mask) == 0) {
+		if (hwaddr_aton(pos, mask) == 0)
 			has_mask = true;
-		}
 	}
 
 	if (has_mask) {
-		/* Delete entries matching both address AND mask */
-		i = 0;
-		while (i < *num) {
-			if (os_memcmp((*acl)[i].addr, addr, ETH_ALEN) == 0 &&
-			    os_memcmp((*acl)[i].mask, mask, ETH_ALEN) == 0) {
-				/* Remove this entry */
-				os_remove_in_array(*acl, *num, sizeof(**acl), i);
-				(*num)--;
-				/* Don't increment i - check same position again */
-			} else {
-				i++;
-			}
+		if (os_memcmp(mask, exact_mask_val, ETH_ALEN) == 0) {
+			/* Remove specific exact entry by address */
+			hostapd_remove_acl_mac(exact_acl, num_exact, addr);
+		} else {
+			/* Remove specific masked entry by addr+mask pair */
+			hostapd_remove_acl_mac_masked_pair(masked_acl,
+							   num_masked,
+							   addr, mask);
 		}
 	} else {
-		/* Delete ALL entries matching the address (regardless of mask) */
-		hostapd_remove_acl_mac(acl, num, addr);
+		/* No mask specified: remove from both lists */
+		hostapd_acl_del_entry(exact_acl, num_exact,
+				      masked_acl, num_masked, addr);
 	}
 
 	return 0;
 }
 
 
-void hostapd_ctrl_iface_acl_clear_list(struct mac_acl_entry **acl,
-				       int *num)
+void hostapd_ctrl_iface_acl_clear_list(struct hostapd_bss_config *conf,
+					bool accept)
 {
-	while (*num)
-		hostapd_remove_acl_mac(acl, num, (*acl)[0].addr);
+	if (accept)
+		hostapd_acl_clear(&conf->accept_mac, &conf->num_accept_mac,
+				  &conf->accept_mac_masked,
+				  &conf->num_accept_mac_masked);
+	else
+		hostapd_acl_clear(&conf->deny_mac, &conf->num_deny_mac,
+				  &conf->deny_mac_masked,
+				  &conf->num_deny_mac_masked);
 }
 
 
-int hostapd_ctrl_iface_acl_show_mac(struct mac_acl_entry *acl, int num,
+int hostapd_ctrl_iface_acl_show_mac(struct hostapd_bss_config *conf,
+				    bool accept,
 				    char *buf, size_t buflen)
 {
+	struct mac_acl_entry *exact_acl, *masked_acl;
+	int num_exact, num_masked;
 	int i = 0, len = 0, ret = 0;
-	static const u8 exact_mask[ETH_ALEN] =
-		{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
-	if (!acl)
-		return 0;
+	if (accept) {
+		exact_acl  = conf->accept_mac;
+		num_exact  = conf->num_accept_mac;
+		masked_acl = conf->accept_mac_masked;
+		num_masked = conf->num_accept_mac_masked;
+	} else {
+		exact_acl  = conf->deny_mac;
+		num_exact  = conf->num_deny_mac;
+		masked_acl = conf->deny_mac_masked;
+		num_masked = conf->num_deny_mac_masked;
+	}
 
-	while (i < num) {
-		/* Show mask only if it's not the default exact match */
-		if (os_memcmp(acl[i].mask, exact_mask, ETH_ALEN) == 0) {
-			/* Exact match - don't show mask for cleaner output */
-			ret = os_snprintf(buf + len, buflen - len,
-					  MACSTR " VLAN_ID=%d\n",
-					  MAC2STR(acl[i].addr),
-					  acl[i].vlan_id.untagged);
-		} else {
-			/* Masked entry - show the mask */
-			ret = os_snprintf(buf + len, buflen - len,
-					  MACSTR " mask=" MACSTR " VLAN_ID=%d\n",
-					  MAC2STR(acl[i].addr),
-					  MAC2STR(acl[i].mask),
-					  acl[i].vlan_id.untagged);
-		}
+	while (i < num_exact) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  MACSTR " VLAN_ID=%d\n",
+				  MAC2STR(exact_acl[i].addr),
+				  exact_acl[i].vlan_id.untagged);
 		if (ret < 0 || (size_t) ret >= buflen - len)
 			return len;
 		i++;
 		len += ret;
 	}
+
+	i = 0;
+	while (i < num_masked) {
+		ret = os_snprintf(buf + len, buflen - len,
+				  MACSTR " mask=" MACSTR " VLAN_ID=%d\n",
+				  MAC2STR(masked_acl[i].addr),
+				  MAC2STR(masked_acl[i].mask),
+				  masked_acl[i].vlan_id.untagged);
+		if (ret < 0 || (size_t) ret >= buflen - len)
+			return len;
+		i++;
+		len += ret;
+	}
+
 	return len;
 }
 
-
-int hostapd_ctrl_iface_acl_add_mac(struct mac_acl_entry **acl, int *num,
-				   const char *cmd)
+int hostapd_ctrl_iface_acl_add_mac(struct hostapd_bss_config *conf,
+				   bool accept, const char *cmd)
 {
+	struct mac_acl_entry **exact_acl, **masked_acl;
+	int *num_exact, *num_masked;
 	u8 addr[ETH_ALEN];
 	u8 mask[ETH_ALEN];
-	int ret = 0, vlanid = 0, i;
+	int ret = 0, vlanid = 0, k;
 	const char *pos, *mask_pos;
-	bool has_mask = false;
 	bool duplicate = false;
-	static const u8 exact_mask[ETH_ALEN] =
+	static const u8 exact_mask_val[ETH_ALEN] =
 		{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+
+	if (accept) {
+		exact_acl  = &conf->accept_mac;
+		num_exact  = &conf->num_accept_mac;
+		masked_acl = &conf->accept_mac_masked;
+		num_masked = &conf->num_accept_mac_masked;
+	} else {
+		exact_acl  = &conf->deny_mac;
+		num_exact  = &conf->num_deny_mac;
+		masked_acl = &conf->deny_mac_masked;
+		num_masked = &conf->num_deny_mac_masked;
+	}
 
 	if (hwaddr_aton(cmd, addr))
 		return -1;
 
 	/* Initialize mask to exact match by default */
-	os_memcpy(mask, exact_mask, ETH_ALEN);
+	os_memcpy(mask, exact_mask_val, ETH_ALEN);
 
 	/* Check for mask parameter
 	 * format : "aa:bb:cc:dd:ee:ff ff:ff:ff:00:00:00 [VLAN_ID=X]"
@@ -3804,10 +3844,17 @@ int hostapd_ctrl_iface_acl_add_mac(struct mac_acl_entry **acl, int *num,
 		/* Skip any spaces */
 		while (*pos == ' ')
 			pos++;
-		/* Check if this looks like a MAC address (mask) */
-		mask_pos = pos;
-		if (hwaddr_aton(mask_pos, mask) == 0) {
-			has_mask = true;
+		/* If the next token is not VLAN_ID= and not end-of-string,
+		 * treat it as a mask.  Reject malformed masks explicitly
+		 * instead of silently falling back to exact-match. */
+		if (*pos && os_strncmp(pos, "VLAN_ID=", 8) != 0) {
+			mask_pos = pos;
+			if (hwaddr_aton(mask_pos, mask) != 0) {
+				wpa_printf(MSG_ERROR,
+					   "ACL: Invalid mask in ADD_MAC command"
+					   " — expected MAC address format");
+				return -1;
+			}
 			/* Move pos past the mask */
 			while (*pos && *pos != ' ')
 				pos++;
@@ -3819,25 +3866,32 @@ int hostapd_ctrl_iface_acl_add_mac(struct mac_acl_entry **acl, int *num,
 	if (pos)
 		vlanid = atoi(pos + 8);
 
-	/* Check for exact duplicate: same address AND same mask.
-	 * This allows adding the same address with different masks,
-	 * which is useful for overlapping ACL ranges. */
-	for (i = 0; i < *num; i++) {
-		if (os_memcmp((*acl)[i].addr, addr, ETH_ALEN) == 0 &&
-		    os_memcmp((*acl)[i].mask, mask, ETH_ALEN) == 0) {
+	/*
+	 * Duplicate check: compare address AND mask together so that the same
+	 * address with different masks (one exact, one masked) is allowed to
+	 * coexist in the two separate lists.
+	 */
+	if (os_memcmp(mask, exact_mask_val, ETH_ALEN) == 0) {
+		/* Exact entry: O(log n) binary search */
+		if (hostapd_maclist_found(*exact_acl, *num_exact, addr, NULL))
 			duplicate = true;
-			break;
+	} else {
+		/* Masked entry: explicit addr+mask pair check — O(m) */
+		for (k = 0; k < *num_masked; k++) {
+			if (os_memcmp((*masked_acl)[k].addr, addr,
+				      ETH_ALEN) == 0 &&
+			    os_memcmp((*masked_acl)[k].mask, mask,
+				      ETH_ALEN) == 0) {
+				duplicate = true;
+				break;
+			}
 		}
 	}
 
 	if (!duplicate) {
-		ret = hostapd_add_acl_maclist(acl, num, vlanid, addr);
-		if (ret != -1 && *acl) {
-			/* Set the mask for the newly added entry */
-			if (has_mask)
-				os_memcpy((*acl)[*num - 1].mask, mask, ETH_ALEN);
-			qsort(*acl, *num, sizeof(**acl), hostapd_acl_comp);
-		}
+		ret = hostapd_acl_add_entry(exact_acl, num_exact,
+					    masked_acl, num_masked,
+					    vlanid, addr, mask);
 	} else {
 		wpa_printf(MSG_DEBUG,
 			   "ACL: Entry " MACSTR " with mask " MACSTR " already exists",
@@ -4081,9 +4135,8 @@ int hostapd_disassoc_accept_mac(struct hostapd_data *hapd)
 
 		disconnect_sta = false;
 
-		if (!hostapd_maclist_found(hapd->conf->accept_mac,
-					   hapd->conf->num_accept_mac,
-					   sta->addr, &vlan_id) ||
+		if (!hostapd_acl_maclist_found(hapd->conf, true,
+					       sta->addr, &vlan_id) ||
 		    (vlan_id.notempty &&
 		     vlan_compare(&vlan_id, sta->vlan_desc)))
 			disconnect_sta = true;
@@ -4095,10 +4148,9 @@ int hostapd_disassoc_accept_mac(struct hostapd_data *hapd)
 			info = &sta->mld_info.links[link_id];
 			if (!info->valid || link_id != hapd->mld_link_id)
 				continue;
-			if (!hostapd_maclist_found(hapd->conf->accept_mac,
-						   hapd->conf->num_accept_mac,
-						   info->peer_addr,
-						   &vlan_id) ||
+			if (!hostapd_acl_maclist_found(hapd->conf, true,
+						       info->peer_addr,
+						       &vlan_id) ||
 			    (vlan_id.notempty &&
 			     vlan_compare(&vlan_id, sta->vlan_desc))) {
 				disconnect_sta = true;
@@ -4128,9 +4180,8 @@ int hostapd_disassoc_deny_mac(struct hostapd_data *hapd)
 		struct mld_link_info *info;
 #endif /* CONFIG_IEEE80211BE */
 
-		if (hostapd_maclist_found(hapd->conf->deny_mac,
-					  hapd->conf->num_deny_mac, sta->addr,
-					  &vlan_id) &&
+		if (hostapd_acl_maclist_found(hapd->conf, false,
+					      sta->addr, &vlan_id) &&
 		    (!vlan_id.notempty ||
 		     !vlan_compare(&vlan_id, sta->vlan_desc)))
 			ap_sta_disconnect(hapd, sta, sta->addr,
@@ -4143,10 +4194,9 @@ int hostapd_disassoc_deny_mac(struct hostapd_data *hapd)
 			if (!info->valid || link_id != hapd->mld_link_id)
 				continue;
 
-			if (hostapd_maclist_found(hapd->conf->deny_mac,
-						  hapd->conf->num_deny_mac,
-						  info->peer_addr,
-						  &vlan_id) &&
+			if (hostapd_acl_maclist_found(hapd->conf, false,
+						      info->peer_addr,
+						      &vlan_id) &&
 			    (!vlan_id.notempty ||
 			     !vlan_compare(&vlan_id, sta->vlan_desc)))
 				ap_sta_disconnect(hapd, sta, sta->addr,
