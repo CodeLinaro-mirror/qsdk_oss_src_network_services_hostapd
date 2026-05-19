@@ -374,6 +374,7 @@ int hostapd_add_candidate_own(struct hostapd_data *hapd, int pref,
 	u8 center_freq1_idx = 0, center_freq2_idx = 0;
 	enum oper_chan_width oper_chwidth;
 	enum nr_chan_width width;
+	int secondary_channel;
 	u32 bssid_info;
 
 	bssid_info = NEI_REP_BSSID_INFO_AP_REACHABLE; /* AP is reachable */
@@ -410,16 +411,21 @@ int hostapd_add_candidate_own(struct hostapd_data *hapd, int pref,
 
 	hostapd_get_oper_chan_info_of_bss(hapd, &oper_chwidth,
 					  &center_freq1_idx, &center_freq2_idx);
+	secondary_channel = hapd->iconf->secondary_channel;
+
+	if (center_freq1_idx == hapd->iconf->channel &&
+	    oper_chwidth == CONF_OPER_CHWIDTH_USE_HT)
+		secondary_channel = 0;
 
 	if (ieee80211_freq_to_channel_ext(hapd->iface->freq,
-					  hapd->iconf->secondary_channel,
+					  secondary_channel,
 					  oper_chwidth,
 					  &op_class, &channel) ==
 	    NUM_HOSTAPD_MODES)
 		return 0;
 	width = hostapd_get_nr_chan_width(hapd, ht, vht, he,
 					  oper_chwidth,
-					  hapd->iconf->secondary_channel);
+					  secondary_channel);
 
 	if (width != NR_CHAN_WIDTH_80P80)
 		center_freq2_idx = 0;
@@ -427,7 +433,7 @@ int hostapd_add_candidate_own(struct hostapd_data *hapd, int pref,
 	if (!vht && ht) {
 		center_freq1_idx = 0;
 		ieee80211_freq_to_chan(hapd->iface->freq +
-				       10 * hapd->iconf->secondary_channel,
+				       10 * secondary_channel,
 				       &center_freq1_idx);
 	}
 
