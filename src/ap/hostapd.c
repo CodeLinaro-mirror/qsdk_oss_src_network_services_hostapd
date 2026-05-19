@@ -4928,7 +4928,10 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 	}
 
 #ifdef CONFIG_QCN_EXTN
-	dcs_enable_init(hapd, iface->conf->conf_extn.dcs_conf.enable_bitmap);
+	if (iface->iface_extn.dcs_in_progress)
+		hostapd_dcs_restore_extn(iface, "AP restart after DFS channel switch");
+	else
+		dcs_enable_init(hapd, iface->conf->conf_extn.dcs_conf.enable_bitmap);
 	hostapd_set_he_mcs_12_13_cap_extn(hapd);
 	hostapd_periodic_acs_start(iface);
 #endif
