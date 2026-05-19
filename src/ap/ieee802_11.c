@@ -11983,6 +11983,9 @@ static bool hostapd_rnr_get_bss_info(struct hostapd_data *hapd,
 	struct hostapd_data *bss;
 	bool ap_mld = false;
 	u8 tmp_match_idx = 255;
+	enum oper_chan_width bss_chwidth;
+	int secondary_channel;
+	u8 seg0, seg1;
 
 	if (!hapd->iface || i >= hapd->iface->num_bss || !op_class || !channel)
 		return false;
@@ -12012,8 +12015,15 @@ static bool hostapd_rnr_get_bss_info(struct hostapd_data *hapd,
 			     mld_update, reporting_hapd, bss, match_idx))
 		return false;
 
+	hostapd_get_oper_chan_info_of_bss(bss, &bss_chwidth, &seg0, &seg1);
+	secondary_channel = bss->iconf->secondary_channel;
+
+	if (seg0 == bss->iconf->channel &&
+	    bss_chwidth == CONF_OPER_CHWIDTH_USE_HT)
+		secondary_channel = 0;
+
 #ifdef CONFIG_QCN_EXTN
-	if ((hostapd_get_oper_chan_width_of_bss(bss) == CONF_OPER_CHWIDTH_320MHZ) &&
+	if ((bss_chwidth == CONF_OPER_CHWIDTH_320MHZ) &&
 	    hapd->iconf->downgrade_320mhz_opclass) {
 		hostapd_modify_supported_op_class_for_320mhz_extn(
 			bss->iface->freq, op_class);
@@ -12022,8 +12032,8 @@ static bool hostapd_rnr_get_bss_info(struct hostapd_data *hapd,
 #endif /* CONFIG_QCN_EXTN */
 	if (ieee80211_freq_to_channel_ext(
 		    bss->iface->freq,
-		    bss->iconf->secondary_channel,
-		    hostapd_get_oper_chan_width_of_bss(bss),
+		    secondary_channel,
+		    bss_chwidth,
 		    op_class, channel) == NUM_HOSTAPD_MODES)
 		return false;
 
