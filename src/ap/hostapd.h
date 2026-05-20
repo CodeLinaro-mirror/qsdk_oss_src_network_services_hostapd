@@ -1457,11 +1457,19 @@ enum hostapd_afc_power_sync_result {
 #ifdef HOSTAPD
 enum hostapd_afc_power_sync_result
 hostapd_sync_current_afc_power_mode(struct hostapd_iface *iface,
-                                    bool ignore_best_mode_config);
+				    bool ignore_best_mode_config);
+enum hostapd_afc_power_sync_result
+hostapd_force_afc_non_sp_power_mode(struct hostapd_iface *iface);
 #else
 static inline enum hostapd_afc_power_sync_result
 hostapd_sync_current_afc_power_mode(struct hostapd_iface *iface,
-                                    bool ignore_best_mode_config)
+				    bool ignore_best_mode_config)
+{
+	return HOSTAPD_AFC_PWR_SYNC_NOOP;
+}
+
+static inline enum hostapd_afc_power_sync_result
+hostapd_force_afc_non_sp_power_mode(struct hostapd_iface *iface)
 {
 	return HOSTAPD_AFC_PWR_SYNC_NOOP;
 }

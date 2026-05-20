@@ -10210,8 +10210,9 @@ get_sp_psd_for_non_punctured_chan(struct hostapd_data *hapd,
 	eirp_20mhz = hostapd_get_eirp_pwr(iface, chan_freq, 0, CHWIDTH_20, 0,
 					  ap_pwr_type, true, client_mode, true);
 	if (eirp_20mhz == CHAN_MIN_TWICE_TX_POWER) {
-	    wpa_printf(MSG_WARNING, "Failed to calculate EIRP in TPE for channel %d",
-		       chan_freq);
+		wpa_printf(MSG_DEBUG,
+			   "Failed to calculate EIRP in TPE for channel %d",
+			   chan_freq);
 	    sp_psd = CHAN_MIN_TX_POWER;
 	} else {
 	    sp_psd = (eirp_20mhz - (CONV_20MHZ_EIRP_TO_PSD_IN_DBM * 2)) / 2;

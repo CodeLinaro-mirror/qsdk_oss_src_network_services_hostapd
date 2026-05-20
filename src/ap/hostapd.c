@@ -3268,12 +3268,19 @@ static int hostapd_find_random_chan_and_switch(struct hostapd_iface *iface)
  * Return: true when the current tuple is valid, false otherwise.
  */
 static bool hostapd_is_current_afc_tuple_valid(struct hostapd_iface *iface,
-					       u8 power_mode)
+						       u8 power_mode)
 {
 	enum chan_width ch_width;
 	u8 center_chan_no;
 	u16 center_freq;
 	u16 bw;
+
+	if (he_reg_is_sp(power_mode) && !iface->is_afc_power_event_received) {
+		wpa_printf(MSG_INFO,
+			   "AFC repeater power sync: SP unavailable without AFC iface=%s freq=%d mode=%u",
+			   iface->phy, iface->freq, power_mode);
+		return false;
+	}
 
 	ch_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
 	center_chan_no = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
@@ -3287,6 +3294,333 @@ static bool hostapd_is_current_afc_tuple_valid(struct hostapd_iface *iface,
 						     power_mode);
 }
 
+/**
+ * hostapd_get_afc_non_sp_fallback_power_mode() - Determine the non-SP fallback
+ * power mode
+ * @iface: Pointer to hostapd interface data
+ * @current_power_mode: The 6 GHz regulatory power mode currently in use
+ *
+ * Returns the appropriate non-SP fallback power mode for a 6 GHz AP that must
+ * leave Standard Power (SP) operation because AFC data is unavailable or has
+ * expired.  The target is chosen based solely on whether the current mode is
+ * indoor or outdoor:
+ *
+ * - Indoor SP  (HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP, value 8)
+ *                                                       -> NL80211_REG_AP_LPI
+ * - Outdoor SP (HE_REG_INFO_6GHZ_AP_TYPE_SP, value 1)   -> NL80211_REG_AP_VLP
+ *
+ * LPI channels are disabled outdoors (HOSTAPD_CHAN_DISABLED), so VLP is the
+ * only valid non-SP fallback for an outdoor AP.  Conversely, an indoor SP AP
+ * falls back to LPI rather than VLP to stay within its licensed power envelope.
+ *
+ * If @iface or iface->conf is NULL, or if @current_power_mode is not an SP
+ * variant (i.e. he_reg_is_sp() returns false), the function returns
+ * NL80211_REG_NUM_POWER_MODES as a sentinel indicating that no fallback is
+ * applicable.  Callers must treat this sentinel as a no-op condition.
+ *
+ * This function does not validate whether the returned mode is usable on the
+ * current channel/bandwidth/puncturing tuple.  The caller must perform that
+ * check with hostapd_is_current_afc_tuple_valid() before acting on the result.
+ *
+ * Return: NL80211_REG_AP_LPI for indoor SP, NL80211_REG_AP_VLP for outdoor SP,
+ *         or NL80211_REG_NUM_POWER_MODES if @current_power_mode is not SP or
+ *         the interface pointers are invalid.
+ */
+static u8
+hostapd_get_afc_non_sp_fallback_power_mode(struct hostapd_iface *iface,
+					   u8 current_power_mode)
+{
+	if (!iface || !iface->conf || !he_reg_is_sp(current_power_mode))
+		return NL80211_REG_NUM_POWER_MODES;
+
+	if (he_reg_is_indoor(current_power_mode))
+		return NL80211_REG_AP_LPI;
+
+	return NL80211_REG_AP_VLP;
+}
+
+/**
+ * hostapd_restore_6ghz_power_mode() - Roll back a failed 6 GHz power mode
+ * change
+ * @iface: Pointer to hostapd interface data
+ * @old_power_mode: The 6 GHz regulatory power mode to restore
+ *
+ * Restores the interface to @old_power_mode after a failed attempt to switch
+ * to a new power mode in hostapd_request_6ghz_power_mode().  The steps are:
+ *
+ *   1. Write @old_power_mode back into iface->conf->he_6ghz_reg_pwr_type.
+ *   2. Clear the local TPE cache via hostapd_clear_local_tpe().
+ *   3. Re-run hostapd_get_hw_features(), hostapd_select_hw_mode(), and
+ *      hostapd_set_current_hw_info() to bring the hardware state back in
+ *      line with @old_power_mode.
+ *
+ * If any of the three hardware calls in step 3 fail, an error is logged but
+ * the function still returns normally.  There is no further recovery path;
+ * the caller (hostapd_request_6ghz_power_mode()) will return
+ * %HOSTAPD_AFC_PWR_SYNC_ERROR regardless.
+ *
+ * This function intentionally does not call hostapd_switch_power_mode() or
+ * ieee802_11_update_beacons().  It is invoked only when the forward transition
+ * has already failed before or during the CSA step, so no over-the-air
+ * announcement of the new mode was ever made and no beacon update is needed.
+ *
+ * iface->power_mode_6ghz_before_change is not modified here.  It is written
+ * by hostapd_request_6ghz_power_mode() only after steps 2-4 of that function
+ * succeed, so on any rollback path it retains its pre-call value.
+ *
+ * Context: Called exclusively from hostapd_request_6ghz_power_mode() as an
+ *          error-path rollback.  Must not be called in any other context.
+ */
+static void
+hostapd_restore_6ghz_power_mode(struct hostapd_iface *iface, u8 old_power_mode)
+{
+	iface->conf->he_6ghz_reg_pwr_type = old_power_mode;
+	hostapd_clear_local_tpe(iface);
+	if (hostapd_get_hw_features(iface) ||
+	    hostapd_select_hw_mode(iface) ||
+	    hostapd_set_current_hw_info(iface, iface->freq))
+		wpa_printf(MSG_ERROR,
+			   "Failed to restore 6 GHz power mode iface=%s mode=%u",
+			   iface->phy, old_power_mode);
+}
+
+/**
+ * hostapd_request_6ghz_power_mode() - Execute a 6 GHz AP power mode transition
+ * @iface: Pointer to hostapd interface data
+ * @hapd:  Pointer to the primary BSS hostapd_data for @iface
+ * @current_power_mode: The 6 GHz regulatory power mode the AP is leaving
+ *                      (used only for log messages)
+ * @new_power_mode: The target 6 GHz regulatory power mode to switch to
+ * @reason: Short human-readable string identifying the caller, written to the
+ *          log alongside the mode transition (e.g. "fallback", "sync")
+ *
+ * Drives the full sequence required to move a 6 GHz AP from one regulatory
+ * power mode to another on the same operating channel.  The steps are:
+ *
+ *   1. Write @new_power_mode into iface->conf->he_6ghz_reg_pwr_type and clear
+ *      the local TPE cache via hostapd_clear_local_tpe().
+ *   2. Refresh the per-mode channel list from the driver with
+ *      hostapd_get_hw_features().
+ *   3. Re-select the hardware mode for the new power mode with
+ *      hostapd_select_hw_mode().
+ *   4. Update the cached hardware info for the current frequency with
+ *      hostapd_set_current_hw_info().
+ *   5. Record @new_power_mode in iface->power_mode_6ghz_before_change so that
+ *      the CSA completion path knows which mode was requested.
+ *   6. Issue the power-mode Channel Switch Announcement via
+ *      hostapd_switch_power_mode().
+ *   7. Rebuild and push updated beacon frames via ieee802_11_update_beacons().
+ *      A failure here is logged but does not cause the function to return
+ *      ERROR; the mode switch itself has already been committed.
+ *
+ * If any of steps 2-4 or 6 fail, hostapd_restore_6ghz_power_mode() is called
+ * to roll back iface->conf->he_6ghz_reg_pwr_type and re-run steps 2-4 with
+ * the original mode before returning ERROR.
+ * iface->power_mode_6ghz_before_change is not written on a rollback path, so
+ * the in-flight marker is not left in an inconsistent state.
+ *
+ * The caller is responsible for ensuring that the target channel/bandwidth/
+ * puncturing tuple is valid in @new_power_mode before calling this function.
+ * Use hostapd_is_current_afc_tuple_valid() to perform that check.
+ *
+ * Context: Called only from hostapd_force_afc_non_sp_power_mode() and
+ *          hostapd_sync_current_afc_power_mode().  Must be called with the
+ *          interface in a state where a CSA can be issued (i.e. no CSA already
+ *          in progress and no pending power mode change).
+ *
+ * Return:
+ * * %HOSTAPD_AFC_PWR_SYNC_UPDATED - all steps succeeded and the power mode
+ *   CSA has been initiated; iface->power_mode_6ghz_before_change is set to
+ *   @new_power_mode.
+ * * %HOSTAPD_AFC_PWR_SYNC_ERROR - one of the hardware refresh, mode selection,
+ *   hardware info update, or CSA steps failed; the power mode has been rolled
+ *   back to the value it held on entry.
+ */
+static enum hostapd_afc_power_sync_result
+hostapd_request_6ghz_power_mode(struct hostapd_iface *iface,
+				struct hostapd_data *hapd,
+				u8 current_power_mode,
+				u8 new_power_mode,
+				const char *reason)
+{
+	u8 old_power_mode;
+	int ret;
+
+	wpa_printf(MSG_INFO,
+		   "AFC repeater power mode request: %s iface=%s freq=%d mode=%u->%u",
+		   reason, iface->phy, iface->freq, current_power_mode,
+		   new_power_mode);
+	old_power_mode = iface->conf->he_6ghz_reg_pwr_type;
+	iface->conf->he_6ghz_reg_pwr_type = new_power_mode;
+	hostapd_clear_local_tpe(iface);
+	ret = hostapd_get_hw_features(iface);
+	if (ret) {
+		hostapd_restore_6ghz_power_mode(iface, old_power_mode);
+		wpa_printf(MSG_ERROR,
+			   "AFC repeater power mode request failed: hw refresh iface=%s mode=%u ret=%d",
+			   iface->phy, new_power_mode, ret);
+		return HOSTAPD_AFC_PWR_SYNC_ERROR;
+	}
+
+	ret = hostapd_select_hw_mode(iface);
+	if (ret) {
+		hostapd_restore_6ghz_power_mode(iface, old_power_mode);
+		wpa_printf(MSG_ERROR,
+			   "AFC repeater power mode request failed: hw mode iface=%s mode=%u ret=%d",
+			   iface->phy, new_power_mode, ret);
+		return HOSTAPD_AFC_PWR_SYNC_ERROR;
+	}
+
+	ret = hostapd_set_current_hw_info(iface, iface->freq);
+	if (ret) {
+		hostapd_restore_6ghz_power_mode(iface, old_power_mode);
+		wpa_printf(MSG_ERROR,
+			   "AFC repeater power mode request failed: hw info iface=%s freq=%d mode=%u ret=%d",
+			   iface->phy, iface->freq, new_power_mode, ret);
+		return HOSTAPD_AFC_PWR_SYNC_ERROR;
+	}
+
+	iface->power_mode_6ghz_before_change = new_power_mode;
+	if (hostapd_switch_power_mode(hapd)) {
+		hostapd_restore_6ghz_power_mode(iface, old_power_mode);
+		wpa_printf(MSG_ERROR,
+			   "AFC repeater power mode request failed: switch iface=%s freq=%d mode=%u",
+			   iface->phy, iface->freq, new_power_mode);
+		return HOSTAPD_AFC_PWR_SYNC_ERROR;
+	}
+
+	if (ieee802_11_update_beacons(iface))
+		wpa_printf(MSG_ERROR,
+			   "AFC repeater power mode request: beacon update failed iface=%s mode=%u",
+			   iface->phy, new_power_mode);
+
+	return HOSTAPD_AFC_PWR_SYNC_UPDATED;
+}
+
+/**
+ * hostapd_force_afc_non_sp_power_mode() - Fall back from SP to a non-SP power
+ * mode
+ * @iface: Pointer to hostapd interface data
+ *
+ * Attempts to switch a 6 GHz AP that is currently operating in Standard Power
+ * (SP) mode to the appropriate non-SP fallback mode when AFC data is no longer
+ * available or valid.  The fallback target is determined solely by whether the
+ * current power mode is indoor or outdoor:
+ *
+ *   - Indoor SP  (HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP)  -> LPI
+ *   - Outdoor SP (HE_REG_INFO_6GHZ_AP_TYPE_SP)         -> VLP
+ *
+ * Before attempting the switch the function checks for two conditions that
+ * require the fallback to be deferred:
+ *
+ *   1. A power mode change is already in flight
+ *      (iface->power_mode_6ghz_before_change != -1 and differs from the
+ *      current mode).  The pending flag is set and ERROR is returned so the
+ *      caller retries on the next event.  If power_mode_6ghz_before_change
+ *      matches the current mode the stale marker is cleared and evaluation
+ *      continues.
+ *
+ *   2. A Channel Switch Announcement (CSA) is in progress.  The pending flag
+ *      is set and ERROR is returned for the same reason.
+ *
+ * Once a fallback target is determined, the current channel/bandwidth/
+ * puncturing tuple is validated against that target power mode via
+ * hostapd_is_current_afc_tuple_valid().  If the tuple is invalid for the
+ * fallback mode, INVALID_CURRENT is returned and the caller is responsible
+ * for disconnecting the backhaul STA or triggering a channel change.
+ *
+ * On success the power mode switch is driven through
+ * hostapd_request_6ghz_power_mode(), which refreshes the hardware channel
+ * list, selects the hardware mode, updates the hardware info, issues a
+ * power-mode CSA, and updates the beacons.
+ *
+ * This function is a no-op for non-6 GHz interfaces and for interfaces that
+ * are not currently in an SP power mode.
+ *
+ * Context: Called from the AFC event handlers and the pending repeater sync
+ *          path.  Must not be called while holding any lock that
+ *          hostapd_request_6ghz_power_mode() or hostapd_csa_in_progress()
+ *          may also acquire.
+ *
+ * Return:
+ * * %HOSTAPD_AFC_PWR_SYNC_NOOP - iface is not 6 GHz, is not in SP mode, or
+ *   the fallback target equals the current mode; no action taken.
+ * * %HOSTAPD_AFC_PWR_SYNC_UPDATED - fallback power mode switch was
+ *   successfully initiated via CSA; beacons have been updated.
+ * * %HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT - the current channel/BW/puncture
+ *   tuple is not valid in the fallback power mode; the caller must disconnect
+ *   the backhaul STA or trigger a channel change.
+ * * %HOSTAPD_AFC_PWR_SYNC_ERROR - fallback deferred because a power mode
+ *   change or CSA is already in progress, or an internal step of
+ *   hostapd_request_6ghz_power_mode() failed;
+ *   is_afc_repeater_power_sync_pending is set so the fallback is retried on the
+ *   next regulatory or AFC event.
+ */
+enum hostapd_afc_power_sync_result
+hostapd_force_afc_non_sp_power_mode(struct hostapd_iface *iface)
+{
+	struct hostapd_data *hapd;
+	u8 current_power_mode;
+	u8 fallback_power_mode;
+
+	if (!iface || !iface->bss || !iface->bss[0])
+		return HOSTAPD_AFC_PWR_SYNC_ERROR;
+
+	if (!is_6ghz_freq(iface->freq))
+		return HOSTAPD_AFC_PWR_SYNC_NOOP;
+
+	hapd = iface->bss[0];
+	current_power_mode = iface->conf->he_6ghz_reg_pwr_type;
+
+	if (iface->power_mode_6ghz_before_change > -1) {
+		if (iface->power_mode_6ghz_before_change ==
+		    current_power_mode) {
+			wpa_printf(MSG_INFO,
+				   "AFC repeater fallback: clear stale pending mode iface=%s mode=%u",
+				   iface->phy, current_power_mode);
+			iface->power_mode_6ghz_before_change = -1;
+		} else {
+			wpa_printf(MSG_INFO,
+				   "AFC repeater fallback deferred: iface=%s current=%u pending_mode=%d",
+				   iface->phy, current_power_mode,
+				   iface->power_mode_6ghz_before_change);
+			iface->is_afc_repeater_power_sync_pending = true;
+			return HOSTAPD_AFC_PWR_SYNC_ERROR;
+		}
+	}
+
+	if (hostapd_csa_in_progress(iface)) {
+		wpa_printf(MSG_INFO,
+			   "AFC repeater fallback deferred: iface=%s csa=1",
+			   iface->phy);
+		iface->is_afc_repeater_power_sync_pending = true;
+		return HOSTAPD_AFC_PWR_SYNC_ERROR;
+	}
+
+	fallback_power_mode = hostapd_get_afc_non_sp_fallback_power_mode
+							(iface,
+							 current_power_mode);
+	if (fallback_power_mode == NL80211_REG_NUM_POWER_MODES ||
+	    fallback_power_mode == current_power_mode)
+		return HOSTAPD_AFC_PWR_SYNC_NOOP;
+
+	if (!hostapd_is_current_afc_tuple_valid(iface, fallback_power_mode)) {
+		wpa_printf(MSG_ERROR,
+			   "AFC repeater fallback invalid: iface=%s freq=%d mode=%u punct=0x%x",
+			   iface->phy, iface->freq, fallback_power_mode,
+			   iface->conf->punct_bitmap);
+		return HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT;
+	}
+
+	if (iface->state != HAPD_IFACE_ENABLED)
+		wpa_printf(MSG_INFO,
+			   "AFC repeater fallback while iface state=%u iface=%s",
+			   iface->state, iface->phy);
+
+	return hostapd_request_6ghz_power_mode(iface, hapd, current_power_mode,
+					       fallback_power_mode, "fallback");
+}
+
 enum hostapd_afc_power_sync_result
 hostapd_sync_current_afc_power_mode(struct hostapd_iface *iface,
 				    bool ignore_best_mode_config)
@@ -3294,6 +3628,7 @@ hostapd_sync_current_afc_power_mode(struct hostapd_iface *iface,
 	struct hostapd_data *hapd;
 	u8 best_power_mode;
 	u8 current_power_mode;
+	u8 fallback_power_mode;
 
 	if (!iface || !iface->bss || !iface->bss[0])
 		return HOSTAPD_AFC_PWR_SYNC_ERROR;
@@ -3326,22 +3661,26 @@ hostapd_sync_current_afc_power_mode(struct hostapd_iface *iface,
 		if (current_power_mode == NL80211_REG_AP_SP)
 			return HOSTAPD_AFC_PWR_SYNC_NOOP;
 
-		wpa_printf(MSG_INFO,
-			   "AFC repeater power sync: switch iface=%s freq=%d mode=%u->%u",
-			   iface->phy, iface->freq, current_power_mode,
-			   NL80211_REG_AP_SP);
-		iface->power_mode_6ghz_before_change = NL80211_REG_AP_SP;
-		if (hostapd_switch_power_mode(hapd)) {
-			wpa_printf(MSG_ERROR,
-				   "AFC repeater power sync: switch failed iface=%s freq=%d mode=%u",
-				   iface->phy, iface->freq, NL80211_REG_AP_SP);
-			return HOSTAPD_AFC_PWR_SYNC_ERROR;
-		}
-
-		return HOSTAPD_AFC_PWR_SYNC_UPDATED;
+		return hostapd_request_6ghz_power_mode(iface, hapd,
+						       current_power_mode,
+						       NL80211_REG_AP_SP, "sync");
 	}
 
 	if (!hostapd_is_current_afc_tuple_valid(iface, current_power_mode)) {
+		fallback_power_mode =
+			hostapd_get_afc_non_sp_fallback_power_mode
+						(iface, current_power_mode);
+
+		if (fallback_power_mode != NL80211_REG_NUM_POWER_MODES &&
+		    fallback_power_mode != current_power_mode &&
+		    hostapd_is_current_afc_tuple_valid
+					(iface, fallback_power_mode)) {
+			return hostapd_request_6ghz_power_mode(iface, hapd,
+						       current_power_mode,
+						       fallback_power_mode,
+						       "sync fallback");
+		}
+
 		wpa_printf(MSG_ERROR,
 			   "AFC repeater power sync: current tuple invalid iface=%s freq=%d mode=%u punct=0x%x",
 			   iface->phy, iface->freq, current_power_mode,
@@ -3427,20 +3766,25 @@ int hostapd_disconnect_backhaul_sta(struct hostapd_iface *iface)
 	}
 
 	reply_len = sizeof(reply) - 1;
-	ret = wpa_ctrl_request(ctrl, "DISCONNECT", 10, reply, &reply_len, NULL);
+	ret = wpa_ctrl_request(ctrl, "DISCONNECT", 2, reply, &reply_len, NULL);
 	wpa_ctrl_close(ctrl);
 	free(ifname);
 	if (ret < 0) {
-		wpa_printf(MSG_ERROR,
-			   "Backhaul STA disconnect failed: control request failed");
-		return -1;
+		/*
+		 * A timeout here is expected when the STA is already in the
+		 * process of disconnecting (e.g. AFC expiry triggered a kernel
+		 * deauth before this command arrived). Treat it as success.
+		 */
+		wpa_printf(MSG_INFO,
+			   "Backhaul STA disconnect: control request timed out, STA likely already disconnecting");
+		return 0;
 	}
 
 	reply[reply_len] = '\0';
 	if (os_strncmp(reply, "FAIL", 4) == 0) {
-		wpa_printf(MSG_ERROR,
-			   "Backhaul STA disconnect failed: supplicant rejected request");
-		return -1;
+		wpa_printf(MSG_INFO,
+			   "Backhaul STA disconnect: supplicant rejected request, STA likely already disconnected");
+		return 0;
 	}
 
 	if (ret)
@@ -3578,7 +3922,10 @@ hostapd_run_pending_repeater_afc_power_sync(struct hostapd_iface *iface,
 		return 0;
 	}
 
-	sync_result = hostapd_sync_current_afc_power_mode(iface, true);
+	if (!iface->is_afc_power_event_received)
+		sync_result = hostapd_force_afc_non_sp_power_mode(iface);
+	else
+		sync_result = hostapd_sync_current_afc_power_mode(iface, true);
 	switch (sync_result) {
 	case HOSTAPD_AFC_PWR_SYNC_UPDATED:
 		wpa_printf(MSG_INFO,
@@ -9286,7 +9633,7 @@ hostapd_reg_get_eirp_from_chan_list(struct hostapd_iface *iface, u16 freq,
 
 		if ((chan_6ghz->flag & HOSTAPD_CHAN_DISABLED) ||
 		    (chan_6ghz->flag & HOSTAPD_CHAN_NO_IR)) {
-			wpa_printf(MSG_ERROR,
+			wpa_printf(MSG_DEBUG,
 				   "Freq [%d] is disabled. Flag: 0x%x, power type: %d",
 				   chan_6ghz->freq, chan_6ghz->flag, pwr_type);
 			return -1;
@@ -9616,13 +9963,13 @@ hostapd_get_sp_eirp(struct hostapd_iface *iface, u16 freq, u16 cen_freq,
 	bool found = false;
 
 	if (!iface->is_afc_power_event_received) {
-		wpa_printf(MSG_ERROR, "AFC power event not received");
+		wpa_printf(MSG_DEBUG, "AFC power event not received");
 		return -1;
 	}
 
 	afc_info = iface->afc_rsp_info;
 	if (!afc_info || !afc_info->num_chan_objs || !afc_info->num_freq_objs) {
-		wpa_printf(MSG_ERROR, "afc info is NULL");
+		wpa_printf(MSG_DEBUG, "afc info is NULL");
 		return -1;
 	}
 
@@ -9631,7 +9978,7 @@ hostapd_get_sp_eirp(struct hostapd_iface *iface, u16 freq, u16 cen_freq,
 						  client_type, is_client_lookup,
 						  false, &reg_sp_eirp_pwr);
 	if (ret) {
-		wpa_printf(MSG_ERROR,
+		wpa_printf(MSG_DEBUG,
 			   "Unable to get reg EIRP for SP, Cli Type: %d ",
 			   client_type);
 		return ret;
@@ -9717,7 +10064,7 @@ s16 hostapd_get_eirp_pwr(struct hostapd_iface *iface, u16 freq, u16 center_freq,
 							  is_twice_pwr, &eirp_pwr);
 
 	if (ret) {
-		wpa_printf(MSG_ERROR,
+		wpa_printf(MSG_DEBUG,
 			   "Unable to get EIRP for freq: %d, cf: %d, bw: %d, pp 0x%x"
 			   " ap_pwr_type: %d, is_client_lookup: %d, client_type: %d",
 			   freq, center_freq, bw, in_punc_pattern,
