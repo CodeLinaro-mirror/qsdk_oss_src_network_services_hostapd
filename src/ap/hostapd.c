@@ -2937,12 +2937,16 @@ static int hostapd_enable_no_ir_bss_members(struct hostapd_iface *iface,
 					    enum hostapd_bss_category cat)
 {
 	int i;
+	int failed = 0;
 
 	for (i = 0; i < iface->num_bss; i++) {
 		struct hostapd_data *hapd = iface->bss[i];
 		int ret = 0;
 
-		if (!hapd || !hapd->started)
+		if (!hapd || hapd->started)
+			continue;
+
+		if (!hapd_reenable_pending(hapd))
 			continue;
 
 		if (!hostapd_is_bss_in_category(hapd, cat))
@@ -2950,13 +2954,15 @@ static int hostapd_enable_no_ir_bss_members(struct hostapd_iface *iface,
 
 		ret = hostapd_enable_bss(hapd);
 		if (ret) {
+			failed = -1;
 			wpa_printf(MSG_ERROR,
 				   "Failed to re-enable %s link %u after setting new transmitting profile",
 				   hapd->conf->iface, hapd->mld_link_id);
 			/* Continue attempting to enable remaining BSSes */
 		}
 	}
-	return 0;
+
+	return failed;
 }
 
 bool hostapd_is_bss_in_category(struct hostapd_data *hapd,
@@ -3033,16 +3039,21 @@ static int hostapd_enable_no_ir_bsses(struct hostapd_iface *iface)
 {
 	int ret = 0;
 
-	hostapd_set_state(iface, HAPD_IFACE_ENABLED);
 	if (iface->conf->mbssid != MBSSID_DISABLED)
 		ret = hostapd_enable_no_ir_mbssids(iface);
 	else
 		ret = hostapd_enable_no_ir_nonmbssids(iface);
 
+	if (ret)
+		return ret;
+
+	if (!hostapd_check_reenable_bss(iface))
+		hostapd_set_state(iface, HAPD_IFACE_ENABLED);
+
 	return ret;
 }
 
-static int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
+int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 {
 	bool all_no_ir, is_6ghz;
 	int i, j, ret = 0;
@@ -3494,7 +3505,9 @@ static int configured_fixed_chan_to_freq(struct hostapd_iface *iface)
 static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 					    void *ctx)
 {
+	int i;
 	int ret;
+	bool regdom_reenable = iface->is_regdom_forced_down;
 
 	ret = hostapd_get_hw_features(iface);
 	if (ret) {
@@ -3507,20 +3520,78 @@ static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 		if (ret) {
 			wpa_printf(MSG_ERROR, "Configured channel is not valid (%d)",
 				   ret);
+			hostapd_regdom_force_disable_iface(iface,
+							   "configured channel invalid");
 			return ret;
 		}
 	}
 
 	ret = hostapd_select_hw_mode(iface);
-	if (ret && !iface->is_no_ir) {
+	if (ret < 0 && !iface->is_no_ir) {
 		wpa_printf(MSG_ERROR, "Failed to select hardware mode (%d)", ret);
+		hostapd_regdom_force_disable_iface(iface,
+						   "no valid hardware mode");
 		return ret;
 	}
+
+	if (ret == 1)
+		return 0;
 
 	ret = hostapd_set_current_hw_info(iface, iface->freq);
 	if (ret) {
 		wpa_printf(MSG_ERROR, "Failed to set current hw info (%d)", ret);
+		hostapd_regdom_force_disable_iface(iface,
+						 "failed to set hw info");
 		return ret;
+	}
+
+	for (i = 0; i < iface->num_bss; i++) {
+		if (!iface->bss[i])
+			continue;
+		hostapd_sync_country_from_driver(iface->bss[i]);
+	}
+
+	if (!hostapd_is_iface_regdom_supported(iface)) {
+		if (!hostapd_regdom_move_iface_to_supported_channel(iface)) {
+			if (regdom_reenable) {
+				ret = hostapd_regdom_restore_iface(iface);
+				if (ret) {
+					wpa_printf(MSG_ERROR,
+						   "REGDOM: Failed to re-enable interface %s on fallback channel",
+						   iface->conf->bss[0]->iface);
+				}
+				return ret;
+			}
+
+			if (iface->state == HAPD_IFACE_ENABLED)
+				hostapd_regdom_force_disable_iface(iface,
+								 "switching to fallback channel");
+
+			if (iface->state == HAPD_IFACE_NO_IR) {
+				ret = hostapd_no_ir_channel_list_updated(iface);
+				if (ret)
+					wpa_printf(MSG_ERROR,
+						   "REGDOM: Failed NO_IR update for %s on fallback channel",
+						   iface->conf->bss[0]->iface);
+			}
+
+			return ret;
+		}
+
+		hostapd_regdom_force_disable_iface(iface,
+							 "configured channel unsupported");
+		return 0;
+	}
+
+	if (regdom_reenable) {
+		ret = hostapd_regdom_restore_iface(iface);
+		if (ret) {
+			wpa_printf(MSG_ERROR,
+				   "REGDOM: Failed to re-enable interface %s",
+				   iface->conf->bss[0]->iface);
+			return ret;
+		}
+		return 0;
 	}
 
 	wpa_printf(MSG_DEBUG, "Handling NOIR Channel List Update");
@@ -3615,7 +3686,6 @@ void hostapd_channel_list_updated(struct hostapd_iface *iface, int initiator)
 	eloop_cancel_timeout(channel_list_update_timeout, iface, NULL);
 	setup_interface2(iface);
 }
-
 
 static int setup_interface(struct hostapd_iface *iface)
 {
