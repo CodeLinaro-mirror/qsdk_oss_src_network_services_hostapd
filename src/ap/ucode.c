@@ -82,13 +82,18 @@ hostapd_ucode_update_bss_list(struct hostapd_iface *iface, uc_value_t *if_bss, u
 	ucv_object_add(if_bss, iface->phy, ucv_get(list));
 }
 
-static void
+void
 hostapd_ucode_update_interfaces()
 {
-	uc_value_t *ifs = ucv_object_new(vm);
-	uc_value_t *if_bss = ucv_array_new(vm);
-	uc_value_t *bss = ucv_object_new(vm);
+	uc_value_t *ifs, *if_bss, *bss;
 	int i;
+
+	if (!vm || !global)
+		return;
+
+	ifs = ucv_object_new(vm);
+	if_bss = ucv_array_new(vm);
+	bss = ucv_object_new(vm);
 
 	for (i = 0; i < interfaces->count; i++) {
 		struct hostapd_iface *iface = interfaces->iface[i];
