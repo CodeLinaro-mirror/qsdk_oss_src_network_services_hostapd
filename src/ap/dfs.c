@@ -2467,35 +2467,6 @@ static void hostapd_deferred_csa_dispatch(struct hostapd_iface *iface)
 	}
 }
 
-static int hostapd_precac_complete(struct hostapd_iface *iface, int success,
-				   int freq, int ht_enabled, int chan_offset,
-				   int chan_width, int cf1, int cf2,
-				   int chan_width_device, int cf_device)
-{
-	/* Mark the channel as available (or leave as USABLE if radar hit) */
-	if (success) {
-		set_dfs_state(iface, freq, ht_enabled, chan_offset,
-					chan_width, cf1, cf2,
-					HOSTAPD_CHAN_DFS_AVAILABLE, 0);
-		wpa_printf(MSG_INFO,
-			   "PRECAC_ CAC succeeded on chan %d (freq=%d MHz) - "
-			   , iface->radar_background.channel, freq);
-	} else {
-		wpa_printf(MSG_INFO,
-			   "PRECAC_ CAC failed on chan %d (freq=%d MHz) - "
-			   "skipping to next PreCAC channel"
-			   , iface->radar_background.channel, freq);
-		wpa_printf(MSG_INFO, "skipping to next PreCAC channel");
-	}
-
-	iface->radar_background.cac_started = 0;
-	iface->radar_background.channel = -1;
-	iface->radar_background.freq = 0;
-
-	hostapd_dfs_start_precac(iface);
-	return 0;
-}
-
 /**
  * hostapd_dfs_precac_restart_after_radar - Restart PreCAC after radar detection
  * @iface: Pointer to interface data
@@ -2533,22 +2504,18 @@ int hostapd_dfs_precac_restart_after_radar(struct hostapd_iface *iface,
 }
 
 /**
- * hostapd_rcac_complete - Handle QCA Agile CAC (RCAC/PreCAC) completion
+ * hostapd_agile_complete - Handle Agile CAC (RCAC/PreCAC) completion
  * @iface: Pointer to hostapd interface data
  * @success: 1 if CAC completed successfully, 0 if aborted/failed
  * @freq: Frequency on which background CAC was performed
- * @ht_enabled, @chan_offset, @chan_width, @cf1, @cf2: Channel parameters
- * @chan_width_device, @cf_device: Device-reported channel parameters
  *
  * Handles the completion (success or abort) of a background CAC event for
  * both RCAC and PreCAC modes
  *
  * Returns 0
  */
-static int hostapd_rcac_complete(struct hostapd_iface *iface, int success,
-				 int freq, int ht_enabled, int chan_offset,
-				 int chan_width, int cf1, int cf2,
-				 int chan_width_device, int cf_device)
+static int hostapd_agile_complete(struct hostapd_iface *iface, int success,
+				  int freq)
 {
 	if (!success) {
 		if (freq > 0 && iface->radar_background.freq > 0 &&
@@ -2560,10 +2527,18 @@ static int hostapd_rcac_complete(struct hostapd_iface *iface, int success,
 			return 0;
 		}
 
+		wpa_printf(MSG_INFO,
+			   "DFS: Agile CAC failed/aborted on freq %d MHz",
+			   freq);
 	}
 
-	iface->radar_background.cac_started = 0;
 	iface->radar_detected = false;
+	iface->radar_background.cac_started = 0;
+	iface->radar_background.channel = -1;
+	iface->radar_background.freq = 0;
+
+	if (success && iface->dfs_domain == HOSTAPD_DFS_REGION_ETSI)
+		return hostapd_dfs_start_precac(iface);
 
 	return 0;
 }
@@ -2681,23 +2656,8 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			 * to a new DFS channel.
 			 */
 			if (is_background || hostapd_dfs_is_background_event(iface, freq)) {
-				if (dfs_is_agile_cac_enabled(iface)) {
-					if (iface->dfs_domain != HOSTAPD_DFS_REGION_ETSI)
-						return hostapd_rcac_complete(iface, success,
-							     freq, ht_enabled,
-							     chan_offset,
-							     chan_width, cf1,
-							     cf2,
-							     chan_width_device,
-							     cf_device);
-
-					return hostapd_precac_complete(iface, success,
-							       freq, ht_enabled,
-							       chan_offset,
-							       chan_width, cf1, cf2,
-							       chan_width_device,
-							       cf_device);
-				}
+				if (dfs_is_agile_cac_enabled(iface))
+					return hostapd_agile_complete(iface, success, freq);
 
 				iface->radar_background.cac_started = 0;
 				if (!iface->radar_background.temp_ch)
@@ -2774,18 +2734,8 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 		hostapd_csa_bitmap_update_extn(iface, freq);
 #endif
 	} else if (is_background || hostapd_dfs_is_background_event(iface, freq)) {
-		if (dfs_is_agile_cac_enabled(iface)) {
-			if (iface->dfs_domain == HOSTAPD_DFS_REGION_ETSI)
-				return hostapd_precac_complete(iface, success,
-							       freq, ht_enabled,
-							       chan_offset,
-							       chan_width, cf1, cf2,
-							       chan_width_device,
-							       cf_device);
-			return hostapd_rcac_complete(iface, success, freq, ht_enabled,
-							chan_offset, chan_width, cf1, cf2,
-							chan_width_device, cf_device);
-		}
+		if (dfs_is_agile_cac_enabled(iface))
+			return hostapd_agile_complete(iface, success, freq);
 
 		iface->radar_background.cac_started = 0;
 		if (iface->conf->enable_background_radar)
@@ -2995,7 +2945,7 @@ hostapd_dfs_background_start_channel_switch(struct hostapd_iface *iface,
 				iface->radar_background.channel = -1;
 				iface->radar_background.freq = 0;
 			} else {
-				hostapd_dfs_precac_restart_after_radar(iface, freq);
+				return hostapd_dfs_precac_restart_after_radar(iface, freq);
 			}
 		}
 
