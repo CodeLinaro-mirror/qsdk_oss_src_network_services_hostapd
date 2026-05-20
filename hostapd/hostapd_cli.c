@@ -3487,6 +3487,27 @@ static int hostapd_cli_cmd_set_he_mu_edca(struct wpa_ctrl *ctrl, int argc, char 
 
 	return wpa_ctrl_command(ctrl, cmd);
 }
+
+static int hostapd_cli_cmd_get_he_mu_edca(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	char cmd[256];
+	int res;
+
+	if (argc != 2) {
+		printf("Invalid usage: get_mu_edca <ac> <param>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "GET_MU_EDCA %s %s",
+			  argv[0], argv[1]);
+
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
 #endif /* CONFIG_QCN_EXTN */
 struct hostapd_cli_cmd {
 	const char *cmd;
@@ -3998,6 +4019,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<ac>: Access category (be, bk, vi, vo)\n"
 	  "<param>: Parameter name (aifsn, ecwmin, ecwmax, timer, acm)\n"
 	  "<value>: Parameter value\n" },
+	{ "get_mu_edca", hostapd_cli_cmd_get_he_mu_edca, NULL,
+	  "<ac> <param> = get HE MU EDCA parameter value\n"
+	  "<ac>: Access category (be, bk, vi, vo)\n"
+	  "<param>: Parameter name (aifsn, ecwmin, ecwmax, timer, acm)\n" },
 #endif /* CONFIG_QCN_EXTN */
 	{ NULL, NULL, NULL, NULL }
 };
