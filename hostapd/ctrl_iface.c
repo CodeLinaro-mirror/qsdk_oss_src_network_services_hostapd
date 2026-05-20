@@ -10013,6 +10013,86 @@ int hostapd_ctrl_iface_set_he_muedca(struct hostapd_data *hapd, char *buf)
 
 	return 0;
 }
+
+static int hostapd_ctrl_iface_get_he_muedca(struct hostapd_data *hapd, char *buf,
+					    char *reply, int reply_size)
+{
+	char *ac = NULL, *saveptr = NULL, *param = NULL, *token = NULL;
+	const u8 *ac_param = NULL;
+	/* max_len must match local_buf size below */
+	size_t max_len = 64, buf_len;
+	/* local copy so strtok_r does not modify the caller's buffer */
+	char local_buf[64];
+	int val, res;
+
+	if (!buf || !hapd || !hapd->iconf || !reply)
+		return -1;
+
+	buf_len = strnlen(buf, max_len);
+	/* Minimum valid input is "<ac> <param>", e.g. "be acm" (6 chars) */
+	if (buf_len == max_len || buf_len < 6) {
+		wpa_printf(MSG_ERROR,
+			   "MU-EDCA: Invalid input length %zu (expected 6..%zu)",
+			   buf_len, max_len - 1);
+		return -1;
+	}
+
+	os_strlcpy(local_buf, buf, sizeof(local_buf));
+
+	/* Parse exactly: <ac> <param> */
+	ac = strtok_r(local_buf, " ", &saveptr);
+	param = strtok_r(NULL, " ", &saveptr);
+	token = strtok_r(NULL, " ", &saveptr);
+
+	if (!ac || !param || token) {
+		wpa_printf(MSG_ERROR, "MU-EDCA: usage get_mu_edca <ac> <param>");
+		return -1;
+	}
+
+	/* Select AC buffer */
+	if (os_strcmp(ac, "be") == 0)
+		ac_param = hapd->iconf->he_mu_edca.he_mu_ac_be_param;
+	else if (os_strcmp(ac, "bk") == 0)
+		ac_param = hapd->iconf->he_mu_edca.he_mu_ac_bk_param;
+	else if (os_strcmp(ac, "vi") == 0)
+		ac_param = hapd->iconf->he_mu_edca.he_mu_ac_vi_param;
+	else if (os_strcmp(ac, "vo") == 0)
+		ac_param = hapd->iconf->he_mu_edca.he_mu_ac_vo_param;
+	else {
+		wpa_printf(MSG_ERROR, "MU-EDCA: Unknown AC '%s'", ac);
+		return -1;
+	}
+
+	/* Extract parameter value from packed 3-byte AC record:
+	 * Byte 0 (HE_MU_AC_PARAM_ACI_IDX):   [ Reserved(1) | ACI(2) | ACM(1) | AIFSN(4) ]
+	 * Byte 1 (HE_MU_AC_PARAM_ECW_IDX):   [ ECWmax(4) | ECWmin(4) ]
+	 * Byte 2 (HE_MU_AC_PARAM_TIMER_IDX): MU EDCA Timer
+	 */
+	if (os_strcmp(param, "aifsn") == 0)
+		val = ac_param[HE_MU_AC_PARAM_ACI_IDX] & HE_MU_AC_PARAM_AIFSN;
+	else if (os_strcmp(param, "acm") == 0)
+		val = !!(ac_param[HE_MU_AC_PARAM_ACI_IDX] & HE_MU_AC_PARAM_ACM);
+	else if (os_strcmp(param, "ecwmin") == 0)
+		val = ac_param[HE_MU_AC_PARAM_ECW_IDX] & HE_MU_AC_PARAM_ECWMIN;
+	else if (os_strcmp(param, "ecwmax") == 0)
+		val = (ac_param[HE_MU_AC_PARAM_ECW_IDX] & HE_MU_AC_PARAM_ECWMAX) >> 4;
+	else if (os_strcmp(param, "timer") == 0)
+		val = ac_param[HE_MU_AC_PARAM_TIMER_IDX];
+	else {
+		wpa_printf(MSG_ERROR, "MU-EDCA: Unknown parameter '%s'", param);
+		return -1;
+	}
+
+	res = os_snprintf(reply, reply_size, "%d\n", val);
+	if (os_snprintf_error(reply_size, res)) {
+		wpa_printf(MSG_ERROR,
+			   "MU-EDCA: Reply buffer too small (size=%d)",
+			   reply_size);
+		return -1;
+	}
+
+	return res;
+}
 #endif /* CONFIG_QCN_EXTN */
 
 /**
@@ -11055,6 +11135,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "SET_MU_EDCA ", 12) == 0) {
 		if (hostapd_ctrl_iface_set_he_muedca(hapd, buf + 12) < 0)
 			reply_len = -1;
+	} else if (os_strncmp(buf, "GET_MU_EDCA ", 12) == 0) {
+		reply_len = hostapd_ctrl_iface_get_he_muedca(hapd, buf + 12,
+							     reply, reply_size);
 #endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_IEEE80211AX
 	} else if (os_strncmp(buf, "DUMP_SCS_LIST ", 14) == 0) {
