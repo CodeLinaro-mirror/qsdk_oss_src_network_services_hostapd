@@ -2087,6 +2087,8 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			hostapd_ctrl_iface_update_rssi_monitor(hapd);
 		} else if (os_strcasecmp(cmd, "ssid") == 0) {
 			hostapd_neighbor_sync_own_report(hapd);
+		} else if (os_strcasecmp(cmd, "rnr") == 0) {
+			ieee802_11_set_beacon(hapd);
 #ifdef CONFIG_IEEE80211AC
 		} else if (os_strcasecmp(cmd, "vht_mcs_nss_set") == 0) {
 			if (hostapd_tx_bss_only(hapd, "vht_mcs_nss_set") < 0)
@@ -2707,6 +2709,11 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 	} else if (os_strcmp(cmd, "acl_deny_allow_time") == 0) {
 		res = os_snprintf(buf, buflen, "%u\n",
 				  hapd->conf->acl_deny_allow_time);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "rnr") == 0) {
+		res = os_snprintf(buf, buflen, "rnr = %u\n", hapd->conf->rnr);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;

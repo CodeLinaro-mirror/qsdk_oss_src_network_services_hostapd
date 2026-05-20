@@ -32,6 +32,9 @@ struct mld_link_info;
 
 #define BITRATE_5_5_MBPS 55
 
+#define INCLUDE_ELEMENT_IN_BEACON        BIT(0)
+#define INCLUDE_ELEMENT_IN_PROBE_RESP    BIT(1)
+
 enum colocation_mode {
 	NO_COLOCATED_6GHZ,
 	STANDALONE_6GHZ,
