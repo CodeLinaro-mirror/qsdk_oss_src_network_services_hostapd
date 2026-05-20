@@ -87,7 +87,7 @@ enum hostapd_if_frame_processing_decision
 hostapd_if_notify_action(struct hostapd_data *hapd,
 			 struct sta_info *sta,
 			 const struct ieee80211_mgmt *mgmt,
-			 size_t frame_len);
+			 size_t frame_len, int rssi);
 
 enum hostapd_if_frame_processing_decision
 hostapd_if_notify_assoc(struct hostapd_data *hapd,
