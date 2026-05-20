@@ -1395,6 +1395,19 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 				hapd->iface->cac_type = HAPD_CAC_COMPLETE_AFTER_CSA;
 				ieee802_11_set_beacon(hapd);
 				wpa_printf(MSG_DEBUG, "DFS:Starting CAC after CSA on freq=%d", freq);
+				wpa_msg(hapd->iface->bss[0]->msg_ctx,
+					MSG_INFO, DFS_EVENT_CAC_START
+					"freq=%d chan=%d sec_chan=%d, width=%d,"
+					"seg0=%d, seg1=%d, cac_time=%ds bitmap:0x%04x",
+					hapd->iface->freq,
+					hapd->iface->conf->channel,
+					hapd->iface->conf->secondary_channel,
+					hostapd_get_oper_chwidth(hapd->iface->conf),
+					hostapd_get_oper_centr_freq_seg0_idx(hapd->iface->conf),
+					hostapd_get_oper_centr_freq_seg1_idx(hapd->iface->conf),
+					hapd->iface->dfs_cac_ms / 1000,
+					hapd->iface->conf->punct_bitmap);
+
 				hostapd_start_dfs_cac(hapd->iface, hapd->iface->conf->hw_mode,
 						     hapd->iface->freq,
 						     hapd->iconf->channel,
