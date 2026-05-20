@@ -5581,6 +5581,16 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 
 		bss->rnr = val;
+	} else if (os_strcmp(buf, "rnr_ie_allowed") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 255) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid rnr_ie_allowed, valid values: 0 (no restriction) to 255");
+			return 1;
+		}
+
+		bss->rnr_ie_allowed = (u8) val;
 	} else if (os_strcmp(buf, "ssid_protection") == 0) {
 		int val = atoi(pos);
 
