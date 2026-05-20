@@ -13,6 +13,7 @@
 #include "utils/eloop.h"
 #include "radius/radius.h"
 #include "drivers/driver.h"
+#include "common/qca-vendor.h"
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
 #include "common/wpa_ctrl.h"
@@ -2978,14 +2979,40 @@ static void hostapd_event_afc_update_complete(
 
 	hostapd_free_afc_data(iface);
 	if (hostapd_allocate_afc_rsp_info(iface, afc_rsp_info)) {
-		wpa_printf(MSG_DEBUG, "AFC response memory  allocation failed");
+		wpa_printf(MSG_DEBUG, "AFC response memory allocation failed");
+		/* Cannot store AFC data - nothing to act on */
 		return;
 	}
-	iface->is_afc_power_event_received = true;
+	iface->is_afc_power_event_received =
+		afc_rsp_info->target_status_code ==
+		QCA_WLAN_VENDOR_AFC_EVT_STATUS_CODE_SUCCESS;
 
 	hapd = iface->bss[0];
+	if (!iface->is_afc_power_event_received) {
+		wpa_printf(MSG_INFO,
+			   "AFC power update failed: iface=%s status=%u server_resp=%d",
+			   iface->phy, afc_rsp_info->target_status_code,
+			   afc_rsp_info->serv_resp_code);
+		iface->is_afc_channel_change_pending = false;
+		iface->is_afc_repeater_power_sync_pending = false;
+		if (hostapd_iface_has_connected_backhaul_sta(iface) &&
+		    hostapd_disconnect_backhaul_sta(iface))
+			wpa_printf(MSG_ERROR,
+				   "AFC power update failed: backhaul disconnect failed iface=%s",
+				   iface->phy);
+		return;
+	}
+
 	is_connected_repeater = hostapd_iface_has_connected_backhaul_sta(iface);
 	if (is_connected_repeater) {
+		/*
+		 * Do not trigger a channel change while the backhaul STA is
+		 * connected. AFC response data is stored; defer power mode
+		 * evaluation to hostapd_run_pending_repeater_afc_power_sync()
+		 * which runs after the REGDOM_SET_BY_DRIVER event delivers
+		 * the updated channel list. This ensures SP validity is
+		 * checked against fresh regulatory data, not stale flags.
+		 */
 		wpa_printf(MSG_INFO,
 			   "AFC repeater power sync pending: iface=%s freq=%d",
 			   iface->phy, iface->freq);
@@ -3224,6 +3251,27 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG, "AFC payload reset not supported");
 		return;
 	}
+
+	/*
+	 * A payload reset means AFC data is no longer valid. For a
+	 * connected repeater, do not trigger a channel change as that
+	 * would tear down the dual-channel state while the backhaul
+	 * STA is still active and cause a crash. Instead clear the
+	 * pending flags and disconnect the backhaul STA so the
+	 * repeater can re-associate and re-run AFC from a clean state.
+	 */
+	if (hostapd_iface_has_connected_backhaul_sta(iface)) {
+		wpa_printf(MSG_DEBUG,
+			   "AFC payload reset: connected repeater, skip channel change iface=%s",
+			   iface->phy);
+		iface->is_afc_channel_change_pending = false;
+		if (hostapd_disconnect_backhaul_sta(iface))
+			wpa_printf(MSG_ERROR,
+				   "AFC payload reset: backhaul disconnect failed iface=%s",
+				   iface->phy);
+		return;
+	}
+
 	iface->is_afc_channel_change_pending = true;
 	/* Wait for NL8011_WIPHY_REG_CHANGE event to get the updated channel list */
 	eloop_register_timeout(5, 0,

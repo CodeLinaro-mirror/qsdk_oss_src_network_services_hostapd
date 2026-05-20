@@ -3114,6 +3114,24 @@ int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 			 */
 			if (hostapd_drv_is_retail_afc_supported(iface->bss[0]) &&
 			    iface->conf->enable_best_power_mode) {
+				/*
+				 * Do not trigger a channel change while the backhaul
+				 * STA is connected. A channel change would tear down
+				 * the dual-channel state while the backhaul link is
+				 * still active and cause a crash. Defer power mode
+				 * re-evaluation to hostapd_run_pending_repeater_afc_
+				 * power_sync() which runs after the next successful
+				 * AFC response and REGDOM_SET_BY_DRIVER event.
+				 */
+				if (hostapd_iface_has_connected_backhaul_sta(iface)) {
+					wpa_printf(MSG_DEBUG,
+						   "NO_IR: defer AFC channel selection for connected repeater iface=%s",
+						   iface->phy);
+					iface->is_afc_channel_change_pending = false;
+					iface->is_afc_repeater_power_sync_pending = true;
+					return 0;
+				}
+
 				wpa_printf(MSG_DEBUG,
 					   "NO_IR: Enable retail AFC channel selection");
 				iface->is_afc_channel_change_pending = true;
