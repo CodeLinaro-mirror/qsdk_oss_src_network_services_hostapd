@@ -3186,6 +3186,14 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 		}
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	hostapd_prepare_nol_ie_bmap_extn(iface, iface->conf->channel, freq,
+			iface->conf->secondary_channel,
+			convert_to_oper_chan_width(chan_width),
+			cf1, cf2,
+			hostapd_get_punct_bitmap(iface->bss[0]), radar_bitmap_oper);
+#endif
+
 	if (iface->conf->use_ru_puncture_dfs && hostapd_is_usable_punct_bitmap(iface)) {
 		iface->radar_bit_pattern = radar_bitmap_oper;
 		iface->conf->punct_bitmap = cur_punct_bits;

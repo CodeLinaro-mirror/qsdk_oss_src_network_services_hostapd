@@ -496,4 +496,10 @@ int nl80211_set_muedca_mode(void *priv, int mode, int radio_idx);
 
 int hostapd_validate_monitor_iface(const char *ifname, int *ifindex);
 
+#ifdef CONFIG_QCN_EXTN
+int nl80211_put_freq_params(struct nl_msg *msg,
+			    const struct hostapd_freq_params *freq,
+			    struct i802_bss *bss);
+#endif /* CONFIG_QCN_EXTN */
+
 #endif /* DRIVER_NL80211_H */
