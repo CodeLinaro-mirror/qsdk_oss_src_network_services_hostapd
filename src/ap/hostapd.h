@@ -754,6 +754,8 @@ struct hostapd_mld {
 #ifdef CONFIG_IEEE80211BE
 	struct mac_acl_entry *epcs_authorized_mac;
 	int num_epcs_authorized_mac;
+	/* true if any link in this MLD uses configured (mld_link_id) allocation */
+	int link_id_mode;
 #endif /* CONFIG_IEEE80211BE */
 	struct ttlm_context ttlm_ctx;
 };

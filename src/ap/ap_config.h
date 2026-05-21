@@ -1196,6 +1196,10 @@ struct hostapd_bss_config {
 	u8 ml_max_rec_links;
 
 	bool single_link_emlsr;
+
+	/* User-configured link ID; -1 means auto-allocate */
+	int mld_link_id;
+
 #ifdef CONFIG_TESTING_OPTIONS
 	/*
 	 * If set indicate the AP as disabled in the RNR element included in the
