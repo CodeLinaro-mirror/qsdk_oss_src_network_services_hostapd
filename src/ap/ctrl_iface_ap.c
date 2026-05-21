@@ -4180,6 +4180,18 @@ int hostapd_disassoc_deny_mac(struct hostapd_data *hapd)
 		struct mld_link_info *info;
 #endif /* CONFIG_IEEE80211BE */
 
+		/*
+		 * In DENY_UNLESS_ACCEPTED mode (mode 1) the accept list takes
+		 * priority over the deny list for already-connected STAs.
+		 * Skip STAs that are in the accept list so they are not
+		 * disconnected solely because they also appear in the deny list.
+		 *
+		 */
+		if (hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED &&
+		    hostapd_acl_maclist_found(hapd->conf, true,
+					      sta->addr, NULL))
+			continue;
+
 		if (hostapd_acl_maclist_found(hapd->conf, false,
 					      sta->addr, &vlan_id) &&
 		    (!vlan_id.notempty ||
@@ -4192,6 +4204,12 @@ int hostapd_disassoc_deny_mac(struct hostapd_data *hapd)
 			     sta->mld_info.mld_sta; link_id++) {
 			info = &sta->mld_info.links[link_id];
 			if (!info->valid || link_id != hapd->mld_link_id)
+				continue;
+
+			/* Accept list takes priority in DENY_UNLESS_ACCEPTED mode */
+			if (hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED &&
+			    hostapd_acl_maclist_found(hapd->conf, true,
+						      info->peer_addr, NULL))
 				continue;
 
 			if (hostapd_acl_maclist_found(hapd->conf, false,
