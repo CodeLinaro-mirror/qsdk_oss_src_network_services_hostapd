@@ -397,6 +397,7 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->acs_num_scans = 5;
 	conf->acs_scan_retry_interval = 5;
 	conf->acs_scan_retry_max_count = 25;
+	conf->acs_enable_bw_downgrade = 0;
 #endif /* CONFIG_ACS */
 
 #ifdef CONFIG_IEEE80211AX
