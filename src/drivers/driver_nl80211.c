@@ -1233,6 +1233,16 @@ static unsigned int nl80211_get_ifindex(void *priv)
 	return drv->ifindex;
 }
 
+static int nl80211_get_wiphy_idx(void *priv)
+{
+	struct i802_bss *bss = priv;
+
+	if (bss && bss->drv)
+		return bss->drv->wiphy_idx;
+
+	return -1;
+}
+
 static bool nl80211_is_only_afc_power_fetch(void *priv)
 {
 	struct i802_bss *bss = priv;
@@ -17598,6 +17608,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.add_tx_ts = nl80211_add_ts,
 	.del_tx_ts = nl80211_del_ts,
 	.get_ifindex = nl80211_get_ifindex,
+	.get_wiphy_idx = nl80211_get_wiphy_idx,
 	.is_only_afc_power_fetch = nl80211_is_only_afc_power_fetch,
 #ifdef CONFIG_DRIVER_NL80211_QCA
 	.roaming = nl80211_roaming,

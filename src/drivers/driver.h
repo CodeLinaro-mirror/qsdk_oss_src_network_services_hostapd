@@ -2957,6 +2957,8 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_CIP_PADDING_SUPPORT  0x0000000800000000ULL
 /** Driver supports sending CSA in the current channel, when new/target channel is DFS*/
 #define WPA_DRIVER_FLAGS2_DFS_CHANNEL_SWITCH   0x0000001000000000ULL
+/** Driver supports synchronized beacon transmission across radios/links */
+#define WPA_DRIVER_FLAGS2_BEACON_TX_SYNC       0x0000002000000000ULL
 	u64 flags2;
 
 #define FULL_AP_CLIENT_STATE_SUPP(drv_flags) \
@@ -4082,6 +4084,14 @@ struct wpa_driver_ops {
 	 * Returns: Interface index
 	 */
 	unsigned int (*get_ifindex)(void *priv);
+
+	/**
+	 * get_wiphy_idx - Get wiphy index for the radio
+	 * @priv: private driver interface data
+	 *
+	 * Returns: wiphy index, or -1 on failure
+	 */
+	int (*get_wiphy_idx)(void *priv);
 
 	/**
 	 * is_only_afc_power_fetch - Check if only AFC power fetch is required

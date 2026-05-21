@@ -12517,6 +12517,7 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 	u8 bss_param = 0;
 	bool ap_mld = false;
 	u8 *eid = *pos;
+	int bss_wiphy_idx, reporting_wiphy_idx;
 
 	if (!bss || !bss->conf || bss == reporting_hapd)
 		return false;
@@ -12544,7 +12545,17 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 		*len += RNR_TBTT_HEADER_LEN;
 	}
 
-	*eid++ = RNR_NEIGHBOR_AP_OFFSET_UNKNOWN;
+	bss_wiphy_idx = hostapd_drv_get_wiphy_idx(bss);
+	reporting_wiphy_idx = hostapd_drv_get_wiphy_idx(reporting_hapd);
+
+	if ((bss->iface->drv_flags2 & WPA_DRIVER_FLAGS2_BEACON_TX_SYNC) &&
+	    (bss->iconf->beacon_int == reporting_hapd->iconf->beacon_int) &&
+	    (bss_wiphy_idx >= 0 && bss_wiphy_idx == reporting_wiphy_idx)) {
+		*eid++ = 0;
+	} else {
+		*eid++ = RNR_NEIGHBOR_AP_OFFSET_UNKNOWN;
+	}
+
 	os_memcpy(eid, bss->own_addr, ETH_ALEN);
 	eid += ETH_ALEN;
 	os_memcpy(eid, &bss->conf->ssid.short_ssid, 4);
