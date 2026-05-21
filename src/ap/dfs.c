@@ -2530,12 +2530,13 @@ static int hostapd_agile_complete(struct hostapd_iface *iface, int success,
 		wpa_printf(MSG_INFO,
 			   "DFS: Agile CAC failed/aborted on freq %d MHz",
 			   freq);
+
+		iface->radar_background.channel = -1;
+		iface->radar_background.freq = 0;
 	}
 
 	iface->radar_detected = false;
 	iface->radar_background.cac_started = 0;
-	iface->radar_background.channel = -1;
-	iface->radar_background.freq = 0;
 
 	if (success && iface->dfs_domain == HOSTAPD_DFS_REGION_ETSI)
 		return hostapd_dfs_start_precac(iface);
