@@ -6057,7 +6057,10 @@ static int nl80211_bw_to_nl(int bw, enum nl80211_chan_width *cw,
 }
 
 
-static int nl80211_put_freq_params(struct wpa_driver_nl80211_data *drv,
+#ifndef CONFIG_QCN_EXTN
+static
+#endif /* CONFIG_QCN_EXTN */
+int nl80211_put_freq_params(struct wpa_driver_nl80211_data *drv,
 				   struct nl_msg *msg,
 				   const struct hostapd_freq_params *freq,
 				   struct i802_bss *bss)
