@@ -735,6 +735,50 @@ uc_wpas_recvd_ch_sw_result_ev(uc_vm_t *vm, size_t nargs)
 }
 
 /**
+ * uc_wpas_abort_scan_for_acs - API to abort STA scan when repeater AP starts ACS
+ * @vm: ucode VM context invoking the callback
+ * @nargs: Number of ucode arguments passed to the function
+ *
+ * Called from ucode when hostapd starts ACS. The function locates interfaces
+ * and aborts any ongoing scans, then sets acs_complete flag to 0 to prevent
+ * new scans until ACS completes.
+ *
+ * Return: New ucode integer value (0 on success, -1 on error).
+ */
+static uc_value_t *
+uc_wpas_abort_scan_for_acs(uc_vm_t *vm, size_t nargs)
+{
+	struct wpa_supplicant *wpa_s;
+
+	wpa_printf(MSG_INFO, "%s: Aborting STA scans for ACS start",
+		   __func__);
+
+	/* Validate global context */
+	if (!wpa_global || !wpa_global->ifaces) {
+		wpa_printf(MSG_ERROR, "%s: wpa_global or ifaces is NULL",
+			   __func__);
+		return ucv_int64_new(-1);
+	}
+
+	for (wpa_s = wpa_global->ifaces; wpa_s; wpa_s = wpa_s->next) {
+		if (wpa_s->conf && wpa_s->conf->ind_rptr &&
+		    (wpa_s->acs_complete == 1)) {
+			/* Abort any ongoing scan */
+			wpas_abort_ongoing_scan(wpa_s);
+
+			/* Set acs_complete to 0 to prevent new scans */
+			wpa_s->acs_complete = 0;
+
+			wpa_printf(MSG_DEBUG,
+				   "%s: Aborted scan and set acs_complete=0 for %s",
+				   __func__, wpa_s->ifname);
+		}
+	}
+
+	return ucv_int64_new(0);
+}
+
+/**
  * uc_wpas_start_scan_post_acs - API to start STA scan post repeater AP ACS
  * @vm: ucode VM context invoking the callback
  * @nargs: Number of ucode arguments passed to the function
@@ -787,6 +831,7 @@ int wpas_ucode_init(struct wpa_global *gl)
 #ifdef CONFIG_QCN_EXTN
 		{ "recvd_ch_sw_result_ev", uc_wpas_recvd_ch_sw_result_ev },
 		{ "start_scan_post_acs", uc_wpas_start_scan_post_acs },
+		{ "abort_scan_for_acs", uc_wpas_abort_scan_for_acs },
 #endif
 	};
 	static const uc_function_list_t iface_fns[] = {
