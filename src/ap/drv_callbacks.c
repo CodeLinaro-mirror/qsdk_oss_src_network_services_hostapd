@@ -2989,14 +2989,45 @@ static void hostapd_event_afc_update_complete(
 
 	hapd = iface->bss[0];
 	if (!iface->is_afc_power_event_received) {
+		enum hostapd_afc_power_sync_result sync_result;
+
 		wpa_printf(MSG_INFO,
 			   "AFC power update failed: iface=%s status=%u server_resp=%d",
 			   iface->phy, afc_rsp_info->target_status_code,
 			   afc_rsp_info->serv_resp_code);
 		iface->is_afc_channel_change_pending = false;
 		iface->is_afc_repeater_power_sync_pending = false;
-		if (hostapd_iface_has_connected_backhaul_sta(iface) &&
-		    hostapd_disconnect_backhaul_sta(iface))
+		sync_result = hostapd_force_afc_non_sp_power_mode(iface);
+		if (sync_result == HOSTAPD_AFC_PWR_SYNC_UPDATED ||
+		    sync_result == HOSTAPD_AFC_PWR_SYNC_NOOP ||
+		    sync_result == HOSTAPD_AFC_PWR_SYNC_ERROR) {
+			/*
+			 * Non-SP fallback handled:
+			 * UPDATED - CSA to non-SP mode started
+			 * NOOP    - already in a valid non-SP mode, no change
+			 *           needed
+			 * ERROR   - power change deferred (e.g. CSA already in
+			 *           progress); will be retried on next event
+			 */
+			return;
+		}
+
+		if (!hostapd_iface_has_connected_backhaul_sta(iface)) {
+			/*
+			 * Standalone AP with no valid non-SP fallback.
+			 * Remain in current mode until the next AFC response
+			 * or regulatory update triggers a retry.
+			 */
+			wpa_printf(MSG_INFO,
+				   "AFC power update failed: no fallback, standalone AP iface=%s result=%d",
+				   iface->phy, sync_result);
+			return;
+		}
+
+		wpa_printf(MSG_ERROR,
+			   "AFC power update failed: fallback unavailable, disconnect backhaul STA iface=%s result=%d",
+			   iface->phy, sync_result);
+		if (hostapd_disconnect_backhaul_sta(iface))
 			wpa_printf(MSG_ERROR,
 				   "AFC power update failed: backhaul disconnect failed iface=%s",
 				   iface->phy);
@@ -3240,11 +3271,14 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_DEBUG, "Processing AFC payload reset event");
 	if (!iface->afc_rsp_info) {
-		wpa_printf(MSG_DEBUG, "No AFC payload to reset");
-		return;
+		wpa_printf(MSG_INFO,
+			   "AFC payload reset: no cached payload iface=%s",
+			   iface->phy);
+	} else {
+		/* Clear AFC payload */
+		hostapd_free_afc_data(iface);
 	}
-	/* Clear AFC payload */
-	hostapd_free_afc_data(iface);
+
 	iface->is_afc_power_event_received = false;
 	iface->is_afc_repeater_power_sync_pending = false;
 	if (!hostapd_drv_is_retail_afc_supported(iface->bss[0])) {
@@ -3261,15 +3295,50 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 	 * repeater can re-associate and re-run AFC from a clean state.
 	 */
 	if (hostapd_iface_has_connected_backhaul_sta(iface)) {
+		enum hostapd_afc_power_sync_result sync_result;
+
 		wpa_printf(MSG_DEBUG,
-			   "AFC payload reset: connected repeater, skip channel change iface=%s",
+			   "AFC payload reset: connected repeater, attempt non-SP fallback iface=%s",
 			   iface->phy);
 		iface->is_afc_channel_change_pending = false;
+		sync_result = hostapd_force_afc_non_sp_power_mode(iface);
+		if (sync_result == HOSTAPD_AFC_PWR_SYNC_UPDATED ||
+		    sync_result == HOSTAPD_AFC_PWR_SYNC_NOOP ||
+		    sync_result == HOSTAPD_AFC_PWR_SYNC_ERROR) {
+			/*
+			 * Non-SP fallback handled:
+			 * UPDATED - CSA to non-SP mode started
+			 * NOOP    - already in a valid non-SP mode, no change
+			 *           needed
+			 * ERROR   - power change deferred (e.g. CSA already in
+			 *           progress); will be retried on next event
+			 */
+			return;
+		}
+
+		wpa_printf(MSG_ERROR,
+			   "AFC payload reset: fallback unavailable, disconnect backhaul STA iface=%s result=%d",
+			   iface->phy, sync_result);
 		if (hostapd_disconnect_backhaul_sta(iface))
 			wpa_printf(MSG_ERROR,
 				   "AFC payload reset: backhaul disconnect failed iface=%s",
 				   iface->phy);
 		return;
+	}
+
+	if (he_reg_is_sp(iface->conf->he_6ghz_reg_pwr_type)) {
+		enum hostapd_afc_power_sync_result sync_result;
+
+		wpa_printf(MSG_INFO,
+			   "AFC payload reset: fallback SP AP iface=%s",
+			   iface->phy);
+		sync_result = hostapd_force_afc_non_sp_power_mode(iface);
+		if (sync_result == HOSTAPD_AFC_PWR_SYNC_UPDATED ||
+		    sync_result == HOSTAPD_AFC_PWR_SYNC_NOOP)
+			return;
+		wpa_printf(MSG_ERROR,
+			   "AFC payload reset: SP AP fallback unavailable iface=%s result=%d",
+			   iface->phy, sync_result);
 	}
 
 	iface->is_afc_channel_change_pending = true;
