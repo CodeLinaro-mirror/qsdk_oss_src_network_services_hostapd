@@ -2155,6 +2155,7 @@ static bool probe_rssi_check_suppression(struct hostapd_data *hapd, const u8 *sa
 				int ssi_signal)
 {
 	struct hostapd_sta_info *info;
+	struct sta_info *sta;
 	struct os_reltime now, diff;
 	int elapsed_sec;
 
@@ -2173,7 +2174,8 @@ static bool probe_rssi_check_suppression(struct hostapd_data *hapd, const u8 *sa
 		   hapd->iconf->rssi_probe_delay_time_window,
 		   hapd->iconf->rssi_probe_delay_req_count);
 
-	if (ap_get_sta(hapd, sa)) {
+	sta = ap_get_sta(hapd, sa);
+	if (sta && (sta->flags & WLAN_STA_ASSOC)) {
 		info = sta_track_get(hapd->iface, sa);
 		wpa_printf(MSG_DEBUG,
 			   "Probe delay: STA already associated, allowing");
