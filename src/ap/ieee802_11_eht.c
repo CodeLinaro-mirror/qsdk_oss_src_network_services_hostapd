@@ -248,6 +248,23 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 				~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ;
 	}
 
+       /*
+        * Enforce band-specific Non-OFDMA UL MU-MIMO constraints
+        * unconditionally, regardless of config or BSS-level overrides:
+        * - 2.4 GHz: EHT max BW is 40 MHz, so 160 MHz and 320 MHz
+        *   Non-OFDMA UL MU-MIMO bits are not applicable and must be cleared.
+        * - 5 GHz: 320 MHz is a 6 GHz-only feature and must be cleared.
+        */
+       if (mode->mode == HOSTAPD_MODE_IEEE80211B ||
+           mode->mode == HOSTAPD_MODE_IEEE80211G) {
+               cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
+                       ~(EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_160MHZ |
+                         EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ);
+       } else if (!is_6ghz_op_class(hapd->iconf->op_class)) {
+               /* 5 GHz: 320 MHz Non-OFDMA UL MU-MIMO not applicable */
+               cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
+                       ~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ;
+       }
 
 	/* Apply BSS-level beamformee spatial streams overrides */
 	if (hapd->conf->eht_phy_capab_mask &
