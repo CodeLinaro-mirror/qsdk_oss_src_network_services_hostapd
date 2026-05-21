@@ -1973,13 +1973,6 @@ struct wpa_config {
 	int uplink_csa;
 
 	/**
-	 * rcsa: if rcsa is enabled, on Radar detection, send Qualcomm
-	 * Vendor Action frame with CSA IE to Root to insist it to trigger CSA.
-	 * If rcsa is disabled, do STA deauth
-	 */
-	int rcsa;
-
-	/**
 	 * cswopts: Channel Switch Options bitmap
 	 * Bit 0 (0x1): Random non DFS channel selection
 	 * Bit 1 (0x2): Ignore CSA from Root AP on DFS
