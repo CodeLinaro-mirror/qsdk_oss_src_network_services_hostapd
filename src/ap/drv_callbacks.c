@@ -4264,6 +4264,51 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 	}
 }
 
+static void hostapd_monitor_event_handler(struct hapd_interfaces *interfaces,
+					  union wpa_event_data *data)
+{
+	size_t i;
+
+	if (!data)
+		return;
+
+	/* Clear state when the monitor interface is removed */
+	if (data->interface_status.ievent == EVENT_INTERFACE_REMOVED) {
+		for (i = 0; i < interfaces->count; i++) {
+			struct hostapd_iface *iface = interfaces->iface[i];
+
+			if (!iface || os_strcmp(iface->monitor_iface,
+					data->interface_status.ifname) != 0)
+				continue;
+			wpa_printf(MSG_INFO,
+				   "Monitor iface: Interface %s removed for radio %s",
+				   iface->monitor_iface, iface->phy);
+			iface->monitor_iface[0] = '\0';
+			iface->monitor_ifindex = 0;
+			iface->monitor_iface_configured = false;
+		}
+	/* Deferred setup: retry when the monitor interface appears */
+	} else if (data->interface_status.ievent == EVENT_INTERFACE_ADDED) {
+		for (i = 0; i < interfaces->count; i++) {
+			struct hostapd_iface *iface = interfaces->iface[i];
+
+			if (!iface || iface->monitor_iface_configured ||
+			    !iface->conf->monitor_iface_name[0] ||
+			    os_strcmp(iface->conf->monitor_iface_name,
+				      data->interface_status.ifname) != 0)
+				continue;
+
+			wpa_printf(MSG_INFO,
+				   "Monitor iface: Interface %s appeared, retrying setup for radio %s",
+				   data->interface_status.ifname, iface->phy);
+			if (hostapd_setup_monitor_iface(iface) < 0)
+				wpa_printf(MSG_WARNING,
+					   "Monitor iface: Deferred setup failed for %s on radio %s",
+					   iface->conf->monitor_iface_name,
+					   iface->phy);
+		}
+	}
+}
 
 void hostapd_wpa_event_global(void *ctx, enum wpa_event_type event,
 				 union wpa_event_data *data)
@@ -4289,6 +4334,7 @@ void hostapd_wpa_event_global(void *ctx, enum wpa_event_type event,
 	}
 	if (hapd)
 		wpa_supplicant_event(hapd, event, data);
+	hostapd_monitor_event_handler(interfaces, data);
 }
 
 #endif /* HOSTAPD */

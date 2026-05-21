@@ -19,6 +19,7 @@
 #include <netlink/genl/ctrl.h>
 #include <netlink/genl/family.h>
 #include <linux/rtnetlink.h>
+#include <sys/ioctl.h>
 #include <netpacket/packet.h>
 #include <linux/errqueue.h>
 
@@ -77,6 +78,10 @@ enum nlmsgerr_attrs {
 #define nl_socket_set_nonblocking(h) android_nl_socket_set_nonblocking(h)
 
 #endif /* ANDROID */
+
+#ifndef ARPHRD_IEEE80211_RADIOTAP
+#define ARPHRD_IEEE80211_RADIOTAP 803
+#endif
 
 static void handle_nl_debug_hook(struct nl_msg *msg, int tx)
 {
@@ -17409,6 +17414,68 @@ int nl80211_set_muedca_mode(void *priv, int mode, int radio_idx)
 	return ret;
 }
 #endif /* CONFIG_QCN_EXTN */
+
+/*
+ * hostapd_validate_monitor_iface - Validate a monitor-mode interface
+ * @ifname: Interface name to validate
+ * @ifindex: Output parameter filled with the interface index on success
+ *
+ * Opens a temporary SOCK_DGRAM socket to resolve the interface index via
+ * SIOCGIFINDEX and verify the hardware type is ARPHRD_IEEE80211_RADIOTAP,
+ * confirming the interface is a monitor interface.
+ *
+ * Returns: 0 on success, -1 on failure
+ */
+int hostapd_validate_monitor_iface(const char *ifname, int *ifindex)
+{
+	struct ifreq ifr;
+	int sock;
+
+	if (!ifname || ifname[0] == '\0') {
+		wpa_printf(MSG_ERROR, "Monitor iface: Invalid interface name");
+		return -1;
+	}
+
+	sock = socket(AF_INET, SOCK_DGRAM, 0);
+	if (sock < 0) {
+		wpa_printf(MSG_ERROR,
+			   "Monitor iface: Failed to create socket: %s",
+			   strerror(errno));
+		return -1;
+	}
+
+	os_memset(&ifr, 0, sizeof(ifr));
+	os_strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
+
+	if (ioctl(sock, SIOCGIFINDEX, &ifr) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "Monitor iface %s: Interface does not exist: %s",
+			   ifname, strerror(errno));
+		close(sock);
+		return -1;
+	}
+
+	*ifindex = ifr.ifr_ifindex;
+
+	if (ioctl(sock, SIOCGIFHWADDR, &ifr) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "Monitor iface %s: Failed to get interface type: %s",
+			   ifname, strerror(errno));
+		close(sock);
+		return -1;
+	}
+
+	if (ifr.ifr_hwaddr.sa_family != ARPHRD_IEEE80211_RADIOTAP) {
+		wpa_printf(MSG_ERROR,
+			   "Monitor iface %s: Not a monitor interface (type=%d)",
+			   ifname, ifr.ifr_hwaddr.sa_family);
+		close(sock);
+		return -1;
+	}
+
+	close(sock);
+	return 0;
+}
 
 const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.name = "nl80211",

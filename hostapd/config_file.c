@@ -2162,6 +2162,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->ppe_vp_type = atoi(pos);
 	} else if (os_strcmp(buf, "snoop_iface") == 0) {
 		os_strlcpy(bss->snoop_iface, pos, sizeof(bss->snoop_iface));
+	} else if (os_strcmp(buf, "monitor_iface") == 0) {
+		os_strlcpy(conf->monitor_iface_name, pos, sizeof(conf->monitor_iface_name));
 	} else if (os_strcmp(buf, "vlan_bridge") == 0) {
 		os_strlcpy(bss->vlan_bridge, pos, sizeof(bss->vlan_bridge));
 	} else if (os_strcmp(buf, "wds_bridge") == 0) {

@@ -1023,6 +1023,11 @@ struct hostapd_iface {
 	int last_scan_aborted;
 	bool csa_pending_on_cac_abort;
 	struct csa_settings csa_settings;
+
+	/* Monitor interface management */
+	char monitor_iface[IFNAMSIZ + 1];
+	int monitor_ifindex;
+	bool monitor_iface_configured;
 };
 
 
@@ -1992,4 +1997,6 @@ u16 dfs_filter_punc_bitmap_by_src(struct hostapd_iface *iface,
  */
 void dfs_reset_punc_bitmap_src(struct hostapd_iface *iface,
 			       u16 punct_bitmap);
+int hostapd_setup_monitor_iface(struct hostapd_iface *iface);
+
 #endif /* HOSTAPD_H */

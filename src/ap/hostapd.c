@@ -42,6 +42,7 @@
 #include "hostapd_if/hostapd_if.h"
 #include "wpa_auth_glue.h"
 #include "ap_drv_ops.h"
+#include "../drivers/driver_nl80211.h"
 #include "ap_config.h"
 #include "p2p_hostapd.h"
 #include "gas_serv.h"
@@ -80,6 +81,56 @@ int hostapd_mbssid_setup_bss(struct hostapd_data *hapd);
 void hostapd_switch_color_timeout_handler(void *eloop_data,
 					  void *user_ctx);
 #endif /* CONFIG_IEEE80211AX */
+
+int hostapd_setup_monitor_iface(struct hostapd_iface *iface)
+{
+	struct hostapd_config *conf = iface->conf;
+	int ifindex = 0;
+
+	if (!conf->monitor_iface_name[0])
+		return 0;
+
+	/* Prevent override if already configured */
+	if (iface->monitor_iface_configured) {
+		wpa_printf(MSG_WARNING,
+			   "Monitor iface: Already configured for radio %s (current=%s)",
+			   iface->phy, iface->monitor_iface);
+		return 0;
+	}
+
+	if (hostapd_validate_monitor_iface(conf->monitor_iface_name,
+					   &ifindex) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "Monitor iface: Validation failed for %s on radio %s",
+			   conf->monitor_iface_name, iface->phy);
+		return -1;
+	}
+
+	os_strlcpy(iface->monitor_iface, conf->monitor_iface_name,
+		   sizeof(iface->monitor_iface));
+	iface->monitor_ifindex = ifindex;
+	iface->monitor_iface_configured = true;
+
+	wpa_printf(MSG_INFO,
+		   "Monitor iface: %s configured for radio %s (ifindex=%d)",
+		   iface->monitor_iface, iface->phy, iface->monitor_ifindex);
+
+	return 0;
+}
+
+static void hostapd_cleanup_monitor_iface(struct hostapd_iface *iface)
+{
+	if (!iface->monitor_iface_configured)
+		return;
+
+	wpa_printf(MSG_INFO,
+		   "Monitor iface: Cleaning up %s, must be managed by other userspace entity\n",
+		   iface->monitor_iface);
+
+	iface->monitor_iface[0] = '\0';
+	iface->monitor_ifindex = 0;
+	iface->monitor_iface_configured = false;
+}
 
 static int hostapd_adjust_legacy_beacon_rate(struct hostapd_data *hapd)
 {
@@ -4309,6 +4360,10 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 		}
 #endif /* CONFIG_QCN_EXTN */
 
+		if (hostapd_setup_monitor_iface(iface) < 0)
+			wpa_printf(MSG_WARNING,
+				   "Monitor iface: Setup failed, continuing without monitor interface");
+
 #ifdef NEED_AP_MLME
 		/* Handle DFS only if it is not offloaded to the driver */
 		if (!(iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD)) {
@@ -4878,6 +4933,8 @@ void hostapd_interface_deinit(struct hostapd_iface *iface)
 		return;
 
 	hostapd_set_state(iface, HAPD_IFACE_DISABLED);
+
+	hostapd_cleanup_monitor_iface(iface);
 
 	eloop_cancel_timeout(channel_list_update_timeout, iface, NULL);
 	iface->wait_channel_update = 0;
