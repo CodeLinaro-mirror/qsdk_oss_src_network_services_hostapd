@@ -565,8 +565,7 @@ u8 * hostapd_eid_he_operation(struct hostapd_data *hapd, u8 *eid)
 
 		*pos++ = seg0;
 		*pos++ = seg1;
-		/* Minimum Rate */
-		*pos++ = 6; /* TODO: what should be set here? */
+		*pos++ = hapd->iconf->he_6ghz_min_rate;
 	}
 
 	oper->he_oper_params = host_to_le32(params);

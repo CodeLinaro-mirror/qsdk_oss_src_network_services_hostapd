@@ -2118,6 +2118,9 @@ vht_rollback:
 			return -1;
 #endif /* CONFIG_IEEE80211AC */
 #ifdef CONFIG_IEEE80211AX
+		} else if (os_strcasecmp(cmd, "he_6ghz_min_rate") == 0 &&
+			   is_6ghz_op_class(hapd->iconf->op_class) && tx_hapd) {
+			ieee802_11_update_beacons(tx_hapd->iface);
 		} else if (os_strcasecmp(cmd, "bss_he_su_beamformer") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_su_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_mu_beamformer") == 0 ||
@@ -2910,6 +2913,15 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 	} else if (os_strcasecmp(cmd, "bss_he_bsr_support") == 0) {
 		res = os_snprintf(buf, buflen, "bss_he_bsr_support = %u\n",
 				  hapd->conf->he_phy_capab.he_bsr_support);
+	} else if (os_strcasecmp(cmd, "he_6ghz_min_rate") == 0) {
+		if (!is_6ghz_op_class(hapd->iconf->op_class)) {
+			wpa_printf(MSG_ERROR,
+				   "he_6ghz_min_rate is applicable for 6 GHz only");
+			return -1;
+		}
+
+		res = os_snprintf(buf, buflen, "he_6ghz_min_rate = %u\n",
+				  hapd->iconf->he_6ghz_min_rate);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
