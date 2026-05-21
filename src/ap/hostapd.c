@@ -10880,6 +10880,16 @@ void hostapd_get_oper_chan_info_of_bss(struct hostapd_data *hapd,
 		if (*width == CONF_OPER_CHWIDTH_320MHZ)
 			*width = CONF_OPER_CHWIDTH_160MHZ;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+			hostapd_get_oper_info_of_repurposed_bss_extn(
+					hapd, width, seg0, seg1);
+			wpa_printf(MSG_DEBUG,
+				   "Repurpose: chwidth %d seg0 %d seg1 %d",
+				   *width, *seg0, *seg1);
+		}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 }
 
