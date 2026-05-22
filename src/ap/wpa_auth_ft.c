@@ -2268,6 +2268,26 @@ void wpa_auth_ft_store_keys(struct wpa_state_machine *sm, const u8 *pmk_r0,
 			    sm->pmk_r1_name, sm->pairwise, &vlan,
 			    expires_in, session_timeout, identity,
 			    identity_len, radius_cui, radius_cui_len);
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * Hand the PMK-R1 to the test plugin via the wpa_auth callback.
+	 * The glue layer (wpa_auth_glue.c) will forward it to
+	 * hostapd_if_plugin_store_pmk_r1() with the correct ifname so that
+	 * it is stored only in the matching per-interface plugin cache.
+	 */
+	if (sm->wpa_auth->cb->test_plugin_store_pmk_r1)
+		sm->wpa_auth->cb->test_plugin_store_pmk_r1(sm->wpa_auth->cb_ctx,
+							   wpa_auth_get_spa(sm),
+							   pmk_r1, key_len,
+							   sm->pmk_r1_name,
+							   sm->pairwise,
+							   expires_in,
+							   session_timeout,
+							   identity,
+							   identity_len,
+							   radius_cui,
+							   radius_cui_len);
+#endif /* CONFIG_QCN_EXTN */
 }
 
 
@@ -5080,6 +5100,25 @@ static int wpa_ft_rrb_rx_r1(struct wpa_authenticator *wpa_auth,
 				f_identity, f_identity_len, f_radius_cui,
 				f_radius_cui_len) < 0)
 		goto out;
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * Hand the PMK-R1 to the test plugin via the wpa_auth callback.
+	 * The glue layer (wpa_auth_glue.c) will forward it to
+	 * hostapd_if_plugin_store_pmk_r1() with the correct ifname so that
+	 * it is stored only in the matching per-interface plugin cache.
+	 */
+	if (wpa_auth->cb->test_plugin_store_pmk_r1)
+		wpa_auth->cb->test_plugin_store_pmk_r1(wpa_auth->cb_ctx,
+						       f_s1kh_id,
+						       f_pmk_r1, pmk_r1_len,
+						       f_pmk_r1_name, pairwise,
+						       expires_in,
+						       session_timeout,
+						       f_identity,
+						       f_identity_len,
+						       f_radius_cui,
+						       f_radius_cui_len);
+#endif /* CONFIG_QCN_EXTN */
 
 	ret = 0;
 out:
@@ -5923,4 +5962,26 @@ void wpa_ft_push_roam_notification(struct wpa_authenticator *wpa_auth, const u8 
 		wpa_ft_send_roam_notification(wpa_auth, r1kh, addr);
 	}
 }
+
+void wpa_ft_clear_pmk_r1(struct wpa_authenticator *wpa_auth, const u8 *spa,
+			 const u8 *pmk_r1_name)
+{
+	struct wpa_ft_pmk_cache *cache = wpa_auth->ft_pmk_cache;
+	struct wpa_ft_pmk_r1_sa *r1;
+
+	dl_list_for_each(r1, &cache->pmk_r1, struct wpa_ft_pmk_r1_sa, list) {
+		if (ether_addr_equal(r1->spa, spa) &&
+		    os_memcmp_const(r1->pmk_r1_name, pmk_r1_name,
+				    WPA_PMK_NAME_LEN) == 0) {
+			break;
+		}
+	}
+
+	if (!r1)
+		return;
+
+        dl_list_del(&r1->list);
+        eloop_cancel_timeout(wpa_ft_expire_pmk_r1, r1, NULL);
+}
+
 #endif /* CONFIG_IEEE80211R_AP */
