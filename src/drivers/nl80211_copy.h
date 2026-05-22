@@ -950,6 +950,10 @@
  *	after %NL80211_ATTR_CH_SWITCH_COUNT TBTT's.  The userspace may
  *	decide to react to this indication by requesting other
  *	interfaces to change channel as well.
+ *	%NL80211_ATTR_MAX_CH_SWITCH_TIME included in this command indicates the
+ *	AP's Max Channel Switch Time. Userspace can use this information to
+ *	decide whether to remain connected or disconnect before the AP moves to
+ *	the new channel.
  *
  * @NL80211_CMD_START_P2P_DEVICE: Start the given P2P Device, identified by
  *	its %NL80211_ATTR_WDEV identifier. It must have been created with
@@ -3020,6 +3024,12 @@ enum nl80211_commands {
  *	will transmit beacons for all bands at the same time (burst mode) if
  *	the beacon intervals are the same.
  *
+ * @NL80211_ATTR_MAX_CH_SWITCH_TIME: u32 attribute carrying the Switch Time
+ *	field from the MCST (Max Channel Switch Time) element, indicating the
+ *	time delta between the time the last beacon is transmitted by the AP in
+ *	the current channel and the expected time of the first beacon
+ *	transmitted by the AP in the new channel, expressed in TUs.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3645,7 +3655,10 @@ enum nl80211_attrs {
 	NL80211_ATTR_DPS_ASSIST,
 	NL80211_ATTR_HE_MUEDCA_MODE,
 
+	NL80211_ATTR_LOW_POWER_20MHZ,
 	NL80211_ATTR_BEACON_TX_SYNC_SUPPORT,
+
+	NL80211_ATTR_MAX_CH_SWITCH_TIME,
 
 	/* add attributes here, update the policy in nl80211.c */
 
