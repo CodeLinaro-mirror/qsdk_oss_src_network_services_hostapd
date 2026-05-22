@@ -3958,6 +3958,11 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 	case EVENT_WPS_BUTTON_PUSHED:
 		hostapd_wps_button_pushed(hapd, NULL);
 		break;
+#ifdef RDK_ONEWIFI
+	case EVENT_WPS_CANCEL:
+		hostapd_wps_cancel(hapd);
+		break;
+#endif /* RDK_ONEWIFI */
 #ifdef NEED_AP_MLME
 	case EVENT_TX_STATUS:
 		switch (data->tx_status.type) {

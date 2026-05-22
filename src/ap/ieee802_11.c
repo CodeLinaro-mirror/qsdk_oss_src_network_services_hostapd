@@ -8057,11 +8057,16 @@ int add_associated_sta(struct hostapd_data *hapd,
 	return 0;
 }
 
-
+#ifdef RDK_ONEWIFI
+u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta, const u8 *addr, u16 status_code, int reassoc,
+                           const u8 *ies, size_t ies_len, int rssi,
+                           int omit_rsnxe)
+#else
 static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 			   const u8 *addr, u16 status_code, int reassoc,
 			   const u8 *ies, size_t ies_len, int rssi,
 			   int omit_rsnxe)
+#endif
 {
 	int send_len;
 	u8 *buf;
@@ -9360,6 +9365,12 @@ static void handle_assoc(struct hostapd_data *hapd,
 			return;
 		}
 	}
+#ifdef RDK_ONEWIFI
+       os_free(sta->assoc_req);
+       sta->assoc_req = os_malloc(len);
+       os_memcpy(sta->assoc_req, (u8 *)mgmt, len);
+       sta->assoc_req_len = len;
+#endif
 	if ((fc & WLAN_FC_RETRY) &&
 	    sta->last_seq_ctrl != WLAN_INVALID_MGMT_SEQ &&
 	    sta->last_seq_ctrl == seq_ctrl &&
@@ -14387,7 +14398,10 @@ size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
 		if (skip_rnr)
 			break;
 #endif /* CONFIG_QCN_EXTN */
-
+#ifdef RDK_ONEWIFI
+        total_len += hostapd_drv_eid_rnr_colocation_len(hapd,
+                                                   &current_len);
+#endif
 		if (mode == COLOCATED_LOWER_BAND)
 			total_len +=
 				hostapd_eid_rnr_colocation_len(hapd,
@@ -14927,6 +14941,9 @@ u8 * hostapd_eid_rnr(struct hostapd_data *hapd, u8 *eid, u32 type,
 			break;
 #endif /* CONFIG_QCN_EXTN */
 
+#ifdef RDK_ONEWIFI
+        eid = hostapd_drv_eid_rnr_colocation(hapd, eid, &current_len);
+#endif
 		if (mode == COLOCATED_LOWER_BAND)
 			eid = hostapd_eid_rnr_colocation(hapd, eid,
 							 &current_len, type,

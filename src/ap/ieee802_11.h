@@ -606,7 +606,12 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 				  bool reassoc, int tx_link_status,
 				  bool offload,
 				  bool *set_beacon);
-
+#ifdef RDK_ONEWIFI
+u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
+                       const u8 *addr, u16 status_code, int reassoc,
+                       const u8 *ies, size_t ies_len, int rssi,
+                       int omit_rsnxe);
+#endif
 void ml_deinit_link_reconf_req(struct link_reconf_req_list **req_list_ptr);
 int ieee80211_ml_process_link(struct hostapd_data *hapd,
 			      struct hostapd_data *phapd,

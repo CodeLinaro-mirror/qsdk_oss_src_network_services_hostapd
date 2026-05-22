@@ -133,7 +133,6 @@ int eloop_register_sock(int sock, eloop_event_type type,
  * eloop_register_sock().
  */
 void eloop_unregister_sock(int sock, eloop_event_type type);
-
 /**
  * eloop_register_event - Register handler for generic events
  * @event: Event to wait (eloop implementation specific)
@@ -261,7 +260,6 @@ int eloop_deplete_timeout(unsigned int req_secs, unsigned int req_usecs,
 int eloop_replenish_timeout(unsigned int req_secs, unsigned int req_usecs,
 			    eloop_timeout_handler handler, void *eloop_data,
 			    void *user_data);
-
 /**
  * eloop_register_signal - Register handler for signals
  * @sig: Signal number (e.g., SIGHUP)

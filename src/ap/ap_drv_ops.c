@@ -1129,8 +1129,6 @@ int hostapd_drv_sta_deauth(struct hostapd_data *hapd,
 	return hapd->driver->sta_deauth(hapd->drv_priv, own_addr, addr,
 					reason, link_id);
 }
-
-
 int hostapd_drv_sta_disassoc(struct hostapd_data *hapd,
 			     const u8 *addr, int reason)
 {
@@ -1640,8 +1638,6 @@ int hostapd_drv_do_acs(struct hostapd_data *hapd)
 
 	return ret;
 }
-
-
 int hostapd_drv_update_dh_ie(struct hostapd_data *hapd, const u8 *peer,
 			     u16 reason_code, const u8 *ie, size_t ielen)
 {
@@ -1658,8 +1654,6 @@ int hostapd_drv_dpp_listen(struct hostapd_data *hapd, bool enable)
 		return 0;
 	return hapd->driver->dpp_listen(hapd->drv_priv, enable);
 }
-
-
 #ifdef CONFIG_PASN
 int hostapd_drv_set_secure_ranging_ctx(struct hostapd_data *hapd,
 				       const u8 *own_addr, const u8 *peer_addr,
