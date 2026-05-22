@@ -445,6 +445,10 @@ struct wpa_auth_callbacks {
 			 size_t tspec_ielen);
 	u8* (*add_bmle)(void *ctx, u8 *bmle_ie, u8 type, void *ml_data);
 	size_t (*add_bmle_len)(void *ctx, u8 type, void *ml_data);
+	int (*frame_fwd_decision)(void *ctx, u16 auth_alg);
+	int (*notify_remote_auth)(void *ctx, const u8 *sta_addr,
+				  const u8 *ies, u16 ies_len,
+				  u16 status_code, bool is_ml);
 #endif /* CONFIG_IEEE80211R_AP */
 #ifdef CONFIG_MESH
 	int (*start_ampe)(void *ctx, const u8 *sta_addr);

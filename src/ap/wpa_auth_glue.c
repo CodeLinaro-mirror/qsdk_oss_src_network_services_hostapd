@@ -1708,6 +1708,25 @@ static int hostapd_wpa_auth_add_tspec(void *ctx, const u8 *sta_addr,
 }
 
 
+#ifdef CONFIG_HOSTAPD_IF
+static int hostapd_wpa_auth_frame_fwd_decision(void *ctx, u16 auth_alg)
+{
+	return hostapd_if_frame_fwd_decision(ctx, auth_alg,
+					     HOSTAPD_IF_FRAME_TYPE_REMOTE_AUTH);
+}
+
+
+static int hostapd_wpa_auth_notify_remote_auth(void *ctx, const u8 *sta_addr,
+					       const u8 *ies, u16 ies_len,
+					       u16 status_code, bool is_ml)
+{
+	return hostapd_if_notify_remote_auth(ctx, (uint8_t *)sta_addr,
+					     ies, ies_len,
+					     status_code, is_ml);
+}
+#endif
+
+
 static u8 *hostapd_wpa_ft_add_bmle(void *ctx, u8 *bmle_ie, u8 type, void *mle_data)
 {
 	struct hostapd_data *hapd = ctx;
@@ -1796,7 +1815,6 @@ static void hostapd_wpa_unregister_ft_oui(struct hostapd_data *hapd)
 	hapd->oui_rnotify = NULL;
 }
 #endif /* CONFIG_IEEE80211R_AP */
-
 
 #ifndef CONFIG_NO_RADIUS
 static void hostapd_request_radius_psk(void *ctx, const u8 *addr, int key_mgmt,
@@ -1994,6 +2012,10 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 		.get_radius_cui = hostapd_wpa_auth_get_radius_cui,
 		.set_session_timeout = hostapd_wpa_auth_set_session_timeout,
 		.get_session_timeout = hostapd_wpa_auth_get_session_timeout,
+#ifdef CONFIG_HOSTAPD_IF
+		.frame_fwd_decision = hostapd_wpa_auth_frame_fwd_decision,
+		.notify_remote_auth = hostapd_wpa_auth_notify_remote_auth,
+#endif
 #endif /* CONFIG_IEEE80211R_AP */
 #ifndef CONFIG_NO_RADIUS
 		.request_radius_psk = hostapd_request_radius_psk,

@@ -6911,6 +6911,21 @@ hostapd_mlie_to_get_mld_addr_from_assoc(struct hostapd_data *hapd,
 	return get_basic_mle_mld_addr(elems.basic_mle, elems.basic_mle_len);
 }
 
+struct wpa_state_machine *get_wpa_sm_from_ft_ds_list(struct hostapd_data *hapd,
+						     uint8_t *sta_mld_addr)
+{
+	struct hostapd_ft_over_ds_ml_sta_entry *entry;
+
+	entry = ap_get_ft_ds_ml_sta(hapd, sta_mld_addr);
+	if (!entry) {
+		wpa_printf(MSG_ERROR, "FT: Entry not found for sta_mld " MACSTR,
+			   MAC2STR(sta_mld_addr));
+		return NULL;
+	}
+
+	return entry->wpa_sm;
+}
+
 static struct sta_info *
 get_sta_from_ft_ds_list(struct hostapd_data *hapd,
 			const struct ieee80211_mgmt *mgmt,
