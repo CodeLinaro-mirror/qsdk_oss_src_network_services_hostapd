@@ -8695,6 +8695,26 @@ void hostapd_chan_switch_config(struct hostapd_data *hapd,
 }
 
 
+int hostapd_update_monitor_channel(struct hostapd_data *hapd,
+				   const struct hostapd_freq_params *freq_params)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	int ret;
+
+	if (!iface->monitor_iface_configured)
+		return 0;
+
+	ret = hostapd_drv_update_monitor_channel(hapd, iface->monitor_ifindex,
+						 freq_params);
+	if (ret)
+		wpa_printf(MSG_INFO,
+			   "Monitor set_freq: Failed to set freq on %s err=%d",
+			   iface->monitor_iface, ret);
+
+	return ret;
+}
+
+
 int hostapd_switch_channel(struct hostapd_data *hapd,
 			   struct csa_settings *settings)
 {
@@ -8754,6 +8774,11 @@ int hostapd_switch_channel(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 	}
 #endif /* CONFIG_QCN_EXTN */
+
+	/* Switch monitor interface to the new channel if configured */
+	if (hapd == hapd->iface->bss[0])
+		if (hostapd_update_monitor_channel(hapd, &settings->freq_params))
+			return -1;
 
 	return 0;
 }

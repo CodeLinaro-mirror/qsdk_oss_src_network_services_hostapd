@@ -13156,6 +13156,35 @@ error:
 	return ret;
 }
 
+static int nl80211_update_monitor_channel(void *priv, int ifindex,
+					  const struct hostapd_freq_params *freq_params)
+{
+	struct nl_msg *msg;
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	int ret;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Set channel for monitor");
+	msg = nl80211_ifindex_msg(drv, ifindex, 0, NL80211_CMD_SET_CHANNEL);
+	if (!msg)
+		return -ENOBUFS;
+
+	ret = nl80211_put_freq_params(msg, freq_params, bss);
+	if (ret < 0) {
+		nlmsg_free(msg);
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Could not build monitor set_freq request");
+		return ret;
+	}
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Monitor set_freq failed err=%d (%s)",
+			   ret, strerror(-ret));
+	return ret;
+}
+
 static int nl80211_set_6ghz_pwr_mode(void *priv,
 				     struct he_6ghz_pwr_mode_settings *settings)
 {
@@ -17576,6 +17605,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.get_survey = wpa_driver_nl80211_get_survey,
 	.status = wpa_driver_nl80211_status,
 	.switch_channel = nl80211_switch_channel,
+	.update_monitor_channel = nl80211_update_monitor_channel,
 	.set_6ghz_pwr_mode = nl80211_set_6ghz_pwr_mode,
 #ifdef CONFIG_IEEE80211AX
 	.switch_color = nl80211_switch_color,
