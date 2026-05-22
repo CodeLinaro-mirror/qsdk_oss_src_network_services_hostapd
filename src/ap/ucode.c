@@ -675,7 +675,11 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 		return NULL;
 #endif
 
-	if (iface->state != HAPD_IFACE_ENABLED)
+	if (iface->state != HAPD_IFACE_ENABLED
+#ifdef CONFIG_QCN_EXTN
+	|| iface->conf->conf_extn.rpt_max_phy
+#endif
+	)
 		uc_hostapd_disable_iface(iface);
 
 	for (i = 0; i < iface->num_bss; i++) {
