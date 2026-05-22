@@ -641,28 +641,6 @@ static void sme_add_assoc_req_ie(struct wpa_supplicant *wpa_s,
 
 #ifdef CONFIG_ENC_ASSOC
 
-static struct sae_pt *
-sme_eppke_sae_derive_pt(struct wpa_ssid *ssid, int group)
-{
-	const char *password = ssid->sae_password;
-	int groups[2] = { group, 0 };
-
-	if (!password)
-		password = ssid->passphrase;
-
-	if (!password) {
-		wpa_printf(MSG_DEBUG, "EPPKE: SAE without a password");
-		return NULL;
-	}
-
-	return sae_derive_pt(groups, ssid->ssid, ssid->ssid_len,
-			     (const u8 *) password, os_strlen(password),
-			     (const u8 *) ssid->sae_password_id,
-			     ssid->sae_password_id ?
-			     os_strlen(ssid->sae_password_id) : 0);
-}
-
-
 static bool wpas_eppke_ap_capable(struct wpa_supplicant *wpa_s,
 				  struct wpa_bss *bss)
 {
@@ -794,7 +772,8 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 		}
 		if (pasn->pt)
 			sae_deinit_pt(pasn->pt);
-		pasn_set_pt(pasn, sme_eppke_sae_derive_pt(ssid, group));
+		pasn_set_pt(pasn, wpas_pasn_sae_derive_pt_for_eppke(ssid,
+								    group));
 		if (!pasn->pt) {
 			wpa_printf(MSG_DEBUG, "EPPKE: Failed to derive PT");
 			goto fail;
