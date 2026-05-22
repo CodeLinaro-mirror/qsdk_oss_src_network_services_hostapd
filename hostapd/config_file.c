@@ -5128,6 +5128,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->externally_triggered_m3 = (int) val;
 	} else if (os_strcmp(buf, "plugin_eap_offload") == 0) {
 		bss->plugin_eap_offload = atoi(pos);
+	} else if (os_strcmp(buf, "plugin_eapol_key_offload") == 0) {
+		bss->plugin_eapol_key_offload = atoi(pos);
 	} else if (os_strcmp(buf, "notify_mgmt_frames") == 0) {
 		bss->notify_mgmt_frames = atoi(pos);
 #ifdef CONFIG_DPP

@@ -363,6 +363,7 @@ static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
 			  wpabuf_head(conf->sae_pw_id_key),
 			  wpabuf_len(conf->sae_pw_id_key));
 	}
+	wconf->plugin_eapol_key_offload = conf->plugin_eapol_key_offload;
 }
 
 
