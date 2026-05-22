@@ -771,6 +771,9 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 
 	wpabuf_free(sta->sae_pw_id);
 
+#ifdef RDK_ONEWIFI
+	os_free(sta->assoc_req);
+#endif
 	os_free(sta);
 }
 

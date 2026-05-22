@@ -434,6 +434,10 @@ struct sta_info {
 	bool ft_re_add;
 	u16 max_idle_period; /* if nonzero, the granted BSS max idle period in
 			      * units of 1000 TUs */
+#ifdef RDK_ONEWIFI
+	u8 *assoc_req;
+	size_t assoc_req_len;
+#endif
 
 #ifdef CONFIG_IEEE80211AX
 	struct hostapd_scs_req_desc_data

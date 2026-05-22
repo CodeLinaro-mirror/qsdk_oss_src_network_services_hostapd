@@ -442,6 +442,9 @@ static void hostapd_wpa_auth_psk_failure_report(void *ctx, const u8 *addr)
 	struct hostapd_data *hapd = ctx;
 	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_STA_POSSIBLE_PSK_MISMATCH MACSTR,
 		MAC2STR(addr));
+#ifdef RDK_ONEWIFI
+	hostapd_drv_sta_notify_deauth(hapd, addr, WLAN_REASON_PREV_AUTH_NOT_VALID);
+#endif
 	hostapd_ubus_notify(hapd, "key-mismatch", addr);
 }
 
@@ -2105,6 +2108,9 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 #ifndef CONFIG_NO_RADIUS
 		.request_radius_psk = hostapd_request_radius_psk,
 #endif /* CONFIG_NO_RADIUS */
+#ifdef RDK_ONEWIFI
+		.get_sta_auth_type = hostapd_wpa_auth_get_sta_auth_type,
+#endif /* RDK_ONEWIFI */
 #ifdef CONFIG_PASN
 		.set_ltf_keyseed = hostapd_set_ltf_keyseed,
 #endif /* CONFIG_PASN */

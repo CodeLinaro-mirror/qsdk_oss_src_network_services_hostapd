@@ -483,6 +483,9 @@ struct wpa_auth_callbacks {
 #ifdef CONFIG_MESH
 	int (*start_ampe)(void *ctx, const u8 *sta_addr);
 #endif /* CONFIG_MESH */
+#ifdef RDK_ONEWIFI
+void (*get_sta_auth_type)(void *ctx, const u8 *addr,const u8 *ies, size_t ies_len, int frame_type);
+#endif /* RDK_ONEWIFI */
 #ifdef CONFIG_PASN
 	int (*set_ltf_keyseed)(void *ctx, const u8 *addr, const u8 *ltf_keyseed,
 			       size_t ltf_keyseed_len);

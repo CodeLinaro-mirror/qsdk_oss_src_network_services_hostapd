@@ -233,6 +233,23 @@ void _wpa_printf(int level, const char *fmt, ...)
 		wpa_printf_hook(level, fmt, ap);
 		va_end(ap);
 	}
+#ifdef RDK_ONEWIFI
+		FILE *fpg = NULL;
+
+
+		if ((access("/nvram/wifiLibhostapDbg", R_OK)) == 0) {
+			fpg = fopen("/tmp/wifilibhostap", "a+");
+			if (fpg == NULL) {
+				return;
+			}
+            va_start(ap, fmt);
+            vfprintf(fpg, fmt, ap);
+            va_end(ap);
+            fprintf(fpg, "\n");
+            fflush(fpg);
+            fclose(fpg);
+		}
+#endif
 
 	if (level >= wpa_debug_level) {
 #ifdef CONFIG_ANDROID_LOG
@@ -250,6 +267,12 @@ void _wpa_printf(int level, const char *fmt, ...)
 #endif /* CONFIG_DEBUG_SYSLOG */
 		wpa_debug_print_timestamp();
 #ifdef CONFIG_DEBUG_FILE
+#ifdef RDK_ONEWIFI
+		if ((access("/nvram/wifiHostapDbg", R_OK)) != 0 &&
+			(access("/nvram/wifiHostapDbg2", R_OK)) != 0) {
+			return;
+		}
+#endif /* RDK_ONEWIFI */
 		if (out_file) {
 			va_start(ap, fmt);
 			vfprintf(out_file, fmt, ap);
@@ -286,7 +309,29 @@ void _wpa_hexdump(int level, const char *title, const u8 *buf,
 
 	if (wpa_hexdump_hook)
 		wpa_hexdump_hook(level, title, buf, len);
+#ifdef RDK_ONEWIFI
+    static FILE *fpg = NULL;
 
+    if ((access("/nvram/wifiLibhostapDbg", R_OK)) == 0) {
+        if (fpg == NULL) {
+            fpg = fopen("/tmp/wifilibhostap", "a+");
+            if (fpg == NULL)
+                return;
+        }
+
+        fprintf(fpg, "%s - hexdump(len=%lu):", title, (unsigned long) len);
+
+        if (buf == NULL) {
+            fprintf(fpg, " [NULL]");
+        } else {
+            for (i = 0; i < len; i++)
+                fprintf(fpg, " %02x", buf[i]);
+        }
+
+        fprintf(fpg, "\n");
+        fflush(fpg);
+    }
+#endif /* RDK_ONEWIFI */
 #ifdef CONFIG_DEBUG_LINUX_TRACING
 	if (wpa_debug_tracing_file != NULL) {
 		fprintf(wpa_debug_tracing_file,
@@ -380,6 +425,12 @@ void _wpa_hexdump(int level, const char *title, const u8 *buf,
 #endif /* CONFIG_DEBUG_SYSLOG */
 	wpa_debug_print_timestamp();
 #ifdef CONFIG_DEBUG_FILE
+#ifdef RDK_ONEWIFI
+	if ((access("/nvram/wifiHostapDbg", R_OK) != 0) &&
+		(access("/nvram/wifiHostapDbg2", R_OK)) != 0) {
+		return;
+	}
+#endif /* RDK_ONEWIFI */
 	if (out_file) {
 		fprintf(out_file, "%s - hexdump(len=%lu):",
 			title, (unsigned long) len);
@@ -552,6 +603,14 @@ int wpa_debug_reopen_file(void)
 int wpa_debug_open_file(const char *path)
 {
 #ifdef CONFIG_DEBUG_FILE
+#ifdef RDK_ONEWIFI
+	wpa_debug_timestamp++;
+
+	if ((access("/nvram/wifiHostapDbg", R_OK)) == 0)
+		wpa_debug_level = MSG_DEBUG;
+	else if ((access("/nvram/wifiHostapDbg2", R_OK)) == 0)
+		wpa_debug_level = MSG_EXCESSIVE;
+#endif /* RDK_ONEWIFI */
 	int out_fd;
 
 	if (!path)
@@ -855,10 +914,19 @@ void hostapd_logger(void *ctx, const u8 *addr, unsigned int module, int level,
 	if (hostapd_logger_cb)
 		hostapd_logger_cb(ctx, addr, module, level, buf, len);
 	else if (addr)
+#ifdef RDK_ONEWIFI
+		wpa_printf(MSG_INFO, "hostapd_logger: STA " MACSTR " - %s",
+			   MAC2STR(addr), buf);
+#else
 		wpa_printf(MSG_DEBUG, "hostapd_logger: STA " MACSTR " - %s",
 			   MAC2STR(addr), buf);
+#endif
 	else
+#ifdef RDK_ONEWIFI
+		wpa_printf(MSG_INFO, "hostapd_logger: %s", buf);
+#else
 		wpa_printf(MSG_DEBUG, "hostapd_logger: %s", buf);
+#endif
 	bin_clear_free(buf, buflen);
 }
 #endif /* CONFIG_NO_HOSTAPD_LOGGER */
