@@ -349,8 +349,6 @@ void wps_pbc_disable_event(struct wps_context *wps)
 
 	wps->event_cb(wps->cb_ctx, WPS_EV_PBC_DISABLE, NULL);
 }
-
-
 #ifdef CONFIG_WPS_OOB
 
 struct wpabuf * wps_get_oob_cred(struct wps_context *wps, int rf_band,

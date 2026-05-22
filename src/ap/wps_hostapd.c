@@ -940,6 +940,11 @@ static void hostapd_wps_event_cb(void *ctx, enum wps_event event,
 	}
 	if (hapd->wps_event_cb)
 		hapd->wps_event_cb(hapd->wps_event_cb_ctx, event, data);
+
+#ifdef RDK_ONEWIFI
+       hostapd_drv_wps_event_notify_cb(hapd, event, data);
+#endif //RDK_ONEWIFI
+
 }
 
 static int hostapd_wps_mbssid_cb (void *ctx)

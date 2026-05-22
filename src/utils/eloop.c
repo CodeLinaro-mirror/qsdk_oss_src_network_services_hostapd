@@ -558,6 +558,10 @@ static void eloop_sock_table_dispatch(struct eloop_sock_table *readers,
 				      struct pollfd **pollfds_map,
 				      int max_pollfd_map)
 {
+#ifdef RDK_ONEWIFI
+	if (eloop.terminate)
+		return;
+#endif
 	if (eloop_sock_table_dispatch_table(readers, pollfds_map,
 					    max_pollfd_map, POLLIN | POLLERR |
 					    POLLHUP))
@@ -612,6 +616,57 @@ static void eloop_sock_table_dispatch(struct eloop_sock_table *table,
 	}
 }
 
+#ifdef RDK_ONEWIFI
+int eloop_sock_table_read_set_fds(fd_set *fds)
+{
+       int i;
+
+       if (eloop.readers.table == NULL)
+               return 0;
+
+       for (i = 0; i < eloop.readers.count; i++) {
+               assert(eloop.readers.table[i].sock >= 0);
+               FD_SET(eloop.readers.table[i].sock, fds);
+       }
+       return 0;
+}
+
+int eloop_sock_table_read_get_biggest_fd(void)
+{
+       int i;
+       int sock_fd = 0;
+
+       if (eloop.readers.table == NULL)
+               return 0;
+
+       for (i = 0; i < eloop.readers.count; i++) {
+               assert(eloop.readers.table[i].sock >= 0);
+               if(sock_fd < eloop.readers.table[i].sock) {
+                       sock_fd = eloop.readers.table[i].sock;
+               }
+       }
+       return sock_fd;
+}
+
+void eloop_sock_table_read_dispatch(fd_set *fds)
+{
+       int i;
+
+       if (eloop.readers.table == NULL)
+               return;
+
+       eloop.readers.changed = 0;
+       for (i = 0; i < eloop.readers.count; i++) {
+               if (FD_ISSET(eloop.readers.table[i].sock, fds)) {
+                       eloop.readers.table[i].handler(eloop.readers.table[i].sock,
+                                               eloop.readers.table[i].eloop_data,
+                                               eloop.readers.table[i].user_data);
+                       if (eloop.readers.changed)
+                               break;
+               }
+       }
+}
+#endif /* RDK_ONEWIFI */
 #endif /* CONFIG_ELOOP_SELECT */
 
 
@@ -965,8 +1020,60 @@ int eloop_replenish_timeout(unsigned int req_secs, unsigned int req_usecs,
 
 	return -1;
 }
+#ifdef RDK_ONEWIFI
+int eloop_get_timeout_ms(void)
+{
+       struct eloop_timeout *timeout;
+       struct os_reltime tv, now;
+       int timeout_ms = -1;
 
+       if(dl_list_empty(&eloop.timeout))
+       {
+               return timeout_ms;
+       }
 
+       timeout = dl_list_first(&eloop.timeout, struct eloop_timeout,
+                                       list);
+       if (timeout) {
+               os_get_reltime(&now);
+               if (os_reltime_before(&now, &timeout->time))
+                       os_reltime_sub(&timeout->time, &now, &tv);
+               else
+                       tv.sec = tv.usec = 0;
+               timeout_ms = tv.sec * 1000 + tv.usec / 1000;
+       }
+       return timeout_ms;
+}
+
+int eloop_timeout_run(void)
+{
+       struct eloop_timeout *timeout;
+       struct os_reltime tv, now;
+
+       if(dl_list_empty(&eloop.timeout))
+       {
+               return 0;
+       }
+
+       /* check if some registered timeouts have occurred */
+       timeout = dl_list_first(&eloop.timeout, struct eloop_timeout,
+                               list);
+       if (timeout) {
+               os_get_reltime(&now);
+               if (!os_reltime_before(&now, &timeout->time)) {
+                       void *eloop_data = timeout->eloop_data;
+                       void *user_data = timeout->user_data;
+                       eloop_timeout_handler handler =
+                               timeout->handler;
+                       eloop_remove_timeout(timeout);
+                        printf("Executing callback\n");
+                       handler(eloop_data, user_data);
+               }
+
+       }
+       return 0;
+}
+#endif /* RDK_ONEWIFI */
 #ifndef CONFIG_NATIVE_WINDOWS
 static void eloop_handle_alarm(int sig)
 {
@@ -1200,6 +1307,10 @@ void eloop_run(void)
 				   , strerror(errno));
 			goto out;
 		}
+#ifdef RDK_ONEWIFI
+		if (eloop.terminate)
+			break;
+#endif /* RDK_ONEWIFI */
 
 		eloop.readers.changed = 0;
 		eloop.writers.changed = 0;

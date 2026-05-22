@@ -832,6 +832,9 @@ int wps_registrar_add_pin(struct wps_registrar *reg, const u8 *addr,
 	eloop_register_timeout(WPS_PBC_WALK_TIME, 0,
 			       wps_registrar_set_selected_timeout,
 			       reg, NULL);
+#ifdef RDK_ONEWIFI
+	wps_pin_active_event(reg->wps);
+#endif
 
 	return 0;
 }
@@ -1128,6 +1131,9 @@ int wps_registrar_wps_cancel(struct wps_registrar *reg)
 		wpa_printf(MSG_DEBUG, "WPS: PIN is set - cancelling it");
 		wps_registrar_pin_completed(reg);
 		wps_registrar_invalidate_wildcard_pin(reg, NULL, 0);
+#ifdef RDK_ONEWIFI
+		wps_pin_disable_event(reg->wps);
+#endif
 		return 1;
 	}
 	return 0;
@@ -3509,6 +3515,9 @@ static void wps_registrar_set_selected_timeout(void *eloop_ctx,
 	reg->pbc = 0;
 	wps_registrar_expire_pins(reg);
 	wps_registrar_selected_registrar_changed(reg, 0);
+#ifdef RDK_ONEWIFI
+	wps_pin_timeout_event(reg->wps);
+#endif
 }
 
 
