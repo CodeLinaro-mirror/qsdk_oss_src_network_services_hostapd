@@ -446,10 +446,19 @@ struct wpa_auth_callbacks {
 	u8* (*add_bmle)(void *ctx, u8 *bmle_ie, u8 type, void *ml_data);
 	size_t (*add_bmle_len)(void *ctx, u8 type, void *ml_data);
 	int (*frame_fwd_decision)(void *ctx, u16 auth_alg);
+	int (*pull_pmk_r1)(void *ctx, const u8 *sta_addr,
+			   u8 *pmk_r1_name, u8 *pmk_r1,
+			   size_t *pmk_r1_len, int *pairwise,
+			   int *session_timeout,
+			   const u8 **identity, size_t *identity_len,
+			   const u8 **radius_cui, size_t *radius_cui_len);
 	int (*notify_remote_auth)(void *ctx, const u8 *sta_addr,
 				  const u8 *ies, u16 ies_len,
 				  u16 status_code, bool is_ml);
 #endif /* CONFIG_IEEE80211R_AP */
+	int (*pull_pmk)(void *ctx, const u8 *sta_addr,
+			u8 *pmk, size_t *pmk_len, u8 *pmkid,
+			int *session_timeout);
 #ifdef CONFIG_MESH
 	int (*start_ampe)(void *ctx, const u8 *sta_addr);
 #endif /* CONFIG_MESH */

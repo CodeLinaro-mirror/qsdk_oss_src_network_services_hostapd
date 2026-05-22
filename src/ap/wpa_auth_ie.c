@@ -819,6 +819,39 @@ static int wpa_auth_pmksa_iter(struct wpa_authenticator *a, void *ctx)
 
 #endif /* CONFIG_IEEE80211BE */
 
+static void wpa_pull_pmk(struct wpa_state_machine *sm,
+			 struct wpa_authenticator *wpa_auth,
+			 int num_pmkid_in_rsnie, const u8 **pmkid)
+{
+	u8 pulled_pmk[PMK_LEN_MAX];
+	size_t pulled_pmk_len = 0;
+	u8 pulled_pmkid[PMKID_LEN];
+	int session_timeout = 0;
+
+	if (sm->pmksa || !num_pmkid_in_rsnie)
+		return;
+
+	if (!wpa_auth->cb->pull_pmk)
+	       return;
+
+	if (wpa_auth->cb->pull_pmk(wpa_auth->cb_ctx, sm->addr, pulled_pmk,
+				   &pulled_pmk_len, pulled_pmkid,
+				   &session_timeout))
+		return;
+
+	wpa_printf(MSG_DEBUG, "Found PMK from hostapd-if cache\n");
+	/*
+	 * Copy the pulled PMK to sm->pmksa by adding it to
+	 * the PMKSA cache
+	 */
+	sm->pmksa = pmksa_cache_auth_add(wpa_auth->pmksa, pulled_pmk,
+					 pulled_pmk_len, pulled_pmkid, NULL, 0,
+					 wpa_auth->addr, sm->addr,
+					 session_timeout, NULL,
+					 sm->wpa_key_mgmt);
+	if (sm->pmksa)
+		*pmkid = sm->pmksa->pmkid;
+}
 
 enum wpa_validate_result
 wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
@@ -1267,6 +1300,9 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 			break;
 		}
 	}
+
+	wpa_pull_pmk(sm, wpa_auth, data.num_pmkid, &pmkid);
+
 	for (i = 0; sm->pmksa == NULL && wpa_auth->conf.okc &&
 		     i < data.num_pmkid; i++) {
 		struct wpa_auth_okc_iter_data idata;
