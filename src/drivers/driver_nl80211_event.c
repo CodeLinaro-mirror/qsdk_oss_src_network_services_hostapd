@@ -6360,7 +6360,7 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 				     tb[NL80211_ATTR_PUNCT_BITMAP],
 				     tb[NL80211_ATTR_CH_SWITCH_COUNT],
 				     tb[NL80211_ATTR_6G_REG_POWER_MODE],
-				     0,
+				     tb[NL80211_ATTR_MAX_CH_SWITCH_TIME],
 				     tb[NL80211_ATTR_CHANNEL_WIDTH_DEVICE],
 				     tb[NL80211_ATTR_CENTER_FREQ_DEVICE],
 				     0);

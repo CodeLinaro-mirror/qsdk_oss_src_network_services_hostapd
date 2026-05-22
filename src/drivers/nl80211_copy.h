@@ -3327,6 +3327,12 @@ enum nl80211_commands {
  * @NL80211_ATTR_USE_CFP: Whether control frame protection is used for the
  * 	association (&enum nl80211_cfp, represented as a u32).
  *
+ * @NL80211_ATTR_MAX_CH_SWITCH_TIME: u32 attribute carrying the Switch Time
+ *	field from the MCST (Max Channel Switch Time) element, indicating the
+ *	time delta between the time the last beacon is transmitted by the AP in
+ *	the current channel and the expected time of the first beacon
+ *	transmitted by the AP in the new channel, expressed in TUs.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3989,6 +3995,8 @@ enum nl80211_attrs {
 	/* add attributes here, update the policy in nl80211.c */
 
 	NL80211_ATTR_BEACON_TX_SYNC_SUPPORT,
+
+	NL80211_ATTR_MAX_CH_SWITCH_TIME,
 
 	__NL80211_ATTR_AFTER_LAST,
 	NUM_NL80211_ATTR = __NL80211_ATTR_AFTER_LAST,
