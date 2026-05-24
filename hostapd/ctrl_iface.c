@@ -10574,7 +10574,8 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 			if (hostapd_ctrl_iface_acl_del_mac(
 				    hapd->conf, true, buf + 19) ||
 			    hostapd_set_acl(hapd) ||
-			    hostapd_disassoc_accept_mac(hapd))
+			    hostapd_disassoc_accept_mac(hapd) ||
+			    hostapd_disassoc_deny_mac(hapd))
 				reply_len = -1;
 		} else if (os_strcmp(buf + 11, "SHOW") == 0) {
 			reply_len = hostapd_ctrl_iface_acl_show_mac(
@@ -10582,7 +10583,8 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		} else if (os_strcmp(buf + 11, "CLEAR") == 0) {
 			hostapd_ctrl_iface_acl_clear_list(hapd->conf, true);
 			if (hostapd_set_acl(hapd) ||
-			    hostapd_disassoc_accept_mac(hapd))
+			    hostapd_disassoc_accept_mac(hapd) ||
+			    hostapd_disassoc_deny_mac(hapd))
 				reply_len = -1;
 		} else {
 			reply_len = -1;
