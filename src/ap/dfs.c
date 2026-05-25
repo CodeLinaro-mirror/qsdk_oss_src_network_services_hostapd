@@ -41,6 +41,7 @@ static struct hostapd_channel_data *
 dfs_downgrade_bandwidth(struct hostapd_iface *iface, int *secondary_channel,
 			u8 *oper_centr_freq_seg0_idx,
 			u8 *oper_centr_freq_seg1_idx,
+			u8 *oper_chwidth,
 			enum dfs_channel_type *channel_type);
 
 static void hostapd_dfs_update_background_chain(struct hostapd_iface *iface);
@@ -1826,7 +1827,6 @@ int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 	struct hostapd_hw_modes *cmode = iface->current_mode;
 	int ieee80211_mode = IEEE80211_MODE_AP, err;
 	struct csa_settings csa_settings;
-	u8 new_vht_oper_chwidth;
 	unsigned int i;
 	unsigned int num_err = 0;
 	u8 op_class, chan;
@@ -1850,11 +1850,8 @@ int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_NEW_CHANNEL
 		"freq=%d chan=%d sec_chan=%d", freq, channel,
 		secondary_channel);
-
-	new_vht_oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
-	hostapd_set_oper_chwidth(iface->conf, current_vht_oper_chwidth);
 	if (ieee80211_freq_to_channel_ext(freq, secondary_channel,
-					  new_vht_oper_chwidth, &op_class,
+					  current_vht_oper_chwidth, &op_class,
 					  &chan) != NUM_HOSTAPD_MODES) {
 		wpa_printf(MSG_DEBUG, "Update op_class %d->%d",
 			   iface->conf->op_class, op_class);
@@ -1874,7 +1871,6 @@ int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 	if (iface->mconf)
 		ieee80211_mode = IEEE80211_MODE_MESH;
 #endif /* CONFIG_MESH */
-
 	info = (struct hostapd_channel_info) {
 		.mode = iface->conf->hw_mode,
 		.freq = freq,
@@ -1886,7 +1882,7 @@ int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 		.he.enabled = iface->conf->ieee80211ax,
 		.eht.enabled = iface->conf->ieee80211be,
 		.ht.sec_channel_offset = secondary_channel,
-		.oper_chwidth = new_vht_oper_chwidth,
+		.oper_chwidth = current_vht_oper_chwidth,
 		.center_segment0 = oper_centr_freq_seg0_idx,
 		.center_segment1 = oper_centr_freq_seg1_idx,
 		.vht.caps = cmode->vht_capab,
@@ -1929,13 +1925,13 @@ int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 		iface->freq = freq;
 		iface->conf->channel = channel;
 		iface->conf->secondary_channel = secondary_channel;
-		hostapd_set_oper_chwidth(iface->conf, new_vht_oper_chwidth);
+		hostapd_set_oper_chwidth(iface->conf, current_vht_oper_chwidth);
 		hostapd_set_oper_centr_freq_seg0_idx(iface->conf,
 						     oper_centr_freq_seg0_idx);
 		hostapd_set_oper_centr_freq_seg1_idx(iface->conf,
 						     oper_centr_freq_seg1_idx);
 		if (ieee80211_freq_to_channel_ext(freq, secondary_channel,
-						  new_vht_oper_chwidth,
+						  current_vht_oper_chwidth,
 						  &op_class, &chan) !=
 		    NUM_HOSTAPD_MODES) {
 			wpa_printf(MSG_DEBUG, "Update op_class %d->%d",
@@ -2246,6 +2242,7 @@ static void hostapd_dfs_update_background_chain(struct hostapd_iface *iface)
 	struct hostapd_channel_data *channel;
 	u8 oper_centr_freq_seg0_idx = 0;
 	u8 oper_centr_freq_seg1_idx = 0;
+	u8 current_vht_oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
 
 	if (dfs_is_agile_cac_enabled(iface)) {
 		hostapd_agile_cac_update(iface);
@@ -2268,6 +2265,7 @@ static void hostapd_dfs_update_background_chain(struct hostapd_iface *iface)
 		channel = dfs_downgrade_bandwidth(iface, &sec,
 						  &oper_centr_freq_seg0_idx,
 						  &oper_centr_freq_seg1_idx,
+						  &current_vht_oper_chwidth,
 						  &channel_type);
 	if (!channel ||
 	    hostapd_start_dfs_cac(iface, iface->conf->hw_mode,
@@ -2277,7 +2275,7 @@ static void hostapd_dfs_update_background_chain(struct hostapd_iface *iface)
 				  iface->conf->ieee80211ax,
 				  iface->conf->ieee80211be,
 				  iface->conf->ieee80211bn,
-				  sec, hostapd_get_oper_chwidth(iface->conf),
+				  sec, current_vht_oper_chwidth,
 				  oper_centr_freq_seg0_idx,
 				  oper_centr_freq_seg1_idx, true, 0, 0)) {
 		wpa_printf(MSG_ERROR, "DFS failed to start CAC offchannel");
@@ -2828,9 +2826,12 @@ static struct hostapd_channel_data *
 dfs_downgrade_bandwidth(struct hostapd_iface *iface, int *secondary_channel,
 			u8 *oper_centr_freq_seg0_idx,
 			u8 *oper_centr_freq_seg1_idx,
+			u8 *oper_chwidth,
 			enum dfs_channel_type *channel_type)
 {
 	struct hostapd_channel_data *channel;
+	int orig_secondary_channel = iface->conf->secondary_channel;
+	u8 orig_oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
 
 	for (;;) {
 		channel = dfs_get_valid_channel(iface, secondary_channel,
@@ -2838,6 +2839,12 @@ dfs_downgrade_bandwidth(struct hostapd_iface *iface, int *secondary_channel,
 						oper_centr_freq_seg1_idx,
 						*channel_type);
 		if (channel) {
+			if (oper_chwidth)
+				*oper_chwidth =
+					hostapd_get_oper_chwidth(iface->conf);
+			iface->conf->secondary_channel = orig_secondary_channel;
+			hostapd_set_oper_chwidth(iface->conf,
+						 orig_oper_chwidth);
 			wpa_printf(MSG_DEBUG, "DFS: Selected channel: %d",
 				   channel->chan);
 			return channel;
@@ -2865,6 +2872,8 @@ dfs_downgrade_bandwidth(struct hostapd_iface *iface, int *secondary_channel,
 		}
 	}
 
+	iface->conf->secondary_channel = orig_secondary_channel;
+	hostapd_set_oper_chwidth(iface->conf, orig_oper_chwidth);
 	wpa_printf(MSG_INFO,
 		   "%s: no DFS channels left, waiting for NOP to finish",
 		   __func__);
@@ -2878,6 +2887,7 @@ static int hostapd_dfs_start_channel_switch_cac(struct hostapd_iface *iface)
 	int secondary_channel;
 	u8 oper_centr_freq_seg0_idx = 0;
 	u8 oper_centr_freq_seg1_idx = 0;
+	u8 current_vht_oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
 	enum dfs_channel_type channel_type = DFS_ANY_CHANNEL;
 	int err = 1;
 	u8 op_class, chan;
@@ -2898,6 +2908,7 @@ static int hostapd_dfs_start_channel_switch_cac(struct hostapd_iface *iface)
 		channel = dfs_downgrade_bandwidth(iface, &secondary_channel,
 						  &oper_centr_freq_seg0_idx,
 						  &oper_centr_freq_seg1_idx,
+						  &current_vht_oper_chwidth,
 						  &channel_type);
 		if (!channel) {
 			wpa_printf(MSG_ERROR, "No valid channel available");
@@ -2924,12 +2935,13 @@ static int hostapd_dfs_start_channel_switch_cac(struct hostapd_iface *iface)
 	iface->freq = channel->freq;
 	iface->conf->channel = channel->chan;
 	iface->conf->secondary_channel = secondary_channel;
+	hostapd_set_oper_chwidth(iface->conf, current_vht_oper_chwidth);
 	hostapd_set_oper_centr_freq_seg0_idx(iface->conf,
 					     oper_centr_freq_seg0_idx);
 	hostapd_set_oper_centr_freq_seg1_idx(iface->conf,
 					     oper_centr_freq_seg1_idx);
 	if (ieee80211_freq_to_channel_ext(channel->freq, secondary_channel,
-					  hostapd_get_oper_chwidth(iface->conf),
+					  current_vht_oper_chwidth,
 					  &op_class, &chan) !=
 	    NUM_HOSTAPD_MODES) {
 		wpa_printf(MSG_DEBUG, "Update op_class %d->%d",
@@ -3055,6 +3067,7 @@ int hostapd_dfs_start_channel_switch(struct hostapd_iface *iface)
 		channel = dfs_downgrade_bandwidth(iface, &secondary_channel,
 						  &oper_centr_freq_seg0_idx,
 						  &oper_centr_freq_seg1_idx,
+						  &current_vht_oper_chwidth,
 						  &channel_type);
 		if (!channel) {
 			/*
@@ -4200,6 +4213,7 @@ struct hostapd_channel_data *
 dfs_downgrade_bandwidth_helper(struct hostapd_iface *iface, int *secondary_channel,
 			       u8 *oper_centr_freq_seg0_idx,
 			       u8 *oper_centr_freq_seg1_idx,
+			       u8 *oper_chwidth,
 			       int *channel_type)
 {
 	enum dfs_channel_type type = *channel_type;
@@ -4208,6 +4222,7 @@ dfs_downgrade_bandwidth_helper(struct hostapd_iface *iface, int *secondary_chann
 	channel = dfs_downgrade_bandwidth(iface, secondary_channel,
 					  oper_centr_freq_seg0_idx,
 					  oper_centr_freq_seg1_idx,
+					  oper_chwidth,
 					  &type);
 	*channel_type = type;
 
