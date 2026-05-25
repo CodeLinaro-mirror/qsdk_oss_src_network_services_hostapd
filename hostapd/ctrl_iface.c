@@ -4704,52 +4704,6 @@ static void hostapd_get_channel_switch_time(struct hostapd_iface *iface,
 	}
 }
 
-/**
- * hostapd_is_chan_unpuncture_allowed() - Validate user puncture pattern against CAC state
- * @iface: Pointer to hostapd interface
- * @settings: CSA settings containing requested puncture bitmap
- * @bandwidth: Channel bandwidth (CONF_OPER_CHWIDTH_*)
- *
- * Validates whether the user-requested puncture pattern would unpuncture any 20 MHz
- * subchannels which have not reached HOSTAPD_CHAN_DFS_AVAILABLE state and returns failure
- * if any of the subchannels matches this criteria.
- *
- * Subchannels that remain PUNCTURED (BIT set) in the user-requested puncture pattern
- * are not checked.
- *
- * Return: true if all unpunctured subchannels are safe to unpuncture, false otherwise.
- */
-static bool hostapd_is_chan_unpuncture_allowed(struct hostapd_iface *iface,
-					       struct csa_settings settings,
-					       int bandwidth)
-{
-	int i;
-	int subch_count;
-	u16 punc_bitmap = settings.freq_params.punct_bitmap;
-
-	subch_count = dfs_get_subchannel_count(bandwidth);
-	for (i = 0; i < subch_count; i++) {
-		struct hostapd_channel_data *channel;
-
-		channel = dfs_get_punc_subchan(iface,
-					       settings.freq_params.freq, i);
-		if (!channel)
-			continue;
-
-		if ((punc_bitmap & BIT(i)))
-			continue;
-
-		if ((channel->flag & HOSTAPD_CHAN_DFS_MASK) != HOSTAPD_CHAN_DFS_AVAILABLE) {
-			wpa_printf(MSG_ERROR,
-				   "chanswitch: cannot unpuncture radar-punctured channel %d (%d MHz) before CAC completion",
-				   channel->chan, channel->freq);
-			return false;
-		}
-	}
-
-	return true;
-}
-
 static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 					  char *pos)
 {
@@ -4922,7 +4876,9 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 	}
 
 	if (iface->conf->use_ru_puncture_dfs) {
-		if (hostapd_is_chan_unpuncture_allowed(iface, settings, bandwidth)) {
+		if (!hostapd_dfs_csa_target_has_unavailable_channel(iface,
+								    &settings.freq_params,
+								    bandwidth)) {
 			wpa_printf(MSG_DEBUG,
 				   "DFS: Update puncture source for User puncture bitmap=0x%04x",
 				   settings.freq_params.punct_bitmap);
