@@ -365,6 +365,30 @@ void ieee802_11_sa_query_action(struct hostapd_data *hapd,
 }
 
 
+static bool hostapd_sae_pw_id_exclusive_ml_partner(struct hostapd_data *hapd)
+{
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_data *link;
+
+	if (!hapd->conf->mld_ap)
+		return true;
+
+	for_each_mld_link(link, hapd) {
+		if (link == hapd)
+			continue;
+		/* There is at least one password without
+		 * password identifier in an affiliated AP MLD link,
+		 * i.e., no SAE password exists or an SAE password
+		 * exists but with no password identifier
+		 */
+		if (hostapd_sae_pw_id_in_use(link->conf) != 2)
+			return false;
+	}
+#endif /* CONFIG_IEEE80211BE */
+	return true;
+}
+
+
 static void hostapd_ext_capab_byte(struct hostapd_data *hapd, u8 *pos, int idx,
 				   bool mbssid_complete)
 {
@@ -466,7 +490,7 @@ static void hostapd_ext_capab_byte(struct hostapd_data *hapd, u8 *pos, int idx,
 			if (in_use)
 				*pos |= 0x02; /* Bit 81 - SAE Password
 					       * Identifiers In Use */
-			if (in_use == 2)
+			if (in_use == 2 && hostapd_sae_pw_id_exclusive_ml_partner(hapd))
 				*pos |= 0x04; /* Bit 82 - SAE Password
 					       * Identifiers Used Exclusively */
 		}
