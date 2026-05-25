@@ -1379,6 +1379,83 @@ struct wpabuf * hpke_base_open(enum hpke_kem_id kem_id,
 			       const u8 *enc_ct, size_t enc_ct_len);
 
 /**
+ * enum crypto_ml_kem_variant - ML-KEM parameter set
+ */
+enum crypto_ml_kem_variant {
+	CRYPTO_ML_KEM_512,
+	CRYPTO_ML_KEM_768,
+	CRYPTO_ML_KEM_1024,
+};
+
+/* ML-KEM shared secret length is always 32 bytes (FIPS 203) */
+#define CRYPTO_ML_KEM_SS_LEN 32
+
+/**
+ * struct crypto_ml_kem - ML-KEM context
+ *
+ * Internal data structure for ML-KEM operations. The contents is specific to
+ * the used crypto library.
+ */
+struct crypto_ml_kem;
+
+/**
+ * crypto_ml_kem_init - Initialize an ML-KEM context
+ * @variant: ML-KEM parameter set (512, 768, or 1024)
+ * Returns: Pointer to ML-KEM context or %NULL on failure
+ */
+struct crypto_ml_kem * crypto_ml_kem_init(enum crypto_ml_kem_variant variant);
+
+/**
+ * crypto_ml_kem_deinit - Free ML-KEM context
+ * @ml_kem: ML-KEM context from crypto_ml_kem_init()
+ */
+void crypto_ml_kem_deinit(struct crypto_ml_kem *ml_kem);
+
+/**
+ * crypto_ml_kem_keygen - Generate an ML-KEM key pair
+ * @ml_kem: ML-KEM context from crypto_ml_kem_init()
+ * Returns: 0 on success, -1 on failure
+ */
+int crypto_ml_kem_keygen(struct crypto_ml_kem *ml_kem);
+
+/**
+ * crypto_ml_kem_get_pubkey - Retrieve public (encapsulation) key
+ * @ml_kem: ML-KEM context from crypto_ml_kem_init()
+ * Returns: Public key in a wpabuf or %NULL on failure. The caller is
+ * responsible for freeing the returned wpabuf.
+ */
+struct wpabuf * crypto_ml_kem_get_pubkey(struct crypto_ml_kem *ml_kem);
+
+/**
+ * crypto_ml_kem_encapsulate - Encapsulate a shared secret
+ * @ml_kem: ML-KEM context from crypto_ml_kem_init()
+ * @peer_pub: Peer's public (encapsulation) key
+ * @peer_pub_len: Length of @peer_pub in bytes
+ * @ciphertext: Pointer to wpabuf pointer; allocated by this function. On
+ *	successuful return would hold the ML-KEM ciphertext.
+ * @secret: Pointer to wpabuf pointer; allocated by this function. On successful
+ *	return would hold the ML-KEM shared secret.
+ * Returns: 0 on success, -1 on failure
+ */
+int crypto_ml_kem_encapsulate(struct crypto_ml_kem *ml_kem,
+			      const u8 *peer_pub, size_t peer_pub_len,
+			      struct wpabuf **ciphertext,
+			      struct wpabuf **secret);
+
+/**
+ * crypto_ml_kem_decapsulate - Decapsulate a shared secret
+ * @ml_kem: ML-KEM context from crypto_ml_kem_init()
+ * @ciphertext: Ciphertext received from peer
+ * @ciphertext_len: Length of @ciphertext in bytes
+ * @secret: Pointer to wpabuf pointer; allocated by this function. On successful
+ *	return would hold the ML-KEM shared secret.
+ * Returns: 0 on success, -1 on failure
+ */
+int crypto_ml_kem_decapsulate(struct crypto_ml_kem *ml_kem,
+			      const u8 *ciphertext, size_t ciphertext_len,
+			      struct wpabuf **secret);
+
+/**
  * crypto_unload - Unload crypto resources
  *
  * This function is called just before the process exits to allow dynamic
