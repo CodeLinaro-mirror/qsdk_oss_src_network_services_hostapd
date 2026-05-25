@@ -282,14 +282,15 @@ u16 hostapd_own_capab_info(struct hostapd_data *hapd)
 		capab |= WLAN_CAPABILITY_SHORT_SLOT_TIME;
 
 	/*
-	 * Currently, Spectrum Management capability bit is set when directly
-	 * requested in configuration by spectrum_mgmt_required or when AP is
-	 * running on DFS channel.
-	 * TODO: Also consider driver support for TPC to set Spectrum Mgmt bit
-	 */
+    * Currently, Spectrum Management capability bit is set when directly
+    * requested in configuration by spectrum_mgmt_required or when AP is
+    * running on DFS channel.
+    * TODO: Also consider driver support for TPC to set Spectrum Mgmt bit
+	*/
 	if (hapd->iface->current_mode &&
 	    hapd->iface->current_mode->mode == HOSTAPD_MODE_IEEE80211A &&
-	    (hapd->iconf->spectrum_mgmt_required || dfs))
+	    (hapd->iconf->spectrum_mgmt_required || dfs ||
+	     hapd->iconf->ieee80211h))
 		capab |= WLAN_CAPABILITY_SPECTRUM_MGMT;
 
 	for (i = 0; i < RRM_CAPABILITIES_IE_LEN; i++) {
