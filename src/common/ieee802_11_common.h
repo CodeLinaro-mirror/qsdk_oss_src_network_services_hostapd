@@ -194,6 +194,7 @@ struct ieee802_11_elems {
 	u8 uhr_capabilities_len;
 	u8 eht_operation_len;
 	u8 uhr_operation_len;
+	u16 per_link_sta_capability;
 	size_t basic_mle_len;
 	size_t probe_req_mle_len;
 	size_t reconf_mle_len;

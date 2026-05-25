@@ -1133,7 +1133,7 @@ ParseRes ieee802_11_parse_link_assoc_req(struct ieee802_11_elems *elems,
 					   "MLD: missing capability info");
 			goto out;
 		}
-
+		elems->per_link_sta_capability = WPA_GET_LE16(pos);
 		pos += 2;
 		sub_elem_len -= 2;
 
