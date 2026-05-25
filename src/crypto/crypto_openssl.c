@@ -5739,6 +5739,327 @@ struct wpabuf * hpke_base_open(enum hpke_kem_id kem_id,
 #endif /* CONFIG_DPP3 */
 
 
+#if OPENSSL_VERSION_NUMBER >= 0x30500000L
+
+struct crypto_ml_kem {
+	EVP_PKEY *pkey;
+	const char *alg;
+};
+
+
+static const char * crypto_ml_kem_alg_name(enum crypto_ml_kem_variant variant)
+{
+	switch (variant) {
+	case CRYPTO_ML_KEM_512:
+		return "ML-KEM-512";
+	case CRYPTO_ML_KEM_768:
+		return "ML-KEM-768";
+	case CRYPTO_ML_KEM_1024:
+		return "ML-KEM-1024";
+	}
+	return NULL;
+}
+
+
+struct crypto_ml_kem * crypto_ml_kem_init(enum crypto_ml_kem_variant variant)
+{
+	struct crypto_ml_kem *ml_kem;
+
+	ml_kem = os_zalloc(sizeof(*ml_kem));
+	if (!ml_kem)
+		return NULL;
+
+	ml_kem->alg = crypto_ml_kem_alg_name(variant);
+	if (!ml_kem->alg) {
+		wpa_printf(MSG_DEBUG, "OpenSSL: Unsupported ML-KEM variant: %d",
+			   variant);
+		os_free(ml_kem);
+		return NULL;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "OpenSSL: ML-KEM initialized with variant: %s",
+		   ml_kem->alg);
+
+	return ml_kem;
+}
+
+
+void crypto_ml_kem_deinit(struct crypto_ml_kem *ml_kem)
+{
+	if (!ml_kem)
+		return;
+
+	wpa_printf(MSG_DEBUG, "OpenSSL: ML-KEM deinitialized");
+
+	EVP_PKEY_free(ml_kem->pkey);
+	os_free(ml_kem);
+}
+
+
+int crypto_ml_kem_keygen(struct crypto_ml_kem *ml_kem)
+{
+	if (!ml_kem)
+		return -1;
+
+	EVP_PKEY_free(ml_kem->pkey);
+	ml_kem->pkey = NULL;
+
+	ml_kem->pkey = EVP_PKEY_Q_keygen(NULL, NULL,
+				    ml_kem->alg);
+	if (!ml_kem->pkey) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: ML-KEM keygen failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		return -1;
+	}
+
+	return 0;
+}
+
+
+struct wpabuf * crypto_ml_kem_get_pubkey(struct crypto_ml_kem *ml_kem)
+{
+	struct wpabuf *buf;
+	size_t pub_len;
+
+	if (!ml_kem || !ml_kem->pkey)
+		return NULL;
+
+	if (EVP_PKEY_get_octet_string_param(ml_kem->pkey,
+					    OSSL_PKEY_PARAM_PUB_KEY,
+					    NULL, 0,
+					    &pub_len) != 1)
+		return NULL;
+
+	buf = wpabuf_alloc(pub_len);
+	if (!buf)
+		return NULL;
+
+	if (EVP_PKEY_get_octet_string_param(ml_kem->pkey,
+					    OSSL_PKEY_PARAM_PUB_KEY,
+					    wpabuf_put(buf, pub_len),
+					    pub_len,
+					    &pub_len) != 1) {
+		wpabuf_free(buf);
+		return NULL;
+	}
+
+	return buf;
+}
+
+
+int crypto_ml_kem_encapsulate(struct crypto_ml_kem *ml_kem,
+			      const u8 *peer_pub, size_t peer_pub_len,
+			      struct wpabuf **ciphertext,
+			      struct wpabuf **secret)
+{
+	EVP_PKEY_CTX *ctx = NULL;
+	EVP_PKEY *peer_key = NULL;
+	OSSL_PARAM params[2];
+	size_t ct_len, ss_len;
+	int ret = -1;
+
+	if (!ml_kem || !peer_pub || !peer_pub_len || !ciphertext || !secret)
+		return -1;
+
+	wpa_printf(MSG_DEBUG,
+		   "OpenSSL: ML-KEM encapsulation started for peer public key of length %zu",
+		   peer_pub_len);
+
+	/* First, generate a KEY object from the peer's public key */
+	params[0] = OSSL_PARAM_construct_octet_string(OSSL_PKEY_PARAM_PUB_KEY,
+						      (void *)peer_pub,
+						      peer_pub_len);
+	params[1] = OSSL_PARAM_construct_end();
+
+	peer_key = EVP_PKEY_new();
+	if (!peer_key)
+		goto fail;
+
+	ctx = EVP_PKEY_CTX_new_from_name(NULL, ml_kem->alg,
+					 NULL);
+	if (!ctx)
+		goto fail;
+
+	if (EVP_PKEY_fromdata_init(ctx) != 1 ||
+	    EVP_PKEY_fromdata(ctx, &peer_key, EVP_PKEY_PUBLIC_KEY,
+			      params) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: ML-KEM fromdata failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		goto fail;
+	}
+
+	EVP_PKEY_CTX_free(ctx);
+
+	/* Perform the encapsulation*/
+	ctx = EVP_PKEY_CTX_new_from_pkey(NULL, peer_key,
+					 NULL);
+	if (!ctx)
+		goto fail;
+
+	if (EVP_PKEY_encapsulate_init(ctx, NULL) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: EVP_PKEY_encapsulate_init failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		goto fail;
+	}
+
+	/* Before the encapsulation, determine output sizes */
+	if (EVP_PKEY_encapsulate(ctx, NULL,
+				 &ct_len,
+				 NULL, &ss_len) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: EVP_PKEY_encapsulate size query failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		goto fail;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "OpenSSL: ML-KEM encapsulation output sizes: ciphertext=%zu secret=%zu",
+		   ct_len, ss_len);
+
+	*ciphertext = wpabuf_alloc(ct_len);
+	*secret = wpabuf_alloc(ss_len);
+	if (!*ciphertext || !*secret)
+		goto fail;
+
+	if (EVP_PKEY_encapsulate(ctx,
+				 wpabuf_put(*ciphertext, ct_len),
+				 &ct_len,
+				 wpabuf_put(*secret, ss_len),
+				 &ss_len) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: EVP_PKEY_encapsulate failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		goto fail;
+	}
+
+	ret = 0;
+fail:
+	if (ret) {
+		wpabuf_free(*ciphertext);
+		*ciphertext = NULL;
+		wpabuf_clear_free(*secret);
+		*secret = NULL;
+	}
+	EVP_PKEY_free(peer_key);
+	EVP_PKEY_CTX_free(ctx);
+	return ret;
+}
+
+
+int crypto_ml_kem_decapsulate(struct crypto_ml_kem *ml_kem,
+			      const u8 *ciphertext, size_t ciphertext_len,
+			      struct wpabuf **secret)
+{
+	EVP_PKEY_CTX *ctx;
+	size_t ss_len;
+
+	if (!ml_kem || !ml_kem->pkey)
+		return -1;
+
+	wpa_printf(MSG_DEBUG,
+		   "OpenSSL: ML-KEM decapsulation started for ciphertext of length %zu",
+		   ciphertext_len);
+
+	ctx = EVP_PKEY_CTX_new_from_pkey(NULL, ml_kem->pkey,
+					 NULL);
+	if (!ctx)
+		return -1;
+
+	if (EVP_PKEY_decapsulate_init(ctx, NULL) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: EVP_PKEY_decapsulate_init failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		EVP_PKEY_CTX_free(ctx);
+		return -1;
+	}
+
+	/* Determine shared secret size */
+	if (EVP_PKEY_decapsulate(ctx, NULL, &ss_len,
+				 ciphertext,
+				 ciphertext_len) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: EVP_PKEY_decapsulate size query failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		EVP_PKEY_CTX_free(ctx);
+		return -1;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "OpenSSL: ML-KEM decapsulation output size: secret=%zu",
+		   ss_len);
+
+	*secret = wpabuf_alloc(ss_len);
+	if (!*secret) {
+		EVP_PKEY_CTX_free(ctx);
+		return -1;
+	}
+
+	if (EVP_PKEY_decapsulate(ctx, wpabuf_put(*secret, ss_len),
+				 &ss_len,
+				 ciphertext,
+				 ciphertext_len) != 1) {
+		wpa_printf(MSG_ERROR,
+			   "OpenSSL: EVP_PKEY_decapsulate failed: %s",
+			   ERR_error_string(ERR_get_error(), NULL));
+		wpabuf_clear_free(*secret);
+		*secret = NULL;
+		EVP_PKEY_CTX_free(ctx);
+		return -1;
+	}
+
+	EVP_PKEY_CTX_free(ctx);
+	return 0;
+}
+
+#else /* OPENSSL_VERSION_NUMBER >= 0x30500000L */
+
+struct crypto_ml_kem * crypto_ml_kem_init(enum crypto_ml_kem_variant variant)
+{
+	wpa_printf(MSG_ERROR, "OpenSSL: ML-KEM requires OpenSSL >= 3.5");
+	return NULL;
+}
+
+
+void crypto_ml_kem_deinit(struct crypto_ml_kem *ml_kem)
+{
+}
+
+
+int crypto_ml_kem_keygen(struct crypto_ml_kem *ml_kem)
+{
+	return -1;
+}
+
+
+struct wpabuf * crypto_ml_kem_get_pubkey(struct crypto_ml_kem *ml_kem)
+{
+	return NULL;
+}
+
+
+int crypto_ml_kem_encapsulate(struct crypto_ml_kem *ml_kem,
+			      const u8 *peer_pub, size_t peer_pub_len,
+			      struct wpabuf **ciphertext,
+			      struct wpabuf **secret)
+{
+	return -1;
+}
+
+
+int crypto_ml_kem_decapsulate(struct crypto_ml_kem *ml_kem,
+			      const u8 *ciphertext, size_t ciphertext_len,
+			      struct wpabuf **secret)
+{
+	return -1;
+}
+
+#endif /* OpenSSL >= 3.5 */
+
+
 void crypto_unload(void)
 {
 	openssl_unload_legacy_provider();
