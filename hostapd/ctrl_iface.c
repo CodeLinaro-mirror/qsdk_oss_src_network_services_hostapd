@@ -3202,6 +3202,139 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+	} else if (os_strcasecmp(cmd, "ecsa_ie_status") == 0) {
+		res = os_snprintf(buf, buflen, "ecsa_ie_status = %d\n",
+				  hapd->iconf->ecsa_ie_only);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "he_basic_mcs_nss_set") == 0) {
+		res = os_snprintf(buf, buflen, "he_basic_mcs_nss_set = 0x%x\n",
+				  hapd->iconf->he_op.he_basic_mcs_nss_set);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "he_rts_threshold") == 0) {
+		res = os_snprintf(buf, buflen, "he_rts_threshold = 0x%x\n",
+				  hapd->iconf->he_op.he_rts_threshold);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "spp_amsdu") == 0) {
+		res = os_snprintf(buf, buflen, "spp_amsdu = %d\n",
+				  hapd->conf->spp_amsdu);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "he_twt_responder") == 0) {
+		res = os_snprintf(buf, buflen, "he_twt_responder = %u\n",
+				  hapd->iconf->he_op.he_twt_responder);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "he_6ghz_max_ampdu_len_exp") == 0) {
+		res = os_snprintf(buf, buflen, "he_6ghz_max_ampdu_len_exp = %u\n",
+				  hapd->iconf->he_6ghz_max_ampdu_len_exp);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "he_er_su_disable") == 0) {
+		res = os_snprintf(buf, buflen, "he_er_su_disable = %u\n",
+				  hapd->iconf->he_op.he_er_su_disable);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "enable_mcs15") == 0) {
+		res = os_snprintf(buf, buflen, "enable_mcs15 = %d\n",
+				  hapd->iconf->enable_mcs15);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "short_gi_20") == 0) {
+		res = os_snprintf(buf, buflen, "short_gi_20 = %u\n",
+				  !!(hapd->iconf->ht_capab & HT_CAP_INFO_SHORT_GI20MHZ));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "short_gi_40") == 0) {
+		res = os_snprintf(buf, buflen, "short_gi_40 = %u\n",
+				  !!(hapd->iconf->ht_capab & HT_CAP_INFO_SHORT_GI40MHZ));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "max-amsdu-7935") == 0) {
+		res = os_snprintf(buf, buflen, "max-amsdu-7935 = %u\n",
+				  !!(hapd->iconf->ht_capab & HT_CAP_INFO_MAX_AMSDU_SIZE));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "short_gi_80") == 0) {
+		res = os_snprintf(buf, buflen, "short_gi_80 = %u\n",
+				  !!(hapd->iconf->vht_capab & VHT_CAP_SHORT_GI_80));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "short_gi_160") == 0) {
+		res = os_snprintf(buf, buflen, "short_gi_160 = %u\n",
+				  !!(hapd->iconf->vht_capab & VHT_CAP_SHORT_GI_160));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "max-mpdu-7991") == 0) {
+		res = os_snprintf(buf, buflen, "max-mpdu-7991 = %u\n",
+				  !!(hapd->iconf->vht_capab & VHT_CAP_MAX_MPDU_LENGTH_7991));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "mpdu-11454") == 0) {
+		res = os_snprintf(buf, buflen, "mpdu-11454 = %u\n",
+				  !!(hapd->iconf->vht_capab & VHT_CAP_MAX_MPDU_LENGTH_11454));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "rxldpc") == 0) {
+		res = os_snprintf(buf, buflen, "rxldpc = %u\n",
+				  !!(hapd->iconf->vht_capab & VHT_CAP_RXLDPC));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "tx-stbc-2by1") == 0) {
+		res = os_snprintf(buf, buflen, "tx-stbc-2by1 = %u\n",
+				  !!(hapd->iconf->vht_capab & VHT_CAP_TXSTBC));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "rx-stbc-1") == 0) {
+		res = os_snprintf(buf, buflen, "rx-stbc-1 = %u\n",
+				  !!(hapd->iconf->vht_capab & VHT_CAP_RXSTBC_1));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "rx-stbc-12") == 0) {
+		res = os_snprintf(buf, buflen, "rx-stbc-12 = %u\n",
+				  !!(hapd->iconf->vht_capab & VHT_CAP_RXSTBC_2));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "rx-stbc-123") == 0) {
+		res = os_snprintf(buf, buflen, "rx-stbc-123 = %u\n",
+				  ((hapd->iconf->vht_capab & VHT_CAP_RXSTBC_3) >>
+				    VHT_CAP_RXSTBC_MASK_SHIFT));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "rx-stbc-1234") == 0) {
+		res = os_snprintf(buf, buflen, "rx-stbc-1234 = %u\n",
+				  !!(hapd->iconf->vht_capab & VHT_CAP_RXSTBC_4));
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "beacon_int") == 0) {
+		res = os_snprintf(buf, buflen, "beacon_int = %u\n",
+				  hapd->iconf->beacon_int);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
 #ifdef CONFIG_QCN_EXTN
 	} else {
 		res = hostapd_ctrl_iface_get_extn(hapd, cmd, buf, buflen);
