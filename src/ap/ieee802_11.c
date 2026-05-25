@@ -8507,6 +8507,7 @@ int ieee80211_ml_process_link(struct hostapd_data *hapd,
 	sta->mld_assoc_link_id = origin_sta->mld_assoc_link_id;
 	sta->sa_query_timed_out = origin_sta->sa_query_timed_out;
 	ap_sta_set_mld(sta, true);
+	sta->capability = elems.per_link_sta_capability;
 	sta->auth_alg = origin_sta->auth_alg;
 #ifdef CONFIG_ENC_ASSOC
 	sta->epp_sta = origin_sta->epp_sta;
@@ -8557,7 +8558,6 @@ int ieee80211_ml_process_link(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_DEBUG, "MLD: link=%u, association OK (aid=%u)",
 		   hapd->mld_link_id, sta->aid);
-
 	sta->flags |= WLAN_STA_ASSOC_REQ_OK;
 	sta->vlan_id = origin_sta->vlan_id;
 	sta->auth_alg = origin_sta->auth_alg;

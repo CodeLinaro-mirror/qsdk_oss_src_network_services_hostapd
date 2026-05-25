@@ -256,6 +256,7 @@ struct ieee802_11_elems {
 	size_t nan_len;
 	u8 uhr_capabilities_len;
 	u8 uhr_operation_len;
+	u16 per_link_sta_capability;
 	u8 security_profile_len;
 	size_t pqc_parameter_len;
 

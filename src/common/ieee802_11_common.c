@@ -1223,6 +1223,7 @@ static ParseRes ieee802_11_parse_link_profile(struct ieee802_11_elems *elems,
 			goto out;
 		}
 
+		elems->per_link_sta_capability = WPA_GET_LE16(pos);
 		pos += 2;
 		sub_elem_len -= 2;
 
