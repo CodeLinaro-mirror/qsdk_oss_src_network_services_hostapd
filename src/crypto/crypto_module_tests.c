@@ -19,7 +19,6 @@
 #include "crypto/sha256.h"
 #include "crypto/sha384.h"
 
-
 static int test_siv(void)
 {
 #ifdef CONFIG_MESH
@@ -2469,6 +2468,138 @@ static int test_hpke(void)
 	return 0;
 }
 
+static int test_ml_kem_variant(enum crypto_ml_kem_variant variant,
+			       const char *name)
+{
+	struct crypto_ml_kem *sender = NULL, *receiver = NULL;
+	struct wpabuf *pubkey = NULL;
+	struct wpabuf *ciphertext = NULL, *sender_secret = NULL;
+	struct wpabuf *receiver_secret = NULL;
+	struct os_reltime t_start, t_end;
+	struct os_reltime t_keygen, t_encap, t_decap;
+	long t_total_us;
+	int ret = -1;
+
+	wpa_printf(MSG_INFO, "ML-KEM %s: init + keygen", name);
+
+	os_get_reltime(&t_start);
+	receiver = crypto_ml_kem_init(variant);
+	if (!receiver) {
+		wpa_printf(MSG_ERROR, "ML-KEM %s: receiver init failed", name);
+		return -1;
+	}
+
+	if (crypto_ml_kem_keygen(receiver) < 0) {
+		wpa_printf(MSG_ERROR, "ML-KEM %s: keygen failed", name);
+		goto fail;
+	}
+	os_get_reltime(&t_end);
+	os_reltime_sub(&t_end, &t_start, &t_keygen);
+
+	pubkey = crypto_ml_kem_get_pubkey(receiver);
+	if (!pubkey) {
+		wpa_printf(MSG_ERROR, "ML-KEM %s: get_pubkey failed", name);
+		goto fail;
+	}
+
+	wpa_printf(MSG_INFO, "ML-KEM %s: encapsulate", name);
+
+	sender = crypto_ml_kem_init(variant);
+	if (!sender) {
+		wpa_printf(MSG_ERROR, "ML-KEM %s: sender init failed", name);
+		goto fail;
+	}
+
+	os_get_reltime(&t_start);
+	if (crypto_ml_kem_encapsulate(sender, wpabuf_head(pubkey),
+				      wpabuf_len(pubkey),
+				      &ciphertext,
+				      &sender_secret) < 0) {
+		wpa_printf(MSG_ERROR, "ML-KEM %s: encapsulate failed", name);
+		goto fail;
+	}
+	os_get_reltime(&t_end);
+	os_reltime_sub(&t_end, &t_start, &t_encap);
+
+	if (wpabuf_len(sender_secret) != CRYPTO_ML_KEM_SS_LEN) {
+		wpa_printf(MSG_ERROR,
+			   "ML-KEM %s: unexpected sender secret length %zu",
+			   name, wpabuf_len(sender_secret));
+		goto fail;
+	}
+
+	wpa_printf(MSG_INFO, "ML-KEM %s: decapsulate", name);
+
+	os_get_reltime(&t_start);
+	if (crypto_ml_kem_decapsulate(receiver, wpabuf_head(ciphertext),
+				      wpabuf_len(ciphertext),
+				      &receiver_secret) < 0) {
+		wpa_printf(MSG_ERROR, "ML-KEM %s: decapsulate failed", name);
+		goto fail;
+	}
+	os_get_reltime(&t_end);
+	os_reltime_sub(&t_end, &t_start, &t_decap);
+
+	if (wpabuf_len(receiver_secret) != CRYPTO_ML_KEM_SS_LEN) {
+		wpa_printf(MSG_ERROR,
+			   "ML-KEM %s: unexpected receiver secret length %zu",
+			   name, wpabuf_len(receiver_secret));
+		goto fail;
+	}
+
+	if (os_memcmp(wpabuf_head(sender_secret), wpabuf_head(receiver_secret),
+		      CRYPTO_ML_KEM_SS_LEN) != 0) {
+		wpa_printf(MSG_ERROR,
+			   "ML-KEM %s: shared secrets do not match", name);
+		goto fail;
+	}
+
+	t_total_us = (t_keygen.sec + t_encap.sec + t_decap.sec) * 1000000L +
+		     t_keygen.usec + t_encap.usec + t_decap.usec;
+
+	wpa_printf(MSG_INFO,
+		   "ML-KEM %s: keygen=%ld us, encap=%ld us, decap=%ld us, total=%ld us",
+		   name,
+		   t_keygen.sec * 1000000L + t_keygen.usec,
+		   t_encap.sec * 1000000L + t_encap.usec,
+		   t_decap.sec * 1000000L + t_decap.usec,
+		   t_total_us);
+
+	wpa_printf(MSG_INFO, "ML-KEM %s: PASSED", name);
+	ret = 0;
+fail:
+	wpabuf_free(pubkey);
+	wpabuf_free(ciphertext);
+	wpabuf_free(sender_secret);
+	wpabuf_free(receiver_secret);
+	crypto_ml_kem_deinit(sender);
+	crypto_ml_kem_deinit(receiver);
+	return ret;
+}
+
+
+static int test_ml_kem(void)
+{
+	struct {
+		enum crypto_ml_kem_variant variant;
+		const char *name;
+	} variants[] = {
+		{ CRYPTO_ML_KEM_512, "512" },
+		{ CRYPTO_ML_KEM_768, "768" },
+		{ CRYPTO_ML_KEM_1024, "1024" },
+	};
+	unsigned int i;
+
+	wpa_printf(MSG_INFO, "ML-KEM tests");
+	for (i = 0; i < ARRAY_SIZE(variants); i++) {
+		if (test_ml_kem_variant(variants[i].variant,
+					variants[i].name) < 0)
+			return -1;
+	}
+
+	return 0;
+}
+
 
 static int test_ms_funcs(void)
 {
@@ -2591,6 +2722,7 @@ int crypto_module_tests(void)
 	    test_fips186_2_prf() ||
 	    test_extract_expand_hkdf() ||
 	    test_hpke() ||
+	    test_ml_kem() ||
 	    test_ms_funcs())
 		ret = -1;
 
