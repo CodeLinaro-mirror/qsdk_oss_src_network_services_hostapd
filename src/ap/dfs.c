@@ -3307,6 +3307,9 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+	if (iface->conf->use_ru_puncture_dfs && !hostapd_is_usable_punct_bitmap(iface))
+		dfs_reset_punc_bitmap_src(iface, ALL_SUBCHANS_PUNC);
+
 	/* Switch channel with random channel selection for invalid puncturing pattern */
 #ifdef CONFIG_IEEE80211BE
 	iface->radar_bit_pattern = 0;

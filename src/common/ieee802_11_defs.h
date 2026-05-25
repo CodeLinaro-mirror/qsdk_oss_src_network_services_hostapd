@@ -36,6 +36,8 @@
 
 #define WLAN_INVALID_MGMT_SEQ   0xFFFF
 
+#define ALL_SUBCHANS_PUNC 0xFFFF
+
 #define WLAN_GET_SEQ_FRAG(seq) ((seq) & (BIT(3) | BIT(2) | BIT(1) | BIT(0)))
 #define WLAN_GET_SEQ_SEQ(seq) \
 	(((seq) & (~(BIT(3) | BIT(2) | BIT(1) | BIT(0)))) >> 4)
