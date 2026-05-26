@@ -8518,6 +8518,9 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 	 * frequencies accordingly
 	 */
 	if (chanwidth == CONF_OPER_CHWIDTH_320MHZ ||
+#ifdef CONFIG_QCN_EXTN
+	    hostapd_is_repurpose_disabled_11be_extn(hapd->conf) ||
+#endif /* CONFIG_QCN_EXTN */
 	    settings->freq_params.punct_bitmap) {
 		enum oper_chan_width chan_op_bw = chanwidth;
 		u8 oper_centr_freq0_idx = 0, oper_centr_freq1_idx = 0, pri_chan = 0;
@@ -8550,6 +8553,17 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 		}
 
 		chanwidth = chan_op_bw;
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+			hostapd_get_csa_info_of_repurposed_bss_extn(
+					hapd, pri_chan,
+					settings->freq_params.sec_channel_offset,
+					&chanwidth,
+					&oper_centr_freq0_idx,
+					&oper_centr_freq1_idx);
+		}
+#endif /* CONFIG_QCN_EXTN */
+
 		if (oper_centr_freq0_idx == 0 || oper_centr_freq0_idx == pri_chan)
 			sec_channel_offset = 0;
 		else if (oper_centr_freq0_idx > pri_chan)
@@ -8559,7 +8573,7 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 
 		wpa_printf(MSG_DEBUG,
 			   "Updated Legacy BW %d chan1 %d chan2 %d sec_chan %d",
-			   chan_op_bw, oper_centr_freq0_idx, oper_centr_freq1_idx,
+			   chanwidth, oper_centr_freq0_idx, oper_centr_freq1_idx,
 			   sec_channel_offset);
 	}
 #endif /* CONFIG_IEEE80211BE */
