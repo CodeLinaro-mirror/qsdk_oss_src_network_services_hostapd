@@ -193,9 +193,12 @@ static int nl80211_send_frame_cmd(struct i802_bss *bss,
 				  size_t csa_offs_len, int link_id);
 static int wpa_driver_nl80211_probe_req_report(struct i802_bss *bss,
 					       int report);
-static int nl80211_put_freq_params(struct nl_msg *msg,
-				   const struct hostapd_freq_params *freq,
-				   struct i802_bss *bss);
+#ifndef CONFIG_QCN_EXTN
+static
+#endif /* CONFIG_QCN_EXTN */
+int nl80211_put_freq_params(struct nl_msg *msg,
+			    const struct hostapd_freq_params *freq,
+			    struct i802_bss *bss);
 #define IFIDX_ANY -1
 
 static void add_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx,
@@ -5699,9 +5702,12 @@ static int nl80211_set_ap_rssi_monitor(struct i802_bss *bss,
 }
 
 
-static int nl80211_put_freq_params(struct nl_msg *msg,
- 				   const struct hostapd_freq_params *freq,
- 				   struct i802_bss *bss)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif /* CONFIG_QCN_EXTN */
+int nl80211_put_freq_params(struct nl_msg *msg,
+			    const struct hostapd_freq_params *freq,
+			    struct i802_bss *bss)
 {
 	enum hostapd_hw_mode hw_mode;
 	int is_24ghz;
