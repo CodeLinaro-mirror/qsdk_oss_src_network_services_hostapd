@@ -429,7 +429,11 @@ setup_mld:
 #ifdef CONFIG_QCN_EXTN
 		hostapd_notify_link_repurpose(hapd, "hostapd_driver_init");
 #endif /* CONFIG_QCN_EXTN */
-		hostapd_mld_add_link(hapd);
+		if (hostapd_mld_add_link(hapd) < 0) {
+			hostapd_mld_remove_link(hapd);
+			return -1;
+		}
+
 		hostapd_validate_update_ml_max_rec_links(hapd);
 	}
 #endif /* CONFIG_IEEE80211BE */
