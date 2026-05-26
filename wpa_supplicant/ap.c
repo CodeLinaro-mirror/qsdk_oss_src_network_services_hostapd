@@ -2179,8 +2179,12 @@ void wpas_ap_event_dfs_radar_detected(struct wpa_supplicant *wpa_s,
 
 	if (!iface)
 		iface = wpa_s->ifmsh;
-	if (!iface || !iface->bss[0])
+	if (!iface || !iface->bss[0]) {
+#ifdef CONFIG_QCN_EXTN
+		wpas_dfs_radar_detected_sta_mode(wpa_s, radar);
+#endif
 		return;
+	}
 	wpa_printf(MSG_DEBUG, "DFS radar detected on %d MHz", radar->freq);
 	hostapd_dfs_radar_detected(iface, radar->freq,
 				   radar->ht_enabled, radar->chan_offset,
@@ -2254,8 +2258,12 @@ void wpas_ap_event_dfs_cac_nop_finished(struct wpa_supplicant *wpa_s,
 
 	if (!iface)
 		iface = wpa_s->ifmsh;
-	if (!iface || !iface->bss[0])
+	if (!iface || !iface->bss[0]) {
+#ifdef CONFIG_QCN_EXTN
+		wpas_dfs_nop_finished_sta_mode(wpa_s, radar);
+#endif
 		return;
+	}
 	wpa_printf(MSG_DEBUG, "DFS NOP finished on %d MHz", radar->freq);
 	hostapd_dfs_nop_finished(iface, radar->freq,
 				 radar->ht_enabled, radar->chan_offset,

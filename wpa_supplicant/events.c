@@ -2027,6 +2027,18 @@ int wpa_supplicant_connect(struct wpa_supplicant *wpa_s,
 	}
 #endif /* IEEE8021X_EAPOL */
 
+#ifdef CONFIG_QCN_EXTN
+	/* Check if selected BSS uses NOL channel (handles both SLO and MLO) */
+	if (wpas_bss_uses_nol_channel_extn(wpa_s, selected)) {
+		wpa_printf(MSG_INFO,
+			   "NOL: Selected BSS " MACSTR " uses NOL channel,"
+			   " rejecting connection", MAC2STR(selected->bssid));
+		wpas_connection_failed(wpa_s, selected->bssid, NULL);
+		wpa_supplicant_mark_disassoc(wpa_s);
+		return -1;
+	}
+#endif
+
 	wpa_msg(wpa_s, MSG_DEBUG,
 		"Considering connect request: reassociate: %d  selected: "
 		MACSTR "  bssid: " MACSTR "  pending: " MACSTR
