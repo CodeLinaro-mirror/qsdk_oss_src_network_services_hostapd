@@ -492,7 +492,8 @@ static void find_6g_chan_gt_40(struct hostapd_iface *iface,
 {
 	u16 pri_chan_pos;
 	const u16 *bw_pp_arr;
-	u16 num_pp, pp_mask;
+	u16 num_pp, pp_mask, afc_pp;
+	bool allow_dynamic_punc = true;
 	int i;
 
 	pri_chan_pos = (chan->freq - new_start_freq) / 20;
@@ -502,6 +503,29 @@ static void find_6g_chan_gt_40(struct hostapd_iface *iface,
 		wpa_printf(MSG_ERROR,
 			   "No valid puncture pattern array for bw %d", channel_width);
 		return;
+	}
+
+	afc_pp = afc_bitmap & pp_mask;
+	if (power_type == NL80211_REG_AP_SP) {
+		s16 initial_sp_eirp = hostapd_get_eirp_pwr(iface, chan->freq,
+							   centre_freq,
+							   channel_width, afc_pp,
+							   NL80211_REG_AP_SP, false,
+							   NL80211_REG_NUM_POWER_MODES,
+							   false);
+		/*
+		 * Dynamic puncturing policy:
+		 * - threshold unset (-64): puncture only when initial SP EIRP
+		 *   is at minimum (-64)
+		 * - threshold set: puncture only when initial SP EIRP does not
+		 *   already exceed the configured threshold
+		 */
+		if (iface->conf->punc_eirp_thres_6ghz == CHAN_MIN_TX_POWER) {
+			if (initial_sp_eirp > CHAN_MIN_TX_POWER)
+				allow_dynamic_punc = false;
+		} else if (initial_sp_eirp > iface->conf->punc_eirp_thres_6ghz) {
+			allow_dynamic_punc = false;
+		}
 	}
 
 	for (i = 0; i < num_pp; i++) {
@@ -538,6 +562,20 @@ static void find_6g_chan_gt_40(struct hostapd_iface *iface,
 					       channel_width, 0,
 					       NL80211_REG_AP_VLP, false,
 					       NL80211_REG_NUM_POWER_MODES, false);
+
+		if (power_type == NL80211_REG_AP_SP && temp_bitmap != afc_pp) {
+			/*
+			 * Dynamic PP must be allowed and must improve above threshold.
+			 * Apply threshold gate only to dynamic puncturing candidates.
+			 * The AFC baseline candidate (temp_bitmap == afc_pp) is
+			 * intentionally not filtered here.
+			 */
+			if (!allow_dynamic_punc)
+				continue;
+			if (sp_pwr <= iface->conf->punc_eirp_thres_6ghz)
+				continue;
+		}
+
 		if (power_type == NL80211_REG_AP_SP && (sp_pwr < lpi_pwr || sp_pwr < vlp_pwr)) {
 			wpa_printf(MSG_DEBUG,
 				   "SP eirp %d is less than LPI eirp %d or VLP eirp %d for freq %d bw %d and PP 0x%x",
