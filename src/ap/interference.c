@@ -789,7 +789,7 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 		   chan_width,
 		   cf1, cf2, chan_bw_interference_bitmap);
 
-	if (iface->conf->discard_6g_awgn_event || hostapd_is_backhaul_sta_conn(iface)) {
+	if (iface->conf->discard_6g_awgn_event) {
 		if (iface->bss && iface->bss[0] && iface->bss[0]->msg_ctx)
 			wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, INTERFERENCE_DETECTED
 				"type=%s freq=%d chan_width=%d cf1=%d cf2=%d bitmap=0x%x",
@@ -799,6 +799,21 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 		wpa_printf(MSG_DEBUG, "discard_6g_awgn_event set ignoring"
 			   " AWGN DETECT event from driver");
 		return 0;
+	}
+	if (hostapd_is_bh_sta_connecting_or_connected_extn(iface)) {
+		if (iface->conf->conf_extn.rptr_allow_chan_sw) {
+			wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, INTERFERENCE_DETECTED
+				"Rptr: BH STA connected - disconnect BH STA "
+				"and allow channel switch");
+			hostapd_ucode_trigger_bhsta_disconnect(iface);
+		} else {
+			wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, INTERFERENCE_DETECTED
+			"Rptr: BH STA connected - Discard AWGN"
+			"type=%s freq=%d chan_width=%d cf1=%d cf2=%d bitmap=0x%x",
+			"AWGN", freq, chan_width, cf1, cf2,
+			chan_bw_interference_bitmap);
+			return 0;
+		}
 	}
 
 #ifdef CONFIG_QCN_EXTN

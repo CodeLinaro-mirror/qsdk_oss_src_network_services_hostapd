@@ -840,6 +840,7 @@ int wpas_ucode_init(struct wpa_global *gl)
 		{ "notify_uplink_csa", uc_wpas_notify_uplink_csa_extn },
 		{ "reconnect", uc_wpas_iface_reconnect_extn },
 		{ "notify_rcsa", uc_wpas_notify_rcsa_extn },
+		{ "abort_scan_for_acs", uc_wpas_abort_scan_for_acs },
 #endif
 	};
 

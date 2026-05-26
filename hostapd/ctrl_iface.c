@@ -4775,10 +4775,18 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 #ifdef CONFIG_QCN_EXTN
 	if (!settings.freq_params.rptr_mgr &&
 		hostapd_is_bh_sta_connecting_or_connected_extn(iface)) {
-		wpa_printf(MSG_ERROR,
-			   "chanswitch: backhaul STA in connecting or connected"
-			   " state, aborting channel switch");
-		return -1;
+		if (iface->conf->conf_extn.rptr_allow_chan_sw) {
+			wpa_printf(MSG_DEBUG,
+				   "chanswitch: BH STA in connecting or connected"
+				   " state, disconnect BH STA channel switch"
+				   " and allow channel switch");
+			hostapd_ucode_trigger_bhsta_disconnect(iface);
+		} else {
+			wpa_printf(MSG_ERROR,
+				   "chanswitch: BH STA in connecting or"
+				   " connected state, aborting channel switch");
+			return -1;
+		}
 	}
 
 	if (!hostapd_is_chan_in_primary_list(iface,
