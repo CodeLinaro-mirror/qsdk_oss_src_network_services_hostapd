@@ -20,6 +20,7 @@
 #include "common/dpp.h"
 #include "rsn_supp/wpa.h"
 #include "rsn_supp/pmksa_cache.h"
+#include "rsn_supp/wpa_ie.h"
 #include "config.h"
 #include "wpa_supplicant_i.h"
 #include "driver_i.h"
