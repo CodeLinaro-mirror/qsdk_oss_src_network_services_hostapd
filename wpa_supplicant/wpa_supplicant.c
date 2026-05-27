@@ -2538,6 +2538,11 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 	} else if (sel & WPA_KEY_MGMT_FT_PSK) {
 		wpa_s->key_mgmt = WPA_KEY_MGMT_FT_PSK;
 		wpa_dbg(wpa_s, MSG_DEBUG, "WPA: using KEY_MGMT FT/PSK");
+#ifdef CONFIG_PQC
+	} else if (sel & WPA_KEY_MGMT_FT_802_1X_PQC) {
+		wpa_s->key_mgmt = WPA_KEY_MGMT_FT_802_1X_PQC;
+		wpa_dbg(wpa_s, MSG_DEBUG, "RSN: using KEY_MGMT FT/802.1X-PQC");
+#endif /* CONFIG_PQC */
 #endif /* CONFIG_IEEE80211R */
 	} else if (sel & WPA_KEY_MGMT_IEEE8021X_SHA256) {
 		wpa_s->key_mgmt = WPA_KEY_MGMT_IEEE8021X_SHA256;
@@ -2565,6 +2570,11 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 	} else if (sel & WPA_KEY_MGMT_EPPKE) {
 		wpa_s->key_mgmt = WPA_KEY_MGMT_EPPKE;
 		wpa_dbg(wpa_s, MSG_DEBUG, "RSN: using KEY_MGMT EPPKE");
+#ifdef CONFIG_PQC
+	} else if (sel & WPA_KEY_MGMT_802_1X_PQC) {
+		wpa_s->key_mgmt = WPA_KEY_MGMT_802_1X_PQC;
+		wpa_dbg(wpa_s, MSG_DEBUG, "RSN: using KEY_MGMT 802.1X-PQC");
+#endif /* CONFIG_PQC */
 #endif /* CONFIG_ENC_ASSOC */
 	} else {
 		wpa_msg(wpa_s, MSG_WARNING, "WPA: Failed to select "

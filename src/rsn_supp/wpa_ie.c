@@ -198,6 +198,10 @@ int wpa_gen_wpa_ie_rsn(u8 *rsn_ie, size_t rsn_ie_len,
 #endif /* CONFIG_SHA384 */
 	} else if (key_mgmt == WPA_KEY_MGMT_FT_PSK) {
 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_FT_PSK);
+#ifdef CONFIG_PQC
+	} else if (key_mgmt == WPA_KEY_MGMT_FT_802_1X_PQC) {
+		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_FT_802_1X_PQC);
+#endif /* CONFIG_PQC */
 #endif /* CONFIG_IEEE80211R */
 	} else if (key_mgmt == WPA_KEY_MGMT_IEEE8021X_SHA256) {
 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_802_1X_SHA256);
@@ -244,6 +248,10 @@ int wpa_gen_wpa_ie_rsn(u8 *rsn_ie, size_t rsn_ie_len,
 #ifdef CONFIG_ENC_ASSOC
 	} else if (key_mgmt == WPA_KEY_MGMT_EPPKE) {
 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_EPPKE);
+#ifdef CONFIG_PQC
+	} else if (key_mgmt == WPA_KEY_MGMT_802_1X_PQC) {
+		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_802_1X_PQC);
+#endif /* CONFIG_PQC */
 #endif /* CONFIG_ENC_ASSOC */
 	} else {
 		wpa_printf(MSG_WARNING, "Invalid key management type (%d).",

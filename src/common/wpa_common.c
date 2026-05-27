@@ -266,6 +266,12 @@ int rsn_key_mgmt_to_wpa_akm(u32 akm_suite)
 #endif /* CONFIG_PASN */
 	case RSN_AUTH_KEY_MGMT_EPPKE:
 		return WPA_KEY_MGMT_EPPKE;
+#ifdef CONFIG_PQC
+	case RSN_AUTH_KEY_MGMT_802_1X_PQC:
+		return WPA_KEY_MGMT_802_1X_PQC;
+	case RSN_AUTH_KEY_MGMT_FT_802_1X_PQC:
+		return WPA_KEY_MGMT_FT_802_1X_PQC;
+#endif /* CONFIG_PQC */
 	default:
 		return 0;
 	}
@@ -3231,6 +3237,10 @@ const char * wpa_key_mgmt_txt(int key_mgmt, int proto)
 		return "WPA2-EAP-SHA384";
 	case WPA_KEY_MGMT_EPPKE:
 		return "EPPKE";
+	case WPA_KEY_MGMT_802_1X_PQC:
+		return "EAP-PQC";
+	case WPA_KEY_MGMT_FT_802_1X_PQC:
+		return "FT-EAP-PQC";
 	default:
 		return "UNKNOWN";
 	}
@@ -3287,6 +3297,10 @@ u32 wpa_akm_to_suite(int akm)
 #endif /* CONFIG_PASN */
 	if (akm & WPA_KEY_MGMT_EPPKE)
 		return RSN_AUTH_KEY_MGMT_EPPKE;
+	if (akm & WPA_KEY_MGMT_FT_802_1X_PQC)
+		return RSN_AUTH_KEY_MGMT_FT_802_1X_PQC;
+	if (akm & WPA_KEY_MGMT_802_1X_PQC)
+		return RSN_AUTH_KEY_MGMT_802_1X_PQC;
 	return 0;
 }
 
@@ -4994,35 +5008,35 @@ security_profile_table[] = {
 
 #ifdef CONFIG_PQC
 	/* 16: PQC 802.1X (AKM 31), no ECP, SHA-512, ML-KEM-1024 */
-	{ 16, WPA_KEY_MGMT_PQC_8021X, WPA_CIPHER_GCMP_256,
+	{ 16, WPA_KEY_MGMT_802_1X_PQC, WPA_CIPHER_GCMP_256,
 	  true, true, true, 0 },
 
 	/* 17: PQC 802.1X (AKM 31), P-256, SHA-256, ML-KEM-512 */
-	{ 17, WPA_KEY_MGMT_PQC_8021X, WPA_CIPHER_GCMP_256,
+	{ 17, WPA_KEY_MGMT_802_1X_PQC, WPA_CIPHER_GCMP_256,
 	  true, true, true, 1 },
 
 	/* 18: PQC 802.1X (AKM 31), P-384, SHA-384, ML-KEM-768 */
-	{ 18, WPA_KEY_MGMT_PQC_8021X, WPA_CIPHER_GCMP_256,
+	{ 18, WPA_KEY_MGMT_802_1X_PQC, WPA_CIPHER_GCMP_256,
 	  true, true, true, 2 },
 
 	/* 19: PQC 802.1X (AKM 31), P-521, SHA-512, ML-KEM-1024 */
-	{ 19, WPA_KEY_MGMT_PQC_8021X, WPA_CIPHER_GCMP_256,
+	{ 19, WPA_KEY_MGMT_802_1X_PQC, WPA_CIPHER_GCMP_256,
 	  true, true, true, 3 },
 
 	/* 20: FT PQC 802.1X (AKM 32), no ECP, SHA-512, ML-KEM-1024 */
-	{ 20, WPA_KEY_MGMT_FT_PQC_8021X, WPA_CIPHER_GCMP_256,
+	{ 20, WPA_KEY_MGMT_FT_802_1X_PQC, WPA_CIPHER_GCMP_256,
 	  true, true, true, 0 },
 
 	/* 21: FT PQC 802.1X (AKM 32), P-256, SHA-256, ML-KEM-512 */
-	{ 21, WPA_KEY_MGMT_FT_PQC_8021X, WPA_CIPHER_GCMP_256,
+	{ 21, WPA_KEY_MGMT_FT_802_1X_PQC, WPA_CIPHER_GCMP_256,
 	  true, true, true, 1 },
 
 	/* 22: FT PQC 802.1X (AKM 32), P-384, SHA-384, ML-KEM-768 */
-	{ 22, WPA_KEY_MGMT_PQC_8021X, WPA_CIPHER_GCMP_256,
+	{ 22, WPA_KEY_MGMT_802_1X_PQC, WPA_CIPHER_GCMP_256,
 	  true, true, true, 2 },
 
 	/* 23: FT PQC 802.1X (AKM 32), P-521, SHA-512, ML-KEM-1024 */
-	{ 23, WPA_KEY_MGMT_FT_PQC_8021X, WPA_CIPHER_GCMP_256,
+	{ 23, WPA_KEY_MGMT_FT_802_1X_PQC, WPA_CIPHER_GCMP_256,
 	  true, true, true, 3 },
 #endif /* CONFIG_PQC */
 };

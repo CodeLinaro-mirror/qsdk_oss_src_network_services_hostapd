@@ -973,6 +973,13 @@ static int wpa_config_parse_key_mgmt(const struct parse_data *data,
 
 	if (!errors && ssid->key_mgmt == val)
 		return 1;
+	/*
+	 * AKMs that are usable only through a security profile, e.g. the PQC
+	 * AKMs, do not have a key_mgmt name of their own and are taken from
+	 * the configured security profiles instead.
+	 */
+	val |= sec_prof_implied_key_mgmt(ssid->security_profiles);
+
 	wpa_printf(MSG_MSGDUMP, "key_mgmt: 0x%x", val);
 	ssid->key_mgmt = val;
 	return errors ? -1 : 0;
@@ -2627,6 +2634,7 @@ static int wpa_config_parse_security_profiles(const struct parse_data *data,
 	}
 	os_free(ssid->security_profiles);
 	ssid->security_profiles = vals;
+	ssid->key_mgmt |= sec_prof_implied_key_mgmt(vals);
 
 	return 0;
 }
