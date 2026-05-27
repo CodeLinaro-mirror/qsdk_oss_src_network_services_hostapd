@@ -2572,15 +2572,23 @@ static int hostapd_dfs_unpunc_cacdone_subchans(struct hostapd_iface *iface,
 					       int chan_width, int cf1,
 					       int cf2, u16 unpuncture_bitmap)
 {
-	u8 centr_chan1;
-	u8 centr_chan2;
+	u8 centr_chan1 = 0;
+	u8 centr_chan2 = 0;
 	enum oper_chan_width oper_chan_width;
 	u16 puncture_bitmap;
 	u16 radar_unpunc_bitmap;
 
 	radar_unpunc_bitmap = dfs_get_dfs_punctured_bitmap(iface,
 							   unpuncture_bitmap);
-	dfs_reset_punc_bitmap_src(iface, unpuncture_bitmap);
+	if (!radar_unpunc_bitmap) {
+		wpa_printf(MSG_DEBUG,
+			   "Skipping auto-unpuncture: no DFS-punctured subchannels eligible in bitmap=0x%04x",
+			   unpuncture_bitmap);
+		return 0;
+	}
+
+	dfs_reset_punc_bitmap_src(iface, radar_unpunc_bitmap);
+
 	puncture_bitmap = iface->radar_bit_pattern &
 			  ~radar_unpunc_bitmap;
 	iface->radar_bit_pattern = puncture_bitmap;
