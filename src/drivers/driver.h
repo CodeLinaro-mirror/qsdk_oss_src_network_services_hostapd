@@ -6432,6 +6432,16 @@ struct wpa_driver_ops {
 	int (*set_muedca_mode)(void *priv, int mode, int radio_idx);
 #endif /* CONFIG_QCN_EXTN */
 	int (*abort_cac)(void *priv, int link_id);
+
+	/**
+	 * notify_radar - Send radar notify through nl80211
+	 * @priv: Private driver interface data
+	 * @freq: Channel parameters
+	 * @radar_bitmap: Radar bitmap relative to the operating block
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*notify_radar)(void *priv, struct hostapd_freq_params *freq,
+			    u16 radar_bitmap);
 };
 
 /**

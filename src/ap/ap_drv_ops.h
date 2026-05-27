@@ -127,6 +127,24 @@ int hostapd_drv_sta_disassoc(struct hostapd_data *hapd,
 int hostapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 			    unsigned int wait, const u8 *dst, const u8 *data,
 			    size_t len);
+
+/**
+ * hostapd_drv_notify_radar - Notify driver about radar detection
+ * @hapd: hostapd data
+ * @freq: Frequency parameters of the radar channel (primary/secondary,
+ *	channel width, center frequencies)
+ * @radar_bitmap: Bitmap of segments on which radar was detected (driver/
+ *	implementation specific)
+ *
+ * This is used to inform the driver about radar detection on the current
+ * operating channel so that the driver can initiate DFS related actions (e.g.,
+ * channel switch and marking the channel as unavailable).
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int hostapd_drv_notify_radar(struct hostapd_data *hapd,
+			     struct hostapd_freq_params *freq,
+			     u16 radar_bitmap);
 int hostapd_drv_send_action_addr3_ap(struct hostapd_data *hapd,
 				     unsigned int freq,
 				     unsigned int wait, const u8 *dst,
