@@ -319,9 +319,18 @@ static u8 * rsne_write_data(u8 *buf, size_t len, u8 *pos, int group,
 	}
 #endif /* CONFIG_RSN_TESTING */
 
-	if (num_suites == 0) {
-		wpa_printf(MSG_DEBUG, "Invalid key management type (%d).",
+	/*
+	 * According to Draft P802.11bt D1.0, WPA_KEY_MGMT_802_1X_PQC
+	 * and WPA_KEY_MGMT_FT_802_1X_PQC must not be set in the RSN
+	 * element in beacons and probe respones.
+	 */
+	if (!num_suites &&
+	    !(key_mgmt & (WPA_KEY_MGMT_802_1X_PQC |
+			  WPA_KEY_MGMT_FT_802_1X_PQC))) {
+		wpa_printf(MSG_DEBUG,
+			   "Invalid key management type (%d)",
 			   key_mgmt);
+
 		return NULL;
 	}
 	WPA_PUT_LE16(count, num_suites);
