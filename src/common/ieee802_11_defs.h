@@ -251,6 +251,7 @@
 #define WLAN_STATUS_DENIED_UHR_NOT_SUPPORTED 157
 #define WLAN_STATUS_REJECTED_ST_EXEC_TARGET_NOT_PREPARED 158
 #define WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE 159
+/* IEEE P802.11bt/D1.0, 9.4.1.9, Table 9-96 */
 #define WLAN_STATUS_POW_REQUIRED 166
 #define WLAN_STATUS_UNSUPPORTED_ML_KEM_PARAMETER 167
 #define WLAN_STATUS_INVALID_ML_KEM_PARAMETER 168
@@ -3418,6 +3419,39 @@ struct ieee80211_uhr_operation {
 #define UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC		0x00300000
 #define UHR_OPER_PARAMS_NPCA_MOPLEN_NPCA		0x00400000
 #define UHR_OPER_PARAMS_NPCA_DIS_SUBCH_BITMAP_PRES	0x00800000
+
+/* See Table 12-aa1 (PQC profiles) in Draft P802.11bt D1.0 */
+enum pqc_constraint_num {
+	PQC_CONSTRAINT_ML_KEM_1024 = 0,
+	PQC_CONSTRAINT_ECP_19_ML_KEM_512 = 1,
+	PQC_CONSTRAINT_ECP_20_ML_KEM_768 = 2,
+	PQC_CONSTRAINT_ECP_21_ML_KEM_1024 = 3,
+	PQC_CONSTRAINT_MAX = 3,
+	PQC_CONSTRAINT_NONE = 255,
+};
+
+/* See Table 9-aa3 (Content Presence field encoding) in Draft P802.11bt D1.0 */
+enum ieee80211_pqc_content_present {
+	PQC_CONTENT_NONE = 0,
+	PQC_CONTENT_ML_KEM_ENC_KEY = 1,
+	PQC_CONTENT_ML_KEM_CT = 2,
+	PQC_CONTENT_PUBLIC_KEY_PARAM_AND_ML_KEM_ENC_KEY = 3,
+	PQC_CONTENT_PUBLIC_KEY_PARAM_AND_ML_KEM_CT = 4,
+};
+
+/* See section 9.4.2.aa2 in Draft P802.11bt D1.0 */
+struct ieee80211_pqc {
+	u8 sec_prof_number;
+	u8 content_present;
+
+	/*
+	 * Follow by variable length fields:
+	 * Public Key Parameter
+	 * ML-KEM Encapsulation Key
+	 * ML-KEM Ciphertext
+	 */
+	u8 variable[];
+} STRUCT_PACKED;
 
 #ifdef _MSC_VER
 #pragma pack(pop)

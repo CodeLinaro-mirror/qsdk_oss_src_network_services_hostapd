@@ -5080,3 +5080,28 @@ const struct security_profile_entry * sec_prof_get(int p)
 
 	return NULL;
 }
+
+
+/*
+ * Global table of PQC constraints as defined in Draft P802.11bt D1.0,
+ * Table 12-aa1 (PQC profiles).
+ */
+#define PQC(_num, _group, _hash, _kem)			\
+	[_num] = {					\
+		.number = _num,				\
+		.group = _group,			\
+		.hash = _hash,				\
+		.kem = _kem,				\
+	}
+
+const struct ieee80211_pqc_constraint
+g_pqc_constraints[PQC_CONSTRAINT_MAX + 1] = {
+	PQC(PQC_CONSTRAINT_ML_KEM_1024, 0, RSN_HASH_SHA512,
+	    CRYPTO_ML_KEM_1024),
+	PQC(PQC_CONSTRAINT_ECP_19_ML_KEM_512, 19, RSN_HASH_SHA256,
+	    CRYPTO_ML_KEM_512),
+	PQC(PQC_CONSTRAINT_ECP_20_ML_KEM_768, 20, RSN_HASH_SHA384,
+	    CRYPTO_ML_KEM_768),
+	PQC(PQC_CONSTRAINT_ECP_21_ML_KEM_1024, 21, RSN_HASH_SHA512,
+	    CRYPTO_ML_KEM_1024),
+};

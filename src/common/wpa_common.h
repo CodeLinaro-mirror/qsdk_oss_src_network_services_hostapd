@@ -9,6 +9,7 @@
 #ifndef WPA_COMMON_H
 #define WPA_COMMON_H
 
+#include "ieee802_11_defs.h"
 #include "common/defs.h"
 
 /* IEEE 802.11i */
@@ -881,5 +882,26 @@ struct security_profile_entry {
 
 int sec_prof_implied_key_mgmt(const int *profiles);
 const struct security_profile_entry * sec_prof_get(int p);
+
+/**
+ * struct ieee80211_pqc_constraint - IEEE P802.11bt D1.0 PQC Constraint
+ *
+ * Represents a PQC constraint as described in section 12.12.10
+ * in Draft P802.11bt D1.0.
+ *
+ * @number: PQC constraint number
+ * @group: ECP group number
+ * @hash: Hash algorithm (See RSN_HASH_ALG_*)
+ * @kem: KEM variant (See CRYPTO_ML_KEM_VARIANT_*)
+ */
+struct ieee80211_pqc_constraint {
+	u8 number;
+	u8 group;
+	enum rsn_hash_alg hash;
+	u32 kem;
+};
+
+extern const struct ieee80211_pqc_constraint
+	g_pqc_constraints[PQC_CONSTRAINT_MAX + 1];
 
 #endif /* WPA_COMMON_H */
