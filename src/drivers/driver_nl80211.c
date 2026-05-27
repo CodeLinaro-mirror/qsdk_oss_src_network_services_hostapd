@@ -11919,6 +11919,10 @@ static int wpa_driver_nl80211_get_survey(void *priv, unsigned int freq)
 	void *ctx = (bss->scan_link && bss->scan_link->ctx) ?
 		bss->scan_link->ctx : bss->ctx;
 
+#ifdef CONFIG_QCN_EXTN
+	ctx = wpa_driver_nl80211_get_survey_extn(bss, ctx);
+#endif
+
 	os_memset(&data, 0, sizeof(data));
 	survey_results = &data.survey_results;
 

@@ -17,6 +17,10 @@
 #include "utils/list.h"
 #include "driver.h"
 
+#ifdef CONFIG_QCN_EXTN
+#include "../../qcn_extns/cmn.h"
+#endif
+
 #ifndef NL_CAPABILITY_VERSION_3_5_0
 #define nla_nest_start(msg, attrtype) \
 	nla_nest_start(msg, NLA_F_NESTED | (attrtype))
@@ -75,6 +79,10 @@ struct i802_link {
 struct i802_bss {
 	struct wpa_driver_nl80211_data *drv;
 	struct i802_bss *next;
+
+#ifdef CONFIG_QCN_EXTN
+	struct i802_bss_extn bss_extn;
+#endif
 
 	/* The links which are physically present */
 	u16 valid_links;
