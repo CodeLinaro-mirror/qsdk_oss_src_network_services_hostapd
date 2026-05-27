@@ -1203,12 +1203,32 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 }
 
 
-static int get_max_security_profile(const int *profiles)
+/*
+ * Only the security profiles listed in the security_profiles configuration
+ * parameter are advertised and accepted.
+ */
+static bool sec_prof_advertised(struct hostapd_data *hapd, int p)
 {
+	const int *profiles = hapd->conf->security_profiles;
+	int i;
+
+	for (i = 0; profiles && profiles[i] >= 0; i++) {
+		if (profiles[i] == p)
+			return true;
+	}
+
+	return false;
+}
+
+
+static int get_max_security_profile(struct hostapd_data *hapd)
+{
+	const int *profiles = hapd->conf->security_profiles;
 	int i, max_profile = -1;
 
 	for (i = 0; profiles && profiles[i] >= 0; i++) {
-		if (profiles[i] > max_profile)
+		if (profiles[i] > max_profile &&
+		    sec_prof_advertised(hapd, profiles[i]))
 			max_profile = profiles[i];
 	}
 
@@ -1234,7 +1254,7 @@ size_t hostapd_security_profile_len(struct hostapd_data *hapd)
 		return wpabuf_len(hapd->conf->security_profile_override);
 #endif /* CONFIG_TESTING_OPTIONS */
 
-	max_profile = get_max_security_profile(hapd->conf->security_profiles);
+	max_profile = get_max_security_profile(hapd);
 	if (max_profile < 0)
 		return 0;
 
@@ -1292,7 +1312,7 @@ u8 * hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid)
 	}
 #endif /* CONFIG_TESTING_OPTIONS */
 
-	max_profile = get_max_security_profile(hapd->conf->security_profiles);
+	max_profile = get_max_security_profile(hapd);
 	if (max_profile < 0)
 		return eid;
 
@@ -1307,7 +1327,7 @@ u8 * hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid)
 	for (i = 0; hapd->conf->security_profiles[i] >= 0; i++) {
 		int p = hapd->conf->security_profiles[i];
 
-		if (p / 8 < (int) bitmap_len)
+		if (p / 8 < (int) bitmap_len && sec_prof_advertised(hapd, p))
 			bitmap[p / 8] |= BIT(p % 8);
 	}
 
