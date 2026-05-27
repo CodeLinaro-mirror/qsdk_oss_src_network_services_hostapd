@@ -4966,6 +4966,79 @@ size_t wpa_auth_key_delivery_elem_len(struct wpa_state_machine *sm,
 	return 3 + body_len + (body_len / 255) * 2;
 }
 
+
+/*
+ * wpa_auth_build_key_delivery_elem - Build Key Delivery element (9.4.2.184)
+ * at pos.  Fragments into WLAN_EID_FRAGMENT continuations if body > 254 bytes.
+ * Returns pointer past the last byte written.
+ *
+ * Caller must have pre-allocated at least wpa_auth_key_delivery_elem_len()
+ * bytes at pos.
+ */
+u8 * wpa_auth_build_key_delivery_elem(struct wpa_state_machine *sm,
+				      u16 req_links, u8 *pos)
+{
+	u8 *body, *kde_end, *elem_start;
+	size_t kde_list_len, body_len, chunk;
+	const u8 *src;
+	size_t remaining;
+
+	if (!sm || sm->mld_assoc_link_id < 0)
+		return pos;
+
+	if (!sm->group)
+		return pos;
+
+	kde_list_len = wpa_auth_ml_group_kdes_len(sm, req_links);
+	if (!kde_list_len)
+		return pos;
+
+	body_len = WPA_KEY_RSC_LEN + kde_list_len;
+	body = os_zalloc(body_len);
+	if (!body)
+		return pos;
+
+	/* RSC for the assoc-link primary GTK; zero RSC is a safe fallback */
+	if (wpa_auth_get_seqnum(sm->wpa_auth, NULL, sm->group->GN, body) < 0)
+		wpa_printf(MSG_DEBUG,
+			   "RSN: Key Delivery element: failed to get RSC, using zero");
+
+	kde_end = wpa_auth_ml_group_kdes(sm, body + WPA_KEY_RSC_LEN, req_links);
+	body_len = WPA_KEY_RSC_LEN + (size_t)(kde_end - (body + WPA_KEY_RSC_LEN));
+
+	/*
+	 * Emit Key Delivery extension element with automatic fragmentation.
+	 * First fragment carries up to 254 bytes of body (EID_EXT byte brings
+	 * the Length field to at most 255).  Each WLAN_EID_FRAGMENT continuation
+	 * carries up to 255 bytes.
+	 */
+	elem_start = pos;
+	src        = body;
+	remaining  = body_len;
+	chunk      = (remaining > 254) ? 254 : remaining;
+
+	*pos++ = WLAN_EID_EXTENSION;
+	*pos++ = (u8)(chunk + 1);          /* +1 for EID_EXT byte */
+	*pos++ = WLAN_EID_EXT_KEY_DELIVERY;
+	os_memcpy(pos, src, chunk);
+	pos += chunk; src += chunk; remaining -= chunk;
+
+	while (remaining) {
+		chunk  = (remaining > 255) ? 255 : remaining;
+		*pos++ = WLAN_EID_FRAGMENT;
+		*pos++ = (u8) chunk;
+		os_memcpy(pos, src, chunk);
+		pos += chunk; src += chunk; remaining -= chunk;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "RSN: Key Delivery element: body=%zu wire=%zu",
+		   body_len, (size_t)(pos - elem_start));
+
+	os_free(body);
+	return pos;
+}
+
 #endif /* CONFIG_IEEE80211BE */
 
 
