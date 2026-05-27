@@ -875,6 +875,7 @@ struct security_profile_entry {
 	bool ieee8021x_auth_frame;
 	bool assoc_frame_encrypt;
 	bool pmksa_caching_privacy;
+	/* PQC constraint number (see PQC_CONSTRAINT_*) */
 	int pqc_profile;
 };
 
