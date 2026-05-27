@@ -2599,6 +2599,9 @@ static int hostapd_dfs_unpunc_cacdone_subchans(struct hostapd_iface *iface,
 	if (cf2)
 		ieee80211_freq_to_chan(cf2, &centr_chan2);
 
+	if (oper_chan_width == CONF_OPER_CHWIDTH_320MHZ)
+		puncture_bitmap = RIGHT80_240MHZ_PUNC | puncture_bitmap;
+
 	return hostapd_dfs_request_channel_switch(iface, channel, freq,
 						  secondary_channel,
 						  oper_chan_width,

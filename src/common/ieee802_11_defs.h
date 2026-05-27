@@ -856,6 +856,9 @@
 
 #define CONTROL_MIC_PAD_NOT_SET 255
 
+/* 320 - 80 or 240 MHz puncture. The rightmost 80 MHz is punctured */
+#define RIGHT80_240MHZ_PUNC 0xF000
+
 /* Advertisement Protocol ID definitions (IEEE Std 802.11-2020, Table 9-237) */
 enum adv_proto_id {
 	ACCESS_NETWORK_QUERY_PROTOCOL = 0,
