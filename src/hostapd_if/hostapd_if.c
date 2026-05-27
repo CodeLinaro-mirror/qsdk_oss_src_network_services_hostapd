@@ -1024,7 +1024,7 @@ enum hostapd_if_frame_processing_decision
 hostapd_if_notify_action(struct hostapd_data *hapd,
 			 struct sta_info *sta,
 			 const struct ieee80211_mgmt *mgmt,
-			 size_t frame_len)
+			 size_t frame_len, int rssi)
 {
 	struct frame_reg_table *table;
 	enum hostapd_if_action_frame_type key;
@@ -1069,6 +1069,7 @@ hostapd_if_notify_action(struct hostapd_data *hapd,
 	ctx_req.rx_link_id = link_id;
 	ctx_req.data.action.category = mgmt->u.action.category;
 	ctx_req.data.action.action_code = mgmt->u.action.u.wmm_action.action_code;
+	ctx_req.data.action.rssi = rssi;
 
 	decision = __get_frame_decision(&policy, false);
 

@@ -8251,6 +8251,10 @@ static int handle_action(struct hostapd_data *hapd,
 #endif /* CONFIG_QCN_EXTN */
 			 )
 {
+#ifdef CONFIG_HOSTAPD_IF
+	int rssi = 0;
+#endif
+
 	struct sta_info *sta;
 	u8 *action __maybe_unused;
 
@@ -8309,7 +8313,10 @@ static int handle_action(struct hostapd_data *hapd,
 	}
 
 #ifdef CONFIG_HOSTAPD_IF
-	if (hostapd_if_notify_action(hapd, sta, mgmt, len) ==
+#ifdef CONFIG_QCN_EXTN
+	rssi = extn_args->rssi;
+#endif
+	if (hostapd_if_notify_action(hapd, sta, mgmt, len, rssi) ==
 	    HOSTAPD_IF_FRAME_PROCESSING_OFFLOAD)
 		return 1;
 #endif
