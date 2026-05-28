@@ -6003,6 +6003,18 @@ int wpa_sm_set_ap_security_profile(struct wpa_sm *sm, const u8 *elem,
 }
 
 
+/*
+ * Returns the number of the security profile selected for the association, or
+ * -1 when no profile is in use.
+ */
+int wpa_sm_get_matched_security_profile(struct wpa_sm *sm)
+{
+	if (!sm || !sm->security_profile)
+		return -1;
+	return sm->security_profile->number;
+}
+
+
 /**
  * wpa_sm_parse_own_wpa_ie - Parse own WPA/RSN IE
  * @sm: Pointer to WPA state machine data from wpa_sm_init()

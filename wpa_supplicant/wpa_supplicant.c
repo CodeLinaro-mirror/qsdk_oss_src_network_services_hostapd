@@ -3078,6 +3078,26 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 }
 
 
+#ifdef CONFIG_PQC
+static bool wpas_pqc_akm_configured(struct wpa_supplicant *wpa_s)
+{
+	struct wpa_ssid *ssid;
+
+	if (wpa_key_mgmt_pqc(wpa_s->key_mgmt))
+		return true;
+
+	for (ssid = wpa_s->conf->ssid; ssid; ssid = ssid->next) {
+		if (!ssid->disabled &&
+		    wpa_key_mgmt_pqc(sec_prof_implied_key_mgmt(
+					     ssid->security_profiles)))
+			return true;
+	}
+
+	return false;
+}
+#endif /* CONFIG_PQC */
+
+
 static void wpas_ext_capab_byte(struct wpa_supplicant *wpa_s, u8 *pos, int idx,
 				struct wpa_bss *bss)
 {
@@ -3179,6 +3199,17 @@ static void wpas_ext_capab_byte(struct wpa_supplicant *wpa_s, u8 *pos, int idx,
 			*pos |= 0x20; /* Bit 85 - Mirrored SCS */
 #endif /* CONFIG_NO_ROBUST_AV */
 		break;
+	case 14: /* Bits 112-119 */
+#ifdef CONFIG_PQC
+		/*
+		 * TODO: Support for Extended Length Element should be declared
+		 * by the driver. However, if PQC is enabled assume that it is
+		 * supported.
+		 */
+		if (wpas_pqc_akm_configured(wpa_s))
+			*pos |= 0x20;
+#endif /* CONFIG_PQC */
+		break;
 	}
 }
 
@@ -3187,7 +3218,7 @@ int wpas_build_ext_capab(struct wpa_supplicant *wpa_s, u8 *buf,
 			  size_t buflen, struct wpa_bss *bss)
 {
 	u8 *pos = buf;
-	u8 len = 11, i;
+	u8 len = 15, i;
 
 	if (len < wpa_s->extended_capa_len)
 		len = wpa_s->extended_capa_len;

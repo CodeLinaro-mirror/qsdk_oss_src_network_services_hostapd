@@ -725,6 +725,8 @@ struct last_scan_ssid {
  * @rsne_len: Length of RSNE
  * @rsnxe: RSNXE
  * @rsnxe_len: Length of RSNXE
+ * @key_mgmt: AKM used for connection
+ * @security_profile: Security profile used for connection
  */
 struct auth_802_1x_data {
 	u16 auth_trans;
@@ -742,6 +744,9 @@ struct auth_802_1x_data {
 	size_t rsne_len;
 	u8 rsnxe[257];
 	size_t rsnxe_len;
+
+	u32 key_mgmt;
+	int security_profile;
 };
 #endif /* CONFIG_IEEE8021X_AUTH */
 
