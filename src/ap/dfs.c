@@ -3253,6 +3253,9 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			hostapd_get_punct_bitmap(iface->bss[0]));
 	}
 
+	if (iface->conf->use_ru_puncture_dfs && !hostapd_is_usable_punct_bitmap(iface))
+		dfs_reset_punc_bitmap_src(iface, ALL_SUBCHANS_PUNC);
+
 	/* Switch channel with random channel selection for invalid puncturing pattern */
 	iface->radar_bit_pattern = 0;
 	iface->conf->punct_bitmap = cur_punct_bits;
