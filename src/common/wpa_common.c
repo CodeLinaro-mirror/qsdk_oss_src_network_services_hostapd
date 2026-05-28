@@ -5290,6 +5290,46 @@ int sec_prof_implied_key_mgmt(const int *profiles)
 }
 
 
+/**
+ * sec_prof_list_pqc_constraints - Collect the PQC constraints of the profiles
+ * @profiles: -1 terminated int array of enabled security profile numbers
+ * @constraints: Buffer for the returned constraint numbers
+ * @max: Number of entries that fit in @constraints
+ * Returns: Number of constraint numbers stored in @constraints
+ *
+ * The set of usable PQC constraints is implied by the enabled security
+ * profiles, so it does not need to be configured separately.
+ */
+size_t sec_prof_list_pqc_constraints(const int *profiles, u8 *constraints,
+				     size_t max)
+{
+	size_t count = 0, j;
+	int i;
+
+	if (!profiles || !constraints)
+		return 0;
+
+	for (i = 0; profiles[i] >= 0 && count < max; i++) {
+		const struct security_profile_entry *sp;
+
+		sp = sec_prof_get(profiles[i]);
+		if (!sp || sp->pqc_profile < 0)
+			continue;
+
+		for (j = 0; j < count; j++) {
+			if (constraints[j] == sp->pqc_profile)
+				break;
+		}
+		if (j < count)
+			continue;
+
+		constraints[count++] = sp->pqc_profile;
+	}
+
+	return count;
+}
+
+
 const struct security_profile_entry * sec_prof_get(int p)
 {
 	unsigned int i;

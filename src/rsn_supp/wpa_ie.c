@@ -515,6 +515,20 @@ bool security_profile_has_eppke(const u8 *sp, int ssid_key_mgmt)
 }
 
 
+static bool pqc_constraint_supported(const u8 *pqc_constraints,
+				     size_t num_pqc_constraints, int pqc)
+{
+	size_t i;
+
+	for (i = 0; i < num_pqc_constraints; i++) {
+		if (pqc_constraints[i] == pqc)
+			return true;
+	}
+
+	return false;
+}
+
+
 /*
  * security_profile_select - Map parameters to a unique profile
  * @akmp: Negotiated AKM (WPA_KEY_MGMT_*)
@@ -525,6 +539,8 @@ bool security_profile_has_eppke(const u8 *sp, int ssid_key_mgmt)
  *                 corresponding non-_AUTH profiles (11-15) that share the
  *                 same AKM.  Must be false for non-802.1X AKMs.
  * @eppke: Whether EPPKE is used
+ * @pqc_constraints: List of supported PQC constraint numbers, or %NULL
+ * @num_pqc_constraints: Number of entries in @pqc_constraints
  * @bitmap: AP's Security Profile Bitmap (from the Security Profile element)
  * @bitmap_len: Length of @bitmap in bytes
  * Returns: Selected profile number (0-119) on success, -1 if no match found.
@@ -551,6 +567,7 @@ bool security_profile_has_eppke(const u8 *sp, int ssid_key_mgmt)
 const struct security_profile_entry *
 security_profile_select(int akmp, int pairwise_cipher,
 			bool eap_over_auth, bool eppke,
+			const u8 *pqc_constraints, size_t num_pqc_constraints,
 			const u8 *bitmap, size_t bitmap_len)
 {
 	unsigned int profile;
@@ -574,6 +591,13 @@ security_profile_select(int akmp, int pairwise_cipher,
 
 		sp = sec_prof_get(profile);
 		if (!sp)
+			continue;
+
+		/* Skip profiles whose PQC constraint is not supported */
+		if (sp->pqc_profile >= 0 &&
+		    !pqc_constraint_supported(pqc_constraints,
+					      num_pqc_constraints,
+					      sp->pqc_profile))
 			continue;
 
 		/* Check AKM match using the per-profile mapping */

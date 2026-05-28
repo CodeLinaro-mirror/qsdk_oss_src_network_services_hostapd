@@ -1776,7 +1776,7 @@ wpa_bss_validate_rsne_ml(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 
 		sp = wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_SECURITY_PROFILE);
 
-		sp_key_mgmt = security_profile_get_key_mgmt(sp, ssid->key_mgmt);
+		sp_key_mgmt = security_profile_get_key_mgmt(sp, ssid);
 		if (!sp_key_mgmt ||
 		    !(ssid->pairwise_cipher & WPA_CIPHER_GCMP_256))
 			goto no_sp_match;

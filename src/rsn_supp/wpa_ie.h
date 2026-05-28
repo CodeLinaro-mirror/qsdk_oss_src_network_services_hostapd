@@ -28,6 +28,7 @@ bool security_profile_has_eppke(const u8 *sp, int ssid_key_mgmt);
 const struct security_profile_entry *
 security_profile_select(int akmp, int pairwise_cipher,
 			bool eap_over_auth, bool eppke,
+			const u8 *pqc_constraints, size_t num_pqc_constraints,
 			const u8 *bitmap, size_t bitmap_len);
 int security_profile_build_sta(struct wpa_sm *sm, int selected_profile_num,
 			       u8 *buf, size_t buf_len);

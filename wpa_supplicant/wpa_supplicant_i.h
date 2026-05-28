@@ -2065,6 +2065,11 @@ int wpa_supplicant_connect(struct wpa_supplicant *wpa_s,
 			   struct wpa_ssid *ssid);
 void wpa_supplicant_stop_countermeasures(void *eloop_ctx, void *sock_ctx);
 void wpa_supplicant_delayed_mic_error_report(void *eloop_ctx, void *sock_ctx);
+#ifdef CONFIG_PQC
+bool wpas_pqc_constraint_match(struct wpa_ssid *ssid, u8 pqc);
+#endif /* CONFIG_PQC */
+size_t wpas_ssid_pqc_constraints(struct wpa_ssid *ssid, u8 *constraints,
+				 size_t max);
 void wnm_bss_keep_alive_deinit(struct wpa_supplicant *wpa_s);
 int wpa_supplicant_fast_associate(struct wpa_supplicant *wpa_s);
 int wpa_wps_supplicant_fast_associate(struct wpa_supplicant *wpa_s);
@@ -2282,7 +2287,9 @@ bool wpas_security_profile_active(struct wpa_supplicant *wpa_s);
  */
 const struct security_profile_entry *
 security_profile_select_best(const u8 *sp, const int *numbers);
-int security_profile_get_key_mgmt(const u8 *sp, int ssid_key_mgmt);
+int security_profile_get_key_mgmt(const u8 *sp, struct wpa_ssid *ssid);
+int security_profile_get_key_mgmt_akm(const u8 *sp, int ssid_key_mgmt,
+				      struct wpa_ssid *ssid);
 const u8 * security_profile_get_rsnx(const u8 *sp, size_t *rsnx_len);
 int security_profile_get_rsn_caps(const u8 *sp);
 bool sec_prof_list_has_eap_over_auth(const int *numbers);

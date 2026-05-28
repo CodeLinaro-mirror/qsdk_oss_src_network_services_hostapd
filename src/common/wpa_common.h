@@ -892,6 +892,8 @@ struct security_profile_entry {
 
 
 int sec_prof_implied_key_mgmt(const int *profiles);
+size_t sec_prof_list_pqc_constraints(const int *profiles, u8 *constraints,
+				     size_t max);
 const struct security_profile_entry * sec_prof_get(int p);
 
 /**

@@ -778,6 +778,37 @@ static int wpa_supplicant_match_privacy(struct wpa_bss *bss,
 	return !privacy;
 }
 
+bool wpas_pqc_constraint_match(struct wpa_ssid *ssid, u8 pqc)
+{
+	u8 constraints[PQC_CONSTRAINT_MAX + 1];
+	size_t num, i;
+
+	num = wpas_ssid_pqc_constraints(ssid, constraints, ARRAY_SIZE(constraints));
+
+	for (i = 0; i < num; i++) {
+		if (constraints[i] == pqc)
+			return true;
+	}
+
+	return false;
+}
+
+
+/*
+ * Return the PQC constraints implied by the security profiles enabled in a
+ * network block. Nothing is returned when PQC is not enabled, no network is
+ * selected, or none of the enabled profiles uses PQC.
+ */
+size_t wpas_ssid_pqc_constraints(struct wpa_ssid *ssid, u8 *constraints,
+				 size_t max)
+{
+	if (!ssid)
+		return 0;
+
+	return sec_prof_list_pqc_constraints(ssid->security_profiles,
+					     constraints, max);
+}
+
 
 static int wpa_supplicant_ssid_bss_match(struct wpa_supplicant *wpa_s,
 					 struct wpa_ssid *ssid,
@@ -882,8 +913,8 @@ static int wpa_supplicant_ssid_bss_match(struct wpa_supplicant *wpa_s,
 		 * does not explicitly list those values.
 		 */
 		if (sp) {
-			int sp_key_mgmt = security_profile_get_key_mgmt(
-				sp, ssid->key_mgmt);
+			int sp_key_mgmt =
+				security_profile_get_key_mgmt(sp, ssid);
 
 			if (!sp_key_mgmt ||
 			    !(ssid->pairwise_cipher & WPA_CIPHER_GCMP_256)) {

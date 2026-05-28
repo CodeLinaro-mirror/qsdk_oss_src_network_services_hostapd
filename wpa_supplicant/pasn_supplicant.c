@@ -780,7 +780,8 @@ static struct wpa_bss * wpas_pasn_allowed(struct wpa_supplicant *wpa_s,
 			const u8 *sp = wpa_bss_get_ie_ext(
 				bss, WLAN_EID_EXT_SECURITY_PROFILE);
 
-			if (security_profile_get_key_mgmt(sp, akmp))
+			if (security_profile_get_key_mgmt_akm(
+				    sp, akmp, wpa_s->current_ssid))
 				sp_match = true;
 		}
 
@@ -861,11 +862,17 @@ static void wpas_pasn_sec_prof_eppke(struct wpa_supplicant *wpa_s,
 	const u8 *sp, *bitmap;
 	const struct security_profile_entry *profile = NULL;
 	u8 bitmap_len;
+	u8 pqc_constraints[PQC_CONSTRAINT_MAX + 1];
+	size_t num_pqc_constraints;
 	u8 sp_buf[256];
 	int sp_len;
 
 	if (!wpas_security_profile_active(wpa_s))
 		return;
+
+	num_pqc_constraints = wpas_ssid_pqc_constraints(
+		wpa_s->current_ssid, pqc_constraints,
+		ARRAY_SIZE(pqc_constraints));
 
 	/*
 	 * Security Profile + EPPKE (external auth path):
@@ -909,7 +916,9 @@ static void wpas_pasn_sec_prof_eppke(struct wpa_supplicant *wpa_s,
 	 * No new driver attribute is required.
 	 */
 	profile = security_profile_select(awork->akmp, awork->cipher,
-					  false, true, bitmap, bitmap_len);
+					  false, true, pqc_constraints,
+					  num_pqc_constraints,
+					  bitmap, bitmap_len);
 	if (!profile)
 		return;
 

@@ -1682,12 +1682,16 @@ security_profile_select_best(const u8 *sp, const int *numbers)
  * wpa_supplicant_set_suites() succeeds even when the RSNE/RSNOE/RSNO2E does
  * not explicitly list the AKM that the security profile implies.
  */
-int security_profile_get_key_mgmt(const u8 *sp, int ssid_key_mgmt)
+int security_profile_get_key_mgmt_akm(const u8 *sp, int ssid_key_mgmt,
+				      struct wpa_ssid *ssid)
 {
 	u8 bitmap_len, num_vendor;
 	const u8 *bitmap;
 	int profile, result = 0;
 	int akm_bit;
+
+	if (!ssid_key_mgmt)
+		return 0;
 
 	/*
 	 * sp_ie layout (wpa_bss_get_ie_ext returns full element):
@@ -1713,6 +1717,21 @@ int security_profile_get_key_mgmt(const u8 *sp, int ssid_key_mgmt)
 		if (!(bitmap[profile / 8] & BIT(profile % 8)))
 			continue;
 
+#ifdef CONFIG_PQC
+		{
+			const struct security_profile_entry *e =
+				sec_prof_get(profile);
+
+			/*
+			 * Skip profiles whose PQC constraint is not
+			 * implied by the enabled security profiles.
+			 */
+			if (e && e->pqc_profile >= 0 && ssid &&
+			    !wpas_pqc_constraint_match(ssid, e->pqc_profile))
+				continue;
+		}
+#endif /* CONFIG_PQC */
+
 		/*
 		 * security_profile_akm_matches() expects a single key_mgmt
 		 * value (not a bitmask), so iterate over each set bit in
@@ -1731,6 +1750,24 @@ int security_profile_get_key_mgmt(const u8 *sp, int ssid_key_mgmt)
 	}
 
 	return result;
+}
+
+
+int security_profile_get_key_mgmt(const u8 *sp, struct wpa_ssid *ssid)
+{
+	int key_mgmt;
+
+	if (!ssid)
+		return 0;
+
+	/*
+	 * AKMs that are configured only through a security profile, e.g. the
+	 * PQC AKMs, are not listed in the key_mgmt network parameter.
+	 */
+	key_mgmt = ssid->key_mgmt |
+		sec_prof_implied_key_mgmt(ssid->security_profiles);
+
+	return security_profile_get_key_mgmt_akm(sp, key_mgmt, ssid);
 }
 
 
@@ -2160,7 +2197,7 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		     * the RSNE/RSNOE/RSNO2E does not list it.
 		     */
 		    (bss_sp &&
-		     security_profile_get_key_mgmt(bss_sp, ssid->key_mgmt) &&
+		     security_profile_get_key_mgmt(bss_sp, ssid) &&
 		     (ssid->pairwise_cipher & WPA_CIPHER_GCMP_256))) &&
 		   ((ie.key_mgmt & ssid->key_mgmt) ||
 		    /*
@@ -2172,7 +2209,7 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		     * cipher, so treat GCMP-256 as available when a matching
 		     * profile exists. */
 		    (bss_sp &&
-		     security_profile_get_key_mgmt(bss_sp, ssid->key_mgmt) &&
+		     security_profile_get_key_mgmt(bss_sp, ssid) &&
 		     (ssid->pairwise_cipher & WPA_CIPHER_GCMP_256)))) {
 		/*
 		 * When the RSNE did not advertise the AKM/cipher but the
@@ -2180,9 +2217,9 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		 * wpa_supplicant_set_suites() can proceed normally.
 		 */
 		if (bss_sp &&
-		    security_profile_get_key_mgmt(bss_sp, ssid->key_mgmt)) {
-			int sp_key_mgmt = security_profile_get_key_mgmt(
-				bss_sp, ssid->key_mgmt);
+		    security_profile_get_key_mgmt(bss_sp, ssid)) {
+			int sp_key_mgmt =
+				security_profile_get_key_mgmt(bss_sp, ssid);
 
 			if (!(ie.pairwise_cipher & WPA_CIPHER_GCMP_256) &&
 			    (ssid->pairwise_cipher & WPA_CIPHER_GCMP_256)) {
@@ -2823,6 +2860,11 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		const u8 *bitmap;
 		bool eap_over_auth = false;
 		bool eppke = false;
+		u8 pqc_constraints[PQC_CONSTRAINT_MAX + 1];
+		size_t num_pqc_constraints;
+
+		num_pqc_constraints = wpas_ssid_pqc_constraints(
+			ssid, pqc_constraints, ARRAY_SIZE(pqc_constraints));
 
 		if (!sp ||sp[1] < 3)
 			goto no_valid_sp;
@@ -2888,7 +2930,8 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		wpa_s->sel_security_profile =
 			security_profile_select(
 				wpa_s->key_mgmt, wpa_s->pairwise_cipher,
-				eap_over_auth, eppke, bitmap, bitmap_len);
+				eap_over_auth, eppke, pqc_constraints,
+				num_pqc_constraints, bitmap, bitmap_len);
 
 		if (wpa_s->sel_security_profile) {
 			wpa_dbg(wpa_s, MSG_DEBUG,
