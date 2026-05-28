@@ -183,6 +183,7 @@ struct ieee802_11_elems {
 	u8 key_delivery_len;
 	size_t wrapped_data_len;
 	u8 fils_pk_len;
+	u8 nonce_len;
 	u8 owe_dh_len;
 	u8 power_capab_len;
 	u8 roaming_cons_sel_len;
