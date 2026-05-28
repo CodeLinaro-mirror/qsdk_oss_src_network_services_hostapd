@@ -3717,6 +3717,14 @@ wpa_supplicant_get_scan_results(struct wpa_supplicant *wpa_s,
 	}
 	filter_scan_res(wpa_s, scan_res);
 
+#ifdef CONFIG_QCN_EXTN
+	if (wpa_s->conf && wpa_s->conf->conf_extn.strict_passive_scan) {
+		for (i = 0; i < scan_res->num; i++)
+			scan_res->res[i] = wpa_scan_ssid_hide_beacon_extn(wpa_s,
+									  scan_res->res[i]);
+	}
+#endif
+
 	for (i = 0; i < scan_res->num; i++) {
 		struct wpa_scan_res *scan_res_item = scan_res->res[i];
 
