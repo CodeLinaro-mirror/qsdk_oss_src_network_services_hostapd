@@ -757,6 +757,9 @@ int hostapd_reload_config_iface(struct hostapd_iface **ifacep)
 	}
 
 	iface->conf = newconf;
+#ifdef CONFIG_QCN_EXTN
+	hostapd_periodic_acs_start(iface);
+#endif
 	hostapd_config_free(oldconf);
 
 
@@ -832,6 +835,9 @@ int hostapd_reload_config_bss(struct hostapd_iface *iface,
 	hapd->iconf->center_freq_device = oldconf->center_freq_device;
 	hapd->reenable_beacon = 1;
 	hostapd_reload_bss(hapd);
+#ifdef CONFIG_QCN_EXTN
+	hostapd_periodic_acs_start(iface);
+#endif
 
 	wpa_printf(MSG_DEBUG,"Relaod config bss %s completed\n", iface_name);
 
@@ -4924,6 +4930,7 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 #ifdef CONFIG_QCN_EXTN
 	dcs_enable_init(hapd, iface->conf->conf_extn.dcs_conf.enable_bitmap);
 	hostapd_set_he_mcs_12_13_cap_extn(hapd);
+	hostapd_periodic_acs_start(iface);
 #endif
 	/*
 	 * WPS UPnP module can be initialized only when the "upnp_iface" is up.
@@ -5284,6 +5291,10 @@ void hostapd_interface_deinit(struct hostapd_iface *iface)
 	hostapd_cleanup_monitor_iface(iface);
 
 	eloop_cancel_timeout(channel_list_update_timeout, iface, NULL);
+
+#ifdef CONFIG_QCN_EXTN
+	hostapd_periodic_acs_stop(iface);
+#endif
 	iface->wait_channel_update = 0;
 	iface->is_afc_channel_change_pending = 0;
 	iface->is_afc_repeater_power_sync_pending = 0;

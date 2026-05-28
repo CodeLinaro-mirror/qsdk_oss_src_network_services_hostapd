@@ -1712,6 +1712,10 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 	hostapd_chan_switch_complete(hapd, power_mode_6ghz, width,
 				     width_device, is_dfs0, is_dfs);
 
+#ifdef CONFIG_QCN_EXTN
+	hostapd_periodic_acs_schedule(hapd->iface);
+#endif
+
 	for (i = 0; i < hapd->iface->num_bss; i++)
 		hostapd_neighbor_set_own_report(hapd->iface->bss[i]);
 
