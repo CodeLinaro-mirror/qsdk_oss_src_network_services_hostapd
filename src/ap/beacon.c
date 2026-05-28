@@ -311,6 +311,9 @@ u8 * hostapd_eid_country(struct hostapd_data *hapd, u8 *eid,
 	u8 *pos = eid;
 	u8 *end = eid + max_len;
 	u8 op_class;
+#ifdef CONFIG_QCN_EXTN
+	u8 opclass_tbl_idx;
+#endif /* CONFIG_QCN_EXTN */
 	bool force_global;
 
 	if (!hapd->iconf->ieee80211d || max_len < 6 ||
@@ -327,6 +330,13 @@ u8 * hostapd_eid_country(struct hostapd_data *hapd, u8 *eid,
 	/* Force the third octet of the country string to indicate
 	 * Global Operating Class (Table E-4) */
 	force_global = true;
+#ifdef CONFIG_QCN_EXTN
+	opclass_tbl_idx = hapd->iconf->conf_extn.opclass_tbl_idx;
+	if (opclass_tbl_idx != OPCLS_TAB_IDX_NONE)
+		eid[4] = opclass_tbl_idx;
+
+	force_global = false;
+#endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_MBO
 	/* Wi-Fi Agile Muiltiband AP is required to use a global operating
