@@ -1062,6 +1062,9 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 				bias = NULL;
 			}
 		} else if (is_24ghz_mode(mode->mode) &&
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_QCN_APP_EXTN)
+			   !iface->conf->conf_extn.qacs_conf.acs_2g_scan_all &&
+#endif /* CONFIG_QCN_EXTN && CONFIG_QCN_APP_EXTN */
 			   is_common_24ghz_chan(chan->chan)) {
 			tmp_bias.channel = chan->chan;
 			tmp_bias.bias = ACS_24GHZ_PREFER_1_6_11;
