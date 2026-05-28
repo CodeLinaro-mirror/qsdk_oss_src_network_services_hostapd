@@ -1554,3 +1554,116 @@ def test_ieee8021x_auth_mixed_concurrent(dev, apdev):
     # (Key Delivery element), so broadcast should work immediately.
     hwsim_utils.test_connectivity(dev[0], dev[1])
     hwsim_utils.test_connectivity(dev[1], dev[0])
+
+def _run_ieee8021x_auth_security_profile_pqc(dev, apdev, key_mgmt,
+                                             expected_akm, expected_profile,
+                                             pqc_constraint):
+    ssid = "test-ieee8021x-auth-secprof-pqc"
+
+    params = hostapd.wpa2_eap_params(ssid=ssid)
+    params["wpa_key_mgmt"] = key_mgmt
+    params["rsn_pairwise"] = "GCMP-256"
+    params["group_cipher"] = "GCMP-256"
+    params["ieee80211w"] = "2"
+    params["security_profiles"] = str(expected_profile)
+    params["eap_using_authentication_frames"] = "1"
+    params["assoc_frame_encryption"] = "1"
+    params["pmksa_caching_privacy"] = "1"
+    params["supported_pqc_constraints"] = str(pqc_constraint)
+
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    try:
+        dev[0].set("security_profiles", "1")
+    except:
+        raise HwsimSkip("Security profiles not supported")
+
+    dev[0].connect(ssid,
+                   key_mgmt=key_mgmt,
+                   ieee80211w="2",
+                   pairwise="GCMP-256",
+                   group="GCMP-256",
+                   eap="TLS",
+                   identity="tls user",
+                   ca_cert="auth_serv/ca.pem",
+                   client_cert="auth_serv/user.pem",
+                   private_key="auth_serv/user.key",
+                   scan_freq="2412",
+                   pmksa_privacy="1",
+                   eap_over_auth_frame="1",
+                   supported_pqc_constraints=str(pqc_constraint))
+
+    hapd.wait_sta()
+    sta = hapd.get_sta(dev[0].own_addr())
+
+    if sta["AKMSuiteSelector"] != expected_akm:
+        raise Exception("Incorrect AKMSuiteSelector value: " +
+                        sta["AKMSuiteSelector"])
+
+    val = dev[0].get_status_field("security_profile")
+    if val != str(expected_profile):
+        raise Exception("Unexpected security_profile: " + str(val))
+
+    # Each profile uses a different hash and key length in the transcript based
+    # PTK derivation, so a mismatch only shows up as a data path failure.
+    hwsim_utils.test_connectivity(dev[0], hapd)
+
+    # The EAPOL-Key integrity and key wrap algorithms are AKM defined for the
+    # PQC AKMs, but their lengths follow the profile.
+    if "OK" not in hapd.request("REKEY_GTK"):
+        raise Exception("REKEY_GTK failed")
+    ev = dev[0].wait_event(["RSN: Group rekeying completed"], timeout=5)
+    if ev is None:
+        raise Exception("GTK rekey timed out")
+
+    hwsim_utils.test_connectivity(dev[0], hapd)
+
+    # Disconnect and reconnect to verify PMKSA caching works
+    for i in range(2):
+        dev[0].request("DISCONNECT")
+        dev[0].wait_disconnected(timeout=5)
+        dev[0].request("RECONNECT")
+        dev[0].wait_connected(timeout=15,
+                              error="Reconnect %d timed out" % (i + 1))
+        hapd.wait_sta()
+        sta = hapd.get_sta(dev[0].own_addr())
+        if sta["AKMSuiteSelector"] != expected_akm:
+            raise Exception("Incorrect AKMSuiteSelector after reconnect %d: " %
+                            (i + 1) + sta["AKMSuiteSelector"])
+        hwsim_utils.test_connectivity(dev[0], hapd)
+
+def test_ieee8021x_auth_alg_eap_tls_security_profile_16(dev, apdev):
+    """IEEE 802.1X authentication with EAP-TLS and Security Profile 16 (PQC constraint 0)"""
+    key_mgmt = dev[0].get_capability("key_mgmt")
+    if "EAP-PQC" not in key_mgmt:
+        raise HwsimSkip(f"EAP-PQC not supported: {key_mgmt}")
+
+    _run_ieee8021x_auth_security_profile_pqc(dev, apdev,
+                                             "00-0f-ac-31", 16)
+
+def test_ieee8021x_auth_alg_eap_tls_security_profile_17(dev, apdev):
+    """IEEE 802.1X authentication with EAP-TLS and Security Profile 17 (PQC constraint 1)"""
+    key_mgmt = dev[0].get_capability("key_mgmt")
+    if "EAP-PQC" not in key_mgmt:
+        raise HwsimSkip(f"EAP-PQC not supported: {key_mgmt}")
+
+    _run_ieee8021x_auth_security_profile_pqc(dev, apdev,
+                                             "00-0f-ac-31", 17)
+
+def test_ieee8021x_auth_alg_eap_tls_security_profile_18(dev, apdev):
+    """IEEE 802.1X authentication with EAP-TLS and Security Profile 18 (PQC constraint 2)"""
+    key_mgmt = dev[0].get_capability("key_mgmt")
+    if "EAP-PQC" not in key_mgmt:
+        raise HwsimSkip(f"EAP-PQC not supported: {key_mgmt}")
+
+    _run_ieee8021x_auth_security_profile_pqc(dev, apdev,
+                                             "00-0f-ac-31", 18)
+
+def test_ieee8021x_auth_alg_eap_tls_security_profile_19(dev, apdev):
+    """IEEE 802.1X authentication with EAP-TLS and Security Profile 19 (PQC constraint 3)"""
+    key_mgmt = dev[0].get_capability("key_mgmt")
+    if "EAP-PQC" not in key_mgmt:
+        raise HwsimSkip(f"EAP-PQC not supported: {key_mgmt}")
+
+    _run_ieee8021x_auth_security_profile_pqc(dev, apdev, "EAP-PQC",
+                                             "00-0f-ac-31", 19, 3)
