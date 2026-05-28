@@ -2290,6 +2290,11 @@ eht_bfme_ss_rollback:
 			hapd->conf->eht_phy_capab = old_eht_phy_capab;
 			hapd->conf->eht_phy_capab_mask = old_eht_phy_capab_mask;
 			return -1;
+		} else if (os_strcasecmp(cmd, "eht_tx_mcs_nss_set") == 0 ||
+			   os_strcasecmp(cmd, "eht_rx_mcs_nss_set") == 0) {
+			if (hostapd_tx_bss_only(hapd, cmd) < 0)
+				return -1;
+			return hostapd_reload_bss_only(hapd);
 		} else if (os_strcasecmp(cmd, "bss_eht_su_beamformer") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_su_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_mu_beamformer") == 0 ||
@@ -3012,6 +3017,24 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 				   EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO) ?
 				  !!(hapd->conf->eht_phy_capab.eht_mu_mimo_mask & BIT(2)) :
 				  hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "eht_tx_mcs_nss_set") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "eht_tx_mcs_nss_set = 0x%04x(<=80 mhz) 0x%04x(160 mhz) 0x%04x(320 mhz)\n",
+				  hapd->conf->eht_tx_mcs_nss_set[0],
+				  hapd->conf->eht_tx_mcs_nss_set[1],
+				  hapd->conf->eht_tx_mcs_nss_set[2]);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "eht_rx_mcs_nss_set") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "eht_rx_mcs_nss_set = 0x%04x(<=80 mhz) 0x%04x(160 mhz) 0x%04x(320 mhz)\n",
+				  hapd->conf->eht_rx_mcs_nss_set[0],
+				  hapd->conf->eht_rx_mcs_nss_set[1],
+				  hapd->conf->eht_rx_mcs_nss_set[2]);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;

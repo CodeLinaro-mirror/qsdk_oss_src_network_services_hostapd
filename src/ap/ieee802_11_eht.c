@@ -96,6 +96,28 @@ static u8 ieee80211_eht_mcs_set_size(enum hostapd_hw_mode mode, u8 opclass,
 	return sz;
 }
 
+
+
+static void intersect_eht_mcs_map(u8 *pos, const u8 *hw_mcs_set, size_t mcs_set_len,
+				  const u16 *usr_tx_mcs_set, const u16 *usr_rx_mcs_set)
+{
+	u8 i, idx, hw_val, hw_rx, hw_tx, usr_rx, usr_tx;
+
+	for (i = 0; i < (u8)(mcs_set_len / EHT_PHYCAP_MCS_NSS_LEN_20MHZ_PLUS); i++) {
+		for (idx = 0; idx < EHT_PHYCAP_MCS_NSS_LEN_20MHZ_PLUS; idx++) {
+			hw_val = *hw_mcs_set++;
+
+			hw_rx = hw_val & 0xF;
+			hw_tx = hw_val >> 4;
+
+			usr_rx = (usr_rx_mcs_set[i] >> (idx * 4)) & 0xF;
+			usr_tx = (usr_tx_mcs_set[i] >> (idx * 4)) & 0xF;
+
+			*pos++ = MIN(hw_rx, usr_rx) | (MIN(hw_tx, usr_tx) << 4);
+		}
+	}
+}
+
 bool eht_mu_mask_valid(u8 mask)
 {
 	if (mask & BIT(2)) {
@@ -181,9 +203,17 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 
 	/* For non-transmitting BSSs in MBSSID, inherit BSS-level overrides
 	 * from the transmitting BSS */
-	if (tx_hapd != hapd && tx_hapd->conf->eht_phy_capab_mask) {
-		hapd->conf->eht_phy_capab = tx_hapd->conf->eht_phy_capab;
-		hapd->conf->eht_phy_capab_mask = tx_hapd->conf->eht_phy_capab_mask;
+	if (tx_hapd != hapd) {
+		if (tx_hapd->conf->eht_phy_capab_mask) {
+			hapd->conf->eht_phy_capab = tx_hapd->conf->eht_phy_capab;
+			hapd->conf->eht_phy_capab_mask = tx_hapd->conf->eht_phy_capab_mask;
+		}
+		os_memcpy(hapd->conf->eht_tx_mcs_nss_set,
+			  tx_hapd->conf->eht_tx_mcs_nss_set,
+			  sizeof(hapd->conf->eht_tx_mcs_nss_set));
+		os_memcpy(hapd->conf->eht_rx_mcs_nss_set,
+			  tx_hapd->conf->eht_rx_mcs_nss_set,
+			  sizeof(hapd->conf->eht_rx_mcs_nss_set));
 	}
 	if (!((hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_SU_BEAMFORMER) ?
 	      hapd->conf->eht_phy_capab.su_beamformer :
@@ -434,7 +464,9 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 						 mode->he_capab[opmode].phy_cap,
 						 eht_cap->phy_cap);
 	if (mcs_nss_len) {
-		os_memcpy(pos, eht_cap->mcs, mcs_nss_len);
+		intersect_eht_mcs_map(pos, eht_cap->mcs, mcs_nss_len,
+				      hapd->conf->eht_tx_mcs_nss_set,
+				      hapd->conf->eht_rx_mcs_nss_set);
 		pos += mcs_nss_len;
 	}
 
