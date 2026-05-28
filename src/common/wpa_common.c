@@ -2557,7 +2557,7 @@ int wpa_parse_wpa_ie_rsn(const u8 *rsn_ie, size_t rsn_ie_len,
 		count = WPA_GET_LE16(pos);
 		pos += 2;
 		left -= 2;
-		if (count == 0 || count > left / RSN_SELECTOR_LEN) {
+		if (count > left / RSN_SELECTOR_LEN) {
 			wpa_printf(MSG_DEBUG, "%s: ie count botch (key mgmt), "
 				   "count %u left %u", __func__, count, left);
 			return -6;
