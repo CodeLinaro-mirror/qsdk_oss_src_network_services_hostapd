@@ -5034,6 +5034,13 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 				return -1;
 			}
 		}
+	} else if (is_6ghz_freq(settings.freq_params.freq) &&
+		   !iface->conf->enable_best_power_mode) {
+		hostapd_set_current_6ghz_pwr_type(iface, &settings.power_mode);
+		wpa_printf(MSG_DEBUG,
+			   "%s: Using configured power mode %d for Freq %d (BPM disabled)",
+			   __func__, settings.power_mode,
+			   settings.freq_params.freq);
 	}
 
 	if (settings.power_mode == HE_REG_INFO_6GHZ_AP_TYPE_SP &&

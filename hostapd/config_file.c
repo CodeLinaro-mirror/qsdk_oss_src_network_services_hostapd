@@ -4506,6 +4506,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 #endif /* CONFIG_AFC */
+	} else if (os_strcmp(buf, "enable_best_power_mode") == 0) {
+		conf->enable_best_power_mode = atoi(pos);
 	} else if (os_strcmp(buf, "mbssid") == 0) {
 		int mbssid = atoi(pos);
 		if (mbssid < 0 || mbssid > MULTI_MBSSID_GROUP_ENABLED) {

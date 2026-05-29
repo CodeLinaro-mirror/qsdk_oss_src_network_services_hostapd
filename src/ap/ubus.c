@@ -786,6 +786,7 @@ hostapd_switch_chan(struct ubus_context *ctx, struct ubus_object *obj,
 	};
 	u8 chwidth = hostapd_get_oper_chwidth(iconf);
 	u8 seg0 = 0, seg1 = 0;
+	bool is_6ghz;
 	int ret = UBUS_STATUS_OK;
 	int i;
 
@@ -842,7 +843,7 @@ hostapd_switch_chan(struct ubus_context *ctx, struct ubus_object *obj,
 		chwidth = CHANWIDTH_USE_HT;
 		break;
 	}
-	css.power_mode = hapd->iconf->he_6ghz_reg_pwr_type;
+	is_6ghz = is_6ghz_freq(css.freq_params.freq);
 
 	info = (struct hostapd_channel_info) {
 		.mode = iconf->hw_mode,
@@ -878,6 +879,24 @@ hostapd_switch_chan(struct ubus_context *ctx, struct ubus_object *obj,
 
 	if (hostapd_set_freq_params(&css.freq_params, &info))
 		return UBUS_STATUS_NOT_SUPPORTED;
+
+	if (is_6ghz) {
+		if (hapd->iconf->enable_best_power_mode) {
+			u8 bpm = hostapd_get_best_ap_6ghz_power_mode(
+				hapd->iface, css.freq_params.freq,
+				css.freq_params.center_freq1,
+				css.freq_params.bandwidth,
+				css.freq_params.punct_bitmap);
+
+			css.power_mode = bpm != NL80211_REG_NUM_POWER_MODES ?
+				bpm : hapd->iconf->he_6ghz_reg_pwr_type;
+		} else {
+			hostapd_set_current_6ghz_pwr_type(hapd->iface,
+							   &css.power_mode);
+		}
+	} else {
+		css.power_mode = -1;
+	}
 
 	/* Trigger mesh CSA before AP channel switch if mesh VAP present */
 	hostapd_ubus_mesh_switch_channel(hapd->iface, &css);
