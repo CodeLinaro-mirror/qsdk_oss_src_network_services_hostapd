@@ -2062,4 +2062,31 @@ int hostapd_update_monitor_channel(struct hostapd_data *hapd,
 void hostapd_clear_old_bss(struct hostapd_data *bss);
 struct hostapd_data * hostapd_mbssid_get_bss(struct hostapd_data *hapd, size_t i);
 
+#ifdef CONFIG_IEEE80211AX
+/**
+ * hostapd_set_current_6ghz_pwr_type - Set 6 GHz power mode when BPM is disabled
+ * @iface: Pointer to hostapd interface
+ * @power_mode: Output power mode to set
+ *
+ * Sets @power_mode to the configured 6 GHz regulatory power type.
+ * Logs an error if SP mode is requested but no AFC power event has been
+ * received - this should not happen on a running interface but the value
+ * is passed to the driver for final validation.
+ */
+static inline void
+hostapd_set_current_6ghz_pwr_type(struct hostapd_iface *iface,
+				  int *power_mode)
+{
+	u8 cur_pwr_type = iface->conf->he_6ghz_reg_pwr_type;
+
+	if (he_reg_is_sp(cur_pwr_type) && !iface->is_afc_power_event_received) {
+		/* Should Not Happen: SP mode without AFC on a running iface */
+		wpa_printf(MSG_ERROR,
+			   "%s: SP power mode configured but AFC not received, passing to driver",
+			   __func__);
+	}
+	*power_mode = cur_pwr_type;
+}
+#endif /* CONFIG_IEEE80211AX */
+
 #endif /* HOSTAPD_H */

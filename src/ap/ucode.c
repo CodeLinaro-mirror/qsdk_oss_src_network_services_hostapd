@@ -987,6 +987,12 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 #endif
 
 	conf = iface->conf;
+	/* Initialize power_mode from current configured type;
+	 * explicit "power_mode" key in the ucode object overrides below. */
+	if (is_6ghz_freq(iface->freq))
+		csa.power_mode = conf->he_6ghz_reg_pwr_type;
+	else
+		csa.power_mode = -1;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "csa_count", NULL))) && !errno)
 		csa.cs_count = intval;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "sec_channel", NULL))) && !errno)
