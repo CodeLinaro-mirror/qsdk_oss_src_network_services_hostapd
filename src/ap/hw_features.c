@@ -2324,6 +2324,18 @@ int hostapd_select_hw_mode(struct hostapd_iface *iface)
 	switch (hostapd_check_chans(iface)) {
 	case HOSTAPD_CHAN_VALID:
 		iface->is_no_ir = false;
+
+		if (iface->conf->use_ru_puncture_dfs && iface->conf->punct_bitmap) {
+			enum chan_width ch_width;
+
+			ch_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
+			wpa_printf(MSG_DEBUG,
+				   "DFS: Update puncture source for User puncture bitmap=0x%04x",
+				   iface->conf->punct_bitmap);
+			dfs_update_puncture_source(iface, iface->freq, ch_width,
+						   iface->conf->punct_bitmap,
+						   DFS_CHAN_PUNC_USER);
+		}
 		return 0;
 	case HOSTAPD_CHAN_ACS: /* ACS will run and later complete */
 		return 1;
