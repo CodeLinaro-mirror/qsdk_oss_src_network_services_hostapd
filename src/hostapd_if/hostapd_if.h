@@ -63,6 +63,7 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 		       struct sta_info *sta,
 		       const uint8_t *frame,
 		       uint16_t frame_len,
+		       int rssi,
 		       u16 status_code,
 		       u16 auth_transaction,
 		       u8 allow_reuse,
@@ -87,7 +88,7 @@ enum hostapd_if_frame_processing_decision
 hostapd_if_notify_action(struct hostapd_data *hapd,
 			 struct sta_info *sta,
 			 const struct ieee80211_mgmt *mgmt,
-			 size_t frame_len);
+			 size_t frame_len, int rssi);
 
 enum hostapd_if_frame_processing_decision
 hostapd_if_notify_assoc(struct hostapd_data *hapd,

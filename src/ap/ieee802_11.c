@@ -1807,7 +1807,8 @@ static int check_sae_rejected_groups(struct hostapd_data *hapd,
 
 static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 			    const struct ieee80211_mgmt *mgmt, size_t len,
-			    u16 auth_transaction, u16 status_code)
+			    u16 auth_transaction, u16 status_code,
+			    int rssi)
 {
 	int resp = WLAN_STATUS_SUCCESS;
 	struct wpabuf *data = NULL;
@@ -2080,7 +2081,7 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 #ifdef CONFIG_HOSTAPD_IF
 		/* Link context will be computed inside hostapd_if_notify_auth() */
 		if (hostapd_if_notify_auth(hapd, sta, (const u8 *) mgmt, len,
-				status_code, auth_transaction,
+				rssi, status_code, auth_transaction,
 				allow_reuse, WLAN_AUTH_SAE, dst) ==
 				HOSTAPD_IF_FRAME_PROCESSING_WAIT)
 			return;
@@ -2143,7 +2144,7 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 		}
 #ifdef CONFIG_HOSTAPD_IF
 		if (hostapd_if_notify_auth(hapd, sta, (const u8 *) mgmt, len,
-					status_code, auth_transaction, 0,
+					rssi, status_code, auth_transaction, 0,
 					WLAN_AUTH_SAE, dst) ==
 					HOSTAPD_IF_FRAME_PROCESSING_WAIT)
 			return;
@@ -3947,7 +3948,7 @@ static void handle_auth(struct hostapd_data *hapd,
 			       "authentication OK (open system)");
 #ifdef CONFIG_HOSTAPD_IF
 		if (hostapd_if_notify_auth(hapd, sta, (const u8 *) mgmt, len,
-					WLAN_STATUS_SUCCESS, 2, 0,
+					rssi, WLAN_STATUS_SUCCESS, 2, 0,
 					WLAN_AUTH_OPEN, mgmt->sa) ==
 					HOSTAPD_IF_FRAME_PROCESSING_WAIT)
 			return;
@@ -4017,7 +4018,8 @@ static void handle_auth(struct hostapd_data *hapd,
 		if (ft_auth_resp >= 0) {
 #ifdef CONFIG_HOSTAPD_IF
 			hostapd_if_notify_auth(hapd, sta, (const u8 *) mgmt,
-					       len, (u16) ft_auth_resp, 1, 0,
+					       len, rssi, (u16) ft_auth_resp,
+					       1, 0,
 					       auth_alg, mgmt->sa);
 #endif
 		}
@@ -4041,7 +4043,7 @@ static void handle_auth(struct hostapd_data *hapd,
 		}
 #endif /* CONFIG_MESH */
 		handle_auth_sae(hapd, sta, mgmt, len, auth_transaction,
-				status_code);
+				status_code, rssi);
 		return;
 #endif /* CONFIG_SAE */
 #ifdef CONFIG_FILS
@@ -8247,6 +8249,10 @@ static int handle_action(struct hostapd_data *hapd,
 #endif /* CONFIG_QCN_EXTN */
 			 )
 {
+#ifdef CONFIG_HOSTAPD_IF
+	int rssi = 0;
+#endif
+
 	struct sta_info *sta;
 	u8 *action __maybe_unused;
 
@@ -8305,7 +8311,10 @@ static int handle_action(struct hostapd_data *hapd,
 	}
 
 #ifdef CONFIG_HOSTAPD_IF
-	if (hostapd_if_notify_action(hapd, sta, mgmt, len) ==
+#ifdef CONFIG_QCN_EXTN
+	rssi = extn_args->rssi;
+#endif
+	if (hostapd_if_notify_action(hapd, sta, mgmt, len, rssi) ==
 	    HOSTAPD_IF_FRAME_PROCESSING_OFFLOAD)
 		return 1;
 #endif
