@@ -3901,18 +3901,51 @@ out:
 }
 
 
-static int sme_validate_8021x_auth_elems(struct wpa_supplicant *wpa_s,
-					 const struct ieee802_11_elems *elems,
-					 struct wpabuf *pdu)
+static int sme_8021x_auth_process_dh_params(struct wpa_supplicant *wpa_s,
+					    const struct ieee802_11_elems *elems)
 {
-	struct wpa_ie_data ie;
 	u16 group;
 
-	if (!elems->rsn_ie || !elems->owe_dh || !elems->nonce ||
+	if (elems->owe_dh_len < 2) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: DH parameter too short (%u)",
+			(unsigned int)elems->owe_dh_len);
+		return -1;
+	}
+
+	group = WPA_GET_LE16(elems->owe_dh);
+	if (group != wpa_s->auth_1x->dh_group) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: DH group mismatch (AP=%u, local=%u)",
+			group, wpa_s->auth_1x->dh_group);
+		return -1;
+	}
+
+	wpa_s->auth_1x->dhss =
+		crypto_ecdh_set_peerkey(wpa_s->auth_1x->ecdh, 1,
+					elems->owe_dh + 2,
+					elems->owe_dh_len - 2);
+	if (!wpa_s->auth_1x->dhss) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: Failed to compute DH shared secret");
+		return -1;
+	}
+
+	return 0;
+}
+
+
+static int sme_validate_8021x_common_elems(struct wpa_supplicant *wpa_s,
+					   const struct ieee802_11_elems *elems,
+					   struct wpabuf *pdu)
+{
+	struct wpa_ie_data ie;
+
+	if (!elems->rsn_ie || !elems->nonce ||
 	    elems->nonce_len != WPA_NONCE_LEN) {
 		wpa_msg(wpa_s, MSG_INFO,
-			"IEEE 802.1X: Missing required encryption elements (RSNE=%p, DH=%p, Nonce=%p)",
-			elems->rsn_ie, elems->owe_dh, elems->nonce);
+			"IEEE 802.1X: Missing required elements (RSNE=%p, Nonce=%p)",
+			elems->rsn_ie, elems->nonce);
 		return -1;
 	}
 
@@ -3960,34 +3993,26 @@ static int sme_validate_8021x_auth_elems(struct wpa_supplicant *wpa_s,
 		}
 	}
 
-	if (elems->owe_dh_len < 2) {
-		wpa_msg(wpa_s, MSG_INFO,
-			"IEEE 802.1X: DH parameter too short (%u)",
-			(unsigned int) elems->owe_dh_len);
-		return -1;
-	}
-
-	group = WPA_GET_LE16(elems->owe_dh);
-	if (group != wpa_s->auth_1x->dh_group) {
-		wpa_msg(wpa_s, MSG_INFO,
-			"IEEE 802.1X: DH group mismatch (AP=%u, local=%u)",
-			group, wpa_s->auth_1x->dh_group);
-		return -1;
-	}
-
-	wpa_s->auth_1x->dhss =
-		crypto_ecdh_set_peerkey(wpa_s->auth_1x->ecdh, 1,
-					elems->owe_dh + 2,
-					elems->owe_dh_len - 2);
-	if (!wpa_s->auth_1x->dhss) {
-		wpa_msg(wpa_s, MSG_INFO,
-			"IEEE 802.1X: Failed to compute DH shared secret");
-		return -1;
-	}
-
 	os_memcpy(wpa_s->auth_1x->anonce, elems->nonce, WPA_NONCE_LEN);
 
 	return 0;
+}
+
+
+static int sme_validate_8021x_auth_elems(struct wpa_supplicant *wpa_s,
+					 const struct ieee802_11_elems *elems,
+					 struct wpabuf *pdu)
+{
+	if (sme_validate_8021x_common_elems(wpa_s, elems, pdu))
+		return -1;
+
+	if (!elems->owe_dh) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: Missing DH Parameter element");
+		return -1;
+	}
+
+	return sme_8021x_auth_process_dh_params(wpa_s, elems);
 }
 
 
