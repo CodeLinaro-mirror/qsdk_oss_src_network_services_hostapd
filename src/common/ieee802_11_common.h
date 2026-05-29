@@ -18,6 +18,41 @@ struct element {
 	u8 data[];
 } STRUCT_PACKED;
 
+struct ext_len_element {
+	u8 id;
+	le16 ext_id;
+	le16 datalen;
+	u8 data[];
+} STRUCT_PACKED;
+
+static inline size_t element_hdr_size(const struct element *elem)
+{
+	if (elem->id == WLAN_EID_EXT_LENGTH)
+		return sizeof(struct ext_len_element);
+	return sizeof(struct element);
+}
+
+static inline size_t element_datalen(const struct element *elem)
+{
+	if (elem->id == WLAN_EID_EXT_LENGTH)
+		return le_to_host16(
+			((const struct ext_len_element *)elem)->datalen);
+	return elem->datalen;
+}
+
+static inline const u8 *element_data(const struct element *elem)
+{
+	if (elem->id == WLAN_EID_EXT_LENGTH)
+		return ((const struct ext_len_element *)elem)->data;
+	return elem->data;
+}
+
+static inline const struct element *element_next(const struct element *elem)
+{
+	return (const struct element *)(element_data(elem) +
+					element_datalen(elem));
+}
+
 struct hostapd_hw_modes;
 
 #define MAX_NOF_MB_IES_SUPPORTED 5
@@ -134,6 +169,7 @@ struct ieee802_11_elems {
 	const u8 *uhr_capabilities;
 	const u8 *uhr_operation;
 	const u8 *security_profile;
+	const u8 *pqc_parameters;
 
 	u8 ssid_len;
 	u8 supp_rates_len;
@@ -211,6 +247,7 @@ struct ieee802_11_elems {
 	u8 uhr_capabilities_len;
 	u8 uhr_operation_len;
 	u8 security_profile_len;
+	size_t pqc_parameters_len;
 
 	struct mb_ies_info mb_ies;
 
@@ -359,8 +396,11 @@ enum oper_chan_width chan_width_to_oper_chwidth(enum chan_width chan_width);
 	     (const u8 *) (_data) + (_datalen) - (const u8 *) _elem >=	\
 		(int) sizeof(*_elem) &&					\
 	     (const u8 *) (_data) + (_datalen) - (const u8 *) _elem >=	\
-		(int) sizeof(*_elem) + _elem->datalen;			\
-	     _elem = (const struct element *) (_elem->data + _elem->datalen))
+		(int) element_hdr_size(_elem) &&			\
+	     (const u8 *) (_data) + (_datalen) - (const u8 *) _elem >=	\
+		(int) (element_hdr_size(_elem) +			\
+		       element_datalen(_elem));				\
+	     _elem = element_next(_elem))
 
 #define for_each_element_id(element, _id, data, datalen)		\
 	for_each_element(element, data, datalen)			\

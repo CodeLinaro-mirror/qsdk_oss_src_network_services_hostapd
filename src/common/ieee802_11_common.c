@@ -483,6 +483,38 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
 }
 
 
+static int ieee802_11_parse_ext_len_elem(const struct ext_len_element *elem,
+					 struct ieee802_11_elems *elems,
+					 int show_errors)
+{
+	u16 id, info_len;
+	const u8 *pos;
+
+	id = le_to_host16(elem->ext_id);
+	info_len = le_to_host16(elem->datalen);
+	pos = elem->data;
+
+	switch (id) {
+	case WLAN_EID_EXT_LEN_PQC_PARAMETERS:
+		if (info_len < sizeof(struct ieee80211_pqc))
+			break;
+
+		elems->pqc_parameters = pos;
+		elems->pqc_parameters_len = info_len;
+		break;
+	default:
+		if (show_errors) {
+			wpa_printf(MSG_MSGDUMP,
+				   "IEEE 802.11 element parsing ignored unknown element extended length (id=%u elen=%hu)",
+				   id, info_len);
+		}
+		return -1;
+	}
+
+	return 0;
+}
+
+
 static ParseRes __ieee802_11_parse_elems(const u8 *start, size_t len,
 					 struct ieee802_11_elems *elems,
 					 int show_errors)
@@ -494,15 +526,26 @@ static ParseRes __ieee802_11_parse_elems(const u8 *start, size_t len,
 		return ParseOK;
 
 	for_each_element(elem, start, len) {
-		u8 id = elem->id, elen = elem->datalen;
-		const u8 *pos = elem->data;
+		u8 id = elem->id, elen;
+		const u8 *pos;
 		size_t *total_len = NULL;
 
 		if (id == WLAN_EID_FRAGMENT && elems->num_frag_elems > 0) {
 			elems->num_frag_elems--;
 			continue;
 		}
+
 		elems->num_frag_elems = 0;
+		if (id == WLAN_EID_EXT_LENGTH) {
+			if (ieee802_11_parse_ext_len_elem((struct ext_len_element *)elem,
+							  elems,
+							  show_errors))
+				unknown++;
+			continue;
+		}
+
+		elen = elem->datalen;
+		pos = elem->data;
 
 		switch (id) {
 		case WLAN_EID_SSID:

@@ -564,6 +564,8 @@
 #define WLAN_EID_EXT_SECURITY_PROFILE 162
 #define WLAN_EID_EXT_POW 164
 
+#define WLAN_EID_EXT_LEN_PQC_PARAMETERS 0
+
 /* Extended Capabilities field */
 #define WLAN_EXT_CAPAB_20_40_COEX 0
 #define WLAN_EXT_CAPAB_GLK 1
