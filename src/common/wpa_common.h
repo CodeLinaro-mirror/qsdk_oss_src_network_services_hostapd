@@ -925,4 +925,7 @@ int hkdf_expand_bin(size_t hash_len, const u8 *prk, size_t prk_len,
 int hkdf_expand(size_t hash_len, const u8 *prk, size_t prk_len,
 		const char *info, u8 *okm, size_t okm_len);
 
+const struct ieee80211_pqc_constraint *
+wpa_get_pqc_constraint(u8 security_profile_num);
+
 #endif /* WPA_COMMON_H */

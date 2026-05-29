@@ -5421,3 +5421,21 @@ int hkdf_expand(size_t hash_len, const u8 *prk, size_t prk_len,
 	return hkdf_expand_bin(hash_len, prk, prk_len, (const u8 *) info,
 			       os_strlen(info), okm, okm_len);
 }
+
+
+const struct ieee80211_pqc_constraint *
+wpa_get_pqc_constraint(u8 security_profile_num)
+{
+	const struct security_profile_entry *sp =
+		sec_prof_get(security_profile_num);
+
+	if (!sp || sp->pqc_profile < 0 ||
+	    sp->pqc_profile > PQC_CONSTRAINT_MAX) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid PQC security profile number: %u",
+			   security_profile_num);
+		return NULL;
+	}
+
+	return &g_pqc_constraints[sp->pqc_profile];
+}

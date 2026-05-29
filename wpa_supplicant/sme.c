@@ -497,6 +497,15 @@ static void sme_802_1x_auth_data_free(struct wpa_supplicant *wpa_s)
 	if (!wpa_s || !wpa_s->auth_1x)
 		return;
 
+#ifdef CONFIG_PQC
+	wpa_s->auth_1x->constraint = NULL;
+
+	if (wpa_s->auth_1x->ml_kem) {
+		crypto_ml_kem_deinit(wpa_s->auth_1x->ml_kem);
+		wpa_s->auth_1x->ml_kem = NULL;
+	}
+#endif /* CONFIG_PQC */
+
 	if (wpa_s->auth_1x->ecdh) {
 		crypto_ecdh_deinit(wpa_s->auth_1x->ecdh);
 		wpa_s->auth_1x->ecdh = NULL;
@@ -515,29 +524,66 @@ static void sme_802_1x_auth_data_free(struct wpa_supplicant *wpa_s)
 
 static int sme_init_802_1x_for_ptk(struct wpa_supplicant *wpa_s, bool external)
 {
+	struct auth_802_1x_data *auth_1x = wpa_s->auth_1x;
 	int rsne_len, rsnxe_len;
 
 	/* Generate SNonce */
-	if (random_get_bytes(wpa_s->auth_1x->snonce, WPA_NONCE_LEN) < 0) {
+	if (random_get_bytes(auth_1x->snonce, WPA_NONCE_LEN) < 0) {
 		wpa_dbg(wpa_s, MSG_INFO, "Failed to generate SNonce");
 		goto fail;
 	}
 
-	/* Initialize ECDH for Diffie-Hellman Parameter element */
-	/* TODO: Add support for other groups */
-	wpa_s->auth_1x->dh_group = 19;
-	wpa_s->auth_1x->ecdh = crypto_ecdh_init(wpa_s->auth_1x->dh_group);
-	if (!wpa_s->auth_1x->ecdh) {
-		wpa_dbg(wpa_s, MSG_INFO, "Failed to init ECDH group %d",
-			wpa_s->auth_1x->dh_group);
+	if (wpa_key_mgmt_pqc(auth_1x->key_mgmt)) {
+#ifdef CONFIG_PQC
+		auth_1x->constraint =
+			wpa_get_pqc_constraint(auth_1x->security_profile);
+
+		if (!auth_1x->constraint) {
+			wpa_dbg(wpa_s, MSG_INFO, "Invalid PQC security profile %d",
+				auth_1x->security_profile);
+			goto fail;
+		}
+
+		auth_1x->dh_group = auth_1x->constraint->group;
+		auth_1x->ml_kem = crypto_ml_kem_init(auth_1x->constraint->kem);
+		if (!auth_1x->ml_kem) {
+			wpa_dbg(wpa_s, MSG_INFO,
+				"Failed to init ML-KEM for security profile %d",
+				auth_1x->security_profile);
+			goto fail;
+		}
+
+		if (crypto_ml_kem_keygen(auth_1x->ml_kem) < 0) {
+			wpa_dbg(wpa_s, MSG_INFO,
+				"Failed to generate ML-KEM key for security profile %d",
+				auth_1x->security_profile);
+			goto fail;
+		}
+#else /* CONFIG_PQC */
+		wpa_dbg(wpa_s, MSG_INFO, "PQC AKM suite 0x%08x not supported in this build",
+			auth_1x->key_mgmt);
 		goto fail;
+#endif /* CONFIG_PQC */
+	} else {
+		/* TODO: Add support for other groups */
+		auth_1x->dh_group = 19;
+	}
+
+	/* ECDH is not used in some PQC AKM constraints */
+	if (auth_1x->dh_group > 0) {
+		auth_1x->ecdh = crypto_ecdh_init(auth_1x->dh_group);
+		if (!auth_1x->ecdh) {
+			wpa_dbg(wpa_s, MSG_INFO, "Failed to init ECDH group %d",
+				auth_1x->dh_group);
+			goto fail;
+		}
 	}
 
 	/* Generate RSNE */
 	if (external)
 		rsne_len = wpa_external_auth_add_rsne(
 			wpa_s->wpa,
-			wpa_s->auth_1x->rsne, sizeof(wpa_s->auth_1x->rsne),
+			auth_1x->rsne, sizeof(auth_1x->rsne),
 			wpa_s->sme.ext_auth_key_mgmt,
 			wpa_s->sme.ext_pairwise_cipher,
 			wpa_s->sme.ext_group_cipher,
@@ -546,30 +592,30 @@ static int sme_init_802_1x_for_ptk(struct wpa_supplicant *wpa_s, bool external)
 			sme_get_ext_auth_pmkid(wpa_s));
 	else
 		rsne_len = wpa_gen_wpa_ie_rsn(
-			wpa_s->auth_1x->rsne, sizeof(wpa_s->auth_1x->rsne),
+			auth_1x->rsne, sizeof(auth_1x->rsne),
 			wpa_s->pairwise_cipher, wpa_s->group_cipher,
 			wpa_s->key_mgmt, wpa_s->mgmt_group_cipher, wpa_s->wpa);
 	if (rsne_len < 0) {
 		wpa_dbg(wpa_s, MSG_INFO, "Failed to generate RSNE");
 		goto fail;
 	}
-	wpa_s->auth_1x->rsne_len = rsne_len;
+	auth_1x->rsne_len = rsne_len;
 
 	/* Generate RSNXE */
 	if (external) {
 		/* Store driver-provided RSNXE directly */
-		os_memcpy(wpa_s->auth_1x->rsnxe, wpa_s->sme.ext_rsnxe,
+		os_memcpy(auth_1x->rsnxe, wpa_s->sme.ext_rsnxe,
 			  wpa_s->sme.ext_rsnxe_len);
 		rsnxe_len = wpa_s->sme.ext_rsnxe_len;
 	} else {
-		rsnxe_len = wpa_gen_rsnxe(wpa_s->wpa, wpa_s->auth_1x->rsnxe,
-					  sizeof(wpa_s->auth_1x->rsnxe));
+		rsnxe_len = wpa_gen_rsnxe(wpa_s->wpa, auth_1x->rsnxe,
+					  sizeof(auth_1x->rsnxe));
 	}
 	if (rsnxe_len < 0) {
 		wpa_dbg(wpa_s, MSG_INFO, "Failed to generate RSNXE");
 		goto fail;
 	}
-	wpa_s->auth_1x->rsnxe_len = rsnxe_len;
+	auth_1x->rsnxe_len = rsnxe_len;
 
 	return 0;
 fail:

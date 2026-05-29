@@ -747,6 +747,11 @@ struct auth_802_1x_data {
 
 	u32 key_mgmt;
 	int security_profile;
+
+#ifdef CONFIG_PQC
+	const struct ieee80211_pqc_constraint *constraint;
+	struct crypto_ml_kem *ml_kem;
+#endif /* CONFIG_PQC */
 };
 #endif /* CONFIG_IEEE8021X_AUTH */
 
