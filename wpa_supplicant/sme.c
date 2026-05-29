@@ -627,19 +627,57 @@ fail:
 static struct wpabuf *
 sme_build_802_1x_for_ptk(struct wpa_supplicant *wpa_s)
 {
-	struct wpabuf *pubkey_buf = NULL;
+	struct auth_802_1x_data *auth_1x = wpa_s->auth_1x;
+	struct wpabuf *edch_pkey_buf = NULL, *ml_kem_pkey_buf = NULL;
 	struct wpabuf *buf = NULL;
-	size_t total_len;
+	size_t total_len = 3 + WPA_NONCE_LEN + auth_1x->rsne_len +
+		auth_1x->rsnxe_len;
+#ifdef CONFIG_PQC
+	size_t pqc_data_len = sizeof(struct ieee80211_pqc);
+	u8 present = PQC_CONTENT_NONE;
+#endif /* CONFIG_PQC */
 
-	pubkey_buf = crypto_ecdh_get_pubkey(wpa_s->auth_1x->ecdh, 0);
-	if (!pubkey_buf) {
-		wpa_dbg(wpa_s, MSG_INFO, "Failed to get ECDH pubkey");
-		goto fail;
+	wpa_printf(MSG_DEBUG,
+		   "SME: Build 802.1X data for PTK handshake. PQC=%d",
+		   wpa_key_mgmt_pqc(auth_1x->key_mgmt));
+
+	if (auth_1x->ecdh) {
+		edch_pkey_buf = crypto_ecdh_get_pubkey(auth_1x->ecdh, 0);
+		if (!edch_pkey_buf) {
+			wpa_dbg(wpa_s, MSG_INFO, "Failed to get ECDH pubkey");
+			goto fail;
+		}
 	}
 
-	total_len = 3 + WPA_NONCE_LEN +
-		wpa_s->auth_1x->rsne_len + wpa_s->auth_1x->rsnxe_len +
-		3 + 2 + wpabuf_len(pubkey_buf);
+	if (wpa_key_mgmt_pqc(auth_1x->key_mgmt)) {
+#ifdef CONFIG_PQC
+		if (auth_1x->pmksa_caching) {
+			ml_kem_pkey_buf =
+				crypto_ml_kem_get_pubkey(auth_1x->ml_kem);
+			if (!ml_kem_pkey_buf) {
+				wpa_printf(MSG_DEBUG,
+					   "IEEE 802.1X: ML-KEM get_pubkey failed");
+				goto fail;
+			}
+
+			pqc_data_len += wpabuf_len(ml_kem_pkey_buf);
+			if (edch_pkey_buf) {
+				pqc_data_len += wpabuf_len(edch_pkey_buf);
+				present =
+					PQC_CONTENT_PUBLIC_KEY_PARAM_AND_ML_KEM_ENC_KEY;
+			} else {
+				present = PQC_CONTENT_ML_KEM_ENC_KEY;
+			}
+		} else {
+			present = PQC_CONTENT_NONE;
+		}
+
+		/* The extended element length header is 5 octets */
+		total_len += 5 + pqc_data_len;
+#endif /* CONFIG_PQC */
+	} else {
+		total_len += 3 + 2 + wpabuf_len(edch_pkey_buf);
+	}
 
 	buf = wpabuf_alloc(total_len);
 	if (!buf) {
@@ -652,22 +690,44 @@ sme_build_802_1x_for_ptk(struct wpa_supplicant *wpa_s)
 	wpabuf_put_u8(buf, WLAN_EID_EXT_NONCE);
 	wpabuf_put_data(buf, wpa_s->auth_1x->snonce, WPA_NONCE_LEN);
 
-	wpabuf_put_data(buf, wpa_s->auth_1x->rsne, wpa_s->auth_1x->rsne_len);
-	wpabuf_put_data(buf, wpa_s->auth_1x->rsnxe,
-			wpa_s->auth_1x->rsnxe_len);
+	wpabuf_put_data(buf, auth_1x->rsne, auth_1x->rsne_len);
+	wpabuf_put_data(buf, auth_1x->rsnxe,
+			auth_1x->rsnxe_len);
 
-	wpabuf_put_u8(buf, WLAN_EID_EXTENSION);
-	wpabuf_put_u8(buf, 1 + 2 + wpabuf_len(pubkey_buf));
-	wpabuf_put_u8(buf, WLAN_EID_EXT_OWE_DH_PARAM);
-	wpabuf_put_le16(buf, wpa_s->auth_1x->dh_group);
-	wpabuf_put_buf(buf, pubkey_buf);
+	if (wpa_key_mgmt_pqc(auth_1x->key_mgmt)) {
+#ifdef CONFIG_PQC
+		wpabuf_put_u8(buf, WLAN_EID_EXT_LENGTH);
+		wpabuf_put_le16(buf, WLAN_EID_EXT_LEN_PQC_PARAMETERS);
+		wpabuf_put_le16(buf, pqc_data_len);
 
-	wpabuf_free(pubkey_buf);
+		wpabuf_put_u8(buf, auth_1x->security_profile);
+		wpabuf_put_u8(buf, present);
 
+		if (auth_1x->pmksa_caching) {
+			if (edch_pkey_buf)
+				wpabuf_put_buf(buf, edch_pkey_buf);
+			wpabuf_put_buf(buf, ml_kem_pkey_buf);
+		}
+
+		wpabuf_free(ml_kem_pkey_buf);
+#endif /* CONFIG_PQC */
+	} else if (edch_pkey_buf) {
+		wpabuf_put_u8(buf, WLAN_EID_EXTENSION);
+		wpabuf_put_u8(buf, 1 + 2 + wpabuf_len(edch_pkey_buf));
+		wpabuf_put_u8(buf, WLAN_EID_EXT_OWE_DH_PARAM);
+		wpabuf_put_le16(buf, auth_1x->dh_group);
+		wpabuf_put_buf(buf, edch_pkey_buf);
+	} else {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"SME: No ECDH public key available for 802.1X handshake");
+		goto fail;
+	}
+
+	wpabuf_free(edch_pkey_buf);
 	return buf;
-
 fail:
-	wpabuf_free(pubkey_buf);
+	wpabuf_free(edch_pkey_buf);
+	wpabuf_free(ml_kem_pkey_buf);
 	sme_802_1x_auth_data_free(wpa_s);
 	return NULL;
 }
@@ -791,7 +851,7 @@ static struct wpabuf * sme_build_802_1x_auth_start(struct wpa_supplicant *wpa_s,
 {
 	struct wpabuf *buf, *eapol_pdu;
 	size_t buf_len, sp_len;
-	struct wpabuf *buf_for_ptk = NULL;
+	struct wpabuf *elems_buf = NULL;
 
 	eapol_pdu = eapol_sm_get_eapol_pdu(wpa_s->eapol,
 					   IEEE802_1X_TYPE_EAPOL_START);
@@ -806,20 +866,13 @@ static struct wpabuf * sme_build_802_1x_auth_start(struct wpa_supplicant *wpa_s,
 
 	buf_len = 2 + 2 + 2 + wpabuf_len(eapol_pdu);
 
-	/*
-	 * With 802.1X over authentication frames were the AKM is PQC and PMKSA
-	 * caching is not used, include PQC Parameters element.
-	 */
-	if (wpa_key_mgmt_pqc(wpa_s->auth_1x->key_mgmt) &&
-	    !wpa_s->auth_1x->pmksa_caching) {
-		buf_len += 5 + sizeof(struct ieee80211_pqc);
-	} else if (wpa_s->auth_1x->derive_ptk) {
-		buf_for_ptk = sme_build_802_1x_for_ptk(wpa_s);
-		if (!buf_for_ptk) {
+	if (wpa_s->auth_1x->derive_ptk) {
+		elems_buf = sme_build_802_1x_for_ptk(wpa_s);
+		if (!elems_buf) {
 			wpabuf_free(eapol_pdu);
 			return NULL;
 		}
-		buf_len += wpabuf_len(buf_for_ptk);
+		buf_len += wpabuf_len(elems_buf);
 	} else {
 		buf_len += 7; /* AKM Suite Selector element */
 	}
@@ -829,7 +882,7 @@ static struct wpabuf * sme_build_802_1x_auth_start(struct wpa_supplicant *wpa_s,
 	buf = wpabuf_alloc(buf_len);
 	if (!buf) {
 		wpabuf_free(eapol_pdu);
-		wpabuf_free(buf_for_ptk);
+		wpabuf_free(elems_buf);
 		return NULL;
 	}
 
@@ -838,16 +891,9 @@ static struct wpabuf * sme_build_802_1x_auth_start(struct wpa_supplicant *wpa_s,
 	wpabuf_put_le16(buf, wpabuf_len(eapol_pdu));
 	wpabuf_put_buf(buf, eapol_pdu);
 
-	if (wpa_key_mgmt_pqc(wpa_s->auth_1x->key_mgmt) &&
-	    !wpa_s->auth_1x->pmksa_caching) {
-		wpabuf_put_u8(buf, WLAN_EID_EXT_LENGTH);
-		wpabuf_put_le16(buf, WLAN_EID_EXT_LEN_PQC_PARAMETERS);
-		wpabuf_put_le16(buf, sizeof(struct ieee80211_pqc));
-		wpabuf_put_u8(buf, wpa_s->auth_1x->security_profile);
-		wpabuf_put_u8(buf, PQC_CONTENT_NONE);
-	} else if (wpa_s->auth_1x->derive_ptk) {
-		wpabuf_put_buf(buf, buf_for_ptk);
-		wpabuf_free(buf_for_ptk);
+	if (wpa_s->auth_1x->derive_ptk) {
+		wpabuf_put_buf(buf, elems_buf);
+		wpabuf_free(elems_buf);
 	} else {
 		wpabuf_put_u8(buf, WLAN_EID_EXTENSION);
 		wpabuf_put_u8(buf, 1 + 4);
