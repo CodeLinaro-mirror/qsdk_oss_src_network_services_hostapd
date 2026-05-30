@@ -2581,14 +2581,14 @@ static int hostapd_dfs_unpunc_cacdone_subchans(struct hostapd_iface *iface,
 							   unpuncture_bitmap);
 	if (!radar_unpunc_bitmap) {
 		wpa_printf(MSG_DEBUG,
-			   "Skipping auto-unpuncture: no DFS-punctured subchannels eligible in bitmap=0x%04x",
+			   "DFS: skipping auto-unpuncture: no DFS-punctured subchannels eligible in bitmap=0x%04x",
 			   unpuncture_bitmap);
 		return 0;
 	}
 
 	dfs_reset_punc_bitmap_src(iface, radar_unpunc_bitmap);
 
-	puncture_bitmap = iface->radar_bit_pattern &
+	puncture_bitmap = iface->conf->punct_bitmap &
 			  ~radar_unpunc_bitmap;
 	iface->radar_bit_pattern = puncture_bitmap;
 
@@ -2600,6 +2600,11 @@ static int hostapd_dfs_unpunc_cacdone_subchans(struct hostapd_iface *iface,
 
 	if (oper_chan_width == CONF_OPER_CHWIDTH_320MHZ)
 		puncture_bitmap = RIGHT80_240MHZ_PUNC | puncture_bitmap;
+
+	wpa_printf(MSG_DEBUG,
+		   "DFS: auto-unpuncture requesting CSA: chan=%d unpuncture_bitmap: 0x%04x, existing bitmap: 0x%04x, radar_unpunc_bitmap=0x%04x puncture_bitmap=0x%04x",
+		   unpuncture_bitmap, iface->conf->punct_bitmap,
+		   channel, radar_unpunc_bitmap, puncture_bitmap);
 
 	return hostapd_dfs_request_channel_switch(iface, channel, freq,
 						  secondary_channel,
@@ -3161,7 +3166,7 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			   "DFS: Update puncture source for Radar puncture bitmap=0x%04x",
 			   radar_bitmap_oper | iface->radar_bit_pattern);
 		dfs_update_puncture_source(iface, iface->freq, chan_width,
-					   radar_bitmap_oper | iface->radar_bit_pattern,
+					   radar_bitmap_oper | iface->conf->punct_bitmap,
 					   DFS_CHAN_PUNC_RADAR);
 	}
 
