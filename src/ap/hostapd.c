@@ -1337,7 +1337,7 @@ static void hostapd_mld_move_vlan_list(struct hostapd_data *old_fbss,
  * If the BSS being removed is the first link, the next link becomes the first
  * link.
  */
-static void hostapd_bss_link_deinit(struct hostapd_data *hapd)
+void hostapd_bss_link_deinit(struct hostapd_data *hapd)
 {
 #ifdef CONFIG_IEEE80211BE
 	int i;
