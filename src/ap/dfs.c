@@ -74,7 +74,11 @@ static inline bool dfs_is_agile_cac_enabled(const struct hostapd_iface *iface)
 static bool dfs_use_radar_background(struct hostapd_iface *iface)
 {
 	return (iface->drv_flags2 & WPA_DRIVER_FLAGS2_RADAR_BACKGROUND) &&
-		iface->conf->enable_background_radar;
+		iface->conf->enable_background_radar
+#ifdef CONFIG_QCN_EXTN
+		&& iface->iface_extn.agile_capable
+#endif /* CONFIG_QCN_EXTN */
+	;
 }
 
 int dfs_get_subchannel_count(int bandwidth)

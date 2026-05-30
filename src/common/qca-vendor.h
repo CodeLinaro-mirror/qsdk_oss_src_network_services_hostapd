@@ -4401,6 +4401,12 @@ enum qca_wlan_vendor_attr_config {
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_6GHZ_VLP_PRIORITY_THRESH_FREQ = 151,
 
+	/* Indicates whether the current chainmask on the radio specified by
+	 * %QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX supports Agile DFS.
+	 * 1 = agile DFS capable, 0 = not capable.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE = 153,
+
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_MAX =
