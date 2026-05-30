@@ -2501,8 +2501,12 @@ setup_mld:
 			hostapd_notify_link_repurpose(hapd, "hostapd_setup_bss");
 #endif /* CONFIG_QCN_EXTN */
 
-		if (!hapd_reenable_pending(hapd))
-			hostapd_mld_add_link(hapd);
+		if (!hapd_reenable_pending(hapd)) {
+			if (hostapd_mld_add_link(hapd) < 0) {
+				hostapd_mld_remove_link(hapd);
+				return -1;
+			}
+		}
 		hostapd_validate_update_ml_max_rec_links(hapd);
 	}
 	if (!is_mesh && hapd->iface->current_hw_info &&
@@ -7618,7 +7622,10 @@ setup_mld:
 			bss_succ->drv_priv = NULL;
 			return -1;
 		}
-		hostapd_mld_add_link(bss_succ);
+		if (hostapd_mld_add_link(bss_succ) < 0) {
+			hostapd_mld_remove_link(bss_succ);
+			return -1;
+		}
 		hostapd_validate_update_ml_max_rec_links(bss_succ);
 	}
 #endif /* CONFIG_IEEE80211BE */
@@ -9409,6 +9416,22 @@ u8 hostapd_get_mld_id(struct hostapd_data *hapd)
 }
 
 
+int hostapd_mld_link_config_check(struct hostapd_data *hapd)
+{
+	struct hostapd_mld *mld = hapd->mld;
+	struct hostapd_data *first = mld->fbss;
+
+	if (hapd->conf->ssid.ssid_len != first->conf->ssid.ssid_len ||
+	    os_memcmp(hapd->conf->ssid.ssid, first->conf->ssid.ssid,
+		      first->conf->ssid.ssid_len) != 0) {
+		wpa_printf(MSG_ERROR, "AP MLD %s: Link SSID mismatch", mld->name);
+		return -1;
+	}
+
+	return 0;
+}
+
+
 int hostapd_mld_add_link(struct hostapd_data *hapd)
 {
 	struct hostapd_mld *mld = hapd->mld;
@@ -9418,6 +9441,9 @@ int hostapd_mld_add_link(struct hostapd_data *hapd)
 
 	/* Should not happen */
 	if (!mld)
+		return -1;
+
+	if (mld->fbss && hostapd_mld_link_config_check(hapd) < 0)
 		return -1;
 
 	dl_list_add_tail(&mld->links, &hapd->link);
