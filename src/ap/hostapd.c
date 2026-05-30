@@ -1564,7 +1564,7 @@ static void hostapd_mld_move_vlan_list(struct hostapd_data *old_fbss,
  * If the BSS being removed is the first link, the next link becomes the first
  * link.
  */
-static void hostapd_bss_link_deinit(struct hostapd_data *hapd)
+void hostapd_bss_link_deinit(struct hostapd_data *hapd)
 {
 #ifdef CONFIG_IEEE80211BE
 	int i;
@@ -7493,13 +7493,13 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 				hapd_iface->num_bss--;
 				wpa_printf(MSG_DEBUG, "%s: free hapd %p %s",
 					   __func__, hapd, hapd->conf->iface);
+				hostapd_multi_mbssid_remove_bss(hapd);
 				hostapd_config_free_bss(hapd->conf);
 				hapd->conf = NULL;
 #ifdef CONFIG_IEEE80211BE
 				hostapd_mld_ref_dec(hapd->mld);
 #endif /* CONFIG_IEEE80211BE */
 				hostapd_free_mbssid_idx(hapd);
-				hostapd_multi_mbssid_remove_bss(hapd);
 				os_free(hapd);
 				return -1;
 			}
@@ -7845,13 +7845,13 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 						  hapd->conf->iface);
 		}
 
+		hostapd_multi_mbssid_remove_bss(hapd);
 		hostapd_config_free_bss(hapd->conf);
 		hapd->conf = NULL;
 #ifdef CONFIG_IEEE80211BE
 		hostapd_mld_ref_dec(hapd->mld);
 #endif /* CONFIG_IEEE80211BE */
 		hostapd_free_mbssid_idx(hapd);
-		hostapd_multi_mbssid_remove_bss(hapd);
 		os_free(hapd);
 
 		iface->num_bss--;
