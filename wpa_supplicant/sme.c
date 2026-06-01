@@ -4256,6 +4256,80 @@ static size_t wpas_get_kdk_len(struct wpa_supplicant *wpa_s)
 }
 
 
+static int sme_802_1x_derive_ptk_and_install(struct wpa_supplicant *wpa_s,
+					     const u8 *frame_body,
+					     size_t frame_body_len,
+					     bool external)
+{
+	struct auth_802_1x_data *auth_1x = wpa_s->auth_1x;
+	const u8 *peer_addr = sme_get_peer_addr(wpa_s, external);
+	int key_mgmt = sme_get_key_mgmt(wpa_s, external);
+	int pairwise_cipher = sme_get_pairwise_cipher(wpa_s, external);
+	struct wpa_ptk ptk;
+	u8 pmk[PMK_LEN_MAX];
+	size_t pmk_len;
+	size_t kdk_len;
+	static const u8 zero[6] = { 0 };
+	enum wpa_alg alg;
+
+	if (sme_get_pmk_for_1x_auth(wpa_s,
+				    auth_1x->pmkid_found ?
+				    auth_1x->pmkid : NULL,
+				    external, pmk, &pmk_len) < 0) {
+		wpa_msg(wpa_s, MSG_INFO, "IEEE 802.1X: Failed to get PMK");
+		return -1;
+	}
+
+	kdk_len = wpas_get_kdk_len(wpa_s);
+
+	if (!auth_1x->dhss ||
+	    wpa_auth_802_1x_pmk_to_ptk(
+		    pmk, pmk_len, wpa_s->own_addr, peer_addr,
+		    auth_1x->snonce, auth_1x->anonce,
+		    key_mgmt, pairwise_cipher,
+		    wpabuf_head(auth_1x->dhss),
+		    wpabuf_len(auth_1x->dhss),
+		    &ptk, kdk_len) < 0) {
+		wpa_msg(wpa_s, MSG_INFO, "SME: PTK derivation failed");
+		forced_memzero(pmk, PMK_LEN_MAX);
+		return -1;
+	}
+
+	forced_memzero(pmk, PMK_LEN_MAX);
+
+	/* Clear DHss after successful PTK derivation */
+	wpabuf_clear_free(auth_1x->dhss);
+	auth_1x->dhss = NULL;
+
+	if (sme_validate_802_1x_auth_mic(wpa_s,
+					 frame_body, frame_body_len,
+					 &ptk, external) < 0) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: MIC validation failed");
+		forced_memzero(&ptk, sizeof(ptk));
+		return -1;
+	}
+
+	alg = wpa_cipher_to_alg(pairwise_cipher);
+	if (wpa_drv_set_key(wpa_s, -1, alg, peer_addr, 0, 1,
+			    zero, sizeof(zero), ptk.tk, ptk.tk_len,
+			    KEY_FLAG_PAIRWISE_RX_TX) < 0) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: TK configuration failed");
+		forced_memzero(&ptk, sizeof(ptk));
+		return -1;
+	}
+
+	ptksa_cache_add(wpa_s->ptksa, wpa_s->own_addr, peer_addr,
+			pairwise_cipher, dot11RSNAConfigPMKLifetime,
+			&ptk, NULL, NULL, key_mgmt,
+			WLAN_AUTH_802_1X);
+
+	forced_memzero(&ptk, sizeof(ptk));
+	return 0;
+}
+
+
 static void sme_process_802_1x_auth_response(struct wpa_supplicant *wpa_s,
 					     struct auth_info *auth,
 					     bool external)
@@ -4379,77 +4453,10 @@ static void sme_process_802_1x_auth_response(struct wpa_supplicant *wpa_s,
 	if (auth->status_code == WLAN_STATUS_802_1_X_AUTH_SUCCESS ||
 	    wpa_s->auth_1x->pmkid_found) {
 		if (wpa_s->auth_1x->derive_ptk) {
-			struct wpa_ptk ptk;
-			u8 pmk[PMK_LEN_MAX];
-			size_t pmk_len;
-			size_t kdk_len;
-			static const u8 zero[6] = { 0 };
-			enum wpa_alg alg;
-			int pairwise_cipher;
-
-			pairwise_cipher = sme_get_pairwise_cipher(wpa_s,
-								  external);
-			if (sme_get_pmk_for_1x_auth(
-				    wpa_s,
-				    wpa_s->auth_1x->pmkid_found ?
-				    wpa_s->auth_1x->pmkid : NULL,
-				    external, pmk, &pmk_len) < 0) {
-				wpa_msg(wpa_s, MSG_INFO,
-					"IEEE 802.1X: Failed to get PMK");
-				goto fail;
-			}
-
-			kdk_len = wpas_get_kdk_len(wpa_s);
-
-			if (!wpa_s->auth_1x->dhss ||
-			    wpa_auth_802_1x_pmk_to_ptk(
-				    pmk, pmk_len, wpa_s->own_addr, peer_addr,
-				    wpa_s->auth_1x->snonce,
-				    wpa_s->auth_1x->anonce,
-				    key_mgmt, pairwise_cipher,
-				    wpabuf_head(wpa_s->auth_1x->dhss),
-				    wpabuf_len(wpa_s->auth_1x->dhss),
-				    &ptk, kdk_len) < 0) {
-				wpa_msg(wpa_s, MSG_INFO,
-					"SME: PTK derivation failed");
-				forced_memzero(pmk, PMK_LEN_MAX);
-				goto fail;
-			}
-
-			forced_memzero(pmk, PMK_LEN_MAX);
-
-			/* Clear DHss after successful PTK derivation */
-			wpabuf_clear_free(wpa_s->auth_1x->dhss);
-			wpa_s->auth_1x->dhss = NULL;
-
-			if (sme_validate_802_1x_auth_mic(
+			if (sme_802_1x_derive_ptk_and_install(
 				    wpa_s, auth->frame_body,
-				    auth->frame_body_len, &ptk,
-				    external) < 0) {
-				wpa_msg(wpa_s, MSG_INFO,
-					"IEEE 802.1X: MIC validation failed");
-				forced_memzero(&ptk, sizeof(ptk));
+				    auth->frame_body_len, external) < 0)
 				goto fail;
-			}
-
-			alg = wpa_cipher_to_alg(pairwise_cipher);
-			if (wpa_drv_set_key(wpa_s, -1, alg, peer_addr, 0, 1,
-					    zero, sizeof(zero),
-					    ptk.tk, ptk.tk_len,
-					    KEY_FLAG_PAIRWISE_RX_TX) < 0) {
-				wpa_msg(wpa_s, MSG_INFO,
-					"IEEE 802.1X: TK configuration failed");
-				forced_memzero(&ptk, sizeof(ptk));
-				goto fail;
-			}
-
-			ptksa_cache_add(wpa_s->ptksa, wpa_s->own_addr,
-					peer_addr, pairwise_cipher,
-					dot11RSNAConfigPMKLifetime, &ptk, NULL,
-					NULL, key_mgmt,
-					WLAN_AUTH_802_1X);
-
-			forced_memzero(&ptk, sizeof(ptk));
 		}
 
 		wpa_msg(wpa_s, MSG_INFO,
