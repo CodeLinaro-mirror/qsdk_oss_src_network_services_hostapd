@@ -2104,6 +2104,7 @@ static void phy_info_iftype_copy(struct hostapd_hw_modes *mode,
 	struct he_capabilities *he_capab = &mode->he_capab[opmode];
 	struct eht_capabilities *eht_capab = &mode->eht_capab[opmode];
 	struct uhr_capabilities *uhr_capab = &mode->uhr_capab[opmode];
+	struct uhr_npca_info *npca_info = &mode->npca_info[opmode];
 
 	switch (opmode) {
 	case IEEE80211_MODE_INFRA:
@@ -2235,6 +2236,15 @@ static void phy_info_iftype_copy(struct hostapd_hw_modes *mode,
 		if (len > sizeof(uhr_capab->phy_cap))
 			len = sizeof(uhr_capab->phy_cap);
 		os_memcpy(uhr_capab->phy_cap, pos_phy, len);
+	}
+
+	if (tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_NPCA]) {
+		len = nla_len(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_NPCA]);
+		if (len > sizeof(*npca_info))
+			len = sizeof(*npca_info);
+		os_memcpy(npca_info,
+			  nla_data(tb[NL80211_BAND_IFTYPE_ATTR_UHR_CAP_NPCA]),
+			  len);
 	}
 }
 
