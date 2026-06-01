@@ -1294,19 +1294,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211AC
 	if (hostapd_is_vht_enabled(hapd) &&
 	    !is_6ghz_op_class(hapd->iconf->op_class)) {
-
-#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
-		u8 *vht_start = pos;
-#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
-
 		pos = hostapd_eid_vht_capabilities(hapd, pos, 0);
-
-#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
-		if (pos > vht_start)
-			params->mu_cap_war_vht_cap_offset = vht_start;
-		else
-			params->mu_cap_war_vht_cap_offset = NULL;
-#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 
 		pos = hostapd_eid_vht_operation(hapd, pos);
 		pos = hostapd_eid_txpower_envelope(hapd, pos);
@@ -2682,9 +2670,41 @@ void handle_probe_req(struct hostapd_data *hapd,
 
 #if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
 	if (is_mu_cap_war_active(hapd) && elems.is_mu_cap_war_vendor &&
-	    is_sta_elems_vht_only(&elems))
-		hostapd_mu_cap_war_update_db_extn(hapd, mgmt->sa,
-						  params.mu_cap_war_vht_cap_offset);
+	    is_sta_elems_vht_only(&elems)) {
+		u8 *vht_cap_ie = NULL;
+		u8 *pos, *end, *ies;
+		size_t ies_len, fixed_hdr;
+
+		fixed_hdr = offsetof(struct ieee80211_mgmt, u.probe_resp.variable);
+
+		if (params.resp_len <= fixed_hdr)
+			goto skip_mu_cap_war;
+
+		ies_len = params.resp_len - fixed_hdr;
+		ies = params.resp->u.probe_resp.variable;
+		pos = (u8 *) ies;
+		end = pos + ies_len;
+
+		while (end - pos >= 2) {
+			u8 eid = pos[0];
+			u8 elen = pos[1];
+
+			if (pos + 2 + elen > end)
+				break;
+
+			if (eid == WLAN_EID_VHT_CAP) {
+				vht_cap_ie = pos;
+				break;
+			}
+
+			pos += 2 + elen;
+		}
+
+		if (vht_cap_ie)
+			hostapd_mu_cap_war_update_db_extn(hapd, mgmt->sa,
+							  vht_cap_ie);
+skip_mu_cap_war:
+	}
 #endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 
 	ret = hostapd_drv_send_mlme(hostapd_mbssid_get_tx_bss(hapd),
