@@ -497,6 +497,16 @@ struct uhr_capabilities {
 	u8 phy[5];
 };
 
+/* struct uhr_npca_info - IEEE 802.11bn UHR NPCA capabilities */
+struct uhr_npca_info {
+	bool npca_supported;
+	u8 npca_min_dur_threshold;
+	u8 npca_switch_delay;
+	u8 npca_switch_back_delay;
+	u8 npca_initial_qsrc;
+	u8 npca_moplen;
+};
+
 #define HOSTAPD_MODE_FLAG_HT_INFO_KNOWN BIT(0)
 #define HOSTAPD_MODE_FLAG_VHT_INFO_KNOWN BIT(1)
 #define HOSTAPD_MODE_FLAG_HE_INFO_KNOWN BIT(2)
@@ -631,6 +641,11 @@ struct hostapd_hw_modes {
 	 * uhr_capab - UHR (IEEE 802.11bn) capabilities
 	 */
 	struct uhr_capabilities uhr_capab[IEEE80211_MODE_NUM];
+
+	/**
+	 * npca_info - UHR NPCA (IEEE 802.11bn) information
+	 */
+	struct uhr_npca_info npca_info[IEEE80211_MODE_NUM];
 };
 
 
