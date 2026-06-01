@@ -507,6 +507,9 @@ static void sme_802_1x_auth_data_free(struct wpa_supplicant *wpa_s)
 
 	wpabuf_clear_free(wpa_s->auth_1x->ml_kem_ss);
 	wpa_s->auth_1x->ml_kem_ss = NULL;
+
+	wpabuf_free(wpa_s->auth_1x->transcript);
+	wpa_s->auth_1x->transcript = NULL;
 #endif /* CONFIG_PQC */
 
 	if (wpa_s->auth_1x->ecdh) {
@@ -848,6 +851,116 @@ static size_t sme_802_1x_auth_start_sec_prof(struct wpa_supplicant *wpa_s,
 }
 
 
+#define WPA_AUTH_FRAME_ML_IE_LEN	(6 + ETH_ALEN)
+
+static int sme_802_1x_store_auth_frame(struct wpa_supplicant *wpa_s,
+				       const u8 *frame, size_t frame_len,
+				       bool auth_algo_num_included,
+				       bool add_ml_elem,
+				       u16 auth_transaction)
+{
+#ifdef CONFIG_PQC
+	struct auth_802_1x_data *auth_1x = wpa_s->auth_1x;
+	u8 *copy;
+	size_t total_len = frame_len;
+
+	if (!auth_1x || !wpa_key_mgmt_pqc(auth_1x->key_mgmt))
+		return 0;
+
+	if (auth_transaction == 1) {
+		wpabuf_free(auth_1x->transcript);
+		auth_1x->transcript = NULL;
+		auth_1x->last_stored_auth_transaction = 0;
+	} else if (auth_transaction <=
+		   auth_1x->last_stored_auth_transaction) {
+		wpa_printf(MSG_DEBUG,
+			   "IEEE 802.1X: Skip storing auth frame (transaction %u <= %u)",
+			   auth_transaction,
+			   auth_1x->last_stored_auth_transaction);
+		return 0;
+	}
+
+	/* Add space for the authentication algorithm number if not included */
+	if (!auth_algo_num_included)
+		total_len += 2;
+
+	if (add_ml_elem)
+		total_len += WPA_AUTH_FRAME_ML_IE_LEN;
+
+	copy = os_malloc(total_len);
+	if (!copy)
+		return -1;
+
+	if (!auth_algo_num_included) {
+		WPA_PUT_LE16(copy, WLAN_AUTH_802_1X);
+		os_memcpy(copy + 2, frame, frame_len);
+	} else {
+		os_memcpy(copy, frame, frame_len);
+	}
+
+	/*
+	 * The driver appends the Basic Multi-Link element to the frames it
+	 * transmits, so mirror it here to hash the frame as sent over the air.
+	 * TODO: Need to find a better design for this, e.g., get the full frame
+	 * from the driver on the authentication event and store it.
+	 */
+	if (add_ml_elem) {
+		u8 *pos = copy + total_len - WPA_AUTH_FRAME_ML_IE_LEN;
+
+		*pos++ = WLAN_EID_EXTENSION;
+		*pos++ = 4 + ETH_ALEN;
+		*pos++ = WLAN_EID_EXT_MULTI_LINK;
+		WPA_PUT_LE16(pos, MULTI_LINK_CONTROL_TYPE_BASIC);
+		pos += 2;
+		*pos++ = 1 + ETH_ALEN;
+
+		os_memcpy(pos, wpa_s->own_addr, ETH_ALEN);
+	}
+
+	/* Zero out MIC octets in the copy if a MIC element is present */
+	if (total_len > 8 &&
+	    total_len > 8U + WPA_GET_LE16(copy + 6)) {
+		const u8 *mic_elem;
+		size_t skip_len = 8 + WPA_GET_LE16(copy + 6);
+
+		mic_elem = get_ie(copy + skip_len,
+				  total_len - skip_len,
+				  WLAN_EID_MIC);
+		if (mic_elem) {
+			wpa_printf(MSG_DEBUG,
+				   "IEEE 802.1X: Zero out MIC octets in the stored auth frame");
+
+			os_memset((u8 *) mic_elem + 2, 0, mic_elem[1]);
+		}
+	}
+
+	if (!auth_1x->transcript) {
+		auth_1x->transcript = wpabuf_alloc(total_len + sizeof(u16));
+		if (!auth_1x->transcript) {
+			os_free(copy);
+			return -1;
+		}
+	} else {
+		if (wpabuf_resize(&auth_1x->transcript,
+				  total_len + sizeof(u16)) < 0) {
+			os_free(copy);
+			return -1;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG, "IEEE 802.1X: Store auth len=%zu, trans=%u",
+		   total_len, auth_transaction);
+
+	wpabuf_put_le16(auth_1x->transcript, total_len);
+	wpabuf_put_data(auth_1x->transcript, copy, total_len);
+	os_free(copy);
+	auth_1x->last_stored_auth_transaction = auth_transaction;
+#endif /* CONFIG_PQC */
+
+	return 0;
+}
+
+
 static struct wpabuf * sme_build_802_1x_auth_start(struct wpa_supplicant *wpa_s,
 						   struct wpa_ssid *ssid,
 						   bool external)
@@ -855,6 +968,7 @@ static struct wpabuf * sme_build_802_1x_auth_start(struct wpa_supplicant *wpa_s,
 	struct wpabuf *buf, *eapol_pdu;
 	size_t buf_len, sp_len;
 	struct wpabuf *elems_buf = NULL;
+	int key_mgmt = sme_get_key_mgmt(wpa_s, external);
 
 	eapol_pdu = eapol_sm_get_eapol_pdu(wpa_s->eapol,
 					   IEEE802_1X_TYPE_EAPOL_START);
@@ -901,8 +1015,7 @@ static struct wpabuf * sme_build_802_1x_auth_start(struct wpa_supplicant *wpa_s,
 		wpabuf_put_u8(buf, WLAN_EID_EXTENSION);
 		wpabuf_put_u8(buf, 1 + 4);
 		wpabuf_put_u8(buf, WLAN_EID_EXT_AKM_SUITE_SELECTOR);
-		wpabuf_put_be32(buf,
-				wpa_akm_to_suite(wpa_s->auth_1x->key_mgmt));
+		wpabuf_put_be32(buf, wpa_akm_to_suite(key_mgmt));
 	}
 
 #ifdef CONFIG_TESTING_OPTIONS
@@ -2494,6 +2607,22 @@ no_fils:
 		return;
 	}
 
+#ifdef CONFIG_IEEE8021X_AUTH
+	if (wpa_s->auth_1x &&
+	    sme_802_1x_store_auth_frame(wpa_s, params.auth_data,
+					params.auth_data_len,
+					false, params.mld,
+					wpa_s->auth_1x->auth_trans) < 0) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: Failed to save frame body for PTK derivation");
+
+		wpas_connection_failed(wpa_s, bss->bssid, NULL);
+		wpa_supplicant_mark_disassoc(wpa_s);
+		wpabuf_free(resp);
+		wpas_connect_work_done(wpa_s);
+		return;
+	}
+#endif /* CONFIG_IEEE8021X_AUTH */
 
 	wpa_s->sme.auth_alg = params.auth_alg;
 	wpa_s->keys_cleared &= ~keys_to_clear;
@@ -2615,8 +2744,6 @@ void sme_authenticate(struct wpa_supplicant *wpa_s,
 
 
 #if defined(CONFIG_SAE) || defined(CONFIG_IEEE8021X_AUTH)
-
-#define WPA_AUTH_FRAME_ML_IE_LEN	(6 + ETH_ALEN)
 
 static void wpa_auth_ml_ie(struct wpabuf *buf, const u8 *mld_addr)
 {
@@ -4369,6 +4496,15 @@ static void sme_process_802_1x_auth_response(struct wpa_supplicant *wpa_s,
 		wpa_msg(wpa_s, MSG_INFO,
 			"IEEE 802.1X: Failed to parse Authentication frame");
 		return;
+	}
+
+	if (sme_802_1x_store_auth_frame(wpa_s, auth->frame_body,
+					auth->frame_body_len,
+					true, false,
+					auth->auth_transaction) < 0) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: Failed to save frame body for PTK derivation");
+		goto fail;
 	}
 
 	if (sme_is_ml_auth(wpa_s, external) &&
