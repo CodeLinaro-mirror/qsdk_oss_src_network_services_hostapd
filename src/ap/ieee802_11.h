@@ -646,6 +646,8 @@ u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
 				   bool skip_post_phase);
 size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,
 					 bool skip_post_phase);
+int hostapd_npca_primary_chan_to_subchan_idx(struct hostapd_data *hapd,
+					     const char *val_str);
 u16 copy_sta_uhr_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		       enum ieee80211_op_mode opmode,
 		       const u8 *uhr_capab, size_t uhr_capab_len);
