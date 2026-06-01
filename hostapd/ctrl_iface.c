@@ -5420,6 +5420,226 @@ static char hostapd_ctrl_iface_notify_cw_change(struct hostapd_data *hapd,
 }
 
 
+#ifdef CONFIG_IEEE80211BN
+static bool is_uhr_section_keyword(const char *s)
+{
+	return os_strncmp(s, "DPS ", 4) == 0 ||
+	       os_strncmp(s, "DUO ", 4) == 0 ||
+	       os_strncmp(s, "P_EDCA ", 7) == 0 ||
+	       os_strncmp(s, "AP_PUO ", 7) == 0 ||
+	       os_strncmp(s, "ELR ", 4) == 0;
+}
+
+static int
+parse_npca_params(struct hostapd_data *hapd,
+		  struct hostapd_uhr_npca_params *npca,
+		  char **pos)
+{
+	char *cur = *pos;
+	char *end, *token;
+
+	while (*cur) {
+		while (*cur == ' ')
+			cur++;
+		if (!*cur)
+			break;
+		/* Stop if we hit another top-level keyword */
+		if (is_uhr_section_keyword(cur))
+			break;
+
+		/* Find end of this token */
+		end = os_strchr(cur, ' ');
+		if (end)
+			*end = '\0';
+		token = cur;
+		cur = end ? end + 1 : cur + os_strlen(cur);
+
+		if (os_strncmp(token, "enable=", 7) == 0) {
+			npca->enable = atoi(token + 7) != 0;
+			if (!npca->enable) {
+				break;
+			}
+		} else if (os_strncmp(token, "primary_chan=", 13) == 0) {
+			int subchan_idx =
+				hostapd_npca_primary_chan_to_subchan_idx(
+					hapd, token + 13);
+
+			if (subchan_idx < 0)
+				return -1;
+			npca->params =
+				(npca->params &
+				 ~UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS) |
+				((u32) subchan_idx <<
+				 UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS_SHIFT);
+		} else if (os_strncmp(token, "min_dur=", 8) == 0) {
+			u32 v = (u32) atoi(token + 8) &
+				(UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH >>
+				 UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH_SHIFT);
+			npca->params =
+				(npca->params &
+				 ~UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH) |
+				(v << UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH_SHIFT);
+		} else if (os_strncmp(token, "switch_delay=", 13) == 0) {
+			/* User supplies microseconds; wire value = us / 4. */
+			u32 us = (u32) atoi(token + 13);
+			u32 v = (us / 4) &
+				(UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY >>
+				 UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY_SHIFT);
+			npca->params =
+				(npca->params &
+				 ~UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY) |
+				(v << UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY_SHIFT);
+		} else if (os_strncmp(token, "switch_back=", 12) == 0) {
+			/* User supplies microseconds; wire value = us / 4. */
+			u32 us = (u32) atoi(token + 12);
+			u32 v = (us / 4) &
+				(UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY >>
+				 UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY_SHIFT);
+			npca->params =
+				(npca->params &
+				 ~UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY) |
+				(v << UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY_SHIFT);
+		} else if (os_strncmp(token, "init_qsrc=", 10) == 0) {
+			u32 v = (u32) atoi(token + 10) &
+				(UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC >>
+				 UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC_SHIFT);
+			npca->params =
+				(npca->params &
+				 ~UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC) |
+				(v << UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC_SHIFT);
+		} else if (os_strncmp(token, "moplen=", 7) == 0) {
+			if (atoi(token + 7))
+				npca->params |= UHR_OPER_PARAMS_NPCA_MOPLEN_NPCA;
+			else
+				npca->params &= ~UHR_OPER_PARAMS_NPCA_MOPLEN_NPCA;
+		} else if (os_strncmp(token, "bitmap=", 7) == 0) {
+			unsigned long bmap;
+			bmap = strtoul(token + 7, NULL, 0);
+			npca->disabled_subchan_bitmap = (u16)(bmap & 0xFFFF);
+			npca->params |= UHR_OPER_PARAMS_NPCA_DIS_SUBCH_BITMAP_PRES;
+		} else {
+			wpa_printf(MSG_ERROR,
+				   "UPDATE_UHR_FEATURES: unknown NPCA token '%s'",
+				   token);
+			return -1;
+		}
+	}
+
+	*pos = cur;
+	return 0;
+}
+
+static int
+hostapd_validate_uhr_cu_state(struct hostapd_data *hapd) {
+
+	if (!hostapd_is_uhr_enabled(hapd)) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES: UHR not enabled on this BSS");
+		return 0;
+	}
+
+	if (hapd->uhr_ecu.state != UHR_ECU_IDLE) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES: UHR_CU already in progress, try again later");
+		return -1;
+	}
+
+	return 0;
+}
+
+
+static int
+hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
+{
+	struct hostapd_bss_config *conf = hapd->conf;
+	struct uhr_params_update_config *upd = &conf->uhr_params_update;
+	struct hostapd_uhr_npca_params new_npca;
+	struct hostapd_data *bss;
+	u16 mode_changed = 0;
+	char *pos;
+	int i;
+
+	if (hostapd_validate_uhr_cu_state(hapd) < 0)
+		return -1;
+
+	pos = cmd;
+
+	while (*pos) {
+		/* Skip leading whitespace */
+		while (*pos == ' ')
+			pos++;
+		if (!*pos)
+			break;
+
+		if (os_strncmp(pos, "NPCA ", 5) == 0) {
+			pos += 5;
+			struct hostapd_uhr_npca_params prev_npca = upd->npca;
+
+			os_memset(&new_npca, 0, sizeof(new_npca));
+			if (parse_npca_params(hapd, &new_npca, &pos) < 0)
+				return -1;
+			if (!(upd->mode_changed & BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA)) ||
+			    os_memcmp(&prev_npca, &new_npca, sizeof(new_npca)) != 0) {
+				mode_changed |= BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA);
+			}
+		} else {
+			wpa_printf(MSG_ERROR,
+				   "UPDATE_UHR_FEATURES: unknown keyword at '%s'",
+				   pos);
+			return -1;
+		}
+	}
+
+	if (!mode_changed) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES: no feature update.");
+		return -1;
+	}
+
+
+	if (mode_changed & BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA)) {
+		for (i = 0; i < hapd->iface->num_bss; i++) {
+			bss = hapd->iface->bss[i];
+
+			if (hostapd_validate_uhr_cu_state(bss) < 0)
+				return -1;
+		}
+
+		for (i = 0; i < hapd->iface->num_bss; i++) {
+			bss = hapd->iface->bss[i];
+
+			if (!hostapd_is_uhr_enabled(hapd))
+				continue;
+
+			bss->conf->uhr_params_update.mode_changed |= BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA);
+			bss->conf->uhr_params_update.npca = new_npca;
+
+			if (!hapd->started)
+				hostapd_update_ecu_params(hapd);
+
+			/* TODO: Add the changes for to update bss specific uhr_params_update features e.g DPS */
+
+			/* TODO - Invoke critical update command */
+
+			bss->uhr_ecu.uhr_params_update_countdown = upd->adv_notification_interval;
+
+		}
+	} else {
+		/*TODO - Add support for BSS specific critical update params update */
+	}
+
+
+	wpa_printf(MSG_DEBUG,
+		   "UPDATE_UHR_FEATURES: UHR Params Update window "
+		   "countdown=%u modes=%d",
+		   hapd->uhr_ecu.uhr_params_update_countdown,
+		   upd->mode_changed);
+
+	return 0;
+}
+#endif /* CONFIG_IEEE80211BN */
+
+
 #ifdef CONFIG_TESTING_OPTIONS
 static int hostapd_ctrl_iface_set_bw(struct hostapd_iface *iface, char *pos)
 {
@@ -10523,6 +10743,11 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strcmp(buf, "UPDATE_BEACON") == 0) {
 		if (ieee802_11_set_beacon(hapd))
 			reply_len = -1;
+#ifdef CONFIG_IEEE80211BN
+	} else if (os_strncmp(buf, "UPDATE_UHR_FEATURES ", 20) == 0) {
+		if (hostapd_ctrl_iface_update_uhr_features(hapd, buf + 20))
+			reply_len = -1;
+#endif /* CONFIG_IEEE80211BN */
 	} else if (os_strncmp(buf, "MLD_ADD_LINK ", 13) == 0) {
 		if (hostapd_ctrl_iface_add(hapd->iface->interfaces, buf + 13))
 			reply_len = -1;
