@@ -751,6 +751,7 @@ struct auth_802_1x_data {
 #ifdef CONFIG_PQC
 	const struct ieee80211_pqc_constraint *constraint;
 	struct crypto_ml_kem *ml_kem;
+	struct wpabuf *ml_kem_ss;
 #endif /* CONFIG_PQC */
 };
 #endif /* CONFIG_IEEE8021X_AUTH */

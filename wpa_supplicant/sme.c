@@ -504,6 +504,9 @@ static void sme_802_1x_auth_data_free(struct wpa_supplicant *wpa_s)
 		crypto_ml_kem_deinit(wpa_s->auth_1x->ml_kem);
 		wpa_s->auth_1x->ml_kem = NULL;
 	}
+
+	wpabuf_clear_free(wpa_s->auth_1x->ml_kem_ss);
+	wpa_s->auth_1x->ml_kem_ss = NULL;
 #endif /* CONFIG_PQC */
 
 	if (wpa_s->auth_1x->ecdh) {
@@ -3901,10 +3904,118 @@ out:
 }
 
 
+static int sme_802_1x_process_pqc_params(struct wpa_supplicant *wpa_s,
+					 const struct ieee802_11_elems *elems)
+{
+#ifdef CONFIG_PQC
+	const struct ieee80211_pqc *pqc;
+	struct wpabuf *ml_kem_ss = NULL;
+	const u8 *pos;
+	size_t left;
+
+	if (!elems->pqc_parameters ||
+	    elems->pqc_parameters_len < sizeof(struct ieee80211_pqc)) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: Missing or too short PQC Parameters element");
+		return -1;
+	}
+
+	pqc = (const struct ieee80211_pqc *)elems->pqc_parameters;
+	pos = (const u8 *)(pqc + 1);
+	left = elems->pqc_parameters_len - sizeof(struct ieee80211_pqc);
+
+	if (pqc->sec_prof_number != wpa_s->auth_1x->security_profile) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: PQC security profile mismatch (AP=%u, local=%d)",
+			pqc->sec_prof_number,
+			wpa_s->auth_1x->security_profile);
+		return -1;
+	}
+
+	if (pqc->content_present == PQC_CONTENT_NONE) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: No PQC content present in PQC Parameters element");
+		return 0;
+	}
+
+	if (pqc->content_present != PQC_CONTENT_ML_KEM_CT &&
+	    pqc->content_present !=
+	    PQC_CONTENT_PUBLIC_KEY_PARAM_AND_ML_KEM_CT) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: Unexpected PQC content present value %u",
+			pqc->content_present);
+		return -1;
+	}
+
+	/* Process ECDH public key if present */
+	if (pqc->content_present ==
+	    PQC_CONTENT_PUBLIC_KEY_PARAM_AND_ML_KEM_CT) {
+		size_t pubkey_len;
+
+		if (!wpa_s->auth_1x->ecdh) {
+			wpa_msg(wpa_s, MSG_INFO,
+				"IEEE 802.1X: ECDH not initialized for PQC DH");
+			return -1;
+		}
+
+		pubkey_len = crypto_ecdh_prime_len(wpa_s->auth_1x->ecdh);
+		if (left < pubkey_len) {
+			wpa_msg(wpa_s, MSG_INFO,
+				"IEEE 802.1X: PQC DH pubkey too short (%zu < %zu)",
+				left, pubkey_len);
+			return -1;
+		}
+
+		wpabuf_clear_free(wpa_s->auth_1x->dhss);
+		wpa_s->auth_1x->dhss =
+			crypto_ecdh_set_peerkey(wpa_s->auth_1x->ecdh, 0,
+						pos, pubkey_len);
+		if (!wpa_s->auth_1x->dhss) {
+			wpa_msg(wpa_s, MSG_INFO,
+				"IEEE 802.1X: Failed to compute PQC DH shared secret");
+			return -1;
+		}
+		pos += pubkey_len;
+		left -= pubkey_len;
+	}
+
+	/* Remaining data is ML-KEM ciphertext */
+	if (!left) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: Missing ML-KEM ciphertext");
+		return -1;
+	}
+
+	if (crypto_ml_kem_decapsulate(wpa_s->auth_1x->ml_kem, pos, left,
+				      &ml_kem_ss) < 0) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: ML-KEM decapsulation failed");
+		return -1;
+	}
+
+	wpabuf_clear_free(wpa_s->auth_1x->ml_kem_ss);
+	wpa_s->auth_1x->ml_kem_ss = ml_kem_ss;
+
+	return 0;
+
+#else /* CONFIG_PQC */
+	wpa_msg(wpa_s, MSG_INFO,
+		"IEEE 802.1X: PQC key management is not supported in this build");
+	return -1;
+#endif /* CONFIG_PQC */
+}
+
+
 static int sme_8021x_auth_process_dh_params(struct wpa_supplicant *wpa_s,
 					    const struct ieee802_11_elems *elems)
 {
 	u16 group;
+
+	if (!elems->owe_dh) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: Missing DH Parameter element");
+		return -1;
+	}
 
 	if (elems->owe_dh_len < 2) {
 		wpa_msg(wpa_s, MSG_INFO,
@@ -4003,14 +4114,11 @@ static int sme_validate_8021x_auth_elems(struct wpa_supplicant *wpa_s,
 					 const struct ieee802_11_elems *elems,
 					 struct wpabuf *pdu)
 {
-	if (sme_validate_8021x_common_elems(wpa_s, elems, pdu))
+	if (sme_validate_8021x_common_elems(wpa_s, elems, pdu) < 0)
 		return -1;
 
-	if (!elems->owe_dh) {
-		wpa_msg(wpa_s, MSG_INFO,
-			"IEEE 802.1X: Missing DH Parameter element");
-		return -1;
-	}
+	if (wpa_key_mgmt_pqc(wpa_s->auth_1x->key_mgmt))
+		return sme_802_1x_process_pqc_params(wpa_s, elems);
 
 	return sme_8021x_auth_process_dh_params(wpa_s, elems);
 }
@@ -4197,14 +4305,17 @@ static void sme_process_802_1x_auth_response(struct wpa_supplicant *wpa_s,
 
 	if (auth->auth_transaction == 2) {
 		if (wpa_s->auth_1x->derive_ptk) {
-			if (sme_validate_8021x_auth_elems(wpa_s, &elems, pdu) <
-			    0) {
+			if (sme_validate_8021x_auth_elems(wpa_s,
+							  &elems,
+							  pdu) < 0) {
 				validation_failed = true;
 				goto cleanup;
 			}
 
-			/* Fall back to EAP handshake if PMKSA entry for caching
-			 * was not identified */
+			/*
+			 * Fall back to EAP handshake if PMKSA entry for caching
+			 * was not identified
+			 */
 			if (wpa_s->auth_1x->pmksa_caching &&
 			    !wpa_s->auth_1x->pmkid_found) {
 				eapol_sm_set_eap_over_auth_frame(wpa_s->eapol,
