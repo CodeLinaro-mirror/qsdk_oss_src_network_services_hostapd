@@ -6494,6 +6494,37 @@ static bool hapd_is_known_sta(struct hostapd_data *hapd, struct sta_info *sta,
 	return true;
 }
 
+static bool hostapd_skip_sa_query(struct hostapd_data *hapd,
+				  struct sta_info *sta,
+				  struct sta_info *current_sta)
+{
+
+	if (hapd->conf->disable_sa_query &&
+	    current_sta->auth_alg == WLAN_AUTH_SAE) {
+		/*
+		 * Skip SA Query for SAE only after authentication confirm
+		 * completed, but force the cleanup path for already associated
+		 * MFP STAs to avoid stale peer state on immediate reassociation.
+		 */
+		if (!current_sta->sae || current_sta->sae->state != SAE_ACCEPTED) {
+			wpa_printf(MSG_DEBUG,
+				   "SA Query disabled but SAE not accepted for STA "
+				   MACSTR, MAC2STR(current_sta->addr));
+			return false;
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "SA Query skipped for SAE STA " MACSTR,
+			    MAC2STR(current_sta->addr));
+		current_sta->skip_sa_query = 1;
+		sta->skip_sa_query = 1;
+
+		return true;
+	}
+
+	return false;
+}
+
 static bool check_sa_query(struct hostapd_data *hapd, struct sta_info *sta,
 			   int reassoc, const u8 *ies, size_t ies_len,
 			   struct sta_info *current_sta)
@@ -6520,6 +6551,8 @@ static bool check_sa_query(struct hostapd_data *hapd, struct sta_info *sta,
 		if (hapd_is_known_sta(hapd, sta, ies, ies_len))
 			return false;
 
+		if (hostapd_skip_sa_query(hapd, sta, current_sta))
+			return false;
 		/*
 		 * STA has already been associated with MFP and SA Query timeout
 		 * has not been reached. Reject the association attempt
@@ -9491,8 +9524,10 @@ handle_assoc_sa_query_timeout_ml_setup(struct hostapd_data *hapd,
 					       elems.basic_mle_len, mld_addr)) {
 		u8 link_id = hapd->mld_link_id;
 
-		wpa_printf(MSG_DEBUG, "Allowing reassociation of MLD STA " MACSTR
+		if (!sta->skip_sa_query)
+			wpa_printf(MSG_DEBUG, "Allowing reassociation of MLD STA " MACSTR
 			   " after SA Query timeout", MAC2STR(mld_addr));
+
 		sta->mld_info.mld_sta = true;
 		set_link_id_for_each_partner_link_sta(hapd, sta, link_id);
 		sta->mld_assoc_link_id = link_id;
@@ -9504,9 +9539,10 @@ handle_assoc_sa_query_timeout_ml_setup(struct hostapd_data *hapd,
 		mld_link_addr = sta->mld_info.links[link_id].peer_addr;
 		eml_cap = sta->mld_info.common_info.eml_capa;
 	} else {
-		wpa_printf(MSG_DEBUG, "Allowing reassociation of MLD STA as legacy"
-			   " STA " MACSTR " after timed out SA Query procedure",
-			   MAC2STR(mgmt->sa));
+		if (!sta->skip_sa_query)
+			wpa_printf(MSG_DEBUG, "Allowing reassociation of MLD STA as legacy"
+				   " STA " MACSTR " after timed out SA Query procedure",
+				   MAC2STR(mgmt->sa));
 		memset(&sta->mld_info, 0x00, sizeof(sta->mld_info));
 	}
 
@@ -9531,6 +9567,31 @@ handle_assoc_sa_query_timeout_ml_setup(struct hostapd_data *hapd,
 	sta->pending_drv_add = false;
 	sta->added_unassoc = 1;
 	return 0;
+}
+
+static int hostapd_reset_sta_for_skip_sa_query(struct hostapd_data *hapd,
+					       struct sta_info *sta,
+					       const struct ieee80211_mgmt *mgmt,
+					       const u8 *pos, int left,
+					       int reassoc)
+{
+	u8 mld_addr[ETH_ALEN] = {0};
+	wpa_printf(MSG_DEBUG, "Allowing reassocation sta " MACSTR
+			      " without doing SA Query procedure",
+		   MAC2STR(sta->addr));
+	wpa_auth_sta_deinit(sta->wpa_sm);
+	sta->wpa_sm = NULL;
+	SET_EACH_PARTNER_STA_OBJ(hapd, sta, wpa_sm, NULL);
+	ap_sta_remove_link_sta(hapd, sta, 0);
+	hostapd_drv_sta_remove(hapd, sta->addr);
+
+	if (handle_assoc_sa_query_timeout_ml_setup(
+				hapd, sta, mgmt, pos, left, mld_addr,
+				false, reassoc) < 0)
+		return 0;
+
+	sta->skip_sa_query = 0;
+	return 1;
 }
 
 static void handle_assoc(struct hostapd_data *hapd,
@@ -9839,7 +9900,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 					   MAC2STR(osta->addr), ohapd->conf->iface);
 				resp = WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY;
 				goto fail;
-			} else if (osta->sa_query_timed_out) {
+			} else if (osta->sa_query_timed_out || osta->skip_sa_query) {
 				wpa_printf(MSG_DEBUG, "SA query timed out for " MACSTR " on %s, "
 					   "delete it", MAC2STR(osta->addr), ohapd->conf->iface);
 				ap_sta_cleanup_all(ohapd, osta, sta);
@@ -9851,6 +9912,8 @@ static void handle_assoc(struct hostapd_data *hapd,
 					resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
 					goto fail;
 				}
+				osta->skip_sa_query = 0;
+				sta->skip_sa_query = 0;
 			}
 		}
 
@@ -9858,6 +9921,12 @@ static void handle_assoc(struct hostapd_data *hapd,
 
 	if (hapd->conf->wpa && check_sa_query(hapd, sta, reassoc, pos, left, sta)) {
 		resp = WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY;
+		goto fail;
+	}
+
+	if (sta->skip_sa_query &&
+	    !hostapd_reset_sta_for_skip_sa_query(hapd, sta, mgmt, pos, left, reassoc)) {
+		resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
 		goto fail;
 	}
 
