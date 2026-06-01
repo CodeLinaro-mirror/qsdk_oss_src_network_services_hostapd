@@ -2727,7 +2727,16 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 #endif
 					hostapd_set_state(iface, HAPD_IFACE_ENABLED);
 					iface->cac_type = 0;
-					ieee802_11_set_beacon(hapd);
+
+					for (size_t i = 0; i < iface->num_bss; i++) {
+						struct hostapd_data *bss = iface->bss[i];
+
+						if (!bss || bss->disabled || !bss->started)
+							continue;
+
+						ieee802_11_set_beacon(bss);
+					}
+
 					hostapd_start_device_cac_background(iface);
 				}
 			}
