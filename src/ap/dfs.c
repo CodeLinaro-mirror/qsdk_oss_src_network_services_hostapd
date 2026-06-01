@@ -72,7 +72,7 @@ static inline bool dfs_is_agile_cac_enabled(const struct hostapd_iface *iface)
 	return iface && iface->conf && iface->conf->bgcac_en;
 }
 
-static bool dfs_use_radar_background(struct hostapd_iface *iface)
+bool dfs_use_radar_background(struct hostapd_iface *iface)
 {
 	return (iface->drv_flags2 & WPA_DRIVER_FLAGS2_RADAR_BACKGROUND) &&
 		iface->conf->enable_background_radar;

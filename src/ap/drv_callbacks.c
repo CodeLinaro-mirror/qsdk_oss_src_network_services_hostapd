@@ -3861,6 +3861,23 @@ static void hostapd_update_ap_powersave(struct hostapd_data *hapd,
 }
 #endif /* CONFIG_IEEE80211BN */
 
+static void hostapd_restart_agile_cac_all_ifaces(struct hostapd_data *hapd)
+{
+	unsigned int i;
+
+	if (!hapd->iface || !hapd->iface->interfaces)
+		return;
+
+	for (i = 0; i < hapd->iface->interfaces->count; i++) {
+		struct hostapd_iface *h = hapd->iface->interfaces->iface[i];
+
+		if (h->state == HAPD_IFACE_ENABLED &&
+		    dfs_use_radar_background(h) &&
+		    !h->radar_background.cac_started)
+			hostapd_restart_agile_cac_after_ch_switch(h);
+	}
+}
+
 void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		       union wpa_event_data *data)
 {
@@ -3922,6 +3939,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 			}
 		}
 #endif /* CONFIG_IEEE80211BE */
+		hostapd_restart_agile_cac_all_ifaces(hapd);
 		break;
 	case EVENT_WPS_BUTTON_PUSHED:
 		hostapd_wps_button_pushed(hapd, NULL);
