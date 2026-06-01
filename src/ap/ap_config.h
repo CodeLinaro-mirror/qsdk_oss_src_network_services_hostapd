@@ -1391,6 +1391,10 @@ struct hostapd_bss_config {
 #endif /* CONFIG_IEEE80211BN */
 
 	enum qca_wlan_intf_offload_type ppe_vp_type;
+
+	bool is_cmn_param;
+	int cmn_param_id;
+	int cmn_param_val[2];
 };
 
 /**
