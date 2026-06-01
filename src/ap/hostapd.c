@@ -1653,6 +1653,7 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 {
 	wpa_printf(MSG_DEBUG, "%s(%p)", __func__, iface);
 	eloop_cancel_timeout(channel_list_update_timeout, iface, NULL);
+	hostapd_cancel_agile_cac_restart(iface);
 #ifdef NEED_AP_MLME
 	hostapd_stop_setup_timers(iface);
 	/* OCE 4.3.1/4.3.2: cancel periodic survey timer and clear scan_cb */
