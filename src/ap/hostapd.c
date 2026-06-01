@@ -555,7 +555,7 @@ static void hostapd_reload_bss(struct hostapd_data *hapd)
 }
 
 
-static void hostapd_clear_old_bss(struct hostapd_data *bss)
+void hostapd_clear_old_bss(struct hostapd_data *bss)
 {
 	wpa_printf(MSG_DEBUG, "BSS %s changed - clear old state",
 		   bss->conf->iface);
@@ -11574,4 +11574,23 @@ u8 hostapd_get_oper_class_of_bss(struct hostapd_data *hapd)
 #endif /* CONFIG_IEEE80211BE */
 
 	return op_class;
+}
+
+struct hostapd_data * hostapd_mbssid_get_bss(struct hostapd_data *hapd, size_t i)
+{
+	struct hostapd_data *bss, *tx_hapd;
+
+	tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
+	if (!tx_hapd)
+		return NULL;
+
+	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
+		bss = hostapd_get_multi_group_bss(tx_hapd->mbssid_group, i);
+	else
+		bss = hapd->iface->bss[i];
+
+	if (!bss || !bss->conf)
+		return NULL;
+
+	return bss;
 }

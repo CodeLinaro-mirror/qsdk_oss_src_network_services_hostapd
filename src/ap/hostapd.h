@@ -2010,5 +2010,7 @@ void dfs_reset_punc_bitmap_src(struct hostapd_iface *iface,
 int hostapd_setup_monitor_iface(struct hostapd_iface *iface);
 int hostapd_update_monitor_channel(struct hostapd_data *hapd,
 				   const struct hostapd_freq_params *freq_params);
+void hostapd_clear_old_bss(struct hostapd_data *bss);
+struct hostapd_data * hostapd_mbssid_get_bss(struct hostapd_data *hapd, size_t i);
 
 #endif /* HOSTAPD_H */
