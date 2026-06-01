@@ -398,7 +398,6 @@ struct eht_phy_capabilities_info {
 
 struct hostapd_uhr_npca_params {
 	bool enable;
-	bool update;
 	u32 params;  /* npca_params (bits 0-31) */
 	u16 disabled_subchan_bitmap;
 };
