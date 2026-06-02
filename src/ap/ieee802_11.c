@@ -5633,6 +5633,8 @@ size_t hostapd_security_profile_ie_len(struct hostapd_data *hapd)
 {
 	int i, max_profile = -1;
 	size_t bitmap_len, ext_rsn_capab_len = 0;
+	u8 rsnxe_buf[2 + sizeof(u64)];
+	u8 *rsnxe_end;
 
 	if (!hapd || !hapd->conf || !hapd->conf->security_profiles)
 		return 0;
@@ -5647,6 +5649,10 @@ size_t hostapd_security_profile_ie_len(struct hostapd_data *hapd)
 
 	/* Bitmap size: ceil((max_profile + 1) / 8) */
 	bitmap_len = (max_profile / 8) + 1;
+
+	rsnxe_end = hostapd_eid_rsnxe(hapd, rsnxe_buf, sizeof(rsnxe_buf), ~0ULL);
+	if (rsnxe_end > rsnxe_buf + 2)
+		ext_rsn_capab_len = rsnxe_end - rsnxe_buf - 2;
 
 	/*
 	 * D1.4 format:
@@ -5674,6 +5680,8 @@ u8 *hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid)
 	u8 bitmap[16]; /* max 128 profiles */
 	size_t bitmap_len = 0;
 	int i, max_profile = -1;
+	u8 rsnxe_buf[2 + sizeof(u64)];
+	u8 *rsnxe_end;
 
 	if (!hapd || !hapd->conf || !hapd->conf->security_profiles)
 		return eid;
@@ -5696,6 +5704,14 @@ u8 *hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid)
 
 		if (p / 8 < (int) bitmap_len)
 			bitmap[p / 8] |= BIT(p % 8);
+	}
+
+	rsnxe_end = hostapd_eid_rsnxe(hapd, rsnxe_buf, sizeof(rsnxe_buf), ~0ULL);
+	if (rsnxe_end > rsnxe_buf + 2) {
+		ext_rsn_capab_len = rsnxe_end - rsnxe_buf - 2;
+		if (ext_rsn_capab_len > sizeof(ext_rsn_capab))
+			ext_rsn_capab_len = sizeof(ext_rsn_capab);
+		os_memcpy(ext_rsn_capab, rsnxe_buf + 2, ext_rsn_capab_len);
 	}
 
 	/* Build Reduced RSN Capabilities */
@@ -6233,6 +6249,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		if (hapd->conf->sae_pwe == SAE_PWE_BOTH &&
 		    sta->auth_alg == WLAN_AUTH_SAE &&
 		    sta->sae && !sta->sae->h2e &&
+		    (hapd->conf->rsnxe_capab_mask & BIT_ULL(WLAN_RSNX_CAPAB_SAE_H2E)) &&
 		    ieee802_11_rsnx_capab_len(elems->rsnxe, elems->rsnxe_len,
 					      WLAN_RSNX_CAPAB_SAE_H2E)) {
 			wpa_printf(MSG_INFO, "SAE: " MACSTR
@@ -7289,7 +7306,8 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 #endif /* CONFIG_TESTING_OPTIONS */
 	if (!omit_rsnxe)
-		p = hostapd_eid_rsnxe(hapd, p, buf + buflen - p);
+		p = hostapd_eid_rsnxe(hapd, p, buf + buflen - p,
+				      hapd->conf->rsnxe_capab_mask);
 #ifdef CONFIG_TESTING_OPTIONS
 rsnxe_done:
 #endif /* CONFIG_TESTING_OPTIONS */
