@@ -1854,10 +1854,18 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (full_config && conf->ieee80211bn && !conf->ieee80211be) {
-		wpa_printf(MSG_ERROR,
-			   "Cannot set ieee80211bn without ieee80211be");
-		return -1;
+	if (full_config && conf->ieee80211bn && !bss->disable_11bn) {
+		if (!conf->ieee80211be) {
+			wpa_printf(MSG_ERROR,
+				   "Cannot set ieee80211bn without ieee80211be");
+			return -1;
+		}
+
+		if (!bss->mld_ap) {
+			wpa_printf(MSG_ERROR,
+				   "Cannot set ieee80211bn without mld_ap");
+			return -1;
+		}
 	}
 #endif
 
