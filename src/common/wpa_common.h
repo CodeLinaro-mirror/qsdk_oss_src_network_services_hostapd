@@ -817,6 +817,8 @@ int pasn_pmk_to_ptk(const u8 *pmk, size_t pmk_len,
 
 size_t pasn_mic_len(enum rsn_hash_alg alg);
 
+size_t wpa_hash_len(enum rsn_hash_alg hash);
+
 int wpa_auth_8021x_mic(int akmp, const u8 *kck, size_t kck_len, const u8 *addr1,
 		       const u8 *addr2, const u8 *data, size_t data_len,
 		       const u8 *frame, size_t frame_len, u8 *mic);
@@ -865,6 +867,14 @@ int wpa_auth_802_1x_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const u8 *spa,
 			       int akmp, int cipher, const u8 *dhss,
 			       size_t dhss_len, struct wpa_ptk *ptk,
 			       size_t kdk_len);
+int wpa_auth_802_1x_pqc_pmk_to_ptk(const u8 *pmk, size_t pmk_len,
+				   const u8 *originator, const u8 *responder,
+				   enum rsn_hash_alg hash,
+				   int cipher,
+				   const u8 *dhss, size_t dhss_len,
+				   const u8 *ml_kem_ss,
+				   const u8 *transcript, size_t transcript_len,
+				   struct wpa_ptk *ptk, size_t kdk_len);
 void wpa_add_supported_groups(struct wpabuf *buf, const int *groups);
 
 /* Security Profile entry (IEEE P802.11bn/D2.0) */
@@ -908,6 +918,8 @@ extern const struct ieee80211_pqc_constraint
 int hkdf_extract(size_t hash_len, const u8 *salt, size_t salt_len,
 		 size_t num_elem, const u8 *addr[], const size_t len[],
 		 u8 *prk);
+int hkdf_expand_bin(size_t hash_len, const u8 *prk, size_t prk_len,
+		    const u8 *info, size_t info_len, u8 *okm, size_t okm_len);
 int hkdf_expand(size_t hash_len, const u8 *prk, size_t prk_len,
 		const char *info, u8 *okm, size_t okm_len);
 

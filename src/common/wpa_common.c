@@ -1865,6 +1865,21 @@ err:
  * pasn_mic_len - Returns the MIC length for PASN authentication
  * @alg: Selected hash algorithm from pasn_pmk_to_ptk()
  */
+size_t wpa_hash_len(enum rsn_hash_alg hash)
+{
+	switch (hash) {
+	case RSN_HASH_SHA256:
+		return SHA256_MAC_LEN;
+	case RSN_HASH_SHA384:
+		return SHA384_MAC_LEN;
+	case RSN_HASH_SHA512:
+		return SHA512_MAC_LEN;
+	default:
+		return 0;
+	}
+}
+
+
 size_t pasn_mic_len(enum rsn_hash_alg alg)
 {
 	switch (alg) {
@@ -1947,6 +1962,212 @@ int wpa_auth_802_1x_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const u8 *spa,
 			      spa, aa, snonce, anonce, ptk, akmp,
 			      cipher, dhss, dhss_len, kdk_len,
 			      PASN_GROUP_NOT_SPECIFIED);
+}
+
+
+static int wpa_auth_802_1x_calc_t(enum rsn_hash_alg hash,
+				  const u8 *transcript,
+				  size_t transcript_len, u8 *t)
+{
+	switch (hash) {
+#ifdef CONFIG_SHA512
+	case RSN_HASH_SHA512:
+		return sha512_vector(1, &transcript, &transcript_len, t);
+#endif /* CONFIG_SHA512 */
+#ifdef CONFIG_SHA384
+	case RSN_HASH_SHA384:
+		return sha384_vector(1, &transcript, &transcript_len, t);
+#endif /* CONFIG_SHA384 */
+	case RSN_HASH_SHA256:
+		return sha256_vector(1, &transcript, &transcript_len, t);
+	default:
+		wpa_printf(MSG_DEBUG,
+			   "WPA: Unsupported 802.1X auth: hash=%d for T calculation",
+			   hash);
+	}
+
+	return -1;
+}
+
+
+/**
+ * wpa_auth_802_1x_pqc_pmk_to_ptk - Derive PTK from PQC PMK
+ * @pmk: PMK buffer
+ * @pmk_len: Length of PMK in octets
+ * @originator: Originator address
+ * @responder: Responder address
+ * @hash: Selected hash algorithm
+ * @cipher: Negotiated pairwise cipher
+ * @dhss: Diffie-Hellman Shared Secret. Can be NULL
+ * @dhss_len: Length of dhss in octets. Should be zero if dhss is NULL
+ * @ml_kem_ss: ML-KEM Shared Secret (32 octets)
+ * @transcript: Transcript of the authentication exchange
+ * @transcript_len: Length of the transcript in octets
+ * @ptk: Buffer for Pairwise Transient Key
+ * @kdk_len: Length in octets that should be derived for KDK. Can be zero.
+ * Returns: 0 on success, -1 on failure
+ */
+int wpa_auth_802_1x_pqc_pmk_to_ptk(const u8 *pmk, size_t pmk_len,
+				   const u8 *originator, const u8 *responder,
+				   enum rsn_hash_alg hash,
+				   int cipher,
+				   const u8 *dhss, size_t dhss_len,
+				   const u8 *ml_kem_ss,
+				   const u8 *transcript, size_t transcript_len,
+				   struct wpa_ptk *ptk, size_t kdk_len)
+{
+	static const char *label = "Pairwise key expansion";
+	u8 data[os_strlen(label) + 2 * ETH_ALEN];
+	u8 t[SHA512_MAC_LEN];
+	u8 prk[SHA512_MAC_LEN];
+	u8 tmp[WPA_KCK_MAX_LEN + WPA_KEK_MAX_LEN + WPA_TK_MAX_LEN +
+	       WPA_KDK_MAX_LEN];
+	size_t hash_len;
+	const u8 *addrs[3];
+	size_t addrs_len[3], idx = 0;
+	size_t ptk_len;
+	int ret = -1;
+
+	wpa_printf(MSG_DEBUG, "PQC PMK to PTK: hash=%d", hash);
+
+	hash_len = wpa_hash_len(hash);
+	if (!hash_len) {
+		wpa_printf(MSG_DEBUG,
+			   "WPA: Unsupported hash algorithm %d for PQC PTK derivation",
+			   hash);
+		return -1;
+	}
+
+	if (!pmk || !pmk_len) {
+		wpa_printf(MSG_DEBUG, "WPA: No PMK set for PTK derivation");
+		return -1;
+	}
+
+	/* IEEE P802.11bt/D1.0, 12.7.1.3: PMK_bits is the hash output length */
+	if (pmk_len != hash_len) {
+		wpa_printf(MSG_DEBUG,
+			   "WPA: Unexpected PMK length %zu for PQC PTK derivation (expected %zu)",
+			   pmk_len, hash_len);
+		return -1;
+	}
+
+	if (kdk_len > WPA_KDK_MAX_LEN) {
+		wpa_printf(MSG_DEBUG,
+			   "WPA: KDK len=%zu exceeds max supported len",
+			   kdk_len);
+		return -1;
+	}
+
+	/* First calculate T = H(transcript) */
+	if (!transcript || !transcript_len) {
+		wpa_printf(MSG_DEBUG,
+			   "WPA: No transcript set for PQC PTK derivation");
+		return -1;
+	}
+
+	if (wpa_auth_802_1x_calc_t(hash, transcript, transcript_len, t) < 0) {
+		wpa_printf(MSG_DEBUG,
+			   "WPA: Failed to calculate the transcript hash");
+		return -1;
+	}
+
+	ptk->kck_len = pmk_len / 2;
+	/* IEEE P802.11bt/D1.0, Table 12-13: KEK_bits is 128/256/256 */
+	ptk->kek_len = hash == RSN_HASH_SHA256 ? 16 : 32;
+	ptk->tk_len = wpa_cipher_key_len(cipher);
+	ptk->kdk_len = kdk_len;
+	/* Needed for the EAPOL-Key MIC length of any later group rekeying */
+	ptk->hash_alg = hash;
+	ptk_len = ptk->kck_len + ptk->kek_len + ptk->tk_len + ptk->kdk_len;
+
+	os_memset(addrs, 0, sizeof(addrs));
+	os_memset(addrs_len, 0, sizeof(addrs_len));
+
+	/*
+	 * Next calculate: PRK = HKDF-Extract(T, KEMss-List || XXXkey)
+	 * Where KEMss-List is:
+	 * - MLKEMss for PQC profile 0
+	 * - DHss || MLKEMss for PQC profile 1, 2 and 3
+	 */
+	if (dhss && dhss_len) {
+		addrs[idx] = dhss;
+		addrs_len[idx] = dhss_len;
+		idx++;
+	}
+
+	addrs[idx] = ml_kem_ss;
+	addrs_len[idx] = CRYPTO_ML_KEM_SS_LEN;
+	idx++;
+
+	addrs[idx] = pmk;
+	addrs_len[idx] = pmk_len;
+	idx++;
+
+	if (hkdf_extract(hash_len, t, hash_len, idx,
+			 addrs, addrs_len,
+			 prk) < 0) {
+		wpa_printf(MSG_DEBUG,
+			   "WPA: HKDF-Extract failed for PQC PMK to PTK");
+		goto err;
+	}
+
+
+	/*
+	 * Calculate the PTK:
+	 * PTK = HKDF-Expand(PRK, Pairwise key expansion" ||
+	 *                   originator_MAC_address || responder_MAC_address,
+	 *		     Length)
+	 */
+	os_memcpy(data, label, os_strlen(label));
+	os_memcpy(data + os_strlen(label), originator, ETH_ALEN);
+	os_memcpy(data + os_strlen(label) + ETH_ALEN, responder, ETH_ALEN);
+
+	if (hkdf_expand_bin(hash_len, prk, hash_len, data, sizeof(data),
+			    tmp, ptk_len) < 0) {
+		wpa_printf(MSG_DEBUG,
+			   "WPA: HKDF-Expand failed for PQC PMK to PTK");
+		goto err;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "WPA: PQC: PTK derivation - Originator=" MACSTR " Responder=" MACSTR,
+		   MAC2STR(originator), MAC2STR(responder));
+
+	wpa_hexdump_key(MSG_DEBUG,
+			"WPA: PQC: PMK", pmk, pmk_len);
+	wpa_hexdump_key(MSG_DEBUG,
+			"WPA: PQC: PTK", tmp, ptk_len);
+
+	os_memcpy(ptk->kck, tmp, ptk->kck_len);
+	wpa_hexdump_key(MSG_DEBUG,
+			"WPA: PQC: KCK", ptk->kck, ptk->kck_len);
+
+	os_memcpy(ptk->kek, tmp + ptk->kck_len, ptk->kek_len);
+	wpa_hexdump_key(MSG_DEBUG,
+			"WPA: PQC: KEK", ptk->kek, ptk->kek_len);
+
+	os_memcpy(ptk->tk, tmp + ptk->kck_len + ptk->kek_len, ptk->tk_len);
+	wpa_hexdump_key(MSG_DEBUG,
+			"WPA: PQC: TK", ptk->tk, ptk->tk_len);
+
+	if (kdk_len) {
+		os_memcpy(ptk->kdk, tmp + ptk->kck_len + ptk->kek_len +
+			  ptk->tk_len, ptk->kdk_len);
+		wpa_hexdump_key(MSG_DEBUG,
+				"WPA: PQC: KDK", ptk->kdk, ptk->kdk_len);
+	}
+
+	ptk->kek2_len = 0;
+	ptk->kck2_len = 0;
+
+	ptk->ptk_len = ptk_len;
+	ret = 0;
+
+err:
+	forced_memzero(tmp, sizeof(tmp));
+	forced_memzero(prk, sizeof(prk));
+
+	return ret;
 }
 
 
@@ -5131,11 +5352,9 @@ int hkdf_extract(size_t hash_len, const u8 *salt, size_t salt_len,
 }
 
 
-int hkdf_expand(size_t hash_len, const u8 *prk, size_t prk_len,
-		const char *info, u8 *okm, size_t okm_len)
+int hkdf_expand_bin(size_t hash_len, const u8 *prk, size_t prk_len,
+		    const u8 *info, size_t info_len, u8 *okm, size_t okm_len)
 {
-	size_t info_len = os_strlen(info);
-
 	if (hash_len == 32)
 		return hmac_sha256_kdf(prk, prk_len, NULL,
 				       (const u8 *) info, info_len,
@@ -5153,4 +5372,12 @@ int hkdf_expand(size_t hash_len, const u8 *prk, size_t prk_len,
 				       okm, okm_len);
 #endif /* CONFIG_SHA512 */
 	return -1;
+}
+
+
+int hkdf_expand(size_t hash_len, const u8 *prk, size_t prk_len,
+		const char *info, u8 *okm, size_t okm_len)
+{
+	return hkdf_expand_bin(hash_len, prk, prk_len, (const u8 *) info,
+			       os_strlen(info), okm, okm_len);
 }
