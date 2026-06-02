@@ -260,6 +260,8 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 
 	/* This max size includes wmm and user configured vendor elements */
 	bss->available_vendor_elem_size = MBSSID_NON_TX_DEF_VENDOR_ELEM_SIZE;
+
+	bss->rsnxe_capab_mask = ~0ULL;
 }
 
 #ifdef CONFIG_IEEE80211BE

@@ -889,6 +889,7 @@ struct hostapd_bss_config {
 	struct wpabuf *gtk_rsc_override;
 	struct wpabuf *igtk_rsc_override;
 	int no_beacon_rsnxe;
+	u64 rsnxe_capab_mask;
 	int skip_prune_assoc;
 	int ft_rsnxe_used;
 	unsigned int oci_freq_override_eapol_m3;
