@@ -727,6 +727,7 @@ struct last_scan_ssid {
  * @rsnxe_len: Length of RSNXE
  * @key_mgmt: AKM used for connection
  * @security_profile: Security profile used for connection
+ * @eap_success: Whether EAP authentication was successful
  */
 struct auth_802_1x_data {
 	u16 auth_trans;
@@ -747,6 +748,7 @@ struct auth_802_1x_data {
 
 	u32 key_mgmt;
 	int security_profile;
+	bool eap_success;
 
 #ifdef CONFIG_PQC
 	const struct ieee80211_pqc_constraint *constraint;

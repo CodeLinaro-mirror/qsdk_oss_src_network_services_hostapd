@@ -1049,9 +1049,25 @@ static struct wpabuf * sme_build_802_1x_auth_start(struct wpa_supplicant *wpa_s,
 static struct wpabuf *
 sme_build_802_1x_auth_continue(struct wpa_supplicant *wpa_s)
 {
-	struct wpabuf *buf, *eapol_pdu;
+	struct wpabuf *buf = NULL, *eapol_pdu = NULL, *elems_buf = NULL;
+	bool need_eapol = true;
+	size_t buf_len = 2 + 2 + 2;
 
-	if (wpa_s->auth_1x->status != WLAN_STATUS_SUCCESS) {
+	if (wpa_key_mgmt_pqc(wpa_s->auth_1x->key_mgmt) &&
+	    wpa_s->auth_1x->eap_success) {
+		wpa_printf(MSG_DEBUG,
+			   "IEEE 802.1X: Authentication successful. Continue with PTK derivation");
+
+		elems_buf = sme_build_802_1x_for_ptk(wpa_s);
+		if (!elems_buf) {
+			wpa_printf(MSG_INFO,
+				   "Failed to build 802.1X elements for PTK");
+			return NULL;
+		}
+
+		buf_len += wpabuf_len(elems_buf);
+		need_eapol = false;
+	} else if (wpa_s->auth_1x->status != WLAN_STATUS_SUCCESS) {
 		buf = wpabuf_alloc(2 + 2 + 2);
 		if (!buf)
 			return NULL;
@@ -1062,23 +1078,37 @@ sme_build_802_1x_auth_continue(struct wpa_supplicant *wpa_s)
 		return buf;
 	}
 
-	eapol_pdu = eapol_sm_get_eapol_pdu(wpa_s->eapol,
-					   IEEE802_1X_TYPE_EAP_PACKET);
-	if (!eapol_pdu)
-		return NULL;
+	if (need_eapol) {
+		eapol_pdu = eapol_sm_get_eapol_pdu(wpa_s->eapol,
+						   IEEE802_1X_TYPE_EAP_PACKET);
+		if (!eapol_pdu) {
+			wpabuf_free(elems_buf);
+			return NULL;
+		}
 
-	buf = wpabuf_alloc(2 + 2 + 2 + wpabuf_len(eapol_pdu));
+		buf_len += wpabuf_len(eapol_pdu);
+	}
+
+	buf = wpabuf_alloc(buf_len);
 	if (!buf) {
 		wpabuf_free(eapol_pdu);
+		wpabuf_free(elems_buf);
 		return NULL;
 	}
 
 	wpa_s->auth_1x->auth_trans++;
 	wpabuf_put_le16(buf, wpa_s->auth_1x->auth_trans);
 	wpabuf_put_le16(buf, wpa_s->auth_1x->status);
-	wpabuf_put_le16(buf, wpabuf_len(eapol_pdu));
-	wpabuf_put_buf(buf, eapol_pdu);
+	wpabuf_put_le16(buf, need_eapol ? wpabuf_len(eapol_pdu) : 0);
+	if (need_eapol)
+		wpabuf_put_buf(buf, eapol_pdu);
+
 	wpabuf_free(eapol_pdu);
+
+	if (elems_buf) {
+		wpabuf_put_buf(buf, elems_buf);
+		wpabuf_free(elems_buf);
+	}
 
 	return buf;
 }
@@ -4617,6 +4647,19 @@ static void sme_process_802_1x_auth_response(struct wpa_supplicant *wpa_s,
 		}
 	}
 
+	if (wpa_key_mgmt_pqc(wpa_s->auth_1x->key_mgmt) &&
+	    wpa_s->auth_1x->eap_success) {
+		wpa_printf(MSG_DEBUG,
+			   "IEEE 802.1X: Already completed EAP authentication, processing PQC parameters for transaction 2");
+
+		if (sme_802_1x_process_pqc_params(wpa_s, &elems) < 0) {
+			validation_failed = true;
+			goto cleanup;
+		}
+
+		wpa_s->auth_1x->pmkid_found = true;
+	}
+
 	if (wpa_s->auth_1x->pmksa_caching &&
 	    auth->status_code != WLAN_STATUS_SUCCESS) {
 		wpa_msg(wpa_s, MSG_INFO,
@@ -4650,6 +4693,62 @@ static void sme_process_802_1x_auth_response(struct wpa_supplicant *wpa_s,
 				WLAN_STATUS_802_1_X_AUTH_SUCCESS);
 			goto fail;
 		}
+	}
+
+	if (auth->status_code == WLAN_STATUS_802_1_X_AUTH_SUCCESS &&
+	    wpa_key_mgmt_pqc(wpa_s->auth_1x->key_mgmt)) {
+		struct rsn_pmksa_cache_entry *pmksa;
+		struct wpa_ssid *sp_ssid = external ?
+			wpa_s->sme.ext_auth_wpa_ssid : wpa_s->current_ssid;
+		u8 pmk[PMK_LEN_MAX];
+		size_t pmk_len;
+		int res;
+
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: Authentication successful");
+
+		wpa_s->auth_1x->eap_success = true;
+
+		/*
+		 * Disable EAP over authentication frame only after configuring
+		 * the PMKSA as otherwise, it would be configured with the
+		 * wrong authentication algorithm.
+		 */
+		res = sme_get_pmk_for_1x_auth(wpa_s, NULL, external,
+					      pmk, &pmk_len);
+		eapol_sm_set_eap_over_auth_frame(wpa_s->eapol, false);
+		forced_memzero(pmk, PMK_LEN_MAX);
+
+		if (res < 0) {
+			wpa_msg(wpa_s, MSG_INFO,
+				"IEEE 802.1X: Failed to get PMK");
+			goto fail;
+		}
+
+		if (pmksa_cache_set_current(wpa_s->wpa, NULL,
+					    peer_addr,
+					    sp_ssid,
+					    0,
+					    NULL,
+					    key_mgmt,
+					    false) < 0) {
+			wpa_msg(wpa_s, MSG_INFO,
+				"IEEE 802.1X: Failed to set PMKSA cache entry");
+			goto fail;
+		}
+
+		wpa_s->auth_1x->pmksa_caching = true;
+		pmksa = pmksa_cache_get_current(wpa_s->wpa);
+		if (pmksa)
+			os_memcpy(wpa_s->auth_1x->pmkid, pmksa->pmkid,
+				  PMKID_LEN);
+		if (external)
+			sme_external_auth_send_802_1x(
+				wpa_s, wpa_s->sme.ext_auth_wpa_ssid, 0);
+		else
+			sme_send_authentication(wpa_s, wpa_s->current_bss,
+						wpa_s->current_ssid, 0);
+		goto cleanup;
 	}
 
 	if (auth->status_code == WLAN_STATUS_802_1_X_AUTH_SUCCESS ||
