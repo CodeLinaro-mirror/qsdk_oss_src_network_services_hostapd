@@ -45,7 +45,9 @@ dfs_downgrade_bandwidth(struct hostapd_iface *iface, int *secondary_channel,
 			enum dfs_channel_type *channel_type);
 
 static void hostapd_dfs_update_background_chain(struct hostapd_iface *iface);
-
+static int hostapd_dfs_compute_bgcac_chan_params(int chan, int bw_mhz,
+				    enum oper_chan_width *oper_width,
+				    u8 *seg0, int *sec);
 static int dfs_get_precac_channel_by_state(struct hostapd_iface *iface,
 					   u32 dfs_state,
 					   int *channel, int *freq,
@@ -1951,6 +1953,9 @@ hostapd_dfs_get_next_precac_channel(struct hostapd_iface *iface,
 {
 	struct hostapd_channel_data *chan = NULL;
 	int total, idx;
+	int bw_mhz;
+	u8 seg0_tmp = 0;
+	enum oper_chan_width oper_width_tmp;
 
 	wpa_printf(MSG_INFO, "PRECAC_Performing Precac on the DFS Channel list");
 	total = dfs_find_channel(iface, NULL, 0, DFS_NO_CAC_YET,
@@ -1983,7 +1988,10 @@ hostapd_dfs_get_next_precac_channel(struct hostapd_iface *iface,
 		   "PRECAC_Checking channel %d (freq=%d MHz)",
 		   chan->chan, chan->freq);
 
-	*secondary_channel = iface->conf->secondary_channel;
+	bw_mhz = channel_width_to_int(
+		     hostapd_get_chan_width_from_oper_chan_width(iface->conf));
+	hostapd_dfs_compute_bgcac_chan_params(chan->chan, bw_mhz, &oper_width_tmp,
+				 &seg0_tmp, secondary_channel);
 
 	dfs_adjust_center_freq(iface, chan, *secondary_channel, 0,
 			       oper_centr_freq_seg0_idx,
@@ -2548,6 +2556,9 @@ int hostapd_dfs_precac_restart_after_radar(struct hostapd_iface *iface,
 static int hostapd_agile_complete(struct hostapd_iface *iface, int success,
 				  int freq)
 {
+	int precac_channel = iface->radar_background.channel;
+	int precac_freq = iface->radar_background.freq;
+
 	if (!success) {
 		if (freq > 0 && iface->radar_background.freq > 0 &&
 		    freq != iface->radar_background.freq) {
@@ -2566,12 +2577,36 @@ static int hostapd_agile_complete(struct hostapd_iface *iface, int success,
 		iface->radar_background.freq = 0;
 	}
 
+
+	if (iface->dfs_domain == HOSTAPD_DFS_REGION_ETSI) {
+		if (success)
+			wpa_printf(MSG_INFO,
+				   "PRECAC_ CAC succeeded on chan %d (freq=%d MHz) - "
+				   "moving to next channel",
+				   precac_channel, freq);
+		else if (freq == precac_freq && iface->radar_detected) {
+			wpa_printf(MSG_INFO,
+				   "PRECAC_ CAC aborted on chan %d (freq=%d MHz) - "
+				   "radar detected, skipping to next channel",
+				    precac_channel, freq);
+		}
+		else {
+			wpa_printf(MSG_INFO,
+				   "PRECAC_ CAC failed on chan %d (freq=%d MHz) - "
+				   "channel switch in progress, will resume after switch",
+				   precac_channel, freq);
+			iface->radar_detected = false;
+			iface->radar_background.cac_started = 0;
+			return 0;
+		}
+
+		iface->radar_detected = false;
+		iface->radar_background.cac_started = 0;
+		return hostapd_dfs_start_precac(iface);
+	}
+
 	iface->radar_detected = false;
 	iface->radar_background.cac_started = 0;
-
-	if (success && iface->dfs_domain == HOSTAPD_DFS_REGION_ETSI)
-		return hostapd_dfs_start_precac(iface);
-
 	return 0;
 }
 
@@ -3416,7 +3451,7 @@ static void rcac_update_background_state(struct hostapd_iface *iface,
 }
 
 /*
- * rcac_compute_chan_params - Compute oper_width, seg0, sec for RCAC
+ * hostapd_dfs_compute_bgcac_chan_params - Compute oper_width, seg0, sec for RCAC
  * @chan: Primary channel number
  * @bw_mhz: Bandwidth in MHz (20, 40, 80, 160)
  * @oper_width: Output: oper_chan_width enum
@@ -3425,7 +3460,7 @@ static void rcac_update_background_state(struct hostapd_iface *iface,
  *
  * Returns 0 on success, -1 if bw_mhz is unsupported.
  */
-static int rcac_compute_chan_params(int chan, int bw_mhz,
+static int hostapd_dfs_compute_bgcac_chan_params(int chan, int bw_mhz,
 				    enum oper_chan_width *oper_width,
 				    u8 *seg0, int *sec)
 {
@@ -3635,7 +3670,7 @@ int hostapd_start_rcac_on_channel(struct hostapd_iface *iface, int chan,
 		return -1;
 	}
 
-	if (rcac_compute_chan_params(chan, bw_mhz, &oper_width, &seg0, &sec) < 0)
+	if (hostapd_dfs_compute_bgcac_chan_params(chan, bw_mhz, &oper_width, &seg0, &sec) < 0)
 		return -1;
 
 	block_base_freq = (seg0 * 5 + 5000) - bw_mhz / 2 + 10;
