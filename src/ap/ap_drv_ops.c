@@ -1315,10 +1315,16 @@ int hostapd_drv_send_action_forced_addr3(struct hostapd_data *hapd,
 
 int hostapd_stop_background_cac(struct hostapd_data *hapd)
 {
+	int radio_idx;
+
 	if (!hapd->driver || !hapd->driver->stop_background_cac ||
 	    !hapd->drv_priv)
 		return -1;
-	return hapd->driver->stop_background_cac(hapd->drv_priv);
+
+	radio_idx = (hapd->iface && hapd->iface->current_hw_info) ?
+		(int)hapd->iface->current_hw_info->hw_idx : -1;
+
+	return hapd->driver->stop_background_cac(hapd->drv_priv, radio_idx);
 }
 
 
@@ -1333,7 +1339,7 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 {
 	struct hostapd_data *hapd = iface->bss[0];
 	struct hostapd_freq_params data;
-	int res;
+	int res, radio_idx;
 	struct hostapd_hw_modes *cmode = iface->current_mode;
 #ifdef CONFIG_QCN_EXTN
 	bool is_dfs = false;
@@ -1419,7 +1425,9 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 	if (!radar_background && hostapd_update_monitor_channel(hapd, &data))
 		return -1;
 
-	res = hapd->driver->start_dfs_cac(hapd->drv_priv, &data);
+	radio_idx = (radar_background && iface->current_hw_info) ?
+		(int)iface->current_hw_info->hw_idx : -1;
+	res = hapd->driver->start_dfs_cac(hapd->drv_priv, &data, radio_idx);
 	if (!res) {
 		if (radar_background)
 			iface->radar_background.cac_started = 1;

@@ -12107,7 +12107,7 @@ static int nl80211_set_p2p_powersave(void *priv, int legacy_ps, int opp_ps,
 }
 
 
-static int nl80211_stop_background_radar_detection(void *priv)
+static int nl80211_stop_background_radar_detection(void *priv, int radio_idx)
 {
 	struct i802_bss *bss = priv;
 	struct wpa_driver_nl80211_data *drv = bss->drv;
@@ -12129,6 +12129,12 @@ static int nl80211_stop_background_radar_detection(void *priv)
 		}
 	}
 
+	if (radio_idx >= 0 &&
+	    nla_put_u8(msg, NL80211_ATTR_WIPHY_RADIO_INDEX, (u8)radio_idx)) {
+		nlmsg_free(msg);
+		return -ENOBUFS;
+	}
+
 	ret = send_and_recv_cmd(drv, msg);
 	if (ret)
 		wpa_printf(MSG_DEBUG,
@@ -12139,7 +12145,8 @@ static int nl80211_stop_background_radar_detection(void *priv)
 
 
 static int nl80211_start_radar_detection(void *priv,
-					 struct hostapd_freq_params *freq)
+					 struct hostapd_freq_params *freq,
+					 int radio_idx)
 {
 	struct i802_bss *bss = priv;
 	struct wpa_driver_nl80211_data *drv = bss->drv;
@@ -12171,6 +12178,12 @@ static int nl80211_start_radar_detection(void *priv,
 			nlmsg_free(msg);
 			return -1;
 		}
+	}
+
+	if (freq->radar_background && radio_idx >= 0 &&
+	    nla_put_u8(msg, NL80211_ATTR_WIPHY_RADIO_INDEX, (u8)radio_idx)) {
+		nlmsg_free(msg);
+		return -1;
 	}
 
 	ret = send_and_recv_cmd(drv, msg);
