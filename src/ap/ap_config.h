@@ -1723,6 +1723,7 @@ struct hostapd_config {
 	bool npca_enable;
 	u8 npca_primary_channel;
 	u16 npca_punct_bitmap;
+	u8 npca_primary_chan_offset;
 #endif /* CONFIG_IEEE80211BN */
 
 	/* Disable MCS15 Subfield in EHT operation element */
