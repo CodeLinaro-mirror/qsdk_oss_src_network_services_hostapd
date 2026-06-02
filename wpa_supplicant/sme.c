@@ -208,6 +208,26 @@ static struct wpabuf * sme_auth_build_sae_commit(struct wpa_supplicant *wpa_s,
 			rsnxe_capa = rsnxe[2 + 4];
 		else if (rsnxe && rsnxe[1] >= 1)
 			rsnxe_capa = rsnxe[2];
+
+		/*
+		 * Security Profile element preference (802.11bn D1.4, 37.32):
+		 * The Extended RSN Capabilities in the Security Profile element
+		 * take precedence over the legacy RSNX/RSNXO element.  Merge
+		 * the security profile's RSNX capabilities into rsnxe_capa so
+		 * that SAE H2E / SAE-PK checks below use the security profile
+		 * values.
+		 */
+		if (wpas_security_profile_active(wpa_s)) {
+			const u8 *sp_ie_rsnx;
+			size_t sp_rsnx_len;
+			const u8 *sp = wpa_bss_get_ie_ext(
+				bss, WLAN_EID_EXT_SECURITY_PROFILE);
+
+			sp_ie_rsnx = security_profile_ie_get_rsnx(
+				sp, &sp_rsnx_len);
+			if (sp_ie_rsnx && sp_rsnx_len >= 1)
+				rsnxe_capa |= sp_ie_rsnx[0];
+		}
 	}
 
 	sae_pwe = wpas_get_ssid_sae_pwe(wpa_s, ssid);
