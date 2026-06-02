@@ -817,11 +817,6 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 	}
 
 #ifdef CONFIG_QCN_EXTN
-	if (!(iface->conf->conf_extn.dcs_conf.dcs_random_chan_bitmap & DCS_AWGN_INTF)) {
-		hostapd_trigger_dynamic_acs(iface->bss[0], CHANNEL_CHANGE_CSA);
-		return 0;
-	}
-
 	if (dcs_get_bw_reduction_ctrl_extn(iface->conf, DCS_AWGN_INTF) == false) {
 		wpa_printf(MSG_DEBUG, "DCS Bandwidth reduction is not set");
 		channel_switch = 1;
@@ -840,6 +835,10 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 	}
 
 	if (channel_switch) {
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_dcs_awgn_handle_rand_chan_disabled_extn(iface))
+			goto exit;
+#endif
 		/* store frequencies with interference in awgn_interference_freqs */
 		current_start_freq = (cf1 - channel_width_to_int(chan_width) / 2) + 10;
 		for (i = 0; i < BW_INTERFERENCE_MAXBITS; i++) {
@@ -921,6 +920,11 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 			wpa_printf(MSG_DEBUG,
 				   "AWGN: bandwidth reduction not needed/possible (cur=%d new=%d)",
 				   chan_width, new_chan_width);
+
+#ifdef CONFIG_QCN_EXTN
+			if (hostapd_dcs_awgn_handle_rand_chan_disabled_extn(iface))
+				goto exit;
+#endif
 
 			/* Bring down the vap since all channels are blocked for switch */
 			hostapd_drv_stop_ap(iface->bss[0]);
