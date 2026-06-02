@@ -152,10 +152,19 @@ static int sme_get_pmk_for_1x_auth(struct wpa_supplicant *wpa_s,
 		return 0;
 	}
 
-	if (wpa_key_mgmt_sha384(key_mgmt))
-		len = PMK_LEN_SUITE_B_192;
-	else
-		len = PMK_LEN;
+	len = 0;
+#ifdef CONFIG_PQC
+	/* IEEE P802.11bt/D1.0, 12.7.1.3: PMK_bits is the hash output length */
+	if (wpa_key_mgmt_pqc(key_mgmt) && wpa_s->auth_1x &&
+	    wpa_s->auth_1x->constraint)
+		len = wpa_hash_len(wpa_s->auth_1x->constraint->hash);
+#endif /* CONFIG_PQC */
+	if (!len) {
+		if (wpa_key_mgmt_sha384(key_mgmt))
+			len = PMK_LEN_SUITE_B_192;
+		else
+			len = PMK_LEN;
+	}
 
 	res = eapol_sm_get_key(wpa_s->eapol, pmk_buf, len);
 	if (res) {
@@ -4409,17 +4418,74 @@ static int sme_802_1x_derive_ptk_and_install(struct wpa_supplicant *wpa_s,
 
 	kdk_len = wpas_get_kdk_len(wpa_s);
 
-	if (!auth_1x->dhss ||
-	    wpa_auth_802_1x_pmk_to_ptk(
-		    pmk, pmk_len, wpa_s->own_addr, peer_addr,
-		    auth_1x->snonce, auth_1x->anonce,
-		    key_mgmt, pairwise_cipher,
-		    wpabuf_head(auth_1x->dhss),
-		    wpabuf_len(auth_1x->dhss),
-		    &ptk, kdk_len) < 0) {
-		wpa_msg(wpa_s, MSG_INFO, "SME: PTK derivation failed");
-		forced_memzero(pmk, PMK_LEN_MAX);
-		return -1;
+#ifdef CONFIG_PQC
+	if (wpa_key_mgmt_pqc(auth_1x->key_mgmt)) {
+		const u8 *dhss = NULL;
+		size_t dhss_len = 0;
+
+		if (!auth_1x->ml_kem_ss) {
+			wpa_msg(wpa_s, MSG_INFO,
+				"IEEE 802.1X: Missing ML-KEM shared secret for PTK derivation");
+			forced_memzero(pmk, PMK_LEN_MAX);
+			return -1;
+		}
+
+		if (!auth_1x->transcript) {
+			wpa_msg(wpa_s, MSG_INFO,
+				"IEEE 802.1X: Missing transcript hash for PQC PTK derivation");
+			forced_memzero(pmk, PMK_LEN_MAX);
+			return -1;
+		}
+
+		if (auth_1x->dhss) {
+			dhss = wpabuf_head(auth_1x->dhss);
+			dhss_len = wpabuf_len(auth_1x->dhss);
+		}
+
+		if (wpa_auth_802_1x_pqc_pmk_to_ptk(pmk, pmk_len,
+						   wpa_s->own_addr,
+						   peer_addr,
+						   auth_1x->constraint->hash,
+						   pairwise_cipher,
+						   dhss, dhss_len,
+						   wpabuf_head(auth_1x->ml_kem_ss),
+						   wpabuf_head(auth_1x->transcript),
+						   wpabuf_len(auth_1x->transcript),
+						   &ptk, kdk_len) < 0) {
+			wpa_msg(wpa_s, MSG_INFO,
+				"IEEE 802.1X: PQC PTK derivation failed");
+			forced_memzero(pmk, PMK_LEN_MAX);
+			return -1;
+		}
+
+		wpabuf_clear_free(auth_1x->ml_kem_ss);
+		auth_1x->ml_kem_ss = NULL;
+		wpabuf_clear_free(auth_1x->transcript);
+		auth_1x->transcript = NULL;
+	} else
+#endif /* CONFIG_PQC */
+	{
+		if (!auth_1x->dhss) {
+			wpa_msg(wpa_s, MSG_INFO,
+				"IEEE 802.1X: Missing DH shared secret for PTK derivation");
+			forced_memzero(pmk, PMK_LEN_MAX);
+			return -1;
+		}
+
+		if (wpa_auth_802_1x_pmk_to_ptk(pmk, pmk_len, wpa_s->own_addr,
+					       peer_addr,
+					       auth_1x->snonce,
+					       auth_1x->anonce,
+					       key_mgmt,
+					       pairwise_cipher,
+					       wpabuf_head(auth_1x->dhss),
+					       wpabuf_len(auth_1x->dhss),
+					       &ptk, kdk_len) < 0) {
+			wpa_msg(wpa_s, MSG_INFO,
+				"IEEE 802.1X: PTK derivation failed");
+			forced_memzero(pmk, PMK_LEN_MAX);
+			return -1;
+		}
 	}
 
 	forced_memzero(pmk, PMK_LEN_MAX);

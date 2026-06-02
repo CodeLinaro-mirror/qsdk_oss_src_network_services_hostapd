@@ -365,10 +365,23 @@ static int wpa_supplicant_get_pmk(struct wpa_sm *sm,
 		u8 buf[2 * PMK_LEN];
 #endif /* CONFIG_IEEE80211R */
 
-		if (wpa_key_mgmt_sha384(sm->key_mgmt))
-			pmk_len = PMK_LEN_SUITE_B_192;
-		else
-			pmk_len = PMK_LEN;
+		pmk_len = 0;
+#ifdef CONFIG_PQC
+		if (wpa_key_mgmt_pqc(sm->key_mgmt) && sm->security_profile) {
+			const struct ieee80211_pqc_constraint *c =
+				wpa_get_pqc_constraint(
+					sm->security_profile->number);
+
+			if (c)
+				pmk_len = wpa_hash_len(c->hash);
+		}
+#endif /* CONFIG_PQC */
+		if (!pmk_len) {
+			if (wpa_key_mgmt_sha384(sm->key_mgmt))
+				pmk_len = PMK_LEN_SUITE_B_192;
+			else
+				pmk_len = PMK_LEN;
+		}
 		res = eapol_sm_get_key(sm->eapol, sm->pmk, pmk_len);
 		if (res) {
 			if (pmk_len == PMK_LEN) {
