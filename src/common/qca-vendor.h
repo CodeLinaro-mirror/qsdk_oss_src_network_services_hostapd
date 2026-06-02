@@ -4408,6 +4408,20 @@ enum qca_wlan_vendor_attr_config {
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST - 1,
 };
 
+/**
+ * enum qca_nl80211_vendor_config_generic_command - Values used with
+ * %QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND to identify the specific
+ * operation being configured.
+ *
+ * @QCA_WLAN_VENDOR_WIFI_PARAM_ALLOW_SCAN_ON_DFS_CHAN: Enable or disable
+ *	scanning on DFS channels when DCS WLAN-interference (mode 2) triggers
+ *	an ACS channel switch.  Payload is a u8 (1 = enable, 0 = disable)
+ *	in %QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_DATA.
+ */
+enum qca_nl80211_vendor_config_generic_command {
+	QCA_WLAN_VENDOR_WIFI_PARAM_ALLOW_SCAN_ON_DFS_CHAN = 609,
+};
+
 /* Compatibility defines for previously used incorrect enum
  * qca_wlan_vendor_attr_config names. These values should not be used in any
  * new implementation. */
