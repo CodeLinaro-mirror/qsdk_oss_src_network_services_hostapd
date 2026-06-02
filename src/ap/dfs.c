@@ -2992,6 +2992,11 @@ hostapd_dfs_background_start_channel_switch(struct hostapd_iface *iface,
 		return 0;
 	}
 
+	if (iface->dfs_domain == HOSTAPD_DFS_REGION_ETSI &&
+	    iface->conf->bgcac_en &&
+	    hostapd_dfs_agile_cac_switch(iface) == 0)
+		return 0;
+
 	/*
 	 * If background radar detection is supported and the radar channel
 	 * monitored by the background chain is available switch to it without
