@@ -476,6 +476,7 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->npca_enable = 0;
 	conf->npca_primary_channel = 0;
 	conf->npca_punct_bitmap = 0;
+	conf->npca_primary_chan_offset = -1;
 #endif /* CONFIG_IEEE80211BN */
 
 	bss->rate_type = BEACON_RATE_LEGACY;
@@ -1963,6 +1964,93 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 	return 0;
 }
 
+#ifdef CONFIG_IEEE80211BN
+static int hostapd_config_check_npca_config(struct hostapd_config *conf)
+{
+	enum oper_chan_width chwidth;
+	int seg0, npca_chan;
+	bool in_secondary;
+	int bw_mhz, num20, first_20_chan;
+
+	if (!conf->npca_enable)
+		return 0;
+
+        if (!conf->npca_primary_channel)
+		return 0;
+
+	chwidth = hostapd_get_oper_chwidth(conf);
+	if (chwidth != CONF_OPER_CHWIDTH_80MHZ &&
+	    chwidth != CONF_OPER_CHWIDTH_160MHZ &&
+	    chwidth != CONF_OPER_CHWIDTH_320MHZ) {
+		wpa_printf(MSG_ERROR,
+			   "NPCA is only supported for 80/160/320 MHz bandwidths");
+		return -1;
+	}
+
+	seg0 = (int)hostapd_get_oper_centr_freq_seg0_idx(conf);
+	npca_chan = (int)conf->npca_primary_channel;
+	in_secondary = false;
+
+	if (chwidth == CONF_OPER_CHWIDTH_80MHZ) {
+		/*
+		 * 80 MHz: seg0 is the center; subchannels are at seg0±2 and
+		 * seg0±6. Secondary 40 MHz half = the pair of subchannels on
+		 * the opposite side of seg0 from the primary channel.
+		 */
+		bw_mhz = 80;
+		if (conf->channel < seg0)
+			in_secondary = (npca_chan >= seg0 + 2 &&
+					npca_chan <= seg0 + 6);
+		else
+			in_secondary = (npca_chan >= seg0 - 6 &&
+					npca_chan <= seg0 - 2);
+	} else if (chwidth == CONF_OPER_CHWIDTH_160MHZ) {
+		/*
+		 * 160 MHz: seg0 is the center of the full 160 MHz band.
+		 * The primary 80 MHz half contains conf->channel.
+		 * Secondary half = the 4 subchannels on the side of seg0
+		 * that does not contain the primary channel.
+		 */
+		bw_mhz = 160;
+		if (conf->channel < seg0)
+			in_secondary = (npca_chan >= seg0 + 2 &&
+					npca_chan <= seg0 + 14);
+		else
+			in_secondary = (npca_chan >= seg0 - 14 &&
+					npca_chan <= seg0 - 2);
+	} else {
+		/*
+		 * 320 MHz: seg0 is the center of the full 320 MHz band.
+		 * Secondary half = the 8 subchannels on the side of seg0
+		 * that does not contain the primary channel.
+		 */
+		bw_mhz = 320;
+		if (conf->channel < seg0)
+			in_secondary = (npca_chan >= seg0 + 2 &&
+					npca_chan <= seg0 + 30);
+		else
+			in_secondary = (npca_chan >= seg0 - 30 &&
+					npca_chan <= seg0 - 2);
+	}
+
+	if (!in_secondary) {
+		wpa_printf(MSG_ERROR,
+			   "NPCA primary channel %d not in secondary segment "
+			   "(seg0=%d, bw=%d MHz)",
+			   npca_chan, seg0, bw_mhz);
+		return -1;
+	}
+
+	num20 = bw_mhz / 20;
+	first_20_chan = seg0 - 2 * (num20 - 1);
+
+	conf->npca_primary_chan_offset =
+		(npca_chan - first_20_chan) / 4;
+
+	return 0;
+}
+#endif /* CONFIG_IEEE80211BN */
+
 
 static int hostapd_config_check_cw(struct hostapd_config *conf, int queue)
 {
@@ -2059,6 +2147,11 @@ int hostapd_config_check(struct hostapd_config *conf, int full_config)
 		return -1;
 	}
 #endif /* CONFIG_QCN_EXTN */
+
+#ifdef CONFIG_IEEE80211BN
+	if (full_config && hostapd_config_check_npca_config(conf))
+		return -1;
+#endif /* CONFIG_IEEE80211BN */
 
 	for (i = 0; i < conf->num_bss; i++) {
 		if (hostapd_config_check_bss(conf->bss[i], conf, full_config))
