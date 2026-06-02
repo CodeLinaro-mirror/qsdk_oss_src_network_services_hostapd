@@ -867,6 +867,9 @@ hostapd_switch_chan(struct ubus_context *ctx, struct ubus_object *obj,
 		.uhr.dbe_bandwidth = iconf->dbe_bandwidth,
 		.uhr.cap = mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
 		.uhr.dbe_punct_bitmap = iconf->dbe_punct_bitmap,
+		.uhr.npca_freq = hostapd_hw_get_freq(
+			hapd, iconf->npca_primary_channel),
+		.uhr.npca_punct_bitmap = iconf->npca_punct_bitmap,
 	#endif /* CONFIG_IEEE80211BN */
 		.bandwidth_device = iconf->bandwidth_device,
 		.center_freq_device = iconf->center_freq_device,

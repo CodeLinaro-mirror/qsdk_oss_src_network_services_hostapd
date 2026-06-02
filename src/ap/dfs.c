@@ -2585,6 +2585,9 @@ static int hostapd_dfs_testmode_set_beacon_csa(struct hostapd_iface *iface)
 		.uhr.dbe_bandwidth = iface->conf->dbe_bandwidth,
 		.uhr.cap = &iface->current_mode->uhr_capab[IEEE80211_MODE_AP],
 		.uhr.dbe_punct_bitmap = iface->conf->dbe_punct_bitmap,
+		.uhr.npca_freq = hostapd_hw_get_freq(
+			hapd, iface->conf->npca_primary_channel),
+		.uhr.npca_punct_bitmap = iface->conf->npca_punct_bitmap,
 	#endif /* CONFIG_IEEE80211BN */
 		.eht.cap = &iface->current_mode->eht_capab[IEEE80211_MODE_AP],
 		.bandwidth_device = iface->conf->bandwidth_device,

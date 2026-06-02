@@ -851,6 +851,9 @@ int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
 		.uhr.dbe_bandwidth = hapd->iconf->dbe_bandwidth,
 		.uhr.cap = cmode ? &cmode->uhr_capab[IEEE80211_MODE_AP] : NULL,
 		.uhr.dbe_punct_bitmap = hapd->iconf->dbe_punct_bitmap,
+		.uhr.npca_freq = hostapd_hw_get_freq(
+			hapd, hapd->iconf->npca_primary_channel),
+		.uhr.npca_punct_bitmap = hapd->iconf->npca_punct_bitmap,
 	#endif /* CONFIG_IEEE80211BN */
 		.ht.sec_channel_offset = sec_channel_offset,
 		.oper_chwidth = oper_chwidth,

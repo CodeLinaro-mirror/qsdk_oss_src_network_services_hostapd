@@ -116,6 +116,8 @@ struct hostapd_channel_info {
 		const struct uhr_capabilities *cap;
 		u8 dbe_bandwidth;
 		u16 dbe_punct_bitmap;
+		int npca_freq;
+		u16 npca_punct_bitmap;
 	} uhr;
 	int bandwidth_device;
 	int center_freq_device;

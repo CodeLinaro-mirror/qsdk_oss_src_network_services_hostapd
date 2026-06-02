@@ -8490,6 +8490,9 @@ int hostapd_change_config_freq(struct hostapd_data *hapd,
 			.uhr.dbe_bandwidth = conf->dbe_bandwidth,
 			.uhr.cap = mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
 			.uhr.dbe_punct_bitmap = conf->dbe_punct_bitmap,
+			.uhr.npca_freq = hostapd_hw_get_freq(
+				hapd, conf->npca_primary_channel),
+			.uhr.npca_punct_bitmap = conf->npca_punct_bitmap,
 #endif /* CONFIG_IEEE80211BN */
 			.he_6ghz_reg_pwr_type = hapd->iconf->he_6ghz_reg_pwr_type,
 		};

@@ -16,6 +16,7 @@
 #include "common/hw_features_common.h"
 #include "ap/sta_info.h"
 #include "ap/hostapd.h"
+#include "ap/hw_features.h"
 #include "ap/ieee802_11_auth.h"
 #include "ap/ieee802_11.h"
 #include "config_ssid.h"
@@ -216,6 +217,9 @@ static int wpas_mesh_update_freq_params(struct wpa_supplicant *wpa_s)
 		.uhr.cap = ifmsh->current_mode ?
 		&ifmsh->current_mode->uhr_capab[IEEE80211_MODE_MESH] : NULL,
 		.uhr.dbe_punct_bitmap = ifmsh->conf->dbe_punct_bitmap,
+		.uhr.npca_freq = hostapd_hw_get_freq(
+			ifmsh->bss[0], ifmsh->conf->npca_primary_channel),
+		.uhr.npca_punct_bitmap = ifmsh->conf->npca_punct_bitmap,
 	#endif /* CONFIG_IEEE80211BN */
 		.bandwidth_device = ifmsh->conf->bandwidth_device,
 		.center_freq_device = ifmsh->conf->center_freq_device,
