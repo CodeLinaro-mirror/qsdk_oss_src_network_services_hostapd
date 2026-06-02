@@ -5648,9 +5648,6 @@ size_t hostapd_security_profile_ie_len(struct hostapd_data *hapd)
 	/* Bitmap size: ceil((max_profile + 1) / 8) */
 	bitmap_len = (max_profile / 8) + 1;
 
-	if (hapd->conf->security_profile_rsnx)
-		ext_rsn_capab_len = os_strlen(hapd->conf->security_profile_rsnx) / 2;
-
 	/*
 	 * D1.4 format:
 	 * EID (1) + Length (1) + EID_Ext (1) + Reduced_RSN_Capab (1) +
@@ -5699,19 +5696,6 @@ u8 *hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid)
 
 		if (p / 8 < (int) bitmap_len)
 			bitmap[p / 8] |= BIT(p % 8);
-	}
-
-	/* Parse Extended RSN Capabilities from hex string */
-	if (hapd->conf->security_profile_rsnx) {
-		ext_rsn_capab_len = os_strlen(hapd->conf->security_profile_rsnx) / 2;
-		if (ext_rsn_capab_len > sizeof(ext_rsn_capab))
-			ext_rsn_capab_len = sizeof(ext_rsn_capab);
-		if (hexstr2bin(hapd->conf->security_profile_rsnx, ext_rsn_capab,
-			       ext_rsn_capab_len) < 0) {
-			wpa_printf(MSG_ERROR,
-				   "UHR: Invalid security_profile_rsnx hex string");
-			ext_rsn_capab_len = 0;
-		}
 	}
 
 	/* Build Reduced RSN Capabilities */

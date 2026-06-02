@@ -3092,15 +3092,6 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   "Line %d: Invalid security_profiles value '%s'", line, pos);
 			return 1;
 		}
-	} else if (os_strcmp(buf, "security_profile_rsnx") == 0) {
-		os_free(bss->security_profile_rsnx);
-		bss->security_profile_rsnx = os_strdup(pos);
-		if (!bss->security_profile_rsnx) {
-			wpa_printf(MSG_ERROR,
-				   "Line %d: Failed to allocate security_profile_rsnx",
-				   line);
-			return 1;
-		}
 	} else if (os_strcmp(buf, "security_profile_ext_key_id") == 0) {
 		bss->security_profile_ext_key_id = atoi(pos);
 	} else if (os_strcmp(buf, "security_profile_ocvc") == 0) {
