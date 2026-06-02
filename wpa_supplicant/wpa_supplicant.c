@@ -2015,6 +2015,8 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 	enum sae_pwe sae_pwe;
 #endif /* CONFIG_SAE */
 	const u8 *bss_wpa, *bss_rsn, *bss_rsnx;
+	const u8 *bss_sp_ie = NULL; /* AP's Security Profile element */
+	u8 sp_rsnx_buf[2 + 32]; /* synthetic RSNXE from Security Profile */
 	bool wmm;
 	struct rsn_pmksa_cache_entry *pmksa;
 
@@ -2022,14 +2024,72 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		bss_wpa = wpa_bss_get_vendor_ie(bss, WPA_IE_VENDOR_TYPE);
 		bss_rsn = wpa_bss_get_rsne(wpa_s, bss, ssid, false);
 		bss_rsnx = wpa_bss_get_rsnxe(wpa_s, bss, ssid, false);
+
+		/*
+		 * Security Profile element (802.11bn D1.4, 9.4.2.364):
+		 * When the AP advertises this element and the driver/supplicant
+		 * supports Security Profile negotiation, the security profile
+		 * number takes precedence over the legacy RSN/RSNO/RSNO2 and
+		 * RSNX/RSNXO elements for AKM, pairwise cipher, RSN
+		 * capabilities, and RSNX capabilities selection.
+		 */
+		if (wpas_security_profile_active(wpa_s))
+			bss_sp_ie = wpa_bss_get_ie_ext(
+				bss, WLAN_EID_EXT_SECURITY_PROFILE);
 	} else {
 		bss_wpa = bss_rsn = bss_rsnx = NULL;
 	}
 
 	if (bss_rsn && (ssid->proto & WPA_PROTO_RSN) &&
 	    wpa_parse_wpa_ie(bss_rsn, 2 + bss_rsn[1], &ie) == 0 &&
-	    matching_ciphers(ssid, &ie, bss->freq) &&
-	    (ie.key_mgmt & ssid->key_mgmt)) {
+	    (matching_ciphers(ssid, &ie, bss->freq) ||
+	     /*
+	      * Security profile preference (802.11bn D1.4, 37.32):
+	      * All defined profiles use GCMP-256 as pairwise cipher.
+	      * If the AP advertises a security profile that matches the
+	      * STA's configured AKM, treat GCMP-256 as available even if
+	      * the RSN/RSNO/RSNO2 element does not list it.
+	      */
+	     (bss_sp_ie &&
+	      security_profile_ie_get_key_mgmt(bss_sp_ie, ssid->key_mgmt) &&
+	      (ssid->pairwise_cipher & WPA_CIPHER_GCMP_256))) &&
+	    ((ie.key_mgmt & ssid->key_mgmt) ||
+	     /*
+	      * Security profile preference (802.11bn D1.4, 37.32):
+	      * Consider the AP as supporting the AKM implied by any security
+	      * profile number it advertises, even if the RSN/RSNO/RSNO2
+	      * element does not explicitly list that AKM.  Similarly, all
+	      * defined profiles use GCMP-256 as pairwise cipher, so treat
+	      * GCMP-256 as available when a matching profile exists.
+	      */
+	     (bss_sp_ie &&
+	      security_profile_ie_get_key_mgmt(bss_sp_ie, ssid->key_mgmt) &&
+	      (ssid->pairwise_cipher & WPA_CIPHER_GCMP_256)))) {
+		/*
+		 * When the RSN element did not advertise the AKM/cipher but
+		 * the security profile did, augment ie so that the rest of
+		 * wpa_supplicant_set_suites() can proceed normally.
+		 */
+		if (bss_sp_ie &&
+		    security_profile_ie_get_key_mgmt(bss_sp_ie,
+						     ssid->key_mgmt)) {
+			int sp_key_mgmt = security_profile_ie_get_key_mgmt(
+				bss_sp_ie, ssid->key_mgmt);
+
+			if (!(ie.pairwise_cipher & ssid->pairwise_cipher) &&
+			    (ssid->pairwise_cipher & WPA_CIPHER_GCMP_256)) {
+				wpa_dbg(wpa_s, MSG_DEBUG,
+					"RSN: Security Profile element overrides RSN element pairwise cipher (GCMP-256)");
+				ie.pairwise_cipher |= WPA_CIPHER_GCMP_256;
+				ie.has_pairwise = 1;
+			}
+			if (!(ie.key_mgmt & ssid->key_mgmt) && sp_key_mgmt) {
+				wpa_dbg(wpa_s, MSG_DEBUG,
+					"RSN: Security Profile element overrides RSN element AKM (key_mgmt=0x%x)",
+					sp_key_mgmt);
+				ie.key_mgmt |= sp_key_mgmt;
+			}
+		}
 		wpa_dbg(wpa_s, MSG_DEBUG, "RSN: using IEEE 802.11i/D9.0");
 		proto = WPA_PROTO_RSN;
 	} else if (bss_wpa && (ssid->proto & WPA_PROTO_WPA) &&
@@ -2125,6 +2185,66 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 	if (ssid->ieee80211w) {
 		wpa_dbg(wpa_s, MSG_DEBUG, "WPA: Selected mgmt group cipher %d",
 			ie.mgmt_group_cipher);
+	}
+
+	/*
+	 * Security Profile element preference (802.11bn D1.4, 37.32):
+	 *
+	 * 1. RSN Capabilities: The Reduced RSN Capabilities field in the
+	 *    Security Profile element takes precedence over the RSN
+	 *    Capabilities field in the legacy RSN/RSNO/RSNO2 elements.
+	 *    All defined profiles (0-15) mandate MFPR=1 and MFPC=1.
+	 *    ExtKeyID and OCVC are taken from the Reduced RSN Capabilities.
+	 *
+	 * 2. RSNX Capabilities: The Extended RSN Capabilities field in the
+	 *    Security Profile element takes precedence over the legacy
+	 *    RSNX/RSNXO element.
+	 *
+	 * Apply these overrides now so that all subsequent capability checks
+	 * (MFPC, ExtKeyID, SSID protection, assoc encryption, SPP A-MSDU,
+	 * etc.) use the security profile values.
+	 */
+	if (bss_sp_ie && proto == WPA_PROTO_RSN) {
+		int sp_rsn_caps = security_profile_ie_get_rsn_caps(bss_sp_ie);
+
+		if (sp_rsn_caps) {
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"RSN: Security Profile element overrides RSN capabilities: 0x%x -> 0x%x",
+				ie.capabilities, sp_rsn_caps);
+			ie.capabilities = sp_rsn_caps;
+		}
+
+		/*
+		 * Override bss_rsnx with the Extended RSN Capabilities from
+		 * the Security Profile element.  The field is encoded in the
+		 * same wire format as an RSNXE body (length prefix in bits
+		 * 0-3 of the first byte), so ieee802_11_rsnx_capab_len() can
+		 * consume it directly.
+		 *
+		 * We synthesise a minimal two-byte RSNXE header (EID=244,
+		 * Length) so that ieee802_11_rsnx_capab() — which expects a
+		 * full element starting at EID — works without modification.
+		 * The synthetic element is stored in a local buffer and
+		 * bss_rsnx is pointed at it for the remainder of this
+		 * function.
+		 */
+		{
+			size_t ext_rsnx_len;
+			const u8 *ext_rsnx = security_profile_ie_get_rsnx(
+				bss_sp_ie, &ext_rsnx_len);
+
+			if (ext_rsnx && ext_rsnx_len > 0) {
+				if (ext_rsnx_len <= sizeof(sp_rsnx_buf) - 2) {
+					sp_rsnx_buf[0] = WLAN_EID_RSNX;
+					sp_rsnx_buf[1] = (u8) ext_rsnx_len;
+					os_memcpy(sp_rsnx_buf + 2, ext_rsnx,
+						  ext_rsnx_len);
+					wpa_dbg(wpa_s, MSG_DEBUG,
+						"RSN: Security Profile element overrides RSNX capabilities");
+					bss_rsnx = sp_rsnx_buf;
+				}
+			}
+		}
 	}
 
 	wpa_s->wpa_proto = proto;
