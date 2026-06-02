@@ -841,6 +841,12 @@ int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
 				    NULL,
 				    hostapd_get_punct_bitmap(hapd),
 				    hapd->iconf->he_6ghz_reg_pwr_type,
+#ifdef CONFIG_IEEE80211BN
+				    hostapd_hw_get_freq(hapd, hapd->iconf->npca_primary_channel),
+				    hapd->iconf->npca_punct_bitmap,
+#else
+				    0, 0,
+#endif /* CONFIG_IEEE80211BN */
 				    bandwidth_device, center_freq_device))
 		return -1;
 
@@ -1378,6 +1384,7 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 				    hostapd_get_punct_bitmap(hapd) |
 				    iface->radar_bit_pattern,
 				    hapd->iconf->he_6ghz_reg_pwr_type,
+				    0, 0,
 				    bandwidth_device, center_freq_device)) {
 		wpa_printf(MSG_ERROR, "Can't set freq params");
 		return -1;

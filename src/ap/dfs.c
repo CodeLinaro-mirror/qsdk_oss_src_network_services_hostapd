@@ -1913,6 +1913,7 @@ int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 				      &cmode->uhr_capab[ieee80211_mode],
 				      punct_bitmap | iface->radar_bit_pattern,
 				      iface->conf->he_6ghz_reg_pwr_type,
+                                      0, 0,
 				      iface->conf->bandwidth_device,
 				      iface->conf->center_freq_device);
 
@@ -2522,6 +2523,13 @@ static int hostapd_dfs_testmode_set_beacon_csa(struct hostapd_iface *iface)
 				      &iface->current_mode->uhr_capab[IEEE80211_MODE_AP],
 				      hostapd_get_punct_bitmap(iface->bss[0]),
 				      iface->conf->he_6ghz_reg_pwr_type,
+#ifdef CONFIG_IEEE80211BN
+				      hostapd_hw_get_freq(hapd,
+					iface->conf->npca_primary_channel),
+				      iface->conf->npca_punct_bitmap,
+#else
+				      0, 0,
+#endif /* CONFIG_IEEE80211BN */
 				      iface->conf->bandwidth_device,
 				      iface->conf->center_freq_device);
 

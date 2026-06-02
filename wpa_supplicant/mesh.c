@@ -16,6 +16,7 @@
 #include "common/hw_features_common.h"
 #include "ap/sta_info.h"
 #include "ap/hostapd.h"
+#include "ap/hw_features.h"
 #include "ap/ieee802_11_auth.h"
 #include "ap/ieee802_11.h"
 #include "config_ssid.h"
@@ -215,6 +216,13 @@ static int wpas_mesh_update_freq_params(struct wpa_supplicant *wpa_s)
 		    ifmsh->conf->vht_capab,
 		    he_capab, NULL, NULL, 0,
 		    ifmsh->conf->he_6ghz_reg_pwr_type,
+#ifdef CONFIG_IEEE80211BN
+		    hostapd_hw_get_freq(ifmsh->bss[0],
+					ifmsh->conf->npca_primary_channel),
+		    ifmsh->conf->npca_punct_bitmap,
+#else
+		    0, 0,
+#endif /* CONFIG_IEEE80211BN */
 		    ifmsh->conf->bandwidth_device,
 		    ifmsh->conf->center_freq_device)) {
 		wpa_printf(MSG_ERROR, "Error updating mesh frequency params");

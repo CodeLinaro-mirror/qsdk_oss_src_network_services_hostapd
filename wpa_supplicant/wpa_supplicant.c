@@ -4080,6 +4080,7 @@ skip_80mhz:
 				    &mode->uhr_capab[ieee80211_mode],
 				    0,
 				    freq->he_6ghz_reg_pwr_type,
+				    0, 0,
 				    freq->bandwidth_device,
 				    freq->center_freq_device) != 0)
 		return false;

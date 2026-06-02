@@ -33,6 +33,7 @@
 #include "beacon.h"
 #include "hs20.h"
 #include "dfs.h"
+#include "hw_features.h"
 #include "taxonomy.h"
 #include "ieee802_11_auth.h"
 #include "dscp_policy.h"
@@ -4381,6 +4382,13 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 				    &cmode->uhr_capab[IEEE80211_MODE_AP],
 				    hostapd_get_punct_bitmap(hapd),
 				    iconf->he_6ghz_reg_pwr_type,
+#ifdef CONFIG_IEEE80211BN
+				    hostapd_hw_get_freq(hapd,
+					iconf->npca_primary_channel),
+				    iconf->npca_punct_bitmap,
+#else
+				    0, 0,
+#endif /* CONFIG_IEEE80211BN */
 				    iconf->bandwidth_device,
 				    iconf->center_freq_device) == 0) {
 		freq.link_id = -1;
