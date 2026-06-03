@@ -136,6 +136,12 @@ void hostapd_parse_smd_ie(struct hostapd_data *hapd, struct sta_info *sta,
 		return;
 	}
 
+	if (!hapd->mld) {
+		wpa_printf(MSG_DEBUG, "SMD IE Parse: MLD not enabled in AP configuration for " MACSTR,
+			   MAC2STR(sta->addr));
+		return;
+	}
+
 	if (!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_SMD)) {
 		wpa_printf(MSG_DEBUG,
 			   "SMD IE Parse: Driver does not support SMD for " MACSTR,
@@ -169,6 +175,8 @@ void hostapd_parse_smd_ie(struct hostapd_data *hapd, struct sta_info *sta,
 	sta->smd_info.caps.ptk_mode = !!(smd_cap_byte & BIT(5));
 	sta->smd_info.smd_timeout = hapd->conf->smd.smd_prep_timeout;
 	sta->smd_info.smd_sta = true;
+
+	os_memcpy(sta->smd_info.current_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
 
 	wpa_printf(MSG_INFO,
 		   "SMD IE: Parsed from " MACSTR " - ID: " MACSTR
