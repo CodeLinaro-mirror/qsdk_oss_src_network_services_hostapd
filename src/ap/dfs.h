@@ -11,6 +11,7 @@
 
 /* Wait duration between radar detection and channel switch*/
 #define HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR 500000
+#define HAPD_AGILE_CAC_RESTART_DELAY_SECS 3
 
 /* DFS_RANDOM_CH_FLAG bits passed to dfs_get_valid_channel() */
 #define DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH   0x00000001 /* exclude current operating channel */
@@ -92,6 +93,8 @@ int hostapd_start_background_cac(struct hostapd_iface *iface);
 int hostapd_start_rcac_on_channel(struct hostapd_iface *iface, int chan, int bw_mhz);
 int hostapd_dfs_agile_cac_switch(struct hostapd_iface *iface);
 void hostapd_restart_agile_cac_after_ch_switch(struct hostapd_iface *iface);
+void hostapd_schedule_agile_cac_restart(struct hostapd_iface *iface);
+void hostapd_cancel_agile_cac_restart(struct hostapd_iface *iface);
 void hostapd_abort_background_cac(struct hostapd_iface *iface);
 enum oper_chan_width convert_to_oper_chan_width(int chan_width);
 

@@ -1423,7 +1423,7 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 						     hostapd_get_oper_centr_freq_seg1_idx(hapd->iface->conf),
 						     false, width_device,
 						     hapd->iconf->center_freq_device);
-				hostapd_restart_agile_cac_after_ch_switch(hapd->iface);
+				hostapd_schedule_agile_cac_restart(hapd->iface);
 			} else {
 				hostapd_disable_iface(hapd->iface);
 				hostapd_enable_iface(hapd->iface);
@@ -1434,7 +1434,7 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 			hapd->disable_cu = 1;
 			ieee802_11_set_beacon(hapd);
 			hostapd_start_device_cac_background(hapd->iface);
-			hostapd_restart_agile_cac_after_ch_switch(hapd->iface);
+			hostapd_schedule_agile_cac_restart(hapd->iface);
 			wpa_msg(hapd->msg_ctx, MSG_INFO, AP_CSA_FINISHED
 				"freq=%d dfs=%d", freq, is_dfs);
 		}

@@ -2301,6 +2301,38 @@ hostapd_dfs_is_background_event(struct hostapd_iface *iface, int freq)
 		iface->radar_background.freq == freq;
 }
 
+static void hostapd_dfs_agile_cac_restart_timeout(void *eloop_data,
+						   void *user_data)
+{
+	struct hostapd_iface *iface = eloop_data;
+
+	wpa_printf(MSG_DEBUG, "DFS: agile CAC restart timeout fired");
+	hostapd_restart_agile_cac_after_ch_switch(iface);
+}
+
+void hostapd_schedule_agile_cac_restart(struct hostapd_iface *iface)
+{
+	if (!dfs_is_agile_cac_enabled(iface))
+		return;
+	if (!dfs_use_radar_background(iface))
+		return;
+	if (eloop_is_timeout_registered(hostapd_dfs_agile_cac_restart_timeout,
+					iface, NULL))
+		return;
+	wpa_printf(MSG_DEBUG,
+		   "DFS: scheduling agile CAC restart in %d sec",
+		   HAPD_AGILE_CAC_RESTART_DELAY_SECS);
+	eloop_register_timeout(HAPD_AGILE_CAC_RESTART_DELAY_SECS, 0,
+			       hostapd_dfs_agile_cac_restart_timeout,
+			       iface, NULL);
+}
+
+void hostapd_cancel_agile_cac_restart(struct hostapd_iface *iface)
+{
+	eloop_cancel_timeout(hostapd_dfs_agile_cac_restart_timeout,
+			     iface, NULL);
+}
+
 void hostapd_dfs_radar_handling_timeout(void *eloop_data, void *user_data)
 {
 	struct hostapd_iface *iface = eloop_data;
@@ -2803,6 +2835,7 @@ int hostapd_dfs_pre_cac_expired(struct hostapd_iface *iface, int freq,
 		      cf1, cf2, HOSTAPD_CHAN_DFS_USABLE,0);
 
 	if (dfs_is_agile_cac_enabled(iface) &&
+	    iface->dfs_domain != HOSTAPD_DFS_REGION_ETSI &&
 	    !iface->radar_background.cac_started &&
 	    iface->radar_background.freq > 0 &&
 	    iface->radar_background.freq == freq) {

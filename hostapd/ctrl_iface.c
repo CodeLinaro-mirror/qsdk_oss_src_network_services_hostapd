@@ -2035,6 +2035,7 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			   val ? "enabled" : "disabled");
 		if (!val) {
 			hostapd_abort_background_cac(hapd->iface);
+			hostapd_cancel_agile_cac_restart(hapd->iface);
 			hapd->iface->radar_background.channel = -1;
 			hapd->iface->radar_background.cac_started = 0;
 			hapd->iface->user_rcac_channel = 0;
