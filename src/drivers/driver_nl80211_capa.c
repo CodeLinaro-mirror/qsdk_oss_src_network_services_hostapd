@@ -1013,6 +1013,10 @@ static int wiphy_info_handler(struct nl_msg *msg, void *arg)
 		os_strlcpy(drv->phyname,
 			   nla_get_string(tb[NL80211_ATTR_WIPHY_NAME]),
 			   sizeof(drv->phyname));
+
+	if (tb[NL80211_ATTR_STA_DFS_EN])
+		capa->sta_dfs_en = nla_get_u8(tb[NL80211_ATTR_STA_DFS_EN]);
+
 	if (tb[NL80211_ATTR_MAX_NUM_SCAN_SSIDS])
 		capa->max_scan_ssids =
 			nla_get_u8(tb[NL80211_ATTR_MAX_NUM_SCAN_SSIDS]);
