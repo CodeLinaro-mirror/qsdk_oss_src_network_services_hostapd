@@ -3224,19 +3224,76 @@ static int ieee80211_802_1x_derive_ptk(struct hostapd_data *hapd,
 	else
 		kdk_len = 0;
 
-	if (wpa_auth_802_1x_pmk_to_ptk(
-		    pmk, sta->eap_auth_data.pmk_len,
-		    sta->addr, aa,
-		    sta->eap_auth_data.snonce,
-		    sta->eap_auth_data.anonce,
-		    sta->eap_auth_data.akm,
-		    sta->eap_auth_data.cipher,
-		    wpabuf_head_u8(sta->eap_auth_data.dhss),
-		    wpabuf_len(sta->eap_auth_data.dhss),
-		    &sta->eap_auth_data.ptk, kdk_len)) {
-		wpa_printf(MSG_INFO, "Failed to derive the PTK");
-		return -1;
+#ifdef CONFIG_PQC
+	if (wpa_key_mgmt_pqc(sta->eap_auth_data.akm)) {
+		const u8 *dhss = NULL;
+		size_t dhss_len = 0;
+
+		if (!sta->eap_auth_data.ml_kem_ss) {
+			if (sta->eap_auth_data.auth_success) {
+				wpa_printf(MSG_INFO,
+					   "IEEE 802.1X: Missing ML-KEM shared secret for PTK derivation");
+				return -1;
+			}
+
+			wpa_printf(MSG_DEBUG,
+				   "IEEE 802.1X: No ML-KEM shared secret available yet, skip PTK derivation for now");
+			return 0;
+		}
+
+		if (!sta->eap_auth_data.transcript) {
+			wpa_printf(MSG_INFO,
+				   "IEEE 802.1X: Missing transcript hash for PTK derivation");
+			return -1;
+		}
+
+		/* DHSS is not present for PQC constraint 0 (no group) */
+		if (sta->eap_auth_data.dhss) {
+			dhss = wpabuf_head_u8(sta->eap_auth_data.dhss);
+			dhss_len = wpabuf_len(sta->eap_auth_data.dhss);
+		}
+
+		if (wpa_auth_802_1x_pqc_pmk_to_ptk(pmk, sta->eap_auth_data.pmk_len,
+						   sta->addr, aa,
+						   sta->eap_auth_data.constraint->hash,
+						   sta->eap_auth_data.cipher,
+						   dhss, dhss_len,
+						   wpabuf_head_u8(sta->eap_auth_data.ml_kem_ss),
+						   wpabuf_head_u8(sta->eap_auth_data.transcript),
+						   wpabuf_len(sta->eap_auth_data.transcript),
+						   &sta->eap_auth_data.ptk,
+						   kdk_len)) {
+			wpa_printf(MSG_INFO, "IEEE 802.1x: Failed to derive the PTK");
+			return -1;
+		}
+
+		/* Delete PQC specific data after PTK derivation */
+		wpabuf_clear_free(sta->eap_auth_data.ml_kem_ss);
+		sta->eap_auth_data.ml_kem_ss = NULL;
+		wpabuf_clear_free(sta->eap_auth_data.transcript);
+		sta->eap_auth_data.transcript = NULL;
+	} else
+#endif /* CONFIG_PQC */
+	{
+		if (wpa_auth_802_1x_pmk_to_ptk(
+			pmk, sta->eap_auth_data.pmk_len,
+			sta->addr, aa,
+			sta->eap_auth_data.snonce,
+			sta->eap_auth_data.anonce,
+			sta->eap_auth_data.akm,
+			sta->eap_auth_data.cipher,
+			wpabuf_head_u8(sta->eap_auth_data.dhss),
+			wpabuf_len(sta->eap_auth_data.dhss),
+			&sta->eap_auth_data.ptk, kdk_len)) {
+			wpa_printf(MSG_INFO, "Failed to derive the PTK");
+			return -1;
+		}
 	}
+
+	/* Delete DHss after successful PTK derivation */
+	wpabuf_clear_free(sta->eap_auth_data.dhss);
+	sta->eap_auth_data.dhss = NULL;
+
 	wpa_printf(MSG_DEBUG, "PTK derived successfully");
 
 	if (wpa_auth_802_1x_set_key(hapd->wpa_auth,
@@ -3246,10 +3303,6 @@ static int ieee80211_802_1x_derive_ptk(struct hostapd_data *hapd,
 		wpa_printf(MSG_INFO, "Failed to set the TK to the driver");
 		return -1;
 	}
-
-	/* Delete DHss after successful PTK derivation */
-	wpabuf_clear_free(sta->eap_auth_data.dhss);
-	sta->eap_auth_data.dhss = NULL;
 
 	sta->eap_auth_data.add_mic = true;
 	return 0;
@@ -3324,6 +3377,9 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 			aa = hapd->mld->mld_addr;
 #endif /* CONFIG_IEEE80211BE */
 
+		wpa_printf(MSG_DEBUG,
+			   "IEEE 802.1X: EAP authentication successful");
+
 		/* Per IEEE 802.11bi/D4.0, 12.16.5 (IEEE 802.1X authentication
 		 * utilizing Authentication frames), if the IEEE 802.1X
 		 * authentication is successful, the Status Code field
@@ -3339,10 +3395,27 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 			return;
 		}
 
-		if (wpa_key_mgmt_sha384(sta->eap_auth_data.akm))
-			pmk_len = PMK_LEN_SUITE_B_192;
-		else
-			pmk_len = PMK_LEN;
+		pmk_len = 0;
+#ifdef CONFIG_PQC
+		if (wpa_key_mgmt_pqc(sta->eap_auth_data.akm) &&
+		    sta->eap_auth_data.constraint)
+			pmk_len = wpa_hash_len(
+				sta->eap_auth_data.constraint->hash);
+#endif /* CONFIG_PQC */
+		if (!pmk_len) {
+			if (wpa_key_mgmt_sha384(sta->eap_auth_data.akm))
+				pmk_len = PMK_LEN_SUITE_B_192;
+			else
+				pmk_len = PMK_LEN;
+		}
+
+		if (_len < pmk_len) {
+			wpa_printf(MSG_INFO,
+				   "IEEE 802.1X: MSK too short (%zu) for PMK length %zu",
+				   _len, pmk_len);
+			os_free(data);
+			return;
+		}
 
 		sta->eap_auth_data.pmk_len = pmk_len;
 		os_memcpy(sta->eap_auth_data.pmk, msk, pmk_len);
@@ -3352,6 +3425,10 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 			os_free(data);
 			return;
 		}
+
+#ifdef CONFIG_PQC
+		sta->eap_auth_data.auth_success = true;
+#endif /* CONFIG_PQC */
 
 		/* TODO: Fill session_timeout? */
 		wpa_hexdump_key(MSG_DEBUG, "IEEE802.1X: Cache PMK",
