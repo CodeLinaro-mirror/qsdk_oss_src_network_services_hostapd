@@ -731,9 +731,8 @@ static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 	 * message and for an Authentication frame with transaction sequence
 	 * frame 2, if PMKSA caching was used.
 	 */
-	if (auth_alg == WLAN_AUTH_802_1X &&
-	    (resp == WLAN_STATUS_802_1_X_AUTH_SUCCESS ||
-	     (sta && sta->eap_auth_data.add_mic))) {
+	if (auth_alg == WLAN_AUTH_802_1X && sta &&
+	    sta->eap_auth_data.add_mic) {
 		mic_len = wpa_mic_len(sta->eap_auth_data.akm,
 				      sta->eap_auth_data.pmk_len,
 				      RSN_HASH_NOT_SPECIFIED,
@@ -808,9 +807,8 @@ static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 #endif /* CONFIG_TESTING_OPTIONS */
 
 #ifdef CONFIG_IEEE8021X_AUTH
-	if (auth_alg == WLAN_AUTH_802_1X &&
-	    (resp == WLAN_STATUS_802_1_X_AUTH_SUCCESS ||
-	     (sta && sta->eap_auth_data.add_mic))) {
+	if (auth_alg == WLAN_AUTH_802_1X && sta &&
+	    sta->eap_auth_data.add_mic) {
 		const u8 *frame, *data, *rsne, *rsnxe;
 		u8 data_buf[500], mic[WPA_1X_MAX_MIC_LEN];
 		size_t frame_len, data_len;
@@ -3211,6 +3209,53 @@ u16 wpa_auth_validate_802_1x_frame(struct hostapd_data *hapd,
 }
 
 
+static int ieee80211_802_1x_derive_ptk(struct hostapd_data *hapd,
+				       struct sta_info *sta, const u8 *pmk,
+				       const u8 *aa, bool force_kdk,
+				       enum wpa_alg alg, size_t key_len)
+{
+	size_t kdk_len;
+
+	if (force_kdk ||
+	    (wpa_auth_ap_support_secure_ltf(hapd->wpa_auth) &&
+	     ieee802_11_rsnx_capab(sta->eap_auth_data.rsnxe,
+				   WLAN_RSNX_CAPAB_SECURE_LTF)))
+		kdk_len = WPA_KDK_MAX_LEN;
+	else
+		kdk_len = 0;
+
+	if (wpa_auth_802_1x_pmk_to_ptk(
+		    pmk, sta->eap_auth_data.pmk_len,
+		    sta->addr, aa,
+		    sta->eap_auth_data.snonce,
+		    sta->eap_auth_data.anonce,
+		    sta->eap_auth_data.akm,
+		    sta->eap_auth_data.cipher,
+		    wpabuf_head_u8(sta->eap_auth_data.dhss),
+		    wpabuf_len(sta->eap_auth_data.dhss),
+		    &sta->eap_auth_data.ptk, kdk_len)) {
+		wpa_printf(MSG_INFO, "Failed to derive the PTK");
+		return -1;
+	}
+	wpa_printf(MSG_DEBUG, "PTK derived successfully");
+
+	if (wpa_auth_802_1x_set_key(hapd->wpa_auth,
+				    alg, sta->addr,
+				    sta->eap_auth_data.ptk.tk,
+				    key_len)) {
+		wpa_printf(MSG_INFO, "Failed to set the TK to the driver");
+		return -1;
+	}
+
+	/* Delete DHss after successful PTK derivation */
+	wpabuf_clear_free(sta->eap_auth_data.dhss);
+	sta->eap_auth_data.dhss = NULL;
+
+	sta->eap_auth_data.add_mic = true;
+	return 0;
+}
+
+
 /**
  * ieee80211_send_eap_req - Callback function to send EAP-Request message in an
  *	Authentication frame
@@ -3258,7 +3303,7 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 	if (enc_assoc && eap_req_len > 0 && eap_req[0] == 3) {
 		u8 msk[2 * PMK_LEN] = { 0 };
 		size_t _len = 2 * PMK_LEN;
-		size_t pmk_len, kdk_len;
+		size_t pmk_len;
 		bool is_ml = ap_sta_is_mld(hapd, sta);
 		enum wpa_alg alg =
 			wpa_cipher_to_alg(sta->eap_auth_data.cipher);
@@ -3302,42 +3347,11 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 		sta->eap_auth_data.pmk_len = pmk_len;
 		os_memcpy(sta->eap_auth_data.pmk, msk, pmk_len);
 
-		if (force_kdk ||
-		    (wpa_auth_ap_support_secure_ltf(hapd->wpa_auth) &&
-		     ieee802_11_rsnx_capab(sta->eap_auth_data.rsnxe,
-					   WLAN_RSNX_CAPAB_SECURE_LTF)))
-			kdk_len = WPA_KDK_MAX_LEN;
-		else
-			kdk_len = 0;
-		if (wpa_auth_802_1x_pmk_to_ptk(
-			    msk, sta->eap_auth_data.pmk_len,
-			    sta->addr, aa,
-			    sta->eap_auth_data.snonce,
-			    sta->eap_auth_data.anonce,
-			    sta->eap_auth_data.akm,
-			    sta->eap_auth_data.cipher,
-			    wpabuf_head_u8(sta->eap_auth_data.dhss),
-			    wpabuf_len(sta->eap_auth_data.dhss),
-			    &sta->eap_auth_data.ptk, kdk_len)) {
-			wpa_printf(MSG_INFO, "Failed to derive the PTK");
+		if (ieee80211_802_1x_derive_ptk(hapd, sta, msk, aa,
+						force_kdk, alg, key_len)) {
 			os_free(data);
 			return;
 		}
-		wpa_printf(MSG_DEBUG, "PTK derived successfully");
-
-		if (wpa_auth_802_1x_set_key(hapd->wpa_auth,
-					    alg, sta->addr,
-					    sta->eap_auth_data.ptk.tk,
-					    key_len)) {
-			wpa_printf(MSG_INFO,
-				   "Failed to set the TK to the driver");
-			os_free(data);
-			return;
-		}
-
-		/* Delete DHss after successful PTK derivation */
-		wpabuf_clear_free(sta->eap_auth_data.dhss);
-		sta->eap_auth_data.dhss = NULL;
 
 		/* TODO: Fill session_timeout? */
 		wpa_hexdump_key(MSG_DEBUG, "IEEE802.1X: Cache PMK",
@@ -3485,7 +3499,7 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 		for (i = 0; i < data.num_pmkid; i++) {
 			const u8 *aa;
 			enum wpa_alg alg;
-			size_t key_len, kdk_len;
+			size_t key_len;
 #ifdef CONFIG_TESTING_OPTIONS
 			bool force_kdk = hapd->conf->force_kdk_derivation;
 #else /* CONFIG_TESTING_OPTIONS */
@@ -3522,48 +3536,21 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 				return;
 			}
 
-			if (force_kdk ||
-			    (wpa_auth_ap_support_secure_ltf(hapd->wpa_auth) &&
-			     ieee802_11_rsnx_capab(sta->eap_auth_data.rsnxe,
-						   WLAN_RSNX_CAPAB_SECURE_LTF)))
-				kdk_len = WPA_KDK_MAX_LEN;
-			else
-				kdk_len = 0;
-
-			if (wpa_auth_802_1x_pmk_to_ptk(
-				    cached_pmk->pmk, cached_pmk->pmk_len,
-				    sta->addr, aa,
-				    sta->eap_auth_data.snonce,
-				    sta->eap_auth_data.anonce,
-				    sta->eap_auth_data.akm,
-				    sta->eap_auth_data.cipher,
-				    wpabuf_head_u8(sta->eap_auth_data.dhss),
-				    wpabuf_len(sta->eap_auth_data.dhss),
-				    &sta->eap_auth_data.ptk, kdk_len)) {
-				wpa_printf(MSG_INFO, "Failed to derive PTK");
-				resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
-				goto fail;
-			}
-			wpa_printf(MSG_DEBUG, "PTK derived successfully");
-
-			if (wpa_auth_802_1x_set_key(hapd->wpa_auth, alg,
-						    sta->addr,
-						    sta->eap_auth_data.ptk.tk,
-						    key_len)) {
-				wpa_printf(MSG_INFO,
-					   "Failed to set TK to driver");
+			sta->eap_auth_data.pmk_len = cached_pmk->pmk_len;
+			if (ieee80211_802_1x_derive_ptk(hapd, sta,
+							cached_pmk->pmk, aa,
+							force_kdk, alg,
+							key_len) < 0) {
+				wpabuf_free(reply);
+				reply = NULL;
 				resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 				goto fail;
 			}
 
 			sta->flags |= WLAN_STA_AUTH;
 			sta->auth_alg = WLAN_AUTH_802_1X;
-			sta->eap_auth_data.add_mic = true;
 			send_8021x_auth_reply(hapd, sta, auth_transaction + 1,
 					      WLAN_STATUS_SUCCESS, reply);
-			/* Delete DHss after successful PTK derivation */
-			wpabuf_clear_free(sta->eap_auth_data.dhss);
-			sta->eap_auth_data.dhss = NULL;
 			return;
 		}
 
