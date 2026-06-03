@@ -1387,6 +1387,9 @@
  * @NL80211_CMD_SET_SMD_CTX: Set UHR SMD dynamic context on the target AP MLD
  *     for the non-AP MLD.
  *
+ * @NL80211_CMD_GET_SMD_CTX: Get UHR SMD dynamic context from the current AP MLD
+ *     for the non-AP MLD; the driver returns it as an event back to user-space.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -1684,6 +1687,7 @@ enum nl80211_commands {
 	NL80211_CMD_SMD_ROAM,
 
 	NL80211_CMD_SET_SMD_CTX,
+	NL80211_CMD_GET_SMD_CTX,
 
 	/* add new commands above here */
 
@@ -9545,6 +9549,7 @@ enum nl80211_smd_ctx {
 	NL80211_SMD_CTX_ATTR_UL,
 	NL80211_SMD_CTX_ATTR_QOS,
 	NL80211_SMD_CTX_ATTR_VENDOR,
+	NL80211_SMD_CTX_ATTR_VALID_CTX,
 
 	__NL80211_SMD_CTX_ATTR_LAST,
 	NL80211_SMD_CTX_ATTR_MAX = __NL80211_SMD_CTX_ATTR_LAST - 1

@@ -7005,6 +7005,21 @@ struct wpa_driver_ops {
 	 */
 	int (*set_smd_ctx)(void *priv, const u8 *sta_addr,
 			   const struct sta_smd_ctx_info *ctx);
+
+	/**
+	 * get_smd_ctx - Get SMD context from driver for a station
+	 * @priv: Private driver interface data
+	 * @sta_addr: station address
+	 * @valid_ctx_bitmap: bitmap indicating which context fields to fetch
+	 * @tx_tid_bitmap: TX TIDs to include
+	 * @rx_tid_bitmap: RX TIDs to include
+	 * @out_ctx: returned allocated sta_smd_ctx_info; caller must os_free()
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*get_smd_ctx)(void *priv, const u8 *sta_addr,
+			   u8 valid_ctx_bitmap, u8 tx_tid_bitmap,
+			   u8 rx_tid_bitmap,
+			   struct sta_smd_ctx_info **out_ctx);
 };
 
 /**
