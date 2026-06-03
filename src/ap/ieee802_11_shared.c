@@ -1207,7 +1207,7 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
  * Only the security profiles listed in the security_profiles configuration
  * parameter are advertised and accepted.
  */
-static bool sec_prof_advertised(struct hostapd_data *hapd, int p)
+bool hostapd_sec_prof_advertised(struct hostapd_data *hapd, int p)
 {
 	const int *profiles = hapd->conf->security_profiles;
 	int i;
@@ -1228,7 +1228,7 @@ static int get_max_security_profile(struct hostapd_data *hapd)
 
 	for (i = 0; profiles && profiles[i] >= 0; i++) {
 		if (profiles[i] > max_profile &&
-		    sec_prof_advertised(hapd, profiles[i]))
+		    hostapd_sec_prof_advertised(hapd, profiles[i]))
 			max_profile = profiles[i];
 	}
 
@@ -1327,7 +1327,7 @@ u8 * hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid)
 	for (i = 0; hapd->conf->security_profiles[i] >= 0; i++) {
 		int p = hapd->conf->security_profiles[i];
 
-		if (p / 8 < (int) bitmap_len && sec_prof_advertised(hapd, p))
+		if (p / 8 < (int) bitmap_len && hostapd_sec_prof_advertised(hapd, p))
 			bitmap[p / 8] |= BIT(p % 8);
 	}
 

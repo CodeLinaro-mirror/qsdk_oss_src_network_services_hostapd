@@ -776,4 +776,5 @@ int wpa_write_eppke_rsne(const u8 *wpa_ie, size_t wpa_ie_len,
 			 const u8 *pmkid, int akmp,
 			 int pairwise_cipher, enum mfp_options mfp);
 
+
 #endif /* WPA_AUTH_H */
