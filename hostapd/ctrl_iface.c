@@ -3207,12 +3207,14 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+#ifdef CONFIG_TESTING_OPTIONS
 	} else if (os_strcasecmp(cmd, "ecsa_ie_status") == 0) {
 		res = os_snprintf(buf, buflen, "ecsa_ie_status = %d\n",
 				  hapd->iconf->ecsa_ie_only);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+#endif
 	} else if (os_strcasecmp(cmd, "he_basic_mcs_nss_set") == 0) {
 		res = os_snprintf(buf, buflen, "he_basic_mcs_nss_set = 0x%x\n",
 				  hapd->iconf->he_op.he_basic_mcs_nss_set);
