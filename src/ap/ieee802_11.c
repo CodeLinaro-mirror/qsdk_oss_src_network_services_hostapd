@@ -2627,17 +2627,99 @@ static u16 wpa_res_to_status_code(enum wpa_validate_result res)
 #ifdef CONFIG_IEEE8021X_AUTH
 
 static struct wpabuf *
+build_802_1x_pqc_element(struct hostapd_data *hapd, struct sta_info *sta)
+{
+#ifdef CONFIG_PQC
+	struct eap_over_auth_data *auth_data = &sta->eap_auth_data;
+	struct wpabuf *buf, *pub = NULL;
+	size_t len = sizeof(struct ieee80211_pqc);
+
+	wpa_printf(MSG_DEBUG,
+		   "IEEE 802.1X: Build PQC Parameters element for security profile %u",
+		   auth_data->security_profile);
+
+	if (auth_data->ecdh) {
+		pub = crypto_ecdh_get_pubkey(auth_data->ecdh, 0);
+		if (!pub) {
+			wpa_printf(MSG_DEBUG,
+				   "IEEE 802.1X: Failed to get ECDH public key");
+			return NULL;
+		}
+	}
+
+	/*
+	 * The Public Key Parameter is carried only together with the ML-KEM
+	 * ciphertext.
+	 */
+	if (auth_data->ml_kem_ciphertext) {
+		len += wpabuf_len(auth_data->ml_kem_ciphertext);
+		if (pub)
+			len += wpabuf_len(pub);
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "IEEE 802.1X: Calculated PQC Parameters element length=%zu",
+		   len);
+
+	buf = wpabuf_alloc(5 + len);
+	if (!buf) {
+		wpa_printf(MSG_DEBUG,
+			   "IEEE 802.1X: Failed to allocate buffer for PQC Parameters element");
+		wpabuf_free(pub);
+		return NULL;
+	}
+
+	wpabuf_put_u8(buf, WLAN_EID_EXT_LENGTH);
+	wpabuf_put_le16(buf, WLAN_EID_EXT_LEN_PQC_PARAMETERS);
+	wpabuf_put_le16(buf, len);
+
+	wpabuf_put_u8(buf, auth_data->security_profile);
+	if (!auth_data->ml_kem_ciphertext) {
+		wpabuf_put_u8(buf, PQC_CONTENT_NONE);
+	} else if (auth_data->ecdh) {
+		wpabuf_put_u8(buf, PQC_CONTENT_PUBLIC_KEY_PARAM_AND_ML_KEM_CT);
+		wpabuf_put_buf(buf, pub);
+		wpabuf_put_buf(buf, auth_data->ml_kem_ciphertext);
+	} else  {
+		wpabuf_put_u8(buf, PQC_CONTENT_ML_KEM_CT);
+		wpabuf_put_buf(buf, auth_data->ml_kem_ciphertext);
+	}
+
+	wpabuf_free(pub);
+	pub = NULL;
+
+	return buf;
+#endif /* CONFIG_PQC */
+	return NULL;
+}
+
+
+static struct wpabuf *
 prepare_802_1x_auth_resp(struct hostapd_data *hapd, struct sta_info *sta,
 			 u16 auth_transaction, u16 status,
 			 struct rsn_pmksa_cache_entry *cached_pmk,
 			 const u8 *eap_req, size_t eap_req_len)
 {
-	struct wpabuf *pub = NULL, *data;
+	struct wpabuf *pub = NULL, *data, *pqc = NULL;
+	/*
+	 * Room left for the frame body after the Authentication frame fixed
+	 * fields (Authentication Algorithm Number, Authentication Transaction
+	 * Sequence Number, Status Code)
+	 */
+	const size_t buf_len = IEEE80211_MAX_MMPDU_SIZE - IEEE80211_HDRLEN -
+		2 - 2 - 2;
 	bool enc_assoc = ap_sta_support_enc_assoc(hapd,
 						  sta->eap_auth_data.rsnxe,
 						  sta->eap_auth_data.rsnxe_len);
 
-	data = wpabuf_alloc(1000 + eap_req_len);
+	if (2 + eap_req_len > buf_len) {
+		wpa_printf(MSG_INFO,
+			   "IEEE 802.1X: EAP message of %zu octets does not fit in an Authentication frame",
+			   eap_req_len);
+		return NULL;
+	}
+
+	data = wpabuf_alloc(buf_len);
 	if (!data) {
 		wpa_printf(MSG_INFO,
 			   "Authentication frame buffer allocation failed");
@@ -2672,17 +2754,6 @@ prepare_802_1x_auth_resp(struct hostapd_data *hapd, struct sta_info *sta,
 			struct hostapd_bss_config *conf = hapd->conf;
 			int res;
 
-			/* Derive own public key */
-			if (sta->eap_auth_data.ecdh) {
-				pub = crypto_ecdh_get_pubkey(
-					sta->eap_auth_data.ecdh, 1);
-				if (!pub) {
-					status =
-						WLAN_STATUS_UNSPECIFIED_FAILURE;
-					goto reply;
-				}
-			}
-
 			/* ANonce generation */
 			if (random_get_bytes(a_nonce, WPA_NONCE_LEN) < 0) {
 				status = WLAN_STATUS_UNSPECIFIED_FAILURE;
@@ -2690,12 +2761,6 @@ prepare_802_1x_auth_resp(struct hostapd_data *hapd, struct sta_info *sta,
 			}
 			os_memcpy(sta->eap_auth_data.anonce, a_nonce,
 				  WPA_NONCE_LEN);
-
-
-			if (pub && wpabuf_resize(&data, wpabuf_len(pub)) < 0) {
-				status = WLAN_STATUS_UNSPECIFIED_FAILURE;
-				goto reply;
-			}
 
 			/* Per IEEE 802.11bi/D4.0, 12.16.8.3 (IEEE 802.1X),
 			 * responder shall include an RSNE with the AKM and
@@ -2718,12 +2783,49 @@ prepare_802_1x_auth_resp(struct hostapd_data *hapd, struct sta_info *sta,
 			}
 			wpabuf_put(data, res);
 
-			/* DH Parameter element */
-			wpabuf_put_u8(data, WLAN_EID_EXTENSION);
-			wpabuf_put_u8(data, 1 + 2 + wpabuf_len(pub));
-			wpabuf_put_u8(data, WLAN_EID_EXT_OWE_DH_PARAM);
-			wpabuf_put_le16(data, sta->eap_auth_data.group);
-			wpabuf_put_buf(data, pub);
+			if (wpa_key_mgmt_pqc(sta->eap_auth_data.akm)) {
+				pqc = build_802_1x_pqc_element(hapd, sta);
+				if (!pqc) {
+					status = WLAN_STATUS_UNSPECIFIED_FAILURE;
+					goto reply;
+				}
+
+				if (wpabuf_len(pqc) + 3 + WPA_NONCE_LEN >
+				    wpabuf_tailroom(data)) {
+					wpa_printf(MSG_INFO,
+						   "IEEE 802.1X: PQC Parameters element does not fit in the Authentication frame");
+
+					status = WLAN_STATUS_UNSPECIFIED_FAILURE;
+					goto reply;
+				}
+
+				wpabuf_put_buf(data, pqc);
+			} else {
+				/* Derive own public key */
+				if (sta->eap_auth_data.ecdh) {
+					pub = crypto_ecdh_get_pubkey(
+						sta->eap_auth_data.ecdh, 1);
+					if (!pub) {
+						status =
+							WLAN_STATUS_UNSPECIFIED_FAILURE;
+						goto reply;
+					}
+				}
+
+				if (pub &&
+				    3 + 2 + wpabuf_len(pub) + 3 + WPA_NONCE_LEN >
+				    wpabuf_tailroom(data)) {
+					status = WLAN_STATUS_UNSPECIFIED_FAILURE;
+					goto reply;
+				}
+
+				/* DH Parameter element */
+				wpabuf_put_u8(data, WLAN_EID_EXTENSION);
+				wpabuf_put_u8(data, 1 + 2 + wpabuf_len(pub));
+				wpabuf_put_u8(data, WLAN_EID_EXT_OWE_DH_PARAM);
+				wpabuf_put_le16(data, sta->eap_auth_data.group);
+				wpabuf_put_buf(data, pub);
+			}
 
 			/* ANonce in Nonce element */
 			wpabuf_put_u8(data, WLAN_EID_EXTENSION);
@@ -2747,6 +2849,7 @@ prepare_802_1x_auth_resp(struct hostapd_data *hapd, struct sta_info *sta,
 		}
 	} /* if (auth_transaction == 2) */
 reply:
+	wpabuf_free(pqc);
 	wpabuf_free(pub);
 	return data;
 }
