@@ -106,6 +106,27 @@ void uhr_tgt_ap_handle_st_roam_cleanup(struct hostapd_data *hapd,
 					const struct uhr_iap_frame *iap);
 
 
+/* ST Execute via Target AP */
+int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd,
+				struct sta_info *sta,
+				const u8 *buf, size_t len);
+
+/* ST Ctx - Current AP handler (receives CTX REQUEST from target AP) */
+void uhr_cur_ap_handle_st_ctx_request(struct hostapd_data *hapd,
+				      const struct uhr_iap_frame *iap,
+				      u16 frame_len);
+
+/* ST Ctx - Target AP handler (receives CTX RESPONSE from current AP) */
+void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
+					const struct uhr_iap_frame *iap,
+					u16 frame_len);
+
+/* Current AP handler for ST EXEC VIA TGT DONE notification */
+void uhr_cur_ap_handle_st_exec_via_tgt_done(struct hostapd_data *hapd,
+					     const struct uhr_iap_frame *iap,
+					     u16 frame_len);
+
+
 /* Current AP Functions */
 int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 				   struct sta_info *sta,
