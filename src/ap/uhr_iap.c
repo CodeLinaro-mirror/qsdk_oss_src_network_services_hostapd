@@ -838,6 +838,27 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
 		break;
 
 
+	case UHR_IAP_MSG_ST_EXEC_VIA_TGT_DONE:
+		wpa_printf(MSG_DEBUG,
+			   "UHR IAP: Processing ST EXEC VIA TGT DONE (txn=%u)",
+			   iap->iap_transaction_id);
+		uhr_cur_ap_handle_st_exec_via_tgt_done(hapd, iap, frame_len);
+		break;
+
+	case UHR_IAP_MSG_ST_CTX_REQUEST:
+		wpa_printf(MSG_DEBUG,
+			   "UHR IAP: Processing ST CTX REQUEST (txn=%u)",
+			   iap->iap_transaction_id);
+		uhr_cur_ap_handle_st_ctx_request(hapd, iap, frame_len);
+		break;
+
+	case UHR_IAP_MSG_ST_CTX_RESPONSE:
+		wpa_printf(MSG_DEBUG,
+			   "UHR IAP: Processing ST CTX RESPONSE (txn=%u)",
+			   iap->iap_transaction_id);
+		uhr_tgt_ap_handle_st_ctx_response(hapd, iap, frame_len);
+		break;
+
 	default:
 		wpa_printf(MSG_ERROR, "SMD IAP: Unknown message type %u",
 			   iap->msg_type);
