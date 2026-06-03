@@ -3591,6 +3591,11 @@ int wpa_compare_rsne_params(const u8 *rsne1, size_t rsne1_len,
 	    rsn1.key_mgmt == rsn2.key_mgmt)
 		return 0;
 
+	/* Allow PQC key management to match with unspecified key management */
+	if ((!rsn1.key_mgmt && wpa_key_mgmt_pqc(rsn2.key_mgmt)) ||
+	    (!rsn2.key_mgmt && wpa_key_mgmt_pqc(rsn1.key_mgmt)))
+		return 0;
+
 	return -1;
 }
 
