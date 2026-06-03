@@ -89,6 +89,15 @@ struct eap_over_auth_data {
 	bool add_mic;
 	u8 epp_pmkid_cur[PMKID_LEN];
 	u8 epp_pmkid_next[PMKID_LEN];
+#ifdef CONFIG_PQC
+	const struct ieee80211_pqc_constraint *constraint;
+	struct crypto_ml_kem *ml_kem;
+	struct wpabuf *ml_kem_ss;
+	struct wpabuf *ml_kem_ciphertext;
+	struct wpabuf *transcript;
+	u8 security_profile;
+	bool auth_success;
+#endif /* CONFIG_PQC */
 };
 
 #define EHT_ML_MAX_STA_PROF_LEN 1024

@@ -2752,6 +2752,180 @@ reply:
 }
 
 
+static u16 wpa_auth_process_pqc_params(struct hostapd_data *hapd,
+				       struct sta_info *sta,
+				       struct ieee802_11_elems *elems)
+{
+#ifdef CONFIG_PQC
+	struct eap_over_auth_data *auth_data = &sta->eap_auth_data;
+	const struct ieee80211_pqc *pqc;
+	u16 ret = WLAN_STATUS_UNSPECIFIED_FAILURE;
+	const u8 *pos;
+	size_t left;
+
+	if (elems->pqc_parameters_len < sizeof(struct ieee80211_pqc)) {
+		wpa_printf(MSG_DEBUG,
+			   "IEEE 802.1X: Too short PQC Parameters element");
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
+	}
+
+	pqc = (const struct ieee80211_pqc *)elems->pqc_parameters;
+	pos = (const u8 *)(pqc + 1);
+	left = elems->pqc_parameters_len - sizeof(struct ieee80211_pqc);
+
+	if (pqc->sec_prof_number > SEC_PROF_MAX) {
+		wpa_printf(MSG_DEBUG,
+			   "IEEE 802.1X: Invalid security profile %u in PQC Parameters element",
+			   pqc->sec_prof_number);
+		ret = WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE;
+		goto err;
+	}
+
+	if (!hostapd_sec_prof_advertised(hapd, pqc->sec_prof_number)) {
+		wpa_printf(MSG_DEBUG,
+			   "IEEE 802.1x: Indicated security profile %u not advertised by AP",
+			   pqc->sec_prof_number);
+		ret = WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE;
+		goto err;
+	}
+
+	auth_data->security_profile = pqc->sec_prof_number;
+	auth_data->constraint =
+		wpa_get_pqc_constraint(pqc->sec_prof_number);
+
+	if (!auth_data->constraint) {
+		wpa_printf(MSG_DEBUG,
+			   "IEEE 802.1X: No matching PQC constraint for security profile %u",
+			   pqc->sec_prof_number);
+		ret = WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE;
+		goto err;
+	}
+
+	if (pqc->content_present == PQC_CONTENT_NONE) {
+		wpa_printf(MSG_INFO,
+			   "IEEE 802.1X: No PQC content present in PQC Parameters element");
+	} else if (pqc->content_present != PQC_CONTENT_ML_KEM_ENC_KEY &&
+		   pqc->content_present != PQC_CONTENT_PUBLIC_KEY_PARAM_AND_ML_KEM_ENC_KEY) {
+		wpa_printf(MSG_INFO,
+			   "IEEE 802.1X: Invalid content present value (0x%02x) in PQC Parameters element",
+			   pqc->content_present);
+		goto err;
+	}
+
+	if (pqc->content_present == PQC_CONTENT_ML_KEM_ENC_KEY &&
+	    auth_data->constraint->group) {
+		wpa_printf(MSG_INFO,
+			   "IEEE 802.1X: Missing ECDH public key in PQC Parameters element");
+		goto err;
+	}
+
+	if (pqc->content_present ==
+	    PQC_CONTENT_PUBLIC_KEY_PARAM_AND_ML_KEM_ENC_KEY &&
+	    !auth_data->constraint->group) {
+		wpa_printf(MSG_INFO,
+			   "IEEE 802.1X: Unexpected ECDH public key in PQC Parameters element for security profile %u",
+			   pqc->sec_prof_number);
+		goto err;
+	}
+
+	/* First handle the DH processing */
+	if (pqc->content_present ==
+	    PQC_CONTENT_PUBLIC_KEY_PARAM_AND_ML_KEM_ENC_KEY) {
+		size_t pubkey_len;
+
+		crypto_ecdh_deinit(auth_data->ecdh);
+		auth_data->ecdh = NULL;
+		wpabuf_clear_free(auth_data->dhss);
+		auth_data->dhss = NULL;
+
+		auth_data->ecdh =
+			crypto_ecdh_init(auth_data->constraint->group);
+		if (!auth_data->ecdh) {
+			wpa_printf(MSG_DEBUG,
+				   "IEEE 802.1X: Failed to setup ECDH context");
+			ret = WLAN_STATUS_FINITE_CYCLIC_GROUP_NOT_SUPPORTED;
+			goto err;
+		}
+
+		pubkey_len = crypto_ecdh_prime_len(auth_data->ecdh);
+		if (left < pubkey_len) {
+			wpa_printf(MSG_DEBUG,
+				   "IEEE 802.1X: Too short PQC Parameters element for public key");
+			ret = WLAN_STATUS_INVALID_PUBLIC_KEY;
+			goto err;
+		}
+
+		wpa_hexdump(MSG_DEBUG, "Peer public key", pos, pubkey_len);
+
+		auth_data->dhss = crypto_ecdh_set_peerkey(auth_data->ecdh,
+							  0,
+							  pos,
+							  pubkey_len);
+		if (!auth_data->dhss) {
+			wpa_printf(MSG_DEBUG, "Invalid peer public key");
+			ret = WLAN_STATUS_INVALID_PUBLIC_KEY;
+			goto err;
+		}
+
+		wpa_hexdump_buf_key(MSG_DEBUG, "DH shared secret",
+				    auth_data->dhss);
+
+		left -= pubkey_len;
+		pos += pubkey_len;
+	}
+
+	/* Now handle ML-KEM processing */
+	if (pqc->content_present ==
+	    PQC_CONTENT_PUBLIC_KEY_PARAM_AND_ML_KEM_ENC_KEY ||
+	    pqc->content_present == PQC_CONTENT_ML_KEM_ENC_KEY) {
+		crypto_ml_kem_deinit(auth_data->ml_kem);
+		auth_data->ml_kem = NULL;
+		wpabuf_clear_free(auth_data->ml_kem_ss);
+		auth_data->ml_kem_ss = NULL;
+		wpabuf_clear_free(auth_data->ml_kem_ciphertext);
+		auth_data->ml_kem_ciphertext = NULL;
+
+		wpa_hexdump(MSG_DEBUG, "ML-KEM public info", pos, left);
+		auth_data->ml_kem =
+			crypto_ml_kem_init(auth_data->constraint->kem);
+		if (!auth_data->ml_kem) {
+			wpa_printf(MSG_INFO,
+				   "IEEE 802.1X: Failed to setup ML-KEM context");
+			ret = WLAN_STATUS_UNSUPPORTED_ML_KEM_PARAMETER;
+			goto err;
+		}
+
+		/*
+		 * Encapsulation includes the FIPS 203, 7.2, encapsulation key
+		 * check, so a failure indicates an invalid key.
+		 */
+		if (crypto_ml_kem_encapsulate(auth_data->ml_kem,
+					      pos, left,
+					      &auth_data->ml_kem_ciphertext,
+					      &auth_data->ml_kem_ss) < 0) {
+			wpa_printf(MSG_INFO,
+				   "IEEE 802.1X: ML-KEM encapsulation failed");
+			ret = WLAN_STATUS_INVALID_ML_KEM_PARAMETER;
+			goto err;
+		}
+
+		wpa_hexdump_buf_key(MSG_DEBUG, "ML-KEM shared secret",
+				    auth_data->ml_kem_ss);
+
+		wpa_hexdump_buf(MSG_DEBUG, "ML-KEM ciphertext",
+				auth_data->ml_kem_ciphertext);
+	}
+
+	ret = WLAN_STATUS_SUCCESS;
+err:
+	return ret;
+#else /* CONFIG_PQC */
+	wpa_printf(MSG_INFO,
+		   "IEEE 802.1X: PQC key management is not supported in this build");
+	return WLAN_STATUS_UNSPECIFIED_FAILURE;
+#endif /* CONFIG_PQC */
+}
+
 u16 wpa_auth_validate_802_1x_frame(struct hostapd_data *hapd,
 				   struct sta_info *sta,
 				   struct ieee802_11_elems *elems)
@@ -2769,17 +2943,22 @@ u16 wpa_auth_validate_802_1x_frame(struct hostapd_data *hapd,
 	 * include a Diffie-Hellman Parameter element nor an RSNE nor an RSNXE
 	 * nor a Nonce element in the first Authentication frame for IEEE 802.1X
 	 * authentication.
+	 * Similarly, based on Draft P802.11bt/D1.0, PQC Parameters are not
+	 * expected when encrypted association is not used.
 	 */
 	if (!enc_assoc &&
-	    (elems->rsn_ie || elems->nonce || elems->owe_dh)) {
+	    (elems->rsn_ie || elems->nonce || elems->owe_dh ||
+	     elems->pqc_parameters)) {
 		wpa_printf(MSG_INFO,
-			   "Invalid inclusion of RSNE/Nonce/DHE when (Re)Association frame encryption is not supported");
+			   "Invalid inclusion of RSNE/Nonce/DHE/PQC when (Re)Association frame encryption is not supported");
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
+
 	if (enc_assoc &&
 	    (!elems->rsn_ie || !elems->nonce ||
-	     elems->nonce_len != WPA_NONCE_LEN || !elems->owe_dh)) {
-		wpa_printf(MSG_ERROR, "Missing RSNE/DHIE/Nonce");
+	     elems->nonce_len != WPA_NONCE_LEN ||
+	     (!elems->owe_dh && !elems->pqc_parameters))) {
+		wpa_printf(MSG_ERROR, "Missing RSNE/DHIE/Nonce/PQC");
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
 
@@ -2796,6 +2975,12 @@ u16 wpa_auth_validate_802_1x_frame(struct hostapd_data *hapd,
 	     wpa_parse_wpa_ie_rsn(elems->rsn_ie - 2, elems->rsn_ie_len + 2,
 				  &rsn) < 0)) {
 		wpa_printf(MSG_INFO, "No valid RSNE");
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
+	}
+
+	if (enc_assoc && elems->owe_dh && elems->pqc_parameters) {
+		wpa_printf(MSG_INFO,
+			   "Incorrect inclusion of both OWE DH Parameter element and PQC Parameters element");
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
 
@@ -2835,6 +3020,26 @@ u16 wpa_auth_validate_802_1x_frame(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG,
 			   "Received keymgmt (0x%x) in AKM Suite Selector element",
 			   sta->eap_auth_data.akm);
+	}
+
+	/*
+	 * The rest of the 802.1X code assumes that a PQC AKM implies a valid
+	 * PQC constraint, which is only set when processing the element.
+	 */
+	if (enc_assoc && wpa_key_mgmt_pqc(sta->eap_auth_data.akm) &&
+	    !elems->pqc_parameters) {
+		wpa_printf(MSG_INFO,
+			   "Missing PQC Parameters element for AKM 0x%x",
+			   sta->eap_auth_data.akm);
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
+	}
+
+	if (enc_assoc && !wpa_key_mgmt_pqc(sta->eap_auth_data.akm) &&
+	    elems->pqc_parameters) {
+		wpa_printf(MSG_INFO,
+			   "Unexpected PQC Parameters element for AKM 0x%x",
+			   sta->eap_auth_data.akm);
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
 
 	if (elems->rsnxe) {
@@ -2895,6 +3100,9 @@ u16 wpa_auth_validate_802_1x_frame(struct hostapd_data *hapd,
 		wpa_hexdump_buf_key(MSG_DEBUG, "DH shared secret", secret);
 		sta->eap_auth_data.dhss = secret;
 	}
+
+	if (elems->pqc_parameters)
+		return wpa_auth_process_pqc_params(hapd, sta, elems);
 
 	return WLAN_STATUS_SUCCESS;
 }
@@ -3264,6 +3472,61 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 		}
 
 		ieee802_1x_eapol_sm_set_port_enabled(sta->eapol_sm, true);
+#ifdef CONFIG_PQC
+	} else if (sta->eap_auth_data.auth_success &&
+		   wpa_key_mgmt_pqc(sta->eap_auth_data.akm)) {
+		struct ieee802_11_elems elems;
+		struct rsn_pmksa_cache_entry *cached_pmk = NULL;
+
+		if (ieee802_11_parse_elems(pos, end - pos,
+					   &elems,
+					   1) == ParseFailed) {
+			wpa_printf(MSG_INFO,
+				   "IEEE 802.1X:Could not parse elements");
+			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto fail;
+		}
+
+		if (!elems.pqc_parameters ||
+		    wpa_auth_process_pqc_params(hapd, sta,
+						&elems) != WLAN_STATUS_SUCCESS) {
+			wpa_printf(MSG_INFO,
+				   "IEEE 802.1X: Missing or failed to process PQC Parameters element: %u",
+				   !!elems.pqc_parameters);
+			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto fail;
+		}
+
+		cached_pmk = pmksa_cache_search(hapd, NULL,
+						sta->eap_auth_data.epp_pmkid_cur,
+						ap_sta_is_mld(hapd, sta));
+		if (!cached_pmk) {
+			wpa_printf(MSG_INFO,
+				   "IEEE 802.1X: No matching PMKSA cache entry found for PMKID in RSNXE");
+			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto fail;
+		}
+
+		reply = prepare_802_1x_auth_resp(hapd, sta,
+						 auth_transaction + 1,
+						 WLAN_STATUS_SUCCESS,
+						 cached_pmk,
+						 NULL, 0);
+		if (!reply) {
+			wpa_printf(MSG_INFO,
+				   "Failed to prepare IEEE 802.1X Authentication frame");
+			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto fail;
+		}
+
+		/* TODO: Add PTK derivation */
+
+		sta->flags |= WLAN_STA_AUTH;
+		sta->auth_alg = WLAN_AUTH_802_1X;
+		send_8021x_auth_reply(hapd, sta, auth_transaction + 1,
+					WLAN_STATUS_SUCCESS, reply);
+		return;
+#endif /* CONFIG_PQC */
 	}
 
 	/* Forward the extracted EAP PDU to AS */

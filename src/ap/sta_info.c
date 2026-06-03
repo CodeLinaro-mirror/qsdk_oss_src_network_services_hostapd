@@ -582,6 +582,12 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	crypto_ecdh_deinit(sta->eap_auth_data.ecdh);
 	wpabuf_clear_free(sta->eap_auth_data.dhss);
 	os_free(sta->eap_auth_data.rsnxe);
+#ifdef CONFIG_PQC
+	crypto_ml_kem_deinit(sta->eap_auth_data.ml_kem);
+	wpabuf_clear_free(sta->eap_auth_data.ml_kem_ss);
+	wpabuf_clear_free(sta->eap_auth_data.ml_kem_ciphertext);
+	wpabuf_free(sta->eap_auth_data.transcript);
+#endif /* CONFIG_PQC */
 #endif /* CONFIG_IEEE8021X_AUTH */
 
 	os_free(sta);
