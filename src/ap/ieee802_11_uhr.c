@@ -3473,3 +3473,35 @@ void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
 					  iap->sta_addr,
 					  iap->iap_transaction_id);
 }
+
+
+void uhr_cur_ap_handle_st_exec_via_tgt_done(struct hostapd_data *hapd,
+					     const struct uhr_iap_frame *iap,
+					     u16 frame_len)
+{
+	struct sta_info *sta;
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR: ST EXEC VIA TGT DONE from Target AP " MACSTR
+		   " for STA " MACSTR,
+		   MAC2STR(iap->target_ap_mld_addr),
+		   MAC2STR(iap->sta_addr));
+
+	sta = ap_get_sta(hapd, iap->sta_addr);
+	if (!sta) {
+		wpa_printf(MSG_ERROR,
+			   "UHR VIA TGT DONE: STA " MACSTR " not found",
+			   MAC2STR(iap->sta_addr));
+		return;
+	}
+
+	if (hostapd_smd_roam(hapd, sta, 1, 3,
+			     sta->dl_sn_not_transferred,
+			     sta->ul_sn_not_transferred,
+			     hapd->conf->smd.uhr_dl_drain_duration_tu))
+		wpa_printf(MSG_DEBUG,
+			   "UHR VIA TGT DONE: WMI roam notification failed");
+
+	uhr_cancel_st_prep_timeout(sta, iap->target_ap_mld_addr);
+	uhr_cur_ap_purge_ap_list(hapd, sta);
+}
