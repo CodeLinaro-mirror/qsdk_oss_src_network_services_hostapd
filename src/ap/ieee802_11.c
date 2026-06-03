@@ -10894,6 +10894,21 @@ static void handle_uhr_link_reconfig(struct hostapd_data *hapd,
 		uhr_handle_st_prep_req(hapd, sta, (const u8 *) mgmt, len, smd_ctx);
 		break;
 	case UHR_LINK_RECONFIG_TYPE_EXECUTE:
+		/*
+		 * Distinguish ST Execute via Target AP-MLD from the normal
+		 * IAP-forwarded path: in the via-target path the STA sends
+		 * Execute directly to us, so the STA record is not yet
+		 * authorized (ST Prep created it but did not authorize it).
+		 */
+		if (!(sta->flags & WLAN_STA_AUTHORIZED)) {
+			wpa_printf(MSG_INFO,
+				   "UHR: ST Execute received at Target AP "
+				   "for " MACSTR " — initiating CTX fetch",
+				   MAC2STR(sta->addr));
+			uhr_handle_st_exec_req_tgt(hapd, sta,
+						   (const u8 *) mgmt, len);
+			return;
+		}
 		uhr_handle_st_exec_req(hapd, sta, (const u8 *) mgmt, len, smd_ctx);
 		break;
 	default:
