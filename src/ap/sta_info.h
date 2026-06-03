@@ -229,6 +229,7 @@ struct smd_info {
 	struct hostapd_data *tgt_prep_timer_hapd; /* assoc-link hapd at timer registration */
 	enum tgt_smd_roam_state state; /* non-AP STA state in Tgt AP */
 	bool flag;
+	u8 current_ap_mld_addr[ETH_ALEN]; /* Current AP MLD addr at time of ST Prep */
 };
 #endif /* CONFIG_IEEE80211BN */
 
