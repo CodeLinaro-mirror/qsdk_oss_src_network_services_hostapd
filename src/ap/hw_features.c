@@ -216,6 +216,7 @@ int hostapd_get_hw_features(struct hostapd_iface *iface)
 
 	multi_hw_info = hostapd_get_multi_hw_info(hapd, &num_multi_hws);
 	if (!multi_hw_info) {
+		hostapd_check_get_afc_details(hapd);
 #ifdef CONFIG_QCN_EXTN
 		hostapd_query_hw_blocklist_extn(iface, hapd);
 #endif
@@ -237,6 +238,7 @@ int hostapd_get_hw_features(struct hostapd_iface *iface)
 			   hw_info->end_freq);
 	}
 
+	hostapd_check_get_afc_details(hapd);
 #ifdef CONFIG_QCN_EXTN
 	hostapd_query_hw_blocklist_extn(iface, hapd);
 	if (iface->conf && is_6ghz_op_class(iface->conf->op_class))

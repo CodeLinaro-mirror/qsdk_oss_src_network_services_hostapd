@@ -1210,6 +1210,7 @@ void hostapd_switch_color(struct hostapd_data *hapd, u64 bitmap);
 void hostapd_cleanup_cca_params(struct hostapd_data *hapd);
 
 void hostapd_free_afc_data(struct hostapd_iface *iface);
+void hostapd_check_get_afc_details(struct hostapd_data *hapd);
 /* utils.c */
 int hostapd_register_probereq_cb(struct hostapd_data *hapd,
 				 int (*cb)(void *ctx, const u8 *sa,

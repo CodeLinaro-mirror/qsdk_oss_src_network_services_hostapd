@@ -4832,16 +4832,44 @@ static int hostapd_fetch_afc_power_event(struct hostapd_data *hapd)
 	uint8_t radio_idx = NL80211_WIPHY_RADIO_ID_MAX;
 	int ret = -1;
 
-	if (!hostapd_drv_is_retail_afc_supported(hapd)) {
-		wpa_printf(MSG_ERROR, "AFC enterprise mode, hostapd not supported");
-		return ret;
-	}
-
 	if (hapd->iface->num_multi_hws) {
 		if (hapd->iface->current_hw_info) {
+			/* current_hw_info already set — use it directly */
 			radio_idx = hapd->iface->current_hw_info->hw_idx;
+		} else if (hapd->iface->freq != 0) {
+			/* freq known — look up hw_info without modifying iface state */
+			struct hostapd_multi_hw_info *hw_info;
+
+			hw_info = hostapd_get_current_hw_info(hapd->iface,
+							     hapd->iface->freq);
+			if (!hw_info) {
+				wpa_printf(MSG_ERROR,
+					   "No multi_hw_info match for freq=%d",
+					   hapd->iface->freq);
+				return ret;
+			}
+			radio_idx = hw_info->hw_idx;
+		} else if (hapd->iface->conf->radio_idx >= 0) {
+			/* freq=0 (ACS): use radio_idx from conf */
+			unsigned int i;
+
+			for (i = 0; i < hapd->iface->num_multi_hws; i++) {
+				if ((int)hapd->iface->multi_hw_info[i].hw_idx ==
+				    hapd->iface->conf->radio_idx) {
+					radio_idx =
+						hapd->iface->multi_hw_info[i].hw_idx;
+					break;
+				}
+			}
+			if (radio_idx == NL80211_WIPHY_RADIO_ID_MAX) {
+				wpa_printf(MSG_ERROR,
+					   "No multi_hw_info match for radio_idx=%d",
+					   hapd->iface->conf->radio_idx);
+				return ret;
+			}
 		} else {
-			wpa_printf(MSG_ERROR, "No current_hw_info");
+			wpa_printf(MSG_ERROR,
+				   "No current_hw_info, freq=0, no radio_idx fallback");
 			return ret;
 		}
 	}
@@ -4855,6 +4883,27 @@ static int hostapd_fetch_afc_power_event(struct hostapd_data *hapd)
 	return -1;
 #endif /* NEED_AP_MLME */
 }
+
+
+void hostapd_check_get_afc_details(struct hostapd_data *hapd)
+{
+	struct hostapd_iface *iface = hapd->iface;
+
+	if (iface->is_afc_power_event_received)
+		return;
+
+	if (!hostapd_is_sp_chans_available(iface)) {
+		wpa_printf(MSG_DEBUG, "No SP Channels available");
+		return;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "SP channels available. Fetch AFC Payload from the driver");
+
+	if (hostapd_fetch_afc_power_event(hapd))
+		wpa_printf(MSG_DEBUG, "Failed to fetch AFC payload");
+}
+
 
 static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 						 int err)
@@ -4973,24 +5022,6 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 			u8 center_chan_no;
 			u16 center_freq;
 
-			if (!iface->is_afc_power_event_received) {
-			    bool sp_available = hostapd_is_sp_chans_available(iface);
-
-			    if (sp_available) {
-				int ret;
-
-				wpa_printf(MSG_DEBUG,
-					   "SP channels available in 6 GHz band for best power mode operation, fetching from driver");
-				ret = hostapd_fetch_afc_power_event(hapd);
-				if (ret)
-				    wpa_printf(MSG_DEBUG,
-					       "Failed to fetch AFC power event from driver");
-				/* Proceed with best power mode calculation */
-			    } else {
-				wpa_printf(MSG_DEBUG,
-					   "No SP channels available in 6 GHz band for best power mode operation");
-			    }
-			}
 			ch_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
 			center_chan_no = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
 			center_freq = ieee80211_chan_to_freq(NULL, iface->conf->op_class,
