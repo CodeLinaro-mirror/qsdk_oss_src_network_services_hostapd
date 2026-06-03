@@ -588,6 +588,16 @@ static u8 * hostapd_eid_ecsa(struct hostapd_data *hapd, u8 *eid)
 	return eid;
 }
 
+u8 * hostapd_eid_add_max_cs_time(u8 *eid, u32 switch_time)
+{
+	*eid++ = WLAN_EID_EXTENSION;
+	*eid++ = 4;
+	*eid++ = WLAN_EID_EXT_MAX_CHANNEL_SWITCH_TIME;
+	WPA_PUT_LE24(eid, switch_time);
+	eid += 3;
+
+	return eid;
+}
 
 static u8 * hostapd_eid_max_cs_time(struct hostapd_data *hapd, u8 *eid)
 {
@@ -597,7 +607,7 @@ static u8 * hostapd_eid_max_cs_time(struct hostapd_data *hapd, u8 *eid)
 	/* Add Max Channel Switch Time element only if this AP is affiliated
 	 * with an AP MLD and channel switch is in process. */
 	if (!hapd->conf->mld_ap || !hapd->cs_freq_params.channel)
-		return eid;
+		goto check_bootup_cac;
 
 #ifdef CONFIG_QCN_EXTN
 	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
@@ -620,14 +630,24 @@ static u8 * hostapd_eid_max_cs_time(struct hostapd_data *hapd, u8 *eid)
 	} else {
 		/* Fallback to previous hardcoded behavior (assume 1 second) */
 		switch_time = USEC_TO_TU(250 * 1000) + 2 * hapd->iconf->beacon_int;
-		wpa_printf(MSG_DEBUG, "Using fallback channel switch time: %u TU", switch_time);
+		wpa_printf(MSG_DEBUG, "Using fallback channel switch time: %u TU",
+			   switch_time);
 	}
 
-	*eid++ = WLAN_EID_EXTENSION;
-	*eid++ = 4;
-	*eid++ = WLAN_EID_EXT_MAX_CHANNEL_SWITCH_TIME;
-	WPA_PUT_LE24(eid, switch_time);
-	eid += 3;
+	return hostapd_eid_add_max_cs_time(eid, switch_time);
+
+check_bootup_cac:
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * Bootup CAC: add MCST IE directly in the 5 GHz beacon so that
+	 * clients on the 5 GHz channel can see the remaining CAC time.
+	 */
+	if (hapd->conf->mld_ap && hapd->iface->bootup_cac_in_progress) {
+		switch_time = hostapd_get_remaining_cac_tu(hapd->iface);
+		if (switch_time)
+			eid = hostapd_eid_add_max_cs_time(eid, switch_time);
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 	return eid;
@@ -4586,7 +4606,9 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 set_ap:
 	res = hostapd_drv_set_ap(hapd, &params);
 	if (res)
-		wpa_printf(MSG_ERROR, "Failed to set beacon parameters");
+		wpa_printf(MSG_ERROR,
+			   "%s: Failed to set beacon parameters (ret=%d)",
+			   hapd->conf->iface, res);
 	else
 		ret = 0;
 fail2:
