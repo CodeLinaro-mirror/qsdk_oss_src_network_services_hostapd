@@ -566,3 +566,8 @@ size_t nl80211_attr_len_u32(void);
 size_t nl80211_attr_len_flag(void);
 
 #endif /* DRIVER_NL80211_H */
+
+#ifdef CONFIG_IEEE80211BN
+struct nlattr;
+struct sta_smd_ctx_info *nl80211_parse_smd_ctx(struct nlattr *smd_attr);
+#endif

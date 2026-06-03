@@ -225,6 +225,7 @@ static const char * nl80211_command_to_string(enum nl80211_commands cmd)
 	C2S(NL80211_CMD_SMD_TRANSITION_DONE)
 	C2S(NL80211_CMD_SMD_ROAM)
 	C2S(NL80211_CMD_SET_SMD_CTX)
+	C2S(NL80211_CMD_GET_SMD_CTX)
 	C2S(NL80211_CMD_UHR_MODE_UPDATE)
 	}
 #undef C2S
@@ -2050,7 +2051,7 @@ static void nl80211_parse_smd_ctx_ba_params(struct nlattr *tb,
  * hostapd's internal sta_smd_ctx_info structure. The caller must free
  * the returned structure.
  */
-static struct sta_smd_ctx_info * nl80211_parse_smd_ctx(struct nlattr *smd_attr)
+struct sta_smd_ctx_info * nl80211_parse_smd_ctx(struct nlattr *smd_attr)
 {
 	struct nlattr *tb[NL80211_SMD_CTX_ATTR_MAX + 1];
 	struct nlattr *dl_tb[NL80211_SMD_CTX_DL_ATTR_MAX + 1];
