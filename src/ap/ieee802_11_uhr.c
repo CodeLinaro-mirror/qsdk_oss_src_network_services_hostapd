@@ -1662,7 +1662,8 @@ void uhr_deinit_link_reconf_req(struct uhr_link_reconf_req_list **req_list_ptr)
  * Populate sta->smd_info with TARGET AP's SMD capabilities.
  */
 static void uhr_mark_smd_features(struct hostapd_data *hapd,
-				  struct sta_info *sta)
+				  struct sta_info *sta,
+				  const u8 *current_ap_mld_addr)
 {
 	if (!hapd->conf->smd.enabled || !sta)
 		return;
@@ -1694,6 +1695,10 @@ static void uhr_mark_smd_features(struct hostapd_data *hapd,
 	wpa_printf(MSG_INFO,
 		   "SMD ST PREP Target AP: Marked SMD features for " MACSTR,
 		   MAC2STR(sta->addr));
+
+	if (current_ap_mld_addr)
+		os_memcpy(sta->smd_info.current_ap_mld_addr,
+			  current_ap_mld_addr, ETH_ALEN);
 }
 
 
@@ -2083,6 +2088,7 @@ static int uhr_finalize_assoc_and_keys(
 static int uhr_process_reconf_req_list(
         struct hostapd_data *hapd,
         const u8 *sta_addr,
+        const u8 *current_ap_mld_addr,
         struct uhr_link_reconf_req_list *req_list,
         bool *assoc_link_found,
         u8 *assoc_link_id,
@@ -2156,7 +2162,8 @@ static int uhr_process_reconf_req_list(
                         }
 
                         sta->capability = info->capability;
-                        uhr_mark_smd_features(hapd_link, sta);
+                        uhr_mark_smd_features(hapd_link, sta,
+					      current_ap_mld_addr);
 
                         *assoc_link_found = true;
                         *assoc_link_id = info->link_id;
@@ -2354,6 +2361,7 @@ fail:
 static int uhr_tgt_ap_parse_ml(
 	struct hostapd_data *hapd,
 	const u8 *sta_addr,
+	const u8 *current_ap_mld_addr,
 	const struct uhr_iap_security_ctx *sec_ctx,
 	const u8 *ml_ie,
 	size_t ml_ie_len,
@@ -2378,7 +2386,8 @@ static int uhr_tgt_ap_parse_ml(
 				mlbuf, &req_list) < 0)
 		goto out;
 
-	if (uhr_process_reconf_req_list(hapd, sta_addr, req_list, &assoc_link_found,
+	if (uhr_process_reconf_req_list(hapd, sta_addr, current_ap_mld_addr,
+				req_list, &assoc_link_found,
 				&assoc_link_id, &assoc_hapd, &assoc_sta) < 0) {
 		wpa_printf(MSG_ERROR,
 			   "SMD ST PREP Target AP: No valid assoc link found");
@@ -2958,7 +2967,8 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
        }
 
 	/* Parse ML-IE and process profiles (includes MLD-level PTK installation) */
-	if (uhr_tgt_ap_parse_ml(hapd, iap->sta_addr, &iap->sec_ctx,
+	if (uhr_tgt_ap_parse_ml(hapd, iap->sta_addr, iap->current_ap_mld_addr,
+				&iap->sec_ctx,
 			        elems.reconf_mle,
 			        elems.reconf_mle_len,
 			        &req_list,
