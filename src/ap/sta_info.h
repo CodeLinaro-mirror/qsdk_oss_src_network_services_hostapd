@@ -233,6 +233,7 @@ struct smd_info {
 	u8 *tgt_prep_timer_ctx; /* heap-allocated sta_addr copy passed to eloop */
 	struct hostapd_data *tgt_prep_timer_hapd;
 	enum tgt_smd_roam_state state; /* non-AP STA state in Tgt AP */
+	u8 current_ap_mld_addr[ETH_ALEN]; /* Current AP MLD addr at ST Prep */
 	bool flag;
 };
 #endif /* CONFIG_IEEE80211BN */
