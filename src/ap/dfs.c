@@ -3886,6 +3886,12 @@ int hostapd_dfs_nop_finished(struct hostapd_iface *iface, int freq,
 		}
 #endif
 		hostapd_handle_dfs(iface);
+	} else if (iface->dfs_domain == HOSTAPD_DFS_REGION_ETSI &&
+		   iface->conf->bgcac_en &&
+		   !iface->radar_background.cac_started) {
+		wpa_printf(MSG_INFO,
+			   "PRECAC_NOP expired - resuming PRECAC on newly available channel");
+		hostapd_dfs_start_precac(iface);
 	} else if (dfs_use_radar_background(iface) &&
 			iface->radar_background.channel == -1) {
 		/* Reset radar background chain if disabled */
