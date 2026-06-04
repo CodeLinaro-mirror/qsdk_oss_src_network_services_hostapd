@@ -2928,7 +2928,26 @@ prepare_802_1x_auth_resp(struct hostapd_data *hapd, struct sta_info *sta,
 					 wpa_akm_to_suite(
 						 sta->eap_auth_data.akm));
 		}
-	} /* if (auth_transaction == 2) */
+	}
+#ifdef CONFIG_PQC
+	else if (wpa_key_mgmt_pqc(sta->eap_auth_data.akm) &&
+		 sta->eap_auth_data.auth_success) {
+		pqc = build_802_1x_pqc_element(hapd, sta);
+		if (!pqc) {
+			status = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto reply;
+		}
+
+		if (wpabuf_len(pqc) > wpabuf_tailroom(data)) {
+			wpa_printf(MSG_INFO,
+				   "IEEE 802.1X: PQC Parameters element does not fit in the Authentication frame");
+			status = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto reply;
+		}
+
+		wpabuf_put_buf(data, pqc);
+	}
+#endif /* CONFIG_PQC */
 reply:
 	wpabuf_free(pqc);
 	wpabuf_free(pub);
