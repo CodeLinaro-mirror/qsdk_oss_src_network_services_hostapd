@@ -4460,6 +4460,16 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 		non_assoc_links &= ~BIT(link_id);
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (bss && is_5ghz_freq(bss->freq) &&
+		wpas_bss_uses_nol_channel_extn(wpa_s, bss)) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"ML RNR 5G NOL channel - Ignore link %d (freq=%d)",
+			link_id, bss->freq);
+		non_assoc_links &= ~BIT(link_id);
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	mbssid_idx = wpa_bss_get_mbssid_idx(bss);
 	i = 0;
 	/* NOTE: Any changes in rnr ie len calculation or fetching the ap info
@@ -4524,8 +4534,12 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 
 					scan_res = wpa_drv_get_scan_results(wpa_s, bssid);
 
-					if (scan_res == NULL)
+					if (scan_res == NULL) {
+						wpa_dbg(wpa_s, MSG_DEBUG,
+							"ML scan_res not exists");
+						non_assoc_links &= ~BIT(link_id);
 						goto cont;
+					}
 
 					if (scan_res && !scan_res->num) {
 						freqs[j] = partner_freq;
@@ -4533,12 +4547,32 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 					}
 
 					pbss = wpa_bss_get_bssid(wpa_s, bssid);
-					if (pbss && !wpa_is_6ghz_power_mode_match(wpa_s, pbss)) {
+					if(!pbss) {
+						wpa_dbg(wpa_s, MSG_DEBUG,
+							"ML pbss not exists");
+						non_assoc_links &= ~BIT(link_id);
+						goto cont;
+					}
+					if (!wpa_is_6ghz_power_mode_match(wpa_s, pbss)) {
 						wpa_dbg(wpa_s, MSG_DEBUG,
 							"ML RNR 6 GHz Power Mode mismatch - Ignore");
 						non_assoc_links &= ~BIT(link_id);
 						goto cont;
 					}
+#ifdef CONFIG_QCN_EXTN
+					/* If the 5G partner link is on a NOL channel,
+					 * skip it to allow connection on non-5G links.
+					 * After NOL expiry, the STA can disconnect and
+					 * reconnect including the 5G link. */
+					if (is_5ghz_freq(partner_freq) &&
+					    wpas_bss_uses_nol_channel_extn(wpa_s, pbss)) {
+						wpa_dbg(wpa_s, MSG_DEBUG,
+							"ML RNR 5G NOL channel - Skip link %d (freq=%d)",
+							link_id, partner_freq);
+						non_assoc_links &= ~BIT(link_id);
+						goto cont;
+					}
+#endif /* CONFIG_QCN_EXTN */
 				}
 
 cont:
