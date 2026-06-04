@@ -90,6 +90,7 @@ int hostapd_is_dfs_overlap(struct hostapd_iface *iface, enum chan_width width,
 void hostapd_dfs_radar_handling_timeout(void *eloop_data, void *user_data);
 void hostapd_start_device_cac_background(struct hostapd_iface *iface);
 int hostapd_start_background_cac(struct hostapd_iface *iface);
+bool dfs_use_radar_background(struct hostapd_iface *iface);
 int hostapd_start_rcac_on_channel(struct hostapd_iface *iface, int chan, int bw_mhz);
 int hostapd_dfs_agile_cac_switch(struct hostapd_iface *iface);
 void hostapd_restart_agile_cac_after_ch_switch(struct hostapd_iface *iface);
