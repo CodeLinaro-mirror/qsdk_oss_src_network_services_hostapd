@@ -4891,7 +4891,8 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 			wpa_printf(MSG_DEBUG,
 				   "DFS: Update puncture source for User puncture bitmap=0x%04x",
 				   settings.freq_params.punct_bitmap);
-			dfs_update_puncture_source(iface, settings.freq_params.freq,
+			dfs_update_puncture_source(iface,
+						   settings.freq_params.center_freq1,
 						   bandwidth,
 						   settings.freq_params.punct_bitmap,
 						   DFS_CHAN_PUNC_USER);
