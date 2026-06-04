@@ -3480,6 +3480,7 @@ void uhr_cur_ap_handle_st_exec_via_tgt_done(struct hostapd_data *hapd,
 					     u16 frame_len)
 {
 	struct sta_info *sta;
+	struct smd_roam_ap_info *chosen;
 
 	wpa_printf(MSG_DEBUG,
 		   "UHR: ST EXEC VIA TGT DONE from Target AP " MACSTR
@@ -3502,6 +3503,9 @@ void uhr_cur_ap_handle_st_exec_via_tgt_done(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG,
 			   "UHR VIA TGT DONE: WMI roam notification failed");
 
-	uhr_cancel_st_prep_timeout(sta, iap->target_ap_mld_addr);
+	chosen = uhr_find_ap_in_list(sta, iap->target_ap_mld_addr);
+	if (chosen)
+		uhr_cur_ap_cancel_st_prep_for_entry(hapd, sta, chosen);
+	uhr_remove_ap_from_list(sta, iap->target_ap_mld_addr);
 	uhr_cur_ap_purge_ap_list(hapd, sta);
 }
