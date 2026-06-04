@@ -513,4 +513,21 @@ int nl80211_put_freq_params(struct nl_msg *msg,
 			    struct i802_bss *bss);
 #endif /* CONFIG_QCN_EXTN */
 
+/**
+ * nl80211_update_beacons_on_chain_mask_change() - Update beacons after a
+ * chain mask change.
+ * @drv: nl80211 driver data.
+ *
+ * Fetches the current HW feature data from the driver to get the updated
+ * chain mask value. Push the new capabilities into all
+ * active beacons.
+ *
+ * Context: Process context.
+ *
+ * Return: 0 on success
+ *         -1 on failure (hw feature fetch failure, no matching mode found
+ *         or beacon update failure).
+ */
+int nl80211_update_beacons_on_chain_mask_change(struct wpa_driver_nl80211_data *drv);
+
 #endif /* DRIVER_NL80211_H */

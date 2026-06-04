@@ -6915,13 +6915,10 @@ static int hostapd_ctrl_iface_stop_mld(struct hostapd_data *hapd)
 static int hostapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd, char *cmd,
 					    char *buf, size_t buflen)
 {
-	int ret = -1, i;
+	int ret = -1;
 	uint32_t tx_ant, rx_ant;
 	uint8_t radio_idx = NL80211_WIPHY_RADIO_ID_MAX;
 	char *ptr, *endptr;
-	u16 num_modes, flags;
-	u8 dfs_domain;
-	struct hostapd_hw_modes *modes;
 
 	if ((!hapd->started) || (hapd->iface->state != HAPD_IFACE_ENABLED)) {
 		wpa_printf(MSG_ERROR, "Interface is not UP.\n");
@@ -6959,52 +6956,7 @@ static int hostapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd, char *cm
 	ret = hapd->driver->set_chain_mask(hapd->drv_priv, radio_idx, tx_ant, rx_ant);
 
 	if (ret)
-		return ret;
-
-	/* Get latest modes sent by driver with new chain mask values.
-	 */
-	modes = nl80211_get_hw_feature_data(hapd->drv_priv, &num_modes,
-				    &flags, &dfs_domain, 0);
-	if (modes) {
-		int found_matching_mode = 0;
-		for (i = 0; i < num_modes; i++) {
-			struct hostapd_hw_modes *mode = &modes[i];
-			if (mode->channels && (mode->mode == hapd->iface->current_mode->mode) &&
-			    (mode->channels->freq == hapd->iface->current_mode->channels->freq)) {
-				if (hapd->iface->current_mode->rates)
-					os_free(hapd->iface->current_mode->rates);
-
-				if (hapd->iface->current_mode->channels)
-					os_free(hapd->iface->current_mode->channels);
-
-				wpa_driver_free_6ghz_channels(hapd->iface->current_mode);
-
-				os_memcpy(hapd->iface->current_mode,
-					  mode, sizeof(struct hostapd_hw_modes));
-
-				/* Set pointers to NULL to prevent double free */
-				mode->rates = NULL;
-				mode->channels = NULL;
-				found_matching_mode = 1;
-				continue;
-			}
-			os_free(mode->rates);
-			os_free(mode->channels);
-			wpa_driver_free_6ghz_channels(mode);
-		}
-		os_free(modes);
-		if (!found_matching_mode) {
-			wpa_printf(MSG_ERROR, "No matching mode found.\n");
-			return -1;
-		}
-	} else {
-		wpa_printf(MSG_ERROR, "Failed to get latest modes.\n");
-		return -1;
-	}
-
-	ret = ieee802_11_update_beacons(hapd->iface);
-	if (ret)
-		wpa_printf(MSG_ERROR, "Failed to update beacons.\n");
+		wpa_printf(MSG_ERROR, "Failed to set chain mask.\n");
 
 	return ret;
 }
