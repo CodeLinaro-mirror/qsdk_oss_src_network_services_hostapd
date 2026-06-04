@@ -423,6 +423,24 @@ nl80211_get_hw_feature_data(void *priv, u16 *num_modes, u16 *flags,
 			    u8 pwr_mode);
 
 int nl80211_get_chain_mask(void *priv, u8 radio_idx, char *buf, size_t buf_len);
+
+/**
+ * nl80211_update_beacons_on_chain_mask_change() - Update beacons after a
+ * chain mask change.
+ * @drv: nl80211 driver data.
+ *
+ * Fetches the current HW feature data from the driver to get the updated
+ * chain mask value. Push the new capabilities into all
+ * active beacons.
+ *
+ * Context: Process context.
+ *
+ * Return: 0 on success
+ *         -1 on failure (hw feature fetch failure, no matching mode found
+ *         or beacon update failure).
+ */
+int nl80211_update_beacons_on_chain_mask_change(struct wpa_driver_nl80211_data *drv);
+
 int process_global_event(struct nl_msg *msg, void *arg);
 int process_bss_event(struct nl_msg *msg, void *arg);
 

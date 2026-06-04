@@ -2022,6 +2022,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_REG_PARAMS = 518,
 	QCA_NL80211_VENDOR_SUBCMD_TPC_EIRP_EVENT = 519,
 	QCA_NL80211_VENDOR_SUBCMD_HE_MCS_12_13_SUPP = 521,
+	QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED = 529,
 };
 
 /* Attributes for the 6 GHz power-mode vendor command and completion event. */
