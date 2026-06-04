@@ -1421,11 +1421,13 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 
 	res = hapd->driver->start_dfs_cac(hapd->drv_priv, &data);
 	if (!res) {
-		if (radar_background)
+		if (radar_background) {
 			iface->radar_background.cac_started = 1;
-		else
+			os_get_reltime(&iface->radar_background.dfs_cac_start);
+		} else {
 			iface->cac_started = 1;
-		os_get_reltime(&iface->dfs_cac_start);
+			os_get_reltime(&iface->dfs_cac_start);
+		}
 	}
 
 	return res;
