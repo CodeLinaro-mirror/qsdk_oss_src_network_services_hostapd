@@ -1456,6 +1456,7 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 	iface->current_hw_info = NULL;
 	iface->csa_pending_on_cac_abort = false;
 	os_memset(&iface->csa_settings, 0, sizeof(struct csa_settings));
+	os_memset(&iface->radar_background, 0, sizeof(iface->radar_background));
 #ifdef CONFIG_QCN_EXTN
 	hostapd_iface_deinit_extn(iface);
 #endif /* CONFIG_QCN_EXTN */
@@ -6984,6 +6985,8 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt, const char *event)
 		hapd->iface->cac_type = 0;
 		hapd->iface->csa_pending_on_cac_abort = false;
 		os_memset(&hapd->iface->csa_settings, 0, sizeof(struct csa_settings));
+		os_memset(&hapd->iface->radar_background, 0,
+			  sizeof(hapd->iface->radar_background));
 		hostapd_interface_update_fils_ubpr(hapd->iface, false);
 	}
 
