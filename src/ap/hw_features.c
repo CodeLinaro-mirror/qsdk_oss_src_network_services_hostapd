@@ -566,12 +566,32 @@ void hostapd_stop_setup_timers(struct hostapd_iface *iface)
 static int ieee80211n_check_40mhz(struct hostapd_iface *iface)
 {
 	struct wpa_driver_scan_params params;
+	struct hostapd_channel_data *pri_chan;
 	int ret;
 
 	/* Check that HT40 is used and PRI / SEC switch is allowed */
 	if (!iface->conf->secondary_channel || iface->conf->no_pri_sec_switch ||
 		iface->conf->noscan)
 		return 0;
+
+	/*
+	 * Skip the 40 MHz scan when the primary channel is a DFS channel.
+	 * A neighbor scan could trigger ieee80211n_switch_pri_sec() and
+	 * move the primary off the configured DFS channel, violating
+	 * operator intent and breaking CAC continuity. Secondary-channel
+	 * availability is still enforced by
+	 * ieee80211n_allowed_ht40_channel_pair().
+	 */
+	pri_chan = hw_get_channel_freq(iface->current_mode->mode,
+				      iface->freq, NULL,
+				      iface->hw_features,
+				      iface->num_hw_features);
+	if (pri_chan && (pri_chan->flag & HOSTAPD_CHAN_RADAR)) {
+		wpa_printf(MSG_DEBUG,
+			   "Skip 40 MHz scan: primary channel %d is DFS",
+			   iface->conf->channel);
+		return 0;
+	}
 
 	hostapd_set_state(iface, HAPD_IFACE_HT_SCAN);
 	wpa_printf(MSG_DEBUG, "Scan for neighboring BSSes prior to enabling "
