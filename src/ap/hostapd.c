@@ -1061,7 +1061,7 @@ static bool hostapd_validate_link_removal_ttlm(struct hostapd_data *hapd)
 				/* check for negotiated mapping as well */
 			}
 		} else {
-			for (i = 1; hapd->iface->num_bss; i++) {
+			for (i = 1; i < hapd->iface->num_bss; i++) {
 				bss = hapd->iface->bss[i];
 				if (!hostapd_validate_link_removal_ttlm_global(bss))
 					return false;
