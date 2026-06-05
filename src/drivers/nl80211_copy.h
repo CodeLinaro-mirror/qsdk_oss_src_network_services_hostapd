@@ -3029,6 +3029,11 @@ enum nl80211_commands {
  *	time delta between the time the last beacon is transmitted by the AP in
  *	the current channel and the expected time of the first beacon
  *	transmitted by the AP in the new channel, expressed in TUs.
+ * @NL80211_ATTR_SMD_SUPPORT: Flag attribute to indicate driver supports SMD
+ *	(Seamless Mobility Domain) feature.
+ *
+ * @NL80211_ATTR_SMD_STA_DL_DATA_FWD: Flag attribute to indicate driver supports
+ * 	SMD DL DATA forward feature.
  *
  * @NL80211_ATTR_STA_DFS_EN: whether STA_DFS_EN is enabled (u8, 0 or 1)
  *
@@ -3661,6 +3666,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_BEACON_TX_SYNC_SUPPORT,
 
 	NL80211_ATTR_MAX_CH_SWITCH_TIME,
+	NL80211_ATTR_SMD_SUPPORT,
+	NL80211_ATTR_SMD_STA_DL_DATA_FWD,
 
 	NL80211_ATTR_STA_DFS_EN,
 
@@ -6995,6 +7002,13 @@ enum nl80211_feature_flags {
  * @NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD: Driver/device which
  *	supports advertised ttlm in offload mode.
  *
+ * @NL80211_EXT_FEATURE_SMD_SUPPORT_AP: Driver/device which
+ *	supports Seamless Mobility Domain (SMD)
+ *
+ * @NL80211_EXT_FEATURE_SMD_SUPPORT_DL_PKT_FRWRD: Driver/device which
+ *	supports DL Data forward with SMD Capable devices.
+ *
+ *
  * @NUM_NL80211_EXT_FEATURES: number of extended features.
  * @MAX_NL80211_EXT_FEATURES: highest extended feature index.
  */
@@ -7081,6 +7095,8 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD,
 	NL80211_EXT_FEATURE_CONTROL_FRAME_PROTECTION,
 	NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT,
+	NL80211_EXT_FEATURE_SMD_SUPPORT_AP,
+	NL80211_EXT_FEATURE_SMD_SUPPORT_DL_PKT_FRWRD,
 
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,

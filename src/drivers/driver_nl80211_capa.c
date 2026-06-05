@@ -744,6 +744,15 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 		capa->flags2 |= WPA_DRIVER_FLAGS2_SPP_AMSDU;
 
 	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_SMD_SUPPORT_AP))
+		capa->flags2 |= WPA_DRIVER_FLAGS2_SMD;
+
+
+	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_SMD_SUPPORT_DL_PKT_FRWRD))
+		capa->flags2 |= WPA_DRIVER_FLAGS2_SMD_DL_DATA_FWD;
+
+	if (ext_feature_isset(ext_features, len,
 			      NL80211_EXT_FEATURE_DEVICE_BW))
 		info->drv->device_bw = 1;
 

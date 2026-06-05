@@ -461,6 +461,22 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
 		elems->cip_pad = pos;
 		elems->cip_pad_len = elen;
 		break;
+	case WLAN_EID_EXT_SMD:
+		if (elen < (ETH_ALEN + 1 + sizeof(u8))) {
+			if (show_errors) {
+				wpa_printf(MSG_DEBUG,
+					   "Too short SMD element (elen=%u)",
+					   (unsigned int) elen);
+			}
+			break;
+		}
+		elems->smd = pos;
+		elems->smd_len = elen;
+		break;
+	case WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS:
+		elems->smd_bsstransparams = pos;
+		elems->smd_bsstransparams_len = elen;
+		break;
 	default:
 		if (show_errors) {
 			wpa_printf(MSG_MSGDUMP,
@@ -3385,6 +3401,71 @@ bool is_same_band(int freq1, int freq2)
 	return false;
 }
 
+u8 *wpas_build_smd_ie(const u8 *smd_id, u8 ptk_mode, u8 capabilities,
+		      u16 timeout, size_t *ie_len)
+{
+	u8 smd_capabilities;
+	u8 *pos;
+	u8 *ie;
+
+	if (!smd_id) {
+		*ie_len = 0;
+		return NULL;
+	}
+
+	ie = os_malloc(SMD_IE_LEN);
+	if (!ie)
+		return NULL;
+	*ie_len = SMD_IE_LEN;
+
+	pos = ie;
+	*pos++ = WLAN_EID_EXTENSION;
+	*pos++ = SMD_IE_LEN - 2;
+	*pos++ = WLAN_EID_EXT_SMD;
+
+	os_memcpy(pos, smd_id, ETH_ALEN);
+	pos += ETH_ALEN;
+
+	smd_capabilities = capabilities & 0x1F;
+	if (ptk_mode)
+		smd_capabilities |= BIT(5);
+
+	*pos++ = smd_capabilities;
+
+	WPA_PUT_LE16(pos, timeout);
+
+	return ie;
+}
+
+int wpas_parse_smd_ie(const u8 *ie, size_t ie_len, u8 *smd_id,
+		      u8 *ptk_mode, u8 *capabilities, u16 *timeout)
+{
+	const u8 *pos;
+
+	if (!ie || ie_len < SMD_IE_LEN)
+		return -EINVAL;
+
+	if (ie[0] != WLAN_EID_EXTENSION || ie[1] != 10 ||
+	    ie[2] != WLAN_EID_EXT_SMD)
+		return -EINVAL;
+
+	pos = ie + 3;
+
+	if (smd_id)
+		os_memcpy(smd_id, pos, ETH_ALEN);
+	pos += ETH_ALEN;
+
+	if (capabilities)
+		*capabilities = *pos & 0x1F;
+	if (ptk_mode)
+		*ptk_mode = (*pos & BIT(5)) ? 1 : 0;
+	pos++;
+
+	if (timeout)
+		*timeout = WPA_GET_LE16(pos);
+
+	return 0;
+}
 
 int ieee802_11_parse_candidate_list(const char *pos, void *non_pref_chan,
 				    u8 *nei_rep, size_t nei_rep_len)
