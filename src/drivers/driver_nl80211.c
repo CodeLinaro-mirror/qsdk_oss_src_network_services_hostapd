@@ -12107,7 +12107,8 @@ static int nl80211_set_p2p_powersave(void *priv, int legacy_ps, int opp_ps,
 }
 
 
-static int nl80211_stop_background_radar_detection(void *priv, int radio_idx)
+static int nl80211_stop_background_radar_detection(void *priv, int radio_idx,
+						    int link_id)
 {
 	struct i802_bss *bss = priv;
 	struct wpa_driver_nl80211_data *drv = bss->drv;
@@ -12120,10 +12121,9 @@ static int nl80211_stop_background_radar_detection(void *priv, int radio_idx)
 	if (!msg)
 		return -ENOBUFS;
 
-	if (bss->valid_links) {
-		u8 link_id = nl80211_get_link_id_from_link(bss, bss->flink);
+	if (nl80211_link_valid(bss->valid_links, link_id)) {
 		wpa_printf(MSG_DEBUG, "nl80211: Stop background radar detection on link_id=%d", link_id);
-		if (nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id)) {
+		if (nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, (u8)link_id)) {
 			nlmsg_free(msg);
 			return -ENOBUFS;
 		}

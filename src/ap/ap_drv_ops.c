@@ -1316,6 +1316,7 @@ int hostapd_drv_send_action_forced_addr3(struct hostapd_data *hapd,
 int hostapd_stop_background_cac(struct hostapd_data *hapd)
 {
 	int radio_idx;
+	int link_id = -1;
 
 	if (!hapd->driver || !hapd->driver->stop_background_cac ||
 	    !hapd->drv_priv)
@@ -1324,7 +1325,13 @@ int hostapd_stop_background_cac(struct hostapd_data *hapd)
 	radio_idx = (hapd->iface && hapd->iface->current_hw_info) ?
 		(int)hapd->iface->current_hw_info->hw_idx : -1;
 
-	return hapd->driver->stop_background_cac(hapd->drv_priv, radio_idx);
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf && hapd->conf->mld_ap)
+		link_id = hapd->mld_link_id;
+#endif /* CONFIG_IEEE80211BE */
+
+	return hapd->driver->stop_background_cac(hapd->drv_priv, radio_idx,
+					      link_id);
 }
 
 

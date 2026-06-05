@@ -2034,6 +2034,7 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 		wpa_printf(MSG_INFO, "Background CAC %s",
 			   val ? "enabled" : "disabled");
 		if (!val) {
+			hapd->iface->conf->enable_background_radar = 0;
 			hostapd_abort_background_cac(hapd->iface);
 			hapd->iface->radar_background.channel = -1;
 			hapd->iface->radar_background.cac_started = 0;
