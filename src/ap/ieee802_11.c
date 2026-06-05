@@ -3014,10 +3014,9 @@ prepare_802_1x_auth_resp(struct hostapd_data *hapd, struct sta_info *sta,
 					 wpa_akm_to_suite(
 						 sta->eap_auth_data.akm));
 		}
-	}
 #ifdef CONFIG_PQC
-	else if (wpa_key_mgmt_pqc(sta->eap_auth_data.akm) &&
-		 sta->eap_auth_data.auth_success) {
+	} else if (wpa_key_mgmt_pqc(sta->eap_auth_data.akm) &&
+		   sta->eap_auth_data.auth_success) {
 		pqc = build_802_1x_pqc_element(hapd, sta);
 		if (!pqc) {
 			status = WLAN_STATUS_UNSPECIFIED_FAILURE;
@@ -3033,6 +3032,8 @@ prepare_802_1x_auth_resp(struct hostapd_data *hapd, struct sta_info *sta,
 
 		wpabuf_put_buf(data, pqc);
 	}
+#else
+	}
 #endif /* CONFIG_PQC */
 reply:
 	wpabuf_free(pqc);
@@ -3040,12 +3041,12 @@ reply:
 	return data;
 }
 
+#ifdef CONFIG_PQC
 
 static u16 wpa_auth_process_pqc_params(struct hostapd_data *hapd,
 				       struct sta_info *sta,
 				       struct ieee802_11_elems *elems)
 {
-#ifdef CONFIG_PQC
 	struct eap_over_auth_data *auth_data = &sta->eap_auth_data;
 	const struct ieee80211_pqc *pqc;
 	u16 ret = WLAN_STATUS_UNSPECIFIED_FAILURE;
@@ -3203,12 +3204,10 @@ static u16 wpa_auth_process_pqc_params(struct hostapd_data *hapd,
 	ret = WLAN_STATUS_SUCCESS;
 err:
 	return ret;
-#else /* CONFIG_PQC */
-	wpa_printf(MSG_INFO,
-		   "IEEE 802.1X: PQC key management is not supported in this build");
-	return WLAN_STATUS_UNSPECIFIED_FAILURE;
-#endif /* CONFIG_PQC */
 }
+
+#endif /* CONFIG_PQC */
+
 
 u16 wpa_auth_validate_802_1x_frame(struct hostapd_data *hapd,
 				   struct sta_info *sta,
@@ -3385,8 +3384,10 @@ u16 wpa_auth_validate_802_1x_frame(struct hostapd_data *hapd,
 		sta->eap_auth_data.dhss = secret;
 	}
 
+#ifdef CONFIG_PQC
 	if (elems->pqc_parameters)
 		return wpa_auth_process_pqc_params(hapd, sta, elems);
+#endif /* CONFIG_PQC */
 
 	return WLAN_STATUS_SUCCESS;
 }
@@ -3621,7 +3622,12 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 					     sta->eap_auth_data.ptk.kck,
 					     sta->eap_auth_data.ptk.kck_len,
 					     aa, sta->addr, 0, sta->eapol_sm,
-					     sta->eap_auth_data.akm);
+					     sta->eap_auth_data.akm,
+#ifdef CONFIG_PQC
+					     sta->eap_auth_data.constraint ?
+					     sta->eap_auth_data.constraint->hash :
+#endif /* CONFIG_PQC */
+					     RSN_HASH_NOT_SPECIFIED);
 		if (!entry) {
 			wpa_printf(MSG_INFO, "Failed to add PMKSA entry");
 			return;
@@ -3934,6 +3940,23 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 			goto fail;
 		}
+
+		if (pmksa_cache_auth_recalc_pmkid(
+			    wpa_auth_get_pmksa_cache(hapd->wpa_auth,
+						     ap_sta_is_mld(hapd, sta)),
+			    cached_pmk, sta->eap_auth_data.ptk.kck,
+			    sta->eap_auth_data.ptk.kck_len, aa, sta->addr,
+			    sta->eap_auth_data.constraint->hash) < 0) {
+			wpa_printf(MSG_INFO,
+				   "IEEE 802.1X: Failed to recalculate the PMKID");
+			wpabuf_free(reply);
+			reply = NULL;
+			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto fail;
+		}
+
+		os_memcpy(sta->eap_auth_data.epp_pmkid_cur, cached_pmk->pmkid,
+			  PMKID_LEN);
 
 		sta->flags |= WLAN_STA_AUTH;
 		sta->auth_alg = WLAN_AUTH_802_1X;

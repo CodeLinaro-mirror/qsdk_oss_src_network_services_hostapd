@@ -49,18 +49,12 @@ static void _pmksa_cache_free_entry(struct rsn_pmksa_cache_entry *entry)
 }
 
 
-void pmksa_cache_free_entry(struct rsn_pmksa_cache *pmksa,
-			    struct rsn_pmksa_cache_entry *entry)
+static void pmksa_cache_unlink_pmkid(struct rsn_pmksa_cache *pmksa,
+				     struct rsn_pmksa_cache_entry *entry)
 {
 	struct rsn_pmksa_cache_entry *pos, *prev;
 	unsigned int hash;
 
-	pmksa->pmksa_count--;
-
-	if (pmksa->free_cb)
-		pmksa->free_cb(entry, pmksa->ctx);
-
-	/* unlink from hash list */
 	hash = PMKID_HASH(entry->pmkid);
 	pos = pmksa->pmkid[hash];
 	prev = NULL;
@@ -75,6 +69,20 @@ void pmksa_cache_free_entry(struct rsn_pmksa_cache *pmksa,
 		prev = pos;
 		pos = pos->hnext;
 	}
+}
+
+
+void pmksa_cache_free_entry(struct rsn_pmksa_cache *pmksa,
+			    struct rsn_pmksa_cache_entry *entry)
+{
+	struct rsn_pmksa_cache_entry *pos, *prev;
+
+	pmksa->pmksa_count--;
+
+	if (pmksa->free_cb)
+		pmksa->free_cb(entry, pmksa->ctx);
+
+	pmksa_cache_unlink_pmkid(pmksa, entry);
 
 	/* unlink from entry list */
 	pos = pmksa->pmksa;
@@ -283,13 +291,14 @@ pmksa_cache_auth_add(struct rsn_pmksa_cache *pmksa,
 		     const u8 *pmk, size_t pmk_len, const u8 *pmkid,
 		     const u8 *kck, size_t kck_len,
 		     const u8 *aa, const u8 *spa, int session_timeout,
-		     struct eapol_state_machine *eapol, int akmp)
+		     struct eapol_state_machine *eapol, int akmp,
+		     enum rsn_hash_alg hash)
 {
 	struct rsn_pmksa_cache_entry *entry;
 
 	entry = pmksa_cache_auth_create_entry(pmk, pmk_len, pmkid, kck, kck_len,
 					      aa, spa, session_timeout, eapol,
-					      akmp);
+					      akmp, hash);
 
 	if (pmksa_cache_auth_add_entry(pmksa, entry) < 0)
 		return NULL;
@@ -318,7 +327,8 @@ struct rsn_pmksa_cache_entry *
 pmksa_cache_auth_create_entry(const u8 *pmk, size_t pmk_len, const u8 *pmkid,
 			      const u8 *kck, size_t kck_len, const u8 *aa,
 			      const u8 *spa, int session_timeout,
-			      struct eapol_state_machine *eapol, int akmp)
+			      struct eapol_state_machine *eapol, int akmp,
+			      enum rsn_hash_alg hash)
 {
 	struct rsn_pmksa_cache_entry *entry;
 	struct os_reltime now;
@@ -345,7 +355,7 @@ pmksa_cache_auth_create_entry(const u8 *pmk, size_t pmk_len, const u8 *pmkid,
 	else if (wpa_key_mgmt_suite_b(akmp))
 		rsn_pmkid_suite_b(kck, kck_len, aa, spa, entry->pmkid);
 	else
-		rsn_pmkid(pmk, pmk_len, aa, spa, entry->pmkid, akmp);
+		rsn_pmkid(pmk, pmk_len, aa, spa, entry->pmkid, akmp, hash);
 	os_get_reltime(&now);
 	entry->expiration = now.sec;
 	if (session_timeout > 0)
@@ -369,6 +379,49 @@ pmksa_cache_auth_create_entry(const u8 *pmk, size_t pmk_len, const u8 *pmkid,
  * already in the cache for the same Supplicant, this entry will be replaced
  * with the new entry. PMKID will be calculated based on the PMK.
  */
+/**
+ * pmksa_cache_auth_recalc_pmkid - Recalculate the PMKID of a cache entry
+ * @pmksa: Pointer to PMKSA cache data from pmksa_cache_auth_init()
+ * @entry: Pointer to the PMKSA cache entry to update
+ * @kck: Key confirmation key from the derived PTK
+ * @kck_len: KCK length in bytes
+ * @aa: Authenticator address
+ * @spa: Supplicant address
+ * @hash: Hash algorithm to use in the PMKID derivation
+ * Returns: 0 on success, -1 on failure
+ *
+ * Per IEEE P802.11bt/D1.0, 12.7.1.3, the PMKID of the PQC AKMs is keyed with
+ * the PTK-KCK, which is not available when the entry is created. Rehash the
+ * entry into the PMKID index since the PMKID is used as the lookup key.
+ */
+int pmksa_cache_auth_recalc_pmkid(struct rsn_pmksa_cache *pmksa,
+				  struct rsn_pmksa_cache_entry *entry,
+				  const u8 *kck, size_t kck_len, const u8 *aa,
+				  const u8 *spa, enum rsn_hash_alg hash)
+{
+	unsigned int idx;
+
+	if (!kck || !kck_len || kck_len > WPA_KCK_MAX_LEN)
+		return -1;
+
+	pmksa_cache_unlink_pmkid(pmksa, entry);
+
+	os_memcpy(entry->kck, kck, kck_len);
+	entry->kck_len = kck_len;
+
+	rsn_pmkid(kck, kck_len, aa, spa, entry->pmkid, entry->akmp, hash);
+
+	idx = PMKID_HASH(entry->pmkid);
+	entry->hnext = pmksa->pmkid[idx];
+	pmksa->pmkid[idx] = entry;
+
+	wpa_hexdump(MSG_DEBUG, "RSN: recalculated PMKID", entry->pmkid,
+		    PMKID_LEN);
+
+	return 0;
+}
+
+
 int pmksa_cache_auth_add_entry(struct rsn_pmksa_cache *pmksa,
 			       struct rsn_pmksa_cache_entry *entry)
 {
@@ -550,7 +603,8 @@ struct rsn_pmksa_cache_entry * pmksa_cache_get_okc(
 				  new_pmkid);
 		else
 			rsn_pmkid(entry->pmk, entry->pmk_len, aa, spa,
-				  new_pmkid, entry->akmp);
+				  new_pmkid, entry->akmp,
+				  RSN_HASH_NOT_SPECIFIED);
 		if (os_memcmp(new_pmkid, pmkid, PMKID_LEN) == 0)
 			return entry;
 	}

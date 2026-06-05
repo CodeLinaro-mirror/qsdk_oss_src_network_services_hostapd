@@ -45,7 +45,8 @@ int pasn_responder_pmksa_cache_add(struct rsn_pmksa_cache *pmksa,
 				   const u8 *pmkid, int akmp)
 {
 	if (pmksa_cache_auth_add(pmksa, pmk, pmk_len, pmkid, NULL, 0, own_addr,
-				 bssid, 0, NULL, akmp))
+				 bssid, 0, NULL, akmp,
+				 RSN_HASH_NOT_SPECIFIED))
 		return 0;
 	return -1;
 }
@@ -278,7 +279,8 @@ static int pasn_wd_handle_sae_confirm(struct pasn_data *pasn,
 #endif /* CONFIG_PMKSA_PRIVACY */
 	pmksa_cache_auth_add(pasn->pmksa, pasn->sae.pmk, pasn->sae.pmk_len,
 			     pasn->sae.pmkid, NULL, 0, pasn->own_addr,
-			     peer_addr, 0, NULL, pasn->sae.akmp);
+			     peer_addr, 0, NULL, pasn->sae.akmp,
+			     RSN_HASH_NOT_SPECIFIED);
 	return 0;
 }
 

@@ -45,7 +45,8 @@ int pasn_initiator_pmksa_cache_add(struct rsn_pmksa_cache *pmksa,
 				   size_t pmk_len, const u8 *pmkid, int akmp)
 {
 	if (pmksa_cache_add(pmksa, pmk, pmk_len, pmkid, NULL, 0, bssid,
-			    own_addr, NULL, akmp, NULL, 0))
+			    own_addr, NULL, akmp, NULL, 0,
+			    RSN_HASH_NOT_SPECIFIED))
 		return 0;
 	return -1;
 }
@@ -508,7 +509,8 @@ static int wpas_pasn_wd_fils_rx(struct pasn_data *pasn, struct wpabuf *wd)
 					    pasn->pmk_len, pasn->fils.erp_pmkid,
 					    NULL, 0, pasn->peer_addr,
 					    pasn->own_addr, NULL,
-					    pasn->akmp, NULL, pasn->auth_alg);
+					    pasn->akmp, NULL, pasn->auth_alg,
+					    RSN_HASH_NOT_SPECIFIED);
 
 	pasn->fils.completed = true;
 	return 0;
@@ -1053,7 +1055,8 @@ static int wpas_pasn_set_pmk(struct pasn_data *pasn,
 						    pasn->own_addr,
 						    pasn->network_ctx,
 						    pasn->akmp, NULL,
-						    pasn->auth_alg);
+						    pasn->auth_alg,
+						    RSN_HASH_NOT_SPECIFIED);
 		return 0;
 	}
 #endif /* CONFIG_SAE */

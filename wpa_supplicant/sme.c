@@ -177,7 +177,7 @@ static int sme_get_pmk_for_1x_auth(struct wpa_supplicant *wpa_s,
 
 	pmksa_cache_add(pmksa_cache, pmk_buf, len, NULL, NULL, 0, peer_addr,
 			wpa_s->own_addr, ssid, key_mgmt, NULL,
-			WLAN_AUTH_802_1X);
+			WLAN_AUTH_802_1X, RSN_HASH_NOT_SPECIFIED);
 
 	return 0;
 }
@@ -4421,6 +4421,36 @@ static size_t wpas_get_kdk_len(struct wpa_supplicant *wpa_s)
 	return 0;
 }
 
+#ifdef CONFIG_PQC
+
+static int sme_802_1x_update_pmksa_pmkid(struct wpa_supplicant *wpa_s,
+					 const u8 *peer_addr,
+					 struct wpa_ptk *ptk)
+{
+	struct auth_802_1x_data *auth_1x = wpa_s->auth_1x;
+	struct rsn_pmksa_cache_entry *pmksa;
+
+	pmksa = pmksa_cache_get_current(wpa_s->wpa);
+	if (!pmksa || !auth_1x->constraint) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: No PMKSA cache entry to update");
+		return -1;
+	}
+
+	if (pmksa_cache_recalc_pmkid(pmksa, ptk->kck, ptk->kck_len, peer_addr,
+				     wpa_s->own_addr,
+				     auth_1x->constraint->hash) < 0) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: Failed to recalculate the PMKID");
+		return -1;
+	}
+
+	os_memcpy(auth_1x->pmkid, pmksa->pmkid, PMKID_LEN);
+
+	return 0;
+}
+
+#endif /* CONFIG_PQC */
 
 static int sme_802_1x_derive_ptk_and_install(struct wpa_supplicant *wpa_s,
 					     const u8 *frame_body,
@@ -4547,6 +4577,18 @@ static int sme_802_1x_derive_ptk_and_install(struct wpa_supplicant *wpa_s,
 			pairwise_cipher, dot11RSNAConfigPMKLifetime,
 			&ptk, NULL, NULL, key_mgmt,
 			WLAN_AUTH_802_1X);
+
+#ifdef CONFIG_PQC
+	/*
+	 * The PMKID is bound to the PMKSA, so recalculate it only for the
+	 * exchange that created it and not for PMKSA caching.
+	 */
+	if (wpa_key_mgmt_pqc(auth_1x->key_mgmt) && auth_1x->eap_success &&
+	    sme_802_1x_update_pmksa_pmkid(wpa_s, peer_addr, &ptk) < 0) {
+		forced_memzero(&ptk, sizeof(ptk));
+		return -1;
+	}
+#endif /* CONFIG_PQC */
 
 	forced_memzero(&ptk, sizeof(ptk));
 	return 0;

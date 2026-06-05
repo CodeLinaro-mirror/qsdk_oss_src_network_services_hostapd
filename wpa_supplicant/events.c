@@ -529,7 +529,8 @@ static int wpa_find_assoc_pmkid_okc(struct wpa_supplicant *wpa_s,
 		"RSN: No direct PMKID match found - trying OKC for "
 		MACSTR " to identify driver-derived PMKID", MAC2STR(aa));
 
-	pmksa_cache_derive_pmkid(cur_pmksa, aa, wpa_s->own_addr, derived_pmkid);
+	pmksa_cache_derive_pmkid(cur_pmksa, aa, wpa_s->own_addr, derived_pmkid,
+				 RSN_HASH_NOT_SPECIFIED);
 
 	for (i = 0; i < ie->num_pmkid; i++) {
 		if (os_memcmp(derived_pmkid, ie->pmkid + i * PMKID_LEN,
