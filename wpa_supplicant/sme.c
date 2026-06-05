@@ -674,6 +674,16 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 
 	skip_auth = wpa_s->conf->reassoc_same_bss_optim &&
 		wpa_s->reassoc_same_bss;
+
+	if (!skip_auth && wpa_s->smd_capable) {
+		struct rsn_pmksa_cache_entry *pmksa = pmksa_cache_get_current(wpa_s->wpa);
+		if (pmksa && pmksa->smd_enabled &&
+		    os_memcmp(pmksa->aa, bss->bssid, ETH_ALEN) == 0) {
+			wpa_printf(MSG_DEBUG, "SME: Using OPEN Auth for SMD PMKSA Cache reuse");
+			params.auth_alg = WPA_AUTH_ALG_OPEN;
+		}
+	}
+
 	wpa_s->current_bss = bss;
 
 	wpa_s->reassociate = 0;
@@ -1181,6 +1191,59 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 	}
 no_fils:
 #endif /* CONFIG_FILS */
+
+	if (wpa_s->smd_capable) {
+		u8 auth_ies[512];
+		size_t auth_ies_len = 0;
+		u8 *smd_ie;
+		size_t smd_ie_len;
+		u8 ptk_mode = 0;
+		u8 capabilities = bss->smd_capabilities ? bss->smd_capabilities : 0x01;
+		u16 timeout = bss->smd_timeout ? bss->smd_timeout : 1000;
+
+		if (ssid->smd_ptk_mode == 1)
+			ptk_mode = 1;
+
+		params.smd.enabled = wpa_s->smd_capable;
+		os_memcpy(params.smd.smd_identifier,
+			  bss->smd_identifier, ETH_ALEN);
+		params.smd.smd_timeout = timeout;
+		params.smd.caps.max_prep_target_apmlds = 0;
+		params.smd.caps.smd_type = ssid->smd_ptk_mode;
+		params.smd.caps.ptk_mode = ptk_mode;
+
+		if (params.ie && params.ie_len > 0) {
+			if (params.ie_len <= sizeof(auth_ies)) {
+				os_memcpy(auth_ies, params.ie, params.ie_len);
+				auth_ies_len = params.ie_len;
+			} else {
+				wpa_printf(MSG_WARNING, "SME: Existing auth IEs too large");
+				goto skip_smd_ie;
+			}
+		}
+
+		smd_ie = wpas_build_smd_ie(bss->smd_identifier, ptk_mode, capabilities,
+					  timeout, &smd_ie_len);
+		if (smd_ie) {
+			if (auth_ies_len + smd_ie_len < sizeof(auth_ies)) {
+				os_memcpy(auth_ies + auth_ies_len, smd_ie,
+					  smd_ie_len);
+				auth_ies_len += smd_ie_len;
+
+				params.ie = auth_ies;
+				params.ie_len = auth_ies_len;
+
+				wpa_printf(MSG_DEBUG,
+					   "SME: Added SMD IE to authentication frame");
+			} else {
+				wpa_printf(MSG_WARNING, "SME: Auth IEs buffer tpp small for SMD IE");
+			}
+
+			os_free(smd_ie);
+		}
+
+	skip_smd_ie:;
+	}
 
 	wpa_supplicant_cancel_sched_scan(wpa_s);
 	wpa_supplicant_cancel_scan(wpa_s);
@@ -2045,6 +2108,13 @@ static int sme_sae_set_pmk(struct wpa_supplicant *wpa_s, const u8 *bssid)
 {
 	wpa_printf(MSG_DEBUG,
 		   "SME: SAE completed - setting PMK for 4-way handshake");
+
+	if (wpa_s->current_bss && wpa_s->smd_capable) {
+		wpa_printf(MSG_DEBUG, "SMD : Setting SAE PMK with SMD Context");
+		wpa_sm_set_smd_params(wpa_s->wpa, wpa_s->smd_id,
+				      wpa_s->smd_ptk_mode,
+				      wpa_s->smd_me_initial_ap_mld_addr);
+	}
 	wpa_sm_set_pmk(wpa_s->wpa, wpa_s->sme.sae.pmk, wpa_s->sme.sae.pmk_len,
 		       wpa_s->sme.sae.pmkid, bssid);
 	if (wpa_s->conf->sae_pmkid_in_assoc) {
@@ -2336,6 +2406,37 @@ void sme_event_auth(struct wpa_supplicant *wpa_s, union wpa_event_data *data)
 			   "MLD: Authentication - clearing MLD state");
 		wpas_reset_mlo_info(wpa_s);
 		return;
+	}
+
+	if (data->auth.ies && data->auth.ies_len > 0) {
+		struct ieee802_11_elems elems;
+
+		if (ieee802_11_parse_elems(data->auth.ies + ie_offset,
+					   data->auth.ies_len - ie_offset,
+					   & elems, 0) != ParseFailed) {
+			if (elems.smd && elems.smd_len >= 10) {
+				u8 smd_identifier[6];
+				u8 ptk_mode, capabilities;
+				u16 timeout;
+
+				if (wpas_parse_smd_ie(elems.smd, elems.smd_len,
+						      smd_identifier, &ptk_mode,
+						      &capabilities, &timeout) == 0) {
+					wpa_printf(MSG_DEBUG, "SME: Parsed SMD IE from auth response: "
+						   "SMD_ID=" MACSTR " PTK_mode=%u capabilities=0x%02x timeout=%u",
+						   MAC2STR(smd_identifier), ptk_mode, capabilities, timeout);
+
+					if (wpa_s->current_bss) {
+						os_memcpy(wpa_s->current_bss->smd_identifier, smd_identifier, 6);
+						wpa_s->current_bss->smd_capabilities = capabilities;
+						wpa_s->current_bss->smd_ptk_mode = ptk_mode;
+						wpa_s->current_bss->smd_timeout = timeout;
+					}
+				} else {
+					wpa_printf(MSG_WARNING, "SME: Failed to parse SMD IE from auth response");
+				}
+			}
+		}
 	}
 
 	sme_associate(wpa_s, ssid->mode, data->auth.peer,
@@ -2682,6 +2783,42 @@ mscs_fail:
 #ifdef CONFIG_QCN_EXTN
 	wpas_add_qcn_ie_assoc_req_extn(wpa_s);
 #endif /* CONFIG_QCN_EXTN */
+	if (wpa_s->current_bss && wpa_s->smd_capable) {
+		u8 *smd_ie;
+		size_t smd_ie_len;
+		u8 ptk_mode = 0;
+		u8 capabilities = wpa_s->current_bss->smd_capabilities ?
+			wpa_s->current_bss->smd_capabilities : 0x01;
+		u16 timeout = wpa_s->current_bss->smd_timeout ?
+			wpa_s->current_bss->smd_timeout : 1000;
+
+		if (ssid && ssid->smd_ptk_mode == 1)
+			ptk_mode = 1;
+		params.smd.enabled = wpa_s->smd_capable;
+		os_memcpy(params.smd.smd_identifier,
+			  wpa_s->current_bss->smd_identifier, ETH_ALEN);
+		params.smd.smd_timeout = timeout;
+		params.smd.caps.max_prep_target_apmlds = 0;
+		params.smd.caps.smd_type = wpa_s->current_bss->smd_type;
+		params.smd.caps.ptk_mode = ptk_mode;
+		smd_ie = wpas_build_smd_ie(wpa_s->current_bss->smd_identifier,
+					   ptk_mode, capabilities, timeout, &smd_ie_len);
+		if (smd_ie) {
+			if (wpa_s->sme.assoc_req_ie_len + smd_ie_len <=
+			    sizeof(wpa_s->sme.assoc_req_ie)) {
+				os_memcpy(wpa_s->sme.assoc_req_ie + wpa_s->sme.assoc_req_ie_len,
+					  smd_ie, smd_ie_len);
+				wpa_s->sme.assoc_req_ie_len += smd_ie_len;
+				wpa_printf(MSG_DEBUG, "SME: Added SMD IE to association request (PTK Mode %u)",
+					   ptk_mode);
+			} else {
+				wpa_printf(MSG_WARNING, "SME: Not enough buffer space for SMD IE in association request");
+			}
+
+			os_free(smd_ie);
+		}
+	}
+
 	params.bssid = bssid;
 	params.ssid = wpa_s->sme.ssid;
 	params.ssid_len = wpa_s->sme.ssid_len;

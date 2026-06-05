@@ -1652,3 +1652,57 @@ void hostapd_wfa_capab(struct hostapd_data *hapd, struct sta_info *sta,
 	if (gen_capa)
 		hostapd_wfa_gen_capab(hapd, sta, gen_capa + 2, gen_capa[1]);
 }
+
+#ifdef CONFIG_IEEE80211BN
+/**
+ * hostapd_eid_smd - Build SMD Information Element
+ * @hapd: BSS data
+ * @eid: Pointer to current position in buffer
+ * Returns: Pointer to next position in buffer
+ *
+ * Writes the SMD IE (IEEE 802.11bn SMD Information Element) into the
+ * provided buffer.  The IE carries the AP's SMD identifier, capabilities
+ * byte, and preparation timeout (1 octet, units of 64 TUs).
+ */
+u8 *hostapd_eid_smd(struct hostapd_data *hapd, u8 *eid)
+{
+	u8 smd_cap_byte;
+
+	if (!hapd->conf->smd.enabled)
+		return eid;
+
+	if (!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_SMD))
+		return eid;
+
+	*eid++ = WLAN_EID_EXTENSION;
+	*eid++ = SMD_IE_LEN - 2; /* Length: ExtID + SMD ID + Caps + Timeout */
+	*eid++ = WLAN_EID_EXT_SMD;
+
+	/* SMD Identifier (6 octets) */
+	os_memcpy(eid, hapd->conf->smd.smd_identifier, ETH_ALEN);
+	eid += ETH_ALEN;
+
+	/* SMD Capabilities (1 octet)
+	 * B0: DL Data Forwarding
+	 * B1-B3: Max Number Of Prepared Target AP MLDs
+	 * B4: SMD Type
+	 * B5: PTK Mode
+	 * B6: Neighboring AP Probing Support
+	 * B7: Reserved
+	 */
+	smd_cap_byte = 0;
+	if (hapd->conf->smd.caps.dl_data_fwd)
+		smd_cap_byte |= BIT(0);
+	smd_cap_byte |= (hapd->conf->smd.caps.max_prep_target_apmlds & 0x07) << 1;
+	if (hapd->conf->smd.caps.smd_type)
+		smd_cap_byte |= BIT(4);
+	if (hapd->conf->smd.caps.ptk_mode)
+		smd_cap_byte |= BIT(5);
+	*eid++ = smd_cap_byte;
+
+	/* Preparation Timeout (1 octet, units of 64 TUs) */
+	*eid++ = hapd->conf->smd.smd_prep_timeout;
+
+	return eid;
+}
+#endif /* CONFIG_IEEE80211BN */

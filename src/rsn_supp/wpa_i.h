@@ -121,6 +121,15 @@ struct wpa_sm {
 	unsigned int spp_amsdu:1;
 	unsigned int sae_pw_id_change:1;
 
+	unsigned int smd_enabled:1;
+	u8 smd_id[6];
+	u8 smd_ptk_mode;
+	u8 smd_kdk[PMK_LEN_MAX];
+	size_t smd_kdk_len;
+
+	/* SMD-ME association context per IEEE80211 bn */
+	u8 smd_me_initial_ap_mld_addr[ETH_ALEN];
+
 	u8 *assoc_wpa_ie; /* Own WPA/RSN IE from (Re)AssocReq */
 	size_t assoc_wpa_ie_len;
 	u8 *assoc_rsnxe; /* Own RSNXE from (Re)AssocReq */

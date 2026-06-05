@@ -369,6 +369,12 @@ static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
 			  wpabuf_len(conf->sae_pw_id_key));
 	}
 	wconf->plugin_eapol_key_offload = conf->plugin_eapol_key_offload;
+
+#ifdef CONFIG_IEEE80211BN
+	wconf->smd_capable = conf->smd.enabled;
+	os_memcpy(wconf->smd_domain_id, conf->smd.smd_identifier, ETH_ALEN);
+	wconf->smd_ptk_mode = conf->smd.caps.ptk_mode;
+#endif /* CONFIG_IEEE80211BN */
 }
 
 

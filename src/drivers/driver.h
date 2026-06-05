@@ -1197,6 +1197,8 @@ struct wpa_driver_auth_params {
 	 * The MLD AP address
 	 */
 	const u8 *ap_mld_addr;
+
+	struct wpa_smd_params smd;
 };
 
 /**
@@ -1901,6 +1903,8 @@ struct wpa_driver_associate_params {
 	 * p2p_mode - P2P R1 only, P2P R2 only, or PCC mode
 	 */
 	enum wpa_p2p_mode p2p_mode;
+
+	struct wpa_smd_params smd;
 };
 
 enum hide_ssid {

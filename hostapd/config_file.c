@@ -6104,6 +6104,60 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 #endif
 	} else if (os_strcmp(buf, "i2r_lmr_policy") == 0) {
 		conf->i2r_lmr_policy = atoi(pos);
+#ifdef CONFIG_IEEE80211BN
+	} else if (os_strcmp(buf, "smd_ap") == 0) {
+		bss->smd.enabled = atoi(pos);
+		wpa_printf(MSG_DEBUG, "SMD Config: smd_ap set to %d", bss->smd.enabled);
+	} else if (os_strcmp(buf, "smd_identifier") == 0) {
+		if (hwaddr_aton(pos, bss->smd.smd_identifier)) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid SMD identifier '%s'",
+				   line, pos);
+			return 1;
+		}
+		wpa_printf(MSG_DEBUG, "SMD Config: smd_identifier set to " MACSTR,
+			   MAC2STR(bss->smd.smd_identifier));
+	} else if (os_strcmp(buf, "smd_timeout") == 0) {
+		int timeout = strtol(pos, NULL, 10);
+		if (timeout < 0 || timeout > 255) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid SMD timeout value %d",
+				   line, timeout);
+			return 1;
+		}
+		bss->smd.smd_prep_timeout = timeout;
+		wpa_printf(MSG_DEBUG, "SMD Config: smd_timeout set to %d TU", timeout);
+	} else if (os_strcmp(buf, "smd_max_peer_apmlds") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid smd_max_peer_apmlds value %d (must be 0-7)",
+				   line, val);
+			return 1;
+		}
+		bss->smd.caps.max_prep_target_apmlds = val;
+		wpa_printf(MSG_DEBUG, "SMD Config: smd_max_peer_apmlds set to %d", val);
+	} else if (os_strcmp(buf, "smd_type") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid smd_type value %d (must be 0 or 1)",
+				   line, val);
+			return 1;
+		}
+		bss->smd.caps.smd_type = val;
+		wpa_printf(MSG_DEBUG, "SMD Config: smd_type set to %d", val);
+	} else if (os_strcmp(buf, "smd_ptk_mode") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid smd_ptk_mode value %d (must be 0 or 1)",
+				   line, val);
+			return 1;
+		}
+		bss->smd.caps.ptk_mode = val;
+		wpa_printf(MSG_DEBUG, "SMD Config: smd_ptk_mode set to %d", val);
+#endif /* CONFIG_IEEE80211BN */
 	} else {
 		if (!hostapd_config_fill_extn(conf, bss, buf, pos, line))
 			return 0;

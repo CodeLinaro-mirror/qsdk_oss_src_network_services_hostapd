@@ -533,6 +533,14 @@ static void write_int(FILE *f, const char *field, int value, int def)
 	fprintf(f, "\t%s=%d\n", field, value);
 }
 
+static void write_smd_id(FILE *f, struct wpa_ssid *ssid)
+{
+	char *value = wpa_config_get(ssid, "smd_id");
+	if (value == NULL)
+		return;
+	fprintf(f, "\tsmd_id=%s\n", value);
+	os_free(value);
+}
 
 static void write_bssid(FILE *f, struct wpa_ssid *ssid)
 {
@@ -1039,6 +1047,9 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid,
 	INT(enable_4addr_mode);
 	INT(max_idle);
 	INT(disable_reconfig);
+	INT(smd_enabled);
+	write_smd_id(f, ssid);
+	INT(smd_ptk_mode);
 	INT(ssid_protection);
 	INT_DEF(rsn_overriding, RSN_OVERRIDING_NOT_SET);
 	INT(control_frame_protection);
