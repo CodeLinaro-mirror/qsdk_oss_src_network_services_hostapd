@@ -308,6 +308,13 @@ struct airtime_sta_weight {
 	u8 addr[ETH_ALEN];
 };
 
+#ifdef CONFIG_IEEE80211BN
+struct smd_partner_entry {
+	u8 mac_addr[ETH_ALEN];
+	struct smd_partner_entry *next;
+};
+#endif /* CONFIG_IEEE80211BN */
+
 #define EXT_CAPA_MAX_LEN 15
 #define MAX_VENDOR_ELEM_ALLOWED 10
 
@@ -1323,6 +1330,26 @@ struct hostapd_bss_config {
 #ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
 	struct hostapd_config_plugin plugin;
 #endif
+
+	/* AP side */
+#ifdef CONFIG_IEEE80211BN
+	struct {
+		int enabled; /* SMD AP enabled */
+		u8 smd_identifier[ETH_ALEN]; /* SMD Identifier (MAC address) */
+		u8 smd_prep_timeout; /* SMD Element Preparation Timeout, units of 64 TUs */
+		/* UHR ST Execute configuration */
+		u32 uhr_dl_drain_duration_tu;  /* DL Drain duration in TU */
+		struct {
+			bool dl_data_fwd; /* DL Data Forwarding */
+			u8 max_prep_target_apmlds; /* Max Number Of Prepared Target AP MLDs */
+			bool smd_type; /* SMD Type */
+			bool ptk_mode; /* PTK Mode */
+		} caps;
+	} smd;
+
+       /* SMD partner APs for roaming */
+       struct smd_partner_entry *smd_partners;
+#endif /* CONFIG_IEEE80211BN */
 };
 
 /**

@@ -3432,7 +3432,7 @@ u8 *wpas_build_smd_ie(const u8 *smd_id, u8 ptk_mode, u8 capabilities,
 
 	*pos++ = smd_capabilities;
 
-	WPA_PUT_LE16(pos, timeout);
+	*pos++ = (u8)timeout;
 
 	return ie;
 }
@@ -3445,7 +3445,7 @@ int wpas_parse_smd_ie(const u8 *ie, size_t ie_len, u8 *smd_id,
 	if (!ie || ie_len < SMD_IE_LEN)
 		return -EINVAL;
 
-	if (ie[0] != WLAN_EID_EXTENSION || ie[1] != 10 ||
+	if (ie[0] != WLAN_EID_EXTENSION || ie[1] != SMD_IE_LEN - 2 ||
 	    ie[2] != WLAN_EID_EXT_SMD)
 		return -EINVAL;
 
@@ -3462,7 +3462,7 @@ int wpas_parse_smd_ie(const u8 *ie, size_t ie_len, u8 *smd_id,
 	pos++;
 
 	if (timeout)
-		*timeout = WPA_GET_LE16(pos);
+		*timeout = *pos;
 
 	return 0;
 }
