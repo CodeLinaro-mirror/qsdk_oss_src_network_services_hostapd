@@ -8623,6 +8623,9 @@ union wpa_event_data {
 		u8 bpcc;
 		u8 switch_count;
 		u8 link_id;
+		u8 enhanced_bpcc;
+		bool enhanced_critical_update;
+		u8 ecu_countdown;
 	} cu_event;
 
 	/**
