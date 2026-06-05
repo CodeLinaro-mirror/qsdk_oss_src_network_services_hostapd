@@ -17626,6 +17626,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.scan2 = driver_nl80211_scan2,
 	.sched_scan = wpa_driver_nl80211_sched_scan,
 	.stop_sched_scan = wpa_driver_nl80211_stop_sched_scan,
+	.trigger_smd_discovery = wpa_driver_nl80211_trigger_smd_discovery,
 	.get_scan_results = wpa_driver_nl80211_get_scan_results,
 	.abort_scan = wpa_driver_nl80211_abort_scan,
 	.deauthenticate = driver_nl80211_deauthenticate,

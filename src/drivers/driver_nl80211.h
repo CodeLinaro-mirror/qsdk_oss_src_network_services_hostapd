@@ -475,6 +475,9 @@ int wpa_driver_nl80211_scan(struct i802_bss *bss,
 int wpa_driver_nl80211_sched_scan(void *priv,
 				  struct wpa_driver_scan_params *params);
 int wpa_driver_nl80211_stop_sched_scan(void *priv);
+int wpa_driver_nl80211_trigger_smd_discovery(void *priv,
+					     const struct wpa_driver_smd_neighbor *neighbors,
+					     size_t num_neighbors);
 struct wpa_scan_results * wpa_driver_nl80211_get_scan_results(void *priv,
 							      const u8 *bssid);
 void nl80211_dump_scan(struct wpa_driver_nl80211_data *drv);
