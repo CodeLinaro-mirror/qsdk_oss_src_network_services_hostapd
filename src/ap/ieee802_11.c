@@ -6598,8 +6598,8 @@ static u32 hostapd_get_aid_word(struct hostapd_data *hapd,
 
 
 #ifdef CONFIG_IEEE80211BE
-static int hostapd_get_wds_mld_ifname_id(struct hostapd_data *hapd,
-					 struct sta_info *sta)
+int hostapd_get_wds_mld_ifname_id(struct hostapd_data *hapd,
+				  struct sta_info *sta)
 {
 	struct hostapd_mld *mld = hapd->mld;
 	struct hostapd_data *link_bss;
@@ -7591,6 +7591,15 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 	resp = check_multi_ap(hapd, sta, elems->multi_ap, elems->multi_ap_len);
 	if (resp != WLAN_STATUS_SUCCESS)
 		goto out;
+
+#ifdef CONFIG_QCN_EXTN
+	/* WDS vendor IE: parse from assoc request and set sta_extn.wds_ie_peer */
+	resp = check_wds_ie_extn(hapd, sta,
+				 elems->elems_extn.wds_ie,
+				 elems->elems_extn.wds_ie_len);
+	if (resp != WLAN_STATUS_SUCCESS)
+		goto out;
+#endif /* CONFIG_QCN_EXTN */
 
 	resp = copy_sta_ht_capab(hapd, sta, elems->ht_capabilities);
 	if (resp != WLAN_STATUS_SUCCESS)
@@ -9532,6 +9541,12 @@ rsnxe_done:
 
 	if (sta && (sta->flags & WLAN_STA_MULTI_AP))
 		p = hostapd_eid_multi_ap(hapd, p, end - p);
+
+#ifdef CONFIG_QCN_EXTN
+	/* WDS vendor IE in association response */
+	if (sta && sta->sta_extn.wds_ie_peer)
+		p = hostapd_eid_wds_ie_extn(hapd, p, end - p);
+#endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_P2P
 	if (sta && sta->p2p_ie && hapd->p2p_group) {
@@ -11985,6 +12000,26 @@ static void set_sta_flag_to_partner_links(struct hostapd_data *hapd,
 }
 #endif /* CONFIG_IEEE80211BE */
 
+
+#ifdef CONFIG_IEEE80211BE
+/**
+ * hostapd_set_sta_flag_to_partner_links - Propagate STA flags to partner links
+ * This is a non-static wrapper over set_sta_flag_to_partner_links(), exposed
+ * for use by qcn_extns modules.
+ * The function propagates relevant STA flags (e.g., WDS, Multi-AP) from the
+ * given station context to all corresponding partner links, ensuring
+ * consistency across multi-link or multi-BSS configurations.
+ *
+ * @hapd: Pointer to the hostapd BSS context
+ * @sta: Station context for which WDS/Multi-AP flags need to be propagate
+ */
+void hostapd_set_sta_flag_to_partner_links(struct hostapd_data *hapd,
+					   struct sta_info *sta)
+{
+	set_sta_flag_to_partner_links(hapd, sta);
+}
+#endif /* CONFIG_IEEE80211BE */
+
 static void handle_assoc_cb(struct hostapd_data *hapd,
 			    const struct ieee80211_mgmt *mgmt,
 			    size_t len, int reassoc, int ok)
@@ -12360,6 +12395,10 @@ skip_update:
 	}
 #endif /* CONFIG_ROBUST_AV */
 
+#ifdef CONFIG_QCN_EXTN
+	handle_assoc_cb_wds_ie_extn(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
+
 handle_ml:
 	hostapd_ml_handle_assoc_cb(hapd, sta, ok);
 }
@@ -12680,11 +12719,20 @@ void ieee802_11_rx_from_unknown(struct hostapd_data *hapd, const u8 *src,
 
 		if (!hapd->conf->wds_sta)
 			return;
+#ifdef CONFIG_QCN_EXTN
+		if ((hapd->conf->bss_extn.wds_ie && !sta->sta_extn.wds_ie_peer) ||
+		    (!hapd->conf->bss_extn.wds_ie && sta->sta_extn.wds_ie_peer)) {
+			wpa_printf(MSG_DEBUG, "AP or Sta is not WDS_IE enabled peer\n");
+			return;
+		}
+
+#endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_IEEE80211BE
 		if (hapd->conf->mld_ap && wds
 #ifdef CONFIG_QCN_EXTN
 		    && !hostapd_is_repurpose_disabled_11be_extn(hapd->conf)
 #endif /* CONFIG_QCN_EXTN */
+		    ) {
 		    ) {
 			if (hostapd_get_wds_mld_ifname_id(hapd, sta) < 0) {
 				wpa_printf(MSG_DEBUG,

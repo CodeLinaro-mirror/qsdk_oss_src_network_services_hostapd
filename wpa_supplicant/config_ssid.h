@@ -1251,6 +1251,20 @@ struct wpa_ssid {
 	 */
 	int multi_ap_profile;
 
+#ifdef CONFIG_QCN_EXTN
+	/**
+	 * wds_ie - WDS vendor IE advertisement control (STA mode)
+	 *
+	 * When set to 1, the STA includes the WDS vendor IE (OUI 00:13:84,
+	 * type 0x01) in association request frames, advertising WDS_IE_CAP_STA.
+	 * The AP will enable WDS mode only when both sides advertise WDS IE.
+	 *
+	 * 0 = WDS IE disabled (default)
+	 * 1 = WDS IE enabled
+	 */
+	int wds_ie;
+#endif
+
 	/**
 	 * beacon_prot - Whether Beacon protection is enabled
 	 *

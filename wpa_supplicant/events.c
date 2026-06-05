@@ -55,6 +55,7 @@
 #include "dpp_supplicant.h"
 #include "pr_supplicant.h"
 #include "nan_supplicant.h"
+#include "../qcn_extns/cmn.h"
 
 
 #define MAX_OWE_TRANSITION_BSS_SELECT_COUNT 5
@@ -4159,6 +4160,10 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 							data->assoc_info.freq,
 							data->assoc_info.resp_ies,
 							data->assoc_info.resp_ies_len);
+		/* WDS vendor IE: parse from assoc response */
+		wds_ie_process_assoc_resp_extn(wpa_s,
+					       data->assoc_info.resp_ies,
+					       data->assoc_info.resp_ies_len);
 #endif /* CONFIG_QCN_EXTN */
 	}
 
