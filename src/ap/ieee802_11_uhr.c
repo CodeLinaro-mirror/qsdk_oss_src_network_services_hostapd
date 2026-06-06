@@ -3320,6 +3320,7 @@ int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd, struct sta_info *sta,
 {
 	struct ieee802_11_elems elems;
 	struct uhr_reconfig_mle mle;
+	struct hostapd_data *assoc_hapd = NULL;
 	const u8 *ies;
 	size_t ies_len;
 
@@ -3364,6 +3365,15 @@ int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd, struct sta_info *sta,
 		   " — sending CTX_REQUEST to Current AP " MACSTR,
 		   MAC2STR(sta->addr),
 		   MAC2STR(sta->smd_info.current_ap_mld_addr));
+
+	/*
+	 * Cancel the prep timer before the async CTX_REQUEST/CTX_RESPONSE
+	 * window opens.  If the timer were left running it could fire during
+	 * the exchange, call ap_free_sta(), and leave the CTX_RESPONSE handler
+	 * with a dangling sta_info pointer.
+	 */
+	if (hostapd_mld_find_assoc_sta(hapd, sta->addr, &assoc_hapd))
+		uhr_tgt_cancel_st_prep_timer(assoc_hapd, sta->addr);
 
 	return uhr_iap_send_st_ctx_request(hapd,
 					   sta->smd_info.current_ap_mld_addr,
