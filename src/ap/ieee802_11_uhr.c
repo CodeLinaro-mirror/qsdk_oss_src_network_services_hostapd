@@ -2992,20 +2992,17 @@ send_response:
 #endif /* CONFIG_IEEE80211BE */
 	}
 
-       // Once the target AP is validated we can send a prep request message to the FW
-       // (1) Role: This is always the serving AP
-       // failures need to be notified to FW whenever failed in hostapd
-       if (sta) {
-               u32 role = 2; /* Always target AP */
-               u32 type = 1; /* Always prep response since it was sent out already */
-               u32 dl_sn_not_transferred = sta->dl_sn_not_transferred;
-               u32 ul_sn_not_transferred = sta->ul_sn_not_transferred;
-               u32 dl_drain_time = assoc_hapd->conf->smd.uhr_dl_drain_duration_tu;
-               if (hostapd_smd_roam(assoc_hapd, assoc_sta, role, type, dl_sn_not_transferred, ul_sn_not_transferred, dl_drain_time)) {
-                       wpa_printf(MSG_DEBUG, "UHR Current AP: Failed to send WMI roam notification - not skipping for now.");
-               }
-       }
-	
+	/* Notify firmware of the ST Prep outcome — only when pointers are valid */
+	if (sta && assoc_hapd && assoc_sta &&
+	    hostapd_smd_roam(assoc_hapd, assoc_sta,
+			     2, /* role: Target AP */
+			     1, /* type: ST Prep response */
+			     sta->dl_sn_not_transferred,
+			     sta->ul_sn_not_transferred,
+			     assoc_hapd->conf->smd.uhr_dl_drain_duration_tu))
+		wpa_printf(MSG_ERROR,
+			   "UHR ST PREP Target AP: WMI roam notification failed");
+
 	if (response_frame)
 		os_free(response_frame);
 	
