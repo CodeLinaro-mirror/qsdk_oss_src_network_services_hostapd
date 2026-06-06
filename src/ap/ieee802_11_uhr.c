@@ -3565,6 +3565,16 @@ void uhr_cur_ap_handle_st_exec_via_tgt_done(struct hostapd_data *hapd,
 		return;
 	}
 
+	chosen = uhr_find_ap_in_list(sta, iap->target_ap_mld_addr);
+	if (!chosen ||
+	    chosen->state != SMD_AP_STATE_ST_EXEC_VIA_TGT_STARTED) {
+		wpa_printf(MSG_ERROR,
+			   "UHR VIA TGT DONE: Target AP " MACSTR
+			   " not in expected state",
+			   MAC2STR(iap->target_ap_mld_addr));
+		return;
+	}
+
 	if (hostapd_smd_roam(hapd, sta, 1, 3,
 			     sta->dl_sn_not_transferred,
 			     sta->ul_sn_not_transferred,
@@ -3572,9 +3582,7 @@ void uhr_cur_ap_handle_st_exec_via_tgt_done(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG,
 			   "UHR VIA TGT DONE: WMI roam notification failed");
 
-	chosen = uhr_find_ap_in_list(sta, iap->target_ap_mld_addr);
-	if (chosen)
-		uhr_cur_ap_cancel_st_prep_for_entry(hapd, sta, chosen);
+	uhr_cur_ap_cancel_st_prep_for_entry(hapd, sta, chosen);
 	uhr_remove_ap_from_list(sta, iap->target_ap_mld_addr);
 	uhr_cur_ap_purge_ap_list(hapd, sta);
 }
