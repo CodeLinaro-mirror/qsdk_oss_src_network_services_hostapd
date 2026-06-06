@@ -3506,6 +3506,25 @@ void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
 		   "UHR CTX RESP: Sent OTA ST Exec Response to STA " MACSTR,
 		   MAC2STR(iap->sta_addr));
 
+	/*
+	 * Notify the firmware that the TAP-side transition is complete.
+	 * role=2 (Target AP), type=4 (DYNAMIC_CONTEXT) — mirrors the call
+	 * in uhr_tgt_ap_handle_st_exec_req() for the IAP-forwarded path.
+	 * Without this command the firmware does not update its SMD context
+	 * (BA sessions, PN counters, peer state) and cannot TX to the STA.
+	 */
+	if (hostapd_smd_roam(lhapd, sta,
+			     2,   /* role: Target AP */
+			     4,   /* type: DYNAMIC_CONTEXT */
+			     sta->dl_sn_not_transferred,
+			     sta->ul_sn_not_transferred,
+			     lhapd->conf->smd.uhr_dl_drain_duration_tu)) {
+		wpa_printf(MSG_WARNING,
+			   "UHR CTX RESP: Failed to send DYNAMIC_CONTEXT WMI for STA "
+			   MACSTR, MAC2STR(iap->sta_addr));
+		return;
+	}
+
 	uhr_tgt_cancel_st_prep_timer(lhapd, iap->sta_addr);
 
 	uhr_iap_send_st_exec_via_tgt_done(lhapd,
