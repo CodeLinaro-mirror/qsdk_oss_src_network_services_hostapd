@@ -3335,6 +3335,9 @@ int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd, struct sta_info *sta,
 		return -1;
 	}
 
+	/* Save dialog token for use in the async CTX_RESPONSE path */
+	sta->smd_info.st_exec_dialog_token = buf[IEEE80211_HDRLEN + 2];
+
 	ies = buf + IEEE80211_HDRLEN + 4;
 	ies_len = len - IEEE80211_HDRLEN - 4;
 
@@ -3476,7 +3479,7 @@ void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
 	}
 
 	/* dialog token is in the STA's saved ST Exec request — use 0 if unavailable */
-	dialog_token = 0;
+	dialog_token = sta->smd_info.st_exec_dialog_token;
 
 	resp_buf = uhr_tgt_build_st_exec_resp_frame(lhapd, sta, dialog_token,
 						    &resp_len);

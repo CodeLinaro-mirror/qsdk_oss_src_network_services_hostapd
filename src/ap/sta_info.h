@@ -236,6 +236,7 @@ struct smd_info {
 	enum tgt_smd_roam_state state; /* non-AP STA state in Tgt AP */
 	bool flag;
 	u8 current_ap_mld_addr[ETH_ALEN]; /* Current AP MLD addr at time of ST Prep */
+	u8 st_exec_dialog_token; /* Dialog token from STA's ST Execute frame */
 };
 #endif /* CONFIG_IEEE80211BN */
 
