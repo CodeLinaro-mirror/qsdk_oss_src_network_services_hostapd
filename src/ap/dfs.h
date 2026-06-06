@@ -175,6 +175,7 @@ u32 hostapd_get_remaining_cac_tu(struct hostapd_iface *iface);
  * @secondary_channel: Pointer to secondary channel offset (output)
  * @oper_centr_freq_seg0_idx: Pointer to center freq seg0 (output)
  * @oper_centr_freq_seg1_idx: Pointer to center freq seg1 (output)
+ * @oper_chwidth: Pointer to reduced channel width (output)
  * Returns: Channel data pointer on success, NULL on failure
  */
 
@@ -182,7 +183,8 @@ struct hostapd_channel_data *
 dfs_find_bw_reduced_channel(struct hostapd_iface *iface,
 			   int *secondary_channel,
 			   u8 *oper_centr_freq_seg0_idx,
-			   u8 *oper_centr_freq_seg1_idx);
+			   u8 *oper_centr_freq_seg1_idx,
+			   u8 *oper_chwidth);
 
 int hostapd_set_dfs_cac_time(struct hostapd_iface *iface);
 #ifdef CONFIG_QCN_EXTN

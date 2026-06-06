@@ -1364,23 +1364,101 @@ static int dfs_get_next_lower_chwidth(u8 chwidth)
 	}
 }
 
+/**
+ * dfs_find_ht_reduced_channel - Find a valid HT20/HT40 during BW reduction
+ * @iface: ptr to the hostapd interface (input)
+ * @chan: Current primary channel data (input)
+ * @secondary_channel: Secondary channel offset -> set to +1 (HT40+), -1 (HT40-)
+ *                     or 0 (HT20) on success (output)
+ * @oper_centr_freq_seg0_idx: Center frequency segment 0 index for the reduced
+ *                            bandwidth channel (output)
+ * @oper_centr_freq_seg1_idx: Center frequency segment 1 index, set to 0 for
+ *                            HT20/HT40 (output)
+ * @oper_chwidth: Set to CONF_OPER_CHWIDTH_USE_HT on success (output)
+ *
+ * Returns: Pointer to the primary channel data on success, NULL if no valid
+ *          HT reduced bandwidth is available.
+ */
+static struct hostapd_channel_data *
+dfs_find_ht_reduced_channel(struct hostapd_iface *iface,
+			    struct hostapd_channel_data *chan,
+			    int *secondary_channel,
+			    u8 *oper_centr_freq_seg0_idx,
+			    u8 *oper_centr_freq_seg1_idx,
+			    u8 *oper_chwidth)
+{
+	struct hostapd_hw_modes *mode = iface->current_mode;
+	int channel = chan->chan;
+	int sec_candidates[] = {1, -1, 0};
+	int sc_idx;
+	int orig_sec_chan = iface->conf->secondary_channel;
+	u8 saved_seg0_idx = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
+
+	for (sc_idx = 0; sc_idx < ARRAY_SIZE(sec_candidates); sc_idx++) {
+		int sc = sec_candidates[sc_idx];
+		int ht_n_chans = (sc != 0) ? 2 : 1;
+		int ht_first_idx, ht_seg1;
+		u8 ht_seg0 = 0, ht_seg1_idx = 0;
+
+		iface->conf->secondary_channel = sc;
+
+		dfs_adjust_center_freq(iface, chan, sc, -1, CONF_OPER_CHWIDTH_USE_HT,
+				       &ht_seg0, &ht_seg1_idx);
+
+		hostapd_set_oper_centr_freq_seg0_idx(iface->conf, ht_seg0);
+
+		ht_first_idx = dfs_get_start_chan_idx(iface, &ht_seg1,
+						      CONF_OPER_CHWIDTH_USE_HT,
+						      channel, false);
+
+		/* Restore original BW and seg0 before checking availability */
+		hostapd_set_oper_centr_freq_seg0_idx(iface->conf, saved_seg0_idx);
+		iface->conf->secondary_channel = orig_sec_chan;
+
+		if (ht_first_idx < 0)
+			continue;
+
+		if (!dfs_chan_range_available(mode, ht_first_idx,
+					      ht_n_chans, DFS_AVAILABLE))
+			continue;
+
+		/* Found a valid HT candidate - store it */
+		*secondary_channel = sc;
+		*oper_centr_freq_seg0_idx = ht_seg0;
+		*oper_centr_freq_seg1_idx = ht_seg1_idx;
+		*oper_chwidth = CONF_OPER_CHWIDTH_USE_HT;
+		wpa_printf(MSG_INFO,
+			   "DFS: BW reduction successful - Ch %d, HT%s",
+			   channel,
+			   sc == 1 ? "40+" : sc == -1 ? "40-" : "20");
+		return chan;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "DFS: No valid HT reduced BW found for channel %d", channel);
+	return NULL;
+}
+
+
 struct hostapd_channel_data *
 dfs_find_bw_reduced_channel(struct hostapd_iface *iface,
 			   int *secondary_channel,
 			   u8 *oper_centr_freq_seg0_idx,
-			   u8 *oper_centr_freq_seg1_idx)
+			   u8 *oper_centr_freq_seg1_idx,
+			   u8 *oper_chwidth)
 {
 	struct hostapd_hw_modes *mode;
 	struct hostapd_channel_data *chan = NULL;
 	int i, channel;
 	int seg1_start;
 	u8 current_chwidth;
-	u8 target_chwidth;
+	int target_chwidth;
 	int n_chans, n_chans1;
 	int first_chan_idx;
 	u8 saved_seg0_idx;
 	u8 temp_seg0_idx, temp_seg1_idx;
 
+	*secondary_channel = iface->conf->secondary_channel;
 	wpa_printf(MSG_DEBUG, "DFS: Trying bandwidth reduction");
 
 	if (!iface->conf->dfs_bw_reduce_en) {
@@ -1418,6 +1496,7 @@ dfs_find_bw_reduced_channel(struct hostapd_iface *iface,
 			*secondary_channel = 0;
 			*oper_centr_freq_seg0_idx = 0;
 			*oper_centr_freq_seg1_idx = 0;
+			*oper_chwidth = CONF_OPER_CHWIDTH_USE_HT;
 			wpa_printf(MSG_INFO,
 				   "DFS: BW reduction successful - Ch %d, 20 MHz",
 				   channel);
@@ -1441,6 +1520,12 @@ dfs_find_bw_reduced_channel(struct hostapd_iface *iface,
 	saved_seg0_idx = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
 
 	while (1) {
+		if (target_chwidth == CONF_OPER_CHWIDTH_USE_HT)
+			return dfs_find_ht_reduced_channel(iface, chan,
+							   secondary_channel,
+							   oper_centr_freq_seg0_idx,
+							   oper_centr_freq_seg1_idx,
+							   oper_chwidth);
 		n_chans = dfs_get_used_n_chans(iface, &n_chans1, target_chwidth);
 
 		/* Temporarily set target BW and recompute seg0_idx so that
@@ -1466,30 +1551,10 @@ dfs_find_bw_reduced_channel(struct hostapd_iface *iface,
 
 		if (dfs_chan_range_available(mode, first_chan_idx,
 					     n_chans, DFS_AVAILABLE)) {
-			/*
-			 * Every target bandwidth above 20 MHz is built from an
-			 * HT40 pair, so secondary_channel must be derived here
-			 * for all of them, not just CONF_OPER_CHWIDTH_USE_HT -
-			 * hostapd_set_freq_params() rejects 80/160/320 MHz
-			 * configs with no secondary channel offset. But
-			 * CONF_OPER_CHWIDTH_USE_HT itself covers both HT40
-			 * (n_chans == 2) and plain 20 MHz (n_chans == 1), so
-			 * +1/-1 is only valid when the target is actually
-			 * HT40 - otherwise it must stay 0.
-			 */
-			if (target_chwidth == CONF_OPER_CHWIDTH_USE_HT &&
-			    n_chans == 1)
-				*secondary_channel = 0;
-			else
-				*secondary_channel =
-					(channel < temp_seg0_idx) ? 1 : -1;
+			*oper_centr_freq_seg0_idx = temp_seg0_idx;
+			*oper_centr_freq_seg1_idx = temp_seg1_idx;
 
-			dfs_adjust_center_freq(iface, chan,
-					       *secondary_channel, -1,
-					       target_chwidth,
-					       oper_centr_freq_seg0_idx,
-					       oper_centr_freq_seg1_idx);
-
+			*oper_chwidth = target_chwidth;
 			wpa_printf(MSG_INFO,
 				   "DFS: BW reduction successful - Ch %d, target BW %d",
 				   channel, target_chwidth);
@@ -4509,6 +4574,7 @@ static bool hostapd_dfs_radar_reduce_bandwidth(struct hostapd_iface *iface,
 	int secondary_channel;
 	u8 oper_centr_freq_seg0_idx = 0;
 	u8 oper_centr_freq_seg1_idx = 0;
+	u8 oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
 
 	if (!iface->conf->dfs_bw_reduce_en)
 		return false;
@@ -4520,7 +4586,8 @@ static bool hostapd_dfs_radar_reduce_bandwidth(struct hostapd_iface *iface,
 
 	channel = dfs_find_bw_reduced_channel(iface, &secondary_channel,
 					      &oper_centr_freq_seg0_idx,
-					      &oper_centr_freq_seg1_idx);
+					      &oper_centr_freq_seg1_idx,
+					      &oper_chwidth);
 	if (!channel)
 		return false;
 
@@ -4528,7 +4595,7 @@ static bool hostapd_dfs_radar_reduce_bandwidth(struct hostapd_iface *iface,
 		   channel->chan);
 	*ret = hostapd_dfs_request_channel_switch(
 		iface, channel->chan, channel->freq, secondary_channel,
-		hostapd_get_oper_chwidth(iface->conf),
+		oper_chwidth,
 		oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx,
 		hostapd_get_punct_bitmap(iface->bss[0]));
 	return true;
