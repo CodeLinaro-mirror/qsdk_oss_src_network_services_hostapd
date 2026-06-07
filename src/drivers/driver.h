@@ -5605,16 +5605,23 @@ struct wpa_driver_ops {
 	 * start_dfs_cac - Listen for radar interference on the channel
 	 * @priv: Private driver interface data
 	 * @freq: Channel parameters
+	 * @radio_idx: Physical radio index for background CAC
+	 *	(NL80211_ATTR_WIPHY_RADIO_INDEX). -1 if not applicable (foreground
+	 *	CAC or no multi-radio info available); the attribute is omitted and
+	 *	the kernel falls back to legacy single-slot behaviour.
 	 * Returns: 0 on success, -1 on failure
 	 */
-	int (*start_dfs_cac)(void *priv, struct hostapd_freq_params *freq);
+	int (*start_dfs_cac)(void *priv, struct hostapd_freq_params *freq, int radio_idx);
 
 	/**
 	 * stop_background_cac - Stop an ongoing background CAC
 	 * @priv: Private driver interface data
+	 * @radio_idx: Physical radio index of the background CAC to stop
+	 *	(NL80211_ATTR_WIPHY_RADIO_INDEX). -1 if not known; the attribute
+	 *	is omitted and the kernel selects the active slot by link.
 	 * Returns: 0 on success, -1 on failure
 	 */
-	int (*stop_background_cac)(void *priv);
+	int (*stop_background_cac)(void *priv, int radio_idx);
 
 	/**
 	 * stop_ap - Removes beacon from AP
