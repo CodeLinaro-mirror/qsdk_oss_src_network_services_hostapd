@@ -2006,6 +2006,91 @@ hostapd_dfs_get_next_precac_channel(struct hostapd_iface *iface,
 	return chan;
 }
 
+static bool dfs_precac_try_half_bw(struct hostapd_iface *iface)
+{
+	int home_bw = channel_width_to_int(
+		      hostapd_get_chan_width_from_oper_chan_width(iface->conf));
+	int half_bw = home_bw / 2;
+	enum oper_chan_width orig_oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
+	int orig_secondary_channel = iface->conf->secondary_channel;
+	enum oper_chan_width half_width;
+	u8 seg0 = 0, seg1 = 0;
+	int sec = 0;
+	struct hostapd_channel_data *chan;
+	int ret;
+
+	if (half_bw < 20)
+		return false;
+
+	switch (half_bw) {
+	case 20:
+		half_width = CONF_OPER_CHWIDTH_USE_HT;
+		break;
+	case 40:
+		half_width = CONF_OPER_CHWIDTH_USE_HT;
+		break;
+	case 80:
+		half_width = CONF_OPER_CHWIDTH_80MHZ;
+		break;
+	default:
+		return false;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "PRECAC_No full-BW channel found - trying half-BW (%d MHz)",
+		   half_bw);
+
+	hostapd_set_oper_chwidth(iface->conf, half_width);
+	if (half_bw == 20)
+		iface->conf->secondary_channel = 0;
+
+	chan = hostapd_dfs_get_next_precac_channel(iface, &seg0, &seg1, &sec);
+	if (!chan) {
+		wpa_printf(MSG_DEBUG,
+			   "PRECAC_No half-BW channel available either");
+		hostapd_set_oper_chwidth(iface->conf, orig_oper_chwidth);
+		iface->conf->secondary_channel = orig_secondary_channel;
+		return false;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "PRECAC_Starting background CAC on channel %d at half-BW (%d MHz)",
+		   chan->chan, half_bw);
+
+	ret = hostapd_start_dfs_cac(iface, iface->conf->hw_mode,
+				    chan->freq, chan->chan,
+				    iface->conf->ieee80211n,
+				    iface->conf->ieee80211ac,
+				    iface->conf->ieee80211ax,
+				    iface->conf->ieee80211be,
+				    iface->conf->ieee80211bn,
+				    sec,
+				    hostapd_get_oper_chwidth(iface->conf),
+				    seg0, seg1,
+				    true, 0, 0);
+
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "PRECAC_half-BW hostapd_start_dfs_cac() failed: %d", ret);
+		hostapd_set_oper_chwidth(iface->conf, orig_oper_chwidth);
+		iface->conf->secondary_channel = orig_secondary_channel;
+		return false;
+	}
+
+	iface->radar_background.channel = chan->chan;
+	iface->radar_background.freq = chan->freq;
+	iface->radar_background.secondary_channel = sec;
+	iface->radar_background.centr_freq_seg0_idx = seg0;
+	iface->radar_background.centr_freq_seg1_idx = seg1;
+	iface->radar_background.chwidth = hostapd_get_oper_chwidth(iface->conf);
+	iface->radar_background.cac_started = 1;
+
+	hostapd_set_oper_chwidth(iface->conf, orig_oper_chwidth);
+	iface->conf->secondary_channel = orig_secondary_channel;
+
+	return true;
+}
+
 int hostapd_dfs_start_precac(struct hostapd_iface *iface)
 {
 	struct hostapd_channel_data *chan;
@@ -2015,6 +2100,8 @@ int hostapd_dfs_start_precac(struct hostapd_iface *iface)
 
 	chan = hostapd_dfs_get_next_precac_channel(iface, &seg0, &seg1, &sec);
 	if (!chan) {
+		if (dfs_precac_try_half_bw(iface))
+			return 0;
 		wpa_printf(MSG_INFO,
 			   "PRECAC_No eligible DFS channel found - all processed or none available");
 		iface->radar_background.channel = -1;
