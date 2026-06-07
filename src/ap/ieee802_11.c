@@ -5172,6 +5172,25 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 }
 #endif /* CONFIG_IEEE80211BE */
 
+static bool hostapd_deny_non_ht_assoc(struct hostapd_data *hapd,
+				      struct sta_info *sta)
+{
+	bool require_ht;
+
+	if (!hapd->iconf->ieee80211n)
+		return false;
+
+	require_ht = hapd->iconf->require_ht;
+#ifdef CONFIG_QCN_EXTN
+	if (hapd->conf->bss_extn.puren_bss.is_overridden)
+		require_ht |= hapd->conf->bss_extn.puren_bss.value;
+#endif
+	if (require_ht && !(sta->flags & WLAN_STA_HT))
+		return true;
+
+	return false;
+}
+
 static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			     const u8 *ies, size_t ies_len,
 			     struct ieee802_11_elems *elems,
@@ -5216,8 +5235,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 	resp = copy_sta_ht_capab(hapd, sta, elems->ht_capabilities);
 	if (resp != WLAN_STATUS_SUCCESS)
 		goto out;
-	if (hapd->iconf->ieee80211n && hapd->iconf->require_ht &&
-	    !(sta->flags & WLAN_STA_HT)) {
+	if (hostapd_deny_non_ht_assoc(hapd, sta)) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_INFO, "Station does not support "
 			       "mandatory HT PHY - reject association");
