@@ -124,4 +124,5 @@ dfs_find_bw_reduced_channel(struct hostapd_iface *iface,
 			   u8 *oper_centr_freq_seg0_idx,
 			   u8 *oper_centr_freq_seg1_idx);
 
+int hostapd_set_dfs_cac_time(struct hostapd_iface *iface);
 #endif /* DFS_H */

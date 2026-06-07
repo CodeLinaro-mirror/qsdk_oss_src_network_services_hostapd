@@ -1621,6 +1621,35 @@ static unsigned int dfs_get_cac_time(struct hostapd_iface *iface,
 	return cac_time_ms;
 }
 
+int hostapd_set_dfs_cac_time(struct hostapd_iface *iface)
+{
+	int n_chans, n_chans1, start_chan_idx, start_chan_idx1;
+	int chan_width = hostapd_get_oper_chwidth(iface->conf);
+
+	/* Get start (first) channel for current configuration */
+	start_chan_idx = dfs_get_start_chan_idx(iface, &start_chan_idx1,
+						chan_width,
+						iface->conf->channel, false);
+	if (start_chan_idx == -1)
+		return -1;
+
+	/* Get number of used channels, depend on width */
+	n_chans = dfs_get_used_n_chans(iface, &n_chans1, chan_width);
+
+#ifdef CONFIG_QCN_EXTN
+	/* Setup CAC time */
+	if (iface->conf->conf_extn.skip_cac) {
+		iface->dfs_cac_ms = 0;
+	} else {
+#endif
+		iface->dfs_cac_ms = dfs_get_cac_time(iface, start_chan_idx,
+						     n_chans);
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif
+
+	return 0;
+}
 
 /*
  * Main DFS handler
@@ -4156,7 +4185,11 @@ int hostapd_dfs_start_cac(struct hostapd_iface *iface, int freq,
 		(is_background || hostapd_dfs_is_background_event(iface, freq)) ?
 		" (background)" : "");
 
-	os_get_reltime(&iface->dfs_cac_start);
+	if (is_background || is_background_event)
+		os_get_reltime(&iface->radar_background.dfs_cac_start);
+	else
+		os_get_reltime(&iface->dfs_cac_start);
+
 	return 0;
 }
 

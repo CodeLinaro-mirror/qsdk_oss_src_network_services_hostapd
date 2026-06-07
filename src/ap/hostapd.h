@@ -880,6 +880,7 @@ struct hostapd_iface {
 		unsigned int temp_ch:1;
 		/* CAC started on radar offchain */
 		unsigned int cac_started:1;
+		struct os_reltime dfs_cac_start;
 	} radar_background;
 
 	/*

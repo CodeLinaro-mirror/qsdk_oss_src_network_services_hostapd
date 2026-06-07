@@ -1378,6 +1378,16 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 
 	hostapd_clear_local_tpe(hapd->iface);
 
+	/* Hostapd receives the CH_SWITCH_NOTIFY event for all links on the
+	 * CSA-triggered radio. If the new channel requires CAC, only the first
+	 * link that gets this event starts CAC, so don’t reset dfs_cac_ms when
+	 * this event is received for the second link on the same radio and CAC
+	 * is already in progress.
+	 * For non-DFS channels, dfs_cac_ms is reset here.
+	 */
+	if (!hapd->iface->cac_started)
+		hapd->iface->dfs_cac_ms = 0;
+
 	if (hapd->csa_in_progress &&
 	    freq == hapd->cs_freq_params.freq) {
 		if ((is_dfs || is_dfs0) && hostapd_is_dfs_required(hapd->iface) &&
@@ -1395,6 +1405,10 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 				hostapd_set_state(hapd->iface, HAPD_IFACE_DFS);
 				hapd->iface->cac_type = HAPD_CAC_COMPLETE_AFTER_CSA;
 				ieee802_11_set_beacon(hapd);
+
+				if (hostapd_set_dfs_cac_time(hapd->iface))
+					return;
+
 				wpa_printf(MSG_DEBUG, "DFS:Starting CAC after CSA on freq=%d", freq);
 				wpa_msg(hapd->iface->bss[0]->msg_ctx,
 					MSG_INFO, DFS_EVENT_CAC_START
