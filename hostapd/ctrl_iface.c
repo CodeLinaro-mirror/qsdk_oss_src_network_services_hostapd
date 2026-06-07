@@ -1712,13 +1712,15 @@ static int hostapd_ctrl_iface_update_rssi_monitor(struct hostapd_data *hapd)
 
 #ifdef NEED_AP_MLME
 /*
- * hostapd_ctrl_iface_get_rcac_freq - Get current RCAC channel info
+ * hostapd_ctrl_iface_bgcac_status - Get current RCAC channel info
  *
  * Returns RCAC channel, frequency, bandwidth and status (ongoing/done/unavailable).
  * Only uses radar_background parameters — device-width params are not relevant
  * for RCAC which uses the operating bandwidth.
+ * For PreCAC (ETSI): Returns channel currently being CACed and status
+ * (ongoing/idle).
  */
-static int hostapd_ctrl_iface_get_rcac_freq(struct hostapd_data *hapd,
+static int hostapd_ctrl_iface_get_bgcac_status(struct hostapd_data *hapd,
 					    char *buf, size_t buflen)
 {
 	const struct hostapd_iface *iface = hapd->iface;
@@ -1733,6 +1735,8 @@ static int hostapd_ctrl_iface_get_rcac_freq(struct hostapd_data *hapd,
 	if (iface->radar_background.cac_started) {
 		status = "ongoing";
 		freq = iface->radar_background.freq;
+	} else if (iface->dfs_domain == HOSTAPD_DFS_REGION_ETSI) {
+		status = "idle";
 	} else if (iface->radar_background.channel != -1 &&
 		   iface->radar_background.freq > 0) {
 		status = "done";
@@ -1756,15 +1760,17 @@ static int hostapd_ctrl_iface_get_rcac_freq(struct hostapd_data *hapd,
 			bw = 0;
 			break;
 		}
-
 		if (ieee80211_freq_to_chan(freq, &chan_num) != NUM_HOSTAPD_MODES)
 			chan = chan_num;
 	}
 
-	res = os_snprintf(buf, buflen, "channel=%d freq=%d bw=%d status=%s\n",
-			  chan, freq, bw, status);
+	res = os_snprintf(buf, buflen,
+			  "mode=%s status=%s channel=%d freq=%d bw=%d\n",
+			  iface->dfs_domain == HOSTAPD_DFS_REGION_ETSI ?
+			  "PreCAC" : "RCAC", status, chan, freq, bw);
 	if (os_snprintf_error(buflen, res))
 		return -1;
+
 	return res;
 }
 #endif /* NEED_AP_MLME */
@@ -2693,8 +2699,8 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
-	} else if (os_strcmp(cmd, "rcac_freq") == 0) {
-		return hostapd_ctrl_iface_get_rcac_freq(hapd, buf, buflen);
+	} else if (os_strcmp(cmd, "bgcac_status") == 0) {
+		return hostapd_ctrl_iface_get_bgcac_status(hapd, buf, buflen);
 #endif /* NEED_AP_MLME */
 	} else if (os_strcmp(cmd, "macaddr_acl") == 0) {
 		if (!hapd || !hapd->conf) {
