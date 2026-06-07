@@ -4642,6 +4642,14 @@ enum nl80211_wmm_rule {
  *	very low power (VLP) AP, despite being NO_IR.
  * @NL80211_FREQUENCY_ATTR_ALLOW_20MHZ_ACTIVITY: This channel can be active in
  *	20 MHz bandwidth, despite being NO_IR.
+ * @NL80211_FREQUENCY_ATTR_NO_UHR: UHR operation is not allowed on this channel
+ *	in current regulatory domain.
+ * @NL80211_FREQUENCY_ATTR_6GHZ_SUPP_PWR_MODES: 6 Ghz power modes supported by
+ *	this channel
+ * @NL80211_FREQUENCY_ATTR_6GHZ_TXPOWERS: Tx powers in each supported power mode
+ * @NL80211_FREQUENCY_ATTR_NOL_HISTORY: This attribute is set for a channel
+ * 	when radar is found on the channel, but unlike NOL,
+ * 	it is never cleared
  * @NL80211_FREQUENCY_ATTR_MAX: highest frequency attribute number
  *	currently defined
  * @__NL80211_FREQUENCY_ATTR_AFTER_LAST: internal use
@@ -4687,6 +4695,11 @@ enum nl80211_frequency_attr {
 	NL80211_FREQUENCY_ATTR_CAN_MONITOR,
 	NL80211_FREQUENCY_ATTR_ALLOW_6GHZ_VLP_AP,
 	NL80211_FREQUENCY_ATTR_ALLOW_20MHZ_ACTIVITY,
+	NL80211_FREQUENCY_ATTR_NO_UHR,
+	/* QSDK-only unapproved attrs are offset by +10 to avoid upstream ID collision */
+	NL80211_FREQUENCY_ATTR_6GHZ_SUPP_PWR_MODES = 52,
+	NL80211_FREQUENCY_ATTR_6GHZ_TXPOWERS = 53,
+	NL80211_FREQUENCY_ATTR_NOL_HISTORY = 54,
 
 	/* keep last */
 	__NL80211_FREQUENCY_ATTR_AFTER_LAST,

@@ -423,6 +423,12 @@ struct hostapd_channel_data {
 	unsigned int dfs_cac_ms;
 
 	/**
+	 * nolhistory - This variable is set when radar is found on the
+	 * channel, unlike NOL it is never cleared
+	 */
+	bool nolhistory;
+
+	/**
 	 * wmm_rules_valid - Indicates wmm_rules state
 	 */
 	int wmm_rules_valid;
