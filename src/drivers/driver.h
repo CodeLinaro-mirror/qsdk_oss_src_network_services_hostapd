@@ -5619,9 +5619,10 @@ struct wpa_driver_ops {
 	 * @radio_idx: Physical radio index of the background CAC to stop
 	 *	(NL80211_ATTR_WIPHY_RADIO_INDEX). -1 if not known; the attribute
 	 *	is omitted and the kernel selects the active slot by link.
+	 * @link_id: MLD link ID for the interface sending the stop command.
 	 * Returns: 0 on success, -1 on failure
 	 */
-	int (*stop_background_cac)(void *priv, int radio_idx);
+	int (*stop_background_cac)(void *priv, int radio_idx, int link_id);
 
 	/**
 	 * stop_ap - Removes beacon from AP
