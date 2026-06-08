@@ -1593,6 +1593,147 @@ static int matching_ciphers(struct wpa_ssid *ssid, struct wpa_ie_data *ie,
 }
 
 
+/*
+ * security_profile_ie_get_key_mgmt - Get key_mgmt bitmask implied by any
+ * profile in the AP's Security Profile element that matches ssid->key_mgmt.
+ *
+ * Walks the AP's Security Profile Bitmap and returns a WPA_KEY_MGMT_* bitmask
+ * covering all profiles whose bit is set AND whose AKM matches at least one
+ * AKM in ssid->key_mgmt.  Returns 0 if no matching profile is found.
+ *
+ * This is used to augment ie.key_mgmt so that the RSN element check in
+ * wpa_supplicant_set_suites() succeeds even when the RSN/RSNO/RSNO2 element
+ * does not explicitly list the AKM that the security profile implies.
+ */
+int security_profile_ie_get_key_mgmt(const u8 *sp_ie,
+				     int ssid_key_mgmt)
+{
+	u8 bitmap_len;
+	const u8 *bitmap;
+	int profile, result = 0;
+	int akm_bit;
+
+	/*
+	 * sp_ie layout (wpa_bss_get_ie_ext returns full element):
+	 *   [0] = 255 (EID_EXTENSION)
+	 *   [1] = Length
+	 *   [2] = 162 (EID_EXT_SECURITY_PROFILE)
+	 *   [3] = Reduced RSN Capabilities
+	 *   [4] = Security Profile Indication (B0-B3 = bitmap_octets)
+	 *   [5..] = Security Profile Bitmap
+	 */
+	if (!sp_ie || sp_ie[1] < 3)
+		return 0;
+
+	bitmap_len = sp_ie[4] & 0x0F;
+	if (sp_ie[1] < 3 + bitmap_len)
+		return 0;
+
+	bitmap = sp_ie + 5;
+
+	for (profile = 0;
+	     profile <= SECURITY_PROFILE_NUM_MAX &&
+	     profile < bitmap_len * 8;
+	     profile++) {
+		if (!(bitmap[profile / 8] & BIT(profile % 8)))
+			continue;
+
+		/*
+		 * security_profile_akm_matches() expects a single key_mgmt
+		 * value (not a bitmask), so iterate over each set bit in
+		 * ssid_key_mgmt and test them individually.
+		 */
+		for (akm_bit = 0; akm_bit < 32; akm_bit++) {
+			int akm = ssid_key_mgmt & BIT(akm_bit);
+
+			if (!akm)
+				continue;
+			if (security_profile_akm_matches(profile, akm)) {
+				result |= akm;
+				break;
+			}
+		}
+	}
+
+	return result;
+}
+
+
+/*
+ * security_profile_ie_get_rsnx - Return a pointer to the Extended RSN
+ * Capabilities field inside the AP's Security Profile element, formatted
+ * identically to an RSNXE body (length-prefix in bits 0-3 of first byte).
+ *
+ * Returns a pointer to the first byte of the Extended RSN Capabilities field
+ * within sp_ie, and sets *rsnx_len to its length.  Returns NULL if the
+ * element is too short to contain the field.
+ *
+ * The returned pointer is valid for the lifetime of sp_ie.
+ */
+const u8 *security_profile_ie_get_rsnx(const u8 *sp_ie,
+				       size_t *rsnx_len)
+{
+	u8 bitmap_len;
+	size_t offset;
+
+	if (!sp_ie || sp_ie[1] < 3)
+		return NULL;
+
+	bitmap_len = sp_ie[4] & 0x0F;
+
+	/*
+	 * Offset of Extended RSN Capabilities within sp_ie:
+	 *   EID(1) + Len(1) + EID_EXT(1) + ReducedRSNCaps(1) +
+	 *   SecProfInd(1) + bitmap(bitmap_len) = 5 + bitmap_len
+	 */
+	offset = 5 + bitmap_len;
+	if ((size_t)(sp_ie[1] + 2) <= offset)
+		return NULL; /* no room for at least one byte */
+
+	*rsnx_len = (size_t)(sp_ie[1] + 2) - offset;
+	return sp_ie + offset;
+}
+
+
+/*
+ * security_profile_ie_get_rsn_caps - Derive RSN Capabilities from the AP's
+ * Security Profile element.
+ *
+ * All defined security profiles (0-15) require MFPR=1 and MFPC=1
+ * (802.11bn D1.4, Table 9-bb14).  The Reduced RSN Capabilities field
+ * additionally carries ExtKeyID (bit 0) and OCVC (bit 1).
+ *
+ * Returns a WPA_CAPABILITY_* bitmask suitable for use as ie.capabilities,
+ * or 0 if sp_ie is NULL or too short.
+ */
+int security_profile_ie_get_rsn_caps(const u8 *sp_ie)
+{
+	u8 reduced;
+	int caps;
+
+	if (!sp_ie || sp_ie[1] < 2)
+		return 0;
+
+	/*
+	 * sp_ie[3] = Reduced RSN Capabilities (Figure 9-aa71):
+	 *   B0 = Extended Key ID for Unicast Frames
+	 *   B1 = OCVC
+	 * All defined profiles mandate MFPR=1 (Table 9-bb14).
+	 */
+	reduced = sp_ie[3];
+
+	/* All defined profiles require both MFPC and MFPR */
+	caps = WPA_CAPABILITY_MFPC | WPA_CAPABILITY_MFPR;
+
+	if (reduced & REDUCED_RSN_CAPS_EXT_KEY_ID)
+		caps |= WPA_CAPABILITY_EXT_KEY_ID_FOR_UNICAST;
+	if (reduced & REDUCED_RSN_CAPS_OCVC)
+		caps |= WPA_CAPABILITY_OCVC;
+
+	return caps;
+}
+
+
 void wpas_set_mgmt_group_cipher(struct wpa_supplicant *wpa_s,
 				struct wpa_ssid *ssid, struct wpa_ie_data *ie)
 {
