@@ -1498,8 +1498,12 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 	    !hostapd_config_check_bss_6g(bss))
 		return -1;
 
+	/*
+	 * plugin_eap_offload handles EAP authentication outside hostapd, so
+	 * a local EAP server or configured RADIUS auth server is not required.
+	 */
 	if (full_config && bss->ieee802_1x && !bss->eap_server &&
-	    !bss->radius->auth_servers) {
+	    !bss->radius->auth_servers && !bss->plugin_eap_offload) {
 		wpa_printf(MSG_ERROR, "Invalid IEEE 802.1X configuration (no "
 			   "EAP authenticator configured).");
 		return -1;
