@@ -24,6 +24,7 @@
 #include "crypto/random.h"
 #include "crypto/sha256.h"
 #include "crypto/sha384.h"
+#include "crypto/sha512.h"
 #include "rsn_supp/wpa.h"
 #include "rsn_supp/pmksa_cache.h"
 #include "rsn_supp/wpa_ie.h"
@@ -3976,12 +3977,18 @@ static int sme_validate_802_1x_auth_mic(struct wpa_supplicant *wpa_s,
 	const u8 *ap_rsne, *ap_rsnxe, *mic_elem;
 	size_t ap_rsne_len, ap_rsnxe_len, mic_len, data_len;
 	int key_mgmt = sme_get_key_mgmt(wpa_s, external);
-	u8 calc_mic[SHA384_MAC_LEN];
+	u8 calc_mic[SHA512_MAC_LEN];
 	u8 *data;
 	u8 *pos;
 	struct wpa_bss *bss;
 	int ret = -1;
 	size_t mic_field_off;
+	enum rsn_hash_alg hash_alg = RSN_HASH_NOT_SPECIFIED;
+
+#ifdef CONFIG_PQC
+	if (wpa_key_mgmt_pqc(wpa_s->auth_1x->key_mgmt))
+		hash_alg = wpa_s->auth_1x->constraint->hash;
+#endif /* CONFIG_PQC */
 
 	if (!ptk || !ptk->kck_len || !frame_data || !frame_data_len)
 		return -1;
@@ -4010,7 +4017,14 @@ static int sme_validate_802_1x_auth_mic(struct wpa_supplicant *wpa_s,
 	}
 
 	/* Determine MIC length based on key management */
-	mic_len = wpa_key_mgmt_sha384(key_mgmt) ? 24 : 16;
+	if (hash_alg == RSN_HASH_SHA512)
+		mic_len = 32;
+	else if (hash_alg == RSN_HASH_SHA384 ||
+		 wpa_key_mgmt_sha384(key_mgmt))
+		mic_len = 24;
+	else
+		mic_len = 16;
+
 	if (mic_elem[1] != mic_len) {
 		wpa_msg(wpa_s, MSG_INFO,
 			"IEEE 802.1X: MIC length mismatch (%u != %zu)",
@@ -4044,7 +4058,12 @@ static int sme_validate_802_1x_auth_mic(struct wpa_supplicant *wpa_s,
 	os_memset(pos + mic_field_off, 0, mic_len);
 
 	/* Calculate MIC */
-	if (wpa_key_mgmt_sha384(key_mgmt)) {
+	if (hash_alg == RSN_HASH_SHA512) {
+		if (hmac_sha512(ptk->kck, ptk->kck_len, data, data_len,
+				calc_mic) < 0)
+			goto out;
+	} else if (hash_alg == RSN_HASH_SHA384 ||
+		   wpa_key_mgmt_sha384(key_mgmt)) {
 		if (hmac_sha384(ptk->kck, ptk->kck_len, data, data_len,
 				calc_mic) < 0)
 			goto out;
@@ -4296,12 +4315,18 @@ static int sme_add_802_1x_mic_in_assoc(struct wpa_supplicant *wpa_s,
 	struct ptksa_cache_entry *ptk_entry;
 	const u8 *rsne, *rsnxe;
 	size_t rsne_len = 0, rsnxe_len = 0;
-	u8 mic[SHA384_MAC_LEN];
+	u8 mic[SHA512_MAC_LEN];
 	size_t mic_len = 0;
 	const u8 *spa = wpa_s->own_addr;
 	struct wpabuf *buf = NULL;
 	int ret = -1;
 	u8 *pos;
+	enum rsn_hash_alg hash_alg = RSN_HASH_NOT_SPECIFIED;
+
+#ifdef CONFIG_PQC
+	if (wpa_key_mgmt_pqc(wpa_s->auth_1x->key_mgmt))
+		hash_alg = wpa_s->auth_1x->constraint->hash;
+#endif /* CONFIG_PQC */
 
 	ptk_entry = ptksa_cache_get(wpa_s->ptksa, aa, wpa_s->pairwise_cipher);
 	if (!ptk_entry || !ptk_entry->ptk.kck_len)
@@ -4327,7 +4352,13 @@ static int sme_add_802_1x_mic_in_assoc(struct wpa_supplicant *wpa_s,
 	wpabuf_put_data(buf, rsne, rsne_len);
 	wpabuf_put_data(buf, rsnxe, rsnxe_len);
 
-	if (wpa_key_mgmt_sha384(wpa_s->key_mgmt)) {
+	if (hash_alg == RSN_HASH_SHA512) {
+		mic_len = SHA512_MAC_LEN / 2;
+		if (hmac_sha512(ptk_entry->ptk.kck, ptk_entry->ptk.kck_len,
+				wpabuf_head(buf), wpabuf_len(buf), mic) < 0)
+			goto out;
+	} else if (hash_alg == RSN_HASH_SHA384 ||
+		   wpa_key_mgmt_sha384(wpa_s->key_mgmt)) {
 		mic_len = SHA384_MAC_LEN / 2;
 		if (hmac_sha384(ptk_entry->ptk.kck, ptk_entry->ptk.kck_len,
 				wpabuf_head(buf), wpabuf_len(buf), mic) < 0)
