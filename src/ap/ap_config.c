@@ -364,7 +364,6 @@ struct hostapd_config * hostapd_config_defaults(void)
 	bss->security_profiles = NULL;
 	bss->security_profile_ext_key_id = 0;
 	bss->security_profile_ocvc = 0;
-	bss->security_profile_rsnx = NULL;
 
 	conf->num_bss = 1;
 
@@ -1180,7 +1179,6 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 #endif /* CONFIG_PASN */
 
 	os_free(conf->security_profiles);
-	os_free(conf->security_profile_rsnx);
 
 	wpabuf_clear_free(conf->sae_pw_id_key);
 
