@@ -6216,6 +6216,28 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		bss->smd.caps.ptk_mode = val;
 		wpa_printf(MSG_DEBUG, "SMD Config: smd_ptk_mode set to %d", val);
+	} else if (os_strcmp(buf, "npca_primary_channel") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 255) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid npca_primary_channel %d (0-255)",
+				   line, val);
+			return 1;
+		}
+		conf->npca_primary_channel = val;
+		wpa_printf(MSG_DEBUG, "npca_primary_channel=%d", val);
+	} else if (os_strcmp(buf, "npca_enable") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid npca_enable %d (0 or 1)",
+				   line, val);
+			return 1;
+		}
+		conf->npca_enable = val;
+	} else if (os_strcmp(buf, "npca_punct_bitmap") == 0) {
+		if (get_u16(pos, line, &conf->npca_punct_bitmap))
+			return 1;
 #endif /* CONFIG_IEEE80211BN */
 	} else {
 		if (!hostapd_config_fill_extn(conf, bss, buf, pos, line))

@@ -472,6 +472,12 @@ struct hostapd_config * hostapd_config_defaults(void)
 	hostapd_set_default_epcs_params(bss);
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BN
+	conf->npca_enable = 0;
+	conf->npca_primary_channel = 0;
+	conf->npca_punct_bitmap = 0;
+#endif /* CONFIG_IEEE80211BN */
+
 	bss->rate_type = BEACON_RATE_LEGACY;
 	bss->beacon_rate = 0;
 #ifdef CONFIG_QCN_EXTN

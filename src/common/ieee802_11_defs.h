@@ -3381,11 +3381,12 @@ struct ieee80211_eht_capabilities {
 	u8 optional[EHT_MCS_NSS_CAPAB_LEN + EHT_PPE_THRESH_CAPAB_LEN];
 } STRUCT_PACKED;
 
-/* Figure 9-aa2: UHR Operation Parameters field format described in P802.11bn_D1.0 section 9.4.2.aa1 */
+/* Figure 9-aa2: UHR Operation Parameters field format described in P802.11bn_D1.4 section 9.4.2.355 UHR Operation element */
 #define UHR_OPER_DPS_ENABLED		BIT(0)
-#define UHR_OPER_NPCA_OPER_PRESENT	BIT(1)
+#define UHR_OPER_NPCA_ENABLED		BIT(1)
 #define UHR_OPER_DBE_ENABLED		BIT(2)
 #define UHR_OPER_P_EDCA_ENABLED		BIT(3)
+#define UHR_OPER_NPCA_OPER_PRESENT	BIT(9)
 
 struct ieee80211_dbe_info {
 	/* TODO: Convert this into structure bitfield
@@ -3416,6 +3417,9 @@ struct ieee80211_p_edca_info {
 } STRUCT_PACKED;
 
 /* Figure 9-aa3: NPCA Operation Information field format */
+#define IEEE80211_UHR_NPCA_OPER_BASE_SIZE			4
+#define IEEE80211_UHR_NPCA_OPER_DISABLED_SUBCHAN_BITMAP_SIZE	2
+
 struct ieee80211_npca_info {
 	/* TODO: Convert this into structure bitfield
 	 * As per spec npca_params defined as below

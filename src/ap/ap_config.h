@@ -1706,6 +1706,11 @@ struct hostapd_config {
 	int *security_profiles;       /* NULL-terminated array from hostapd_parse_intlist */
 	int security_profile_ext_key_id; /* Reduced RSN Capabilities bit 0 */
 	int security_profile_ocvc;    /* Reduced RSN Capabilities bit 1 */
+#ifdef CONFIG_IEEE80211BN
+	bool npca_enable;
+	u8 npca_primary_channel;
+	u16 npca_punct_bitmap;
+#endif /* CONFIG_IEEE80211BN */
 };
 
 

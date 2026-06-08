@@ -7236,6 +7236,11 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 	if (hostapd_is_uhr_enabled(hapd)) {
 		buflen += 3 + sizeof(struct ieee80211_uhr_capabilities);
 		buflen += 3 + sizeof(struct ieee80211_uhr_operation);
+		if (hapd->iconf->npca_enable) {
+			buflen += IEEE80211_UHR_NPCA_OPER_BASE_SIZE;
+			if (hapd->iconf->npca_punct_bitmap)
+				buflen += IEEE80211_UHR_NPCA_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
+		}
 	}
 	/* Add SMD IE if both AP and STA support SMD */
 	if (hapd->conf->smd.enabled && sta && sta->smd_info.smd_sta) {
