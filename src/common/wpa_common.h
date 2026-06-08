@@ -816,6 +816,9 @@ struct wpa_eapol_ie_parse {
 	size_t mlo_link_len[MAX_NUM_MLD_LINKS];
 	const u8 *rsn_override_link[MAX_NUM_MLD_LINKS];
 	size_t rsn_override_link_len[MAX_NUM_MLD_LINKS];
+	/* Security Profile element (802.11bn D1.4, 9.4.2.364, EID ext=162) */
+	const u8 *security_profile_ie;
+	size_t security_profile_ie_len;
 };
 
 int wpa_parse_kde_ies(const u8 *buf, size_t len, struct wpa_eapol_ie_parse *ie);
