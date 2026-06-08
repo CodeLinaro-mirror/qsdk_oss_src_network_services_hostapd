@@ -197,6 +197,9 @@ const u8 * auth_skip_fixed_fields(struct hostapd_data *hapd,
 const u8 * hostapd_process_ml_auth(struct hostapd_data *hapd,
 				   const struct ieee80211_mgmt *mgmt,
 				   size_t len);
+const u8 * skip_ml_auth_fixed_fields(struct hostapd_data *hapd,
+				     const struct ieee80211_mgmt *mgmt,
+				     size_t len);
 u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 				 struct ieee802_11_elems *elems,
 				 struct sta_info *sta);

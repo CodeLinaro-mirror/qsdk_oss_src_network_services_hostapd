@@ -1057,6 +1057,10 @@ void ieee802_11_elems_clear_ext_ids(struct ieee802_11_elems *elems,
 			elems->uhr_operation = NULL;
 			elems->uhr_operation_len = 0;
 			break;
+		case WLAN_EID_EXT_SECURITY_PROFILE:
+			elems->security_profile_ie = NULL;
+			elems->security_profile_ie_len = 0;
+			break;
 		}
 	}
 }

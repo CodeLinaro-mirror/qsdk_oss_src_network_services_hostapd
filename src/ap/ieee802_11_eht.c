@@ -1466,6 +1466,23 @@ const u8 * hostapd_process_ml_auth(struct hostapd_data *hapd,
 	return get_basic_mle_mld_addr(elems.basic_mle, elems.basic_mle_len);
 }
 
+const u8 * skip_ml_auth_fixed_fields(struct hostapd_data *hapd,
+                                   const struct ieee80211_mgmt *mgmt,
+                                   size_t len)
+{
+	const u8 *pos;
+
+	len -= offsetof(struct ieee80211_mgmt, u.auth.variable);
+
+	pos = auth_skip_fixed_fields(hapd, mgmt, len);
+
+	if (!pos)
+		return NULL;
+
+	return pos;
+}
+
+
 
 static int hostapd_mld_validate_assoc_info(struct hostapd_data *hapd,
 					   struct sta_info *sta)
