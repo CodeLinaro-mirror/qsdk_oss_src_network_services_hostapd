@@ -237,6 +237,7 @@ int hostapd_get_hw_features(struct hostapd_iface *iface)
 	hostapd_query_hw_blocklist_extn(iface, hapd);
 	if (iface->conf && is_6ghz_op_class(iface->conf->op_class))
 		hostapd_get_6ghz_thresh_priority_freq_extn(iface);
+	hostapd_get_agile_capable_extn(iface);
 #endif /* CONFIG_QCN_EXTN */
 
 	return 0;

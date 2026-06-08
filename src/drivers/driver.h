@@ -7354,6 +7354,15 @@ enum wpa_event_type {
 	 * EVENT_SCAN_RESULTS_EXTN - Notification event for Extension scan results from driver
 	 */
 	EVENT_SCAN_RESULTS_EXTN,
+
+	/**
+	 * EVENT_AGILE_CAPABLE - TX/RX chainmask changed; driver reports new
+	 * Agile DFS (background CAC) capability.
+	 *
+	 * adfs_capable=1: new chainmask supports Agile DFS (in adfs_chain_mask)
+	 * adfs_capable=0: new chainmask does NOT support Agile DFS
+	 */
+	EVENT_AGILE_CAPABLE,
 #endif
 
 	/**
