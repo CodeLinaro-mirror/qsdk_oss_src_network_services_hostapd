@@ -819,7 +819,8 @@ size_t pasn_mic_len(enum rsn_hash_alg alg);
 
 size_t wpa_hash_len(enum rsn_hash_alg hash);
 
-int wpa_auth_8021x_mic(int akmp, const u8 *kck, size_t kck_len, const u8 *addr1,
+int wpa_auth_8021x_mic(int akmp, enum rsn_hash_alg hash_alg,
+		       const u8 *kck, size_t kck_len, const u8 *addr1,
 		       const u8 *addr2, const u8 *data, size_t data_len,
 		       const u8 *frame, size_t frame_len, u8 *mic);
 

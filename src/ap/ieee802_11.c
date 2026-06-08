@@ -870,6 +870,7 @@ static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 	struct wpabuf *ml_resp = NULL;
 	size_t ml_resp_len = 0;
 #ifdef CONFIG_IEEE8021X_AUTH
+	enum rsn_hash_alg hash_alg = RSN_HASH_NOT_SPECIFIED;
 	size_t mic_len = 0;
 #endif /* CONFIG_IEEE8021X_AUTH */
 
@@ -888,11 +889,17 @@ static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 	 * message and for an Authentication frame with transaction sequence
 	 * frame 2, if PMKSA caching was used.
 	 */
+#ifdef CONFIG_PQC
+	if (sta && wpa_key_mgmt_pqc(sta->eap_auth_data.akm) &&
+	    sta->eap_auth_data.constraint)
+		hash_alg = sta->eap_auth_data.constraint->hash;
+#endif /* CONFIG_PQC */
+
 	if (auth_alg == WLAN_AUTH_802_1X && sta &&
 	    sta->eap_auth_data.add_mic) {
 		mic_len = wpa_mic_len(sta->eap_auth_data.akm,
 				      sta->eap_auth_data.pmk_len,
-				      RSN_HASH_NOT_SPECIFIED,
+				      hash_alg,
 				      PASN_GROUP_NOT_SPECIFIED);
 		rlen += 2 + mic_len;
 	}
@@ -1004,6 +1011,7 @@ static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 		frame = (const u8 *) &reply->u.auth.auth_alg;
 		frame_len =  rlen - IEEE80211_HDRLEN;
 		if (wpa_auth_8021x_mic(sta->eap_auth_data.akm,
+				       hash_alg,
 				       sta->eap_auth_data.ptk.kck,
 				       sta->eap_auth_data.ptk.kck_len,
 				       aa, sta->addr, data, data_len,
@@ -6853,6 +6861,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		u8 mic_len, data_buf[(255 + 2) * 2], mic[WPA_1X_MAX_MIC_LEN];
 		const u8 *aa = hapd->own_addr;
 		size_t data_len = 0;
+		enum rsn_hash_alg hash_alg = RSN_HASH_NOT_SPECIFIED;
 		int ret;
 
 		if (!elems->mic) {
@@ -6861,7 +6870,14 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			goto out;
 		}
 
-		if (wpa_key_mgmt_sha384(sta->eap_auth_data.akm))
+#ifdef CONFIG_PQC
+		if (wpa_key_mgmt_pqc(sta->eap_auth_data.akm))
+			hash_alg = sta->eap_auth_data.constraint->hash;
+#endif /* CONFIG_PQC */
+		if (hash_alg == RSN_HASH_SHA512)
+			mic_len = SHA512_MAC_LEN / 2;
+		else if (hash_alg == RSN_HASH_SHA384 ||
+			 wpa_key_mgmt_sha384(sta->eap_auth_data.akm))
 			mic_len = SHA384_MAC_LEN / 2;
 		else
 			mic_len = SHA256_MAC_LEN / 2;
@@ -6900,6 +6916,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 
 		data = data_buf;
 		ret = wpa_auth_8021x_mic(sta->eap_auth_data.akm,
+					 hash_alg,
 					 sta->eap_auth_data.ptk.kck,
 					 sta->eap_auth_data.ptk.kck_len, aa,
 					 sta->addr, data, data_len,

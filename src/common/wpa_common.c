@@ -148,6 +148,9 @@ unsigned int wpa_mic_len(int akmp, size_t pmk_len, enum rsn_hash_alg hash,
 			 u16 pasn_group)
 {
 	switch (akmp) {
+	case WPA_KEY_MGMT_802_1X_PQC:
+	case WPA_KEY_MGMT_FT_802_1X_PQC:
+		return rsn_mic_len_hash(pmk_len, hash);
 	case WPA_KEY_MGMT_IEEE8021X_SUITE_B_192:
 	case WPA_KEY_MGMT_FT_IEEE8021X_SHA384:
 	case WPA_KEY_MGMT_IEEE8021X_SHA384:
@@ -291,6 +294,7 @@ int wpa_use_akm_defined(int akmp)
 		akmp == WPA_KEY_MGMT_IEEE8021X_SHA384 ||
 		akmp == WPA_KEY_MGMT_EPPKE ||
 		wpa_key_mgmt_sae(akmp) ||
+		wpa_key_mgmt_pqc(akmp) ||
 		wpa_key_mgmt_suite_b(akmp) ||
 		wpa_key_mgmt_fils(akmp);
 }
@@ -331,6 +335,7 @@ int wpa_use_aes_key_wrap(int akmp)
 		wpa_key_mgmt_ft(akmp) ||
 		wpa_key_mgmt_sha256(akmp) ||
 		wpa_key_mgmt_sae(akmp) ||
+		wpa_key_mgmt_pqc(akmp) ||
 		wpa_key_mgmt_suite_b(akmp);
 }
 
@@ -536,6 +541,16 @@ int wpa_eapol_key_mic(const u8 *key, size_t key_len, int akmp,
 				return -1;
 			break;
 #endif /* CONFIG_DPP */
+#ifdef CONFIG_PQC
+		case WPA_KEY_MGMT_802_1X_PQC:
+#ifdef CONFIG_IEEE80211R
+		case WPA_KEY_MGMT_FT_802_1X_PQC:
+#endif /* CONFIG_IEEE80211R */
+			if (rsn_eapol_key_mic_hash(key, key_len, akmp, hash_alg,
+						   ver, buf, len, mic) < 0)
+				return -1;
+			break;
+#endif /* CONFIG_PQC */
 #ifdef CONFIG_SHA384
 		case WPA_KEY_MGMT_IEEE8021X_SHA384:
 #ifdef CONFIG_IEEE80211R
@@ -2174,6 +2189,7 @@ err:
 /**
  * wpa_auth_8021x_mic - Calculate IEEE 802.1X in Authentication frames  MIC
  * @akmp: Negotiated key management protocol
+ * @hash_alg: Hash algorithm to use for MIC calculation
  * @kck: The key confirmation key from 802.1X exchange
  * @kck_len: KCK length in octets
  * @addr1: Authenticator address
@@ -2197,7 +2213,8 @@ err:
  *
  * HMAC-HASH (PTK-KCK, AA || SPA || RSNE || RSNXE || Frame Data)
  */
-int wpa_auth_8021x_mic(int akmp, const u8 *kck, size_t kck_len, const u8 *addr1,
+int wpa_auth_8021x_mic(int akmp, enum rsn_hash_alg hash_alg,
+		       const u8 *kck, size_t kck_len, const u8 *addr1,
 		       const u8 *addr2, const u8 *data, size_t data_len,
 		       const u8 *frame, size_t frame_len, u8 *mic)
 {
@@ -2240,7 +2257,15 @@ int wpa_auth_8021x_mic(int akmp, const u8 *kck, size_t kck_len, const u8 *addr1,
 	}
 
 	wpa_hexdump_key(MSG_DEBUG, "MIC: buf", buf, buf_len);
-	if (wpa_key_mgmt_sha384(akmp)) {
+
+	if (hash_alg == RSN_HASH_SHA512) {
+		wpa_printf(MSG_DEBUG, "MIC: HMAC-SHA512");
+		mic_len = 32;
+
+		if (hmac_sha512(kck, kck_len, buf, buf_len, mic) < 0)
+			goto out;
+	} else if (hash_alg == RSN_HASH_SHA384 ||
+		   wpa_key_mgmt_sha384(akmp)) {
 		wpa_printf(MSG_DEBUG, "MIC: HMAC-SHA384");
 		mic_len = 24;
 
