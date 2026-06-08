@@ -5215,6 +5215,133 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 }
 #endif /* CONFIG_IEEE80211BE */
 
+/*
+ * hostapd_security_profile_ie_len - Calculate length of UHR Security Info IE
+ *
+ * Returns the total byte length of the IE (including EID and Length fields),
+ * or 0 if no profiles are configured.
+ */
+size_t hostapd_security_profile_ie_len(struct hostapd_data *hapd)
+{
+	int i, max_profile = -1;
+	size_t bitmap_len, ext_rsn_capab_len = 0;
+
+	if (!hapd || !hapd->conf || !hapd->conf->security_profiles)
+		return 0;
+
+	for (i = 0; hapd->conf->security_profiles[i] >= 0; i++) {
+		if (hapd->conf->security_profiles[i] > max_profile)
+			max_profile = hapd->conf->security_profiles[i];
+	}
+
+	if (max_profile < 0)
+		return 0;
+
+	/* Bitmap size: ceil((max_profile + 1) / 8) */
+	bitmap_len = (max_profile / 8) + 1;
+
+	if (hapd->conf->security_profile_rsnx)
+		ext_rsn_capab_len = os_strlen(hapd->conf->security_profile_rsnx) / 2;
+
+	/*
+	 * D1.4 format:
+	 * EID (1) + Length (1) + EID_Ext (1) + Reduced_RSN_Capab (1) +
+	 * Security_Profile_Indication (1) + Security_Profile_Bitmap (bitmap_len) +
+	 * Ext_RSN_Capab (ext_rsn_capab_len)
+	 */
+	return 2 + 1 + 1 + 1 + bitmap_len + ext_rsn_capab_len;
+}
+
+
+/*
+ * hostapd_eid_security_profile - Build UHR Security Information element
+ *
+ * Writes the D1.4 bitmap-format Security Profile element into @eid and
+ * returns a pointer past the last written byte.
+ */
+u8 *hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid)
+{
+	u8 *pos = eid;
+	u8 *len_pos;
+	u8 reduced_rsn_capab = 0;
+	u8 ext_rsn_capab[256];
+	size_t ext_rsn_capab_len = 0;
+	u8 bitmap[16]; /* max 128 profiles */
+	size_t bitmap_len = 0;
+	int i, max_profile = -1;
+
+	if (!hapd || !hapd->conf || !hapd->conf->security_profiles)
+		return eid;
+
+	for (i = 0; hapd->conf->security_profiles[i] >= 0; i++) {
+		if (hapd->conf->security_profiles[i] > max_profile)
+			max_profile = hapd->conf->security_profiles[i];
+	}
+
+	if (max_profile < 0)
+		return eid;
+
+	/* Build bitmap */
+	bitmap_len = (max_profile / 8) + 1;
+	if (bitmap_len > sizeof(bitmap))
+		bitmap_len = sizeof(bitmap);
+	os_memset(bitmap, 0, bitmap_len);
+	for (i = 0; hapd->conf->security_profiles[i] >= 0; i++) {
+		int p = hapd->conf->security_profiles[i];
+
+		if (p / 8 < (int) bitmap_len)
+			bitmap[p / 8] |= BIT(p % 8);
+	}
+
+	/* Parse Extended RSN Capabilities from hex string */
+	if (hapd->conf->security_profile_rsnx) {
+		ext_rsn_capab_len = os_strlen(hapd->conf->security_profile_rsnx) / 2;
+		if (ext_rsn_capab_len > sizeof(ext_rsn_capab))
+			ext_rsn_capab_len = sizeof(ext_rsn_capab);
+		if (hexstr2bin(hapd->conf->security_profile_rsnx, ext_rsn_capab,
+			       ext_rsn_capab_len) < 0) {
+			wpa_printf(MSG_ERROR,
+				   "UHR: Invalid security_profile_rsnx hex string");
+			ext_rsn_capab_len = 0;
+		}
+	}
+
+	/* Build Reduced RSN Capabilities */
+	if (hapd->conf->security_profile_ext_key_id)
+		reduced_rsn_capab |=
+			WLAN_SEC_PROF_REDUCED_RSN_CAPA_EXTENDED_KEY_ID;
+	if (hapd->conf->security_profile_ocvc)
+		reduced_rsn_capab |= WLAN_SEC_PROF_REDUCED_RSN_CAPA_OCVC;
+
+	/* Write IE */
+	*pos++ = WLAN_EID_EXTENSION;
+	len_pos = pos++;  /* Length field, filled later */
+	*pos++ = WLAN_EID_EXT_SECURITY_PROFILE;
+
+	/* Reduced RSN Capabilities (1 byte) */
+	*pos++ = reduced_rsn_capab;
+
+	/* Security Profile Indication (1 byte):
+	 * B0-B3: Number of octets in Security Profile Bitmap
+	 * B4-B7: Number of Vendor Specific Security Profiles (0)
+	 */
+	*pos++ = (u8) bitmap_len;
+
+	/* Security Profile Bitmap */
+	os_memcpy(pos, bitmap, bitmap_len);
+	pos += bitmap_len;
+
+	/* Extended RSN Capabilities */
+	if (ext_rsn_capab_len > 0) {
+		os_memcpy(pos, ext_rsn_capab, ext_rsn_capab_len);
+		pos += ext_rsn_capab_len;
+	}
+
+	/* Fill length */
+	*len_pos = (u8) (pos - len_pos - 1);
+	return pos;
+}
+
 static bool hostapd_deny_non_ht_assoc(struct hostapd_data *hapd,
 				      struct sta_info *sta)
 {
@@ -6979,6 +7106,16 @@ rsnxe_done:
 				   "with Padding Delay = %u", padding_delay);
 		}
 	}
+
+	if (hapd->conf->security_profiles) {
+		u8 *sec_prof_start = p;
+		p = hostapd_eid_security_profile(hapd, p);
+		send_len += (p - sec_prof_start);
+		wpa_printf(MSG_ERROR,
+			   "UHR: Added Security Profile IE to Association Response (len=%zu)",
+			   (size_t)(p - sec_prof_start));
+	}
+
 
 	if (hostapd_drv_send_mlme(hapd, reply, send_len, 0, NULL, 0, 0, 0, 0) < 0) {
 		wpa_printf(MSG_INFO, "Failed to send assoc resp: %s",

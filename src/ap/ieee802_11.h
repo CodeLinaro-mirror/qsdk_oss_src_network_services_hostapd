@@ -553,6 +553,8 @@ bool eht_mu_mask_valid(u8 mask);
 u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 			   enum ieee80211_op_mode opmode);
 u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn);
+size_t hostapd_security_profile_ie_len(struct hostapd_data *hapd);
+u8 *hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid);
 u16 copy_sta_eht_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		       enum ieee80211_op_mode opmode,
 		       const u8 *he_capab, size_t he_capab_len,

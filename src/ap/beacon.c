@@ -1474,7 +1474,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 		pos = hostapd_eid_uhr_operation(hapd, pos, false);
 	}
 #endif /* CONFIG_IEEE80211BN */
-
+	pos = hostapd_eid_security_profile(hapd, pos);
 #ifdef CONFIG_IEEE80211AC
 	if (hapd->conf->vendor_vht)
 		pos = hostapd_eid_vendor_vht(hapd, pos);
@@ -3558,6 +3558,8 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		tail_len += (3 + sizeof(struct ieee80211_uhr_operation));
 #endif /* CONFIG_IEEE80211BN */
 
+	tail_len += hostapd_security_profile_ie_len(hapd);
+
 	if (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
 	    hapd == hostapd_mbssid_get_tx_bss(hapd))
 		tail_len += 5; /* Multiple BSSID Configuration element */
@@ -3709,6 +3711,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_FST */
 
+	tailpos = hostapd_eid_security_profile(hapd, tailpos);
 #ifdef CONFIG_IEEE80211AC
 	if (hostapd_is_vht_enabled(hapd) &&
 	    !is_6ghz_op_class(hapd->iconf->op_class)) {
