@@ -337,6 +337,79 @@ static size_t hostapd_supp_rates(struct hostapd_data *hapd, u8 *buf)
 }
 
 
+#define MAX_SECURITY_PROFILE_NUM 16
+
+static const struct security_profile_entry_ap security_profile_table[MAX_SECURITY_PROFILE_NUM] = {
+    /* profile_num, key_mgmt, pairwise_cipher, mfpr, mfpc,
+     * ieee8021x_auth_frame, assoc_frame_encrypt,
+     * pmksa_caching_privacy, kek_in_pasn, unauth_eppke
+     */
+
+     /* 0: EPPKE (AKM 29), unauth‑EPPKE allowed */
+	[0]  = { 0,  WPA_KEY_MGMT_EPPKE,			  WPA_CIPHER_GCMP_256,
+		true, false, true,  true,  true,  true,  true },
+
+    /* 1: EPPKE + SAE (AKM 29+24) */
+	[1]  = { 1,  WPA_KEY_MGMT_EPPKE | WPA_KEY_MGMT_SAE_EXT_KEY,
+		WPA_CIPHER_GCMP_256, true, false, false,  true,	true,  true,  false },
+
+    /* 2: EPPKE + FT‑SAE (AKM 29+25) */
+	[2]  = { 2,  WPA_KEY_MGMT_EPPKE | WPA_KEY_MGMT_FT_SAE_EXT_KEY,
+		WPA_CIPHER_GCMP_256, true, false, true,  true,	true,  true,  false },
+
+    /* 3: 802.1X/5 + assoc‑encrypt */
+	[3]  = { 3,  WPA_KEY_MGMT_IEEE8021X_SHA256,  WPA_CIPHER_GCMP_256,
+		true, true,  true,  true,  true,  false, false },
+
+    /* 4: FT‑802.1X/3 + assoc‑encrypt */
+	[4]  = { 4,  WPA_KEY_MGMT_FT_IEEE8021X,      WPA_CIPHER_GCMP_256,
+		true, true,  true,  true,  true,  false, false },
+
+    /* 5: FILS‑SHA256/23 + assoc‑encrypt */
+	[5]  = { 5,  WPA_KEY_MGMT_FILS_SHA256,	     WPA_CIPHER_GCMP_256,
+		true, true,  true,  true,  true,  false, false },
+
+    /* 6: FT‑FILS‑SHA256/22 + assoc‑encrypt */
+	[6]  = { 6,  WPA_KEY_MGMT_FT_FILS_SHA256,    WPA_CIPHER_GCMP_256,
+		true, true,  true,  true,  true,  false, false },
+
+    /* 7: IEEE8021X‑SHA384/12 + assoc‑encrypt */
+	[7]  = { 7,  WPA_KEY_MGMT_IEEE8021X_SHA384,  WPA_CIPHER_GCMP_256,
+		true, true,  true,  true,  true,  false, false },
+
+    /* 8: OWE/18 */
+	[8]  = { 8,  WPA_KEY_MGMT_OWE,		     WPA_CIPHER_GCMP_256,
+		true, false, false, false, false, false, false },
+
+    /* 9: SAE/24 */
+	[9]  = { 9,  WPA_KEY_MGMT_SAE_EXT_KEY,	     WPA_CIPHER_GCMP_256,
+		true, false, false, false, false, false, false },
+
+    /* 10: FT‑SAE/25 */
+	[10] = { 10, WPA_KEY_MGMT_FT_SAE_EXT_KEY,    WPA_CIPHER_GCMP_256,
+		true, false, false, false, false, false, false },
+
+    /* 11: 802.1X/5 (no assoc‑encrypt) */
+	[11] = { 11, WPA_KEY_MGMT_IEEE8021X_SHA256,  WPA_CIPHER_GCMP_256,
+		true, false, false, false, false, false, false },
+
+    /* 12: FT‑802.1X/3 (no assoc‑encrypt) */
+	[12] = { 12, WPA_KEY_MGMT_FT_IEEE8021X,      WPA_CIPHER_GCMP_256,
+		true, false, false, false, false, false, false },
+
+    /* 13: FILS‑SHA256/23 (no assoc‑encrypt) */
+	[13] = { 13, WPA_KEY_MGMT_FILS_SHA256,	     WPA_CIPHER_GCMP_256,
+		true, false, false, false, false, false, false },
+
+    /* 14: FT‑FILS‑SHA256/22 (no assoc‑encrypt) */
+	[14] = { 14, WPA_KEY_MGMT_FT_FILS_SHA256,    WPA_CIPHER_GCMP_256,
+		true, false, false, false, false, false, false },
+
+    /* 15: IEEE8021X‑SHA384/12 (no assoc‑encrypt) */
+	[15] = { 15, WPA_KEY_MGMT_IEEE8021X_SHA384,  WPA_CIPHER_GCMP_256,
+		true, false, false, false, false, false, false },
+};
+
 u8 * hostapd_eid_supp_rates(struct hostapd_data *hapd, u8 *eid)
 {
 	u8 *pos = eid;
