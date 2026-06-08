@@ -2154,4 +2154,29 @@ int wpas_get_owe_trans_network(const u8 *owe_ie, const u8 **bssid,
 
 void wpas_scan_for_rnr_entries(void *eloop_ctx, void *timeout_ctx);
 
+/**
+ * wpas_security_profile_active - Is Security Profile element active?
+ * @wpa_s: Pointer to wpa_supplicant data
+ *
+ * Returns true when Security Profile element functionality is enabled for
+ * the current connection attempt:
+ *   - Supplicant-SME path (WPA_DRIVER_FLAGS_SME): always active when the AP
+ *     advertises the element.
+ *   - Driver-SME path: only active when the driver
+ *     explicitly indicates support via WPA_DRIVER_FLAGS2_SECURITY_PROFILE.
+ *     Without this flag the feature is fully disabled even if the AP
+ *     advertises the Security Profile element (802.11bn D1.4, 37.32).
+ *
+ * Use this helper as the single gate for ALL Security Profile element
+ * parsing, override, and validation logic so that the driver-SME path
+ * without driver support behaves identically to a legacy STA.
+ */
+static inline bool wpas_security_profile_active(struct wpa_supplicant *wpa_s)
+{
+	if (wpa_s->drv_flags & WPA_DRIVER_FLAGS_SME)
+		return true; /* supplicant-SME: always active */
+	/* driver-SME: only when driver advertises support */
+	return !!(wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_SECURITY_PROFILE);
+}
+
 #endif /* WPA_SUPPLICANT_I_H */
