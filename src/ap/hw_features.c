@@ -53,6 +53,10 @@ void hostapd_free_hw_features(struct hostapd_hw_modes *hw_features,
 	if (hw_features == NULL)
 		return;
 
+#ifdef CONFIG_QCN_EXTN
+	hostapd_free_hw_features_extn(hw_features, num_hw_features);
+#endif
+
 	for (i = 0; i < num_hw_features; i++) {
 		os_free(hw_features[i].channels);
 		os_free(hw_features[i].rates);
