@@ -769,7 +769,93 @@ static int ieee80211_802_1x_store_auth_frame(struct sta_info *sta,
 	return 0;
 }
 
-#endif /* CONFIF_IEEE8021X_AUTH */
+
+/*
+ * ieee80211_store_last_8021x_auth_frame - Build and store the last
+ * Authentication frame reply for IEEE 802.1X authentication.
+ *
+ * @hapd: Pointer to hostapd_data.
+ * @sta: Pointer to the station information.
+ * @dst: Destination address for the Authentication frame reply.
+ * @auth_transaction: Authentication transaction sequence number.
+ * @status: Status code for the Authentication frame reply.
+ * @data: Data to include in the Authentication frame reply.
+ * Returns: 0 on success, -1 on failure.
+ *
+ * This function builds and store the last Authentication frame reply for
+ * 802.1X authentication. The last authentication frame is handled differently
+ * from other authentication frames, since for PQC AKMs, it needs to be
+ * included in the transcript before the derivation of the PTK, and the MIC
+ * needs to be calculated over the whole frame.
+ */
+static int
+ieee80211_store_last_8021x_auth_frame(struct hostapd_data *hapd,
+				      struct sta_info *sta,
+				      const u8 *dst,
+				      u16 auth_transaction, u16 status,
+				      struct wpabuf *data)
+{
+	struct wpabuf *buf;
+	size_t rlen = 6, mic_len = 0;
+	struct wpabuf *ml_resp = NULL;
+	enum rsn_hash_alg hash_alg = RSN_HASH_NOT_SPECIFIED;
+	int ret;
+
+#ifdef CONFIG_PQC
+	if (wpa_key_mgmt_pqc(sta->eap_auth_data.akm) &&
+	    sta->eap_auth_data.constraint)
+		hash_alg = sta->eap_auth_data.constraint->hash;
+#endif /* CONFIG_PQC */
+
+	if (data)
+		rlen += wpabuf_len(data);
+
+#ifdef CONFIG_IEEE80211BE
+	if (ap_sta_is_mld(hapd, sta)) {
+		ml_resp = hostapd_ml_auth_resp(hapd);
+		if (!ml_resp)
+			return -1;
+		rlen += wpabuf_len(ml_resp);
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	mic_len = wpa_mic_len(sta->eap_auth_data.akm,
+			      sta->eap_auth_data.pmk_len,
+			      hash_alg, PASN_GROUP_NOT_SPECIFIED);
+	rlen += 2 + mic_len;
+
+	buf = wpabuf_alloc(rlen);
+	if (!buf) {
+		wpabuf_free(ml_resp);
+		return -1;
+	}
+
+	wpabuf_put_le16(buf, WLAN_AUTH_802_1X);
+	wpabuf_put_le16(buf, auth_transaction);
+	wpabuf_put_le16(buf, status);
+
+	if (data)
+		wpabuf_put_buf(buf, data);
+
+	/* Mirror the element layout used by send_auth_reply() */
+	if (ml_resp)
+		wpabuf_put_buf(buf, ml_resp);
+	wpabuf_free(ml_resp);
+
+	/* Put an Empty MIC element */
+	wpabuf_put_u8(buf, WLAN_EID_MIC);
+	wpabuf_put_u8(buf, mic_len);
+	wpabuf_put(buf, mic_len);
+
+	ret = ieee80211_802_1x_store_auth_frame(sta,
+						wpabuf_head_u8(buf),
+						wpabuf_len(buf),
+						auth_transaction);
+	wpabuf_free(buf);
+	return ret;
+}
+
+#endif /* CONFIG_IEEE8021X_AUTH */
 
 static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 			   const u8 *dst,
@@ -3724,6 +3810,23 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 			}
 
 			sta->eap_auth_data.pmk_len = cached_pmk->pmk_len;
+
+			/*
+			 * Build and store the last Authentication frame, as
+			 * it is needed for PTK derivation for PQC AKMs
+			 */
+			if (ieee80211_store_last_8021x_auth_frame(hapd, sta,
+								  sta->addr,
+								  auth_transaction + 1,
+								  WLAN_STATUS_SUCCESS,
+								  reply) < 0) {
+				wpa_printf(MSG_INFO,
+					   "Failed to store the last Authentication frame");
+				wpabuf_free(reply);
+				resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+				goto fail;
+			}
+
 			if (ieee80211_802_1x_derive_ptk(hapd, sta,
 							cached_pmk->pmk, aa,
 							force_kdk, alg,
@@ -3757,6 +3860,13 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 		   wpa_key_mgmt_pqc(sta->eap_auth_data.akm)) {
 		struct ieee802_11_elems elems;
 		struct rsn_pmksa_cache_entry *cached_pmk = NULL;
+		const u8 *aa = hapd->own_addr;
+		int cipher = sta->eap_auth_data.cipher;
+
+#ifdef CONFIG_IEEE80211BE
+		if (ap_sta_is_mld(hapd, sta))
+			aa = hapd->mld->mld_addr;
+#endif /* CONFIG_IEEE80211BE */
 
 		if (ieee802_11_parse_elems(pos, end - pos,
 					   &elems,
@@ -3799,7 +3909,31 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 			goto fail;
 		}
 
-		/* TODO: Add PTK derivation */
+		/*
+		 * Build and store the last Authentication frame, as it is
+		 * needed for PTK derivation for PQC AKMs
+		 */
+		if (ieee80211_store_last_8021x_auth_frame(hapd, sta,
+							  sta->addr,
+							  auth_transaction + 1,
+							  WLAN_STATUS_SUCCESS,
+							  reply) < 0) {
+			wpa_printf(MSG_INFO,
+				   "Failed to build the last Authentication frame");
+			wpabuf_free(reply);
+			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto fail;
+		}
+
+		if (ieee80211_802_1x_derive_ptk(hapd, sta, cached_pmk->pmk,
+						aa, force_kdk,
+						wpa_cipher_to_alg(cipher),
+						wpa_cipher_key_len(cipher)) < 0) {
+			wpabuf_free(reply);
+			reply = NULL;
+			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto fail;
+		}
 
 		sta->flags |= WLAN_STA_AUTH;
 		sta->auth_alg = WLAN_AUTH_802_1X;
