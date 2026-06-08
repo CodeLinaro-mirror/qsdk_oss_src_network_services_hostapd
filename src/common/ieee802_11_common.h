@@ -135,6 +135,8 @@ struct ieee802_11_elems {
 	const struct ieee80211_ttlm_elem *ttlm[IEEE80211_TTLM_MAX_CNT];
 	const u8 *mscs_desc;
 	const u8 *cip_pad;
+	/* Security Profile element (802.11bn D1.4, 9.4.2.364, EID ext=162) */
+	const u8 *security_profile_ie;
 	const u8 *smd;
 	const u8 *smd_bsstransparams;
 
@@ -212,6 +214,9 @@ struct ieee802_11_elems {
 	size_t proximity_ranging_len;
 	u8 smd_len;
 	u8 smd_bsstransparams_len;
+
+	/* Security Profile element (802.11bn D1.4, 9.4.2.364, EID ext=162) */
+	size_t security_profile_ie_len;
 
 	struct mb_ies_info mb_ies;
 
