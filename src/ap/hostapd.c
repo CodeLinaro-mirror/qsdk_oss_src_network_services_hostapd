@@ -2470,6 +2470,9 @@ int hostapd_setup_bss(struct hostapd_data *hapd, bool first,
 
 	wpa_printf(MSG_DEBUG, "%s(hapd=%p (%s), first=%d reenable=%u)",
 		   __func__, hapd, conf->iface, first, hapd->reenable);
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_interface_create(hapd);
+#endif
 
 	/* Prepare per-BSS rates early from BSS config and current mode */
 	if (hapd->iface->current_mode &&
@@ -6713,9 +6716,6 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 			if (hostapd_tx_bss_only(hapd, "ht_mcs_nss_set") < 0)
 				goto fail;
 		}
-#ifdef CONFIG_HOSTAPD_IF
-		hostapd_if_interface_create(hapd);
-#endif
 	}
 
 	hapd_iface->is_ch_switch_dfs = false;

@@ -424,6 +424,9 @@ int hostapd_if_interface_create(struct hostapd_data *hapd)
 	if (!hapd->conf->external_plugin_enable)
 		return 0;
 
+	if (hapd->hostapd_if_data)
+		return 0;
+
 	wpa_printf(MSG_ERROR, "%s:%s %d", __func__, hapd->conf->iface,
 		hapd->mld_link_id);
 	leader = hostapd_mld_get_first_bss(hapd);
