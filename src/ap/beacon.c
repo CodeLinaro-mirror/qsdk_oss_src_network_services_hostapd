@@ -38,6 +38,9 @@
 #include "ieee802_11_auth.h"
 #include "dscp_policy.h"
 #include "../../qcn_extns/cmn.h"
+#ifdef CONFIG_HOSTAPD_IF
+#include "hostapd_if/hostapd_if.h"
+#endif
 #include <assert.h>
 
 #define HOSTAPD_TPC_REPORT_IE_LEN			2
