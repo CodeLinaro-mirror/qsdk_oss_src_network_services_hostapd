@@ -244,6 +244,7 @@
 #define WLAN_STATUS_DENIED_TX_LINK_NOT_ACCEPTED 139
 #define WLAN_STATUS_EPCS_DENIED_VERIFICATION_FAILURE 140
 #define WLAN_STATUS_DENIED_OPERATION_PARAMETER_UPDATE 141
+#define WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE 159
 
 /* Reason codes (IEEE Std 802.11-2020, 9.4.1.7, Table 9-90) */
 #define WLAN_REASON_UNSPECIFIED 1
@@ -307,7 +308,8 @@
 #define WLAN_REASON_MAC_ADDRESS_ALREADY_EXISTS_IN_MBSS 64
 #define WLAN_REASON_MESH_CHANNEL_SWITCH_REGULATORY_REQ 65
 #define WLAN_REASON_MESH_CHANNEL_SWITCH_UNSPECIFIED 66
-
+/* IEEE 802.11bn D1.4: Security Profile element mismatch in (Re)Assoc Response */
+#define WLAN_REASON_SEC_PROF_IE_IN_ASSOC_RESP_INVALID  WLAN_REASON_INVALID_IE
 
 /* Element IDs (IEEE Std 802.11-2020, 9.4.2.1, Table 9-92) */
 #define WLAN_EID_SSID 0
@@ -544,6 +546,22 @@
 #define WLAN_EID_EXT_PASN_ENCRYPTED_DATA 140
 #define WLAN_EID_EXT_UHR_OPERATION 151
 #define WLAN_EID_EXT_UHR_CAPABILITIES 152
+
+/* Security Profile element (802.11bn D1.4, Table 9-164, EID Extension = 162) */
+#define WLAN_EID_EXT_SECURITY_PROFILE 162
+
+/* Security Profile element fields (IEEE 802.11bn D1.4 §9.4.2.363) */
+/* Reduced RSN Capabilities field bits (Figure 9-aa71) */
+#define WLAN_SEC_PROF_REDUCED_RSN_CAPA_EXTENDED_KEY_ID  BIT(0)
+#define WLAN_SEC_PROF_REDUCED_RSN_CAPA_OCVC             BIT(1)
+
+/* Security Profile Indication field (Figure 9-aa72):
+ * Bits 0-3: Number of octets in Security Profile Bitmap
+ * Bits 4-7: Number of Vendor Specific Security Profiles
+ */
+#define WLAN_SEC_PROF_IND_BITMAP_OCTETS(ind)  ((ind) & 0x0f)
+#define WLAN_SEC_PROF_IND_VENDOR_COUNT(ind)   (((ind) >> 4) & 0x0f)
+
 #define WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS 155
 
 #define WLAN_EID_EXT_SMD 154
@@ -658,6 +676,34 @@
 #define WLAN_RSNX_CAPAB_SSID_PROTECTION 21
 #define WLAN_RSNX_CAPAB_CIGTK 33
 #define WLAN_RSNX_CAPAB_SAE_PW_ID_CHANGE 34
+
+/*
+ * Security Profile Number values (802.11bn D1.4, Table 9-bb14).
+ * All profiles use pairwise cipher GCMP-256 (00-0F-AC:9) and MFPR=1.
+ * AKM suites are 00-0F-AC:<value below>.
+ */
+#define SECURITY_PROFILE_NUM_EPPKE_NO_AUTH	0  /* EPPKE (29), no mutual auth */
+#define SECURITY_PROFILE_NUM_EPPKE_SAE		1  /* EPPKE (29) + SAE (24) */
+#define SECURITY_PROFILE_NUM_EPPKE_FT_SAE	2  /* EPPKE (29) + FT/SAE (25) */
+#define SECURITY_PROFILE_NUM_8021X_AUTH		3  /* 802.1X (5), EAP over AUTH */
+#define SECURITY_PROFILE_NUM_8021X_FT_AUTH	4  /* 802.1X+FT (3), EAP over AUTH */
+#define SECURITY_PROFILE_NUM_8021X_SHA384_AUTH	5  /* 802.1X SHA384 (23), EAP over AUTH */
+#define SECURITY_PROFILE_NUM_8021X_FT384_AUTH	6  /* 802.1X+FT SHA384 (22), EAP over AUTH */
+#define SECURITY_PROFILE_NUM_8021X_SUITEB_AUTH	7  /* 802.1X Suite-B (12), EAP over AUTH */
+#define SECURITY_PROFILE_NUM_OWE		8  /* OWE/None (18) */
+#define SECURITY_PROFILE_NUM_SAE		9  /* SAE (24) */
+#define SECURITY_PROFILE_NUM_FT_SAE		10 /* FT/SAE (25) */
+#define SECURITY_PROFILE_NUM_8021X		11 /* 802.1X (5) */
+#define SECURITY_PROFILE_NUM_8021X_FT		12 /* 802.1X+FT (3) */
+#define SECURITY_PROFILE_NUM_8021X_SHA384	13 /* 802.1X SHA384 (23) */
+#define SECURITY_PROFILE_NUM_8021X_FT384	14 /* 802.1X+FT SHA384 (22) */
+#define SECURITY_PROFILE_NUM_8021X_SUITEB	15 /* 802.1X Suite-B (12) */
+/* 16-119: Reserved */
+#define SECURITY_PROFILE_NUM_MAX		119
+
+/* Reduced RSN Capabilities field bits (Figure 9-aa71) */
+#define REDUCED_RSN_CAPS_EXT_KEY_ID	BIT(0)
+#define REDUCED_RSN_CAPS_OCVC		BIT(1)
 
 /* Multiple BSSID element subelements */
 #define WLAN_MBSSID_SUBELEMENT_NONTRANSMITTED_BSSID_PROFILE 0
