@@ -36,6 +36,7 @@
 #include "common/version.h"
 #include "rsn_supp/preauth.h"
 #include "rsn_supp/pmksa_cache.h"
+#include "rsn_supp/wpa_ie.h"
 #include "common/wpa_ctrl.h"
 #include "common/ieee802_11_common.h"
 #include "common/ieee802_11_defs.h"
@@ -5361,6 +5362,8 @@ static void wpas_start_assoc_cb(struct wpa_radio_work *work, int deinit)
 #ifdef CONFIG_SAE
 	params.sae_pwe = wpas_get_ssid_sae_pwe(wpa_s, ssid);
 #endif /* CONFIG_SAE */
+
+	params.security_profile_active = wpas_security_profile_active(wpa_s);
 
 	ret = wpa_drv_associate(wpa_s, &params);
 	forced_memzero(psk, sizeof(psk));
