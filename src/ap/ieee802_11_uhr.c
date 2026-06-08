@@ -11,7 +11,7 @@
 #include "hostapd.h"
 #include "sta_info.h"
 #include "ieee802_11.h"
-
+#include "common/hw_features_common.h"
 
 size_t hostapd_eid_uhr_capab_len(struct hostapd_data *hapd,
 				 enum ieee80211_op_mode opmode)
@@ -113,8 +113,13 @@ u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool beacon)
 	struct ieee80211_uhr_operation *oper;
 	u8 *pos = eid, *len, *start = eid;
 	u16 oper_ctrl = 0;
+	struct hostapd_hw_modes *mode;
+	struct uhr_npca_info *npca_info;
+	bool npca_present;
+	u32 npca_params = 0;
 
-	if (!hapd->iface->current_mode)
+	mode = hapd->iface->current_mode;
+	if (!mode)
 		return eid;
 
 	*pos++ = WLAN_EID_EXTENSION;
@@ -122,6 +127,10 @@ u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool beacon)
 	*pos++ = WLAN_EID_EXT_UHR_OPERATION;
 
 	oper = (struct ieee80211_uhr_operation *) pos;
+	npca_info = &mode->npca_info[IEEE80211_MODE_AP];
+	npca_present = npca_info->npca_supported && hapd->iconf->npca_enable;
+	if (npca_present)
+		oper_ctrl |= UHR_OPER_CTRL_NPCA_ENA;
 
 	if (hapd->iconf->dbe_bandwidth) {
 		u8 dbe_bw = hapd->iconf->dbe_bandwidth <<
@@ -130,10 +139,33 @@ u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool beacon)
 		oper_ctrl |= UHR_OPER_CTRL_DBE_ENA;
 		oper_ctrl |= dbe_bw;
 	}
-
 	pos += sizeof(*oper);
 
 	/* UHR Operation Parameters field */
+	if (npca_present) {
+		oper_ctrl |= UHR_OPER_CTRL_NPCA_OP_PARAMS_PRES;
+		npca_params |= (u32) hapd->iconf->npca_primary_channel &
+			UHR_OPER_PARAMS_NPCA_PRI_CHAN_OFFS;
+		npca_params |= ((u32) npca_info->npca_min_dur_threshold << 4) &
+			UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH;
+		npca_params |= ((u32) npca_info->npca_switch_delay << 8) &
+			UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY;
+		npca_params |= ((u32) npca_info->npca_switch_back_delay << 14) &
+			UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY;
+		npca_params |= ((u32) npca_info->npca_initial_qsrc << 20) &
+			UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC;
+		npca_params |= ((u32) npca_info->npca_moplen << 22) &
+			UHR_OPER_PARAMS_NPCA_MOPLEN_NPCA;
+		if (hapd->iconf->npca_punct_bitmap)
+			npca_params |= UHR_OPER_PARAMS_NPCA_DIS_SUBCH_BITMAP_PRES;
+
+		WPA_PUT_LE32(pos, npca_params);
+		pos += sizeof(u32);
+		if (hapd->iconf->npca_punct_bitmap) {
+			WPA_PUT_LE16(pos, hapd->iconf->npca_punct_bitmap);
+			pos += sizeof(u16);
+		}
+	}
 
 	if (!beacon && hapd->iconf->dbe_bandwidth) {
 		oper_ctrl |= UHR_OPER_CTRL_DPE_OP_PARAMS_PRES;

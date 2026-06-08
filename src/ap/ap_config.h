@@ -1719,6 +1719,11 @@ struct hostapd_config {
 
 	/* Monitor interface name */
 	char monitor_iface_name[IFNAMSIZ + 1];
+#ifdef CONFIG_IEEE80211BN
+	bool npca_enable;
+	u8 npca_primary_channel;
+	u16 npca_punct_bitmap;
+#endif /* CONFIG_IEEE80211BN */
 
 	/* Disable MCS15 Subfield in EHT operation element */
 	bool disable_mcs15_rx;
