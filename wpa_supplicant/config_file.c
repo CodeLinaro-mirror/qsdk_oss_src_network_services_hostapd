@@ -1054,6 +1054,9 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid,
 	INT_DEF(rsn_overriding, RSN_OVERRIDING_NOT_SET);
 	INT(control_frame_protection);
 	INT(cip_padding_delay);
+#ifdef CONFIG_QCN_EXTN
+	INT(wds_ie);
+#endif
 #ifdef CONFIG_SAE
 	if (ssid->alt_sae_password_ids) {
 		struct wpabuf_array *ids = ssid->alt_sae_password_ids;

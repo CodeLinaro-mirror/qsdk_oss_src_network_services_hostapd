@@ -1657,6 +1657,16 @@ struct wpa_supplicant {
 	u8 multi_ap_profile;
 	u16 multi_ap_primary_vlanid;
 
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * wds_ie_ap - WDS IE AP capability flag (STA mode)
+	 *
+	 * Set to 1 when the AP advertised WDS_IE_CAP_AP in its association
+	 * response and the STA has wds_ie=1 configured.
+	 */
+	unsigned int wds_ie_ap:1;
+#endif /* CONFIG_QCN_EXTN */
+
 #ifndef CONFIG_NO_ROBUST_AV
 	struct robust_av_data robust_av;
 	bool mscs_setup_done;

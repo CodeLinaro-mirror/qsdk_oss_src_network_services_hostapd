@@ -1046,8 +1046,9 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 	buflen += hostapd_tpc_report_len(hapd);
 #ifdef CONFIG_QCN_EXTN
 	buflen += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
+	/* WDS vendor IE */
+	buflen += hostapd_wds_ie_len_extn(hapd);
 #endif /* CONFIG_QCN_EXTN */
-
 	/* Estimated Service Parameters (ESP) IE */
 	buflen += hostapd_esp_ie_len_extn(hapd);
 
@@ -1530,6 +1531,8 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 
 #ifdef CONFIG_QCN_EXTN
 	pos = hostapd_eid_qcn_vendor_ie_extn(hapd, pos, IEEE80211_MODE_AP);
+	/* WDS vendor IE in probe response */
+	pos = hostapd_eid_wds_ie_extn(hapd, pos, epos - pos);
 #endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_IEEE80211BN
 	/* SMD Information element */
@@ -3582,6 +3585,8 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	tail_len += hostapd_tpc_report_len(hapd);
 #ifdef CONFIG_QCN_EXTN
 	tail_len += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
+	/* WDS vendor IE */
+	tail_len += hostapd_wds_ie_len_extn(hapd);
 #endif /* CONFIG_QCN_EXTN */
 
 	tailpos = tail = os_malloc(tail_len);
@@ -3899,6 +3904,9 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 					     tail + tail_len - tailpos);
 #ifdef CONFIG_QCN_EXTN
 	tailpos = hostapd_eid_qcn_vendor_ie_extn(hapd, tailpos, IEEE80211_MODE_AP);
+	/* WDS vendor IE in beacon */
+	tailpos = hostapd_eid_wds_ie_extn(hapd, tailpos,
+					  tail + tail_len - tailpos);
 #endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_IEEE80211BN
 	/* SMD Information element */

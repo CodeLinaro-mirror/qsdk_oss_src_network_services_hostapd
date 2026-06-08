@@ -3005,6 +3005,9 @@ static const struct parse_data ssid_fields[] = {
         { INT_RANGE(smd_enabled, 0, 1)},
         { FUNC(smd_id)},
         { INT_RANGE(smd_ptk_mode, 0, 1)},
+#ifdef CONFIG_QCN_EXTN
+	{ INT_RANGE(wds_ie, 0, 1) },
+#endif
 };
 
 #undef OFFSET

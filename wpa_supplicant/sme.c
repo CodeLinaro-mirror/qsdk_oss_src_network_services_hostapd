@@ -2759,6 +2759,19 @@ mscs_fail:
 		wpa_s->sme.assoc_req_ie_len += multi_ap_ie_len;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	/* WDS vendor IE: add to assoc request if wds_ie is enabled */
+	if (ssid && ssid->wds_ie) {
+		u8 *pos = wpa_s->sme.assoc_req_ie + wpa_s->sme.assoc_req_ie_len;
+		size_t avail = sizeof(wpa_s->sme.assoc_req_ie) -
+			       wpa_s->sme.assoc_req_ie_len;
+		u8 *end = wds_ie_populate_assoc_req_extn(wpa_s, ssid,
+							 pos, avail);
+
+		wpa_s->sme.assoc_req_ie_len += end - pos;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_RSN_OVERRIDE_SUPPORT,
 			 wpas_rsn_overriding(wpa_s, ssid));
 	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_RSN_OVERRIDE,
