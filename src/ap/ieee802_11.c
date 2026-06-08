@@ -13629,9 +13629,9 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 			*eid |= RNR_TBTT_INFO_MLD_PARAM2_LINK_DISABLED;
 #endif /* CONFIG_TESTING_OPTIONS */
 		if (type == WLAN_FC_STYPE_PROBE_RESP &&
-		    hapd->mld &&
+		    bss->mld &&
 		    BIT(bss->mld_link_id) &
-		    hapd->mld->ttlm_ctx.established_ttlm.disabled_link_bitmap)
+		    bss->mld->ttlm_ctx.established_ttlm.disabled_link_bitmap)
 			*eid |= RNR_TBTT_INFO_MLD_PARAM2_LINK_DISABLED;
 		eid++;
 	}
