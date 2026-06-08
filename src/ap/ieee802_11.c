@@ -77,6 +77,9 @@
 #define CIPIE_PADDING_DELAY 3
 #define CIP_CAPAB_LEN 4
 
+#define SECURITY_PROFILE_INDICATION 2
+#define SECURITY_PROFILE_BITMAP 3
+
 #ifdef CONFIG_IEEE80211AX
 #include "robust_av.h"
 #endif
@@ -409,6 +412,312 @@ static const struct security_profile_entry_ap security_profile_table[MAX_SECURIT
 	[15] = { 15, WPA_KEY_MGMT_IEEE8021X_SHA384,  WPA_CIPHER_GCMP_256,
 		true, false, false, false, false, false, false },
 };
+
+static int hostapd_get_sta_num_sec_prof(const u8 *sec_prof_ie, size_t len)
+{
+	u8 indication, bitmap_len;
+	const u8 *bitmap;
+	size_t i;
+
+	if (!sec_prof_ie || len < 2) {
+		wpa_printf(MSG_DEBUG, "UHR: Security Profile element too short");
+		return -1;
+	}
+
+	/* Parse Security Profile Indication field (1 byte):
+	 * Bits 0-3: bitmap_len (number of octets in bitmap)
+	 * Bits 4-7: vendor profile count
+	 * IEEE 802.11bn D1.4, Figure 9-aa70
+	 */
+	indication = sec_prof_ie[SECURITY_PROFILE_INDICATION];
+	bitmap_len = indication & SECURITY_PROFILE_INDICATION_BITMAP_LEN_MASK;
+
+	if (len < (size_t)(3 + bitmap_len)) {
+		wpa_printf(MSG_DEBUG, "UHR: Truncated Security Profile bitmap");
+		return -1;
+	}
+
+	if (bitmap_len == 0) {
+		wpa_printf(MSG_DEBUG, "UHR: Empty Security Profile bitmap");
+		return -1;
+	}
+
+	bitmap = &sec_prof_ie[SECURITY_PROFILE_BITMAP];
+
+	/* first set bit is the profile number */
+	for (i = 0; i < bitmap_len * 8; i++) {
+		if (bitmap[i / 8] & BIT(i % 8)) {
+			wpa_printf(MSG_DEBUG,
+				   "UHR: STA profile number extracted: %zu", i);
+			return (int) i;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG, "UHR: No profile set in bitmap");
+	return -1;
+}
+
+/**
+ * is_valid_profile - Check if a profile number is valid
+ * @profile_num: Profile number to validate (0-15)
+ * Returns: true if valid, false otherwise
+ */
+static bool is_valid_profile(int profile_num)
+{
+	if (profile_num < 0 || profile_num >= MAX_SECURITY_PROFILE_NUM)
+		return false;
+
+	return security_profile_table[profile_num].key_mgmt != 0;
+}
+
+
+/**
+ * hostapd_find_validate_profile - Find and validate a matching security profile
+ * @hapd: AP data
+ * @addr: STA MAC address (for logging)
+ * @sta_profile_num: Profile number from STA's Security Profile element
+ * @rsne_data: Parsed RSNE data from STA
+ * @rsnxe: STA's RSNXE.
+ * @rsnxe_len: STA's RSNXE data len
+ * @profile_matched: On success, filled with the matched profile entry
+ * Returns: true if a matching profile is found and validated, false otherwise
+ */
+static bool hostapd_find_validate_profile(
+	struct hostapd_data *hapd,
+	const u8 *addr,
+	int sta_profile_num,
+	const struct wpa_ie_data *rsne_data,
+	const u8 *rsnxe,
+	size_t rsnxe_len,
+	struct security_profile_entry_ap *profile_matched)
+{
+	const struct security_profile_entry_ap *entry;
+	size_t i;
+
+	/* Validate the profile number is in the table before searching */
+	if (!is_valid_profile(sta_profile_num)) {
+		wpa_printf(MSG_ERROR,
+			   "UHR: Profile %d not in table",
+			   sta_profile_num);
+		return false;
+	}
+
+	/* Check if this profile is in the AP's advertised list */
+	for (i = 0; hapd->conf->security_profiles[i] >= 0; i++) {
+		if (hapd->conf->security_profiles[i] != sta_profile_num)
+			continue;
+
+		entry = &security_profile_table[sta_profile_num];
+
+		/* Validate RSNE fields */
+		if (!(entry->key_mgmt & rsne_data->key_mgmt)) {
+			wpa_printf(MSG_DEBUG,
+				   "UHR: Profile %d key_mgmt mismatch: required=0x%x got=0x%x",
+				   sta_profile_num, entry->key_mgmt,
+				   rsne_data->key_mgmt);
+			return false;
+		}
+		if (!(entry->pairwise_cipher & rsne_data->pairwise_cipher)) {
+			wpa_printf(MSG_DEBUG,
+				   "UHR: Profile %d pairwise cipher mismatch: required=0x%x got=0x%x",
+				   sta_profile_num, entry->pairwise_cipher,
+				   rsne_data->pairwise_cipher);
+			return false;
+		}
+		if (entry->mfpc &&
+		    !(rsne_data->capabilities & WPA_CAPABILITY_MFPC)) {
+			wpa_printf(MSG_DEBUG,
+				   "UHR: Profile %d MFPC required but not set",
+				   sta_profile_num);
+			return false;
+		}
+		if (entry->mfpr &&
+		    !(rsne_data->capabilities & WPA_CAPABILITY_MFPR)) {
+			wpa_printf(MSG_DEBUG,
+				   "UHR: Profile %d MFPR required but not set",
+				   sta_profile_num);
+			return false;
+		}
+
+		/* Validate RSNXE fields */
+		if (entry->ieee8021x_auth_frame &&
+		    !ieee802_11_rsnx_capab_len(rsnxe, rsnxe_len,
+					   WLAN_RSNX_CAPAB_802_1X_IN_AUTH_FRAMES)) {
+			wpa_printf(MSG_DEBUG,
+				   "UHR: Profile %d 8021x_auth_frame capab missing",
+				   sta_profile_num);
+			return false;
+		}
+		if (entry->assoc_frame_encrypt &&
+		    !ieee802_11_rsnx_capab_len(rsnxe, rsnxe_len,
+					   WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION)) {
+			wpa_printf(MSG_DEBUG,
+				   "UHR: Profile %d assoc_frame_encrypt capab missing",
+				   sta_profile_num);
+			return false;
+		}
+		if (entry->pmksa_caching_privacy &&
+		    !ieee802_11_rsnx_capab_len(rsnxe, rsnxe_len,
+					   WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY)) {
+			wpa_printf(MSG_DEBUG,
+				   "UHR: Profile %d pmksa_caching_privacy capab missing",
+				   sta_profile_num);
+			return false;
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "UHR: Station " MACSTR
+			   " matches security profile %d (key_mgmt=0x%x cipher=0x%x)",
+			   MAC2STR(addr), sta_profile_num,
+			   entry->key_mgmt, entry->pairwise_cipher);
+		if (profile_matched)
+			*profile_matched = *entry;
+		return true;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "UHR: Station " MACSTR
+		   " profile %d not in AP's advertised list",
+		   MAC2STR(addr), sta_profile_num);
+	return false;
+}
+
+/*
+ * validate_sta_security_profile - Validate STA's Security Profile element
+ *
+ * Validates that the STA's indicated security profile matches one of the
+ * AP's advertised profiles and that the RSNE/RSNXE fields are consistent.
+ *
+ * @hapd: AP data
+ * @addr: STA MAC address (for logging)
+ * @wpa_ie: STA's RSNE (including EID and Length)
+ * @wpa_ie_len: Length of wpa_ie
+ * @rsnxe: STA's RSNXE (including EID and Length), or NULL
+ * @rsnxe_len: Length of rsnxe (unused; rsnxe already includes EID+Len)
+ * @sta_sec_ie: Body of STA's Security Profile element (after EID_Ext byte)
+ * @sta_sec_ie_len: Length of sta_sec_ie
+ * @profile_matched: On success, filled with the matched profile entry
+ * Returns: true if validation passes, false otherwise
+ */
+static bool validate_sta_security_profile(
+	struct hostapd_data *hapd,
+	const u8 *addr,
+	const u8 *wpa_ie, size_t wpa_ie_len,
+	const u8 *rsnxe, size_t rsnxe_len,
+	const u8 *sta_sec_ie, size_t sta_sec_ie_len,
+	struct security_profile_entry_ap *profile_matched)
+{
+	struct wpa_ie_data data;
+	int sta_profile_num;
+
+	if (!hapd->conf->security_profiles)
+		return true; /* No profiles configured, allow */
+
+	wpa_printf(MSG_DEBUG, "UHR: Validating security profile for STA " MACSTR,
+		   MAC2STR(addr));
+
+	/* Parse station's RSNE */
+	if (!wpa_ie || wpa_ie_len < 2) {
+		wpa_printf(MSG_INFO, "UHR: Station " MACSTR " missing RSNE",
+			   MAC2STR(addr));
+		return false;
+	}
+
+	if (wpa_parse_wpa_ie_rsn(wpa_ie-2, wpa_ie_len+2, &data) < 0) {
+		wpa_printf(MSG_INFO, "UHR: Station " MACSTR " invalid RSNE",
+			   MAC2STR(addr));
+		return false;
+	}
+
+	/* Extract STA's profile number from Security Profile element */
+	sta_profile_num = hostapd_get_sta_num_sec_prof(sta_sec_ie, sta_sec_ie_len);
+	if (sta_profile_num < 0) {
+		wpa_printf(MSG_INFO,
+			   "UHR: Station " MACSTR " has invalid Security Profile element",
+			   MAC2STR(addr));
+		return false;
+	}
+
+	wpa_printf(MSG_DEBUG, "UHR: STA " MACSTR " profile number: %d",
+		   MAC2STR(addr), sta_profile_num);
+
+	/* Use the helper function to find and validate the profile */
+	return hostapd_find_validate_profile(hapd, addr, sta_profile_num,
+					 &data, rsnxe, rsnxe_len ,profile_matched);
+}
+/**
+ * validate_security_profile_common - Common UHR Security Profile validation
+ * @hapd: hostapd BSS data structure
+ * @sta_info: Station address.
+ * @ies: Pointer to the start of IEs
+ * @ies_len: Length of IEs
+ * @auth_context: Authentication context string (e.g., "SAE", "PASN", "802.1X")
+ *
+ * This helper function consolidates the common Security Profile validation logic
+ * used across different authentication methods (SAE, PASN, 802.1X).
+ *
+ * Returns: WLAN_STATUS_SUCCESS on success or validation not needed,
+ *	    WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE on validation failure
+ */
+static u16 validate_security_profile_common(
+	struct hostapd_data *hapd,
+	struct sta_info *sta,
+	const u8 *ies,
+	size_t ies_len,
+	const char *auth_context,
+	struct security_profile_entry_ap *profile_matched)
+{
+
+	u8 *addr;
+
+	addr = sta->addr;
+
+	struct ieee802_11_elems elems;
+
+	/* Skip validation if no Security Profiles are configured */
+	if (!hapd->conf->security_profiles)
+		return WLAN_STATUS_SUCCESS;
+
+	if (!elems.security_profile_ie) {
+		/* No Security Profile element present - validation not needed */
+		return WLAN_STATUS_SUCCESS;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR: Validating Security Profile from " MACSTR
+		   " in %s auth (body_len=%zu)",
+		   MAC2STR(addr), auth_context, elems.security_profile_ie_len);
+
+	/* Perform validation */
+	if (!validate_sta_security_profile(
+		    hapd, addr,
+		    elems.rsn_ie, elems.rsn_ie_len,
+		    elems.rsnxe, elems.rsnxe_len,
+		    elems.security_profile_ie, elems.security_profile_ie_len,
+		    profile_matched)) {
+		wpa_printf(MSG_INFO,
+			   "UHR: Rejecting %s auth from " MACSTR
+			   " - Security Profile mismatch",
+			   auth_context, MAC2STR(addr));
+		return WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR: Security Profile validated for " MACSTR
+		   " in %s auth",
+		   MAC2STR(addr), auth_context);
+
+	/* UHR Security Profile validated successfully */
+	if (sta->wpa_sm) {
+		sta->wpa_sm->security_profile_indication = 1;
+		wpa_printf(MSG_ERROR,
+				   "UHR: STA " MACSTR
+				   " profile validated, security_profile=1",
+				   MAC2STR(sta->addr));
+	}
+
+	return WLAN_STATUS_SUCCESS;
+}
 
 u8 * hostapd_eid_supp_rates(struct hostapd_data *hapd, u8 *eid)
 {
