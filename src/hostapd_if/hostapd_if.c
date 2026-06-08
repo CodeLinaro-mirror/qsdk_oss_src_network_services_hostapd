@@ -556,6 +556,7 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 		       struct sta_info *sta,
 		       const uint8_t *frame,
 		       uint16_t frame_len,
+		       int rssi,
 		       u16 status_code,
 		       u16 auth_transaction,
 		       u8 allow_reuse,
@@ -576,6 +577,7 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 
 	os_memset(&ctx_req, 0, sizeof(ctx_req));
 	ctx_req.status_code = status_code;
+	ctx_req.data.auth_req.rssi = rssi;
 	ctx_req.data.auth_req.auth_transaction = auth_transaction;
 	ctx_req.data.auth_req.allow_reuse = allow_reuse;
 	ctx_req.data.auth_req.auth_alg = auth_alg;
@@ -3347,6 +3349,5 @@ size_t hostapd_if_assoc_resp_tail_len(struct sta_info *sta, size_t current_len)
 
 	return tail_len;
 }
-
 
 
