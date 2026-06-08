@@ -6143,6 +6143,157 @@ static int wpa_driver_nl80211_set_cbs(void *priv,
 #endif
 #endif
 
+static int nl80211_set_multi_bss_param(struct i802_bss *bss,
+				       struct wpa_driver_ap_params *params)
+{
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nlattr *config, *entry, *vendor_data;
+	struct nl_msg *msg;
+	size_t i;
+	int ret;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Set %zu multi BSS parameter(s)",
+		   params->num_cmn_params);
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg) {
+		wpa_printf(MSG_DEBUG, "nl80211: Failed to build vendor cmd message");
+		goto fail;
+	}
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_QCA) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
+			QCA_NL80211_VENDOR_SUBCMD_SET_MULTI_BSS_PARAM)) {
+		wpa_printf(MSG_DEBUG, "nl80211: Failed to put multi bss vendor subcommand");
+		goto fail;
+	}
+
+	vendor_data = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!vendor_data) {
+		wpa_printf(MSG_DEBUG, "nl80211: Failed to nest start multi bss vendor data");
+		goto fail;
+	}
+
+	if (nla_put_u32(msg,
+			QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_REF_BSS_IFINDEX,
+			bss->ifindex)) {
+		wpa_printf(MSG_DEBUG, "nl80211: Failed to put REF_BSS_IFINDEX:%u",
+			   bss->ifindex);
+		goto fail;
+	}
+
+#ifdef CONFIG_IEEE80211BE
+	if (params->mld_ap &&
+	    nla_put_u8(msg,
+		       QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_REF_BSS_LINKID,
+		       params->mld_link_id)) {
+		wpa_printf(MSG_DEBUG, "nl80211: Failed to put REF_BSS_LINKID:%u",
+			   params->mld_link_id);
+		goto fail;
+	}
+#endif
+
+	config = nla_nest_start(msg, QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_CONFIGS);
+	if (!config) {
+		wpa_printf(MSG_DEBUG, "nl80211: Failed to nest start param configs");
+		goto fail;
+	}
+
+	for (i = 0; i < params->num_cmn_params; i++) {
+		entry = nla_nest_start(msg, i + 1);
+		if (!entry) {
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: Failed to nest start entry for multi bss params info");
+			goto fail;
+		}
+
+		if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_ID,
+				params->multi_bss_params[i].cmn_param_id)) {
+			wpa_printf(MSG_DEBUG, "nl80211: Failed to put param id %d",
+				   params->multi_bss_params[i].cmn_param_id);
+			goto fail;
+		}
+
+		if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_VAL_1,
+				params->multi_bss_params[i].cmn_param_val[0])) {
+			wpa_printf(MSG_DEBUG, "nl80211: Failed to put param value_1%d",
+				   params->multi_bss_params[i].cmn_param_val[0]);
+			goto fail;
+		}
+
+		if (params->multi_bss_params[i].cmn_param_val[1] >= 0 &&
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_VAL_2,
+				params->multi_bss_params[i].cmn_param_val[1])) {
+			wpa_printf(MSG_DEBUG, "nl80211: Failed to put Param value_2:%d",
+				   params->multi_bss_params[i].cmn_param_val[1]);
+			goto fail;
+		}
+		nla_nest_end(msg, entry);
+
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: multi BSS vendor attrs ifindex=%d linkid=%d param_id=%d param_val1=%d param_val2=%d",
+			   bss->ifindex,
+			   params->mld_ap ? params->mld_link_id : NL80211_DRV_LINK_ID_NA,
+			   params->multi_bss_params[i].cmn_param_id,
+			   params->multi_bss_params[i].cmn_param_val[0],
+			   params->multi_bss_params[i].cmn_param_val[1]);
+	}
+	nla_nest_end(msg, config);
+	nla_nest_end(msg, vendor_data);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to set multi BSS parameter(s): %d (%s)",
+			   ret, strerror(-ret));
+
+	return ret;
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
+static bool wpa_driver_is_vendor_cmd_required(struct wpa_driver_ap_params *params)
+{
+	if (!params->num_cmn_params) {
+		wpa_printf(MSG_DEBUG,
+			   "num_cmn_params is zero, skip to send multi bss vendor command");
+		return false;
+	}
+
+	switch (params->multi_bss_params[0].cmn_param_id) {
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_BEACON_INT:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_VHT_MU_BFMER:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_VHT_SU_BFMER:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_VHT_SU_BFMEE:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_VHT_SOUNDING_DIM:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_VHT_BFMEE_STS:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_SU_BFMER:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_SU_BFMEE:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_DL_MU_OFDMA:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_DL_MU_OFDMA_BFER:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_UL_MU_OFDMA:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_MU_BEAMFORMER:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_UL_MUMIMO:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_RTS_THRESHOLD:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_SU_BFMER:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_SU_BFMEE:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_MU_BFMER:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_DL_MU_OFDMA:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_UL_MU_OFDMA:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_DL_OFDMA_MUMIMO:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_UL_OFDMA_MUMIMO:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_BFME_SS_80:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_BFME_SS_160:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_BFME_SS_320:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_LTF:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_ENABLE_MCS15:
+		return true;
+	}
+
+	return false;
+}
+
 static int wpa_driver_nl80211_set_ap(void *priv,
 				     struct wpa_driver_ap_params *params)
 {
@@ -6151,7 +6302,7 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 	struct i802_link *link = bss->flink;
 	struct nl_msg *msg;
 	u8 cmd = NL80211_CMD_NEW_BEACON;
-	int ret = -ENOBUFS;
+	int ret = -ENOBUFS, i;
 	int beacon_set;
 	int num_suites;
 	u32 suites[20], suite;
@@ -6591,6 +6742,24 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 			   ret, strerror(-ret));
 	} else {
 		link->beacon_set = 1;
+
+		if (wpa_driver_is_vendor_cmd_required(params)) {
+			ret = nl80211_set_multi_bss_param(bss, params);
+			if (ret) {
+				wpa_printf(MSG_ERROR,
+					   "nl80211: Failed to set MBSSID common params");
+				return ret;
+			}
+
+			for (i = 0; i < params->num_cmn_params; i++) {
+				params->multi_bss_params[i].cmn_param_id = -1;
+				params->multi_bss_params[i].cmn_param_val[0] = -1;
+				params->multi_bss_params[i].cmn_param_val[1] = -1;
+			}
+			params->num_cmn_params = 0;
+
+			return ret;
+		}
 
 		if (params->rssi_reject_assoc_rssi) {
 			if (nl80211_set_ap_rssi_monitor(bss, params) < 0) {
