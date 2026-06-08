@@ -360,6 +360,12 @@ struct hostapd_config * hostapd_config_defaults(void)
 	hostapd_config_defaults_bss_extn(bss);
 #endif
 
+	/* Security IE defaults */
+	bss->security_profiles = NULL;
+	bss->security_profile_ext_key_id = 0;
+	bss->security_profile_ocvc = 0;
+	bss->security_profile_rsnx = NULL;
+
 	conf->num_bss = 1;
 
 	conf->beacon_int = 100;
@@ -1172,6 +1178,9 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 #ifdef CONFIG_PASN
 	os_free(conf->pasn_groups);
 #endif /* CONFIG_PASN */
+
+	os_free(conf->security_profiles);
+	os_free(conf->security_profile_rsnx);
 
 	wpabuf_clear_free(conf->sae_pw_id_key);
 

@@ -798,6 +798,49 @@ static int hostapd_parse_intlist(int **int_list, char *val)
 }
 
 
+/* Like hostapd_parse_intlist but uses -1 as the list terminator so that 0
+ * remains a valid entry.  Needed for security_profiles where profile number 0
+ * (EPPKE without mutual authentication) is a defined value.
+ */
+static int hostapd_parse_intlist_neg1(int **int_list, char *val)
+{
+	int *list;
+	int count;
+	char *pos, *end;
+
+	os_free(*int_list);
+	*int_list = NULL;
+
+	pos = val;
+	count = 0;
+	while (*pos != '\0') {
+		if (*pos == ' ')
+			count++;
+		pos++;
+	}
+
+	list = os_malloc(sizeof(int) * (count + 2));
+	if (list == NULL)
+		return -1;
+	pos = val;
+	count = 0;
+	while (*pos != '\0') {
+		end = os_strchr(pos, ' ');
+		if (end)
+			*end = '\0';
+
+		list[count++] = atoi(pos);
+		if (!end)
+			break;
+		pos = end + 1;
+	}
+	list[count] = -1; /* sentinel; 0 is a valid profile number */
+
+	*int_list = list;
+	return 0;
+}
+
+
 static int hostapd_config_bss(struct hostapd_config *conf, const char *ifname)
 {
 	struct hostapd_bss_config **all, *bss;
@@ -3043,6 +3086,25 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "peerkey") == 0) {
 		wpa_printf(MSG_INFO,
 			   "Line %d: Obsolete peerkey parameter ignored", line);
+	} else if (os_strcmp(buf, "security_profiles") == 0) {
+		if (hostapd_parse_intlist_neg1(&bss->security_profiles, pos)) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid security_profiles value '%s'", line, pos);
+			return 1;
+		}
+	} else if (os_strcmp(buf, "security_profile_rsnx") == 0) {
+		os_free(bss->security_profile_rsnx);
+		bss->security_profile_rsnx = os_strdup(pos);
+		if (!bss->security_profile_rsnx) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Failed to allocate security_profile_rsnx",
+				   line);
+			return 1;
+		}
+	} else if (os_strcmp(buf, "security_profile_ext_key_id") == 0) {
+		bss->security_profile_ext_key_id = atoi(pos);
+	} else if (os_strcmp(buf, "security_profile_ocvc") == 0) {
+		bss->security_profile_ocvc = atoi(pos);
 #ifdef CONFIG_IEEE80211R_AP
 	} else if (os_strcmp(buf, "ft_iface") == 0) {
 		os_strlcpy(bss->ft_iface, pos, sizeof(bss->ft_iface));

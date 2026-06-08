@@ -1331,6 +1331,10 @@ struct hostapd_bss_config {
 	struct hostapd_config_plugin plugin;
 #endif
 
+	int *security_profiles;       /* NULL-terminated array from hostapd_parse_intlist */
+	char *security_profile_rsnx;  /* Extended RSN Capabilities hex string */
+	int security_profile_ext_key_id; /* Reduced RSN Capabilities bit 0 */
+	int security_profile_ocvc;    /* Reduced RSN Capabilities bit 1 */
 	/* AP side */
 #ifdef CONFIG_IEEE80211BN
 	struct {
@@ -1690,6 +1694,10 @@ struct hostapd_config {
 
 	/* Monitor interface name */
 	char monitor_iface_name[IFNAMSIZ + 1];
+	int *security_profiles;       /* NULL-terminated array from hostapd_parse_intlist */
+	char *security_profile_rsnx;  /* Extended RSN Capabilities hex string */
+	int security_profile_ext_key_id; /* Reduced RSN Capabilities bit 0 */
+	int security_profile_ocvc;    /* Reduced RSN Capabilities bit 1 */
 };
 
 
