@@ -6192,21 +6192,11 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		if (resp != WLAN_STATUS_SUCCESS)
 			goto out;
 
-	/* For non-encrypted assoc frames, the spec requires the Security
-	 * Profile element in message 3 of the 4-way handshake.  Set the
-	 * flag now so wpa_send_eapol_m3() includes it.  For encrypted
-	 * assoc (EPPKE or 802.1X with assoc-frame-encryption) the IE goes
-	 * in the assoc response instead, so the flag is left clear.
-	 * SAE is idempotent here — the flag was already set at auth commit.
-	 */
-#ifdef CONFIG_ENC_ASSOC
-	if (security_profile_matched &&
-	    !((sta->auth_alg == WLAN_AUTH_EPPKE ||
-	       sta->auth_alg == WLAN_AUTH_802_1X) &&
-	      wpa_auth_ap_sta_support_assoc_enc(sta->wpa_sm))) {
-		sta->wpa_sm->security_profile_indication = 1;
-	}
-#endif
+		if (hapd->conf->security_profiles)
+			sta->wpa_sm->ap_security_profile_indication = 1;
+
+		if (security_profile_matched)
+			sta->wpa_sm->ap_security_profile_indication = 1;
 
 		if (wpa_auth_uses_mfp(sta->wpa_sm))
 			sta->flags |= WLAN_STA_MFP;

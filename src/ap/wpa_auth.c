@@ -40,6 +40,7 @@
 #define STATE_MACHINE_DEBUG_PREFIX "WPA"
 #define STATE_MACHINE_ADDR wpa_auth_get_spa(sm)
 #define KDE_ALL_LINKS 0xffff
+#define MAX_LEN 255
 
 #ifndef SMD_PTK_MODE_PER_DOMAIN
 #define SMD_PTK_MODE_PER_DOMAIN 0
@@ -5404,6 +5405,14 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 		kde_len += wpabuf_len(conf->eapol_m3_elements);
 #endif /* CONFIG_TESTING_OPTIONS */
 
+	if (sm->security_profile_indication) {
+		struct hostapd_data *hapd = sm->wpa_auth->cb_ctx;
+		size_t security_ie_len = hostapd_security_profile_ie_len(hapd);
+
+		if (security_ie_len > 0)
+			kde_len += 2 + RSN_SELECTOR_LEN + security_ie_len - 2;
+	}
+
 	kde = os_malloc(kde_len);
 	if (!kde)
 		goto done;
@@ -5566,6 +5575,36 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 	if (conf->eapol_m3_no_encrypt)
 		encr = 0;
 #endif /* CONFIG_TESTING_OPTIONS */
+
+	/*
+	 * Add UHR Security Information element to EAPOL-Key Message 3 (M3).
+	 */
+	if (sm->security_profile_indication || sm->ap_security_profile_indication) {
+		struct hostapd_data *hapd = sm->wpa_auth->cb_ctx;
+		u8 security_profile_ie[MAX_LEN];
+		u8 *security_profile_ie_start;
+		u8 *security_profile_ie_end;
+		size_t security_profile_ie_len;
+
+		security_profile_ie_start = security_profile_ie;
+		security_profile_ie_end = hostapd_eid_security_profile(hapd, security_profile_ie_start);
+		security_profile_ie_len = security_profile_ie_end - security_profile_ie_start;
+
+		wpa_printf(MSG_ERROR,
+			   "UHR: Adding UHR Security KDE to M3 (ie_len=%zu)",
+			   security_profile_ie_len);
+		if (security_profile_ie_len > 0)
+			wpa_hexdump(MSG_ERROR, "UHR: UHR Security IE",
+				    security_profile_ie, security_profile_ie_len);
+
+		if (security_profile_ie_len > 0) {
+			os_memcpy(pos, security_profile_ie, security_profile_ie_len);
+			pos += security_profile_ie_len;
+			wpa_printf(MSG_ERROR,
+				   "UHR: UHR Security KDE added to M3 (kde_data_len=%zu)",
+				   security_profile_ie_len - 2);
+		}
+	}
 
 	wpa_send_eapol(sm->wpa_auth, sm,
 		       (secure ? WPA_KEY_INFO_SECURE : 0) |

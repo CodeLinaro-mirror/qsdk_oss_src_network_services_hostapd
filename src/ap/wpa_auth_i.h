@@ -233,6 +233,7 @@ struct wpa_state_machine {
 	unsigned int sae_pw_id_counter;
 	int security_profile_indication;
 	bool externally_triggered_m3;
+	int ap_security_profile_indication;
 
 #ifdef CONFIG_IEEE80211BN
 	struct wpa_smd_info smd_info; /* SMD information for this station */
