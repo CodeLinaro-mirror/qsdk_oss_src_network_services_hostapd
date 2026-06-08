@@ -1456,7 +1456,8 @@ int get_tx_parameters(struct sta_info *sta, int ap_max_chanwidth,
 #endif /* CONFIG_OCV */
 
 
-u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len)
+u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
+		       u64 capab_mask)
 {
 	u8 *pos = eid;
 	bool sae_pk = false;
@@ -1501,6 +1502,8 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len)
 	if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK &&
 	    hapd->conf->control_frame_prot)
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
+
+	capab &= capab_mask;
 
 	if (!capab)
 		return eid; /* no supported extended RSN capabilities */

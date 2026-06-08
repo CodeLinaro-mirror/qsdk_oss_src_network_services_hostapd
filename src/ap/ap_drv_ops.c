@@ -143,7 +143,8 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 	}
 
 	if (!hapd->conf->rsn_override_omit_rsnxe) {
-		pos = hostapd_eid_rsnxe(hapd, buf, sizeof(buf));
+		pos = hostapd_eid_rsnxe(hapd, buf, sizeof(buf),
+					hapd->conf->rsnxe_capab_mask);
 		if (add_buf_data(&assocresp, buf, pos - buf) < 0)
 			goto fail;
 	}
