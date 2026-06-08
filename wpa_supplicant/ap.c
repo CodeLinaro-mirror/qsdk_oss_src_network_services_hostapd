@@ -35,6 +35,7 @@
 #include "driver_i.h"
 #include "p2p_supplicant.h"
 #include "ap.h"
+#include "ubus.h"
 #include "ap/sta_info.h"
 #include "notify.h"
 
@@ -1888,6 +1889,108 @@ int ap_switch_channel(struct wpa_supplicant *wpa_s,
 }
 
 
+int wpas_ap_apply_channel_switch(struct wpa_supplicant *wpa_s,
+				 struct csa_settings *settings)
+{
+#ifdef CONFIG_MESH
+	if (wpa_s->ifmsh && wpa_s->ifmsh->conf->disable_csa_dfs == 1) {
+		wpa_printf(MSG_DEBUG,
+			   "wpa chanswitch interface %s : cancelling radar handling timeout",
+			   wpa_s->ifmsh->conf->bss[0]->iface);
+		eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout,
+				     wpa_s->ifmsh, NULL);
+	}
+#endif /* CONFIG_MESH */
+
+	return ap_switch_channel(wpa_s, settings);
+}
+
+
+static bool wpas_ap_iface_running(struct wpa_supplicant *wpa_s)
+{
+#ifdef CONFIG_AP
+	struct hostapd_iface *iface;
+
+	if (!wpa_s)
+		return false;
+
+	iface = wpa_s->ap_iface;
+	if (!iface || !iface->bss || !iface->bss[0])
+		return false;
+
+	switch (iface->state) {
+	case HAPD_IFACE_UNINITIALIZED:
+	case HAPD_IFACE_DISABLED:
+		return false;
+	default:
+		return true;
+	}
+#else /* CONFIG_AP */
+	return false;
+#endif /* CONFIG_AP */
+}
+
+
+static int wpas_mesh_has_ap_iface_same_radio(struct wpa_supplicant *wpa_s)
+{
+#ifdef CONFIG_MESH
+	struct wpa_supplicant *ifs;
+	int ret;
+
+	if (!wpa_s || !wpa_s->ifmsh || !wpa_s->radio)
+		return 0;
+
+	/* Check all interfaces on the same radio */
+	dl_list_for_each(ifs, &wpa_s->radio->ifaces, struct wpa_supplicant,
+			 radio_list) {
+		if (wpas_ap_iface_running(ifs)) {
+			wpa_printf(MSG_DEBUG,
+				   "%s: Found running AP interface %s on same radio",
+				   __func__, ifs->ifname);
+			return 1;
+		}
+	}
+
+	ret = wpas_ubus_has_hostapd_iface_same_radio(wpa_s);
+	if (ret != 0)
+		return ret;
+
+	wpa_printf(MSG_DEBUG,
+		   "%s: No AP interface found on same radio in supplicant or hostapd",
+		   __func__);
+#endif /* CONFIG_MESH */
+
+	return 0;
+}
+
+
+static bool wpas_mesh_ignore_dfs_event(struct wpa_supplicant *wpa_s)
+{
+#ifdef CONFIG_MESH
+	int ret;
+
+	if (!wpa_s || wpa_s->ap_iface || !wpa_s->ifmsh)
+		return false;
+
+	ret = wpas_mesh_has_ap_iface_same_radio(wpa_s);
+	if (ret > 0) {
+		wpa_printf(MSG_INFO,
+			   "Ignore mesh DFS event on %s because a running AP exists on the same radio",
+			   wpa_s->ifname);
+		return true;
+	}
+
+	if (ret < 0) {
+		wpa_printf(MSG_INFO,
+			   "Process mesh DFS event on %s because AP coordination could not be verified",
+			   wpa_s->ifname);
+	}
+#endif /* CONFIG_MESH */
+
+	return false;
+}
+
+
 #ifdef CONFIG_CTRL_IFACE
 int ap_ctrl_iface_chanswitch(struct wpa_supplicant *wpa_s, const char *pos)
 {
@@ -1902,14 +2005,6 @@ int ap_ctrl_iface_chanswitch(struct wpa_supplicant *wpa_s, const char *pos)
 #ifdef CONFIG_MESH
 	if (!iface && wpa_s->ifmsh)
 		iface = wpa_s->ifmsh;
-
-	if (wpa_s->ifmsh && wpa_s->ifmsh->conf->disable_csa_dfs == 1) {
-		wpa_printf(MSG_DEBUG, "wpa chanswitch interface %s :"
-			   " cancelling radar handling timeout",
-			   wpa_s->ifmsh->conf->bss[0]->iface);
-		eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout,
-				     wpa_s->ifmsh, NULL);
-	}
 #endif /* CONFIG_MESH */
 
 	if (!iface)
@@ -1921,7 +2016,26 @@ int ap_ctrl_iface_chanswitch(struct wpa_supplicant *wpa_s, const char *pos)
 
 	settings.link_id = -1;
 
-	return ap_switch_channel(wpa_s, &settings);
+#ifdef CONFIG_MESH
+	if (!wpa_s->ap_iface && wpa_s->ifmsh) {
+		ret = wpas_mesh_has_ap_iface_same_radio(wpa_s);
+		if (ret < 0) {
+			wpa_printf(MSG_INFO,
+				   "Reject mesh CHAN_SWITCH on %s because AP coordination could not be verified",
+				   wpa_s->ifname);
+			return -1;
+		}
+
+		if (ret > 0) {
+			wpa_printf(MSG_INFO,
+				   "Reject mesh CHAN_SWITCH on %s because a running AP already exists on the same radio",
+				   wpa_s->ifname);
+			return -1;
+		}
+	}
+#endif /* CONFIG_MESH */
+
+	return wpas_ap_apply_channel_switch(wpa_s, &settings);
 }
 #endif /* CONFIG_CTRL_IFACE */
 
@@ -2185,6 +2299,10 @@ void wpas_ap_event_dfs_radar_detected(struct wpa_supplicant *wpa_s,
 #endif
 		return;
 	}
+
+	if (wpas_mesh_ignore_dfs_event(wpa_s))
+		return;
+
 	wpa_printf(MSG_DEBUG, "DFS radar detected on %d MHz", radar->freq);
 	hostapd_dfs_radar_detected(iface, radar->freq,
 				   radar->ht_enabled, radar->chan_offset,
