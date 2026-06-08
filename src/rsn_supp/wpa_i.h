@@ -140,6 +140,23 @@ struct wpa_sm {
 	size_t ap_rsne_override_len, ap_rsne_override_2_len,
 		ap_rsnxe_override_len;
 
+	/*
+	 * Security Profile element state (802.11bn D1.4, 9.4.2.364, 37.32).
+	 *
+	 * security_profile_active: mirrors wpas_security_profile_active().
+	 *   Set to 1 for supplicant-SME always, or for driver-SME only when
+	 *   WPA_DRIVER_FLAGS2_SECURITY_PROFILE is set.  When 0, all Security
+	 *   Profile element parsing and validation is skipped in wpa.c.
+	 *
+	 * ap_security_profile_ie / ap_security_profile_ie_len: copy of the
+	 *   Security Profile element from the AP's Beacon/ProbeResp, stored
+	 *   for EAPOL-Key msg 3/4 or encrypted (Re)Association Response
+	 *   comparison.
+	 */
+	int security_profile_active;
+	u8 *ap_security_profile_ie;
+	size_t ap_security_profile_ie_len;
+
 #ifdef CONFIG_TDLS
 	struct wpa_tdls_peer *tdls;
 	int tdls_prohibited;
