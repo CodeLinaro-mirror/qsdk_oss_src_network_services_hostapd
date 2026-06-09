@@ -5921,6 +5921,17 @@ int nl80211_put_freq_params(struct nl_msg *msg,
 			return -ENOBUFS;
 	}
 
+	if (freq->npca_freq != 0) {
+		wpa_printf(MSG_DEBUG, "  * npca_freq=%d", freq->npca_freq);
+		wpa_printf(MSG_DEBUG, "  * npca_punct_bitmap=0x%x",
+			   freq->npca_punct_bitmap);
+		if (nla_put_u32(msg, NL80211_ATTR_NPCA_PRIMARY_FREQ,
+				freq->npca_freq) ||
+		    nla_put_u32(msg, NL80211_ATTR_NPCA_PUNCT_BITMAP,
+				freq->npca_punct_bitmap))
+			return -ENOBUFS;
+	}
+
 	if (nl80211_put_freq_params_device(bss->drv, msg, freq)) {
 		wpa_printf(MSG_ERROR, "Failed to add device parameters");
 		return -EINVAL;

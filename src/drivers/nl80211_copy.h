@@ -3016,6 +3016,12 @@ enum nl80211_commands {
  *	association request when used with NL80211_CMD_NEW_STATION). Can be set
  *	only if %NL80211_STA_FLAG_WME is set.
  *
+ * @NL80211_ATTR_NPCA_PRIMARY_FREQ: u32 attribute specifying the NPCA primary
+ *	channel frequency in MHz for UHR Non-Primary Channel Access operation.
+ *
+ * @NL80211_ATTR_NPCA_PUNCT_BITMAP: u32 attribute specifying the NPCA
+ *	disabled subchannel bitmap for UHR Non-Primary Channel Access.
+ *
  * @NL80211_ATTR_HE_MUEDCA_MODE: Attribute that denotes the mode of seeting MU
  *	EDCA parameters(See enum nl80211_muedca_mode).
  *
@@ -3658,6 +3664,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_UHR_CAPABILITY,
 
 	NL80211_ATTR_DISABLE_UHR,
+	NL80211_ATTR_NPCA_PRIMARY_FREQ,
+	NL80211_ATTR_NPCA_PUNCT_BITMAP,
 
 	NL80211_ATTR_PCIE,
 	NL80211_ATTR_DCVS,
