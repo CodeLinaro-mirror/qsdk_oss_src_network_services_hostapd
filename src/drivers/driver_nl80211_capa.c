@@ -768,6 +768,11 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 		 * feature enabled for ath12k
 		 */
 		capa->flags2 |= WPA_DRIVER_FLAGS2_DFS_CHANNEL_SWITCH;
+
+		/* Boot-up CAC: driver supports creating all 5 GHz BSS interfaces during
+		 * DFS CAC and deferring vdev_up until CAC completes.
+		 */
+		capa->flags2 |= WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC;
 	}
 }
 

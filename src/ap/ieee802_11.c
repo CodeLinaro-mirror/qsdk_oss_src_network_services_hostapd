@@ -12990,9 +12990,14 @@ static bool hostapd_rnr_get_bss_info(struct hostapd_data *hapd,
 		return false;
 
 	bss = hapd->iface->bss[i];
-	if (!bss || !bss->conf || !bss->started || !bss->beacon_set_done ||
-	    bss == reporting_hapd)
+	if (!bss || !bss->conf || !bss->started || bss == reporting_hapd)
 		return false;
+	if (!bss->beacon_set_done) {
+#ifdef CONFIG_QCN_EXTN
+		if (!hostapd_bss_rnr_eligible_extn(bss))
+#endif /* CONFIG_QCN_EXTN */
+			return false;
+	}
 
 #ifdef CONFIG_IEEE80211BE
 #ifdef CONFIG_QCN_EXTN

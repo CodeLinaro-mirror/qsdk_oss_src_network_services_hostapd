@@ -3083,6 +3083,8 @@ struct wpa_driver_capa {
 /** Driver supports Security Profile element (802.11bn D1.4, 9.4.2.364, 37.32)
  *  handling */
 #define WPA_DRIVER_FLAGS2_SECURITY_PROFILE     0x0000004000000000ULL
+/** Driver supports creating all 5 GHz BSS interfaces during DFS CAC (boot-up CAC) */
+#define WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC 0x0000008000000000ULL
 /** Driver supports SMD in station/AP mode */
 #define WPA_DRIVER_FLAGS2_SMD			0x0000020000000000ULL
 /** Driver supports SMD DL data forwarding during seamless transitions */

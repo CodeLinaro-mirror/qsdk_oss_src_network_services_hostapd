@@ -809,6 +809,10 @@ struct hostapd_iface {
 	/* Bitmask of used vendor BSSID indices (non-MBSSID) */
 	u32 vendor_bssid_used_mask;
 	u16 radar_bit_pattern_extn;
+	/* Set when boot-up CAC is active: all 5 GHz BSS were created before CAC
+	 * completed and vdev_up is deferred until CAC finishes.
+	 */
+	unsigned int bootup_cac_in_progress:1;
 #endif /* CONFIG_QCN_EXTN */
 
 	unsigned int wait_channel_update:1;
