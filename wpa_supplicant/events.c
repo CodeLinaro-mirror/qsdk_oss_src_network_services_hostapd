@@ -1732,15 +1732,6 @@ struct wpa_ssid * wpa_scan_res_match(struct wpa_supplicant *wpa_s,
 		return NULL;
 	}
 
-#ifdef CONFIG_QCN_EXTN
-	if (bss && is_5ghz_freq(bss->freq) &&
-			wpas_bss_uses_nol_channel_extn(wpa_s, bss)) {
-		wpa_dbg(wpa_s, MSG_DEBUG,
-			"ML RNR 5G NOL channel - skip (freq=%d)", bss->freq);
-		return NULL;
-	}
-#endif /* CONFIG_QCN_EXTN */
-
 	for (ssid = group; ssid; ssid = only_first_ssid ? NULL : ssid->pnext) {
 		if (wpa_scan_res_ok(wpa_s, ssid, match_ssid, match_ssid_len,
 				    bss, bssid_ignore_count, debug_print, link))
