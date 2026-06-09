@@ -569,10 +569,8 @@ int wpa_auth_set_ptk_full(struct wpa_state_machine *sm,
 			  u8 *kck, size_t kck_len,
 			  u8 *kek, size_t kek_len,
 			  u8 *tk, size_t tk_len);
+int wpa_auth_get_pmkid_suite_b(struct wpa_state_machine *sm, u8 *pmkid);
 
-int wpa_auth_get_pmk_full(struct wpa_state_machine *sm,
-			  u8 *pmk, size_t *pmk_len,
-			  u8 *pmkid);
 int wpa_auth_set_pmk_full(struct wpa_state_machine *sm,
 			  u8 *pmk, u8 *pmkid, int pmk_len,
 			  int session_timeout,

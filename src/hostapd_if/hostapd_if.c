@@ -16,6 +16,7 @@
 #include "ap/ap_drv_ops.h"
 #include "ap/wpa_auth.h"
 #include "ap/wpa_auth_i.h"
+#include "ap/pmksa_cache_auth.h"
 #include "ap/beacon.h"
 #include "ap/ap_mlme.h"
 #include "eapol_auth/eapol_auth_sm.h"
@@ -1757,8 +1758,61 @@ __hostapd_if_set_beacon_probe_vendor_ies_exit:
 	os_free((void *)buf);
 }
 
+static
+int __get_pmk_1x(struct sta_info *sta, int akm, uint8_t pmk[PMK_LEN_MAX],
+		 size_t *pmk_len, uint8_t pmkid[PMKID_LEN])
+{
+	/*
+	 * call 1x_get_key to get the key, then use rsn_pmkid
+	 * to calculate the PMKID, then return.
+	 * For suite-B, put the PMKID as all zeroes if KCK is not
+	 * available
+	 */
+	const u8 *msk;
+	size_t msk_len;
+	const u8 *aa = wpa_auth_get_aa(sta->wpa_sm);
+	const u8 *spa = wpa_auth_get_spa(sta->wpa_sm);
+
+	msk = ieee802_1x_get_key(sta->eapol_sm, &msk_len);
+	if (!msk || msk_len < PMK_LEN)
+		return -1;
+
+	/*
+	 * Mirror the PMK/pmk_len adjustment done in wpa_auth_pmksa_add
+	 * before PMKID derivation.
+	 */
+#ifdef CONFIG_IEEE80211R_AP
+	if (msk_len >= 2 * PMK_LEN && wpa_key_mgmt_ft(akm) &&
+	    wpa_key_mgmt_wpa_ieee8021x(akm) && !wpa_key_mgmt_sha384(akm)) {
+		/* Use MPMK/XXKey (second PMK_LEN bytes of MSK) */
+		msk = msk + PMK_LEN;
+		msk_len = PMK_LEN;
+	} else
+#endif /* CONFIG_IEEE80211R_AP */
+	if (wpa_key_mgmt_sha384(akm)) {
+		if (msk_len > PMK_LEN_SUITE_B_192)
+		    msk_len = PMK_LEN_SUITE_B_192;
+	} else if (msk_len > PMK_LEN) {
+		msk_len = PMK_LEN;
+	}
+
+	if (wpa_key_mgmt_suite_b(akm)) {
+		/* KCK not available; return zero PMKID */
+		if (wpa_auth_get_pmkid_suite_b(sta->wpa_sm, pmkid) < 0)
+			return 0;
+	} else {
+		rsn_pmkid(msk, msk_len, aa, spa, pmkid, akm);
+	}
+
+	os_memcpy(pmk, msk, msk_len);
+	*pmk_len = msk_len;
+
+	return 0;
+}
+
 /*
  * Use MLD mac of STA in case of 11be STA
+ * This API reflects the PMK/PMKID after Assoc request - response sequence
  */
 int hostapd_if_get_pmk(char *ifname, uint8_t *sta_mac,
 		       uint8_t pmk[PMK_LEN_MAX], size_t *pmk_len,
@@ -1766,17 +1820,70 @@ int hostapd_if_get_pmk(char *ifname, uint8_t *sta_mac,
 {
 	struct hostapd_data *hapd;
 	struct sta_info *sta;
+	int akm;
 
-	sta = __get_sta(ifname, sta_mac, -1, false, &hapd);
-	if (!sta) {
+	if (!ifname || !sta_mac || !pmk || !pmk_len || !pmkid) {
 		wpa_printf(MSG_ERROR,
-			   "ERROR in fetching sta object %s "
-			   MACSTR "\n",
-			   __func__, MAC2STR(sta_mac));
+			   "NULL parameter(s) in %s:%s mac:%p pmk:%p pmk_len:%p"
+			   "pmkid:%p\n",
+			   __func__, ifname, sta_mac, pmk, pmk_len, pmkid);
 		return -1;
 	}
 
-	return wpa_auth_get_pmk_full(sta->wpa_sm, pmk, pmk_len, pmkid);
+	sta = __get_sta(ifname, sta_mac, -1, false, &hapd);
+	if (!sta) {
+		wpa_printf(MSG_ERROR, "ERROR in fetching sta object %s "
+			   MACSTR "\n", __func__, MAC2STR(sta_mac));
+		return -1;
+	}
+
+	if (!sta->wpa_sm)
+		return -1;
+
+	os_memset(pmkid, 0, PMKID_LEN);
+	/*
+	 * wpa_sm->pmksa is cleared after Assoc request if the
+	 * RSNIE in the assoc request does not have PMKID
+	 * wpa_sm->pmksa will reflect the presence of PMKID
+	 * in the most recent Assoc request received from the STA.
+	 *
+	 * In case PMKID is present in the Assoc request, return this to the
+	 * caller (since this is what will be used in the 4-way handshake
+	 * that follows this assoc request).
+	 */
+	if (sta->wpa_sm->pmksa) {
+		struct rsn_pmksa_cache_entry *pmksa = sta->wpa_sm->pmksa;
+
+		*pmk_len = pmksa->pmk_len;
+		os_memcpy(pmk, pmksa->pmk, *pmk_len);
+		os_memcpy(pmkid, pmksa->pmkid, PMKID_LEN);
+		return 0;
+	}
+
+	akm = sta->wpa_sm->wpa_key_mgmt;
+
+	if (wpa_key_mgmt_sae(akm)) {
+		if (!sta->sae || !sta->sae->pmk_len) {
+			wpa_printf(MSG_ERROR, "ERROR! SAE PMK not available\n");
+			return -1;
+		}
+		*pmk_len = sta->sae->pmk_len;
+		os_memcpy(pmk, sta->sae->pmk, sta->sae->pmk_len);
+		os_memcpy(pmkid, sta->sae->pmkid, PMKID_LEN);
+		return 0;
+	} else if (wpa_key_mgmt_wpa_ieee8021x(akm)) {
+		return __get_pmk_1x(sta, akm, pmk, pmk_len, pmkid);
+	} else if (akm == WPA_KEY_MGMT_OWE) {
+		if (!sta->owe_pmk)
+			return -1;
+		*pmk_len = sta->owe_pmk_len;
+		os_memcpy(pmk, sta->owe_pmk, *pmk_len);
+		os_memcpy(pmkid, sta->owe_pmkid, PMKID_LEN);
+		return 0;
+	}
+
+	wpa_printf(MSG_ERROR, "Unsupported AKM for GET_PMK\n");
+	return -1;
 }
 
 /*

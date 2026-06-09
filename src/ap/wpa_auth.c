@@ -7337,6 +7337,20 @@ int wpa_auth_get_ptk_full(struct wpa_state_machine *sm,
 	return 0;
 }
 
+int wpa_auth_get_pmkid_suite_b(struct wpa_state_machine *sm, u8 *pmkid)
+{
+	if (!sm->PTK.kck_len)
+		return -1;
+
+	if (sm->wpa_key_mgmt == WPA_KEY_MGMT_IEEE8021X_SUITE_B_192)
+		return rsn_pmkid_suite_b_192(sm->PTK.kck, sm->PTK.kck_len,
+					     wpa_auth_get_aa(sm),
+					     wpa_auth_get_spa(sm), pmkid);
+	return rsn_pmkid_suite_b(sm->PTK.kck, sm->PTK.kck_len,
+				 wpa_auth_get_aa(sm), wpa_auth_get_spa(sm),
+				 pmkid);
+}
+
 int wpa_auth_set_ptk_full(struct wpa_state_machine *sm,
 		uint8_t *kck, size_t kck_len,
 		uint8_t *kek, size_t kek_len,
@@ -7374,20 +7388,6 @@ int wpa_auth_set_ptk_full(struct wpa_state_machine *sm,
 			sm->keyidx_active, sm->PTK.tk,
 			wpa_cipher_key_len(sm->pairwise),
 			KEY_FLAG_PAIRWISE_RX);
-	return 0;
-}
-
-int wpa_auth_get_pmk_full(struct wpa_state_machine *sm,
-			   u8 *pmk, size_t *pmk_len,
-			   u8 *pmkid)
-{
-	if (!sm) {
-		wpa_printf(MSG_ERROR, "ERROR! SM is NULL\n");
-		return -1;
-	}
-	*pmk_len = sm->pmk_len;
-	os_memcpy(pmk, sm->PMK, *pmk_len);
-	os_memcpy(pmkid, sm->pmkid, PMKID_LEN);
 	return 0;
 }
 
