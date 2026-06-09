@@ -6223,7 +6223,6 @@ int nl80211_put_freq_params(struct wpa_driver_nl80211_data *drv,
 			if (nla_put_u32(msg, NL80211_ATTR_PUNCT_BITMAP,
 					freq->punct_bitmap))
 				return -ENOBUFS;
-
 		}
 	} else if (freq->ht_enabled ||
 		   ((freq->he_enabled || freq->eht_enabled) && is_24ghz)) {
@@ -6260,6 +6259,17 @@ int nl80211_put_freq_params(struct wpa_driver_nl80211_data *drv,
 			   NL80211_CHAN_NO_HT);
 		if (nla_put_u32(msg, NL80211_ATTR_WIPHY_CHANNEL_TYPE,
 				NL80211_CHAN_NO_HT))
+			return -ENOBUFS;
+	}
+
+	if (freq->npca_freq != 0) {
+		wpa_printf(MSG_DEBUG, "  * npca_freq=%d", freq->npca_freq);
+		wpa_printf(MSG_DEBUG, "  * npca_punct_bitmap=0x%x",
+			   freq->npca_punct_bitmap);
+		if (nla_put_u32(msg, NL80211_ATTR_NPCA_PRIMARY_FREQ,
+				freq->npca_freq) ||
+		    nla_put_u32(msg, NL80211_ATTR_NPCA_PUNCT_BITMAP,
+				freq->npca_punct_bitmap))
 			return -ENOBUFS;
 	}
 
