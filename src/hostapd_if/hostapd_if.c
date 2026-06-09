@@ -544,13 +544,22 @@ void hostapd_if_interface_remove(struct hostapd_data *hapd)
 	if (!table)
 		return;
 
-	wpa_printf(MSG_DEBUG, "%s:%s link-id:%d", __func__, hapd->conf->iface,
-		hapd->mld_link_id);
-
 	if (--table->ref_count == 0)
 		__free_frame_reg_table(table);
 
 	hapd->hostapd_if_data = NULL;
+
+	if (!hapd->conf)
+		return;
+
+	wpa_printf(MSG_DEBUG, "%s:%s link-id:%d", __func__, hapd->conf->iface,
+		   hapd->mld_link_id);
+
+#ifdef HOSTAPD_EXTERNAL_PLUGIN
+	if (hapd->conf->external_plugin_enable &&
+	    hostapd_if_plugin && hostapd_if_plugin->interface_remove)
+		hostapd_if_plugin->interface_remove(hapd->conf->iface, hapd);
+#endif
 }
 
 static enum hostapd_if_frame_processing_decision
