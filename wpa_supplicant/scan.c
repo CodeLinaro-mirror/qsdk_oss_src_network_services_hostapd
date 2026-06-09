@@ -4404,6 +4404,41 @@ static bool wpa_is_bss_freq_present_in_conf(struct wpa_supplicant *wpa_s,
 	return false;
 }
 
+/**
+ * wpa_bss_alloc_from_scan_res - Allocate a temporary wpa_bss from a scan result
+ * @wpa_s: Pointer to wpa_supplicant data
+ * @res: Scan result to copy from
+ * Returns: Allocated wpa_bss (caller must os_free()), or NULL on failure
+ *
+ * Creates a temporary wpa_bss populated from a scan result for use in NOL
+ * and 6 GHz power mode checks when the BSS is not yet in the BSS table.
+ * The returned BSS is not added to any list and must be freed by the caller.
+ */
+static struct wpa_bss *
+wpa_bss_alloc_from_scan_res(struct wpa_supplicant *wpa_s,
+				    struct wpa_scan_res *res)
+{
+	struct wpa_bss *bss;
+	size_t ie_total = res->ie_len + res->beacon_ie_len;
+
+	bss = os_zalloc(sizeof(*bss) + ie_total);
+	if (!bss)
+		return NULL;
+
+	os_memcpy(bss->bssid, res->bssid, ETH_ALEN);
+	bss->freq = res->freq;
+	bss->max_cw = res->max_cw;
+	bss->ie_len = res->ie_len;
+	bss->beacon_ie_len = res->beacon_ie_len;
+	if (ie_total)
+		os_memcpy(bss->ies, (const u8 *) (res + 1), ie_total);
+
+	/* Populate channel operation information required by the NOL check. */
+	wpa_get_bss_channel_oper_info_extn(wpa_s, bss);
+
+	return bss;
+}
+
 static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 					struct wpa_scan_res *res,
 					struct os_reltime *fetch_time)
@@ -4470,6 +4505,15 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 		return ret;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+		if (is_5ghz_freq(bss->freq) &&
+		    wpas_bss_uses_nol_channel_extn(wpa_s, bss)) {
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"ML RNR 5G NOL channel - Ignore");
+			return ret;
+		}
+#endif /* CONFIG_QCN_EXTN */
+
 	mbssid_idx = wpa_bss_get_mbssid_idx(bss);
 	i = 0;
 	/* NOTE: Any changes in rnr ie len calculation or fetching the ap info
@@ -4513,6 +4557,8 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 					struct wpa_scan_results *scan_res;
 					struct wpa_bss *pbss =
 						wpa_bss_get_bssid(wpa_s, data);
+					struct wpa_scan_results *p_scan_res = NULL;
+					bool pbss_tmp = false;
 					int partner_freq = ieee80211_chan_to_freq(NULL, ap_info->op_class, ap_info->channel);
 
 					hw_idx = wpa_get_hw_idx_by_freq(wpa_s, partner_freq);
@@ -4533,12 +4579,56 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 						goto cont;
 					}
 
-					if (pbss &&
-					    !wpa_is_6ghz_power_mode_match(wpa_s, pbss)) {
+					if (!pbss) {
+						struct wpa_scan_res *partner_res = NULL;
+
+						p_scan_res = wpa_drv_get_scan_results(wpa_s, data);
+						if (p_scan_res && p_scan_res->num)
+							partner_res = wpa_scan_get_bssid(p_scan_res, data);
+						if (partner_res) {
+							pbss = wpa_bss_alloc_from_scan_res(wpa_s,
+											   partner_res);
+							pbss_tmp = pbss != NULL;
+						}
+						if (!pbss) {
+							wpa_dbg(wpa_s, MSG_DEBUG,
+								"ML pbss not exists");
+							if (p_scan_res)
+								wpa_scan_results_free(p_scan_res);
+							goto cont;
+						}
+						wpa_printf(MSG_DEBUG,
+							   "ML pbss: using temporary scan result");
+					}
+
+					if (!wpa_is_6ghz_power_mode_match(wpa_s, pbss)) {
 						wpa_dbg(wpa_s, MSG_DEBUG,
 							"ML RNR 6 GHz Power Mode mismatch - Ignore");
+						if (pbss_tmp)
+							os_free(pbss);
+						if (p_scan_res)
+							wpa_scan_results_free(p_scan_res);
 						goto cont;
 					}
+
+#ifdef CONFIG_QCN_EXTN
+					if (is_5ghz_freq(partner_freq) &&
+					    wpas_bss_uses_nol_channel_extn(wpa_s, pbss)) {
+						wpa_printf(MSG_DEBUG,
+							   "ML RNR 5G NOL channel - Skip link %d (freq=%d)",
+							   link_id, partner_freq);
+						if (pbss_tmp)
+							os_free(pbss);
+						if (p_scan_res)
+							wpa_scan_results_free(p_scan_res);
+						goto cont;
+					}
+#endif /* CONFIG_QCN_EXTN */
+
+					if (pbss_tmp)
+						os_free(pbss);
+					if (p_scan_res)
+						wpa_scan_results_free(p_scan_res);
 
 					scan_res = wpa_drv_get_scan_results(wpa_s, bssid);
 
