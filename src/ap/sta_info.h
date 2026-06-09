@@ -95,6 +95,7 @@ struct eap_over_auth_data {
 	struct wpabuf *ml_kem_ss;
 	struct wpabuf *ml_kem_ciphertext;
 	struct wpabuf *transcript;
+	u16 last_stored_auth_transaction;
 	u8 security_profile;
 	bool auth_success;
 #endif /* CONFIG_PQC */

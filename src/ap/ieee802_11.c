@@ -699,6 +699,77 @@ static u16 auth_shared_key(struct hostapd_data *hapd, struct sta_info *sta,
 #endif /* CONFIG_NO_RC4 */
 #endif /* CONFIG_WEP */
 
+#ifdef CONFIG_IEEE8021X_AUTH
+
+static int ieee80211_802_1x_store_auth_frame(struct sta_info *sta,
+					     const u8 *frame,
+					     size_t frame_len,
+					     u16 auth_transaction)
+{
+#ifdef CONFIG_PQC
+	u8 *copy;
+
+	if (auth_transaction == 1) {
+		wpabuf_free(sta->eap_auth_data.transcript);
+		sta->eap_auth_data.transcript = NULL;
+		sta->eap_auth_data.last_stored_auth_transaction = 0;
+	} else if (auth_transaction <=
+		   sta->eap_auth_data.last_stored_auth_transaction) {
+		wpa_printf(MSG_DEBUG,
+			   "IEEE 802.1X: Skip storing auth frame (transaction %u <= %u)",
+			   auth_transaction,
+			   sta->eap_auth_data.last_stored_auth_transaction);
+		return 0;
+	}
+
+	copy = os_memdup(frame, frame_len);
+	if (!copy)
+		return -1;
+
+	if (frame_len > 8 &&
+	    frame_len > 8U + WPA_GET_LE16(copy + 6)) {
+		size_t skip_len = 8 + WPA_GET_LE16(copy + 6);
+		const u8 *mmie = get_ie(copy + skip_len,
+					frame_len - skip_len,
+					WLAN_EID_MIC);
+
+		if (mmie) {
+			wpa_printf(MSG_DEBUG,
+				   "IEEE 802.1X: Zero out MIC octets in the stored auth frame");
+
+			os_memset((u8 *)mmie + 2, 0, mmie[1]);
+		}
+	}
+
+	if (!sta->eap_auth_data.transcript) {
+		sta->eap_auth_data.transcript =
+			wpabuf_alloc(frame_len + sizeof(u16));
+
+		if (!sta->eap_auth_data.transcript) {
+			os_free(copy);
+			return -1;
+		}
+	} else {
+		if (wpabuf_resize(&sta->eap_auth_data.transcript,
+				  frame_len + sizeof(u16)) < 0) {
+			os_free(copy);
+			return -1;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG, "IEEE 802.1X: Store auth len=%zu, tran=%u",
+		   frame_len, auth_transaction);
+
+	wpabuf_put_le16(sta->eap_auth_data.transcript, frame_len);
+	wpabuf_put_data(sta->eap_auth_data.transcript, copy, frame_len);
+	os_free(copy);
+	sta->eap_auth_data.last_stored_auth_transaction = auth_transaction;
+#endif /* CONFIG_PQC */
+
+	return 0;
+}
+
+#endif /* CONFIF_IEEE8021X_AUTH */
 
 static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 			   const u8 *dst,
@@ -857,6 +928,18 @@ static int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 		}
 		os_memcpy(ptr + 2, mic, mic_len);
 	}
+
+	if (auth_alg == WLAN_AUTH_802_1X && sta &&
+	    ieee80211_802_1x_store_auth_frame(
+		    sta, (const u8 *) &reply->u.auth,
+		    rlen - sizeof(struct ieee80211_hdr),
+		    auth_transaction) < 0) {
+		wpa_printf(MSG_INFO,
+			   "IEEE 802.1X: Failed to store Tx authentication frame");
+		os_free(buf);
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
+	}
+
 #endif /* CONFIF_IEEE8021X_AUTH */
 
 	if (hostapd_drv_send_mlme(hapd, reply, rlen, 0, NULL, 0, 0) < 0)
@@ -3447,12 +3530,13 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 	if (reply)
 		send_8021x_auth_reply(hapd, sta, auth_transaction, status,
 				      reply);
+
 	os_free(data);
 }
 
 
 static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
-			       const u8 *pos, size_t len, u16 auth_alg,
+			       const struct ieee80211_mgmt *mgmt, size_t mgmt_len,
 			       u16 auth_transaction)
 {
 	struct ieee802_1x_hdr *eapol_pdu;
@@ -3460,6 +3544,8 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 	const u8 *end;
 	struct wpabuf *reply;
 	bool force_kdk = false;
+	const u8 *pos = mgmt->u.auth.variable;
+	size_t len = mgmt_len - IEEE80211_HDRLEN - sizeof(mgmt->u.auth);
 
 #ifdef CONFIG_TESTING_OPTIONS
 	force_kdk = hapd->conf->force_kdk_derivation;
@@ -3509,6 +3595,16 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 	pos += encap_len;
 	sta->eap_auth_data.auth_transaction = auth_transaction;
+
+	if (ieee80211_802_1x_store_auth_frame(sta,
+					      (const u8*)&mgmt->u.auth,
+					      mgmt_len - IEEE80211_HDRLEN,
+					      auth_transaction) < 0) {
+		wpa_printf(MSG_INFO,
+				"IEEE 802.1X: Failed to store Rx authentication frame");
+		resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+		goto fail;
+	}
 
 	/* Process Authentication frame elements
 	 * Authentication frames with transaction sequence greater
@@ -5625,10 +5721,8 @@ static void handle_auth(struct hostapd_data *hapd,
 #endif /* CONFIG_FILS */
 #ifdef CONFIG_IEEE8021X_AUTH
 	case WLAN_AUTH_802_1X:
-		handle_auth_802_1x(hapd, sta, mgmt->u.auth.variable,
-				   len - IEEE80211_HDRLEN -
-				   sizeof(mgmt->u.auth),
-				   auth_alg, auth_transaction);
+		handle_auth_802_1x(hapd, sta, mgmt, len,
+				   auth_transaction);
 		return;
 #endif /* CONFIG_IEEE8021X_AUTH */
 #ifdef CONFIG_ENC_ASSOC
