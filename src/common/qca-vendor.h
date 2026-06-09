@@ -4409,6 +4409,12 @@ enum qca_wlan_vendor_attr_config {
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_6GHZ_VLP_PRIORITY_THRESH_FREQ = 151,
 
+	/* 8-bit unsigned value to enable/disable the driver to allow forwarding
+	 * 3-address multicast frames in WDS mode
+	 * 1-Enable, 0-Disable.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ALLOW_3ADDR_MC = 152,
+
 	/* Indicates whether the current chainmask on the radio specified by
 	 * %QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX supports Agile DFS.
 	 * 1 = agile DFS capable, 0 = not capable.
