@@ -3999,6 +3999,8 @@ void hostapd_start_device_cac_background(struct hostapd_iface *iface)
  */
 int hostapd_start_background_cac(struct hostapd_iface *iface)
 {
+	u8 op_class, channel;
+
 	if (!iface || !iface->conf)
 		return -1;
 
@@ -4029,6 +4031,29 @@ int hostapd_start_background_cac(struct hostapd_iface *iface)
 
 		return hostapd_dfs_start_precac(iface);
 	}
+
+	if (iface->conf->rcac_freq > 0) {
+		if (iface->dfs_domain == HOSTAPD_DFS_REGION_ETSI) {
+			wpa_printf(MSG_WARNING,
+				   "DFS: rcac_freq configured but domain is ETSI - ignoring");
+		} else {
+			if (ieee80211_freq_to_channel_ext(iface->conf->rcac_freq,
+							  0,
+							  CONF_OPER_CHWIDTH_USE_HT,
+							  &op_class,
+							  &channel) == NUM_HOSTAPD_MODES) {
+				wpa_printf(MSG_WARNING,
+					   "DFS: rcac_freq=%d is invalid - ignoring",
+					   iface->conf->rcac_freq);
+			} else {
+				wpa_printf(MSG_INFO,
+					   "DFS: rcac_freq=%d configured, setting user_rcac_channel=%d",
+					   iface->conf->rcac_freq, channel);
+				iface->user_rcac_channel = channel;
+			}
+		}
+	}
+
 	wpa_printf(MSG_INFO, "DFS: starting Agile CAC (bgcac_en=1)");
 
 	hostapd_dfs_update_background_chain(iface);
