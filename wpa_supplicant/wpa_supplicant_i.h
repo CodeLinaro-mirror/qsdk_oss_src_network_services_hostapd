@@ -710,6 +710,23 @@ struct last_scan_ssid {
 	size_t ssid_len;
 };
 
+#define STA_CAC_NOT_STARTED 0
+#define STA_CAC_STARTED 1
+
+/**
+ * struct station_cac_params - STA CAC pending-connect context
+ * @selected_bssid: Selected BSS entry identifier cached for CAC-resume flow
+ * @selected_ssid: Selected network profile cached while CAC is in progress
+ * @dfs_links: Bitmap of links/frequencies that require STA CAC
+ * @cac_completed_links: Bitmap of links that reported CAC finished
+ */
+struct station_cac_params {
+	unsigned int selected_bssid;
+	struct wpa_ssid *selected_ssid;
+	u16 dfs_links;
+	u16 cac_completed_links;
+};
+
 /**
  * struct wpa_supplicant - Internal data for wpa_supplicant interface
  *
@@ -1714,6 +1731,7 @@ struct wpa_supplicant {
 
 	struct wpa_ssid *ml_connect_probe_ssid;
 	struct wpa_bss *ml_connect_probe_bss;
+	struct station_cac_params sta_cac;
 
 #ifdef CONFIG_OWE
 	/* An array of frequencies to scan for OWE transition mode BSSs when

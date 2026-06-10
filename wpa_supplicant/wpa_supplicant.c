@@ -947,6 +947,8 @@ const char * wpa_supplicant_state_txt(enum wpa_states state)
 	case WPA_PRE_CONNECT:
 		return "PRE_CONNECT";
 #endif
+	case WPA_STACACING:
+		return "STACACING";
 	case WPA_AUTHENTICATING:
 		return "AUTHENTICATING";
 	case WPA_ASSOCIATING:

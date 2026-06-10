@@ -30,6 +30,7 @@
 #include "notify.h"
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
+#include "common/hw_features_common.h"
 #include "common/gas_server.h"
 #include "common/dpp.h"
 #include "common/ptksa_cache.h"
@@ -1998,6 +1999,502 @@ static int wpa_supplicant_connect_ml_missing(struct wpa_supplicant *wpa_s,
 	return 1;
 }
 
+static void wpas_sta_cac_clear(struct wpa_supplicant *wpa_s)
+{
+	os_memset(&wpa_s->sta_cac, 0, sizeof(wpa_s->sta_cac));
+}
+
+
+static struct hostapd_channel_data *
+wpas_get_chan_data(struct wpa_supplicant *wpa_s, int freq)
+{
+	size_t i;
+
+	for (i = 0; i < wpa_s->hw.num_modes; i++) {
+		struct hostapd_hw_modes *mode = &wpa_s->hw.modes[i];
+		struct hostapd_channel_data *chan;
+
+		chan = hw_mode_get_channel(mode, freq, NULL);
+		if (chan)
+			return chan;
+	}
+
+	return NULL;
+}
+
+/**
+ * wpas_sta_cac_get_freq_for_link - Resolve STA CAC bitmap bit to operating frequency
+ * @selected: Selected BSS carrying SLO/MLO link frequency information
+ * @bit: STA CAC link bitmap bit (BIT(link_id))
+ * Returns: Frequency in MHz on success, 0 if @bit does not map to a valid link
+ *
+ * For SLO candidates, BIT(0) maps to @selected->freq.
+ * For MLO candidates, @bit is matched against selected->valid_links and the
+ * corresponding selected->mld_links[link_id].freq is returned.
+ */
+static int wpas_sta_cac_get_freq_for_link(const struct wpa_bss *selected, u16 bit)
+{
+	int i;
+
+	if (!selected->valid_links)
+		return bit == BIT(0) ? selected->freq : 0;
+
+	for_each_link(selected->valid_links, i) {
+		if (bit == BIT(i))
+			return selected->mld_links[i].freq;
+	}
+
+	return 0;
+}
+
+/*
+ * wpas_sta_cac_get_link_chandef - Build chan definition for STA CAC link
+ * @wpa_s: Pointer to wpa_supplicant data
+ * @selected: Selected BSS carrying SLO/MLO link information
+ * @bit: STA CAC link bitmap bit (BIT(link_id))
+ * @params: Output channel definition parameters for driver
+ * Returns: 0 on success, -1 on failure
+ *
+ */
+static int wpas_sta_cac_get_link_chandef(struct wpa_supplicant *wpa_s,
+					 const struct wpa_bss *selected,
+					 u16 bit,
+					 struct hostapd_freq_params *params)
+{
+	u8 channel, cf1_idx, cf2_idx;
+	enum hostapd_hw_mode mode;
+	enum chan_width width;
+	le16 punc_bitmap;
+	int link_id = -1;
+	int i;
+
+	os_memset(params, 0, sizeof(*params));
+
+	if (!selected->valid_links) {
+		params->freq = (bit == BIT(0)) ? selected->freq : 0;
+		params->link_id = 0;
+	}
+	for_each_link(selected->valid_links, i) {
+		if (bit == BIT(i)) {
+			link_id = i;
+			break;
+		}
+	}
+	if (link_id < 0)
+		return -1;
+	params->link_id = link_id;
+	params->freq = selected->mld_links[link_id].freq;
+	if (!params->freq)
+		return -1;
+
+	mode = ieee80211_freq_to_chan(params->freq, &channel);
+	if (mode == NUM_HOSTAPD_MODES)
+		return -1;
+
+	params->mode = mode;
+	params->channel = channel;
+	params->center_freq1 = params->freq;
+	width = CHAN_WIDTH_20;
+
+
+	if (link_id < 0) {
+		width = selected->max_cw;
+		cf1_idx = selected->center_freq1_idx;
+		cf2_idx = selected->center_freq2_idx;
+		punc_bitmap = selected->punc_bitmap;
+	} else {
+		const struct mld_link *link = &selected->mld_links[link_id];
+
+		width = link->width;
+		cf1_idx = link->center_freq1_idx;
+		cf2_idx = link->center_freq2_idx;
+		punc_bitmap = link->punc_bitmap;
+	}
+
+	if (cf1_idx)
+		params->center_freq1 = 5000 + 5 * cf1_idx;
+	if (cf2_idx)
+		params->center_freq2 = 5000 + 5 * cf2_idx;
+	params->punct_bitmap = le_to_host16(punc_bitmap);
+
+	if (width == CHAN_WIDTH_40 && params->center_freq1 != params->freq)
+		params->sec_channel_offset =
+			params->center_freq1 > params->freq ? 1 : -1;
+
+	params->bandwidth = channel_width_to_int(width);
+	if (params->bandwidth <= 0)
+		params->bandwidth = channel_width_to_int(CHAN_WIDTH_20);
+	if (!params->center_freq1)
+		params->center_freq1 = params->freq;
+
+	params->vht_enabled = !!(wpa_s->hw_capab & BIT(CAPAB_VHT));
+	params->ht_enabled  = !!(wpa_s->hw_capab & BIT(CAPAB_HT));
+	params->he_enabled  = !!(wpa_s->hw_capab & BIT(CAPAB_HE));
+
+	if (!wpa_bss_get_ie(selected, WLAN_EID_HT_CAP))
+		params->ht_enabled = 0;
+
+#ifdef CONFIG_IEEE80211AC
+	if (!wpa_bss_get_ie(selected, WLAN_EID_VHT_CAP))
+		params->vht_enabled = 0;
+#endif /* CONFIG_IEEE80211AC */
+
+#ifdef CONFIG_IEEE80211AX
+	if (!wpa_bss_get_ie_ext(selected, WLAN_EID_EXT_HE_CAPABILITIES))
+		params->he_enabled = 0;
+#endif /* CONFIG_IEEE80211AX */
+
+	return 0;
+}
+
+/**
+ * wpas_sta_cac_start_for_link - Start DFS CAC on one required STA CAC link
+ * @wpa_s: Pointer to wpa_supplicant data
+ * @selected: Selected BSS used to derive frequency and link-id
+ * @bit: Required STA CAC link bit to start CAC on
+ * Returns: 0 on success, -1 on failure
+ *
+ * This helper builds hostapd_freq_params for the selected link/frequency and
+ * calls the driver start_dfs_cac op. Any failure keeps STA CAC flow blocked and
+ * is handled by the caller.
+ */
+static int wpas_sta_cac_start_for_link(struct wpa_supplicant *wpa_s,
+				       struct wpa_bss *selected, u16 bit)
+{
+	struct hostapd_freq_params data;
+
+	if (wpas_sta_cac_get_link_chandef(wpa_s, selected, bit, &data) < 0)
+		return -1;
+
+	if (wpa_drv_start_dfs_cac(wpa_s, &data) < 0) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"STA-DFS: start_dfs_cac failed bit=0x%x freq=%d link=%d",
+			bit, data.freq, data.link_id);
+		return -1;
+	}
+
+	wpa_dbg(wpa_s, MSG_DEBUG,
+		"STA-DFS: CAC started req=0x%x done=0x%x",
+		wpa_s->sta_cac.dfs_links,
+		wpa_s->sta_cac.cac_completed_links);
+	return 0;
+}
+
+
+static void wpas_sta_cac_abort_for_link(struct wpa_supplicant *wpa_s,
+					struct wpa_bss *selected, u16 bit)
+{
+	int i, link_id = -1;
+
+	if (selected->valid_links) {
+		for_each_link(selected->valid_links, i) {
+			if (bit == BIT(i)) {
+				link_id = i;
+				break;
+			}
+		}
+		if (link_id < 0)
+			return;
+	}
+
+	if (!wpa_s->driver)
+		return;
+
+	if (!wpa_s->driver->abort_cac)
+		return;
+
+	if (wpa_s->driver->abort_cac(wpa_s->drv_priv, link_id) < 0) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"STA-DFS: abort_cac failed bit=0x%x link=%d",
+			bit, link_id);
+	}
+}
+
+static bool wpas_sta_segment_has_nolhistory(struct wpa_supplicant *wpa_s,
+					    int start_freq, int n_chans,
+					    u16 punct_bitmap)
+{
+	const int bw20 = 20;
+	int i;
+
+	for (i = 0; i < n_chans; i++) {
+		struct hostapd_channel_data *chan;
+		int sub_freq = start_freq + (i * bw20);
+
+		if (punct_bitmap & BIT(i))
+			continue;
+		chan = wpas_get_chan_data(wpa_s, sub_freq);
+		if (!chan || !(chan->flag & HOSTAPD_CHAN_RADAR))
+			continue;
+		if (chan->nolhistory) {
+			wpa_dbg(wpa_s, MSG_DEBUG, "STA-DFS: CHAN NOL History");
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/*
+* wpas_sta_get_bw_layout - Derive 20 MHz layout for a chandef
+* @freq: Primary channel center frequency in MHz
+* @width: Channel width enumeration
+* @cf1: Center frequency segment 0 in MHz (0 if not provided)
+* @chan_offset: Secondary channel offset for 40 MHz (HT40+/-) mapping
+* @n_chans: Pointer to output number of 20 MHz subchannels
+* @start_freq: Pointer to output start frequency of first 20 MHz subchannel
+*
+* Convert the given channel definition to a contiguous set of 20 MHz
+* subchannels. The function normalizes the configured channel width to a
+* multiple of 20 MHz (minimum 20 MHz) and derives the number of 20 MHz
+* subchannels and the starting frequency of the first one.
+*
+* For 40 MHz operation without an explicit @cf1 but with a non-zero
+* @chan_offset, the layout is derived from the primary frequency and offset.
+* For 20 MHz (including NOHT and UNKNOWN) without an explicit @cf1, a single
+* 20 MHz channel starting at @freq is assumed.
+*/
+static void wpas_sta_get_bw_layout(int freq, enum chan_width width, int cf1,
+				   int chan_offset, int *n_chans,
+				   int *start_freq)
+{
+	const int bw20 = 20;
+	int bw_cen, bw;
+
+	bw = channel_width_to_int(width);
+	if (bw < bw20 || (bw % bw20))
+		bw = bw20;
+	*n_chans = bw / bw20;
+	bw_cen = cf1 ? cf1 : freq;
+
+	if (width == CHAN_WIDTH_40 && !cf1 && chan_offset) {
+		*start_freq = chan_offset > 0 ? freq : freq - bw20;
+		return;
+	}
+
+	if ((width == CHAN_WIDTH_20 || width == CHAN_WIDTH_20_NOHT ||
+	    width == CHAN_WIDTH_UNKNOWN) && !cf1) {
+		*start_freq = freq;
+		*n_chans = 1;
+		return;
+	}
+
+	*start_freq = bw_cen - ((bw - bw20) / 2);
+}
+
+/**
+ * wpas_sta_bw_has_nolhistory - Check NOL history overlap for a chandef
+ * @wpa_s: Pointer to wpa_supplicant data
+ * @freq: Primary frequency in MHz
+ * @width: Channel width
+ * @cf1: Center frequency segment 0 in MHz
+ * @cf2: Center frequency segment 1 in MHz (80+80 only)
+ * @chan_offset: Secondary channel offset for 40 MHz fallback mapping
+ * @punct_bitmap: Preamble puncturing bitmap for subchannel filtering
+ *
+ * Derive all 20 MHz subchannels covered by the given chandef and check whether
+ * any DFS/radar subchannel has NOL history set.
+ *
+ * Return: true if at least one covered radar subchannel has NOL history
+ */
+static bool wpas_sta_bw_has_nolhistory(struct wpa_supplicant *wpa_s, int freq,
+				       enum chan_width width, int cf1, int cf2,
+				       int chan_offset, u16 punct_bitmap)
+{
+	int start_freq, n_chans;
+
+	if (!is_5ghz_freq(freq))
+		return false;
+
+	wpas_sta_get_bw_layout(freq, width, cf1, chan_offset, &n_chans,
+			       &start_freq);
+	if (wpas_sta_segment_has_nolhistory(wpa_s, start_freq, n_chans,
+					    punct_bitmap))
+		return true;
+
+	wpa_dbg(wpa_s, MSG_DEBUG, "STA-DFS: NOL check no match");
+	return false;
+}
+
+/**
+ * wpas_sta_bw_requires_cac - Check whether CAC is required for a chandef
+ * @wpa_s: Pointer to wpa_supplicant data
+ * @freq: Primary frequency in MHz
+ * @width: Channel width
+ * @cf1: Center frequency segment 0 in MHz
+ * @cf2: Center frequency segment 1 in MHz (80+80 only)
+ * @chan_offset: Secondary channel offset for 40 MHz fallback mapping
+ * @punct_bitmap: Preamble puncturing bitmap for subchannel filtering
+ *
+ * CAC is required if STA DFS runtime gate is enabled and chandef has NOL
+ * overlap on any covered DFS/radar subchannel.
+ *
+ * Return: true if CAC is required before using this chandef
+ */
+static bool wpas_sta_bw_requires_cac(struct wpa_supplicant *wpa_s, int freq,
+		enum chan_width width, int cf1, int cf2,
+		int chan_offset, u16 punct_bitmap)
+{
+	if (!wpa_s->sta_dfs_en || !is_5ghz_freq(freq))
+		return false;
+
+	return wpas_sta_bw_has_nolhistory(wpa_s, freq, width, cf1, cf2,
+			chan_offset, punct_bitmap);
+}
+
+static enum chan_width convert_bw_to_cw_enum(int bw)
+{
+	switch (bw) {
+		case 20:
+			/* Prefer HT-capable 20 MHz over NOHT if ambiguous */
+			return CHAN_WIDTH_20;
+		case 40:
+			return CHAN_WIDTH_40;
+		case 80:
+			return CHAN_WIDTH_80;
+		case 160:
+			return CHAN_WIDTH_160;
+		case 320:
+			return CHAN_WIDTH_320;
+		default:
+			return CHAN_WIDTH_UNKNOWN;
+	}
+}
+
+static bool wpas_sta_link_requires_cac(struct wpa_supplicant *wpa_s,
+				       struct wpa_bss *selected, u16 bit)
+{
+	struct hostapd_freq_params data;
+	enum chan_width width;
+
+	if (wpas_sta_cac_get_link_chandef(wpa_s, selected, bit, &data) < 0) {
+		wpa_dbg(wpa_s, MSG_DEBUG, "STA-DFS: %s %d", __func__, __LINE__);
+		return false;
+	}
+
+	wpa_dbg(wpa_s, MSG_DEBUG, "STA-DFS: Dump data Freq %d bw %d cf1 %d"
+		"cf2 %d sec %d", data.freq, data.bandwidth, data.center_freq1,
+		data.center_freq2, data.sec_channel_offset);
+	width = convert_bw_to_cw_enum(data.bandwidth);
+	return wpas_sta_bw_requires_cac(wpa_s, data.freq, width,
+					data.center_freq1, data.center_freq2,
+					data.sec_channel_offset,
+					data.punct_bitmap);
+}
+
+/**
+ * wpas_sta_cac_get_required_link_bitmap - Build STA CAC required-link bitmap
+ * @wpa_s: Pointer to wpa_supplicant data
+ * @selected: Selected BSS for the current connect attempt
+ * Returns: Bitmap of links that require DFS CAC before auth/assoc
+ *
+ * For SLO selection, the function checks selected->freq and returns BIT(0)
+ * when CAC is required.
+ * For MLO selection, each valid link is evaluated and links requiring CAC are
+ * accumulated in the returned bitmap.
+ */
+static u16 wpas_sta_cac_get_required_link_bitmap(struct wpa_supplicant *wpa_s,
+						 struct wpa_bss *selected)
+{
+	u16 required = 0;
+	u16 links;
+	int i;
+
+	if (!selected->valid_links) {
+		if (wpas_sta_link_requires_cac(wpa_s, selected, BIT(0)))
+			required = BIT(0);
+	}
+
+	links = selected->valid_links ? selected->valid_links : BIT(0);
+	for_each_link(links, i) {
+		u16 bit = BIT(i);
+
+		if (!wpas_sta_link_requires_cac(wpa_s, selected, bit))
+			continue;
+		required |= bit;
+	}
+
+	return required;
+}
+
+
+/**
+ * wpas_sta_cac_start_all - Start DFS CAC on all pending required STA CAC links
+ * @wpa_s: Pointer to wpa_supplicant data
+ * Returns: 1 when CAC starts on all pending links, -1 on failure
+ *
+ * The pending set is computed as:
+ * pending = required_links & ~cac_completed_links
+ */
+static int wpas_sta_cac_start_all(struct wpa_supplicant *wpa_s)
+{
+	struct wpa_bss *selected;
+	u16 pending, started = 0;
+	int i;
+
+	selected = wpa_bss_get_id(wpa_s, wpa_s->sta_cac.selected_bssid);
+	if (!selected)
+		return -1;
+
+	pending = wpa_s->sta_cac.dfs_links &
+		~wpa_s->sta_cac.cac_completed_links;
+
+	for_each_link(pending, i) {
+		if (wpas_sta_cac_start_for_link(wpa_s, selected, BIT(i)) < 0)
+			goto abortcac;
+		started |= BIT(i);
+	}
+
+	return 1;
+
+abortcac:
+	for_each_link(started, i)
+		wpas_sta_cac_abort_for_link(wpa_s, selected, BIT(i));
+
+	return -1;
+}
+
+
+/**
+ * wpas_sta_cac_start - Start STA CAC flow for selected SLO/MLO candidate
+ * @wpa_s: Pointer to wpa_supplicant data
+ * @selected: Selected candidate BSS
+ * @ssid: Selected network profile
+ *
+ * Return:
+ * - STA_CAC_NOT_STARTED: STA CAC is not applicable for the selected connect
+ *   request and caller can proceed with normal association flow.
+ * - STA_CAC_STARTED: STA CAC context has been armed and auth/assoc must stay
+ *   blocked until CAC completion/radar handling advances the flow.
+ */
+static int wpas_sta_cac_start(struct wpa_supplicant *wpa_s,
+			      struct wpa_bss *selected,
+			      struct wpa_ssid *ssid)
+{
+	u16 required;
+
+	if (!selected || !ssid || !wpa_s->sta_dfs_en)
+		return STA_CAC_NOT_STARTED;
+
+	required = wpas_sta_cac_get_required_link_bitmap(wpa_s, selected);
+	if (!required)
+		return STA_CAC_NOT_STARTED;
+
+	wpas_sta_cac_clear(wpa_s);
+	wpa_s->sta_cac.selected_bssid = selected->id;
+	wpa_s->sta_cac.selected_ssid = ssid;
+	wpa_s->sta_cac.dfs_links = required;
+
+	wpa_supplicant_set_state(wpa_s, WPA_STACACING);
+	if (wpas_sta_cac_start_all(wpa_s) < 0) {
+		wpas_sta_cac_clear(wpa_s);
+		wpa_supplicant_req_new_scan(wpa_s, 0, 0);
+		return STA_CAC_NOT_STARTED;
+	}
+
+	return STA_CAC_STARTED;
+}
+
 
 int wpa_supplicant_connect(struct wpa_supplicant *wpa_s,
 			   struct wpa_bss *selected,
@@ -2068,6 +2565,10 @@ int wpa_supplicant_connect(struct wpa_supplicant *wpa_s,
 		}
 
 		if (wpa_supplicant_connect_ml_missing(wpa_s, selected, ssid))
+			return 0;
+
+		if (wpas_sta_cac_start(wpa_s, selected, ssid) ==
+		    STA_CAC_STARTED)
 			return 0;
 
 		wpa_msg(wpa_s, MSG_DEBUG, "Request association with " MACSTR,
@@ -6015,6 +6516,60 @@ static void wpa_supplicant_event_port_authorized(struct wpa_supplicant *wpa_s)
 	}
 }
 
+/**
+ * wpas_sta_cac_mark_chan_dfs_available - Update channel DFS state to AVAILABLE
+ * @wpa_s: Pointer to wpa_supplicant data
+ * @freq: Channel frequency in MHz
+ *
+ * This is used after successful CAC completion handling to refresh local
+ * channel state before continuing association flow.
+ */
+static void wpas_sta_cac_mark_chan_dfs_available(struct wpa_supplicant *wpa_s,
+						  int freq)
+{
+	struct hostapd_channel_data *chan = wpas_get_chan_data(wpa_s, freq);
+
+	if (!chan)
+		return;
+
+	chan->flag &= ~HOSTAPD_CHAN_DFS_MASK;
+	chan->flag |= HOSTAPD_CHAN_DFS_AVAILABLE;
+}
+
+
+/**
+ * wpas_sta_cac_get_link_for_event - Map DFS CAC event to STA CAC link bitmap bit
+ * @wpa_s: Pointer to wpa_supplicant data
+ * @radar: DFS event payload from driver/kernel
+ * @selected: Selected BSS used to derive link-to-frequency mapping
+ *
+ * Mapping policy:
+ * 1. If event provides a valid link_id that is part of current STA CAC
+ *    required-link bitmap, use BIT(link_id) directly.
+ * 2. Otherwise, fallback to frequency-based mapping by comparing @radar->freq
+ *    against the selected link frequency for each required bit.
+ *
+ * Return: Matching link bit from STA CAC required-link bitmap, or 0 if event
+ * cannot be mapped to any pending required link.
+ */
+static u16 wpas_sta_cac_get_link_for_event(struct wpa_supplicant *wpa_s,
+					   const struct dfs_event *radar,
+					   struct wpa_bss *selected)
+{
+	u16 required = wpa_s->sta_cac.dfs_links;
+	int i;
+
+	if (radar->link_id >= 0 && (required & BIT(radar->link_id)))
+		return BIT(radar->link_id);
+
+	for_each_link(required, i) {
+		if (wpas_sta_cac_get_freq_for_link(selected, BIT(i)) == radar->freq)
+			return BIT(i);
+	}
+
+	return 0;
+}
+
 
 static unsigned int wpas_event_cac_ms(const struct wpa_supplicant *wpa_s,
 				      int freq)
@@ -6037,6 +6592,72 @@ static unsigned int wpas_event_cac_ms(const struct wpa_supplicant *wpa_s,
 	return 0;
 }
 
+/*
+ * wpas_sta_segment_mark_nolhistory - Mark NOL history for a 20 MHz segment set
+ * @wpa_s: Pointer to wpa_supplicant data
+ * @start_freq: Start frequency in MHz of the first 20 MHz subchannel
+ * @n_chans: Number of contiguous 20 MHz subchannels to process
+ * @punct_bitmap: Preamble puncturing bitmap for subchannel filtering
+ *
+ * Iterate over a contiguous set of 20 MHz subchannels starting at
+ * @start_freq and mark nolhistory=true on each covered DFS/radar
+ * subchannel that is not masked out by @punct_bitmap. This persists
+ * NOL history information for the given segment to guide future STA
+ * DFS decisions.
+ */
+static void wpas_sta_segment_mark_nolhistory(struct wpa_supplicant *wpa_s,
+					     int start_freq, int n_chans,
+					     u16 punct_bitmap)
+{
+	const int bw20 = 20;
+	int i;
+
+	for (i = 0; i < n_chans; i++) {
+		struct hostapd_channel_data *chan;
+		int sub_freq = start_freq + (i * bw20);
+
+		if (punct_bitmap & BIT(i))
+			continue;
+		chan = wpas_get_chan_data(wpa_s, sub_freq);
+		if (!chan || !(chan->flag & HOSTAPD_CHAN_RADAR))
+			continue;
+		chan->nolhistory = true;
+		wpa_dbg(wpa_s, MSG_DEBUG, "STA-DFS: NOL marked sub_freq=%d",
+				sub_freq);
+	}
+}
+
+/**
+ * wpas_mark_chan_nolhistory - Mark NOL history for all subchannels in chandef
+ * @wpa_s: Pointer to wpa_supplicant data
+ * @freq: Primary frequency in MHz
+ * @width: Channel width
+ * @cf1: Center frequency segment 0 in MHz
+ * @cf2: Center frequency segment 1 in MHz (80+80 only)
+ * @chan_offset: Secondary channel offset for 40 MHz fallback mapping
+ * @punct_bitmap: Preamble puncturing bitmap for subchannel filtering
+ *
+ * Mark nolhistory=true on every radar subchannel covered by the given
+ * chandef. Used when radar is detected to persist channel availability
+ * restrictions for future STA DFS decisions.
+ */
+static void wpas_mark_chan_nolhistory(struct wpa_supplicant *wpa_s, int freq,
+				      enum chan_width width, int cf1, int cf2,
+				      int chan_offset, u16 punct_bitmap)
+{
+	int start_freq, n_chans;
+
+	wpas_sta_get_bw_layout(freq, width, cf1, chan_offset, &n_chans,
+			       &start_freq);
+	wpas_sta_segment_mark_nolhistory(wpa_s, start_freq, n_chans,
+					 punct_bitmap);
+}
+
+static void wpas_disconnect_on_radar(struct wpa_supplicant *wpa_s)
+{
+	wpa_bss_flush(wpa_s, 1);
+	wpa_supplicant_deauthenticate(wpa_s, WLAN_REASON_DEAUTH_LEAVING);
+}
 
 static void wpas_event_dfs_cac_started(struct wpa_supplicant *wpa_s,
 				       struct dfs_event *radar)
@@ -6068,6 +6689,44 @@ static void wpas_event_dfs_cac_finished(struct wpa_supplicant *wpa_s,
 	} else
 #endif /* NEED_AP_MLME && CONFIG_AP */
 	{
+		if (wpa_s->sta_dfs_en &&
+		    wpa_s->wpa_state == WPA_STACACING &&
+		    wpa_s->sta_cac.dfs_links &&
+		    wpa_s->sta_cac.selected_ssid) {
+			struct wpa_bss *selected;
+			u16 bit;
+
+			selected = wpa_bss_get_id(wpa_s, wpa_s->sta_cac.selected_bssid);
+			if (!selected) {
+				wpas_sta_cac_clear(wpa_s);
+				wpa_supplicant_req_new_scan(wpa_s, 0, 0);
+				return;
+			}
+
+			bit = wpas_sta_cac_get_link_for_event(wpa_s, radar,
+							      selected);
+			if (!bit)
+				return;
+
+			wpa_s->sta_cac.cac_completed_links |= bit;
+			wpas_sta_cac_mark_chan_dfs_available(wpa_s, radar->freq);
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"STA-DFS: CAC finished bit=0x%x req=0x%x done=0x%x",
+				bit, wpa_s->sta_cac.dfs_links,
+				wpa_s->sta_cac.cac_completed_links);
+
+			if ((wpa_s->sta_cac.cac_completed_links &
+			     wpa_s->sta_cac.dfs_links) == wpa_s->sta_cac.dfs_links) {
+				struct wpa_ssid *ssid = wpa_s->sta_cac.selected_ssid;
+
+				wpas_sta_cac_clear(wpa_s);
+				wpa_supplicant_connect(wpa_s, selected, ssid);
+				return;
+			}
+
+			return;
+		}
+
 		/* Restart auth timeout with original value after CAC is
 		 * finished */
 		wpas_auth_timeout_restart(wpa_s, 0);
@@ -6084,6 +6743,14 @@ static void wpas_event_dfs_cac_aborted(struct wpa_supplicant *wpa_s,
 	} else
 #endif /* NEED_AP_MLME && CONFIG_AP */
 	{
+		if (wpa_s->sta_dfs_en &&
+		    wpa_s->wpa_state == WPA_STACACING &&
+		    wpa_s->sta_cac.dfs_links) {
+			wpas_sta_cac_clear(wpa_s);
+			wpa_supplicant_req_new_scan(wpa_s, 0, 0);
+			return;
+		}
+
 		/* Restart auth timeout with original value after CAC is
 		 * aborted */
 		wpas_auth_timeout_restart(wpa_s, 0);
@@ -7076,26 +7743,46 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 		wpas_p2p_update_channel_list(wpa_s, WPAS_P2P_CHANNEL_UPDATE_CS);
 		wnm_clear_coloc_intf_reporting(wpa_s);
 		break;
-#ifdef CONFIG_AP
-#ifdef NEED_AP_MLME
 	case EVENT_DFS_RADAR_DETECTED:
 		if (data) {
 			wpa_msg(wpa_s, MSG_INFO, "%s on %d MHz", DFS_EVENT_RADAR_DETECTED,
-				data->dfs_event.freq);
+					data->dfs_event.freq);
+#ifdef CONFIG_AP
+#ifdef NEED_AP_MLME
 			wpas_ap_event_dfs_radar_detected(wpa_s,
-							 &data->dfs_event);
+					&data->dfs_event);
+#endif /* NEED_AP_MLME */
+#endif /* CONFIG_AP */
+			if (wpa_s->ifmsh)
+				break;
+
+			if (wpa_s->sta_dfs_en) {
+				wpas_mark_chan_nolhistory(wpa_s,
+						data->dfs_event.freq,
+						data->dfs_event.chan_width,
+						data->dfs_event.cf1,
+						data->dfs_event.cf2,
+						data->dfs_event.chan_offset,
+						(u16)~data->dfs_event.radar_bitmap);
+				if (wpa_s->wpa_state == WPA_STACACING &&
+						wpa_s->sta_cac.dfs_links) {
+					wpas_sta_cac_clear(wpa_s);
+					wpa_bss_flush(wpa_s, 1);
+					wpa_supplicant_req_new_scan(wpa_s, 0, 0);
+					break;
+				}
+			}
 			/* On Radar detection, if uplink_csa/rcsa is not enabled
 			 * flush all the scan bss cache and deauth the STA
 			 */
 			if (!wpa_s->conf->uplink_csa &&
-			    !IS_CSH_PROCESS_RCSA_ENABLED(wpa_s->conf->cswopts) &&
-			    !wpa_s->ifmsh) {
-				wpa_bss_flush(wpa_s, 1);
-				wpa_supplicant_deauthenticate(wpa_s,
-						WLAN_REASON_DEAUTH_LEAVING);
+			    !IS_CSH_PROCESS_RCSA_ENABLED(wpa_s->conf->cswopts)) {
+				wpas_disconnect_on_radar(wpa_s);
 			}
 		}
 		break;
+#ifdef CONFIG_AP
+#ifdef NEED_AP_MLME
 	case EVENT_DFS_NOP_FINISHED:
 		if (data)
 			wpas_ap_event_dfs_cac_nop_finished(wpa_s,
