@@ -3089,6 +3089,8 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_SMD			0x0000020000000000ULL
 /** Driver supports SMD DL data forwarding during seamless transitions */
 #define WPA_DRIVER_FLAGS2_SMD_DL_DATA_FWD       0x0000040000000000ULL
+/** Driver supports (Re)Association Request/Response frame encryption */
+#define WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION 0x0000080000000000ULL
 	u64 flags2;
 
 #define FULL_AP_CLIENT_STATE_SUPP(drv_flags) \
