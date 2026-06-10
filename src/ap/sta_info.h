@@ -444,6 +444,9 @@ struct sta_info {
         /* SMD information */
         struct smd_info smd_info;
 #endif /* CONFIG_IEEE80211BN */
+#ifdef CONFIG_ENC_ASSOC
+	bool epp_sta; /* Indicates if the station is an EPP peer */
+#endif /* CONFIG_ENC_ASSOC */
 };
 
 
@@ -626,4 +629,15 @@ struct sta_info *ap_sta_get_by_link_addr(struct hostapd_data *hapd, const u8 *li
 					 struct sta_info *curr_sta);
 void ap_sta_cleanup_all(struct hostapd_data *hapd, struct sta_info *sta,
 			struct sta_info *curr_sta);
+
+
+static inline bool ap_sta_is_epp(const struct sta_info *sta)
+{
+#ifdef CONFIG_ENC_ASSOC
+	return sta && sta->epp_sta;
+#else /* CONFIG_ENC_ASSOC */
+	return false;
+#endif /* CONFIG_ENC_ASSOC */
+}
+
 #endif /* STA_INFO_H */
