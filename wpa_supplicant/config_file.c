@@ -1056,6 +1056,7 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid,
 	INT(cip_padding_delay);
 #ifdef CONFIG_QCN_EXTN
 	INT(wds_ie);
+	INT(allow_3addr_mc);
 #endif
 #ifdef CONFIG_SAE
 	if (ssid->alt_sae_password_ids) {

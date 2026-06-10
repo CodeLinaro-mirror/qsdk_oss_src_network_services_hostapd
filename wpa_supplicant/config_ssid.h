@@ -1263,6 +1263,14 @@ struct wpa_ssid {
 	 * 1 = WDS IE enabled
 	 */
 	int wds_ie;
+
+	/**
+	 * allow_3addr_mc - Allow 3-address multicast (STA mode)
+	 *
+	 * 0 = disallow 3-address multicast (default)
+	 * 1 = allow 3-address multicast
+	 */
+	int allow_3addr_mc;
 #endif
 
 	/**
