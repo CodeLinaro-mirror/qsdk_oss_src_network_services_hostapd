@@ -43,6 +43,10 @@
 #include "rfkill.h"
 #include "driver_nl80211.h"
 #include "../../qcn_extns/cmn.h"
+#ifdef CONFIG_AP
+#include "ap/hostapd.h"
+#include "ap/beacon.h"
+#endif /* CONFIG_AP */
 
 
 #ifndef NETLINK_CAP_ACK
@@ -5933,6 +5937,71 @@ int nl80211_put_freq_params(struct nl_msg *msg,
 #endif
 
 	return 0;
+}
+
+int nl80211_update_beacons_on_chain_mask_change(struct wpa_driver_nl80211_data *drv)
+{
+#ifdef CONFIG_AP
+	struct i802_bss *bss = drv->first_bss;
+	struct hostapd_data *hapd = bss->ctx;
+	struct hostapd_hw_modes *modes;
+	u16 num_modes, flags;
+	u8 dfs_domain;
+	int i, ret;
+	bool found_matching_mode = false;
+
+	if (!hapd || !hapd->iface || !hapd->iface->current_mode)
+		return -1;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Dynamic chainmask changed, update the beacons");
+	modes = nl80211_get_hw_feature_data(bss, &num_modes, &flags, &dfs_domain, 0);
+	if (!modes) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to get hw feature data after chain mask change");
+		return -1;
+	}
+
+	for (i = 0; i < num_modes; i++) {
+		struct hostapd_hw_modes *mode = &modes[i];
+
+		if (!mode->channels ||
+		    mode->mode != hapd->iface->current_mode->mode ||
+		    mode->channels[0].freq != hapd->iface->current_mode->channels[0].freq) {
+			os_free(mode->rates);
+			os_free(mode->channels);
+			wpa_driver_free_6ghz_channels(mode);
+			continue;
+		}
+
+		if (hapd->iface->current_mode->rates)
+			os_free(hapd->iface->current_mode->rates);
+
+		if (hapd->iface->current_mode->channels)
+			os_free(hapd->iface->current_mode->channels);
+
+		wpa_driver_free_6ghz_channels(hapd->iface->current_mode);
+		os_memcpy(hapd->iface->current_mode, mode,
+			  sizeof(struct hostapd_hw_modes));
+		mode->rates = NULL;
+		mode->channels = NULL;
+		found_matching_mode = true;
+	}
+
+	os_free(modes);
+	if (!found_matching_mode) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: No matching hw mode found after chain mask change");
+		return -1;
+	}
+
+	ret = ieee802_11_update_beacons(hapd->iface);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to update beacons after chain mask change");
+	return ret;
+#else
+	return -1;
+#endif /* CONFIG_AP */
 }
 
 static int wpa_driver_set_chain_mask(void *priv, uint8_t radio_idx,

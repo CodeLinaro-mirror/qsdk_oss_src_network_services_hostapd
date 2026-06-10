@@ -4581,6 +4581,9 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 	case QCA_NL80211_VENDOR_SUBCMD_TPC_EIRP_EVENT:
 		qca_nl80211_tpc_eirp_event(bss, data, len);
 		break;
+	case QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED:
+		nl80211_update_beacons_on_chain_mask_change(bss->drv);
+		break;
 	default:
 		if (!nl80211_vendor_event_qca_extn(bss, subcmd, data, len))
 			break;
