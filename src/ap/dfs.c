@@ -2955,6 +2955,10 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 		}
 
 #ifdef CONFIG_QCN_EXTN
+		if (iface->bootup_cac_in_progress &&
+		    hostapd_is_dfs_chan_available(iface))
+			hostapd_bootup_cac_complete_extn(iface);
+
 		hostapd_csa_bitmap_update_extn(iface, freq);
 #endif
 	} else if (is_background || hostapd_dfs_is_background_event(iface, freq)) {
