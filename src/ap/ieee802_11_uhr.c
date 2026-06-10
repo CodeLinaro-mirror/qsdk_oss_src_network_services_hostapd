@@ -116,7 +116,7 @@ u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool beacon)
 	struct hostapd_hw_modes *mode;
 	struct uhr_npca_info *npca_info;
 	bool npca_present;
-	u32 npca_params = 0;
+	int offs;
 
 	mode = hapd->iface->current_mode;
 	if (!mode)
@@ -129,6 +129,13 @@ u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool beacon)
 	oper = (struct ieee80211_uhr_operation *) pos;
 	npca_info = &mode->npca_info[IEEE80211_MODE_AP];
 	npca_present = npca_info->npca_supported && hapd->iconf->npca_enable;
+	offs = hapd->iconf->npca_primary_chan_offset;
+	if (npca_present && offs < 0) {
+		wpa_printf(MSG_DEBUG,
+			   "NPCA: invalid primary channel %d for current BW, skipping NPCA params",
+			   hapd->iconf->npca_primary_channel);
+		npca_present = false;
+	}
 	if (npca_present)
 		oper_ctrl |= UHR_OPER_CTRL_NPCA_ENA;
 
@@ -143,8 +150,10 @@ u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool beacon)
 
 	/* UHR Operation Parameters field */
 	if (npca_present) {
+		u32 npca_params = 0;
+
 		oper_ctrl |= UHR_OPER_CTRL_NPCA_OP_PARAMS_PRES;
-		npca_params |= (u32) hapd->iconf->npca_primary_channel &
+		npca_params |= (u32) offs &
 			UHR_OPER_PARAMS_NPCA_PRI_CHAN_OFFS;
 		npca_params |= ((u32) npca_info->npca_min_dur_threshold << 4) &
 			UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH;
