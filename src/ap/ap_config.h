@@ -1485,6 +1485,7 @@ struct hostapd_config {
 	int enable_background_radar;
 	int bgcac_en;
 	bool dfs_bw_reduce_en;
+	int rcac_freq;
 	enum {
 		LONG_PREAMBLE = 0,
 		SHORT_PREAMBLE = 1
