@@ -1822,6 +1822,13 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 			   "Disabling IEEE 802.11be as IEEE 802.11ax is disabled for this BSS");
 	}
 
+	if (full_config && (!conf->ieee80211be || bss->disable_11be) &&
+	    bss->bss_require_eht) {
+		bss->bss_require_eht = false;
+		wpa_printf(MSG_INFO,
+			   "Disabling bss_require_eht as IEEE 802.11be is disabled for this BSS");
+	}
+
 	if ((!conf->ieee80211be || bss->disable_11be) && bss->mld_ap) {
 		wpa_printf(MSG_INFO,
 			   "Cannot enable mld_ap when IEEE 802.11be is disabled");

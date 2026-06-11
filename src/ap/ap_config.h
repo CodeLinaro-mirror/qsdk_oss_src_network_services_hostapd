@@ -829,6 +829,9 @@ struct hostapd_bss_config {
 	bool disable_11ax;
 	bool disable_11be;
 	bool disable_11bn;
+#ifdef CONFIG_IEEE80211BE
+	bool bss_require_eht;
+#endif /* CONFIG_IEEE80211BE */		 
 
 	/* IEEE 802.11v */
 	int time_advertisement;
