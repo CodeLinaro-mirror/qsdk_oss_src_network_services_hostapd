@@ -282,7 +282,6 @@ static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
 			  wpabuf_head(conf->rsnxe_override_ft),
 			  wconf->rsnxe_override_ft_len);
 	}
-	wconf->rsnxe_capab_mask = conf->rsnxe_capab_mask;
 	if (conf->gtk_rsc_override &&
 	    wpabuf_len(conf->gtk_rsc_override) > 0 &&
 	    wpabuf_len(conf->gtk_rsc_override) <= WPA_KEY_RSC_LEN) {
@@ -312,6 +311,9 @@ static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
 		wconf->eapol_m3_elements = wpabuf_dup(conf->eapol_m3_elements);
 	wconf->eapol_m3_no_encrypt = conf->eapol_m3_no_encrypt;
 	wconf->eapol_key_reserved_random = conf->eapol_key_reserved_random;
+#endif /* CONFIG_TESTING_OPTIONS */
+#ifdef CONFIG_TESTING_OPTIONS
+	wconf->rsnxe_capab_mask = conf->rsnxe_capab_mask;
 #endif /* CONFIG_TESTING_OPTIONS */
 #ifdef CONFIG_P2P
 	os_memcpy(wconf->ip_addr_go, conf->ip_addr_go, 4);

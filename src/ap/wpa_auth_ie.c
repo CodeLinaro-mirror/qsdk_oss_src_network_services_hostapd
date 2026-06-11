@@ -517,7 +517,9 @@ int wpa_write_rsnxe(struct wpa_auth_config *conf, u8 *buf, size_t len)
 	size_t flen;
 
 	capab = rsnxe_capab(conf, conf->wpa_key_mgmt);
+#ifdef CONFIG_TESTING_OPTIONS
 	capab &= conf->rsnxe_capab_mask;
+#endif /* CONFIG_TESTING_OPTIONS */
 
 	if (!capab)
 		return 0; /* no supported extended RSN capabilities */
