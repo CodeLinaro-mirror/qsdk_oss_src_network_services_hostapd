@@ -3039,6 +3039,9 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_STA_DFS_EN: whether STA_DFS_EN is enabled (u8, 0 or 1)
  *
+ * @NL80211_ATTR_EPP_PEER: A flag attribute to indicate if the peer is an EPP
+ *	STA. Used with %NL80211_CMD_NEW_STA and %NL80211_CMD_ADD_LINK_STA
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3681,6 +3684,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_SMD_AP,
 	NL80211_ATTR_SMD_PARAMS,
 	NL80211_ATTR_SMD_STA_DL_DATA_FWD,
+
+	NL80211_ATTR_EPP_PEER,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -5661,6 +5666,7 @@ enum nl80211_bss_status {
  * @NL80211_AUTHTYPE_FILS_SK: Fast Initial Link Setup shared key
  * @NL80211_AUTHTYPE_FILS_SK_PFS: Fast Initial Link Setup shared key with PFS
  * @NL80211_AUTHTYPE_FILS_PK: Fast Initial Link Setup public key
+ * @NL80211_AUTHTYPE_EPPKE: Enhanced Privacy Protection Key Exchange
  * @__NL80211_AUTHTYPE_NUM: internal
  * @NL80211_AUTHTYPE_MAX: maximum valid auth algorithm
  * @NL80211_AUTHTYPE_AUTOMATIC: determine automatically (if necessary by
@@ -5676,6 +5682,7 @@ enum nl80211_auth_type {
 	NL80211_AUTHTYPE_FILS_SK,
 	NL80211_AUTHTYPE_FILS_SK_PFS,
 	NL80211_AUTHTYPE_FILS_PK,
+	NL80211_AUTHTYPE_EPPKE,
 
 	/* keep last */
 	__NL80211_AUTHTYPE_NUM,
@@ -7049,6 +7056,13 @@ enum nl80211_feature_flags {
  *	supports DL Data forward with SMD Capable devices.
  *
  *
+ * @NL80211_EXT_FEATURE_EPPKE: Driver supports Enhanced Privacy Protection
+ *      Key Exchange (EPPKE) with user space SME (NL80211_CMD_AUTHENTICATE)
+ *      in non-AP STA mode.
+ *
+ * @NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION: Driver supports (Re)Association
+ *      Request/Response frame encryption
+ *
  * @NUM_NL80211_EXT_FEATURES: number of extended features.
  * @MAX_NL80211_EXT_FEATURES: highest extended feature index.
  */
@@ -7137,6 +7151,8 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT,
 	NL80211_EXT_FEATURE_SMD_SUPPORT_AP,
 	NL80211_EXT_FEATURE_SMD_SUPPORT_DL_PKT_FRWRD,
+	NL80211_EXT_FEATURE_EPPKE,
+	NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION,
 
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,
