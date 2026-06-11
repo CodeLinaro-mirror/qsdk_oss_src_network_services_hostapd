@@ -9962,8 +9962,10 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 			       "did not acknowledge association response");
 		sta->flags &= ~WLAN_STA_ASSOC_REQ_OK;
 		/* The STA is added only in case of SUCCESS */
-		if (status == WLAN_STATUS_SUCCESS)
+		if (status == WLAN_STATUS_SUCCESS) {
 			hostapd_drv_sta_remove(hapd, sta->addr);
+			sta->added_unassoc = 0;
+		}
 
 		ap_sta_reset_assoc_req_rx_times(sta);
 
