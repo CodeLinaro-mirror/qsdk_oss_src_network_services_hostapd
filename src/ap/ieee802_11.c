@@ -12102,8 +12102,10 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		 * (Re)Association Response frame TX callback is received.
 		 * Remove the driver STA entry once the callback is received
 		 */
-		if (status == WLAN_STATUS_SUCCESS || epp_sta)
+		if (status == WLAN_STATUS_SUCCESS || epp_sta) {
 			hostapd_drv_sta_remove(hapd, sta->addr);
+			sta->added_unassoc = 0;
+		}
 
 		ap_sta_reset_assoc_req_rx_times(sta);
 
