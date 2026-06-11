@@ -139,6 +139,7 @@ struct ieee802_11_elems {
 	const u8 *security_profile_ie;
 	const u8 *smd;
 	const u8 *smd_bsstransparams;
+	const u8 *akm_suite_selector;
 
 	u8 ssid_len;
 	u8 supp_rates_len;
@@ -221,7 +222,7 @@ struct ieee802_11_elems {
 	struct mb_ies_info mb_ies;
 
 	size_t fte_defrag_len;
-
+	u8 akm_suite_selector_len;
 	/*
 	 * The number of fragment elements to be skipped after a known
 	 * fragmented element.
