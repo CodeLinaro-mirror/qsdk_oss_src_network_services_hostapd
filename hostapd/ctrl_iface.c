@@ -4779,6 +4779,24 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 	if (iface->num_bss && iface->bss[0]->conf->mld_ap)
 		settings.link_id = iface->bss[0]->mld_link_id;
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_IEEE80211BN
+	/* Reject if UHR is disabled in channel switch settings but the
+	 * interface has a BSS with UHR enabled, since UHR is a superset of
+	 * EHT and silently disabling it would downgrade the VAP after CSA. */
+	if (!settings.freq_params.uhr_enabled) {
+		for (i = 0; i < iface->num_bss; i++) {
+			if (!iface->bss[i])
+				continue;
+			if (hostapd_is_uhr_enabled(iface->bss[i])) {
+				wpa_printf(MSG_ERROR,
+					   "chanswitch: Do not allow UHR to be disabled"
+					   " when VAP %s is operating in UHR mode",
+					   iface->bss[i]->conf->iface);
+				return -1;
+			}
+		}
+	}
+#endif /* CONFIG_IEEE80211BN */
 	if (settings.power_mode == HE_REG_INFO_6GHZ_AP_TYPE_SP &&
 	    !iface->is_afc_power_event_received) {
 		wpa_printf(MSG_ERROR, "Standard Power mode cant be set without AFC");
