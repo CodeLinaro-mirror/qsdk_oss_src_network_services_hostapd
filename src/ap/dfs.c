@@ -2883,6 +2883,23 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 					return hostapd_dfs_start_channel_switch_background(iface);
 			}
 
+#ifdef CONFIG_QCN_EXTN
+			/*
+			 * Boot-up CAC path: all BSSes were already created
+			 * before CAC started.  Complete the bring-up here,
+			 * before the state check below, so that
+			 * iface->state == HAPD_IFACE_ENABLED after this call
+			 * and the hostapd_setup_interface_complete() re-entry
+			 * in the HAPD_CAC_COMPLETE_AFTER_BSS branch is
+			 * naturally skipped.
+			 */
+			if (iface->bootup_cac_in_progress &&
+			    hostapd_is_dfs_chan_available(iface)) {
+				hostapd_bootup_cac_complete_extn(iface);
+				goto cac_done;
+			}
+#endif /* CONFIG_QCN_EXTN */
+
 			/*
 			 * Just mark the channel available when CAC completion
 			 * event is received in enabled state. CAC result could
@@ -2955,10 +2972,6 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 		}
 
 #ifdef CONFIG_QCN_EXTN
-		if (iface->bootup_cac_in_progress &&
-		    hostapd_is_dfs_chan_available(iface))
-			hostapd_bootup_cac_complete_extn(iface);
-
 		hostapd_csa_bitmap_update_extn(iface, freq);
 #endif
 	} else if (is_background || hostapd_dfs_is_background_event(iface, freq)) {
@@ -2971,8 +2984,16 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 	} else if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_CSA) {
 		iface->cac_started = 0;
 		iface->cac_type = 0;
+	} else {
+#ifdef CONFIG_QCN_EXTN
+		if (iface->bootup_cac_in_progress)
+			iface->bootup_cac_in_progress = 0;
+#endif /* CONFIG_QCN_EXTN */
 	}
 
+#ifdef CONFIG_QCN_EXTN
+cac_done:
+#endif
 	iface->radar_detected = false;
 
 	if (hapd->iface->csa_pending_on_cac_abort &&

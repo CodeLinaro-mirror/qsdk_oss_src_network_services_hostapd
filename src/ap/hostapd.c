@@ -5096,7 +5096,23 @@ dfs_offload:
 	}
 #endif /* CONFIG_FST */
 
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * When boot-up CAC is in progress on a DFS channel, the interface
+	 * state was already set to HAPD_IFACE_DFS by
+	 * hostapd_bootup_cac_start_extn().  Transitioning to ENABLED here
+	 * and printing AP-ENABLED is misleading because the radio is still
+	 * performing CAC. The transition to ENABLED happens in
+	 * hostapd_bootup_cac_complete_extn() once CAC finishes.
+	 */
+	if (!iface->bootup_cac_in_progress ||
+	    hostapd_is_dfs_required(iface) <= 0) {
+#endif /* CONFIG_QCN_EXTN */
 	hostapd_set_state(iface, HAPD_IFACE_ENABLED);
+	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 	hostapd_owe_update_trans(iface);
 	airtime_policy_update_init(iface);
 
@@ -5105,7 +5121,6 @@ dfs_offload:
 	    !iface->radar_background.cac_started)
 		hostapd_start_background_cac(iface);
 
-	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
 	if (hapd->setup_complete_cb)
 		hapd->setup_complete_cb(hapd->setup_complete_cb_ctx);
 
@@ -5138,6 +5153,9 @@ dfs_offload:
 fail:
 	wpa_printf(MSG_ERROR, "Interface initialization failed");
 	hostapd_ubus_free_iface(iface);
+#ifdef CONFIG_QCN_EXTN
+	iface->bootup_cac_in_progress = 0;
+#endif /* CONFIG_QCN_EXTN */
 
 	if (iface->is_no_ir) {
 		hostapd_set_state(iface, HAPD_IFACE_NO_IR);
