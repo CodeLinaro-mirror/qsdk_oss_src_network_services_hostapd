@@ -1354,6 +1354,15 @@ struct hostapd_bss_config {
        /* SMD partner APs for roaming */
        struct smd_partner_entry *smd_partners;
 #endif /* CONFIG_IEEE80211BN */
+
+	/* is_cmn_param - flag to identify MBSSID common parameter */
+	bool is_cmn_param;
+
+	/* cmn_param_id - MBSSID common parameter ID */
+	int cmn_param_id;
+
+	/* cmn_param_id - MBSSID common parameter values */
+	int cmn_param_val[2];
 };
 
 /**
