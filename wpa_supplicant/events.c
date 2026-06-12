@@ -6576,27 +6576,6 @@ static void wpa_supplicant_event_port_authorized(struct wpa_supplicant *wpa_s)
 }
 
 /**
- * wpas_sta_cac_mark_chan_dfs_available - Update channel DFS state to AVAILABLE
- * @wpa_s: Pointer to wpa_supplicant data
- * @freq: Channel frequency in MHz
- *
- * This is used after successful CAC completion handling to refresh local
- * channel state before continuing association flow.
- */
-static void wpas_sta_cac_mark_chan_dfs_available(struct wpa_supplicant *wpa_s,
-						  int freq)
-{
-	struct hostapd_channel_data *chan = wpas_get_chan_data(wpa_s, freq);
-
-	if (!chan)
-		return;
-
-	chan->flag &= ~HOSTAPD_CHAN_DFS_MASK;
-	chan->flag |= HOSTAPD_CHAN_DFS_AVAILABLE;
-}
-
-
-/**
  * wpas_sta_cac_get_link_for_event - Map DFS CAC event to STA CAC link bitmap bit
  * @wpa_s: Pointer to wpa_supplicant data
  * @radar: DFS event payload from driver/kernel
@@ -6768,7 +6747,29 @@ static void wpas_event_dfs_cac_finished(struct wpa_supplicant *wpa_s,
 				return;
 
 			wpa_s->sta_cac.cac_completed_links |= bit;
-			wpas_sta_cac_mark_chan_dfs_available(wpa_s, radar->freq);
+
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"STA-DFS: radar detected on %d MHz (no AP iface) - "
+				"updating hw channel states directly: "
+				"ht_enabled=%d chan_offset=%d chan_width=%d "
+				"cf1=%d cf2=%d radar_bitmap=0x%04X "
+				"chan_width_device=%d cf_device=%d",
+				radar->freq, radar->ht_enabled,
+				radar->chan_offset,
+				radar->chan_width, radar->cf1, radar->cf2,
+				radar->radar_bitmap,
+				radar->chan_width_device, radar->cf_device);
+
+#ifdef CONFIG_QCN_EXTN
+			wpas_set_dfs_state(wpa_s, radar->freq,
+					   radar->ht_enabled,
+					   radar->chan_offset,
+					   radar->chan_width,
+					   radar->cf1,
+					   radar->cf2,
+					   HOSTAPD_CHAN_DFS_AVAILABLE,
+					   radar->radar_bitmap);
+#endif
 			wpa_dbg(wpa_s, MSG_DEBUG,
 				"STA-DFS: CAC finished bit=0x%x req=0x%x done=0x%x",
 				bit, wpa_s->sta_cac.dfs_links,
