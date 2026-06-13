@@ -5862,6 +5862,8 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 	const u8 *p2p_dev_addr = NULL;
 	const struct element *elem;
 	bool pmk_cache_based_sae;
+	struct security_profile_entry_ap matched_profile;
+	bool security_profile_matched = false;
 
 	for_each_element(elem, ies, ies_len) {
 		memcpy(sta->vendor_oui, elem->data, 3);
@@ -5869,6 +5871,8 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		   !WPA_GET_BE24(sta->vendor_oui))
 			break;
 	}
+
+	os_memset(&matched_profile, 0, sizeof(matched_profile));
 
 	if (type != LINK_PARSE_RECONF) {
 		resp = check_ssid(hapd, sta, elems->ssid, elems->ssid_len);
@@ -6002,14 +6006,8 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		}
 	}
 #endif /* CONFIG_IEEE80211BE */
-		struct security_profile_entry_ap matched_profile;
-		bool security_profile_matched = false;
 
-		os_memset(&matched_profile, 0, sizeof(matched_profile));
-
-		bool is_assoc_link = true;
-
-		is_assoc_link = (hapd->mld_link_id == sta->mld_assoc_link_id);
+		bool is_assoc_link = (hapd->mld_link_id == sta->mld_assoc_link_id);
 
 		if ((hapd->conf->security_profiles && is_assoc_link)
 		    || (hapd->conf->security_profiles && !(ap_sta_is_mld(hapd,sta)))) {
@@ -6025,7 +6023,11 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			wpa_printf(MSG_DEBUG,
 				   "UHR: (Re)Assoc Security Profile validated "
 				   "for " MACSTR, MAC2STR(sta->addr));
-			security_profile_matched = true;
+
+			if (matched_profile.profile_num != 0) {
+				wpa_printf(MSG_ERROR," %d %s %d \n", matched_profile.profile_num, __func__, __LINE__);
+				security_profile_matched = true;
+			}
 		}
 
 #ifdef CONFIG_IEEE80211BN
