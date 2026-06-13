@@ -2290,6 +2290,19 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 	wpa_s->group_cipher = WPA_CIPHER_NONE;
 	wpa_s->pairwise_cipher = WPA_CIPHER_NONE;
 #else /* CONFIG_NO_WPA */
+
+	if (bss_sp_ie) {
+		int sp_key_mgmt = security_profile_ie_get_key_mgmt(
+					bss_sp_ie, ssid->key_mgmt);
+		if (sp_key_mgmt) {
+			wpa_dbg(wpa_s, MSG_DEBUG,
+			"WPA: Security Profile element overrides AP pairwise cipher to include GCMP-256");
+			ie.pairwise_cipher |= WPA_CIPHER_GCMP_256;
+			/* Group cipher not overridden - AP base RSNE governs group cipher */
+		}
+	}
+
+
 	sel = ie.group_cipher & ssid->group_cipher;
 	wpa_dbg(wpa_s, MSG_DEBUG,
 		"WPA: AP group 0x%x network profile group 0x%x; available group 0x%x",
