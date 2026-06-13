@@ -6204,6 +6204,32 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 					       sta->sae_pw_id_counter);
 		wpa_auth_set_rsn_selection(sta->wpa_sm, elems->rsn_selection,
 					   elems->rsn_selection_len);
+
+		/*
+		 * Security Profile validation for SAE and other non-802.1X
+		 * authentication methods.  For 802.1X, this is done above in
+		 * the CONFIG_IEEE8021X_AUTH block.  For SAE, the security
+		 * profile was validated during the auth phase, but we need to
+		 * set security_profile_matched here so that wpa_validate_wpa_ie()
+		 * uses the profile's pairwise cipher (GCMP-256) instead of the
+		 * AP's rsn_pairwise setting.
+		 */
+		if (hapd->conf->security_profiles && !security_profile_matched &&
+		    elems->security_profile_ie && is_assoc_link) {
+			u16 sp_resp = validate_security_profile_common(
+				hapd, sta, ies, ies_len,
+				type == LINK_PARSE_REASSOC ? "Reassoc" : "Assoc",
+				&matched_profile);
+
+			if (sp_resp == WLAN_STATUS_SUCCESS) {
+				wpa_printf(MSG_DEBUG,
+					   "UHR: Security Profile validated for "
+					   MACSTR " in (Re)Assoc",
+					   MAC2STR(sta->addr));
+				security_profile_matched = true;
+			}
+		}
+
 		res = wpa_validate_wpa_ie(hapd->wpa_auth, sta->wpa_sm,
 					  hapd->iface->freq,
 					  wpa_ie, wpa_ie_len,
