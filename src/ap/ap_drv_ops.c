@@ -142,12 +142,14 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 			goto fail;
 	}
 
+#ifdef CONFIG_TESTING_OPTIONS
 	if (!hapd->conf->rsn_override_omit_rsnxe) {
 		pos = hostapd_eid_rsnxe(hapd, buf, sizeof(buf),
 					hapd->conf->rsnxe_capab_mask);
 		if (add_buf_data(&assocresp, buf, pos - buf) < 0)
 			goto fail;
 	}
+#endif /* CONFIG_TESTING_OPTIONS */
 
 	if (add_buf(&beacon, hapd->wps_beacon_ie) < 0 ||
 	    add_buf(&proberesp, hapd->wps_probe_resp_ie) < 0)

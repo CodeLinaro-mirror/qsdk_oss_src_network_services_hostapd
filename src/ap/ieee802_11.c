@@ -6345,6 +6345,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			goto out;
 		}
 
+#ifdef CONFIG_TESTING_OPTIONS
 		if (hapd->conf->sae_pwe == SAE_PWE_BOTH &&
 		    sta->auth_alg == WLAN_AUTH_SAE &&
 		    sta->sae && !sta->sae->h2e &&
@@ -6357,6 +6358,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 			goto out;
 		}
+#endif /* CONFIG_TESTING_OPTIONS */
 #endif /* CONFIG_SAE */
 
 #ifdef CONFIG_OWE
@@ -7408,8 +7410,12 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 #endif /* CONFIG_TESTING_OPTIONS */
 	if (!omit_rsnxe)
+#ifdef CONFIG_TESTING_OPTIONS
 		p = hostapd_eid_rsnxe(hapd, p, buf + buflen - p,
 				      hapd->conf->rsnxe_capab_mask);
+#else /* CONFIG_TESTING_OPTIONS */
+		p = hostapd_eid_rsnxe(hapd, p, buf + buflen - p, ~0ULL);
+#endif /* CONFIG_TESTING_OPTIONS */
 #ifdef CONFIG_TESTING_OPTIONS
 rsnxe_done:
 #endif /* CONFIG_TESTING_OPTIONS */
