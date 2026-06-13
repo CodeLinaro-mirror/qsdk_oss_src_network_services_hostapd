@@ -4191,7 +4191,7 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 	struct wpabuf *beacon, *proberesp, *assocresp;
 	bool twt_he_responder = false;
 	size_t bcn_len;
-	int res, ret = -1;
+	int res, ret = -1, j;
 #ifdef CONFIG_DRIVER_NL80211_QCA
 	int i;
 	struct hostapd_hw_modes *mode;
@@ -4329,6 +4329,20 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 #endif /* CONFIG_IEEE80211BE */
 	params.disable_cu = hapd->disable_cu;
 	hapd->disable_cu = 0;
+
+	if (hapd->conf->is_cmn_param) {
+		/* Currently hostapd framework supports to send only one parameter */
+		params.num_cmn_params = 1;
+
+		for (j = 0; j < params.num_cmn_params; j++) {
+			params.multi_bss_params[j].cmn_param_id = hapd->conf->cmn_param_id;
+			params.multi_bss_params[j].cmn_param_val[0] = hapd->conf->cmn_param_val[0];
+			if (hapd->conf->cmn_param_val[1] >= 0) {
+				params.multi_bss_params[j].cmn_param_val[1] =
+								hapd->conf->cmn_param_val[1];
+			}
+		}
+	}
 
 #ifdef CONFIG_IEEE80211BN
 	/* Populate SMD parameters from hapd->conf into params structure */

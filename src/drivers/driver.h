@@ -2092,6 +2092,13 @@ struct wpa_driver_ap_ttlm_params {
 	bool send_default_mapping;
 };
 
+#define WPA_DRIVER_AP_MAX_CMN_PARAMS 10
+
+struct wpa_driver_multi_bss_cmn_params {
+	int cmn_param_id;
+	int cmn_param_val[2];
+};
+
 struct wpa_driver_ap_params {
 	/**
 	 * head - Beacon head from IEEE 802.11 header to IEs before TIM IE
@@ -2558,6 +2565,16 @@ struct wpa_driver_ap_params {
 #ifdef CONFIG_IEEE80211BN
 	struct wpa_smd_params smd;
 #endif /* CONFIG_IEEE80211BN */
+
+	/* Num common parameter to add in qca_vendor command */
+	size_t num_cmn_params;
+
+	/**
+	 * structure contains common parameter's ID and
+	 * user configures values from userspace
+	 */
+	struct wpa_driver_multi_bss_cmn_params
+		multi_bss_params[WPA_DRIVER_AP_MAX_CMN_PARAMS];
 };
 
 struct wpa_driver_mesh_bss_params {
