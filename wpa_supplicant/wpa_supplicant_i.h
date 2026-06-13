@@ -2224,4 +2224,13 @@ static inline bool wpas_security_profile_active(struct wpa_supplicant *wpa_s)
 	return !!(wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_SECURITY_PROFILE);
 }
 
+/*
+ * Security Profile element helper functions (wpa_supplicant.c).
+ * Used by both wpa_supplicant_set_suites() and BSS selection
+ * (wpa_supplicant_ssid_bss_match() in events.c).
+ */
+int security_profile_ie_get_key_mgmt(const u8 *sp_ie, int ssid_key_mgmt);
+const u8 *security_profile_ie_get_rsnx(const u8 *sp_ie, size_t *rsnx_len);
+int security_profile_ie_get_rsn_caps(const u8 *sp_ie);
+
 #endif /* WPA_SUPPLICANT_I_H */
