@@ -17,6 +17,9 @@
 #include "bss.h"
 #include "scan.h"
 #include "p2p_supplicant.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../qcn_extns/wpa_supplicant_extn.h"
+#endif
 
 /* Forward declarations */
 static void wpas_rrm_channel_load_timeout(void *eloop_ctx, void *timeout_ctx);
@@ -441,10 +444,14 @@ static void wpas_rrm_send_msr_report_mpdu(struct wpa_supplicant *wpa_s,
 	wpabuf_put_u8(report, wpa_s->rrm.token);
 
 	wpabuf_put_data(report, data, len);
-
+#ifdef CONFIG_QCN_EXTN
+	if (wpa_drv_send_rrm_action_extn(wpa_s, wpabuf_head(report),
+					 wpabuf_len(report), 0)) {
+#else /* CONFIG_QCN_EXTN */
 	if (wpa_drv_send_action(wpa_s, wpa_s->assoc_freq, 0, wpa_s->bssid,
 				wpa_s->own_addr, wpa_s->bssid,
 				wpabuf_head(report), wpabuf_len(report), 0)) {
+#endif
 		wpa_printf(MSG_ERROR,
 			   "RRM: Radio measurement report failed: Sending Action frame failed");
 	}
@@ -1307,6 +1314,9 @@ wpas_rm_handle_beacon_req(struct wpa_supplicant *wpa_s,
 		goto out_reject;
 	}
 
+	if (params->freqs[0])
+		wpa_s->rrm.req_freq = params->freqs[0];
+
 	params->duration = le_to_host16(req->duration);
 	params->duration_mandatory = duration_mandatory;
 	if (!params->duration) {
@@ -1484,8 +1494,9 @@ void wpas_rrm_handle_radio_measurement_request(struct wpa_supplicant *wpa_s,
 	wpa_s->rrm.token = *frame;
 	os_memcpy(wpa_s->rrm.dst_addr, dst, ETH_ALEN);
 
-	/* Number of repetitions is not supported */
+	wpa_s->rrm.req_freq = 0;
 
+	/* Number of repetitions is not supported */
 	report = wpas_rrm_process_msr_req_elems(wpa_s, frame + 3, len - 3);
 	if (!report)
 		return;
