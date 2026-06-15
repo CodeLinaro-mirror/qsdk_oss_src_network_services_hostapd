@@ -1363,6 +1363,11 @@ struct hostapd_bss_config {
 
 	/* cmn_param_id - MBSSID common parameter values */
 	int cmn_param_val[2];
+#ifdef CONFIG_ENC_ASSOC
+	unsigned int assoc_frame_encryption:1;
+	unsigned int pmksa_caching_privacy:1;
+	unsigned int eap_using_authentication_frames:1;
+#endif /* CONFIG_ENC_ASSOC  */
 };
 
 /**
