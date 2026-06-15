@@ -774,6 +774,22 @@ static int wpa_supplicant_ctrl_iface_set(struct wpa_supplicant *wpa_s,
 		wpa_s->disable_sa_query = !!atoi(value);
 	} else if (os_strcasecmp(cmd, "ignore_sae_h2e_only") == 0) {
 		wpa_s->ignore_sae_h2e_only = !!atoi(value);
+	} else if (os_strcasecmp(cmd, "smd_enabled") ==0) {
+		wpa_s->smd_capable = !!atoi(value);
+		wpa_printf(MSG_DEBUG, "SMD: smd_enabled set to %d", wpa_s->smd_capable);
+	} else if (os_strcasecmp(cmd, "smd_id") == 0) {
+		if (hwaddr_aton(value, wpa_s->smd_id) < 0) {
+			wpa_printf(MSG_ERROR, "SMD: Invalid smd_id format");
+			ret = -1;
+		} else {
+			wpa_printf(MSG_DEBUG, "SMD: smd_id set to " MACSTR,
+				   MAC2STR(wpa_s->smd_id));
+
+		}
+	} else if (os_strcasecmp(cmd, "smd_ptk_mode") == 0) {
+		wpa_s->smd_ptk_mode = atoi(value);
+		wpa_printf(MSG_DEBUG, "SMD: smd_ptk_mode set to %d",
+			   wpa_s->smd_ptk_mode);
 	} else if (os_strcasecmp(cmd, "extra_sae_rejected_groups") == 0) {
 		char *pos;
 
@@ -997,6 +1013,10 @@ static int wpa_supplicant_ctrl_iface_set(struct wpa_supplicant *wpa_s,
 	} else if (os_strcasecmp(cmd, "urnm_mfpr_x20") == 0) {
 		wpa_s->urnm_mfpr_x20 = !!atoi(value);
 #endif /* CONFIG_PASN */
+#ifdef CONFIG_QCN_EXTN
+	} else if (os_strcasecmp(cmd, "CSwOpts") == 0) {
+		ret = wpa_supplicant_ctrl_iface_set_cswopts_extn(wpa_s, value);
+#endif /* CONFIG_QCN_EXTN */
 	} else {
 #ifdef CONFIG_QCN_EXTN
 		bool is_extn_cmd;
@@ -1064,6 +1084,11 @@ static int wpa_supplicant_ctrl_iface_get(struct wpa_supplicant *wpa_s,
 	} else if (os_strcasecmp(cmd, "last_tk_key_idx") == 0) {
 		res = os_snprintf(buf, buflen, "%d", wpa_s->last_tk_key_idx);
 #endif /* CONFIG_TESTING_OPTIONS */
+#ifdef CONFIG_QCN_EXTN
+	} else if (os_strcasecmp(cmd, "CSwOpts") == 0) {
+		res = os_snprintf(buf, buflen, "CSwOpts=0x%x\n",
+				  wpa_s->conf->cswopts);
+#endif /* CONFIG_QCN_EXTN */
 	} else {
 #ifdef CONFIG_QCN_EXTN
 		bool is_extn_cmd;
@@ -3316,6 +3341,13 @@ static int wpa_supplicant_ctrl_iface_scan_result(
 		pos += ret;
 	}
 
+	if (bss->smd_capable) {
+		ret = os_snprintf(pos, end - pos, "[SMD]");
+		if (os_snprintf_error(end - pos, ret))
+			return -1;
+		pos += ret;
+	}
+
 	ret = os_snprintf(pos, end - pos, "\t%s",
 			  wpa_ssid_txt(bss->ssid, bss->ssid_len));
 	if (os_snprintf_error(end - pos, ret))
@@ -5523,6 +5555,31 @@ static int print_bss_info(struct wpa_supplicant *wpa_s, struct wpa_bss *bss,
 		os_get_reltime(&now);
 		ret = os_snprintf(pos, end - pos, "age=%d\n",
 				  (int) (now.sec - bss->last_update.sec));
+		if (os_snprintf_error(end - pos, ret))
+			return 0;
+		pos += ret;
+	}
+
+	if (bss->smd_capable) {
+		ret = os_snprintf(pos, end - pos, "smd_capable=1\n");
+		if (os_snprintf_error(end - pos, ret))
+			return 0;
+		pos += ret;
+
+		ret = os_snprintf(pos, end - pos, "smd_identifier=" MACSTR "\n",
+				  MAC2STR(bss->smd_identifier));
+		if (os_snprintf_error(end - pos, ret))
+			return 0;
+		pos += ret;
+
+		ret = os_snprintf(pos, end - pos, "smd_capabilities=0x%02x\n",
+				  bss->smd_capabilities);
+		if (os_snprintf_error(end - pos, ret))
+			return 0;
+		pos += ret;
+
+		ret = os_snprintf(pos, end - pos, "smd_timeout=%u\n",
+				  bss->smd_timeout);
 		if (os_snprintf_error(end - pos, ret))
 			return 0;
 		pos += ret;
@@ -12717,14 +12774,17 @@ static int wpas_ctrl_iface_epcs(struct wpa_supplicant *wpa_s, char *pos,
 }
 #endif /* CONFIG_IEEE80211BE */
 
-#ifdef CONFIG_TESTING_OPTIONS
 static int wpas_ctrl_ml_probe(struct wpa_supplicant *wpa_s, char *cmd)
 {
 	char *token, *context = NULL;
 	u8 bssid[ETH_ALEN];
 	int mld_id = -1, link_id = -1;
+	u16 links_mask = 0;
+	u8 tx_link = 0;
 	struct wpa_bss *bss;
 	int *freqs;
+	bool tx_link_set = false;
+	bool select_no_link_id = false;
 
 	os_memset(bssid, 0, sizeof(bssid));
 
@@ -12736,7 +12796,36 @@ static int wpas_ctrl_ml_probe(struct wpa_supplicant *wpa_s, char *cmd)
 			mld_id = atoi(token + 7);
 		} else if (os_strncmp(token, "link_id=", 8) == 0) {
 			link_id = atoi(token + 8);
+
+			if (link_id == -1) {
+				links_mask = 0;
+				select_no_link_id = true;
+				continue;
+			}
+
+			if (link_id < 0 || link_id >= MAX_NUM_MLD_LINKS) {
+				wpa_printf(MSG_INFO, "CTRL: Invalid link_id %d", link_id);
+				return -1;
+			}
+
+			if (!select_no_link_id)
+				links_mask |= BIT(link_id);
+		} else if (os_strncmp(token, "tx_link=", 8) == 0) {
+			tx_link = atoi(token + 8);
+
+			if (tx_link < 0 || tx_link >= MAX_NUM_MLD_LINKS) {
+				wpa_printf(MSG_INFO, "CTRL: Invalid tx_link token: %d", tx_link);
+				return -1;
+			}
+			tx_link_set = true;
 		}
+	}
+
+	if (tx_link_set && (links_mask & BIT(tx_link))) {
+		wpa_printf(MSG_INFO,
+			   "CTRL: Invalid ML probe: link_id selection overlaps with tx_link %u",
+			   tx_link);
+		return -1;
 	}
 
 	if (is_zero_ether_addr(bssid)) {
@@ -12777,8 +12866,8 @@ static int wpas_ctrl_ml_probe(struct wpa_supplicant *wpa_s, char *cmd)
 
 	os_memcpy(wpa_s->ml_probe_bssid, bssid, ETH_ALEN);
 	wpa_s->ml_probe_mld_id = mld_id;
-	if (link_id >= 0)
-		wpa_s->ml_probe_links = BIT(link_id);
+	wpa_s->ml_probe_links = links_mask;
+	wpa_s->ml_probe_tx_link = tx_link;
 
 	wpa_s->normal_scans = 0;
 	wpa_s->scan_req = MANUAL_SCAN_REQ;
@@ -12788,8 +12877,6 @@ static int wpas_ctrl_ml_probe(struct wpa_supplicant *wpa_s, char *cmd)
 
 	return 0;
 }
-#endif /* CONFIG_TESTING_OPTIONS */
-
 
 #ifdef CONFIG_NAN_USD
 
@@ -14073,13 +14160,13 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 	} else if (os_strcmp(buf, "TWT_TEARDOWN") == 0) {
 		if (wpas_ctrl_iface_send_twt_teardown(wpa_s, ""))
 			reply_len = -1;
-	} else if (os_strncmp(buf, "ML_PROBE_REQ ", 13) == 0) {
-		if (wpas_ctrl_ml_probe(wpa_s, buf + 13))
-			reply_len = -1;
 	} else if (os_strncmp(buf, "TEST_RSNXE_DATA ", 16) == 0) {
 		if (wpas_ctrl_test_rsnxe_data(wpa_s, buf + 16) < 0)
 			reply_len = -1;
 #endif /* CONFIG_TESTING_OPTIONS */
+	} else if (os_strncmp(buf, "ML_PROBE_REQ ", 13) == 0) {
+		if (wpas_ctrl_ml_probe(wpa_s, buf + 13))
+			reply_len = -1;
 	} else if (os_strncmp(buf, "VENDOR_ELEM_ADD ", 16) == 0) {
 		if (wpas_ctrl_vendor_elem_add(wpa_s, buf + 16) < 0)
 			reply_len = -1;

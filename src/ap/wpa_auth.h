@@ -331,9 +331,18 @@ struct wpa_auth_config {
 
 	bool spp_amsdu;
 
+#ifdef CONFIG_TESTING_OPTIONS
+	u64 rsnxe_capab_mask;
+#endif /* CONFIG_TESTING_OPTIONS */
+
 	unsigned int sae_pw_id_num;
 	u8 sae_pw_id_key[32];
 	int externally_triggered_m3;
+	int plugin_eapol_key_offload;
+
+	int smd_capable;
+	u8 smd_domain_id[ETH_ALEN];
+	int smd_ptk_mode;
 };
 
 typedef enum {
@@ -444,7 +453,28 @@ struct wpa_auth_callbacks {
 			 size_t tspec_ielen);
 	u8* (*add_bmle)(void *ctx, u8 *bmle_ie, u8 type, void *ml_data);
 	size_t (*add_bmle_len)(void *ctx, u8 type, void *ml_data);
+	int (*frame_fwd_decision)(void *ctx, u16 auth_alg);
+	int (*pull_pmk_r1)(void *ctx, const u8 *sta_addr,
+			   u8 *pmk_r1_name, u8 *pmk_r1,
+			   size_t *pmk_r1_len, int *pairwise,
+			   int *session_timeout,
+			   const u8 **identity, size_t *identity_len,
+			   const u8 **radius_cui, size_t *radius_cui_len);
+#ifdef CONFIG_QCN_EXTN
+	void (*test_plugin_store_pmk_r1)(void *ctx, const u8 *spa,
+					 const u8 *pmk_r1, size_t pmk_r1_len,
+					 const u8 *pmk_r1_name, int pairwise,
+					 int expires_in, int session_timeout,
+					 const u8 *identity, size_t identity_len,
+					 const u8 *radius_cui, size_t radius_cui_len);
+#endif /* CONFIG_QCN_EXTN */
+	int (*notify_remote_auth)(void *ctx, const u8 *sta_addr,
+				  const u8 *ies, u16 ies_len,
+				  u16 status_code, bool is_ml);
 #endif /* CONFIG_IEEE80211R_AP */
+	int (*pull_pmk)(void *ctx, const u8 *sta_addr,
+			u8 *pmk, size_t *pmk_len, u8 *pmkid,
+			int *session_timeout);
 #ifdef CONFIG_MESH
 	int (*start_ampe)(void *ctx, const u8 *sta_addr);
 #endif /* CONFIG_MESH */
@@ -487,7 +517,8 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 		    const u8 *mdie, size_t mdie_len,
 		    const u8 *owe_dh, size_t owe_dh_len,
 		    struct wpa_state_machine *assoc_sm,
-		    bool is_ml, bool external_pmk_cache);
+		    bool is_ml, bool external_pmk_cache,
+		    const struct security_profile_entry_ap *security_profile);
 int wpa_validate_osen(struct wpa_authenticator *wpa_auth,
 		      struct wpa_state_machine *sm,
 		      const u8 *osen_ie, size_t osen_ie_len);
@@ -541,7 +572,7 @@ int wpa_auth_set_pmk_full(struct wpa_state_machine *sm,
 			  u8 *pmk, u8 *pmkid, int pmk_len,
 			  int session_timeout,
 			  struct eapol_state_machine *eapol);
-
+void wpa_auth_set_sm_ptk_done(struct wpa_state_machine *sm);
 int wpa_auth_get_gtk(struct wpa_authenticator *wpa_auth,
 		     int *gtk_index,
 		     u8 *gtk, size_t *gtk_len);
@@ -612,6 +643,10 @@ void wpa_auth_eapol_key_tx_status(struct wpa_authenticator *wpa_auth,
 
 u8 wpa_sta_sm_get_num_mld_links(struct wpa_state_machine *sm);
 
+#ifdef CONFIG_IEEE80211BN
+void wpa_auth_set_smd_info(struct wpa_state_machine *sm, struct sta_info *sta);
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef CONFIG_IEEE80211R_AP
 u8 * wpa_sm_write_assoc_resp_ies(struct wpa_state_machine *sm, u8 *pos,
 				 size_t max_len, int auth_alg,
@@ -644,6 +679,8 @@ int wpa_ft_fetch_pmk_r1(struct wpa_authenticator *wpa_auth,
 			const u8 **radius_cui, size_t *radius_cui_len,
 			int *session_timeout);
 void wpa_ft_push_roam_notification(struct wpa_authenticator *wpa_auth, const u8 *addr);
+void wpa_ft_clear_pmk_r1(struct wpa_authenticator *wpa_auth, const u8 *spa,
+			 const u8 *pmk_r1_name);
 
 #endif /* CONFIG_IEEE80211R_AP */
 

@@ -55,6 +55,9 @@ static void hostapd_config_free_vlan(struct hostapd_bss_config *bss)
 void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 {
 	dl_list_init(&bss->anqp_elem);
+#if CONFIG_MBO
+	bss->oce_tx_power = -128; /* -128 = not set, use regulatory max */
+#endif
 
 	bss->logger_syslog_level = HOSTAPD_LEVEL_INFO;
 	bss->logger_stdout_level = HOSTAPD_LEVEL_INFO;
@@ -237,12 +240,14 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->eht_phy_capab.mu_beamformer = 1;
 
 	bss->single_link_emlsr = false;
+	bss->mld_link_id = -1; /* -1 = auto-allocate */
 #endif /* CONFIG_IEEE80211BE */
 	bss->ht_mcs_nss_set = 0;
 	bss->group_control_frame_cipher = WPA_CIPHER_BIP_GMAC_256;
 	/* Default: do not gate EAPOL M3 (can be enabled per-BSS config) */
 	bss->externally_triggered_m3 = 0;
 	bss->plugin_eap_offload = 0;
+	bss->plugin_eapol_key_offload = 0;
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 	/* Default: external plugin disabled (can be enabled per-BSS config) */
@@ -255,6 +260,10 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 
 	/* This max size includes wmm and user configured vendor elements */
 	bss->available_vendor_elem_size = MBSSID_NON_TX_DEF_VENDOR_ELEM_SIZE;
+
+#ifdef CONFIG_TESTING_OPTIONS
+	bss->rsnxe_capab_mask = ~0ULL;
+#endif /* CONFIG_TESTING_OPTIONS */
 }
 
 #ifdef CONFIG_IEEE80211BE
@@ -355,6 +364,11 @@ struct hostapd_config * hostapd_config_defaults(void)
 	hostapd_config_defaults_bss_extn(bss);
 #endif
 
+	/* Security IE defaults */
+	bss->security_profiles = NULL;
+	bss->security_profile_ext_key_id = 0;
+	bss->security_profile_ocvc = 0;
+
 	conf->num_bss = 1;
 
 	conf->beacon_int = 100;
@@ -394,6 +408,7 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->acs_num_scans = 5;
 	conf->acs_scan_retry_interval = 5;
 	conf->acs_scan_retry_max_count = 25;
+	conf->acs_enable_bw_downgrade = 0;
 #endif /* CONFIG_ACS */
 
 #ifdef CONFIG_IEEE80211AX
@@ -415,6 +430,7 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->he_6ghz_tx_ant_pat = 1;
 	conf->discard_6g_awgn_event = 0;
 	conf->he_6ghz_reg_pwr_type = HE_REG_INFO_6GHZ_AP_TYPE_VLP;
+	conf->he_6ghz_min_rate = 6;
 	conf->enable_best_power_mode = 1;
 	conf->puncture_strict_6ghz = 0;
 	conf->punc_eirp_thres_6ghz = CHAN_MIN_TX_POWER;
@@ -997,7 +1013,9 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 	os_free(conf->eap_req_id_text);
 	os_free(conf->erp_domain);
 	os_free(conf->accept_mac);
+	os_free(conf->accept_mac_masked);
 	os_free(conf->deny_mac);
+	os_free(conf->deny_mac_masked);
 	hostapd_config_free_acl_timed_list(conf);
 	os_free(conf->nas_identifier);
 	if (conf->radius) {
@@ -1164,6 +1182,8 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 	os_free(conf->pasn_groups);
 #endif /* CONFIG_PASN */
 
+	os_free(conf->security_profiles);
+
 	wpabuf_clear_free(conf->sae_pw_id_key);
 
 	os_free(conf);
@@ -1200,19 +1220,16 @@ void hostapd_config_free(struct hostapd_config *conf)
 	os_free(conf);
 }
 
-
 /**
  * hostapd_maclist_found_with_mask - Find a MAC address using mask-aware search
- * @list: MAC address list
+ * @list: Masked MAC address list (all entries have non-trivial masks)
  * @num_entries: Number of addresses in the list
  * @addr: Address to search for
  * @vlan_id: Buffer for returning VLAN ID or %NULL if not needed
  * Returns: 1 if address is in the list or 0 if not.
  *
- * Performs linear search with support for MAC address masking.
- * For each entry, applies the mask and compares:
- * - Exact match when mask is ff:ff:ff:ff:ff:ff
- * - Masked match when mask has some bits cleared
+ * Performs O(n) linear search applying each entry's mask before comparing.
+ * This function is only called for the masked list.
  */
 static int hostapd_maclist_found_with_mask(struct mac_acl_entry *list,
 					   int num_entries, const u8 *addr,
@@ -1222,45 +1239,27 @@ static int hostapd_maclist_found_with_mask(struct mac_acl_entry *list,
 	bool match;
 	u8 addr_masked;
 	u8 list_masked;
-	static const u8 exact_mask[ETH_ALEN] =
-		{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
 	for (i = 0; i < num_entries; i++) {
-		/* Check if this entry uses exact match (all-ones mask) */
-		if (os_memcmp(list[i].mask, exact_mask, ETH_ALEN) == 0) {
-			/* Exact match - compare all bytes */
-			if (os_memcmp(list[i].addr, addr, ETH_ALEN) == 0) {
-				wpa_printf(MSG_DEBUG, "ACL: MATCH FOUND (exact) - " MACSTR,
-					   MAC2STR(addr));
-				if (vlan_id)
-					*vlan_id = list[i].vlan_id;
-				return 1;
+		/* Apply mask and compare byte-by-byte */
+		match = true;
+		for (j = 0; j < ETH_ALEN; j++) {
+			addr_masked = addr[j] & list[i].mask[j];
+			list_masked = list[i].addr[j] & list[i].mask[j];
+			if (addr_masked != list_masked) {
+				match = false;
+				break;
 			}
-		} else {
-			/* Masked match - apply mask and compare */
-			match = true;
-			for (j = 0; j < ETH_ALEN; j++) {
-				addr_masked = addr[j] & list[i].mask[j];
-				list_masked = list[i].addr[j] & list[i].mask[j];
-				if (addr_masked != list_masked) {
-					wpa_printf(MSG_DEBUG,
-						   "ACL: Byte %d mismatch: addr=0x%02x & mask=0x%02x = 0x%02x, "
-						   "list=0x%02x & mask=0x%02x = 0x%02x",
-						   j, addr[j], list[i].mask[j], addr_masked,
-						   list[i].addr[j], list[i].mask[j], list_masked);
-					match = false;
-					break;
-				}
-			}
-			if (match) {
-				wpa_printf(MSG_DEBUG, "ACL: MATCH FOUND (masked) - " MACSTR
-					   " matches " MACSTR " with mask " MACSTR,
-					   MAC2STR(addr), MAC2STR(list[i].addr),
-					   MAC2STR(list[i].mask));
-				if (vlan_id)
-					*vlan_id = list[i].vlan_id;
-				return 1;
-			}
+		}
+		if (match) {
+			wpa_printf(MSG_DEBUG,
+				   "ACL: MATCH FOUND (masked) - " MACSTR
+				   " matches " MACSTR " with mask " MACSTR,
+				   MAC2STR(addr), MAC2STR(list[i].addr),
+				   MAC2STR(list[i].mask));
+			if (vlan_id)
+				*vlan_id = list[i].vlan_id;
+			return 1;
 		}
 	}
 
@@ -1268,22 +1267,18 @@ static int hostapd_maclist_found_with_mask(struct mac_acl_entry *list,
 	return 0;
 }
 
-
 /**
- * hostapd_maclist_found_binary - Find a MAC address using binary search
- * @list: MAC address list (must be sorted)
+ * hostapd_maclist_found - Find a MAC address from a list
+ * @list: MAC address list
  * @num_entries: Number of addresses in the list
  * @addr: Address to search for
  * @vlan_id: Buffer for returning VLAN ID or %NULL if not needed
  * Returns: 1 if address is in the list or 0 if not.
  *
- * Performs binary search for exact MAC address match.
- * This is the original implementation - fast O(log n) search.
- * Should only be used when all entries have exact masks.
+ * Perform a binary search for given MAC address from a pre-sorted list.
  */
-static int hostapd_maclist_found_binary(struct mac_acl_entry *list,
-					int num_entries, const u8 *addr,
-					struct vlan_description *vlan_id)
+int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
+			  const u8 *addr, struct vlan_description *vlan_id)
 {
 	int start, end, middle, res;
 
@@ -1298,7 +1293,6 @@ static int hostapd_maclist_found_binary(struct mac_acl_entry *list,
 				*vlan_id = list[middle].vlan_id;
 			return 1;
 		}
-
 		if (res < 0)
 			start = middle + 1;
 		else
@@ -1310,49 +1304,42 @@ static int hostapd_maclist_found_binary(struct mac_acl_entry *list,
 
 
 /**
- * hostapd_maclist_found - Find a MAC address from a list
- * @list: MAC address list
- * @num_entries: Number of addresses in the list
- * @addr: Address to search for
- * @vlan_id: Buffer for returning VLAN ID or %NULL if not needed
- * Returns: 1 if address is in the list or 0 if not.
+ * hostapd_acl_maclist_found - Search both exact and masked accept/deny lists
+ * @conf: BSS configuration containing the accept/deny MAC ACL lists
+ * @accept: true  = search accept_mac (exact) + accept_mac_masked (masked)
+ *          false = search deny_mac   (exact) + deny_mac_masked   (masked)
+ * @addr: MAC address to search for
+ * @vlan_id: Buffer for returning VLAN ID, or %NULL if not needed
+ * Returns: 1 if the address is found in either list, 0 if not found.
  *
- * Intelligently selects the optimal search algorithm:
- * - Binary search O(log n) when all entries have exact masks
- * - Linear search O(n) when any entry has a custom mask
- * This provides optimal performance for existing configurations
- * while supporting the new masking feature.
  */
-int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
-			  const u8 *addr, struct vlan_description *vlan_id)
+int hostapd_acl_maclist_found(struct hostapd_bss_config *conf, bool accept,
+			      const u8 *addr, struct vlan_description *vlan_id)
 {
-	int i;
-	bool has_masked_entries = false;
-	static const u8 exact_mask[ETH_ALEN] =
-		{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+	struct mac_acl_entry *exact, *masked;
+	int num_exact, num_masked;
 
-	if (num_entries == 0)
-		return 0;
-
-	/* Check if list contains any masked entries */
-	for (i = 0; i < num_entries; i++) {
-		if (os_memcmp(list[i].mask, exact_mask, ETH_ALEN) != 0) {
-			has_masked_entries = true;
-			wpa_printf(MSG_DEBUG, "ACL: Masked entries detected at index %d", i);
-			break;
-		}
-	}
-
-	/* Delegate to appropriate search algorithm */
-	if (has_masked_entries) {
-		return hostapd_maclist_found_with_mask(list, num_entries, addr,
-						       vlan_id);
+	if (accept) {
+		exact      = conf->accept_mac;
+		num_exact  = conf->num_accept_mac;
+		masked     = conf->accept_mac_masked;
+		num_masked = conf->num_accept_mac_masked;
 	} else {
-		return hostapd_maclist_found_binary(list, num_entries, addr,
-						    vlan_id);
+		exact      = conf->deny_mac;
+		num_exact  = conf->num_deny_mac;
+		masked     = conf->deny_mac_masked;
+		num_masked = conf->num_deny_mac_masked;
 	}
-}
 
+	if (hostapd_maclist_found(exact, num_exact, addr, vlan_id))
+		return 1;
+
+	if (num_masked > 0 &&
+	    hostapd_maclist_found_with_mask(masked, num_masked, addr, vlan_id))
+		return 1;
+
+	return 0;
+}
 
 int hostapd_vlan_valid(struct hostapd_vlan *vlan,
 		       struct vlan_description *vlan_desc)
@@ -1706,6 +1693,12 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 			   "Cannot enable mld_ap when IEEE 802.11be is disabled");
 		return -1;
 	}
+	/* Validate mld_addr is configured when use_driver_vendor_addr is enabled */
+	if (bss->mld_ap && conf->use_driver_vendor_addr &&
+			is_zero_ether_addr(bss->mld_addr)) {
+		wpa_printf(MSG_ERROR, "MLD: mld_addr must be configured when use_driver_vendor_addr is enabled");
+		return -1;
+	}
 #endif /* CONFIG_IEEE80211BE */
 
 #if defined(CONFIG_IEEE80211BE) && defined(CONFIG_QCN_EXTN)
@@ -1872,10 +1865,18 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (full_config && conf->ieee80211bn && !conf->ieee80211be) {
-		wpa_printf(MSG_ERROR,
-			   "Cannot set ieee80211bn without ieee80211be");
-		return -1;
+	if (full_config && conf->ieee80211bn && !bss->disable_11bn) {
+		if (!conf->ieee80211be) {
+			wpa_printf(MSG_ERROR,
+				   "Cannot set ieee80211bn without ieee80211be");
+			return -1;
+		}
+
+		if (!bss->mld_ap) {
+			wpa_printf(MSG_ERROR,
+				   "Cannot set ieee80211bn without mld_ap");
+			return -1;
+		}
 	}
 #endif
 
@@ -2046,6 +2047,13 @@ int hostapd_config_check(struct hostapd_config *conf, int full_config)
 		return -1;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (full_config && !hostapd_config_check_repurpose_width_extn(conf)) {
+		wpa_printf(MSG_ERROR, "Wrong repurpose width configurations");
+		return -1;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	for (i = 0; i < conf->num_bss; i++) {
 		if (hostapd_config_check_bss(conf->bss[i], conf, full_config))
 			return -1;
@@ -2206,7 +2214,6 @@ int hostapd_acl_comp(const void *a, const void *b)
 	return os_memcmp(aa->addr, bb->addr, sizeof(macaddr));
 }
 
-
 int hostapd_add_acl_maclist(struct mac_acl_entry **acl, int *num,
 			    int vlan_id, const u8 *addr)
 {
@@ -2230,7 +2237,6 @@ int hostapd_add_acl_maclist(struct mac_acl_entry **acl, int *num,
 	return 0;
 }
 
-
 void hostapd_remove_acl_mac(struct mac_acl_entry **acl, int *num,
 			    const u8 *addr)
 {
@@ -2246,6 +2252,126 @@ void hostapd_remove_acl_mac(struct mac_acl_entry **acl, int *num,
 	}
 }
 
+int hostapd_add_acl_maclist_masked(struct mac_acl_entry **acl, int *num,
+				   int vlan_id, const u8 *addr, const u8 *mask)
+{
+	struct mac_acl_entry *newacl;
+
+	newacl = os_realloc_array(*acl, *num + 1, sizeof(**acl));
+	if (!newacl) {
+		wpa_printf(MSG_ERROR, "MAC masked list reallocation failed");
+		return -1;
+	}
+
+	*acl = newacl;
+	os_memcpy((*acl)[*num].addr, addr, ETH_ALEN);
+	os_memcpy((*acl)[*num].mask, mask, ETH_ALEN);
+	os_memset(&(*acl)[*num].vlan_id, 0, sizeof((*acl)[*num].vlan_id));
+	(*acl)[*num].vlan_id.untagged = vlan_id;
+	(*acl)[*num].vlan_id.notempty = !!vlan_id;
+	(*num)++;
+
+	return 0;
+}
+
+/**
+ * hostapd_remove_all_masked_entries_for_addr - Remove all masked ACL entries
+ *     matching an address
+ * @acl: pointer to the masked MAC list
+ * @num: pointer to the entry count
+ * @addr: MAC address to match
+ *
+ * Removes every masked entry whose address field equals @addr, regardless of
+ * the mask value.  Used when no specific mask is given (i.e. "remove all rules
+ * for this address").
+ */
+void hostapd_remove_all_masked_entries_for_addr(struct mac_acl_entry **acl,
+						int *num, const u8 *addr)
+{
+	int i = 0;
+
+	while (i < *num) {
+		if (ether_addr_equal((*acl)[i].addr, addr)) {
+			os_remove_in_array(*acl, *num, sizeof(**acl), i);
+			(*num)--;
+		} else {
+			i++;
+		}
+	}
+}
+
+/**
+ * hostapd_remove_acl_mac_masked_pair - Remove a specific masked ACL entry
+ * @acl: pointer to the masked MAC list
+ * @num: pointer to the entry count
+ * @addr: MAC address to match
+ * @mask: mask to match (both addr AND mask must match)
+ *
+ * Removes the masked entry whose addr+mask pair exactly matches the given
+ * values.  Since the add path prevents duplicate addr+mask pairs, at most one
+ * entry will be removed.
+ */
+void hostapd_remove_acl_mac_masked_pair(struct mac_acl_entry **acl, int *num,
+					const u8 *addr, const u8 *mask)
+{
+	int i = 0;
+
+	while (i < *num) {
+		if (ether_addr_equal((*acl)[i].addr, addr) &&
+		    os_memcmp((*acl)[i].mask, mask, ETH_ALEN) == 0) {
+			os_remove_in_array(*acl, *num, sizeof(**acl), i);
+			(*num)--;
+			break; /* addr+mask pairs are unique; stop after first match */
+		} else {
+			i++;
+		}
+	}
+}
+
+int hostapd_acl_add_entry(struct mac_acl_entry **exact_acl, int *num_exact,
+			  struct mac_acl_entry **masked_acl, int *num_masked,
+			  int vlan_id, const u8 *addr, const u8 *mask)
+{
+	static const u8 all_ones[ETH_ALEN] =
+		{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+
+	if (os_memcmp(mask, all_ones, ETH_ALEN) == 0) {
+		/* Exact-match entry: add to sorted list */
+		if (hostapd_add_acl_maclist(exact_acl, num_exact,
+					    vlan_id, addr) < 0)
+			return -1;
+		/* Re-sort to maintain binary-search invariant */
+		qsort(*exact_acl, *num_exact, sizeof(**exact_acl),
+		      hostapd_acl_comp);
+	} else {
+		/* Masked entry: append to masked list */
+		if (hostapd_add_acl_maclist_masked(masked_acl, num_masked,
+						   vlan_id, addr, mask) < 0)
+			return -1;
+	}
+
+	return 0;
+}
+
+void hostapd_acl_del_entry(struct mac_acl_entry **exact_acl, int *num_exact,
+			   struct mac_acl_entry **masked_acl, int *num_masked,
+			   const u8 *addr)
+{
+	hostapd_remove_acl_mac(exact_acl, num_exact, addr);
+	hostapd_remove_all_masked_entries_for_addr(masked_acl, num_masked, addr);
+}
+
+void hostapd_acl_clear(struct mac_acl_entry **exact_acl, int *num_exact,
+		       struct mac_acl_entry **masked_acl, int *num_masked)
+{
+	os_free(*exact_acl);
+	*exact_acl = NULL;
+	*num_exact = 0;
+
+	os_free(*masked_acl);
+	*masked_acl = NULL;
+	*num_masked = 0;
+}
 
 void hostapd_config_free_acl_timed_list(struct hostapd_bss_config *conf)
 {

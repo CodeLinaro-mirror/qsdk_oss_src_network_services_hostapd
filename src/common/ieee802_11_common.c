@@ -325,7 +325,8 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
 		elems->assoc_delay_info = pos;
 		break;
 	case WLAN_EID_EXT_FILS_REQ_PARAMS:
-		if (elen < 3)
+		/* Minimum 2 bytes: FILS Information + Max Channel Time */
+		if (elen < 2)
 			break;
 		elems->fils_req_params = pos;
 		elems->fils_req_params_len = elen;
@@ -369,10 +370,10 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
 		elems->fils_pk = pos;
 		elems->fils_pk_len = elen;
 		break;
-	case WLAN_EID_EXT_FILS_NONCE:
-		if (elen != FILS_NONCE_LEN)
+	case WLAN_EID_EXT_NONCE:
+		if (elen != NONCE_LEN)
 			break;
-		elems->fils_nonce = pos;
+		elems->nonce = pos;
 		break;
 	case WLAN_EID_EXT_OWE_DH_PARAM:
 		if (elen < 2)
@@ -459,6 +460,31 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
 	case WLAN_EID_EXT_CIP_CAPAB:
 		elems->cip_pad = pos;
 		elems->cip_pad_len = elen;
+		break;
+	case WLAN_EID_EXT_SECURITY_PROFILE:
+		/* 802.11bn D1.4, 9.4.2.364: Security Profile element.
+		 * Minimum: EID_EXT(1) + ReducedRSNCaps(1) + SecProfInd(1) = 3
+		 * bytes already consumed as ext_id; elen covers the rest
+		 * starting from Reduced RSN Capabilities. */
+		if (elen < 2)
+			break;
+		elems->security_profile_ie = pos - 1; /* include ext_id byte */
+		elems->security_profile_ie_len = elen + 1;
+	case WLAN_EID_EXT_SMD:
+		if (elen < (ETH_ALEN + 1 + sizeof(u8))) {
+			if (show_errors) {
+				wpa_printf(MSG_DEBUG,
+					   "Too short SMD element (elen=%u)",
+					   (unsigned int) elen);
+			}
+			break;
+		}
+		elems->smd = pos;
+		elems->smd_len = elen;
+		break;
+	case WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS:
+		elems->smd_bsstransparams = pos;
+		elems->smd_bsstransparams_len = elen;
 		break;
 	default:
 		if (show_errors) {
@@ -968,8 +994,8 @@ void ieee802_11_elems_clear_ext_ids(struct ieee802_11_elems *elems,
 			elems->fils_pk = NULL;
 			elems->fils_pk_len = 0;
 			break;
-		case WLAN_EID_EXT_FILS_NONCE:
-			elems->fils_nonce = NULL;
+		case WLAN_EID_EXT_NONCE:
+			elems->nonce = NULL;
 			break;
 		case WLAN_EID_EXT_OWE_DH_PARAM:
 			elems->owe_dh = NULL;
@@ -1030,6 +1056,10 @@ void ieee802_11_elems_clear_ext_ids(struct ieee802_11_elems *elems,
 		case WLAN_EID_EXT_UHR_OPERATION:
 			elems->uhr_operation = NULL;
 			elems->uhr_operation_len = 0;
+			break;
+		case WLAN_EID_EXT_SECURITY_PROFILE:
+			elems->security_profile_ie = NULL;
+			elems->security_profile_ie_len = 0;
 			break;
 		}
 	}
@@ -1132,7 +1162,7 @@ ParseRes ieee802_11_parse_link_assoc_req(struct ieee802_11_elems *elems,
 					   "MLD: missing capability info");
 			goto out;
 		}
-
+		elems->per_link_sta_capability = WPA_GET_LE16(pos);
 		pos += 2;
 		sub_elem_len -= 2;
 
@@ -3384,6 +3414,71 @@ bool is_same_band(int freq1, int freq2)
 	return false;
 }
 
+u8 *wpas_build_smd_ie(const u8 *smd_id, u8 ptk_mode, u8 capabilities,
+		      u16 timeout, size_t *ie_len)
+{
+	u8 smd_capabilities;
+	u8 *pos;
+	u8 *ie;
+
+	if (!smd_id) {
+		*ie_len = 0;
+		return NULL;
+	}
+
+	ie = os_malloc(SMD_IE_LEN);
+	if (!ie)
+		return NULL;
+	*ie_len = SMD_IE_LEN;
+
+	pos = ie;
+	*pos++ = WLAN_EID_EXTENSION;
+	*pos++ = SMD_IE_LEN - 2;
+	*pos++ = WLAN_EID_EXT_SMD;
+
+	os_memcpy(pos, smd_id, ETH_ALEN);
+	pos += ETH_ALEN;
+
+	smd_capabilities = capabilities & 0x1F;
+	if (ptk_mode)
+		smd_capabilities |= BIT(5);
+
+	*pos++ = smd_capabilities;
+
+	*pos++ = (u8)timeout;
+
+	return ie;
+}
+
+int wpas_parse_smd_ie(const u8 *ie, size_t ie_len, u8 *smd_id,
+		      u8 *ptk_mode, u8 *capabilities, u16 *timeout)
+{
+	const u8 *pos;
+
+	if (!ie || ie_len < SMD_IE_LEN)
+		return -EINVAL;
+
+	if (ie[0] != WLAN_EID_EXTENSION || ie[1] != SMD_IE_LEN - 2 ||
+	    ie[2] != WLAN_EID_EXT_SMD)
+		return -EINVAL;
+
+	pos = ie + 3;
+
+	if (smd_id)
+		os_memcpy(smd_id, pos, ETH_ALEN);
+	pos += ETH_ALEN;
+
+	if (capabilities)
+		*capabilities = *pos & 0x1F;
+	if (ptk_mode)
+		*ptk_mode = (*pos & BIT(5)) ? 1 : 0;
+	pos++;
+
+	if (timeout)
+		*timeout = *pos;
+
+	return 0;
+}
 
 int ieee802_11_parse_candidate_list(const char *pos, void *non_pref_chan,
 				    u8 *nei_rep, size_t nei_rep_len)

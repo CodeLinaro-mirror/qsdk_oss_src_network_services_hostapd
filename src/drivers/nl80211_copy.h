@@ -950,6 +950,10 @@
  *	after %NL80211_ATTR_CH_SWITCH_COUNT TBTT's.  The userspace may
  *	decide to react to this indication by requesting other
  *	interfaces to change channel as well.
+ *	%NL80211_ATTR_MAX_CH_SWITCH_TIME included in this command indicates the
+ *	AP's Max Channel Switch Time. Userspace can use this information to
+ *	decide whether to remain connected or disconnect before the AP moves to
+ *	the new channel.
  *
  * @NL80211_CMD_START_P2P_DEVICE: Start the given P2P Device, identified by
  *	its %NL80211_ATTR_WDEV identifier. It must have been created with
@@ -1634,6 +1638,8 @@ enum nl80211_commands {
 	NL80211_CMD_QOS_MGMT,
 
 	NL80211_CMD_AP_POWER_SAVE,
+
+	NL80211_CMD_TRIGGER_SMD_DISCOVERY,
 
 	/* add new commands above here */
 
@@ -3016,6 +3022,23 @@ enum nl80211_commands {
  * @NL80211_ATTR_BITRATE: This attribute is used with %NL80211_CMD_FRAME to
  * 	send legacy bitrate information of management packets to userspace.
  *
+ * @NL80211_ATTR_BEACON_TX_SYNC_SUPPORT: Flag attribute indicating that HW
+ *	will transmit beacons for all bands at the same time (burst mode) if
+ *	the beacon intervals are the same.
+ *
+ * @NL80211_ATTR_MAX_CH_SWITCH_TIME: u32 attribute carrying the Switch Time
+ *	field from the MCST (Max Channel Switch Time) element, indicating the
+ *	time delta between the time the last beacon is transmitted by the AP in
+ *	the current channel and the expected time of the first beacon
+ *	transmitted by the AP in the new channel, expressed in TUs.
+ * @NL80211_ATTR_SMD_SUPPORT: Flag attribute to indicate driver supports SMD
+ *	(Seamless Mobility Domain) feature.
+ *
+ * @NL80211_ATTR_SMD_STA_DL_DATA_FWD: Flag attribute to indicate driver supports
+ * 	SMD DL DATA forward feature.
+ *
+ * @NL80211_ATTR_STA_DFS_EN: whether STA_DFS_EN is enabled (u8, 0 or 1)
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3640,6 +3663,24 @@ enum nl80211_attrs {
 	NL80211_ATTR_DCVS,
 	NL80211_ATTR_DPS_ASSIST,
 	NL80211_ATTR_HE_MUEDCA_MODE,
+
+	NL80211_ATTR_LOW_POWER_20MHZ,
+	NL80211_ATTR_BEACON_TX_SYNC_SUPPORT,
+
+	NL80211_ATTR_MAX_CH_SWITCH_TIME,
+
+	NL80211_ATTR_STA_DFS_EN,
+
+	NL80211_ATTR_SMD_ENABLED,
+	NL80211_ATTR_SMD_PTK_MODE,
+	NL80211_ATTR_SMD_KDK,
+	NL80211_ATTR_DH_PARAMS,
+	NL80211_ATTR_SMD_IDENTIFIER,
+	NL80211_ATTR_SMD_DISCOVERY_TARGETS,
+	NL80211_ATTR_SMD_SUPPORT,
+	NL80211_ATTR_SMD_AP,
+	NL80211_ATTR_SMD_PARAMS,
+	NL80211_ATTR_SMD_STA_DL_DATA_FWD,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -4601,6 +4642,14 @@ enum nl80211_wmm_rule {
  *	very low power (VLP) AP, despite being NO_IR.
  * @NL80211_FREQUENCY_ATTR_ALLOW_20MHZ_ACTIVITY: This channel can be active in
  *	20 MHz bandwidth, despite being NO_IR.
+ * @NL80211_FREQUENCY_ATTR_NO_UHR: UHR operation is not allowed on this channel
+ *	in current regulatory domain.
+ * @NL80211_FREQUENCY_ATTR_6GHZ_SUPP_PWR_MODES: 6 Ghz power modes supported by
+ *	this channel
+ * @NL80211_FREQUENCY_ATTR_6GHZ_TXPOWERS: Tx powers in each supported power mode
+ * @NL80211_FREQUENCY_ATTR_NOL_HISTORY: This attribute is set for a channel
+ * 	when radar is found on the channel, but unlike NOL,
+ * 	it is never cleared
  * @NL80211_FREQUENCY_ATTR_MAX: highest frequency attribute number
  *	currently defined
  * @__NL80211_FREQUENCY_ATTR_AFTER_LAST: internal use
@@ -4646,6 +4695,11 @@ enum nl80211_frequency_attr {
 	NL80211_FREQUENCY_ATTR_CAN_MONITOR,
 	NL80211_FREQUENCY_ATTR_ALLOW_6GHZ_VLP_AP,
 	NL80211_FREQUENCY_ATTR_ALLOW_20MHZ_ACTIVITY,
+	NL80211_FREQUENCY_ATTR_NO_UHR,
+	/* QSDK-only unapproved attrs are offset by +10 to avoid upstream ID collision */
+	NL80211_FREQUENCY_ATTR_6GHZ_SUPP_PWR_MODES = 52,
+	NL80211_FREQUENCY_ATTR_6GHZ_TXPOWERS = 53,
+	NL80211_FREQUENCY_ATTR_NOL_HISTORY = 54,
 
 	/* keep last */
 	__NL80211_FREQUENCY_ATTR_AFTER_LAST,
@@ -5556,6 +5610,22 @@ enum nl80211_bss {
 	NL80211_BSS_MLD_ADDR,
 	NL80211_BSS_USE_FOR,
 	NL80211_BSS_CANNOT_USE_REASONS,
+
+	NL80211_BSS_SMD_CAPABLE,
+	NL80211_BSS_SMD_DOMAIN_ID,
+	NL80211_BSS_SMD_CAPABILITIES,
+	NL80211_BSS_SMD_TIMEOUT,
+
+	NL80211_BSS_SMD_DL_FORWARDING,
+	NL80211_BSS_SMD_MAX_TARGETS,
+	NL80211_BSS_SMD_TYPE,
+	NL80211_BSS_SMD_SMD_PTK_MODE,
+	NL80211_BSS_SMD_FROM_BEACON,
+
+	NL80211_BSS_RNR_SMD_INFERENCE_PRESENT,
+	NL80211_BSS_RNR_SAME_SMD_BIT,
+	NL80211_BSS_RNR_AP_MLD_ID,
+	NL80211_BSS_RNR_SHORT_SSID,
 
 	/* keep last */
 	__NL80211_BSS_AFTER_LAST,
@@ -6972,6 +7042,13 @@ enum nl80211_feature_flags {
  * @NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD: Driver/device which
  *	supports advertised ttlm in offload mode.
  *
+ * @NL80211_EXT_FEATURE_SMD_SUPPORT_AP: Driver/device which
+ *	supports Seamless Mobility Domain (SMD)
+ *
+ * @NL80211_EXT_FEATURE_SMD_SUPPORT_DL_PKT_FRWRD: Driver/device which
+ *	supports DL Data forward with SMD Capable devices.
+ *
+ *
  * @NUM_NL80211_EXT_FEATURES: number of extended features.
  * @MAX_NL80211_EXT_FEATURES: highest extended feature index.
  */
@@ -7058,6 +7135,8 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD,
 	NL80211_EXT_FEATURE_CONTROL_FRAME_PROTECTION,
 	NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT,
+	NL80211_EXT_FEATURE_SMD_SUPPORT_AP,
+	NL80211_EXT_FEATURE_SMD_SUPPORT_DL_PKT_FRWRD,
 
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,
@@ -8854,6 +8933,62 @@ enum nl80211_qm_attrs {
 	/* keep last */
 	__NL80211_QM_ATTR_LAST,
 	NL80211_QM_ATTR_MAX = __NL80211_QM_ATTR_LAST - 1
+};
+
+enum nl80211_smd_discovery_target_attrs {
+        __NL80211_SMD_DISCOVERY_TARGET_INVALID,
+
+        NL80211_SMD_DISCOVERY_TARGET_SHORT_SSID,
+        NL80211_SMD_DISCOVERY_TARGET_FREQ,
+        NL80211_SMD_DISCOVERY_TARGET_OP_CLASS,
+        NL80211_SMD_DISCOVERY_TARGET_BSSID,
+        NL80211_SMD_DISCOVERY_TARGET_AP_MLD_ID,
+
+        __NL80211_SMD_DISCOVERY_TARGET_AFTER_LAST,
+        NL80211_SMD_DISCOVERY_TARGET_MAX =
+                __NL80211_SMD_DISCOVERY_TARGET_AFTER_LAST - 1
+};
+
+/**
+ * enum nl80211_smd_params_attrs - SMD parameters attributes
+ *
+ * Used with %NL80211_ATTR_SMD_PARAMS nested attribute in
+ * %NL80211_CMD_START_AP to configure SMD (Seamless Multiband Device)
+ * parameters as defined in IEEE 802.11bn.
+ *
+ * @NL80211_SMD_PARAMS_ATTR_UNSPEC: (reserved)
+ *
+ * @NL80211_SMD_PARAMS_ATTR_IDENTIFIER: SMD Identifier, a 6-byte MAC address
+ *     that uniquely identifies the SMD (required).
+ *
+ * @NL80211_SMD_PARAMS_ATTR_TIMEOUT: Timeout value in TU (Time Units, 1 TU = 1024 us).
+ *     This indicates the timeout between the ST preparation response and ST
+ *     execution request. u16 attribute (required).
+ *
+ * @NL80211_SMD_PARAMS_ATTR_DL_DATA_FWD: Flag attribute indicating if DL data
+ *     forwarding from current AP MLD to target AP MLD is supported.
+ *
+ * @NL80211_SMD_PARAMS_ATTR_MAX_PEER_APMLDS: Maximum number of prepared target
+ *     AP MLDs. u8 attribute, valid range 0-7 (required).
+ *
+ * @NL80211_SMD_PARAMS_ATTR_TYPE: SMD Type field. u8 attribute:
+ *     0 = per-AP MLD MAC SAE, 1 = per-SMD MAC SAE (required).
+ *
+ * @NL80211_SMD_PARAMS_ATTR_PTK_MODE: PTK Mode field. u8 attribute:
+ *     0 = Per-SMD PTK, 1 = Per-AP MLD PTK (required).
+ */
+enum nl80211_smd_params_attrs {
+        NL80211_SMD_PARAMS_ATTR_UNSPEC,
+        NL80211_SMD_PARAMS_ATTR_IDENTIFIER,
+        NL80211_SMD_PARAMS_ATTR_TIMEOUT,
+        NL80211_SMD_PARAMS_ATTR_DL_DATA_FWD,
+        NL80211_SMD_PARAMS_ATTR_MAX_PEER_APMLDS,
+        NL80211_SMD_PARAMS_ATTR_TYPE,
+        NL80211_SMD_PARAMS_ATTR_PTK_MODE,
+
+        /* keep last */
+        __NL80211_SMD_PARAMS_ATTR_LAST,
+        NL80211_SMD_PARAMS_ATTR_MAX = __NL80211_SMD_PARAMS_ATTR_LAST - 1
 };
 
 #endif /* __LINUX_NL80211_H */

@@ -1186,6 +1186,13 @@ void ieee802_1x_receive(struct hostapd_data *hapd, const u8 *sa, const u8 *buf,
 	    hdr->type == IEEE802_1X_TYPE_EAPOL_KEY &&
 	    (key->type == EAPOL_KEY_TYPE_WPA ||
 	     key->type == EAPOL_KEY_TYPE_RSN)) {
+#ifdef CONFIG_HOSTAPD_IF
+		if (hapd->conf->plugin_eapol_key_offload) {
+			hostapd_if_eapol_key_rx(hapd, sa, (const u8 *) hdr,
+						sizeof(*hdr) + datalen);
+			return;
+		}
+#endif /* CONFIG_HOSTAPD_IF */
 		wpa_receive(hapd->wpa_auth, sta->wpa_sm, (u8 *) hdr,
 			    sizeof(*hdr) + datalen);
 		return;
@@ -2510,8 +2517,11 @@ static void _ieee802_1x_tx_key(void *ctx, void *sta_ctx)
 static void ieee802_1x_eapol_event(void *ctx, void *sta_ctx,
 				   enum eapol_event type)
 {
-	/* struct hostapd_data *hapd = ctx; */
+	struct hostapd_data *hapd = ctx;
 	struct sta_info *sta = sta_ctx;
+
+	if(hapd->conf->plugin_eapol_key_offload)
+		return;
 
 	switch (type) {
 	case EAPOL_AUTH_SM_CHANGE:
@@ -3089,6 +3099,16 @@ static bool ieee802_1x_finished(struct hostapd_data *hapd,
 	} else {
 		session_timeout = dot11RSNAConfigPMKLifetime;
 	}
+
+#ifdef CONFIG_HOSTAPD_IF
+	{
+		size_t identity_len = 0;
+		const u8 *identity = ieee802_1x_get_identity(sta->eapol_sm, &identity_len);
+
+		hostapd_if_event_dot1x_complete(hapd, sta->addr, identity, identity_len, success);
+	}
+#endif /* CONFIG_HOSTAPD_IF */
+
 	if (success && key && len >= PMK_LEN &&
 	    !sta->hs20_deauth_requested &&
 	    wpa_auth_pmksa_add(sta->wpa_sm, key, len, session_timeout,

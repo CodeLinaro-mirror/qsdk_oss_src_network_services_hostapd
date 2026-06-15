@@ -158,8 +158,60 @@ static void handle_ndisc(void *ctx, const u8 *src_addr, const u8 *buf,
 		break;
 #endif /* CONFIG_HS20 */
 	case NEIGHBOR_ADVERTISEMENT:
+		if (len < ETH_HLEN + sizeof(*msg))
+			break;
+
 		if (hapd->conf->na_mcast_to_ucast)
 			ucast_to_stas(hapd, buf, len);
+		/*
+		 * IPv6 header may not be 32-bit aligned in the buffer, so use
+		 * a local copy to avoid unaligned reads.
+		 */
+		os_memcpy(&saddr, &msg->target_addr, sizeof(saddr));
+
+		/*
+		 * RFC 4861 Section 7.1.2: Validate NA frame - Hop Limit must
+		 * be 255, target must not be unspecified (::) or multicast.
+		 */
+		if (msg->ipv6h.ip6_hlim != 255 ||
+		    (saddr.s6_addr32[0] == 0 && saddr.s6_addr32[1] == 0 &&
+		     saddr.s6_addr32[2] == 0 && saddr.s6_addr32[3] == 0) ||
+		    saddr.s6_addr[0] == 0xff)
+			break;
+
+		/*
+		 * Use Ethernet source MAC (src_addr) to identify the
+		 * STA. NA frames carry a Target Link-Layer Address
+		 * option (type 2), not a Source Link-Layer Address
+		 * option (type 1) as NS frames do.
+		 */
+		sta = ap_get_sta(hapd, src_addr);
+		if (!sta)
+			break;
+
+		if (sta_has_ip6addr(sta, &saddr))
+			break;
+
+		if (inet_ntop(AF_INET6, &saddr, addrtxt,
+			      sizeof(addrtxt)) == NULL)
+			addrtxt[0] = '\0';
+		wpa_printf(MSG_DEBUG,
+			   "ndisc_snoop: Learned new IPv6 address %s for "
+			   MACSTR " via NA", addrtxt,
+			   MAC2STR(sta->addr));
+		hostapd_drv_br_delete_ip_neigh(hapd, 6, (u8 *) &saddr);
+		res = hostapd_drv_br_add_ip_neigh(hapd, 6,
+						  (u8 *) &saddr,
+						  128, sta->addr);
+		if (res) {
+			wpa_printf(MSG_ERROR,
+				   "ndisc_snoop: Adding ip neigh failed: %d",
+				   res);
+			break;
+		}
+
+		if (sta_ip6addr_add(sta, &saddr))
+			break;
 		break;
 	default:
 		break;

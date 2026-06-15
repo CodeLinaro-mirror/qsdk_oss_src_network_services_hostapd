@@ -33,11 +33,13 @@ void hostapd_ucode_add_bss(struct hostapd_data *hapd);
 void hostapd_ucode_free_bss(struct hostapd_data *hapd);
 void hostapd_ucode_reload_bss(struct hostapd_data *hapd);
 bool hostapd_ucode_update_radio_mask(char *ifname, u8 hw_idx);
+void hostapd_ucode_update_interfaces();
 
 #ifdef CONFIG_QCN_EXTN
 void hostapd_ucode_chsw_result_ev_notify(struct hostapd_data *hapd,
 					 int freq, int ret);
 void hostapd_ucode_notify_acs_completed(struct hostapd_iface *iface, int success);
+void hostapd_ucode_notify_acs_start(struct hostapd_iface *iface);
 int hostapd_ucode_get_sta_channel_per_band(struct hostapd_iface *iface,
 					   int band,
 					   struct hostapd_freq_params *freq);
@@ -76,6 +78,9 @@ static inline bool hostapd_ucode_update_radio_mask(char *ifname, u8 hw_idx)
 {
 	return true;
 }
+static inline void hostapd_ucode_update_interfaces()
+{
+}
 #ifdef CONFIG_QCN_EXTN
 static inline void
 hostapd_ucode_chsw_result_ev_notify(struct hostapd_data *hapd,
@@ -84,6 +89,10 @@ hostapd_ucode_chsw_result_ev_notify(struct hostapd_data *hapd,
 }
 static inline void
 hostapd_ucode_notify_acs_completed(struct hostapd_iface *iface, int success)
+{
+}
+static inline void
+hostapd_ucode_notify_acs_start(struct hostapd_iface *iface)
 {
 }
 static inline int

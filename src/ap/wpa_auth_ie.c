@@ -517,6 +517,9 @@ int wpa_write_rsnxe(struct wpa_auth_config *conf, u8 *buf, size_t len)
 	size_t flen;
 
 	capab = rsnxe_capab(conf, conf->wpa_key_mgmt);
+#ifdef CONFIG_TESTING_OPTIONS
+	capab &= conf->rsnxe_capab_mask;
+#endif /* CONFIG_TESTING_OPTIONS */
 
 	if (!capab)
 		return 0; /* no supported extended RSN capabilities */
@@ -819,6 +822,39 @@ static int wpa_auth_pmksa_iter(struct wpa_authenticator *a, void *ctx)
 
 #endif /* CONFIG_IEEE80211BE */
 
+static void wpa_pull_pmk(struct wpa_state_machine *sm,
+			 struct wpa_authenticator *wpa_auth,
+			 int num_pmkid_in_rsnie, const u8 **pmkid)
+{
+	u8 pulled_pmk[PMK_LEN_MAX];
+	size_t pulled_pmk_len = 0;
+	u8 pulled_pmkid[PMKID_LEN];
+	int session_timeout = 0;
+
+	if (sm->pmksa || !num_pmkid_in_rsnie)
+		return;
+
+	if (!wpa_auth->cb->pull_pmk)
+	       return;
+
+	if (wpa_auth->cb->pull_pmk(wpa_auth->cb_ctx, sm->addr, pulled_pmk,
+				   &pulled_pmk_len, pulled_pmkid,
+				   &session_timeout))
+		return;
+
+	wpa_printf(MSG_DEBUG, "Found PMK from hostapd-if cache\n");
+	/*
+	 * Copy the pulled PMK to sm->pmksa by adding it to
+	 * the PMKSA cache
+	 */
+	sm->pmksa = pmksa_cache_auth_add(wpa_auth->pmksa, pulled_pmk,
+					 pulled_pmk_len, pulled_pmkid, NULL, 0,
+					 wpa_auth->addr, sm->addr,
+					 session_timeout, NULL,
+					 sm->wpa_key_mgmt);
+	if (sm->pmksa)
+		*pmkid = sm->pmksa->pmkid;
+}
 
 enum wpa_validate_result
 wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
@@ -828,7 +864,8 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 		    const u8 *mdie, size_t mdie_len,
 		    const u8 *owe_dh, size_t owe_dh_len,
 		    struct wpa_state_machine *assoc_sm, bool is_ml,
-		    bool external_pmk_cache)
+		    bool external_pmk_cache,
+		    const struct security_profile_entry_ap *security_profile)
 {
 	struct wpa_auth_config *conf = &wpa_auth->conf;
 	struct wpa_ie_data data;
@@ -987,6 +1024,9 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 			wpa_auth->conf.rsn_override_key_mgmt_2;
 	else if (sm->rsn_override)
 		key_mgmt = data.key_mgmt & wpa_auth->conf.rsn_override_key_mgmt;
+	else if (security_profile)
+		/* Restrict AKM to exactly what the matched UHR profile mandates */
+		key_mgmt = data.key_mgmt & security_profile->key_mgmt;
 	else
 		key_mgmt = data.key_mgmt & wpa_auth->conf.wpa_key_mgmt;
 	if (!key_mgmt) {
@@ -1059,6 +1099,9 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 	else if (version == WPA_PROTO_RSN && sm->rsn_override)
 		ciphers = data.pairwise_cipher &
 			wpa_auth->conf.rsn_override_pairwise;
+	else if (version == WPA_PROTO_RSN && security_profile)
+		/* Restrict pairwise cipher to exactly what the matched UHR profile mandates */
+		ciphers = data.pairwise_cipher & security_profile->pairwise_cipher;
 	else if (version == WPA_PROTO_RSN)
 		ciphers = data.pairwise_cipher & wpa_auth->conf.rsn_pairwise;
 	else
@@ -1083,6 +1126,30 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 			wpa_printf(MSG_DEBUG, "Unsupported management group "
 				   "cipher %d", data.mgmt_group_cipher);
 			return WPA_INVALID_MGMT_GROUP_CIPHER;
+		}
+	}
+
+	/*
+	 * UHR Security Profile per-profile MFP enforcement.
+	 * All defined profiles require MFPC and MFPR regardless of the AP's
+	 * global ieee80211w setting.  Enforce them here so that a STA cannot
+	 * bypass the profile requirement by relying on a permissive global
+	 * ieee80211w=1 (optional) configuration.
+	 */
+	if (security_profile) {
+		if (security_profile->mfpc &&
+		    !(data.capabilities & WPA_CAPABILITY_MFPC)) {
+			wpa_printf(MSG_DEBUG,
+				   "UHR: Profile %d requires MFPC but STA did not set it",
+				   security_profile->profile_num);
+			return WPA_MGMT_FRAME_PROTECTION_VIOLATION;
+		}
+		if (security_profile->mfpr &&
+		    !(data.capabilities & WPA_CAPABILITY_MFPR)) {
+			wpa_printf(MSG_DEBUG,
+				   "UHR: Profile %d requires MFPR but STA did not set it",
+				   security_profile->profile_num);
+			return WPA_MGMT_FRAME_PROTECTION_VIOLATION;
 		}
 	}
 
@@ -1267,6 +1334,9 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 			break;
 		}
 	}
+
+	wpa_pull_pmk(sm, wpa_auth, data.num_pmkid, &pmkid);
+
 	for (i = 0; sm->pmksa == NULL && wpa_auth->conf.okc &&
 		     i < data.num_pmkid; i++) {
 		struct wpa_auth_okc_iter_data idata;

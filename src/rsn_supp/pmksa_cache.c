@@ -12,6 +12,7 @@
 #include "eloop.h"
 #include "eapol_supp/eapol_supp_sm.h"
 #include "wpa.h"
+#include "wpa_debug.h"
 #include "wpa_i.h"
 #include "pmksa_cache.h"
 
@@ -262,8 +263,18 @@ pmksa_cache_add(struct rsn_pmksa_cache *pmksa, const u8 *pmk, size_t pmk_len,
 		rsn_pmkid_suite_b_192(kck, kck_len, aa, spa, entry->pmkid);
 	else if (wpa_key_mgmt_suite_b(akmp))
 		rsn_pmkid_suite_b(kck, kck_len, aa, spa, entry->pmkid);
-	else
+	else {
 		rsn_pmkid(pmk, pmk_len, aa, spa, entry->pmkid, akmp);
+	}
+
+
+	if (pmksa->sm && pmksa->sm->smd_enabled) {
+		os_memcpy(entry->smd_id, pmksa->sm->smd_id, ETH_ALEN);
+		entry->smd_enabled = 1;
+		entry->smd_ptk_mode = pmksa->sm->smd_ptk_mode;
+		wpa_printf(MSG_DEBUG, "RSN: Creating entry with SMD ID " MACSTR
+			   " PTK mode %u", MAC2STR(pmksa->sm->smd_id), pmksa->sm->smd_ptk_mode);
+	}
 	os_get_reltime(&now);
 	if (pmksa->sm) {
 		pmk_lifetime = pmksa->sm->dot11RSNAConfigPMKLifetime;
@@ -380,9 +391,9 @@ pmksa_cache_add_entry(struct rsn_pmksa_cache *pmksa,
 	}
 	pmksa->pmksa_count++;
 	wpa_printf(MSG_DEBUG, "RSN: Added PMKSA cache entry for " MACSTR
-		   " spa=" MACSTR " network_ctx=%p akmp=0x%x",
+		   " spa=" MACSTR " network_ctx=%p akmp=0x%x smd_id= " MACSTR,
 		   MAC2STR(entry->aa), MAC2STR(entry->spa),
-		   entry->network_ctx, entry->akmp);
+		   entry->network_ctx, entry->akmp, MAC2STR(entry->smd_id));
 
 	if (!pmksa->sm)
 		return entry;
@@ -484,13 +495,38 @@ struct rsn_pmksa_cache_entry * pmksa_cache_get(struct rsn_pmksa_cache *pmksa,
 {
 	struct rsn_pmksa_cache_entry *entry = pmksa->pmksa;
 	while (entry) {
-		if ((aa == NULL || ether_addr_equal(entry->aa, aa)) &&
+		bool aa_match;
+
+		wpa_printf(MSG_DEBUG, "RSN: Checking PMKSA Entry - smd: %d", entry->smd_enabled);
+
+		if (pmksa->sm && pmksa->sm->smd_enabled &&
+		    pmksa->sm->smd_ptk_mode == 0 &&
+		    entry->smd_enabled && entry->smd_ptk_mode == 0) {
+			aa_match = (aa == NULL ||
+				    os_memcmp(entry->smd_id, pmksa->sm->smd_id, ETH_ALEN) == 0);
+			if (aa_match && aa != NULL) {
+				wpa_printf(MSG_DEBUG, "RSN: PMKSA matched by SMD ID " MACSTR
+					   " (entry AA=" MACSTR " lookup AA=" MACSTR ")",
+					   MAC2STR(entry->smd_id),
+					   MAC2STR(entry->aa), MAC2STR(aa));
+			}
+		} else {
+			aa_match = (aa == NULL || ether_addr_equal(entry->aa, aa));
+		}
+		if (pmkid) {
+			wpa_hexdump(MSG_DEBUG, "RSN: Checking PMKID %d", entry->pmkid, PMKID_LEN);
+			wpa_hexdump(MSG_DEBUG, "RSN: Checking PMKID %d", pmkid, PMKID_LEN);
+		}
+
+		if (aa_match &&
 		    (!spa || ether_addr_equal(entry->spa, spa)) &&
 		    (pmkid == NULL ||
 		     os_memcmp(entry->pmkid, pmkid, PMKID_LEN) == 0) &&
 		    (!akmp || akmp == entry->akmp) &&
-		    (network_ctx == NULL || network_ctx == entry->network_ctx))
+		    (network_ctx == NULL || network_ctx == entry->network_ctx)) {
+			wpa_printf(MSG_DEBUG, "RSN: PMKSA cache entry matched");
 			return entry;
+		    }
 		entry = entry->next;
 	}
 	return NULL;
@@ -733,19 +769,23 @@ int pmksa_cache_list(struct rsn_pmksa_cache *pmksa, char *buf, size_t len)
 	struct rsn_pmksa_cache_entry *entry;
 	struct os_reltime now;
 	int cache_id_used = 0;
+	int smd_used = 0;
 
 	for (entry = pmksa->pmksa; entry; entry = entry->next) {
 		if (entry->fils_cache_id_set) {
 			cache_id_used = 1;
-			break;
+		}
+		if (entry->smd_enabled) {
+			smd_used = 1;
 		}
 	}
 
 	os_get_reltime(&now);
 	ret = os_snprintf(pos, buf + len - pos,
 			  "Index / AA / PMKID / expiration (in seconds) / "
-			  "opportunistic%s\n",
-			  cache_id_used ? " / FILS Cache Identifier" : "");
+			  "opportunistic%s%s\n",
+			  cache_id_used ? " / FILS Cache Identifier" : "",
+			  smd_used ? " / SMD ID / SMD PTK Mode" : "");
 	if (os_snprintf_error(buf + len - pos, ret))
 		return pos - buf;
 	pos += ret;
@@ -770,6 +810,13 @@ int pmksa_cache_list(struct rsn_pmksa_cache *pmksa, char *buf, size_t len)
 			ret = os_snprintf(pos, buf + len - pos, " %02x%02x",
 					  entry->fils_cache_id[0],
 					  entry->fils_cache_id[1]);
+			if (os_snprintf_error(buf + len - pos, ret))
+				return pos - buf;
+			pos += ret;
+		}
+		if (entry->smd_enabled) {
+			ret = os_snprintf(pos, buf + len - pos, " " MACSTR " %u",
+					  MAC2STR(entry->smd_id), entry->smd_ptk_mode);
 			if (os_snprintf_error(buf + len - pos, ret))
 				return pos - buf;
 			pos += ret;

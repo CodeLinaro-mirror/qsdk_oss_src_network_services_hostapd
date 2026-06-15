@@ -336,6 +336,13 @@ int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 			continue;
 		}
 
+#ifdef CONFIG_QCN_EXTN
+		if (!hostapd_hwbl_validate_6ghz(iface, chan, bw,
+						new_centre_freq, 0,
+						iface->conf->he_6ghz_reg_pwr_type))
+			continue;
+#endif
+
 		wpa_printf(MSG_DEBUG, "AWGN: Adding channel %d (%d) to valid chandef list",
 			   chan->freq, chan->chan);
 		(*chandef_list)[channel_idx] = chan;
@@ -485,7 +492,8 @@ static void find_6g_chan_gt_40(struct hostapd_iface *iface,
 {
 	u16 pri_chan_pos;
 	const u16 *bw_pp_arr;
-	u16 num_pp, pp_mask;
+	u16 num_pp, pp_mask, afc_pp;
+	bool allow_dynamic_punc = true;
 	int i;
 
 	pri_chan_pos = (chan->freq - new_start_freq) / 20;
@@ -495,6 +503,29 @@ static void find_6g_chan_gt_40(struct hostapd_iface *iface,
 		wpa_printf(MSG_ERROR,
 			   "No valid puncture pattern array for bw %d", channel_width);
 		return;
+	}
+
+	afc_pp = afc_bitmap & pp_mask;
+	if (power_type == NL80211_REG_AP_SP) {
+		s16 initial_sp_eirp = hostapd_get_eirp_pwr(iface, chan->freq,
+							   centre_freq,
+							   channel_width, afc_pp,
+							   NL80211_REG_AP_SP, false,
+							   NL80211_REG_NUM_POWER_MODES,
+							   false);
+		/*
+		 * Dynamic puncturing policy:
+		 * - threshold unset (-64): puncture only when initial SP EIRP
+		 *   is at minimum (-64)
+		 * - threshold set: puncture only when initial SP EIRP does not
+		 *   already exceed the configured threshold
+		 */
+		if (iface->conf->punc_eirp_thres_6ghz == CHAN_MIN_TX_POWER) {
+			if (initial_sp_eirp > CHAN_MIN_TX_POWER)
+				allow_dynamic_punc = false;
+		} else if (initial_sp_eirp > iface->conf->punc_eirp_thres_6ghz) {
+			allow_dynamic_punc = false;
+		}
 	}
 
 	for (i = 0; i < num_pp; i++) {
@@ -531,6 +562,20 @@ static void find_6g_chan_gt_40(struct hostapd_iface *iface,
 					       channel_width, 0,
 					       NL80211_REG_AP_VLP, false,
 					       NL80211_REG_NUM_POWER_MODES, false);
+
+		if (power_type == NL80211_REG_AP_SP && temp_bitmap != afc_pp) {
+			/*
+			 * Dynamic PP must be allowed and must improve above threshold.
+			 * Apply threshold gate only to dynamic puncturing candidates.
+			 * The AFC baseline candidate (temp_bitmap == afc_pp) is
+			 * intentionally not filtered here.
+			 */
+			if (!allow_dynamic_punc)
+				continue;
+			if (sp_pwr <= iface->conf->punc_eirp_thres_6ghz)
+				continue;
+		}
+
 		if (power_type == NL80211_REG_AP_SP && (sp_pwr < lpi_pwr || sp_pwr < vlp_pwr)) {
 			wpa_printf(MSG_DEBUG,
 				   "SP eirp %d is less than LPI eirp %d or VLP eirp %d for freq %d bw %d and PP 0x%x",
@@ -744,24 +789,36 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 		   chan_width,
 		   cf1, cf2, chan_bw_interference_bitmap);
 
-	if (iface->conf->discard_6g_awgn_event || hostapd_is_backhaul_sta_conn(iface)) {
-		if (iface->bss && iface->bss[0] && iface->bss[0]->msg_ctx)
-			wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, INTERFERENCE_DETECTED
-				"type=%s freq=%d chan_width=%d cf1=%d cf2=%d bitmap=0x%x",
-				"AWGN", freq, chan_width, cf1, cf2,
-				chan_bw_interference_bitmap);
+	if (iface->bss && iface->bss[0] && iface->bss[0]->msg_ctx)
+		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, INTERFERENCE_DETECTED
+			"type=%s freq=%d chan_width=%d cf1=%d cf2=%d bitmap=0x%x",
+			"AWGN", freq, chan_width, cf1, cf2,
+			chan_bw_interference_bitmap);
 
+	if (iface->conf->discard_6g_awgn_event) {
 		wpa_printf(MSG_DEBUG, "discard_6g_awgn_event set ignoring"
 			   " AWGN DETECT event from driver");
 		return 0;
 	}
+	if (hostapd_is_bh_sta_connecting_or_connected_extn(iface)) {
+		if (iface->conf->conf_extn.rptr_allow_chan_sw) {
+			if (iface->bss && iface->bss[0] && iface->bss[0]->msg_ctx)
+				wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
+					INTERFERENCE_DETECTED
+					"Rptr: BH STA connected - disconnect BH STA "
+					"and allow channel switch");
 
-#ifdef CONFIG_QCN_EXTN
-	if (!(iface->conf->conf_extn.dcs_conf.dcs_random_chan_bitmap & DCS_AWGN_INTF)) {
-		hostapd_trigger_dynamic_acs(iface->bss[0], CHANNEL_CHANGE_CSA);
-		return 0;
+			hostapd_ucode_trigger_bhsta_disconnect(iface);
+		} else {
+			if (iface->bss && iface->bss[0] && iface->bss[0]->msg_ctx)
+				wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
+					INTERFERENCE_DETECTED
+					"Rptr: BH STA connected - Discard AWGN");
+			return 0;
+		}
 	}
 
+#ifdef CONFIG_QCN_EXTN
 	if (dcs_get_bw_reduction_ctrl_extn(iface->conf, DCS_AWGN_INTF) == false) {
 		wpa_printf(MSG_DEBUG, "DCS Bandwidth reduction is not set");
 		channel_switch = 1;
@@ -780,6 +837,10 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 	}
 
 	if (channel_switch) {
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_dcs_awgn_handle_rand_chan_disabled_extn(iface))
+			goto exit;
+#endif
 		/* store frequencies with interference in awgn_interference_freqs */
 		current_start_freq = (cf1 - channel_width_to_int(chan_width) / 2) + 10;
 		for (i = 0; i < BW_INTERFERENCE_MAXBITS; i++) {
@@ -813,7 +874,7 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 				goto exit;
 			}
 
-			reduced_chan_width(&new_chan_width, chan_width, freq,
+			reduced_chan_width(iface, &new_chan_width, chan_width, freq,
 					   mode, chan_bw_interference_bitmap);
 			if (new_chan_width >= chan_width) {
 				wpa_printf(MSG_ERROR,
@@ -855,12 +916,17 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 			goto exit;
 		}
 
-		reduced_chan_width(&new_chan_width, chan_width, freq,
+		reduced_chan_width(iface, &new_chan_width, chan_width, freq,
 				   mode, chan_bw_interference_bitmap);
 		if (new_chan_width >= chan_width) {
 			wpa_printf(MSG_DEBUG,
 				   "AWGN: bandwidth reduction not needed/possible (cur=%d new=%d)",
 				   chan_width, new_chan_width);
+
+#ifdef CONFIG_QCN_EXTN
+			if (hostapd_dcs_awgn_handle_rand_chan_disabled_extn(iface))
+				goto exit;
+#endif
 
 			/* Bring down the vap since all channels are blocked for switch */
 			hostapd_drv_stop_ap(iface->bss[0]);
@@ -910,6 +976,7 @@ do_csa:
 	settings.freq_params.vht_enabled = iface->conf->ieee80211ac;
 	settings.freq_params.he_enabled = iface->conf->ieee80211ax;
 	settings.freq_params.eht_enabled= iface->conf->ieee80211be;
+	settings.freq_params.uhr_enabled= iface->conf->ieee80211bn;
 	settings.power_mode = -1;
 
 	if (is_6ghz_freq(settings.freq_params.freq) &&
@@ -934,6 +1001,9 @@ do_csa:
 			goto exit;
 		}
 	}
+
+	/* Trigger mesh CSA before AP channel switch if mesh VAP present */
+	hostapd_ubus_mesh_switch_channel(iface, &settings);
 
 	for (i = 0; i < iface->num_bss; i++) {
 		/* Save CHAN_SWITCH VHT and HE config */
@@ -1051,6 +1121,7 @@ static void set_csa_param(struct csa_settings *settings,
 	settings->freq_params.vht_enabled = iface->conf->ieee80211ac;
 	settings->freq_params.he_enabled = iface->conf->ieee80211ax;
 	settings->freq_params.eht_enabled = iface->conf->ieee80211be;
+	settings->freq_params.uhr_enabled = iface->conf->ieee80211bn;
 	settings->power_mode = -1;
 
 	if (is_6ghz_freq(settings->freq_params.freq) &&
@@ -1615,6 +1686,10 @@ int hostapd_intf_afc_received(struct hostapd_iface *iface)
 	}
 
 	set_csa_param(&settings, chan_data, iface, new_chan_width, new_centre_freq);
+
+	/* Trigger mesh CSA before AP channel switch if mesh VAP present */
+	hostapd_ubus_mesh_switch_channel(iface, &settings);
+
 	for (i = 0; i < iface->num_bss; i++) {
 		/* Save CHAN_SWITCH VHT and HE config */
 		hostapd_chan_switch_config(iface->bss[i], &settings.freq_params);

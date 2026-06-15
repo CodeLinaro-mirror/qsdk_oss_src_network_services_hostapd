@@ -11,6 +11,7 @@
 #include "driver_i.h"
 #include "sme.h"
 #include "config.h"
+#include "ap.h"
 #ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/cmn.h"
 #endif
@@ -76,6 +77,89 @@ wpas_ucode_update_interfaces(void)
 
 	ucv_object_add(ucv_prototype_get(global), "interfaces", ucv_get(ifs));
 	ucv_gc(vm);
+}
+
+static bool
+uc_wpas_object_get_int(uc_value_t *obj, const char *name, int *out)
+{
+	uc_value_t *val;
+
+	if (!obj || !out)
+		return false;
+
+	val = ucv_object_get(obj, name, NULL);
+	if (!val || ucv_type(val) != UC_INTEGER)
+		return false;
+
+	*out = (int) ucv_int64_get(val);
+	return true;
+}
+
+static bool
+uc_wpas_object_get_bool(uc_value_t *obj, const char *name, bool *out)
+{
+	uc_value_t *val;
+
+	if (!obj || !out)
+		return false;
+
+	val = ucv_object_get(obj, name, NULL);
+	if (!val)
+		return false;
+
+	if (ucv_type(val) == UC_BOOLEAN) {
+		*out = ucv_boolean_get(val);
+		return true;
+	}
+
+	if (ucv_type(val) == UC_INTEGER) {
+		*out = !!ucv_int64_get(val);
+		return true;
+	}
+
+	return false;
+}
+
+#define WPAS_MESH_CSA_2_TU_MAX		127
+#define WPAS_MESH_CSA_100_TU_FLAG	0x80
+#define WPAS_MESH_CSA_100_TU_MAX	127
+
+static u8
+wpas_mesh_encode_csa_count(unsigned int switch_time_tu)
+{
+	unsigned int count;
+
+	if (!switch_time_tu)
+		return 1;
+
+	if (switch_time_tu <= WPAS_MESH_CSA_2_TU_MAX * 2) {
+		count = (switch_time_tu + 1) / 2;
+		return count ? count : 1;
+	}
+
+	count = (switch_time_tu + 99) / 100;
+	if (count > WPAS_MESH_CSA_100_TU_MAX)
+		count = WPAS_MESH_CSA_100_TU_MAX;
+
+	return WPAS_MESH_CSA_100_TU_FLAG | count;
+}
+
+static u8
+wpas_mesh_csa_count_from_ap(unsigned int ap_csa_count,
+			    unsigned int ap_beacon_int)
+{
+	unsigned int switch_time_tu;
+
+	if (!ap_csa_count || !ap_beacon_int) {
+		wpa_printf(MSG_DEBUG,
+			   "mesh: invalid CSA parameters (count=%u, beacon_int=%u), using default",
+			   ap_csa_count, ap_beacon_int);
+		return ap_csa_count ? ap_csa_count : 5;
+	}
+
+	switch_time_tu = ap_csa_count * ap_beacon_int;
+
+	return wpas_mesh_encode_csa_count(switch_time_tu);
 }
 
 void wpas_ucode_add_bss(struct wpa_supplicant *wpa_s)
@@ -380,7 +464,16 @@ void wpas_ucode_event(struct wpa_supplicant *wpa_s, int event, union wpa_event_d
 #ifdef CONFIG_QCN_EXTN
 	wpa_printf(MSG_INFO, "%s: freq = %d is_dfs = %d wpa_state = %s mcst = %u", __func__,
 		   data->ch_switch.freq, is_dfs, wpa_state, data->ch_switch.mcst);
+
+	if (wpa_s->conf->ind_rptr && is_dfs &&
+	    IS_CSH_IGNORE_CSA_DFS_ENABLED(wpa_s->conf->cswopts) &&
+	    wpa_s->wpa_state != WPA_PRE_CONNECT) {
+		wpa_s->hold_scan_csa = true;
+		wpa_supplicant_deauthenticate(wpa_s,
+					      WLAN_REASON_DEAUTH_LEAVING);
+	}
 #endif
+
 	ucv_put(wpa_ucode_call(6));
 	ucv_gc(vm);
 }
@@ -608,6 +701,113 @@ out:
 	return ret;
 }
 
+static uc_value_t *
+uc_wpas_iface_switch_channel(uc_vm_t *vm, size_t nargs)
+{
+	struct wpa_supplicant *wpa_s = uc_fn_thisval("wpas.iface");
+	uc_value_t *info = uc_fn_arg(0);
+	struct csa_settings csa;
+	enum chan_width width = CHAN_WIDTH_UNKNOWN;
+	int val;
+	bool boolval;
+
+	if (!wpa_s || ucv_type(info) != UC_OBJECT)
+		return ucv_boolean_new(false);
+
+#ifndef CONFIG_MESH
+	return ucv_boolean_new(false);
+#else
+	if (!wpa_s->ifmsh)
+		return ucv_boolean_new(false);
+
+	os_memset(&csa, 0, sizeof(csa));
+	csa.cs_count = 5;
+	csa.link_id = -1;
+	csa.power_mode = -1;
+
+	csa.freq_params.ht_enabled = wpa_s->ifmsh->conf->ieee80211n;
+	csa.freq_params.vht_enabled = wpa_s->ifmsh->conf->ieee80211ac;
+	csa.freq_params.he_enabled = wpa_s->ifmsh->conf->ieee80211ax;
+	csa.freq_params.eht_enabled = wpa_s->ifmsh->conf->ieee80211be;
+	csa.freq_params.uhr_enabled = wpa_s->ifmsh->conf->ieee80211bn;
+
+	if (uc_wpas_object_get_int(info, "csa_count", &val))
+		csa.cs_count = val;
+	if (uc_wpas_object_get_int(info, "ap_beacon_int", &val) && val > 0)
+		csa.cs_count = wpas_mesh_csa_count_from_ap(
+			csa.cs_count, val);
+	if (uc_wpas_object_get_bool(info, "block_tx", &boolval))
+		csa.block_tx = boolval;
+
+	if (!uc_wpas_object_get_int(info, "frequency", &csa.freq_params.freq))
+		return ucv_boolean_new(false);
+	if (!uc_wpas_object_get_int(info, "bandwidth", &csa.freq_params.bandwidth))
+		return ucv_boolean_new(false);
+
+	uc_wpas_object_get_int(info, "center_freq1",
+			       &csa.freq_params.center_freq1);
+	uc_wpas_object_get_int(info, "center_freq2",
+			       &csa.freq_params.center_freq2);
+	if (uc_wpas_object_get_int(info, "punct_bitmap", &val))
+		csa.freq_params.punct_bitmap = val;
+	uc_wpas_object_get_int(info, "bandwidth_device",
+			       &csa.freq_params.bandwidth_device);
+	uc_wpas_object_get_int(info, "center_freq_device",
+			       &csa.freq_params.center_freq_device);
+
+	if (uc_wpas_object_get_bool(info, "ht", &boolval))
+		csa.freq_params.ht_enabled = boolval;
+	if (uc_wpas_object_get_bool(info, "vht", &boolval))
+		csa.freq_params.vht_enabled = boolval;
+	if (uc_wpas_object_get_bool(info, "he", &boolval))
+		csa.freq_params.he_enabled = boolval;
+	if (uc_wpas_object_get_bool(info, "eht", &boolval))
+		csa.freq_params.eht_enabled = boolval;
+	if (uc_wpas_object_get_bool(info, "uhr", &boolval))
+		csa.freq_params.uhr_enabled = boolval;
+	if (uc_wpas_object_get_int(info, "power_mode", &val))
+		csa.power_mode = val;
+
+	if (!uc_wpas_object_get_int(info, "sec_chan_offset",
+				    &csa.freq_params.sec_channel_offset)) {
+		switch (csa.freq_params.bandwidth) {
+		case 20:
+			width = CHAN_WIDTH_20;
+			break;
+		case 40:
+			width = CHAN_WIDTH_40;
+			break;
+		case 80:
+			width = CHAN_WIDTH_80;
+			break;
+		case 160:
+			width = CHAN_WIDTH_160;
+			break;
+		case 320:
+			width = CHAN_WIDTH_320;
+			break;
+		default:
+			width = CHAN_WIDTH_UNKNOWN;
+			break;
+		}
+
+#ifdef CONFIG_QCN_EXTN
+		csa.freq_params.sec_channel_offset =
+			compute_sec_channel_offset_extn(
+				csa.freq_params.freq,
+				csa.freq_params.center_freq1,
+				width);
+		if (csa.freq_params.sec_channel_offset < 0)
+			csa.freq_params.sec_channel_offset = 0;
+#else
+		csa.freq_params.sec_channel_offset = 0;
+#endif
+	}
+
+	return ucv_boolean_new(wpas_ap_apply_channel_switch(wpa_s, &csa) == 0);
+#endif /* CONFIG_MESH */
+}
+
 #ifdef CONFIG_QCN_EXTN
 /**
  * uc_wpas_recvd_ch_sw_result_ev - Handle ucode channel switch result event
@@ -662,8 +862,24 @@ uc_wpas_recvd_ch_sw_result_ev(uc_vm_t *vm, size_t nargs)
 	for (wpa_s = wpa_global->ifaces; wpa_s; wpa_s = wpa_s->next) {
 		if (!wpa_s)
 			continue;
-		if (wpa_s->wpa_state != WPA_PRE_CONNECT)
+		/*
+		 * Non-DFS channel change on the Repeater AP side: clear the
+		 * hold flag and kick off a fresh scan so the STA can follow
+		 * the AP to its new channel.  Skip the WPA_PRE_CONNECT path
+		 * for this interface.
+		 */
+		if (wpa_s->wpa_state != WPA_PRE_CONNECT &&
+		    IS_CSH_IGNORE_CSA_DFS_ENABLED(wpa_s->conf->cswopts) &&
+		    wpa_s->hold_scan_csa) {
+			wpa_printf(MSG_INFO,
+				   "%s: Resuming STA scan on %s after Repeater AP non-DFS channel change",
+				   __func__, wpa_s->ifname);
+			wpa_s->hold_scan_csa = false;
+			eloop_cancel_timeout(wpa_supplicant_start_sta_scan, wpa_s, NULL);
+			wpa_supplicant_req_scan(wpa_s, 0, 0);
 			continue;
+		}
+
 		if (!wpa_s->cache_cwork)
 			continue;
 		if (!wpa_s->cache_cwork->bss)
@@ -705,6 +921,50 @@ uc_wpas_recvd_ch_sw_result_ev(uc_vm_t *vm, size_t nargs)
 	}
 
 	return ucv_int64_new(ret);
+}
+
+/**
+ * uc_wpas_abort_scan_for_acs - API to abort STA scan when repeater AP starts ACS
+ * @vm: ucode VM context invoking the callback
+ * @nargs: Number of ucode arguments passed to the function
+ *
+ * Called from ucode when hostapd starts ACS. The function locates interfaces
+ * and aborts any ongoing scans, then sets acs_complete flag to 0 to prevent
+ * new scans until ACS completes.
+ *
+ * Return: New ucode integer value (0 on success, -1 on error).
+ */
+static uc_value_t *
+uc_wpas_abort_scan_for_acs(uc_vm_t *vm, size_t nargs)
+{
+	struct wpa_supplicant *wpa_s;
+
+	wpa_printf(MSG_INFO, "%s: Aborting STA scans for ACS start",
+		   __func__);
+
+	/* Validate global context */
+	if (!wpa_global || !wpa_global->ifaces) {
+		wpa_printf(MSG_ERROR, "%s: wpa_global or ifaces is NULL",
+			   __func__);
+		return ucv_int64_new(-1);
+	}
+
+	for (wpa_s = wpa_global->ifaces; wpa_s; wpa_s = wpa_s->next) {
+		if (wpa_s->conf && wpa_s->conf->ind_rptr &&
+		    (wpa_s->acs_complete == 1)) {
+			/* Abort any ongoing scan */
+			wpas_abort_ongoing_scan(wpa_s);
+
+			/* Set acs_complete to 0 to prevent new scans */
+			wpa_s->acs_complete = 0;
+
+			wpa_printf(MSG_DEBUG,
+				   "%s: Aborted scan and set acs_complete=0 for %s",
+				   __func__, wpa_s->ifname);
+		}
+	}
+
+	return ucv_int64_new(0);
 }
 
 /**
@@ -760,14 +1020,17 @@ int wpas_ucode_init(struct wpa_global *gl)
 #ifdef CONFIG_QCN_EXTN
 		{ "recvd_ch_sw_result_ev", uc_wpas_recvd_ch_sw_result_ev },
 		{ "start_scan_post_acs", uc_wpas_start_scan_post_acs },
+		{ "abort_scan_for_acs", uc_wpas_abort_scan_for_acs },
 #endif
 	};
 	static const uc_function_list_t iface_fns[] = {
 		{ "status", uc_wpas_iface_status },
+		{ "switch_channel", uc_wpas_iface_switch_channel },
 #ifdef CONFIG_QCN_EXTN
 		{ "notify_uplink_csa", uc_wpas_notify_uplink_csa_extn },
 		{ "reconnect", uc_wpas_iface_reconnect_extn },
 		{ "notify_rcsa", uc_wpas_notify_rcsa_extn },
+		{ "abort_scan_for_acs", uc_wpas_abort_scan_for_acs },
 #endif
 	};
 

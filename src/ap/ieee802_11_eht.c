@@ -109,7 +109,6 @@ bool eht_mu_mask_valid(u8 mask)
 	return true;
 }
 
-
 size_t hostapd_eid_eht_capab_len(struct hostapd_data *hapd,
 				 enum ieee80211_op_mode opmode)
 {
@@ -249,6 +248,23 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 				~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ;
 	}
 
+       /*
+        * Enforce band-specific Non-OFDMA UL MU-MIMO constraints
+        * unconditionally, regardless of config or BSS-level overrides:
+        * - 2.4 GHz: EHT max BW is 40 MHz, so 160 MHz and 320 MHz
+        *   Non-OFDMA UL MU-MIMO bits are not applicable and must be cleared.
+        * - 5 GHz: 320 MHz is a 6 GHz-only feature and must be cleared.
+        */
+       if (mode->mode == HOSTAPD_MODE_IEEE80211B ||
+           mode->mode == HOSTAPD_MODE_IEEE80211G) {
+               cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
+                       ~(EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_160MHZ |
+                         EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ);
+       } else if (!is_6ghz_op_class(hapd->iconf->op_class)) {
+               /* 5 GHz: 320 MHz Non-OFDMA UL MU-MIMO not applicable */
+               cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
+                       ~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ;
+       }
 
 	/* Apply BSS-level beamformee spatial streams overrides */
 	if (hapd->conf->eht_phy_capab_mask &
@@ -283,6 +299,133 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 		}
 
 		WPA_PUT_LE16(&cap->phy_cap[EHT_PHY_BFMEE_SS_80MHZ_IDX], phy);
+	}
+
+	if (hapd->conf->eht_phy_capab_mask &
+	    EHT_PHY_BSS_OVR_NDP_4X_EHT_LTF_AND_320NSGI) {
+		if (hapd->conf->eht_phy_capab.eht_ndp_4x_eht_ltf_and_320nsgi)
+			cap->phy_cap[EHT_PHYCAP_NDP_4X_EHT_LTF_AND_320NSGI_IDX] |=
+				EHT_PHYCAP_NDP_4X_EHT_LTF_AND_320NSGI;
+		else
+			cap->phy_cap[EHT_PHYCAP_NDP_4X_EHT_LTF_AND_320NSGI_IDX] &=
+				~EHT_PHYCAP_NDP_4X_EHT_LTF_AND_320NSGI;
+	}
+
+	if (hapd->conf->eht_phy_capab_mask &
+	    (EHT_PHY_BSS_OVR_NUM_SD_LT80 | EHT_PHY_BSS_OVR_NUM_SD_160 |
+	     EHT_PHY_BSS_OVR_NUM_SD_320)) {
+		u8 num_sd_lt80;
+		u8 num_sd_160;
+		u8 num_sd_320;
+		bool su_bfmr =
+			((hapd->conf->eht_phy_capab_mask &
+			  EHT_PHY_BSS_OVR_SU_BEAMFORMER) ?
+			 hapd->conf->eht_phy_capab.su_beamformer :
+			 hapd->iface->conf->eht_phy_capab.su_beamformer);
+
+		num_sd_lt80 =
+			(cap->phy_cap[EHT_PHYCAP_NUM_SD_LT80_IDX] &
+			 EHT_PHYCAP_NUM_SD_LT80_MASK) >>
+			EHT_PHYCAP_NUM_SD_LT80_SHIFT;
+		num_sd_160 =
+			(cap->phy_cap[EHT_PHYCAP_NUM_SD_160_IDX] &
+			 EHT_PHYCAP_NUM_SD_160_MASK) >>
+			EHT_PHYCAP_NUM_SD_160_SHIFT;
+		num_sd_320 =
+			((cap->phy_cap[EHT_PHYCAP_NUM_SD_320_LOW_IDX] &
+			  EHT_PHYCAP_NUM_SD_320_LOW_MASK) >>
+			 EHT_PHYCAP_NUM_SD_320_LOW_SHIFT) |
+			(((cap->phy_cap[EHT_PHYCAP_NUM_SD_320_HIGH_IDX] &
+			   EHT_PHYCAP_NUM_SD_320_HIGH_MASK) >>
+			  EHT_PHYCAP_NUM_SD_320_HIGH_SHIFT) << 2);
+
+		if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_NUM_SD_LT80)
+			num_sd_lt80 = hapd->conf->eht_phy_capab.eht_num_sd_lt80;
+		if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_NUM_SD_160)
+			num_sd_160 = hapd->conf->eht_phy_capab.eht_num_sd_160;
+		if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_NUM_SD_320)
+			num_sd_320 = hapd->conf->eht_phy_capab.eht_num_sd_320;
+
+		if (!su_bfmr) {
+			num_sd_lt80 = 0;
+			num_sd_160 = 0;
+			num_sd_320 = 0;
+		}
+
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_LT80_IDX] &=
+			~EHT_PHYCAP_NUM_SD_LT80_MASK;
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_LT80_IDX] |=
+			(num_sd_lt80 << EHT_PHYCAP_NUM_SD_LT80_SHIFT) &
+			EHT_PHYCAP_NUM_SD_LT80_MASK;
+
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_160_IDX] &=
+			~EHT_PHYCAP_NUM_SD_160_MASK;
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_160_IDX] |=
+			(num_sd_160 << EHT_PHYCAP_NUM_SD_160_SHIFT) &
+			EHT_PHYCAP_NUM_SD_160_MASK;
+
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_320_LOW_IDX] &=
+			~EHT_PHYCAP_NUM_SD_320_LOW_MASK;
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_320_LOW_IDX] |=
+			(num_sd_320 << EHT_PHYCAP_NUM_SD_320_LOW_SHIFT) &
+			EHT_PHYCAP_NUM_SD_320_LOW_MASK;
+
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_320_HIGH_IDX] &=
+			~EHT_PHYCAP_NUM_SD_320_HIGH_MASK;
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_320_HIGH_IDX] |=
+			((num_sd_320 >> 2) << EHT_PHYCAP_NUM_SD_320_HIGH_SHIFT) &
+			EHT_PHYCAP_NUM_SD_320_HIGH_MASK;
+	}
+
+	if (hapd->conf->eht_phy_capab_mask &
+	    EHT_PHY_BSS_OVR_4X_EHT_LTF_AND_800NS_GI) {
+		if (hapd->conf->eht_phy_capab.eht_4x_eht_ltf_and_800ns_gi)
+			cap->phy_cap[EHT_PHYCAP_4X_EHT_LTF_AND_800NS_GI_IDX] |=
+				EHT_PHYCAP_4X_EHT_LTF_AND_800NS_GI;
+		else
+			cap->phy_cap[EHT_PHYCAP_4X_EHT_LTF_AND_800NS_GI_IDX] &=
+				~EHT_PHYCAP_4X_EHT_LTF_AND_800NS_GI;
+	}
+
+	if (hapd->conf->eht_phy_capab_mask &
+	    EHT_PHY_BSS_OVR_RX_1024_AND_4096_QAM_LS_242_TONE_RU) {
+		if (hapd->conf->eht_phy_capab
+			    .eht_rx_1024_and_4096_qam_ls_242_tone_ru)
+			cap->phy_cap
+				[EHT_PHYCAP_RX_1024_AND_4096_QAM_LS_242_TONE_RU_IDX] |=
+				EHT_PHYCAP_RX_1024_AND_4096_QAM_LS_242_TONE_RU;
+		else
+			cap->phy_cap
+				[EHT_PHYCAP_RX_1024_AND_4096_QAM_LS_242_TONE_RU_IDX] &=
+				~EHT_PHYCAP_RX_1024_AND_4096_QAM_LS_242_TONE_RU;
+	}
+
+	if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_DL_OFDMA_TXBF) {
+		if (hapd->conf->eht_phy_capab.eht_dl_ofdma_txbf)
+			cap->phy_cap[EHT_PHYCAP_TRIG_MU_BF_PART_BW_FB_IDX] |=
+				EHT_PHYCAP_TRIG_MU_BF_PART_BW_FB;
+		else
+			cap->phy_cap[EHT_PHYCAP_TRIG_MU_BF_PART_BW_FB_IDX] &=
+				~EHT_PHYCAP_TRIG_MU_BF_PART_BW_FB;
+	}
+
+	if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_SUP_MCS15_IN_MRU) {
+		cap->phy_cap[EHT_PHYCAP_SUP_MCS15_IN_MRU_IDX] &=
+			~EHT_PHYCAP_SUP_MCS15_IN_MRU_MASK;
+		cap->phy_cap[EHT_PHYCAP_SUP_MCS15_IN_MRU_IDX] |=
+			(hapd->conf->eht_phy_capab.eht_sup_mcs15_in_mru <<
+			 EHT_PHYCAP_SUP_MCS15_IN_MRU_SHIFT) &
+			EHT_PHYCAP_SUP_MCS15_IN_MRU_MASK;
+	}
+
+	if (hapd->conf->eht_phy_capab_mask &
+	    EHT_PHY_BSS_OVR_MCS14_DUP_IN_6GHZ) {
+		if (hapd->conf->eht_phy_capab.eht_mcs14_dup_in_6ghz)
+			cap->phy_cap[EHT_PHYCAP_MCS14_DUP_IN_6GHZ_IDX] |=
+				EHT_PHYCAP_MCS14_DUP_IN_6GHZ;
+		else
+			cap->phy_cap[EHT_PHYCAP_MCS14_DUP_IN_6GHZ_IDX] &=
+				~EHT_PHYCAP_MCS14_DUP_IN_6GHZ;
 	}
 	pos = cap->optional;
 
@@ -1252,7 +1395,7 @@ sae_confirm_skip_fixed_fields(struct hostapd_data *hapd,
 #endif /* CONFIG_SAE */
 
 
-static const u8 * auth_skip_fixed_fields(struct hostapd_data *hapd,
+const u8 * auth_skip_fixed_fields(struct hostapd_data *hapd,
 					 const struct ieee80211_mgmt *mgmt,
 					 size_t len)
 {
@@ -1339,6 +1482,23 @@ const u8 * hostapd_process_ml_auth(struct hostapd_data *hapd,
 
 	return get_basic_mle_mld_addr(elems.basic_mle, elems.basic_mle_len);
 }
+
+const u8 * skip_ml_auth_fixed_fields(struct hostapd_data *hapd,
+                                   const struct ieee80211_mgmt *mgmt,
+                                   size_t len)
+{
+	const u8 *pos;
+
+	len -= offsetof(struct ieee80211_mgmt, u.auth.variable);
+
+	pos = auth_skip_fixed_fields(hapd, mgmt, len);
+
+	if (!pos)
+		return NULL;
+
+	return pos;
+}
+
 
 
 static int hostapd_mld_validate_assoc_info(struct hostapd_data *hapd,
@@ -3781,7 +3941,6 @@ static int hostapd_epcs_authorize_mac_using_cli(struct hostapd_data *hapd,
 						char *pos)
 {
 	u8 peer_mld_addr[ETH_ALEN];
-	char *mldaddr_pos = pos;
 
 	if (hwaddr_aton(pos, peer_mld_addr))
 		return -1;
@@ -3794,10 +3953,9 @@ static int hostapd_epcs_authorize_mac_using_cli(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	return hostapd_ctrl_iface_acl_add_mac(
-			&hapd->mld->epcs_authorized_mac,
-			&hapd->mld->num_epcs_authorized_mac,
-			mldaddr_pos);
+	return hostapd_add_acl_maclist(&hapd->mld->epcs_authorized_mac,
+				       &hapd->mld->num_epcs_authorized_mac,
+				       0, peer_mld_addr);
 }
 
 static int hostapd_epcs_deauthorize_mac_using_cli(struct hostapd_data *hapd,
@@ -3806,7 +3964,6 @@ static int hostapd_epcs_deauthorize_mac_using_cli(struct hostapd_data *hapd,
 	u8 peer_mld_addr[ETH_ALEN];
 	struct sta_info *sta;
 	struct wlan_epcs_info epcs_info;
-	char *mldaddr_pos = pos;
 
 	if (hwaddr_aton(pos, peer_mld_addr))
 		return -1;
@@ -3826,10 +3983,9 @@ static int hostapd_epcs_deauthorize_mac_using_cli(struct hostapd_data *hapd,
 							  sta, false);
 	}
 
-	if (hostapd_ctrl_iface_acl_del_mac(&hapd->mld->epcs_authorized_mac,
-					   &hapd->mld->num_epcs_authorized_mac,
-					   mldaddr_pos))
-		return -1;
+	hostapd_remove_acl_mac(&hapd->mld->epcs_authorized_mac,
+			       &hapd->mld->num_epcs_authorized_mac,
+			       peer_mld_addr);
 
 	return 0;
 }

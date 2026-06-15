@@ -298,11 +298,109 @@ int wpa_gen_wpa_ie(struct wpa_sm *sm, u8 *wpa_ie, size_t wpa_ie_len)
 }
 
 
+/*
+ * security_profile_akm_matches - Check if a profile's AKM matches key_mgmt
+ * @profile_num: Security Profile number (Table 9-bb14, 802.11bn D1.4)
+ * @key_mgmt: Negotiated WPA_KEY_MGMT_* value
+ *
+ * Returns 1 if the profile's AKM (Table 9-bb14) matches key_mgmt, 0 otherwise.
+ * Used during profile selection in wpa_supplicant_set_suites().
+ */
+int security_profile_akm_matches(int profile_num, int key_mgmt)
+{
+	switch (profile_num) {
+	case SECURITY_PROFILE_NUM_EPPKE_NO_AUTH:
+	case SECURITY_PROFILE_NUM_EPPKE_SAE:
+	case SECURITY_PROFILE_NUM_EPPKE_FT_SAE:
+		/* EPPKE AKM (00-0F-AC:29) */
+		return !!(key_mgmt & WPA_KEY_MGMT_EPPKE);
+	case SECURITY_PROFILE_NUM_8021X_AUTH:
+	case SECURITY_PROFILE_NUM_8021X:
+		/* 802.1X AKM (00-0F-AC:5) */
+		return key_mgmt == WPA_KEY_MGMT_IEEE8021X ||
+		       key_mgmt == WPA_KEY_MGMT_IEEE8021X_SHA256;
+	case SECURITY_PROFILE_NUM_8021X_FT_AUTH:
+	case SECURITY_PROFILE_NUM_8021X_FT:
+		/* 802.1X+FT AKM (00-0F-AC:3) */
+		return key_mgmt == WPA_KEY_MGMT_FT_IEEE8021X;
+	case SECURITY_PROFILE_NUM_8021X_SHA384_AUTH:
+	case SECURITY_PROFILE_NUM_8021X_SHA384:
+		/* 802.1X SHA384 AKM (00-0F-AC:23) */
+		return key_mgmt == WPA_KEY_MGMT_IEEE8021X_SHA384;
+	case SECURITY_PROFILE_NUM_8021X_FT384_AUTH:
+	case SECURITY_PROFILE_NUM_8021X_FT384:
+		/* 802.1X+FT SHA384 AKM (00-0F-AC:22) */
+		return key_mgmt == WPA_KEY_MGMT_FT_IEEE8021X_SHA384;
+	case SECURITY_PROFILE_NUM_8021X_SUITEB_AUTH:
+	case SECURITY_PROFILE_NUM_8021X_SUITEB:
+		/* 802.1X Suite-B-192 AKM (00-0F-AC:12) */
+		return key_mgmt == WPA_KEY_MGMT_IEEE8021X_SUITE_B_192;
+	case SECURITY_PROFILE_NUM_OWE:
+		/* OWE/None AKM (00-0F-AC:18) */
+		return key_mgmt == WPA_KEY_MGMT_OWE;
+	case SECURITY_PROFILE_NUM_SAE:
+		/* SAE AKM (00-0F-AC:24) */
+		return key_mgmt == WPA_KEY_MGMT_SAE_EXT_KEY ||
+		       key_mgmt == WPA_KEY_MGMT_SAE;
+	case SECURITY_PROFILE_NUM_FT_SAE:
+		/* FT/SAE AKM (00-0F-AC:25) */
+		return key_mgmt == WPA_KEY_MGMT_FT_SAE_EXT_KEY ||
+		       key_mgmt == WPA_KEY_MGMT_FT_SAE;
+	default:
+		return 0;
+	}
+}
+
+
 int wpa_gen_rsnxe(struct wpa_sm *sm, u8 *rsnxe, size_t rsnxe_len)
 {
 	u8 *pos = rsnxe;
-	u64 capab = 0, tmp;
+	u64 capab, tmp;
 	size_t flen;
+
+	capab = wpa_sm_get_rsnxe_capab(sm);
+
+	if (!capab)
+		return 0; /* no supported extended RSN capabilities */
+	tmp = capab;
+	flen = 0;
+	while (tmp) {
+		flen++;
+		tmp >>= 8;
+	}
+	if (rsnxe_len < 2 + flen)
+		return -1;
+	capab |= flen - 1; /* bit 0-3 = Field length (n - 1) */
+
+	*pos++ = WLAN_EID_RSNX;
+	*pos++ = flen;
+	while (capab) {
+		*pos++ = capab & 0xff;
+		capab >>= 8;
+	}
+
+	return pos - rsnxe;
+}
+
+
+/*
+ * wpa_sm_get_rsnxe_capab - Compute RSNXE capability word from wpa_sm state
+ * @sm: WPA state machine
+ *
+ * Returns the u64 capability word that wpa_gen_rsnxe() encodes into the RSNXE
+ * wire format, WITHOUT the length prefix bits (bits 0-3). The caller is
+ * responsible for inserting the length prefix before encoding.
+ *
+ * This is the single source of truth for RSNXE capabilities. Both
+ * wpa_gen_rsnxe() and security_profile_build_sta_ie() call this function to
+ * guarantee that the RSNXE and the Security Profile element's Extended RSN
+ * Capabilities field always carry identical values (802.11bn D1.4, 9.4.2.364,
+ * p.206: "field values must be configured to match the value specified in the
+ * corresponding Security Profile").
+ */
+u64 wpa_sm_get_rsnxe_capab(struct wpa_sm *sm)
+{
+	u64 capab = 0;
 
 	if (wpa_key_mgmt_sae(sm->key_mgmt) &&
 	    (sm->sae_pwe == SAE_PWE_HASH_TO_ELEMENT ||
@@ -331,24 +429,126 @@ int wpa_gen_rsnxe(struct wpa_sm *sm, u8 *rsnxe, size_t rsnxe_len)
 	if (sm->control_frame_prot)
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
 
-	if (!capab)
-		return 0; /* no supported extended RSN capabilities */
-	tmp = capab;
-	flen = 0;
+	return capab;
+}
+
+
+/*
+ * security_profile_build_sta_ie - Build Security Profile element for STA TX
+ * @sm: WPA state machine — same instance used by wpa_gen_wpa_ie_rsn() and
+ *      wpa_gen_rsnxe(). All capability fields are derived from sm, NOT from
+ *      the AP's advertised Security Profile element.
+ * @selected_profile_num: Single profile number the STA has selected (0-119).
+ *      Only this profile's bit is set in the Security Profile Bitmap (37.32).
+ * @buf: Output buffer
+ * @buf_len: Size of output buffer
+ *
+ * Returns: Number of bytes written, or -1 on error.
+ *
+ * Spec: 9.4.2.364 (Figure 9-aa70), 37.32, Table 9-bb14 (802.11bn D1.4).
+ * Element ID = 255, Element ID Extension = 162 (Table 9-164).
+ *
+ * Consistency guarantee:
+ *   Reduced RSN Capabilities <- rsn_supp_capab(sm)  [same as RSNE builder]
+ *   Extended RSN Capabilities <- wpa_sm_get_rsnxe_capab(sm) [same as RSNXE]
+ * This ensures RSNE RSN Capabilities, RSNXE, and Security Profile element
+ * always carry identical capability values (9.4.2.364 p.206).
+ */
+int security_profile_build_sta_ie(struct wpa_sm *sm,
+				  int selected_profile_num,
+				  u8 *buf, size_t buf_len)
+{
+	u8 *pos = buf;
+	u8 *len_pos;
+	u8 reduced_rsn_caps = 0;
+	u16 rsn_caps;
+	u64 ext_rsn_capab;
+	u64 tmp;
+	size_t ext_rsn_len;
+	size_t bitmap_len;
+	size_t total;
+
+	if (!sm || selected_profile_num < 0 ||
+	    selected_profile_num > SECURITY_PROFILE_NUM_MAX)
+		return -1;
+
+	/*
+	 * Reduced RSN Capabilities (Figure 9-aa71): B0=ExtKeyID, B1=OCVC.
+	 * Derived from rsn_supp_capab(sm) — the same function used by
+	 * wpa_gen_wpa_ie_rsn() — so this field always matches the RSN
+	 * Capabilities word in the STA's RSNE.
+	 */
+	rsn_caps = rsn_supp_capab(sm);
+
+	if (rsn_caps & WPA_CAPABILITY_EXT_KEY_ID_FOR_UNICAST)
+		reduced_rsn_caps |= REDUCED_RSN_CAPS_EXT_KEY_ID;
+	if (rsn_caps & WPA_CAPABILITY_OCVC)
+		reduced_rsn_caps |= REDUCED_RSN_CAPS_OCVC;
+
+	/*
+	 * Extended RSN Capabilities (Table 9-408): derived from
+	 * wpa_sm_get_rsnxe_capab(sm) — the same helper used by
+	 * wpa_gen_rsnxe() — so this field always matches the STA's RSNXE.
+	 * Length prefix (bits 0-3) is added below after computing byte length.
+	 */
+	ext_rsn_capab = wpa_sm_get_rsnxe_capab(sm);
+	tmp = ext_rsn_capab;
+	ext_rsn_len = 0;
 	while (tmp) {
-		flen++;
+		ext_rsn_len++;
 		tmp >>= 8;
 	}
-	if (rsnxe_len < 2 + flen)
-		return -1;
-	capab |= flen - 1; /* bit 0-3 = Field length (n - 1) */
+	if (ext_rsn_len == 0)
+		ext_rsn_len = 1; /* minimum 1 octet */
+	/* Encode length in bits 0-3 of first byte (Table 9-408) */
+	ext_rsn_capab |= (u64)(ext_rsn_len - 1);
 
-	*pos++ = WLAN_EID_RSNX;
-	*pos++ = flen;
-	while (capab) {
-		*pos++ = capab & 0xff;
-		capab >>= 8;
+	/*
+	 * Security Profile Bitmap: one bit per profile number.
+	 * Only the selected profile's bit is set (37.32).
+	 * Profile numbers 0-7 fit in 1 octet, 8-15 in 2 octets, etc.
+	 */
+	bitmap_len = (size_t)(selected_profile_num / 8) + 1;
+
+	/* EID(1) + Len(1) + EID_EXT(1) + ReducedRSNCaps(1) +
+	 * SecProfInd(1) + bitmap(bitmap_len) + ext_rsn(ext_rsn_len) */
+	total = 2 + 1 + 1 + 1 + bitmap_len + ext_rsn_len;
+	if (buf_len < total)
+		return -1;
+
+	/* Element ID = 255 (WLAN_EID_EXTENSION) */
+	*pos++ = WLAN_EID_EXTENSION;
+	len_pos = pos++; /* Length — filled in at end */
+
+	/* Element ID Extension = 162 (Table 9-164, 802.11bn D1.4 p.129) */
+	*pos++ = WLAN_EID_EXT_SECURITY_PROFILE;
+
+	/* Reduced RSN Capabilities (1 octet, Figure 9-aa71) */
+	*pos++ = reduced_rsn_caps;
+
+	/*
+	 * Security Profile Indication (1 octet, Figure 9-aa72):
+	 * B0-B3 = Number Of Octets Of Security Profile Bitmap
+	 * B4-B7 = Number Of Vendor Specific Security Profiles (0 here)
+	 */
+	*pos++ = (u8)(bitmap_len & 0x0F);
+
+	/* Security Profile Bitmap: bit X = 1 for selected_profile_num */
+	os_memset(pos, 0, bitmap_len);
+	pos[selected_profile_num / 8] |= BIT(selected_profile_num % 8);
+	pos += bitmap_len;
+
+	/* Vendor Specific Security Profile List: empty (0 vendor profiles) */
+
+	/* Extended RSN Capabilities (variable, Table 9-408) */
+	tmp = ext_rsn_capab;
+	while (ext_rsn_len--) {
+		*pos++ = (u8)(tmp & 0xff);
+		tmp >>= 8;
 	}
 
-	return pos - rsnxe;
+	/* Fill Length field (excludes EID and Length bytes, includes EID_EXT) */
+	*len_pos = (u8)(pos - len_pos - 1);
+
+	return (int)(pos - buf);
 }

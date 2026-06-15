@@ -28,6 +28,7 @@ struct hostapd_data;
 struct hapd_interfaces;
 struct rrm_measurement_beacon_report;
 struct sta_info;
+struct csa_settings;
 
 #ifdef UBUS_SUPPORT
 
@@ -69,6 +70,20 @@ int hostapd_ubus_notify_bss_transition_query(
 void hostapd_ubus_notify_authorized(struct hostapd_data *hapd, struct sta_info *sta,
 				    const char *auth_alg);
 char *hostapd_ubus_bhsta_state(struct hostapd_iface *iface);
+int hostapd_ubus_mesh_switch_channel(struct hostapd_iface *iface,
+				     struct csa_settings *settings);
+
+/**
+ * hostapd_ubus_bhsta_ifname() - Get backhaul STA interface name
+ * @iface: Pointer to hostapd interface data
+ *
+ * Query ubus for the backhaul STA status associated with the AP interface and
+ * return the backhaul STA interface name. The returned string is dynamically
+ * allocated and must be freed by the caller.
+ *
+ * Return: Backhaul STA interface name on success, NULL on failure.
+ */
+char *hostapd_ubus_bhsta_ifname(struct hostapd_iface *iface);
 
 #else
 
@@ -154,6 +169,18 @@ hostapd_ubus_notify_authorized(struct hostapd_data *hapd, struct sta_info *sta,
 static inline char *hostapd_ubus_bhsta_state(struct hostapd_iface *iface)
 {
 	return NULL;
+}
+
+static inline char *hostapd_ubus_bhsta_ifname(struct hostapd_iface *iface)
+{
+	return NULL;
+}
+
+static inline int
+hostapd_ubus_mesh_switch_channel(struct hostapd_iface *iface,
+				 struct csa_settings *settings)
+{
+	return 0;
 }
 
 #endif

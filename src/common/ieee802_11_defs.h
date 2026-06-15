@@ -36,6 +36,8 @@
 
 #define WLAN_INVALID_MGMT_SEQ   0xFFFF
 
+#define ALL_SUBCHANS_PUNC 0xFFFF
+
 #define WLAN_GET_SEQ_FRAG(seq) ((seq) & (BIT(3) | BIT(2) | BIT(1) | BIT(0)))
 #define WLAN_GET_SEQ_SEQ(seq) \
 	(((seq) & (~(BIT(3) | BIT(2) | BIT(1) | BIT(0)))) >> 4)
@@ -242,6 +244,7 @@
 #define WLAN_STATUS_DENIED_TX_LINK_NOT_ACCEPTED 139
 #define WLAN_STATUS_EPCS_DENIED_VERIFICATION_FAILURE 140
 #define WLAN_STATUS_DENIED_OPERATION_PARAMETER_UPDATE 141
+#define WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE 159
 
 /* Reason codes (IEEE Std 802.11-2020, 9.4.1.7, Table 9-90) */
 #define WLAN_REASON_UNSPECIFIED 1
@@ -305,7 +308,8 @@
 #define WLAN_REASON_MAC_ADDRESS_ALREADY_EXISTS_IN_MBSS 64
 #define WLAN_REASON_MESH_CHANNEL_SWITCH_REGULATORY_REQ 65
 #define WLAN_REASON_MESH_CHANNEL_SWITCH_UNSPECIFIED 66
-
+/* IEEE 802.11bn D1.4: Security Profile element mismatch in (Re)Assoc Response */
+#define WLAN_REASON_SEC_PROF_IE_IN_ASSOC_RESP_INVALID  WLAN_REASON_INVALID_IE
 
 /* Element IDs (IEEE Std 802.11-2020, 9.4.2.1, Table 9-92) */
 #define WLAN_EID_SSID 0
@@ -505,7 +509,7 @@
 #define WLAN_EID_EXT_EXTENDED_REQUEST 10
 #define WLAN_EID_EXT_ESTIMATED_SERVICE_PARAMS 11
 #define WLAN_EID_EXT_FILS_PUBLIC_KEY 12
-#define WLAN_EID_EXT_FILS_NONCE 13
+#define WLAN_EID_EXT_NONCE 13
 #define WLAN_EID_EXT_FUTURE_CHANNEL_GUIDANCE 14
 #define WLAN_EID_EXT_OWE_DH_PARAM 32
 #define WLAN_EID_EXT_PASSWORD_IDENTIFIER 33
@@ -514,6 +518,7 @@
 #define WLAN_EID_EXT_HE_MU_EDCA_PARAMS 38
 #define WLAN_EID_EXT_SPATIAL_REUSE 39
 #define WLAN_EID_EXT_COLOR_CHANGE_ANNOUNCEMENT 42
+#define WLAN_EID_EXT_ESS_REPORT 45
 #define WLAN_EID_EXT_MAX_CHANNEL_SWITCH_TIME 52
 #define WLAN_EID_EXT_OCV_OCI 54
 #define WLAN_EID_EXT_MULTIPLE_BSSID_CONFIGURATION 55
@@ -541,6 +546,38 @@
 #define WLAN_EID_EXT_PASN_ENCRYPTED_DATA 140
 #define WLAN_EID_EXT_UHR_OPERATION 151
 #define WLAN_EID_EXT_UHR_CAPABILITIES 152
+
+/* Security Profile element (802.11bn D1.4, Table 9-164, EID Extension = 162) */
+#define WLAN_EID_EXT_SECURITY_PROFILE 162
+
+/* Security Profile element fields (IEEE 802.11bn D1.4 §9.4.2.363) */
+/* Reduced RSN Capabilities field bits (Figure 9-aa71) */
+#define WLAN_SEC_PROF_REDUCED_RSN_CAPA_EXTENDED_KEY_ID  BIT(0)
+#define WLAN_SEC_PROF_REDUCED_RSN_CAPA_OCVC             BIT(1)
+
+/* Security Profile Indication field (Figure 9-aa72):
+ * Bits 0-3: Number of octets in Security Profile Bitmap
+ * Bits 4-7: Number of Vendor Specific Security Profiles
+ */
+#define WLAN_SEC_PROF_IND_BITMAP_OCTETS(ind)  ((ind) & 0x0f)
+#define WLAN_SEC_PROF_IND_VENDOR_COUNT(ind)   (((ind) >> 4) & 0x0f)
+
+#define WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS 155
+
+#define WLAN_EID_EXT_SMD 154
+/* SMD Information Element length: EID (1) + Len (1) + ExtID (1) +
+ * SMD Identifier (ETH_ALEN) + Capabilities (1) + Timeout (1) */
+#define SMD_IE_LEN (2 + 1 + ETH_ALEN + 1 + 1)
+
+#ifdef CONFIG_IEEE80211BN
+/* UHR Reconfiguration Multi-Link Control field */
+#define UHR_RECONF_ML_CONTROL_TYPE_MASK                 0x0007
+#define UHR_RECONF_ML_CONTROL_TYPE_RECONF               2
+
+/* UHR Reconfiguration Presence Bitmap (bits 4-15 of ML Control, shifted >> 4) */
+#define UHR_RECONF_ML_CTRL_PRES_TARGET_AP_MLD_ADDR      BIT(4)
+
+#endif /* CONFIG_IEEE80211BN */
 
 /* Extended Capabilities field */
 #define WLAN_EXT_CAPAB_20_40_COEX 0
@@ -637,8 +674,43 @@
 #define WLAN_RSNX_CAPAB_URNM_MFPR 15
 #define WLAN_RSNX_CAPAB_KEK_IN_PASN 18
 #define WLAN_RSNX_CAPAB_SSID_PROTECTION 21
+#define WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION 27
+#define WLAN_RSNX_CAPAB_802_1X_IN_AUTH_FRAMES 28
+#define WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY 29
 #define WLAN_RSNX_CAPAB_CIGTK 33
 #define WLAN_RSNX_CAPAB_SAE_PW_ID_CHANGE 34
+#define WLAN_RSNX_CAPAB_UNAUTH_EPPKE 36
+
+/*
+ * Security Profile Number values (802.11bn D1.4, Table 9-bb14).
+ * All profiles use pairwise cipher GCMP-256 (00-0F-AC:9) and MFPR=1.
+ * AKM suites are 00-0F-AC:<value below>.
+ */
+#define SECURITY_PROFILE_NUM_EPPKE_NO_AUTH	0  /* EPPKE (29), no mutual auth */
+#define SECURITY_PROFILE_NUM_EPPKE_SAE		1  /* EPPKE (29) + SAE (24) */
+#define SECURITY_PROFILE_NUM_EPPKE_FT_SAE	2  /* EPPKE (29) + FT/SAE (25) */
+#define SECURITY_PROFILE_NUM_8021X_AUTH		3  /* 802.1X (5), EAP over AUTH */
+#define SECURITY_PROFILE_NUM_8021X_FT_AUTH	4  /* 802.1X+FT (3), EAP over AUTH */
+#define SECURITY_PROFILE_NUM_8021X_SHA384_AUTH	5  /* 802.1X SHA384 (23), EAP over AUTH */
+#define SECURITY_PROFILE_NUM_8021X_FT384_AUTH	6  /* 802.1X+FT SHA384 (22), EAP over AUTH */
+#define SECURITY_PROFILE_NUM_8021X_SUITEB_AUTH	7  /* 802.1X Suite-B (12), EAP over AUTH */
+#define SECURITY_PROFILE_NUM_OWE		8  /* OWE/None (18) */
+#define SECURITY_PROFILE_NUM_SAE		9  /* SAE (24) */
+#define SECURITY_PROFILE_NUM_FT_SAE		10 /* FT/SAE (25) */
+#define SECURITY_PROFILE_NUM_8021X		11 /* 802.1X (5) */
+#define SECURITY_PROFILE_NUM_8021X_FT		12 /* 802.1X+FT (3) */
+#define SECURITY_PROFILE_NUM_8021X_SHA384	13 /* 802.1X SHA384 (23) */
+#define SECURITY_PROFILE_NUM_8021X_FT384	14 /* 802.1X+FT SHA384 (22) */
+#define SECURITY_PROFILE_NUM_8021X_SUITEB	15 /* 802.1X Suite-B (12) */
+/* 16-119: Reserved */
+#define SECURITY_PROFILE_NUM_MAX		119
+
+/* Security Profile Indication field (Figure 9-yyy, IEEE 802.11bn D1.4) */
+#define SECURITY_PROFILE_INDICATION_BITMAP_LEN_MASK	0x0f
+
+/* Reduced RSN Capabilities field bits (Figure 9-aa71) */
+#define REDUCED_RSN_CAPS_EXT_KEY_ID	BIT(0)
+#define REDUCED_RSN_CAPS_OCVC		BIT(1)
 
 /* Multiple BSSID element subelements */
 #define WLAN_MBSSID_SUBELEMENT_NONTRANSMITTED_BSSID_PROFILE 0
@@ -855,6 +927,9 @@
 
 #define CONTROL_MIC_PAD_NOT_SET 255
 
+/* 320 - 80 or 240 MHz puncture. The rightmost 80 MHz is punctured */
+#define RIGHT80_240MHZ_PUNC 0xF000
+
 /* Advertisement Protocol ID definitions (IEEE Std 802.11-2020, Table 9-237) */
 enum adv_proto_id {
 	ACCESS_NETWORK_QUERY_PROTOCOL = 0,
@@ -981,7 +1056,7 @@ enum lci_req_subelem {
 	LCI_REQ_SUBELEM_MAX_AGE = 4,
 };
 
-#define FILS_NONCE_LEN 16
+#define NONCE_LEN 16
 #define FILS_SESSION_LEN 8
 #define FILS_CACHE_ID_LEN 2
 #define FILS_MAX_KEY_AUTH_LEN 48
@@ -1736,6 +1811,7 @@ enum mbo_attr_id {
 	OCE_ATTR_ID_PROBE_SUPPRESSION_BSSIDS = 105,
 	OCE_ATTR_ID_PROBE_SUPPRESSION_SSIDS = 106,
 	OCE_ATTR_ID_TRANSMIT_POWER = 107,
+	OCE_ATTR_ID_IP_SUBNET_IDENTIFIER = 108,
 };
 
 /* MBO v0.0_r19, 4.2.1: MBO AP Capability Indication Attribute */
@@ -2901,6 +2977,31 @@ struct ieee80211_spatial_reuse {
 
 /* Mac capabilities for index 3 octet HE_MAC_CAPAB_3 */
 #define HE_MACCAP_FLEXI_TWT                     ((u8) BIT(6))
+#define HE_MACCAP_MULTI_TID_AGGR_RX_IDX		1
+#define HE_MACCAP_MULTI_TID_AGGR_RX_MASK		((u8) (BIT(4) | BIT(5) | BIT(6)))
+#define HE_MACCAP_MULTI_TID_AGGR_RX_SHIFT	4
+#define HE_MACCAP_MAX_AMPDU_LEN_EXP_IDX		3
+#define HE_MACCAP_MAX_AMPDU_LEN_EXP_MASK		((u8) (BIT(3) | BIT(4)))
+#define HE_MACCAP_MAX_AMPDU_LEN_EXP_SHIFT	3
+#define HE_MACCAP_MULTI_TID_AGGR_TX_LO_IDX	4
+#define HE_MACCAP_MULTI_TID_AGGR_TX_LO_MASK	((u8) BIT(7))
+#define HE_MACCAP_MULTI_TID_AGGR_TX_HI_IDX	5
+#define HE_MACCAP_MULTI_TID_AGGR_TX_HI_MASK	((u8) (BIT(0) | BIT(1)))
+#define HE_MACCAP_FRAGMENTATION_IDX		0
+#define HE_MACCAP_FRAGMENTATION_MASK		((u8) (BIT(3) | BIT(4)))
+#define HE_MACCAP_FRAGMENTATION_SHIFT		3
+#define HE_MACCAP_MAX_FRAG_MSDU_IDX		0
+#define HE_MACCAP_MAX_FRAG_MSDU_MASK		((u8) (BIT(5) | BIT(6) | BIT(7)))
+#define HE_MACCAP_MAX_FRAG_MSDU_SHIFT		5
+#define HE_MACCAP_MIN_FRAG_SIZE_IDX		1
+#define HE_MACCAP_MIN_FRAG_SIZE_MASK		((u8) (BIT(0) | BIT(1)))
+#define HE_MACCAP_MIN_FRAG_SIZE_SHIFT		0
+#define HE_MACCAP_BSR_IDX			2
+#define HE_MACCAP_BSR				((u8) BIT(3))
+#define HE_MACCAP_AMSDU_IN_AMPDU_IDX		4
+#define HE_MACCAP_AMSDU_IN_AMPDU		((u8) BIT(6))
+#define HE_MACCAP_OMI_IDX			3
+#define HE_MACCAP_OMI				((u8) BIT(1))
 
 #define HE_PHYCAP_CHANNEL_WIDTH_SET_IDX		0
 #define HE_PHYCAP_CHANNEL_WIDTH_MASK		((u8) (BIT(1) | BIT(2) | \
@@ -2916,6 +3017,27 @@ struct ieee80211_spatial_reuse {
 #define HE_PHYCAP_SU_BEAMFORMEE_CAPAB		((u8) BIT(0))
 #define HE_PHYCAP_MU_BEAMFORMER_CAPAB_IDX	4
 #define HE_PHYCAP_MU_BEAMFORMER_CAPAB		((u8) BIT(1))
+#define HE_PHYCAP_BFEE_STS_LTEQ80_IDX		4
+#define HE_PHYCAP_BFEE_STS_LTEQ80_MASK		((u8) (BIT(2) | BIT(3) | BIT(4)))
+#define HE_PHYCAP_BFEE_STS_LTEQ80_SHIFT		2
+#define HE_PHYCAP_BFEE_STS_GT80_IDX		4
+#define HE_PHYCAP_BFEE_STS_GT80_MASK		((u8) (BIT(5) | BIT(6) | BIT(7)))
+#define HE_PHYCAP_BFEE_STS_GT80_SHIFT		5
+#define HE_PHYCAP_SU_PPDU_1X_LTF_800NS_GI_IDX	1
+#define HE_PHYCAP_SU_PPDU_1X_LTF_800NS_GI	((u8) BIT(6))
+#define HE_PHYCAP_NDP_4X_LTF_3200NS_GI_IDX	2
+#define HE_PHYCAP_NDP_4X_LTF_3200NS_GI		((u8) BIT(1))
+#define HE_PHYCAP_SU_MU_PPDU_4X_LTF_800NS_GI_IDX 7
+#define HE_PHYCAP_SU_MU_PPDU_4X_LTF_800NS_GI	((u8) BIT(2))
+#define HE_PHYCAP_MAX_NC_IDX			7
+#define HE_PHYCAP_MAX_NC_MASK			((u8) (BIT(3) | BIT(4) | BIT(5)))
+#define HE_PHYCAP_MAX_NC_SHIFT			3
+#define HE_PHYCAP_ER_SU_PPDU_4X_LTF_800NS_GI_IDX 8
+#define HE_PHYCAP_ER_SU_PPDU_4X_LTF_800NS_GI	((u8) BIT(0))
+#define HE_PHYCAP_ER_SU_PPDU_1X_LTF_800NS_GI_IDX 8
+#define HE_PHYCAP_ER_SU_PPDU_1X_LTF_800NS_GI	((u8) BIT(4))
+#define HE_PHYCAP_RX_1024QAM_LT242RU_IDX	9
+#define HE_PHYCAP_RX_1024QAM_LT242RU		((u8) BIT(3))
 
 #define HE_PHYCAP_UL_MUMIMO_CAPB_IDX	2
 #define HE_PHYCAP_UL_MUMIMO_CAPB	((u8) BIT(6))
@@ -3083,6 +3205,8 @@ struct ieee80211_he_mu_edca_parameter_set {
 #define RNR_BSS_PARAM_MEMBER_CO_LOCATED_ESS         BIT(4)
 #define RNR_BSS_PARAM_UNSOLIC_PROBE_RESP_ACTIVE     BIT(5)
 #define RNR_BSS_PARAM_CO_LOCATED                    BIT(6)
+/* IEEE Std 802.11-2025 11bn */
+#define RNR_BSS_PARAM_MEMBER_OF_SMD		    BIT(7)
 /* Maximum transmit power in Y/2 dBm (-127..126); setting -128 indicates
  * no power is configured for that corresponding 20 MHz channel */
 #define RNR_20_MHZ_PSD_NO_POWER			   -128
@@ -3162,11 +3286,38 @@ struct ieee80211_eht_operation {
 
 #define EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_IDX	0
 #define EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_MASK	((u8) BIT(1))
+#define EHT_PHYCAP_NDP_4X_EHT_LTF_AND_320NSGI_IDX 0
+#define EHT_PHYCAP_NDP_4X_EHT_LTF_AND_320NSGI	((u8) BIT(3))
 
 #define EHT_PHYCAP_SU_BEAMFORMER_IDX		0
 #define EHT_PHYCAP_SU_BEAMFORMER		((u8) BIT(5))
 #define EHT_PHYCAP_SU_BEAMFORMEE_IDX		0
 #define EHT_PHYCAP_SU_BEAMFORMEE		((u8) BIT(6))
+
+#define EHT_PHYCAP_NUM_SD_LT80_IDX		2
+#define EHT_PHYCAP_NUM_SD_LT80_MASK		((u8) (BIT(0) | BIT(1) | BIT(2)))
+#define EHT_PHYCAP_NUM_SD_LT80_SHIFT		0
+#define EHT_PHYCAP_NUM_SD_160_IDX		2
+#define EHT_PHYCAP_NUM_SD_160_MASK		((u8) (BIT(3) | BIT(4) | BIT(5)))
+#define EHT_PHYCAP_NUM_SD_160_SHIFT		3
+#define EHT_PHYCAP_NUM_SD_320_LOW_IDX		2
+#define EHT_PHYCAP_NUM_SD_320_LOW_MASK		((u8) (BIT(6) | BIT(7)))
+#define EHT_PHYCAP_NUM_SD_320_LOW_SHIFT		6
+#define EHT_PHYCAP_NUM_SD_320_HIGH_IDX		3
+#define EHT_PHYCAP_NUM_SD_320_HIGH_MASK		((u8) BIT(0))
+#define EHT_PHYCAP_NUM_SD_320_HIGH_SHIFT	0
+
+#define EHT_PHYCAP_TRIG_MU_BF_PART_BW_FB_IDX	3
+#define EHT_PHYCAP_TRIG_MU_BF_PART_BW_FB	((u8) BIT(6))
+#define EHT_PHYCAP_4X_EHT_LTF_AND_800NS_GI_IDX	4
+#define EHT_PHYCAP_4X_EHT_LTF_AND_800NS_GI	((u8) BIT(3))
+#define EHT_PHYCAP_RX_1024_AND_4096_QAM_LS_242_TONE_RU_IDX 5
+#define EHT_PHYCAP_RX_1024_AND_4096_QAM_LS_242_TONE_RU	((u8) BIT(2))
+#define EHT_PHYCAP_SUP_MCS15_IN_MRU_IDX		6
+#define EHT_PHYCAP_SUP_MCS15_IN_MRU_MASK	((u8) (BIT(3) | BIT(4) | BIT(5) | BIT(6)))
+#define EHT_PHYCAP_SUP_MCS15_IN_MRU_SHIFT	3
+#define EHT_PHYCAP_MCS14_DUP_IN_6GHZ_IDX	6
+#define EHT_PHYCAP_MCS14_DUP_IN_6GHZ		((u8) BIT(7))
 
 /* Beamformee SS fields for BSS capability override (IEEE 802.11be) */
 /* These are separate from QCN 240MHz extension definitions */

@@ -58,6 +58,18 @@ struct nan_publish_params;
 
 #define HOSTAPD_CHAN_PSD 0x00200000
 
+/**
+ * enum dfs_chan_puncture_source - Source of channel puncturing
+ * @DFS_CHAN_PUNC_NONE: Channel is not punctured
+ * @DFS_CHAN_PUNC_RADAR: Channel is punctured due to radar detection
+ * @DFS_CHAN_PUNC_USER: Channel is punctured due to user request
+ */
+enum dfs_chan_puncture_source {
+	DFS_CHAN_PUNC_NONE,
+	DFS_CHAN_PUNC_RADAR,
+	DFS_CHAN_PUNC_USER,
+};
+
 /* Allowed bandwidth mask */
 enum hostapd_chan_width_attr {
 	HOSTAPD_CHAN_WIDTH_10   = BIT(0),
@@ -411,6 +423,12 @@ struct hostapd_channel_data {
 	unsigned int dfs_cac_ms;
 
 	/**
+	 * nolhistory - This variable is set when radar is found on the
+	 * channel, unlike NOL it is never cleared
+	 */
+	bool nolhistory;
+
+	/**
 	 * wmm_rules_valid - Indicates wmm_rules state
 	 */
 	int wmm_rules_valid;
@@ -424,6 +442,12 @@ struct hostapd_channel_data {
 	 * punct_bitmap - RU puncturing bitmap
 	 */
 	u16 punct_bitmap;
+
+	/**
+	 * puncture_source - Puncture source for this 20 MHz channel
+	 * dfs_chan_puncture_source puncture source state
+	 */
+	enum dfs_chan_puncture_source puncture_source;
 
 	/**
 	 * psd_power - PSD power
@@ -678,6 +702,16 @@ struct hostapd_multi_hw_info {
  * (used during scan result processing)
  * @ie_len: length of the following IE field in octets
  * @beacon_ie_len: length of the following Beacon IE field in octets
+ * @smd_capable: SMD capability/support
+ * @smd_identifier: SMD identifier (if supported)
+ * @smd_capabilities: SMD capabilities bitmap (if supported)
+ * @smd_timeout: SMD preparation timeout (if supported)
+ * @smd_dl_forwarding: SMD MSDU forwarding support (if supported)
+ * @smd_max_targets: SMD maximum supported targets (if supported)
+ * @smd_type: SMD type (MAC-SAP support)
+ * @smd_ptk_mode: PTK key management mode
+ * @smd_from_beacon: Flag to indicate if SMD capability was read from
+ * beacon.
  *
  * This structure is used as a generic format for scan results from the
  * driver. Each driver interface implementation is responsible for converting
@@ -713,6 +747,21 @@ struct wpa_scan_res {
 	bool mlo_tput_accumulated;
 	size_t ie_len;
 	size_t beacon_ie_len;
+	bool smd_capable;
+	u8 smd_identifier[ETH_ALEN];
+	u8 smd_capabilities;
+	u16 smd_timeout;
+	bool smd_dl_forwarding;
+	u8 smd_max_targets;
+	bool smd_type;
+	bool smd_ptk_mode;
+	bool smd_from_beacon;
+
+	bool rnr_smd_inference_present;
+	bool rnr_same_smd_bit;
+	u8 rnr_ap_mld_id;
+	u32 rnr_short_ssid;
+
 	/* Followed by ie_len + beacon_ie_len octets of IE data */
 };
 
@@ -770,6 +819,41 @@ struct t2lm_mapping {
 	 */
 	u8 uplink;
 };
+
+
+/**
+ * struct wpa_driver_smd_neighbor - SMD neighbor discovery target
+ *
+ * Represents a neighbor AP that is part of an SMD domain, extracted from
+ * RNR (Reduced Neighbor Report) elements for directed discovery.
+ */
+struct wpa_driver_smd_neighbor {
+	/**
+	 * short_ssid - Short SSID of target AP
+	 */
+	u32 short_ssid;
+
+	/**
+	 * freq - Operating frequency in MHz
+	 */
+	u32 freq;
+
+	/**
+	 * u8 op_class - Operating Class
+	 */
+	u8 op_class;
+
+	/**
+	 * u8 bssid - BSSID of target AP (optional, may be all 0s)
+	 */
+	u8 bssid[ETH_ALEN];
+
+	/**
+	 * ap_mld_id - AP MLD ID (optional, 0 if not present)
+	 */
+	u8 ap_mld_id;
+};
+
 
 /**
  * struct wpa_driver_scan_params - Scan parameters
@@ -1037,6 +1121,39 @@ struct wpa_driver_scan_params {
 };
 
 /**
+ * smd_enabled - Whether this AP is part of an SMD
+ * smd - SMD configuration
+ * This structure mirrors the SMD configuration from hostapd_bss_config
+ * and is populated by the AP layer before being passed to the driver.
+ */
+struct wpa_smd_params {
+        /**
+         * enabled - Whether SMD is enabled for this AP
+         */
+        int enabled;
+
+        /**
+         * smd_identifier - SMD Identifier (6-byte MAC address)
+         */
+        u8 smd_identifier[ETH_ALEN];
+
+        /**
+         * smd_timeout - SMD Preparation Timeout, units of 64 TUs
+         */
+        u8 smd_timeout;
+
+        /**
+         * caps - SMD capabilities
+         */
+        struct {
+                bool dl_data_fwd; /* DL Data Forwarding */
+                u8 max_prep_target_apmlds; /* Max Number Of Prepared Target AP MLDs (0-7) */
+                bool smd_type; /* SMD Type (0 or 1) */
+                bool ptk_mode; /* PTK Mode (0 or 1) */
+        } caps;
+};
+
+/**
  * struct wpa_driver_auth_params - Authentication parameters
  * Data for struct wpa_driver_ops::authenticate().
  */
@@ -1086,6 +1203,8 @@ struct wpa_driver_auth_params {
 	 * The MLD AP address
 	 */
 	const u8 *ap_mld_addr;
+
+	struct wpa_smd_params smd;
 };
 
 /**
@@ -1790,6 +1909,17 @@ struct wpa_driver_associate_params {
 	 * p2p_mode - P2P R1 only, P2P R2 only, or PCC mode
 	 */
 	enum wpa_p2p_mode p2p_mode;
+
+	/**
+	 * security_profile_active - Whether Security Profile element is active
+	 *
+	 * True when the Security Profile element (IEEE 802.11bn) functionality
+	 * is enabled for this connection.  Drivers that handle the Security
+	 * Profile element themselves (e.g., for driver-SME) can use this flag
+	 * to know whether to parse, validate, and apply the element.
+	 */
+	bool security_profile_active;
+	struct wpa_smd_params smd;
 };
 
 enum hide_ssid {
@@ -1960,6 +2090,13 @@ struct wpa_driver_ap_ttlm_params {
 	struct drv_adv_ttlm_params up_ttlm;
 	struct drv_adv_ttlm_params est_ttlm;
 	bool send_default_mapping;
+};
+
+#define WPA_DRIVER_AP_MAX_CMN_PARAMS 10
+
+struct wpa_driver_multi_bss_cmn_params {
+	int cmn_param_id;
+	int cmn_param_val[2];
 };
 
 struct wpa_driver_ap_params {
@@ -2195,6 +2332,11 @@ struct wpa_driver_ap_params {
 	int pbss;
 
 	/**
+	 * dynamic_vlan - Whether dynamic VLAN is enabled for this AP
+	 */
+	bool dynamic_vlan;
+
+	/**
 	 * multicast_to_unicast - Whether to use multicast_to_unicast
 	 *
 	 * If this is non-zero, the AP is requested to perform multicast to
@@ -2419,6 +2561,20 @@ struct wpa_driver_ap_params {
 	int rssi_deauth_grace_samples;
 
 	int dps_assist;
+
+#ifdef CONFIG_IEEE80211BN
+	struct wpa_smd_params smd;
+#endif /* CONFIG_IEEE80211BN */
+
+	/* Num common parameter to add in qca_vendor command */
+	size_t num_cmn_params;
+
+	/**
+	 * structure contains common parameter's ID and
+	 * user configures values from userspace
+	 */
+	struct wpa_driver_multi_bss_cmn_params
+		multi_bss_params[WPA_DRIVER_AP_MAX_CMN_PARAMS];
 };
 
 struct wpa_driver_mesh_bss_params {
@@ -2939,6 +3095,17 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_CIP_PADDING_SUPPORT  0x0000000800000000ULL
 /** Driver supports sending CSA in the current channel, when new/target channel is DFS*/
 #define WPA_DRIVER_FLAGS2_DFS_CHANNEL_SWITCH   0x0000001000000000ULL
+/** Driver supports synchronized beacon transmission across radios/links */
+#define WPA_DRIVER_FLAGS2_BEACON_TX_SYNC       0x0000002000000000ULL
+/** Driver supports Security Profile element (802.11bn D1.4, 9.4.2.364, 37.32)
+ *  handling */
+#define WPA_DRIVER_FLAGS2_SECURITY_PROFILE     0x0000004000000000ULL
+/** Driver supports creating all 5 GHz BSS interfaces during DFS CAC (boot-up CAC) */
+#define WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC 0x0000008000000000ULL
+/** Driver supports SMD in station/AP mode */
+#define WPA_DRIVER_FLAGS2_SMD			0x0000020000000000ULL
+/** Driver supports SMD DL data forwarding during seamless transitions */
+#define WPA_DRIVER_FLAGS2_SMD_DL_DATA_FWD       0x0000040000000000ULL
 	u64 flags2;
 
 #define FULL_AP_CLIENT_STATE_SUPP(drv_flags) \
@@ -3071,6 +3238,8 @@ struct wpa_driver_capa {
 	u8  mbssid_max_ngroups;
 	/* Maximum supported beacon size */
 	unsigned int max_beacon_size;
+	/* Indicates whether STA DFS is enabled */
+	u8 sta_dfs_en;
 
 	/* EDCA based ranging capabilities */
 	u8 edca_format_and_bw;
@@ -4062,6 +4231,14 @@ struct wpa_driver_ops {
 	 * Returns: Interface index
 	 */
 	unsigned int (*get_ifindex)(void *priv);
+
+	/**
+	 * get_wiphy_idx - Get wiphy index for the radio
+	 * @priv: private driver interface data
+	 *
+	 * Returns: wiphy index, or -1 on failure
+	 */
+	int (*get_wiphy_idx)(void *priv);
 
 	/**
 	 * is_only_afc_power_fetch - Check if only AFC power fetch is required
@@ -5327,6 +5504,22 @@ struct wpa_driver_ops {
 	 */
 	int (*stop_sched_scan)(void *priv);
 
+        /**
+         * trigger_smd_discovery = Trigger SMD neighbor discovery
+         * @priv: Private driver interface data
+         * @neighbors: Array of SMD neighbor targets to discover
+         * @num_neighbors: Number of neighbors in the array
+         * Returns: 0 on success, -1 on failure
+         *
+         * This function triggers directed discovery for SMD neighbors identified
+         * from RNR elements. The driver should issue
+         * NL80211_CMD_TRIGGER_SMD_DISCOVERY to the kernel with the target
+         * list for efficient directed scanning.
+         */
+        int (*trigger_smd_discovery)(void *priv,
+                                     const struct wpa_driver_smd_neighbor *neighbors,
+                                     size_t num_neighbors);
+
 	/**
 	 * poll_client - Probe (null data or such) the given station
 	 * @priv: Private driver interface data
@@ -5364,6 +5557,17 @@ struct wpa_driver_ops {
 	 * avoid frequency conflict in single channel concurrency.
 	 */
 	int (*switch_channel)(void *priv, struct csa_settings *settings);
+
+	/**
+	 * update_monitor_channel - Set channel for a monitor interface
+	 * using NL80211_CMD_SET_CHANNEL
+	 * @priv: Private driver interface data
+	 * @ifindex: Interface index of the monitor interface
+	 * @freq_params: New channel frequency parameters
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*update_monitor_channel)(void *priv, int ifindex,
+				      const struct hostapd_freq_params *freq_params);
 
 	/**
 	 * set_6ghz_pwr_mode - Set the 6 GHz power mode
@@ -5438,9 +5642,24 @@ struct wpa_driver_ops {
 	 * start_dfs_cac - Listen for radar interference on the channel
 	 * @priv: Private driver interface data
 	 * @freq: Channel parameters
+	 * @radio_idx: Physical radio index for background CAC
+	 *	(NL80211_ATTR_WIPHY_RADIO_INDEX). -1 if not applicable (foreground
+	 *	CAC or no multi-radio info available); the attribute is omitted and
+	 *	the kernel falls back to legacy single-slot behaviour.
 	 * Returns: 0 on success, -1 on failure
 	 */
-	int (*start_dfs_cac)(void *priv, struct hostapd_freq_params *freq);
+	int (*start_dfs_cac)(void *priv, struct hostapd_freq_params *freq, int radio_idx);
+
+	/**
+	 * stop_background_cac - Stop an ongoing background CAC
+	 * @priv: Private driver interface data
+	 * @radio_idx: Physical radio index of the background CAC to stop
+	 *	(NL80211_ATTR_WIPHY_RADIO_INDEX). -1 if not known; the attribute
+	 *	is omitted and the kernel selects the active slot by link.
+	 * @link_id: MLD link ID for the interface sending the stop command.
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*stop_background_cac)(void *priv, int radio_idx, int link_id);
 
 	/**
 	 * stop_ap - Removes beacon from AP
@@ -6300,6 +6519,22 @@ struct wpa_driver_ops {
 
 #ifdef CONFIG_QCN_EXTN
 	/**
+	 * fetch_hw_blocked_chans - Request driver cached HW blocked channels.
+	 * @priv: Private driver interface data
+	 * @radio_idx: Radio index; -1 for all radios
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*fetch_hw_blocked_chans)(void *priv, int radio_idx);
+
+	/*
+	 * is_6ghz_hw_blocked_chans_supported - Check if driver supports HW blocked channels
+	 * vendor event/query in 6 GHz.
+	 * @priv: Private driver interface data
+	 * Returns: true if supported, false otherwise
+	 */
+	bool (*is_6ghz_hw_blocked_chans_supported)(void *priv);
+
+	/**
 	 * dcs_config - Send the DCS config params to driver in order to configure
 	 * at firmware.
 	 * @priv: Private driver interface data
@@ -6318,6 +6553,18 @@ struct wpa_driver_ops {
 	 * Returns: 0 on success, -1 on failure
 	 */
 	int (*dcs_sim)(void *priv, u8 link_id, struct driver_dcs_sim *params);
+	/**
+	 * set_cbs - Send the CBS params to driver in order to trigger scan.
+	 * @priv: Private driver interface data
+	 * @params: CBS params structure.
+	 * @freq_list: Frequency list for scan trigger.
+	 * @link_id: Link ID of the specified link; -1 for non-MLD
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*set_cbs)(void *priv,
+		       const struct cbs_params_extn *params,
+		       int *freq_list,
+		       int link_id);
 #endif
 #endif /* CONFIG_IEEE80211BE */
 
@@ -6351,6 +6598,16 @@ struct wpa_driver_ops {
 	int (*set_muedca_mode)(void *priv, int mode, int radio_idx);
 #endif /* CONFIG_QCN_EXTN */
 	int (*abort_cac)(void *priv, int link_id);
+
+	/**
+	 * notify_radar - Send radar notify through nl80211
+	 * @priv: Private driver interface data
+	 * @freq: Channel parameters
+	 * @radar_bitmap: Radar bitmap relative to the operating block
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*notify_radar)(void *priv, struct hostapd_freq_params *freq,
+			    u16 radar_bitmap);
 };
 
 /**
@@ -7118,6 +7375,25 @@ enum wpa_event_type {
 	 * EVENT_DCS_INTF - Notification event for DCS interference from driver
 	 */
 	EVENT_DCS_INTF,
+
+	/**
+	 * EVENT_HW_BLOCKED_CHANS_NOTIFY - HW blocked channel information received
+	 */
+	EVENT_HW_BLOCKED_CHANS_NOTIFY,
+
+	/**
+	 * EVENT_SCAN_RESULTS_EXTN - Notification event for Extension scan results from driver
+	 */
+	EVENT_SCAN_RESULTS_EXTN,
+
+	/**
+	 * EVENT_AGILE_CAPABLE - TX/RX chainmask changed; driver reports new
+	 * Agile DFS (background CAC) capability.
+	 *
+	 * adfs_capable=1: new chainmask supports Agile DFS (in adfs_chain_mask)
+	 * adfs_capable=0: new chainmask does NOT support Agile DFS
+	 */
+	EVENT_AGILE_CAPABLE,
 #endif
 
 	/**

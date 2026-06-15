@@ -35,6 +35,7 @@
 #include "driver_i.h"
 #include "p2p_supplicant.h"
 #include "ap.h"
+#include "ubus.h"
 #include "ap/sta_info.h"
 #include "notify.h"
 
@@ -1712,13 +1713,9 @@ int ap_ctrl_iface_acl_add_mac(struct wpa_supplicant *wpa_s,
 	hapd->conf->macaddr_acl = acl_type;
 
 	if (acl_type == ACCEPT_UNLESS_DENIED)
-		return hostapd_ctrl_iface_acl_add_mac(&hapd->conf->deny_mac,
-						      &hapd->conf->num_deny_mac,
-						      buf);
+		return hostapd_ctrl_iface_acl_add_mac(hapd->conf, false, buf);
 	if (acl_type == DENY_UNLESS_ACCEPTED)
-		return hostapd_ctrl_iface_acl_add_mac(
-			&hapd->conf->accept_mac,
-			&hapd->conf->num_accept_mac, buf);
+		return hostapd_ctrl_iface_acl_add_mac(hapd->conf, true, buf);
 
 	return -1;
 }
@@ -1740,13 +1737,9 @@ int ap_ctrl_iface_acl_del_mac(struct wpa_supplicant *wpa_s,
 	hapd->conf->macaddr_acl = acl_type;
 
 	if (acl_type == ACCEPT_UNLESS_DENIED)
-		return hostapd_ctrl_iface_acl_del_mac(&hapd->conf->deny_mac,
-						      &hapd->conf->num_deny_mac,
-						      buf);
+		return hostapd_ctrl_iface_acl_del_mac(hapd->conf, false, buf);
 	if (acl_type == DENY_UNLESS_ACCEPTED)
-		return hostapd_ctrl_iface_acl_del_mac(
-			&hapd->conf->accept_mac, &hapd->conf->num_accept_mac,
-			buf);
+		return hostapd_ctrl_iface_acl_del_mac(hapd->conf, true, buf);
 
 	return -1;
 }
@@ -1766,13 +1759,11 @@ int ap_ctrl_iface_acl_show_mac(struct wpa_supplicant *wpa_s,
 		return -1;
 
 	if (acl_type == ACCEPT_UNLESS_DENIED)
-		return hostapd_ctrl_iface_acl_show_mac(hapd->conf->deny_mac,
-						       hapd->conf->num_deny_mac,
+		return hostapd_ctrl_iface_acl_show_mac(hapd->conf, false,
 						       buf, buflen);
 	if (acl_type == DENY_UNLESS_ACCEPTED)
-		return hostapd_ctrl_iface_acl_show_mac(
-			hapd->conf->accept_mac,	hapd->conf->num_accept_mac,
-			buf, buflen);
+		return hostapd_ctrl_iface_acl_show_mac(hapd->conf, true,
+						       buf, buflen);
 
 	return -1;
 }
@@ -1793,11 +1784,9 @@ void ap_ctrl_iface_acl_clear_list(struct wpa_supplicant *wpa_s,
 	hapd->conf->macaddr_acl = acl_type;
 
 	if (acl_type == ACCEPT_UNLESS_DENIED)
-		hostapd_ctrl_iface_acl_clear_list(&hapd->conf->deny_mac,
-						  &hapd->conf->num_deny_mac);
+		hostapd_ctrl_iface_acl_clear_list(hapd->conf, false);
 	else if (acl_type == DENY_UNLESS_ACCEPTED)
-		hostapd_ctrl_iface_acl_clear_list(&hapd->conf->accept_mac,
-						  &hapd->conf->num_accept_mac);
+		hostapd_ctrl_iface_acl_clear_list(hapd->conf, true);
 }
 
 
@@ -1900,6 +1889,108 @@ int ap_switch_channel(struct wpa_supplicant *wpa_s,
 }
 
 
+int wpas_ap_apply_channel_switch(struct wpa_supplicant *wpa_s,
+				 struct csa_settings *settings)
+{
+#ifdef CONFIG_MESH
+	if (wpa_s->ifmsh && wpa_s->ifmsh->conf->disable_csa_dfs == 1) {
+		wpa_printf(MSG_DEBUG,
+			   "wpa chanswitch interface %s : cancelling radar handling timeout",
+			   wpa_s->ifmsh->conf->bss[0]->iface);
+		eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout,
+				     wpa_s->ifmsh, NULL);
+	}
+#endif /* CONFIG_MESH */
+
+	return ap_switch_channel(wpa_s, settings);
+}
+
+
+static bool wpas_ap_iface_running(struct wpa_supplicant *wpa_s)
+{
+#ifdef CONFIG_AP
+	struct hostapd_iface *iface;
+
+	if (!wpa_s)
+		return false;
+
+	iface = wpa_s->ap_iface;
+	if (!iface || !iface->bss || !iface->bss[0])
+		return false;
+
+	switch (iface->state) {
+	case HAPD_IFACE_UNINITIALIZED:
+	case HAPD_IFACE_DISABLED:
+		return false;
+	default:
+		return true;
+	}
+#else /* CONFIG_AP */
+	return false;
+#endif /* CONFIG_AP */
+}
+
+
+static int wpas_mesh_has_ap_iface_same_radio(struct wpa_supplicant *wpa_s)
+{
+#ifdef CONFIG_MESH
+	struct wpa_supplicant *ifs;
+	int ret;
+
+	if (!wpa_s || !wpa_s->ifmsh || !wpa_s->radio)
+		return 0;
+
+	/* Check all interfaces on the same radio */
+	dl_list_for_each(ifs, &wpa_s->radio->ifaces, struct wpa_supplicant,
+			 radio_list) {
+		if (wpas_ap_iface_running(ifs)) {
+			wpa_printf(MSG_DEBUG,
+				   "%s: Found running AP interface %s on same radio",
+				   __func__, ifs->ifname);
+			return 1;
+		}
+	}
+
+	ret = wpas_ubus_has_hostapd_iface_same_radio(wpa_s);
+	if (ret != 0)
+		return ret;
+
+	wpa_printf(MSG_DEBUG,
+		   "%s: No AP interface found on same radio in supplicant or hostapd",
+		   __func__);
+#endif /* CONFIG_MESH */
+
+	return 0;
+}
+
+
+static bool wpas_mesh_ignore_dfs_event(struct wpa_supplicant *wpa_s)
+{
+#ifdef CONFIG_MESH
+	int ret;
+
+	if (!wpa_s || wpa_s->ap_iface || !wpa_s->ifmsh)
+		return false;
+
+	ret = wpas_mesh_has_ap_iface_same_radio(wpa_s);
+	if (ret > 0) {
+		wpa_printf(MSG_INFO,
+			   "Ignore mesh DFS event on %s because a running AP exists on the same radio",
+			   wpa_s->ifname);
+		return true;
+	}
+
+	if (ret < 0) {
+		wpa_printf(MSG_INFO,
+			   "Process mesh DFS event on %s because AP coordination could not be verified",
+			   wpa_s->ifname);
+	}
+#endif /* CONFIG_MESH */
+
+	return false;
+}
+
+
 #ifdef CONFIG_CTRL_IFACE
 int ap_ctrl_iface_chanswitch(struct wpa_supplicant *wpa_s, const char *pos)
 {
@@ -1914,14 +2005,6 @@ int ap_ctrl_iface_chanswitch(struct wpa_supplicant *wpa_s, const char *pos)
 #ifdef CONFIG_MESH
 	if (!iface && wpa_s->ifmsh)
 		iface = wpa_s->ifmsh;
-
-	if (wpa_s->ifmsh && wpa_s->ifmsh->conf->disable_csa_dfs == 1) {
-		wpa_printf(MSG_DEBUG, "wpa chanswitch interface %s :"
-			   " cancelling radar handling timeout",
-			   wpa_s->ifmsh->conf->bss[0]->iface);
-		eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout,
-				     wpa_s->ifmsh, NULL);
-	}
 #endif /* CONFIG_MESH */
 
 	if (!iface)
@@ -1933,7 +2016,26 @@ int ap_ctrl_iface_chanswitch(struct wpa_supplicant *wpa_s, const char *pos)
 
 	settings.link_id = -1;
 
-	return ap_switch_channel(wpa_s, &settings);
+#ifdef CONFIG_MESH
+	if (!wpa_s->ap_iface && wpa_s->ifmsh) {
+		ret = wpas_mesh_has_ap_iface_same_radio(wpa_s);
+		if (ret < 0) {
+			wpa_printf(MSG_INFO,
+				   "Reject mesh CHAN_SWITCH on %s because AP coordination could not be verified",
+				   wpa_s->ifname);
+			return -1;
+		}
+
+		if (ret > 0) {
+			wpa_printf(MSG_INFO,
+				   "Reject mesh CHAN_SWITCH on %s because a running AP already exists on the same radio",
+				   wpa_s->ifname);
+			return -1;
+		}
+	}
+#endif /* CONFIG_MESH */
+
+	return wpas_ap_apply_channel_switch(wpa_s, &settings);
 }
 #endif /* CONFIG_CTRL_IFACE */
 
@@ -1979,9 +2081,15 @@ int wpa_supplicant_ap_mac_addr_filter(struct wpa_supplicant *wpa_s,
 	os_free(conf->accept_mac);
 	conf->accept_mac = NULL;
 	conf->num_accept_mac = 0;
+	os_free(conf->accept_mac_masked);
+	conf->accept_mac_masked = NULL;
+	conf->num_accept_mac_masked = 0;
 	os_free(conf->deny_mac);
 	conf->deny_mac = NULL;
 	conf->num_deny_mac = 0;
+	os_free(conf->deny_mac_masked);
+	conf->deny_mac_masked = NULL;
+	conf->num_deny_mac_masked = 0;
 
 	if (addr == NULL) {
 		conf->macaddr_acl = ACCEPT_UNLESS_DENIED;
@@ -2185,8 +2293,16 @@ void wpas_ap_event_dfs_radar_detected(struct wpa_supplicant *wpa_s,
 
 	if (!iface)
 		iface = wpa_s->ifmsh;
-	if (!iface || !iface->bss[0])
+	if (!iface || !iface->bss[0]) {
+#ifdef CONFIG_QCN_EXTN
+		wpas_dfs_radar_detected_sta_mode(wpa_s, radar);
+#endif
 		return;
+	}
+
+	if (wpas_mesh_ignore_dfs_event(wpa_s))
+		return;
+
 	wpa_printf(MSG_DEBUG, "DFS radar detected on %d MHz", radar->freq);
 	hostapd_dfs_radar_detected(iface, radar->freq,
 				   radar->ht_enabled, radar->chan_offset,
@@ -2228,6 +2344,7 @@ void wpas_ap_event_dfs_cac_finished(struct wpa_supplicant *wpa_s,
 	hostapd_dfs_complete_cac(iface, 1, radar->freq,
 				 radar->ht_enabled, radar->chan_offset,
 				 radar->chan_width, radar->cf1, radar->cf2,
+				 radar->radar_bitmap,
 				 radar->is_background,
 				 radar->chan_width_device, radar->cf_device);
 }
@@ -2246,6 +2363,7 @@ void wpas_ap_event_dfs_cac_aborted(struct wpa_supplicant *wpa_s,
 	hostapd_dfs_complete_cac(iface, 0, radar->freq,
 				 radar->ht_enabled, radar->chan_offset,
 				 radar->chan_width, radar->cf1, radar->cf2,
+				 radar->radar_bitmap,
 				 radar->is_background,
 				 radar->chan_width_device, radar->cf_device);
 }
@@ -2258,8 +2376,12 @@ void wpas_ap_event_dfs_cac_nop_finished(struct wpa_supplicant *wpa_s,
 
 	if (!iface)
 		iface = wpa_s->ifmsh;
-	if (!iface || !iface->bss[0])
+	if (!iface || !iface->bss[0]) {
+#ifdef CONFIG_QCN_EXTN
+		wpas_dfs_nop_finished_sta_mode(wpa_s, radar);
+#endif
 		return;
+	}
 	wpa_printf(MSG_DEBUG, "DFS NOP finished on %d MHz", radar->freq);
 	hostapd_dfs_nop_finished(iface, radar->freq,
 				 radar->ht_enabled, radar->chan_offset,

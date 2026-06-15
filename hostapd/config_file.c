@@ -798,6 +798,49 @@ static int hostapd_parse_intlist(int **int_list, char *val)
 }
 
 
+/* Like hostapd_parse_intlist but uses -1 as the list terminator so that 0
+ * remains a valid entry.  Needed for security_profiles where profile number 0
+ * (EPPKE without mutual authentication) is a defined value.
+ */
+static int hostapd_parse_intlist_neg1(int **int_list, char *val)
+{
+	int *list;
+	int count;
+	char *pos, *end;
+
+	os_free(*int_list);
+	*int_list = NULL;
+
+	pos = val;
+	count = 0;
+	while (*pos != '\0') {
+		if (*pos == ' ')
+			count++;
+		pos++;
+	}
+
+	list = os_malloc(sizeof(int) * (count + 2));
+	if (list == NULL)
+		return -1;
+	pos = val;
+	count = 0;
+	while (*pos != '\0') {
+		end = os_strchr(pos, ' ');
+		if (end)
+			*end = '\0';
+
+		list[count++] = atoi(pos);
+		if (!end)
+			break;
+		pos = end + 1;
+	}
+	list[count] = -1; /* sentinel; 0 is a valid profile number */
+
+	*int_list = list;
+	return 0;
+}
+
+
 static int hostapd_config_bss(struct hostapd_config *conf, const char *ifname)
 {
 	struct hostapd_bss_config **all, *bss;
@@ -2162,6 +2205,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->ppe_vp_type = atoi(pos);
 	} else if (os_strcmp(buf, "snoop_iface") == 0) {
 		os_strlcpy(bss->snoop_iface, pos, sizeof(bss->snoop_iface));
+	} else if (os_strcmp(buf, "monitor_iface") == 0) {
+		os_strlcpy(conf->monitor_iface_name, pos, sizeof(conf->monitor_iface_name));
 	} else if (os_strcmp(buf, "vlan_bridge") == 0) {
 		os_strlcpy(bss->vlan_bridge, pos, sizeof(bss->vlan_bridge));
 	} else if (os_strcmp(buf, "wds_bridge") == 0) {
@@ -2342,6 +2387,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->disable_csa_dfs = atoi(pos);
 	} else if (os_strcmp(buf, "use_ru_puncture_dfs") == 0) {
 		conf->use_ru_puncture_dfs = atoi(pos);
+	} else if (os_strcmp(buf, "dfs_disable_auto_unpunc") == 0) {
+		conf->dfs_disable_auto_unpunc = atoi(pos);
 	} else if (os_strcmp(buf, "enable_6ghz_composite_ap") == 0) {
 		conf->enable_6ghz_composite_ap = atoi(pos);
 	} else if (os_strcmp(buf, "enable_mcs15") == 0) {
@@ -3039,6 +3086,16 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "peerkey") == 0) {
 		wpa_printf(MSG_INFO,
 			   "Line %d: Obsolete peerkey parameter ignored", line);
+	} else if (os_strcmp(buf, "security_profiles") == 0) {
+		if (hostapd_parse_intlist_neg1(&bss->security_profiles, pos)) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid security_profiles value '%s'", line, pos);
+			return 1;
+		}
+	} else if (os_strcmp(buf, "security_profile_ext_key_id") == 0) {
+		bss->security_profile_ext_key_id = atoi(pos);
+	} else if (os_strcmp(buf, "security_profile_ocvc") == 0) {
+		bss->security_profile_ocvc = atoi(pos);
 #ifdef CONFIG_IEEE80211R_AP
 	} else if (os_strcmp(buf, "ft_iface") == 0) {
 		os_strlcpy(bss->ft_iface, pos, sizeof(bss->ft_iface));
@@ -3192,6 +3249,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 	} else if (os_strcmp(buf, "acs_exclude_dfs") == 0) {
 		conf->acs_exclude_dfs = atoi(pos);
+	} else if (os_strcmp(buf, "acs_pcaconly") == 0) {
+		conf->acs_dfs_available_only = atoi(pos);
 	} else if (os_strcmp(buf, "op_class") == 0) {
 		conf->op_class = atoi(pos);
 	} else if (os_strcmp(buf, "channel") == 0) {
@@ -3210,6 +3269,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 	} else if (os_strcmp(buf, "edmg_channel") == 0) {
 		conf->edmg_channel = atoi(pos);
+	} else if (os_strcmp(buf, "dfs_bw_reduce_en") == 0) {
+		conf->dfs_bw_reduce_en = atoi(pos);
 	} else if (os_strcmp(buf, "enable_edmg") == 0) {
 		conf->enable_edmg = atoi(pos);
 	} else if (os_strcmp(buf, "chanlist") == 0) {
@@ -3289,6 +3350,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line);
 			return -1;
 		}
+	} else if (os_strcmp(buf, "acs_enable_bw_downgrade") == 0) {
+		conf->acs_enable_bw_downgrade = atoi(pos);
 #endif /* CONFIG_ACS */
 	} else if (os_strcmp(buf, "dtim_period") == 0) {
 		int val = atoi(pos);
@@ -3714,6 +3777,254 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "bss_he_su_beamformee") == 0) {
 		bss->he_phy_capab.he_su_beamformee = atoi(pos);
 		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_SU_BEAMFORMEE;
+	} else if (os_strcmp(buf, "bss_he_bfee_sts_lteq80") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_bfee_sts_lteq80 %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_bfee_sts_lteq80 = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_BFEE_STS_LTEQ80;
+	} else if (os_strcmp(buf, "bss_he_bfee_sts_gt80") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_bfee_sts_gt80 %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_bfee_sts_gt80 = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_BFEE_STS_GT80;
+	} else if (os_strcmp(buf, "bss_he_multi_tid_aggr") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_multi_tid_aggr %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_multi_tid_aggr = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_MULTI_TID_AGGR;
+	} else if (os_strcmp(buf, "bss_he_multi_tid_aggr_tx") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_multi_tid_aggr_tx %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_multi_tid_aggr_tx = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_MULTI_TID_AGGR_TX;
+	} else if (os_strcmp(buf, "bss_he_max_ampdu_len_exp") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 3) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_max_ampdu_len_exp %d (expected 0..3)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_max_ampdu_len_exp = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_MAX_AMPDU_LEN_EXP;
+	} else if (os_strcmp(buf, "bss_he_su_ppdu_1x_ltf_800ns_gi") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_su_ppdu_1x_ltf_800ns_gi %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_su_ppdu_1x_ltf_800ns_gi = val;
+		bss->he_phy_capab_mask |=
+			HE_PHY_BSS_OVR_SU_PPDU_1X_LTF_800NS_GI;
+	} else if (os_strcmp(buf, "bss_he_su_mu_ppdu_4x_ltf_800ns_gi") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_su_mu_ppdu_4x_ltf_800ns_gi %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_su_mu_ppdu_4x_ltf_800ns_gi = val;
+		bss->he_phy_capab_mask |=
+			HE_PHY_BSS_OVR_SU_MU_PPDU_4X_LTF_800NS_GI;
+	} else if (os_strcmp(buf, "bss_he_max_frag_msdu") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_max_frag_msdu %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_max_frag_msdu = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_MAX_FRAG_MSDU;
+	} else if (os_strcmp(buf, "bss_he_min_frag_size") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 3) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_min_frag_size %d (expected 0..3)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_min_frag_size = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_MIN_FRAG_SIZE;
+	} else if (os_strcmp(buf, "bss_he_omi") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_omi %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_omi = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_OMI;
+	} else if (os_strcmp(buf, "bss_he_ndp_4x_ltf_3200ns_gi") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_ndp_4x_ltf_3200ns_gi %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_ndp_4x_ltf_3200ns_gi = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_NDP_4X_LTF_3200NS_GI;
+	} else if (os_strcmp(buf, "bss_he_fragmentation") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 3) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_fragmentation %d (expected 0..3)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_fragmentation = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_FRAGMENTATION;
+	} else if (os_strcmp(buf, "bss_he_amsdu_in_ampdu_suprt") == 0 ||
+		   os_strcmp(buf, "bss_he_amsdu_in_ampdu_supp") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid %s %d (expected 0..1)",
+				   line, buf, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_amsdu_in_ampdu_suprt = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_AMSDU_IN_AMPDU_SUPRT;
+	} else if (os_strcmp(buf, "bss_he_subfee_sts_lteq80") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_subfee_sts_lteq80 %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_bfee_sts_lteq80 = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_BFEE_STS_LTEQ80;
+	} else if (os_strcmp(buf, "bss_he_subfee_sts_gt80") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_subfee_sts_gt80 %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_bfee_sts_gt80 = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_BFEE_STS_GT80;
+	} else if (os_strcmp(buf, "bss_he_max_nc_suprt") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_max_nc_suprt %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_max_nc = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_MAX_NC_SUPRT;
+	} else if (os_strcmp(buf, "bss_he_er_su_disable") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_er_su_disable %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_er_su_disable = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_ER_SU_DISABLE;
+	} else if (os_strcmp(buf, "bss_he_er_su_ppdu_1x_ltf_800ns_gi") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_er_su_ppdu_1x_ltf_800ns_gi %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_er_su_ppdu_1x_ltf_800ns_gi = val;
+		bss->he_phy_capab_mask |=
+			HE_PHY_BSS_OVR_ER_SU_PPDU_1X_LTF_800NS_GI;
+	} else if (os_strcmp(buf, "bss_he_er_su_ppdu_4x_ltf_800ns_gi") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_er_su_ppdu_4x_ltf_800ns_gi %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_er_su_ppdu_4x_ltf_800ns_gi = val;
+		bss->he_phy_capab_mask |=
+			HE_PHY_BSS_OVR_ER_SU_PPDU_4X_LTF_800NS_GI;
+	} else if (os_strcmp(buf, "bss_he_1024qam_lt242ru_rx_enable") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_1024qam_lt242ru_rx_enable %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_1024qam_lt242ru_rx_enable = val;
+		bss->he_phy_capab_mask |=
+			HE_PHY_BSS_OVR_1024QAM_LT242RU_RX_ENABLE;
+	} else if (os_strcmp(buf, "bss_he_full_bw_ul_mumimo") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_full_bw_ul_mumimo %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_ul_mumimo = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_UL_MUMIMO;
+	} else if (os_strcmp(buf, "bss_he_bsr_support") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_bsr_support %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_bsr_support = val;
+		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_BSR_SUPPORT;
 	} else if (os_strcmp(buf, "he_dl_mu_ofdma") == 0) {
 		conf->he_phy_capab.he_dl_mu_ofdma = atoi(pos);
 	} else if (os_strcmp(buf, "bss_he_dl_mu_ofdma") == 0) {
@@ -3908,6 +4219,17 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->he_6ghz_rx_ant_pat = atoi(pos);
 	} else if (os_strcmp(buf, "he_6ghz_tx_ant_pat") == 0) {
 		conf->he_6ghz_tx_ant_pat = atoi(pos);
+	} else if (os_strcmp(buf, "he_6ghz_min_rate") == 0) {
+		int val = atoi(pos);
+
+		if (val < 1 || val > 206) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid he_6ghz_min_rate %d (valid range: 1-206)",
+				   line, val);
+			return 1;
+		}
+
+		conf->he_6ghz_min_rate = (u8) val;
 	} else if (os_strcmp(buf, "unsol_bcast_probe_resp_interval") == 0) {
 		int val = atoi(pos);
 
@@ -4424,6 +4746,43 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		 bss->mbo_ap_cap_ind = atoi(pos);
 	} else if (os_strcmp(buf, "oce") == 0) {
 		bss->oce = atoi(pos);
+	} else if (os_strcmp(buf, "oce_ip_subnet_id") == 0) {
+		if (strlen(pos) != 12 ||
+		    hexstr2bin(pos, bss->oce_ip_subnet_id, 6) < 0) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid oce_ip_subnet_id '%s' (use 12 hex chars)",
+				   line, pos);
+			return 1;
+		}
+		bss->oce_ip_subnet_id_set = true;
+	} else if (os_strcmp(buf, "oce_ess_report") == 0) {
+		bss->oce_ess_report_enabled = (bool)atoi(pos);
+	} else if (os_strcmp(buf, "oce_ess_edge") == 0) {
+		bss->oce_ess_edge = atoi(pos);
+	} else if (os_strcmp(buf, "oce_ess_rssi_threshold") == 0) {
+		int val = atoi(pos);
+		if (val != -1 && (val < -100 || val > -38)) {
+			wpa_printf(MSG_ERROR,
+				   "oce_ess_rssi_threshold must be in [-100, -38] or -1 (no recommendation)");
+			return 1;
+		}
+		bss->oce_ess_rssi_threshold = val;
+	} else if (os_strcmp(buf, "oce_tx_power") == 0) {
+		bss->oce_tx_power = atoi(pos);
+	} else if (os_strcmp(buf, "oce_dl_availcap") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 15) {
+			wpa_printf(MSG_ERROR, "oce_dl_availcap must be in [0, 15]");
+			return 1;
+		}
+		bss->oce_dl_availcap = val;
+	} else if (os_strcmp(buf, "oce_ul_availcap") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 15) {
+			wpa_printf(MSG_ERROR, "oce_ul_availcap must be in [0, 15]");
+			return 1;
+		}
+		bss->oce_ul_availcap = val;
 	} else if (os_strcmp(buf, "mbo_cell_data_conn_pref") == 0) {
 		bss->mbo_cell_data_conn_pref = atoi(pos);
 #endif /* CONFIG_MBO */
@@ -4533,6 +4892,12 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->igtk_rsc_override = wpabuf_parse_bin(pos);
 	} else if (os_strcmp(buf, "no_beacon_rsnxe") == 0) {
 		bss->no_beacon_rsnxe = atoi(pos);
+	} else if (os_strcmp(buf, "rsnxe_capab_mask") == 0) {
+		/* Value is the bits to SUPPRESS (complement form):
+		 * rsnxe_capab_mask=20 suppresses SAE-H2E (bit 5 = 0x20).
+		 * Internally stored as the allow-mask (~value).
+		 */
+		bss->rsnxe_capab_mask = ~strtoull(pos, NULL, 16);
 	} else if (os_strcmp(buf, "skip_prune_assoc") == 0) {
 		bss->skip_prune_assoc = atoi(pos);
 	} else if (os_strcmp(buf, "ft_rsnxe_used") == 0) {
@@ -4824,6 +5189,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->externally_triggered_m3 = (int) val;
 	} else if (os_strcmp(buf, "plugin_eap_offload") == 0) {
 		bss->plugin_eap_offload = atoi(pos);
+	} else if (os_strcmp(buf, "plugin_eapol_key_offload") == 0) {
+		bss->plugin_eapol_key_offload = atoi(pos);
 	} else if (os_strcmp(buf, "notify_mgmt_frames") == 0) {
 		bss->notify_mgmt_frames = atoi(pos);
 #ifdef CONFIG_DPP
@@ -5281,7 +5648,27 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line, "ext_capa", pos))
 			return 1;
 	} else if (os_strcmp(buf, "rnr") == 0) {
-		bss->rnr = atoi(pos);
+		int val = atoi(pos);
+
+		if (val < 0 ||
+		    val > (INCLUDE_ELEMENT_IN_BEACON |
+			   INCLUDE_ELEMENT_IN_PROBE_RESP)) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid RNR frame selection value. Valid values: 0 to 3");
+			return 1;
+		}
+
+		bss->rnr = val;
+	} else if (os_strcmp(buf, "rnr_ie_allowed") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 255) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid rnr_ie_allowed, valid values: 0 (no restriction) to 255");
+			return 1;
+		}
+
+		bss->rnr_ie_allowed = (u8) val;
 	} else if (os_strcmp(buf, "ssid_protection") == 0) {
 		int val = atoi(pos);
 
@@ -5363,6 +5750,16 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line);
 			return 1;
 		}
+	} else if (os_strcmp(buf, "mld_link_id") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val >= MAX_NUM_MLD_LINKS) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid mld_link_id %d (valid: 0-%d)",
+				   line, val, MAX_NUM_MLD_LINKS - 1);
+			return 1;
+		}
+		bss->mld_link_id = val;
 	} else if (os_strcmp(buf, "eht_bw320_offset") == 0) {
 		conf->eht_bw320_offset = atoi(pos);
 	} else if (os_strcmp(buf, "eht_part_dl_mu_mimo") == 0) {
@@ -5438,6 +5835,108 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			bss->eht_phy_capab.su_beamformee = 1;
 			bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_SU_BEAMFORMEE;
 		}
+	} else if (os_strcmp(buf, "bss_eht_ndp_4x_eht_ltf_and_320nsgi") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_ndp_4x_eht_ltf_and_320nsgi %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_ndp_4x_eht_ltf_and_320nsgi = val;
+		bss->eht_phy_capab_mask |=
+			EHT_PHY_BSS_OVR_NDP_4X_EHT_LTF_AND_320NSGI;
+	} else if (os_strcmp(buf, "bss_eht_num_sd_lt80") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_num_sd_lt80 %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_num_sd_lt80 = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_NUM_SD_LT80;
+	} else if (os_strcmp(buf, "bss_eht_num_sd_160") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_num_sd_160 %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_num_sd_160 = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_NUM_SD_160;
+	} else if (os_strcmp(buf, "bss_eht_num_sd_320") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_num_sd_320 %d (expected 0..7)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_num_sd_320 = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_NUM_SD_320;
+	} else if (os_strcmp(buf, "bss_eht_4x_eht_ltf_and_800ns_gi") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_4x_eht_ltf_and_800ns_gi %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_4x_eht_ltf_and_800ns_gi = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_4X_EHT_LTF_AND_800NS_GI;
+	} else if (os_strcmp(buf, "bss_eht_rx_1024_and_4096_qam_ls_242_tone_ru") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_rx_1024_and_4096_qam_ls_242_tone_ru %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_rx_1024_and_4096_qam_ls_242_tone_ru = val;
+		bss->eht_phy_capab_mask |=
+			EHT_PHY_BSS_OVR_RX_1024_AND_4096_QAM_LS_242_TONE_RU;
+	} else if (os_strcmp(buf, "bss_eht_dl_ofdma_txbf") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_dl_ofdma_txbf %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_dl_ofdma_txbf = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_DL_OFDMA_TXBF;
+	} else if (os_strcmp(buf, "bss_eht_sup_mcs15_in_mru") == 0 ||
+		   os_strcmp(buf, "bss_eht_mcs15_supp") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid %s %d (expected 0..1)",
+				   line, buf, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_sup_mcs15_in_mru = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_SUP_MCS15_IN_MRU;
+	} else if (os_strcmp(buf, "bss_eht_mcs14_dup_in_6ghz") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_mcs14_dup_in_6ghz %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_mcs14_dup_in_6ghz = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_MCS14_DUP_IN_6GHZ;
 #ifdef CONFIG_IEEE80211BE
 	} else if (os_strcmp(buf, "enable_aal") == 0) {
 		bss->enable_aal = atoi(pos);
@@ -5664,6 +6163,60 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 #endif
 	} else if (os_strcmp(buf, "i2r_lmr_policy") == 0) {
 		conf->i2r_lmr_policy = atoi(pos);
+#ifdef CONFIG_IEEE80211BN
+	} else if (os_strcmp(buf, "smd_ap") == 0) {
+		bss->smd.enabled = atoi(pos);
+		wpa_printf(MSG_DEBUG, "SMD Config: smd_ap set to %d", bss->smd.enabled);
+	} else if (os_strcmp(buf, "smd_identifier") == 0) {
+		if (hwaddr_aton(pos, bss->smd.smd_identifier)) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid SMD identifier '%s'",
+				   line, pos);
+			return 1;
+		}
+		wpa_printf(MSG_DEBUG, "SMD Config: smd_identifier set to " MACSTR,
+			   MAC2STR(bss->smd.smd_identifier));
+	} else if (os_strcmp(buf, "smd_timeout") == 0) {
+		int timeout = strtol(pos, NULL, 10);
+		if (timeout < 0 || timeout > 255) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid SMD timeout value %d",
+				   line, timeout);
+			return 1;
+		}
+		bss->smd.smd_prep_timeout = timeout;
+		wpa_printf(MSG_DEBUG, "SMD Config: smd_timeout set to %d TU", timeout);
+	} else if (os_strcmp(buf, "smd_max_peer_apmlds") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid smd_max_peer_apmlds value %d (must be 0-7)",
+				   line, val);
+			return 1;
+		}
+		bss->smd.caps.max_prep_target_apmlds = val;
+		wpa_printf(MSG_DEBUG, "SMD Config: smd_max_peer_apmlds set to %d", val);
+	} else if (os_strcmp(buf, "smd_type") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid smd_type value %d (must be 0 or 1)",
+				   line, val);
+			return 1;
+		}
+		bss->smd.caps.smd_type = val;
+		wpa_printf(MSG_DEBUG, "SMD Config: smd_type set to %d", val);
+	} else if (os_strcmp(buf, "smd_ptk_mode") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid smd_ptk_mode value %d (must be 0 or 1)",
+				   line, val);
+			return 1;
+		}
+		bss->smd.caps.ptk_mode = val;
+		wpa_printf(MSG_DEBUG, "SMD Config: smd_ptk_mode set to %d", val);
+#endif /* CONFIG_IEEE80211BN */
 	} else {
 		if (!hostapd_config_fill_extn(conf, bss, buf, pos, line))
 			return 0;

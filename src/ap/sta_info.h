@@ -113,6 +113,24 @@ struct dscp_policy_state {
 	bool pending_more;
 };
 
+#ifdef CONFIG_IEEE80211BN
+/* SMD Capabilities structure */
+struct smd_caps {
+        bool dl_data_fwd; /* DL Data Forwarding capability */
+        u8 max_prep_target_apmlds; /* Max Number Of Prepared Target AP MLDs */
+        bool smd_type; /* SMD Type field */
+        bool ptk_mode; /* PTK Mode field */
+};
+
+/* SMD (Seamless Multiband Device) station information */
+struct smd_info {
+        bool smd_sta; /* Station supports SMD */
+        u8 smd_identifier[ETH_ALEN]; /* SMD Identifier from STA */
+        u8 smd_timeout; /* Timeout Value in TU */
+        struct smd_caps caps; /* SMD capabilities */
+};
+#endif /* CONFIG_IEEE80211BN */
+
 struct sta_info {
 	struct sta_info *next; /* next entry in sta list */
 	struct sta_info *hnext; /* next entry in hash table list */
@@ -302,7 +320,7 @@ struct sta_info {
 #endif /* CONFIG_TAXONOMY */
 
 #ifdef CONFIG_FILS
-	u8 fils_snonce[FILS_NONCE_LEN];
+	u8 fils_snonce[NONCE_LEN];
 	u8 fils_session[FILS_SESSION_LEN];
 	u8 fils_erp_pmkid[PMKID_LEN];
 	u8 *fils_pending_assoc_req;
@@ -389,6 +407,13 @@ struct sta_info {
 	u8 unsolicited_dialog_token;
 	struct dscp_policy_state dscp_state;
 	struct sta_info *sa_query_triggered_sta;
+#ifdef CONFIG_IEEE80211BE
+	u16 link_addr_conflict_bitmap; /* bitmap of partner link indices (bit k
+					* set when link k's per-link address
+					* conflicted with an existing MFP STA
+					* during association; re-walk only those
+					* links on SA Query timeout comeback) */
+#endif
 	bool dscp_reset;
 	bool ft_re_add;
 	u16 max_idle_period; /* if nonzero, the granted BSS max idle period in
@@ -414,6 +439,11 @@ struct sta_info {
 	struct os_time rssi_reject_timeout;
 	struct wpabuf *sae_pw_id;
 	unsigned int sae_pw_id_counter;
+
+#ifdef CONFIG_IEEE80211BN
+        /* SMD information */
+        struct smd_info smd_info;
+#endif /* CONFIG_IEEE80211BN */
 };
 
 

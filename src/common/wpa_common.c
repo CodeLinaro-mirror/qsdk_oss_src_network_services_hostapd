@@ -486,13 +486,15 @@ int wpa_eapol_key_mic(const u8 *key, size_t key_len, int akmp,
  * @akmp: Negotiated AKM
  * @cipher: Negotiated pairwise cipher
  * @kdk_len: The length in octets that should be derived for KDK
+ * @z: Optional Z.x data (may be %NULL if not used)
+ * @smd_id: SMD Identifier (6 Octets) for Per-SMD PTK Derivation
  * Returns: 0 on success, -1 on failure
  *
  * IEEE Std 802.11i-2004 - 8.5.1.2 Pairwise key hierarchy
  * PTK = PRF-X(PMK, "Pairwise key expansion",
  *             Min(AA, SA) || Max(AA, SA) ||
  *             Min(ANonce, SNonce) || Max(ANonce, SNonce)
- *             [ || Z.x ])
+ *             [ || Z.x ] [ || SMD_ID ])
  *
  * The optional Z.x component is used only with DPP and that part is not defined
  * in IEEE 802.11.
@@ -501,10 +503,11 @@ int wpa_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const char *label,
 		   const u8 *addr1, const u8 *addr2,
 		   const u8 *nonce1, const u8 *nonce2,
 		   struct wpa_ptk *ptk, int akmp, int cipher,
-		   const u8 *z, size_t z_len, size_t kdk_len)
+		   const u8 *z, size_t z_len, size_t kdk_len,
+		   const u8 *smd_id)
 {
 #define MAX_Z_LEN 66 /* with NIST P-521 */
-	u8 data[2 * ETH_ALEN + 2 * WPA_NONCE_LEN + MAX_Z_LEN];
+	u8 data[2 * ETH_ALEN + 2 * WPA_NONCE_LEN + MAX_Z_LEN + ETH_ALEN];
 	size_t data_len = 2 * ETH_ALEN + 2 * WPA_NONCE_LEN;
 	u8 tmp[WPA_KCK_MAX_LEN + WPA_KEK_MAX_LEN + WPA_TK_MAX_LEN +
 		WPA_KDK_MAX_LEN];
@@ -548,6 +551,15 @@ int wpa_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const char *label,
 		os_memcpy(data + 2 * ETH_ALEN + 2 * WPA_NONCE_LEN, z, z_len);
 		data_len += z_len;
 	}
+
+#ifdef CONFIG_IEEE80211BN
+	if (smd_id) {
+		os_memcpy(data + data_len, smd_id, ETH_ALEN);
+		data_len += ETH_ALEN;
+		wpa_hexdump(MSG_DEBUG, "WPA: SMD Identifier in PTK derivation",
+			    smd_id, ETH_ALEN);
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 	if (kdk_len > WPA_KDK_MAX_LEN) {
 		wpa_printf(MSG_ERROR,
@@ -668,6 +680,10 @@ int wpa_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const char *label,
 			return -1;
 	}
 
+#ifdef CONFIG_IEEE80211BN
+	/* TODO: IEEE 802.11bn-D1.2 §37.15.4.2 Per-AP MLD PTK mode key derivation */
+#endif /* CONFIG_IEEE80211BN */
+
 	wpa_printf(MSG_DEBUG, "WPA: PTK derivation - A1=" MACSTR " A2=" MACSTR,
 		   MAC2STR(addr1), MAC2STR(addr2));
 	wpa_hexdump(MSG_DEBUG, "WPA: Nonce1", nonce1, WPA_NONCE_LEN);
@@ -707,7 +723,7 @@ int fils_rmsk_to_pmk(int akmp, const u8 *rmsk, size_t rmsk_len,
 		     const u8 *snonce, const u8 *anonce, const u8 *dh_ss,
 		     size_t dh_ss_len, u8 *pmk, size_t *pmk_len)
 {
-	u8 nonces[2 * FILS_NONCE_LEN];
+	u8 nonces[2 * NONCE_LEN];
 	const u8 *addr[2];
 	size_t len[2];
 	size_t num_elem;
@@ -724,12 +740,12 @@ int fils_rmsk_to_pmk(int akmp, const u8 *rmsk, size_t rmsk_len,
 		return -1;
 
 	wpa_hexdump_key(MSG_DEBUG, "FILS: rMSK", rmsk, rmsk_len);
-	wpa_hexdump(MSG_DEBUG, "FILS: SNonce", snonce, FILS_NONCE_LEN);
-	wpa_hexdump(MSG_DEBUG, "FILS: ANonce", anonce, FILS_NONCE_LEN);
+	wpa_hexdump(MSG_DEBUG, "FILS: SNonce", snonce, NONCE_LEN);
+	wpa_hexdump(MSG_DEBUG, "FILS: ANonce", anonce, NONCE_LEN);
 	wpa_hexdump(MSG_DEBUG, "FILS: DHss", dh_ss, dh_ss_len);
 
-	os_memcpy(nonces, snonce, FILS_NONCE_LEN);
-	os_memcpy(&nonces[FILS_NONCE_LEN], anonce, FILS_NONCE_LEN);
+	os_memcpy(nonces, snonce, NONCE_LEN);
+	os_memcpy(&nonces[NONCE_LEN], anonce, NONCE_LEN);
 	addr[0] = rmsk;
 	len[0] = rmsk_len;
 	num_elem = 1;
@@ -739,10 +755,10 @@ int fils_rmsk_to_pmk(int akmp, const u8 *rmsk, size_t rmsk_len,
 		num_elem++;
 	}
 	if (wpa_key_mgmt_sha384(akmp))
-		res = hmac_sha384_vector(nonces, 2 * FILS_NONCE_LEN, num_elem,
+		res = hmac_sha384_vector(nonces, 2 * NONCE_LEN, num_elem,
 					 addr, len, pmk);
 	else
-		res = hmac_sha256_vector(nonces, 2 * FILS_NONCE_LEN, num_elem,
+		res = hmac_sha256_vector(nonces, 2 * NONCE_LEN, num_elem,
 					 addr, len, pmk);
 	if (res == 0)
 		wpa_hexdump_key(MSG_DEBUG, "FILS: PMK", pmk, *pmk_len);
@@ -805,7 +821,7 @@ int fils_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const u8 *spa, const u8 *aa,
 	 * KDK = L(FILS-Key-Data, ICK_bits + KEK_bits + TK_bits + FILS-FT_bits,
 	 *	   KDK_bits)
 	 */
-	data_len = 2 * ETH_ALEN + 2 * FILS_NONCE_LEN + dhss_len;
+	data_len = 2 * ETH_ALEN + 2 * NONCE_LEN + dhss_len;
 	data = os_malloc(data_len);
 	if (!data)
 		goto err;
@@ -814,10 +830,10 @@ int fils_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const u8 *spa, const u8 *aa,
 	pos += ETH_ALEN;
 	os_memcpy(pos, aa, ETH_ALEN);
 	pos += ETH_ALEN;
-	os_memcpy(pos, snonce, FILS_NONCE_LEN);
-	pos += FILS_NONCE_LEN;
-	os_memcpy(pos, anonce, FILS_NONCE_LEN);
-	pos += FILS_NONCE_LEN;
+	os_memcpy(pos, snonce, NONCE_LEN);
+	pos += NONCE_LEN;
+	os_memcpy(pos, anonce, NONCE_LEN);
+	pos += NONCE_LEN;
 	if (dhss)
 		os_memcpy(pos, dhss, dhss_len);
 
@@ -871,8 +887,8 @@ int fils_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const u8 *spa, const u8 *aa,
 
 	wpa_printf(MSG_DEBUG, "FILS: PTK derivation - SPA=" MACSTR
 		   " AA=" MACSTR, MAC2STR(spa), MAC2STR(aa));
-	wpa_hexdump(MSG_DEBUG, "FILS: SNonce", snonce, FILS_NONCE_LEN);
-	wpa_hexdump(MSG_DEBUG, "FILS: ANonce", anonce, FILS_NONCE_LEN);
+	wpa_hexdump(MSG_DEBUG, "FILS: SNonce", snonce, NONCE_LEN);
+	wpa_hexdump(MSG_DEBUG, "FILS: ANonce", anonce, NONCE_LEN);
 	if (dhss)
 		wpa_hexdump_key(MSG_DEBUG, "FILS: DHss", dhss, dhss_len);
 	wpa_hexdump_key(MSG_DEBUG, "FILS: PMK", pmk, pmk_len);
@@ -928,8 +944,8 @@ int fils_key_auth_sk(const u8 *ick, size_t ick_len, const u8 *snonce,
 	wpa_printf(MSG_DEBUG, "FILS: Key-Auth derivation: STA-MAC=" MACSTR
 		   " AP-BSSID=" MACSTR, MAC2STR(sta_addr), MAC2STR(bssid));
 	wpa_hexdump_key(MSG_DEBUG, "FILS: ICK", ick, ick_len);
-	wpa_hexdump(MSG_DEBUG, "FILS: SNonce", snonce, FILS_NONCE_LEN);
-	wpa_hexdump(MSG_DEBUG, "FILS: ANonce", anonce, FILS_NONCE_LEN);
+	wpa_hexdump(MSG_DEBUG, "FILS: SNonce", snonce, NONCE_LEN);
+	wpa_hexdump(MSG_DEBUG, "FILS: ANonce", anonce, NONCE_LEN);
 	wpa_hexdump(MSG_DEBUG, "FILS: gSTA", g_sta, g_sta_len);
 	wpa_hexdump(MSG_DEBUG, "FILS: gAP", g_ap, g_ap_len);
 
@@ -939,9 +955,9 @@ int fils_key_auth_sk(const u8 *ick, size_t ick_len, const u8 *snonce,
 	 *                      [ || gSTA || gAP ])
 	 */
 	addr[0] = snonce;
-	len[0] = FILS_NONCE_LEN;
+	len[0] = NONCE_LEN;
 	addr[1] = anonce;
-	len[1] = FILS_NONCE_LEN;
+	len[1] = NONCE_LEN;
 	addr[2] = sta_addr;
 	len[2] = ETH_ALEN;
 	addr[3] = bssid;
@@ -3732,6 +3748,19 @@ static int wpa_parse_generic(const u8 *pos, struct wpa_eapol_ie_parse *ie)
 		return 0;
 	}
 
+	if (left >= 1 && selector == RSN_KEY_DATA_UHR_SECURITY) {
+		/* KDE data: EID_Ext(1) + body */
+		ie->security_profile_ie = p;
+		ie->security_profile_ie_len = left > 1 ? left : 0;
+		wpa_printf(MSG_ERROR,
+			   "UHR: Found UHR Security KDE in EAPOL-Key (left=%zu body_len=%zu)",
+			   left, ie->security_profile_ie_len);
+		wpa_hexdump(MSG_ERROR, "UHR: UHR Security KDE data", p, left);
+		wpa_hexdump(MSG_ERROR, "UHR: UHR Security KDE in EAPOL-Key",
+			    pos, dlen);
+		return 0;
+	}
+
 	if (left >= 1 && selector == WFA_KEY_DATA_IP_ADDR_REQ) {
 		ie->ip_addr_req = p;
 		wpa_hexdump(MSG_DEBUG, "WPA: IP Address Request in EAPOL-Key",
@@ -4018,6 +4047,18 @@ int wpa_parse_kde_ies(const u8 *buf, size_t len, struct wpa_eapol_ie_parse *ie)
 			   pos[2] == WLAN_EID_EXT_EHT_CAPABILITIES) {
 			ie->eht_capabilities = pos + 3;
 			ie->eht_capab_len = pos[1] - 1;
+		} else if (*pos == WLAN_EID_EXTENSION &&
+			   pos[1] >= 2 &&
+			   pos[2] == WLAN_EID_EXT_SECURITY_PROFILE) {
+			/* Security Profile element (802.11bn D1.4, 9.4.2.364).
+			 * Store pointer to the full element (EID byte included)
+			 * for comparison with the AP's Beacon/ProbeResp copy. */
+			ie->security_profile_ie = pos;
+			ie->security_profile_ie_len = pos[1] + 2;
+			wpa_hexdump(MSG_DEBUG,
+				    "WPA: Security Profile element in EAPOL-Key",
+				    ie->security_profile_ie,
+				    ie->security_profile_ie_len);
 		} else if (*pos == WLAN_EID_QOS && pos[1] >= 1) {
 			ie->qosinfo = pos[2];
 		} else if (*pos == WLAN_EID_SUPPORTED_CHANNELS) {

@@ -19,6 +19,7 @@
 #include "wpa_auth.h"
 #include "dpp_hostapd.h"
 #include "ieee802_11.h"
+#include "neighbor_db.h"
 #include "hostapd_if/hostapd_if.h"
 
 
@@ -909,9 +910,179 @@ u8 * hostapd_eid_mbo_rssi_assoc_rej(struct hostapd_data *hapd, u8 *eid,
 }
 
 
+
+
+
+u8 * hostapd_eid_ap_channel_report(struct hostapd_data *hapd, u8 *eid,
+				   size_t len)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct hostapd_neighbor_entry *nr;
+	/* op_class -> channel map: at most 16 distinct op_classes, 8 channels each */
+#define AP_CHAN_RPT_MAX_CLASSES 16
+#define AP_CHAN_RPT_MAX_CHANS   8
+	u8 op_classes[AP_CHAN_RPT_MAX_CLASSES];
+	u8 channels[AP_CHAN_RPT_MAX_CLASSES][AP_CHAN_RPT_MAX_CHANS];
+	u8 nchan[AP_CHAN_RPT_MAX_CLASSES];
+	int nclasses = 0;
+	size_t i, j, k;
+	u8 *start = eid;
+
+	if (!OCE_AP_ENABLED(hapd))
+		return eid;
+
+	os_memset(op_classes, 0, sizeof(op_classes));
+	os_memset(nchan, 0, sizeof(nchan));
+
+	/* Collect (op_class, channel) pairs from all co-located ifaces */
+	for (i = 0; i < iface->interfaces->count; i++) {
+		struct hostapd_iface *other = iface->interfaces->iface[i];
+		u8 oc, ch;
+		int found = 0;
+
+		if (!other || !other->freq || !other->num_bss ||
+		    !other->bss[0] || !other->bss[0]->started)
+			continue;
+
+		if (other == iface)
+			continue;
+
+		if (ieee80211_freq_to_channel_ext(
+			    other->freq,
+			    other->conf->secondary_channel,
+			    hostapd_get_oper_chwidth(other->conf),
+			    &oc, &ch) == NUM_HOSTAPD_MODES)
+			continue;
+
+		/* Find or add this op_class */
+		for (k = 0; k < (size_t)nclasses; k++) {
+			if (op_classes[k] == oc) {
+				found = 1;
+				break;
+			}
+		}
+		if (!found) {
+			if (nclasses >= AP_CHAN_RPT_MAX_CLASSES)
+				continue;
+			k = nclasses++;
+			op_classes[k] = oc;
+			nchan[k] = 0;
+		}
+
+		/* Add channel if not already present */
+		for (j = 0; j < nchan[k]; j++) {
+			if (channels[k][j] == ch)
+				break;
+		}
+		if (j == nchan[k] && nchan[k] < AP_CHAN_RPT_MAX_CHANS)
+			channels[k][nchan[k]++] = ch;
+	}
+
+	/*
+	 * Also collect channels from discovered neighbors (scan results).
+	 * Walk nr_db of all co-located ifaces so that SET_NEIGHBOR entries
+	 * added to any BSS are visible regardless of which hapd builds the
+	 * beacon.
+	 */
+	for (i = 0; i < iface->interfaces->count; i++) {
+		struct hostapd_iface *other = iface->interfaces->iface[i];
+
+		if (!other || !other->num_bss || !other->bss[0])
+			continue;
+
+		dl_list_for_each(nr, &other->bss[0]->nr_db,
+				 struct hostapd_neighbor_entry, list) {
+			u8 nr_oc, nr_ch;
+			int nr_found = 0;
+
+			if (!nr->nr || wpabuf_len(nr->nr) < 13)
+				continue;
+
+			/* NR element: BSSID(6)+info(4)+op_class(1)+ch(1)+phy(1) */
+			nr_oc = ((const u8 *) wpabuf_head(nr->nr))[10];
+			nr_ch = ((const u8 *) wpabuf_head(nr->nr))[11];
+
+			if (!nr_oc || !nr_ch)
+				continue;
+
+			for (k = 0; k < (size_t)nclasses; k++) {
+				if (op_classes[k] == nr_oc) {
+					nr_found = 1;
+					break;
+				}
+			}
+			if (!nr_found) {
+				if (nclasses >= AP_CHAN_RPT_MAX_CLASSES)
+					continue;
+				k = nclasses++;
+				op_classes[k] = nr_oc;
+				nchan[k] = 0;
+			}
+			for (j = 0; j < nchan[k]; j++) {
+				if (channels[k][j] == nr_ch)
+					break;
+			}
+			if (j == nchan[k] && nchan[k] < AP_CHAN_RPT_MAX_CHANS)
+				channels[k][nchan[k]++] = nr_ch;
+		}
+	}
+
+	/* Build one AP Channel Report IE per op_class */
+	for (k = 0; k < (size_t)nclasses; k++) {
+		size_t ie_len = 2 + 1 + nchan[k]; /* EID + len + op_class + channels */
+
+		if ((size_t)(eid - start) + ie_len > len)
+			break;
+		*eid++ = WLAN_EID_AP_CHANNEL_REPORT;
+		*eid++ = 1 + nchan[k]; /* op_class + channel list */
+		*eid++ = op_classes[k];
+		for (j = 0; j < nchan[k]; j++)
+			*eid++ = channels[k][j];
+	}
+
+	return eid;
+}
+u8 * hostapd_eid_ess_report(struct hostapd_data *hapd, u8 *eid, size_t len)
+{
+	u8 ess_info;
+	int rssi = hapd->conf->oce_ess_rssi_threshold;
+	u8 rssi_encoded;
+
+	if (!OCE_AP_ENABLED(hapd) || !hapd->conf->oce_ess_report_enabled)
+		return eid;
+
+	if (len < 4)
+		return eid;
+
+	/* 802.11be-2024 Section 9.4.2.255:
+	 * 0-62 = -100 to -38 dBm, 63 = no recommendation
+	 */
+	rssi_encoded = (rssi == -1) ? 63 : (u8)(rssi + 100);
+
+	/*
+	 * 802.11be-2024 Section 9.4.2.255:
+	 * ESS Information field
+	 *   Bit 0: Planned ESS
+	 *   Bit 1: Edge Of ESS
+	 *   Bits 2-7: Recommended BSS Transition RSSI Threshold (6 bits)
+	 */
+	ess_info = BIT(0); /* Planned ESS = 1 */
+	if (hapd->conf->oce_ess_edge)
+		ess_info |= BIT(1);
+	ess_info |= (rssi_encoded & 0x3F) << 2;
+
+	*eid++ = WLAN_EID_EXTENSION;
+	*eid++ = 2; /* Element ID Extension + ESS Information */
+	*eid++ = WLAN_EID_EXT_ESS_REPORT;
+	*eid++ = ess_info;
+
+	return eid;
+}
+
+
 u8 * hostapd_eid_mbo(struct hostapd_data *hapd, u8 *eid, size_t len)
 {
-	u8 mbo[12], *mbo_pos = mbo;
+	u8 mbo[23], *mbo_pos = mbo;
 	u8 *pos = eid;
 
 	if (!hapd->conf->mbo_enabled &&
@@ -945,6 +1116,8 @@ u8 * hostapd_eid_mbo(struct hostapd_data *hapd, u8 *eid, size_t len)
 				ctrl |= OCE_IS_NON_OCE_AP_PRESENT;
 			if (hapd->ap_11b_present)
 				ctrl |= OCE_IS_11B_AP_PRESENT;
+			if (hapd->conf->fils_hlp_wait_time)
+				ctrl |= OCE_IS_FILS_HLP_ENABLED;
 		}
 
 		*mbo_pos++ = OCE_ATTR_ID_CAPA_IND;
@@ -962,10 +1135,30 @@ u8 * hostapd_eid_mbo(struct hostapd_data *hapd, u8 *eid, size_t len)
 				if (mode->channels[i].freq == hapd->iface->freq) {
 					*mbo_pos++ = OCE_ATTR_ID_TRANSMIT_POWER;
 					*mbo_pos++ = 1;
-					*mbo_pos++ = mode->channels[i].max_tx_power;
+					if (hapd->conf->oce_tx_power != -128)
+						*mbo_pos++ = (u8)(s8)hapd->conf->oce_tx_power;
+					else
+						*mbo_pos++ = mode->channels[i].max_tx_power;
 					break;
 				}
 			}
+		}
+
+		/* OCE Reduced WAN Metrics attribute (Attr 103) */
+		if (OCE_AP_ENABLED(hapd) &&
+		    (hapd->conf->oce_dl_availcap || hapd->conf->oce_ul_availcap)) {
+			*mbo_pos++ = OCE_ATTR_ID_REDUCED_WAN_METRICS;
+			*mbo_pos++ = 1;
+			*mbo_pos++ = (u8)(((hapd->conf->oce_dl_availcap & 0x0f) << 4) |
+					   (hapd->conf->oce_ul_availcap & 0x0f));
+		}
+
+		/* OCE IP Subnet Identifier attribute (Attr 108) */
+		if (OCE_AP_ENABLED(hapd) && hapd->conf->oce_ip_subnet_id_set) {
+			*mbo_pos++ = OCE_ATTR_ID_IP_SUBNET_IDENTIFIER;
+			*mbo_pos++ = 6;
+			for (int i = 5; i >= 0; i--)
+				*mbo_pos++ = hapd->conf->oce_ip_subnet_id[i];
 		}
 	}
 
@@ -1001,6 +1194,15 @@ u8 hostapd_mbo_ie_len(struct hostapd_data *hapd)
 	    hapd->iface->current_mode &&
 	    hapd->iface->current_mode->mode != HOSTAPD_MODE_IEEE80211B)
 		len += 3;
+
+	if (OCE_AP_ENABLED(hapd)) {
+		/* OCE Reduced WAN Metrics attribute (3) */
+		if (hapd->conf->oce_dl_availcap || hapd->conf->oce_ul_availcap)
+			len += 3;
+		/* OCE IP Subnet Identifier attribute (8 = 2 header + 6 value) */
+		if (hapd->conf->oce_ip_subnet_id_set)
+			len += 8;
+	}
 
 	return len;
 }
@@ -1139,7 +1341,14 @@ u8 * hostapd_eid_fils_indic(struct hostapd_data *hapd, u8 *eid, int hessid)
 		/* B3..B5: Number of Realm Identifiers */
 		fils_info |= realms << 3;
 	}
-	/* TODO: B6: FILS IP Address Configuration */
+	/* B6: FILS IP Address Configuration — set only when a DHCP server is
+	 * configured for HLP, which is the actual indicator that the AP can
+	 * perform FILS IP address assignment. fils_hlp_wait_time is a timing
+	 * parameter with a non-zero default and must not be used as the gate. */
+
+	if (hapd->conf->dhcp_server.af == AF_INET &&
+	    hapd->conf->dhcp_server.u.v4.s_addr != 0)
+		fils_info |= BIT(6);
 	if (hapd->conf->fils_cache_id_set)
 		fils_info |= BIT(7);
 	if (hessid && !is_zero_ether_addr(hapd->conf->hessid))
@@ -1247,7 +1456,8 @@ int get_tx_parameters(struct sta_info *sta, int ap_max_chanwidth,
 #endif /* CONFIG_OCV */
 
 
-u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len)
+u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
+		       u64 capab_mask)
 {
 	u8 *pos = eid;
 	bool sae_pk = false;
@@ -1292,6 +1502,8 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len)
 	if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK &&
 	    hapd->conf->control_frame_prot)
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
+
+	capab &= capab_mask;
 
 	if (!capab)
 		return eid; /* no supported extended RSN capabilities */
@@ -1443,3 +1655,57 @@ void hostapd_wfa_capab(struct hostapd_data *hapd, struct sta_info *sta,
 	if (gen_capa)
 		hostapd_wfa_gen_capab(hapd, sta, gen_capa + 2, gen_capa[1]);
 }
+
+#ifdef CONFIG_IEEE80211BN
+/**
+ * hostapd_eid_smd - Build SMD Information Element
+ * @hapd: BSS data
+ * @eid: Pointer to current position in buffer
+ * Returns: Pointer to next position in buffer
+ *
+ * Writes the SMD IE (IEEE 802.11bn SMD Information Element) into the
+ * provided buffer.  The IE carries the AP's SMD identifier, capabilities
+ * byte, and preparation timeout (1 octet, units of 64 TUs).
+ */
+u8 *hostapd_eid_smd(struct hostapd_data *hapd, u8 *eid)
+{
+	u8 smd_cap_byte;
+
+	if (!hapd->conf->smd.enabled)
+		return eid;
+
+	if (!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_SMD))
+		return eid;
+
+	*eid++ = WLAN_EID_EXTENSION;
+	*eid++ = SMD_IE_LEN - 2; /* Length: ExtID + SMD ID + Caps + Timeout */
+	*eid++ = WLAN_EID_EXT_SMD;
+
+	/* SMD Identifier (6 octets) */
+	os_memcpy(eid, hapd->conf->smd.smd_identifier, ETH_ALEN);
+	eid += ETH_ALEN;
+
+	/* SMD Capabilities (1 octet)
+	 * B0: DL Data Forwarding
+	 * B1-B3: Max Number Of Prepared Target AP MLDs
+	 * B4: SMD Type
+	 * B5: PTK Mode
+	 * B6: Neighboring AP Probing Support
+	 * B7: Reserved
+	 */
+	smd_cap_byte = 0;
+	if (hapd->conf->smd.caps.dl_data_fwd)
+		smd_cap_byte |= BIT(0);
+	smd_cap_byte |= (hapd->conf->smd.caps.max_prep_target_apmlds & 0x07) << 1;
+	if (hapd->conf->smd.caps.smd_type)
+		smd_cap_byte |= BIT(4);
+	if (hapd->conf->smd.caps.ptk_mode)
+		smd_cap_byte |= BIT(5);
+	*eid++ = smd_cap_byte;
+
+	/* Preparation Timeout (1 octet, units of 64 TUs) */
+	*eid++ = hapd->conf->smd.smd_prep_timeout;
+
+	return eid;
+}
+#endif /* CONFIG_IEEE80211BN */

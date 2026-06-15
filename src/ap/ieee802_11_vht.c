@@ -143,6 +143,14 @@ u8 * hostapd_eid_vht_capabilities(struct hostapd_data *hapd, u8 *eid, u32 nsts)
 	}
 
 	chwidth = hapd->iconf->vht_oper_chwidth;
+#ifdef CONFIG_QCN_EXTN
+	/* If the BSS is repurposed BSS, then its operating channel width
+	 * advertised in VHT operation element can be lesser than the interface
+	 * level setting. In that case, rederive the repurposed BSS's operating
+	 * chan width and update the VHT Capability Info accordingly.
+	 */
+	hostapd_repurpose_update_vht_capabilities_extn(hapd, &chwidth, cap);
+#endif /* CONFIG_QCN_EXTN */
 	if (((host_to_le32(mode->vht_capab)) & VHT_CAP_EXTENDED_NSS_BW_SUPPORT)
 		&& ((chwidth == CHANWIDTH_160MHZ) || (chwidth == CHANWIDTH_80P80MHZ))) {
 		cap->vht_capabilities_info |= VHT_CAP_EXTENDED_NSS_BW_SUPPORT;
@@ -216,6 +224,17 @@ u8 * hostapd_eid_vht_operation(struct hostapd_data *hapd, u8 *eid)
 				       &oper_chwidth, &seg0, &seg1);
 	}
 #endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		hostapd_get_oper_info_of_repurposed_bss_extn(
+				hapd, &oper_chwidth,
+				&seg0, &seg1);
+		wpa_printf(MSG_DEBUG,
+			   "Repurpose: VHT OP chwidth %d seg0 %d seg1 %d",
+			   oper_chwidth, seg0, seg1);
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	/*
 	 * center freq = 5 GHz + (5 * index)
@@ -463,6 +482,24 @@ void hostapd_get_vht_capab(struct hostapd_data *hapd,
 
 	if (!(own_cap & VHT_CAP_MU_BEAMFORMEE_CAPABLE))
 		cap &= ~VHT_CAP_MU_BEAMFORMER_CAPABLE;
+
+#ifdef CONFIG_QCN_EXTN
+	/* If the BSS is repurposed and bandwidth is not 160,
+	 * clear the supported channel width mask from self cap
+	 */
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		enum oper_chan_width chwidth;
+		u8 seg0, seg1;
+
+		hostapd_repurpose_get_vht_legacy_chan_info_extn(hapd, &chwidth,
+								&seg0, &seg1);
+		hostapd_get_oper_info_of_repurposed_bss_extn(hapd, &chwidth,
+							     &seg0, &seg1);
+		if (chwidth != CHANWIDTH_160MHZ &&
+		    chwidth != CHANWIDTH_80P80MHZ)
+			own_cap &= ~VHT_CAP_SUPP_CHAN_WIDTH_MASK;
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	/* mask channel widths we don't support */
 	switch (own_cap & VHT_CAP_SUPP_CHAN_WIDTH_MASK) {

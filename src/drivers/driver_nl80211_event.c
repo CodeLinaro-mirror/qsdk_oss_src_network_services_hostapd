@@ -203,6 +203,7 @@ static const char * nl80211_command_to_string(enum nl80211_commands cmd)
 	C2S(NL80211_CMD_ERP)
 	C2S(NL80211_CMD_QOS_MGMT)
 	C2S(NL80211_CMD_AP_POWER_SAVE)
+	C2S(NL80211_CMD_TRIGGER_SMD_DISCOVERY)
 	C2S(__NL80211_CMD_AFTER_LAST)
 	}
 #undef C2S
@@ -4352,9 +4353,14 @@ qca_nl80211_afc_power_update_completed(struct i802_bss *bss,
 			nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_REQ_ID]);
 	}
 
+	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_STATUS_CODE]) {
+		afc_rsp->target_status_code =
+			nla_get_u8(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_STATUS_CODE]);
+	}
+
 	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_EXP_DATE]) {
 		afc_rsp->avail_exp_time_d =
-		nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_EXP_DATE]);
+			nla_get_u32(attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_EXP_DATE]);
 	}
 
 	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_EXP_TIME]) {
@@ -4574,6 +4580,9 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 		break;
 	case QCA_NL80211_VENDOR_SUBCMD_TPC_EIRP_EVENT:
 		qca_nl80211_tpc_eirp_event(bss, data, len);
+		break;
+	case QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED:
+		nl80211_update_beacons_on_chain_mask_change(bss->drv);
 		break;
 	default:
 		if (!nl80211_vendor_event_qca_extn(bss, subcmd, data, len))
@@ -5581,7 +5590,7 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 				     tb[NL80211_ATTR_CH_SWITCH_COUNT],
 				     tb[NL80211_ATTR_CHANNEL_WIDTH_DEVICE],
 				     tb[NL80211_ATTR_CENTER_FREQ_DEVICE],
-				     0,
+				     tb[NL80211_ATTR_MAX_CH_SWITCH_TIME],
 				     0);
 		break;
 	case NL80211_CMD_CH_SWITCH_NOTIFY:

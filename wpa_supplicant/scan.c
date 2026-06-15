@@ -1085,12 +1085,25 @@ static void wpa_supplicant_scan(void *eloop_ctx, void *timeout_ctx)
 	}
 
 #ifdef CONFIG_QCN_EXTN
-	/* Repeater feature: gate STA scans until AP ACS completes */
+	/* Repeater feature: gate STA scan until
+	 * (1) AP ACS completes or
+	 * (2) AP CSA (for CSwOpts 0x2) completes
+	 */
 	if (wpa_s->conf && wpa_s->conf->ind_rptr && !wpa_s->acs_complete) {
 		wpa_dbg(wpa_s, MSG_DEBUG,
 			"Skip Repeater STA scan as repeater ACS is incomplete");
 		eloop_register_timeout(REP_AP_ACS_TIMEOUT_INTERVAL, 0,
-				       wpa_supplicant_start_sta_scan, wpa_s, NULL);
+				       wpa_supplicant_start_sta_scan,
+				       wpa_s, NULL);
+		return;
+	}
+
+	if (IS_CSH_IGNORE_CSA_DFS_ENABLED(wpa_s->conf->cswopts) && wpa_s->hold_scan_csa) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"Skip Repeater STA scan until repeater moves to a non-DFS channel");
+		eloop_register_timeout(REP_AP_CSA_TIMEOUT_INTERVAL, 0,
+				       wpa_supplicant_start_sta_scan,
+				       wpa_s, NULL);
 		return;
 	}
 #endif
@@ -1563,6 +1576,10 @@ scan:
 		wpas_p2p_scan_freqs(wpa_s, &params, true);
 #endif /* CONFIG_P2P */
 
+	if (!is_zero_ether_addr(wpa_s->ml_probe_bssid) &&
+	    (wpa_s->scan_req == MANUAL_SCAN_REQ))
+		params.link_id = wpa_s->ml_probe_tx_link;
+
 	ret = wpa_supplicant_trigger_scan(wpa_s, scan_params, false, false);
 
 	if (ret && wpa_s->last_scan_req == MANUAL_SCAN_REQ && params.freqs &&
@@ -1597,6 +1614,7 @@ scan:
 
 	wpa_s->ml_probe_mld_id = -1;
 	wpa_s->ml_probe_links = 0;
+	wpa_s->ml_probe_tx_link = -1;
 	os_memset(wpa_s->ml_probe_bssid, 0, sizeof(wpa_s->ml_probe_bssid));
 }
 
@@ -3699,6 +3717,14 @@ wpa_supplicant_get_scan_results(struct wpa_supplicant *wpa_s,
 	}
 	filter_scan_res(wpa_s, scan_res);
 
+#ifdef CONFIG_QCN_EXTN
+	if (wpa_s->conf && wpa_s->conf->conf_extn.strict_passive_scan) {
+		for (i = 0; i < scan_res->num; i++)
+			scan_res->res[i] = wpa_scan_ssid_hide_beacon_extn(wpa_s,
+									  scan_res->res[i]);
+	}
+#endif
+
 	for (i = 0; i < scan_res->num; i++) {
 		struct wpa_scan_res *scan_res_item = scan_res->res[i];
 
@@ -4509,17 +4535,17 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 					if (scan_res == NULL)
 						goto cont;
 
+					if (scan_res && !scan_res->num) {
+						freqs[j] = partner_freq;
+						j++;
+					}
+
 					pbss = wpa_bss_get_bssid(wpa_s, bssid);
 					if (pbss && !wpa_is_6ghz_power_mode_match(wpa_s, pbss)) {
 						wpa_dbg(wpa_s, MSG_DEBUG,
 							"ML RNR 6 GHz Power Mode mismatch - Ignore");
 						non_assoc_links &= ~BIT(link_id);
 						goto cont;
-					}
-
-					if (scan_res && !scan_res->num) {
-						freqs[j] = partner_freq;
-						j++;
 					}
 				}
 

@@ -7,6 +7,7 @@
 
 #include "utils/common.h"
 #include "utils/bitfield.h"
+#include "common/eapol_common.h"
 #include "common/wpa_ctrl.h"
 #include "ap/hostapd.h"
 #include "ap/sta_info.h"
@@ -44,6 +45,8 @@
 #define IEEE80211_MAX_MGMT_LEN_NO_FCS 2300
 #endif
 
+#define  HOSTAPD_INVALID_RSSI -128
+
 static struct hapd_interfaces *hostapd_if_ifaces;
 
 /*
@@ -56,6 +59,11 @@ struct frame_reg_table {
 	 * Per-mgmt registration
 	 */
 	enum hostapd_if_frame_policy mgmt[HOSTAPD_IF_FRAME_TYPE_MAX];
+
+	/*
+	 * Per-action registration
+	 */
+	enum hostapd_if_frame_policy action[HOSTAPD_IF_FRAME_TYPE_ACTION_MAX];
 	/*
 	 * Event registration bitfield
 	 */
@@ -279,6 +287,8 @@ void hostapd_if_register_frame(void *ifname_ctx,
 	 */
 	struct hostapd_data *hapd = NULL;
 	struct frame_reg_table *table = NULL;
+	const char *ifname;
+	const char *type_str;
 
 	hapd = (struct hostapd_data *)ifname_ctx;
 	if (!hapd || !cat) {
@@ -286,13 +296,30 @@ void hostapd_if_register_frame(void *ifname_ctx,
 		return;
 	}
 
+	ifname = hapd->conf ? hapd->conf->iface : "unknown";
 	table = (struct frame_reg_table *) hapd->hostapd_if_data;
 	if (!table) {
 		wpa_printf(MSG_ERROR, "%s: ERROR! table not found\n", __func__);
 		return;
 	}
 
-	if (cat->type >= HOSTAPD_IF_FRAME_TYPE_MAX) {
+	if(cat->type == HOSTAPD_IF_FRAME_TYPE_ACTION) {
+		type_str = hostapd_if_action_frame_type_string(cat->u.action_type);
+		if (policy == HOSTAPD_IF_FRAME_INVOKE) {
+			wpa_printf(MSG_ERROR, "%s: ERROR! policy invalid for "
+				   "action frames\n", __func__);
+			return;
+		}
+		if (cat->u.action_type >= HOSTAPD_IF_FRAME_TYPE_ACTION_MAX) {
+			wpa_printf(MSG_ERROR, "%s: ERROR! action type invalid %s (%d)\n",
+				   __func__, type_str, cat->u.action_type);
+			return;
+		}
+		wpa_printf(MSG_DEBUG, "%s: registering action frame %s (%d) policy=%d ifname=%s\n",
+			   __func__, type_str, cat->u.action_type, policy, ifname);
+		table->action[cat->u.action_type] = policy;
+		return;
+	} else if (cat->type >= HOSTAPD_IF_FRAME_TYPE_MAX) {
 		wpa_printf(MSG_ERROR, "%s: ERROR! type invalid %d", __func__, cat->type);
 		return;
 	}
@@ -484,6 +511,8 @@ __get_frame_decision(enum hostapd_if_frame_policy *policy,
 	switch (*policy) {
 	case HOSTAPD_IF_FRAME_INVOKE:
 		return HOSTAPD_IF_FRAME_PROCESSING_WAIT;
+	case HOSTAPD_IF_FRAME_OFFLOAD:
+		return HOSTAPD_IF_FRAME_PROCESSING_OFFLOAD;
 	default:
 		return HOSTAPD_IF_FRAME_PROCESSING_CONTINUE;
 	}
@@ -527,6 +556,7 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 		       struct sta_info *sta,
 		       const uint8_t *frame,
 		       uint16_t frame_len,
+		       int rssi,
 		       u16 status_code,
 		       u16 auth_transaction,
 		       u8 allow_reuse,
@@ -547,6 +577,7 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 
 	os_memset(&ctx_req, 0, sizeof(ctx_req));
 	ctx_req.status_code = status_code;
+	ctx_req.data.auth_req.rssi = rssi;
 	ctx_req.data.auth_req.auth_transaction = auth_transaction;
 	ctx_req.data.auth_req.allow_reuse = allow_reuse;
 	ctx_req.data.auth_req.auth_alg = auth_alg;
@@ -603,6 +634,95 @@ hostapd_if_frame_fwd_decision(struct hostapd_data *hapd, u16 auth_alg,
 	enum hostapd_if_frame_policy policy;
 	return hostapd_if_notify_get_policy_decision(hapd, auth_alg, &policy,
 						     frame_type);
+}
+
+enum hostapd_if_frame_processing_decision
+hostapd_if_notify_remote_auth(struct hostapd_data *hapd, uint8_t *sta_mac,
+			      const uint8_t *ies, uint16_t ies_len,
+			      uint16_t status_code, bool is_ml)
+{
+	enum hostapd_if_frame_policy policy;
+	enum hostapd_if_frame_processing_decision decision;
+	struct hostapd_if_frame_ctx ctx_req;
+
+	decision = hostapd_if_notify_get_policy_decision(hapd, 0, &policy,
+							 HOSTAPD_IF_FRAME_TYPE_REMOTE_AUTH);
+
+	os_memset(&ctx_req, 0, sizeof(ctx_req));
+	ctx_req.status_code = status_code;
+
+	ctx_req.rx_link_id = hapd->mld_link_id;
+	ctx_req.data.remote_auth_req.is_ml_sta = is_ml;
+
+#ifdef HOSTAPD_EXTERNAL_PLUGIN
+	if (!hostapd_if_plugin || !hostapd_if_plugin->notify_remote_auth)
+		return HOSTAPD_IF_FRAME_PROCESSING_CONTINUE;
+
+	if (policy == HOSTAPD_IF_FRAME_NOTIFY) {
+		hostapd_if_plugin->notify_remote_auth(hapd->conf->iface,
+						      sta_mac, ies, ies_len,
+						      &ctx_req);
+	} else if (policy == HOSTAPD_IF_FRAME_INVOKE) {
+		hostapd_if_plugin->invoke_remote_auth(hapd->conf->iface,
+						      sta_mac, ies, ies_len,
+						      &ctx_req);
+	}
+#endif
+
+	return decision;
+}
+
+int hostapd_if_pull_pmk_r1(struct hostapd_data *hapd, uint8_t *sta_mac,
+			   uint8_t *pmk_r1_name, uint8_t *pmk_r1,
+			   size_t *pmk_r1_len, int *pairwise,
+			   int *session_timeout, const uint8_t **identity,
+			   size_t *identity_len, const uint8_t **radius_cui,
+			   size_t *radius_cui_len)
+{
+	uint8_t *hapd_if_identity, *hapd_if_radius_cui;
+
+	if (!hostapd_if_plugin || !hostapd_if_plugin->pull_pmk_r1)
+		return -1;
+
+	hapd_if_identity = os_zalloc(MAX_RADIUS_CUI_LEN);
+	hapd_if_radius_cui = os_zalloc(MAX_RADIUS_CUI_LEN);
+
+	if (!hapd_if_identity || !hapd_if_radius_cui) {
+		wpa_printf(MSG_ERROR, "Failed to allocate memory in pull_pmk_r1\n");
+		goto hostapd_if_pull_pmk_r1_fail;
+	}
+
+	if (hostapd_if_plugin->pull_pmk_r1(hapd->conf->iface, sta_mac,pmk_r1_name, pmk_r1, pmk_r1_len,
+				       pairwise,
+				       session_timeout, hapd_if_identity,
+				       identity_len, hapd_if_radius_cui,
+				       radius_cui_len)) {
+		goto hostapd_if_pull_pmk_r1_fail;
+	}
+
+	*identity = hapd_if_identity;
+	*radius_cui = hapd_if_radius_cui;
+	return 0;
+
+hostapd_if_pull_pmk_r1_fail:
+	if (hapd_if_identity)
+		os_free(hapd_if_identity);
+
+	if (hapd_if_radius_cui)
+		os_free(hapd_if_radius_cui);
+
+	return -1;
+}
+
+int hostapd_if_pull_pmk(struct hostapd_data *hapd, uint8_t *sta_mac,
+			uint8_t *pmk, size_t *pmk_len, uint8_t *pmkid,
+			int *session_timeout)
+{
+	if ((!hostapd_if_plugin) || (!hostapd_if_plugin->pull_pmk))
+		return -1;
+
+	return hostapd_if_plugin->pull_pmk(hapd->conf->iface, sta_mac, pmk,
+					   pmk_len, pmkid, session_timeout);
 }
 
 /*
@@ -844,6 +964,162 @@ void hostapd_if_eapol_rx(struct hostapd_data *hapd, const u8 *sa,
 #endif
 }
 
+static enum hostapd_if_action_frame_type
+__action_key_from_mgmt(const struct ieee80211_mgmt *mgmt, size_t frame_len,
+		       enum hostapd_if_action_frame_type *category)
+{
+	u8 action = mgmt->u.action.u.wmm_action.action_code;
+
+	switch (mgmt->u.action.category) {
+	case WLAN_ACTION_VENDOR_SPECIFIC:
+	case WLAN_ACTION_VENDOR_SPECIFIC_PROTECTED:
+		*category = HOSTAPD_IF_FRAME_TYPE_ACTION_VENDOR;
+		return HOSTAPD_IF_FRAME_TYPE_ACTION_VENDOR;
+	case WLAN_ACTION_RADIO_MEASUREMENT:
+		*category = HOSTAPD_IF_FRAME_TYPE_ACTION_RADIO;
+		switch (action) {
+		case WLAN_RRM_NEIGHBOR_REPORT_REQUEST:
+			return HOSTAPD_IF_FRAME_TYPE_ACTION_RADIO_NEIGHBOUR_REQ;
+		default:
+			return HOSTAPD_IF_FRAME_TYPE_ACTION_RADIO;
+		}
+	case WLAN_ACTION_WNM:
+		*category = HOSTAPD_IF_FRAME_TYPE_ACTION_WNM;
+		switch (action) {
+		case WNM_BSS_TRANS_MGMT_QUERY:
+			return HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_BTM_QUERY;
+		case WNM_BSS_TRANS_MGMT_RESP:
+			return HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_BTM_RESP;
+		case WNM_DMS_REQ:
+			return HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_DMS_REQ;
+		case WNM_DMS_RESP:
+			return HOSTAPD_IF_FRAME_TYPE_ACTION_WNM_DMS_RESP;
+		default:
+			return HOSTAPD_IF_FRAME_TYPE_ACTION_WNM;
+		}
+	case WLAN_ACTION_WMM:
+		*category = HOSTAPD_IF_FRAME_TYPE_ACTION_WMM;
+		switch (action) {
+		case WMM_ACTION_CODE_ADDTS_REQ:
+			return HOSTAPD_IF_FRAME_TYPE_ACTION_WMM_ADDTS_REQ;
+		case WMM_ACTION_CODE_DELTS:
+			return HOSTAPD_IF_FRAME_TYPE_ACTION_WMM_DELTS;
+		default:
+			return HOSTAPD_IF_FRAME_TYPE_ACTION_WMM;
+		}
+	case WLAN_ACTION_FT:
+		*category = HOSTAPD_IF_FRAME_TYPE_ACTION_FT;
+		switch (action) {
+		case 1:
+			return HOSTAPD_IF_FRAME_TYPE_ACTION_FT_REQ;
+		case 2:
+			return HOSTAPD_IF_FRAME_TYPE_ACTION_FT_RESP;
+		default:
+			return HOSTAPD_IF_FRAME_TYPE_ACTION_FT;
+		}
+	default:
+		return HOSTAPD_IF_FRAME_TYPE_ACTION_MAX;
+	}
+}
+
+enum hostapd_if_frame_processing_decision
+hostapd_if_notify_action(struct hostapd_data *hapd,
+			 struct sta_info *sta,
+			 const struct ieee80211_mgmt *mgmt,
+			 size_t frame_len, int rssi)
+{
+	struct frame_reg_table *table;
+	enum hostapd_if_action_frame_type key;
+	enum hostapd_if_action_frame_type generic_key;
+	enum hostapd_if_frame_policy policy = HOSTAPD_IF_FRAME_DO_NOTHING;
+	enum hostapd_if_frame_processing_decision decision =
+						HOSTAPD_IF_FRAME_PROCESSING_CONTINUE;
+	int link_id;
+	struct hostapd_if_frame_ctx ctx_req;
+
+	const u8 *sta_mac = sta ? sta->addr : mgmt->sa;
+	u16 plugin_frame_len = (u16) frame_len;
+
+	table = (struct frame_reg_table *) hapd->hostapd_if_data;
+	if (!table)
+		return decision;
+
+	key = __action_key_from_mgmt(mgmt, frame_len, &generic_key);
+	if (key >= HOSTAPD_IF_FRAME_TYPE_ACTION_MAX)
+		return decision;
+
+	/* Look up the policy for the specific action frame subtype. */
+	policy = table->action[key];
+	if (policy == HOSTAPD_IF_FRAME_DO_NOTHING &&
+	    generic_key < HOSTAPD_IF_FRAME_TYPE_ACTION_MAX)
+		/* If no action-specific policy is configured (DO_NOTHING),
+		 * fall back to the generic action category policy.
+		 */
+		policy = table->action[generic_key];
+
+	if (!hapd->conf)
+		return -1;
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap)
+		link_id = hapd->mld_link_id;
+	else
+#endif /* CONFIG_IEEE80211BE */
+		link_id = -1;
+
+	os_memset(&ctx_req, 0, sizeof(ctx_req));
+	ctx_req.rx_link_id = link_id;
+	ctx_req.data.action.category = mgmt->u.action.category;
+	ctx_req.data.action.action_code = mgmt->u.action.u.wmm_action.action_code;
+	ctx_req.data.action.rssi = rssi;
+
+	decision = __get_frame_decision(&policy, false);
+
+#ifdef HOSTAPD_EXTERNAL_PLUGIN
+	if (policy == HOSTAPD_IF_FRAME_NOTIFY) {
+		if (hostapd_if_plugin && hostapd_if_plugin->notify_action) {
+			hostapd_if_plugin->notify_action(hapd->conf->iface,
+							 sta_mac,
+							 (const u8 *) mgmt,
+							 plugin_frame_len,
+							 link_id,
+							 &ctx_req);
+		}
+	} else if (policy == HOSTAPD_IF_FRAME_OFFLOAD) {
+		if (hostapd_if_plugin && hostapd_if_plugin->offload_action) {
+			hostapd_if_plugin->offload_action(hapd->conf->iface,
+							  sta_mac,
+							  (const u8 *) mgmt,
+							  plugin_frame_len,
+							  link_id,
+							  &ctx_req);
+		}
+	}
+#endif
+	return decision;
+}
+
+
+void hostapd_if_eapol_key_rx(struct hostapd_data *hapd, const u8 *sa,
+			     const u8 *data, u16 data_len)
+{
+	int link_id = -1;
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf && hapd->conf->mld_ap)
+		link_id = hapd->mld_link_id;
+#endif
+#ifdef HOSTAPD_EXTERNAL_PLUGIN
+	if (hostapd_if_plugin && hostapd_if_plugin->eapol_key_rx) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: executing EAPOL-Key RX through plugin",
+			   __func__);
+		hostapd_if_plugin->eapol_key_rx(hapd->conf->iface, link_id, sa,
+						(u8 *) data, data_len);
+	}
+#endif
+}
+
 /*
  * External app resumes Association flow:
  * Compose and send (Re)Association Response using ctx->status_code
@@ -1078,6 +1354,111 @@ __hostapd_if_auth_response_exit:
 	 */
 	if (ctx->data.auth_resp.additional_ies)
 		os_free((void *)ctx->data.auth_resp.additional_ies);
+	os_free((void *)ctx);
+}
+
+/*
+ * External app resumes FT over-DS remote authentication flow:
+ * Compose and send remote authentication response using ctx->status_code.
+ *
+ * ifname: Interface name
+ * sta_mac: MAC address of the STA
+ * ctx: Frame context containing status code and remote auth response data
+ */
+void __hostapd_if_remote_auth_response(char *ifname, uint8_t *sta_mac,
+				       struct hostapd_if_frame_ctx *ctx)
+{
+	struct hostapd_data *hapd;
+	struct wpa_state_machine *wpa_sm;
+
+	wpa_printf(MSG_MSGDUMP,
+		   "%s: %s, " MACSTR " status=%u\n",
+		   __func__, ifname, MAC2STR(sta_mac), ctx->status_code);
+
+	/*
+	 * Get the appropriate hapd using link_id from context
+	 */
+	hapd = __hostapd_get_link_iface(ifname, ctx->rx_link_id);
+	if (!hapd) {
+		wpa_printf(MSG_ERROR,
+			   "hostapd_if: remote_auth_response - "
+			   "interface %s not found with link-id %d",
+			   ifname, ctx->rx_link_id);
+		goto __hostapd_if_remote_auth_response_exit;
+	}
+
+	if (ctx->data.remote_auth_resp.is_ml_sta) {
+		/*
+		 * Get the wpa_state_machine from FT over-DS list
+		 */
+		wpa_sm = get_wpa_sm_from_ft_ds_list(hapd, sta_mac);
+	} else {
+		struct sta_info *sta;
+
+		sta = ap_get_sta(hapd, sta_mac);
+		if (sta)
+			wpa_sm = sta->wpa_sm;
+		else
+			wpa_sm = NULL;
+	}
+
+	if (!wpa_sm) {
+		__inbound_error_event(hapd, sta_mac,
+				HOSTAPD_IF_AUTH_RESPONSE_ERROR,
+				__func__, __LINE__);
+		wpa_printf(MSG_ERROR,
+			   "hostapd_if: remote_auth_response - "
+			   "wpa_sm not found for STA " MACSTR " on %s",
+			   MAC2STR(sta_mac), ifname);
+		goto __hostapd_if_remote_auth_response_exit;
+	}
+
+	/*
+	 * Resume FT over-DS authentication.
+	 * If the plugin provided a PMK-R1, store it in hostapd's cache first.
+	 * If no PMK-R1 was provided but the plugin signalled SUCCESS, override
+	 * the status to INVALID_PMKID so the STA gets a proper rejection.
+	 */
+	{
+		struct hostapd_if_pmk_r1 *r1 =
+			ctx->data.remote_auth_resp.pmk_r1;
+		uint16_t status_code;
+
+		if (r1) {
+			wpa_ft_store_pmk_r1(
+				hapd->wpa_auth,
+				sta_mac,
+				r1->pmk_r1,
+				r1->pmk_r1_len,
+				r1->pmk_r1_name,
+				r1->pairwise,
+				NULL,
+				r1->expires_in,
+				r1->session_timeout,
+				r1->identity_len ? r1->identity : NULL,
+				r1->identity_len,
+				r1->radius_cui_len ? r1->radius_cui : NULL,
+				r1->radius_cui_len);
+			status_code = ctx->status_code;
+		} else {
+			/*
+			 * If external APP set the status code as SUCCESS
+			 * without passing a valid PMK-R1, override it
+			 * to INVALID_PMKID
+			 */
+			if (ctx->status_code == WLAN_STATUS_SUCCESS)
+				status_code = WLAN_STATUS_INVALID_PMKID;
+			else
+				status_code = ctx->status_code;
+		}
+		ft_finish_pull(wpa_sm, status_code);
+	}
+
+__hostapd_if_remote_auth_response_exit:
+	/*
+	 * Free ctx handed in from plugin
+	 */
+	os_free(ctx->data.remote_auth_resp.pmk_r1);
 	os_free((void *)ctx);
 }
 
@@ -1430,6 +1811,250 @@ int hostapd_if_get_gtk(char *ifname, int link_id, int *gtk_idx,
 }
 
 /*
+ * Helper function to populate radio information structure
+ */
+static void populate_radio_info(struct hostapd_if_radio_info *radio, struct hostapd_data *hapd,
+				struct sta_info *sta, const struct hostap_sta_driver_data *data,
+				int driver_data_valid, bool is_mld)
+{
+	int freq = hapd->iface->freq;
+	enum hostapd_if_band band;
+
+	/* Populate frequency and channel */
+	radio->freq = freq;
+	radio->channel = hapd->iconf->channel;
+
+	/* Determine band */
+	if (hapd->iface->current_mode) {
+		switch (hapd->iface->current_mode->mode) {
+		case HOSTAPD_MODE_IEEE80211B:
+		case HOSTAPD_MODE_IEEE80211G:
+			band = HOSTAPD_IF_BAND_2GHZ;
+			break;
+		case HOSTAPD_MODE_IEEE80211A:
+			if (is_6ghz_freq(freq))
+				band = HOSTAPD_IF_BAND_6GHZ;
+			else
+				band = HOSTAPD_IF_BAND_5GHZ;
+			break;
+		case HOSTAPD_MODE_IEEE80211AD:
+			band = HOSTAPD_IF_BAND_60GHZ;
+			break;
+		default:
+			band = HOSTAPD_IF_BAND_UNKNOWN;
+			return;
+		}
+	} else {
+		band = HOSTAPD_IF_BAND_UNKNOWN;
+	}
+	radio->band = band;
+
+	/* Populate signal strength from driver data */
+	radio->rssi = driver_data_valid ? (int8_t)data->signal : HOSTAPD_INVALID_RSSI;
+
+	/* Compute capability flags */
+	radio->cap_flags = 0;
+
+	if (hapd->iface->current_mode) {
+
+		/* Check OFDM support */
+		if (hapd->iface->current_mode->mode != HOSTAPD_MODE_IEEE80211B)
+			radio->cap_flags |= HOSTAPD_IF_STA_CAP_OFDM;
+
+		/* Check 11g support (2.4 GHz OFDM) */
+		if (hapd->iface->current_mode->mode == HOSTAPD_MODE_IEEE80211G)
+			radio->cap_flags |= HOSTAPD_IF_STA_CAP_11G;
+	}
+
+	/* Check HT support */
+	if (sta->flags & WLAN_STA_HT) {
+		radio->cap_flags |= HOSTAPD_IF_STA_CAP_HT | HOSTAPD_IF_STA_CAP_11N;
+	}
+
+	/* Check HT40 support */
+	if (sta->ht_capabilities &&
+	    (sta->ht_capabilities->ht_capabilities_info &
+	     HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET))
+		radio->cap_flags |= HOSTAPD_IF_STA_CAP_HT40;
+
+	/* Check VHT support */
+	if (sta->flags & WLAN_STA_VHT)
+		radio->cap_flags |= HOSTAPD_IF_STA_CAP_VHT;
+
+	/* Check HE support */
+	if (sta->flags & WLAN_STA_HE)
+		radio->cap_flags |= HOSTAPD_IF_STA_CAP_HE;
+
+	/* Check EHT support */
+	if (sta->flags & WLAN_STA_EHT)
+		radio->cap_flags |= HOSTAPD_IF_STA_CAP_EHT;
+
+	/* Check 6 GHz support */
+	if (sta->flags & WLAN_STA_6GHZ)
+		radio->cap_flags |= HOSTAPD_IF_STA_CAP_6GHZ;
+
+	/* Check MLD support */
+	if (is_mld)
+		radio->cap_flags |= HOSTAPD_IF_STA_CAP_MLD;
+}
+
+
+/*
+ * Get station information
+ * Use MLD mac of STA in case of 11be STA
+ */
+int hostapd_if_get_sta_info(char *ifname, uint8_t *sta_mac, struct hostapd_if_sta_info *info)
+{
+	struct hostapd_data *hapd;
+	struct sta_info *sta;
+	struct hostap_sta_driver_data data;
+	int ret;
+
+	if (!ifname || !sta_mac || !info) {
+		wpa_printf(MSG_ERROR,
+			   "%s: ERROR! NULL parameters ifname=%p sta_mac=%p"
+			   " info=%p", __func__, ifname, sta_mac, info);
+		return -EINVAL;
+	}
+
+	wpa_printf(MSG_DEBUG, "%s: %s, " MACSTR, __func__, ifname, MAC2STR(sta_mac));
+
+	/* Initialize output structure */
+	os_memset(info, 0, sizeof(*info));
+
+	/* Find the station */
+	sta = __get_sta(ifname, sta_mac, -1, false, &hapd);
+	if (!sta) {
+		wpa_printf(MSG_ERROR,
+			   "%s: STA " MACSTR " not found on %s",
+			   __func__, MAC2STR(sta_mac), ifname);
+		return -ENOENT;
+	}
+
+	/* Get driver data (RSSI, rates, etc.) */
+	os_memset(&data, 0, sizeof(data));
+	ret = hostapd_drv_read_sta_data(hapd, &data, sta->addr);
+	if (ret < 0) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: Failed to read driver data for " MACSTR,
+			   __func__, MAC2STR(sta->addr));
+		/* Continue anyway - we can still populate from sta_info */
+	}
+
+	info->ht_caps_len = 0;
+
+	/* Copy HT capabilities */
+	if (sta->ht_capabilities) {
+		info->ht_caps_len = sizeof(struct ieee80211_ht_capabilities);
+		if (info->ht_caps_len > HOSTAPD_IF_HT_CAP_MAX_LEN)
+			info->ht_caps_len = HOSTAPD_IF_HT_CAP_MAX_LEN;
+		os_memcpy(info->ht_caps, sta->ht_capabilities,
+			  info->ht_caps_len);
+	} else {
+	}
+
+	info->vht_caps_len = 0;
+
+	/* Copy VHT capabilities */
+	if (sta->vht_capabilities) {
+		info->vht_caps_len = sizeof(struct ieee80211_vht_capabilities);
+		if (info->vht_caps_len > HOSTAPD_IF_VHT_CAP_MAX_LEN)
+			info->vht_caps_len = HOSTAPD_IF_VHT_CAP_MAX_LEN;
+		os_memcpy(info->vht_caps, sta->vht_capabilities, info->vht_caps_len);
+	}
+
+	info->he_caps_len = 0;
+
+	/* Copy HE capabilities */
+	if (sta->he_capab && sta->he_capab_len > 0) {
+		info->he_caps_len = sta->he_capab_len;
+		if (info->he_caps_len > HOSTAPD_IF_HE_CAP_MAX_LEN)
+			info->he_caps_len = HOSTAPD_IF_HE_CAP_MAX_LEN;
+		os_memcpy(info->he_caps, sta->he_capab, info->he_caps_len);
+	}
+
+	info->eht_caps_len = 0;
+
+	/* Copy EHT capabilities */
+	if (sta->eht_capab && sta->eht_capab_len > 0) {
+		info->eht_caps_len = sta->eht_capab_len;
+		if (info->eht_caps_len > HOSTAPD_IF_EHT_CAP_MAX_LEN)
+			info->eht_caps_len = HOSTAPD_IF_EHT_CAP_MAX_LEN;
+		os_memcpy(info->eht_caps, sta->eht_capab, info->eht_caps_len);
+	}
+
+	/* Populate radio/channel/signal information based on MLD status */
+#ifdef CONFIG_IEEE80211BE
+	if (ap_sta_is_mld(hapd, sta)) {
+		int i;
+
+		/* MLD station: populate per-link information */
+		info->is_mld_sta = true;
+		os_memcpy(info->u.mld_info.mld_addr,
+			  sta->mld_info.common_info.mld_addr, ETH_ALEN);
+		info->u.mld_info.eml_capa = sta->mld_info.common_info.eml_capa;
+		info->u.mld_info.mld_capa = sta->mld_info.common_info.mld_capa;
+
+		/* Copy per-link information including radio/signal/cap_flags */
+		info->u.mld_info.num_links = 0;
+		int max_links = (MAX_NUM_MLD_LINKS < MAX_MLO_LINKS) ? MAX_NUM_MLD_LINKS : MAX_MLO_LINKS;
+		for (i = 0; i < max_links; i++) {
+			struct hostapd_data *link_hapd;
+
+			if (!sta->mld_info.links[i].valid)
+				continue;
+
+			/* Get link-specific BSS */
+			link_hapd = hostapd_mld_get_link_bss(hapd, i);
+			if (!link_hapd) {
+				wpa_printf(MSG_WARNING,
+					   "%s: No BSS found for link_id %d, "
+					   "skipping", __func__, i);
+				continue;
+			}
+
+			/*
+			 * Now populate the link information at index i
+			 * (which is the link_id)
+			 */
+			os_memcpy(info->u.mld_info.links[i].local_addr,
+				  sta->mld_info.links[i].local_addr, ETH_ALEN);
+			os_memcpy(info->u.mld_info.links[i].peer_addr,
+				  sta->mld_info.links[i].peer_addr, ETH_ALEN);
+
+			/* Populate radio info for this link */
+			populate_radio_info(&info->u.mld_info.links[i].radio, link_hapd, sta, &data,
+					    (ret == 0), true);
+
+			/*
+			 * Mark link as valid only after successful population
+			 */
+			info->u.mld_info.links[i].valid = true;
+			info->u.mld_info.num_links++;
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "%s: Successfully retrieved MLD info for " MACSTR " (num_links=%d)",
+			   __func__, MAC2STR(sta_mac), info->u.mld_info.num_links);
+	} else
+#endif /* CONFIG_IEEE80211BE */
+	{
+		/* Non-MLD station: populate single-link information */
+		populate_radio_info(&info->u.non_mld, hapd, sta, &data, (ret == 0), false);
+
+		wpa_printf(MSG_DEBUG,
+			   "%s: Successfully retrieved non-MLD info for " MACSTR
+			   " (freq=%d, band=%d, rssi=%d, cap_flags=0x%x)",
+			   __func__, MAC2STR(sta_mac), info->u.non_mld.freq,
+			   info->u.non_mld.band, info->u.non_mld.rssi,
+			   info->u.non_mld.cap_flags);
+	}
+
+	return 0;
+}
+
+
+/*
  * ASYNC set hooks: route plugin requests to WPA authenticator
  */
 /*
@@ -1543,16 +2168,15 @@ __hostapd_if_set_pmk_exit:
 void __hostapd_if_set_ptk(char *ifname, uint8_t *sta_mac,
 			  uint8_t *kck, size_t kck_len,
 			  uint8_t *kek, size_t kek_len,
-			  uint8_t *tk, size_t tk_len)
+			  uint8_t *tk, size_t tk_len,
+			  bool authorized)
 {
 	struct hostapd_data *hapd;
 	struct sta_info *sta;
 
 	wpa_printf(MSG_MSGDUMP,
-		   "%s: %s, " MACSTR " kck_len=%zu kek_len=%zu "
-		   "tk_len=%zu\n",
-		   __func__, ifname, MAC2STR(sta_mac),
-		   kck_len, kek_len, tk_len);
+		   "%s: %s, " MACSTR " kck_len=%zu kek_len=%zu tk_len=%zu authorized=%d\n",
+		   __func__, ifname, MAC2STR(sta_mac), kck_len, kek_len, tk_len, authorized);
 
 	wpa_hexdump_key(MSG_EXCESSIVE,
 			"hostapd_if_set_ptk kck",
@@ -1589,6 +2213,11 @@ void __hostapd_if_set_ptk(char *ifname, uint8_t *sta_mac,
 
 	wpa_auth_set_ptk_full(sta->wpa_sm, kck, kck_len,
 			      kek, kek_len, tk, tk_len);
+	wpa_auth_set_sm_ptk_done(sta->wpa_sm);
+
+	if (authorized)
+		ieee802_1x_set_sta_authorized(hapd, sta, 1);
+
 __hostapd_if_set_ptk_exit:
 	os_free((void *)kck);
 	os_free((void *)kek);
@@ -1673,6 +2302,48 @@ __hostapd_if_start_sa_query_exit:
 	return;
 }
 
+
+void __hostapd_if_eapol_key_tx(char *ifname,  uint8_t *sta_mac, uint8_t link_id,
+		uint8_t *frame, uint16_t frame_len)
+{
+	struct hostapd_data *hapd = NULL;
+	struct sta_info *sta = NULL;
+	u32 flags = 0;
+	int encrypt = 0;
+
+	wpa_printf(MSG_MSGDUMP,
+			"%s: %s, link_id=%d frame_len=%u\n",
+			__func__, ifname, link_id, (unsigned int) frame_len);
+
+	wpa_hexdump(MSG_EXCESSIVE,
+			"hostapd_if_eapol_key_tx frame",
+			frame, frame_len);
+
+	sta = __get_sta(ifname, sta_mac, link_id, false, &hapd);
+	if (!sta) {
+		if (hapd)
+			__inbound_error_event(hapd, sta_mac,
+					HOSTAPD_IF_EAPOL_KEY_TX_ERROR,
+					__func__, __LINE__);
+		wpa_printf(MSG_ERROR,
+				"hostapd_if: eapol_tx - STA " MACSTR " not found on %s",
+				MAC2STR(sta_mac), ifname);
+
+		goto __hostapd_if_eapol_key_tx_exit;
+	}
+
+	hostapd_sta_flags_to_drv(sta->flags);
+	if (wpa_auth_pairwise_set(sta->wpa_sm))
+		encrypt = 1;
+
+	hostapd_drv_hapd_send_eapol(hapd, sta->addr, frame, frame_len, encrypt,
+			flags, link_id);
+
+__hostapd_if_eapol_key_tx_exit:
+	os_free((void *) frame);
+}
+
+
 /*
  * Resume EAPOL transmission from plugin.
  * Use MLD mac of STA in case of 11be STA.
@@ -1710,6 +2381,63 @@ void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
 }
 
 
+void __hostapd_if_set_authorized(char *ifname, uint8_t *sta_mac, int authorized)
+{
+	struct hostapd_data *hapd = NULL;
+	struct sta_info *sta;
+
+	wpa_printf(MSG_MSGDUMP, "%s: %s, " MACSTR " authorized=%d\n",
+		   __func__, ifname, MAC2STR(sta_mac), authorized);
+
+	sta = __get_sta(ifname, sta_mac, -1, false, &hapd);
+	if (!sta) {
+		if (hapd) {
+			__inbound_error_event(hapd, sta_mac,
+					      HOSTAPD_IF_SET_AUTHORIZED_ERROR,
+					      __func__, __LINE__);
+		}
+		wpa_printf(MSG_ERROR,
+			   "hostapd_if: set_authorized - STA " MACSTR " not found on %s",
+			   MAC2STR(sta_mac), ifname);
+		return;
+	}
+
+	ieee802_1x_set_sta_authorized(hapd, sta, !!authorized);
+}
+
+void __hostapd_if_send_frame(char *ifname, int tx_link_id, uint8_t *frame, uint16_t frame_len)
+{
+	struct hostapd_data *hapd;
+	int ret;
+
+	wpa_printf(MSG_MSGDUMP,
+		   "%s: %s, link_id=%d frame_len=%u\n",
+		   __func__, ifname, tx_link_id, (unsigned int) frame_len);
+
+	wpa_hexdump(MSG_EXCESSIVE, "hostapd_if_send_frame frame", frame, frame_len);
+
+	hapd = __hostapd_get_link_iface(ifname, tx_link_id);
+	if (!hapd) {
+		wpa_printf(MSG_ERROR,
+			   "hostapd_if: send_frame - interface %s not found with link-id %d",
+			   ifname, tx_link_id);
+		goto __hostapd_if_send_frame_exit;
+	}
+
+	ret = hostapd_drv_send_mlme(hapd, frame, frame_len, 0, NULL, 0, 0, 0, 0);
+
+	if (ret < 0) {
+		__inbound_error_event(hapd, NULL, HOSTAPD_IF_SEND_FRAME_ERROR,
+				      __func__, __LINE__);
+		wpa_printf(MSG_ERROR, "hostapd_if: send_frame - failed for %s link-id %d",
+			   ifname, tx_link_id);
+	}
+
+__hostapd_if_send_frame_exit:
+	os_free((void *)frame);
+}
+
+
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 void hostapd_plugin_register(struct hostapd_external_app_object *plugin)
 {
@@ -1726,6 +2454,7 @@ void hostapd_plugin_register(struct hostapd_external_app_object *plugin)
 	plugin->get_pmk = hostapd_if_get_pmk;
 	plugin->get_ptk = hostapd_if_get_ptk;
 	plugin->get_gtk = hostapd_if_get_gtk;
+	plugin->get_sta_info = hostapd_if_get_sta_info;
 
 	/*
 	 * ASYNC southbound operations wired to async serializers
@@ -1863,6 +2592,43 @@ void hostapd_if_event_assoc_tx_complete(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR"\n", __func__, __LINE__,
 		hapd->conf->iface, MAC2STR(addr));
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+}
+
+/*
+ * Use MLD mac of STA (in addr parameter) in case of 11be STA
+ */
+void hostapd_if_event_dot1x_complete(struct hostapd_data *hapd,
+				     const u8 *addr,
+				     const u8 *identity,
+				     size_t identity_len,
+				     int success)
+{
+	struct hostapd_if_event evt;
+	size_t copy_len = 0;
+
+	if (!hostapd_if_is_event_registered(hapd, HOSTAPD_IF_EVENT_DOT1X_COMPLETE))
+		return;
+
+	os_memset(&evt, 0, sizeof(evt));
+	evt.type = HOSTAPD_IF_EVENT_DOT1X_COMPLETE;
+	os_strlcpy(evt.ifname, hapd->conf->iface, sizeof(evt.ifname));
+	os_memcpy(evt.sta_mac, addr, sizeof(evt.sta_mac));
+
+	if (identity && identity_len) {
+		copy_len = identity_len;
+		if (copy_len > MAX_RADIUS_CUI_LEN)
+			copy_len = MAX_RADIUS_CUI_LEN;
+
+		os_memcpy(evt.data.dot1x_completion.identity, identity,
+			  copy_len);
+	}
+
+	evt.data.dot1x_completion.identity_len = copy_len;
+	evt.data.dot1x_completion.success = success;
+
+	wpa_printf(MSG_MSGDUMP, "%s: %d %s " MACSTR " %d %zu\n", __func__,
+		   __LINE__, hapd->conf->iface, MAC2STR(addr), success, copy_len);
 	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
 }
 
@@ -2176,14 +2942,15 @@ int hostapd_if_set_pmk_validate_inputs(char *ifname, uint8_t *sta_mac,
 int hostapd_if_set_ptk_validate_inputs(char *ifname, uint8_t *sta_mac,
 				       uint8_t *kck, size_t kck_len,
 				       uint8_t *kek, size_t kek_len,
-				       uint8_t *tk, size_t tk_len)
+				       uint8_t *tk, size_t tk_len,
+				       bool authorized)
 {
 	if (!ifname || !sta_mac || !kck || kck_len == 0 || !kek ||
 			kek_len == 0 || !tk || tk_len == 0) {
 		wpa_printf(MSG_ERROR,
-			   "%s: ERROR! NULL/invalid parameters ifname=%p sta_mac=%p kck=%p kck_len=%zu kek=%p kek_len=%zu tk=%p tk_len=%zu",
+			   "%s: ERROR: NULL/invalid parameters ifname=%p sta_mac=%p kck=%p kck_len=%zu kek=%p kek_len=%zu tk=%p tk_len=%zu authorized=%d",
 			   __func__, ifname, sta_mac, kck, kck_len,
-			   kek, kek_len, tk, tk_len);
+			   kek, kek_len, tk, tk_len, authorized);
 		return -1;
 	}
 	return 0;
@@ -2256,6 +3023,59 @@ int hostapd_if_eapol_tx_validate_inputs(char *ifname, uint8_t *sta_mac,
 		wpa_printf(MSG_ERROR,
 			   "hostapd_if_eapol_tx: Data length %hu exceeds maximum %zu",
 			   data_len, HOSTAPD_IF_MAX_EAP_DATA);
+		return -1;
+	}
+	return 0;
+}
+
+int hostapd_if_set_authorized_validate_inputs(char *ifname, uint8_t *sta_mac,
+					      int authorized)
+{
+	if (!ifname || !sta_mac || (authorized != 0 && authorized != 1)) {
+		wpa_printf(MSG_ERROR,
+			   "%s: ERROR: invalid parameters ifname=%p sta_mac=%p authorized=%d",
+			   __func__, ifname, sta_mac, authorized);
+		return -1;
+	}
+	return 0;
+}
+
+int hostapd_if_remote_auth_response_validate_inputs(char *ifname,
+						    uint8_t *sta_mac,
+						    struct hostapd_if_frame_ctx *ctx)
+{
+	if (!ifname || !sta_mac || !ctx) {
+		wpa_printf(MSG_ERROR, "%s: ERROR! NULL parameters %p:%p:%p\n",
+			   __func__, ifname, sta_mac, ctx);
+		return -1;
+	}
+	return 0;
+}
+
+int hostapd_if_send_frame_validate_inputs(char *ifname, int link_id,
+					  uint8_t *frame, uint16_t frame_len)
+{
+	if (!ifname || !frame || frame_len < IEEE80211_HDRLEN || (link_id > 0xf)) {
+		wpa_printf(MSG_ERROR,
+			   "%s: ERROR! invalid parameters ifname=%p link_id=%u frame=%p frame_len=%u",
+			   __func__, ifname, link_id, frame,
+			   (unsigned int) frame_len);
+		return -1;
+	}
+
+	return 0;
+}
+
+
+int hostapd_if_eapol_key_tx_validate_inputs(char *ifname, uint8_t *sta_mac, uint8_t link_id,
+					    uint8_t *frame,
+					    uint16_t frame_len)
+{
+	if (!ifname || !sta_mac || !frame || frame_len <= ETH_HLEN ||
+	    (link_id != 0xff && link_id > 0xf)) {
+		wpa_printf(MSG_ERROR,
+			   "%s: ERROR: invalid parameters ifname=%p link_id=%u frame=%p frame_len=%u",
+			   __func__, ifname, link_id, frame, frame_len);
 		return -1;
 	}
 
@@ -2354,13 +3174,14 @@ void hostapd_if_set_pmk_dump_params(char *ifname, uint8_t *sta_mac,
 void hostapd_if_set_ptk_dump_params(char *ifname, uint8_t *sta_mac,
 				    uint8_t *kck, size_t kck_len,
 				    uint8_t *kek, size_t kek_len,
-				    uint8_t *tk, size_t tk_len)
+				    uint8_t *tk, size_t tk_len,
+				    bool authorized)
 {
 	wpa_printf(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " kck_len=%zu kek_len=%zu "
-		   "tk_len=%zu\n",
+		   "tk_len=%zu authorized=%d\n",
 		   __func__, ifname, MAC2STR(sta_mac),
-		   kck_len, kek_len, tk_len);
+		   kck_len, kek_len, tk_len, authorized);
 
 	wpa_hexdump_key(MSG_EXCESSIVE,
 			__func__,
@@ -2395,11 +3216,50 @@ void hostapd_if_start_sa_query_dump_params(char *ifname, uint8_t *sta_mac, int l
 		   __func__, ifname, MAC2STR(sta_mac), link_id);
 }
 
+void hostapd_if_set_authorized_dump_params(char *ifname, uint8_t *sta_mac,
+					   int authorized)
+{
+	wpa_printf(MSG_MSGDUMP, "%s: %s, " MACSTR " authorized=%d\n",
+		   __func__, ifname, MAC2STR(sta_mac), authorized);
+}
+
 void hostapd_if_trigger_eapol_m3_dump_params(char *ifname, uint8_t *sta_mac)
 {
 	wpa_printf(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR "\n",
 		   __func__, ifname, MAC2STR(sta_mac));
+}
+
+void hostapd_if_send_frame_dump_params(char *ifname, int tx_link_id,
+				       uint8_t *frame, uint16_t frame_len)
+{
+	wpa_printf(MSG_MSGDUMP, "%s: %s, link_id=%d frame_len=%u\n",
+		   __func__, ifname, tx_link_id, (unsigned int) frame_len);
+
+	wpa_hexdump(MSG_EXCESSIVE, __func__, frame, frame_len);
+}
+
+void hostapd_if_eapol_key_tx_dump_params(char *ifname, uint8_t *sta_mac, uint8_t link_id,
+					 uint8_t *frame,
+					 uint16_t frame_len)
+{
+	int tx_link_id = (link_id == 0xff) ? -1 : link_id;
+
+	wpa_printf(MSG_MSGDUMP,
+		   "%s: %s, link_id=%d frame_len=%u\n",
+		   __func__, ifname, tx_link_id, (unsigned int) frame_len);
+
+	wpa_hexdump(MSG_EXCESSIVE,
+		    __func__,
+		    frame, frame_len);
+}
+
+void hostapd_if_remote_auth_response_dump_params(char *ifname, uint8_t *sta_mac,
+						 struct hostapd_if_frame_ctx *ctx)
+{
+	wpa_printf(MSG_MSGDUMP,
+		   "%s: %s, " MACSTR " status=%u\n",
+		   __func__, ifname, MAC2STR(sta_mac), ctx->status_code);
 }
 
 size_t hostapd_if_auth_reply_tail_len(struct sta_info *sta, size_t current_len)
@@ -2489,3 +3349,5 @@ size_t hostapd_if_assoc_resp_tail_len(struct sta_info *sta, size_t current_len)
 
 	return tail_len;
 }
+
+

@@ -754,6 +754,8 @@ struct hostapd_mld {
 #ifdef CONFIG_IEEE80211BE
 	struct mac_acl_entry *epcs_authorized_mac;
 	int num_epcs_authorized_mac;
+	/* true if any link in this MLD uses configured (mld_link_id) allocation */
+	int link_id_mode;
 #endif /* CONFIG_IEEE80211BE */
 	struct ttlm_context ttlm_ctx;
 };
@@ -807,6 +809,10 @@ struct hostapd_iface {
 	/* Bitmask of used vendor BSSID indices (non-MBSSID) */
 	u32 vendor_bssid_used_mask;
 	u16 radar_bit_pattern_extn;
+	/* Set when boot-up CAC is active: all 5 GHz BSS were created before CAC
+	 * completed and vdev_up is deferred until CAC finishes.
+	 */
+	unsigned int bootup_cac_in_progress:1;
 #endif /* CONFIG_QCN_EXTN */
 
 	unsigned int wait_channel_update:1;
@@ -871,13 +877,20 @@ struct hostapd_iface {
 		int freq;
 		int centr_freq_seg0_idx;
 		int centr_freq_seg1_idx;
+		enum oper_chan_width chwidth;
 		/* Main chain is on temporary channel during
 		 * CAC detection on radar offchain.
 		 */
 		unsigned int temp_ch:1;
 		/* CAC started on radar offchain */
 		unsigned int cac_started:1;
+		struct os_reltime dfs_cac_start;
 	} radar_background;
+
+	/*
+	 * User-configured RCAC channel
+	 */
+	int user_rcac_channel;
 
 	u16 hw_flags;
 
@@ -984,6 +997,8 @@ struct hostapd_iface {
 
 	/* Configured freq of interface is NO_IR */
 	bool is_no_ir;
+	/* Interface was brought down due regulatory incompatibility */
+	bool is_regdom_forced_down;
 
 	bool is_ch_switch_dfs; /* Channel switch from ACS to DFS */
 	/* 6 GHz AFC information */
@@ -994,6 +1009,11 @@ struct hostapd_iface {
 	 * once NL8011_WIPHY_REG_CHANGE event is received.
 	 */
 	bool is_afc_channel_change_pending;
+	/* Connected repeater defers AFC power sync until the updated
+	 * channel list/regulatory view is received through
+	 * CHANNEL_LIST_CHANGED.
+	 */
+	bool is_afc_repeater_power_sync_pending;
 	/* Cached PSD value for RNR */
 	s8 rnr_psd;
 
@@ -1010,6 +1030,11 @@ struct hostapd_iface {
 	int last_scan_aborted;
 	bool csa_pending_on_cac_abort;
 	struct csa_settings csa_settings;
+
+	/* Monitor interface management */
+	char monitor_iface[IFNAMSIZ + 1];
+	int monitor_ifindex;
+	bool monitor_iface_configured;
 };
 
 
@@ -1206,6 +1231,7 @@ bool hostapd_check_reenable_bss(struct hostapd_iface *iface);
 int hostapd_switch_pending_bss(struct hostapd_iface *iface,
 			       struct csa_settings *settings);
 bool hostapd_enable_pending_bss(struct hostapd_iface *iface);
+int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface);
 #ifdef CONFIG_IEEE80211BE
 
 void hostapd_set_ml_max_rec_links(struct hostapd_data *hapd, u8 ml_max_rec_links);
@@ -1411,7 +1437,109 @@ hostapd_get_bonded_chan_center_freq(u16 freq, u16 bw, u16 cen320_freq,
  */
 int hostapd_switch_power_mode(struct hostapd_data *hapd);
 
+/**
+ * enum hostapd_afc_power_sync_result - AFC power sync result
+ * @HOSTAPD_AFC_PWR_SYNC_NOOP: No change was required
+ * @HOSTAPD_AFC_PWR_SYNC_UPDATED: Power mode update was triggered
+ * @HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT: Current channel tuple is invalid in
+ * the current power mode
+ * @HOSTAPD_AFC_PWR_SYNC_ERROR: Power sync failed
+ */
+enum hostapd_afc_power_sync_result {
+	HOSTAPD_AFC_PWR_SYNC_NOOP,
+	HOSTAPD_AFC_PWR_SYNC_UPDATED,
+	HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT,
+	HOSTAPD_AFC_PWR_SYNC_ERROR,
+};
+
+/**
+ * hostapd_sync_current_afc_power_mode() - Sync AFC power mode on current tuple
+ * @iface: Pointer to hostapd interface data
+ * @ignore_best_mode_config: Ignore the best-power-mode knob and evaluate the
+ * current channel tuple unconditionally
+ *
+ * Re-evaluate the best 6 GHz AP power mode for the currently operating
+ * channel after fresh AFC data is available. This helper is intentionally
+ * limited to power-mode-only updates on the existing operating tuple.
+ *
+ * Return:
+ * * %HOSTAPD_AFC_PWR_SYNC_NOOP when no update is needed
+ * * %HOSTAPD_AFC_PWR_SYNC_UPDATED when a power update is started
+ * * %HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT when the current tuple cannot
+ *   operate in the current power mode
+ * * %HOSTAPD_AFC_PWR_SYNC_ERROR on internal failure
+ */
+#ifdef HOSTAPD
+enum hostapd_afc_power_sync_result
+hostapd_sync_current_afc_power_mode(struct hostapd_iface *iface,
+				    bool ignore_best_mode_config);
+enum hostapd_afc_power_sync_result
+hostapd_force_afc_non_sp_power_mode(struct hostapd_iface *iface);
+#else
+static inline enum hostapd_afc_power_sync_result
+hostapd_sync_current_afc_power_mode(struct hostapd_iface *iface,
+				    bool ignore_best_mode_config)
+{
+	return HOSTAPD_AFC_PWR_SYNC_NOOP;
+}
+
+static inline enum hostapd_afc_power_sync_result
+hostapd_force_afc_non_sp_power_mode(struct hostapd_iface *iface)
+{
+	return HOSTAPD_AFC_PWR_SYNC_NOOP;
+}
+#endif
+
+/**
+ * hostapd_iface_has_connected_backhaul_sta() - Check backhaul STA state
+ * @iface: Pointer to hostapd interface data
+ *
+ * Check whether the interface is operating as a repeater with an associated
+ * backhaul STA. Connected repeaters keep the current channel on AFC power
+ * update and perform only current-channel power sync.
+ *
+ * Return: true when a backhaul STA is connected, false otherwise.
+ */
+#ifdef HOSTAPD
+bool hostapd_iface_has_connected_backhaul_sta(struct hostapd_iface *iface);
+#else
+static inline bool
+hostapd_iface_has_connected_backhaul_sta(struct hostapd_iface *iface)
+{
+	return false;
+}
+#endif
+
+/**
+ * hostapd_disconnect_backhaul_sta() - Disconnect associated backhaul STA
+ * @iface: Pointer to hostapd interface data
+ *
+ * Resolve the backhaul STA interface name through ubus and issue DISCONNECT
+ * through the wpa_supplicant control interface. This is used when the current
+ * 6 GHz channel tuple is no longer valid after AFC data is updated.
+ *
+ * Return: 0 on success, non-zero on failure.
+ */
+#ifdef HOSTAPD
+int hostapd_disconnect_backhaul_sta(struct hostapd_iface *iface);
+#else
+static inline int hostapd_disconnect_backhaul_sta(struct hostapd_iface *iface)
+{
+	return -1;
+}
+#endif
+
 u16 hostapd_get_punct_bitmap(struct hostapd_data *hapd);
+
+void hostapd_get_oper_chan_info_of_bss(struct hostapd_data *hapd,
+				       enum oper_chan_width *width,
+				       u8 *seg0, u8 *seg1);
+
+u8 hostapd_get_oper_class_of_bss(struct hostapd_data *hapd);
+
+enum oper_chan_width
+hostapd_get_oper_chan_width_of_bss(struct hostapd_data *hapd);
+
 bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface);
 void hostapd_gen_per_sta_profiles(struct hostapd_data *hapd);
 size_t hostapd_eid_eht_ml_reconfig_len(struct hostapd_data *hapd);
@@ -1467,12 +1595,59 @@ void hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface,
  * Return: None
  */
 #ifdef HOSTAPD
+#define HOSTAPD_IFACE_RELOAD_LINKID_REGDOM 0xFE
 void hostapd_set_no_ir_state(struct hostapd_iface *iface);
+bool hostapd_regdom_channel_supported(struct hostapd_iface *iface,
+				      struct hostapd_channel_data *chan);
+bool hostapd_is_iface_regdom_supported(struct hostapd_iface *iface);
+struct hostapd_channel_data *
+hostapd_regdom_first_supported_channel(struct hostapd_iface *iface);
+int hostapd_regdom_move_iface_to_supported_channel(struct hostapd_iface *iface);
+void hostapd_regdom_force_disable_iface(struct hostapd_iface *iface,
+						 const char *reason);
+int hostapd_regdom_restore_iface(struct hostapd_iface *iface);
 #else
 static inline void
 hostapd_set_no_ir_state(struct hostapd_iface *iface)
 {
 	/* No-op if hostapd is not defined */
+}
+
+static inline bool
+hostapd_regdom_channel_supported(struct hostapd_iface *iface,
+				      struct hostapd_channel_data *chan)
+{
+	return false;
+}
+
+static inline bool
+hostapd_is_iface_regdom_supported(struct hostapd_iface *iface)
+{
+	return false;
+}
+
+static inline struct hostapd_channel_data *
+hostapd_regdom_first_supported_channel(struct hostapd_iface *iface)
+{
+	return NULL;
+}
+
+static inline int
+hostapd_regdom_move_iface_to_supported_channel(struct hostapd_iface *iface)
+{
+	return -1;
+}
+
+static inline void
+hostapd_regdom_force_disable_iface(struct hostapd_iface *iface,
+						 const char *reason)
+{
+}
+
+static inline int
+hostapd_regdom_restore_iface(struct hostapd_iface *iface)
+{
+	return 0;
 }
 #endif
 void hostapd_no_ir_cleanup(struct hostapd_data *bss);
@@ -1754,5 +1929,93 @@ enum hostapd_bss_category {
  */
 bool hostapd_is_bss_in_category(struct hostapd_data *hapd,
 				enum hostapd_bss_category cat);
+
+/**
+ * dfs_get_subchannel_count() - Get the total subchannel count for a given bandwidth
+ * @bandwidth: Channel width enum value
+ *
+ * Return: Number of 20 MHz subchannels in the given bandwidth, or 0 if invalid.
+ */
+int dfs_get_subchannel_count(int bandwidth);
+
+/**
+ * dfs_get_punc_src_chan() - Resolve channel for puncture update
+ * @iface: Pointer to hostapd interface
+ * @primary_freq: Primary operating frequency in MHz
+ * @bit: 20 MHz subchannel bit position
+ *
+ * Return: Pointer to channel data for the given bit, or %NULL if unavailable.
+ */
+struct hostapd_channel_data *
+dfs_get_punc_subchan(struct hostapd_iface *iface,
+		     int primary_freq, int bit);
+
+/**
+ * hostapd_update_puncture_source() - Update puncture source per 20 MHz
+ * subchannel
+ * @iface: Pointer to hostapd interface
+ * @primary_freq: Primary operating frequency in MHz
+ * @bandwidth: Channel width enum value
+ * @new_punct_bitmap: New puncture bitmap to apply
+ * @source: Puncture source being updated
+ *
+ * Update the per-channel puncture source for the given puncture bitmap.
+ *
+ * Return: 0 on success, -1 on validation failure.
+ */
+int dfs_update_puncture_source(struct hostapd_iface *iface,
+			       int primary_freq, int bandwidth,
+			       u16 new_punct_bitmap,
+			       enum dfs_chan_puncture_source source);
+
+/**
+ * dfs_is_puncture_bitmap_bit_user() - Check whether a puncture bit is
+ *                                     user-punctured
+ * @iface: Pointer to hostapd interface
+ * @bit: 20 MHz subchannel bit position
+ *
+ * Return: 1 if the bit maps to a user-punctured channel, 0 otherwise.
+ */
+int dfs_is_puncture_bitmap_bit_user(struct hostapd_iface *iface,
+				    int bit);
+
+/**
+ * dfs_is_puncture_bitmap_bit_radar() - Check whether a puncture bit is
+ *                                      radar-punctured
+ * @iface: Pointer to hostapd interface
+ * @bit: 20 MHz subchannel bit position
+ *
+ * Return: 1 if the bit maps to a radar-punctured channel, 0 otherwise.
+ */
+int dfs_is_puncture_bitmap_bit_radar(struct hostapd_iface *iface,
+				     int bit);
+
+/**
+ * dfs_filter_punc_bitmap_by_src() - Filter bitmap by puncture source
+ * @iface: Pointer to hostapd interface
+ * @punct_bitmap: Puncture bitmap to filter
+ * @source: Puncture source to match
+ *
+ * Return: Bitmap containing only bits that map to channels with @source.
+ */
+u16 dfs_filter_punc_bitmap_by_src(struct hostapd_iface *iface,
+				  u16 punct_bitmap,
+				  enum dfs_chan_puncture_source source);
+
+/**
+ * dfs_reset_punc_bitmap_src() - Reset puncture source for bitmap
+ * @iface: Pointer to hostapd interface
+ * @punct_bitmap: Puncture bitmap whose bits should be reset
+ *
+ * Reset the puncture source of channels mapped by set bits in @punct_bitmap
+ * to %HOSTAPD_CHAN_PUNC_NONE.
+ */
+void dfs_reset_punc_bitmap_src(struct hostapd_iface *iface,
+			       u16 punct_bitmap);
+int hostapd_setup_monitor_iface(struct hostapd_iface *iface);
+int hostapd_update_monitor_channel(struct hostapd_data *hapd,
+				   const struct hostapd_freq_params *freq_params);
+void hostapd_clear_old_bss(struct hostapd_data *bss);
+struct hostapd_data * hostapd_mbssid_get_bss(struct hostapd_data *hapd, size_t i);
 
 #endif /* HOSTAPD_H */

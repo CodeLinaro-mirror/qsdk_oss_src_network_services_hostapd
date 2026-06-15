@@ -40,6 +40,12 @@
 #define STATE_MACHINE_DEBUG_PREFIX "WPA"
 #define STATE_MACHINE_ADDR wpa_auth_get_spa(sm)
 #define KDE_ALL_LINKS 0xffff
+#define MAX_LEN 255
+
+#ifndef SMD_PTK_MODE_PER_DOMAIN
+#define SMD_PTK_MODE_PER_DOMAIN 0
+#define SMD_PTK_MODE_PER_AP     1
+#endif
 
 
 static int wpa_sm_step(struct wpa_state_machine *sm);
@@ -852,6 +858,13 @@ struct wpa_authenticator * wpa_init(const u8 *addr,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+	if (conf->plugin_eapol_key_offload) {
+		wpa_printf(MSG_INFO, "EAPOL-KEY Plugin Offload enabled. Force turn-off rekey related configs\n");
+		conf->wpa_group_rekey = 0;
+		conf->wpa_strict_rekey = 0;
+		conf->wpa_ptk_rekey = 0;
+	}
+
 #ifdef CONFIG_IEEE80211R_AP
 	/* if MLD share FT PMK cache across link BSS
 	 * refcount is used to check and free the cache during link BSS's deinit.
@@ -1068,6 +1081,19 @@ wpa_auth_sta_init(struct wpa_authenticator *wpa_auth, const u8 *addr,
 	/* Initialize external M3 gating policy per-STA */
 	sm->externally_triggered_m3 = wpa_auth->conf.externally_triggered_m3;
 
+	if (wpa_auth->conf.smd_capable) {
+		sm->smd_enabled = 1;
+		os_memcpy(sm->smd_id, wpa_auth->conf.smd_domain_id, ETH_ALEN);
+		sm->smd_ptk_mode = wpa_auth->conf.smd_ptk_mode;
+	}
+
+#ifdef CONFIG_IEEE80211BN
+	/* Initialize SMD information */
+	os_memset(&sm->smd_info, 0, sizeof(sm->smd_info));
+	wpa_printf(MSG_DEBUG, "WPA: Initialized SMD info for " MACSTR,
+		   MAC2STR(addr));
+#endif /* CONFIG_IEEE80211BN */
+
 	return sm;
 }
 
@@ -1234,6 +1260,16 @@ void wpa_auth_sta_deinit(struct wpa_state_machine *sm)
 #ifdef CONFIG_IEEE80211R_AP
 	wpa_ft_sta_deinit(sm);
 #endif /* CONFIG_IEEE80211R_AP */
+
+#ifdef CONFIG_IEEE80211BN
+	/* Clear SMD information */
+	if (sm->smd_info.smd_sta) {
+		wpa_printf(MSG_DEBUG, "WPA: Clearing SMD info for " MACSTR,
+			   MAC2STR(sm->addr));
+		os_memset(&sm->smd_info, 0, sizeof(sm->smd_info));
+	}
+#endif /* CONFIG_IEEE80211BN */
+
 	if (sm->in_step_loop) {
 		/* Must not free state machine while wpa_sm_step() is running.
 		 * Freeing will be completed in the end of wpa_sm_step(). */
@@ -3057,8 +3093,19 @@ static int wpa_derive_ptk(struct wpa_state_machine *sm, const u8 *snonce,
 	size_t z_len = 0, kdk_len;
 	int akmp;
 	int ret;
+	const u8 *smd_addr = NULL;
 
-	if (sm->wpa_auth->conf.force_kdk_derivation ||
+	/* Set kdk_len based on SMD PTK mode */
+	if (sm->smd_enabled && sm->smd_ptk_mode == 1) {
+		/* Per-AP MLD PTK mode - derive SMD_KDK */
+		kdk_len = sm->pmk_len;  /* KDK length = PMK length per spec */
+		wpa_printf(MSG_DEBUG,
+			   "SMD: Setting kdk_len=%zu for Per-AP MLD PTK mode",
+			   kdk_len);
+	} else if (sm->smd_enabled && sm->smd_ptk_mode == 0) {
+		/* Per-SMD PTK mode - no KDK derivation */
+		kdk_len = 0;
+	} else if (sm->wpa_auth->conf.force_kdk_derivation ||
 	    (!no_kdk && sm->wpa_auth->conf.secure_ltf &&
 	     ieee802_11_rsnx_capab(sm->rsnxe, WLAN_RSNX_CAPAB_SECURE_LTF)))
 		kdk_len = WPA_KDK_MAX_LEN;
@@ -3110,16 +3157,35 @@ static int wpa_derive_ptk(struct wpa_state_machine *sm, const u8 *snonce,
 	}
 #endif /* CONFIG_DPP2 */
 
+#ifdef CONFIG_IEEE80211BN
+	/*
+	 * Include SMD address in PTK derivation if:
+	 * 1. Station is a non-AP station and supports SMD
+	 * 2. AP supports SMD (driver capability)
+	 * 3. AP is configured with SMD enabled
+	 * 4. This is during SM PTKNEGOTIATING state
+	 */
+	if (sm->smd_info.smd_sta)
+		smd_addr = sm->smd_info.smd_identifier;
+#endif /* CONFIG_IEEE80211BN */
+
+
 	akmp = sm->wpa_key_mgmt;
 	if (force_sha256)
 		akmp |= WPA_KEY_MGMT_PSK_SHA256;
+
 	ret = wpa_pmk_to_ptk(pmk, pmk_len, "Pairwise key expansion",
-			     wpa_auth_get_aa(sm), wpa_auth_get_spa(sm),
-			     sm->ANonce, snonce, ptk, akmp,
-			     sm->pairwise, z, z_len, kdk_len);
+			wpa_auth_get_aa(sm), wpa_auth_get_spa(sm),
+			sm->ANonce, snonce, ptk, akmp,
+			sm->pairwise, z, z_len, kdk_len, smd_addr);
 	if (ret) {
-		wpa_printf(MSG_DEBUG,
-			   "WPA: PTK derivation failed");
+		if (smd_addr)
+			wpa_printf(MSG_DEBUG,
+				   "WPA: Per-SMD PTK derivation failed");
+		else
+			wpa_printf(MSG_DEBUG,
+				   "WPA: PTK derivation failed");
+
 		return ret;
 	}
 
@@ -3225,8 +3291,8 @@ int fils_auth_pmk_to_ptk(struct wpa_state_machine *sm, const u8 *pmk,
 	forced_memzero(ick, sizeof(ick));
 
 	/* Store nonces for (Re)Association Request/Response frame processing */
-	os_memcpy(sm->SNonce, snonce, FILS_NONCE_LEN);
-	os_memcpy(sm->ANonce, anonce, FILS_NONCE_LEN);
+	os_memcpy(sm->SNonce, snonce, NONCE_LEN);
+	os_memcpy(sm->ANonce, anonce, NONCE_LEN);
 
 	return res;
 }
@@ -3443,10 +3509,10 @@ int fils_decrypt_assoc(struct wpa_state_machine *sm, const u8 *fils_session,
 	aad_len[1] = ETH_ALEN;
 	/* The STA's nonce */
 	aad[2] = sm->SNonce;
-	aad_len[2] = FILS_NONCE_LEN;
+	aad_len[2] = NONCE_LEN;
 	/* The AP's nonce */
 	aad[3] = sm->ANonce;
-	aad_len[3] = FILS_NONCE_LEN;
+	aad_len[3] = NONCE_LEN;
 	/*
 	 * The (Re)Association Request frame from the Capability Information
 	 * field to the FILS Session element (both inclusive).
@@ -3502,10 +3568,10 @@ int fils_encrypt_assoc(struct wpa_state_machine *sm, u8 *buf,
 	aad_len[1] = ETH_ALEN;
 	/* The AP's nonce */
 	aad[2] = sm->ANonce;
-	aad_len[2] = FILS_NONCE_LEN;
+	aad_len[2] = NONCE_LEN;
 	/* The STA's nonce */
 	aad[3] = sm->SNonce;
-	aad_len[3] = FILS_NONCE_LEN;
+	aad_len[3] = NONCE_LEN;
 	/*
 	 * The (Re)Association Response frame from the Capability Information
 	 * field (the same offset in both Association and Reassociation
@@ -4522,23 +4588,27 @@ size_t wpa_auth_ml_group_kdes_len(struct wpa_state_machine *sm, u16 req_links)
 		return 0;
 
 	for (link_id = 0; link_id < MAX_NUM_MLD_LINKS; link_id++) {
-		if (!sm->mld_links[link_id].valid)
+		if (!sm->mld_links[link_id].valid) {
 			continue;
+		}
 
-		if (!(req_links & BIT(link_id)))
+		if (!(req_links & BIT(link_id))) {
 			continue;
+		}
 
 		wpa_auth = sm->mld_links[link_id].wpa_auth;
-		if (!wpa_auth || !wpa_auth->group)
+		if (!wpa_auth || !wpa_auth->group) {
 			continue;
+		}
 
 		/* MLO GTK KDE
 		 * Header + Key ID + Tx + LinkID + PN + GTK */
 		kde_len += KDE_HDR_LEN + 1 + RSN_PN_LEN;
 		kde_len += wpa_auth->group->GTK_len;
 
-		if (!sm->mgmt_frame_prot)
+		if (!sm->mgmt_frame_prot) {
 			continue;
+		}
 
 		if (wpa_auth->conf.tx_bss_auth)
 			wpa_auth = wpa_auth->conf.tx_bss_auth;
@@ -4548,16 +4618,18 @@ size_t wpa_auth_ml_group_kdes_len(struct wpa_state_machine *sm, u16 req_links)
 		kde_len += KDE_HDR_LEN + WPA_IGTK_KDE_PREFIX_LEN + 1;
 		kde_len += wpa_cipher_key_len(wpa_auth->conf.group_mgmt_cipher);
 
-		if (!wpa_auth->conf.beacon_prot)
+		if (!wpa_auth->conf.beacon_prot) {
 			continue;
+		}
 
 		/* MLO BIGTK KDE
 		 * Header + Key ID + BIPN + LinkID + BIGTK */
 		kde_len += KDE_HDR_LEN + WPA_BIGTK_KDE_PREFIX_LEN + 1;
 		kde_len += wpa_cipher_key_len(wpa_auth->conf.group_mgmt_cipher);
 
-		if (!sm->ctrl_frame_prot)
+		if (!sm->ctrl_frame_prot) {
 			continue;
+		}
 
 		/* MLO CIGTK KDE
 		 * Header + Key ID + BIPN + LinkID + CIGTK */
@@ -4592,11 +4664,15 @@ u8 * wpa_auth_ml_group_kdes(struct wpa_state_machine *sm, u8 *pos,
 	ml_key_info.control_frame_prot = sm->wpa_auth->conf.control_frame_prot;
 
 	for (i = 0, link_id = 0; link_id < MAX_NUM_MLD_LINKS; link_id++) {
-		if (!sm->mld_links[link_id].valid)
+		if (!sm->mld_links[link_id].valid) {
+			wpa_printf(MSG_DEBUG, "SM Link %d is invalid", link_id);
 			continue;
+		}
 
-		if (!(req_links & BIT(link_id)))
+		if (!(req_links & BIT(link_id))) {
+			wpa_printf(MSG_DEBUG, "Requested Link %d is invalid", link_id);
 			continue;
+		}
 
 		ml_key_info.links[i++].link_id = link_id;
 	}
@@ -5329,6 +5405,14 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 		kde_len += wpabuf_len(conf->eapol_m3_elements);
 #endif /* CONFIG_TESTING_OPTIONS */
 
+	if (sm->security_profile_indication) {
+		struct hostapd_data *hapd = sm->wpa_auth->cb_ctx;
+		size_t security_ie_len = hostapd_security_profile_ie_len(hapd);
+
+		if (security_ie_len > 0)
+			kde_len += 2 + RSN_SELECTOR_LEN + security_ie_len - 2;
+	}
+
 	kde = os_malloc(kde_len);
 	if (!kde)
 		goto done;
@@ -5491,6 +5575,36 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 	if (conf->eapol_m3_no_encrypt)
 		encr = 0;
 #endif /* CONFIG_TESTING_OPTIONS */
+
+	/*
+	 * Add UHR Security Information element to EAPOL-Key Message 3 (M3).
+	 */
+	if (sm->security_profile_indication || sm->ap_security_profile_indication) {
+		struct hostapd_data *hapd = sm->wpa_auth->cb_ctx;
+		u8 security_profile_ie[MAX_LEN];
+		u8 *security_profile_ie_start;
+		u8 *security_profile_ie_end;
+		size_t security_profile_ie_len;
+
+		security_profile_ie_start = security_profile_ie;
+		security_profile_ie_end = hostapd_eid_security_profile(hapd, security_profile_ie_start);
+		security_profile_ie_len = security_profile_ie_end - security_profile_ie_start;
+
+		wpa_printf(MSG_ERROR,
+			   "UHR: Adding UHR Security KDE to M3 (ie_len=%zu)",
+			   security_profile_ie_len);
+		if (security_profile_ie_len > 0)
+			wpa_hexdump(MSG_ERROR, "UHR: UHR Security IE",
+				    security_profile_ie, security_profile_ie_len);
+
+		if (security_profile_ie_len > 0) {
+			os_memcpy(pos, security_profile_ie, security_profile_ie_len);
+			pos += security_profile_ie_len;
+			wpa_printf(MSG_ERROR,
+				   "UHR: UHR Security KDE added to M3 (kde_data_len=%zu)",
+				   security_profile_ie_len - 2);
+		}
+	}
 
 	wpa_send_eapol(sm->wpa_auth, sm,
 		       (secure ? WPA_KEY_INFO_SECURE : 0) |
@@ -7275,6 +7389,14 @@ int wpa_auth_set_pmk_full(struct wpa_state_machine *sm, u8 *pmk, u8 *pmkid,
 }
 
 
+void wpa_auth_set_sm_ptk_done (struct wpa_state_machine *sm) {
+
+	if (sm) {
+		sm->wpa_ptk_state = WPA_PTK_PTKINITDONE;
+		sm->pairwise_set = true;
+	}
+}
+
 const u8 * wpa_auth_get_pmk(struct wpa_state_machine *sm, int *len)
 {
 	if (!sm)
@@ -7361,9 +7483,13 @@ int wpa_auth_pmksa_add(struct wpa_state_machine *sm, const u8 *pmk,
 		       unsigned int pmk_len,
 		       int session_timeout, struct eapol_state_machine *eapol)
 {
+	struct rsn_pmksa_cache *pmksa;
+
 	if (!sm || sm->wpa != WPA_VERSION_WPA2 ||
 	    sm->wpa_auth->conf.disable_pmksa_caching)
 		return -1;
+
+	pmksa = sm->wpa_auth->pmksa;
 
 #ifdef CONFIG_IEEE80211R_AP
 	if (pmk_len >= 2 * PMK_LEN && wpa_key_mgmt_ft(sm->wpa_key_mgmt) &&
@@ -7382,7 +7508,11 @@ int wpa_auth_pmksa_add(struct wpa_state_machine *sm, const u8 *pmk,
 	}
 
 	wpa_hexdump_key(MSG_DEBUG, "RSN: Cache PMK", pmk, pmk_len);
-	if (pmksa_cache_auth_add(sm->wpa_auth->pmksa, pmk, pmk_len, NULL,
+#ifdef CONFIG_IEEE80211BE
+	if (sm->wpa_auth->is_ml && sm->mld_assoc_link_id >= 0)
+		pmksa = sm->wpa_auth->ml_pmksa;
+#endif /* CONFIG_IEEE80211BE */
+	if (pmksa_cache_auth_add(pmksa, pmk, pmk_len, NULL,
 				 sm->PTK.kck, sm->PTK.kck_len,
 				 wpa_auth_get_aa(sm),
 				 wpa_auth_get_spa(sm), session_timeout,
@@ -8135,6 +8265,30 @@ void wpa_auth_set_transition_disable(struct wpa_authenticator *wpa_auth,
 	if (wpa_auth)
 		wpa_auth->conf.transition_disable = val;
 }
+
+#ifdef CONFIG_IEEE80211BN
+void wpa_auth_set_smd_info(struct wpa_state_machine *sm, struct sta_info *sta)
+{
+	if (!sm || !sta)
+		return;
+
+	if (!sta->smd_info.smd_sta) {
+		/* Clear any existing SMD info in state machine */
+		os_memset(&sm->smd_info, 0, sizeof(sm->smd_info));
+		return;
+	}
+
+	sm->smd_info.smd_sta = sta->smd_info.smd_sta;
+	os_memcpy(sm->smd_info.smd_identifier, sta->smd_info.smd_identifier,
+		  ETH_ALEN);
+	sm->smd_info.smd_timeout = sta->smd_info.smd_timeout;
+	sm->smd_info.caps.dl_data_fwd = sta->smd_info.caps.dl_data_fwd;
+	sm->smd_info.caps.max_prep_target_apmlds =
+		sta->smd_info.caps.max_prep_target_apmlds;
+	sm->smd_info.caps.smd_type = sta->smd_info.caps.smd_type;
+	sm->smd_info.caps.ptk_mode = sta->smd_info.caps.ptk_mode;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_TESTING_OPTIONS
 

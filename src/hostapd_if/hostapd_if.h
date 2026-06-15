@@ -31,13 +31,15 @@ typedef uint16_t u16;
 
 struct hostapd_data;
 struct sta_info;
+struct ieee80211_mgmt;
 
 /*
  * Frame processing decision returned to RX handlers
  */
 enum hostapd_if_frame_processing_decision {
 	HOSTAPD_IF_FRAME_PROCESSING_CONTINUE = 0,
-	HOSTAPD_IF_FRAME_PROCESSING_WAIT = 1
+	HOSTAPD_IF_FRAME_PROCESSING_WAIT = 1,
+	HOSTAPD_IF_FRAME_PROCESSING_OFFLOAD = 2
 };
 
 /*
@@ -61,6 +63,7 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 		       struct sta_info *sta,
 		       const uint8_t *frame,
 		       uint16_t frame_len,
+		       int rssi,
 		       u16 status_code,
 		       u16 auth_transaction,
 		       u8 allow_reuse,
@@ -82,6 +85,12 @@ void hostapd_if_notify_disassoc(struct hostapd_data *hapd,
 				size_t frame_len);
 
 enum hostapd_if_frame_processing_decision
+hostapd_if_notify_action(struct hostapd_data *hapd,
+			 struct sta_info *sta,
+			 const struct ieee80211_mgmt *mgmt,
+			 size_t frame_len, int rssi);
+
+enum hostapd_if_frame_processing_decision
 hostapd_if_notify_assoc(struct hostapd_data *hapd,
 			struct sta_info *sta,
 			const uint8_t *frame,
@@ -100,9 +109,27 @@ void hostapd_if_interface_remove(struct hostapd_data *hapd);
 int hostapd_if_interface_create(struct hostapd_data *hapd);
 
 int hostapd_if_set_interfaces(struct hapd_interfaces *interfaces);
+enum hostapd_if_frame_processing_decision
+hostapd_if_notify_remote_auth(struct hostapd_data *hapd, uint8_t *sta_mac,
+			      const uint8_t *ies, uint16_t ies_len,
+			      uint16_t status_code, bool is_ml);
+
+int hostapd_if_pull_pmk_r1(struct hostapd_data *hapd, uint8_t *sta_mac,
+			   uint8_t *pmk_r1_name, uint8_t *pmk_r1,
+			   size_t *pmk_r1_len, int *pairwise,
+			   int *session_timeout, const uint8_t **identity,
+			   size_t *identity_len, const uint8_t **radius_cui,
+			   size_t *radius_cui_len);
+
+int hostapd_if_pull_pmk(struct hostapd_data *hapd, uint8_t *sta_mac,
+			uint8_t *pmk, size_t *pmk_len, uint8_t *pmkid,
+			int *session_timeout);
 
 void hostapd_if_eapol_rx(struct hostapd_data *hapd, const u8 *sa,
 			 const u8 *data, u16 data_len);
+
+void hostapd_if_eapol_key_rx(struct hostapd_data *hapd, const u8 *sa,
+			     const u8 *data, u16 data_len);
 
 /*
  * Event notification wrapper functions
@@ -124,6 +151,12 @@ void hostapd_if_event_disassoc(struct hostapd_data *hapd,
 void hostapd_if_event_assoc_tx_complete(struct hostapd_data *hapd,
 					const u8 *addr, int ok, uint16_t status,
 					uint16_t aid);
+
+void hostapd_if_event_dot1x_complete(struct hostapd_data *hapd,
+				     const u8 *addr,
+				     const u8 *identity,
+				     size_t identity_len,
+				     int success);
 
 void hostapd_if_event_auth_tx_complete(struct hostapd_data *hapd,
 				       const u8 *addr);

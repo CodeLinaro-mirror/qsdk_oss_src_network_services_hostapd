@@ -396,9 +396,42 @@ static void wpa_bss_copy_res(struct wpa_bss *dst, struct wpa_scan_res *src,
 	dst->est_throughput = src->est_throughput;
 	dst->snr = src->snr;
 
+	dst->smd_capable = src->smd_capable;
+	if (src->smd_capable) {
+		os_memcpy(dst->smd_identifier, src->smd_identifier, ETH_ALEN);
+		dst->smd_capabilities = src->smd_capabilities;
+		dst->smd_timeout = src->smd_timeout;
+
+		dst->smd_dl_forwarding = src->smd_dl_forwarding;
+		dst->smd_max_targets = src->smd_max_targets;
+		dst->smd_type = src->smd_type;
+		dst->smd_ptk_mode = src->smd_ptk_mode;
+		dst->smd_from_beacon = src->smd_from_beacon;
+
+		dst->rnr_smd_inference_present = src->rnr_smd_inference_present;
+		dst->rnr_same_smd_bit = src->rnr_same_smd_bit;
+		dst->rnr_ap_mld_id = src->rnr_ap_mld_id;
+		dst->rnr_short_ssid = src->rnr_short_ssid;
+
+	} else {
+		os_memset(dst->smd_identifier, 0, ETH_ALEN);
+		dst->smd_capabilities = 0;
+		dst->smd_timeout = 0;
+
+		dst->smd_dl_forwarding = 0;
+		dst->smd_max_targets = 0;
+		dst->smd_type = 0;
+		dst->smd_ptk_mode = 0;
+		dst->smd_from_beacon = 0;
+
+		dst->rnr_smd_inference_present = false;
+		dst->rnr_same_smd_bit = false;
+		dst->rnr_ap_mld_id = 0;
+		dst->rnr_short_ssid = 0;
+	}
+
 	calculate_update_time(fetch_time, src->age, &dst->last_update);
 }
-
 
 static int wpa_bss_is_wps_candidate(struct wpa_supplicant *wpa_s,
 				    struct wpa_bss *bss)

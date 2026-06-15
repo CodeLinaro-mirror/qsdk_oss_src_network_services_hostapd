@@ -18,6 +18,9 @@
 #include "common/qca-vendor-attr.h"
 #include "common/brcm_vendor.h"
 #include "driver_nl80211.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../../qcn_extns/cmn.h"
+#endif
 
 
 static int protocol_feature_handler(struct nl_msg *msg, void *arg)
@@ -741,6 +744,15 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 		capa->flags2 |= WPA_DRIVER_FLAGS2_SPP_AMSDU;
 
 	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_SMD_SUPPORT_AP))
+		capa->flags2 |= WPA_DRIVER_FLAGS2_SMD;
+
+
+	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_SMD_SUPPORT_DL_PKT_FRWRD))
+		capa->flags2 |= WPA_DRIVER_FLAGS2_SMD_DL_DATA_FWD;
+
+	if (ext_feature_isset(ext_features, len,
 			      NL80211_EXT_FEATURE_DEVICE_BW))
 		info->drv->device_bw = 1;
 
@@ -756,6 +768,11 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 		 * feature enabled for ath12k
 		 */
 		capa->flags2 |= WPA_DRIVER_FLAGS2_DFS_CHANNEL_SWITCH;
+
+		/* Boot-up CAC: driver supports creating all 5 GHz BSS interfaces during
+		 * DFS CAC and deferring vdev_up until CAC completes.
+		 */
+		capa->flags2 |= WPA_DRIVER_FLAGS2_IFACE_CREATE_DURING_CAC;
 	}
 }
 
@@ -1010,6 +1027,10 @@ static int wiphy_info_handler(struct nl_msg *msg, void *arg)
 		os_strlcpy(drv->phyname,
 			   nla_get_string(tb[NL80211_ATTR_WIPHY_NAME]),
 			   sizeof(drv->phyname));
+
+	if (tb[NL80211_ATTR_STA_DFS_EN])
+		capa->sta_dfs_en = nla_get_u8(tb[NL80211_ATTR_STA_DFS_EN]);
+
 	if (tb[NL80211_ATTR_MAX_NUM_SCAN_SSIDS])
 		capa->max_scan_ssids =
 			nla_get_u8(tb[NL80211_ATTR_MAX_NUM_SCAN_SSIDS]);
@@ -1187,6 +1208,11 @@ static int wiphy_info_handler(struct nl_msg *msg, void *arg)
 					drv->connect_ext_vendor_cmd_avail = 1;
 					break;
 #endif /* CONFIG_DRIVER_NL80211_QCA */
+#ifdef CONFIG_QCN_EXTN
+				default:
+					wiphy_info_qca_vendor_command_extn(drv, vinfo);
+					break;
+#endif /* CONFIG_QCN_EXTN */
 				}
 #ifdef CONFIG_DRIVER_NL80211_BRCM
 			} else if (vinfo->vendor_id == OUI_BRCM) {
@@ -1246,6 +1272,9 @@ static int wiphy_info_handler(struct nl_msg *msg, void *arg)
 
 	if (tb[NL80211_ATTR_MLO_SUPPORT])
 		capa->flags2 |= WPA_DRIVER_FLAGS2_MLO;
+
+	if (tb[NL80211_ATTR_BEACON_TX_SYNC_SUPPORT])
+		capa->flags2 |= WPA_DRIVER_FLAGS2_BEACON_TX_SYNC;
 
 	return NL_SKIP;
 }
@@ -1526,6 +1555,12 @@ static void qca_nl80211_get_features(struct wpa_driver_nl80211_data *drv)
 
 	if (check_feature(QCA_WLAN_VENDOR_FEATURE_PCC_MODE, &info))
 		drv->capa.flags2 |= WPA_DRIVER_FLAGS2_P2P_FEATURE_PCC_MODE;
+
+	if (check_feature(QCA_WLAN_VENDOR_FEATURE_SECURITY_PROFILE_STA, &info)) {
+		wpa_printf(MSG_DEBUG,
+			   "The driver supports Security Profile element in STA mode");
+		drv->capa.flags2 |= WPA_DRIVER_FLAGS2_SECURITY_PROFILE;
+	}
 
 	os_free(info.flags);
 }
@@ -1835,6 +1870,9 @@ static void phy_info_freq(struct hostapd_hw_modes *mode,
 			tb_freq[NL80211_FREQUENCY_ATTR_DFS_CAC_TIME]);
 	}
 
+	if (tb_freq[NL80211_FREQUENCY_ATTR_NOL_HISTORY])
+		chan->nolhistory = true;
+
 	chan->wmm_rules_valid = 0;
 	if (tb_freq[NL80211_FREQUENCY_ATTR_WMM]) {
 		static struct nla_policy wmm_policy[NL80211_WMMR_MAX + 1] = {
@@ -1911,6 +1949,7 @@ static struct nla_policy freq_policy[NL80211_FREQUENCY_ATTR_MAX + 1] = {
 	[NL80211_FREQUENCY_ATTR_NO_80MHZ] = { .type = NLA_FLAG },
 	[NL80211_FREQUENCY_ATTR_NO_160MHZ] = { .type = NLA_FLAG },
 	[NL80211_FREQUENCY_ATTR_NO_320MHZ] = { .type = NLA_FLAG },
+	[NL80211_FREQUENCY_ATTR_NOL_HISTORY] = { .type = NLA_FLAG },
 	[NL80211_FREQUENCY_ATTR_PSD] = { .type = NLA_S8 },
 
 };

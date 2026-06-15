@@ -22,6 +22,7 @@ struct wpas_ubus_bss {
 
 void wpas_ubus_add_bss(struct wpa_supplicant *wpa_s);
 void wpas_ubus_free_bss(struct wpa_supplicant *wpa_s);
+int wpas_ubus_has_hostapd_iface_same_radio(struct wpa_supplicant *wpa_s);
 
 #ifdef CONFIG_WPS
 void wpas_ubus_notify(struct wpa_supplicant *wpa_s, const struct wps_credential *cred);
@@ -36,6 +37,11 @@ static inline void wpas_ubus_add_bss(struct wpa_supplicant *wpa_s)
 
 static inline void wpas_ubus_free_bss(struct wpa_supplicant *wpa_s)
 {
+}
+
+static inline int wpas_ubus_has_hostapd_iface_same_radio(struct wpa_supplicant *wpa_s)
+{
+	return -1;
 }
 
 static inline void wpas_ubus_notify(struct wpa_supplicant *wpa_s, const struct wps_credential *cred)

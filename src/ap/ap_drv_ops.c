@@ -142,11 +142,14 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 			goto fail;
 	}
 
+#ifdef CONFIG_TESTING_OPTIONS
 	if (!hapd->conf->rsn_override_omit_rsnxe) {
-		pos = hostapd_eid_rsnxe(hapd, buf, sizeof(buf));
+		pos = hostapd_eid_rsnxe(hapd, buf, sizeof(buf),
+					hapd->conf->rsnxe_capab_mask);
 		if (add_buf_data(&assocresp, buf, pos - buf) < 0)
 			goto fail;
 	}
+#endif /* CONFIG_TESTING_OPTIONS */
 
 	if (add_buf(&beacon, hapd->wps_beacon_ie) < 0 ||
 	    add_buf(&proberesp, hapd->wps_probe_resp_ie) < 0)
@@ -842,6 +845,11 @@ int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
 		return -1;
 
 #ifdef CONFIG_QCN_EXTN
+	if (hostapd_validate_hw_blocklist_for_freq_params_extn(
+		    hapd->iface, &data, data.he_6ghz_reg_pwr_type,
+		    "set_freq"))
+		return -1;
+
 	update_chan_params(hapd, data.center_freq1, data.center_freq2, hostapd_get_chan_width_from_oper_chan_width(hapd->iconf));
 #endif
 
@@ -863,6 +871,14 @@ int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
 			   "hostapd_set_freq: link_id=%d", data.link_id);
 	}
 #endif /* CONFIG_IEEE80211BE */
+
+	/*
+	 * Only the first AP interface triggers the monitor update to avoid
+	 * redundant calls.
+	 */
+	if (hapd == hapd->iface->bss[0])
+		if (hostapd_update_monitor_channel(hapd, &data))
+			return -1;
 
 	return hapd->driver->set_freq(hapd->drv_priv, &data);
 }
@@ -1269,6 +1285,15 @@ int hostapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 				    NULL);
 }
 
+int hostapd_drv_notify_radar(struct hostapd_data *hapd,
+			     struct hostapd_freq_params *freq,
+			     u16 radar_bitmap)
+{
+	if (!hapd->driver || !hapd->driver->notify_radar || !hapd->drv_priv)
+		return -1;
+
+	return hapd->driver->notify_radar(hapd->drv_priv, freq, radar_bitmap);
+}
 
 int hostapd_drv_send_action_addr3_ap(struct hostapd_data *hapd,
 				     unsigned int freq,
@@ -1291,6 +1316,28 @@ int hostapd_drv_send_action_forced_addr3(struct hostapd_data *hapd,
 }
 
 
+int hostapd_stop_background_cac(struct hostapd_data *hapd)
+{
+	int radio_idx;
+	int link_id = -1;
+
+	if (!hapd->driver || !hapd->driver->stop_background_cac ||
+	    !hapd->drv_priv)
+		return -1;
+
+	radio_idx = (hapd->iface && hapd->iface->current_hw_info) ?
+		(int)hapd->iface->current_hw_info->hw_idx : -1;
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf && hapd->conf->mld_ap)
+		link_id = hapd->mld_link_id;
+#endif /* CONFIG_IEEE80211BE */
+
+	return hapd->driver->stop_background_cac(hapd->drv_priv, radio_idx,
+					      link_id);
+}
+
+
 int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 			  enum hostapd_hw_mode mode, int freq,
 			  int channel, int ht_enabled, int vht_enabled,
@@ -1302,7 +1349,7 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 {
 	struct hostapd_data *hapd = iface->bss[0];
 	struct hostapd_freq_params data;
-	int res;
+	int res, radio_idx;
 	struct hostapd_hw_modes *cmode = iface->current_mode;
 #ifdef CONFIG_QCN_EXTN
 	bool is_dfs = false;
@@ -1385,13 +1432,20 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 		data.link_id = hapd->mld_link_id;
 #endif /* CONFIG_IEEE80211BE */
 
-	res = hapd->driver->start_dfs_cac(hapd->drv_priv, &data);
+	if (!radar_background && hostapd_update_monitor_channel(hapd, &data))
+		return -1;
+
+	radio_idx = (radar_background && iface->current_hw_info) ?
+		(int)iface->current_hw_info->hw_idx : -1;
+	res = hapd->driver->start_dfs_cac(hapd->drv_priv, &data, radio_idx);
 	if (!res) {
-		if (radar_background)
+		if (radar_background) {
 			iface->radar_background.cac_started = 1;
-		else
+			os_get_reltime(&iface->radar_background.dfs_cac_start);
+		} else {
 			iface->cac_started = 1;
-		os_get_reltime(&iface->dfs_cac_start);
+			os_get_reltime(&iface->dfs_cac_start);
+		}
 	}
 
 	return res;

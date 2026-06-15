@@ -308,6 +308,13 @@ struct airtime_sta_weight {
 	u8 addr[ETH_ALEN];
 };
 
+#ifdef CONFIG_IEEE80211BN
+struct smd_partner_entry {
+	u8 mac_addr[ETH_ALEN];
+	struct smd_partner_entry *next;
+};
+#endif /* CONFIG_IEEE80211BN */
+
 #define EXT_CAPA_MAX_LEN 15
 #define MAX_VENDOR_ELEM_ALLOWED 10
 
@@ -320,6 +327,25 @@ struct he_phy_capabilities_info {
 	bool he_dl_mu_ofdma_bfer;
 	bool he_ul_mu_ofdma;
 	int he_ul_mumimo;
+	u8 he_bfee_sts_lteq80;
+	u8 he_bfee_sts_gt80;
+	u8 he_multi_tid_aggr;
+	u8 he_multi_tid_aggr_tx;
+	u8 he_max_ampdu_len_exp;
+	u8 he_su_ppdu_1x_ltf_800ns_gi;
+	u8 he_su_mu_ppdu_4x_ltf_800ns_gi;
+	u8 he_fragmentation;
+	u8 he_max_frag_msdu;
+	u8 he_min_frag_size;
+	u8 he_amsdu_in_ampdu_suprt;
+	u8 he_omi;
+	u8 he_ndp_4x_ltf_3200ns_gi;
+	u8 he_max_nc;
+	u8 he_er_su_disable;
+	u8 he_er_su_ppdu_1x_ltf_800ns_gi;
+	u8 he_er_su_ppdu_4x_ltf_800ns_gi;
+	u8 he_1024qam_lt242ru_rx_enable;
+	u8 he_bsr_support;
 };
 #endif /* CONFIG_IEEE80211AX */
 
@@ -341,6 +367,15 @@ struct eht_phy_capabilities_info {
 	u8 eht_bfme_ss_80;
 	u8 eht_bfme_ss_160;
 	u8 eht_bfme_ss_320;
+	u8 eht_ndp_4x_eht_ltf_and_320nsgi;
+	u8 eht_num_sd_lt80;
+	u8 eht_num_sd_160;
+	u8 eht_num_sd_320;
+	u8 eht_4x_eht_ltf_and_800ns_gi;
+	u8 eht_rx_1024_and_4096_qam_ls_242_tone_ru;
+	u8 eht_dl_ofdma_txbf;
+	u8 eht_sup_mcs15_in_mru;
+	u8 eht_mcs14_dup_in_6ghz;
 };
 #endif /* CONFIG_IEEE80211BE */
 
@@ -441,6 +476,25 @@ struct hostapd_bss_config {
 #define HE_PHY_BSS_OVR_DL_MU_OFDMA      BIT(4)
 #define HE_PHY_BSS_OVR_DL_MU_OFDMA_BFER BIT(5)
 #define HE_PHY_BSS_OVR_UL_MU_OFDMA      BIT(6)
+#define HE_PHY_BSS_OVR_BFEE_STS_LTEQ80  BIT(7)
+#define HE_PHY_BSS_OVR_BFEE_STS_GT80    BIT(8)
+#define HE_PHY_BSS_OVR_MULTI_TID_AGGR   BIT(9)
+#define HE_PHY_BSS_OVR_MULTI_TID_AGGR_TX BIT(10)
+#define HE_PHY_BSS_OVR_MAX_AMPDU_LEN_EXP BIT(11)
+#define HE_PHY_BSS_OVR_SU_PPDU_1X_LTF_800NS_GI BIT(12)
+#define HE_PHY_BSS_OVR_SU_MU_PPDU_4X_LTF_800NS_GI BIT(13)
+#define HE_PHY_BSS_OVR_MAX_FRAG_MSDU BIT(14)
+#define HE_PHY_BSS_OVR_MIN_FRAG_SIZE BIT(15)
+#define HE_PHY_BSS_OVR_OMI BIT(16)
+#define HE_PHY_BSS_OVR_NDP_4X_LTF_3200NS_GI BIT(17)
+#define HE_PHY_BSS_OVR_FRAGMENTATION BIT(18)
+#define HE_PHY_BSS_OVR_AMSDU_IN_AMPDU_SUPRT BIT(19)
+#define HE_PHY_BSS_OVR_MAX_NC_SUPRT BIT(20)
+#define HE_PHY_BSS_OVR_ER_SU_DISABLE BIT(21)
+#define HE_PHY_BSS_OVR_ER_SU_PPDU_1X_LTF_800NS_GI BIT(22)
+#define HE_PHY_BSS_OVR_ER_SU_PPDU_4X_LTF_800NS_GI BIT(23)
+#define HE_PHY_BSS_OVR_1024QAM_LT242RU_RX_ENABLE BIT(24)
+#define HE_PHY_BSS_OVR_BSR_SUPPORT BIT(25)
 	u32 he_phy_capab_mask;
 #endif /* CONFIG_IEEE80211AX */
 
@@ -458,14 +512,27 @@ struct hostapd_bss_config {
 #define EHT_PHY_BSS_OVR_BFME_SS_320     BIT(13)
 #define EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO BIT(14)
 #define EHT_PHY_BSS_OVR_MU_BFMR_MASK        BIT(15)
+#define EHT_PHY_BSS_OVR_NDP_4X_EHT_LTF_AND_320NSGI BIT(16)
+#define EHT_PHY_BSS_OVR_NUM_SD_LT80 BIT(17)
+#define EHT_PHY_BSS_OVR_NUM_SD_160 BIT(18)
+#define EHT_PHY_BSS_OVR_NUM_SD_320 BIT(19)
+#define EHT_PHY_BSS_OVR_4X_EHT_LTF_AND_800NS_GI BIT(20)
+#define EHT_PHY_BSS_OVR_RX_1024_AND_4096_QAM_LS_242_TONE_RU BIT(21)
+#define EHT_PHY_BSS_OVR_DL_OFDMA_TXBF BIT(22)
+#define EHT_PHY_BSS_OVR_SUP_MCS15_IN_MRU BIT(23)
+#define EHT_PHY_BSS_OVR_MCS14_DUP_IN_6GHZ BIT(24)
 	u32 eht_phy_capab_mask;
 #endif /* CONFIG_IEEE80211BE */
 
 	enum macaddr_acl macaddr_acl;
 	struct mac_acl_entry *accept_mac;
 	int num_accept_mac;
+	struct mac_acl_entry *accept_mac_masked;
+	int num_accept_mac_masked;
 	struct mac_acl_entry *deny_mac;
 	int num_deny_mac;
+	struct mac_acl_entry *deny_mac_masked;
+	int num_deny_mac_masked;
 	/* deny phase duration (seconds) */
 	unsigned int acl_deny_wait_time;
 	/* allow phase duration (seconds) */
@@ -822,6 +889,7 @@ struct hostapd_bss_config {
 	struct wpabuf *gtk_rsc_override;
 	struct wpabuf *igtk_rsc_override;
 	int no_beacon_rsnxe;
+	u64 rsnxe_capab_mask;
 	int skip_prune_assoc;
 	int ft_rsnxe_used;
 	unsigned int oci_freq_override_eapol_m3;
@@ -872,6 +940,17 @@ struct hostapd_bss_config {
 	  */
 	 unsigned int mbo_ap_cap_ind;
 	int mbo_cell_data_conn_pref;
+	/* OCE IP Subnet Identifier attribute (Attr 108) */
+	u8 oce_ip_subnet_id[6];
+	bool oce_ip_subnet_id_set;
+	/* OCE ESS Report element (EID 97) */
+	bool oce_ess_report_enabled;
+	int oce_ess_edge;
+	int oce_ess_rssi_threshold;
+	int oce_tx_power; /* -128 = use regulatory max */
+	/* OCE Reduced WAN Metrics (Attr 103): 0-15 */
+	int oce_dl_availcap;
+	int oce_ul_availcap;
 #endif /* CONFIG_MBO */
 
 	int ftm_responder;
@@ -900,6 +979,7 @@ struct hostapd_bss_config {
 	int externally_triggered_m3;
 	int plugin_eap_offload;
 	int external_pmk_cache;
+	int plugin_eapol_key_offload;
 
 #ifdef CONFIG_DPP
 	char *dpp_name;
@@ -1104,6 +1184,7 @@ struct hostapd_bss_config {
 	u8 ext_capa[EXT_CAPA_MAX_LEN];
 
 	u8 rnr;
+	u8 rnr_ie_allowed;
 	int beacon_tx_mode;
 	char *config_id;
 
@@ -1124,6 +1205,10 @@ struct hostapd_bss_config {
 	u8 ml_max_rec_links;
 
 	bool single_link_emlsr;
+
+	/* User-configured link ID; -1 means auto-allocate */
+	int mld_link_id;
+
 #ifdef CONFIG_TESTING_OPTIONS
 	/*
 	 * If set indicate the AP as disabled in the RNR element included in the
@@ -1246,6 +1331,38 @@ struct hostapd_bss_config {
 #ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
 	struct hostapd_config_plugin plugin;
 #endif
+
+	int *security_profiles;       /* NULL-terminated array from hostapd_parse_intlist */
+	int security_profile_ext_key_id; /* Reduced RSN Capabilities bit 0 */
+	int security_profile_ocvc;    /* Reduced RSN Capabilities bit 1 */
+	/* AP side */
+#ifdef CONFIG_IEEE80211BN
+	struct {
+		int enabled; /* SMD AP enabled */
+		u8 smd_identifier[ETH_ALEN]; /* SMD Identifier (MAC address) */
+		u8 smd_prep_timeout; /* SMD Element Preparation Timeout, units of 64 TUs */
+		/* UHR ST Execute configuration */
+		u32 uhr_dl_drain_duration_tu;  /* DL Drain duration in TU */
+		struct {
+			bool dl_data_fwd; /* DL Data Forwarding */
+			u8 max_prep_target_apmlds; /* Max Number Of Prepared Target AP MLDs */
+			bool smd_type; /* SMD Type */
+			bool ptk_mode; /* PTK Mode */
+		} caps;
+	} smd;
+
+       /* SMD partner APs for roaming */
+       struct smd_partner_entry *smd_partners;
+#endif /* CONFIG_IEEE80211BN */
+
+	/* is_cmn_param - flag to identify MBSSID common parameter */
+	bool is_cmn_param;
+
+	/* cmn_param_id - MBSSID common parameter ID */
+	int cmn_param_id;
+
+	/* cmn_param_id - MBSSID common parameter values */
+	int cmn_param_val[2];
 };
 
 /**
@@ -1296,12 +1413,15 @@ struct hostapd_config {
 	struct wpa_freq_range_list acs_freq_list;
 	u8 acs_freq_list_present;
 	int acs_exclude_dfs;
+	int acs_enable_bw_downgrade;
+	int acs_dfs_available_only;
 	u8 min_tx_power;
 	enum hostapd_hw_mode hw_mode; /* HOSTAPD_MODE_IEEE80211A, .. */
 	bool hw_mode_set;
 	int acs_exclude_6ghz_non_psc;
 	int enable_background_radar;
 	int bgcac_en;
+	bool dfs_bw_reduce_en;
 	enum {
 		LONG_PREAMBLE = 0,
 		SHORT_PREAMBLE = 1
@@ -1433,6 +1553,7 @@ struct hostapd_config {
 	u8 he_6ghz_rx_ant_pat;
 	u8 he_6ghz_tx_ant_pat;
 	u8 he_6ghz_reg_pwr_type;
+	u8 he_6ghz_min_rate;
 	/*
 	 * This indicates hostapd support for calculation of best power mode
 	 * for the 6 GHz band. This is used to determine whether we have to
@@ -1529,6 +1650,10 @@ struct hostapd_config {
 	unsigned int ch_switch_eht_config;
 	int disable_csa_dfs;
 
+#define CH_SWITCH_UHR_ENABLED BIT(0)
+#define CH_SWITCH_UHR_DISABLED BIT(1)
+	unsigned int ch_switch_uhr_config;
+
 	enum mbssid {
 		MBSSID_DISABLED = 0,
 		MBSSID_ENABLED = 1,
@@ -1543,6 +1668,9 @@ struct hostapd_config {
 	bool channel_usage;
 	bool peer_to_peer_twt;
 	int use_ru_puncture_dfs;
+
+	/* Add support to control auto-unpuncture of radar puncture channels */
+	int dfs_disable_auto_unpunc;
 	int ccfs;
 	int bandwidth_device;
 	int center_freq_device;
@@ -1572,6 +1700,12 @@ struct hostapd_config {
 
 	/* Set I2R LMR policy to allow LMR response from ISTA */
 	bool i2r_lmr_policy;
+
+	/* Monitor interface name */
+	char monitor_iface_name[IFNAMSIZ + 1];
+	int *security_profiles;       /* NULL-terminated array from hostapd_parse_intlist */
+	int security_profile_ext_key_id; /* Reduced RSN Capabilities bit 0 */
+	int security_profile_ocvc;    /* Reduced RSN Capabilities bit 1 */
 };
 
 
@@ -1604,6 +1738,9 @@ hostapd_set_oper_chwidth(struct hostapd_config *conf,
 		conf->he_oper_chwidth = oper_chwidth;
 #endif /* CONFIG_IEEE80211AX */
 	conf->vht_oper_chwidth = oper_chwidth;
+#ifdef CONFIG_QCN_EXTN
+	hostapd_set_repurpose_oper_chwidth_extn(conf, oper_chwidth);
+#endif /* CONFIG_QCN_EXTN */
 }
 
 static inline u8
@@ -1723,6 +1860,8 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf);
 void hostapd_config_free(struct hostapd_config *conf);
 int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
 			  const u8 *addr, struct vlan_description *vlan_id);
+int hostapd_acl_maclist_found(struct hostapd_bss_config *conf, bool accept,
+			      const u8 *addr, struct vlan_description *vlan_id);
 const u8 * hostapd_get_psk(const struct hostapd_bss_config *conf,
 			   const u8 *addr, const u8 *p2p_dev_addr,
 			   const u8 *prev_psk, int *vlan_id);
@@ -1744,8 +1883,23 @@ int hostapd_setup_sae_pt(struct hostapd_bss_config *conf);
 int hostapd_acl_comp(const void *a, const void *b);
 int hostapd_add_acl_maclist(struct mac_acl_entry **acl, int *num,
 			    int vlan_id, const u8 *addr);
+int hostapd_add_acl_maclist_masked(struct mac_acl_entry **acl, int *num,
+				   int vlan_id, const u8 *addr,
+				   const u8 *mask);
 void hostapd_remove_acl_mac(struct mac_acl_entry **acl, int *num,
 			    const u8 *addr);
+void hostapd_remove_all_masked_entries_for_addr(struct mac_acl_entry **acl,
+						int *num, const u8 *addr);
+void hostapd_remove_acl_mac_masked_pair(struct mac_acl_entry **acl, int *num,
+					const u8 *addr, const u8 *mask);
+int hostapd_acl_add_entry(struct mac_acl_entry **exact_acl, int *num_exact,
+			  struct mac_acl_entry **masked_acl, int *num_masked,
+			  int vlan_id, const u8 *addr, const u8 *mask);
+void hostapd_acl_del_entry(struct mac_acl_entry **exact_acl, int *num_exact,
+			   struct mac_acl_entry **masked_acl, int *num_masked,
+			   const u8 *addr);
+void hostapd_acl_clear(struct mac_acl_entry **exact_acl, int *num_exact,
+		       struct mac_acl_entry **masked_acl, int *num_masked);
 void hostapd_config_free_acl_timed_list(struct hostapd_bss_config *conf);
 bool hostapd_config_check_bss_6g(struct hostapd_bss_config *bss);
 

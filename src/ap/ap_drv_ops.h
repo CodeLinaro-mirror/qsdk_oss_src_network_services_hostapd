@@ -127,6 +127,24 @@ int hostapd_drv_sta_disassoc(struct hostapd_data *hapd,
 int hostapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 			    unsigned int wait, const u8 *dst, const u8 *data,
 			    size_t len);
+
+/**
+ * hostapd_drv_notify_radar - Notify driver about radar detection
+ * @hapd: hostapd data
+ * @freq: Frequency parameters of the radar channel (primary/secondary,
+ *	channel width, center frequencies)
+ * @radar_bitmap: Bitmap of segments on which radar was detected (driver/
+ *	implementation specific)
+ *
+ * This is used to inform the driver about radar detection on the current
+ * operating channel so that the driver can initiate DFS related actions (e.g.,
+ * channel switch and marking the channel as unavailable).
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int hostapd_drv_notify_radar(struct hostapd_data *hapd,
+			     struct hostapd_freq_params *freq,
+			     u16 radar_bitmap);
 int hostapd_drv_send_action_addr3_ap(struct hostapd_data *hapd,
 				     unsigned int freq,
 				     unsigned int wait, const u8 *dst,
@@ -152,6 +170,7 @@ int hostapd_sta_assoc(struct hostapd_data *hapd, const u8 *addr,
 		      int reassoc, u16 status, const u8 *ie, size_t len);
 int hostapd_add_tspec(struct hostapd_data *hapd, const u8 *addr,
 		      u8 *tspec_ie, size_t tspec_ielen);
+int hostapd_stop_background_cac(struct hostapd_data *hapd);
 int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 			  enum hostapd_hw_mode mode, int freq,
 			  int channel, int ht_enabled, int vht_enabled,
@@ -374,6 +393,19 @@ static inline int hostapd_drv_switch_channel(struct hostapd_data *hapd,
 }
 
 static inline int
+hostapd_drv_update_monitor_channel(struct hostapd_data *hapd, int ifindex,
+				    const struct hostapd_freq_params *freq_params)
+{
+	if (hapd->driver == NULL ||
+	    hapd->driver->update_monitor_channel == NULL ||
+	    hapd->drv_priv == NULL)
+		return -1;
+
+	return hapd->driver->update_monitor_channel(hapd->drv_priv, ifindex,
+						    freq_params);
+}
+
+static inline int
 hostapd_drv_set_6ghz_pwr_mode(struct hostapd_data *hapd,
 			      struct he_6ghz_pwr_mode_settings *settings)
 {
@@ -554,6 +586,16 @@ hostapd_drv_register_frame(struct hostapd_data *hapd, u16 type,
 					    match_len, multicast);
 }
 #endif /* CONFIG_TESTING_OPTIONS */
+
+
+static inline int hostapd_drv_get_wiphy_idx(struct hostapd_data *hapd)
+{
+	if (!hapd->driver || !hapd->drv_priv || !hapd->driver->get_wiphy_idx)
+		return -1;
+
+	return hapd->driver->get_wiphy_idx(hapd->drv_priv);
+}
+
 
 #ifdef CONFIG_IEEE80211BE
 

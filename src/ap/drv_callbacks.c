@@ -13,6 +13,7 @@
 #include "utils/eloop.h"
 #include "radius/radius.h"
 #include "drivers/driver.h"
+#include "common/qca-vendor.h"
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
 #include "common/wpa_ctrl.h"
@@ -650,7 +651,7 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 					  elems.rsnxe ? elems.rsnxe_len + 2 : 0,
 					  elems.mdie, elems.mdie_len,
 					  elems.owe_dh, elems.owe_dh_len, NULL,
-					  ap_sta_is_mld(hapd, sta), false);
+					  ap_sta_is_mld(hapd, sta), false, NULL);
 		reason = WLAN_REASON_INVALID_IE;
 		status = WLAN_STATUS_INVALID_IE;
 		switch (res) {
@@ -1329,6 +1330,14 @@ int hostapd_switch_power_mode(struct hostapd_data *hapd)
 	settings.pwr_mode = hapd->iface->power_mode_6ghz_before_change;
 	settings.link_id = -1;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_validate_current_6ghz_hw_blocklist_extn(
+		    hapd->iface, settings.pwr_mode, "power mode switch")) {
+		hapd->iface->power_mode_6ghz_before_change = -1;
+		return -1;
+	}
+#endif
+
 	for (i = 0; i < hapd->iface->num_bss; i++) {
 #ifdef CONFIG_IEEE80211BE
 		if (hapd->iface->bss[i]->conf->mld_ap)
@@ -1353,12 +1362,31 @@ int hostapd_switch_power_mode(struct hostapd_data *hapd)
 	return ret;
 }
 
+/**
+ * hostapd_chan_switch_complete - finalize home channel change
+ * @hapd: hostapd BSS context
+ *
+ * Called when a home-channel change has completed. Drivers are expected
+ * to stop background (Agile) CAC during the switch; this callback must
+ * restart Agile CAC on the new home channel so that DFS monitoring
+ * continues correctly after every channel change.
+ */
 void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 				  int width, int width_device, int is_dfs0, int is_dfs)
 {
 	int freq = hapd->iface->freq;
 
 	hostapd_clear_local_tpe(hapd->iface);
+
+	/* Hostapd receives the CH_SWITCH_NOTIFY event for all links on the
+	 * CSA-triggered radio. If the new channel requires CAC, only the first
+	 * link that gets this event starts CAC, so don’t reset dfs_cac_ms when
+	 * this event is received for the second link on the same radio and CAC
+	 * is already in progress.
+	 * For non-DFS channels, dfs_cac_ms is reset here.
+	 */
+	if (!hapd->iface->cac_started)
+		hapd->iface->dfs_cac_ms = 0;
 
 	if (hapd->csa_in_progress &&
 	    freq == hapd->cs_freq_params.freq) {
@@ -1377,7 +1405,24 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 				hostapd_set_state(hapd->iface, HAPD_IFACE_DFS);
 				hapd->iface->cac_type = HAPD_CAC_COMPLETE_AFTER_CSA;
 				ieee802_11_set_beacon(hapd);
+
+				if (hostapd_set_dfs_cac_time(hapd->iface))
+					return;
+
 				wpa_printf(MSG_DEBUG, "DFS:Starting CAC after CSA on freq=%d", freq);
+				wpa_msg(hapd->iface->bss[0]->msg_ctx,
+					MSG_INFO, DFS_EVENT_CAC_START
+					"freq=%d chan=%d sec_chan=%d, width=%d,"
+					"seg0=%d, seg1=%d, cac_time=%ds bitmap:0x%04x",
+					hapd->iface->freq,
+					hapd->iface->conf->channel,
+					hapd->iface->conf->secondary_channel,
+					hostapd_get_oper_chwidth(hapd->iface->conf),
+					hostapd_get_oper_centr_freq_seg0_idx(hapd->iface->conf),
+					hostapd_get_oper_centr_freq_seg1_idx(hapd->iface->conf),
+					hapd->iface->dfs_cac_ms / 1000,
+					hapd->iface->conf->punct_bitmap);
+
 				hostapd_start_dfs_cac(hapd->iface, hapd->iface->conf->hw_mode,
 						     hapd->iface->freq,
 						     hapd->iconf->channel,
@@ -1392,6 +1437,7 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 						     hostapd_get_oper_centr_freq_seg1_idx(hapd->iface->conf),
 						     false, width_device,
 						     hapd->iconf->center_freq_device);
+				hostapd_schedule_agile_cac_restart(hapd->iface);
 			} else {
 				hostapd_disable_iface(hapd->iface);
 				hostapd_enable_iface(hapd->iface);
@@ -1402,6 +1448,7 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 			hapd->disable_cu = 1;
 			ieee802_11_set_beacon(hapd);
 			hostapd_start_device_cac_background(hapd->iface);
+			hostapd_schedule_agile_cac_restart(hapd->iface);
 			wpa_msg(hapd->msg_ctx, MSG_INFO, AP_CSA_FINISHED
 				"freq=%d dfs=%d", freq, is_dfs);
 		}
@@ -1445,12 +1492,13 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 
 	hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
 		       HOSTAPD_LEVEL_INFO,
-		       "driver %s channel switch: iface->freq=%d, freq=%d, ht=%d, vht_ch=0x%x, he_ch=0x%x, eht_ch=0x%x, offset=%d, width=%d (%s), cf1=%d, cf2=%d, puncturing_bitmap=0x%x width_device=%d, cf_device=%d 6ghz power mode=%d",
+		       "driver %s channel switch: iface->freq=%d, freq=%d, ht=%d, vht_ch=0x%x, he_ch=0x%x, eht_ch=0x%x, uhr_ch=0x%x, offset=%d, width=%d (%s), cf1=%d, cf2=%d, puncturing_bitmap=0x%x width_device=%d, cf_device=%d 6ghz power mode=%d",
 		       finished ? "had" : "starting",
 		       hapd->iface->freq,
 		       freq, ht, hapd->iconf->ch_switch_vht_config,
 		       hapd->iconf->ch_switch_he_config,
-		       hapd->iconf->ch_switch_eht_config, offset,
+		       hapd->iconf->ch_switch_eht_config,
+		       hapd->iconf->ch_switch_uhr_config, offset,
 		       width, channel_width_to_string(width), cf1, cf2,
 		       punct_bitmap, width_device, cf_device, power_mode_6ghz);
 
@@ -1565,6 +1613,7 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 			 CH_SWITCH_HE_DISABLED)
 			hapd->iconf->ieee80211ax = 0;
 	}
+
 #ifdef CONFIG_IEEE80211BE
 	if (hapd->iconf->ch_switch_eht_config) {
 		/* CHAN_SWITCH EHT config */
@@ -1580,9 +1629,27 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 			hapd->iconf->ieee80211be = 0;
 	}
 #endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->iconf->ch_switch_uhr_config) {
+		/* CHAN_SWITCH UHR config */
+		if (hapd->iconf->ch_switch_uhr_config &
+		    CH_SWITCH_UHR_ENABLED) {
+			hapd->iconf->ieee80211bn = 1;
+			hapd->iconf->ieee80211be = 1;
+			hapd->iconf->ieee80211ax = 1;
+			if (!is_6ghz_freq(hapd->iface->freq) &&
+			    hapd->iface->freq > 4000)
+				hapd->iconf->ieee80211ac = 1;
+		} else if (hapd->iconf->ch_switch_uhr_config &
+			   CH_SWITCH_UHR_DISABLED)
+			hapd->iconf->ieee80211bn = 0;
+	}
+#endif /* CONFIG_IEEE80211BN */
 	hapd->iconf->ch_switch_vht_config = 0;
 	hapd->iconf->ch_switch_he_config = 0;
 	hapd->iconf->ch_switch_eht_config = 0;
+	hapd->iconf->ch_switch_uhr_config = 0;
 
 	if (width == CHAN_WIDTH_40 || width == CHAN_WIDTH_80 ||
 	    width == CHAN_WIDTH_80P80 || width == CHAN_WIDTH_160 ||
@@ -1658,6 +1725,10 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 
 	hostapd_chan_switch_complete(hapd, power_mode_6ghz, width,
 				     width_device, is_dfs0, is_dfs);
+
+#ifdef CONFIG_QCN_EXTN
+	hostapd_periodic_acs_schedule(hapd->iface);
+#endif
 
 	for (i = 0; i < hapd->iface->num_bss; i++)
 		hostapd_neighbor_set_own_report(hapd->iface->bss[i]);
@@ -2450,9 +2521,12 @@ static struct hostapd_channel_data * hostapd_get_mode_channel(
 }
 
 
-static void hostapd_update_nf(struct hostapd_iface *iface,
-			      struct hostapd_channel_data *chan,
-			      struct freq_survey *survey)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+void hostapd_update_nf(struct hostapd_iface *iface,
+		       struct hostapd_channel_data *chan,
+		       struct freq_survey *survey)
 {
 	if (!iface->chans_surveyed) {
 		chan->min_nf = survey->nf;
@@ -2489,6 +2563,11 @@ static void hostapd_single_channel_get_survey(struct hostapd_iface *iface,
 		   survey->freq,
 		   (unsigned long int) survey->channel_time,
 		   (unsigned long int) survey->channel_time_busy);
+
+#ifdef CONFIG_QCN_EXTN
+	if (!hostapd_cbs_handle_single_channel_survey(iface, chan, survey))
+		return;
+#endif
 
 	if (survey->channel_time > iface->last_channel_time &&
 	    survey->channel_time > survey->channel_time_busy) {
@@ -2626,7 +2705,8 @@ static void hostapd_event_dfs_cac_finished(struct hostapd_data *hapd,
 	wpa_printf(MSG_DEBUG, "DFS CAC finished on %d MHz", radar->freq);
 	hostapd_dfs_complete_cac(hapd->iface, 1, radar->freq, radar->ht_enabled,
 				 radar->chan_offset, radar->chan_width,
-				 radar->cf1, radar->cf2, radar->is_background,
+				 radar->cf1, radar->cf2, radar->radar_bitmap,
+				 radar->is_background,
 				 radar->chan_width_device, radar->cf_device);
     radar->is_dfs_event_on_curr_hw = true;
 }
@@ -2645,7 +2725,8 @@ static void hostapd_event_dfs_cac_aborted(struct hostapd_data *hapd,
 	wpa_printf(MSG_DEBUG, "DFS CAC aborted on %d MHz", radar->freq);
 	hostapd_dfs_complete_cac(hapd->iface, 0, radar->freq, radar->ht_enabled,
 				 radar->chan_offset, radar->chan_width,
-				 radar->cf1, radar->cf2, radar->is_background,
+				 radar->cf1, radar->cf2, radar->radar_bitmap,
+				 radar->is_background,
 				 radar->chan_width_device, radar->cf_device);
     radar->is_dfs_event_on_curr_hw = true;
 }
@@ -2903,6 +2984,7 @@ static void hostapd_event_afc_update_complete(
 {
 	struct afc_sp_reg_info *afc_rsp_info = &afc_info->afc_rsp_info;
 	struct hostapd_iface *iface = NULL;
+	bool is_connected_repeater;
 	int i;
 	const char *phy_name = hostapd_drv_get_radio_name(hapd);
 
@@ -2935,19 +3017,85 @@ static void hostapd_event_afc_update_complete(
 
 	hostapd_free_afc_data(iface);
 	if (hostapd_allocate_afc_rsp_info(iface, afc_rsp_info)) {
-		wpa_printf(MSG_DEBUG, "AFC response memory  allocation failed");
+		wpa_printf(MSG_DEBUG, "AFC response memory allocation failed");
+		/* Cannot store AFC data - nothing to act on */
 		return;
 	}
-	iface->is_afc_power_event_received = true;
+	iface->is_afc_power_event_received =
+		afc_rsp_info->target_status_code ==
+		QCA_WLAN_VENDOR_AFC_EVT_STATUS_CODE_SUCCESS;
 
 	hapd = iface->bss[0];
+	if (!iface->is_afc_power_event_received) {
+		enum hostapd_afc_power_sync_result sync_result;
+
+		wpa_printf(MSG_INFO,
+			   "AFC power update failed: iface=%s status=%u server_resp=%d",
+			   iface->phy, afc_rsp_info->target_status_code,
+			   afc_rsp_info->serv_resp_code);
+		iface->is_afc_channel_change_pending = false;
+		iface->is_afc_repeater_power_sync_pending = false;
+		sync_result = hostapd_force_afc_non_sp_power_mode(iface);
+		if (sync_result == HOSTAPD_AFC_PWR_SYNC_UPDATED ||
+		    sync_result == HOSTAPD_AFC_PWR_SYNC_NOOP ||
+		    sync_result == HOSTAPD_AFC_PWR_SYNC_ERROR) {
+			/*
+			 * Non-SP fallback handled:
+			 * UPDATED - CSA to non-SP mode started
+			 * NOOP    - already in a valid non-SP mode, no change
+			 *           needed
+			 * ERROR   - power change deferred (e.g. CSA already in
+			 *           progress); will be retried on next event
+			 */
+			return;
+		}
+
+		if (!hostapd_iface_has_connected_backhaul_sta(iface)) {
+			/*
+			 * Standalone AP with no valid non-SP fallback.
+			 * Remain in current mode until the next AFC response
+			 * or regulatory update triggers a retry.
+			 */
+			wpa_printf(MSG_INFO,
+				   "AFC power update failed: no fallback, standalone AP iface=%s result=%d",
+				   iface->phy, sync_result);
+			return;
+		}
+
+		wpa_printf(MSG_ERROR,
+			   "AFC power update failed: fallback unavailable, disconnect backhaul STA iface=%s result=%d",
+			   iface->phy, sync_result);
+		if (hostapd_disconnect_backhaul_sta(iface))
+			wpa_printf(MSG_ERROR,
+				   "AFC power update failed: backhaul disconnect failed iface=%s",
+				   iface->phy);
+		return;
+	}
+
+	is_connected_repeater = hostapd_iface_has_connected_backhaul_sta(iface);
+	if (is_connected_repeater) {
+		/*
+		 * Do not trigger a channel change while the backhaul STA is
+		 * connected. AFC response data is stored; defer power mode
+		 * evaluation to hostapd_run_pending_repeater_afc_power_sync()
+		 * which runs after the REGDOM_SET_BY_DRIVER event delivers
+		 * the updated channel list. This ensures SP validity is
+		 * checked against fresh regulatory data, not stale flags.
+		 */
+		wpa_printf(MSG_INFO,
+			   "AFC repeater power sync pending: iface=%s freq=%d",
+			   iface->phy, iface->freq);
+		iface->is_afc_repeater_power_sync_pending = true;
+		return;
+	}
+
 	if (hapd->driver && hapd->driver->is_only_afc_power_fetch &&
 	    hapd->drv_priv) {
 		bool is_only_afc_power_fetch =
 			hapd->driver->is_only_afc_power_fetch(hapd->drv_priv);
 
 		if (is_only_afc_power_fetch) {
-			wpa_printf(MSG_DEBUG, "AFC info fetch completed, no channel change requested\n");
+			hostapd_sync_current_afc_power_mode(iface, false);
 			return;
 		}
 	}
@@ -3161,16 +3309,76 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_DEBUG, "Processing AFC payload reset event");
 	if (!iface->afc_rsp_info) {
-		wpa_printf(MSG_DEBUG, "No AFC payload to reset");
-		return;
+		wpa_printf(MSG_INFO,
+			   "AFC payload reset: no cached payload iface=%s",
+			   iface->phy);
+	} else {
+		/* Clear AFC payload */
+		hostapd_free_afc_data(iface);
 	}
-	/* Clear AFC payload */
-	hostapd_free_afc_data(iface);
+
 	iface->is_afc_power_event_received = false;
+	iface->is_afc_repeater_power_sync_pending = false;
 	if (!hostapd_drv_is_retail_afc_supported(iface->bss[0])) {
 		wpa_printf(MSG_DEBUG, "AFC payload reset not supported");
 		return;
 	}
+
+	/*
+	 * A payload reset means AFC data is no longer valid. For a
+	 * connected repeater, do not trigger a channel change as that
+	 * would tear down the dual-channel state while the backhaul
+	 * STA is still active and cause a crash. Instead clear the
+	 * pending flags and disconnect the backhaul STA so the
+	 * repeater can re-associate and re-run AFC from a clean state.
+	 */
+	if (hostapd_iface_has_connected_backhaul_sta(iface)) {
+		enum hostapd_afc_power_sync_result sync_result;
+
+		wpa_printf(MSG_DEBUG,
+			   "AFC payload reset: connected repeater, attempt non-SP fallback iface=%s",
+			   iface->phy);
+		iface->is_afc_channel_change_pending = false;
+		sync_result = hostapd_force_afc_non_sp_power_mode(iface);
+		if (sync_result == HOSTAPD_AFC_PWR_SYNC_UPDATED ||
+		    sync_result == HOSTAPD_AFC_PWR_SYNC_NOOP ||
+		    sync_result == HOSTAPD_AFC_PWR_SYNC_ERROR) {
+			/*
+			 * Non-SP fallback handled:
+			 * UPDATED - CSA to non-SP mode started
+			 * NOOP    - already in a valid non-SP mode, no change
+			 *           needed
+			 * ERROR   - power change deferred (e.g. CSA already in
+			 *           progress); will be retried on next event
+			 */
+			return;
+		}
+
+		wpa_printf(MSG_ERROR,
+			   "AFC payload reset: fallback unavailable, disconnect backhaul STA iface=%s result=%d",
+			   iface->phy, sync_result);
+		if (hostapd_disconnect_backhaul_sta(iface))
+			wpa_printf(MSG_ERROR,
+				   "AFC payload reset: backhaul disconnect failed iface=%s",
+				   iface->phy);
+		return;
+	}
+
+	if (he_reg_is_sp(iface->conf->he_6ghz_reg_pwr_type)) {
+		enum hostapd_afc_power_sync_result sync_result;
+
+		wpa_printf(MSG_INFO,
+			   "AFC payload reset: fallback SP AP iface=%s",
+			   iface->phy);
+		sync_result = hostapd_force_afc_non_sp_power_mode(iface);
+		if (sync_result == HOSTAPD_AFC_PWR_SYNC_UPDATED ||
+		    sync_result == HOSTAPD_AFC_PWR_SYNC_NOOP)
+			return;
+		wpa_printf(MSG_ERROR,
+			   "AFC payload reset: SP AP fallback unavailable iface=%s result=%d",
+			   iface->phy, sync_result);
+	}
+
 	iface->is_afc_channel_change_pending = true;
 	/* Wait for NL8011_WIPHY_REG_CHANGE event to get the updated channel list */
 	eloop_register_timeout(5, 0,
@@ -3667,6 +3875,22 @@ static void hostapd_update_ap_powersave(struct hostapd_data *hapd,
 }
 #endif /* CONFIG_IEEE80211BN */
 
+static void hostapd_restart_agile_cac_all_ifaces(struct hostapd_data *hapd)
+{
+	unsigned int i;
+
+	if (!hapd->iface || !hapd->iface->interfaces)
+		return;
+
+	for (i = 0; i < hapd->iface->interfaces->count; i++) {
+		struct hostapd_iface *h = hapd->iface->interfaces->iface[i];
+
+		if (h->state == HAPD_IFACE_ENABLED &&
+		    dfs_use_radar_background(h) &&
+		    !h->radar_background.cac_started)
+			hostapd_restart_agile_cac_after_ch_switch(h);
+	}
+}
 
 void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		       union wpa_event_data *data)
@@ -3729,6 +3953,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 			}
 		}
 #endif /* CONFIG_IEEE80211BE */
+		hostapd_restart_agile_cac_all_ifaces(hapd);
 		break;
 	case EVENT_WPS_BUTTON_PUSHED:
 		hostapd_wps_button_pushed(hapd, NULL);
@@ -4164,6 +4389,51 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 	}
 }
 
+static void hostapd_monitor_event_handler(struct hapd_interfaces *interfaces,
+					  union wpa_event_data *data)
+{
+	size_t i;
+
+	if (!data)
+		return;
+
+	/* Clear state when the monitor interface is removed */
+	if (data->interface_status.ievent == EVENT_INTERFACE_REMOVED) {
+		for (i = 0; i < interfaces->count; i++) {
+			struct hostapd_iface *iface = interfaces->iface[i];
+
+			if (!iface || os_strcmp(iface->monitor_iface,
+					data->interface_status.ifname) != 0)
+				continue;
+			wpa_printf(MSG_INFO,
+				   "Monitor iface: Interface %s removed for radio %s",
+				   iface->monitor_iface, iface->phy);
+			iface->monitor_iface[0] = '\0';
+			iface->monitor_ifindex = 0;
+			iface->monitor_iface_configured = false;
+		}
+	/* Deferred setup: retry when the monitor interface appears */
+	} else if (data->interface_status.ievent == EVENT_INTERFACE_ADDED) {
+		for (i = 0; i < interfaces->count; i++) {
+			struct hostapd_iface *iface = interfaces->iface[i];
+
+			if (!iface || iface->monitor_iface_configured ||
+			    !iface->conf->monitor_iface_name[0] ||
+			    os_strcmp(iface->conf->monitor_iface_name,
+				      data->interface_status.ifname) != 0)
+				continue;
+
+			wpa_printf(MSG_INFO,
+				   "Monitor iface: Interface %s appeared, retrying setup for radio %s",
+				   data->interface_status.ifname, iface->phy);
+			if (hostapd_setup_monitor_iface(iface) < 0)
+				wpa_printf(MSG_WARNING,
+					   "Monitor iface: Deferred setup failed for %s on radio %s",
+					   iface->conf->monitor_iface_name,
+					   iface->phy);
+		}
+	}
+}
 
 void hostapd_wpa_event_global(void *ctx, enum wpa_event_type event,
 				 union wpa_event_data *data)
@@ -4189,6 +4459,7 @@ void hostapd_wpa_event_global(void *ctx, enum wpa_event_type event,
 	}
 	if (hapd)
 		wpa_supplicant_event(hapd, event, data);
+	hostapd_monitor_event_handler(interfaces, data);
 }
 
 #endif /* HOSTAPD */

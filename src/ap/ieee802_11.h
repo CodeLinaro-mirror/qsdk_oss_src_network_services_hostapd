@@ -32,6 +32,9 @@ struct mld_link_info;
 
 #define BITRATE_5_5_MBPS 55
 
+#define INCLUDE_ELEMENT_IN_BEACON        BIT(0)
+#define INCLUDE_ELEMENT_IN_PROBE_RESP    BIT(1)
+
 enum colocation_mode {
 	NO_COLOCATED_6GHZ,
 	STANDALONE_6GHZ,
@@ -114,6 +117,8 @@ static inline int ieee802_11_get_mib_sta(struct hostapd_data *hapd,
 	return 0;
 }
 #endif /* NEED_AP_MLME */
+struct wpa_state_machine *get_wpa_sm_from_ft_ds_list(struct hostapd_data *hapd,
+						     uint8_t *sta_mld_addr);
 void
 initiate_assoc_response(struct hostapd_data *hapd, struct sta_info *sta,
 			     int resp, int reassoc,
@@ -165,6 +170,8 @@ void hostapd_get_eht_capab(struct hostapd_data *hapd,
 void hostapd_get_uhr_capab(const struct ieee80211_uhr_capabilities *src,
 			   struct ieee80211_uhr_capabilities *dest,
 			   size_t len);
+int add_associated_sta(struct hostapd_data *hapd,
+                       struct sta_info *sta, int reassoc);
 u8 * hostapd_eid_eht_ml_beacon(struct hostapd_data *hapd,
 			       struct mld_info *mld_info,
 			       u8 *eid, bool include_mld_id,
@@ -184,9 +191,15 @@ size_t hostapd_eid_eht_ml_beacon_len(struct hostapd_data *hapd,
 				     bool include_mld_id,
 				     u8 include_ext_cap);
 struct wpabuf * hostapd_ml_auth_resp(struct hostapd_data *hapd);
+const u8 * auth_skip_fixed_fields(struct hostapd_data *hapd,
+                                  const struct ieee80211_mgmt *mgmt,
+                                  size_t len);
 const u8 * hostapd_process_ml_auth(struct hostapd_data *hapd,
 				   const struct ieee80211_mgmt *mgmt,
 				   size_t len);
+const u8 * skip_ml_auth_fixed_fields(struct hostapd_data *hapd,
+				     const struct ieee80211_mgmt *mgmt,
+				     size_t len);
 u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 				 struct ieee802_11_elems *elems,
 				 struct sta_info *sta);
@@ -195,6 +208,8 @@ int hostapd_process_ml_assoc_req_addr(struct hostapd_data *hapd,
 				      u8 *mld_addr);
 int hostapd_get_aid(struct hostapd_data *hapd, struct sta_info *sta);
 int hostapd_get_wds_mld_sta_uid(struct hostapd_data *hapd, struct sta_info *sta);
+void hostapd_set_sta_flag_to_partner_links(struct hostapd_data *hapd,
+					   struct sta_info *sta);
 u16 copy_sta_ht_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		      const u8 *ht_capab);
 u16 copy_sta_vendor_vht(struct hostapd_data *hapd, struct sta_info *sta,
@@ -272,6 +287,10 @@ u8 * hostapd_eid_rm_enabled_capab(struct hostapd_data *hapd,
 u8 * hostapd_eid_mbo(struct hostapd_data *hapd, u8 *eid, size_t len);
 
 u8 hostapd_mbo_ie_len(struct hostapd_data *hapd);
+u8 * hostapd_eid_ess_report(struct hostapd_data *hapd, u8 *eid,
+			    size_t len);
+u8 * hostapd_eid_ap_channel_report(struct hostapd_data *hapd, u8 *eid,
+				   size_t len);
 
 u8 * hostapd_eid_mbo_rssi_assoc_rej(struct hostapd_data *hapd, u8 *eid,
 				    size_t len, int delta);
@@ -287,6 +306,12 @@ static inline u8 * hostapd_eid_mbo(struct hostapd_data *hapd, u8 *eid,
 static inline u8 hostapd_mbo_ie_len(struct hostapd_data *hapd)
 {
 	return 0;
+}
+
+static inline u8 * hostapd_eid_ap_channel_report(struct hostapd_data *hapd,
+						  u8 *eid, size_t len)
+{
+	return eid;
 }
 
 #endif /* CONFIG_MBO */
@@ -514,7 +539,8 @@ int get_tx_parameters(struct sta_info *sta, int ap_max_chanwidth,
 		      int ap_seg1_idx, int *bandwidth, int *seg1_idx);
 
 void auth_sae_process_commit(void *eloop_ctx, void *user_ctx);
-u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len);
+u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len, u64 capab_mask);
+u8 * hostapd_eid_smd(struct hostapd_data *hapd, u8 *eid);
 u16 check_ext_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		    const u8 *ext_capab_ie, size_t ext_capab_ie_len);
 size_t hostapd_eid_rnr_len(struct hostapd_data *hapd, u32 type,
@@ -532,12 +558,16 @@ bool eht_mu_mask_valid(u8 mask);
 u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 			   enum ieee80211_op_mode opmode);
 u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn);
+size_t hostapd_security_profile_ie_len(struct hostapd_data *hapd);
+u8 *hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid);
 u16 copy_sta_eht_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		       enum ieee80211_op_mode opmode,
 		       const u8 *he_capab, size_t he_capab_len,
 		       const u8 *eht_capab, size_t eht_capab_len);
 u16 copy_sta_uhr_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		       const u8 *uhr_capab, size_t uhr_capab_len);
+void hostapd_parse_smd_ie(struct hostapd_data *hapd, struct sta_info *sta,
+			const u8 *ies, size_t ies_len);
 size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd, u32 frame_type,
 			      u8 *elem_count, const u8 *known_bss,
 			      size_t known_bss_len, size_t *rnr_len,

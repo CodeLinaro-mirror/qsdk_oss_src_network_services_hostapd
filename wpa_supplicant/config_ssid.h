@@ -1251,6 +1251,28 @@ struct wpa_ssid {
 	 */
 	int multi_ap_profile;
 
+#ifdef CONFIG_QCN_EXTN
+	/**
+	 * wds_ie - WDS vendor IE advertisement control (STA mode)
+	 *
+	 * When set to 1, the STA includes the WDS vendor IE (OUI 00:13:84,
+	 * type 0x01) in association request frames, advertising WDS_IE_CAP_STA.
+	 * The AP will enable WDS mode only when both sides advertise WDS IE.
+	 *
+	 * 0 = WDS IE disabled (default)
+	 * 1 = WDS IE enabled
+	 */
+	int wds_ie;
+
+	/**
+	 * allow_3addr_mc - Allow 3-address multicast (STA mode)
+	 *
+	 * 0 = disallow 3-address multicast (default)
+	 * 1 = allow 3-address multicast
+	 */
+	int allow_3addr_mc;
+#endif
+
 	/**
 	 * beacon_prot - Whether Beacon protection is enabled
 	 *
@@ -1425,6 +1447,26 @@ struct wpa_ssid {
 
 	int cip_padding_delay;
 
+        /**
+         * smd_enabled - Whether SMD (Seamless Mobility Domain) is enabled
+         * 0 = SMD disabled (default)
+         * 1 = SMD enabled
+         */
+        int smd_enabled;
+
+        /**
+         * smd_id - SMD ID (Seamless Mobility Domain Identifier)
+         * 6-byte identifier for the SMD
+         */
+        u8 smd_id[ETH_ALEN];
+
+
+	/**
+	 * smd_ptk_mode - SMD PTK mode for Seamless Mobility Domain
+	 * 0 = Per-SMD PTK (Mode 0) - default
+	 * 1 = Per-AP MLD PTK (Mode 1)
+	 */
+	int smd_ptk_mode;
 };
 
 #endif /* CONFIG_SSID_H */

@@ -19,6 +19,7 @@
 #include "common/ieee802_11_common.h"
 #include "common/qca-vendor.h"
 #include "driver_nl80211.h"
+#include "wpa_debug.h"
 
 
 #define MAX_NL80211_NOISE_FREQS 100
@@ -795,6 +796,21 @@ nl80211_parse_bss_info(struct wpa_driver_nl80211_data *drv,
 		[NL80211_BSS_PARENT_TSF] = { .type = NLA_U64 },
 		[NL80211_BSS_PARENT_BSSID] = { .type = NLA_UNSPEC },
 		[NL80211_BSS_LAST_SEEN_BOOTTIME] = { .type = NLA_U64 },
+		[NL80211_BSS_SMD_CAPABLE] = { .type = NLA_FLAG },
+		[NL80211_BSS_SMD_DOMAIN_ID] = { .type = NLA_UNSPEC },
+		[NL80211_BSS_SMD_CAPABILITIES] = { .type = NLA_U8 },
+		[NL80211_BSS_SMD_TIMEOUT] = { .type = NLA_U8 },
+
+		[NL80211_BSS_SMD_DL_FORWARDING] = { .type = NLA_FLAG },
+		[NL80211_BSS_SMD_MAX_TARGETS] = { .type = NLA_U8 },
+		[NL80211_BSS_SMD_TYPE] = { .type = NLA_FLAG },
+		[NL80211_BSS_SMD_SMD_PTK_MODE] = { .type = NLA_FLAG },
+		[NL80211_BSS_SMD_FROM_BEACON] = { .type = NLA_FLAG },
+
+		[NL80211_BSS_RNR_SMD_INFERENCE_PRESENT] = {. type = NLA_FLAG },
+		[NL80211_BSS_RNR_SAME_SMD_BIT] = {. type = NLA_FLAG },
+		[NL80211_BSS_RNR_AP_MLD_ID] = { .type = NLA_U8 },
+		[NL80211_BSS_RNR_SHORT_SSID] = { .type = NLA_U32 },
 	};
 	struct wpa_scan_res *r;
 	const u8 *ie, *beacon_ie;
@@ -906,6 +922,66 @@ nl80211_parse_bss_info(struct wpa_driver_nl80211_data *drv,
 		r->parent_tsf = nla_get_u64(bss[NL80211_BSS_PARENT_TSF]);
 		os_memcpy(r->tsf_bssid, nla_data(bss[NL80211_BSS_PARENT_BSSID]),
 			  ETH_ALEN);
+	}
+
+	if (bss[NL80211_BSS_SMD_CAPABLE]) {
+		if (bss[NL80211_BSS_SMD_DOMAIN_ID]) {
+			if (nla_len(bss[NL80211_BSS_SMD_DOMAIN_ID]) == ETH_ALEN) {
+				r->smd_capable = true;
+				os_memcpy(r->smd_identifier,
+					  nla_data(bss[NL80211_BSS_SMD_DOMAIN_ID]),
+					  ETH_ALEN);
+			} else {
+				wpa_printf(MSG_DEBUG,
+					   "nl80211: SMD capable BSS missing doamin ID");
+			}
+		} else {
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: SMD capable BSS missing doamin ID");
+		}
+
+		if (bss[NL80211_BSS_SMD_CAPABILITIES]) {
+			r->smd_capabilities = nla_get_u8(bss[NL80211_BSS_SMD_CAPABILITIES]);
+		} else {
+			r->smd_capabilities = 0;
+		}
+
+		if (bss[NL80211_BSS_SMD_TIMEOUT]) {
+			r->smd_timeout = nla_get_u8(bss[NL80211_BSS_SMD_TIMEOUT]);
+		} else {
+			r->smd_timeout = 0;
+		}
+
+		r->smd_dl_forwarding = bss[NL80211_BSS_SMD_DL_FORWARDING] != NULL;
+		r->smd_max_targets = bss[NL80211_BSS_SMD_MAX_TARGETS] ?
+				nla_get_u8(bss[NL80211_BSS_SMD_MAX_TARGETS]) : 0;
+		r->smd_type = bss[NL80211_BSS_SMD_TYPE] != NULL;
+		r->smd_ptk_mode = bss[NL80211_BSS_SMD_SMD_PTK_MODE] != NULL;
+		r->smd_from_beacon = bss[NL80211_BSS_SMD_FROM_BEACON] != NULL;
+
+		r->rnr_smd_inference_present = bss[NL80211_BSS_RNR_SMD_INFERENCE_PRESENT] != NULL;
+		r->rnr_same_smd_bit = bss[NL80211_BSS_RNR_SAME_SMD_BIT] != NULL;
+		r->rnr_ap_mld_id = bss[NL80211_BSS_RNR_AP_MLD_ID] ?
+				nla_get_u8(bss[NL80211_BSS_RNR_AP_MLD_ID]) : 0;
+		r->rnr_short_ssid = bss[NL80211_BSS_RNR_SHORT_SSID] ?
+				nla_get_u32(bss[NL80211_BSS_RNR_SHORT_SSID]) : 0;
+
+	} else {
+		r->smd_capable = false;
+		os_memset(r->smd_identifier, 0, ETH_ALEN);
+		r->smd_capabilities = 0;
+		r->smd_timeout = 0;
+
+		r->smd_dl_forwarding = false;
+		r->smd_max_targets = 0;
+		r->smd_type = false;
+		r->smd_ptk_mode = false;
+		r->smd_from_beacon = false;
+
+		r->rnr_smd_inference_present = false;
+		r->rnr_same_smd_bit = false;
+		r->rnr_ap_mld_id = 0;
+		r->rnr_short_ssid = 0;
 	}
 
 	return r;
@@ -1407,3 +1483,92 @@ fail:
 }
 
 #endif /* CONFIG_DRIVER_NL80211_QCA */
+
+int wpa_driver_nl80211_trigger_smd_discovery(void *priv,
+					     const struct wpa_driver_smd_neighbor *neighbors,
+					     size_t num_neighbors)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nlattr *targets_attr;
+	struct nl_msg *msg = NULL;
+	int ret = -1;
+	size_t i;
+
+	if (!neighbors || !num_neighbors) {
+		wpa_printf(MSG_ERROR, "nl80211: SMD discovery: Invalid SMD parameters");
+		return -1;
+	}
+
+	msg = nl80211_cmd_msg(bss, 0, NL80211_CMD_TRIGGER_SMD_DISCOVERY);
+	if (!msg)
+		return -1;
+
+	targets_attr = nla_nest_start(msg, NL80211_ATTR_SMD_DISCOVERY_TARGETS);
+	if (!targets_attr) {
+		wpa_printf(MSG_ERROR, "nl80211: Failed to start SMD targets attribute");
+		goto fail;
+	}
+
+	for (i = 0; i < num_neighbors; i++) {
+		struct nlattr *target_attr;
+
+		target_attr = nla_nest_start(msg, i + 1);
+		if (!target_attr) {
+			wpa_printf(MSG_ERROR, "nl80211: Failed to create target nest for neighbor %zu", i);
+			goto fail;
+		}
+
+		if (nla_put_u32(msg, NL80211_SMD_DISCOVERY_TARGET_SHORT_SSID,
+				neighbors[i].short_ssid)) {
+			wpa_printf(MSG_ERROR, "nl80211: Failed to add short ssid for neighbor %zu", i);
+			goto fail;
+		}
+
+		if (nla_put_u32(msg, NL80211_SMD_DISCOVERY_TARGET_FREQ,
+				neighbors[i].freq)) {
+			wpa_printf(MSG_ERROR, "nl80211: Failed to add frequency for neighbor %zu", i);
+			goto fail;
+		}
+
+		if (nla_put_u8(msg, NL80211_SMD_DISCOVERY_TARGET_OP_CLASS,
+			       neighbors[i].op_class)) {
+			wpa_printf(MSG_ERROR, "nl80211: Failed to add op class for neighbor %zu", i);
+			goto fail;
+		}
+
+		if (!is_zero_ether_addr(neighbors[i].bssid)) {
+			if (nla_put(msg, NL80211_SMD_DISCOVERY_TARGET_BSSID,
+				    ETH_ALEN, neighbors[i].bssid)) {
+				wpa_printf(MSG_ERROR, "nl80211: Failed to add BSSID for neighbor %zu", i);
+				goto fail;
+			}
+		}
+
+		if (neighbors[i].ap_mld_id != 0) {
+			if (nla_put_u8(msg, NL80211_SMD_DISCOVERY_TARGET_AP_MLD_ID,
+				       neighbors[i].ap_mld_id)) {
+				wpa_printf(MSG_ERROR, "nl80211: Failed to add AP MLD ID for neighbor %zu", i);
+				goto fail;
+			}
+		}
+		nla_nest_end(msg, target_attr);
+	}
+
+	nla_nest_end(msg, targets_attr);
+
+	ret = send_and_recv_cmd(drv, msg);
+	msg = NULL;
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Trigger SMD discovery failed: ret=%d (%s)",
+			   ret, strerror(-ret));
+		goto fail;
+	}
+
+	return 0;
+
+fail:
+	nlmsg_free(msg);
+	return -1;
+}

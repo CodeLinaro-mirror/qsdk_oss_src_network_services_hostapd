@@ -14,5 +14,10 @@ struct wpa_sm;
 int wpa_gen_wpa_ie(struct wpa_sm *sm, u8 *wpa_ie, size_t wpa_ie_len);
 int wpa_gen_rsnxe(struct wpa_sm *sm, u8 *rsnxe, size_t rsnxe_len);
 u16 rsn_supp_capab(struct wpa_sm *sm);
+u64 wpa_sm_get_rsnxe_capab(struct wpa_sm *sm);
+int security_profile_akm_matches(int profile_num, int key_mgmt);
+int security_profile_build_sta_ie(struct wpa_sm *sm,
+				  int selected_profile_num,
+				  u8 *buf, size_t buf_len);
 
 #endif /* WPA_IE_H */

@@ -71,6 +71,8 @@ int wpa_supplicant_ap_mac_addr_filter(struct wpa_supplicant *wpa_s,
 void wpa_supplicant_ap_pwd_auth_fail(struct wpa_supplicant *wpa_s);
 int ap_switch_channel(struct wpa_supplicant *wpa_s,
 		      struct csa_settings *settings);
+int wpas_ap_apply_channel_switch(struct wpa_supplicant *wpa_s,
+				 struct csa_settings *settings);
 int ap_ctrl_iface_chanswitch(struct wpa_supplicant *wpa_s, const char *txtaddr);
 void wpas_ap_ch_switch(struct wpa_supplicant *wpa_s, int freq, int ht,
 		       int offset, int width, int cf1, int cf2,

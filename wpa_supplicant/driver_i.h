@@ -1287,6 +1287,16 @@ static inline int wpa_drv_mark_ppe_vp_type(struct wpa_supplicant *wpa_s,
 }
 
 static inline int
+wpa_drv_start_dfs_cac(struct wpa_supplicant *wpa_s,
+		      struct hostapd_freq_params *freq)
+{
+	if (!wpa_s->driver->start_dfs_cac)
+		return -1;
+
+	return wpa_s->driver->start_dfs_cac(wpa_s->drv_priv, freq, -1);
+}
+
+static inline int
 wpas_drv_nan_cancel_subscribe(struct wpa_supplicant *wpa_s, int subscribe_id)
 {
 	if (!wpa_s->driver->nan_cancel_subscribe)
@@ -1317,4 +1327,15 @@ static inline int wpa_drv_set_epcs_cfg(struct wpa_supplicant *wpa_s,
 					   epcs_cfg_value);
 }
 #endif /* CONFIG_IEEE80211BE */
+
+static inline int wpa_drv_trigger_smd_discovery(struct wpa_supplicant *wpa_s,
+						const struct wpa_driver_smd_neighbor *neighbors,
+						size_t num_neighbors)
+{
+	if (!wpa_s->driver->trigger_smd_discovery)
+		return -1;
+	return wpa_s->driver->trigger_smd_discovery(wpa_s->drv_priv, neighbors,
+						    num_neighbors);
+}
+
 #endif /* DRIVER_I_H */

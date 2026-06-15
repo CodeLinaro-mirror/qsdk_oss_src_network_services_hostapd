@@ -121,6 +121,15 @@ struct wpa_sm {
 	unsigned int spp_amsdu:1;
 	unsigned int sae_pw_id_change:1;
 
+	unsigned int smd_enabled:1;
+	u8 smd_id[6];
+	u8 smd_ptk_mode;
+	u8 smd_kdk[PMK_LEN_MAX];
+	size_t smd_kdk_len;
+
+	/* SMD-ME association context per IEEE80211 bn */
+	u8 smd_me_initial_ap_mld_addr[ETH_ALEN];
+
 	u8 *assoc_wpa_ie; /* Own WPA/RSN IE from (Re)AssocReq */
 	size_t assoc_wpa_ie_len;
 	u8 *assoc_rsnxe; /* Own RSNXE from (Re)AssocReq */
@@ -130,6 +139,23 @@ struct wpa_sm {
 	u8 *ap_rsne_override, *ap_rsne_override_2, *ap_rsnxe_override;
 	size_t ap_rsne_override_len, ap_rsne_override_2_len,
 		ap_rsnxe_override_len;
+
+	/*
+	 * Security Profile element state (802.11bn D1.4, 9.4.2.364, 37.32).
+	 *
+	 * security_profile_active: mirrors wpas_security_profile_active().
+	 *   Set to 1 for supplicant-SME always, or for driver-SME only when
+	 *   WPA_DRIVER_FLAGS2_SECURITY_PROFILE is set.  When 0, all Security
+	 *   Profile element parsing and validation is skipped in wpa.c.
+	 *
+	 * ap_security_profile_ie / ap_security_profile_ie_len: copy of the
+	 *   Security Profile element from the AP's Beacon/ProbeResp, stored
+	 *   for EAPOL-Key msg 3/4 or encrypted (Re)Association Response
+	 *   comparison.
+	 */
+	int security_profile_active;
+	u8 *ap_security_profile_ie;
+	size_t ap_security_profile_ie_len;
 
 #ifdef CONFIG_TDLS
 	struct wpa_tdls_peer *tdls;
@@ -209,9 +235,9 @@ struct wpa_sm {
 #endif /* CONFIG_TESTING_OPTIONS */
 
 #ifdef CONFIG_FILS
-	u8 fils_nonce[FILS_NONCE_LEN];
+	u8 fils_nonce[NONCE_LEN];
 	u8 fils_session[FILS_SESSION_LEN];
-	u8 fils_anonce[FILS_NONCE_LEN];
+	u8 fils_anonce[NONCE_LEN];
 	u8 fils_key_auth_ap[FILS_MAX_KEY_AUTH_LEN];
 	u8 fils_key_auth_sta[FILS_MAX_KEY_AUTH_LEN];
 	size_t fils_key_auth_len;

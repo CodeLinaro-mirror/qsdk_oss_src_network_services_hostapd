@@ -35,6 +35,11 @@
 #include "wpa_auth_glue.h"
 #include "wpa_auth_i.h"
 #include "hostapd_if/hostapd_if.h"
+#ifdef CONFIG_QCN_EXTN
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+#include "../../qcn_extns/hostapd_if_plugin.h"
+#endif
+#endif /* CONFIG_QCN_EXTN */
 
 static void hostapd_wpa_auth_config_update(struct hostapd_data *hapd,
 					   struct wpa_auth_config *_conf)
@@ -307,6 +312,9 @@ static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
 	wconf->eapol_m3_no_encrypt = conf->eapol_m3_no_encrypt;
 	wconf->eapol_key_reserved_random = conf->eapol_key_reserved_random;
 #endif /* CONFIG_TESTING_OPTIONS */
+#ifdef CONFIG_TESTING_OPTIONS
+	wconf->rsnxe_capab_mask = conf->rsnxe_capab_mask;
+#endif /* CONFIG_TESTING_OPTIONS */
 #ifdef CONFIG_P2P
 	os_memcpy(wconf->ip_addr_go, conf->ip_addr_go, 4);
 	os_memcpy(wconf->ip_addr_mask, conf->ip_addr_mask, 4);
@@ -363,6 +371,13 @@ static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
 			  wpabuf_head(conf->sae_pw_id_key),
 			  wpabuf_len(conf->sae_pw_id_key));
 	}
+	wconf->plugin_eapol_key_offload = conf->plugin_eapol_key_offload;
+
+#ifdef CONFIG_IEEE80211BN
+	wconf->smd_capable = conf->smd.enabled;
+	os_memcpy(wconf->smd_domain_id, conf->smd.smd_identifier, ETH_ALEN);
+	wconf->smd_ptk_mode = conf->smd.caps.ptk_mode;
+#endif /* CONFIG_IEEE80211BN */
 }
 
 
@@ -1707,6 +1722,64 @@ static int hostapd_wpa_auth_add_tspec(void *ctx, const u8 *sta_addr,
 }
 
 
+#ifdef CONFIG_QCN_EXTN
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+static void hostapd_wpa_auth_store_pmk_r1(void *ctx, const u8 *spa,
+					  const u8 *pmk_r1, size_t pmk_r1_len,
+					  const u8 *pmk_r1_name, int pairwise,
+					  int expires_in, int session_timeout,
+					  const u8 *identity,
+					  size_t identity_len,
+					  const u8 *radius_cui,
+					  size_t radius_cui_len)
+{
+	struct hostapd_data *hapd = ctx;
+	hostapd_if_plugin_store_pmk_r1(hapd->conf->iface, spa,
+				       pmk_r1, pmk_r1_len,
+				       pmk_r1_name, pairwise,
+				       expires_in, session_timeout,
+				       identity, identity_len,
+				       radius_cui, radius_cui_len);
+}
+#endif
+#endif /* CONFIG_QCN_EXTN */
+
+
+#ifdef CONFIG_HOSTAPD_IF
+static int hostapd_wpa_auth_pull_pmk_r1(void *ctx, const u8 *sta_addr,
+					u8 *pmk_r1_name, u8 *pmk_r1,
+					size_t *pmk_r1_len, int *pairwise,
+					int *session_timeout,
+					const u8 **identity,
+					size_t *identity_len,
+					const u8 **radius_cui,
+					size_t *radius_cui_len)
+{
+	return hostapd_if_pull_pmk_r1(ctx, (uint8_t *)sta_addr, pmk_r1_name,
+				      pmk_r1, pmk_r1_len, pairwise,
+				      session_timeout, identity, identity_len,
+				      radius_cui, radius_cui_len);
+}
+
+
+static int hostapd_wpa_auth_frame_fwd_decision(void *ctx, u16 auth_alg)
+{
+	return hostapd_if_frame_fwd_decision(ctx, auth_alg,
+					     HOSTAPD_IF_FRAME_TYPE_REMOTE_AUTH);
+}
+
+
+static int hostapd_wpa_auth_notify_remote_auth(void *ctx, const u8 *sta_addr,
+					       const u8 *ies, u16 ies_len,
+					       u16 status_code, bool is_ml)
+{
+	return hostapd_if_notify_remote_auth(ctx, (uint8_t *)sta_addr,
+					     ies, ies_len,
+					     status_code, is_ml);
+}
+#endif
+
+
 static u8 *hostapd_wpa_ft_add_bmle(void *ctx, u8 *bmle_ie, u8 type, void *mle_data)
 {
 	struct hostapd_data *hapd = ctx;
@@ -1796,6 +1869,15 @@ static void hostapd_wpa_unregister_ft_oui(struct hostapd_data *hapd)
 }
 #endif /* CONFIG_IEEE80211R_AP */
 
+#ifdef CONFIG_HOSTAPD_IF
+static int hostapd_wpa_auth_pull_pmk(void *ctx, const u8 *sta_addr,
+				     u8 *pmk, size_t *pmk_len, u8 *pmkid,
+				     int *session_timeout)
+{
+	return hostapd_if_pull_pmk(ctx, (uint8_t *)sta_addr, pmk, pmk_len,
+				   pmkid, session_timeout);
+}
+#endif
 
 #ifndef CONFIG_NO_RADIUS
 static void hostapd_request_radius_psk(void *ctx, const u8 *addr, int key_mgmt,
@@ -1993,7 +2075,20 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 		.get_radius_cui = hostapd_wpa_auth_get_radius_cui,
 		.set_session_timeout = hostapd_wpa_auth_set_session_timeout,
 		.get_session_timeout = hostapd_wpa_auth_get_session_timeout,
+#ifdef CONFIG_HOSTAPD_IF
+		.pull_pmk_r1 = hostapd_wpa_auth_pull_pmk_r1,
+		.frame_fwd_decision = hostapd_wpa_auth_frame_fwd_decision,
+		.notify_remote_auth = hostapd_wpa_auth_notify_remote_auth,
+#endif
+#ifdef CONFIG_QCN_EXTN
+#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+		.test_plugin_store_pmk_r1 = hostapd_wpa_auth_store_pmk_r1,
+#endif
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211R_AP */
+#ifdef CONFIG_HOSTAPD_IF
+		.pull_pmk = hostapd_wpa_auth_pull_pmk,
+#endif
 #ifndef CONFIG_NO_RADIUS
 		.request_radius_psk = hostapd_request_radius_psk,
 #endif /* CONFIG_NO_RADIUS */

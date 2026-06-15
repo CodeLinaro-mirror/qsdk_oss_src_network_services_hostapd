@@ -54,6 +54,10 @@ struct rsn_pmksa_cache_entry {
 	 * PMKSA for SAE.
 	 */
 	bool sae_reauth_scheduled;
+
+	u8 smd_id[ETH_ALEN];
+	unsigned int smd_enabled:1;
+	u8 smd_ptk_mode;
 };
 
 struct rsn_pmksa_cache;

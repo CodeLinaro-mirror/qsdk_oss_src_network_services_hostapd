@@ -458,6 +458,12 @@ static int wpa_get_beacon_ie(struct wpa_supplicant *wpa_s)
 		if (wpa_sm_set_ap_rsnxe_override(wpa_s->wpa, ie,
 						 ie ? 2 + ie[1] : 0))
 			ret = -1;
+
+		ie = wpa_bss_get_ie_ext(curr,
+					WLAN_EID_EXT_SECURITY_PROFILE);
+		if (wpa_sm_set_ap_security_profile_ie(wpa_s->wpa, ie,
+						      ie ? 2 + ie[1] : 0))
+			ret = -1;
 	} else {
 		ret = -1;
 	}
@@ -1553,6 +1559,12 @@ int wpa_supplicant_init_wpa(struct wpa_supplicant *wpa_s)
 		ptksa_cache_deinit(wpa_s->ptksa);
 		wpa_s->ptksa = NULL;
 		return -1;
+	}
+
+	if (wpa_s->smd_capable && !is_zero_ether_addr(wpa_s->smd_id)) {
+		wpa_sm_set_smd_params(wpa_s->wpa, wpa_s->smd_id,
+				      wpa_s->smd_ptk_mode,
+				      wpa_s->smd_me_initial_ap_mld_addr);
 	}
 #endif /* CONFIG_NO_WPA */
 

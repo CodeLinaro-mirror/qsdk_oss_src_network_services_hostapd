@@ -208,6 +208,26 @@ static struct wpabuf * sme_auth_build_sae_commit(struct wpa_supplicant *wpa_s,
 			rsnxe_capa = rsnxe[2 + 4];
 		else if (rsnxe && rsnxe[1] >= 1)
 			rsnxe_capa = rsnxe[2];
+
+		/*
+		 * Security Profile element preference (802.11bn D1.4, 37.32):
+		 * The Extended RSN Capabilities in the Security Profile element
+		 * take precedence over the legacy RSNX/RSNXO element.  Merge
+		 * the security profile's RSNX capabilities into rsnxe_capa so
+		 * that SAE H2E / SAE-PK checks below use the security profile
+		 * values.
+		 */
+		if (wpas_security_profile_active(wpa_s)) {
+			const u8 *sp_ie_rsnx;
+			size_t sp_rsnx_len;
+			const u8 *sp = wpa_bss_get_ie_ext(
+				bss, WLAN_EID_EXT_SECURITY_PROFILE);
+
+			sp_ie_rsnx = security_profile_ie_get_rsnx(
+				sp, &sp_rsnx_len);
+			if (sp_ie_rsnx && sp_rsnx_len >= 1)
+				rsnxe_capa |= sp_ie_rsnx[0];
+		}
 	}
 
 	sae_pwe = wpas_get_ssid_sae_pwe(wpa_s, ssid);
@@ -631,6 +651,7 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 #endif /* CONFIG_MBO */
 	int omit_rsnxe = 0;
 	u16 missing_links = 0;
+	u8 *auth_ie_buf = NULL;
 
 	if (bss == NULL) {
 		wpa_msg(wpa_s, MSG_ERROR, "SME: No scan result available for "
@@ -674,6 +695,16 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 
 	skip_auth = wpa_s->conf->reassoc_same_bss_optim &&
 		wpa_s->reassoc_same_bss;
+
+	if (!skip_auth && wpa_s->smd_capable) {
+		struct rsn_pmksa_cache_entry *pmksa = pmksa_cache_get_current(wpa_s->wpa);
+		if (pmksa && pmksa->smd_enabled &&
+		    os_memcmp(pmksa->aa, bss->bssid, ETH_ALEN) == 0) {
+			wpa_printf(MSG_DEBUG, "SME: Using OPEN Auth for SMD PMKSA Cache reuse");
+			params.auth_alg = WPA_AUTH_ALG_OPEN;
+		}
+	}
+
 	wpa_s->current_bss = bss;
 
 	wpa_s->reassociate = 0;
@@ -1182,6 +1213,59 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 no_fils:
 #endif /* CONFIG_FILS */
 
+	if (wpa_s->smd_capable) {
+		u8 auth_ies[512];
+		size_t auth_ies_len = 0;
+		u8 *smd_ie;
+		size_t smd_ie_len;
+		u8 ptk_mode = 0;
+		u8 capabilities = bss->smd_capabilities ? bss->smd_capabilities : 0x01;
+		u16 timeout = bss->smd_timeout ? bss->smd_timeout : 1000;
+
+		if (ssid->smd_ptk_mode == 1)
+			ptk_mode = 1;
+
+		params.smd.enabled = wpa_s->smd_capable;
+		os_memcpy(params.smd.smd_identifier,
+			  bss->smd_identifier, ETH_ALEN);
+		params.smd.smd_timeout = timeout;
+		params.smd.caps.max_prep_target_apmlds = 0;
+		params.smd.caps.smd_type = ssid->smd_ptk_mode;
+		params.smd.caps.ptk_mode = ptk_mode;
+
+		if (params.ie && params.ie_len > 0) {
+			if (params.ie_len <= sizeof(auth_ies)) {
+				os_memcpy(auth_ies, params.ie, params.ie_len);
+				auth_ies_len = params.ie_len;
+			} else {
+				wpa_printf(MSG_WARNING, "SME: Existing auth IEs too large");
+				goto skip_smd_ie;
+			}
+		}
+
+		smd_ie = wpas_build_smd_ie(bss->smd_identifier, ptk_mode, capabilities,
+					  timeout, &smd_ie_len);
+		if (smd_ie) {
+			if (auth_ies_len + smd_ie_len < sizeof(auth_ies)) {
+				os_memcpy(auth_ies + auth_ies_len, smd_ie,
+					  smd_ie_len);
+				auth_ies_len += smd_ie_len;
+
+				params.ie = auth_ies;
+				params.ie_len = auth_ies_len;
+
+				wpa_printf(MSG_DEBUG,
+					   "SME: Added SMD IE to authentication frame");
+			} else {
+				wpa_printf(MSG_WARNING, "SME: Auth IEs buffer tpp small for SMD IE");
+			}
+
+			os_free(smd_ie);
+		}
+
+	skip_smd_ie:;
+	}
+
 	wpa_supplicant_cancel_sched_scan(wpa_s);
 	wpa_supplicant_cancel_scan(wpa_s);
 
@@ -1234,6 +1318,51 @@ no_fils:
 	}
 
 
+	/*
+	 * Security Profile element — auth frame inclusion (802.11bn D1.4,
+	 * 37.32, 9.4.2.364).
+	 *
+	 * When the Security Profile element was selected and built in
+	 * wpa_supplicant_set_suites(), include it in the Authentication frame
+	 * IEs (params.ie / params.ie_len → NL80211_ATTR_IE) for auth
+	 * algorithms that use it:
+	 *
+	 *   WPA_AUTH_ALG_EPPKE  — EPPKE (AKM 29) authentication
+	 *   WPA_AUTH_ALG_802_1X — 802.1X-in-auth-frames (37.32, Table 9-bb14)
+	 */
+	if (wpa_s->security_profile_ie_len > 0 &&
+	    (params.auth_alg == WPA_AUTH_ALG_EPPKE ||
+	     params.auth_alg == WPA_AUTH_ALG_802_1X)) {
+		if (params.ie && params.ie_len > 0) {
+			size_t combined_len = params.ie_len +
+				wpa_s->security_profile_ie_len;
+
+			auth_ie_buf = os_malloc(combined_len);
+			if (!auth_ie_buf) {
+				wpa_msg(wpa_s, MSG_ERROR,
+					"SME: Failed to allocate buffer for auth frame IEs");
+				wpas_connection_failed(wpa_s, bss->bssid, NULL);
+				wpa_supplicant_mark_disassoc(wpa_s);
+				wpabuf_free(resp);
+				wpas_connect_work_done(wpa_s);
+				return;
+			}
+			os_memcpy(auth_ie_buf, params.ie, params.ie_len);
+			os_memcpy(auth_ie_buf + params.ie_len,
+				  wpa_s->security_profile_ie,
+				  wpa_s->security_profile_ie_len);
+			params.ie = auth_ie_buf;
+			params.ie_len = combined_len;
+		} else {
+			params.ie = wpa_s->security_profile_ie;
+			params.ie_len = wpa_s->security_profile_ie_len;
+		}
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"SME: Including Security Profile element in auth frame (alg=0x%x profile=%d)",
+			params.auth_alg,
+			wpa_s->selected_security_profile_num);
+	}
+
 	wpa_s->sme.auth_alg = params.auth_alg;
 	if (wpa_drv_authenticate(wpa_s, &params) < 0) {
 		wpa_msg(wpa_s, MSG_INFO, "SME: Authentication request to the "
@@ -1241,6 +1370,7 @@ no_fils:
 		wpas_connection_failed(wpa_s, bss->bssid, NULL);
 		wpa_supplicant_mark_disassoc(wpa_s);
 		wpabuf_free(resp);
+		os_free(auth_ie_buf);
 		wpas_connect_work_done(wpa_s);
 		return;
 	}
@@ -1254,6 +1384,7 @@ no_fils:
 	 */
 
 	wpabuf_free(resp);
+	os_free(auth_ie_buf);
 }
 
 
@@ -1366,9 +1497,6 @@ void sme_authenticate(struct wpa_supplicant *wpa_s,
 	cwork->bss = bss;
 	cwork->ssid = ssid;
 	cwork->sme = 1;
-#ifdef CONFIG_QCN_EXTN
-	wpa_s->cache_cwork = cwork;
-#endif
 
 #ifdef CONFIG_SAE
 	wpa_s->sme.sae.state = SAE_NOTHING;
@@ -1381,6 +1509,7 @@ void sme_authenticate(struct wpa_supplicant *wpa_s,
 		if (wpa_s->conf->rptr_mgr_comm_mode == RPTR_MGR_MODE_COMM_SOCK) {
 			wpa_supp_pre_connect_state_handle_extn(wpa_s, bss);
 		}
+		wpa_s->cache_cwork = cwork;
 		wpa_supplicant_set_state(wpa_s, WPA_PRE_CONNECT);
 
 		eloop_register_timeout(SME_PRE_CONNECT_TIMEOUT, 0, sme_pre_connect_timer_extn,
@@ -2047,6 +2176,13 @@ static int sme_sae_set_pmk(struct wpa_supplicant *wpa_s, const u8 *bssid)
 {
 	wpa_printf(MSG_DEBUG,
 		   "SME: SAE completed - setting PMK for 4-way handshake");
+
+	if (wpa_s->current_bss && wpa_s->smd_capable) {
+		wpa_printf(MSG_DEBUG, "SMD : Setting SAE PMK with SMD Context");
+		wpa_sm_set_smd_params(wpa_s->wpa, wpa_s->smd_id,
+				      wpa_s->smd_ptk_mode,
+				      wpa_s->smd_me_initial_ap_mld_addr);
+	}
 	wpa_sm_set_pmk(wpa_s->wpa, wpa_s->sme.sae.pmk, wpa_s->sme.sae.pmk_len,
 		       wpa_s->sme.sae.pmkid, bssid);
 	if (wpa_s->conf->sae_pmkid_in_assoc) {
@@ -2340,6 +2476,37 @@ void sme_event_auth(struct wpa_supplicant *wpa_s, union wpa_event_data *data)
 		return;
 	}
 
+	if (data->auth.ies && data->auth.ies_len > 0) {
+		struct ieee802_11_elems elems;
+
+		if (ieee802_11_parse_elems(data->auth.ies + ie_offset,
+					   data->auth.ies_len - ie_offset,
+					   & elems, 0) != ParseFailed) {
+			if (elems.smd && elems.smd_len >= 10) {
+				u8 smd_identifier[6];
+				u8 ptk_mode, capabilities;
+				u16 timeout;
+
+				if (wpas_parse_smd_ie(elems.smd, elems.smd_len,
+						      smd_identifier, &ptk_mode,
+						      &capabilities, &timeout) == 0) {
+					wpa_printf(MSG_DEBUG, "SME: Parsed SMD IE from auth response: "
+						   "SMD_ID=" MACSTR " PTK_mode=%u capabilities=0x%02x timeout=%u",
+						   MAC2STR(smd_identifier), ptk_mode, capabilities, timeout);
+
+					if (wpa_s->current_bss) {
+						os_memcpy(wpa_s->current_bss->smd_identifier, smd_identifier, 6);
+						wpa_s->current_bss->smd_capabilities = capabilities;
+						wpa_s->current_bss->smd_ptk_mode = ptk_mode;
+						wpa_s->current_bss->smd_timeout = timeout;
+					}
+				} else {
+					wpa_printf(MSG_WARNING, "SME: Failed to parse SMD IE from auth response");
+				}
+			}
+		}
+	}
+
 	sme_associate(wpa_s, ssid->mode, data->auth.peer,
 		      data->auth.auth_type);
 }
@@ -2368,7 +2535,7 @@ void sme_associate(struct wpa_supplicant *wpa_s, enum wpas_mode mode,
 	struct ieee802_11_elems elems;
 	struct wpa_ssid *ssid = wpa_s->current_ssid;
 #ifdef CONFIG_FILS
-	u8 nonces[2 * FILS_NONCE_LEN];
+	u8 nonces[2 * NONCE_LEN];
 #endif /* CONFIG_FILS */
 #ifdef CONFIG_HT_OVERRIDES
 	struct ieee80211_ht_capabilities htcaps;
@@ -2460,8 +2627,8 @@ void sme_associate(struct wpa_supplicant *wpa_s, enum wpas_mode mode,
 			    wpa_s->sme.assoc_req_ie,
 			    wpa_s->sme.assoc_req_ie_len);
 
-		os_memcpy(nonces, snonce, FILS_NONCE_LEN);
-		os_memcpy(nonces + FILS_NONCE_LEN, anonce, FILS_NONCE_LEN);
+		os_memcpy(nonces, snonce, NONCE_LEN);
+		os_memcpy(nonces + NONCE_LEN, anonce, NONCE_LEN);
 		params.fils_nonces = nonces;
 		params.fils_nonces_len = sizeof(nonces);
 	}
@@ -2612,6 +2779,19 @@ mscs_fail:
 		wpa_s->sme.assoc_req_ie_len += multi_ap_ie_len;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	/* WDS vendor IE: add to assoc request if wds_ie is enabled */
+	if (ssid && ssid->wds_ie) {
+		u8 *pos = wpa_s->sme.assoc_req_ie + wpa_s->sme.assoc_req_ie_len;
+		size_t avail = sizeof(wpa_s->sme.assoc_req_ie) -
+			       wpa_s->sme.assoc_req_ie_len;
+		u8 *end = wds_ie_populate_assoc_req_extn(wpa_s, ssid,
+							 pos, avail);
+
+		wpa_s->sme.assoc_req_ie_len += end - pos;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_RSN_OVERRIDE_SUPPORT,
 			 wpas_rsn_overriding(wpa_s, ssid));
 	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_RSN_OVERRIDE,
@@ -2681,9 +2861,64 @@ mscs_fail:
 		wpabuf_free(cip_ie);
 	}
 
+	/*
+	 * Security Profile element — assoc frame inclusion (37.32):
+	 * Include unconditionally when a profile has been selected (unlike the
+	 * auth frame, inclusion here does not depend on RSNE presence).
+	 * The element was pre-built in wpa_supplicant_set_suites() from the
+	 * same wpa_sm state as the RSNE and RSNXE, guaranteeing consistency.
+	 */
+	if (wpa_s->security_profile_ie_len > 0 &&
+	    wpa_s->security_profile_ie_len <=
+	    sizeof(wpa_s->sme.assoc_req_ie) - wpa_s->sme.assoc_req_ie_len) {
+		os_memcpy(wpa_s->sme.assoc_req_ie + wpa_s->sme.assoc_req_ie_len,
+			  wpa_s->security_profile_ie,
+			  wpa_s->security_profile_ie_len);
+		wpa_s->sme.assoc_req_ie_len += wpa_s->security_profile_ie_len;
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"SME: Appended Security Profile element to assoc frame IEs (profile=%d)",
+			wpa_s->selected_security_profile_num);
+	}
+
 #ifdef CONFIG_QCN_EXTN
 	wpas_add_qcn_ie_assoc_req_extn(wpa_s);
 #endif /* CONFIG_QCN_EXTN */
+	if (wpa_s->current_bss && wpa_s->smd_capable) {
+		u8 *smd_ie;
+		size_t smd_ie_len;
+		u8 ptk_mode = 0;
+		u8 capabilities = wpa_s->current_bss->smd_capabilities ?
+			wpa_s->current_bss->smd_capabilities : 0x01;
+		u16 timeout = wpa_s->current_bss->smd_timeout ?
+			wpa_s->current_bss->smd_timeout : 1000;
+
+		if (ssid && ssid->smd_ptk_mode == 1)
+			ptk_mode = 1;
+		params.smd.enabled = wpa_s->smd_capable;
+		os_memcpy(params.smd.smd_identifier,
+			  wpa_s->current_bss->smd_identifier, ETH_ALEN);
+		params.smd.smd_timeout = timeout;
+		params.smd.caps.max_prep_target_apmlds = 0;
+		params.smd.caps.smd_type = wpa_s->current_bss->smd_type;
+		params.smd.caps.ptk_mode = ptk_mode;
+		smd_ie = wpas_build_smd_ie(wpa_s->current_bss->smd_identifier,
+					   ptk_mode, capabilities, timeout, &smd_ie_len);
+		if (smd_ie) {
+			if (wpa_s->sme.assoc_req_ie_len + smd_ie_len <=
+			    sizeof(wpa_s->sme.assoc_req_ie)) {
+				os_memcpy(wpa_s->sme.assoc_req_ie + wpa_s->sme.assoc_req_ie_len,
+					  smd_ie, smd_ie_len);
+				wpa_s->sme.assoc_req_ie_len += smd_ie_len;
+				wpa_printf(MSG_DEBUG, "SME: Added SMD IE to association request (PTK Mode %u)",
+					   ptk_mode);
+			} else {
+				wpa_printf(MSG_WARNING, "SME: Not enough buffer space for SMD IE in association request");
+			}
+
+			os_free(smd_ie);
+		}
+	}
+
 	params.bssid = bssid;
 	params.ssid = wpa_s->sme.ssid;
 	params.ssid_len = wpa_s->sme.ssid_len;

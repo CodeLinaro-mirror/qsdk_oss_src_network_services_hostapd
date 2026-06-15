@@ -17,6 +17,10 @@
 #include "utils/list.h"
 #include "driver.h"
 
+#ifdef CONFIG_QCN_EXTN
+#include "../../qcn_extns/cmn.h"
+#endif
+
 #ifndef NL_CAPABILITY_VERSION_3_5_0
 #define nla_nest_start(msg, attrtype) \
 	nla_nest_start(msg, NLA_F_NESTED | (attrtype))
@@ -75,6 +79,10 @@ struct i802_link {
 struct i802_bss {
 	struct wpa_driver_nl80211_data *drv;
 	struct i802_bss *next;
+
+#ifdef CONFIG_QCN_EXTN
+	struct i802_bss_extn bss_extn;
+#endif
 
 	/* The links which are physically present */
 	u16 valid_links;
@@ -217,6 +225,9 @@ struct wpa_driver_nl80211_data {
 	unsigned int device_bw:1;
 	unsigned int afc_support:1;
 	unsigned int afc_retail_support:1;
+#ifdef CONFIG_QCN_EXTN
+	unsigned int vendor_6ghz_hw_blocked_chans_support:1;
+#endif
 
 	u8 extra_bss_membership_selectors[8];
 
@@ -464,6 +475,9 @@ int wpa_driver_nl80211_scan(struct i802_bss *bss,
 int wpa_driver_nl80211_sched_scan(void *priv,
 				  struct wpa_driver_scan_params *params);
 int wpa_driver_nl80211_stop_sched_scan(void *priv);
+int wpa_driver_nl80211_trigger_smd_discovery(void *priv,
+					     const struct wpa_driver_smd_neighbor *neighbors,
+					     size_t num_neighbors);
 struct wpa_scan_results * wpa_driver_nl80211_get_scan_results(void *priv,
 							      const u8 *bssid);
 void nl80211_dump_scan(struct wpa_driver_nl80211_data *drv);
@@ -490,5 +504,30 @@ int qca_nl80211_handle_afc_events(struct i802_bss *bss, u8 *data, size_t len,
 #ifdef CONFIG_QCN_EXTN
 int nl80211_set_muedca_mode(void *priv, int mode, int radio_idx);
 #endif /* CONFIG_QCN_EXTN */
+
+int hostapd_validate_monitor_iface(const char *ifname, int *ifindex);
+
+#ifdef CONFIG_QCN_EXTN
+int nl80211_put_freq_params(struct nl_msg *msg,
+			    const struct hostapd_freq_params *freq,
+			    struct i802_bss *bss);
+#endif /* CONFIG_QCN_EXTN */
+
+/**
+ * nl80211_update_beacons_on_chain_mask_change() - Update beacons after a
+ * chain mask change.
+ * @drv: nl80211 driver data.
+ *
+ * Fetches the current HW feature data from the driver to get the updated
+ * chain mask value. Push the new capabilities into all
+ * active beacons.
+ *
+ * Context: Process context.
+ *
+ * Return: 0 on success
+ *         -1 on failure (hw feature fetch failure, no matching mode found
+ *         or beacon update failure).
+ */
+int nl80211_update_beacons_on_chain_mask_change(struct wpa_driver_nl80211_data *drv);
 
 #endif /* DRIVER_NL80211_H */

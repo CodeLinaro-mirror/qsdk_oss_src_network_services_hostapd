@@ -745,7 +745,10 @@ static int is_common_24ghz_chan(int chan)
 
 
 #ifdef CONFIG_IEEE80211BE
-static void acs_update_puncturing_bitmap(struct hostapd_iface *iface,
+#ifndef CONFIG_QCN_EXTN
+static
+#endif /* CONFIG_QCN_EXTN */
+void acs_update_puncturing_bitmap(struct hostapd_iface *iface,
 					 struct hostapd_hw_modes *mode, u32 bw,
 					 int n_chans,
 					 struct hostapd_channel_data *chan,
@@ -936,45 +939,51 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 				break;
 			}
 
-			if ((chan2->flag & HOSTAPD_CHAN_RADAR) &&
-			    iface->conf->acs_exclude_dfs)
-				break;
+		if ((chan2->flag & HOSTAPD_CHAN_RADAR) &&
+		    iface->conf->acs_exclude_dfs)
+			break;
 
-			if (chan2->max_tx_power < iface->conf->min_tx_power)
-				break;
+		if (iface->conf->acs_dfs_available_only &&
+		    (chan2->flag & HOSTAPD_CHAN_RADAR) &&
+		    (chan2->flag & HOSTAPD_CHAN_DFS_MASK) !=
+		    HOSTAPD_CHAN_DFS_AVAILABLE)
+			break;
 
-			if ((chan2->flag & HOSTAPD_CHAN_INDOOR_ONLY) &&
-			    iface->conf->country[2] == 0x4f)
-				break;
+		if (chan2->max_tx_power < iface->conf->min_tx_power)
+			break;
 
-			if (!acs_usable_chan(chan2))
-				continue;
+		if ((chan2->flag & HOSTAPD_CHAN_INDOOR_ONLY) &&
+		    iface->conf->country[2] == 0x4f)
+			break;
 
-			factor += chan2->interference_factor;
-			total_weight += 1;
+		if (!acs_usable_chan(chan2))
+			continue;
 
-			if (!chan_pri_allowed(chan2))
-				continue;
+		factor += chan2->interference_factor;
+		total_weight += 1;
 
 #ifdef CONFIG_QCN_EXTN
-			if (!chan_pri_allowed_extn(chan2))
-				 continue;
+		if (!chan_pri_allowed_extn(chan2))
+			 continue;
 #endif
 
-			if (!is_in_chanlist(iface, chan2))
-				continue;
+		if (!chan_pri_allowed(chan2))
+			continue;
 
-			if (!is_in_freqlist(iface, chan2))
-				continue;
+		if (!is_in_chanlist(iface, chan2))
+			continue;
 
-			if (iface->conf->acs_exclude_6ghz_non_psc &&
-			    !is_6ghz_psc_frequency(chan2->freq))
-				continue;
+		if (!is_in_freqlist(iface, chan2))
+			continue;
 
-			/* find the best channel in this segment */
-			if (!best || chan2->interference_factor <
-			    best->interference_factor)
-				best = chan2;
+		if (iface->conf->acs_exclude_6ghz_non_psc &&
+		    !is_6ghz_psc_frequency(chan2->freq))
+			continue;
+
+		/* find the best channel in this segment */
+		if (!best || chan2->interference_factor <
+		    best->interference_factor)
+			best = chan2;
 		}
 
 		if (j != n_chans) {
@@ -1059,6 +1068,9 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 				bias = NULL;
 			}
 		} else if (is_24ghz_mode(mode->mode) &&
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_QCN_APP_EXTN)
+			   !iface->conf->conf_extn.qacs_conf.acs_2g_scan_all &&
+#endif /* CONFIG_QCN_EXTN && CONFIG_QCN_APP_EXTN */
 			   is_common_24ghz_chan(chan->chan)) {
 			tmp_bias.channel = chan->chan;
 			tmp_bias.bias = ACS_24GHZ_PREFER_1_6_11;
@@ -1076,7 +1088,16 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 				   chan->chan, factor);
 		}
 
+#ifdef CONFIG_QCN_EXTN
+		acs_update_total_interference_factor_extn(iface, mode, bw,
+					     bw320_offset, n_chans, chan, factor);
+#endif /* CONFIG_QCN_EXTN */
+
 		if (acs_usable_chan(chan) &&
+#ifdef CONFIG_QCN_EXTN
+		    acs_hwbl_chan_ok_extn(iface, mode, bw, bw320_offset, n_chans,
+					  chan, factor) &&
+#endif /* CONFIG_QCN_EXTN */
 		    (!*ideal_chan || factor < *ideal_factor)) {
 			/* Reset puncturing bitmap for the previous ideal
 			 * channel */
@@ -1098,7 +1119,12 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 		}
 
 		/* This channel would at least be usable */
-		if (!(*rand_chan)) {
+		if (!(*rand_chan)
+#ifdef CONFIG_QCN_EXTN
+		    && acs_hwbl_chan_ok_extn(iface, mode, bw, bw320_offset,
+					     n_chans, chan, factor)
+#endif /* CONFIG_QCN_EXTN */
+		    ) {
 			*rand_chan = chan;
 			ideal_bw320_offset = bw320_offset;
 		}
@@ -1114,7 +1140,39 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
  * option (survey, BSS, spectral, ...). chan->interference factor must be
  * summable (i.e., must be always greater than zero).
  */
-static struct hostapd_channel_data *
+static void acs_update_bw_downgrade_config(struct hostapd_iface *iface, u32 bw)
+{
+	switch (bw) {
+	case 20:
+		hostapd_set_oper_chwidth(iface->conf, CONF_OPER_CHWIDTH_USE_HT);
+		iface->conf->secondary_channel = 0;
+		break;
+	case 40:
+		hostapd_set_oper_chwidth(iface->conf, CONF_OPER_CHWIDTH_USE_HT);
+		if (!iface->conf->secondary_channel)
+			iface->conf->secondary_channel = 1;
+		break;
+	case 80:
+		hostapd_set_oper_chwidth(iface->conf, CONF_OPER_CHWIDTH_80MHZ);
+		break;
+	case 160:
+		hostapd_set_oper_chwidth(iface->conf, CONF_OPER_CHWIDTH_160MHZ);
+		break;
+	case 320:
+		hostapd_set_oper_chwidth(iface->conf, CONF_OPER_CHWIDTH_320MHZ);
+		break;
+	default:
+		wpa_printf(MSG_DEBUG,
+			   "ACS: Unsupported bandwidth downgrade target %u MHz",
+			   bw);
+		break;
+	}
+}
+
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+struct hostapd_channel_data *
 acs_find_ideal_chan(struct hostapd_iface *iface)
 {
 	struct hostapd_channel_data *ideal_chan = NULL,
@@ -1160,12 +1218,32 @@ bw_selected:
 	wpa_printf(MSG_DEBUG,
 		   "ACS: Survey analysis for selected bandwidth %d MHz", bw);
 
+	ideal_chan = NULL;
+	rand_chan = NULL;
+	ideal_factor = 0;
+
 	for (i = 0; i < iface->num_hw_features; i++) {
 		mode = &iface->hw_features[i];
-		if (!hostapd_hw_skip_mode(iface, mode))
-			acs_find_ideal_chan_mode(iface, mode, n_chans, bw,
-						 &rand_chan, &ideal_chan,
-						 &ideal_factor);
+		if (!hostapd_hw_skip_mode(iface, mode)) {
+#ifdef CONFIG_QCN_EXTN
+			acs_reset_chan_ranks(mode);
+#endif /* CONFIG_QCN_EXTN */
+			do {
+				acs_find_ideal_chan_mode(iface, mode, n_chans, bw,
+							 &rand_chan, &ideal_chan,
+							 &ideal_factor);
+				if (ideal_chan || bw <= 20 || !iface->conf->acs_enable_bw_downgrade)
+					break;
+				wpa_printf(MSG_DEBUG, "ACS: Failed for bandwidth %d MHz", bw);
+				n_chans /= 2;
+				bw = num_chan_to_bw(n_chans);
+				acs_update_bw_downgrade_config(iface, bw);
+				wpa_printf(MSG_DEBUG, "ACS: Finding ideal channel for downgraded bandwidth %d MHz", bw);
+			} while(1);
+#ifdef CONFIG_QCN_EXTN
+			acs_rank_channels(mode);
+#endif /* CONFIG_QCN_EXTN */
+		}
 	}
 
 	if (ideal_chan) {
@@ -1317,8 +1395,10 @@ static int acs_study_bss_based(struct hostapd_iface *iface)
 	return 0;
 }
 
-
-static int acs_study_options(struct hostapd_iface *iface)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int acs_study_options(struct hostapd_iface *iface)
 {
 	if (acs_study_survey_based(iface) == 0)
 		return 0;
@@ -1413,6 +1493,14 @@ static void acs_scan_complete(struct hostapd_iface *iface)
 
 	iface->scan_cb = NULL;
 
+#ifdef CONFIG_QCN_EXTN
+	if (!acs_scan_event_expected_extn(iface)) {
+		wpa_printf(MSG_DEBUG, "state %s, Ignore acs scan event",
+				hostapd_state_text(iface->state));
+		return;
+	}
+#endif
+
 	/* If the last scan was aborted, clear aborted flag and retry ACS scan */
 	if (iface->last_scan_aborted) {
 		wpa_printf(MSG_INFO, "ACS: Previous scan aborted; retrying ACS scan");
@@ -1441,8 +1529,10 @@ static void acs_scan_complete(struct hostapd_iface *iface)
 	if (iface->conf->conf_extn.qacs_enable) {
 		if (!acs_process_hostapd_scan_data(iface))
 			acs_study(iface);
+
 		return;
-	}
+	} else
+		acs_process_hostapd_scan_data(iface);
 #endif
 
 	if (++iface->acs_num_completed_scans < iface->conf->acs_num_scans) {
@@ -1483,6 +1573,12 @@ static int * acs_request_scan_add_freqs(struct hostapd_iface *iface,
 		if ((chan->flag & HOSTAPD_CHAN_DISABLED) ||
 		    ((chan->flag & HOSTAPD_CHAN_RADAR) &&
 		     iface->conf->acs_exclude_dfs))
+			continue;
+
+		if (iface->conf->acs_dfs_available_only &&
+		    (chan->flag & HOSTAPD_CHAN_RADAR) &&
+		    (chan->flag & HOSTAPD_CHAN_DFS_MASK) !=
+		    HOSTAPD_CHAN_DFS_AVAILABLE)
 			continue;
 
 		if (!is_in_chanlist(iface, chan))

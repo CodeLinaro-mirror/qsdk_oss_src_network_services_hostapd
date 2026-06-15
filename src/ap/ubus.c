@@ -677,6 +677,93 @@ static void switch_chan_fallback_cb(void *eloop_data, void *user_ctx)
 	hostapd_switch_channel_fallback(iface, freq_params);
 }
 
+int hostapd_ubus_mesh_switch_channel(struct hostapd_iface *iface,
+				     struct csa_settings *settings)
+{
+	struct hostapd_data *hapd;
+	const char *phy;
+	uint32_t id;
+	int ret;
+
+	if (!ctx || !iface || !settings || !iface->bss || iface->num_bss == 0)
+		return 0;
+
+	hapd = iface->bss[0];
+	phy = hostapd_drv_get_radio_name(hapd);
+	if (!phy || !phy[0]) {
+		wpa_printf(MSG_INFO,
+			   "%s: unable to determine radio name for %s",
+			   __func__, hapd->conf->iface);
+		return -1;
+	}
+
+	ret = ubus_lookup_id(ctx, "wpa_supplicant", &id);
+	if (ret == UBUS_STATUS_NOT_FOUND) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: wpa_supplicant not found, no mesh interface present on %s",
+			   __func__, phy);
+		return 0;
+	}
+	if (ret) {
+		wpa_printf(MSG_INFO,
+			   "%s: failed to find wpa_supplicant ubus object for %s (ret=%d)",
+			   __func__, phy, ret);
+		return -1;
+	}
+
+	blob_buf_init(&b, 0);
+	blobmsg_add_string(&b, "phy", phy);
+	if (iface->current_hw_info)
+		blobmsg_add_u32(&b, "radio", iface->current_hw_info->hw_idx);
+	blobmsg_add_u32(&b, "frequency", settings->freq_params.freq);
+	blobmsg_add_u32(&b, "csa_count", settings->cs_count);
+	blobmsg_add_u32(&b, "ap_beacon_int", iface->conf->beacon_int);
+	blobmsg_add_u8(&b, "block_tx", !!settings->block_tx);
+	blobmsg_add_u32(&b, "bandwidth", settings->freq_params.bandwidth);
+	blobmsg_add_u32(&b, "sec_chan_offset",
+			settings->freq_params.sec_channel_offset);
+	blobmsg_add_u8(&b, "ht", !!settings->freq_params.ht_enabled);
+	blobmsg_add_u8(&b, "vht", !!settings->freq_params.vht_enabled);
+	blobmsg_add_u8(&b, "he", !!settings->freq_params.he_enabled);
+	blobmsg_add_u8(&b, "eht", !!settings->freq_params.eht_enabled);
+	blobmsg_add_u8(&b, "uhr", !!settings->freq_params.uhr_enabled);
+
+	if (settings->freq_params.center_freq1)
+		blobmsg_add_u32(&b, "center_freq1",
+				settings->freq_params.center_freq1);
+	if (settings->freq_params.center_freq2)
+		blobmsg_add_u32(&b, "center_freq2",
+				settings->freq_params.center_freq2);
+	if (settings->freq_params.punct_bitmap)
+		blobmsg_add_u32(&b, "punct_bitmap",
+				settings->freq_params.punct_bitmap);
+	if (settings->power_mode >= 0)
+		blobmsg_add_u32(&b, "power_mode", settings->power_mode);
+	if (settings->freq_params.bandwidth_device)
+		blobmsg_add_u32(&b, "bandwidth_device",
+				settings->freq_params.bandwidth_device);
+	if (settings->freq_params.center_freq_device)
+		blobmsg_add_u32(&b, "center_freq_device",
+				settings->freq_params.center_freq_device);
+
+	ret = ubus_invoke(ctx, id, "mesh_switch_chan", b.head,
+			  NULL, NULL, 500);
+	if (ret == UBUS_STATUS_NOT_FOUND) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: mesh_switch_chan method not found, no mesh interface on %s",
+			   __func__, phy);
+		return 0;
+	}
+	if (ret) {
+		wpa_printf(MSG_INFO,
+			   "%s: mesh_switch_chan failed for %s (ret=%d)",
+			   __func__, phy, ret);
+		return -1;
+	}
+
+	return 0;
+}
+
 #ifdef NEED_AP_MLME
 static int
 hostapd_switch_chan(struct ubus_context *ctx, struct ubus_object *obj,
@@ -778,6 +865,9 @@ hostapd_switch_chan(struct ubus_context *ctx, struct ubus_object *obj,
 				hapd->iconf->he_6ghz_reg_pwr_type,
 				iconf->bandwidth_device,
 				iconf->center_freq_device);
+
+	/* Trigger mesh CSA before AP channel switch if mesh VAP present */
+	hostapd_ubus_mesh_switch_channel(hapd->iface, &css);
 
 	for (i = 0; i < hapd->iface->num_bss; i++) {
 		struct hostapd_data *bss = hapd->iface->bss[i];
@@ -1988,64 +2078,110 @@ int hostapd_ubus_notify_bss_transition_query(
 
 enum {
 	STATUS_STA_STATE,
+	STATUS_STA_IFNAME,
 	__STATUS_MAX,
 };
 
 static const struct blobmsg_policy status_policy[__STATUS_MAX] = {
 	[STATUS_STA_STATE] = { .name = "state", .type = BLOBMSG_TYPE_STRING },
+	[STATUS_STA_IFNAME] = { .name = "ifname", .type = BLOBMSG_TYPE_STRING },
 };
+
+struct hostapd_bhsta_status {
+	char *state;
+	char *ifname;
+};
+
+/**
+ * hostapd_ubus_strdup_attr() - Duplicate ubus string attribute
+ * @attr: ubus blob attribute containing a string
+ *
+ * Read a string value from the ubus blob attribute and return a heap-allocated
+ * copy. Empty strings are treated as absent values. The returned string must be
+ * freed by the caller.
+ *
+ * Return: Duplicated string on success, NULL when the attribute is absent,
+ * empty, or memory allocation fails.
+ */
+static char *hostapd_ubus_strdup_attr(struct blob_attr *attr)
+{
+	const char *value;
+	size_t n;
+	char *copy;
+
+	if (!attr)
+		return NULL;
+
+	value = blobmsg_get_string(attr);
+	if (!value || value[0] == '\0')
+		return NULL;
+
+	n = strlen(value) + 1;
+	copy = malloc(n);
+	if (!copy)
+		return NULL;
+
+	memcpy(copy, value, n);
+	return copy;
+}
 
 static void state_status_cb(struct ubus_request *req, int type, struct blob_attr *msg)
 {
 	struct blob_attr *tb[__STATUS_MAX];
-	char **out_state = (char **)req->priv;
-	size_t n;
-	char *copy = NULL;
+	struct hostapd_bhsta_status *status = req->priv;
 
-	if (out_state)
-		*out_state = NULL;
+	wpa_printf(MSG_DEBUG,
+		   "Backhaul STA status callback: type=%d msg=%s status=%s",
+		   type, msg ? "present" : "NULL",
+		   status ? "present" : "NULL");
 
-	if (!msg)
+	if (status) {
+		status->state = NULL;
+		status->ifname = NULL;
+	}
+
+	if (!msg) {
+		wpa_printf(MSG_INFO, "Backhaul STA status callback: empty response");
 		return;
+	}
 
 	blobmsg_parse(status_policy, __STATUS_MAX, tb, blob_data(msg), blob_len(msg));
 
-	if (!tb[STATUS_STA_STATE])
+	if (!status) {
+		wpa_printf(MSG_ERROR,
+			   "Backhaul STA status callback missing private status");
 		return;
+	}
 
-	const char *state = blobmsg_get_string(tb[STATUS_STA_STATE]);
-
-	if (!state || state[0] == '\0')
-		return;
-
-	wpa_printf(MSG_INFO, "state of station is %s", state);
-
-	n = strlen(state) + 1;
-	copy = (char *)malloc(n);
-
-	if (!copy)
-		return;
-
-	memcpy(copy, state, n);
-	*out_state = copy;
+	status->state = hostapd_ubus_strdup_attr(tb[STATUS_STA_STATE]);
+	status->ifname = hostapd_ubus_strdup_attr(tb[STATUS_STA_IFNAME]);
+	wpa_printf(MSG_INFO, "Backhaul STA status: state=%s ifname=%s",
+		   status->state ? status->state : "NULL",
+		   status->ifname ? status->ifname : "NULL");
 }
 
-char *hostapd_ubus_bhsta_state(struct hostapd_iface *iface)
+static int hostapd_ubus_get_bhsta_status(struct hostapd_iface *iface,
+					 struct hostapd_bhsta_status *status)
 {
 	uint32_t id;
 	int ret = -1;
 	int hw_idx = 0;
-	char *state = NULL;
-	struct hostapd_data *hapd = iface->bss[0];
+	struct hostapd_data *hapd;
+
+	if (!iface || !status)
+		return -1;
+
+	hapd = iface->bss[0];
+
+	status->state = NULL;
+	status->ifname = NULL;
 
 	if (iface->current_hw_info)
 		hw_idx = iface->current_hw_info->hw_idx;
 
 	ret = ubus_lookup_id(ctx, "wpa_supplicant", &id);
-	if (ret) {
-		wpa_printf(MSG_INFO, "ubus look up failed %d", ret);
-		return NULL;
-	}
+	if (ret)
+		return ret;
 
 	const char *phy = hostapd_drv_get_radio_name(hapd);
 
@@ -2053,18 +2189,39 @@ char *hostapd_ubus_bhsta_state(struct hostapd_iface *iface)
 	blobmsg_add_string(&b, "phy", phy);
 	blobmsg_add_u32(&b, "radio", hw_idx);
 
-	ret = ubus_invoke(ctx, id, "phy_status", b.head, state_status_cb, &state, 3000);
-	if (ret) {
-		wpa_printf(MSG_DEBUG, "phy_status invoke failed %d", ret);
-		return NULL;
-	}
+	ret = ubus_invoke(ctx, id, "phy_status", b.head, state_status_cb, status, 3000);
+	if (ret)
+		return ret;
 
-	if (!state) {
-		wpa_printf(MSG_INFO, "no state received");
-		return NULL;
-	}
+	if (!status->state && !status->ifname)
+		return -1;
 
-	wpa_printf(MSG_INFO, "received state is '%s'", state);
-	return state;
+	return 0;
 }
 
+char *hostapd_ubus_bhsta_state(struct hostapd_iface *iface)
+{
+	struct hostapd_bhsta_status status;
+
+	if (hostapd_ubus_get_bhsta_status(iface, &status))
+		return NULL;
+
+	free(status.ifname);
+	if (!status.state)
+		return NULL;
+
+	return status.state;
+}
+
+char *hostapd_ubus_bhsta_ifname(struct hostapd_iface *iface)
+{
+	struct hostapd_bhsta_status status;
+
+	if (hostapd_ubus_get_bhsta_status(iface, &status))
+		return NULL;
+
+	free(status.state);
+	if (!status.ifname)
+		return NULL;
+	return status.ifname;
+}

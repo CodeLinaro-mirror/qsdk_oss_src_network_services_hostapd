@@ -482,6 +482,11 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 			hostapd_set_wds_sta(hapd, NULL, sta->addr, aid, 0);
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	/* WDS vendor IE: disable WDS mode if it was enabled via WDS IE */
+	ap_free_sta_wds_ie_extn(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
+
 	if (sta->ipaddr)
 		hostapd_drv_br_delete_ip_neigh(hapd, 4, (u8 *) &sta->ipaddr);
 	ap_sta_ip6addr_del(hapd, sta);

@@ -30,7 +30,6 @@
 #include "pmksa_cache_auth.h"
 #include "sta_info.h"
 #include "hostapd.h"
-#include "hostapd_if/hostapd_if.h"
 
 #ifdef CONFIG_IEEE80211R_AP
 
@@ -2269,6 +2268,26 @@ void wpa_auth_ft_store_keys(struct wpa_state_machine *sm, const u8 *pmk_r0,
 			    sm->pmk_r1_name, sm->pairwise, &vlan,
 			    expires_in, session_timeout, identity,
 			    identity_len, radius_cui, radius_cui_len);
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * Hand the PMK-R1 to the test plugin via the wpa_auth callback.
+	 * The glue layer (wpa_auth_glue.c) will forward it to
+	 * hostapd_if_plugin_store_pmk_r1() with the correct ifname so that
+	 * it is stored only in the matching per-interface plugin cache.
+	 */
+	if (sm->wpa_auth->cb->test_plugin_store_pmk_r1)
+		sm->wpa_auth->cb->test_plugin_store_pmk_r1(sm->wpa_auth->cb_ctx,
+							   wpa_auth_get_spa(sm),
+							   pmk_r1, key_len,
+							   sm->pmk_r1_name,
+							   sm->pairwise,
+							   expires_in,
+							   session_timeout,
+							   identity,
+							   identity_len,
+							   radius_cui,
+							   radius_cui_len);
+#endif /* CONFIG_QCN_EXTN */
 }
 
 
@@ -3715,6 +3734,15 @@ static int wpa_auth_ft_set_pending_req_ies(struct wpa_state_machine *sm,
 	return 0;
 }
 
+static void __pmk_pulled_free(bool pmk_pulled, const u8 *identity,
+			      const u8 *radius_cui)
+{
+	if (!pmk_pulled)
+		return;
+	os_free((u8 *)identity);
+	os_free((u8 *)radius_cui);
+}
+
 static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 				   const u8 *ies, size_t ies_len,
 				   u8 **resp_ies, size_t *resp_ies_len,
@@ -3734,6 +3762,7 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 	size_t identity_len = 0, radius_cui_len = 0;
 	size_t pmk_r1_len, kdk_len, len, bmle_len;
 	int retval = WLAN_STATUS_UNSPECIFIED_FAILURE;
+	bool pmk_pulled = false;
 
 	*resp_ies = NULL;
 	*resp_ies_len = 0;
@@ -3861,6 +3890,30 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 		}
 	}
 
+	if (sm->wpa_auth->cb->pull_pmk_r1 &&
+	    sm->wpa_auth->cb->pull_pmk_r1(sm->wpa_auth->cb_ctx, sm->addr,
+					  pmk_r1_name, pmk_r1, &pmk_r1_len,
+					  &pairwise, &session_timeout,
+					  &identity, &identity_len, &radius_cui,
+					  &radius_cui_len) == 0) {
+		pmk_pulled = true;
+		wpa_printf(MSG_DEBUG, "FT: Found PMKR1Name hostapd-if cache\n");
+		os_memcpy(sm->r1_key_holder, sm->wpa_auth->conf.r1_key_holder,
+			  sizeof(sm->r1_key_holder));
+		/*
+		 * Store it in PMK-R1 Cache as well
+		 */
+		wpa_ft_store_pmk_r1(sm->wpa_auth, sm->addr, pmk_r1,
+				    pmk_r1_len, pmk_r1_name, pairwise,
+				    NULL, 0, session_timeout,
+				    identity_len ? identity : NULL,
+				    identity_len,
+				    radius_cui_len ? radius_cui : NULL,
+				    radius_cui_len);
+		os_memset(&vlan, 0, sizeof(vlan));
+		goto pmk_r1_derived;
+	}
+
 	wpa_printf(MSG_DEBUG,
 		   "FT: No PMK-R1 available in local cache for the requested PMKR1Name");
 	if (wpa_ft_local_derive_pmk_r1(sm->wpa_auth, sm,
@@ -3986,12 +4039,14 @@ pmk_r1_derived:
 		wpa_auth_add_sta_ft(sm->wpa_auth, sm->addr);
 		if (wpa_ft_set_vlan(sm->wpa_auth, wpa_auth_get_spa(sm), &vlan) < 0) {
 			wpa_printf(MSG_DEBUG, "FT: Failed to configure VLAN");
+			__pmk_pulled_free(pmk_pulled, identity, radius_cui);
 			return WLAN_STATUS_UNSPECIFIED_FAILURE;
 		}
 		if (wpa_ft_set_identity(sm->wpa_auth, wpa_auth_get_spa(sm),
 					identity, identity_len) < 0 ||
 				wpa_ft_set_radius_cui(sm->wpa_auth, wpa_auth_get_spa(sm),
 					radius_cui, radius_cui_len) < 0) {
+			__pmk_pulled_free(pmk_pulled, identity, radius_cui);
 			wpa_printf(MSG_DEBUG, "FT: Failed to configure identity/CUI");
 			return WLAN_STATUS_UNSPECIFIED_FAILURE;
 		}
@@ -4043,6 +4098,7 @@ fail:
 	*resp_ies = NULL;
 out:
 	wpa_ft_parse_ies_free(&parse);
+	__pmk_pulled_free(pmk_pulled, identity, radius_cui);
 	return retval;
 }
 
@@ -4488,7 +4544,7 @@ static void wpa_ft_rrb_rx_request_cb(void *ctx, const u8 *dst,
 	wpa_printf(MSG_DEBUG, "FT: Over-the-DS RX request cb for " MACSTR,
 		   MAC2STR(sm->addr));
 	wpa_ft_send_rrb_auth_resp(sm, sm->ft_pending_current_ap, sm->addr,
-				  sm->addr, WLAN_STATUS_SUCCESS, ies, ies_len,
+				  sm->addr, resp, ies, ies_len,
 				  is_mld);
 }
 
@@ -4505,6 +4561,7 @@ static int wpa_ft_rrb_rx_request(struct wpa_authenticator *wpa_auth,
 	bool is_ml = false;
 	struct ieee802_11_elems elems;
 	const u8 *mld_mac;
+	bool deferred_auth;
 
 	if (ieee802_11_parse_elems(body, len, &elems, 1) == ParseFailed) {
 		wpa_printf(MSG_DEBUG,
@@ -4547,8 +4604,18 @@ static int wpa_ft_rrb_rx_request(struct wpa_authenticator *wpa_auth,
 	sm->ft_pending_cb_ctx = sm;
 	os_memcpy(sm->ft_pending_current_ap, current_ap, ETH_ALEN);
 	sm->ft_pending_pull_left_retries = sm->wpa_auth->conf.rkh_pull_retries;
+	deferred_auth = 0;
+	if (wpa_auth->cb->frame_fwd_decision)
+		deferred_auth = wpa_auth->cb->frame_fwd_decision(wpa_auth->cb_ctx,
+								 WLAN_AUTH_FT);
 	res = wpa_ft_process_auth_req(sm, body, len, &resp_ies,
-				      &resp_ies_len, false);
+				      &resp_ies_len, deferred_auth);
+	if (wpa_auth->cb->notify_remote_auth &&
+	    wpa_auth->cb->notify_remote_auth(wpa_auth->cb_ctx, sm->addr, body,
+					     len, res < 0 ? 0 : res, is_ml)) {
+		wpa_printf(MSG_DEBUG, "waiting for ext-APP to respond to FT_PACKET\n");
+		return 0;
+	}
 	if (res < 0) {
 		wpa_printf(MSG_DEBUG, "FT: No immediate response available - wait for pull response");
 		return 0;
@@ -5033,6 +5100,25 @@ static int wpa_ft_rrb_rx_r1(struct wpa_authenticator *wpa_auth,
 				f_identity, f_identity_len, f_radius_cui,
 				f_radius_cui_len) < 0)
 		goto out;
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * Hand the PMK-R1 to the test plugin via the wpa_auth callback.
+	 * The glue layer (wpa_auth_glue.c) will forward it to
+	 * hostapd_if_plugin_store_pmk_r1() with the correct ifname so that
+	 * it is stored only in the matching per-interface plugin cache.
+	 */
+	if (wpa_auth->cb->test_plugin_store_pmk_r1)
+		wpa_auth->cb->test_plugin_store_pmk_r1(wpa_auth->cb_ctx,
+						       f_s1kh_id,
+						       f_pmk_r1, pmk_r1_len,
+						       f_pmk_r1_name, pairwise,
+						       expires_in,
+						       session_timeout,
+						       f_identity,
+						       f_identity_len,
+						       f_radius_cui,
+						       f_radius_cui_len);
+#endif /* CONFIG_QCN_EXTN */
 
 	ret = 0;
 out:
@@ -5876,4 +5962,26 @@ void wpa_ft_push_roam_notification(struct wpa_authenticator *wpa_auth, const u8 
 		wpa_ft_send_roam_notification(wpa_auth, r1kh, addr);
 	}
 }
+
+void wpa_ft_clear_pmk_r1(struct wpa_authenticator *wpa_auth, const u8 *spa,
+			 const u8 *pmk_r1_name)
+{
+	struct wpa_ft_pmk_cache *cache = wpa_auth->ft_pmk_cache;
+	struct wpa_ft_pmk_r1_sa *r1;
+
+	dl_list_for_each(r1, &cache->pmk_r1, struct wpa_ft_pmk_r1_sa, list) {
+		if (ether_addr_equal(r1->spa, spa) &&
+		    os_memcmp_const(r1->pmk_r1_name, pmk_r1_name,
+				    WPA_PMK_NAME_LEN) == 0) {
+			break;
+		}
+	}
+
+	if (!r1)
+		return;
+
+        dl_list_del(&r1->list);
+        eloop_cancel_timeout(wpa_ft_expire_pmk_r1, r1, NULL);
+}
+
 #endif /* CONFIG_IEEE80211R_AP */

@@ -82,13 +82,18 @@ hostapd_ucode_update_bss_list(struct hostapd_iface *iface, uc_value_t *if_bss, u
 	ucv_object_add(if_bss, iface->phy, ucv_get(list));
 }
 
-static void
+void
 hostapd_ucode_update_interfaces()
 {
-	uc_value_t *ifs = ucv_object_new(vm);
-	uc_value_t *if_bss = ucv_array_new(vm);
-	uc_value_t *bss = ucv_object_new(vm);
+	uc_value_t *ifs, *if_bss, *bss;
 	int i;
+
+	if (!vm || !global)
+		return;
+
+	ifs = ucv_object_new(vm);
+	if_bss = ucv_array_new(vm);
+	bss = ucv_object_new(vm);
 
 	for (i = 0; i < interfaces->count; i++) {
 		struct hostapd_iface *iface = interfaces->iface[i];
@@ -670,7 +675,11 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 		return NULL;
 #endif
 
-	if (iface->state != HAPD_IFACE_ENABLED)
+	if (iface->state != HAPD_IFACE_ENABLED
+#ifdef CONFIG_QCN_EXTN
+	|| iface->conf->conf_extn.rpt_max_phy
+#endif
+	)
 		uc_hostapd_disable_iface(iface);
 
 	for (i = 0; i < iface->num_bss; i++) {
@@ -703,6 +712,7 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 		return NULL;
 
 	if (!info) {
+		conf = iface->conf;
 		iface->freq = 0;
 		goto out;
 	}
@@ -870,6 +880,7 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 	struct csa_settings csa = {};
 	uint64_t intval;
 	int ret = 0;
+	bool mesh_origin = false;
 #ifdef CONFIG_QCN_EXTN
 	bool is_dfs = false;
 	char *wpa_state = NULL;
@@ -900,6 +911,9 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 #ifdef CONFIG_IEEE80211BE
 	csa.freq_params.eht_enabled = conf->ieee80211be;
 #endif
+#ifdef CONFIG_IEEE80211BN
+	csa.freq_params.uhr_enabled = conf->ieee80211bn;
+#endif
 	intval = ucv_int64_get(ucv_object_get(info, "oper_chwidth", NULL));
 	if (errno)
 		intval = hostapd_get_oper_chwidth(conf);
@@ -920,6 +934,12 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 		csa.freq_params.punct_bitmap = intval;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "power_mode", NULL))) && !errno)
 		csa.power_mode = intval;
+
+	mesh_origin = ucv_boolean_get(ucv_object_get(info, "mesh_origin", NULL));
+	if (!mesh_origin) {
+		hostapd_ubus_mesh_switch_channel(iface, &csa);
+	}
+
 #ifdef CONFIG_QCN_EXTN
 	if ((intval = ucv_int64_get(ucv_object_get(info, "mcst", NULL))) && !errno)
 		csa.mcst = intval;
@@ -1339,6 +1359,23 @@ void hostapd_ucode_chsw_result_ev_notify(struct hostapd_data *hapd, int freq,
 	uc_value_push(ucv_int64_new(freq));
 	uc_value_push(ucv_int64_new(ret));
 	ucv_put(wpa_ucode_call(2));
+	ucv_gc(vm);
+}
+
+/**
+ * hostapd_ucode_notify_acs_start - Notify ucode about ACS start event
+ * @iface: Hostapd Interface
+ */
+void hostapd_ucode_notify_acs_start(struct hostapd_iface *iface)
+{
+	if (wpa_ucode_call_prepare("notify_acs_start"))
+		return;
+
+	iface->iface_extn.acs_success = 0;
+	iface->iface_extn.acs_failed = 0;
+	wpa_printf(MSG_INFO, "Notify ACS start event to ucode");
+	uc_value_push(ucv_get(hostapd_ucode_iface_get_uval(iface)));
+	ucv_put(wpa_ucode_call(1));
 	ucv_gc(vm);
 }
 

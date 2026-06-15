@@ -101,7 +101,7 @@ struct ieee802_11_elems {
 	const u8 *key_delivery;
 	const u8 *wrapped_data;
 	const u8 *fils_pk;
-	const u8 *fils_nonce;
+	const u8 *nonce;
 	const u8 *owe_dh;
 	const u8 *power_capab;
 	const u8 *roaming_cons_sel;
@@ -135,6 +135,10 @@ struct ieee802_11_elems {
 	const struct ieee80211_ttlm_elem *ttlm[IEEE80211_TTLM_MAX_CNT];
 	const u8 *mscs_desc;
 	const u8 *cip_pad;
+	/* Security Profile element (802.11bn D1.4, 9.4.2.364, EID ext=162) */
+	const u8 *security_profile_ie;
+	const u8 *smd;
+	const u8 *smd_bsstransparams;
 
 	u8 ssid_len;
 	u8 supp_rates_len;
@@ -194,6 +198,7 @@ struct ieee802_11_elems {
 	u8 uhr_capabilities_len;
 	u8 eht_operation_len;
 	u8 uhr_operation_len;
+	u16 per_link_sta_capability;
 	size_t basic_mle_len;
 	size_t probe_req_mle_len;
 	size_t reconf_mle_len;
@@ -207,6 +212,11 @@ struct ieee802_11_elems {
 	size_t rsn_selection_len;
 	u8 wfa_capab_len;
 	size_t proximity_ranging_len;
+	u8 smd_len;
+	u8 smd_bsstransparams_len;
+
+	/* Security Profile element (802.11bn D1.4, 9.4.2.364, EID ext=162) */
+	size_t security_profile_ie_len;
 
 	struct mb_ies_info mb_ies;
 
@@ -360,6 +370,11 @@ bool is_same_band(int freq1, int freq2);
 int ieee802_11_parse_candidate_list(const char *pos, void *non_pref_chan,
 				     u8 *nei_rep, size_t nei_rep_len);
 
+u8 *wpas_build_smd_ie(const u8 *smd_id, u8 ptk_mode, u8 capabilities,
+		      u16 timeout, size_t *ie_len);
+int wpas_parse_smd_ie(const u8 *smd_ie, size_t smd_ie_len, u8 *smd_id,
+		      u8 *ptk_mode, u8 *capabilities, u16 *timeout);
+
 int ieee802_11_ext_capab(const u8 *ie, unsigned int capab);
 bool ieee802_11_rsnx_capab_len(const u8 *rsnxe, size_t rsnxe_len,
 			       unsigned int capab);
@@ -481,5 +496,20 @@ enum chan_width get_operation_channel_width(struct ieee802_11_elems *elems);
 enum chan_width get_sta_operation_chan_width(
 	enum chan_width ap_operation_chan_width,
 	struct supported_chan_width sta_supported_width);
+
+/* Security Profile entry (IEEE 802.11bn D1.4, Table 9-bb14) */
+struct security_profile_entry_ap {
+	u8 profile_num;
+	int key_mgmt;
+	int pairwise_cipher;
+	bool mfpr;
+	bool mfpc;
+	bool ieee8021x_auth_frame;
+	bool assoc_frame_encrypt;
+	bool ds_mac_addr;
+	bool pmksa_caching_privacy;
+	bool kek_in_pasn;
+	bool unauth_eppke;
+};
 
 #endif /* IEEE802_11_COMMON_H */

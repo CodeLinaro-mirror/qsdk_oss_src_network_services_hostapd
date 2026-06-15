@@ -710,6 +710,23 @@ struct last_scan_ssid {
 	size_t ssid_len;
 };
 
+#define STA_CAC_NOT_STARTED 0
+#define STA_CAC_STARTED 1
+
+/**
+ * struct station_cac_params - STA CAC pending-connect context
+ * @selected_bssid: Selected BSS entry identifier cached for CAC-resume flow
+ * @selected_ssid: Selected network profile cached while CAC is in progress
+ * @dfs_links: Bitmap of links/frequencies that require STA CAC
+ * @cac_completed_links: Bitmap of links that reported CAC finished
+ */
+struct station_cac_params {
+	unsigned int selected_bssid;
+	struct wpa_ssid *selected_ssid;
+	u16 dfs_links;
+	u16 cac_completed_links;
+};
+
 /**
  * struct wpa_supplicant - Internal data for wpa_supplicant interface
  *
@@ -782,6 +799,9 @@ struct wpa_supplicant {
 		struct wpa_bss *bss;
 		bool disabled;
 		struct wpabuf *ies;
+#ifdef CONFIG_QCN_EXTN
+		unsigned int pending_ch_switch_freq;
+#endif
 	} links[MAX_NUM_MLD_LINKS];
 	u8 *last_con_fail_realm;
 	size_t last_con_fail_realm_len;
@@ -879,6 +899,23 @@ struct wpa_supplicant {
 	u8 rsnxe[257];
 	size_t rsnxe_len;
 
+	/*
+	 * Security Profile element support (802.11bn D1.4, 9.4.2.364, 37.32).
+	 *
+	 * selected_security_profile_num: profile number chosen from the
+	 *   intersection of the AP's Security Profile Bitmap and the STA's
+	 *   supported profiles. -1 means no profile selected (feature inactive).
+	 *
+	 * security_profile_ie / security_profile_ie_len: pre-built Security
+	 *   Profile element for the selected profile, built once in
+	 *   wpa_supplicant_set_suites() after RSNE and RSNXE are finalised.
+	 *   Appended to auth and assoc frames by sme_send_authentication() and
+	 *   sme_associate() respectively.
+	 */
+	int selected_security_profile_num;
+	u8 security_profile_ie[32];
+	size_t security_profile_ie_len;
+
 	struct scard_data *scard;
 	char imsi[20];
 	int mnc_len;
@@ -944,6 +981,14 @@ struct wpa_supplicant {
 	 * until repeater AP ACS completes (signaled via external event).
 	 */
 	bool acs_complete;
+
+	/**
+	 * hold_scan_csa: Repeater CSA scan-hold flag for STA scan gating
+	 * When CSwOpts 0x2 is set and the AP is moving to a DFS channel,
+	 * postpone/skip STA scans until the AP CSA completes and the
+	 * repeater moves to a non-DFS channel (signaled via external event).
+	 */
+	bool hold_scan_csa;
 #endif
 	unsigned int own_scan_running:1;
 	unsigned int clear_driver_scan_cache:1;
@@ -974,6 +1019,7 @@ struct wpa_supplicant {
 	u8 ml_probe_bssid[ETH_ALEN];
 	int ml_probe_mld_id;
 	u16 ml_probe_links;
+	u8 ml_probe_tx_link;
 
 	u64 drv_flags;
 	u64 drv_flags2;
@@ -1006,6 +1052,7 @@ struct wpa_supplicant {
 	unsigned int max_remain_on_chan;
 	unsigned int max_stations;
 	unsigned int max_num_akms;
+	bool sta_dfs_en;
 
 	int pending_mic_error_report;
 	int pending_mic_error_pairwise;
@@ -1627,6 +1674,16 @@ struct wpa_supplicant {
 	u8 multi_ap_profile;
 	u16 multi_ap_primary_vlanid;
 
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * wds_ie_ap - WDS IE AP capability flag (STA mode)
+	 *
+	 * Set to 1 when the AP advertised WDS_IE_CAP_AP in its association
+	 * response and the STA has wds_ie=1 configured.
+	 */
+	unsigned int wds_ie_ap:1;
+#endif /* CONFIG_QCN_EXTN */
+
 #ifndef CONFIG_NO_ROBUST_AV
 	struct robust_av_data robust_av;
 	bool mscs_setup_done;
@@ -1674,6 +1731,7 @@ struct wpa_supplicant {
 
 	struct wpa_ssid *ml_connect_probe_ssid;
 	struct wpa_bss *ml_connect_probe_bss;
+	struct station_cac_params sta_cac;
 
 #ifdef CONFIG_OWE
 	/* An array of frequencies to scan for OWE transition mode BSSs when
@@ -1701,11 +1759,26 @@ struct wpa_supplicant {
 	bool ext_auth_to_same_bss; /* Whether external authentication has been
 				    * completed successfully with the BSS that
 				    * we are already associated with. */  
+
 #ifdef CONFIG_QCN_EXTN
 	struct wpa_connect_work *cache_cwork;
 	int pre_connect_cnt;
 	struct wpa_supplicant_extn wpas_extn;
 #endif
+
+	bool smd_capable;
+	u8 smd_id[ETH_ALEN];
+	u8 smd_ptk_mode;
+
+	/* SMD_KDK for Per-AP MLD PTK mode (REQ-SEC-PTK-AP-002/003) */
+	u8 smd_kdk[PMK_LEN];		/* SMD Key Derivation Key */
+	size_t smd_kdk_len;		/* SMD_KDK length */
+	unsigned int smd_kdk_valid:1;	/* SMD_KDK validity flag */
+
+	unsigned int smd_me_associated:1;
+	u8 smd_me_initial_ap_mld_addr[ETH_ALEN];
+	struct os_time smd_me_association_time;
+
 };
 
 
@@ -2125,5 +2198,39 @@ int wpas_get_owe_trans_network(const u8 *owe_ie, const u8 **bssid,
 			       const u8 **ssid, size_t *ssid_len);
 
 void wpas_scan_for_rnr_entries(void *eloop_ctx, void *timeout_ctx);
+
+/**
+ * wpas_security_profile_active - Is Security Profile element active?
+ * @wpa_s: Pointer to wpa_supplicant data
+ *
+ * Returns true when Security Profile element functionality is enabled for
+ * the current connection attempt:
+ *   - Supplicant-SME path (WPA_DRIVER_FLAGS_SME): always active when the AP
+ *     advertises the element.
+ *   - Driver-SME path: only active when the driver
+ *     explicitly indicates support via WPA_DRIVER_FLAGS2_SECURITY_PROFILE.
+ *     Without this flag the feature is fully disabled even if the AP
+ *     advertises the Security Profile element (802.11bn D1.4, 37.32).
+ *
+ * Use this helper as the single gate for ALL Security Profile element
+ * parsing, override, and validation logic so that the driver-SME path
+ * without driver support behaves identically to a legacy STA.
+ */
+static inline bool wpas_security_profile_active(struct wpa_supplicant *wpa_s)
+{
+	if (wpa_s->drv_flags & WPA_DRIVER_FLAGS_SME)
+		return true; /* supplicant-SME: always active */
+	/* driver-SME: only when driver advertises support */
+	return !!(wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_SECURITY_PROFILE);
+}
+
+/*
+ * Security Profile element helper functions (wpa_supplicant.c).
+ * Used by both wpa_supplicant_set_suites() and BSS selection
+ * (wpa_supplicant_ssid_bss_match() in events.c).
+ */
+int security_profile_ie_get_key_mgmt(const u8 *sp_ie, int ssid_key_mgmt);
+const u8 *security_profile_ie_get_rsnx(const u8 *sp_ie, size_t *rsnx_len);
+int security_profile_ie_get_rsn_caps(const u8 *sp_ie);
 
 #endif /* WPA_SUPPLICANT_I_H */

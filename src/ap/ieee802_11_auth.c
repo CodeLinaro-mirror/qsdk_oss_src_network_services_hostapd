@@ -225,8 +225,7 @@ static int hostapd_check_acl_deny_with_timed_allow(struct hostapd_data *hapd,
 	bool deny_phase_expired, allow_phase_expired;
 
 	/* Check if STA is in the deny list */
-	if (!hostapd_maclist_found(hapd->conf->deny_mac,
-				   hapd->conf->num_deny_mac, addr, vlan_id))
+	if (!hostapd_acl_maclist_found(hapd->conf, false, addr, vlan_id))
 		return HOSTAPD_ACL_ACCEPT;
 
 	os_get_reltime(&now);
@@ -313,15 +312,13 @@ int hostapd_check_acl(struct hostapd_data *hapd, const u8 *addr,
 #endif /*CONFIG_WPS */
 
 	if (hapd->conf->macaddr_acl == ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST) {
-		in_accept = hostapd_maclist_found(hapd->conf->accept_mac,
-						  hapd->conf->num_accept_mac,
-						  addr, vlan_id);
+		in_accept = hostapd_acl_maclist_found(hapd->conf, true,
+						      addr, vlan_id);
 		if (!in_accept)
 			return HOSTAPD_ACL_REJECT;
 
-		in_deny = hostapd_maclist_found(hapd->conf->deny_mac,
-						hapd->conf->num_deny_mac,
-						addr, vlan_id);
+		in_deny = hostapd_acl_maclist_found(hapd->conf, false,
+						    addr, vlan_id);
 		if (in_deny)
 			return HOSTAPD_ACL_REJECT;
 
@@ -332,12 +329,10 @@ int hostapd_check_acl(struct hostapd_data *hapd, const u8 *addr,
 		return hostapd_check_acl_deny_with_timed_allow(hapd, addr,
 							       vlan_id);
 
-	if (hostapd_maclist_found(hapd->conf->accept_mac,
-				  hapd->conf->num_accept_mac, addr, vlan_id))
+	if (hostapd_acl_maclist_found(hapd->conf, true, addr, vlan_id))
 		return HOSTAPD_ACL_ACCEPT;
 
-	if (hostapd_maclist_found(hapd->conf->deny_mac,
-				  hapd->conf->num_deny_mac, addr, vlan_id))
+	if (hostapd_acl_maclist_found(hapd->conf, false, addr, vlan_id))
 		return HOSTAPD_ACL_REJECT;
 
 	if (hapd->iface->drv_flags == WPA_DRIVER_FLAGS_WIRED)

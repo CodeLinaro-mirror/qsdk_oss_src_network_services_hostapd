@@ -754,14 +754,70 @@ static int wpa_derive_ptk(struct wpa_sm *sm, const unsigned char *src_addr,
 	else
 		kdk_len = 0;
 
-	ret = wpa_pmk_to_ptk(sm->pmk, sm->pmk_len, "Pairwise key expansion",
-			     sm->own_addr, wpa_sm_get_auth_addr(sm), sm->snonce,
-			     key->key_nonce, ptk, akmp,
-			     sm->pairwise_cipher, z, z_len,
-			     kdk_len);
-	if (ret) {
-		wpa_printf(MSG_ERROR, "WPA: PTK derivation failed");
-		return ret;
+	if (sm->smd_enabled) {
+		wpa_printf(MSG_DEBUG, "WPA: Using SMD-aware PTK derivation (mode=%d)",
+			   sm->smd_ptk_mode);
+
+		wpa_printf(MSG_DEBUG,
+				"WPA: SMD PTK derivation AA=" MACSTR,
+				MAC2STR(wpa_sm_get_auth_addr(sm)));
+
+		/* Per-AP MLD PTK mode - derive SMD_KDK */
+		if (sm->smd_ptk_mode == 1) {
+			kdk_len = sm->pmk_len;  /* KDK length = PMK length per spec */
+			wpa_printf(MSG_DEBUG,
+				"SMD: Setting kdk_len=%zu for Per-AP MLD PTK mode",
+				kdk_len);
+		} else {
+			/* Per-SMD PTK mode - no KDK derivation */
+			kdk_len = 0;
+			wpa_printf(MSG_DEBUG,
+				"SMD: Setting kdk_len=0 for Per-SMD PTK mode");
+		}
+
+		ret = wpa_pmk_to_ptk(sm->pmk, sm->pmk_len, "Pairwise key expansion",
+				sm->own_addr, wpa_sm_get_auth_addr(sm), sm->snonce,
+				key->key_nonce, ptk, akmp,
+				sm->pairwise_cipher, z, z_len,
+				kdk_len, sm->smd_id);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "WPA: SMD PTK Derivation failed");
+			return ret;
+		}
+
+		if (sm->smd_ptk_mode == 1 && ptk->kdk_len > 0) {
+			if (ptk->kdk_len > sizeof(sm->smd_kdk)) {
+				wpa_printf(MSG_ERROR,
+					   "WPA: SMD_KDK too large (%zu > %zu)",
+					   ptk->kdk_len, sizeof(sm->smd_kdk));
+				return -1;
+			}
+
+			/* To protect from rekey */
+			os_memcpy(sm->smd_kdk, ptk->kdk, ptk->kdk_len);
+			sm->smd_kdk_len = ptk->kdk_len;
+			wpa_hexdump_key(MSG_DEBUG, "WPA: SMD_KDK Derived",
+					sm->smd_kdk, sm->smd_kdk_len);
+		}
+
+		wpa_printf(MSG_INFO, "WPA: Per-SMD PTK Derived successfully (mode=%d)",
+			   sm->smd_ptk_mode);
+		wpa_hexdump_key(MSG_DEBUG, "WPA: SMD PTK-KCK",
+				ptk->kck, ptk->kck_len);
+		wpa_hexdump_key(MSG_DEBUG, "WPA: SMD PTK-KEK",
+				ptk->kek, ptk->kek_len);
+		wpa_hexdump_key(MSG_DEBUG, "WPA: SMD PTK-TK",
+				ptk->tk, ptk->tk_len);
+	} else {
+		ret = wpa_pmk_to_ptk(sm->pmk, sm->pmk_len, "Pairwise key expansion",
+				sm->own_addr, wpa_sm_get_auth_addr(sm), sm->snonce,
+				key->key_nonce, ptk, akmp,
+				sm->pairwise_cipher, z, z_len,
+				kdk_len, NULL);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "WPA: PTK derivation failed");
+			return ret;
+		}
 	}
 
 #ifdef CONFIG_PASN
@@ -1311,8 +1367,10 @@ static int wpa_supplicant_install_ptk(struct wpa_sm *sm,
 		sm->ptk.installed_rx = true;
 	} else {
 		/* TK is not needed anymore in supplicant */
-		os_memset(sm->ptk.tk, 0, WPA_TK_MAX_LEN);
-		sm->ptk.tk_len = 0;
+		if (!(sm->smd_enabled && sm->smd_ptk_mode == 0)) {
+			os_memset(sm->ptk.tk, 0, WPA_TK_MAX_LEN);
+			sm->ptk.tk_len = 0;
+		}
 		sm->ptk.installed = 1;
 		sm->tk_set = true;
 	}
@@ -2418,6 +2476,51 @@ static int wpa_supplicant_validate_ie(struct wpa_sm *sm,
 				    ie->rsnxe_override, ie->rsnxe_override_len);
 			wpa_sm_deauthenticate(sm,
 					      WLAN_REASON_IE_IN_4WAY_DIFFERS);
+			return -1;
+		}
+	}
+
+	if (sm->security_profile_active) {
+		const u8 *msg3_sp = ie->security_profile_ie;
+		size_t msg3_sp_len = ie->security_profile_ie_len;
+		int sp_fail = 0;
+		const char *sp_fail_reason = NULL;
+
+		if (sm->ap_security_profile_ie &&
+		    sm->ap_security_profile_ie_len > 0) {
+			if (!msg3_sp || msg3_sp_len == 0) {
+				sp_fail = 1;
+				sp_fail_reason =
+					"Security Profile: element present in Beacon/ProbeResp but absent in EAPOL-Key msg 3/4";
+			} else if (msg3_sp_len !=
+				   sm->ap_security_profile_ie_len ||
+				   os_memcmp(msg3_sp,
+					     sm->ap_security_profile_ie,
+					     sm->ap_security_profile_ie_len)
+				   != 0) {
+				sp_fail = 1;
+				sp_fail_reason =
+					"Security Profile: element in EAPOL-Key msg 3/4 does not match Beacon/ProbeResp";
+			} else {
+				wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+					"Security Profile: element in EAPOL-Key msg 3/4 matches Beacon/ProbeResp");
+			}
+		} else if (msg3_sp && msg3_sp_len > 0) {
+			sp_fail = 1;
+			sp_fail_reason =
+				"Security Profile: element present in EAPOL-Key msg 3/4 but absent in Beacon/ProbeResp";
+		}
+
+		if (sp_fail) {
+			wpa_msg(sm->ctx->msg_ctx, MSG_WARNING, "%s",
+				sp_fail_reason);
+			wpa_hexdump(MSG_DEBUG,
+				    "Security Profile element in Beacon/ProbeResp",
+				    sm->ap_security_profile_ie,
+				    sm->ap_security_profile_ie_len);
+			wpa_hexdump(MSG_DEBUG,
+				    "Security Profile element in EAPOL-Key msg 3/4",
+				    msg3_sp, msg3_sp_len);
 			return -1;
 		}
 	}
@@ -4597,6 +4700,7 @@ void wpa_sm_deinit(struct wpa_sm *sm)
 	os_free(sm->ap_rsne_override);
 	os_free(sm->ap_rsne_override_2);
 	os_free(sm->ap_rsnxe_override);
+	os_free(sm->ap_security_profile_ie);
 	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
 		os_free(sm->mlo.links[i].ap_rsne);
 		os_free(sm->mlo.links[i].ap_rsnxe);
@@ -4753,7 +4857,13 @@ void wpa_sm_notify_disassoc(struct wpa_sm *sm)
 	eloop_cancel_timeout(wpa_sm_start_preauth, sm, NULL);
 	eloop_cancel_timeout(wpa_sm_rekey_ptk, sm, NULL);
 	rsn_preauth_deinit(sm);
-	pmksa_cache_clear_current(sm);
+
+	if (sm->smd_enabled && sm->cur_pmksa && sm->cur_pmksa->smd_enabled) {
+		wpa_printf(MSG_DEBUG, "RSN: Preserving SMD PMKSA on disconnect");
+	} else {
+		pmksa_cache_clear_current(sm);
+	}
+
 	if (wpa_sm_get_state(sm) == WPA_4WAY_HANDSHAKE)
 		sm->dot11RSNA4WayHandshakeFailures++;
 #ifdef CONFIG_TDLS
@@ -4843,13 +4953,51 @@ void wpa_sm_set_pmk_from_pmksa(struct wpa_sm *sm)
 				sm->cur_pmksa->pmk, sm->cur_pmksa->pmk_len);
 		sm->pmk_len = sm->cur_pmksa->pmk_len;
 		os_memcpy(sm->pmk, sm->cur_pmksa->pmk, sm->pmk_len);
+
+		if (sm->cur_pmksa->smd_enabled) {
+			sm->smd_enabled = 1;
+			os_memcpy(sm->smd_id, sm->cur_pmksa->smd_id, ETH_ALEN);
+			sm->smd_ptk_mode = sm->cur_pmksa->smd_ptk_mode;
+			wpa_printf(MSG_DEBUG, "WPA: Restored SMD Context from PMKSA - ID " MACSTR
+				   " PTK Mode %u", MAC2STR(sm->smd_id), sm->smd_ptk_mode);
+
+		}
 	} else {
 		wpa_printf(MSG_DEBUG, "WPA: No current PMKSA - clear PMK");
 		sm->pmk_len = 0;
 		os_memset(sm->pmk, 0, PMK_LEN_MAX);
+		sm->smd_enabled = 0;
+		os_memset(sm->smd_id, 0, ETH_ALEN);
+		sm->smd_ptk_mode = 0;
 	}
 }
 
+
+void wpa_sm_set_smd_params(struct wpa_sm *sm, const u8 *smd_id,
+			   u8 smd_ptk_mode, const u8 *initial_ap_mld_addr)
+{
+	if (sm == NULL)
+		return;
+
+	if (smd_id) {
+		sm->smd_enabled = 1;
+		os_memcpy(sm->smd_id, smd_id, ETH_ALEN);
+		sm->smd_ptk_mode = smd_ptk_mode;
+		if (initial_ap_mld_addr)
+			os_memcpy(sm->smd_me_initial_ap_mld_addr,
+				  initial_ap_mld_addr, ETH_ALEN);
+		wpa_printf(MSG_DEBUG, "WPA: SMD parameter set - ID " MACSTR
+		   	   " PTK mode %u AP MLD " MACSTR "",
+			   MAC2STR(sm->smd_id), sm->smd_ptk_mode,
+			   MAC2STR(sm->smd_me_initial_ap_mld_addr));
+	} else {
+		sm->smd_enabled = 0;
+		os_memset(sm->smd_id, 0, ETH_ALEN);
+		sm->smd_ptk_mode = 0;
+		os_memset(sm->smd_me_initial_ap_mld_addr, 0, ETH_ALEN);
+		wpa_printf(MSG_DEBUG, "WPA: SMD parameter cleared");
+	}
+}
 
 /**
  * wpa_sm_set_fast_reauth - Set fast reauthentication (EAP) enabled/disabled
@@ -5300,6 +5448,9 @@ int wpa_sm_set_param(struct wpa_sm *sm, enum wpa_sm_conf_params param,
 		break;
 	case WPA_PARAM_SAE_PW_ID_CHANGE:
 		sm->sae_pw_id_change = !!value;
+		break;
+	case WPA_PARAM_SECURITY_PROFILE_ACTIVE:
+		sm->security_profile_active = !!value;
 		break;
 	default:
 		break;
@@ -5887,6 +6038,43 @@ int wpa_sm_set_ap_rsnxe_override(struct wpa_sm *sm, const u8 *ie, size_t len)
 
 
 /**
+ * wpa_sm_set_ap_security_profile_ie - Set AP Security Profile element from Beacon/ProbeResp
+ * @sm: Pointer to WPA state machine data from wpa_sm_init()
+ * @ie: Pointer to IE data (starting from id), or NULL to clear
+ * @len: IE length
+ * Returns: 0 on success, -1 on failure
+ *
+ * Inform WPA state machine about the Security Profile element used in
+ * Beacon / Probe Response frame.  The copy is stored in
+ * sm->ap_security_profile_ie and compared against the element received in
+ * EAPOL-Key msg 3/4 and encrypted (Re)Association Response frames.
+ */
+int wpa_sm_set_ap_security_profile_ie(struct wpa_sm *sm, const u8 *ie, size_t len)
+{
+	if (!sm)
+		return -1;
+
+	os_free(sm->ap_security_profile_ie);
+	if (!ie || len == 0) {
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"RSN: Clearing AP Security Profile element");
+		sm->ap_security_profile_ie = NULL;
+		sm->ap_security_profile_ie_len = 0;
+	} else {
+		wpa_hexdump(MSG_DEBUG, "RSN: Set AP Security Profile element",
+			    ie, len);
+		sm->ap_security_profile_ie = os_memdup(ie, len);
+		if (!sm->ap_security_profile_ie)
+			return -1;
+
+		sm->ap_security_profile_ie_len = len;
+	}
+
+	return 0;
+}
+
+
+/**
  * wpa_sm_parse_own_wpa_ie - Parse own WPA/RSN IE
  * @sm: Pointer to WPA state machine data from wpa_sm_init()
  * @data: Pointer to data area for parsing results
@@ -6235,12 +6423,12 @@ struct wpabuf * fils_build_auth(struct wpa_sm *sm, int dh_group, const u8 *md)
 		goto fail;
 	}
 
-	if (random_get_bytes(sm->fils_nonce, FILS_NONCE_LEN) < 0 ||
+	if (random_get_bytes(sm->fils_nonce, NONCE_LEN) < 0 ||
 	    random_get_bytes(sm->fils_session, FILS_SESSION_LEN) < 0)
 		goto fail;
 
 	wpa_hexdump(MSG_DEBUG, "FILS: Generated FILS Nonce",
-		    sm->fils_nonce, FILS_NONCE_LEN);
+		    sm->fils_nonce, NONCE_LEN);
 	wpa_hexdump(MSG_DEBUG, "FILS: Generated FILS Session",
 		    sm->fils_session, FILS_SESSION_LEN);
 
@@ -6305,10 +6493,10 @@ struct wpabuf * fils_build_auth(struct wpa_sm *sm, int dh_group, const u8 *md)
 
 	/* FILS Nonce */
 	wpabuf_put_u8(buf, WLAN_EID_EXTENSION); /* Element ID */
-	wpabuf_put_u8(buf, 1 + FILS_NONCE_LEN); /* Length */
+	wpabuf_put_u8(buf, 1 + NONCE_LEN); /* Length */
 	/* Element ID Extension */
-	wpabuf_put_u8(buf, WLAN_EID_EXT_FILS_NONCE);
-	wpabuf_put_data(buf, sm->fils_nonce, FILS_NONCE_LEN);
+	wpabuf_put_u8(buf, WLAN_EID_EXT_NONCE);
+	wpabuf_put_data(buf, sm->fils_nonce, NONCE_LEN);
 
 	/* FILS Session */
 	wpabuf_put_u8(buf, WLAN_EID_EXTENSION); /* Element ID */
@@ -6433,12 +6621,12 @@ int fils_process_auth(struct wpa_sm *sm, const u8 *bssid, const u8 *data,
 		goto fail;
 	}
 
-	if (!elems.fils_nonce) {
+	if (!elems.nonce) {
 		wpa_printf(MSG_DEBUG, "FILS: No FILS Nonce field");
 		goto fail;
 	}
-	os_memcpy(sm->fils_anonce, elems.fils_nonce, FILS_NONCE_LEN);
-	wpa_hexdump(MSG_DEBUG, "FILS: ANonce", sm->fils_anonce, FILS_NONCE_LEN);
+	os_memcpy(sm->fils_anonce, elems.nonce, NONCE_LEN);
+	wpa_hexdump(MSG_DEBUG, "FILS: ANonce", sm->fils_anonce, NONCE_LEN);
 
 #ifdef CONFIG_IEEE80211R
 	if (wpa_key_mgmt_ft(sm->key_mgmt)) {
@@ -6897,11 +7085,9 @@ struct wpabuf * fils_build_assoc_req(struct wpa_sm *sm, const u8 **kek,
 	*kek_len = sm->ptk.kek_len;
 	wpa_hexdump_key(MSG_DEBUG, "FILS: KEK for AEAD", *kek, *kek_len);
 	*snonce = sm->fils_nonce;
-	wpa_hexdump(MSG_DEBUG, "FILS: SNonce for AEAD AAD",
-		    *snonce, FILS_NONCE_LEN);
+	wpa_hexdump(MSG_DEBUG, "FILS: SNonce for AEAD AAD", *snonce, NONCE_LEN);
 	*anonce = sm->fils_anonce;
-	wpa_hexdump(MSG_DEBUG, "FILS: ANonce for AEAD AAD",
-		    *anonce, FILS_NONCE_LEN);
+	wpa_hexdump(MSG_DEBUG, "FILS: ANonce for AEAD AAD", *anonce, NONCE_LEN);
 
 	return buf;
 }
@@ -7071,6 +7257,48 @@ int fils_process_assoc_resp(struct wpa_sm *sm, const u8 *resp, size_t len)
 		 * might eventually be removed. */
 		if (sm->assoc_rsnxe && sm->assoc_rsnxe_len)
 			goto fail;
+	}
+
+	if (sm->security_profile_active) {
+		const u8 *assoc_sp = elems.security_profile_ie;
+		size_t assoc_sp_len = elems.security_profile_ie_len;
+
+		if (sm->ap_security_profile_ie &&
+		    sm->ap_security_profile_ie_len > 2) {
+			if (!assoc_sp || assoc_sp_len == 0) {
+				wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+					"ENC_ASSOC: Security Profile element present in Beacon/ProbeResp but absent in (Re)Association Response");
+				wpa_hexdump(MSG_DEBUG,
+					    "ENC_ASSOC: Security Profile element in Beacon/ProbeResp",
+					    sm->ap_security_profile_ie,
+					    sm->ap_security_profile_ie_len);
+				goto fail;
+			}
+			if (sm->ap_security_profile_ie_len - 2 != assoc_sp_len ||
+			    os_memcmp(sm->ap_security_profile_ie + 2,
+				      assoc_sp,
+				      assoc_sp_len) != 0) {
+				wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+					"ENC_ASSOC: Security Profile element mismatch between Beacon/ProbeResp and (Re)Association Response");
+				wpa_hexdump(MSG_DEBUG,
+					    "ENC_ASSOC: Security Profile element in Beacon/ProbeResp",
+					    sm->ap_security_profile_ie,
+					    sm->ap_security_profile_ie_len);
+				wpa_hexdump(MSG_DEBUG,
+					    "ENC_ASSOC: Security Profile element in (Re)Association Response",
+					    assoc_sp, assoc_sp_len);
+				goto fail;
+			}
+			wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+				"ENC_ASSOC: Security Profile element in (Re)Association Response matches Beacon/ProbeResp");
+		} else if (assoc_sp && assoc_sp_len > 0) {
+			wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+				"ENC_ASSOC: Security Profile element present in (Re)Association Response but absent in Beacon/ProbeResp");
+			wpa_hexdump(MSG_DEBUG,
+				    "ENC_ASSOC: Security Profile element in (Re)Association Response",
+				    assoc_sp, assoc_sp_len);
+			goto fail;
+		}
 	}
 
 	/* TODO: FILS Public Key */
