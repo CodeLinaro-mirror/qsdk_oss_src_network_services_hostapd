@@ -5700,8 +5700,11 @@ void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
 
 		hapd->mld = mld;
 		hostapd_mld_ref_inc(mld);
-		if (hostapd_bss_alloc_link_id(hapd))
-			goto fail;
+		if (hostapd_bss_alloc_link_id(hapd)) {
+			hostapd_mld_ref_dec(mld);
+			hapd->mld = NULL;
+			return;
+		}
 		break;
 	}
 
