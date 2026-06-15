@@ -3399,12 +3399,12 @@ struct ieee80211_eht_capabilities {
 	u8 optional[EHT_MCS_NSS_CAPAB_LEN + EHT_PPE_THRESH_CAPAB_LEN];
 } STRUCT_PACKED;
 
-/* Figure 9-aa2: UHR Operation Parameters field format described in P802.11bn_D1.4 section 9.4.2.355 UHR Operation element */
+/* Figure 9-aa2: UHR Operation Parameters field format described in P802.11bn_D1.5 section 9.4.2.356 UHR Operation element */
 #define UHR_OPER_DPS_ENABLED		BIT(0)
 #define UHR_OPER_NPCA_ENABLED		BIT(1)
-#define UHR_OPER_DBE_ENABLED		BIT(2)
-#define UHR_OPER_P_EDCA_ENABLED		BIT(3)
-#define UHR_OPER_NPCA_OPER_PRESENT	BIT(9)
+#define UHR_OPER_P_EDCA_ENABLED		BIT(2)
+#define UHR_OPER_DBE_ENABLED		BIT(3)
+#define UHR_OPER_NPCA_OPER_PRESENT	BIT(10)
 
 struct ieee80211_dbe_info {
 	/* TODO: Convert this into structure bitfield
@@ -3454,10 +3454,9 @@ struct ieee80211_npca_info {
 	u16 npca_disabled_subchan_bitmap;
 } STRUCT_PACKED;
 
-/* Figure 9-aa1: UHR Operation element format described in P802.11bn_D1.4 section 9.4.2.355.1 */
+/* Figure 9-aa1: UHR Operation element format described in P802.11bn_D1.5 section 9.4.2.356.1 */
 struct ieee80211_uhr_operation {
 	u16 uhr_oper_params;   /*UHR Operation Parameters*/
-	u8 basic_uhr_mcs_nss_set[4];
 	u8 variable[];
 } STRUCT_PACKED;
 
@@ -3477,14 +3476,17 @@ struct ieee80211_uhr_operation {
 #define UHR_MACCAP_DPS_ASSIST			BIT(1)
 #define UHR_MACCAP_NPCA_SUPP			BIT(4)
 
-/* B26-B28: Parameter Update Adv Notification Interval (3 bits, byte 3) */
-#define UHR_MACCAP3_PARAM_UPD_ADV_NOTIF_INTV_MASK	((u8) (BIT(2) | BIT(3) | BIT(4)))
+/* B26-B30: Parameter Update Adv Notification Interval (5 bits, byte 3) */
+#define UHR_MACCAP3_PARAM_UPD_ADV_NOTIF_INTV_MASK	((u8) (BIT(2) | BIT(3) | \
+							       BIT(4) | BIT(5) | \
+							       BIT(6)))
 #define UHR_MACCAP3_PARAM_UPD_ADV_NOTIF_INTV_SHIFT	2
 
-/* B29-B33: Update Indication In TIM Interval (5 bits, split across bytes 3-4) */
-#define UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_MASK		((u8) (BIT(5) | BIT(6) | BIT(7)))
-#define UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_SHIFT		5
-#define UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK		((u8) (BIT(0) | BIT(1)))
+/* B31-B35: Update Indication In TIM Interval (5 bits, split across bytes 3-4) */
+#define UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_MASK		((u8) (BIT(7)))
+#define UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_SHIFT		7
+#define UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK		((u8) (BIT(0) | BIT(1) | \
+							       BIT(2) | BIT(3)))
 #define UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_SHIFT	0
 
 #define UHR_MAC_CAPAB_LEN	6
