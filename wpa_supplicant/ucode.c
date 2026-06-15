@@ -895,6 +895,7 @@ uc_wpas_recvd_ch_sw_result_ev(uc_vm_t *vm, size_t nargs)
 			wpa_printf(MSG_INFO,
 				   "Recv chan sw result: failure ret=%d, triggering scan for ifname=%s",
 				   chsw_ret, wpa_s->ifname);
+			wpa_s->cache_cwork = NULL;
 			wpa_s->pre_connect_cnt = 0;
 			/* Flush outdated BSS entries so the next scan uses fresh results */
 			wpa_bss_flush(wpa_s, 0);
