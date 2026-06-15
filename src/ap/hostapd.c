@@ -1017,6 +1017,9 @@ static bool hostapd_ttlm_info_check_non_default_mappings(int link_id,
 
 static bool hostapd_validate_link_removal_ttlm_global(struct hostapd_data *hapd)
 {
+	if (!hapd->conf->mld_ap || !hapd->mld)
+		return true;
+
 	/* check the established mapping */
 	if (hostapd_ttlm_info_check_non_default_mappings(hapd->mld_link_id,
 							 &hapd->mld->ttlm_ctx.established_ttlm.ttlm,
@@ -1053,6 +1056,9 @@ static bool hostapd_validate_link_removal_ttlm(struct hostapd_data *hapd)
 			dl_list_for_each(bss, &group->bss_list, struct hostapd_data, mbssid_bss) {
 				if (bss == hapd)
 					continue;
+				if (!bss->conf->mld_ap || !bss->mld || bss->disabled ||
+				    !bss->beacon_set_done)
+					continue;
 
 				/* even if one non-tx bss fails validation, return false */
 				if (!hostapd_validate_link_removal_ttlm_global(bss))
@@ -1063,6 +1069,9 @@ static bool hostapd_validate_link_removal_ttlm(struct hostapd_data *hapd)
 		} else {
 			for (i = 1; i < hapd->iface->num_bss; i++) {
 				bss = hapd->iface->bss[i];
+				if (!bss->conf->mld_ap || !bss->mld || bss->disabled ||
+				    !bss->beacon_set_done)
+					continue;
 				if (!hostapd_validate_link_removal_ttlm_global(bss))
 					return false;
 
