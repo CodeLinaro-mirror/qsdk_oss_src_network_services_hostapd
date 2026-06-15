@@ -87,7 +87,8 @@ static void hostapd_wpa_auth_config_update(struct hostapd_data *hapd,
 		!!(hapd->iface->drv_flags2 &
 		   WPA_DRIVER_FLAGS2_PROT_RANGE_NEG_AP);
 	_conf->cigtk =
-		!!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK);
+		!!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK) &&
+		hapd->conf->control_frame_prot;
 
 #ifdef CONFIG_IEEE80211BE
 	_conf->mld_addr = NULL;
