@@ -373,6 +373,11 @@ hostapd_offload_set_adv_ttlm_multi_mbssid(struct hostapd_data *hapd)
 	int ret = 0;
 
 	dl_list_for_each(bss, &group->bss_list, struct hostapd_data, mbssid_bss) {
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(bss->conf))
+			continue;
+#endif /* CONFIG_QCN_EXTN */
+
 		if (bss != hapd && bss->conf->mld_ap && bss->mld &&
 		    !bss->disabled && bss->beacon_set_done) {
 			struct drv_adv_ttlm_params upcoming_params;
@@ -421,6 +426,10 @@ hostapd_offload_set_adv_ttlm_mbssid_enhanced(struct hostapd_data *hapd)
 		if (!bss->conf->mld_ap || !bss->mld || bss->disabled ||
 		    !bss->beacon_set_done)
 			continue;
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(bss->conf))
+			continue;
+#endif /* CONFIG_QCN_EXTN */
 
 		ctx = &bss->mld->ttlm_ctx;
 		send_default_mapping =
