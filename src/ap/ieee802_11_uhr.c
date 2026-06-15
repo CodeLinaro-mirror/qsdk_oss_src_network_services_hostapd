@@ -85,7 +85,7 @@ u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 		 UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_MASK);
 	cap->mac[4] =
 		(cap->mac[4] & ~UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK) |
-		(((hapd->conf->uhr_params_update.update_in_tim_interval >> 3) <<
+		(((hapd->conf->uhr_params_update.update_in_tim_interval >> 1) <<
 		  UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_SHIFT) &
 		 UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK);
 
@@ -145,6 +145,7 @@ u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool beacon)
 	*pos++ = WLAN_EID_EXT_UHR_OPERATION;
 
 	oper = (struct ieee80211_uhr_operation *) pos;
+	os_memset(oper, 0, sizeof(*oper));
 	npca_info = &mode->npca_info[IEEE80211_MODE_AP];
 	npca_present = npca_info->npca_supported && hapd->iconf->npca_enable;
 	offs = hapd->iconf->npca_primary_chan_offset;

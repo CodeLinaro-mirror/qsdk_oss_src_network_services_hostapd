@@ -3901,14 +3901,17 @@ struct ieee80211_uhr_operation {
 #define UHR_MACCAP_DPS_ASSIST			BIT(1)
 #define UHR_MACCAP_NPCA_SUPP			BIT(4)
 
-/* B26-B28: Parameter Update Adv Notification Interval (3 bits, byte 3) */
-#define UHR_MACCAP3_PARAM_UPD_ADV_NOTIF_INTV_MASK	((u8) (BIT(2) | BIT(3) | BIT(4)))
+/* B26-B30: Parameter Update Adv Notification Interval (5 bits, byte 3) */
+#define UHR_MACCAP3_PARAM_UPD_ADV_NOTIF_INTV_MASK	((u8) (BIT(2) | BIT(3) | \
+							       BIT(4) | BIT(5) | \
+							       BIT(6)))
 #define UHR_MACCAP3_PARAM_UPD_ADV_NOTIF_INTV_SHIFT	2
 
-/* B29-B33: Update Indication In TIM Interval (5 bits, split across bytes 3-4) */
-#define UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_MASK		((u8) (BIT(5) | BIT(6) | BIT(7)))
-#define UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_SHIFT		5
-#define UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK		((u8) (BIT(0) | BIT(1)))
+/* B31-B35: Update Indication In TIM Interval (5 bits, split across bytes 3-4) */
+#define UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_MASK		((u8) (BIT(7)))
+#define UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_SHIFT		7
+#define UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK		((u8) (BIT(0) | BIT(1) | \
+							       BIT(2) | BIT(3)))
 #define UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_SHIFT	0
 
 #define IEEE80211_UHR_CAP_MAX_SIZE	sizeof(struct ieee80211_uhr_capabilities)
