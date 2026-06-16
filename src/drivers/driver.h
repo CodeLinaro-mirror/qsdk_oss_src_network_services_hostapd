@@ -7935,6 +7935,16 @@ enum wpa_event_type {
 	 */
 	EVENT_UPDATE_AP_POWERSAVE,
 
+#ifdef CONFIG_IEEE80211BN
+	/**
+	 * EVENT_CRITICAL_UPDATE_NOTIFY - ECU lifecycle transition event
+	 *
+	 * Sent by the driver when the kernel reports a CU state change via
+	 * NL80211_CMD_CRITICAL_UPDATE_NOTIFY.
+	 */
+	EVENT_CRITICAL_UPDATE_NOTIFY,
+#endif /* CONFIG_IEEE80211BN */
+
 	/**
 	 * EVENT_LINK_REMOVAL_COMPLETED - Update link scheduled for removal
 	 * procedure is completed.
@@ -9149,6 +9159,16 @@ union wpa_event_data {
 		bool dps_assist_updated;
 		int dps_assist;
 	} ap_powersave_event;
+
+#ifdef CONFIG_IEEE80211BN
+	/**
+	 * Data for NL80211_CMD_CRITICAL_UPDATE_NOTIFY event
+	 */
+	struct cu_notify_event {
+		u8 link_id;
+		u32 cu_state; /* enum nl80211_cu_state */
+	} cu_notify_event;
+#endif /* CONFIG_IEEE80211BN */
 
 	/**
 	 * struct reconfig_info - Data for EVENT_SETUP_LINK_RECONFIG
