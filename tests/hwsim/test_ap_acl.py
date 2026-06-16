@@ -1116,3 +1116,242 @@ def test_ap_acl_show_mixed_exact_and_masked(dev, apdev):
     hapd.request("ACCEPT_ACL CLEAR")
     hapd.request("DENY_ACL CLEAR")
     _check_acl_counts(hapd, 0, 0, "after CLEAR both lists")
+
+
+# ===========================================================================
+# macaddr_acl mode-change enforcement (SET macaddr_acl <N>)
+#
+# When the ACL mode is changed at runtime via "SET macaddr_acl <N>", hostapd
+# must immediately re-evaluate all connected STAs against the new mode and
+# the current accept/deny lists.  The tests below verify that behaviour.
+#
+# Key rule: existing tests set the mode at AP creation time (via params dict)
+# and are therefore NOT affected by the new mode-change enforcement.  Only
+# tests that call "SET macaddr_acl" dynamically will trigger the new path.
+# ===========================================================================
+
+def test_ap_acl_mode_change_0_to_1_disconnects_unlisted(dev, apdev):
+    """macaddr_acl mode change 0->1: STA not in accept list is disconnected"""
+    ssid = "acl-mode-chg-0to1"
+    # Start in mode 0 (ACCEPT_UNLESS_DENIED) - no lists, all STAs connect
+    params = {'ssid': ssid, 'macaddr_acl': "0"}
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    addr0 = dev[0].own_addr()
+    addr1 = dev[1].own_addr()
+
+    # Both STAs connect in mode 0 (no deny list)
+    dev[0].scan_for_bss(apdev[0]['bssid'], freq="2412")
+    dev[0].connect(ssid, key_mgmt="NONE", scan_freq="2412")
+    dev[1].scan_for_bss(apdev[0]['bssid'], freq="2412")
+    dev[1].connect(ssid, key_mgmt="NONE", scan_freq="2412")
+
+    # Add addr1 to accept list (addr0 is NOT in accept list)
+    hapd.request("ACCEPT_ACL ADD_MAC " + addr1)
+
+    # Switch to mode 1 (DENY_UNLESS_ACCEPTED).
+    # addr0 is not in the accept list -> must be disconnected.
+    # addr1 is in the accept list -> must stay connected.
+    dev[0].dump_monitor()
+    dev[1].dump_monitor()
+    hapd.request("SET macaddr_acl 1")
+
+    # addr0 must be disconnected
+    ev = dev[0].wait_event(["CTRL-EVENT-DISCONNECTED"], timeout=3)
+    if ev is None:
+        raise Exception("dev[0] was not disconnected after mode change 0->1 "
+                        "(not in accept list)")
+
+    # addr1 must remain connected
+    ev = dev[1].wait_event(["CTRL-EVENT-DISCONNECTED"], timeout=1)
+    if ev is not None:
+        raise Exception("dev[1] was disconnected after mode change 0->1 "
+                        "(it is in the accept list)")
+
+    dev[0].request("DISCONNECT")
+    dev[1].request("DISCONNECT")
+    dev[1].wait_disconnected()
+    hapd.request("ACCEPT_ACL CLEAR")
+
+
+def test_ap_acl_mode_change_0_to_3_disconnects_unlisted(dev, apdev):
+    """macaddr_acl mode change 0->3: STA not in accept list is disconnected"""
+    ssid = "acl-mode-chg-0to3"
+    params = {'ssid': ssid, 'macaddr_acl': "0"}
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    addr0 = dev[0].own_addr()
+    addr1 = dev[1].own_addr()
+
+    # Both connect in mode 0
+    dev[0].scan_for_bss(apdev[0]['bssid'], freq="2412")
+    dev[0].connect(ssid, key_mgmt="NONE", scan_freq="2412")
+    dev[1].scan_for_bss(apdev[0]['bssid'], freq="2412")
+    dev[1].connect(ssid, key_mgmt="NONE", scan_freq="2412")
+
+    # addr1 in accept list only; addr0 not in any list
+    hapd.request("ACCEPT_ACL ADD_MAC " + addr1)
+
+    # Switch to mode 3 (ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST).
+    # addr0 not in accept list -> disconnected.
+    # addr1 in accept list, not in deny list -> stays connected.
+    dev[0].dump_monitor()
+    dev[1].dump_monitor()
+    hapd.request("SET macaddr_acl 3")
+
+    ev = dev[0].wait_event(["CTRL-EVENT-DISCONNECTED"], timeout=3)
+    if ev is None:
+        raise Exception("dev[0] was not disconnected after mode change 0->3 "
+                        "(not in accept list)")
+
+    ev = dev[1].wait_event(["CTRL-EVENT-DISCONNECTED"], timeout=1)
+    if ev is not None:
+        raise Exception("dev[1] was disconnected after mode change 0->3 "
+                        "(it is in the accept list and not in deny list)")
+
+    dev[0].request("DISCONNECT")
+    dev[1].request("DISCONNECT")
+    dev[1].wait_disconnected()
+    hapd.request("ACCEPT_ACL CLEAR")
+
+
+def test_ap_acl_mode_change_1_to_0_keeps_connected(dev, apdev):
+    """macaddr_acl mode change 1->0: accepted STA stays connected"""
+    ssid = "acl-mode-chg-1to0"
+    params = {'ssid': ssid, 'macaddr_acl': "1"}
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    addr0 = dev[0].own_addr()
+
+    # Add addr0 to accept list and connect in mode 1
+    hapd.request("ACCEPT_ACL ADD_MAC " + addr0)
+    dev[0].scan_for_bss(apdev[0]['bssid'], freq="2412")
+    dev[0].connect(ssid, key_mgmt="NONE", scan_freq="2412")
+
+    # Switch to mode 0 (ACCEPT_UNLESS_DENIED).
+    # addr0 is not in the deny list -> must stay connected.
+    dev[0].dump_monitor()
+    hapd.request("SET macaddr_acl 0")
+
+    ev = dev[0].wait_event(["CTRL-EVENT-DISCONNECTED"], timeout=1)
+    if ev is not None:
+        raise Exception("dev[0] was unexpectedly disconnected after mode "
+                        "change 1->0 (not in deny list)")
+
+    dev[0].request("DISCONNECT")
+    dev[0].wait_disconnected()
+    hapd.request("ACCEPT_ACL CLEAR")
+
+
+def test_ap_acl_mode_change_0_to_0_no_disconnect(dev, apdev):
+    """macaddr_acl mode change 0->0 (same mode): no spurious disconnect"""
+    ssid = "acl-mode-chg-0to0"
+    params = {'ssid': ssid, 'macaddr_acl': "0"}
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    addr0 = dev[0].own_addr()
+
+    dev[0].scan_for_bss(apdev[0]['bssid'], freq="2412")
+    dev[0].connect(ssid, key_mgmt="NONE", scan_freq="2412")
+
+    # Re-set the same mode - no disconnect should occur
+    dev[0].dump_monitor()
+    hapd.request("SET macaddr_acl 0")
+
+    ev = dev[0].wait_event(["CTRL-EVENT-DISCONNECTED"], timeout=1)
+    if ev is not None:
+        raise Exception("dev[0] was unexpectedly disconnected after "
+                        "SET macaddr_acl 0 (same mode, no deny list)")
+
+    dev[0].request("DISCONNECT")
+    dev[0].wait_disconnected()
+
+
+def test_ap_acl_mode_change_deny_list_enforced_on_mode_change(dev, apdev):
+    """macaddr_acl mode change: STA in deny list is disconnected on mode change"""
+    ssid = "acl-mode-chg-deny"
+    # Start in mode 1 with addr0 in accept list
+    params = {'ssid': ssid, 'macaddr_acl': "1"}
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    addr0 = dev[0].own_addr()
+
+    hapd.request("ACCEPT_ACL ADD_MAC " + addr0)
+    hapd.request("DENY_ACL ADD_MAC " + addr0)
+
+    # In mode 1, accept overrides deny -> addr0 connects
+    dev[0].scan_for_bss(apdev[0]['bssid'], freq="2412")
+    dev[0].connect(ssid, key_mgmt="NONE", scan_freq="2412")
+
+    # Switch to mode 0 (ACCEPT_UNLESS_DENIED).
+    # In mode 0, deny list is checked after accept list.
+    # addr0 is in BOTH lists; hostapd_check_acl() finds it in accept first
+    # -> ACCEPT.  So addr0 should NOT be disconnected.
+    dev[0].dump_monitor()
+    hapd.request("SET macaddr_acl 0")
+
+    ev = dev[0].wait_event(["CTRL-EVENT-DISCONNECTED"], timeout=1)
+    if ev is not None:
+        raise Exception("dev[0] was unexpectedly disconnected after mode "
+                        "change 1->0 (accept list takes priority in mode 0)")
+
+    # Now remove addr0 from accept list (still in deny list).
+    # hostapd_disassoc_deny_mac() should disconnect it.
+    dev[0].dump_monitor()
+    hapd.request("ACCEPT_ACL DEL_MAC " + addr0)
+    ev = dev[0].wait_event(["CTRL-EVENT-DISCONNECTED"], timeout=3)
+    if ev is None:
+        raise Exception("dev[0] was not disconnected after being removed "
+                        "from accept list while still in deny list (mode 0)")
+
+    dev[0].request("DISCONNECT")
+    hapd.request("ACCEPT_ACL CLEAR")
+    hapd.request("DENY_ACL CLEAR")
+
+
+def test_ap_acl_mode_change_3_to_1_disconnects_deny_listed(dev, apdev):
+    """macaddr_acl mode change 3->1: STA in deny list disconnected"""
+    ssid = "acl-mode-chg-3to1"
+    params = {'ssid': ssid, 'macaddr_acl': "3"}
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    addr0 = dev[0].own_addr()
+    addr1 = dev[1].own_addr()
+
+    # addr0: accept list only -> connects in mode 3
+    # addr1: accept list only -> connects in mode 3
+    hapd.request("ACCEPT_ACL ADD_MAC " + addr0)
+    hapd.request("ACCEPT_ACL ADD_MAC " + addr1)
+
+    dev[0].scan_for_bss(apdev[0]['bssid'], freq="2412")
+    dev[0].connect(ssid, key_mgmt="NONE", scan_freq="2412")
+    dev[1].scan_for_bss(apdev[0]['bssid'], freq="2412")
+    dev[1].connect(ssid, key_mgmt="NONE", scan_freq="2412")
+
+    # Add addr0 to deny list (while still in accept list)
+    hapd.request("DENY_ACL ADD_MAC " + addr0)
+
+    # Switch to mode 1 (DENY_UNLESS_ACCEPTED).
+    # In mode 1, accept overrides deny -> addr0 stays connected.
+    # addr1 is in accept list, not in deny list -> stays connected.
+    dev[0].dump_monitor()
+    dev[1].dump_monitor()
+    hapd.request("SET macaddr_acl 1")
+
+    # Neither should be disconnected (both in accept list)
+    ev = dev[0].wait_event(["CTRL-EVENT-DISCONNECTED"], timeout=1)
+    if ev is not None:
+        raise Exception("dev[0] was unexpectedly disconnected after mode "
+                        "change 3->1 (accept overrides deny in mode 1)")
+
+    ev = dev[1].wait_event(["CTRL-EVENT-DISCONNECTED"], timeout=1)
+    if ev is not None:
+        raise Exception("dev[1] was unexpectedly disconnected after mode "
+                        "change 3->1 (it is in accept list)")
+
+    dev[0].request("DISCONNECT")
+    dev[0].wait_disconnected()
+    dev[1].request("DISCONNECT")
+    dev[1].wait_disconnected()
+    hapd.request("ACCEPT_ACL CLEAR")
+    hapd.request("DENY_ACL CLEAR")
