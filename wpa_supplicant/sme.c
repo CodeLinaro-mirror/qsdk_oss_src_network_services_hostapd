@@ -1402,6 +1402,7 @@ static void sme_auth_start_cb(struct wpa_radio_work *work, int deinit)
 		if (work->started)
 			wpa_s->connect_work = NULL;
 
+		wpa_s->cache_cwork = NULL;
 		wpas_connect_work_free(cwork);
 		return;
 	}
@@ -1450,6 +1451,7 @@ void sme_schedule_auth_radio_work(struct wpa_supplicant *wpa_s,
 		wpas_connect_work_free(cwork);
 	}
 
+	wpa_s->cache_cwork = NULL;
 	wpa_s->pre_connect_cnt = 0;
 }
 #endif
@@ -3500,6 +3502,7 @@ void sme_deinit(struct wpa_supplicant *wpa_s)
 #ifdef CONFIG_QCN_EXTN
 	eloop_cancel_timeout(sme_pre_connect_timer_extn, wpa_s, NULL);
 	wpa_s->pre_connect_cnt = 0;
+	wpa_s->cache_cwork = NULL;
 #endif
 }
 
