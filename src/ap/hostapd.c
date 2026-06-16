@@ -9538,6 +9538,11 @@ int hostapd_mld_link_config_check(struct hostapd_data *hapd)
 	struct hostapd_mld *mld = hapd->mld;
 	struct hostapd_data *first = mld->fbss;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return 0;
+#endif /* CONFIG_QCN_EXTN */
+
 	if (hapd->conf->ssid.ssid_len != first->conf->ssid.ssid_len ||
 	    os_memcmp(hapd->conf->ssid.ssid, first->conf->ssid.ssid,
 		      first->conf->ssid.ssid_len) != 0) {
