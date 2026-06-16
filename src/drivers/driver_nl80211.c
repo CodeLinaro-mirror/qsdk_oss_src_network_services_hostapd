@@ -5463,6 +5463,9 @@ static int nl80211_mbssid(struct nl_msg *msg, struct mbssid_data *params)
 	if (!params->mbssid_tx_iface)
 		return 0;
 
+	wpa_hexdump(MSG_MSGDUMP, "nl80211: MBSSID Elements",
+		    params->mbssid_elem, params->mbssid_elem_len);
+
 	config = nla_nest_start(msg, NL80211_ATTR_MBSSID_CONFIG);
 	if (!config ||
 	    nla_put_u8(msg, NL80211_MBSSID_CONFIG_ATTR_INDEX,
@@ -5509,6 +5512,9 @@ static int nl80211_mbssid(struct nl_msg *msg, struct mbssid_data *params)
 
 	if (!params->ema)
 		return 0;
+
+	wpa_hexdump(MSG_MSGDUMP, "nl80211: EMA RNR elements",
+		    params->rnr_elem, params->rnr_elem_len);
 
 	if (params->rnr_elem_count && params->rnr_elem_len &&
 	    params->rnr_elem_offset && *params->rnr_elem_offset) {
