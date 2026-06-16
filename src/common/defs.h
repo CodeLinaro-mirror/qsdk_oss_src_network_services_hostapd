@@ -223,6 +223,11 @@ static inline int wpa_auth_alg_fils(int alg)
 	return !!(alg & (WPA_AUTH_ALG_FILS | WPA_AUTH_ALG_FILS_SK_PFS));
 }
 
+static inline bool wpa_auth_alg_eppke(int alg)
+{
+	return !!(alg & WPA_AUTH_ALG_EPPKE);
+}
+
 enum wpa_alg {
 	WPA_ALG_NONE,
 	WPA_ALG_WEP,
