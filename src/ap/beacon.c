@@ -4360,6 +4360,9 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 	bool beacon_set = false;
 	u8 num_repurposed_links = 0;
 #endif /* CONFIG_IEEE80211BE */
+	enum oper_chan_width bss_chwidth;
+	u8 bss_seg0, bss_seg1;
+	u16 bss_punct_bitmap;
 
 	if (!hapd->drv_priv) {
 		wpa_printf(MSG_ERROR, "Interface is disabled");
@@ -4519,6 +4522,37 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 	}
 #endif /* CONFIG_IEEE80211BN */
 
+	bss_chwidth = hostapd_get_oper_chwidth(iconf);
+	bss_seg0 = hostapd_get_oper_centr_freq_seg0_idx(iconf);
+	bss_seg1 = hostapd_get_oper_centr_freq_seg1_idx(iconf);
+	bss_punct_bitmap = hostapd_get_punct_bitmap(hapd);
+/*
+ * When EHT is disabled on a BSS and the radio is configured for
+ * 320Mhz on a 5GHz / 6GHz operating class, downgrade the channel width
+ * to the HE maximum of 160Mhz along with the corresponding seg0
+ * and seg1 center frequency indices.
+ */
+#ifdef CONFIG_IEEE80211BE
+	if (!hostapd_is_eht_enabled(hapd)) {
+		int seg0_shift = 0;
+		if (is_6ghz_op_class(iconf->op_class) &&
+		    iconf->eht_oper_chwidth == CONF_OPER_CHWIDTH_320MHZ)
+			seg0_shift = (iconf->channel >
+				      iconf->eht_oper_centr_freq_seg0_idx) ?
+				      16:-16;
+		else if (is_5ghz_freq(iface->freq) &&
+			 iconf->eht_oper_chwidth == CONF_OPER_CHWIDTH_320MHZ)
+			seg0_shift = -16;
+
+		if (seg0_shift) {
+			bss_chwidth = CONF_OPER_CHWIDTH_160MHZ;
+			bss_seg0 += seg0_shift;
+			bss_seg1 = 0;
+			bss_punct_bitmap = 0;
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+
 	if (cmode &&
 	    hostapd_set_freq_params(&freq, iconf->hw_mode, iface->freq,
 				    iconf->channel, iconf->enable_edmg,
@@ -4527,14 +4561,14 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 				    iconf->ieee80211be,
 				    iconf->ieee80211bn,
 				    iconf->secondary_channel,
-				    hostapd_get_oper_chwidth(iconf),
-				    hostapd_get_oper_centr_freq_seg0_idx(iconf),
-				    hostapd_get_oper_centr_freq_seg1_idx(iconf),
+				    bss_chwidth,
+				    bss_seg0,
+				    bss_seg1,
 				    cmode->vht_capab,
 				    &cmode->he_capab[IEEE80211_MODE_AP],
 				    &cmode->eht_capab[IEEE80211_MODE_AP],
 				    &cmode->uhr_capab[IEEE80211_MODE_AP],
-				    hostapd_get_punct_bitmap(hapd),
+				    bss_punct_bitmap,
 				    iconf->he_6ghz_reg_pwr_type,
 #ifdef CONFIG_IEEE80211BN
 				    hostapd_hw_get_freq(hapd,
