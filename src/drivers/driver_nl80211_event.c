@@ -5435,6 +5435,59 @@ static void nl80211_ap_powersave_update_event(struct i802_bss *bss,
 #endif /* CONFIG_IEEE80211BN */
 
 
+#ifdef CONFIG_IEEE80211BN
+static const char *nl80211_cu_state_str(u32 state)
+{
+	switch (state) {
+	case NL80211_CU_STATE_STARTED:
+		return "STARTED";
+	case NL80211_CU_STATE_ADV_NOTIFICATION_END:
+		return "ADV_NOTIFICATION_END";
+	case NL80211_CU_STATE_POST_NOTIFICATION_END:
+		return "POST_NOTIFICATION_END";
+	case NL80211_CU_STATE_ECU_END:
+		return "ECU_END";
+	case NL80211_CU_STATE_ABORT:
+		return "ABORT";
+	default:
+		return "UNKNOWN";
+	}
+}
+
+static void nl80211_critical_update_notify_event(struct i802_bss *bss,
+						 struct nlattr **tb)
+{
+	union wpa_event_data data;
+
+	if (!tb[NL80211_ATTR_CU_STATE]) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: CRITICAL_UPDATE_NOTIFY missing CU_STATE attr");
+		return;
+	}
+
+	if (!tb[NL80211_ATTR_MLO_LINK_ID]) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: CRITICAL_UPDATE_NOTIFY missing LINK_ID attr");
+		return;
+	}
+
+	os_memset(&data, 0, sizeof(data));
+
+	data.cu_notify_event.link_id =
+			nla_get_u8(tb[NL80211_ATTR_MLO_LINK_ID]);
+
+	data.cu_notify_event.cu_state =
+		nla_get_u8(tb[NL80211_ATTR_CU_STATE]);
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: CRITICAL_UPDATE_NOTIFY link_id=%u cu_state=%s",
+		   data.cu_notify_event.link_id,
+		   nl80211_cu_state_str(data.cu_notify_event.cu_state));
+
+	wpa_supplicant_event(bss->ctx, EVENT_CRITICAL_UPDATE_NOTIFY, &data);
+}
+#endif /* CONFIG_IEEE80211BN */
+
 static void do_process_drv_event(struct i802_bss *bss, int cmd,
 				 struct nlattr **tb,
 				 bool *event_handled)
@@ -5759,6 +5812,9 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 #ifdef CONFIG_IEEE80211BN
 	case NL80211_CMD_AP_POWER_SAVE:
 		nl80211_ap_powersave_update_event(bss, tb);
+		break;
+	case NL80211_CMD_CRITICAL_UPDATE_NOTIFY:
+		nl80211_critical_update_notify_event(bss, tb);
 		break;
 #endif /* CONFIG_IEEE80211BN */
 	default:

@@ -8824,6 +8824,7 @@ enum nl80211_cu_type {
 	NL80211_CU_TYPE_UHR_PARAMS,
 };
 
+
 /**
  * enum nl80211_cu_state - UHR Enhanced Critical Update (ECU) state
  *
@@ -8831,20 +8832,23 @@ enum nl80211_cu_type {
  * %NL80211_CMD_CRITICAL_UPDATE_NOTIFY.
  *
  * @NL80211_CU_STATE_STARTED: ECU session has started; the driver is
- *	transmitting beacons with the CU element and indication bit set.
+ *      transmitting beacons with the CU element and indication bit set.
  * @NL80211_CU_STATE_ADV_NOTIFICATION_END: Advance notification phase
- *	has ended; the advance notification window has elapsed.
+ *      has ended; the advance notification window has elapsed.
  * @NL80211_CU_STATE_POST_NOTIFICATION_END: Post notification phase
- *	has ended; the post notification window has elapsed.
+ *      has ended; the post notification window has elapsed.
  * @NL80211_CU_STATE_ECU_END: ECU session is complete; the driver has
- *	finished transmitting CU beacons and cleared the CU indication bit.
+ *      finished transmitting CU beacons and cleared the CU indication bit.
+ * @NL80211_CU_STATE_ABORT: ECU session is aborted;
  */
 enum nl80211_cu_state {
 	NL80211_CU_STATE_STARTED,
 	NL80211_CU_STATE_ADV_NOTIFICATION_END,
 	NL80211_CU_STATE_POST_NOTIFICATION_END,
 	NL80211_CU_STATE_ECU_END,
+	NL80211_CU_STATE_ABORT,
 };
+
 
 /**
  * enum nl80211_erp_attrs - set ErP attributes during entry/exit
