@@ -929,6 +929,12 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		/* Enhanced Critical Updates Information */
 		control |= BASIC_MULTI_LINK_CTRL_PRES_ENH_CRIT_UPD;
 		common_info_len++;
+
+		if (hapd->conf->bss_load_update_period) {
+			/* Age of BSS Load Present */
+			control |= BASIC_MULTI_LINK_CTRL_PRES_AGE_OF_BSS_LOAD;
+			common_info_len++;
+		}
 	}
 
 	wpabuf_put_le16(buf, control);
@@ -1015,9 +1021,12 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		wpabuf_put_le16(buf, ext_mld_cap);
 	}
 
-	/* Currently hard-code Enhanced Critical Updates Information to zero */
-	if (hostapd_is_uhr_enabled(hapd))
+	if (hostapd_is_uhr_enabled(hapd)) {
+		/* Currently hard-code Enhanced Critical Updates Information to zero */
 		wpabuf_put_u8(buf, 0);
+		if (hapd->conf->bss_load_update_period)
+			wpabuf_put_u8(buf, 0); /* Age of BSS Load */
+	}
 
 	if (!mld_info)
 		goto out;
@@ -1176,9 +1185,12 @@ size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 	if (include_ext_cap)
 		len += 2;
 
-	/* Enhanced Critical Updates Information */
-	if (hostapd_is_uhr_enabled(hapd))
+	if (hostapd_is_uhr_enabled(hapd)) {
+		/* Enhanced Critical Updates Information */
 		len++;
+		if (hapd->conf->bss_load_update_period)
+			len++; /* Age of BSS Load */
+	}
 
 	if (!info)
 		goto out;
@@ -1257,9 +1269,12 @@ static size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd,
 	if (include_ext_cap)
 		eht_ml_len += 2;
 
-	/* Enhanced Critical Updates Information (1) in common info */
-	if (hostapd_is_uhr_enabled(hapd))
+	if (hostapd_is_uhr_enabled(hapd)) {
+		/* Enhanced Critical Updates Information (1) in common info */
 		eht_ml_len++;
+		if (hapd->conf->bss_load_update_period)
+			eht_ml_len++; /* Age of BSS Load */
+	}
 
 	for (link_id = 0; info && link_id < ARRAY_SIZE(info->links);
 	     link_id++) {
