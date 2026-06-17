@@ -4928,6 +4928,44 @@ u8 * wpa_auth_ml_group_kdes(struct wpa_state_machine *sm, u8 *pos,
 	return pos;
 }
 
+
+/*
+ * wpa_auth_key_delivery_elem_len - Calculate wire length of Key Delivery
+ * element (9.4.2.184), including WLAN_EID_FRAGMENT overhead if needed.
+ *
+ * body = RSC(8) + KDE_list; first extension element body capped at 254 bytes
+ * (255 - 1 for the EID_EXT byte); each continuation fragment up to 255 bytes.
+ */
+size_t wpa_auth_key_delivery_elem_len(struct wpa_state_machine *sm,
+				      u16 req_links)
+{
+	size_t kde_list_len, body_len;
+
+	if (!sm || sm->mld_assoc_link_id < 0)
+		return 0;
+
+	kde_list_len = wpa_auth_ml_group_kdes_len(sm, req_links);
+	if (!kde_list_len)
+		return 0;
+
+	/* body = RSC(8) + KDE_list */
+	body_len = WPA_KEY_RSC_LEN + kde_list_len;
+
+	/*
+	 * Unfragmented: EID(1) + Len(1) + EID_EXT(1) + body  → 3 + body_len
+	 * Fragmented:   same 3 bytes + body_len bytes of data
+	 *               + ceil((body_len - 254) / 255) * 2 bytes for fragment
+	 *               EID+Len headers.
+	 *
+	 * ceil((body_len - 254) / 255) = (body_len - 254 + 254) / 255
+	 *                               = body_len / 255  (integer division)
+	 */
+	if (body_len <= 254)
+		return 3 + body_len;
+
+	return 3 + body_len + (body_len / 255) * 2;
+}
+
 #endif /* CONFIG_IEEE80211BE */
 
 
