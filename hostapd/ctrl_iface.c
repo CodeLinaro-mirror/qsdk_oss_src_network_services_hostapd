@@ -2132,9 +2132,6 @@ vht_rollback:
 		} else if (os_strcasecmp(cmd, "bss_he_su_beamformer") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_su_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_mu_beamformer") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_dl_mu_ofdma") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_dl_mu_ofdma_bfer") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_ul_mu_ofdma") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_ul_mumimo") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_full_bw_ul_mumimo") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_bfee_sts_lteq80") == 0 ||
@@ -2298,10 +2295,6 @@ eht_bfme_ss_rollback:
 		} else if (os_strcasecmp(cmd, "bss_eht_su_beamformer") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_su_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_mu_beamformer") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_dl_mu_ofdma") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_ul_mu_ofdma") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_dl_ofdma_mumimo") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_ul_ofdma_mumimo") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_ndp_4x_eht_ltf_and_320nsgi") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_num_sd_lt80") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_num_sd_160") == 0 ||
@@ -2813,25 +2806,6 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
-	} else if (os_strcasecmp(cmd, "bss_he_dl_mu_ofdma") == 0) {
-		res = os_snprintf(buf, buflen, "bss_he_dl_mu_ofdma = %d\n",
-				hapd->conf->he_phy_capab.he_dl_mu_ofdma);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
-	} else if (os_strcasecmp(cmd, "bss_he_dl_mu_ofdma_bfer") == 0) {
-		res = os_snprintf(buf, buflen,
-				 "bss_he_dl_mu_ofdma_bfer = %d\n",
-				hapd->conf->he_phy_capab.he_dl_mu_ofdma_bfer);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
-	} else if (os_strcasecmp(cmd, "bss_he_ul_mu_ofdma") == 0) {
-		res = os_snprintf(buf, buflen, "bss_he_ul_mu_ofdma = %d\n",
-				hapd->conf->he_phy_capab.he_ul_mu_ofdma);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
 	} else if (os_strcasecmp(cmd, "bss_he_ul_mumimo") == 0) {
 		res = os_snprintf(buf, buflen, "bss_he_ul_mumimo = %d\n",
 				hapd->conf->he_phy_capab.he_ul_mumimo);
@@ -2952,32 +2926,6 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 	} else if (os_strcasecmp(cmd, "bss_eht_mu_beamformer") == 0) {
 		res = os_snprintf(buf, buflen, "bss_eht_mu_beamformer = %d\n",
 				hapd->conf->eht_phy_capab.mu_beamformer);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
-	} else if (os_strcasecmp(cmd, "bss_eht_dl_mu_ofdma") == 0) {
-		res = os_snprintf(buf, buflen, "bss_eht_dl_mu_ofdma = %d\n",
-				hapd->conf->eht_phy_capab.dl_mu_ofdma);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
-	} else if (os_strcasecmp(cmd, "bss_eht_ul_mu_ofdma") == 0) {
-		res = os_snprintf(buf, buflen, "bss_eht_ul_mu_ofdma = %d\n",
-				hapd->conf->eht_phy_capab.ul_mu_ofdma);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
-	} else if (os_strcasecmp(cmd, "bss_eht_dl_ofdma_mumimo") == 0) {
-		res = os_snprintf(buf, buflen,
-				 "bss_eht_dl_ofdma_mumimo = %d\n",
-				hapd->conf->eht_phy_capab.dl_ofdma_mumimo);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
-	} else if (os_strcasecmp(cmd, "bss_eht_ul_ofdma_mumimo") == 0) {
-		res = os_snprintf(buf, buflen,
-				 "bss_eht_ul_ofdma_mumimo = %d\n",
-				hapd->conf->eht_phy_capab.ul_ofdma_mumimo);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
@@ -11289,12 +11237,6 @@ static int hostapd_ctrl_iface_parse_mbssid_cmn_param_cmd(char *str, char *get_st
 		param_id = CMD_HE_SU_BFMEE;
 	else if (os_strcasecmp(str, "SET bss_he_mu_beamformer") == 0)
 		param_id = CMD_HE_MU_BEAMFORMER;
-	else if (os_strcasecmp(str, "SET bss_he_dl_mu_ofdma") == 0)
-		param_id = CMD_HE_DL_MU_OFDMA;
-	else if (os_strcasecmp(str, "SET bss_he_dl_mu_ofdma_bfer") == 0)
-		param_id = CMD_HE_DL_MU_OFDMA_BFER;
-	else if (os_strcasecmp(str, "SET bss_he_ul_mu_ofdma") == 0)
-		param_id = CMD_HE_UL_MU_OFDMA;
 	else if (os_strcasecmp(str, "SET bss_he_ul_mumimo") == 0)
 		param_id = CMD_HE_UL_MUMIMO;
 	else if (os_strcasecmp(str, "SET he_basic_mcs_nss_set") == 0)
@@ -11355,14 +11297,6 @@ static int hostapd_ctrl_iface_parse_mbssid_cmn_param_cmd(char *str, char *get_st
 		param_id = CMD_EHT_SU_BFMEE;
 	else if (os_strcasecmp(str, "SET bss_eht_mu_beamformer") == 0)
 		param_id = CMD_EHT_MU_BFMER;
-	else if (os_strcasecmp(str, "SET bss_eht_dl_mu_ofdma") == 0)
-		param_id = CMD_EHT_DL_MU_OFDMA;
-	else if (os_strcasecmp(str, "SET bss_eht_ul_mu_ofdma") == 0)
-		param_id = CMD_EHT_UL_MU_OFDMA;
-	else if (os_strcasecmp(str, "SET bss_eht_dl_ofdma_mumimo") == 0)
-		param_id = CMD_EHT_DL_OFDMA_MUMIMO;
-	else if (os_strcasecmp(str, "SET bss_eht_ul_ofdma_mumimo") == 0)
-		param_id = CMD_EHT_UL_OFDMA_MUMIMO;
 	else if (os_strcasecmp(str, "SET bss_eht_bfme_ss_80") == 0)
 		param_id = CMD_EHT_BFME_SS_80;
 	else if (os_strcasecmp(str, "SET bss_eht_bfme_ss_160") == 0)

@@ -2327,12 +2327,6 @@ static void hostapd_inherit_mbssid_cmn_params(struct hostapd_data *dest_hapd,
 		src_hapd->conf->he_phy_capab.he_su_beamformer;
 	dest_hapd->conf->he_phy_capab.he_su_beamformee =
 		src_hapd->conf->he_phy_capab.he_su_beamformee;
-	dest_hapd->conf->he_phy_capab.he_dl_mu_ofdma =
-		src_hapd->conf->he_phy_capab.he_dl_mu_ofdma;
-	dest_hapd->conf->he_phy_capab.he_dl_mu_ofdma_bfer =
-		src_hapd->conf->he_phy_capab.he_dl_mu_ofdma_bfer;
-	dest_hapd->conf->he_phy_capab.he_ul_mu_ofdma =
-		src_hapd->conf->he_phy_capab.he_ul_mu_ofdma;
 	dest_hapd->conf->he_phy_capab.he_mu_beamformer =
 		src_hapd->conf->he_phy_capab.he_mu_beamformer;
 	dest_hapd->conf->he_phy_capab.he_ul_mumimo =
@@ -2354,14 +2348,6 @@ static void hostapd_inherit_mbssid_cmn_params(struct hostapd_data *dest_hapd,
 		src_hapd->conf->eht_phy_capab.su_beamformee;
 	dest_hapd->conf->eht_phy_capab.mu_beamformer =
 		src_hapd->conf->eht_phy_capab.mu_beamformer;
-	dest_hapd->conf->eht_phy_capab.dl_mu_ofdma =
-		src_hapd->conf->eht_phy_capab.dl_mu_ofdma;
-	dest_hapd->conf->eht_phy_capab.ul_mu_ofdma =
-		src_hapd->conf->eht_phy_capab.ul_mu_ofdma;
-	dest_hapd->conf->eht_phy_capab.dl_ofdma_mumimo =
-		src_hapd->conf->eht_phy_capab.dl_ofdma_mumimo;
-	dest_hapd->conf->eht_phy_capab.ul_ofdma_mumimo =
-		src_hapd->conf->eht_phy_capab.ul_ofdma_mumimo;
 	dest_hapd->conf->eht_phy_capab.eht_bfme_ss_80 =
 		src_hapd->conf->eht_phy_capab.eht_bfme_ss_80;
 	dest_hapd->conf->eht_phy_capab.eht_bfme_ss_160 =
@@ -6339,24 +6325,6 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 
 	if (hostapd_require_tx_bss(hapd,
 				   hapd->conf->he_phy_capab_mask &
-				   HE_PHY_BSS_OVR_DL_MU_OFDMA,
-				   "bss_he_dl_mu_ofdma") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->he_phy_capab_mask &
-				   HE_PHY_BSS_OVR_DL_MU_OFDMA_BFER,
-				   "bss_he_dl_mu_ofdma_bfer") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->he_phy_capab_mask &
-				   HE_PHY_BSS_OVR_UL_MU_OFDMA,
-				   "bss_he_ul_mu_ofdma") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->he_phy_capab_mask &
 				   HE_PHY_BSS_OVR_UL_MUMIMO,
 				   "bss_he_ul_mumimo") < 0)
 		return -1;
@@ -6505,30 +6473,6 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 				   hapd->conf->eht_phy_capab_mask &
 				   EHT_PHY_BSS_OVR_MU_BEAMFORMER,
 				   "bss_eht_mu_beamformer") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->eht_phy_capab_mask &
-				   EHT_PHY_BSS_OVR_DL_MU_OFDMA,
-				   "bss_eht_dl_mu_ofdma") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->eht_phy_capab_mask &
-				   EHT_PHY_BSS_OVR_UL_MU_OFDMA,
-				   "bss_eht_ul_mu_ofdma") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->eht_phy_capab_mask &
-				   EHT_PHY_BSS_OVR_DL_OFDMA_MUMIMO,
-				   "bss_eht_dl_ofdma_mumimo") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->eht_phy_capab_mask &
-				   EHT_PHY_BSS_OVR_UL_OFDMA_MUMIMO,
-				   "bss_eht_ul_ofdma_mumimo") < 0)
 		return -1;
 
 	if (hostapd_require_tx_bss(hapd,
