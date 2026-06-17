@@ -2361,7 +2361,9 @@ static void hostapd_inherit_mbssid_cmn_params(struct hostapd_data *dest_hapd,
 		src_hapd->conf->eht_phy_capab.eht_bfme_ss_320;
 	dest_hapd->conf->eht_ltf = src_hapd->conf->eht_ltf;
 	dest_hapd->iconf->enable_mcs15 = src_hapd->iconf->enable_mcs15;
+#ifdef CONFIG_TESTING_OPTIONS
 	dest_hapd->iconf->ecsa_ie_only = src_hapd->iconf->ecsa_ie_only;
+#endif
 
 	wpa_printf(MSG_DEBUG,
 		   "MBSSID common parameters are successfully inherited for %s from %s",
