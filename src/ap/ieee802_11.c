@@ -2327,6 +2327,33 @@ int sae_sm_step(struct hostapd_data *hapd, struct sta_info *sta,
 }
 
 
+/*
+ * hostapd_sp_implied_key_mgmt - Derive implied key_mgmt from security profiles
+ *
+ * When security_profiles[] contains a SAE-EXT-KEY profile (1, 2, 9, or 10),
+ * the AP must accept SAE authentication even if wpa_key_mgmt does not
+ * explicitly include SAE-EXT-KEY.  Returns WPA_KEY_MGMT_SAE_EXT_KEY |
+ * WPA_KEY_MGMT_FT_SAE_EXT_KEY when such a profile is configured, 0 otherwise.
+ */
+static int hostapd_sp_implied_key_mgmt(const struct hostapd_bss_config *conf)
+{
+	int i;
+
+	if (!conf->security_profiles)
+		return 0;
+	for (i = 0; conf->security_profiles[i] >= 0; i++) {
+		int p = conf->security_profiles[i];
+
+		if (p == SECURITY_PROFILE_NUM_EPPKE_SAE ||
+		    p == SECURITY_PROFILE_NUM_EPPKE_FT_SAE ||
+		    p == SECURITY_PROFILE_NUM_SAE ||
+		    p == SECURITY_PROFILE_NUM_FT_SAE)
+			return WPA_KEY_MGMT_SAE_EXT_KEY |
+			       WPA_KEY_MGMT_FT_SAE_EXT_KEY;
+	}
+	return 0;
+}
+
 static void sae_pick_next_group(struct hostapd_data *hapd, struct sta_info *sta)
 {
 	struct sae_data *sae = sta->sae;
@@ -2343,7 +2370,8 @@ static void sae_pick_next_group(struct hostapd_data *hapd, struct sta_info *sta)
 		groups = default_groups;
 		if (wpa_key_mgmt_sae_ext_key(conf->wpa_key_mgmt |
 					     conf->rsn_override_key_mgmt |
-					     conf->rsn_override_key_mgmt_2))
+					     conf->rsn_override_key_mgmt_2 |
+					     hostapd_sp_implied_key_mgmt(conf)))
 			default_groups[1] = 20;
 	}
 
@@ -2420,7 +2448,8 @@ static int sae_is_group_enabled(struct hostapd_data *hapd, int group)
 		groups = default_groups;
 		if (wpa_key_mgmt_sae_ext_key(conf->wpa_key_mgmt |
 					     conf->rsn_override_key_mgmt |
-					     conf->rsn_override_key_mgmt_2))
+					     conf->rsn_override_key_mgmt_2 |
+					     hostapd_sp_implied_key_mgmt(conf)))
 			default_groups[1] = 20;
 	}
 
@@ -2493,7 +2522,8 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 		groups = default_groups;
 		if (wpa_key_mgmt_sae_ext_key(conf->wpa_key_mgmt |
 					     conf->rsn_override_key_mgmt |
-					     conf->rsn_override_key_mgmt_2))
+					     conf->rsn_override_key_mgmt_2 |
+					     hostapd_sp_implied_key_mgmt(conf)))
 			default_groups[1] = 20;
 	}
 
@@ -5013,7 +5043,8 @@ static void handle_auth(struct hostapd_data *hapd,
 	      (hapd->conf->wpa &&
 	       wpa_key_mgmt_sae(hapd->conf->wpa_key_mgmt |
 				hapd->conf->rsn_override_key_mgmt |
-				hapd->conf->rsn_override_key_mgmt_2) &&
+				hapd->conf->rsn_override_key_mgmt_2 |
+				hostapd_sp_implied_key_mgmt(hapd->conf)) &&
 	       auth_alg == WLAN_AUTH_SAE) ||
 #endif /* CONFIG_SAE */
 #ifdef CONFIG_FILS
@@ -6514,6 +6545,7 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 }
 #endif /* CONFIG_IEEE80211BE */
 
+
 /*
  * hostapd_security_profile_ie_len - Calculate length of UHR Security Info IE
  *
@@ -6544,6 +6576,20 @@ size_t hostapd_security_profile_ie_len(struct hostapd_data *hapd)
 	rsnxe_end = hostapd_eid_rsnxe(hapd, rsnxe_buf, sizeof(rsnxe_buf), ~0ULL);
 	if (rsnxe_end > rsnxe_buf + 2)
 		ext_rsn_capab_len = rsnxe_end - rsnxe_buf - 2;
+
+	/* If any configured profile mandates SAE-H2E, ensure space for the bit */
+	for (i = 0; hapd->conf->security_profiles[i] >= 0; i++) {
+		int p = hapd->conf->security_profiles[i];
+
+		if (p == SECURITY_PROFILE_NUM_EPPKE_SAE ||
+		    p == SECURITY_PROFILE_NUM_EPPKE_FT_SAE ||
+		    p == SECURITY_PROFILE_NUM_SAE ||
+		    p == SECURITY_PROFILE_NUM_FT_SAE) {
+			if (ext_rsn_capab_len < 1)
+				ext_rsn_capab_len = 1;
+			break;
+		}
+	}
 
 	/*
 	 * D1.4 format:
@@ -6603,6 +6649,23 @@ u8 *hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid)
 		if (ext_rsn_capab_len > sizeof(ext_rsn_capab))
 			ext_rsn_capab_len = sizeof(ext_rsn_capab);
 		os_memcpy(ext_rsn_capab, rsnxe_buf + 2, ext_rsn_capab_len);
+	}
+
+	/* If any configured profile mandates SAE-H2E, force the H2E bit */
+	for (i = 0; hapd->conf->security_profiles[i] >= 0; i++) {
+		int p = hapd->conf->security_profiles[i];
+
+		if (p == SECURITY_PROFILE_NUM_EPPKE_SAE ||
+		    p == SECURITY_PROFILE_NUM_EPPKE_FT_SAE ||
+		    p == SECURITY_PROFILE_NUM_SAE ||
+		    p == SECURITY_PROFILE_NUM_FT_SAE) {
+			if (ext_rsn_capab_len < 1) {
+				ext_rsn_capab_len = 1;
+				os_memset(ext_rsn_capab, 0, 1);
+			}
+			ext_rsn_capab[0] |= BIT(WLAN_RSNX_CAPAB_SAE_H2E);
+			break;
+		}
 	}
 
 	/* Build Reduced RSN Capabilities */
