@@ -8542,6 +8542,13 @@ int hostapd_change_config_freq(struct hostapd_data *hapd,
 				    NULL,
 				    hostapd_get_punct_bitmap(hapd),
 				    hapd->iconf->he_6ghz_reg_pwr_type,
+#ifdef CONFIG_IEEE80211BN
+				    hostapd_hw_get_freq(hapd,
+					conf->npca_primary_channel),
+				    conf->npca_punct_bitmap,
+#else
+				    0, 0,
+#endif /* CONFIG_IEEE80211BN */
 				    conf->bandwidth_device,
 				    conf->center_freq_device))
 		return -1;

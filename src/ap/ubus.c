@@ -863,6 +863,13 @@ hostapd_switch_chan(struct ubus_context *ctx, struct ubus_object *obj,
 				NULL,
 				hostapd_get_punct_bitmap(hapd),
 				hapd->iconf->he_6ghz_reg_pwr_type,
+#ifdef CONFIG_IEEE80211BN
+				hostapd_hw_get_freq(hapd,
+					iconf->npca_primary_channel),
+				iconf->npca_punct_bitmap,
+#else
+				0, 0,
+#endif /* CONFIG_IEEE80211BN */
 				iconf->bandwidth_device,
 				iconf->center_freq_device);
 

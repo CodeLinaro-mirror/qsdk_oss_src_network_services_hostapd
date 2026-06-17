@@ -1372,6 +1372,16 @@ struct hostapd_freq_params {
 	 */
 	u32 mcst;
 #endif
+
+	/**
+	 * npca_freq - NPCA primary channel frequency in MHz (0 if not used)
+	 */
+	int npca_freq;
+
+	/**
+	 * npca_punct_bitmap - NPCA disabled subchannel bitmap (0 if not used)
+	 */
+	u16 npca_punct_bitmap;
 };
 
 /**
