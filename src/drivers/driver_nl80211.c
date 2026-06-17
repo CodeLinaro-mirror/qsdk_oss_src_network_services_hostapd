@@ -12515,6 +12515,7 @@ static int nl80211_start_radar_detection(void *priv,
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	struct nl_msg *msg;
 	int ret;
+	u16 valid_links;
 
 	wpa_printf(MSG_DEBUG, "nl80211: Start radar detection (CAC) %d MHz (ht_enabled=%d, vht_enabled=%d, he_enabled=%d, bandwidth=%d MHz, cf1=%d MHz, cf2=%d MHz skip_cac=%d)",
 		   freq->freq, freq->ht_enabled, freq->vht_enabled, freq->he_enabled,
@@ -12532,7 +12533,12 @@ static int nl80211_start_radar_detection(void *priv,
 		return -1;
 	}
 
-	if (nl80211_link_valid(bss->valid_links, freq->link_id)) {
+	if (is_sta_interface(drv->nlmode))
+		valid_links = drv->sta_mlo_info.valid_links;
+	else
+		valid_links = bss->valid_links;
+
+	if (nl80211_link_valid(valid_links, freq->link_id)) {
 		wpa_printf(MSG_DEBUG,
 			   "nl80211: Radar detection (CAC) on link_id=%d",
 			   freq->link_id);
