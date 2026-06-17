@@ -1579,6 +1579,52 @@ wpas_smd_get_prepared_target_v2(struct wpa_supplicant *wpa_s)
 	return NULL;
 }
 
+/**
+ * wpas_smd_pick_exec_link - Select TX link for ST Execution
+ * @wpa_s: wpa_supplicant context
+ *
+ * Returns the link ID of the first active non-assoc link from valid_links,
+ * or mlo_assoc_link_id when no other link is available (single-link MLO or
+ * all non-assoc links dormant).
+ * Returns -1 for non-MLO connections (let mac80211 decide).
+ */
+static s8 wpas_smd_pick_exec_link(struct wpa_supplicant *wpa_s)
+{
+	u16 non_assoc_links;
+	u8 link_id;
+
+	if (!wpa_s->valid_links) {
+		/* Non-MLO connection: no link selection needed */
+		return -1;
+	}
+
+	/* Exclude the assoc link from candidates */
+	non_assoc_links = wpa_s->valid_links & ~BIT(wpa_s->mlo_assoc_link_id);
+	if (!non_assoc_links) {
+		wpa_printf(MSG_ERROR,
+			   "santy SMD: ST Exec TX: no non-assoc link available "
+			   "(valid_links=0x%04x assoc_link=%u), "
+			   "falling back to assoc link",
+			   wpa_s->valid_links, wpa_s->mlo_assoc_link_id);
+		return (s8) wpa_s->mlo_assoc_link_id;
+	}
+
+	/* Pick the lowest-numbered non-assoc active link */
+	for (link_id = 0; link_id < MAX_NUM_MLD_LINKS; link_id++) {
+		if (non_assoc_links & BIT(link_id)) {
+			wpa_printf(MSG_ERROR,
+				   "santy SMD: ST Exec TX: selected link_id=%u "
+				   "(assoc_link=%u valid_links=0x%04x)",
+				   link_id, wpa_s->mlo_assoc_link_id,
+				   wpa_s->valid_links);
+			return (s8) link_id;
+		}
+	}
+
+	/* Unreachable, but be safe */
+	return (s8) wpa_s->mlo_assoc_link_id;
+}
+
 int wpas_smd_request_prepare(struct wpa_supplicant *wpa_s, const u8 *bssid,
 			     int no_dl_sn, int no_ul_sn, const char *scs_ids)
 {
@@ -1974,6 +2020,24 @@ int wpas_smd_request_prepare_enhanced(struct wpa_supplicant *wpa_s, const u8 *bs
 
 	params.reconfig_info = reconfig_info; /* Pass populated link management info to driver */
 
+	/*
+	 * Determine the TX link based on force_diff_tx:
+	 *
+	 * force_diff_tx=0 (default):
+	 *   Both ST Prep and ST Exec go on mlo_assoc_link_id.
+	 *
+	 * force_diff_tx=1:
+	 *   ST Prep  -> mlo_assoc_link_id (assoc link, same as default).
+	 *   ST Exec  -> first non-assoc active link via
+	 *               wpas_smd_pick_exec_link(); falls back to assoc link
+	 *               when no other link is available.
+	 */
+	if (reconfig_info && reconfig_info->is_execution_request &&
+	    reconfig_info->force_diff_tx)
+		params.tx_link_id = wpas_smd_pick_exec_link(wpa_s);
+	else
+		params.tx_link_id = (s8) wpa_s->mlo_assoc_link_id;
+
 	/* Per-link IEs: copy pointers and lengths */
 	params.per_link_ie_buf = per_link_ie_buf;
 	params.per_link_ie_len = per_link_ie_len;
@@ -2098,6 +2162,22 @@ int smd_ctrl_iface_prepare(struct wpa_supplicant *wpa_s, char *cmd,
 					os_free(buf);
 				}
 			}
+		} else if (os_strcasecmp(pos, "FORCE_DIFF_TX") == 0) {
+			/*
+			 * FORCE_DIFF_TX: boolean flag requesting that ST Prep
+			 * and ST Exec be sent on different MLO links.
+			 *   ST Prep -> mlo_assoc_link_id
+			 *   ST Exec -> first non-assoc active link
+			 *              (fallback: assoc link if none available)
+			 *
+			 * Example:
+			 *   SMD_PREPARE aa:bb:cc:dd:ee:ff FORCE_DIFF_TX
+			 */
+			reconfig_info.force_diff_tx = 1;
+			reconfig_ptr = &reconfig_info;
+			wpa_printf(MSG_ERROR,
+				   "santy SMD: PREPARE FORCE_DIFF_TX set: ST Exec "
+				   "will use non-assoc link");
 		}
 		pos = tmp;
 	}
@@ -2105,6 +2185,22 @@ int smd_ctrl_iface_prepare(struct wpa_supplicant *wpa_s, char *cmd,
 	/* Call enhanced preparation function with link management info if provided */
 	if (wpas_smd_request_prepare_enhanced(wpa_s, bssid, no_dl_sn, no_ul_sn, scs_ids, reconfig_ptr, per_link_ie.buf, per_link_ie.len, MAX_NUM_MLD_LINKS) < 0)
 		return -1;
+
+	/*
+	 * Store force_diff_tx in the prepared target so that the auto-exec
+	 * path (smd_st_roam_execute_work -> wpas_smd_request_execute) can
+	 * honour it when ST Execution is triggered after PREP response.
+	 */
+	if (reconfig_info.force_diff_tx) {
+		struct wpa_smd_prepared_target *target =
+			wpas_smd_get_prepared_target(wpa_s, bssid);
+		if (target) {
+			target->force_diff_tx = 1;
+			wpa_printf(MSG_DEBUG,
+				   "SMD: stored force_diff_tx=1 for target "
+				   MACSTR, MAC2STR(bssid));
+		}
+	}
 
 	os_memcpy(buf, "OK\n", 3);
 
@@ -3415,7 +3511,19 @@ int wpas_smd_request_execute(struct wpa_supplicant *wpa_s,
 	reconfig_info.exec_path = exec_path;
 	reconfig_info.dl_tid_bitmap = dl_tid_bitmap;
 
-	wpa_printf(MSG_INFO, "SMD: ST Execution to " MACSTR
+	/*
+	 * Propagate force_diff_tx from the prepared target so that
+	 * wpas_smd_request_prepare_enhanced() selects the correct TX link.
+	 * The flag was stored in target->force_diff_tx when SMD_PREPARE
+	 * was processed with the FORCE_DIFF_TX argument.
+	 */
+	reconfig_info.force_diff_tx = target->force_diff_tx;
+
+	wpa_printf(MSG_DEBUG,
+		   "SMD: ST Exec for " MACSTR " force_diff_tx=%u",
+		   MAC2STR(bssid), reconfig_info.force_diff_tx);
+
+	wpa_printf(MSG_INFO, "SMD: ST Execution to " MACSTR 
 		   " (path=%d dl_tid_bitmap=0x%02x)", MAC2STR(bssid), exec_path, dl_tid_bitmap);
 
 	/* Leverage existing prepare function with execution parameters
