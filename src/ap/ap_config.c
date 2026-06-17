@@ -268,6 +268,11 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 #ifdef CONFIG_TESTING_OPTIONS
 	bss->rsnxe_capab_mask = ~0ULL;
 #endif /* CONFIG_TESTING_OPTIONS */
+#ifdef CONFIG_ENC_ASSOC
+	bss->assoc_frame_encryption = 0;
+	bss->pmksa_caching_privacy = 0;
+	bss->eap_using_authentication_frames = 0;
+#endif /* CONFIG_ENC_ASSOC */
 }
 
 #ifdef CONFIG_IEEE80211BE

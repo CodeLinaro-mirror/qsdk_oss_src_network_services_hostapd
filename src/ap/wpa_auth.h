@@ -343,6 +343,11 @@ struct wpa_auth_config {
 	int smd_capable;
 	u8 smd_domain_id[ETH_ALEN];
 	int smd_ptk_mode;
+#ifdef CONFIG_ENC_ASSOC
+	unsigned int assoc_frame_encryption:1;
+	unsigned int pmksa_caching_privacy:1;
+	unsigned int eap_using_authentication_frames:1;
+#endif /* CONFIG_ENC_ASSOC */
 };
 
 typedef enum {
