@@ -25,6 +25,9 @@
 #include "ap/ap_config.h"
 #include "ap/ieee802_11.h"
 #include "config_file.h"
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
 
 
 #ifndef CONFIG_NO_VLAN
@@ -534,7 +537,83 @@ hostapd_config_read_radius_addr(struct hostapd_radius_server **server,
 	return ret;
 }
 
+#ifdef CONFIG_RADIUS_TLS
+static int hostapd_dns_resolution(struct hostapd_radius_server **server,
+				  int *num_server, const char *val, int def_port,
+				  struct hostapd_radius_server **curr_serv)
+{
+	struct hostapd_radius_server *nserv;
+	static int server_index = 1;
+	struct addrinfo hints, *res;
+	char ip[INET6_ADDRSTRLEN];
 
+	memset(&hints, 0, sizeof hints);
+	hints.ai_family = AF_UNSPEC;      /* IPv4 or IPv6 */
+	hints.ai_socktype = SOCK_STREAM;  /* TCP */
+
+	/* Create a RADIUS server Instance */
+	nserv = os_realloc_array(*server, *num_server + 1, sizeof(*nserv));
+	if (nserv == NULL)
+		return -1;
+
+	*server = nserv;
+	nserv = &nserv[*num_server];
+	(*num_server)++;
+	(*curr_serv) = nserv;
+
+	os_memset(nserv, 0, sizeof(*nserv));
+	nserv->port = def_port;
+	/* Store Domain Name of RADIUS Server
+	 * This will be needed for the RADIUS Client (Authenticator)
+	 * to perform a match with the SubjectAltName in the RADIUS
+	 * server certificate received as part of the TLS handshake
+	 */
+	os_free(nserv->subject);
+	nserv->subject = os_strdup(val);
+	nserv->index = server_index++;
+
+	/* DNS Resolution to get RADIUS Server IP address.
+	 * getaddrinfo() returns a list of IP addresses associated with the
+	 * domain name. For simplicity, TCP connection is attempted with the
+	 * first IP address returned from the DNS resolution only, i.e, if the
+	 * first server is unaccessible, next IP is not tried.
+	 */
+	if (getaddrinfo(val, NULL, &hints, &res)) {
+		wpa_printf(MSG_ERROR, "RADIUS: DNS resolution failed for %s",
+			   val);
+		return -1;
+	}
+
+	if (res->ai_family == AF_INET) {
+		struct sockaddr_in *sin = (struct sockaddr_in *)res->ai_addr;
+
+		nserv->addr.af = AF_INET;
+		os_memcpy(&nserv->addr.u.v4, &sin->sin_addr,
+			  sizeof(struct in_addr));
+		inet_ntop(AF_INET, &nserv->addr.u.v4, ip, sizeof(ip));
+		wpa_printf(MSG_DEBUG, "RADIUS: DNSName resolved to server IP: %s", ip);
+	}
+#ifdef CONFIG_IPV6
+	else if (res->ai_family == AF_INET6) {
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)res->ai_addr;
+
+		nserv->addr.af = AF_INET6;
+		os_memcpy(&nserv->addr.u.v6, &sin6->sin6_addr,
+			  sizeof(struct in6_addr));
+		inet_ntop(AF_INET6, &nserv->addr.u.v6, ip, sizeof(ip));
+		wpa_printf(MSG_DEBUG, "RADIUS: DNSName resolved to server IP: %s", ip);
+	}
+#endif /* CONFIG_IPV6 */
+	else {
+		wpa_printf(MSG_DEBUG, "RADIUS: Unrecognized address family");
+		freeaddrinfo(res);
+		return -1;
+	}
+	freeaddrinfo(res);
+
+	return 0;
+}
+#endif
 
 static int hostapd_parse_das_client(struct hostapd_bss_config *bss, char *val)
 {
@@ -2646,6 +2725,33 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		   os_strcmp(buf, "auth_server_private_key_passwd") == 0) {
 		os_free(bss->radius->auth_server->private_key_passwd);
 		bss->radius->auth_server->private_key_passwd = os_strdup(pos);
+	} else if (os_strcmp(buf, "auth_server_hostname") == 0) {
+		wpa_printf(MSG_DEBUG, "RADIUS: Domain name: %s", pos);
+		if (bss->radius->auth_server) {
+			/* A RADIUS server already exists - it was likely created via
+			 * auth_server_addr config option. In such a case, just store
+			 * the RADIUS server domain name in the existing RADIUS server
+			 * instance. Since Server IP address is explicitly configured
+			 * using the auth_server_addr config option, skip DNS resolution.
+			 * The stored server domain name will later be used during
+			 * the TLS handshake to verify server identity
+			 */
+			os_free(bss->radius->auth_server->subject);
+			bss->radius->auth_server->subject = os_strdup(pos);
+		} else {
+			/* No RADIUS server exists — only auth_server_hostname config
+			 * option is configured. In such a case, first create a RADIUS
+			 * server instance and also perform DNS resolution
+			 */
+			if (hostapd_dns_resolution(&bss->radius->auth_servers,
+						   &bss->radius->num_auth_servers,
+						   pos, 2083,
+						   &bss->radius->auth_server)) {
+				wpa_printf(MSG_DEBUG, "RADIUS: Failed to get "
+					  "Server IP from Domain Name");
+				return 1;
+			}
+		}
 #endif /* CONFIG_RADIUS_TLS */
 	} else if (os_strcmp(buf, "acct_server_addr") == 0) {
 		if (hostapd_config_read_radius_addr(

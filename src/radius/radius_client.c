@@ -1366,6 +1366,7 @@ static void radius_client_write_ready(int sock, void *eloop_ctx, void *sock_ctx)
 	int res = -1;
 	struct tls_connection_params params;
 	struct hostapd_radius_server *server;
+	char * altsubject_match = NULL;
 
 	wpa_printf(MSG_DEBUG, "RADIUS: TCP connection established - start TLS handshake (sock=%d)",
 		   sock);
@@ -1412,11 +1413,49 @@ static void radius_client_write_ready(int sock, void *eloop_ctx, void *sock_ctx)
 	params.private_key = server->private_key;
 	params.private_key_passwd = server->private_key_passwd;
 	params.flags = TLS_CONN_DISABLE_TLSv1_0 | TLS_CONN_DISABLE_TLSv1_1;
+	/* Domain name of the RADIUS Server */
+	params.domain_match = server->subject;
+
+	if (!params.domain_match) {
+		char ip[INET6_ADDRSTRLEN];
+		char ip_match[INET6_ADDRSTRLEN + 4]; /* "IP:" + ip + '\0' */
+
+		wpa_printf(MSG_DEBUG, "RADIUS: Domain name missing; using IP "
+			   "address for identity match");
+		if (server->addr.af == AF_INET) {
+			inet_ntop(AF_INET, &server->addr.u.v4, ip, sizeof(ip));
+			os_snprintf(ip_match, sizeof(ip_match), "IP:%s", ip);
+
+			altsubject_match = os_strdup(ip_match);
+			params.altsubject_match = altsubject_match;
+
+			wpa_printf(MSG_DEBUG, "RADIUS: IP %s for identity match",
+				   ip_match);
+		}
+#ifdef CONFIG_IPV6
+		else if (server->addr.af == AF_INET6) {
+			inet_ntop(AF_INET6, &server->addr.u.v6, ip, sizeof(ip));
+			os_snprintf(ip_match, sizeof(ip_match), "IP:%s", ip);
+
+			altsubject_match = os_strdup(ip_match);
+			params.altsubject_match = altsubject_match;
+			wpa_printf(MSG_DEBUG, "RADIUS: IP %s for identity match",
+				   ip_match);
+		}
+#endif /* CONFIG_IPV6 */
+		else {
+			wpa_printf(MSG_ERROR, "Unrecognized address family");
+			goto fail;
+		}
+	}
 	if (tls_connection_set_params(radius->tls_ctx, conn, &params)) {
 		wpa_printf(MSG_INFO,
 			   "RADIUS: Failed to set TLS connection parameters");
 		goto fail;
 	}
+
+	os_free(altsubject_match);
+	altsubject_match = NULL;
 
 	in = NULL;
 	appl = NULL;
@@ -1457,6 +1496,8 @@ fail:
 	wpa_printf(MSG_INFO, "RADIUS: Failed to perform TLS handshake");
 	tls_connection_deinit(radius->tls_ctx, conn);
 	wpabuf_free(out);
+	os_free(altsubject_match);
+	altsubject_match = NULL;
 	radius_client_close_tcp(radius, sock, msg_type);
 }
 #endif /* CONFIG_RADIUS_TLS */

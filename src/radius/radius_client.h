@@ -65,6 +65,7 @@ struct hostapd_radius_server {
 	 */
 	char *private_key;
 
+	char *subject;
 	/**
 	 * private_key_passwd - Password for the private key for RADIUS/TLS
 	 */

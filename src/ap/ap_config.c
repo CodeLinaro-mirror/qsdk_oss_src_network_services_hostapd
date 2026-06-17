@@ -678,6 +678,7 @@ static void hostapd_config_free_radius(struct hostapd_radius_server *servers,
 		os_free(servers[i].client_cert);
 		os_free(servers[i].private_key);
 		os_free(servers[i].private_key_passwd);
+		os_free(servers[i].subject);
 	}
 	os_free(servers);
 }
