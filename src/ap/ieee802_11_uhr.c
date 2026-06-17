@@ -41,6 +41,26 @@ u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 	    hapd->conf->dps_assist == FEATURE_DISABLED)
 		cap->mac_cap[0] &= ~UHR_MACCAP_DPS_ASSIST;
 
+	cap->mac_cap[3] =
+		(cap->mac_cap[3] &
+		 ~UHR_MACCAP3_PARAM_UPD_ADV_NOTIF_INTV_MASK) |
+		((hapd->conf->uhr_params_update.adv_notification_interval <<
+		  UHR_MACCAP3_PARAM_UPD_ADV_NOTIF_INTV_SHIFT) &
+		 UHR_MACCAP3_PARAM_UPD_ADV_NOTIF_INTV_MASK);
+
+	cap->mac_cap[3] =
+		(cap->mac_cap[3] &
+		 ~UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_MASK) |
+		((hapd->conf->uhr_params_update.update_in_tim_interval <<
+		  UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_SHIFT) &
+		 UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_MASK);
+	cap->mac_cap[4] =
+		(cap->mac_cap[4] &
+		 ~UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK) |
+		(((hapd->conf->uhr_params_update.update_in_tim_interval >> 3) <<
+		  UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_SHIFT) &
+		 UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK);
+
 	os_memcpy(cap->phy_cap, uhr_cap->phy_cap, sizeof(cap->phy_cap));
 	pos += sizeof(struct ieee80211_uhr_capabilities);
 

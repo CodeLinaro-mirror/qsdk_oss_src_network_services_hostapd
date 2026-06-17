@@ -384,6 +384,16 @@ struct eht_phy_capabilities_info {
 #define FEATURE_ENABLED		1
 
 /**
+ * struct uhr_params_update_config - UHR params update configuration
+ *
+ * Configurable intervals for UHR parameter update notifications.
+ */
+struct uhr_params_update_config {
+	u8 adv_notification_interval;
+	u8 update_in_tim_interval;
+};
+
+/**
  * struct hostapd_bss_config - Per-BSS configuration
  */
 struct hostapd_bss_config {
@@ -1328,6 +1338,14 @@ struct hostapd_bss_config {
 	 * 0 and 1 are used to enable and disable support.
 	 */
 	int dps_assist;
+
+#ifdef CONFIG_IEEE80211BN
+	/**
+	 * uhr_params_update - UHR params update configuration intervals.
+	 */
+	struct uhr_params_update_config uhr_params_update;
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
 	struct hostapd_config_plugin plugin;
 #endif

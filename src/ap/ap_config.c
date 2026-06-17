@@ -256,6 +256,10 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 
 #ifdef CONFIG_IEEE80211BN
 	bss->dps_assist = DRIVER_DEFINED;
+
+	/* UHR intervals are represented as TUs */
+	bss->uhr_params_update.adv_notification_interval = 7;
+	bss->uhr_params_update.update_in_tim_interval = 10;
 #endif /* CONFIG_IEEE80211BN */
 
 	/* This max size includes wmm and user configured vendor elements */

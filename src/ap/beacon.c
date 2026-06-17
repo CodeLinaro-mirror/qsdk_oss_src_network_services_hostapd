@@ -3842,8 +3842,28 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hostapd_is_uhr_enabled(hapd))
+	if (hostapd_is_uhr_enabled(hapd)) {
+		u8 *uhr_cap;
+
 		tailpos = hostapd_eid_uhr_operation(hapd, tailpos, true);
+
+		params->uhr_cap = os_zalloc(3 + IEEE80211_UHR_CAP_MAX_SIZE);
+		if (!params->uhr_cap) {
+			wpa_printf(MSG_ERROR, "Failed to allocate for UHR capabilities");
+			os_free(head);
+			os_free(tail);
+			return -1;
+		}
+
+		uhr_cap = hostapd_eid_uhr_capab(hapd, params->uhr_cap,
+					       IEEE80211_MODE_AP);
+		/* check that it was filled */
+		if (uhr_cap == params->uhr_cap) {
+			os_free(params->uhr_cap);
+			params->uhr_cap = NULL;
+		}
+
+	}
 #endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_IEEE80211AC
@@ -4166,6 +4186,10 @@ void ieee802_11_free_ap_params(struct wpa_driver_ap_params *params)
 #endif /* CONFIG_IEEE80211AX */
 	os_free(params->allowed_freqs);
 	params->allowed_freqs = NULL;
+#ifdef CONFIG_IEEE80211BN
+	os_free(params->uhr_cap);
+	params->uhr_cap = NULL;
+#endif /* CONFIG_IEEE80211BN */
 }
 
 #ifdef CONFIG_IEEE80211BE
