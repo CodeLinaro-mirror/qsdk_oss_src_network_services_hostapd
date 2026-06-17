@@ -567,8 +567,9 @@
 #define WLAN_SEC_PROF_IND_VENDOR_COUNT(ind)   (((ind) >> 4) & 0x0f)
 
 #define WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS 155
-
 #define WLAN_EID_EXT_SMD 154
+#define WLAN_EID_EXT_UHR_PARAMS_UPDATE          158
+
 /* SMD Information Element length: EID (1) + Len (1) + ExtID (1) +
  * SMD Identifier (ETH_ALEN) + Capabilities (1) + Timeout (1) */
 #define SMD_IE_LEN (2 + 1 + ETH_ALEN + 1 + 1)
@@ -3425,16 +3426,16 @@ struct ieee80211_p_edca_info {
 #define IEEE80211_UHR_NPCA_OPER_DISABLED_SUBCHAN_BITMAP_SIZE	2
 
 struct ieee80211_npca_info {
-	/* TODO: Convert this into structure bitfield
-	 * As per spec npca_params defined as below
-	 * npca_primary_chan					:4
-	 * npca_min_dur_threshold				:4
-	 * npca_switching_delay					:6
-	 * npca_switch_back_delay				:6
-	 * npca_initial_qsrc					:2
-	 * npca_moplen						:1
-	 * npca_disabled_subchan_bitmap_pres			:1
-	 * reserved						:8
+	/* npca_params bit layout (Figure 9-aa4, IEEE P802.11bn D1.4 ss9.4.2.355.2):
+	 * npca_primary_chan					:4  (B0-B3)
+	 * npca_min_dur_threshold				:4  (B4-B7)
+	 * npca_switching_delay					:6  (B8-B13)
+	 * npca_switch_back_delay				:6  (B14-B19)
+	 * npca_initial_qsrc					:2  (B20-B21)
+	 * npca_moplen						:1  (B22)
+	 * npca_disabled_subchan_bitmap_pres			:1  (B23)
+	 * reserved						:8  (B24-B31)
+	 * npca_disabled_subchan_bitmap is a separate u16 (B32-B47)
 	 */
 	u32 npca_params;
 	u16 npca_disabled_subchan_bitmap;
@@ -3485,6 +3486,15 @@ struct ieee80211_uhr_capabilities {
 	/* UHR PHY Capabilities Information */
 	u8 phy_cap[UHR_PHY_CAPAB_LEN];
 } STRUCT_PACKED;
+
+/* Table 9-bb13: Encoding of the Mode ID field (9.4.2.362) */
+#define UHR_PARAMS_UPDATE_MODE_ID_NPCA		1
+/* TODO: Add Mode ID macros for DPS(0), DUO(2), P-EDCA(3), DBE(4), AP PUO(5), ELR(6) */
+
+/* Mode Tuple field bits (Figure 9-aa67) */
+#define UHR_MODE_TUPLE_MODE_ID_MASK		0x3F
+#define UHR_MODE_TUPLE_MODE_ENABLE		BIT(6)
+#define UHR_MODE_TUPLE_MODE_UPDATE		BIT(7)
 
 #define IEEE80211_EHT_CAPAB_MIN_LEN (2 + 9)
 

@@ -192,3 +192,159 @@ u16 copy_sta_uhr_capab(struct hostapd_data *hapd, struct sta_info *sta,
 
 	return WLAN_STATUS_SUCCESS;
 }
+
+
+/* mode_ctrl(1) is always present; mode_len(1) is present when the mode
+ * is enabled (mandatory even when mode_params_len == 0).
+ * Per 9.4.2.362: Mode Length and Mode Specific Parameters fields are not
+ * included if Mode Enable is 0 or the mode has no parameters.
+ */
+static size_t uhr_mode_tuple_hdr_len(bool enable, size_t mode_params_len)
+{
+	size_t len = 1; /* mode_ctrl */
+
+	if (enable)
+		len += 1; /* mode_len */
+
+	return len;
+}
+
+
+static u8 * uhr_put_mode_tuple_hdr(u8 *pos, u8 mode_id, bool enable,
+				    bool update, u8 mode_len)
+{
+	u8 mode_ctrl = mode_id & UHR_MODE_TUPLE_MODE_ID_MASK;
+
+	if (enable)
+		mode_ctrl |= UHR_MODE_TUPLE_MODE_ENABLE;
+	if (enable && update)
+		mode_ctrl |= UHR_MODE_TUPLE_MODE_UPDATE;
+	*pos++ = mode_ctrl;
+
+	if (enable)
+		*pos++ = mode_len;
+
+	return pos;
+}
+
+
+/* NPCA (Mode ID = 1): Mode Specific Parameters = NPCA Operation Parameters
+ * field (9.4.2.355.2), 4 or 6 octets. Present only when Mode Enable = 1.
+ */
+static size_t uhr_npca_mode_tuple_len(const struct hostapd_bss_config *conf)
+{
+	const struct hostapd_uhr_npca_params *npca =
+		&conf->uhr_params_update.npca;
+	size_t params_len;
+
+	params_len = 0;
+	if (npca->enable) {
+		params_len = 4;
+		if (npca->params & UHR_OPER_PARAMS_NPCA_DIS_SUBCH_BITMAP_PRES)
+			params_len += 2;
+	}
+
+	return uhr_mode_tuple_hdr_len(npca->enable, params_len) + params_len;
+}
+
+
+static u8 * uhr_put_npca_mode_tuple(u8 *pos,
+				    const struct hostapd_bss_config *conf)
+{
+	const struct hostapd_uhr_npca_params *npca =
+		&conf->uhr_params_update.npca;
+	bool bitmap_present;
+	u8 mode_len;
+
+	bitmap_present = npca->enable &&
+			 !!(npca->params &
+				UHR_OPER_PARAMS_NPCA_DIS_SUBCH_BITMAP_PRES);
+	mode_len = npca->enable ?
+		4 + (bitmap_present ? 2 : 0) : 0;
+
+	pos = uhr_put_mode_tuple_hdr(pos, UHR_PARAMS_UPDATE_MODE_ID_NPCA,
+				     npca->enable, npca->update, mode_len);
+	if (npca->enable) {
+		WPA_PUT_LE32(pos, npca->params);
+		pos += 4;
+		if (bitmap_present) {
+			WPA_PUT_LE16(pos, npca->disabled_subchan_bitmap);
+			pos += 2;
+		}
+	}
+
+	return pos;
+}
+
+
+size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,
+					 bool skip_post_phase)
+{
+	const struct hostapd_bss_config *conf = hapd->conf;
+	size_t len;
+
+	if (hapd->uhr_ecu.state == UHR_ECU_IDLE)
+		return 0;
+
+	/*
+	 * Per 37.30.2.2: during the post-notification phase the element is
+	 * included only in Beacon and Probe Response frames, not in
+	 * (Re)Association Response or Link Reconfiguration Response frames.
+	 */
+	if (skip_post_phase &&
+	    hapd->uhr_ecu.state >= UHR_ECU_POST_ADVANCE_NOTIFY)
+		return 0;
+
+	if (!conf->uhr_params_update.mode_changed)
+		return 0;
+
+	/* EID(1) + Length(1) + EID_EXT(1) + Countdown Timer(1) */
+	len = 4;
+
+	if (conf->uhr_params_update.mode_changed & BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA))
+		len += uhr_npca_mode_tuple_len(conf);
+	/* TODO: Add length for DPS, DUO, P-EDCA, DBE, AP PUO, ELR modes */
+
+	if (len == 4)
+		return 0;
+
+	return len;
+}
+
+
+u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
+				   bool skip_post_phase)
+{
+	const struct hostapd_bss_config *conf = hapd->conf;
+	u8 *pos = eid;
+	u8 *length_pos;
+
+	if (hapd->uhr_ecu.state == UHR_ECU_IDLE)
+		return eid;
+
+	if (skip_post_phase &&
+	    hapd->uhr_ecu.state >= UHR_ECU_POST_ADVANCE_NOTIFY)
+		return eid;
+
+	if (!conf->uhr_params_update.mode_changed)
+		return eid;
+
+	*pos++ = WLAN_EID_EXTENSION;
+	length_pos = pos++;
+	*pos++ = WLAN_EID_EXT_UHR_PARAMS_UPDATE;
+
+	*pos++ = hapd->uhr_ecu.uhr_params_update_countdown;
+
+	/* Mode Tuple List (9.4.2.362) */
+	/* TODO: Add Mode Tuple for DPS (Mode ID = 0) */
+	if (conf->uhr_params_update.mode_changed & BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA))
+		pos = uhr_put_npca_mode_tuple(pos, conf);
+	/* TODO: Add Mode Tuple for DUO (Mode ID = 2) */
+	/* TODO: Add Mode Tuple for P-EDCA (Mode ID = 3) */
+	/* TODO: Add Mode Tuple for DBE (Mode ID = 4) */
+	/* TODO: Add Mode Tuple for AP PUO (Mode ID = 5) */
+	/* TODO: Add Mode Tuple for ELR Reception (Mode ID = 6) */
+
+	*length_pos = pos - (eid + 2);
+	return pos;
+}
