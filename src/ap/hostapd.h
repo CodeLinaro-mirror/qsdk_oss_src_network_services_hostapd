@@ -154,6 +154,7 @@ struct hostapd_frame_info {
 	u32 channel;
 	u32 datarate;
 	int ssi_signal; /* dBm */
+	struct sta_smd_ctx_info *smd_ctx;
 };
 
 enum wps_status {

@@ -31,6 +31,108 @@
 #include "drivers/nl80211_copy.h"
 #include "../../qcn_extns/cmn.h"
 
+/* SMD context definitions - IEEE 802.11bn compliant */
+#define SMD_NUM_TIDS 8
+#define SMD_WPA_PN_LEN 16
+#define SMD_NUM_SCSID 16
+
+/* Valid context bitmap flags */
+#define SMD_CTX_VALID_DL_SN      BIT(0)
+#define SMD_CTX_VALID_UL_SN      BIT(1)
+#define SMD_CTX_VALID_PN         BIT(2)
+#define SMD_CTX_VALID_BA_PARAMS  BIT(3)
+#define SMD_CTX_VALID_QOS        BIT(4)
+/* BIT(5) to BIT(7) are reserved */
+
+/**
+ * struct sta_smd_ba_info - Block Ack parameters for SMD context
+ * @amsdu_supported: A-MSDU support flag
+ * @ba_policy: Block Ack policy (0=delayed, 1=immediate)
+ * @buffer_size: Block Ack buffer size (10 bits)
+ * @timeout: Block Ack timeout value
+ * @ext_no_frag: Extended no fragmentation flag
+ * @extfrag_level: Extended fragmentation level (2 bits)
+ * @ext_buffer_size: Extended buffer size (10 bits)
+ */
+struct sta_smd_ba_info {
+	u16 amsdu_supported:1,
+	    ba_policy:1,
+	    buffer_size:10;
+	u16 timeout;
+	u16 ext_no_frag:1,
+	    extfrag_level:2,
+	    ext_buffer_size:10;
+};
+
+/**
+ * struct sta_smd_ctx_info - SMD station context information
+ * @valid_ctx_bmap: Bitmap indicating which context fields are valid
+ * @st_type: SMD BSS Transition Type (Prep/Exec)
+ * @pn_len: Length of PN which varies based on cipher type
+ * @dl: Downlink context
+ *   @valid_tid_bmap: Bitmap of valid TIDs for DL
+ *   @sn: Sequence numbers per TID
+ *   @pn: Packet number (single PN for all TIDs in DL)
+ *   @ba: Block Ack parameters per TID
+ * @ul: Uplink context
+ *   @valid_tid_bmap: Bitmap of valid TIDs for UL
+ *   @sn: Sequence numbers per TID
+ *   @pn: Packet numbers per TID (separate PN per TID in UL)
+ *   @ba: Block Ack parameters per TID
+ * @qos: QoS context
+ *   @scs_descriptors: Pointers to SCS Descriptor elements per SCS_ID
+ *   @mscs_descriptor: Pointer to MSCS Descriptor element
+ * @vendor_ctx_len: Length of vendor-specific context
+ * @vendor_ctx: Vendor-specific context data
+ *
+ * This structure contains the complete SMD station context as defined
+ * in IEEE 802.11bn for seamless roaming with state transfer.
+ */
+struct sta_smd_ctx_info {
+	u8 valid_ctx_bmap;
+	u8 st_type;
+	u8 pn_len; /* Length of PN which varies based on the cipher type */
+
+	struct {
+		u8 valid_tid_bmap;
+		u16 sn[SMD_NUM_TIDS];
+		u8 pn[SMD_WPA_PN_LEN];
+		struct sta_smd_ba_info ba[SMD_NUM_TIDS];
+	} dl;
+
+	struct {
+		u8 valid_tid_bmap;
+		u16 sn[SMD_NUM_TIDS];
+		u16 pn[SMD_NUM_TIDS][SMD_WPA_PN_LEN];
+		struct sta_smd_ba_info ba[SMD_NUM_TIDS];
+	} ul;
+
+	struct {
+		/* SCS Descriptor element for each SCS_ID */
+		u8 *scs_descriptors[SMD_NUM_SCSID];
+		/* MSCS Descriptor element */
+		u8 *mscs_descriptor;
+	} qos;
+
+	size_t vendor_ctx_len;
+	u8 vendor_ctx[];
+};
+
+/* Calculate approximate size of sta_smd_ctx_info structure
+ * This is used for buffer allocation and validation.
+ * Actual size may vary due to alignment and vendor context.
+ *
+ * Base calculation:
+ * - valid_ctx_bmap: 1 byte
+ * - pn_len: 1 byte
+ * - dl: 1 + (8*2) + 16 + (8*6) = 81 bytes
+ * - ul: 1 + (8*2) + (8*16*2) + (8*6) = 321 bytes
+ * - qos: (16*8) + 8 = 136 bytes (pointers only, descriptors separate)
+ * - vendor_ctx_len: 8 bytes
+ * - vendor_ctx: 8 bytes (pointer)
+ * Total: ~556 bytes (may vary with alignment)
+ */
+
 struct nan_subscribe_params;
 struct nan_publish_params;
 
@@ -8218,6 +8320,12 @@ union wpa_event_data {
 		 * non MLD.
 		 */
 		int link_id;
+
+		/**
+		 * smd_ctx - SMD context from driver (optional, NULL if not present)
+		 */
+		struct sta_smd_ctx_info *smd_ctx;
+
 	} rx_mgmt;
 
 	/**
