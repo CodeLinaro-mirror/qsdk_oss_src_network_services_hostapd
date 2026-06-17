@@ -5864,6 +5864,12 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 	bool pmk_cache_based_sae;
 	struct security_profile_entry_ap matched_profile;
 	bool security_profile_matched = false;
+#ifdef CONFIG_SAE
+	bool epp_sta = false;
+#ifdef CONFIG_ENC_ASSOC
+	epp_sta = sta->epp_sta;
+#endif /* CONFIG_ENC_ASSOC */
+#endif /* CONFIG_SAE */
 
 	for_each_element(elem, ies, ies_len) {
 		memcpy(sta->vendor_oui, elem->data, 3);
@@ -6333,7 +6339,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			if (wpa_key_mgmt_sae_ext_key(sa->akmp))
 				wpa_auth_set_hash_alg_sae_ext_key(
 					sta->wpa_sm, sa->pmk_len);
-		} else if (!pmk_cache_based_sae &&
+		} else if (!pmk_cache_based_sae && !epp_sta &&
 			   wpa_auth_uses_sae(sta->wpa_sm) &&
 			   sta->auth_alg != WLAN_AUTH_SAE &&
 			   !(sta->auth_alg == WLAN_AUTH_FT &&
@@ -6783,6 +6789,9 @@ int ieee80211_ml_process_link(struct hostapd_data *hapd,
 	sta->mld_assoc_link_id = origin_sta->mld_assoc_link_id;
 	sta->sa_query_timed_out = origin_sta->sa_query_timed_out;
 	ap_sta_set_mld(sta, true);
+#ifdef CONFIG_ENC_ASSOC
+	sta->epp_sta = origin_sta->epp_sta;
+#endif /* CONFIG_ENC_ASSOC */
 
 	sta->capability = elems.per_link_sta_capability;
 
@@ -6919,7 +6928,11 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 
 	if (tx_link_status == WLAN_STATUS_SUCCESS && sta->mld_info.mld_sta) {
 		u8 mld_link_id = hapd->mld_link_id;
+		bool epp_sta = false;
 
+#ifdef CONFIG_ENC_ASSOC
+	epp_sta = sta->epp_sta;
+#endif /* CONFIG_ENC_ASSOC */
 		mld_link_sta = sta->mld_assoc_link_id != mld_link_id;
 		mld_link_addr = sta->mld_info.links[mld_link_id].peer_addr;
 		eml_cap = sta->mld_info.common_info.eml_capa;
@@ -6958,7 +6971,8 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 #endif
 					    sta->flags, 0, 0, 0, 0,
 					    mld_link_addr, mld_link_sta,
-					    eml_cap, reassoc, CONTROL_MIC_PAD_NOT_SET)) {
+					    eml_cap, reassoc, CONTROL_MIC_PAD_NOT_SET,
+					    epp_sta)) {
 				hostapd_logger(hapd, sta->addr,HOSTAPD_MODULE_IEEE80211,HOSTAPD_LEVEL_NOTICE,
 					       "Could not add STA to kernel driver");
 				return -1;
@@ -7048,9 +7062,13 @@ int add_associated_sta(struct hostapd_data *hapd,
 	struct ieee80211_uhr_capabilities uhr_cap;
 	int set = 1;
 	const u8 *mld_link_addr = NULL;
-	bool mld_link_sta = false;
+	bool mld_link_sta = false, epp_sta = false;
 	u16 eml_cap = 0;
 	bool reassoc = (type == LINK_PARSE_REASSOC);
+
+#ifdef CONFIG_ENC_ASSOC
+	epp_sta = sta->epp_sta;
+#endif /* CONFIG_ENC_ASSOC */
 
 #ifdef CONFIG_IEEE80211BE
 	if (ap_sta_is_mld(hapd, sta)) {
@@ -7172,7 +7190,7 @@ int add_associated_sta(struct hostapd_data *hapd,
 			    sta->flags | WLAN_STA_ASSOC, sta->qosinfo,
 			    sta->vht_opmode, sta->p2p_ie ? 1 : 0,
 			    set, mld_link_addr, mld_link_sta, eml_cap,
-			    type, sta->control_mic_pad)) {
+			    type, sta->control_mic_pad, epp_sta)) {
 		hostapd_logger(hapd, sta->addr,
 			       HOSTAPD_MODULE_IEEE80211, HOSTAPD_LEVEL_NOTICE,
 			       "Could not %s STA to kernel driver",
@@ -8183,10 +8201,13 @@ handle_assoc_sa_query_timeout_ml_setup(struct hostapd_data *hapd,
 				       bool do_drv_add, int reassoc)
 {
 	struct ieee802_11_elems elems;
-	bool mld_link_sta = false;
+	bool mld_link_sta = false, epp_sta = false;
 	const u8 *mld_link_addr = NULL;
 	u16 eml_cap = 0;
 
+#ifdef CONFIG_ENC_ASSOC
+	epp_sta = sta->epp_sta;
+#endif /* CONFIG_ENC_ASSOC */
 	if (ap_sta_is_authorized(sta))
 		ap_sta_set_authorized(hapd, sta, 0);
 
@@ -8233,7 +8254,8 @@ handle_assoc_sa_query_timeout_ml_setup(struct hostapd_data *hapd,
 #endif
 			    NULL, sta->flags, 0, 0, 0, 0,
 			    mld_link_addr, mld_link_sta,
-			    eml_cap, reassoc, CONTROL_MIC_PAD_NOT_SET)) {
+			    eml_cap, reassoc, CONTROL_MIC_PAD_NOT_SET,
+			    epp_sta)) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_NOTICE,
 			       "Could not add STA to kernel driver");
