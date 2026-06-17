@@ -8740,6 +8740,12 @@ union wpa_event_data {
 		 * non MLD.
 		 */
 		int link_id;
+
+		/**
+		 * smd_ctx - SMD context from driver (optional, NULL if not present)
+		 */
+		struct sta_smd_ctx_info *smd_ctx;
+
 	} rx_mgmt;
 
 	/**
