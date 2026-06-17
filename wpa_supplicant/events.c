@@ -8219,12 +8219,20 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 						data->dfs_event.chan_offset,
 						(u16)~data->dfs_event.radar_bitmap);
 				if (wpa_s->wpa_state == WPA_STACACING &&
-						wpa_s->sta_cac.dfs_links) {
-					wpas_sta_cac_clear(wpa_s);
-					wpa_bss_flush(wpa_s, 1);
-					wpa_supplicant_req_new_scan(wpa_s, 0, 0);
-					break;
+				    wpa_s->sta_cac.dfs_links) {
+					if (IS_CSH_PROCESS_RCSA_ENABLED(wpa_s->conf->cswopts)) {
+#ifdef CONFIG_QCN_EXTN
+						wpa_rcsa_handle_radar(wpa_s, &data->dfs_event);
+#endif
+					} else {
+
+						wpas_sta_cac_clear(wpa_s);
+						wpa_bss_flush(wpa_s, 1);
+						wpa_supplicant_req_new_scan(wpa_s, 0, 0);
+						break;
+					}
 				}
+
 			}
 			/* On Radar detection, if uplink_csa/rcsa is not enabled
 			 * flush all the scan bss cache and deauth the STA
@@ -8232,7 +8240,13 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			if (!wpa_s->conf->uplink_csa &&
 			    !IS_CSH_PROCESS_RCSA_ENABLED(wpa_s->conf->cswopts)) {
 				wpas_disconnect_on_radar(wpa_s);
+			} else if (IS_CSH_PROCESS_RCSA_ENABLED(wpa_s->conf->cswopts)
+				   && wpa_s->sta_dfs_en) {
+#ifdef CONFIG_QCN_EXTN
+				wpa_rcsa_handle_radar(wpa_s, &data->dfs_event);
+#endif
 			}
+
 		}
 		break;
 #ifdef CONFIG_AP
