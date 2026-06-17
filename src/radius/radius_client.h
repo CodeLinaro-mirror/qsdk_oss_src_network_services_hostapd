@@ -291,5 +291,7 @@ int radius_client_get_mib(struct radius_client_data *radius, char *buf,
 			  size_t buflen);
 void radius_client_reconfig(struct radius_client_data *radius,
 			    struct hostapd_radius_servers *conf);
-
+void radius_tls_reconnect(void *eloop_ctx, void *timeout_ctx);
+void
+radius_tls_schedule_reconnect(struct radius_client_data *radius);
 #endif /* RADIUS_CLIENT_H */
