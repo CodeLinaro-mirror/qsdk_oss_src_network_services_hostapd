@@ -518,6 +518,10 @@ SM_STATE(BE_AUTH, SUCCESS)
 	txReq();
 	sm->authSuccess = true;
 	sm->keyRun = true;
+#ifdef CONFIG_HOSTAPD_IF
+	if (sm->eapol->cb.dot1x_eap_success)
+		sm->eapol->cb.dot1x_eap_success(sm->eapol->conf.ctx, sm->sta);
+#endif /* CONFIG_HOSTAPD_IF */
 }
 
 
@@ -1266,6 +1270,9 @@ struct eapol_authenticator * eapol_auth_init(struct eapol_auth_config *conf,
 	eapol->cb.eapol_event = cb->eapol_event;
 	eapol->cb.erp_get_key = cb->erp_get_key;
 	eapol->cb.erp_add_key = cb->erp_add_key;
+#ifdef CONFIG_HOSTAPD_IF
+	eapol->cb.dot1x_eap_success = cb->dot1x_eap_success;
+#endif /* CONFIG_HOSTAPD_IF */
 
 	return eapol;
 }
