@@ -2424,6 +2424,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->ap_max_inactivity = atoi(pos);
 	} else if (os_strcmp(buf, "skip_inactivity_poll") == 0) {
 		bss->skip_inactivity_poll = atoi(pos);
+	} else if (os_strcmp(buf, "skip_disconnect") == 0) {
+		bss->skip_disconnect = atoi(pos);
 	} else if (os_strcmp(buf, "bss_max_idle") == 0) {
 		int val = atoi(pos);
 

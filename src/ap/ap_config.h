@@ -798,6 +798,7 @@ struct hostapd_bss_config {
 
 	int disassoc_low_ack;
 	int skip_inactivity_poll;
+	bool skip_disconnect;
 
 #define TDLS_PROHIBIT BIT(0)
 #define TDLS_PROHIBIT_CHAN_SWITCH BIT(1)
