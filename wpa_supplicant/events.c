@@ -9047,8 +9047,8 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 				if (wpa_s->wpa_state == WPA_STACACING &&
 						wpa_s->sta_cac.dfs_links) {
 	#ifdef CONFIG_QCN_EXTN
-					if (IS_CSH_PROCESS_RCSA_ENABLED(
-							wpa_s->conf->cswopts)) {
+					if (IS_CSH_PROCESS_RCSA_ENABLED(wpa_s->conf->cswopts) ||
+					    IS_CSH_RCSA_TO_UPLINK_ENABLED(wpa_s->conf->cswopts)) {
 						wpa_rcsa_handle_radar(wpa_s,
 								      &data->dfs_event);
 					} else {
@@ -9070,10 +9070,12 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			 */
 #ifdef CONFIG_QCN_EXTN
 			if (!wpa_s->conf->uplink_csa &&
-			    !IS_CSH_PROCESS_RCSA_ENABLED(wpa_s->conf->cswopts)) {
+			    !IS_CSH_PROCESS_RCSA_ENABLED(wpa_s->conf->cswopts) &&
+			    !IS_CSH_RCSA_TO_UPLINK_ENABLED(wpa_s->conf->cswopts)) {
 				wpas_disconnect_on_radar(wpa_s);
-			} else if (IS_CSH_PROCESS_RCSA_ENABLED(
-					wpa_s->conf->cswopts) && wpa_s->sta_dfs_en) {
+			} else if ((IS_CSH_PROCESS_RCSA_ENABLED(wpa_s->conf->cswopts) ||
+				   IS_CSH_RCSA_TO_UPLINK_ENABLED(wpa_s->conf->cswopts)) &&
+				  wpa_s->sta_dfs_en) {
 				wpa_rcsa_handle_radar(wpa_s, &data->dfs_event);
 			}
 #else /* CONFIG_QCN_EXTN */
