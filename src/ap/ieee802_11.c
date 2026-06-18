@@ -6875,6 +6875,7 @@ int ieee80211_ml_process_link(struct hostapd_data *hapd,
 	sta->mld_assoc_link_id = origin_sta->mld_assoc_link_id;
 	sta->sa_query_timed_out = origin_sta->sa_query_timed_out;
 	ap_sta_set_mld(sta, true);
+	sta->auth_alg = origin_sta->auth_alg;
 #ifdef CONFIG_ENC_ASSOC
 	sta->epp_sta = origin_sta->epp_sta;
 #endif /* CONFIG_ENC_ASSOC */
@@ -10155,7 +10156,8 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 	    sta->auth_alg == WLAN_AUTH_FILS_SK ||
 	    sta->auth_alg == WLAN_AUTH_FILS_SK_PFS ||
 	    sta->auth_alg == WLAN_AUTH_FILS_PK ||
-	    sta->auth_alg == WLAN_AUTH_FT) {
+	    sta->auth_alg == WLAN_AUTH_FT ||
+	    sta->auth_alg == WLAN_AUTH_EPPKE) {
 		/*
 		 * Open, static WEP, FT protocol, or FILS; no separate
 		 * authorization step.
