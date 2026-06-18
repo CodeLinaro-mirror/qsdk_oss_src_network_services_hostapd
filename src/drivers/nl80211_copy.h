@@ -1641,6 +1641,8 @@ enum nl80211_commands {
 
 	NL80211_CMD_TRIGGER_SMD_DISCOVERY,
 
+	NL80211_CMD_UHR_MODE_UPDATE,
+
 	/* add new commands above here */
 
 	/* used to define NL80211_CMD_MAX below */
@@ -3692,6 +3694,11 @@ enum nl80211_attrs {
 	NL80211_ATTR_SMD_AP,
 	NL80211_ATTR_SMD_PARAMS,
 	NL80211_ATTR_SMD_STA_DL_DATA_FWD,
+	NL80211_ATTR_SMD_STA,
+	NL80211_ATTR_SMD_CONFIG,
+	NL80211_ATTR_SMD_TIMEOUT,
+
+	NL80211_ATTR_UHR_MODE_UPDATE_PARAMS,
 
 	NL80211_ATTR_EPP_PEER,
 
@@ -9016,6 +9023,39 @@ enum nl80211_smd_params_attrs {
         /* keep last */
         __NL80211_SMD_PARAMS_ATTR_LAST,
         NL80211_SMD_PARAMS_ATTR_MAX = __NL80211_SMD_PARAMS_ATTR_LAST - 1
+};
+
+/**
+ * enum nl80211_uhr_mode_update_attrs - UHR mode update per-link attributes
+ *
+ * These attributes are used within %NL80211_ATTR_UHR_MODE_UPDATE_PARAMS
+ * (nested) to configure UHR mode parameters per link, sent via
+ * %NL80211_CMD_UHR_MODE_UPDATE.
+ *
+ * @__NL80211_UHR_MODE_UPDATE_ATTR_INVALID: invalid
+ * @NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID: MLO link ID (u8) to apply
+ *	the configuration to.
+ * @NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE: flag/u8 to enable (1) or
+ *	disable (0) NPCA on this link.
+ * @NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY: NPCA switch delay
+ *	value (u8) in TUs.
+ * @NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY: NPCA switch-back
+ *	delay value (u8) in TUs.
+ * @__NL80211_UHR_MODE_UPDATE_ATTR_AFTER_LAST: internal use
+ * @NL80211_UHR_MODE_UPDATE_ATTR_MAX: highest attribute number
+ */
+enum nl80211_uhr_mode_update_attrs {
+	__NL80211_UHR_MODE_UPDATE_ATTR_INVALID,
+
+	NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID,
+	NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE,
+	NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY,
+	NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY,
+
+	/* keep last */
+	__NL80211_UHR_MODE_UPDATE_ATTR_AFTER_LAST,
+	NL80211_UHR_MODE_UPDATE_ATTR_MAX =
+		__NL80211_UHR_MODE_UPDATE_ATTR_AFTER_LAST - 1
 };
 
 #endif /* __LINUX_NL80211_H */

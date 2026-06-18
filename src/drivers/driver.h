@@ -506,6 +506,20 @@ struct uhr_npca_info {
 	u8 npca_moplen;
 };
 
+/**
+ * struct npca_link_config - Per-link NPCA configuration
+ * @link_id: MLO link ID (-1 means apply to all links)
+ * @npca_enable: true = enable NPCA, false = disable NPCA
+ * @npca_switch_delay: NPCA switch delay in TUs (0 = use driver default)
+ * @npca_switchback_delay: NPCA switch-back delay in TUs (0 = use driver default)
+ */
+struct npca_link_config {
+	int link_id;
+	bool npca_enable;
+	u8 npca_switch_delay;
+	u8 npca_switchback_delay;
+};
+
 #define HOSTAPD_MODE_FLAG_HT_INFO_KNOWN BIT(0)
 #define HOSTAPD_MODE_FLAG_VHT_INFO_KNOWN BIT(1)
 #define HOSTAPD_MODE_FLAG_HE_INFO_KNOWN BIT(2)
@@ -6477,6 +6491,20 @@ struct wpa_driver_ops {
 	 * Returns: 0 on success, negative value on failure
 	 */
 	int (*set_epcs_cfg)(void *priv, bool epcs_cfg_value);
+
+	/**
+	 * uhr_mode_update - Send UHR mode update (NPCA enable/disable) per link
+	 * @priv: Private driver interface data
+	 * @links: Array of per-link NPCA configurations
+	 * @num_links: Number of entries in the links array
+	 * Returns: 0 on success, negative value on failure
+	 *
+	 * This function sends NL80211_CMD_UHR_MODE_UPDATE with per-link NPCA
+	 * parameters. Each entry in @links specifies the link ID and the NPCA
+	 * enable/disable state along with optional delay parameters.
+	 */
+	int (*uhr_mode_update)(void *priv, struct npca_link_config *links,
+			       int num_links);
 
 	/**
 	 * set_ttlm_link_mapping - Set ttlm link mapping
