@@ -133,4 +133,10 @@ dfs_find_bw_reduced_channel(struct hostapd_iface *iface,
 			   u8 *oper_centr_freq_seg1_idx);
 
 int hostapd_set_dfs_cac_time(struct hostapd_iface *iface);
+#ifdef CONFIG_QCN_EXTN
+int dfs_check_chans_radar(struct hostapd_iface *iface,
+			  int start_chan_idx, int n_chans);
+int dfs_check_chans_available(struct hostapd_iface *iface,
+			      int start_chan_idx, int n_chans);
+#endif /* CONFIG_QCN_EXTN */
 #endif /* DFS_H */

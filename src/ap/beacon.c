@@ -4491,7 +4491,7 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 #endif /* CONFIG_IEEE80211BE */
 		params.freq = &freq;
 #ifdef CONFIG_QCN_EXTN
-		params.freq->skip_cac = iconf->conf_extn.skip_cac;
+		hostapd_beacon_set_skip_cac_extn(iface, params.freq);
 		hostapd_ignorecac_update_freq_params_extn(iface,
 							   params.freq);
 		if (iface->mcst && iface->cs_time) {
