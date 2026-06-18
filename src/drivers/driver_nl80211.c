@@ -17224,8 +17224,8 @@ static int wpa_driver_nl80211_uhr_mode_update(void *priv,
 			       (u8)links[i].link_id))
 			goto failed;
 
-		if (nla_put_u8(msg, NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE,
-			       links[i].npca_enable))
+		if (links[i].npca_enable &&
+		    nla_put_flag(msg, NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE))
 			goto failed;
 
 		if (links[i].npca_switch_delay &&
