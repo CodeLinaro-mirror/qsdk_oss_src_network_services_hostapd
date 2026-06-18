@@ -132,17 +132,17 @@ u8 hostapd_tx_maxnss(struct hostapd_data *hapd, struct sta_info *sta)
 	if (sta) {
 		htmode =  (!!(sta->flags & WLAN_STA_HT)) |
 			((!!(sta->flags & WLAN_STA_VHT)) << 1) |
-			((!!(sta->flags & WLAN_STA_EHT)) << 2) |
-			((!!(sta->flags & WLAN_STA_HE)) << 3);
+			((!!(sta->flags & WLAN_STA_HE)) << 2) |
+			((!!(sta->flags & WLAN_STA_EHT)) << 3);
 		support_check[MAXNSS_HTMODE_HT_N] = !!sta->ht_capabilities;
 		support_check[MAXNSS_HTMODE_VHT_AC] = !!sta->vht_capabilities;
 		support_check[MAXNSS_HTMODE_EHT_BE] = !!sta->eht_capab;
 		support_check[MAXNSS_HTMODE_HE_AX] = !!sta->he_capab;
 	} else {
-		htmode = (!!conf->ieee80211ac) |
-			((!!conf->ieee80211n) << 1) |
-			((!!conf->ieee80211be) << 2) |
-			((!!conf->ieee80211ax) << 3);
+		htmode = (!!conf->ieee80211n) |
+			((!!conf->ieee80211ac) << 1) |
+			((!!conf->ieee80211ax) << 2) |
+			((!!conf->ieee80211be) << 3);
 		support_check[MAXNSS_HTMODE_HT_N] = hostapd_is_ht_enabled(hapd);
 		support_check[MAXNSS_HTMODE_VHT_AC] = hostapd_is_vht_enabled(hapd);
 		support_check[MAXNSS_HTMODE_EHT_BE] = hostapd_is_eht_enabled(hapd);
