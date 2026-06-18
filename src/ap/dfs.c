@@ -1113,7 +1113,10 @@ int dfs_get_start_chan_idx(struct hostapd_iface *iface, int *seg1_start,
 
 
 /* At least one channel have radar flag */
-static int dfs_check_chans_radar(struct hostapd_iface *iface,
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int dfs_check_chans_radar(struct hostapd_iface *iface,
 				 int start_chan_idx, int n_chans)
 {
 	struct hostapd_channel_data *channel;
@@ -1135,7 +1138,10 @@ static int dfs_check_chans_radar(struct hostapd_iface *iface,
 
 
 /* All channels available */
-static int dfs_check_chans_available(struct hostapd_iface *iface,
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int dfs_check_chans_available(struct hostapd_iface *iface,
 				     int start_chan_idx, int n_chans)
 {
 	struct hostapd_channel_data *channel;
