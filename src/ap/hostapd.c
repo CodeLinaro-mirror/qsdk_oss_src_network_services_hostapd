@@ -2610,6 +2610,14 @@ setup_mld:
 			   "Failed to update radio mask for %s",
 			   hapd->conf->iface);
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_QCN_EXTN
+	if (!first && !hapd_reenable_pending(hapd) &&
+	    hostapd_drv_mark_vap_submode(hapd, hapd->conf->bss_extn.vap_submode)) {
+		wpa_printf(MSG_ERROR, "vap_submode vendor command failed: %s",
+			   hapd->conf->iface);
+		return -1;
+	}
+#endif /* CONFIG_QCN_EXTN */
 	/* MBSSID setup already done during reenable*/
 	if (!hapd_reenable_pending(hapd) &&
 	    hostapd_mbssid_setup_bss(hapd))
