@@ -585,7 +585,7 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 	ctx_req.data.auth_req.auth_alg = auth_alg;
 
 	/*
-	 * rx_link_id selection: 0 for non-MLD, otherwise
+	 * rx_link_id selection: hw_idx for non-MLD, otherwise
 	 * hapd->mld_link_id
 	 */
 #ifdef CONFIG_IEEE80211BE
@@ -593,7 +593,7 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 		ctx_req.rx_link_id = hapd->mld_link_id;
 	else
 #endif /* CONFIG_IEEE80211BE */
-		ctx_req.rx_link_id = 0;
+		ctx_req.rx_link_id = hapd->iface->current_hw_info->hw_idx;
 
 	/*
 	 * Associated link id and per-link peer MAC
@@ -653,7 +653,13 @@ hostapd_if_notify_remote_auth(struct hostapd_data *hapd, uint8_t *sta_mac,
 	os_memset(&ctx_req, 0, sizeof(ctx_req));
 	ctx_req.status_code = status_code;
 
-	ctx_req.rx_link_id = hapd->mld_link_id;
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf && hapd->conf->mld_ap)
+		ctx_req.rx_link_id = hapd->mld_link_id;
+	else
+#endif /* CONFIG_IEEE80211BE */
+		ctx_req.rx_link_id = hapd->iface->current_hw_info->hw_idx;
+
 	ctx_req.data.remote_auth_req.is_ml_sta = is_ml;
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
@@ -790,7 +796,7 @@ hostapd_if_notify_assoc(struct hostapd_data *hapd,
 		ctx_req.rx_link_id = hapd->mld_link_id;
 	else
 #endif /* CONFIG_IEEE80211BE */
-		ctx_req.rx_link_id = -1;
+		ctx_req.rx_link_id = hapd->iface->current_hw_info->hw_idx;
 
 	/*
 	 * Fill assoc_req MLD topology if running as MLD AP
@@ -888,7 +894,7 @@ void hostapd_if_notify_disassoc(struct hostapd_data *hapd,
 		ctx_req.rx_link_id = hapd->mld_link_id;
 	else
 #endif /* CONFIG_IEEE80211BE */
-		ctx_req.rx_link_id = -1;
+		ctx_req.rx_link_id = hapd->iface->current_hw_info->hw_idx;
 
 	if ((policy != HOSTAPD_IF_FRAME_NOTIFY) &&
 		(policy != HOSTAPD_IF_FRAME_INVOKE))
@@ -933,7 +939,7 @@ void hostapd_if_notify_deauth(struct hostapd_data *hapd,
 		ctx_req.rx_link_id = hapd->mld_link_id;
 	else
 #endif /* CONFIG_IEEE80211BE */
-		ctx_req.rx_link_id = -1;
+		ctx_req.rx_link_id = hapd->iface->current_hw_info->hw_idx;
 
 	if ((policy != HOSTAPD_IF_FRAME_NOTIFY) &&
 	    (policy != HOSTAPD_IF_FRAME_INVOKE))
@@ -950,7 +956,7 @@ void hostapd_if_notify_deauth(struct hostapd_data *hapd,
 void hostapd_if_eapol_rx(struct hostapd_data *hapd, const u8 *sa,
 			 const u8 *data, u16 data_len)
 {
-	int link_id = -1;
+	int link_id = hapd->iface->current_hw_info->hw_idx;
 
 #ifdef CONFIG_IEEE80211BE
 	if (hapd->conf && hapd->conf->mld_ap)
@@ -1067,7 +1073,7 @@ hostapd_if_notify_action(struct hostapd_data *hapd,
 		link_id = hapd->mld_link_id;
 	else
 #endif /* CONFIG_IEEE80211BE */
-		link_id = -1;
+		link_id = hapd->iface->current_hw_info->hw_idx;
 
 	os_memset(&ctx_req, 0, sizeof(ctx_req));
 	ctx_req.rx_link_id = link_id;
@@ -1105,7 +1111,7 @@ hostapd_if_notify_action(struct hostapd_data *hapd,
 void hostapd_if_eapol_key_rx(struct hostapd_data *hapd, const u8 *sa,
 			     const u8 *data, u16 data_len)
 {
-	int link_id = -1;
+	int link_id = hapd->iface->current_hw_info->hw_idx;
 
 #ifdef CONFIG_IEEE80211BE
 	if (hapd->conf && hapd->conf->mld_ap)
@@ -2486,7 +2492,7 @@ void hostapd_if_event_deauth(struct hostapd_data *hapd, struct sta_info *sta,
 			     int tx_status_ok)
 {
 	struct hostapd_if_event evt;
-	int link_id = -1;
+	int link_id = hapd->iface->current_hw_info->hw_idx;
 
 	if (!hostapd_if_is_event_registered(hapd,
 					    HOSTAPD_IF_EVENT_DEAUTH))
@@ -2527,7 +2533,7 @@ void hostapd_if_event_disassoc(struct hostapd_data *hapd,
 			       int tx_status_ok)
 {
 	struct hostapd_if_event evt;
-	int link_id = -1;
+	int link_id = hapd->iface->current_hw_info->hw_idx;
 
 	if (!hostapd_if_is_event_registered(hapd,
 					    HOSTAPD_IF_EVENT_DISASSOC))
