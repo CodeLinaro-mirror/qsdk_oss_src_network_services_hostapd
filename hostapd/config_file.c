@@ -3307,6 +3307,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		/* bgcac_en=1 also implies enable_background_radar */
 		if (conf->bgcac_en)
 			conf->enable_background_radar = 1;
+	} else if (os_strcmp(buf, "rcac_freq") == 0) {
+		conf->rcac_freq = atoi(pos);
 	} else if (os_strcmp(buf, "min_tx_power") == 0) {
 		int val = atoi(pos);
 
