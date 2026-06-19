@@ -2351,7 +2351,8 @@ __hostapd_if_eapol_key_tx_exit:
  * Use MLD mac of STA in case of 11be STA.
  */
 void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
-			   uint8_t type, uint8_t *data, uint16_t data_len)
+			   uint8_t type, uint8_t *data, uint16_t data_len,
+			   bool with_header)
 {
 	struct hostapd_data *hapd = NULL;
 	struct sta_info *sta;
@@ -2375,7 +2376,16 @@ void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
 		goto  __hostapd_if_eapol_tx_exit;
 	}
 
-	ieee802_1x_send(hapd, sta, type, data, data_len);
+	if (with_header) {
+		int link_id = -1;
+#ifdef CONFIG_IEEE80211BE
+		link_id = hapd->conf->mld_ap ? hapd->mld_link_id : -1;
+#endif /* CONFIG_IEEE80211BE */
+		hostapd_drv_hapd_send_eapol(hapd, sta->addr, data, data_len,
+					    wpa_auth_pairwise_set(sta->wpa_sm) ? 1 : 0,
+					    hostapd_sta_flags_to_drv(sta->flags), link_id);
+	} else
+		ieee802_1x_send(hapd, sta, type, data, data_len);
 
  __hostapd_if_eapol_tx_exit:
 	os_free((void *)data);
