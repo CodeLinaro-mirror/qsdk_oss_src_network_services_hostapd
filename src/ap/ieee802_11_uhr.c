@@ -776,11 +776,19 @@ void uhr_cur_ap_handle_st_prep_resp(struct hostapd_data *hapd,
 	}
 
 	frame = iap->frame_buf;
+	if (frame_len < offsetof(struct ieee80211_mgmt, bssid) + ETH_ALEN) {
+		wpa_printf(MSG_ERROR,
+			   "UHR Current AP: Frame too short for MAC header (%u < %zu)",
+			   frame_len,
+			   offsetof(struct ieee80211_mgmt, bssid) + ETH_ALEN);
+		uhr_remove_ap_from_list(sta, iap->target_ap_mld_addr);
+		return;
+	}
 	mgmt_hdr = (struct ieee80211_mgmt *)frame;
 	os_memcpy(mgmt_hdr->sa, hapd->own_addr, ETH_ALEN);
 	os_memcpy(mgmt_hdr->bssid, hapd->own_addr, ETH_ALEN);
 	wpa_hexdump(MSG_MSGDUMP, "UHR Current AP: Response frame",
-	    	    frame, frame_len);
+		    frame, frame_len);
 
 	/* Check status code */
 	if (iap->status_code != UHR_IAP_STATUS_SUCCESS) {
@@ -843,3 +851,1642 @@ void uhr_cur_ap_handle_st_prep_resp(struct hostapd_data *hapd,
 	/* STA will now roam to target AP */
 }
 
+int uhr_handle_st_exec_req(struct hostapd_data *hapd,
+                                 struct sta_info *sta,
+                                 const u8 *buf, size_t len)
+{
+	struct ieee802_11_elems elems;
+	struct uhr_reconfig_mle mle;
+	const u8 *ies;
+	size_t ies_len;
+	struct smd_roam_ap_info *target_info;
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR ST EXEC: Processing Execute request from " MACSTR,
+		   MAC2STR(sta->addr));
+
+	if (len < IEEE80211_HDRLEN + 3) {
+		wpa_printf(MSG_ERROR, "UHR ST EXEC: Frame too short");
+		return -1;
+	}
+
+	ies = buf + IEEE80211_HDRLEN + 3  + 1;
+	ies_len = len - IEEE80211_HDRLEN - 3 - 1;
+
+	if (ieee802_11_parse_elems(ies, ies_len, &elems, 1) == ParseFailed) {
+		wpa_printf(MSG_ERROR, "UHR ST EXEC: Failed to parse elements");
+		return -1;
+	}
+
+	if (uhr_parse_reconfig_mle(&elems, &mle) < 0) {
+		wpa_printf(MSG_ERROR, "UHR ST EXEC: Failed to parse Reconfig ML IE");
+		return -1;
+	}
+
+	if (!mle.has_target_ap_mld_addr) {
+		wpa_printf(MSG_ERROR, "UHR ST EXEC: No Target AP MLD address in ML IE");
+		return -1;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR ST EXEC: Target AP " MACSTR,
+		   MAC2STR(mle.target_ap_mld_addr));
+
+	/* Find Target AP in ap_list */
+	target_info = uhr_find_ap_in_list(sta, mle.target_ap_mld_addr);
+	if (!target_info) {
+		wpa_printf(MSG_ERROR,
+			   "UHR ST EXEC: Target AP " MACSTR " not in list",
+			   MAC2STR(mle.target_ap_mld_addr));
+		return -1;
+	}
+
+	if (target_info->state != SMD_AP_STATE_ST_PREP_COMPLETE) {
+		wpa_printf(MSG_ERROR,
+			   "UHR ST EXEC: Invalid state %d (expected ST_PREP_COMPLETE)",
+			   target_info->state);
+		return -1;
+	}
+
+	target_info->state = SMD_AP_STATE_ST_EXEC_STARTED;
+	os_memcpy(target_info->sta_addr, sta->addr, ETH_ALEN);
+	wpa_printf(MSG_INFO,
+		   "UHR ST EXEC: Target AP " MACSTR " state: ST_PREP_COMPLETE → ST_EXEC_STARTED",
+		   MAC2STR(mle.target_ap_mld_addr));
+
+	u32 role = 1; // FIXME: Add support for target AP based execution eventually
+	u32 type = 2;
+	u32 dl_sn_not_transferred = sta->dl_sn_not_transferred;
+	u32 ul_sn_not_transferred = sta->ul_sn_not_transferred;
+	u32 dl_drain_time = hapd->conf->smd.uhr_dl_drain_duration_tu;
+	if (hostapd_smd_roam(hapd, sta, role, type, dl_sn_not_transferred, ul_sn_not_transferred, dl_drain_time)) {
+		wpa_printf(MSG_DEBUG, "UHR Current AP: Failed to send WMI roam notification - not skipping for now.");
+	}
+
+
+	return uhr_iap_send_st_exec_req(hapd, sta, mle.target_ap_mld_addr, buf, len);
+}
+
+/**
+ * uhr_dl_drain_timeout - Handle DL Drain timeout
+ * @eloop_ctx: hostapd data
+ * @timeout_ctx: Target AP info
+ *
+ * Phase 9: Handle DL Drain timeout expiration.
+ * Completes the transition by removing the Target AP from the list.
+ */
+static void uhr_dl_drain_timeout(void *eloop_ctx, void *timeout_ctx)
+{
+       struct hostapd_data *hapd = eloop_ctx;
+       struct smd_roam_ap_info *target_info = timeout_ctx;
+       struct sta_info *sta;
+
+       wpa_printf(MSG_DEBUG,
+                  "UHR DL DRAIN: Timeout expired for AP " MACSTR,
+                  MAC2STR(target_info->ap_mld_addr));
+
+       /* Find station */
+       sta = ap_get_sta(hapd, target_info->sta_addr);
+       if (!sta) {
+               wpa_printf(MSG_ERROR, "UHR DL DRAIN: Station not found");
+               return;
+       }
+
+       /* Verify state is DL_DRAIN_ACTIVE */
+       if (target_info->state != SMD_AP_STATE_DL_DRAIN_ACTIVE) {
+               wpa_printf(MSG_ERROR,
+                          "UHR DL DRAIN: Invalid state %d (expected DL_DRAIN_ACTIVE)",
+                          target_info->state);
+       }
+
+       /* STATE TRANSITION: DL_DRAIN_ACTIVE → TRANSITION_COMPLETE */
+       target_info->state = SMD_AP_STATE_TRANSITION_COMPLETE;
+
+       wpa_printf(MSG_INFO,
+                  "UHR DL DRAIN: Target AP " MACSTR " state: DL_DRAIN_ACTIVE → TRANSITION_COMPLETE",
+                  MAC2STR(target_info->ap_mld_addr));
+
+       /* Remove Target AP from list */
+       uhr_remove_ap_from_list(sta, target_info->ap_mld_addr);
+
+       /* Transition COMPLETE - ap_list should now be empty */
+       wpa_printf(MSG_INFO,
+                  "UHR DL DRAIN: Station " MACSTR " fully transitioned to Target AP (ap_list now empty)",
+                  MAC2STR(sta->addr));
+}
+
+void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
+                                    const struct uhr_iap_frame *iap,
+                                    u16 frame_len)
+{
+       struct sta_info *sta;
+       struct smd_roam_ap_info *target_info;
+       const u8 *frame_buf;
+       int ret;
+	u32 role = 1;
+	u32 type = 3;
+	u32 dl_sn_not_transferred = 0;
+	u32 ul_sn_not_transferred = 0;
+	u32 dl_drain_time = 0;
+
+       wpa_printf(MSG_DEBUG,
+                  "UHR ST EXEC: Received IAP RESPONSE (txn=%u, status=%u, frame_len=%u)",
+                  iap->iap_transaction_id, iap->status_code, frame_len);
+
+       /* Find station */
+       sta = ap_get_sta(hapd, iap->sta_addr);
+       if (!sta) {
+               wpa_printf(MSG_ERROR, "UHR ST EXEC: Station not found");
+               return;
+       }
+
+       /* Find Target AP */
+       target_info = uhr_find_ap_in_list(sta, iap->target_ap_mld_addr);
+       if (!target_info) {
+               wpa_printf(MSG_ERROR, "UHR ST EXEC: Target AP not found");
+               return;
+       }
+
+       /* Verify state is ST_EXEC_IAP_PENDING */
+       if (target_info->state != SMD_AP_STATE_ST_EXEC_IAP_PENDING) {
+               wpa_printf(MSG_ERROR,
+                          "UHR ST EXEC: Invalid state %d (expected ST_EXEC_IAP_PENDING)",
+                          target_info->state);
+       }
+
+       /* Check IAP status */
+       if (iap->status_code != 0) {
+               wpa_printf(MSG_ERROR,
+                          "UHR ST EXEC: IAP response failed, status=%u",
+                          iap->status_code);
+
+               /* Revert to ST_PREP_COMPLETE (can retry) */
+               target_info->state = SMD_AP_STATE_ST_PREP_COMPLETE;
+               return;
+       }
+
+       /* Extract DL Drain Duration from frame_buf (last 4 bytes) */
+       frame_buf = iap->frame_buf;
+       if (frame_len >= 4) {
+               target_info->dl_drain_duration_tu = WPA_GET_LE32(frame_buf + frame_len - 4);
+
+               wpa_printf(MSG_DEBUG,
+                          "UHR ST EXEC: Extracted DL Drain Duration: %u TU",
+                          target_info->dl_drain_duration_tu);
+       }
+
+	if (frame_len < offsetof(struct ieee80211_mgmt, bssid) + ETH_ALEN) {
+		wpa_printf(MSG_ERROR,
+			   "UHR ST EXEC: Frame too short for MAC header (%u < %zu)",
+			   frame_len,
+			   offsetof(struct ieee80211_mgmt, bssid) + ETH_ALEN);
+		target_info->state = SMD_AP_STATE_ST_PREP_COMPLETE;
+		return;
+	}
+	struct ieee80211_mgmt *mgmt_hdr = (struct ieee80211_mgmt *)frame_buf;
+	os_memcpy(mgmt_hdr->sa, hapd->own_addr, ETH_ALEN);
+	os_memcpy(mgmt_hdr->bssid, hapd->own_addr, ETH_ALEN);
+	wpa_hexdump(MSG_MSGDUMP, "UHR Current AP: Response frame",
+		    frame_buf, frame_len);
+
+       /* Forward complete OTA response to station */
+       ret = hostapd_drv_send_mlme(hapd, frame_buf, frame_len, 0, NULL, 0, 0, 0, 0);
+       if (ret < 0) {
+               wpa_printf(MSG_ERROR, "UHR ST EXEC: Failed to send OTA response");
+               target_info->state = SMD_AP_STATE_ST_PREP_COMPLETE;
+               return;
+       }
+
+	dl_sn_not_transferred = sta->dl_sn_not_transferred;
+	ul_sn_not_transferred = sta->ul_sn_not_transferred;
+	dl_drain_time = hapd->conf->smd.uhr_dl_drain_duration_tu;
+	if (hostapd_smd_roam(hapd, sta, role, type, dl_sn_not_transferred, ul_sn_not_transferred, dl_drain_time)) {
+		wpa_printf(MSG_DEBUG, "UHR Current AP: Failed to send WMI roam notification - not skipping for now.");
+	}
+
+       /* STATE TRANSITION: ST_EXEC_IAP_PENDING → ST_EXEC_OTA_SENT */
+       target_info->state = SMD_AP_STATE_ST_EXEC_OTA_SENT;
+
+       wpa_printf(MSG_INFO,
+                  "UHR ST EXEC: Target AP " MACSTR " state: ST_EXEC_IAP_PENDING → ST_EXEC_OTA_SENT",
+                  MAC2STR(iap->target_ap_mld_addr));
+
+       wpa_printf(MSG_INFO, "UHR ST EXEC: Waiting for TX STATUS with ACK=1...");
+}
+
+/**
+ * uhr_st_exec_handle_tx_status - Handle TX STATUS callback (CRITICAL)
+ * @hapd: hostapd data
+ * @sta: Station info
+ * @target_ap_mld_addr: Target AP MLD MAC address
+ * @acked: Whether frame was ACKed
+ *
+ * Phase 7-8: Handle TX STATUS callback.
+ * Only proceeds with cleanup if ACK=1.
+ * Removes all non-target APs and starts DL Drain timeout.
+ */
+void uhr_st_exec_handle_tx_status(struct hostapd_data *hapd,
+                                 struct sta_info *sta,
+                                 const u8 *target_ap_mld_addr,
+                                 int acked)
+{
+       struct smd_roam_ap_info *ap_info, *next;
+       struct smd_roam_ap_info *target_info;
+       u32 dl_drain_duration_sec, dl_drain_duration_usec;
+
+       wpa_printf(MSG_DEBUG,
+                  "UHR ST EXEC TX STATUS: Target AP " MACSTR " ACK=%d",
+                  MAC2STR(target_ap_mld_addr), acked);
+
+       /* Find Target AP */
+       target_info = uhr_find_ap_in_list(sta, target_ap_mld_addr);
+       if (!target_info) {
+               wpa_printf(MSG_ERROR, "UHR ST EXEC TX STATUS: Target AP not found");
+               return;
+       }
+
+       /* Verify state is ST_EXEC_OTA_SENT */
+       if (target_info->state != SMD_AP_STATE_ST_EXEC_OTA_SENT) {
+               wpa_printf(MSG_ERROR,
+                          "UHR ST EXEC TX STATUS: Invalid state %d (expected ST_EXEC_OTA_SENT)",
+                          target_info->state);
+       }
+
+       /* Check if ACKed */
+       if (!acked) {
+               wpa_printf(MSG_ERROR,
+                          "UHR ST EXEC TX STATUS: Frame NOT acked (ACK=0)");
+
+               /* Revert to ST_PREP_COMPLETE (can retry) */
+               target_info->state = SMD_AP_STATE_ST_PREP_COMPLETE;
+               return;
+       }
+
+       /* STATE TRANSITION: ST_EXEC_OTA_SENT → ST_EXEC_COMPLETED */
+       target_info->state = SMD_AP_STATE_ST_EXEC_COMPLETE;
+
+       wpa_printf(MSG_INFO,
+                  "UHR ST EXEC TX STATUS: Target AP " MACSTR " state: ST_EXEC_OTA_SENT → ST_EXEC_COMPLETED (ACK=1)",
+                  MAC2STR(target_ap_mld_addr));
+
+       /* Remove ALL non-target APs from list */
+       ap_info = sta->smd_info.ap_list;
+       while (ap_info) {
+               next = ap_info->next;
+
+               if (os_memcmp(ap_info->ap_mld_addr, target_ap_mld_addr, ETH_ALEN) != 0) {
+                       wpa_printf(MSG_DEBUG,
+                                  "UHR ST EXEC TX STATUS: Removing non-target AP " MACSTR " (state=%d)",
+                                  MAC2STR(ap_info->ap_mld_addr), ap_info->state);
+
+                       /* Cancel any pending timeouts */
+                       uhr_cancel_st_prep_timeout(sta, ap_info->ap_mld_addr);
+
+                       /* Remove from list */
+                       uhr_remove_ap_from_list(sta, ap_info->ap_mld_addr);
+               }
+
+               ap_info = next;
+       }
+
+       /* Transition to DL_DRAIN_ACTIVE and start timeout */
+       target_info->state = SMD_AP_STATE_DL_DRAIN_ACTIVE;
+       os_get_reltime(&target_info->dl_drain_start);
+
+       u64 dl_drain_duration_us = (u64)target_info->dl_drain_duration_tu * 1024;
+       dl_drain_duration_sec = (u32)(dl_drain_duration_us / 1000000);
+       dl_drain_duration_usec = (u32)(dl_drain_duration_us % 1000000);
+
+       eloop_register_timeout(dl_drain_duration_sec, dl_drain_duration_usec,
+                             uhr_dl_drain_timeout, hapd, target_info);
+
+       wpa_printf(MSG_INFO,
+                  "UHR ST EXEC TX STATUS: Target AP " MACSTR " state: ST_EXEC_COMPLETED → DL_DRAIN_ACTIVE",
+                  MAC2STR(target_ap_mld_addr));
+
+       wpa_printf(MSG_INFO,
+                  "UHR ST EXEC TX STATUS: Started DL Drain timeout (%u sec %u usec)",
+                  dl_drain_duration_sec, dl_drain_duration_usec);
+}
+
+
+
+
+/* PMKID length constant */
+#ifndef PMKID_LEN
+#define PMKID_LEN 16
+#endif
+
+
+/**
+ * struct uhr_link_reconf_req_list - Container for all Per-STA Profiles
+ * 
+ * Following EHT naming: link_reconf_req_list → uhr_link_reconf_req_list
+ * This matches EHT's pattern for managing link reconfiguration requests
+ */
+struct uhr_link_reconf_req_list {
+	u8 sta_mld_addr[ETH_ALEN];
+	u8 dialog_token;
+	u16 links_ok;            /* Bitmap of successfully processed links */
+	u16 new_valid_links;     /* Bitmap of all valid links after reconfig */
+	
+	struct dl_list list;     /* List of uhr_link_reconf_req_info */
+};
+
+
+/**
+ * struct uhr_link_reconf_req_info - Individual Per-STA Profile info
+ * 
+ * Following EHT naming: link_reconf_req_info → uhr_link_reconf_req_info
+ * Each entry represents one link to be added to the target AP-MLD
+ */
+struct uhr_link_reconf_req_info {
+	struct dl_list list;
+	u8 link_id;
+	u16 status;
+	bool is_assoc_link;      /* First valid profile = assoc link */
+	u8 peer_addr[ETH_ALEN];
+	u8 local_addr[ETH_ALEN];
+	u8 *sta_prof;            /* STA Profile IEs */
+	size_t sta_prof_len;
+	u16 capability;
+};
+
+
+/**
+ * uhr_deinit_link_reconf_req - Cleanup request list
+ * 
+ * Pattern from: ml_deinit_link_reconf_req()
+ * Following EHT naming convention
+ */
+void uhr_deinit_link_reconf_req(struct uhr_link_reconf_req_list **req_list_ptr)
+{
+	struct uhr_link_reconf_req_list *req_list;
+	struct uhr_link_reconf_req_info *info, *tmp;
+	
+	if (!req_list_ptr || !*req_list_ptr)
+		return;
+	
+	req_list = *req_list_ptr;
+	
+	/* Free each profile (EHT pattern) */
+	dl_list_for_each_safe(info, tmp, &req_list->list,
+			      struct uhr_link_reconf_req_info, list) {
+		dl_list_del(&info->list);
+		os_free(info);
+	}
+	
+	os_free(req_list);
+	*req_list_ptr = NULL;
+}
+
+
+/**
+ * uhr_mark_smd_features - Mark SMD features in sta_info
+ * @hapd: BSS data
+ * @sta: Station info
+ *
+ * Populate sta->smd_info with TARGET AP's SMD capabilities.
+ */
+static void uhr_mark_smd_features(struct hostapd_data *hapd,
+				  struct sta_info *sta)
+{
+	if (!hapd->conf->smd.enabled || !sta)
+		return;
+
+	/* Check if driver supports SMD */
+	if (!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_SMD)) {
+		wpa_printf(MSG_DEBUG,
+			   "SMD ST PREP Target AP: Driver does not support SMD");
+		return;
+	}
+
+	/* Mark sta as SMD-capable */
+	sta->smd_info.smd_sta = true;
+
+	/* Copy TARGET AP's SMD identifier */
+	os_memcpy(sta->smd_info.smd_identifier,
+		  hapd->conf->smd.smd_identifier, ETH_ALEN);
+
+	/* Copy TARGET AP's SMD capabilities */
+	sta->smd_info.caps.dl_data_fwd = hapd->conf->smd.caps.dl_data_fwd;
+	sta->smd_info.caps.max_prep_target_apmlds =
+		hapd->conf->smd.caps.max_prep_target_apmlds;
+	sta->smd_info.caps.smd_type = hapd->conf->smd.caps.smd_type;
+	sta->smd_info.caps.ptk_mode = hapd->conf->smd.caps.ptk_mode;
+
+	/* Copy TARGET AP's SMD timeout */
+	sta->smd_info.smd_timeout = hapd->conf->smd.smd_prep_timeout;
+
+	wpa_printf(MSG_INFO,
+		   "SMD ST PREP Target AP: Marked SMD features for " MACSTR,
+		   MAC2STR(sta->addr));
+}
+
+
+/**
+ * uhr_target_ap_install_security_context - Install security context (Phase 4)
+ * @hapd: hostapd data
+ * @sta_addr: Station MAC address
+ * @sec_ctx: Security context from IAP
+ * Returns: 0 on success, -1 on error
+ *
+ * Phase 4: Install security context to wpa_sm AFTER all STA entries are created.
+ */
+static int uhr_target_ap_install_security_context(struct hostapd_data *hapd,
+						  const u8 *sta_addr,
+						  const struct uhr_iap_security_ctx *sec_ctx)
+{
+	struct sta_info *sta;
+	struct wpa_state_machine *sm;
+	
+	wpa_printf(MSG_DEBUG,
+		   "SMD ST PREP Target AP: Installing security context for STA " MACSTR,
+		   MAC2STR(sta_addr));
+	
+	/* Find STA entry */
+	sta = ap_get_sta(hapd, sta_addr);
+	if (!sta) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: STA entry not found for security context");
+		return -1;
+	}
+	
+	/* Get or create WPA state machine */
+	sm = sta->wpa_sm;
+	if (!sm) {
+		sm = wpa_auth_sta_init(hapd->wpa_auth, sta->addr, NULL);
+		if (!sm) {
+			wpa_printf(MSG_ERROR,
+				   "SMD ST PREP Target AP: Failed to create WPA SM");
+			return -1;
+		}
+		sta->wpa_sm = sm;
+	}
+	
+	/* Install PMK */
+	if (sec_ctx->pmk_len > 0 && sec_ctx->pmk_len <= PMK_LEN_MAX) {
+		os_memcpy(sm->PMK, sec_ctx->pmk, sec_ctx->pmk_len);
+		sm->pmk_len = sec_ctx->pmk_len;
+		wpa_printf(MSG_DEBUG,
+			   "SMD ST PREP Target AP: Installed PMK (len=%u)",
+			   sec_ctx->pmk_len);
+	}
+	
+	/* Install PMKID */
+	os_memcpy(sm->pmkid, sec_ctx->pmkid, PMKID_LEN);
+	sm->pmkid_set = 1;
+	
+	/* Install PTK components */
+	if (sec_ctx->kck_len > 0 && sec_ctx->kek_len > 0 && sec_ctx->tk_len > 0) {
+		if (sec_ctx->kck_len <= WPA_KCK_MAX_LEN) {
+			os_memcpy(sm->PTK.kck, sec_ctx->kck, sec_ctx->kck_len);
+			sm->PTK.kck_len = sec_ctx->kck_len;
+		}
+		if (sec_ctx->kek_len <= WPA_KEK_MAX_LEN) {
+			os_memcpy(sm->PTK.kek, sec_ctx->kek, sec_ctx->kek_len);
+			sm->PTK.kek_len = sec_ctx->kek_len;
+		}
+		if (sec_ctx->tk_len <= WPA_TK_MAX_LEN) {
+			os_memcpy(sm->PTK.tk, sec_ctx->tk, sec_ctx->tk_len);
+			sm->PTK.tk_len = sec_ctx->tk_len;
+		}
+		sm->PTK_valid = 1;
+		wpa_printf(MSG_DEBUG,
+			   "SMD ST PREP Target AP: Installed PTK components");
+	}
+	
+	/* Install cipher suite information */
+	sm->wpa_key_mgmt = WPA_GET_BE32(sec_ctx->akm);
+	sm->pairwise = WPA_GET_BE32(sec_ctx->cipher);
+	
+	wpa_printf(MSG_DEBUG,
+		   "SMD ST PREP Target AP: Security context installation complete (pmk_len=%u, kck_len=%u, kek_len=%u, tk_len=%u)",
+		   sec_ctx->pmk_len, sec_ctx->kck_len,
+		   sec_ctx->kek_len, sec_ctx->tk_len);
+	return 0;
+}
+
+
+/**
+ * uhr_target_ap_install_ptk_to_driver - Install PTK to driver (Phase 5)
+ * @hapd: hostapd data
+ * @sta_addr: Station MAC address
+ * @req_list: Request list with all profiles
+ * @sec_ctx: Security context from IAP
+ * Returns: 0 on success, -1 on error
+ *
+ * **Phase 5: Install PTK to driver at MLD level via assoc link**
+ * 
+ * CORRECTED in v24.3: Install PTK ONCE at MLD level via assoc link.
+ * In normal association, PTK is installed once on the assoc link and
+ * shared across all links in the MLD. We follow the same pattern here.
+ * 
+ * This is essential for actual data communication after roaming.
+ * Without this, the driver won't have the keys to encrypt/decrypt frames.
+ */
+static int uhr_target_ap_install_ptk_to_driver(
+	struct hostapd_data *hapd,
+	const u8 *sta_addr,
+	struct uhr_link_reconf_req_list *req_list,
+	const struct uhr_iap_security_ctx *sec_ctx)
+{
+	struct uhr_link_reconf_req_info *info;
+	struct hostapd_data *hapd_assoc = NULL;
+	struct sta_info *sta;
+	enum wpa_alg alg;
+	int key_idx = 0;
+	int set_tx = 1;
+	u8 *key_rsc = NULL;
+	size_t key_rsc_len = 0;
+	u8 assoc_link_id = 0;
+	int ret;
+	
+	wpa_printf(MSG_DEBUG,
+		   "SMD ST PREP Target AP: Installing PTK to driver at MLD level");
+	
+	/* Determine cipher algorithm from security context */
+	switch (WPA_GET_BE32(sec_ctx->cipher)) {
+	case WPA_CIPHER_CCMP:
+		alg = WPA_ALG_CCMP;
+		break;
+	case WPA_CIPHER_GCMP:
+		alg = WPA_ALG_GCMP;
+		break;
+	case WPA_CIPHER_CCMP_256:
+		alg = WPA_ALG_CCMP_256;
+		break;
+	case WPA_CIPHER_GCMP_256:
+		alg = WPA_ALG_GCMP_256;
+		break;
+	default:
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: Unsupported cipher 0x%x",
+			   WPA_GET_BE32(sec_ctx->cipher));
+		return -1;
+	}
+	
+	/* Find the assoc link (first valid profile) */
+	dl_list_for_each(info, &req_list->list,
+			 struct uhr_link_reconf_req_info, list) {
+		if (info->is_assoc_link && info->status == WLAN_STATUS_SUCCESS) {
+			hapd_assoc = hostapd_mld_get_link_bss(hapd, info->link_id);
+			assoc_link_id = info->link_id;
+			break;
+		}
+	}
+	
+	if (!hapd_assoc) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: No assoc link found for PTK installation");
+		return -1;
+	}
+	
+	/* Find STA entry on assoc link */
+	sta = ap_get_sta(hapd_assoc, sta_addr);
+	if (!sta) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: No STA on assoc link for PTK installation");
+		return -1;
+	}
+	
+	/* **CORRECT: Install PTK ONCE via assoc link at MLD level** */
+	wpa_printf(MSG_DEBUG,
+		   "SMD ST PREP Target AP: Installing PTK via assoc link %u (alg=%d, len=%u)",
+		   assoc_link_id, alg, sec_ctx->tk_len);
+	
+	ret = hostapd_drv_set_key(hapd_assoc->conf->iface, hapd_assoc,
+				  alg, sta->addr, key_idx, 0, set_tx,
+				  key_rsc, key_rsc_len,
+				  sec_ctx->tk, sec_ctx->tk_len,
+				  KEY_FLAG_PAIRWISE_RX_TX);
+	
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: Failed to install PTK to driver");
+		return -1;
+	}
+	
+	/* Mark PTK as installed */
+	if (sta->wpa_sm)
+		sta->wpa_sm->PTK.installed = 1;
+	
+	wpa_printf(MSG_INFO,
+		   "SMD ST PREP Target AP: PTK installed to driver at MLD level via assoc link - " MACSTR,
+		   MAC2STR(sta->addr));
+	
+	return 0;
+}
+
+
+/**
+ * uhr_tgt_ap_parse_ml - Parse Reconfiguration ML-IE
+ * @hapd: hostapd data
+ * @sta_addr: MLD MAC address
+ * @sec_ctx: Security context from IAP
+ * @ml_ie: Pointer to ML-IE
+ * @ml_ie_len: Length of ML-IE
+ * @req_list_out: Output parameter for request list
+ * Returns: 0 on success, -1 on error
+ *
+ * Parses the Reconfiguration Multi-Link element and processes
+ * all Per-STA Profile subelements with proper ordering.
+ * 
+ * FLOW:
+ * 1. Parse all Per-STA Profiles
+ * 2. Phase 1: Validate IEs for ALL profiles
+ * 3. Phase 2: NEW_STA (first valid = assoc link) + mark mld_assoc_link_id
+ * 4. Phase 3: ADD_LINK_STA (remaining valid) + copy mld_assoc_link_id
+ * 5. Phase 4: Security context to wpa_sm
+ * 6. Phase 5: PTK to driver at MLD level
+ * 
+ */
+static int uhr_tgt_ap_parse_ml(
+	struct hostapd_data *hapd,
+	const u8 *sta_addr,
+	const struct uhr_iap_security_ctx *sec_ctx,
+	const u8 *ml_ie,
+	size_t ml_ie_len,
+	struct uhr_link_reconf_req_list **req_list_out)
+{
+	struct wpabuf *mlbuf;
+	const struct ieee80211_eht_ml *ml;
+	const u8 *pos, *end;
+	u16 ml_control;
+	u8 common_info_len;
+	size_t ml_len;
+	struct uhr_link_reconf_req_list *req_list = NULL;
+	struct uhr_link_reconf_req_info *info;
+	u8 assoc_link_id = 0;
+	int ret = -1;
+	bool assoc_link_found = false;
+	struct hostapd_data *assoc_hapd = NULL;
+	struct sta_info *assoc_sta = NULL;
+	
+	wpa_printf(MSG_DEBUG, "SMD ST PREP Target AP: Parsing ML-IE (len=%zu)", ml_ie_len);
+
+	mlbuf = ieee802_11_defrag(ml_ie, ml_ie_len, true);
+	if (!mlbuf) {
+		wpa_printf(MSG_ERROR, "SMD ST PREP Target AP: Failed to defrag ML-IE");
+		return -1;
+	}
+	
+	ml = wpabuf_head(mlbuf);
+	ml_len = wpabuf_len(mlbuf);
+	end = ((const u8 *) ml) + ml_len;
+	
+	wpa_printf(MSG_ERROR, "ML LEN: %zu", ml_len);
+	wpa_hexdump(MSG_DEBUG, "Full ML IE", ml, ml_len);
+	if (ml_len < sizeof(*ml)) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: ML-IE too short");
+		goto out;
+	}
+	
+	ml_control = le_to_host16(ml->ml_control);
+	
+	if ((ml_control & MULTI_LINK_CONTROL_TYPE_MASK) != MULTI_LINK_CONTROL_TYPE_RECONF) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: Not a Reconfiguration ML-IE");
+		goto out;
+	}
+	
+	/* Allocate request list (EHT-style) */
+	req_list = os_zalloc(sizeof(*req_list));
+	if (!req_list)
+		goto out;
+	
+	dl_list_init(&req_list->list);
+
+	os_memcpy(req_list->sta_mld_addr, sta_addr, ETH_ALEN);
+	
+	/* Get Common Info length */
+	if (ml_len < sizeof(*ml) + 1) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: No Common Info length");
+		goto out;
+	}
+	
+	common_info_len = ml->variable[0];
+	wpa_printf(MSG_ERROR, "SMD PREP TARGET AP: common info len: %x", common_info_len);
+	
+	/* Skip to Link Info field */
+	pos = ml->variable + common_info_len;
+	
+	/* Parse all Per-STA Profiles */
+	while (end - pos > 2) {
+		u8 subelement_id;
+		size_t subelement_len;
+		int num_frag_subelems;
+		const struct ieee80211_eht_per_sta_profile *per_sta_prof;
+		u16 sta_control;
+		u8 link_id;
+		const u8 *sta_info;
+		u8 sta_info_len;
+
+	
+		/* REUSE: EHT subelement defragmentation */
+		num_frag_subelems = ieee802_11_defrag_mle_subelem(
+			mlbuf, pos, &subelement_len);
+		if (num_frag_subelems < 0)
+			goto out;
+		
+		ml_len -= num_frag_subelems * 2;
+		end = ((const u8 *) ml) + ml_len;
+		
+		subelement_id = *pos;
+		wpa_hexdump(MSG_DEBUG, "Subelement:", pos, subelement_len);
+		
+		/* Only process Per-STA Profile subelements */
+		if (subelement_id != MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE) {
+			pos += 2 + subelement_len;
+			continue;
+		}
+		
+		if (subelement_len < sizeof(*per_sta_prof) + 1) {
+			pos += 2 + subelement_len;
+			continue;
+		}
+		
+		/* Parse Per-STA Profile */
+		per_sta_prof = (const struct ieee80211_eht_per_sta_profile *) (pos + 2);
+		sta_control = le_to_host16(per_sta_prof->sta_control);
+		
+		/* REUSE: EHT macros */
+		link_id = sta_control & EHT_PER_STA_RECONF_CTRL_LINK_ID_MSK;
+		
+		/* Check MAC address present */
+		if (!(sta_control & EHT_PER_STA_RECONF_CTRL_MAC_ADDR)) {
+			pos += 2 + subelement_len;
+			continue;
+		}
+		
+		/* Get STA Info */
+		sta_info = per_sta_prof->variable;
+		sta_info_len = *sta_info;
+		wpa_hexdump(MSG_DEBUG, "Per-STA Info", sta_info, sta_info_len);
+		
+		if (sta_info_len < 1 + ETH_ALEN) {
+			pos += 2 + subelement_len;
+			continue;
+		}
+		
+		/* Allocate profile info (EHT-style) */
+		info = os_zalloc(sizeof(*info) + subelement_len);
+		if (!info)
+			goto out;
+		
+		info->link_id = link_id;
+		info->status = WLAN_STATUS_SUCCESS;
+		os_memcpy(info->peer_addr, sta_info + 1, ETH_ALEN);
+		
+		/* Find local address */
+		struct hostapd_data *link_hapd = hostapd_mld_get_link_bss(hapd, link_id);
+		if (link_hapd)
+			os_memcpy(info->local_addr, link_hapd->own_addr, ETH_ALEN);
+		
+		/* Store IEs */
+		const u8 *ies_start = sta_info + sta_info_len;
+		if (subelement_len >= sizeof(*per_sta_prof) + sta_info_len + 2) {
+			info->capability = WPA_GET_LE16(ies_start);
+			info->sta_prof = (u8 *)(info + 1);
+			os_memcpy(info->sta_prof, ies_start + 2,
+				  subelement_len - sizeof(*per_sta_prof) - sta_info_len - 2);
+			info->sta_prof_len = subelement_len - sizeof(*per_sta_prof) -
+					     sta_info_len - 2;
+		}
+		
+		/* Add to list (EHT pattern) */
+		dl_list_add_tail(&req_list->list, &info->list);
+		
+		pos += 2 + subelement_len;
+	}
+	
+	/* Process all links in a single pass */
+	wpa_printf(MSG_DEBUG,
+		   "SMD ST PREP Target AP: Processing all links");
+
+	dl_list_for_each(info, &req_list->list,
+			 struct uhr_link_reconf_req_info, list) {
+		struct hostapd_data *hapd_link;
+		struct sta_info *old_sta;
+		struct sta_info *sta;
+
+		wpa_printf(MSG_ERROR, "SMD ST Prep Target AP: Processing link ID: %d", info->link_id);	
+
+		/* 1. Get BSS for this link */
+		hapd_link = hostapd_mld_get_link_bss(hapd, info->link_id);
+		if (!hapd_link) {
+			wpa_printf(MSG_ERROR,
+				   "SMD ST PREP Target AP: No BSS for link %u",
+				   info->link_id);
+			info->status = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			continue;
+		}
+
+		old_sta = ap_get_sta(hapd_link, sta_addr);
+		if (old_sta) {
+			wpa_printf(MSG_INFO,
+				   "SMD ST PREP Target AP: Old sta found for " MACSTR 
+				   " on link %u, freeing it",
+				   MAC2STR(sta_addr), info->link_id);
+			ap_free_sta(hapd_link, old_sta);
+		}
+
+		/* 2. Create hostapd sta object */
+		sta = ap_sta_add(hapd_link, sta_addr);
+		if (!sta) {
+			wpa_printf(MSG_ERROR,
+				   "SMD ST PREP Target AP: Failed to create sta for link %u",
+				   info->link_id);
+			info->status = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
+			continue;
+		}
+
+		/* 3. Validate IEs - MUST have valid IEs */
+		if (!info->sta_prof || info->sta_prof_len == 0) {
+			wpa_printf(MSG_ERROR,
+				   "SMD ST PREP Target AP: No IEs for link %u",
+				   info->link_id);
+			info->status = WLAN_STATUS_INVALID_IE;
+			ap_free_sta(hapd_link, sta);
+			continue;
+		}
+
+		wpa_hexdump(MSG_DEBUG, "STA Profile", info->sta_prof, info->sta_prof_len);
+		info->status = check_assoc_ies(hapd_link, sta, info->sta_prof,
+					       info->sta_prof_len, LINK_PARSE_RECONF);
+
+		if (info->status != WLAN_STATUS_SUCCESS) {
+			wpa_printf(MSG_ERROR,
+				   "SMD ST PREP Target AP: IE validation failed for link %u (status=%u)",
+				   info->link_id, info->status);
+			ap_free_sta(hapd_link, sta);
+			continue;
+		}
+
+		/* 4. Validation passed - configure station */
+		sta->capability = info->capability;
+		uhr_mark_smd_features(hapd_link, sta);
+		os_memcpy(sta->mld_info.links[info->link_id].peer_addr, info->peer_addr, ETH_ALEN);
+		os_memcpy(sta->mld_info.links[info->link_id].local_addr, info->local_addr, ETH_ALEN);
+		sta->mld_info.links[info->link_id].valid = true;
+
+		sta->smd_info.state = SMD_STA_ST_PREP_DONE;
+
+		/* 5. Determine if assoc or additional link */
+		if (!assoc_link_found) {
+			/* First successful link = assoc link */
+			wpa_printf(MSG_ERROR, "SMD ST PREP TARGET AP: This link is marked as  the association link for STA %p", sta);
+			assoc_link_id = info->link_id;
+			info->is_assoc_link = true;
+			sta->mld_assoc_link_id = info->link_id;
+			ap_sta_set_mld(sta, true);
+
+			/* Add station to driver (reassoc=0 for new association) */
+			if (ap_sta_re_add(hapd_link, sta, 0) < 0) {
+				wpa_printf(MSG_ERROR,
+					   "SMD ST PREP Target AP: Failed to add MLD link station to driver");
+				ap_free_sta(hapd_link, sta);
+				info->status = WLAN_STATUS_UNSPECIFIED_FAILURE;
+				continue;
+			}
+			assoc_link_found = true;
+			assoc_hapd = hapd_link;
+			assoc_sta = sta;
+
+			sta->flags |= WLAN_STA_AUTH;
+			hostapd_set_sta_flags(hapd_link, sta);
+
+			/* Configure the AID and listen interval */
+			if (hostapd_get_aid(hapd_link, sta) < 0) {
+				wpa_printf(MSG_ERROR, "Could not allocate any more STAs");
+				ap_free_sta(hapd_link, sta);
+				goto out;
+			}
+
+
+			//hostapd_parse_smd_ie(hapd, sta, info->sta_prof, info->sta_prof_len);
+
+			wpa_printf(MSG_ERROR, "wpa_sm: %p - sta->smd_info.smd_sta: %d", sta->wpa_sm, sta->smd_info.smd_sta);
+			if (sta->wpa_sm && sta->smd_info.smd_sta) {
+				wpa_printf(MSG_DEBUG,
+					   "SMD: Transferring SMD info to wpa_state_machine for "
+					   MACSTR " after association",
+					   MAC2STR(sta->addr));
+				wpa_auth_set_smd_info(sta->wpa_sm, sta);
+			}
+
+			wpa_printf(MSG_INFO,
+				   "SMD ST PREP Target AP: Link %u is assoc link",
+				   info->link_id);
+		} else {
+			/* Additional link */
+			wpa_printf(MSG_ERROR, "SMD ST PREP TARGET AP: This link is marked as  the additional link for STA %p", sta);
+			info->is_assoc_link = false;
+			sta->mld_assoc_link_id = assoc_link_id;
+			ap_sta_set_mld(sta, true);
+			sta->flags |= WLAN_STA_AUTH;
+
+			/* Add MLD link station to driver (reassoc=0) */
+			if (add_associated_sta(hapd_link, sta, 0) < 0) {
+				wpa_printf(MSG_ERROR,
+					   "SMD ST PREP Target AP: Failed to add MLD link station to driver");
+				ap_free_sta(hapd_link, sta);
+				info->status = WLAN_STATUS_UNSPECIFIED_FAILURE;
+				continue;
+			}
+			os_memcpy(assoc_sta->mld_info.links[info->link_id].peer_addr, info->peer_addr, ETH_ALEN);
+			os_memcpy(assoc_sta->mld_info.links[info->link_id].local_addr, info->local_addr, ETH_ALEN);
+			assoc_sta->mld_info.links[info->link_id].valid = true;
+			wpa_printf(MSG_INFO,
+				   "SMD ST PREP Target AP: Link %u references assoc link %u",
+				   info->link_id, assoc_link_id);
+		}
+
+		/* 6. Update links_ok bitmap */
+		req_list->links_ok |= BIT(info->link_id);
+	}
+
+	/* Check if we got at least one successful link (assoc link) */
+	if (!assoc_link_found) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: No valid assoc link found");
+		goto out;
+	}
+
+	/* Add MLD link station to driver (reassoc=0) */
+	assoc_sta->listen_interval = 100;
+	if (add_associated_sta(assoc_hapd, assoc_sta, 0) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: Failed to add MLD link station to driver");
+		goto out;
+	}
+	assoc_sta->flags |= WLAN_STA_ASSOC;
+	hostapd_set_sta_flags(assoc_hapd, assoc_sta);
+	
+
+	/* Phase 4: Install security context to wpa_sm */
+	wpa_printf(MSG_DEBUG,
+		   "SMD ST PREP Target AP: Phase 4 - Installing security context");
+	if (uhr_target_ap_install_security_context(hapd, sta_addr, sec_ctx) < 0)
+		goto out;
+	
+	/* **Phase 5: Install PTK to driver at MLD level (ONCE via assoc link)** */
+	wpa_printf(MSG_DEBUG,
+		   "SMD ST PREP Target AP: Phase 5 - Installing PTK to driver");
+	if (uhr_target_ap_install_ptk_to_driver(hapd, sta_addr, req_list, sec_ctx) < 0)
+		goto out;
+
+	os_memcpy(assoc_sta->mld_info.common_info.mld_addr, sta_addr, ETH_ALEN);
+	if (ap_sta_is_mld(hapd, assoc_sta)) {
+		wpa_printf(MSG_DEBUG,
+			   "MLD: Set ML info in RSN Authenticator");
+		wpa_auth_set_ml_info(assoc_sta->wpa_sm,
+				     assoc_sta->mld_assoc_link_id,
+				     &assoc_sta->mld_info);
+	}
+	
+	/* **NEW in v24.4: Return req_list for response generation** */
+	*req_list_out = req_list;
+	ret = 0;
+	wpa_printf(MSG_DEBUG,
+		   "SMD ST PREP Target AP: ML-IE parsing complete");
+	
+out:
+	wpabuf_free(mlbuf);
+	if (ret && req_list)
+		uhr_deinit_link_reconf_req(&req_list);
+	return ret;
+}
+
+
+#define SMD_PRES_AID     BIT(0)
+#define SMD_PRES_DL_BA   BIT(1)
+#define SMD_PRES_UL_BA   BIT(2)
+#define SMD_PRES_SCS     BIT(3)
+
+/*
+ * Append SMD BSS Transition IE (ST Preparation Response)
+ *  - status: IEEE 802.11 status code (LE)
+ *  - aid_present: set true to include AID
+ *  - aid: Association ID (LE)
+ *  - dl_ba/ul_ba/scs: optional blocks if present (can be NULL/0)
+ * Returns: advanced pos
+ */
+static u8 * hostapd_eid_smd_bss_trans_prep_resp(u8 *pos,
+                                                u16 status,
+                                                bool aid_present,
+                                                u16 aid,
+                                                const u8 *dl_ba, u8 dl_ba_len,
+                                                const u8 *ul_ba, u8 ul_ba_len,
+                                                const u8 *scs,   u8 scs_len)
+{
+        u8 *len_pos;
+        u8 presence = 0;
+
+        /* Element ID (Extended) */
+        *pos++ = WLAN_EID_EXTENSION;
+
+        /* Reserve Length (1 byte) — fill later */
+        len_pos = pos++;
+
+        /* Element ID Extension: SMD BSS Transition Parameters */
+        *pos++ = WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS;
+
+        /* ---- ST Info ---- */
+
+        /* Status Code (2, LE) */
+        WPA_PUT_LE16(pos, status);
+        pos += 2;
+
+        /* Reserved (1) */
+        *pos++ = 0x00;
+
+        /* Presence Bitmap (1) */
+        if (aid_present)
+                presence |= SMD_PRES_AID;
+        if (dl_ba && dl_ba_len)
+                presence |= SMD_PRES_DL_BA;
+        if (ul_ba && ul_ba_len)
+                presence |= SMD_PRES_UL_BA;
+        if (scs && scs_len)
+                presence |= SMD_PRES_SCS;
+
+        *pos++ = presence;
+
+        /* Conditionally present fields (in the order of bits) */
+        if (aid_present) {
+                WPA_PUT_LE16(pos, aid);
+                pos += 2;
+        }
+        if (dl_ba && dl_ba_len) {
+                os_memcpy(pos, dl_ba, dl_ba_len);
+                pos += dl_ba_len;
+        }
+        if (ul_ba && ul_ba_len) {
+                os_memcpy(pos, ul_ba, ul_ba_len);
+                pos += ul_ba_len;
+        }
+        if (scs && scs_len) {
+                os_memcpy(pos, scs, scs_len);
+                pos += scs_len;
+        }
+
+        /* Length must include: [Ext ID (1) + everything after it] */
+        *len_pos = (u8) (pos - len_pos - 1);
+
+        return pos;
+}
+
+static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
+			       const u8 *sta_addr,
+			       u8 dialog_token,
+			       u16 status_code,
+			       struct uhr_link_reconf_req_list *req_list,
+			       size_t *response_len)
+{
+	u8 *buf, *pos;
+	size_t len;
+	struct ieee80211_mgmt *mgmt;
+	struct sta_info *sta;
+	struct mld_info mld;
+	size_t kde_len = 0, mle_len = 0;
+	struct uhr_link_reconf_req_info *info;
+	unsigned int status_list_count = 0;
+
+	sta = ap_get_sta(hapd, sta_addr);
+
+	/* Count links for status list */
+	if (req_list) {
+		dl_list_for_each(info, &req_list->list,
+				 struct uhr_link_reconf_req_info, list) {
+			status_list_count++;
+		}
+	}
+	
+	/* Calculate frame length */
+	len = IEEE80211_HDRLEN + 1 + 1 + 1  +  1 + 1;  /* Header + Category + Action + Token + Type + Count */
+	
+	/* **NEW: Reconfiguration Status List (ALWAYS present)** */
+	len += status_list_count * 3;  /* link_id (1B) + status (2B) per link */
+	/* **NEW: Conditional content based on links_ok** */
+	if (status_code == 0 && sta && req_list && req_list->links_ok > 0) {
+		/* REUSE: EHT group key distribution */
+		kde_len = 0;
+		len += kde_len;
+		
+		/* REUSE: EHT ML-IE building */
+		os_memset(&mld, 0, sizeof(mld));
+		mld.mld_sta = true;
+		
+		/* Build mld_info for accepted links */
+		dl_list_for_each(info, &req_list->list,
+				 struct uhr_link_reconf_req_info, list) {
+			if (info->status == WLAN_STATUS_SUCCESS) {
+				os_memcpy(mld.links[info->link_id].local_addr, info->local_addr, ETH_ALEN);
+				os_memcpy(mld.links[info->link_id].peer_addr, info->peer_addr, ETH_ALEN);
+
+
+				struct mld_link_info *link = &mld.links[info->link_id];
+				struct hostapd_data *lhapd;
+
+				
+				lhapd = hostapd_mld_get_link_bss(hapd, info->link_id);
+				if (!lhapd)
+					continue;
+				
+				link->valid = true;
+				link->status = info->status;
+				ieee80211_ml_build_assoc_resp(lhapd, hapd, sta, link);
+			}
+		}
+		
+		mle_len = hostapd_eid_eht_ml_len(hapd, &mld, false, true, 0);
+		len += mle_len;
+	}
+
+	// SMD BSS Transition IE:
+	// Length = Element ID (1) + Length (1) + Element ID Extn (1) + ST Info (Variable)
+	len += 3;
+	// For ST Preparation Response, the ST Info contains the following:
+	// 2   byte - Status Code
+	// 1   byte - Reserved
+	// 1   byte - Presence Bitmap	
+	// 0/2 byte - AID
+	// ??? byte - DL BA Info
+	// ??? byte - UL BA Info
+	// ??? byte - SCS List
+	// ------------------------------------------------------------
+	// NOTE:
+	// For the time being, only the AID is present
+	// ------------------------------------------------------------
+	len += 2 + 1 + 1 + 2;
+
+	buf = os_zalloc(len);
+	if (!buf)
+		return NULL;
+	
+	mgmt = (struct ieee80211_mgmt *) buf;
+	
+	/* Fill MAC header */
+	mgmt->frame_control = host_to_le16((WLAN_FC_TYPE_MGMT << 2) |
+					   (WLAN_FC_STYPE_ACTION << 4));
+	os_memcpy(mgmt->da, sta_addr, ETH_ALEN);
+	os_memcpy(mgmt->sa, hapd->own_addr, ETH_ALEN);
+	os_memcpy(mgmt->bssid, hapd->own_addr, ETH_ALEN);
+	
+	/* Fill action frame */
+	pos = (u8 *) &mgmt->u.action;
+	*pos++ = WLAN_ACTION_PROTECTED_UHR;
+	*pos++ = 1;
+	*pos++ = dialog_token;
+	*pos++ = 0; // PREP
+	*pos++ = status_list_count;
+
+	/* **NEW: Build Reconfiguration Status List (ALWAYS)** */
+	if (req_list) {
+		dl_list_for_each(info, &req_list->list,
+				 struct uhr_link_reconf_req_info, list) {
+			*pos++ = info->link_id;
+			WPA_PUT_LE16(pos, info->status);
+			pos += 2;
+			wpa_printf(MSG_DEBUG,
+				   "SMD ST PREP Target AP: Status list - link %u: status=%u",
+				   info->link_id, info->status);
+		}
+	}
+	
+	/* **NEW: Conditional content (ONLY if links_ok > 0)** */
+	if (status_code != 0 || !sta || !req_list || req_list->links_ok == 0)
+		goto done;
+	
+	/* REUSE: EHT group key distribution */
+	if (kde_len) {
+		u8 *kde_pos = pos;
+		kde_pos = wpa_auth_ml_group_kdes(sta->wpa_sm, ++kde_pos,
+						 req_list->links_ok);
+		*pos = kde_pos - pos - 1;
+		pos += kde_len;
+		wpa_printf(MSG_DEBUG,
+			   "SMD ST PREP Target AP: Added Group Key Data (len=%zu)",
+			   kde_len);
+	}
+	
+	/* REUSE: EHT ML-IE building */
+	if (mle_len) {
+		pos = hostapd_eid_eht_basic_ml_common(hapd, pos, &mld,
+						      false, true, 0, true);
+		wpa_printf(MSG_DEBUG,
+			   "SMD ST PREP Target AP: Added ML-IE (len=%zu)",
+			   mle_len);
+	}
+	
+        bool aid_present = true;
+        u16 aid = sta ? sta->aid : 0;
+
+        pos = hostapd_eid_smd_bss_trans_prep_resp(
+                pos,
+                0,
+                aid_present,
+                aid,
+                NULL, 0,   // DL BA Info not present
+                NULL, 0,   // UL BA Info not present
+                NULL, 0    // SCS List not present
+        );
+
+done:
+	if (mld.mld_sta)
+		ap_sta_free_sta_profile(&mld);
+	
+	*response_len = pos - buf;
+	
+	wpa_printf(MSG_INFO,
+		   "SMD ST PREP Target AP: Generated response (len=%zu, status=%u, links_ok=0x%x)",
+		   *response_len, status_code,
+		   req_list ? req_list->links_ok : 0);
+	
+	return buf;
+}
+
+
+void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
+			       const struct uhr_iap_frame *iap,
+			       u16 frame_len)
+{
+	const u8 *frame;
+	struct ieee802_11_elems elems;
+	u8 dialog_token = 0;
+	u8 *response_frame = NULL;
+	size_t response_len = 0;
+	u16 status_code = 0;
+	struct uhr_link_reconf_req_list *req_list = NULL;
+	struct uhr_smd_bss_transition_element sbte;
+	struct sta_info *sta = NULL;
+	int ret;
+	
+	if (!hapd || !iap) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: Invalid parameters");
+		return;
+	}
+	
+	wpa_printf(MSG_DEBUG,
+		   "SMD ST PREP Target AP: Received IAP request (txn=%u)",
+		   iap->iap_transaction_id);
+	
+	/* Validate frame */
+	if (frame_len == 0 || !(iap->flags & UHR_IAP_FLAG_HAS_SEC_CTX)) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: Invalid IAP request");
+		status_code = 1;
+		goto send_response;
+	}
+	
+	frame = iap->frame_buf;
+
+	if (frame_len < WLAN_ST_PREP_MIN_LEN) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: Frame too short");
+		status_code = 1;
+		goto send_response;
+	}
+	
+	dialog_token = frame[26];
+	
+	/* Parse IEs */
+	if (ieee802_11_parse_elems(frame + WLAN_ST_PREP_MIN_LEN,
+		frame_len - WLAN_ST_PREP_MIN_LEN, &elems, 1) == ParseFailed) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: Failed to parse IEs");
+		status_code = 1;
+		goto send_response;
+	}
+	
+	/* Check for ML-IE */
+	if (!elems.reconf_mle || !elems.reconf_mle_len) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: No ML-IE");
+		status_code = 1;
+		goto send_response;
+	}
+
+       /* Parse SMD BSS Transition IE */
+       if (uhr_parse_smd_bss_trans_elem(&elems, 0, &sbte) < 0) {
+               wpa_printf(MSG_ERROR, "UHR Target AP: Failed to parse SBTE");
+               status_code = 1;
+		goto send_response;
+       }
+	
+	/* Parse ML-IE and process profiles (includes MLD-level PTK installation) */
+	if (uhr_tgt_ap_parse_ml(hapd, iap->sta_addr, &iap->sec_ctx,
+			        elems.reconf_mle,
+			        elems.reconf_mle_len,
+			        &req_list) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: Failed to parse ML-IE");
+		status_code = 1;
+		goto send_response;
+	}
+
+       sta = ap_get_sta(hapd, iap->sta_addr);
+       if (!sta) {
+               wpa_printf(MSG_ERROR, "UHR Target AP: Failed to get STA");
+               status_code = 1;
+		goto send_response;
+       }
+
+       /* Update flags based on the flags */
+       sta->dl_sn_not_transferred = sbte.dl_sn_not_transferred;
+       sta->ul_sn_not_transferred = sbte.ul_sn_not_transferred;
+
+send_response:
+	response_frame = uhr_tgt_ap_st_prep_resp(hapd, iap->sta_addr,
+					     dialog_token,
+					     status_code,
+					     req_list,
+					     &response_len);
+	
+	/* Send IAP RESPONSE */
+	ret = uhr_iap_send_st_prep_resp(hapd, iap->current_ap_mld_addr,
+				    iap->sta_addr,
+				    iap->iap_transaction_id,
+				    le_to_host64(iap->sequence_number),
+				    status_code == 0 ? UHR_IAP_STATUS_SUCCESS :
+						       UHR_IAP_STATUS_FAILURE,
+				    response_frame, response_len);
+
+	if (!ret && sta) {
+		wpa_printf(MSG_ERROR, "Assoc sta cb");
+		//hapd->new_assoc_sta_cb(hapd, sta, 0);
+		ap_sta_clear_disconnect_timeouts(hapd, sta);
+		ap_sta_clear_assoc_timeout(hapd, sta);
+#ifdef CONFIG_IEEE80211BE
+	        if (ap_sta_is_mld(hapd, sta)) {
+	                struct hostapd_data *bss;
+	                struct sta_info *lsta;
+	
+	                for_each_mld_link(bss, hapd) {
+	                        if (bss == hapd)
+	                                continue;
+	                        lsta = ap_get_sta(bss, sta->addr);
+	                        if (lsta)
+	                                ap_sta_clear_assoc_timeout(bss, lsta);
+	                }
+	        }
+
+#ifdef CONFIG_P2P
+	        if (sta->p2p_ie == NULL && !sta->no_p2p_set) {
+	                sta->no_p2p_set = 1;
+	                hapd->num_sta_no_p2p++;
+	                if (hapd->num_sta_no_p2p == 1)
+	                        hostapd_p2p_non_p2p_sta_connected(hapd);
+	        }
+#endif /* CONFIG_P2P */
+
+	        //airtime_policy_new_sta(hapd, sta);
+#endif /* CONFIG_IEEE80211BE */
+	}
+
+       // Once the target AP is validated we can send a prep request message to the FW
+       // (1) Role: This is always the serving AP
+       // failures need to be notified to FW whenever failed in hostapd
+       if (sta) {
+               u32 role = 2; /* Always target AP */
+               u32 type = 1; /* Always prep response since it was sent out already */
+               u32 dl_sn_not_transferred = sta->dl_sn_not_transferred;
+               u32 ul_sn_not_transferred = sta->ul_sn_not_transferred;
+               u32 dl_drain_time = hapd->conf->smd.uhr_dl_drain_duration_tu;
+               if (hostapd_smd_roam(hapd, sta, role, type, dl_sn_not_transferred, ul_sn_not_transferred, dl_drain_time)) {
+                       wpa_printf(MSG_DEBUG, "UHR Current AP: Failed to send WMI roam notification - not skipping for now.");
+               }
+       }
+	
+	if (response_frame)
+		os_free(response_frame);
+	
+	if (req_list)
+		uhr_deinit_link_reconf_req(&req_list);
+	
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: Failed to send IAP response");
+		return;
+	}
+	
+	wpa_printf(MSG_DEBUG,
+		   "SMD ST PREP Target AP: IAP response sent (status=%u)",
+		   status_code);
+	
+	if (status_code == 0) {
+		wpa_printf(MSG_INFO,
+			   "SMD ST PREP Target AP: Ready for STA " MACSTR " with MLD-level PTK and assoc link marking",
+			   MAC2STR(iap->sta_addr));
+	}
+
+        /* Start prep timer - will be cancelled on ST Exec */
+        uhr_tgt_start_st_prep_timer(hapd, iap->sta_addr);
+}
+
+static u8 * hostapd_eid_smd_bss_trans_exec_resp(u8 *pos,
+					        u16 dl_drain_time)
+{
+        u8 *len_pos;
+        u8 presence = 0;
+
+        /* Element ID (Extended) */
+        *pos++ = WLAN_EID_EXTENSION;
+
+        /* Reserve Length (1 byte) — fill later */
+        len_pos = pos++;
+
+        /* Element ID Extension: SMD BSS Transition Parameters */
+        *pos++ = WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS;
+
+        /* ---- ST Info ---- */
+
+        /* Status Code (2, LE) */
+        WPA_PUT_LE16(pos, 0);
+        pos += 2;
+
+        /* Reserved (1) */
+        *pos++ = 0x00;
+
+        /* Presence Bitmap (1) */
+        presence |= BIT(0);
+
+        *pos++ = presence;
+
+        /* Conditionally present fields (in the order of bits) */
+        WPA_PUT_LE16(pos, dl_drain_time);
+        pos += 2;
+
+        /* Length must include: [Ext ID (1) + everything after it] */
+        *len_pos = (u8) (pos - len_pos - 1);
+
+        return pos;
+}
+
+void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
+                                const struct uhr_iap_frame *iap)
+{
+       struct sta_info *sta;
+       u8 *resp_buf, *pos;
+       const u8 *frame;
+       int ret;
+       struct ieee80211_mgmt *mgmt;
+
+       wpa_printf(MSG_DEBUG,
+                  "UHR ST EXEC: Received IAP REQUEST (txn=%u)",
+                  iap->iap_transaction_id);
+
+       /* Find station (should already be prepped from ST Prep) */
+       sta = ap_get_sta(hapd, iap->sta_addr);
+       if (!sta) {
+               wpa_printf(MSG_ERROR, "UHR ST EXEC: Station not found");
+               uhr_iap_send_st_exec_resp(hapd,
+                                         iap->current_ap_mld_addr,
+                                         iap->sta_addr,
+                                         iap->iap_transaction_id,
+                                         le_to_host64(iap->sequence_number),
+                                         1, NULL, 0);
+               return;
+       }
+
+	if (ap_sta_is_mld(hapd, sta)) {
+		wpa_printf(MSG_DEBUG,
+			   "MLD: Set ML info in RSN Authenticator");
+		wpa_auth_set_ml_info(sta->wpa_sm,
+				     sta->mld_assoc_link_id,
+				     &sta->mld_info);
+	}
+
+	if (ap_sta_set_authorized_flag(hapd, sta, 1)) {
+		sta->flags_ext |= WLAN_STA_SMD;
+		hostapd_set_sta_flags(hapd,sta);
+		wpa_printf(MSG_DEBUG, "Authorized the STA");
+	} else {
+		wpa_printf(MSG_DEBUG, "Could not send authorize to the STA - sending failure (TBD)");
+		
+	}
+
+	u32 role = 2;
+	u32 type = 4;
+	u32 dl_sn_not_transferred = sta->dl_sn_not_transferred;
+	u32 ul_sn_not_transferred = sta->ul_sn_not_transferred;
+	u32 dl_drain_time = hapd->conf->smd.uhr_dl_drain_duration_tu;
+	if (hostapd_smd_roam(hapd, sta, role, type, dl_sn_not_transferred, ul_sn_not_transferred, dl_drain_time)) {
+		wpa_printf(MSG_DEBUG, "UHR Current AP: Failed to send WMI roam notification - not skipping for now.");
+	}
+
+	/*
+	 * Extract IAP frame:
+	 * [00-23] WLAN Header
+         * [24-24] Category
+         * [25-25] Action Type
+         * [26-26] Dialog Token
+         * [27-27] UHR Reconfiguration Type
+         * [28-~~] Reconfiguration ML IE
+         * [~~-~~] SMD BSS Transition Parameters IE (TBD)
+	 * [~~-~~] Diffie-Helman Parameters IE (TBD)
+	 * [~~-~~] Nonce Element IE (TBD)
+	 */
+	frame = iap->frame_buf;
+
+
+	int i = 0, n = 0;
+	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+		if (sta->mld_info.links[i].valid)
+			n++;
+	}
+	wpa_printf(MSG_ERROR, "Number of links: %d", n);
+
+
+
+	size_t kde_len = wpa_auth_ml_group_kdes_len(sta->wpa_sm, 0xFFFF) + 1;
+	wpa_printf(MSG_DEBUG, "Group key length: %zu", kde_len);
+
+	size_t len = IEEE80211_HDRLEN + // Header
+			1 +		// Category
+			1 +		// Action
+			1 + 		// Dialog Token
+			1 + 		// Type
+			1 + 		// Count
+			(3 * n) +	// Reconfiguration Status List
+			kde_len +	// Group Keys
+			9;		// SMD BSS Transition IE
+
+        resp_buf = os_zalloc(len);
+        if (!resp_buf) {
+                uhr_iap_send_st_exec_resp(hapd,
+                                          iap->current_ap_mld_addr,
+                                          iap->sta_addr,
+                                          iap->iap_transaction_id,
+                                          le_to_host64(iap->sequence_number),
+                                          WLAN_STATUS_UNSPECIFIED_FAILURE,
+					  NULL, 0);
+                return;
+        }
+
+	mgmt = (struct ieee80211_mgmt *)resp_buf;
+
+        /* Fill MAC header */
+        mgmt->frame_control = host_to_le16((WLAN_FC_TYPE_MGMT << 2) | (WLAN_FC_STYPE_ACTION << 4));
+        os_memcpy(mgmt->da, sta->addr, ETH_ALEN);
+        os_memcpy(mgmt->sa, hapd->own_addr, ETH_ALEN);
+        os_memcpy(mgmt->bssid, hapd->own_addr, ETH_ALEN);
+	pos = (u8 *) &mgmt->u.action;
+	*pos++ = WLAN_ACTION_PROTECTED_UHR;
+	*pos++ = 1;
+	*pos++ = frame[26];
+	*pos++ = 1;
+	u8 *rcsl_count = pos;
+	pos++;
+
+       for (i = 0; i < n; i++) {                      
+               *pos++ = i;
+               WPA_PUT_LE16(pos, WLAN_STATUS_SUCCESS);
+               pos += 2;                              
+               *rcsl_count += 1;                      
+       }                                              
+
+
+       /* 2. Group Keys (GTK, IGTK, BIGTK) */
+	if (sta->wpa_sm) {
+		u8 *kde_pos = pos;
+		kde_pos = wpa_auth_ml_group_kdes(sta->wpa_sm, ++kde_pos, 0xFFFF);
+		*pos = kde_pos - pos - 1;
+		wpa_hexdump_key(MSG_DEBUG, "MLD: Group KDE", pos + 1, *pos);
+		wpa_printf(MSG_DEBUG,
+			   "UHR ST EXEC: Added Group Keys (len=%zu)",
+			   kde_len);
+		pos += kde_len;
+	}
+
+	sta->smd_info.state = SMD_STA_ST_EXEC_DONE;
+
+	pos = hostapd_eid_smd_bss_trans_exec_resp(pos, hapd->conf->smd.uhr_dl_drain_duration_tu);
+
+       /* Send IAP RESPONSE back to Current AP */
+       ret = uhr_iap_send_st_exec_resp(hapd,
+                                       iap->current_ap_mld_addr,
+                                       iap->sta_addr,
+                                       iap->iap_transaction_id,
+                                       le_to_host64(iap->sequence_number),
+                                       0,
+                                       resp_buf, len);
+
+       os_free(resp_buf);
+
+       if (ret < 0) {
+               wpa_printf(MSG_ERROR,
+                          "UHR ST EXEC: Failed to send IAP RESPONSE");
+               return;
+       }
+
+       wpa_printf(MSG_INFO,
+                  "UHR ST EXEC: Sent IAP RESPONSE to Current AP " MACSTR " (len=%zu)",
+                  MAC2STR(iap->current_ap_mld_addr), len);
+
+       uhr_tgt_st_prep_timer_cleanup(hapd, (u8 *) iap->sta_addr);
+}
