@@ -793,6 +793,7 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	bool changed = false;
 #ifdef CONFIG_QCN_EXTN
 	bool is_dfs = false, skip_cac_rep = false;
+	u32 mcst = 0;
 	uc_value_t *wpa_state_val;
 	char *wpa_state = NULL;
 #endif
@@ -824,6 +825,10 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 		os_strlcpy(iface->iface_extn.sta_wpa_state, wpa_state,
 				sizeof(iface->iface_extn.sta_wpa_state));
 	}
+
+	intval = ucv_int64_get(ucv_object_get(info, "mcst", NULL));
+	if (!errno)
+		mcst = intval;
 
 	if (iface->conf->conf_extn.ind_rptr)
 		return NULL;
@@ -885,8 +890,21 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 
 #ifdef CONFIG_QCN_EXTN
 	is_dfs = ucv_boolean_get(ucv_object_get(info, "is_dfs", NULL));
+	if (!errno && is_dfs && mcst) {
+		iface->mcst = mcst;
+		iface->cs_time = IEEE80211_TU_TO_MS(mcst) +
+			(2 * conf->beacon_int);
+		wpa_printf(MSG_INFO, "%s: using residual CAC mcst=%u TU for DFS iface start",
+			   __func__, iface->mcst);
+	} else {
+		iface->mcst = 0;
+		iface->cs_time = 0;
+	}
+
 	if (!errno && conf->conf_extn.skip_cac)
-		skip_cac_rep = is_dfs;
+		skip_cac_rep = is_dfs && !iface->mcst;
+	wpa_printf(MSG_INFO, "%s: is_dfs=%d mcst=%u TU cs_time=%u ms skip_cac_rep=%d",
+		   __func__, is_dfs, iface->mcst, iface->cs_time, skip_cac_rep);
 #endif
 out:
 	switch (iface->state) {

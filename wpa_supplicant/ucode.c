@@ -284,6 +284,8 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 				ucv_int64_new(bss->mld_links[i].punc_bitmap));
 				is_dfs = ieee80211_is_dfs(bss->mld_links[i].freq, NULL, 0);
 				ucv_object_add(info, "is_dfs", ucv_boolean_new(is_dfs));
+				ucv_object_add(info, "mcst",
+					       ucv_int64_new(wpa_bss_get_mld_link_mcst_extn(bss, i)));
 				sec_chan_offset = compute_sec_channel_offset_extn(bss->mld_links[i].freq,
 										  center_freq1,
 										  bss->mld_links[i].width);
@@ -625,9 +627,15 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 		for_each_link(wpa_s->valid_links, i) {
 			freq = wpa_s->links[i].freq;
 			if (hw_idx == wpa_get_hw_idx_by_freq(wpa_s, freq)) {
+#ifdef CONFIG_QCN_EXTN
+				u32 mcst = wpas_ucode_get_link_mcst_extn(wpa_s, i);
+#endif
 				ucv_object_add(ret, "frequency", ucv_int64_new(freq));
 				sec_chan = wpas_get_sec_chan(wpa_s->links[i].bss);
 				ucv_object_add(ret, "sec_chan_offset", ucv_int64_new(sec_chan));
+#ifdef CONFIG_QCN_EXTN
+				ucv_object_add(ret, "mcst", ucv_int64_new(mcst));
+#endif
 				if (wpa_drv_mlo_signal_poll(wpa_s, &mlo_si) == 0) {
 					if (mlo_si.links[i].chanwidth != CHAN_WIDTH_UNKNOWN) {
 						ucv_object_add(ret, "chan_width", ucv_int64_new(mlo_si.links[i].chanwidth));
