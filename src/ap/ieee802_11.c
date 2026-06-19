@@ -5392,6 +5392,14 @@ static u16 owe_process_assoc_req(struct hostapd_data *hapd,
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
 	sta->owe_pmk_len = hash_len;
+	os_free(sta->owe_pmkid);
+	sta->owe_pmkid = os_memdup(pmkid, PMKID_LEN);
+	if (!sta->owe_pmkid) {
+		os_free(sta->owe_pmk);
+		sta->owe_pmk = NULL;
+		sta->owe_pmk_len = 0;
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
+	}
 
 	wpa_hexdump_key(MSG_DEBUG, "OWE: PMK", sta->owe_pmk, sta->owe_pmk_len);
 	wpa_hexdump(MSG_DEBUG, "OWE: PMKID", pmkid, PMKID_LEN);

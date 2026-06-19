@@ -721,6 +721,7 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 
 #ifdef CONFIG_OWE
 	bin_clear_free(sta->owe_pmk, sta->owe_pmk_len);
+	os_free(sta->owe_pmkid);
 	crypto_ecdh_deinit(sta->owe_ecdh);
 #endif /* CONFIG_OWE */
 
