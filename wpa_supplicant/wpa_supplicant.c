@@ -8933,6 +8933,7 @@ static void wpa_supplicant_deinit_iface(struct wpa_supplicant *wpa_s,
 #ifdef CONFIG_QCN_EXTN
 	wpas_iface_deinit_extn(wpa_s);
 #endif /* CONFIG_QCN_EXTN */
+	wpas_sta_cac_clear(wpa_s);
 	os_free(wpa_s->ssids_from_scan_req);
 	os_free(wpa_s->last_scan_freqs);
 
