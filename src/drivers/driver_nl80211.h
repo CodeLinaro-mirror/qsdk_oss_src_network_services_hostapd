@@ -16,6 +16,7 @@
 #include "nl80211_copy.h"
 #include "utils/list.h"
 #include "driver.h"
+#include <netlink/attr.h>
 
 #ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
@@ -512,6 +513,16 @@ int nl80211_put_freq_params(struct nl_msg *msg,
 			    const struct hostapd_freq_params *freq,
 			    struct i802_bss *bss);
 #endif /* CONFIG_QCN_EXTN */
+
+size_t nl80211_attr_len(size_t len);
+
+size_t nl80211_attr_len_u8(void);
+
+size_t nl80211_attr_len_u16(void);
+
+size_t nl80211_attr_len_u32(void);
+
+size_t nl80211_attr_len_flag(void);
 
 /**
  * nl80211_update_beacons_on_chain_mask_change() - Update beacons after a
