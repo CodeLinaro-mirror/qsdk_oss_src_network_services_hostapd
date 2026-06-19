@@ -34,4 +34,7 @@ void smd_neighbor_update_deinit(struct hostapd_data *hapd);
 int smd_neighbor_update_send(struct hostapd_data *hapd,
 				  enum smd_neighbor_update_type update_type);
 
+void smd_neighbor_update_rx(struct hostapd_data *hapd, const u8 *src_addr,
+			    const u8 *dst_addr, const u8 *data, size_t data_len,
+			    u8 oui_suffix);
 #endif /* SMD_NEIGHBOR_UPDATE_H */
