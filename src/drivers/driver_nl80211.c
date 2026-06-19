@@ -8490,8 +8490,13 @@ int nl80211_create_iface(struct wpa_driver_nl80211_data *drv,
 {
 	int ret;
 
-	if (use_existing && if_nametoindex(ifname))
+	if (use_existing && if_nametoindex(ifname)) {
+		nl80211_vendor_cmd_if_offload_type((void *)drv, OUI_QCA,
+						   QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
+						   NULL, 0, 0, NULL, ifname,
+						   ppe_vp_type, false);
 		return nl80211_use_existing_iface(drv, ifname, iftype, addr);
+	}
 
 	ret = nl80211_create_iface_once(drv, ifname, iftype, addr, wds, handler,
 					arg);
@@ -11574,6 +11579,7 @@ static int wpa_driver_nl80211_if_add(void *priv, enum wpa_driver_if_type type,
 		new_bss->ctx = bss_ctx;
 		new_bss->flink->ctx = bss_ctx;
 		new_bss->added_if = added;
+		new_bss->ppe_vp_type = ppe_vp_type;
 
 		/* Set interface mode to NL80211_IFTYPE_AP */
 		if (nl80211_set_mode(new_bss, nlmode))
