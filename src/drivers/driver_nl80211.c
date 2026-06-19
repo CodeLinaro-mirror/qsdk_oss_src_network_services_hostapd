@@ -7562,6 +7562,10 @@ int nl80211_create_iface(struct wpa_driver_nl80211_data *drv,
 			     linux_set_iface_flags(drv->global->ioctl_sock,
 						   ifname, 1) < 0))
 					return -1;
+			nl80211_vendor_cmd_if_offload_type((void *)drv,  OUI_QCA,
+							   QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
+							   NULL, 0, 0, NULL, ifname,
+							   ppe_vp_type, false);
 			return -ENFILE;
 		}
 		wpa_printf(MSG_INFO, "Try to remove and re-create %s", ifname);
@@ -10610,6 +10614,7 @@ static int wpa_driver_nl80211_if_add(void *priv, enum wpa_driver_if_type type,
 		new_bss->ctx = bss_ctx;
 		new_bss->flink->ctx = bss_ctx;
 		new_bss->added_if = added;
+		new_bss->ppe_vp_type = ppe_vp_type;
 
 		/* Set interface mode to NL80211_IFTYPE_AP */
 		if (nl80211_set_mode(new_bss, nlmode))
