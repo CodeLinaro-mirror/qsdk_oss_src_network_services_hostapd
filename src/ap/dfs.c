@@ -1707,7 +1707,9 @@ int hostapd_set_dfs_cac_time(struct hostapd_iface *iface)
 	n_chans = dfs_get_used_n_chans(iface, &n_chans1, chan_width);
 #ifdef CONFIG_QCN_EXTN
 	/* Setup CAC time */
-	if (iface->conf->conf_extn.skip_cac)
+	if (iface->mcst && iface->cs_time) {
+		iface->dfs_cac_ms = iface->cs_time;
+	} else if (iface->conf->conf_extn.skip_cac)
 		iface->dfs_cac_ms = 0;
 	else
 #endif /* CONFIG_QCN_EXTN */

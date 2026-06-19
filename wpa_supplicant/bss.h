@@ -154,6 +154,8 @@ struct wpa_bss {
 		u8 center_freq2_idx;
 		u8 width;
 		le16 punc_bitmap;
+		u32 mcst;
+		struct os_reltime mcst_update_time;
 #endif
 	} mld_links[MAX_NUM_MLD_LINKS];
 
@@ -271,7 +273,6 @@ void wpa_bss_parse_basic_ml_element(struct wpa_supplicant *wpa_s,
 				    struct wpa_bss *bss);
 u16 wpa_bss_parse_reconf_ml_element(struct wpa_supplicant *wpa_s,
 				    struct wpa_bss *bss);
-
 u32 wpa_bss_compare_res(const struct wpa_bss *old,
 			const struct wpa_scan_res *new_res);
 struct wpa_bss *
