@@ -2282,6 +2282,23 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
 {
 	struct hostapd_bss_config *conf = hapd->conf;
 
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * Dependent repeater FH AP: must not transmit beacons until the BH
+	 * STA has completed association.
+	 */
+	if (hapd->iface->conf->conf_extn.repeater &&
+	    !hapd->iface->conf->conf_extn.ind_rptr &&
+	    os_strncmp(hapd->iface->iface_extn.sta_wpa_state, "COMPLETED", 9) != 0) {
+		wpa_printf(MSG_INFO,
+			   "%s: repeater FH AP, BH STA not connected"
+			   " (sta_wpa_state=\"%s\"), skipping start_ap for %s",
+			   __func__, hapd->iface->iface_extn.sta_wpa_state,
+			   conf->iface);
+		return 0;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	if (!conf->start_disabled && ieee802_11_set_beacon(hapd) < 0)
 		return -1;
 
