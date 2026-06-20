@@ -1770,6 +1770,19 @@ int hostapd_drv_set_qos(struct hostapd_data *hapd, struct qm_req_data *qm_req,
 	return hapd->driver->set_qos(hapd->drv_priv, qm_req, qm_resp);
 }
 
+#ifdef CONFIG_IEEE80211BN
+int hostapd_drv_critical_update(struct hostapd_data *hapd, u8 link_id,
+				u32 cu_type, const u8 *elems, size_t elems_len)
+{
+	if (!hapd->driver || !hapd->drv_priv ||
+	    !hapd->driver->critical_update)
+		return -EOPNOTSUPP;
+
+	return hapd->driver->critical_update(hapd->drv_priv, link_id,
+					     cu_type, elems, elems_len);
+}
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef CONFIG_QCN_EXTN
 int hostapd_drv_set_muedca_mode(struct hostapd_data *hapd, int mode, int radio_idx)
 {

@@ -718,4 +718,9 @@ int hostapd_drv_set_advertised_ttlm_params(struct hostapd_data *hapd,
 int hostapd_drv_set_qos(struct hostapd_data *hapd, struct qm_req_data *qm_req,
 			struct qm_resp_data *qm_resp);
 
+#ifdef CONFIG_IEEE80211BN
+int hostapd_drv_critical_update(struct hostapd_data *hapd, u8 link_id,
+				u32 cu_type, const u8 *elems, size_t elems_len);
+#endif /* CONFIG_IEEE80211BN */
+
 #endif /* AP_DRV_OPS */
