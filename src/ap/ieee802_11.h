@@ -29,6 +29,7 @@ struct sae_pt;
 struct sae_password_entry;
 struct mld_info;
 struct mld_link_info;
+struct rsn_pmksa_cache_entry;
 
 #define BITRATE_5_5_MBPS 55
 
@@ -668,5 +669,10 @@ u8 * hostapd_eid_mbssid_nontx_optional_ie(struct hostapd_data *bss,
 					  struct non_inheritance_elem *non_inherit_ie,
 					  u8 *eid, ssize_t *nontx_prof_len,
 					  u8 frame_type);
+
+void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
+			    u8 type, u16 auth_transaction, u16 status,
+			    struct rsn_pmksa_cache_entry *cached_pmk,
+			    const u8 *eap_req, size_t eap_req_len);
 
 #endif /* IEEE802_11_H */
