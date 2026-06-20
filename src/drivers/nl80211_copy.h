@@ -1356,6 +1356,12 @@
  *	features and also to notify userspace about the status response with
  *	attributes defined in %NL80211_ATTR_QOS_MGMT.
  *
+ * @NL80211_CMD_CRITICAL_UPDATE: Command sent by hostapd to initiate a
+ * 	Critical Update (CU) session on an AP link. Requires
+ * 	%NL80211_ATTR_IFINDEX, %NL80211_ATTR_MLO_LINK_ID,
+ * 	%NL80211_ATTR_CU_TYPE, and
+ * 	%NL80211_ATTR_IE carrying the CU element to be stitched into beacons.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -1642,6 +1648,7 @@ enum nl80211_commands {
 	NL80211_CMD_TRIGGER_SMD_DISCOVERY,
 
 	NL80211_CMD_UHR_MODE_UPDATE,
+	NL80211_CMD_CRITICAL_UPDATE,
 
 	/* add new commands above here */
 
@@ -3047,6 +3054,9 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_STA_DFS_EN: whether STA_DFS_EN is enabled (u8, 0 or 1)
  *
+ * @NL80211_ATTR_CU_TYPE: (u8) Critical Update type, see &enum nl80211_cu_type.
+ * 	Used with %NL80211_CMD_CRITICAL_UPDATE.
+ *
  * @NL80211_ATTR_EPP_PEER: A flag attribute to indicate if the peer is an EPP
  *	STA. Used with %NL80211_CMD_NEW_STA and %NL80211_CMD_ADD_LINK_STA
  *
@@ -3675,8 +3685,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_PCIE,
 	NL80211_ATTR_DCVS,
 	NL80211_ATTR_DPS_ASSIST,
-	NL80211_ATTR_HE_MUEDCA_MODE,
 
+	NL80211_ATTR_HE_MUEDCA_MODE,
 	NL80211_ATTR_LOW_POWER_20MHZ,
 	NL80211_ATTR_BEACON_TX_SYNC_SUPPORT,
 
@@ -3699,6 +3709,7 @@ enum nl80211_attrs {
 	NL80211_ATTR_SMD_TIMEOUT,
 
 	NL80211_ATTR_UHR_MODE_UPDATE_PARAMS,
+	NL80211_ATTR_CU_TYPE,
 
 	NL80211_ATTR_EPP_PEER,
 
@@ -8792,6 +8803,17 @@ enum nl80211_set_cu {
 
 	NUM_NL80211_CUS = BIT(2),
 };
+
+/**
+ * enum nl80211_cu_type - Critical Update session type
+ *
+ * @NL80211_CU_TYPE_UHR_PARAMS: UHR parameter update (IEEE 802.11bn).
+ *	The CU element is a UHR Params Update IE passed in %NL80211_ATTR_IE.
+ */
+enum nl80211_cu_type {
+	NL80211_CU_TYPE_UHR_PARAMS,
+};
+
 
 /**
  * enum nl80211_erp_attrs - set ErP attributes during entry/exit
