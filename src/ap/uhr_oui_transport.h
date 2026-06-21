@@ -55,6 +55,7 @@ struct uhr_oui_ctx {
 	u8 iap_transaction_id;
 	u64 iap_sequence_number;
 	struct uhr_peer_entry *peers;
+	int peer_count;
 };
 
 
@@ -99,13 +100,27 @@ int uhr_oui_peer_exists(struct uhr_oui_ctx *ctx, const u8 *mac_addr);
 /**
  * uhr_oui_add_peer - Add peer to configured list
  * @ctx: OUI context
- * @mac_addr: Peer MAC address to add
+ * @mac_addr: Peer MAC address to add  (00:00:00:00:00:00 = wildcard)
  * @key: 32-byte AES-SIV key, or NULL for no encryption
  * @has_key: true if key is valid
  * Returns: 0 on success, -1 on error
  */
 int uhr_oui_add_peer(struct uhr_oui_ctx *ctx, const u8 *mac_addr,
 		     const u8 *key, bool has_key);
+
+/**
+ * uhr_oui_clone_peer - Register new_mac with the key from existing_mac
+ * @ctx: OUI context
+ * @existing_mac: Peer whose key to copy (falls back to wildcard if not found)
+ * @new_mac: New MLD address to register
+ * Returns: 0 on success, -1 on error
+ *
+ * Called from uhr_iap_rx to register the MLD address carried in the IAP
+ * frame body.  The peer list is keyed by MLD address only; link addresses
+ * are never stored.
+ */
+int uhr_oui_clone_peer(struct uhr_oui_ctx *ctx,
+		       const u8 *existing_mac, const u8 *new_mac);
 
 /**
  * uhr_load_partners - Load configured SMD partner APs
