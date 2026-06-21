@@ -19,7 +19,7 @@
 
 
 /**
- * uhr_oui_get_peer - Look up a peer by MAC address
+ * uhr_oui_get_peer - Look up a peer by MAC address (exact match only)
  */
 static struct uhr_peer_entry *uhr_oui_get_peer(struct uhr_oui_ctx *ctx,
 					       const u8 *mac_addr)
@@ -76,6 +76,12 @@ int uhr_oui_add_peer(struct uhr_oui_ctx *ctx, const u8 *mac_addr,
 			   MAC2STR(mac_addr));
 		return 0;
 	}
+	if (ctx->peer_count >= UHR_MAX_PEERS) {
+		wpa_printf(MSG_WARNING,
+			   "SMD OUI: Peer list full (%d), not adding " MACSTR,
+			   UHR_MAX_PEERS, MAC2STR(mac_addr));
+		return -1;
+	}
 
 	peer = os_zalloc(sizeof(*peer));
 	if (!peer) {
@@ -90,10 +96,48 @@ int uhr_oui_add_peer(struct uhr_oui_ctx *ctx, const u8 *mac_addr,
 	}
 	peer->next = ctx->peers;
 	ctx->peers = peer;
+	ctx->peer_count++;
 
 	wpa_printf(MSG_DEBUG, "SMD OUI: Added peer " MACSTR " (%s)",
 		   MAC2STR(mac_addr), peer->has_key ? "encrypted" : "plain");
 	return 0;
+}
+
+
+/**
+ * uhr_oui_clone_peer - Register new_mac with the key from existing_mac
+ *
+ * Called from uhr_iap_rx to register the MLD address carried in the IAP
+ * frame body.  Falls back to the wildcard entry when existing_mac has no
+ * exact entry (first-contact via wildcard path).
+ */
+int uhr_oui_clone_peer(struct uhr_oui_ctx *ctx,
+		       const u8 *existing_mac, const u8 *new_mac)
+{
+	struct uhr_peer_entry *existing;
+
+	if (!ctx || !existing_mac || !new_mac)
+		return -1;
+
+	if (uhr_oui_get_peer(ctx, new_mac))
+		return 0;
+
+	existing = uhr_oui_get_peer(ctx, existing_mac);
+	if (!existing) {
+		existing = uhr_oui_get_wildcard_peer(ctx);
+		if (existing)
+			wpa_printf(MSG_INFO,
+				   "SMD OUI: Adding " MACSTR " to smd_partner list (promoted via wildcard key)",
+				   MAC2STR(new_mac));
+	}
+	if (!existing) {
+		wpa_printf(MSG_WARNING,
+			   "SMD OUI: No key source for MLD addr " MACSTR " — no exact peer and no wildcard",
+			   MAC2STR(new_mac));
+		return -1;
+	}
+
+	return uhr_oui_add_peer(ctx, new_mac, existing->key, existing->has_key);
 }
 
 
@@ -112,6 +156,7 @@ static void uhr_oui_rx_callback(void *ctx, const u8 *src_addr,
 {
 	struct uhr_oui_ctx *oui_ctx = ctx;
 	struct uhr_peer_entry *peer;
+	struct uhr_peer_entry *wildcard_peer = NULL;
 	u8 oui_suffix;
 	u8 dst_addr[ETH_ALEN] = {0};
 	const u8 *iap_data;
@@ -151,6 +196,18 @@ static void uhr_oui_rx_callback(void *ctx, const u8 *src_addr,
 	iap_len  = len - sizeof(struct l2_ethhdr) - 6;
 
 	peer = uhr_oui_get_peer(oui_ctx, src_addr);
+	if (!peer) {
+		/* No exact match — try wildcard (all-zero MAC).  The wildcard
+		 * supplies the shared key; src_addr is promoted to a concrete
+		 * entry by uhr_iap_rx once the MLD addr is known from the body. */
+		wildcard_peer = uhr_oui_get_wildcard_peer(oui_ctx);
+		if (wildcard_peer) {
+			wpa_printf(MSG_INFO,
+				   "SMD OUI: No exact peer for " MACSTR " — decrypting with wildcard key",
+				   MAC2STR(src_addr));
+			peer = wildcard_peer;
+		}
+	}
 	if (peer && peer->has_key) {
 		/* AES-SIV-256 decrypt: AD = [src_addr, oui_suffix] */
 		const u8 *ad[2] = { src_addr, &oui_suffix };
@@ -166,8 +223,10 @@ static void uhr_oui_rx_callback(void *ctx, const u8 *src_addr,
 
 		plain_len = iap_len - AES_BLOCK_SIZE;
 		plain = os_malloc(plain_len);
-		if (!plain)
+		if (!plain) {
+			wpa_printf(MSG_ERROR, "SMD OUI: OOM allocating decrypt buffer");
 			return;
+		}
 
 		if (aes_siv_decrypt(peer->key, sizeof(peer->key),
 				    iap_data, iap_len, 2, ad, ad_len,
@@ -178,6 +237,11 @@ static void uhr_oui_rx_callback(void *ctx, const u8 *src_addr,
 			os_free(plain);
 			return;
 		}
+
+		if (wildcard_peer)
+			wpa_printf(MSG_INFO,
+				   "SMD OUI: Wildcard decryption succeeded for " MACSTR " — MLD addr will be promoted",
+				   MAC2STR(src_addr));
 
 		uhr_iap_rx(oui_ctx->hapd, src_addr, dst_addr, plain, plain_len);
 		os_free(plain);
@@ -204,8 +268,12 @@ struct uhr_oui_ctx *uhr_oui_init(struct hostapd_data *hapd)
 	}
 
 	ctx->hapd = hapd;
-	os_memcpy(ctx->own_addr, hapd->own_addr, ETH_ALEN);
 
+	os_memcpy(ctx->own_addr, hapd->mld->mld_addr, ETH_ALEN);
+	ctx->iap_transaction_id = 0;
+	ctx->iap_sequence_number = 0;
+	ctx->peers = NULL;
+	
 	/* Create L2 packet socket for ETH_P_OUI */
 	wpa_printf(MSG_INFO, "SMD OUI: Bridge is currently %s", hapd->conf->bridge);
 	ctx->l2 = l2_packet_init(hapd->conf->bridge, NULL, ETH_P_OUI,
@@ -280,6 +348,13 @@ int uhr_oui_send(struct uhr_oui_ctx *ctx, const u8 *dst_addr, const u8 *src_addr
 	struct l2_ethhdr *ethhdr;
 
 	peer = uhr_oui_get_peer(ctx, dst_addr);
+	if (!peer) {
+		peer = uhr_oui_get_wildcard_peer(ctx);
+		if (peer)
+			wpa_printf(MSG_DEBUG,
+				   "SMD OUI: No exact peer for " MACSTR " — sending with wildcard key",
+				   MAC2STR(dst_addr));
+	}
 
 	if (peer && peer->has_key) {
 		/* AES-SIV-256: AD = [src_addr, oui_suffix] */
@@ -288,8 +363,10 @@ int uhr_oui_send(struct uhr_oui_ctx *ctx, const u8 *dst_addr, const u8 *src_addr
 
 		payload_len = data_len + AES_BLOCK_SIZE;
 		payload = os_malloc(payload_len);
-		if (!payload)
+		if (!payload) {
+			wpa_printf(MSG_ERROR, "SMD OUI: OOM allocating encrypt buffer");
 			return -1;
+		}
 
 		if (aes_siv_encrypt(peer->key, sizeof(peer->key),
 				    data, data_len, 2, ad, ad_len,
@@ -308,6 +385,7 @@ int uhr_oui_send(struct uhr_oui_ctx *ctx, const u8 *dst_addr, const u8 *src_addr
 	packet_len = sizeof(*ethhdr) + sizeof(global_oui_smd) + 1 + payload_len;
 	packet = os_zalloc(packet_len);
 	if (!packet) {
+		wpa_printf(MSG_ERROR, "SMD OUI: OOM allocating packet buffer");
 		if (peer && peer->has_key)
 			os_free(payload);
 		return -1;

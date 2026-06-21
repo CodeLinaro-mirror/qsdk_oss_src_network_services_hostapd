@@ -501,6 +501,14 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
 	iap = (const struct uhr_iap_frame *) data;
 	frame_len = le_to_host16(iap->frame_len);
 
+	/* Promote sender's MLD addr to a concrete peer entry (wildcard path). */
+	if (uhr_oui_clone_peer(hapd->uhr_oui_ctx, src_addr,
+			       iap->current_ap_mld_addr) < 0) {
+		wpa_printf(MSG_WARNING,
+			   "SMD IAP: Failed to register MLD addr " MACSTR " in smd_partner list",
+			   MAC2STR(iap->current_ap_mld_addr));
+	}
+
 	if (iap->flags & UHR_IAP_FLAG_HAS_DYNAMIC_CTX)
 		smd_ctx_len = le_to_host16(iap->smd_ctx_len);
 	
