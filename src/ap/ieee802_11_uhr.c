@@ -2359,18 +2359,13 @@ static u8 * hostapd_eid_smd_bss_trans_prep_resp(u8 *pos,
 
         /* Reserve Length (1 byte) — fill later */
         len_pos = pos++;
+	*len_pos = 0;
 
         /* Element ID Extension: SMD BSS Transition Parameters */
         *pos++ = WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS;
+	*len_pos += 1;
 
         /* ---- ST Info ---- */
-
-        /* Status Code (2, LE) */
-        WPA_PUT_LE16(pos, status);
-        pos += 2;
-
-        /* Reserved (1) */
-        *pos++ = 0x00;
 
         /* Presence Bitmap (1) */
         if (aid_present)
@@ -2383,27 +2378,29 @@ static u8 * hostapd_eid_smd_bss_trans_prep_resp(u8 *pos,
                 presence |= SMD_PRES_SCS;
 
         *pos++ = presence;
+	*len_pos += 1;
 
         /* Conditionally present fields (in the order of bits) */
         if (aid_present) {
                 WPA_PUT_LE16(pos, aid);
                 pos += 2;
+		*len_pos += 2;
         }
         if (dl_ba && dl_ba_len) {
                 os_memcpy(pos, dl_ba, dl_ba_len);
                 pos += dl_ba_len;
+		*len_pos += dl_ba_len;
         }
         if (ul_ba && ul_ba_len) {
                 os_memcpy(pos, ul_ba, ul_ba_len);
                 pos += ul_ba_len;
+		*len_pos += ul_ba_len;
         }
         if (scs && scs_len) {
                 os_memcpy(pos, scs, scs_len);
                 pos += scs_len;
+		*len_pos += scs_len;
         }
-
-        /* Length must include: [Ext ID (1) + everything after it] */
-        *len_pos = (u8) (pos - len_pos - 1);
 
         return pos;
 }
@@ -2435,7 +2432,7 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 	}
 
 	/* Calculate frame length */
-	len = IEEE80211_HDRLEN + 1 + 1 + 1  +  1 + 1;  /* Header + Category + Action + Token + Type + Count */
+	len = IEEE80211_HDRLEN + 1 + 1 + 1 + 1 + 2 + 1;  /* Header + Category + Action + Token + Type + Status Code + Count */
 
 	/* **NEW: Reconfiguration Status List (ALWAYS present)** */
 	len += status_list_count * 3;  /* link_id (1B) + status (2B) per link */
@@ -2479,8 +2476,6 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 	// Length = Element ID (1) + Length (1) + Element ID Extn (1) + ST Info (Variable)
 	len += 3;
 	// For ST Preparation Response, the ST Info contains the following:
-	// 2   byte - Status Code
-	// 1   byte - Reserved
 	// 1   byte - Presence Bitmap
 	// 0/2 byte - AID
 	// ??? byte - DL BA Info
@@ -2490,7 +2485,7 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 	// NOTE:
 	// For the time being, only the AID is present
 	// ------------------------------------------------------------
-	len += 2 + 1 + 1 + 2;
+	len += 1 + 2;
 
 	buf = os_zalloc(len);
 	if (!buf)
@@ -2511,6 +2506,9 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 	*pos++ = 1;
 	*pos++ = dialog_token;
 	*pos++ = 0; // PREP
+        /* Status Code (2, LE) */
+        WPA_PUT_LE16(pos, 0);
+        pos += 2;
 	*pos++ = status_list_count;
 
 	/* **NEW: Build Reconfiguration Status List (ALWAYS)** */
@@ -2849,37 +2847,31 @@ static u8 * hostapd_eid_smd_bss_trans_exec_resp(u8 *pos,
 					        u16 dl_drain_time)
 {
         u8 *len_pos;
-        u8 presence = 0;
+        u8 st_control = 0;
 
         /* Element ID (Extended) */
         *pos++ = WLAN_EID_EXTENSION;
 
         /* Reserve Length (1 byte) — fill later */
         len_pos = pos++;
+	*len_pos = 0;
 
         /* Element ID Extension: SMD BSS Transition Parameters */
         *pos++ = WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS;
+	*len_pos += 1;
 
         /* ---- ST Info ---- */
 
-        /* Status Code (2, LE) */
-        WPA_PUT_LE16(pos, 0);
-        pos += 2;
-
-        /* Reserved (1) */
-        *pos++ = 0x00;
-
         /* Presence Bitmap (1) */
-        presence |= BIT(0);
+        st_control |= BIT(0); // DL Drain present
 
-        *pos++ = presence;
+        *pos++ = st_control;
+	*len_pos += 1;
 
         /* Conditionally present fields (in the order of bits) */
         WPA_PUT_LE16(pos, dl_drain_time);
         pos += 2;
-
-        /* Length must include: [Ext ID (1) + everything after it] */
-        *len_pos = (u8) (pos - len_pos - 1);
+	*len_pos += 2;
 
         return pos;
 }
@@ -3001,10 +2993,11 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 			1 +		// Action
 			1 + 		// Dialog Token
 			1 + 		// Type
+			2 +		// Status
 			1 + 		// Count
 			(3 * n) +	// Reconfiguration Status List
 			kde_len +	// Group Keys
-			9;		// SMD BSS Transition IE
+			6;		// SMD BSS Transition IE
 
         resp_buf = os_zalloc(len);
         if (!resp_buf) {
@@ -3030,7 +3023,15 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 	*pos++ = WLAN_ACTION_PROTECTED_UHR;
 	*pos++ = 1;
 	*pos++ = frame[26];
+
+	// Type
 	*pos++ = 1;
+
+	/* Status Code (2, LE) */
+	WPA_PUT_LE16(pos, 0);
+	pos += 2;
+
+	// Count
 	u8 *rcsl_count = pos;
 	pos++;
 
