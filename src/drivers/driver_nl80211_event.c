@@ -1467,16 +1467,17 @@ static void mlme_event_uhr_reconfig_resp(struct wpa_driver_nl80211_data *drv,
 	pos = frame + 24; /* Skip MAC header */
 	end = frame + len;
 
-	/* Category (1) + Action (1) + Dialog Token (1) + Type (1) + Count (1) */
-	if (end - pos < 5) {
+	/* Category (1) + Action (1) + Dialog Token (1) + Type (1) + Status Code (2) + Count (1) */
+	if (end - pos < 7) {
 		event.uhr_reconfig_resp.status_code = 0; /* Unknown */
 		event.uhr_reconfig_resp.count = 0;
 		event.uhr_reconfig_resp.status_list = NULL;
 		event.uhr_reconfig_resp.resp_ie = pos;
 		event.uhr_reconfig_resp.resp_ie_len = end - pos;
 	} else {
-		/* Skip Category, Action, Dialog Token, Type to get to Count */
-		pos += 4;
+		/* Skip Category, Action, Dialog Token, Type  and Status Code to get to Count */
+		pos += 6;
+
 		u8 count = *pos++;
 
 		/* Follow ML Reconfig pattern exactly */

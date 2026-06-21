@@ -2855,7 +2855,6 @@ static int smd_parse_bss_transition(struct wpa_smd_prepared_target *target,
 				    const u8 *ie)
 {
 	const u8 *pos, *end;
-	u16 status_code;
 	size_t ie_len;
 	u8 presence;
 	int ret;
@@ -2864,32 +2863,15 @@ static int smd_parse_bss_transition(struct wpa_smd_prepared_target *target,
 		return -1;
 
 	ie_len = ie[1];
-	if (ie_len < 1 + 4)
+	if (ie_len < 1 + 1)
 		return -1;
 
 	pos = ie + 3;
 	end = ie + 2 + ie_len;
 
-	status_code = WPA_GET_LE16(pos);
-	pos += 2;
-
-	wpa_printf(MSG_DEBUG,
-		   "UHR: SMD: Prep resp BSS Trans status=%u", status_code);
-
-	if (status_code != 0) {
-		wpa_printf(MSG_DEBUG,
-			   "UHR: SMD: Prep resp BSS Trans rejected (status=%u)",
-			   status_code);
-		return 0;
-	}
-
-	pos++;
-
 	presence = *pos++;
 
 	if (presence & BIT(0)) {
-		if (end - pos < 2)
-			return -1;
 		target->aid = WPA_GET_LE16(pos);
 		pos += 2;
 		wpa_printf(MSG_DEBUG, "UHR: SMD Prep Resp AID=%u", target->aid);
@@ -2934,7 +2916,6 @@ static int smd_parse_bss_transition_exec_resp(struct wpa_smd_prepared_target *ta
 					      const u8 *ie)
 {
 	const u8 *pos, *end;
-	u16 status_code;
 	u8 presence;
 	size_t ie_len;
 
@@ -2942,26 +2923,11 @@ static int smd_parse_bss_transition_exec_resp(struct wpa_smd_prepared_target *ta
 		return -1;
 
 	ie_len = ie[1];
-	if (ie_len < 1 + 4)
+	if (ie_len < 1 + 1)
 		return -1;
 
 	pos = ie + 3;
 	end = ie + 2 + ie_len;
-
-	status_code = WPA_GET_LE16(pos);
-	pos += 2;
-
-	wpa_printf(MSG_DEBUG,
-		   "UHR: SMD: Exec resp BSS trans status=%u", status_code);
-
-	if (status_code != 0) {
-		wpa_printf(MSG_DEBUG,
-			   "UHR: SMD: exec resp BSS trans rejected (status=%u)",
-			   status_code);
-		return 0;
-	}
-
-	pos++;
 
 	presence = *pos++;
 
