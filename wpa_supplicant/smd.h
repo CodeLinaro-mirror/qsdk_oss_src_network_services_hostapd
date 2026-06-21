@@ -19,6 +19,7 @@ struct wpa_ssid;
 #define SMD_DOMAIN_ID_LEN       6
 #define SMD_MAX_LINKS		MAX_NUM_MLD_LINKS
 
+#define SMD_ME_TIMEOUT		5
 #define SMD_PTK_MODE_PER_DOMAIN 0
 #define SMD_PTK_MODE_PER_AP     1
 
@@ -168,7 +169,8 @@ struct wpa_smd_prepared_target {
 
 	u8 *dh_pubkey;
 	size_t dh_pubkey_len;
-	u8 *peer_dh_pubkey;
+	u16 dh_group;		/* DH group used in ST Prep Req; validated on Resp */
+	u8* peer_dh_pubkey;
 	size_t peer_dh_pubkey_len;
 
 	struct {
@@ -201,6 +203,12 @@ struct wpa_smd_prepared_target {
 	 */
 	u8 force_diff_tx;
 
+	/* exec_path for auto-execute: 0=via serving AP, 1=via target AP */
+	u8 auto_exec_path;
+	/* 1 = this is the ROAM ST preferred target; triggers
+	 * eloop ST Execute work on PREP response */
+	int is_preferred_target;
+
 	u16 dl_drain_duration;
 	bool dl_drain_duration_valid;
 
@@ -225,6 +233,12 @@ struct wpa_smd_prepared_target {
 	size_t prep_resp_frame_len;
 	u8 *exec_resp_frame;
 	size_t exec_resp_frame_len;
+
+	/* PTK install tracking: true once PTK has been installed for partner
+	 * (transitioning) links.  Set during PREP when state is PARTIAL;
+	 * deferred to EXEC when state was PENDING at PREP time.
+	 */
+	bool partner_ptk_installed;
 };
 
 int smd_enabled(struct wpa_supplicant *wpa_s);
@@ -242,6 +256,8 @@ int smd_establish_smd_me_association(struct wpa_supplicant *wpa_s, struct wpa_bs
 				     struct wpa_ssid *ssid);
 int smd_needs_bss_transition(struct wpa_supplicant *wpa_s, struct wpa_bss *bss);
 int smd_prepare_bss_transition(struct wpa_supplicant *wpa_s, struct wpa_bss *bss);
+int smd_should_suppress_connect(struct wpa_supplicant *wpa_s,
+				struct wpa_bss *selected);
 
 int smd_parse_rnr_for_neighbors(struct wpa_supplicant *wpa_s,
 				struct wpa_bss *bss,
@@ -368,8 +384,6 @@ int smd_ctrl_iface_list_prepared(struct wpa_supplicant *wpa_s, char *buf, size_t
 int smd_ctrl_iface_cancel_prepare(struct wpa_supplicant *wpa_s, char *cmd,
 				  char *buf, size_t buflen);
 
-/* SMD_KDK management for Per-AP MLD PTK mode */
-int smd_get_kdk_for_target_ptk(struct wpa_supplicant *wpa_s,
-			       const u8 **kdk_out, size_t *kdk_len_out);
-
+int wpas_smd_bss_transition(struct wpa_supplicant *wpa_s, const u8 *bssid,
+			   u8 exec_path, char *buf, size_t buflen);
 #endif /* SMD_H */

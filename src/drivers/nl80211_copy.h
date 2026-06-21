@@ -9488,4 +9488,26 @@ enum nl80211_smd_ctx {
 	NL80211_SMD_CTX_ATTR_MAX = __NL80211_SMD_CTX_ATTR_LAST - 1
 };
 
+/**
+ * enum nl80211_smd_link_transition_state - SMD BSS Transition link distribution
+ *
+ * Carried in %NL80211_ATTR_SMD_LINK_TRANSITION_STATE in PREP and EXEC done
+ * events.
+ *
+ * @NL80211_SMD_LINK_STATE_PENDING: No radio switches yet; PTK derived but
+ *	not safe to install.
+ * @NL80211_SMD_LINK_STATE_PARTIAL: Partner links at TAP, primary still at
+ *	SAP.  PTK may be installed for transitioning links.
+ * @NL80211_SMD_LINK_STATE_DL_DRAIN: All non-primary links at TAP; primary
+ *	draining.  Install PTK for any links not yet installed.
+ * @NL80211_SMD_LINK_STATE_COMPLETE: All links at TAP.  Install PTK for
+ *	remaining links including primary.
+ */
+enum nl80211_smd_link_transition_state {
+	NL80211_SMD_LINK_STATE_PENDING,
+	NL80211_SMD_LINK_STATE_PARTIAL,
+	NL80211_SMD_LINK_STATE_DL_DRAIN,
+	NL80211_SMD_LINK_STATE_COMPLETE,
+};
+
 #endif /* __LINUX_NL80211_H */

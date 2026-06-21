@@ -1812,6 +1812,8 @@ struct wpa_supplicant {
 	/* Preparation-phase context */
 	struct dl_list smd_targets; /* struct wpa_smd_prepared_target::list */
 	u8 smd_prep_dialog_token;
+	unsigned int smd_st_requested:1; /* ST roam requested via ROAM <bssid> ST */
+	u8 smd_st_exec_path;             /* exec_path: 0=via serving AP, 1=via target AP */
 };
 
 

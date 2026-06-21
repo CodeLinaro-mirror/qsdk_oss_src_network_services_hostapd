@@ -362,6 +362,7 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
 			break;
 		elems->key_delivery = pos;
 		elems->key_delivery_len = elen;
+		total_len = &elems->key_delivery_len;
 		break;
 	case WLAN_EID_EXT_WRAPPED_DATA:
 		elems->wrapped_data = pos;
@@ -527,6 +528,7 @@ static ParseRes __ieee802_11_parse_elems(const u8 *start, size_t len,
 	for_each_element(elem, start, len) {
 		u8 id = elem->id, elen = elem->datalen;
 		const u8 *pos = elem->data;
+
 		size_t *total_len = NULL;
 
 		if (id == WLAN_EID_FRAGMENT && elems->num_frag_elems > 0) {
@@ -1018,6 +1020,7 @@ void ieee802_11_elems_clear_ext_ids(struct ieee802_11_elems *elems,
 			break;
 		case WLAN_EID_EXT_NONCE:
 			elems->nonce = NULL;
+			elems->nonce_len = 0;
 			break;
 		case WLAN_EID_EXT_OWE_DH_PARAM:
 			elems->owe_dh = NULL;

@@ -1431,74 +1431,73 @@ static void mlme_event_ch_switch(struct wpa_driver_nl80211_data *drv,
  * @drv: Driver data
  * @frame: Frame data
  * @len: Frame length
- * @tb: Netlink attributes (NL80211_ATTR_UHR_RECONFIG_TYPE used for type determination)
+ * @transition_state_attr: NL80211_ATTR_SMD_LINK_TRANSITION_STATE attribute
+ *	(may be NULL if not present in the netlink message)
  *
  * This function handles ST Preparation Response (type=0) and ST Execution
  * Response (type=1) frames received from the kernel via MLME notification.
  */
 static void mlme_event_uhr_reconfig_resp(struct wpa_driver_nl80211_data *drv,
-					 const u8 *frame, size_t len)
+					  const u8 *frame, size_t len,
+					  struct nlattr *transition_state_attr)
 {
 	union wpa_event_data event;
-	u8 type;
 	const u8 *pos, *end;
+	u16 status_code;
+	u8 type, count;
 
-	/* Determine type from frame body (byte 27 = Type field in UHR action frame)
-	 * 0 = ST Preparation, 1 = ST Execution (IEEE 802.11bn Table 9-658bc)
+	/*
+	 * Minimum length to safely read through the Count field:
+	 * 24 (MAC header) + 1+1+1+1 (Cat+Action+DlgToken+Type) +
+	 * 2 (Status Code) + 1 (Count) = 31 bytes.
+	 * (D1.2 was 28; the extra 3 bytes are the new Status Code field.)
 	 */
-	/* Frame must be at least 28 bytes: 24 MAC header + Category + Action +
-	 * Dialog Token + Type (IEEE 802.11bn Table 9-658bb)
-	 */
-	if (len < 28) {
-		wpa_printf(MSG_DEBUG, "nl80211: UHR Reconfig frame too short (%zu < 28)", len);
+	if (len < 31) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: UHR Reconfig response too short (%zu < 31)",
+			   len);
 		return;
 	}
-	type = frame[27]; /* Type: 0=ST Preparation, 1=ST Execution */
 
-	wpa_printf(MSG_DEBUG, "nl80211: UHR Reconfig response type=%u len=%zu",
-		   type, len);
-
-	os_memset(&event, 0, sizeof(event));
-	event.uhr_reconfig_resp.type = type;  /* 0 = Prepare, 1 = Execute */
-	event.uhr_reconfig_resp.frame = frame;
-	event.uhr_reconfig_resp.frame_len = len;
-
-	/* Parse frame body */
-	pos = frame + 24; /* Skip MAC header */
 	end = frame + len;
 
-	/* Category (1) + Action (1) + Dialog Token (1) + Type (1) + Status Code (2) + Count (1) */
-	if (end - pos < 7) {
-		event.uhr_reconfig_resp.status_code = 0; /* Unknown */
-		event.uhr_reconfig_resp.count = 0;
-		event.uhr_reconfig_resp.status_list = NULL;
-		event.uhr_reconfig_resp.resp_ie = pos;
-		event.uhr_reconfig_resp.resp_ie_len = end - pos;
-	} else {
-		/* Skip Category, Action, Dialog Token, Type  and Status Code to get to Count */
-		pos += 6;
+	type = frame[27]; /* Type: 0=ST Preparation, 1=ST Execution */
 
-		u8 count = *pos++;
+	status_code = WPA_GET_LE16(frame + 28);
 
-		/* Follow ML Reconfig pattern exactly */
-		event.uhr_reconfig_resp.count = count;
-		if (end - pos < 3 * count) {
-			wpa_printf(MSG_DEBUG, "nl80211: Truncated UHR Reconfig Response frame");
-			return;
-		}
-		/* Extract status from first link status entry for compatibility */
-		if (count > 0) {
-			pos++; /* Skip first link_id */
-			event.uhr_reconfig_resp.status_code = WPA_GET_LE16(pos);
-			pos -= 1; /* Back up to start of status entries */
-		} else {
-			event.uhr_reconfig_resp.status_code = 0; /* Success when no links */
-		}
-		event.uhr_reconfig_resp.status_list = pos;
-		pos += 3 * count; /* Skip all status entries */
-		event.uhr_reconfig_resp.resp_ie = pos;
-		event.uhr_reconfig_resp.resp_ie_len = end - pos;
-	}
+        count = frame[30];
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: UHR Reconfig response type=%u status=%u count=%u len=%zu",
+		   type, status_code, count, len);
+
+        pos = frame + 31;
+
+        /* Each duplet: Link ID (1 octet) + Status Code (2 octets) = 3 bytes */
+        if ((size_t)(end - pos) < (size_t)(3 * count)) {
+                wpa_printf(MSG_DEBUG,
+                           "nl80211: UHR Reconfig response: truncated status list "
+                           "(need %u bytes, have %td)",
+                           3 * count, end - pos);
+                return;
+        }
+
+	os_memset(&event, 0, sizeof(event));
+	event.uhr_reconfig_resp.type        = type;
+	event.uhr_reconfig_resp.status_code = status_code;  /* top-level D1.4 */
+	event.uhr_reconfig_resp.count       = count;
+	event.uhr_reconfig_resp.status_list = pos;
+	event.uhr_reconfig_resp.frame       = frame;
+	event.uhr_reconfig_resp.frame_len   = len;
+
+	pos += 3 * count;  /* skip past all per-link duplets */
+
+        event.uhr_reconfig_resp.resp_ie     = pos;
+        event.uhr_reconfig_resp.resp_ie_len = end - pos;
+
+	if (transition_state_attr)
+		event.uhr_reconfig_resp.link_transition_state =
+			nla_get_u8(transition_state_attr);
 
 	wpa_supplicant_event(drv->ctx, EVENT_UHR_RECONFIG_RESP, &event);
 }
@@ -2660,7 +2659,8 @@ static void mlme_event(struct i802_bss *bss,
 		mlme_event_unprot_beacon(drv, nla_data(frame), nla_len(frame));
 		break;
 	case NL80211_CMD_UHR_LINK_RECONFIG_RESP:
-		mlme_event_uhr_reconfig_resp(drv, nla_data(frame), nla_len(frame));
+		mlme_event_uhr_reconfig_resp(drv, nla_data(frame), nla_len(frame),
+					     NULL);
 		break;
 	default:
 		break;
@@ -6284,7 +6284,8 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 #endif /* CONFIG_IEEE80211BN */
 	case NL80211_CMD_UHR_LINK_RECONFIG_RESP:
 		mlme_event_uhr_reconfig_resp(drv, nla_data(frame),
-					     nla_len(frame));
+					     nla_len(frame),
+					     tb[NL80211_ATTR_SMD_LINK_TRANSITION_STATE]);
 		break;
 	case NL80211_CMD_SMD_TRANSITION_DONE:
 		nl80211_smd_transition_status(bss, tb);

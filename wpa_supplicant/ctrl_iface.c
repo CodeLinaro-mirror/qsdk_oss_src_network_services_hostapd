@@ -6247,6 +6247,9 @@ static int wpa_supplicant_ctrl_iface_roam(struct wpa_supplicant *wpa_s,
 	struct wpa_bss *bss;
 	struct wpa_ssid *ssid = wpa_s->current_ssid;
 	struct wpa_radio_work *already_connecting;
+	bool use_smd_st = false;
+	u8 exec_path = 0; /* Default: via serving AP */
+	char *pos;
 
 	if (hwaddr_aton(addr, bssid)) {
 		wpa_printf(MSG_DEBUG, "CTRL_IFACE ROAM: invalid "
@@ -6255,6 +6258,45 @@ static int wpa_supplicant_ctrl_iface_roam(struct wpa_supplicant *wpa_s,
 	}
 
 	wpa_printf(MSG_DEBUG, "CTRL_IFACE ROAM " MACSTR, MAC2STR(bssid));
+
+	/* Check for optional ST argument: ROAM <bssid> ST [0|1] */
+	pos = os_strchr(addr, ' ');
+	if (pos) {
+		while (*pos == ' ')
+			pos++;
+		if (os_strncasecmp(pos, "ST", 2) == 0 &&
+		    (pos[2] == '\0' || pos[2] == ' ')) {
+			use_smd_st = true;
+			pos += 2;
+			while (*pos == ' ')
+				pos++;
+			if (*pos != '\0')
+				exec_path = (u8) atoi(pos);
+		}
+	}
+
+	/* If ST is requested, check if SMD is enabled and MLO association */
+	if (use_smd_st) {
+		wpa_s->smd_st_requested = 1;
+		wpa_s->smd_st_exec_path = exec_path;
+		if (wpa_s->smd_capable && wpa_s->valid_links) {
+			wpa_printf(MSG_INFO,
+				   "CTRL_IFACE ROAM ST: dispatching SMD BSS transition to "
+				   MACSTR " (exec_path=%u)",
+				   MAC2STR(bssid), exec_path);
+			if (wpas_smd_bss_transition(wpa_s, bssid, exec_path,
+						    NULL, 0) < 0) {
+				wpa_printf(MSG_ERROR,
+					   "CTRL_IFACE ROAM ST: SMD BSS transition failed");
+				return -1;
+			}
+			return 0;
+		}
+		wpa_printf(MSG_DEBUG,
+			   "CTRL_IFACE ROAM ST: SMD not enabled or SLO assoc "
+			   "(smd_capable=%d valid_links=0x%x) - falling back to regular roam",
+			   wpa_s->smd_capable, wpa_s->valid_links);
+	}
 
 	if (!ssid) {
 		wpa_printf(MSG_DEBUG, "CTRL_IFACE ROAM: No network "
