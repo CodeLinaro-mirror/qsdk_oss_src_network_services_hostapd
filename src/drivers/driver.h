@@ -3796,6 +3796,7 @@ struct wpa_driver_uhr_reconfig_params {
 	size_t *per_link_ie_len;
 	size_t max_links;
 	struct wpa_smd_params smd;
+	int is_preferred_target;
 	struct wpa_mlo_reconfig_info *reconfig_info;
 	s8 tx_link_id;
 };
@@ -9294,6 +9295,8 @@ union wpa_event_data {
 	 * @status_list: List of status codes
 	 * @resp_ie: Pointer to the response IEs
 	 * @resp_ie_len: Length of the response IEs
+	 * @link_transition_state: Link distribution state from the kernel;
+	 *	one of &enum nl80211_smd_link_transition_state.
 	 */
 	struct uhr_reconfig_resp {
 		u8 type;
@@ -9304,6 +9307,7 @@ union wpa_event_data {
 		const u8 *status_list;
 		const u8 *resp_ie;
 		size_t resp_ie_len;
+		enum nl80211_smd_link_transition_state link_transition_state;
 	} uhr_reconfig_resp;
 
 	/**

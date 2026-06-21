@@ -1074,6 +1074,7 @@ void ieee802_11_elems_clear_ext_ids(struct ieee802_11_elems *elems,
 			break;
 		case WLAN_EID_EXT_NONCE:
 			elems->nonce = NULL;
+			elems->nonce_len = 0;
 			break;
 		case WLAN_EID_EXT_OWE_DH_PARAM:
 			elems->owe_dh = NULL;

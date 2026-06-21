@@ -207,6 +207,7 @@ struct ieee802_11_elems {
 	u8 wfd_len;
 	u8 interworking_len;
 	u8 qos_map_set_len;
+	u8 nonce_len;
 	u8 hs20_len;
 	u8 ext_capab_len;
 	u8 ssid_list_len;
@@ -226,7 +227,6 @@ struct ieee802_11_elems {
 	size_t key_delivery_len;
 	size_t wrapped_data_len;
 	u8 fils_pk_len;
-	u8 nonce_len;
 	u8 owe_dh_len;
 	u8 power_capab_len;
 	u8 roaming_cons_sel_len;
