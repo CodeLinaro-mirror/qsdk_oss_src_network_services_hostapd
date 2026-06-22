@@ -20,6 +20,7 @@
 #include "ap/ap_mlme.h"
 #include "eapol_auth/eapol_auth_sm.h"
 #include "eapol_auth/eapol_auth_sm_i.h"
+#include "eap_server/eap.h"
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 #include "../qcn_extns/hostapd_external_interface.h"
@@ -2132,43 +2133,60 @@ void __hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 		goto __hostapd_if_set_pmk_exit;
 	}
 
+	eapol = sta->eapol_sm;
 	wpa_sm = sta->wpa_sm;
 
-	if (dot1x_done && ctx) {
-		eapol = os_zalloc(sizeof(*eapol));
-		if (!eapol) {
-			wpa_printf(MSG_ERROR,
-				   "hostapd_if: set_pmk - failed to allocate EAPOL state for STA "
-				   MACSTR " on %s",
-				   MAC2STR(sta_mac), ifname);
-			goto __hostapd_if_set_pmk_exit;
-		}
-		eapol->sta = sta;
-		if (ctx->identity && ctx->identity_len) {
-			eapol->identity =
-				(u8 *) dup_binstr(ctx->identity,
-						ctx->identity_len);
-			if (eapol->identity)
-				eapol->identity_len = ctx->identity_len;
-		}
-		if (ctx->cui && ctx->cui_len)
-			eapol->radius_cui =
-				wpabuf_alloc_copy(ctx->cui,
-						ctx->cui_len);
-		eapol->acct_multi_session_id = ctx->multi_session_id;
-	}
+	if (!dot1x_done || !ctx)
+		goto __hostapd_if_set_pmk_exit;
 
-	if (wpa_auth_set_pmk_full(wpa_sm, pmk, pmkid, (int) pmk_len,
-				  session_timeout, eapol)) {
-		__inbound_error_event(hapd, sta_mac, HOSTAPD_IF_SET_PMK_ERROR,
-				      __func__, __LINE__);
+	if (!hapd->conf->plugin_eap_offload) {
+		wpa_printf(MSG_ERROR, "SET PMK CALLED WITHOUT OFFLOAD CONF\n");
 		goto __hostapd_if_set_pmk_exit;
 	}
 
-	if (dot1x_done && ctx) {
-		ieee802_1x_new_station(hapd, sta);
-		wpa_auth_sta_associated_start_sm(hapd->wpa_auth, wpa_sm);
+	if (!eapol || !eapol->eap_if) {
+		wpa_printf(MSG_ERROR,
+				"hostapd_if: set_pmk - eapol not ready for STA "
+				MACSTR " on %s",
+				MAC2STR(sta_mac), ifname);
+		goto __hostapd_if_set_pmk_exit;
 	}
+
+	/* Set the MSK in the EAPOL key location so ieee802_1x_get_key
+	 * can retrieve it, then signal keyRun and keyAvailable so the
+	 * WPA PTK state machine can transition AUTHENTICATION2 ->
+	 * INITPMK -> PTKSTART without a full RADIUS exchange. */
+	bin_clear_free(eapol->eap_if->eapKeyData, eapol->eap_if->eapKeyDataLen);
+	eapol->eap_if->eapKeyDataLen = 0;
+	eapol->eap_if->eapKeyData = os_memdup(pmk, pmk_len);
+	if (!eapol->eap_if->eapKeyData) {
+		wpa_printf(MSG_ERROR,
+				"hostapd_if: set_pmk - failed to set eapKeyData for STA "
+				MACSTR " on %s",
+				MAC2STR(sta_mac), ifname);
+		eapol->eap_if->eapKeyDataLen = 0;
+		goto __hostapd_if_set_pmk_exit;
+	}
+	eapol->eap_if->eapKeyDataLen = pmk_len;
+	eapol->eap_if->eapKeyAvailable = true;
+	eapol->keyRun = true;
+
+	if (ctx->identity && ctx->identity_len) {
+		os_free(eapol->identity);
+		eapol->identity_len = 0;
+		eapol->identity = (u8 *) dup_binstr(ctx->identity,
+						    ctx->identity_len);
+		if (eapol->identity)
+			eapol->identity_len = ctx->identity_len;
+	}
+	if (ctx->cui && ctx->cui_len) {
+		wpabuf_free(eapol->radius_cui);
+		eapol->radius_cui = wpabuf_alloc_copy(ctx->cui, ctx->cui_len);
+	}
+	eapol->acct_multi_session_id = ctx->multi_session_id;
+
+
+	wpa_auth_sm_notify(wpa_sm);
 
 __hostapd_if_set_pmk_exit:
 	os_free((void *)pmk);
@@ -2179,13 +2197,6 @@ __hostapd_if_set_pmk_exit:
 		if (ctx->cui)
 			os_free(ctx->cui);
 		os_free(ctx);
-	}
-	if (eapol) {
-		if (eapol->identity)
-			os_free(eapol->identity);
-		if (eapol->radius_cui)
-			wpabuf_free(eapol->radius_cui);
-		os_free(eapol);
 	}
 
 }

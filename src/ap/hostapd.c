@@ -8188,8 +8188,7 @@ void hostapd_new_assoc_sta(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 
 	/* Start IEEE 802.1X authentication process for new stations */
-	if (!hapd->conf->plugin_eap_offload)
-		ieee802_1x_new_station(hapd, sta);
+	ieee802_1x_new_station(hapd, sta);
 
 #ifdef CONFIG_ENC_ASSOC
 		if (ap_sta_is_epp(sta) && sta->wpa_sm) {
@@ -8240,12 +8239,11 @@ void hostapd_new_assoc_sta(struct hostapd_data *hapd, struct sta_info *sta,
 		 * based on the port authorized event. */
 
 		/*
-		 * Do not initalize the state machine if 802.1x offload is
-		 * enabled or if EAPOL-KEY (4-way) offload is enabled
+		 * Do not initalize the state machine if
+		 * if EAPOL-KEY (4-way) offload is enabled
 		 */
 		wpa_auth_sta_associated(hapd->wpa_auth, sta->wpa_sm,
-					!(hapd->conf->plugin_eap_offload ||
-					  hapd->conf->plugin_eapol_key_offload));
+					!hapd->conf->plugin_eapol_key_offload);
 	}
 
 	if (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_WIRED) {

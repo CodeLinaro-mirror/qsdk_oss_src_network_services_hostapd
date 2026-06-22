@@ -1211,17 +1211,7 @@ int wpa_auth_sta_associated(struct wpa_authenticator *wpa_auth,
 	}
 
 	if (!wpa_initialize)
-		return -1;
-
-	return wpa_auth_sta_associated_start_sm(wpa_auth, sm);
-}
-
-int wpa_auth_sta_associated_start_sm(struct wpa_authenticator *wpa_auth,
-				     struct wpa_state_machine *sm)
-{
-	if (!wpa_auth || !sm)
-		return -1;
-
+		return 0;
 	wpa_auth_logger(wpa_auth, wpa_auth_get_spa(sm), LOGGER_DEBUG,
 			"start authentication");
 	sm->started = 1;
