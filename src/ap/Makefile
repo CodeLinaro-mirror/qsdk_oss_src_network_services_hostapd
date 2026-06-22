@@ -52,6 +52,7 @@ LIB_OBJS= \
 	preauth_auth.o \
 	robust_av.o \
 	rrm.o \
+	hostapd_log.o \
 	sta_info.o \
 	tkip_countermeasures.o \
 	utils.o \

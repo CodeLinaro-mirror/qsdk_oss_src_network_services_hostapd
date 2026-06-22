@@ -79,6 +79,7 @@ OBJS += ../src/ap/ap_config.o
 OBJS += ../src/ap/eap_user_db.o
 OBJS += ../src/ap/ieee802_11_auth.o
 OBJS += ../src/ap/sta_info.o
+OBJS += ../src/ap/hostapd_log.o
 OBJS += ../src/ap/wpa_auth.o
 OBJS += ../src/ap/tkip_countermeasures.o
 OBJS += ../src/ap/ap_mlme.o
