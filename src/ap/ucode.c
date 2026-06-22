@@ -309,7 +309,7 @@ uc_hostapd_bss_set_config(uc_vm_t *vm, size_t nargs)
 	if (!conf)
 		goto out;
 
-	if (idx > conf->num_bss || !conf->bss[idx])
+	if (idx >= conf->num_bss || !conf->bss[idx])
 		goto free;
 
 	if (ucv_boolean_get(files_only)) {
@@ -538,7 +538,7 @@ uc_hostapd_iface_add_bss(uc_vm_t *vm, size_t nargs)
 {
 	struct hostapd_iface *iface = uc_fn_thisval("hostapd.iface");
 	struct hostapd_bss_config *bss;
-	struct hostapd_config *conf;
+	struct hostapd_config *conf = NULL;
 	struct hostapd_data *hapd;
 	uc_value_t *file = uc_fn_arg(0);
 	uc_value_t *index = uc_fn_arg(1);
@@ -548,14 +548,14 @@ uc_hostapd_iface_add_bss(uc_vm_t *vm, size_t nargs)
 	struct hostapd_data **temp_bss;
 
 	if (!iface || ucv_type(file) != UC_STRING)
-		goto out;
+		return NULL;
 
 	if (ucv_type(index) == UC_INTEGER)
 		idx = ucv_int64_get(index);
 
 	conf = interfaces->config_read_cb(ucv_string_get(file));
-	if (!conf || idx > conf->num_bss || !conf->bss[idx])
-		goto out;
+	if (!conf || idx >= conf->num_bss || !conf->bss[idx])
+		goto free_conf;
 
 	bss = conf->bss[idx];
 
@@ -573,7 +573,7 @@ uc_hostapd_iface_add_bss(uc_vm_t *vm, size_t nargs)
 					    iface->conf->num_bss + 1,
 					    sizeof(*iface->conf->bss));
 	if (!tmp_bss)
-		goto out;
+		goto free_conf;
 	iface->conf->bss = tmp_bss;
 	iface->conf->bss[iface->conf->num_bss] = bss;
 	iface->conf->num_bss++;
@@ -609,7 +609,7 @@ uc_hostapd_iface_add_bss(uc_vm_t *vm, size_t nargs)
 	conf->bss[idx] = NULL;
 	ret = hostapd_ucode_bss_get_uval(hapd);
 	hostapd_ucode_update_interfaces();
-	goto out;
+	goto free_conf;
 
 remove_bss:
 	iface->num_bss--;
@@ -630,7 +630,7 @@ remove_bss_conf:
 	iface->conf->bss[iface->conf->num_bss] = NULL;
 	iface->conf->last_bss = iface->conf->num_bss ?
 		iface->conf->bss[iface->conf->num_bss - 1] : NULL;
-out:
+free_conf:
 	hostapd_config_free(conf);
 	return ret;
 }
