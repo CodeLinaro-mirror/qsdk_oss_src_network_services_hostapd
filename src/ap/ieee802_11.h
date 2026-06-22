@@ -641,6 +641,7 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 			    const u8 *eap_req, size_t eap_req_len);
 
 void hostapd_update_ecu_params(struct hostapd_data *hapd);
+void hostapd_reset_uhr_cu_params (struct hostapd_data *hapd);
 size_t hostapd_eid_uhr_capab_len(struct hostapd_data *hapd,
 				 enum ieee80211_op_mode opmode);
 u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
@@ -652,6 +653,8 @@ size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,
 					 bool no_post_phase, bool from_user);
 int hostapd_npca_primary_chan_to_subchan_idx(struct hostapd_data *hapd,
 					     const char *val_str);
+u8 hostapd_npca_get_primary_chan(struct hostapd_data *hapd,
+				 const struct hostapd_uhr_npca_params *npca);
 u16 copy_sta_uhr_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		       enum ieee80211_op_mode opmode,
 		       const u8 *uhr_capab, size_t uhr_capab_len);
