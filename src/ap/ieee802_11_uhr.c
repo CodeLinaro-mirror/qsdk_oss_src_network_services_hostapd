@@ -207,6 +207,8 @@ void hostapd_update_ecu_params(struct hostapd_data *hapd)
 			&hapd->conf->uhr_params_update.npca;
 
 		hapd->iconf->npca_enable = npca->enable;
+		hapd->iconf->npca_primary_channel =
+			hostapd_npca_get_primary_chan(hapd, npca);
 		hapd->iconf->npca_primary_chan_offset =
 			(npca->params &
 			 UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS);
@@ -217,6 +219,20 @@ void hostapd_update_ecu_params(struct hostapd_data *hapd)
 	}
 
 	/* TODO: update for other ECU features */
+}
+
+
+void hostapd_reset_uhr_cu_params(struct hostapd_data *hapd)
+{
+	if (!hapd->conf->uhr_params_update.mode_changed)
+		return;
+
+	os_memset(&hapd->conf->uhr_params_update.npca, 0,
+		  sizeof(hapd->conf->uhr_params_update.npca));
+
+	hostapd_update_ecu_params(hapd);
+
+	hapd->conf->uhr_params_update.mode_changed = 0;
 }
 
 
@@ -552,3 +568,59 @@ int hostapd_npca_primary_chan_to_subchan_idx(struct hostapd_data *hapd,
 
 	return subchan_idx;
 }
+
+u8 hostapd_npca_get_primary_chan(struct hostapd_data *hapd,
+				 const struct hostapd_uhr_npca_params *npca)
+{
+	u8 subchan_idx;
+	u8 center_chan;
+	int bss_bw_mhz;
+	int num_20mhz;
+	int lowest_chan;
+	int primary_chan;
+	enum oper_chan_width chwidth;
+
+	subchan_idx = (u8)(npca->params & UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS);
+
+	center_chan = hostapd_get_oper_centr_freq_seg0_idx(hapd->iconf);
+
+	chwidth = hostapd_get_oper_chwidth(hapd->iconf);
+	switch (chwidth) {
+	case CONF_OPER_CHWIDTH_320MHZ:
+		bss_bw_mhz = 320;
+		break;
+	case CONF_OPER_CHWIDTH_160MHZ:
+		bss_bw_mhz = 160;
+		break;
+	case CONF_OPER_CHWIDTH_80MHZ:
+		bss_bw_mhz = 80;
+		break;
+	default:
+		wpa_printf(MSG_DEBUG,
+			   "NPCA: BW < 80 MHz, cannot recover primary channel");
+		return 0;
+	}
+
+	num_20mhz = bss_bw_mhz / 20;
+	if (subchan_idx >= (u8)num_20mhz) {
+		wpa_printf(MSG_DEBUG,
+			   "NPCA: subchan_idx %u out of range for %d MHz BW",
+			   subchan_idx, bss_bw_mhz);
+		return 0;
+	}
+
+	/* Channel numbers increase by 4 per 20 MHz step; the lowest subchannel
+	 * is (num_20mhz - 1) * 2 channel numbers below the center. */
+	lowest_chan = (int)center_chan - (num_20mhz - 1) * 2;
+	primary_chan = lowest_chan + (int)subchan_idx * 4;
+
+	if (primary_chan <= 0 || primary_chan > 255) {
+		wpa_printf(MSG_DEBUG,
+			   "NPCA: recovered channel %d out of range",
+			   primary_chan);
+		return 0;
+	}
+
+	return (u8)primary_chan;
+}
+
