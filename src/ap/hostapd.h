@@ -886,6 +886,7 @@ struct hostapd_iface {
 
 	unsigned int wait_channel_update:1;
 	unsigned int cac_started:1;
+	unsigned int skip_mesh_dfs:1;
 #ifdef CONFIG_FST
 	struct fst_iface *fst;
 	const struct wpabuf *fst_ies;
