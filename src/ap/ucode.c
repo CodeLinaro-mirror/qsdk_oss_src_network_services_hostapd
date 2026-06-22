@@ -361,9 +361,9 @@ uc_hostapd_bss_set_config(uc_vm_t *vm, size_t nargs)
 	}
 
 	/*
-	 * Stop non-TX MLD BSS beacons before the TX BSS teardown.
-	 * REENABLE_REUSE_LINK preserves the kernel MLD link so the driver
-	 * does not see an inconsistent MLD state
+	 * Stop non-TX BSS beacons (both MLD and non-MLD) before the TX BSS
+	 * teardown.  REENABLE_REUSE_LINK preserves the kernel link/vdev so
+	 * the driver does not see an inconsistent MBSSID group state.
 	 */
 	if (hapd->iconf->mbssid && hapd == hostapd_mbssid_get_tx_bss(hapd) &&
 	    hapd->mbssid_group) {
@@ -371,8 +371,7 @@ uc_hostapd_bss_set_config(uc_vm_t *vm, size_t nargs)
 
 		dl_list_for_each(non_tx, &hapd->mbssid_group->bss_list,
 				 struct hostapd_data, mbssid_bss) {
-			if (non_tx == hapd || !non_tx->started ||
-			    !non_tx->conf || !non_tx->conf->mld_ap)
+			if (non_tx == hapd || !non_tx->started || !non_tx->conf)
 				continue;
 			hostapd_disable_bss(non_tx, 0, AP_EVENT_DISABLED);
 		}
@@ -397,7 +396,7 @@ uc_hostapd_bss_set_config(uc_vm_t *vm, size_t nargs)
 	hostapd_setup_bss(hapd, hapd == iface->bss[0], true);
 
 #ifdef CONFIG_IEEE80211BE
-	/* Re-enable non-TX MLD BSSes stopped above */
+	/* Re-enable non-TX BSSes (both MLD and non-MLD) stopped above */
 	if (hapd->iconf->mbssid && hapd == hostapd_mbssid_get_tx_bss(hapd) &&
 	    hapd->mbssid_group) {
 		struct hostapd_data *non_tx;
@@ -624,6 +623,11 @@ free_hapd:
 		hostapd_bss_link_deinit(hapd);
 #endif /* CONFIG_IEEE80211BE */
 	hostapd_free_hapd_data(hapd);
+	hostapd_free_mbssid_idx(hapd);
+	hostapd_multi_mbssid_remove_bss(hapd);
+#ifdef CONFIG_IEEE80211BE
+	hostapd_mld_ref_dec(hapd->mld);
+#endif /* CONFIG_IEEE80211BE */
 	os_free(hapd);
 remove_bss_conf:
 	iface->conf->num_bss--;
