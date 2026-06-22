@@ -173,6 +173,7 @@ struct eapol_state_machine {
 	unsigned int authenticated; /* The number of times authentication has
 				     * been completed successfully. */
 	bool stopped;
+	bool offload_mode;
 };
 
 #endif /* EAPOL_AUTH_SM_I_H */
