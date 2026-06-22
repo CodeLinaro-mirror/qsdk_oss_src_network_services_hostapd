@@ -5342,6 +5342,9 @@ hostapd_alloc_bss_data(struct hostapd_iface *hapd_iface,
 	hapd->iconf = conf;
 	hapd->conf = bss;
 	hapd->iface = hapd_iface;
+	/* -1 = no per-module override; falls back to global wpa_debug_level */
+	os_memset(hapd->log_module_level, 0xff,
+		  sizeof(hapd->log_module_level));
 	if (conf)
 		hapd->driver = conf->driver;
 	hapd->ctrl_sock = -1;

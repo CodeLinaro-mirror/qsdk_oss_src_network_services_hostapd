@@ -43,6 +43,7 @@ LIB_OBJS= \
 	pmksa_cache_auth.o \
 	preauth_auth.o \
 	rrm.o \
+	hostapd_log.o \
 	sta_info.o \
 	tkip_countermeasures.o \
 	utils.o \

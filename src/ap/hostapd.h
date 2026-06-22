@@ -22,6 +22,7 @@
 #include "ucode.h"
 #include "ttlm.h"
 #include "atf/atf_offload.h"
+#include "hostapd_log.h"
 #ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/cmn.h"
 #endif /* CONFIG_QCN_EXTN */
@@ -727,6 +728,13 @@ struct hostapd_data {
 #ifdef CONFIG_NAN_USD
 	struct nan_de *nan_de;
 #endif /* CONFIG_NAN_USD */
+
+	/* Per-module log level overrides. -1 means no override is set for
+	 * that module and logging falls back to the global wpa_debug_level.
+	 * Any other value is a HOSTAPD_LEVEL_* threshold: messages below it
+	 * are suppressed regardless of the global level. Set via
+	 * LOG_LEVEL <module> <level> ctrl_iface command. */
+	int log_module_level[HOSTAPD_MOD_MAX];
 
 	u64 scan_cookie; /* Scan instance identifier for the ongoing HT40 scan
 			  */
