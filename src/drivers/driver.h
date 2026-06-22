@@ -6910,7 +6910,7 @@ struct wpa_driver_ops {
 #ifdef CONFIG_IEEE80211AX
 	/**
 	 * rule_config_notify - Notify driver on nft rule config for Qos features
-	 * 			like SCS/MSCS.
+	 * 		like SCS/MSCS.
 	 * @priv: Private driver interface data
 	 * @vendor_id : vendor id
 	 * @subcmd: vendor subcmd
@@ -6919,12 +6919,15 @@ struct wpa_driver_ops {
 	 * @buf: buffer data
 	 * @mac: mac address
 	 * @ifname: interface name
+	 * @qm_desc: QM rule descriptor with TCLAS/5-tuple info (may be NULL)
 	 */
 	int (*rule_config_notify)(void *priv, unsigned int vendor_id,
 				  unsigned int subcmd, const u8 *data,
 				  size_t data_len,
 				  enum nested_attr nested_attr_flag,
-				  struct wpabuf *buf, u8* mac, const char *ifname);
+				  struct wpabuf *buf, const u8 *mac, const char *ifname,
+				  const struct qm_req_desc_data *qm_desc,
+				  enum qos_mgmt_type qm_type);
 #endif /* CONFIG_IEEE80211AX */
 
 	/**

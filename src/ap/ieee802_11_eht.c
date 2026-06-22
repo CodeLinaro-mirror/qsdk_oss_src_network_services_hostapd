@@ -3843,7 +3843,8 @@ int hostapd_configure_epcs(struct hostapd_data *hapd,
 		rule.handle = sta->mld_info.epcs.rule_handle;
 		sta->mld_info.epcs.rule_handle = 0;
 		hostapd_config_nft_rule(&rule, false);
-		hostapd_drv_rule_config_notify(hapd, sta->addr);
+		hostapd_drv_rule_config_notify(hapd, sta->addr, NULL,
+					       HOSTAPD_QM_TYPE_MSCS);
 	}
 
 	/* Send the QoS request */
@@ -3875,7 +3876,8 @@ int hostapd_configure_epcs(struct hostapd_data *hapd,
 		rule.mark = (EPCS_QM_ID << 8) | HOSTAPD_QOS_SCS_TAG;
 		rule.nf_family = NFPROTO_NETDEV;
 		hostapd_config_nft_rule(&rule, true);
-		hostapd_drv_rule_config_notify(hapd, sta->addr);
+		hostapd_drv_rule_config_notify(hapd, sta->addr, NULL,
+					       HOSTAPD_QM_TYPE_MSCS);
 		sta->mld_info.epcs.rule_handle = rule.handle;
 	}
 

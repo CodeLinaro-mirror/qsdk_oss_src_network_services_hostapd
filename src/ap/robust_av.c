@@ -1496,6 +1496,7 @@ hostapd_process_scs_change(struct hostapd_data *hapd, struct sta_info *sta,
 {
 	int idx;
 	u8 scs_id = scs_req_desc_tmp->scs_id;
+	struct qm_req_desc_data qm_desc;
 
 	if (status != HOSTAPD_QM_STATUS_SUCCESS) {
 		wpa_printf(MSG_ERROR, "SCS change request failed for scs_id:%u,"
@@ -1513,6 +1514,11 @@ hostapd_process_scs_change(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 
 	hostapd_scs_delete_nft_rule(hapd, sta, idx);
+
+	os_memset(&qm_desc, 0, sizeof(qm_desc));
+	hostapd_copy_scs_desc(&qm_desc, *sta->scs_req_desc[idx]);
+	hostapd_drv_rule_config_notify(hapd, sta->addr, &qm_desc,
+				       HOSTAPD_QM_TYPE_SCS);
 
 	os_memcpy(sta->scs_req_desc[idx], scs_req_desc_tmp,
 		  sizeof(*scs_req_desc_tmp));
@@ -1893,6 +1899,9 @@ static void hostapd_process_scs_req(struct hostapd_data *hapd,
 	struct hostapd_scs_resp_desc_data *scs_resp_desc;
 	u8 scs_id_req, scs_id_resp, request_type, status;
 	struct hostapd_scs_req_desc_data *scs_req_desc;
+	struct qm_req_desc_data qm_desc;
+	struct hostapd_scs_req_desc_data notify_descs[HOSTAPD_SCS_MAX_DESCPRIPTORS_PER_REQUEST];
+	int notify_count = 0;
 	int idx, idx1, scs_req_idx;
 	bool nft_update = false;
 	bool idx_found;
@@ -1982,12 +1991,18 @@ static void hostapd_process_scs_req(struct hostapd_data *hapd,
 			scs_resp_desc->status = WLAN_STATUS_REQUEST_DECLINED;
 		}
 
+		notify_descs[notify_count++] = *scs_req_desc;
 	}
 
 	if (nft_update)
 		hostapd_process_nft_rules(hapd, sta);
 
-	hostapd_drv_rule_config_notify(hapd, sta->addr);
+	for (idx = 0; idx < notify_count; idx++) {
+		os_memset(&qm_desc, 0, sizeof(qm_desc));
+		hostapd_copy_scs_desc(&qm_desc, notify_descs[idx]);
+		hostapd_drv_rule_config_notify(hapd, sta->addr, &qm_desc,
+					       HOSTAPD_QM_TYPE_SCS);
+	}
 }
 
 
@@ -2236,7 +2251,6 @@ int hostapd_process_mscs_req(struct hostapd_data *hapd,
 	default:
 		goto decline;
 	}
-	hostapd_drv_rule_config_notify(hapd, sta->addr);
 	return ret;
 
 decline:
@@ -2387,8 +2401,10 @@ static int hostapd_handle_mscs_req(struct hostapd_data *hapd,
 
 	ret = hostapd_process_mscs_req(hapd, sta, payload, &mscs, dialog_token);
 
-	return hostapd_send_mscs_response(hapd, sta, mgmt->sa, dialog_token,
-					  ret);
+	hostapd_drv_rule_config_notify(hapd, sta->addr, NULL,
+				       HOSTAPD_QM_TYPE_MSCS);
+
+	return hostapd_send_mscs_response(hapd, sta, mgmt->sa, dialog_token, ret);
 }
 
 
