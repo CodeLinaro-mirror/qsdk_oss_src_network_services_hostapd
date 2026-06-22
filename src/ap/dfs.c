@@ -2246,8 +2246,9 @@ static bool dfs_rcac_try_half_bw(struct hostapd_iface *iface,
 	int home_start = home_center_freq - (home_bw / 2) + 10;
 	int home_end   = home_center_freq + (home_bw / 2) - 10;
 	enum oper_chan_width half_width;
-	int total;
-	int i;
+	struct hostapd_channel_data *c;
+	u8 cf0 = 0, cf1 = 0;
+	int sec = 0;
 
 	wpa_printf(MSG_DEBUG,
 		   "DFS: dfs_rcac_try_half_bw: home_bw=%d half_bw=%d sec_chan=%d",
@@ -2266,26 +2267,16 @@ static bool dfs_rcac_try_half_bw(struct hostapd_iface *iface,
 	else if (half_bw == 40)
 		iface->conf->secondary_channel = orig_secondary_channel;
 
-	total = dfs_find_channel(iface, NULL, 0, DFS_ANY_CHANNEL,
-				 DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
-
-	for (i = 0; i < total; i++) {
-		struct hostapd_channel_data *c = NULL;
-
-		dfs_find_channel(iface, &c, i, DFS_ANY_CHANNEL,
-				 DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
-		if (!c ||
-		    (c->freq >= home_start && c->freq <= home_end))
-			continue;
-		if (hostapd_start_rcac_on_channel(iface, c->chan, half_bw) == 0) {
-			hostapd_set_oper_chwidth(iface->conf, orig_oper_chwidth);
-			iface->conf->secondary_channel = orig_secondary_channel;
-			wpa_printf(MSG_DEBUG,
-				   "DFS: half-BW RCAC: starting %d MHz RCAC on chan %d "
-				   "(all %d MHz blocks have NOL channels)",
-				   half_bw, c->chan, home_bw);
-			return true;
-		}
+	c = dfs_get_valid_channel(iface, &sec, &cf0, &cf1, DFS_ANY_CHANNEL);
+	if (c && !(c->freq >= home_start && c->freq <= home_end) &&
+	    hostapd_start_rcac_on_channel(iface, c->chan, half_bw) == 0) {
+		hostapd_set_oper_chwidth(iface->conf, orig_oper_chwidth);
+		iface->conf->secondary_channel = orig_secondary_channel;
+		wpa_printf(MSG_DEBUG,
+			   "DFS: half-BW RCAC: starting %d MHz RCAC on chan %d "
+			   "(all %d MHz blocks have NOL channels)",
+			   half_bw, c->chan, home_bw);
+		return true;
 	}
 
 	hostapd_set_oper_chwidth(iface->conf, orig_oper_chwidth);
@@ -2316,9 +2307,9 @@ static void hostapd_agile_cac_update(struct hostapd_iface *iface)
 	int home_center = (hostapd_get_oper_centr_freq_seg0_idx(iface->conf) * 5) + 5000;
 	int home_start = home_center - home_bw / 2 + 10;
 	int home_end = home_center + home_bw / 2 - 10;
-	int total = dfs_find_channel(iface, NULL, 0, DFS_ANY_CHANNEL,
-				     DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
-	int i;
+	struct hostapd_channel_data *c;
+	int sec = 0;
+	u8 cf0 = 0, cf1 = 0;
 	enum oper_chan_width orig_oper_chwidth;
 
 	if (iface->user_rcac_channel > 0 &&
@@ -2327,18 +2318,11 @@ static void hostapd_agile_cac_update(struct hostapd_iface *iface)
 
 	orig_oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
 
-	for (i = 0; i < total; i++) {
-		struct hostapd_channel_data *c = NULL;
-
-		dfs_find_channel(iface, &c, i, DFS_ANY_CHANNEL,
-				 DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
-		if (!c ||
-		    (c->freq >= home_start && c->freq <= home_end) ||
-		    c->chan == iface->radar_background.channel)
-			continue;
-		if (hostapd_start_rcac_on_channel(iface, c->chan, home_bw) == 0)
-			return;
-	}
+	c = dfs_get_valid_channel(iface, &sec, &cf0, &cf1, DFS_ANY_CHANNEL);
+	if (c &&
+	    !(c->freq >= home_start && c->freq <= home_end) &&
+	    hostapd_start_rcac_on_channel(iface, c->chan, home_bw) == 0)
+		return;
 
 	/* Try half-BW if no full-BW block is available */
 	if (dfs_rcac_try_half_bw(iface, home_bw, orig_oper_chwidth))
