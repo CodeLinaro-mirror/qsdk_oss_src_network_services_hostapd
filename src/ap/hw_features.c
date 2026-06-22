@@ -2353,7 +2353,7 @@ int hostapd_select_hw_mode(struct hostapd_iface *iface)
 			wpa_printf(MSG_DEBUG,
 				   "DFS: Update puncture source for User puncture bitmap=0x%04x",
 				   iface->conf->punct_bitmap);
-			dfs_update_puncture_source(iface, iface->freq, ch_width,
+			dfs_update_puncture_source(iface, 0, ch_width,
 						   iface->conf->punct_bitmap,
 						   DFS_CHAN_PUNC_USER);
 		}
