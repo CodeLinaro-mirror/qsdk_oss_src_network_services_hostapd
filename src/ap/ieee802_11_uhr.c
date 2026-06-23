@@ -382,7 +382,7 @@ u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
 	length_pos = pos++;
 	*pos++ = WLAN_EID_EXT_UHR_PARAMS_UPDATE;
 
-	*pos++ = hapd->uhr_ecu.uhr_params_update_countdown;
+	*pos++ = hapd->uhr_ecu.countdown_timer;
 
 	/* Mode Tuple List (9.4.2.362) */
 	/* TODO: Add Mode Tuple for DPS (Mode ID = 0) */

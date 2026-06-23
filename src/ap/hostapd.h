@@ -357,7 +357,7 @@ enum uhr_ecu_state {
 
 struct hostapd_uhr_ecu {
 	enum uhr_ecu_state state;
-	u8 uhr_params_update_countdown;
+	u8 countdown_timer;
 };
 #endif /* CONFIG_IEEE80211BN */
 
