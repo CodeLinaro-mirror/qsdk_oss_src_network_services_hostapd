@@ -1503,6 +1503,9 @@
  * @NL80211_CMD_SMD_ROAM: Event notifying userspace to trigger an SMD-domain
  *	BSS transition roam to a target AP in the same SMD domain.
  *
+ * @NL80211_CMD_SET_SMD_CTX: Set UHR SMD dynamic context on the target AP MLD
+ *     for the non-AP MLD.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -3473,6 +3476,9 @@ enum nl80211_commands {
  *      %NL80211_CMD_SMD_TRANSITION_DONE events and in UHR Link Reconfiguration
  *      Response done notifications to indicate how far link migration has
  *      progressed (PENDING, PARTIAL, DL_DRAIN, or COMPLETE).
+ *
+ * @NL80211_ATTR_SMD_CTX: Nested attribute associated with UHR SMD BSS
+ *	Transition data. See &enum nl8021_smd_attrs.
  *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
@@ -10079,7 +10085,6 @@ enum nl80211_uhr_mode_update_attrs {
 	NL80211_UHR_MODE_UPDATE_ATTR_MAX =
 		__NL80211_UHR_MODE_UPDATE_ATTR_AFTER_LAST - 1
 };
-
 enum nl80211_smd_ctx_type {
 	NL80211_SMD_CTX_TYPE_PREP,
 	NL80211_SMD_CTX_TYPE_EXEC,
@@ -10149,7 +10154,6 @@ enum nl80211_smd_link_transition_state {
 	NL80211_SMD_LINK_STATE_DL_DRAIN,
 	NL80211_SMD_LINK_STATE_COMPLETE,
 };
-
 /**
  * enum nl80211_cu_type - Critical Update session type
  *
