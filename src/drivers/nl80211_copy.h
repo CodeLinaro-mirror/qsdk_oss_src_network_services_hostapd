@@ -1362,6 +1362,10 @@
  * 	%NL80211_ATTR_CU_TYPE, and
  * 	%NL80211_ATTR_IE carrying the CU element to be stitched into beacons.
  *
+ * @NL80211_CMD_CRITICAL_UPDATE_NOTIFY: Event sent by the kernel to notify
+ *	user space of CU lifecycle transitions on an AP link.
+ *	Carries %NL80211_ATTR_CU_STATE indicating the current ECU phase.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -1649,6 +1653,7 @@ enum nl80211_commands {
 
 	NL80211_CMD_UHR_MODE_UPDATE,
 	NL80211_CMD_CRITICAL_UPDATE,
+	NL80211_CMD_CRITICAL_UPDATE_NOTIFY,
 
 	/* add new commands above here */
 
@@ -3057,6 +3062,10 @@ enum nl80211_commands {
  * @NL80211_ATTR_CU_TYPE: (u8) Critical Update type, see &enum nl80211_cu_type.
  * 	Used with %NL80211_CMD_CRITICAL_UPDATE.
  *
+ * @NL80211_ATTR_CU_STATE: (u32) Current CU session state,
+ *	see &enum nl80211_cu_state. Carried in
+ *	%NL80211_CMD_CRITICAL_UPDATE_NOTIFY events.
+ *
  * @NL80211_ATTR_EPP_PEER: A flag attribute to indicate if the peer is an EPP
  *	STA. Used with %NL80211_CMD_NEW_STA and %NL80211_CMD_ADD_LINK_STA
  *
@@ -3710,6 +3719,7 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_UHR_MODE_UPDATE_PARAMS,
 	NL80211_ATTR_CU_TYPE,
+	NL80211_ATTR_CU_STATE,
 
 	NL80211_ATTR_EPP_PEER,
 
@@ -8814,6 +8824,27 @@ enum nl80211_cu_type {
 	NL80211_CU_TYPE_UHR_PARAMS,
 };
 
+/**
+ * enum nl80211_cu_state - UHR Enhanced Critical Update (ECU) state
+ *
+ * Reflects the IEEE 802.11bn ECU state machine phases reported via
+ * %NL80211_CMD_CRITICAL_UPDATE_NOTIFY.
+ *
+ * @NL80211_CU_STATE_STARTED: ECU session has started; the driver is
+ *	transmitting beacons with the CU element and indication bit set.
+ * @NL80211_CU_STATE_ADV_NOTIFICATION_END: Advance notification phase
+ *	has ended; the advance notification window has elapsed.
+ * @NL80211_CU_STATE_POST_NOTIFICATION_END: Post notification phase
+ *	has ended; the post notification window has elapsed.
+ * @NL80211_CU_STATE_ECU_END: ECU session is complete; the driver has
+ *	finished transmitting CU beacons and cleared the CU indication bit.
+ */
+enum nl80211_cu_state {
+	NL80211_CU_STATE_STARTED,
+	NL80211_CU_STATE_ADV_NOTIFICATION_END,
+	NL80211_CU_STATE_POST_NOTIFICATION_END,
+	NL80211_CU_STATE_ECU_END,
+};
 
 /**
  * enum nl80211_erp_attrs - set ErP attributes during entry/exit
