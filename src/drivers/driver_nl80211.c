@@ -13137,7 +13137,8 @@ static int nl80211_start_radar_detection(void *priv,
 
 	ret = send_and_recv_cmd(drv, msg);
 	if (ret == 0) {
-		nl80211_link_set_freq(bss, freq->link_id, freq->freq);
+		if (!freq->radar_background)
+			nl80211_link_set_freq(bss, freq->link_id, freq->freq);
 		return 0;
 	}
 
