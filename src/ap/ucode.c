@@ -328,8 +328,63 @@ uc_hostapd_bss_set_config(uc_vm_t *vm, size_t nargs)
 		goto done;
 	}
 
+#ifdef CONFIG_IEEE80211BE
+	/*
+	 * When the SSID changes, reload all MLD links before stop_ap while
+	 * beacons are still running so SET_BEACON is used instead of
+	 * START_AP (no cross-link SSID check on SET_BEACON).
+	 */
+	if (hapd->started && hapd->conf->mld_ap && hapd->mld &&
+	    (conf->bss[idx]->ssid.ssid_len != hapd->conf->ssid.ssid_len ||
+	     os_memcmp(conf->bss[idx]->ssid.ssid, hapd->conf->ssid.ssid,
+		       conf->bss[idx]->ssid.ssid_len) != 0)) {
+		struct hostapd_data *link;
+
+		/* Swap new config into hapd so all links see the new SSID. */
+		old_bss = hapd->conf;
+		hapd->conf = conf->bss[idx];
+		conf->bss[idx] = old_bss;
+
+		dl_list_for_each(link, &hapd->mld->links,
+				 struct hostapd_data, link) {
+			if (!link->started)
+				continue;
+			link->conf->ssid.ssid_len = hapd->conf->ssid.ssid_len;
+			os_memcpy(link->conf->ssid.ssid, hapd->conf->ssid.ssid,
+				  hapd->conf->ssid.ssid_len);
+			hostapd_reload_bss_only(link);
+		}
+
+		/* Restore hapd->conf for the teardown path below. */
+		conf->bss[idx] = hapd->conf;
+		hapd->conf = old_bss;
+	}
+
+	/*
+	 * Stop non-TX MLD BSS beacons before the TX BSS teardown.
+	 * REENABLE_REUSE_LINK preserves the kernel MLD link so the driver
+	 * does not see an inconsistent MLD state
+	 */
+	if (hapd->iconf->mbssid && hapd == hostapd_mbssid_get_tx_bss(hapd) &&
+	    hapd->mbssid_group) {
+		struct hostapd_data *non_tx;
+
+		dl_list_for_each(non_tx, &hapd->mbssid_group->bss_list,
+				 struct hostapd_data, mbssid_bss) {
+			if (non_tx == hapd || !non_tx->started ||
+			    !non_tx->conf || !non_tx->conf->mld_ap)
+				continue;
+			hostapd_disable_bss(non_tx, 0, AP_EVENT_DISABLED);
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+
 	hostapd_bss_deinit_no_free(hapd);
 	hostapd_drv_stop_ap(hapd);
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf && hapd->conf->mld_ap && hapd != iface->bss[0])
+		hostapd_bss_link_deinit(hapd);
+#endif /* CONFIG_IEEE80211BE */
 	hostapd_free_hapd_data(hapd);
 
 	old_bss = hapd->conf;
@@ -340,6 +395,22 @@ uc_hostapd_bss_set_config(uc_vm_t *vm, size_t nargs)
 	conf->bss[idx] = old_bss;
 
 	hostapd_setup_bss(hapd, hapd == iface->bss[0], true);
+
+#ifdef CONFIG_IEEE80211BE
+	/* Re-enable non-TX MLD BSSes stopped above */
+	if (hapd->iconf->mbssid && hapd == hostapd_mbssid_get_tx_bss(hapd) &&
+	    hapd->mbssid_group) {
+		struct hostapd_data *non_tx;
+
+		dl_list_for_each(non_tx, &hapd->mbssid_group->bss_list,
+				 struct hostapd_data, mbssid_bss) {
+			if (non_tx == hapd ||
+			    non_tx->reenable != REENABLE_REUSE_LINK)
+				continue;
+			hostapd_enable_bss(non_tx);
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
 
 	hostapd_ucode_update_interfaces();
 
@@ -386,6 +457,17 @@ uc_hostapd_bss_delete(uc_vm_t *vm, size_t nargs)
 	 */
 	if (hapd->iconf->mbssid) {
 		if (hapd == hostapd_mbssid_get_tx_bss(hapd)) {
+			if ((hapd->mbssid_group &&
+			     iface->num_bss == (int)dl_list_len(
+				     &hapd->mbssid_group->bss_list)) ||
+			    (!hapd->mbssid_group &&
+			     hapd == iface->bss[0])) {
+				wpa_printf(MSG_DEBUG,
+					   "Trying to delete last TX BSS "
+					   "that would empty iface %s",
+					   hapd->conf->iface);
+				return NULL;
+			}
 			hostapd_remove_non_tx_bsses(hapd);
 			/* Re-find idx: non-TX removals may have shifted the array */
 			for (idx = 0; idx < iface->num_bss; idx++)
@@ -536,6 +618,11 @@ deinit_ctrl:
 	if (interfaces->ctrl_iface_deinit)
 		interfaces->ctrl_iface_deinit(hapd);
 free_hapd:
+#ifdef CONFIG_IEEE80211BE
+	/* Clean up any MLD link added by setup_bss() before it failed. */
+	if (hapd->conf && hapd->conf->mld_ap)
+		hostapd_bss_link_deinit(hapd);
+#endif /* CONFIG_IEEE80211BE */
 	hostapd_free_hapd_data(hapd);
 	os_free(hapd);
 remove_bss_conf:
@@ -1002,6 +1089,9 @@ uc_hostapd_bss_rename(uc_vm_t *vm, size_t nargs)
 	if (!strncmp(hapd->conf->ssid.vlan, hapd->conf->iface, sizeof(hapd->conf->ssid.vlan)))
 		os_strlcpy(hapd->conf->ssid.vlan, ifname, sizeof(hapd->conf->ssid.vlan));
 	os_strlcpy(hapd->conf->iface, ifname, sizeof(hapd->conf->iface));
+
+	hostapd_set_ctrl_sock_iface(hapd);
+
 	hostapd_ubus_add_bss(hapd);
 
 	hostapd_ucode_update_interfaces();

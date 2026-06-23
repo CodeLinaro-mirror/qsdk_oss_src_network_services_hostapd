@@ -717,6 +717,7 @@ static void wpa_supplicant_cleanup(struct wpa_supplicant *wpa_s)
 	eloop_cancel_timeout(wpas_verify_ssid_beacon, wpa_s, NULL);
 	eloop_cancel_timeout(wpas_wfa_capab_tx, wpa_s, NULL);
 	eloop_cancel_timeout(wpas_scan_for_rnr_entries, wpa_s, NULL);
+	eloop_cancel_timeout(wpas_flush_sta_entry, wpa_s, NULL);
 #ifdef CONFIG_QCN_EXTN
 	eloop_cancel_timeout(wpa_supplicant_start_sta_scan, wpa_s, NULL);
 #endif
@@ -1402,10 +1403,13 @@ void wpa_supplicant_clear_status(struct wpa_supplicant *wpa_s)
 	enum wpa_states old_state = wpa_s->wpa_state;
 	enum wpa_states new_state;
 
-	if (old_state == WPA_SCANNING)
+	if (old_state == WPA_SCANNING || old_state == WPA_STACACING)
 		new_state = WPA_SCANNING;
 	else
 		new_state = WPA_DISCONNECTED;
+
+	if (old_state == WPA_STACACING)
+		wpas_sta_cac_clear(wpa_s);
 
 	wpa_s->pairwise_cipher = 0;
 	wpa_s->group_cipher = 0;
@@ -4080,6 +4084,7 @@ skip_80mhz:
 				    &mode->uhr_capab[ieee80211_mode],
 				    0,
 				    freq->he_6ghz_reg_pwr_type,
+				    0, 0,
 				    freq->bandwidth_device,
 				    freq->center_freq_device) != 0)
 		return false;

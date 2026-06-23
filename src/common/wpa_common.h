@@ -99,6 +99,7 @@ WPA_CIPHER_BIP_CMAC_256)
 #define RSN_AUTH_KEY_MGMT_802_1X_SHA384 RSN_SELECTOR(0x00, 0x0f, 0xac, 23)
 #define RSN_AUTH_KEY_MGMT_SAE_EXT_KEY RSN_SELECTOR(0x00, 0x0f, 0xac, 24)
 #define RSN_AUTH_KEY_MGMT_FT_SAE_EXT_KEY RSN_SELECTOR(0x00, 0x0f, 0xac, 25)
+#define RSN_AUTH_KEY_MGMT_EPPKE RSN_SELECTOR(0x00, 0x0f, 0xac, 29)
 
 #define RSN_AUTH_KEY_MGMT_CCKM RSN_SELECTOR(0x00, 0x40, 0x96, 0x00)
 #define RSN_AUTH_KEY_MGMT_DPP RSN_SELECTOR(0x50, 0x6f, 0x9a, 0x02)
@@ -887,7 +888,7 @@ int wpa_pasn_validate_rsne(const struct wpa_ie_data *data);
 int wpa_pasn_parse_parameter_ie(const u8 *data, u8 len, bool from_ap,
 				struct wpa_pasn_params_data *pasn_params);
 
-void wpa_pasn_add_rsnxe(struct wpabuf *buf, u16 capab);
+void wpa_pasn_add_rsnxe(struct wpabuf *buf, u32 capab);
 int wpa_pasn_add_extra_ies(struct wpabuf *buf, const u8 *extra_ies, size_t len);
 
 void rsn_set_snonce_cookie(u8 *snonce);

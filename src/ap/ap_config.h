@@ -383,6 +383,27 @@ struct eht_phy_capabilities_info {
 #define FEATURE_DISABLED	0
 #define FEATURE_ENABLED		1
 
+
+struct hostapd_uhr_npca_params {
+	bool enable;
+	bool update;
+	u32 params;  /* npca_params (bits 0-31) */
+	u16 disabled_subchan_bitmap;
+};
+
+/**
+ * struct uhr_params_update_config - UHR params update configuration
+ *
+ * Configurable intervals for UHR parameter update notifications.
+ */
+struct uhr_params_update_config {
+	u8 adv_notification_interval;
+	u8 update_in_tim_interval;
+	u16 mode_changed;
+	struct hostapd_uhr_npca_params npca;
+	/* TODO: Add DPS, DUO, P-EDCA, DBE, AP PUO, ELR mode param structs */
+};
+
 /**
  * struct hostapd_bss_config - Per-BSS configuration
  */
@@ -1328,6 +1349,16 @@ struct hostapd_bss_config {
 	 * 0 and 1 are used to enable and disable support.
 	 */
 	int dps_assist;
+
+#ifdef CONFIG_IEEE80211BN
+	/**
+	 * uhr_params_update - UHR params update configuration
+	 *
+	 * for the UHR Parameters Update element (Draft IEEE P802.11bn 1.4)
+	 */
+	struct uhr_params_update_config uhr_params_update;
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
 	struct hostapd_config_plugin plugin;
 #endif
@@ -1710,6 +1741,7 @@ struct hostapd_config {
 	bool npca_enable;
 	u8 npca_primary_channel;
 	u16 npca_punct_bitmap;
+	u8 npca_primary_chan_offset;
 #endif /* CONFIG_IEEE80211BN */
 };
 

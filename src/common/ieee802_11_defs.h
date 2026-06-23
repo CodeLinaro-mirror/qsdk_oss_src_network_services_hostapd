@@ -100,6 +100,8 @@
 #define WLAN_AUTH_FILS_SK_PFS		5
 #define WLAN_AUTH_FILS_PK		6
 #define WLAN_AUTH_PASN			7
+#define WLAN_AUTH_802_1X		8
+#define WLAN_AUTH_EPPKE			9
 #define WLAN_AUTH_LEAP			128
 
 /* Authentication transaction sequence number */
@@ -245,6 +247,8 @@
 #define WLAN_STATUS_EPCS_DENIED_VERIFICATION_FAILURE 140
 #define WLAN_STATUS_DENIED_OPERATION_PARAMETER_UPDATE 141
 #define WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE 159
+#define WLAN_STATUS_802_1_X_AUTH_FAILED 152
+#define WLAN_STATUS_802_1_X_AUTH_SUCCESS 153
 
 /* Reason codes (IEEE Std 802.11-2020, 9.4.1.7, Table 9-90) */
 #define WLAN_REASON_UNSPECIFIED 1
@@ -563,8 +567,9 @@
 #define WLAN_SEC_PROF_IND_VENDOR_COUNT(ind)   (((ind) >> 4) & 0x0f)
 
 #define WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS 155
-
 #define WLAN_EID_EXT_SMD 154
+#define WLAN_EID_EXT_UHR_PARAMS_UPDATE          158
+
 /* SMD Information Element length: EID (1) + Len (1) + ExtID (1) +
  * SMD Identifier (ETH_ALEN) + Capabilities (1) + Timeout (1) */
 #define SMD_IE_LEN (2 + 1 + ETH_ALEN + 1 + 1)
@@ -3421,16 +3426,16 @@ struct ieee80211_p_edca_info {
 #define IEEE80211_UHR_NPCA_OPER_DISABLED_SUBCHAN_BITMAP_SIZE	2
 
 struct ieee80211_npca_info {
-	/* TODO: Convert this into structure bitfield
-	 * As per spec npca_params defined as below
-	 * npca_primary_chan					:4
-	 * npca_min_dur_threshold				:4
-	 * npca_switching_delay					:6
-	 * npca_switch_back_delay				:6
-	 * npca_initial_qsrc					:2
-	 * npca_moplen						:1
-	 * npca_disabled_subchan_bitmap_pres			:1
-	 * reserved						:8
+	/* npca_params bit layout (Figure 9-aa4, IEEE P802.11bn D1.4 ss9.4.2.355.2):
+	 * npca_primary_chan					:4  (B0-B3)
+	 * npca_min_dur_threshold				:4  (B4-B7)
+	 * npca_switching_delay					:6  (B8-B13)
+	 * npca_switch_back_delay				:6  (B14-B19)
+	 * npca_initial_qsrc					:2  (B20-B21)
+	 * npca_moplen						:1  (B22)
+	 * npca_disabled_subchan_bitmap_pres			:1  (B23)
+	 * reserved						:8  (B24-B31)
+	 * npca_disabled_subchan_bitmap is a separate u16 (B32-B47)
 	 */
 	u32 npca_params;
 	u16 npca_disabled_subchan_bitmap;
@@ -3452,13 +3457,27 @@ struct ieee80211_uhr_operation {
 #define UHR_OPER_PARAMS_NPCA_MOPLEN_NPCA		0x00400000
 #define UHR_OPER_PARAMS_NPCA_DIS_SUBCH_BITMAP_PRES	0x00800000
 
-/* Figure 9-aa7: UHR MAC Capabilities Information field format */
+/* Figure 9-aa9: UHR MAC Capabilities Information field format
+ * (IEEE P802.11bn/D1.4, section 9.4.2.356.2)
+ */
 #define UHR_MACCAP_DPS_SUPP			BIT(0)
 #define UHR_MACCAP_DPS_ASSIST			BIT(1)
 #define UHR_MACCAP_NPCA_SUPP			BIT(4)
 
+/* B26-B28: Parameter Update Adv Notification Interval (3 bits, byte 3) */
+#define UHR_MACCAP3_PARAM_UPD_ADV_NOTIF_INTV_MASK	((u8) (BIT(2) | BIT(3) | BIT(4)))
+#define UHR_MACCAP3_PARAM_UPD_ADV_NOTIF_INTV_SHIFT	2
+
+/* B29-B33: Update Indication In TIM Interval (5 bits, split across bytes 3-4) */
+#define UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_MASK		((u8) (BIT(5) | BIT(6) | BIT(7)))
+#define UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_SHIFT		5
+#define UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK		((u8) (BIT(0) | BIT(1)))
+#define UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_SHIFT	0
+
 #define UHR_MAC_CAPAB_LEN	6
 #define UHR_PHY_CAPAB_LEN	5
+
+#define IEEE80211_UHR_CAP_MAX_SIZE	sizeof(struct ieee80211_uhr_capabilities)
 
 /* Figure 9-aa8: UHR Capabilities element format P802.11bn_D1.4 section 9.4.2.356 */
 struct ieee80211_uhr_capabilities {
@@ -3467,6 +3486,15 @@ struct ieee80211_uhr_capabilities {
 	/* UHR PHY Capabilities Information */
 	u8 phy_cap[UHR_PHY_CAPAB_LEN];
 } STRUCT_PACKED;
+
+/* Table 9-bb13: Encoding of the Mode ID field (9.4.2.362) */
+#define UHR_PARAMS_UPDATE_MODE_ID_NPCA		1
+/* TODO: Add Mode ID macros for DPS(0), DUO(2), P-EDCA(3), DBE(4), AP PUO(5), ELR(6) */
+
+/* Mode Tuple field bits (Figure 9-aa67) */
+#define UHR_MODE_TUPLE_MODE_ID_MASK		0x3F
+#define UHR_MODE_TUPLE_MODE_ENABLE		BIT(6)
+#define UHR_MODE_TUPLE_MODE_UPDATE		BIT(7)
 
 #define IEEE80211_EHT_CAPAB_MIN_LEN (2 + 9)
 

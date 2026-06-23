@@ -1116,8 +1116,16 @@ u8 * hostapd_eid_mbo(struct hostapd_data *hapd, u8 *eid, size_t len)
 				ctrl |= OCE_IS_NON_OCE_AP_PRESENT;
 			if (hapd->ap_11b_present)
 				ctrl |= OCE_IS_11B_AP_PRESENT;
-			if (hapd->conf->fils_hlp_wait_time)
+#ifdef CONFIG_FILS
+			/* OCE_IS_FILS_HLP_ENABLED (OCE Spec v2.0 Sec 3.3 Bit 5)
+			 * must be set only when the AP has a DHCP server
+			 * configured for FILS IP address assignment via HLP.
+			 * fils_hlp_wait_time is a timing parameter with a
+			 * non-zero default and must not be used to condition this bit. */
+			if (hapd->conf->dhcp_server.af == AF_INET &&
+			    hapd->conf->dhcp_server.u.v4.s_addr != 0)
 				ctrl |= OCE_IS_FILS_HLP_ENABLED;
+#endif /* CONFIG_FILS */
 		}
 
 		*mbo_pos++ = OCE_ATTR_ID_CAPA_IND;

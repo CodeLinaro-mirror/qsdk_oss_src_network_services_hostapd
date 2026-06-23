@@ -33,6 +33,7 @@
 #include "beacon.h"
 #include "hs20.h"
 #include "dfs.h"
+#include "hw_features.h"
 #include "taxonomy.h"
 #include "ieee802_11_auth.h"
 #include "dscp_policy.h"
@@ -1032,6 +1033,7 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 			if (hapd->iconf->npca_punct_bitmap)
 				buflen += IEEE80211_UHR_NPCA_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
 		}
+		buflen += hostapd_eid_uhr_params_update_len(hapd, false);
 	}
 	buflen += hostapd_smd_ie_len(hapd);
 #endif /* CONFIG_IEEE80211BN */
@@ -1112,6 +1114,11 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 	buflen += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
 #endif /* CONFIG_QCN_EXTN */
+
+#ifdef CONFIG_IEEE80211BN
+	if (hostapd_is_uhr_enabled(hapd))
+		buflen += hostapd_eid_uhr_params_update_len(hapd, false);
+#endif /* CONFIG_IEEE80211BE */
 
 	nontx_probe_params->resp = os_zalloc(buflen);
 	if (!nontx_probe_params->resp) {
@@ -1238,6 +1245,11 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 	pos = hostapd_eid_qcn_vendor_ie_extn(hapd, pos, IEEE80211_MODE_AP);
 #endif /* CONFIG_QCN_EXTN */
+
+#ifdef CONFIG_IEEE80211BN
+	if (hostapd_is_uhr_enabled(hapd))
+		pos = hostapd_eid_uhr_params_update(hapd, pos, false);
+#endif /* CONFIG_IEEE80211BN */
 
 	/* Final length */
 	nontx_probe_params->resp_len = pos - (u8 *) nontx_probe_params->resp;
@@ -1478,6 +1490,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	if (hostapd_is_uhr_enabled(hapd)) {
 		pos = hostapd_eid_uhr_capab(hapd, pos, IEEE80211_MODE_AP);
 		pos = hostapd_eid_uhr_operation(hapd, pos, false);
+		pos = hostapd_eid_uhr_params_update(hapd, pos, false);
 	}
 #endif /* CONFIG_IEEE80211BN */
 	pos = hostapd_eid_security_profile(hapd, pos);
@@ -3841,8 +3854,28 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hostapd_is_uhr_enabled(hapd))
+	if (hostapd_is_uhr_enabled(hapd)) {
+		u8 *uhr_cap;
+
 		tailpos = hostapd_eid_uhr_operation(hapd, tailpos, true);
+
+		params->uhr_cap = os_zalloc(3 + IEEE80211_UHR_CAP_MAX_SIZE);
+		if (!params->uhr_cap) {
+			wpa_printf(MSG_ERROR, "Failed to allocate for UHR capabilities");
+			os_free(head);
+			os_free(tail);
+			return -1;
+		}
+
+		uhr_cap = hostapd_eid_uhr_capab(hapd, params->uhr_cap,
+					       IEEE80211_MODE_AP);
+		/* check that it was filled */
+		if (uhr_cap == params->uhr_cap) {
+			os_free(params->uhr_cap);
+			params->uhr_cap = NULL;
+		}
+
+	}
 #endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_IEEE80211AC
@@ -4165,6 +4198,10 @@ void ieee802_11_free_ap_params(struct wpa_driver_ap_params *params)
 #endif /* CONFIG_IEEE80211AX */
 	os_free(params->allowed_freqs);
 	params->allowed_freqs = NULL;
+#ifdef CONFIG_IEEE80211BN
+	os_free(params->uhr_cap);
+	params->uhr_cap = NULL;
+#endif /* CONFIG_IEEE80211BN */
 }
 
 #ifdef CONFIG_IEEE80211BE
@@ -4381,6 +4418,13 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 				    &cmode->uhr_capab[IEEE80211_MODE_AP],
 				    hostapd_get_punct_bitmap(hapd),
 				    iconf->he_6ghz_reg_pwr_type,
+#ifdef CONFIG_IEEE80211BN
+				    hostapd_hw_get_freq(hapd,
+					iconf->npca_primary_channel),
+				    iconf->npca_punct_bitmap,
+#else
+				    0, 0,
+#endif /* CONFIG_IEEE80211BN */
 				    iconf->bandwidth_device,
 				    iconf->center_freq_device) == 0) {
 		freq.link_id = -1;

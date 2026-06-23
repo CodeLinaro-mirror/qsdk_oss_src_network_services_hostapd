@@ -719,13 +719,36 @@ struct last_scan_ssid {
  * @selected_ssid: Selected network profile cached while CAC is in progress
  * @dfs_links: Bitmap of links/frequencies that require STA CAC
  * @cac_completed_links: Bitmap of links that reported CAC finished
+ * @csa_wait_cac_links: Bitmask of MLO link IDs with a pending post-CSA CAC.
+ *   Bit N set means link N is currently performing CAC after a CSA.
+ * @csa_link_freq: Per-link target frequency when a post-CSA CAC is active.
+ *   Valid only when the corresponding bit in csa_wait_cac_links is set.
+ * @csa_non_link_wait: Whether a non-link (SLO) post-CSA CAC is pending.
+ * @csa_non_link_freq: Target frequency for the pending SLO post-CSA CAC.
  */
 struct station_cac_params {
 	unsigned int selected_bssid;
 	struct wpa_ssid *selected_ssid;
 	u16 dfs_links;
 	u16 cac_completed_links;
+	u16 csa_wait_cac_links;
+	int csa_link_freq[MAX_NUM_MLD_LINKS];
+	bool csa_non_link_wait;
+	int csa_non_link_freq;
 };
+
+/* wpas_sta_cac_clear() - Clear STA CAC state
+ * @wpa_s - Pointer to wpa_supplicant interface
+ * Return - None
+ */
+void wpas_sta_cac_clear(struct wpa_supplicant *wpa_s);
+
+/* wpas_flush_sta_entry() - Disconnect / Flush STA timeout handler
+ * @eloop_ctx - Abstract pointer to eloop context
+ * @timeout_ctx - Abstract pointer to user eloop ctx
+ * Return - None
+ */
+void wpas_flush_sta_entry(void *eloop_ctx, void *timeout_ctx);
 
 /**
  * struct wpa_supplicant - Internal data for wpa_supplicant interface

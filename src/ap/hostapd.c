@@ -1564,7 +1564,7 @@ static void hostapd_mld_move_vlan_list(struct hostapd_data *old_fbss,
  * If the BSS being removed is the first link, the next link becomes the first
  * link.
  */
-static void hostapd_bss_link_deinit(struct hostapd_data *hapd)
+void hostapd_bss_link_deinit(struct hostapd_data *hapd)
 {
 #ifdef CONFIG_IEEE80211BE
 	int i;
@@ -2361,7 +2361,9 @@ static void hostapd_inherit_mbssid_cmn_params(struct hostapd_data *dest_hapd,
 		src_hapd->conf->eht_phy_capab.eht_bfme_ss_320;
 	dest_hapd->conf->eht_ltf = src_hapd->conf->eht_ltf;
 	dest_hapd->iconf->enable_mcs15 = src_hapd->iconf->enable_mcs15;
+#ifdef CONFIG_TESTING_OPTIONS
 	dest_hapd->iconf->ecsa_ie_only = src_hapd->iconf->ecsa_ie_only;
+#endif
 
 	wpa_printf(MSG_DEBUG,
 		   "MBSSID common parameters are successfully inherited for %s from %s",
@@ -5905,14 +5907,14 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 
 	addr = hostapd_addr_to_u64(hapd->own_addr);
 
-	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
-
 #ifdef CONFIG_QCN_EXTN
-		if (hostapd_validate_mbssid_group_size_extn(hapd)) {
-			wpa_printf(MSG_ERROR, "Invalid group size");
-			return -1;
-		}
+	if (hostapd_validate_mbssid_configuration_extn(hapd)) {
+		wpa_printf(MSG_ERROR, "Invalid MBSSID configuration");
+		return -1;
+	}
 #endif
+
+	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
 		if (!multi_mbssid->group) {
 			multi_mbssid->num_mbssid_groups = mbssid_max_interfaces /
 							  iface->conf->group_size;
@@ -7494,13 +7496,13 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 				hapd_iface->num_bss--;
 				wpa_printf(MSG_DEBUG, "%s: free hapd %p %s",
 					   __func__, hapd, hapd->conf->iface);
+				hostapd_multi_mbssid_remove_bss(hapd);
 				hostapd_config_free_bss(hapd->conf);
 				hapd->conf = NULL;
 #ifdef CONFIG_IEEE80211BE
 				hostapd_mld_ref_dec(hapd->mld);
 #endif /* CONFIG_IEEE80211BE */
 				hostapd_free_mbssid_idx(hapd);
-				hostapd_multi_mbssid_remove_bss(hapd);
 				os_free(hapd);
 				return -1;
 			}
@@ -7846,13 +7848,13 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 						  hapd->conf->iface);
 		}
 
+		hostapd_multi_mbssid_remove_bss(hapd);
 		hostapd_config_free_bss(hapd->conf);
 		hapd->conf = NULL;
 #ifdef CONFIG_IEEE80211BE
 		hostapd_mld_ref_dec(hapd->mld);
 #endif /* CONFIG_IEEE80211BE */
 		hostapd_free_mbssid_idx(hapd);
-		hostapd_multi_mbssid_remove_bss(hapd);
 		os_free(hapd);
 
 		iface->num_bss--;
@@ -8540,6 +8542,13 @@ int hostapd_change_config_freq(struct hostapd_data *hapd,
 				    NULL,
 				    hostapd_get_punct_bitmap(hapd),
 				    hapd->iconf->he_6ghz_reg_pwr_type,
+#ifdef CONFIG_IEEE80211BN
+				    hostapd_hw_get_freq(hapd,
+					conf->npca_primary_channel),
+				    conf->npca_punct_bitmap,
+#else
+				    0, 0,
+#endif /* CONFIG_IEEE80211BN */
 				    conf->bandwidth_device,
 				    conf->center_freq_device))
 		return -1;
@@ -9543,6 +9552,11 @@ int hostapd_mld_link_config_check(struct hostapd_data *hapd)
 {
 	struct hostapd_mld *mld = hapd->mld;
 	struct hostapd_data *first = mld->fbss;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return 0;
+#endif /* CONFIG_QCN_EXTN */
 
 	if (hapd->conf->ssid.ssid_len != first->conf->ssid.ssid_len ||
 	    os_memcmp(hapd->conf->ssid.ssid, first->conf->ssid.ssid,

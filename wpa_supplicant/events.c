@@ -2058,12 +2058,6 @@ static int wpa_supplicant_connect_ml_missing(struct wpa_supplicant *wpa_s,
 	return 1;
 }
 
-static void wpas_sta_cac_clear(struct wpa_supplicant *wpa_s)
-{
-	os_memset(&wpa_s->sta_cac, 0, sizeof(wpa_s->sta_cac));
-}
-
-
 static struct hostapd_channel_data *
 wpas_get_chan_data(struct wpa_supplicant *wpa_s, int freq)
 {
@@ -6576,27 +6570,6 @@ static void wpa_supplicant_event_port_authorized(struct wpa_supplicant *wpa_s)
 }
 
 /**
- * wpas_sta_cac_mark_chan_dfs_available - Update channel DFS state to AVAILABLE
- * @wpa_s: Pointer to wpa_supplicant data
- * @freq: Channel frequency in MHz
- *
- * This is used after successful CAC completion handling to refresh local
- * channel state before continuing association flow.
- */
-static void wpas_sta_cac_mark_chan_dfs_available(struct wpa_supplicant *wpa_s,
-						  int freq)
-{
-	struct hostapd_channel_data *chan = wpas_get_chan_data(wpa_s, freq);
-
-	if (!chan)
-		return;
-
-	chan->flag &= ~HOSTAPD_CHAN_DFS_MASK;
-	chan->flag |= HOSTAPD_CHAN_DFS_AVAILABLE;
-}
-
-
-/**
  * wpas_sta_cac_get_link_for_event - Map DFS CAC event to STA CAC link bitmap bit
  * @wpa_s: Pointer to wpa_supplicant data
  * @radar: DFS event payload from driver/kernel
@@ -6650,6 +6623,52 @@ static unsigned int wpas_event_cac_ms(const struct wpa_supplicant *wpa_s,
 
 	return 0;
 }
+
+
+/* wpas_csa_cac_time_ms - Get CAC time for the full operating bandwidth.
+ * @wpa_s - Pointer to wpa_supplicant interface
+ * @cf1 - Center frequency for the CSA channel
+ * @bw - Bandiwdth of the CSA channel
+ *
+ * Iterates all 20 MHz subchannels covered by cf1/bw and returns the maximum
+ * dfs_cac_ms across all DFS subchannels. This mirrors what cfg80211 computes
+ * in cfg80211_chandef_dfs_cac_time() when starting the kernel CAC.
+ *
+ * TODO: extend to cover center_freq2/bw2 for 80+80 MHz operation.
+ */
+static unsigned int wpas_csa_cac_time_ms(const struct wpa_supplicant *wpa_s,
+					 int cf1, int bw)
+{
+	unsigned int cac_ms = 0;
+	int subchan_freq, start_freq;
+
+	start_freq = cf1 - bw / 2 + 10;
+	for (subchan_freq = start_freq; subchan_freq < cf1 + bw / 2;
+	     subchan_freq += 20) {
+		int i;
+
+		for (i = 0; i < wpa_s->hw.num_modes; i++) {
+			const struct hostapd_hw_modes *mode = &wpa_s->hw.modes[i];
+			int j;
+
+			for (j = 0; j < mode->num_channels; j++) {
+				const struct hostapd_channel_data *chan;
+
+				chan = &mode->channels[j];
+				if (chan->freq != subchan_freq)
+					continue;
+				if (!(chan->flag & HOSTAPD_CHAN_RADAR))
+					break;
+				if (chan->dfs_cac_ms > cac_ms)
+					cac_ms = chan->dfs_cac_ms;
+				break;
+			}
+		}
+	}
+
+	return cac_ms;
+}
+
 
 /*
  * wpas_sta_segment_mark_nolhistory - Mark NOL history for a 20 MHz segment set
@@ -6712,10 +6731,288 @@ static void wpas_mark_chan_nolhistory(struct wpa_supplicant *wpa_s, int freq,
 					 punct_bitmap);
 }
 
-static void wpas_disconnect_on_radar(struct wpa_supplicant *wpa_s)
+static void wpas_sta_csa_cac_timeout(void *eloop_ctx, void *timeout_ctx)
 {
+	struct wpa_supplicant *wpa_s = eloop_ctx;
+
+	wpa_dbg(wpa_s, MSG_DEBUG,
+		"STA-DFS: CSA CAC timeout - disconnect");
+	wpa_s->sta_cac.csa_wait_cac_links = 0;
+	wpa_s->sta_cac.csa_non_link_wait = false;
 	wpa_bss_flush(wpa_s, 1);
 	wpa_supplicant_deauthenticate(wpa_s, WLAN_REASON_DEAUTH_LEAVING);
+}
+
+void wpas_sta_cac_clear(struct wpa_supplicant *wpa_s)
+{
+	eloop_cancel_timeout(wpas_sta_csa_cac_timeout, wpa_s, NULL);
+	os_memset(&wpa_s->sta_cac, 0, sizeof(wpa_s->sta_cac));
+}
+
+static void wpas_disconnect_on_radar(struct wpa_supplicant *wpa_s)
+{
+	wpa_s->sta_cac.csa_wait_cac_links = 0;
+	wpa_s->sta_cac.csa_non_link_wait = false;
+	eloop_cancel_timeout(wpas_sta_csa_cac_timeout, wpa_s, NULL);
+	wpa_bss_flush(wpa_s, 1);
+	wpa_supplicant_deauthenticate(wpa_s, WLAN_REASON_DEAUTH_LEAVING);
+}
+
+static bool wpas_sta_csa_need_cac(struct wpa_supplicant *wpa_s,
+				   union wpa_event_data *data)
+{
+	return wpas_sta_bw_requires_cac(wpa_s, data->ch_switch.freq,
+					data->ch_switch.ch_width,
+					data->ch_switch.cf1,
+					data->ch_switch.cf2,
+					data->ch_switch.ch_offset,
+					data->ch_switch.punct_bitmap);
+}
+
+#define STA_DFS_CAC_ETSI_DEFAULT_SEC  (10 * 60)
+#define STA_DFS_CAC_GRACE_SEC         5
+
+/*
+ * wpas_sta_csa_start_cac() - Start CAC upon receiving the CSA complete
+ * @wpa_s - Pointer to wpa_supplicant interface
+ * @data - Pointer to event data for Supplicant events
+ * @is_link - Whether CSA is recevied per link
+ *
+ * Return - 0 on sucess, -1 on failure.
+ */
+static int wpas_sta_csa_start_cac(struct wpa_supplicant *wpa_s,
+				  union wpa_event_data *data, bool is_link)
+{
+	struct hostapd_freq_params params;
+	struct wpa_bss *bss;
+	enum hostapd_hw_mode mode;
+	u8 channel;
+	unsigned int cac_time;
+
+	int link_id = data->ch_switch.link_id;
+
+	/* Both EVENT_LINK_CH_SWITCH and EVENT_CH_SWITCH can fire for the same
+	 * channel switch. Skip if CAC for this link/freq is already running.
+	 */
+	if (is_link) {
+		if (link_id >= 0 && link_id < MAX_NUM_MLD_LINKS &&
+		    (wpa_s->sta_cac.csa_wait_cac_links & BIT(link_id)) &&
+		    wpa_s->sta_cac.csa_link_freq[link_id] == data->ch_switch.freq)
+			return 0;
+	} else {
+		if (wpa_s->sta_cac.csa_non_link_wait &&
+		    wpa_s->sta_cac.csa_non_link_freq == data->ch_switch.freq)
+			return 0;
+
+		/* EVENT_LINK_CH_SWITCH already started CAC for this freq;
+		 * the subsequent non-link EVENT_CH_SWITCH for the same switch
+		 * must be a no-op.
+		 */
+		if (wpa_s->sta_cac.csa_wait_cac_links) {
+			int i;
+
+			for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+				if ((wpa_s->sta_cac.csa_wait_cac_links & BIT(i)) &&
+				    wpa_s->sta_cac.csa_link_freq[i] == data->ch_switch.freq) {
+					/*
+					 * Track non-Link event for same freq to update
+					 * assoc freq upon CAC completion
+					 **/
+					wpa_s->sta_cac.csa_non_link_wait = true;
+					wpa_s->sta_cac.csa_non_link_freq = data->ch_switch.freq;
+					return 0;
+				}
+			}
+		}
+	}
+
+	if (is_link)
+		bss = wpa_s->links[link_id].bss;
+	else
+		bss = wpa_s->current_bss;
+
+	mode = ieee80211_freq_to_chan(data->ch_switch.freq, &channel);
+	if (mode == NUM_HOSTAPD_MODES)
+		return -1;
+
+	os_memset(&params, 0, sizeof(params));
+	params.mode = mode;
+	params.freq = data->ch_switch.freq;
+	params.channel = channel;
+	params.ht_enabled = data->ch_switch.ht_enabled;
+	params.sec_channel_offset = data->ch_switch.ch_offset;
+	params.bandwidth = channel_width_to_int(data->ch_switch.ch_width);
+	if (params.bandwidth <= 0)
+		params.bandwidth = 20;
+	params.center_freq1 = data->ch_switch.cf1 ?
+		data->ch_switch.cf1 : data->ch_switch.freq;
+	params.center_freq2 = data->ch_switch.cf2;
+
+	params.link_id = link_id;
+
+	params.vht_enabled = !!(wpa_s->hw_capab & BIT(CAPAB_VHT));
+	params.ht_enabled  = !!(wpa_s->hw_capab & BIT(CAPAB_HT));
+	params.he_enabled  = !!(wpa_s->hw_capab & BIT(CAPAB_HE));
+	params.eht_enabled = !!(wpa_s->hw_capab & BIT(CAPAB_EHT));
+
+	if (bss) {
+		if (!wpa_bss_get_ie(bss, WLAN_EID_HT_CAP))
+			params.ht_enabled = 0;
+#ifdef CONFIG_IEEE80211AC
+		if (!wpa_bss_get_ie(bss, WLAN_EID_VHT_CAP))
+			params.vht_enabled = 0;
+#endif /* CONFIG_IEEE80211AC */
+#ifdef CONFIG_IEEE80211AX
+		if (!wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_HE_CAPABILITIES))
+			params.he_enabled = 0;
+#endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_IEEE80211BE
+		if (!wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_EHT_CAPABILITIES))
+			params.eht_enabled = 0;
+#endif /* CONFIG_IEEE80211BE */
+	}
+
+	if (!params.he_enabled)
+		params.eht_enabled = 0;
+
+	if (wpa_drv_start_dfs_cac(wpa_s, &params) < 0)
+		return -1;
+
+	if (is_link && link_id >= 0 && link_id < MAX_NUM_MLD_LINKS) {
+		wpa_s->sta_cac.csa_wait_cac_links |= BIT(link_id);
+		wpa_s->sta_cac.csa_link_freq[link_id] = params.freq;
+	} else {
+		wpa_s->sta_cac.csa_non_link_wait = true;
+		wpa_s->sta_cac.csa_non_link_freq = params.freq;
+	}
+
+	cac_time = wpas_csa_cac_time_ms(wpa_s, params.center_freq1,
+					params.bandwidth) / 1000;
+	if (!cac_time)
+		cac_time = STA_DFS_CAC_ETSI_DEFAULT_SEC;
+	cac_time += STA_DFS_CAC_GRACE_SEC;
+	eloop_cancel_timeout(wpas_sta_csa_cac_timeout, wpa_s, NULL);
+	eloop_register_timeout(cac_time, 0, wpas_sta_csa_cac_timeout, wpa_s, NULL);
+	return 0;
+}
+
+static void wpas_sta_csa_apply_deferred_non_link_switch(struct wpa_supplicant *wpa_s,
+							int freq)
+{
+	struct wpa_bss *bss = wpa_s->current_bss;
+
+	wpa_s->assoc_freq = freq;
+
+	if (wpa_s->current_ssid)
+		wpa_s->current_ssid->frequency = freq;
+
+	if (bss && bss->freq != freq) {
+		bss->freq = freq;
+		notify_bss_changes(wpa_s, WPA_BSS_FREQ_CHANGED_FLAG, bss);
+	}
+}
+
+static void wpas_sta_csa_apply_deferred_link_switch(struct wpa_supplicant *wpa_s,
+						    int link_id, int freq)
+{
+	struct wpa_bss *bss;
+
+	if (link_id < 0 || link_id >= MAX_NUM_MLD_LINKS)
+		return;
+
+	wpa_s->links[link_id].freq = freq;
+	bss = wpa_s->links[link_id].bss;
+
+	if (bss && bss->freq != freq) {
+		bss->freq = freq;
+		notify_bss_changes(wpa_s, WPA_BSS_FREQ_CHANGED_FLAG, bss);
+	}
+
+	/* Signal Completion if the Event is for assoc Freq */
+	if (wpa_s->sta_cac.csa_non_link_wait &&
+	    wpa_s->sta_cac.csa_non_link_freq == freq) {
+		wpas_sta_csa_apply_deferred_non_link_switch(wpa_s, freq);
+		wpa_s->sta_cac.csa_non_link_wait = false;
+		wpa_s->sta_cac.csa_non_link_freq = 0;
+	}
+}
+
+static void wpas_sta_csa_apply_deferred_switch(struct wpa_supplicant *wpa_s,
+					    const struct dfs_event *radar)
+{
+	int link_id = radar->link_id;
+
+	if (link_id >= 0 && link_id < MAX_NUM_MLD_LINKS &&
+	    (wpa_s->sta_cac.csa_wait_cac_links & BIT(link_id))) {
+		wpas_sta_csa_apply_deferred_link_switch(wpa_s, link_id,
+							radar->freq);
+		wpa_s->sta_cac.csa_wait_cac_links &= ~BIT(link_id);
+		wpa_s->sta_cac.csa_link_freq[link_id] = 0;
+		return;
+	}
+
+	/* link_id=-1: scan by freq */
+	if (link_id < 0 && wpa_s->sta_cac.csa_wait_cac_links) {
+		int i;
+
+		for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+			if ((wpa_s->sta_cac.csa_wait_cac_links & BIT(i)) &&
+			    wpa_s->sta_cac.csa_link_freq[i] == radar->freq) {
+				wpas_sta_csa_apply_deferred_link_switch(wpa_s, i,
+									radar->freq);
+				wpa_s->sta_cac.csa_wait_cac_links &= ~BIT(i);
+				wpa_s->sta_cac.csa_link_freq[i] = 0;
+				return;
+			}
+		}
+	}
+
+	if (wpa_s->sta_cac.csa_non_link_wait) {
+		wpas_sta_csa_apply_deferred_non_link_switch(wpa_s, radar->freq);
+		wpa_s->sta_cac.csa_non_link_wait = false;
+		wpa_s->sta_cac.csa_non_link_freq = 0;
+	}
+}
+
+
+void wpas_flush_sta_entry(void *eloop_ctx, void *timeout_ctx)
+{
+	struct wpa_supplicant *wpa_s = eloop_ctx;
+
+	wpa_dbg(wpa_s, MSG_DEBUG,
+		"DFS: CSA is not received within 2 seconds -"
+		"assume CSA is completed and flush BSS table");
+	wpas_disconnect_on_radar(wpa_s);
+}
+
+static bool wpas_sta_cac_matches_deferred_csa(struct wpa_supplicant *wpa_s,
+					      const struct dfs_event *radar)
+{
+	if (!wpa_s->sta_dfs_en)
+		return false;
+
+	/* Check per-link CSA CAC */
+	if (radar->link_id >= 0 && radar->link_id < MAX_NUM_MLD_LINKS) {
+		return !!(wpa_s->sta_cac.csa_wait_cac_links & BIT(radar->link_id)) &&
+		       wpa_s->sta_cac.csa_link_freq[radar->link_id] == radar->freq;
+	}
+
+	/* link_id=-1: kernel did not report a link ID. Match by freq against
+	 * any pending per-link or non-link CAC.
+	 */
+	if (wpa_s->sta_cac.csa_wait_cac_links) {
+		int i;
+
+		for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+			if ((wpa_s->sta_cac.csa_wait_cac_links & BIT(i)) &&
+			    wpa_s->sta_cac.csa_link_freq[i] == radar->freq)
+				return true;
+		}
+	}
+
+	/* Check non-link (SLO) CSA CAC */
+	return wpa_s->sta_cac.csa_non_link_wait &&
+	       wpa_s->sta_cac.csa_non_link_freq == radar->freq;
 }
 
 static void wpas_event_dfs_cac_started(struct wpa_supplicant *wpa_s,
@@ -6768,7 +7065,29 @@ static void wpas_event_dfs_cac_finished(struct wpa_supplicant *wpa_s,
 				return;
 
 			wpa_s->sta_cac.cac_completed_links |= bit;
-			wpas_sta_cac_mark_chan_dfs_available(wpa_s, radar->freq);
+
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"STA-DFS: radar detected on %d MHz (no AP iface) - "
+				"updating hw channel states directly: "
+				"ht_enabled=%d chan_offset=%d chan_width=%d "
+				"cf1=%d cf2=%d radar_bitmap=0x%04X "
+				"chan_width_device=%d cf_device=%d",
+				radar->freq, radar->ht_enabled,
+				radar->chan_offset,
+				radar->chan_width, radar->cf1, radar->cf2,
+				radar->radar_bitmap,
+				radar->chan_width_device, radar->cf_device);
+
+#ifdef CONFIG_QCN_EXTN
+			wpas_set_dfs_state(wpa_s, radar->freq,
+					   radar->ht_enabled,
+					   radar->chan_offset,
+					   radar->chan_width,
+					   radar->cf1,
+					   radar->cf2,
+					   HOSTAPD_CHAN_DFS_AVAILABLE,
+					   radar->radar_bitmap);
+#endif
 			wpa_dbg(wpa_s, MSG_DEBUG,
 				"STA-DFS: CAC finished bit=0x%x req=0x%x done=0x%x",
 				bit, wpa_s->sta_cac.dfs_links,
@@ -6782,6 +7101,24 @@ static void wpas_event_dfs_cac_finished(struct wpa_supplicant *wpa_s,
 				wpa_supplicant_connect(wpa_s, selected, ssid);
 				return;
 			}
+
+			return;
+		}
+
+		if (wpas_sta_cac_matches_deferred_csa(wpa_s, radar)) {
+#ifdef CONFIG_QCN_EXTN
+			wpas_set_dfs_state(wpa_s, radar->freq,
+					   radar->ht_enabled,
+					   radar->chan_offset,
+					   radar->chan_width,
+					   radar->cf1,
+					   radar->cf2,
+					   HOSTAPD_CHAN_DFS_AVAILABLE,
+					   radar->radar_bitmap);
+#endif
+			wpa_dbg(wpa_s, MSG_DEBUG,"STA-DFS: CSA CAC finished");
+			eloop_cancel_timeout(wpas_sta_csa_cac_timeout, wpa_s, NULL);
+			wpas_sta_csa_apply_deferred_switch(wpa_s, radar);
 
 			return;
 		}
@@ -6807,6 +7144,19 @@ static void wpas_event_dfs_cac_aborted(struct wpa_supplicant *wpa_s,
 		    wpa_s->sta_cac.dfs_links) {
 			wpas_sta_cac_clear(wpa_s);
 			wpa_supplicant_req_new_scan(wpa_s, 0, 0);
+			return;
+		}
+
+		if (wpas_sta_cac_matches_deferred_csa(wpa_s, radar)) {
+			/* CAC was aborted — may be radar-caused or benign.
+			 * Do NOT clear csa_wait_cac here: if this abort was
+			 * due to radar, RADAR_DETECTED arrives immediately
+			 * after with the proper radar_bitmap and will send
+			 * RCSA. Clearing state here would cause RADAR_DETECTED
+			 * to miss the csa_wait_cac path.
+			 * For benign aborts (no RADAR_DETECTED follows), the
+			 * csa_cac_timeout will disconnect after the grace period.
+			 */
 			return;
 		}
 
@@ -7324,6 +7674,43 @@ static int wpas_pasn_auth(struct wpa_supplicant *wpa_s,
 #endif /* CONFIG_PASN */
 
 
+static bool wpas_sta_csa_handle_cac_start(struct wpa_supplicant *wpa_s,
+					  enum wpa_event_type event,
+					  union wpa_event_data *data,
+					  bool is_link_event)
+{
+	enum wpa_event_type expected_event;
+
+	expected_event = is_link_event ? EVENT_LINK_CH_SWITCH :
+			    EVENT_CH_SWITCH;
+
+	if (event != expected_event)
+		return false;
+
+	if (!wpas_sta_csa_need_cac(wpa_s, data))
+		return false;
+
+	eloop_cancel_timeout(wpas_flush_sta_entry, wpa_s, NULL);
+	if (is_link_event) {
+		wpa_printf(MSG_INFO, "STA-DFS: CSA CAC start link_id=%d freq=%d",
+			   data->ch_switch.link_id, data->ch_switch.freq);
+	} else {
+		wpa_printf(MSG_INFO, "STA-DFS: CSA CAC start (non-link) freq=%d",
+			   data->ch_switch.freq);
+	}
+
+	if (wpas_sta_csa_start_cac(wpa_s, data, is_link_event) < 0) {
+		wpa_printf(MSG_INFO,
+			   "STA-DFS: CSA CAC start failed - disconnecting");
+		wpas_disconnect_on_radar(wpa_s);
+		return true;
+	}
+
+	wpa_printf(MSG_INFO, "STA-DFS: CSA CAC started successfully");
+	return true;
+}
+
+
 void supplicant_event(void *ctx, enum wpa_event_type event,
 		      union wpa_event_data *data)
 {
@@ -7701,6 +8088,10 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			data->ch_switch.cf1,
 			data->ch_switch.cf2,
 			data->ch_switch.mcst);
+
+		if (wpas_sta_csa_handle_cac_start(wpa_s, event, data, true))
+			break;
+
 		if (event == EVENT_LINK_CH_SWITCH_STARTED)
 #ifdef CONFIG_QCN_EXTN
 		{
@@ -7741,6 +8132,10 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			data->ch_switch.cf1,
 			data->ch_switch.cf2,
 			data->ch_switch.mcst);
+
+		if (wpas_sta_csa_handle_cac_start(wpa_s, event, data, false))
+			break;
+
 		if (event == EVENT_CH_SWITCH_STARTED)
 #ifdef CONFIG_QCN_EXTN
 		{
@@ -7824,12 +8219,20 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 						data->dfs_event.chan_offset,
 						(u16)~data->dfs_event.radar_bitmap);
 				if (wpa_s->wpa_state == WPA_STACACING &&
-						wpa_s->sta_cac.dfs_links) {
-					wpas_sta_cac_clear(wpa_s);
-					wpa_bss_flush(wpa_s, 1);
-					wpa_supplicant_req_new_scan(wpa_s, 0, 0);
-					break;
+				    wpa_s->sta_cac.dfs_links) {
+					if (IS_CSH_PROCESS_RCSA_ENABLED(wpa_s->conf->cswopts)) {
+#ifdef CONFIG_QCN_EXTN
+						wpa_rcsa_handle_radar(wpa_s, &data->dfs_event);
+#endif
+					} else {
+
+						wpas_sta_cac_clear(wpa_s);
+						wpa_bss_flush(wpa_s, 1);
+						wpa_supplicant_req_new_scan(wpa_s, 0, 0);
+						break;
+					}
 				}
+
 			}
 			/* On Radar detection, if uplink_csa/rcsa is not enabled
 			 * flush all the scan bss cache and deauth the STA
@@ -7837,7 +8240,13 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			if (!wpa_s->conf->uplink_csa &&
 			    !IS_CSH_PROCESS_RCSA_ENABLED(wpa_s->conf->cswopts)) {
 				wpas_disconnect_on_radar(wpa_s);
+			} else if (IS_CSH_PROCESS_RCSA_ENABLED(wpa_s->conf->cswopts)
+				   && wpa_s->sta_dfs_en) {
+#ifdef CONFIG_QCN_EXTN
+				wpa_rcsa_handle_radar(wpa_s, &data->dfs_event);
+#endif
 			}
+
 		}
 		break;
 #ifdef CONFIG_AP
