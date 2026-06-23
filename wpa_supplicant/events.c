@@ -2264,9 +2264,22 @@ static void wpas_sta_cac_abort_for_link(struct wpa_supplicant *wpa_s,
 	}
 }
 
-static bool wpas_sta_segment_has_nolhistory(struct wpa_supplicant *wpa_s,
-					    int start_freq, int n_chans,
-					    u16 punct_bitmap)
+/*
+ * wpas_sta_segment_nolhistory_needs_cac() - Checks whether the
+ * input channels need CAC based on NOL history.
+ *
+ * @wpa_s: Pointer to wpa_suplicant interface
+ * @start_freq: Start Frequency of the bandwidth segment
+ * @n_chans: Total number of channels in the bandwidth segment
+ * @punct_bitmap: Puncture pattern indicating punctured channels in the
+ * operating segment.
+ *
+ * Return: True, if CAC is needed, false otherwise.
+ */
+static bool
+wpas_sta_segment_nolhistory_needs_cac(struct wpa_supplicant *wpa_s,
+				      int start_freq, int n_chans,
+				      u16 punct_bitmap)
 {
 	const int bw20 = 20;
 	int i;
@@ -2280,7 +2293,9 @@ static bool wpas_sta_segment_has_nolhistory(struct wpa_supplicant *wpa_s,
 		chan = wpas_get_chan_data(wpa_s, sub_freq);
 		if (!chan || !(chan->flag & HOSTAPD_CHAN_RADAR))
 			continue;
-		if (chan->nolhistory) {
+		if (chan->nolhistory &&
+		    ((chan->flag & HOSTAPD_CHAN_DFS_MASK) !=
+		     HOSTAPD_CHAN_DFS_AVAILABLE)) {
 			wpa_dbg(wpa_s, MSG_DEBUG, "STA-DFS: CHAN NOL History");
 			return true;
 		}
@@ -2337,7 +2352,8 @@ static void wpas_sta_get_bw_layout(int freq, enum chan_width width, int cf1,
 }
 
 /**
- * wpas_sta_bw_has_nolhistory - Check NOL history overlap for a chandef
+ * wpas_sta_bw_nolhistory_needs_cac - Check if any subchannel with NOL history
+ *                                    still requires CAC
  * @wpa_s: Pointer to wpa_supplicant data
  * @freq: Primary frequency in MHz
  * @width: Channel width
@@ -2347,13 +2363,14 @@ static void wpas_sta_get_bw_layout(int freq, enum chan_width width, int cf1,
  * @punct_bitmap: Preamble puncturing bitmap for subchannel filtering
  *
  * Derive all 20 MHz subchannels covered by the given chandef and check whether
- * any DFS/radar subchannel has NOL history set.
+ * any DFS/radar subchannel has NOL history set and has not yet completed CAC.
  *
- * Return: true if at least one covered radar subchannel has NOL history
+ * Return: true if CAC is required on at least one subchannel due to NOL history
  */
-static bool wpas_sta_bw_has_nolhistory(struct wpa_supplicant *wpa_s, int freq,
-				       enum chan_width width, int cf1, int cf2,
-				       int chan_offset, u16 punct_bitmap)
+static bool
+wpas_sta_bw_nolhistory_needs_cac(struct wpa_supplicant *wpa_s, int freq,
+				 enum chan_width width, int cf1, int cf2,
+				 int chan_offset, u16 punct_bitmap)
 {
 	int start_freq, n_chans;
 
@@ -2362,8 +2379,8 @@ static bool wpas_sta_bw_has_nolhistory(struct wpa_supplicant *wpa_s, int freq,
 
 	wpas_sta_get_bw_layout(freq, width, cf1, chan_offset, &n_chans,
 			       &start_freq);
-	if (wpas_sta_segment_has_nolhistory(wpa_s, start_freq, n_chans,
-					    punct_bitmap))
+	if (wpas_sta_segment_nolhistory_needs_cac(wpa_s, start_freq, n_chans,
+						  punct_bitmap))
 		return true;
 
 	wpa_dbg(wpa_s, MSG_DEBUG, "STA-DFS: NOL check no match");
@@ -2385,15 +2402,16 @@ static bool wpas_sta_bw_has_nolhistory(struct wpa_supplicant *wpa_s, int freq,
  *
  * Return: true if CAC is required before using this chandef
  */
-static bool wpas_sta_bw_requires_cac(struct wpa_supplicant *wpa_s, int freq,
-		enum chan_width width, int cf1, int cf2,
-		int chan_offset, u16 punct_bitmap)
+static bool
+wpas_sta_bw_requires_cac(struct wpa_supplicant *wpa_s, int freq,
+			 enum chan_width width, int cf1, int cf2,
+			 int chan_offset, u16 punct_bitmap)
 {
 	if (!wpa_s->sta_dfs_en || !is_5ghz_freq(freq))
 		return false;
 
-	return wpas_sta_bw_has_nolhistory(wpa_s, freq, width, cf1, cf2,
-			chan_offset, punct_bitmap);
+	return wpas_sta_bw_nolhistory_needs_cac(wpa_s, freq, width, cf1, cf2,
+						chan_offset, punct_bitmap);
 }
 
 static enum chan_width convert_bw_to_cw_enum(int bw)
