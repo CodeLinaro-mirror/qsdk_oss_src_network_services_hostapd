@@ -261,7 +261,8 @@ def test_ap_qacs_dynamic(dev, apdev):
 
     # Inject fake BSS and configure survey noise before starting AP
     inject_fake_bss(dev[0], phy, 2412, "02:00:00:00:00:01", "Fake_AP_1")
-    inject_fake_bss(dev[0], phy, 2437, "02:00:00:00:00:02", "Fake_AP_2")
+    inject_fake_bss(dev[0], phy, 2412, "02:00:00:00:00:02", "Fake_AP_2")
+    inject_fake_bss(dev[0], phy, 2437, "02:00:00:00:00:03", "Fake_AP_3")
     set_hwsim_environment(dev[0], phy, noise=-95, busy_pct=0)
 
     try:
@@ -286,8 +287,53 @@ def test_ap_qacs_dynamic(dev, apdev):
 
         out = hapd.request("ACS show_report")
         logger.info("ACS_REPORT output:\n" + out)
+        out = hapd.request("ACS show_neighbor_report")
+        logger.info("ACS_NEIGHBOR_REPORT output:\n" + out)
 
     finally:
         # Cleanup
         clear_fake_bss(dev[0], phy)
         set_hwsim_environment(dev[0], phy, -92, 0)
+
+def test_ap_qacs_dynamic_5ghz(dev, apdev):
+    """Test dynamic survey parameters and fake BSS injection with ACS on 5 GHz"""
+
+    logger.info("Setting up dynamic 5 GHz survey environment and injecting fake BSS...")
+
+    phy = get_phy(dev[0], apdev[0]['ifname'])
+
+    inject_fake_bss(dev[0], phy, 5180, "02:00:00:00:10:01", "Fake_AP_5G_1")
+    inject_fake_bss(dev[0], phy, 5180, "02:00:00:00:10:02", "Fake_AP_5G_2")
+    inject_fake_bss(dev[0], phy, 5220, "02:00:00:00:10:03", "Fake_AP_5G_3")
+    set_hwsim_environment(dev[0], phy, noise=-95, busy_pct=0)
+
+    try:
+        params = hostapd.wpa2_params(ssid="test-dynamic-acs-5g", passphrase="12345678")
+        params['hw_mode'] = 'a'
+        params['channel'] = '0'
+        params['qacs_enable'] = '1'
+        params['acs_num_scans'] = '1'
+        params['country_code'] = 'US'
+
+        logger.info("Starting hostapd with ACS enabled on 5 GHz...")
+        hapd = hostapd.add_ap(apdev[0], params, wait_enabled=False)
+        wait_acs(hapd)
+
+        channel = hapd.get_status_field("channel")
+        freq = hapd.get_status_field("freq")
+        logger.info("==================================================")
+        logger.info("ACS selected channel: " + str(channel) + " (Freq: " + str(freq) + " MHz)")
+        logger.info("==================================================")
+
+        if int(freq) < 5000:
+            raise Exception("Unexpected frequency")
+
+        out = hapd.request("ACS show_report")
+        logger.info("ACS_REPORT output:\n" + out)
+        out = hapd.request("ACS show_neighbor_report")
+        logger.info("ACS_NEIGHBOR_REPORT output:\n" + out)
+
+    finally:
+        clear_fake_bss(dev[0], phy)
+        set_hwsim_environment(dev[0], phy, -95, 0)
+        clear_regdom(hapd, dev)
