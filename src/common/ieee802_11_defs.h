@@ -2127,6 +2127,11 @@ enum plink_action_field {
 #define VENDOR_VHT_TYPE		0x04
 #define VENDOR_VHT_SUBTYPE	0x08
 #define VENDOR_VHT_SUBTYPE2	0x00
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
+/* Vendor specific client sends Broadcom VHT vendor IE with subtype 0x07
+ * (same wire layout as VENDOR_VHT_SUBTYPE/SUBTYPE2: OUI+type+subtype+VHT caps) */
+#define VENDOR_VHT_SUBTYPE3	0x07
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 
 #define VENDOR_HT_CAPAB_OUI_TYPE 0x33 /* 00-90-4c:0x33 */
 

@@ -188,7 +188,11 @@ static int ieee802_11_parse_vendor_specific(const u8 *pos, size_t elen,
 		case VENDOR_VHT_TYPE:
 			if (elen > 4 &&
 			    (pos[4] == VENDOR_VHT_SUBTYPE ||
-			     pos[4] == VENDOR_VHT_SUBTYPE2)) {
+			     pos[4] == VENDOR_VHT_SUBTYPE2
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
+			     || pos[4] == VENDOR_VHT_SUBTYPE3
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
+			     )) {
 				elems->vendor_vht = pos;
 				elems->vendor_vht_len = elen;
 #if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
