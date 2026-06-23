@@ -5493,7 +5493,7 @@ static void hostapd_mld_ref_inc(struct hostapd_mld *mld)
 }
 
 
-static void hostapd_mld_ref_dec(struct hostapd_mld *mld)
+void hostapd_mld_ref_dec(struct hostapd_mld *mld)
 {
 	if (!mld)
 		return;
@@ -5532,7 +5532,7 @@ int hostapd_parse_link_id(char *buf)
 
 #endif /* CONFIG_IEEE80211BE */
 
-static void hostapd_multi_mbssid_remove_bss(struct hostapd_data *hapd)
+void hostapd_multi_mbssid_remove_bss(struct hostapd_data *hapd)
 {
 	struct hostapd_data *next_txbss;
 	struct hostapd_multi_mbssid_group *group;
