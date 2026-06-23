@@ -4039,6 +4039,20 @@ enum ieee80211_pqc_content_presence {
 #define UHR_MODE_TUPLE_MODE_ENABLE		BIT(6)
 #define UHR_MODE_TUPLE_MODE_UPDATE		BIT(7)
 
+/* Enhanced Critical Updates Information field (Figure 9-803a, 802.11bn D2.0)
+ * This 1-octet field is carried in:
+ *  - TBTT Information field of the RNR element
+ *  - Common Info field of the Basic Multi-Link element
+ *  - STA Info field of the Basic Multi-Link element
+ */
+#define UHR_ECU_INFO_ENHANCED_BPCC_MASK		0x0F
+#define UHR_ECU_INFO_CRITICAL_UPDATE_TYPE_MASK	0x70
+#define UHR_ECU_INFO_CRITICAL_UPDATE_TYPE_SHIFT	4
+#define UHR_ECU_INFO_ENHANCED_ALL_UPDATES_INCLUDED	BIT(7)
+
+/* Critical Update Type subfield values (bits 4-6 of ECU Info field) */
+#define UHR_CRITICAL_UPDATE_TYPE_UHR_MODE	1
+
 #ifdef _MSC_VER
 #pragma pack(pop)
 #endif /* _MSC_VER */
