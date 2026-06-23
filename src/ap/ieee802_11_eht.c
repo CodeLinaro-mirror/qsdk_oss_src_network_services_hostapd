@@ -893,6 +893,12 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		common_info_len += 2;
 	}
 
+	if (hostapd_is_uhr_enabled(hapd)) {
+		/* Enhanced Critical Updates Information */
+		control |= BASIC_MULTI_LINK_CTRL_PRES_ENH_CRIT_UPD;
+		common_info_len++;
+	}
+
 	wpabuf_put_le16(buf, control);
 
 	wpabuf_put_u8(buf, common_info_len);
@@ -977,6 +983,10 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		wpabuf_put_le16(buf, ext_mld_cap);
 	}
 
+	/* Currently hard-code Enhanced Critical Updates Information to zero */
+	if (hostapd_is_uhr_enabled(hapd))
+		wpabuf_put_u8(buf, 0);
+
 	if (!mld_info)
 		goto out;
 
@@ -1010,6 +1020,9 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		 * frames */
 		if (include_bpcc)
 			sta_info_len++;
+		/* Enhanced Critical Updates Information */
+		if (include_bpcc && hostapd_is_uhr_enabled(hapd))
+			sta_info_len++;
 
 		total_len = sta_info_len + link->resp_sta_profile_len;
 
@@ -1031,6 +1044,8 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 
 		if (include_bpcc)
 			control |= BASIC_MLE_STA_CTRL_PRES_BSS_PARAM_COUNT;
+		if (include_bpcc && hostapd_is_uhr_enabled(hapd))
+			control |= BASIC_MLE_STA_CTRL_PRES_ENH_CRIT_UPD;
 
 		wpabuf_put_le16(buf, control);
 
@@ -1055,6 +1070,9 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		/* BSS Parameters Change Count */
 		if (include_bpcc)
 			wpabuf_put_u8(buf, link_bss->rx_cu_param.bpcc);
+		/* Enhanced Critical Updates Information */
+		if (include_bpcc && hostapd_is_uhr_enabled(hapd))
+			wpabuf_put_u8(buf, 0);
 
 		if (!link->resp_sta_profile)
 			continue;
@@ -1126,6 +1144,10 @@ size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 	if (include_ext_cap)
 		len += 2;
 
+	/* Enhanced Critical Updates Information */
+	if (hostapd_is_uhr_enabled(hapd))
+		len++;
+
 	if (!info)
 		goto out;
 
@@ -1160,6 +1182,10 @@ size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 		if (include_bpcc)
 			sta_prof_len++;
 
+		/* Enhanced Critical Updates Information */
+		if (include_bpcc && hostapd_is_uhr_enabled(hapd))
+			sta_prof_len++;
+
 		/* Per-STA Profile Subelement(1), Length (1) */
 		len += 2;
 		len += sta_prof_len;
@@ -1184,7 +1210,8 @@ out:
 }
 
 
-static size_t hostapd_eid_eht_ml_len(struct mld_info *info,
+static size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd,
+				     struct mld_info *info,
 				     bool include_mld_id, bool include_bpcc,
 				     u8 include_ext_cap)
 {
@@ -1197,6 +1224,10 @@ static size_t hostapd_eid_eht_ml_len(struct mld_info *info,
 
 	if (include_ext_cap)
 		eht_ml_len += 2;
+
+	/* Enhanced Critical Updates Information (1) in common info */
+	if (hostapd_is_uhr_enabled(hapd))
+		eht_ml_len++;
 
 	for (link_id = 0; info && link_id < ARRAY_SIZE(info->links);
 	     link_id++) {
@@ -1212,6 +1243,10 @@ static size_t hostapd_eid_eht_ml_len(struct mld_info *info,
 		/* BSS Parameters Change Count (1) for (Re)Association Response
 		 * frames */
 		if (include_bpcc)
+			sta_len++;
+
+		/* Enhanced Critical Updates Information (1) in per-STA profile */
+		if (include_bpcc && hostapd_is_uhr_enabled(hapd))
 			sta_len++;
 
 		/* Element data and (fragmentation) headers */
@@ -1267,7 +1302,8 @@ size_t hostapd_eid_eht_ml_beacon_len(struct hostapd_data *hapd,
 				     bool include_mld_id,
 				     u8 include_ext_cap)
 {
-	return hostapd_eid_eht_ml_len(info, include_mld_id, false, include_ext_cap);
+	return hostapd_eid_eht_ml_len(hapd, info, include_mld_id, false,
+				       include_ext_cap);
 }
 
 
@@ -2393,7 +2429,7 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 		 * once mac80211 is fixed to match the standard (or this comment
 		 * be removed if the standard is modified to match
 		 * implementation). */
-		mle_len = hostapd_eid_eht_ml_len(&mld, false, true, 0);
+		mle_len = hostapd_eid_eht_ml_len(hapd, &mld, false, true, 0);
 		len += mle_len;
 	}
 
