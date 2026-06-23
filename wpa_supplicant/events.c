@@ -6753,9 +6753,16 @@ static void wpas_mark_chan_nolhistory(struct wpa_supplicant *wpa_s, int freq,
 static void wpas_sta_csa_cac_timeout(void *eloop_ctx, void *timeout_ctx)
 {
 	struct wpa_supplicant *wpa_s = eloop_ctx;
+	int link_id = (int)(uintptr_t)timeout_ctx;
 
-	wpa_dbg(wpa_s, MSG_DEBUG,
-		"STA-DFS: CSA CAC timeout - disconnect");
+	if (link_id < MAX_NUM_MLD_LINKS) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"STA-DFS: CSA CAC timeout link_id=%d - disconnect",
+			link_id);
+	} else {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"STA-DFS: CSA CAC timeout (non-link) - disconnect");
+	}
 	wpa_s->sta_cac.csa_wait_cac_links = 0;
 	wpa_s->sta_cac.csa_non_link_wait = false;
 	wpa_bss_flush(wpa_s, 1);
@@ -6764,15 +6771,20 @@ static void wpas_sta_csa_cac_timeout(void *eloop_ctx, void *timeout_ctx)
 
 void wpas_sta_cac_clear(struct wpa_supplicant *wpa_s)
 {
-	eloop_cancel_timeout(wpas_sta_csa_cac_timeout, wpa_s, NULL);
+	int i;
+
+	for (i = 0; i < MAX_NUM_MLD_LINKS; i++)
+		eloop_cancel_timeout(wpas_sta_csa_cac_timeout, wpa_s,
+				     (void *)(uintptr_t)i);
+	/* non-link sentinel */
+	eloop_cancel_timeout(wpas_sta_csa_cac_timeout, wpa_s,
+			     (void *)(uintptr_t)MAX_NUM_MLD_LINKS);
 	os_memset(&wpa_s->sta_cac, 0, sizeof(wpa_s->sta_cac));
 }
 
 static void wpas_disconnect_on_radar(struct wpa_supplicant *wpa_s)
 {
-	wpa_s->sta_cac.csa_wait_cac_links = 0;
-	wpa_s->sta_cac.csa_non_link_wait = false;
-	eloop_cancel_timeout(wpas_sta_csa_cac_timeout, wpa_s, NULL);
+	wpas_sta_cac_clear(wpa_s);
 	wpa_bss_flush(wpa_s, 1);
 	wpa_supplicant_deauthenticate(wpa_s, WLAN_REASON_DEAUTH_LEAVING);
 }
@@ -6809,6 +6821,13 @@ static int wpas_sta_csa_start_cac(struct wpa_supplicant *wpa_s,
 	unsigned int cac_time;
 
 	int link_id = data->ch_switch.link_id;
+
+	if (is_link && (link_id < 0 || link_id >= MAX_NUM_MLD_LINKS)) {
+		wpa_dbg(wpa_s, MSG_ERROR,
+			"STA-DFS: invalid link_id=%d for CSA CAC, ignoring",
+			link_id);
+		return -1;
+	}
 
 	/* Both EVENT_LINK_CH_SWITCH and EVENT_CH_SWITCH can fire for the same
 	 * channel switch. Skip if CAC for this link/freq is already running.
@@ -6910,8 +6929,23 @@ static int wpas_sta_csa_start_cac(struct wpa_supplicant *wpa_s,
 	if (!cac_time)
 		cac_time = STA_DFS_CAC_ETSI_DEFAULT_SEC;
 	cac_time += STA_DFS_CAC_GRACE_SEC;
-	eloop_cancel_timeout(wpas_sta_csa_cac_timeout, wpa_s, NULL);
-	eloop_register_timeout(cac_time, 0, wpas_sta_csa_cac_timeout, wpa_s, NULL);
+
+	/* Register a per-link timeout so each link's safety-net fires
+	 * independently. A second link starting CAC will not reset an
+	 * already-running timer for a different link.
+	 */
+	if (is_link && link_id >= 0 && link_id < MAX_NUM_MLD_LINKS) {
+		eloop_cancel_timeout(wpas_sta_csa_cac_timeout, wpa_s,
+				     (void *)(uintptr_t)link_id);
+		eloop_register_timeout(cac_time, 0, wpas_sta_csa_cac_timeout,
+				       wpa_s, (void *)(uintptr_t)link_id);
+	} else {
+		eloop_cancel_timeout(wpas_sta_csa_cac_timeout, wpa_s,
+				     (void *)(uintptr_t)MAX_NUM_MLD_LINKS);
+		eloop_register_timeout(cac_time, 0, wpas_sta_csa_cac_timeout,
+				       wpa_s,
+				       (void *)(uintptr_t)MAX_NUM_MLD_LINKS);
+	}
 	return 0;
 }
 
@@ -7136,7 +7170,28 @@ static void wpas_event_dfs_cac_finished(struct wpa_supplicant *wpa_s,
 					   radar->radar_bitmap);
 #endif
 			wpa_dbg(wpa_s, MSG_DEBUG,"STA-DFS: CSA CAC finished");
-			eloop_cancel_timeout(wpas_sta_csa_cac_timeout, wpa_s, NULL);
+			if (radar->link_id >= 0 &&
+			    radar->link_id < MAX_NUM_MLD_LINKS) {
+				eloop_cancel_timeout(
+					wpas_sta_csa_cac_timeout, wpa_s,
+					(void *)(uintptr_t)radar->link_id);
+			} else {
+				/* link_id not reported — cancel by freq match */
+				int i;
+
+				for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+					if (wpa_s->sta_cac.csa_link_freq[i] ==
+					    radar->freq)
+						eloop_cancel_timeout(
+							wpas_sta_csa_cac_timeout,
+							wpa_s,
+							(void *)(uintptr_t)i);
+				}
+				if (wpa_s->sta_cac.csa_non_link_freq == radar->freq)
+					eloop_cancel_timeout(
+						wpas_sta_csa_cac_timeout, wpa_s,
+						(void *)(uintptr_t)MAX_NUM_MLD_LINKS);
+			}
 			wpas_sta_csa_apply_deferred_switch(wpa_s, radar);
 
 			return;
