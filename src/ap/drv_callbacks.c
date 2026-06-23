@@ -4237,6 +4237,15 @@ hostapd_handle_critical_update_notify(struct hostapd_data *hapd,
 	}
 
 	hapd->uhr_ecu.state = new_state;
+	/*
+	 * Enhanced All Updates Included (B7 of the ECUI byte) must be 1
+	 * while the UHR Parameters Update element is present in the frame
+	 * (advance- and post-notification phases), and 0 once the element
+	 * is no longer included (UHR_ECU_UPDATE_IND_IN_TIM / IDLE).
+	 */
+	hapd->rx_ecu_param.all_updates_included =
+		(new_state == UHR_ECU_ADVANCE_NOTIFY ||
+		 new_state == UHR_ECU_POST_ADVANCE_NOTIFY);
 
 	/* TODO: Refresh beacon so the UHR Params Update element is added, updated,
 	 * or removed according to the new ECU state. */

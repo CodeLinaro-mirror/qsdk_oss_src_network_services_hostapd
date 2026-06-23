@@ -16176,11 +16176,13 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 			*eid |= RNR_TBTT_INFO_MLD_PARAM2_LINK_DISABLED;
 		eid++;
 
-		/* Enhanced Critical Updates Information (IEEE P802.11bn/D1.5, Figure 9-800a),
-		 * placeholder, update when critical_update is handled.
-		 */
-		if (tbtt_info_len == RNR_TBTT_INFO_MLD_ECU_LEN)
-			*eid++ = 0;
+		/* Enhanced Critical Updates Information (IEEE P802.11bn/D2.0, Figure 9-803a) */
+		if (tbtt_info_len == RNR_TBTT_INFO_MLD_ECU_LEN) {
+			u8 ecu_info = (type != WLAN_FC_STYPE_BEACON) ?
+				hostapd_get_ecu_info(&bss->rx_ecu_param) : 0;
+
+			*eid++ = ecu_info;
+		}
 
 	}
 #endif /* CONFIG_IEEE80211BE */
