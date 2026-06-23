@@ -393,6 +393,7 @@ void wpa_supplicant_mark_disassoc(struct wpa_supplicant *wpa_s)
 	}
 
 	wpa_supplicant_set_state(wpa_s, WPA_DISCONNECTED);
+	wpas_sta_cac_clear(wpa_s);
 	bssid_changed = !is_zero_ether_addr(wpa_s->bssid);
 	os_memset(wpa_s->bssid, 0, ETH_ALEN);
 	os_memset(wpa_s->pending_bssid, 0, ETH_ALEN);
@@ -7721,8 +7722,11 @@ static bool wpas_sta_csa_handle_cac_start(struct wpa_supplicant *wpa_s,
 	if (event != expected_event)
 		return false;
 
-	if (!wpas_sta_csa_need_cac(wpa_s, data))
+	if (!wpas_sta_csa_need_cac(wpa_s, data)) {
+		/* New channel does not need CAC. Stop any stale timeout */
+		wpas_sta_cac_clear(wpa_s);
 		return false;
+	}
 
 	eloop_cancel_timeout(wpas_flush_sta_entry, wpa_s, NULL);
 	if (is_link_event) {
