@@ -6478,6 +6478,18 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 
 #ifdef CONFIG_IEEE80211BE
 	if (hostapd_require_tx_bss(hapd,
+				   hostapd_eht_mcs_nss_set_is_set(
+					hapd->conf->eht_tx_mcs_nss_set),
+				   "eht_tx_mcs_nss_set") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hostapd_eht_mcs_nss_set_is_set(
+					hapd->conf->eht_rx_mcs_nss_set),
+				   "eht_rx_mcs_nss_set") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
 				   hapd->conf->eht_phy_capab_mask &
 				   EHT_PHY_BSS_OVR_SU_BEAMFORMER,
 				   "bss_eht_su_beamformer") < 0)

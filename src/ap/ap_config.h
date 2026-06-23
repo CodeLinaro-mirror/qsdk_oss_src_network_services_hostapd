@@ -25,6 +25,18 @@
 #include "../../qcn_extns/hostapd_if_plugin.h"
 #endif
 
+#define EHT_MCS_NSS_MAP_UNSET 0xffffU
+#define EHT_MCS_NSS_SET 3
+
+#ifdef CONFIG_IEEE80211BE
+static inline bool hostapd_eht_mcs_nss_set_is_set(const u16 mcs_nss_set[EHT_MCS_NSS_SET])
+{
+	return mcs_nss_set[0] != EHT_MCS_NSS_MAP_UNSET ||
+		mcs_nss_set[1] != EHT_MCS_NSS_MAP_UNSET ||
+		mcs_nss_set[2] != EHT_MCS_NSS_MAP_UNSET;
+}
+#endif /* CONFIG_IEEE80211BE */
+
 enum macaddr_acl {
 	ACCEPT_UNLESS_DENIED = 0,
 	DENY_UNLESS_ACCEPTED = 1,
@@ -1295,6 +1307,10 @@ struct hostapd_bss_config {
 	u16 vht_mcs_nss_set;
 #endif /* CONFIG_IEEE80211AC */
 	u32 ht_mcs_nss_set;
+#ifdef CONFIG_IEEE80211BE
+	u16 eht_tx_mcs_nss_set[EHT_MCS_NSS_SET];
+	u16 eht_rx_mcs_nss_set[EHT_MCS_NSS_SET];
+#endif /* CONFIG_IEEE80211BE */
 
 	enum beacon_rate_type rate_type;
 	unsigned int beacon_rate;

@@ -763,6 +763,40 @@ static int hostapd_parse_chanlist(struct hostapd_config *conf, char *val)
 }
 
 
+#ifdef CONFIG_IEEE80211BE
+static int hostapd_parse_eht_mcs_nss_set(const char *pos,
+					  u16 mcs_nss_set[EHT_MCS_NSS_SET],
+					  const char *config_name)
+{
+	u16 tmp[EHT_MCS_NSS_SET];
+	int n_consumed = 0, bw, n;
+
+	if (sscanf(pos, "%hx %hx %hx %n",
+		   &tmp[0], &tmp[1], &tmp[2],
+		   &n_consumed) != 3) {
+		wpa_printf(MSG_ERROR, "%s: expected 3 hex values", config_name);
+		return -1;
+	}
+	/* 0: <=80Mhz, 1: 160Mhz, 2: 320Mhz */
+	for (bw = 0; bw < EHT_MCS_NSS_SET; bw++) {
+		for (n = 0; n <= 2; n++) {
+			u8 nss = (tmp[bw] >> (n * 4)) & 0xf;
+
+			if (nss > EHT_NSS_MAX_STREAMS) {
+				wpa_printf(MSG_ERROR,
+					   "%s: BW %d nibble %d value %u exceeds max NSS %u",
+					   config_name, bw, n, nss,
+					   EHT_NSS_MAX_STREAMS);
+				return -1;
+			}
+		}
+	}
+	os_memcpy(mcs_nss_set, tmp, sizeof(tmp));
+	return 0;
+}
+#endif /* CONFIG_IEEE80211BE */
+
+
 static int hostapd_parse_intlist(int **int_list, char *val)
 {
 	int *list;
@@ -5702,6 +5736,22 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 #ifdef CONFIG_IEEE80211BE
 	} else if (os_strcmp(buf, "ieee80211be") == 0) {
 		conf->ieee80211be = atoi(pos);
+	} else if (os_strcmp(buf, "eht_tx_mcs_nss_set") == 0) {
+		if (hostapd_parse_eht_mcs_nss_set(pos, bss->eht_tx_mcs_nss_set,
+						  "eht_tx_mcs_nss_set")) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid eht_tx_mcs_nss_set '%s'",
+				   line, pos);
+			return 1;
+		}
+	} else if (os_strcmp(buf, "eht_rx_mcs_nss_set") == 0) {
+		if (hostapd_parse_eht_mcs_nss_set(pos, bss->eht_rx_mcs_nss_set,
+						  "eht_rx_mcs_nss_set")) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid eht_rx_mcs_nss_set '%s'",
+				   line, pos);
+			return 1;
+		}
 	} else if (os_strcmp(buf, "eht_oper_chwidth") == 0) {
 		conf->eht_oper_chwidth = atoi(pos);
 	} else if (os_strcmp(buf, "eht_oper_centr_freq_seg0_idx") == 0) {
