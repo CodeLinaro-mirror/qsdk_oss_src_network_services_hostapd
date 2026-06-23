@@ -245,6 +245,95 @@ hostapd_get_nr_chan_width(struct hostapd_data *hapd,
 }
 #endif /* NEED_AP_MLME */
 
+static void hostapd_neighbor_add_op_capab_subelements(struct hostapd_data *hapd,
+						      struct wpabuf *nr,
+						      int ht, int vht, int he,
+						      bool eht)
+{
+	u8 buf[512];
+	u8 *pos, *end;
+	size_t len;
+
+	if (ht) {
+		pos = buf;
+		end = hostapd_eid_ht_capabilities(hapd, pos);
+		len = end - pos;
+		if (len > 2) { /* EID + Len */
+			wpabuf_put_u8(nr, WNM_NEIGHBOR_HT_CAPAB);
+			wpabuf_put_u8(nr, len - 2);
+			wpabuf_put_data(nr, pos + 2, len - 2);
+		}
+
+		pos = buf;
+		end = hostapd_eid_ht_operation(hapd, pos);
+		len = end - pos;
+		if (len > 2) { /* EID + Len */
+			wpabuf_put_u8(nr, WNM_NEIGHBOR_HT_OPER);
+			wpabuf_put_u8(nr, len - 2);
+			wpabuf_put_data(nr, pos + 2, len - 2);
+		}
+	}
+
+	if (vht) {
+		pos = buf;
+		end = hostapd_eid_vht_capabilities(hapd, pos, 0);
+		len = end - pos;
+		if (len > 2) { /* EID + Len */
+			wpabuf_put_u8(nr, WNM_NEIGHBOR_VHT_CAPAB);
+			wpabuf_put_u8(nr, len - 2);
+			wpabuf_put_data(nr, pos + 2, len - 2);
+		}
+
+		pos = buf;
+		end = hostapd_eid_vht_operation(hapd, pos);
+		len = end - pos;
+		if (len > 2) { /* EID + Len */
+			wpabuf_put_u8(nr, WNM_NEIGHBOR_VHT_OPER);
+			wpabuf_put_u8(nr, len - 2);
+			wpabuf_put_data(nr, pos + 2, len - 2);
+		}
+	}
+
+	if (he) {
+		pos = buf;
+		end = hostapd_eid_he_capab(hapd, pos, IEEE80211_MODE_AP);
+		len = end - pos;
+		if (len > 3) { /* EID + Len + ExtID */
+			wpabuf_put_u8(nr, WNM_NEIGHBOR_HE_CAPAB);
+			wpabuf_put_u8(nr, len - 3);
+			wpabuf_put_data(nr, pos + 3, len - 3);
+		}
+
+		pos = buf;
+		end = hostapd_eid_he_operation(hapd, pos);
+		len = end - pos;
+		if (len > 3) { /* EID + Len + ExtID */
+			wpabuf_put_u8(nr, WNM_NEIGHBOR_HE_OPER);
+			wpabuf_put_u8(nr, len - 3);
+			wpabuf_put_data(nr, pos + 3, len - 3);
+		}
+	}
+
+	if (eht) {
+		pos = buf;
+		end = hostapd_eid_eht_capab(hapd, pos, IEEE80211_MODE_AP);
+		len = end - pos;
+		if (len > 3) { /* EID + Len + ExtID */
+			wpabuf_put_u8(nr, WNM_NEIGHBOR_EHT_CAPAB);
+			wpabuf_put_u8(nr, len - 3);
+			wpabuf_put_data(nr, pos + 3, len - 3);
+		}
+
+		pos = buf;
+		end = hostapd_eid_eht_operation(hapd, pos);
+		len = end - pos;
+		if (len > 3) { /* EID + Len + ExtID */
+			wpabuf_put_u8(nr, WNM_NEIGHBOR_EHT_OPER);
+			wpabuf_put_u8(nr, len - 3);
+			wpabuf_put_data(nr, pos + 3, len - 3);
+		}
+	}
+}
 
 void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
 {
@@ -350,6 +439,8 @@ void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
 	wpabuf_put_u8(nr, width);
 	wpabuf_put_u8(nr, center_freq1_idx);
 	wpabuf_put_u8(nr, center_freq2_idx);
+
+	hostapd_neighbor_add_op_capab_subelements(hapd, nr, ht, vht, he, eht);
 
 	hostapd_neighbor_set(hapd, hapd->own_addr, &ssid, nr, hapd->iconf->lci,
 			     hapd->iconf->civic, hapd->iconf->stationary_ap, 0);
