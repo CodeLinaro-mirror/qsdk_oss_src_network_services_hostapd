@@ -685,6 +685,33 @@ static int hostapd_derive_psk(struct hostapd_ssid *ssid)
 }
 
 
+/*
+ * ap_sp_implied_key_mgmt - Derive implied key_mgmt from security profiles
+ *
+ * When security_profiles[] contains a SAE-EXT-KEY profile (1, 2, 9, or 10),
+ * the AP must prepare SAE PT even if wpa_key_mgmt does not explicitly include
+ * SAE-EXT-KEY.  Returns WPA_KEY_MGMT_SAE_EXT_KEY | WPA_KEY_MGMT_FT_SAE_EXT_KEY
+ * when such a profile is configured, 0 otherwise.
+ */
+static int ap_sp_implied_key_mgmt(const struct hostapd_bss_config *conf)
+{
+	int i;
+
+	if (!conf->security_profiles)
+		return 0;
+	for (i = 0; conf->security_profiles[i] >= 0; i++) {
+		int p = conf->security_profiles[i];
+
+		if (p == SECURITY_PROFILE_NUM_EPPKE_SAE ||
+		    p == SECURITY_PROFILE_NUM_EPPKE_FT_SAE ||
+		    p == SECURITY_PROFILE_NUM_SAE ||
+		    p == SECURITY_PROFILE_NUM_FT_SAE)
+			return WPA_KEY_MGMT_SAE_EXT_KEY |
+			       WPA_KEY_MGMT_FT_SAE_EXT_KEY;
+	}
+	return 0;
+}
+
 int hostapd_setup_sae_pt(struct hostapd_bss_config *conf)
 {
 #ifdef CONFIG_SAE
@@ -697,19 +724,22 @@ int hostapd_setup_sae_pt(struct hostapd_bss_config *conf)
 	     !hostapd_sae_pw_id_in_use(conf) &&
 	     !wpa_key_mgmt_sae_ext_key(conf->wpa_key_mgmt |
 				       conf->rsn_override_key_mgmt |
-				       conf->rsn_override_key_mgmt_2) &&
+				       conf->rsn_override_key_mgmt_2 |
+				       ap_sp_implied_key_mgmt(conf)) &&
 	     !hostapd_sae_pk_in_use(conf)) ||
 	    conf->sae_pwe == SAE_PWE_FORCE_HUNT_AND_PECK ||
 	    !wpa_key_mgmt_sae(conf->wpa_key_mgmt |
 			      conf->rsn_override_key_mgmt |
-			      conf->rsn_override_key_mgmt_2))
+			      conf->rsn_override_key_mgmt_2 |
+			      ap_sp_implied_key_mgmt(conf)))
 		return 0; /* PT not needed */
 
 	if (!groups) {
 		groups = default_groups;
 		if (wpa_key_mgmt_sae_ext_key(conf->wpa_key_mgmt |
 					     conf->rsn_override_key_mgmt |
-					     conf->rsn_override_key_mgmt_2))
+					     conf->rsn_override_key_mgmt_2 |
+					     ap_sp_implied_key_mgmt(conf)))
 			default_groups[1] = 20;
 	}
 
