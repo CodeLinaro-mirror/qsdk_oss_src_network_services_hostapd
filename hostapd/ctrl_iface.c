@@ -3241,7 +3241,7 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 			return -1;
 		return res;
 #ifdef CONFIG_TESTING_OPTIONS
-	} else if (os_strcasecmp(cmd, "ecsa_ie_status") == 0) {
+	} else if (os_strcasecmp(cmd, "ecsa_ie_only") == 0) {
 		res = os_snprintf(buf, buflen, "ecsa_ie_status = %d\n",
 				  hapd->iconf->ecsa_ie_only);
 		if (os_snprintf_error(buflen, res))
@@ -11432,6 +11432,10 @@ static bool hostapd_ctrl_iface_is_mbssid_cmn_param(struct hostapd_data *hapd,
 			value = first;
 	}
 
+	if (os_strncasecmp(cmd, "set_he_bfee_sts ", 16) == 0 ||
+	    os_strncasecmp(cmd, "set_he_subfee_sts_suprt ", 24) == 0)
+		value = first;
+
 	if (!value) {
 		wpa_printf(MSG_ERROR, "value is NULL for cmd:%s", cmd);
 		return false;
@@ -11478,8 +11482,9 @@ static int hostapd_ctrl_iface_get_cmn_param_val(struct hostapd_data *hapd, char 
 	get_val[0] = pos ? (int) strtol(pos + 1, NULL, 0) :
 		     (int) strtol(reply, &end, 0);
 
-	/* This param has 2 values */
-	if (os_strncasecmp(str, "get_he_bfee_sts", 15) == 0)
+	/* These params have 2 values */
+	if (os_strcmp(str, "get_he_bfee_sts") == 0 ||
+	    os_strcmp(str, "get_he_subfee_sts_suprt") == 0)
 		get_val[1] = (int) strtol(end, NULL, 0);
 
 	return 0;
@@ -11507,6 +11512,10 @@ static int hostapd_ctrl_iface_set_cmn_param(struct hostapd_data *hapd, char *buf
 			value = first;
 	}
 
+	if (os_strncasecmp(str, "set_he_bfee_sts ", 16) == 0 ||
+	    os_strncasecmp(str, "set_he_subfee_sts_suprt ", 24) == 0)
+		value = first;
+
 	if (!value) {
 		wpa_printf(MSG_ERROR, "Value is NULL");
 		goto end;
@@ -11515,7 +11524,8 @@ static int hostapd_ctrl_iface_set_cmn_param(struct hostapd_data *hapd, char *buf
 	val[0] = (int) strtol(value, &end, 0);
 
 	/* This param has 2 values */
-	if (os_strncasecmp(str, "set_he_bfee_sts", 15) == 0)
+	if (os_strncasecmp(str, "set_he_bfee_sts ", 16) == 0 ||
+	    os_strncasecmp(str, "set_he_subfee_sts_suprt ", 24) == 0)
 		val[1] = (int) strtol(end, NULL, 0);
 
 	cmd_bk = os_malloc(os_strlen(buf) + 1);
@@ -11538,7 +11548,8 @@ static int hostapd_ctrl_iface_set_cmn_param(struct hostapd_data *hapd, char *buf
 		goto end;
 	}
 
-	if (os_strncasecmp(str, "set_he_bfee_sts", 15) == 0) {
+	if (os_strncasecmp(str, "set_he_bfee_sts ", 16) == 0 ||
+	    os_strncasecmp(str, "set_he_subfee_sts_suprt ", 24) == 0) {
 		if (get_val[0] == val[0] && get_val[1] == val[1]) {
 			wpa_printf(MSG_DEBUG,
 				   "Values matches with previous configured get_val[0]:%d get_val[1]:%d val[0]:%d val[1]:%d",
