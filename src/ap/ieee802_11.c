@@ -350,7 +350,7 @@ static const struct security_profile_entry_ap security_profile_table[MAX_SECURIT
 		true, true,  true,  true,  true,  false, false },
 
     /* 5: FILS‑SHA256/23 + assoc‑encrypt */
-	[5]  = { 5,  WPA_KEY_MGMT_FILS_SHA256,	     WPA_CIPHER_GCMP_256,
+	[5]  = { 5,  WPA_KEY_MGMT_IEEE8021X_SHA384,	     WPA_CIPHER_GCMP_256,
 		true, true,  true,  true,  true,  false, false },
 
     /* 6: FT‑FILS‑SHA256/22 + assoc‑encrypt */
@@ -358,7 +358,7 @@ static const struct security_profile_entry_ap security_profile_table[MAX_SECURIT
 		true, true,  true,  true,  true,  false, false },
 
     /* 7: IEEE8021X‑SHA384/12 + assoc‑encrypt */
-	[7]  = { 7,  WPA_KEY_MGMT_IEEE8021X_SHA384,  WPA_CIPHER_GCMP_256,
+	[7]  = { 7,  WPA_KEY_MGMT_IEEE8021X_SUITE_B_192,  WPA_CIPHER_GCMP_256,
 		true, true,  true,  true,  true,  false, false },
 
     /* 8: OWE/18 */
@@ -382,7 +382,7 @@ static const struct security_profile_entry_ap security_profile_table[MAX_SECURIT
 		true, false, false, false, false, false, false },
 
     /* 13: FILS‑SHA256/23 (no assoc‑encrypt) */
-	[13] = { 13, WPA_KEY_MGMT_FILS_SHA256,	     WPA_CIPHER_GCMP_256,
+	[13] = { 13, WPA_KEY_MGMT_IEEE8021X_SHA384,	     WPA_CIPHER_GCMP_256,
 		true, false, false, false, false, false, false },
 
     /* 14: FT‑FILS‑SHA256/22 (no assoc‑encrypt) */
@@ -390,7 +390,7 @@ static const struct security_profile_entry_ap security_profile_table[MAX_SECURIT
 		true, false, false, false, false, false, false },
 
     /* 15: IEEE8021X‑SHA384/12 (no assoc‑encrypt) */
-	[15] = { 15, WPA_KEY_MGMT_IEEE8021X_SHA384,  WPA_CIPHER_GCMP_256,
+	[15] = { 15, WPA_KEY_MGMT_IEEE8021X_SUITE_B_192,  WPA_CIPHER_GCMP_256,
 		true, false, false, false, false, false, false },
 };
 
@@ -654,8 +654,9 @@ static u16 validate_security_profile_common(
 
 	struct ieee802_11_elems elems;
 
-	if ((ieee802_11_parse_elems(ies, ies_len, &elems, 1) != ParseFailed)) {
-		wpa_printf(MSG_ERROR,"Parse Success %s %d \n",__func__,__LINE__);
+	if (ieee802_11_parse_elems(ies, ies_len, &elems, 1) == ParseFailed) {
+		wpa_printf(MSG_DEBUG, "Failed to parse IEs in %s", __func__);
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
 
 	/* Skip validation if no Security Profiles are configured */
