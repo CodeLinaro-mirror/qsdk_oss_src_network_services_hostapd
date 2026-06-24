@@ -379,7 +379,8 @@ void wpa_supplicant_mark_disassoc(struct wpa_supplicant *wpa_s)
 
 #ifdef CONFIG_HS20
 	/* Clear possibly configured frame filters */
-	wpa_drv_configure_frame_filters(wpa_s, 0);
+	if (wpa_s->drv_priv)
+		wpa_drv_configure_frame_filters(wpa_s, 0);
 #endif /* CONFIG_HS20 */
 
 	if (wpa_s->wpa_state == WPA_INTERFACE_DISABLED)
