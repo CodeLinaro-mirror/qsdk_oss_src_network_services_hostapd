@@ -3094,8 +3094,9 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 			return -1;
 		return res;
 	} else if (os_strcmp(cmd, "unsolicited_probe_resp_state") == 0) {
-		if (hapd->iconf->mbssid == MBSSID_DISABLED) {
-			res = os_snprintf(buf, buflen, "MBSSID is disabled\n");
+		if (!is_6ghz_op_class(hapd->iconf->op_class)) {
+			res = os_snprintf(buf, buflen,
+					  "unsolicited_probe_resp_state is applicable for 6 GHz only\n");
 			if (os_snprintf_error(buflen, res))
 				return -1;
 			return res;
@@ -3106,8 +3107,9 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 			return -1;
 		return res;
 	} else if (os_strcmp(cmd, "fils_state") == 0) {
-		if (hapd->iconf->mbssid == MBSSID_DISABLED) {
-			res = os_snprintf(buf, buflen, "MBSSID is disabled\n");
+		if (!is_6ghz_op_class(hapd->iconf->op_class)) {
+			res = os_snprintf(buf, buflen,
+					  "fils_state is applicable for 6 GHz only\n");
 			if (os_snprintf_error(buflen, res))
 				return -1;
 			return res;

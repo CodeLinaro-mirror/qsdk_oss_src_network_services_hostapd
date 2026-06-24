@@ -14638,6 +14638,20 @@ repeat_rnr_len:
 	return total_len;
 }
 
+static bool hostapd_iface_has_started_bss(struct hostapd_iface *iface)
+{
+	size_t i;
+
+	if (!iface || !iface->conf || iface->state == HAPD_IFACE_DISABLED)
+		return false;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		if (iface->bss[i] && iface->bss[i]->started)
+			return true;
+	}
+
+	return false;
+}
 
 enum colocation_mode get_colocation_mode(struct hostapd_data *hapd)
 {
@@ -14655,10 +14669,8 @@ enum colocation_mode get_colocation_mode(struct hostapd_data *hapd)
 		bool is_colocated_6ghz;
 
 		iface = hapd->iface->interfaces->iface[i];
-		if (iface == hapd->iface || !iface || !iface->conf)
-			continue;
-
-		if (iface->state == HAPD_IFACE_DISABLED)
+		if (iface == hapd->iface ||
+		    !hostapd_iface_has_started_bss(iface))
 			continue;
 
 		is_colocated_6ghz = is_6ghz_op_class(iface->conf->op_class);
@@ -14680,9 +14692,10 @@ enum colocation_mode get_colocation_mode(struct hostapd_data *hapd)
 			struct hostapd_iface *iface =
 				hapd->iface->interfaces->iface[i];
 
-			if (!iface || iface == hapd->iface || !iface->conf ||
-			    iface->state == HAPD_IFACE_DISABLED)
+			if (iface == hapd->iface ||
+			    !hostapd_iface_has_started_bss(iface))
 				continue;
+
 			/* Include all co-located BSSes (same or different channel) */
 			if (!is_6ghz_op_class(iface->conf->op_class))
 				return COLOCATED_LOWER_BAND;
