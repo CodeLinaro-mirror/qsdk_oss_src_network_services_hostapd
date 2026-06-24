@@ -1647,7 +1647,7 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 	int ret = -1;
 	u16 ml_control;
 	const u8 *ml_end;
-	unsigned int i;
+	u8 saved_peer_addr[ETH_ALEN];
 
 	mlbuf = ieee802_11_defrag(elems->basic_mle, elems->basic_mle_len, true);
 	if (!mlbuf)
@@ -1754,14 +1754,24 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 	}
 
 	/*
-	 * When a station initially connected as a 3-link STA
-	 * re-associates as a single-link STA, it is not valid.
-	 * Reset the valid flag
+	 * Reset all per-link state before parsing the new ML IE. A STA may
+	 * send back-to-back reassoc-reqs with different ML IEs (e.g., fewer
+	 * links or without NSTR). The valid-flag-only reset left stale fields
+	 * (nstr_bitmap_len, peer_addr, nstr_bitmap, capability) in non-assoc
+	 * link slots and leaked resp_sta_profile heap allocations. Free those
+	 * allocations and zero all link slots. The assoc link's peer_addr
+	 * holds the link-specific MAC (set from mgmt->sa at auth time, before
+	 * driver address translation) and must be saved and restored.
 	 */
-	for (i = 0; i < MAX_NUM_MLD_LINKS; i++)
-		info->links[i].valid = false;
-
+	os_memcpy(saved_peer_addr,
+		  info->links[hapd->mld_link_id].peer_addr, ETH_ALEN);
+	ap_sta_free_sta_profile(info);
+	os_memset(info->links, 0, sizeof(info->links));
 	info->links[hapd->mld_link_id].valid = 1;
+	os_memcpy(info->links[hapd->mld_link_id].local_addr,
+		  hapd->own_addr, ETH_ALEN);
+	os_memcpy(info->links[hapd->mld_link_id].peer_addr,
+		  saved_peer_addr, ETH_ALEN);
 
 	/* Parse the Link Info field that starts after the end of the variable
 	 * length Common Info field. */
@@ -1906,6 +1916,7 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 out:
 	wpabuf_free(mlbuf);
 	if (ret) {
+		ap_sta_free_sta_profile(info);
 		os_memset(info, 0, sizeof(*info));
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
