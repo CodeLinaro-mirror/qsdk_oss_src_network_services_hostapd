@@ -4693,3 +4693,29 @@ bool hostapd_dfs_csa_target_has_unavailable_channel(struct hostapd_iface *iface,
 
 	return false;
 }
+
+u32 hostapd_get_remaining_cac_tu(struct hostapd_iface *iface)
+{
+	struct os_reltime age;
+	u32 switch_time;
+	u32 left_ms;
+	u32 elapsed_ms;
+
+	os_reltime_age(&iface->dfs_cac_start, &age);
+	elapsed_ms = age.sec * 1000 + age.usec / 1000;
+	if (elapsed_ms < iface->dfs_cac_ms)
+		left_ms = iface->dfs_cac_ms - elapsed_ms;
+	else
+		left_ms = 0;
+
+	switch_time = USEC_TO_TU(left_ms * 1000);
+	if (switch_time > 0xFFFFFF)
+		switch_time = 0xFFFFFF;
+
+	wpa_printf(MSG_DEBUG,
+		   "MLD: MCST : freq=%d dfs_cac_ms=%u elapsed_ms=%u left_ms=%u switch_time(TU)=%u",
+		   iface->freq, iface->dfs_cac_ms, elapsed_ms, left_ms,
+		   switch_time);
+
+	return switch_time;
+}

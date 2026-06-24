@@ -228,13 +228,10 @@ static void handle_auth(struct hostapd_data *hapd,
 static struct wpabuf *cip_build_assoc_resp_ie(u8 padding_delay);
 
 #ifdef CONFIG_IEEE80211BE
-static u8 * hostapd_eid_mcst_cac_per_sta(struct hostapd_data *hapd, u8 *eid,
-					 size_t len)
+static u8 * hostapd_eid_mcst(struct hostapd_data *hapd, u8 *eid,
+			     size_t len)
 {
-	struct os_reltime age;
 	u32 switch_time;
-	u32 left_ms;
-	u32 elapsed_ms;
 
 	if (len < 6)
 		return eid;
@@ -243,29 +240,9 @@ static u8 * hostapd_eid_mcst_cac_per_sta(struct hostapd_data *hapd, u8 *eid,
 	    !hapd->iface->dfs_cac_ms)
 		return eid;
 
-	os_reltime_age(&hapd->iface->dfs_cac_start, &age);
-	elapsed_ms = age.sec * 1000 + age.usec / 1000;
-	if (elapsed_ms < hapd->iface->dfs_cac_ms)
-		left_ms = hapd->iface->dfs_cac_ms - elapsed_ms;
-	else
-		left_ms = 0;
+	switch_time = hostapd_get_remaining_cac_tu(hapd->iface);
 
-	switch_time = USEC_TO_TU(left_ms * 1000);
-	if (switch_time > 0xFFFFFF)
-		switch_time = 0xFFFFFF;
-
-	wpa_printf(MSG_DEBUG,
-		   "MLD: MCST per-STA profile: freq=%d cac_started=%d dfs_cac_ms=%u elapsed_ms=%u left_ms=%u switch_time(TU)=%u",
-		   hapd->iface->freq, hapd->iface->cac_started,
-		   hapd->iface->dfs_cac_ms, elapsed_ms, left_ms, switch_time);
-
-	*eid++ = WLAN_EID_EXTENSION;
-	*eid++ = 4;
-	*eid++ = WLAN_EID_EXT_MAX_CHANNEL_SWITCH_TIME;
-	WPA_PUT_LE24(eid, switch_time);
-	eid += 3;
-
-	return eid;
+	return hostapd_eid_add_max_cs_time(eid, switch_time);
 }
 #endif /* CONFIG_IEEE80211BE */
 
@@ -7705,7 +7682,7 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 
 	p = hostapd_eid_ext_capab(hapd, p, false);
 #ifdef CONFIG_IEEE80211BE
-	p = hostapd_eid_mcst_cac_per_sta(hapd, p, buf + buflen - p);
+	p = hostapd_eid_mcst(hapd, p, buf + buflen - p);
 #endif /* CONFIG_IEEE80211BE */
 	p = hostapd_eid_mbo(hapd, p, buf + buflen - p);
 	p = hostapd_eid_wmm(hapd, p, false);
