@@ -4212,8 +4212,10 @@ static int hostapd_ctrl_reset_pn(struct hostapd_data *hapd, const char *cmd)
 				   0, sta->last_tk, sta->last_tk_len,
 				   KEY_FLAG_PAIRWISE_RX_TX);
 }
+#endif /* CONFIG_TESTING_OPTIONS */
 
 
+#if defined(CONFIG_QCN_EXTN) || defined(CONFIG_TESTING_OPTIONS)
 static int hostapd_ctrl_set_key(struct hostapd_data *hapd, const char *cmd)
 {
 	u8 addr[ETH_ALEN];
@@ -4272,8 +4274,10 @@ static int hostapd_ctrl_set_key(struct hostapd_data *hapd, const char *cmd)
 	return hostapd_drv_set_key(hapd->conf->iface, hapd, alg, addr, idx, 0,
 				   set_tx, seq, 6, key, key_len, key_flag);
 }
+#endif /* CONFIG_QCN_EXTN || CONFIG_TESTING_OPTIONS */
 
 
+#ifdef CONFIG_TESTING_OPTIONS
 static void restore_tk(void *ctx1, void *ctx2)
 {
 	struct hostapd_data *hapd = ctx1;
@@ -10533,9 +10537,13 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "RESET_PN ", 9) == 0) {
 		if (hostapd_ctrl_reset_pn(hapd, buf + 9) < 0)
 			reply_len = -1;
+#endif /* CONFIG_TESTING_OPTIONS */
+#if defined(CONFIG_QCN_EXTN) || defined(CONFIG_TESTING_OPTIONS)
 	} else if (os_strncmp(buf, "SET_KEY ", 8) == 0) {
 		if (hostapd_ctrl_set_key(hapd, buf + 8) < 0)
 			reply_len = -1;
+#endif /* CONFIG_QCN_EXTN || CONFIG_TESTING_OPTIONS */
+#ifdef CONFIG_TESTING_OPTIONS
 	} else if (os_strncmp(buf, "RESEND_M1 ", 10) == 0) {
 		if (hostapd_ctrl_resend_m1(hapd, buf + 10) < 0)
 			reply_len = -1;
