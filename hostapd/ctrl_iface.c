@@ -2092,6 +2092,16 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			hostapd_disassoc_deny_mac(hapd);
 		} else if (os_strcasecmp(cmd, "accept_mac_file") == 0) {
 			hostapd_disassoc_accept_mac(hapd);
+		} else if (os_strcasecmp(cmd, "macaddr_acl") == 0) {
+			/*
+			 * ACL mode changed at runtime: re-evaluate all connected
+			 * STAs against the new mode and the current accept/deny
+			 * lists.
+			 */
+			if (hapd->conf->num_accept_mac > 0 ||
+			    hapd->conf->num_accept_mac_masked > 0)
+				hostapd_disassoc_accept_mac(hapd);
+			hostapd_disassoc_deny_mac(hapd);
 		} else if (os_strcasecmp(cmd, "rssi_reject_assoc_rssi") == 0) {
 			hostapd_ctrl_iface_update_rssi_monitor(hapd);
 		} else if (os_strcasecmp(cmd, "ssid") == 0) {
