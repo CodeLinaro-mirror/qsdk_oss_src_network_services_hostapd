@@ -1059,6 +1059,10 @@ static bool hostapd_validate_link_removal_ttlm(struct hostapd_data *hapd)
 				if (!bss->conf->mld_ap || !bss->mld || bss->disabled ||
 				    !bss->beacon_set_done)
 					continue;
+#ifdef CONFIG_QCN_EXTN
+				if (hostapd_is_repurpose_disabled_11be_extn(bss->conf))
+					continue;
+#endif /* CONFIG_QCN_EXTN */
 
 				/* even if one non-tx bss fails validation, return false */
 				if (!hostapd_validate_link_removal_ttlm_global(bss))
@@ -1072,6 +1076,10 @@ static bool hostapd_validate_link_removal_ttlm(struct hostapd_data *hapd)
 				if (!bss->conf->mld_ap || !bss->mld || bss->disabled ||
 				    !bss->beacon_set_done)
 					continue;
+#ifdef CONFIG_QCN_EXTN
+				if (hostapd_is_repurpose_disabled_11be_extn(bss->conf))
+					continue;
+#endif /* CONFIG_QCN_EXTN */
 				if (!hostapd_validate_link_removal_ttlm_global(bss))
 					return false;
 
