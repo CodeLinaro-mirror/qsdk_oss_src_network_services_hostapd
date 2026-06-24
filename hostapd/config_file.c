@@ -4075,19 +4075,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_BSR_SUPPORT;
 	} else if (os_strcmp(buf, "he_dl_mu_ofdma") == 0) {
 		conf->he_phy_capab.he_dl_mu_ofdma = atoi(pos);
-	} else if (os_strcmp(buf, "bss_he_dl_mu_ofdma") == 0) {
-		bss->he_phy_capab.he_dl_mu_ofdma = atoi(pos);
-		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_DL_MU_OFDMA;
 	} else if (os_strcmp(buf, "he_dl_mu_ofdma_bfer") == 0) {
 		conf->he_phy_capab.he_dl_mu_ofdma_bfer = atoi(pos);
-	} else if (os_strcmp(buf, "bss_he_dl_mu_ofdma_bfer") == 0) {
-		bss->he_phy_capab.he_dl_mu_ofdma_bfer = atoi(pos);
-		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_DL_MU_OFDMA_BFER;
 	} else if (os_strcmp(buf, "he_ul_mu_ofdma") == 0) {
 		conf->he_phy_capab.he_ul_mu_ofdma = atoi(pos);
-	} else if (os_strcmp(buf, "bss_he_ul_mu_ofdma") == 0) {
-		bss->he_phy_capab.he_ul_mu_ofdma = atoi(pos);
-		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_UL_MU_OFDMA;
 	} else if (os_strcmp(buf, "he_mu_beamformer") == 0) {
 		conf->he_phy_capab.he_mu_beamformer = atoi(pos);
 	} else if (os_strcmp(buf, "bss_he_mu_beamformer") == 0) {
@@ -5768,24 +5759,12 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_SU_BEAMFORMEE;
 	} else if (os_strcmp(buf, "eht_dl_mu_ofdma") == 0) {
 		conf->eht_phy_capab.dl_mu_ofdma = atoi(pos);
-	} else if (os_strcmp(buf, "bss_eht_dl_mu_ofdma") == 0) {
-		bss->eht_phy_capab.dl_mu_ofdma = atoi(pos);
-		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_DL_MU_OFDMA;
 	} else if (os_strcmp(buf, "eht_ul_mu_ofdma") == 0) {
 		conf->eht_phy_capab.ul_mu_ofdma = atoi(pos);
-	} else if (os_strcmp(buf, "bss_eht_ul_mu_ofdma") == 0) {
-		bss->eht_phy_capab.ul_mu_ofdma = atoi(pos);
-		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_UL_MU_OFDMA;
 	} else if (os_strcmp(buf, "eht_dl_ofdma_mumimo") == 0) {
 		conf->eht_phy_capab.dl_ofdma_mumimo = atoi(pos);
-	} else if (os_strcmp(buf, "bss_eht_dl_ofdma_mumimo") == 0) {
-		bss->eht_phy_capab.dl_ofdma_mumimo = atoi(pos);
-		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_DL_OFDMA_MUMIMO;
 	} else if (os_strcmp(buf, "eht_ul_ofdma_mumimo") == 0) {
 		conf->eht_phy_capab.ul_ofdma_mumimo = atoi(pos);
-	} else if (os_strcmp(buf, "bss_eht_ul_ofdma_mumimo") == 0) {
-		bss->eht_phy_capab.ul_ofdma_mumimo = atoi(pos);
-		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_UL_OFDMA_MUMIMO;
 	} else if (os_strcmp(buf, "eht_mu_beamformer") == 0) {
 		conf->eht_phy_capab.mu_beamformer = atoi(pos);
 	} else if (os_strcmp(buf, "bss_eht_mu_beamformer") == 0) {
