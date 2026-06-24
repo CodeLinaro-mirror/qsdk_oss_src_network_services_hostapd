@@ -433,8 +433,11 @@ static int dfs_is_chan_allowed(struct hostapd_channel_data *chan, int n_chans)
 	return 0;
 }
 
-
+#ifdef RDK_ONEWIFI
+struct hostapd_channel_data *
+#else
 static struct hostapd_channel_data *
+#endif
 dfs_get_chan_data(struct hostapd_hw_modes *mode, int freq, int first_chan_idx)
 {
 	int i;
@@ -1170,8 +1173,11 @@ static int dfs_check_chans_unavailable(struct hostapd_iface *iface,
 	return res;
 }
 
-
+#ifdef RDK_ONEWIFI
+struct hostapd_channel_data *
+#else
 static struct hostapd_channel_data *
+#endif
 dfs_get_valid_channel(struct hostapd_iface *iface,
 		      int *secondary_channel,
 		      u8 *oper_centr_freq_seg0_idx,
@@ -1574,9 +1580,12 @@ int set_dfs_state(struct hostapd_iface *iface, int freq, int ht_enabled,
 	return ret;
 }
 
-
-static int dfs_are_channels_overlapped(struct hostapd_iface *iface, int freq,
+#ifdef RDK_ONEWIFI
+int dfs_are_channels_overlapped(struct hostapd_iface *iface, int freq,
 				       int chan_width, int cf1, int cf2)
+#else
+static int dfs_are_channels_overlapped(struct hostapd_iface *iface, int freq, int chan_width, int cf1, int cf2)
+#endif
 {
 	int start_chan_idx, start_chan_idx1;
 	struct hostapd_hw_modes *mode;

@@ -488,7 +488,22 @@ enum wps_event {
 	 * WPS_EV_PBC_DISABLE - PBC mode was disabled
 	 */
 	WPS_EV_PBC_DISABLE,
+#ifdef RDK_ONEWIFI
+        /**
+        * WPS_EV_PIN_TIMEOUT - PIN session was expired
+        */
+       WPS_EV_PIN_TIMEOUT,
 
+       /**
+        * WPS_EV_PIN_DISABLE - PIN session was disabled
+        */
+       WPS_EV_PIN_DISABLE,
+
+       /**
+        * WPS_EV_PIN_ACTIVE - PIN mode was activated
+        */
+       WPS_EV_PIN_ACTIVE,
+#endif
 	/**
 	 * WPS_EV_ER_AP_ADD - ER: AP added
 	 */

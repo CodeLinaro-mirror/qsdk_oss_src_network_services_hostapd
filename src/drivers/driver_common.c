@@ -102,6 +102,9 @@ const char * event_to_string(enum wpa_event_type event)
 	E2S(AWGN_DETECTED);
 	E2S(TID_LINK_MAP);
 	E2S(LINK_RECONFIG);
+#ifdef RDK_ONEWIFI
+	E2S(WPS_CANCEL);
+#endif
 	E2S(MLD_INTERFACE_FREED);
 	E2S(SETUP_LINK_RECONFIG);
 	E2S(RX_CRITICAL_UPDATE);

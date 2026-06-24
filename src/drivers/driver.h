@@ -4724,7 +4724,10 @@ struct wpa_driver_ops {
 	 */
 	int (*sta_deauth)(void *priv, const u8 *own_addr, const u8 *addr,
 			  u16 reason, int link_id);
-
+#ifdef RDK_ONEWIFI
+       int (*sta_notify_deauth)(void *priv, const u8 *own_addr, const u8 *addr,
+                         u16 reason);
+#endif
 	/**
 	 * sta_disassoc - Disassociate a station (AP only)
 	 * @priv: Private driver interface data
@@ -5016,6 +5019,17 @@ struct wpa_driver_ops {
 	int (*set_ap_wps_ie)(void *priv, const struct wpabuf *beacon,
 			     const struct wpabuf *proberesp,
 			     const struct wpabuf *assocresp);
+
+#ifdef RDK_ONEWIFI
+       /**
+        * wps_event_notify_cb - Notification of WPS event
+        * @ctx:   wpa_supplicant context
+        * @event: wps event type
+        * @data:  wps event data
+        * Returns: 0 on success, -1 on failure
+        */
+       int (*wps_event_notify_cb)(void *ctx, unsigned int event, void *data);
+#endif //RDK_ONEWIFI
 
 	/**
 	 * set_supp_port - Set IEEE 802.1X Supplicant Port status
@@ -6266,6 +6280,13 @@ struct wpa_driver_ops {
 	 */
 	int (*dpp_listen)(void *priv, bool enable);
 
+#ifdef RDK_ONEWIFI
+	size_t (*get_rnr_colocation_len)(void *priv,
+				       size_t *current_len);
+	u8* (*get_rnr_colocation_ie)(void *priv, u8 *eid,
+				   size_t *current_len);
+#endif
+
 	/**
 	 * set_secure_ranging_ctx - Add or delete secure ranging parameters of
 	 * the specified peer to the driver.
@@ -6440,7 +6461,29 @@ struct wpa_driver_ops {
 			      const u8 *match, size_t match_len,
 			      bool multicast);
 #endif /* CONFIG_TESTING_OPTIONS */
+#ifdef RDK_ONEWIFI
+       /**
+        * get_sta_auth_type - Notify about Auth Type STA sent in Assoc/Reassoc Req
+        * @priv: Private driver interface data
+        * @addr: Sends the STA Address
+        * @key_mgmt: STA Auth Type in Association Request
+        * @frame_type: Sends Frame Type of the Station
+        *
+        * Returns: 0 on success, -1 on failure
+        * Update about Auth Type in Association/Reassociation Request to driver
+        */
+       int (*get_sta_auth_type)(void *priv,
+                                       const u8 *addr, int key_mgmt, int frame_type);
 
+       struct hostapd_data *(*get_mbssid_tx_bss)(void *priv);
+       int (*get_mbssid_bss_index)(void *priv);
+       size_t (*get_mbssid_len)(void *priv, u32 frame_type,
+                             u8 *elem_count);
+       u8 * (*get_mbssid_ie)(void *priv, u8 *eid, u8 *end,
+                       unsigned int frame_stype, u8 elem_count,
+                       u8 **elem_offset);
+       u8* (*get_mbssid_config)(void *priv, u8 *eid);
+#endif
 	/**
 	 * get_multi_hw_info - Get multiple underlying hardware information
 	 *		       (hardware IDx and supported frequency range)
@@ -6850,7 +6893,12 @@ enum wpa_event_type {
 	 * EVENT_WPS_BUTTON_PUSHED - Report hardware push button press for WPS
 	 */
 	EVENT_WPS_BUTTON_PUSHED,
-
+#ifdef RDK_ONEWIFI
+       /**
+        * EVENT_WPS_CANCEL - Terminate current WPS session
+        */
+       EVENT_WPS_CANCEL,
+#endif
 	/**
 	 * EVENT_TX_STATUS - Report TX status
 	 */
@@ -7530,6 +7578,19 @@ enum sta_connect_fail_reason_codes {
 	STA_CONNECT_FAIL_REASON_ASSOC_NO_ACK_RECEIVED = 6,
 	STA_CONNECT_FAIL_REASON_ASSOC_NO_RESP_RECEIVED = 7,
 };
+#ifdef RDK_ONEWIFI
+/**
+ * enum sta_frame_type
+ * @STA_FRAME_ASSOC: Received STA Frame Type is Association
+ * @STA_FRAME_REASSOC: Received STA Frame Type is Reassociation
+ * @STA_FRAME_EAPOL_M2: Received STA Frame Type is EAPOL M2
+ */
+ enum sta_frame_type {
+       STA_FRAME_ASSOC = 0,
+       STA_FRAME_REASSOC,
+       STA_FRAME_EAPOL_M2,
+};
+#endif
 
 /**
  * union wpa_event_data - Additional data for wpa_supplicant_event() calls

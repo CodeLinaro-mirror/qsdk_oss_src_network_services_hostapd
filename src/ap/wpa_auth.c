@@ -289,8 +289,15 @@ static inline int wpa_auth_set_key(struct wpa_authenticator *wpa_auth,
 	return wpa_auth->cb->set_key(wpa_auth->cb_ctx, vlan_id, alg, addr, idx,
 				     key, key_len, key_flag);
 }
-
-
+#ifdef RDK_ONEWIFI
+static void wpa_auth_get_sta_auth_type(struct wpa_authenticator *wpa_auth, const u8 *addr,
+                                       const u8 *data, size_t data_len, int frame_type)
+{
+       if(!wpa_auth->cb->get_sta_auth_type)
+               return;
+       wpa_auth->cb->get_sta_auth_type(wpa_auth->cb_ctx, addr, data, data_len, frame_type);
+}
+#endif
 #ifdef CONFIG_PASN
 static inline int wpa_auth_set_ltf_keyseed(struct wpa_authenticator *wpa_auth,
 					   const u8 *peer_addr,
@@ -341,6 +348,32 @@ static inline int wpa_auth_get_seqnum(struct wpa_authenticator *wpa_auth,
 			  WPA_KEY_RSC_LEN);
 	}
 #endif /* CONFIG_TESTING_OPTIONS */
+#ifdef RDK_ONEWIFI
+        if (res == 0) {
+        const char *key_type;
+        size_t pn_len;
+
+        // Determine key type and PN length
+        if (idx >= 1 && idx <= 3) {
+            key_type = "GTK";
+            pn_len = 8;
+        } else if (idx == 4 || idx == 5) {
+            key_type = "IGTK";
+            pn_len = 6;
+        } else if (idx == 6 || idx == 7) {
+            key_type = "BIGTK";
+            pn_len = 6;
+        } else {
+            key_type = "UNKNOWN";
+            pn_len = 6;
+        }
+
+        wpa_printf(MSG_MSGDUMP, "PN_FETCH: %s (idx=%d)", key_type, idx);
+        wpa_hexdump(MSG_MSGDUMP, "PN_FETCH", seq, pn_len);
+        wpa_printf(MSG_MSGDUMP, "PN_FETCH PN Counter (LE): %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
+                   seq[0], seq[1], seq[2], seq[3], seq[4], seq[5], seq[6], seq[7]);
+    }
+#endif
 	return res;
 }
 
@@ -4140,6 +4173,9 @@ SM_STATE(WPA_PTK, PTKCALCNEGOTIATING)
 		eapol_key_ie = kde.wpa_ie;
 		eapol_key_ie_len = kde.wpa_ie_len;
 	}
+#ifdef RDK_ONEWIFI
+	wpa_auth_get_sta_auth_type(wpa_auth, sm->addr, eapol_key_ie, eapol_key_ie_len, STA_FRAME_EAPOL_M2);
+#endif
 	ft = sm->wpa == WPA_VERSION_WPA2 && wpa_key_mgmt_ft(sm->wpa_key_mgmt);
 	if (!sm->wpa_ie ||
 	    wpa_compare_rsn_ie(ft, sm->wpa_ie, sm->wpa_ie_len,

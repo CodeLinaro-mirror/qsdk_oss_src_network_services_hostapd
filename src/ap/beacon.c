@@ -768,11 +768,17 @@ ieee802_11_build_ap_params_mbssid(struct hostapd_data *hapd,
 	     !iface->ema_max_periodicity))
 		goto fail;
 
+#ifdef RDK_ONEWIFI
+       tx_bss = hostapd_drv_mbssid_get_tx_bss(hapd);
+       len = hostapd_drv_eid_mbssid_len(tx_bss, WLAN_FC_STYPE_BEACON, &elem_count,
+                                    NULL, 0, &rnr_len);
+#else
+
 	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
 	len = hostapd_eid_mbssid_len(tx_bss, WLAN_FC_STYPE_BEACON, &elem_count,
 				     NULL, 0, &rnr_len, true, params,
 				     &is_len_calc_failed);
-
+#endif /* RDK_ONEWIFI */
 	if (is_len_calc_failed)
 		goto fail;
 
@@ -800,14 +806,24 @@ ieee802_11_build_ap_params_mbssid(struct hostapd_data *hapd,
 		if (!rnr_elem_offset)
 			goto fail;
 	}
+#ifdef RDK_ONEWIFI
+       end = hostapd_drv_eid_mbssid(tx_bss, elem, elem + len, WLAN_FC_STYPE_BEACON,
+                                elem_count, elem_offset, NULL, 0, rnr_elem,
+                                &rnr_elem_count, rnr_elem_offset, rnr_len);
+#else
 
 	end = hostapd_eid_mbssid(tx_bss, elem, elem + len, WLAN_FC_STYPE_BEACON,
 				 elem_count, elem_offset, NULL, 0, rnr_elem,
 				 &rnr_elem_count, rnr_elem_offset, rnr_len,
 				 &elemid_modified_bmap, true, params);
+#endif /* RDK_ONEWIFI */
 
 	params->mbssid.mbssid_tx_iface = tx_bss->conf->iface;
+#ifdef RDK_ONEWIFI
+	params->mbssid.mbssid_index = hostapd_drv_mbssid_get_bss_index(hapd);
+#else
 	params->mbssid.mbssid_index = hostapd_mbssid_get_bss_index(hapd);
+#endif /* RDK_ONEWIFI */
 	params->mbssid.mbssid_elem = elem;
 	params->mbssid.mbssid_elem_len = end - elem;
 	params->mbssid.mbssid_elem_count = elem_count;
@@ -1641,11 +1657,16 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 		} else {
 			mbssid_pos = pos;
 		}
+#ifdef RDK_ONEWIFI
+       pos = hostapd_drv_eid_mbssid(hapd, pos, epos, WLAN_FC_STYPE_PROBE_RESP, 0,
+                                NULL, NULL, 0,
+                                NULL, NULL, NULL, 0);
+#else
 		pos = hostapd_eid_mbssid(hapd_probed, pos, epos,
 					 WLAN_FC_STYPE_PROBE_RESP, 0,
 					 NULL, params->known_bss, params->known_bss_len,
 					 NULL, NULL, NULL, 0, NULL, bcast_prb_resp, params);
-
+#endif /* RDK_ONEWIFI */
 		/* Insert mbssid-ie at specified location */
 		if (hostapd_insert_mbssid_ie(mbssid_offset, mbssid_pos, pos)) {
 			wpa_printf(MSG_ERROR, "Failed to insert MBSSID-IE");
@@ -1708,7 +1729,11 @@ static void hostapd_gen_probe_resp(struct hostapd_data *hapd,
 	u8 *pos;
 	size_t buflen;
 
+#ifdef RDK_ONEWIFI
+       hapd = hostapd_drv_mbssid_get_tx_bss(hapd);
+#else
 	hapd = hostapd_mbssid_get_tx_bss(hapd);
+#endif /* RDK_ONEWIFI */
 
 #define MAX_PROBERESP_LEN 768
 	buflen = MAX_PROBERESP_LEN;
@@ -2815,6 +2840,10 @@ skip_mu_cap_war:
 	}
 #endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 
+#ifdef RDK_ONEWIFI
+       hapd = hostapd_drv_mbssid_get_tx_bss(hapd);
+#endif /* RDK_ONEWIFI */
+
 	ret = hostapd_drv_send_mlme(hostapd_mbssid_get_tx_bss(hapd),
 				    params.resp, params.resp_len, noack,
 				    csa_offs_len ? csa_offs : NULL,
@@ -3599,6 +3628,10 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		tail_len += (3 + sizeof(struct ieee80211_uhr_operation));
 #endif /* CONFIG_IEEE80211BN */
 
+#ifdef RDK_ONEWIFI
+       if (hapd->iconf->mbssid == MBSSID_ENABLED)
+               tail_len += 5; /* Multiple BSSID Configuration element */
+#endif /* RDK_ONEWIFI */
 	tail_len += hostapd_security_profile_ie_len(hapd);
 
 	if (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
@@ -3792,7 +3825,11 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	 * MBSSID IE in Enhanced Multi-BSSID enabled  case.
 	 */
 	mbssid_cfg_elem = tailpos;
+#ifdef RDK_ONEWIFI
+       tailpos = hostapd_drv_mbssid_config(hapd, tailpos);
+#else
 	tailpos = hostapd_eid_mbssid_config(hapd, tailpos, 0);
+#endif /* RDK_ONEWIFI */
 
 	if (tailpos - mbssid_cfg_elem) {
 		if ((mbssid_cfg_elem + 1 < tailpos) &&
