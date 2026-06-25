@@ -14372,7 +14372,8 @@ static bool hostapd_skip_rnr(size_t i, struct mbssid_ie_profiles *skip_profiles,
 
 	/* No need to report if length is for MLD TBTT and the BSS is not
 	 * affiliated with an aP MLD. Normal TBTT will include this. */
-	if (tbtt_info_len == RNR_TBTT_INFO_MLD_LEN && !ap_mld)
+	if ((tbtt_info_len == RNR_TBTT_INFO_MLD_LEN ||
+	     tbtt_info_len == RNR_TBTT_INFO_MLD_ECU_LEN) && !ap_mld)
 		return true;
 
 #ifdef CONFIG_IEEE80211BE
@@ -14499,13 +14500,18 @@ hostapd_eid_rnr_iface_len(struct hostapd_data *hapd,
 	size_t total_len = 0, len = *current_len;
 	int total_tbtt_count = 0;
 	size_t i;
-	u8 tbtt_info_len = mld_update ? RNR_TBTT_INFO_MLD_LEN :
-		RNR_TBTT_INFO_LEN;
+	u8 tbtt_info_len;
 	bool reporting_ap_mld = false;
 	bool have_pending_group;
 	u8 pending_op_class = 0, pending_channel = 0;
 	bool *tbtt_added = NULL;
 	u8 max_rnr = reporting_hapd->conf->rnr_ie_allowed;
+
+	if (mld_update)
+		tbtt_info_len = hostapd_is_uhr_enabled(hapd) ?
+			RNR_TBTT_INFO_MLD_ECU_LEN : RNR_TBTT_INFO_MLD_LEN;
+	else
+		tbtt_info_len = RNR_TBTT_INFO_LEN;
 
 #ifdef CONFIG_IEEE80211BE
 #ifdef CONFIG_QCN_EXTN
@@ -14617,7 +14623,8 @@ repeat_rnr_len:
 	 */
 	if (!mld_update && tbtt_info_len == RNR_TBTT_INFO_LEN &&
 	    reporting_ap_mld) {
-		tbtt_info_len = RNR_TBTT_INFO_MLD_LEN;
+		tbtt_info_len = hostapd_is_uhr_enabled(hapd) ?
+			RNR_TBTT_INFO_MLD_ECU_LEN : RNR_TBTT_INFO_MLD_LEN;
 		goto repeat_rnr_len;
 	}
 
@@ -15044,7 +15051,8 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 
 #ifdef CONFIG_IEEE80211BE
 	/* Include the MLD parameters only when TBTT length is for ML RNR */
-	if (ap_mld && tbtt_info_len == RNR_TBTT_INFO_MLD_LEN) {
+	if (ap_mld && (tbtt_info_len == RNR_TBTT_INFO_MLD_LEN ||
+		       tbtt_info_len == RNR_TBTT_INFO_MLD_ECU_LEN)) {
 		u8 param_ch = 0;
 		/* If BSS is not a partner of the reporting_hapd or
 		 * it is one of the nontransmitted hapd,
@@ -15084,6 +15092,13 @@ static bool hostapd_eid_rnr_bss(struct hostapd_data *hapd,
 		    bss->mld->ttlm_ctx.established_ttlm.disabled_link_bitmap)
 			*eid |= RNR_TBTT_INFO_MLD_PARAM2_LINK_DISABLED;
 		eid++;
+
+		/* Enhanced Critical Updates Information (IEEE P802.11bn/D1.5, Figure 9-800a),
+		 * placeholder, update when critical_update is handled.
+		 */
+		if (tbtt_info_len == RNR_TBTT_INFO_MLD_ECU_LEN)
+			*eid++ = 0;
+
 	}
 #endif /* CONFIG_IEEE80211BE */
 
@@ -15108,13 +15123,18 @@ static u8 * hostapd_eid_rnr_iface(struct hostapd_data *hapd,
 	u8 *eid_start = eid, *size_offset = (eid - len) + 1;
 	u8 *tbtt_count_pos = size_offset + 1;
 	u8 total_tbtt_count = 0;
-	u8 tbtt_info_len = mld_update ? RNR_TBTT_INFO_MLD_LEN :
-		RNR_TBTT_INFO_LEN;
+	u8 tbtt_info_len;
 	bool reporting_ap_mld = false;
 	bool have_pending_group;
 	u8 pending_op_class = 0, pending_channel = 0;
 	bool *tbtt_added = NULL;
 	u8 max_rnr = reporting_hapd->conf->rnr_ie_allowed;
+
+	if (mld_update)
+		tbtt_info_len = hostapd_is_uhr_enabled(hapd) ?
+			RNR_TBTT_INFO_MLD_ECU_LEN : RNR_TBTT_INFO_MLD_LEN;
+	else
+		tbtt_info_len = RNR_TBTT_INFO_LEN;
 
 	if (!(iface->drv_flags & WPA_DRIVER_FLAGS_AP_CSA) || !iface->freq)
 		return eid;
@@ -15231,7 +15251,8 @@ repeat_rnr:
 	 */
 	if (!mld_update && tbtt_info_len == RNR_TBTT_INFO_LEN &&
 	    reporting_ap_mld) {
-		tbtt_info_len = RNR_TBTT_INFO_MLD_LEN;
+		tbtt_info_len = hostapd_is_uhr_enabled(hapd) ?
+			RNR_TBTT_INFO_MLD_ECU_LEN : RNR_TBTT_INFO_MLD_LEN;
 		goto repeat_rnr;
 	}
 
