@@ -11,6 +11,9 @@
 #include "hostapd.h"
 #include "sta_info.h"
 #include "ieee802_11.h"
+#include "common/hw_features_common.h"
+#include "common/ieee802_11_common.h"
+
 
 u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 			    enum ieee80211_op_mode opmode)
@@ -263,7 +266,7 @@ static u8 * uhr_put_npca_mode_tuple(u8 *pos,
 		4 + (bitmap_present ? 2 : 0) : 0;
 
 	pos = uhr_put_mode_tuple_hdr(pos, UHR_PARAMS_UPDATE_MODE_ID_NPCA,
-				     npca->enable, npca->update, mode_len);
+				     npca->enable, true, mode_len);
 	if (npca->enable) {
 		WPA_PUT_LE32(pos, npca->params);
 		pos += 4;
@@ -347,4 +350,175 @@ u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
 
 	*length_pos = pos - (eid + 2);
 	return pos;
+}
+
+/**
+ * hostapd_npca_primary_chan_to_subchan_idx - Convert a user-supplied NPCA
+ * primary channel value to a 0-based 20 MHz subchannel index within the BSS
+ * bandwidth.
+ *
+ * @hapd: hostapd BSS data
+ * @val_str: string containing a frequency in MHz (> 233) or a channel number
+ *
+ * The function validates that:
+ *  - The BSS bandwidth is at least 80 MHz (NPCA requirement).
+ *  - The resolved frequency falls on a 20 MHz subchannel boundary inside the
+ *    BSS bandwidth.
+ *  - The NPCA primary differs from the BSS primary channel.
+ *  - The NPCA primary lies in the half of the BSS bandwidth that is opposite
+ *    to the BSS primary channel (secondary half).
+ *
+ * Returns: subchannel index (0-15) on success, -1 on error.
+ */
+int hostapd_npca_primary_chan_to_subchan_idx(struct hostapd_data *hapd,
+					     const char *val_str)
+{
+	int user_val = atoi(val_str);
+	int target_freq;
+	u8 center_chan_no = hostapd_get_oper_centr_freq_seg0_idx(hapd->iconf);
+	int bss_freq = ieee80211_chan_to_freq(NULL, hapd->iconf->op_class,
+					     center_chan_no);
+	enum oper_chan_width chwidth;
+	int bss_bw_mhz;
+	int lowest_freq;
+	int subchan_idx;
+	int half;
+	int bss_primary_freq;
+	bool primary_in_lower;
+	bool npca_in_lower;
+
+	if (bss_freq < 0) {
+		int bss_primary = hapd->iface->freq;
+
+		if (is_6ghz_freq(bss_primary))
+			bss_freq = 5950 + center_chan_no * 5;
+		else if (is_5ghz_freq(bss_primary))
+			bss_freq = 5000 + center_chan_no * 5;
+		else
+			bss_freq = 2407 + center_chan_no * 5;
+	}
+
+	chwidth = hostapd_get_oper_chwidth(hapd->iconf);
+
+	/* Determine BSS bandwidth in MHz */
+	switch (chwidth) {
+	case CONF_OPER_CHWIDTH_320MHZ:
+		bss_bw_mhz = 320;
+		break;
+	case CONF_OPER_CHWIDTH_160MHZ:
+		bss_bw_mhz = 160;
+		break;
+	case CONF_OPER_CHWIDTH_80MHZ:
+		bss_bw_mhz = 80;
+		break;
+	case CONF_OPER_CHWIDTH_40MHZ_6GHZ:
+		bss_bw_mhz = 40;
+		break;
+	default: /* CONF_OPER_CHWIDTH_USE_HT = 20 or 40 MHz */
+		bss_bw_mhz = hapd->iconf->secondary_channel ? 40 : 20;
+		break;
+	}
+
+	/* Spec: NPCA requires >= 80 MHz BSS BW */
+	if (bss_bw_mhz < 80) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES: NPCA requires "
+			   "at least 80 MHz BSS bandwidth "
+			   "(current: %d MHz)",
+			   bss_bw_mhz);
+		return -1;
+	}
+
+	/*
+	 * Convert channel number to frequency if needed.
+	 * Values > 233 are unambiguously a frequency in MHz.
+	 * Values <= 233 are a channel number; derive frequency using the VAP's
+	 * operating class so that e.g. channel 6 on a 2.4 GHz VAP and channel 6
+	 * on a 6 GHz VAP are handled correctly without ambiguity. If op_class is
+	 * not configured (0), fall back to band-based conversion derived from the
+	 * BSS primary channel frequency.
+	 */
+	if (user_val > 233) {
+		target_freq = user_val;
+	} else {
+		target_freq = ieee80211_chan_to_freq(NULL, hapd->iconf->op_class,
+						    (u8) user_val);
+		if (target_freq < 0) {
+			int bss_primary = hapd->iface->freq;
+
+			if (is_6ghz_freq(bss_primary))
+				target_freq = 5950 + user_val * 5;
+			else if (is_5ghz_freq(bss_primary))
+				target_freq = 5000 + user_val * 5;
+			else
+				target_freq = 2407 + user_val * 5;
+		}
+	}
+
+	/*
+	 * Compute the lowest 20 MHz subchannel frequency of the BSS:
+	 * center_freq - bss_bw/2 + 10 MHz.
+	 */
+	lowest_freq = bss_freq - bss_bw_mhz / 2 + 10;
+
+	/* Subchannel index = distance from lowest in 20 MHz steps */
+	subchan_idx = (target_freq - lowest_freq) / 20;
+
+	if (subchan_idx < 0 || subchan_idx > 15 ||
+	    target_freq < lowest_freq ||
+	    target_freq >= lowest_freq + bss_bw_mhz ||
+	    (target_freq - lowest_freq) % 20 != 0) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES: primary_chan freq %d MHz "
+			   "is not a 20 MHz subchannel within the BSS "
+			   "bandwidth (center %d MHz, %d MHz wide)",
+			   target_freq, bss_freq, bss_bw_mhz);
+		return -1;
+	}
+
+	/* Spec: NPCA primary must differ from BSS primary */
+	if (target_freq == hapd->iface->freq) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES: primary_chan freq "
+			   "%d MHz is the BSS primary channel; "
+			   "NPCA primary must be different",
+			   target_freq);
+		return -1;
+	}
+
+	/*
+	 * Spec: NPCA primary must be in the secondary half of the BSS
+	 * bandwidth:
+	 *   80 MHz  -> secondary 40 MHz
+	 *   160 MHz -> secondary 80 MHz
+	 *   320 MHz -> secondary 160 MHz
+	 *
+	 * The BSS primary channel (iface->freq) sits in one half; the NPCA
+	 * primary must be in the other.
+	 * Half-bandwidth = bss_bw_mhz / 2.
+	 * Primary half:   [lowest_freq, lowest_freq + half)
+	 * Secondary half: [lowest_freq + half, lowest_freq + bss_bw_mhz)
+	 */
+	half = bss_bw_mhz / 2;
+	bss_primary_freq = hapd->iface->freq;
+	primary_in_lower = (bss_primary_freq >= lowest_freq &&
+			    bss_primary_freq < lowest_freq + half);
+	npca_in_lower = (target_freq >= lowest_freq &&
+			 target_freq < lowest_freq + half);
+
+	if (primary_in_lower == npca_in_lower) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES: primary_chan "
+			   "freq %d MHz is not in the secondary "
+			   "%d MHz of the BSS (center %d MHz, "
+			   "%d MHz wide); NPCA primary must be "
+			   "in the half opposite to the BSS "
+			   "primary channel (%d MHz)",
+			   target_freq, half,
+			   bss_freq, bss_bw_mhz,
+			   bss_primary_freq);
+		return -1;
+	}
+
+	return subchan_idx;
 }
