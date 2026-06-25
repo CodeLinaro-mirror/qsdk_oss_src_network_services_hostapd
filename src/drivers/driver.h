@@ -6587,8 +6587,23 @@ struct wpa_driver_ops {
 	int (*set_qos)(void *priv, struct qm_req_data *qm_req,
 		       struct qm_resp_data *qm_resp);
 
+#ifdef CONFIG_IEEE80211BN
 	/**
-	 * clear_afc_payload - Notify driver to send a request to firmware to
+	 * critical_update - Initiate a UHR Enhanced Critical Update (ECU)
+	 * session on an AP link.
+	 * @priv: Private driver interface data
+	 * @link_id: MLO link ID of the AP link
+	 * @cu_type: Critical Update type (enum nl80211_cu_type)
+	 * @elems: CU element blob to stitch into beacons, or NULL
+	 * @elems_len: Length of @elems in bytes
+	 * Returns: 0 on success, negative value on failure
+	 */
+	int (*critical_update)(void *priv, u8 link_id, u32 cu_type,
+			       const u8 *elems, size_t elems_len);
+#endif /* CONFIG_IEEE80211BN */
+
+	/**
+ * clear_afc_payload - Notify driver to send a request to firmware to
 	 * clear the stored AFC payload
 	 * @priv: Private driver interface data
 	 * @link_id: Link ID of the specified link; -1 for non-MLD

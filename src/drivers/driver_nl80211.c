@@ -18673,6 +18673,67 @@ int hostapd_validate_monitor_iface(const char *ifname, int *ifindex)
 	return 0;
 }
 
+
+#ifdef CONFIG_IEEE80211BN
+/**
+ * nl80211_critical_update - Send NL80211_CMD_CRITICAL_UPDATE to the kernel
+ *
+ * Encodes and sends the command that initiates a UHR Enhanced Critical Update
+ * (ECU) session on the specified AP link.  The kernel/Firmware will stitch the
+ * supplied CU element blob into beacons and drive the ECU state machine,
+ * reporting progress back via NL80211_CMD_CRITICAL_UPDATE_NOTIFY events.
+ *
+ * @priv:     Private driver interface data (struct i802_bss *)
+ * @link_id:  MLO link ID of the AP link on which to start the ECU session
+ * @cu_type:  Critical Update type (enum nl80211_cu_type value)
+ * @elems:      CU element blob to stitch into beacons, or NULL
+ * @elems_len:  Length of @elems in bytes
+ *
+ * Returns: 0 on success, negative errno on failure
+ */
+static int nl80211_critical_update(void *priv, u8 link_id, u32 cu_type,
+				   const u8 *elems, size_t elems_len)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret;
+
+	if (drv->nlmode != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: critical_update link_id=%u cu_type=%u elems_len=%zu",
+		   link_id, cu_type, elems_len);
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_CRITICAL_UPDATE);
+	if (!msg)
+		goto fail;
+
+	if (bss->valid_links &&
+	    nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id))
+		goto fail;
+	if (nla_put_u8(msg, NL80211_ATTR_CU_TYPE, cu_type))
+		goto fail;
+
+	if (elems && elems_len &&
+	    nla_put(msg, NL80211_ATTR_IE, elems_len, elems))
+		goto fail;
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "nl80211: critical_update failed: err=%d (%s)",
+			   ret, strerror(-ret));
+	return ret;
+
+fail:
+	nlmsg_free(msg);
+	return ret;
+}
+#endif /* CONFIG_IEEE80211BN */
+
+
 const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.name = "nl80211",
 	.desc = "Linux nl80211/cfg80211",
@@ -18887,4 +18948,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #endif /* CONFIG_QCN_EXTN */
 	.abort_cac = nl80211_abort_cac,
 	.notify_radar = nl80211_notify_radar,
+#ifdef CONFIG_IEEE80211BN
+	.critical_update = nl80211_critical_update,
+#endif /* CONFIG_IEEE80211BN */
 };
