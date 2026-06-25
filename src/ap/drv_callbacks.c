@@ -3101,6 +3101,11 @@ static void hostapd_event_afc_update_complete(
 	}
 
 	if (hostapd_drv_is_retail_afc_supported(hapd)) {
+		if (!iface->conf->enable_best_power_mode) {
+			wpa_printf(MSG_ERROR,
+				   "Skip power event action for retail AFC use cases - BPM not enabled");
+			return;
+		}
 		iface->is_afc_channel_change_pending = true;
 		/* Wait for NL8011_WIPHY_REG_CHANGE event to get the updated channel list */
 		eloop_register_timeout(5, 0, afc_channel_change_timeout, iface,
@@ -3379,10 +3384,15 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 			   iface->phy, sync_result);
 	}
 
-	iface->is_afc_channel_change_pending = true;
-	/* Wait for NL8011_WIPHY_REG_CHANGE event to get the updated channel list */
-	eloop_register_timeout(5, 0,
-			       afc_channel_change_timeout, iface, NULL);
+	if (iface->conf->enable_best_power_mode) {
+		iface->is_afc_channel_change_pending = true;
+		/* Wait for NL8011_WIPHY_REG_CHANGE event to get the updated channel list */
+		eloop_register_timeout(5, 0,
+				       afc_channel_change_timeout, iface, NULL);
+	} else {
+		wpa_printf(MSG_ERROR,
+			   "Skip payload reset action for retail AFC use cases - BPM not enabled");
+	}
 }
 
 #ifdef CONFIG_OWE

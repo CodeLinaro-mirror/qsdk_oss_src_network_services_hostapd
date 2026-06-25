@@ -842,7 +842,24 @@ hostapd_switch_chan(struct ubus_context *ctx, struct ubus_object *obj,
 		break;
 	}
 
-	css.power_mode = hapd->iconf->he_6ghz_reg_pwr_type;
+	bool is_6ghz = is_6ghz_freq(css.freq_params.freq);
+
+	if (is_6ghz) {
+		if (hapd->iconf->enable_best_power_mode) {
+			u8 bpm = hostapd_get_best_ap_6ghz_power_mode(
+				hapd->iface, css.freq_params.freq,
+				css.freq_params.center_freq1,
+				css.freq_params.bandwidth,
+				css.freq_params.punct_bitmap);
+
+			css.power_mode = (bpm != NL80211_REG_NUM_POWER_MODES) ?
+				bpm : hapd->iconf->he_6ghz_reg_pwr_type;
+		} else {
+			hostapd_set_current_6ghz_pwr_type(hapd->iface, &css.power_mode);
+		}
+	} else {
+		css.power_mode = -1;
+	}
 	hostapd_set_freq_params(&css.freq_params, iconf->hw_mode,
 				css.freq_params.freq,
 				css.freq_params.channel, iconf->enable_edmg,

@@ -1000,6 +1000,13 @@ do_csa:
 				   __func__, settings.freq_params.freq);
 			goto exit;
 		}
+	} else if (is_6ghz_freq(settings.freq_params.freq) &&
+		   !iface->conf->enable_best_power_mode) {
+		hostapd_set_current_6ghz_pwr_type(iface, &settings.power_mode);
+		wpa_printf(MSG_DEBUG,
+			   "%s: Using configured power mode %d for Freq %d (BPM disabled)",
+			   __func__, settings.power_mode,
+			   settings.freq_params.freq);
 	}
 
 	/* Trigger mesh CSA before AP channel switch if mesh VAP present */
@@ -1141,6 +1148,13 @@ static void set_csa_param(struct csa_settings *settings,
 				   settings->freq_params.freq,
 				   settings->power_mode);
 		}
+	} else if (is_6ghz_freq(settings->freq_params.freq) &&
+		   !iface->conf->enable_best_power_mode) {
+		hostapd_set_current_6ghz_pwr_type(iface, &settings->power_mode);
+		wpa_printf(MSG_DEBUG,
+			   "%s: Using configured power mode %d for Freq %d (BPM disabled)",
+			   __func__, settings->power_mode,
+			   settings->freq_params.freq);
 	}
 }
 
