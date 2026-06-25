@@ -196,6 +196,29 @@ u16 copy_sta_uhr_capab(struct hostapd_data *hapd, struct sta_info *sta,
 	return WLAN_STATUS_SUCCESS;
 }
 
+void hostapd_update_ecu_params(struct hostapd_data *hapd)
+{
+	if (!hapd->conf->uhr_params_update.mode_changed)
+		return;
+
+	if (hapd->conf->uhr_params_update.mode_changed &
+	    BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA)) {
+		const struct hostapd_uhr_npca_params *npca =
+			&hapd->conf->uhr_params_update.npca;
+
+		hapd->iconf->npca_enable = npca->enable;
+		hapd->iconf->npca_primary_chan_offset =
+			(npca->params &
+			 UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS);
+		hapd->iconf->npca_punct_bitmap =
+			(npca->params &
+			 UHR_OPER_PARAMS_NPCA_DIS_SUBCH_BITMAP_PRES) ?
+			npca->disabled_subchan_bitmap : 0;
+	}
+
+	/* TODO: update for other ECU features */
+}
+
 
 /* mode_ctrl(1) is always present; mode_len(1) is present when the mode
  * is enabled (mandatory even when mode_params_len == 0).
