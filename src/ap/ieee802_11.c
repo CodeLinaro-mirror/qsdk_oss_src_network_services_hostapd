@@ -7866,7 +7866,7 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 		if (hostapd_is_uhr_enabled(hapd)) {
 			p = hostapd_eid_uhr_capab(hapd, p, IEEE80211_MODE_AP);
 			p = hostapd_eid_uhr_operation(hapd, p, false);
-			p = hostapd_eid_uhr_params_update(hapd, p, true);
+			p = hostapd_eid_uhr_params_update(hapd, p, true, false);
 		}
 #endif /* CONFIG_IEEE80211BN */
 	}
@@ -8443,7 +8443,7 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 			if (hapd->iconf->npca_punct_bitmap)
 				buflen += IEEE80211_UHR_NPCA_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
 		}
-		buflen += hostapd_eid_uhr_params_update_len(hapd, true);
+		buflen += hostapd_eid_uhr_params_update_len(hapd, true, false);
 	}
 	/* Add SMD IE if both AP and STA support SMD */
 	if (hapd->conf->smd.enabled && sta && sta->smd_info.smd_sta) {
@@ -8669,7 +8669,7 @@ rsnxe_done:
 	if (hostapd_is_uhr_enabled(hapd)) {
 		p = hostapd_eid_uhr_capab(hapd, p, IEEE80211_MODE_AP);
 		p = hostapd_eid_uhr_operation(hapd, p, false);
-		p = hostapd_eid_uhr_params_update(hapd, p, true);
+		p = hostapd_eid_uhr_params_update(hapd, p, true, false);
 	}
 #endif /* CONFIG_IEEE80211BN */
 

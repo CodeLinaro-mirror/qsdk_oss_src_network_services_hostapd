@@ -5512,6 +5512,52 @@ hostapd_validate_uhr_cu_state(struct hostapd_data *hapd) {
 	return 0;
 }
 
+static int
+hostapd_send_uhr_params_critical_update(struct hostapd_data *hapd)
+{
+	size_t elem_len;
+	u8 *elem, *elem_end;
+	int ret;
+
+	wpa_printf(MSG_DEBUG,
+		   "UPDATE_UHR_FEATURES [%s]: Initiating UHR enhanced critical update",
+		   hapd->conf->iface);
+
+	elem_len = hostapd_eid_uhr_params_update_len(hapd, false, true);
+	if (elem_len == 0) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES [%s]: UHR Params Update element is empty",
+			   hapd->conf->iface);
+		return -1;
+	}
+
+	elem = os_malloc(elem_len);
+	if (!elem) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES [%s]: failed to allocate element buffer",
+			   hapd->conf->iface);
+		return -1;
+	}
+
+	elem_end = hostapd_eid_uhr_params_update(hapd, elem, false, true);
+	elem_len = elem_end - elem;
+
+	wpa_hexdump(MSG_DEBUG,
+		    "UPDATE_UHR_FEATURES: UHR Params Update element",
+		    elem, elem_len);
+
+	ret = hostapd_drv_critical_update(hapd, hapd->mld_link_id,
+					  NL80211_CU_TYPE_UHR_PARAMS,
+					  elem, elem_len);
+	os_free(elem);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES [%s] NL80211_CMD_CRITICAL_UPDATE failed: %d",
+			   hapd->conf->iface,
+			   ret);
+	return ret;
+}
+
 
 static int
 hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
@@ -5584,15 +5630,19 @@ hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 
 			/* TODO: Add the changes for to update bss specific uhr_params_update features e.g DPS */
 
-			/* TODO - Invoke critical update command */
 
 			bss->uhr_ecu.uhr_params_update_countdown = upd->adv_notification_interval;
+			if (hostapd_send_uhr_params_critical_update(bss)) {
+				wpa_printf(MSG_ERROR,
+					   "UPDATE_UHR_FEATURES: failed to send critical update command");
 
+				/*TODO: how to reset the state of other BSS? */
+				return -1;
+			}
 		}
 	} else {
 		/*TODO - Add support for BSS specific critical update params update */
 	}
-
 
 	wpa_printf(MSG_DEBUG,
 		   "UPDATE_UHR_FEATURES: UHR Params Update window "
