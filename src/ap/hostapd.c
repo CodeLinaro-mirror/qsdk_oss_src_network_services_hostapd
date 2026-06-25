@@ -2610,6 +2610,14 @@ setup_mld:
 			   "Failed to update radio mask for %s",
 			   hapd->conf->iface);
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_QCN_EXTN
+	if (!first && !hapd_reenable_pending(hapd) &&
+	    hostapd_drv_mark_vap_submode(hapd, hapd->conf->bss_extn.vap_submode)) {
+		wpa_printf(MSG_ERROR, "vap_submode vendor command failed: %s",
+			   hapd->conf->iface);
+		return -1;
+	}
+#endif /* CONFIG_QCN_EXTN */
 	/* MBSSID setup already done during reenable*/
 	if (!hapd_reenable_pending(hapd) &&
 	    hostapd_mbssid_setup_bss(hapd))
@@ -2798,6 +2806,9 @@ setup_mld:
 		wpa_printf(MSG_ERROR, "IEEE 802.1X initialization failed.");
 		return -1;
 	}
+#ifdef CONFIG_IEEE8021X_AUTH
+	hapd->send_eap_req = ieee80211_send_eap_req;
+#endif /* CONFIG_IEEE8021X_AUTH */
 
 	if (conf->wpa && hostapd_setup_wpa(hapd))
 		return -1;
@@ -8186,6 +8197,17 @@ void hostapd_new_assoc_sta(struct hostapd_data *hapd, struct sta_info *sta,
 	/* Start IEEE 802.1X authentication process for new stations */
 	if (!hapd->conf->plugin_eap_offload)
 		ieee802_1x_new_station(hapd, sta);
+
+#ifdef CONFIG_ENC_ASSOC
+		if (ap_sta_is_epp(sta) && sta->wpa_sm && sta->pasn) {
+			wpa_store_eppke_pmk_ptk_sm(sta->wpa_sm,
+						   &sta->pasn->ptk,
+						   sta->pasn->pmk,
+						   sta->pasn->pmk_len);
+			wpa_auth_set_ptk_rekey_timer(sta->wpa_sm);
+		}
+#endif /* CONFIG_ENC_ASSOC */
+
 	if (reassoc) {
 		if (sta->auth_alg != WLAN_AUTH_FT &&
 		    sta->auth_alg != WLAN_AUTH_FILS_SK &&

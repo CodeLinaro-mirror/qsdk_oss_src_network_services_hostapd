@@ -12772,6 +12772,155 @@ static int wpas_ctrl_iface_epcs(struct wpa_supplicant *wpa_s, char *pos,
 
 	return 0;
 }
+
+/**
+ * wpas_ctrl_iface_npca_enable - Handle NPCA ctrl_iface command
+ *
+ * Command format:
+ *   NPCA <0|1> [link_id=<id> [switch_delay=<delay>]
+ *                      [switchback_delay=<delay>]] ...
+ *
+ * The global enable/disable flag is applied to all MLO links that have NPCA
+ * capability. Per-link overrides can be specified with link_id= tokens.
+ * switch_delay and switchback_delay are optional per-link parameters (in TUs).
+ *
+ * Returns 0 on success, -1 on failure.
+ */
+static int wpas_ctrl_iface_npca_enable(struct wpa_supplicant *wpa_s,
+				       char *cmd)
+{
+	int global_enable;
+	char *pos, *token;
+	struct npca_link_config links[MAX_NUM_MLD_LINKS];
+	int num_links = 0;
+	int i;
+
+	/* Parse global enable/disable flag */
+	pos = cmd;
+	global_enable = atoi(pos);
+
+	/* Skip past the enable value */
+	while (*pos && !isspace((unsigned char)*pos))
+		pos++;
+	while (*pos && isspace((unsigned char)*pos))
+		pos++;
+
+	/* Build per-link config array from valid_links */
+	if (!wpa_s->valid_links) {
+		wpa_printf(MSG_DEBUG,
+			   "NPCA: no MLO links associated, cannot apply");
+		return -1;
+	}
+
+	/* Initialize link configs from valid_links with global enable value */
+	for_each_link(wpa_s->valid_links, i) {
+		struct hostapd_hw_modes *mode;
+
+		/* Get hardware mode for this link's frequency */
+		mode = get_mode_with_freq(wpa_s->hw.modes, wpa_s->hw.num_modes,
+					  wpa_s->links[i].freq);
+		if (!mode) {
+			wpa_printf(MSG_DEBUG,
+				   "NPCA: no hw mode for link %d freq %u",
+				   i, wpa_s->links[i].freq);
+			continue;
+		}
+
+		/* Check NPCA capability for STA mode */
+		if (!mode->npca_info[IEEE80211_MODE_INFRA].npca_supported) {
+			wpa_printf(MSG_DEBUG,
+				   "NPCA: link %d does not support NPCA",
+				   i);
+			continue;
+		}
+
+		links[num_links].link_id = i;
+		links[num_links].npca_enable = !!global_enable;
+		links[num_links].npca_switch_delay = 0;
+		links[num_links].npca_switchback_delay = 0;
+		num_links++;
+	}
+
+	if (num_links == 0) {
+		wpa_printf(MSG_DEBUG,
+			   "NPCA: no NPCA-capable links found");
+		return -1;
+	}
+
+	/* Parse optional per-link overrides: link_id=<id> [switch_delay=<d>]
+	 * [switchback_delay=<d>] */
+	token = pos;
+	while (*token) {
+		int link_id = -1, sw_delay = 0, swb_delay = 0;
+		char *next;
+
+		/* Skip whitespace */
+		while (*token && isspace((unsigned char)*token))
+			token++;
+		if (!*token)
+			break;
+
+		if (os_strncmp(token, "link_id=", 8) == 0) {
+			link_id = atoi(token + 8);
+
+			/* Advance past link_id=<val> */
+			next = token + 8;
+			while (*next && !isspace((unsigned char)*next))
+				next++;
+			token = next;
+
+			/* Look for optional switch_delay and switchback_delay
+			 * that follow this link_id */
+			while (*token) {
+				while (*token && isspace((unsigned char)*token))
+					token++;
+				if (!*token)
+					break;
+				if (os_strncmp(token, "switch_delay=", 13) == 0) {
+					sw_delay = atoi(token + 13);
+					next = token + 13;
+					while (*next && !isspace((unsigned char)*next))
+						next++;
+					token = next;
+				} else if (os_strncmp(token, "switchback_delay=", 17) == 0) {
+					swb_delay = atoi(token + 17);
+					next = token + 17;
+					while (*next && !isspace((unsigned char)*next))
+						next++;
+					token = next;
+				} else {
+					/* Next token is not for this link */
+					break;
+				}
+			}
+
+			/* Apply per-link override */
+			if (link_id >= 0 && link_id < MAX_NUM_MLD_LINKS) {
+				for (i = 0; i < num_links; i++) {
+					if (links[i].link_id == link_id) {
+						links[i].npca_enable =
+							!!global_enable;
+						links[i].npca_switch_delay =
+							(u8)sw_delay;
+						links[i].npca_switchback_delay =
+							(u8)swb_delay;
+						break;
+					}
+				}
+			}
+		} else {
+			/* Unknown token, skip it */
+			while (*token && !isspace((unsigned char)*token))
+				token++;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "NPCA: sending uhr_mode_update for %d link(s), global_enable=%d",
+		   num_links, global_enable);
+
+	return wpa_drv_uhr_mode_update(wpa_s, links, num_links);
+}
 #endif /* CONFIG_IEEE80211BE */
 
 static int wpas_ctrl_ml_probe(struct wpa_supplicant *wpa_s, char *cmd)
@@ -14458,6 +14607,9 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 	} else if (os_strncmp(buf, "EPCS ", 5) == 0) {
 		reply_len = wpas_ctrl_iface_epcs(wpa_s, buf+5, reply,
 						 reply_size);
+	} else if (os_strncmp(buf, "NPCA ", 5) == 0) {
+		if (wpas_ctrl_iface_npca_enable(wpa_s, buf + 5) < 0)
+			reply_len = -1;
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_QCN_EXTN
 	} else if (os_strcmp(buf, "GET_FREQ_LIST") == 0) {

@@ -49,6 +49,9 @@ struct pasn_data {
 	bool derive_kdk;
 	size_t kdk_len;
 	void *cb_ctx;
+	unsigned int auth_alg;
+	u8 mld_addr[ETH_ALEN];
+	bool is_ml_peer;
 
 #ifdef CONFIG_SAE
 	struct sae_pt *pt;
@@ -129,7 +132,7 @@ struct pasn_data {
 	int disable_pmksa_caching;
 	int *pasn_groups;
 	int use_anti_clogging;
-	const u8 *rsn_ie;
+	u8 *rsn_ie;
 	size_t rsn_ie_len;
 
 	u8 *comeback_key;
@@ -137,6 +140,14 @@ struct pasn_data {
 	u16 comeback_idx;
 	u16 *comeback_pending_idx;
 	struct wpabuf *frame;
+#ifdef CONFIG_ENC_ASSOC
+	bool authorized;
+	bool tk_configured;
+#endif /* CONFIG_ENC_ASSOC */
+#ifdef CONFIG_PMKSA_PRIVACY
+	bool pmksa_caching_privacy;
+	u8 epp_pmkid_cur[PMKID_LEN];
+#endif /* CONFIG_PMKSA_PRIVACY */
 
 	/**
 	 * send_mgmt - Function handler to transmit a Management frame
@@ -162,6 +173,13 @@ struct pasn_data {
 	int (*prepare_data_element)(void *ctx, const u8 *peer_addr);
 
 	int (*parse_data_element)(void *ctx, const u8 *data, size_t len);
+#ifdef CONFIG_ENC_ASSOC
+	int (*eppke_set_key)(void *ctx, enum wpa_alg alg, const u8 *addr,
+			     int vlan_id, const u8 *key, size_t key_len);
+#endif /* CONFIG_ENC_ASSOC */
+	struct rsn_pmksa_cache_entry *
+	(*pmksa_cache_search)(void *ctx, const u8 *spa, const u8 *pmkid,
+			      bool is_ml);
 };
 
 /* Initiator */
@@ -204,13 +222,23 @@ void pasn_register_callbacks(struct pasn_data *pasn, void *cb_ctx,
 					      unsigned int wait),
 			     int (*validate_custom_pmkid)(void *ctx,
 							  const u8 *addr,
-							  const u8 *pmkid));
+							  const u8 *pmkid),
+			     int (*eppke_set_key)(void *ctx, enum wpa_alg alg,
+						  const u8 *addr, int vlan_id,
+						  const u8 *key,
+						  size_t key_len),
+			     struct rsn_pmksa_cache_entry *
+			     (*pmksa_cache_search)(void *ctx, const u8 *spa,
+						   const u8 *pmkid,
+						   bool is_ml));
+
 void pasn_enable_kdk_derivation(struct pasn_data *pasn);
 void pasn_disable_kdk_derivation(struct pasn_data *pasn);
 
 void pasn_set_akmp(struct pasn_data *pasn, int akmp);
 void pasn_set_cipher(struct pasn_data *pasn, int cipher);
 void pasn_set_own_addr(struct pasn_data *pasn, const u8 *addr);
+void pasn_set_own_mld_addr(struct pasn_data *pasn, const u8 *addr);
 void pasn_set_peer_addr(struct pasn_data *pasn, const u8 *addr);
 void pasn_set_bssid(struct pasn_data *pasn, const u8 *addr);
 void pasn_set_initiator_pmksa(struct pasn_data *pasn,
@@ -236,6 +264,7 @@ void pasn_set_noauth(struct pasn_data *pasn, bool noauth);
 void pasn_set_password(struct pasn_data *pasn, const char *password);
 void pasn_set_wpa_key_mgmt(struct pasn_data *pasn, int key_mgmt);
 void pasn_set_rsn_pairwise(struct pasn_data *pasn, int rsn_pairwise);
+void pasn_set_rsne(struct pasn_data *pasn, const u8 *rsne);
 void pasn_set_rsnxe_caps(struct pasn_data *pasn, u32 rsnxe_capab);
 void pasn_set_rsnxe_ie(struct pasn_data *pasn, const u8 *rsnxe_ie);
 void pasn_set_custom_pmkid(struct pasn_data *pasn, const u8 *pmkid);

@@ -1103,12 +1103,38 @@ void wpa_auth_set_sta_ft_over_ds_ml(struct wpa_state_machine *sm, bool status)
 	sm->ft_over_ds_ml = status;
 }
 
+#ifdef CONFIG_ENC_ASSOC
+void wpa_store_eppke_pmk_ptk_sm(struct wpa_state_machine *sm,
+				const struct wpa_ptk *ptk, const u8 *pmk,
+				size_t pmk_len)
+{
+	os_memcpy(&sm->PTK, ptk, sizeof(struct wpa_ptk));
+	os_memcpy(sm->PMK, pmk, pmk_len);
+	sm->pmk_len = pmk_len;
+	sm->PTK_valid = true;
+	sm->pairwise_set = true;
+	sm->hash_alg = ptk->hash_alg;
+}
+#endif /* CONFIG_ENC_ASSOC */
+
+
 int wpa_auth_sta_associated(struct wpa_authenticator *wpa_auth,
 			    struct wpa_state_machine *sm,
 			    bool wpa_initialize)
 {
 	if (!wpa_auth || !wpa_auth->conf.wpa || !sm)
 		return -1;
+
+#ifdef CONFIG_ENC_ASSOC
+	if (sm->auth_alg == WLAN_AUTH_EPPKE) {
+		wpa_auth_logger(wpa_auth, wpa_auth_get_spa(sm), LOGGER_DEBUG,
+				"EPPKE authentication already completed - do not start 4-way handshake");
+		/* Go to PTKINITDONE state to allow GTK rekeying */
+		sm->wpa_ptk_state = WPA_PTK_PTKINITDONE;
+		sm->Pair = true;
+		return 0;
+	}
+#endif /* CONFIG_ENC_ASSOC */
 
 #ifdef CONFIG_IEEE80211R_AP
 	if (sm->ft_completed) {
@@ -2615,6 +2641,11 @@ int wpa_auth_sm_event(struct wpa_state_machine *sm, enum wpa_event event)
 	    (event == WPA_AUTH || event == WPA_ASSOC))
 		remove_ptk = 0;
 #endif /* CONFIG_FILS */
+#ifdef CONFIG_ENC_ASSOC
+	if (sm->auth_alg == WLAN_AUTH_EPPKE &&
+	    (event == WPA_AUTH || event == WPA_ASSOC))
+		remove_ptk = 0;
+#endif /* CONFIG_ENC_ASSOC */
 
 	if (remove_ptk) {
 		sm->PTK_valid = false;
@@ -7745,11 +7776,15 @@ int wpa_auth_pmksa_add_entry(struct wpa_authenticator *wpa_auth,
 
 
 struct rsn_pmksa_cache *
-wpa_auth_get_pmksa_cache(struct wpa_authenticator *wpa_auth)
+wpa_auth_get_pmksa_cache(struct wpa_authenticator *wpa_auth, bool is_ml)
 {
 	if (!wpa_auth || !wpa_auth->pmksa)
 		return NULL;
+#ifdef CONFIG_IEEE80211BE
+	return is_ml ? wpa_auth->ml_pmksa : wpa_auth->pmksa;
+#else /* CONFIG_IEEE80211BE */
 	return wpa_auth->pmksa;
+#endif /* CONFIG_IEEE80211BE */
 }
 
 
@@ -8824,6 +8859,126 @@ int wpa_auth_reconfig_wpa_auth_sm(struct hostapd_data *rhapd,
 }
 
 
+#ifdef CONFIG_ENC_ASSOC
+
+u8 * wpa_auth_eid_key_delivery(u8 *eid, size_t max_len,
+			       struct wpa_state_machine *sm, bool is_ml)
+{
+	size_t gtk_len, kde_len = 0;
+	u8 rsc[WPA_KEY_RSC_LEN] = {0}, *gtk;
+	struct wpa_group *gsm = sm->group;
+	u8 hdr[2];
+	u8 *kde, *buf;
+	const u8 *ptr;
+	size_t slice_len;
+	const size_t buflen = 1024;
+
+	/* TODO: Make sure there is sufficient length for the element */
+	buf = os_malloc(buflen);
+	if (!buf)
+		return eid;
+
+	ptr = buf;
+	kde = buf;
+	if (is_ml) {
+		kde = wpa_auth_ml_group_kdes(sm, kde, KDE_ALL_LINKS);
+		kde_len = wpa_auth_ml_group_kdes_len(sm, KDE_ALL_LINKS);
+	} else {
+		gtk = gsm->GTK[gsm->GN - 1];
+		gtk_len = gsm->GTK_len;
+		hdr[0] = gsm->GN & 0x03; /* KeyID bits */
+		kde = wpa_add_kde(kde, RSN_KEY_DATA_GROUPKEY, hdr, sizeof(hdr),
+				  gtk, gtk_len);
+		kde = ieee80211w_kde_add(sm, kde);
+		/* GTK KDE: 0xdd|len(1B)|RSN Selector(4B)|KeyID(2B)|GTK| */
+		kde_len = 2 + RSN_SELECTOR_LEN + 2 + gsm->GTK_len +
+			ieee80211w_kde_len(sm);
+	}
+
+	if (!is_ml && sm->group->wpa_group_state == WPA_GROUP_SETKEYSDONE)
+		wpa_auth_get_seqnum(sm->wpa_auth, NULL, gsm->GN, rsc);
+
+	/*
+	 * As the Key Delivery element can exceed the size of 255 bytes need to
+	 * handle fragmentation.
+	 */
+	slice_len = kde_len <= 246 ? kde_len : 246;
+	/* ElementID(0xff)|Length(1B)|ElementID Extn(1B)|RSC(8B)|KDE list */
+	*eid++ = WLAN_EID_EXTENSION;
+	*eid++ = slice_len + 1 + WPA_KEY_RSC_LEN;
+	*eid++ = WLAN_EID_EXT_KEY_DELIVERY;
+	os_memcpy(eid, rsc, WPA_KEY_RSC_LEN);
+	eid += WPA_KEY_RSC_LEN;
+
+	os_memcpy(eid, ptr, slice_len);
+
+	ptr += slice_len;
+	eid += slice_len;
+	kde_len -= slice_len;
+
+	while (kde_len) {
+		slice_len = kde_len <= 255 ? kde_len : 255;
+		*eid++ = WLAN_EID_FRAGMENT;
+		*eid++ = slice_len;
+		os_memcpy(eid, ptr, slice_len);
+
+		ptr += slice_len;
+		eid += slice_len;
+		kde_len -= slice_len;
+	}
+
+	bin_clear_free(buf, buflen);
+	return eid;
+}
+
+
+u8 * wpa_auth_write_assoc_resp_eppke(struct wpa_state_machine *sm,
+				     u8 *pos, size_t max_len, bool is_ml)
+{
+	int res;
+	u8 *end = pos + max_len;
+
+	if (!sm)
+		return pos;
+
+	res = wpa_write_rsn_ie(&sm->wpa_auth->conf, pos, max_len, NULL);
+	if (res < 0)
+		return pos;
+	pos += res;
+	pos = wpa_auth_eid_key_delivery(pos, end - pos, sm, is_ml);
+
+	return pos;
+}
+
+#endif /* CONFIG_ENC_ASSOC */
+
+
+#ifdef CONFIG_PMKSA_PRIVACY
+
+int wpa_auth_epp_derive_new_pmkid(const u8 *anonce, const u8 *snonce,
+				  int akmp, size_t pmk_len, u8 *pmkid)
+{
+	return rsn_pmkid_privacy(anonce, snonce, akmp, pmk_len, pmkid);
+}
+
+
+bool wpa_auth_ap_sta_support_pmkid_privacy(struct wpa_state_machine *sm)
+{
+	struct wpa_auth_config *conf;
+
+	if (!sm)
+		return false;
+
+	conf = &sm->wpa_auth->conf;
+
+	return conf->pmksa_caching_privacy &&
+		ieee802_11_rsnx_capab(sm->rsnxe,
+				      WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY);
+}
+
+#endif /* CONFIG_PMKSA_PRIVACY */
+
+
 void wpa_reset_assoc_sm_info(struct wpa_state_machine *assoc_sm,
 			     struct wpa_authenticator *wpa_auth,
 			     u8 mld_assoc_link_id)
@@ -8922,3 +9077,27 @@ void wpa_auth_trigger_m3(struct wpa_state_machine *sm)
 
 	SM_ENTER(WPA_PTK, PTKINITNEGOTIATING);
 }
+
+#ifdef CONFIG_IEEE8021X_AUTH
+int wpa_auth_802_1x_get_msk(struct wpa_authenticator *wpa_auth,
+			     const u8 *addr, u8 *msk, size_t *len)
+{
+	return wpa_auth_get_msk(wpa_auth, addr, msk, len);
+}
+
+
+int wpa_auth_802_1x_set_key(struct wpa_authenticator *wpa_auth,
+			    enum wpa_alg alg, const u8 *addr,
+			    u8 *key, size_t key_len)
+{
+
+	return wpa_auth_set_key(wpa_auth, 0, alg, addr, 0, key,
+				key_len, KEY_FLAG_PAIRWISE_RX_TX);
+
+}
+
+bool wpa_auth_ap_support_secure_ltf(struct wpa_authenticator *wpa_auth)
+{
+	return wpa_auth->conf.secure_ltf;
+}
+#endif /* CONFIG_IEEE8021X_AUTH */

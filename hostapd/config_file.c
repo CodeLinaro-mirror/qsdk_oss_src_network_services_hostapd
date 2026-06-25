@@ -647,6 +647,10 @@ static int hostapd_config_parse_key_mgmt(int line, const char *value)
 		else if (os_strcmp(start, "PASN") == 0)
 			val |= WPA_KEY_MGMT_PASN;
 #endif /* CONFIG_PASN */
+#ifdef CONFIG_ENC_ASSOC
+		else if (os_strcmp(start, "EPPKE") == 0)
+			val |= WPA_KEY_MGMT_EPPKE;
+#endif /* CONFIG_ENC_ASSOC */
 		else {
 			wpa_printf(MSG_ERROR, "Line %d: invalid key_mgmt '%s'",
 				   line, start);
@@ -2910,6 +2914,14 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->extended_key_id = val;
+#ifdef CONFIG_ENC_ASSOC
+	} else if (os_strcmp(buf, "assoc_frame_encryption") == 0) {
+		bss->assoc_frame_encryption = atoi(pos);
+	} else if (os_strcmp(buf, "pmksa_caching_privacy") == 0) {
+		bss->pmksa_caching_privacy = atoi(pos);
+	} else if (os_strcmp(buf, "eap_using_authentication_frames") == 0) {
+		bss->eap_using_authentication_frames = atoi(pos);
+#endif /* CONFIG_ENC_ASSOC  */
 	} else if (os_strcmp(buf, "wpa_group_rekey") == 0) {
 		bss->wpa_group_rekey = atoi(pos);
 		bss->wpa_group_rekey_set = 1;
@@ -3295,6 +3307,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		/* bgcac_en=1 also implies enable_background_radar */
 		if (conf->bgcac_en)
 			conf->enable_background_radar = 1;
+	} else if (os_strcmp(buf, "rcac_freq") == 0) {
+		conf->rcac_freq = atoi(pos);
 	} else if (os_strcmp(buf, "min_tx_power") == 0) {
 		int val = atoi(pos);
 

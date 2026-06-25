@@ -1684,11 +1684,15 @@ static enum rsn_hash_alg pasn_select_hash_alg(int akmp, int cipher,
 
 
 /**
- * pasn_pmk_to_ptk - Calculate PASN PTK from PMK, addresses, etc.
+ * pasn_pmk_to_ptk - Calculate PASN/EPPKE PTK from PMK, addresses, etc.
  * @pmk: Pairwise master key
  * @pmk_len: Length of PMK
- * @spa: Suppplicant address
- * @bssid: AP BSSID
+ * @spa: For EPPKE authentication, non-AP MLD MAC address is used for MLO. For
+ *	PASN authentication or EPPKE authentication for non-MLO, non-AP STA link
+ *	MAC address is used.
+ * @bssid: For EPPKE authentication, AP MLD MAC address is used for MLO. For
+ *	PASN authentication or EPPKE authentication for non-MLO, AP BSSID is
+ *	used.
  * @dhss: Is the shared secret (DHss) derived from the PASN ephemeral key
  *	exchange encoded as an octet string
  * @dhss_len: The length of dhss in octets
@@ -1698,13 +1702,15 @@ static enum rsn_hash_alg pasn_select_hash_alg(int akmp, int cipher,
  * @kdk_len: the length in octets that should be derived for HTLK. Can be zero.
  * @kek_len: The length in octets that should be derived for KEK. Can be zero.
  * @alg: Output variable for indicating the selected hash algorithm
+ * @is_eppke: EPPKE authentication
  * Returns: 0 on success, -1 on failure
  */
 int pasn_pmk_to_ptk(const u8 *pmk, size_t pmk_len,
 		    const u8 *spa, const u8 *bssid,
 		    const u8 *dhss, size_t dhss_len,
 		    struct wpa_ptk *ptk, int akmp, int cipher,
-		    size_t kdk_len, size_t kek_len, enum rsn_hash_alg *alg)
+		    size_t kdk_len, size_t kek_len, enum rsn_hash_alg *alg,
+		    bool is_eppke)
 {
 	u8 tmp[WPA_KCK_MAX_LEN + WPA_KEK_MAX_LEN + WPA_TK_MAX_LEN +
 	       WPA_KDK_MAX_LEN];
@@ -1712,7 +1718,8 @@ int pasn_pmk_to_ptk(const u8 *pmk, size_t pmk_len,
 	u8 *data;
 	size_t data_len, ptk_len;
 	int ret = -1;
-	const char *label = "PASN PTK Derivation";
+	const char *label = is_eppke ? "EPPKE PTK Derivation" :
+		"PASN PTK Derivation";
 
 	if (!pmk || !pmk_len) {
 		wpa_printf(MSG_ERROR, "PASN: No PMK set for PTK derivation");
@@ -1725,6 +1732,12 @@ int pasn_pmk_to_ptk(const u8 *pmk, size_t pmk_len,
 	}
 
 	/*
+	 * Use "EPPKE PTK Derivation" instead of “PASN PTK Derivation” for
+	 * EPPKE Authentication per IEEE P802.11bi/D4.0, 12.16.9.3.4 (PTKSA
+	 * derivation and MIC computation with EPPKE authentication). For EPPKE
+	 * MLO, the non-AP MLD MAC address is used instead of the SPA and the
+	 * AP MLD MAC address instead of the BSSID.
+	 *
 	 * PASN-PTK = KDF(PMK, “PASN PTK Derivation”, SPA || BSSID || DHss)
 	 *
 	 * KCK = L(PASN-PTK, 0, 256)
@@ -1905,15 +1918,123 @@ int wpa_ltf_keyseed(struct wpa_ptk *ptk, int akmp, int cipher)
 }
 
 
+#ifdef CONFIG_IEEE8021X_AUTH
+
+int wpa_auth_802_1x_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const u8 *spa,
+			       const u8 *aa, const u8 *snonce, const u8 *anonce,
+			       int akmp, int cipher, const u8 *dhss,
+			       size_t dhss_len, struct wpa_ptk *ptk,
+			       size_t kdk_len)
+{
+	return wpa_pmk_to_ptk(pmk, pmk_len, "Pairwise key expansion",
+			      spa, aa, snonce, anonce, ptk, akmp,
+			      cipher, dhss, dhss_len, kdk_len);
+}
+
+
+/**
+ * wpa_auth_8021x_mic - Calculate IEEE 802.1X in Authentication frames  MIC
+ * @akmp: Negotiated key management protocol
+ * @kck: The key confirmation key from 802.1X exchange
+ * @kck_len: KCK length in octets
+ * @addr1: Authenticator address
+ * @addr2: Supplicant address
+ * @data: This should hold the RSNE + RSNXE.
+ *	For a MIC included by the AP with EAP-Success and the second
+ *	Authentication frame if a PMKSA was identified via a PMKID included in
+ *	the first Authentication frame, this holds the Beacon frame RSNE+RSNXE.
+ *	For a MIC included by the non-AP STA in the (Re)Association Request
+ *	frame, this holds the RSNE and RSNXE sent by the non-AP STA.
+ * @data_len: The length of data
+ * @frame: For a MIC included by the AP in EAP-Success and the second
+ *	Authentication frame if a PMKSA was identified via a PMKID included in
+ *	the first Authentication frame, this holds the body of the
+ *	Authentication frame including the MIC element with the octets in the
+ *	MIC field of the MIC element set to 0, else NULL
+ * @frame_len: The length of frame
+ * @mic: Buffer to hold the MIC on success. Must be large enough to handle the
+ *	maximal MIC length.
+ * Returns: 0 on success, -1 on failure
+ *
+ * HMAC-HASH (PTK-KCK, AA || SPA || RSNE || RSNXE || Frame Data)
+ */
+int wpa_auth_8021x_mic(int akmp, const u8 *kck, size_t kck_len, const u8 *addr1,
+		       const u8 *addr2, const u8 *data, size_t data_len,
+		       const u8 *frame, size_t frame_len, u8 *mic)
+{
+	size_t mic_len;
+	u8 *buf;
+	int ret = -1;
+	size_t buf_len = 2 * ETH_ALEN + data_len + frame_len;
+
+	if (!kck) {
+		wpa_printf(MSG_INFO, "802.1X: No KCK for MIC calculation");
+		return -1;
+	}
+
+	if (!data || !data_len) {
+		wpa_printf(MSG_INFO,
+			   "802.1X: Invalid data for MIC calculation");
+		return -1;
+	}
+
+	buf = os_zalloc(buf_len);
+	if (!buf)
+		return -1;
+
+	wpa_printf(MSG_DEBUG, "802.1X MIC calculation");
+	wpa_printf(MSG_DEBUG, "addr1: " MACSTR, MAC2STR(addr1));
+	wpa_printf(MSG_DEBUG, "addr2: " MACSTR, MAC2STR(addr2));
+
+	os_memcpy(buf, addr1, ETH_ALEN);
+	os_memcpy(buf + ETH_ALEN, addr2, ETH_ALEN);
+
+	wpa_hexdump_key(MSG_DEBUG, "MIC: data", data, data_len);
+	os_memcpy(buf + 2 * ETH_ALEN, data, data_len);
+
+	wpa_hexdump_key(MSG_DEBUG, "MIC: KCK", kck, kck_len);
+
+	wpa_hexdump_key(MSG_MSGDUMP, "802.1X: MIC: frame", frame, frame_len);
+	os_memcpy(buf + 2 * ETH_ALEN + data_len, frame, frame_len);
+
+	wpa_hexdump_key(MSG_DEBUG, "MIC: buf", buf, buf_len);
+	if (wpa_key_mgmt_sha384(akmp)) {
+		wpa_printf(MSG_DEBUG, "MIC: HMAC-SHA384");
+		mic_len = 24;
+
+		if (hmac_sha384(kck, kck_len, buf, buf_len, mic) < 0)
+			goto out;
+	} else {
+		wpa_printf(MSG_DEBUG, "MIC: HMAC-SHA256");
+		mic_len = 16;
+
+		if (hmac_sha256(kck, kck_len, buf, buf_len, mic) < 0)
+			goto out;
+	}
+
+	wpa_hexdump_key(MSG_DEBUG, "802.1X: Calculated MIC", mic, mic_len);
+	ret = 0;
+out:
+	bin_clear_free(buf, buf_len);
+	return ret;
+}
+
+#endif /* CONFIG_IEEE8021X_AUTH */
+
+
 /**
  * pasn_mic - Calculate PASN MIC
  * @alg: Selected hash algorithm from pasn_pmk_to_ptk()
  * @kck: The key confirmation key for the PASN PTKSA
  * @kck_len: KCK length in octets
- * @addr1: For the 2nd PASN frame supplicant address; for the 3rd frame the
- *	BSSID
- * @addr2: For the 2nd PASN frame the BSSID; for the 3rd frame the supplicant
- *	address
+ * @addr1: For the 2nd PASN/EPPKE frame supplicant address is used for non-MLO;
+ *	for MLO, 2nd EPPKE authentication to use non-AP MLD MAC address.
+ *	For the 3rd PASN/EPPKE frame BSSID is used for non-MLO; for MLO, 3rd
+ *	EPPKE authentication to use AP MLD MAC address as per
+ * @addr2: For the 2nd PASN/EPPKE frame BSSID is used for non-MLO; for MLO, 2nd
+ *	EPPKE authentication to use AP MLD MAC address. For the 3rd PASN/EPPKE
+ *	frame supplicant address is used for non-MLO; for MLO, 3rd EPPKE
+ *	Authentication frame to use non-AP MLD MAC address.
  * @data: For calculating the MIC for the 2nd PASN frame, this should hold the
  *	Beacon frame RSNE + RSNXE. For calculating the MIC for the 3rd PASN
  *	frame, this should hold the hash of the body of the PASN 1st frame.
@@ -2916,6 +3037,70 @@ int rsn_pmkid_suite_b_192(const u8 *kck, size_t kck_len, const u8 *aa,
 	return 0;
 }
 #endif /* CONFIG_SUITEB192 */
+
+
+#ifdef CONFIG_PMKSA_PRIVACY
+/**
+ * rsn_pmkid_privacy - Calculate a new PMKID for PMKSA caching privacy
+ * @pmkid_anonce: Authenticator nonce (ANonce)
+ * @pmkid_snonce: Supplicant nonce (SNonce)
+ * @akmp: Negotiated key management protocol
+ * @pmk_len: PMK length in bytes
+ * @pmkid: Buffer for returning PMKID
+ * Returns: 0 on success, -1 on failure
+ *
+ * IEEE P802.11bi/D4.0, 12.16.7.2 (PMKID privacy)
+ * PMKID = Truncate-128(Hash("PMK Name" || PMKIDANonce || PMKIDSNonce))
+ */
+int rsn_pmkid_privacy(const u8 *pmkid_anonce, const u8 *pmkid_snonce,
+		      int akmp, size_t pmk_len, u8 *pmkid)
+{
+	const char *label = "PMK Name";
+	const u8 *addr[3];
+	const size_t len[3] = { 8, NONCE_LEN, NONCE_LEN };
+	unsigned char hash[SHA512_MAC_LEN];
+
+	wpa_hexdump(MSG_DEBUG, "PMKID privacy: PMKIDANonce",
+		    pmkid_anonce, NONCE_LEN);
+	wpa_hexdump(MSG_DEBUG, "PMKID privacy: PMKIDSNonce",
+		    pmkid_snonce, NONCE_LEN);
+
+	addr[0] = (const u8 *) label;
+	addr[1] = pmkid_anonce;
+	addr[2] = pmkid_snonce;
+
+	if (0) {
+#if defined(CONFIG_FILS) || defined(CONFIG_SHA384)
+	} else if (wpa_key_mgmt_sha384(akmp)) {
+		wpa_printf(MSG_DEBUG, "RSN: Derive PMKID using SHA-384");
+		if (sha384_vector(3, addr, len, hash) < 0)
+			return -1;
+#endif /* CONFIG_FILS || CONFIG_SHA384 */
+#ifdef CONFIG_SAE
+	} else if (wpa_key_mgmt_sae_ext_key(akmp)) {
+		if (pmk_len == 64) {
+			if (sha512_vector(3, addr, len, hash) < 0)
+				return -1;
+		} else if (pmk_len == 48) {
+			if (sha384_vector(3, addr, len, hash) < 0)
+				return -1;
+		} else {
+			if (sha256_vector(3, addr, len, hash) < 0)
+				return -1;
+		}
+#endif /* CONFIG_SAE */
+	} else {
+		wpa_printf(MSG_DEBUG, "RSN: Derive PMKID using SHA-256");
+		if (sha256_vector(3, addr, len, hash) < 0)
+			return -1;
+	}
+
+	wpa_hexdump(MSG_DEBUG, "PMKID privacy: new PMKID", hash, PMKID_LEN);
+	os_memcpy(pmkid, hash, PMKID_LEN);
+
+	return 0;
+}
+#endif /* CONFIG_PMKSA_PRIVACY */
 
 
 /**
@@ -4115,7 +4300,7 @@ int wpa_parse_kde_ies(const u8 *buf, size_t len, struct wpa_eapol_ie_parse *ie)
 
 /*
  * wpa_pasn_build_auth_header - Add the MAC header and initialize Authentication
- * frame for PASN
+ * frame for PASN/EPPKE
  *
  * @buf: Buffer in which the header will be added
  * @bssid: The BSSID of the AP
@@ -4123,15 +4308,17 @@ int wpa_parse_kde_ies(const u8 *buf, size_t len, struct wpa_eapol_ie_parse *ie)
  * @dst: Destination address
  * @trans_seq: Authentication transaction sequence number
  * @status: Authentication status
+ * @is_eppke: EPPKE authentication
  */
 void wpa_pasn_build_auth_header(struct wpabuf *buf, const u8 *bssid,
 				const u8 *src, const u8 *dst,
-				u8 trans_seq, u16 status)
+				u8 trans_seq, u16 status, bool is_eppke)
 {
 	struct ieee80211_mgmt *auth;
+	u16 auth_alg = is_eppke ? WLAN_AUTH_EPPKE : WLAN_AUTH_PASN;
 
-	wpa_printf(MSG_DEBUG, "PASN: Add authentication header. trans_seq=%u",
-		   trans_seq);
+	wpa_printf(MSG_DEBUG, "%s: Add authentication header trans_seq=%u",
+		   is_eppke ? "EPPKE" : "PASN", trans_seq);
 
 	auth = wpabuf_put(buf, offsetof(struct ieee80211_mgmt,
 					u.auth.variable));
@@ -4144,7 +4331,7 @@ void wpa_pasn_build_auth_header(struct wpabuf *buf, const u8 *bssid,
 	os_memcpy(auth->bssid, bssid, ETH_ALEN);
 	auth->seq_ctrl = 0;
 
-	auth->u.auth.auth_alg = host_to_le16(WLAN_AUTH_PASN);
+	auth->u.auth.auth_alg = host_to_le16(auth_alg);
 	auth->u.auth.auth_transaction = host_to_le16(trans_seq);
 	auth->u.auth.status_code = host_to_le16(status);
 }
@@ -4388,23 +4575,29 @@ int wpa_pasn_add_wrapped_data(struct wpabuf *buf,
 
 
 /*
- * wpa_pasn_validate_rsne - Validate PSAN specific data of RSNE
+ * wpa_pasn_validate_rsne - Validate PASN/EPPKE specific data of RSNE
  * @data: Parsed representation of an RSNE
+ * @is_eppke: EPPKE Authentication
  * Returns -1 for invalid data; otherwise 0
  */
-int wpa_pasn_validate_rsne(const struct wpa_ie_data *data)
+int wpa_pasn_validate_rsne(const struct wpa_ie_data *data, bool is_eppke)
 {
-	u16 capab = WPA_CAPABILITY_MFPC | WPA_CAPABILITY_MFPR;
+	u16 capab = WPA_CAPABILITY_MFPC;
+
+	if (!is_eppke)
+		capab |= WPA_CAPABILITY_MFPR;
 
 	if (data->proto != WPA_PROTO_RSN)
 		return -1;
 
 	if ((data->capabilities & capab) != capab) {
-		wpa_printf(MSG_DEBUG, "PASN: Invalid RSNE capabilities");
+		wpa_printf(MSG_DEBUG, "%s: Invalid RSNE capabilities",
+			   is_eppke ? "EPPKE" : "PASN");
 		return -1;
 	}
 
-	if (!data->has_group || data->group_cipher != WPA_CIPHER_GTK_NOT_USED) {
+	if (!data->has_group ||
+	    (!is_eppke && data->group_cipher != WPA_CIPHER_GTK_NOT_USED)) {
 		wpa_printf(MSG_DEBUG, "PASN: Invalid group data cipher");
 		return -1;
 	}
@@ -4435,12 +4628,12 @@ int wpa_pasn_validate_rsne(const struct wpa_ie_data *data)
 	case WPA_KEY_MGMT_PASN:
 		break;
 	default:
-		wpa_printf(MSG_ERROR, "PASN: invalid key_mgmt: 0x%0x",
-			   data->key_mgmt);
+		wpa_printf(MSG_ERROR, "%s: invalid key_mgmt: 0x%0x",
+			   is_eppke ? "EPPKE" : "PASN", data->key_mgmt);
 		return -1;
 	}
 
-	if (data->mgmt_group_cipher != WPA_CIPHER_GTK_NOT_USED) {
+	if (!is_eppke && (data->mgmt_group_cipher != WPA_CIPHER_GTK_NOT_USED)) {
 		wpa_printf(MSG_DEBUG, "PASN: Invalid group mgmt cipher");
 		return -1;
 	}

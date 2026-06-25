@@ -625,6 +625,8 @@ static inline int rsn_pmkid_suite_b_192(const u8 *kck, size_t kck_len,
 	return -1;
 }
 #endif /* CONFIG_SUITEB192 */
+int rsn_pmkid_privacy(const u8 *pmkid_anonce, const u8 *pmkid_snonce,
+		      int akmp, size_t pmk_len, u8 *pmkid);
 
 const char * wpa_cipher_txt(int cipher);
 const char * wpa_key_mgmt_txt(int key_mgmt, int proto);
@@ -846,6 +848,7 @@ int wpa_parse_cipher(const char *value);
 int wpa_write_ciphers(char *start, char *end, int ciphers, const char *delim);
 int wpa_select_ap_group_cipher(int wpa, int wpa_pairwise, int rsn_pairwise);
 unsigned int wpa_mic_len(int akmp, size_t pmk_len, enum rsn_hash_alg hash);
+unsigned int wpa_kek_len(int akmp, size_t pmk_len);
 int wpa_use_akm_defined(int akmp);
 int wpa_use_cmac(int akmp);
 int wpa_use_aes_key_wrap(int akmp);
@@ -855,9 +858,14 @@ int pasn_pmk_to_ptk(const u8 *pmk, size_t pmk_len,
 		    const u8 *spa, const u8 *bssid,
 		    const u8 *dhss, size_t dhss_len,
 		    struct wpa_ptk *ptk, int akmp, int cipher,
-		    size_t kdk_len, size_t kek_len, enum rsn_hash_alg *alg);
+		    size_t kdk_len, size_t kek_len, enum rsn_hash_alg *alg,
+		    bool is_eppke);
 
 size_t pasn_mic_len(enum rsn_hash_alg alg);
+
+int wpa_auth_8021x_mic(int akmp, const u8 *kck, size_t kck_len, const u8 *addr1,
+		       const u8 *addr2, const u8 *data, size_t data_len,
+		       const u8 *frame, size_t frame_len, u8 *mic);
 
 int pasn_mic(enum rsn_hash_alg alg, const u8 *kck, size_t kck_len,
 	     const u8 *addr1, const u8 *addr2,
@@ -871,7 +879,7 @@ int pasn_auth_frame_hash(enum rsn_hash_alg alg, const u8 *data, size_t len,
 
 void wpa_pasn_build_auth_header(struct wpabuf *buf, const u8 *bssid,
 				const u8 *src, const u8 *dst,
-				u8 trans_seq, u16 status);
+				u8 trans_seq, u16 status, bool is_eppke);
 
 int wpa_pasn_add_rsne(struct wpabuf *buf, const u8 *pmkid,
 		      int akmp, int cipher);
@@ -884,7 +892,7 @@ void wpa_pasn_add_parameter_ie(struct wpabuf *buf, u16 pasn_group,
 int wpa_pasn_add_wrapped_data(struct wpabuf *buf,
 			      struct wpabuf *wrapped_data_buf);
 
-int wpa_pasn_validate_rsne(const struct wpa_ie_data *data);
+int wpa_pasn_validate_rsne(const struct wpa_ie_data *data, bool is_eppke);
 int wpa_pasn_parse_parameter_ie(const u8 *data, u8 len, bool from_ap,
 				struct wpa_pasn_params_data *pasn_params);
 
@@ -899,4 +907,11 @@ int rsn_key_mgmt_to_wpa_akm(u32 akm_suite);
 
 unsigned int wpa_kck_len(int akmp, size_t pmk_len);
 unsigned int wpa_kek_len(int akmp, size_t pmk_len);
+
+int wpa_auth_802_1x_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const u8 *spa,
+			       const u8 *aa, const u8 *snonce, const u8 *anonce,
+			       int akmp, int cipher, const u8 *dhss,
+			       size_t dhss_len, struct wpa_ptk *ptk,
+			       size_t kdk_len);
+
 #endif /* WPA_COMMON_H */

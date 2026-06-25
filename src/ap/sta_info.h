@@ -89,6 +89,21 @@ struct pending_eapol_rx {
 	enum frame_encryption encrypted;
 };
 
+struct eap_over_auth_data {
+	int akm;
+	int cipher;
+	u16 group;
+	u16 auth_transaction;
+	u8 snonce[WPA_NONCE_LEN];
+	u8 anonce[WPA_NONCE_LEN];
+	u8 *rsnxe;
+	size_t pmk_len;
+	struct wpa_ptk ptk;
+	size_t rsnxe_len;
+	struct crypto_ecdh *ecdh;
+	struct wpabuf *dhss;
+};
+
 #define EHT_ML_MAX_STA_PROF_LEN 1024
 struct mld_info {
 	bool mld_sta;
@@ -343,6 +358,7 @@ struct sta_info {
 #ifdef CONFIG_OWE
 	u8 *owe_pmk;
 	size_t owe_pmk_len;
+	u8 *owe_pmkid;
 	struct crypto_ecdh *owe_ecdh;
 	u16 owe_group;
 #endif /* CONFIG_OWE */
@@ -444,6 +460,21 @@ struct sta_info {
         /* SMD information */
         struct smd_info smd_info;
 #endif /* CONFIG_IEEE80211BN */
+#ifdef CONFIG_ENC_ASSOC
+	bool epp_sta; /* Indicates if the station is an EPP peer */
+#endif /* CONFIG_ENC_ASSOC */
+
+#ifdef CONFIG_PMKSA_PRIVACY
+	u8 snonce[NONCE_LEN]; /* SNonce to compute next PMKID if
+			       * PMKID caching privacy is on */
+	u8 anonce[NONCE_LEN]; /* ANonce to compute next PMKID if
+			       * PMKID caching privacy is on */
+	u8 epp_pmkid_next[PMKID_LEN];
+#endif /* CONFIG_PMKSA_PRIVACY */
+
+#ifdef CONFIG_IEEE8021X_AUTH
+	struct eap_over_auth_data eap_auth_data;
+#endif /* CONFIG_IEEE8021X_AUTH */
 };
 
 
@@ -626,4 +657,27 @@ struct sta_info *ap_sta_get_by_link_addr(struct hostapd_data *hapd, const u8 *li
 					 struct sta_info *curr_sta);
 void ap_sta_cleanup_all(struct hostapd_data *hapd, struct sta_info *sta,
 			struct sta_info *curr_sta);
+
+
+static inline bool ap_sta_is_epp(const struct sta_info *sta)
+{
+#ifdef CONFIG_ENC_ASSOC
+	return sta && sta->epp_sta;
+#else /* CONFIG_ENC_ASSOC */
+	return false;
+#endif /* CONFIG_ENC_ASSOC */
+}
+
+static inline bool ap_sta_support_enc_assoc(struct hostapd_data *hapd,
+					    const u8 *rsnxe, size_t rsnxe_len)
+{
+#ifdef CONFIG_ENC_ASSOC
+		return (hapd->conf->assoc_frame_encryption &&
+			ieee802_11_rsnx_capab_len(rsnxe,
+						  rsnxe_len,
+						  WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION));
+#else /* CONFIG_ENC_ASSOC */
+	return false;
+#endif /* CONFIG_ENC_ASSOC */
+}
 #endif /* STA_INFO_H */

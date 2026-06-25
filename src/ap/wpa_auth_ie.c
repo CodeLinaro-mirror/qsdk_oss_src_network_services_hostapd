@@ -303,6 +303,13 @@ static u8 * rsne_write_data(u8 *buf, size_t len, u8 *pos, int group,
 		num_suites++;
 	}
 #endif /* CONFIG_PASN */
+#ifdef CONFIG_ENC_ASSOC
+	if (key_mgmt & WPA_KEY_MGMT_EPPKE) {
+		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_EPPKE);
+		pos += RSN_SELECTOR_LEN;
+		num_suites++;
+	}
+#endif /* CONFIG_ENC_ASSOC */
 
 #ifdef CONFIG_RSN_TESTING
 	if (rsn_testing) {
@@ -474,6 +481,35 @@ static int wpa_write_rsne_override_2(struct wpa_auth_config *conf, u8 *buf,
 }
 
 
+#ifdef CONFIG_IEEE8021X_AUTH
+int wpa_write_802_1x_rsne(struct wpa_authenticator *wpa_auth, u8 *buf,
+			  size_t len, const u8 *pmkid, int akmp,
+			  int pairwise_cipher, int group_cipher,
+			  int group_mgmt_cipher, enum mfp_options mfp)
+{
+	struct rsn_ie_hdr *hdr;
+	u8 *pos;
+	struct wpa_auth_config *conf = &wpa_auth->conf;
+
+	hdr = (struct rsn_ie_hdr *) buf;
+	hdr->elem_id = WLAN_EID_RSN;
+	WPA_PUT_LE16(hdr->version, RSN_VERSION);
+	pos = (u8 *) (hdr + 1);
+
+	pos = rsne_write_data(buf, len, pos, group_cipher,
+			      pairwise_cipher, akmp,
+			      wpa_own_rsn_capab(conf, conf->ieee80211w),
+			      pmkid, mfp, group_mgmt_cipher);
+	if (!pos)
+		return -1;
+
+	hdr->len = pos - buf - 2;
+
+	return pos - buf;
+}
+#endif /* CONFIG_IEEE8021X_AUTH */
+
+
 static u64 rsnxe_capab(struct wpa_auth_config *conf, int key_mgmt)
 {
 	u64 capab = 0;
@@ -505,6 +541,23 @@ static u64 rsnxe_capab(struct wpa_auth_config *conf, int key_mgmt)
 		capab |= BIT(WLAN_RSNX_CAPAB_SPP_A_MSDU);
 	if (conf->cigtk)
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
+
+#ifdef CONFIG_ENC_ASSOC
+	/* Per IEEE 802.11bi/D4.0, 12.16.7 (PMKSA caching privacy)
+	 * a STA that sets the PMKSA Caching Privacy Support
+	 * field in the RSNXE to 1 shall set the (Re)Association
+	 * Frame Encryption Support field in the RSNXE to 1.
+	 */
+	if (conf->assoc_frame_encryption ||
+	    conf->pmksa_caching_privacy) {
+		capab |= BIT(WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION);
+		capab |= BIT(WLAN_RSNX_CAPAB_KEK_IN_PASN);
+	}
+	if (conf->pmksa_caching_privacy)
+		capab |= BIT(WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY);
+	if (conf->eap_using_authentication_frames)
+		capab |= BIT(WLAN_RSNX_CAPAB_802_1X_IN_AUTH_FRAMES);
+#endif /* CONFIG_ENC_ASSOC */
 
 	return capab;
 }

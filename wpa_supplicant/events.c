@@ -7368,6 +7368,40 @@ static void wpas_event_assoc_reject(struct wpa_supplicant *wpa_s,
 					     reject_bss->bssid,
 					     rssi_rej[3],
 					     rssi_rej[2] + reject_bss->level);
+
+			/* For MLO, immediately retry on another link of the
+			 * same AP MLD instead of waiting for the Retry Delay
+			 * on the rejected link.
+			 */
+			if (reject_bss->valid_links) {
+				struct wpa_ssid *ssid = wpa_s->current_ssid;
+				u8 link_id;
+
+				for_each_link(reject_bss->valid_links, link_id) {
+					struct wpa_bss *alt_bss;
+
+					if (link_id == reject_bss->mld_link_id)
+						continue;
+
+					alt_bss = wpa_bss_get_bssid(
+						wpa_s,
+						reject_bss->mld_links[link_id].bssid);
+					if (!alt_bss)
+						continue;
+
+					wpa_printf(MSG_DEBUG,
+						   "MLO: OCE rejection on link %d, retrying on link %d "
+						   MACSTR,
+						   reject_bss->mld_link_id,
+						   link_id,
+						   MAC2STR(alt_bss->bssid));
+					wpas_connect_work_done(wpa_s);
+					wpa_supplicant_mark_disassoc(wpa_s);
+					wpa_supplicant_connect(wpa_s, alt_bss,
+							       ssid);
+					return;
+				}
+			}
 		}
 	}
 #endif /* CONFIG_MBO */

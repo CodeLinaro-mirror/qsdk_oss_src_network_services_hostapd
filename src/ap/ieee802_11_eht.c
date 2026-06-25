@@ -1410,6 +1410,7 @@ const u8 * auth_skip_fixed_fields(struct hostapd_data *hapd,
 	 * (Presence of fields and elements in Authentications frames) */
 	switch (auth_alg) {
 	case WLAN_AUTH_OPEN:
+	case WLAN_AUTH_EPPKE:
 	case WLAN_AUTH_FT:
 		return pos;
 #ifdef CONFIG_SAE

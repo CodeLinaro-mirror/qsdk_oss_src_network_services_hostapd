@@ -371,9 +371,10 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
 		elems->fils_pk_len = elen;
 		break;
 	case WLAN_EID_EXT_NONCE:
-		if (elen != NONCE_LEN)
+		if (elen < NONCE_LEN)
 			break;
 		elems->nonce = pos;
+		elems->nonce_len = elen;
 		break;
 	case WLAN_EID_EXT_OWE_DH_PARAM:
 		if (elen < 2)
@@ -485,6 +486,12 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
 	case WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS:
 		elems->smd_bsstransparams = pos;
 		elems->smd_bsstransparams_len = elen;
+		break;
+	case WLAN_EID_EXT_AKM_SUITE_SELECTOR:
+		if (elen < RSN_SELECTOR_LEN)
+			break;
+		elems->akm_suite_selector = pos;
+		elems->akm_suite_selector_len = elen;
 		break;
 	default:
 		if (show_errors) {
@@ -680,8 +687,12 @@ static ParseRes __ieee802_11_parse_elems(const u8 *start, size_t len,
 		case WLAN_EID_MIC:
 			elems->mic = pos;
 			elems->mic_len = elen;
-			/* after mic everything is encrypted, so stop. */
-			goto done;
+			if (elems->stop_at_mic) {
+				/* After MIC everything is encrypted, so stop.
+				 */
+				goto done;
+			}
+			break;
 		case WLAN_EID_MULTI_BAND:
 			if (elems->mb_ies.nof_ies >= MAX_NOF_MB_IES_SUPPORTED) {
 				wpa_printf(MSG_MSGDUMP,
@@ -791,6 +802,13 @@ ParseRes ieee802_11_parse_elems(const u8 *start, size_t len,
 	os_memset(elems, 0, sizeof(*elems));
 
 	return __ieee802_11_parse_elems(start, len, elems, show_errors);
+}
+
+
+ParseRes ieee802_11_parse_elems_ctrl(const u8 *start, size_t len,
+				     struct ieee802_11_elems *elems)
+{
+	return __ieee802_11_parse_elems(start, len, elems, elems->show_errors);
 }
 
 

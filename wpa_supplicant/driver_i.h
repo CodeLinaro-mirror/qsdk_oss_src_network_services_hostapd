@@ -1326,6 +1326,17 @@ static inline int wpa_drv_set_epcs_cfg(struct wpa_supplicant *wpa_s,
 	return wpa_s->driver->set_epcs_cfg(wpa_s->drv_priv,
 					   epcs_cfg_value);
 }
+
+static inline int wpa_drv_uhr_mode_update(struct wpa_supplicant *wpa_s,
+					  struct npca_link_config *links,
+					  int num_links)
+{
+	if (!wpa_s->driver->uhr_mode_update)
+		return -1;
+
+	return wpa_s->driver->uhr_mode_update(wpa_s->drv_priv, links,
+					      num_links);
+}
 #endif /* CONFIG_IEEE80211BE */
 
 static inline int wpa_drv_trigger_smd_discovery(struct wpa_supplicant *wpa_s,

@@ -585,7 +585,7 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 	ctx_req.data.auth_req.auth_alg = auth_alg;
 
 	/*
-	 * rx_link_id selection: 0 for non-MLD, otherwise
+	 * rx_link_id selection: hw_idx for non-MLD, otherwise
 	 * hapd->mld_link_id
 	 */
 #ifdef CONFIG_IEEE80211BE
@@ -593,7 +593,10 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 		ctx_req.rx_link_id = hapd->mld_link_id;
 	else
 #endif /* CONFIG_IEEE80211BE */
-		ctx_req.rx_link_id = 0;
+	if (hapd->iface->current_hw_info)
+		ctx_req.rx_link_id = hapd->iface->current_hw_info->hw_idx;
+	else
+		ctx_req.rx_link_id = -1;
 
 	/*
 	 * Associated link id and per-link peer MAC
@@ -653,7 +656,16 @@ hostapd_if_notify_remote_auth(struct hostapd_data *hapd, uint8_t *sta_mac,
 	os_memset(&ctx_req, 0, sizeof(ctx_req));
 	ctx_req.status_code = status_code;
 
-	ctx_req.rx_link_id = hapd->mld_link_id;
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf && hapd->conf->mld_ap)
+		ctx_req.rx_link_id = hapd->mld_link_id;
+	else
+#endif /* CONFIG_IEEE80211BE */
+	if (hapd->iface->current_hw_info)
+		ctx_req.rx_link_id = hapd->iface->current_hw_info->hw_idx;
+	else
+		ctx_req.rx_link_id = -1;
+
 	ctx_req.data.remote_auth_req.is_ml_sta = is_ml;
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
@@ -790,6 +802,9 @@ hostapd_if_notify_assoc(struct hostapd_data *hapd,
 		ctx_req.rx_link_id = hapd->mld_link_id;
 	else
 #endif /* CONFIG_IEEE80211BE */
+	if (hapd->iface->current_hw_info)
+		ctx_req.rx_link_id = hapd->iface->current_hw_info->hw_idx;
+	else
 		ctx_req.rx_link_id = -1;
 
 	/*
@@ -888,6 +903,9 @@ void hostapd_if_notify_disassoc(struct hostapd_data *hapd,
 		ctx_req.rx_link_id = hapd->mld_link_id;
 	else
 #endif /* CONFIG_IEEE80211BE */
+	if (hapd->iface->current_hw_info)
+		ctx_req.rx_link_id = hapd->iface->current_hw_info->hw_idx;
+	else
 		ctx_req.rx_link_id = -1;
 
 	if ((policy != HOSTAPD_IF_FRAME_NOTIFY) &&
@@ -933,6 +951,9 @@ void hostapd_if_notify_deauth(struct hostapd_data *hapd,
 		ctx_req.rx_link_id = hapd->mld_link_id;
 	else
 #endif /* CONFIG_IEEE80211BE */
+	if (hapd->iface->current_hw_info)
+		ctx_req.rx_link_id = hapd->iface->current_hw_info->hw_idx;
+	else
 		ctx_req.rx_link_id = -1;
 
 	if ((policy != HOSTAPD_IF_FRAME_NOTIFY) &&
@@ -950,7 +971,8 @@ void hostapd_if_notify_deauth(struct hostapd_data *hapd,
 void hostapd_if_eapol_rx(struct hostapd_data *hapd, const u8 *sa,
 			 const u8 *data, u16 data_len)
 {
-	int link_id = -1;
+	int link_id = hapd->iface->current_hw_info ?
+		hapd->iface->current_hw_info->hw_idx : -1;
 
 #ifdef CONFIG_IEEE80211BE
 	if (hapd->conf && hapd->conf->mld_ap)
@@ -1067,6 +1089,9 @@ hostapd_if_notify_action(struct hostapd_data *hapd,
 		link_id = hapd->mld_link_id;
 	else
 #endif /* CONFIG_IEEE80211BE */
+	if (hapd->iface->current_hw_info)
+		link_id = hapd->iface->current_hw_info->hw_idx;
+	else
 		link_id = -1;
 
 	os_memset(&ctx_req, 0, sizeof(ctx_req));
@@ -1105,7 +1130,8 @@ hostapd_if_notify_action(struct hostapd_data *hapd,
 void hostapd_if_eapol_key_rx(struct hostapd_data *hapd, const u8 *sa,
 			     const u8 *data, u16 data_len)
 {
-	int link_id = -1;
+	int link_id = hapd->iface->current_hw_info ?
+		hapd->iface->current_hw_info->hw_idx : -1;
 
 #ifdef CONFIG_IEEE80211BE
 	if (hapd->conf && hapd->conf->mld_ap)
@@ -2351,7 +2377,8 @@ __hostapd_if_eapol_key_tx_exit:
  * Use MLD mac of STA in case of 11be STA.
  */
 void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
-			   uint8_t type, uint8_t *data, uint16_t data_len)
+			   uint8_t type, uint8_t *data, uint16_t data_len,
+			   bool with_header)
 {
 	struct hostapd_data *hapd = NULL;
 	struct sta_info *sta;
@@ -2375,7 +2402,16 @@ void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
 		goto  __hostapd_if_eapol_tx_exit;
 	}
 
-	ieee802_1x_send(hapd, sta, type, data, data_len);
+	if (with_header) {
+		int link_id = -1;
+#ifdef CONFIG_IEEE80211BE
+		link_id = hapd->conf->mld_ap ? hapd->mld_link_id : -1;
+#endif /* CONFIG_IEEE80211BE */
+		hostapd_drv_hapd_send_eapol(hapd, sta->addr, data, data_len,
+					    wpa_auth_pairwise_set(sta->wpa_sm) ? 1 : 0,
+					    hostapd_sta_flags_to_drv(sta->flags), link_id);
+	} else
+		ieee802_1x_send(hapd, sta, type, data, data_len);
 
  __hostapd_if_eapol_tx_exit:
 	os_free((void *)data);
@@ -2476,7 +2512,8 @@ void hostapd_if_event_deauth(struct hostapd_data *hapd, struct sta_info *sta,
 			     int tx_status_ok)
 {
 	struct hostapd_if_event evt;
-	int link_id = -1;
+	int link_id = hapd->iface->current_hw_info ?
+		hapd->iface->current_hw_info->hw_idx : -1;
 
 	if (!hostapd_if_is_event_registered(hapd,
 					    HOSTAPD_IF_EVENT_DEAUTH))
@@ -2517,7 +2554,8 @@ void hostapd_if_event_disassoc(struct hostapd_data *hapd,
 			       int tx_status_ok)
 {
 	struct hostapd_if_event evt;
-	int link_id = -1;
+	int link_id = hapd->iface->current_hw_info ?
+		hapd->iface->current_hw_info->hw_idx : -1;
 
 	if (!hostapd_if_is_event_registered(hapd,
 					    HOSTAPD_IF_EVENT_DISASSOC))
