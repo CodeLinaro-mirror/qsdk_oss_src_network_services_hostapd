@@ -846,6 +846,11 @@ u16 hostapd_critical_update_capab(struct hostapd_data *hapd)
 #ifdef CONFIG_QCN_EXTN
 	}
 #endif /* CONFIG_QCN_EXTN */
+
+	if (hostapd_is_uhr_enabled(hapd) &&
+	    hapd->rx_ecu_param.critical_update)
+	       capab |= WLAN_CAPABILITY_ECU;
+
 	if (hapd->iconf && hapd->iconf->mbssid) {
 		for (i = 1; i < hapd->iface->num_bss; i++) {
 			bss = hapd->iface->bss[i];
@@ -16194,6 +16199,10 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 #endif /* CONFIG_QCN_EXTN */
 		if (bss->conf->mld_ap && bss->rx_cu_param.critical_flag)
 			capab_info |= WLAN_CAPABILITY_PBCC;
+
+		if (hostapd_is_uhr_enabled(bss) &&
+		    bss->rx_ecu_param.critical_update)
+			capab_info |= WLAN_CAPABILITY_ECU;
 
 		WPA_PUT_LE16(eid, capab_info);
 		eid += sizeof(capab_info);

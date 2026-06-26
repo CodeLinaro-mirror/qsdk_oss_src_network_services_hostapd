@@ -117,7 +117,7 @@
 /* IEEE Std 802.11-2024, 9.4.1.4 (Capability Information field) */
 #define WLAN_CAPABILITY_ESS BIT(0)
 #define WLAN_CAPABILITY_IBSS BIT(1)
-/* bit 2 is reserved (was WLAN_CAPABILITY_CF_POLLABLE) */
+#define WLAN_CAPABILITY_ECU  BIT(2)
 /* bit 3 is reserved (was WLAN_CAPABILITY_CF_POLL_REQUEST) */
 #define WLAN_CAPABILITY_PRIVACY BIT(4)
 #define WLAN_CAPABILITY_SHORT_PREAMBLE BIT(5)
