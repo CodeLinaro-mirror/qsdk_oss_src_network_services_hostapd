@@ -13,6 +13,13 @@
 #include "ieee802_11.h"
 #include "common/hw_features_common.h"
 #include "common/ieee802_11_common.h"
+#include "ap/ieee802_11.h"
+#include "utils/eloop.h"
+#include "common/ieee802_11_defs.h"
+#include "uhr_utils.h"
+#include "ap_drv_ops.h"
+#include "wpa_auth.h"
+#include "wpa_auth_i.h"
 
 
 u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
@@ -70,7 +77,6 @@ u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 	*length_pos = pos - (eid + 2);
 	return pos;
 }
-
 
 u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn)
 {
@@ -219,7 +225,6 @@ void hostapd_update_ecu_params(struct hostapd_data *hapd)
 	/* TODO: update for other ECU features */
 }
 
-
 void hostapd_reset_uhr_cu_params(struct hostapd_data *hapd)
 {
 	if (!hapd->conf->uhr_params_update.mode_changed)
@@ -232,7 +237,6 @@ void hostapd_reset_uhr_cu_params(struct hostapd_data *hapd)
 
 	hapd->conf->uhr_params_update.mode_changed = 0;
 }
-
 
 /* mode_ctrl(1) is always present; mode_len(1) is present when the mode
  * is enabled (mandatory even when mode_params_len == 0).
@@ -620,5 +624,222 @@ u8 hostapd_npca_get_primary_chan(struct hostapd_data *hapd,
 	}
 
 	return (u8)primary_chan;
+}
+
+int uhr_handle_st_prep_req(struct hostapd_data *hapd,
+				   struct sta_info *sta,
+				   const u8 *frame, size_t frame_len)
+{
+	struct ieee802_11_elems elems;
+	struct uhr_reconfig_mle mle;
+	struct uhr_smd_bss_transition_element sbte;
+	struct smd_roam_ap_info *ap_info;
+	const u8 *ies;
+	size_t ies_len;
+	int is_new_ap = 0;
+
+	if (!hapd || !sta || !frame || frame_len == 0) {
+		wpa_printf(MSG_ERROR, "UHR Current AP: Invalid parameters");
+		return -1;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR Current AP: Processing request from STA " MACSTR " (frame_len=%zu)",
+		   MAC2STR(sta->addr), frame_len);
+
+	if (frame_len < WLAN_ST_PREP_MIN_LEN) {
+		wpa_printf(MSG_ERROR, "UHR Current AP: Frame too short (%zu < 28)",
+			   frame_len);
+		return -1;
+	}
+
+	ies = frame + WLAN_ST_PREP_MIN_LEN;
+	ies_len = frame_len - WLAN_ST_PREP_MIN_LEN;
+
+	if (ieee802_11_parse_elems(ies, ies_len, &elems, 1) == ParseFailed) {
+		wpa_printf(MSG_ERROR, "UHR Current AP: Failed to parse IEs");
+		return -1;
+	}
+
+	if (uhr_parse_reconfig_mle(&elems, &mle) < 0) {
+		wpa_printf(MSG_ERROR, "UHR Current AP: Failed to parse ML-IE");
+		return -1;
+	}
+
+	/* Parse SMD BSS Transition IE */
+	if (uhr_parse_smd_bss_trans_elem(&elems, 0, &sbte) < 0) {
+		wpa_printf(MSG_ERROR, "UHR Current AP: Failed to parse SBTE");
+		return -1;
+	}
+
+	if (!mle.has_target_ap_mld_addr) {
+		wpa_printf(MSG_ERROR,
+			   "UHR Current AP: No target AP MLD address in ML-IE");
+		return -1;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR Current AP: Target AP MLD " MACSTR ,
+		   MAC2STR(mle.target_ap_mld_addr));
+
+	/* Find target AP in roaming candidate list */
+	ap_info = uhr_find_ap_in_list(sta, mle.target_ap_mld_addr);
+	if (!ap_info) {
+		wpa_printf(MSG_DEBUG,
+			   "UHR Current AP: Target AP " MACSTR " not in list, creating entry",
+			   MAC2STR(mle.target_ap_mld_addr));
+
+		/* CREATE new ap_info entry for fresh ST preparation */
+		ap_info = os_zalloc(sizeof(*ap_info));
+		if (!ap_info) {
+			wpa_printf(MSG_ERROR,
+				   "UHR Current AP: Failed to allocate ap_info");
+			return -1;
+		}
+
+		os_memcpy(ap_info->ap_mld_addr, mle.target_ap_mld_addr, ETH_ALEN);
+		os_get_reltime(&ap_info->last_seen);
+		is_new_ap = 1;
+
+		wpa_printf(MSG_DEBUG,
+			   "UHR Current AP: Created ap_info for " MACSTR ,
+			   MAC2STR(ap_info->ap_mld_addr));
+	}
+
+	wpa_printf(MSG_DEBUG, "UHR Current AP: Target AP validated, sending IAP request");
+
+	sta->dl_sn_not_transferred = sbte.dl_sn_not_transferred;
+	sta->ul_sn_not_transferred = sbte.ul_sn_not_transferred;
+
+	u32 role = 1;
+	u32 type = 0;
+	u32 dl_sn_not_transferred = sta->dl_sn_not_transferred;
+	u32 ul_sn_not_transferred = sta->ul_sn_not_transferred;
+	u32 dl_drain_time = hapd->conf->smd.uhr_dl_drain_duration_tu;
+	if (hostapd_smd_roam(hapd, sta, role, type, dl_sn_not_transferred, ul_sn_not_transferred, dl_drain_time)) {
+		wpa_printf(MSG_DEBUG, "UHR Current AP: Failed to send WMI roam notification - not skipping for now.");
+	}
+
+	/* Send IAP request to target AP with complete frame */
+	if (uhr_iap_send_st_prep_req(hapd, mle.target_ap_mld_addr, sta,
+				 frame, frame_len) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "UHR Current AP: Failed to send IAP request");
+		if (is_new_ap)
+			os_free(ap_info);
+		return -1;
+	}
+
+	if (is_new_ap) {
+		ap_info->next = sta->smd_info.ap_list;
+		sta->smd_info.ap_list = ap_info;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR Current AP: IAP request sent, waiting for response");
+
+	return 0;
+}
+
+
+void uhr_cur_ap_handle_st_prep_resp(struct hostapd_data *hapd,
+				    const struct uhr_iap_frame *iap,
+	    			    u16 frame_len)
+{
+	struct sta_info *sta;
+	const u8 *frame;
+	struct ieee80211_mgmt *mgmt_hdr = NULL;
+
+	if (!hapd || !iap) {
+		wpa_printf(MSG_ERROR, "UHR Current AP: Invalid parameters for IAP response");
+		return;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR Current AP: Received IAP response (txn=%u, status=%u, frame_len=%u)",
+		   iap->iap_transaction_id, iap->status_code, frame_len);
+
+	/* Find STA */
+	sta = ap_get_sta(hapd, iap->sta_addr);
+	if (!sta) {
+		wpa_printf(MSG_ERROR,
+			   "UHR Current AP: STA " MACSTR " not found",
+			   MAC2STR(iap->sta_addr));
+		return;
+	}
+
+	if (frame_len == 0) {
+		wpa_printf(MSG_ERROR,
+			   "UHR Current AP: No response frame in IAP response");
+		uhr_remove_ap_from_list(sta, iap->target_ap_mld_addr);
+		return;
+	}
+
+	frame = iap->frame_buf;
+	mgmt_hdr = (struct ieee80211_mgmt *)frame;
+	os_memcpy(mgmt_hdr->sa, hapd->own_addr, ETH_ALEN);
+	os_memcpy(mgmt_hdr->bssid, hapd->own_addr, ETH_ALEN);
+	wpa_hexdump(MSG_MSGDUMP, "UHR Current AP: Response frame",
+	    	    frame, frame_len);
+
+	/* Check status code */
+	if (iap->status_code != UHR_IAP_STATUS_SUCCESS) {
+		wpa_printf(MSG_ERROR,
+			   "UHR Current AP: IAP request failed (status=%u)",
+			   iap->status_code);
+
+		/* Remove failed AP from candidate list */
+		uhr_remove_ap_from_list(sta, iap->target_ap_mld_addr);
+
+		if (hostapd_drv_send_mlme(hapd, frame, frame_len, 0, NULL, 0, 0, 0, 0) < 0) {
+			wpa_printf(MSG_ERROR,
+				   "UHR Current AP: Failed to send response to STA");
+			return;
+		}
+
+		return;
+	}
+
+	/* Extract 802.11 response frame */
+	
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR Current AP: Forwarding response frame to STA " MACSTR " (len=%u)",
+		   MAC2STR(sta->addr), frame_len);
+
+	wpa_hexdump(MSG_MSGDUMP, "UHR Current AP: Response frame",
+		    frame, frame_len);
+
+	/* Forward response frame to STA
+	 * The frame is a complete 802.11 UHR Link Reconfig Response
+	 * Send it directly to the STA
+	 */
+	if (hostapd_drv_send_mlme(hapd, frame, frame_len, 0, NULL, 0, 0, 0, 0) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "UHR Current AP: Failed to send response to STA");
+		return;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR Current AP: Response forwarded successfully");
+
+	u32 role = 1;
+	u32 type = 1;
+	u32 dl_sn_not_transferred = sta->dl_sn_not_transferred;
+	u32 ul_sn_not_transferred = sta->ul_sn_not_transferred;
+	u32 dl_drain_time = hapd->conf->smd.uhr_dl_drain_duration_tu;
+	if (hostapd_smd_roam(hapd, sta, role, type, dl_sn_not_transferred, ul_sn_not_transferred, dl_drain_time)) {
+		wpa_printf(MSG_DEBUG, "UHR Current AP: Failed to send WMI roam notification - not skipping for now.");
+	}
+
+
+	if (uhr_cur_start_st_prep_timer(sta, iap->target_ap_mld_addr) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "UHR Current AP: Failed to start ST prep timeout");
+		/* Continue anyway - timeout is not critical */
+	}
+
+	/* Update AP info - ST preparation successful */
+	/* STA will now roam to target AP */
 }
 
