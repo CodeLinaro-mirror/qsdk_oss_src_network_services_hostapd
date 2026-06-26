@@ -424,15 +424,18 @@ nl80211_get_hw_feature_data(void *priv, u16 *num_modes, u16 *flags,
 			    u8 pwr_mode);
 
 int nl80211_get_chain_mask(void *priv, u8 radio_idx, char *buf, size_t buf_len);
-
 /**
  * nl80211_update_beacons_on_chain_mask_change() - Update beacons after a
  * chain mask change.
- * @drv: nl80211 driver data.
+ * @bss: BSS context associated with the chain mask change notification.
+ * @hw_idx: Hardware index from chain mask vendor event; use -1 if unavailable.
+ * @ifindex: netdev ifindex from chain mask vendor event; use -1 if unavailable.
  *
  * Fetches the current HW feature data from the driver to get the updated
- * chain mask value. Push the new capabilities into all
- * active beacons.
+ * chain mask value and pushes the new capabilities into the active beacons
+ * for the corresponding BSS. If @ifindex is provided, that interface is
+ * selected before link-level matching. For AP MLD operation, only affiliated
+ * links whose hw_idx matches @hw_idx are refreshed.
  *
  * Context: Process context.
  *
@@ -440,8 +443,8 @@ int nl80211_get_chain_mask(void *priv, u8 radio_idx, char *buf, size_t buf_len);
  *         -1 on failure (hw feature fetch failure, no matching mode found
  *         or beacon update failure).
  */
-int nl80211_update_beacons_on_chain_mask_change(struct wpa_driver_nl80211_data *drv);
-
+int nl80211_update_beacons_on_chain_mask_change(struct i802_bss *bss, int hw_idx,
+						int ifindex);
 int process_global_event(struct nl_msg *msg, void *arg);
 int process_bss_event(struct nl_msg *msg, void *arg);
 
