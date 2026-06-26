@@ -18077,6 +18077,25 @@ enum qca_wlan_vendor_attr_afc_event {
 };
 
 /**
+ * enum qca_wlan_vendor_attr_chain_mask_event - Attributes for
+ * %QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED event.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_HW_IDX: Required u32 attribute.
+ * Hardware (radio) index for which chain mask has changed.
+ * @QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_IFINDEX: Optional u32 attribute.
+ * Netdev ifindex that initiated the chain mask update, if known.
+ */
+enum qca_wlan_vendor_attr_chain_mask_event {
+	QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_HW_IDX = 1,
+	QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_IFINDEX = 2,
+
+	QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_MAX =
+		QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_AFTER_LAST - 1,
+};
+
+/**
  * enum qca_wlan_vendor_attr_afc_response: Defines attributes to be used
  * with vendor command QCA_NL80211_VENDOR_SUBCMD_AFC_RESPONSE. These attributes
  * will support sending only a single AFC response to the driver at a time.
