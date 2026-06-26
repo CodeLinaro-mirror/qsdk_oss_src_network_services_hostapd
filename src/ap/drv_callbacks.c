@@ -2274,7 +2274,8 @@ static struct hostapd_data * get_hapd_bssid(struct hostapd_iface *iface,
 				continue;
 
 			if (ether_addr_equal(bssid, p_hapd->own_addr) ||
-			    (ether_addr_equal(bssid, p_hapd->mld->mld_addr) &&
+			    (p_hapd->conf->mld_ap &&
+			     ether_addr_equal(bssid, p_hapd->mld->mld_addr) &&
 			     link_id == p_hapd->mld_link_id))
 				return p_hapd;
 		}
