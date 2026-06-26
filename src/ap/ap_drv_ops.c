@@ -1394,6 +1394,7 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 	data.radar_background = radar_background;
 
 #ifdef CONFIG_QCN_EXTN
+	data.mcst = iface->mcst;
 	chanwidth = hostapd_oper_chwidth_to_chanwidth_extn(oper_chwidth,
 							   sec_channel_offset);
 	is_dfs = ieee80211_is_dfs(freq, NULL, 0);
@@ -1404,7 +1405,10 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 		data.skip_cac = ((iface->iface_extn.csa_bitmap ||
 				 iface->iface_extn.dfs_available_from_sta) &&
 				 iface->conf->conf_extn.skip_cac);
-		if (!data.skip_cac &&
+		if (is_dfs && iface->mcst &&
+		    iface->conf->conf_extn.skip_cac) {
+			data.skip_cac = 0;
+		} else if (!data.skip_cac &&
 		    hostapd_mcst_allows_skip_cac_extn(iface->mcst,
 						      iface->conf->beacon_int,
 						      is_dfs)) {
@@ -1421,7 +1425,10 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 	} else {
 		data.skip_cac = (iface->cac_type != HAPD_CAC_COMPLETE_AFTER_CSA) &&
 				 iface->conf->conf_extn.skip_cac;
-		if (!data.skip_cac &&
+		if (is_dfs && iface->mcst &&
+		    iface->conf->conf_extn.skip_cac) {
+			data.skip_cac = 0;
+		} else if (!data.skip_cac &&
 		    hostapd_mcst_allows_skip_cac_extn(iface->mcst,
 						      iface->conf->beacon_int,
 						      is_dfs)) {
