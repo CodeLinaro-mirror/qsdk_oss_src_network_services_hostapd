@@ -240,12 +240,21 @@ skip_chan_width:
 	if (freq_val >= 5500 && freq_val <= 5730 && chanwidth == 9)
 		center_idx=130;
 
-	if (freq_val < 3000)
+	if (freq_val < 3000) {
+		int cf1_2g = 0;
+		if (sec_channel)
+			cf1_2g = freq_val + (sec_channel * 10);
+		else
+			cf1_2g = freq_val;
 		ucv_object_add(ret, "center_seg0_idx", ucv_int64_new(0));
-	else
+		ucv_object_add(ret, "center_seg1_idx", ucv_int64_new(0));
+		ucv_object_add(ret, "center_freq1", ucv_int64_new(cf1_2g));
+	}
+	else {
 		ucv_object_add(ret, "center_seg0_idx", ucv_int64_new(center_idx));
-	center_idx = (center_idx - channel) * 5 + freq_val;
-	ucv_object_add(ret, "center_freq1", ucv_int64_new(center_idx));
+		center_idx = (center_idx - channel) * 5 + freq_val;
+		ucv_object_add(ret, "center_freq1", ucv_int64_new(center_idx));
+	}
 
 	if (!cf1 && !cf2)
 		return ret;
