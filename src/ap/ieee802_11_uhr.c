@@ -2893,8 +2893,8 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 
 
 
-	size_t kde_len = wpa_auth_ml_group_kdes_len(sta->wpa_sm, 0xFFFF) + 1;
-	wpa_printf(MSG_DEBUG, "Group key length: %zu", kde_len);
+	size_t key_deliv_len = sta->wpa_sm ?
+		wpa_auth_key_delivery_elem_len(sta->wpa_sm, 0xFFFF) : 0;
 
 	size_t len = IEEE80211_HDRLEN + // Header
 			1 +		// Category
@@ -2904,7 +2904,7 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 			2 +		// Status Code
 			1 + 		// Count
 			(3 * n) +	// Reconfiguration Status List
-			kde_len +	// Group Keys
+			key_deliv_len + // Key Delivery element (9.4.2.184)
 			6;		// SMD BSS Transition IE
 
         resp_buf = os_zalloc(len);
@@ -2940,51 +2940,46 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 	u8 *rcsl_count = pos;
 	pos++;
 
-       for (i = 0; i < n; i++) {                      
-               *pos++ = i;
-               WPA_PUT_LE16(pos, WLAN_STATUS_SUCCESS);
-               pos += 2;                              
-               *rcsl_count += 1;                      
-       }                                              
-
-
-       /* 2. Group Keys (GTK, IGTK, BIGTK) */
-	if (sta->wpa_sm) {
-		u8 *kde_pos = pos;
-		kde_pos = wpa_auth_ml_group_kdes(sta->wpa_sm, ++kde_pos, 0xFFFF);
-		*pos = kde_pos - pos - 1;
-		wpa_hexdump_key(MSG_DEBUG, "MLD: Group KDE", pos + 1, *pos);
-		wpa_printf(MSG_DEBUG,
-			   "UHR ST EXEC: Added Group Keys (len=%zu)",
-			   kde_len);
-		pos += kde_len;
-	}
+	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+		if (!sta->mld_info.links[i].valid)
+			continue;
+		*pos++ = (u8) i;
+		WPA_PUT_LE16(pos, WLAN_STATUS_SUCCESS);
+		pos += 2;
+		*rcsl_count += 1;
+ 	}
+ 
+	/* Key Delivery element (9.4.2.184): RSC + MLO GTK/IGTK/BIGTK KDEs */
+	if (key_deliv_len && sta->wpa_sm)
+		pos = wpa_auth_build_key_delivery_elem(sta->wpa_sm, 0xFFFF, pos);
 
 	sta->smd_info.state = SMD_STA_ST_EXEC_DONE;
 
 	pos = hostapd_eid_smd_bss_trans_exec_resp(pos, lhapd->conf->smd.uhr_dl_drain_duration_tu);
 
-       /* Send IAP RESPONSE back to Current AP */
-       ret = uhr_iap_send_st_exec_resp(lhapd,
-                                       iap->current_ap_mld_addr,
-                                       iap->sta_addr,
-                                       iap->iap_transaction_id,
-                                       le_to_host64(iap->sequence_number),
-                                       0,
-				       iap->current_link_id,
-                                       resp_buf, len);
 
+	/* Send IAP RESPONSE back to Current AP */
+	size_t resp_len = (size_t)(pos - resp_buf);
+	ret = uhr_iap_send_st_exec_resp(lhapd,
+					iap->current_ap_mld_addr,
+					iap->sta_addr,
+					iap->iap_transaction_id,
+					le_to_host64(iap->sequence_number),
+					0,
+					iap->current_link_id,
+					resp_buf, resp_len);
        os_free(resp_buf);
 
-       if (ret < 0) {
-               wpa_printf(MSG_ERROR,
-                          "UHR ST EXEC: Failed to send IAP RESPONSE");
-               return;
-       }
 
-       wpa_printf(MSG_INFO,
-                  "UHR ST EXEC: Sent IAP RESPONSE to Current AP " MACSTR " (len=%zu)",
-                  MAC2STR(iap->current_ap_mld_addr), len);
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR,
+			   "UHR ST EXEC: Failed to send IAP RESPONSE");
+		return;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "UHR ST EXEC: Sent IAP RESPONSE to Current AP " MACSTR " (len=%zu)",
+		   MAC2STR(iap->current_ap_mld_addr), resp_len);
 
 	uhr_tgt_cancel_st_prep_timer(lhapd, (u8 *) iap->sta_addr);
       /* TODO: Delete the peer if exec is not done */
