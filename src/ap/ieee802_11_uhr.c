@@ -313,6 +313,9 @@ size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,
 	if (!from_user && hapd->uhr_ecu.state == UHR_ECU_IDLE)
 		return 0;
 
+	if (hapd->uhr_ecu.state == UHR_ECU_UPDATE_IND_IN_TIM)
+		return 0;
+
 	/*
 	 * Per 37.30.2.2: during the post-notification phase the element is
 	 * included only in Beacon and Probe Response frames, not in
@@ -347,6 +350,9 @@ u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
 	u8 *length_pos;
 
 	if (!from_user && hapd->uhr_ecu.state == UHR_ECU_IDLE)
+		return eid;
+
+	if (hapd->uhr_ecu.state == UHR_ECU_UPDATE_IND_IN_TIM)
 		return eid;
 
 	if (skip_post_phase &&

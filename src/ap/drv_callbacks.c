@@ -3883,6 +3883,95 @@ static void hostapd_update_ap_powersave(struct hostapd_data *hapd,
 				   "Failed to update beacons with DPS Assist Support Bit");
 	}
 }
+
+/**
+ * hostapd_handle_critical_update_notify - Process EVENT_CRITICAL_UPDATE_NOTIFY
+ * @hapd: hostapd BSS data (already resolved to the correct link)
+ * @ev:   Event data carrying link_id and cu_state
+ *
+ * Maps the kernel-reported nl80211_cu_state onto the hostapd-internal
+ * uhr_ecu_state and triggers a beacon update so that the UHR Params Update
+ * element is included/excluded as required by IEEE 802.11bn 37.30.2.2:
+ *
+ * STARTED		-> UHR_ECU_ADVANCE_NOTIFY      (begin adv-notification;
+ * 			   element mandatory in Beacon/ProbeResp/Assoc/LinkReconf)
+ * ADV_NOTIFICATION_END -> UHR_ECU_POST_ADVANCE_NOTIFY (update has taken effect;
+ * 			    element optional in Beacon/ProbeResp only)
+ * POST_NOTIFICATION_END -> UHR_ECU_IDLE                (post window elapsed;
+ *  			   element must not be included in any frame)
+ * ECU_END		  -> UHR_ECU_IDLE                (session complete)
+ * ECU_ABORT		-> UHR_ECU_IDLE 		(session aborted)
+ *
+ */
+static void
+hostapd_handle_critical_update_notify(struct hostapd_data *hapd,
+				      const struct cu_notify_event *ev)
+{
+	enum uhr_ecu_state new_state;
+
+	if (!hostapd_is_uhr_enabled(hapd)) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: CRITICAL_UPDATE_NOTIFY ignored - UHR not enabled on %s",
+			   hapd->conf->iface);
+		return;
+	}
+
+	switch (ev->cu_state) {
+	case NL80211_CU_STATE_STARTED:
+		new_state = UHR_ECU_ADVANCE_NOTIFY;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: ECU STARTED on %s link %u - entering adv-notification phase",
+			   hapd->conf->iface, ev->link_id);
+		break;
+
+	case NL80211_CU_STATE_ADV_NOTIFICATION_END:
+		/*
+		 * Advance-notification window has elapsed.  The element stays
+		 * in beacons (state remains IN_PROGRESS) but the beacon must
+		 * be refreshed so the countdown timer field is updated.
+		 */
+		new_state = UHR_ECU_POST_ADVANCE_NOTIFY;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: ECU ADV_NOTIFICATION_END on %s link %u",
+			   hapd->conf->iface, ev->link_id);
+
+		/*TODO: update the hapd config to uhr updated values, so that
+		 * it can be refelected in UHR operation IE
+		 */
+		break;
+
+	case NL80211_CU_STATE_POST_NOTIFICATION_END:
+		new_state = UHR_ECU_UPDATE_IND_IN_TIM;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: ECU POST_NOTIFICATION_END on %s link %u",
+			   hapd->conf->iface, ev->link_id);
+		break;
+
+	case NL80211_CU_STATE_ECU_END:
+		new_state = UHR_ECU_IDLE;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: ECU_END on %s link %u - session complete",
+			   hapd->conf->iface, ev->link_id);
+		break;
+	case NL80211_CU_STATE_ABORT:
+		new_state = UHR_ECU_IDLE;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: ECU ABORT on %s link %u - session aborted",
+			   hapd->conf->iface, ev->link_id);
+		/* TODO: reset the uhr parameter values */
+		break;
+	default:
+		wpa_printf(MSG_WARNING,
+			   "nl80211: CRITICAL_UPDATE_NOTIFY unknown cu_state=%u on %s link %u",
+			   ev->cu_state, hapd->conf->iface, ev->link_id);
+		return;
+	}
+
+	hapd->uhr_ecu.state = new_state;
+
+	/* TODO: Refresh beacon so the UHR Params Update element is added, updated,
+	 * or removed according to the new ECU state. */
+}
 #endif /* CONFIG_IEEE80211BN */
 
 static void hostapd_restart_agile_cac_all_ifaces(struct hostapd_data *hapd)
@@ -4393,6 +4482,12 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 #ifdef CONFIG_IEEE80211BN
 	case EVENT_UPDATE_AP_POWERSAVE:
 		hostapd_update_ap_powersave(hapd, &data->ap_powersave_event);
+		break;
+	case EVENT_CRITICAL_UPDATE_NOTIFY:
+		link_hapd = switch_link_hapd(hapd, data->cu_notify_event.link_id);
+		if (link_hapd)
+			hostapd_handle_critical_update_notify(link_hapd,
+							      &data->cu_notify_event);
 		break;
 #endif /* CONFIG_IEEE80211BN */
 	default:

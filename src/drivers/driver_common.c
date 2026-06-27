@@ -132,6 +132,9 @@ const char * event_to_string(enum wpa_event_type event)
 	E2S(AGILE_CAPABLE);
 #endif
 	E2S(UPDATE_AP_POWERSAVE);
+#ifdef CONFIG_IEEE80211BN
+	E2S(CRITICAL_UPDATE_NOTIFY);
+#endif /* CONFIG_IEEE80211BN */
 	}
 
 	return "UNKNOWN";

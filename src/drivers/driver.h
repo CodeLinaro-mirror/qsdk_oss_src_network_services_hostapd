@@ -7523,13 +7523,25 @@ enum wpa_event_type {
 #endif
 
 	/**
-	 * EVENT_UPDATE_AP_POWERSAVE - Received a AP Power Save update event
-	 *
-	 * This event is used by the driver to notify the usersapce about
-	 * enablement/disablement of AP Power Save feature.
-	 */
+ * EVENT_UPDATE_AP_POWERSAVE - Received a AP Power Save update event
+ *
+ * This event is used by the driver to notify the usersapce about
+ * enablement/disablement of AP Power Save feature.
+ */
 	EVENT_UPDATE_AP_POWERSAVE
+#ifdef CONFIG_IEEE80211BN
+	,
+	/**
+	 * EVENT_CRITICAL_UPDATE_NOTIFY - ECU lifecycle transition event
+	 *
+	 * Sent by the driver when the kernel reports a CU state change via
+	 * NL80211_CMD_CRITICAL_UPDATE_NOTIFY.  The cu_notify_event member
+	 * carries the link_id and the new nl80211_cu_state value.
+	 */
+	EVENT_CRITICAL_UPDATE_NOTIFY
+#endif /* CONFIG_IEEE80211BN */
 };
+
 
 
 /**
@@ -8672,6 +8684,16 @@ union wpa_event_data {
 		bool dps_assist_updated;
 		int dps_assist;
 	} ap_powersave_event;
+
+#ifdef CONFIG_IEEE80211BN
+	/**
+	 * Data for NL80211_CMD_CRITICAL_UPDATE_NOTIFY event
+	 */
+	struct cu_notify_event {
+		u8 link_id;
+		u32 cu_state; /* enum nl80211_cu_state */
+	} cu_notify_event;
+#endif /* CONFIG_IEEE80211BN */
 };
 
 #define HOSTAPD_OP_DEAUTH        0x8000   /* 10xxxx... */
