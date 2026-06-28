@@ -207,6 +207,10 @@ static const char * nl80211_command_to_string(enum nl80211_commands cmd)
 	C2S(NL80211_CMD_UHR_MODE_UPDATE)
 	C2S(NL80211_CMD_CRITICAL_UPDATE);
 	C2S(NL80211_CMD_CRITICAL_UPDATE_NOTIFY);
+	C2S(NL80211_CMD_UHR_LINK_RECONFIG_REQ)
+	C2S(NL80211_CMD_UHR_LINK_RECONFIG_RESP)
+	C2S(NL80211_CMD_SMD_TRANSITION_DONE)
+	C2S(NL80211_CMD_SMD_ROAM)
 	C2S(__NL80211_CMD_AFTER_LAST)
 	}
 #undef C2S
@@ -1420,6 +1424,140 @@ static void mlme_event_ch_switch(struct wpa_driver_nl80211_data *drv,
 }
 
 
+/**
+ * mlme_event_uhr_reconfig_resp - Handle UHR Link Reconfiguration Response
+ * @drv: Driver data
+ * @frame: Frame data
+ * @len: Frame length
+ * @tb: Netlink attributes (NL80211_ATTR_UHR_RECONFIG_TYPE used for type determination)
+ *
+ * This function handles ST Preparation Response (type=0) and ST Execution
+ * Response (type=1) frames received from the kernel via MLME notification.
+ */
+static void mlme_event_uhr_reconfig_resp(struct wpa_driver_nl80211_data *drv,
+					 const u8 *frame, size_t len)
+{
+	union wpa_event_data event;
+	u8 type;
+	const u8 *pos, *end;
+
+	/* Determine type from frame body (byte 27 = Type field in UHR action frame)
+	 * 0 = ST Preparation, 1 = ST Execution (IEEE 802.11bn Table 9-658bc)
+	 */
+	/* Frame must be at least 28 bytes: 24 MAC header + Category + Action +
+	 * Dialog Token + Type (IEEE 802.11bn Table 9-658bb)
+	 */
+	if (len < 28) {
+		wpa_printf(MSG_DEBUG, "nl80211: UHR Reconfig frame too short (%zu < 28)", len);
+		return;
+	}
+	type = frame[27]; /* Type: 0=ST Preparation, 1=ST Execution */
+
+	wpa_printf(MSG_DEBUG, "nl80211: UHR Reconfig response type=%u len=%zu",
+		   type, len);
+
+	os_memset(&event, 0, sizeof(event));
+	event.uhr_reconfig_resp.type = type;  /* 0 = Prepare, 1 = Execute */
+	event.uhr_reconfig_resp.frame = frame;
+	event.uhr_reconfig_resp.frame_len = len;
+
+	/* Parse frame body */
+	pos = frame + 24; /* Skip MAC header */
+	end = frame + len;
+
+	/* Category (1) + Action (1) + Dialog Token (1) + Type (1) + Count (1) */
+	if (end - pos < 5) {
+		event.uhr_reconfig_resp.status_code = 0; /* Unknown */
+		event.uhr_reconfig_resp.count = 0;
+		event.uhr_reconfig_resp.status_list = NULL;
+		event.uhr_reconfig_resp.resp_ie = pos;
+		event.uhr_reconfig_resp.resp_ie_len = end - pos;
+	} else {
+		/* Skip Category, Action, Dialog Token, Type to get to Count */
+		pos += 4;
+		u8 count = *pos++;
+
+		/* Follow ML Reconfig pattern exactly */
+		event.uhr_reconfig_resp.count = count;
+		if (end - pos < 3 * count) {
+			wpa_printf(MSG_DEBUG, "nl80211: Truncated UHR Reconfig Response frame");
+			return;
+		}
+		/* Extract status from first link status entry for compatibility */
+		if (count > 0) {
+			pos++; /* Skip first link_id */
+			event.uhr_reconfig_resp.status_code = WPA_GET_LE16(pos);
+			pos -= 1; /* Back up to start of status entries */
+		} else {
+			event.uhr_reconfig_resp.status_code = 0; /* Success when no links */
+		}
+		event.uhr_reconfig_resp.status_list = pos;
+		pos += 3 * count; /* Skip all status entries */
+		event.uhr_reconfig_resp.resp_ie = pos;
+		event.uhr_reconfig_resp.resp_ie_len = end - pos;
+	}
+
+	wpa_supplicant_event(drv->ctx, EVENT_UHR_RECONFIG_RESP, &event);
+}
+
+static void
+nl80211_smd_transition_status(struct i802_bss *bss,
+			      struct nlattr **tb)
+{
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	union wpa_event_data event;
+	u32 type;
+
+	if (!tb[NL80211_ATTR_MAC] ||
+	    nla_len(tb[NL80211_ATTR_MAC]) < ETH_ALEN ||
+	    !tb[NL80211_ATTR_STATUS_CODE] ||
+	    nla_len(tb[NL80211_ATTR_STATUS_CODE]) < 2 ||
+	    !tb[NL80211_ATTR_SMD_TRANSITION_TYPE]) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: SMD transition done missing or malformed attributes");
+		return;
+	}
+
+	type = nla_get_u32(tb[NL80211_ATTR_SMD_TRANSITION_TYPE]);
+
+	if (type != NL80211_SMD_TRANSITION_COMPLETE &&
+	    type != NL80211_SMD_TRANSITION_ABORT) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Unexpected SMD transition type %u", type);
+		return;
+	}
+
+	os_memset(&event, 0, sizeof(event));
+	event.st_transition.target_mld_addr = nla_data(tb[NL80211_ATTR_MAC]);
+	event.st_transition.status_code =
+				nla_get_u16(tb[NL80211_ATTR_STATUS_CODE]);
+	event.st_transition.type = type;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: SMD transition done type=%u status=%u target="
+		   MACSTR, type, event.st_transition.status_code,
+		   MAC2STR(event.st_transition.target_mld_addr));
+
+	if (type == NL80211_SMD_TRANSITION_COMPLETE) {
+		os_memcpy(drv->sta_mlo_info.ap_mld_addr,
+			  nla_data(tb[NL80211_ATTR_MAC]), ETH_ALEN);
+
+		if (get_sta_mlo_interface_info(bss) < 0) {
+			wpa_printf(MSG_INFO,
+				   "nl80211: SMD: Failed to get STA MLO info");
+			return;
+		}
+
+		if (!nl80211_get_assoc_bssid(bss)) {
+			wpa_printf(MSG_INFO,
+				   "nl80211: SMD: Failed to get BSSID info after SMD transition");
+			return;
+		}
+	}
+
+	wpa_supplicant_event(drv->ctx, EVENT_SMD_TRANSITION_DONE, &event);
+}
+
 static void mlme_timeout_event(struct wpa_driver_nl80211_data *drv,
 			       enum nl80211_commands cmd, struct nlattr *addr)
 {
@@ -2217,6 +2355,9 @@ static void mlme_event(struct i802_bss *bss,
 		break;
 	case NL80211_CMD_UNPROT_BEACON:
 		mlme_event_unprot_beacon(drv, nla_data(frame), nla_len(frame));
+		break;
+	case NL80211_CMD_UHR_LINK_RECONFIG_RESP:
+		mlme_event_uhr_reconfig_resp(drv, nla_data(frame), nla_len(frame));
 		break;
 	default:
 		break;
@@ -5838,6 +5979,13 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 		nl80211_critical_update_notify_event(bss, tb);
 		break;
 #endif /* CONFIG_IEEE80211BN */
+	case NL80211_CMD_UHR_LINK_RECONFIG_RESP:
+		mlme_event_uhr_reconfig_resp(drv, nla_data(frame),
+					     nla_len(frame));
+		break;
+	case NL80211_CMD_SMD_TRANSITION_DONE:
+		nl80211_smd_transition_status(bss, tb);
+		break;
 	default:
 		wpa_dbg(drv->ctx, MSG_DEBUG, "nl80211: Ignored unknown event "
 			"(cmd=%d)", cmd);

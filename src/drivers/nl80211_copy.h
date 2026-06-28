@@ -1366,6 +1366,24 @@
  *	user space of CU lifecycle transitions on an AP link.
  *	Carries %NL80211_ATTR_CU_STATE indicating the current ECU phase.
  *
+ * @NL80211_CMD_TRIGGER_SMD_DISCOVERY: Trigger directed SMD neighbor discovery.
+ *	Userspace passes a list of target BSSIDs (identified from RNR elements)
+ *	via %NL80211_ATTR_SMD_DISCOVERY_TARGETS for efficient directed scanning.
+ *
+ * @NL80211_CMD_UHR_LINK_RECONFIG_REQ: Send a UHR Link Reconfiguration Request
+ *	as part of the SMD BSS Transition protocol (IEEE 802.11bn §37.16.3).
+ *	Used for both ST Preparation (type=0) and ST Execution (type=1) phases.
+ *
+ * @NL80211_CMD_UHR_LINK_RECONFIG_RESP: Unsolicited event from the kernel to
+ *	userspace carrying the UHR Link Reconfiguration Response received from
+ *	the peer AP during SMD BSS Transition.
+ *
+ * @NL80211_CMD_SMD_TRANSITION_DONE: Event notifying userspace that the SMD
+ *	BSS Transition execution has completed.
+ *
+ * @NL80211_CMD_SMD_ROAM: Event notifying userspace to trigger an SMD-domain
+ *	BSS transition roam to a target AP in the same SMD domain.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -1654,6 +1672,13 @@ enum nl80211_commands {
 	NL80211_CMD_UHR_MODE_UPDATE,
 	NL80211_CMD_CRITICAL_UPDATE,
 	NL80211_CMD_CRITICAL_UPDATE_NOTIFY,
+
+	NL80211_CMD_UHR_LINK_RECONFIG_REQ,
+	NL80211_CMD_UHR_LINK_RECONFIG_RESP,
+
+	NL80211_CMD_SMD_TRANSITION_DONE,
+
+	NL80211_CMD_SMD_ROAM,
 
 	/* add new commands above here */
 
@@ -3057,6 +3082,20 @@ enum nl80211_commands {
  * @NL80211_ATTR_SMD_STA_DL_DATA_FWD: Flag attribute to indicate driver supports
  * 	SMD DL DATA forward feature.
  *
+ * @NL80211_ATTR_SMD_STA: Nested attribute containing station-level SMD info.
+ *
+ * @NL80211_ATTR_SMD_CONFIG: u32 bitmask of SMD configuration flags (e.g.,
+ *	bit 0 = suppress DL SN, bit 1 = suppress UL SN).
+ *
+ * @NL80211_ATTR_SMD_TIMEOUT: u8 attribute specifying the SMD transition timeout
+ *	in units of 64 TUs, as defined in IEEE 802.11bn.
+ *
+ * @NL80211_ATTR_SMD_AP: Flag attribute indicating this AP is part of an SMD
+ *	(Seamless Multiband Device) as defined in IEEE 802.11bn.
+ *
+ * @NL80211_ATTR_SMD_PARAMS: Nested attribute containing SMD parameters for
+ *	the AP. See &enum nl80211_smd_params_attrs.
+ *
  * @NL80211_ATTR_STA_DFS_EN: whether STA_DFS_EN is enabled (u8, 0 or 1)
  *
  * @NL80211_ATTR_CU_TYPE: (u8) Critical Update type, see &enum nl80211_cu_type.
@@ -3068,6 +3107,94 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_EPP_PEER: A flag attribute to indicate if the peer is an EPP
  *	STA. Used with %NL80211_CMD_NEW_STA and %NL80211_CMD_ADD_LINK_STA
+ *
+ * @NL80211_ATTR_SMD_ENABLED: Flag attribute indicating SMD is enabled for
+ *	this association.
+ *
+ * @NL80211_ATTR_SMD_PTK_MODE: u8 attribute specifying the PTK derivation mode
+ *	for SMD (-1 = default, 0 = per-SMD, 1 = per-AP MLD).
+ *
+ * @NL80211_ATTR_SMD_KDK: Binary attribute carrying the SMD Key Derivation Key.
+ *
+ * @NL80211_ATTR_DH_PARAMS: Binary attribute carrying Diffie-Hellman parameters.
+ *
+ * @NL80211_ATTR_SMD_IDENTIFIER: Binary attribute (ETH_ALEN) carrying the SMD
+ *	domain identifier (MAC address of the SMD AP).
+ *
+ * @NL80211_ATTR_SMD_DISCOVERY_TARGETS: Nested attribute listing SMD neighbor
+ *	discovery targets (BSSIDs from RNR) for directed discovery.
+ *
+ * @NL80211_ATTR_SMD_TARGET_MLD_ADDR: Binary attribute (ETH_ALEN) carrying the
+ *	target MLD MAC address for SMD BSS Transition.
+ *
+ * @NL80211_ATTR_SMD_SNONCE: Binary attribute carrying the station nonce (SNonce)
+ *	used in per-AP PTK derivation.
+ *
+ * @NL80211_ATTR_SMD_ANONCE: Binary attribute carrying the AP nonce (ANonce)
+ *	used in per-AP PTK derivation.
+ *
+ * @NL80211_ATTR_SMD_SCS_LIST: String attribute with a comma-separated list of
+ *	SCS (Service Class Specification) IDs for the SMD transition.
+ *
+ * @NL80211_ATTR_SMD_AID: u16 attribute carrying the AID assigned by the AP
+ *	in the SMD association.
+ *
+ * @NL80211_ATTR_SMD_DH_PUBLIC_KEY: Binary attribute carrying the own DH public
+ *	key for per-AP PTK derivation mode.
+ *
+ * @NL80211_ATTR_SMD_TRANSITION_TYPE: u32 attribute indicating the SMD BSS
+ *	Transition event type (0 = prepare, 1 = execute).
+ *
+ * @NL80211_ATTR_PEER_SMD_ENABLED: Flag attribute indicating the peer AP
+ *	supports SMD.
+ *
+ * @NL80211_ATTR_PEER_SMD_MAC_ADDR: Binary attribute (ETH_ALEN) carrying the
+ *	peer AP SMD MAC address.
+ *
+ * @NL80211_ATTR_PEER_SMD_DL_DATA_FWD: Flag attribute indicating the peer AP
+ *	supports SMD DL data forwarding.
+ *
+ * @NL80211_ATTR_UHR_RECONFIG_TYPE: u32 attribute indicating the UHR Link
+ *	Reconfiguration type (0 = ST Preparation, 1 = ST Execution).
+ *
+ * @NL80211_ATTR_SMD_EXEC_PATH: u8 attribute specifying the ST Execution path
+ *	(0 = via current AP, 1 = direct to target AP).
+ *
+ * @NL80211_ATTR_SMD_DL_TID_BITMAP: u8 bitmap of DL TIDs to drain before
+ *	ST Execution.
+ *
+ * @NL80211_ATTR_SMD_ROLE: u32 attribute specifying the SMD role of this device.
+ *
+ * @NL80211_ATTR_SMD_TYPE: u32 attribute specifying the SMD type.
+ *
+ * @NL80211_ATTR_SMD_DL_SN_NOT_TRANSFERRED: Flag indicating DL sequence number
+ *	is not transferred during SMD BSS Transition.
+ *
+ * @NL80211_ATTR_SMD_UL_SN_NOT_TRANSFERRED: Flag indicating UL sequence number
+ *	is not transferred during SMD BSS Transition.
+ *
+ * @NL80211_ATTR_SMD_STA_LINK_MACS: Nested attribute carrying the per-link
+ *      MAC addresses of a non-AP STA MLD for an SMD BSS Transition. Each
+ *      nested entry is an attribute containing exactly one
+ *      %NL80211_ATTR_SMD_STA_LINK_MAC.  Used in %NL80211_CMD_SMD_ROAM to
+ *      specify which STA link MAC addresses are involved in the transition.
+ *
+ * @NL80211_ATTR_SMD_STA_LINK_MAC: Binary attribute (ETH_ALEN bytes) carrying
+ *      the MAC address of a single STA link.  Nested inside
+ *      %NL80211_ATTR_SMD_STA_LINK_MACS; each entry identifies one link of the
+ *      non-AP MLD participating in the SMD BSS Transition.
+ *
+ * @NL80211_ATTR_SMD_PREFERRED_TARGET: Flag attribute (NLA_FLAG). When
+ *      present in %NL80211_CMD_SMD_ROAM, marks the specified target AP MLD
+ *      as the preferred transition target, causing the driver to allocate
+ *      resources at PREP-response time rather than deferring to EXEC time.
+ *
+ * @NL80211_ATTR_SMD_LINK_TRANSITION_STATE: u8 attribute carrying the current
+ *      link distribution state of an SMD BSS Transition. Values defined in
+ *      &enum nl80211_smd_link_transition_state.  Carried in
+ *      %NL80211_CMD_SMD_TRANSITION_DONE events and in UHR Link Reconfiguration
+ *      Response done notifications to indicate how far link migration has
+ *      progressed (PENDING, PARTIAL, DL_DRAIN, or COMPLETE).
  *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
@@ -3722,6 +3849,35 @@ enum nl80211_attrs {
 	NL80211_ATTR_CU_STATE,
 
 	NL80211_ATTR_EPP_PEER,
+
+	NL80211_ATTR_SMD_TARGET_MLD_ADDR,
+	NL80211_ATTR_SMD_SNONCE,
+	NL80211_ATTR_SMD_ANONCE,
+	NL80211_ATTR_SMD_SCS_LIST,
+	NL80211_ATTR_SMD_AID,
+	NL80211_ATTR_SMD_DH_PUBLIC_KEY,
+
+	NL80211_ATTR_SMD_TRANSITION_TYPE,
+
+	NL80211_ATTR_PEER_SMD_ENABLED,
+	NL80211_ATTR_PEER_SMD_MAC_ADDR,
+	NL80211_ATTR_PEER_SMD_DL_DATA_FWD,
+
+	NL80211_ATTR_UHR_RECONFIG_TYPE,
+
+	NL80211_ATTR_SMD_EXEC_PATH,
+	NL80211_ATTR_SMD_DL_TID_BITMAP,
+
+	NL80211_ATTR_SMD_ROLE,
+	NL80211_ATTR_SMD_TYPE,
+	NL80211_ATTR_SMD_DL_SN_NOT_TRANSFERRED,
+	NL80211_ATTR_SMD_UL_SN_NOT_TRANSFERRED,
+	NL80211_ATTR_SMD_DL_DRAIN_TIME,
+
+	NL80211_ATTR_SMD_STA_LINK_MACS,
+	NL80211_ATTR_SMD_STA_LINK_MAC,
+	NL80211_ATTR_SMD_PREFERRED_TARGET,
+	NL80211_ATTR_SMD_LINK_TRANSITION_STATE,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -5654,7 +5810,6 @@ enum nl80211_bss {
 	NL80211_BSS_MLD_ADDR,
 	NL80211_BSS_USE_FOR,
 	NL80211_BSS_CANNOT_USE_REASONS,
-
 	NL80211_BSS_SMD_CAPABLE,
 	NL80211_BSS_SMD_DOMAIN_ID,
 	NL80211_BSS_SMD_CAPABILITIES,
@@ -9042,13 +9197,13 @@ enum nl80211_qm_attrs {
 };
 
 enum nl80211_smd_discovery_target_attrs {
-        __NL80211_SMD_DISCOVERY_TARGET_INVALID,
+	__NL80211_SMD_DISCOVERY_TARGET_INVALID,
 
-        NL80211_SMD_DISCOVERY_TARGET_SHORT_SSID,
-        NL80211_SMD_DISCOVERY_TARGET_FREQ,
-        NL80211_SMD_DISCOVERY_TARGET_OP_CLASS,
-        NL80211_SMD_DISCOVERY_TARGET_BSSID,
-        NL80211_SMD_DISCOVERY_TARGET_AP_MLD_ID,
+	NL80211_SMD_DISCOVERY_TARGET_SHORT_SSID,
+	NL80211_SMD_DISCOVERY_TARGET_FREQ,
+	NL80211_SMD_DISCOVERY_TARGET_OP_CLASS,
+	NL80211_SMD_DISCOVERY_TARGET_BSSID,
+	NL80211_SMD_DISCOVERY_TARGET_AP_MLD_ID,
 
         __NL80211_SMD_DISCOVERY_TARGET_AFTER_LAST,
         NL80211_SMD_DISCOVERY_TARGET_MAX =
@@ -9084,17 +9239,45 @@ enum nl80211_smd_discovery_target_attrs {
  *     0 = Per-SMD PTK, 1 = Per-AP MLD PTK (required).
  */
 enum nl80211_smd_params_attrs {
-        NL80211_SMD_PARAMS_ATTR_UNSPEC,
-        NL80211_SMD_PARAMS_ATTR_IDENTIFIER,
-        NL80211_SMD_PARAMS_ATTR_TIMEOUT,
-        NL80211_SMD_PARAMS_ATTR_DL_DATA_FWD,
-        NL80211_SMD_PARAMS_ATTR_MAX_PEER_APMLDS,
-        NL80211_SMD_PARAMS_ATTR_TYPE,
-        NL80211_SMD_PARAMS_ATTR_PTK_MODE,
+	NL80211_SMD_PARAMS_ATTR_UNSPEC,
+	NL80211_SMD_PARAMS_ATTR_IDENTIFIER,
+	NL80211_SMD_PARAMS_ATTR_TIMEOUT,
+	NL80211_SMD_PARAMS_ATTR_DL_DATA_FWD,
+	NL80211_SMD_PARAMS_ATTR_MAX_PEER_APMLDS,
+	NL80211_SMD_PARAMS_ATTR_TYPE,
+	NL80211_SMD_PARAMS_ATTR_PTK_MODE,
 
-        /* keep last */
-        __NL80211_SMD_PARAMS_ATTR_LAST,
-        NL80211_SMD_PARAMS_ATTR_MAX = __NL80211_SMD_PARAMS_ATTR_LAST - 1
+	/* keep last */
+	__NL80211_SMD_PARAMS_ATTR_LAST,
+	NL80211_SMD_PARAMS_ATTR_MAX = __NL80211_SMD_PARAMS_ATTR_LAST - 1
+};
+
+/**
+ * enum nl80211_smd_transition_type - SMD parameters attributes
+ *
+ * Used with %NL80211_ATTR_SMD_TRANSITION_TYPE in status-only
+ * %NL80211_CMD_SMD_TRANSITION_DONE notifications.
+ *
+ * @NL80211_SMD_TRANSITION_PREP: ST Prep Response handled.
+ *
+ * @NL80211_SMD_TRANSITION_EXEC: ST Exec Response handled.
+ *
+ * @NL80211_SMD_TRANSITION_COMPLETE: Primary link switch complete
+ * (including SMD BSS transition of all accepted links) after DL
+ * drain. Status-only notification (no frame).
+ *
+ * @NL80211_SMD_TRANSITION_ABORT: Transition aborted (Timeout or failure).
+ *     Status-only notification (no frame).
+ */
+enum nl80211_smd_transition_type {
+	NL80211_SMD_TRANSITION_PREP,
+	NL80211_SMD_TRANSITION_EXEC,
+	NL80211_SMD_TRANSITION_COMPLETE,
+	NL80211_SMD_TRANSITION_ABORT,
+
+	/* keep last */
+	__NL80211_SMD_TRANSITION_ATTR_LAST,
+	NL80211_SMD_TRANSITION_ATTR_MAX = __NL80211_SMD_TRANSITION_ATTR_LAST - 1
 };
 
 /**
