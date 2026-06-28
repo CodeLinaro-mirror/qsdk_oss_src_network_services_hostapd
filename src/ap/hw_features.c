@@ -567,12 +567,32 @@ void hostapd_stop_setup_timers(struct hostapd_iface *iface)
 static int ieee80211n_check_40mhz(struct hostapd_iface *iface)
 {
 	struct wpa_driver_scan_params params;
+	struct hostapd_channel_data *pri_chan;
 	int ret;
 
 	/* Check that HT40 is used and PRI / SEC switch is allowed */
 	if (!iface->conf->secondary_channel || iface->conf->no_pri_sec_switch ||
 		iface->conf->noscan)
 		return 0;
+
+	/*
+	 * Skip the 40 MHz scan when the primary channel is a DFS channel.
+	 * A neighbor scan could trigger ieee80211n_switch_pri_sec() and
+	 * move the primary off the configured DFS channel, violating
+	 * operator intent and breaking CAC continuity. Secondary-channel
+	 * availability is still enforced by
+	 * ieee80211n_allowed_ht40_channel_pair().
+	 */
+	pri_chan = hw_get_channel_freq(iface->current_mode->mode,
+				      iface->freq, NULL,
+				      iface->hw_features,
+				      iface->num_hw_features);
+	if (pri_chan && (pri_chan->flag & HOSTAPD_CHAN_RADAR)) {
+		wpa_printf(MSG_DEBUG,
+			   "Skip 40 MHz scan: primary channel %d is DFS",
+			   iface->conf->channel);
+		return 0;
+	}
 
 	hostapd_set_state(iface, HAPD_IFACE_HT_SCAN);
 	wpa_printf(MSG_DEBUG, "Scan for neighboring BSSes prior to enabling "
@@ -1288,37 +1308,6 @@ static int hostapd_validate_bss_he_capab(struct hostapd_data *hapd)
 		}
 	}
 
-	/* Check MU Beamformee */
-	/* Check DL MU-OFDMA */
-	if (mask & HE_PHY_BSS_OVR_DL_MU_OFDMA) {
-		if (hapd->conf->he_phy_capab.he_dl_mu_ofdma &&
-		    !(hw_he->phy_cap[HE_PHYCAP_CHANNEL_WIDTH_SET_IDX] &
-		      HE_PHYCAP_CHANNEL_WIDTH_SET_40MHZ_IN_2G)) {
-			/* Basic check - driver should support OFDMA */
-			wpa_printf(MSG_DEBUG,
-				   "Warning: bss_he_dl_mu_ofdma configured but driver support unclear");
-		}
-	}
-
-	/* Check DL MU-OFDMA Beamformer */
-	if (mask & HE_PHY_BSS_OVR_DL_MU_OFDMA_BFER) {
-		if (hapd->conf->he_phy_capab.he_dl_mu_ofdma_bfer &&
-		    !hapd->conf->he_phy_capab.he_dl_mu_ofdma) {
-			wpa_printf(MSG_ERROR,
-				   "bss_he_dl_mu_ofdma_bfer requires bss_he_dl_mu_ofdma");
-			return -1;
-		}
-	}
-
-	/* Check UL MU-OFDMA */
-	if (mask & HE_PHY_BSS_OVR_UL_MU_OFDMA) {
-		if (hapd->conf->he_phy_capab.he_ul_mu_ofdma) {
-			/* Basic validation - driver should support UL OFDMA */
-			wpa_printf(MSG_DEBUG,
-				   "bss_he_ul_mu_ofdma configured");
-		}
-	}
-
 	/* Check UL MU-MIMO */
 	if (mask & HE_PHY_BSS_OVR_UL_MUMIMO) {
 		if (hapd->conf->he_phy_capab.he_ul_mumimo == 1 &&
@@ -1390,39 +1379,6 @@ static int hostapd_validate_bss_eht_capab(struct hostapd_data *hapd)
 		if (hapd->conf->eht_phy_capab.mu_beamformer) {
 			wpa_printf(MSG_DEBUG,
 				   "bss_eht_mu_beamformer configured");
-		}
-	}
-
-	/* Check MU Beamformee */
-	/* Check DL MU-OFDMA */
-	if (mask & EHT_PHY_BSS_OVR_DL_MU_OFDMA) {
-		if (hapd->conf->eht_phy_capab.dl_mu_ofdma) {
-			wpa_printf(MSG_DEBUG,
-				   "bss_eht_dl_mu_ofdma configured");
-		}
-	}
-
-	/* Check UL MU-OFDMA */
-	if (mask & EHT_PHY_BSS_OVR_UL_MU_OFDMA) {
-		if (hapd->conf->eht_phy_capab.ul_mu_ofdma) {
-			wpa_printf(MSG_DEBUG,
-				   "bss_eht_ul_mu_ofdma configured");
-		}
-	}
-
-	/* Check DL OFDMA+MU-MIMO */
-	if (mask & EHT_PHY_BSS_OVR_DL_OFDMA_MUMIMO) {
-		if (hapd->conf->eht_phy_capab.dl_ofdma_mumimo) {
-			wpa_printf(MSG_DEBUG,
-				   "bss_eht_dl_ofdma_mumimo configured");
-		}
-	}
-
-	/* Check UL OFDMA+MU-MIMO */
-	if (mask & EHT_PHY_BSS_OVR_UL_OFDMA_MUMIMO) {
-		if (hapd->conf->eht_phy_capab.ul_ofdma_mumimo) {
-			wpa_printf(MSG_DEBUG,
-				   "bss_eht_ul_ofdma_mumimo configured");
 		}
 	}
 
@@ -2333,7 +2289,7 @@ int hostapd_select_hw_mode(struct hostapd_iface *iface)
 			wpa_printf(MSG_DEBUG,
 				   "DFS: Update puncture source for User puncture bitmap=0x%04x",
 				   iface->conf->punct_bitmap);
-			dfs_update_puncture_source(iface, iface->freq, ch_width,
+			dfs_update_puncture_source(iface, 0, ch_width,
 						   iface->conf->punct_bitmap,
 						   DFS_CHAN_PUNC_USER);
 		}

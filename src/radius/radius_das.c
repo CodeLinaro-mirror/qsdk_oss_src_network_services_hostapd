@@ -15,6 +15,9 @@
 #include "utils/list.h"
 #include "radius.h"
 #include "radius_das.h"
+#ifdef CONFIG_HOSTAPD_IF
+#include "hostapd_if/hostapd_if.h"
+#endif
 
 
 static struct dl_list das_ports = DL_LIST_HEAD_INIT(das_ports);
@@ -157,6 +160,9 @@ static struct radius_msg * radius_das_disconnect(struct radius_das_data *das,
 		attrs.cui_len = len;
 	}
 
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_notify_radius_coa_event(das->ctx, attrs.sta_addr, msg, hdr->code);
+#endif
 	res = das->disconnect(das->ctx, &attrs);
 	switch (res) {
 	case RADIUS_DAS_NAS_MISMATCH:
@@ -351,6 +357,9 @@ static struct radius_msg * radius_das_coa(struct radius_das_data *das,
 	}
 #endif /* CONFIG_HS20 */
 
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_notify_radius_coa_event(das->ctx, attrs.sta_addr, msg, hdr->code);
+#endif
 	res = das->coa(das->ctx, &attrs);
 	switch (res) {
 	case RADIUS_DAS_NAS_MISMATCH:

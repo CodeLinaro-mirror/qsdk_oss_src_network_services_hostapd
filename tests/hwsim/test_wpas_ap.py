@@ -1203,12 +1203,21 @@ def test_wpas_ap_acl_mgmt(dev):
 
     if "OK" not in dev[0].request("DENY_ACL ADD_MAC " + addr1):
         raise Exception("DENY_ACL ADD_MAC failed")
-    dev[1].wait_disconnected()
-    dev[1].request("DISCONNECT")
+    # The accept list takes priority over the deny list for already-connected
+    # STAs (in all modes except ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST).
+    # addr1 is in the accept list, so adding it to the deny list must NOT
+    # disconnect it immediately.
+    ev = dev[1].wait_event(["CTRL-EVENT-DISCONNECTED"], timeout=1)
+    if ev is not None:
+        raise Exception("dev[1] was unexpectedly disconnected after "
+                        "DENY_ACL ADD_MAC (accept list takes priority)")
 
     check_acl(dev[0], 1, 1)
     if "OK" not in dev[0].request("ACCEPT_ACL CLEAR"):
         raise Exception("Failed to clear accept ACL")
+    # Now addr1 is only in the deny list -> must be disconnected.
+    dev[1].wait_disconnected()
+    dev[1].request("DISCONNECT")
     check_acl(dev[0], 0, 1)
     if "OK" not in dev[0].request("DENY_ACL CLEAR"):
         raise Exception("Failed to clear deny ACL")

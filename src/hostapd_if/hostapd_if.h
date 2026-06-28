@@ -148,6 +148,19 @@ void hostapd_if_event_disassoc(struct hostapd_data *hapd,
 			       bool is_tx_status,
 			       int tx_status_ok);
 
+void hostapd_if_notify_radius_send_event(struct hostapd_data *hapd,
+					 const u8 *addr, void *radius_msg,
+					 uint32_t msg_type);
+
+void hostapd_if_notify_radius_receive_event(struct hostapd_data *hapd,
+					    const u8 *addr,
+					    void *msg,
+					    const void *hdr,
+					    uint32_t msg_type);
+
+void hostapd_if_notify_radius_coa_event(struct hostapd_data *hapd, const u8 *addr,
+					void *msg, u8 hdr_code);
+
 void hostapd_if_event_assoc_tx_complete(struct hostapd_data *hapd,
 					const u8 *addr, int ok, uint16_t status,
 					uint16_t aid);

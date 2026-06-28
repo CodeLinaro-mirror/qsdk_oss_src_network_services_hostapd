@@ -101,6 +101,8 @@ static struct wpabuf * wpas_pasn_wd_sae_commit(struct pasn_data *pasn)
 {
 	struct wpabuf *buf = NULL;
 	int ret;
+	const u8 *pw_id = NULL;
+	size_t pw_id_len = 0;
 
 	ret = sae_set_group(&pasn->sae, pasn->group);
 	if (ret) {
@@ -128,7 +130,12 @@ static struct wpabuf * wpas_pasn_wd_sae_commit(struct pasn_data *pasn)
 	wpabuf_put_le16(buf, 1);
 	wpabuf_put_le16(buf, WLAN_STATUS_SAE_HASH_TO_ELEMENT);
 
-	sae_write_commit(&pasn->sae, buf, NULL, NULL, 0);
+	/* Include the password identifier if the PT was derived with one */
+	if (pasn->pt && pasn->pt->password_id) {
+		pw_id = wpabuf_head(pasn->pt->password_id);
+		pw_id_len = wpabuf_len(pasn->pt->password_id);
+	}
+	sae_write_commit(&pasn->sae, buf, NULL, pw_id, pw_id_len);
 	pasn->sae.state = SAE_COMMITTED;
 
 	return buf;
@@ -423,7 +430,8 @@ static int wpas_pasn_wd_fils_rx(struct pasn_data *pasn, struct wpabuf *wd)
 		return -1;
 	}
 
-	ret = wpa_pasn_validate_rsne(&rsne_data);
+	ret = wpa_pasn_validate_rsne(&rsne_data,
+				     pasn->auth_alg == WLAN_AUTH_EPPKE);
 	if (ret) {
 		wpa_printf(MSG_DEBUG, "PASN: FILS: Failed validating RSNE");
 		return -1;
@@ -610,7 +618,8 @@ static struct wpabuf * wpas_pasn_build_auth_1(struct pasn_data *pasn,
 
 	wpa_pasn_build_auth_header(buf, pasn->bssid,
 				   pasn->own_addr, pasn->peer_addr,
-				   pasn->trans_seq + 1, WLAN_STATUS_SUCCESS);
+				   pasn->trans_seq + 1, WLAN_STATUS_SUCCESS,
+				   pasn->auth_alg == WLAN_AUTH_EPPKE);
 
 	pmkid = NULL;
 	if (wpa_key_mgmt_ft(pasn->akmp)) {
@@ -637,7 +646,9 @@ static struct wpabuf * wpas_pasn_build_auth_1(struct pasn_data *pasn,
 			wrapped_data_buf = wpas_pasn_get_wrapped_data(pasn);
 	}
 
-	if (wpa_pasn_add_rsne(buf, pmkid, pasn->akmp, pasn->cipher) < 0)
+	if (pasn->rsn_ie && pasn->rsn_ie_len)
+		wpabuf_put_data(buf, pasn->rsn_ie, pasn->rsn_ie_len);
+	else if (wpa_pasn_add_rsne(buf, pmkid, pasn->akmp, pasn->cipher) < 0)
 		goto fail;
 
 	if (!wrapped_data_buf)
@@ -706,7 +717,8 @@ static struct wpabuf * wpas_pasn_build_auth_3(struct pasn_data *pasn)
 	wpa_pasn_build_auth_header(buf, pasn->bssid,
 				   pasn->own_addr, pasn->peer_addr,
 				   WLAN_AUTH_TR_SEQ_PASN_AUTH3,
-				   WLAN_STATUS_SUCCESS);
+				   WLAN_STATUS_SUCCESS,
+				   pasn->auth_alg == WLAN_AUTH_EPPKE);
 
 	wrapped_data_buf = wpas_pasn_get_wrapped_data(pasn);
 
@@ -826,6 +838,7 @@ void wpa_pasn_reset(struct pasn_data *pasn)
 #endif /* CONFIG_TESTING_OPTIONS */
 	pasn->network_id = 0;
 	pasn->derive_kdk = false;
+	os_free(pasn->rsn_ie);
 	pasn->rsn_ie = NULL;
 	pasn->rsn_ie_len = 0;
 	os_free(pasn->rsnxe_ie);
@@ -1251,7 +1264,8 @@ int wpa_pasn_auth_rx(struct pasn_data *pasn, const u8 *data, size_t len,
 		goto fail;
 	}
 
-	ret = wpa_pasn_validate_rsne(&rsn_data);
+	ret = wpa_pasn_validate_rsne(&rsn_data,
+				     pasn->auth_alg == WLAN_AUTH_EPPKE);
 	if (ret) {
 		wpa_printf(MSG_DEBUG, "PASN: Failed validating RSNE");
 		goto fail;
@@ -1315,7 +1329,8 @@ int wpa_pasn_auth_rx(struct pasn_data *pasn, const u8 *data, size_t len,
 			      pasn->own_addr, pasn->peer_addr,
 			      wpabuf_head(secret), wpabuf_len(secret),
 			      &pasn->ptk, pasn->akmp, pasn->cipher,
-			      pasn->kdk_len, pasn->kek_len, &pasn->hash_alg);
+			      pasn->kdk_len, pasn->kek_len, &pasn->hash_alg,
+			      pasn->auth_alg == WLAN_AUTH_EPPKE);
 	if (ret) {
 		wpa_printf(MSG_DEBUG, "PASN: Failed to derive PTK");
 		goto fail;

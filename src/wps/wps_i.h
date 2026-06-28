@@ -12,6 +12,10 @@
 #include "wps.h"
 #include "wps_attr_parse.h"
 
+#ifdef RDK_ONEWIFI
+#include "../qcn_extns/wps_rdk_extn.h"
+#endif /* RDK_ONEWIFI */
+
 struct wps_nfc_pw_token;
 
 /**

@@ -1116,8 +1116,16 @@ u8 * hostapd_eid_mbo(struct hostapd_data *hapd, u8 *eid, size_t len)
 				ctrl |= OCE_IS_NON_OCE_AP_PRESENT;
 			if (hapd->ap_11b_present)
 				ctrl |= OCE_IS_11B_AP_PRESENT;
-			if (hapd->conf->fils_hlp_wait_time)
+#ifdef CONFIG_FILS
+			/* OCE_IS_FILS_HLP_ENABLED (OCE Spec v2.0 Sec 3.3 Bit 5)
+			 * must be set only when the AP has a DHCP server
+			 * configured for FILS IP address assignment via HLP.
+			 * fils_hlp_wait_time is a timing parameter with a
+			 * non-zero default and must not be used to condition this bit. */
+			if (hapd->conf->dhcp_server.af == AF_INET &&
+			    hapd->conf->dhcp_server.u.v4.s_addr != 0)
 				ctrl |= OCE_IS_FILS_HLP_ENABLED;
+#endif /* CONFIG_FILS */
 		}
 
 		*mbo_pos++ = OCE_ATTR_ID_CAPA_IND;
@@ -1504,6 +1512,25 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
 
 	capab &= capab_mask;
+
+#ifdef CONFIG_ENC_ASSOC
+	/* Per IEEE 802.11bi/D4.0, 12.16.7 (PMKSA caching privacy)
+	 * a STA that sets the PMKSA Caching Privacy Support
+	 * field in the RSNXE to 1 shall set the (Re)Association
+	 * Frame Encryption Support field in the RSNXE to 1.
+	 */
+	if ((hapd->iface->drv_flags2 &
+	     WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION) &&
+	    (hapd->conf->assoc_frame_encryption ||
+	    hapd->conf->pmksa_caching_privacy)) {
+		capab |= BIT(WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION);
+		capab |= BIT(WLAN_RSNX_CAPAB_KEK_IN_PASN);
+	}
+	if (hapd->conf->pmksa_caching_privacy)
+		capab |= BIT(WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY);
+	if (hapd->conf->eap_using_authentication_frames)
+		capab |= BIT(WLAN_RSNX_CAPAB_802_1X_IN_AUTH_FRAMES);
+#endif /* CONFIG_ENC_ASSOC */
 
 	if (!capab)
 		return eid; /* no supported extended RSN capabilities */

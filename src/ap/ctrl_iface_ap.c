@@ -4142,6 +4142,8 @@ int hostapd_disassoc_accept_mac(struct hostapd_data *hapd)
 		    (vlan_id.notempty &&
 		     vlan_compare(&vlan_id, sta->vlan_desc)))
 			disconnect_sta = true;
+		else
+			continue;
 
 #ifdef CONFIG_IEEE80211BE
 		for (link_id = 0; hapd->conf->mld_ap &&
@@ -4183,13 +4185,16 @@ int hostapd_disassoc_deny_mac(struct hostapd_data *hapd)
 #endif /* CONFIG_IEEE80211BE */
 
 		/*
-		 * In DENY_UNLESS_ACCEPTED mode (mode 1) the accept list takes
-		 * priority over the deny list for already-connected STAs.
-		 * Skip STAs that are in the accept list so they are not
+		 * The accept list takes priority over the deny list in all
+		 * modes EXCEPT ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST (mode 3),
+		 * where a STA must be in the accept list AND NOT in the deny
+		 * list.  This is consistent with hostapd_check_acl() which
+		 * checks the accept list first for modes 0, 1, 2, and 4.
+		 * Skip STAs found in the accept list so they are not
 		 * disconnected solely because they also appear in the deny list.
-		 *
 		 */
-		if (hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED &&
+		if (hapd->conf->macaddr_acl !=
+		    ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST &&
 		    hostapd_acl_maclist_found(hapd->conf, true,
 					      sta->addr, NULL))
 			continue;
@@ -4208,8 +4213,9 @@ int hostapd_disassoc_deny_mac(struct hostapd_data *hapd)
 			if (!info->valid || link_id != hapd->mld_link_id)
 				continue;
 
-			/* Accept list takes priority in DENY_UNLESS_ACCEPTED mode */
-			if (hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED &&
+			/* Accept list takes priority in all modes except mode 3 */
+			if (hapd->conf->macaddr_acl !=
+			    ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST &&
 			    hostapd_acl_maclist_found(hapd->conf, true,
 						      info->peer_addr, NULL))
 				continue;

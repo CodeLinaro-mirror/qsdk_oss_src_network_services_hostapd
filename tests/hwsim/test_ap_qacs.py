@@ -18,6 +18,26 @@ from test_ap_acs import force_prev_ap_on_5g
 from test_ap_acs import force_prev_ap_on_6g
 from test_ap_acs import wait_acs
 
+def get_phy(dev, ifname):
+    ret, phy = dev.cmd_execute(["cat", "/sys/class/net/" + ifname + "/phy80211/name"], shell=False)
+    if ret == 0 and phy.strip():
+        return phy.strip()
+    return "phy0"
+
+def set_hwsim_environment(dev, phy, noise=-95, busy_pct=0):
+    logger.info("Setting survey noise to %s and busy_pct to %s on %s" % (str(noise), str(busy_pct), phy))
+    dev.cmd_execute(["echo", str(noise), ">", "/sys/kernel/debug/ieee80211/" + phy + "/hwsim/survey_noise"], shell=True)
+    dev.cmd_execute(["echo", str(busy_pct), ">", "/sys/kernel/debug/ieee80211/" + phy + "/hwsim/survey_time_busy_pct"], shell=True)
+
+def inject_fake_bss(dev, phy, freq=2412, mac="02:00:00:00:00:01", ssid="Fake_AP", bw=20, ht=0, vht=0, he=0, eht=0):
+    logger.info("Injecting fake BSS %s on %s at %s (BW=%d HT=%d VHT=%d HE=%d EHT=%d)" % (ssid, phy, str(freq), bw, ht, vht, he, eht))
+    cmd_str = "%s %s %s %d %d %d %d %d" % (str(freq), mac, ssid, bw, ht, vht, he, eht)
+    dev.cmd_execute(["echo", "'" + cmd_str + "'", ">", "/sys/kernel/debug/ieee80211/" + phy + "/hwsim/inject_fake_bss"], shell=True)
+
+def clear_fake_bss(dev, phy):
+    logger.info("Clearing fake BSS on %s" % phy)
+    dev.cmd_execute(["echo", "clear", ">", "/sys/kernel/debug/ieee80211/" + phy + "/hwsim/inject_fake_bss"], shell=True)
+
 def test_ap_qacs(dev, apdev):
     """Automatic channel selection"""
     force_prev_ap_on_24g(apdev[0])
@@ -231,3 +251,43 @@ def test_ap_qacs_40mhz_minus(dev, apdev):
     if "WIDTH=40 MHz" not in sig:
         raise Exception("Station did not report 40 MHz bandwidth")
 
+
+def test_ap_qacs_dynamic(dev, apdev):
+    """Test dynamic survey parameters and fake BSS injection with ACS"""
+
+    logger.info("Setting up dynamic survey environment and injecting fake BSS...")
+
+    phy = get_phy(dev[0], apdev[0]['ifname'])
+
+    # Inject fake BSS and configure survey noise before starting AP
+    inject_fake_bss(dev[0], phy, 2412, "02:00:00:00:00:01", "Fake_AP_1")
+    inject_fake_bss(dev[0], phy, 2437, "02:00:00:00:00:02", "Fake_AP_2")
+    set_hwsim_environment(dev[0], phy, noise=-95, busy_pct=0)
+
+    try:
+        params = hostapd.wpa2_params(ssid="test-dynamic-acs", passphrase="12345678")
+        params['hw_mode'] = 'g'
+        params['channel'] = '0'
+        params['qacs_enable'] = '1'
+        params['acs_num_scans'] = '1'
+
+        logger.info("Starting hostapd with ACS enabled...")
+        hapd = hostapd.add_ap(apdev[0], params, wait_enabled=False)
+        wait_acs(hapd)
+
+        channel = hapd.get_status_field("channel")
+        freq = hapd.get_status_field("freq")
+        logger.info("==================================================")
+        logger.info("ACS selected channel: " + str(channel) + " (Freq: " + str(freq) + " MHz)")
+        logger.info("==================================================")
+
+        if int(freq) < 2400:
+            raise Exception("Unexpected frequency")
+
+        out = hapd.request("ACS show_report")
+        logger.info("ACS_REPORT output:\n" + out)
+
+    finally:
+        # Cleanup
+        clear_fake_bss(dev[0], phy)
+        set_hwsim_environment(dev[0], phy, -92, 0)

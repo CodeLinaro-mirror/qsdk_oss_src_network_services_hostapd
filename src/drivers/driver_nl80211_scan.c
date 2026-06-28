@@ -370,9 +370,17 @@ fail:
 int wpa_driver_nl80211_scan(struct i802_bss *bss,
 			    struct wpa_driver_scan_params *params)
 {
-	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct wpa_driver_nl80211_data *drv;
 	int ret = -1, timeout;
 	struct nl_msg *msg = NULL;
+
+	if (!bss) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: scan request with no driver handle");
+		return -1;
+	}
+
+	drv = bss->drv;
 
 	wpa_dbg(drv->ctx, MSG_DEBUG, "nl80211: scan request for %s, iftype %s",
 			bss->ifname, nl80211_iftype_str(drv->nlmode));

@@ -1356,6 +1356,16 @@
  *	features and also to notify userspace about the status response with
  *	attributes defined in %NL80211_ATTR_QOS_MGMT.
  *
+ * @NL80211_CMD_CRITICAL_UPDATE: Command sent by hostapd to initiate a
+ * 	Critical Update (CU) session on an AP link. Requires
+ * 	%NL80211_ATTR_IFINDEX, %NL80211_ATTR_MLO_LINK_ID,
+ * 	%NL80211_ATTR_CU_TYPE, and
+ * 	%NL80211_ATTR_IE carrying the CU element to be stitched into beacons.
+ *
+ * @NL80211_CMD_CRITICAL_UPDATE_NOTIFY: Event sent by the kernel to notify
+ *	user space of CU lifecycle transitions on an AP link.
+ *	Carries %NL80211_ATTR_CU_STATE indicating the current ECU phase.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -1640,6 +1650,10 @@ enum nl80211_commands {
 	NL80211_CMD_AP_POWER_SAVE,
 
 	NL80211_CMD_TRIGGER_SMD_DISCOVERY,
+
+	NL80211_CMD_UHR_MODE_UPDATE,
+	NL80211_CMD_CRITICAL_UPDATE,
+	NL80211_CMD_CRITICAL_UPDATE_NOTIFY,
 
 	/* add new commands above here */
 
@@ -3016,6 +3030,12 @@ enum nl80211_commands {
  *	association request when used with NL80211_CMD_NEW_STATION). Can be set
  *	only if %NL80211_STA_FLAG_WME is set.
  *
+ * @NL80211_ATTR_NPCA_PRIMARY_FREQ: u32 attribute specifying the NPCA primary
+ *	channel frequency in MHz for UHR Non-Primary Channel Access operation.
+ *
+ * @NL80211_ATTR_NPCA_PUNCT_BITMAP: u32 attribute specifying the NPCA
+ *	disabled subchannel bitmap for UHR Non-Primary Channel Access.
+ *
  * @NL80211_ATTR_HE_MUEDCA_MODE: Attribute that denotes the mode of seeting MU
  *	EDCA parameters(See enum nl80211_muedca_mode).
  *
@@ -3038,6 +3058,16 @@ enum nl80211_commands {
  * 	SMD DL DATA forward feature.
  *
  * @NL80211_ATTR_STA_DFS_EN: whether STA_DFS_EN is enabled (u8, 0 or 1)
+ *
+ * @NL80211_ATTR_CU_TYPE: (u8) Critical Update type, see &enum nl80211_cu_type.
+ * 	Used with %NL80211_CMD_CRITICAL_UPDATE.
+ *
+ * @NL80211_ATTR_CU_STATE: (u32) Current CU session state,
+ *	see &enum nl80211_cu_state. Carried in
+ *	%NL80211_CMD_CRITICAL_UPDATE_NOTIFY events.
+ *
+ * @NL80211_ATTR_EPP_PEER: A flag attribute to indicate if the peer is an EPP
+ *	STA. Used with %NL80211_CMD_NEW_STA and %NL80211_CMD_ADD_LINK_STA
  *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
@@ -3658,12 +3688,14 @@ enum nl80211_attrs {
 	NL80211_ATTR_UHR_CAPABILITY,
 
 	NL80211_ATTR_DISABLE_UHR,
+	NL80211_ATTR_NPCA_PRIMARY_FREQ,
+	NL80211_ATTR_NPCA_PUNCT_BITMAP,
 
 	NL80211_ATTR_PCIE,
 	NL80211_ATTR_DCVS,
 	NL80211_ATTR_DPS_ASSIST,
-	NL80211_ATTR_HE_MUEDCA_MODE,
 
+	NL80211_ATTR_HE_MUEDCA_MODE,
 	NL80211_ATTR_LOW_POWER_20MHZ,
 	NL80211_ATTR_BEACON_TX_SYNC_SUPPORT,
 
@@ -3681,6 +3713,15 @@ enum nl80211_attrs {
 	NL80211_ATTR_SMD_AP,
 	NL80211_ATTR_SMD_PARAMS,
 	NL80211_ATTR_SMD_STA_DL_DATA_FWD,
+	NL80211_ATTR_SMD_STA,
+	NL80211_ATTR_SMD_CONFIG,
+	NL80211_ATTR_SMD_TIMEOUT,
+
+	NL80211_ATTR_UHR_MODE_UPDATE_PARAMS,
+	NL80211_ATTR_CU_TYPE,
+	NL80211_ATTR_CU_STATE,
+
+	NL80211_ATTR_EPP_PEER,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -4407,6 +4448,8 @@ enum nl80211_mpath_info {
  *	capabilities element
  * @NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY: UHR PHY capabilities as in UHR
  *	capabilities element
+ * @NL80211_BAND_IFTYPE_ATTR_UHR_CAP_NPCA: UHR NPCA parameters in UHR
+ *	operations element
  * @__NL80211_BAND_IFTYPE_ATTR_AFTER_LAST: internal use
  * @NL80211_BAND_IFTYPE_ATTR_MAX: highest band attribute currently defined
  */
@@ -4426,6 +4469,7 @@ enum nl80211_band_iftype_attr {
 	NL80211_BAND_IFTYPE_ATTR_EHT_CAP_PPE,
 	NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC,
 	NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY,
+	NL80211_BAND_IFTYPE_ATTR_UHR_CAP_NPCA,
 
 	/* keep last */
 	__NL80211_BAND_IFTYPE_ATTR_AFTER_LAST,
@@ -5661,6 +5705,7 @@ enum nl80211_bss_status {
  * @NL80211_AUTHTYPE_FILS_SK: Fast Initial Link Setup shared key
  * @NL80211_AUTHTYPE_FILS_SK_PFS: Fast Initial Link Setup shared key with PFS
  * @NL80211_AUTHTYPE_FILS_PK: Fast Initial Link Setup public key
+ * @NL80211_AUTHTYPE_EPPKE: Enhanced Privacy Protection Key Exchange
  * @__NL80211_AUTHTYPE_NUM: internal
  * @NL80211_AUTHTYPE_MAX: maximum valid auth algorithm
  * @NL80211_AUTHTYPE_AUTOMATIC: determine automatically (if necessary by
@@ -5676,6 +5721,7 @@ enum nl80211_auth_type {
 	NL80211_AUTHTYPE_FILS_SK,
 	NL80211_AUTHTYPE_FILS_SK_PFS,
 	NL80211_AUTHTYPE_FILS_PK,
+	NL80211_AUTHTYPE_EPPKE,
 
 	/* keep last */
 	__NL80211_AUTHTYPE_NUM,
@@ -7049,6 +7095,13 @@ enum nl80211_feature_flags {
  *	supports DL Data forward with SMD Capable devices.
  *
  *
+ * @NL80211_EXT_FEATURE_EPPKE: Driver supports Enhanced Privacy Protection
+ *      Key Exchange (EPPKE) with user space SME (NL80211_CMD_AUTHENTICATE)
+ *      in non-AP STA mode.
+ *
+ * @NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION: Driver supports (Re)Association
+ *      Request/Response frame encryption
+ *
  * @NUM_NL80211_EXT_FEATURES: number of extended features.
  * @MAX_NL80211_EXT_FEATURES: highest extended feature index.
  */
@@ -7137,6 +7190,8 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT,
 	NL80211_EXT_FEATURE_SMD_SUPPORT_AP,
 	NL80211_EXT_FEATURE_SMD_SUPPORT_DL_PKT_FRWRD,
+	NL80211_EXT_FEATURE_EPPKE,
+	NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION,
 
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,
@@ -8760,6 +8815,42 @@ enum nl80211_set_cu {
 };
 
 /**
+ * enum nl80211_cu_type - Critical Update session type
+ *
+ * @NL80211_CU_TYPE_UHR_PARAMS: UHR parameter update (IEEE 802.11bn).
+ *	The CU element is a UHR Params Update IE passed in %NL80211_ATTR_IE.
+ */
+enum nl80211_cu_type {
+	NL80211_CU_TYPE_UHR_PARAMS,
+};
+
+
+/**
+ * enum nl80211_cu_state - UHR Enhanced Critical Update (ECU) state
+ *
+ * Reflects the IEEE 802.11bn ECU state machine phases reported via
+ * %NL80211_CMD_CRITICAL_UPDATE_NOTIFY.
+ *
+ * @NL80211_CU_STATE_STARTED: ECU session has started; the driver is
+ *      transmitting beacons with the CU element and indication bit set.
+ * @NL80211_CU_STATE_ADV_NOTIFICATION_END: Advance notification phase
+ *      has ended; the advance notification window has elapsed.
+ * @NL80211_CU_STATE_POST_NOTIFICATION_END: Post notification phase
+ *      has ended; the post notification window has elapsed.
+ * @NL80211_CU_STATE_ECU_END: ECU session is complete; the driver has
+ *      finished transmitting CU beacons and cleared the CU indication bit.
+ * @NL80211_CU_STATE_ABORT: ECU session is aborted;
+ */
+enum nl80211_cu_state {
+	NL80211_CU_STATE_STARTED,
+	NL80211_CU_STATE_ADV_NOTIFICATION_END,
+	NL80211_CU_STATE_POST_NOTIFICATION_END,
+	NL80211_CU_STATE_ECU_END,
+	NL80211_CU_STATE_ABORT,
+};
+
+
+/**
  * enum nl80211_erp_attrs - set ErP attributes during entry/exit
  *
  * @NL80211_ERP_ATTR_ENTER: (flag) enter into ErP mode.
@@ -8989,6 +9080,39 @@ enum nl80211_smd_params_attrs {
         /* keep last */
         __NL80211_SMD_PARAMS_ATTR_LAST,
         NL80211_SMD_PARAMS_ATTR_MAX = __NL80211_SMD_PARAMS_ATTR_LAST - 1
+};
+
+/**
+ * enum nl80211_uhr_mode_update_attrs - UHR mode update per-link attributes
+ *
+ * These attributes are used within %NL80211_ATTR_UHR_MODE_UPDATE_PARAMS
+ * (nested) to configure UHR mode parameters per link, sent via
+ * %NL80211_CMD_UHR_MODE_UPDATE.
+ *
+ * @__NL80211_UHR_MODE_UPDATE_ATTR_INVALID: invalid
+ * @NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID: MLO link ID (u8) to apply
+ *	the configuration to.
+ * @NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE: flag/u8 to enable (1) or
+ *	disable (0) NPCA on this link.
+ * @NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY: NPCA switch delay
+ *	value (u8) in TUs.
+ * @NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY: NPCA switch-back
+ *	delay value (u8) in TUs.
+ * @__NL80211_UHR_MODE_UPDATE_ATTR_AFTER_LAST: internal use
+ * @NL80211_UHR_MODE_UPDATE_ATTR_MAX: highest attribute number
+ */
+enum nl80211_uhr_mode_update_attrs {
+	__NL80211_UHR_MODE_UPDATE_ATTR_INVALID,
+
+	NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID,
+	NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE,
+	NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY,
+	NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY,
+
+	/* keep last */
+	__NL80211_UHR_MODE_UPDATE_ATTR_AFTER_LAST,
+	NL80211_UHR_MODE_UPDATE_ATTR_MAX =
+		__NL80211_UHR_MODE_UPDATE_ATTR_AFTER_LAST - 1
 };
 
 #endif /* __LINUX_NL80211_H */

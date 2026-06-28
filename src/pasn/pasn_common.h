@@ -49,6 +49,9 @@ struct pasn_data {
 	bool derive_kdk;
 	size_t kdk_len;
 	void *cb_ctx;
+	unsigned int auth_alg;
+	u8 mld_addr[ETH_ALEN];
+	bool is_ml_peer;
 
 #ifdef CONFIG_SAE
 	struct sae_pt *pt;
@@ -58,10 +61,20 @@ struct pasn_data {
 	const char *password;
 	int wpa_key_mgmt;
 	int rsn_pairwise;
-	u16 rsnxe_capab;
+	u64 rsnxe_capab;
 	u8 *rsnxe_ie;
 	bool custom_pmkid_valid;
 	u8 custom_pmkid[PMKID_LEN];
+	enum mfp_options ieee80211w;
+
+	/* Counter from the decrypted password identifier blob (set when
+	 * get_pt_for_pw_id() resolves an encrypted identifier) */
+	unsigned int sae_pw_id_counter;
+	/* Decrypted (real) password identifier resolved from an encrypted
+	 * identifier blob; NULL for plaintext identifiers. Owned by pasn_data
+	 * and freed by pasn_data_deinit(). */
+	u8 *dec_pw_id;
+	size_t dec_pw_id_len;
 
 	/*
 	 * Extra elements to add into Authentication frames. These can be used,
@@ -129,7 +142,7 @@ struct pasn_data {
 	int disable_pmksa_caching;
 	int *pasn_groups;
 	int use_anti_clogging;
-	const u8 *rsn_ie;
+	u8 *rsn_ie;
 	size_t rsn_ie_len;
 
 	u8 *comeback_key;
@@ -137,6 +150,14 @@ struct pasn_data {
 	u16 comeback_idx;
 	u16 *comeback_pending_idx;
 	struct wpabuf *frame;
+#ifdef CONFIG_ENC_ASSOC
+	bool authorized;
+	bool tk_configured;
+#endif /* CONFIG_ENC_ASSOC */
+#ifdef CONFIG_PMKSA_PRIVACY
+	bool pmksa_caching_privacy;
+	u8 epp_pmkid_cur[PMKID_LEN];
+#endif /* CONFIG_PMKSA_PRIVACY */
 
 	/**
 	 * send_mgmt - Function handler to transmit a Management frame
@@ -162,6 +183,43 @@ struct pasn_data {
 	int (*prepare_data_element)(void *ctx, const u8 *peer_addr);
 
 	int (*parse_data_element)(void *ctx, const u8 *data, size_t len);
+#ifdef CONFIG_ENC_ASSOC
+	int (*eppke_set_key)(void *ctx, enum wpa_alg alg, const u8 *addr,
+			     int vlan_id, const u8 *key, size_t key_len);
+#endif /* CONFIG_ENC_ASSOC */
+	struct rsn_pmksa_cache_entry *
+	(*pmksa_cache_search)(void *ctx, const u8 *spa, const u8 *pmkid,
+			      bool is_ml);
+#ifdef CONFIG_SAE
+	/**
+	 * get_pt_for_pw_id - Look up SAE PT for a given password identifier
+	 * @ctx: Callback context from cb_ctx
+	 * @pw_id: Password identifier received in the SAE commit frame
+	 * @pw_id_len: Length of the password identifier
+	 * @group: SAE group being used
+	 * @password: Output pointer to the matching password string
+	 * @counter: Output counter value from the decrypted identifier blob
+	 *	(set to 0 for plaintext identifiers)
+	 * @dec_pw_id: Output pointer to the decrypted (real) password
+	 *	identifier for encrypted blobs; set to NULL for plaintext
+	 *	identifiers. The caller takes ownership and must free with
+	 *	os_free().
+	 * @dec_pw_id_len: Output length of the decrypted password identifier
+	 * Returns: SAE PT on success, NULL if not found
+	 *
+	 * This callback is invoked by the PASN responder when processing an
+	 * SAE commit frame that contains a password identifier, allowing the
+	 * AP to look up the correct PT at commit-processing time rather than
+	 * at PASN-setup time.
+	 */
+	struct sae_pt * (*get_pt_for_pw_id)(void *ctx,
+					    const u8 *pw_id, size_t pw_id_len,
+					    int group,
+					    const char **password,
+					    unsigned int *counter,
+					    u8 **dec_pw_id,
+					    size_t *dec_pw_id_len);
+#endif /* CONFIG_SAE */
 };
 
 /* Initiator */
@@ -204,13 +262,23 @@ void pasn_register_callbacks(struct pasn_data *pasn, void *cb_ctx,
 					      unsigned int wait),
 			     int (*validate_custom_pmkid)(void *ctx,
 							  const u8 *addr,
-							  const u8 *pmkid));
+							  const u8 *pmkid),
+			     int (*eppke_set_key)(void *ctx, enum wpa_alg alg,
+						  const u8 *addr, int vlan_id,
+						  const u8 *key,
+						  size_t key_len),
+			     struct rsn_pmksa_cache_entry *
+			     (*pmksa_cache_search)(void *ctx, const u8 *spa,
+						   const u8 *pmkid,
+						   bool is_ml));
+
 void pasn_enable_kdk_derivation(struct pasn_data *pasn);
 void pasn_disable_kdk_derivation(struct pasn_data *pasn);
 
 void pasn_set_akmp(struct pasn_data *pasn, int akmp);
 void pasn_set_cipher(struct pasn_data *pasn, int cipher);
 void pasn_set_own_addr(struct pasn_data *pasn, const u8 *addr);
+void pasn_set_own_mld_addr(struct pasn_data *pasn, const u8 *addr);
 void pasn_set_peer_addr(struct pasn_data *pasn, const u8 *addr);
 void pasn_set_bssid(struct pasn_data *pasn, const u8 *addr);
 void pasn_set_initiator_pmksa(struct pasn_data *pasn,
@@ -236,11 +304,14 @@ void pasn_set_noauth(struct pasn_data *pasn, bool noauth);
 void pasn_set_password(struct pasn_data *pasn, const char *password);
 void pasn_set_wpa_key_mgmt(struct pasn_data *pasn, int key_mgmt);
 void pasn_set_rsn_pairwise(struct pasn_data *pasn, int rsn_pairwise);
-void pasn_set_rsnxe_caps(struct pasn_data *pasn, u16 rsnxe_capab);
+void pasn_set_rsne(struct pasn_data *pasn, const u8 *rsne);
+void pasn_set_rsnxe_caps(struct pasn_data *pasn, u64 rsnxe_capab);
 void pasn_set_rsnxe_ie(struct pasn_data *pasn, const u8 *rsnxe_ie);
 void pasn_set_custom_pmkid(struct pasn_data *pasn, const u8 *pmkid);
 int pasn_set_extra_ies(struct pasn_data *pasn, const u8 *extra_ies,
 		       size_t extra_ies_len);
+void pasn_set_mfp(struct pasn_data *pasn, enum mfp_options mfp);
+
 struct rsn_pmksa_cache * pasn_responder_pmksa_cache_init(void);
 void pasn_responder_pmksa_cache_deinit(struct rsn_pmksa_cache *pmksa);
 int pasn_responder_pmksa_cache_add(struct rsn_pmksa_cache *pmksa,

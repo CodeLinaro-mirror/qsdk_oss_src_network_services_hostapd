@@ -309,7 +309,7 @@ uc_hostapd_bss_set_config(uc_vm_t *vm, size_t nargs)
 	if (!conf)
 		goto out;
 
-	if (idx > conf->num_bss || !conf->bss[idx])
+	if (idx >= conf->num_bss || !conf->bss[idx])
 		goto free;
 
 	if (ucv_boolean_get(files_only)) {
@@ -328,8 +328,62 @@ uc_hostapd_bss_set_config(uc_vm_t *vm, size_t nargs)
 		goto done;
 	}
 
+#ifdef CONFIG_IEEE80211BE
+	/*
+	 * When the SSID changes, reload all MLD links before stop_ap while
+	 * beacons are still running so SET_BEACON is used instead of
+	 * START_AP (no cross-link SSID check on SET_BEACON).
+	 */
+	if (hapd->started && hapd->conf->mld_ap && hapd->mld &&
+	    (conf->bss[idx]->ssid.ssid_len != hapd->conf->ssid.ssid_len ||
+	     os_memcmp(conf->bss[idx]->ssid.ssid, hapd->conf->ssid.ssid,
+		       conf->bss[idx]->ssid.ssid_len) != 0)) {
+		struct hostapd_data *link;
+
+		/* Swap new config into hapd so all links see the new SSID. */
+		old_bss = hapd->conf;
+		hapd->conf = conf->bss[idx];
+		conf->bss[idx] = old_bss;
+
+		dl_list_for_each(link, &hapd->mld->links,
+				 struct hostapd_data, link) {
+			if (!link->started)
+				continue;
+			link->conf->ssid.ssid_len = hapd->conf->ssid.ssid_len;
+			os_memcpy(link->conf->ssid.ssid, hapd->conf->ssid.ssid,
+				  hapd->conf->ssid.ssid_len);
+			hostapd_reload_bss_only(link);
+		}
+
+		/* Restore hapd->conf for the teardown path below. */
+		conf->bss[idx] = hapd->conf;
+		hapd->conf = old_bss;
+	}
+
+	/*
+	 * Stop non-TX BSS beacons (both MLD and non-MLD) before the TX BSS
+	 * teardown.  REENABLE_REUSE_LINK preserves the kernel link/vdev so
+	 * the driver does not see an inconsistent MBSSID group state.
+	 */
+	if (hapd->iconf->mbssid && hapd == hostapd_mbssid_get_tx_bss(hapd) &&
+	    hapd->mbssid_group) {
+		struct hostapd_data *non_tx;
+
+		dl_list_for_each(non_tx, &hapd->mbssid_group->bss_list,
+				 struct hostapd_data, mbssid_bss) {
+			if (non_tx == hapd || !non_tx->started || !non_tx->conf)
+				continue;
+			hostapd_disable_bss(non_tx, 0, AP_EVENT_DISABLED);
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+
 	hostapd_bss_deinit_no_free(hapd);
 	hostapd_drv_stop_ap(hapd);
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf && hapd->conf->mld_ap && hapd != iface->bss[0])
+		hostapd_bss_link_deinit(hapd);
+#endif /* CONFIG_IEEE80211BE */
 	hostapd_free_hapd_data(hapd);
 
 	old_bss = hapd->conf;
@@ -340,6 +394,22 @@ uc_hostapd_bss_set_config(uc_vm_t *vm, size_t nargs)
 	conf->bss[idx] = old_bss;
 
 	hostapd_setup_bss(hapd, hapd == iface->bss[0], true);
+
+#ifdef CONFIG_IEEE80211BE
+	/* Re-enable non-TX BSSes (both MLD and non-MLD) stopped above */
+	if (hapd->iconf->mbssid && hapd == hostapd_mbssid_get_tx_bss(hapd) &&
+	    hapd->mbssid_group) {
+		struct hostapd_data *non_tx;
+
+		dl_list_for_each(non_tx, &hapd->mbssid_group->bss_list,
+				 struct hostapd_data, mbssid_bss) {
+			if (non_tx == hapd ||
+			    non_tx->reenable != REENABLE_REUSE_LINK)
+				continue;
+			hostapd_enable_bss(non_tx);
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
 
 	hostapd_ucode_update_interfaces();
 
@@ -386,6 +456,17 @@ uc_hostapd_bss_delete(uc_vm_t *vm, size_t nargs)
 	 */
 	if (hapd->iconf->mbssid) {
 		if (hapd == hostapd_mbssid_get_tx_bss(hapd)) {
+			if ((hapd->mbssid_group &&
+			     iface->num_bss == (int)dl_list_len(
+				     &hapd->mbssid_group->bss_list)) ||
+			    (!hapd->mbssid_group &&
+			     hapd == iface->bss[0])) {
+				wpa_printf(MSG_DEBUG,
+					   "Trying to delete last TX BSS "
+					   "that would empty iface %s",
+					   hapd->conf->iface);
+				return NULL;
+			}
 			hostapd_remove_non_tx_bsses(hapd);
 			/* Re-find idx: non-TX removals may have shifted the array */
 			for (idx = 0; idx < iface->num_bss; idx++)
@@ -456,7 +537,7 @@ uc_hostapd_iface_add_bss(uc_vm_t *vm, size_t nargs)
 {
 	struct hostapd_iface *iface = uc_fn_thisval("hostapd.iface");
 	struct hostapd_bss_config *bss;
-	struct hostapd_config *conf;
+	struct hostapd_config *conf = NULL;
 	struct hostapd_data *hapd;
 	uc_value_t *file = uc_fn_arg(0);
 	uc_value_t *index = uc_fn_arg(1);
@@ -466,14 +547,14 @@ uc_hostapd_iface_add_bss(uc_vm_t *vm, size_t nargs)
 	struct hostapd_data **temp_bss;
 
 	if (!iface || ucv_type(file) != UC_STRING)
-		goto out;
+		return NULL;
 
 	if (ucv_type(index) == UC_INTEGER)
 		idx = ucv_int64_get(index);
 
 	conf = interfaces->config_read_cb(ucv_string_get(file));
-	if (!conf || idx > conf->num_bss || !conf->bss[idx])
-		goto out;
+	if (!conf || idx >= conf->num_bss || !conf->bss[idx])
+		goto free_conf;
 
 	bss = conf->bss[idx];
 
@@ -491,7 +572,7 @@ uc_hostapd_iface_add_bss(uc_vm_t *vm, size_t nargs)
 					    iface->conf->num_bss + 1,
 					    sizeof(*iface->conf->bss));
 	if (!tmp_bss)
-		goto out;
+		goto free_conf;
 	iface->conf->bss = tmp_bss;
 	iface->conf->bss[iface->conf->num_bss] = bss;
 	iface->conf->num_bss++;
@@ -527,7 +608,7 @@ uc_hostapd_iface_add_bss(uc_vm_t *vm, size_t nargs)
 	conf->bss[idx] = NULL;
 	ret = hostapd_ucode_bss_get_uval(hapd);
 	hostapd_ucode_update_interfaces();
-	goto out;
+	goto free_conf;
 
 remove_bss:
 	iface->num_bss--;
@@ -536,14 +617,24 @@ deinit_ctrl:
 	if (interfaces->ctrl_iface_deinit)
 		interfaces->ctrl_iface_deinit(hapd);
 free_hapd:
+#ifdef CONFIG_IEEE80211BE
+	/* Clean up any MLD link added by setup_bss() before it failed. */
+	if (hapd->conf && hapd->conf->mld_ap)
+		hostapd_bss_link_deinit(hapd);
+#endif /* CONFIG_IEEE80211BE */
 	hostapd_free_hapd_data(hapd);
+	hostapd_free_mbssid_idx(hapd);
+	hostapd_multi_mbssid_remove_bss(hapd);
+#ifdef CONFIG_IEEE80211BE
+	hostapd_mld_ref_dec(hapd->mld);
+#endif /* CONFIG_IEEE80211BE */
 	os_free(hapd);
 remove_bss_conf:
 	iface->conf->num_bss--;
 	iface->conf->bss[iface->conf->num_bss] = NULL;
 	iface->conf->last_bss = iface->conf->num_bss ?
 		iface->conf->bss[iface->conf->num_bss - 1] : NULL;
-out:
+free_conf:
 	hostapd_config_free(conf);
 	return ret;
 }
@@ -702,6 +793,7 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	bool changed = false;
 #ifdef CONFIG_QCN_EXTN
 	bool is_dfs = false, skip_cac_rep = false;
+	u32 mcst = 0;
 	uc_value_t *wpa_state_val;
 	char *wpa_state = NULL;
 #endif
@@ -733,6 +825,10 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 		os_strlcpy(iface->iface_extn.sta_wpa_state, wpa_state,
 				sizeof(iface->iface_extn.sta_wpa_state));
 	}
+
+	intval = ucv_int64_get(ucv_object_get(info, "mcst", NULL));
+	if (!errno)
+		mcst = intval;
 
 	if (iface->conf->conf_extn.ind_rptr)
 		return NULL;
@@ -794,8 +890,21 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 
 #ifdef CONFIG_QCN_EXTN
 	is_dfs = ucv_boolean_get(ucv_object_get(info, "is_dfs", NULL));
+	if (!errno && is_dfs && mcst) {
+		iface->mcst = mcst;
+		iface->cs_time = IEEE80211_TU_TO_MS(mcst) +
+			(2 * conf->beacon_int);
+		wpa_printf(MSG_INFO, "%s: using residual CAC mcst=%u TU for DFS iface start",
+			   __func__, iface->mcst);
+	} else {
+		iface->mcst = 0;
+		iface->cs_time = 0;
+	}
+
 	if (!errno && conf->conf_extn.skip_cac)
-		skip_cac_rep = is_dfs;
+		skip_cac_rep = is_dfs && !iface->mcst;
+	wpa_printf(MSG_INFO, "%s: is_dfs=%d mcst=%u TU cs_time=%u ms skip_cac_rep=%d",
+		   __func__, is_dfs, iface->mcst, iface->cs_time, skip_cac_rep);
 #endif
 out:
 	switch (iface->state) {
@@ -900,6 +1009,12 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 #endif
 
 	conf = iface->conf;
+	/* Initialize power_mode from current configured type;
+	 * explicit "power_mode" key in the ucode object overrides below. */
+	if (is_6ghz_freq(iface->freq))
+		csa.power_mode = conf->he_6ghz_reg_pwr_type;
+	else
+		csa.power_mode = -1;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "csa_count", NULL))) && !errno)
 		csa.cs_count = intval;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "sec_channel", NULL))) && !errno)
@@ -1002,6 +1117,9 @@ uc_hostapd_bss_rename(uc_vm_t *vm, size_t nargs)
 	if (!strncmp(hapd->conf->ssid.vlan, hapd->conf->iface, sizeof(hapd->conf->ssid.vlan)))
 		os_strlcpy(hapd->conf->ssid.vlan, ifname, sizeof(hapd->conf->ssid.vlan));
 	os_strlcpy(hapd->conf->iface, ifname, sizeof(hapd->conf->iface));
+
+	hostapd_set_ctrl_sock_iface(hapd);
+
 	hostapd_ubus_add_bss(hapd);
 
 	hostapd_ucode_update_interfaces();

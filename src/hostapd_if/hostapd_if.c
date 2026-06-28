@@ -25,6 +25,7 @@
 #include "../qcn_extns/hostapd_external_interface.h"
 #endif
 #include "hostapd_if.h"
+#include "radius/radius.h"
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 #include "../qcn_extns/hostapd_if_eloop.h"
 #endif
@@ -46,6 +47,7 @@
 #endif
 
 #define  HOSTAPD_INVALID_RSSI -128
+#define  RADIUS_MSG_TYPE_INVALID ((uint32_t)-1)
 
 static struct hapd_interfaces *hostapd_if_ifaces;
 
@@ -583,7 +585,7 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 	ctx_req.data.auth_req.auth_alg = auth_alg;
 
 	/*
-	 * rx_link_id selection: 0 for non-MLD, otherwise
+	 * rx_link_id selection: hw_idx for non-MLD, otherwise
 	 * hapd->mld_link_id
 	 */
 #ifdef CONFIG_IEEE80211BE
@@ -591,7 +593,10 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 		ctx_req.rx_link_id = hapd->mld_link_id;
 	else
 #endif /* CONFIG_IEEE80211BE */
-		ctx_req.rx_link_id = 0;
+	if (hapd->iface->current_hw_info)
+		ctx_req.rx_link_id = hapd->iface->current_hw_info->hw_idx;
+	else
+		ctx_req.rx_link_id = -1;
 
 	/*
 	 * Associated link id and per-link peer MAC
@@ -651,7 +656,16 @@ hostapd_if_notify_remote_auth(struct hostapd_data *hapd, uint8_t *sta_mac,
 	os_memset(&ctx_req, 0, sizeof(ctx_req));
 	ctx_req.status_code = status_code;
 
-	ctx_req.rx_link_id = hapd->mld_link_id;
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf && hapd->conf->mld_ap)
+		ctx_req.rx_link_id = hapd->mld_link_id;
+	else
+#endif /* CONFIG_IEEE80211BE */
+	if (hapd->iface->current_hw_info)
+		ctx_req.rx_link_id = hapd->iface->current_hw_info->hw_idx;
+	else
+		ctx_req.rx_link_id = -1;
+
 	ctx_req.data.remote_auth_req.is_ml_sta = is_ml;
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
@@ -788,6 +802,9 @@ hostapd_if_notify_assoc(struct hostapd_data *hapd,
 		ctx_req.rx_link_id = hapd->mld_link_id;
 	else
 #endif /* CONFIG_IEEE80211BE */
+	if (hapd->iface->current_hw_info)
+		ctx_req.rx_link_id = hapd->iface->current_hw_info->hw_idx;
+	else
 		ctx_req.rx_link_id = -1;
 
 	/*
@@ -886,6 +903,9 @@ void hostapd_if_notify_disassoc(struct hostapd_data *hapd,
 		ctx_req.rx_link_id = hapd->mld_link_id;
 	else
 #endif /* CONFIG_IEEE80211BE */
+	if (hapd->iface->current_hw_info)
+		ctx_req.rx_link_id = hapd->iface->current_hw_info->hw_idx;
+	else
 		ctx_req.rx_link_id = -1;
 
 	if ((policy != HOSTAPD_IF_FRAME_NOTIFY) &&
@@ -931,6 +951,9 @@ void hostapd_if_notify_deauth(struct hostapd_data *hapd,
 		ctx_req.rx_link_id = hapd->mld_link_id;
 	else
 #endif /* CONFIG_IEEE80211BE */
+	if (hapd->iface->current_hw_info)
+		ctx_req.rx_link_id = hapd->iface->current_hw_info->hw_idx;
+	else
 		ctx_req.rx_link_id = -1;
 
 	if ((policy != HOSTAPD_IF_FRAME_NOTIFY) &&
@@ -948,7 +971,8 @@ void hostapd_if_notify_deauth(struct hostapd_data *hapd,
 void hostapd_if_eapol_rx(struct hostapd_data *hapd, const u8 *sa,
 			 const u8 *data, u16 data_len)
 {
-	int link_id = -1;
+	int link_id = hapd->iface->current_hw_info ?
+		hapd->iface->current_hw_info->hw_idx : -1;
 
 #ifdef CONFIG_IEEE80211BE
 	if (hapd->conf && hapd->conf->mld_ap)
@@ -1065,6 +1089,9 @@ hostapd_if_notify_action(struct hostapd_data *hapd,
 		link_id = hapd->mld_link_id;
 	else
 #endif /* CONFIG_IEEE80211BE */
+	if (hapd->iface->current_hw_info)
+		link_id = hapd->iface->current_hw_info->hw_idx;
+	else
 		link_id = -1;
 
 	os_memset(&ctx_req, 0, sizeof(ctx_req));
@@ -1103,7 +1130,8 @@ hostapd_if_notify_action(struct hostapd_data *hapd,
 void hostapd_if_eapol_key_rx(struct hostapd_data *hapd, const u8 *sa,
 			     const u8 *data, u16 data_len)
 {
-	int link_id = -1;
+	int link_id = hapd->iface->current_hw_info ?
+		hapd->iface->current_hw_info->hw_idx : -1;
 
 #ifdef CONFIG_IEEE80211BE
 	if (hapd->conf && hapd->conf->mld_ap)
@@ -2349,7 +2377,8 @@ __hostapd_if_eapol_key_tx_exit:
  * Use MLD mac of STA in case of 11be STA.
  */
 void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
-			   uint8_t type, uint8_t *data, uint16_t data_len)
+			   uint8_t type, uint8_t *data, uint16_t data_len,
+			   bool with_header)
 {
 	struct hostapd_data *hapd = NULL;
 	struct sta_info *sta;
@@ -2373,7 +2402,16 @@ void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
 		goto  __hostapd_if_eapol_tx_exit;
 	}
 
-	ieee802_1x_send(hapd, sta, type, data, data_len);
+	if (with_header) {
+		int link_id = -1;
+#ifdef CONFIG_IEEE80211BE
+		link_id = hapd->conf->mld_ap ? hapd->mld_link_id : -1;
+#endif /* CONFIG_IEEE80211BE */
+		hostapd_drv_hapd_send_eapol(hapd, sta->addr, data, data_len,
+					    wpa_auth_pairwise_set(sta->wpa_sm) ? 1 : 0,
+					    hostapd_sta_flags_to_drv(sta->flags), link_id);
+	} else
+		ieee802_1x_send(hapd, sta, type, data, data_len);
 
  __hostapd_if_eapol_tx_exit:
 	os_free((void *)data);
@@ -2474,7 +2512,8 @@ void hostapd_if_event_deauth(struct hostapd_data *hapd, struct sta_info *sta,
 			     int tx_status_ok)
 {
 	struct hostapd_if_event evt;
-	int link_id = -1;
+	int link_id = hapd->iface->current_hw_info ?
+		hapd->iface->current_hw_info->hw_idx : -1;
 
 	if (!hostapd_if_is_event_registered(hapd,
 					    HOSTAPD_IF_EVENT_DEAUTH))
@@ -2515,7 +2554,8 @@ void hostapd_if_event_disassoc(struct hostapd_data *hapd,
 			       int tx_status_ok)
 {
 	struct hostapd_if_event evt;
-	int link_id = -1;
+	int link_id = hapd->iface->current_hw_info ?
+		hapd->iface->current_hw_info->hw_idx : -1;
 
 	if (!hostapd_if_is_event_registered(hapd,
 					    HOSTAPD_IF_EVENT_DISASSOC))
@@ -2592,6 +2632,119 @@ void hostapd_if_event_assoc_tx_complete(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR"\n", __func__, __LINE__,
 		hapd->conf->iface, MAC2STR(addr));
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+}
+
+void hostapd_if_notify_radius_send_event(struct hostapd_data *hapd,
+					 const u8 *addr, void *radius_msg,
+					 uint32_t msg_type)
+{
+	struct hostapd_if_event evt;
+	const u8 *attrs = NULL;
+	size_t attrs_len = 0;
+	struct radius_hdr *hdr;
+	struct wpabuf *buf;
+	struct radius_msg *msg;
+
+	if (!hapd || !radius_msg)
+		return;
+
+	if (!hostapd_if_is_event_registered(hapd,
+					    HOSTAPD_IF_EVENT_RADIUS_SEND))
+		return;
+
+	msg = radius_msg;
+	buf = radius_msg_get_buf(msg);
+	hdr = radius_msg_get_hdr(msg);
+	if (buf && wpabuf_len(buf) > sizeof(struct radius_hdr)) {
+		attrs = wpabuf_head_u8(buf) + sizeof(struct radius_hdr);
+		attrs_len = wpabuf_len(buf) - sizeof(struct radius_hdr);
+	}
+
+	os_memset(&evt, 0, sizeof(evt));
+	evt.type = HOSTAPD_IF_EVENT_RADIUS_SEND;
+	os_strlcpy(evt.ifname, hapd->conf->iface, sizeof(evt.ifname));
+	if (addr)
+		os_memcpy(evt.sta_mac, addr, sizeof(evt.sta_mac));
+	evt.data.radius_msg.attrs = attrs;
+	evt.data.radius_msg.attrs_len = attrs_len;
+	evt.data.radius_msg.hdr_code = hdr->code;
+	evt.data.radius_msg.msg_type = msg_type;
+
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+}
+
+void hostapd_if_notify_radius_receive_event(struct hostapd_data *hapd, const u8 *addr,
+					    void *msg_ptr,
+					    const void *hdr_ptr,
+					    uint32_t msg_type)
+{
+	struct radius_msg *msg = (struct radius_msg *)msg_ptr;
+	const struct radius_hdr *hdr = (const struct radius_hdr *)hdr_ptr;
+	struct hostapd_if_event evt;
+	const u8 *attrs = NULL;
+	size_t attrs_len = 0;
+	struct wpabuf *msgbuf;
+
+	if (!hapd || !msg)
+		return;
+
+	if (!hostapd_if_is_event_registered(hapd,
+					    HOSTAPD_IF_EVENT_RADIUS_RECEIVE))
+		return;
+
+	msgbuf = radius_msg_get_buf(msg);
+	if (msgbuf && wpabuf_len(msgbuf) > sizeof(struct radius_hdr)) {
+		attrs = wpabuf_head_u8(msgbuf) + sizeof(struct radius_hdr);
+		attrs_len = wpabuf_len(msgbuf) - sizeof(struct radius_hdr);
+	}
+
+	os_memset(&evt, 0, sizeof(evt));
+	evt.type = HOSTAPD_IF_EVENT_RADIUS_RECEIVE;
+	os_strlcpy(evt.ifname, hapd->conf->iface, sizeof(evt.ifname));
+	if (addr && !is_zero_ether_addr(addr))
+		os_memcpy(evt.sta_mac, addr, sizeof(evt.sta_mac));
+	evt.data.radius_msg.attrs = attrs;
+	evt.data.radius_msg.attrs_len = attrs_len;
+	evt.data.radius_msg.hdr_code = hdr->code;
+	evt.data.radius_msg.msg_type = msg_type;
+
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+}
+
+void hostapd_if_notify_radius_coa_event(struct hostapd_data *hapd, const u8 *addr,
+					void *msg_ptr, u8 hdr_code)
+{
+	struct radius_msg *msg = (struct radius_msg *)msg_ptr;
+	struct hostapd_if_event evt;
+	const u8 *attrs = NULL;
+	size_t attrs_len = 0;
+	struct wpabuf *msgbuf;
+
+	if (!hapd || !msg)
+		return;
+
+	if (!hostapd_if_is_event_registered(hapd,
+					    HOSTAPD_IF_EVENT_RADIUS_COA))
+		return;
+
+	msgbuf = radius_msg_get_buf(msg);
+	if (msgbuf && wpabuf_len(msgbuf) > sizeof(struct radius_hdr)) {
+		attrs = wpabuf_head_u8(msgbuf) + sizeof(struct radius_hdr);
+		attrs_len = wpabuf_len(msgbuf) - sizeof(struct radius_hdr);
+	}
+
+	os_memset(&evt, 0, sizeof(evt));
+	evt.type = HOSTAPD_IF_EVENT_RADIUS_COA;
+	os_strlcpy(evt.ifname, hapd->conf->iface, sizeof(evt.ifname));
+	if (addr)
+		os_memcpy(evt.sta_mac, addr, sizeof(evt.sta_mac));
+	evt.data.radius_msg.attrs = attrs;
+	evt.data.radius_msg.attrs_len = attrs_len;
+	evt.data.radius_msg.hdr_code = hdr_code;
+	// No valid msg_type for COA event
+	evt.data.radius_msg.msg_type = RADIUS_MSG_TYPE_INVALID;
+
 	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
 }
 

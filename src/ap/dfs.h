@@ -109,6 +109,14 @@ int hostapd_dfs_count_precac_channels(struct hostapd_iface *iface);
 int hostapd_dfs_start_precac(struct hostapd_iface *iface);
 int hostapd_dfs_precac_restart_after_radar(struct hostapd_iface *iface,
 					   int radar_freq);
+
+/**
+ * hostapd_get_remaining_cac_tu - Get remaining CAC time in TU
+ * @iface: Pointer to hostapd interface undergoing CAC
+ * Returns: Remaining CAC time in TU, or 0 if CAC is not running / complete
+ */
+u32 hostapd_get_remaining_cac_tu(struct hostapd_iface *iface);
+
 /**
  * dfs_find_bw_reduced_channel - Try to reduce bandwidth on same channel
  * @iface: Pointer to interface data

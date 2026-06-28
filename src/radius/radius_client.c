@@ -13,6 +13,9 @@
 #include "common.h"
 #include "eloop.h"
 #include "crypto/tls.h"
+#ifdef CONFIG_HOSTAPD_IF
+#include "hostapd_if/hostapd_if.h"
+#endif
 #include "radius.h"
 #include "radius_client.h"
 
@@ -976,6 +979,9 @@ int radius_client_send(struct radius_client_data *radius,
 #endif /* CONFIG_RADIUS_TLS */
 
 	buf = radius_msg_get_buf(msg);
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_notify_radius_send_event(radius->ctx, addr, msg, msg_type);
+#endif
 #ifdef CONFIG_RADIUS_TLS
 	if (conn) {
 		out = tls_connection_encrypt(radius->tls_ctx, conn, buf);
@@ -1310,6 +1316,11 @@ static void radius_client_receive(int sock, void *eloop_ctx, void *sock_ctx)
 		       "request, round trip time %d.%02d sec",
 		       roundtrip / 100, roundtrip % 100);
 	rconf->round_trip_time = roundtrip;
+
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_notify_radius_receive_event(radius->ctx, req->addr, msg, hdr,
+					       msg_type);
+#endif
 
 	for (i = 0; i < num_handlers; i++) {
 		RadiusRxResult res;

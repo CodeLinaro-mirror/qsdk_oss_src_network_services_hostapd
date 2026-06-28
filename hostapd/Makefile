@@ -79,6 +79,7 @@ OBJS += ../src/ap/ap_config.o
 OBJS += ../src/ap/eap_user_db.o
 OBJS += ../src/ap/ieee802_11_auth.o
 OBJS += ../src/ap/sta_info.o
+OBJS += ../src/ap/hostapd_log.o
 OBJS += ../src/ap/wpa_auth.o
 OBJS += ../src/ap/tkip_countermeasures.o
 OBJS += ../src/ap/ap_mlme.o
@@ -394,6 +395,7 @@ ifdef CONFIG_IEEE80211BN
 CONFIG_IEEE80211BE=y
 CFLAGS += -DCONFIG_IEEE80211BN
 OBJS += ../src/ap/ieee802_11_uhr.o
+OBJS += ../src/ap/uhr_neighbor_update.o
 endif
 
 ifdef CONFIG_IEEE80211BE
@@ -680,6 +682,11 @@ ifdef CONFIG_NAN_USD
 OBJS += ../src/common/nan_de.o
 OBJS += ../src/ap/nan_usd_ap.o
 CFLAGS += -DCONFIG_NAN_USD
+endif
+
+ifdef CONFIG_ENC_ASSOC
+CONFIG_PASN=y
+CFLAGS += -DCONFIG_ENC_ASSOC
 endif
 
 ifdef CONFIG_PASN

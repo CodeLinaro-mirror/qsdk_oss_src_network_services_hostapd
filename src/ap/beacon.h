@@ -59,6 +59,15 @@ void sta_track_claim_taxonomy_info(struct hostapd_iface *iface, const u8 *addr,
 
 const u8 * hostapd_wpa_ie(struct hostapd_data *hapd, u8 eid);
 
+/**
+ * hostapd_eid_add_max_cs_time - Add Max Channel Switch Time element.
+ * @eid: Buffer position where the element should be written.
+ * @switch_time: Max channel switch time in TU.
+ *
+ * Return: Updated buffer position after the element.
+ */
+u8 * hostapd_eid_add_max_cs_time(u8 *eid, u32 switch_time);
+
 u8 * hostapd_unsol_bcast_probe_resp(struct hostapd_data *hapd,
 				    struct unsol_bcast_probe_resp *ubpr);
 

@@ -28,6 +28,7 @@
 #include "../qcn_extns/cmn.h"
 #endif /* CONFIG_QCN_EXTN */
 #include "ieee802_11.h"
+#include "uhr_neighbor_update.h"
 
 #define RADIUS_CLIENT_MAX_RETRIES 10
 #define RADIUS_CLIENT_MAX_WAIT	120
@@ -116,6 +117,14 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->assoc_sa_query_max_timeout = 1000;
 	bss->assoc_sa_query_retry_timeout = 201;
 	bss->group_mgmt_cipher = WPA_CIPHER_AES_128_CMAC;
+
+#ifdef CONFIG_IEEE80211BN
+	/* SMD Neighbor Update defaults */
+	bss->smd_neighbor_update_enabled = 0;
+	bss->smd_neighbor_expiry_time = SMD_NEIGHBOR_ENTRY_EXPIRE_SEC;
+	bss->smd_neighbor_pull_interval = SMD_NEIGHBOR_PULL_PERIOD_SEC;
+#endif
+
 #ifdef EAP_SERVER_FAST
 	 /* both anonymous and authenticated provisioning */
 	bss->eap_fast_prov = 3;
@@ -233,6 +242,8 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->he_phy_capab_mask = 0;
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
+	os_memset(bss->eht_tx_mcs_nss_set, 0xff, sizeof(bss->eht_tx_mcs_nss_set));
+	os_memset(bss->eht_rx_mcs_nss_set, 0xff, sizeof(bss->eht_rx_mcs_nss_set));
 	os_memset(&bss->eht_phy_capab, 0, sizeof(bss->eht_phy_capab));
 	bss->eht_phy_capab_mask = 0;
 	bss->eht_phy_capab.eht_mu_bfmr_mask = 0x7;
@@ -256,6 +267,10 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 
 #ifdef CONFIG_IEEE80211BN
 	bss->dps_assist = DRIVER_DEFINED;
+
+	/* UHR intervals are represented as TUs */
+	bss->uhr_params_update.adv_notification_interval = 7;
+	bss->uhr_params_update.update_in_tim_interval = 10;
 #endif /* CONFIG_IEEE80211BN */
 
 	/* This max size includes wmm and user configured vendor elements */
@@ -264,6 +279,11 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 #ifdef CONFIG_TESTING_OPTIONS
 	bss->rsnxe_capab_mask = ~0ULL;
 #endif /* CONFIG_TESTING_OPTIONS */
+#ifdef CONFIG_ENC_ASSOC
+	bss->assoc_frame_encryption = 0;
+	bss->pmksa_caching_privacy = 0;
+	bss->eap_using_authentication_frames = 0;
+#endif /* CONFIG_ENC_ASSOC */
 }
 
 #ifdef CONFIG_IEEE80211BE
@@ -472,6 +492,13 @@ struct hostapd_config * hostapd_config_defaults(void)
 	hostapd_set_default_epcs_params(bss);
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BN
+	conf->npca_enable = 0;
+	conf->npca_primary_channel = 0;
+	conf->npca_punct_bitmap = 0;
+	conf->npca_primary_chan_offset = -1;
+#endif /* CONFIG_IEEE80211BN */
+
 	bss->rate_type = BEACON_RATE_LEGACY;
 	bss->beacon_rate = 0;
 #ifdef CONFIG_QCN_EXTN
@@ -658,6 +685,33 @@ static int hostapd_derive_psk(struct hostapd_ssid *ssid)
 }
 
 
+/*
+ * ap_sp_implied_key_mgmt - Derive implied key_mgmt from security profiles
+ *
+ * When security_profiles[] contains a SAE-EXT-KEY profile (1, 2, 9, or 10),
+ * the AP must prepare SAE PT even if wpa_key_mgmt does not explicitly include
+ * SAE-EXT-KEY.  Returns WPA_KEY_MGMT_SAE_EXT_KEY | WPA_KEY_MGMT_FT_SAE_EXT_KEY
+ * when such a profile is configured, 0 otherwise.
+ */
+static int ap_sp_implied_key_mgmt(const struct hostapd_bss_config *conf)
+{
+	int i;
+
+	if (!conf->security_profiles)
+		return 0;
+	for (i = 0; conf->security_profiles[i] >= 0; i++) {
+		int p = conf->security_profiles[i];
+
+		if (p == SECURITY_PROFILE_NUM_EPPKE_SAE ||
+		    p == SECURITY_PROFILE_NUM_EPPKE_FT_SAE ||
+		    p == SECURITY_PROFILE_NUM_SAE ||
+		    p == SECURITY_PROFILE_NUM_FT_SAE)
+			return WPA_KEY_MGMT_SAE_EXT_KEY |
+			       WPA_KEY_MGMT_FT_SAE_EXT_KEY;
+	}
+	return 0;
+}
+
 int hostapd_setup_sae_pt(struct hostapd_bss_config *conf)
 {
 #ifdef CONFIG_SAE
@@ -670,19 +724,22 @@ int hostapd_setup_sae_pt(struct hostapd_bss_config *conf)
 	     !hostapd_sae_pw_id_in_use(conf) &&
 	     !wpa_key_mgmt_sae_ext_key(conf->wpa_key_mgmt |
 				       conf->rsn_override_key_mgmt |
-				       conf->rsn_override_key_mgmt_2) &&
+				       conf->rsn_override_key_mgmt_2 |
+				       ap_sp_implied_key_mgmt(conf)) &&
 	     !hostapd_sae_pk_in_use(conf)) ||
 	    conf->sae_pwe == SAE_PWE_FORCE_HUNT_AND_PECK ||
 	    !wpa_key_mgmt_sae(conf->wpa_key_mgmt |
 			      conf->rsn_override_key_mgmt |
-			      conf->rsn_override_key_mgmt_2))
+			      conf->rsn_override_key_mgmt_2 |
+			      ap_sp_implied_key_mgmt(conf)))
 		return 0; /* PT not needed */
 
 	if (!groups) {
 		groups = default_groups;
 		if (wpa_key_mgmt_sae_ext_key(conf->wpa_key_mgmt |
 					     conf->rsn_override_key_mgmt |
-					     conf->rsn_override_key_mgmt_2))
+					     conf->rsn_override_key_mgmt_2 |
+					     ap_sp_implied_key_mgmt(conf)))
 			default_groups[1] = 20;
 	}
 
@@ -1509,8 +1566,12 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 	    !hostapd_config_check_bss_6g(bss))
 		return -1;
 
+	/*
+	 * plugin_eap_offload handles EAP authentication outside hostapd, so
+	 * a local EAP server or configured RADIUS auth server is not required.
+	 */
 	if (full_config && bss->ieee802_1x && !bss->eap_server &&
-	    !bss->radius->auth_servers) {
+	    !bss->radius->auth_servers && !bss->plugin_eap_offload) {
 		wpa_printf(MSG_ERROR, "Invalid IEEE 802.1X configuration (no "
 			   "EAP authenticator configured).");
 		return -1;
@@ -1957,6 +2018,93 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 	return 0;
 }
 
+#ifdef CONFIG_IEEE80211BN
+static int hostapd_config_check_npca_config(struct hostapd_config *conf)
+{
+	enum oper_chan_width chwidth;
+	int seg0, npca_chan;
+	bool in_secondary;
+	int bw_mhz, num20, first_20_chan;
+
+	if (!conf->npca_enable)
+		return 0;
+
+        if (!conf->npca_primary_channel)
+		return 0;
+
+	chwidth = hostapd_get_oper_chwidth(conf);
+	if (chwidth != CONF_OPER_CHWIDTH_80MHZ &&
+	    chwidth != CONF_OPER_CHWIDTH_160MHZ &&
+	    chwidth != CONF_OPER_CHWIDTH_320MHZ) {
+		wpa_printf(MSG_ERROR,
+			   "NPCA is only supported for 80/160/320 MHz bandwidths");
+		return -1;
+	}
+
+	seg0 = (int)hostapd_get_oper_centr_freq_seg0_idx(conf);
+	npca_chan = (int)conf->npca_primary_channel;
+	in_secondary = false;
+
+	if (chwidth == CONF_OPER_CHWIDTH_80MHZ) {
+		/*
+		 * 80 MHz: seg0 is the center; subchannels are at seg0±2 and
+		 * seg0±6. Secondary 40 MHz half = the pair of subchannels on
+		 * the opposite side of seg0 from the primary channel.
+		 */
+		bw_mhz = 80;
+		if (conf->channel < seg0)
+			in_secondary = (npca_chan >= seg0 + 2 &&
+					npca_chan <= seg0 + 6);
+		else
+			in_secondary = (npca_chan >= seg0 - 6 &&
+					npca_chan <= seg0 - 2);
+	} else if (chwidth == CONF_OPER_CHWIDTH_160MHZ) {
+		/*
+		 * 160 MHz: seg0 is the center of the full 160 MHz band.
+		 * The primary 80 MHz half contains conf->channel.
+		 * Secondary half = the 4 subchannels on the side of seg0
+		 * that does not contain the primary channel.
+		 */
+		bw_mhz = 160;
+		if (conf->channel < seg0)
+			in_secondary = (npca_chan >= seg0 + 2 &&
+					npca_chan <= seg0 + 14);
+		else
+			in_secondary = (npca_chan >= seg0 - 14 &&
+					npca_chan <= seg0 - 2);
+	} else {
+		/*
+		 * 320 MHz: seg0 is the center of the full 320 MHz band.
+		 * Secondary half = the 8 subchannels on the side of seg0
+		 * that does not contain the primary channel.
+		 */
+		bw_mhz = 320;
+		if (conf->channel < seg0)
+			in_secondary = (npca_chan >= seg0 + 2 &&
+					npca_chan <= seg0 + 30);
+		else
+			in_secondary = (npca_chan >= seg0 - 30 &&
+					npca_chan <= seg0 - 2);
+	}
+
+	if (!in_secondary) {
+		wpa_printf(MSG_ERROR,
+			   "NPCA primary channel %d not in secondary segment "
+			   "(seg0=%d, bw=%d MHz)",
+			   npca_chan, seg0, bw_mhz);
+		return -1;
+	}
+
+	num20 = bw_mhz / 20;
+	first_20_chan = seg0 - 2 * (num20 - 1);
+
+	conf->npca_primary_chan_offset =
+		(npca_chan - first_20_chan) / 4;
+
+	return 0;
+}
+#endif /* CONFIG_IEEE80211BN */
+
 
 static int hostapd_config_check_cw(struct hostapd_config *conf, int queue)
 {
@@ -2053,6 +2201,11 @@ int hostapd_config_check(struct hostapd_config *conf, int full_config)
 		return -1;
 	}
 #endif /* CONFIG_QCN_EXTN */
+
+#ifdef CONFIG_IEEE80211BN
+	if (full_config && hostapd_config_check_npca_config(conf))
+		return -1;
+#endif /* CONFIG_IEEE80211BN */
 
 	for (i = 0; i < conf->num_bss; i++) {
 		if (hostapd_config_check_bss(conf->bss[i], conf, full_config))

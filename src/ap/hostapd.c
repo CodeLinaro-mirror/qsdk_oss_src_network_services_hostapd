@@ -1017,6 +1017,9 @@ static bool hostapd_ttlm_info_check_non_default_mappings(int link_id,
 
 static bool hostapd_validate_link_removal_ttlm_global(struct hostapd_data *hapd)
 {
+	if (!hapd->conf->mld_ap || !hapd->mld)
+		return true;
+
 	/* check the established mapping */
 	if (hostapd_ttlm_info_check_non_default_mappings(hapd->mld_link_id,
 							 &hapd->mld->ttlm_ctx.established_ttlm.ttlm,
@@ -1053,6 +1056,13 @@ static bool hostapd_validate_link_removal_ttlm(struct hostapd_data *hapd)
 			dl_list_for_each(bss, &group->bss_list, struct hostapd_data, mbssid_bss) {
 				if (bss == hapd)
 					continue;
+				if (!bss->conf->mld_ap || !bss->mld || bss->disabled ||
+				    !bss->beacon_set_done)
+					continue;
+#ifdef CONFIG_QCN_EXTN
+				if (hostapd_is_repurpose_disabled_11be_extn(bss->conf))
+					continue;
+#endif /* CONFIG_QCN_EXTN */
 
 				/* even if one non-tx bss fails validation, return false */
 				if (!hostapd_validate_link_removal_ttlm_global(bss))
@@ -1063,6 +1073,13 @@ static bool hostapd_validate_link_removal_ttlm(struct hostapd_data *hapd)
 		} else {
 			for (i = 1; i < hapd->iface->num_bss; i++) {
 				bss = hapd->iface->bss[i];
+				if (!bss->conf->mld_ap || !bss->mld || bss->disabled ||
+				    !bss->beacon_set_done)
+					continue;
+#ifdef CONFIG_QCN_EXTN
+				if (hostapd_is_repurpose_disabled_11be_extn(bss->conf))
+					continue;
+#endif /* CONFIG_QCN_EXTN */
 				if (!hostapd_validate_link_removal_ttlm_global(bss))
 					return false;
 
@@ -1564,7 +1581,7 @@ static void hostapd_mld_move_vlan_list(struct hostapd_data *old_fbss,
  * If the BSS being removed is the first link, the next link becomes the first
  * link.
  */
-static void hostapd_bss_link_deinit(struct hostapd_data *hapd)
+void hostapd_bss_link_deinit(struct hostapd_data *hapd)
 {
 #ifdef CONFIG_IEEE80211BE
 	int i;
@@ -2335,12 +2352,6 @@ static void hostapd_inherit_mbssid_cmn_params(struct hostapd_data *dest_hapd,
 		src_hapd->conf->he_phy_capab.he_su_beamformer;
 	dest_hapd->conf->he_phy_capab.he_su_beamformee =
 		src_hapd->conf->he_phy_capab.he_su_beamformee;
-	dest_hapd->conf->he_phy_capab.he_dl_mu_ofdma =
-		src_hapd->conf->he_phy_capab.he_dl_mu_ofdma;
-	dest_hapd->conf->he_phy_capab.he_dl_mu_ofdma_bfer =
-		src_hapd->conf->he_phy_capab.he_dl_mu_ofdma_bfer;
-	dest_hapd->conf->he_phy_capab.he_ul_mu_ofdma =
-		src_hapd->conf->he_phy_capab.he_ul_mu_ofdma;
 	dest_hapd->conf->he_phy_capab.he_mu_beamformer =
 		src_hapd->conf->he_phy_capab.he_mu_beamformer;
 	dest_hapd->conf->he_phy_capab.he_ul_mumimo =
@@ -2362,14 +2373,6 @@ static void hostapd_inherit_mbssid_cmn_params(struct hostapd_data *dest_hapd,
 		src_hapd->conf->eht_phy_capab.su_beamformee;
 	dest_hapd->conf->eht_phy_capab.mu_beamformer =
 		src_hapd->conf->eht_phy_capab.mu_beamformer;
-	dest_hapd->conf->eht_phy_capab.dl_mu_ofdma =
-		src_hapd->conf->eht_phy_capab.dl_mu_ofdma;
-	dest_hapd->conf->eht_phy_capab.ul_mu_ofdma =
-		src_hapd->conf->eht_phy_capab.ul_mu_ofdma;
-	dest_hapd->conf->eht_phy_capab.dl_ofdma_mumimo =
-		src_hapd->conf->eht_phy_capab.dl_ofdma_mumimo;
-	dest_hapd->conf->eht_phy_capab.ul_ofdma_mumimo =
-		src_hapd->conf->eht_phy_capab.ul_ofdma_mumimo;
 	dest_hapd->conf->eht_phy_capab.eht_bfme_ss_80 =
 		src_hapd->conf->eht_phy_capab.eht_bfme_ss_80;
 	dest_hapd->conf->eht_phy_capab.eht_bfme_ss_160 =
@@ -2378,7 +2381,9 @@ static void hostapd_inherit_mbssid_cmn_params(struct hostapd_data *dest_hapd,
 		src_hapd->conf->eht_phy_capab.eht_bfme_ss_320;
 	dest_hapd->conf->eht_ltf = src_hapd->conf->eht_ltf;
 	dest_hapd->iconf->enable_mcs15 = src_hapd->iconf->enable_mcs15;
+#ifdef CONFIG_TESTING_OPTIONS
 	dest_hapd->iconf->ecsa_ie_only = src_hapd->iconf->ecsa_ie_only;
+#endif
 
 	wpa_printf(MSG_DEBUG,
 		   "MBSSID common parameters are successfully inherited for %s from %s",
@@ -2625,6 +2630,14 @@ setup_mld:
 			   "Failed to update radio mask for %s",
 			   hapd->conf->iface);
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_QCN_EXTN
+	if (!first && !hapd_reenable_pending(hapd) &&
+	    hostapd_drv_mark_vap_submode(hapd, hapd->conf->bss_extn.vap_submode)) {
+		wpa_printf(MSG_ERROR, "vap_submode vendor command failed: %s",
+			   hapd->conf->iface);
+		return -1;
+	}
+#endif /* CONFIG_QCN_EXTN */
 	/* MBSSID setup already done during reenable*/
 	if (!hapd_reenable_pending(hapd) &&
 	    hostapd_mbssid_setup_bss(hapd))
@@ -2813,6 +2826,9 @@ setup_mld:
 		wpa_printf(MSG_ERROR, "IEEE 802.1X initialization failed.");
 		return -1;
 	}
+#ifdef CONFIG_IEEE8021X_AUTH
+	hapd->send_eap_req = ieee80211_send_eap_req;
+#endif /* CONFIG_IEEE8021X_AUTH */
 
 	if (conf->wpa && hostapd_setup_wpa(hapd))
 		return -1;
@@ -5337,6 +5353,9 @@ hostapd_alloc_bss_data(struct hostapd_iface *hapd_iface,
 	hapd->iconf = conf;
 	hapd->conf = bss;
 	hapd->iface = hapd_iface;
+	/* -1 = no per-module override; falls back to global wpa_debug_level */
+	os_memset(hapd->log_module_level, 0xff,
+		  sizeof(hapd->log_module_level));
 	if (conf)
 		hapd->driver = conf->driver;
 	hapd->ctrl_sock = -1;
@@ -5488,7 +5507,7 @@ static void hostapd_mld_ref_inc(struct hostapd_mld *mld)
 }
 
 
-static void hostapd_mld_ref_dec(struct hostapd_mld *mld)
+void hostapd_mld_ref_dec(struct hostapd_mld *mld)
 {
 	if (!mld)
 		return;
@@ -5527,7 +5546,7 @@ int hostapd_parse_link_id(char *buf)
 
 #endif /* CONFIG_IEEE80211BE */
 
-static void hostapd_multi_mbssid_remove_bss(struct hostapd_data *hapd)
+void hostapd_multi_mbssid_remove_bss(struct hostapd_data *hapd)
 {
 	struct hostapd_data *next_txbss;
 	struct hostapd_multi_mbssid_group *group;
@@ -5922,14 +5941,14 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 
 	addr = hostapd_addr_to_u64(hapd->own_addr);
 
-	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
-
 #ifdef CONFIG_QCN_EXTN
-		if (hostapd_validate_mbssid_group_size_extn(hapd)) {
-			wpa_printf(MSG_ERROR, "Invalid group size");
-			return -1;
-		}
+	if (hostapd_validate_mbssid_configuration_extn(hapd)) {
+		wpa_printf(MSG_ERROR, "Invalid MBSSID configuration");
+		return -1;
+	}
 #endif
+
+	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
 		if (!multi_mbssid->group) {
 			multi_mbssid->num_mbssid_groups = mbssid_max_interfaces /
 							  iface->conf->group_size;
@@ -6334,24 +6353,6 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 
 	if (hostapd_require_tx_bss(hapd,
 				   hapd->conf->he_phy_capab_mask &
-				   HE_PHY_BSS_OVR_DL_MU_OFDMA,
-				   "bss_he_dl_mu_ofdma") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->he_phy_capab_mask &
-				   HE_PHY_BSS_OVR_DL_MU_OFDMA_BFER,
-				   "bss_he_dl_mu_ofdma_bfer") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->he_phy_capab_mask &
-				   HE_PHY_BSS_OVR_UL_MU_OFDMA,
-				   "bss_he_ul_mu_ofdma") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->he_phy_capab_mask &
 				   HE_PHY_BSS_OVR_UL_MUMIMO,
 				   "bss_he_ul_mumimo") < 0)
 		return -1;
@@ -6473,6 +6474,18 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 
 #ifdef CONFIG_IEEE80211BE
 	if (hostapd_require_tx_bss(hapd,
+				   hostapd_eht_mcs_nss_set_is_set(
+					hapd->conf->eht_tx_mcs_nss_set),
+				   "eht_tx_mcs_nss_set") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hostapd_eht_mcs_nss_set_is_set(
+					hapd->conf->eht_rx_mcs_nss_set),
+				   "eht_rx_mcs_nss_set") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
 				   hapd->conf->eht_phy_capab_mask &
 				   EHT_PHY_BSS_OVR_SU_BEAMFORMER,
 				   "bss_eht_su_beamformer") < 0)
@@ -6488,30 +6501,6 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 				   hapd->conf->eht_phy_capab_mask &
 				   EHT_PHY_BSS_OVR_MU_BEAMFORMER,
 				   "bss_eht_mu_beamformer") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->eht_phy_capab_mask &
-				   EHT_PHY_BSS_OVR_DL_MU_OFDMA,
-				   "bss_eht_dl_mu_ofdma") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->eht_phy_capab_mask &
-				   EHT_PHY_BSS_OVR_UL_MU_OFDMA,
-				   "bss_eht_ul_mu_ofdma") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->eht_phy_capab_mask &
-				   EHT_PHY_BSS_OVR_DL_OFDMA_MUMIMO,
-				   "bss_eht_dl_ofdma_mumimo") < 0)
-		return -1;
-
-	if (hostapd_require_tx_bss(hapd,
-				   hapd->conf->eht_phy_capab_mask &
-				   EHT_PHY_BSS_OVR_UL_OFDMA_MUMIMO,
-				   "bss_eht_ul_ofdma_mumimo") < 0)
 		return -1;
 
 	if (hostapd_require_tx_bss(hapd,
@@ -7511,13 +7500,13 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 				hapd_iface->num_bss--;
 				wpa_printf(MSG_DEBUG, "%s: free hapd %p %s",
 					   __func__, hapd, hapd->conf->iface);
+				hostapd_multi_mbssid_remove_bss(hapd);
 				hostapd_config_free_bss(hapd->conf);
 				hapd->conf = NULL;
 #ifdef CONFIG_IEEE80211BE
 				hostapd_mld_ref_dec(hapd->mld);
 #endif /* CONFIG_IEEE80211BE */
 				hostapd_free_mbssid_idx(hapd);
-				hostapd_multi_mbssid_remove_bss(hapd);
 				os_free(hapd);
 				return -1;
 			}
@@ -7863,13 +7852,13 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 						  hapd->conf->iface);
 		}
 
+		hostapd_multi_mbssid_remove_bss(hapd);
 		hostapd_config_free_bss(hapd->conf);
 		hapd->conf = NULL;
 #ifdef CONFIG_IEEE80211BE
 		hostapd_mld_ref_dec(hapd->mld);
 #endif /* CONFIG_IEEE80211BE */
 		hostapd_free_mbssid_idx(hapd);
-		hostapd_multi_mbssid_remove_bss(hapd);
 		os_free(hapd);
 
 		iface->num_bss--;
@@ -8201,6 +8190,43 @@ void hostapd_new_assoc_sta(struct hostapd_data *hapd, struct sta_info *sta,
 	/* Start IEEE 802.1X authentication process for new stations */
 	if (!hapd->conf->plugin_eap_offload)
 		ieee802_1x_new_station(hapd, sta);
+
+#ifdef CONFIG_ENC_ASSOC
+		if (ap_sta_is_epp(sta) && sta->wpa_sm) {
+			const struct wpa_ptk *ptk;
+			const u8 *pmk;
+			size_t pmk_len;
+
+			switch (sta->auth_alg) {
+			case WLAN_AUTH_EPPKE:
+				if (!sta->pasn) {
+					wpa_printf(MSG_INFO,
+						   "EPP: Missing PASN data");
+					return;
+				}
+				ptk = &sta->pasn->ptk;
+				pmk = sta->pasn->pmk;
+				pmk_len = sta->pasn->pmk_len;
+				break;
+#ifdef CONFIG_IEEE8021X_AUTH
+			case WLAN_AUTH_802_1X:
+				ptk = &sta->eap_auth_data.ptk;
+				pmk = sta->eap_auth_data.pmk;
+				pmk_len = sta->eap_auth_data.pmk_len;
+				break;
+#endif /* CONFIG_IEEE8021X_AUTH */
+			default:
+				wpa_printf(MSG_INFO,
+					   "EPP: Unsupported auth alg=%d for an EPP station",
+					   sta->auth_alg);
+				return;
+			}
+			wpa_store_eppke_pmk_ptk_sm(sta->wpa_sm, ptk, pmk,
+						   pmk_len);
+			wpa_auth_set_ptk_rekey_timer(sta->wpa_sm);
+		}
+#endif /* CONFIG_ENC_ASSOC */
+
 	if (reassoc) {
 		if (sta->auth_alg != WLAN_AUTH_FT &&
 		    sta->auth_alg != WLAN_AUTH_FILS_SK &&
@@ -8557,6 +8583,13 @@ int hostapd_change_config_freq(struct hostapd_data *hapd,
 				    NULL,
 				    hostapd_get_punct_bitmap(hapd),
 				    hapd->iconf->he_6ghz_reg_pwr_type,
+#ifdef CONFIG_IEEE80211BN
+				    hostapd_hw_get_freq(hapd,
+					conf->npca_primary_channel),
+				    conf->npca_punct_bitmap,
+#else
+				    0, 0,
+#endif /* CONFIG_IEEE80211BN */
 				    conf->bandwidth_device,
 				    conf->center_freq_device))
 		return -1;
@@ -9560,6 +9593,11 @@ int hostapd_mld_link_config_check(struct hostapd_data *hapd)
 {
 	struct hostapd_mld *mld = hapd->mld;
 	struct hostapd_data *first = mld->fbss;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+		return 0;
+#endif /* CONFIG_QCN_EXTN */
 
 	if (hapd->conf->ssid.ssid_len != first->conf->ssid.ssid_len ||
 	    os_memcmp(hapd->conf->ssid.ssid, first->conf->ssid.ssid,

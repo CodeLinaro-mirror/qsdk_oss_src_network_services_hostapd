@@ -1751,6 +1751,53 @@ static int hostapd_cli_cmd_update_beacon(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, "UPDATE_BEACON");
 }
 
+#ifdef CONFIG_IEEE80211BN
+/*
+ * hostapd_cli_cmd_update_uhr_features - Send UPDATE_UHR_FEATURES command
+ *
+ * Usage:
+ *   hostapd_cli -i <intf> [-l <link_id>] update_uhr_features \
+*       [NPCA enable=<0|1> [primary_chan=<chan|freq_mhz>]
+*             [min_dur=<0-15>] [switch_delay=<0-63>] [switch_back=<0-63>]
+*             [init_qsrc=<0-3>] [moplen=<0|1>] [disabled_subch_bitmap=<0xHHHH>]]
+ *
+ * At least one of NPCA must be specified.  The NPCA parameters map
+ * directly to the Figure 9-aa4 NPCA Operation Parameters field defined in
+ * IEEE P802.11bn D1.4 ss9.4.2.355.2.
+ */
+static int hostapd_cli_cmd_update_uhr_features(struct wpa_ctrl *ctrl,
+					       int argc, char *argv[])
+{
+	char cmd[512];
+	int res, i;
+	size_t used;
+
+	if (argc < 1) {
+		printf("Usage: update_uhr_features "
+		       "[NPCA enable=<0|1> [primary_chan=<chan|freq_mhz>]\n"
+		       "  [min_dur=<0-15>] [switch_delay=<0-63>] [switch_back=<0-63>]\n"
+		       "  [init_qsrc=<0-3>] [moplen=<0|1>] [bitmap=<0xHHHH>]]\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "UPDATE_UHR_FEATURES");
+	if (os_snprintf_error(sizeof(cmd), res))
+		return -1;
+	used = res;
+
+	for (i = 0; i < argc; i++) {
+		res = os_snprintf(cmd + used, sizeof(cmd) - used, " %s", argv[i]);
+		if (os_snprintf_error(sizeof(cmd) - used, res)) {
+			printf("Too long UPDATE_UHR_FEATURES command.\n");
+			return -1;
+		}
+		used += res;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+#endif /* CONFIG_IEEE80211BN */
+
 static int hostapd_cli_cmd_add_tpe(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	char cmd[256];
@@ -3577,6 +3624,13 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "= stop specified AP MLD without affecting other APs/MLDs" },
 	{ "update_beacon", hostapd_cli_cmd_update_beacon, NULL,
 	  "= update Beacon frame contents\n"},
+#ifdef CONFIG_IEEE80211BN
+	{ "update_uhr_features", hostapd_cli_cmd_update_uhr_features, NULL,
+	  "[NPCA enable=<0|1> [primary_chan=chan]\n"
+	  "  [min_dur=<0-15>] [switch_delay=<0-63>] [switch_back=<0-63>]\n"
+	  "  [init_qsrc=<0-3>] [moplen=<0|1>] [disabled_subch_bitmap=<0xHHHH>]]\n"
+	  "= Update UHR feature parameters that requires enhanced critical update"},
+#endif /* CONFIG_IEEE80211BN */
 	{ "add_tpe", hostapd_cli_cmd_add_tpe, NULL,
 	  "add_tpe <tx_pwr_intrpt> <tx_pwr_cnt> <tx_pwr_cat> <tx_pwr …>"},
 	{ "del_tpe", hostapd_cli_cmd_del_tpe, NULL,

@@ -33,6 +33,7 @@
 #include "beacon.h"
 #include "hs20.h"
 #include "dfs.h"
+#include "hw_features.h"
 #include "taxonomy.h"
 #include "ieee802_11_auth.h"
 #include "dscp_policy.h"
@@ -587,6 +588,16 @@ static u8 * hostapd_eid_ecsa(struct hostapd_data *hapd, u8 *eid)
 	return eid;
 }
 
+u8 * hostapd_eid_add_max_cs_time(u8 *eid, u32 switch_time)
+{
+	*eid++ = WLAN_EID_EXTENSION;
+	*eid++ = 4;
+	*eid++ = WLAN_EID_EXT_MAX_CHANNEL_SWITCH_TIME;
+	WPA_PUT_LE24(eid, switch_time);
+	eid += 3;
+
+	return eid;
+}
 
 static u8 * hostapd_eid_max_cs_time(struct hostapd_data *hapd, u8 *eid)
 {
@@ -596,7 +607,7 @@ static u8 * hostapd_eid_max_cs_time(struct hostapd_data *hapd, u8 *eid)
 	/* Add Max Channel Switch Time element only if this AP is affiliated
 	 * with an AP MLD and channel switch is in process. */
 	if (!hapd->conf->mld_ap || !hapd->cs_freq_params.channel)
-		return eid;
+		goto check_bootup_cac;
 
 #ifdef CONFIG_QCN_EXTN
 	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
@@ -619,14 +630,24 @@ static u8 * hostapd_eid_max_cs_time(struct hostapd_data *hapd, u8 *eid)
 	} else {
 		/* Fallback to previous hardcoded behavior (assume 1 second) */
 		switch_time = USEC_TO_TU(250 * 1000) + 2 * hapd->iconf->beacon_int;
-		wpa_printf(MSG_DEBUG, "Using fallback channel switch time: %u TU", switch_time);
+		wpa_printf(MSG_DEBUG, "Using fallback channel switch time: %u TU",
+			   switch_time);
 	}
 
-	*eid++ = WLAN_EID_EXTENSION;
-	*eid++ = 4;
-	*eid++ = WLAN_EID_EXT_MAX_CHANNEL_SWITCH_TIME;
-	WPA_PUT_LE24(eid, switch_time);
-	eid += 3;
+	return hostapd_eid_add_max_cs_time(eid, switch_time);
+
+check_bootup_cac:
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * Bootup CAC: add MCST IE directly in the 5 GHz beacon so that
+	 * clients on the 5 GHz channel can see the remaining CAC time.
+	 */
+	if (hapd->conf->mld_ap && hapd->iface->bootup_cac_in_progress) {
+		switch_time = hostapd_get_remaining_cac_tu(hapd->iface);
+		if (switch_time)
+			eid = hostapd_eid_add_max_cs_time(eid, switch_time);
+	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 	return eid;
@@ -747,11 +768,17 @@ ieee802_11_build_ap_params_mbssid(struct hostapd_data *hapd,
 	     !iface->ema_max_periodicity))
 		goto fail;
 
+#ifdef RDK_ONEWIFI
+       tx_bss = hostapd_drv_mbssid_get_tx_bss(hapd);
+       len = hostapd_drv_eid_mbssid_len(tx_bss, WLAN_FC_STYPE_BEACON, &elem_count,
+                                    NULL, 0, &rnr_len);
+#else
+
 	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
 	len = hostapd_eid_mbssid_len(tx_bss, WLAN_FC_STYPE_BEACON, &elem_count,
 				     NULL, 0, &rnr_len, true, params,
 				     &is_len_calc_failed);
-
+#endif /* RDK_ONEWIFI */
 	if (is_len_calc_failed)
 		goto fail;
 
@@ -779,14 +806,24 @@ ieee802_11_build_ap_params_mbssid(struct hostapd_data *hapd,
 		if (!rnr_elem_offset)
 			goto fail;
 	}
+#ifdef RDK_ONEWIFI
+       end = hostapd_drv_eid_mbssid(tx_bss, elem, elem + len, WLAN_FC_STYPE_BEACON,
+                                elem_count, elem_offset, NULL, 0, rnr_elem,
+                                &rnr_elem_count, rnr_elem_offset, rnr_len);
+#else
 
 	end = hostapd_eid_mbssid(tx_bss, elem, elem + len, WLAN_FC_STYPE_BEACON,
 				 elem_count, elem_offset, NULL, 0, rnr_elem,
 				 &rnr_elem_count, rnr_elem_offset, rnr_len,
 				 &elemid_modified_bmap, true, params);
+#endif /* RDK_ONEWIFI */
 
 	params->mbssid.mbssid_tx_iface = tx_bss->conf->iface;
+#ifdef RDK_ONEWIFI
+	params->mbssid.mbssid_index = hostapd_drv_mbssid_get_bss_index(hapd);
+#else
 	params->mbssid.mbssid_index = hostapd_mbssid_get_bss_index(hapd);
+#endif /* RDK_ONEWIFI */
 	params->mbssid.mbssid_elem = elem;
 	params->mbssid.mbssid_elem_len = end - elem;
 	params->mbssid.mbssid_elem_count = elem_count;
@@ -1027,6 +1064,12 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 	if (hostapd_is_uhr_enabled(hapd)) {
 		buflen += 3 + sizeof(struct ieee80211_uhr_capabilities);
 		buflen += 3 + sizeof(struct ieee80211_uhr_operation);
+		if (hapd->iconf->npca_enable) {
+			buflen += IEEE80211_UHR_NPCA_OPER_BASE_SIZE;
+			if (hapd->iconf->npca_punct_bitmap)
+				buflen += IEEE80211_UHR_NPCA_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
+		}
+		buflen += hostapd_eid_uhr_params_update_len(hapd, false, false);
 	}
 	buflen += hostapd_smd_ie_len(hapd);
 #endif /* CONFIG_IEEE80211BN */
@@ -1107,6 +1150,11 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 	buflen += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
 #endif /* CONFIG_QCN_EXTN */
+
+#ifdef CONFIG_IEEE80211BN
+	if (hostapd_is_uhr_enabled(hapd))
+		buflen += hostapd_eid_uhr_params_update_len(hapd, false, false);
+#endif /* CONFIG_IEEE80211BE */
 
 	nontx_probe_params->resp = os_zalloc(buflen);
 	if (!nontx_probe_params->resp) {
@@ -1233,6 +1281,11 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 	pos = hostapd_eid_qcn_vendor_ie_extn(hapd, pos, IEEE80211_MODE_AP);
 #endif /* CONFIG_QCN_EXTN */
+
+#ifdef CONFIG_IEEE80211BN
+	if (hostapd_is_uhr_enabled(hapd))
+		pos = hostapd_eid_uhr_params_update(hapd, pos, false, false);
+#endif /* CONFIG_IEEE80211BN */
 
 	/* Final length */
 	nontx_probe_params->resp_len = pos - (u8 *) nontx_probe_params->resp;
@@ -1473,6 +1526,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	if (hostapd_is_uhr_enabled(hapd)) {
 		pos = hostapd_eid_uhr_capab(hapd, pos, IEEE80211_MODE_AP);
 		pos = hostapd_eid_uhr_operation(hapd, pos, false);
+		pos = hostapd_eid_uhr_params_update(hapd, pos, false, false);
 	}
 #endif /* CONFIG_IEEE80211BN */
 	pos = hostapd_eid_security_profile(hapd, pos);
@@ -1603,11 +1657,16 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 		} else {
 			mbssid_pos = pos;
 		}
+#ifdef RDK_ONEWIFI
+       pos = hostapd_drv_eid_mbssid(hapd, pos, epos, WLAN_FC_STYPE_PROBE_RESP, 0,
+                                NULL, NULL, 0,
+                                NULL, NULL, NULL, 0);
+#else
 		pos = hostapd_eid_mbssid(hapd_probed, pos, epos,
 					 WLAN_FC_STYPE_PROBE_RESP, 0,
 					 NULL, params->known_bss, params->known_bss_len,
 					 NULL, NULL, NULL, 0, NULL, bcast_prb_resp, params);
-
+#endif /* RDK_ONEWIFI */
 		/* Insert mbssid-ie at specified location */
 		if (hostapd_insert_mbssid_ie(mbssid_offset, mbssid_pos, pos)) {
 			wpa_printf(MSG_ERROR, "Failed to insert MBSSID-IE");
@@ -1670,7 +1729,11 @@ static void hostapd_gen_probe_resp(struct hostapd_data *hapd,
 	u8 *pos;
 	size_t buflen;
 
+#ifdef RDK_ONEWIFI
+       hapd = hostapd_drv_mbssid_get_tx_bss(hapd);
+#else
 	hapd = hostapd_mbssid_get_tx_bss(hapd);
+#endif /* RDK_ONEWIFI */
 
 #define MAX_PROBERESP_LEN 768
 	buflen = MAX_PROBERESP_LEN;
@@ -2777,6 +2840,10 @@ skip_mu_cap_war:
 	}
 #endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 
+#ifdef RDK_ONEWIFI
+       hapd = hostapd_drv_mbssid_get_tx_bss(hapd);
+#endif /* RDK_ONEWIFI */
+
 	ret = hostapd_drv_send_mlme(hostapd_mbssid_get_tx_bss(hapd),
 				    params.resp, params.resp_len, noack,
 				    csa_offs_len ? csa_offs : NULL,
@@ -3561,6 +3628,10 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		tail_len += (3 + sizeof(struct ieee80211_uhr_operation));
 #endif /* CONFIG_IEEE80211BN */
 
+#ifdef RDK_ONEWIFI
+       if (hapd->iconf->mbssid == MBSSID_ENABLED)
+               tail_len += 5; /* Multiple BSSID Configuration element */
+#endif /* RDK_ONEWIFI */
 	tail_len += hostapd_security_profile_ie_len(hapd);
 
 	if (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
@@ -3754,7 +3825,11 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	 * MBSSID IE in Enhanced Multi-BSSID enabled  case.
 	 */
 	mbssid_cfg_elem = tailpos;
+#ifdef RDK_ONEWIFI
+       tailpos = hostapd_drv_mbssid_config(hapd, tailpos);
+#else
 	tailpos = hostapd_eid_mbssid_config(hapd, tailpos, 0);
+#endif /* RDK_ONEWIFI */
 
 	if (tailpos - mbssid_cfg_elem) {
 		if ((mbssid_cfg_elem + 1 < tailpos) &&
@@ -3836,8 +3911,28 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hostapd_is_uhr_enabled(hapd))
+	if (hostapd_is_uhr_enabled(hapd)) {
+		u8 *uhr_cap;
+
 		tailpos = hostapd_eid_uhr_operation(hapd, tailpos, true);
+
+		params->uhr_cap = os_zalloc(3 + IEEE80211_UHR_CAP_MAX_SIZE);
+		if (!params->uhr_cap) {
+			wpa_printf(MSG_ERROR, "Failed to allocate for UHR capabilities");
+			os_free(head);
+			os_free(tail);
+			return -1;
+		}
+
+		uhr_cap = hostapd_eid_uhr_capab(hapd, params->uhr_cap,
+					       IEEE80211_MODE_AP);
+		/* check that it was filled */
+		if (uhr_cap == params->uhr_cap) {
+			os_free(params->uhr_cap);
+			params->uhr_cap = NULL;
+		}
+
+	}
 #endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_IEEE80211AC
@@ -4160,6 +4255,10 @@ void ieee802_11_free_ap_params(struct wpa_driver_ap_params *params)
 #endif /* CONFIG_IEEE80211AX */
 	os_free(params->allowed_freqs);
 	params->allowed_freqs = NULL;
+#ifdef CONFIG_IEEE80211BN
+	os_free(params->uhr_cap);
+	params->uhr_cap = NULL;
+#endif /* CONFIG_IEEE80211BN */
 }
 
 #ifdef CONFIG_IEEE80211BE
@@ -4376,6 +4475,13 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 				    &cmode->uhr_capab[IEEE80211_MODE_AP],
 				    hostapd_get_punct_bitmap(hapd),
 				    iconf->he_6ghz_reg_pwr_type,
+#ifdef CONFIG_IEEE80211BN
+				    hostapd_hw_get_freq(hapd,
+					iconf->npca_primary_channel),
+				    iconf->npca_punct_bitmap,
+#else
+				    0, 0,
+#endif /* CONFIG_IEEE80211BN */
 				    iconf->bandwidth_device,
 				    iconf->center_freq_device) == 0) {
 		freq.link_id = -1;
@@ -4388,6 +4494,13 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 		params.freq->skip_cac = iconf->conf_extn.skip_cac;
 		hostapd_ignorecac_update_freq_params_extn(iface,
 							   params.freq);
+		if (iface->mcst && iface->cs_time) {
+			/* Dependent repeater FH AP residual CAC: pass adjusted
+			 * cs_time to START_AP so kernel runs remaining CAC.
+			 */
+			params.freq->skip_cac = 0;
+			params.freq->mcst = IEEE80211_MS_TO_TU(iface->cs_time);
+		}
 #endif
 	}
 
@@ -4537,7 +4650,9 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 set_ap:
 	res = hostapd_drv_set_ap(hapd, &params);
 	if (res)
-		wpa_printf(MSG_ERROR, "Failed to set beacon parameters");
+		wpa_printf(MSG_ERROR,
+			   "%s: Failed to set beacon parameters (ret=%d)",
+			   hapd->conf->iface, res);
 	else
 		ret = 0;
 fail2:

@@ -2214,11 +2214,14 @@ void wpa_bss_parse_basic_ml_element(struct wpa_supplicant *wpa_s,
 	l->center_freq2_idx = bss->center_freq2_idx;
 	l->width = bss->max_cw;
 	l->punc_bitmap = bss->punc_bitmap;
+	wpa_bss_parse_basic_mle_per_sta_mcst_extn(bss, mlbuf,
+						  ml_basic_common_info->len);
 
 	wpa_printf(MSG_DEBUG, "%s: link_id = %d freq = %d center_freq1_idx = %d"
-		   "center_freq2_idx = %d max_cw = %d punc_bitmap = %d",
+		   "center_freq2_idx = %d max_cw = %d punc_bitmap = %d mcst = %u",
 		   __func__, link_id, bss->freq, bss->center_freq1_idx,
-		   bss->center_freq2_idx, bss->max_cw, bss->punc_bitmap);
+		   bss->center_freq2_idx, bss->max_cw, bss->punc_bitmap,
+		   l->mcst);
 #endif
 
 	bss->mld_bss_non_transmitted = false;

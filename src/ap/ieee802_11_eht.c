@@ -96,6 +96,28 @@ static u8 ieee80211_eht_mcs_set_size(enum hostapd_hw_mode mode, u8 opclass,
 	return sz;
 }
 
+
+
+static void intersect_eht_mcs_map(u8 *pos, const u8 *hw_mcs_set, size_t mcs_set_len,
+				  const u16 *usr_tx_mcs_set, const u16 *usr_rx_mcs_set)
+{
+	u8 i, idx, hw_val, hw_rx, hw_tx, usr_rx, usr_tx;
+
+	for (i = 0; i < (u8)(mcs_set_len / EHT_PHYCAP_MCS_NSS_LEN_20MHZ_PLUS); i++) {
+		for (idx = 0; idx < EHT_PHYCAP_MCS_NSS_LEN_20MHZ_PLUS; idx++) {
+			hw_val = *hw_mcs_set++;
+
+			hw_rx = hw_val & 0xF;
+			hw_tx = hw_val >> 4;
+
+			usr_rx = (usr_rx_mcs_set[i] >> (idx * 4)) & 0xF;
+			usr_tx = (usr_tx_mcs_set[i] >> (idx * 4)) & 0xF;
+
+			*pos++ = MIN(hw_rx, usr_rx) | (MIN(hw_tx, usr_tx) << 4);
+		}
+	}
+}
+
 bool eht_mu_mask_valid(u8 mask)
 {
 	if (mask & BIT(2)) {
@@ -181,9 +203,17 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 
 	/* For non-transmitting BSSs in MBSSID, inherit BSS-level overrides
 	 * from the transmitting BSS */
-	if (tx_hapd != hapd && tx_hapd->conf->eht_phy_capab_mask) {
-		hapd->conf->eht_phy_capab = tx_hapd->conf->eht_phy_capab;
-		hapd->conf->eht_phy_capab_mask = tx_hapd->conf->eht_phy_capab_mask;
+	if (tx_hapd != hapd) {
+		if (tx_hapd->conf->eht_phy_capab_mask) {
+			hapd->conf->eht_phy_capab = tx_hapd->conf->eht_phy_capab;
+			hapd->conf->eht_phy_capab_mask = tx_hapd->conf->eht_phy_capab_mask;
+		}
+		os_memcpy(hapd->conf->eht_tx_mcs_nss_set,
+			  tx_hapd->conf->eht_tx_mcs_nss_set,
+			  sizeof(hapd->conf->eht_tx_mcs_nss_set));
+		os_memcpy(hapd->conf->eht_rx_mcs_nss_set,
+			  tx_hapd->conf->eht_rx_mcs_nss_set,
+			  sizeof(hapd->conf->eht_rx_mcs_nss_set));
 	}
 	if (!((hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_SU_BEAMFORMER) ?
 	      hapd->conf->eht_phy_capab.su_beamformer :
@@ -434,7 +464,9 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 						 mode->he_capab[opmode].phy_cap,
 						 eht_cap->phy_cap);
 	if (mcs_nss_len) {
-		os_memcpy(pos, eht_cap->mcs, mcs_nss_len);
+		intersect_eht_mcs_map(pos, eht_cap->mcs, mcs_nss_len,
+				      hapd->conf->eht_tx_mcs_nss_set,
+				      hapd->conf->eht_rx_mcs_nss_set);
 		pos += mcs_nss_len;
 	}
 
@@ -893,6 +925,18 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		common_info_len += 2;
 	}
 
+	if (hostapd_is_uhr_enabled(hapd)) {
+		/* Enhanced Critical Updates Information */
+		control |= BASIC_MULTI_LINK_CTRL_PRES_ENH_CRIT_UPD;
+		common_info_len++;
+
+		if (hapd->conf->bss_load_update_period) {
+			/* Age of BSS Load Present */
+			control |= BASIC_MULTI_LINK_CTRL_PRES_AGE_OF_BSS_LOAD;
+			common_info_len++;
+		}
+	}
+
 	wpabuf_put_le16(buf, control);
 
 	wpabuf_put_u8(buf, common_info_len);
@@ -977,6 +1021,13 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		wpabuf_put_le16(buf, ext_mld_cap);
 	}
 
+	if (hostapd_is_uhr_enabled(hapd)) {
+		/* Currently hard-code Enhanced Critical Updates Information to zero */
+		wpabuf_put_u8(buf, 0);
+		if (hapd->conf->bss_load_update_period)
+			wpabuf_put_u8(buf, 0); /* Age of BSS Load */
+	}
+
 	if (!mld_info)
 		goto out;
 
@@ -1010,6 +1061,9 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		 * frames */
 		if (include_bpcc)
 			sta_info_len++;
+		/* Enhanced Critical Updates Information */
+		if (include_bpcc && hostapd_is_uhr_enabled(hapd))
+			sta_info_len++;
 
 		total_len = sta_info_len + link->resp_sta_profile_len;
 
@@ -1031,6 +1085,8 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 
 		if (include_bpcc)
 			control |= BASIC_MLE_STA_CTRL_PRES_BSS_PARAM_COUNT;
+		if (include_bpcc && hostapd_is_uhr_enabled(hapd))
+			control |= BASIC_MLE_STA_CTRL_PRES_ENH_CRIT_UPD;
 
 		wpabuf_put_le16(buf, control);
 
@@ -1055,6 +1111,9 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		/* BSS Parameters Change Count */
 		if (include_bpcc)
 			wpabuf_put_u8(buf, link_bss->rx_cu_param.bpcc);
+		/* Enhanced Critical Updates Information */
+		if (include_bpcc && hostapd_is_uhr_enabled(hapd))
+			wpabuf_put_u8(buf, 0);
 
 		if (!link->resp_sta_profile)
 			continue;
@@ -1126,6 +1185,13 @@ size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 	if (include_ext_cap)
 		len += 2;
 
+	if (hostapd_is_uhr_enabled(hapd)) {
+		/* Enhanced Critical Updates Information */
+		len++;
+		if (hapd->conf->bss_load_update_period)
+			len++; /* Age of BSS Load */
+	}
+
 	if (!info)
 		goto out;
 
@@ -1160,6 +1226,10 @@ size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 		if (include_bpcc)
 			sta_prof_len++;
 
+		/* Enhanced Critical Updates Information */
+		if (include_bpcc && hostapd_is_uhr_enabled(hapd))
+			sta_prof_len++;
+
 		/* Per-STA Profile Subelement(1), Length (1) */
 		len += 2;
 		len += sta_prof_len;
@@ -1184,7 +1254,8 @@ out:
 }
 
 
-static size_t hostapd_eid_eht_ml_len(struct mld_info *info,
+static size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd,
+				     struct mld_info *info,
 				     bool include_mld_id, bool include_bpcc,
 				     u8 include_ext_cap)
 {
@@ -1197,6 +1268,13 @@ static size_t hostapd_eid_eht_ml_len(struct mld_info *info,
 
 	if (include_ext_cap)
 		eht_ml_len += 2;
+
+	if (hostapd_is_uhr_enabled(hapd)) {
+		/* Enhanced Critical Updates Information (1) in common info */
+		eht_ml_len++;
+		if (hapd->conf->bss_load_update_period)
+			eht_ml_len++; /* Age of BSS Load */
+	}
 
 	for (link_id = 0; info && link_id < ARRAY_SIZE(info->links);
 	     link_id++) {
@@ -1212,6 +1290,10 @@ static size_t hostapd_eid_eht_ml_len(struct mld_info *info,
 		/* BSS Parameters Change Count (1) for (Re)Association Response
 		 * frames */
 		if (include_bpcc)
+			sta_len++;
+
+		/* Enhanced Critical Updates Information (1) in per-STA profile */
+		if (include_bpcc && hostapd_is_uhr_enabled(hapd))
 			sta_len++;
 
 		/* Element data and (fragmentation) headers */
@@ -1267,7 +1349,8 @@ size_t hostapd_eid_eht_ml_beacon_len(struct hostapd_data *hapd,
 				     bool include_mld_id,
 				     u8 include_ext_cap)
 {
-	return hostapd_eid_eht_ml_len(info, include_mld_id, false, include_ext_cap);
+	return hostapd_eid_eht_ml_len(hapd, info, include_mld_id, false,
+				       include_ext_cap);
 }
 
 
@@ -1400,18 +1483,41 @@ const u8 * auth_skip_fixed_fields(struct hostapd_data *hapd,
 					 size_t len)
 {
 	u16 auth_alg = le_to_host16(mgmt->u.auth.auth_alg);
-#ifdef CONFIG_SAE
+#if defined(CONFIG_SAE) || defined(CONFIG_IEEE8021X_AUTH)
 	u16 auth_transaction = le_to_host16(mgmt->u.auth.auth_transaction);
 	u16 status_code = le_to_host16(mgmt->u.auth.status_code);
-#endif /* CONFIG_SAE */
+#endif /* CONFIG_SAE or CONFIG_IEEE8021X_AUTH */
 	const u8 *pos = mgmt->u.auth.variable;
 
 	/* Skip fixed fields as based on IEEE Std 802.11-2024, Table 9-71
 	 * (Presence of fields and elements in Authentications frames) */
 	switch (auth_alg) {
 	case WLAN_AUTH_OPEN:
+	case WLAN_AUTH_EPPKE:
 	case WLAN_AUTH_FT:
 		return pos;
+#ifdef CONFIG_IEEE8021X_AUTH
+	case WLAN_AUTH_802_1X: {
+		u16 encap_len;
+
+		/* Extract 2-octet Encapsulation Length from variable field */
+		if (len < 2)
+			return NULL;
+
+		encap_len = WPA_GET_LE16(pos);
+		pos += 2;
+		len -= 2;
+
+		/* Skip Encapsulation field if present */
+		if (encap_len > 0) {
+			if (len < encap_len)
+				return NULL;
+			pos += encap_len;
+		}
+
+		return pos;
+	}
+#endif /* CONFIG_IEEE8021X_AUTH */
 #ifdef CONFIG_SAE
 	case WLAN_AUTH_SAE:
 		if (auth_transaction == WLAN_AUTH_TR_SEQ_SAE_COMMIT) {
@@ -2323,6 +2429,10 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 	 */
 	len = IEEE80211_HDRLEN + 3 + 1 + count * 3;
 	kde_len = mle_len = 0;
+#ifdef CONFIG_IEEE80211BN
+	if (hostapd_is_uhr_enabled(hapd))
+		len += hostapd_eid_uhr_params_update_len(hapd, true, false);
+#endif /* CONFIG_IEEE80211BN */
 
 	if (req_list->links_add_ok) {
 		kde_len = wpa_auth_ml_group_kdes_len(
@@ -2366,7 +2476,7 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 		 * once mac80211 is fixed to match the standard (or this comment
 		 * be removed if the standard is modified to match
 		 * implementation). */
-		mle_len = hostapd_eid_eht_ml_len(&mld, false, true, 0);
+		mle_len = hostapd_eid_eht_ml_len(hapd, &mld, false, true, 0);
 		len += mle_len;
 	}
 
@@ -2484,6 +2594,11 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 		pos += mle_len;
 		pos_len += mle_len;
 	}
+
+#ifdef CONFIG_IEEE80211BN
+	if (hostapd_is_uhr_enabled(hapd))
+		pos = hostapd_eid_uhr_params_update(hapd, pos, true, false);
+#endif /* CONFIG_IEEE80211BN */
 
 reject_all_req:
 	if (reject_all) {

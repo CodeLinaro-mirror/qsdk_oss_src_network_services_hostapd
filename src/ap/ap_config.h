@@ -25,6 +25,18 @@
 #include "../../qcn_extns/hostapd_if_plugin.h"
 #endif
 
+#define EHT_MCS_NSS_MAP_UNSET 0xffffU
+#define EHT_MCS_NSS_SET 3
+
+#ifdef CONFIG_IEEE80211BE
+static inline bool hostapd_eht_mcs_nss_set_is_set(const u16 mcs_nss_set[EHT_MCS_NSS_SET])
+{
+	return mcs_nss_set[0] != EHT_MCS_NSS_MAP_UNSET ||
+		mcs_nss_set[1] != EHT_MCS_NSS_MAP_UNSET ||
+		mcs_nss_set[2] != EHT_MCS_NSS_MAP_UNSET;
+}
+#endif /* CONFIG_IEEE80211BE */
+
 enum macaddr_acl {
 	ACCEPT_UNLESS_DENIED = 0,
 	DENY_UNLESS_ACCEPTED = 1,
@@ -382,6 +394,26 @@ struct eht_phy_capabilities_info {
 #define DRIVER_DEFINED		-1
 #define FEATURE_DISABLED	0
 #define FEATURE_ENABLED		1
+
+
+struct hostapd_uhr_npca_params {
+	bool enable;
+	u32 params;  /* npca_params (bits 0-31) */
+	u16 disabled_subchan_bitmap;
+};
+
+/**
+ * struct uhr_params_update_config - UHR params update configuration
+ *
+ * Configurable intervals for UHR parameter update notifications.
+ */
+struct uhr_params_update_config {
+	u8 adv_notification_interval;
+	u8 update_in_tim_interval;
+	u16 mode_changed;
+	struct hostapd_uhr_npca_params npca;
+	/* TODO: Add DPS, DUO, P-EDCA, DBE, AP PUO, ELR mode param structs */
+};
 
 /**
  * struct hostapd_bss_config - Per-BSS configuration
@@ -1274,6 +1306,10 @@ struct hostapd_bss_config {
 	u16 vht_mcs_nss_set;
 #endif /* CONFIG_IEEE80211AC */
 	u32 ht_mcs_nss_set;
+#ifdef CONFIG_IEEE80211BE
+	u16 eht_tx_mcs_nss_set[EHT_MCS_NSS_SET];
+	u16 eht_rx_mcs_nss_set[EHT_MCS_NSS_SET];
+#endif /* CONFIG_IEEE80211BE */
 
 	enum beacon_rate_type rate_type;
 	unsigned int beacon_rate;
@@ -1328,6 +1364,16 @@ struct hostapd_bss_config {
 	 * 0 and 1 are used to enable and disable support.
 	 */
 	int dps_assist;
+
+#ifdef CONFIG_IEEE80211BN
+	/**
+	 * uhr_params_update - UHR params update configuration
+	 *
+	 * for the UHR Parameters Update element (Draft IEEE P802.11bn 1.4)
+	 */
+	struct uhr_params_update_config uhr_params_update;
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
 	struct hostapd_config_plugin plugin;
 #endif
@@ -1353,6 +1399,11 @@ struct hostapd_bss_config {
 
        /* SMD partner APs for roaming */
        struct smd_partner_entry *smd_partners;
+
+	/* SMD Neighbor Update */
+	int smd_neighbor_update_enabled;
+	int smd_neighbor_expiry_time;    /* Entry expiry time in seconds */
+	int smd_neighbor_pull_interval;  /* Pull request interval in seconds */
 #endif /* CONFIG_IEEE80211BN */
 
 	/* is_cmn_param - flag to identify MBSSID common parameter */
@@ -1363,6 +1414,11 @@ struct hostapd_bss_config {
 
 	/* cmn_param_id - MBSSID common parameter values */
 	int cmn_param_val[2];
+#ifdef CONFIG_ENC_ASSOC
+	unsigned int assoc_frame_encryption:1;
+	unsigned int pmksa_caching_privacy:1;
+	unsigned int eap_using_authentication_frames:1;
+#endif /* CONFIG_ENC_ASSOC  */
 };
 
 /**
@@ -1422,6 +1478,7 @@ struct hostapd_config {
 	int enable_background_radar;
 	int bgcac_en;
 	bool dfs_bw_reduce_en;
+	int rcac_freq;
 	enum {
 		LONG_PREAMBLE = 0,
 		SHORT_PREAMBLE = 1
@@ -1706,6 +1763,12 @@ struct hostapd_config {
 	int *security_profiles;       /* NULL-terminated array from hostapd_parse_intlist */
 	int security_profile_ext_key_id; /* Reduced RSN Capabilities bit 0 */
 	int security_profile_ocvc;    /* Reduced RSN Capabilities bit 1 */
+#ifdef CONFIG_IEEE80211BN
+	bool npca_enable;
+	u8 npca_primary_channel;
+	u16 npca_punct_bitmap;
+	u8 npca_primary_chan_offset;
+#endif /* CONFIG_IEEE80211BN */
 };
 
 

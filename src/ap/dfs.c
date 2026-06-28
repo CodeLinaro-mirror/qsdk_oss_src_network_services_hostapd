@@ -12,6 +12,7 @@
 
 #include "utils/common.h"
 #include "common/ieee802_11_defs.h"
+#include "common/ieee802_11_common.h"
 #include "common/hw_features_common.h"
 #include "common/wpa_ctrl.h"
 #include "hostapd.h"
@@ -105,15 +106,56 @@ int dfs_get_subchannel_count(int bandwidth)
 	}
 }
 
-struct hostapd_channel_data *
+/**
+ * dfs_get_punc_subchan() - Determine 20 MHz subchannel for puncture source
+ * @iface: Pointer to hostapd interface
+ * @bit: 20 MHz subchannel index within the operating bandwidth
+ * @center_freq: Center frequency defining the operating channel block (MHz)
+ * @bw: Channel bandwidth in MHz
+ *
+ * Computes the 20 MHz subchannel corresponding to the given bit position
+ * within the channel block identified by @center_freq and @bw.
+ *
+ * The @center_freq must be provided by the caller when operating in
+ * dynamic paths (e.g., CSA or radar), so that subchannel computation
+ * reflects the target channel context rather than iface->conf, which may
+ * still refer to the previous operating channel.
+ *
+ * If @center_freq is not provided, or 0, (e.g., during initial setup), it is
+ * derived from iface->conf using the appropriate operating class and
+ * channel definition.
+ *
+ * Return: Pointer to channel data for the computed 20 MHz subchannel, or
+ * %NULL if unavailable.
+ */
+static struct hostapd_channel_data *
 dfs_get_punc_subchan(struct hostapd_iface *iface,
-		     int primary_freq, int bit)
+		     int bit, u16 center_freq, int bw)
 {
+	int pri_freq;
+
 	if (!iface->current_mode)
 		return NULL;
 
-	return hw_mode_get_channel(iface->current_mode,
-				   primary_freq + bit * 20, NULL);
+	if (!center_freq) {
+		u8 seg0_idx = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
+		enum oper_chan_width chanwidth = hostapd_get_oper_chwidth(iface->conf);
+		u8 op_class, op_channel;
+
+		if (ieee80211_freq_to_channel_ext(iface->freq,
+						  iface->conf->secondary_channel,
+						  chanwidth, &op_class,
+						  &op_channel) == NUM_HOSTAPD_MODES)
+			return NULL;
+		center_freq = ieee80211_chan_to_freq(NULL, op_class, seg0_idx);
+		if (center_freq < 0)
+			return NULL;
+		bw = channel_width_to_int(
+			hostapd_get_chan_width_from_oper_chan_width(iface->conf));
+	}
+
+	pri_freq = center_freq - (bw / 2) + 10 + bit * 20;
+	return hw_mode_get_channel(iface->current_mode, pri_freq, NULL);
 }
 
 /**
@@ -143,13 +185,14 @@ static void dfs_update_subchan_punc_src(struct hostapd_channel_data *chan,
 }
 
 int dfs_update_puncture_source(struct hostapd_iface *iface,
-			       int primary_freq, int bandwidth,
+			       u16 center_freq, int bandwidth,
 			       u16 new_punct_bitmap,
 			       enum dfs_chan_puncture_source source)
 {
 	struct hostapd_channel_data *chan;
 	int bit;
 	int subchannel_count;
+	int bw;
 
 	subchannel_count = dfs_get_subchannel_count(bandwidth);
 	if (!subchannel_count) {
@@ -159,8 +202,9 @@ int dfs_update_puncture_source(struct hostapd_iface *iface,
 		return -1;
 	}
 
+	bw = channel_width_to_int(bandwidth);
 	for (bit = 0; bit < subchannel_count; bit++) {
-		chan = dfs_get_punc_subchan(iface, primary_freq, bit);
+		chan = dfs_get_punc_subchan(iface, bit, center_freq, bw);
 		if (!chan)
 			continue;
 
@@ -186,7 +230,7 @@ dfs_is_puncture_bitmap_bit_source(struct hostapd_iface *iface, int bit,
 {
 	struct hostapd_channel_data *chan;
 
-	chan = dfs_get_punc_subchan(iface, iface->freq, bit);
+	chan = dfs_get_punc_subchan(iface, bit, 0, 0);
 	if (!chan)
 		return 0;
 
@@ -254,7 +298,7 @@ void dfs_reset_punc_bitmap_src(struct hostapd_iface *iface,
 		if (!(punct_bitmap & BIT(bit)))
 			continue;
 
-		chan = dfs_get_punc_subchan(iface, iface->freq, bit);
+		chan = dfs_get_punc_subchan(iface, bit, 0, 0);
 		if (!chan)
 			continue;
 
@@ -389,8 +433,11 @@ static int dfs_is_chan_allowed(struct hostapd_channel_data *chan, int n_chans)
 	return 0;
 }
 
-
+#ifdef RDK_ONEWIFI
+struct hostapd_channel_data *
+#else
 static struct hostapd_channel_data *
+#endif
 dfs_get_chan_data(struct hostapd_hw_modes *mode, int freq, int first_chan_idx)
 {
 	int i;
@@ -1126,8 +1173,11 @@ static int dfs_check_chans_unavailable(struct hostapd_iface *iface,
 	return res;
 }
 
-
+#ifdef RDK_ONEWIFI
+struct hostapd_channel_data *
+#else
 static struct hostapd_channel_data *
+#endif
 dfs_get_valid_channel(struct hostapd_iface *iface,
 		      int *secondary_channel,
 		      u8 *oper_centr_freq_seg0_idx,
@@ -1530,9 +1580,12 @@ int set_dfs_state(struct hostapd_iface *iface, int freq, int ht_enabled,
 	return ret;
 }
 
-
-static int dfs_are_channels_overlapped(struct hostapd_iface *iface, int freq,
+#ifdef RDK_ONEWIFI
+int dfs_are_channels_overlapped(struct hostapd_iface *iface, int freq,
 				       int chan_width, int cf1, int cf2)
+#else
+static int dfs_are_channels_overlapped(struct hostapd_iface *iface, int freq, int chan_width, int cf1, int cf2)
+#endif
 {
 	int start_chan_idx, start_chan_idx1;
 	struct hostapd_hw_modes *mode;
@@ -1643,7 +1696,9 @@ int hostapd_set_dfs_cac_time(struct hostapd_iface *iface)
 
 #ifdef CONFIG_QCN_EXTN
 	/* Setup CAC time */
-	if (iface->conf->conf_extn.skip_cac) {
+	if (iface->mcst && iface->cs_time) {
+		iface->dfs_cac_ms = iface->cs_time;
+	} else if (iface->conf->conf_extn.skip_cac) {
 		iface->dfs_cac_ms = 0;
 	} else {
 #endif
@@ -1913,6 +1968,7 @@ int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 				      &cmode->uhr_capab[ieee80211_mode],
 				      punct_bitmap | iface->radar_bit_pattern,
 				      iface->conf->he_6ghz_reg_pwr_type,
+                                      0, 0,
 				      iface->conf->bandwidth_device,
 				      iface->conf->center_freq_device);
 
@@ -2245,8 +2301,9 @@ static bool dfs_rcac_try_half_bw(struct hostapd_iface *iface,
 	int home_start = home_center_freq - (home_bw / 2) + 10;
 	int home_end   = home_center_freq + (home_bw / 2) - 10;
 	enum oper_chan_width half_width;
-	int total;
-	int i;
+	struct hostapd_channel_data *c;
+	u8 cf0 = 0, cf1 = 0;
+	int sec = 0;
 
 	wpa_printf(MSG_DEBUG,
 		   "DFS: dfs_rcac_try_half_bw: home_bw=%d half_bw=%d sec_chan=%d",
@@ -2265,26 +2322,16 @@ static bool dfs_rcac_try_half_bw(struct hostapd_iface *iface,
 	else if (half_bw == 40)
 		iface->conf->secondary_channel = orig_secondary_channel;
 
-	total = dfs_find_channel(iface, NULL, 0, DFS_ANY_CHANNEL,
-				 DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
-
-	for (i = 0; i < total; i++) {
-		struct hostapd_channel_data *c = NULL;
-
-		dfs_find_channel(iface, &c, i, DFS_ANY_CHANNEL,
-				 DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
-		if (!c ||
-		    (c->freq >= home_start && c->freq <= home_end))
-			continue;
-		if (hostapd_start_rcac_on_channel(iface, c->chan, half_bw) == 0) {
-			hostapd_set_oper_chwidth(iface->conf, orig_oper_chwidth);
-			iface->conf->secondary_channel = orig_secondary_channel;
-			wpa_printf(MSG_DEBUG,
-				   "DFS: half-BW RCAC: starting %d MHz RCAC on chan %d "
-				   "(all %d MHz blocks have NOL channels)",
-				   half_bw, c->chan, home_bw);
-			return true;
-		}
+	c = dfs_get_valid_channel(iface, &sec, &cf0, &cf1, DFS_ANY_CHANNEL);
+	if (c && !(c->freq >= home_start && c->freq <= home_end) &&
+	    hostapd_start_rcac_on_channel(iface, c->chan, half_bw) == 0) {
+		hostapd_set_oper_chwidth(iface->conf, orig_oper_chwidth);
+		iface->conf->secondary_channel = orig_secondary_channel;
+		wpa_printf(MSG_DEBUG,
+			   "DFS: half-BW RCAC: starting %d MHz RCAC on chan %d "
+			   "(all %d MHz blocks have NOL channels)",
+			   half_bw, c->chan, home_bw);
+		return true;
 	}
 
 	hostapd_set_oper_chwidth(iface->conf, orig_oper_chwidth);
@@ -2315,9 +2362,9 @@ static void hostapd_agile_cac_update(struct hostapd_iface *iface)
 	int home_center = (hostapd_get_oper_centr_freq_seg0_idx(iface->conf) * 5) + 5000;
 	int home_start = home_center - home_bw / 2 + 10;
 	int home_end = home_center + home_bw / 2 - 10;
-	int total = dfs_find_channel(iface, NULL, 0, DFS_ANY_CHANNEL,
-				     DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
-	int i;
+	struct hostapd_channel_data *c;
+	int sec = 0;
+	u8 cf0 = 0, cf1 = 0;
 	enum oper_chan_width orig_oper_chwidth;
 
 	if (iface->user_rcac_channel > 0 &&
@@ -2326,18 +2373,11 @@ static void hostapd_agile_cac_update(struct hostapd_iface *iface)
 
 	orig_oper_chwidth = hostapd_get_oper_chwidth(iface->conf);
 
-	for (i = 0; i < total; i++) {
-		struct hostapd_channel_data *c = NULL;
-
-		dfs_find_channel(iface, &c, i, DFS_ANY_CHANNEL,
-				 DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
-		if (!c ||
-		    (c->freq >= home_start && c->freq <= home_end) ||
-		    c->chan == iface->radar_background.channel)
-			continue;
-		if (hostapd_start_rcac_on_channel(iface, c->chan, home_bw) == 0)
-			return;
-	}
+	c = dfs_get_valid_channel(iface, &sec, &cf0, &cf1, DFS_ANY_CHANNEL);
+	if (c &&
+	    !(c->freq >= home_start && c->freq <= home_end) &&
+	    hostapd_start_rcac_on_channel(iface, c->chan, home_bw) == 0)
+		return;
 
 	/* Try half-BW if no full-BW block is available */
 	if (dfs_rcac_try_half_bw(iface, home_bw, orig_oper_chwidth))
@@ -2522,6 +2562,13 @@ static int hostapd_dfs_testmode_set_beacon_csa(struct hostapd_iface *iface)
 				      &iface->current_mode->uhr_capab[IEEE80211_MODE_AP],
 				      hostapd_get_punct_bitmap(iface->bss[0]),
 				      iface->conf->he_6ghz_reg_pwr_type,
+#ifdef CONFIG_IEEE80211BN
+				      hostapd_hw_get_freq(hapd,
+					iface->conf->npca_primary_channel),
+				      iface->conf->npca_punct_bitmap,
+#else
+				      0, 0,
+#endif /* CONFIG_IEEE80211BN */
 				      iface->conf->bandwidth_device,
 				      iface->conf->center_freq_device);
 
@@ -3404,7 +3451,7 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 		wpa_printf(MSG_DEBUG,
 			   "DFS: Update puncture source for Radar puncture bitmap=0x%04x",
 			   radar_bitmap_oper | iface->radar_bit_pattern);
-		dfs_update_puncture_source(iface, iface->freq, chan_width,
+		dfs_update_puncture_source(iface, cf1, chan_width,
 					   radar_bitmap_oper | iface->conf->punct_bitmap,
 					   DFS_CHAN_PUNC_RADAR);
 	}
@@ -3999,6 +4046,8 @@ void hostapd_start_device_cac_background(struct hostapd_iface *iface)
  */
 int hostapd_start_background_cac(struct hostapd_iface *iface)
 {
+	u8 op_class, channel;
+
 	if (!iface || !iface->conf)
 		return -1;
 
@@ -4029,6 +4078,29 @@ int hostapd_start_background_cac(struct hostapd_iface *iface)
 
 		return hostapd_dfs_start_precac(iface);
 	}
+
+	if (iface->conf->rcac_freq > 0) {
+		if (iface->dfs_domain == HOSTAPD_DFS_REGION_ETSI) {
+			wpa_printf(MSG_WARNING,
+				   "DFS: rcac_freq configured but domain is ETSI - ignoring");
+		} else {
+			if (ieee80211_freq_to_channel_ext(iface->conf->rcac_freq,
+							  0,
+							  CONF_OPER_CHWIDTH_USE_HT,
+							  &op_class,
+							  &channel) == NUM_HOSTAPD_MODES) {
+				wpa_printf(MSG_WARNING,
+					   "DFS: rcac_freq=%d is invalid - ignoring",
+					   iface->conf->rcac_freq);
+			} else {
+				wpa_printf(MSG_INFO,
+					   "DFS: rcac_freq=%d configured, setting user_rcac_channel=%d",
+					   iface->conf->rcac_freq, channel);
+				iface->user_rcac_channel = channel;
+			}
+		}
+	}
+
 	wpa_printf(MSG_INFO, "DFS: starting Agile CAC (bgcac_en=1)");
 
 	hostapd_dfs_update_background_chain(iface);
@@ -4631,4 +4703,30 @@ bool hostapd_dfs_csa_target_has_unavailable_channel(struct hostapd_iface *iface,
 	}
 
 	return false;
+}
+
+u32 hostapd_get_remaining_cac_tu(struct hostapd_iface *iface)
+{
+	struct os_reltime age;
+	u32 switch_time;
+	u32 left_ms;
+	u32 elapsed_ms;
+
+	os_reltime_age(&iface->dfs_cac_start, &age);
+	elapsed_ms = age.sec * 1000 + age.usec / 1000;
+	if (elapsed_ms < iface->dfs_cac_ms)
+		left_ms = iface->dfs_cac_ms - elapsed_ms;
+	else
+		left_ms = 0;
+
+	switch_time = USEC_TO_TU(left_ms * 1000);
+	if (switch_time > 0xFFFFFF)
+		switch_time = 0xFFFFFF;
+
+	wpa_printf(MSG_DEBUG,
+		   "MLD: MCST : freq=%d dfs_cac_ms=%u elapsed_ms=%u left_ms=%u switch_time(TU)=%u",
+		   iface->freq, iface->dfs_cac_ms, elapsed_ms, left_ms,
+		   switch_time);
+
+	return switch_time;
 }

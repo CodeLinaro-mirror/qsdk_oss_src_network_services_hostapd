@@ -496,6 +496,30 @@ struct uhr_capabilities {
 	u8 phy_cap[UHR_PHY_CAPAB_LEN];
 };
 
+/* struct uhr_npca_info - IEEE 802.11bn UHR NPCA capabilities */
+struct uhr_npca_info {
+	bool npca_supported;
+	u8 npca_min_dur_threshold;
+	u8 npca_switch_delay;
+	u8 npca_switch_back_delay;
+	u8 npca_initial_qsrc;
+	u8 npca_moplen;
+};
+
+/**
+ * struct npca_link_config - Per-link NPCA configuration
+ * @link_id: MLO link ID (-1 means apply to all links)
+ * @npca_enable: true = enable NPCA, false = disable NPCA
+ * @npca_switch_delay: NPCA switch delay in TUs (0 = use driver default)
+ * @npca_switchback_delay: NPCA switch-back delay in TUs (0 = use driver default)
+ */
+struct npca_link_config {
+	int link_id;
+	bool npca_enable;
+	u8 npca_switch_delay;
+	u8 npca_switchback_delay;
+};
+
 #define HOSTAPD_MODE_FLAG_HT_INFO_KNOWN BIT(0)
 #define HOSTAPD_MODE_FLAG_VHT_INFO_KNOWN BIT(1)
 #define HOSTAPD_MODE_FLAG_HE_INFO_KNOWN BIT(2)
@@ -634,6 +658,10 @@ struct hostapd_hw_modes {
 	 */
 	struct uhr_capabilities uhr_capab[IEEE80211_MODE_NUM];
 
+	/**
+	 * npca_info - UHR NPCA (IEEE 802.11bn) information
+	 */
+	struct uhr_npca_info npca_info[IEEE80211_MODE_NUM];
 };
 
 
@@ -1358,6 +1386,16 @@ struct hostapd_freq_params {
 	 */
 	u32 mcst;
 #endif
+
+	/**
+	 * npca_freq - NPCA primary channel frequency in MHz (0 if not used)
+	 */
+	int npca_freq;
+
+	/**
+	 * npca_punct_bitmap - NPCA disabled subchannel bitmap (0 if not used)
+	 */
+	u16 npca_punct_bitmap;
 };
 
 /**
@@ -2564,6 +2602,12 @@ struct wpa_driver_ap_params {
 
 #ifdef CONFIG_IEEE80211BN
 	struct wpa_smd_params smd;
+
+	/**
+	 * uhr_cap - Full UHR capabilities element, includes the extended
+	 * element header
+	 */
+	u8 *uhr_cap;
 #endif /* CONFIG_IEEE80211BN */
 
 	/* Num common parameter to add in qca_vendor command */
@@ -3106,6 +3150,8 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_SMD			0x0000020000000000ULL
 /** Driver supports SMD DL data forwarding during seamless transitions */
 #define WPA_DRIVER_FLAGS2_SMD_DL_DATA_FWD       0x0000040000000000ULL
+/** Driver supports (Re)Association Request/Response frame encryption */
+#define WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION 0x0000080000000000ULL
 	u64 flags2;
 
 #define FULL_AP_CLIENT_STATE_SUPP(drv_flags) \
@@ -3360,6 +3406,9 @@ struct hostapd_sta_add_params {
 	size_t uhr_capab_len;
 	u32 flags; /* bitmask of WPA_STA_* flags */
 	u32 flags_mask; /* unset bits in flags */
+#ifdef CONFIG_ENC_ASSOC
+	bool epp_sta;
+#endif /* CONFIG_ENC_ASSOC */
 #ifdef CONFIG_MESH
 	enum mesh_plink_state plink_state;
 	u16 peer_aid;
@@ -4675,7 +4724,10 @@ struct wpa_driver_ops {
 	 */
 	int (*sta_deauth)(void *priv, const u8 *own_addr, const u8 *addr,
 			  u16 reason, int link_id);
-
+#ifdef RDK_ONEWIFI
+       int (*sta_notify_deauth)(void *priv, const u8 *own_addr, const u8 *addr,
+                         u16 reason);
+#endif
 	/**
 	 * sta_disassoc - Disassociate a station (AP only)
 	 * @priv: Private driver interface data
@@ -4967,6 +5019,17 @@ struct wpa_driver_ops {
 	int (*set_ap_wps_ie)(void *priv, const struct wpabuf *beacon,
 			     const struct wpabuf *proberesp,
 			     const struct wpabuf *assocresp);
+
+#ifdef RDK_ONEWIFI
+       /**
+        * wps_event_notify_cb - Notification of WPS event
+        * @ctx:   wpa_supplicant context
+        * @event: wps event type
+        * @data:  wps event data
+        * Returns: 0 on success, -1 on failure
+        */
+       int (*wps_event_notify_cb)(void *ctx, unsigned int event, void *data);
+#endif //RDK_ONEWIFI
 
 	/**
 	 * set_supp_port - Set IEEE 802.1X Supplicant Port status
@@ -6217,6 +6280,13 @@ struct wpa_driver_ops {
 	 */
 	int (*dpp_listen)(void *priv, bool enable);
 
+#ifdef RDK_ONEWIFI
+	size_t (*get_rnr_colocation_len)(void *priv,
+				       size_t *current_len);
+	u8* (*get_rnr_colocation_ie)(void *priv, u8 *eid,
+				   size_t *current_len);
+#endif
+
 	/**
 	 * set_secure_ranging_ctx - Add or delete secure ranging parameters of
 	 * the specified peer to the driver.
@@ -6391,7 +6461,29 @@ struct wpa_driver_ops {
 			      const u8 *match, size_t match_len,
 			      bool multicast);
 #endif /* CONFIG_TESTING_OPTIONS */
+#ifdef RDK_ONEWIFI
+       /**
+        * get_sta_auth_type - Notify about Auth Type STA sent in Assoc/Reassoc Req
+        * @priv: Private driver interface data
+        * @addr: Sends the STA Address
+        * @key_mgmt: STA Auth Type in Association Request
+        * @frame_type: Sends Frame Type of the Station
+        *
+        * Returns: 0 on success, -1 on failure
+        * Update about Auth Type in Association/Reassociation Request to driver
+        */
+       int (*get_sta_auth_type)(void *priv,
+                                       const u8 *addr, int key_mgmt, int frame_type);
 
+       struct hostapd_data *(*get_mbssid_tx_bss)(void *priv);
+       int (*get_mbssid_bss_index)(void *priv);
+       size_t (*get_mbssid_len)(void *priv, u32 frame_type,
+                             u8 *elem_count);
+       u8 * (*get_mbssid_ie)(void *priv, u8 *eid, u8 *end,
+                       unsigned int frame_stype, u8 elem_count,
+                       u8 **elem_offset);
+       u8* (*get_mbssid_config)(void *priv, u8 *eid);
+#endif
 	/**
 	 * get_multi_hw_info - Get multiple underlying hardware information
 	 *		       (hardware IDx and supported frequency range)
@@ -6447,6 +6539,20 @@ struct wpa_driver_ops {
 	int (*set_epcs_cfg)(void *priv, bool epcs_cfg_value);
 
 	/**
+	 * uhr_mode_update - Send UHR mode update (NPCA enable/disable) per link
+	 * @priv: Private driver interface data
+	 * @links: Array of per-link NPCA configurations
+	 * @num_links: Number of entries in the links array
+	 * Returns: 0 on success, negative value on failure
+	 *
+	 * This function sends NL80211_CMD_UHR_MODE_UPDATE with per-link NPCA
+	 * parameters. Each entry in @links specifies the link ID and the NPCA
+	 * enable/disable state along with optional delay parameters.
+	 */
+	int (*uhr_mode_update)(void *priv, struct npca_link_config *links,
+			       int num_links);
+
+	/**
 	 * set_ttlm_link_mapping - Set ttlm link mapping
 	 * @priv: Private driver interface data
 	 * @type: driver interface type
@@ -6481,8 +6587,23 @@ struct wpa_driver_ops {
 	int (*set_qos)(void *priv, struct qm_req_data *qm_req,
 		       struct qm_resp_data *qm_resp);
 
+#ifdef CONFIG_IEEE80211BN
 	/**
-	 * clear_afc_payload - Notify driver to send a request to firmware to
+	 * critical_update - Initiate a UHR Enhanced Critical Update (ECU)
+	 * session on an AP link.
+	 * @priv: Private driver interface data
+	 * @link_id: MLO link ID of the AP link
+	 * @cu_type: Critical Update type (enum nl80211_cu_type)
+	 * @elems: CU element blob to stitch into beacons, or NULL
+	 * @elems_len: Length of @elems in bytes
+	 * Returns: 0 on success, negative value on failure
+	 */
+	int (*critical_update)(void *priv, u8 link_id, u32 cu_type,
+			       const u8 *elems, size_t elems_len);
+#endif /* CONFIG_IEEE80211BN */
+
+	/**
+ * clear_afc_payload - Notify driver to send a request to firmware to
 	 * clear the stored AFC payload
 	 * @priv: Private driver interface data
 	 * @link_id: Link ID of the specified link; -1 for non-MLD
@@ -6787,7 +6908,12 @@ enum wpa_event_type {
 	 * EVENT_WPS_BUTTON_PUSHED - Report hardware push button press for WPS
 	 */
 	EVENT_WPS_BUTTON_PUSHED,
-
+#ifdef RDK_ONEWIFI
+       /**
+        * EVENT_WPS_CANCEL - Terminate current WPS session
+        */
+       EVENT_WPS_CANCEL,
+#endif
 	/**
 	 * EVENT_TX_STATUS - Report TX status
 	 */
@@ -7397,13 +7523,25 @@ enum wpa_event_type {
 #endif
 
 	/**
-	 * EVENT_UPDATE_AP_POWERSAVE - Received a AP Power Save update event
-	 *
-	 * This event is used by the driver to notify the usersapce about
-	 * enablement/disablement of AP Power Save feature.
-	 */
+ * EVENT_UPDATE_AP_POWERSAVE - Received a AP Power Save update event
+ *
+ * This event is used by the driver to notify the usersapce about
+ * enablement/disablement of AP Power Save feature.
+ */
 	EVENT_UPDATE_AP_POWERSAVE
+#ifdef CONFIG_IEEE80211BN
+	,
+	/**
+	 * EVENT_CRITICAL_UPDATE_NOTIFY - ECU lifecycle transition event
+	 *
+	 * Sent by the driver when the kernel reports a CU state change via
+	 * NL80211_CMD_CRITICAL_UPDATE_NOTIFY.  The cu_notify_event member
+	 * carries the link_id and the new nl80211_cu_state value.
+	 */
+	EVENT_CRITICAL_UPDATE_NOTIFY
+#endif /* CONFIG_IEEE80211BN */
 };
+
 
 
 /**
@@ -7467,6 +7605,19 @@ enum sta_connect_fail_reason_codes {
 	STA_CONNECT_FAIL_REASON_ASSOC_NO_ACK_RECEIVED = 6,
 	STA_CONNECT_FAIL_REASON_ASSOC_NO_RESP_RECEIVED = 7,
 };
+#ifdef RDK_ONEWIFI
+/**
+ * enum sta_frame_type
+ * @STA_FRAME_ASSOC: Received STA Frame Type is Association
+ * @STA_FRAME_REASSOC: Received STA Frame Type is Reassociation
+ * @STA_FRAME_EAPOL_M2: Received STA Frame Type is EAPOL M2
+ */
+ enum sta_frame_type {
+       STA_FRAME_ASSOC = 0,
+       STA_FRAME_REASSOC,
+       STA_FRAME_EAPOL_M2,
+};
+#endif
 
 /**
  * union wpa_event_data - Additional data for wpa_supplicant_event() calls
@@ -8533,6 +8684,16 @@ union wpa_event_data {
 		bool dps_assist_updated;
 		int dps_assist;
 	} ap_powersave_event;
+
+#ifdef CONFIG_IEEE80211BN
+	/**
+	 * Data for NL80211_CMD_CRITICAL_UPDATE_NOTIFY event
+	 */
+	struct cu_notify_event {
+		u8 link_id;
+		u32 cu_state; /* enum nl80211_cu_state */
+	} cu_notify_event;
+#endif /* CONFIG_IEEE80211BN */
 };
 
 #define HOSTAPD_OP_DEAUTH        0x8000   /* 10xxxx... */

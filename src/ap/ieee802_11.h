@@ -29,6 +29,7 @@ struct sae_pt;
 struct sae_password_entry;
 struct mld_info;
 struct mld_link_info;
+struct rsn_pmksa_cache_entry;
 
 #define BITRATE_5_5_MBPS 55
 
@@ -555,11 +556,18 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 			   enum ieee80211_op_mode opmode);
 u8 * hostapd_eid_eht_operation(struct hostapd_data *hapd, u8 *eid);
 bool eht_mu_mask_valid(u8 mask);
+void hostapd_update_ecu_params(struct hostapd_data *hapd);
 u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 			   enum ieee80211_op_mode opmode);
 u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn);
 size_t hostapd_security_profile_ie_len(struct hostapd_data *hapd);
 u8 *hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid);
+u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
+				   bool skip_post_phase, bool from_user);
+size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,
+					 bool no_post_phase, bool from_user);
+int hostapd_npca_primary_chan_to_subchan_idx(struct hostapd_data *hapd,
+					     const char *val_str);
 u16 copy_sta_eht_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		       enum ieee80211_op_mode opmode,
 		       const u8 *he_capab, size_t he_capab_len,
@@ -601,7 +609,12 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 				  bool reassoc, int tx_link_status,
 				  bool offload,
 				  bool *set_beacon);
-
+#ifdef RDK_ONEWIFI
+u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
+                       const u8 *addr, u16 status_code, int reassoc,
+                       const u8 *ies, size_t ies_len, int rssi,
+                       int omit_rsnxe);
+#endif
 void ml_deinit_link_reconf_req(struct link_reconf_req_list **req_list_ptr);
 int ieee80211_ml_process_link(struct hostapd_data *hapd,
 			      struct hostapd_data *phapd,
@@ -664,5 +677,10 @@ u8 * hostapd_eid_mbssid_nontx_optional_ie(struct hostapd_data *bss,
 					  struct non_inheritance_elem *non_inherit_ie,
 					  u8 *eid, ssize_t *nontx_prof_len,
 					  u8 frame_type);
+
+void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
+			    u8 type, u16 auth_transaction, u16 status,
+			    struct rsn_pmksa_cache_entry *cached_pmk,
+			    const u8 *eap_req, size_t eap_req_len);
 
 #endif /* IEEE802_11_H */

@@ -33,9 +33,11 @@ void pasn_data_deinit(struct pasn_data *pasn)
 	if (!pasn)
 		return;
 	os_free(pasn->rsnxe_ie);
+	os_free(pasn->rsn_ie);
 	wpabuf_free(pasn->frame);
 	os_free(pasn->pasn_groups);
 	wpabuf_free(pasn->auth1);
+	os_free(pasn->dec_pw_id);
 	bin_clear_free(pasn, sizeof(struct pasn_data));
 }
 
@@ -47,7 +49,14 @@ void pasn_register_callbacks(struct pasn_data *pasn, void *cb_ctx,
 					      unsigned int wait),
 			     int (*validate_custom_pmkid)(void *ctx,
 							  const u8 *addr,
-							  const u8 *pmkid))
+							  const u8 *pmkid),
+			     int (*eppke_set_key)(void *ctx, enum wpa_alg alg,
+						  const u8 *addr, int vlan_id,
+						  const u8 *key,
+						  size_t key_len),
+			     struct rsn_pmksa_cache_entry *
+			     (*pmksa_cache_search)(void *ctx, const u8 *spa,
+						   const u8 *pmkid, bool is_ml))
 {
 	if (!pasn)
 		return;
@@ -55,6 +64,10 @@ void pasn_register_callbacks(struct pasn_data *pasn, void *cb_ctx,
 	pasn->cb_ctx = cb_ctx;
 	pasn->send_mgmt = send_mgmt;
 	pasn->validate_custom_pmkid = validate_custom_pmkid;
+#ifdef CONFIG_ENC_ASSOC
+	pasn->eppke_set_key = eppke_set_key;
+#endif /* CONFIG_ENC_ASSOC */
+	pasn->pmksa_cache_search = pmksa_cache_search;
 }
 
 
@@ -98,6 +111,16 @@ void pasn_set_own_addr(struct pasn_data *pasn, const u8 *addr)
 		return;
 	os_memcpy(pasn->own_addr, addr, ETH_ALEN);
 }
+
+
+#ifdef CONFIG_ENC_ASSOC
+void pasn_set_own_mld_addr(struct pasn_data *pasn, const u8 *addr)
+{
+	if (!pasn || !addr)
+		return;
+	os_memcpy(pasn->mld_addr, addr, ETH_ALEN);
+}
+#endif /* CONFIG_ENC_ASSOC */
 
 
 void pasn_set_peer_addr(struct pasn_data *pasn, const u8 *addr)
@@ -145,6 +168,13 @@ void pasn_set_wpa_key_mgmt(struct pasn_data *pasn, int key_mgmt)
 }
 
 
+void pasn_set_mfp(struct pasn_data *pasn, enum mfp_options mfp)
+{
+	if (pasn)
+		pasn->ieee80211w = mfp;
+}
+
+
 void pasn_set_rsn_pairwise(struct pasn_data *pasn, int rsn_pairwise)
 {
 	if (!pasn)
@@ -153,7 +183,7 @@ void pasn_set_rsn_pairwise(struct pasn_data *pasn, int rsn_pairwise)
 }
 
 
-void pasn_set_rsnxe_caps(struct pasn_data *pasn, u16 rsnxe_capab)
+void pasn_set_rsnxe_caps(struct pasn_data *pasn, u64 rsnxe_capab)
 {
 	if (!pasn)
 		return;
@@ -165,7 +195,18 @@ void pasn_set_rsnxe_ie(struct pasn_data *pasn, const u8 *rsnxe_ie)
 {
 	if (!pasn || !rsnxe_ie)
 		return;
+	os_free(pasn->rsnxe_ie);
 	pasn->rsnxe_ie = os_memdup(rsnxe_ie, 2 + rsnxe_ie[1]);
+}
+
+
+void pasn_set_rsne(struct pasn_data *pasn, const u8 *rsne)
+{
+	if (!pasn || !rsne)
+		return;
+	os_free(pasn->rsn_ie);
+	pasn->rsn_ie = os_memdup(rsne, 2 + rsne[1]);
+	pasn->rsn_ie_len = pasn->rsn_ie ? 2 + rsne[1] : 0;
 }
 
 

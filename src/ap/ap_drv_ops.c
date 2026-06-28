@@ -558,7 +558,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
 		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
 		    int set, const u8 *link_addr, bool mld_link_sta,
-		    u16 eml_cap, int type, u8 control_mic_pad)
+		    u16 eml_cap, int type, u8 control_mic_pad, bool epp_sta)
 {
 	struct hostapd_sta_add_params params, *tmp = NULL;
 	struct hostapd_data *assoc_hapd;
@@ -593,6 +593,10 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 	params.set = set;
 	params.mld_link_id = -1;
 	params.control_mic_pad = control_mic_pad;
+
+#ifdef CONFIG_ENC_ASSOC
+	params.epp_sta = epp_sta;
+#endif /* CONFIG_ENC_ASSOC */
 
 #ifdef CONFIG_QCN_EXTN
 	hostapd_copy_sta_add_params_extn(&params.params_extn, sta_extn);
@@ -841,6 +845,12 @@ int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
 				    NULL,
 				    hostapd_get_punct_bitmap(hapd),
 				    hapd->iconf->he_6ghz_reg_pwr_type,
+#ifdef CONFIG_IEEE80211BN
+				    hostapd_hw_get_freq(hapd, hapd->iconf->npca_primary_channel),
+				    hapd->iconf->npca_punct_bitmap,
+#else
+				    0, 0,
+#endif /* CONFIG_IEEE80211BN */
 				    bandwidth_device, center_freq_device))
 		return -1;
 
@@ -1119,8 +1129,6 @@ int hostapd_drv_sta_deauth(struct hostapd_data *hapd,
 	return hapd->driver->sta_deauth(hapd->drv_priv, own_addr, addr,
 					reason, link_id);
 }
-
-
 int hostapd_drv_sta_disassoc(struct hostapd_data *hapd,
 			     const u8 *addr, int reason)
 {
@@ -1378,6 +1386,7 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 				    hostapd_get_punct_bitmap(hapd) |
 				    iface->radar_bit_pattern,
 				    hapd->iconf->he_6ghz_reg_pwr_type,
+				    0, 0,
 				    bandwidth_device, center_freq_device)) {
 		wpa_printf(MSG_ERROR, "Can't set freq params");
 		return -1;
@@ -1385,6 +1394,7 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 	data.radar_background = radar_background;
 
 #ifdef CONFIG_QCN_EXTN
+	data.mcst = iface->mcst;
 	chanwidth = hostapd_oper_chwidth_to_chanwidth_extn(oper_chwidth,
 							   sec_channel_offset);
 	is_dfs = ieee80211_is_dfs(freq, NULL, 0);
@@ -1395,7 +1405,10 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 		data.skip_cac = ((iface->iface_extn.csa_bitmap ||
 				 iface->iface_extn.dfs_available_from_sta) &&
 				 iface->conf->conf_extn.skip_cac);
-		if (!data.skip_cac &&
+		if (is_dfs && iface->mcst &&
+		    iface->conf->conf_extn.skip_cac) {
+			data.skip_cac = 0;
+		} else if (!data.skip_cac &&
 		    hostapd_mcst_allows_skip_cac_extn(iface->mcst,
 						      iface->conf->beacon_int,
 						      is_dfs)) {
@@ -1412,7 +1425,10 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 	} else {
 		data.skip_cac = (iface->cac_type != HAPD_CAC_COMPLETE_AFTER_CSA) &&
 				 iface->conf->conf_extn.skip_cac;
-		if (!data.skip_cac &&
+		if (is_dfs && iface->mcst &&
+		    iface->conf->conf_extn.skip_cac) {
+			data.skip_cac = 0;
+		} else if (!data.skip_cac &&
 		    hostapd_mcst_allows_skip_cac_extn(iface->mcst,
 						      iface->conf->beacon_int,
 						      is_dfs)) {
@@ -1629,8 +1645,6 @@ int hostapd_drv_do_acs(struct hostapd_data *hapd)
 
 	return ret;
 }
-
-
 int hostapd_drv_update_dh_ie(struct hostapd_data *hapd, const u8 *peer,
 			     u16 reason_code, const u8 *ie, size_t ielen)
 {
@@ -1647,8 +1661,6 @@ int hostapd_drv_dpp_listen(struct hostapd_data *hapd, bool enable)
 		return 0;
 	return hapd->driver->dpp_listen(hapd->drv_priv, enable);
 }
-
-
 #ifdef CONFIG_PASN
 int hostapd_drv_set_secure_ranging_ctx(struct hostapd_data *hapd,
 				       const u8 *own_addr, const u8 *peer_addr,
@@ -1758,6 +1770,19 @@ int hostapd_drv_set_qos(struct hostapd_data *hapd, struct qm_req_data *qm_req,
 
 	return hapd->driver->set_qos(hapd->drv_priv, qm_req, qm_resp);
 }
+
+#ifdef CONFIG_IEEE80211BN
+int hostapd_drv_critical_update(struct hostapd_data *hapd, u8 link_id,
+				u32 cu_type, const u8 *elems, size_t elems_len)
+{
+	if (!hapd->driver || !hapd->drv_priv ||
+	    !hapd->driver->critical_update)
+		return -EOPNOTSUPP;
+
+	return hapd->driver->critical_update(hapd->drv_priv, link_id,
+					     cu_type, elems, elems_len);
+}
+#endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_QCN_EXTN
 int hostapd_drv_set_muedca_mode(struct hostapd_data *hapd, int mode, int radio_idx)

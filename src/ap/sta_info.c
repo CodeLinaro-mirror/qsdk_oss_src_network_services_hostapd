@@ -721,6 +721,7 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 
 #ifdef CONFIG_OWE
 	bin_clear_free(sta->owe_pmk, sta->owe_pmk_len);
+	os_free(sta->owe_pmkid);
 	crypto_ecdh_deinit(sta->owe_ecdh);
 #endif /* CONFIG_OWE */
 
@@ -770,6 +771,15 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 
 	wpabuf_free(sta->sae_pw_id);
 
+#ifdef CONFIG_IEEE8021X_AUTH
+	crypto_ecdh_deinit(sta->eap_auth_data.ecdh);
+	wpabuf_clear_free(sta->eap_auth_data.dhss);
+	os_free(sta->eap_auth_data.rsnxe);
+#endif /* CONFIG_IEEE8021X_AUTH */
+
+#ifdef RDK_ONEWIFI
+	os_free(sta->assoc_req);
+#endif
 	os_free(sta);
 }
 
@@ -2694,9 +2704,12 @@ void ap_sta_remove_link_sta(struct hostapd_data *hapd,
 int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_authorized)
 {
 	const u8 *mld_link_addr = NULL;
-	bool mld_link_sta = false;
+	bool mld_link_sta = false, epp_sta = false;
 	u16 eml_cap = 0;
 
+#ifdef CONFIG_ENC_ASSOC
+	epp_sta = sta->epp_sta;
+#endif /* CONFIG_ENC_ASSOC */
 	/*
 	 * If a station that is already associated to the AP, is trying to
 	 * authenticate again, remove the STA entry, in order to make sure the
@@ -2739,7 +2752,8 @@ int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_aut
 
 #endif
 			    sta->flags, 0, 0, 0, 0,
-			    mld_link_addr, mld_link_sta, eml_cap, 0, CONTROL_MIC_PAD_NOT_SET)) {
+			    mld_link_addr, mld_link_sta, eml_cap, 0, CONTROL_MIC_PAD_NOT_SET,
+			    epp_sta)) {
 		hostapd_logger(hapd, sta->addr,
 			       HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_NOTICE,

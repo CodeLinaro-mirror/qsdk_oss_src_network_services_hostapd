@@ -2092,6 +2092,16 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			hostapd_disassoc_deny_mac(hapd);
 		} else if (os_strcasecmp(cmd, "accept_mac_file") == 0) {
 			hostapd_disassoc_accept_mac(hapd);
+		} else if (os_strcasecmp(cmd, "macaddr_acl") == 0) {
+			/*
+			 * ACL mode changed at runtime: re-evaluate all connected
+			 * STAs against the new mode and the current accept/deny
+			 * lists.
+			 */
+			if (hapd->conf->num_accept_mac > 0 ||
+			    hapd->conf->num_accept_mac_masked > 0)
+				hostapd_disassoc_accept_mac(hapd);
+			hostapd_disassoc_deny_mac(hapd);
 		} else if (os_strcasecmp(cmd, "rssi_reject_assoc_rssi") == 0) {
 			hostapd_ctrl_iface_update_rssi_monitor(hapd);
 		} else if (os_strcasecmp(cmd, "ssid") == 0) {
@@ -2132,9 +2142,6 @@ vht_rollback:
 		} else if (os_strcasecmp(cmd, "bss_he_su_beamformer") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_su_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_mu_beamformer") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_dl_mu_ofdma") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_dl_mu_ofdma_bfer") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_ul_mu_ofdma") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_ul_mumimo") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_full_bw_ul_mumimo") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_bfee_sts_lteq80") == 0 ||
@@ -2290,13 +2297,14 @@ eht_bfme_ss_rollback:
 			hapd->conf->eht_phy_capab = old_eht_phy_capab;
 			hapd->conf->eht_phy_capab_mask = old_eht_phy_capab_mask;
 			return -1;
+		} else if (os_strcasecmp(cmd, "eht_tx_mcs_nss_set") == 0 ||
+			   os_strcasecmp(cmd, "eht_rx_mcs_nss_set") == 0) {
+			if (hostapd_tx_bss_only(hapd, cmd) < 0)
+				return -1;
+			return hostapd_reload_bss_only(hapd);
 		} else if (os_strcasecmp(cmd, "bss_eht_su_beamformer") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_su_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_mu_beamformer") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_dl_mu_ofdma") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_ul_mu_ofdma") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_dl_ofdma_mumimo") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_ul_ofdma_mumimo") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_ndp_4x_eht_ltf_and_320nsgi") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_num_sd_lt80") == 0 ||
 			   os_strcasecmp(cmd, "bss_eht_num_sd_160") == 0 ||
@@ -2808,25 +2816,6 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
-	} else if (os_strcasecmp(cmd, "bss_he_dl_mu_ofdma") == 0) {
-		res = os_snprintf(buf, buflen, "bss_he_dl_mu_ofdma = %d\n",
-				hapd->conf->he_phy_capab.he_dl_mu_ofdma);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
-	} else if (os_strcasecmp(cmd, "bss_he_dl_mu_ofdma_bfer") == 0) {
-		res = os_snprintf(buf, buflen,
-				 "bss_he_dl_mu_ofdma_bfer = %d\n",
-				hapd->conf->he_phy_capab.he_dl_mu_ofdma_bfer);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
-	} else if (os_strcasecmp(cmd, "bss_he_ul_mu_ofdma") == 0) {
-		res = os_snprintf(buf, buflen, "bss_he_ul_mu_ofdma = %d\n",
-				hapd->conf->he_phy_capab.he_ul_mu_ofdma);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
 	} else if (os_strcasecmp(cmd, "bss_he_ul_mumimo") == 0) {
 		res = os_snprintf(buf, buflen, "bss_he_ul_mumimo = %d\n",
 				hapd->conf->he_phy_capab.he_ul_mumimo);
@@ -2950,32 +2939,6 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
-	} else if (os_strcasecmp(cmd, "bss_eht_dl_mu_ofdma") == 0) {
-		res = os_snprintf(buf, buflen, "bss_eht_dl_mu_ofdma = %d\n",
-				hapd->conf->eht_phy_capab.dl_mu_ofdma);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
-	} else if (os_strcasecmp(cmd, "bss_eht_ul_mu_ofdma") == 0) {
-		res = os_snprintf(buf, buflen, "bss_eht_ul_mu_ofdma = %d\n",
-				hapd->conf->eht_phy_capab.ul_mu_ofdma);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
-	} else if (os_strcasecmp(cmd, "bss_eht_dl_ofdma_mumimo") == 0) {
-		res = os_snprintf(buf, buflen,
-				 "bss_eht_dl_ofdma_mumimo = %d\n",
-				hapd->conf->eht_phy_capab.dl_ofdma_mumimo);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
-	} else if (os_strcasecmp(cmd, "bss_eht_ul_ofdma_mumimo") == 0) {
-		res = os_snprintf(buf, buflen,
-				 "bss_eht_ul_ofdma_mumimo = %d\n",
-				hapd->conf->eht_phy_capab.ul_ofdma_mumimo);
-		if (os_snprintf_error(buflen, res))
-			return -1;
-		return res;
 	} else if (os_strcasecmp(cmd, "bss_eht_mu_bfmr") == 0) {
 		res = os_snprintf(buf, buflen, "bss_eht_mu_bfmr = 0x%x\n",
 				  hapd->conf->eht_phy_capab.eht_mu_bfmr_mask);
@@ -3012,6 +2975,24 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 				   EHT_PHY_BSS_OVR_NON_OFDMA_UL_MUMIMO) ?
 				  !!(hapd->conf->eht_phy_capab.eht_mu_mimo_mask & BIT(2)) :
 				  hapd->iface->conf->eht_phy_capab.non_ofdma_ulmumimo_320mhz);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "eht_tx_mcs_nss_set") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "eht_tx_mcs_nss_set = 0x%04x(<=80 mhz) 0x%04x(160 mhz) 0x%04x(320 mhz)\n",
+				  hapd->conf->eht_tx_mcs_nss_set[0],
+				  hapd->conf->eht_tx_mcs_nss_set[1],
+				  hapd->conf->eht_tx_mcs_nss_set[2]);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "eht_rx_mcs_nss_set") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "eht_rx_mcs_nss_set = 0x%04x(<=80 mhz) 0x%04x(160 mhz) 0x%04x(320 mhz)\n",
+				  hapd->conf->eht_rx_mcs_nss_set[0],
+				  hapd->conf->eht_rx_mcs_nss_set[1],
+				  hapd->conf->eht_rx_mcs_nss_set[2]);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
@@ -3207,12 +3188,14 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
-	} else if (os_strcasecmp(cmd, "ecsa_ie_status") == 0) {
+#ifdef CONFIG_TESTING_OPTIONS
+	} else if (os_strcasecmp(cmd, "ecsa_ie_only") == 0) {
 		res = os_snprintf(buf, buflen, "ecsa_ie_status = %d\n",
 				  hapd->iconf->ecsa_ie_only);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+#endif
 	} else if (os_strcasecmp(cmd, "he_basic_mcs_nss_set") == 0) {
 		res = os_snprintf(buf, buflen, "he_basic_mcs_nss_set = 0x%x\n",
 				  hapd->iconf->he_op.he_basic_mcs_nss_set);
@@ -4776,6 +4759,24 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 	if (iface->num_bss && iface->bss[0]->conf->mld_ap)
 		settings.link_id = iface->bss[0]->mld_link_id;
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_IEEE80211BN
+	/* Reject if UHR is disabled in channel switch settings but the
+	 * interface has a BSS with UHR enabled, since UHR is a superset of
+	 * EHT and silently disabling it would downgrade the VAP after CSA. */
+	if (!settings.freq_params.uhr_enabled) {
+		for (i = 0; i < iface->num_bss; i++) {
+			if (!iface->bss[i])
+				continue;
+			if (hostapd_is_uhr_enabled(iface->bss[i])) {
+				wpa_printf(MSG_ERROR,
+					   "chanswitch: Do not allow UHR to be disabled"
+					   " when VAP %s is operating in UHR mode",
+					   iface->bss[i]->conf->iface);
+				return -1;
+			}
+		}
+	}
+#endif /* CONFIG_IEEE80211BN */
 	if (settings.power_mode == HE_REG_INFO_6GHZ_AP_TYPE_SP &&
 	    !iface->is_afc_power_event_received) {
 		wpa_printf(MSG_ERROR, "Standard Power mode cant be set without AFC");
@@ -4849,6 +4850,13 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 				return -1;
 			}
 		}
+	} else if (is_6ghz_freq(settings.freq_params.freq) &&
+		   !iface->conf->enable_best_power_mode) {
+		hostapd_set_current_6ghz_pwr_type(iface, &settings.power_mode);
+		wpa_printf(MSG_DEBUG,
+			   "%s: Using configured power mode %d for Freq %d (BPM disabled)",
+			   __func__, settings.power_mode,
+			   settings.freq_params.freq);
 	}
 
 	ret = hostapd_check_validity_device_params(&settings.freq_params);
@@ -4887,7 +4895,8 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 			wpa_printf(MSG_DEBUG,
 				   "DFS: Update puncture source for User puncture bitmap=0x%04x",
 				   settings.freq_params.punct_bitmap);
-			dfs_update_puncture_source(iface, settings.freq_params.freq,
+			dfs_update_puncture_source(iface,
+						   settings.freq_params.center_freq1,
 						   bandwidth,
 						   settings.freq_params.punct_bitmap,
 						   DFS_CHAN_PUNC_USER);
@@ -5374,6 +5383,276 @@ static char hostapd_ctrl_iface_notify_cw_change(struct hostapd_data *hapd,
 
 	return 0;
 }
+
+
+#ifdef CONFIG_IEEE80211BN
+static bool is_uhr_section_keyword(const char *s)
+{
+	return os_strncmp(s, "DPS ", 4) == 0 ||
+	       os_strncmp(s, "DUO ", 4) == 0 ||
+	       os_strncmp(s, "P_EDCA ", 7) == 0 ||
+	       os_strncmp(s, "AP_PUO ", 7) == 0 ||
+	       os_strncmp(s, "ELR ", 4) == 0;
+}
+
+static int
+parse_npca_params(struct hostapd_data *hapd,
+		  struct hostapd_uhr_npca_params *npca,
+		  char **pos)
+{
+	char *cur = *pos;
+	char *end, *token;
+
+	while (*cur) {
+		while (*cur == ' ')
+			cur++;
+		if (!*cur)
+			break;
+		/* Stop if we hit another top-level keyword */
+		if (is_uhr_section_keyword(cur))
+			break;
+
+		/* Find end of this token */
+		end = os_strchr(cur, ' ');
+		if (end)
+			*end = '\0';
+		token = cur;
+		cur = end ? end + 1 : cur + os_strlen(cur);
+
+		if (os_strncmp(token, "enable=", 7) == 0) {
+			npca->enable = atoi(token + 7) != 0;
+			if (!npca->enable) {
+				break;
+			}
+		} else if (os_strncmp(token, "primary_chan=", 13) == 0) {
+			int subchan_idx =
+				hostapd_npca_primary_chan_to_subchan_idx(
+					hapd, token + 13);
+
+			if (subchan_idx < 0)
+				return -1;
+			npca->params =
+				(npca->params &
+				 ~UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS) |
+				((u32) subchan_idx <<
+				 UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS_SHIFT);
+		} else if (os_strncmp(token, "min_dur=", 8) == 0) {
+			u32 v = (u32) atoi(token + 8) &
+				(UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH >>
+				 UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH_SHIFT);
+			npca->params =
+				(npca->params &
+				 ~UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH) |
+				(v << UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH_SHIFT);
+		} else if (os_strncmp(token, "switch_delay=", 13) == 0) {
+			/* User supplies microseconds; wire value = us / 4. */
+			u32 us = (u32) atoi(token + 13);
+			u32 v = (us / 4) &
+				(UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY >>
+				 UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY_SHIFT);
+			npca->params =
+				(npca->params &
+				 ~UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY) |
+				(v << UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY_SHIFT);
+		} else if (os_strncmp(token, "switch_back=", 12) == 0) {
+			/* User supplies microseconds; wire value = us / 4. */
+			u32 us = (u32) atoi(token + 12);
+			u32 v = (us / 4) &
+				(UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY >>
+				 UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY_SHIFT);
+			npca->params =
+				(npca->params &
+				 ~UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY) |
+				(v << UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY_SHIFT);
+		} else if (os_strncmp(token, "init_qsrc=", 10) == 0) {
+			u32 v = (u32) atoi(token + 10) &
+				(UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC >>
+				 UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC_SHIFT);
+			npca->params =
+				(npca->params &
+				 ~UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC) |
+				(v << UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC_SHIFT);
+		} else if (os_strncmp(token, "moplen=", 7) == 0) {
+			if (atoi(token + 7))
+				npca->params |= UHR_OPER_PARAMS_NPCA_MOPLEN_NPCA;
+			else
+				npca->params &= ~UHR_OPER_PARAMS_NPCA_MOPLEN_NPCA;
+		} else if (os_strncmp(token, "bitmap=", 7) == 0) {
+			unsigned long bmap;
+			bmap = strtoul(token + 7, NULL, 0);
+			npca->disabled_subchan_bitmap = (u16)(bmap & 0xFFFF);
+			npca->params |= UHR_OPER_PARAMS_NPCA_DIS_SUBCH_BITMAP_PRES;
+		} else {
+			wpa_printf(MSG_ERROR,
+				   "UPDATE_UHR_FEATURES: unknown NPCA token '%s'",
+				   token);
+			return -1;
+		}
+	}
+
+	*pos = cur;
+	return 0;
+}
+
+static int
+hostapd_validate_uhr_cu_state(struct hostapd_data *hapd) {
+
+	if (!hostapd_is_uhr_enabled(hapd)) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES: UHR not enabled on this BSS");
+		return 0;
+	}
+
+	if (hapd->uhr_ecu.state != UHR_ECU_IDLE) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES: UHR_CU already in progress, try again later");
+		return -1;
+	}
+
+	return 0;
+}
+
+static int
+hostapd_send_uhr_params_critical_update(struct hostapd_data *hapd)
+{
+	size_t elem_len;
+	u8 *elem, *elem_end;
+	int ret;
+
+	wpa_printf(MSG_DEBUG,
+		   "UPDATE_UHR_FEATURES [%s]: Initiating UHR enhanced critical update",
+		   hapd->conf->iface);
+
+	elem_len = hostapd_eid_uhr_params_update_len(hapd, false, true);
+	if (elem_len == 0) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES [%s]: UHR Params Update element is empty",
+			   hapd->conf->iface);
+		return -1;
+	}
+
+	elem = os_malloc(elem_len);
+	if (!elem) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES [%s]: failed to allocate element buffer",
+			   hapd->conf->iface);
+		return -1;
+	}
+
+	elem_end = hostapd_eid_uhr_params_update(hapd, elem, false, true);
+	elem_len = elem_end - elem;
+
+	wpa_hexdump(MSG_DEBUG,
+		    "UPDATE_UHR_FEATURES: UHR Params Update element",
+		    elem, elem_len);
+
+	ret = hostapd_drv_critical_update(hapd, hapd->mld_link_id,
+					  NL80211_CU_TYPE_UHR_PARAMS,
+					  elem, elem_len);
+	os_free(elem);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES [%s] NL80211_CMD_CRITICAL_UPDATE failed: %d",
+			   hapd->conf->iface,
+			   ret);
+	return ret;
+}
+
+
+static int
+hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
+{
+	struct hostapd_bss_config *conf = hapd->conf;
+	struct uhr_params_update_config *upd = &conf->uhr_params_update;
+	struct hostapd_uhr_npca_params new_npca;
+	struct hostapd_data *bss;
+	u16 mode_changed = 0;
+	char *pos;
+	int i;
+
+	if (hostapd_validate_uhr_cu_state(hapd) < 0)
+		return -1;
+
+	pos = cmd;
+
+	while (*pos) {
+		/* Skip leading whitespace */
+		while (*pos == ' ')
+			pos++;
+		if (!*pos)
+			break;
+
+		if (os_strncmp(pos, "NPCA ", 5) == 0) {
+			pos += 5;
+			struct hostapd_uhr_npca_params prev_npca = upd->npca;
+
+			os_memset(&new_npca, 0, sizeof(new_npca));
+			if (parse_npca_params(hapd, &new_npca, &pos) < 0)
+				return -1;
+			if (!(upd->mode_changed & BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA)) ||
+			    os_memcmp(&prev_npca, &new_npca, sizeof(new_npca)) != 0) {
+				mode_changed |= BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA);
+			}
+		} else {
+			wpa_printf(MSG_ERROR,
+				   "UPDATE_UHR_FEATURES: unknown keyword at '%s'",
+				   pos);
+			return -1;
+		}
+	}
+
+	if (!mode_changed) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES: no feature update.");
+		return -1;
+	}
+
+
+	if (mode_changed & BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA)) {
+		for (i = 0; i < hapd->iface->num_bss; i++) {
+			bss = hapd->iface->bss[i];
+
+			if (hostapd_validate_uhr_cu_state(bss) < 0)
+				return -1;
+		}
+
+		for (i = 0; i < hapd->iface->num_bss; i++) {
+			bss = hapd->iface->bss[i];
+
+			if (!hostapd_is_uhr_enabled(hapd))
+				continue;
+
+			bss->conf->uhr_params_update.mode_changed |= BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA);
+			bss->conf->uhr_params_update.npca = new_npca;
+
+			if (!hapd->started)
+				hostapd_update_ecu_params(hapd);
+
+			/* TODO: Add the changes for to update bss specific uhr_params_update features e.g DPS */
+
+
+			bss->uhr_ecu.uhr_params_update_countdown = upd->adv_notification_interval;
+			if (hostapd_send_uhr_params_critical_update(bss)) {
+				wpa_printf(MSG_ERROR,
+					   "UPDATE_UHR_FEATURES: failed to send critical update command");
+
+				/*TODO: how to reset the state of other BSS? */
+				return -1;
+			}
+		}
+	} else {
+		/*TODO - Add support for BSS specific critical update params update */
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "UPDATE_UHR_FEATURES: UHR Params Update window "
+		   "countdown=%u modes=%d",
+		   hapd->uhr_ecu.uhr_params_update_countdown,
+		   upd->mode_changed);
+
+	return 0;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 
 #ifdef CONFIG_TESTING_OPTIONS
@@ -10479,6 +10758,11 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strcmp(buf, "UPDATE_BEACON") == 0) {
 		if (ieee802_11_set_beacon(hapd))
 			reply_len = -1;
+#ifdef CONFIG_IEEE80211BN
+	} else if (os_strncmp(buf, "UPDATE_UHR_FEATURES ", 20) == 0) {
+		if (hostapd_ctrl_iface_update_uhr_features(hapd, buf + 20))
+			reply_len = -1;
+#endif /* CONFIG_IEEE80211BN */
 	} else if (os_strncmp(buf, "MLD_ADD_LINK ", 13) == 0) {
 		if (hostapd_ctrl_iface_add(hapd->iface->interfaces, buf + 13))
 			reply_len = -1;
@@ -11245,12 +11529,6 @@ static int hostapd_ctrl_iface_parse_mbssid_cmn_param_cmd(char *str, char *get_st
 		param_id = CMD_HE_SU_BFMEE;
 	else if (os_strcasecmp(str, "SET bss_he_mu_beamformer") == 0)
 		param_id = CMD_HE_MU_BEAMFORMER;
-	else if (os_strcasecmp(str, "SET bss_he_dl_mu_ofdma") == 0)
-		param_id = CMD_HE_DL_MU_OFDMA;
-	else if (os_strcasecmp(str, "SET bss_he_dl_mu_ofdma_bfer") == 0)
-		param_id = CMD_HE_DL_MU_OFDMA_BFER;
-	else if (os_strcasecmp(str, "SET bss_he_ul_mu_ofdma") == 0)
-		param_id = CMD_HE_UL_MU_OFDMA;
 	else if (os_strcasecmp(str, "SET bss_he_ul_mumimo") == 0)
 		param_id = CMD_HE_UL_MUMIMO;
 	else if (os_strcasecmp(str, "SET he_basic_mcs_nss_set") == 0)
@@ -11311,14 +11589,6 @@ static int hostapd_ctrl_iface_parse_mbssid_cmn_param_cmd(char *str, char *get_st
 		param_id = CMD_EHT_SU_BFMEE;
 	else if (os_strcasecmp(str, "SET bss_eht_mu_beamformer") == 0)
 		param_id = CMD_EHT_MU_BFMER;
-	else if (os_strcasecmp(str, "SET bss_eht_dl_mu_ofdma") == 0)
-		param_id = CMD_EHT_DL_MU_OFDMA;
-	else if (os_strcasecmp(str, "SET bss_eht_ul_mu_ofdma") == 0)
-		param_id = CMD_EHT_UL_MU_OFDMA;
-	else if (os_strcasecmp(str, "SET bss_eht_dl_ofdma_mumimo") == 0)
-		param_id = CMD_EHT_DL_OFDMA_MUMIMO;
-	else if (os_strcasecmp(str, "SET bss_eht_ul_ofdma_mumimo") == 0)
-		param_id = CMD_EHT_UL_OFDMA_MUMIMO;
 	else if (os_strcasecmp(str, "SET bss_eht_bfme_ss_80") == 0)
 		param_id = CMD_EHT_BFME_SS_80;
 	else if (os_strcasecmp(str, "SET bss_eht_bfme_ss_160") == 0)
@@ -11378,6 +11648,10 @@ static bool hostapd_ctrl_iface_is_mbssid_cmn_param(struct hostapd_data *hapd,
 			value = first;
 	}
 
+	if (os_strncasecmp(cmd, "set_he_bfee_sts ", 16) == 0 ||
+	    os_strncasecmp(cmd, "set_he_subfee_sts_suprt ", 24) == 0)
+		value = first;
+
 	if (!value) {
 		wpa_printf(MSG_ERROR, "value is NULL for cmd:%s", cmd);
 		return false;
@@ -11424,8 +11698,9 @@ static int hostapd_ctrl_iface_get_cmn_param_val(struct hostapd_data *hapd, char 
 	get_val[0] = pos ? (int) strtol(pos + 1, NULL, 0) :
 		     (int) strtol(reply, &end, 0);
 
-	/* This param has 2 values */
-	if (os_strncasecmp(str, "get_he_bfee_sts", 15) == 0)
+	/* These params have 2 values */
+	if (os_strcmp(str, "get_he_bfee_sts") == 0 ||
+	    os_strcmp(str, "get_he_subfee_sts_suprt") == 0)
 		get_val[1] = (int) strtol(end, NULL, 0);
 
 	return 0;
@@ -11453,6 +11728,10 @@ static int hostapd_ctrl_iface_set_cmn_param(struct hostapd_data *hapd, char *buf
 			value = first;
 	}
 
+	if (os_strncasecmp(str, "set_he_bfee_sts ", 16) == 0 ||
+	    os_strncasecmp(str, "set_he_subfee_sts_suprt ", 24) == 0)
+		value = first;
+
 	if (!value) {
 		wpa_printf(MSG_ERROR, "Value is NULL");
 		goto end;
@@ -11461,7 +11740,8 @@ static int hostapd_ctrl_iface_set_cmn_param(struct hostapd_data *hapd, char *buf
 	val[0] = (int) strtol(value, &end, 0);
 
 	/* This param has 2 values */
-	if (os_strncasecmp(str, "set_he_bfee_sts", 15) == 0)
+	if (os_strncasecmp(str, "set_he_bfee_sts ", 16) == 0 ||
+	    os_strncasecmp(str, "set_he_subfee_sts_suprt ", 24) == 0)
 		val[1] = (int) strtol(end, NULL, 0);
 
 	cmd_bk = os_malloc(os_strlen(buf) + 1);
@@ -11484,7 +11764,8 @@ static int hostapd_ctrl_iface_set_cmn_param(struct hostapd_data *hapd, char *buf
 		goto end;
 	}
 
-	if (os_strncasecmp(str, "set_he_bfee_sts", 15) == 0) {
+	if (os_strncasecmp(str, "set_he_bfee_sts ", 16) == 0 ||
+	    os_strncasecmp(str, "set_he_subfee_sts_suprt ", 24) == 0) {
 		if (get_val[0] == val[0] && get_val[1] == val[1]) {
 			wpa_printf(MSG_DEBUG,
 				   "Values matches with previous configured get_val[0]:%d get_val[1]:%d val[0]:%d val[1]:%d",

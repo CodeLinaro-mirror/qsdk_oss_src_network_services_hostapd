@@ -100,6 +100,8 @@
 #define WLAN_AUTH_FILS_SK_PFS		5
 #define WLAN_AUTH_FILS_PK		6
 #define WLAN_AUTH_PASN			7
+#define WLAN_AUTH_802_1X		8
+#define WLAN_AUTH_EPPKE			9
 #define WLAN_AUTH_LEAP			128
 
 /* Authentication transaction sequence number */
@@ -245,6 +247,8 @@
 #define WLAN_STATUS_EPCS_DENIED_VERIFICATION_FAILURE 140
 #define WLAN_STATUS_DENIED_OPERATION_PARAMETER_UPDATE 141
 #define WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE 159
+#define WLAN_STATUS_802_1_X_AUTH_FAILED 152
+#define WLAN_STATUS_802_1_X_AUTH_SUCCESS 153
 
 /* Reason codes (IEEE Std 802.11-2020, 9.4.1.7, Table 9-90) */
 #define WLAN_REASON_UNSPECIFIED 1
@@ -546,6 +550,7 @@
 #define WLAN_EID_EXT_PASN_ENCRYPTED_DATA 140
 #define WLAN_EID_EXT_UHR_OPERATION 151
 #define WLAN_EID_EXT_UHR_CAPABILITIES 152
+#define WLAN_EID_EXT_SUPPORTED_GROUPS 161
 
 /* Security Profile element (802.11bn D1.4, Table 9-164, EID Extension = 162) */
 #define WLAN_EID_EXT_SECURITY_PROFILE 162
@@ -563,8 +568,9 @@
 #define WLAN_SEC_PROF_IND_VENDOR_COUNT(ind)   (((ind) >> 4) & 0x0f)
 
 #define WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS 155
-
 #define WLAN_EID_EXT_SMD 154
+#define WLAN_EID_EXT_UHR_PARAMS_UPDATE          158
+
 /* SMD Information Element length: EID (1) + Len (1) + ExtID (1) +
  * SMD Identifier (ETH_ALEN) + Capabilities (1) + Timeout (1) */
 #define SMD_IE_LEN (2 + 1 + ETH_ALEN + 1 + 1)
@@ -2215,8 +2221,14 @@ enum bss_trans_mgmt_reason {
 #define WNM_NEIGHBOR_BSS_TERMINATION_DURATION    4
 #define WNM_NEIGHBOR_BEARING                     5
 #define WNM_NEIGHBOR_WIDE_BW_CHAN                6
+#define WNM_NEIGHBOR_BSS_LOAD                   11
+#define WNM_NEIGHBOR_UHR_CAPAB                  13
+#define WNM_NEIGHBOR_UHR_OPER                   14
+#define WNM_NEIGHBOR_SMD_INFO                   15
+#define WNM_NEIGHBOR_TX_POWER_INDICATION        16
 #define WNM_NEIGHBOR_MEASUREMENT_REPORT         39
 #define WNM_NEIGHBOR_HT_CAPAB                   45
+#define WNM_NEIGHBOR_SUPP_RATES                 54
 #define WNM_NEIGHBOR_HT_OPER                    61
 #define WNM_NEIGHBOR_SEC_CHAN_OFFSET            62
 #define WNM_NEIGHBOR_MEASUREMENT_PILOT          66
@@ -2224,6 +2236,10 @@ enum bss_trans_mgmt_reason {
 #define WNM_NEIGHBOR_MULTIPLE_BSSID             71
 #define WNM_NEIGHBOR_VHT_CAPAB                 191
 #define WNM_NEIGHBOR_VHT_OPER                  192
+#define WNM_NEIGHBOR_HE_CAPAB                  193
+#define WNM_NEIGHBOR_HE_OPER                   194
+#define WNM_NEIGHBOR_EHT_CAPAB                 199
+#define WNM_NEIGHBOR_EHT_OPER                  200
 #define WNM_NEIGHBOR_MULTI_LINK                201
 
 /* QoS action */
@@ -2854,6 +2870,8 @@ enum phy_type {
 #define NEI_REP_BSSID_INFO_COLOCATED_WITH_6GHZ BIT(20)
 #define NEI_REP_BSSID_INFO_EHT BIT(21)
 #define NEI_REP_BSSID_INFO_DMG_POSITIONING BIT(22)
+#define NEI_REP_BSSID_INFO_SAME_SMD BIT(23)
+#define NEI_REP_BSSID_INFO_UHR BIT(24)
 
 /*
  * IEEE Std 802.11-2020, Table 9-175 - HT/VHT Operation Information
@@ -3196,6 +3214,13 @@ struct ieee80211_he_mu_edca_parameter_set {
 #define RNR_TBTT_INFO_COUNT_VAL(x)                  (((x) & 0xf0) >> 4)
 #define RNR_TBTT_INFO_LEN                           13
 #define RNR_TBTT_INFO_MLD_LEN                       16
+
+/*
+ * IEEE P802.11bn/D1.5, Table 9-363
+ * 9.4.2.169.2 Neighbor AP Information field
+ * MLD params (3) + Enhanced Critical Updates Information (1)
+ */
+#define RNR_TBTT_INFO_MLD_ECU_LEN                   17
 #define RNR_NEIGHBOR_AP_OFFSET_UNKNOWN              255
 /* Figure 9-632a - BSS Parameters subfield format */
 #define RNR_BSS_PARAM_OCT_RECOMMENDED               BIT(0)
@@ -3381,11 +3406,12 @@ struct ieee80211_eht_capabilities {
 	u8 optional[EHT_MCS_NSS_CAPAB_LEN + EHT_PPE_THRESH_CAPAB_LEN];
 } STRUCT_PACKED;
 
-/* Figure 9-aa2: UHR Operation Parameters field format described in P802.11bn_D1.0 section 9.4.2.aa1 */
+/* Figure 9-aa2: UHR Operation Parameters field format described in P802.11bn_D1.4 section 9.4.2.355 UHR Operation element */
 #define UHR_OPER_DPS_ENABLED		BIT(0)
-#define UHR_OPER_NPCA_OPER_PRESENT	BIT(1)
+#define UHR_OPER_NPCA_ENABLED		BIT(1)
 #define UHR_OPER_DBE_ENABLED		BIT(2)
 #define UHR_OPER_P_EDCA_ENABLED		BIT(3)
+#define UHR_OPER_NPCA_OPER_PRESENT	BIT(9)
 
 struct ieee80211_dbe_info {
 	/* TODO: Convert this into structure bitfield
@@ -3416,17 +3442,20 @@ struct ieee80211_p_edca_info {
 } STRUCT_PACKED;
 
 /* Figure 9-aa3: NPCA Operation Information field format */
+#define IEEE80211_UHR_NPCA_OPER_BASE_SIZE			4
+#define IEEE80211_UHR_NPCA_OPER_DISABLED_SUBCHAN_BITMAP_SIZE	2
+
 struct ieee80211_npca_info {
-	/* TODO: Convert this into structure bitfield
-	 * As per spec npca_params defined as below
-	 * npca_primary_chan					:4
-	 * npca_min_dur_threshold				:4
-	 * npca_switching_delay					:6
-	 * npca_switch_back_delay				:6
-	 * npca_initial_qsrc					:2
-	 * npca_moplen						:1
-	 * npca_disabled_subchan_bitmap_pres			:1
-	 * reserved						:8
+	/* npca_params bit layout (Figure 9-aa4, IEEE P802.11bn D1.4 ss9.4.2.355.2):
+	 * npca_primary_chan					:4  (B0-B3)
+	 * npca_min_dur_threshold				:4  (B4-B7)
+	 * npca_switching_delay					:6  (B8-B13)
+	 * npca_switch_back_delay				:6  (B14-B19)
+	 * npca_initial_qsrc					:2  (B20-B21)
+	 * npca_moplen						:1  (B22)
+	 * npca_disabled_subchan_bitmap_pres			:1  (B23)
+	 * reserved						:8  (B24-B31)
+	 * npca_disabled_subchan_bitmap is a separate u16 (B32-B47)
 	 */
 	u32 npca_params;
 	u16 npca_disabled_subchan_bitmap;
@@ -3439,12 +3468,43 @@ struct ieee80211_uhr_operation {
 	u8 variable[];
 } STRUCT_PACKED;
 
-/* Figure 9-aa7: UHR MAC Capabilities Information field format */
+/* IEEE P802.11bn/D1.3, Figure 9-aa4 */
+#define UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS		0x0000000F
+#define UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH	0x000000F0
+#define UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY		0x00003F00
+#define UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY	0x000FC000
+#define UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC		0x00300000
+#define UHR_OPER_PARAMS_NPCA_MOPLEN_NPCA		0x00400000
+#define UHR_OPER_PARAMS_NPCA_DIS_SUBCH_BITMAP_PRES	0x00800000
+#define UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS_SHIFT	0
+#define UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH_SHIFT	4
+#define UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY_SHIFT	8
+#define UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY_SHIFT 14
+#define UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC_SHIFT	20
+#define UHR_OPER_PARAMS_NPCA_MOPLEN_NPCA_SHIFT		22
+#define UHR_OPER_PARAMS_NPCA_DIS_SUBCH_BITMAP_PRES_SHIFT 23
+
+/* Figure 9-aa9: UHR MAC Capabilities Information field format
+ * (IEEE P802.11bn/D1.4, section 9.4.2.356.2)
+ */
 #define UHR_MACCAP_DPS_SUPP			BIT(0)
 #define UHR_MACCAP_DPS_ASSIST			BIT(1)
+#define UHR_MACCAP_NPCA_SUPP			BIT(4)
+
+/* B26-B28: Parameter Update Adv Notification Interval (3 bits, byte 3) */
+#define UHR_MACCAP3_PARAM_UPD_ADV_NOTIF_INTV_MASK	((u8) (BIT(2) | BIT(3) | BIT(4)))
+#define UHR_MACCAP3_PARAM_UPD_ADV_NOTIF_INTV_SHIFT	2
+
+/* B29-B33: Update Indication In TIM Interval (5 bits, split across bytes 3-4) */
+#define UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_MASK		((u8) (BIT(5) | BIT(6) | BIT(7)))
+#define UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_SHIFT		5
+#define UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK		((u8) (BIT(0) | BIT(1)))
+#define UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_SHIFT	0
 
 #define UHR_MAC_CAPAB_LEN	6
 #define UHR_PHY_CAPAB_LEN	5
+
+#define IEEE80211_UHR_CAP_MAX_SIZE	sizeof(struct ieee80211_uhr_capabilities)
 
 /* Figure 9-aa8: UHR Capabilities element format P802.11bn_D1.4 section 9.4.2.356 */
 struct ieee80211_uhr_capabilities {
@@ -3453,6 +3513,15 @@ struct ieee80211_uhr_capabilities {
 	/* UHR PHY Capabilities Information */
 	u8 phy_cap[UHR_PHY_CAPAB_LEN];
 } STRUCT_PACKED;
+
+/* Table 9-bb13: Encoding of the Mode ID field (9.4.2.362) */
+#define UHR_PARAMS_UPDATE_MODE_ID_NPCA		1
+/* TODO: Add Mode ID macros for DPS(0), DUO(2), P-EDCA(3), DBE(4), AP PUO(5), ELR(6) */
+
+/* Mode Tuple field bits (Figure 9-aa67) */
+#define UHR_MODE_TUPLE_MODE_ID_MASK		0x3F
+#define UHR_MODE_TUPLE_MODE_ENABLE		BIT(6)
+#define UHR_MODE_TUPLE_MODE_UPDATE		BIT(7)
 
 #define IEEE80211_EHT_CAPAB_MIN_LEN (2 + 9)
 
@@ -3487,6 +3556,8 @@ struct ieee80211_uhr_capabilities {
 #define BASIC_MULTI_LINK_CTRL_PRES_MLD_CAPA		0x0100
 #define BASIC_MULTI_LINK_CTRL_PRES_AP_MLD_ID		0x0200
 #define BASIC_MULTI_LINK_CTRL_PRES_EXT_MLD_CAP		0x0400
+#define BASIC_MULTI_LINK_CTRL_PRES_ENH_CRIT_UPD		0x0800
+#define BASIC_MULTI_LINK_CTRL_PRES_AGE_OF_BSS_LOAD	0x1000
 
 #define BASIC_MULTI_LINK_CTRL_EXT_EN			0
 #define BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN		1
@@ -3506,6 +3577,7 @@ struct ieee80211_uhr_capabilities {
 #define BASIC_MLE_STA_CTRL_PRES_NSTR_LINK_PAIR		0x0200
 #define BASIC_MLE_STA_CTRL_NSTR_BITMAP			0x0400
 #define BASIC_MLE_STA_CTRL_PRES_BSS_PARAM_COUNT		0x0800
+#define BASIC_MLE_STA_CTRL_PRES_ENH_CRIT_UPD		0x1000
 
 #define BASIC_MLE_STA_PROF_STA_MAC_IDX			3
 

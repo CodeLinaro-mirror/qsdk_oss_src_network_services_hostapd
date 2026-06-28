@@ -22,6 +22,7 @@
 #include "ucode.h"
 #include "ttlm.h"
 #include "atf/atf_offload.h"
+#include "hostapd_log.h"
 #ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/cmn.h"
 #endif /* CONFIG_QCN_EXTN */
@@ -48,6 +49,7 @@ struct ieee80211_ht_capabilities;
 struct full_dynamic_vlan;
 enum wps_event;
 union wps_event_data;
+struct rsn_pmksa_cache_entry;
 #ifdef CONFIG_MESH
 struct mesh_conf;
 #endif /* CONFIG_MESH */
@@ -58,6 +60,7 @@ struct mesh_conf;
 
 struct hostapd_iface;
 struct hostapd_mld;
+struct smd_neighbor_update_ctx;
 
 struct hapd_interfaces {
 	int (*reload_config)(struct hostapd_iface *iface);
@@ -326,6 +329,32 @@ enum hostapd_reenable_mode {
 	REENABLE_DEINIT = 4,
 };
 
+#ifdef CONFIG_IEEE80211BN
+/* UHR Enhanced Critical Update (ECU) state machine states
+ * as per IEEE 802.11bn section 37.30.2.2.
+ */
+enum uhr_ecu_state {
+
+	/* ECU(Enhanced Critical Update) is not started */
+	UHR_ECU_IDLE,
+
+	/* ECU started, advance notification interval going on */
+	UHR_ECU_ADVANCE_NOTIFY,
+
+	/* ECU crossed advance notification interval */
+	UHR_ECU_POST_ADVANCE_NOTIFY,
+
+	/* ECU update indication included in TIM element */
+	UHR_ECU_UPDATE_IND_IN_TIM,
+
+};
+
+struct hostapd_uhr_ecu {
+	enum uhr_ecu_state state;
+	u8 uhr_params_update_countdown;
+};
+#endif /* CONFIG_IEEE80211BN */
+
 /**
  * struct hostapd_data - hostapd per-BSS data structure
  */
@@ -486,6 +515,13 @@ struct hostapd_data {
 			   size_t psk_len);
 	void *new_psk_cb_ctx;
 
+#ifdef CONFIG_IEEE8021X_AUTH
+	void (*send_eap_req)(struct hostapd_data *hapd, struct sta_info *sta,
+			     u8 type, u16 auth_transaction, u16 status,
+			     struct rsn_pmksa_cache_entry *cached_pmk,
+			     const u8 *eap_req, size_t eap_req_len);
+#endif /* CONFIG_IEEE8021X_AUTH */
+
 	/* channel switch parameters */
 	struct hostapd_freq_params cs_freq_params;
 	u8 cs_count;
@@ -507,6 +543,10 @@ struct hostapd_data {
 	struct os_reltime last_color_collision;
 	u64 color_collision_bitmap;
 #endif /* CONFIG_IEEE80211AX */
+
+#ifdef CONFIG_IEEE80211BN
+	struct hostapd_uhr_ecu uhr_ecu;
+#endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_P2P
 	struct p2p_data *p2p;
@@ -689,6 +729,13 @@ struct hostapd_data {
 	struct nan_de *nan_de;
 #endif /* CONFIG_NAN_USD */
 
+	/* Per-module log level overrides. -1 means no override is set for
+	 * that module and logging falls back to the global wpa_debug_level.
+	 * Any other value is a HOSTAPD_LEVEL_* threshold: messages below it
+	 * are suppressed regardless of the global level. Set via
+	 * LOG_LEVEL <module> <level> ctrl_iface command. */
+	int log_module_level[HOSTAPD_MOD_MAX];
+
 	u64 scan_cookie; /* Scan instance identifier for the ongoing HT40 scan
 			  */
 	bool disable_cu;
@@ -700,6 +747,10 @@ struct hostapd_data {
 	u16 mapping_switch_time;
 	struct channel_usage_config chan_usage_config;
 	void *hostapd_if_data; /* for per-interface/MLD frame_reg_table, opaque */
+
+#ifdef CONFIG_IEEE80211BN
+	struct smd_neighbor_update_ctx *smd_neighbor_update_ctx;
+#endif /* CONFIG_IEEE80211BN */
 };
 
 
@@ -1219,6 +1270,7 @@ bool hostapd_is_ml_partner(struct hostapd_data *hapd1,
 u8 hostapd_get_mld_id(struct hostapd_data *hapd);
 int hostapd_mld_add_link(struct hostapd_data *hapd);
 int hostapd_mld_remove_link(struct hostapd_data *hapd);
+void hostapd_bss_link_deinit(struct hostapd_data *hapd);
 u8 hostapd_get_active_links(struct hostapd_data *hapd);
 struct hostapd_data * hostapd_mld_get_first_bss(struct hostapd_data *hapd);
 
@@ -1585,6 +1637,8 @@ hostapd_get_multi_group_bss(struct hostapd_multi_mbssid_group *group,
                            int bss_idx);
 u8 hostapd_max_bssid_indicator(struct hostapd_data *hapd);
 void hostapd_free_mbssid_idx(struct hostapd_data *hapd);
+void hostapd_multi_mbssid_remove_bss(struct hostapd_data *hapd);
+void hostapd_mld_ref_dec(struct hostapd_mld *mld);
 void hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface,
 					bool iface_enabled);
 /**
@@ -1939,22 +1993,10 @@ bool hostapd_is_bss_in_category(struct hostapd_data *hapd,
 int dfs_get_subchannel_count(int bandwidth);
 
 /**
- * dfs_get_punc_src_chan() - Resolve channel for puncture update
- * @iface: Pointer to hostapd interface
- * @primary_freq: Primary operating frequency in MHz
- * @bit: 20 MHz subchannel bit position
- *
- * Return: Pointer to channel data for the given bit, or %NULL if unavailable.
- */
-struct hostapd_channel_data *
-dfs_get_punc_subchan(struct hostapd_iface *iface,
-		     int primary_freq, int bit);
-
-/**
  * hostapd_update_puncture_source() - Update puncture source per 20 MHz
  * subchannel
  * @iface: Pointer to hostapd interface
- * @primary_freq: Primary operating frequency in MHz
+ * @center_freq: Center frequency in MHz
  * @bandwidth: Channel width enum value
  * @new_punct_bitmap: New puncture bitmap to apply
  * @source: Puncture source being updated
@@ -1964,7 +2006,7 @@ dfs_get_punc_subchan(struct hostapd_iface *iface,
  * Return: 0 on success, -1 on validation failure.
  */
 int dfs_update_puncture_source(struct hostapd_iface *iface,
-			       int primary_freq, int bandwidth,
+			       u16 center_freq, int bandwidth,
 			       u16 new_punct_bitmap,
 			       enum dfs_chan_puncture_source source);
 
@@ -2017,5 +2059,32 @@ int hostapd_update_monitor_channel(struct hostapd_data *hapd,
 				   const struct hostapd_freq_params *freq_params);
 void hostapd_clear_old_bss(struct hostapd_data *bss);
 struct hostapd_data * hostapd_mbssid_get_bss(struct hostapd_data *hapd, size_t i);
+
+#ifdef CONFIG_IEEE80211AX
+/**
+ * hostapd_set_current_6ghz_pwr_type - Set 6 GHz power mode when BPM is disabled
+ * @iface: Pointer to hostapd interface
+ * @power_mode: Output power mode to set
+ *
+ * Sets @power_mode to the configured 6 GHz regulatory power type.
+ * Logs an error if SP mode is requested but no AFC power event has been
+ * received - this should not happen on a running interface but the value
+ * is passed to the driver for final validation.
+ */
+static inline void
+hostapd_set_current_6ghz_pwr_type(struct hostapd_iface *iface,
+				  int *power_mode)
+{
+	u8 cur_pwr_type = iface->conf->he_6ghz_reg_pwr_type;
+
+	if (he_reg_is_sp(cur_pwr_type) && !iface->is_afc_power_event_received) {
+		/* Should Not Happen: SP mode without AFC on a running iface */
+		wpa_printf(MSG_ERROR,
+			   "%s: SP power mode configured but AFC not received, passing to driver",
+			   __func__);
+	}
+	*power_mode = cur_pwr_type;
+}
+#endif /* CONFIG_IEEE80211AX */
 
 #endif /* HOSTAPD_H */

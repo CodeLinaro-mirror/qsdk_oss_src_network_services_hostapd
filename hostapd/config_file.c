@@ -647,6 +647,10 @@ static int hostapd_config_parse_key_mgmt(int line, const char *value)
 		else if (os_strcmp(start, "PASN") == 0)
 			val |= WPA_KEY_MGMT_PASN;
 #endif /* CONFIG_PASN */
+#ifdef CONFIG_ENC_ASSOC
+		else if (os_strcmp(start, "EPPKE") == 0)
+			val |= WPA_KEY_MGMT_EPPKE;
+#endif /* CONFIG_ENC_ASSOC */
 		else {
 			wpa_printf(MSG_ERROR, "Line %d: invalid key_mgmt '%s'",
 				   line, start);
@@ -757,6 +761,40 @@ static int hostapd_parse_chanlist(struct hostapd_config *conf, char *val)
 
 	return 0;
 }
+
+
+#ifdef CONFIG_IEEE80211BE
+static int hostapd_parse_eht_mcs_nss_set(const char *pos,
+					  u16 mcs_nss_set[EHT_MCS_NSS_SET],
+					  const char *config_name)
+{
+	u16 tmp[EHT_MCS_NSS_SET];
+	int n_consumed = 0, bw, n;
+
+	if (sscanf(pos, "%hx %hx %hx %n",
+		   &tmp[0], &tmp[1], &tmp[2],
+		   &n_consumed) != 3) {
+		wpa_printf(MSG_ERROR, "%s: expected 3 hex values", config_name);
+		return -1;
+	}
+	/* 0: <=80Mhz, 1: 160Mhz, 2: 320Mhz */
+	for (bw = 0; bw < EHT_MCS_NSS_SET; bw++) {
+		for (n = 0; n <= 2; n++) {
+			u8 nss = (tmp[bw] >> (n * 4)) & 0xf;
+
+			if (nss > EHT_NSS_MAX_STREAMS) {
+				wpa_printf(MSG_ERROR,
+					   "%s: BW %d nibble %d value %u exceeds max NSS %u",
+					   config_name, bw, n, nss,
+					   EHT_NSS_MAX_STREAMS);
+				return -1;
+			}
+		}
+	}
+	os_memcpy(mcs_nss_set, tmp, sizeof(tmp));
+	return 0;
+}
+#endif /* CONFIG_IEEE80211BE */
 
 
 static int hostapd_parse_intlist(int **int_list, char *val)
@@ -2910,6 +2948,14 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->extended_key_id = val;
+#ifdef CONFIG_ENC_ASSOC
+	} else if (os_strcmp(buf, "assoc_frame_encryption") == 0) {
+		bss->assoc_frame_encryption = atoi(pos);
+	} else if (os_strcmp(buf, "pmksa_caching_privacy") == 0) {
+		bss->pmksa_caching_privacy = atoi(pos);
+	} else if (os_strcmp(buf, "eap_using_authentication_frames") == 0) {
+		bss->eap_using_authentication_frames = atoi(pos);
+#endif /* CONFIG_ENC_ASSOC  */
 	} else if (os_strcmp(buf, "wpa_group_rekey") == 0) {
 		bss->wpa_group_rekey = atoi(pos);
 		bss->wpa_group_rekey_set = 1;
@@ -3295,6 +3341,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		/* bgcac_en=1 also implies enable_background_radar */
 		if (conf->bgcac_en)
 			conf->enable_background_radar = 1;
+	} else if (os_strcmp(buf, "rcac_freq") == 0) {
+		conf->rcac_freq = atoi(pos);
 	} else if (os_strcmp(buf, "min_tx_power") == 0) {
 		int val = atoi(pos);
 
@@ -4027,19 +4075,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_BSR_SUPPORT;
 	} else if (os_strcmp(buf, "he_dl_mu_ofdma") == 0) {
 		conf->he_phy_capab.he_dl_mu_ofdma = atoi(pos);
-	} else if (os_strcmp(buf, "bss_he_dl_mu_ofdma") == 0) {
-		bss->he_phy_capab.he_dl_mu_ofdma = atoi(pos);
-		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_DL_MU_OFDMA;
 	} else if (os_strcmp(buf, "he_dl_mu_ofdma_bfer") == 0) {
 		conf->he_phy_capab.he_dl_mu_ofdma_bfer = atoi(pos);
-	} else if (os_strcmp(buf, "bss_he_dl_mu_ofdma_bfer") == 0) {
-		bss->he_phy_capab.he_dl_mu_ofdma_bfer = atoi(pos);
-		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_DL_MU_OFDMA_BFER;
 	} else if (os_strcmp(buf, "he_ul_mu_ofdma") == 0) {
 		conf->he_phy_capab.he_ul_mu_ofdma = atoi(pos);
-	} else if (os_strcmp(buf, "bss_he_ul_mu_ofdma") == 0) {
-		bss->he_phy_capab.he_ul_mu_ofdma = atoi(pos);
-		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_UL_MU_OFDMA;
 	} else if (os_strcmp(buf, "he_mu_beamformer") == 0) {
 		conf->he_phy_capab.he_mu_beamformer = atoi(pos);
 	} else if (os_strcmp(buf, "bss_he_mu_beamformer") == 0) {
@@ -4242,6 +4281,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->unsol_bcast_probe_resp_interval = val;
 	} else if (os_strcmp(buf, "discard_6g_awgn_event") == 0) {
 		conf->discard_6g_awgn_event = atoi(pos);
+	} else if (os_strcmp(buf, "enable_best_power_mode") == 0) {
+		conf->enable_best_power_mode = atoi(pos);
 	} else if (os_strcmp(buf, "mbssid") == 0) {
 		int mbssid = atoi(pos);
 		if (mbssid < 0 || mbssid > MULTI_MBSSID_GROUP_ENABLED) {
@@ -5688,6 +5729,22 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 #ifdef CONFIG_IEEE80211BE
 	} else if (os_strcmp(buf, "ieee80211be") == 0) {
 		conf->ieee80211be = atoi(pos);
+	} else if (os_strcmp(buf, "eht_tx_mcs_nss_set") == 0) {
+		if (hostapd_parse_eht_mcs_nss_set(pos, bss->eht_tx_mcs_nss_set,
+						  "eht_tx_mcs_nss_set")) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid eht_tx_mcs_nss_set '%s'",
+				   line, pos);
+			return 1;
+		}
+	} else if (os_strcmp(buf, "eht_rx_mcs_nss_set") == 0) {
+		if (hostapd_parse_eht_mcs_nss_set(pos, bss->eht_rx_mcs_nss_set,
+						  "eht_rx_mcs_nss_set")) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid eht_rx_mcs_nss_set '%s'",
+				   line, pos);
+			return 1;
+		}
 	} else if (os_strcmp(buf, "eht_oper_chwidth") == 0) {
 		conf->eht_oper_chwidth = atoi(pos);
 	} else if (os_strcmp(buf, "eht_oper_centr_freq_seg0_idx") == 0) {
@@ -5704,24 +5761,12 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_SU_BEAMFORMEE;
 	} else if (os_strcmp(buf, "eht_dl_mu_ofdma") == 0) {
 		conf->eht_phy_capab.dl_mu_ofdma = atoi(pos);
-	} else if (os_strcmp(buf, "bss_eht_dl_mu_ofdma") == 0) {
-		bss->eht_phy_capab.dl_mu_ofdma = atoi(pos);
-		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_DL_MU_OFDMA;
 	} else if (os_strcmp(buf, "eht_ul_mu_ofdma") == 0) {
 		conf->eht_phy_capab.ul_mu_ofdma = atoi(pos);
-	} else if (os_strcmp(buf, "bss_eht_ul_mu_ofdma") == 0) {
-		bss->eht_phy_capab.ul_mu_ofdma = atoi(pos);
-		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_UL_MU_OFDMA;
 	} else if (os_strcmp(buf, "eht_dl_ofdma_mumimo") == 0) {
 		conf->eht_phy_capab.dl_ofdma_mumimo = atoi(pos);
-	} else if (os_strcmp(buf, "bss_eht_dl_ofdma_mumimo") == 0) {
-		bss->eht_phy_capab.dl_ofdma_mumimo = atoi(pos);
-		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_DL_OFDMA_MUMIMO;
 	} else if (os_strcmp(buf, "eht_ul_ofdma_mumimo") == 0) {
 		conf->eht_phy_capab.ul_ofdma_mumimo = atoi(pos);
-	} else if (os_strcmp(buf, "bss_eht_ul_ofdma_mumimo") == 0) {
-		bss->eht_phy_capab.ul_ofdma_mumimo = atoi(pos);
-		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_UL_OFDMA_MUMIMO;
 	} else if (os_strcmp(buf, "eht_mu_beamformer") == 0) {
 		conf->eht_phy_capab.mu_beamformer = atoi(pos);
 	} else if (os_strcmp(buf, "bss_eht_mu_beamformer") == 0) {
@@ -6128,6 +6173,32 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->dps_assist = val;
+	} else if (os_strcmp(buf, "smd_neighbor_update") == 0) {
+		bss->smd_neighbor_update_enabled = atoi(pos);
+	} else if (os_strcmp(buf, "smd_neighbor_expiry_time") == 0) {
+		bss->smd_neighbor_expiry_time = atoi(pos);
+	} else if (os_strcmp(buf, "smd_neighbor_pull_interval") == 0) {
+		bss->smd_neighbor_pull_interval = atoi(pos);
+#endif /* CONFIG_IEEE80211BN */
+#ifdef CONFIG_IEEE80211BN
+	} else if (os_strcmp(buf, "uhr_adv_notification_interval") == 0) {
+		int val = atoi(pos);
+		if (val < 1 || val > 7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: uhr_adv_notification_interval must be 1-7",
+				   line);
+			return 1;
+		}
+		bss->uhr_params_update.adv_notification_interval = (u8) val;
+	} else if (os_strcmp(buf, "uhr_update_in_tim_interval") == 0) {
+		int val = atoi(pos);
+		if (val < 1 || val > 31) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: uhr_update_in_tim_interval must be 1-31",
+				   line);
+			return 1;
+		}
+		bss->uhr_params_update.update_in_tim_interval = (u8) val;
 #endif /* CONFIG_IEEE80211BN */
 
 	} else if (os_strcmp(buf, "enable_dscp_policy_capa") == 0) {
@@ -6216,6 +6287,28 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		bss->smd.caps.ptk_mode = val;
 		wpa_printf(MSG_DEBUG, "SMD Config: smd_ptk_mode set to %d", val);
+	} else if (os_strcmp(buf, "npca_primary_channel") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 255) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid npca_primary_channel %d (0-255)",
+				   line, val);
+			return 1;
+		}
+		conf->npca_primary_channel = val;
+		wpa_printf(MSG_DEBUG, "npca_primary_channel=%d", val);
+	} else if (os_strcmp(buf, "npca_enable") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid npca_enable %d (0 or 1)",
+				   line, val);
+			return 1;
+		}
+		conf->npca_enable = val;
+	} else if (os_strcmp(buf, "npca_punct_bitmap") == 0) {
+		if (get_u16(pos, line, &conf->npca_punct_bitmap))
+			return 1;
 #endif /* CONFIG_IEEE80211BN */
 	} else {
 		if (!hostapd_config_fill_extn(conf, bss, buf, pos, line))
