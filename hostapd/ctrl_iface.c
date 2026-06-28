@@ -4979,6 +4979,16 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 	if (iface->cac_started)
 		return hostapd_abort_cac_for_channel_switch(iface, &settings);
 
+	/*
+	 * After ieee80211_abort_cac() the kernel releases the link's channel
+	 * context (beacon_interval=0 for the MLO link). A subsequent
+	 * NL80211_CMD_CHANNEL_SWITCH with NL80211_ATTR_MLO_LINK_ID is then
+	 * rejected with -ENOTCONN. Use force_channel_switch (disable/enable
+	 * path) instead, which never issues NL80211_CMD_CHANNEL_SWITCH.
+	 */
+	if (iface->conf->disable_csa_dfs == 1 && iface->radar_detected)
+		return hostapd_force_channel_switch(iface, &settings);
+
 	/* Trigger mesh CSA before AP channel switch if mesh VAP present */
 	hostapd_ubus_mesh_switch_channel(iface, &settings);
 	for (i = 0; i < iface->num_bss; i++) {
