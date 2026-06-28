@@ -136,6 +136,8 @@ const char * event_to_string(enum wpa_event_type event)
 #ifdef CONFIG_IEEE80211BN
 	E2S(CRITICAL_UPDATE_NOTIFY);
 #endif /* CONFIG_IEEE80211BN */
+	E2S(UHR_RECONFIG_RESP);
+	E2S(SMD_TRANSITION_DONE);
 	E2S(ESP_UPDATE);
 #ifdef CONFIG_QCN_EXTN
 	E2S(DCS_INTF);
