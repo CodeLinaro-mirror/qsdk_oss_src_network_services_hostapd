@@ -4799,6 +4799,26 @@ void wpa_pasn_add_rsnxe(struct wpabuf *buf, u64 capab)
 		wpabuf_put_u8(buf, (capab >> 56) & 0x000000FF);
 }
 
+void wpa_pasn_add_own_supported_groups(struct wpabuf *buf, int *pasn_groups)
+{
+	int count, i;
+
+	if (!buf || !pasn_groups)
+		return;
+
+	count = int_array_len(pasn_groups);
+	if (wpabuf_tailroom(buf) < 2 + 1 + (count * 2))
+		return;
+
+	wpabuf_put_u8(buf, WLAN_EID_EXTENSION);
+	wpabuf_put_u8(buf, 1 + (count * 2));
+	wpabuf_put_u8(buf, WLAN_EID_EXT_SUPPORTED_GROUPS);
+	for (i = 0; i < count; i++) {
+		wpa_printf(MSG_DEBUG, "PASN: own Supported Group %d",
+			   pasn_groups[i]);
+		wpabuf_put_le16(buf, pasn_groups[i]);
+	}
+}
 
 /*
  * wpa_pasn_add_extra_ies - Add protocol specific IEs in Authentication
