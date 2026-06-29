@@ -18,7 +18,9 @@
 #include "crypto/sha384.h"
 #include "pasn/pasn_common.h"
 #include "hostapd.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #include "ttlm.h"
 #ifdef CONFIG_IEEE80211AX
 #include "robust_av.h"
@@ -237,7 +239,9 @@ struct sta_info {
 	struct sta_info *next; /* next entry in sta list */
 	struct sta_info *hnext; /* next entry in hash table list */
 
+#ifdef CONFIG_QCN_EXTN
         struct sta_info_extn sta_extn;
+#endif /* CONFIG_QCN_EXTN */
 
 	u8 addr[6];
 	be32 ipaddr;

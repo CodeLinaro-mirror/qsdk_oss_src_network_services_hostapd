@@ -33,12 +33,14 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef CONFIG_QCN_EXTN
 int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq,
 			        int chan_width,
 			        int cf1, int cf2,
 			        u32 chan_bw_interference_bitmap);
 
 int hostapd_intf_afc_received(struct hostapd_iface *iface);
+#endif /* CONFIG_QCN_EXTN */
 
 bool hostapd_is_backhaul_sta_conn(struct hostapd_iface *iface);
 

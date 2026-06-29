@@ -29,7 +29,9 @@
 #endif /* CONFIG_MACSEC */
 #include "utils/list.h"
 #include "drivers/nl80211_copy.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 
 /* SMD context definitions - IEEE 802.11bn compliant */
 #define SMD_NUM_TIDS 8
@@ -478,7 +480,9 @@ struct hostapd_channel_data {
 	/**
 	 * extn - Extensiom hostapd channel data
 	 */
+#ifdef CONFIG_QCN_EXTN
 	struct hostapd_channel_data_extn extn;
+#endif /* CONFIG_QCN_EXTN */
 #endif
 
 	/**
@@ -3499,7 +3503,9 @@ struct hostapd_sta_add_params {
 	const u8 *addr;
 	u16 aid;
 
+#ifdef CONFIG_QCN_EXTN
 	struct hostapd_sta_add_params_extn params_extn;
+#endif /* CONFIG_QCN_EXTN */
 
 	u16 capability;
 	const u8 *supp_rates;
@@ -6870,8 +6876,10 @@ struct wpa_driver_ops {
 	 * @link_id: Link ID of the specified link; -1 for non-MLD
 	 * Returns: 0 on success, -1 on failure
 	 */
+#ifdef CONFIG_QCN_EXTN
 	int (*dcs_config)(void *priv, u8 link_id,
 			  struct driver_dcs_config *params);
+#endif /* CONFIG_QCN_EXTN */
 
 	/**
 	 * dcs_sim - Send the DCS simulation params to driver in order to trigger
@@ -6881,7 +6889,9 @@ struct wpa_driver_ops {
 	 * @params: dcs sim structure.
 	 * Returns: 0 on success, -1 on failure
 	 */
+#ifdef CONFIG_QCN_EXTN
 	int (*dcs_sim)(void *priv, u8 link_id, struct driver_dcs_sim *params);
+#endif /* CONFIG_QCN_EXTN */
 	/**
 	 * set_cbs - Send the CBS params to driver in order to trigger scan.
 	 * @priv: Private driver interface data
@@ -6890,10 +6900,12 @@ struct wpa_driver_ops {
 	 * @link_id: Link ID of the specified link; -1 for non-MLD
 	 * Returns: 0 on success, -1 on failure
 	 */
+#ifdef CONFIG_QCN_EXTN
 	int (*set_cbs)(void *priv,
 		       const struct cbs_params_extn *params,
 		       int *freq_list,
 		       int link_id);
+#endif /* CONFIG_QCN_EXTN */
 #endif
 #endif /* CONFIG_IEEE80211BE */
 
@@ -8957,7 +8969,9 @@ union wpa_event_data {
 	 *
 	 * This field is used for extension events
 	 */
+#ifdef CONFIG_QCN_EXTN
 	union wpa_event_data_extn event_data_extn;
+#endif /* CONFIG_QCN_EXTN */
 
 	/**
 	 * Data for AP Power Save update

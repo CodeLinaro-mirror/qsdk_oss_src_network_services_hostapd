@@ -57,7 +57,9 @@
 #include "nan_usd.h"
 #include "dpp_supplicant.h"
 #include "pr_supplicant.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 
 
 #define MAX_OWE_TRANSITION_BSS_SELECT_COUNT 5
@@ -1227,12 +1229,14 @@ static bool wpas_valid_ml_bss(struct wpa_supplicant *wpa_s, struct wpa_bss *bss)
 {
 	u16 removed_links;
 
+#ifdef CONFIG_QCN_EXTN
 	if (wpa_s->conf->ind_rptr) {
 		wpa_printf(MSG_INFO,
 		"%s: refreshing ML parse for BSS " MACSTR,
 		__func__, MAC2STR(bss->bssid));
 		wpa_bss_parse_basic_ml_element(wpa_s, bss);
 	}
+#endif /* CONFIG_QCN_EXTN */
 
 	if (!bss->valid_links)
 		return true;
@@ -2153,6 +2157,7 @@ static int wpas_sta_cac_get_link_chandef(struct wpa_supplicant *wpa_s,
 	width = CHAN_WIDTH_20;
 
 
+#ifdef CONFIG_QCN_EXTN
 	if (link_id < 0) {
 		width = selected->max_cw;
 		cf1_idx = selected->center_freq1_idx;
@@ -2160,12 +2165,12 @@ static int wpas_sta_cac_get_link_chandef(struct wpa_supplicant *wpa_s,
 		punc_bitmap = selected->punc_bitmap;
 	} else {
 		const struct mld_link *link = &selected->mld_links[link_id];
-
 		width = link->width;
 		cf1_idx = link->center_freq1_idx;
 		cf2_idx = link->center_freq2_idx;
 		punc_bitmap = link->punc_bitmap;
 	}
+#endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_QCN_EXTN
 	if (!wpas_sta_cac_5g_320mhz_update_freq_params_extn(width, cf2_idx, params)) {
@@ -8347,24 +8352,29 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 						(u16)~data->dfs_event.radar_bitmap);
 				if (wpa_s->wpa_state == WPA_STACACING &&
 				    wpa_s->sta_cac.dfs_links) {
+#ifdef CONFIG_QCN_EXTN
 					if (IS_CSH_PROCESS_RCSA_ENABLED(wpa_s->conf->cswopts) ||
 					    IS_CSH_RCSA_TO_UPLINK_ENABLED(wpa_s->conf->cswopts)) {
-#ifdef CONFIG_QCN_EXTN
 						wpa_rcsa_handle_radar(wpa_s, &data->dfs_event);
-#endif
 					} else {
-
 						wpas_sta_cac_clear(wpa_s);
 						wpa_bss_flush(wpa_s, 1);
 						wpa_supplicant_req_new_scan(wpa_s, 0, 0);
 						break;
 					}
+#else
+					wpas_sta_cac_clear(wpa_s);
+					wpa_bss_flush(wpa_s, 1);
+					wpa_supplicant_req_new_scan(wpa_s, 0, 0);
+					break;
+#endif /* CONFIG_QCN_EXTN */
 				}
 
 			}
 			/* On Radar detection, if uplink_csa/rcsa is not enabled
 			 * flush all the scan bss cache and deauth the STA
 			 */
+#ifdef CONFIG_QCN_EXTN
 			if (!wpa_s->conf->uplink_csa &&
 			    !IS_CSH_PROCESS_RCSA_ENABLED(wpa_s->conf->cswopts) &&
 			    !IS_CSH_RCSA_TO_UPLINK_ENABLED(wpa_s->conf->cswopts)) {
@@ -8372,10 +8382,11 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			} else if ((IS_CSH_PROCESS_RCSA_ENABLED(wpa_s->conf->cswopts) ||
 				    IS_CSH_RCSA_TO_UPLINK_ENABLED(wpa_s->conf->cswopts)) &&
 				   wpa_s->sta_dfs_en) {
-#ifdef CONFIG_QCN_EXTN
 				wpa_rcsa_handle_radar(wpa_s, &data->dfs_event);
-#endif
 			}
+#else
+			wpas_disconnect_on_radar(wpa_s);
+#endif /* CONFIG_QCN_EXTN */
 
 		}
 		break;

@@ -33,7 +33,9 @@
 #include "scan.h"
 #include "sme.h"
 #include "hs20_supplicant.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 
 #define SME_AUTH_TIMEOUT 5
 #define SME_ASSOC_TIMEOUT 5
@@ -1429,7 +1431,9 @@ static void sme_auth_start_cb(struct wpa_radio_work *work, int deinit)
 		if (work->started)
 			wpa_s->connect_work = NULL;
 
+#ifdef CONFIG_QCN_EXTN
 		wpa_s->cache_cwork = NULL;
+#endif /* CONFIG_QCN_EXTN */
 		wpas_connect_work_free(cwork);
 		return;
 	}
@@ -1478,7 +1482,9 @@ void sme_schedule_auth_radio_work(struct wpa_supplicant *wpa_s,
 		wpas_connect_work_free(cwork);
 	}
 
+#ifdef CONFIG_QCN_EXTN
 	wpa_s->cache_cwork = NULL;
+#endif /* CONFIG_QCN_EXTN */
 	wpa_s->pre_connect_cnt = 0;
 }
 #endif

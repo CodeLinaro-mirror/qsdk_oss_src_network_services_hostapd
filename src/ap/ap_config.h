@@ -20,10 +20,13 @@
 #include "wps/wps.h"
 #include "fst/fst.h"
 #include "vlan.h"
+struct hostapd_iface;
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
-#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+#endif /* CONFIG_QCN_EXTN */
+#if defined(HOSTAPD_EXTERNAL_PLUGIN_TESTAPP) && defined(CONFIG_QCN_EXTN)
 #include "../../qcn_extns/hostapd_if_plugin.h"
-#endif
+#endif /* HOSTAPD_EXTERNAL_PLUGIN_TESTAPP && CONFIG_QCN_EXTN */
 
 #define EHT_MCS_NSS_MAP_UNSET 0xffffU
 #define EHT_MCS_NSS_SET 3
@@ -427,7 +430,9 @@ struct hostapd_bss_config {
 	char snoop_iface[IFNAMSIZ + 1];
 	char vlan_bridge[IFNAMSIZ + 1];
 	char wds_bridge[IFNAMSIZ + 1];
+#ifdef CONFIG_QCN_EXTN
 	struct hostapd_bss_config_extn bss_extn;
+#endif /* CONFIG_QCN_EXTN */
 	int bridge_hairpin; /* hairpin_mode on bridge members */
 
 	enum hostapd_logger_level logger_syslog_level, logger_stdout_level;
@@ -1465,7 +1470,9 @@ struct hostapd_config {
 	struct hostapd_bss_config **bss, *last_bss;
 	size_t num_bss;
 
+#ifdef CONFIG_QCN_EXTN
 	struct hostapd_config_extn conf_extn;
+#endif /* CONFIG_QCN_EXTN */
 	u16 beacon_int;
 	int rts_threshold;
 	int fragm_threshold;
@@ -1842,9 +1849,11 @@ hostapd_set_oper_centr_freq_seg0_idx(struct hostapd_config *conf,
 		oper_centr_freq_seg0_idx +=
 			conf->channel > oper_centr_freq_seg0_idx ? 16 : -16;
 
+#ifdef CONFIG_QCN_EXTN
 	oper_centr_freq_seg0_idx =
 		hostapd_set_legacy_oper_centr_freq_seg0_extn(
 			conf, oper_centr_freq_seg0_idx);
+#endif /* CONFIG_QCN_EXTN */
 
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_IEEE80211AX

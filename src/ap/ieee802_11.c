@@ -65,7 +65,9 @@
 #include "comeback_token.h"
 #include "nan_usd_ap.h"
 #include "pasn/pasn_common.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #include "wpa_auth_i.h"
 #include "ttlm.h"
 #include "dscp_policy.h"
@@ -5685,7 +5687,7 @@ static void handle_auth(struct hostapd_data *hapd,
 			}
 #endif /* CONFIG_IEEE80211BE */
 		}
-#ifdef CONFIG_HOSTAPD_IF
+#if defined(CONFIG_HOSTAPD_IF) && defined(CONFIG_QCN_EXTN)
 		if (hostapd_if_frame_fwd_decision(hapd,auth_alg,
 						  HOSTAPD_IF_FRAME_TYPE_AUTH)) {
 			deferred_auth_response = true;
@@ -7172,9 +7174,11 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		if (resp != WLAN_STATUS_SUCCESS)
 			goto out;
 
+#ifdef CONFIG_QCN_EXTN
 		resp = hostapd_copy_sta_eht_240mhz_cap_extn(hapd, sta,
 							    IEEE80211_MODE_AP,
 							    &elems->elems_extn);
+#endif /* CONFIG_QCN_EXTN */
 		if (resp != WLAN_STATUS_SUCCESS)
 			goto out;
 
@@ -8515,8 +8519,6 @@ int add_associated_sta(struct hostapd_data *hapd,
 
 #ifdef CONFIG_QCN_EXTN
 			    (struct sta_info_extn *)&sta->sta_extn,
-#else
-			    NULL,
 #endif
 #ifdef CONFIG_IEEE80211BN
                            sta->smd_info.smd_sta, sta->smd_info.caps.dl_data_fwd, sta->smd_info.smd_identifier,
@@ -10705,9 +10707,11 @@ static int hostapd_action_vs(struct hostapd_data *hapd,
 		hostapd_dscp_action(hapd, sta, pos, end, protected);
 		return 0;
 	default:
-		if (!handle_action_vs_extn(hapd, sta, mgmt, len, freq,
-					   protected) == 0)
+#ifdef CONFIG_QCN_EXTN
+		if (handle_action_vs_extn(hapd, sta, mgmt, len, freq,
+					  protected) == 0)
 			return 0;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_DEBUG,
 			   "Ignore unknown Vendor Specific Action frame OUI/type %08x%s",
@@ -13808,7 +13812,7 @@ static bool set_punct_psd_override(struct hostapd_data *hapd, u16 punct_bitmap,
 }
 #else
 static inline bool set_punct_psd_override(struct hostapd_data *hapd,
-					  u16 punct_bitmap, int j, int *chan_psd)
+					  u16 punct_bitmap, int j, s16 *chan_psd)
 {
 	return false;
 }

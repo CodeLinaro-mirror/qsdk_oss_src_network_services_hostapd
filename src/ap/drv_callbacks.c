@@ -50,7 +50,9 @@
 #include "interference.h"
 #include "ttlm.h"
 #include "robust_av.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #include "ap/uhr_utils.h"
 
 #ifdef CONFIG_FILS
@@ -2658,6 +2660,7 @@ static void hostapd_event_dfs_radar_detected(struct hostapd_data *hapd,
     radar->is_dfs_event_on_curr_hw = true;
 }
 
+#ifdef CONFIG_QCN_EXTN
 static void hostapd_event_awgn_detected(struct hostapd_data *hapd,
 					 struct awgn_event *awgn_info)
 {
@@ -2670,6 +2673,7 @@ static void hostapd_event_afc_received(struct hostapd_data *hapd)
 {
 	hostapd_intf_afc_received(hapd->iface);
 }
+#endif /* CONFIG_QCN_EXTN */
 
 static void hostapd_event_dfs_pre_cac_expired(struct hostapd_data *hapd,
 					      struct dfs_event *radar)
@@ -4385,6 +4389,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		hapd = switch_link_hapd(hapd, data->dfs_event.link_id);
 		hostapd_event_dfs_radar_detected(hapd, &data->dfs_event);
 		break;
+#ifdef CONFIG_QCN_EXTN
 	case EVENT_AWGN_DETECTED:
 		if (!data)
 			break;
@@ -4394,6 +4399,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 	case EVENT_AFC_RECEIVED:
 		hostapd_event_afc_received(hapd);
 		break;
+#endif /* CONFIG_QCN_EXTN */
 	case EVENT_DFS_PRE_CAC_EXPIRED:
 		if (!data)
 			break;
@@ -4619,8 +4625,10 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		break;
 #endif /* CONFIG_IEEE80211BN */
 	default:
+#ifdef CONFIG_QCN_EXTN
 		if (!hostapd_wpa_event_extn(ctx, event, data))
 			break;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_DEBUG, "Unknown event %d", event);
 		break;

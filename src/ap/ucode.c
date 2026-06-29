@@ -373,7 +373,9 @@ uc_hostapd_bss_set_config(uc_vm_t *vm, size_t nargs)
 				 struct hostapd_data, mbssid_bss) {
 			if (non_tx == hapd || !non_tx->started || !non_tx->conf)
 				continue;
+#ifdef CONFIG_QCN_EXTN
 			hostapd_disable_bss(non_tx, 0, AP_EVENT_DISABLED);
+#endif /* CONFIG_QCN_EXTN */
 		}
 	}
 #endif /* CONFIG_IEEE80211BE */

@@ -21,7 +21,9 @@
 #include "bssid_ignore.h"
 #include "bss.h"
 #include "smd.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 
 static void wpa_bss_set_hessid(struct wpa_bss *bss)
 {
