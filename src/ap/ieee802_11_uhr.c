@@ -60,7 +60,7 @@ u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 	cap->mac_cap[4] =
 		(cap->mac_cap[4] &
 		 ~UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK) |
-		(((hapd->conf->uhr_params_update.update_in_tim_interval >> 3) <<
+		(((hapd->conf->uhr_params_update.update_in_tim_interval >> 1) <<
 		  UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_SHIFT) &
 		 UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK);
 
@@ -91,8 +91,6 @@ u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn)
 
 	oper = (struct ieee80211_uhr_operation *)pos;
 	os_memset(oper, 0, sizeof(*oper));
-	/* TODO: Fill in appropriate UHR-MCS max NSS information */
-	oper->basic_uhr_mcs_nss_set[0] = 0x11;
 
 	npca_info = &mode->npca_info[IEEE80211_MODE_AP];
 	npca_present = npca_info->npca_supported &&
