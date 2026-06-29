@@ -1788,6 +1788,7 @@ struct wpa_supplicant {
 	unsigned int next_beacon_check;
 
 	unsigned int ml_neigh_retries;
+	u8 ml_neigh_retry_bssid[ETH_ALEN];
 	struct hostapd_multi_hw_info *multi_hw_info;
 	u8 num_multi_hws;
 
