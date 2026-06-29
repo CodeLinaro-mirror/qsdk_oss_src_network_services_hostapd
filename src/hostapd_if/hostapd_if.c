@@ -2110,7 +2110,7 @@ void __hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 		    "hostapd_if_set_pmk pmkid",
 		    pmkid, PMKID_LEN);
 
-	sta = __get_sta(ifname, sta_mac, -1, false, &hapd);
+	sta = __get_sta(ifname, sta_mac, -1, true, &hapd);
 	if (!sta) {
 		if (hapd)
 			__inbound_error_event(hapd, sta_mac,
