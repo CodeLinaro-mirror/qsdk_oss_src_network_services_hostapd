@@ -6446,9 +6446,9 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "uhr_adv_notification_interval") == 0) {
 		int val = atoi(pos);
 
-		if (val < 1 || val > 7) {
+		if (val < 5 || val > 31) {
 			wpa_printf(MSG_ERROR,
-				   "Line %d: uhr_adv_notification_interval must be 1-7",
+				   "Line %d: uhr_adv_notification_interval must be 5-31",
 				   line);
 			return 1;
 		}
@@ -6456,9 +6456,9 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "uhr_update_in_tim_interval") == 0) {
 		int val = atoi(pos);
 
-		if (val < 1 || val > 31) {
+		if (val < 5 || val > 31) {
 			wpa_printf(MSG_ERROR,
-				   "Line %d: uhr_update_in_tim_interval must be 1-31",
+				   "Line %d: uhr_update_in_tim_interval must be 5-31",
 				   line);
 			return 1;
 		}

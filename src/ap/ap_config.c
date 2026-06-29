@@ -274,7 +274,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->smd_neighbor_expiry_time = SMD_NEIGHBOR_ENTRY_EXPIRE_SEC;
 	bss->smd_neighbor_pull_interval = SMD_NEIGHBOR_PULL_PERIOD_SEC;
 
-	bss->uhr_params_update.adv_notification_interval = 7;
+	bss->uhr_params_update.adv_notification_interval = 10;
 	bss->uhr_params_update.update_in_tim_interval = 10;
 #endif /* CONFIG_IEEE80211BN */
 
