@@ -347,6 +347,7 @@ struct hostapd_uhr_ecu {
 	enum uhr_ecu_state state;
 	u8 countdown_timer;
 };
+struct uhr_oui_ctx;
 #endif /* CONFIG_IEEE80211BN */
 
 /**
@@ -749,6 +750,7 @@ struct hostapd_data {
 
 #ifdef CONFIG_IEEE80211BN
 	struct smd_neighbor_update_ctx *smd_neighbor_update_ctx;
+	struct uhr_oui_ctx *uhr_oui_ctx;
 #endif /* CONFIG_IEEE80211BN */
 
 #if defined(CONFIG_INTERWORKING) || defined(CONFIG_DPP)
