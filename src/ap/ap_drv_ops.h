@@ -733,4 +733,7 @@ int hostapd_drv_critical_update(struct hostapd_data *hapd, u8 link_id,
 				u32 cu_type, const u8 *elems, size_t elems_len);
 #endif /* CONFIG_IEEE80211BN */
 
+int hostapd_drv_set_smd_ctx(struct hostapd_data *hapd, struct sta_info *sta,
+			    const struct sta_smd_ctx_info *ctx);
+
 #endif /* AP_DRV_OPS */

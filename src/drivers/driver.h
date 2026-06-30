@@ -6936,6 +6936,16 @@ struct wpa_driver_ops {
 	 */
 	int (*notify_radar)(void *priv, struct hostapd_freq_params *freq,
 			    u16 radar_bitmap);
+
+	/*
+	 * set_smd_ctx - Set SMD context for an SMD station
+	 * @priv: Private driver interface data
+	 * @sta_addr: station address
+	 * @ctx: SMD context information
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*set_smd_ctx)(void *priv, const u8 *sta_addr,
+			   const struct sta_smd_ctx_info *ctx);
 };
 
 /**

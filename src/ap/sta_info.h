@@ -201,6 +201,8 @@ struct smd_roam_ap_info {
 	u32 dl_drain_duration_tu;          /* DL Drain duration in TU */
 	struct os_reltime dl_drain_start;  /* DL Drain start time */
 	struct sta_info *sta;              /* Back pointer to station */
+	bool smd_ctx_valid;
+	struct sta_smd_ctx_info *smd_ctx;  /* SMD context for this AP MLD transition */
 };
 
 

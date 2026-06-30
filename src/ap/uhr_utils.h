@@ -82,7 +82,7 @@ void uhr_deinit_link_reconf_req(struct uhr_link_reconf_req_list **req_list_ptr);
 /* ST Execute - Current AP Functions */
 int uhr_handle_st_exec_req(struct hostapd_data *hapd,
                                  struct sta_info *sta,
-                                 const u8 *buf, size_t len);
+				  const u8 *buf, size_t len, struct sta_smd_ctx_info *smd_ctx);
 
 
 void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
@@ -102,7 +102,7 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 /* Current AP Functions */
 int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 				   struct sta_info *sta,
-				   const u8 *frame, size_t frame_len);
+				   const u8 *frame, size_t frame_len, struct sta_smd_ctx_info *smd_ctx);
 
 int uhr_parse_smd_bss_trans_elem(const struct ieee802_11_elems *elems,
 				 u8 type,

@@ -169,6 +169,156 @@ void hostapd_get_uhr_capab(const struct ieee80211_uhr_capabilities *src,
 }
 
 
+static void uhr_smd_ctx_dump(const struct sta_smd_ctx_info *smd_ctx,
+			     const char *prefix)
+{
+	int i;
+
+#define SMD_BLOCKACK_BUFSIZE(a, b) ((((u16) (b)) << 10) | (a))
+
+	if (!smd_ctx)
+		return;
+
+	wpa_printf(MSG_DEBUG, "%s: SMD Context Dump:", prefix);
+	wpa_printf(MSG_DEBUG, "%s: ST Type=%u",
+		   prefix, smd_ctx->st_type);
+	wpa_printf(MSG_DEBUG, "%s: valid_ctx_bmap=0x%02x",
+		   prefix, smd_ctx->valid_ctx_bmap);
+	wpa_printf(MSG_DEBUG, "%s: pn_len=%u", prefix, smd_ctx->pn_len);
+
+	/* DL Context */
+	if (smd_ctx->dl.valid_tid_bmap)
+		wpa_printf(MSG_DEBUG, "%s: [TX CONTEXT] valid_tid_bmap=0x%02x",
+			   prefix, smd_ctx->dl.valid_tid_bmap);
+
+	/* SN */
+	if (smd_ctx->valid_ctx_bmap & SMD_CTX_VALID_DL_SN) {
+		for (i = 0; i < SMD_NUM_TIDS; i++) {
+			if (!(smd_ctx->dl.valid_tid_bmap & BIT(i)))
+				continue;
+
+			wpa_printf(MSG_DEBUG, "%s:   TID=%u SN=%u", prefix, i,
+				   smd_ctx->dl.sn[i]);
+		}
+	}
+
+	/* PN */
+	if (smd_ctx->valid_ctx_bmap & SMD_CTX_VALID_PN) {
+		wpa_printf(MSG_DEBUG, "%s:   PN (len=%u):",
+			   prefix, smd_ctx->pn_len);
+		wpa_hexdump(MSG_DEBUG, "    ", smd_ctx->dl.pn,
+			    smd_ctx->pn_len);
+	}
+
+	/* BlockAck Parameters */
+	if (smd_ctx->valid_ctx_bmap & SMD_CTX_VALID_BA_PARAMS) {
+		const struct sta_smd_ba_info *ba;
+
+		for (i = 0; i < SMD_NUM_TIDS; i++) {
+			if (!(smd_ctx->dl.valid_tid_bmap & BIT(i)))
+				continue;
+
+			ba = &smd_ctx->dl.ba[i];
+			wpa_printf(MSG_DEBUG,
+				   "%s:   BlockAck: TID=%u policy=%u "
+				   "full_buf_size=%u timeout=%u ext_no_frag=%d"
+				   "extfrag_level=%u",
+				   prefix, i,
+				   ba->ba_policy,
+				   SMD_BLOCKACK_BUFSIZE(ba->buffer_size,
+							ba->ext_buffer_size),
+				   ba->timeout,
+				   ba->ext_no_frag,
+				   ba->extfrag_level);
+		}
+	}
+
+	/* UL Context */
+	if (smd_ctx->ul.valid_tid_bmap)
+		wpa_printf(MSG_DEBUG, "%s: [RX CONTEXT] valid_tid_bmap=0x%02x",
+			   prefix, smd_ctx->ul.valid_tid_bmap);
+
+	/* SN */
+	if (smd_ctx->valid_ctx_bmap & SMD_CTX_VALID_UL_SN) {
+		for (i = 0; i < SMD_NUM_TIDS; i++) {
+			if (!(smd_ctx->ul.valid_tid_bmap & BIT(i)))
+				continue;
+
+			wpa_printf(MSG_DEBUG, "%s:   TID=%u SN=%u",
+				   prefix, i, smd_ctx->ul.sn[i]);
+		}
+	}
+
+	/* PN */
+	if (smd_ctx->valid_ctx_bmap & SMD_CTX_VALID_PN) {
+		for (i = 0; i < SMD_NUM_TIDS; i++) {
+			if (!(smd_ctx->ul.valid_tid_bmap & BIT(i)))
+				continue;
+
+			wpa_printf(MSG_DEBUG,
+				   "%s:   PN[%d] (len=%u):",
+				   prefix, i, smd_ctx->pn_len);
+			wpa_hexdump(MSG_DEBUG, "    ",
+				    (u8 *) smd_ctx->ul.pn[i],
+				    smd_ctx->pn_len);
+		}
+	}
+
+	/* Block Ack Parameters */
+	if (smd_ctx->valid_ctx_bmap & SMD_CTX_VALID_BA_PARAMS) {
+		const struct sta_smd_ba_info *ba;
+
+		for (i = 0; i < SMD_NUM_TIDS; i++) {
+			if (!(smd_ctx->ul.valid_tid_bmap & BIT(i)))
+				continue;
+
+			ba = &smd_ctx->ul.ba[i];
+			wpa_printf(MSG_DEBUG,
+				   "%s:   BlockAck: TID=%u policy=%u "
+				   "full_buf_size=%u timeout=%u ext_no_frag=%d"
+				   "extfrag_level=%u",
+				   prefix, i,
+				   ba->ba_policy,
+				   SMD_BLOCKACK_BUFSIZE(ba->buffer_size,
+							ba->ext_buffer_size),
+				   ba->timeout,
+				   ba->ext_no_frag,
+				   ba->extfrag_level);
+		}
+	}
+
+	/* QoS Context */
+	if (smd_ctx->valid_ctx_bmap & SMD_CTX_VALID_QOS) {
+		wpa_printf(MSG_DEBUG, "%s: [QOS CONTEXT]", prefix);
+
+		/* SCS Descriptors */
+		for (i = 0; i < SMD_NUM_SCSID; i++) {
+			if (smd_ctx->qos.scs_descriptors[i]) {
+				wpa_printf(MSG_DEBUG,
+					   "%s:   SCS[%d]: present (ptr=%p)",
+					   prefix, i,
+					   smd_ctx->qos.scs_descriptors[i]);
+			}
+		}
+
+		/* MSCS Descriptor */
+		if (smd_ctx->qos.mscs_descriptor)
+			wpa_printf(MSG_DEBUG, "%s:   MSCS: present (ptr=%p)",
+				   prefix, smd_ctx->qos.mscs_descriptor);
+	}
+
+	/* Vendor Context */
+	if (smd_ctx->vendor_ctx_len) {
+		wpa_printf(MSG_DEBUG, "%s: [VENDOR CONTEXT]", prefix);
+		wpa_printf(MSG_DEBUG, "%s:   length: %zu bytes",
+			   prefix, smd_ctx->vendor_ctx_len);
+		wpa_hexdump(MSG_DEBUG, "    ",
+			    smd_ctx->vendor_ctx, smd_ctx->vendor_ctx_len);
+	}
+}
+
+
+
 static bool ieee80211_invalid_uhr_cap_size(size_t len)
 {
 	return len < sizeof(struct ieee80211_uhr_capabilities);
@@ -628,7 +778,8 @@ u8 hostapd_npca_get_primary_chan(struct hostapd_data *hapd,
 
 int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 				   struct sta_info *sta,
-				   const u8 *frame, size_t frame_len)
+				   const u8 *frame, size_t frame_len,
+				   struct sta_smd_ctx_info *smd_ctx)
 {
 	struct ieee802_11_elems elems;
 	struct uhr_reconfig_mle mle;
@@ -705,6 +856,19 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 			   "UHR Current AP: Created ap_info for " MACSTR ,
 			   MAC2STR(ap_info->ap_mld_addr));
 	}
+	if (smd_ctx) {
+		uhr_smd_ctx_dump(smd_ctx, "UHR ST Prep");
+		if (smd_ctx->st_type != 0) {
+			wpa_printf(MSG_ERROR,
+				   "UHR Current AP: ST Type invalid, "
+				   "expected 0 (Prep) but got %u",
+				   smd_ctx->st_type);
+			return -1;
+		} else {
+			ap_info->smd_ctx_valid = 1;
+			ap_info->smd_ctx = smd_ctx;
+		}
+	}
 
 	wpa_printf(MSG_DEBUG, "UHR Current AP: Target AP validated, sending IAP request");
 
@@ -775,7 +939,7 @@ void uhr_cur_ap_handle_st_prep_resp(struct hostapd_data *hapd,
 		return;
 	}
 
-	frame = iap->frame_buf;
+	frame = iap->frame_ctx_data;
 	if (frame_len < offsetof(struct ieee80211_mgmt, bssid) + ETH_ALEN) {
 		wpa_printf(MSG_ERROR,
 			   "UHR Current AP: Frame too short for MAC header (%u < %zu)",
@@ -853,7 +1017,8 @@ void uhr_cur_ap_handle_st_prep_resp(struct hostapd_data *hapd,
 
 int uhr_handle_st_exec_req(struct hostapd_data *hapd,
                                  struct sta_info *sta,
-                                 const u8 *buf, size_t len)
+				  const u8 *buf, size_t len,
+				 struct sta_smd_ctx_info *smd_ctx)
 {
 	struct ieee802_11_elems elems;
 	struct uhr_reconfig_mle mle;
@@ -910,6 +1075,21 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 
 	target_info->state = SMD_AP_STATE_ST_EXEC_STARTED;
 	os_memcpy(target_info->sta_addr, sta->addr, ETH_ALEN);
+
+	if (smd_ctx) {
+		uhr_smd_ctx_dump(smd_ctx, "UHR ST Exec");
+		if (smd_ctx->st_type != 1) {
+			wpa_printf(MSG_ERROR,
+				   "UHR ST EXEC: ST Type invalid, "
+				   "expected 1 (Exec) but got %u",
+				   smd_ctx->st_type);
+			return -1;
+		} else {
+			target_info->smd_ctx_valid = 1;
+			target_info->smd_ctx = smd_ctx;
+		}
+	}
+
 	wpa_printf(MSG_INFO,
 		   "UHR ST EXEC: Target AP " MACSTR " state: ST_PREP_COMPLETE → ST_EXEC_STARTED",
 		   MAC2STR(mle.target_ap_mld_addr));
@@ -1026,7 +1206,7 @@ void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
        }
 
        /* Extract DL Drain Duration from frame_buf (last 4 bytes) */
-       frame_buf = iap->frame_buf;
+	frame_buf = iap->frame_ctx_data;
        if (frame_len >= 4) {
                target_info->dl_drain_duration_tu = WPA_GET_LE32(frame_buf + frame_len - 4);
 
@@ -2109,6 +2289,40 @@ done:
 	return buf;
 }
 
+static int uhr_target_ap_set_smd_ctx(struct hostapd_data *hapd, const u8 *sta_addr,
+				     struct sta_smd_ctx_info *smd_ctx)
+{
+	struct hostapd_data *link = NULL, *assoc_hapd;
+	struct sta_info *sta = NULL, *assoc_sta;
+	int ret;
+
+	wpa_printf(MSG_DEBUG,
+		   "SMD: Target AP: Setting dynamic context for " MACSTR,
+		   MAC2STR(sta_addr));
+
+	for_each_mld_link(link, hapd) {
+		sta = ap_get_sta(hapd, sta_addr);
+		if (sta)
+			break;
+	}
+
+	if (!sta)
+		return -1;
+
+	assoc_sta = hostapd_ml_get_assoc_sta(link, sta, &assoc_hapd);
+	if (!assoc_sta)
+		return -1;
+
+	uhr_smd_ctx_dump(smd_ctx, "UHR SET_SMD_CTX");
+	ret = hostapd_drv_set_smd_ctx(assoc_hapd, assoc_sta, smd_ctx);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "Failed to send SET_SMD_CTX to driver=%d",
+			   ret);
+		return ret;
+	}
+
+	return 0;
+}
 
 void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 			       const struct uhr_iap_frame *iap,
@@ -2124,6 +2338,8 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 	struct uhr_smd_bss_transition_element sbte;
 	struct sta_info *sta = NULL;
 	int ret;
+	u16 smd_ctx_len = 0;
+	struct sta_smd_ctx_info *smd_ctx;
 	
 	if (!hapd || !iap) {
 		wpa_printf(MSG_ERROR,
@@ -2143,7 +2359,7 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 		goto send_response;
 	}
 	
-	frame = iap->frame_buf;
+	frame = iap->frame_ctx_data;
 
 	if (frame_len < WLAN_ST_PREP_MIN_LEN) {
 		wpa_printf(MSG_ERROR,
@@ -2151,7 +2367,14 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 		status_code = 1;
 		goto send_response;
 	}
-	
+
+	if (iap->flags & UHR_IAP_FLAG_HAS_DYNAMIC_CTX) {
+		smd_ctx_len = le_to_host16(iap->smd_ctx_len);
+		wpa_printf(MSG_DEBUG,
+			   "SMD ST PREP Target AP: Dynamic context len=%u",
+			   smd_ctx_len);
+	}
+
 	dialog_token = frame[26];
 	
 	/* Parse IEs */
@@ -2199,6 +2422,15 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
        /* Update flags based on the flags */
        sta->dl_sn_not_transferred = sbte.dl_sn_not_transferred;
        sta->ul_sn_not_transferred = sbte.ul_sn_not_transferred;
+
+	if (smd_ctx_len) {
+		smd_ctx = (void *) (iap->frame_ctx_data + frame_len);
+		if (uhr_target_ap_set_smd_ctx(hapd, iap->sta_addr, smd_ctx)) {
+			wpa_printf(MSG_ERROR, "SMD ST PREP Target AP: Failed to set ctx");
+			status_code = 1;
+			goto send_response;
+		}
+	}
 
 send_response:
 	response_frame = uhr_tgt_ap_st_prep_resp(hapd, iap->sta_addr,
@@ -2330,11 +2562,13 @@ static u8 * hostapd_eid_smd_bss_trans_exec_resp(u8 *pos,
 void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
                                 const struct uhr_iap_frame *iap)
 {
-       struct sta_info *sta;
-       u8 *resp_buf, *pos;
-       const u8 *frame;
-       int ret;
-       struct ieee80211_mgmt *mgmt;
+	struct sta_info *sta;
+	u8 *resp_buf, *pos;
+	const u8 *frame;
+	int ret;
+	struct ieee80211_mgmt *mgmt;
+	u16 smd_ctx_len = 0;
+	struct sta_smd_ctx_info *smd_ctx;
 
        wpa_printf(MSG_DEBUG,
                   "UHR ST EXEC: Received IAP REQUEST (txn=%u)",
@@ -2359,6 +2593,27 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 		wpa_auth_set_ml_info(sta->wpa_sm,
 				     sta->mld_assoc_link_id,
 				     &sta->mld_info);
+	}
+
+	if (iap->flags & UHR_IAP_FLAG_HAS_DYNAMIC_CTX) {
+		smd_ctx_len = le_to_host16(iap->smd_ctx_len);
+		wpa_printf(MSG_DEBUG,
+			   "SMD ST EXEC Target AP: Dynamic context len=%u",
+			   smd_ctx_len);
+	}
+
+	if (smd_ctx_len) {
+		smd_ctx = (void *) (iap->frame_ctx_data + iap->frame_len);
+		if (uhr_target_ap_set_smd_ctx(hapd, iap->sta_addr, smd_ctx)) {
+			wpa_printf(MSG_ERROR, "SMD ST EXEC Target AP: Failed to set ctx");
+			uhr_iap_send_st_exec_resp(hapd,
+						  iap->current_ap_mld_addr,
+						  iap->sta_addr,
+						  iap->iap_transaction_id,
+						  le_to_host64(iap->sequence_number),
+						  WLAN_STATUS_UNSPECIFIED_FAILURE,
+						  NULL, 0);
+		}
 	}
 
 	if (ap_sta_set_authorized_flag(hapd, sta, 1)) {
@@ -2391,7 +2646,7 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 	 * [~~-~~] Diffie-Helman Parameters IE (TBD)
 	 * [~~-~~] Nonce Element IE (TBD)
 	 */
-	frame = iap->frame_buf;
+	frame = iap->frame_ctx_data;
 
 
 	int i = 0, n = 0;
@@ -2488,5 +2743,5 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
                   "UHR ST EXEC: Sent IAP RESPONSE to Current AP " MACSTR " (len=%zu)",
                   MAC2STR(iap->current_ap_mld_addr), len);
 
-       uhr_tgt_st_prep_timer_cleanup(hapd, (u8 *) iap->sta_addr);
+	uhr_tgt_st_prep_timer_cleanup(hapd, (u8 *) iap->sta_addr);
 }

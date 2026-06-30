@@ -4047,6 +4047,19 @@ static void hostapd_restart_agile_cac_all_ifaces(struct hostapd_data *hapd)
 	}
 }
 
+void hostapd_rx_free_smd_ctx(struct sta_smd_ctx_info *smd_ctx)
+{
+	int i;
+
+	if (!smd_ctx)
+		return;
+
+	for (i = 0; i < SMD_NUM_SCSID; i++)
+		os_free(smd_ctx->qos.scs_descriptors[i]);
+	os_free(smd_ctx->qos.mscs_descriptor);
+	os_free(smd_ctx);
+}
+
 void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		       union wpa_event_data *data)
 {
@@ -4154,13 +4167,14 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		break;
 #endif /* NEED_AP_MLME */
 	case EVENT_RX_MGMT:
-		if (!data->rx_mgmt.frame)
-			break;
+		if (data->rx_mgmt.frame) {
 #ifdef NEED_AP_MLME
-		hostapd_mgmt_rx(hapd, &data->rx_mgmt);
+			hostapd_mgmt_rx(hapd, &data->rx_mgmt);
 #else /* NEED_AP_MLME */
-		hostapd_action_rx(hapd, &data->rx_mgmt);
+			hostapd_action_rx(hapd, &data->rx_mgmt);
 #endif /* NEED_AP_MLME */
+		}
+		hostapd_rx_free_smd_ctx(data->rx_mgmt.smd_ctx);
 		break;
 	case EVENT_RX_PROBE_REQ:
 		if (data->rx_probe_req.sa == NULL ||
