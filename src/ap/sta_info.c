@@ -460,11 +460,6 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 		else
 			aid = sta->aid;
 
-#ifdef CONFIG_QCN_EXTN
-		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
-			aid = sta->aid;
-#endif /* CONFIG_QCN_EXTN */
-
 		if (ap_sta_is_mld(hapd, sta)) {
 			for_each_mld_link(phapd, hapd) {
 				if (phapd == hapd)
@@ -504,9 +499,26 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 		hapd->sta_aid[sta->aid / 32] &=
 			~BIT(sta->aid % 32);
 
-	if (sta->wds_mld_uid > 0)
+	if (sta->wds_mld_uid > 0) {
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+			u32 uid_base = WDS_STA_UID_REPURPOSED_BASE +
+				       (hapd->mld_link_id *
+					WDS_STA_UID_REPURPOSED_PER_LINK);
+
+			if (sta->wds_mld_uid >= uid_base &&
+			    sta->wds_mld_uid <
+			    uid_base + WDS_STA_UID_REPURPOSED_PER_LINK) {
+				int uid_offset = sta->wds_mld_uid - uid_base;
+
+				hapd->wds_sta_uid_repurpose[uid_offset / 32] &=
+					~BIT(uid_offset % 32);
+			}
+		} else
+#endif /* CONFIG_QCN_EXTN */
 		hapd->wds_sta_uid[(sta->wds_mld_uid - 1) / 32] &=
 			~BIT((sta->wds_mld_uid - 1) % 32);
+	}
 
 	hapd->num_sta--;
 	if (sta->nonerp_set) {
