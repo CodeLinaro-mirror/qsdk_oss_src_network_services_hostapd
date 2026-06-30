@@ -250,9 +250,9 @@ struct sta_info {
 	struct dl_list ip6addr; /* list head for struct ip6addr */
 	u16 aid; /* STA's unique AID (1 .. 2007) or 0 if not yet assigned */
 #ifdef CONFIG_IEEE80211BE
-	u16 wds_ifname_id; /* WDS interface name identifier (1 .. 2007) for MLO
-			    * WDS stations, used to generate unique interface
-			    * names. 0 if not yet assigned. */
+	u16 wds_ifname_id; /* WDS interface name identifier (1..2007 for
+			    * non-repurposed links, >= 3001 for repurposed
+			    * links), or 0 if not yet assigned. */
 #endif /* CONFIG_IEEE80211BE */
 	u16 disconnect_reason_code; /* RADIUS server override */
 	unsigned long long flags; /* Bitfield of WLAN_STA_* */
