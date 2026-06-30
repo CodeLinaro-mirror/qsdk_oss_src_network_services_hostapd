@@ -1979,6 +1979,8 @@ int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 		return err;
 	}
 
+	hostapd_get_channel_switch_time(iface, &csa_settings.freq_params);
+
 	/* If mesh VAP present, trigger mesh CSA prior to AP channel switch.
 	 * Constraint: CSA beacon must be transmitted within ~550 ms of
 	 * radar detection. Cannot wait for mesh TBTT (1000 TU). */
