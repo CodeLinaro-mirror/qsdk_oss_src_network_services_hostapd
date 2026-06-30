@@ -248,6 +248,12 @@ struct rx_critical_param {
 	u8 switch_count;
 };
 
+struct rx_ecu_param {
+	bool critical_update;
+	u8 ebpcc;
+	u8 countdown;
+};
+
 /**
  * enum elemid_cu - used for detecting element id modification
  * category 2 critical update
@@ -707,6 +713,7 @@ struct hostapd_data {
        struct rx_critical_param rx_cu_param;
        /*Element ID critical update data*/
        struct elemid_cu_param cu_eid[ELEMID_CU_PARAM_MAX];
+       struct rx_ecu_param rx_ecu_param;
 #ifdef CONFIG_IEEE80211BE
 	u8 eht_mld_bss_param_change;
 	struct hostapd_mld *mld;

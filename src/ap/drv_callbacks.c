@@ -3709,6 +3709,21 @@ static void hostapd_event_update_cu_param(struct hostapd_data *hapd,
 	hapd->rx_cu_param.switch_count = cu_event->switch_count;
 }
 
+#ifdef CONFIG_IEEE80211BN
+static void hostapd_event_update_ecu_param(struct hostapd_data *hapd,
+					   struct cu_event *cu_event)
+{
+	/* Update Enhanced Critical Update (ECU) parameters.
+	 * The enhanced_bpcc is a 4-bit value (modulo 16) received from the
+	 * driver via EVENT_RX_CRITICAL_UPDATE when the kernel reports an
+	 * updated Enhanced BSS Parameter Change Count for this link.
+	 */
+	hapd->rx_ecu_param.ebpcc = cu_event->enhanced_bpcc & 0x0F;
+	hapd->rx_ecu_param.critical_update = cu_event->enhanced_critical_update;
+	hapd->rx_ecu_param.countdown = cu_event->ecu_countdown;
+}
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef CONFIG_IEEE80211BE
 
 static void hostapd_mld_iface_enable(struct hostapd_data *hapd)
@@ -4411,8 +4426,12 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		 break;
 	case EVENT_RX_CRITICAL_UPDATE:
 		link_hapd = switch_link_hapd(hapd, data->cu_event.link_id);
-		if (link_hapd)
+		if (link_hapd) {
 			hostapd_event_update_cu_param(link_hapd, &data->cu_event);
+#ifdef CONFIG_IEEE80211BN
+			hostapd_event_update_ecu_param(link_hapd, &data->cu_event);
+#endif /* CONFIG_IEEE80211BN */
+		}
 		break;
 	case EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY:
 		hostapd_event_afc_update_complete(hapd,

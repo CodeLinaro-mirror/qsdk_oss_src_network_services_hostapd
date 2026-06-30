@@ -1465,6 +1465,9 @@ mlme_event_mgmt_critical_update(struct i802_bss *bss, struct nlattr *rx_cu_param
 			[NL80211_CU_MLD_LINK_ATTR_CRITICAL_FLAG] = { .type = NLA_FLAG },
 			[NL80211_CU_MLD_LINK_ATTR_BPCC] = { .type = NLA_U8 },
 			[NL80211_CU_MLD_LINK_ATTR_SWITCH_COUNT] = { .type = NLA_U8 },
+			[NL80211_CU_MLD_LINK_ATTR_ENHANCED_BPCC] = { .type = NLA_U8 },
+			[NL80211_CU_MLD_LINK_ATTR_ENHANCED_CRITICAL_FLAG] = { .type = NLA_FLAG },
+			[NL80211_CU_MLD_LINK_ATTR_ECU_COUNTDOWN] = { .type = NLA_U8 },
 		};
 	static struct nla_policy
 		mld_policy[NL80211_CU_MLD_ATTR_MAX + 1] = {
@@ -1526,6 +1529,20 @@ mlme_event_mgmt_critical_update(struct i802_bss *bss, struct nlattr *rx_cu_param
 						event.cu_event.switch_count =
 							nla_get_u8(link[NL80211_CU_MLD_LINK_ATTR_SWITCH_COUNT]);
 					}
+#ifdef CONFIG_IEEE80211BN
+					if (link[NL80211_CU_MLD_LINK_ATTR_ENHANCED_BPCC]) {
+						event.cu_event.enhanced_bpcc =
+							nla_get_u8(link[NL80211_CU_MLD_LINK_ATTR_ENHANCED_BPCC]);
+					}
+					if (link[NL80211_CU_MLD_LINK_ATTR_ENHANCED_CRITICAL_FLAG]) {
+						event.cu_event.enhanced_critical_update =
+							nla_get_flag(link[NL80211_CU_MLD_LINK_ATTR_ENHANCED_CRITICAL_FLAG]);
+					}
+					if (link[NL80211_CU_MLD_LINK_ATTR_ECU_COUNTDOWN]) {
+						event.cu_event.ecu_countdown =
+							nla_get_u8(link[NL80211_CU_MLD_LINK_ATTR_ECU_COUNTDOWN]);
+					}
+#endif /* CONFIG_IEEE80211BN */
 					wpa_supplicant_event(tmp_bss->ctx,
 							     EVENT_RX_CRITICAL_UPDATE, &event);
 				}
