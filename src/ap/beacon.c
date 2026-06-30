@@ -695,7 +695,7 @@ static u8 * hostapd_eid_supported_op_classes(struct hostapd_data *hapd, u8 *eid)
  * @eid: Pointer to the current position in the buffer
  * Returns: Pointer to the next position in the buffer
  */
-static u8 * hostapd_eid_smd_ie(struct hostapd_data *hapd, u8 *eid)
+u8 * hostapd_eid_smd_ie(struct hostapd_data *hapd, u8 *eid)
 {
 	u8 *pos = eid;
 	u8 smd_cap_byte;

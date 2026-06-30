@@ -152,6 +152,12 @@ static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 	struct wpabuf *nr;
 	const u8 *subelems;
 	size_t subelems_len;
+	size_t raw_subelems_len;
+#ifdef CONFIG_IEEE80211BN
+	bool same_smd = false;
+	const u8 *smd_info_start = NULL;
+	const u8 *smd_info_end = NULL;
+#endif
 
 	if (data_len < 2)
 		return -1;
@@ -178,7 +184,8 @@ static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 	phy_type = *pos++;
 
 	subelems = pos;
-	subelems_len = tlv_end - pos;
+	raw_subelems_len = tlv_end - pos;
+	subelems_len = raw_subelems_len;
 	/* Parse SSID from optional subelements if present */
 	os_memset(&ssid, 0, sizeof(ssid));
 	while (subelems_len >= 2) {
@@ -191,6 +198,16 @@ static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 			ssid.ssid_len = elen;
 			os_memcpy(ssid.ssid, subelems + 2, elen);
 		}
+#ifdef CONFIG_IEEE80211BN
+		if (id == WNM_NEIGHBOR_SMD_INFO) {
+			smd_info_start = subelems;
+			smd_info_end = subelems + 2 + elen;
+			if (elen >= ETH_ALEN && hapd->conf->smd.enabled &&
+			    os_memcmp(subelems + 2, hapd->conf->smd.smd_identifier,
+				      ETH_ALEN) == 0)
+				same_smd = true;
+		}
+#endif
 		subelems += 2 + elen;
 		subelems_len -= 2 + elen;
 	}
@@ -200,6 +217,14 @@ static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 		ssid.ssid_len = hapd->conf->ssid.ssid_len;
 		os_memcpy(ssid.ssid, hapd->conf->ssid.ssid, ssid.ssid_len);
 	}
+
+#ifdef CONFIG_IEEE80211BN
+	/* Always recompute SAME_SMD locally rather than trusting the sender's
+	 * value, since only this AP knows its own SMD identifier. */
+	bssid_info &= ~NEI_REP_BSSID_INFO_SAME_SMD;
+	if (same_smd)
+		bssid_info |= NEI_REP_BSSID_INFO_SAME_SMD;
+#endif
 
 	if (update_type == SMD_NEIGHBOR_UPDATE_REMOVE_AP) {
 		hostapd_neighbor_remove(hapd, bssid, &ssid);
@@ -224,8 +249,21 @@ static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 	wpabuf_put_u8(nr, op_class);
 	wpabuf_put_u8(nr, channel);
 	wpabuf_put_u8(nr, phy_type);
-	if (tlv_end > pos)
-		wpabuf_put_data(nr, pos, tlv_end - pos);
+	if (raw_subelems_len) {
+#ifdef CONFIG_IEEE80211BN
+		if (same_smd && smd_info_start) {
+			/* Strip WNM_NEIGHBOR_SMD_INFO from the neighbor report:
+			 * the STA already knows the SMD ID when SAME_SMD is set,
+			 * so advertising it again is redundant. */
+			wpabuf_put_data(nr, pos, smd_info_start - pos);
+			wpabuf_put_data(nr, smd_info_end,
+					pos + raw_subelems_len - smd_info_end);
+		} else
+#endif
+		{
+			wpabuf_put_data(nr, pos, raw_subelems_len);
+		}
+	}
 
 	if (hostapd_neighbor_set(hapd, bssid, &ssid, nr, NULL, NULL, 0, 0) < 0) {
 		wpabuf_free(nr);
