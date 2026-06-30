@@ -17,36 +17,110 @@
 #include "uhr_utils.h"
 #include "ieee802_11.h"
 
-/**
- * uhr_st_prep_timeout_handler - Handle ST preparation timeout
- * @eloop_ctx: Station info pointer
- * @timeout_ctx: AP info pointer that timed out
- *
- * Called when ST preparation timeout expires for a specific AP.
- * Removes the expired AP from the station's roaming candidate list.
- */
+
+static void uhr_st_iap_timeout_handler(void *eloop_ctx,
+                                       void *timeout_ctx)
+{
+        struct sta_info *sta = eloop_ctx;
+        struct smd_roam_ap_info *ap_info = timeout_ctx;
+
+        ap_info->uhr_st_iap_timer_ongoing = false;
+        ap_info->uhr_st_iap_timeout_occurred = true;
+
+        wpa_printf(MSG_DEBUG,
+                   "UHR: ST IAP timeout fired for AP " MACSTR,
+                   MAC2STR(ap_info->ap_mld_addr));
+
+        uhr_remove_ap_from_list(sta, ap_info->ap_mld_addr);
+}
+
+
+int uhr_cur_start_iap_msg_timer(struct sta_info *sta,
+                               const u8 *ap_mld_addr)
+{
+        struct smd_roam_ap_info *ap_info;
+
+        if (!sta || !ap_mld_addr)
+                return -1;
+
+        ap_info = uhr_find_ap_in_list(sta, ap_mld_addr);
+        if (!ap_info)
+                return -1;
+
+        if (ap_info->uhr_st_iap_timer_ongoing)
+                return 0;
+
+        ap_info->uhr_st_iap_timer_ongoing = true;
+        ap_info->uhr_st_iap_timeout_occurred = false;
+
+        if (eloop_register_timeout(0,
+                                   UHR_ST_IAP_TIMEOUT_MS,
+                                   uhr_st_iap_timeout_handler,
+                                   sta, ap_info) < 0) {
+                ap_info->uhr_st_iap_timer_ongoing = false;
+                return -1;
+        }
+
+        wpa_printf(MSG_DEBUG,
+                   "UHR: Started ST IAP timeout (%u ms) for AP " MACSTR,
+                   UHR_ST_IAP_TIMEOUT_MS / 1000,
+                   MAC2STR(ap_mld_addr));
+
+        return 0;
+}
+
+
+void uhr_cancel_iap_timeout(struct sta_info *sta,
+                            const u8 *ap_mld_addr)
+{
+        struct smd_roam_ap_info *ap_info;
+
+        if (!sta || !ap_mld_addr)
+                return;
+
+        ap_info = uhr_find_ap_in_list(sta, ap_mld_addr);
+        if (!ap_info || !ap_info->uhr_st_iap_timer_ongoing)
+                return;
+
+        eloop_cancel_timeout(uhr_st_iap_timeout_handler, sta, ap_info);
+
+        ap_info->uhr_st_iap_timer_ongoing = false;
+        ap_info->uhr_st_iap_timeout_occurred = false;
+}
+
 static void uhr_st_prep_timeout_handler(void *eloop_ctx, void *timeout_ctx)
 {
 	struct sta_info *sta = eloop_ctx;
 	struct smd_roam_ap_info *ap_info = timeout_ctx;
+
+	struct hostapd_data *prep_hapd = ap_info->st_prep_hapd;
+	struct hostapd_data *partner_hapd;
+	struct sta_info *partner_sta;
+	u8 ap_mld_addr[ETH_ALEN];
+
+	os_memcpy(ap_mld_addr, ap_info->ap_mld_addr, ETH_ALEN);
+
 	wpa_printf(MSG_DEBUG, "UHR: ST prep timeout for AP " MACSTR,
-		   MAC2STR(ap_info->ap_mld_addr));
-	/* Mark timeout occurred */
-	ap_info->uhr_st_prep_timeout_occurred = true;
-	/* Remove expired AP from list */
-	uhr_remove_ap_from_list(sta, ap_info->ap_mld_addr);
+		   MAC2STR(ap_mld_addr));
+
+	ap_info->uhr_st_prep_timer_ongoing = false;
+
+	/* Remove the original entry — frees ap_info */
+	uhr_remove_ap_from_list(sta, ap_mld_addr);
+
+	/* Remove stale clones from all partner link stations */
+	if (prep_hapd) {
+		for_each_mld_link(partner_hapd, prep_hapd) {
+			if (partner_hapd == prep_hapd)
+				continue;
+			partner_sta = ap_get_sta(partner_hapd, sta->addr);
+			if (partner_sta)
+				uhr_remove_ap_from_list(partner_sta, ap_mld_addr);
+		}
+	}
 }
 
 
-/**
- * uhr_cur_start_st_prep_timer - Start ST preparation timeout for an AP
- * @sta: Station info
- * @ap_mld_addr: Target AP MLD MAC address
- * Returns: 0 on success, -1 on error
- *
- * Starts a 5-second timeout for ST preparation with the specified AP.
- * If timeout expires, the AP is automatically removed from candidate list.
- */
 int uhr_cur_start_st_prep_timer(struct sta_info *sta, const u8 *ap_mld_addr)
 {
 	struct smd_roam_ap_info *ap_info;
@@ -66,10 +140,12 @@ int uhr_cur_start_st_prep_timer(struct sta_info *sta, const u8 *ap_mld_addr)
 	/* Record start time */
 	os_get_reltime(&ap_info->uhr_st_prep_start);
 	ap_info->uhr_st_prep_timeout_occurred = false;
+	ap_info->uhr_st_prep_timer_ongoing = true;
 	/* Start new timeout */
 	if (eloop_register_timeout(UHR_ST_PREP_TIMEOUT_SEC, 0,
 				   uhr_st_prep_timeout_handler, sta, ap_info) < 0) {
 		wpa_printf(MSG_ERROR, "UHR: Failed to register ST prep timeout");
+		ap_info->uhr_st_prep_timer_ongoing = false;
 		return -1;
 	}
 	wpa_printf(MSG_DEBUG, "UHR: Started ST prep timeout (%d sec) for AP " MACSTR,
@@ -79,34 +155,21 @@ int uhr_cur_start_st_prep_timer(struct sta_info *sta, const u8 *ap_mld_addr)
 }
 
 
-/**
- * uhr_cancel_st_prep_timeout - Cancel ST preparation timeout for an AP
- * @sta: Station info
- * @ap_mld_addr: Target AP MLD MAC address
- *
- * Cancels the ST preparation timeout for the specified AP.
- * Should be called when ST preparation completes successfully.
- */
 void uhr_cancel_st_prep_timeout(struct sta_info *sta, const u8 *ap_mld_addr)
 {
 	struct smd_roam_ap_info *ap_info;
 	if (!sta || !ap_mld_addr)
 		return;
 	ap_info = uhr_find_ap_in_list(sta, ap_mld_addr);
-	if (!ap_info)
+	if (!ap_info || !ap_info->uhr_st_prep_timer_ongoing)
 		return;
 	eloop_cancel_timeout(uhr_st_prep_timeout_handler, sta, ap_info);
+	ap_info->uhr_st_prep_timer_ongoing = false;
 	wpa_printf(MSG_DEBUG, "UHR: Cancelled ST prep timeout for AP " MACSTR,
 		   MAC2STR(ap_mld_addr));
 }
 
 
-/**
- * uhr_find_ap_in_list - Find AP in station's roaming candidate list
- * @sta: Station info
- * @ap_mld_addr: AP MLD MAC address to find
- * Returns: AP info pointer if found, NULL otherwise
- */
 struct smd_roam_ap_info *uhr_find_ap_in_list(struct sta_info *sta, const u8 *ap_mld_addr)
 {
 	struct smd_roam_ap_info *ap_info;
@@ -166,7 +229,7 @@ int uhr_remove_ap_from_list(struct sta_info *sta, const u8 *ap_mld_addr)
 	ap_info = sta->smd_info.ap_list;
 	while (ap_info) {
 		if (ether_addr_equal(ap_info->ap_mld_addr, ap_mld_addr)) {
-			eloop_cancel_timeout(uhr_st_prep_timeout_handler, sta, ap_info);
+			eloop_cancel_timeout(uhr_st_iap_timeout_handler, sta, ap_info);
 			if (prev)
 				prev->next = ap_info->next;
 			else
@@ -200,8 +263,8 @@ void uhr_cleanup_sta_roam_contexts(struct sta_info *sta)
 	ap_info = sta->smd_info.ap_list;
 	while (ap_info) {
 		next = ap_info->next;
-		/* Cancel any pending timeouts */
-		eloop_cancel_timeout(uhr_st_prep_timeout_handler, sta, ap_info);
+		/* Cancel all pending timers before freeing*/
+		eloop_cancel_timeout(uhr_st_iap_timeout_handler, sta, ap_info);
 		wpa_printf(MSG_DEBUG, "UHR: Freeing roam context for AP " MACSTR,
 			   MAC2STR(ap_info->ap_mld_addr));
 		os_free(ap_info);
@@ -272,6 +335,135 @@ int uhr_parse_smd_bss_trans_elem(const struct ieee802_11_elems *elems,
 	return 0;
 }
 
+size_t hostapd_uhr_eid_bmlie_from_rmlie(const struct wpabuf *mlbuf,
+						u8 link_id,
+						u8 *bmlie)
+{
+	const u8 *pos;
+	u16 ml_control;
+	u8 mac_addr[ETH_ALEN];
+	u8 *out = bmlie;
+	u16 bmlie_ml_control = 0;
+	u8 bmlie_len = 0;
+	u8 bmlie_common_info_len = 0;
+	size_t len = 0;
+	
+	/* Optional fields from RMLIE */
+	const u8 *eml_caps = NULL;
+	const u8 *mld_caps = NULL;
+	const u8 *ext_mld_caps = NULL;
+
+	const struct ieee80211_eht_ml *ml;
+	
+	if (!mlbuf || !bmlie) {
+		wpa_printf(MSG_ERROR, "SMD ST Prep: Invalid parameters");
+		return 0;
+	}
+	ml = (const struct ieee80211_eht_ml *) wpabuf_head(mlbuf);
+	len = wpabuf_len(mlbuf);
+	
+	wpa_hexdump(MSG_DEBUG, "SMD ST Prep: Input RMLIE", ml, len);
+	
+	if (!ml)
+		return 0;
+
+	
+	if (len < sizeof(*ml) + ETH_ALEN + 1UL)
+		goto fail;
+	
+	const struct eht_ml_reconf_common_info *ml_common_info;
+
+	ml_common_info = (const struct eht_ml_reconf_common_info *) ml->variable;
+
+	pos = (const u8 *) ml_common_info->variable;
+	ml_control = WPA_GET_LE16((const u8 *) ml);
+
+	if (!(ml_control & RECONF_MULTI_LINK_CTRL_PRES_MLD_MAC_ADDR))
+		goto fail;
+
+	os_memcpy(mac_addr, pos, ETH_ALEN);
+	pos += ETH_ALEN;
+
+	if (ml_control & RECONF_MULTI_LINK_CTRL_PRES_EML_CAPA) {
+		eml_caps = pos;
+		pos +=2;
+	}
+	if (ml_control & RECONF_MULTI_LINK_CTRL_PRES_MLD_CAPA) {
+		mld_caps = pos;
+		pos +=2;
+	}
+
+	if (ml_control & RECONF_MULTI_LINK_CTRL_PRES_EXT_MLD_CAP) {
+		ext_mld_caps = pos;
+		pos +=2;
+	}
+	if (ml_control & RECONF_MULTI_LINK_CTRL_PRESS_TGT_MLD_ADDR) {
+		pos += ETH_ALEN;
+	}
+	
+	bmlie_ml_control = MULTI_LINK_CONTROL_TYPE_BASIC;
+	bmlie_common_info_len = 1 + ETH_ALEN;
+	
+	if (eml_caps) {
+		bmlie_ml_control |= BASIC_MULTI_LINK_CTRL_PRES_EML_CAPA;
+		bmlie_common_info_len += 2;
+	}
+	if (mld_caps) {
+		bmlie_ml_control |= BASIC_MULTI_LINK_CTRL_PRES_MLD_CAPA;
+		bmlie_common_info_len += 2;
+	}
+	if (ext_mld_caps) {
+		bmlie_ml_control |= BASIC_MULTI_LINK_CTRL_PRES_EXT_MLD_CAP;
+		bmlie_common_info_len += 2;
+	}
+
+	bmlie_len = 1 + 2 + bmlie_common_info_len;
+	if (bmlie_len > 255)
+		goto fail;
+	
+	*out++ = WLAN_EID_EXTENSION;
+	*out++ = bmlie_len;
+	*out++ = WLAN_EID_EXT_MULTI_LINK;
+
+	WPA_PUT_LE16(out, bmlie_ml_control);
+	out += 2;
+
+	*out++ = bmlie_common_info_len;
+
+	os_memcpy(out, mac_addr, ETH_ALEN);
+	out += ETH_ALEN;
+
+	if (eml_caps) {
+		os_memcpy(out, eml_caps, 2);
+		out += 2;
+	}
+
+	if (mld_caps) {
+		os_memcpy(out, mld_caps, 2);
+		out += 2;
+	}
+
+	if (ext_mld_caps) {
+		os_memcpy(out, ext_mld_caps, 2);
+		out += 2;
+	}
+
+	wpa_printf(MSG_DEBUG, "SMD ST Prep: Built BMLIE from RMLIE (%d bytes, link_id=%u)",
+		   (int)(out - bmlie), link_id);
+	wpa_printf(MSG_DEBUG, "  MLD MAC: " MACSTR, MAC2STR(mac_addr));
+	wpa_printf(MSG_DEBUG, "  EML Caps: %s", eml_caps ? "present" : "absent");
+	wpa_printf(MSG_DEBUG, "  MLD Caps: %s", mld_caps ? "present" : "absent");
+	wpa_printf(MSG_DEBUG, "  Ext MLD Caps: %s", ext_mld_caps ? "present" : "absent");
+
+	
+	/* Debug: Dump output BMLIE */
+	wpa_hexdump(MSG_DEBUG, "SMD ST Prep: Output BMLIE", bmlie, bmlie_len + 2);
+
+	return (out - bmlie);
+fail:
+	return 0;
+}
+
 
 /**
  * uhr_parse_reconfig_mle - Parse UHR Reconfiguration Multi-Link element
@@ -291,6 +483,8 @@ int uhr_parse_reconfig_mle(const struct ieee802_11_elems *elems,
 	u16 ml_control, presence_bitmap;
 	const u8 *pos;
 	int ret = -1;
+	u8 bmlie[30];
+	os_memset(bmlie, 0, 30);
 
 	/* NULL pointer checks */
 	if (!elems || !mle) {
@@ -482,6 +676,7 @@ void uhr_tgt_st_prep_timer_cleanup(void *eloop_ctx, void *timeout_ctx)
 
 			       /* Clear timer reference */
                                sta->smd_info.uhr_target_prep_timer = 0;
+                               sta->smd_info.tgt_prep_timer_ctx = NULL;
 
 			       if (state == SMD_STA_ST_EXEC_DONE)
 				       continue;
@@ -530,6 +725,7 @@ void uhr_tgt_start_st_prep_timer(struct hostapd_data *hapd,
        eloop_register_timeout(timeout_sec, 0, uhr_tgt_st_prep_timer_cleanup,
                               hapd, addr_copy);
        sta->smd_info.uhr_target_prep_timer = 1;
+       sta->smd_info.tgt_prep_timer_ctx = addr_copy;
 
        wpa_printf(MSG_DEBUG,
                   "UHR Target AP: Started prep timer for " MACSTR " (%u sec)",
@@ -553,7 +749,10 @@ void uhr_tgt_cancel_st_prep_timer(struct hostapd_data *hapd,
        if (!sta || !sta->smd_info.uhr_target_prep_timer)
                return;
 
-       eloop_cancel_timeout(uhr_tgt_st_prep_timer_cleanup, hapd, (void *)sta_addr);
+       eloop_cancel_timeout(uhr_tgt_st_prep_timer_cleanup, hapd,
+                            sta->smd_info.tgt_prep_timer_ctx);
+       os_free(sta->smd_info.tgt_prep_timer_ctx);
+       sta->smd_info.tgt_prep_timer_ctx = NULL;
        sta->smd_info.uhr_target_prep_timer = 0;
 
        wpa_printf(MSG_DEBUG,

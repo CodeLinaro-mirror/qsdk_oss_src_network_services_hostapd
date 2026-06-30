@@ -52,8 +52,6 @@ static int uhr_extract_security_ctx(struct hostapd_data *hapd,
 	if (sm->pmk_len > 0 && sm->pmk_len <= PMK_LEN_MAX) {
 		sec_ctx->pmk_len = sm->pmk_len;
 		os_memcpy(sec_ctx->pmk, sm->PMK, sm->pmk_len);
-		wpa_printf(MSG_DEBUG, "SMD IAP: Extracted PMK (len=%u)",
-			   sec_ctx->pmk_len);
 	} else {
 		wpa_printf(MSG_ERROR, "SMD IAP: Invalid PMK length %u",
 			   sm->pmk_len);
@@ -61,45 +59,41 @@ static int uhr_extract_security_ctx(struct hostapd_data *hapd,
 	}
 	
 	/* Extract PMKID */
-	if (sm->pmkid_set) {
+	if (sm->pmkid_set)
 		os_memcpy(sec_ctx->pmkid, sm->pmkid, PMKID_LEN);
-		wpa_printf(MSG_DEBUG, "SMD IAP: Extracted PMKID");
-	}
 	
 	/* Extract PTK components for rekeying support */
 	if (sm->PTK_valid) {
 		/* KCK */
 		sec_ctx->kck_len = sm->PTK.kck_len;
-		if (sec_ctx->kck_len > 0 && sec_ctx->kck_len <= WPA_KCK_MAX_LEN) {
-			os_memcpy(sec_ctx->kck, sm->PTK.kck,
-				  sec_ctx->kck_len);
-			wpa_printf(MSG_DEBUG,
-				   "SMD IAP: Extracted KCK (len=%u)",
-				   sec_ctx->kck_len);
-		}
-		
+		if (sec_ctx->kck_len > 0 && sec_ctx->kck_len <= WPA_KCK_MAX_LEN)
+			os_memcpy(sec_ctx->kck, sm->PTK.kck, sec_ctx->kck_len);
+
 		/* KEK */
 		sec_ctx->kek_len = sm->PTK.kek_len;
-		if (sec_ctx->kek_len > 0 && sec_ctx->kek_len <= WPA_KEK_MAX_LEN) {
-			os_memcpy(sec_ctx->kek, sm->PTK.kek,
-				  sec_ctx->kek_len);
-			wpa_printf(MSG_DEBUG,
-				   "SMD IAP: Extracted KEK (len=%u)",
-				   sec_ctx->kek_len);
-		}
-		
+		if (sec_ctx->kek_len > 0 && sec_ctx->kek_len <= WPA_KEK_MAX_LEN)
+			os_memcpy(sec_ctx->kek, sm->PTK.kek, sec_ctx->kek_len);
+
 		/* TK */
 		sec_ctx->tk_len = sm->PTK.tk_len;
-		if (sec_ctx->tk_len > 0 && sec_ctx->tk_len <= WPA_TK_MAX_LEN) {
+		if (sec_ctx->tk_len > 0 && sec_ctx->tk_len <= WPA_TK_MAX_LEN)
 			os_memcpy(sec_ctx->tk, sm->PTK.tk, sec_ctx->tk_len);
-			wpa_printf(MSG_DEBUG, "SMD IAP: Extracted TK (len=%u)",
-				   sec_ctx->tk_len);
-		}
 	}
 	
 	/* Extract cipher suite information */
 	WPA_PUT_BE32(sec_ctx->akm, sm->wpa_key_mgmt);
 	WPA_PUT_BE32(sec_ctx->cipher, sm->pairwise);
+
+	if (sm->wpa_ie) {
+		os_memcpy(sec_ctx->wpa_ie, sm->wpa_ie, sm->wpa_ie_len);
+		sec_ctx->wpa_ie_len = sm->wpa_ie_len;
+	}
+	if (sm->rsnxe) {
+		os_memcpy(sec_ctx->rsnxe, sm->rsnxe, sm->rsnxe_len);
+		sec_ctx->rsnxe_len = sm->rsnxe_len;
+	}
+
+
 	
 	wpa_printf(MSG_DEBUG,
 		   "SMD IAP: Security context extraction complete");
@@ -156,7 +150,7 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 	iap_len = sizeof(*iap) + frame_len + smd_ctx_len;
 	buf = os_zalloc(iap_len);
 	if (!buf) {
-		wpa_printf(MSG_ERROR, "SMD IAP: Failed to allocate IAP frame");
+		wpa_printf(MSG_ERROR, "SMD IAP: Failed to allocate IAP frame len = %zu", iap_len);
 		return -1;
 	}
 	
@@ -168,12 +162,12 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 	iap->sequence_number = htole64(g_iap_sequence_number++);
 	
 	/* Fill addresses */
-	os_memcpy(iap->current_ap_mld_addr, hapd->own_addr, ETH_ALEN);
+	os_memcpy(iap->current_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
 	os_memcpy(iap->target_ap_mld_addr, target_ap_mld_addr, ETH_ALEN);
 	os_memcpy(iap->sta_addr, sta->addr, ETH_ALEN);
 	
 	/* Fill link IDs */
-	iap->current_link_id = 0; /* TODO: Get from hapd */
+	iap->current_link_id = hapd->mld_link_id; /* TODO: Get from hapd */
 	
 	/* Set flags and status */
 	iap->flags = UHR_IAP_FLAG_HAS_SEC_CTX;
@@ -208,7 +202,7 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 	
 	/* Send via native OUI transport with suffix 0x06 */
 	ret = uhr_oui_send(hapd->uhr_oui_ctx, target_ap_mld_addr,
-                           hapd->own_addr,
+                           hapd->mld->mld_addr,
 			   UHR_IAP_SUFFIX_REQUEST, buf, iap_len);
 	
 	os_free(buf);
@@ -217,7 +211,8 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 		wpa_printf(MSG_ERROR, "SMD IAP: Failed to send REQUEST");
 		return -1;
 	}
-	
+
+	ap_info->state = SMD_AP_STATE_ST_PREP_IAP_PENDING;
 	wpa_printf(MSG_DEBUG, "SMD IAP: REQUEST sent successfully");
 	return 0;
 }
@@ -228,7 +223,7 @@ int uhr_iap_send_st_prep_resp(struct hostapd_data *hapd,
 			  const u8 *sta_addr,
 			  u8 iap_transaction_id,
 			  u64 sequence_number,
-			  u8 status_code,
+			  u8 status_code, u8 current_link_id,
 			  const u8 *frame, size_t frame_len)
 {
 	struct uhr_iap_frame *iap;
@@ -275,11 +270,11 @@ int uhr_iap_send_st_prep_resp(struct hostapd_data *hapd,
 	
 	/* Fill addresses */
 	os_memcpy(iap->current_ap_mld_addr, current_ap_mld_addr, ETH_ALEN);
-	os_memcpy(iap->target_ap_mld_addr, hapd->own_addr, ETH_ALEN);
+	os_memcpy(iap->target_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
 	os_memcpy(iap->sta_addr, sta_addr, ETH_ALEN);
 	
 	/* Fill link IDs */
-	iap->current_link_id = 0;
+	iap->current_link_id = current_link_id;;
 	
 	/* Set flags and status */
 	iap->flags = 0; /* No security context in response */
@@ -303,7 +298,7 @@ int uhr_iap_send_st_prep_resp(struct hostapd_data *hapd,
 	
 	/* Send via native OUI transport with suffix 0x07 */
 	ret = uhr_oui_send(hapd->uhr_oui_ctx, current_ap_mld_addr,
-                           hapd->own_addr,
+                           hapd->mld->mld_addr,
 			   UHR_IAP_SUFFIX_RESPONSE, buf, iap_len);
 	
 	os_free(buf);
@@ -330,8 +325,10 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
 
        /* Find Target AP */
        target_info = uhr_find_ap_in_list(sta, target_ap_mld_addr);
-       if (!target_info)
+       if (!target_info) {
+	       wpa_printf(MSG_ERROR, "IAP: ST EXEC REQ: Target Info NULL");
                return -1;
+	}
 
 	smd_ctx = target_info->smd_ctx;
 	if (target_info->smd_ctx_valid && smd_ctx)
@@ -340,8 +337,10 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
        /* Allocate IAP frame (minimal - no security context needed) */
 	iap_len = sizeof(*iap) + frame_len + smd_ctx_len;
        buf = os_zalloc(iap_len);
-       if (!buf)
+       if (!buf) {
+	       wpa_printf(MSG_ERROR, "IAP: IAP Frame alloc failed ");
                return -1;
+	}
 
        iap = (struct uhr_iap_frame *) buf;
 
@@ -351,15 +350,16 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
        iap->sequence_number = htole64(g_iap_sequence_number++);
 
        /* Fill addresses */
-       os_memcpy(iap->current_ap_mld_addr, hapd->own_addr, ETH_ALEN);
+       os_memcpy(iap->current_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
        os_memcpy(iap->target_ap_mld_addr, target_ap_mld_addr, ETH_ALEN);
        os_memcpy(iap->sta_addr, sta->addr, ETH_ALEN);
 
        /* No security context needed (already sent in ST Prep) */
        iap->flags = 0;
        iap->status_code = 0;
+       iap->current_link_id = hapd->mld_link_id;
 
-       iap->frame_len = frame_len;
+       iap->frame_len = htole16(frame_len);
 	os_memcpy(iap->frame_ctx_data, frame, frame_len);
 
 	iap->smd_ctx_len = htole16(smd_ctx_len);
@@ -376,9 +376,9 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
                   "UHR IAP: Sending ST EXEC REQUEST to " MACSTR " (txn=%u)",
                   MAC2STR(target_ap_mld_addr), iap->iap_transaction_id);
 
-       /* Send via native OUI transport with suffix 0x08 */
+       /* Send via native OUI transport with suffix 0x06 (REQUEST) */
        ret = uhr_oui_send(hapd->uhr_oui_ctx, target_ap_mld_addr,
-			  hapd->own_addr,
+			  hapd->mld->mld_addr,
                           UHR_IAP_SUFFIX_REQUEST,
                           buf, iap_len);
 
@@ -386,16 +386,8 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
 
        if (ret < 0) {
                wpa_printf(MSG_ERROR, "UHR IAP: Failed to send ST EXEC REQUEST");
-               target_info->state = SMD_AP_STATE_ST_PREP_COMPLETE;
                return -1;
        }
-
-       /* STATE TRANSITION: ST_EXEC_STARTED → ST_EXEC_IAP_PENDING */
-       target_info->state = SMD_AP_STATE_ST_EXEC_IAP_PENDING;
-
-       wpa_printf(MSG_INFO,
-                  "UHR ST EXEC: Target AP " MACSTR " state: ST_EXEC_STARTED → ST_EXEC_IAP_PENDING",
-                  MAC2STR(target_ap_mld_addr));
 
        return 0;
 }
@@ -407,12 +399,19 @@ int uhr_iap_send_st_exec_resp(struct hostapd_data *hapd,
                               u8 iap_transaction_id,
                               u64 sequence_number,
                               u8 status_code,
+			      u8 current_link_id,
                               const u8 *frame, size_t frame_len)
 {
        struct uhr_iap_frame *iap;
        size_t iap_len;
        u8 *buf;
        int ret;
+
+       if (!hapd || !current_ap_mld_addr || !sta_addr) {
+               wpa_printf(MSG_ERROR,
+                          "SMD IAP: Invalid parameters for send_exec_response");
+               return -1;
+       }
 
        /* Allocate buffer for IAP frame */
        iap_len = sizeof(*iap) + frame_len;
@@ -429,8 +428,11 @@ int uhr_iap_send_st_exec_resp(struct hostapd_data *hapd,
 
        /* Fill addresses */
        os_memcpy(iap->current_ap_mld_addr, current_ap_mld_addr, ETH_ALEN);
-       os_memcpy(iap->target_ap_mld_addr, hapd->own_addr, ETH_ALEN);
+       os_memcpy(iap->target_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
        os_memcpy(iap->sta_addr, sta_addr, ETH_ALEN);
+	
+       /* Fill link IDs */
+	iap->current_link_id = current_link_id;;
 
        /* Set status and frame */
        iap->flags = 0;
@@ -444,9 +446,9 @@ int uhr_iap_send_st_exec_resp(struct hostapd_data *hapd,
                   MAC2STR(current_ap_mld_addr), iap_transaction_id,
                   status_code, frame_len);
 
-       /* Send via native OUI transport with suffix 0x09 */
+       /* Send via native OUI transport with suffix 0x07 (RESPONSE) */
        ret = uhr_oui_send(hapd->uhr_oui_ctx, current_ap_mld_addr,
-			  hapd->own_addr,
+			  hapd->mld->mld_addr,
                           UHR_IAP_SUFFIX_RESPONSE,
                           buf, iap_len);
 
@@ -475,17 +477,17 @@ int uhr_iap_send_st_exec_resp(struct hostapd_data *hapd,
  * Validates frame and dispatches to appropriate handler.
  */
 void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_addr,
-		const u8 *data, size_t data_len, u8 oui_suffix)
+		const u8 *data, size_t data_len) // u8 oui_suffix)
 {
 	const struct uhr_iap_frame *iap;
 	u16 smd_ctx_len = 0;
 	u16 frame_len;
 	
 	wpa_printf(MSG_DEBUG,
-		   "SMD IAP: Received frame from " MACSTR " (suffix=0x%02x, len=%zu)",
-		   MAC2STR(src_addr), oui_suffix, data_len);
+		   "SMD IAP: Received frame from " MACSTR " (len=%zu)",
+		   MAC2STR(src_addr), data_len);
 
-	if (os_memcmp(dst_addr, hapd->own_addr, ETH_ALEN) != 0) {
+	if (os_memcmp(dst_addr, hapd->mld->mld_addr, ETH_ALEN) != 0) {
 		wpa_printf(MSG_ERROR, "SMD IAP: Not for this interface");
 		return;
 	}
@@ -496,8 +498,6 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
 		return;
 	}
 
-	wpa_hexdump(MSG_DEBUG, "SMD OUI: UHR IAP RX Checking before parsing ouisuffic", data, data_len); 
-	
 	iap = (const struct uhr_iap_frame *) data;
 	frame_len = le_to_host16(iap->frame_len);
 

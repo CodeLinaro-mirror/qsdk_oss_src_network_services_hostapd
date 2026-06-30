@@ -150,13 +150,12 @@ enum smd_ap_state {
 	SMD_AP_STATE_ST_PREP_IAP_PENDING,
 	SMD_AP_STATE_ST_PREP_COMPLETE,
 
-	/* ST Execute states (NEW in V25) */
-	SMD_AP_STATE_ST_EXEC_STARTED,      /* ST Execute initiated */
-	SMD_AP_STATE_ST_EXEC_IAP_PENDING,  /* Waiting for IAP RESPONSE */
-	SMD_AP_STATE_ST_EXEC_OTA_SENT,     /* OTA response sent, waiting TX STATUS */
-	SMD_AP_STATE_ST_EXEC_COMPLETE,
-	SMD_AP_STATE_DL_DRAIN_ACTIVE,      /* DL Drain timeout active */
-	SMD_AP_STATE_TRANSITION_COMPLETE,  /* Transition complete */
+       /* ST Execute states (NEW in V25) */
+       SMD_AP_STATE_ST_EXEC_STARTED,      /* ST Execute initiated */
+       SMD_AP_STATE_ST_EXEC_IAP_PENDING,  /* Waiting for IAP RESPONSE */
+       SMD_AP_STATE_ST_EXEC_COMPLETE,
+       SMD_AP_STATE_DL_DRAIN_ACTIVE,      /* DL Drain timeout active */
+       SMD_AP_STATE_TRANSITION_COMPLETE,  /* Transition complete */
 };
 
 /**
@@ -195,7 +194,10 @@ struct smd_roam_ap_info {
 
 	/* UHR ST preparation timeout tracking */
 	bool uhr_st_prep_timeout_occurred;
+	bool uhr_st_prep_timer_ongoing;    /* true while ST prep timer is armed */
 	struct os_reltime uhr_st_prep_start;
+	u8 st_prep_link_id;                /* MLD link that owns the ST prep timer */
+	struct hostapd_data *st_prep_hapd; /* hapd of the prep link (for clone cleanup) */
 
 	/* ST Execute fields  */
 	u32 dl_drain_duration_tu;          /* DL Drain duration in TU */
@@ -203,6 +205,8 @@ struct smd_roam_ap_info {
 	struct sta_info *sta;              /* Back pointer to station */
 	bool smd_ctx_valid;
 	struct sta_smd_ctx_info *smd_ctx;  /* SMD context for this AP MLD transition */
+	bool uhr_st_iap_timer_ongoing;
+	bool uhr_st_iap_timeout_occurred;
 };
 
 
@@ -222,7 +226,9 @@ struct smd_info {
 	struct smd_caps caps; /* SMD capabilities */
 	struct smd_roam_ap_info *ap_list;  /* List of potential target APs */
 	int uhr_target_prep_timer; /* Target AP prep timer */
+	u8 *tgt_prep_timer_ctx; /* heap-allocated sta_addr copy passed to eloop */
 	enum tgt_smd_roam_state state; /* non-AP STA state in Tgt AP */
+	bool flag;
 };
 #endif /* CONFIG_IEEE80211BN */
 

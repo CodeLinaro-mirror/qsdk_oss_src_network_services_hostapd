@@ -9,11 +9,92 @@
 #include "utils/common.h"
 #include "utils/eloop.h"
 #include "l2_packet/l2_packet.h"
+#include "crypto/aes.h"
+#include "crypto/aes_siv.h"
 #include "hostapd.h"
 #include "uhr_oui_transport.h"
 #include "uhr_iap.h"
 #include "uhr_utils.h"
 #include "ap_config.h"
+
+
+/**
+ * uhr_oui_get_peer - Look up a peer by MAC address
+ */
+static struct uhr_peer_entry *uhr_oui_get_peer(struct uhr_oui_ctx *ctx,
+					       const u8 *mac_addr)
+{
+	struct uhr_peer_entry *peer;
+
+	if (!ctx || !mac_addr)
+		return NULL;
+
+	for (peer = ctx->peers; peer; peer = peer->next) {
+		if (os_memcmp(peer->mac_addr, mac_addr, ETH_ALEN) == 0)
+			return peer;
+	}
+
+	return NULL;
+}
+
+
+/**
+ * uhr_oui_get_wildcard_peer - Find wildcard peer entry (all-zero MAC)
+ *
+ * A wildcard entry has mac_addr == 00:00:00:00:00:00 and supplies the
+ * shared key for peers not yet individually registered.  On first contact
+ * the wildcard is cloned into a concrete entry keyed by the peer's MLD addr.
+ */
+static struct uhr_peer_entry *uhr_oui_get_wildcard_peer(struct uhr_oui_ctx *ctx)
+{
+	struct uhr_peer_entry *peer;
+
+	if (!ctx)
+		return NULL;
+
+	for (peer = ctx->peers; peer; peer = peer->next) {
+		if (is_zero_ether_addr(peer->mac_addr))
+			return peer;
+	}
+
+	return NULL;
+}
+
+/**
+ * uhr_oui_add_peer - Add peer to configured list
+ */
+int uhr_oui_add_peer(struct uhr_oui_ctx *ctx, const u8 *mac_addr,
+		     const u8 *key, bool has_key)
+{
+	struct uhr_peer_entry *peer;
+
+	if (!ctx || !mac_addr)
+		return -1;
+
+	if (uhr_oui_get_peer(ctx, mac_addr)) {
+		wpa_printf(MSG_DEBUG, "SMD OUI: Peer " MACSTR " already exists",
+			   MAC2STR(mac_addr));
+		return 0;
+	}
+
+	peer = os_zalloc(sizeof(*peer));
+	if (!peer) {
+		wpa_printf(MSG_ERROR, "SMD OUI: Failed to allocate peer entry");
+		return -1;
+	}
+
+	os_memcpy(peer->mac_addr, mac_addr, ETH_ALEN);
+	if (has_key && key) {
+		os_memcpy(peer->key, key, sizeof(peer->key));
+		peer->has_key = true;
+	}
+	peer->next = ctx->peers;
+	ctx->peers = peer;
+
+	wpa_printf(MSG_DEBUG, "SMD OUI: Added peer " MACSTR " (%s)",
+		   MAC2STR(mac_addr), peer->has_key ? "encrypted" : "plain");
+	return 0;
+}
 
 
 /**
@@ -24,14 +105,19 @@
  * @len: Frame length
  *
  * Called by L2 packet layer when ETH_P_OUI frame is received.
- * Validates OUI header and dispatches to IAP handler.
+ * Validates OUI header, optionally decrypts, and dispatches to IAP handler.
  */
 static void uhr_oui_rx_callback(void *ctx, const u8 *src_addr,
 				const u8 *buf, size_t len)
 {
 	struct uhr_oui_ctx *oui_ctx = ctx;
+	struct uhr_peer_entry *peer;
 	u8 oui_suffix;
 	u8 dst_addr[ETH_ALEN] = {0};
+	const u8 *iap_data;
+	size_t iap_len;
+	u8 *plain = NULL;
+
 
 	wpa_printf(MSG_DEBUG,
 		   "SMD OUI: Received frame from " MACSTR " (len=%zu)",
@@ -61,8 +147,43 @@ static void uhr_oui_rx_callback(void *ctx, const u8 *src_addr,
 
 	os_memcpy(dst_addr, buf, ETH_ALEN);
 
-	/* Dispatch to IAP handler (skip OUI header) */
-	uhr_iap_rx(oui_ctx->hapd, src_addr, dst_addr, buf + sizeof(struct l2_ethhdr) + 6, len - sizeof(struct l2_ethhdr) - 6, oui_suffix);
+	iap_data = buf + sizeof(struct l2_ethhdr) + 6;
+	iap_len  = len - sizeof(struct l2_ethhdr) - 6;
+
+	peer = uhr_oui_get_peer(oui_ctx, src_addr);
+	if (peer && peer->has_key) {
+		/* AES-SIV-256 decrypt: AD = [src_addr, oui_suffix] */
+		const u8 *ad[2] = { src_addr, &oui_suffix };
+		size_t ad_len[2] = { ETH_ALEN, 1 };
+		size_t plain_len;
+
+		if (iap_len < AES_BLOCK_SIZE) {
+			wpa_printf(MSG_DEBUG,
+				   "SMD OUI: Encrypted frame too short (%zu)",
+				   iap_len);
+			return;
+		}
+
+		plain_len = iap_len - AES_BLOCK_SIZE;
+		plain = os_malloc(plain_len);
+		if (!plain)
+			return;
+
+		if (aes_siv_decrypt(peer->key, sizeof(peer->key),
+				    iap_data, iap_len, 2, ad, ad_len,
+				    plain) < 0) {
+			wpa_printf(MSG_DEBUG,
+				   "SMD OUI: AES-SIV decrypt failed from " MACSTR,
+				   MAC2STR(src_addr));
+			os_free(plain);
+			return;
+		}
+
+		uhr_iap_rx(oui_ctx->hapd, src_addr, dst_addr, plain, plain_len);
+		os_free(plain);
+	} else {
+		uhr_iap_rx(oui_ctx->hapd, src_addr, dst_addr, iap_data, iap_len);
+	}
 }
 
 
@@ -135,58 +256,13 @@ void uhr_oui_deinit(struct uhr_oui_ctx *ctx)
 
 
 /**
- * uhr_oui_peer_exists - Check if peer exists in configured list
+ * uhr_oui_peer_exists - Check if peer is reachable (exact match or wildcard)
  */
 int uhr_oui_peer_exists(struct uhr_oui_ctx *ctx, const u8 *mac_addr)
 {
-	struct uhr_peer_entry *peer;
-
-	if (!ctx || !mac_addr)
-		return 0;
-
-	peer = ctx->peers;
-	while (peer) {
-		if (ether_addr_equal(peer->mac_addr, mac_addr))
-			return 1;
-		peer = peer->next;
-	}
-
-	return 0;
+	return uhr_oui_get_peer(ctx, mac_addr) != NULL ||
+		uhr_oui_get_wildcard_peer(ctx) != NULL;
 }
-
-
-/**
- * uhr_oui_add_peer - Add peer to configured list
- */
-int uhr_oui_add_peer(struct uhr_oui_ctx *ctx, const u8 *mac_addr)
-{
-	struct uhr_peer_entry *peer;
-
-	if (!ctx || !mac_addr)
-		return -1;
-
-	/* Check if already exists */
-	if (uhr_oui_peer_exists(ctx, mac_addr)) {
-		wpa_printf(MSG_DEBUG, "SMD OUI: Peer " MACSTR " already exists",
-			   MAC2STR(mac_addr));
-		return 0;
-	}
-
-	peer = os_zalloc(sizeof(*peer));
-	if (!peer) {
-		wpa_printf(MSG_ERROR, "SMD OUI: Failed to allocate peer entry");
-		return -1;
-	}
-
-	os_memcpy(peer->mac_addr, mac_addr, ETH_ALEN);
-	peer->next = ctx->peers;
-	ctx->peers = peer;
-
-	wpa_printf(MSG_DEBUG, "SMD OUI: Added peer " MACSTR,
-		   MAC2STR(mac_addr));
-	return 0;
-}
-
 
 /**
  * uhr_oui_send - Send SMD IAP frame via ETH_P_OUI
@@ -195,15 +271,47 @@ static const u8 global_oui_smd[] = { 0x00, 0x13, 0x74, 0x00, 0x02};
 int uhr_oui_send(struct uhr_oui_ctx *ctx, const u8 *dst_addr, const u8 *src_addr, u8 oui_suffix,
 		 const u8 *data, size_t data_len)
 {
+	struct uhr_peer_entry *peer;
+	u8 *payload = NULL;
+	size_t payload_len;
 	u8 *packet, *p;
 	size_t packet_len;
 	int ret;
 	struct l2_ethhdr *ethhdr;
 
-	packet_len = sizeof(*ethhdr) + sizeof(global_oui_smd) + 1 + data_len;
+	peer = uhr_oui_get_peer(ctx, dst_addr);
+
+	if (peer && peer->has_key) {
+		/* AES-SIV-256: AD = [src_addr, oui_suffix] */
+		const u8 *ad[2] = { src_addr, &oui_suffix };
+		size_t ad_len[2] = { ETH_ALEN, 1 };
+
+		payload_len = data_len + AES_BLOCK_SIZE;
+		payload = os_malloc(payload_len);
+		if (!payload)
+			return -1;
+
+		if (aes_siv_encrypt(peer->key, sizeof(peer->key),
+				    data, data_len, 2, ad, ad_len,
+				    payload) < 0) {
+			wpa_printf(MSG_ERROR,
+				   "SMD OUI: AES-SIV encrypt failed for " MACSTR,
+				   MAC2STR(dst_addr));
+			os_free(payload);
+			return -1;
+		}
+	} else {
+		payload = (u8 *) data;
+		payload_len = data_len;
+	}
+
+	packet_len = sizeof(*ethhdr) + sizeof(global_oui_smd) + 1 + payload_len;
 	packet = os_zalloc(packet_len);
-	if (!packet)
+	if (!packet) {
+		if (peer && peer->has_key)
+			os_free(payload);
 		return -1;
+	}
 	p = packet;
 
 	ethhdr = (struct l2_ethhdr *) packet;
@@ -216,15 +324,12 @@ int uhr_oui_send(struct uhr_oui_ctx *ctx, const u8 *dst_addr, const u8 *src_addr
 	p[sizeof(global_oui_smd)] = oui_suffix;
 	p += sizeof(global_oui_smd) + 1;
 
-	os_memcpy(p, data, data_len);
-
-	wpa_hexdump(MSG_DEBUG, "SMD OUI: Sending UHR OUI frame", packet, packet_len);
+	os_memcpy(p, payload, payload_len);
 
 	ret = l2_packet_send(ctx->l2, NULL, 0, packet, packet_len);
 	os_free(packet);
-	if (ret < 0)
-		wpa_printf(MSG_ERROR, "SMD OUI: l2_packet_send to " MACSTR " failed: %d",
-			   MAC2STR(dst_addr), ret);
+	if (peer && peer->has_key)
+		os_free(payload);
 	return ret;
 }
 
@@ -247,15 +352,16 @@ int uhr_load_partners(struct hostapd_data *hapd)
 		return 0;
 	}
 
-	for (partner = hapd->conf->smd_partners; partner; partner = partner->next) {
-		if (uhr_oui_add_peer(hapd->uhr_oui_ctx, partner->mac_addr) < 0) {
-			wpa_printf(MSG_ERROR,
-				   "SMD: Failed to add partner " MACSTR,
-				   MAC2STR(partner->mac_addr));
-			continue;
-		}
-		count++;
-	}
+       for (partner = hapd->conf->smd_partners; partner; partner = partner->next) {
+               if (uhr_oui_add_peer(hapd->uhr_oui_ctx, partner->mac_addr,
+                                    partner->key, partner->has_key) < 0) {
+                       wpa_printf(MSG_ERROR,
+                                  "SMD: Failed to add partner " MACSTR,
+                                  MAC2STR(partner->mac_addr));
+                       continue;
+               }
+               count++;
+       }
 
 	wpa_printf(MSG_INFO, "SMD: Loaded %d partner(s)", count);
 	return count;

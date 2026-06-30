@@ -17,6 +17,7 @@
 #define UHR_IAP_MSG_ST_EXEC_RESPONSE 4
 
 #define UHR_IAP_MAX_FRAME_LEN 1500
+#define MAX_IE_LEN 60
 
 /**
  * struct uhr_iap_security_ctx - Security context for ST preparation
@@ -40,6 +41,12 @@ struct uhr_iap_security_ctx {
        /* Cipher suite information */
        u8 akm[4];
        u8 cipher[4];
+
+       u8 wpa_ie[MAX_IE_LEN];
+       u8 rsnxe[MAX_IE_LEN];
+       u8 wpa_ie_len;
+       u8 rsnxe_len;
+
 } __attribute__((packed));
 
 /**
@@ -87,7 +94,7 @@ int uhr_iap_send_st_prep_resp(struct hostapd_data *hapd,
 			  const u8 *sta_addr,
 			  u8 iap_transaction_id,
 			  u64 sequence_number,
-			  u8 status_code,
+			  u8 status_code, u8 current_link_id,
 			  const u8 *frame, size_t frame_len);
 
 int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
@@ -100,11 +107,12 @@ int uhr_iap_send_st_exec_resp(struct hostapd_data *hapd,
                               u8 iap_transaction_id,
                               u64 sequence_number,
                               u8 status_code,
+			      u8 current_link_id,
                               const u8 *frame, size_t frame_len);
 
 
 void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_addr,
-		const u8 *data, size_t data_len, u8 oui_suffix);
+		const u8 *data, size_t data_len);
 
 #endif /* UHR_IAP_H */
 
