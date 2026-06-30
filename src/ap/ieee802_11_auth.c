@@ -304,12 +304,49 @@ int hostapd_check_acl(struct hostapd_data *hapd, const u8 *addr,
 {
 	int in_accept, in_deny;
 #ifdef CONFIG_WPS
-	/* According to WPS spec 2.0, disable MAC address filtering
-	 * if WPS is active on the AP.
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_data *tmp_hapd;
+#endif/* CONFIG_IEEE80211BE */
+	bool is_pbc_enrollee = false;
+
+	/*
+	 * Bypass ACL for WPS PBC enrollees: allow stations seen sending a WPS
+	 * PBC probe request within the walk time window.  Non-WPS stations in
+	 * the deny list are still rejected even when PBC is active.
 	 */
-	if (hapd->wps_stats.pbc_status == WPS_PBC_STATUS_ACTIVE)
-		 return HOSTAPD_ACL_ACCEPT;
-#endif /*CONFIG_WPS */
+	if (hapd->wps_stats.pbc_status == WPS_PBC_STATUS_ACTIVE) {
+
+		if (hapd->wps && hapd->wps->registrar &&
+		    wps_registrar_is_pbc_enrollee(hapd->wps->registrar, addr))
+			is_pbc_enrollee = true;
+
+#ifdef CONFIG_IEEE80211BE
+		/* For MLD AP, also check partner links' PBC session lists. */
+		if (!is_pbc_enrollee && hapd->mld) {
+
+			for_each_mld_link(tmp_hapd, hapd) {
+				if (tmp_hapd == hapd)
+					continue;
+				if (tmp_hapd->wps && tmp_hapd->wps->registrar &&
+				    wps_registrar_is_pbc_enrollee(
+					    tmp_hapd->wps->registrar, addr)) {
+					is_pbc_enrollee = true;
+					break;
+				}
+			}
+		}
+#endif /* CONFIG_IEEE80211BE */
+
+		if (is_pbc_enrollee) {
+			wpa_printf(MSG_DEBUG,
+				   "WPS: ACL bypass for " MACSTR
+				   " - WPS PBC active and station is PBC enrollee",
+				   MAC2STR(addr));
+			return HOSTAPD_ACL_ACCEPT;
+		}
+	}
+
+#endif /* CONFIG_WPS */
 
 	if (hapd->conf->macaddr_acl == ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST) {
 		in_accept = hostapd_acl_maclist_found(hapd->conf, true,
