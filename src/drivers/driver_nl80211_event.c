@@ -4421,7 +4421,7 @@ qca_nl80211_iface_reload(struct i802_bss *bss, u8 *data, size_t len)
 
 static void compute_num_freq_obj(struct nlattr **attr, u8 *num_freq_obj)
 {
-	u8 nl_len;
+	int nl_len;
 	int rem;
 	struct nlattr *nl;
 	struct nlattr *freq_info[QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_MAX + 1];
@@ -4465,7 +4465,8 @@ static void compute_num_chan_obj(struct nlattr **attr,
 				 u8 *num_opclass_obj, u8 *opclass_chan_list,
 				 u8 *total_channels)
 {
-	u8 nl_len, num_channels = 0, i = 0;
+	int nl_len;
+	u8 num_channels = 0, i = 0;
 	int rem, iter;
 	struct nlattr *nl, *nl_attr;
 	struct nlattr *opclass_info[QCA_WLAN_VENDOR_ATTR_AFC_OPCLASS_INFO_MAX + 1];
@@ -4476,6 +4477,10 @@ static void compute_num_chan_obj(struct nlattr **attr,
 	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_OPCLASS_CHAN_LIST]) {
 		nla_for_each_nested(nl, attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_OPCLASS_CHAN_LIST],
 				    rem) {
+			if (i >= NUM_6GHZ_OPCLASS) {
+				wpa_printf(MSG_INFO, "AFC opclass count exceeds max %d", NUM_6GHZ_OPCLASS);
+				return;
+			}
 			num_channels = 0;
 			nl_len = nla_len(nl);
 
