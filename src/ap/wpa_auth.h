@@ -539,8 +539,6 @@ struct wpa_state_machine *
 wpa_auth_sta_init(struct wpa_authenticator *wpa_auth, const u8 *addr,
 		  const u8 *p2p_dev_addr);
 void wpa_auth_set_sta_ft_over_ds_ml(struct wpa_state_machine *sm, bool status);
-int wpa_auth_sta_associated_start_sm(struct wpa_authenticator *wpa_auth,
-				     struct wpa_state_machine *sm);
 int wpa_auth_sta_associated(struct wpa_authenticator *wpa_auth,
 			    struct wpa_state_machine *sm,
 			    bool wpa_initialize);

@@ -2613,6 +2613,7 @@ int ieee802_1x_init(struct hostapd_data *hapd)
 	if (hapd->conf->identity_request_retry_interval) {
 		conf.identity_request_retry_interval = hapd->conf->identity_request_retry_interval;
 	}
+	conf.plugin_eap_offload = hapd->conf->plugin_eap_offload;
 
 	os_memset(&cb, 0, sizeof(cb));
 	cb.eapol_send = ieee802_1x_eapol_send;
@@ -2853,12 +2854,19 @@ void ieee802_1x_notify_port_enabled(struct eapol_state_machine *sm,
 }
 
 
-void ieee802_1x_notify_port_valid(struct eapol_state_machine *sm, bool valid)
+void ieee802_1x_notify_port_valid(struct hostapd_data *hapd,
+				  struct sta_info *sta,
+				  struct eapol_state_machine *sm, bool valid)
 {
 	if (!sm)
 		return;
 	sm->portValid = valid;
 	eapol_auth_step(sm);
+
+	if (sm->offload_mode && valid) {
+		ieee802_1x_set_sta_authorized(hapd, sta, 1);
+		ieee802_1x_finished(hapd, sta, 1, 0);
+	}
 }
 
 

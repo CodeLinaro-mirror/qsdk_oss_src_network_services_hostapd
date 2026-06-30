@@ -461,7 +461,7 @@ static void hostapd_wpa_auth_set_eapol(void *ctx, const u8 *addr,
 		ieee802_1x_notify_port_enabled(sta->eapol_sm, value);
 		break;
 	case WPA_EAPOL_portValid:
-		ieee802_1x_notify_port_valid(sta->eapol_sm, value);
+		ieee802_1x_notify_port_valid(hapd, sta, sta->eapol_sm, value);
 		break;
 	case WPA_EAPOL_authorized:
 		ieee802_1x_set_sta_authorized(hapd, sta, value);
