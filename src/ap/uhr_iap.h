@@ -61,11 +61,13 @@ struct uhr_iap_frame {
        struct uhr_iap_security_ctx sec_ctx;
 
        u16 frame_len;
-       u8  frame_buf[];
+	__le16 smd_ctx_len;
+	u8  frame_ctx_data[];
 } __attribute__((packed));
 
 /* Flags for uhr_iap_frame */
-#define UHR_IAP_FLAG_HAS_SEC_CTX  0x01
+#define UHR_IAP_FLAG_HAS_SEC_CTX      0x01
+#define UHR_IAP_FLAG_HAS_DYNAMIC_CTX  0x02
 
 /* IAP status codes */
 #define UHR_IAP_STATUS_SUCCESS           0

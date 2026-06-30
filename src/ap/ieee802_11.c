@@ -11403,7 +11403,7 @@ static int hostapd_action_vs(struct hostapd_data *hapd,
 static void handle_uhr_link_reconfig(struct hostapd_data *hapd,
 				     struct sta_info *sta,
 				     const struct ieee80211_mgmt *mgmt,
-				     size_t len)
+				     size_t len, struct sta_smd_ctx_info *smd_ctx)
 {
 	const u8 *frame = (const u8 *) mgmt;
 	u8 type = frame[IEEE80211_HDRLEN + 3];  /* Skip header + category + action + dialog */
@@ -11415,10 +11415,10 @@ static void handle_uhr_link_reconfig(struct hostapd_data *hapd,
 
 	switch (type) {
 	case UHR_LINK_RECONFIG_TYPE_PREP:
-		uhr_handle_st_prep_req(hapd, sta, (const u8 *) mgmt, len);
+		uhr_handle_st_prep_req(hapd, sta, (const u8 *) mgmt, len, smd_ctx);
 		break;
 	case UHR_LINK_RECONFIG_TYPE_EXECUTE:
-		uhr_handle_st_exec_req(hapd, sta, (const u8 *) mgmt, len);
+		uhr_handle_st_exec_req(hapd, sta, (const u8 *) mgmt, len, smd_ctx);
 		break;
 	default:
 		wpa_printf(MSG_DEBUG, "UHR: Received type not resolved");
@@ -11428,7 +11428,8 @@ static void handle_uhr_link_reconfig(struct hostapd_data *hapd,
 
 static void ieee802_11_rx_protected_uhr_action(struct hostapd_data *hapd,
                                         const struct ieee80211_mgmt *mgmt,
-                                        size_t len)
+                                        size_t len,
+					struct sta_smd_ctx_info *smd_ctx)
 {
 	u8 action;
 	struct sta_info *sta;
@@ -11446,7 +11447,7 @@ static void ieee802_11_rx_protected_uhr_action(struct hostapd_data *hapd,
 
 	switch (action) {
 	case WLAN_PROT_UHR_LINK_RECONFIG_REQUEST:
-		handle_uhr_link_reconfig(hapd, sta, mgmt, len);
+		handle_uhr_link_reconfig(hapd, sta, mgmt, len, smd_ctx);
 		break;
 	default:
 		wpa_printf(MSG_DEBUG,
@@ -11480,6 +11481,9 @@ static int handle_action(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 			 , const struct handle_action_extn_args *extn_args
 #endif /* CONFIG_QCN_EXTN */
+#ifdef CONFIG_IEEE80211BN
+			 , struct sta_smd_ctx_info *smd_ctx
+#endif /* CONFIG_IEEE80211BN */
 			 )
 {
 #ifdef CONFIG_HOSTAPD_IF
@@ -11693,7 +11697,7 @@ static int handle_action(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211BN
 	case WLAN_ACTION_PROTECTED_UHR:
 		wpa_printf(MSG_DEBUG, "Received protected UHR action frame");
-		ieee802_11_rx_protected_uhr_action(hapd, mgmt, len);
+		ieee802_11_rx_protected_uhr_action(hapd, mgmt, len, smd_ctx);
 		return 1;
 #endif /* CONFIG_IEEE80211BN */
 	default:
@@ -11950,6 +11954,9 @@ int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 	int ret = 0;
 	unsigned int freq;
 	int ssi_signal = fi ? fi->ssi_signal : 0;
+#ifdef CONFIG_IEEE80211BN
+	struct sta_smd_ctx_info *smd_ctx = fi ? fi->smd_ctx : NULL;
+#endif /* CONFIG_IEEE80211BN */
 
 	if (len < 24)
 		return 0;
@@ -12086,10 +12093,18 @@ int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 			struct handle_action_extn_args extn_args = {
 				.rssi = ssi_signal,
 			};
+#ifdef CONFIG_IEEE80211BN
+			ret = handle_action(hapd, mgmt, len, freq, &extn_args, smd_ctx);
+#else
 			ret = handle_action(hapd, mgmt, len, freq, &extn_args);
+#endif /* CONFIG_IEEE80211BN */
 		}
 #else
+#ifdef CONFIG_IEEE80211BN
+		ret = handle_action(hapd, mgmt, len, freq, smd_ctx);
+#else
 		ret = handle_action(hapd, mgmt, len, freq);
+#endif /* CONFIG_IEEE80211BN */
 #endif /* CONFIG_QCN_EXTN */
 		break;
 	default:
