@@ -3950,9 +3950,14 @@ hostapd_handle_critical_update_notify(struct hostapd_data *hapd,
 			   "nl80211: ECU ADV_NOTIFICATION_END on %s link %u",
 			   hapd->conf->iface, ev->link_id);
 
-		/*TODO: update the hapd config to uhr updated values, so that
-		 * it can be refelected in UHR operation IE
+		/*
+		 * The update has taken effect.  Commit the new NPCA parameters
+		 * into iconf so that hostapd_eid_uhr_operation() reflects the
+		 * updated values in Probe Response and (Re)Association Response
+		 * frames from this point on.
 		 */
+		hostapd_update_ecu_params(hapd);
+
 		break;
 
 	case NL80211_CU_STATE_POST_NOTIFICATION_END:
@@ -3973,7 +3978,7 @@ hostapd_handle_critical_update_notify(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG,
 			   "nl80211: ECU ABORT on %s link %u - session aborted",
 			   hapd->conf->iface, ev->link_id);
-		/* TODO: reset the uhr parameter values */
+		hostapd_reset_uhr_cu_params(hapd);
 		break;
 	default:
 		wpa_printf(MSG_WARNING,

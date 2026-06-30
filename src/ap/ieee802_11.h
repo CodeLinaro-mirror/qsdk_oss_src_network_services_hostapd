@@ -560,6 +560,7 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 u8 * hostapd_eid_eht_operation(struct hostapd_data *hapd, u8 *eid);
 bool eht_mu_mask_valid(u8 mask);
 void hostapd_update_ecu_params(struct hostapd_data *hapd);
+void hostapd_reset_uhr_cu_params (struct hostapd_data *hapd);
 u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 			   enum ieee80211_op_mode opmode);
 u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn);
@@ -571,6 +572,8 @@ size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,
 					 bool no_post_phase, bool from_user);
 int hostapd_npca_primary_chan_to_subchan_idx(struct hostapd_data *hapd,
 					     const char *val_str);
+u8 hostapd_npca_get_primary_chan(struct hostapd_data *hapd,
+				 const struct hostapd_uhr_npca_params *npca);
 u16 copy_sta_eht_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		       enum ieee80211_op_mode opmode,
 		       const u8 *he_capab, size_t he_capab_len,
