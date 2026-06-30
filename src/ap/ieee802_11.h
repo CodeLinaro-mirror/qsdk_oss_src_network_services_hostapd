@@ -54,6 +54,8 @@ enum link_parse_type {
 	LINK_PARSE_ASSOC,
 	LINK_PARSE_REASSOC,
 	LINK_PARSE_RECONF,
+	LINK_PARSE_UHR_RECONF_ASSOC,
+	LINK_PARSE_UHR_RECONF_LINK,
 };
 
 #define LINK_RECONF_GROUP_KDE_MAX_LEN 255
@@ -571,6 +573,9 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 			   enum ieee80211_op_mode opmode);
 u8 * hostapd_eid_eht_operation(struct hostapd_data *hapd, u8 *eid);
 bool eht_mu_mask_valid(u8 mask);
+u16 hostapd_ml_process_reconf_link(struct hostapd_data *hapd,
+			       struct sta_info *assoc_sta, const u8 *ies,
+			       size_t ies_len, u8 link_id, const u8 *link_addr, u8 type);
 u16 copy_sta_eht_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		       enum ieee80211_op_mode opmode,
 		       const u8 *he_capab, size_t he_capab_len,

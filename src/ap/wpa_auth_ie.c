@@ -962,7 +962,7 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 		    const u8 *owe_dh, size_t owe_dh_len,
 		    struct wpa_state_machine *assoc_sm, bool is_ml,
 		    const struct security_profile_entry *security_profile,
-		    bool external_pmk_cache)
+		    bool external_pmk_cache, bool smd_roam)
 {
 	struct wpa_auth_config *conf = &wpa_auth->conf;
 	struct wpa_ie_data data;
@@ -988,7 +988,6 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 			   version, MAC2STR(sm->addr));
 		return WPA_INVALID_PROTO;
 	}
-
 	if (version == WPA_PROTO_RSN) {
 		res = wpa_parse_wpa_ie_rsn(wpa_ie, wpa_ie_len, &data);
 		if (!data.has_pairwise)
@@ -1475,10 +1474,9 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 				 (vlan && vlan->tagged[0]) ? "+" : "");
 		os_memcpy(wpa_auth->dot11RSNAPMKIDUsed, pmkid, PMKID_LEN);
 	}
-
 #ifdef CONFIG_SAE
-	if (sm->wpa_key_mgmt == WPA_KEY_MGMT_SAE ||
-	    sm->wpa_key_mgmt == WPA_KEY_MGMT_SAE_EXT_KEY) {
+	if (!smd_roam && (sm->wpa_key_mgmt == WPA_KEY_MGMT_SAE ||
+	    sm->wpa_key_mgmt == WPA_KEY_MGMT_SAE_EXT_KEY)) {
 		u64 drv_flags = 0;
 		u64 drv_flags2 = 0;
 		bool ap_sae_offload = false;
@@ -1511,7 +1509,6 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 		}
 	}
 #endif /* CONFIG_SAE */
-
 #ifdef CONFIG_DPP
 	if (sm->wpa_key_mgmt == WPA_KEY_MGMT_DPP && !sm->pmksa) {
 		wpa_auth_vlogger(wpa_auth, sm->addr, LOGGER_DEBUG,

@@ -34,6 +34,8 @@ struct uhr_oui_ctx;
  */
 struct uhr_peer_entry {
 	u8 mac_addr[ETH_ALEN];
+	u8 key[32];    /* AES-SIV-256 key; valid only when has_key is true */
+	bool has_key;
 	struct uhr_peer_entry *next;
 };
 
@@ -87,10 +89,10 @@ int uhr_oui_send(struct uhr_oui_ctx *ctx, const u8 *dst_addr, const u8 *src_addr
 		 const u8 *data, size_t data_len);
 
 /**
- * uhr_oui_peer_exists - Check if peer exists in configured list
+ * uhr_oui_peer_exists - Check if peer is reachable (exact match or wildcard IAP)
  * @ctx: OUI context
  * @mac_addr: Peer MAC address to check
- * Returns: 1 if peer exists, 0 otherwise
+ * Returns: 1 if peer exists (exact or wildcard), 0 otherwise
  */
 int uhr_oui_peer_exists(struct uhr_oui_ctx *ctx, const u8 *mac_addr);
 
@@ -98,9 +100,12 @@ int uhr_oui_peer_exists(struct uhr_oui_ctx *ctx, const u8 *mac_addr);
  * uhr_oui_add_peer - Add peer to configured list
  * @ctx: OUI context
  * @mac_addr: Peer MAC address to add
+ * @key: 32-byte AES-SIV key, or NULL for no encryption
+ * @has_key: true if key is valid
  * Returns: 0 on success, -1 on error
  */
-int uhr_oui_add_peer(struct uhr_oui_ctx *ctx, const u8 *mac_addr);
+int uhr_oui_add_peer(struct uhr_oui_ctx *ctx, const u8 *mac_addr,
+		     const u8 *key, bool has_key);
 
 /**
  * uhr_load_partners - Load configured SMD partner APs

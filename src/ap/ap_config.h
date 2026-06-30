@@ -325,6 +325,8 @@ struct airtime_sta_weight {
 struct smd_partner_entry {
 	u8 mac_addr[ETH_ALEN];
 	struct smd_partner_entry *next;
+       u8 key[32];    /* AES-SIV-256 key; all-zero means no encryption */
+       bool has_key;
 };
 #endif /* CONFIG_IEEE80211BN */
 
