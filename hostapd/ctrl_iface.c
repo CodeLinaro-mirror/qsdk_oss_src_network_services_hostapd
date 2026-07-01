@@ -5628,7 +5628,7 @@ hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 		for (i = 0; i < hapd->iface->num_bss; i++) {
 			bss = hapd->iface->bss[i];
 
-			if (!hostapd_is_uhr_enabled(hapd))
+			if (!hostapd_is_uhr_enabled(bss))
 				continue;
 
 			bss->conf->uhr_params_update.mode_changed |= BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA);
@@ -5640,7 +5640,7 @@ hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 			/* TODO: Add the changes for to update bss specific uhr_params_update features e.g DPS */
 
 
-			bss->uhr_ecu.uhr_params_update_countdown = upd->adv_notification_interval;
+			bss->uhr_ecu.countdown_timer = upd->adv_notification_interval;
 			if (hostapd_send_uhr_params_critical_update(bss)) {
 				wpa_printf(MSG_ERROR,
 					   "UPDATE_UHR_FEATURES: failed to send critical update command");
@@ -5656,7 +5656,7 @@ hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 	wpa_printf(MSG_DEBUG,
 		   "UPDATE_UHR_FEATURES: UHR Params Update window "
 		   "countdown=%u modes=%d",
-		   hapd->uhr_ecu.uhr_params_update_countdown,
+		   hapd->uhr_ecu.countdown_timer,
 		   upd->mode_changed);
 
 	return 0;

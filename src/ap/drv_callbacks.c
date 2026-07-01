@@ -3721,7 +3721,7 @@ static void hostapd_event_update_ecu_param(struct hostapd_data *hapd,
 	 */
 	hapd->rx_ecu_param.ebpcc = cu_event->enhanced_bpcc & 0x0F;
 	hapd->rx_ecu_param.critical_update = cu_event->enhanced_critical_update;
-	hapd->rx_ecu_param.countdown = cu_event->ecu_countdown;
+	hapd->uhr_ecu.countdown_timer = cu_event->ecu_countdown;
 }
 #endif /* CONFIG_IEEE80211BN */
 
