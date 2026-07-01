@@ -2235,7 +2235,7 @@ int wpa_auth_802_1x_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const u8 *spa,
 	return wpa_pmk_to_ptk(pmk, pmk_len, "Pairwise key expansion",
 			      spa, aa, snonce, anonce, ptk, akmp,
 			      cipher, dhss, dhss_len, kdk_len,
-			      PASN_GROUP_NOT_SPECIFIED);
+			      PASN_GROUP_NOT_SPECIFIED, NULL);
 }
 
 
