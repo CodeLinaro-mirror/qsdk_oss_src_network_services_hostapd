@@ -9030,6 +9030,51 @@ int hostapd_force_channel_switch(struct hostapd_iface *iface,
 	return ret;
 }
 
+void hostapd_get_channel_switch_time(struct hostapd_iface *iface,
+				     struct hostapd_freq_params *freq_params)
+{
+	struct hostapd_data *hapd = NULL;
+	unsigned int i;
+	int ret;
+
+	if (iface->bss == NULL || iface->num_bss == 0)
+		return;
+
+	iface->cs_time = 0;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		if (iface->bss[i]->driver == NULL ||
+		    iface->bss[i]->drv_priv == NULL)
+			continue;
+
+		hapd = iface->bss[i];
+		break;
+	}
+
+	if (hapd == NULL) {
+		wpa_printf(MSG_DEBUG,
+			   "No valid BSS with driver found for channel switch time query");
+		return;
+	}
+
+	if (hapd->driver->get_channel_switch_time) {
+		ret = hapd->driver->get_channel_switch_time(hapd->drv_priv,
+							    freq_params,
+							    &iface->cs_time);
+		if (ret == 0) {
+			wpa_printf(MSG_DEBUG,
+				   "channel switch time from driver: %u",
+				   iface->cs_time);
+		} else {
+			wpa_printf(MSG_WARNING,
+				   "Failed to get channel switch time from driver: %d",
+				   ret);
+			/* Reset to safe default */
+			iface->cs_time = 0;
+		}
+	}
+}
+
 
 /**
  * hostapd_abort_cac_for_channel_switch - Abort an ongoing CAC to perform a

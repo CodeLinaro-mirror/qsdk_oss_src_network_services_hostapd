@@ -1188,6 +1188,8 @@ int hostapd_switch_channel(struct hostapd_data *hapd,
 int hostapd_abort_dfs_cac(struct hostapd_data *hapd);
 int hostapd_abort_cac_for_channel_switch(struct hostapd_iface *iface,
 					 struct csa_settings *settings);
+void hostapd_get_channel_switch_time(struct hostapd_iface *iface,
+				     struct hostapd_freq_params *freq_params);
 int hostapd_force_channel_switch(struct hostapd_iface *iface,
 				 struct csa_settings *settings);
 void
