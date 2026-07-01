@@ -4820,24 +4820,25 @@ static void hostapd_interface_setup_failure_handler(void *eloop_ctx,
 }
 
 /**
- * hostapd_is_sp_chans_available - Check if at least one tx-able
- * 6Ghz SP channel is available for operation (A channel is non-tx-able if there
- * is NO_IR flag is set in it)
+ * hostapd_is_pwr_mode_chans_available - Check if at least one tx-able
+ * 6 GHz channel is available for the given power mode (a channel is
+ * non-tx-able if the NO_IR flag is set on it).
  * @iface: Pointer to hostapd interface data
- * Return: true if SP channels are available, false otherwise
+ * @pwr_mode: NL80211 regulatory AP power mode index
+ * Return: true if channels are available, false otherwise
  */
 static bool
-hostapd_is_sp_chans_available(struct hostapd_iface *iface)
+hostapd_is_pwr_mode_chans_available(struct hostapd_iface *iface,
+				    enum nl80211_regulatory_power_modes pwr_mode)
 {
 	int i;
 	struct hostapd_hw_modes *mode = NULL;
-	bool sp_available = false;
 	struct hostapd_channel_data *pwr_mode_chan_list;
 	u8 num_6ghz_chans;
 
 	if (!iface->num_hw_features) {
 		wpa_printf(MSG_ERROR, "No hw features");
-		return sp_available;
+		return false;
 	}
 
 	for (i = 0; i < iface->num_hw_features; i++) {
@@ -4848,26 +4849,46 @@ hostapd_is_sp_chans_available(struct hostapd_iface *iface)
 	}
 	if (!mode) {
 		wpa_printf(MSG_ERROR, "No 6 GHz mode");
-		return sp_available;
+		return false;
 	}
 
-	num_6ghz_chans = mode->channels_6ghz.num_channels_6ghz[NL80211_REG_AP_SP];
-	pwr_mode_chan_list = mode->channels_6ghz.chans_6ghz[NL80211_REG_AP_SP];
+	num_6ghz_chans = mode->channels_6ghz.num_channels_6ghz[pwr_mode];
+	pwr_mode_chan_list = mode->channels_6ghz.chans_6ghz[pwr_mode];
 	if (!num_6ghz_chans || !pwr_mode_chan_list) {
-		wpa_printf(MSG_ERROR, "No 6 GHz SP channels");
-		return sp_available;
+		wpa_printf(MSG_ERROR, "No 6 GHz channels for power mode %d",
+			   pwr_mode);
+		return false;
 	}
 
 	for (i = 0; i < num_6ghz_chans; i++) {
 		if (!(pwr_mode_chan_list[i].flag & HOSTAPD_CHAN_NO_IR) &&
 		    !(pwr_mode_chan_list[i].flag & HOSTAPD_CHAN_DISABLED)) {
-		    wpa_printf(MSG_DEBUG, "SP channel available: %d MHz",
-			       pwr_mode_chan_list[i].freq);
-		    sp_available = true;
-		    break;
+			wpa_printf(MSG_DEBUG, "Channel available: %d MHz (pwr_mode %d)",
+				   pwr_mode_chan_list[i].freq, pwr_mode);
+			return true;
 		}
 	}
-	return sp_available;
+	return false;
+}
+
+static bool
+hostapd_is_sp_chans_available(struct hostapd_iface *iface)
+{
+	return hostapd_is_pwr_mode_chans_available(iface, NL80211_REG_AP_SP);
+}
+
+bool
+hostapd_is_lpi_chans_available(struct hostapd_iface *iface)
+{
+	return hostapd_is_pwr_mode_chans_available(iface, NL80211_REG_AP_LPI);
+}
+
+bool
+hostapd_is_indoor_sp_pwr_mode(struct hostapd_data *hapd)
+{
+	return hapd->iconf->he_6ghz_reg_pwr_type == HE_REG_INFO_6GHZ_AP_TYPE_SP &&
+	       hapd->iconf->enable_6ghz_composite_ap &&
+	       hostapd_is_lpi_chans_available(hapd->iface);
 }
 
 /**

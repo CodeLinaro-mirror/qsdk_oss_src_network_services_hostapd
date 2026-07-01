@@ -14048,8 +14048,7 @@ static void hostapd_add_6g_tpe(struct hostapd_data *hapd, u8 **eid, u8 pwr_mode)
 		pwr_interp_conf = TPE_REG_EIRP_PSD;
 #endif
 
-	if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_SP &&
-	    hapd->iconf->enable_6ghz_composite_ap)
+	if (hostapd_is_indoor_sp_pwr_mode(hapd))
 		pwr_mode = HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP;
 
 	switch(pwr_mode) {

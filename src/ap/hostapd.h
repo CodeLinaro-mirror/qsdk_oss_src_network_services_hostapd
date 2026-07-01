@@ -2081,6 +2081,8 @@ int hostapd_update_monitor_channel(struct hostapd_data *hapd,
 void hostapd_clear_old_bss(struct hostapd_data *bss);
 struct hostapd_data * hostapd_mbssid_get_bss(struct hostapd_data *hapd, size_t i);
 
+bool hostapd_is_lpi_chans_available(struct hostapd_iface *iface);
+bool hostapd_is_indoor_sp_pwr_mode(struct hostapd_data *hapd);
 #ifdef CONFIG_IEEE80211AX
 /**
  * hostapd_set_current_6ghz_pwr_type - Set 6 GHz power mode when BPM is disabled
