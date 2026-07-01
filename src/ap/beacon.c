@@ -2759,11 +2759,12 @@ u8 * hostapd_unsol_bcast_probe_resp(struct hostapd_data *hapd,
 	/* Do not enable UBPR in 6GHz AP if colocated with lower band APs */
 	hapd->conf->ubpr_state = FILS_UBPR_USER_DISABLED;
 
-	if (!is_6ghz_op_class(hapd->iconf->op_class) ||
-	    !hapd->conf->unsol_bcast_probe_resp_interval)
+	if (!is_6ghz_op_class(hapd->iconf->op_class))
 		return NULL;
 
-	if (get_colocation_mode(hapd) == COLOCATED_6GHZ) {
+	if (hapd->conf->unsol_bcast_probe_resp_interval &&
+	    hapd->conf->force_disable_in_band_discovery &&
+	    (get_colocation_mode(hapd) == COLOCATED_6GHZ)) {
 		hapd->conf->ubpr_state = FILS_UBPR_FORCE_DISABLED;
 		return NULL;
 	}
