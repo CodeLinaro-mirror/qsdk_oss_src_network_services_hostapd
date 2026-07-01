@@ -1736,6 +1736,10 @@ enum hostapd_chan_status acs_init(struct hostapd_iface *iface)
 
 	acs_cleanup(iface);
 
+#ifdef CONFIG_QCN_EXTN
+	acs_init_extn(iface, NORMAL_SCAN_TRIGGER);
+#endif
+
 	if (acs_request_scan(iface) < 0)
 		return HOSTAPD_CHAN_INVALID;
 	if (!iface->iface_extn.dynamic_acs_action)
