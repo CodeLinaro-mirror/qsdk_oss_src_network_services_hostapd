@@ -6199,6 +6199,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->ttlm_enable = atoi(pos);
 	} else if (os_strcmp(buf, "single_link_emlsr") == 0) {
 		bss->single_link_emlsr = atoi(pos);
+	} else if (os_strcmp(buf, "disable_eml") == 0) {
+		bss->disable_eml = atoi(pos);
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN

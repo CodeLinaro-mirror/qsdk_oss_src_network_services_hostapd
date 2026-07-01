@@ -960,6 +960,10 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 	hapd->iface->mld_eml_capa &= ~EHT_ML_EML_CAPA_EMLSR_TRANS_DELAY_MASK;
 	hapd->iface->mld_eml_capa &= ~EHT_ML_EML_CAPA_EMLSR_PADDING_DELAY_MASK;
 
+	/* Disable all EML capabilities (EMLSR + EMLMR) if configured */
+	if (hapd->conf->disable_eml)
+		hapd->iface->mld_eml_capa = 0;
+
 	wpa_printf(MSG_DEBUG, "MLD: EML Capabilities=0x%x",
 		   hapd->iface->mld_eml_capa);
 	wpabuf_put_le16(buf, hapd->iface->mld_eml_capa);
