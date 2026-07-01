@@ -416,9 +416,25 @@ int hostapd_if_deinit(void)
 	return 0;
 }
 
+static
+struct frame_reg_table *__get_shared_mld_table(struct hostapd_data *hapd)
+{
+	struct hostapd_data *hapd_partner;
+
+	if (!hapd->conf->mld_ap || !hapd->mld)
+		return NULL;
+
+	for_each_mld_link(hapd_partner, hapd) {
+
+		if (!hapd_partner->hostapd_if_data)
+			continue;
+		return hapd_partner->hostapd_if_data;
+	}
+	return NULL;
+}
+
 int hostapd_if_interface_create(struct hostapd_data *hapd)
 {
-	struct hostapd_data *leader;
 	struct frame_reg_table *table = NULL;
 
 	if (!hapd->conf->external_plugin_enable)
@@ -427,36 +443,29 @@ int hostapd_if_interface_create(struct hostapd_data *hapd)
 	if (hapd->hostapd_if_data)
 		return 0;
 
-	wpa_printf(MSG_ERROR, "%s:%s %d", __func__, hapd->conf->iface,
+	wpa_printf(MSG_DEBUG, "%s:%s link-id:%d", __func__, hapd->conf->iface,
 		hapd->mld_link_id);
-	leader = hostapd_mld_get_first_bss(hapd);
 
-	/*
-	 * If in MLD and a table exists in the leader, share it
-	 * (just refcount)
-	 */
-	if (leader && leader != hapd) {
-		if (!leader->hostapd_if_data) {
-			wpa_printf(MSG_ERROR, "%s: ERROR! leader BSS does not have table\n",
-				__func__);
-			return -1;
-		}
-		table = (struct frame_reg_table *) leader->hostapd_if_data;
-		++table->ref_count;
+	table = __get_shared_mld_table(hapd);
+	if (table) {
+
+		wpa_printf(MSG_DEBUG, "%s: sharing table for %s link-id:%d\n",
+			   __func__, hapd->conf->iface, hapd->mld_link_id);
+
 		hapd->hostapd_if_data = (void *) table;
-
-		wpa_printf(MSG_DEBUG, "%s! using table from leader bss\n", __func__);
+		++table->ref_count;
 		goto hostapd_if_interface_create_plugin_call;
 	}
 
-	table = (struct frame_reg_table *)
-		calloc(1, sizeof(struct frame_reg_table));
+	table = os_zalloc(sizeof(*table));
 	if (!table) {
 		wpa_printf(MSG_ERROR, "%s! ERROR!! TABLE allocation failed\n",
 			__func__);
 		return -1;
 	}
 
+	wpa_printf(MSG_DEBUG, "%s:%s Allocating table link-id:%d\n", __func__,
+		   hapd->conf->iface, hapd->mld_link_id);
 	table->ref_count = 1;
 	/*
 	 * Allocate bitfield for event registration tracking
