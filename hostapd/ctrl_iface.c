@@ -13419,14 +13419,16 @@ static int hostapd_ctrl_check_event_enabled(struct wpa_ctrl_dst *dst,
 
 
 static void hostapd_ctrl_iface_send_internal(int sock, struct dl_list *ctrl_dst,
-					     const char *ifname, int level,
+					     const char *ifname,
+					     int mld_link_id, int level,
 					     const char *buf, size_t len)
 {
 	struct wpa_ctrl_dst *dst, *next;
 	struct msghdr msg;
 	int idx, res;
-	struct iovec io[5];
+	struct iovec io[8];
 	char levelstr[10];
+	char linkid_str[20];
 
 	if (sock < 0 || dl_list_empty(ctrl_dst))
 		return;
@@ -13452,6 +13454,16 @@ static void hostapd_ctrl_iface_send_internal(int sock, struct dl_list *ctrl_dst,
 	io[idx].iov_base = (char *) buf;
 	io[idx].iov_len = len;
 	idx++;
+	if (mld_link_id >= 0) {
+		res = os_snprintf(linkid_str, sizeof(linkid_str), " LINKID=%d",
+				  mld_link_id);
+		if (os_snprintf_error(sizeof(linkid_str), res))
+			return;
+
+		io[idx].iov_base = linkid_str;
+		io[idx].iov_len = os_strlen(linkid_str);
+		idx++;
+	}
 	os_memset(&msg, 0, sizeof(msg));
 	msg.msg_iov = io;
 	msg.msg_iovlen = idx;
@@ -13487,19 +13499,28 @@ static void hostapd_ctrl_iface_send(struct hostapd_data *hapd, int level,
 				    enum wpa_msg_type type,
 				    const char *buf, size_t len)
 {
+	int mld_link_id = -1;
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap)
+		mld_link_id = hapd->mld_link_id;
+#endif /* CONFIG_IEEE80211BE */
+
 	if (type != WPA_MSG_NO_GLOBAL) {
 		hostapd_ctrl_iface_send_internal(
 			hapd->iface->interfaces->global_ctrl_sock,
 			&hapd->iface->interfaces->global_ctrl_dst,
 			type != WPA_MSG_PER_INTERFACE ?
 			NULL : hapd->conf->iface,
+			type == WPA_MSG_PER_INTERFACE ?
+			mld_link_id : -1,
 			level, buf, len);
 	}
 
 	if (type != WPA_MSG_ONLY_GLOBAL) {
 		hostapd_ctrl_iface_send_internal(
 			hapd->ctrl_sock, &hapd->ctrl_dst,
-			NULL, level, buf, len);
+			NULL, -1, level, buf, len);
 	}
 }
 #endif /* CONFIG_NATIVE_WINDOWS */
