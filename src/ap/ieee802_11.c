@@ -5359,7 +5359,7 @@ static void handle_auth(struct hostapd_data *hapd,
 		return;
 	}
 #endif /* CONFIG_SAE */
-	{
+	if (hapd->conf->mld_ap) {
 		struct hostapd_ft_over_ds_ml_sta_entry *entry;
 
 		entry = ap_get_ft_ds_ml_sta(hapd, sa);
