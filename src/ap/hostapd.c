@@ -7275,6 +7275,7 @@ int hostapd_disable_iface(struct hostapd_iface *hapd_iface)
 	/* same as hostapd_interface_deinit without deinitializing ctrl-iface */
 	for (j = 0; j < hapd_iface->num_bss; j++) {
 		struct hostapd_data *hapd = hapd_iface->bss[j];
+		hapd->reenable = REENABLE_DEINIT;
 		hostapd_bss_deinit_no_free(hapd);
 		hostapd_bss_link_deinit(hapd);
 		hostapd_free_hapd_data(hapd);
