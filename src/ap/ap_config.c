@@ -256,6 +256,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->eht_phy_capab.mu_beamformer = 1;
 
 	bss->single_link_emlsr = false;
+	bss->disable_eml = false;
 	bss->mld_link_id = -1; /* -1 = auto-allocate */
 #endif /* CONFIG_IEEE80211BE */
 	bss->ht_mcs_nss_set = 0;
