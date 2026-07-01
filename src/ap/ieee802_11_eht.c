@@ -1442,11 +1442,39 @@ sae_commit_skip_fixed_fields(const struct ieee80211_mgmt *mgmt, size_t len,
 #define GROUP_20_CONFIRM_FIXED_FIELDS_LEN  48
 #define GROUP_21_CONFIRM_FIXED_FIELDS_LEN  64
 
+static bool sae_confirm_ies_valid(const u8 *pos, size_t len, bool *has_mle)
+{
+	struct ieee802_11_elems elems;
+
+	if (has_mle)
+		*has_mle = false;
+
+	if (!len)
+		return true;
+
+	if (ieee802_11_parse_elems(pos, (int) len, &elems, 0) == ParseFailed)
+		return false;
+
+	if (has_mle && elems.basic_mle && elems.basic_mle_len)
+		*has_mle = true;
+
+	return true;
+}
+
 static const u8 *
 sae_confirm_skip_fixed_fields(struct hostapd_data *hapd,
 			      const struct ieee80211_mgmt *mgmt, size_t len,
 			      const u8 *pos, u16 status_code)
 {
+	static const size_t kck_lens[] = {
+		GROUP_19_CONFIRM_FIXED_FIELDS_LEN,
+		GROUP_20_CONFIRM_FIXED_FIELDS_LEN,
+		GROUP_21_CONFIRM_FIXED_FIELDS_LEN
+	};
+	const u8 *best = NULL;
+	size_t rem;
+	size_t i;
+
 	if (status_code == WLAN_STATUS_REJECTED_WITH_SUGGESTED_BSS_TRANSITION)
 		return pos;
 
@@ -1455,15 +1483,33 @@ sae_confirm_skip_fixed_fields(struct hostapd_data *hapd,
 		goto truncated;
 	pos += 2;
 	len -= 2;
+	rem = len;
 
-	if (len >= GROUP_21_CONFIRM_FIXED_FIELDS_LEN)
-		pos += GROUP_21_CONFIRM_FIXED_FIELDS_LEN;
-	else if (len >= GROUP_20_CONFIRM_FIXED_FIELDS_LEN)
-		pos += GROUP_20_CONFIRM_FIXED_FIELDS_LEN;
-	else if (len >= GROUP_19_CONFIRM_FIXED_FIELDS_LEN)
-		pos += GROUP_19_CONFIRM_FIXED_FIELDS_LEN;
-	else
+	for (i = 0; i < ARRAY_SIZE(kck_lens); i++) {
+		const u8 *ie_pos;
+		size_t ie_len;
+		bool has_mle = false;
+
+		if (rem < kck_lens[i])
+			continue;
+
+		ie_pos = pos + kck_lens[i];
+		ie_len = rem - kck_lens[i];
+
+		if (!sae_confirm_ies_valid(ie_pos, ie_len, &has_mle))
+			continue;
+
+		if (hapd && hapd->conf && hapd->conf->mld_ap && has_mle)
+			return ie_pos;
+
+		if (!best)
+			best = ie_pos;
+	}
+
+	if (!best)
 		return NULL;
+
+	pos = best;
 
 	if (pos - mgmt->u.auth.variable > (int) len) {
 	truncated:
