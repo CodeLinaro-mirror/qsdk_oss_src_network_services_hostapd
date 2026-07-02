@@ -247,6 +247,7 @@ enum dpp_netrole {
 	DPP_NETROLE_STA,
 	DPP_NETROLE_AP,
 	DPP_NETROLE_CONFIGURATOR,
+	DPP_NETROLE_MAP_AGENT,        /* EasyMesh: Multi-AP Agent (1905-layer) */
 };
 
 struct dpp_configuration {
@@ -375,8 +376,29 @@ struct dpp_authentication {
 		struct wpabuf *cacert;
 		char *server_name;
 		struct wpabuf *pp_key;
+		/* EasyMesh: connector groups[].netRole, e.g. "mapAgent" or
+		 * "mapBackhaulSta" - used to tell the 1905 connector object
+		 * apart from the backhaul STA credential object when a
+		 * Configuration Response carries both. */
+		char connector_netrole[32];
+		/* EasyMesh: dfCounterThreshold, top-level field of the
+		 * mapAgent (1905-layer) DPP Configuration Object. */
+		int df_counter_threshold;
 	} conf_obj[DPP_MAX_CONF_OBJ];
 	unsigned int num_conf_obj;
+	/* EasyMesh: signedConnector of the 1905/mapAgent config object, kept
+	 * separately since it has no SSID/credential of its own and is
+	 * consumed by the 1905 layer above wpa_supplicant rather than folded
+	 * into a Wi-Fi network profile. */
+	char *dpp_1905_connector;
+	/*
+	 * EasyMesh MLO: raw JSON of the bSTAList array to include in the
+	 * mapAgent Enrollee's Config Request, set by the caller before
+	 * dpp_build_conf_req_helper() runs. NOT owned by dpp_authentication -
+	 * this is a borrowed pointer (e.g. into wpa_s->conf->dpp_bsta_list);
+	 * do not free it in dpp_auth_deinit().
+	 */
+	const char *bsta_list;
 	struct dpp_asymmetric_key *conf_key_pkg;
 	struct wpabuf *net_access_key;
 	os_time_t net_access_key_expiry;

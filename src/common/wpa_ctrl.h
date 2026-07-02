@@ -228,6 +228,15 @@ extern "C" {
 #define DPP_EVENT_CONFOBJ_PSK "DPP-CONFOBJ-PSK "
 #define DPP_EVENT_SAE_PWE "DPP-EVENT-SAE-PWE "
 #define DPP_EVENT_CONNECTOR "DPP-CONNECTOR "
+/*
+ * mapAgent (1905-layer) DPP Configuration Object fields, one event name
+ * per field so an external application can consume them without having
+ * to parse a "key=value" payload.
+ */
+#define DPP_EVENT_1905_CONNECTOR "DPP-1905-CONNECTOR "
+#define DPP_EVENT_1905_C_SIGN_KEY "DPP-1905-C-SIGN-KEY "
+#define DPP_EVENT_1905_NET_ACCESS_KEY "DPP-1905-NET-ACCESS-KEY "
+#define DPP_EVENT_1905_DF_COUNTER_THRESHOLD "DPP-1905-DF-COUNTER-THRESHOLD "
 #define DPP_EVENT_C_SIGN_KEY "DPP-C-SIGN-KEY "
 #define DPP_EVENT_PP_KEY "DPP-PP-KEY "
 #define DPP_EVENT_NET_ACCESS_KEY "DPP-NET-ACCESS-KEY "
