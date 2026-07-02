@@ -1858,6 +1858,9 @@ struct hostapd_config {
 		int min_power;
 	} afc;
 #endif /* CONFIG_AFC */
+	/* intermediate non-DFS channel to be used to boot-up quickly */
+	int intercac_chan;
+	int intercac_chwidth;
 };
 
 
