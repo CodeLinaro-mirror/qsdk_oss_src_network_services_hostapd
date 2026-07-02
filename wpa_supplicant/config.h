@@ -1710,6 +1710,22 @@ struct wpa_config {
 	char *dpp_mud_url;
 
 	/**
+	 * dpp_1905_connector - raw JSON of the EasyMesh mapAgent
+	 * (1905-layer) DPP config object, received via the
+	 * DPP-1905-CONNECTOR ctrl_iface event and consumed by the 1905
+	 * layer above wpa_supplicant
+	 */
+	char *dpp_1905_connector;
+
+	/**
+	 * dpp_bsta_list - EasyMesh MLO: raw JSON of the bSTAList array to
+	 * include in the mapAgent Enrollee's DPP Configuration Request,
+	 * set by the 1905 layer (which knows the device's radios and MLO
+	 * capabilities) before DPP onboarding starts
+	 */
+	char *dpp_bsta_list;
+
+	/**
 	 * dpp_extra_conf_req_name - JSON node name of additional data for
 	 * Enrollee's DPP Configuration Request
 	 */
