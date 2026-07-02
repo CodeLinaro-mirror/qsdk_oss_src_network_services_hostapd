@@ -72,6 +72,10 @@
 #include "robust_av.h"
 #include "wpa_auth_i.h"
 
+#ifdef CONFIG_IEEE80211BN
+#include "uhr_utils.h"
+#endif /* CONFIG_IEEE80211BN */
+
 #define CIPIE_ELEMENT_ID 0
 #define CIPIE_LENGTH 1
 #define CIPIE_ELEMENT_ID_EXTENSION 2
@@ -1134,6 +1138,7 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 	struct wpabuf *ml_resp = NULL;
 	struct wpabuf *smd_resp = NULL;
 	size_t smd_len = 0;
+	size_t smd_resp_len = 0;
 #ifdef CONFIG_IEEE8021X_AUTH
 	enum rsn_hash_alg hash_alg = RSN_HASH_NOT_SPECIFIED;
 	size_t mic_len = 0;
@@ -1159,20 +1164,15 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 				wpabuf_free(ml_resp);
 				return -1;
 			}
+			smd_resp_len = wpabuf_len(smd_resp);
 		}
 	}
 #endif /* CONFIG_IEEE80211BN */
 
-	rlen = IEEE80211_HDRLEN + sizeof(reply->u.auth) + ies_len;
 	if (ml_resp)
 		ml_len = wpabuf_len(ml_resp);
-	rlen += ml_len;
-	rlen += smd_len;
-
-#ifdef CONFIG_HOSTAPD_IF
-	tail_len = hostapd_if_auth_reply_tail_len(sta, rlen);
-#endif
-	rlen += tail_len;
+	rlen = IEEE80211_HDRLEN + sizeof(reply->u.auth) + ies_len +
+	       ml_len + smd_resp_len;
 #ifdef CONFIG_IEEE8021X_AUTH
 	/* Add MIC element for an Authentication frame carrying an EAP-Success
 	 * message and for an Authentication frame with transaction sequence
@@ -1194,9 +1194,15 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 #endif /* CONFIG_IEEE8021X_AUTH */
 
+#ifdef CONFIG_HOSTAPD_IF
+	tail_len = hostapd_if_auth_reply_tail_len(sta, rlen);
+#endif
+	rlen += tail_len;
+
 	buf = os_zalloc(rlen);
 	if (!buf) {
 		wpabuf_free(ml_resp);
+		wpabuf_free(smd_resp);
 		return -1;
 	}
 
@@ -6684,7 +6690,7 @@ int hostapd_get_aid(struct hostapd_data *hapd, struct sta_info *sta)
 	if (j == 32)
 		return -1;
 	aid = i * 32 + j;
-	if (aid > 2007)
+	if (aid <= 0 || aid > 2007)
 		return -1;
 
 	sta->aid = aid;
@@ -8467,7 +8473,7 @@ out:
 }
 
 
-static int check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
+int check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			   const u8 *ies, size_t ies_len,
 			   enum link_parse_type type)
 {
@@ -8892,11 +8898,19 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 					    sta->supported_rates_len,
 #ifdef CONFIG_QCN_EXTN
 					    0, NULL, NULL, NULL, 0, NULL, 0,
-					    NULL, 0, NULL, NULL,
+					    NULL, 0, NULL,
 #else
 					    0, NULL, NULL, NULL, 0, NULL, 0,
-					    NULL, 0, NULL,
+					    NULL, 0,
 #endif
+#ifdef CONFIG_IEEE80211BN
+					    sta->smd_info.smd_sta,
+					    sta->smd_info.caps.dl_data_fwd,
+					    sta->smd_info.smd_identifier,
+#else
+					    false, false, NULL,
+#endif
+					    NULL,
 					    sta->flags, 0, 0, 0, 0,
 					    mld_link_addr, mld_link_sta,
 					    eml_cap, ap_sta_is_epp(sta), reassoc,
@@ -9003,7 +9017,9 @@ int add_associated_sta(struct hostapd_data *hapd,
 #endif /* CONFIG_ENC_ASSOC */
 
 #ifdef CONFIG_IEEE80211BE
+	wpa_printf(MSG_DEBUG, "Associated link: %d, current link: %d, %d, %p, %d", sta->mld_assoc_link_id, hapd->mld_link_id, hapd->conf->mld_ap, sta, sta->mld_info.mld_sta);
 	if (ap_sta_is_mld(hapd, sta)) {
+
 		u8 mld_link_id = hapd->mld_link_id;
 
 		mld_link_sta = sta->mld_assoc_link_id != mld_link_id;
@@ -9114,6 +9130,13 @@ int add_associated_sta(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 			    (struct sta_info_extn *)&sta->sta_extn,
 #endif
+#ifdef CONFIG_IEEE80211BN
+			    sta->smd_info.smd_sta,
+			    sta->smd_info.caps.dl_data_fwd,
+			    sta->smd_info.smd_identifier,
+#else
+			    false, false, NULL,
+#endif
 			    sta->he_6ghz_capab,
 			    sta->flags | WLAN_STA_ASSOC, sta->qosinfo,
 			    sta->vht_opmode, sta->p2p_ie ? 1 : 0,
@@ -9162,6 +9185,7 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 	if (sta)
 		buflen += 150;
 #endif /* CONFIG_FILS */
+
 #ifdef CONFIG_OWE
 	if (sta &&
 	    ((hostapd_config_all_key_mgmt(hapd->conf)) & WPA_KEY_MGMT_OWE))
@@ -10272,6 +10296,11 @@ handle_assoc_sa_query_timeout_ml_setup(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 			    NULL,
 #endif
+#ifdef CONFIG_IEEE80211BN
+                            sta->smd_info.smd_sta, sta->smd_info.caps.dl_data_fwd, sta->smd_info.smd_identifier,
+#else
+                            0, 0, NULL,
+#endif
 			    NULL, sta->flags, 0, 0, 0, 0,
 			    mld_link_addr, mld_link_sta,
 			    eml_cap, ap_sta_is_epp(sta), reassoc,
@@ -11370,6 +11399,65 @@ static int hostapd_action_vs(struct hostapd_data *hapd,
 	return -1;
 }
 
+#ifdef CONFIG_IEEE80211BN
+static void handle_uhr_link_reconfig(struct hostapd_data *hapd,
+				     struct sta_info *sta,
+				     const struct ieee80211_mgmt *mgmt,
+				     size_t len)
+{
+	const u8 *frame = (const u8 *) mgmt;
+	u8 type = frame[IEEE80211_HDRLEN + 3];  /* Skip header + category + action + dialog */
+
+	if (len < IEEE80211_HDRLEN + 4) {
+		wpa_printf(MSG_DEBUG, "UHR: Frame too short");
+		return;
+	}
+
+	switch (type) {
+	case UHR_LINK_RECONFIG_TYPE_PREP:
+		uhr_handle_st_prep_req(hapd, sta, (const u8 *) mgmt, len);
+		break;
+	case UHR_LINK_RECONFIG_TYPE_EXECUTE:
+		uhr_handle_st_exec_req(hapd, sta, (const u8 *) mgmt, len);
+		break;
+	default:
+		wpa_printf(MSG_DEBUG, "UHR: Received type not resolved");
+	}
+}
+
+
+static void ieee802_11_rx_protected_uhr_action(struct hostapd_data *hapd,
+                                        const struct ieee80211_mgmt *mgmt,
+                                        size_t len)
+{
+	u8 action;
+	struct sta_info *sta;
+
+	action =  *((u8 *)&mgmt->u.action + 1);
+
+	sta = ap_get_sta(hapd, mgmt->sa);
+	if (!sta) {
+		wpa_printf(MSG_DEBUG, "UHR: Action frame from unknown STA " MACSTR,
+			   MAC2STR(mgmt->sa));
+		return;
+	}
+
+	wpa_printf(MSG_DEBUG, "UHR: Received action=%u ",action);
+
+	switch (action) {
+	case WLAN_PROT_UHR_LINK_RECONFIG_REQUEST:
+		handle_uhr_link_reconfig(hapd, sta, mgmt, len);
+		break;
+	default:
+		wpa_printf(MSG_DEBUG,
+			"MLD: Unsupported Protected UHR Action %u from " MACSTR
+			" discarded", action, MAC2STR(mgmt->sa));
+		break;
+	}
+}
+
+
+#endif /* CONFIG_IEEE80211BN */
 
 static int robust_action_frame(u8 category)
 {
@@ -11602,6 +11690,12 @@ static int handle_action(struct hostapd_data *hapd,
 		ieee802_11_rx_protected_eht_action(hapd, sta, mgmt, len);
 		return 1;
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_IEEE80211BN
+	case WLAN_ACTION_PROTECTED_UHR:
+		wpa_printf(MSG_DEBUG, "Received protected UHR action frame");
+		ieee802_11_rx_protected_uhr_action(hapd, mgmt, len);
+		return 1;
+#endif /* CONFIG_IEEE80211BN */
 	default:
 #ifdef CONFIG_QCN_EXTN
 		if (handle_action_extn(hapd, mgmt, len, freq))
@@ -11684,6 +11778,155 @@ static void ieee80211_clear_critical_flag(struct hostapd_data *hapd)
 		link_bss->rx_cu_param.critical_flag  = 0;
 	}
 }
+
+#ifdef CONFIG_IEEE80211BN
+
+/**
+ * uhr_send_st_prep_response - Send ST Preparation Response
+ * @hapd: hostapd data
+ * @sta: Station info
+ * @req_mgmt: Original request management frame
+ * @req_len: Request frame length
+ * Returns: 0 on success, -1 on error
+ *
+ * Sends an automatic ST Preparation Response with success status.
+ */
+int uhr_send_st_prep_response(struct hostapd_data *hapd,
+				     struct sta_info *sta,
+				     const struct ieee80211_mgmt *req_mgmt,
+				     size_t req_len)
+{
+	struct ieee80211_mgmt *mgmt;
+	u8 *buf, *pos;
+	size_t len;
+	u8 dialog_token;
+	int ret;
+
+	if (!hapd || !sta || !req_mgmt) {
+		wpa_printf(MSG_ERROR, "UHR ST Prep Response: Invalid parameters");
+		return -1;
+	}
+
+	/* Extract dialog token from request */
+	if (req_len < IEEE80211_HDRLEN + 4) {
+		wpa_printf(MSG_ERROR, "UHR ST Prep Response: Request too short");
+		return -1;
+	}
+	/* Dialog token is at offset 2 after category and action */
+	dialog_token = *((u8 *)&req_mgmt->u.action + 2);
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR ST Prep Response: Sending response to STA " MACSTR " (dialog_token=%u)",
+		   MAC2STR(sta->addr), dialog_token);
+
+	/* Calculate frame length with mandatory IEs */
+	/* Basic frame: MAC header + action fields + status + type */
+	/* category + action + dialog + count + (link_id + status) per link */
+	len = IEEE80211_HDRLEN + 1 + 1 + 1 + 1 + 1 + 3; /* category + action + dialog + type + count + one link entry */
+
+	/* Add SMD BSS Transition Parameters IE */
+	/* IE Header (2) + Extension ID (1) + Target AID (2) + Status Code (2) + BA Info (1) */
+	size_t smd_bss_ie_len = 2 + 1 + 2 + 2 + 1; /* SMD BSS Transition IE */
+	len += smd_bss_ie_len;
+
+	/* Add Basic Multi-Link Element (simplified) */
+	/* IE Header (2) + Extension ID (1) + ML Control (2) + Common Info Length (1) + MLD MAC (6) */
+	size_t basic_mle_len = 2 + 1 + 2 + 1 + 6; /* Basic MLE */
+	len += basic_mle_len;
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR ST Prep Response: Frame length=%zu (basic=%zu, smd_ie=%zu, mle=%zu)",
+		   len, (size_t)(IEEE80211_HDRLEN + 6), smd_bss_ie_len, basic_mle_len);
+
+	buf = os_zalloc(len);
+	if (!buf) {
+		wpa_printf(MSG_ERROR, "UHR ST Prep Response: Memory allocation failed");
+		return -1;
+	}
+
+	mgmt = (struct ieee80211_mgmt *) buf;
+
+	/* Fill MAC header - use MLD addresses for proper encryption */
+	mgmt->frame_control = IEEE80211_FC(WLAN_FC_TYPE_MGMT,
+					   WLAN_FC_STYPE_ACTION);
+	os_memcpy(mgmt->da, sta->addr, ETH_ALEN);
+	os_memcpy(mgmt->sa, hapd->mld->mld_addr, ETH_ALEN);
+	os_memcpy(mgmt->bssid, hapd->mld->mld_addr, ETH_ALEN);
+
+	/* Fill action frame */
+	pos = (u8 *) &mgmt->u.action;
+	*pos++ = WLAN_ACTION_PROTECTED_UHR;
+	*pos++ = 1; /* WLAN_PROTECTED_UHR_ACTION_LINK_RECONFIG_RES */
+	*pos++ = dialog_token;
+	*pos++ = 0; /* Type: 0 = ST Preparation */
+	*pos++ = 1; /* Count: number of link status entries */
+
+	/* Add link status entry for the current link */
+	u8 link_id = hapd->mld_link_id;
+	*pos++ = link_id;
+	WPA_PUT_LE16(pos, WLAN_STATUS_SUCCESS); /* Status code for this link */
+	pos += 2;
+
+	wpa_printf(MSG_DEBUG, "UHR ST Prep Response: Added link status (link_id=%u, status=SUCCESS)", link_id);
+
+	/*
+	 * Append mandatory IEs expected by STA-side parsing:
+	 *  - SMD BSS Transition Parameters IE (Extension element, Ext ID = WLAN_EID_EXT_SMD)
+	 *  - Basic Multi-Link element (Extension element, Ext ID = WLAN_EID_EXT_MULTI_LINK)
+	 *
+	 * Note: len was already calculated to include these IEs.
+	 */
+	{
+		u16 target_aid = sta->aid ? sta->aid : 1;
+		u16 bss_trans_status = WLAN_STATUS_SUCCESS;
+		u8 ba_info = 0x00;
+
+		/* SMD BSS Transition Parameters IE */
+		*pos++ = WLAN_EID_EXTENSION;
+		*pos++ = 1 + 2 + 2 + 1; /* ExtID + TargetAID + Status + BAInfo */
+		*pos++ = WLAN_EID_EXT_SMD;
+		WPA_PUT_LE16(pos, target_aid);
+		pos += 2;
+		WPA_PUT_LE16(pos, bss_trans_status);
+		pos += 2;
+		*pos++ = ba_info;
+
+		/* Basic Multi-Link element (minimal common info: MLD MAC only) */
+		*pos++ = WLAN_EID_EXTENSION;
+		*pos++ = 1 + 2 + 1 + ETH_ALEN; /* ExtID + ML Control + CommonLen + MLD MAC */
+		*pos++ = WLAN_EID_EXT_MULTI_LINK;
+
+		/* ML Control: Basic (type=0) and no presence bitmap */
+		WPA_PUT_LE16(pos, 0x0000);
+		pos += 2;
+
+		/* Common Info Length + Common Info (MLD MAC only in this minimal form) */
+		*pos++ = ETH_ALEN;
+		os_memcpy(pos, hapd->own_addr, ETH_ALEN);
+		pos += ETH_ALEN;
+
+		wpa_printf(MSG_DEBUG,
+			   "UHR ST Prep Response: Appended SMD BSS Trans IE (AID=%u) + Basic MLE (MLD=" MACSTR ")",
+			   target_aid, MAC2STR(hapd->own_addr));
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR ST Prep Response: Sending frame (len=%zu)", len);
+	wpa_printf(MSG_DEBUG,
+		   "UHR ST Prep Response: Frame will be encrypted by driver (Protected UHR Action, category=%u)",
+		   WLAN_ACTION_PROTECTED_UHR);
+
+	/* Send the frame - no_encrypt=0 allows driver to encrypt Protected UHR frames */
+	ret = hostapd_drv_send_mlme(hapd, buf, len, 0, NULL, 0, 0, 0, 0);
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR, "UHR ST Prep Response: Failed to send frame");
+	}
+
+	os_free(buf);
+	return ret;
+}
+
+#endif /* CONFIG_IEEE80211BN */
 
 
 /**
