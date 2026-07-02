@@ -5153,9 +5153,11 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 #ifdef NEED_AP_MLME
 		/* Handle DFS only if it is not offloaded to the driver */
 		if (!(iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD)) {
+			if (!hostapd_dfs_intercac_boot(iface)
 #ifdef CONFIG_QCN_EXTN
-			if (!hostapd_bootup_cac_start_extn(iface))
+			    && !hostapd_bootup_cac_start_extn(iface)
 #endif /* CONFIG_QCN_EXTN */
+			   )
 			{
 				/* Check DFS */
 				res = hostapd_handle_dfs(iface);

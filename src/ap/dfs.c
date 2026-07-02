@@ -2729,6 +2729,257 @@ int hostapd_dfs_precac_restart_after_radar(struct hostapd_iface *iface,
 	return hostapd_dfs_start_precac(iface);
 }
 
+static bool hostapd_dfs_intercac_preferred_chan_usable(struct hostapd_iface *iface,
+						       int preferred_chan,
+						       enum oper_chan_width preferred_width)
+{
+	struct hostapd_hw_modes *mode;
+	int n_chans, n_chans1, first_chan_idx, i;
+
+	wpa_printf(MSG_DEBUG,
+		   "intercac: check_fully_available(ch %d, width %d)",
+		   preferred_chan, preferred_width);
+
+	if (!iface->current_mode)
+		return false;
+
+	mode = iface->current_mode;
+
+	n_chans = dfs_get_used_n_chans(iface, &n_chans1, preferred_width);
+	if (n_chans <= 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: check_fully_available: n_chans failed for width %d",
+			   preferred_width);
+		return false;
+	}
+
+	first_chan_idx = -1;
+	for (i = 0; i < mode->num_channels; i++) {
+		if (mode->channels[i].chan == preferred_chan) {
+			first_chan_idx = i;
+			break;
+		}
+	}
+	if (first_chan_idx < 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: check_fully_available: ch %d not found in channel list",
+			   preferred_chan);
+		return false;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "intercac: check_fully_available: ch %d width %d n_chans=%d first_idx=%d",
+		   preferred_chan, preferred_width, n_chans, first_chan_idx);
+
+	if (!dfs_chan_range_available(mode, first_chan_idx, n_chans,
+				      DFS_AVAILABLE)) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: check_fully_available: ch %d not fully available",
+			   preferred_chan);
+		return false;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "intercac: check_fully_available: ALL %d sub-chans of ch %d (width %d) DFS_AVAILABLE",
+		   n_chans, preferred_chan, preferred_width);
+
+	return true;
+}
+
+bool hostapd_dfs_intercac_boot(struct hostapd_iface *iface)
+{
+	struct hostapd_config *conf;
+	enum oper_chan_width chan_width, inter_width;
+	struct hostapd_channel_data *chan;
+	int inter_freq, inter_sec, inter_bw_mhz;
+	u8 inter_seg0;
+	int n_chans, n_chans1;
+
+	wpa_printf(MSG_DEBUG, "intercac: boot called");
+
+	conf = iface->conf;
+	if (!conf->intercac_chan) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: boot: not configured, skip");
+		return false;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "intercac: boot: intercac_chan=%d chwidth=%d current_chan=%d freq=%d",
+		   conf->intercac_chan, conf->intercac_chwidth,
+		   conf->channel, iface->freq);
+
+	if (!dfs_use_radar_background(iface)) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: boot: agile CAC not supported");
+		return false;
+	}
+
+	chan = hw_mode_get_channel(iface->current_mode, iface->freq, NULL);
+	if (!chan || !(chan->flag & HOSTAPD_CHAN_RADAR)) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: boot: ch %d not DFS, skip",
+			   conf->channel);
+		return false;
+	}
+
+	if ((chan->flag & HOSTAPD_CHAN_DFS_MASK) == HOSTAPD_CHAN_DFS_AVAILABLE) {
+		wpa_printf(MSG_INFO,
+			   "intercac: preferred chan %d already DFS available flags=0x%x",
+			   chan->chan, chan->flag);
+		return false;
+	}
+
+	chan_width = hostapd_get_oper_chwidth(conf);
+	wpa_printf(MSG_DEBUG,
+		   "intercac: boot: DFS ch %d chan_width=%d intercac_chwidth=%d",
+		   conf->channel, chan_width, conf->intercac_chwidth);
+
+	/* Currently only (precac bw = operation bw) is supported */
+	if (conf->intercac_chwidth != chan_width) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: boot: BW mismatch (inter=%d chan=%d), not supported",
+			   conf->intercac_chwidth, chan_width);
+		return false;
+	}
+
+	/* Use dfs_get_used_n_chans() to derive BW in MHz from chan_width.
+	 * Returns 4 for 80 MHz, 8 for 160 MHz, 2 for HT40. */
+
+	n_chans = dfs_get_used_n_chans(iface, &n_chans1,
+			conf->intercac_chwidth);
+	if (n_chans <= 0) {
+		wpa_printf(MSG_ERROR,
+				"intercac: boot: n_chans failed for width %d",
+				conf->intercac_chwidth);
+		return false;
+	}
+	inter_bw_mhz = n_chans * 20;
+
+	if (hostapd_dfs_compute_bgcac_chan_params(conf->intercac_chan,
+						  inter_bw_mhz, &inter_width,
+						  &inter_seg0, &inter_sec) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: boot: compute params failed for ch %d bw %d",
+			   conf->intercac_chan, inter_bw_mhz);
+		return false;
+	}
+
+	inter_freq = hostapd_hw_get_freq(iface->bss[0], conf->intercac_chan);
+	if (inter_freq <= 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: boot: freq lookup failed for ch %d",
+			   conf->intercac_chan);
+		return false;
+	}
+
+	iface->preferred_chan = conf->channel;
+	iface->preferred_chan_width = chan_width;
+
+	wpa_printf(MSG_INFO,
+		   "intercac: ACTIVATING - intermediate ch %d (%d MHz bw %d), preferred DFS ch %d (width %d), RCAC->ch %d",
+		   conf->intercac_chan, inter_freq, inter_bw_mhz,
+		   conf->channel, chan_width, conf->channel);
+
+	conf->channel = conf->intercac_chan;
+	iface->freq = inter_freq;
+	conf->secondary_channel = inter_sec;
+	hostapd_set_oper_chwidth(conf, inter_width);
+	hostapd_set_oper_centr_freq_seg0_idx(conf, inter_seg0);
+	hostapd_set_oper_centr_freq_seg1_idx(conf, 0);
+	iface->user_rcac_channel = iface->preferred_chan;
+
+	wpa_printf(MSG_INFO,
+		   "intercac: boot done - AP on ch %d, RCAC pinned to ch %d",
+		   conf->channel, iface->user_rcac_channel);
+	return true;
+}
+
+bool hostapd_dfs_intercac_agile_complete(struct hostapd_iface *iface,
+					 int success)
+{
+	int preferred_chan;
+	enum oper_chan_width preferred_width;
+	int freq, bw_mhz;
+	enum oper_chan_width oper_width;
+	u8 seg0;
+	int sec;
+	struct hostapd_channel_data *chan_data = NULL;
+	int n_chans, n_chans1;
+
+	wpa_printf(MSG_DEBUG,
+		   "intercac: agile_complete(success=%d)", success);
+
+	preferred_chan = iface->preferred_chan;
+	preferred_width = iface->preferred_chan_width;
+
+	wpa_printf(MSG_DEBUG,
+		   "intercac: agile_complete: preferred_chan=%d width=%d",
+		   preferred_chan, preferred_width);
+
+	if (!preferred_chan) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: agile_complete: not active");
+		return false;
+	}
+	if (!success) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: agile_complete: agile CAC failed");
+		return false;
+	}
+
+	if (!hostapd_dfs_intercac_preferred_chan_usable(iface, preferred_chan,
+							preferred_width)) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: agile_complete: full BW not ready, waiting");
+		return false;
+	}
+
+	freq = hostapd_hw_get_freq(iface->bss[0], preferred_chan);
+	if (freq <= 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: agile_complete: freq lookup failed for ch %d",
+			   preferred_chan);
+		return false;
+	}
+
+	n_chans = dfs_get_used_n_chans(iface, &n_chans1, preferred_width);
+	if (n_chans <= 0) {
+		wpa_printf(MSG_ERROR,
+				"intercac: agile_complete: n_chans failed for width %d",
+				preferred_width);
+		return false;
+	}
+	bw_mhz = n_chans * 20;
+
+	if (hostapd_dfs_compute_bgcac_chan_params(preferred_chan, bw_mhz,
+						  &oper_width, &seg0, &sec) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: agile_complete: compute params failed");
+		return false;
+	}
+
+	chan_data = hw_mode_get_channel(iface->current_mode, freq, NULL);
+	if (chan_data) {
+		int refined = dfs_is_chan_allowed(chan_data, 2) ? 1 : -1;
+
+		wpa_printf(MSG_DEBUG,
+			   "intercac: agile_complete: refined sec %d->%d via dfs_is_chan_allowed",
+			   sec, refined);
+		sec = refined;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "intercac: SWITCHING - full BW ready for ch %d width %d, intermediate ch %d",
+		   preferred_chan, preferred_width,
+		   iface->conf->channel);
+
+	iface->preferred_chan = 0;
+	hostapd_dfs_request_channel_switch(iface, preferred_chan, freq,
+					   sec, preferred_width, seg0, 0, 0);
+	return true;
+}
+
 /**
  * hostapd_agile_complete - Handle Agile CAC (RCAC/PreCAC) completion
  * @iface: Pointer to hostapd interface data
@@ -2745,6 +2996,8 @@ static int hostapd_agile_complete(struct hostapd_iface *iface, int success,
 {
 	int precac_channel = iface->radar_background.channel;
 	int precac_freq = iface->radar_background.freq;
+
+	hostapd_dfs_intercac_agile_complete(iface, success);
 
 	if (!success) {
 		if (freq > 0 && iface->radar_background.freq > 0 &&
