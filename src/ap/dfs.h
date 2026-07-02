@@ -149,4 +149,5 @@ int dfs_check_chans_available(struct hostapd_iface *iface,
 			      int start_chan_idx, int n_chans);
 #endif /* CONFIG_QCN_EXTN */
 
+bool hostapd_dfs_intercac_boot(struct hostapd_iface *iface);
 #endif /* DFS_H */

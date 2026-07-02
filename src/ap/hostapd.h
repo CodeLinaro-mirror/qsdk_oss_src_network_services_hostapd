@@ -1118,6 +1118,15 @@ struct hostapd_iface {
 	int monitor_ifindex;
 	bool monitor_iface_configured;
 
+	/*
+	 * When boot/CSA target is a DFS channel,
+	 * preferred channel/width are saved here while AP temporarily operates
+	 * on conf->intercac_chan.
+	 * 0 means Inter CAC is not active.
+	 */
+	int preferred_chan;
+	enum oper_chan_width preferred_chan_width;
+
 	/* Use assisted DFS functionality from the driver. This is used only
 	 * in wpa_supplicant builds for P2P GO functionality. */
 	bool assisted_dfs;
