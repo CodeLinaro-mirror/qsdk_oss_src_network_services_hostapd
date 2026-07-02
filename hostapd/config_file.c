@@ -3361,6 +3361,19 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->acs_exclude_6ghz_non_psc = atoi(pos);
 	} else if (os_strcmp(buf, "enable_background_radar") == 0) {
 		conf->enable_background_radar = atoi(pos);
+	} else if (os_strcmp(buf, "interCACChan") == 0) {
+		int val = atoi(pos);
+
+		if (val && (!conf->bgcac_en ||
+			    !conf->enable_background_radar)) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: intercac_chan requires bgcac_en=1 and enable_background_radar=1",
+				   line);
+			return 1;
+		}
+
+		conf->intercac_chan = val;
+		conf->intercac_chwidth = CONF_OPER_CHWIDTH_80MHZ;
 	} else if (os_strcmp(buf, "bgcac_en") == 0) {
 		conf->bgcac_en = atoi(pos);
 		/* bgcac_en=1 also implies enable_background_radar */

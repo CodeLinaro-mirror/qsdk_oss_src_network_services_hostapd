@@ -1793,6 +1793,9 @@ struct hostapd_config {
 	char *mqtt_broker_host;
 	int   mqtt_broker_port;
 #endif /* CONFIG_MQTT */
+	/* intermediate non-DFS channel to be used to boot-up quickly */
+	int intercac_chan;
+	int intercac_chwidth;
 };
 
 
