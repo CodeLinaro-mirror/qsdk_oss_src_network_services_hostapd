@@ -3523,6 +3523,13 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	if (iface->conf->use_ru_puncture_dfs && hostapd_is_usable_punct_bitmap(iface)) {
 		iface->radar_bit_pattern = radar_bitmap_oper;
 		iface->conf->punct_bitmap = cur_punct_bits;
+
+		if (hostapd_csa_in_progress(iface)) {
+			wpa_printf(MSG_DEBUG,
+				   "DFS: radar detected during CSA, deferring puncture channel switch");
+			return 0;
+		}
+
 		u8 oper_centr_freq_seg0_idx = iface->conf->vht_oper_centr_freq_seg0_idx;
 		u8 oper_centr_freq_seg1_idx = iface->conf->vht_oper_centr_freq_seg1_idx;
 
