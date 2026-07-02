@@ -16,7 +16,7 @@ struct ieee80211_ht_capabilities;
 struct ieee80211_vht_capabilities;
 struct hostapd_freq_params;
 
-u32 hostapd_sta_flags_to_drv(u32 flags);
+u32 hostapd_sta_flags_to_drv(u32 flags, u32 flags_ext);
 int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 			       struct wpabuf **beacon,
 			       struct wpabuf **proberesp,
@@ -37,6 +37,15 @@ int hostapd_vlan_if_add(struct hostapd_data *hapd, const char *ifname);
 int hostapd_vlan_if_remove(struct hostapd_data *hapd, const char *ifname);
 int hostapd_set_wds_sta(struct hostapd_data *hapd, char *ifname_wds,
 			const u8 *addr, int aid, int val);
+
+int hostapd_smd_roam(struct hostapd_data *hapd,
+                     struct sta_info *sta,
+                     u32 role,
+                     u32 type,
+                     bool dl_sn_not_transferred,
+                     bool ul_sn_not_transferred,
+                     u32 dl_drain_time);
+
 int hostapd_sta_add(struct hostapd_data *hapd,
 		    const u8 *addr, u16 aid, u16 capability,
 		    const u8 *supp_rates, size_t supp_rates_len,
@@ -52,6 +61,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 		    struct sta_info_extn *sta_extn,
 #endif
+		    bool smd_sta, bool dl_data_fwd, const u8 *smd_mac_addr,
 		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
 		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
 		    int set, const u8 *link_addr, bool mld_link_sta,

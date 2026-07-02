@@ -103,7 +103,7 @@ void ieee802_1x_send(struct hostapd_data *hapd, struct sta_info *sta,
 #endif /* CONFIG_IEEE80211BE */
 		hostapd_drv_hapd_send_eapol(
 			hapd, sta->addr, buf, len,
-			encrypt, hostapd_sta_flags_to_drv(sta->flags), link_id);
+			encrypt, hostapd_sta_flags_to_drv(sta->flags, sta->flags_ext), link_id);
 	}
 
 	os_free(buf);
