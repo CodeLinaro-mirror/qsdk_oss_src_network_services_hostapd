@@ -282,7 +282,10 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 					       ucv_int64_new(center_freq2));
 				ucv_object_add(info, "punct_bitmap",
 				ucv_int64_new(bss->mld_links[i].punc_bitmap));
-				is_dfs = ieee80211_is_dfs(bss->mld_links[i].freq, NULL, 0);
+				is_dfs = wpas_ucode_is_dfs_chandef(bss->mld_links[i].freq,
+								   bss->mld_links[i].width,
+								   center_freq1,
+								   center_freq2);
 				ucv_object_add(info, "is_dfs", ucv_boolean_new(is_dfs));
 				ucv_object_add(info, "mcst",
 					       ucv_int64_new(wpa_bss_get_mld_link_mcst_extn(bss, i)));
@@ -344,7 +347,10 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 				       ucv_int64_new(center_freq2));
 			ucv_object_add(info, "punct_bitmap",
 				       ucv_int64_new(bss->punc_bitmap));
-			is_dfs = ieee80211_is_dfs(bss->freq, NULL, 0);
+			is_dfs = wpas_ucode_is_dfs_chandef(bss->freq,
+							   bss->max_cw,
+							   center_freq1,
+							   center_freq2);
 			ucv_object_add(info, "is_dfs",
 				       ucv_boolean_new(is_dfs));
 			sec_chan_offset = compute_sec_channel_offset_extn(bss->freq,
@@ -443,7 +449,10 @@ void wpas_ucode_event(struct wpa_supplicant *wpa_s, int event, union wpa_event_d
 	uc_value_push(ucv_get(val));
 	uc_value_push(ucv_get(ucv_int64_new(vap_type)));
 #ifdef CONFIG_QCN_EXTN
-	is_dfs = ieee80211_is_dfs(data->ch_switch.freq, NULL, 0);
+	is_dfs = wpas_ucode_is_dfs_chandef(data->ch_switch.freq,
+					   data->ch_switch.ch_width,
+					   data->ch_switch.cf1,
+					   data->ch_switch.cf2);
 	wpa_state = wpa_supplicant_state_txt(wpa_s->wpa_state);
 #endif
 
@@ -643,8 +652,10 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 						ucv_object_add(ret, "center_freq2", ucv_int64_new(mlo_si.links[i].center_frq2));
 						ucv_object_add(ret, "punct_bitmap", ucv_int64_new(mlo_si.links[i].punct_bitmap));
 #ifdef CONFIG_QCN_EXTN
-						is_dfs = compute_dfs_for_chanwidth_extn(freq,
-											mlo_si.links[i].chanwidth);
+						is_dfs = wpas_ucode_is_dfs_chandef(freq,
+										   mlo_si.links[i].chanwidth,
+										   mlo_si.links[i].center_frq1,
+										   mlo_si.links[i].center_frq2);
 						ucv_object_add(ret, "is_dfs", ucv_boolean_new(is_dfs));
 #endif
 					}
@@ -676,8 +687,10 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 					       ucv_int64_new(si.center_frq2));
 				ucv_object_add(ret, "punct_bitmap", ucv_int64_new(si.punct_bitmap));
 #ifdef CONFIG_QCN_EXTN
-				is_dfs = compute_dfs_for_chanwidth_extn(bss->freq,
-									si.chanwidth);
+				is_dfs = wpas_ucode_is_dfs_chandef(bss->freq,
+								   si.chanwidth,
+								   si.center_frq1,
+								   si.center_frq2);
 				ucv_object_add(ret, "is_dfs", ucv_boolean_new(is_dfs));
 #endif
 			}
