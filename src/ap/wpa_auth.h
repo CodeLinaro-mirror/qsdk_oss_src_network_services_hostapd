@@ -822,6 +822,8 @@ u8 * wpa_auth_ml_group_kdes(struct wpa_state_machine *sm, u8 *pos,
 			    u16 req_links);
 size_t wpa_auth_key_delivery_elem_len(struct wpa_state_machine *sm,
 				      u16 req_links);
+u8 * wpa_auth_build_key_delivery_elem(struct wpa_state_machine *sm,
+				      u16 req_links, u8 *pos);
 void wpa_reset_assoc_sm_info(struct wpa_state_machine *assoc_sm,
 			     struct wpa_authenticator *wpa_auth,
 			     u8 mld_assoc_link_id);
