@@ -3679,6 +3679,7 @@ struct wpa_mlo_signal_info {
  * @is_execution_request: Flag to indicate ST Execution (vs ST Preparation)
  * @exec_path: Execution path for ST Execution (0 = via current AP, 1 = direct)
  * @dl_tid_bitmap: DL TID bitmap for traffic draining during ST Execution
+ * @force_diff_tx:  when set, ST Prep and ST Exec are sent on diff link
  */
 struct wpa_mlo_reconfig_info {
 	u16 add_links;
@@ -3688,6 +3689,7 @@ struct wpa_mlo_reconfig_info {
 	u8 is_execution_request;
 	u8 exec_path;
 	u8 dl_tid_bitmap;
+	u8 force_diff_tx;
 };
 
 /**
@@ -3712,6 +3714,7 @@ struct wpa_mlo_reconfig_info {
  * @max_links: Number of link entries
  * @smd: SMD domain parameters
  * @reconfig_info: Link add/del information for SMD preparation (optional)
+ * @tx_link_id: MLO link ID on which this frame must be transmitted
  */
 struct wpa_driver_uhr_reconfig_params {
 	u8 type;
@@ -3734,6 +3737,7 @@ struct wpa_driver_uhr_reconfig_params {
 	size_t max_links;
 	struct wpa_smd_params smd;
 	struct wpa_mlo_reconfig_info *reconfig_info;
+	s8 tx_link_id;
 };
 
 /**

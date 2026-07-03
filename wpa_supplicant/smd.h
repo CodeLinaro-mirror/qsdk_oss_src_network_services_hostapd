@@ -193,6 +193,14 @@ struct wpa_smd_prepared_target {
 
 	u8 exec_req_dl_tid_bitmpa;
 
+	/*
+	 * force_diff_tx - mirrors the FORCE_DIFF_TX flag from SMD_PREPARE.
+	 * Stored here so wpas_smd_request_execute() can honour it when ST
+	 * Execution is triggered automatically after PREP completes.
+	 * 1 = send ST Exec on a non-assoc link; 0 = use assoc link (default).
+	 */
+	u8 force_diff_tx;
+
 	u16 dl_drain_duration;
 	bool dl_drain_duration_valid;
 

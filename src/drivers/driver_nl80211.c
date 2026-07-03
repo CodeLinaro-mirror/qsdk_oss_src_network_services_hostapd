@@ -17439,6 +17439,23 @@ wpa_driver_nl80211_uhr_reconfig_req(void *priv,
 	if (!msg)
 		return -ENOBUFS;
 
+	/*
+	 * Specify the MLO link on which the frame must be transmitted.
+	 * ST Preparation uses the assoc link (or user TX_LINK= override).
+	 * ST Execution uses a non-assoc link selected by
+	 * wpas_smd_pick_exec_link() in wpa_supplicant.
+	 * When tx_link_id < 0 the attribute is omitted and mac80211 picks
+	 * the link freely.
+	 */
+	if (params->tx_link_id >= 0) {
+		if (nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID,
+			       (u8) params->tx_link_id))
+			goto nla_fail;
+		wpa_printf(MSG_INFO,
+			   "santy nl80211: UHR_LINK_RECONFIG_REQ tx_link_id=%d "
+			   "(type=%u)", params->tx_link_id, params->type);
+	}
+
 	if (nla_put_u8(msg, NL80211_ATTR_UHR_RECONFIG_TYPE, params->type))
 		goto nla_fail;
 
