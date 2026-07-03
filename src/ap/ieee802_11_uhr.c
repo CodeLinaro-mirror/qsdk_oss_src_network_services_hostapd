@@ -2713,8 +2713,22 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
        sta->ul_sn_not_transferred = sbte.ul_sn_not_transferred;
 
 	if (smd_ctx_len) {
-		smd_ctx = (void *) (iap->frame_ctx_data + frame_len);
-		if (uhr_target_ap_set_smd_ctx(hapd, iap->sta_addr, smd_ctx)) {
+		if (smd_ctx_len < sizeof(struct sta_smd_ctx_info)) {
+			wpa_printf(MSG_ERROR,
+				   "SMD ST PREP Target AP: smd_ctx too small (%u < %zu), dropping",
+				   smd_ctx_len, sizeof(struct sta_smd_ctx_info));
+			status_code = 1;
+			goto send_response;
+		}
+		smd_ctx = (struct sta_smd_ctx_info *)(iap->frame_ctx_data + frame_len);
+		/* Subtract is safe: smd_ctx_len >= sizeof(*smd_ctx) confirmed above */
+		if (smd_ctx->vendor_ctx_len > (size_t)(smd_ctx_len - sizeof(*smd_ctx))) {
+			wpa_printf(MSG_ERROR,
+				   "SMD ST PREP Target AP: vendor_ctx overflow, dropping");
+			status_code = 1;
+			goto send_response;
+		}
+		if (uhr_target_ap_set_smd_ctx(assoc_hapd, iap->sta_addr, smd_ctx)) {
 			wpa_printf(MSG_ERROR, "SMD ST PREP Target AP: Failed to set ctx");
 			status_code = 1;
 			goto send_response;
@@ -2879,8 +2893,8 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
                                          iap->sta_addr,
                                          iap->iap_transaction_id,
                                          le_to_host64(iap->sequence_number),
-					 iap->current_link_id,
-                                         1, NULL, 0);
+					 WLAN_STATUS_UNSPECIFIED_FAILURE,
+                                         iap->current_link_id, NULL, 0);
                return;
        }
 
@@ -2900,17 +2914,46 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 	}
 
 	if (smd_ctx_len) {
-		smd_ctx = (void *) (iap->frame_ctx_data + iap->frame_len);
-		if (uhr_target_ap_set_smd_ctx(hapd, iap->sta_addr, smd_ctx)) {
+		if (smd_ctx_len < sizeof(struct sta_smd_ctx_info)) {
+			wpa_printf(MSG_ERROR,
+				   "SMD ST EXEC Target AP: smd_ctx too small (%u < %zu), dropping",
+				   smd_ctx_len, sizeof(struct sta_smd_ctx_info));
+			uhr_iap_send_st_exec_resp(lhapd,
+					  iap->current_ap_mld_addr,
+					  iap->sta_addr,
+					  iap->iap_transaction_id,
+					  le_to_host64(iap->sequence_number),
+					  WLAN_STATUS_UNSPECIFIED_FAILURE,
+					  iap->current_link_id,
+					  NULL, 0);
+			return;
+		}
+		smd_ctx = (struct sta_smd_ctx_info *)(iap->frame_ctx_data + le_to_host16(iap->frame_len));
+		/* Subtract is safe: smd_ctx_len >= sizeof(*smd_ctx) confirmed above */
+		if (smd_ctx->vendor_ctx_len > (size_t)(smd_ctx_len - sizeof(*smd_ctx))) {
+			wpa_printf(MSG_ERROR,
+				   "SMD ST EXEC Target AP: vendor_ctx overflow, dropping");
+			uhr_iap_send_st_exec_resp(lhapd,
+					  iap->current_ap_mld_addr,
+					  iap->sta_addr,
+					  iap->iap_transaction_id,
+					  le_to_host64(iap->sequence_number),
+					  WLAN_STATUS_UNSPECIFIED_FAILURE,
+					  iap->current_link_id,
+					  NULL, 0);
+			return;
+		}
+		if (uhr_target_ap_set_smd_ctx(lhapd, iap->sta_addr, smd_ctx)) {
 			wpa_printf(MSG_ERROR, "SMD ST EXEC Target AP: Failed to set ctx");
-			uhr_iap_send_st_exec_resp(hapd,
+			uhr_iap_send_st_exec_resp(lhapd,
 						  iap->current_ap_mld_addr,
 						  iap->sta_addr,
 						  iap->iap_transaction_id,
 						  le_to_host64(iap->sequence_number),
-						  iap->current_link_id,
 						  WLAN_STATUS_UNSPECIFIED_FAILURE,
+						  iap->current_link_id,
 						  NULL, 0);
+			return;
 		}
 	}
 
@@ -2977,8 +3020,8 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
                                           iap->sta_addr,
                                           iap->iap_transaction_id,
                                           le_to_host64(iap->sequence_number),
-					  iap->current_link_id,
-                                          WLAN_STATUS_UNSPECIFIED_FAILURE,
+					  WLAN_STATUS_UNSPECIFIED_FAILURE,
+                                          iap->current_link_id,
 					  NULL, 0);
                 return;
         }
