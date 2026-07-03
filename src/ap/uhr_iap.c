@@ -188,7 +188,7 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 	iap->smd_ctx_len = htole16(smd_ctx_len);
 	if (smd_ctx_len) {
 		iap->flags |= UHR_IAP_FLAG_HAS_DYNAMIC_CTX;
-		pos = iap->frame_ctx_data + iap->frame_len;
+		pos = iap->frame_ctx_data + frame_len;
 		os_memcpy(pos, smd_ctx, smd_ctx_len);
 		wpa_printf(MSG_DEBUG,
 			   "SMD IAP: Including Prep SMD context (%zu bytes) for " MACSTR,
@@ -365,7 +365,7 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
 	iap->smd_ctx_len = htole16(smd_ctx_len);
 	if (smd_ctx_len) {
 		iap->flags |= UHR_IAP_FLAG_HAS_DYNAMIC_CTX;
-		pos = iap->frame_ctx_data + iap->frame_len;
+		pos = iap->frame_ctx_data + frame_len;
 		os_memcpy(pos, smd_ctx, smd_ctx_len);
 		wpa_printf(MSG_DEBUG,
 			   "SMD IAP: Including Exec SMD context (%zu bytes) for " MACSTR,
