@@ -872,7 +872,7 @@ u8 *hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd,
 u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 				     u8 *eid, struct mld_info *mld_info,
 				     bool include_mld_id, bool include_bpcc,
-				     u8 include_ext_cap)
+				     u8 include_ext_cap, bool is_smd)
 {
 	struct wpabuf *buf;
 	u16 control;
@@ -1039,8 +1039,13 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		size_t total_len;
 
 		/* Skip the local one */
-		if (link_id == hapd->mld_link_id || !link->valid)
+		if (!link->valid)
 			continue;
+
+		if (!is_smd) {
+			if (link_id == hapd->mld_link_id)
+				continue;
+		}
 
 		link_bss = hostapd_mld_get_link_bss(hapd, link_id);
 		if (!link_bss) {
@@ -1254,10 +1259,9 @@ out:
 }
 
 
-static size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd,
-				     struct mld_info *info,
-				     bool include_mld_id, bool include_bpcc,
-				     u8 include_ext_cap)
+size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd, struct mld_info *info,
+			      bool include_mld_id, bool include_bpcc,
+			      u8 include_ext_cap)
 {
 	size_t len = 0;
 	size_t eht_ml_len = 2 + EHT_ML_COMMON_INFO_LEN;
@@ -1322,7 +1326,7 @@ u8 * hostapd_eid_eht_ml_beacon(struct hostapd_data *hapd,
 			       u8 include_ext_cap)
 {
 	eid = hostapd_eid_eht_basic_ml_common(hapd, eid, info, include_mld_id,
-					      false, include_ext_cap);
+					      false, include_ext_cap, false);
 
 	if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAG2_MLD_LINK_REMOVAL_OFFLOAD)
 		return eid;
@@ -1338,7 +1342,7 @@ u8 * hostapd_eid_eht_ml_assoc(struct hostapd_data *hapd, struct sta_info *info,
 		return eid;
 
 	eid = hostapd_eid_eht_basic_ml_common(hapd, eid, &info->mld_info,
-					      false, true, include_ext_cap);
+					      false, true, include_ext_cap, false);
 	ap_sta_free_sta_profile(&info->mld_info);
 	return eid;
 }
@@ -2628,7 +2632,7 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 		 * be removed if the standard is modified to match
 		 * implementation). */
 		mle_pos = hostapd_eid_eht_basic_ml_common(hapd, mle_pos, &mld,
-							  false, true, 0);
+							  false, true, 0, false);
 		if ((size_t) (mle_pos - pos) != mle_len) {
 			wpa_printf(MSG_DEBUG,
 				   "MLD: Unexpected MLE length: %ld != %zu",
