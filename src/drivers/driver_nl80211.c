@@ -2014,12 +2014,20 @@ try_again:
 	if (ret == 0) {
 		os_memcpy(drv->bssid, arg.assoc_bssid, ETH_ALEN);
 
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Assoc BSSID: " MACSTR " valid links: 0x%x",
+			   MAC2STR(drv->bssid), drv->sta_mlo_info.valid_links);
 		if (drv->sta_mlo_info.valid_links) {
 			int i;
 
-			for (i = 0; i < MAX_NUM_MLD_LINKS; i++)
+			for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
 				os_memcpy(drv->sta_mlo_info.links[i].bssid,
 					  arg.bssid[i], ETH_ALEN);
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: Assoc BSSID: " MACSTR " valid links: 0x%x",
+				   MAC2STR(drv->sta_mlo_info.links[i].bssid),
+				   drv->sta_mlo_info.valid_links);
+			}
 		}
 
 		return drv->bssid;
@@ -3128,6 +3136,15 @@ static int nl80211_action_subscribe_ap(struct i802_bss *bss)
 	/* Vendor-specific */
 	if (nl80211_register_action_frame(bss, (u8 *) "\x7f", 1) < 0)
 		ret = -1;
+
+#ifdef CONFIG_IEEE80211BN
+	/* Protected UHR - ST Link UHR Reconfiguration Request - Preparation */
+	if (nl80211_register_action_frame(bss, (u8 *)"\x2B\x00", 2) < 0)
+		ret = -1;
+	/* Protected UHR - ST Link UHR Reconfiguration Request - Execution */
+	if (nl80211_register_action_frame(bss, (u8 *)"\x2B\x01", 2) < 0)
+		ret = -1;
+#endif /* CONFIG_IEEE80211BN */
 
 	return ret;
 }
@@ -4450,7 +4467,7 @@ nl80211_put_bss_membership_selectors(struct wpa_driver_nl80211_data *drv,
 
 #ifdef CONFIG_IEEE80211BN
 static int nl80211_put_smd_params(struct nl_msg *msg,
-                                  const struct wpa_smd_params *params)
+				  const struct wpa_smd_params *params)
 {
        struct nlattr *smd_params;
 
@@ -4472,7 +4489,13 @@ static int nl80211_put_smd_params(struct nl_msg *msg,
                return -1;
        }
 
-       /* SMD Identifier (6-byte MAC address) */
+       /* SMD Identifier (6-byte MAC address format, IEEE 802.11bn section 9.4.2.322.3).
+	* The SMD domain identifier is a 6-byte value in MAC address format that
+	* uniquely identifies the SMD domain.  It is passed to the kernel via
+	* NL80211_SMD_PARAMS_ATTR_IDENTIFIER so that the driver and firmware can
+	* tag all frames belonging to this domain and validate membership during
+	* ME-association (section 37.15) and BSS transition (section 37.16).
+	*/
        if (nla_put(msg, NL80211_SMD_PARAMS_ATTR_IDENTIFIER, ETH_ALEN,
                    params->smd_identifier)) {
                wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD identifier");
@@ -17373,6 +17396,195 @@ static int nl80211_dpp_listen(void *priv, bool enable)
 }
 #endif /* CONFIG_DPP */
 
+#ifdef CONFIG_IEEE80211BN
+/*
+ * wpa_driver_nl80211_uhr_reconfig_req - Issue a UHR Link Reconfiguration Request
+ *
+ * Implements the nl80211 side of the SMD BSS Transition driver operation
+ * (IEEE 802.11bn section 37.16.3).  This function is invoked by both the
+ * AP-side (as iAP sending a Reconfiguration Request to the non-AP STA) and
+ * the non-AP STA-side for the ST Preparation and ST Execution phases:
+ *
+ *   type = 0: ST Preparation  - carries target MLD address, link bitmap, and
+ *             optional per-link IEs for the Reconfiguration MLE (section 9.3.3.10).
+ *   type = 1: ST Execution    - carries exec_path (direct or via current AP) and
+ *             DL TID bitmap; the Reconfiguration MLE MUST NOT contain per-STA
+ *             profiles in the Link Info field (IEEE 802.11bn Table 9-658bb).
+ *
+ * The kernel receives this via NL80211_CMD_UHR_LINK_RECONFIG_REQ and uses it
+ * to drive the firmware state machine for link-set changes during transition.
+ * Kernel-side handling is defined in the companion kernel change for
+ * nl80211/mac80211 SMD BST Execution support.
+ */
+static int
+wpa_driver_nl80211_uhr_reconfig_req(void *priv,
+				    const struct wpa_driver_uhr_reconfig_params *params)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	u32 cfg = 0;
+	int ret;
+
+	if (!params || !params->bssid)
+		return -EINVAL;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: UHR_LINK_RECONFIG_REQ type=%u for " MACSTR
+		   " no_dl_sn=%d no_ul_sn=%d ind:%d",
+		   params->type, MAC2STR(params->bssid), params->no_dl_sn,
+		   params->no_ul_sn, bss->ifindex);
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_UHR_LINK_RECONFIG_REQ);
+	if (!msg)
+		return -ENOBUFS;
+
+	if (nla_put_u8(msg, NL80211_ATTR_UHR_RECONFIG_TYPE, params->type))
+		goto nla_fail;
+
+	/* Add ST Execution specific attributes (IEEE 802.11bn Table 9-658bb):
+	 * - exec_path: 0=via current AP, 1=direct to target AP
+	 * - dl_tid_bitmap: DL TID bitmap for traffic draining (SMD BSS Transition Params)
+	 * For ST Execution (type=1), Reconfiguration MLE shall NOT contain per-STA profiles.
+	 */
+	if (params->type == 1) {
+		if (nla_put_u8(msg, NL80211_ATTR_SMD_EXEC_PATH, params->exec_path) ||
+		    nla_put_u8(msg, NL80211_ATTR_SMD_DL_TID_BITMAP, params->dl_tid_bitmap))
+			goto nla_fail;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: ST Execution exec_path=%u dl_tid_bitmap=0x%02x",
+			   params->exec_path, params->dl_tid_bitmap);
+	}
+
+	if (params->target_mld_addr) {
+		if (nla_put(msg, NL80211_ATTR_SMD_TARGET_MLD_ADDR, ETH_ALEN,
+			    params->target_mld_addr))
+			goto nla_fail;
+	} else {
+		if (nla_put(msg, NL80211_ATTR_SMD_TARGET_MLD_ADDR, ETH_ALEN, params->bssid))
+			goto nla_fail;
+	}
+
+	if (params->ssid && params->ssid_len) {
+		if (nla_put(msg, NL80211_ATTR_SSID, params->ssid_len, params->ssid))
+			goto nla_fail;
+	}
+
+	if (params->no_dl_sn)
+		cfg |= BIT(0);
+	if (params->no_ul_sn)
+		cfg |= BIT(1);
+	if (cfg && nla_put_u32(msg, NL80211_ATTR_SMD_CONFIG, cfg))
+		goto nla_fail;
+	if (params->scs_ids && params->scs_ids[0]) {
+		if (nla_put_string(msg, NL80211_ATTR_SMD_SCS_LIST, params->scs_ids))
+			goto nla_fail;
+	}
+
+	/* Optional SNonce and DH public key for Per-AP PTK mode */
+	if (params->snonce && params->snonce_len) {
+		if (nla_put(msg, NL80211_ATTR_SMD_SNONCE, params->snonce_len, params->snonce))
+			goto nla_fail;
+	}
+	if (params->dh_pubkey && params->dh_pubkey_len) {
+		if (nla_put(msg, NL80211_ATTR_SMD_DH_PUBLIC_KEY,
+			    params->dh_pubkey_len, params->dh_pubkey))
+			goto nla_fail;
+	}
+
+	/* Include per-link selection using ML reconfig-style nesting as per plan.
+	 * Per IEEE 802.11bn: for ST Execution (type=1), the Reconfiguration MLE
+	 * shall NOT contain any per-STA profile in the Link Info field.
+	 * This is naturally enforced since add_links=0 for execution requests.
+	 */
+	if (params->type == 0 && params->reconfig_info && params->reconfig_info->add_links) {
+		struct wpa_mlo_reconfig_info *info = params->reconfig_info;
+		struct nlattr *add_links;
+		u8 link_id;
+
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: ST Prep with reconfig_info: add_links=0x%x delete_links=0x%x",
+			   info->add_links, info->delete_links);
+		for (int i = 0; i < 16; i++) {
+			if (info->add_links & BIT(i))
+				wpa_printf(MSG_DEBUG, "nl80211: Link %d: bssid=" MACSTR " freq=%d",
+					   i, MAC2STR(info->add_link_bssid[i]),
+					   info->add_link_freq[i]);
+		}
+
+		add_links = nla_nest_start(msg, NL80211_ATTR_MLO_LINKS);
+		if (!add_links)
+			goto nla_fail;
+
+		for_each_link(info->add_links, link_id) {
+			struct nlattr *attr = nla_nest_start(msg, 0);
+
+			if (!attr)
+				goto nla_fail;
+
+			if (nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id) ||
+			    nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN,
+				    info->add_link_bssid[link_id]) ||
+			    nla_put_u32(msg, NL80211_ATTR_WIPHY_FREQ,
+					info->add_link_freq[link_id]))
+				goto nla_fail;
+
+			/* Add per-link IEs if provided */
+			if (params->per_link_ie_buf && params->per_link_ie_len &&
+			    link_id < params->max_links &&
+			    params->per_link_ie_buf[link_id] &&
+			    params->per_link_ie_len[link_id] > 0) {
+				if (nla_put(msg, NL80211_ATTR_IE,
+					    params->per_link_ie_len[link_id],
+					    params->per_link_ie_buf[link_id]))
+					goto nla_fail;
+				wpa_printf(MSG_DEBUG,
+					   "nl80211: Added %zu bytes of per-link IE for link %d",
+					   params->per_link_ie_len[link_id], link_id);
+			}
+
+			nla_nest_end(msg, attr);
+		}
+
+		nla_nest_end(msg, add_links);
+	}
+
+	/* STA: send nested SMD_PARAMS (no SMD_AP flag for STA path) */
+	if (params->smd.enabled &&
+	    nla_put_flag(msg, NL80211_ATTR_SMD_AP)) {
+		wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD AP flag");
+		goto nla_fail;
+	}
+
+	if (nl80211_put_smd_params(msg, &params->smd) < 0) {
+		wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD params");
+		goto nla_fail;
+	}
+
+	/* Add delete_links if provided */
+	if (params->reconfig_info && params->reconfig_info->delete_links) {
+		if (nla_put_u16(msg, NL80211_ATTR_MLO_RECONF_REM_LINKS,
+				params->reconfig_info->delete_links))
+			goto nla_fail;
+	}
+
+	ret = send_and_recv_resp(drv, msg, NULL, NULL);
+	msg = NULL;
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: NL80211_CMD_UHR_LINK_RECONFIG_REQ failed: %d (%s)",
+			ret, strerror(-ret));
+		return ret;
+	}
+
+	wpa_printf(MSG_DEBUG, "nl80211: SMD_PREPARE sent successfully");
+	return 0;
+
+nla_fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 static int nl80211_link_add(void *priv, u8 link_id, const u8 *addr,
 			    void *bss_ctx)
@@ -18753,7 +18965,10 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.scan2 = driver_nl80211_scan2,
 	.sched_scan = wpa_driver_nl80211_sched_scan,
 	.stop_sched_scan = wpa_driver_nl80211_stop_sched_scan,
+#ifdef CONFIG_IEEE80211BN
 	.trigger_smd_discovery = wpa_driver_nl80211_trigger_smd_discovery,
+	.uhr_reconfig_req = wpa_driver_nl80211_uhr_reconfig_req,
+#endif /* CONFIG_IEEE80211BN */
 	.get_scan_results = wpa_driver_nl80211_get_scan_results,
 	.abort_scan = wpa_driver_nl80211_abort_scan,
 	.deauthenticate = driver_nl80211_deauthenticate,
