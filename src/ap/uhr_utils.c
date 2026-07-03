@@ -376,7 +376,8 @@ size_t hostapd_uhr_eid_bmlie_from_rmlie(const struct wpabuf *mlbuf,
 	ml_common_info = (const struct eht_ml_reconf_common_info *) ml->variable;
 
 	pos = (const u8 *) ml_common_info->variable;
-	ml_control = WPA_GET_LE16((const u8 *) ml);
+
+	ml_control = WPA_GET_LE16((const u8 *) ml) >> 4;
 
 	if (!(ml_control & RECONF_MULTI_LINK_CTRL_PRES_MLD_MAC_ADDR))
 		goto fail;
@@ -541,22 +542,22 @@ int uhr_parse_reconfig_mle(const struct ieee802_11_elems *elems,
 	common_info_len = 1;  /* Length octet */
 
 	/* B0: MLD MAC Address (mandatory for UHR Reconfig) - Reuse EHT definition */
-	if (!(ml_control & RECONF_MULTI_LINK_CTRL_PRES_MLD_MAC_ADDR)) {
+	if (!(presence_bitmap & RECONF_MULTI_LINK_CTRL_PRES_MLD_MAC_ADDR)) {
 		wpa_printf(MSG_DEBUG, "UHR: MLD MAC Address not present (required)");
 		goto out;
 	}
 	common_info_len += ETH_ALEN;
 
 	/* B1: EML Capabilities (optional) - Reuse EHT definition */
-	if (ml_control & RECONF_MULTI_LINK_CTRL_PRES_EML_CAPA)
+	if (presence_bitmap & RECONF_MULTI_LINK_CTRL_PRES_EML_CAPA)
 		common_info_len += 2;
 
 	/* B2: MLD Capabilities And Operations (optional) - Reuse EHT definition */
-	if (ml_control & RECONF_MULTI_LINK_CTRL_PRES_MLD_CAPA)
+	if (presence_bitmap & RECONF_MULTI_LINK_CTRL_PRES_MLD_CAPA)
 		common_info_len += 2;
 
 	/* B3: Extended MLD Capabilities And Operations (optional) - Reuse EHT definition */
-	if (ml_control & RECONF_MULTI_LINK_CTRL_PRES_EXT_MLD_CAP)
+	if (presence_bitmap & RECONF_MULTI_LINK_CTRL_PRES_EXT_MLD_CAP)
 		common_info_len += 2;
 
 	/* B4: Target AP MLD MAC Address (optional but critical for UHR) - UHR-specific */
@@ -590,15 +591,15 @@ int uhr_parse_reconfig_mle(const struct ieee802_11_elems *elems,
 	wpa_printf(MSG_DEBUG, "UHR: STA MLD MAC=" MACSTR, MAC2STR(mle->mld_mac_addr));
 
 	/* Skip optional EML Capabilities - Reuse EHT definition */
-	if (ml_control & RECONF_MULTI_LINK_CTRL_PRES_EML_CAPA)
+	if (presence_bitmap & RECONF_MULTI_LINK_CTRL_PRES_EML_CAPA)
 		pos += 2;
 
 	/* Skip optional MLD Capabilities - Reuse EHT definition */
-	if (ml_control & RECONF_MULTI_LINK_CTRL_PRES_MLD_CAPA)
+	if (presence_bitmap & RECONF_MULTI_LINK_CTRL_PRES_MLD_CAPA)
 		pos += 2;
 
 	/* Skip optional Extended MLD Capabilities - Reuse EHT definition */
-	if (ml_control & RECONF_MULTI_LINK_CTRL_PRES_EXT_MLD_CAP)
+	if (presence_bitmap & RECONF_MULTI_LINK_CTRL_PRES_EXT_MLD_CAP)
 		pos += 2;
 
 	/* Extract Target AP MLD MAC Address (critical for UHR) - UHR-specific */

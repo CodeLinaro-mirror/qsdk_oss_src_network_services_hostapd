@@ -567,8 +567,8 @@
 #define WLAN_SEC_PROF_IND_BITMAP_OCTETS(ind)  ((ind) & 0x0f)
 #define WLAN_SEC_PROF_IND_VENDOR_COUNT(ind)   (((ind) >> 4) & 0x0f)
 
-#define WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS 155
 #define WLAN_EID_EXT_SMD 154
+#define WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS 155
 #define WLAN_EID_EXT_UHR_PARAMS_UPDATE          158
 
 /* SMD Information Element length: EID (1) + Len (1) + ExtID (1) +
