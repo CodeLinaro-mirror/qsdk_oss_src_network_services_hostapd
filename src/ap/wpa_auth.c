@@ -1157,6 +1157,13 @@ int wpa_auth_sta_associated(struct wpa_authenticator *wpa_auth,
 {
 	if (!wpa_auth || !wpa_auth->conf.wpa || !sm)
 		return -1;
+#ifdef CONFIG_IEEE80211BN
+	if (sm->smd_info.flag) {
+		sm->wpa_ptk_state = WPA_PTK_PTKINITDONE;
+		sm->Pair = true;
+		return 0;
+	}
+#endif 
 
 #ifdef CONFIG_ENC_ASSOC
 	if (sm->auth_alg == WLAN_AUTH_EPPKE) {

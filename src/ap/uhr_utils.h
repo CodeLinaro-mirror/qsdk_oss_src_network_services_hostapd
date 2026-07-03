@@ -39,6 +39,8 @@ enum uhr_smd_st_type {
 	UHR_SMD_ST_EXEC_RESP = 3,
 };
 
+#define UHR_ST_IAP_TIMEOUT_MS 1000000
+
 struct uhr_smd_bss_transition_element {
 	u16 listen_interval;
 	u16 dl_drain_time;
@@ -79,6 +81,9 @@ void uhr_deinit_link_reconf_req(struct uhr_link_reconf_req_list **req_list_ptr);
 
 #define MAX_NUM_MLD_LINKS 15
 
+int uhr_cur_start_iap_msg_timer(struct sta_info *sta, const u8 *ap_mld_addr);
+void uhr_cancel_iap_timeout(struct sta_info *sta, const u8 *ap_mld_addr);
+
 /* ST Execute - Current AP Functions */
 int uhr_handle_st_exec_req(struct hostapd_data *hapd,
                                  struct sta_info *sta,
@@ -88,11 +93,6 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
                                     const struct uhr_iap_frame *iap,
                                     u16 frame_len);
-
-void uhr_st_exec_handle_tx_status(struct hostapd_data *hapd,
-                                 struct sta_info *sta,
-                                 const u8 *target_ap_mld_addr,
-                                 int acked);
 
 /* ST Execute - Target AP Functions */
 void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
@@ -114,9 +114,13 @@ void uhr_tgt_start_st_prep_timer(struct hostapd_data *hapd,
                                 const u8 *sta_addr);
 void uhr_tgt_cancel_st_prep_timer(struct hostapd_data *hapd, const u8 *sta_addr);
 
+size_t hostapd_uhr_eid_bmlie_from_rmlie(const struct wpabuf *mlbuf,
+						u8 link_id,
+						u8 *bmlie);
 /* Function declarations */
 int uhr_parse_reconfig_mle(const struct ieee802_11_elems *elems,
 			   struct uhr_reconfig_mle *mle);
+
 
 /* Timeout management functions */
 int uhr_cur_start_st_prep_timer(struct sta_info *sta, const u8 *ap_mld_addr);

@@ -2227,6 +2227,28 @@ static bool get_hexstream(const char *val, struct wpabuf **var,
 #endif /* CONFIG_TESTING_OPTIONS */
 
 
+#ifdef CONFIG_IEEE80211BN
+static int smd_derive_key(const char *pos, u8 *key, size_t key_len)
+{
+	u8 oldkey[16];
+	int ret;
+
+	/* Try full-length hex key first (64 hex chars = 32 bytes) */
+	if (!hexstr2bin(pos, key, key_len))
+		return 0;
+
+	/* Fall back: 32 hex chars (16 bytes) derived to key_len via KDF */
+	if (hexstr2bin(pos, oldkey, sizeof(oldkey)))
+		return -1;
+
+	ret = hmac_sha256_kdf(oldkey, sizeof(oldkey), "SMD PARTNER KEY", NULL, 0,
+			      key, key_len);
+	os_memset(oldkey, 0, sizeof(oldkey));
+	return ret;
+}
+#endif /* CONFIG_IEEE80211BN */
+
+
 static int hostapd_config_fill(struct hostapd_config *conf,
 				struct hostapd_bss_config *bss,
 				const char *buf, char *pos, int line)
@@ -6248,6 +6270,17 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "smd_partner") == 0) {
                 struct smd_partner_entry *partner;
                 u8 mac[ETH_ALEN];
+                char *key_str;
+
+                /* Format: <mac> [<hex-key>] */
+                key_str = os_strchr(pos, ' ');
+                if (key_str) {
+                        *key_str++ = '\0';
+                        while (*key_str == ' ')
+                                key_str++;
+                        if (!*key_str)
+                                key_str = NULL;
+                }
 
                 if (hwaddr_aton(pos, mac) < 0) {
                         wpa_printf(MSG_ERROR,
@@ -6265,12 +6298,29 @@ static int hostapd_config_fill(struct hostapd_config *conf,
                 }
 
                 os_memcpy(partner->mac_addr, mac, ETH_ALEN);
+
+                if (key_str) {
+                        if (smd_derive_key(key_str, partner->key,
+                                           sizeof(partner->key)) < 0) {
+                                wpa_printf(MSG_ERROR,
+                                           "Line %d: Invalid smd_partner key",
+                                           line);
+                                os_free(partner);
+                                return 1;
+                        }
+                        partner->has_key = true;
+                        wpa_printf(MSG_DEBUG,
+                                  "SMD: Added partner " MACSTR " (encrypted)",
+                                  MAC2STR(mac));
+                } else {
+                        wpa_printf(MSG_DEBUG,
+                                  "SMD: Added partner " MACSTR " (no encryption)",
+                                  MAC2STR(mac));
+                }
+
                 partner->next = bss->smd_partners;
                 bss->smd_partners = partner;
 
-                wpa_printf(MSG_DEBUG,
-                          "SMD: Added partner " MACSTR,
-                          MAC2STR(mac));
 	} else if (os_strcmp(buf, "smd_identifier") == 0) {
 		if (hwaddr_aton(pos, bss->smd.smd_identifier)) {
 			wpa_printf(MSG_ERROR,

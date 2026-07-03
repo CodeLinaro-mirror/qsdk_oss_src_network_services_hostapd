@@ -1628,7 +1628,7 @@ const u8 * hostapd_process_ml_auth(struct hostapd_data *hapd,
 
 	if (ieee802_11_parse_elems(pos,
 				   (int)len - (pos - mgmt->u.auth.variable),
-				   &elems, 0) == ParseFailed) {
+				   &elems, 1) == ParseFailed) {
 		wpa_printf(MSG_DEBUG,
 			   "MLD: Failed parsing Authentication frame");
 	}
@@ -1791,11 +1791,15 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 	if (!mlbuf)
 		return WLAN_STATUS_SUCCESS;
 
+
 	ml = wpabuf_head(mlbuf);
 	ml_len = wpabuf_len(mlbuf);
 	ml_end = ((const u8 *) ml) + ml_len;
 
+	wpa_hexdump(MSG_DEBUG, "UHR: BMLE", (const u8 *) ml, ml_len);
+
 	ml_control = le_to_host16(ml->ml_control);
+
 	if ((ml_control & MULTI_LINK_CONTROL_TYPE_MASK) !=
 	    MULTI_LINK_CONTROL_TYPE_BASIC) {
 		wpa_printf(MSG_DEBUG, "MLD: Invalid ML type=%u",
@@ -1879,7 +1883,6 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 	wpa_printf(MSG_DEBUG, "MLD: addr=" MACSTR ", eml=0x%x, mld=0x%x",
 		   MAC2STR(info->common_info.mld_addr),
 		   info->common_info.eml_capa, info->common_info.mld_capa);
-
 	/* Check the MLD MAC Address */
 	if (!ether_addr_equal(info->common_info.mld_addr,
 			      common_info->mld_addr)) {
@@ -1890,7 +1893,6 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 			   MAC2STR(common_info->mld_addr));
 		goto out;
 	}
-
 	/*
 	 * When a station initially connected as a 3-link STA
 	 * re-associates as a single-link STA, it is not valid.
@@ -2324,10 +2326,10 @@ static bool recover_from_zero_links(u16 *links_del_ok, u8 *recovery_link)
 }
 
 
-static u16
+u16
 hostapd_ml_process_reconf_link(struct hostapd_data *hapd,
 			       struct sta_info *assoc_sta, const u8 *ies,
-			       size_t ies_len, u8 link_id, const u8 *link_addr)
+			       size_t ies_len, u8 link_id, const u8 *link_addr, u8 type)
 {
 	struct hostapd_data *lhapd, *other_hapd;
 	struct mld_link_info link;
@@ -2355,7 +2357,7 @@ hostapd_ml_process_reconf_link(struct hostapd_data *hapd,
 
 	/* Parse STA profile, check the IEs, and send ADD_LINK_STA */
 	ieee80211_ml_process_link(lhapd, NULL, assoc_sta, &link, ies, ies_len,
-				  LINK_PARSE_RECONF, false, set_beacon);
+				  type, false, set_beacon);
 
 	if (link.status != WLAN_STATUS_SUCCESS)
 		return link.status;
@@ -3122,7 +3124,8 @@ hostapd_validate_link_reconf_req(struct hostapd_data *hapd,
 							info->sta_prof + 2,
 							info->sta_prof_len - 2,
 							info->link_id,
-							info->peer_addr);
+							info->peer_addr,
+							LINK_PARSE_RECONF);
 		if (status != WLAN_STATUS_SUCCESS) {
 			wpa_printf(MSG_DEBUG,
 				   "MLD: Add link IE validation failed for link=%u",

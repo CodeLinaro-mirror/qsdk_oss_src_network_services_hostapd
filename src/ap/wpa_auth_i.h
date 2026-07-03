@@ -31,6 +31,7 @@ struct wpa_smd_info {
 	u8 smd_identifier[ETH_ALEN]; /* SMD Identifier from STA */
 	u8 smd_timeout; /* Timeout Value, units of 64 TUs */
 	struct wpa_smd_caps caps; /* SMD capabilities */
+	bool flag;
 };
 #endif /* CONFIG_IEEE80211BN */
 

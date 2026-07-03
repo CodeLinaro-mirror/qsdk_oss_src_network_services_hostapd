@@ -2131,8 +2131,7 @@ static struct sta_smd_ctx_info * nl80211_parse_smd_ctx(struct nlattr *smd_attr)
 	return ctx;
 
 fail:
-	if (ctx)
-		os_free(ctx);
+	os_free(ctx);
 	return NULL;
 }
 #endif /* CONFIG_IEEE80211BN */

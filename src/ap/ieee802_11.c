@@ -3803,7 +3803,7 @@ void handle_auth_fils(struct hostapd_data *hapd, struct sta_info *sta,
 				  elems.rsnxe ? elems.rsnxe - 2 : NULL,
 				  elems.rsnxe ? elems.rsnxe_len + 2 : 0,
 				  elems.mdie, elems.mdie_len, NULL, 0, NULL,
-				  ap_sta_is_mld(hapd, sta), false, NULL);
+				  ap_sta_is_mld(hapd, sta), false, NULL, false);
 	resp = wpa_res_to_status_code(res);
 	if (resp != WLAN_STATUS_SUCCESS)
 		goto fail;
@@ -5434,6 +5434,15 @@ static void handle_auth(struct hostapd_data *hapd,
 			return;
 		}
 #endif /* CONFIG_MESH */
+
+		if (auth_alg == WLAN_AUTH_SAE
+			&& auth_transaction == WLAN_AUTH_TR_SEQ_SAE_CONFIRM
+			&& !sta) {
+			wpa_printf(MSG_INFO, " No STA for SAE AUTH COMMIT");
+			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			goto fail;
+		}
+
 		sta = ap_sta_add(hapd, sa);
 		if (!sta) {
 			wpa_printf(MSG_DEBUG, "ap_sta_add() failed");
@@ -6400,7 +6409,7 @@ u16 owe_process_rsn_ie(struct hostapd_data *hapd,
 	res = wpa_validate_wpa_ie(hapd->wpa_auth, sta->wpa_sm,
 				  hapd->iface->freq, rsn_ie, rsn_ie_len,
 				  NULL, 0, NULL, 0, owe_dh, owe_dh_len, NULL,
-				  ap_sta_is_mld(hapd, sta), false, NULL);
+				  ap_sta_is_mld(hapd, sta), false, NULL, false);
 	status = wpa_res_to_status_code(res);
 	if (status != WLAN_STATUS_SUCCESS)
 		goto end;
@@ -6950,6 +6959,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 #ifdef CONFIG_IEEE8021X_AUTH
 	bool mic_check = true;
 #endif /* CONFIG_IEEE8021X_AUTH */
+	bool smd_flag = false ;
 
 	for_each_element(elem, ies, ies_len) {
 		memcpy(sta->vendor_oui, elem->data, 3);
@@ -6960,7 +6970,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 
 	os_memset(&matched_profile, 0, sizeof(matched_profile));
 
-	if (type != LINK_PARSE_RECONF) {
+	if (type == LINK_PARSE_ASSOC || type == LINK_PARSE_REASSOC) {
 		resp = check_ssid(hapd, sta, elems->ssid, elems->ssid_len);
 		if (resp != WLAN_STATUS_SUCCESS)
 			goto out;
@@ -7207,7 +7217,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 	/* Link Reconfiguration Request frame for add link operation will not
 	 * have RSN and other security IEs. So, skip the checks.
 	 */
-	if (type == LINK_PARSE_RECONF) {
+	if (type == LINK_PARSE_RECONF || type == LINK_PARSE_UHR_RECONF_LINK) {
 		wpa_printf(MSG_DEBUG,
 			   "MLD: Skip security IE checks for Link Reconfiguration request");
 		goto skip_wpa_ies;
@@ -7381,6 +7391,8 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			}
 		}
 
+		if (type == LINK_PARSE_UHR_RECONF_ASSOC || type == LINK_PARSE_UHR_RECONF_LINK)
+			smd_flag = true;
 		res = wpa_validate_wpa_ie(hapd->wpa_auth, sta->wpa_sm,
 					  hapd->iface->freq,
 					  wpa_ie, wpa_ie_len,
@@ -7394,7 +7406,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 					  ap_sta_is_mld(hapd, sta),
 					  hapd->conf->external_pmk_cache,
 					  security_profile_matched ?
-					  &matched_profile : NULL);
+					  &matched_profile : NULL, smd_flag);
 		resp = wpa_res_to_status_code(res);
 		if (resp != WLAN_STATUS_SUCCESS)
 			goto out;
@@ -7533,6 +7545,9 @@ skip_pmkid_update:
 				     info);
 	}
 #endif /* CONFIG_IEEE80211BE */
+
+		if (type == LINK_PARSE_UHR_RECONF_ASSOC || type == LINK_PARSE_UHR_RECONF_LINK)
+			goto skip_sae_owe;
 
 #ifdef CONFIG_SAE
 		if (wpa_auth_uses_sae(sta->wpa_sm) && sta->sae &&
@@ -7712,7 +7727,9 @@ skip_wpa_ies:
 #endif /* CONFIG_MBO */
 
 #if defined(CONFIG_FILS) && defined(CONFIG_OCV)
-	if (type != LINK_PARSE_RECONF &&
+	if (type != LINK_PARSE_RECONF && 
+	    type != LINK_PARSE_UHR_RECONF_ASSOC &&
+	    type != LINK_PARSE_UHR_RECONF_LINK &&
 	    wpa_auth_uses_ocv(sta->wpa_sm) &&
 	    (sta->auth_alg == WLAN_AUTH_FILS_SK ||
 	     sta->auth_alg == WLAN_AUTH_FILS_SK_PFS ||
@@ -7984,7 +8001,7 @@ int ieee80211_ml_process_link(struct hostapd_data *hapd,
 		goto out;
 	}
 
-	if (type != LINK_PARSE_RECONF) {
+	if (type != LINK_PARSE_RECONF  && type != LINK_PARSE_UHR_RECONF_LINK) {
 		mlbuf = ieee802_11_defrag(elems.basic_mle, elems.basic_mle_len,
 					  true);
 		if (!mlbuf)
@@ -8002,7 +8019,7 @@ int ieee80211_ml_process_link(struct hostapd_data *hapd,
 
 	sta->flags = origin_sta->flags & WLAN_STA_AUTH;
 
-	if (type == LINK_PARSE_RECONF)
+	if (type == LINK_PARSE_RECONF || type == LINK_PARSE_UHR_RECONF_LINK)
 		sta->flags |= (origin_sta->flags & (WLAN_STA_ASSOC | WLAN_STA_MFP));
 
 	sta->mld_assoc_link_id = origin_sta->mld_assoc_link_id;
@@ -8029,7 +8046,7 @@ int ieee80211_ml_process_link(struct hostapd_data *hapd,
 		li->resp_sta_profile = NULL;
 		li->resp_sta_profile_len = 0;
 
-		if (type == LINK_PARSE_RECONF && i == hapd->mld_link_id) {
+		if ((type == LINK_PARSE_RECONF || type == LINK_PARSE_UHR_RECONF_LINK) && i == hapd->mld_link_id) {
 			os_memcpy(li->local_addr, hapd->own_addr, ETH_ALEN);
 			os_memcpy(li->peer_addr, link->peer_addr, ETH_ALEN);
 		}
@@ -8073,7 +8090,7 @@ out:
 	wpabuf_free(mlbuf);
 	link->status = status;
 
-	if (!offload && type != LINK_PARSE_RECONF)
+	if (!offload && (type == LINK_PARSE_ASSOC || type == LINK_PARSE_REASSOC))
 		ieee80211_ml_build_assoc_resp(hapd, phapd, sta, link);
 
 	wpa_printf(MSG_DEBUG, "MLD: link: status=%u", status);
@@ -8087,6 +8104,7 @@ out:
 	 * link valid true again in sta's wpa_sm for all valid links.
 	 */
 	wpa_auth_set_ml_info_link(origin_sta->wpa_sm,  &origin_sta->mld_info, hapd->mld_link_id);
+	wpa_printf(MSG_DEBUG, "MLD: States set");
 	return 0;
 }
 
