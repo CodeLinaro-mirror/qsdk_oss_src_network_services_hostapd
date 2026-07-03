@@ -2340,7 +2340,7 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 	struct ieee80211_mgmt *mgmt;
 	struct sta_info *sta;
 	struct mld_info mld;
-	size_t kde_len = 0, mle_len = 0;
+	size_t mle_len = 0;
 	struct uhr_link_reconf_req_info *info;
 	unsigned int status_list_count = 0;
 
@@ -2361,9 +2361,6 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 	len += status_list_count * 3;  /* link_id (1B) + status (2B) per link */
 	/* **NEW: Conditional content based on links_ok** */
 	if (status_code == 0 && sta && req_list && req_list->links_ok > 0) {
-		/* REUSE: EHT group key distribution */
-		kde_len = 0;
-		len += kde_len;
 		
 		/* REUSE: EHT ML-IE building */
 		os_memset(&mld, 0, sizeof(mld));
@@ -2450,19 +2447,7 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 	/* **NEW: Conditional content (ONLY if links_ok > 0)** */
 	if (status_code != 0 || !sta || !req_list || req_list->links_ok == 0)
 		goto done;
-	
-	/* REUSE: EHT group key distribution */
-	if (kde_len) {
-		u8 *kde_pos = pos;
-		kde_pos = wpa_auth_ml_group_kdes(sta->wpa_sm, ++kde_pos,
-						 req_list->links_ok);
-		*pos = kde_pos - pos - 1;
-		pos += kde_len;
-		wpa_printf(MSG_DEBUG,
-			   "SMD ST PREP Target AP: Added Group Key Data (len=%zu)",
-			   kde_len);
-	}
-	
+
 	/* REUSE: EHT ML-IE building */
 	if (mle_len) {
 		pos = hostapd_eid_eht_basic_ml_common(hapd, pos, &mld,
