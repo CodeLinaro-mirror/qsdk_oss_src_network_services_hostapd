@@ -272,6 +272,8 @@ struct sta_info {
 	struct ieee80211_uhr_capabilities *uhr_capab;
 	size_t uhr_capab_len;
 
+	 u8  skip_sa_query; /* 0: trigger sa query procedure
+			     * 1: skip sa query procedure */
 	int sa_query_count; /* number of pending SA Query requests;
 			     * 0 = no SA Query in progress */
 	int sa_query_timed_out;
