@@ -2527,7 +2527,7 @@ void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
 #endif /* CONFIG_IEEE80211BE */
 		hostapd_drv_hapd_send_eapol(hapd, sta->addr, data, data_len,
 					    wpa_auth_pairwise_set(sta->wpa_sm) ? 1 : 0,
-					    hostapd_sta_flags_to_drv(sta->flags), link_id);
+					    hostapd_sta_flags_to_drv(sta->flags, sta->flags_ext), link_id);
 	} else
 		ieee802_1x_send(hapd, sta, type, data, data_len);
 

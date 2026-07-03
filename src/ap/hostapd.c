@@ -63,6 +63,10 @@
 #include "interference.h"
 #include "robust_av.h"
 #include "atf/atf_offload.h"
+#ifdef CONFIG_IEEE80211BN
+#include "uhr_utils.h"
+#include "uhr_oui_transport.h"
+#endif /* CONFIG_IEEE80211BN */
 #include "../../qcn_extns/cmn.h"
 #include "nft.h"
 
@@ -1428,6 +1432,13 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 	hapd->beacon_set_done = 0;
 
 	wpa_printf(MSG_DEBUG, "%s(%s)", __func__, hapd->conf->iface);
+#ifdef CONFIG_IEEE80211BN
+       if (hapd->uhr_oui_ctx) {
+               wpa_printf(MSG_DEBUG, "SMD: Deinitializing roaming transport");
+               uhr_oui_deinit(hapd->uhr_oui_ctx);
+               hapd->uhr_oui_ctx = NULL;
+       }
+#endif /* CONFIG_IEEE80211BN */
 	hostapd_ucode_free_bss(hapd);
 	hostapd_ubus_free_bss(hapd);
 	accounting_deinit(hapd);
@@ -2333,6 +2344,24 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
 		hostapd_drv_sta_deauth(hapd, addr,
 				       WLAN_REASON_PREV_AUTH_NOT_VALID);
 	}
+
+#ifdef CONFIG_IEEE80211BN
+       /* Initialize SMD Roaming transport if configured */
+       if (conf->smd_partners) {
+               wpa_printf(MSG_DEBUG, "SMD: Initializing roaming transport");
+
+               hapd->uhr_oui_ctx = uhr_oui_init(hapd);
+               if (!hapd->uhr_oui_ctx) {
+                       wpa_printf(MSG_ERROR,
+                                  "SMD: Failed to initialize OUI transport");
+                       return -1;
+               }
+
+               /* Load configured partner APs */
+               uhr_load_partners(hapd);
+       }
+#endif /* CONFIG_IEEE80211BN */
+
 
 	if (hapd->driver && hapd->driver->set_operstate)
 		hapd->driver->set_operstate(hapd->drv_priv, 1);

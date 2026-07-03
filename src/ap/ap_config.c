@@ -1244,6 +1244,20 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 
 	wpabuf_clear_free(conf->sae_pw_id_key);
 
+#ifdef CONFIG_IEEE80211BN
+	{
+		struct smd_partner_entry *partner = conf->smd_partners;
+
+		conf->smd_partners = NULL;
+		while (partner) {
+			struct smd_partner_entry *next = partner->next;
+
+			os_free(partner);
+			partner = next;
+		}
+	}
+#endif /* CONFIG_IEEE80211BN */
+
 	os_free(conf);
 }
 
