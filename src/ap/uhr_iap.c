@@ -108,7 +108,8 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 {
 	 struct sta_smd_ctx_info *smd_ctx;
 	 struct smd_roam_ap_info *ap_info;
-	 size_t iap_len = 0, smd_ctx_len = 0;
+	 size_t iap_len = 0, smd_ctx_len = 0, orig_smd_ctx_len;
+	 bool split_ctx = false;
 	struct uhr_iap_frame *iap;
 	u8 *buf, *pos;
 	int ret;
@@ -212,8 +213,82 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 		return -1;
 	}
 
+	/* type-9 drop (e.g. peer gone or arrival before type-1) is safe:
+	 * the ST Exec IAP unconditionally re-delivers smd_ctx as a fallback. */
+	if (split_ctx) {
+		if (uhr_iap_send_st_prep_ctx(hapd, target_ap_mld_addr, sta->addr,
+					     smd_ctx, orig_smd_ctx_len) < 0)
+			wpa_printf(MSG_WARNING,
+				   "IAP: ST PREP CTX send failed for " MACSTR
+				   "; exec IAP will carry ctx as fallback",
+				   MAC2STR(target_ap_mld_addr));
+	}
+
 	ap_info->state = SMD_AP_STATE_ST_PREP_IAP_PENDING;
 	wpa_printf(MSG_DEBUG, "SMD IAP: REQUEST sent successfully");
+	return 0;
+}
+
+
+int uhr_iap_send_st_prep_ctx(struct hostapd_data *hapd,
+			      const u8 *target_ap_mld_addr,
+			      const u8 *sta_addr,
+			      const struct sta_smd_ctx_info *smd_ctx,
+			      size_t smd_ctx_len)
+{
+	struct uhr_iap_frame *iap;
+	size_t iap_len;
+	int ret;
+
+	if (!hapd || !target_ap_mld_addr || !sta_addr || !smd_ctx || smd_ctx_len == 0)
+		return -1;
+
+	if (!eth_p_1905_peer_exists(hapd->eth_p_1905_ctx,
+				    target_ap_mld_addr)) {
+		wpa_printf(MSG_ERROR,
+			   "IAP: ST PREP CTX: Target AP " MACSTR " not in peer list",
+			   MAC2STR(target_ap_mld_addr));
+		return -1;
+	}
+
+	iap_len = sizeof(*iap) + smd_ctx_len;
+	iap = os_zalloc(iap_len);
+	if (!iap)
+		return -1;
+
+	iap->msg_type = UHR_IAP_MSG_ST_PREP_CTX;
+	iap->iap_transaction_id = g_iap_transaction_id++;
+	iap->sequence_number = htole64(g_iap_sequence_number++);
+
+	os_memcpy(iap->current_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
+	os_memcpy(iap->target_ap_mld_addr, target_ap_mld_addr, ETH_ALEN);
+	os_memcpy(iap->sta_addr, sta_addr, ETH_ALEN);
+
+	iap->flags = UHR_IAP_FLAG_HAS_DYNAMIC_CTX;
+	iap->frame_len = 0;
+	iap->smd_ctx_len = htole16((u16) smd_ctx_len);
+	os_memcpy(iap->frame_ctx_data, smd_ctx, smd_ctx_len);
+
+	wpa_printf(MSG_DEBUG,
+		   "IAP: Sending ST PREP CTX to " MACSTR " (%zu bytes)",
+		   MAC2STR(target_ap_mld_addr), smd_ctx_len);
+
+	struct wpabuf *tbuf = eth_p_1905_iap_encode_prep_ctx(iap);
+	if (!tbuf) {
+		os_free(iap);
+		return -1;
+	}
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, target_ap_mld_addr,
+			      hapd->mld->mld_addr,
+			      ETH_P_1905_SMD_ST_PREP_CTX_MSG,
+			      wpabuf_head(tbuf), wpabuf_len(tbuf));
+	wpabuf_free(tbuf);
+	os_free(iap);
+
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR, "IAP: Failed to send ST PREP CTX");
+		return -1;
+	}
 	return 0;
 }
 
@@ -587,6 +662,12 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
 			   "SMD IAP: Processing RESPONSE (txn=%u, status=%u)",
 			   iap->iap_transaction_id, iap->status_code);
 		uhr_cur_ap_handle_st_prep_resp(hapd, iap, frame_len);
+		break;
+	case UHR_IAP_MSG_ST_PREP_CTX:
+		wpa_printf(MSG_DEBUG,
+			   "UHR IAP: Processing ST PREP CTX (txn=%u)",
+			   iap->iap_transaction_id);
+		uhr_tgt_ap_handle_st_prep_ctx(hapd, iap);
 		break;
 
        case UHR_IAP_MSG_ST_EXEC_REQUEST:
