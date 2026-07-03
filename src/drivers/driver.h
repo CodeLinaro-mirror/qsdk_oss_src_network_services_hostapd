@@ -3541,6 +3541,9 @@ struct hostapd_sta_add_params {
 	const u8 *mld_link_addr;
 	u16 eml_cap;
 	u8 control_mic_pad;
+	bool smd_sta;
+	bool dl_data_fwd;
+	const u8 *smd_mac_addr;
 };
 
 struct ml_reconf_req {
@@ -3600,6 +3603,7 @@ struct wpa_bss_params {
 #define WPA_STA_SPP_AMSDU BIT(7)
 #define WPA_STA_FT_AUTH BIT(8)
 #define WPA_STA_CFP BIT(9)
+#define WPA_STA_SMD BIT(10)
 
 enum tdls_oper {
 	TDLS_DISCOVERY_REQ,
