@@ -2610,6 +2610,68 @@ void uhr_tgt_ap_handle_st_roam_cleanup(struct hostapd_data *hapd,
 }
 
 
+/* uhr_tgt_ap_handle_st_prep_ctx - Apply deferred prep SMD context on Target AP
+ *
+ * Handles UHR_IAP_MSG_ST_PREP_CTX from Current AP.  The STA entry must already
+ * exist from prior processing of UHR_IAP_MSG_ST_PREP_REQUEST.  The context is
+ * passed straight to the driver via uhr_target_ap_set_smd_ctx().
+ *
+ * Benign no-ops: STA not found (prep failed) or exec already completed.
+ */
+void uhr_tgt_ap_handle_st_prep_ctx(struct hostapd_data *hapd,
+				    const struct uhr_iap_frame *iap)
+{
+	struct hostapd_data *assoc_hapd = NULL;
+	struct sta_info *assoc_sta = NULL;
+	struct sta_smd_ctx_info *smd_ctx;
+	u16 smd_ctx_len;
+
+	if (!hostapd_mld_find_assoc_sta(hapd, iap->sta_addr,
+					&assoc_hapd, &assoc_sta)) {
+		wpa_printf(MSG_DEBUG,
+			   "UHR ST PREP CTX: STA " MACSTR " not found "
+			   "(prep may have failed), dropping ctx",
+			   MAC2STR(iap->sta_addr));
+		return;
+	}
+
+	if (assoc_sta->smd_info.state == SMD_STA_ST_EXEC_DONE) {
+		wpa_printf(MSG_DEBUG,
+			   "UHR ST PREP CTX: STA " MACSTR " already exec-done, ignoring",
+			   MAC2STR(iap->sta_addr));
+		return;
+	}
+
+	smd_ctx_len = le_to_host16(iap->smd_ctx_len);
+
+	if (smd_ctx_len < sizeof(struct sta_smd_ctx_info)) {
+		wpa_printf(MSG_ERROR,
+			   "UHR ST PREP CTX: smd_ctx too small (%u < %zu), dropping",
+			   smd_ctx_len, sizeof(struct sta_smd_ctx_info));
+		return;
+	}
+
+	/* frame_len == 0: smd_ctx sits at the start of frame_ctx_data[] */
+	smd_ctx = (struct sta_smd_ctx_info *) iap->frame_ctx_data;
+
+	/* Subtract is safe: smd_ctx_len >= sizeof(*smd_ctx) confirmed above */
+	if (smd_ctx->vendor_ctx_len > (size_t)(smd_ctx_len - sizeof(*smd_ctx))) {
+		wpa_printf(MSG_ERROR,
+			   "UHR ST PREP CTX: vendor_ctx overflow, dropping");
+		return;
+	}
+
+	if (uhr_target_ap_set_smd_ctx(assoc_hapd, iap->sta_addr, smd_ctx)) {
+		wpa_printf(MSG_ERROR,
+			   "UHR ST PREP CTX: Failed to set context for STA " MACSTR,
+			   MAC2STR(iap->sta_addr));
+		return;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR ST PREP CTX: Context applied for STA " MACSTR,
+		   MAC2STR(iap->sta_addr));
+}
 void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 			       const struct uhr_iap_frame *iap,
 			       u16 frame_len)
@@ -2928,6 +2990,8 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 					  NULL, 0);
 			return;
 		}
+		/* smd_ctx may already have been applied via UHR_IAP_MSG_ST_PREP_CTX
+		 * (type 9); the driver call is idempotent. */
 		smd_ctx = (struct sta_smd_ctx_info *)(iap->frame_ctx_data + le_to_host16(iap->frame_len));
 		/* Subtract is safe: smd_ctx_len >= sizeof(*smd_ctx) confirmed above */
 		if (smd_ctx->vendor_ctx_len > (size_t)(smd_ctx_len - sizeof(*smd_ctx))) {
