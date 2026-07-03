@@ -42,6 +42,7 @@
 #include "wps_hostapd.h"
 #include "dscp_policy.h"
 #include "hostapd_if/hostapd_if.h"
+#include "uhr_utils.h"
 
 static void ap_sta_remove_in_other_bss(struct hostapd_data *hapd,
 				       struct sta_info *sta);
@@ -442,6 +443,12 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	/* just in case */
 	ap_sta_set_authorized(hapd, sta, 0);
 	hostapd_set_sta_flags(hapd, sta);
+
+#ifdef CONFIG_IEEE80211BN
+	/* Clean up UHR roaming contexts */
+	uhr_cleanup_sta_roam_contexts(sta);
+#endif /* CONFIG_IEEE80211BN */
+
 
 	if ((sta->flags & WLAN_STA_WDS) ||
 	    (sta->flags & WLAN_STA_MULTI_AP &&
@@ -2735,17 +2742,21 @@ int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_aut
 	if (hostapd_sta_add(hapd, sta->addr, 0, 0,
 			    sta->supported_rates,
 			    sta->supported_rates_len,
-
 #ifdef CONFIG_QCN_EXTN
 			    0, NULL, NULL, NULL, 0, NULL, 0,
-			    NULL, 0, NULL, NULL,
+			    NULL, 0, NULL,
 #else
-
-			    0, NULL, NULL, NULL, 0, NULL, 0, NULL,
-			    0, NULL,
-
+			    0, NULL, NULL, NULL, 0, NULL, 0,
+			    NULL, 0,
 #endif
-			    sta->flags, 0, 0, 0, 0,
+#ifdef CONFIG_IEEE80211BN
+			    sta->smd_info.smd_sta,
+			    sta->smd_info.caps.dl_data_fwd,
+			    sta->smd_info.smd_identifier,
+#else
+			    false, false, NULL,
+#endif /* CONFIG_IEEE80211BN */
+			    NULL, sta->flags, 0, 0, 0, 0,
 			    mld_link_addr, mld_link_sta, eml_cap, 0, CONTROL_MIC_PAD_NOT_SET,
 			    epp_sta)) {
 		hostapd_logger(hapd, sta->addr,
@@ -2771,6 +2782,9 @@ void ap_sta_free_sta_profile(struct mld_info *info)
 		return;
 
 	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+		if (!info->links[i].resp_sta_profile)
+			continue;
+
 		os_free(info->links[i].resp_sta_profile);
 		info->links[i].resp_sta_profile = NULL;
 	}

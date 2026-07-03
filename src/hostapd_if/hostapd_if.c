@@ -2478,7 +2478,7 @@ void __hostapd_if_eapol_key_tx(char *ifname,  uint8_t *sta_mac, uint8_t link_id,
 		goto __hostapd_if_eapol_key_tx_exit;
 	}
 
-	hostapd_sta_flags_to_drv(sta->flags);
+	hostapd_sta_flags_to_drv(sta->flags, sta->flags_ext);
 	if (wpa_auth_pairwise_set(sta->wpa_sm))
 		encrypt = 1;
 

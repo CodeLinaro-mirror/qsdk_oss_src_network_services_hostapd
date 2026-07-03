@@ -34,7 +34,7 @@
 #include "robust_av.h"
 #endif
 
-u32 hostapd_sta_flags_to_drv(u32 flags)
+u32 hostapd_sta_flags_to_drv(u32 flags, u32 flags_ext)
 {
 	int res = 0;
 	if (flags & WLAN_STA_AUTHORIZED)
@@ -53,6 +53,8 @@ u32 hostapd_sta_flags_to_drv(u32 flags)
 		res |= WPA_STA_SPP_AMSDU;
 	if (flags & WLAN_STA_FT_AUTH)
 		res |= WPA_STA_FT_AUTH;
+	if (flags_ext & WLAN_STA_SMD)
+		res |= WPA_STA_SMD;
 	if (flags & WLAN_STA_CFP)
 		res |= WPA_STA_CFP;
 
@@ -345,12 +347,12 @@ int hostapd_set_authorized(struct hostapd_data *hapd,
 	if (authorized) {
 		return hostapd_sta_set_flags(hapd, sta->addr,
 					     hostapd_sta_flags_to_drv(
-						     sta->flags),
+						     sta->flags, sta->flags_ext),
 					     WPA_STA_AUTHORIZED, ~0);
 	}
 
 	return hostapd_sta_set_flags(hapd, sta->addr,
-				     hostapd_sta_flags_to_drv(sta->flags),
+				     hostapd_sta_flags_to_drv(sta->flags, sta->flags_ext),
 				     0, ~WPA_STA_AUTHORIZED);
 }
 
@@ -358,9 +360,9 @@ int hostapd_set_authorized(struct hostapd_data *hapd,
 int hostapd_set_sta_flags(struct hostapd_data *hapd, struct sta_info *sta)
 {
 	int set_flags, total_flags, flags_and, flags_or;
-	total_flags = hostapd_sta_flags_to_drv(sta->flags);
+	total_flags = hostapd_sta_flags_to_drv(sta->flags, sta->flags_ext);
 	set_flags = WPA_STA_SHORT_PREAMBLE | WPA_STA_WMM | WPA_STA_MFP |
-		WPA_STA_AUTHORIZED | WPA_STA_CFP;
+		WPA_STA_ASSOCIATED | WPA_STA_AUTHORIZED | WPA_STA_CFP | WPA_STA_SMD;
 
 	/*
 	 * All the station flags other than WPA_STA_SHORT_PREAMBLE are relevant
@@ -539,10 +541,33 @@ int hostapd_sta_assoc(struct hostapd_data *hapd, const u8 *addr,
 				       reassoc, status, ie, len);
 }
 
+int hostapd_smd_roam(struct hostapd_data *hapd,
+		     struct sta_info *sta,
+		     u32 role,
+		     u32 type,
+		     bool dl_sn_not_transferred,
+		     bool ul_sn_not_transferred,
+		     u32 dl_drain_time)
+{
+	struct hostapd_smd_roam_params params;
+
+	params.role = role;
+	params.dl_sn_not_transferred = dl_sn_not_transferred;
+	params.ul_sn_not_transferred = ul_sn_not_transferred;
+	params.dl_drain_time = dl_drain_time;
+	params.type = type;
+	params.n_macs = 1;
+	memcpy(params.mac[0], sta->mld_info.common_info.mld_addr, ETH_ALEN);
+
+	return hapd->driver->smd_roam(hapd->drv_priv, &params);
+}
 
 int hostapd_sta_add(struct hostapd_data *hapd,
-		    const u8 *addr, u16 aid, u16 capability,
-		    const u8 *supp_rates, size_t supp_rates_len,
+		    const u8 *addr,
+		    u16 aid,
+		    u16 capability,
+		    const u8 *supp_rates,
+		    size_t supp_rates_len,
 		    u16 listen_interval,
 		    const struct ieee80211_ht_capabilities *ht_capab,
 		    const struct ieee80211_vht_capabilities *vht_capab,
@@ -555,6 +580,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 		    struct sta_info_extn *sta_extn,
 #endif
+		    bool smd_sta, bool dl_data_fwd, const u8 *smd_mac_addr,
 		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
 		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
 		    int set, const u8 *link_addr, bool mld_link_sta,
@@ -587,7 +613,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 	params.he_6ghz_capab = he_6ghz_capab;
 	params.vht_opmode_enabled = !!(flags & WLAN_STA_VHT_OPMODE_ENABLED);
 	params.vht_opmode = vht_opmode;
-	params.flags = hostapd_sta_flags_to_drv(flags);
+	params.flags = hostapd_sta_flags_to_drv(flags, 0);
 	params.qosinfo = qosinfo;
 	params.support_p2p_ps = supp_p2p_ps;
 	params.set = set;
@@ -615,6 +641,10 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		if (link_addr)
 			params.eml_cap = eml_cap;
 	}
+
+	params.smd_sta = smd_sta;
+	params.dl_data_fwd = dl_data_fwd;
+	params.smd_mac_addr = smd_mac_addr;
 
 	if (type == LINK_PARSE_RECONF) {
 		sta = ap_get_sta(hapd, addr);

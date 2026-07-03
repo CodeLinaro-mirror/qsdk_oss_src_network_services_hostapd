@@ -51,6 +51,7 @@
 #include "ttlm.h"
 #include "robust_av.h"
 #include "../../qcn_extns/cmn.h"
+#include "ap/uhr_utils.h"
 
 #ifdef CONFIG_FILS
 void hostapd_notify_assoc_fils_finish(struct hostapd_data *hapd,
@@ -2414,6 +2415,39 @@ static void hostapd_mgmt_tx_cb(struct hostapd_data *hapd, const u8 *buf,
 		 * used wildcard BBSID.
 		 */
 	}
+
+#ifdef CONFIG_IEEE80211BN
+	if (stype == WLAN_FC_STYPE_ACTION) {
+		const struct ieee80211_mgmt *mgmt = (const struct ieee80211_mgmt *) buf;
+		const u8 *frame = (const u8 *) buf;
+		if (len >= IEEE80211_HDRLEN + 2 &&
+		    mgmt->u.action.category == WLAN_ACTION_PROTECTED_UHR &&
+		    frame[IEEE80211_HDRLEN + 1] == WLAN_PROT_UHR_LINK_RECONFIG_REQUEST) {
+			struct sta_info *sta = ap_get_sta(hapd, mgmt->da);
+			if (sta) {
+                               /* 
+                                * Extract type field: Category(1) + Action(1) + Dialog(1) + Type(1)
+                                * Type 1 = ST Prep, Type 2 = ST Execute
+                                */
+                               u8 type = frame[IEEE80211_HDRLEN + 3];
+
+                               if (type == 2) {
+				       struct ieee802_11_elems elems;
+				       const u8 *ies = buf + IEEE80211_HDRLEN + 4;  /* Skip category + action + dialog + type */
+				       size_t ies_len = len - IEEE80211_HDRLEN - 4;
+				       if (ieee802_11_parse_elems(ies, ies_len, &elems, 1) != ParseFailed &&
+						       elems.reconf_mle && elems.reconf_mle_len > 0) {
+					       struct uhr_reconfig_mle mle;
+					       if (uhr_parse_reconfig_mle(&elems, &mle) == 0 &&
+							       mle.has_target_ap_mld_addr) {
+						       uhr_st_exec_handle_tx_status(hapd, sta, mle.target_ap_mld_addr, ok);
+						}
+					}
+				}
+                        }
+		}
+	}
+#endif 
 	ieee802_11_mgmt_cb(hapd, buf, len, stype, ok);
 }
 
