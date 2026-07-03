@@ -19044,6 +19044,192 @@ fail:
 #endif /* CONFIG_IEEE80211BN */
 
 
+#ifdef CONFIG_IEEE80211BN
+static int nl80211_put_smd_ba_params(struct nl_msg *msg, int tid,
+				     const struct sta_smd_ba_info *ba)
+{
+	struct nlattr *ba_nest = nla_nest_start(msg, tid + 1);
+
+	if (!ba_nest)
+		return -ENOBUFS;
+
+	if (nla_put_u16(msg, NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE,
+			ba->buffer_size) ||
+	    (ba->ba_policy &&
+	     nla_put_flag(msg, NL80211_SMD_CTX_BA_ATTR_POLICY)) ||
+	    (ba->amsdu_supported &&
+	     nla_put_flag(msg, NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT)) ||
+	    nla_put_u16(msg, NL80211_SMD_CTX_BA_ATTR_TIMEOUT, ba->timeout) ||
+	    (ba->ext_no_frag &&
+	     nla_put_flag(msg, NL80211_SMD_CTX_BA_ATTR_EXT_NO_FRAG)) ||
+	    nla_put_u8(msg, NL80211_SMD_CTX_BA_ATTR_EXT_FRAG_LEVEL,
+		       ba->extfrag_level) ||
+	    nla_put_u16(msg, NL80211_SMD_CTX_BA_ATTR_EXT_BUFF_SIZE,
+			ba->ext_buffer_size))
+		return -ENOBUFS;
+
+	nla_nest_end(msg, ba_nest);
+	return 0;
+}
+
+static int nl80211_put_smd_ctx(struct nl_msg *msg,
+			       const struct sta_smd_ctx_info *ctx)
+{
+	struct nlattr *smd_nest, *dl_nest, *ul_nest, *ba_nest;
+	struct nlattr *sn_nest, *pn_nest;
+	int tid, err;
+
+	smd_nest = nla_nest_start(msg, NL80211_ATTR_SMD_CTX);
+	if (!smd_nest)
+		return -ENOBUFS;
+
+	err = nla_put_u8(msg, NL80211_SMD_CTX_ATTR_TYPE, ctx->st_type);
+	if (err)
+		return -ENOBUFS;
+
+	err = nla_put_u8(msg, NL80211_SMD_CTX_ATTR_PN_LEN, ctx->pn_len);
+	if (err)
+		return -ENOBUFS;
+
+	/* DL */
+	dl_nest = nla_nest_start(msg, NL80211_SMD_CTX_ATTR_DL);
+	if (!dl_nest)
+		return -ENOBUFS;
+
+	if (nla_put_u8(msg, NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP,
+		       ctx->dl.valid_tid_bmap))
+		return -ENOBUFS;
+
+	if (ctx->valid_ctx_bmap & SMD_CTX_VALID_DL_SN) {
+		sn_nest = nla_nest_start(msg, NL80211_SMD_CTX_DL_ATTR_SN);
+		if (!sn_nest)
+			return -ENOBUFS;
+		for (tid = 0; tid < SMD_NUM_TIDS; tid++) {
+			if (!(ctx->dl.valid_tid_bmap & BIT(tid)))
+				continue;
+			if (nla_put_u16(msg, tid + 1, ctx->dl.sn[tid]))
+				return -ENOBUFS;
+		}
+		nla_nest_end(msg, sn_nest);
+	}
+
+	if (ctx->valid_ctx_bmap & SMD_CTX_VALID_PN) {
+		if (nla_put(msg, NL80211_SMD_CTX_DL_ATTR_PN, ctx->pn_len,
+			    ctx->dl.pn))
+			return -ENOBUFS;
+	}
+
+	if (ctx->valid_ctx_bmap & SMD_CTX_VALID_BA_PARAMS) {
+		ba_nest = nla_nest_start(msg, NL80211_SMD_CTX_DL_ATTR_BA_PARAMS);
+		if (!ba_nest)
+			return -ENOBUFS;
+		for (tid = 0; tid < SMD_NUM_TIDS; tid++) {
+			if (!(ctx->dl.valid_tid_bmap & BIT(tid)))
+				continue;
+			if (nl80211_put_smd_ba_params(msg, tid,
+						      &ctx->dl.ba[tid]))
+				return -ENOBUFS;
+		}
+		nla_nest_end(msg, ba_nest);
+	}
+	nla_nest_end(msg, dl_nest);
+
+	/* UL */
+	ul_nest = nla_nest_start(msg, NL80211_SMD_CTX_ATTR_UL);
+	if (!ul_nest)
+		return -ENOBUFS;
+
+	if (nla_put_u8(msg, NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP,
+		       ctx->ul.valid_tid_bmap))
+		return -ENOBUFS;
+
+	if (ctx->valid_ctx_bmap & SMD_CTX_VALID_UL_SN) {
+		sn_nest = nla_nest_start(msg, NL80211_SMD_CTX_UL_ATTR_SN);
+		if (!sn_nest)
+			return -ENOBUFS;
+		for (tid = 0; tid < SMD_NUM_TIDS; tid++) {
+			if (!(ctx->ul.valid_tid_bmap & BIT(tid)))
+				continue;
+			if (nla_put_u16(msg, tid + 1, ctx->ul.sn[tid]))
+				return -ENOBUFS;
+		}
+		nla_nest_end(msg, sn_nest);
+	}
+
+	if (ctx->valid_ctx_bmap & SMD_CTX_VALID_PN) {
+		pn_nest = nla_nest_start(msg, NL80211_SMD_CTX_UL_ATTR_PN);
+		if (!pn_nest)
+			return -ENOBUFS;
+		for (tid = 0; tid < SMD_NUM_TIDS; tid++) {
+			if (!(ctx->ul.valid_tid_bmap & BIT(tid)))
+				continue;
+			if (nla_put(msg, tid + 1, ctx->pn_len,
+				    (const u8 *)ctx->ul.pn[tid]))
+				return -ENOBUFS;
+		}
+		nla_nest_end(msg, pn_nest);
+	}
+
+	if (ctx->valid_ctx_bmap & SMD_CTX_VALID_BA_PARAMS) {
+		ba_nest = nla_nest_start(msg, NL80211_SMD_CTX_UL_ATTR_BA_PARAMS);
+		if (!ba_nest)
+			return -ENOBUFS;
+		for (tid = 0; tid < SMD_NUM_TIDS; tid++) {
+			if (!(ctx->ul.valid_tid_bmap & BIT(tid)))
+				continue;
+			if (nl80211_put_smd_ba_params(msg, tid,
+						      &ctx->ul.ba[tid]))
+				return -ENOBUFS;
+		}
+		nla_nest_end(msg, ba_nest);
+	}
+	nla_nest_end(msg, ul_nest);
+
+	if (ctx->vendor_ctx_len &&
+	    nla_put(msg, NL80211_SMD_CTX_ATTR_VENDOR, ctx->vendor_ctx_len,
+		    ctx->vendor_ctx))
+		return -ENOBUFS;
+
+	nla_nest_end(msg, smd_nest);
+
+	return 0;
+}
+
+static int nl80211_set_smd_ctx(void *priv, const u8 *sta_addr,
+			       const struct sta_smd_ctx_info *ctx)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret;
+
+	if (!sta_addr || !ctx)
+		return -EINVAL;
+
+	wpa_printf(MSG_DEBUG, "Setting SMD context in nl80211");
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_SMD_CTX);
+	if (!msg)
+		return -ENOBUFS;
+
+	if (nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, sta_addr))
+		goto fail;
+
+	/* Add SMD context nested attribute */
+	if (nl80211_put_smd_ctx(msg, ctx))
+		goto fail;
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR, "nl80211: SET_SMD_CTX failed: %d", ret);
+
+	return ret;
+
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+#endif /* CONFIG_IEEE80211BN */
+
 const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.name = "nl80211",
 	.desc = "Linux nl80211/cfg80211",
@@ -19265,4 +19451,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #ifdef CONFIG_IEEE80211BN
 	.critical_update = nl80211_critical_update,
 #endif /* CONFIG_IEEE80211BN */
+#ifdef CONFIG_IEEE80211BN
+	.set_smd_ctx = nl80211_set_smd_ctx,
+#endif
 };

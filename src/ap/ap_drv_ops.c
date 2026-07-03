@@ -1814,6 +1814,18 @@ int hostapd_drv_critical_update(struct hostapd_data *hapd, u8 link_id,
 }
 #endif /* CONFIG_IEEE80211BN */
 
+int hostapd_drv_set_smd_ctx(struct hostapd_data *hapd, struct sta_info *sta,
+			    const struct sta_smd_ctx_info *ctx)
+{
+	if (!hapd->driver || !hapd->drv_priv || !hapd->driver->set_smd_ctx)
+		return 0;
+
+	if (!sta || !ctx)
+		return -1;
+
+	return hapd->driver->set_smd_ctx(hapd->drv_priv, sta->addr, ctx);
+}
+
 #ifdef CONFIG_QCN_EXTN
 int hostapd_drv_set_muedca_mode(struct hostapd_data *hapd, int mode, int radio_idx)
 {

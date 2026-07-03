@@ -112,9 +112,11 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 			 struct sta_info *sta,
 			 const u8 *frame, size_t frame_len)
 {
+	 struct sta_smd_ctx_info *smd_ctx;
+	 struct smd_roam_ap_info *ap_info;
+	 size_t iap_len = 0, smd_ctx_len = 0;
 	struct uhr_iap_frame *iap;
-	size_t iap_len;
-	u8 *buf;
+	u8 *buf, *pos;
 	int ret;
 
 	wpa_printf(MSG_INFO, "SMD IAP: Received UHR Link Reconfig Requst of frame length: %zu", frame_len);
@@ -141,9 +143,17 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 			   MAC2STR(target_ap_mld_addr));
 		return -1;
 	}
+
+	ap_info = uhr_find_ap_in_list(sta, target_ap_mld_addr);
+	if (!ap_info)
+		return -1;
+
+	smd_ctx = ap_info->smd_ctx;
+	if (ap_info->smd_ctx_valid && smd_ctx)
+		smd_ctx_len = sizeof(*smd_ctx) + smd_ctx->vendor_ctx_len;
 	
 	/* Allocate buffer for IAP frame */
-	iap_len = sizeof(*iap) + frame_len;
+	iap_len = sizeof(*iap) + frame_len + smd_ctx_len;
 	buf = os_zalloc(iap_len);
 	if (!buf) {
 		wpa_printf(MSG_ERROR, "SMD IAP: Failed to allocate IAP frame");
@@ -179,8 +189,18 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 	
 	/* Copy frame buffer */
 	iap->frame_len = htole16(frame_len);
-	os_memcpy(iap->frame_buf, frame, frame_len);
-	
+	os_memcpy(iap->frame_ctx_data, frame, frame_len);
+
+	iap->smd_ctx_len = htole16(smd_ctx_len);
+	if (smd_ctx_len) {
+		iap->flags |= UHR_IAP_FLAG_HAS_DYNAMIC_CTX;
+		pos = iap->frame_ctx_data + iap->frame_len;
+		os_memcpy(pos, smd_ctx, smd_ctx_len);
+		wpa_printf(MSG_DEBUG,
+			   "SMD IAP: Including Prep SMD context (%zu bytes) for " MACSTR,
+			   smd_ctx_len, MAC2STR(target_ap_mld_addr));
+	}
+
 	wpa_printf(MSG_DEBUG,
 		   "SMD IAP: Sending REQUEST to " MACSTR " (txn=%u, frame_len=%zu)",
 		   MAC2STR(target_ap_mld_addr), iap->iap_transaction_id,
@@ -271,7 +291,7 @@ int uhr_iap_send_st_prep_resp(struct hostapd_data *hapd,
 	/* Copy frame buffer if present */
 	if (frame && frame_len > 0) {
 		iap->frame_len = htole16(frame_len);
-		os_memcpy(iap->frame_buf, frame, frame_len);
+		os_memcpy(iap->frame_ctx_data, frame, frame_len);
 	} else {
 		iap->frame_len = 0;
 	}
@@ -302,9 +322,10 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
                                 const u8 *target_ap_mld_addr, const u8 *frame, size_t frame_len)
 {
        struct smd_roam_ap_info *target_info;
+	struct sta_smd_ctx_info *smd_ctx;
+	size_t iap_len, smd_ctx_len = 0;
        struct uhr_iap_frame *iap;
-       size_t iap_len;
-       u8 *buf;
+	u8 *buf, *pos;
        int ret;
 
        /* Find Target AP */
@@ -312,8 +333,12 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
        if (!target_info)
                return -1;
 
+	smd_ctx = target_info->smd_ctx;
+	if (target_info->smd_ctx_valid && smd_ctx)
+		smd_ctx_len = sizeof(*smd_ctx) + smd_ctx->vendor_ctx_len;
+
        /* Allocate IAP frame (minimal - no security context needed) */
-       iap_len = sizeof(*iap) + frame_len;
+	iap_len = sizeof(*iap) + frame_len + smd_ctx_len;
        buf = os_zalloc(iap_len);
        if (!buf)
                return -1;
@@ -335,7 +360,17 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
        iap->status_code = 0;
 
        iap->frame_len = frame_len;
-       os_memcpy(iap->frame_buf, frame, frame_len);	
+	os_memcpy(iap->frame_ctx_data, frame, frame_len);
+
+	iap->smd_ctx_len = htole16(smd_ctx_len);
+	if (smd_ctx_len) {
+		iap->flags |= UHR_IAP_FLAG_HAS_DYNAMIC_CTX;
+		pos = iap->frame_ctx_data + iap->frame_len;
+		os_memcpy(pos, smd_ctx, smd_ctx_len);
+		wpa_printf(MSG_DEBUG,
+			   "SMD IAP: Including Exec SMD context (%zu bytes) for " MACSTR,
+			   smd_ctx_len, MAC2STR(target_ap_mld_addr));
+	}
 
        wpa_printf(MSG_DEBUG,
                   "UHR IAP: Sending ST EXEC REQUEST to " MACSTR " (txn=%u)",
@@ -402,7 +437,7 @@ int uhr_iap_send_st_exec_resp(struct hostapd_data *hapd,
        iap->status_code = status_code;
        iap->frame_len = htole16(frame_len);
        if (frame && frame_len > 0)
-               os_memcpy(iap->frame_buf, frame, frame_len);
+		os_memcpy(iap->frame_ctx_data, frame, frame_len);
 
        wpa_printf(MSG_DEBUG,
                   "UHR IAP: Sending ST EXEC RESPONSE to " MACSTR " (txn=%u, status=%u, frame_len=%zu)",
@@ -443,6 +478,7 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
 		const u8 *data, size_t data_len, u8 oui_suffix)
 {
 	const struct uhr_iap_frame *iap;
+	u16 smd_ctx_len = 0;
 	u16 frame_len;
 	
 	wpa_printf(MSG_DEBUG,
@@ -464,8 +500,11 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
 	
 	iap = (const struct uhr_iap_frame *) data;
 	frame_len = le_to_host16(iap->frame_len);
+
+	if (iap->flags & UHR_IAP_FLAG_HAS_DYNAMIC_CTX)
+		smd_ctx_len = le_to_host16(iap->smd_ctx_len);
 	
-	if (data_len < sizeof(*iap) + frame_len) {
+	if (data_len < sizeof(*iap) + frame_len + smd_ctx_len) {
 		wpa_printf(MSG_ERROR,
 			   "SMD IAP: Invalid frame_len (%u > %zu)",
 			   frame_len, data_len - sizeof(*iap));
