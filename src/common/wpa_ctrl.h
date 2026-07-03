@@ -127,7 +127,8 @@ extern "C" {
 /** Ind Rep - WDS STA Pre-connect State */
 #define WPA_EVENT_PRE_CONNECTING "CTRL-EVENT-PRE-CONNECTING "
 #endif
-
+/** Authentication/Association/4WH failures */
+#define WPA_EVENT_CONNECTION_FAIL "CTRL-EVENT-CONNECTION-FAIL "
 
 /** IP subnet status change notification
  *

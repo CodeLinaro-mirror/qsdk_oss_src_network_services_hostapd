@@ -873,4 +873,9 @@ int wpa_write_eppke_rsne(const u8 *wpa_ie, size_t wpa_ie_len,
 			 const u8 *pmkid, int akmp,
 			 int pairwise_cipher, enum mfp_options mfp);
 
+void wpa_auth_connection_fail_event(struct wpa_authenticator *wpa_auth,
+				    size_t frame_len, const char *frame_type,
+				    const u8 *frame_body, const u8 *sta_addr,
+				    const u8 *bssid, u16 conn_code,
+				    bool has_status);
 #endif /* WPA_AUTH_H */

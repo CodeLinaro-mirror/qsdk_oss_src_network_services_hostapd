@@ -3981,14 +3981,14 @@ SM_STATE(WPA_PTK, PTKCALCNEGOTIATING)
 	struct ieee802_1x_hdr *hdr;
 	struct wpa_eapol_key *key;
 	struct wpa_eapol_ie_parse kde;
-	int vlan_id = 0;
+	int vlan_id = 0, reason = 0;
 	int owe_ptk_workaround = !!wpa_auth->conf.owe_ptk_workaround;
 	u8 pmk_r0[PMK_LEN_MAX], pmk_r0_name[WPA_PMK_NAME_LEN];
 	u8 pmk_r1[PMK_LEN_MAX];
 	size_t key_len;
 	u8 *key_data_buf = NULL;
 	size_t key_data_buf_len = 0;
-	bool derive_kdk, no_kdk = false;
+	bool derive_kdk, no_kdk = false, conn_fail_event = false;
 
 	SM_ENTRY_MA(WPA_PTK, PTKCALCNEGOTIATING, wpa_ptk);
 	sm->EAPOLKeyReceived = false;
@@ -4111,6 +4111,8 @@ SM_STATE(WPA_PTK, PTKCALCNEGOTIATING)
 				"invalid MIC in msg 2/4 of 4-Way Handshake");
 		if (psk_found)
 			wpa_auth_psk_failure_report(sm->wpa_auth, sm->addr);
+		reason = WLAN_REASON_UNSPECIFIED;
+		conn_fail_event = true;
 		goto out;
 	}
 
@@ -4163,6 +4165,8 @@ SM_STATE(WPA_PTK, PTKCALCNEGOTIATING)
 	if (wpa_parse_kde_ies(key_data, key_data_length, &kde) < 0) {
 		wpa_auth_vlogger(wpa_auth, wpa_auth_get_spa(sm), LOGGER_INFO,
 				 "received EAPOL-Key msg 2/4 with invalid Key Data contents");
+		reason = WLAN_REASON_UNSPECIFIED;
+		conn_fail_event = true;
 		goto out;
 	}
 	if (kde.rsn_ie) {
@@ -4190,6 +4194,8 @@ SM_STATE(WPA_PTK, PTKCALCNEGOTIATING)
 		/* MLME-DEAUTHENTICATE.request */
 		wpa_sta_disconnect(wpa_auth, sm->addr,
 				   WLAN_REASON_PREV_AUTH_NOT_VALID);
+		reason = WLAN_REASON_PREV_AUTH_NOT_VALID;
+		conn_fail_event = true;
 		goto out;
 	}
 	if ((!sm->rsnxe && kde.rsnxe) ||
@@ -4206,6 +4212,8 @@ SM_STATE(WPA_PTK, PTKCALCNEGOTIATING)
 		/* MLME-DEAUTHENTICATE.request */
 		wpa_sta_disconnect(wpa_auth, sm->addr,
 				   WLAN_REASON_PREV_AUTH_NOT_VALID);
+		reason = WLAN_REASON_PREV_AUTH_NOT_VALID;
+		conn_fail_event = true;
 		goto out;
 	}
 #ifdef CONFIG_OCV
@@ -4281,6 +4289,8 @@ SM_STATE(WPA_PTK, PTKCALCNEGOTIATING)
 		/* MLME-DEAUTHENTICATE.request */
 		wpa_sta_disconnect(wpa_auth, sm->addr,
 				   WLAN_REASON_PREV_AUTH_NOT_VALID);
+		reason = WLAN_REASON_PREV_AUTH_NOT_VALID;
+		conn_fail_event = true;
 		goto out;
 
 	}
@@ -4365,6 +4375,13 @@ SM_STATE(WPA_PTK, PTKCALCNEGOTIATING)
 	sm->PTK_valid = true;
 	sm->hash_alg = sm->PTK.hash_alg;
 out:
+	if (conn_fail_event)
+		wpa_auth_connection_fail_event(wpa_auth,
+					       sm->last_rx_eapol_key_len,
+					       "EAPOL_Message_2",
+					       (u8 *)sm->last_rx_eapol_key,
+					       sm->addr, wpa_auth->addr, reason,
+					       false);
 	forced_memzero(pmk_r0, sizeof(pmk_r0));
 	forced_memzero(pmk_r1, sizeof(pmk_r1));
 	bin_clear_free(key_data_buf, key_data_buf_len);
@@ -5969,6 +5986,14 @@ SM_STATE(WPA_PTK, PTKINITDONE)
 				   "WPA: Failed to set LTF keyseed to driver");
 			wpa_sta_disconnect(sm->wpa_auth, sm->addr,
 					   WLAN_REASON_PREV_AUTH_NOT_VALID);
+			wpa_auth_connection_fail_event(sm->wpa_auth,
+						       sm->last_rx_eapol_key_len,
+						       "EAPOL_Message_4",
+						       (u8 *)sm->last_rx_eapol_key,
+						       sm->addr,
+						       sm->wpa_auth->addr,
+						       WLAN_REASON_PREV_AUTH_NOT_VALID,
+						       false);
 			return;
 		}
 #endif /* CONFIG_PASN */
@@ -9377,4 +9402,39 @@ bool wpa_auth_ap_support_secure_ltf(struct wpa_authenticator *wpa_auth)
 {
 	return wpa_auth->conf.secure_ltf;
 }
+
 #endif /* CONFIG_IEEE8021X_AUTH */
+void wpa_auth_connection_fail_event(struct wpa_authenticator *wpa_auth,
+				    size_t frame_len, const char *frame_type,
+				    const u8 *frame_body, const u8 *sta_addr,
+				    const u8 *bssid, u16 conn_code,
+				    bool has_status)
+{
+	char *hex = NULL;
+	size_t hexlen = 0;
+
+	if (!wpa_auth ||
+	    !wpa_auth->conf.msg_ctx || !sta_addr || !bssid || !frame_type)
+		return;
+
+	if (frame_body && frame_len > 0) {
+		hexlen = 2 * frame_len + 1;
+		hex = os_malloc(hexlen);
+		if (hex)
+			wpa_snprintf_hex(hex, hexlen, frame_body, frame_len);
+	}
+
+	if (has_status)
+		wpa_msg(wpa_auth->conf.msg_ctx, MSG_INFO,
+			WPA_EVENT_CONNECTION_FAIL "addr=" MACSTR
+			" bssid=" MACSTR " status_code=%u frame_type=%s%s%s",
+			MAC2STR(sta_addr), MAC2STR(bssid), conn_code,
+			frame_type, hex ? " frame_body=" : "", hex ? hex : "");
+	else
+		wpa_msg(wpa_auth->conf.msg_ctx, MSG_INFO,
+			WPA_EVENT_CONNECTION_FAIL "addr=" MACSTR
+			" bssid=" MACSTR " reason_code=%u frame_type=%s%s%s",
+			MAC2STR(sta_addr), MAC2STR(bssid), conn_code,
+			frame_type, hex ? " frame_body=" : "", hex ? hex : "");
+	os_free(hex);
+}
