@@ -28,6 +28,7 @@
 #include "p2p/p2p.h"
 #include "fst/fst.h"
 #include "wnm_sta.h"
+#include "smd.h"
 #include "notify.h"
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
@@ -8907,6 +8908,14 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 	case EVENT_SETUP_LINK_RECONFIG:
 		if (data)
 			wpas_setup_link_reconfig(wpa_s, &data->reconfig_info);
+		break;
+	case EVENT_UHR_RECONFIG_RESP:
+		if (data)
+			wpas_uhr_reconfig_resp(wpa_s, &data->uhr_reconfig_resp);
+		break;
+	case EVENT_SMD_TRANSITION_DONE:
+		if (data)
+			wpas_uhr_smd_handle_transition_status(wpa_s, &data->st_transition);
 		break;
 	default:
 #ifdef CONFIG_QCN_EXTN
