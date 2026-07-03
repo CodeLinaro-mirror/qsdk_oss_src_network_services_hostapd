@@ -703,4 +703,8 @@ struct wpabuf * wpa_sm_known_sta_identification(struct wpa_sm *sm, const u8 *aa,
 						u64 timestamp);
 int wpa_sm_install_mlo_group_keys(struct wpa_sm *sm, const u8 *key_data,
 				  size_t key_data_len, u16 added_links_bitmap);
+void wpa_sm_notify_smd_transition_complete(struct wpa_sm *sm,
+					   const u8 *target_addr);
+void wpa_sm_smd_notify_ptk_installed(struct wpa_sm *sm,
+				     const u8 *target_addr);
 #endif /* WPA_H */

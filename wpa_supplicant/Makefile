@@ -106,6 +106,7 @@ OBJS = config.o
 OBJS += notify.o
 OBJS += bss.o
 OBJS += eap_register.o
+OBJS += smd.o
 OBJS += ../src/utils/common.o
 OBJS += ../src/utils/config.o
 OBJS += ../src/utils/wpa_debug.o
