@@ -3012,6 +3012,11 @@ reply:
 				data ? wpabuf_head(data) : (u8 *) "",
 				data ? wpabuf_len(data) : 0, "auth-sae");
 		sae_sme_send_external_auth_status(hapd, sta, resp);
+		wpa_auth_connection_fail_event(hapd->wpa_auth,
+					       len, "Authentication_frame",
+					       (u8 *)mgmt, sta->addr,
+					       hapd->own_addr, resp,
+					       true);
 	}
 
 remove_sta:
@@ -11016,6 +11021,13 @@ static void handle_assoc(struct hostapd_data *hapd,
 	if (sta)
 		hostapd_process_assoc_ml_info(hapd, sta, pos, left, reassoc,
 					      resp, false, &set_beacon);
+
+	if (resp != WLAN_STATUS_SUCCESS)
+		wpa_auth_connection_fail_event(hapd->wpa_auth,
+					       len, "Association_frame",
+					       (u8 *)mgmt, sta->addr,
+					       hapd->own_addr, resp,
+					       true);
 
 #ifdef CONFIG_IEEE80211BE
 	if (sta)
