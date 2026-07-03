@@ -20,6 +20,7 @@
 #include "common/ieee802_11_common.h"
 #include "driver_nl80211.h"
 #include "ap/robust_av.h"
+#include "ap/sta_info.h"
 
 #define QCA_NL80211_TPC_EIRP_DBM_MIN	(-128)
 #define QCA_NL80211_TPC_EIRP_DBM_MAX	127
@@ -1841,12 +1842,308 @@ mlme_event_mgmt_ttlm_expec_dur_update(struct i802_bss *bss,
 	}
 }
 
+#ifdef CONFIG_IEEE80211BN
+static void nl80211_parse_smd_ctx_ba_params(struct nlattr *tb,
+					    struct sta_smd_ba_info *ba,
+					    u8 *valid_ctx_bmap)
+{
+	struct nlattr *ba_tb[NL80211_SMD_CTX_BA_ATTR_MAX + 1];
+	struct nlattr *ba_attr;
+	int rem, tid;
+
+	static struct nla_policy
+		smd_ctx_ba_policy[NL80211_SMD_CTX_BA_ATTR_MAX + 1] = {
+			[NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE] =
+				{ .type = NLA_U16 },
+			[NL80211_SMD_CTX_BA_ATTR_POLICY] =
+				{ .type = NLA_FLAG },
+			[NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT] =
+				{ .type = NLA_FLAG },
+			[NL80211_SMD_CTX_BA_ATTR_TIMEOUT] =
+				{ .type = NLA_U16 },
+			[NL80211_SMD_CTX_BA_ATTR_EXT_NO_FRAG] =
+				{ .type = NLA_FLAG },
+			[NL80211_SMD_CTX_BA_ATTR_EXT_FRAG_LEVEL] =
+				{ .type = NLA_U8 },
+			[NL80211_SMD_CTX_BA_ATTR_EXT_BUFF_SIZE] =
+				{ .type = NLA_U16 },
+	};
+
+	nla_for_each_nested(ba_attr, tb, rem) {
+		struct nlattr *ba_param_attr;
+
+		tid = nla_type(ba_attr) - 1;
+		if (tid >= SMD_NUM_TIDS)
+			break;
+
+		if (nla_parse_nested(ba_tb, NL80211_SMD_CTX_BA_ATTR_MAX,
+				     ba_attr, smd_ctx_ba_policy)) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: SMD: Failed to parse BA[%d]", tid);
+			continue;
+		}
+
+		ba_param_attr = ba_tb[NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE];
+		if (ba_param_attr)
+			ba[tid].buffer_size = nla_get_u16(ba_param_attr);
+
+		ba[tid].ba_policy = !!ba_tb[NL80211_SMD_CTX_BA_ATTR_POLICY];
+
+		ba[tid].amsdu_supported =
+			!!ba_tb[NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT];
+
+		ba_param_attr = ba_tb[NL80211_SMD_CTX_BA_ATTR_TIMEOUT];
+		if (ba_param_attr)
+			ba[tid].timeout = nla_get_u16(ba_param_attr);
+
+		ba[tid].ext_no_frag =
+			!!ba_tb[NL80211_SMD_CTX_BA_ATTR_EXT_NO_FRAG];
+
+		ba_param_attr = ba_tb[NL80211_SMD_CTX_BA_ATTR_EXT_FRAG_LEVEL];
+		if (ba_param_attr)
+			ba[tid].extfrag_level = nla_get_u8(ba_param_attr);
+
+		ba_param_attr = ba_tb[NL80211_SMD_CTX_BA_ATTR_EXT_BUFF_SIZE];
+		if (ba_param_attr)
+			ba[tid].ext_buffer_size = nla_get_u16(ba_param_attr);
+
+		*valid_ctx_bmap |= SMD_CTX_VALID_BA_PARAMS;
+	}
+}
+
+/**
+ * nl80211_parse_smd_ctx - Parse SMD context from NL80211 attributes
+ * @smd_attr: NL80211_ATTR_SMD_CTX nested attribute
+ * Returns: Allocated smd_ctx structure or NULL on error
+ *
+ * This function parses NL80211 nested attributes and converts them to
+ * hostapd's internal sta_smd_ctx_info structure. The caller must free
+ * the returned structure.
+ */
+static struct sta_smd_ctx_info * nl80211_parse_smd_ctx(struct nlattr *smd_attr)
+{
+	struct nlattr *tb[NL80211_SMD_CTX_ATTR_MAX + 1];
+	struct nlattr *dl_tb[NL80211_SMD_CTX_DL_ATTR_MAX + 1];
+	struct nlattr *ul_tb[NL80211_SMD_CTX_UL_ATTR_MAX + 1];
+	struct sta_smd_ctx_info *ctx;
+	size_t vendor_ctx_len = 0;
+	struct nlattr *ba_attr;
+
+	static struct nla_policy
+		smd_ctx_policy[NL80211_SMD_CTX_ATTR_MAX + 1] = {
+			[NL80211_SMD_CTX_ATTR_TYPE] = { .type = NLA_U8  },
+			[NL80211_SMD_CTX_ATTR_PN_LEN] = { .type = NLA_U8 },
+			[NL80211_SMD_CTX_ATTR_DL] = { .type = NLA_NESTED },
+			[NL80211_SMD_CTX_ATTR_UL] = { .type = NLA_NESTED },
+			[NL80211_SMD_CTX_ATTR_QOS] = { .type = NLA_NESTED },
+			[NL80211_SMD_CTX_ATTR_VENDOR] = { .type = NLA_BINARY },
+		};
+
+	static struct nla_policy
+		smd_ctx_dl_policy[NL80211_SMD_CTX_DL_ATTR_MAX + 1] = {
+			[NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP] = { .type = NLA_U8 },
+			[NL80211_SMD_CTX_DL_ATTR_SN] = { .type = NLA_NESTED },
+			[NL80211_SMD_CTX_DL_ATTR_PN] = { .type = NLA_BINARY },
+			[NL80211_SMD_CTX_DL_ATTR_BA_PARAMS] = { .type = NLA_NESTED },
+	};
+
+	static struct nla_policy
+		smd_ctx_ul_policy[NL80211_SMD_CTX_UL_ATTR_MAX + 1] = {
+			[NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP] = { .type = NLA_U8 },
+			[NL80211_SMD_CTX_UL_ATTR_SN] = { .type = NLA_NESTED },
+			[NL80211_SMD_CTX_UL_ATTR_PN] = { .type = NLA_BINARY },
+			[NL80211_SMD_CTX_UL_ATTR_BA_PARAMS] = { .type = NLA_NESTED },
+	};
+
+	if (!smd_attr)
+		return NULL;
+
+	if (nla_parse_nested(tb, NL80211_SMD_CTX_ATTR_MAX, smd_attr, smd_ctx_policy)) {
+		wpa_printf(MSG_ERROR, "nl80211: SMD: Failed to parse context");
+		return NULL;
+	}
+
+	if (!tb[NL80211_SMD_CTX_ATTR_TYPE])
+		return NULL;
+
+	if (!(tb[NL80211_SMD_CTX_ATTR_DL] || tb[NL80211_SMD_CTX_ATTR_UL] ||
+	      tb[NL80211_SMD_CTX_ATTR_QOS] || tb[NL80211_SMD_CTX_ATTR_VENDOR]))
+		return NULL;
+
+	if (tb[NL80211_SMD_CTX_ATTR_VENDOR])
+		vendor_ctx_len = nla_len(tb[NL80211_SMD_CTX_ATTR_VENDOR]);
+
+	ctx = os_zalloc(sizeof(*ctx) + vendor_ctx_len);
+	if (!ctx)
+		return NULL;
+
+	/* Extract ST Type */
+	ctx->st_type = nla_get_u8(tb[NL80211_SMD_CTX_ATTR_TYPE]);
+	wpa_printf(MSG_DEBUG, "nl80211: SMD: ST Type=%u", ctx->st_type);
+
+	/* Extract PN length */
+	if (tb[NL80211_SMD_CTX_ATTR_PN_LEN]) {
+		ctx->pn_len = nla_get_u8(tb[NL80211_SMD_CTX_ATTR_PN_LEN]);
+		if (ctx->pn_len > sizeof(ctx->dl.pn))
+			goto fail;
+
+		ctx->valid_ctx_bmap |= SMD_CTX_VALID_PN;
+		wpa_printf(MSG_DEBUG, "nl80211: SMD: PN length=%u", ctx->pn_len);
+	}
+
+	/* Parse Tx Context */
+	if (tb[NL80211_SMD_CTX_ATTR_DL]) {
+		if (nla_parse_nested(dl_tb, NL80211_SMD_CTX_DL_ATTR_MAX,
+				     tb[NL80211_SMD_CTX_ATTR_DL],
+				     smd_ctx_dl_policy)) {
+			wpa_printf(MSG_ERROR, "nl80211: SMD: Failed to parse Tx");
+			goto fail;
+		}
+
+		/* Valid TID bitmap */
+		if (dl_tb[NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP]) {
+			ctx->dl.valid_tid_bmap =
+				nla_get_u8(dl_tb[NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP]);
+			wpa_printf(MSG_DEBUG, "nl80211: SMD: valid tx_tids=0x%02x",
+				   ctx->dl.valid_tid_bmap);
+		}
+
+		/* Sequence numbers - nested array of u16 */
+		if (dl_tb[NL80211_SMD_CTX_DL_ATTR_SN]) {
+			struct nlattr *sn_attr;
+			int rem, tid;
+
+			ctx->valid_ctx_bmap |= SMD_CTX_VALID_DL_SN;
+
+			nla_for_each_nested(sn_attr,
+					    dl_tb[NL80211_SMD_CTX_DL_ATTR_SN],
+					    rem) {
+				tid = nla_type(sn_attr) - 1;
+				if (tid >= SMD_NUM_TIDS)
+					break;
+
+				ctx->dl.sn[tid] = nla_get_u16(sn_attr);
+				wpa_printf(MSG_DEBUG, "nl80211: SMD: Tx SN[%d]=%u",
+					   tid, ctx->dl.sn[tid]);
+			}
+		}
+
+		/* Packet Number - binary data */
+		if (dl_tb[NL80211_SMD_CTX_DL_ATTR_PN]) {
+			const u8 *pn_data = nla_data(dl_tb[NL80211_SMD_CTX_DL_ATTR_PN]);
+
+			os_memcpy(ctx->dl.pn, pn_data, ctx->pn_len);
+			wpa_hexdump(MSG_DEBUG, "nl80211: SMD: Tx PN",
+				    ctx->dl.pn, ctx->pn_len);
+		}
+
+		/* BA Parameters - nested per TID */
+		ba_attr = dl_tb[NL80211_SMD_CTX_DL_ATTR_BA_PARAMS];
+		if (ba_attr)
+			nl80211_parse_smd_ctx_ba_params(ba_attr, ctx->dl.ba,
+							&ctx->valid_ctx_bmap);
+	}
+
+	/* Parse Rx Context */
+	if (tb[NL80211_SMD_CTX_ATTR_UL]) {
+		if (nla_parse_nested(ul_tb, NL80211_SMD_CTX_UL_ATTR_MAX,
+				     tb[NL80211_SMD_CTX_ATTR_UL],
+				     smd_ctx_ul_policy)) {
+			wpa_printf(MSG_ERROR, "nl80211: SMD: Failed to parse Rx");
+			goto fail;
+		}
+
+		/* Valid TID bitmap */
+		if (ul_tb[NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP]) {
+			ctx->ul.valid_tid_bmap =
+				nla_get_u8(ul_tb[NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP]);
+			wpa_printf(MSG_DEBUG, "nl80211: SMD: valid rx_tids=0x%02x",
+				   ctx->ul.valid_tid_bmap);
+		}
+
+		/* Sequence numbers */
+		if (ul_tb[NL80211_SMD_CTX_UL_ATTR_SN]) {
+			struct nlattr *sn_attr;
+			int rem, tid;
+
+			ctx->valid_ctx_bmap |= SMD_CTX_VALID_UL_SN;
+			nla_for_each_nested(sn_attr,
+					    ul_tb[NL80211_SMD_CTX_UL_ATTR_SN],
+					    rem) {
+				tid = nla_type(sn_attr) - 1;
+				if (tid >= SMD_NUM_TIDS)
+					break;
+
+				ctx->ul.sn[tid] = nla_get_u16(sn_attr);
+				wpa_printf(MSG_DEBUG, "nl80211: SMD: Rx SN[%d]=%u",
+					   tid, ctx->ul.sn[tid]);
+			}
+		}
+
+		/* Packet Numbers - per TID */
+		if (ul_tb[NL80211_SMD_CTX_UL_ATTR_PN]) {
+			struct nlattr *pn_attr;
+			char buf[100];
+			int rem, tid;
+
+			nla_for_each_nested(pn_attr,
+					    ul_tb[NL80211_SMD_CTX_UL_ATTR_PN],
+					    rem) {
+				const u8 *pn_data = nla_data(pn_attr);
+
+				tid = nla_type(pn_attr) - 1;
+				if (tid >= SMD_NUM_TIDS)
+					break;
+
+				os_memcpy(ctx->ul.pn[tid], pn_data, ctx->pn_len);
+				os_snprintf(buf, sizeof(buf),
+					    "nl80211: SMD: Rx PN[%d]", tid);
+				wpa_hexdump(MSG_DEBUG, buf, ctx->ul.pn[tid],
+					    ctx->pn_len);
+			}
+		}
+
+		/* BA Parameters - nested per TID */
+		ba_attr = ul_tb[NL80211_SMD_CTX_UL_ATTR_BA_PARAMS];
+		if (ba_attr)
+			nl80211_parse_smd_ctx_ba_params(ba_attr, ctx->ul.ba,
+							&ctx->valid_ctx_bmap);
+	}
+
+	/* Parse QoS Context */
+	if (tb[NL80211_SMD_CTX_ATTR_QOS]) {
+		/* TODO: Parse QoS data. For now, mark as valid if present */
+		ctx->valid_ctx_bmap |= SMD_CTX_VALID_QOS;
+	}
+
+	/* Vendor context */
+	if (vendor_ctx_len) {
+		const u8 *vendor_data = nla_data(tb[NL80211_SMD_CTX_ATTR_VENDOR]);
+
+		os_memcpy(ctx->vendor_ctx, vendor_data, vendor_ctx_len);
+		ctx->vendor_ctx_len = vendor_ctx_len;
+	}
+
+	wpa_printf(MSG_INFO, "nl80211: SMD: Context parsed successfully, "
+		   "valid_context=0x%02x tx_tids=0x%02x rx_tids=0x%02x",
+		   ctx->valid_ctx_bmap, ctx->dl.valid_tid_bmap,
+		   ctx->ul.valid_tid_bmap);
+	return ctx;
+
+fail:
+	if (ctx)
+		os_free(ctx);
+	return NULL;
+}
+#endif /* CONFIG_IEEE80211BN */
+
 
 static void mlme_event_mgmt(struct i802_bss *bss, struct nlattr *freq,
 			    struct nlattr *bitrate, struct nlattr *sig,
 			    const u8 *frame, size_t len, struct nlattr *rx_cu_param,
 			    int link_id, struct nlattr *link_removal_param,
-			    struct nlattr *ttlm_expec_dur_update_param)
+			    struct nlattr *ttlm_expec_dur_update_param,
+			    struct nlattr *smd_ctx_attr)
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	const struct ieee80211_mgmt *mgmt;
@@ -1901,6 +2198,10 @@ static void mlme_event_mgmt(struct i802_bss *bss, struct nlattr *freq,
 
 	event.rx_mgmt.ctx = bss->ctx;
 	event.rx_mgmt.link_id = link_id;
+
+#ifdef CONFIG_IEEE80211BN
+	event.rx_mgmt.smd_ctx = nl80211_parse_smd_ctx(smd_ctx_attr);
+#endif /* CONFIG_IEEE80211BN */
 
 	wpa_supplicant_event(drv->ctx, EVENT_RX_MGMT, &event);
 }
@@ -2239,7 +2540,8 @@ static void mlme_event(struct i802_bss *bss,
 		       struct nlattr *wmm, struct nlattr *req_ie,
 		       struct nlattr *rx_cu_param, struct nlattr *link,
 		       struct nlattr *link_removal_param,
-		       struct nlattr *ttlm_expec_dur_update_param)
+		       struct nlattr *ttlm_expec_dur_update_param,
+		       struct nlattr *smd_ctx_attr)
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	u16 stype = 0, auth_type = 0;
@@ -2340,7 +2642,7 @@ static void mlme_event(struct i802_bss *bss,
 		mlme_event_mgmt(bss, freq, bitrate, sig, nla_data(frame),
 				nla_len(frame), rx_cu_param, link_id,
 				link_removal_param,
-				ttlm_expec_dur_update_param);
+				ttlm_expec_dur_update_param, smd_ctx_attr);
 		break;
 	case NL80211_CMD_FRAME_TX_STATUS:
 		mlme_event_mgmt_tx_status(bss, cookie, nla_data(frame),
@@ -5779,7 +6081,7 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 			   tb[NL80211_ATTR_STA_WME],
 			   tb[NL80211_ATTR_REQ_IE], NULL,
 			   tb[NL80211_ATTR_MLO_LINK_ID], NULL,
-			   NULL);
+			   NULL, tb[NL80211_ATTR_SMD_CTX]);
 		break;
 	case NL80211_CMD_CONNECT:
 	case NL80211_CMD_ROAM:
@@ -6160,7 +6462,7 @@ int process_bss_event(struct nl_msg *msg, void *arg)
 			   tb[NL80211_ATTR_RXMGMT_CRITICAL_UPDATE],
 			   tb[NL80211_ATTR_MLO_LINK_ID],
 			   tb[NL80211_ATTR_RXMGMT_LINK_REMOVAL_UPDATE],
-			   tb[NL80211_ATTR_ADVERTISED_TTLM_EXPEC_DUR_UPDATE]);
+			   tb[NL80211_ATTR_ADVERTISED_TTLM_EXPEC_DUR_UPDATE], tb[NL80211_ATTR_SMD_CTX]);
 		break;
 	case NL80211_CMD_UNEXPECTED_FRAME:
 		nl80211_spurious_frame(bss, tb, 0);

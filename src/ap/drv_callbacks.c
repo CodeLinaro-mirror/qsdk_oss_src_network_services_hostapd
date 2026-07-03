@@ -2351,6 +2351,7 @@ static int hostapd_mgmt_rx(struct hostapd_data *hapd, struct rx_mgmt *rx_mgmt)
 	fi.freq = rx_mgmt->freq;
 	fi.datarate = rx_mgmt->datarate;
 	fi.ssi_signal = rx_mgmt->ssi_signal;
+	fi.smd_ctx = rx_mgmt->smd_ctx;
 
 	if (hapd == HAPD_BROADCAST) {
 		size_t i;
