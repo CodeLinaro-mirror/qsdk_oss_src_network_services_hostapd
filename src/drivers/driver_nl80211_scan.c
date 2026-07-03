@@ -1058,6 +1058,23 @@ static void nl80211_check_bss_status(struct wpa_driver_nl80211_data *drv,
 		clear_state_mismatch(drv, r->bssid);
 	} else if (is_sta_interface(drv->nlmode) &&
 		   !ether_addr_equal(drv->bssid, r->bssid)) {
+		if (drv->sta_mlo_info.valid_links) {
+			int i;
+
+			for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+				if (!(drv->sta_mlo_info.valid_links & BIT(i)))
+					continue;
+				if (ether_addr_equal(
+					    drv->sta_mlo_info.links[i].bssid,
+					    r->bssid)) {
+					wpa_printf(MSG_DEBUG,
+						   "nl80211: " MACSTR " is a valid MLO link BSSID, not a mismatch",
+						   MAC2STR(r->bssid));
+					return;
+				}
+			}
+		}
+
 		wpa_printf(MSG_DEBUG,
 			   "nl80211: Local state (associated with " MACSTR
 			   ") does not match with BSS state",

@@ -17656,6 +17656,14 @@ wpa_driver_nl80211_uhr_reconfig_req(void *priv,
 			goto nla_fail;
 	}
 
+	if (params->is_preferred_target) {
+		if (nla_put_flag(msg, NL80211_ATTR_SMD_PREFERRED_TARGET))
+			goto nla_fail;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: SMD_PREPARE marked as preferred roam target with"
+			   MACSTR, MAC2STR(params->target_mld_addr));
+	}
+
 	ret = send_and_recv_resp(drv, msg, NULL, NULL);
 	msg = NULL;
 	if (ret) {

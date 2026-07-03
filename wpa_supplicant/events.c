@@ -2619,6 +2619,9 @@ int wpa_supplicant_connect(struct wpa_supplicant *wpa_s,
 		wpa_supplicant_state_txt(wpa_s->wpa_state),
 		ssid, wpa_s->current_ssid);
 
+	if (smd_should_suppress_connect(wpa_s, selected))
+		return 0;
+
 	/*
 	 * Do not trigger new association unless the BSSID has changed or if
 	 * reassociation is requested. If we are in process of associating with
