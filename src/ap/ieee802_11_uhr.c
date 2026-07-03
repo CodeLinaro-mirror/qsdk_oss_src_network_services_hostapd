@@ -2425,9 +2425,9 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 	*pos++ = WLAN_ACTION_PROTECTED_UHR;
 	*pos++ = 1;
 	*pos++ = dialog_token;
-	*pos++ = 0; // PREP
+	*pos++ = 0; /* Type = ST Prepration */
         /* Status Code (2, LE) */
-        WPA_PUT_LE16(pos, 0);
+        WPA_PUT_LE16(pos, status_code); /* Status Code */;
         pos += 2;
 	*pos++ = status_list_count;
 
@@ -2901,7 +2901,7 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 			1 +		// Action
 			1 + 		// Dialog Token
 			1 + 		// Type
-			2 +		// Status
+			2 +		// Status Code
 			1 + 		// Count
 			(3 * n) +	// Reconfiguration Status List
 			kde_len +	// Group Keys
@@ -2932,11 +2932,8 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 	*pos++ = 1;
 	*pos++ = frame[26];
 
-	// Type
-	*pos++ = 1;
-
-	/* Status Code (2, LE) */
-	WPA_PUT_LE16(pos, 0);
+	*pos++ = 1; /* Type = ST Execution */
+	WPA_PUT_LE16(pos, WLAN_STATUS_SUCCESS); /* Status Code */
 	pos += 2;
 
 	// Count

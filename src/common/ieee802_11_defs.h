@@ -1353,6 +1353,7 @@ struct ieee80211_mgmt {
 					u8 action; /* Protected UHR */
 					u8 dialog_token;
 					u8 type;
+					le16 status_code;
 					u8 count;
 					u8 variable[];
 				} STRUCT_PACKED uhr_link_reconf_resp;
