@@ -678,6 +678,7 @@ void uhr_tgt_st_prep_timer_cleanup(void *eloop_ctx, void *timeout_ctx)
 			       /* Clear timer reference */
                                sta->smd_info.uhr_target_prep_timer = 0;
                                sta->smd_info.tgt_prep_timer_ctx = NULL;
+                               sta->smd_info.tgt_prep_timer_hapd = NULL;
 
 			       if (state == SMD_STA_ST_EXEC_DONE)
 				       continue;
@@ -727,6 +728,7 @@ void uhr_tgt_start_st_prep_timer(struct hostapd_data *hapd,
                               hapd, addr_copy);
        sta->smd_info.uhr_target_prep_timer = 1;
        sta->smd_info.tgt_prep_timer_ctx = addr_copy;
+       sta->smd_info.tgt_prep_timer_hapd = hapd;
 
        wpa_printf(MSG_DEBUG,
                   "UHR Target AP: Started prep timer for " MACSTR " (%u sec)",
@@ -745,15 +747,19 @@ void uhr_tgt_cancel_st_prep_timer(struct hostapd_data *hapd,
                                         const u8 *sta_addr)
 {
        struct sta_info *sta;
+       struct hostapd_data *timer_hapd;
 
        sta = ap_get_sta(hapd, sta_addr);
        if (!sta || !sta->smd_info.uhr_target_prep_timer)
                return;
 
-       eloop_cancel_timeout(uhr_tgt_st_prep_timer_cleanup, hapd,
+       timer_hapd = sta->smd_info.tgt_prep_timer_hapd
+		    ? sta->smd_info.tgt_prep_timer_hapd : hapd;
+       eloop_cancel_timeout(uhr_tgt_st_prep_timer_cleanup, timer_hapd,
                             sta->smd_info.tgt_prep_timer_ctx);
        os_free(sta->smd_info.tgt_prep_timer_ctx);
        sta->smd_info.tgt_prep_timer_ctx = NULL;
+       sta->smd_info.tgt_prep_timer_hapd = NULL;
        sta->smd_info.uhr_target_prep_timer = 0;
 
        wpa_printf(MSG_DEBUG,

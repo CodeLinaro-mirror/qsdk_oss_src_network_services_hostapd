@@ -227,6 +227,7 @@ struct smd_info {
 	struct smd_roam_ap_info *ap_list;  /* List of potential target APs */
 	int uhr_target_prep_timer; /* Target AP prep timer */
 	u8 *tgt_prep_timer_ctx; /* heap-allocated sta_addr copy passed to eloop */
+	struct hostapd_data *tgt_prep_timer_hapd; /* assoc-link hapd at timer registration */
 	enum tgt_smd_roam_state state; /* non-AP STA state in Tgt AP */
 	bool flag;
 };
