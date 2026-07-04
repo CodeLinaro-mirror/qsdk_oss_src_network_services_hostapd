@@ -8192,7 +8192,7 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			break;
 
 		wpa_msg(wpa_s, MSG_INFO,
-			"%s freq=%d link_id=%d ht_enabled=%d ch_offset=%d ch_width=%s cf1=%d cf2=%d mcst=%u",
+			"%s freq=%d link_id=%d ht_enabled=%d ch_offset=%d ch_width=%s cf1=%d cf2=%d mcst=%u punct_bitmap=0x%04x",
 			event == EVENT_LINK_CH_SWITCH ?
 			WPA_EVENT_LINK_CHANNEL_SWITCH :
 			WPA_EVENT_LINK_CHANNEL_SWITCH_STARTED,
@@ -8203,7 +8203,8 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			channel_width_to_string(data->ch_switch.ch_width),
 			data->ch_switch.cf1,
 			data->ch_switch.cf2,
-			data->ch_switch.mcst);
+			data->ch_switch.mcst,
+			data->ch_switch.punct_bitmap);
 
 		if (wpas_sta_csa_handle_cac_start(wpa_s, event, data, true))
 			break;
@@ -8238,7 +8239,7 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			break;
 
 		wpa_msg(wpa_s, MSG_INFO,
-			"%s freq=%d ht_enabled=%d ch_offset=%d ch_width=%s cf1=%d cf2=%d mcst=%u",
+			"%s freq=%d ht_enabled=%d ch_offset=%d ch_width=%s cf1=%d cf2=%d mcst=%u punct_bitmap=0x%04x",
 			event == EVENT_CH_SWITCH ? WPA_EVENT_CHANNEL_SWITCH :
 			WPA_EVENT_CHANNEL_SWITCH_STARTED,
 			data->ch_switch.freq,
@@ -8247,7 +8248,8 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			channel_width_to_string(data->ch_switch.ch_width),
 			data->ch_switch.cf1,
 			data->ch_switch.cf2,
-			data->ch_switch.mcst);
+			data->ch_switch.mcst,
+			data->ch_switch.punct_bitmap);
 
 		if (wpas_sta_csa_handle_cac_start(wpa_s, event, data, false))
 			break;
