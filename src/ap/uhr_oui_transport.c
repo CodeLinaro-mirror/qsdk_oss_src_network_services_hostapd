@@ -119,8 +119,12 @@ int uhr_oui_clone_peer(struct uhr_oui_ctx *ctx,
 	if (!ctx || !existing_mac || !new_mac)
 		return -1;
 
-	if (uhr_oui_get_peer(ctx, new_mac))
+	if (uhr_oui_get_peer(ctx, new_mac)) {
+		wpa_printf(MSG_DEBUG,
+			   "SMD OUI: " MACSTR " already in smd_partner list, skipping clone",
+			   MAC2STR(new_mac));
 		return 0;
+	}
 
 	existing = uhr_oui_get_peer(ctx, existing_mac);
 	if (!existing) {
