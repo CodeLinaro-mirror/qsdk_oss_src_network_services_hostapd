@@ -783,8 +783,8 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 	}
 
 	if (ext_feature_isset(ext_features, len,
-			      NL80211_EXT_FEATURE_IEEE8021X_AUTH))
-		capa->flags2 |= WPA_DRIVER_FLAGS2_802_1X_AUTH;
+			      NL80211_EXT_FEATURE_PROBE_RESP_TMPL_OFFLOAD))
+		capa->flags2 |= WPA_DRIVER_FLAGS2_PROBE_RESP_TMPL_OFFLOAD;
 
 	if (ext_feature_isset(ext_features, len,
 			      NL80211_EXT_FEATURE_SMD_SUPPORT_AP))

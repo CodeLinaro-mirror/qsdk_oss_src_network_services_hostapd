@@ -3404,6 +3404,10 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_OKC_PMKID_IN_ASSOC	0x0000004000000000ULL
 /** Driver supports parallel hardware scan across MLD links */
 #define WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN             0x0004000000000000ULL
+/** Driver supports solicited Probe Response template offload. The driver
+ * caches the NL80211_ATTR_PROBE_RESP template and fills in the destination
+ * address when responding to probe requests. */
+#define WPA_DRIVER_FLAGS2_PROBE_RESP_TMPL_OFFLOAD      0x0008000000000000ULL
 	u64 flags2;
 /** Driver supports Security Profile element (IEEE P802.11bn/D2.0, 9.4.2.369
  * and 37.33) handling */

@@ -2965,11 +2965,48 @@ skip_mu_cap_war:
 }
 
 
-static u8 * hostapd_probe_resp_offloads(struct hostapd_data *hapd,
-					size_t *resp_len)
+static u8 *hostapd_probe_resp_build_template(struct hostapd_data *hapd,
+					       size_t *resp_len,
+					       bool zero_da)
 {
 	struct probe_resp_params params;
 
+	os_memset(&params, 0, sizeof(params));
+	params.req = NULL;
+	params.is_p2p = false;
+	params.known_bss = NULL;
+	params.known_bss_len = 0;
+	params.mld_ap = NULL;
+	params.mld_info = NULL;
+
+	hostapd_gen_probe_resp(hapd, &params);
+	if (!params.resp) {
+		hostapd_free_probe_resp_params(&params);
+		*resp_len = 0;
+		return NULL;
+	}
+
+	if (zero_da)
+		os_memset(params.resp->da, 0, ETH_ALEN);
+
+	/* TODO: Avoid passing these through struct hostapd_data */
+	if (params.csa_pos)
+		hapd->cs_c_off_proberesp = params.csa_pos - (u8 *) params.resp;
+	if (params.ecsa_pos)
+		hapd->cs_c_off_ecsa_proberesp = params.ecsa_pos -
+			(u8 *) params.resp;
+#ifdef CONFIG_IEEE80211AX
+	if (params.cca_pos)
+		hapd->cca_c_off_proberesp = params.cca_pos - (u8 *) params.resp;
+#endif /* CONFIG_IEEE80211AX */
+
+	*resp_len = params.resp_len;
+	return (u8 *) params.resp;
+}
+
+static u8 * hostapd_probe_resp_offloads(struct hostapd_data *hapd,
+					size_t *resp_len)
+{
 	/* check probe response offloading caps and print warnings */
 	if (!(hapd->iface->drv_flags & WPA_DRIVER_FLAGS_PROBE_RESP_OFFLOAD))
 		return NULL;
@@ -2999,31 +3036,7 @@ static u8 * hostapd_probe_resp_offloads(struct hostapd_data *hapd,
 			   "this");
 
 	/* Generate a Probe Response template for the non-P2P case */
-	os_memset(&params, 0, sizeof(params));
-	params.req = NULL;
-	params.is_p2p = false;
-	params.known_bss = NULL;
-	params.known_bss_len = 0;
-	params.mld_ap = NULL;
-	params.mld_info = NULL;
-
-	hostapd_gen_probe_resp(hapd, &params);
-	*resp_len = params.resp_len;
-	if (!params.resp)
-		return NULL;
-
-	/* TODO: Avoid passing these through struct hostapd_data */
-	if (params.csa_pos)
-		hapd->cs_c_off_proberesp = params.csa_pos - (u8 *) params.resp;
-	if (params.ecsa_pos)
-		hapd->cs_c_off_ecsa_proberesp = params.ecsa_pos -
-			(u8 *) params.resp;
-#ifdef CONFIG_IEEE80211AX
-	if (params.cca_pos)
-		hapd->cca_c_off_proberesp = params.cca_pos - (u8 *) params.resp;
-#endif /* CONFIG_IEEE80211AX */
-
-	return (u8 *) params.resp;
+	return hostapd_probe_resp_build_template(hapd, resp_len, false);
 }
 
 #endif /* NEED_AP_MLME */
@@ -4185,6 +4198,17 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	tail_len = tailpos > tail ? tailpos - tail : 0;
 
 	resp = hostapd_probe_resp_offloads(hapd, &resp_len);
+	/* Template-offload path: build template when the driver supports
+	 * fast-path probe response TX but not full firmware offload.
+	 */
+	if (!resp &&
+	    (hapd->iface->drv_flags2 &
+	     WPA_DRIVER_FLAGS2_PROBE_RESP_TMPL_OFFLOAD)) {
+		wpa_printf(MSG_DEBUG,
+			   "probe_resp_tmpl: driver supports template offload for %s",
+			   hapd->conf->iface);
+		resp = hostapd_probe_resp_build_template(hapd, &resp_len, true);
+	}
 #endif /* NEED_AP_MLME */
 
 	/* If key management offload is enabled, configure PSK to the driver. */
