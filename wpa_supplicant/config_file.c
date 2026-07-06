@@ -2067,8 +2067,11 @@ int wpa_config_write(const char *name, struct wpa_config *config)
 	if (!ret)
 		ret = chmod(tmp_name, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 #endif /* ANDROID */
-	if (!ret)
-		ret = rename(tmp_name, orig_name);
+	if (!ret && rename(tmp_name, orig_name) != 0) {
+		/* A /tmp fallback cannot be renamed across filesystems. */
+		if (!fallback || errno != EXDEV)
+			ret = -1;
+	}
 	if (ret && !fallback)
 		unlink(tmp_name);
 
