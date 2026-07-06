@@ -10149,6 +10149,10 @@ enum nl80211_smd_ctx_type {
 	NL80211_SMD_CTX_TYPE_EXEC,
 };
 
+/**
+ * @NL80211_SMD_CTX_BA_ATTR_POLICY: Required (u8) attribute to report
+ *	BA policy.
+ */
 enum nl80211_smd_ctx_ba_param {
 	__NL80211_SMD_CTX_BA_ATTR_INVALID,
 	NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE,
