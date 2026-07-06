@@ -19244,8 +19244,7 @@ static int nl80211_put_smd_ba_params(struct nl_msg *msg, int tid,
 
 	if (nla_put_u16(msg, NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE,
 			ba->buffer_size) ||
-	    (ba->ba_policy &&
-	     nla_put_flag(msg, NL80211_SMD_CTX_BA_ATTR_POLICY)) ||
+	    nla_put_u8(msg, NL80211_SMD_CTX_BA_ATTR_POLICY, ba->ba_policy) ||
 	    (ba->amsdu_supported &&
 	     nla_put_flag(msg, NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT)) ||
 	    nla_put_u16(msg, NL80211_SMD_CTX_BA_ATTR_TIMEOUT, ba->timeout) ||

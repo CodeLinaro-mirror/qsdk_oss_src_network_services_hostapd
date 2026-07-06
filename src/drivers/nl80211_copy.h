@@ -9342,7 +9342,7 @@ enum nl80211_smd_ctx_type {
  * @NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE: Required (u16) attribute to report
  *	BA buffer size.
  *
- * @NL80211_SMD_CTX_BA_ATTR_POLICY: Required (flag) attribute to report
+ * @NL80211_SMD_CTX_BA_ATTR_POLICY: Required (u8) attribute to report
  *	BA policy.
  *
  * @NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT: Required (flag) attribute to report
