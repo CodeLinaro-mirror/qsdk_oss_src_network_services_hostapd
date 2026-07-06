@@ -241,6 +241,10 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 #ifdef CONFIG_IEEE80211AX
 	os_memset(&bss->he_phy_capab, 0, sizeof(bss->he_phy_capab));
 	bss->he_phy_capab_mask = 0;
+	os_memset(bss->he_tx_mcs_nss_set, 0xff,
+		  sizeof(bss->he_tx_mcs_nss_set));
+	os_memset(bss->he_rx_mcs_nss_set, 0xff,
+		  sizeof(bss->he_rx_mcs_nss_set));
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
 	os_memset(bss->eht_tx_mcs_nss_set, 0xff, sizeof(bss->eht_tx_mcs_nss_set));

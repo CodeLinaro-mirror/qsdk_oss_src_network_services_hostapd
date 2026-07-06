@@ -38,6 +38,18 @@ static inline bool hostapd_eht_mcs_nss_set_is_set(
 }
 #endif /* CONFIG_IEEE80211BE */
 
+#define HE_MCS_NSS_MAP_UNSET 0xffffffffU
+#define HE_MCS_NSS_SET 2
+
+#ifdef CONFIG_IEEE80211AX
+static inline bool hostapd_he_mcs_nss_set_is_set(
+	const u32 mcs_nss_set[HE_MCS_NSS_SET])
+{
+	return mcs_nss_set[0] != HE_MCS_NSS_MAP_UNSET ||
+		mcs_nss_set[1] != HE_MCS_NSS_MAP_UNSET;
+}
+#endif /* CONFIG_IEEE80211AX */
+
 enum macaddr_acl {
 	ACCEPT_UNLESS_DENIED = 0,
 	DENY_UNLESS_ACCEPTED = 1,
@@ -1423,6 +1435,10 @@ struct hostapd_bss_config {
 	u16 eht_tx_mcs_nss_set[EHT_MCS_NSS_SET];
 	u16 eht_rx_mcs_nss_set[EHT_MCS_NSS_SET];
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_IEEE80211AX
+	u32 he_tx_mcs_nss_set[HE_MCS_NSS_SET];
+	u32 he_rx_mcs_nss_set[HE_MCS_NSS_SET];
+#endif /* CONFIG_IEEE80211AX */
 
 #ifdef CONFIG_IEEE80211BN
 	/* AP side SMD configuration */
