@@ -2802,6 +2802,10 @@ void ap_sta_cleanup_all(struct hostapd_data *ohapd, struct sta_info *osta,
 	hostapd_drv_sta_remove(ohapd, osta->addr);
 	if (ap_sta_is_mld(ohapd, osta)) {
 		for_each_mld_link(lhapd, ohapd) {
+
+			if (lhapd == ohapd)
+				continue;
+
 			lsta = ap_get_sta(lhapd, osta->addr);
 
 			if (lsta == curr_sta)
@@ -2812,7 +2816,9 @@ void ap_sta_cleanup_all(struct hostapd_data *ohapd, struct sta_info *osta,
 				ap_free_sta(lhapd, lsta);
 
 		}
-	} else if (osta != curr_sta) {
-		ap_free_sta(ohapd, osta);
 	}
+
+	if (osta != curr_sta)
+		 ap_free_sta(ohapd, osta);
+
 }
