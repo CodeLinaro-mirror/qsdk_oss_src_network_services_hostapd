@@ -5833,13 +5833,55 @@ int hostapd_get_wds_mld_sta_uid(struct hostapd_data *hapd, struct sta_info *sta)
 	if (!hapd->conf->mld_ap)
 		return -1;
 
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		int uid_offset = -1;
+		u32 uid_base = WDS_STA_UID_REPURPOSED_BASE +
+			       (hapd->mld_link_id *
+				WDS_STA_UID_REPURPOSED_PER_LINK);
+
+		for (i = 0; i < WDS_STA_UID_REPURPOSED_WORDS; i++) {
+			if (hapd->wds_sta_uid_repurpose[i] == (u32) -1)
+				continue;
+
+			for (j = 0; j < 32; j++) {
+				int idx = i * 32 + j;
+
+				if (idx >=
+				    WDS_STA_UID_REPURPOSED_PER_LINK)
+					break;
+
+				if (!(hapd->wds_sta_uid_repurpose[i] & BIT(j))) {
+					uid_offset = idx;
+					break;
+				}
+			}
+
+			if (uid_offset >= 0)
+				break;
+		}
+		if (uid_offset < 0)
+			return -1;
+
+		aid = uid_base + uid_offset;
+		sta->wds_mld_uid = aid;
+		hapd->wds_sta_uid_repurpose[i] |= BIT(j);
+
+		wpa_printf(MSG_DEBUG, "  new UID %d", sta->wds_mld_uid);
+		return 0;
+	}
+#endif
+
 	link_bss = hostapd_mld_get_first_bss(hapd);
 	if (!link_bss)
 		link_bss = hapd;
 
 #ifdef CONFIG_QCN_EXTN
 	if (hostapd_is_repurpose_disabled_11be_extn(link_bss->conf))
-		link_bss = hapd;
+		link_bss = hostapd_get_non_repurposed_link_of_mld_extn(hapd);
+
+	if (!link_bss)
+		return -1;
 #endif
 
 	for (i = 0; i < AID_WORDS; i++) {
@@ -11801,9 +11843,6 @@ skip_update:
 		sta->pending_wds_enable = 0;
 		sta->flags |= WLAN_STA_WDS;
 		set_sta_flag_to_partner_links(hapd, sta);
-#ifdef CONFIG_QCN_EXTN
-		if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
-#endif /* CONFIG_QCN_EXTN */
 		if (hapd->conf->mld_ap &&
 		    hostapd_get_wds_mld_sta_uid(hapd, sta) < 0) {
 			wpa_printf(MSG_DEBUG, "No room for uid"
@@ -11811,9 +11850,6 @@ skip_update:
 				   MACSTR, MAC2STR(sta->addr));
 			return;
 		}
-#ifdef CONFIG_QCN_EXTN
-		}
-#endif /* CONFIG_QCN_EXTN */
 	}
 
 	/* WPS not supported on backhaul BSS. Disable 4addr mode on fronthaul */
@@ -11836,11 +11872,6 @@ skip_update:
 		} else {
 			aid = sta->aid;
 		}
-
-#ifdef CONFIG_QCN_EXTN
-		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
-			aid = sta->aid;
-#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_DEBUG, "Reenable 4-address WDS mode for STA "
 			   MACSTR " (aid %u)",
@@ -12244,12 +12275,9 @@ void ieee802_11_rx_from_unknown(struct hostapd_data *hapd, const u8 *src,
 			wpa_printf(MSG_DEBUG, "AP or Sta is not WDS_IE enabled peer\n");
 			return;
 		}
-
-		if (hapd->conf->mld_ap &&
-		    !hostapd_is_repurpose_disabled_11be_extn(hapd->conf) && wds) {
-#else
-		if (hapd->conf->mld_ap && wds) {
 #endif /* CONFIG_QCN_EXTN */
+
+		if (hapd->conf->mld_ap && wds) {
 			if (hostapd_get_wds_mld_sta_uid(hapd, sta) < 0) {
 				wpa_printf(MSG_DEBUG, "No room for uid"
 					   "to enable 4-address WDS mode for STA "

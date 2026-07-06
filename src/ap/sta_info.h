@@ -242,7 +242,7 @@ struct sta_info {
 	be32 ipaddr;
 	struct dl_list ip6addr; /* list head for struct ip6addr */
 	u16 aid; /* STA's unique AID (1 .. 2007) or 0 if not yet assigned */
-	u16 wds_mld_uid; /* STA's vlan ifname unique id (1 .. 2007) or 0 if not */
+	u16 wds_mld_uid; /* STA's vlan ifname unique id (1..2007 non-repurposed, >= 3001 repurposed) or 0 if not */
 	u16 disconnect_reason_code; /* RADIUS server override */
 	u32 flags; /* Bitfield of WLAN_STA_* */
 	u16 capability;

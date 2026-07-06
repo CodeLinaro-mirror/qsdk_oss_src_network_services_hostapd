@@ -405,6 +405,14 @@ struct hostapd_data {
 	u32 sta_aid[AID_WORDS];
 	u32 wds_sta_uid[AID_WORDS];
 
+#ifdef CONFIG_QCN_EXTN
+#define WDS_STA_UID_REPURPOSED_BASE 3001
+#define WDS_STA_UID_REPURPOSED_PER_LINK 1000
+#define WDS_STA_UID_REPURPOSED_WORDS \
+	((WDS_STA_UID_REPURPOSED_PER_LINK + 31) / 32)
+	u32 wds_sta_uid_repurpose[WDS_STA_UID_REPURPOSED_WORDS];
+#endif /* CONFIG_QCN_EXTN */
+
 	const struct wpa_driver_ops *driver;
 	void *drv_priv;
 
