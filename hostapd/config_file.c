@@ -793,10 +793,35 @@ static int hostapd_parse_eht_mcs_nss_set(const char *pos,
 		}
 	}
 	os_memcpy(mcs_nss_set, tmp, sizeof(tmp));
+
 	return 0;
 }
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211AX
+static int hostapd_parse_he_mcs_nss_set(const char *pos,
+					 u32 mcs_nss_set[HE_MCS_NSS_SET],
+					 const char *config_name)
+{
+	u32 tmp[HE_MCS_NSS_SET];
+	int i;
+
+	if (sscanf(pos, "%x %x", &tmp[0], &tmp[1]) != 2) {
+		wpa_printf(MSG_ERROR, "%s: expected 2 hex values", config_name);
+		return -1;
+	}
+	for (i = 0; i < HE_MCS_NSS_SET; i++) {
+		if (tmp[i] != HE_MCS_NSS_MAP_UNSET && tmp[i] > 0xffff) {
+			wpa_printf(MSG_ERROR,
+				   "%s: slot %d value 0x%x out of range (use 0x0000-0xffff or 0xffffffff)",
+				   config_name, i, tmp[i]);
+			return -1;
+		}
+	}
+	os_memcpy(mcs_nss_set, tmp, sizeof(tmp));
+	return 0;
+}
+#endif /* CONFIG_IEEE80211AX */
 
 static int hostapd_parse_intlist(int **int_list, char *val)
 {
@@ -4341,6 +4366,22 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->group_size = group_size;
 	} else if (os_strcmp(buf, "mbssid_max") == 0) {
 		conf->mbssid_max = atoi(pos);
+	} else if (os_strcmp(buf, "he_tx_mcs_nss_set") == 0) {
+		if (hostapd_parse_he_mcs_nss_set(pos, bss->he_tx_mcs_nss_set,
+						 "he_tx_mcs_nss_set")) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid he_tx_mcs_nss_set '%s'",
+				   line, pos);
+			return 1;
+		}
+	} else if (os_strcmp(buf, "he_rx_mcs_nss_set") == 0) {
+		if (hostapd_parse_he_mcs_nss_set(pos, bss->he_rx_mcs_nss_set,
+						 "he_rx_mcs_nss_set")) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid he_rx_mcs_nss_set '%s'",
+				   line, pos);
+			return 1;
+		}
 #endif /* CONFIG_IEEE80211AX */
 	} else if (os_strcmp(buf, "max_listen_interval") == 0) {
 		bss->max_listen_interval = atoi(pos);

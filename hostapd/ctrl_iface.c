@@ -2181,6 +2181,11 @@ he_rollback:
 			hapd->conf->he_phy_capab = old_he_phy_capab;
 			hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
 			return -1;
+		} else if (os_strcasecmp(cmd, "he_tx_mcs_nss_set") == 0 ||
+			   os_strcasecmp(cmd, "he_rx_mcs_nss_set") == 0) {
+			if (hostapd_tx_bss_only(hapd, cmd) < 0)
+				return -1;
+			return hostapd_reload_bss_only(hapd);
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
 		} else if (os_strcasecmp(cmd, "bss_eht_mu_mimo") == 0) {
@@ -2916,6 +2921,22 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 
 		res = os_snprintf(buf, buflen, "he_6ghz_min_rate = %u\n",
 				  hapd->iconf->he_6ghz_min_rate);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "he_tx_mcs_nss_set") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "he_tx_mcs_nss_set = 0x%04x(<=80 mhz) 0x%04x(160 mhz)\n",
+				  hapd->conf->he_tx_mcs_nss_set[0],
+				  hapd->conf->he_tx_mcs_nss_set[1]);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "he_rx_mcs_nss_set") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "he_rx_mcs_nss_set = 0x%04x(<=80 mhz) 0x%04x(160 mhz)\n",
+				  hapd->conf->he_rx_mcs_nss_set[0],
+				  hapd->conf->he_rx_mcs_nss_set[1]);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;

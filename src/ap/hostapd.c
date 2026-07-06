@@ -6534,6 +6534,18 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 				   HE_PHY_BSS_OVR_BSR_SUPPORT,
 				   "bss_he_bsr_support") < 0)
 		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hostapd_he_mcs_nss_set_is_set(
+					hapd->conf->he_tx_mcs_nss_set),
+				   "he_tx_mcs_nss_set") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hostapd_he_mcs_nss_set_is_set(
+					hapd->conf->he_rx_mcs_nss_set),
+				   "he_rx_mcs_nss_set") < 0)
+		return -1;
 #endif /* CONFIG_IEEE80211AX */
 
 #ifdef CONFIG_IEEE80211BE
