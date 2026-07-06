@@ -1693,16 +1693,6 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 			break;
 	}
 
-	if (hapd->iconf->ieee80211ac) {
-		hapd->iconf->vht_capab &= ~VHT_CAP_SUPP_CHAN_WIDTH_MASK;
-		if (chwidth == CONF_OPER_CHWIDTH_160MHZ)
-			hapd->iconf->vht_capab |=
-				VHT_CAP_SUPP_CHAN_WIDTH_160MHZ;
-		else if (chwidth == CONF_OPER_CHWIDTH_80P80MHZ)
-			hapd->iconf->vht_capab |=
-				VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ;
-	}
-
 	is_dfs = ieee80211_is_dfs(freq, hapd->iface->hw_features,
 				  hapd->iface->num_hw_features);
 
