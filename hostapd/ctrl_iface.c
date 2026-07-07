@@ -2383,6 +2383,19 @@ eht_generic_rollback:
 	return ret;
 }
 
+static int hostapd_ctrl_iface_get_scan_status(struct hostapd_data *hapd,
+					   char *buf, size_t buflen)
+{
+	struct i802_bss *bss = hapd->drv_priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	int scanning;
+
+	scanning = (drv->scan_state == SCAN_STARTED ||
+		    drv->scan_state == SCAN_REQUESTED) ? 1 : 0;
+
+	return os_snprintf(buf, buflen, "scanning: %d\n", scanning);
+}
+
 static int hostapd_get_vendor_elements(struct hostapd_data *hapd, char *buf, size_t buflen)
 {
 	struct hostapd_data *tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
@@ -2718,6 +2731,8 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+	} else if (os_strcmp(cmd, "scan_status") == 0) {
+		return hostapd_ctrl_iface_get_scan_status(hapd, buf, buflen);
 	} else if (os_strcmp(cmd, "acl_deny_wait_time") == 0) {
 		res = os_snprintf(buf, buflen, "%u\n",
 				  hapd->conf->acl_deny_wait_time);
