@@ -390,6 +390,7 @@ struct eht_phy_capabilities_info {
 	u8 eht_dl_ofdma_txbf;
 	u8 eht_sup_mcs15_in_mru;
 	u8 eht_mcs14_dup_in_6ghz;
+	u8 eht_chwidth_320mhz_6g;
 };
 #endif /* CONFIG_IEEE80211BE */
 
@@ -555,6 +556,7 @@ struct hostapd_bss_config {
 #define EHT_PHY_BSS_OVR_DL_OFDMA_TXBF BIT(22)
 #define EHT_PHY_BSS_OVR_SUP_MCS15_IN_MRU BIT(23)
 #define EHT_PHY_BSS_OVR_MCS14_DUP_IN_6GHZ BIT(24)
+#define EHT_PHY_BSS_OVR_CHWIDTH_320MHZ_6G  BIT(25)
 	u32 eht_phy_capab_mask;
 #endif /* CONFIG_IEEE80211BE */
 

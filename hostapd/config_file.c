@@ -6013,6 +6013,17 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		bss->eht_phy_capab.eht_mcs14_dup_in_6ghz = val;
 		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_MCS14_DUP_IN_6GHZ;
+	} else if (os_strcmp(buf, "bss_eht_chwidth_320mhz_6g") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_chwidth_320mhz_6g %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_chwidth_320mhz_6g = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_CHWIDTH_320MHZ_6G;
 #ifdef CONFIG_IEEE80211BE
 	} else if (os_strcmp(buf, "enable_aal") == 0) {
 		bss->enable_aal = atoi(pos);
