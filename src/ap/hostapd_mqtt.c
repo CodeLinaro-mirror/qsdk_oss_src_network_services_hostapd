@@ -17,6 +17,8 @@
 #include "utils/mqtt_feature_map.h"
 #include "hostapd.h"
 #include "hostapd_mqtt.h"
+#include "hostapd_if/hostapd_if.h"
+#include "hostapd_if/hostapd_if_mqtt.h"
 
 /*
  * hostapd_mqtt_handle_sys_ping - respond to CMD_ID_SYS_PING.
@@ -159,6 +161,9 @@ hostapd_mqtt_msg_cb(const char *topic, const void *payload, int payloadlen,
 	case MQTT_FEAT_SYS:
 		hostapd_mqtt_sys_cmd(interfaces, msg_type, msg);
 		break;
+	case MQTT_FEAT_HOSTAPD_IF:
+		hostapd_mqtt_hif_cmd(interfaces, msg_type, msg);
+		break;
 	default:
 		wpa_printf(MSG_DEBUG,
 			   "MQTT RX: no handler for feature %u msg_type=0x%04x",
@@ -187,7 +192,7 @@ hostapd_mqtt_state_cb(bool connected, void *userdata)
 	char    topic[64];
 	uint8_t buf[256];
 	uint16_t num_ifaces = 0;
-	size_t  i;
+	size_t  i, j;
 	int     len;
 
 	if (connected) {
@@ -217,6 +222,20 @@ hostapd_mqtt_state_cb(bool connected, void *userdata)
 					   len, 0, false);
 		}
 		mqtt_tlv_message_free(msg);
+
+		for (i = 0; i < interfaces->count; i++) {
+			struct hostapd_iface *iface;
+
+			iface = interfaces->iface[i];
+			if (!iface)
+				continue;
+
+			for (j = 0; j < iface->num_bss; j++) {
+				if (!iface->bss[j])
+					continue;
+				hostapd_if_interface_create(iface->bss[j]);
+			}
+		}
 	} else {
 		wpa_printf(MSG_WARNING, "MQTT: disconnected from broker");
 	}

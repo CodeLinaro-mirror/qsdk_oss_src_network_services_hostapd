@@ -47,6 +47,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdio.h>
+#include <common.h>
 
 /*
  * mqtt_tlv_map.h is self-contained and has no dependency on the message IDs
@@ -64,6 +65,7 @@
 #define MQTT_FEATURE_SMD   "SMD"   /* Station Management & Discovery   */
 #define MQTT_FEATURE_MLME  "MLME"  /* MAC Layer Management Entity      */
 #define MQTT_FEATURE_MAPC  "MAPC"  /* Multi-AP Controller (reserved)   */
+#define MQTT_FEATURE_HOSTAPD_IF  "HOSTAPD_IF"  /* hostapd southbound IF events     */
 #define MQTT_FEATURE_SYS   "SYS"   /* hostapd system lifecycle         */
 
 /* ── Feature nibble constants ───────────────────────────────────────────── */
@@ -72,8 +74,9 @@ enum mqtt_feat_nibble {
 	MQTT_FEAT_SMD  = 2,   /* 0x02 */
 	MQTT_FEAT_MLME = 3,   /* 0x03 */
 	MQTT_FEAT_MAPC = 4,   /* 0x04 — reserved for future use */
-	/* 5–14: available for new features */
-	MQTT_FEAT_SYS  = 15,  /* 0x0F */
+	MQTT_FEAT_HOSTAPD_IF  = 5,   /* 0x05 */
+	/* 6–14: available for new features */
+	MQTT_FEAT_SYS = 15,  /* 0x0F */
 };
 
 /* ── Message ID constructors ────────────────────────────────────────────── */
@@ -94,6 +97,10 @@ enum mqtt_feat_nibble {
 enum mqtt_cmd_id {
 	/* SYS — System lifecycle */
 	CMD_ID_SYS_PING = MQTT_CMD_ID(MQTT_FEAT_SYS, 1), /* 0x0F01 */
+
+	/* HOSTAPD_IF — southbound interface commands */
+	CMD_ID_HIF_REGISTER_FRAME = MQTT_CMD_ID(MQTT_FEAT_HOSTAPD_IF, 1), /* 0x0501 */
+	CMD_ID_HIF_REGISTER_EVENT  = MQTT_CMD_ID(MQTT_FEAT_HOSTAPD_IF, 2), /* 0x0502 */
 };
 
 /* ── Event IDs  (hostapd → external app) ───────────────────────────────── */
@@ -102,6 +109,17 @@ enum mqtt_evt_id {
 	/* SYS — System lifecycle */
 	EVT_ID_SYS_HOSTAPD_STARTED = MQTT_EVT_ID(MQTT_FEAT_SYS, 1), /* 0x8F01 */
 	EVT_ID_SYS_HOSTAPD_STOPPED = MQTT_EVT_ID(MQTT_FEAT_SYS, 2), /* 0x8F02 */
+
+	/* HOSTAPD_IF — southbound interface events */
+	EVT_ID_HIF_INTERFACE_CREATE        = MQTT_EVT_ID(MQTT_FEAT_HOSTAPD_IF, 1), /* 0x8501 */
+	EVT_ID_HIF_NOTIFY_AUTH             = MQTT_EVT_ID(MQTT_FEAT_HOSTAPD_IF, 2), /* 0x8502 */
+	EVT_ID_HIF_NOTIFY_ASSOC            = MQTT_EVT_ID(MQTT_FEAT_HOSTAPD_IF, 3), /* 0x8503 */
+	EVT_ID_HIF_NOTIFY_DEAUTH           = MQTT_EVT_ID(MQTT_FEAT_HOSTAPD_IF, 4), /* 0x8504 */
+	EVT_ID_HIF_NOTIFY_DISASSOC         = MQTT_EVT_ID(MQTT_FEAT_HOSTAPD_IF, 5), /* 0x8505 */
+	EVT_ID_HIF_EVENT_ASSOC_TX_COMPLETE = MQTT_EVT_ID(MQTT_FEAT_HOSTAPD_IF, 6), /* 0x8506 */
+	EVT_ID_HIF_EVENT_DEAUTH            = MQTT_EVT_ID(MQTT_FEAT_HOSTAPD_IF, 7), /* 0x8507 */
+	EVT_ID_HIF_EVENT_DISASSOC          = MQTT_EVT_ID(MQTT_FEAT_HOSTAPD_IF, 8), /* 0x8508 */
+	EVT_ID_HIF_EVENT_AUTH_TX_COMPLETE  = MQTT_EVT_ID(MQTT_FEAT_HOSTAPD_IF, 9), /* 0x8509 */
 };
 
 /* ── Feature routing table ──────────────────────────────────────────────── */
@@ -125,12 +143,27 @@ static const uint16_t mqtt_sys_msg_ids[] = {
 	(uint16_t)EVT_ID_SYS_HOSTAPD_STOPPED,
 };
 
+static const uint16_t mqtt_hostapd_if_msg_ids[] = {
+	(uint16_t)EVT_ID_HIF_INTERFACE_CREATE,
+	(uint16_t)EVT_ID_HIF_NOTIFY_AUTH,
+	(uint16_t)EVT_ID_HIF_NOTIFY_ASSOC,
+	(uint16_t)EVT_ID_HIF_NOTIFY_DEAUTH,
+	(uint16_t)EVT_ID_HIF_NOTIFY_DISASSOC,
+	(uint16_t)EVT_ID_HIF_EVENT_ASSOC_TX_COMPLETE,
+	(uint16_t)EVT_ID_HIF_EVENT_DEAUTH,
+	(uint16_t)EVT_ID_HIF_EVENT_DISASSOC,
+	(uint16_t)EVT_ID_HIF_EVENT_AUTH_TX_COMPLETE,
+	(uint16_t)CMD_ID_HIF_REGISTER_FRAME,
+	(uint16_t)CMD_ID_HIF_REGISTER_EVENT,
+};
+
 #define MQTT_ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
 static const struct mqtt_feature_entry mqtt_feature_table[] = {
 	{ MQTT_FEATURE_SMD,  mqtt_smd_msg_ids,  0 /* reserved, no active msgs */ },
 	{ MQTT_FEATURE_MLME, mqtt_mlme_msg_ids, 0 /* reserved, no active msgs */ },
 	{ MQTT_FEATURE_MAPC, mqtt_mapc_msg_ids, 0 /* reserved, no active msgs */ },
+	{ MQTT_FEATURE_HOSTAPD_IF, mqtt_hostapd_if_msg_ids, MQTT_ARRAY_SIZE(mqtt_hostapd_if_msg_ids) },
 	{ MQTT_FEATURE_SYS,  mqtt_sys_msg_ids,  MQTT_ARRAY_SIZE(mqtt_sys_msg_ids)  },
 };
 
@@ -210,10 +243,28 @@ static const struct mqtt_tlv_policy mqtt_pol_sys_ping[1] = {
 	{ 0, MQTT_TLV_VAL_NONE, 0, 0, 0, 0 }
 };
 
+/* CMD_ID_HIF_REGISTER_POLICY */
+static const struct mqtt_tlv_policy mqtt_pol_hif_register_frame[] = {
+	{ TLV_HIF_REGISTER_FRAME_FRAME_TYPE, MQTT_TLV_VAL_U8,     1, 1, 0, 0 },
+	{ TLV_HIF_REGISTER_FRAME_POLICY,     MQTT_TLV_VAL_U8,     1, 1, 0, 0 },
+	{ TLV_HIF_REGISTER_FRAME_IFNAME,     MQTT_TLV_VAL_STRING, IFNAMSIZ - 1, 1, 0, 0 },
+};
+
+/* CMD_ID_HIF_REGISTER_EVENT */
+static const struct mqtt_tlv_policy mqtt_pol_hif_register_event[] = {
+	{ TLV_HIF_REGISTER_EVENT_TYPE,   MQTT_TLV_VAL_U8,     1, 1, 0, 0 },
+	{ TLV_HIF_REGISTER_EVENT_SET,    MQTT_TLV_VAL_U8,     1, 1, 0, 0 },
+	{ TLV_HIF_REGISTER_EVENT_IFNAME, MQTT_TLV_VAL_STRING, IFNAMSIZ - 1, 1, 0, 0 },
+};
+
 /* ── CMD policy registry ────────────────────────────────────────────────── */
 
 static const struct mqtt_msg_policy mqtt_cmd_policy_table[] = {
 	{ (uint16_t)CMD_ID_SYS_PING, mqtt_pol_sys_ping, 0 },
+	{ (uint16_t)CMD_ID_HIF_REGISTER_FRAME, mqtt_pol_hif_register_frame,
+	  (uint8_t)MQTT_ARRAY_SIZE(mqtt_pol_hif_register_frame) },
+	{ (uint16_t)CMD_ID_HIF_REGISTER_EVENT, mqtt_pol_hif_register_event,
+	  (uint8_t)MQTT_ARRAY_SIZE(mqtt_pol_hif_register_event) },
 };
 
 static const size_t mqtt_num_cmd_policies =
