@@ -565,6 +565,7 @@ size_t hostapd_eid_eht_capab_len(struct hostapd_data *hapd,
 				 enum ieee80211_op_mode opmode);
 u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 			   enum ieee80211_op_mode opmode);
+int hostapd_sp_implied_key_mgmt(const struct hostapd_bss_config *conf);
 u8 * hostapd_eid_eht_operation(struct hostapd_data *hapd, u8 *eid);
 bool eht_mu_mask_valid(u8 mask);
 void hostapd_update_ecu_params(struct hostapd_data *hapd);

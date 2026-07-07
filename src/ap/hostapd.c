@@ -2891,6 +2891,21 @@ setup_mld:
 	hapd->send_eap_req = ieee80211_send_eap_req;
 #endif /* CONFIG_IEEE8021X_AUTH */
 
+	/* Extend wpa_key_mgmt based on Security Profile IE configuration.
+	 * AKMs implied by security_profiles (e.g., OWE via SP8) are added
+	 * directly to conf->wpa_key_mgmt so that ALL subsequent checks
+	 * (beacon RSN IE, assoc processing, probe responses) see them. */
+	if (conf->security_profiles) {
+		int sp_km = hostapd_sp_implied_key_mgmt(conf);
+
+		if ((sp_km & WPA_KEY_MGMT_OWE) &&
+		    !(conf->wpa_key_mgmt & WPA_KEY_MGMT_OWE)) {
+			wpa_printf(MSG_DEBUG,
+				   "SP8: adding OWE to wpa_key_mgmt from security_profiles");
+			conf->wpa_key_mgmt |= WPA_KEY_MGMT_OWE;
+		}
+	}
+
 	if (conf->wpa && hostapd_setup_wpa(hapd))
 		return -1;
 

@@ -2313,28 +2313,26 @@ int sae_sm_step(struct hostapd_data *hapd, struct sta_info *sta,
 /*
  * hostapd_sp_implied_key_mgmt - Derive implied key_mgmt from security profiles
  *
- * When security_profiles[] contains a SAE-EXT-KEY profile (1, 2, 9, or 10),
- * the AP must accept SAE authentication even if wpa_key_mgmt does not
- * explicitly include SAE-EXT-KEY.  Returns WPA_KEY_MGMT_SAE_EXT_KEY |
- * WPA_KEY_MGMT_FT_SAE_EXT_KEY when such a profile is configured, 0 otherwise.
+ * Returns the union of all AKMs defined by the configured security profiles.
+ * Allows the AP to accept connections whose AKM is implied by a Security
+ * Profile IE even when that AKM is not explicitly listed in wpa_key_mgmt.
+ * Covers all profile families: EPPKE (0-2), 802.1X (3-7/11-15), OWE (8),
+ * SAE (9), FT-SAE (10).
  */
-static int hostapd_sp_implied_key_mgmt(const struct hostapd_bss_config *conf)
+int hostapd_sp_implied_key_mgmt(const struct hostapd_bss_config *conf)
 {
-	int i;
+	int i, implied = 0;
 
 	if (!conf->security_profiles)
 		return 0;
+
 	for (i = 0; conf->security_profiles[i] >= 0; i++) {
 		int p = conf->security_profiles[i];
 
-		if (p == SECURITY_PROFILE_NUM_EPPKE_SAE ||
-		    p == SECURITY_PROFILE_NUM_EPPKE_FT_SAE ||
-		    p == SECURITY_PROFILE_NUM_SAE ||
-		    p == SECURITY_PROFILE_NUM_FT_SAE)
-			return WPA_KEY_MGMT_SAE_EXT_KEY |
-			       WPA_KEY_MGMT_FT_SAE_EXT_KEY;
+		if (p >= 0 && p < MAX_SECURITY_PROFILE_NUM)
+			implied |= security_profile_table[p].key_mgmt;
 	}
-	return 0;
+	return implied;
 }
 
 static void sae_pick_next_group(struct hostapd_data *hapd, struct sta_info *sta)
@@ -3541,6 +3539,42 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 		resp = wpa_auth_validate_802_1x_frame(hapd, sta, &elems);
 		if (resp)
 			goto fail;
+
+		/* UHR: Validate Security Profile if present */
+		if (elems.security_profile_ie && elems.security_profile_ie_len > 0) {
+			size_t security_profile_body_len = elems.security_profile_ie_len > 1 ?
+				elems.security_profile_ie_len - 1 : 0;
+
+			wpa_printf(MSG_DEBUG,
+				   "UHR: Found Security Profile element from STA "
+				   MACSTR " in 802.1X auth (body_len=%zu)",
+				   MAC2STR(sta->addr), security_profile_body_len);
+			wpa_hexdump(MSG_DEBUG,
+				    "UHR: Security Profile element body",
+				    elems.security_profile_ie + 1, security_profile_body_len);
+
+			if (!validate_sta_security_profile(
+				    hapd, sta->addr,
+				    elems.rsn_ie, elems.rsn_ie_len,
+				    elems.rsnxe, elems.rsnxe_len,
+				    elems.security_profile_ie, elems.security_profile_ie_len,
+				    NULL)) {
+				wpa_printf(MSG_INFO,
+					   "UHR: Rejecting 802.1X auth from "
+					   MACSTR " - Security Profile mismatch",
+					   MAC2STR(sta->addr));
+				resp = WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE;
+				goto fail;
+			}
+			/* UHR Security Profile validated successfully */
+			if (sta->wpa_sm) {
+				sta->wpa_sm->security_profile_indication = 1;
+				wpa_printf(MSG_DEBUG,
+					   "UHR: STA " MACSTR
+					   " profile validated in 802.1X auth, security_profile=1",
+					   MAC2STR(sta->addr));
+			}
+		}
 
 		enc_assoc = ap_sta_support_enc_assoc(hapd, elems.rsnxe,
 						     elems.rsnxe_len);
@@ -8484,7 +8518,7 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 #endif /* CONFIG_FILS */
 
 #ifdef CONFIG_OWE
-	if (sta && (hapd->conf->wpa_key_mgmt & WPA_KEY_MGMT_OWE))
+	if (sta && ((hapd->conf->wpa_key_mgmt | hostapd_sp_implied_key_mgmt(hapd->conf)) & WPA_KEY_MGMT_OWE))
 		buflen += 150;
 #endif /* CONFIG_OWE */
 #ifdef CONFIG_DPP2
@@ -8530,6 +8564,11 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 #ifdef CONFIG_QCN_EXTN
 	buflen += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
 #endif /* CONFIG_QCN_EXTN */
+	/* Security Profile IE is appended unconditionally when configured;
+	 * always reserve space regardless of CONFIG_IEEE80211BN. */
+	if (hapd->conf->security_profiles)
+		buflen += hostapd_security_profile_ie_len(hapd);
+
 	buf = os_zalloc(buflen);
 	if (!buf) {
 		res = WLAN_STATUS_UNSPECIFIED_FAILURE;
