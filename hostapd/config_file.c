@@ -4100,6 +4100,18 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		bss->he_phy_capab.he_bsr_support = val;
 		bss->he_phy_capab_mask |= HE_PHY_BSS_OVR_BSR_SUPPORT;
+	} else if (os_strcmp(buf, "bss_he_chwidth_160mhz_5g_6g") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_he_chwidth_160mhz_5g_6g %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->he_phy_capab.he_chan_width_set_160mhz_in_5g_6g = val;
+		bss->he_phy_capab_mask |=
+			HE_PHY_BSS_OVR_CHAN_WIDTH_SET_160MHZ_IN_5G_6G;
 	} else if (os_strcmp(buf, "he_dl_mu_ofdma") == 0) {
 		conf->he_phy_capab.he_dl_mu_ofdma = atoi(pos);
 	} else if (os_strcmp(buf, "he_dl_mu_ofdma_bfer") == 0) {

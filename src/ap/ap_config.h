@@ -360,6 +360,7 @@ struct he_phy_capabilities_info {
 	u8 he_er_su_ppdu_4x_ltf_800ns_gi;
 	u8 he_1024qam_lt242ru_rx_enable;
 	u8 he_bsr_support;
+	u8 he_chan_width_set_160mhz_in_5g_6g;
 };
 #endif /* CONFIG_IEEE80211AX */
 
@@ -529,6 +530,7 @@ struct hostapd_bss_config {
 #define HE_PHY_BSS_OVR_ER_SU_PPDU_4X_LTF_800NS_GI BIT(23)
 #define HE_PHY_BSS_OVR_1024QAM_LT242RU_RX_ENABLE BIT(24)
 #define HE_PHY_BSS_OVR_BSR_SUPPORT BIT(25)
+#define HE_PHY_BSS_OVR_CHAN_WIDTH_SET_160MHZ_IN_5G_6G    BIT(26)
 	u32 he_phy_capab_mask;
 #endif /* CONFIG_IEEE80211AX */
 

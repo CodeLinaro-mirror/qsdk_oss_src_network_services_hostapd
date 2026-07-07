@@ -422,6 +422,13 @@ u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
 			~HE_PHYCAP_UL_MUMIMO_CAPB;
 	}
 
+	if ((hapd->conf->he_phy_capab_mask &
+	     HE_PHY_BSS_OVR_CHAN_WIDTH_SET_160MHZ_IN_5G_6G) &&
+	    hapd->iface->conf->hw_mode == HOSTAPD_MODE_IEEE80211A &&
+	    !hapd->conf->he_phy_capab.he_chan_width_set_160mhz_in_5g_6g)
+		cap->he_phy_capab_info[HE_PHYCAP_CHANNEL_WIDTH_SET_IDX] &=
+				~HE_PHYCAP_CHANNEL_WIDTH_SET_160MHZ_IN_5G;
+
 	pos += ie_size;
 
 	return pos;
