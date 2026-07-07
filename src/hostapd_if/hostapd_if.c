@@ -22,6 +22,9 @@
 #include "eapol_auth/eapol_auth_sm.h"
 #include "eapol_auth/eapol_auth_sm_i.h"
 #include "eap_server/eap.h"
+#ifdef CONFIG_MQTT
+#include "hostapd_if_mqtt.h"
+#endif
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 #include "../qcn_extns/hostapd_external_interface.h"
@@ -102,11 +105,11 @@ static bool hostapd_if_is_event_registered(struct hostapd_data *hapd,
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 static struct hostapd_external_app_object *hostapd_if_plugin;
-#define HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt)			\
+#define HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt)			\
 do {									\
 	if (hostapd_if_plugin &&					\
 	    hostapd_if_plugin->notify_event)				\
-		hostapd_if_plugin->notify_event(&evt);			\
+		hostapd_if_plugin->notify_event(hapd, &evt);		\
 } while (0)
 
 /*
@@ -134,10 +137,10 @@ __inbound_error_event(struct hostapd_data *hapd, const uint8_t *sta_mac,
 	evt.data.inbound_call_error.func = func;
 	evt.data.inbound_call_error.line_num = line_num;
 
-	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
 #else
-#define HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt)
+#define HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt)
 static void
 __inbound_error_event(struct hostapd_data *hapd, const uint8_t *sta_mac,
 		      const char *func,
@@ -372,6 +375,9 @@ void hostapd_if_plugin_deinit(void);
 
 const bool global_plugin_enable = false;
 bool hostapd_if_plugin_enable = global_plugin_enable;
+#ifdef CONFIG_MQTT
+bool hostapd_if_mqtt_enable = true;
+#endif /* CONFIG_MQTT */
 /*
  * Call this once at startup (from hostapd_if_init)
  */
@@ -387,6 +393,11 @@ int hostapd_if_init(struct hapd_interfaces *interfaces, bool plugin_enable)
 	hostapd_if_plugin_enable = (plugin_enable || global_plugin_enable);
 	if (hostapd_if_plugin_enable)
 		eloop_type = hostapd_if_plugin_init(interfaces);
+	else
+#endif
+#ifdef CONFIG_MQTT
+	if (hostapd_if_mqtt_enable)
+		eloop_type = hostapd_if_mqtt_init(interfaces);
 #endif
 	if (hostapd_if_eloop_init(eloop_type) < 0)
 		return -1;
@@ -432,6 +443,30 @@ struct frame_reg_table *__get_shared_mld_table(struct hostapd_data *hapd)
 	}
 	return NULL;
 }
+
+static void __free_frame_reg_table(void *obj)
+{
+	bitfield_free(((struct frame_reg_table *) obj)->event_registration);
+	os_free(obj);
+}
+
+#ifdef HOSTAPD_EXTERNAL_PLUGIN
+static void __clear_shared_mld_table(struct hostapd_data *hapd)
+{
+	struct hostapd_data *hapd_partner;
+
+	if (!hapd->conf->mld_ap || !hapd->mld || !hapd->hostapd_if_data)
+		return;
+
+	__free_frame_reg_table(hapd->hostapd_if_data);
+	/*
+	 * Clear self pointer separately in case of Legacy BSS
+	 */
+	hapd->hostapd_if_data = NULL;
+	for_each_mld_link(hapd_partner, hapd)
+		hapd_partner->hostapd_if_data = NULL;
+}
+#endif /* HOSTAPD_EXTERNAL_PLUGIN */
 
 int hostapd_if_interface_create(struct hostapd_data *hapd)
 {
@@ -484,11 +519,15 @@ hostapd_if_interface_create_plugin_call:
 	/*
 	 * plugin->interface_init → interface_create
 	 */
-	if (hapd->conf->external_plugin_enable &&
-	    hostapd_if_plugin &&
-	    hostapd_if_plugin->interface_create)
-		hostapd_if_plugin->interface_create(
-			(char *) hapd->conf->iface, hapd);
+	if (!hostapd_if_plugin || !hostapd_if_plugin->interface_create)
+		return 0;
+
+	if (hostapd_if_plugin->interface_create(hapd->conf->iface, hapd))
+		/*
+		 * The external client is unreachable, so the shared
+		 * table is no longer valid for any MLD partner.
+		 */
+		__clear_shared_mld_table(hapd);
 #endif
 
 	return 0;
@@ -507,14 +546,11 @@ void hostapd_if_interface_remove(struct hostapd_data *hapd)
 
 	wpa_printf(MSG_DEBUG, "%s:%s link-id:%d", __func__, hapd->conf->iface,
 		hapd->mld_link_id);
-	if (hapd->hostapd_if_data == (void *) table)
-		hapd->hostapd_if_data = NULL;
 
-	if (--table->ref_count == 0) {
-		if (table->event_registration)
-			bitfield_free(table->event_registration);
-		free(table);
-	}
+	if (--table->ref_count == 0)
+		__free_frame_reg_table(table);
+
+	hapd->hostapd_if_data = NULL;
 }
 
 static enum hostapd_if_frame_processing_decision
@@ -622,7 +658,7 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 	if (policy == HOSTAPD_IF_FRAME_NOTIFY) {
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 		if (hostapd_if_plugin && hostapd_if_plugin->notify_auth) {
-			hostapd_if_plugin->notify_auth(hapd->conf->iface,
+			hostapd_if_plugin->notify_auth(hapd, hapd->conf->iface,
 					sta->addr, frame, frame_len, &ctx_req);
 		}
 #endif
@@ -863,7 +899,7 @@ hostapd_if_notify_assoc(struct hostapd_data *hapd,
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 		if (hostapd_if_plugin &&
 		    hostapd_if_plugin->notify_assoc) {
-			hostapd_if_plugin->notify_assoc(hapd->conf->iface,
+			hostapd_if_plugin->notify_assoc(hapd, hapd->conf->iface,
 					sta->addr, frame, frame_len, &ctx_req);
 		}
 #endif
@@ -928,7 +964,7 @@ void hostapd_if_notify_disassoc(struct hostapd_data *hapd,
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 	if (hostapd_if_plugin && hostapd_if_plugin->notify_disassoc) {
-		hostapd_if_plugin->notify_disassoc(hapd->conf->iface,
+		hostapd_if_plugin->notify_disassoc(hapd, hapd->conf->iface,
 			sta->addr, frame, frame_len, &ctx_req);
 	}
 #endif
@@ -976,7 +1012,7 @@ void hostapd_if_notify_deauth(struct hostapd_data *hapd,
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 	if (hostapd_if_plugin && hostapd_if_plugin->notify_deauth) {
-		hostapd_if_plugin->notify_deauth(hapd->conf->iface, sta->addr,
+		hostapd_if_plugin->notify_deauth(hapd, hapd->conf->iface, sta->addr,
 			frame, frame_len, &ctx_req);
 	}
 #endif
@@ -2670,7 +2706,7 @@ void hostapd_if_event_deauth(struct hostapd_data *hapd, struct sta_info *sta,
 	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR" %d %d %d %d\n", __func__,
 		__LINE__, hapd->conf->iface, MAC2STR(sta->addr), link_id, reason_code,
 		is_tx_status, tx_status_ok);
-	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
 
 /*
@@ -2712,7 +2748,7 @@ void hostapd_if_event_disassoc(struct hostapd_data *hapd,
 	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR" %d %d %d %d\n", __func__,
 		__LINE__, hapd->conf->iface, MAC2STR(sta->addr), link_id, reason_code,
 		is_tx_status, tx_status_ok);
-	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
 
 /*
@@ -2735,7 +2771,7 @@ void hostapd_if_event_auth_tx_complete(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR"\n", __func__, __LINE__,
 		hapd->conf->iface, MAC2STR(addr));
-	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
 
 /*
@@ -2762,7 +2798,7 @@ void hostapd_if_event_assoc_tx_complete(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR"\n", __func__, __LINE__,
 		hapd->conf->iface, MAC2STR(addr));
-	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
 
 void hostapd_if_notify_radius_send_event(struct hostapd_data *hapd,
@@ -2801,7 +2837,7 @@ void hostapd_if_notify_radius_send_event(struct hostapd_data *hapd,
 	evt.data.radius_msg.hdr_code = hdr->code;
 	evt.data.radius_msg.msg_type = msg_type;
 
-	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
 
 void hostapd_if_notify_radius_receive_event(struct hostapd_data *hapd, const u8 *addr,
@@ -2839,7 +2875,7 @@ void hostapd_if_notify_radius_receive_event(struct hostapd_data *hapd, const u8 
 	evt.data.radius_msg.hdr_code = hdr->code;
 	evt.data.radius_msg.msg_type = msg_type;
 
-	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
 
 void hostapd_if_notify_radius_coa_event(struct hostapd_data *hapd, const u8 *addr,
@@ -2875,7 +2911,7 @@ void hostapd_if_notify_radius_coa_event(struct hostapd_data *hapd, const u8 *add
 	// No valid msg_type for COA event
 	evt.data.radius_msg.msg_type = RADIUS_MSG_TYPE_INVALID;
 
-	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
 
 /*
@@ -2912,7 +2948,7 @@ void hostapd_if_event_dot1x_complete(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_MSGDUMP, "%s: %d %s " MACSTR " %d %zu\n", __func__,
 		   __LINE__, hapd->conf->iface, MAC2STR(addr), success, copy_len);
-	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
 
 /*
@@ -2935,7 +2971,7 @@ void hostapd_if_event_action_completion(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR"\n", __func__, __LINE__,
 		hapd->conf->iface, MAC2STR(addr));
-	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
 
 void hostapd_if_event_gtk_completion(struct hostapd_data *hapd)
@@ -2952,7 +2988,7 @@ void hostapd_if_event_gtk_completion(struct hostapd_data *hapd)
 
 	wpa_printf(MSG_MSGDUMP, "%s: %d %s\n", __func__, __LINE__,
 		hapd->conf->iface);
-	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
 
 /*
@@ -2975,7 +3011,7 @@ void hostapd_if_event_eapol_m2_received(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR"\n", __func__, __LINE__,
 		hapd->conf->iface, MAC2STR(addr));
-	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
 
 /*
@@ -2999,7 +3035,7 @@ void hostapd_if_event_authorize_completion(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR" %d\n", __func__, __LINE__,
 		hapd->conf->iface, MAC2STR(addr), authorized);
-	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
 
 /*
@@ -3025,7 +3061,7 @@ void hostapd_if_event_sa_query_completion(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR" %d\n", __func__, __LINE__,
 		hapd->conf->iface, MAC2STR(addr), status);
-	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(evt);
+	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
 
 /*
