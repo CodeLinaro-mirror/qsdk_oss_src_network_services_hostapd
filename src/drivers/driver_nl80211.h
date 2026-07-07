@@ -53,6 +53,8 @@ struct nl80211_global {
 
 	/* pending events that happened while waiting for a sync reply */
 	struct dl_list pending_events;
+	/* set while nl80211_deliver_pending_events() is running */
+	bool delivering_pending_events;
 };
 
 struct nl80211_wiphy_data {
