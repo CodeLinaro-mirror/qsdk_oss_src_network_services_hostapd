@@ -1370,6 +1370,14 @@ void ieee802_1x_new_station(struct hostapd_data *hapd, struct sta_info *sta)
 	int force_1x = 0;
 	int key_mgmt;
 
+#ifdef CONFIG_ENC_ASSOC
+	/* EPPKE authentication is completed before association via PASN key
+	 * exchange.  The STA already has keys installed; no 802.1X/EAP
+	 * exchange is needed or expected after association. */
+	if (sta->auth_alg == WLAN_AUTH_EPPKE)
+		return;
+#endif /* CONFIG_ENC_ASSOC */
+
 #ifdef CONFIG_WPS
 	if (hapd->conf->wps_state &&
 	    ((hapd->conf->wpa && (sta->flags & WLAN_STA_MAYBE_WPS)) ||

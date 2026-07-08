@@ -141,6 +141,11 @@ static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
 #endif /* CONFIG_ENC_ASSOC */
 	wconf->extended_key_id = conf->extended_key_id;
 	wconf->wpa_key_mgmt = conf->wpa_key_mgmt;
+	/* If Security Profile 8 (OWE) is configured, include OWE in the
+	 * wpa_auth key_mgmt so it appears in the beacon RSN IE. OWE requires
+	 * beacon advertising for the STA to include the DH element. */
+	if (hostapd_sp_implied_key_mgmt(conf) & WPA_KEY_MGMT_OWE)
+		wconf->wpa_key_mgmt |= WPA_KEY_MGMT_OWE;
 	wconf->rsn_override_key_mgmt = conf->rsn_override_key_mgmt;
 	wconf->rsn_override_key_mgmt_2 = conf->rsn_override_key_mgmt_2;
 	wconf->wpa_pairwise = conf->wpa_pairwise;

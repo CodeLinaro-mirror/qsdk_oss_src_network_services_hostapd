@@ -5603,7 +5603,7 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 		size_t security_ie_len = hostapd_security_profile_ie_len(hapd);
 
 		if (security_ie_len > 0)
-			kde_len += 2 + RSN_SELECTOR_LEN + security_ie_len - 2;
+			kde_len += security_ie_len;
 	}
 
 	kde = os_malloc(kde_len);
