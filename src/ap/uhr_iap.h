@@ -25,6 +25,11 @@
 /* ST Roam Cleanup - notify non-exec TAPs to free prepped STA state */
 #define UHR_IAP_MSG_ST_ROAM_CLEANUP  5
 
+#define UHR_IAP_MSG_ST_PREP_CTX      9
+
+/* Split smd_ctx into a separate message above this payload size. */
+#define UHR_IAP_MTU_THRESHOLD        1400
+
 /* ST Execute via Target AP-MLD IAP message types */
 #define UHR_IAP_MSG_ST_EXEC_VIA_TGT_DONE  6  /* Target -> Current: transition complete */
 #define UHR_IAP_MSG_ST_CTX_REQUEST        7  /* Target -> Current: fetch SMD context */
@@ -80,7 +85,10 @@ struct uhr_iap_frame {
 
        __le16 frame_len;
 	__le16 smd_ctx_len;
-	u8  frame_ctx_data[];
+	union {
+		u8 frame_buf[0];
+		u8 frame_ctx_data[0];
+	};
 } __attribute__((packed));
 
 /* Flags for uhr_iap_frame */

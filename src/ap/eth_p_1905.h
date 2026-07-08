@@ -40,6 +40,21 @@ struct ieee1905_hdr {
 /* Maximum number of peer entries (exact + wildcard combined) */
 #define ETH_P_1905_MAX_PEERS          16
 
+/* SMD IAP message types carried in the 1905 message_type field.
+ * These replace the ETH_P_OUI suffixes (0x06 / 0x07) used by
+ * uhr_oui_transport.  Additional EasyMesh message types can be
+ * registered later via eth_p_1905_rebuild_bpf(). */
+#define ETH_P_1905_IAP_MSG_REQUEST    0x0006
+#define ETH_P_1905_IAP_MSG_RESPONSE   0x0007
+
+/* SMD ST Preparation/Execution 1905 message types (Wi-Fi 8 / SMD feature).
+ * TODO: Replace placeholder values with actual 1905 spec message type IDs
+ * once the spec assigns them. */
+#define ETH_P_1905_SMD_ST_PREP_REQ_MSG   0xFF01  /* placeholder */
+#define ETH_P_1905_SMD_ST_PREP_REP_MSG   0xFF02  /* placeholder */
+#define ETH_P_1905_SMD_ST_EXEC_REQ_MSG   0xFF03  /* placeholder */
+#define ETH_P_1905_SMD_ST_EXEC_REP_MSG   0xFF04  /* placeholder */
+
 struct eth_p_1905_ctx;
 struct hostapd_data;
 

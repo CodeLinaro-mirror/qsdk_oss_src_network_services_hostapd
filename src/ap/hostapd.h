@@ -789,6 +789,7 @@ struct hostapd_data {
 	u8  bss_cotdma_active_count;
 	u8  mapc_dialog_token_count;
 	bool mapc_initialized;
+	struct eth_p_1905_ctx *eth_p_1905_ctx;
 #endif /* CONFIG_IEEE80211BN */
 
 #if defined(CONFIG_INTERWORKING) || defined(CONFIG_DPP)
