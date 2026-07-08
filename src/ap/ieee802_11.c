@@ -7597,15 +7597,21 @@ skip_pmkid_update:
 				resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 				goto out;
 			}
+			/* FT IEs appear only in the assoc-link frame body, not
+			 * in per-STA ML sub-elements; skip re-validation for
+			 * partner links whose wpa_sm is managed by assoc link.
+			 */
+			if (!assoc_wpa_sm) {
 #ifdef CONFIG_IEEE80211BE
-			resp = wpa_ft_validate_reassoc(sta->wpa_sm, ies,
-						       ies_len, &sta->mld_info);
+				resp = wpa_ft_validate_reassoc(sta->wpa_sm, ies,
+							       ies_len, &sta->mld_info);
 #else /* CONFIG_IEEE80211BE */
-			resp = wpa_ft_validate_reassoc(sta->wpa_sm, ies,
-						       ies_len, NULL);
+				resp = wpa_ft_validate_reassoc(sta->wpa_sm, ies,
+							       ies_len, NULL);
 #endif /* CONFIG_IEEE80211BE */
-			if (resp != WLAN_STATUS_SUCCESS)
-				goto out;
+				if (resp != WLAN_STATUS_SUCCESS)
+					goto out;
+			}
 		}
 #endif /* CONFIG_IEEE80211R_AP */
 
