@@ -357,6 +357,7 @@ endif
 ifdef NEED_ETH_P_1905
 CFLAGS += -DCONFIG_ETH_P_1905
 OBJS   += ../src/ap/eth_p_1905.o
+OBJS   += ../src/ap/eth_p_1905_iap.o
 endif
 
 ifdef CONFIG_SAE
