@@ -1422,6 +1422,7 @@ static inline void afc_channel_change_timeout(void *eloop_ctx, void *timeout_ctx
 }
 #endif
 void hostapd_no_ir_cleanup(struct hostapd_data *bss);
+bool hostapd_is_6ghz_chan_txable(const struct hostapd_channel_data *c);
 struct hostapd_data *
 hostapd_interfaces_get_hapd(struct hapd_interfaces *interfaces,
 			    const char *ifname);
