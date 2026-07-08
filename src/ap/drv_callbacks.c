@@ -1521,7 +1521,8 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 
 	/* Check if any of configured channels require DFS */
 	is_dfs0 = hostapd_is_dfs_required(hapd->iface);
-	hapd->iface->freq = freq;
+	if (finished)
+		hapd->iface->freq = freq;
 
 	channel = hostapd_hw_get_channel(hapd, freq);
 	if (!channel) {
@@ -1556,10 +1557,30 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 		break;
 	}
 
+	is_dfs = ieee80211_is_dfs(freq, hapd->iface->hw_features,
+				  hapd->iface->num_hw_features);
+
+	wpa_msg(hapd->msg_ctx, MSG_INFO,
+		"%sfreq=%d ht_enabled=%d ch_offset=%d ch_width=%s cf1=%d cf2=%d is_dfs0=%d dfs=%d puncturing_bitmap=0x%04x width_device=%d, cf_device=%d 6ghz power mode=%d",
+		finished ? WPA_EVENT_CHANNEL_SWITCH :
+		WPA_EVENT_CHANNEL_SWITCH_STARTED,
+		freq, ht, offset, channel_width_to_string(width),
+		cf1, cf2, is_dfs0, is_dfs, punct_bitmap, width_device, cf_device, power_mode_6ghz);
+
+	/* Defer iconf updates until CSA completes to avoid
+	 * advertising the target channel prematurely.
+	 */
+	if (!finished)
+#ifdef CONFIG_QCN_EXTN
+		goto out;
+#else
+		return;
+#endif
+
 	/* The operating channel changed when CSA finished, so need to update
 	 * hw_mode for all following operations to cover the cases where the
 	 * driver changed the operating band. */
-	if (finished && hostapd_csa_update_hwmode(hapd->iface))
+	if (hostapd_csa_update_hwmode(hapd->iface))
 #ifdef CONFIG_QCN_EXTN
 		goto out;
 #else
@@ -1693,25 +1714,8 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 			break;
 	}
 
-	is_dfs = ieee80211_is_dfs(freq, hapd->iface->hw_features,
-				  hapd->iface->num_hw_features);
-
-	wpa_msg(hapd->msg_ctx, MSG_INFO,
-		"%sfreq=%d ht_enabled=%d ch_offset=%d ch_width=%s cf1=%d cf2=%d is_dfs0=%d dfs=%d puncturing_bitmap=0x%04x width_device=%d, cf_device=%d 6ghz power mode=%d",
-		finished ? WPA_EVENT_CHANNEL_SWITCH :
-		WPA_EVENT_CHANNEL_SWITCH_STARTED,
-		freq, ht, offset, channel_width_to_string(width),
-		cf1, cf2, is_dfs0, is_dfs, punct_bitmap, width_device, cf_device, power_mode_6ghz);
-
 #ifdef CONFIG_QCN_EXTN
 	update_chan_params(hapd, cf1, cf2, hostapd_get_chan_width_from_oper_chan_width(hapd->iconf));
-#endif
-
-	if (!finished)
-#ifdef CONFIG_QCN_EXTN
-		goto out;
-#else
-		return;
 #endif
 
 	hostapd_chan_switch_complete(hapd, power_mode_6ghz, width,
