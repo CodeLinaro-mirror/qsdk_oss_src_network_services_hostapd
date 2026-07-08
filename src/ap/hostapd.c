@@ -8086,6 +8086,12 @@ void hostapd_remove_non_tx_bsses(struct hostapd_data *tx_bss)
 
 	if (iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
 		grp = tx_bss->mbssid_group;
+		if (!grp) {
+			wpa_printf(MSG_ERROR,
+				   "MBSSID: No group allocated for %s, nothing to remove",
+				   tx_bss->conf->iface);
+			return;
+		}
 
 		dl_list_for_each_safe(bss, tmp, &grp->bss_list,
 				      struct hostapd_data, mbssid_bss) {
