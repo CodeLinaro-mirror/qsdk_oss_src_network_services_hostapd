@@ -965,7 +965,10 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 #ifdef CONFIG_QCN_EXTN
 		if (!chan_pri_allowed_extn(chan2))
 			 continue;
-#endif
+
+		if (hostapd_acs_is_chan_blocked(iface, chan2->chan))
+			continue;
+#endif /* CONFIG_QCN_EXTN */
 
 		if (!chan_pri_allowed(chan2))
 			continue;
