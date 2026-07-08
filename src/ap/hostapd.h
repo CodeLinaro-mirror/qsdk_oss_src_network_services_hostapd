@@ -93,6 +93,9 @@ struct hapd_interfaces {
 #ifdef CONFIG_ETH_P_OUI
 	struct dl_list eth_p_oui; /* OUI Extended EtherType handlers */
 #endif /* CONFIG_ETH_P_OUI */
+#ifdef CONFIG_ETH_P_1905
+	struct dl_list eth_p_1905; /* IEEE 1905.1 CMDU transport handlers */
+#endif /* CONFIG_ETH_P_1905 */
 	int eloop_initialized;
 
 #ifdef CONFIG_DPP

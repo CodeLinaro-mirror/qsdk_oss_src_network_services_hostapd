@@ -925,6 +925,9 @@ int main(int argc, char *argv[])
 #ifdef CONFIG_ETH_P_OUI
 	dl_list_init(&interfaces.eth_p_oui);
 #endif /* CONFIG_ETH_P_OUI */
+#ifdef CONFIG_ETH_P_1905
+	dl_list_init(&interfaces.eth_p_1905);
+#endif /* CONFIG_ETH_P_1905 */
 #ifdef CONFIG_DPP
 	os_memset(&dpp_conf, 0, sizeof(dpp_conf));
 	dpp_conf.cb_ctx = &interfaces;

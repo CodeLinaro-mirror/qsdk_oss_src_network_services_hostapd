@@ -345,6 +345,18 @@ CFLAGS += -DCONFIG_ETH_P_OUI
 OBJS += ../src/ap/eth_p_oui.o
 endif
 
+# IEEE 1905.1 CMDU transport (used by SMD and any future feature needing
+# 1905 frame exchange from hostapd).  Set NEED_ETH_P_1905=y from any
+# feature block that requires it (e.g. CONFIG_SMD below).
+ifdef CONFIG_IEEE80211BN
+NEED_ETH_P_1905=y
+endif
+
+ifdef NEED_ETH_P_1905
+CFLAGS += -DCONFIG_ETH_P_1905
+OBJS   += ../src/ap/eth_p_1905.o
+endif
+
 ifdef CONFIG_SAE
 CFLAGS += -DCONFIG_SAE
 OBJS += ../src/common/sae.o
