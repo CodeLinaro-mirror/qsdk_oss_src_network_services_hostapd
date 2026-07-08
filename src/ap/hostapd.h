@@ -1726,6 +1726,7 @@ hostapd_regdom_restore_iface(struct hostapd_iface *iface)
 #endif
 void hostapd_no_ir_cleanup(struct hostapd_data *bss);
 
+bool hostapd_is_6ghz_chan_txable(const struct hostapd_channel_data *c);
 /**
  * hostapd_handle_afc_channel_change - Handle retail AFC channel change.
  *
