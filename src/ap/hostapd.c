@@ -3605,41 +3605,76 @@ static bool hostapd_is_current_afc_tuple_valid(struct hostapd_iface *iface,
  *
  * Returns the appropriate non-SP fallback power mode for a 6 GHz AP that must
  * leave Standard Power (SP) operation because AFC data is unavailable or has
- * expired.  The target is chosen based solely on whether the current mode is
- * indoor or outdoor:
+ * expired.  The target is chosen using actual regulatory channel availability,
+ * not deployment type, so the result is valid for both indoor and outdoor APs:
  *
- * - Indoor SP  (HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP, value 8)
- *                                                       -> NL80211_REG_AP_LPI
- * - Outdoor SP (HE_REG_INFO_6GHZ_AP_TYPE_SP, value 1)   -> NL80211_REG_AP_VLP
+ * 1. If current mode is INDOOR_SP (8) and LPI is valid for the current
+ *    channel/BW/puncture tuple, return LPI.
+ * 2. If enable_best_power_mode is set, ask
+ *    hostapd_get_best_ap_6ghz_power_mode_for_iface() for the highest-EIRP
+ *    non-SP mode that is valid for the current tuple, and return it.
+ * 3. Otherwise try LPI then VLP in order, returning the first mode whose
+ *    tuple is valid per hostapd_is_current_afc_tuple_valid().
+ * 4. If no valid non-SP mode exists, return NL80211_REG_NUM_POWER_MODES.
  *
- * LPI channels are disabled outdoors (HOSTAPD_CHAN_DISABLED), so VLP is the
- * only valid non-SP fallback for an outdoor AP.  Conversely, an indoor SP AP
- * falls back to LPI rather than VLP to stay within its licensed power envelope.
+ * The caller is responsible for acting on NL80211_REG_NUM_POWER_MODES as a
+ * no-valid-fallback sentinel (e.g. disconnect backhaul STA or set NO_IR).
  *
- * If @iface or iface->conf is NULL, or if @current_power_mode is not an SP
- * variant (i.e. he_reg_is_sp() returns false), the function returns
- * NL80211_REG_NUM_POWER_MODES as a sentinel indicating that no fallback is
- * applicable.  Callers must treat this sentinel as a no-op condition.
- *
- * This function does not validate whether the returned mode is usable on the
- * current channel/bandwidth/puncturing tuple.  The caller must perform that
- * check with hostapd_is_current_afc_tuple_valid() before acting on the result.
- *
- * Return: NL80211_REG_AP_LPI for indoor SP, NL80211_REG_AP_VLP for outdoor SP,
- *         or NL80211_REG_NUM_POWER_MODES if @current_power_mode is not SP or
- *         the interface pointers are invalid.
+ * Return: NL80211_REG_AP_LPI, NL80211_REG_AP_VLP, or
+ *         NL80211_REG_NUM_POWER_MODES if no valid non-SP mode exists or
+ *         @iface/@current_power_mode preconditions are not met.
  */
 static u8
 hostapd_get_afc_non_sp_fallback_power_mode(struct hostapd_iface *iface,
 					   u8 current_power_mode)
 {
+	u8 best;
+
 	if (!iface || !iface->conf || !he_reg_is_sp(current_power_mode))
 		return NL80211_REG_NUM_POWER_MODES;
 
-	if (he_reg_is_indoor(current_power_mode))
+	/*
+	 * INDOOR_SP (value 8) is set explicitly in config.  Prefer LPI when
+	 * the current tuple is valid for it; otherwise fall through to the
+	 * generic path below.
+	 */
+	if (current_power_mode == HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP &&
+	    hostapd_is_current_afc_tuple_valid(iface, NL80211_REG_AP_LPI))
 		return NL80211_REG_AP_LPI;
 
-	return NL80211_REG_AP_VLP;
+	/*
+	 * When best-power-mode is enabled, use the highest-EIRP non-SP mode
+	 * that is valid for the current channel/BW/puncture tuple.  This is
+	 * deployment-agnostic and handles both "LPI not present" and
+	 * "VLP not present" naturally.
+	 */
+	if (iface->conf->enable_best_power_mode) {
+		best = hostapd_get_best_ap_6ghz_power_mode_for_iface(iface);
+		if (best != NL80211_REG_AP_SP &&
+		    best != NL80211_REG_NUM_POWER_MODES &&
+		    hostapd_is_current_afc_tuple_valid(iface, best)) {
+			wpa_printf(MSG_DEBUG,
+				   "AFC fallback: iface=%s bpm best=%u",
+				   iface->phy, best);
+			return best;
+		}
+	}
+
+	/* BPM disabled or no BPM result: try LPI then VLP by tuple validity */
+	if (hostapd_is_current_afc_tuple_valid(iface, NL80211_REG_AP_LPI)) {
+		wpa_printf(MSG_DEBUG,
+			   "AFC fallback: iface=%s -> LPI", iface->phy);
+		return NL80211_REG_AP_LPI;
+	}
+	if (hostapd_is_current_afc_tuple_valid(iface, NL80211_REG_AP_VLP)) {
+		wpa_printf(MSG_DEBUG,
+			   "AFC fallback: iface=%s -> VLP", iface->phy);
+		return NL80211_REG_AP_VLP;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "AFC fallback: iface=%s no valid non-SP mode", iface->phy);
+	return NL80211_REG_NUM_POWER_MODES;
 }
 
 /**
@@ -3805,32 +3840,31 @@ hostapd_request_6ghz_power_mode(struct hostapd_iface *iface,
  * mode
  * @iface: Pointer to hostapd interface data
  *
- * Attempts to switch a 6 GHz AP that is currently operating in Standard Power
- * (SP) mode to the appropriate non-SP fallback mode when AFC data is no longer
- * available or valid.  The fallback target is determined solely by whether the
- * current power mode is indoor or outdoor:
+ * Attempts to switch a 6 GHz SP AP to the best available non-SP fallback
+ * mode (LPI or VLP) when AFC data is no longer available or valid.  The
+ * fallback target is chosen deployment-agnostically by checking actual
+ * regulatory tuple validity:
  *
- *   - Indoor SP  (HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP)  -> LPI
- *   - Outdoor SP (HE_REG_INFO_6GHZ_AP_TYPE_SP)         -> VLP
+ *   1. If INDOOR_SP (8) and LPI tuple is valid -> LPI.
+ *   2. If BPM enabled: best non-SP mode from EIRP, revalidated by tuple.
+ *   3. LPI tuple valid -> LPI; VLP tuple valid -> VLP.
+ *   4. No valid mode -> INVALID_CURRENT.
+ *
+ * The non-SP mode check is performed BEFORE the transient-defer guards so
+ * a non-SP AP with a concurrent CSA never incorrectly returns DEFERRED.
  *
  * Before attempting the switch the function checks for two conditions that
- * require the fallback to be deferred:
+ * require the fallback to be deferred (current mode must be SP for these
+ * to apply):
  *
  *   1. A power mode change is already in flight
  *      (iface->power_mode_6ghz_before_change != -1 and differs from the
- *      current mode).  The pending flag is set and ERROR is returned so the
- *      caller retries on the next event.  If power_mode_6ghz_before_change
- *      matches the current mode the stale marker is cleared and evaluation
- *      continues.
+ *      current mode).  The pending flag is set and DEFERRED is returned.
+ *      If power_mode_6ghz_before_change matches the current mode the stale
+ *      marker is cleared and evaluation continues.
  *
- *   2. A Channel Switch Announcement (CSA) is in progress.  The pending flag
- *      is set and ERROR is returned for the same reason.
- *
- * Once a fallback target is determined, the current channel/bandwidth/
- * puncturing tuple is validated against that target power mode via
- * hostapd_is_current_afc_tuple_valid().  If the tuple is invalid for the
- * fallback mode, INVALID_CURRENT is returned and the caller is responsible
- * for disconnecting the backhaul STA or triggering a channel change.
+ *   2. A Channel Switch Announcement (CSA) is in progress.  The pending
+ *      flag is set and DEFERRED is returned.
  *
  * On success the power mode switch is driven through
  * hostapd_request_6ghz_power_mode(), which refreshes the hardware channel
@@ -3850,14 +3884,16 @@ hostapd_request_6ghz_power_mode(struct hostapd_iface *iface,
  *   the fallback target equals the current mode; no action taken.
  * * %HOSTAPD_AFC_PWR_SYNC_UPDATED - fallback power mode switch was
  *   successfully initiated via CSA; beacons have been updated.
+ * * %HOSTAPD_AFC_PWR_SYNC_DEFERRED - fallback blocked by a transient
+ *   condition (CSA or pending power switch); is_afc_repeater_power_sync_pending
+ *   is set. Callers with a retry path re-arm retry on the next
+ *   REGDOM_SET_BY_DRIVER event; root AP + BPM-disabled fail-safe
+ *   callers consume this as NO_IR.
  * * %HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT - the current channel/BW/puncture
- *   tuple is not valid in the fallback power mode; the caller must disconnect
- *   the backhaul STA or trigger a channel change.
- * * %HOSTAPD_AFC_PWR_SYNC_ERROR - fallback deferred because a power mode
- *   change or CSA is already in progress, or an internal step of
- *   hostapd_request_6ghz_power_mode() failed;
- *   is_afc_repeater_power_sync_pending is set so the fallback is retried on the
- *   next regulatory or AFC event.
+ *   tuple has no valid non-SP fallback; the caller must disconnect the
+ *   backhaul STA or set NO_IR.
+ * * %HOSTAPD_AFC_PWR_SYNC_ERROR - hard internal failure (hw refresh,
+ *   mode select, or driver switch failed); no retry is armed.
  */
 enum hostapd_afc_power_sync_result
 hostapd_force_afc_non_sp_power_mode(struct hostapd_iface *iface)
@@ -3875,21 +3911,39 @@ hostapd_force_afc_non_sp_power_mode(struct hostapd_iface *iface)
 	hapd = iface->bss[0];
 	current_power_mode = iface->conf->he_6ghz_reg_pwr_type;
 
+	/*
+	 * Clear a stale power_mode_6ghz_before_change marker before the
+	 * non-SP check so it does not linger if the AP has already
+	 * transitioned out of SP (e.g. after a successful fallback).
+	 */
+	if (iface->power_mode_6ghz_before_change > -1 &&
+	    iface->power_mode_6ghz_before_change == current_power_mode) {
+		wpa_printf(MSG_INFO,
+			   "AFC repeater fallback: clear stale pending mode iface=%s mode=%u",
+			   iface->phy, current_power_mode);
+		iface->power_mode_6ghz_before_change = -1;
+	}
+
+	/*
+	 * Non-SP iface: nothing to fall back from.  Check this before the
+	 * transient-defer guards so a non-SP AP with an in-progress CSA
+	 * never incorrectly returns DEFERRED (which root callers map to
+	 * NO_IR).
+	 */
+	if (!he_reg_is_sp(current_power_mode))
+		return HOSTAPD_AFC_PWR_SYNC_NOOP;
+
 	if (iface->power_mode_6ghz_before_change > -1) {
-		if (iface->power_mode_6ghz_before_change ==
-		    current_power_mode) {
-			wpa_printf(MSG_INFO,
-				   "AFC repeater fallback: clear stale pending mode iface=%s mode=%u",
-				   iface->phy, current_power_mode);
-			iface->power_mode_6ghz_before_change = -1;
-		} else {
-			wpa_printf(MSG_INFO,
-				   "AFC repeater fallback deferred: iface=%s current=%u pending_mode=%d",
-				   iface->phy, current_power_mode,
-				   iface->power_mode_6ghz_before_change);
-			iface->is_afc_repeater_power_sync_pending = true;
-			return HOSTAPD_AFC_PWR_SYNC_ERROR;
-		}
+		/*
+		 * Stale same-value marker already cleared above; only a
+		 * mismatched pending mode reaches here.
+		 */
+		wpa_printf(MSG_INFO,
+			   "AFC repeater fallback deferred: iface=%s current=%u pending_mode=%d",
+			   iface->phy, current_power_mode,
+			   iface->power_mode_6ghz_before_change);
+		iface->is_afc_repeater_power_sync_pending = true;
+		return HOSTAPD_AFC_PWR_SYNC_DEFERRED;
 	}
 
 	if (hostapd_csa_in_progress(iface)) {
@@ -3897,14 +3951,20 @@ hostapd_force_afc_non_sp_power_mode(struct hostapd_iface *iface)
 			   "AFC repeater fallback deferred: iface=%s csa=1",
 			   iface->phy);
 		iface->is_afc_repeater_power_sync_pending = true;
-		return HOSTAPD_AFC_PWR_SYNC_ERROR;
+		return HOSTAPD_AFC_PWR_SYNC_DEFERRED;
 	}
 
 	fallback_power_mode = hostapd_get_afc_non_sp_fallback_power_mode
 							(iface,
 							 current_power_mode);
-	if (fallback_power_mode == NL80211_REG_NUM_POWER_MODES ||
-	    fallback_power_mode == current_power_mode)
+	/*
+	 * NUM_POWER_MODES: current mode is SP but no valid non-SP mode
+	 * exists for the current tuple.  Return INVALID_CURRENT so callers
+	 * can disconnect the backhaul STA or call hostapd_set_no_ir_state().
+	 */
+	if (fallback_power_mode == NL80211_REG_NUM_POWER_MODES)
+		return HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT;
+	if (fallback_power_mode == current_power_mode)
 		return HOSTAPD_AFC_PWR_SYNC_NOOP;
 
 	if (!hostapd_is_current_afc_tuple_valid(iface, fallback_power_mode)) {
@@ -3945,9 +4005,22 @@ hostapd_sync_current_afc_power_mode(struct hostapd_iface *iface,
 	if (iface->state != HAPD_IFACE_ENABLED)
 		return HOSTAPD_AFC_PWR_SYNC_NOOP;
 
-	if (iface->power_mode_6ghz_before_change > -1 ||
-	    hostapd_csa_in_progress(iface))
-		return HOSTAPD_AFC_PWR_SYNC_NOOP;
+	/*
+	 * CSA or pending power switch still in progress: cannot evaluate now.
+	 * Clear a stale marker (pending == current) before checking, mirroring
+	 * hostapd_force_afc_non_sp_power_mode(), so a resolved switch does not
+	 * cause repeated DEFERRED returns and stall the retry loop.
+	 */
+	if (iface->power_mode_6ghz_before_change > -1) {
+		u8 cur = iface->conf->he_6ghz_reg_pwr_type;
+
+		if (iface->power_mode_6ghz_before_change == cur)
+			iface->power_mode_6ghz_before_change = -1;
+		else
+			return HOSTAPD_AFC_PWR_SYNC_DEFERRED;
+	}
+	if (hostapd_csa_in_progress(iface))
+		return HOSTAPD_AFC_PWR_SYNC_DEFERRED;
 
 	hapd = iface->bss[0];
 	current_power_mode = iface->conf->he_6ghz_reg_pwr_type;
@@ -4300,9 +4373,20 @@ hostapd_run_pending_repeater_afc_power_sync(struct hostapd_iface *iface,
 			   "AFC repeater power sync complete: no update needed iface=%s",
 			   iface->phy);
 		break;
+	case HOSTAPD_AFC_PWR_SYNC_DEFERRED:
+		/*
+		 * Transient condition (CSA or pending power switch).
+		 * Re-arm the pending flag so this retries on the next
+		 * REGDOM_SET_BY_DRIVER event.
+		 */
+		iface->is_afc_repeater_power_sync_pending = true;
+		wpa_printf(MSG_INFO,
+			   "AFC repeater power sync deferred: will retry iface=%s",
+			   iface->phy);
+		break;
 	case HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT:
 		wpa_printf(MSG_ERROR,
-			   "AFC repeater power sync failed: disconnect backhaul STA iface=%s",
+			   "AFC repeater power sync failed: no valid non-SP fallback, disconnect backhaul STA iface=%s",
 			   iface->phy);
 		if (hostapd_disconnect_backhaul_sta(iface))
 			wpa_printf(MSG_ERROR,
@@ -4311,9 +4395,17 @@ hostapd_run_pending_repeater_afc_power_sync(struct hostapd_iface *iface,
 		break;
 	case HOSTAPD_AFC_PWR_SYNC_ERROR:
 	default:
+		/*
+		 * Hard internal failure; no retry possible.
+		 * Disconnect backhaul STA so repeater can re-associate cleanly.
+		 */
 		wpa_printf(MSG_ERROR,
-			   "AFC repeater power sync failed: internal error iface=%s",
+			   "AFC repeater power sync failed: internal error, disconnect backhaul STA iface=%s",
 			   iface->phy);
+		if (hostapd_disconnect_backhaul_sta(iface))
+			wpa_printf(MSG_ERROR,
+				   "AFC repeater power sync failed: backhaul disconnect failed iface=%s",
+				   iface->phy);
 		break;
 	}
 
