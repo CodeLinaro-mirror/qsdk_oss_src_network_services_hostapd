@@ -1042,8 +1042,8 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 	 * frame 2, if PMKSA caching was used.
 	 */
 	if (auth_alg == WLAN_AUTH_802_1X &&
-	    (resp == WLAN_STATUS_802_1_X_AUTH_SUCCESS ||
-	     sta && sta->eap_auth_data.add_mic)) {
+	    ((resp == WLAN_STATUS_802_1_X_AUTH_SUCCESS) ||
+	     (sta && sta->eap_auth_data.add_mic))) {
 		mic_len = wpa_mic_len(sta->eap_auth_data.akm,
 				      sta->eap_auth_data.pmk_len,
 				      RSN_HASH_NOT_SPECIFIED);
@@ -1136,7 +1136,7 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 
 #ifdef CONFIG_IEEE8021X_AUTH
 	if (auth_alg == WLAN_AUTH_802_1X &&
-	    (resp == WLAN_STATUS_802_1_X_AUTH_SUCCESS ||
+	    ((resp == WLAN_STATUS_802_1_X_AUTH_SUCCESS) ||
 	     (sta && sta->eap_auth_data.add_mic))) {
 		const u8 *frame, *data, *rsne, *rsnxe;
 		u8 data_buf[500], mic[WPA_1X_MAX_MIC_LEN];
