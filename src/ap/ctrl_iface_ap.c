@@ -2999,6 +2999,14 @@ int hostapd_parse_csa_settings(struct hostapd_iface *iface,
 		return ret;
 	}
 
+#ifdef CONFIG_IEEE80211BN
+	if (settings->freq_params.uhr_enabled && !iface->conf->ieee80211bn) {
+		wpa_printf(MSG_ERROR,
+			   "chanswitch: UHR is not allowed when VAP is operating in EHT mode");
+		return -1;
+	}
+#endif /* CONFIG_IEEE80211BN */
+
 #define SET_CSA_SETTING_EXT(str) \
 	do { \
 		const char *pos2 = os_strstr(pos, " " #str "="); \
