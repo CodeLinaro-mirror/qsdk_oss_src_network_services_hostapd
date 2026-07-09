@@ -1511,15 +1511,26 @@ int hostapd_switch_power_mode(struct hostapd_data *hapd);
 
 /**
  * enum hostapd_afc_power_sync_result - AFC power sync result
- * @HOSTAPD_AFC_PWR_SYNC_NOOP: No change was required
- * @HOSTAPD_AFC_PWR_SYNC_UPDATED: Power mode update was triggered
- * @HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT: Current channel tuple is invalid in
- * the current power mode
- * @HOSTAPD_AFC_PWR_SYNC_ERROR: Power sync failed
+ * @HOSTAPD_AFC_PWR_SYNC_NOOP: No action required. iface is not 6 GHz,
+ *   current mode is not SP, or fallback target equals current mode.
+ * @HOSTAPD_AFC_PWR_SYNC_UPDATED: Power mode CSA successfully initiated.
+ * @HOSTAPD_AFC_PWR_SYNC_DEFERRED: Fallback blocked by a transient condition
+ *   (CSA already in progress or a prior power-mode switch is still pending).
+ *   For hostapd_force_afc_non_sp_power_mode(), is_afc_repeater_power_sync_pending
+ *   is set by the function itself. For hostapd_sync_current_afc_power_mode(),
+ *   the pending-repeater-sync caller re-arms it on receiving DEFERRED.
+ *   Retry fires on the next REGDOM_SET_BY_DRIVER event. Valid only for
+ *   connected-repeater contexts which have a guaranteed retry path.
+ *   Root AP + BPM disabled callers must treat this as NO_IR (fail-safe).
+ * @HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT: Current mode is SP but no valid
+ *   non-SP mode exists for the current channel/BW/puncture tuple.
+ * @HOSTAPD_AFC_PWR_SYNC_ERROR: Hard internal failure (iface/bss NULL,
+ *   hw_features, select_hw_mode, or driver switch failed). No retry armed.
  */
 enum hostapd_afc_power_sync_result {
 	HOSTAPD_AFC_PWR_SYNC_NOOP,
 	HOSTAPD_AFC_PWR_SYNC_UPDATED,
+	HOSTAPD_AFC_PWR_SYNC_DEFERRED,
 	HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT,
 	HOSTAPD_AFC_PWR_SYNC_ERROR,
 };
@@ -1537,6 +1548,9 @@ enum hostapd_afc_power_sync_result {
  * Return:
  * * %HOSTAPD_AFC_PWR_SYNC_NOOP when no update is needed
  * * %HOSTAPD_AFC_PWR_SYNC_UPDATED when a power update is started
+ * * %HOSTAPD_AFC_PWR_SYNC_DEFERRED when a CSA or pending power switch
+ *   prevents evaluation; the pending-repeater-sync caller re-arms the
+ *   retry flag
  * * %HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT when the current tuple cannot
  *   operate in the current power mode
  * * %HOSTAPD_AFC_PWR_SYNC_ERROR on internal failure
