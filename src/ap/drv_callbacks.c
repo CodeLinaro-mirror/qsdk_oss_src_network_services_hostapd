@@ -2972,6 +2972,63 @@ afc_channel_change_timeout(void *eloop_ctx, void *timeout_ctx)
 	hostapd_handle_afc_channel_change(iface);
 }
 
+/**
+ * hostapd_afc_find_iface - Find the hostapd iface matching an AFC event
+ *
+ * Three-tier hw_idx matching:
+ * 1. No multi-radio info: single-radio phy — match phy name only.
+ * 2. multi_hw_info present, current_hw_info set: match current_hw_info->hw_idx.
+ * 3. multi_hw_info present, current_hw_info NULL: match conf->radio_idx.
+ */
+static struct hostapd_iface *
+hostapd_afc_find_iface(struct hostapd_data *hapd, int hw_idx)
+{
+	const char *phy_name = hostapd_drv_get_radio_name(hapd);
+	int i;
+
+	if (!phy_name)
+		return NULL;
+
+	for (i = 0; i < hapd->iface->interfaces->count; i++) {
+		struct hostapd_iface *h = hapd->iface->interfaces->iface[i];
+		const char *h_phy;
+
+		/* Skip ifaces that are being torn down */
+		if (!h->num_bss || !h->bss[0] || !h->conf)
+			continue;
+
+		h_phy = hostapd_drv_get_radio_name(h->bss[0]);
+		if (!h_phy || os_strcmp(h_phy, phy_name) != 0)
+			continue;
+
+		/* Single-radio phy: no multi_hw_info — match by phy name only */
+		if (!h->num_multi_hws) {
+			wpa_printf(MSG_INFO,
+				   "AFC: Found Target iface for single radio phy");
+			return h;
+		}
+
+		/* Multi-radio: current_hw_info already set — match hw_idx */
+		if (h->current_hw_info) {
+			if (h->current_hw_info->hw_idx == (u8)hw_idx) {
+				wpa_printf(MSG_INFO,
+					   "AFC: Found Target iface - cur HW idx match");
+				return h;
+			}
+			continue;
+		}
+
+		/* Multi-radio: freq=0 (ACS) — match via conf->radio_idx */
+		if (h->conf->radio_idx >= 0 &&
+		    h->conf->radio_idx == hw_idx) {
+			wpa_printf(MSG_INFO,
+				   "AFC: Found Target iface - conf radio_idx match");
+			return h;
+		}
+	}
+	return NULL;
+}
+
 static void hostapd_event_afc_update_complete(
 		struct hostapd_data *hapd,
 		struct afc_info *afc_info)
@@ -2979,31 +3036,10 @@ static void hostapd_event_afc_update_complete(
 	struct afc_sp_reg_info *afc_rsp_info = &afc_info->afc_rsp_info;
 	struct hostapd_iface *iface = NULL;
 	bool is_connected_repeater;
-	int i;
-	const char *phy_name = hostapd_drv_get_radio_name(hapd);
 
-	if (!phy_name)
-		return;
-
-	wpa_printf(MSG_DEBUG, "AFC response event received for phy %s through %s",
-		   phy_name, hapd->iface->phy);
-	for (i = 0; i < hapd->iface->interfaces->count; i++) {
-		struct hostapd_iface *h_iface = hapd->iface->interfaces->iface[i];
-		const char *h_phy_name;
-
-		h_phy_name = hostapd_drv_get_radio_name(h_iface->bss[0]);
-		if (!h_phy_name || os_strcmp(h_phy_name, phy_name) != 0)
-			continue;
-
-		wpa_printf(MSG_DEBUG, "AFC Response event for iface %s in phy %s",
-			   h_iface->phy, h_phy_name);
-		if (!h_iface->current_hw_info)
-			continue;
-		if (h_iface->current_hw_info->hw_idx != afc_info->hw_idx)
-			continue;
-		iface = h_iface;
-		break;
-	}
+	wpa_printf(MSG_DEBUG, "AFC response event received through %s",
+		   hapd->iface->phy);
+	iface = hostapd_afc_find_iface(hapd, afc_info->hw_idx);
 	if (!iface) {
 		wpa_printf(MSG_ERROR, "No matching hostapd interface found for AFC update");
 		return;
@@ -3276,31 +3312,10 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 				struct afc_info *afc_info)
 {
 	struct hostapd_iface *iface = NULL;
-	int i;
-	const char *phy_name = hostapd_drv_get_radio_name(hapd);
 
-	if (!phy_name)
-		return;
-
-	wpa_printf(MSG_DEBUG, "AFC Reset event received for phy %s through %s",
-		   phy_name, hapd->iface->phy);
-	for (i = 0; i < hapd->iface->interfaces->count; i++) {
-		struct hostapd_iface *h_iface = hapd->iface->interfaces->iface[i];
-		const char *h_phy_name;
-
-		h_phy_name = hostapd_drv_get_radio_name(h_iface->bss[0]);
-		if (!h_phy_name || os_strcmp(h_phy_name, phy_name) != 0)
-			continue;
-
-		wpa_printf(MSG_DEBUG, "AFC Reset event for iface %s in phy %s",
-			   h_iface->phy, h_phy_name);
-		if (!h_iface->current_hw_info)
-			continue;
-		if (h_iface->current_hw_info->hw_idx != afc_info->hw_idx)
-			continue;
-		iface = h_iface;
-		break;
-	}
+	wpa_printf(MSG_DEBUG, "AFC Reset event received through %s",
+		   hapd->iface->phy);
+	iface = hostapd_afc_find_iface(hapd, afc_info->hw_idx);
 	if (!iface) {
 		wpa_printf(MSG_DEBUG, "No matching hostapd interface found for AFC reset");
 		return;
