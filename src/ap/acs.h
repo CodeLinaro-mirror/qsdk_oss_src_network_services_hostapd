@@ -39,6 +39,8 @@ static inline void acs_cleanup(struct hostapd_iface *iface)
 {
 }
 
+static inline void acs_cleanup_mode(struct hostapd_hw_modes *mode) {}
+
 #endif /* CONFIG_ACS */
 
 #endif /* ACS_H */
