@@ -763,6 +763,7 @@ struct hostapd_data {
 	u16 mapping_switch_time;
 	struct channel_usage_config chan_usage_config;
 	void *hostapd_if_data; /* for per-interface/MLD frame_reg_table, opaque */
+	bool is_update_beacon;
 
 #ifdef CONFIG_IEEE80211BN
 	struct smd_neighbor_update_ctx *smd_neighbor_update_ctx;
