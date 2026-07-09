@@ -98,6 +98,10 @@ void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
 void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
                                 const struct uhr_iap_frame *iap);
 
+/* ST Roam Cleanup - Target AP handler */
+void uhr_tgt_ap_handle_st_roam_cleanup(struct hostapd_data *hapd,
+					const struct uhr_iap_frame *iap);
+
 
 /* Current AP Functions */
 int uhr_handle_st_prep_req(struct hostapd_data *hapd,
