@@ -16467,10 +16467,28 @@ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd_probed, u32 frame_type,
 	rnr_override = hostapd_rnr_6ghz_override_extn(hapd);
 #endif /* CONFIG_QCN_EXTN */
 
-	if (!hapd->iconf->mbssid || hapd->iface->num_bss <= 1 ||
+	if (!hapd->iconf->mbssid ||
 	    (frame_type != WLAN_FC_STYPE_BEACON &&
 	     frame_type != WLAN_FC_STYPE_PROBE_RESP))
 		return 0;
+
+	num_bss = hostapd_get_mbssid_max_num_bss(hapd);
+
+	/*
+	 * Include the Multiple BSSID element whenever MBSSID is enabled. The
+	 * element may include zero or more nontransmitted BSSID profiles.
+	 */
+	if (num_bss == 1) {
+		if (frame_type == WLAN_FC_STYPE_BEACON) {
+			if (!elem_count) {
+				wpa_printf(MSG_INFO,
+					   "MBSSID: Insufficient data for Beacon frames");
+				return 0;
+			}
+			*elem_count = 1;
+		}
+		return 3;
+	}
 
 	if (frame_type == WLAN_FC_STYPE_BEACON) {
 		if (!elem_count) {
@@ -16480,8 +16498,6 @@ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd_probed, u32 frame_type,
 		}
 		*elem_count = 0;
 	}
-
-	num_bss = hostapd_get_mbssid_max_num_bss(hapd);
 
 	while (bss_index < num_bss) {
 		size_t rnr_count = bss_index;
@@ -16780,7 +16796,7 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 	rnr_override = hostapd_rnr_6ghz_override_extn(hapd);
 #endif /* CONFIG_QCN_EXTN */
 
-	if (!hapd->iconf->mbssid || hapd->iface->num_bss <= 1 ||
+	if (!hapd->iconf->mbssid ||
 	    (frame_stype != WLAN_FC_STYPE_BEACON &&
 	     frame_stype != WLAN_FC_STYPE_PROBE_RESP))
 		return eid;
@@ -16796,6 +16812,22 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 		rnr_eid && rnr_count && rnr_offset && rnr_len;
 
 	num_bss = hostapd_get_mbssid_max_num_bss(hapd);
+
+	/*
+	 * Include the Multiple BSSID element whenever MBSSID is enabled. The
+	 * element may include zero or more nontransmitted BSSID profiles.
+	 */
+	if (num_bss == 1) {
+		if (frame_stype == WLAN_FC_STYPE_BEACON)
+			elem_offset[0] = eid;
+
+		return hostapd_eid_mbssid_elem(
+				hapd_probed, eid, end, frame_stype,
+				hostapd_max_bssid_indicator(hapd),
+				&bss_index, elem_count, known_bss, known_bss_len,
+				elemid_modified_bmap, num_bss, bcast_prb_resp,
+				params);
+	}
 
 	while (bss_index < num_bss) {
 		unsigned int rnr_start_count = bss_index;
