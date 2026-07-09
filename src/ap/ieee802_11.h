@@ -577,6 +577,8 @@ u16 hostapd_ml_process_reconf_link(struct hostapd_data *hapd,
 u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 			   enum ieee80211_op_mode opmode);
 u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn);
+u8 * hostapd_eid_tx_power_indication(struct hostapd_data *hapd, u8 *eid);
+size_t hostapd_eid_tx_power_indication_len(void);
 size_t hostapd_security_profile_ie_len(struct hostapd_data *hapd);
 u8 *hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid);
 u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
