@@ -6611,6 +6611,9 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 	int i, j, k;
 	bool triggered = false;
 
+	if (sta->auth_alg == WLAN_AUTH_FT)
+		return false;
+
 	if (sta->unadded_sta &&
 	    (sta->flags & WLAN_STA_AUTH)) {
 		for_each_mld_link(bss, hapd) {
