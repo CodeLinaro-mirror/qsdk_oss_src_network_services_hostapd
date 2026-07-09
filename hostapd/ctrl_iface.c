@@ -5389,6 +5389,31 @@ static bool is_uhr_section_keyword(const char *s)
 	       os_strncmp(s, "ELR ", 4) == 0;
 }
 
+static void
+npca_params_from_mode(struct hostapd_uhr_npca_params *npca,
+		      const struct uhr_npca_info *info)
+{
+	u32 params = 0;
+
+	params |= ((u32)info->npca_min_dur_threshold <<
+		   UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH_SHIFT) &
+		  UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH;
+	params |= ((u32)info->npca_switch_delay <<
+		   UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY_SHIFT) &
+		  UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY;
+	params |= ((u32)info->npca_switch_back_delay <<
+		   UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY_SHIFT) &
+		  UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY;
+	params |= ((u32)info->npca_initial_qsrc <<
+		   UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC_SHIFT) &
+		  UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC;
+	if (info->npca_moplen)
+		params |= UHR_OPER_PARAMS_NPCA_MOPLEN_NPCA;
+
+	os_memset(npca, 0, sizeof(*npca));
+	npca->params = params;
+}
+
 static int
 parse_npca_params(struct hostapd_data *hapd,
 		  struct hostapd_uhr_npca_params *npca,
@@ -5396,6 +5421,8 @@ parse_npca_params(struct hostapd_data *hapd,
 {
 	char *cur = *pos;
 	char *end, *token;
+	bool primary_chan_set = false;
+	bool enable_seen = false;
 
 	while (*cur) {
 		while (*cur == ' ')
@@ -5415,7 +5442,15 @@ parse_npca_params(struct hostapd_data *hapd,
 
 		if (os_strncmp(token, "enable=", 7) == 0) {
 			npca->enable = atoi(token + 7) != 0;
+			enable_seen = true;
 			if (!npca->enable) {
+				while (*cur == ' ')
+					cur++;
+				if (*cur && !is_uhr_section_keyword(cur)) {
+					wpa_printf(MSG_ERROR,
+						   "UPDATE_UHR_FEATURES: NPCA enable=0 must not be followed by additional parameters");
+					return -1;
+				}
 				break;
 			}
 		} else if (os_strncmp(token, "primary_chan=", 13) == 0) {
@@ -5425,6 +5460,7 @@ parse_npca_params(struct hostapd_data *hapd,
 
 			if (subchan_idx < 0)
 				return -1;
+			primary_chan_set = true;
 			npca->params =
 				(npca->params &
 				 ~UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS) |
@@ -5482,6 +5518,14 @@ parse_npca_params(struct hostapd_data *hapd,
 				   token);
 			return -1;
 		}
+	}
+
+	if (enable_seen && npca->enable &&
+	    !primary_chan_set) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES: NPCA enable=1 requires "
+			   "primary_chan to be specified");
+		return -1;
 	}
 
 	*pos = cur;
@@ -5563,6 +5607,8 @@ hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 	u16 mode_changed = 0;
 	char *pos;
 	int i;
+	struct hostapd_hw_modes *mode;
+	struct uhr_npca_info *npca_info;
 
 	if (hostapd_validate_uhr_cu_state(hapd) < 0)
 		return -1;
@@ -5580,7 +5626,15 @@ hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 			pos += 5;
 			struct hostapd_uhr_npca_params prev_npca = upd->npca;
 
-			os_memset(&new_npca, 0, sizeof(new_npca));
+			mode = hapd->iface->current_mode;
+			npca_info = mode ?
+				&mode->npca_info[IEEE80211_MODE_AP] : NULL;
+			if (!npca_info || !npca_info->npca_supported) {
+				wpa_printf(MSG_ERROR,
+					   "UPDATE_UHR_FEATURES: NPCA not supported by the driver");
+				return -1;
+			}
+			npca_params_from_mode(&new_npca, npca_info);
 			if (parse_npca_params(hapd, &new_npca, &pos) < 0)
 				return -1;
 			if (!(upd->mode_changed & BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA)) ||
