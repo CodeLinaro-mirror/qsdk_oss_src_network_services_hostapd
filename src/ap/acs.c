@@ -23,6 +23,7 @@
 #include "ap_config.h"
 #include "hw_features.h"
 #include "acs.h"
+#include "ieee802_11.h"
 #ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
 #endif
@@ -1413,11 +1414,230 @@ int acs_study_options(struct hostapd_iface *iface)
 	return -1;
 }
 
+#ifdef CONFIG_IEEE80211BN
+
+static u16 hostapd_find_legitimate_puncture_pattern(u16 pp, int freq,
+		int center_freq, u16 bw)
+{
+	const u16 *pp_arr;
+	u16 num_pp = 0;
+	u16 pp_mask = 0;
+	u16 pri_chan_pos = 0;
+	u16 max_subch;
+	u16 i;
+	int start_freq;
+
+	pp_arr = hostapd_get_valid_puncture_pattern_arr(bw, &num_pp, &pp_mask);
+	pp &= pp_mask;
+
+	if (!pp_arr || !num_pp)
+		return 0;
+
+	start_freq = (bw == 20) ? freq : center_freq - (bw / 2) + 10;
+	if (freq < start_freq)
+		return PUNCTURE_INVALID;
+
+	pri_chan_pos = (freq - start_freq) / 20;
+	max_subch = bw / 20;
+	if (!max_subch || pri_chan_pos >= max_subch)
+		return PUNCTURE_INVALID;
+
+	if (is_punct_bitmap_valid(bw, pri_chan_pos, pp))
+		return pp;
+
+	for (i = 0; i < num_pp; i++) {
+		if (pp_arr[i] == ((pp | pp_arr[i]) & pp_mask) &&
+				is_punct_bitmap_valid(bw, pri_chan_pos, pp_arr[i]))
+			return pp_arr[i];
+	}
+
+	return PUNCTURE_INVALID;
+}
+
+/*
+ * acs_npca_build_punct_bitmap - Build and validate NPCA puncture bitmap.
+ *
+ * Punctures the normal primary channel in the EHT bitmap:
+ *   combined = conf->punct_bitmap (carry-forward) | BIT(primary_bit)
+ *
+ * Validates with is_punct_bitmap_valid() using npca_bit as the active
+ * primary (NPCA channel must not be punctured).
+ * If combined is invalid, NPCA is disabled entirely.
+ */
+static int acs_npca_build_punct_bitmap(struct hostapd_iface *iface,
+				       int seg0, u8 primary_chan,
+				       u8 npca_chan, u16 bw_mhz,
+				       u16 *bitmap)
+{
+	struct hostapd_config *conf = iface->conf;
+	int num20, first_20_chan;
+	u16 pri_bit_pos;
+	u16 primary_punct_bit, combined,leg_pp;
+	int center_freq = iface->freq + (seg0 - iface->conf->channel) * 5;
+	int npca_freq = center_freq - (int)(seg0 - npca_chan) * 5;
+
+	num20 = bw_mhz / 20;
+	first_20_chan = seg0 - 2 * (num20 - 1);
+	pri_bit_pos  = (primary_chan - first_20_chan) / 4;
+	primary_punct_bit = BIT(pri_bit_pos);
+
+	/* OR carry-forward bits with mandatory primary puncture */
+	combined = conf->punct_bitmap | primary_punct_bit;
+
+	leg_pp = hostapd_find_legitimate_puncture_pattern(combined,npca_freq,center_freq,bw_mhz);
+
+	/*
+	 * Combined bitmap is invalid (carry conflicts with primary puncture).
+	 * Disable NPCA so firmware is not sent a contradictory configuration.
+	 */
+	if (leg_pp != PUNCTURE_INVALID) {
+		wpa_printf(MSG_DEBUG,"ACS NPCA: punct bitmap combined=0x%04x (valid)",combined);
+		*bitmap = combined;
+		return 0;
+	}
+
+	wpa_printf(MSG_WARNING,
+		   "ACS NPCA: combined punct bitmap 0x%04x invalid "
+		   "(primary=%d bit%u, npca=%d, bw=%uMHz, carry=0x%04x).",
+		   combined, primary_chan, pri_bit_pos,
+		   npca_chan, bw_mhz,
+		   conf->punct_bitmap);
+	return -1;
+}
+
+
+/*
+ * acs_npca_select_primary_chan - Auto-select NPCA primary channel for ACS.
+ *
+ * Called after standard ACS selects the primary channel, sets seg0, and
+ * resolves current_mode.  Selects the farthest secondary-segment channel
+ * using distance-weighted scoring:
+ *
+ *   score = |candidate - primary| / 4
+ *
+ * Does nothing if npca_enable=0 or npca_primary_channel already set.
+ */
+static int acs_npca_select_primary_chan(struct hostapd_iface *iface,
+				       u8 *npca_channel, u16 *npca_punct_bitmap)
+{
+	struct hostapd_config *conf = iface->conf;
+	struct hostapd_hw_modes *mode;
+	enum oper_chan_width chwidth;
+	u16 bw_mhz;
+	int seg0, lo, hi, i;
+	u8 primary, npca_best_chan = 0;
+	u32 best_score = 0;
+
+	if (!conf->npca_enable || conf->npca_primary_channel)
+		return 0;
+
+	mode = iface->current_mode;
+	if (!mode)
+		return -1;
+
+	/* Verify BW is supported for NPCA */
+	chwidth = hostapd_get_oper_chwidth(conf);
+	if (chwidth == CONF_OPER_CHWIDTH_80MHZ) {
+		bw_mhz = 80;
+	} else if (chwidth == CONF_OPER_CHWIDTH_160MHZ) {
+		bw_mhz = 160;
+	} else if (chwidth == CONF_OPER_CHWIDTH_320MHZ) {
+		bw_mhz = 320;
+	} else
+		return -1;
+
+	/* Validate BW supported by NPCA */
+	if (bw_mhz < 80) {
+		wpa_printf(MSG_DEBUG,
+			   "ACS NPCA: BW %u MHz not supported", bw_mhz);
+		return -1;
+	}
+
+	primary = conf->channel;
+	if (!primary)
+		return -1;
+
+	/* seg0 is set by acs_adjust_center_freq() before this function is
+	 * called; reading from conf ensures the same alignment used by
+	 * hostapd_config_check_npca_config() validation. */
+	seg0 = (int)hostapd_get_oper_centr_freq_seg0_idx(conf);
+	if (!seg0) {
+		wpa_printf(MSG_WARNING,
+			   "ACS NPCA: seg0 not set in conf for ch%d", primary);
+		return -1;
+	}
+
+	/* Secondary segment: opposite half from primary */
+	if (primary < seg0) {
+		lo = seg0 + 2;
+		hi = seg0 + (bw_mhz == 80 ? 6 : bw_mhz == 160 ? 14 : 30);
+	} else {
+		hi = seg0 - 2;
+		lo = seg0 - (bw_mhz == 80 ? 6 : bw_mhz == 160 ? 14 : 30);
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "ACS NPCA: primary=ch%d seg0=%d bw=%uMHz "
+		   "secondary=[ch%d..ch%d]",
+		   primary, seg0, bw_mhz, lo, hi);
+
+	/* Distance-weighted scoring over secondary segment */
+	for (i = 0; i < mode->num_channels; i++) {
+		struct hostapd_channel_data *ch = &mode->channels[i];
+		u32 score;
+
+		if (ch->chan < lo || ch->chan > hi)
+			continue;
+
+		/* Skip hard-disabled or passive-only channels.
+		 * HOSTAPD_CHAN_RADAR is intentionally not skipped:
+		 * CAC was already completed for the operating block. */
+		if (ch->flag & (HOSTAPD_CHAN_DISABLED | HOSTAPD_CHAN_NO_IR))
+			continue;
+
+		/* Distance from primary in 20 MHz steps */
+		score = abs(ch->chan - primary) / 4;
+
+		if (score > best_score) {
+			best_score     = score;
+			npca_best_chan = ch->chan;
+		}
+	}
+
+	if (!npca_best_chan) {
+		wpa_printf(MSG_WARNING,
+			   "ACS NPCA: no valid secondary channel found");
+		return -1;
+	}
+
+	*npca_channel = npca_best_chan;
+
+	wpa_printf(MSG_INFO,
+		   "ACS NPCA: auto-selected npca_primary_channel=%u "
+		   "(primary=ch%d seg0=%d bw=%uMHz score=%u)",
+		   npca_best_chan, primary, seg0, bw_mhz, best_score);
+
+	/* Build and validate the puncture bitmap */
+	if (acs_npca_build_punct_bitmap(iface, seg0, primary,
+				    npca_best_chan, bw_mhz,
+				    npca_punct_bitmap) != 0) {
+		wpa_printf(MSG_WARNING,
+			   "ACS NPCA: cannot build valid punct bitmap for ch%d, "
+			   "skipping", npca_best_chan);
+		return -1;
+	}
+	return 0;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 static void acs_study(struct hostapd_iface *iface)
 {
 	struct hostapd_channel_data *ideal_chan;
 	int err;
+#ifdef CONFIG_IEEE80211BN
+	u8 npca_channel = 0;
+	u16 npca_punct_bitmap = 0;
+#endif /* CONFIG_IEEE80211BN */
 
 	err = acs_study_options(iface);
 	if (err < 0) {
@@ -1464,27 +1684,34 @@ static void acs_study(struct hostapd_iface *iface)
 		}
 
 #ifdef CONFIG_IEEE80211BN
+		if (iface->conf->npca_enable) {
 #ifdef CONFIG_QCN_EXTN
-		if (iface->conf->npca_enable && iface->conf->conf_extn.qacs_enable) {
-			u8 npca_channel = 0;
-			u16 npca_puncture_bitmap = 0;
-			if (!qacs_select_best_npca_chan(iface, iface->current_mode,
+			if (iface->conf->conf_extn.qacs_enable)
+				qacs_select_best_npca_chan(iface,
+						iface->current_mode,
 						ideal_chan,
 						hostapd_get_oper_chwidth(iface->conf),
 						&npca_channel,
-						&npca_puncture_bitmap)) {
+						&npca_punct_bitmap);
+			else
+#endif /* CONFIG_QCN_EXTN */
+				acs_npca_select_primary_chan(iface,
+						&npca_channel,
+						&npca_punct_bitmap);
+
+			if (npca_channel) {
 				iface->conf->npca_primary_channel = npca_channel;
-				iface->conf->npca_punct_bitmap = npca_puncture_bitmap;
-				if (hostapd_config_check_npca_config(iface->conf) != 0) {
-					wpa_printf(MSG_WARNING,
-							"QACS NPCA: selected channel %u failed "
-							"validation, disabling NPCA",
-							iface->conf->npca_primary_channel);
-					hostapd_disable_npca(iface->conf);
-				}
+				iface->conf->npca_punct_bitmap = npca_punct_bitmap;
+			}
+
+			if (hostapd_config_check_npca_config(iface->conf) != 0) {
+				wpa_printf(MSG_WARNING,
+						"ACS NPCA: selected channel %u failed "
+						"validation, disabling NPCA",
+						iface->conf->npca_primary_channel);
+				hostapd_disable_npca(iface->conf);
 			}
 		}
-#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_QCN_EXTN
