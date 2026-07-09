@@ -5153,9 +5153,11 @@ int ieee802_11_set_beacon(struct hostapd_data *hapd)
 	struct hostapd_data *link_bss;
 #endif /* CONFIG_IEEE80211BE */
 
-	ret = __ieee802_11_set_beacon(hapd);
-	if (ret != 0)
-		return ret;
+	if (hapd->started || hapd->is_update_beacon) {
+		ret = __ieee802_11_set_beacon(hapd);
+		if (ret != 0)
+			return ret;
+	}
 
 	if (!iface->interfaces || iface->interfaces->count <= 1)
 		return 0;
@@ -5185,15 +5187,20 @@ int ieee802_11_set_beacon(struct hostapd_data *hapd)
 		for (i = 0; i < other->num_bss; i++) {
 #ifdef CONFIG_IEEE80211BE
 			if (is_6g == other_iface_6g &&
-			    !(hapd_mld && other->bss[i]->conf->mld_ap &&
-#ifdef CONFIG_QCN_EXTN
-			    !hostapd_is_repurpose_disabled_11be_extn
-			    (other->bss[i]->conf) &&
-#endif /* CONFIG_QCN_EXTN */
-			      hostapd_is_ml_partner(hapd, other->bss[i])))
+			    !(hapd_mld && other->bss[i]->conf->mld_ap))
 				continue;
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BE
+			if (!is_6g &&
+			    (!hostapd_is_ml_partner(hapd, other->bss[i])
+#ifdef CONFIG_QCN_EXTN
+			     || hostapd_is_repurpose_disabled_11be_extn(other->bss[i]->conf)
+#endif /* CONFIG_QCN_EXTN */
+			    ))
+				continue;
+
+#endif /* CONFIG_IEEE80211BE */
 			if (other->bss[i] && other->bss[i]->started &&
 			    other->bss[i]->beacon_set_done)
 				__ieee802_11_set_beacon(other->bss[i]);
