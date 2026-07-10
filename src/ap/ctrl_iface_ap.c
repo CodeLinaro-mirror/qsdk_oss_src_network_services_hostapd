@@ -263,10 +263,14 @@ static int hostapd_get_sta_phy_mode(struct sta_info *sta,
 	} else if (sta->flags & WLAN_STA_HT) {
 		ret = os_snprintf(buf + len, buflen - len,
 				  "[11N]");
-	} else {
-		/* Legacy association */
+	} else if (!(sta->flags & WLAN_STA_NONERP)) {
+		/* 11g: ERP-OFDM capable STA */
 		ret = os_snprintf(buf + len, buflen - len,
-				  "[NULL]");
+				  "[11G]");
+	} else {
+		 /* 11b: non-ERP STA (DSSS/CCK only) */
+		ret = os_snprintf(buf + len, buflen - len,
+				  "[11B]");
 	}
 	if (os_snprintf_error(buflen - len, ret))
 		return len;
