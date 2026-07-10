@@ -9576,8 +9576,20 @@ int hostapd_mld_link_config_check(struct hostapd_data *hapd)
 	struct hostapd_data *first = mld->fbss;
 
 #ifdef CONFIG_QCN_EXTN
+	/* skip check for repurposed link as it can have unique ssid */
 	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
 		return 0;
+
+	/* if fbss is repurposed, get first non-repurposed link */
+	if (hostapd_is_repurpose_disabled_11be_extn(first->conf)) {
+		first = hostapd_get_non_repurposed_link_of_mld_extn(hapd);
+
+		/* if there are no non-repurposed links under ML skip
+		 * validation
+		 */
+		if (!first)
+			return 0;
+	}
 #endif /* CONFIG_QCN_EXTN */
 
 	if (hapd->conf->ssid.ssid_len != first->conf->ssid.ssid_len ||
