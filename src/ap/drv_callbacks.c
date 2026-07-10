@@ -3888,7 +3888,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 					      struct link_removal_event *ev,
 					      enum wpa_event_type event)
 {
-	struct hostapd_data *phapd, *partner = NULL, *tx_hapd;
+	struct hostapd_data *phapd, *partner = NULL, *tx_hapd, *thapd;
 	struct hostapd_iface *iface;
 	unsigned int i;
 	struct hapd_interfaces *interfaces;
@@ -3896,6 +3896,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 	u8 bss_term_dur[12] = { 0 };
 	u8 req_mode;
 #endif
+	bool is_6g = false;
 
 	if (!hapd->conf->mld_ap || !hapd->mld || !hapd->started ||
 	    !(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_MLD_LINK_REMOVAL_OFFLOAD))
@@ -3937,14 +3938,18 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 
 		iface = hapd->iface;
 		interfaces = iface->interfaces;
+			/* check this to verify if the removed BSS is 6 GHz,
+			 * otherwise updating only the partner beacon,
+			 * irrespective of the band is suffice.
+			 */
+			is_6g = is_6ghz_op_class(iface->conf->op_class);
 
-			/* Only disable the link instead of removing */
-			if (hapd->removal_type == HAPD_LINK_DISABLE) {
-				hostapd_free_link_stas(hapd);
-				hostapd_disable_bss(hapd, 0, AP_EVENT_DISABLED);
-				phapd = hapd;
-				goto refresh_beacon;
-			}
+		/* Only disable the link instead of removing */
+		if (hapd->removal_type == HAPD_LINK_DISABLE) {
+			hostapd_free_link_stas(hapd);
+			hostapd_disable_bss(hapd, 0, AP_EVENT_DISABLED);
+			return;
+		}
 
 		/* Save one of the partner bss to update the beacon */
 		for_each_mld_link(phapd, hapd) {
@@ -3995,10 +4000,22 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 				ieee802_11_update_beacon_mbssid(tx_hapd);
 		}
 
-	refresh_beacon:
-		/* Refresh all the partner beacons */
-		if (interfaces->count > 0)
-			hostapd_refresh_all_iface_beacons(interfaces->iface[0]);
+		/* For 6G, OOB advertisement also needs to be refreshed in all
+		 * enabled lower bands, hence invoke other iface beacon refresh
+		 * to update all the entries properly
+		 */
+		if (is_6g) {
+			if (!iface && interfaces->count > 0)
+				hostapd_refresh_all_iface_beacons(interfaces->iface[0]);
+			else
+				hostapd_refresh_other_iface_beacons(iface);
+		} else {
+			/* Refresh all partner beacons */
+			for_each_mld_link(thapd, phapd) {
+				ieee802_11_set_beacon_per_bss_only(thapd);
+				hostapd_gen_per_sta_profiles(thapd);
+			}
+		}
 	}
 }
 #endif /* CONFIG_IEEE80211BE */
