@@ -5997,21 +5997,38 @@ int nl80211_put_freq_params(struct nl_msg *msg,
 	return 0;
 }
 
-int nl80211_update_beacons_on_chain_mask_change(struct wpa_driver_nl80211_data *drv)
-{
 #ifdef CONFIG_AP
-	struct i802_bss *bss = drv->first_bss;
-	struct hostapd_data *hapd = bss->ctx;
+static int
+nl80211_update_chain_mask_beacons_for_hapd(struct hostapd_data *hapd)
+{
+	struct i802_bss *bss;
 	struct hostapd_hw_modes *modes;
 	u16 num_modes, flags;
 	u8 dfs_domain;
 	int i, ret;
 	bool found_matching_mode = false;
+	u8 hw_idx;
 
-	if (!hapd || !hapd->iface || !hapd->iface->current_mode)
+	if (!hapd || !hapd->iface || !hapd->iface->current_mode ||
+	    !hapd->iface->current_mode->channels)
 		return -1;
 
-	wpa_printf(MSG_DEBUG, "nl80211: Dynamic chainmask changed, update the beacons");
+	bss = hapd->drv_priv;
+	if (!bss || !bss->drv) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Invalid drv_priv BSS context for chain mask beacon update");
+		return -1;
+	}
+
+	hw_idx = hapd->iface->current_hw_info ?
+		 hapd->iface->current_hw_info->hw_idx :
+		 NL80211_WIPHY_RADIO_ID_MAX;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Dynamic chainmask changed, update the beacons for iface %s hw_idx %u",
+		   (hapd->conf && hapd->conf->iface) ? hapd->conf->iface : "unknown",
+		   hw_idx);
+
 	modes = nl80211_get_hw_feature_data(bss, &num_modes, &flags, &dfs_domain, 0);
 	if (!modes) {
 		wpa_printf(MSG_ERROR,
@@ -6057,6 +6074,90 @@ int nl80211_update_beacons_on_chain_mask_change(struct wpa_driver_nl80211_data *
 		wpa_printf(MSG_ERROR,
 			   "nl80211: Failed to update beacons after chain mask change");
 	return ret;
+}
+#endif /* CONFIG_AP */
+
+int nl80211_update_beacons_on_chain_mask_change(struct i802_bss *bss, int hw_idx,
+						int ifindex)
+{
+#ifdef CONFIG_AP
+	struct hostapd_data *hapd;
+	struct i802_bss *target_bss;
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_data *link_hapd;
+	int ret = -1;
+	bool updated = false, matching_link_found = false;
+#endif /* CONFIG_IEEE80211BE */
+	int link_hw_idx;
+
+	if (!bss || !bss->drv) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Invalid BSS context for chain mask beacon update");
+		return -1;
+	}
+
+	/* Chain mask change is a wiphy-level event and can be dispatched to all
+	 * BSSes. Process it once per driver to avoid duplicate beacon refreshes.
+	 */
+	if (bss != bss->drv->first_bss)
+		return 0;
+
+	target_bss = bss;
+	if (ifindex > 0) {
+		target_bss = get_bss_ifindex(bss->drv, ifindex);
+		if (!target_bss) {
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: Ignore chain mask beacon refresh for unknown ifindex %d",
+				   ifindex);
+			return 0;
+		}
+	}
+
+	hapd = target_bss->ctx;
+	if (!hapd)
+		return -1;
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf && hapd->conf->mld_ap && hapd->mld) {
+#ifdef CONFIG_QCN_EXTN
+		for_each_mld_link_include_repurposed(link_hapd, hapd)
+#else
+		for_each_mld_link(link_hapd, hapd)
+#endif /* CONFIG_QCN_EXTN */
+		{
+			link_hw_idx = (link_hapd->iface &&
+				       link_hapd->iface->current_hw_info) ?
+				      (int) link_hapd->iface->current_hw_info->hw_idx : -1;
+			if (hw_idx >= 0 && link_hw_idx != hw_idx)
+				continue;
+
+			matching_link_found = true;
+			ret = nl80211_update_chain_mask_beacons_for_hapd(link_hapd);
+			if (!ret)
+				updated = true;
+		}
+
+		if (hw_idx >= 0 && !matching_link_found) {
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: No affiliated MLD link matches chain mask hw_idx %d",
+				   hw_idx);
+			return 0;
+		}
+
+		return updated ? 0 : ret;
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	link_hw_idx = (hapd->iface && hapd->iface->current_hw_info) ?
+		      (int) hapd->iface->current_hw_info->hw_idx : -1;
+	if (hw_idx >= 0 && link_hw_idx != hw_idx) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Ignore chain mask beacon refresh for hw_idx %d (iface hw_idx %d)",
+			   hw_idx, link_hw_idx);
+		return 0;
+	}
+
+	return nl80211_update_chain_mask_beacons_for_hapd(hapd);
 #else
 	return -1;
 #endif /* CONFIG_AP */

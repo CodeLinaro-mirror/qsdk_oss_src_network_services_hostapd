@@ -4505,6 +4505,35 @@ static int qca_nl80211_tpc_eirp_event(struct i802_bss *bss, u8 *data, size_t len
 
 
 #define NUM_6GHZ_OPCLASS 7
+
+static int qca_nl80211_chain_mask_changed_event(struct i802_bss *bss, u8 *data,
+						 size_t len)
+{
+	struct nlattr *attr[QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_MAX + 1];
+	int hw_idx = -1;
+	int ifindex = -1;
+
+	/* Older kernels may send this event without payload. */
+	if (data && len &&
+	    !nla_parse(attr, QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_MAX,
+		       (struct nlattr *) data, len, NULL)) {
+		if (attr[QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_HW_IDX])
+			hw_idx = nla_get_u32(
+				attr[QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_HW_IDX]);
+
+		if (attr[QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_IFINDEX])
+			ifindex = nla_get_u32(
+				attr[QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_IFINDEX]);
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Chain mask changed vendor event hw_idx=%d ifindex=%d",
+		   hw_idx, ifindex);
+
+	return nl80211_update_beacons_on_chain_mask_change(bss, hw_idx, ifindex);
+}
+
+
 static void compute_num_freq_obj(struct nlattr **attr, u8 *num_freq_obj)
 {
 	int nl_len;
@@ -5053,7 +5082,7 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 		qca_nl80211_tpc_eirp_event(bss, data, len);
 		break;
 	case QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED:
-		nl80211_update_beacons_on_chain_mask_change(bss->drv);
+		qca_nl80211_chain_mask_changed_event(bss, data, len);
 		break;
 	default:
 		if (!nl80211_vendor_event_qca_extn(bss, subcmd, data, len))
