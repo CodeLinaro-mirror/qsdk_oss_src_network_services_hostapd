@@ -395,6 +395,12 @@ static struct wpabuf * pasn_get_wrapped_data(struct pasn_data *pasn)
 	case WPA_KEY_MGMT_PASN:
 		/* no wrapped data */
 		return NULL;
+#ifdef CONFIG_ENC_ASSOC
+	case WPA_KEY_MGMT_EPPKE:
+		/* EPPKE without base AKM: no wrapped data per
+		 * IEEE P802.11bi/D4.0, 12.16.9.1 */
+		return NULL;
+#endif /* CONFIG_ENC_ASSOC */
 	case WPA_KEY_MGMT_SAE:
 	case WPA_KEY_MGMT_SAE_EXT_KEY:
 #ifdef CONFIG_SAE
@@ -441,8 +447,9 @@ pasn_derive_keys(struct pasn_data *pasn,
 	if (!cached_pmk || !cached_pmk_len)
 		wpa_printf(MSG_DEBUG, "PASN: No valid PMKSA entry");
 
-	if (pasn->akmp == WPA_KEY_MGMT_PASN) {
-		wpa_printf(MSG_DEBUG, "PASN: Using default PMK");
+	if (pasn->akmp == WPA_KEY_MGMT_PASN ||
+	    pasn->akmp == WPA_KEY_MGMT_EPPKE) {
+		wpa_printf(MSG_DEBUG, "PASN/EPPKE: Using default PMK");
 
 		pmk_len = WPA_PASN_PMK_LEN;
 		os_memcpy(pmk, pasn_default_pmk, sizeof(pasn_default_pmk));
@@ -587,6 +594,9 @@ int handle_auth_pasn_resp(struct pasn_data *pasn, const u8 *own_addr,
 	wpa_pasn_build_auth_header(buf, pasn->bssid, own_addr, peer_addr, 2,
 				   status, pasn->auth_alg == WLAN_AUTH_EPPKE);
 
+	if (status == WLAN_STATUS_FINITE_CYCLIC_GROUP_NOT_SUPPORTED)
+		wpa_pasn_add_own_supported_groups(buf, pasn->pasn_groups);
+
 	if (status != WLAN_STATUS_SUCCESS)
 		goto done;
 
@@ -665,6 +675,8 @@ int handle_auth_pasn_resp(struct pasn_data *pasn, const u8 *own_addr,
 		pasn->prepare_data_element(pasn->cb_ctx, peer_addr);
 
 	wpa_pasn_add_extra_ies(buf, pasn->extra_ies, pasn->extra_ies_len);
+
+	wpa_pasn_add_own_supported_groups(buf, pasn->pasn_groups);
 
 #ifdef CONFIG_ENC_ASSOC
 	if (pasn->auth_alg == WLAN_AUTH_EPPKE && pasn->is_ml_peer) {
@@ -868,11 +880,14 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 	}
 
 #ifdef CONFIG_ENC_ASSOC
-	/* IEEE 802.11bi/D4.0, 12.16.9 (Enhanced privacy protection key
+	/* IEEE 802.11bi/D4.0, 12.16.9.1 (Enhanced privacy protection key
 	 * exchange) allows the use of SAE-EXT/FT-SAE-EXT as the base AKMP.
+	 * When not using mutual authentication, the EPPKE AKMP itself is
+	 * used as the selected AKMP in the RSNE (no base AKM case).
 	 */
 	if (mgmt->u.auth.auth_alg == WLAN_AUTH_EPPKE &&
-	    !wpa_key_mgmt_sae_ext_key(rsn_data.key_mgmt)) {
+	    !wpa_key_mgmt_sae_ext_key(rsn_data.key_mgmt) &&
+	    rsn_data.key_mgmt != WPA_KEY_MGMT_EPPKE) {
 		wpa_printf(MSG_DEBUG, "EPPKE: Invalid base AKM");
 		status = WLAN_STATUS_INVALID_RSNIE;
 		goto send_resp;
@@ -888,6 +903,13 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 
 	pasn->akmp = rsn_data.key_mgmt;
 	pasn->cipher = rsn_data.pairwise_cipher;
+
+#ifdef CONFIG_ENC_ASSOC
+	/* For EPPKE without base AKM, use eppke_unauth to control whether
+	 * unauthenticated EPPKE is allowed. */
+	if (pasn->akmp == WPA_KEY_MGMT_EPPKE)
+		pasn->noauth = pasn->eppke_unauth;
+#endif /* CONFIG_ENC_ASSOC */
 
 	if (pasn->derive_kdk &&
 	    ieee802_11_rsnx_capab_len(elems.rsnxe, elems.rsnxe_len,
@@ -1011,8 +1033,9 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 		goto send_resp;
 	}
 
-	if (!pasn->noauth && pasn->akmp == WPA_KEY_MGMT_PASN) {
-		wpa_printf(MSG_DEBUG, "PASN: Refuse PASN-UNAUTH");
+	if (!pasn->noauth && (pasn->akmp == WPA_KEY_MGMT_PASN ||
+			      pasn->akmp == WPA_KEY_MGMT_EPPKE)) {
+		wpa_printf(MSG_DEBUG, "PASN/EPPKE: Refuse UNAUTH");
 		status = WLAN_STATUS_UNSPECIFIED_FAILURE;
 		goto send_resp;
 	}

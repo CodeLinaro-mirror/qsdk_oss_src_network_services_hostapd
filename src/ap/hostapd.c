@@ -63,6 +63,10 @@
 #include "interference.h"
 #include "robust_av.h"
 #include "atf/atf_offload.h"
+#ifdef CONFIG_IEEE80211BN
+#include "uhr_utils.h"
+#include "uhr_oui_transport.h"
+#endif /* CONFIG_IEEE80211BN */
 #include "../../qcn_extns/cmn.h"
 #include "nft.h"
 
@@ -271,6 +275,32 @@ int hostapd_for_each_interface(struct hapd_interfaces *interfaces,
 		if (!interfaces->iface[i])
 			continue;
 		ret = cb(interfaces->iface[i], ctx);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+
+static int hostapd_for_each_iface_on_phy(struct hapd_interfaces *interfaces,
+					 const char *phy_name,
+					 int (*cb)(struct hostapd_iface *iface,
+						   void *ctx), void *ctx)
+{
+	size_t i;
+	int ret;
+
+	for (i = 0; i < interfaces->count; i++) {
+		struct hostapd_iface *iface = interfaces->iface[i];
+		const char *name;
+
+		if (!iface || !iface->num_bss || !iface->bss[0])
+			continue;
+		name = hostapd_drv_get_radio_name(iface->bss[0]);
+		if (!name || os_strcmp(name, phy_name) != 0)
+			continue;
+		ret = cb(iface, ctx);
 		if (ret)
 			return ret;
 	}
@@ -1428,6 +1458,14 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 	hapd->beacon_set_done = 0;
 
 	wpa_printf(MSG_DEBUG, "%s(%s)", __func__, hapd->conf->iface);
+#ifdef CONFIG_IEEE80211BN
+       if (hapd->uhr_oui_ctx) {
+               wpa_printf(MSG_DEBUG, "SMD: Deinitializing roaming transport");
+	       if (hostapd_mld_is_first_bss(hapd))
+		       uhr_oui_deinit(hapd->uhr_oui_ctx);
+               hapd->uhr_oui_ctx = NULL;
+       }
+#endif /* CONFIG_IEEE80211BN */
 	hostapd_ucode_free_bss(hapd);
 	hostapd_ubus_free_bss(hapd);
 	accounting_deinit(hapd);
@@ -2334,6 +2372,55 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
 				       WLAN_REASON_PREV_AUTH_NOT_VALID);
 	}
 
+#ifdef CONFIG_IEEE80211BN
+       /* Initialize SMD Roaming transport if configured */
+	/* In hostapd_start_beacon() or similar initialization */
+	if (conf->smd_partners) {
+	    wpa_printf(MSG_DEBUG, "SMD: Initializing roaming transport");
+
+	    if (hostapd_mld_is_first_bss(hapd)) {
+        	/* Initialize OUI context only for first BSS */
+
+               if (hapd->uhr_oui_ctx) {
+                       wpa_printf(MSG_WARNING, "SMD: Socket is already created for first BSS");
+               } else {
+                       hapd->uhr_oui_ctx = uhr_oui_init(hapd);
+                       if (!hapd->uhr_oui_ctx) {
+                           wpa_printf(MSG_ERROR, "SMD: Failed to initialize OUI transport");
+                           return -1;
+                       }
+               }
+        	/* Load configured partner APs */
+	        uhr_load_partners(hapd);
+	    } else {
+	        /* Affiliated links share the first BSS's context */
+        	struct hostapd_data *f_bss = hostapd_mld_get_first_bss(hapd);
+	        if (!f_bss) {
+        	    wpa_printf(MSG_ERROR, "SMD: First BSS OUI context not initialized");
+	            return -1;
+        	}
+
+               if (!f_bss->uhr_oui_ctx) {
+                       wpa_printf(MSG_INFO, "SMD: Could not find socket for first BSS, creating it");
+                       f_bss->uhr_oui_ctx = uhr_oui_init(f_bss);
+                       if (!f_bss->uhr_oui_ctx) {
+                               wpa_printf(MSG_ERROR, "SMD: Failed to initialize OUI transport");
+                               return -1;
+                       }
+               }
+
+
+	        wpa_printf(MSG_DEBUG, "SMD: Using OUI context from first BSS (link_id=%d)",
+        	           f_bss->mld_link_id);
+	        hapd->uhr_oui_ctx = f_bss->uhr_oui_ctx;
+
+        	/* Load configured partner APs */
+	        uhr_load_partners(hapd);
+	    }
+	}
+#endif /* CONFIG_IEEE80211BN */
+
+
 	if (hapd->driver && hapd->driver->set_operstate)
 		hapd->driver->set_operstate(hapd->drv_priv, 1);
 
@@ -2454,6 +2541,9 @@ int hostapd_setup_bss(struct hostapd_data *hapd, bool first, bool start_beacon)
 
 	wpa_printf(MSG_DEBUG, "%s(hapd=%p (%s), first=%d reenable=%u)",
 		   __func__, hapd, conf->iface, first, hapd->reenable);
+#ifdef CONFIG_HOSTAPD_IF
+	hostapd_if_interface_create(hapd);
+#endif
 
 	/* prepare per-BSS rates early from BSS config and current mode */
 	if (hapd->iface->current_mode) {
@@ -2829,6 +2919,21 @@ setup_mld:
 #ifdef CONFIG_IEEE8021X_AUTH
 	hapd->send_eap_req = ieee80211_send_eap_req;
 #endif /* CONFIG_IEEE8021X_AUTH */
+
+	/* Extend wpa_key_mgmt based on Security Profile IE configuration.
+	 * AKMs implied by security_profiles (e.g., OWE via SP8) are added
+	 * directly to conf->wpa_key_mgmt so that ALL subsequent checks
+	 * (beacon RSN IE, assoc processing, probe responses) see them. */
+	if (conf->security_profiles) {
+		int sp_km = hostapd_sp_implied_key_mgmt(conf);
+
+		if ((sp_km & WPA_KEY_MGMT_OWE) &&
+		    !(conf->wpa_key_mgmt & WPA_KEY_MGMT_OWE)) {
+			wpa_printf(MSG_DEBUG,
+				   "SP8: adding OWE to wpa_key_mgmt from security_profiles");
+			conf->wpa_key_mgmt |= WPA_KEY_MGMT_OWE;
+		}
+	}
 
 	if (conf->wpa && hostapd_setup_wpa(hapd))
 		return -1;
@@ -4221,14 +4326,19 @@ hostapd_run_pending_repeater_afc_power_sync(struct hostapd_iface *iface,
 void hostapd_channel_list_updated(struct hostapd_iface *iface, int initiator)
 {
 	if (initiator == REGDOM_SET_BY_DRIVER) {
-		hostapd_for_each_interface(iface->interfaces,
-					   hostapd_handle_regchannel_update,
-					   NULL);
+		const char *phy_name = hostapd_drv_get_radio_name(iface->bss[0]);
+
+		if (!phy_name)
+			return;
+
+		wpa_printf(MSG_DEBUG, "Reg change event received for phy %s through %s",
+			   phy_name, iface->phy);
+		hostapd_for_each_iface_on_phy(iface->interfaces, phy_name,
+					      hostapd_handle_regchannel_update, NULL);
 #ifdef HOSTAPD
-		hostapd_for_each_interface
-				(iface->interfaces,
-				 hostapd_run_pending_repeater_afc_power_sync,
-				 NULL);
+		hostapd_for_each_iface_on_phy(iface->interfaces, phy_name,
+					      hostapd_run_pending_repeater_afc_power_sync,
+					      NULL);
 #endif
 		return;
 	}
@@ -4771,16 +4881,44 @@ static int hostapd_fetch_afc_power_event(struct hostapd_data *hapd)
 	uint8_t radio_idx = NL80211_WIPHY_RADIO_ID_MAX;
 	int ret = -1;
 
-	if (!hostapd_drv_is_retail_afc_supported(hapd)) {
-		wpa_printf(MSG_ERROR, "AFC enterprise mode, hostapd not supported");
-		return ret;
-	}
-
 	if (hapd->iface->num_multi_hws) {
 		if (hapd->iface->current_hw_info) {
+			/* current_hw_info already set — use it directly */
 			radio_idx = hapd->iface->current_hw_info->hw_idx;
+		} else if (hapd->iface->freq != 0) {
+			/* freq known — look up hw_info without modifying iface state */
+			struct hostapd_multi_hw_info *hw_info;
+
+			hw_info = hostapd_get_current_hw_info(hapd->iface,
+							     hapd->iface->freq);
+			if (!hw_info) {
+				wpa_printf(MSG_ERROR,
+					   "No multi_hw_info match for freq=%d",
+					   hapd->iface->freq);
+				return ret;
+			}
+			radio_idx = hw_info->hw_idx;
+		} else if (hapd->iface->conf->radio_idx >= 0) {
+			/* freq=0 (ACS): use radio_idx from conf */
+			unsigned int i;
+
+			for (i = 0; i < hapd->iface->num_multi_hws; i++) {
+				if ((int)hapd->iface->multi_hw_info[i].hw_idx ==
+				    hapd->iface->conf->radio_idx) {
+					radio_idx =
+						hapd->iface->multi_hw_info[i].hw_idx;
+					break;
+				}
+			}
+			if (radio_idx == NL80211_WIPHY_RADIO_ID_MAX) {
+				wpa_printf(MSG_ERROR,
+					   "No multi_hw_info match for radio_idx=%d",
+					   hapd->iface->conf->radio_idx);
+				return ret;
+			}
 		} else {
-			wpa_printf(MSG_ERROR, "No current_hw_info");
+			wpa_printf(MSG_ERROR,
+				   "No current_hw_info, freq=0, no radio_idx fallback");
 			return ret;
 		}
 	}
@@ -4794,6 +4932,27 @@ static int hostapd_fetch_afc_power_event(struct hostapd_data *hapd)
 	return -1;
 #endif /* NEED_AP_MLME */
 }
+
+
+void hostapd_check_get_afc_details(struct hostapd_data *hapd)
+{
+	struct hostapd_iface *iface = hapd->iface;
+
+	if (iface->is_afc_power_event_received)
+		return;
+
+	if (!hostapd_is_sp_chans_available(iface)) {
+		wpa_printf(MSG_DEBUG, "No SP Channels available");
+		return;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "SP channels available. Fetch AFC Payload from the driver");
+
+	if (hostapd_fetch_afc_power_event(hapd))
+		wpa_printf(MSG_DEBUG, "Failed to fetch AFC payload");
+}
+
 
 static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 						 int err)
@@ -4912,24 +5071,6 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 			u8 center_chan_no;
 			u16 center_freq;
 
-			if (!iface->is_afc_power_event_received) {
-			    bool sp_available = hostapd_is_sp_chans_available(iface);
-
-			    if (sp_available) {
-				int ret;
-
-				wpa_printf(MSG_DEBUG,
-					   "SP channels available in 6 GHz band for best power mode operation, fetching from driver");
-				ret = hostapd_fetch_afc_power_event(hapd);
-				if (ret)
-				    wpa_printf(MSG_DEBUG,
-					       "Failed to fetch AFC power event from driver");
-				/* Proceed with best power mode calculation */
-			    } else {
-				wpa_printf(MSG_DEBUG,
-					   "No SP channels available in 6 GHz band for best power mode operation");
-			    }
-			}
 			ch_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
 			center_chan_no = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
 			center_freq = ieee80211_chan_to_freq(NULL, iface->conf->op_class,
@@ -5742,8 +5883,11 @@ void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
 
 		hapd->mld = mld;
 		hostapd_mld_ref_inc(mld);
-		if (hostapd_bss_alloc_link_id(hapd))
-			goto fail;
+		if (hostapd_bss_alloc_link_id(hapd)) {
+			hostapd_mld_ref_dec(mld);
+			hapd->mld = NULL;
+			return;
+		}
 		break;
 	}
 
@@ -6613,9 +6757,6 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 			if (hostapd_tx_bss_only(hapd, "ht_mcs_nss_set") < 0)
 				goto fail;
 		}
-#ifdef CONFIG_HOSTAPD_IF
-		hostapd_if_interface_create(hapd);
-#endif
 	}
 
 	hapd_iface->is_ch_switch_dfs = false;
@@ -7275,6 +7416,7 @@ int hostapd_disable_iface(struct hostapd_iface *hapd_iface)
 	/* same as hostapd_interface_deinit without deinitializing ctrl-iface */
 	for (j = 0; j < hapd_iface->num_bss; j++) {
 		struct hostapd_data *hapd = hapd_iface->bss[j];
+		hapd->reenable = REENABLE_DEINIT;
 		hostapd_bss_deinit_no_free(hapd);
 		hostapd_bss_link_deinit(hapd);
 		hostapd_free_hapd_data(hapd);
@@ -8188,8 +8330,7 @@ void hostapd_new_assoc_sta(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 
 	/* Start IEEE 802.1X authentication process for new stations */
-	if (!hapd->conf->plugin_eap_offload)
-		ieee802_1x_new_station(hapd, sta);
+	ieee802_1x_new_station(hapd, sta);
 
 #ifdef CONFIG_ENC_ASSOC
 		if (ap_sta_is_epp(sta) && sta->wpa_sm) {
@@ -8232,20 +8373,20 @@ void hostapd_new_assoc_sta(struct hostapd_data *hapd, struct sta_info *sta,
 		    sta->auth_alg != WLAN_AUTH_FILS_SK &&
 		    sta->auth_alg != WLAN_AUTH_FILS_SK_PFS &&
 		    sta->auth_alg != WLAN_AUTH_FILS_PK &&
-		    !(sta->flags & (WLAN_STA_WPS | WLAN_STA_MAYBE_WPS)))
+		    !(sta->flags & (WLAN_STA_WPS | WLAN_STA_MAYBE_WPS))) {
 			wpa_auth_sm_event(sta->wpa_sm, WPA_REAUTH);
+		    }
 	} else if (!(hapd->iface->drv_flags2 &
 		     WPA_DRIVER_FLAGS2_4WAY_HANDSHAKE_AP_PSK)) {
 		/* The 4-way handshake offloaded case will have this handled
 		 * based on the port authorized event. */
 
 		/*
-		 * Do not initalize the state machine if 802.1x offload is
-		 * enabled or if EAPOL-KEY (4-way) offload is enabled
+		 * Do not initalize the state machine if
+		 * if EAPOL-KEY (4-way) offload is enabled
 		 */
 		wpa_auth_sta_associated(hapd->wpa_auth, sta->wpa_sm,
-					!(hapd->conf->plugin_eap_offload ||
-					  hapd->conf->plugin_eapol_key_offload));
+					!hapd->conf->plugin_eapol_key_offload);
 	}
 
 	if (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_WIRED) {
@@ -9031,6 +9172,51 @@ int hostapd_force_channel_switch(struct hostapd_iface *iface,
 	return ret;
 }
 
+void hostapd_get_channel_switch_time(struct hostapd_iface *iface,
+				     struct hostapd_freq_params *freq_params)
+{
+	struct hostapd_data *hapd = NULL;
+	unsigned int i;
+	int ret;
+
+	if (iface->bss == NULL || iface->num_bss == 0)
+		return;
+
+	iface->cs_time = 0;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		if (iface->bss[i]->driver == NULL ||
+		    iface->bss[i]->drv_priv == NULL)
+			continue;
+
+		hapd = iface->bss[i];
+		break;
+	}
+
+	if (hapd == NULL) {
+		wpa_printf(MSG_DEBUG,
+			   "No valid BSS with driver found for channel switch time query");
+		return;
+	}
+
+	if (hapd->driver->get_channel_switch_time) {
+		ret = hapd->driver->get_channel_switch_time(hapd->drv_priv,
+							    freq_params,
+							    &iface->cs_time);
+		if (ret == 0) {
+			wpa_printf(MSG_DEBUG,
+				   "channel switch time from driver: %u",
+				   iface->cs_time);
+		} else {
+			wpa_printf(MSG_WARNING,
+				   "Failed to get channel switch time from driver: %d",
+				   ret);
+			/* Reset to safe default */
+			iface->cs_time = 0;
+		}
+	}
+}
+
 
 /**
  * hostapd_abort_cac_for_channel_switch - Abort an ongoing CAC to perform a
@@ -9117,15 +9303,12 @@ hostapd_switch_channel_fallback(struct hostapd_iface *iface,
 	case 80:
 		if (freq_params->center_freq2) {
 			bw = CONF_OPER_CHWIDTH_80P80MHZ;
-			iface->conf->vht_capab |=
-				VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ;
 		} else {
 			bw = CONF_OPER_CHWIDTH_80MHZ;
 		}
 		break;
 	case 160:
 		bw = CONF_OPER_CHWIDTH_160MHZ;
-		iface->conf->vht_capab |= VHT_CAP_SUPP_CHAN_WIDTH_160MHZ;
 		break;
 	case 320:
 		bw = CONF_OPER_CHWIDTH_320MHZ;

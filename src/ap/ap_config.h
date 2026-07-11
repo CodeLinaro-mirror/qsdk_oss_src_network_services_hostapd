@@ -324,6 +324,8 @@ struct airtime_sta_weight {
 struct smd_partner_entry {
 	u8 mac_addr[ETH_ALEN];
 	struct smd_partner_entry *next;
+       u8 key[32];    /* AES-SIV-256 key; all-zero means no encryption */
+       bool has_key;
 };
 #endif /* CONFIG_IEEE80211BN */
 
@@ -598,6 +600,8 @@ struct hostapd_bss_config {
 	unsigned int assoc_sa_query_max_timeout;
 	/* dot11AssociationSAQueryRetryTimeout (in TUs) */
 	int assoc_sa_query_retry_timeout;
+	/* Disable SA Query processing for WPA3 reassoc/MLD roam */
+	int disable_sa_query;
 #ifdef CONFIG_OCV
 	int ocv; /* Operating Channel Validation */
 #endif /* CONFIG_OCV */
@@ -1187,6 +1191,11 @@ struct hostapd_bss_config {
 	/* Whether to allow PASN-UNAUTH */
 	int pasn_noauth;
 
+#ifdef CONFIG_ENC_ASSOC
+	/* Whether to allow unauthenticated EPPKE (EPPKE without base AKM) */
+	bool eppke_unauth;
+#endif /* CONFIG_ENC_ASSOC */
+
 #ifdef CONFIG_TESTING_OPTIONS
 	/*
 	 * Normally, KDK should be derived if and only if both sides support
@@ -1469,6 +1478,7 @@ struct hostapd_config {
 	struct wpa_freq_range_list acs_freq_list;
 	u8 acs_freq_list_present;
 	int acs_exclude_dfs;
+	int radio_idx; /* hw_idx from multi_hw_info, -1 if not multi-radio */
 	int acs_enable_bw_downgrade;
 	int acs_dfs_available_only;
 	u8 min_tx_power;

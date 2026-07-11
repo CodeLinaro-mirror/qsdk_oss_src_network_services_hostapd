@@ -106,6 +106,7 @@ OBJS = config.o
 OBJS += notify.o
 OBJS += bss.o
 OBJS += eap_register.o
+OBJS += smd.o
 OBJS += ../src/utils/common.o
 OBJS += ../src/utils/config.o
 OBJS += ../src/utils/wpa_debug.o
@@ -1066,6 +1067,10 @@ OBJS += ../src/ap/ttlm.o
 endif
 ifdef CONFIG_IEEE80211BN
 OBJS += ../src/ap/ieee802_11_uhr.o
+OBJS += ../src/ap/uhr_utils.o
+OBJS += ../src/ap/uhr_oui_transport.o
+OBJS += ../src/ap/uhr_iap.o
+#OBJS += ../src/ap/uhr_current_ap.o
 endif
 OBJS += ../src/ap/dscp_policy.o
 ifdef CONFIG_WNM_AP

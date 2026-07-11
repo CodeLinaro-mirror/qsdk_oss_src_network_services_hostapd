@@ -58,6 +58,9 @@
 #define WLAN_STA_PENDING_DEAUTH_CB BIT(30)
 #define WLAN_STA_NONERP BIT(31)
 
+/* STA flags ext */
+#define WLAN_STA_SMD BIT(0)
+
 /* wired mac authentication bypass sta, non-802.1x capable */
 #define WIRED_STA_MAB BIT(2)
 
@@ -133,20 +136,100 @@ struct dscp_policy_state {
 };
 
 #ifdef CONFIG_IEEE80211BN
+/**
+ * enum smd_ap_state - SMD roaming AP state machine
+ *
+ * Complete state machine for ST Prep and ST Execute phases.
+ * ST Prep states (0-3) are used during preparation phase.
+ * ST Execute states (4-8) are used during execution phase.
+ */
+enum smd_ap_state {
+	/* ST Prep states (from V24) */
+	SMD_AP_STATE_IDLE = 0,
+	SMD_AP_STATE_ST_PREP_STARTED,
+	SMD_AP_STATE_ST_PREP_IAP_PENDING,
+	SMD_AP_STATE_ST_PREP_COMPLETE,
+
+       /* ST Execute states (NEW in V25) */
+       SMD_AP_STATE_ST_EXEC_STARTED,      /* ST Execute initiated */
+       SMD_AP_STATE_ST_EXEC_IAP_PENDING,  /* Waiting for IAP RESPONSE */
+       SMD_AP_STATE_ST_EXEC_COMPLETE,
+       SMD_AP_STATE_DL_DRAIN_ACTIVE,      /* DL Drain timeout active */
+       SMD_AP_STATE_TRANSITION_COMPLETE,  /* Transition complete */
+};
+
+/**
+ * enum tgt_smd_roam_state - SMD roaming state for non-AP STA
+ *
+ * complete state machine for SMD at Target AP for non-AP STA MLD
+ */
+enum tgt_smd_roam_state {
+	SMD_STA_ST_NONE,
+	SMD_STA_ST_PREP_DONE,
+	SMD_STA_ST_EXEC_DONE,
+};
+
+/* Forward declaration for sta_info pointer */
+struct sta_info;
+
+/**
+ * struct smd_roam_ap_info - SMD roaming AP information
+ *
+ * Tracks potential target APs for UHR Link Reconfiguration.
+ * Linked list of APs that the STA can roam to.
+ */
+struct smd_roam_ap_info {
+	struct smd_roam_ap_info *next;
+
+	u8 ap_mld_addr[ETH_ALEN];
+	u8 sta_addr[ETH_ALEN];
+
+	/* Channel information */
+	u8 op_class;
+	u8 channel;
+	enum smd_ap_state state;
+
+	/* Last seen timestamp */
+	struct os_reltime last_seen;
+
+	/* UHR ST preparation timeout tracking */
+	bool uhr_st_prep_timeout_occurred;
+	bool uhr_st_prep_timer_ongoing;    /* true while ST prep timer is armed */
+	struct os_reltime uhr_st_prep_start;
+	u8 st_prep_link_id;                /* MLD link that owns the ST prep timer */
+	struct hostapd_data *st_prep_hapd; /* hapd of the prep link (for clone cleanup) */
+
+	/* ST Execute fields  */
+	u32 dl_drain_duration_tu;          /* DL Drain duration in TU */
+	struct os_reltime dl_drain_start;  /* DL Drain start time */
+	struct sta_info *sta;              /* Back pointer to station */
+	bool smd_ctx_valid;
+	struct sta_smd_ctx_info *smd_ctx;  /* SMD context for this AP MLD transition */
+	bool uhr_st_iap_timer_ongoing;
+	bool uhr_st_iap_timeout_occurred;
+};
+
+
 /* SMD Capabilities structure */
 struct smd_caps {
-        bool dl_data_fwd; /* DL Data Forwarding capability */
-        u8 max_prep_target_apmlds; /* Max Number Of Prepared Target AP MLDs */
-        bool smd_type; /* SMD Type field */
-        bool ptk_mode; /* PTK Mode field */
+	bool dl_data_fwd; /* DL Data Forwarding capability */
+	u8 max_prep_target_apmlds; /* Max Number Of Prepared Target AP MLDs */
+	bool smd_type; /* SMD Type field */
+	bool ptk_mode; /* PTK Mode field */
 };
 
 /* SMD (Seamless Multiband Device) station information */
 struct smd_info {
-        bool smd_sta; /* Station supports SMD */
-        u8 smd_identifier[ETH_ALEN]; /* SMD Identifier from STA */
-        u8 smd_timeout; /* Timeout Value in TU */
-        struct smd_caps caps; /* SMD capabilities */
+	bool smd_sta; /* Station supports SMD */
+	u8 smd_identifier[ETH_ALEN]; /* SMD Identifier from STA */
+	u8 smd_timeout; /* Preparation Timeout, units of 64 TUs */
+	struct smd_caps caps; /* SMD capabilities */
+	struct smd_roam_ap_info *ap_list;  /* List of potential target APs */
+	int uhr_target_prep_timer; /* Target AP prep timer */
+	u8 *tgt_prep_timer_ctx; /* heap-allocated sta_addr copy passed to eloop */
+	struct hostapd_data *tgt_prep_timer_hapd; /* assoc-link hapd at timer registration */
+	enum tgt_smd_roam_state state; /* non-AP STA state in Tgt AP */
+	bool flag;
 };
 #endif /* CONFIG_IEEE80211BN */
 
@@ -160,7 +243,7 @@ struct sta_info {
 	be32 ipaddr;
 	struct dl_list ip6addr; /* list head for struct ip6addr */
 	u16 aid; /* STA's unique AID (1 .. 2007) or 0 if not yet assigned */
-	u16 wds_mld_uid; /* STA's vlan ifname unique id (1 .. 2007) or 0 if not */
+	u16 wds_mld_uid; /* STA's vlan ifname unique id (1..2007 non-repurposed, >= 3001 repurposed) or 0 if not */
 	u16 disconnect_reason_code; /* RADIUS server override */
 	u32 flags; /* Bitfield of WLAN_STA_* */
 	u16 capability;
@@ -272,6 +355,8 @@ struct sta_info {
 	struct ieee80211_uhr_capabilities *uhr_capab;
 	size_t uhr_capab_len;
 
+	 u8  skip_sa_query; /* 0: trigger sa query procedure
+			     * 1: skip sa query procedure */
 	int sa_query_count; /* number of pending SA Query requests;
 			     * 0 = no SA Query in progress */
 	int sa_query_timed_out;
@@ -464,9 +549,12 @@ struct sta_info {
 	struct wpabuf *sae_pw_id;
 	unsigned int sae_pw_id_counter;
 
+	u32 flags_ext;
 #ifdef CONFIG_IEEE80211BN
-        /* SMD information */
-        struct smd_info smd_info;
+	/* SMD information */
+	struct smd_info smd_info;
+	bool dl_sn_not_transferred;
+	bool ul_sn_not_transferred;
 #endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_ENC_ASSOC
 	bool epp_sta; /* Indicates if the station is an EPP peer */

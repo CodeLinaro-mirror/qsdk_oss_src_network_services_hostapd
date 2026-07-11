@@ -20,6 +20,7 @@
 #include "scan.h"
 #include "bssid_ignore.h"
 #include "bss.h"
+#include "smd.h"
 #include "../qcn_extns/cmn.h"
 
 static void wpa_bss_set_hessid(struct wpa_bss *bss)
@@ -1084,6 +1085,12 @@ void wpa_bss_update_scan_res(struct wpa_supplicant *wpa_s,
 
 	if (wpa_s->last_scan_res)
 		wpa_s->last_scan_res[wpa_s->last_scan_res_used++] = bss;
+
+#ifdef CONFIG_IEEE80211BN
+	smd_process_discovery_results(wpa_s, bss);
+
+	smd_neighbor_discovery_flow(wpa_s, bss);
+#endif
 }
 
 

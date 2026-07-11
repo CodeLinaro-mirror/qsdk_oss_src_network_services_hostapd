@@ -807,6 +807,7 @@ eapol_auth_alloc(struct eapol_authenticator *eapol, const u8 *addr,
 
 	sm->eapol = eapol;
 	sm->sta = sta_ctx;
+	sm->offload_mode = eapol->conf.plugin_eap_offload ? true : false;
 
 	/* Set default values for state machine constants */
 	sm->auth_pae_state = AUTH_PAE_INITIALIZE;
@@ -852,7 +853,8 @@ eapol_auth_alloc(struct eapol_authenticator *eapol, const u8 *addr,
 	}
 	sm->eap_if = eap_get_interface(sm->eap);
 
-	eapol_auth_initialize(sm);
+	if (!sm->offload_mode)
+		eapol_auth_initialize(sm);
 
 	if (identity) {
 		sm->identity = (u8 *) os_strdup(identity);
@@ -995,6 +997,9 @@ static void eapol_sm_step_cb(void *eloop_ctx, void *timeout_ctx)
  */
 void eapol_auth_step(struct eapol_state_machine *sm)
 {
+	if (sm->offload_mode)
+		return;
+
 	/*
 	 * Run eapol_sm_step_run from a registered timeout to make sure that
 	 * other possible timeouts/events are processed and to avoid long
@@ -1186,6 +1191,7 @@ static int eapol_auth_conf_clone(struct eapol_auth_config *dst,
 	dst->individual_wep_key_len = src->individual_wep_key_len;
 #endif /* CONFIG_WEP */
 	dst->identity_request_retry_interval = src->identity_request_retry_interval;
+	dst->plugin_eap_offload = src->plugin_eap_offload;
 	os_free(dst->eap_req_id_text);
 	if (src->eap_req_id_text) {
 		dst->eap_req_id_text = os_memdup(src->eap_req_id_text,

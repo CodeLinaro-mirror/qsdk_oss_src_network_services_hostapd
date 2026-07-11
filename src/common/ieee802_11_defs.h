@@ -117,7 +117,7 @@
 /* IEEE Std 802.11-2024, 9.4.1.4 (Capability Information field) */
 #define WLAN_CAPABILITY_ESS BIT(0)
 #define WLAN_CAPABILITY_IBSS BIT(1)
-/* bit 2 is reserved (was WLAN_CAPABILITY_CF_POLLABLE) */
+#define WLAN_CAPABILITY_ECU  BIT(2)
 /* bit 3 is reserved (was WLAN_CAPABILITY_CF_POLL_REQUEST) */
 #define WLAN_CAPABILITY_PRIVACY BIT(4)
 #define WLAN_CAPABILITY_SHORT_PREAMBLE BIT(5)
@@ -536,6 +536,7 @@
 #define WLAN_EID_EXT_TCLAS_MASK 89
 #define WLAN_EID_EXT_REJECTED_GROUPS 92
 #define WLAN_EID_EXT_ANTI_CLOGGING_TOKEN 93
+#define WLAN_EID_EXT_MIC 9
 #define WLAN_EID_EXT_PASN_PARAMS 100
 #define WLAN_EID_EXT_EHT_OPERATION 106
 #define WLAN_EID_EXT_MULTI_LINK 107
@@ -567,8 +568,8 @@
 #define WLAN_SEC_PROF_IND_BITMAP_OCTETS(ind)  ((ind) & 0x0f)
 #define WLAN_SEC_PROF_IND_VENDOR_COUNT(ind)   (((ind) >> 4) & 0x0f)
 
-#define WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS 155
 #define WLAN_EID_EXT_SMD 154
+#define WLAN_EID_EXT_SMD_BSS_TRANS_PARAMS 155
 #define WLAN_EID_EXT_UHR_PARAMS_UPDATE          158
 
 /* SMD Information Element length: EID (1) + Len (1) + ExtID (1) +
@@ -758,6 +759,8 @@
 #define WLAN_ACTION_PROTECTED_FTM 34
 #define WLAN_ACTION_EHT 36
 #define WLAN_ACTION_PROTECTED_EHT 37
+/* IEEE Std 802.11bn-D1.3, Table 9-51 (Action field) */
+#define WLAN_ACTION_PROTECTED_UHR 43
 #define WLAN_ACTION_VENDOR_SPECIFIC_PROTECTED 126
 #define WLAN_ACTION_VENDOR_SPECIFIC 127
 /* Note: 128-255 used to report errors by setting category | 0x80 */
@@ -888,6 +891,11 @@
 #define WLAN_PROT_EHT_LINK_RECONFIG_NOTIFY 10
 #define WLAN_PROT_EHT_LINK_RECONFIG_REQUEST 11
 #define WLAN_PROT_EHT_LINK_RECONFIG_RESPONSE 12
+
+/* Protected UHR Action field values (IEEE Std 802.11bn_D1.3, Table 9-658ba) */
+#define WLAN_PROT_UHR_LINK_RECONFIG_REQUEST 0
+#define WLAN_PROT_UHR_LINK_RECONFIG_RESPONSE 1
+#define WLAN_PROT_UHR_LINK_RECONFIG_NOTIFY 2
 
 /* Radio Measurement capabilities (from RM Enabled Capabilities element)
  * IEEE Std 802.11-2020, 9.4.2.44, Table 9-179 */
@@ -1335,6 +1343,21 @@ struct ieee80211_mgmt {
 					 * Basic Multi-Link element (optional) */
 					u8 variable[];
 				} STRUCT_PACKED link_reconf_resp;
+				struct {
+					u8 action; /* Protected UHR */
+					u8 dialog_token;
+					u8 type;
+					u8 variable[];
+				} STRUCT_PACKED uhr_link_reconf_req;
+				struct {
+					u8 action; /* Protected UHR */
+					u8 dialog_token;
+					u8 type;
+					le16 status_code;
+					u8 count;
+					u8 variable[];
+				} STRUCT_PACKED uhr_link_reconf_resp;
+
 #ifdef CONFIG_QCN_EXTN
 				struct {
 					u8 action;
@@ -2127,6 +2150,11 @@ enum plink_action_field {
 #define VENDOR_VHT_TYPE		0x04
 #define VENDOR_VHT_SUBTYPE	0x08
 #define VENDOR_VHT_SUBTYPE2	0x00
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
+/* Vendor specific client sends Broadcom VHT vendor IE with subtype 0x07
+ * (same wire layout as VENDOR_VHT_SUBTYPE/SUBTYPE2: OUI+type+subtype+VHT caps) */
+#define VENDOR_VHT_SUBTYPE3	0x07
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 
 #define VENDOR_HT_CAPAB_OUI_TYPE 0x33 /* 00-90-4c:0x33 */
 
@@ -2209,6 +2237,7 @@ enum bss_trans_mgmt_reason {
 	WNM_TRANSITION_REASON_TRANSITION_DUE_TO_BTM_REQ = 18,
 	WNM_TRANSITION_REASON_PREF_TRANSITION_CANDIDATE_LIST = 19,
 	WNM_TRANSITION_REASON_LEAVING_ESS = 20,
+	WNM_TRANSITION_REASON_ST_NEIGHBORHOOD_DISCOVERY = 22,
 };
 
 /*
@@ -3214,13 +3243,6 @@ struct ieee80211_he_mu_edca_parameter_set {
 #define RNR_TBTT_INFO_COUNT_VAL(x)                  (((x) & 0xf0) >> 4)
 #define RNR_TBTT_INFO_LEN                           13
 #define RNR_TBTT_INFO_MLD_LEN                       16
-
-/*
- * IEEE P802.11bn/D1.5, Table 9-363
- * 9.4.2.169.2 Neighbor AP Information field
- * MLD params (3) + Enhanced Critical Updates Information (1)
- */
-#define RNR_TBTT_INFO_MLD_ECU_LEN                   17
 #define RNR_NEIGHBOR_AP_OFFSET_UNKNOWN              255
 /* Figure 9-632a - BSS Parameters subfield format */
 #define RNR_BSS_PARAM_OCT_RECOMMENDED               BIT(0)
@@ -3406,12 +3428,12 @@ struct ieee80211_eht_capabilities {
 	u8 optional[EHT_MCS_NSS_CAPAB_LEN + EHT_PPE_THRESH_CAPAB_LEN];
 } STRUCT_PACKED;
 
-/* Figure 9-aa2: UHR Operation Parameters field format described in P802.11bn_D1.4 section 9.4.2.355 UHR Operation element */
+/* Figure 9-aa2: UHR Operation Parameters field format described in P802.11bn_D1.5 section 9.4.2.356 UHR Operation element */
 #define UHR_OPER_DPS_ENABLED		BIT(0)
 #define UHR_OPER_NPCA_ENABLED		BIT(1)
-#define UHR_OPER_DBE_ENABLED		BIT(2)
-#define UHR_OPER_P_EDCA_ENABLED		BIT(3)
-#define UHR_OPER_NPCA_OPER_PRESENT	BIT(9)
+#define UHR_OPER_P_EDCA_ENABLED		BIT(2)
+#define UHR_OPER_DBE_ENABLED		BIT(3)
+#define UHR_OPER_NPCA_OPER_PRESENT	BIT(10)
 
 struct ieee80211_dbe_info {
 	/* TODO: Convert this into structure bitfield
@@ -3461,10 +3483,9 @@ struct ieee80211_npca_info {
 	u16 npca_disabled_subchan_bitmap;
 } STRUCT_PACKED;
 
-/* Figure 9-aa1: UHR Operation element format described in P802.11bn_D1.4 section 9.4.2.355.1 */
+/* Figure 9-aa1: UHR Operation element format described in P802.11bn_D1.5 section 9.4.2.356.1 */
 struct ieee80211_uhr_operation {
 	u16 uhr_oper_params;   /*UHR Operation Parameters*/
-	u8 basic_uhr_mcs_nss_set[4];
 	u8 variable[];
 } STRUCT_PACKED;
 
@@ -3491,14 +3512,17 @@ struct ieee80211_uhr_operation {
 #define UHR_MACCAP_DPS_ASSIST			BIT(1)
 #define UHR_MACCAP_NPCA_SUPP			BIT(4)
 
-/* B26-B28: Parameter Update Adv Notification Interval (3 bits, byte 3) */
-#define UHR_MACCAP3_PARAM_UPD_ADV_NOTIF_INTV_MASK	((u8) (BIT(2) | BIT(3) | BIT(4)))
+/* B26-B30: Parameter Update Adv Notification Interval (5 bits, byte 3) */
+#define UHR_MACCAP3_PARAM_UPD_ADV_NOTIF_INTV_MASK	((u8) (BIT(2) | BIT(3) | \
+							       BIT(4) | BIT(5) | \
+							       BIT(6)))
 #define UHR_MACCAP3_PARAM_UPD_ADV_NOTIF_INTV_SHIFT	2
 
-/* B29-B33: Update Indication In TIM Interval (5 bits, split across bytes 3-4) */
-#define UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_MASK		((u8) (BIT(5) | BIT(6) | BIT(7)))
-#define UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_SHIFT		5
-#define UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK		((u8) (BIT(0) | BIT(1)))
+/* B31-B35: Update Indication In TIM Interval (5 bits, split across bytes 3-4) */
+#define UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_MASK		((u8) (BIT(7)))
+#define UHR_MACCAP3_UPD_IND_TIM_INTV_LOW_SHIFT		7
+#define UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK		((u8) (BIT(0) | BIT(1) | \
+							       BIT(2) | BIT(3)))
 #define UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_SHIFT	0
 
 #define UHR_MAC_CAPAB_LEN	6
@@ -3687,6 +3711,7 @@ struct eht_ml_probe_req_common_info {
 #define RECONF_MULTI_LINK_CTRL_PRES_EML_CAPA       0x0002
 #define RECONF_MULTI_LINK_CTRL_PRES_MLD_CAPA       0x0004
 #define RECONF_MULTI_LINK_CTRL_PRES_EXT_MLD_CAP    0x0008
+#define RECONF_MULTI_LINK_CTRL_PRESS_TGT_MLD_ADDR  0x0010
 
 #define EHT_PER_STA_RECONF_CTRL_LINK_ID_MSK        0x000f
 #define EHT_PER_STA_RECONF_CTRL_COMPLETE_PROFILE   0x0010

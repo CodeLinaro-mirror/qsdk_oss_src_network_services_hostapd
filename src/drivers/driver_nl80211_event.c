@@ -20,6 +20,7 @@
 #include "common/ieee802_11_common.h"
 #include "driver_nl80211.h"
 #include "ap/robust_av.h"
+#include "ap/sta_info.h"
 
 #define QCA_NL80211_TPC_EIRP_DBM_MIN	(-128)
 #define QCA_NL80211_TPC_EIRP_DBM_MAX	127
@@ -207,6 +208,11 @@ static const char * nl80211_command_to_string(enum nl80211_commands cmd)
 	C2S(NL80211_CMD_UHR_MODE_UPDATE)
 	C2S(NL80211_CMD_CRITICAL_UPDATE);
 	C2S(NL80211_CMD_CRITICAL_UPDATE_NOTIFY);
+	C2S(NL80211_CMD_UHR_LINK_RECONFIG_REQ)
+	C2S(NL80211_CMD_UHR_LINK_RECONFIG_RESP)
+	C2S(NL80211_CMD_SMD_TRANSITION_DONE)
+	C2S(NL80211_CMD_SMD_ROAM)
+	C2S(NL80211_CMD_SET_SMD_CTX)
 	C2S(__NL80211_CMD_AFTER_LAST)
 	}
 #undef C2S
@@ -1420,6 +1426,140 @@ static void mlme_event_ch_switch(struct wpa_driver_nl80211_data *drv,
 }
 
 
+/**
+ * mlme_event_uhr_reconfig_resp - Handle UHR Link Reconfiguration Response
+ * @drv: Driver data
+ * @frame: Frame data
+ * @len: Frame length
+ * @transition_state_attr: NL80211_ATTR_SMD_LINK_TRANSITION_STATE attribute
+ *	(may be NULL if not present in the netlink message)
+ *
+ * This function handles ST Preparation Response (type=0) and ST Execution
+ * Response (type=1) frames received from the kernel via MLME notification.
+ */
+static void mlme_event_uhr_reconfig_resp(struct wpa_driver_nl80211_data *drv,
+					  const u8 *frame, size_t len,
+					  struct nlattr *transition_state_attr)
+{
+	union wpa_event_data event;
+	const u8 *pos, *end;
+	u16 status_code;
+	u8 type, count;
+
+	/*
+	 * Minimum length to safely read through the Count field:
+	 * 24 (MAC header) + 1+1+1+1 (Cat+Action+DlgToken+Type) +
+	 * 2 (Status Code) + 1 (Count) = 31 bytes.
+	 * (D1.2 was 28; the extra 3 bytes are the new Status Code field.)
+	 */
+	if (len < 31) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: UHR Reconfig response too short (%zu < 31)",
+			   len);
+		return;
+	}
+
+	end = frame + len;
+
+	type = frame[27]; /* Type: 0=ST Preparation, 1=ST Execution */
+
+	status_code = WPA_GET_LE16(frame + 28);
+
+        count = frame[30];
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: UHR Reconfig response type=%u status=%u count=%u len=%zu",
+		   type, status_code, count, len);
+
+        pos = frame + 31;
+
+        /* Each duplet: Link ID (1 octet) + Status Code (2 octets) = 3 bytes */
+        if ((size_t)(end - pos) < (size_t)(3 * count)) {
+                wpa_printf(MSG_DEBUG,
+                           "nl80211: UHR Reconfig response: truncated status list "
+                           "(need %u bytes, have %td)",
+                           3 * count, end - pos);
+                return;
+        }
+
+	os_memset(&event, 0, sizeof(event));
+	event.uhr_reconfig_resp.type        = type;
+	event.uhr_reconfig_resp.status_code = status_code;  /* top-level D1.4 */
+	event.uhr_reconfig_resp.count       = count;
+	event.uhr_reconfig_resp.status_list = pos;
+	event.uhr_reconfig_resp.frame       = frame;
+	event.uhr_reconfig_resp.frame_len   = len;
+
+	pos += 3 * count;  /* skip past all per-link duplets */
+
+        event.uhr_reconfig_resp.resp_ie     = pos;
+        event.uhr_reconfig_resp.resp_ie_len = end - pos;
+
+	if (transition_state_attr)
+		event.uhr_reconfig_resp.link_transition_state =
+			nla_get_u8(transition_state_attr);
+
+	wpa_supplicant_event(drv->ctx, EVENT_UHR_RECONFIG_RESP, &event);
+}
+
+static void
+nl80211_smd_transition_status(struct i802_bss *bss,
+			      struct nlattr **tb)
+{
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	union wpa_event_data event;
+	u32 type;
+
+	if (!tb[NL80211_ATTR_MAC] ||
+	    nla_len(tb[NL80211_ATTR_MAC]) < ETH_ALEN ||
+	    !tb[NL80211_ATTR_STATUS_CODE] ||
+	    nla_len(tb[NL80211_ATTR_STATUS_CODE]) < 2 ||
+	    !tb[NL80211_ATTR_SMD_TRANSITION_TYPE]) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: SMD transition done missing or malformed attributes");
+		return;
+	}
+
+	type = nla_get_u32(tb[NL80211_ATTR_SMD_TRANSITION_TYPE]);
+
+	if (type != NL80211_SMD_TRANSITION_COMPLETE &&
+	    type != NL80211_SMD_TRANSITION_ABORT) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Unexpected SMD transition type %u", type);
+		return;
+	}
+
+	os_memset(&event, 0, sizeof(event));
+	event.st_transition.target_mld_addr = nla_data(tb[NL80211_ATTR_MAC]);
+	event.st_transition.status_code =
+				nla_get_u16(tb[NL80211_ATTR_STATUS_CODE]);
+	event.st_transition.type = type;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: SMD transition done type=%u status=%u target="
+		   MACSTR, type, event.st_transition.status_code,
+		   MAC2STR(event.st_transition.target_mld_addr));
+
+	if (type == NL80211_SMD_TRANSITION_COMPLETE) {
+		os_memcpy(drv->sta_mlo_info.ap_mld_addr,
+			  nla_data(tb[NL80211_ATTR_MAC]), ETH_ALEN);
+
+		if (get_sta_mlo_interface_info(bss) < 0) {
+			wpa_printf(MSG_INFO,
+				   "nl80211: SMD: Failed to get STA MLO info");
+			return;
+		}
+
+		if (!nl80211_get_assoc_bssid(bss)) {
+			wpa_printf(MSG_INFO,
+				   "nl80211: SMD: Failed to get BSSID info after SMD transition");
+			return;
+		}
+	}
+
+	wpa_supplicant_event(drv->ctx, EVENT_SMD_TRANSITION_DONE, &event);
+}
+
 static void mlme_timeout_event(struct wpa_driver_nl80211_data *drv,
 			       enum nl80211_commands cmd, struct nlattr *addr)
 {
@@ -1465,6 +1605,9 @@ mlme_event_mgmt_critical_update(struct i802_bss *bss, struct nlattr *rx_cu_param
 			[NL80211_CU_MLD_LINK_ATTR_CRITICAL_FLAG] = { .type = NLA_FLAG },
 			[NL80211_CU_MLD_LINK_ATTR_BPCC] = { .type = NLA_U8 },
 			[NL80211_CU_MLD_LINK_ATTR_SWITCH_COUNT] = { .type = NLA_U8 },
+			[NL80211_CU_MLD_LINK_ATTR_ENHANCED_BPCC] = { .type = NLA_U8 },
+			[NL80211_CU_MLD_LINK_ATTR_ENHANCED_CRITICAL_FLAG] = { .type = NLA_FLAG },
+			[NL80211_CU_MLD_LINK_ATTR_ECU_COUNTDOWN] = { .type = NLA_U8 },
 		};
 	static struct nla_policy
 		mld_policy[NL80211_CU_MLD_ATTR_MAX + 1] = {
@@ -1526,6 +1669,20 @@ mlme_event_mgmt_critical_update(struct i802_bss *bss, struct nlattr *rx_cu_param
 						event.cu_event.switch_count =
 							nla_get_u8(link[NL80211_CU_MLD_LINK_ATTR_SWITCH_COUNT]);
 					}
+#ifdef CONFIG_IEEE80211BN
+					if (link[NL80211_CU_MLD_LINK_ATTR_ENHANCED_BPCC]) {
+						event.cu_event.enhanced_bpcc =
+							nla_get_u8(link[NL80211_CU_MLD_LINK_ATTR_ENHANCED_BPCC]);
+					}
+					if (link[NL80211_CU_MLD_LINK_ATTR_ENHANCED_CRITICAL_FLAG]) {
+						event.cu_event.enhanced_critical_update =
+							nla_get_flag(link[NL80211_CU_MLD_LINK_ATTR_ENHANCED_CRITICAL_FLAG]);
+					}
+					if (link[NL80211_CU_MLD_LINK_ATTR_ECU_COUNTDOWN]) {
+						event.cu_event.ecu_countdown =
+							nla_get_u8(link[NL80211_CU_MLD_LINK_ATTR_ECU_COUNTDOWN]);
+					}
+#endif /* CONFIG_IEEE80211BN */
 					wpa_supplicant_event(tmp_bss->ctx,
 							     EVENT_RX_CRITICAL_UPDATE, &event);
 				}
@@ -1685,12 +1842,307 @@ mlme_event_mgmt_ttlm_expec_dur_update(struct i802_bss *bss,
 	}
 }
 
+#ifdef CONFIG_IEEE80211BN
+static void nl80211_parse_smd_ctx_ba_params(struct nlattr *tb,
+					    struct sta_smd_ba_info *ba,
+					    u8 *valid_ctx_bmap)
+{
+	struct nlattr *ba_tb[NL80211_SMD_CTX_BA_ATTR_MAX + 1];
+	struct nlattr *ba_attr;
+	int rem, tid;
+
+	static struct nla_policy
+		smd_ctx_ba_policy[NL80211_SMD_CTX_BA_ATTR_MAX + 1] = {
+			[NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE] =
+				{ .type = NLA_U16 },
+			[NL80211_SMD_CTX_BA_ATTR_POLICY] =
+				{ .type = NLA_FLAG },
+			[NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT] =
+				{ .type = NLA_FLAG },
+			[NL80211_SMD_CTX_BA_ATTR_TIMEOUT] =
+				{ .type = NLA_U16 },
+			[NL80211_SMD_CTX_BA_ATTR_EXT_NO_FRAG] =
+				{ .type = NLA_FLAG },
+			[NL80211_SMD_CTX_BA_ATTR_EXT_FRAG_LEVEL] =
+				{ .type = NLA_U8 },
+			[NL80211_SMD_CTX_BA_ATTR_EXT_BUFF_SIZE] =
+				{ .type = NLA_U16 },
+	};
+
+	nla_for_each_nested(ba_attr, tb, rem) {
+		struct nlattr *ba_param_attr;
+
+		tid = nla_type(ba_attr) - 1;
+		if (tid >= SMD_NUM_TIDS)
+			break;
+
+		if (nla_parse_nested(ba_tb, NL80211_SMD_CTX_BA_ATTR_MAX,
+				     ba_attr, smd_ctx_ba_policy)) {
+			wpa_printf(MSG_ERROR,
+				   "nl80211: SMD: Failed to parse BA[%d]", tid);
+			continue;
+		}
+
+		ba_param_attr = ba_tb[NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE];
+		if (ba_param_attr)
+			ba[tid].buffer_size = nla_get_u16(ba_param_attr);
+
+		ba[tid].ba_policy = !!ba_tb[NL80211_SMD_CTX_BA_ATTR_POLICY];
+
+		ba[tid].amsdu_supported =
+			!!ba_tb[NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT];
+
+		ba_param_attr = ba_tb[NL80211_SMD_CTX_BA_ATTR_TIMEOUT];
+		if (ba_param_attr)
+			ba[tid].timeout = nla_get_u16(ba_param_attr);
+
+		ba[tid].ext_no_frag =
+			!!ba_tb[NL80211_SMD_CTX_BA_ATTR_EXT_NO_FRAG];
+
+		ba_param_attr = ba_tb[NL80211_SMD_CTX_BA_ATTR_EXT_FRAG_LEVEL];
+		if (ba_param_attr)
+			ba[tid].extfrag_level = nla_get_u8(ba_param_attr);
+
+		ba_param_attr = ba_tb[NL80211_SMD_CTX_BA_ATTR_EXT_BUFF_SIZE];
+		if (ba_param_attr)
+			ba[tid].ext_buffer_size = nla_get_u16(ba_param_attr);
+
+		*valid_ctx_bmap |= SMD_CTX_VALID_BA_PARAMS;
+	}
+}
+
+/**
+ * nl80211_parse_smd_ctx - Parse SMD context from NL80211 attributes
+ * @smd_attr: NL80211_ATTR_SMD_CTX nested attribute
+ * Returns: Allocated smd_ctx structure or NULL on error
+ *
+ * This function parses NL80211 nested attributes and converts them to
+ * hostapd's internal sta_smd_ctx_info structure. The caller must free
+ * the returned structure.
+ */
+static struct sta_smd_ctx_info * nl80211_parse_smd_ctx(struct nlattr *smd_attr)
+{
+	struct nlattr *tb[NL80211_SMD_CTX_ATTR_MAX + 1];
+	struct nlattr *dl_tb[NL80211_SMD_CTX_DL_ATTR_MAX + 1];
+	struct nlattr *ul_tb[NL80211_SMD_CTX_UL_ATTR_MAX + 1];
+	struct sta_smd_ctx_info *ctx;
+	size_t vendor_ctx_len = 0;
+	struct nlattr *ba_attr;
+
+	static struct nla_policy
+		smd_ctx_policy[NL80211_SMD_CTX_ATTR_MAX + 1] = {
+			[NL80211_SMD_CTX_ATTR_TYPE] = { .type = NLA_U8  },
+			[NL80211_SMD_CTX_ATTR_PN_LEN] = { .type = NLA_U8 },
+			[NL80211_SMD_CTX_ATTR_DL] = { .type = NLA_NESTED },
+			[NL80211_SMD_CTX_ATTR_UL] = { .type = NLA_NESTED },
+			[NL80211_SMD_CTX_ATTR_QOS] = { .type = NLA_NESTED },
+			[NL80211_SMD_CTX_ATTR_VENDOR] = { .type = NLA_BINARY },
+		};
+
+	static struct nla_policy
+		smd_ctx_dl_policy[NL80211_SMD_CTX_DL_ATTR_MAX + 1] = {
+			[NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP] = { .type = NLA_U8 },
+			[NL80211_SMD_CTX_DL_ATTR_SN] = { .type = NLA_NESTED },
+			[NL80211_SMD_CTX_DL_ATTR_PN] = { .type = NLA_BINARY },
+			[NL80211_SMD_CTX_DL_ATTR_BA_PARAMS] = { .type = NLA_NESTED },
+	};
+
+	static struct nla_policy
+		smd_ctx_ul_policy[NL80211_SMD_CTX_UL_ATTR_MAX + 1] = {
+			[NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP] = { .type = NLA_U8 },
+			[NL80211_SMD_CTX_UL_ATTR_SN] = { .type = NLA_NESTED },
+			[NL80211_SMD_CTX_UL_ATTR_PN] = { .type = NLA_BINARY },
+			[NL80211_SMD_CTX_UL_ATTR_BA_PARAMS] = { .type = NLA_NESTED },
+	};
+
+	if (!smd_attr)
+		return NULL;
+
+	if (nla_parse_nested(tb, NL80211_SMD_CTX_ATTR_MAX, smd_attr, smd_ctx_policy)) {
+		wpa_printf(MSG_ERROR, "nl80211: SMD: Failed to parse context");
+		return NULL;
+	}
+
+	if (!tb[NL80211_SMD_CTX_ATTR_TYPE])
+		return NULL;
+
+	if (!(tb[NL80211_SMD_CTX_ATTR_DL] || tb[NL80211_SMD_CTX_ATTR_UL] ||
+	      tb[NL80211_SMD_CTX_ATTR_QOS] || tb[NL80211_SMD_CTX_ATTR_VENDOR]))
+		return NULL;
+
+	if (tb[NL80211_SMD_CTX_ATTR_VENDOR])
+		vendor_ctx_len = nla_len(tb[NL80211_SMD_CTX_ATTR_VENDOR]);
+
+	ctx = os_zalloc(sizeof(*ctx) + vendor_ctx_len);
+	if (!ctx)
+		return NULL;
+
+	/* Extract ST Type */
+	ctx->st_type = nla_get_u8(tb[NL80211_SMD_CTX_ATTR_TYPE]);
+	wpa_printf(MSG_DEBUG, "nl80211: SMD: ST Type=%u", ctx->st_type);
+
+	/* Extract PN length */
+	if (tb[NL80211_SMD_CTX_ATTR_PN_LEN]) {
+		ctx->pn_len = nla_get_u8(tb[NL80211_SMD_CTX_ATTR_PN_LEN]);
+		if (ctx->pn_len > sizeof(ctx->dl.pn))
+			goto fail;
+
+		ctx->valid_ctx_bmap |= SMD_CTX_VALID_PN;
+		wpa_printf(MSG_DEBUG, "nl80211: SMD: PN length=%u", ctx->pn_len);
+	}
+
+	/* Parse Tx Context */
+	if (tb[NL80211_SMD_CTX_ATTR_DL]) {
+		if (nla_parse_nested(dl_tb, NL80211_SMD_CTX_DL_ATTR_MAX,
+				     tb[NL80211_SMD_CTX_ATTR_DL],
+				     smd_ctx_dl_policy)) {
+			wpa_printf(MSG_ERROR, "nl80211: SMD: Failed to parse Tx");
+			goto fail;
+		}
+
+		/* Valid TID bitmap */
+		if (dl_tb[NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP]) {
+			ctx->dl.valid_tid_bmap =
+				nla_get_u8(dl_tb[NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP]);
+			wpa_printf(MSG_DEBUG, "nl80211: SMD: valid tx_tids=0x%02x",
+				   ctx->dl.valid_tid_bmap);
+		}
+
+		/* Sequence numbers - nested array of u16 */
+		if (dl_tb[NL80211_SMD_CTX_DL_ATTR_SN]) {
+			struct nlattr *sn_attr;
+			int rem, tid;
+
+			ctx->valid_ctx_bmap |= SMD_CTX_VALID_DL_SN;
+
+			nla_for_each_nested(sn_attr,
+					    dl_tb[NL80211_SMD_CTX_DL_ATTR_SN],
+					    rem) {
+				tid = nla_type(sn_attr) - 1;
+				if (tid >= SMD_NUM_TIDS)
+					break;
+
+				ctx->dl.sn[tid] = nla_get_u16(sn_attr);
+				wpa_printf(MSG_DEBUG, "nl80211: SMD: Tx SN[%d]=%u",
+					   tid, ctx->dl.sn[tid]);
+			}
+		}
+
+		/* Packet Number - binary data */
+		if (dl_tb[NL80211_SMD_CTX_DL_ATTR_PN]) {
+			const u8 *pn_data = nla_data(dl_tb[NL80211_SMD_CTX_DL_ATTR_PN]);
+
+			os_memcpy(ctx->dl.pn, pn_data, ctx->pn_len);
+			wpa_hexdump(MSG_DEBUG, "nl80211: SMD: Tx PN",
+				    ctx->dl.pn, ctx->pn_len);
+		}
+
+		/* BA Parameters - nested per TID */
+		ba_attr = dl_tb[NL80211_SMD_CTX_DL_ATTR_BA_PARAMS];
+		if (ba_attr)
+			nl80211_parse_smd_ctx_ba_params(ba_attr, ctx->dl.ba,
+							&ctx->valid_ctx_bmap);
+	}
+
+	/* Parse Rx Context */
+	if (tb[NL80211_SMD_CTX_ATTR_UL]) {
+		if (nla_parse_nested(ul_tb, NL80211_SMD_CTX_UL_ATTR_MAX,
+				     tb[NL80211_SMD_CTX_ATTR_UL],
+				     smd_ctx_ul_policy)) {
+			wpa_printf(MSG_ERROR, "nl80211: SMD: Failed to parse Rx");
+			goto fail;
+		}
+
+		/* Valid TID bitmap */
+		if (ul_tb[NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP]) {
+			ctx->ul.valid_tid_bmap =
+				nla_get_u8(ul_tb[NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP]);
+			wpa_printf(MSG_DEBUG, "nl80211: SMD: valid rx_tids=0x%02x",
+				   ctx->ul.valid_tid_bmap);
+		}
+
+		/* Sequence numbers */
+		if (ul_tb[NL80211_SMD_CTX_UL_ATTR_SN]) {
+			struct nlattr *sn_attr;
+			int rem, tid;
+
+			ctx->valid_ctx_bmap |= SMD_CTX_VALID_UL_SN;
+			nla_for_each_nested(sn_attr,
+					    ul_tb[NL80211_SMD_CTX_UL_ATTR_SN],
+					    rem) {
+				tid = nla_type(sn_attr) - 1;
+				if (tid >= SMD_NUM_TIDS)
+					break;
+
+				ctx->ul.sn[tid] = nla_get_u16(sn_attr);
+				wpa_printf(MSG_DEBUG, "nl80211: SMD: Rx SN[%d]=%u",
+					   tid, ctx->ul.sn[tid]);
+			}
+		}
+
+		/* Packet Numbers - per TID */
+		if (ul_tb[NL80211_SMD_CTX_UL_ATTR_PN]) {
+			struct nlattr *pn_attr;
+			char buf[100];
+			int rem, tid;
+
+			nla_for_each_nested(pn_attr,
+					    ul_tb[NL80211_SMD_CTX_UL_ATTR_PN],
+					    rem) {
+				const u8 *pn_data = nla_data(pn_attr);
+
+				tid = nla_type(pn_attr) - 1;
+				if (tid >= SMD_NUM_TIDS)
+					break;
+
+				os_memcpy(ctx->ul.pn[tid], pn_data, ctx->pn_len);
+				os_snprintf(buf, sizeof(buf),
+					    "nl80211: SMD: Rx PN[%d]", tid);
+				wpa_hexdump(MSG_DEBUG, buf, ctx->ul.pn[tid],
+					    ctx->pn_len);
+			}
+		}
+
+		/* BA Parameters - nested per TID */
+		ba_attr = ul_tb[NL80211_SMD_CTX_UL_ATTR_BA_PARAMS];
+		if (ba_attr)
+			nl80211_parse_smd_ctx_ba_params(ba_attr, ctx->ul.ba,
+							&ctx->valid_ctx_bmap);
+	}
+
+	/* Parse QoS Context */
+	if (tb[NL80211_SMD_CTX_ATTR_QOS]) {
+		/* TODO: Parse QoS data. For now, mark as valid if present */
+		ctx->valid_ctx_bmap |= SMD_CTX_VALID_QOS;
+	}
+
+	/* Vendor context */
+	if (vendor_ctx_len) {
+		const u8 *vendor_data = nla_data(tb[NL80211_SMD_CTX_ATTR_VENDOR]);
+
+		os_memcpy(ctx->vendor_ctx, vendor_data, vendor_ctx_len);
+		ctx->vendor_ctx_len = vendor_ctx_len;
+	}
+
+	wpa_printf(MSG_INFO, "nl80211: SMD: Context parsed successfully, "
+		   "valid_context=0x%02x tx_tids=0x%02x rx_tids=0x%02x",
+		   ctx->valid_ctx_bmap, ctx->dl.valid_tid_bmap,
+		   ctx->ul.valid_tid_bmap);
+	return ctx;
+
+fail:
+	os_free(ctx);
+	return NULL;
+}
+#endif /* CONFIG_IEEE80211BN */
+
 
 static void mlme_event_mgmt(struct i802_bss *bss, struct nlattr *freq,
 			    struct nlattr *bitrate, struct nlattr *sig,
 			    const u8 *frame, size_t len, struct nlattr *rx_cu_param,
 			    int link_id, struct nlattr *link_removal_param,
-			    struct nlattr *ttlm_expec_dur_update_param)
+			    struct nlattr *ttlm_expec_dur_update_param,
+			    struct nlattr *smd_ctx_attr)
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	const struct ieee80211_mgmt *mgmt;
@@ -1745,6 +2197,10 @@ static void mlme_event_mgmt(struct i802_bss *bss, struct nlattr *freq,
 
 	event.rx_mgmt.ctx = bss->ctx;
 	event.rx_mgmt.link_id = link_id;
+
+#ifdef CONFIG_IEEE80211BN
+	event.rx_mgmt.smd_ctx = nl80211_parse_smd_ctx(smd_ctx_attr);
+#endif /* CONFIG_IEEE80211BN */
 
 	wpa_supplicant_event(drv->ctx, EVENT_RX_MGMT, &event);
 }
@@ -2083,7 +2539,8 @@ static void mlme_event(struct i802_bss *bss,
 		       struct nlattr *wmm, struct nlattr *req_ie,
 		       struct nlattr *rx_cu_param, struct nlattr *link,
 		       struct nlattr *link_removal_param,
-		       struct nlattr *ttlm_expec_dur_update_param)
+		       struct nlattr *ttlm_expec_dur_update_param,
+		       struct nlattr *smd_ctx_attr)
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	u16 stype = 0, auth_type = 0;
@@ -2184,7 +2641,7 @@ static void mlme_event(struct i802_bss *bss,
 		mlme_event_mgmt(bss, freq, bitrate, sig, nla_data(frame),
 				nla_len(frame), rx_cu_param, link_id,
 				link_removal_param,
-				ttlm_expec_dur_update_param);
+				ttlm_expec_dur_update_param, smd_ctx_attr);
 		break;
 	case NL80211_CMD_FRAME_TX_STATUS:
 		mlme_event_mgmt_tx_status(bss, cookie, nla_data(frame),
@@ -2200,6 +2657,10 @@ static void mlme_event(struct i802_bss *bss,
 		break;
 	case NL80211_CMD_UNPROT_BEACON:
 		mlme_event_unprot_beacon(drv, nla_data(frame), nla_len(frame));
+		break;
+	case NL80211_CMD_UHR_LINK_RECONFIG_RESP:
+		mlme_event_uhr_reconfig_resp(drv, nla_data(frame), nla_len(frame),
+					     NULL);
 		break;
 	default:
 		break;
@@ -4043,9 +4504,39 @@ static int qca_nl80211_tpc_eirp_event(struct i802_bss *bss, u8 *data, size_t len
 }
 
 
+#define NUM_6GHZ_OPCLASS 7
+
+static int qca_nl80211_chain_mask_changed_event(struct i802_bss *bss, u8 *data,
+						 size_t len)
+{
+	struct nlattr *attr[QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_MAX + 1];
+	int hw_idx = -1;
+	int ifindex = -1;
+
+	/* Older kernels may send this event without payload. */
+	if (data && len &&
+	    !nla_parse(attr, QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_MAX,
+		       (struct nlattr *) data, len, NULL)) {
+		if (attr[QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_HW_IDX])
+			hw_idx = nla_get_u32(
+				attr[QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_HW_IDX]);
+
+		if (attr[QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_IFINDEX])
+			ifindex = nla_get_u32(
+				attr[QCA_WLAN_VENDOR_ATTR_CHAIN_MASK_EVENT_IFINDEX]);
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Chain mask changed vendor event hw_idx=%d ifindex=%d",
+		   hw_idx, ifindex);
+
+	return nl80211_update_beacons_on_chain_mask_change(bss, hw_idx, ifindex);
+}
+
+
 static void compute_num_freq_obj(struct nlattr **attr, u8 *num_freq_obj)
 {
-	u8 nl_len;
+	int nl_len;
 	int rem;
 	struct nlattr *nl;
 	struct nlattr *freq_info[QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_MAX + 1];
@@ -4089,7 +4580,8 @@ static void compute_num_chan_obj(struct nlattr **attr,
 				 u8 *num_opclass_obj, u8 *opclass_chan_list,
 				 u8 *total_channels)
 {
-	u8 nl_len, num_channels = 0, i = 0;
+	int nl_len;
+	u8 num_channels = 0, i = 0;
 	int rem, iter;
 	struct nlattr *nl, *nl_attr;
 	struct nlattr *opclass_info[QCA_WLAN_VENDOR_ATTR_AFC_OPCLASS_INFO_MAX + 1];
@@ -4100,6 +4592,10 @@ static void compute_num_chan_obj(struct nlattr **attr,
 	if (attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_OPCLASS_CHAN_LIST]) {
 		nla_for_each_nested(nl, attr[QCA_WLAN_VENDOR_ATTR_AFC_EVENT_OPCLASS_CHAN_LIST],
 				    rem) {
+			if (i >= NUM_6GHZ_OPCLASS) {
+				wpa_printf(MSG_INFO, "AFC opclass count exceeds max %d", NUM_6GHZ_OPCLASS);
+				return;
+			}
 			num_channels = 0;
 			nl_len = nla_len(nl);
 
@@ -4221,7 +4717,6 @@ static int copy_afc_chan_obj(struct nlattr *nl,
 				nla_data(nl),
 				nla_len(nl),
 				NULL)) {
-		os_free(afc_chan_info);
 		wpa_printf(MSG_INFO, "Invalid afc_chan_info attribute");
 		return -EINVAL;
 	}
@@ -4294,7 +4789,6 @@ qca_nl80211_iface_reload(struct i802_bss *bss, u8 *data, size_t len)
 	return 0;
 }
 
-#define NUM_6GHZ_OPCLASS 7
 static int
 qca_nl80211_afc_power_update_completed(struct i802_bss *bss,
 				       u8 *data, size_t len)
@@ -4588,7 +5082,7 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 		qca_nl80211_tpc_eirp_event(bss, data, len);
 		break;
 	case QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED:
-		nl80211_update_beacons_on_chain_mask_change(bss->drv);
+		qca_nl80211_chain_mask_changed_event(bss, data, len);
 		break;
 	default:
 		if (!nl80211_vendor_event_qca_extn(bss, subcmd, data, len))
@@ -5616,7 +6110,7 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 			   tb[NL80211_ATTR_STA_WME],
 			   tb[NL80211_ATTR_REQ_IE], NULL,
 			   tb[NL80211_ATTR_MLO_LINK_ID], NULL,
-			   NULL);
+			   NULL, tb[NL80211_ATTR_SMD_CTX]);
 		break;
 	case NL80211_CMD_CONNECT:
 	case NL80211_CMD_ROAM:
@@ -5697,6 +6191,13 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 			break;
 
 		nl80211_reg_change_event(drv, tb);
+		/* All BSSes on this wiphy share drv->ctx (first_bss->hapd)
+		 * so every BSS would fire an identical wpa_supplicant_event.
+		 * Stop the BSS loop after the first to avoid duplicate
+		 * processing. */
+		if (cmd == NL80211_CMD_WIPHY_REG_CHANGE &&
+		    (drv->capa.flags & WPA_DRIVER_FLAGS_SELF_MANAGED_REGULATORY))
+			*event_handled = true;
 		break;
 	case NL80211_CMD_REG_BEACON_HINT:
 		nl80211_reg_beacon_hint_event(drv, tb);
@@ -5817,6 +6318,14 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 		nl80211_critical_update_notify_event(bss, tb);
 		break;
 #endif /* CONFIG_IEEE80211BN */
+	case NL80211_CMD_UHR_LINK_RECONFIG_RESP:
+		mlme_event_uhr_reconfig_resp(drv, nla_data(frame),
+					     nla_len(frame),
+					     tb[NL80211_ATTR_SMD_LINK_TRANSITION_STATE]);
+		break;
+	case NL80211_CMD_SMD_TRANSITION_DONE:
+		nl80211_smd_transition_status(bss, tb);
+		break;
 	default:
 		wpa_dbg(drv->ctx, MSG_DEBUG, "nl80211: Ignored unknown event "
 			"(cmd=%d)", cmd);
@@ -5990,7 +6499,7 @@ int process_bss_event(struct nl_msg *msg, void *arg)
 			   tb[NL80211_ATTR_RXMGMT_CRITICAL_UPDATE],
 			   tb[NL80211_ATTR_MLO_LINK_ID],
 			   tb[NL80211_ATTR_RXMGMT_LINK_REMOVAL_UPDATE],
-			   tb[NL80211_ATTR_ADVERTISED_TTLM_EXPEC_DUR_UPDATE]);
+			   tb[NL80211_ATTR_ADVERTISED_TTLM_EXPEC_DUR_UPDATE], tb[NL80211_ATTR_SMD_CTX]);
 		break;
 	case NL80211_CMD_UNEXPECTED_FRAME:
 		nl80211_spurious_frame(bss, tb, 0);

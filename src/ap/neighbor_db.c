@@ -392,7 +392,17 @@ static void hostapd_neighbor_add_11bn_subelements(struct hostapd_data *hapd,
 		wpabuf_put_data(nr, pos + 2, len - 2);
 	}
 
-	/* SMD Information TBD */
+	/* SMD Information */
+	if (hapd->conf->smd.enabled) {
+		pos = buf;
+		end = hostapd_eid_smd_ie(hapd, pos);
+		len = end - pos;
+		if (len > 3) { /* EID + Len + ExtID */
+			wpabuf_put_u8(nr, WNM_NEIGHBOR_SMD_INFO);
+			wpabuf_put_u8(nr, len - 3);
+			wpabuf_put_data(nr, pos + 3, len - 3);
+		}
+	}
 
 	/* Basic Multi-Link (MLD only) */
 	if (hostapd_is_multiple_link_mld(hapd)) {
@@ -454,6 +464,11 @@ void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
 	if (eht)
 		bssid_info |= NEI_REP_BSSID_INFO_EHT;
 #ifdef CONFIG_IEEE80211BN
+	/* This AP is SMD-enabled, so it is by definition in the same SMD as
+	 * itself. Set SAME_SMD in the own neighbor report entry sent to STAs. */
+	if (hapd->conf->smd.enabled)
+		bssid_info |= NEI_REP_BSSID_INFO_SAME_SMD;
+
 	/* Set UHR bit if this is a UHR AP */
 	if (hapd->iconf->ieee80211bn)
 		bssid_info |= NEI_REP_BSSID_INFO_UHR;

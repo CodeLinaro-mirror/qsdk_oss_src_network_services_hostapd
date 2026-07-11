@@ -1157,6 +1157,13 @@ int wpa_auth_sta_associated(struct wpa_authenticator *wpa_auth,
 {
 	if (!wpa_auth || !wpa_auth->conf.wpa || !sm)
 		return -1;
+#ifdef CONFIG_IEEE80211BN
+	if (sm->smd_info.flag) {
+		sm->wpa_ptk_state = WPA_PTK_PTKINITDONE;
+		sm->Pair = true;
+		return 0;
+	}
+#endif 
 
 #ifdef CONFIG_ENC_ASSOC
 	if (sm->auth_alg == WLAN_AUTH_EPPKE) {
@@ -1211,17 +1218,7 @@ int wpa_auth_sta_associated(struct wpa_authenticator *wpa_auth,
 	}
 
 	if (!wpa_initialize)
-		return -1;
-
-	return wpa_auth_sta_associated_start_sm(wpa_auth, sm);
-}
-
-int wpa_auth_sta_associated_start_sm(struct wpa_authenticator *wpa_auth,
-				     struct wpa_state_machine *sm)
-{
-	if (!wpa_auth || !sm)
-		return -1;
-
+		return 0;
 	wpa_auth_logger(wpa_auth, wpa_auth_get_spa(sm), LOGGER_DEBUG,
 			"start authentication");
 	sm->started = 1;
@@ -4931,6 +4928,117 @@ u8 * wpa_auth_ml_group_kdes(struct wpa_state_machine *sm, u8 *pos,
 	return pos;
 }
 
+
+/*
+ * wpa_auth_key_delivery_elem_len - Calculate wire length of Key Delivery
+ * element (9.4.2.184), including WLAN_EID_FRAGMENT overhead if needed.
+ *
+ * body = RSC(8) + KDE_list; first extension element body capped at 254 bytes
+ * (255 - 1 for the EID_EXT byte); each continuation fragment up to 255 bytes.
+ */
+size_t wpa_auth_key_delivery_elem_len(struct wpa_state_machine *sm,
+				      u16 req_links)
+{
+	size_t kde_list_len, body_len;
+
+	if (!sm || sm->mld_assoc_link_id < 0)
+		return 0;
+
+	kde_list_len = wpa_auth_ml_group_kdes_len(sm, req_links);
+	if (!kde_list_len)
+		return 0;
+
+	/* body = RSC(8) + KDE_list */
+	body_len = WPA_KEY_RSC_LEN + kde_list_len;
+
+	/*
+	 * Unfragmented: EID(1) + Len(1) + EID_EXT(1) + body  → 3 + body_len
+	 * Fragmented:   same 3 bytes + body_len bytes of data
+	 *               + ceil((body_len - 254) / 255) * 2 bytes for fragment
+	 *               EID+Len headers.
+	 *
+	 * ceil((body_len - 254) / 255) = (body_len - 254 + 254) / 255
+	 *                               = body_len / 255  (integer division)
+	 */
+	if (body_len <= 254)
+		return 3 + body_len;
+
+	return 3 + body_len + (body_len / 255) * 2;
+}
+
+
+/*
+ * wpa_auth_build_key_delivery_elem - Build Key Delivery element (9.4.2.184)
+ * at pos.  Fragments into WLAN_EID_FRAGMENT continuations if body > 254 bytes.
+ * Returns pointer past the last byte written.
+ *
+ * Caller must have pre-allocated at least wpa_auth_key_delivery_elem_len()
+ * bytes at pos.
+ */
+u8 * wpa_auth_build_key_delivery_elem(struct wpa_state_machine *sm,
+				      u16 req_links, u8 *pos)
+{
+	u8 *body, *kde_end, *elem_start;
+	size_t kde_list_len, body_len, chunk;
+	const u8 *src;
+	size_t remaining;
+
+	if (!sm || sm->mld_assoc_link_id < 0)
+		return pos;
+
+	if (!sm->group)
+		return pos;
+
+	kde_list_len = wpa_auth_ml_group_kdes_len(sm, req_links);
+	if (!kde_list_len)
+		return pos;
+
+	body_len = WPA_KEY_RSC_LEN + kde_list_len;
+	body = os_zalloc(body_len);
+	if (!body)
+		return pos;
+
+	/* RSC for the assoc-link primary GTK; zero RSC is a safe fallback */
+	if (wpa_auth_get_seqnum(sm->wpa_auth, NULL, sm->group->GN, body) < 0)
+		wpa_printf(MSG_DEBUG,
+			   "RSN: Key Delivery element: failed to get RSC, using zero");
+
+	kde_end = wpa_auth_ml_group_kdes(sm, body + WPA_KEY_RSC_LEN, req_links);
+	body_len = WPA_KEY_RSC_LEN + (size_t)(kde_end - (body + WPA_KEY_RSC_LEN));
+
+	/*
+	 * Emit Key Delivery extension element with automatic fragmentation.
+	 * First fragment carries up to 254 bytes of body (EID_EXT byte brings
+	 * the Length field to at most 255).  Each WLAN_EID_FRAGMENT continuation
+	 * carries up to 255 bytes.
+	 */
+	elem_start = pos;
+	src        = body;
+	remaining  = body_len;
+	chunk      = (remaining > 254) ? 254 : remaining;
+
+	*pos++ = WLAN_EID_EXTENSION;
+	*pos++ = (u8)(chunk + 1);          /* +1 for EID_EXT byte */
+	*pos++ = WLAN_EID_EXT_KEY_DELIVERY;
+	os_memcpy(pos, src, chunk);
+	pos += chunk; src += chunk; remaining -= chunk;
+
+	while (remaining) {
+		chunk  = (remaining > 255) ? 255 : remaining;
+		*pos++ = WLAN_EID_FRAGMENT;
+		*pos++ = (u8) chunk;
+		os_memcpy(pos, src, chunk);
+		pos += chunk; src += chunk; remaining -= chunk;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "RSN: Key Delivery element: body=%zu wire=%zu",
+		   body_len, (size_t)(pos - elem_start));
+
+	os_free(body);
+	return pos;
+}
+
 #endif /* CONFIG_IEEE80211BE */
 
 
@@ -5495,7 +5603,7 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 		size_t security_ie_len = hostapd_security_profile_ie_len(hapd);
 
 		if (security_ie_len > 0)
-			kde_len += 2 + RSN_SELECTOR_LEN + security_ie_len - 2;
+			kde_len += security_ie_len;
 	}
 
 	kde = os_malloc(kde_len);
@@ -7391,6 +7499,20 @@ int wpa_auth_get_ptk_full(struct wpa_state_machine *sm,
 	return 0;
 }
 
+int wpa_auth_get_pmkid_suite_b(struct wpa_state_machine *sm, u8 *pmkid)
+{
+	if (!sm->PTK.kck_len)
+		return -1;
+
+	if (sm->wpa_key_mgmt == WPA_KEY_MGMT_IEEE8021X_SUITE_B_192)
+		return rsn_pmkid_suite_b_192(sm->PTK.kck, sm->PTK.kck_len,
+					     wpa_auth_get_aa(sm),
+					     wpa_auth_get_spa(sm), pmkid);
+	return rsn_pmkid_suite_b(sm->PTK.kck, sm->PTK.kck_len,
+				 wpa_auth_get_aa(sm), wpa_auth_get_spa(sm),
+				 pmkid);
+}
+
 int wpa_auth_set_ptk_full(struct wpa_state_machine *sm,
 		uint8_t *kck, size_t kck_len,
 		uint8_t *kek, size_t kek_len,
@@ -7428,20 +7550,6 @@ int wpa_auth_set_ptk_full(struct wpa_state_machine *sm,
 			sm->keyidx_active, sm->PTK.tk,
 			wpa_cipher_key_len(sm->pairwise),
 			KEY_FLAG_PAIRWISE_RX);
-	return 0;
-}
-
-int wpa_auth_get_pmk_full(struct wpa_state_machine *sm,
-			   u8 *pmk, size_t *pmk_len,
-			   u8 *pmkid)
-{
-	if (!sm) {
-		wpa_printf(MSG_ERROR, "ERROR! SM is NULL\n");
-		return -1;
-	}
-	*pmk_len = sm->pmk_len;
-	os_memcpy(pmk, sm->PMK, *pmk_len);
-	os_memcpy(pmkid, sm->pmkid, PMKID_LEN);
 	return 0;
 }
 

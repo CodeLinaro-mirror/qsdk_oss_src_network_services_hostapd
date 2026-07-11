@@ -1644,8 +1644,9 @@ void wpa_ft_parse_ies_free(struct wpa_ft_ies *parse)
  */
 static bool pasn_use_sha384(int akmp, int cipher)
 {
-	return (akmp == WPA_KEY_MGMT_PASN && (cipher == WPA_CIPHER_CCMP_256 ||
-					      cipher == WPA_CIPHER_GCMP_256)) ||
+	return ((akmp == WPA_KEY_MGMT_PASN || akmp == WPA_KEY_MGMT_EPPKE) &&
+		(cipher == WPA_CIPHER_CCMP_256 ||
+		 cipher == WPA_CIPHER_GCMP_256)) ||
 		wpa_key_mgmt_sha384(akmp);
 }
 
@@ -1928,7 +1929,7 @@ int wpa_auth_802_1x_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const u8 *spa,
 {
 	return wpa_pmk_to_ptk(pmk, pmk_len, "Pairwise key expansion",
 			      spa, aa, snonce, anonce, ptk, akmp,
-			      cipher, dhss, dhss_len, kdk_len);
+			      cipher, dhss, dhss_len, kdk_len, NULL);
 }
 
 
@@ -4388,6 +4389,13 @@ int wpa_pasn_add_rsne(struct wpabuf *buf, const u8 *pmkid, int akmp, int cipher)
 	case WPA_KEY_MGMT_PASN:
 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_PASN);
 		break;
+#ifdef CONFIG_ENC_ASSOC
+	case WPA_KEY_MGMT_EPPKE:
+		/* EPPKE without base AKM: EPPKE AKMP is used as the selected
+		 * AKMP per IEEE P802.11bi/D4.0, 12.16.9.1. */
+		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_EPPKE);
+		break;
+#endif /* CONFIG_ENC_ASSOC */
 #ifdef CONFIG_SAE
 	case WPA_KEY_MGMT_SAE:
 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_SAE);
@@ -4630,6 +4638,18 @@ int wpa_pasn_validate_rsne(const struct wpa_ie_data *data, bool is_eppke)
 #endif /* CONFIG_IEEE80211R */
 	case WPA_KEY_MGMT_PASN:
 		break;
+#ifdef CONFIG_ENC_ASSOC
+	case WPA_KEY_MGMT_EPPKE:
+		/* EPPKE AKMP is used when EPPKE is performed without a base
+		 * AKM (no mutual authentication). This is only valid for EPPKE
+		 * authentication per IEEE P802.11bi/D4.0, 12.16.9.1. */
+		if (!is_eppke) {
+			wpa_printf(MSG_INFO,
+				   "PASN: EPPKE AKM not allowed for PASN");
+			return -1;
+		}
+		break;
+#endif /* CONFIG_ENC_ASSOC */
 	default:
 		wpa_printf(MSG_ERROR, "%s: invalid key_mgmt: 0x%0x",
 			   is_eppke ? "EPPKE" : "PASN", data->key_mgmt);
@@ -4799,6 +4819,26 @@ void wpa_pasn_add_rsnxe(struct wpabuf *buf, u64 capab)
 		wpabuf_put_u8(buf, (capab >> 56) & 0x000000FF);
 }
 
+void wpa_pasn_add_own_supported_groups(struct wpabuf *buf, int *pasn_groups)
+{
+	int count, i;
+
+	if (!buf || !pasn_groups)
+		return;
+
+	count = int_array_len(pasn_groups);
+	if (wpabuf_tailroom(buf) < 2 + 1 + (count * 2))
+		return;
+
+	wpabuf_put_u8(buf, WLAN_EID_EXTENSION);
+	wpabuf_put_u8(buf, 1 + (count * 2));
+	wpabuf_put_u8(buf, WLAN_EID_EXT_SUPPORTED_GROUPS);
+	for (i = 0; i < count; i++) {
+		wpa_printf(MSG_DEBUG, "PASN: own Supported Group %d",
+			   pasn_groups[i]);
+		wpabuf_put_le16(buf, pasn_groups[i]);
+	}
+}
 
 /*
  * wpa_pasn_add_extra_ies - Add protocol specific IEs in Authentication

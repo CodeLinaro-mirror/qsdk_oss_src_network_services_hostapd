@@ -45,7 +45,9 @@ const u8 * ieee802_1x_get_session_id(struct eapol_state_machine *sm,
 				     size_t *len);
 void ieee802_1x_notify_port_enabled(struct eapol_state_machine *sm,
 				    bool enabled);
-void ieee802_1x_notify_port_valid(struct eapol_state_machine *sm, bool valid);
+void ieee802_1x_notify_port_valid(struct hostapd_data *hapd,
+				  struct sta_info *sta,
+				  struct eapol_state_machine *sm, bool valid);
 void ieee802_1x_notify_pre_auth(struct eapol_state_machine *sm, bool pre_auth);
 int ieee802_1x_get_mib(struct hostapd_data *hapd, char *buf, size_t buflen);
 int ieee802_1x_get_mib_sta(struct hostapd_data *hapd, struct sta_info *sta,

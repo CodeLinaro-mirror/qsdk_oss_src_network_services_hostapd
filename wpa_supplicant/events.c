@@ -28,6 +28,7 @@
 #include "p2p/p2p.h"
 #include "fst/fst.h"
 #include "wnm_sta.h"
+#include "smd.h"
 #include "notify.h"
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
@@ -379,7 +380,8 @@ void wpa_supplicant_mark_disassoc(struct wpa_supplicant *wpa_s)
 
 #ifdef CONFIG_HS20
 	/* Clear possibly configured frame filters */
-	wpa_drv_configure_frame_filters(wpa_s, 0);
+	if (wpa_s->drv_priv)
+		wpa_drv_configure_frame_filters(wpa_s, 0);
 #endif /* CONFIG_HS20 */
 
 	if (wpa_s->wpa_state == WPA_INTERFACE_DISABLED)
@@ -2617,6 +2619,9 @@ int wpa_supplicant_connect(struct wpa_supplicant *wpa_s,
 		MAC2STR(wpa_s->bssid), MAC2STR(wpa_s->pending_bssid),
 		wpa_supplicant_state_txt(wpa_s->wpa_state),
 		ssid, wpa_s->current_ssid);
+
+	if (smd_should_suppress_connect(wpa_s, selected))
+		return 0;
 
 	/*
 	 * Do not trigger new association unless the BSSID has changed or if
@@ -8187,7 +8192,7 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			break;
 
 		wpa_msg(wpa_s, MSG_INFO,
-			"%s freq=%d link_id=%d ht_enabled=%d ch_offset=%d ch_width=%s cf1=%d cf2=%d mcst=%u",
+			"%s freq=%d link_id=%d ht_enabled=%d ch_offset=%d ch_width=%s cf1=%d cf2=%d mcst=%u punct_bitmap=0x%04x",
 			event == EVENT_LINK_CH_SWITCH ?
 			WPA_EVENT_LINK_CHANNEL_SWITCH :
 			WPA_EVENT_LINK_CHANNEL_SWITCH_STARTED,
@@ -8198,7 +8203,8 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			channel_width_to_string(data->ch_switch.ch_width),
 			data->ch_switch.cf1,
 			data->ch_switch.cf2,
-			data->ch_switch.mcst);
+			data->ch_switch.mcst,
+			data->ch_switch.punct_bitmap);
 
 		if (wpas_sta_csa_handle_cac_start(wpa_s, event, data, true))
 			break;
@@ -8233,7 +8239,7 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			break;
 
 		wpa_msg(wpa_s, MSG_INFO,
-			"%s freq=%d ht_enabled=%d ch_offset=%d ch_width=%s cf1=%d cf2=%d mcst=%u",
+			"%s freq=%d ht_enabled=%d ch_offset=%d ch_width=%s cf1=%d cf2=%d mcst=%u punct_bitmap=0x%04x",
 			event == EVENT_CH_SWITCH ? WPA_EVENT_CHANNEL_SWITCH :
 			WPA_EVENT_CHANNEL_SWITCH_STARTED,
 			data->ch_switch.freq,
@@ -8242,7 +8248,8 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			channel_width_to_string(data->ch_switch.ch_width),
 			data->ch_switch.cf1,
 			data->ch_switch.cf2,
-			data->ch_switch.mcst);
+			data->ch_switch.mcst,
+			data->ch_switch.punct_bitmap);
 
 		if (wpas_sta_csa_handle_cac_start(wpa_s, event, data, false))
 			break;
@@ -8907,6 +8914,14 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 	case EVENT_SETUP_LINK_RECONFIG:
 		if (data)
 			wpas_setup_link_reconfig(wpa_s, &data->reconfig_info);
+		break;
+	case EVENT_UHR_RECONFIG_RESP:
+		if (data)
+			wpas_uhr_reconfig_resp(wpa_s, &data->uhr_reconfig_resp);
+		break;
+	case EVENT_SMD_TRANSITION_DONE:
+		if (data)
+			wpas_uhr_smd_handle_transition_status(wpa_s, &data->st_transition);
 		break;
 	default:
 #ifdef CONFIG_QCN_EXTN

@@ -132,17 +132,17 @@ u8 hostapd_tx_maxnss(struct hostapd_data *hapd, struct sta_info *sta)
 	if (sta) {
 		htmode =  (!!(sta->flags & WLAN_STA_HT)) |
 			((!!(sta->flags & WLAN_STA_VHT)) << 1) |
-			((!!(sta->flags & WLAN_STA_EHT)) << 2) |
-			((!!(sta->flags & WLAN_STA_HE)) << 3);
+			((!!(sta->flags & WLAN_STA_HE)) << 2) |
+			((!!(sta->flags & WLAN_STA_EHT)) << 3);
 		support_check[MAXNSS_HTMODE_HT_N] = !!sta->ht_capabilities;
 		support_check[MAXNSS_HTMODE_VHT_AC] = !!sta->vht_capabilities;
 		support_check[MAXNSS_HTMODE_EHT_BE] = !!sta->eht_capab;
 		support_check[MAXNSS_HTMODE_HE_AX] = !!sta->he_capab;
 	} else {
-		htmode = (!!conf->ieee80211ac) |
-			((!!conf->ieee80211n) << 1) |
-			((!!conf->ieee80211be) << 2) |
-			((!!conf->ieee80211ax) << 3);
+		htmode = (!!conf->ieee80211n) |
+			((!!conf->ieee80211ac) << 1) |
+			((!!conf->ieee80211ax) << 2) |
+			((!!conf->ieee80211be) << 3);
 		support_check[MAXNSS_HTMODE_HT_N] = hostapd_is_ht_enabled(hapd);
 		support_check[MAXNSS_HTMODE_VHT_AC] = hostapd_is_vht_enabled(hapd);
 		support_check[MAXNSS_HTMODE_EHT_BE] = hostapd_is_eht_enabled(hapd);
@@ -263,10 +263,14 @@ static int hostapd_get_sta_phy_mode(struct sta_info *sta,
 	} else if (sta->flags & WLAN_STA_HT) {
 		ret = os_snprintf(buf + len, buflen - len,
 				  "[11N]");
-	} else {
-		/* Legacy association */
+	} else if (!(sta->flags & WLAN_STA_NONERP)) {
+		/* 11g: ERP-OFDM capable STA */
 		ret = os_snprintf(buf + len, buflen - len,
-				  "[NULL]");
+				  "[11G]");
+	} else {
+		 /* 11b: non-ERP STA (DSSS/CCK only) */
+		ret = os_snprintf(buf + len, buflen - len,
+				  "[11B]");
 	}
 	if (os_snprintf_error(buflen - len, ret))
 		return len;
@@ -2918,29 +2922,45 @@ static int hostapd_ctrl_check_freq_params(struct hostapd_iface *iface,
 
 		start_ch = seg0_idx - offset;
 
-		/* Validate derived start_ch against the current HW's channel list */
+		/* Validate both start and end channels against the HW channel list.
+		 * Checking only start_ch misses cases where the upper half of the
+		 * bandwidth block extends beyond the legal channel plan (e.g.
+		 * center_freq1=5330/160 MHz: start_ch=52 is valid but end_ch=80
+		 * (5400 MHz, gap between U-NII-2A and U-NII-2C, not a valid Wi-Fi
+		 * channel) is absent from the HW list).
+		 */
 		if (iface && iface->current_mode && start_ch > 0) {
-			bool found = false;
+			bool found_start = false, found_end = false;
+			int end_ch;
 			int j;
+			/* Last channel in 5 GHz 240 MHz width is channel 144 */
+			if (is_5ghz_freq(params->center_freq1) &&
+			    params->bandwidth == 320)
+				end_ch = seg0_idx + 14;
+			else
+				end_ch = seg0_idx + offset;
+
 			for (j = 0; j < iface->current_mode->num_channels; j++) {
 				struct hostapd_channel_data *c =
 							&iface->current_mode->channels[j];
 				if (c->flag & HOSTAPD_CHAN_DISABLED)
-				    continue;
+					continue;
 
 				if (!chan_in_current_hw_info(iface->current_hw_info, c))
-				    continue;
+					continue;
 
-				if (c->chan == start_ch) {
-					found = true;
+				if (c->chan == start_ch)
+					found_start = true;
+				if (c->chan == end_ch)
+					found_end = true;
+				if (found_start && found_end)
 					break;
-				}
 			}
-			if (!found) {
+			if (!found_start || !found_end) {
 				wpa_printf(MSG_ERROR,
-					   "chanswitch: invalid center_freq1=%d for bandwidth=%d MHz (seg0=%u -> start_ch=%d not present)",
+					   "chanswitch: invalid center_freq1=%d for bandwidth=%d MHz (seg0=%u start_ch=%d end_ch=%d not fully present in HW)",
 					   params->center_freq1, params->bandwidth,
-					   seg0_idx, start_ch);
+					   seg0_idx, start_ch, end_ch);
 				return -1;
 			}
 		}

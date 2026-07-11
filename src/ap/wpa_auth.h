@@ -347,6 +347,10 @@ struct wpa_auth_config {
 	unsigned int assoc_frame_encryption:1;
 	unsigned int pmksa_caching_privacy:1;
 	unsigned int eap_using_authentication_frames:1;
+#ifdef CONFIG_PASN
+	/* Whether to allow unauthenticated EPPKE (EPPKE without base AKM) */
+	bool eppke_unauth;
+#endif /* CONFIG_PASN */
 #endif /* CONFIG_ENC_ASSOC */
 };
 
@@ -526,7 +530,8 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 		    const u8 *owe_dh, size_t owe_dh_len,
 		    struct wpa_state_machine *assoc_sm,
 		    bool is_ml, bool external_pmk_cache,
-		    const struct security_profile_entry_ap *security_profile);
+		    const struct security_profile_entry_ap *security_profile,
+		    bool smd_sta);
 int wpa_validate_osen(struct wpa_authenticator *wpa_auth,
 		      struct wpa_state_machine *sm,
 		      const u8 *osen_ie, size_t osen_ie_len);
@@ -539,8 +544,6 @@ struct wpa_state_machine *
 wpa_auth_sta_init(struct wpa_authenticator *wpa_auth, const u8 *addr,
 		  const u8 *p2p_dev_addr);
 void wpa_auth_set_sta_ft_over_ds_ml(struct wpa_state_machine *sm, bool status);
-int wpa_auth_sta_associated_start_sm(struct wpa_authenticator *wpa_auth,
-				     struct wpa_state_machine *sm);
 int wpa_auth_sta_associated(struct wpa_authenticator *wpa_auth,
 			    struct wpa_state_machine *sm,
 			    bool wpa_initialize);
@@ -572,10 +575,8 @@ int wpa_auth_set_ptk_full(struct wpa_state_machine *sm,
 			  u8 *kck, size_t kck_len,
 			  u8 *kek, size_t kek_len,
 			  u8 *tk, size_t tk_len);
+int wpa_auth_get_pmkid_suite_b(struct wpa_state_machine *sm, u8 *pmkid);
 
-int wpa_auth_get_pmk_full(struct wpa_state_machine *sm,
-			  u8 *pmk, size_t *pmk_len,
-			  u8 *pmkid);
 int wpa_auth_set_pmk_full(struct wpa_state_machine *sm,
 			  u8 *pmk, u8 *pmkid, int pmk_len,
 			  int session_timeout,
@@ -819,6 +820,10 @@ void wpa_release_link_auth_ref(struct wpa_state_machine *sm, u8 link_id,
 size_t wpa_auth_ml_group_kdes_len(struct wpa_state_machine *sm, u16 req_links);
 u8 * wpa_auth_ml_group_kdes(struct wpa_state_machine *sm, u8 *pos,
 			    u16 req_links);
+size_t wpa_auth_key_delivery_elem_len(struct wpa_state_machine *sm,
+				      u16 req_links);
+u8 * wpa_auth_build_key_delivery_elem(struct wpa_state_machine *sm,
+				      u16 req_links, u8 *pos);
 void wpa_reset_assoc_sm_info(struct wpa_state_machine *assoc_sm,
 			     struct wpa_authenticator *wpa_auth,
 			     u8 mld_assoc_link_id);

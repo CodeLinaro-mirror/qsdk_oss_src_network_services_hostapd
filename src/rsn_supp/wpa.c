@@ -7864,3 +7864,38 @@ int wpa_sm_install_mlo_group_keys(struct wpa_sm *sm, const u8 *key_data,
 
 	return 0;
 }
+
+void wpa_sm_notify_smd_transition_complete(struct wpa_sm *sm,
+					   const u8 *target_addr)
+{
+	bool mlo = sm->mlo.valid_links;
+
+	if (!sm)
+		return;
+
+	wpa_supplicant_key_neg_complete(sm, target_addr, 1);
+
+	wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
+		"SMD: MLO: valid links: 0x%x", sm->mlo.valid_links);
+	if (mlo)
+		wpa_sm_set_rekey_offload(sm);
+}
+
+void wpa_sm_smd_notify_ptk_installed(struct wpa_sm *sm, const u8 *target_addr)
+{
+	if (!sm)
+		return;
+
+	/*
+	 * PTK installed for the target AP.  Enable RX pairwise protection
+	 * before GTK install, mirroring wpa_supplicant_process_3_of_4().
+	 * Do NOT touch portValid here: wpa_s->bssid still points to the old
+	 * AP at this point, so portValid=true would fire port_cb (which calls
+	 * wpa_drv_set_supp_port()) with the WRONG MAC address.  Port
+	 * authorization is deferred to wpa_sm_notify_smd_transition_complete()
+	 * after wpa_s->bssid has been updated to the target AP.
+	 */
+	wpa_sm_mlme_setprotection(sm, target_addr,
+				  MLME_SETPROTECTION_PROTECT_TYPE_RX,
+				  MLME_SETPROTECTION_KEY_TYPE_PAIRWISE);
+}

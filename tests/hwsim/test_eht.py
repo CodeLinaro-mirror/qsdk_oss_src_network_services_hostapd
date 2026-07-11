@@ -5,6 +5,7 @@
 # See README for more details.
 
 import binascii
+import os
 import subprocess
 import tempfile
 
@@ -109,6 +110,60 @@ def eht_verify_status(wpas, hapd, freq, bw, is_ht=False, is_vht=False,
 def traffic_test(wpas, hapd, success=True, ifname2=None):
     hwsim_utils.test_connectivity(wpas, hapd, success_expected=success,
                                   ifname2=ifname2)
+
+def _log_ap_mld_iw_dev_view(hapd_by_band, hapd_iface, case_label, note):
+    hapd_cmd = next(iter(hapd_by_band.values()), None)
+    if hapd_cmd is None:
+        logger.info("%s: iw dev (%s) skipped (no hapd available)",
+                    case_label, note)
+        return []
+    logger.info("%s: iw dev (%s)", case_label, note)
+    ret, iw_out = hapd_cmd.cmd_execute(["iw", "dev"])
+    if ret != 0:
+        logger.info("%s: iw dev failed (%d): %s", case_label, ret,
+                    iw_out.strip())
+        return []
+    if not iw_out.strip():
+        logger.info("%s: iw dev: <empty>", case_label)
+        return []
+    for line in iw_out.splitlines():
+        logger.info("%s: iw dev: %s", case_label, line)
+    ifnames = []
+    for line in iw_out.splitlines():
+        line = line.strip()
+        if line.startswith("Interface "):
+            ifname = line.split()[1]
+            if ifname == hapd_iface or ifname.startswith(hapd_iface + "-"):
+                ifnames.append(ifname)
+    return sorted(set(ifnames))
+
+def _log_ap_mld_station_dump(hapd_by_band, hapd_iface, case_label, note,
+                             ifnames=None):
+    hapd_cmd = next(iter(hapd_by_band.values()), None)
+    if hapd_cmd is None:
+        logger.info("%s: iw station dump (%s) skipped (no hapd available)",
+                    case_label, note)
+        return
+    logger.info("%s: iw station dump (%s)", case_label, note)
+    if ifnames is None:
+        ifnames = _log_ap_mld_iw_dev_view(hapd_by_band, hapd_iface,
+                                          case_label, note)
+    if not ifnames:
+        ifnames = [hapd_iface]
+    for ifname in sorted(set(ifnames)):
+        ret, sta_out = hapd_cmd.cmd_execute(["iw", "dev", ifname,
+                                             "station", "dump"])
+        if ret != 0:
+            logger.info("%s: iw dev %s station dump failed (%d): %s",
+                        case_label, ifname, ret, sta_out.strip())
+            continue
+        if not sta_out.strip():
+            logger.info("%s: iw dev %s station dump: <empty>",
+                        case_label, ifname)
+            continue
+        for line in sta_out.splitlines():
+            logger.info("%s: iw dev %s station dump: %s",
+                        case_label, ifname, line)
 
 def test_eht_open(dev, apdev):
     """EHT AP with open mode configuration"""
@@ -740,6 +795,795 @@ def test_eht_mld_sae_legacy_client(dev, apdev):
             dev[0].set("sae_groups", "")
             dev[0].set("sae_pwe", "0")
 
+def _ud_mlo_repurpose_connect_and_verify(dev, wpas, ssid, passphrase,
+                                         case_label, hapd_iface,
+                                         hapd_by_band, repurpose_band,
+                                         repurpose_link_id, mlo_scan_freq,
+                                         repurpose_scan_freq,
+                                         expected_active_links,
+                                         expected_valid_links, mlo_bands):
+    band_labels = {
+        "2g": "2.4 GHz",
+        "5g": "5 GHz",
+        "6g": "6 GHz",
+    }
+
+    mlo_desc = "%s/%s" % (band_labels[mlo_bands[0]],
+                          band_labels[mlo_bands[1]])
+    logger.info("%s: Connect MLO STA to %s links", case_label, mlo_desc)
+    wpas.set("sae_pwe", "1")
+    wpas.connect(ssid, sae_password=passphrase,
+                 scan_freq=mlo_scan_freq, key_mgmt="SAE",
+                 ieee80211w="2")
+
+    # Link IDs are 0=2.4 GHz, 1=5 GHz, 2=6 GHz in this setup.
+    valid_links = _eht_valid_links(wpas)
+    active_links = _eht_active_links(wpas)
+    if active_links != expected_active_links:
+        raise Exception("%s: Unexpected MLO active_links 0x%04x (expected 0x%04x)" %
+                        (case_label, active_links, expected_active_links))
+    if valid_links & (1 << repurpose_link_id):
+        raise Exception("%s: Repurposed %s link unexpectedly in valid_links=0x%04x" %
+                        (case_label, repurpose_band, valid_links))
+    if (valid_links & expected_valid_links) != expected_valid_links:
+        raise Exception("%s: Expected links missing from valid_links=0x%04x" %
+                        (case_label, valid_links))
+
+    ifnames = _log_ap_mld_iw_dev_view(hapd_by_band, hapd_iface, case_label,
+                                      "after MLO STA association")
+    _log_ap_mld_station_dump(hapd_by_band, hapd_iface, case_label,
+                             "after MLO STA association", ifnames=ifnames)
+    eht_verify_wifi_version(wpas)
+    traffic_test(wpas, hapd_by_band[mlo_bands[0]])
+    traffic_test(wpas, hapd_by_band[mlo_bands[1]])
+
+    logger.info("%s: Connect 11AX STA on repurposed %s link",
+                case_label, band_labels[repurpose_band])
+    dev[0].set("sae_pwe", "1")
+    dev[0].connect(ssid, sae_password=passphrase,
+                   scan_freq=repurpose_scan_freq,
+                   key_mgmt="SAE", ieee80211w="2",
+                   disable_eht="1")
+
+    repurpose_hapd = hapd_by_band[repurpose_band]
+    bssid = dev[0].get_status_field("bssid")
+    if bssid != repurpose_hapd.own_addr():
+        raise Exception("11AX STA associated with unexpected BSSID %s (expected %s)" %
+                        (bssid, repurpose_hapd.own_addr()))
+
+    sta = repurpose_hapd.get_sta(dev[0].own_addr())
+    logger.info("%s: 11AX STA details: %s", case_label, sta)
+    if "[HE]" not in sta['flags']:
+        raise Exception("11AX STA missing HE capability on repurposed %s link" %
+                        band_labels[repurpose_band])
+    if "[EHT]" in sta['flags']:
+        raise Exception("11AX STA unexpectedly negotiated EHT on repurposed %s link" %
+                        band_labels[repurpose_band])
+
+    ifnames = _log_ap_mld_iw_dev_view(hapd_by_band, hapd_iface, case_label,
+                                      "after 11AX STA association")
+    _log_ap_mld_station_dump(hapd_by_band, hapd_iface, case_label,
+                             "after 11AX STA association", ifnames=ifnames)
+    traffic_test(dev[0], repurpose_hapd)
+
+def _ud_mlo_repurpose_connect_after_restore(wpas, ssid, passphrase, case_label,
+                                            hapd_by_band, hapd_iface,
+                                            repurpose_band,
+                                            restore_scan_freq,
+                                            expected_active_links,
+                                            expected_valid_links):
+    band_labels = {
+        "2g": "2.4 GHz",
+        "5g": "5 GHz",
+        "6g": "6 GHz",
+    }
+    logger.info("%s: Connect MLO STA after restore (%s + peer link)",
+                case_label, band_labels[repurpose_band])
+    if isinstance(expected_active_links, (list, tuple, set)):
+        expected_active_desc = ",".join("0x%04x" % v
+                                        for v in expected_active_links)
+        def active_links_ok(val):
+            return val in expected_active_links
+    else:
+        expected_active_desc = "0x%04x" % expected_active_links
+        def active_links_ok(val):
+            return val == expected_active_links
+
+    if isinstance(expected_valid_links, (list, tuple, set)):
+        expected_valid_desc = ",".join("0x%04x" % v
+                                       for v in expected_valid_links)
+        def valid_links_ok(val):
+            return val in expected_valid_links
+    else:
+        expected_valid_desc = "0x%04x" % expected_valid_links
+        def valid_links_ok(val):
+            return val == expected_valid_links
+
+    active_links = None
+    valid_links = None
+    net_id = None
+    for attempt in range(1, 4):
+        wpas.set("sae_pwe", "1")
+        if attempt > 1:
+            wpas.request("DISCONNECT")
+            try:
+                wpas.wait_disconnected(timeout=5)
+            except Exception:
+                pass
+            if net_id is not None:
+                wpas.request("REMOVE_NETWORK " + str(net_id))
+            time.sleep(0.1)
+        net_id = wpas.connect(ssid, sae_password=passphrase,
+                              scan_freq=restore_scan_freq, key_mgmt="SAE",
+                              ieee80211w="2")
+        deadline = time.monotonic() + 1.5
+        while time.monotonic() < deadline:
+            valid_links = _eht_valid_links(wpas)
+            active_links = _eht_active_links(wpas)
+            if active_links_ok(active_links) and \
+               valid_links_ok(valid_links):
+                break
+            time.sleep(0.05)
+        if active_links_ok(active_links) and valid_links_ok(valid_links):
+            break
+        logger.info("%s: restore attempt %d links: active_links=0x%04x valid_links=0x%04x",
+                    case_label, attempt, active_links, valid_links)
+    if not active_links_ok(active_links):
+        raise Exception("%s: Unexpected MLO active_links %s after restore (expected %s)" %
+                        (case_label,
+                         "0x%04x" % active_links if active_links is not None else "None",
+                         expected_active_desc))
+    if not valid_links_ok(valid_links):
+        raise Exception("%s: Unexpected MLO valid_links %s after restore (expected %s)" %
+                        (case_label,
+                         "0x%04x" % valid_links if valid_links is not None else "None",
+                         expected_valid_desc))
+    eht_verify_wifi_version(wpas)
+    ifnames = _log_ap_mld_iw_dev_view(hapd_by_band, hapd_iface, case_label,
+                                      "after restore MLO STA association")
+    _log_ap_mld_station_dump(hapd_by_band, hapd_iface, case_label,
+                             "after restore MLO STA association",
+                             ifnames=ifnames)
+
+def _ud_mlo_repurpose_restore_to_11be(case_label, hapd_iface, hapd_by_band,
+                                      repurpose_band, repurpose_link_id,
+                                      link_2g, link_5g, link_6g, hostapd_cli):
+    band_labels = {
+        "2g": "2.4 GHz",
+        "5g": "5 GHz",
+        "6g": "6 GHz",
+    }
+
+    hapd_global = hostapd.HostapdGlobal()
+    res = hapd_global.request("REMOVE %s %d" % (hapd_iface,
+                                                repurpose_link_id),
+                              timeout=30)
+    if "OK" not in res:
+        raise Exception("REMOVE link %d failed during restore: %s" %
+                        (repurpose_link_id, res))
+
+    restore_links = {
+        "2g": link_2g,
+        "5g": link_5g,
+        "6g": link_6g,
+    }
+    restore_params = dict(restore_links[repurpose_band])
+    restore_params.pop("repurpose_mode", None)
+    conf_path, _ = hostapd.cfg_mld_link_file(hapd_iface, restore_params)
+    try:
+        hapd_global.send_file(conf_path, conf_path)
+        phy = get_phy({"ifname": hapd_iface})
+        phy_bss = phy
+        if "." not in phy:
+            phy_bss = "%s.0" % phy
+        res = hapd_global.request("ADD bss_config=%s:%s" %
+                                  (phy_bss, conf_path))
+        if "OK" not in res and phy_bss != phy:
+            res = hapd_global.request("ADD bss_config=%s:%s" %
+                                      (phy, conf_path))
+        if "OK" not in res:
+            raise Exception("ADD bss_config failed during restore: " + res)
+
+        hapd_restored = hostapd.Hostapd(hapd_iface, link=repurpose_link_id)
+        if not hapd_restored.ping():
+            raise Exception("Could not ping restored %s link" %
+                            band_labels[repurpose_band])
+
+        ret, out = hapd_restored.cmd_execute([hostapd_cli, "-i", hapd_iface,
+                                              "-l", str(repurpose_link_id),
+                                              "status"])
+        if ret != 0:
+            raise Exception("Failed to run hostapd_cli status after restore")
+        logger.info("%s: hostapd_cli link%s status (after restore):\n%s",
+                    case_label, repurpose_link_id, out)
+        if "ieee80211be=1" not in out:
+            raise Exception("Restore failed: %s link status does not show ieee80211be=1" %
+                            band_labels[repurpose_band])
+
+        return hapd_restored, conf_path
+    except Exception:
+        try:
+            os.remove(conf_path)
+        except OSError:
+            pass
+        raise
+
+
+def _ud_mlo_repurpose_case(dev, ssid, case_label, repurpose_band,
+                           repurpose_link_id, mlo_scan_freq,
+                           repurpose_scan_freq, expected_active_links,
+                           expected_valid_links, mlo_bands,
+                           restore_to_11be=False,
+                           restore_active_links=None,
+                           restore_valid_links=None):
+    check_sae_capab(dev[0])
+
+    # Follow existing 6 GHz test flow: switch regdom before capability check.
+    dev[0].cmd_execute(['iw', 'reg', 'set', 'CA'])
+    wait_regdom_changes(dev[0])
+    _, reg = dev[0].cmd_execute(['iw', 'reg', 'get'])
+    logger.info("%s: iw reg get after setting CA:\n%s", case_label, reg)
+
+    restore_conf_path = None
+    try:
+        if not he_6ghz_supported():
+            raise HwsimSkip("6 GHz support is not available after reg set CA")
+
+        with HWSimRadio(use_mlo=True) as (hapd_radio, hapd_iface), \
+            HWSimRadio(use_mlo=True) as (wpas_radio, wpas_iface):
+
+            passphrase = "0123456789"
+            params = eht_mld_ap_wpa2_params(ssid, passphrase, key_mgmt="SAE",
+                                            mfp="2", pwe='1')
+            params["mld_addr"] = "00:03:7f:11:22:31"
+
+            # 2.4 GHz link.
+            link_2g = dict(params)
+            link_2g["hw_mode"] = "g"
+            link_2g["channel"] = "6"
+            link_2g["bssid"] = "00:03:7f:04:36:82"
+
+            # 5 GHz link.
+            link_5g = dict(params)
+            link_5g["hw_mode"] = "a"
+            link_5g["channel"] = "36"
+            link_5g["bssid"] = "00:03:7f:01:51:47"
+            link_5g["ht_capab"] = "[HT40+]"
+            link_5g["vht_oper_chwidth"] = "1"
+            link_5g["vht_oper_centr_freq_seg0_idx"] = "42"
+            link_5g["vht_oper_centr_freq_seg1_idx"] = "0"
+            link_5g["he_oper_chwidth"] = "1"
+            link_5g["he_oper_centr_freq_seg0_idx"] = "42"
+            link_5g["he_oper_centr_freq_seg1_idx"] = "0"
+            link_5g["eht_oper_chwidth"] = "1"
+            link_5g["eht_oper_centr_freq_seg0_idx"] = "42"
+
+            # 6 GHz link.
+            link_6g = dict(params)
+            link_6g["hw_mode"] = "a"
+            link_6g["channel"] = "49"
+            link_6g["op_class"] = "134"
+            link_6g["he_6ghz_reg_pwr_type"] = "0"
+            link_6g["bssid"] = "00:03:7f:01:51:88"
+            link_6g["he_oper_chwidth"] = "2"
+            link_6g["he_oper_centr_freq_seg0_idx"] = "47"
+            link_6g["he_oper_centr_freq_seg1_idx"] = "0"
+            link_6g["eht_oper_chwidth"] = "2"
+            link_6g["eht_oper_centr_freq_seg0_idx"] = "47"
+
+            repurpose_links = {
+                "2g": link_2g,
+                "5g": link_5g,
+                "6g": link_6g,
+            }
+            repurpose_links[repurpose_band]["repurpose_mode"] = "2"
+
+            try:
+                hapd_2g = eht_mld_enable_ap(hapd_iface, 0, link_2g)
+                hapd_5g = eht_mld_enable_ap(hapd_iface, 1, link_5g)
+                hapd_6g = eht_mld_enable_ap(hapd_iface, 2, link_6g)
+            except Exception as e:
+                if "Failed to set hostapd parameter repurpose_mode" in str(e):
+                    raise HwsimSkip("repurpose_mode not supported by hostapd")
+                if "Could not add hostapd link" in str(e):
+                    raise HwsimSkip("6 GHz link bring-up failed in hostapd: " + str(e))
+                raise
+
+            hapd_by_band = {
+                "2g": hapd_2g,
+                "5g": hapd_5g,
+                "6g": hapd_6g,
+            }
+
+            # Verify repurpose state from hostapd_cli status output.
+            hostapd_cli = os.path.abspath(os.path.join(
+                os.path.dirname(__file__), "..", "..", "hostapd", "hostapd_cli"))
+            ret, out = hapd_by_band[repurpose_band].cmd_execute(
+                [hostapd_cli, "-i", hapd_iface, "-l",
+                 str(repurpose_link_id), "status"])
+            if ret != 0:
+                raise Exception("Failed to run hostapd_cli status for repurpose verification")
+            logger.info("%s: hostapd_cli link%s status:\n%s",
+                        case_label, repurpose_link_id, out)
+            if "ieee80211be=0" not in out:
+                raise Exception("Repurpose failed: %s link status does not show ieee80211be=0" %
+                                repurpose_band)
+
+            wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+            wpas.interface_add(wpas_iface)
+            check_sae_capab(wpas)
+            wpas_disconnected = False
+
+            try:
+                _ud_mlo_repurpose_connect_and_verify(
+                    dev,
+                    wpas,
+                    ssid,
+                    passphrase,
+                    case_label,
+                    hapd_iface,
+                    hapd_by_band,
+                    repurpose_band,
+                    repurpose_link_id,
+                    mlo_scan_freq,
+                    repurpose_scan_freq,
+                    expected_active_links,
+                    expected_valid_links,
+                    mlo_bands,
+                )
+                if restore_to_11be:
+                    wpas.request("DISCONNECT")
+                    wpas.wait_disconnected(timeout=5)
+                    wpas_disconnected = True
+                    dev[0].request("DISCONNECT")
+                    dev[0].wait_disconnected(timeout=5)
+                    hapd_restored, restore_conf_path = \
+                        _ud_mlo_repurpose_restore_to_11be(
+                            case_label,
+                            hapd_iface,
+                            hapd_by_band,
+                            repurpose_band,
+                            repurpose_link_id,
+                            link_2g,
+                            link_5g,
+                            link_6g,
+                            hostapd_cli,
+                        )
+                    hapd_by_band[repurpose_band] = hapd_restored
+                    band_freqs = {
+                        "2g": "2437",
+                        "5g": "5180",
+                        "6g": "6195",
+                    }
+                    band_freqs[repurpose_band] = repurpose_scan_freq
+                    link_ids = {"2g": 0, "5g": 1, "6g": 2}
+                    restore_scan_freq = "%s %s %s" % (repurpose_scan_freq,
+                                                      band_freqs[mlo_bands[0]],
+                                                      band_freqs[mlo_bands[1]])
+                    restore_links = (1 << repurpose_link_id) | \
+                        (1 << link_ids[mlo_bands[0]]) | (1 << link_ids[mlo_bands[1]])
+                    if restore_active_links is None:
+                        restore_active_links = restore_links
+                    if restore_valid_links is None:
+                        restore_valid_links = restore_links
+                    _ud_mlo_repurpose_connect_after_restore(
+                        wpas,
+                        ssid,
+                        passphrase,
+                        case_label,
+                        hapd_by_band,
+                        hapd_iface,
+                        repurpose_band,
+                        restore_scan_freq,
+                        restore_active_links,
+                        restore_valid_links,
+                    )
+                    wpas_disconnected = False
+            finally:
+                wpas.set("sae_pwe", "0")
+                if not wpas_disconnected:
+                    wpas.request("DISCONNECT")
+                    wpa_state = wpas.get_status_field("wpa_state")
+                    if wpa_state not in (None, "DISCONNECTED", "INACTIVE",
+                                         "INTERFACE_DISABLED"):
+                        try:
+                            wpas.wait_disconnected(timeout=5)
+                        except Exception:
+                            pass
+                wpas.close_ctrl()
+                dev[0].set("sae_pwe", "0")
+    finally:
+        if restore_conf_path:
+            try:
+                os.remove(restore_conf_path)
+            except OSError:
+                pass
+        dev[0].set("sae_pwe", "0")
+        dev0_state = dev[0].get_status_field("wpa_state")
+        if dev0_state not in (None, "DISCONNECTED", "INACTIVE",
+                              "INTERFACE_DISABLED"):
+            dev[0].request("DISCONNECT")
+            try:
+                dev[0].wait_disconnected(timeout=5)
+            except Exception:
+                pass
+        dev[0].cmd_execute(['iw', 'reg', 'set', '00'])
+        wait_regdom_changes(dev[0])
+
+
+def test_mlo_repurpose_bootup_2g_in_11ax_5g6g_in_11be_with_mlo_and_11ax_client(dev, apdev):
+    """Boot repurpose 2.4 GHz (repurpose_mode=2): MLO STA on 5/6 GHz, legacy 11ax STA on 2.4 GHz"""
+    _ud_mlo_repurpose_case(
+        dev,
+        ssid="udmlo_b2g",
+        case_label="repurpose_boot_2g",
+        repurpose_band="2g",
+        repurpose_link_id=0,
+        mlo_scan_freq="5180 6195",
+        repurpose_scan_freq="2437",
+        expected_active_links=0x6,
+        expected_valid_links=0x6,
+        mlo_bands=("5g", "6g"),
+    )
+
+def test_mlo_repurpose_bootup_5g_in_11ax_2g6g_in_11be_with_mlo_and_11ax_client(dev, apdev):
+    """Boot repurpose 5 GHz (repurpose_mode=2): MLO STA on 2.4/6 GHz, legacy 11ax STA on 5 GHz"""
+    _ud_mlo_repurpose_case(
+        dev,
+        ssid="udmlo_b5g",
+        case_label="repurpose_boot_5g",
+        repurpose_band="5g",
+        repurpose_link_id=1,
+        mlo_scan_freq="2412 6195",
+        repurpose_scan_freq="5180",
+        expected_active_links=0x5,
+        expected_valid_links=0x5,
+        mlo_bands=("2g", "6g"),
+    )
+
+def test_mlo_repurpose_bootup_6g_in_11ax_2g5g_in_11be_with_mlo_and_11ax_client(dev, apdev):
+    """Boot repurpose 6 GHz (repurpose_mode=2): MLO STA on 2.4/5 GHz, legacy 11ax STA on 6 GHz"""
+    _ud_mlo_repurpose_case(
+        dev,
+        ssid="udmlo_b6g",
+        case_label="repurpose_boot_6g",
+        repurpose_band="6g",
+        repurpose_link_id=2,
+        mlo_scan_freq="2412 5180",
+        repurpose_scan_freq="6195",
+        expected_active_links=0x3,
+        expected_valid_links=0x3,
+        mlo_bands=("2g", "5g"),
+    )
+
+def _ud_mlo_repurpose_static_case(dev, ssid, case_label, repurpose_band,
+                                  repurpose_link_id, mlo_scan_freq,
+                                  repurpose_scan_freq, expected_active_links,
+                                  expected_valid_links, mlo_bands):
+    band_labels = {
+        "2g": "2.4 GHz",
+        "5g": "5 GHz",
+        "6g": "6 GHz",
+    }
+    check_sae_capab(dev[0])
+
+    # Follow existing 6 GHz test flow: switch regdom before capability check.
+    dev[0].cmd_execute(['iw', 'reg', 'set', 'CA'])
+    wait_regdom_changes(dev[0])
+    _, reg = dev[0].cmd_execute(['iw', 'reg', 'get'])
+    logger.info("%s: iw reg get after setting CA:\n%s", case_label, reg)
+
+    conf_path = None
+    try:
+        if not he_6ghz_supported():
+            raise HwsimSkip("6 GHz support is not available after reg set CA")
+
+        with HWSimRadio(use_mlo=True) as (hapd_radio, hapd_iface), \
+            HWSimRadio(use_mlo=True) as (wpas_radio, wpas_iface):
+
+            passphrase = "0123456789"
+            params = eht_mld_ap_wpa2_params(ssid, passphrase, key_mgmt="SAE",
+                                            mfp="2", pwe='1')
+            params["mld_addr"] = "00:03:7f:11:22:31"
+
+            # 2.4 GHz link.
+            link_2g = dict(params)
+            link_2g["hw_mode"] = "g"
+            link_2g["channel"] = "6"
+            link_2g["bssid"] = "00:03:7f:04:36:82"
+
+            # 5 GHz link.
+            link_5g = dict(params)
+            link_5g["hw_mode"] = "a"
+            link_5g["ieee80211ac"] = "1"
+            link_5g["channel"] = "36"
+            link_5g["bssid"] = "00:03:7f:01:51:47"
+            link_5g["ht_capab"] = "[HT40+]"
+            link_5g["vht_oper_chwidth"] = "1"
+            link_5g["vht_oper_centr_freq_seg0_idx"] = "42"
+            link_5g["vht_oper_centr_freq_seg1_idx"] = "0"
+            link_5g["he_oper_chwidth"] = "1"
+            link_5g["he_oper_centr_freq_seg0_idx"] = "42"
+            link_5g["he_oper_centr_freq_seg1_idx"] = "0"
+            link_5g["eht_oper_chwidth"] = "1"
+            link_5g["eht_oper_centr_freq_seg0_idx"] = "42"
+
+            # 6 GHz link.
+            link_6g = dict(params)
+            link_6g["hw_mode"] = "a"
+            link_6g["channel"] = "49"
+            link_6g["op_class"] = "134"
+            link_6g["he_6ghz_reg_pwr_type"] = "0"
+            link_6g["bssid"] = "00:03:7f:01:51:88"
+            link_6g["he_oper_chwidth"] = "2"
+            link_6g["he_oper_centr_freq_seg0_idx"] = "47"
+            link_6g["he_oper_centr_freq_seg1_idx"] = "0"
+            link_6g["eht_oper_chwidth"] = "2"
+            link_6g["eht_oper_centr_freq_seg0_idx"] = "47"
+
+            try:
+                hapd_2g = eht_mld_enable_ap(hapd_iface, 0, link_2g)
+                hapd_5g = eht_mld_enable_ap(hapd_iface, 1, link_5g)
+                hapd_6g = eht_mld_enable_ap(hapd_iface, 2, link_6g)
+            except Exception as e:
+                if "Could not add hostapd link" in str(e):
+                    raise HwsimSkip("6 GHz link bring-up failed in hostapd: " + str(e))
+                raise
+
+            hostapd_cli = os.path.abspath(os.path.join(
+                os.path.dirname(__file__), "..", "..", "hostapd", "hostapd_cli"))
+            ret, out = hapd_2g.cmd_execute([hostapd_cli, "-i", hapd_iface,
+                                            "-l", str(repurpose_link_id),
+                                            "status"])
+            if ret != 0:
+                raise Exception("Failed to run hostapd_cli status before repurpose")
+            logger.info("%s: hostapd_cli link%s status (before repurpose):\n%s",
+                        case_label, repurpose_link_id, out)
+
+            ret, iw_out = hapd_2g.cmd_execute(["iw", "dev"])
+            logger.info("%s: iw dev (before repurpose)", case_label)
+            if ret != 0:
+                logger.info("%s: iw dev failed (%d): %s",
+                            case_label, ret, iw_out.strip())
+            elif not iw_out.strip():
+                logger.info("%s: iw dev: <empty>", case_label)
+            else:
+                for line in iw_out.splitlines():
+                    logger.info("%s: iw dev: %s", case_label, line)
+
+            for link_id, hapd in ((0, hapd_2g), (1, hapd_5g), (2, hapd_6g)):
+                if "OK" not in hapd.request("DISABLE_BSS"):
+                    raise Exception("DISABLE_BSS failed on link %d" % link_id)
+
+            hapd_global = hostapd.HostapdGlobal()
+            ret, out = hapd_2g.cmd_execute([hostapd_cli, "-i", hapd_iface,
+                                            "-l", str(repurpose_link_id),
+                                            "status"])
+            if ret != 0 or "state=" not in out:
+                logger.info("%s: link %d already removed before REMOVE",
+                            case_label, repurpose_link_id)
+            else:
+                res = hapd_global.request("REMOVE %s %d" % (hapd_iface,
+                                                            repurpose_link_id),
+                                          timeout=30)
+                if "OK" not in res:
+                    ret, out = hapd_2g.cmd_execute([hostapd_cli, "-i", hapd_iface,
+                                                    "-l", str(repurpose_link_id),
+                                                    "status"])
+                    if ret == 0 and "state=" in out:
+                        raise Exception("REMOVE link %d failed: %s" %
+                                        (repurpose_link_id, res))
+                    logger.info("%s: REMOVE link %d returned %s (link already removed)",
+                                case_label, repurpose_link_id, res.strip())
+
+            for link_id, hapd in ((0, hapd_2g), (1, hapd_5g), (2, hapd_6g)):
+                if link_id == repurpose_link_id:
+                    continue
+                if "OK" not in hapd.request("ENABLE_BSS"):
+                    raise Exception("ENABLE_BSS failed on link %d" % link_id)
+                ev = hapd.wait_event(["AP-ENABLED"], timeout=5)
+                if ev is None:
+                    raise Exception("AP-ENABLED not seen on link %d" % link_id)
+
+            repurpose_links = {
+                "2g": link_2g,
+                "5g": link_5g,
+                "6g": link_6g,
+            }
+            repurpose_links[repurpose_band]["repurpose_mode"] = "2"
+            conf_path, _ = hostapd.cfg_mld_link_file(
+                hapd_iface, repurpose_links[repurpose_band])
+            hapd_global.send_file(conf_path, conf_path)
+            phy = get_phy({"ifname": hapd_iface})
+            phy_bss = phy
+            if "." not in phy:
+                phy_bss = "%s.0" % phy
+            res = hapd_global.request("ADD bss_config=%s:%s" %
+                                      (phy_bss, conf_path))
+            if "OK" not in res and phy_bss != phy:
+                res = hapd_global.request("ADD bss_config=%s:%s" %
+                                          (phy, conf_path))
+            if "OK" not in res:
+                raise Exception("ADD bss_config failed: " + res)
+
+            hapd_rep = hostapd.Hostapd(hapd_iface, link=repurpose_link_id)
+            if not hapd_rep.ping():
+                raise Exception("Could not ping repurposed %s link" %
+                                band_labels[repurpose_band])
+
+            ret, out = hapd_rep.cmd_execute([hostapd_cli, "-i", hapd_iface,
+                                             "-l", str(repurpose_link_id),
+                                             "status"])
+            if ret != 0:
+                raise Exception("Failed to run hostapd_cli status for repurpose verification")
+            logger.info("%s: hostapd_cli link%s status (after repurpose):\n%s",
+                        case_label, repurpose_link_id, out)
+            if "ieee80211be=0" not in out:
+                raise Exception("Repurpose failed: %s link status does not show ieee80211be=0" %
+                                band_labels[repurpose_band])
+
+            hapd_by_band = {
+                "2g": hapd_2g,
+                "5g": hapd_5g,
+                "6g": hapd_6g,
+            }
+            hapd_by_band[repurpose_band] = hapd_rep
+
+            wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+            wpas.interface_add(wpas_iface)
+            check_sae_capab(wpas)
+
+            try:
+                _ud_mlo_repurpose_connect_and_verify(
+                    dev,
+                    wpas,
+                    ssid,
+                    passphrase,
+                    case_label,
+                    hapd_iface,
+                    hapd_by_band,
+                    repurpose_band,
+                    repurpose_link_id,
+                    mlo_scan_freq,
+                    repurpose_scan_freq,
+                    expected_active_links,
+                    expected_valid_links,
+                    mlo_bands,
+                )
+            finally:
+                wpas.set("sae_pwe", "0")
+                wpas.request("DISCONNECT")
+                wpa_state = wpas.get_status_field("wpa_state")
+                if wpa_state not in (None, "DISCONNECTED", "INACTIVE",
+                                     "INTERFACE_DISABLED"):
+                    try:
+                        wpas.wait_disconnected(timeout=5)
+                    except Exception:
+                        pass
+                wpas.close_ctrl()
+                dev[0].set("sae_pwe", "0")
+    finally:
+        if conf_path:
+            try:
+                os.remove(conf_path)
+            except OSError:
+                pass
+        dev[0].set("sae_pwe", "0")
+        dev0_state = dev[0].get_status_field("wpa_state")
+        if dev0_state not in (None, "DISCONNECTED", "INACTIVE",
+                              "INTERFACE_DISABLED"):
+            dev[0].request("DISCONNECT")
+            try:
+                dev[0].wait_disconnected(timeout=5)
+            except Exception:
+                pass
+        dev[0].cmd_execute(['iw', 'reg', 'set', '00'])
+        wait_regdom_changes(dev[0])
+
+
+def test_mlo_repurpose_static_2g_in_11ax_5g6g_in_11be_with_mlo_and_11ax_client(dev, apdev):
+    """Static repurpose 2.4 GHz (repurpose_mode=2): MLO STA on 5/6 GHz, legacy 11ax STA on 2.4 GHz"""
+    _ud_mlo_repurpose_static_case(
+        dev,
+        ssid="udmlo_s2g",
+        case_label="repurpose_static_2g",
+        repurpose_band="2g",
+        repurpose_link_id=0,
+        mlo_scan_freq="5180 6195",
+        repurpose_scan_freq="2437",
+        expected_active_links=0x6,
+        expected_valid_links=0x6,
+        mlo_bands=("5g", "6g"),
+    )
+
+
+def test_mlo_repurpose_static_5g_in_11ax_2g6g_in_11be_with_mlo_and_11ax_client(dev, apdev):
+    """Static repurpose 5 GHz (repurpose_mode=2): MLO STA on 2.4/6 GHz, legacy 11ax STA on 5 GHz"""
+    _ud_mlo_repurpose_static_case(
+        dev,
+        ssid="udmlo_s5g",
+        case_label="repurpose_static_5g",
+        repurpose_band="5g",
+        repurpose_link_id=1,
+        mlo_scan_freq="2412 6195",
+        repurpose_scan_freq="5180",
+        expected_active_links=0x5,
+        expected_valid_links=0x5,
+        mlo_bands=("2g", "6g"),
+    )
+
+
+def test_mlo_repurpose_static_6g_in_11ax_2g5g_in_11be_with_mlo_and_11ax_client(dev, apdev):
+    """Static repurpose 6 GHz (repurpose_mode=2): MLO STA on 2.4/5 GHz, legacy 11ax STA on 6 GHz"""
+    _ud_mlo_repurpose_static_case(
+        dev,
+        ssid="udmlo_s6g",
+        case_label="repurpose_static_6g",
+        repurpose_band="6g",
+        repurpose_link_id=2,
+        mlo_scan_freq="2412 5180",
+        repurpose_scan_freq="6195",
+        expected_active_links=0x3,
+        expected_valid_links=0x3,
+        mlo_bands=("2g", "5g"),
+    )
+
+
+def test_mlo_repurpose_bootup_2g_in_11ax_5g6g_in_11be_with_mlo_and_11ax_client_then_restore_mlo3(dev, apdev):
+    """Back-to-11be 2.4 GHz: repurpose at boot (mode=2) then restore full 3-link MLO"""
+    _ud_mlo_repurpose_case(
+        dev,
+        ssid="udmlo_rb2g",
+        case_label="repurpose_boot_2g_restore",
+        repurpose_band="2g",
+        repurpose_link_id=0,
+        mlo_scan_freq="5180 6195",
+        repurpose_scan_freq="2437",
+        expected_active_links=0x6,
+        expected_valid_links=0x6,
+        mlo_bands=("5g", "6g"),
+        restore_to_11be=True,
+        restore_active_links=0x7,
+    )
+
+
+def test_mlo_repurpose_bootup_5g_in_11ax_2g6g_in_11be_with_mlo_and_11ax_client_then_restore_mlo3(dev, apdev):
+    """Back-to-11be 5 GHz: repurpose at boot (mode=2) then restore full 3-link MLO"""
+    _ud_mlo_repurpose_case(
+        dev,
+        ssid="udmlo_rb5g",
+        case_label="repurpose_boot_5g_restore",
+        repurpose_band="5g",
+        repurpose_link_id=1,
+        mlo_scan_freq="2412 6195",
+        repurpose_scan_freq="5180",
+        expected_active_links=0x5,
+        expected_valid_links=0x5,
+        mlo_bands=("2g", "6g"),
+        restore_to_11be=True,
+        restore_active_links=0x7,
+        restore_valid_links=0x7,
+    )
+
+
+def test_mlo_repurpose_bootup_6g_in_11ax_2g5g_in_11be_with_mlo_and_11ax_client_then_restore_mlo3(dev, apdev):
+    """Back-to-11be 6 GHz: repurpose at boot (mode=2) then restore full 3-link MLO"""
+    _ud_mlo_repurpose_case(
+        dev,
+        ssid="udmlo_rb6g",
+        case_label="repurpose_boot_6g_restore",
+        repurpose_band="6g",
+        repurpose_link_id=2,
+        mlo_scan_freq="2412 5180",
+        repurpose_scan_freq="6195",
+        expected_active_links=0x3,
+        expected_valid_links=0x3,
+        mlo_bands=("2g", "5g"),
+        restore_to_11be=True,
+        restore_active_links=0x7,
+    )
+
+
 def test_eht_mld_sae_transition(dev, apdev):
     """EHT MLD AP in SAE/PSK transition mode with MLD client connection using two links"""
     with HWSimRadio(use_mlo=True) as (hapd_radio, hapd_iface), \
@@ -1231,6 +2075,276 @@ def test_eht_mld_link_removal(dev, apdev):
 
         logger.info("Test traffic after 1st link disabled")
         traffic_test(wpas, hapd0, success=False)
+
+def _eht_mld_link_repurpose_dynamic(dev, apdev, case_label, links,
+                                    repurpose_link_id, scan_freq,
+                                    use_6ghz=False):
+    band_freqs = {0: 2437, 1: 5180, 2: 6195}
+    tbtt_count = 5
+    restore_regdom = False
+
+    has_5ghz = False
+    for _, link_params in links:
+        if link_params.get("hw_mode") == "a" or \
+           int(link_params.get("channel", "0")) >= 36:
+            has_5ghz = True
+            break
+
+    if use_6ghz:
+        dev[0].cmd_execute(['iw', 'reg', 'set', 'CA'])
+        wait_regdom_changes(dev[0])
+        restore_regdom = True
+        if not he_6ghz_supported():
+            raise HwsimSkip("6 GHz support is not available after reg set CA")
+    elif has_5ghz:
+        dev[0].cmd_execute(['iw', 'reg', 'set', 'US'])
+        wait_regdom_changes(dev[0])
+        restore_regdom = True
+
+    try:
+        with HWSimRadio(use_mlo=True) as (hapd0_radio, hapd0_iface), \
+            HWSimRadio(use_mlo=True) as (wpas_radio, wpas_iface), \
+            HWSimRadio(use_mlo=True) as (wpas_legacy_radio,
+                                         wpas_legacy_iface):
+
+            wpas_mlo = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+            wpas_mlo.interface_add(wpas_iface)
+            check_owe_capab(wpas_mlo)
+
+            wpas_legacy = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+            wpas_legacy.interface_add(wpas_legacy_iface)
+            check_owe_capab(wpas_legacy)
+
+            ssid = "udmlo_dyn"
+            base_params = eht_mld_ap_wpa2_params(ssid, key_mgmt="OWE", mfp="2")
+            hapd_by_link = {}
+            link_params_by_id = {}
+
+            for link_id, link_params in links:
+                params = dict(base_params)
+                params.update(link_params)
+                if "mld_link_id" not in params:
+                    params["mld_link_id"] = str(link_id)
+                link_params_by_id[link_id] = dict(params)
+                hapd_by_link[link_id] = eht_mld_enable_ap(hapd0_iface,
+                                                          link_id, params)
+
+            first_link = min(hapd_by_link.keys())
+            expected_links = 0
+            for link_id in hapd_by_link.keys():
+                expected_links |= 1 << link_id
+
+            wpas_mlo.connect(ssid, scan_freq=scan_freq, key_mgmt="OWE",
+                             ieee80211w="2")
+            eht_verify_status(wpas_mlo, hapd_by_link[first_link],
+                              band_freqs.get(first_link, 2412), 20,
+                              is_ht=True, mld=True,
+                              valid_links=expected_links,
+                              active_links=expected_links)
+            traffic_test(wpas_mlo, hapd_by_link[first_link])
+            ret, out = hapd_by_link[first_link].cmd_execute(["iw", "dev"])
+            logger.info("%s: iw dev (after initial MLO connect):\n%s",
+                        case_label, out)
+            ret, out = hapd_by_link[first_link].cmd_execute(
+                ["iw", "dev", hapd0_iface, "station", "dump"])
+            logger.info("%s: iw dev %s station dump (after initial MLO connect):\n%s",
+                        case_label, hapd0_iface, out)
+
+            try:
+                wpas_mlo.request("DISCONNECT")
+                wpas_mlo.wait_disconnected(timeout=5)
+            except Exception:
+                pass
+
+            logger.info("%s: Remove link %d with TBTT countdown before repurpose",
+                        case_label, repurpose_link_id)
+            hapd_by_link[repurpose_link_id].link_remove(tbtt_count)
+
+            hostapd_cli = os.path.abspath(os.path.join(
+                os.path.dirname(__file__), "..", "..", "hostapd",
+                "hostapd_cli"))
+            removed = False
+            repurpose_bit = 1 << repurpose_link_id
+            hapd_global = hostapd.HostapdGlobal()
+            res = None
+            for _ in range(10):
+                ret, out = hapd_by_link[first_link].cmd_execute(
+                    [hostapd_cli, "-i", hapd0_iface, "-l",
+                     str(repurpose_link_id), "status"])
+                if ret != 0 or "state=" not in out:
+                    removed = True
+                    break
+                res = hapd_global.request("REMOVE %s %d" % (hapd0_iface,
+                                                            repurpose_link_id),
+                                          timeout=10)
+                if "OK" in res:
+                    removed = True
+                    break
+                time.sleep(0.05)
+
+            if not removed:
+                ret, out = hapd_by_link[first_link].cmd_execute(
+                    [hostapd_cli, "-i", hapd0_iface, "-l",
+                     str(repurpose_link_id), "status"])
+                if ret == 0 and "state=" in out:
+                    raise Exception("REMOVE failed for link %d after LINK_REMOVE: %s" %
+                                    (repurpose_link_id, res))
+            time.sleep(0.2)
+
+            logger.info("%s: Add repurposed link %d with repurpose_mode=2",
+                        case_label, repurpose_link_id)
+            repurpose_params = dict(link_params_by_id[repurpose_link_id])
+            repurpose_params['repurpose_mode'] = '2'
+            confname, _ = hostapd.cfg_mld_link_file(hapd0_iface,
+                                                    repurpose_params)
+            hapd_global.send_file(confname, confname)
+            phy = get_phy({"ifname": hapd0_iface})
+            phy_bss = phy if "." in phy else "%s.0" % phy
+            res = hapd_global.request("ADD bss_config=%s:%s" %
+                                      (phy_bss, confname))
+            if "OK" not in res and phy_bss != phy:
+                res = hapd_global.request("ADD bss_config=%s:%s" %
+                                          (phy, confname))
+            if "OK" not in res:
+                raise Exception("ADD bss_config failed for repurposed link: " + res)
+
+            for _ in range(50):
+                ret, out = hapd_by_link[first_link].cmd_execute(
+                    [hostapd_cli, "-i", hapd0_iface, "-l",
+                     str(repurpose_link_id), "status"])
+                if ret == 0 and "state=ENABLED" in out:
+                    break
+                time.sleep(0.1)
+            else:
+                raise Exception("Repurposed link %d did not reach ENABLED state" %
+                                repurpose_link_id)
+
+            # Refresh control interface for the repurposed link to avoid using
+            # a terminated ctrl socket from the removed link instance.
+            try:
+                hapd_by_link[repurpose_link_id].close_ctrl()
+            except Exception:
+                pass
+            hapd_by_link[repurpose_link_id] = hostapd.Hostapd(
+                hapd0_iface, link=repurpose_link_id)
+            if not hapd_by_link[repurpose_link_id].ping():
+                raise Exception("Could not ping repurposed link %d" %
+                                repurpose_link_id)
+
+            logger.info("%s: Verify traffic continues after repurpose",
+                        case_label)
+            non_repurpose_links = [i for i in hapd_by_link.keys()
+                                   if i != repurpose_link_id]
+            mlo_link_id = min(non_repurpose_links)
+            try:
+                wpas_mlo.request("DISCONNECT")
+                wpas_mlo.wait_disconnected(timeout=5)
+            except Exception:
+                pass
+            repurpose_freq = str(band_freqs.get(repurpose_link_id, 2412))
+            wpas_mlo.connect(ssid, scan_freq=scan_freq, key_mgmt="OWE",
+                             ieee80211w="2")
+            traffic_test(wpas_mlo, hapd_by_link[mlo_link_id])
+
+            wpas_legacy.connect(ssid, scan_freq=repurpose_freq,
+                                key_mgmt="OWE", ieee80211w="2",
+                                disable_eht="1")
+            traffic_test(wpas_legacy, hapd_by_link[repurpose_link_id])
+            ret, out = hapd_by_link[first_link].cmd_execute(["iw", "dev"])
+            logger.info("%s: iw dev (after repurpose connections):\n%s",
+                        case_label, out)
+            ret, out = hapd_by_link[first_link].cmd_execute(
+                ["iw", "dev", hapd0_iface, "station", "dump"])
+            logger.info("%s: iw dev %s station dump (after repurpose connections):\n%s",
+                        case_label, hapd0_iface, out)
+    finally:
+        if restore_regdom:
+            dev[0].cmd_execute(['iw', 'reg', 'set', '00'])
+            wait_regdom_changes(dev[0])
+
+
+def test_mlo_repurpose_dynamic_2g_in_11ax_5g6g_in_11be_with_mlo_and_11ax_client(dev, apdev):
+    """Dynamic repurpose 2.4 GHz (mode=2): MLO(3 links) then MLO(2 links)+legacy"""
+    links = [
+        (0, {"channel": "6", "hw_mode": "g"}),
+        (1, {"channel": "36", "hw_mode": "a", "ieee80211ac": "1",
+             "ht_capab": "[HT40+]",
+             "vht_oper_chwidth": "1",
+             "vht_oper_centr_freq_seg0_idx": "42",
+             "vht_oper_centr_freq_seg1_idx": "0",
+             "he_oper_chwidth": "1",
+             "he_oper_centr_freq_seg0_idx": "42",
+             "he_oper_centr_freq_seg1_idx": "0",
+             "eht_oper_chwidth": "1",
+             "eht_oper_centr_freq_seg0_idx": "42"}),
+        (2, {"channel": "49", "hw_mode": "a", "op_class": "134",
+             "he_6ghz_reg_pwr_type": "0",
+             "he_oper_chwidth": "2",
+             "he_oper_centr_freq_seg0_idx": "47",
+             "he_oper_centr_freq_seg1_idx": "0",
+             "eht_oper_chwidth": "2",
+             "eht_oper_centr_freq_seg0_idx": "47"}),
+    ]
+    _eht_mld_link_repurpose_dynamic(dev, apdev,
+                                    "repurpose_dyn_2g",
+                                    links, 0, "2437 5180 6195",
+                                    use_6ghz=True)
+
+
+def test_mlo_repurpose_dynamic_5g_in_11ax_2g6g_in_11be_with_mlo_and_11ax_client(dev, apdev):
+    """Dynamic repurpose 5 GHz (mode=2): MLO(3 links) then MLO(2 links)+legacy"""
+    links = [
+        (0, {"channel": "6", "hw_mode": "g"}),
+        (1, {"channel": "36", "hw_mode": "a", "ieee80211ac": "1",
+             "ht_capab": "[HT40+]",
+             "vht_oper_chwidth": "1",
+             "vht_oper_centr_freq_seg0_idx": "42",
+             "vht_oper_centr_freq_seg1_idx": "0",
+             "he_oper_chwidth": "1",
+             "he_oper_centr_freq_seg0_idx": "42",
+             "he_oper_centr_freq_seg1_idx": "0",
+             "eht_oper_chwidth": "1",
+             "eht_oper_centr_freq_seg0_idx": "42"}),
+        (2, {"channel": "49", "hw_mode": "a", "op_class": "134",
+             "he_6ghz_reg_pwr_type": "0",
+             "he_oper_chwidth": "2",
+             "he_oper_centr_freq_seg0_idx": "47",
+             "he_oper_centr_freq_seg1_idx": "0",
+             "eht_oper_chwidth": "2",
+             "eht_oper_centr_freq_seg0_idx": "47"}),
+    ]
+    _eht_mld_link_repurpose_dynamic(dev, apdev,
+                                    "repurpose_dyn_5g",
+                                    links, 1, "2437 5180 6195",
+                                    use_6ghz=True)
+
+
+def test_mlo_repurpose_dynamic_6g_in_11ax_2g5g_in_11be_with_mlo_and_11ax_client(dev, apdev):
+    """Dynamic repurpose 6 GHz (mode=2): MLO(3 links) then MLO(2 links)+legacy"""
+    links = [
+        (0, {"channel": "6", "hw_mode": "g"}),
+        (1, {"channel": "36", "hw_mode": "a", "ieee80211ac": "1",
+             "ht_capab": "[HT40+]",
+             "vht_oper_chwidth": "1",
+             "vht_oper_centr_freq_seg0_idx": "42",
+             "vht_oper_centr_freq_seg1_idx": "0",
+             "he_oper_chwidth": "1",
+             "he_oper_centr_freq_seg0_idx": "42",
+             "he_oper_centr_freq_seg1_idx": "0",
+             "eht_oper_chwidth": "1",
+             "eht_oper_centr_freq_seg0_idx": "42"}),
+        (2, {"channel": "49", "hw_mode": "a", "op_class": "134",
+             "he_6ghz_reg_pwr_type": "0",
+             "he_oper_chwidth": "2",
+             "he_oper_centr_freq_seg0_idx": "47",
+             "he_oper_centr_freq_seg1_idx": "0",
+             "eht_oper_chwidth": "2",
+             "eht_oper_centr_freq_seg0_idx": "47"}),
+    ]
+    _eht_mld_link_repurpose_dynamic(dev, apdev,
+                                    "repurpose_dyn_6g",
+                                    links, 2, "2437 5180 6195",
+                                    use_6ghz=True)
 
 def test_eht_mld_bss_trans_mgmt_link_removal_imminent(dev, apdev):
     """EHT MLD with two links. BSS transition management with link removal imminent"""

@@ -38,6 +38,9 @@
 #include "ieee802_11_auth.h"
 #include "dscp_policy.h"
 #include "../../qcn_extns/cmn.h"
+#ifdef CONFIG_HOSTAPD_IF
+#include "hostapd_if/hostapd_if.h"
+#endif
 #include <assert.h>
 
 #define HOSTAPD_TPC_REPORT_IE_LEN			2
@@ -695,7 +698,7 @@ static u8 * hostapd_eid_supported_op_classes(struct hostapd_data *hapd, u8 *eid)
  * @eid: Pointer to the current position in the buffer
  * Returns: Pointer to the next position in the buffer
  */
-static u8 * hostapd_eid_smd_ie(struct hostapd_data *hapd, u8 *eid)
+u8 * hostapd_eid_smd_ie(struct hostapd_data *hapd, u8 *eid)
 {
 	u8 *pos = eid;
 	u8 smd_cap_byte;
@@ -2934,11 +2937,12 @@ u8 * hostapd_unsol_bcast_probe_resp(struct hostapd_data *hapd,
 	/* Do not enable UBPR in 6GHz AP if colocated with lower band APs */
 	hapd->conf->ubpr_state = FILS_UBPR_USER_DISABLED;
 
-	if (!is_6ghz_op_class(hapd->iconf->op_class) ||
-	    !hapd->conf->unsol_bcast_probe_resp_interval)
+	if (!is_6ghz_op_class(hapd->iconf->op_class))
 		return NULL;
 
-	if (get_colocation_mode(hapd) == COLOCATED_6GHZ) {
+	if (hapd->conf->unsol_bcast_probe_resp_interval &&
+	    hapd->conf->force_disable_in_band_discovery &&
+	    (get_colocation_mode(hapd) == COLOCATED_6GHZ)) {
 		hapd->conf->ubpr_state = FILS_UBPR_FORCE_DISABLED;
 		return NULL;
 	}
@@ -4168,28 +4172,19 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 
 	params->beacon_tx_mode = hapd->conf->beacon_tx_mode;
 
-	if (hapd->iconf->mbssid) {
-		if (((hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) &&
-		    (hapd->mbssid_group->num_bss == 1)) || hapd->iconf->num_bss == 1) {
-			params->mbssid.mbssid_tx_iface = hapd->conf->iface;
-			params->mbssid.mbssid_index = hostapd_mbssid_get_bss_index(hapd);
-			if (hapd->conf->mld_ap)
-				params->mbssid.mbssid_tx_iface_linkid = hapd->mld_link_id;
-			else
-				params->mbssid.mbssid_tx_iface_linkid = -1;
-			complete = true;
-		} else {
-			if (ieee802_11_build_ap_params_mbssid(hapd, params)) {
-				ieee802_11_free_ap_params(params);
-				wpa_printf(MSG_ERROR,
-					   "MBSSID: Failed to set beacon data");
-				return -1;
-			}
-			complete = hapd->iconf->mbssid == MBSSID_ENABLED ||
-				hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED ||
-				(hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
-				 params->mbssid.mbssid_elem_count == 1);
+	if (hapd->iconf->mbssid &&
+	    (hapd->iconf->mbssid != MULTI_MBSSID_GROUP_ENABLED ||
+	     hapd->mbssid_group)) {
+		if (ieee802_11_build_ap_params_mbssid(hapd, params)) {
+			ieee802_11_free_ap_params(params);
+			wpa_printf(MSG_ERROR,
+				   "MBSSID: Failed to set beacon data");
+			return -1;
 		}
+		complete = hapd->iconf->mbssid == MBSSID_ENABLED ||
+			   hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED ||
+			   (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
+			    params->mbssid.mbssid_elem_count == 1);
 	}
 
 	/*
@@ -4491,7 +4486,7 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 #endif /* CONFIG_IEEE80211BE */
 		params.freq = &freq;
 #ifdef CONFIG_QCN_EXTN
-		params.freq->skip_cac = iconf->conf_extn.skip_cac;
+		hostapd_beacon_set_skip_cac_extn(iface, params.freq);
 		hostapd_ignorecac_update_freq_params_extn(iface,
 							   params.freq);
 		if (iface->mcst && iface->cs_time) {

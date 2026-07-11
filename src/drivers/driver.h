@@ -31,6 +31,108 @@
 #include "drivers/nl80211_copy.h"
 #include "../../qcn_extns/cmn.h"
 
+/* SMD context definitions - IEEE 802.11bn compliant */
+#define SMD_NUM_TIDS 8
+#define SMD_WPA_PN_LEN 16
+#define SMD_NUM_SCSID 16
+
+/* Valid context bitmap flags */
+#define SMD_CTX_VALID_DL_SN      BIT(0)
+#define SMD_CTX_VALID_UL_SN      BIT(1)
+#define SMD_CTX_VALID_PN         BIT(2)
+#define SMD_CTX_VALID_BA_PARAMS  BIT(3)
+#define SMD_CTX_VALID_QOS        BIT(4)
+/* BIT(5) to BIT(7) are reserved */
+
+/**
+ * struct sta_smd_ba_info - Block Ack parameters for SMD context
+ * @amsdu_supported: A-MSDU support flag
+ * @ba_policy: Block Ack policy (0=delayed, 1=immediate)
+ * @buffer_size: Block Ack buffer size (10 bits)
+ * @timeout: Block Ack timeout value
+ * @ext_no_frag: Extended no fragmentation flag
+ * @extfrag_level: Extended fragmentation level (2 bits)
+ * @ext_buffer_size: Extended buffer size (10 bits)
+ */
+struct sta_smd_ba_info {
+	u16 amsdu_supported:1,
+	    ba_policy:1,
+	    buffer_size:10;
+	u16 timeout;
+	u16 ext_no_frag:1,
+	    extfrag_level:2,
+	    ext_buffer_size:10;
+};
+
+/**
+ * struct sta_smd_ctx_info - SMD station context information
+ * @valid_ctx_bmap: Bitmap indicating which context fields are valid
+ * @st_type: SMD BSS Transition Type (Prep/Exec)
+ * @pn_len: Length of PN which varies based on cipher type
+ * @dl: Downlink context
+ *   @valid_tid_bmap: Bitmap of valid TIDs for DL
+ *   @sn: Sequence numbers per TID
+ *   @pn: Packet number (single PN for all TIDs in DL)
+ *   @ba: Block Ack parameters per TID
+ * @ul: Uplink context
+ *   @valid_tid_bmap: Bitmap of valid TIDs for UL
+ *   @sn: Sequence numbers per TID
+ *   @pn: Packet numbers per TID (separate PN per TID in UL)
+ *   @ba: Block Ack parameters per TID
+ * @qos: QoS context
+ *   @scs_descriptors: Pointers to SCS Descriptor elements per SCS_ID
+ *   @mscs_descriptor: Pointer to MSCS Descriptor element
+ * @vendor_ctx_len: Length of vendor-specific context
+ * @vendor_ctx: Vendor-specific context data
+ *
+ * This structure contains the complete SMD station context as defined
+ * in IEEE 802.11bn for seamless roaming with state transfer.
+ */
+struct sta_smd_ctx_info {
+	u8 valid_ctx_bmap;
+	u8 st_type;
+	u8 pn_len; /* Length of PN which varies based on the cipher type */
+
+	struct {
+		u8 valid_tid_bmap;
+		u16 sn[SMD_NUM_TIDS];
+		u8 pn[SMD_WPA_PN_LEN];
+		struct sta_smd_ba_info ba[SMD_NUM_TIDS];
+	} dl;
+
+	struct {
+		u8 valid_tid_bmap;
+		u16 sn[SMD_NUM_TIDS];
+		u16 pn[SMD_NUM_TIDS][SMD_WPA_PN_LEN];
+		struct sta_smd_ba_info ba[SMD_NUM_TIDS];
+	} ul;
+
+	struct {
+		/* SCS Descriptor element for each SCS_ID */
+		u8 *scs_descriptors[SMD_NUM_SCSID];
+		/* MSCS Descriptor element */
+		u8 *mscs_descriptor;
+	} qos;
+
+	size_t vendor_ctx_len;
+	u8 vendor_ctx[];
+};
+
+/* Calculate approximate size of sta_smd_ctx_info structure
+ * This is used for buffer allocation and validation.
+ * Actual size may vary due to alignment and vendor context.
+ *
+ * Base calculation:
+ * - valid_ctx_bmap: 1 byte
+ * - pn_len: 1 byte
+ * - dl: 1 + (8*2) + 16 + (8*6) = 81 bytes
+ * - ul: 1 + (8*2) + (8*16*2) + (8*6) = 321 bytes
+ * - qos: (16*8) + 8 = 136 bytes (pointers only, descriptors separate)
+ * - vendor_ctx_len: 8 bytes
+ * - vendor_ctx: 8 bytes (pointer)
+ * Total: ~556 bytes (may vary with alignment)
+ */
+
 struct nan_subscribe_params;
 struct nan_publish_params;
 
@@ -3383,6 +3485,16 @@ struct hostap_sta_driver_data {
 	u8 ps_state;
 };
 
+struct hostapd_smd_roam_params {
+	u32 type;
+	u32 role;
+	u32 dl_drain_time;
+	bool dl_sn_not_transferred;
+	bool ul_sn_not_transferred;
+	u32 n_macs;
+	u8  mac[MAX_NUM_MLD_LINKS][ETH_ALEN];
+};
+
 struct hostapd_sta_add_params {
 	const u8 *addr;
 	u16 aid;
@@ -3429,6 +3541,9 @@ struct hostapd_sta_add_params {
 	const u8 *mld_link_addr;
 	u16 eml_cap;
 	u8 control_mic_pad;
+	bool smd_sta;
+	bool dl_data_fwd;
+	const u8 *smd_mac_addr;
 };
 
 struct ml_reconf_req {
@@ -3488,6 +3603,7 @@ struct wpa_bss_params {
 #define WPA_STA_SPP_AMSDU BIT(7)
 #define WPA_STA_FT_AUTH BIT(8)
 #define WPA_STA_CFP BIT(9)
+#define WPA_STA_SMD BIT(10)
 
 enum tdls_oper {
 	TDLS_DISCOVERY_REQ,
@@ -3564,12 +3680,69 @@ struct wpa_mlo_signal_info {
  * @add_link_bssid: Array of BSSIDs for the links to be added
  * @add_link_freq: Array of frequencies for the links to be added
  * @delete_links: Bitmask of links to be removed
+ * @is_execution_request: Flag to indicate ST Execution (vs ST Preparation)
+ * @exec_path: Execution path for ST Execution (0 = via current AP, 1 = direct)
+ * @dl_tid_bitmap: DL TID bitmap for traffic draining during ST Execution
+ * @force_diff_tx:  when set, ST Prep and ST Exec are sent on diff link
  */
 struct wpa_mlo_reconfig_info {
 	u16 add_links;
 	u8 add_link_bssid[MAX_NUM_MLD_LINKS][ETH_ALEN];
 	int add_link_freq[MAX_NUM_MLD_LINKS];
 	u16 delete_links;
+	u8 is_execution_request;
+	u8 exec_path;
+	u8 dl_tid_bitmap;
+	u8 force_diff_tx;
+};
+
+/**
+ * struct wpa_driver_uhr_reconfig_params - UHR Link Reconfiguration parameters
+ * @type: 0 = ST Preparation, 1 = ST Execution
+ * @bssid: Target AP BSSID
+ * @target_mld_addr: Target MLD address (optional, can be NULL)
+ * @ssid: Target SSID
+ * @ssid_len: Target SSID length
+ * @no_dl_sn: Suppress DL sequence number transfer
+ * @no_ul_sn: Suppress UL sequence number transfer
+ * @scs_ids: Service Class Specifications (comma-separated, optional)
+ * @ptk_mode: PTK derivation mode (-1 = default, 0 = per-SMD, 1 = per-AP MLD)
+ * @snonce: Station Nonce (for Per-AP PTK mode)
+ * @snonce_len: Length of @snonce
+ * @dh_pubkey: Own DH Public Key (for Per-AP PTK mode)
+ * @dh_pubkey_len: Length of @dh_pubkey
+ * @exec_path: ST Execution path: 0 = via current AP, 1 = direct to target
+ * @dl_tid_bitmap: DL TID bitmap for traffic draining (ST Execution only)
+ * @per_link_ie_buf: Array of per-link IE buffers
+ * @per_link_ie_len: Array of per-link IE lengths
+ * @max_links: Number of link entries
+ * @smd: SMD domain parameters
+ * @reconfig_info: Link add/del information for SMD preparation (optional)
+ * @tx_link_id: MLO link ID on which this frame must be transmitted
+ */
+struct wpa_driver_uhr_reconfig_params {
+	u8 type;
+	const u8 *bssid;
+	const u8 *target_mld_addr;
+	const u8 *ssid;
+	size_t ssid_len;
+	int no_dl_sn;
+	int no_ul_sn;
+	const char *scs_ids;
+	int ptk_mode;
+	const u8 *snonce;
+	size_t snonce_len;
+	const u8 *dh_pubkey;
+	size_t dh_pubkey_len;
+	u8 exec_path;
+	u8 dl_tid_bitmap;
+	u8 **per_link_ie_buf;
+	size_t *per_link_ie_len;
+	size_t max_links;
+	struct wpa_smd_params smd;
+	int is_preferred_target;
+	struct wpa_mlo_reconfig_info *reconfig_info;
+	s8 tx_link_id;
 };
 
 /**
@@ -4111,6 +4284,24 @@ struct wpa_driver_ops {
 	 * example on how this can be done.
 	 */
 	int (*set_key)(void *priv, struct wpa_driver_set_key_params *params);
+
+	/**
+	 * smd_roam - Notify the driver of an SMD BSS transition completion
+	 * @priv: Private driver interface data
+	 * @param: SMD roam parameters describing the completed transition
+	 *
+	 * Returns: 0 on success, -1 on failure
+	 *
+	 * Called by the SMD BSS Transition state machine after the non-AP STA
+	 * completes a Seamless Multi-link Domain (SMD) transition (IEEE 802.11bn
+	 * section 37.16.3).  The driver issues NL80211_CMD_SMD_ROAM to inform the
+	 * kernel of the new set of active link MAC addresses, the transition type
+	 * (intra-domain or inter-domain), the STA role, and whether DL/UL sequence
+	 * numbers were transferred to the new anchor AP.  The kernel uses this
+	 * information to update per-link state and, where applicable, flush the
+	 * data-path queues for links that are no longer active.
+	 */
+	int (*smd_roam)(void *priv, struct hostapd_smd_roam_params *param);
 
 	/**
 	 * init - Initialize driver interface
@@ -5567,21 +5758,38 @@ struct wpa_driver_ops {
 	 */
 	int (*stop_sched_scan)(void *priv);
 
-        /**
-         * trigger_smd_discovery = Trigger SMD neighbor discovery
-         * @priv: Private driver interface data
-         * @neighbors: Array of SMD neighbor targets to discover
-         * @num_neighbors: Number of neighbors in the array
-         * Returns: 0 on success, -1 on failure
-         *
-         * This function triggers directed discovery for SMD neighbors identified
-         * from RNR elements. The driver should issue
-         * NL80211_CMD_TRIGGER_SMD_DISCOVERY to the kernel with the target
-         * list for efficient directed scanning.
-         */
-        int (*trigger_smd_discovery)(void *priv,
-                                     const struct wpa_driver_smd_neighbor *neighbors,
-                                     size_t num_neighbors);
+	/**
+	 * trigger_smd_discovery - Trigger SMD neighbor discovery
+	 * @priv: Private driver interface data
+	 * @neighbors: Array of SMD neighbor targets to discover
+	 * @num_neighbors: Number of neighbors in the array
+	 * Returns: 0 on success, -1 on failure
+	 *
+	 * This function triggers directed discovery for SMD neighbors identified
+	 * from RNR elements. The driver should issue
+	 * NL80211_CMD_TRIGGER_SMD_DISCOVERY to the kernel with the target
+	 * list for efficient directed scanning.
+	 */
+	int (*trigger_smd_discovery)(void *priv,
+				     const struct wpa_driver_smd_neighbor *neighbors,
+				     size_t num_neighbors);
+
+	/**
+	 * uhr_reconfig_req - Send UHR Link Reconfiguration Request
+	 * @priv: Private driver interface data
+	 * @params: UHR reconfiguration parameters (includes type field)
+	 *   type: 0 = ST Preparation, 1 = ST Execution
+	 *   bssid: Target BSSID
+	 *   no_dl_sn: Request DL SN not transferred
+	 * @no_ul_sn: Request UL SN not transferred
+	 * @scs_ids: Comma-separated list of SCS IDs (optional)
+	 * @own_dh_pubkey: Own DH Public Key (for PTK Mode 1) or %NULL
+	 * @own_dh_pubkey_len: Length of own_dh_pubkey
+	 * @snonce: Own SNonce (for PTK Mode 1) or %NULL
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*uhr_reconfig_req)(void *priv,
+				const struct wpa_driver_uhr_reconfig_params *params);
 
 	/**
 	 * poll_client - Probe (null data or such) the given station
@@ -6729,6 +6937,16 @@ struct wpa_driver_ops {
 	 */
 	int (*notify_radar)(void *priv, struct hostapd_freq_params *freq,
 			    u16 radar_bitmap);
+
+	/*
+	 * set_smd_ctx - Set SMD context for an SMD station
+	 * @priv: Private driver interface data
+	 * @sta_addr: station address
+	 * @ctx: SMD context information
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*set_smd_ctx)(void *priv, const u8 *sta_addr,
+			   const struct sta_smd_ctx_info *ctx);
 };
 
 /**
@@ -7528,9 +7746,8 @@ enum wpa_event_type {
  * This event is used by the driver to notify the usersapce about
  * enablement/disablement of AP Power Save feature.
  */
-	EVENT_UPDATE_AP_POWERSAVE
+	EVENT_UPDATE_AP_POWERSAVE,
 #ifdef CONFIG_IEEE80211BN
-	,
 	/**
 	 * EVENT_CRITICAL_UPDATE_NOTIFY - ECU lifecycle transition event
 	 *
@@ -7538,8 +7755,26 @@ enum wpa_event_type {
 	 * NL80211_CMD_CRITICAL_UPDATE_NOTIFY.  The cu_notify_event member
 	 * carries the link_id and the new nl80211_cu_state value.
 	 */
-	EVENT_CRITICAL_UPDATE_NOTIFY
+	EVENT_CRITICAL_UPDATE_NOTIFY,
 #endif /* CONFIG_IEEE80211BN */
+
+	/**
+	 * EVENT_UHR_RECONFIG_RESP - UHR Link Reconfiguration Response received
+	 *
+	 * This event indicates reception of an ST Preparation Response frame
+	 * (UHR Link Reconfiguration Response). The event data includes the
+	 * response type (Prepare=0 or Execute=1), frame content, and status.
+	 */
+	EVENT_UHR_RECONFIG_RESP,
+
+	/**
+	 * EVENT_SMD_TRANSITION_DONE - SMD BSS Transition status notification
+	 *
+	 * Status-only notification for COMPLETE (primary link switched after
+	 * DL drain) or ABORT (transition failed/timed out). Frame carrying
+	 * PREP/EXEC notifications are handled via separate MLME event path.
+	 */
+	EVENT_SMD_TRANSITION_DONE,
 };
 
 
@@ -8104,6 +8339,12 @@ union wpa_event_data {
 		 * non MLD.
 		 */
 		int link_id;
+
+		/**
+		 * smd_ctx - SMD context from driver (optional, NULL if not present)
+		 */
+		struct sta_smd_ctx_info *smd_ctx;
+
 	} rx_mgmt;
 
 	/**
@@ -8623,6 +8864,9 @@ union wpa_event_data {
 		u8 bpcc;
 		u8 switch_count;
 		u8 link_id;
+		u8 enhanced_bpcc;
+		bool enhanced_critical_update;
+		u8 ecu_countdown;
 	} cu_event;
 
 	/**
@@ -8669,6 +8913,44 @@ union wpa_event_data {
 		u8 *addr;
 		u8 tid;
 	} tclas_flow_event;
+
+	/**
+	 * struct uhr_reconfig_resp - Data for EVENT_UHR_RECONFIG_RESP
+	 * @type: Response type (0 = ST Preparation, 1 = ST Execution)
+	 * @frame: Pointer to the received frame
+	 * @frame_len: Length of the frame in bytes
+	 * @status_code: Status code from the response
+	 * @count: Number of statuses in the list
+	 * @status_list: List of status codes
+	 * @resp_ie: Pointer to the response IEs
+	 * @resp_ie_len: Length of the response IEs
+	 * @link_transition_state: Link distribution state from the kernel;
+	 *	one of &enum nl80211_smd_link_transition_state.
+	 */
+	struct uhr_reconfig_resp {
+		u8 type;
+		const u8 *frame;
+		size_t frame_len;
+		u16 status_code;
+		u8 count;
+		const u8 *status_list;
+		const u8 *resp_ie;
+		size_t resp_ie_len;
+		enum nl80211_smd_link_transition_state link_transition_state;
+	} uhr_reconfig_resp;
+
+	/**
+	 * struct st_transition - Data for EVENT_SMD_TRANSITION_DONE
+	 * @target_mld_addr: Target AP MLD Address
+	 * @status_code: Status code (0 for COMPLETE, reason for ABORT)
+	 * @type: Transition type (NL80211_MD_TRANSITION_COMPLETE or
+		   NL80211_SMD_TRANSITION_ABORT)
+	 */
+	struct st_transition {
+		const u8 *target_mld_addr;
+		u16 status_code;
+		u8 type;
+	} st_transition;
 
 	/**
 	 * event_data_extn - Extension event data for vendor-specific events

@@ -16,10 +16,12 @@
 #include "ap/ap_drv_ops.h"
 #include "ap/wpa_auth.h"
 #include "ap/wpa_auth_i.h"
+#include "ap/pmksa_cache_auth.h"
 #include "ap/beacon.h"
 #include "ap/ap_mlme.h"
 #include "eapol_auth/eapol_auth_sm.h"
 #include "eapol_auth/eapol_auth_sm_i.h"
+#include "eap_server/eap.h"
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 #include "../qcn_extns/hostapd_external_interface.h"
@@ -414,44 +416,56 @@ int hostapd_if_deinit(void)
 	return 0;
 }
 
+static
+struct frame_reg_table *__get_shared_mld_table(struct hostapd_data *hapd)
+{
+	struct hostapd_data *hapd_partner;
+
+	if (!hapd->conf->mld_ap || !hapd->mld)
+		return NULL;
+
+	for_each_mld_link(hapd_partner, hapd) {
+
+		if (!hapd_partner->hostapd_if_data)
+			continue;
+		return hapd_partner->hostapd_if_data;
+	}
+	return NULL;
+}
+
 int hostapd_if_interface_create(struct hostapd_data *hapd)
 {
-	struct hostapd_data *leader;
 	struct frame_reg_table *table = NULL;
 
 	if (!hapd->conf->external_plugin_enable)
 		return 0;
 
-	wpa_printf(MSG_ERROR, "%s:%s %d", __func__, hapd->conf->iface,
+	if (hapd->hostapd_if_data)
+		return 0;
+
+	wpa_printf(MSG_DEBUG, "%s:%s link-id:%d", __func__, hapd->conf->iface,
 		hapd->mld_link_id);
-	leader = hostapd_mld_get_first_bss(hapd);
 
-	/*
-	 * If in MLD and a table exists in the leader, share it
-	 * (just refcount)
-	 */
-	if (leader && leader != hapd) {
-		if (!leader->hostapd_if_data) {
-			wpa_printf(MSG_ERROR, "%s: ERROR! leader BSS does not have table\n",
-				__func__);
-			return -1;
-		}
-		table = (struct frame_reg_table *) leader->hostapd_if_data;
-		++table->ref_count;
+	table = __get_shared_mld_table(hapd);
+	if (table) {
+
+		wpa_printf(MSG_DEBUG, "%s: sharing table for %s link-id:%d\n",
+			   __func__, hapd->conf->iface, hapd->mld_link_id);
+
 		hapd->hostapd_if_data = (void *) table;
-
-		wpa_printf(MSG_DEBUG, "%s! using table from leader bss\n", __func__);
+		++table->ref_count;
 		goto hostapd_if_interface_create_plugin_call;
 	}
 
-	table = (struct frame_reg_table *)
-		calloc(1, sizeof(struct frame_reg_table));
+	table = os_zalloc(sizeof(*table));
 	if (!table) {
 		wpa_printf(MSG_ERROR, "%s! ERROR!! TABLE allocation failed\n",
 			__func__);
 		return -1;
 	}
 
+	wpa_printf(MSG_DEBUG, "%s:%s Allocating table link-id:%d\n", __func__,
+		   hapd->conf->iface, hapd->mld_link_id);
 	table->ref_count = 1;
 	/*
 	 * Allocate bitfield for event registration tracking
@@ -1777,8 +1791,61 @@ __hostapd_if_set_beacon_probe_vendor_ies_exit:
 	os_free((void *)buf);
 }
 
+static
+int __get_pmk_1x(struct sta_info *sta, int akm, uint8_t pmk[PMK_LEN_MAX],
+		 size_t *pmk_len, uint8_t pmkid[PMKID_LEN])
+{
+	/*
+	 * call 1x_get_key to get the key, then use rsn_pmkid
+	 * to calculate the PMKID, then return.
+	 * For suite-B, put the PMKID as all zeroes if KCK is not
+	 * available
+	 */
+	const u8 *msk;
+	size_t msk_len;
+	const u8 *aa = wpa_auth_get_aa(sta->wpa_sm);
+	const u8 *spa = wpa_auth_get_spa(sta->wpa_sm);
+
+	msk = ieee802_1x_get_key(sta->eapol_sm, &msk_len);
+	if (!msk || msk_len < PMK_LEN)
+		return -1;
+
+	/*
+	 * Mirror the PMK/pmk_len adjustment done in wpa_auth_pmksa_add
+	 * before PMKID derivation.
+	 */
+#ifdef CONFIG_IEEE80211R_AP
+	if (msk_len >= 2 * PMK_LEN && wpa_key_mgmt_ft(akm) &&
+	    wpa_key_mgmt_wpa_ieee8021x(akm) && !wpa_key_mgmt_sha384(akm)) {
+		/* Use MPMK/XXKey (second PMK_LEN bytes of MSK) */
+		msk = msk + PMK_LEN;
+		msk_len = PMK_LEN;
+	} else
+#endif /* CONFIG_IEEE80211R_AP */
+	if (wpa_key_mgmt_sha384(akm)) {
+		if (msk_len > PMK_LEN_SUITE_B_192)
+		    msk_len = PMK_LEN_SUITE_B_192;
+	} else if (msk_len > PMK_LEN) {
+		msk_len = PMK_LEN;
+	}
+
+	if (wpa_key_mgmt_suite_b(akm)) {
+		/* KCK not available; return zero PMKID */
+		if (wpa_auth_get_pmkid_suite_b(sta->wpa_sm, pmkid) < 0)
+			return 0;
+	} else {
+		rsn_pmkid(msk, msk_len, aa, spa, pmkid, akm);
+	}
+
+	os_memcpy(pmk, msk, msk_len);
+	*pmk_len = msk_len;
+
+	return 0;
+}
+
 /*
  * Use MLD mac of STA in case of 11be STA
+ * This API reflects the PMK/PMKID after Assoc request - response sequence
  */
 int hostapd_if_get_pmk(char *ifname, uint8_t *sta_mac,
 		       uint8_t pmk[PMK_LEN_MAX], size_t *pmk_len,
@@ -1786,17 +1853,70 @@ int hostapd_if_get_pmk(char *ifname, uint8_t *sta_mac,
 {
 	struct hostapd_data *hapd;
 	struct sta_info *sta;
+	int akm;
 
-	sta = __get_sta(ifname, sta_mac, -1, false, &hapd);
-	if (!sta) {
+	if (!ifname || !sta_mac || !pmk || !pmk_len || !pmkid) {
 		wpa_printf(MSG_ERROR,
-			   "ERROR in fetching sta object %s "
-			   MACSTR "\n",
-			   __func__, MAC2STR(sta_mac));
+			   "NULL parameter(s) in %s:%s mac:%p pmk:%p pmk_len:%p"
+			   "pmkid:%p\n",
+			   __func__, ifname, sta_mac, pmk, pmk_len, pmkid);
 		return -1;
 	}
 
-	return wpa_auth_get_pmk_full(sta->wpa_sm, pmk, pmk_len, pmkid);
+	sta = __get_sta(ifname, sta_mac, -1, false, &hapd);
+	if (!sta) {
+		wpa_printf(MSG_ERROR, "ERROR in fetching sta object %s "
+			   MACSTR "\n", __func__, MAC2STR(sta_mac));
+		return -1;
+	}
+
+	if (!sta->wpa_sm)
+		return -1;
+
+	os_memset(pmkid, 0, PMKID_LEN);
+	/*
+	 * wpa_sm->pmksa is cleared after Assoc request if the
+	 * RSNIE in the assoc request does not have PMKID
+	 * wpa_sm->pmksa will reflect the presence of PMKID
+	 * in the most recent Assoc request received from the STA.
+	 *
+	 * In case PMKID is present in the Assoc request, return this to the
+	 * caller (since this is what will be used in the 4-way handshake
+	 * that follows this assoc request).
+	 */
+	if (sta->wpa_sm->pmksa) {
+		struct rsn_pmksa_cache_entry *pmksa = sta->wpa_sm->pmksa;
+
+		*pmk_len = pmksa->pmk_len;
+		os_memcpy(pmk, pmksa->pmk, *pmk_len);
+		os_memcpy(pmkid, pmksa->pmkid, PMKID_LEN);
+		return 0;
+	}
+
+	akm = sta->wpa_sm->wpa_key_mgmt;
+
+	if (wpa_key_mgmt_sae(akm)) {
+		if (!sta->sae || !sta->sae->pmk_len) {
+			wpa_printf(MSG_ERROR, "ERROR! SAE PMK not available\n");
+			return -1;
+		}
+		*pmk_len = sta->sae->pmk_len;
+		os_memcpy(pmk, sta->sae->pmk, sta->sae->pmk_len);
+		os_memcpy(pmkid, sta->sae->pmkid, PMKID_LEN);
+		return 0;
+	} else if (wpa_key_mgmt_wpa_ieee8021x(akm)) {
+		return __get_pmk_1x(sta, akm, pmk, pmk_len, pmkid);
+	} else if (akm == WPA_KEY_MGMT_OWE) {
+		if (!sta->owe_pmk)
+			return -1;
+		*pmk_len = sta->owe_pmk_len;
+		os_memcpy(pmk, sta->owe_pmk, *pmk_len);
+		os_memcpy(pmkid, sta->owe_pmkid, PMKID_LEN);
+		return 0;
+	}
+
+	wpa_printf(MSG_ERROR, "Unsupported AKM for GET_PMK\n");
+	return -1;
 }
 
 /*
@@ -2110,7 +2230,7 @@ void __hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 		    "hostapd_if_set_pmk pmkid",
 		    pmkid, PMKID_LEN);
 
-	sta = __get_sta(ifname, sta_mac, -1, false, &hapd);
+	sta = __get_sta(ifname, sta_mac, -1, true, &hapd);
 	if (!sta) {
 		if (hapd)
 			__inbound_error_event(hapd, sta_mac,
@@ -2132,43 +2252,60 @@ void __hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 		goto __hostapd_if_set_pmk_exit;
 	}
 
+	eapol = sta->eapol_sm;
 	wpa_sm = sta->wpa_sm;
 
-	if (dot1x_done && ctx) {
-		eapol = os_zalloc(sizeof(*eapol));
-		if (!eapol) {
-			wpa_printf(MSG_ERROR,
-				   "hostapd_if: set_pmk - failed to allocate EAPOL state for STA "
-				   MACSTR " on %s",
-				   MAC2STR(sta_mac), ifname);
-			goto __hostapd_if_set_pmk_exit;
-		}
-		eapol->sta = sta;
-		if (ctx->identity && ctx->identity_len) {
-			eapol->identity =
-				(u8 *) dup_binstr(ctx->identity,
-						ctx->identity_len);
-			if (eapol->identity)
-				eapol->identity_len = ctx->identity_len;
-		}
-		if (ctx->cui && ctx->cui_len)
-			eapol->radius_cui =
-				wpabuf_alloc_copy(ctx->cui,
-						ctx->cui_len);
-		eapol->acct_multi_session_id = ctx->multi_session_id;
-	}
+	if (!dot1x_done || !ctx)
+		goto __hostapd_if_set_pmk_exit;
 
-	if (wpa_auth_set_pmk_full(wpa_sm, pmk, pmkid, (int) pmk_len,
-				  session_timeout, eapol)) {
-		__inbound_error_event(hapd, sta_mac, HOSTAPD_IF_SET_PMK_ERROR,
-				      __func__, __LINE__);
+	if (!hapd->conf->plugin_eap_offload) {
+		wpa_printf(MSG_ERROR, "SET PMK CALLED WITHOUT OFFLOAD CONF\n");
 		goto __hostapd_if_set_pmk_exit;
 	}
 
-	if (dot1x_done && ctx) {
-		ieee802_1x_new_station(hapd, sta);
-		wpa_auth_sta_associated_start_sm(hapd->wpa_auth, wpa_sm);
+	if (!eapol || !eapol->eap_if) {
+		wpa_printf(MSG_ERROR,
+				"hostapd_if: set_pmk - eapol not ready for STA "
+				MACSTR " on %s",
+				MAC2STR(sta_mac), ifname);
+		goto __hostapd_if_set_pmk_exit;
 	}
+
+	/* Set the MSK in the EAPOL key location so ieee802_1x_get_key
+	 * can retrieve it, then signal keyRun and keyAvailable so the
+	 * WPA PTK state machine can transition AUTHENTICATION2 ->
+	 * INITPMK -> PTKSTART without a full RADIUS exchange. */
+	bin_clear_free(eapol->eap_if->eapKeyData, eapol->eap_if->eapKeyDataLen);
+	eapol->eap_if->eapKeyDataLen = 0;
+	eapol->eap_if->eapKeyData = os_memdup(pmk, pmk_len);
+	if (!eapol->eap_if->eapKeyData) {
+		wpa_printf(MSG_ERROR,
+				"hostapd_if: set_pmk - failed to set eapKeyData for STA "
+				MACSTR " on %s",
+				MAC2STR(sta_mac), ifname);
+		eapol->eap_if->eapKeyDataLen = 0;
+		goto __hostapd_if_set_pmk_exit;
+	}
+	eapol->eap_if->eapKeyDataLen = pmk_len;
+	eapol->eap_if->eapKeyAvailable = true;
+	eapol->keyRun = true;
+
+	if (ctx->identity && ctx->identity_len) {
+		os_free(eapol->identity);
+		eapol->identity_len = 0;
+		eapol->identity = (u8 *) dup_binstr(ctx->identity,
+						    ctx->identity_len);
+		if (eapol->identity)
+			eapol->identity_len = ctx->identity_len;
+	}
+	if (ctx->cui && ctx->cui_len) {
+		wpabuf_free(eapol->radius_cui);
+		eapol->radius_cui = wpabuf_alloc_copy(ctx->cui, ctx->cui_len);
+	}
+	eapol->acct_multi_session_id = ctx->multi_session_id;
+
+
+	wpa_auth_sm_notify(wpa_sm);
 
 __hostapd_if_set_pmk_exit:
 	os_free((void *)pmk);
@@ -2179,13 +2316,6 @@ __hostapd_if_set_pmk_exit:
 		if (ctx->cui)
 			os_free(ctx->cui);
 		os_free(ctx);
-	}
-	if (eapol) {
-		if (eapol->identity)
-			os_free(eapol->identity);
-		if (eapol->radius_cui)
-			wpabuf_free(eapol->radius_cui);
-		os_free(eapol);
 	}
 
 }
@@ -2360,7 +2490,7 @@ void __hostapd_if_eapol_key_tx(char *ifname,  uint8_t *sta_mac, uint8_t link_id,
 		goto __hostapd_if_eapol_key_tx_exit;
 	}
 
-	hostapd_sta_flags_to_drv(sta->flags);
+	hostapd_sta_flags_to_drv(sta->flags, sta->flags_ext);
 	if (wpa_auth_pairwise_set(sta->wpa_sm))
 		encrypt = 1;
 
@@ -2409,7 +2539,7 @@ void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
 #endif /* CONFIG_IEEE80211BE */
 		hostapd_drv_hapd_send_eapol(hapd, sta->addr, data, data_len,
 					    wpa_auth_pairwise_set(sta->wpa_sm) ? 1 : 0,
-					    hostapd_sta_flags_to_drv(sta->flags), link_id);
+					    hostapd_sta_flags_to_drv(sta->flags, sta->flags_ext), link_id);
 	} else
 		ieee802_1x_send(hapd, sta, type, data, data_len);
 

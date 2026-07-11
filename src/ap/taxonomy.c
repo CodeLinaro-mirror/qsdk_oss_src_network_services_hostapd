@@ -251,16 +251,22 @@ int retrieve_sta_taxonomy(const struct hostapd_data *hapd,
 	pos = buf + ret;
 	end = buf + buflen;
 
+	if (pos >= end)
+		return 0;
 	ie_to_string(pos, end - pos, sta->probe_ie_taxonomy);
 	pos = os_strchr(pos, '\0');
-	if (pos >= end)
+	if (!pos || pos >= end)
 		return 0;
 	ret = os_snprintf(pos, end - pos, "|assoc:");
 	if (os_snprintf_error(end - pos, ret))
 		return 0;
 	pos += ret;
+	if (pos >= end)
+		return 0;
 	ie_to_string(pos, end - pos, sta->assoc_ie_taxonomy);
 	pos = os_strchr(pos, '\0');
+	if (!pos || pos > end)
+		return 0;
 	return pos - buf;
 }
 

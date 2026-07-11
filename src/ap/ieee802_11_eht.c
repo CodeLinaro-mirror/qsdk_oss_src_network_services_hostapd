@@ -872,7 +872,7 @@ u8 *hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd,
 u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 				     u8 *eid, struct mld_info *mld_info,
 				     bool include_mld_id, bool include_bpcc,
-				     u8 include_ext_cap)
+				     u8 include_ext_cap, bool is_smd)
 {
 	struct wpabuf *buf;
 	u16 control;
@@ -1039,8 +1039,13 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		size_t total_len;
 
 		/* Skip the local one */
-		if (link_id == hapd->mld_link_id || !link->valid)
+		if (!link->valid)
 			continue;
+
+		if (!is_smd) {
+			if (link_id == hapd->mld_link_id)
+				continue;
+		}
 
 		link_bss = hostapd_mld_get_link_bss(hapd, link_id);
 		if (!link_bss) {
@@ -1254,10 +1259,9 @@ out:
 }
 
 
-static size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd,
-				     struct mld_info *info,
-				     bool include_mld_id, bool include_bpcc,
-				     u8 include_ext_cap)
+size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd, struct mld_info *info,
+			      bool include_mld_id, bool include_bpcc,
+			      u8 include_ext_cap)
 {
 	size_t len = 0;
 	size_t eht_ml_len = 2 + EHT_ML_COMMON_INFO_LEN;
@@ -1322,7 +1326,7 @@ u8 * hostapd_eid_eht_ml_beacon(struct hostapd_data *hapd,
 			       u8 include_ext_cap)
 {
 	eid = hostapd_eid_eht_basic_ml_common(hapd, eid, info, include_mld_id,
-					      false, include_ext_cap);
+					      false, include_ext_cap, false);
 
 	if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAG2_MLD_LINK_REMOVAL_OFFLOAD)
 		return eid;
@@ -1338,7 +1342,7 @@ u8 * hostapd_eid_eht_ml_assoc(struct hostapd_data *hapd, struct sta_info *info,
 		return eid;
 
 	eid = hostapd_eid_eht_basic_ml_common(hapd, eid, &info->mld_info,
-					      false, true, include_ext_cap);
+					      false, true, include_ext_cap, false);
 	ap_sta_free_sta_profile(&info->mld_info);
 	return eid;
 }
@@ -1442,11 +1446,39 @@ sae_commit_skip_fixed_fields(const struct ieee80211_mgmt *mgmt, size_t len,
 #define GROUP_20_CONFIRM_FIXED_FIELDS_LEN  48
 #define GROUP_21_CONFIRM_FIXED_FIELDS_LEN  64
 
+static bool sae_confirm_ies_valid(const u8 *pos, size_t len, bool *has_mle)
+{
+	struct ieee802_11_elems elems;
+
+	if (has_mle)
+		*has_mle = false;
+
+	if (!len)
+		return true;
+
+	if (ieee802_11_parse_elems(pos, (int) len, &elems, 0) == ParseFailed)
+		return false;
+
+	if (has_mle && elems.basic_mle && elems.basic_mle_len)
+		*has_mle = true;
+
+	return true;
+}
+
 static const u8 *
 sae_confirm_skip_fixed_fields(struct hostapd_data *hapd,
 			      const struct ieee80211_mgmt *mgmt, size_t len,
 			      const u8 *pos, u16 status_code)
 {
+	static const size_t kck_lens[] = {
+		GROUP_19_CONFIRM_FIXED_FIELDS_LEN,
+		GROUP_20_CONFIRM_FIXED_FIELDS_LEN,
+		GROUP_21_CONFIRM_FIXED_FIELDS_LEN
+	};
+	const u8 *best = NULL;
+	size_t rem;
+	size_t i;
+
 	if (status_code == WLAN_STATUS_REJECTED_WITH_SUGGESTED_BSS_TRANSITION)
 		return pos;
 
@@ -1455,15 +1487,33 @@ sae_confirm_skip_fixed_fields(struct hostapd_data *hapd,
 		goto truncated;
 	pos += 2;
 	len -= 2;
+	rem = len;
 
-	if (len >= GROUP_21_CONFIRM_FIXED_FIELDS_LEN)
-		pos += GROUP_21_CONFIRM_FIXED_FIELDS_LEN;
-	else if (len >= GROUP_20_CONFIRM_FIXED_FIELDS_LEN)
-		pos += GROUP_20_CONFIRM_FIXED_FIELDS_LEN;
-	else if (len >= GROUP_19_CONFIRM_FIXED_FIELDS_LEN)
-		pos += GROUP_19_CONFIRM_FIXED_FIELDS_LEN;
-	else
+	for (i = 0; i < ARRAY_SIZE(kck_lens); i++) {
+		const u8 *ie_pos;
+		size_t ie_len;
+		bool has_mle = false;
+
+		if (rem < kck_lens[i])
+			continue;
+
+		ie_pos = pos + kck_lens[i];
+		ie_len = rem - kck_lens[i];
+
+		if (!sae_confirm_ies_valid(ie_pos, ie_len, &has_mle))
+			continue;
+
+		if (hapd && hapd->conf && hapd->conf->mld_ap && has_mle)
+			return ie_pos;
+
+		if (!best)
+			best = ie_pos;
+	}
+
+	if (!best)
 		return NULL;
+
+	pos = best;
 
 	if (pos - mgmt->u.auth.variable > (int) len) {
 	truncated:
@@ -1578,7 +1628,7 @@ const u8 * hostapd_process_ml_auth(struct hostapd_data *hapd,
 
 	if (ieee802_11_parse_elems(pos,
 				   (int)len - (pos - mgmt->u.auth.variable),
-				   &elems, 0) == ParseFailed) {
+				   &elems, 1) == ParseFailed) {
 		wpa_printf(MSG_DEBUG,
 			   "MLD: Failed parsing Authentication frame");
 	}
@@ -1741,11 +1791,15 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 	if (!mlbuf)
 		return WLAN_STATUS_SUCCESS;
 
+
 	ml = wpabuf_head(mlbuf);
 	ml_len = wpabuf_len(mlbuf);
 	ml_end = ((const u8 *) ml) + ml_len;
 
+	wpa_hexdump(MSG_DEBUG, "UHR: BMLE", (const u8 *) ml, ml_len);
+
 	ml_control = le_to_host16(ml->ml_control);
+
 	if ((ml_control & MULTI_LINK_CONTROL_TYPE_MASK) !=
 	    MULTI_LINK_CONTROL_TYPE_BASIC) {
 		wpa_printf(MSG_DEBUG, "MLD: Invalid ML type=%u",
@@ -1829,7 +1883,6 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 	wpa_printf(MSG_DEBUG, "MLD: addr=" MACSTR ", eml=0x%x, mld=0x%x",
 		   MAC2STR(info->common_info.mld_addr),
 		   info->common_info.eml_capa, info->common_info.mld_capa);
-
 	/* Check the MLD MAC Address */
 	if (!ether_addr_equal(info->common_info.mld_addr,
 			      common_info->mld_addr)) {
@@ -1840,7 +1893,6 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 			   MAC2STR(common_info->mld_addr));
 		goto out;
 	}
-
 	/*
 	 * When a station initially connected as a 3-link STA
 	 * re-associates as a single-link STA, it is not valid.
@@ -2274,10 +2326,10 @@ static bool recover_from_zero_links(u16 *links_del_ok, u8 *recovery_link)
 }
 
 
-static u16
+u16
 hostapd_ml_process_reconf_link(struct hostapd_data *hapd,
 			       struct sta_info *assoc_sta, const u8 *ies,
-			       size_t ies_len, u8 link_id, const u8 *link_addr)
+			       size_t ies_len, u8 link_id, const u8 *link_addr, u8 type)
 {
 	struct hostapd_data *lhapd, *other_hapd;
 	struct mld_link_info link;
@@ -2305,7 +2357,7 @@ hostapd_ml_process_reconf_link(struct hostapd_data *hapd,
 
 	/* Parse STA profile, check the IEs, and send ADD_LINK_STA */
 	ieee80211_ml_process_link(lhapd, NULL, assoc_sta, &link, ies, ies_len,
-				  LINK_PARSE_RECONF, false, set_beacon);
+				  type, false, set_beacon);
 
 	if (link.status != WLAN_STATUS_SUCCESS)
 		return link.status;
@@ -2582,7 +2634,7 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 		 * be removed if the standard is modified to match
 		 * implementation). */
 		mle_pos = hostapd_eid_eht_basic_ml_common(hapd, mle_pos, &mld,
-							  false, true, 0);
+							  false, true, 0, false);
 		if ((size_t) (mle_pos - pos) != mle_len) {
 			wpa_printf(MSG_DEBUG,
 				   "MLD: Unexpected MLE length: %ld != %zu",
@@ -3072,7 +3124,8 @@ hostapd_validate_link_reconf_req(struct hostapd_data *hapd,
 							info->sta_prof + 2,
 							info->sta_prof_len - 2,
 							info->link_id,
-							info->peer_addr);
+							info->peer_addr,
+							LINK_PARSE_RECONF);
 		if (status != WLAN_STATUS_SUCCESS) {
 			wpa_printf(MSG_DEBUG,
 				   "MLD: Add link IE validation failed for link=%u",

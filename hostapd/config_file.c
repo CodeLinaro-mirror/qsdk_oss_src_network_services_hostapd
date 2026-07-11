@@ -25,6 +25,7 @@
 #include "ap/ap_config.h"
 #include "ap/ieee802_11.h"
 #include "config_file.h"
+#include "ap/uhr_utils.h"
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
 #include "../qcn_extns/hostapd_if_plugin.h"
@@ -2226,6 +2227,28 @@ static bool get_hexstream(const char *val, struct wpabuf **var,
 #endif /* CONFIG_TESTING_OPTIONS */
 
 
+#ifdef CONFIG_IEEE80211BN
+static int smd_derive_key(const char *pos, u8 *key, size_t key_len)
+{
+	u8 oldkey[16];
+	int ret;
+
+	/* Try full-length hex key first (64 hex chars = 32 bytes) */
+	if (!hexstr2bin(pos, key, key_len))
+		return 0;
+
+	/* Fall back: 32 hex chars (16 bytes) derived to key_len via KDF */
+	if (hexstr2bin(pos, oldkey, sizeof(oldkey)))
+		return -1;
+
+	ret = hmac_sha256_kdf(oldkey, sizeof(oldkey), "SMD PARTNER KEY", NULL, 0,
+			      key, key_len);
+	os_memset(oldkey, 0, sizeof(oldkey));
+	return ret;
+}
+#endif /* CONFIG_IEEE80211BN */
+
+
 static int hostapd_config_fill(struct hostapd_config *conf,
 				struct hostapd_bss_config *bss,
 				const char *buf, char *pos, int line)
@@ -3295,6 +3318,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 	} else if (os_strcmp(buf, "acs_exclude_dfs") == 0) {
 		conf->acs_exclude_dfs = atoi(pos);
+	} else if (os_strcmp(buf, "radio_idx") == 0) {
+		conf->radio_idx = atoi(pos);
 	} else if (os_strcmp(buf, "acs_pcaconly") == 0) {
 		conf->acs_dfs_available_only = atoi(pos);
 	} else if (os_strcmp(buf, "op_class") == 0) {
@@ -3702,6 +3727,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line);
 			return 1;
 		}
+	} else if (os_strcmp(buf, "disable_sa_query") == 0) {
+		bss->disable_sa_query = !!atoi(pos);
 #ifdef CONFIG_OCV
 	} else if (os_strcmp(buf, "ocv") == 0) {
 		bss->ocv = atoi(pos);
@@ -5675,6 +5702,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->pasn_comeback_after = atoi(pos);
 	} else if (os_strcmp(buf, "pasn_noauth") == 0) {
 		bss->pasn_noauth = atoi(pos);
+#ifdef CONFIG_ENC_ASSOC
+	} else if (os_strcmp(buf, "eppke_unauth") == 0) {
+		bss->eppke_unauth = atoi(pos);
+#endif /* CONFIG_ENC_ASSOC */
 	} else if (os_strcmp(buf, "urnm_mfpr") == 0) {
 		bss->urnm_mfpr = !!atoi(pos);
 	} else if (os_strcmp(buf, "urnm_mfpr_x20") == 0) {
@@ -6183,18 +6214,18 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 #ifdef CONFIG_IEEE80211BN
 	} else if (os_strcmp(buf, "uhr_adv_notification_interval") == 0) {
 		int val = atoi(pos);
-		if (val < 1 || val > 7) {
+		if (val < 5 || val > 31) {
 			wpa_printf(MSG_ERROR,
-				   "Line %d: uhr_adv_notification_interval must be 1-7",
+				   "Line %d: uhr_adv_notification_interval must be 5-31",
 				   line);
 			return 1;
 		}
 		bss->uhr_params_update.adv_notification_interval = (u8) val;
 	} else if (os_strcmp(buf, "uhr_update_in_tim_interval") == 0) {
 		int val = atoi(pos);
-		if (val < 1 || val > 31) {
+		if (val < 5 || val > 31) {
 			wpa_printf(MSG_ERROR,
-				   "Line %d: uhr_update_in_tim_interval must be 1-31",
+				   "Line %d: uhr_update_in_tim_interval must be 5-31",
 				   line);
 			return 1;
 		}
@@ -6238,6 +6269,60 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "smd_ap") == 0) {
 		bss->smd.enabled = atoi(pos);
 		wpa_printf(MSG_DEBUG, "SMD Config: smd_ap set to %d", bss->smd.enabled);
+	} else if (os_strcmp(buf, "smd_partner") == 0) {
+                struct smd_partner_entry *partner;
+                u8 mac[ETH_ALEN];
+                char *key_str;
+
+                /* Format: <mac> [<hex-key>] */
+                key_str = os_strchr(pos, ' ');
+                if (key_str) {
+                        *key_str++ = '\0';
+                        while (*key_str == ' ')
+                                key_str++;
+                        if (!*key_str)
+                                key_str = NULL;
+                }
+
+                if (hwaddr_aton(pos, mac) < 0) {
+                        wpa_printf(MSG_ERROR,
+                                   "Line %d: Invalid MAC address '%s'",
+                                   line, pos);
+                        return 1;
+                }
+
+                partner = os_zalloc(sizeof(*partner));
+                if (!partner) {
+                        wpa_printf(MSG_ERROR,
+                                  "Line %d: Failed to allocate partner entry",
+                                   line);
+                        return 1;
+                }
+
+                os_memcpy(partner->mac_addr, mac, ETH_ALEN);
+
+                if (key_str) {
+                        if (smd_derive_key(key_str, partner->key,
+                                           sizeof(partner->key)) < 0) {
+                                wpa_printf(MSG_ERROR,
+                                           "Line %d: Invalid smd_partner key",
+                                           line);
+                                os_free(partner);
+                                return 1;
+                        }
+                        partner->has_key = true;
+                        wpa_printf(MSG_DEBUG,
+                                  "SMD: Added partner " MACSTR " (encrypted)",
+                                  MAC2STR(mac));
+                } else {
+                        wpa_printf(MSG_DEBUG,
+                                  "SMD: Added partner " MACSTR " (no encryption)",
+                                  MAC2STR(mac));
+                }
+
+                partner->next = bss->smd_partners;
+                bss->smd_partners = partner;
+
 	} else if (os_strcmp(buf, "smd_identifier") == 0) {
 		if (hwaddr_aton(pos, bss->smd.smd_identifier)) {
 			wpa_printf(MSG_ERROR,
@@ -6247,6 +6332,14 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		wpa_printf(MSG_DEBUG, "SMD Config: smd_identifier set to " MACSTR,
 			   MAC2STR(bss->smd.smd_identifier));
+	} else if (os_strcmp(buf, "uhr_dl_drain_duration_tu") == 0) {
+		int tu = strtol(pos, NULL, 10);
+		if (tu < 0 || tu > 65535) {
+			wpa_printf(MSG_ERROR, "Invalid DL drain timer %d", tu);
+			return 1;
+		}
+		bss->smd.uhr_dl_drain_duration_tu = tu;
+		wpa_printf(MSG_DEBUG, "SMD Config: uhr_dl_drain_duration_tu set to %d", bss->smd.uhr_dl_drain_duration_tu);
 	} else if (os_strcmp(buf, "smd_timeout") == 0) {
 		int timeout = strtol(pos, NULL, 10);
 		if (timeout < 0 || timeout > 255) {
@@ -6257,6 +6350,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		bss->smd.smd_prep_timeout = timeout;
 		wpa_printf(MSG_DEBUG, "SMD Config: smd_timeout set to %d TU", timeout);
+	} else if (os_strcmp(buf, "smd_dl_data_fwd") == 0) {
+		bss->smd.caps.dl_data_fwd = atoi(pos);
+		wpa_printf(MSG_DEBUG, "SMD Config: smd_dl_data_fwd set to %d", 
+			   bss->smd.caps.dl_data_fwd);
 	} else if (os_strcmp(buf, "smd_max_peer_apmlds") == 0) {
 		int val = atoi(pos);
 		if (val < 0 || val > 7) {

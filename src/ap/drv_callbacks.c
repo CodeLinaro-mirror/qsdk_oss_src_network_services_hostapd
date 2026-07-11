@@ -51,6 +51,7 @@
 #include "ttlm.h"
 #include "robust_av.h"
 #include "../../qcn_extns/cmn.h"
+#include "ap/uhr_utils.h"
 
 #ifdef CONFIG_FILS
 void hostapd_notify_assoc_fils_finish(struct hostapd_data *hapd,
@@ -651,7 +652,7 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 					  elems.rsnxe ? elems.rsnxe_len + 2 : 0,
 					  elems.mdie, elems.mdie_len,
 					  elems.owe_dh, elems.owe_dh_len, NULL,
-					  ap_sta_is_mld(hapd, sta), false, NULL);
+					  ap_sta_is_mld(hapd, sta), false, NULL, false);
 		reason = WLAN_REASON_INVALID_IE;
 		status = WLAN_STATUS_INVALID_IE;
 		switch (res) {
@@ -1692,16 +1693,6 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 			break;
 	}
 
-	if (hapd->iconf->ieee80211ac) {
-		hapd->iconf->vht_capab &= ~VHT_CAP_SUPP_CHAN_WIDTH_MASK;
-		if (chwidth == CONF_OPER_CHWIDTH_160MHZ)
-			hapd->iconf->vht_capab |=
-				VHT_CAP_SUPP_CHAN_WIDTH_160MHZ;
-		else if (chwidth == CONF_OPER_CHWIDTH_80P80MHZ)
-			hapd->iconf->vht_capab |=
-				VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ;
-	}
-
 	is_dfs = ieee80211_is_dfs(freq, hapd->iface->hw_features,
 				  hapd->iface->num_hw_features);
 
@@ -2274,7 +2265,8 @@ static struct hostapd_data * get_hapd_bssid(struct hostapd_iface *iface,
 				continue;
 
 			if (ether_addr_equal(bssid, p_hapd->own_addr) ||
-			    (ether_addr_equal(bssid, p_hapd->mld->mld_addr) &&
+			    (p_hapd->conf->mld_ap &&
+			     ether_addr_equal(bssid, p_hapd->mld->mld_addr) &&
 			     link_id == p_hapd->mld_link_id))
 				return p_hapd;
 		}
@@ -2350,6 +2342,7 @@ static int hostapd_mgmt_rx(struct hostapd_data *hapd, struct rx_mgmt *rx_mgmt)
 	fi.freq = rx_mgmt->freq;
 	fi.datarate = rx_mgmt->datarate;
 	fi.ssi_signal = rx_mgmt->ssi_signal;
+	fi.smd_ctx = rx_mgmt->smd_ctx;
 
 	if (hapd == HAPD_BROADCAST) {
 		size_t i;
@@ -2412,6 +2405,7 @@ static void hostapd_mgmt_tx_cb(struct hostapd_data *hapd, const u8 *buf,
 		 * used wildcard BBSID.
 		 */
 	}
+
 	ieee802_11_mgmt_cb(hapd, buf, len, stype, ok);
 }
 
@@ -2978,6 +2972,63 @@ afc_channel_change_timeout(void *eloop_ctx, void *timeout_ctx)
 	hostapd_handle_afc_channel_change(iface);
 }
 
+/**
+ * hostapd_afc_find_iface - Find the hostapd iface matching an AFC event
+ *
+ * Three-tier hw_idx matching:
+ * 1. No multi-radio info: single-radio phy — match phy name only.
+ * 2. multi_hw_info present, current_hw_info set: match current_hw_info->hw_idx.
+ * 3. multi_hw_info present, current_hw_info NULL: match conf->radio_idx.
+ */
+static struct hostapd_iface *
+hostapd_afc_find_iface(struct hostapd_data *hapd, int hw_idx)
+{
+	const char *phy_name = hostapd_drv_get_radio_name(hapd);
+	int i;
+
+	if (!phy_name)
+		return NULL;
+
+	for (i = 0; i < hapd->iface->interfaces->count; i++) {
+		struct hostapd_iface *h = hapd->iface->interfaces->iface[i];
+		const char *h_phy;
+
+		/* Skip ifaces that are being torn down */
+		if (!h->num_bss || !h->bss[0] || !h->conf)
+			continue;
+
+		h_phy = hostapd_drv_get_radio_name(h->bss[0]);
+		if (!h_phy || os_strcmp(h_phy, phy_name) != 0)
+			continue;
+
+		/* Single-radio phy: no multi_hw_info — match by phy name only */
+		if (!h->num_multi_hws) {
+			wpa_printf(MSG_INFO,
+				   "AFC: Found Target iface for single radio phy");
+			return h;
+		}
+
+		/* Multi-radio: current_hw_info already set — match hw_idx */
+		if (h->current_hw_info) {
+			if (h->current_hw_info->hw_idx == (u8)hw_idx) {
+				wpa_printf(MSG_INFO,
+					   "AFC: Found Target iface - cur HW idx match");
+				return h;
+			}
+			continue;
+		}
+
+		/* Multi-radio: freq=0 (ACS) — match via conf->radio_idx */
+		if (h->conf->radio_idx >= 0 &&
+		    h->conf->radio_idx == hw_idx) {
+			wpa_printf(MSG_INFO,
+				   "AFC: Found Target iface - conf radio_idx match");
+			return h;
+		}
+	}
+	return NULL;
+}
+
 static void hostapd_event_afc_update_complete(
 		struct hostapd_data *hapd,
 		struct afc_info *afc_info)
@@ -2985,31 +3036,10 @@ static void hostapd_event_afc_update_complete(
 	struct afc_sp_reg_info *afc_rsp_info = &afc_info->afc_rsp_info;
 	struct hostapd_iface *iface = NULL;
 	bool is_connected_repeater;
-	int i;
-	const char *phy_name = hostapd_drv_get_radio_name(hapd);
 
-	if (!phy_name)
-		return;
-
-	wpa_printf(MSG_DEBUG, "AFC response event received for phy %s through %s",
-		   phy_name, hapd->iface->phy);
-	for (i = 0; i < hapd->iface->interfaces->count; i++) {
-		struct hostapd_iface *h_iface = hapd->iface->interfaces->iface[i];
-		const char *h_phy_name;
-
-		h_phy_name = hostapd_drv_get_radio_name(h_iface->bss[0]);
-		if (!h_phy_name || os_strcmp(h_phy_name, phy_name) != 0)
-			continue;
-
-		wpa_printf(MSG_DEBUG, "AFC Response event for iface %s in phy %s",
-			   h_iface->phy, h_phy_name);
-		if (!h_iface->current_hw_info)
-			continue;
-		if (h_iface->current_hw_info->hw_idx != afc_info->hw_idx)
-			continue;
-		iface = h_iface;
-		break;
-	}
+	wpa_printf(MSG_DEBUG, "AFC response event received through %s",
+		   hapd->iface->phy);
+	iface = hostapd_afc_find_iface(hapd, afc_info->hw_idx);
 	if (!iface) {
 		wpa_printf(MSG_ERROR, "No matching hostapd interface found for AFC update");
 		return;
@@ -3282,31 +3312,10 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 				struct afc_info *afc_info)
 {
 	struct hostapd_iface *iface = NULL;
-	int i;
-	const char *phy_name = hostapd_drv_get_radio_name(hapd);
 
-	if (!phy_name)
-		return;
-
-	wpa_printf(MSG_DEBUG, "AFC Reset event received for phy %s through %s",
-		   phy_name, hapd->iface->phy);
-	for (i = 0; i < hapd->iface->interfaces->count; i++) {
-		struct hostapd_iface *h_iface = hapd->iface->interfaces->iface[i];
-		const char *h_phy_name;
-
-		h_phy_name = hostapd_drv_get_radio_name(h_iface->bss[0]);
-		if (!h_phy_name || os_strcmp(h_phy_name, phy_name) != 0)
-			continue;
-
-		wpa_printf(MSG_DEBUG, "AFC Reset event for iface %s in phy %s",
-			   h_iface->phy, h_phy_name);
-		if (!h_iface->current_hw_info)
-			continue;
-		if (h_iface->current_hw_info->hw_idx != afc_info->hw_idx)
-			continue;
-		iface = h_iface;
-		break;
-	}
+	wpa_printf(MSG_DEBUG, "AFC Reset event received through %s",
+		   hapd->iface->phy);
+	iface = hostapd_afc_find_iface(hapd, afc_info->hw_idx);
 	if (!iface) {
 		wpa_printf(MSG_DEBUG, "No matching hostapd interface found for AFC reset");
 		return;
@@ -3709,6 +3718,21 @@ static void hostapd_event_update_cu_param(struct hostapd_data *hapd,
 	hapd->rx_cu_param.switch_count = cu_event->switch_count;
 }
 
+#ifdef CONFIG_IEEE80211BN
+static void hostapd_event_update_ecu_param(struct hostapd_data *hapd,
+					   struct cu_event *cu_event)
+{
+	/* Update Enhanced Critical Update (ECU) parameters.
+	 * The enhanced_bpcc is a 4-bit value (modulo 16) received from the
+	 * driver via EVENT_RX_CRITICAL_UPDATE when the kernel reports an
+	 * updated Enhanced BSS Parameter Change Count for this link.
+	 */
+	hapd->rx_ecu_param.ebpcc = cu_event->enhanced_bpcc & 0x0F;
+	hapd->rx_ecu_param.critical_update = cu_event->enhanced_critical_update;
+	hapd->uhr_ecu.countdown_timer = cu_event->ecu_countdown;
+}
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef CONFIG_IEEE80211BE
 
 static void hostapd_mld_iface_enable(struct hostapd_data *hapd)
@@ -3935,9 +3959,14 @@ hostapd_handle_critical_update_notify(struct hostapd_data *hapd,
 			   "nl80211: ECU ADV_NOTIFICATION_END on %s link %u",
 			   hapd->conf->iface, ev->link_id);
 
-		/*TODO: update the hapd config to uhr updated values, so that
-		 * it can be refelected in UHR operation IE
+		/*
+		 * The update has taken effect.  Commit the new NPCA parameters
+		 * into iconf so that hostapd_eid_uhr_operation() reflects the
+		 * updated values in Probe Response and (Re)Association Response
+		 * frames from this point on.
 		 */
+		hostapd_update_ecu_params(hapd);
+
 		break;
 
 	case NL80211_CU_STATE_POST_NOTIFICATION_END:
@@ -3958,7 +3987,7 @@ hostapd_handle_critical_update_notify(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG,
 			   "nl80211: ECU ABORT on %s link %u - session aborted",
 			   hapd->conf->iface, ev->link_id);
-		/* TODO: reset the uhr parameter values */
+		hostapd_reset_uhr_cu_params(hapd);
 		break;
 	default:
 		wpa_printf(MSG_WARNING,
@@ -3989,6 +4018,19 @@ static void hostapd_restart_agile_cac_all_ifaces(struct hostapd_data *hapd)
 		    !h->radar_background.cac_started)
 			hostapd_restart_agile_cac_after_ch_switch(h);
 	}
+}
+
+void hostapd_rx_free_smd_ctx(struct sta_smd_ctx_info *smd_ctx)
+{
+	int i;
+
+	if (!smd_ctx)
+		return;
+
+	for (i = 0; i < SMD_NUM_SCSID; i++)
+		os_free(smd_ctx->qos.scs_descriptors[i]);
+	os_free(smd_ctx->qos.mscs_descriptor);
+	os_free(smd_ctx);
 }
 
 void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
@@ -4098,13 +4140,14 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		break;
 #endif /* NEED_AP_MLME */
 	case EVENT_RX_MGMT:
-		if (!data->rx_mgmt.frame)
-			break;
+		if (data->rx_mgmt.frame) {
 #ifdef NEED_AP_MLME
-		hostapd_mgmt_rx(hapd, &data->rx_mgmt);
+			hostapd_mgmt_rx(hapd, &data->rx_mgmt);
 #else /* NEED_AP_MLME */
-		hostapd_action_rx(hapd, &data->rx_mgmt);
+			hostapd_action_rx(hapd, &data->rx_mgmt);
 #endif /* NEED_AP_MLME */
+		}
+		hostapd_rx_free_smd_ctx(data->rx_mgmt.smd_ctx);
 		break;
 	case EVENT_RX_PROBE_REQ:
 		if (data->rx_probe_req.sa == NULL ||
@@ -4411,8 +4454,12 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		 break;
 	case EVENT_RX_CRITICAL_UPDATE:
 		link_hapd = switch_link_hapd(hapd, data->cu_event.link_id);
-		if (link_hapd)
+		if (link_hapd) {
 			hostapd_event_update_cu_param(link_hapd, &data->cu_event);
+#ifdef CONFIG_IEEE80211BN
+			hostapd_event_update_ecu_param(link_hapd, &data->cu_event);
+#endif /* CONFIG_IEEE80211BN */
+		}
 		break;
 	case EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY:
 		hostapd_event_afc_update_complete(hapd,

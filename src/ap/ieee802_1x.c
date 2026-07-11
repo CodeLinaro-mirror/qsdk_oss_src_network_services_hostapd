@@ -103,7 +103,7 @@ void ieee802_1x_send(struct hostapd_data *hapd, struct sta_info *sta,
 #endif /* CONFIG_IEEE80211BE */
 		hostapd_drv_hapd_send_eapol(
 			hapd, sta->addr, buf, len,
-			encrypt, hostapd_sta_flags_to_drv(sta->flags), link_id);
+			encrypt, hostapd_sta_flags_to_drv(sta->flags, sta->flags_ext), link_id);
 	}
 
 	os_free(buf);
@@ -1370,6 +1370,14 @@ void ieee802_1x_new_station(struct hostapd_data *hapd, struct sta_info *sta)
 	int force_1x = 0;
 	int key_mgmt;
 
+#ifdef CONFIG_ENC_ASSOC
+	/* EPPKE authentication is completed before association via PASN key
+	 * exchange.  The STA already has keys installed; no 802.1X/EAP
+	 * exchange is needed or expected after association. */
+	if (sta->auth_alg == WLAN_AUTH_EPPKE)
+		return;
+#endif /* CONFIG_ENC_ASSOC */
+
 #ifdef CONFIG_WPS
 	if (hapd->conf->wps_state &&
 	    ((hapd->conf->wpa && (sta->flags & WLAN_STA_MAYBE_WPS)) ||
@@ -2613,6 +2621,7 @@ int ieee802_1x_init(struct hostapd_data *hapd)
 	if (hapd->conf->identity_request_retry_interval) {
 		conf.identity_request_retry_interval = hapd->conf->identity_request_retry_interval;
 	}
+	conf.plugin_eap_offload = hapd->conf->plugin_eap_offload;
 
 	os_memset(&cb, 0, sizeof(cb));
 	cb.eapol_send = ieee802_1x_eapol_send;
@@ -2853,12 +2862,19 @@ void ieee802_1x_notify_port_enabled(struct eapol_state_machine *sm,
 }
 
 
-void ieee802_1x_notify_port_valid(struct eapol_state_machine *sm, bool valid)
+void ieee802_1x_notify_port_valid(struct hostapd_data *hapd,
+				  struct sta_info *sta,
+				  struct eapol_state_machine *sm, bool valid)
 {
 	if (!sm)
 		return;
 	sm->portValid = valid;
 	eapol_auth_step(sm);
+
+	if (sm->offload_mode && valid) {
+		ieee802_1x_set_sta_authorized(hapd, sta, 1);
+		ieee802_1x_finished(hapd, sta, 1, 0);
+	}
 }
 
 

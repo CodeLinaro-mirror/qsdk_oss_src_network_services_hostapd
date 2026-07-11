@@ -1357,7 +1357,7 @@ no_fils:
 	 *   WPA_AUTH_ALG_EPPKE  — EPPKE (AKM 29) authentication
 	 *   WPA_AUTH_ALG_802_1X — 802.1X-in-auth-frames (37.32, Table 9-bb14)
 	 */
-	if (wpa_s->security_profile_ie_len > 0 &&
+	if (wpa_s->security_profile_ie_len > 0 && start &&
 	    (params.auth_alg == WPA_AUTH_ALG_EPPKE ||
 	     params.auth_alg == WPA_AUTH_ALG_802_1X)) {
 		if (params.ie && params.ie_len > 0) {

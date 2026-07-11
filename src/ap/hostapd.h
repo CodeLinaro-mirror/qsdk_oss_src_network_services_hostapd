@@ -154,6 +154,7 @@ struct hostapd_frame_info {
 	u32 channel;
 	u32 datarate;
 	int ssi_signal; /* dBm */
+	struct sta_smd_ctx_info *smd_ctx;
 };
 
 enum wps_status {
@@ -246,6 +247,12 @@ struct rx_critical_param {
 	bool critical_flag;
 	u8 bpcc;
 	u8 switch_count;
+};
+
+struct rx_ecu_param {
+	bool critical_update;
+	u8 ebpcc;
+	u8 countdown;
 };
 
 /**
@@ -351,8 +358,9 @@ enum uhr_ecu_state {
 
 struct hostapd_uhr_ecu {
 	enum uhr_ecu_state state;
-	u8 uhr_params_update_countdown;
+	u8 countdown_timer;
 };
+struct uhr_oui_ctx;
 #endif /* CONFIG_IEEE80211BN */
 
 /**
@@ -396,6 +404,14 @@ struct hostapd_data {
 #define AID_WORDS ((2008 + 31) / 32)
 	u32 sta_aid[AID_WORDS];
 	u32 wds_sta_uid[AID_WORDS];
+
+#ifdef CONFIG_QCN_EXTN
+#define WDS_STA_UID_REPURPOSED_BASE 3001
+#define WDS_STA_UID_REPURPOSED_PER_LINK 1000
+#define WDS_STA_UID_REPURPOSED_WORDS \
+	((WDS_STA_UID_REPURPOSED_PER_LINK + 31) / 32)
+	u32 wds_sta_uid_repurpose[WDS_STA_UID_REPURPOSED_WORDS];
+#endif /* CONFIG_QCN_EXTN */
 
 	const struct wpa_driver_ops *driver;
 	void *drv_priv;
@@ -707,6 +723,7 @@ struct hostapd_data {
        struct rx_critical_param rx_cu_param;
        /*Element ID critical update data*/
        struct elemid_cu_param cu_eid[ELEMID_CU_PARAM_MAX];
+       struct rx_ecu_param rx_ecu_param;
 #ifdef CONFIG_IEEE80211BE
 	u8 eht_mld_bss_param_change;
 	struct hostapd_mld *mld;
@@ -750,6 +767,7 @@ struct hostapd_data {
 
 #ifdef CONFIG_IEEE80211BN
 	struct smd_neighbor_update_ctx *smd_neighbor_update_ctx;
+	struct uhr_oui_ctx *uhr_oui_ctx;
 #endif /* CONFIG_IEEE80211BN */
 };
 
@@ -1181,6 +1199,8 @@ int hostapd_switch_channel(struct hostapd_data *hapd,
 int hostapd_abort_dfs_cac(struct hostapd_data *hapd);
 int hostapd_abort_cac_for_channel_switch(struct hostapd_iface *iface,
 					 struct csa_settings *settings);
+void hostapd_get_channel_switch_time(struct hostapd_iface *iface,
+				     struct hostapd_freq_params *freq_params);
 int hostapd_force_channel_switch(struct hostapd_iface *iface,
 				 struct csa_settings *settings);
 void
@@ -1198,6 +1218,7 @@ void hostapd_switch_color(struct hostapd_data *hapd, u64 bitmap);
 void hostapd_cleanup_cca_params(struct hostapd_data *hapd);
 
 void hostapd_free_afc_data(struct hostapd_iface *iface);
+void hostapd_check_get_afc_details(struct hostapd_data *hapd);
 /* utils.c */
 int hostapd_register_probereq_cb(struct hostapd_data *hapd,
 				 int (*cb)(void *ctx, const u8 *sa,

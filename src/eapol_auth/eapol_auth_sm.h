@@ -25,6 +25,7 @@ struct eapol_auth_config {
 	char *erp_domain; /* a copy of this will be allocated */
 	bool eap_skip_prot_success;
 	int identity_request_retry_interval;
+	int plugin_eap_offload;
 	/* Opaque context pointer to owner data for callback functions */
 	void *ctx;
 };

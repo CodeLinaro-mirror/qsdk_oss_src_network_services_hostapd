@@ -2383,6 +2383,19 @@ eht_generic_rollback:
 	return ret;
 }
 
+static int hostapd_ctrl_iface_get_scan_status(struct hostapd_data *hapd,
+					   char *buf, size_t buflen)
+{
+	struct i802_bss *bss = hapd->drv_priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	int scanning;
+
+	scanning = (drv->scan_state == SCAN_STARTED ||
+		    drv->scan_state == SCAN_REQUESTED) ? 1 : 0;
+
+	return os_snprintf(buf, buflen, "scanning: %d\n", scanning);
+}
+
 static int hostapd_get_vendor_elements(struct hostapd_data *hapd, char *buf, size_t buflen)
 {
 	struct hostapd_data *tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
@@ -2718,6 +2731,8 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+	} else if (os_strcmp(cmd, "scan_status") == 0) {
+		return hostapd_ctrl_iface_get_scan_status(hapd, buf, buflen);
 	} else if (os_strcmp(cmd, "acl_deny_wait_time") == 0) {
 		res = os_snprintf(buf, buflen, "%u\n",
 				  hapd->conf->acl_deny_wait_time);
@@ -3094,8 +3109,9 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 			return -1;
 		return res;
 	} else if (os_strcmp(cmd, "unsolicited_probe_resp_state") == 0) {
-		if (hapd->iconf->mbssid == MBSSID_DISABLED) {
-			res = os_snprintf(buf, buflen, "MBSSID is disabled\n");
+		if (!is_6ghz_op_class(hapd->iconf->op_class)) {
+			res = os_snprintf(buf, buflen,
+					  "unsolicited_probe_resp_state is applicable for 6 GHz only\n");
 			if (os_snprintf_error(buflen, res))
 				return -1;
 			return res;
@@ -3106,8 +3122,9 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 			return -1;
 		return res;
 	} else if (os_strcmp(cmd, "fils_state") == 0) {
-		if (hapd->iconf->mbssid == MBSSID_DISABLED) {
-			res = os_snprintf(buf, buflen, "MBSSID is disabled\n");
+		if (!is_6ghz_op_class(hapd->iconf->op_class)) {
+			res = os_snprintf(buf, buflen,
+					  "fils_state is applicable for 6 GHz only\n");
 			if (os_snprintf_error(buflen, res))
 				return -1;
 			return res;
@@ -4212,8 +4229,10 @@ static int hostapd_ctrl_reset_pn(struct hostapd_data *hapd, const char *cmd)
 				   0, sta->last_tk, sta->last_tk_len,
 				   KEY_FLAG_PAIRWISE_RX_TX);
 }
+#endif /* CONFIG_TESTING_OPTIONS */
 
 
+#if defined(CONFIG_QCN_EXTN) || defined(CONFIG_TESTING_OPTIONS)
 static int hostapd_ctrl_set_key(struct hostapd_data *hapd, const char *cmd)
 {
 	u8 addr[ETH_ALEN];
@@ -4272,8 +4291,10 @@ static int hostapd_ctrl_set_key(struct hostapd_data *hapd, const char *cmd)
 	return hostapd_drv_set_key(hapd->conf->iface, hapd, alg, addr, idx, 0,
 				   set_tx, seq, 6, key, key_len, key_flag);
 }
+#endif /* CONFIG_QCN_EXTN || CONFIG_TESTING_OPTIONS */
 
 
+#ifdef CONFIG_TESTING_OPTIONS
 static void restore_tk(void *ctx1, void *ctx2)
 {
 	struct hostapd_data *hapd = ctx1;
@@ -4647,51 +4668,6 @@ static int hostapd_ctrl_iface_set_pwr_mode(struct hostapd_iface *iface,
 #endif /* NEED_AP_MLME */
 }
 
-static void hostapd_get_channel_switch_time(struct hostapd_iface *iface,
-					    struct hostapd_freq_params *freq_params)
-{
-	struct hostapd_data *hapd = NULL;
-	unsigned int i;
-	int ret;
-
-	if (iface->bss == NULL || iface->num_bss == 0)
-		return;
-
-	iface->cs_time = 0;
-
-	for (i = 0; i < iface->num_bss; i++) {
-		if (iface->bss[i]->driver == NULL ||
-		    iface->bss[i]->drv_priv == NULL)
-			continue;
-
-		hapd = iface->bss[i];
-		break;
-	}
-
-	if (hapd == NULL) {
-		wpa_printf(MSG_DEBUG,
-			   "No valid BSS with driver found for channel switch time query");
-		return;
-	}
-
-	if (hapd->driver->get_channel_switch_time) {
-		ret = hapd->driver->get_channel_switch_time(hapd->drv_priv,
-							    freq_params,
-							    &iface->cs_time);
-		if (ret == 0) {
-			wpa_printf(MSG_DEBUG,
-				   "channel switch time from driver: %u",
-				   iface->cs_time);
-		} else {
-			wpa_printf(MSG_WARNING,
-				   "Failed to get channel switch time from driver: %d",
-				   ret);
-			/* Reset to safe default */
-			iface->cs_time = 0;
-		}
-	}
-}
-
 static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 					  char *pos)
 {
@@ -4968,20 +4944,38 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 		}
 	}
 
-	hostapd_get_channel_switch_time(iface, &settings.freq_params);
-
-	if (iface->cac_started)
-		return hostapd_abort_cac_for_channel_switch(iface, &settings);
-
-	/* Trigger mesh CSA before AP channel switch if mesh VAP present */
-	hostapd_ubus_mesh_switch_channel(iface, &settings);
-
 	if (iface->conf->disable_csa_dfs == 1) {
 		wpa_printf(MSG_DEBUG, "chanswitch interface %s : cancel radar handling timer",
 			   iface->conf->bss[0]->iface);
 		eloop_cancel_timeout(hostapd_dfs_radar_handling_timeout, iface, NULL);
 	}
 
+	hostapd_get_channel_switch_time(iface, &settings.freq_params);
+
+	if (iface->cac_started)
+		return hostapd_abort_cac_for_channel_switch(iface, &settings);
+
+	/*
+	 * When radar fires while CAC is active, ieee80211_abort_cac() releases
+	 * the link's channel context. A subsequent NL80211_CMD_CHANNEL_SWITCH
+	 * is rejected with -ENOTCONN (-107). Use force_channel_switch only
+	 * in that case, identified by state==HAPD_IFACE_DFS: the CAC_ABORTED
+	 * event leaves state at DFS, whereas a successful CAC transitions state
+	 * to ENABLED before the CHANSWITCH command arrives.
+	 *
+	 * When radar fires after CAC completes (state==HAPD_IFACE_ENABLED),
+	 * the chanctx is intact and NL80211_CMD_CHANNEL_SWITCH works fine.
+	 * force_channel_switch must NOT be used there: the disable/re-enable
+	 * cycle triggers DFS_PRE_CAC_EXPIRED for all previously-cleared
+	 * channels, resetting them to USABLE and causing a spurious CAC
+	 * restart on the next DFS_NOP_FINISHED event.
+	 */
+	if (iface->conf->disable_csa_dfs == 1 &&
+	    iface->state == HAPD_IFACE_DFS)
+		return hostapd_force_channel_switch(iface, &settings);
+
+	/* Trigger mesh CSA before AP channel switch if mesh VAP present */
+	hostapd_ubus_mesh_switch_channel(iface, &settings);
 	for (i = 0; i < iface->num_bss; i++) {
 
 		/* Save CHAN_SWITCH VHT, HE, and EHT config */
@@ -5196,17 +5190,17 @@ u8 hostapd_maxnss(struct hostapd_data *hapd, struct sta_info *sta)
 	if (sta) {
 		htmode =  (!!(sta->flags & WLAN_STA_HT)) |
 			((!!(sta->flags & WLAN_STA_VHT)) << 1) |
-			((!!(sta->flags & WLAN_STA_EHT)) << 2) |
-			((!!(sta->flags & WLAN_STA_HE)) << 3);
+			((!!(sta->flags & WLAN_STA_HE)) << 2) |
+			((!!(sta->flags & WLAN_STA_EHT)) << 3);
 		support_check[MAXNSS_HTMODE_HT_N] = !!sta->ht_capabilities;
 		support_check[MAXNSS_HTMODE_VHT_AC] = !!sta->vht_capabilities;
 		support_check[MAXNSS_HTMODE_EHT_BE] = !!sta->eht_capab;
 		support_check[MAXNSS_HTMODE_HE_AX] = !!sta->he_capab;
 	} else {
-		htmode = (!!conf->ieee80211ac) |
-			((!!conf->ieee80211n) << 1) |
-			((!!conf->ieee80211be) << 2) |
-			((!!conf->ieee80211ax) << 3);
+		htmode = (!!conf->ieee80211n) |
+			((!!conf->ieee80211ac) << 1) |
+			((!!conf->ieee80211ax) << 2) |
+			((!!conf->ieee80211be) << 3);
 		support_check[MAXNSS_HTMODE_HT_N] = hostapd_is_ht_enabled(hapd);
 		support_check[MAXNSS_HTMODE_VHT_AC] = hostapd_is_vht_enabled(hapd);
 		support_check[MAXNSS_HTMODE_EHT_BE] = hostapd_is_eht_enabled(hapd);
@@ -5619,7 +5613,7 @@ hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 		for (i = 0; i < hapd->iface->num_bss; i++) {
 			bss = hapd->iface->bss[i];
 
-			if (!hostapd_is_uhr_enabled(hapd))
+			if (!hostapd_is_uhr_enabled(bss))
 				continue;
 
 			bss->conf->uhr_params_update.mode_changed |= BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA);
@@ -5631,7 +5625,7 @@ hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 			/* TODO: Add the changes for to update bss specific uhr_params_update features e.g DPS */
 
 
-			bss->uhr_ecu.uhr_params_update_countdown = upd->adv_notification_interval;
+			bss->uhr_ecu.countdown_timer = upd->adv_notification_interval;
 			if (hostapd_send_uhr_params_critical_update(bss)) {
 				wpa_printf(MSG_ERROR,
 					   "UPDATE_UHR_FEATURES: failed to send critical update command");
@@ -5647,7 +5641,7 @@ hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 	wpa_printf(MSG_DEBUG,
 		   "UPDATE_UHR_FEATURES: UHR Params Update window "
 		   "countdown=%u modes=%d",
-		   hapd->uhr_ecu.uhr_params_update_countdown,
+		   hapd->uhr_ecu.countdown_timer,
 		   upd->mode_changed);
 
 	return 0;
@@ -10808,9 +10802,13 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "RESET_PN ", 9) == 0) {
 		if (hostapd_ctrl_reset_pn(hapd, buf + 9) < 0)
 			reply_len = -1;
+#endif /* CONFIG_TESTING_OPTIONS */
+#if defined(CONFIG_QCN_EXTN) || defined(CONFIG_TESTING_OPTIONS)
 	} else if (os_strncmp(buf, "SET_KEY ", 8) == 0) {
 		if (hostapd_ctrl_set_key(hapd, buf + 8) < 0)
 			reply_len = -1;
+#endif /* CONFIG_QCN_EXTN || CONFIG_TESTING_OPTIONS */
+#ifdef CONFIG_TESTING_OPTIONS
 	} else if (os_strncmp(buf, "RESEND_M1 ", 10) == 0) {
 		if (hostapd_ctrl_resend_m1(hapd, buf + 10) < 0)
 			reply_len = -1;
@@ -13419,14 +13417,16 @@ static int hostapd_ctrl_check_event_enabled(struct wpa_ctrl_dst *dst,
 
 
 static void hostapd_ctrl_iface_send_internal(int sock, struct dl_list *ctrl_dst,
-					     const char *ifname, int level,
+					     const char *ifname,
+					     int mld_link_id, int level,
 					     const char *buf, size_t len)
 {
 	struct wpa_ctrl_dst *dst, *next;
 	struct msghdr msg;
 	int idx, res;
-	struct iovec io[5];
+	struct iovec io[8];
 	char levelstr[10];
+	char linkid_str[20];
 
 	if (sock < 0 || dl_list_empty(ctrl_dst))
 		return;
@@ -13452,6 +13452,16 @@ static void hostapd_ctrl_iface_send_internal(int sock, struct dl_list *ctrl_dst,
 	io[idx].iov_base = (char *) buf;
 	io[idx].iov_len = len;
 	idx++;
+	if (mld_link_id >= 0) {
+		res = os_snprintf(linkid_str, sizeof(linkid_str), " LINKID=%d",
+				  mld_link_id);
+		if (os_snprintf_error(sizeof(linkid_str), res))
+			return;
+
+		io[idx].iov_base = linkid_str;
+		io[idx].iov_len = os_strlen(linkid_str);
+		idx++;
+	}
 	os_memset(&msg, 0, sizeof(msg));
 	msg.msg_iov = io;
 	msg.msg_iovlen = idx;
@@ -13487,19 +13497,28 @@ static void hostapd_ctrl_iface_send(struct hostapd_data *hapd, int level,
 				    enum wpa_msg_type type,
 				    const char *buf, size_t len)
 {
+	int mld_link_id = -1;
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap)
+		mld_link_id = hapd->mld_link_id;
+#endif /* CONFIG_IEEE80211BE */
+
 	if (type != WPA_MSG_NO_GLOBAL) {
 		hostapd_ctrl_iface_send_internal(
 			hapd->iface->interfaces->global_ctrl_sock,
 			&hapd->iface->interfaces->global_ctrl_dst,
 			type != WPA_MSG_PER_INTERFACE ?
 			NULL : hapd->conf->iface,
+			type == WPA_MSG_PER_INTERFACE ?
+			mld_link_id : -1,
 			level, buf, len);
 	}
 
 	if (type != WPA_MSG_ONLY_GLOBAL) {
 		hostapd_ctrl_iface_send_internal(
 			hapd->ctrl_sock, &hapd->ctrl_dst,
-			NULL, level, buf, len);
+			NULL, -1, level, buf, len);
 	}
 }
 #endif /* CONFIG_NATIVE_WINDOWS */

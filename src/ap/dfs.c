@@ -1101,8 +1101,11 @@ int dfs_get_start_chan_idx(struct hostapd_iface *iface, int *seg1_start,
 
 
 /* At least one channel have radar flag */
-static int dfs_check_chans_radar(struct hostapd_iface *iface,
-				 int start_chan_idx, int n_chans)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int dfs_check_chans_radar(struct hostapd_iface *iface,
+			 int start_chan_idx, int n_chans)
 {
 	struct hostapd_channel_data *channel;
 	struct hostapd_hw_modes *mode;
@@ -1123,8 +1126,11 @@ static int dfs_check_chans_radar(struct hostapd_iface *iface,
 
 
 /* All channels available */
-static int dfs_check_chans_available(struct hostapd_iface *iface,
-				     int start_chan_idx, int n_chans)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int dfs_check_chans_available(struct hostapd_iface *iface,
+			     int start_chan_idx, int n_chans)
 {
 	struct hostapd_channel_data *channel;
 	struct hostapd_hw_modes *mode;
@@ -1978,6 +1984,8 @@ int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 		hostapd_disable_iface(iface);
 		return err;
 	}
+
+	hostapd_get_channel_switch_time(iface, &csa_settings.freq_params);
 
 	/* If mesh VAP present, trigger mesh CSA prior to AP channel switch.
 	 * Constraint: CSA beacon must be transmitted within ~550 ms of
@@ -3028,7 +3036,8 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 		iface->radar_background.cac_started = 0;
 		if (iface->conf->enable_background_radar)
 			hostapd_dfs_update_background_chain(iface);
-	} else if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_CSA) {
+	} else if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_CSA ||
+		   iface->radar_detected) {
 		iface->cac_started = 0;
 		iface->cac_type = 0;
 	} else {
@@ -3514,6 +3523,13 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	if (iface->conf->use_ru_puncture_dfs && hostapd_is_usable_punct_bitmap(iface)) {
 		iface->radar_bit_pattern = radar_bitmap_oper;
 		iface->conf->punct_bitmap = cur_punct_bits;
+
+		if (hostapd_csa_in_progress(iface)) {
+			wpa_printf(MSG_DEBUG,
+				   "DFS: radar detected during CSA, deferring puncture channel switch");
+			return 0;
+		}
+
 		u8 oper_centr_freq_seg0_idx = iface->conf->vht_oper_centr_freq_seg0_idx;
 		u8 oper_centr_freq_seg1_idx = iface->conf->vht_oper_centr_freq_seg1_idx;
 

@@ -70,6 +70,7 @@
 #include "dpp_supplicant.h"
 #include "nan_usd.h"
 #include "pr_supplicant.h"
+#include "smd.h"
 #ifdef CONFIG_MESH
 #include "ap/ap_config.h"
 #include "ap/hostapd.h"
@@ -701,6 +702,10 @@ static void wpa_supplicant_cleanup(struct wpa_supplicant *wpa_s)
 	wpas_pasn_auth_stop(wpa_s);
 #endif /* CONFIG_PASN */
 
+#ifdef CONFIG_IEEE80211BN
+	smd_groups_deinit(wpa_s);
+	smd_targets_deinit(wpa_s);
+#endif
 	wpa_bss_deinit(wpa_s);
 
 	wpa_supplicant_cancel_delayed_sched_scan(wpa_s);
@@ -1194,6 +1199,28 @@ void wpa_supplicant_set_state(struct wpa_supplicant *wpa_s,
 		wpas_connect_work_done(wpa_s);
 		/* Reinitialize normal_scan counter */
 		wpa_s->normal_scans = 0;
+
+		/* SMD: Transition to ASSOCITAED state when 4-way handshake completes */
+		if (wpa_s->smd_capable &&
+		    smd_get_state(wpa_s) == SMD_STATE_ASSOCIATING) {
+			struct os_time now;
+
+			wpa_s->smd_me_associated = 1;
+			os_get_time(&now);
+			wpa_s->smd_me_association_time = now;
+
+			wpa_printf(MSG_INFO, "SMD: SMD-ME association committed - ID=" MACSTR
+				   " Initial AP MLD=" MACSTR " PTK mode=%d",
+				   MAC2STR(wpa_s->smd_id),
+				   MAC2STR(wpa_s->smd_me_initial_ap_mld_addr),
+				   wpa_s->smd_ptk_mode);
+
+			if (wpa_s->smd_in_transition) {
+				smd_complete_domain_transition(wpa_s, true);
+			}
+
+			smd_set_state(wpa_s, SMD_STATE_ASSOCIATED);
+		}
 	}
 
 #ifdef CONFIG_P2P
@@ -1328,8 +1355,29 @@ void wpa_supplicant_set_state(struct wpa_supplicant *wpa_s,
 	if (state > WPA_SCANNING)
 		wpa_supplicant_stop_autoscan(wpa_s);
 
-	if (state == WPA_DISCONNECTED || state == WPA_INACTIVE)
+	if (state == WPA_DISCONNECTED || state == WPA_INACTIVE) {
 		wpa_supplicant_start_autoscan(wpa_s);
+
+		if (wpa_s->smd_capable) {
+			int smd_state = smd_get_state(wpa_s);
+
+			if (wpa_s->smd_me_associated || smd_state == SMD_STATE_ASSOCIATING ||
+			    smd_state == SMD_STATE_TRANSITIONING) {
+				wpa_printf(MSG_INFO, "SMD: SMD-ME association terminated - resetting state");
+			} else {
+				wpa_printf(MSG_DEBUG, "SMD: Association attempt failed - resetting state");
+			}
+
+			wpa_s->smd_me_associated = 0;
+			os_memset(wpa_s->smd_id, 0, ETH_ALEN);
+			os_memset(wpa_s->smd_me_initial_ap_mld_addr, 0, ETH_ALEN);
+		}
+
+		if (wpa_s->smd_state != SMD_STATE_IDLE &&
+		    wpa_s->smd_state != SMD_STATE_DISABLED) {
+			smd_set_state(wpa_s, SMD_STATE_IDLE);
+		}
+	}
 
 	if (state == WPA_COMPLETED || state == WPA_INTERFACE_DISABLED ||
 	    state == WPA_INACTIVE)
@@ -2722,16 +2770,25 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		}
         }
 	if (wpa_s->smd_capable && bss && bss->smd_capable) {
-		os_memcpy(wpa_s->smd_id, bss->smd_identifier, ETH_ALEN);
-		os_memcpy(wpa_s->smd_me_initial_ap_mld_addr, bss->bssid, ETH_ALEN);
-		wpa_sm_set_smd_params(wpa_s->wpa, wpa_s->smd_id,
-				      wpa_s->smd_ptk_mode,
-				      wpa_s->smd_me_initial_ap_mld_addr);
+		if (smd_needs_initial_association(wpa_s, bss)) {
+			if (smd_establish_smd_me_association(wpa_s, bss, ssid) < 0) {
+				wpa_printf(MSG_WARNING, "SMD: Failed to establish SMD-ME association");
+			}
+		} else if (smd_needs_bss_transition(wpa_s, bss)) {
+				wpa_printf(MSG_WARNING, "SMD: Failed to prepare BSS transition");
+		}
 
-		wpa_printf(MSG_DEBUG, "SMD: Applied SMD-ME parameters - "
-			   "ID=" MACSTR " mode=%d initial_ap_mld=" MACSTR " (commit pending)",
-			   MAC2STR(wpa_s->smd_id), wpa_s->smd_ptk_mode,
-			   MAC2STR(wpa_s->smd_me_initial_ap_mld_addr));
+		if (smd_get_state(wpa_s) == SMD_STATE_ASSOCIATING &&
+		    !is_zero_ether_addr(wpa_s->smd_id)) {
+			wpa_sm_set_smd_params(wpa_s->wpa, wpa_s->smd_id,
+					      wpa_s->smd_ptk_mode,
+					      wpa_s->smd_me_initial_ap_mld_addr);
+
+			wpa_printf(MSG_DEBUG, "SMD: Applied SMD-ME parameters - ID="
+				    MACSTR " mode=%d initial_ap_mld=" MACSTR " (commit pending)",
+				   MAC2STR(wpa_s->smd_id), wpa_s->smd_ptk_mode,
+				   MAC2STR(wpa_s->smd_me_initial_ap_mld_addr));
+		}
 	}
 
 	if (!skip_default_rsne) {
@@ -7198,6 +7255,10 @@ wpa_supplicant_alloc(struct wpa_supplicant *parent)
 	dl_list_init(&wpa_s->mesh_external_pmksa_cache);
 #endif /* CONFIG_MESH */
 #endif /* CONFIG_PMKSA_CACHE_EXTERNAL */
+#ifdef CONFIG_IEEE80211BN
+	dl_list_init(&wpa_s->smd_targets);
+	dl_list_init(&wpa_s->smd_groups);
+#endif
 
 #ifdef CONFIG_QCN_EXTN
 	wpas_iface_init_extn(wpa_s);
@@ -8421,6 +8482,9 @@ static int wpa_supplicant_init_iface(struct wpa_supplicant *wpa_s,
 		   iface->ctrl_interface ? iface->ctrl_interface : "N/A",
 		   iface->bridge_ifname ? iface->bridge_ifname : "N/A");
 
+#ifdef CONFIG_IEEE80211BN
+	smd_groups_init(wpa_s);
+#endif
 	if (iface->confname) {
 #ifdef CONFIG_BACKEND_FILE
 		wpa_s->confname = os_rel2abs_path(iface->confname);

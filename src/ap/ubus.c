@@ -2195,6 +2195,9 @@ static int hostapd_ubus_get_bhsta_status(struct hostapd_iface *iface,
 	if (!iface || !status)
 		return -1;
 
+	if (!ctx)
+		return -1;
+
 	hapd = iface->bss[0];
 
 	status->state = NULL;

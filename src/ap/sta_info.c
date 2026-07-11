@@ -42,6 +42,7 @@
 #include "wps_hostapd.h"
 #include "dscp_policy.h"
 #include "hostapd_if/hostapd_if.h"
+#include "uhr_utils.h"
 
 static void ap_sta_remove_in_other_bss(struct hostapd_data *hapd,
 				       struct sta_info *sta);
@@ -73,12 +74,6 @@ struct hostapd_ft_over_ds_ml_sta_entry *ap_get_ft_ds_ml_sta(struct hostapd_data 
 							    const u8 *sta)
 {
 	struct hostapd_ft_over_ds_ml_sta_entry *item;
-
-	if (!hapd->mld) {
-		wpa_printf(MSG_ERROR, "NULL Pointer %s:%d\n",
-			   __func__, __LINE__);
-		return NULL;
-	}
 
 #ifdef CONFIG_QCN_EXTN
 	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
@@ -449,6 +444,12 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	ap_sta_set_authorized(hapd, sta, 0);
 	hostapd_set_sta_flags(hapd, sta);
 
+#ifdef CONFIG_IEEE80211BN
+	/* Clean up UHR roaming contexts */
+	uhr_cleanup_sta_roam_contexts(sta);
+#endif /* CONFIG_IEEE80211BN */
+
+
 	if ((sta->flags & WLAN_STA_WDS) ||
 	    (sta->flags & WLAN_STA_MULTI_AP &&
 	    ((hapd->conf->multi_ap & FRONTHAUL_BSS)||(hapd->conf->multi_ap & BACKHAUL_BSS)) &&
@@ -459,11 +460,6 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 			aid = sta->wds_mld_uid;
 		else
 			aid = sta->aid;
-
-#ifdef CONFIG_QCN_EXTN
-		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
-			aid = sta->aid;
-#endif /* CONFIG_QCN_EXTN */
 
 		if (ap_sta_is_mld(hapd, sta)) {
 			for_each_mld_link(phapd, hapd) {
@@ -504,9 +500,26 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 		hapd->sta_aid[sta->aid / 32] &=
 			~BIT(sta->aid % 32);
 
-	if (sta->wds_mld_uid > 0)
+	if (sta->wds_mld_uid > 0) {
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+			u32 uid_base = WDS_STA_UID_REPURPOSED_BASE +
+				       (hapd->mld_link_id *
+					WDS_STA_UID_REPURPOSED_PER_LINK);
+
+			if (sta->wds_mld_uid >= uid_base &&
+			    sta->wds_mld_uid <
+			    uid_base + WDS_STA_UID_REPURPOSED_PER_LINK) {
+				int uid_offset = sta->wds_mld_uid - uid_base;
+
+				hapd->wds_sta_uid_repurpose[uid_offset / 32] &=
+					~BIT(uid_offset % 32);
+			}
+		} else
+#endif /* CONFIG_QCN_EXTN */
 		hapd->wds_sta_uid[(sta->wds_mld_uid - 1) / 32] &=
 			~BIT((sta->wds_mld_uid - 1) % 32);
+	}
 
 	hapd->num_sta--;
 	if (sta->nonerp_set) {
@@ -2741,17 +2754,21 @@ int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_aut
 	if (hostapd_sta_add(hapd, sta->addr, 0, 0,
 			    sta->supported_rates,
 			    sta->supported_rates_len,
-
 #ifdef CONFIG_QCN_EXTN
 			    0, NULL, NULL, NULL, 0, NULL, 0,
-			    NULL, 0, NULL, NULL,
+			    NULL, 0, NULL,
 #else
-
-			    0, NULL, NULL, NULL, 0, NULL, 0, NULL,
-			    0, NULL,
-
+			    0, NULL, NULL, NULL, 0, NULL, 0,
+			    NULL, 0,
 #endif
-			    sta->flags, 0, 0, 0, 0,
+#ifdef CONFIG_IEEE80211BN
+			    sta->smd_info.smd_sta,
+			    sta->smd_info.caps.dl_data_fwd,
+			    sta->smd_info.smd_identifier,
+#else
+			    false, false, NULL,
+#endif /* CONFIG_IEEE80211BN */
+			    NULL, sta->flags, 0, 0, 0, 0,
 			    mld_link_addr, mld_link_sta, eml_cap, 0, CONTROL_MIC_PAD_NOT_SET,
 			    epp_sta)) {
 		hostapd_logger(hapd, sta->addr,
@@ -2777,6 +2794,9 @@ void ap_sta_free_sta_profile(struct mld_info *info)
 		return;
 
 	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+		if (!info->links[i].resp_sta_profile)
+			continue;
+
 		os_free(info->links[i].resp_sta_profile);
 		info->links[i].resp_sta_profile = NULL;
 	}
@@ -2794,6 +2814,10 @@ void ap_sta_cleanup_all(struct hostapd_data *ohapd, struct sta_info *osta,
 	hostapd_drv_sta_remove(ohapd, osta->addr);
 	if (ap_sta_is_mld(ohapd, osta)) {
 		for_each_mld_link(lhapd, ohapd) {
+
+			if (lhapd == ohapd)
+				continue;
+
 			lsta = ap_get_sta(lhapd, osta->addr);
 
 			if (lsta == curr_sta)
@@ -2804,7 +2828,9 @@ void ap_sta_cleanup_all(struct hostapd_data *ohapd, struct sta_info *osta,
 				ap_free_sta(lhapd, lsta);
 
 		}
-	} else if (osta != curr_sta) {
-		ap_free_sta(ohapd, osta);
 	}
+
+	if (osta != curr_sta)
+		 ap_free_sta(ohapd, osta);
+
 }

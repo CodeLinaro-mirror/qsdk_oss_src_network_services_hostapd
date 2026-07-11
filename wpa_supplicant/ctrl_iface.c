@@ -65,6 +65,7 @@
 #include "ap/dfs.h"
 #include "nan_usd.h"
 #include "pr_supplicant.h"
+#include "smd.h"
 
 #ifdef __NetBSD__
 #include <net/if_ether.h>
@@ -2529,6 +2530,63 @@ static int wpa_supplicant_ctrl_iface_status(struct wpa_supplicant *wpa_s,
 		pos += ret;
 	}
 
+#ifdef CONFIG_IEEE80211BN
+	if (wpa_s->current_bss && wpa_s->smd_capable) {
+		ret = os_snprintf(pos, end - pos, "smd_id=" MACSTR "\n",
+				  MAC2STR(wpa_s->current_bss->smd_identifier));
+		if (os_snprintf_error(end - pos, ret))
+			return pos - buf;
+		pos += ret;
+
+		if (wpa_s->current_ssid) {
+			ret = os_snprintf(pos, end - pos, "smd_ptk_mode=%d\n",
+					  wpa_s->current_ssid->smd_ptk_mode);
+			if (os_snprintf_error(end - pos, ret))
+				return pos - buf;
+			pos += ret;
+		}
+		ret = os_snprintf(pos, end - pos, "smd_capabilities=0x%02x\n",
+				  wpa_s->current_bss->smd_capabilities);
+		if (os_snprintf_error(end - pos, ret))
+			return pos - buf;
+
+		pos += ret;
+
+		ret = os_snprintf(pos, end - pos, "smd_timeout=%u\n",
+				  wpa_s->current_bss->smd_timeout);
+		if (os_snprintf_error(end - pos, ret))
+			return pos - buf;
+		pos += ret;
+
+		/* SMD Roaming Status */
+		if (wpa_s->roam_in_progress) {
+			ret = os_snprintf(pos, end - pos, "roaming_type=SMD\n");
+			if (os_snprintf_error(end - pos, ret))
+				return pos - buf;
+			pos += ret;
+
+			ret = os_snprintf(pos, end - pos, "smd_state=%s\n",
+					  smd_state_txt(wpa_s->smd_state));
+			if (os_snprintf_error(end - pos, ret))
+				return pos - buf;
+			pos += ret;
+
+			if (!is_zero_ether_addr(wpa_s->pending_bssid)) {
+				ret = os_snprintf(pos, end - pos,
+						  "smd_target=" MACSTR "\n",
+						  MAC2STR(wpa_s->pending_bssid));
+				if (os_snprintf_error(end - pos, ret))
+					return pos - buf;
+				pos += ret;
+			}
+		} else {
+			ret = os_snprintf(pos, end - pos, "roaming_type=REGULAR\n");
+			if (os_snprintf_error(end - pos, ret))
+				return pos - buf;
+			pos += ret;
+		}
+	}
+#endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_HS20
 	if (wpa_s->current_bss &&
 	    (hs20 = wpa_bss_get_vendor_ie(wpa_s->current_bss,
@@ -6189,6 +6247,9 @@ static int wpa_supplicant_ctrl_iface_roam(struct wpa_supplicant *wpa_s,
 	struct wpa_bss *bss;
 	struct wpa_ssid *ssid = wpa_s->current_ssid;
 	struct wpa_radio_work *already_connecting;
+	bool use_smd_st = false;
+	u8 exec_path = 0; /* Default: via serving AP */
+	char *pos;
 
 	if (hwaddr_aton(addr, bssid)) {
 		wpa_printf(MSG_DEBUG, "CTRL_IFACE ROAM: invalid "
@@ -6197,6 +6258,45 @@ static int wpa_supplicant_ctrl_iface_roam(struct wpa_supplicant *wpa_s,
 	}
 
 	wpa_printf(MSG_DEBUG, "CTRL_IFACE ROAM " MACSTR, MAC2STR(bssid));
+
+	/* Check for optional ST argument: ROAM <bssid> ST [0|1] */
+	pos = os_strchr(addr, ' ');
+	if (pos) {
+		while (*pos == ' ')
+			pos++;
+		if (os_strncasecmp(pos, "ST", 2) == 0 &&
+		    (pos[2] == '\0' || pos[2] == ' ')) {
+			use_smd_st = true;
+			pos += 2;
+			while (*pos == ' ')
+				pos++;
+			if (*pos != '\0')
+				exec_path = (u8) atoi(pos);
+		}
+	}
+
+	/* If ST is requested, check if SMD is enabled and MLO association */
+	if (use_smd_st) {
+		wpa_s->smd_st_requested = 1;
+		wpa_s->smd_st_exec_path = exec_path;
+		if (wpa_s->smd_capable && wpa_s->valid_links) {
+			wpa_printf(MSG_INFO,
+				   "CTRL_IFACE ROAM ST: dispatching SMD BSS transition to "
+				   MACSTR " (exec_path=%u)",
+				   MAC2STR(bssid), exec_path);
+			if (wpas_smd_bss_transition(wpa_s, bssid, exec_path,
+						    NULL, 0) < 0) {
+				wpa_printf(MSG_ERROR,
+					   "CTRL_IFACE ROAM ST: SMD BSS transition failed");
+				return -1;
+			}
+			return 0;
+		}
+		wpa_printf(MSG_DEBUG,
+			   "CTRL_IFACE ROAM ST: SMD not enabled or SLO assoc "
+			   "(smd_capable=%d valid_links=0x%x) - falling back to regular roam",
+			   wpa_s->smd_capable, wpa_s->valid_links);
+	}
 
 	if (!ssid) {
 		wpa_printf(MSG_DEBUG, "CTRL_IFACE ROAM: No network "
@@ -10991,6 +11091,11 @@ static void wpas_ctrl_neighbor_rep_cb(void *ctx, struct wpabuf *neighbor_rep)
 		nr = pos;
 		pos += NR_IE_MIN_LEN;
 
+#ifdef CONFIG_SMD
+		const u8 *subelems = pos;
+		size_t subelems_len = end - pos;
+#endif /* CONFIG_SMD */
+
 		lci[0] = '\0';
 		civic[0] = '\0';
 		while (end - pos > 2) {
@@ -11023,6 +11128,11 @@ static void wpas_ctrl_neighbor_rep_cb(void *ctx, struct wpabuf *neighbor_rep)
 
 			pos += s_len;
 		}
+
+#ifdef CONFIG_SMD
+		smd_process_rnr_neighbor_report(wpa_s, nr, subelems,
+						subelems_len);
+#endif /* CONFIG_SMD */
 
 		wpa_msg(wpa_s, MSG_INFO, RRM_EVENT_NEIGHBOR_REP_RXED
 			"bssid=" MACSTR
@@ -13557,8 +13667,13 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 		}
 #endif
 	} else if (os_strncmp(buf, "STATUS", 6) == 0) {
-		reply_len = wpa_supplicant_ctrl_iface_status(
-			wpa_s, buf + 6, reply, reply_size);
+		if (os_strcmp(buf + 6, "-SMD") == 0) {
+			reply_len = smd_ctrl_iface_status(wpa_s,
+							  reply, reply_size);
+		} else {
+			reply_len = wpa_supplicant_ctrl_iface_status(
+				wpa_s, buf + 6, reply, reply_size);
+		}
 	} else if (os_strcmp(buf, "PMKSA") == 0) {
 		reply_len = wpas_ctrl_iface_pmksa(wpa_s, reply, reply_size);
 	} else if (os_strcmp(buf, "PMKSA_FLUSH") == 0) {
@@ -14595,6 +14710,23 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 	} else if (os_strcmp(buf, "MLO_SIGNAL_POLL") == 0) {
 		reply_len = wpas_ctrl_iface_mlo_signal_poll(wpa_s, reply,
 							    reply_size);
+#ifdef CONFIG_IEEE80211BN
+	} else if (os_strcmp(buf, "SMD_DOMAINS") == 0) {
+		reply_len = smd_ctrl_iface_domains(wpa_s, reply, reply_size);
+	} else if (os_strcmp(buf, "SMD_GROUPS") == 0) {
+		reply_len = smd_ctrl_iface_groups(wpa_s, reply, reply_size);
+	} else if (os_strncmp(buf, "SMD_PREPARE ", 12) == 0) {
+		reply_len = smd_ctrl_iface_prepare(wpa_s, buf + 12,
+						   reply, reply_size);
+	} else if (os_strcmp(buf, "SMD_LIST_PREPARED") == 0) {
+		reply_len = smd_ctrl_iface_list_prepared(wpa_s, reply, reply_size);
+	} else if (os_strncmp(buf, "SMD_CANCEL_PREPARE ", 19) == 0) {
+		reply_len = smd_ctrl_iface_cancel_prepare(wpa_s, buf + 19,
+							  reply, reply_size);
+	} else if (os_strncmp(buf, "SMD_EXECUTE ", 12) == 0) {
+		reply_len = smd_ctrl_iface_execute(wpa_s, buf + 12,
+						   reply, reply_size);
+#endif /* CONFIG_IEEE80211BN */
 	} else if (os_strcmp(buf, "NEW_RANDOM_MAC_ADDRESS") == 0) {
 		enum wpas_mac_addr_style mac_addr_style =
 			wpa_s->conf->preassoc_mac_addr;

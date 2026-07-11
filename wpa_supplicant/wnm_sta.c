@@ -23,6 +23,7 @@
 #include "wnm_sta.h"
 #include "notify.h"
 #include "hs20_supplicant.h"
+#include "smd.h"
 
 #define MAX_TFS_IE_LEN  1024
 #define WNM_MAX_NEIGHBOR_REPORT 10
@@ -698,6 +699,8 @@ static void wnm_parse_neighbor_report(struct wpa_supplicant *wpa_s,
 				      struct neighbor_report *rep)
 {
 	u8 left = len;
+	const u8 *subelem_start;
+	u8 subelem_len;
 
 	if (left < 13) {
 		wpa_printf(MSG_DEBUG, "WNM: Too short neighbor report");
@@ -712,6 +715,9 @@ static void wnm_parse_neighbor_report(struct wpa_supplicant *wpa_s,
 
 	pos += 13;
 	left -= 13;
+
+	subelem_start = pos;
+	subelem_len = left;
 
 	while (left >= 2) {
 		u8 id, elen;
@@ -732,6 +738,9 @@ static void wnm_parse_neighbor_report(struct wpa_supplicant *wpa_s,
 
 	rep->freq = wnm_nei_get_chan(wpa_s, rep->regulatory_class,
 				     rep->channel_number);
+
+	/* Parse SMD IE from sublelements */
+	smd_parse_neighbor_smd_info(rep, subelem_start, subelem_len);
 }
 
 
@@ -1675,9 +1684,21 @@ static void ieee802_11_rx_bss_trans_mgmt_req(struct wpa_supplicant *wpa_s,
 
 	if (wpa_s->wnm_num_neighbor_report) {
 		unsigned int valid_ms;
+		unsigned int i;
 
 		wnm_sort_cand_list(wpa_s);
 		wnm_dump_cand_list(wpa_s);
+
+		for (i = 0; i < wpa_s->wnm_num_neighbor_report; i++) {
+			struct neighbor_report *nei;
+			struct wpa_bss *bss;
+
+			nei = &wpa_s->wnm_neighbor_report_elements[i];
+			bss = wpa_bss_get_bssid(wpa_s, nei->bssid);
+			if (bss)
+				smd_btm_enhance_preference(wpa_s, nei, bss);
+		}
+
 		valid_ms = valid_int * beacon_int * 128 / 125;
 		wpa_printf(MSG_DEBUG, "WNM: Candidate list valid for %u ms",
 			   valid_ms);
@@ -2200,6 +2221,20 @@ bool wnm_is_bss_excluded(struct wpa_supplicant *wpa_s, struct wpa_bss *bss)
 	if ((wpa_s->wnm_mode & WNM_BSS_TM_REQ_ABRIDGED) &&
 	    wpa_s->wnm_num_neighbor_report == i)
 		return true;
+
+	if (i < wpa_s->wnm_num_neighbor_report) {
+		struct neighbor_report *nei;
+		int smd_score;
+
+		nei = &wpa_s->wnm_neighbor_report_elements[i];
+		smd_score = smd_btm_filter_candidate(wpa_s, bss, nei);
+		if (smd_score) {
+			wpa_printf(MSG_DEBUG, "SMD: Excluding BSS " MACSTR
+				   " due to SMD Filtering",
+				   MAC2STR(bss->bssid));
+			return true;
+		}
+	}
 
 	return false;
 }

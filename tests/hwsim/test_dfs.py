@@ -749,14 +749,14 @@ def run_dfs_chan_switch_to_vht(dev, apdev, vht80=False, vht80p80=False,
                       "ieee80211d": "1",
                       "hw_mode": "a",
                       "channel": "40"}
+            if vht160:
+                params["ieee80211h"] = "1"
             hapd = hostapd.add_ap(apdev[0], params)
             dev[0].connect("dfs", key_mgmt="NONE", scan_freq="5260 5180 5200")
         dev[0].wait_regdom(country_ie=True)
         hwsim_utils.test_connectivity(dev[0], hapd)
 
         if vht160:
-            if not start_dfs:
-                hapd.set("ieee80211h", "1")
             cmd = "CHAN_SWITCH 5 5180 sec_channel_offset=1 center_freq1=5250 bandwidth=160 ht vht"
         if vht80p80:
             cmd = "CHAN_SWITCH 5 5180 sec_channel_offset=1 center_freq1=5210 center_freq2=5775 bandwidth=80 ht vht"

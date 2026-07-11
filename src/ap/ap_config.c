@@ -116,6 +116,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 
 	bss->assoc_sa_query_max_timeout = 1000;
 	bss->assoc_sa_query_retry_timeout = 201;
+	bss->disable_sa_query = 0;
 	bss->group_mgmt_cipher = WPA_CIPHER_AES_128_CMAC;
 
 #ifdef CONFIG_IEEE80211BN
@@ -269,7 +270,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->dps_assist = DRIVER_DEFINED;
 
 	/* UHR intervals are represented as TUs */
-	bss->uhr_params_update.adv_notification_interval = 7;
+	bss->uhr_params_update.adv_notification_interval = 10;
 	bss->uhr_params_update.update_in_tim_interval = 10;
 #endif /* CONFIG_IEEE80211BN */
 
@@ -429,6 +430,7 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->acs_scan_retry_interval = 5;
 	conf->acs_scan_retry_max_count = 25;
 	conf->acs_enable_bw_downgrade = 0;
+	conf->radio_idx = -1;
 #endif /* CONFIG_ACS */
 
 #ifdef CONFIG_IEEE80211AX
@@ -1242,6 +1244,20 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 	os_free(conf->security_profiles);
 
 	wpabuf_clear_free(conf->sae_pw_id_key);
+
+#ifdef CONFIG_IEEE80211BN
+	{
+		struct smd_partner_entry *partner = conf->smd_partners;
+
+		conf->smd_partners = NULL;
+		while (partner) {
+			struct smd_partner_entry *next = partner->next;
+
+			os_free(partner);
+			partner = next;
+		}
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 	os_free(conf);
 }

@@ -570,6 +570,8 @@ static void nl80211_deliver_pending_events(void *eloop_ctx, void *data)
 	if (dl_list_empty(&global->pending_events))
 		return;
 
+	global->delivering_pending_events = true;
+
 	global->pending_events.next->prev = &pending_events;
 	global->pending_events.prev->next = &pending_events;
 	pending_events.next = global->pending_events.next;
@@ -584,6 +586,8 @@ static void nl80211_deliver_pending_events(void *eloop_ctx, void *data)
 		event->handler(event->msg, event->data);
 		nl80211_remove_pending_event(event);
 	}
+
+	global->delivering_pending_events = false;
 }
 
 
@@ -604,9 +608,18 @@ int nl80211_reply_hook(struct nl80211_global *global, struct nl_msg *msg,
 		 * to read the socket again (it should usually, but it may not
 		 * if multiple timeouts have expired). As such, check here if
 		 * there are already pending events, and if there are, queue
-		 * this one.
+		 * this one to preserve delivery order.
+		 *
+		 * However, if we are already inside nl80211_deliver_pending_events(),
+		 * do not re-queue events triggered by event handlers. Re-queuing
+		 * during delivery causes events to accumulate across command cycles.
+		 * When the accumulated event count is large enough, a re-queued
+		 * event's sequence number eventually matches the reply_seq of a
+		 * concurrent send_and_recv_glb() call, causing the reply handler
+		 * to fire with the wrong message and corrupt the caller's stack.
 		 */
-		if (!dl_list_empty(&global->pending_events))
+		if (!dl_list_empty(&global->pending_events) &&
+		    !global->delivering_pending_events)
 			goto queue_event;
 
 		return NL_OK;
@@ -2014,12 +2027,20 @@ try_again:
 	if (ret == 0) {
 		os_memcpy(drv->bssid, arg.assoc_bssid, ETH_ALEN);
 
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Assoc BSSID: " MACSTR " valid links: 0x%x",
+			   MAC2STR(drv->bssid), drv->sta_mlo_info.valid_links);
 		if (drv->sta_mlo_info.valid_links) {
 			int i;
 
-			for (i = 0; i < MAX_NUM_MLD_LINKS; i++)
+			for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
 				os_memcpy(drv->sta_mlo_info.links[i].bssid,
 					  arg.bssid[i], ETH_ALEN);
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: Assoc BSSID: " MACSTR " valid links: 0x%x",
+				   MAC2STR(drv->sta_mlo_info.links[i].bssid),
+				   drv->sta_mlo_info.valid_links);
+			}
 		}
 
 		return drv->bssid;
@@ -3128,6 +3149,15 @@ static int nl80211_action_subscribe_ap(struct i802_bss *bss)
 	/* Vendor-specific */
 	if (nl80211_register_action_frame(bss, (u8 *) "\x7f", 1) < 0)
 		ret = -1;
+
+#ifdef CONFIG_IEEE80211BN
+	/* Protected UHR - ST Link UHR Reconfiguration Request - Preparation */
+	if (nl80211_register_action_frame(bss, (u8 *)"\x2B\x00", 2) < 0)
+		ret = -1;
+	/* Protected UHR - ST Link UHR Reconfiguration Request - Execution */
+	if (nl80211_register_action_frame(bss, (u8 *)"\x2B\x01", 2) < 0)
+		ret = -1;
+#endif /* CONFIG_IEEE80211BN */
 
 	return ret;
 }
@@ -4450,7 +4480,7 @@ nl80211_put_bss_membership_selectors(struct wpa_driver_nl80211_data *drv,
 
 #ifdef CONFIG_IEEE80211BN
 static int nl80211_put_smd_params(struct nl_msg *msg,
-                                  const struct wpa_smd_params *params)
+				  const struct wpa_smd_params *params)
 {
        struct nlattr *smd_params;
 
@@ -4472,7 +4502,13 @@ static int nl80211_put_smd_params(struct nl_msg *msg,
                return -1;
        }
 
-       /* SMD Identifier (6-byte MAC address) */
+       /* SMD Identifier (6-byte MAC address format, IEEE 802.11bn section 9.4.2.322.3).
+	* The SMD domain identifier is a 6-byte value in MAC address format that
+	* uniquely identifies the SMD domain.  It is passed to the kernel via
+	* NL80211_SMD_PARAMS_ATTR_IDENTIFIER so that the driver and firmware can
+	* tag all frames belonging to this domain and validate membership during
+	* ME-association (section 37.15) and BSS transition (section 37.16).
+	*/
        if (nla_put(msg, NL80211_SMD_PARAMS_ATTR_IDENTIFIER, ETH_ALEN,
                    params->smd_identifier)) {
                wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD identifier");
@@ -5476,6 +5512,9 @@ static int nl80211_mbssid(struct nl_msg *msg, struct mbssid_data *params)
 	if (!params->mbssid_tx_iface)
 		return 0;
 
+	wpa_hexdump(MSG_MSGDUMP, "nl80211: MBSSID Elements",
+		    params->mbssid_elem, params->mbssid_elem_len);
+
 	config = nla_nest_start(msg, NL80211_ATTR_MBSSID_CONFIG);
 	if (!config ||
 	    nla_put_u8(msg, NL80211_MBSSID_CONFIG_ATTR_INDEX,
@@ -5522,6 +5561,9 @@ static int nl80211_mbssid(struct nl_msg *msg, struct mbssid_data *params)
 
 	if (!params->ema)
 		return 0;
+
+	wpa_hexdump(MSG_MSGDUMP, "nl80211: EMA RNR elements",
+		    params->rnr_elem, params->rnr_elem_len);
 
 	if (params->rnr_elem_count && params->rnr_elem_len &&
 	    params->rnr_elem_offset && *params->rnr_elem_offset) {
@@ -5968,21 +6010,38 @@ int nl80211_put_freq_params(struct nl_msg *msg,
 	return 0;
 }
 
-int nl80211_update_beacons_on_chain_mask_change(struct wpa_driver_nl80211_data *drv)
-{
 #ifdef CONFIG_AP
-	struct i802_bss *bss = drv->first_bss;
-	struct hostapd_data *hapd = bss->ctx;
+static int
+nl80211_update_chain_mask_beacons_for_hapd(struct hostapd_data *hapd)
+{
+	struct i802_bss *bss;
 	struct hostapd_hw_modes *modes;
 	u16 num_modes, flags;
 	u8 dfs_domain;
 	int i, ret;
 	bool found_matching_mode = false;
+	u8 hw_idx;
 
-	if (!hapd || !hapd->iface || !hapd->iface->current_mode)
+	if (!hapd || !hapd->iface || !hapd->iface->current_mode ||
+	    !hapd->iface->current_mode->channels)
 		return -1;
 
-	wpa_printf(MSG_DEBUG, "nl80211: Dynamic chainmask changed, update the beacons");
+	bss = hapd->drv_priv;
+	if (!bss || !bss->drv) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Invalid drv_priv BSS context for chain mask beacon update");
+		return -1;
+	}
+
+	hw_idx = hapd->iface->current_hw_info ?
+		 hapd->iface->current_hw_info->hw_idx :
+		 NL80211_WIPHY_RADIO_ID_MAX;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: Dynamic chainmask changed, update the beacons for iface %s hw_idx %u",
+		   (hapd->conf && hapd->conf->iface) ? hapd->conf->iface : "unknown",
+		   hw_idx);
+
 	modes = nl80211_get_hw_feature_data(bss, &num_modes, &flags, &dfs_domain, 0);
 	if (!modes) {
 		wpa_printf(MSG_ERROR,
@@ -6028,6 +6087,90 @@ int nl80211_update_beacons_on_chain_mask_change(struct wpa_driver_nl80211_data *
 		wpa_printf(MSG_ERROR,
 			   "nl80211: Failed to update beacons after chain mask change");
 	return ret;
+}
+#endif /* CONFIG_AP */
+
+int nl80211_update_beacons_on_chain_mask_change(struct i802_bss *bss, int hw_idx,
+						int ifindex)
+{
+#ifdef CONFIG_AP
+	struct hostapd_data *hapd;
+	struct i802_bss *target_bss;
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_data *link_hapd;
+	int ret = -1;
+	bool updated = false, matching_link_found = false;
+#endif /* CONFIG_IEEE80211BE */
+	int link_hw_idx;
+
+	if (!bss || !bss->drv) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Invalid BSS context for chain mask beacon update");
+		return -1;
+	}
+
+	/* Chain mask change is a wiphy-level event and can be dispatched to all
+	 * BSSes. Process it once per driver to avoid duplicate beacon refreshes.
+	 */
+	if (bss != bss->drv->first_bss)
+		return 0;
+
+	target_bss = bss;
+	if (ifindex > 0) {
+		target_bss = get_bss_ifindex(bss->drv, ifindex);
+		if (!target_bss) {
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: Ignore chain mask beacon refresh for unknown ifindex %d",
+				   ifindex);
+			return 0;
+		}
+	}
+
+	hapd = target_bss->ctx;
+	if (!hapd)
+		return -1;
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf && hapd->conf->mld_ap && hapd->mld) {
+#ifdef CONFIG_QCN_EXTN
+		for_each_mld_link_include_repurposed(link_hapd, hapd)
+#else
+		for_each_mld_link(link_hapd, hapd)
+#endif /* CONFIG_QCN_EXTN */
+		{
+			link_hw_idx = (link_hapd->iface &&
+				       link_hapd->iface->current_hw_info) ?
+				      (int) link_hapd->iface->current_hw_info->hw_idx : -1;
+			if (hw_idx >= 0 && link_hw_idx != hw_idx)
+				continue;
+
+			matching_link_found = true;
+			ret = nl80211_update_chain_mask_beacons_for_hapd(link_hapd);
+			if (!ret)
+				updated = true;
+		}
+
+		if (hw_idx >= 0 && !matching_link_found) {
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: No affiliated MLD link matches chain mask hw_idx %d",
+				   hw_idx);
+			return 0;
+		}
+
+		return updated ? 0 : ret;
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	link_hw_idx = (hapd->iface && hapd->iface->current_hw_info) ?
+		      (int) hapd->iface->current_hw_info->hw_idx : -1;
+	if (hw_idx >= 0 && link_hw_idx != hw_idx) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Ignore chain mask beacon refresh for hw_idx %d (iface hw_idx %d)",
+			   hw_idx, link_hw_idx);
+		return 0;
+	}
+
+	return nl80211_update_chain_mask_beacons_for_hapd(hapd);
 #else
 	return -1;
 #endif /* CONFIG_AP */
@@ -7477,6 +7620,8 @@ static u32 sta_flags_nl80211(int flags)
 		f |= BIT(NL80211_STA_FLAG_FT_AUTH);
 	if (flags & WPA_STA_CFP)
 		f |= BIT(NL80211_STA_FLAG_CFP);
+	if (flags & WPA_STA_SMD)
+		f |= BIT(NL80211_STA_FLAG_SMD);
 
 	return f;
 }
@@ -7796,10 +7941,76 @@ static int wpa_driver_nl80211_build_sta(struct wpa_driver_nl80211_data *drv,
 			goto fail;
 	}
 
+	if (params->set && params->smd_sta) {
+		wpa_printf(MSG_DEBUG, "  * SMD enabled:%d", params->smd_sta);
+		if (nla_put_u8(msg, NL80211_ATTR_PEER_SMD_ENABLED, params->smd_sta))
+			goto fail;
+
+		wpa_printf(MSG_DEBUG, "  * SMD dl data forwarding:%d", params->dl_data_fwd);
+		if (nla_put_u8(msg, NL80211_ATTR_PEER_SMD_DL_DATA_FWD, params->dl_data_fwd))
+			goto fail;
+
+		if (params->smd_mac_addr) {
+			wpa_printf(MSG_DEBUG, " * SMD MAC address: " MACSTR, MAC2STR(params->smd_mac_addr));
+			if (nla_put(msg, NL80211_ATTR_PEER_SMD_MAC_ADDR, ETH_ALEN, params->smd_mac_addr))
+				goto fail;
+		}
+	}
+
 	ret = 0;
 fail:
 	return ret;
 }
+
+#ifdef CONFIG_IEEE80211BN
+static int wpa_driver_nl80211_smd_roam(void *priv, struct hostapd_smd_roam_params *params)
+{
+	struct i802_bss *bss = priv;
+	struct nl_msg *msg;
+	struct nlattr *macs_nest, *entry;
+	size_t i;
+
+	msg = nl80211_cmd_msg(bss, 0, NL80211_CMD_SMD_ROAM);
+	if (!msg)
+		return -1;
+
+	if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, bss->ifindex) ||
+	    nla_put_u32(msg, NL80211_ATTR_SMD_ROLE, params->role) ||
+	    nla_put_u32(msg, NL80211_ATTR_SMD_TYPE, params->type))
+		goto fail;
+
+	if (params->dl_sn_not_transferred &&
+	    nla_put_flag(msg, NL80211_ATTR_SMD_DL_SN_NOT_TRANSFERRED))
+		goto fail;
+
+	if (params->ul_sn_not_transferred &&
+	    nla_put_flag(msg, NL80211_ATTR_SMD_UL_SN_NOT_TRANSFERRED))
+		goto fail;
+
+	if (nla_put_u32(msg, NL80211_ATTR_SMD_DL_DRAIN_TIME, params->dl_drain_time))
+		goto fail;
+
+	macs_nest = nla_nest_start(msg, NL80211_ATTR_SMD_STA_LINK_MACS);
+	if (!macs_nest)
+		goto fail;
+
+	for (i = 0; i < params->n_macs; i++) {
+		entry = nla_nest_start(msg, i + 1);
+		if (!entry)
+			goto fail;
+		if (nla_put(msg, NL80211_ATTR_SMD_STA_LINK_MAC, ETH_ALEN, params->mac[i]))
+			goto fail;
+		nla_nest_end(msg, entry);
+	}
+
+	nla_nest_end(msg, macs_nest);
+
+	return send_and_recv_cmd(bss->drv, msg);
+fail:
+	nlmsg_free(msg);
+	return -1;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 static int wpa_driver_nl80211_sta_add(void *priv,
 				      struct hostapd_sta_add_params *params)
@@ -8351,6 +8562,8 @@ static int wpa_driver_nl80211_sta_set_flags(void *priv, const u8 *addr,
 	     nla_put_flag(msg, NL80211_STA_FLAG_TDLS_PEER)) ||
 	    ((total_flags & WPA_STA_FT_AUTH) &&
 	     nla_put_flag(msg, NL80211_STA_FLAG_FT_AUTH)) ||
+	    ((total_flags & WPA_STA_SMD) &&
+	     nla_put_flag(msg, NL80211_STA_FLAG_SMD)) ||
 	    ((total_flags & WPA_STA_CFP) &&
 	     nla_put_flag(msg, NL80211_STA_FLAG_CFP)))
 		goto fail;
@@ -8360,6 +8573,7 @@ static int wpa_driver_nl80211_sta_set_flags(void *priv, const u8 *addr,
 	os_memset(&upd, 0, sizeof(upd));
 	upd.mask = sta_flags_nl80211(flags_or | ~flags_and);
 	upd.set = sta_flags_nl80211(flags_or);
+	wpa_printf(MSG_DEBUG, "mask: %x, set: %x", upd.mask, upd.set);
 	if (nla_put(msg, NL80211_ATTR_STA_FLAGS2, sizeof(upd), &upd))
 		goto fail;
 
@@ -14174,7 +14388,7 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 	if (!beacon_csa)
 		goto fail;
 
-	ret = set_beacon_data(msg, &settings->beacon_csa, false);
+	ret = set_beacon_data(msg, &settings->beacon_csa, true);
 	if (ret)
 		goto error;
 
@@ -14366,7 +14580,7 @@ static int nl80211_switch_color(void *priv, struct cca_settings *settings)
 		goto error;
 	}
 
-	ret = set_beacon_data(msg, &settings->beacon_cca, false);
+	ret = set_beacon_data(msg, &settings->beacon_cca, true);
 	if (ret)
 		goto error;
 
@@ -17367,6 +17581,220 @@ static int nl80211_dpp_listen(void *priv, bool enable)
 }
 #endif /* CONFIG_DPP */
 
+#ifdef CONFIG_IEEE80211BN
+/*
+ * wpa_driver_nl80211_uhr_reconfig_req - Issue a UHR Link Reconfiguration Request
+ *
+ * Implements the nl80211 side of the SMD BSS Transition driver operation
+ * (IEEE 802.11bn section 37.16.3).  This function is invoked by both the
+ * AP-side (as iAP sending a Reconfiguration Request to the non-AP STA) and
+ * the non-AP STA-side for the ST Preparation and ST Execution phases:
+ *
+ *   type = 0: ST Preparation  - carries target MLD address, link bitmap, and
+ *             optional per-link IEs for the Reconfiguration MLE (section 9.3.3.10).
+ *   type = 1: ST Execution    - carries exec_path (direct or via current AP) and
+ *             DL TID bitmap; the Reconfiguration MLE MUST NOT contain per-STA
+ *             profiles in the Link Info field (IEEE 802.11bn Table 9-658bb).
+ *
+ * The kernel receives this via NL80211_CMD_UHR_LINK_RECONFIG_REQ and uses it
+ * to drive the firmware state machine for link-set changes during transition.
+ * Kernel-side handling is defined in the companion kernel change for
+ * nl80211/mac80211 SMD BST Execution support.
+ */
+static int
+wpa_driver_nl80211_uhr_reconfig_req(void *priv,
+				    const struct wpa_driver_uhr_reconfig_params *params)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	u32 cfg = 0;
+	int ret;
+
+	if (!params || !params->bssid)
+		return -EINVAL;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: UHR_LINK_RECONFIG_REQ type=%u for " MACSTR
+		   " no_dl_sn=%d no_ul_sn=%d ind:%d",
+		   params->type, MAC2STR(params->bssid), params->no_dl_sn,
+		   params->no_ul_sn, bss->ifindex);
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_UHR_LINK_RECONFIG_REQ);
+	if (!msg)
+		return -ENOBUFS;
+
+	/*
+	 * Specify the MLO link on which the frame must be transmitted.
+	 * ST Preparation uses the assoc link (or user TX_LINK= override).
+	 * ST Execution uses a non-assoc link selected by
+	 * wpas_smd_pick_exec_link() in wpa_supplicant.
+	 * When tx_link_id < 0 the attribute is omitted and mac80211 picks
+	 * the link freely.
+	 */
+	if (params->tx_link_id >= 0) {
+		if (nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID,
+			       (u8) params->tx_link_id))
+			goto nla_fail;
+		wpa_printf(MSG_INFO,
+			   "santy nl80211: UHR_LINK_RECONFIG_REQ tx_link_id=%d "
+			   "(type=%u)", params->tx_link_id, params->type);
+	}
+
+	if (nla_put_u8(msg, NL80211_ATTR_UHR_RECONFIG_TYPE, params->type))
+		goto nla_fail;
+
+	/* Add ST Execution specific attributes (IEEE 802.11bn Table 9-658bb):
+	 * - exec_path: 0=via current AP, 1=direct to target AP
+	 * - dl_tid_bitmap: DL TID bitmap for traffic draining (SMD BSS Transition Params)
+	 * For ST Execution (type=1), Reconfiguration MLE shall NOT contain per-STA profiles.
+	 */
+	if (params->type == 1) {
+		if (nla_put_u8(msg, NL80211_ATTR_SMD_EXEC_PATH, params->exec_path) ||
+		    nla_put_u8(msg, NL80211_ATTR_SMD_DL_TID_BITMAP, params->dl_tid_bitmap))
+			goto nla_fail;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: ST Execution exec_path=%u dl_tid_bitmap=0x%02x",
+			   params->exec_path, params->dl_tid_bitmap);
+	}
+
+	if (params->target_mld_addr) {
+		if (nla_put(msg, NL80211_ATTR_SMD_TARGET_MLD_ADDR, ETH_ALEN,
+			    params->target_mld_addr))
+			goto nla_fail;
+	} else {
+		if (nla_put(msg, NL80211_ATTR_SMD_TARGET_MLD_ADDR, ETH_ALEN, params->bssid))
+			goto nla_fail;
+	}
+
+	if (params->ssid && params->ssid_len) {
+		if (nla_put(msg, NL80211_ATTR_SSID, params->ssid_len, params->ssid))
+			goto nla_fail;
+	}
+
+	if (params->no_dl_sn)
+		cfg |= BIT(0);
+	if (params->no_ul_sn)
+		cfg |= BIT(1);
+	if (cfg && nla_put_u32(msg, NL80211_ATTR_SMD_CONFIG, cfg))
+		goto nla_fail;
+	if (params->scs_ids && params->scs_ids[0]) {
+		if (nla_put_string(msg, NL80211_ATTR_SMD_SCS_LIST, params->scs_ids))
+			goto nla_fail;
+	}
+
+	/* Optional SNonce and DH public key for Per-AP PTK mode */
+	if (params->snonce && params->snonce_len) {
+		if (nla_put(msg, NL80211_ATTR_SMD_SNONCE, params->snonce_len, params->snonce))
+			goto nla_fail;
+	}
+	if (params->dh_pubkey && params->dh_pubkey_len) {
+		if (nla_put(msg, NL80211_ATTR_SMD_DH_PUBLIC_KEY,
+			    params->dh_pubkey_len, params->dh_pubkey))
+			goto nla_fail;
+	}
+
+	/* Include per-link selection using ML reconfig-style nesting as per plan.
+	 * Per IEEE 802.11bn: for ST Execution (type=1), the Reconfiguration MLE
+	 * shall NOT contain any per-STA profile in the Link Info field.
+	 * This is naturally enforced since add_links=0 for execution requests.
+	 */
+	if (params->type == 0 && params->reconfig_info && params->reconfig_info->add_links) {
+		struct wpa_mlo_reconfig_info *info = params->reconfig_info;
+		struct nlattr *add_links;
+		u8 link_id;
+
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: ST Prep with reconfig_info: add_links=0x%x delete_links=0x%x",
+			   info->add_links, info->delete_links);
+		for (int i = 0; i < 16; i++) {
+			if (info->add_links & BIT(i))
+				wpa_printf(MSG_DEBUG, "nl80211: Link %d: bssid=" MACSTR " freq=%d",
+					   i, MAC2STR(info->add_link_bssid[i]),
+					   info->add_link_freq[i]);
+		}
+
+		add_links = nla_nest_start(msg, NL80211_ATTR_MLO_LINKS);
+		if (!add_links)
+			goto nla_fail;
+
+		for_each_link(info->add_links, link_id) {
+			struct nlattr *attr = nla_nest_start(msg, 0);
+
+			if (!attr)
+				goto nla_fail;
+
+			if (nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id) ||
+			    nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN,
+				    info->add_link_bssid[link_id]) ||
+			    nla_put_u32(msg, NL80211_ATTR_WIPHY_FREQ,
+					info->add_link_freq[link_id]))
+				goto nla_fail;
+
+			/* Add per-link IEs if provided */
+			if (params->per_link_ie_buf && params->per_link_ie_len &&
+			    link_id < params->max_links &&
+			    params->per_link_ie_buf[link_id] &&
+			    params->per_link_ie_len[link_id] > 0) {
+				if (nla_put(msg, NL80211_ATTR_IE,
+					    params->per_link_ie_len[link_id],
+					    params->per_link_ie_buf[link_id]))
+					goto nla_fail;
+				wpa_printf(MSG_DEBUG,
+					   "nl80211: Added %zu bytes of per-link IE for link %d",
+					   params->per_link_ie_len[link_id], link_id);
+			}
+
+			nla_nest_end(msg, attr);
+		}
+
+		nla_nest_end(msg, add_links);
+	}
+
+	/* STA: send nested SMD_PARAMS (no SMD_AP flag for STA path) */
+	if (params->smd.enabled &&
+	    nla_put_flag(msg, NL80211_ATTR_SMD_AP)) {
+		wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD AP flag");
+		goto nla_fail;
+	}
+
+	if (nl80211_put_smd_params(msg, &params->smd) < 0) {
+		wpa_printf(MSG_ERROR, "nl80211: Failed to set SMD params");
+		goto nla_fail;
+	}
+
+	/* Add delete_links if provided */
+	if (params->reconfig_info && params->reconfig_info->delete_links) {
+		if (nla_put_u16(msg, NL80211_ATTR_MLO_RECONF_REM_LINKS,
+				params->reconfig_info->delete_links))
+			goto nla_fail;
+	}
+
+	if (params->is_preferred_target) {
+		if (nla_put_flag(msg, NL80211_ATTR_SMD_PREFERRED_TARGET))
+			goto nla_fail;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: SMD_PREPARE marked as preferred roam target with"
+			   MACSTR, MAC2STR(params->target_mld_addr));
+	}
+
+	ret = send_and_recv_resp(drv, msg, NULL, NULL);
+	msg = NULL;
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: NL80211_CMD_UHR_LINK_RECONFIG_REQ failed: %d (%s)",
+			ret, strerror(-ret));
+		return ret;
+	}
+
+	wpa_printf(MSG_DEBUG, "nl80211: SMD_PREPARE sent successfully");
+	return 0;
+
+nla_fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 static int nl80211_link_add(void *priv, u8 link_id, const u8 *addr,
 			    void *bss_ctx)
@@ -18738,6 +19166,192 @@ fail:
 #endif /* CONFIG_IEEE80211BN */
 
 
+#ifdef CONFIG_IEEE80211BN
+static int nl80211_put_smd_ba_params(struct nl_msg *msg, int tid,
+				     const struct sta_smd_ba_info *ba)
+{
+	struct nlattr *ba_nest = nla_nest_start(msg, tid + 1);
+
+	if (!ba_nest)
+		return -ENOBUFS;
+
+	if (nla_put_u16(msg, NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE,
+			ba->buffer_size) ||
+	    (ba->ba_policy &&
+	     nla_put_flag(msg, NL80211_SMD_CTX_BA_ATTR_POLICY)) ||
+	    (ba->amsdu_supported &&
+	     nla_put_flag(msg, NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT)) ||
+	    nla_put_u16(msg, NL80211_SMD_CTX_BA_ATTR_TIMEOUT, ba->timeout) ||
+	    (ba->ext_no_frag &&
+	     nla_put_flag(msg, NL80211_SMD_CTX_BA_ATTR_EXT_NO_FRAG)) ||
+	    nla_put_u8(msg, NL80211_SMD_CTX_BA_ATTR_EXT_FRAG_LEVEL,
+		       ba->extfrag_level) ||
+	    nla_put_u16(msg, NL80211_SMD_CTX_BA_ATTR_EXT_BUFF_SIZE,
+			ba->ext_buffer_size))
+		return -ENOBUFS;
+
+	nla_nest_end(msg, ba_nest);
+	return 0;
+}
+
+static int nl80211_put_smd_ctx(struct nl_msg *msg,
+			       const struct sta_smd_ctx_info *ctx)
+{
+	struct nlattr *smd_nest, *dl_nest, *ul_nest, *ba_nest;
+	struct nlattr *sn_nest, *pn_nest;
+	int tid, err;
+
+	smd_nest = nla_nest_start(msg, NL80211_ATTR_SMD_CTX);
+	if (!smd_nest)
+		return -ENOBUFS;
+
+	err = nla_put_u8(msg, NL80211_SMD_CTX_ATTR_TYPE, ctx->st_type);
+	if (err)
+		return -ENOBUFS;
+
+	err = nla_put_u8(msg, NL80211_SMD_CTX_ATTR_PN_LEN, ctx->pn_len);
+	if (err)
+		return -ENOBUFS;
+
+	/* DL */
+	dl_nest = nla_nest_start(msg, NL80211_SMD_CTX_ATTR_DL);
+	if (!dl_nest)
+		return -ENOBUFS;
+
+	if (nla_put_u8(msg, NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP,
+		       ctx->dl.valid_tid_bmap))
+		return -ENOBUFS;
+
+	if (ctx->valid_ctx_bmap & SMD_CTX_VALID_DL_SN) {
+		sn_nest = nla_nest_start(msg, NL80211_SMD_CTX_DL_ATTR_SN);
+		if (!sn_nest)
+			return -ENOBUFS;
+		for (tid = 0; tid < SMD_NUM_TIDS; tid++) {
+			if (!(ctx->dl.valid_tid_bmap & BIT(tid)))
+				continue;
+			if (nla_put_u16(msg, tid + 1, ctx->dl.sn[tid]))
+				return -ENOBUFS;
+		}
+		nla_nest_end(msg, sn_nest);
+	}
+
+	if (ctx->valid_ctx_bmap & SMD_CTX_VALID_PN) {
+		if (nla_put(msg, NL80211_SMD_CTX_DL_ATTR_PN, ctx->pn_len,
+			    ctx->dl.pn))
+			return -ENOBUFS;
+	}
+
+	if (ctx->valid_ctx_bmap & SMD_CTX_VALID_BA_PARAMS) {
+		ba_nest = nla_nest_start(msg, NL80211_SMD_CTX_DL_ATTR_BA_PARAMS);
+		if (!ba_nest)
+			return -ENOBUFS;
+		for (tid = 0; tid < SMD_NUM_TIDS; tid++) {
+			if (!(ctx->dl.valid_tid_bmap & BIT(tid)))
+				continue;
+			if (nl80211_put_smd_ba_params(msg, tid,
+						      &ctx->dl.ba[tid]))
+				return -ENOBUFS;
+		}
+		nla_nest_end(msg, ba_nest);
+	}
+	nla_nest_end(msg, dl_nest);
+
+	/* UL */
+	ul_nest = nla_nest_start(msg, NL80211_SMD_CTX_ATTR_UL);
+	if (!ul_nest)
+		return -ENOBUFS;
+
+	if (nla_put_u8(msg, NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP,
+		       ctx->ul.valid_tid_bmap))
+		return -ENOBUFS;
+
+	if (ctx->valid_ctx_bmap & SMD_CTX_VALID_UL_SN) {
+		sn_nest = nla_nest_start(msg, NL80211_SMD_CTX_UL_ATTR_SN);
+		if (!sn_nest)
+			return -ENOBUFS;
+		for (tid = 0; tid < SMD_NUM_TIDS; tid++) {
+			if (!(ctx->ul.valid_tid_bmap & BIT(tid)))
+				continue;
+			if (nla_put_u16(msg, tid + 1, ctx->ul.sn[tid]))
+				return -ENOBUFS;
+		}
+		nla_nest_end(msg, sn_nest);
+	}
+
+	if (ctx->valid_ctx_bmap & SMD_CTX_VALID_PN) {
+		pn_nest = nla_nest_start(msg, NL80211_SMD_CTX_UL_ATTR_PN);
+		if (!pn_nest)
+			return -ENOBUFS;
+		for (tid = 0; tid < SMD_NUM_TIDS; tid++) {
+			if (!(ctx->ul.valid_tid_bmap & BIT(tid)))
+				continue;
+			if (nla_put(msg, tid + 1, ctx->pn_len,
+				    (const u8 *)ctx->ul.pn[tid]))
+				return -ENOBUFS;
+		}
+		nla_nest_end(msg, pn_nest);
+	}
+
+	if (ctx->valid_ctx_bmap & SMD_CTX_VALID_BA_PARAMS) {
+		ba_nest = nla_nest_start(msg, NL80211_SMD_CTX_UL_ATTR_BA_PARAMS);
+		if (!ba_nest)
+			return -ENOBUFS;
+		for (tid = 0; tid < SMD_NUM_TIDS; tid++) {
+			if (!(ctx->ul.valid_tid_bmap & BIT(tid)))
+				continue;
+			if (nl80211_put_smd_ba_params(msg, tid,
+						      &ctx->ul.ba[tid]))
+				return -ENOBUFS;
+		}
+		nla_nest_end(msg, ba_nest);
+	}
+	nla_nest_end(msg, ul_nest);
+
+	if (ctx->vendor_ctx_len &&
+	    nla_put(msg, NL80211_SMD_CTX_ATTR_VENDOR, ctx->vendor_ctx_len,
+		    ctx->vendor_ctx))
+		return -ENOBUFS;
+
+	nla_nest_end(msg, smd_nest);
+
+	return 0;
+}
+
+static int nl80211_set_smd_ctx(void *priv, const u8 *sta_addr,
+			       const struct sta_smd_ctx_info *ctx)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	int ret;
+
+	if (!sta_addr || !ctx)
+		return -EINVAL;
+
+	wpa_printf(MSG_DEBUG, "Setting SMD context in nl80211");
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_SMD_CTX);
+	if (!msg)
+		return -ENOBUFS;
+
+	if (nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, sta_addr))
+		goto fail;
+
+	/* Add SMD context nested attribute */
+	if (nl80211_put_smd_ctx(msg, ctx))
+		goto fail;
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR, "nl80211: SET_SMD_CTX failed: %d", ret);
+
+	return ret;
+
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+#endif /* CONFIG_IEEE80211BN */
+
 const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.name = "nl80211",
 	.desc = "Linux nl80211/cfg80211",
@@ -18747,7 +19361,11 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.scan2 = driver_nl80211_scan2,
 	.sched_scan = wpa_driver_nl80211_sched_scan,
 	.stop_sched_scan = wpa_driver_nl80211_stop_sched_scan,
+#ifdef CONFIG_IEEE80211BN
 	.trigger_smd_discovery = wpa_driver_nl80211_trigger_smd_discovery,
+	.uhr_reconfig_req = wpa_driver_nl80211_uhr_reconfig_req,
+	.smd_roam = wpa_driver_nl80211_smd_roam,
+#endif /* CONFIG_IEEE80211BN */
 	.get_scan_results = wpa_driver_nl80211_get_scan_results,
 	.abort_scan = wpa_driver_nl80211_abort_scan,
 	.deauthenticate = driver_nl80211_deauthenticate,
@@ -18955,4 +19573,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #ifdef CONFIG_IEEE80211BN
 	.critical_update = nl80211_critical_update,
 #endif /* CONFIG_IEEE80211BN */
+#ifdef CONFIG_IEEE80211BN
+	.set_smd_ctx = nl80211_set_smd_ctx,
+#endif
 };

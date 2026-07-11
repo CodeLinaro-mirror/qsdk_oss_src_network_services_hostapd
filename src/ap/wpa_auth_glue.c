@@ -141,6 +141,11 @@ static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
 #endif /* CONFIG_ENC_ASSOC */
 	wconf->extended_key_id = conf->extended_key_id;
 	wconf->wpa_key_mgmt = conf->wpa_key_mgmt;
+	/* If Security Profile 8 (OWE) is configured, include OWE in the
+	 * wpa_auth key_mgmt so it appears in the beacon RSN IE. OWE requires
+	 * beacon advertising for the STA to include the DH element. */
+	if (hostapd_sp_implied_key_mgmt(conf) & WPA_KEY_MGMT_OWE)
+		wconf->wpa_key_mgmt |= WPA_KEY_MGMT_OWE;
 	wconf->rsn_override_key_mgmt = conf->rsn_override_key_mgmt;
 	wconf->rsn_override_key_mgmt_2 = conf->rsn_override_key_mgmt_2;
 	wconf->wpa_pairwise = conf->wpa_pairwise;
@@ -356,6 +361,9 @@ static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
 	wconf->dpp_pfs = conf->dpp_pfs;
 #endif /* CONFIG_DPP2 */
 #ifdef CONFIG_PASN
+#ifdef CONFIG_ENC_ASSOC
+	wconf->eppke_unauth = conf->eppke_unauth;
+#endif /* CONFIG_ENC_ASSOC */
 #ifdef CONFIG_TESTING_OPTIONS
 	wconf->force_kdk_derivation = conf->force_kdk_derivation;
 #endif /* CONFIG_TESTING_OPTIONS */
@@ -461,7 +469,7 @@ static void hostapd_wpa_auth_set_eapol(void *ctx, const u8 *addr,
 		ieee802_1x_notify_port_enabled(sta->eapol_sm, value);
 		break;
 	case WPA_EAPOL_portValid:
-		ieee802_1x_notify_port_valid(sta->eapol_sm, value);
+		ieee802_1x_notify_port_valid(hapd, sta, sta->eapol_sm, value);
 		break;
 	case WPA_EAPOL_authorized:
 		ieee802_1x_set_sta_authorized(hapd, sta, value);
@@ -739,7 +747,7 @@ int hostapd_wpa_auth_send_eapol(void *ctx, const u8 *addr,
 
 	sta = ap_get_sta(hapd, addr);
 	if (sta) {
-		flags = hostapd_sta_flags_to_drv(sta->flags);
+		flags = hostapd_sta_flags_to_drv(sta->flags, sta->flags_ext);
 #ifdef CONFIG_IEEE80211BE
 		if (ap_sta_is_mld(hapd, sta) &&
 		    (sta->flags & WLAN_STA_AUTHORIZED))

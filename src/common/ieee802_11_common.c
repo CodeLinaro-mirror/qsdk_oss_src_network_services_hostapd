@@ -188,7 +188,11 @@ static int ieee802_11_parse_vendor_specific(const u8 *pos, size_t elen,
 		case VENDOR_VHT_TYPE:
 			if (elen > 4 &&
 			    (pos[4] == VENDOR_VHT_SUBTYPE ||
-			     pos[4] == VENDOR_VHT_SUBTYPE2)) {
+			     pos[4] == VENDOR_VHT_SUBTYPE2
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
+			     || pos[4] == VENDOR_VHT_SUBTYPE3
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
+			     )) {
 				elems->vendor_vht = pos;
 				elems->vendor_vht_len = elen;
 #if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
@@ -358,6 +362,7 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
 			break;
 		elems->key_delivery = pos;
 		elems->key_delivery_len = elen;
+		total_len = &elems->key_delivery_len;
 		break;
 	case WLAN_EID_EXT_WRAPPED_DATA:
 		elems->wrapped_data = pos;
@@ -523,6 +528,7 @@ static ParseRes __ieee802_11_parse_elems(const u8 *start, size_t len,
 	for_each_element(elem, start, len) {
 		u8 id = elem->id, elen = elem->datalen;
 		const u8 *pos = elem->data;
+
 		size_t *total_len = NULL;
 
 		if (id == WLAN_EID_FRAGMENT && elems->num_frag_elems > 0) {
@@ -1014,6 +1020,7 @@ void ieee802_11_elems_clear_ext_ids(struct ieee802_11_elems *elems,
 			break;
 		case WLAN_EID_EXT_NONCE:
 			elems->nonce = NULL;
+			elems->nonce_len = 0;
 			break;
 		case WLAN_EID_EXT_OWE_DH_PARAM:
 			elems->owe_dh = NULL;
