@@ -659,7 +659,7 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 		if (hostapd_if_plugin && hostapd_if_plugin->notify_auth) {
 			hostapd_if_plugin->notify_auth(hapd, hapd->conf->iface,
-					sta->addr, frame, frame_len, &ctx_req);
+					(u8 *)(sta ? sta->addr : sa), frame, frame_len, &ctx_req);
 		}
 #endif
 	} else if (policy == HOSTAPD_IF_FRAME_INVOKE) {
@@ -674,7 +674,7 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 			 * Pass computed context by pointer
 			 */
 			hostapd_if_plugin->invoke_auth(hapd->conf->iface,
-					sta->addr, frame, frame_len, &ctx_req);
+					(u8 *)(sta ? sta->addr : sa), frame, frame_len, &ctx_req);
 		}
 #endif
 	}
