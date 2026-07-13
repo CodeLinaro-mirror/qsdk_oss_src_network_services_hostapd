@@ -752,6 +752,9 @@ struct hostapd_data {
 	 * are suppressed regardless of the global level. Set via
 	 * LOG_LEVEL <module> <level> ctrl_iface command. */
 	int log_module_level[HOSTAPD_MOD_MAX];
+	/* Per-peer log filter. Set by LOG_PEER ctrl command. */
+	u8  log_peer_filter_set;
+	u8  log_peer_addr[ETH_ALEN];
 
 	u64 scan_cookie; /* Scan instance identifier for the ongoing HT40 scan
 			  */
