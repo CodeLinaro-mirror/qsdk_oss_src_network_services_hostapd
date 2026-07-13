@@ -1734,6 +1734,7 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 
 	hostapd_free_multi_hw_info(iface->multi_hw_info);
 	iface->multi_hw_info = NULL;
+	iface->num_multi_hws = 0;
 	iface->current_hw_info = NULL;
 	iface->csa_pending_on_cac_abort = false;
 	os_memset(&iface->csa_settings, 0, sizeof(struct csa_settings));
