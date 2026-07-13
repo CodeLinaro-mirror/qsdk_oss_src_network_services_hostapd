@@ -38,4 +38,16 @@ void hostapd_log(struct hostapd_data *hapd, const u8 *addr,
 		 const char *fmt, ...) PRINTF_FORMAT(5, 6);
 #endif /* CONFIG_NO_HOSTAPD_LOGGER */
 
+#ifdef CONFIG_QCN_EXTN
+#define HOSTAPD_LOG_TRIG_AUTH_REJECT    "auth_reject"
+#define HOSTAPD_LOG_TRIG_ASSOC_REJECT   "assoc_reject"
+#define HOSTAPD_LOG_TRIG_4WAY_FAIL      "4way_fail"
+
+void hostapd_log_extn_init(struct hostapd_data *hapd);
+void hostapd_log_extn_deinit(struct hostapd_data *hapd);
+void hostapd_log_trigger_emit(struct hostapd_data *hapd, const u8 *addr,
+			      const char *event_type);
+void hostapd_log_trigger_clear(struct hostapd_data *hapd, const u8 *addr);
+#endif /* CONFIG_QCN_EXTN */
+
 #endif /* HOSTAPD_LOG_H */

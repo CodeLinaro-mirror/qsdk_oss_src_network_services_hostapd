@@ -465,6 +465,9 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 #endif /* CONFIG_NO_VLAN */
 	int set_beacon = 0;
 	bool remove = true;
+#ifdef CONFIG_QCN_EXTN
+	hostapd_log_trigger_clear(hapd, sta->addr);
+#endif /* CONFIG_QCN_EXTN */
 
 	accounting_sta_stop(hapd, sta);
 
