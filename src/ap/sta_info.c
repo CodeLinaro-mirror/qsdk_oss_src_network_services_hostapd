@@ -1283,7 +1283,7 @@ struct sta_info *ap_sta_get_from_obss(struct hostapd_data *hapd, const u8 *mld_a
 				      const u8 *link_addr,
 				      struct hostapd_data **ohapd)
 {
-	int i, j, k;
+	int i, j;
 	struct hostapd_data *hapd_ptr, *assoc_hapd;
 	struct sta_info *osta;
 	struct sta_info *assoc_sta;
@@ -1332,25 +1332,24 @@ struct sta_info *ap_sta_get_from_obss(struct hostapd_data *hapd, const u8 *mld_a
 			     osta = osta->next) {
 				bool found = false;
 
-				if (osta->mld_info.mld_sta) {
-					for (k = 0; k < MAX_NUM_MLD_LINKS; k++) {
-						if (!osta->mld_info.links[k].valid)
-							continue;
-						if (ether_addr_equal(
-							osta->mld_info.links[k].peer_addr,
-							mld_addr)) {
-							found = true;
-							break;
-						}
-						if (!ether_addr_equal(mld_addr,
-								      link_addr) &&
-						    ether_addr_equal(
-							osta->mld_info.links[k].peer_addr,
-							link_addr)) {
-								found = true;
-								break;
-						}
-					}
+				if (!osta->mld_info.mld_sta)
+					continue;
+
+				if (!osta->mld_info.links[hapd_ptr->mld_link_id].valid)
+					continue;
+
+				if (ether_addr_equal(
+					osta->mld_info.links[hapd_ptr->mld_link_id].peer_addr,
+					mld_addr)) {
+					found = true;
+					break;
+				}
+				if (!ether_addr_equal(mld_addr, link_addr) &&
+				    ether_addr_equal(
+					osta->mld_info.links[hapd_ptr->mld_link_id].peer_addr,
+					link_addr)) {
+						found = true;
+						break;
 				}
 
 				if (found) {
