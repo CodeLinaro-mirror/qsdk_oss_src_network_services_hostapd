@@ -1466,6 +1466,9 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
                hapd->uhr_oui_ctx = NULL;
        }
 #endif /* CONFIG_IEEE80211BN */
+#ifdef CONFIG_QCN_EXTN
+	hostapd_log_extn_deinit(hapd);
+#endif /* CONFIG_QCN_EXTN */
 	hostapd_ucode_free_bss(hapd);
 	hostapd_ubus_free_bss(hapd);
 	accounting_deinit(hapd);
@@ -5513,6 +5516,9 @@ hostapd_alloc_bss_data(struct hostapd_iface *hapd_iface,
 #if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
 	hostapd_mu_cap_war_state_init_extn(hapd);
 #endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
+#ifdef CONFIG_QCN_EXTN
+	hostapd_log_extn_init(hapd);
+#endif /* CONFIG_QCN_EXTN */
 
 	if (conf && conf->ieee80211ax)
 		hapd->parameter_set_count = conf->he_mu_edca.he_qos_info & 0xf;
