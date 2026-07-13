@@ -33,6 +33,7 @@ struct probe_resp_params {
 #endif /* CONFIG_IEEE80211AX */
 
 	bool is_ml_probe;
+	bool is_uhr_sta;
 };
 
 int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
