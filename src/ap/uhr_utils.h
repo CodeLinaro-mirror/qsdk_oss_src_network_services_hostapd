@@ -11,9 +11,6 @@
 #include "common/wpa_common.h"
 #include "ap/uhr_iap.h"
 
-/* UHR ST preparation timeout (5 seconds) */
-#define UHR_ST_PREP_TIMEOUT_SEC 5
-
 /* UHR Link Reconfig Type field values (NEW in V25) */
 #define UHR_LINK_RECONFIG_TYPE_PREP    0  /* ST Prep */
 #define UHR_LINK_RECONFIG_TYPE_EXECUTE 1  /* ST Execute */
