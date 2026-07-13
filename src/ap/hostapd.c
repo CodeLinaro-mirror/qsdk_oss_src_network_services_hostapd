@@ -3210,7 +3210,7 @@ void hostapd_no_ir_cleanup(struct hostapd_data *bss)
 	hostapd_free_hapd_data(bss);
 }
 
-static bool hostapd_is_6ghz_chan_txable(const struct hostapd_channel_data *c)
+bool hostapd_is_6ghz_chan_txable(const struct hostapd_channel_data *c)
 {
 	if (c->flag & HOSTAPD_CHAN_NO_IR)
 		return false;
