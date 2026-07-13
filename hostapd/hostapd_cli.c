@@ -1903,6 +1903,23 @@ static int hostapd_cli_cmd_log_level(struct wpa_ctrl *ctrl, int argc,
 }
 
 
+static int hostapd_cli_cmd_log_peer(struct wpa_ctrl *ctrl, int argc,
+				    char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc < 1) {
+		printf("Usage: log_peer <addr>|clear\n");
+		return -1;
+	}
+	res = os_snprintf(cmd, sizeof(cmd), "LOG_PEER %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res))
+		return -1;
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+
 static int hostapd_cli_cmd_raw(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	if (argc == 0)
@@ -3641,6 +3658,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "= drop all ERP keys"},
 	{ "log_level", hostapd_cli_cmd_log_level, NULL,
 	  "[level] = show/change log verbosity level" },
+	{ "log_peer", hostapd_cli_cmd_log_peer, NULL,
+	  "<addr>|clear = restrict/clear per-peer log filter" },
 	{ "pmksa", hostapd_cli_cmd_pmksa, NULL,
 	  " = show PMKSA cache entries" },
 	{ "pmksa_flush", hostapd_cli_cmd_pmksa_flush, NULL,

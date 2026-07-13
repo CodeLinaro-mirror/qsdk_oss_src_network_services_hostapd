@@ -50,6 +50,7 @@
 #include "radius/radius_server.h"
 #include "l2_packet/l2_packet.h"
 #include "ap/hostapd.h"
+#include "ap/hostapd_log.h"
 #include "ap/ap_config.h"
 #include "ap/ieee802_1x.h"
 #include "ap/wpa_auth.h"
@@ -1568,6 +1569,27 @@ static int hostapd_ctrl_iface_get_config(struct hostapd_data *hapd,
 #endif /* CONFIG_QCN_EXTN */
 
 	return pos - buf;
+}
+
+
+/* LOG_PEER restricts logging to a single STA at a time. Only one filter
+ * address is stored; issuing LOG_PEER <new_addr> replaces the previous one.
+ * LOG_PEER clear removes the restriction and restores per-BSS logging. */
+static int hostapd_ctrl_iface_log_peer(struct hostapd_data *hapd,
+				       const char *cmd)
+{
+	u8 addr[ETH_ALEN];
+
+	if (os_strcmp(cmd, "clear") == 0) {
+		hapd->log_peer_filter_set = 0;
+		os_memset(hapd->log_peer_addr, 0, ETH_ALEN);
+		return 0;
+	}
+	if (hwaddr_aton(cmd, addr) < 0)
+		return -1;
+	hapd->log_peer_filter_set = 1;
+	os_memcpy(hapd->log_peer_addr, addr, ETH_ALEN);
+	return 0;
 }
 
 
@@ -10701,6 +10723,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 							  reply_size);
 	} else if (os_strncmp(buf, "SET ", 4) == 0) {
 		if (hostapd_ctrl_iface_set(hapd, buf + 4))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "LOG_PEER ", 9) == 0) {
+		if (hostapd_ctrl_iface_log_peer(hapd, buf + 9))
 			reply_len = -1;
 	} else if (os_strncmp(buf, "GET ", 4) == 0) {
 		reply_len = hostapd_ctrl_iface_get(hapd, buf + 4, reply,
