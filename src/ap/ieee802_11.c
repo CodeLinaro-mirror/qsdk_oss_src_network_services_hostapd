@@ -38,6 +38,7 @@
 #include "wps/wps.h"
 #include "fst/fst.h"
 #include "hostapd.h"
+#include "hostapd_log.h"
 #include "beacon.h"
 #include "ieee802_11_auth.h"
 #include "sta_info.h"
@@ -1192,6 +1193,15 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 		reply_res = WLAN_STATUS_SUCCESS;
 
 	os_free(buf);
+
+#ifdef CONFIG_QCN_EXTN
+	if (resp != WLAN_STATUS_SUCCESS && sta) {
+		wpa_printf(MSG_DEBUG, "auth_reject: STA " MACSTR " status=%u",
+			   MAC2STR(sta->addr), resp);
+		hostapd_log_trigger_emit(hapd, sta->addr,
+					 HOSTAPD_LOG_TRIG_AUTH_REJECT);
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	return reply_res;
 }
@@ -10387,8 +10397,15 @@ initiate_assoc_response(struct hostapd_data *hapd, struct sta_info *sta,
 					    sa, resp, reassoc,
 					    pos, left, rssi, omit_rsnxe);
 
-	if (sta && (resp < 0 || reply_res != WLAN_STATUS_SUCCESS))
+	if (sta && (resp < 0 || reply_res != WLAN_STATUS_SUCCESS)) {
 		ap_sta_reset_assoc_req_rx_times(sta);
+#ifdef CONFIG_QCN_EXTN
+		wpa_printf(MSG_DEBUG, "assoc_reject: STA " MACSTR " status=%u",
+			   MAC2STR(sta->addr), reply_res);
+		hostapd_log_trigger_emit(hapd, sta->addr,
+					 HOSTAPD_LOG_TRIG_ASSOC_REJECT);
+#endif /* CONFIG_QCN_EXTN */
+	}
 
 	if (set_beacon)
 		ieee802_11_update_beacons(hapd->iface);

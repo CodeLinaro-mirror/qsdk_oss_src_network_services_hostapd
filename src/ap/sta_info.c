@@ -437,6 +437,9 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	struct hostapd_data *phapd;
 	struct sta_info *psta;
 	bool remove = true;
+#ifdef CONFIG_QCN_EXTN
+	hostapd_log_trigger_clear(hapd, sta->addr);
+#endif /* CONFIG_QCN_EXTN */
 
 	accounting_sta_stop(hapd, sta);
 
