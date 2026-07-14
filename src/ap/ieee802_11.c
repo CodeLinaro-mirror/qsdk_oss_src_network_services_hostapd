@@ -13880,7 +13880,13 @@ static u8 * hostapd_eid_rnr_colocation(struct hostapd_data *hapd, u8 *eid,
 		    !OCE_AP_ENABLED(hapd))
 			continue;
 
-		if (!iface->num_bss || !iface->bss[0] || !iface->bss[0]->started)
+		/*
+		 * When bss[0] is disabled using disable_bss command,
+		 * it is not destroyed it just down and it shouldn't skip
+		 * updating other colocated BSSs in this iface which are
+		 * up and beaconing.
+		 */
+		if (!iface->num_bss || !iface->bss[0])
 			continue;
 
 		eid = hostapd_eid_rnr_iface(iface->bss[0], hapd, eid,
