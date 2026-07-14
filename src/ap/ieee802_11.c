@@ -15870,6 +15870,7 @@ static bool ieee802_11_mbssid_is_elem_inherited(u8 id, u8 ext_id, bool is_non_tx
 	case WLAN_EID_S1G_CAPABILITIES:
 	case WLAN_EID_QUIET:
 	case WLAN_EID_QUIET_CHANNEL:
+	case WLAN_EID_TPC_REPORT:
 	case WLAN_EID_VENDOR_SPECIFIC:
 		if (is_non_tx == true)
 			return false;

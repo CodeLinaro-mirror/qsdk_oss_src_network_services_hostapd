@@ -4033,6 +4033,37 @@ void hostapd_rx_free_smd_ctx(struct sta_smd_ctx_info *smd_ctx)
 	os_free(smd_ctx);
 }
 
+static bool hostapd_event_tpc_eirp_notify(struct hostapd_data *hapd,
+					  s32 tpc_dbm, int link_id)
+{
+	size_t i;
+	bool changed = false;
+
+	if (!hapd->iface)
+		return false;
+
+	for (i = 0; i < hapd->iface->num_bss; i++) {
+		struct hostapd_data *bss = hapd->iface->bss[i];
+
+		if (!bss || !bss->started)
+			continue;
+
+#ifdef CONFIG_IEEE80211BE
+		if (link_id >= 0 && bss->conf->mld_ap &&
+		    bss->mld_link_id != link_id)
+			continue;
+#endif /* CONFIG_IEEE80211BE */
+
+		if (!bss->tpc_eirp_valid || bss->tpc_eirp_dbm != tpc_dbm) {
+			bss->tpc_eirp_dbm = tpc_dbm;
+			bss->tpc_eirp_valid = true;
+			changed = true;
+		}
+	}
+
+	return changed;
+}
+
 void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		       union wpa_event_data *data)
 {
@@ -4430,13 +4461,17 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		break;
 #endif /* CONFIG_IEEE80211AX */
 	case EVENT_TPC_EIRP_NOTIFY:
-		hapd = switch_link_hapd(hapd, data->tpc_eirp_event.link_id);
-		if (!hapd)
+		if (!data)
 			break;
-		hapd->tpc_eirp_dbm = data->tpc_eirp_event.tpc_dbm;
-		hapd->tpc_eirp_valid = true;
-		ieee802_11_set_beacon(hapd);
-		break;
+		hapd = switch_link_hapd(hapd, data->tpc_eirp_event.link_id);
+		if (!hapd || !hapd->iface)
+			break;
+		if (!hostapd_event_tpc_eirp_notify(hapd,
+					data->tpc_eirp_event.tpc_dbm,
+					data->tpc_eirp_event.link_id))
+			break;
+		if (ieee802_11_update_beacons(hapd->iface))
+			break;
 #ifdef CONFIG_IEEE80211BE
 	case EVENT_MLD_INTERFACE_FREED:
 		wpa_printf(MSG_DEBUG, "MLD: Interface %s freed",
