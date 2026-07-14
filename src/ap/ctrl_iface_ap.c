@@ -1144,6 +1144,72 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 		if (!os_snprintf_error(buflen - len, ret))
 			len += ret;
 	}
+	if (data.flags & STA_DRV_DATA_RX_HE_MCS) {
+		ret = os_snprintf(buf + len, buflen - len, " hemcs %u",
+				  data.rx_hemcs);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_RX_HE_NSS) {
+		ret = os_snprintf(buf + len, buflen - len, " henss %u",
+				  data.rx_he_nss);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_RX_HE_GI) {
+		const char *gi_str;
+
+		switch (data.rx_guard_interval) {
+		case GUARD_INTERVAL_0_8:
+			gi_str = "0.8";
+			break;
+		case GUARD_INTERVAL_1_6:
+			gi_str = "1.6";
+			break;
+		case GUARD_INTERVAL_3_2:
+			gi_str = "3.2";
+			break;
+		default:
+			gi_str = "unknown";
+			break;
+		}
+		ret = os_snprintf(buf + len, buflen - len, " hegi %s", gi_str);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_RX_EHT_MCS) {
+		ret = os_snprintf(buf + len, buflen - len, " ehtmcs %u",
+				  data.rx_ehtmcs);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_RX_EHT_NSS) {
+		ret = os_snprintf(buf + len, buflen - len, " ehtnss %u",
+				  data.rx_eht_nss);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_RX_EHT_GI) {
+		const char *gi_str;
+
+		switch (data.rx_guard_interval) {
+		case GUARD_INTERVAL_0_8:
+			gi_str = "0.8";
+			break;
+		case GUARD_INTERVAL_1_6:
+			gi_str = "1.6";
+			break;
+		case GUARD_INTERVAL_3_2:
+			gi_str = "3.2";
+			break;
+		default:
+			gi_str = "unknown";
+			break;
+		}
+		ret = os_snprintf(buf + len, buflen - len, " ehtgi %s", gi_str);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
 	ret = os_snprintf(buf + len, buflen - len, "\n");
 	if (!os_snprintf_error(buflen - len, ret))
 		len += ret;
@@ -1218,6 +1284,72 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 	}
 	if (data.flags & STA_DRV_DATA_TX_SHORT_GI) {
 		ret = os_snprintf(buf + len, buflen - len, " shortGI");
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_TX_HE_MCS) {
+		ret = os_snprintf(buf + len, buflen - len, " hemcs %u",
+				  data.tx_hemcs);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_TX_HE_NSS) {
+		ret = os_snprintf(buf + len, buflen - len, " henss %u",
+				  data.tx_he_nss);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_TX_HE_GI) {
+		const char *gi_str;
+
+		switch (data.tx_guard_interval) {
+		case GUARD_INTERVAL_0_8:
+			gi_str = "0.8";
+			break;
+		case GUARD_INTERVAL_1_6:
+			gi_str = "1.6";
+			break;
+		case GUARD_INTERVAL_3_2:
+			gi_str = "3.2";
+			break;
+		default:
+			gi_str = "unknown";
+			break;
+		}
+		ret = os_snprintf(buf + len, buflen - len, " hegi %s", gi_str);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_TX_EHT_MCS) {
+		ret = os_snprintf(buf + len, buflen - len, " ehtmcs %u",
+				  data.tx_ehtmcs);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_TX_EHT_NSS) {
+		ret = os_snprintf(buf + len, buflen - len, " ehtnss %u",
+				  data.tx_eht_nss);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_TX_EHT_GI) {
+		const char *gi_str;
+
+		switch (data.tx_guard_interval) {
+		case GUARD_INTERVAL_0_8:
+			gi_str = "0.8";
+			break;
+		case GUARD_INTERVAL_1_6:
+			gi_str = "1.6";
+			break;
+		case GUARD_INTERVAL_3_2:
+			gi_str = "3.2";
+			break;
+		default:
+			gi_str = "unknown";
+			break;
+		}
+		ret = os_snprintf(buf + len, buflen - len, " ehtgi %s", gi_str);
 		if (!os_snprintf_error(buflen - len, ret))
 			len += ret;
 	}

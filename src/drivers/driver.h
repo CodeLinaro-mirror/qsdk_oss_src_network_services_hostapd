@@ -3434,6 +3434,12 @@ enum guard_interval {
 #define STA_DRV_DATA_RX_HE_DCM BIT(15)
 #define STA_DRV_DATA_TX_HE_GI BIT(16)
 #define STA_DRV_DATA_RX_HE_GI BIT(17)
+#define STA_DRV_DATA_TX_EHT_MCS BIT(18)
+#define STA_DRV_DATA_RX_EHT_MCS BIT(19)
+#define STA_DRV_DATA_TX_EHT_NSS BIT(20)
+#define STA_DRV_DATA_RX_EHT_NSS BIT(21)
+#define STA_DRV_DATA_TX_EHT_GI BIT(22)
+#define STA_DRV_DATA_RX_EHT_GI BIT(23)
 
 struct hostap_sta_driver_data {
 	unsigned long rx_packets, tx_packets;
@@ -3468,6 +3474,10 @@ struct hostap_sta_driver_data {
 	u8 tx_he_nss;
 	u8 rx_vht_nss;
 	u8 tx_vht_nss;
+	u8 rx_ehtmcs;
+	u8 tx_ehtmcs;
+	u8 rx_eht_nss;
+	u8 tx_eht_nss;
 	s8 avg_signal; /* dBm */
 	s8 avg_beacon_signal; /* dBm */
 	s8 avg_ack_signal; /* dBm */
