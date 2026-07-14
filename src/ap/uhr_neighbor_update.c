@@ -29,6 +29,145 @@
 #define SMD_NEIGHBOR_TLV_LEN_FIELD_SIZE 1
 #define SMD_NEIGHBOR_REPORT_PAYLOAD_LEN (1 + ETH_ALEN + 4 + 1 + 1 + 1)
 
+static const char * smd_neighbor_update_subelem_name(u8 id)
+{
+	switch (id) {
+	case WNM_NEIGHBOR_BSS_LOAD:
+		return "BSS Load";
+	case WNM_NEIGHBOR_UHR_CAPAB:
+		return "UHR Capabilities";
+	case WNM_NEIGHBOR_UHR_OPER:
+		return "UHR Operation";
+	case WNM_NEIGHBOR_SMD_INFO:
+		return "SMD Information";
+	case WNM_NEIGHBOR_TX_POWER_INDICATION:
+		return "Transmit Power Indication";
+	case WNM_NEIGHBOR_HT_CAPAB:
+		return "HT Capabilities";
+	case WNM_NEIGHBOR_SUPP_RATES:
+		return "Supported Rates";
+	case WNM_NEIGHBOR_HT_OPER:
+		return "HT Operation";
+	case WNM_NEIGHBOR_VHT_CAPAB:
+		return "VHT Capabilities";
+	case WNM_NEIGHBOR_VHT_OPER:
+		return "VHT Operation";
+	case WNM_NEIGHBOR_HE_CAPAB:
+		return "HE Capabilities";
+	case WNM_NEIGHBOR_HE_OPER:
+		return "HE Operation";
+	case WNM_NEIGHBOR_EHT_CAPAB:
+		return "EHT Capabilities";
+	case WNM_NEIGHBOR_EHT_OPER:
+		return "EHT Operation";
+	case WNM_NEIGHBOR_MULTI_LINK:
+		return "Multi-Link";
+	default:
+		return "Unknown";
+	}
+}
+
+static void smd_neighbor_update_log_subelems(const u8 *subelems,
+					     size_t subelems_len)
+{
+	const u8 *pos = subelems;
+	size_t left = subelems_len;
+
+	while (left >= 2) {
+		u8 id = pos[0];
+		u8 len = pos[1];
+		const char *name = smd_neighbor_update_subelem_name(id);
+		char label[64];
+
+		pos += 2;
+		left -= 2;
+
+		if (len > left) {
+			wpa_printf(MSG_WARNING,
+				   "SMD Neighbor: Invalid subelement len=%u (id=%u left=%zu)",
+				   len, id, left);
+			break;
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "SMD Neighbor: subelement id=%u (%s) len=%u",
+			   id, name, len);
+
+		switch (id) {
+		case WNM_NEIGHBOR_BSS_LOAD:
+			if (len >= 5) {
+				u16 sta_count = WPA_GET_LE16(pos);
+				u8 chan_util = pos[2];
+				u16 avail_adm = WPA_GET_LE16(pos + 3);
+
+				wpa_printf(MSG_DEBUG,
+					   "SMD Neighbor: bss load sta_count=%u chan_util=%u avail_adm=%u",
+					   sta_count, chan_util, avail_adm);
+			}
+			break;
+		case WNM_NEIGHBOR_SMD_INFO:
+			if (len >= ETH_ALEN) {
+				wpa_printf(MSG_DEBUG,
+					   "SMD Neighbor: smd identifier " MACSTR,
+					   MAC2STR(pos));
+			}
+			break;
+		case WNM_NEIGHBOR_MULTI_LINK:
+			if (len >= 3) {
+				u16 control = WPA_GET_LE16(pos);
+				u8 common_len = pos[2];
+				const u8 *common = pos + 3;
+				size_t common_off = 3 + common_len;
+
+				wpa_printf(MSG_DEBUG,
+					   "SMD Neighbor: ML control=0x%04x common_len=%u",
+					   control, common_len);
+
+				if (common_off <= len) {
+					if (common_len >= ETH_ALEN) {
+						wpa_printf(MSG_DEBUG,
+							   "SMD Neighbor: ML MLD addr " MACSTR,
+							   MAC2STR(common));
+					}
+
+					if ((control & BASIC_MULTI_LINK_CTRL_PRES_LINK_ID) &&
+					    common_len >= ETH_ALEN + 1) {
+						u8 link_id = common[ETH_ALEN] &
+							BASIC_MLE_STA_CTRL_LINK_ID_MASK;
+
+						wpa_printf(MSG_DEBUG,
+							   "SMD Neighbor: ML link_id=%u",
+							   link_id);
+					}
+				} else {
+					wpa_printf(MSG_WARNING,
+						   "SMD Neighbor: ML common info truncated (len=%u remaining=%zu)",
+						   common_len,
+						   (size_t) (len - 3));
+				}
+			}
+			break;
+		default:
+			break;
+		}
+
+		if (len) {
+			os_snprintf(label, sizeof(label),
+				    "SMD Neighbor: subelement data (id=%u)",
+				    id);
+			wpa_hexdump(MSG_DEBUG, label, pos, len);
+		}
+		pos += len;
+		left -= len;
+	}
+
+	if (left) {
+		wpa_printf(MSG_WARNING,
+			   "SMD Neighbor: Trailing %zu bytes in subelements",
+			   left);
+	}
+}
+
 static bool smd_neighbor_update_validate_rx_addr(struct hostapd_data *hapd,
 						 const u8 *dst_addr)
 {
@@ -115,15 +254,24 @@ static int smd_neighbor_update_build_tlv(struct hostapd_data *hapd,
 	hostapd_neighbor_set_own_report(hapd);
 
 	nr = hostapd_neighbor_get(hapd, hapd->own_addr, NULL);
-	if (!nr || !nr->nr)
+	if (!nr || !nr->nr) {
+		wpa_printf(MSG_WARNING,
+			   "SMD Neighbor: Build TLV failed. Own neighbor report is not present");
 		return -1;
+	}
 
-	if (wpabuf_len(nr->nr) < NR_BODY_FIXED_LEN)
+	if (wpabuf_len(nr->nr) < NR_BODY_FIXED_LEN) {
+		wpa_printf(MSG_WARNING,
+			   "SMD Neighbor: Build TLV failed. Invalid Neighbort report length");
 		return -1;
+	}
 
 	buf = wpabuf_alloc(SMD_NEIGHBOR_TLV_HDR_LEN + wpabuf_len(nr->nr));
-	if (!buf)
+	if (!buf) {
+		wpa_printf(MSG_ERROR,
+			   "SMD Neighbor: Build TLV failed. Neighbor report alloc failed");
 		return -1;
+	}
 
 	wpabuf_put_u8(buf, SMD_NEIGHBOR_TLV_EID);
 	len_pos = wpabuf_put(buf, 1);
@@ -158,18 +306,37 @@ static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 	const u8 *smd_info_end = NULL;
 #endif
 
-	if (data_len < 2)
+	if (data_len < 2) {
+		wpa_printf(MSG_WARNING,
+			   "SMD Neighbor: tlv parsing failed short frame len=%zu",
+			   data_len);
 		return -1;
+	}
 
-	if (*pos++ != SMD_NEIGHBOR_TLV_EID)
+	if (*pos++ != SMD_NEIGHBOR_TLV_EID) {
+		wpa_printf(MSG_WARNING,
+			   "SMD Neighbor: tlv parsing failed unexpected eid=0x%02x",
+			   pos[-1]);
 		return -1;
-	if (pos >= end)
+	}
+	if (pos >= end) {
+		wpa_printf(MSG_WARNING,
+			   "SMD Neighbor: tlv parsing failed, length field is NULL");
 		return -1;
+	}
 
-	if (pos[0] > end - pos - 1)
+	if (pos[0] > end - pos - 1) {
+		wpa_printf(MSG_WARNING,
+			   "SMD Neighbor: tlv parsing failed, invalid len=%u remaining=%zu",
+			   pos[0], (size_t) (end - pos - 1));
 		return -1;
-	if (pos[0] < SMD_NEIGHBOR_REPORT_PAYLOAD_LEN)
+	}
+	if (pos[0] < SMD_NEIGHBOR_REPORT_PAYLOAD_LEN) {
+		wpa_printf(MSG_WARNING,
+			   "SMD Neighbor: Parsing failed, too short len=%u",
+			   pos[0]);
 		return -1;
+	}
 
 	tlv_end = pos + SMD_NEIGHBOR_TLV_LEN_FIELD_SIZE + pos[0];
 	pos++;
@@ -185,6 +352,8 @@ static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 	subelems = pos;
 	raw_subelems_len = tlv_end - pos;
 	subelems_len = raw_subelems_len;
+	if (raw_subelems_len)
+		smd_neighbor_update_log_subelems(subelems, raw_subelems_len);
 	/* Parse SSID from optional subelements if present */
 	os_memset(&ssid, 0, sizeof(ssid));
 	while (subelems_len >= 2) {
@@ -235,13 +404,20 @@ static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 	}
 
 	if (update_type != SMD_NEIGHBOR_UPDATE_NEW_AP &&
-	    update_type != SMD_NEIGHBOR_UPDATE_MODIFY_AP)
+	    update_type != SMD_NEIGHBOR_UPDATE_MODIFY_AP) {
+		wpa_printf(MSG_WARNING,
+			   "SMD Neighbor: Unknown update type=0x%02x",
+			   update_type);
 		return -1;
+	}
 
 	/* Build Neighbor Report payload (no EID/len) */
 	nr = wpabuf_alloc(SMD_NEIGHBOR_REPORT_PAYLOAD_LEN - 1 + (tlv_end - pos));
-	if (!nr)
+	if (!nr) {
+		wpa_printf(MSG_ERROR,
+			   "SMD Neighbor: NR alloc failed");
 		return -1;
+	}
 
 	wpabuf_put_data(nr, bssid, ETH_ALEN);
 	wpabuf_put_le32(nr, bssid_info);
@@ -265,6 +441,9 @@ static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 	}
 
 	if (hostapd_neighbor_set(hapd, bssid, &ssid, nr, NULL, NULL, 0, 0) < 0) {
+		wpa_printf(MSG_WARNING,
+			   "SMD Neighbor: neighbor_set failed for "
+			   MACSTR, MAC2STR(bssid));
 		wpabuf_free(nr);
 		return -1;
 	}
@@ -418,12 +597,18 @@ int smd_neighbor_update_send(struct hostapd_data *hapd,
 	int ret;
 	const u8 bcast[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
-	if (!hapd || !hapd->uhr_oui_ctx)
+	if (!hapd || !hapd->uhr_oui_ctx) {
+		wpa_printf(MSG_ERROR,
+			   "SMD Neighbor: hapd or oui ctx is NULL");
 		return -1;
+	}
 
 	ret = smd_neighbor_update_build_tlv(hapd, update_type, &tlv);
-	if (ret < 0)
+	if (ret < 0) {
+		wpa_printf(MSG_WARNING,
+			   "SMD Neighbor: TLV Build failed");
 		return -1;
+	}
 
 	ret = uhr_oui_send(hapd->uhr_oui_ctx, bcast, hapd->own_addr,
 			   UHR_IAP_SUFFIX_NEIGHBOR_UPDATE,
@@ -466,15 +651,21 @@ int smd_neighbor_update_init(struct hostapd_data *hapd)
 {
 	struct smd_neighbor_update_ctx *ctx;
 
-	if (!hapd || !hapd->uhr_oui_ctx)
+	if (!hapd || !hapd->uhr_oui_ctx) {
+		wpa_printf(MSG_ERROR,
+			   "SMD Neighbor: hapd or oui ctx is NULL");
 		return -1;
+	}
 
 	if (hapd->smd_neighbor_update_ctx)
 		return 0;
 
 	ctx = os_zalloc(sizeof(*ctx));
-	if (!ctx)
+	if (!ctx) {
+		wpa_printf(MSG_ERROR,
+			   "SMD Neighbor: INIT alloc failed");
 		return -1;
+	}
 
 	ctx->hapd = hapd;
 	ctx->expire_sec = hapd->conf->smd_neighbor_expiry_time;
