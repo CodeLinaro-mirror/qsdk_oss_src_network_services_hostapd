@@ -7006,7 +7006,7 @@ static s8 get_client_mode_frm_pwr_type(struct hostapd_data *hapd,
 {
 	u8 pwr_mode = hapd->iconf->he_6ghz_reg_pwr_type;
 
-	if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_SP && hapd->iconf->enable_6ghz_composite_ap)
+	if (hostapd_is_indoor_sp_pwr_mode(hapd))
 		pwr_mode = HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP;
 
 	switch (pwr_mode) {
