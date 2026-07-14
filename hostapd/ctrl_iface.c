@@ -7744,9 +7744,16 @@ static int hostapd_ctrl_iface_negotiated_ttlm(struct hostapd_data *hapd, const c
 static int hostapd_ctrl_iface_conf_ml_rec_links(struct hostapd_data *hapd,
 						const char *links)
 {
-	int links_val;
+	char *endptr;
+	long links_val;
 
-	links_val = atoi(links);
+	errno = 0;
+	links_val = strtol(links, &endptr, 10);
+	if (endptr == links || *endptr != '\0' || errno != 0) {
+		wpa_printf(MSG_ERROR,
+			   "ml_max_rec_links: invalid value '%s'", links);
+		return -1;
+	}
 
 	if (!hapd->conf->mld_ap || !hapd->conf->enable_aal) {
 		wpa_printf(MSG_ERROR,
@@ -7764,20 +7771,21 @@ static int hostapd_ctrl_iface_conf_ml_rec_links(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_QCN_EXTN */
 
-	if (links_val > ML_IE_MAX_SUPPORT_MAX_REC_LINKS) {
+	if (links_val < 0 || links_val > ML_IE_MAX_SUPPORT_MAX_REC_LINKS ||
+			links_val > hapd->mld->num_links) {
 		wpa_printf(MSG_ERROR,
-			   "configured max rec links is %d greater than %d", links_val,
+			   "configured max rec links is %ld greater than %d", links_val,
 			   ML_IE_MAX_SUPPORT_MAX_REC_LINKS);
 		return -1;
 	}
 
 	if (links_val == ML_IE_RSVD_MAX_REC_LINKS) {
 		wpa_printf(MSG_ERROR,
-			   "configured max rec links is %d reserved value", links_val);
+			   "configured max rec links is %ld reserved value", links_val);
 		return -1;
 	}
 
-	hostapd_set_ml_max_rec_links(hapd, links_val);
+	hostapd_set_ml_max_rec_links(hapd, (u8)links_val);
 
 	return 0;
 }
