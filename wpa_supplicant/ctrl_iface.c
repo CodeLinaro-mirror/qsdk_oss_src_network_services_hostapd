@@ -2425,9 +2425,11 @@ static int wpa_supplicant_ctrl_iface_status(struct wpa_supplicant *wpa_s,
 
 		if (wpa_s->connection_set &&
 		    (wpa_s->connection_ht || wpa_s->connection_vht ||
-		     wpa_s->connection_he || wpa_s->connection_eht)) {
+		     wpa_s->connection_he || wpa_s->connection_eht ||
+		     wpa_s->connection_uhr)) {
 			ret = os_snprintf(pos, end - pos,
 					  "wifi_generation=%u\n",
+					  wpa_s->connection_uhr ? 8 :
 					  wpa_s->connection_eht ? 7 :
 					  (wpa_s->connection_he ? 6 :
 					   (wpa_s->connection_vht ? 5 : 4)));
