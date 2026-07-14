@@ -12,6 +12,9 @@
 #include "eloop.h"
 #include "priv_netlink.h"
 #include "netlink.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 
 
 struct netlink_data {
@@ -104,6 +107,10 @@ struct netlink_data * netlink_init(struct netlink_config *cfg)
 		netlink_deinit(netlink);
 		return NULL;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	netlink_increase_rcvbuf_extn(netlink->sock);
+#endif /* CONFIG_QCN_EXTN */
 
 	os_memset(&local, 0, sizeof(local));
 	local.nl_family = AF_NETLINK;
