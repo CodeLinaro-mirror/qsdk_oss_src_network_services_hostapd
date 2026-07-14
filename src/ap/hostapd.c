@@ -66,6 +66,7 @@
 #ifdef CONFIG_IEEE80211BN
 #include "uhr_utils.h"
 #include "uhr_oui_transport.h"
+#include "uhr_neighbor_update.h"
 #endif /* CONFIG_IEEE80211BN */
 #include "../../qcn_extns/cmn.h"
 #include "nft.h"
@@ -571,6 +572,11 @@ static void hostapd_reload_bss(struct hostapd_data *hapd)
 			return;
 		}
 	}
+
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->smd_neighbor_update_ctx)
+		smd_neighbor_update_notify_own_report_changed(hapd);
+#endif /* CONFIG_IEEE80211BN */
 
 	ieee802_11_set_beacon(hapd);
 	hostapd_update_wps(hapd);
@@ -1460,6 +1466,7 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 	wpa_printf(MSG_DEBUG, "%s(%s)", __func__, hapd->conf->iface);
 #ifdef CONFIG_IEEE80211BN
        if (hapd->uhr_oui_ctx) {
+		smd_neighbor_update_deinit(hapd);
                wpa_printf(MSG_DEBUG, "SMD: Deinitializing roaming transport");
 	       if (hostapd_mld_is_first_bss(hapd))
 		       uhr_oui_deinit(hapd->uhr_oui_ctx);
@@ -2392,6 +2399,12 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
                }
         	/* Load configured partner APs */
 	        uhr_load_partners(hapd);
+		if (conf->smd_neighbor_update_enabled &&
+		    smd_neighbor_update_init(hapd) < 0) {
+			wpa_printf(MSG_ERROR,
+				   "SMD: Failed to initialize neighbor update");
+			return -1;
+		}
 	    } else {
 	        /* Affiliated links share the first BSS's context */
         	struct hostapd_data *f_bss = hostapd_mld_get_first_bss(hapd);

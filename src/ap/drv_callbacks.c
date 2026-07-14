@@ -52,6 +52,7 @@
 #include "robust_av.h"
 #include "../../qcn_extns/cmn.h"
 #include "ap/uhr_utils.h"
+#include "uhr_neighbor_update.h"
 
 #ifdef CONFIG_FILS
 void hostapd_notify_assoc_fils_finish(struct hostapd_data *hapd,
@@ -1723,6 +1724,11 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 
 	for (i = 0; i < hapd->iface->num_bss; i++)
 		hostapd_neighbor_set_own_report(hapd->iface->bss[i]);
+
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->smd_neighbor_update_ctx)
+		smd_neighbor_update_notify_own_report_changed(hapd);
+#endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_OCV
 	if (hapd->conf->ocv &&
