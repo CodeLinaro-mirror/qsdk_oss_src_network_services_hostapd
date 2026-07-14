@@ -2047,7 +2047,13 @@ static int hostapd_config_check_npca_config(struct hostapd_config *conf)
         if (!conf->npca_primary_channel)
 		return 0;
 
-	chwidth = hostapd_get_oper_chwidth(conf);
+	/* For 6 GHz op_class the bandwidth is defined by op_class, not by the
+	 * explicit eht_oper_chwidth config knob, so derive it the same way the
+	 * rest of the stack does (ieee802_11_eht.c, repurpose.c). */
+	if (is_6ghz_op_class(conf->op_class))
+		chwidth = op_class_to_ch_width(conf->op_class);
+	else
+		chwidth = hostapd_get_oper_chwidth(conf);
 	if (chwidth != CONF_OPER_CHWIDTH_80MHZ &&
 	    chwidth != CONF_OPER_CHWIDTH_160MHZ &&
 	    chwidth != CONF_OPER_CHWIDTH_320MHZ) {
