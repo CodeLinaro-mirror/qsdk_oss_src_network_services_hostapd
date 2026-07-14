@@ -2174,6 +2174,10 @@ static int wpas_sta_cac_get_link_chandef(struct wpa_supplicant *wpa_s,
 			params->center_freq1 = 5000 + 5 * cf1_idx;
 		if (cf2_idx)
 			params->center_freq2 = 5000 + 5 * cf2_idx;
+		if (width == CHAN_WIDTH_160) {
+			params->center_freq1 = params->center_freq2;
+			params->center_freq2 = 0;
+		}
 #ifdef CONFIG_QCN_EXTN
 	}
 #endif /* CONFIG_QCN_EXTN */
@@ -2541,11 +2545,7 @@ abortcac:
  * @selected: Selected candidate BSS
  * @ssid: Selected network profile
  *
- * Return:
- * - STA_CAC_NOT_STARTED: STA CAC is not applicable for the selected connect
- *   request and caller can proceed with normal association flow.
- * - STA_CAC_STARTED: STA CAC context has been armed and auth/assoc must stay
- *   blocked until CAC completion/radar handling advances the flow.
+ * Return: enum sta_cac_result.
  */
 static int wpas_sta_cac_start(struct wpa_supplicant *wpa_s,
 			      struct wpa_bss *selected,
@@ -2565,13 +2565,13 @@ static int wpas_sta_cac_start(struct wpa_supplicant *wpa_s,
 	wpa_s->sta_cac.selected_ssid = ssid;
 	wpa_s->sta_cac.dfs_links = required;
 
-	wpa_supplicant_set_state(wpa_s, WPA_STACACING);
 	if (wpas_sta_cac_start_all(wpa_s) < 0) {
 		wpas_sta_cac_clear(wpa_s);
 		wpa_supplicant_req_new_scan(wpa_s, 0, 0);
-		return STA_CAC_NOT_STARTED;
+		return STA_CAC_RETRY;
 	}
 
+	wpa_supplicant_set_state(wpa_s, WPA_STACACING);
 	return STA_CAC_STARTED;
 }
 
@@ -2650,8 +2650,8 @@ int wpa_supplicant_connect(struct wpa_supplicant *wpa_s,
 		if (wpa_supplicant_connect_ml_missing(wpa_s, selected, ssid))
 			return 0;
 
-		if (wpas_sta_cac_start(wpa_s, selected, ssid) ==
-		    STA_CAC_STARTED)
+		if (wpas_sta_cac_start(wpa_s, selected, ssid) !=
+		    STA_CAC_NOT_STARTED)
 			return 0;
 
 		wpa_msg(wpa_s, MSG_DEBUG, "Request association with " MACSTR,

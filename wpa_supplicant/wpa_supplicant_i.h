@@ -710,8 +710,20 @@ struct last_scan_ssid {
 	size_t ssid_len;
 };
 
-#define STA_CAC_NOT_STARTED 0
-#define STA_CAC_STARTED 1
+/**
+ * enum sta_cac_result - Return values for wpas_sta_cac_start()
+ * @STA_CAC_NOT_STARTED: STA CAC is not applicable for the selected connect
+ *	request; caller can proceed with normal association flow.
+ * @STA_CAC_STARTED: STA CAC context has been armed; auth/assoc must stay
+ *	blocked until CAC completion or radar handling advances the flow.
+ * @STA_CAC_RETRY: driver rejected the CAC start; sta_cac state cleared and
+ *	a new scan scheduled so the connect flow retries from scan.
+ */
+enum sta_cac_result {
+	STA_CAC_NOT_STARTED,
+	STA_CAC_STARTED,
+	STA_CAC_RETRY,
+};
 
 /**
  * struct station_cac_params - STA CAC pending-connect context
