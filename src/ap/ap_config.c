@@ -267,7 +267,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 #endif
 
 #ifdef CONFIG_IEEE80211BN
-	bss->dps_assist = DRIVER_DEFINED;
+	bss->dps_assist = FEATURE_ENABLED;
 
 	/* UHR intervals are represented as TUs */
 	bss->uhr_params_update.adv_notification_interval = 10;
