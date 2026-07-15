@@ -337,3 +337,80 @@ def test_ap_qacs_dynamic_5ghz(dev, apdev):
         clear_fake_bss(dev[0], phy)
         set_hwsim_environment(dev[0], phy, -95, 0)
         clear_regdom(hapd, dev)
+
+
+def test_ap_primary_chanlist(dev, apdev):
+    """Primary channel list: set, get, and clear via ctrl_iface"""
+    force_prev_ap_on_24g(apdev[0])
+    params = hostapd.wpa2_params(ssid="test-primary-chanlist", passphrase="12345678")
+    params['channel'] = '1'
+    params['qacs_enable'] = '1'
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    # Set a primary channel list restricted to channels 6 and 11
+    res = hapd.request("SET_PRIMARY_CHANS 6 11")
+    if "FAIL" in res:
+        raise Exception("SET_PRIMARY_CHANS 6 11 failed: " + res)
+
+    # Wait for channel switch triggered by the new primary channel list
+    ev = hapd.wait_event(["AP-CSA-FINISHED"], timeout=10)
+    if ev is None:
+        raise Exception("AP-CSA-FINISHED event not received after SET_PRIMARY_CHANS")
+    logger.info("AP-CSA-FINISHED event: " + ev)
+    if "freq=2437" not in ev and "freq=2462" not in ev:
+        raise Exception("AP did not switch to channel 6 (2437 MHz) or 11 (2462 MHz), got: " + ev)
+
+    # Verify the list is reflected back
+    out = hapd.request("GET_PRIMARY_CHANS")
+    if "FAIL" in out:
+        raise Exception("GET_PRIMARY_CHANS failed: " + out)
+    logger.info("GET_PRIMARY_CHANS output: " + out.strip())
+    chans = out.strip().split()
+    if "6" not in chans or "11" not in chans:
+        raise Exception("Expected channels 6 and 11 in primary list, got: " + out.strip())
+
+    # Clear the primary channel list (trailing space + empty string passes "" to handler)
+    res = hapd.request("SET_PRIMARY_CHANS ")
+    if "FAIL" in res:
+        raise Exception("SET_PRIMARY_CHANS (clear) failed: " + res)
+
+    out = hapd.request("GET_PRIMARY_CHANS")
+    if "DISABLED" not in out:
+        raise Exception("Expected DISABLED after clearing primary chan list, got: " + out.strip())
+
+def test_ap_block_chanlist(dev, apdev):
+    """ACS block channel list: set, get, and clear via ctrl_iface"""
+    force_prev_ap_on_24g(apdev[0])
+    params = hostapd.wpa2_params(ssid="test-block-chanlist", passphrase="12345678")
+    params['channel'] = '1'
+    params['qacs_enable'] = '1'
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    # Block channels 1 and 6
+    res = hapd.request("ACS set_block_chan_list 1 6")
+    if "FAIL" in res:
+        raise Exception("ACS set_block_chan_list failed: " + res)
+
+    # Wait for channel switch away from blocked channels
+    ev = hapd.wait_event(["AP-CSA-FINISHED"], timeout=10)
+    if ev is None:
+        raise Exception("AP-CSA-FINISHED event not received after ACS set_block_chan_list")
+    logger.info("AP-CSA-FINISHED event: " + ev)
+    if "freq=2412" in ev or "freq=2437" in ev:
+        raise Exception("AP switched to blocked channel 1 (2412 MHz) or 6 (2437 MHz), got: " + ev)
+
+    out = hapd.request("ACS get_block_chan_list")
+    if "FAIL" in out:
+        raise Exception("ACS get_block_chan_list failed: " + out)
+    logger.info("ACS get_block_chan_list output: " + out.strip())
+    if "1" not in out or "6" not in out:
+        raise Exception("Expected channels 1 and 6 in block list, got: " + out.strip())
+
+    # Clear the block list
+    res = hapd.request("ACS clear_block_chan_list")
+    if "FAIL" in res:
+        raise Exception("ACS clear_block_chan_list failed: " + res)
+
+    out = hapd.request("ACS get_block_chan_list")
+    if "empty" not in out.lower():
+        raise Exception("Expected empty block list after clear, got: " + out.strip())
