@@ -4632,11 +4632,10 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 #endif /* CONFIG_QCN_EXTN */
 #endif
 #ifdef CONFIG_IEEE80211BN
-	/* If driver support is enabled and user wants to disable feature then
-	 * we need to disable in driver
-	 */
-	if (hapd->conf->dps_assist == FEATURE_DISABLED)
-		params.dps_assist = FEATURE_DISABLED;
+	/* Send dps_assist to driver if HW supports the feature */
+	if (cmode && cmode->uhr_capab[IEEE80211_MODE_AP].uhr_supported &&
+	    (cmode->uhr_capab[IEEE80211_MODE_AP].mac_cap[0] & UHR_MACCAP_DPS_ASSIST))
+		params.dps_assist = hapd->conf->dps_assist;
 #endif
 	if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_CIGTK &&
 	    hapd->conf->control_frame_prot)

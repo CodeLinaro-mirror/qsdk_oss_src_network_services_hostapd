@@ -3900,6 +3900,25 @@ static void hostapd_update_ap_powersave(struct hostapd_data *hapd,
 					struct ap_powersave_event *ap_ps_event)
 {
 	if (ap_ps_event->dps_assist_updated) {
+		struct hostapd_hw_modes *mode = hapd->iface->current_mode;
+		struct uhr_capabilities *uhr_cap;
+
+		if (!mode) {
+			wpa_printf(MSG_ERROR,
+				   "Failed to %s DPS Assist feature due to feature not supported by HW",
+				   ap_ps_event->dps_assist ? "enable" : "disable");
+			return;
+		}
+
+		uhr_cap = &mode->uhr_capab[IEEE80211_MODE_AP];
+		if (!uhr_cap->uhr_supported ||
+		    !(uhr_cap->mac_cap[0] & UHR_MACCAP_DPS_ASSIST)) {
+			wpa_printf(MSG_ERROR,
+				   "Failed to %s DPS Assist feature due to feature not supported by HW",
+				   ap_ps_event->dps_assist ? "enable" : "disable");
+			return;
+		}
+
 		hapd->conf->dps_assist = ap_ps_event->dps_assist;
 		/* Update beacon with updated DPS Assist Support Bit */
 		if (ieee802_11_update_beacons(hapd->iface))

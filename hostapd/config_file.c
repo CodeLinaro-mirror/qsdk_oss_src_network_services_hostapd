@@ -6200,7 +6200,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		val = atoi(pos);
 		if (val < FEATURE_DISABLED || val > FEATURE_ENABLED) {
 			wpa_printf(MSG_ERROR,
-				   "Invallid value for dps_assist");
+				   "Invalid value for dps_assist");
 			return 1;
 		}
 		bss->dps_assist = val;

@@ -2747,10 +2747,28 @@ setup_mld:
 #endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_IEEE80211BN
+	struct hostapd_hw_modes *mode;
+	struct uhr_capabilities *uhr_cap;
+
 	if (hostapd_is_uhr_enabled(hapd) &&
 	    ARRAY_SIZE(hapd->sta_aid) > 1) {
 		/* Reserve AIDs 56 to 63 in UHR for Critical Update */
 		hapd->sta_aid[1] |= 0xFF000000;
+	}
+
+	mode = hapd->iface->current_mode;
+	if (!mode) {
+		wpa_printf(MSG_ERROR,
+			   "Current hw mode mode not found, disabling DPS Assist");
+		hapd->conf->dps_assist = FEATURE_DISABLED;
+	} else {
+		uhr_cap = &mode->uhr_capab[IEEE80211_MODE_AP];
+
+		if (!uhr_cap->uhr_supported ||
+		    !(uhr_cap->mac_cap[0] & UHR_MACCAP_DPS_ASSIST)) {
+			wpa_printf(MSG_DEBUG, "Driver does not support DPS Assist");
+			hapd->conf->dps_assist = FEATURE_DISABLED;
+		}
 	}
 #endif /* CONFIG_IEEE80211BN */
 
