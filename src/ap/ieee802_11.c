@@ -5426,7 +5426,9 @@ static void handle_auth(struct hostapd_data *hapd,
 			wpa_printf(MSG_DEBUG, "Delete STA "MACSTR" from driver on %s as STA "
 				   "is not authorized and trying to associate in new bss %s",
 				   MAC2STR(osta->addr), ohapd->conf->iface, hapd->conf->iface);
-			hostapd_drv_sta_deauth(ohapd, osta->addr, WLAN_REASON_PREV_AUTH_NOT_VALID);
+			if (osta->flags & WLAN_STA_ASSOC)
+				hostapd_drv_sta_deauth(ohapd, osta->addr,
+						       WLAN_REASON_PREV_AUTH_NOT_VALID);
 			ap_sta_remove_link_sta(ohapd, osta, false);
 			ap_free_sta(ohapd, osta);
 			osta = NULL;
