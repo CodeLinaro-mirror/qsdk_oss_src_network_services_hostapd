@@ -134,4 +134,8 @@ int uhr_remove_ap_from_list(struct sta_info *sta, const u8 *ap_mld_addr);
 /* Cleanup function for sta_info.c */
 void uhr_cleanup_sta_roam_contexts(struct sta_info *sta);
 
+/* Target AP IAP receive handlers */
+void uhr_tgt_ap_handle_st_prep_ctx(struct hostapd_data *hapd,
+				    const struct uhr_iap_frame *iap);
+
 #endif /* UHR_LINK_RECONFIG_H */

@@ -19,6 +19,12 @@
 /* ST Roam Cleanup - notify non-exec TAPs to free prepped STA state */
 #define UHR_IAP_MSG_ST_ROAM_CLEANUP  5
 
+#define UHR_IAP_MSG_ST_PREP_CTX      9  /* Current -> Target: deferred prep SMD context */
+
+/* IAP MTU threshold: split smd_ctx into a separate message when
+ * sizeof(iap_frame) + ota_frame_len + smd_ctx_len would exceed this. */
+#define UHR_IAP_MTU_THRESHOLD     1400
+
 #define UHR_IAP_MAX_FRAME_LEN 1500
 #define MAX_IE_LEN 60
 
@@ -120,6 +126,12 @@ int uhr_iap_send_st_roam_cleanup(struct hostapd_data *hapd,
 
 void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_addr,
 		const u8 *data, size_t data_len);
+
+int uhr_iap_send_st_prep_ctx(struct hostapd_data *hapd,
+			      const u8 *target_ap_mld_addr,
+			      const u8 *sta_addr,
+			      const struct sta_smd_ctx_info *smd_ctx,
+			      size_t smd_ctx_len);
 
 #endif /* UHR_IAP_H */
 
