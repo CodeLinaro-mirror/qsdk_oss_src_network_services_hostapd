@@ -851,6 +851,8 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 
 		os_memcpy(ap_info->ap_mld_addr, mle.target_ap_mld_addr, ETH_ALEN);
 		os_get_reltime(&ap_info->last_seen);
+
+                // ADD new ap_info entry for target AP
 		is_new_ap = 1;
 
 		wpa_printf(MSG_DEBUG,
@@ -885,6 +887,11 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG, "UHR Current AP: Failed to send WMI roam notification - not skipping for now.");
 	}
 
+	if (is_new_ap) {
+		ap_info->next = sta->smd_info.ap_list;
+		sta->smd_info.ap_list = ap_info;
+	}
+
 	/* Send IAP request to target AP with complete frame */
 	ap_info->state = SMD_AP_STATE_ST_PREP_STARTED;
 	if (uhr_iap_send_st_prep_req(hapd, mle.target_ap_mld_addr, sta,
@@ -895,11 +902,6 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 		if (is_new_ap)
 			os_free(ap_info);
 		return -1;
-	}
-
-	if (is_new_ap) {
-		ap_info->next = sta->smd_info.ap_list;
-		sta->smd_info.ap_list = ap_info;
 	}
 
 	wpa_printf(MSG_DEBUG,
