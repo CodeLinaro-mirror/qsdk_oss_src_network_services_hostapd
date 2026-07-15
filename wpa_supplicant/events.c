@@ -4201,6 +4201,8 @@ static void wpas_parse_connection_info(struct wpa_supplicant *wpa_s,
 		resp_elems.eht_capabilities;
 	if (req_elems.rrm_enabled)
 		wpa_s->rrm.rrm_used = 1;
+	wpa_s->connection_uhr = req_elems.uhr_capabilities &&
+		resp_elems.uhr_capabilities;
 
 	max_nss_rx_req = get_max_nss_capability(&req_elems, 1);
 	max_nss_rx_resp = get_max_nss_capability(&resp_elems, 1);
