@@ -146,7 +146,7 @@ __inbound_error_event(struct hostapd_data *hapd, const uint8_t *sta_mac,
 }
 #endif
 
-static struct hostapd_data *
+struct hostapd_data *
 __hostapd_get_link_iface(const char *ifname, int link_id)
 {
 	size_t i, j;
