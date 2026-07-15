@@ -12,6 +12,7 @@
 #include "robust_av.h"
 #include <libubox/uloop.h>
 #include "sta_info.h"
+#include "../atf/atf_offload.h"
 #ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
 #endif
@@ -769,6 +770,11 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 		rpt_max_phy_override = intval;
 
 	wpa_printf(MSG_DEBUG, "%s: rpt_max_phy_override: %d", __func__, rpt_max_phy_override);
+#endif
+
+	atf_bh_join_leave_update(iface, false);
+
+#ifdef CONFIG_QCN_EXTN
 	if (iface->conf->conf_extn.ind_rptr && !rpt_max_phy_override)
 		return NULL;
 #endif
@@ -991,6 +997,7 @@ out:
 			   MAC2STR(hapd->own_addr), ret);
 	}
 
+	atf_bh_join_leave_update(iface, true);
 	return ucv_boolean_new(true);
 }
 
