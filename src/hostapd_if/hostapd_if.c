@@ -1863,7 +1863,7 @@ int hostapd_if_get_pmk(char *ifname, uint8_t *sta_mac,
 		return -1;
 	}
 
-	sta = __get_sta(ifname, sta_mac, -1, false, &hapd);
+	sta = __get_sta(ifname, sta_mac, -1, true, &hapd);
 	if (!sta) {
 		wpa_printf(MSG_ERROR, "ERROR in fetching sta object %s "
 			   MACSTR "\n", __func__, MAC2STR(sta_mac));
