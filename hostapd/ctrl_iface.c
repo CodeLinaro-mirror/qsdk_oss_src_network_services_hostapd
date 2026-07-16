@@ -2383,6 +2383,19 @@ eht_generic_rollback:
 	return ret;
 }
 
+static int hostapd_ctrl_iface_get_scan_status(struct hostapd_data *hapd,
+					   char *buf, size_t buflen)
+{
+	struct i802_bss *bss = hapd->drv_priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	int scanning;
+
+	scanning = (drv->scan_state == SCAN_STARTED ||
+		    drv->scan_state == SCAN_REQUESTED) ? 1 : 0;
+
+	return os_snprintf(buf, buflen, "scanning: %d\n", scanning);
+}
+
 static int hostapd_get_vendor_elements(struct hostapd_data *hapd, char *buf, size_t buflen)
 {
 	struct hostapd_data *tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
@@ -2718,6 +2731,8 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+	} else if (os_strcmp(cmd, "scan_status") == 0) {
+		return hostapd_ctrl_iface_get_scan_status(hapd, buf, buflen);
 	} else if (os_strcmp(cmd, "acl_deny_wait_time") == 0) {
 		res = os_snprintf(buf, buflen, "%u\n",
 				  hapd->conf->acl_deny_wait_time);
@@ -4941,13 +4956,22 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 		return hostapd_abort_cac_for_channel_switch(iface, &settings);
 
 	/*
-	 * After ieee80211_abort_cac() the kernel releases the link's channel
-	 * context (beacon_interval=0 for the MLO link). A subsequent
-	 * NL80211_CMD_CHANNEL_SWITCH with NL80211_ATTR_MLO_LINK_ID is then
-	 * rejected with -ENOTCONN. Use force_channel_switch (disable/enable
-	 * path) instead, which never issues NL80211_CMD_CHANNEL_SWITCH.
+	 * When radar fires while CAC is active, ieee80211_abort_cac() releases
+	 * the link's channel context. A subsequent NL80211_CMD_CHANNEL_SWITCH
+	 * is rejected with -ENOTCONN (-107). Use force_channel_switch only
+	 * in that case, identified by state==HAPD_IFACE_DFS: the CAC_ABORTED
+	 * event leaves state at DFS, whereas a successful CAC transitions state
+	 * to ENABLED before the CHANSWITCH command arrives.
+	 *
+	 * When radar fires after CAC completes (state==HAPD_IFACE_ENABLED),
+	 * the chanctx is intact and NL80211_CMD_CHANNEL_SWITCH works fine.
+	 * force_channel_switch must NOT be used there: the disable/re-enable
+	 * cycle triggers DFS_PRE_CAC_EXPIRED for all previously-cleared
+	 * channels, resetting them to USABLE and causing a spurious CAC
+	 * restart on the next DFS_NOP_FINISHED event.
 	 */
-	if (iface->conf->disable_csa_dfs == 1 && iface->radar_detected)
+	if (iface->conf->disable_csa_dfs == 1 &&
+	    iface->state == HAPD_IFACE_DFS)
 		return hostapd_force_channel_switch(iface, &settings);
 
 	/* Trigger mesh CSA before AP channel switch if mesh VAP present */

@@ -464,6 +464,61 @@ int uhr_iap_send_st_exec_resp(struct hostapd_data *hapd,
 }
 
 
+int uhr_iap_send_st_roam_cleanup(struct hostapd_data *hapd,
+				  const u8 *target_ap_mld_addr,
+				  const u8 *sta_mld_addr)
+{
+	struct uhr_iap_frame *iap;
+	size_t iap_len;
+	u8 *buf;
+	int ret;
+
+	if (!hapd || !target_ap_mld_addr || !sta_mld_addr)
+		return -1;
+
+	if (!uhr_oui_peer_exists(hapd->uhr_oui_ctx, target_ap_mld_addr)) {
+		wpa_printf(MSG_DEBUG,
+			   "UHR IAP: ST ROAM CLEANUP: Target AP " MACSTR " not in peer list",
+			   MAC2STR(target_ap_mld_addr));
+		return -1;
+	}
+
+	iap_len = sizeof(*iap);
+	buf = os_zalloc(iap_len);
+	if (!buf)
+		return -1;
+
+	iap = (struct uhr_iap_frame *)buf;
+	iap->msg_type = UHR_IAP_MSG_ST_ROAM_CLEANUP;
+	iap->iap_transaction_id = g_iap_transaction_id++;
+	iap->sequence_number = htole64(g_iap_sequence_number++);
+
+	os_memcpy(iap->current_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
+	os_memcpy(iap->target_ap_mld_addr, target_ap_mld_addr, ETH_ALEN);
+	os_memcpy(iap->sta_addr, sta_mld_addr, ETH_ALEN);
+
+	iap->flags = 0;
+	iap->status_code = 0;
+	iap->frame_len = 0;
+	iap->smd_ctx_len = 0;
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR IAP: Sending ST ROAM CLEANUP to " MACSTR " for STA " MACSTR,
+		   MAC2STR(target_ap_mld_addr), MAC2STR(sta_mld_addr));
+
+	ret = uhr_oui_send(hapd->uhr_oui_ctx, target_ap_mld_addr,
+			   hapd->mld->mld_addr,
+			   UHR_IAP_SUFFIX_REQUEST, buf, iap_len);
+	os_free(buf);
+
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR, "UHR IAP: Failed to send ST ROAM CLEANUP");
+		return -1;
+	}
+
+	return 0;
+}
+
 
 /**
  * uhr_iap_rx - Receive and dispatch IAP frame
@@ -545,7 +600,14 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
                           iap->iap_transaction_id);
                uhr_cur_ap_handle_st_exec_resp(hapd, iap, frame_len);
                break;
-		
+
+	case UHR_IAP_MSG_ST_ROAM_CLEANUP:
+		wpa_printf(MSG_DEBUG, "UHR IAP: Processing ST ROAM CLEANUP (txn=%u)",
+			   iap->iap_transaction_id);
+		uhr_tgt_ap_handle_st_roam_cleanup(hapd, iap);
+		break;
+
+
 	default:
 		wpa_printf(MSG_ERROR, "SMD IAP: Unknown message type %u",
 			   iap->msg_type);

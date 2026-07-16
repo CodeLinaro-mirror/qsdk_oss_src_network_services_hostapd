@@ -3318,6 +3318,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 	} else if (os_strcmp(buf, "acs_exclude_dfs") == 0) {
 		conf->acs_exclude_dfs = atoi(pos);
+	} else if (os_strcmp(buf, "radio_idx") == 0) {
+		conf->radio_idx = atoi(pos);
 	} else if (os_strcmp(buf, "acs_pcaconly") == 0) {
 		conf->acs_dfs_available_only = atoi(pos);
 	} else if (os_strcmp(buf, "op_class") == 0) {

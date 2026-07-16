@@ -1478,6 +1478,7 @@ struct hostapd_config {
 	struct wpa_freq_range_list acs_freq_list;
 	u8 acs_freq_list_present;
 	int acs_exclude_dfs;
+	int radio_idx; /* hw_idx from multi_hw_info, -1 if not multi-radio */
 	int acs_enable_bw_downgrade;
 	int acs_dfs_available_only;
 	u8 min_tx_power;

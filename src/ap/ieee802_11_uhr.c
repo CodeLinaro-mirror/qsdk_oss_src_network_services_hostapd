@@ -1292,6 +1292,12 @@ static void uhr_cur_ap_purge_ap_list(struct hostapd_data *lhapd,
 		wpa_printf(MSG_DEBUG,
 			   "UHR ST EXEC: Clearing AP " MACSTR " (state=%d) from ap_list",
 			   MAC2STR(ap_info->ap_mld_addr), ap_info->state);
+		if (uhr_iap_send_st_roam_cleanup(lhapd, ap_info->ap_mld_addr,
+						  sta->addr) < 0)
+			wpa_printf(MSG_DEBUG,
+				   "UHR ST EXEC: Failed to send ROAM CLEANUP to "
+				   MACSTR ", TAP will self-clean via timer",
+				   MAC2STR(ap_info->ap_mld_addr));
 		uhr_cur_ap_cancel_st_prep_for_entry(lhapd, sta, ap_info);
 		uhr_remove_ap_from_list(sta, ap_info->ap_mld_addr);
 		ap_info = next;
@@ -1317,6 +1323,7 @@ void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
        const u8 *frame_buf;
        int ret;
        u32 dl_drain_duration_sec;
+       u32 dl_drain_duration_usec;
 	u32 role = 1;
 	u32 type = 3;
 	u32 dl_sn_not_transferred = 0;
@@ -1404,15 +1411,24 @@ void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG, "UHR Current AP: Failed to send WMI roam notification - not skipping for now.");
 	}
 
+	/* Cancel the ST prep timer before it fires — exec succeeded. */
+	uhr_cancel_st_prep_timeout(sta, iap->target_ap_mld_addr);
+
 	target_info->state = SMD_AP_STATE_DL_DRAIN_ACTIVE;
        wpa_printf(MSG_INFO,
                   "UHR ST EXEC: Target AP " MACSTR " state: ST_EXEC_IAP_PENDING → DL_DRAIN_ACTIVE",
                   MAC2STR(iap->target_ap_mld_addr));
        os_get_reltime(&target_info->dl_drain_start);
 
-       dl_drain_duration_sec = dl_drain_time;
-       wpa_printf(MSG_INFO, "UHR ST EXEC: DL Drain started = %u", dl_drain_duration_sec);
-       eloop_register_timeout(dl_drain_duration_sec, 0, uhr_dl_drain_timeout, hapd, target_info);
+	/* Convert TU (1 TU = 1024 us) to seconds + microseconds */
+	dl_drain_duration_sec = (u32)((u64)dl_drain_time * 1024 / 1000000);
+	dl_drain_duration_usec = (u32)((u64)dl_drain_time * 1024 % 1000000);
+	/* coverity[overflow]: u64 intermediate prevents u32 wrap */
+	if (dl_drain_duration_sec == 0 && dl_drain_duration_usec == 0)
+		dl_drain_duration_sec = 1;
+	wpa_printf(MSG_INFO, "UHR ST EXEC: DL Drain started = %u TU (%u.%06u sec)",
+		   dl_drain_time, dl_drain_duration_sec, dl_drain_duration_usec);
+	eloop_register_timeout(dl_drain_duration_sec, dl_drain_duration_usec, uhr_dl_drain_timeout, lhapd, target_info);
        /* Exec succeeded: cancel all ST prep timers and clear the full ap_list. */
        uhr_cur_ap_purge_ap_list(lhapd, sta);
        wpa_printf(MSG_INFO, "UHR ST EXEC: Waiting for TX STATUS with ACK=1...");
@@ -2546,6 +2562,53 @@ static bool hostapd_mld_find_assoc_sta(struct hostapd_data *rx_hapd,
 
 	return false;
 }
+
+
+void uhr_tgt_ap_handle_st_roam_cleanup(struct hostapd_data *hapd,
+					const struct uhr_iap_frame *iap)
+{
+	struct hostapd_data *assoc_hapd = NULL;
+	struct sta_info *assoc_sta = NULL;
+	struct hostapd_data *bss;
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR ROAM CLEANUP: Received for STA " MACSTR " from " MACSTR,
+		   MAC2STR(iap->sta_addr), MAC2STR(iap->current_ap_mld_addr));
+
+	if (!hostapd_mld_find_assoc_sta(hapd, iap->sta_addr,
+					&assoc_hapd, &assoc_sta)) {
+		wpa_printf(MSG_DEBUG,
+			   "UHR ROAM CLEANUP: STA " MACSTR " not found, nothing to do",
+			   MAC2STR(iap->sta_addr));
+		return;
+	}
+
+	if (assoc_sta->smd_info.state == SMD_STA_ST_EXEC_DONE) {
+		wpa_printf(MSG_DEBUG,
+			   "UHR ROAM CLEANUP: STA " MACSTR " already exec-done, skipping",
+			   MAC2STR(iap->sta_addr));
+		return;
+	}
+
+	uhr_tgt_cancel_st_prep_timer(assoc_hapd, iap->sta_addr);
+
+	for_each_mld_link(bss, assoc_hapd) {
+		struct sta_info *sta;
+
+		sta = ap_get_sta(bss, iap->sta_addr);
+		if (!sta)
+			continue;
+
+		wpa_printf(MSG_DEBUG,
+			   "UHR ROAM CLEANUP: Freeing STA on link %u",
+			   bss->mld_link_id);
+		ap_free_sta(bss, sta);
+	}
+
+	wpa_printf(MSG_INFO, "UHR ROAM CLEANUP: Cleaned up STA " MACSTR,
+		   MAC2STR(iap->sta_addr));
+}
+
 
 void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 			       const struct uhr_iap_frame *iap,
