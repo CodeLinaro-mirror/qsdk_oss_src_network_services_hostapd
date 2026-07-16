@@ -424,7 +424,7 @@ static void ieee80211n_check_scan(struct hostapd_iface *iface)
 		if (hostapd_check_reenable_bss(iface, REENABLE_HT_SCAN))
 			hostapd_enable_pending_bss(iface, REENABLE_HT_SCAN,
 						   false);
-		else
+		else if (!hostapd_check_reenable_bss(iface, REENABLE_NONE))
 			hostapd_setup_interface_complete(iface, 1);
 		return;
 	}
