@@ -2951,6 +2951,20 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			if (iface->bootup_cac_in_progress &&
 			    hostapd_is_dfs_chan_available(iface)) {
 				hostapd_bootup_cac_complete_extn(iface);
+				/*
+				 * Only notify Rptr STA, if this CAC was directly triggered
+				 * by ACS selecting a DFS channel at initial startup.
+				 * acs_dfs_cac_pending is a one-shot flag: set only in
+				 * hostapd_acs_completed() for DFS channel, cleared here.
+				 */
+				if (iface->iface_extn.acs_dfs_cac_pending) {
+					iface->iface_extn.acs_dfs_cac_pending = false;
+					wpa_printf(MSG_DEBUG,
+					"ACS-selected DFS channel CAC "
+					"completed on %d MHz — notify Rptr STA", freq);
+					hostapd_ml_acs_check_and_notify(iface, true);
+				}
+
 				goto cac_done;
 			}
 #endif /* CONFIG_QCN_EXTN */
@@ -2971,23 +2985,6 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 				if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_BSS) {
 					ieee80211_freq_to_chan(cf1, &seg0);
 					hostapd_set_oper_centr_freq_seg0_idx(iface->conf, seg0);
-					/*
-					 * Only notify Rptr STA, if this CAC was directly triggered
-					 * by ACS selecting a DFS channel at initial startup.
-					 * acs_dfs_cac_pending is a one-shot flag: set only in
-					 * hostapd_acs_completed() for DFS channel, cleared here.
-					 */
-#ifdef CONFIG_QCN_EXTN
-					if (iface->iface_extn.acs_dfs_cac_pending) {
-						iface->iface_extn.acs_dfs_cac_pending = false;
-#endif
-						wpa_printf(MSG_DEBUG,
-							"ACS-selected DFS channel CAC"
-							"completed on %d MHz — notify Rptr STA", freq);
-						hostapd_ml_acs_check_and_notify(iface, true);
-#ifdef CONFIG_QCN_EXTN
-					}
-#endif
 					if (hostapd_check_reenable_bss(iface))
 						hostapd_dfs_enable_pending_bss(iface);
 					else
