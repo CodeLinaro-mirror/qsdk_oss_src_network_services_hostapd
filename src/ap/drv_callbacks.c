@@ -1672,6 +1672,9 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 	hapd->iconf->ch_switch_he_config = 0;
 	hapd->iconf->ch_switch_eht_config = 0;
 	hapd->iconf->ch_switch_uhr_config = 0;
+#ifdef CONFIG_IEEE80211BN
+	hostapd_disable_npca(hapd->iconf);
+#endif /* CONFIG_IEEE80211BN */
 
 	if (width == CHAN_WIDTH_40 || width == CHAN_WIDTH_80 ||
 	    width == CHAN_WIDTH_80P80 || width == CHAN_WIDTH_160 ||
