@@ -411,12 +411,7 @@ hostapd_get_multi_group_bss(struct hostapd_multi_mbssid_group *group,
 	return NULL;
 }
 
-static inline bool hapd_reenable_pending(const struct hostapd_data *hapd)
-{
-	return hapd->reenable == REENABLE_REUSE_LINK ||
-		hapd->reenable == REENABLE_HT_SCAN ||
-		hapd->reenable == REENABLE_CAC;
-}
+
 
 bool hostapd_check_reenable_bss(struct hostapd_iface *iface,
 				enum hostapd_reenable_mode reason)
@@ -436,23 +431,33 @@ bool hostapd_check_reenable_bss(struct hostapd_iface *iface,
 	return false;
 }
 
-int hostapd_switch_pending_bss(struct hostapd_iface *iface,
-			      struct csa_settings *settings)
+bool
+hostapd_switch_pending_bss(struct hostapd_iface *iface,
+			   struct csa_settings *settings,
+			   enum hostapd_reenable_mode reason)
 {
-	int b, err = 0, num_err = 0;
+	bool started = false;
+	int b, err;
 
 	for (b = 0; b < iface->num_bss; b++) {
 		struct hostapd_data *hapd = iface->bss[b];
 
-		if (!hapd_reenable_pending(hapd))
+		if (!hapd)
 			continue;
+		/* REENABLE_NONE is a wildcard: match any pending BSS */
+		if (reason == REENABLE_NONE) {
+			if (!hapd_reenable_pending(hapd))
+				continue;
+		} else if (hapd->reenable != reason) {
+			continue;
+		}
 
-		err = hostapd_switch_channel(iface->bss[b], settings);
-		if (err)
-			num_err++;
+		err = hostapd_switch_channel(hapd, settings);
+		if (!err)
+			started = true;
 	}
 
-	return num_err;
+	return started;
 }
 
 
@@ -478,6 +483,12 @@ bool hostapd_enable_pending_bss(struct hostapd_iface *iface,
 
 		if (hapd->started)
 			hostapd_set_state(iface, HAPD_IFACE_ENABLED);
+	}
+
+	if (dfs_cleanup && !iface->bss[0]->started &&
+	    iface->bss[0]->reenable != REENABLE_REUSE_LINK) {
+		ieee802_11_set_beacon(iface->bss[0]);
+		hostapd_drv_stop_ap(iface->bss[0]);
 	}
 
 	return true;
@@ -5384,6 +5395,10 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 		hapd = iface->bss[j];
 		if (j)
 			os_memcpy(hapd->own_addr, prev_addr, ETH_ALEN);
+		if (hapd->reenable == REENABLE_REUSE_LINK) {
+			prev_addr = hapd->own_addr;
+			continue;
+		}
 		if (hostapd_setup_bss(hapd, j == 0, !iface->conf->mbssid)) {
 			for (;;) {
 				hapd = iface->bss[j];
@@ -5881,7 +5896,8 @@ void hostapd_interface_deinit(struct hostapd_iface *iface)
 		if (!iface->bss)
 			break;
 		if (iface->bss[j] &&
-		    iface->bss[j]->reenable != REENABLE_DEINIT)
+		    iface->bss[j]->reenable != REENABLE_DEINIT &&
+		    iface->bss[j]->reenable != REENABLE_REUSE_LINK)
 			iface->bss[j]->reenable = REENABLE_DEINIT;
 		hostapd_bss_deinit(iface->bss[j]);
 	}
@@ -7563,8 +7579,19 @@ hostapd_enable_bss_handle_cac(struct hostapd_data *hapd)
 	/* Handle DFS only if it is not offloaded to the driver */
 	if (!(iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD)) {
 		/* Check DFS */
-		set_dfs_state_freq(iface, iface->freq,
-				   HOSTAPD_CHAN_DFS_USABLE);
+		/* Refresh hw features from the driver so that the channel DFS
+		 * state reflects the kernel's authoritative view, including NOL
+		 * entries, before running hostapd_handle_dfs().
+		 */
+		if (hostapd_get_hw_features(iface) ||
+		    hostapd_select_hw_mode(iface) < 0 ||
+		    hostapd_set_current_hw_info(iface, iface->freq)) {
+			hapd->reenable = REENABLE_NONE;
+			wpa_printf(MSG_ERROR,
+				   "DFS: hw feature refresh failed for BSS %s",
+				   hapd->conf->iface);
+			return ENABLE_BSS_ERROR;
+		}
 		res = hostapd_handle_dfs(iface);
 		if (res <= 0) {
 			if (res < 0) {
@@ -7663,8 +7690,25 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 	if (hapd->reenable == REENABLE_HT_SCAN)
 		goto handle_cac;
 
-	if (hapd->reenable == REENABLE_CAC)
+	if (hapd->reenable == REENABLE_CAC) {
+		/* If CSA is in progress, defer until the channel switch
+		 * and subsequent CAC complete before setting up the BSS.
+		 */
+		if (hostapd_csa_in_progress(hapd_iface)) {
+			wpa_printf(MSG_DEBUG,
+				   "CSA in progress, defer enable BSS %s",
+				   hapd->conf->iface);
+			return 0;
+		}
+		/*
+		 * If the BSS was stopped (beacon_set_done == 0) before the CAC
+		 * started, it has no valid channel context. Run DFS/CAC on the
+		 * new channel before setting up the BSS.
+		 */
+		if (!hapd->beacon_set_done)
+			goto handle_cac;
 		goto setup_bss;
+	}
 
 	enable_state = hostapd_enable_bss_handle_ht_scan(hapd);
 	if (enable_state == ENABLE_BSS_DEFER)
