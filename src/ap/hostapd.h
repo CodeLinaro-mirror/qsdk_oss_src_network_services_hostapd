@@ -343,6 +343,7 @@ enum hostapd_reenable_mode {
 	REENABLE_DEINIT = 4,
 };
 
+
 #ifdef CONFIG_IEEE80211BN
 /* UHR Enhanced Critical Update (ECU) state machine states
  * as per IEEE 802.11bn section 37.30.2.2.
@@ -812,6 +813,14 @@ struct hostapd_data {
 	struct dl_list gas_peers; /* dl_list of struct gas_peer */
 #endif /* CONFIG_INTERWORKING || CONFIG_DPP */
 };
+/* True if hapd has a pending re-enable for any reason (user-disabled,
+ * HT-scan deferred, or CAC in progress). */
+static inline bool hapd_reenable_pending(const struct hostapd_data *hapd)
+{
+	return hapd->reenable == REENABLE_REUSE_LINK ||
+		hapd->reenable == REENABLE_HT_SCAN ||
+		hapd->reenable == REENABLE_CAC;
+}
 
 
 struct hostapd_sta_info {
@@ -1546,8 +1555,10 @@ void hostapd_refresh_all_iface_beacons(struct hostapd_iface *hapd_iface);
 
 bool hostapd_check_reenable_bss(struct hostapd_iface *iface,
 				enum hostapd_reenable_mode reason);
-int hostapd_switch_pending_bss(struct hostapd_iface *iface,
-			       struct csa_settings *settings);
+bool
+hostapd_switch_pending_bss(struct hostapd_iface *iface,
+			   struct csa_settings *settings,
+			   enum hostapd_reenable_mode reason);
 bool hostapd_enable_pending_bss(struct hostapd_iface *iface,
 				enum hostapd_reenable_mode reason,
 				bool dfs_cleanup);
