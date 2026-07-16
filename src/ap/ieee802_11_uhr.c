@@ -2097,7 +2097,7 @@ static int uhr_build_reconf_req_list(struct hostapd_data *hapd,
 	const u8 *end;
         u8 common_info_len;
         struct uhr_link_reconf_req_info *info;
-        u8 bmlie[30];
+        u8 bmlie[UHR_BMLIE_BUF_LEN];
 	u16 ml_control;
 	size_t ml_len;
 	const struct ieee80211_eht_ml *ml;
