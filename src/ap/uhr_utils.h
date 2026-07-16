@@ -117,6 +117,16 @@ void uhr_tgt_start_st_prep_timer(struct hostapd_data *hapd,
                                 const u8 *sta_addr);
 void uhr_tgt_cancel_st_prep_timer(struct hostapd_data *hapd, const u8 *sta_addr);
 
+/* Basic Multi-Link IE max buffer size:
+ * Element ID (1) + Length (1) + Extension ID (1) + Multi-Link Control (2) +
+ * Common Info Length (1) + MLD MAC Address (ETH_ALEN) + Link ID Info (1) +
+ * BSS Parameters Change Count (1) + Medium Sync Delay Info (2) +
+ * EML Capabilities (2) + MLD Capabilities (2) + AP MLD ID (1) +
+ * Extended MLD Capabilities (2) + Enhanced Critical Update (1) +
+ * Age of BSS Load (1) + Future Extensions (8)
+ */
+#define UHR_BMLIE_BUF_LEN  (1 + 1 + 1 + 2 + 1 + ETH_ALEN + 1 + 1 + 2 + 2 + 2 + 1 + 2 + 1 + 1 + 8)
+
 size_t hostapd_uhr_eid_bmlie_from_rmlie(const struct wpabuf *mlbuf,
 						u8 link_id,
 						u8 *bmlie);
