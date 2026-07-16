@@ -8154,6 +8154,7 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 		if (hapd == iface->bss[0]) {
 			/*
 			 * If the First BSS is being removed while the interface is
+		iface->bss[iface->num_bss] = NULL;
 			 * in a pre-beacon state (ACS/DFS/HT scan/country update),
 			 * the driver context may not be fully initialized yet.
 			 * In such cases, successor BSS #1 must be minimally prepared
