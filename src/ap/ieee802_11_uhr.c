@@ -851,6 +851,8 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 
 		os_memcpy(ap_info->ap_mld_addr, mle.target_ap_mld_addr, ETH_ALEN);
 		os_get_reltime(&ap_info->last_seen);
+
+                // ADD new ap_info entry for target AP
 		is_new_ap = 1;
 
 		wpa_printf(MSG_DEBUG,
@@ -885,6 +887,11 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG, "UHR Current AP: Failed to send WMI roam notification - not skipping for now.");
 	}
 
+	if (is_new_ap) {
+		ap_info->next = sta->smd_info.ap_list;
+		sta->smd_info.ap_list = ap_info;
+	}
+
 	/* Send IAP request to target AP with complete frame */
 	ap_info->state = SMD_AP_STATE_ST_PREP_STARTED;
 	if (uhr_iap_send_st_prep_req(hapd, mle.target_ap_mld_addr, sta,
@@ -895,11 +902,6 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 		if (is_new_ap)
 			os_free(ap_info);
 		return -1;
-	}
-
-	if (is_new_ap) {
-		ap_info->next = sta->smd_info.ap_list;
-		sta->smd_info.ap_list = ap_info;
 	}
 
 	wpa_printf(MSG_DEBUG,
@@ -1323,6 +1325,7 @@ void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
        const u8 *frame_buf;
        int ret;
        u32 dl_drain_duration_sec;
+       u32 dl_drain_duration_usec;
 	u32 role = 1;
 	u32 type = 3;
 	u32 dl_sn_not_transferred = 0;
@@ -1410,15 +1413,24 @@ void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG, "UHR Current AP: Failed to send WMI roam notification - not skipping for now.");
 	}
 
+	/* Cancel the ST prep timer before it fires — exec succeeded. */
+	uhr_cancel_st_prep_timeout(sta, iap->target_ap_mld_addr);
+
 	target_info->state = SMD_AP_STATE_DL_DRAIN_ACTIVE;
        wpa_printf(MSG_INFO,
                   "UHR ST EXEC: Target AP " MACSTR " state: ST_EXEC_IAP_PENDING → DL_DRAIN_ACTIVE",
                   MAC2STR(iap->target_ap_mld_addr));
        os_get_reltime(&target_info->dl_drain_start);
 
-       dl_drain_duration_sec = dl_drain_time;
-       wpa_printf(MSG_INFO, "UHR ST EXEC: DL Drain started = %u", dl_drain_duration_sec);
-       eloop_register_timeout(dl_drain_duration_sec, 0, uhr_dl_drain_timeout, hapd, target_info);
+	/* Convert TU (1 TU = 1024 us) to seconds + microseconds */
+	dl_drain_duration_sec = (u32)((u64)dl_drain_time * 1024 / 1000000);
+	dl_drain_duration_usec = (u32)((u64)dl_drain_time * 1024 % 1000000);
+	/* coverity[overflow]: u64 intermediate prevents u32 wrap */
+	if (dl_drain_duration_sec == 0 && dl_drain_duration_usec == 0)
+		dl_drain_duration_sec = 1;
+	wpa_printf(MSG_INFO, "UHR ST EXEC: DL Drain started = %u TU (%u.%06u sec)",
+		   dl_drain_time, dl_drain_duration_sec, dl_drain_duration_usec);
+	eloop_register_timeout(dl_drain_duration_sec, dl_drain_duration_usec, uhr_dl_drain_timeout, lhapd, target_info);
        /* Exec succeeded: cancel all ST prep timers and clear the full ap_list. */
        uhr_cur_ap_purge_ap_list(lhapd, sta);
        wpa_printf(MSG_INFO, "UHR ST EXEC: Waiting for TX STATUS with ACK=1...");
@@ -2600,6 +2612,68 @@ void uhr_tgt_ap_handle_st_roam_cleanup(struct hostapd_data *hapd,
 }
 
 
+/* uhr_tgt_ap_handle_st_prep_ctx - Apply deferred prep SMD context on Target AP
+ *
+ * Handles UHR_IAP_MSG_ST_PREP_CTX from Current AP.  The STA entry must already
+ * exist from prior processing of UHR_IAP_MSG_ST_PREP_REQUEST.  The context is
+ * passed straight to the driver via uhr_target_ap_set_smd_ctx().
+ *
+ * Benign no-ops: STA not found (prep failed) or exec already completed.
+ */
+void uhr_tgt_ap_handle_st_prep_ctx(struct hostapd_data *hapd,
+				    const struct uhr_iap_frame *iap)
+{
+	struct hostapd_data *assoc_hapd = NULL;
+	struct sta_info *assoc_sta = NULL;
+	struct sta_smd_ctx_info *smd_ctx;
+	u16 smd_ctx_len;
+
+	if (!hostapd_mld_find_assoc_sta(hapd, iap->sta_addr,
+					&assoc_hapd, &assoc_sta)) {
+		wpa_printf(MSG_DEBUG,
+			   "UHR ST PREP CTX: STA " MACSTR " not found "
+			   "(prep may have failed), dropping ctx",
+			   MAC2STR(iap->sta_addr));
+		return;
+	}
+
+	if (assoc_sta->smd_info.state == SMD_STA_ST_EXEC_DONE) {
+		wpa_printf(MSG_DEBUG,
+			   "UHR ST PREP CTX: STA " MACSTR " already exec-done, ignoring",
+			   MAC2STR(iap->sta_addr));
+		return;
+	}
+
+	smd_ctx_len = le_to_host16(iap->smd_ctx_len);
+
+	if (smd_ctx_len < sizeof(struct sta_smd_ctx_info)) {
+		wpa_printf(MSG_ERROR,
+			   "UHR ST PREP CTX: smd_ctx too small (%u < %zu), dropping",
+			   smd_ctx_len, sizeof(struct sta_smd_ctx_info));
+		return;
+	}
+
+	/* frame_len == 0: smd_ctx sits at the start of frame_ctx_data[] */
+	smd_ctx = (struct sta_smd_ctx_info *) iap->frame_ctx_data;
+
+	/* Subtract is safe: smd_ctx_len >= sizeof(*smd_ctx) confirmed above */
+	if (smd_ctx->vendor_ctx_len > (size_t)(smd_ctx_len - sizeof(*smd_ctx))) {
+		wpa_printf(MSG_ERROR,
+			   "UHR ST PREP CTX: vendor_ctx overflow, dropping");
+		return;
+	}
+
+	if (uhr_target_ap_set_smd_ctx(assoc_hapd, iap->sta_addr, smd_ctx)) {
+		wpa_printf(MSG_ERROR,
+			   "UHR ST PREP CTX: Failed to set context for STA " MACSTR,
+			   MAC2STR(iap->sta_addr));
+		return;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR ST PREP CTX: Context applied for STA " MACSTR,
+		   MAC2STR(iap->sta_addr));
+}
 void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 			       const struct uhr_iap_frame *iap,
 			       u16 frame_len)
@@ -2703,8 +2777,22 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
        sta->ul_sn_not_transferred = sbte.ul_sn_not_transferred;
 
 	if (smd_ctx_len) {
-		smd_ctx = (void *) (iap->frame_ctx_data + frame_len);
-		if (uhr_target_ap_set_smd_ctx(hapd, iap->sta_addr, smd_ctx)) {
+		if (smd_ctx_len < sizeof(struct sta_smd_ctx_info)) {
+			wpa_printf(MSG_ERROR,
+				   "SMD ST PREP Target AP: smd_ctx too small (%u < %zu), dropping",
+				   smd_ctx_len, sizeof(struct sta_smd_ctx_info));
+			status_code = 1;
+			goto send_response;
+		}
+		smd_ctx = (struct sta_smd_ctx_info *)(iap->frame_ctx_data + frame_len);
+		/* Subtract is safe: smd_ctx_len >= sizeof(*smd_ctx) confirmed above */
+		if (smd_ctx->vendor_ctx_len > (size_t)(smd_ctx_len - sizeof(*smd_ctx))) {
+			wpa_printf(MSG_ERROR,
+				   "SMD ST PREP Target AP: vendor_ctx overflow, dropping");
+			status_code = 1;
+			goto send_response;
+		}
+		if (uhr_target_ap_set_smd_ctx(assoc_hapd, iap->sta_addr, smd_ctx)) {
 			wpa_printf(MSG_ERROR, "SMD ST PREP Target AP: Failed to set ctx");
 			status_code = 1;
 			goto send_response;
@@ -2869,8 +2957,8 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
                                          iap->sta_addr,
                                          iap->iap_transaction_id,
                                          le_to_host64(iap->sequence_number),
-					 iap->current_link_id,
-                                         1, NULL, 0);
+					 WLAN_STATUS_UNSPECIFIED_FAILURE,
+                                         iap->current_link_id, NULL, 0);
                return;
        }
 
@@ -2890,17 +2978,48 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 	}
 
 	if (smd_ctx_len) {
-		smd_ctx = (void *) (iap->frame_ctx_data + iap->frame_len);
-		if (uhr_target_ap_set_smd_ctx(hapd, iap->sta_addr, smd_ctx)) {
+		if (smd_ctx_len < sizeof(struct sta_smd_ctx_info)) {
+			wpa_printf(MSG_ERROR,
+				   "SMD ST EXEC Target AP: smd_ctx too small (%u < %zu), dropping",
+				   smd_ctx_len, sizeof(struct sta_smd_ctx_info));
+			uhr_iap_send_st_exec_resp(lhapd,
+					  iap->current_ap_mld_addr,
+					  iap->sta_addr,
+					  iap->iap_transaction_id,
+					  le_to_host64(iap->sequence_number),
+					  WLAN_STATUS_UNSPECIFIED_FAILURE,
+					  iap->current_link_id,
+					  NULL, 0);
+			return;
+		}
+		/* smd_ctx may already have been applied via UHR_IAP_MSG_ST_PREP_CTX
+		 * (type 9); the driver call is idempotent. */
+		smd_ctx = (struct sta_smd_ctx_info *)(iap->frame_ctx_data + le_to_host16(iap->frame_len));
+		/* Subtract is safe: smd_ctx_len >= sizeof(*smd_ctx) confirmed above */
+		if (smd_ctx->vendor_ctx_len > (size_t)(smd_ctx_len - sizeof(*smd_ctx))) {
+			wpa_printf(MSG_ERROR,
+				   "SMD ST EXEC Target AP: vendor_ctx overflow, dropping");
+			uhr_iap_send_st_exec_resp(lhapd,
+					  iap->current_ap_mld_addr,
+					  iap->sta_addr,
+					  iap->iap_transaction_id,
+					  le_to_host64(iap->sequence_number),
+					  WLAN_STATUS_UNSPECIFIED_FAILURE,
+					  iap->current_link_id,
+					  NULL, 0);
+			return;
+		}
+		if (uhr_target_ap_set_smd_ctx(lhapd, iap->sta_addr, smd_ctx)) {
 			wpa_printf(MSG_ERROR, "SMD ST EXEC Target AP: Failed to set ctx");
-			uhr_iap_send_st_exec_resp(hapd,
+			uhr_iap_send_st_exec_resp(lhapd,
 						  iap->current_ap_mld_addr,
 						  iap->sta_addr,
 						  iap->iap_transaction_id,
 						  le_to_host64(iap->sequence_number),
-						  iap->current_link_id,
 						  WLAN_STATUS_UNSPECIFIED_FAILURE,
+						  iap->current_link_id,
 						  NULL, 0);
+			return;
 		}
 	}
 
@@ -2967,8 +3086,8 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
                                           iap->sta_addr,
                                           iap->iap_transaction_id,
                                           le_to_host64(iap->sequence_number),
-					  iap->current_link_id,
-                                          WLAN_STATUS_UNSPECIFIED_FAILURE,
+					  WLAN_STATUS_UNSPECIFIED_FAILURE,
+                                          iap->current_link_id,
 					  NULL, 0);
                 return;
         }

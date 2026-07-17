@@ -5100,6 +5100,9 @@ static void handle_auth(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 	int ft_auth_resp;
 	bool deferred_auth_response = false;
+#ifdef CONFIG_HOSTAPD_IF
+	bool hapd_if_notified = false;
+#endif
 	struct hostapd_ubus_request req = {
 		.type = HOSTAPD_UBUS_AUTH_REQ,
 		.mgmt_frame = mgmt,
@@ -5423,7 +5426,9 @@ static void handle_auth(struct hostapd_data *hapd,
 			wpa_printf(MSG_DEBUG, "Delete STA "MACSTR" from driver on %s as STA "
 				   "is not authorized and trying to associate in new bss %s",
 				   MAC2STR(osta->addr), ohapd->conf->iface, hapd->conf->iface);
-			hostapd_drv_sta_deauth(ohapd, osta->addr, WLAN_REASON_PREV_AUTH_NOT_VALID);
+			if (osta->flags & WLAN_STA_ASSOC)
+				hostapd_drv_sta_deauth(ohapd, osta->addr,
+						       WLAN_REASON_PREV_AUTH_NOT_VALID);
 			ap_sta_remove_link_sta(ohapd, osta, false);
 			ap_free_sta(ohapd, osta);
 			osta = NULL;
@@ -5634,6 +5639,7 @@ static void handle_auth(struct hostapd_data *hapd,
 					WLAN_AUTH_OPEN, mgmt->sa) ==
 					HOSTAPD_IF_FRAME_PROCESSING_WAIT)
 			return;
+		hapd_if_notified = true;
 #endif
 		sta->flags |= WLAN_STA_AUTH;
 		wpa_auth_sm_event(sta->wpa_sm, WPA_AUTH);
@@ -5773,6 +5779,15 @@ static void handle_auth(struct hostapd_data *hapd,
 	}
 
  fail:
+
+#ifdef CONFIG_HOSTAPD_IF
+	if (!hapd_if_notified &&
+	    hostapd_if_notify_auth(hapd, sta, (const u8 *) mgmt, len, rssi,
+				   resp, auth_transaction, 0,
+				   auth_alg, mgmt->sa) == HOSTAPD_IF_FRAME_PROCESSING_WAIT)
+		return;
+#endif
+
 	dst = mgmt->sa;
 
 	reply_res = send_auth_reply(hapd, sta, dst, auth_alg,
@@ -6691,6 +6706,9 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 	struct sta_info *lsta;
 	int i, j, k;
 	bool triggered = false;
+
+	if (sta->auth_alg == WLAN_AUTH_FT)
+		return false;
 
 	if (sta->unadded_sta &&
 	    (sta->flags & WLAN_STA_AUTH)) {
@@ -11727,8 +11745,10 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 			       "did not acknowledge association response");
 		sta->flags &= ~WLAN_STA_ASSOC_REQ_OK;
 		/* The STA is added only in case of SUCCESS */
-		if (status == WLAN_STATUS_SUCCESS)
+		if (status == WLAN_STATUS_SUCCESS) {
 			hostapd_drv_sta_remove(hapd, sta->addr);
+			sta->added_unassoc = 0;
+		}
 
 		ap_sta_reset_assoc_req_rx_times(sta);
 
@@ -14048,8 +14068,7 @@ static void hostapd_add_6g_tpe(struct hostapd_data *hapd, u8 **eid, u8 pwr_mode)
 		pwr_interp_conf = TPE_REG_EIRP_PSD;
 #endif
 
-	if (pwr_mode == HE_REG_INFO_6GHZ_AP_TYPE_SP &&
-	    hapd->iconf->enable_6ghz_composite_ap)
+	if (hostapd_is_indoor_sp_pwr_mode(hapd))
 		pwr_mode = HE_REG_INFO_6GHZ_AP_TYPE_INDOOR_SP;
 
 	switch(pwr_mode) {

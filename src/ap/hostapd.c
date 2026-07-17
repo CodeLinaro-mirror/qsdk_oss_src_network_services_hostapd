@@ -66,6 +66,7 @@
 #ifdef CONFIG_IEEE80211BN
 #include "uhr_utils.h"
 #include "uhr_oui_transport.h"
+#include "uhr_neighbor_update.h"
 #endif /* CONFIG_IEEE80211BN */
 #include "../../qcn_extns/cmn.h"
 #include "nft.h"
@@ -571,6 +572,11 @@ static void hostapd_reload_bss(struct hostapd_data *hapd)
 			return;
 		}
 	}
+
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->smd_neighbor_update_ctx)
+		smd_neighbor_update_notify_own_report_changed(hapd);
+#endif /* CONFIG_IEEE80211BN */
 
 	ieee802_11_set_beacon(hapd);
 	hostapd_update_wps(hapd);
@@ -1460,6 +1466,7 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 	wpa_printf(MSG_DEBUG, "%s(%s)", __func__, hapd->conf->iface);
 #ifdef CONFIG_IEEE80211BN
        if (hapd->uhr_oui_ctx) {
+		smd_neighbor_update_deinit(hapd);
                wpa_printf(MSG_DEBUG, "SMD: Deinitializing roaming transport");
 	       if (hostapd_mld_is_first_bss(hapd))
 		       uhr_oui_deinit(hapd->uhr_oui_ctx);
@@ -2392,6 +2399,12 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
                }
         	/* Load configured partner APs */
 	        uhr_load_partners(hapd);
+		if (conf->smd_neighbor_update_enabled &&
+		    smd_neighbor_update_init(hapd) < 0) {
+			wpa_printf(MSG_ERROR,
+				   "SMD: Failed to initialize neighbor update");
+			return -1;
+		}
 	    } else {
 	        /* Affiliated links share the first BSS's context */
         	struct hostapd_data *f_bss = hostapd_mld_get_first_bss(hapd);
@@ -3210,7 +3223,7 @@ void hostapd_no_ir_cleanup(struct hostapd_data *bss)
 	hostapd_free_hapd_data(bss);
 }
 
-static bool hostapd_is_6ghz_chan_txable(const struct hostapd_channel_data *c)
+bool hostapd_is_6ghz_chan_txable(const struct hostapd_channel_data *c)
 {
 	if (c->flag & HOSTAPD_CHAN_NO_IR)
 		return false;
@@ -4820,24 +4833,25 @@ static void hostapd_interface_setup_failure_handler(void *eloop_ctx,
 }
 
 /**
- * hostapd_is_sp_chans_available - Check if at least one tx-able
- * 6Ghz SP channel is available for operation (A channel is non-tx-able if there
- * is NO_IR flag is set in it)
+ * hostapd_is_pwr_mode_chans_available - Check if at least one tx-able
+ * 6 GHz channel is available for the given power mode (a channel is
+ * non-tx-able if the NO_IR flag is set on it).
  * @iface: Pointer to hostapd interface data
- * Return: true if SP channels are available, false otherwise
+ * @pwr_mode: NL80211 regulatory AP power mode index
+ * Return: true if channels are available, false otherwise
  */
 static bool
-hostapd_is_sp_chans_available(struct hostapd_iface *iface)
+hostapd_is_pwr_mode_chans_available(struct hostapd_iface *iface,
+				    enum nl80211_regulatory_power_modes pwr_mode)
 {
 	int i;
 	struct hostapd_hw_modes *mode = NULL;
-	bool sp_available = false;
 	struct hostapd_channel_data *pwr_mode_chan_list;
 	u8 num_6ghz_chans;
 
 	if (!iface->num_hw_features) {
 		wpa_printf(MSG_ERROR, "No hw features");
-		return sp_available;
+		return false;
 	}
 
 	for (i = 0; i < iface->num_hw_features; i++) {
@@ -4848,26 +4862,46 @@ hostapd_is_sp_chans_available(struct hostapd_iface *iface)
 	}
 	if (!mode) {
 		wpa_printf(MSG_ERROR, "No 6 GHz mode");
-		return sp_available;
+		return false;
 	}
 
-	num_6ghz_chans = mode->channels_6ghz.num_channels_6ghz[NL80211_REG_AP_SP];
-	pwr_mode_chan_list = mode->channels_6ghz.chans_6ghz[NL80211_REG_AP_SP];
+	num_6ghz_chans = mode->channels_6ghz.num_channels_6ghz[pwr_mode];
+	pwr_mode_chan_list = mode->channels_6ghz.chans_6ghz[pwr_mode];
 	if (!num_6ghz_chans || !pwr_mode_chan_list) {
-		wpa_printf(MSG_ERROR, "No 6 GHz SP channels");
-		return sp_available;
+		wpa_printf(MSG_ERROR, "No 6 GHz channels for power mode %d",
+			   pwr_mode);
+		return false;
 	}
 
 	for (i = 0; i < num_6ghz_chans; i++) {
 		if (!(pwr_mode_chan_list[i].flag & HOSTAPD_CHAN_NO_IR) &&
 		    !(pwr_mode_chan_list[i].flag & HOSTAPD_CHAN_DISABLED)) {
-		    wpa_printf(MSG_DEBUG, "SP channel available: %d MHz",
-			       pwr_mode_chan_list[i].freq);
-		    sp_available = true;
-		    break;
+			wpa_printf(MSG_DEBUG, "Channel available: %d MHz (pwr_mode %d)",
+				   pwr_mode_chan_list[i].freq, pwr_mode);
+			return true;
 		}
 	}
-	return sp_available;
+	return false;
+}
+
+static bool
+hostapd_is_sp_chans_available(struct hostapd_iface *iface)
+{
+	return hostapd_is_pwr_mode_chans_available(iface, NL80211_REG_AP_SP);
+}
+
+bool
+hostapd_is_lpi_chans_available(struct hostapd_iface *iface)
+{
+	return hostapd_is_pwr_mode_chans_available(iface, NL80211_REG_AP_LPI);
+}
+
+bool
+hostapd_is_indoor_sp_pwr_mode(struct hostapd_data *hapd)
+{
+	return hapd->iconf->he_6ghz_reg_pwr_type == HE_REG_INFO_6GHZ_AP_TYPE_SP &&
+	       hapd->iconf->enable_6ghz_composite_ap &&
+	       hostapd_is_lpi_chans_available(hapd->iface);
 }
 
 /**
@@ -9778,8 +9812,20 @@ int hostapd_mld_link_config_check(struct hostapd_data *hapd)
 	struct hostapd_data *first = mld->fbss;
 
 #ifdef CONFIG_QCN_EXTN
+	/* skip check for repurposed link as it can have unique ssid */
 	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
 		return 0;
+
+	/* if fbss is repurposed, get first non-repurposed link */
+	if (hostapd_is_repurpose_disabled_11be_extn(first->conf)) {
+		first = hostapd_get_non_repurposed_link_of_mld_extn(hapd);
+
+		/* if there are no non-repurposed links under ML skip
+		 * validation
+		 */
+		if (!first)
+			return 0;
+	}
 #endif /* CONFIG_QCN_EXTN */
 
 	if (hapd->conf->ssid.ssid_len != first->conf->ssid.ssid_len ||

@@ -638,6 +638,89 @@ static void wnm_parse_neighbor_report_elem(struct neighbor_report *rep,
 		os_memcpy(rep->rm_capab, pos, 5);
 		rep->rm_capab_present = 1;
 		break;
+	case WNM_NEIGHBOR_WIDE_BW_CHAN:
+		if (elen < WNM_NEIGHBOR_WIDE_BW_CHAN_LEN) {
+			wpa_printf(MSG_DEBUG,
+				   "WNM: Too short wide bandwidth channel");
+			break;
+		}
+		rep->wide_bw_chan_width = pos[0];
+		rep->wide_bw_chan_center_seg0 = pos[1];
+		rep->wide_bw_chan_center_seg1 = pos[2];
+		rep->wide_bw_chan_present = 1;
+		break;
+	case WNM_NEIGHBOR_SUPP_RATES:
+		if (elen < 1) {
+			wpa_printf(MSG_DEBUG, "WNM: Too short supported rates");
+			break;
+		}
+		if (elen > WNM_NEIGHBOR_SUPP_RATES_MAX) {
+			wpa_printf(MSG_DEBUG,
+				   "WNM: Supported rates truncated (%u > %u)",
+				   elen, WNM_NEIGHBOR_SUPP_RATES_MAX);
+		}
+		rep->supp_rates_len = MIN(elen, WNM_NEIGHBOR_SUPP_RATES_MAX);
+		os_memcpy(rep->supp_rates, pos, rep->supp_rates_len);
+		rep->supp_rates_present = 1;
+		break;
+	case WNM_NEIGHBOR_UHR_CAPAB:
+		if (elen < WNM_NEIGHBOR_UHR_CAPAB_LEN) {
+			wpa_printf(MSG_DEBUG, "WNM: Too short UHR capabilities");
+			break;
+		}
+		if (elen > WNM_NEIGHBOR_UHR_CAPAB_LEN) {
+			wpa_printf(MSG_DEBUG,
+				   "WNM: UHR capabilities truncated (%u > %u)",
+				   elen, WNM_NEIGHBOR_UHR_CAPAB_LEN);
+		}
+		rep->uhr_capab_len = MIN(elen, WNM_NEIGHBOR_UHR_CAPAB_LEN);
+		os_memcpy(rep->uhr_capab, pos, rep->uhr_capab_len);
+		rep->uhr_capab_present = 1;
+		break;
+	case WNM_NEIGHBOR_UHR_OPER:
+		if (elen < WNM_NEIGHBOR_UHR_OPER_LEN) {
+			wpa_printf(MSG_DEBUG, "WNM: Too short UHR operation");
+			break;
+		}
+		if (elen > WNM_NEIGHBOR_UHR_OPER_LEN) {
+			wpa_printf(MSG_DEBUG,
+				   "WNM: UHR operation truncated (%u > %u)",
+				   elen, WNM_NEIGHBOR_UHR_OPER_LEN);
+		}
+		rep->uhr_oper_len = MIN(elen, WNM_NEIGHBOR_UHR_OPER_LEN);
+		os_memcpy(rep->uhr_oper, pos, rep->uhr_oper_len);
+		rep->uhr_oper_present = 1;
+		break;
+	case WNM_NEIGHBOR_SMD_INFO: {
+		const u8 *smd_data = NULL;
+		/* BSSID (ETH_ALEN) + Capabilities (1) + Preparation
+		 * Timeout (1); spec D1.5: timeout is a 1-byte field */
+		size_t smd_len = ETH_ALEN + 1 + 1;
+
+		/* Per spec the subelement carries the SMD IE body with
+		 * ExtID stripped (see hostapd_neighbor_add_11bn_subelements).
+		 * Handle the ExtID-present case defensively for interop. */
+		if (elen >= smd_len && pos[0] != WLAN_EID_EXT_SMD)
+			smd_data = pos;
+		else if (elen >= smd_len + 1 &&
+			 pos[0] == WLAN_EID_EXT_SMD)
+			smd_data = pos + 1;
+		else {
+			wpa_printf(MSG_DEBUG,
+				   "SMD: Too short SMD info in neighbor report (len=%u)",
+				   elen);
+			break;
+		}
+		os_memcpy(rep->smd_id, smd_data, ETH_ALEN);
+		smd_data += ETH_ALEN;
+		rep->smd_ptk_mode = (*smd_data & SMD_IE_CAPA_PTK_MODE) ? 1 : 0;
+		rep->smd_capable = 1;
+		wpa_printf(MSG_DEBUG, "SMD: Parsed neighbor SMD IE - "
+			   "ID=" MACSTR " PTK mode=%d",
+			   MAC2STR(rep->smd_id),
+			   rep->smd_ptk_mode);
+		break;
+	}
 	case WNM_NEIGHBOR_MULTIPLE_BSSID:
 		if (elen < 1) {
 			wpa_printf(MSG_DEBUG, "WNM: Too short multiple BSSID");
@@ -699,9 +782,6 @@ static void wnm_parse_neighbor_report(struct wpa_supplicant *wpa_s,
 				      struct neighbor_report *rep)
 {
 	u8 left = len;
-	const u8 *subelem_start;
-	u8 subelem_len;
-
 	if (left < 13) {
 		wpa_printf(MSG_DEBUG, "WNM: Too short neighbor report");
 		return;
@@ -713,11 +793,15 @@ static void wnm_parse_neighbor_report(struct wpa_supplicant *wpa_s,
 	rep->channel_number = *(pos + 11);
 	rep->phy_type = *(pos + 12);
 
+	/* Initialise SMD fields from bssid_info; WNM_NEIGHBOR_SMD_INFO
+	 * subelement overrides smd_id and smd_ptk_mode when present. */
+	rep->smd_capable = !!(rep->bssid_info & NEI_REP_BSSID_INFO_SAME_SMD);
+	rep->smd_same_domain = rep->smd_capable;
+	rep->smd_ptk_mode = 0;
+	os_memset(rep->smd_id, 0, ETH_ALEN);
+
 	pos += 13;
 	left -= 13;
-
-	subelem_start = pos;
-	subelem_len = left;
 
 	while (left >= 2) {
 		u8 id, elen;
@@ -738,9 +822,6 @@ static void wnm_parse_neighbor_report(struct wpa_supplicant *wpa_s,
 
 	rep->freq = wnm_nei_get_chan(wpa_s, rep->regulatory_class,
 				     rep->channel_number);
-
-	/* Parse SMD IE from sublelements */
-	smd_parse_neighbor_smd_info(rep, subelem_start, subelem_len);
 }
 
 

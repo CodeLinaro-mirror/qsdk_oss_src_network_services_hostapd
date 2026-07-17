@@ -965,7 +965,10 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 #ifdef CONFIG_QCN_EXTN
 		if (!chan_pri_allowed_extn(chan2))
 			 continue;
-#endif
+
+		if (hostapd_acs_is_chan_blocked(iface, chan2->chan))
+			continue;
+#endif /* CONFIG_QCN_EXTN */
 
 		if (!chan_pri_allowed(chan2))
 			continue;
@@ -1558,6 +1561,8 @@ static int * acs_request_scan_add_freqs(struct hostapd_iface *iface,
 					int *freq)
 {
 	struct hostapd_channel_data *chan;
+	bool all_no_ir = true;
+	bool is_6ghz = false;
 	int i;
 
 	for (i = 0; i < mode->num_channels; i++) {
@@ -1596,6 +1601,21 @@ static int * acs_request_scan_add_freqs(struct hostapd_iface *iface,
 
 		*freq++ = chan->freq;
 	}
+
+	for (i = 0; i < mode->num_channels; i++) {
+		if (!is_6ghz_freq(mode->channels[i].freq))
+			continue;
+
+		is_6ghz = true;
+		if (!hostapd_is_6ghz_chan_txable(&mode->channels[i]))
+			continue;
+
+		all_no_ir = false;
+		break;
+
+	}
+	if (all_no_ir && is_6ghz)
+		iface->is_no_ir = true;
 
 	return freq;
 }
@@ -1740,8 +1760,11 @@ enum hostapd_chan_status acs_init(struct hostapd_iface *iface)
 	acs_init_extn(iface, NORMAL_SCAN_TRIGGER);
 #endif
 
-	if (acs_request_scan(iface) < 0)
+	if (acs_request_scan(iface) < 0) {
+		if (iface->is_no_ir)
+			return HOSTAPD_CHAN_INVALID_NO_IR;
 		return HOSTAPD_CHAN_INVALID;
+	}
 	if (!iface->iface_extn.dynamic_acs_action)
 		hostapd_set_state(iface, HAPD_IFACE_ACS);
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, ACS_EVENT_STARTED);

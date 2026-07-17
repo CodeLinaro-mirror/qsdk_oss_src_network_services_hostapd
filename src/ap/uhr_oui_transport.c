@@ -14,6 +14,7 @@
 #include "hostapd.h"
 #include "uhr_oui_transport.h"
 #include "uhr_iap.h"
+#include "uhr_neighbor_update.h"
 #include "uhr_utils.h"
 #include "ap_config.h"
 
@@ -119,8 +120,12 @@ int uhr_oui_clone_peer(struct uhr_oui_ctx *ctx,
 	if (!ctx || !existing_mac || !new_mac)
 		return -1;
 
-	if (uhr_oui_get_peer(ctx, new_mac))
+	if (uhr_oui_get_peer(ctx, new_mac)) {
+		wpa_printf(MSG_DEBUG,
+			   "SMD OUI: " MACSTR " already in smd_partner list, skipping clone",
+			   MAC2STR(new_mac));
 		return 0;
+	}
 
 	existing = uhr_oui_get_peer(ctx, existing_mac);
 	if (!existing) {
@@ -181,7 +186,9 @@ static void uhr_oui_rx_callback(void *ctx, const u8 *src_addr,
 
 	/* Validate suffix */
 	if (oui_suffix != UHR_IAP_SUFFIX_REQUEST &&
-	    oui_suffix != UHR_IAP_SUFFIX_RESPONSE) {
+	    oui_suffix != UHR_IAP_SUFFIX_RESPONSE &&
+	    oui_suffix != UHR_IAP_SUFFIX_NEIGHBOR_UPDATE &&
+	    oui_suffix != UHR_IAP_SUFFIX_NEIGHBOR_FETCH) {
 		wpa_printf(MSG_DEBUG, "SMD OUI: Invalid suffix 0x%02x",
 			   oui_suffix);
 		return;
@@ -243,10 +250,20 @@ static void uhr_oui_rx_callback(void *ctx, const u8 *src_addr,
 				   "SMD OUI: Wildcard decryption succeeded for " MACSTR " — MLD addr will be promoted",
 				   MAC2STR(src_addr));
 
-		uhr_iap_rx(oui_ctx->hapd, src_addr, dst_addr, plain, plain_len);
+		if (oui_suffix == UHR_IAP_SUFFIX_NEIGHBOR_FETCH ||
+		    oui_suffix == UHR_IAP_SUFFIX_NEIGHBOR_UPDATE)
+			smd_neighbor_update_rx(oui_ctx->hapd, src_addr, dst_addr,
+					       plain, plain_len, oui_suffix);
+		else
+			uhr_iap_rx(oui_ctx->hapd, src_addr, dst_addr, plain, plain_len);
 		os_free(plain);
 	} else {
-		uhr_iap_rx(oui_ctx->hapd, src_addr, dst_addr, iap_data, iap_len);
+		if (oui_suffix == UHR_IAP_SUFFIX_NEIGHBOR_FETCH ||
+		    oui_suffix == UHR_IAP_SUFFIX_NEIGHBOR_UPDATE)
+			smd_neighbor_update_rx(oui_ctx->hapd, src_addr, dst_addr,
+					       iap_data, iap_len, oui_suffix);
+		else
+			uhr_iap_rx(oui_ctx->hapd, src_addr, dst_addr, iap_data, iap_len);
 	}
 }
 

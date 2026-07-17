@@ -11,9 +11,6 @@
 #include "common/wpa_common.h"
 #include "ap/uhr_iap.h"
 
-/* UHR ST preparation timeout (5 seconds) */
-#define UHR_ST_PREP_TIMEOUT_SEC 5
-
 /* UHR Link Reconfig Type field values (NEW in V25) */
 #define UHR_LINK_RECONFIG_TYPE_PREP    0  /* ST Prep */
 #define UHR_LINK_RECONFIG_TYPE_EXECUTE 1  /* ST Execute */
@@ -136,5 +133,9 @@ int uhr_remove_ap_from_list(struct sta_info *sta, const u8 *ap_mld_addr);
 
 /* Cleanup function for sta_info.c */
 void uhr_cleanup_sta_roam_contexts(struct sta_info *sta);
+
+/* Target AP IAP receive handlers */
+void uhr_tgt_ap_handle_st_prep_ctx(struct hostapd_data *hapd,
+				    const struct uhr_iap_frame *iap);
 
 #endif /* UHR_LINK_RECONFIG_H */

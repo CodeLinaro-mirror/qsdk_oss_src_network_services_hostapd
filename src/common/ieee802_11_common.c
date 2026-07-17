@@ -3466,7 +3466,7 @@ u8 *wpas_build_smd_ie(const u8 *smd_id, u8 ptk_mode, u8 capabilities,
 
 	smd_capabilities = capabilities & 0x1F;
 	if (ptk_mode)
-		smd_capabilities |= BIT(5);
+		smd_capabilities |= SMD_IE_CAPA_PTK_MODE;
 
 	*pos++ = smd_capabilities;
 
@@ -3496,7 +3496,7 @@ int wpas_parse_smd_ie(const u8 *ie, size_t ie_len, u8 *smd_id,
 	if (capabilities)
 		*capabilities = *pos & 0x1F;
 	if (ptk_mode)
-		*ptk_mode = (*pos & BIT(5)) ? 1 : 0;
+		*ptk_mode = (*pos & SMD_IE_CAPA_PTK_MODE) ? 1 : 0;
 	pos++;
 
 	if (timeout)

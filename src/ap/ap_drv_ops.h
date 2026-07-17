@@ -364,7 +364,8 @@ static inline int hostapd_drv_get_survey(struct hostapd_data *hapd,
 
 static inline int hostapd_get_country(struct hostapd_data *hapd, char *alpha2)
 {
-	if (hapd->driver == NULL || hapd->driver->get_country == NULL)
+	if (hapd->driver == NULL || hapd->drv_priv == NULL ||
+	    hapd->driver->get_country == NULL)
 		return -1;
 	return hapd->driver->get_country(hapd->drv_priv, alpha2);
 }

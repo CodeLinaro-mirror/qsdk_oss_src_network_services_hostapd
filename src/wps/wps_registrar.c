@@ -3504,6 +3504,45 @@ int wps_registrar_update_ie(struct wps_registrar *reg)
 }
 
 
+/**
+ * wps_registrar_is_pbc_enrollee - Check if a station is a WPS PBC enrollee
+ * @reg: Registrar data from wps_registrar_init()
+ * @addr: MAC address of the station to check
+ * Returns: 1 if the station has sent a WPS PBC probe request within the
+ *          PBC walk time window, 0 otherwise
+ *
+ * This function checks whether the given station has been seen sending a
+ * WPS PBC probe request (i.e., it is in the PBC session list). It is used
+ * to restrict the ACL bypass during WPS PBC to only genuine WPS enrollees,
+ * preventing non-WPS stations in the deny list from bypassing the ACL.
+ */
+int wps_registrar_is_pbc_enrollee(struct wps_registrar *reg, const u8 *addr)
+{
+	struct wps_pbc_session *pbc;
+	struct os_reltime now;
+
+	if (!reg || !addr)
+		return 0;
+
+	os_get_reltime(&now);
+
+	for (pbc = reg->pbc_sessions; pbc; pbc = pbc->next) {
+		if (ether_addr_equal(pbc->addr, addr)) {
+			if (!os_reltime_expired(&now, &pbc->timestamp,
+						WPS_PBC_WALK_TIME))
+				return 1;
+			/*
+			 * found matching addr but expired;
+			 * no need to continue
+			 */
+			break;
+		}
+	}
+
+	return 0;
+}
+
+
 static void wps_registrar_set_selected_timeout(void *eloop_ctx,
 					       void *timeout_ctx)
 {

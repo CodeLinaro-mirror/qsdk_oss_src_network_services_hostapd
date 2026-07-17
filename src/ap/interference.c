@@ -615,9 +615,26 @@ int find_6g_enabled_chans(struct hostapd_iface *iface,
 			  struct hostapd_channel_data **chan_6ghz,
 			  int n_chans, int power_type)
 {
-	int i, channel_idx = 0;
+	size_t i, num_6ghz_chan;
+	int channel_idx = 0;
 
-	for (i = 0; i < mode->num_channels; i++) {
+	if (!chan_6ghz || power_type < 0 ||
+	    power_type >= NL80211_REG_NUM_POWER_MODES) {
+		wpa_printf(MSG_DEBUG,
+			   "AFC: invalid channel list for power type %d, skipping",
+			   power_type);
+		return 0;
+	}
+
+	num_6ghz_chan = mode->channels_6ghz.num_channels_6ghz[power_type];
+	if (!chan_6ghz[power_type] || !num_6ghz_chan) {
+		wpa_printf(MSG_DEBUG,
+			   "AFC: no channels for power type %d, skipping",
+			   power_type);
+		return 0;
+	}
+
+	for (i = 0; i < num_6ghz_chan; i++) {
 		struct hostapd_channel_data *chan;
 		struct hostapd_channel_data *chan_6ghz_list;
 		int channel_width;

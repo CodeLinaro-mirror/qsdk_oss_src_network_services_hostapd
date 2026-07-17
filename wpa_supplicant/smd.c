@@ -1165,42 +1165,6 @@ int smd_validate_security_policy(struct wpa_supplicant *wpa_s,
 	return 0;
 }
 
-int smd_parse_neighbor_smd_info(struct neighbor_report *neighbor,
-				const u8 *ie, size_t ie_len)
-{
-	const u8 *pos, *end;
-
-	if (!neighbor || !ie)
-		return -1;
-
-	neighbor->smd_capable = 0;
-	neighbor->smd_same_domain = 0;
-	os_memset(neighbor->smd_id, 0, ETH_ALEN);
-
-	pos = ie;
-	end = ie + ie_len;
-
-	while (pos + 2 <= end) {
-		u8 eid = pos[0];
-		u8 elen = pos[1];
-
-		if (pos + 2 + elen >  end)
-			break;
-
-		if (eid == WLAN_EID_EXTENSION && elen >= 11) {
-			wpa_printf(MSG_DEBUG, "SMD: Parsed neighbor SMD IE - ID="
-				    MACSTR " PTK mode=%d",
-				   MAC2STR(neighbor->smd_id),
-				   neighbor->smd_ptk_mode);
-			return 0;
-		}
-
-		pos += 2 + elen;
-	}
-
-	wpa_printf(MSG_DEBUG, "SMD: No SMD IE found in neighbor report");
-	return -1;
-}
 
 int smd_btm_filter_candidate(struct wpa_supplicant *wpa_s,
 			     struct wpa_bss *bss,

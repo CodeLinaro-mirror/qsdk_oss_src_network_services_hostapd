@@ -9,6 +9,11 @@
 #ifndef WNM_STA_H
 #define WNM_STA_H
 
+#define WNM_NEIGHBOR_WIDE_BW_CHAN_LEN 3
+#define WNM_NEIGHBOR_UHR_CAPAB_LEN 6
+#define WNM_NEIGHBOR_UHR_OPER_LEN 20
+#define WNM_NEIGHBOR_SUPP_RATES_MAX 32
+
 struct measurement_pilot {
 	u8 measurement_pilot;
 	u8 subelem_len;
@@ -29,11 +34,20 @@ struct neighbor_report {
 	u8 regulatory_class;
 	u8 channel_number;
 	u8 phy_type;
+	u8 wide_bw_chan_width;
+	u8 wide_bw_chan_center_seg0;
+	u8 wide_bw_chan_center_seg1;
 	u8 preference; /* valid if preference_present=1 */
 	u16 tsf_offset; /* valid if tsf_present=1 */
 	u16 beacon_int; /* valid if tsf_present=1 */
 	char country[2]; /* valid if country_present=1 */
 	u8 rm_capab[5]; /* valid if rm_capab_present=1 */
+	u8 supp_rates_len;
+	u8 supp_rates[WNM_NEIGHBOR_SUPP_RATES_MAX];
+	u8 uhr_capab_len;
+	u8 uhr_capab[WNM_NEIGHBOR_UHR_CAPAB_LEN];
+	u8 uhr_oper_len;
+	u8 uhr_oper[WNM_NEIGHBOR_UHR_OPER_LEN];
 	u16 bearing; /* valid if bearing_present=1 */
 	u16 rel_height; /* valid if bearing_present=1 */
 	u32 distance; /* valid if bearing_present=1 */
@@ -44,6 +58,10 @@ struct neighbor_report {
 	unsigned int tsf_present:1;
 	unsigned int country_present:1;
 	unsigned int rm_capab_present:1;
+	unsigned int wide_bw_chan_present:1;
+	unsigned int supp_rates_present:1;
+	unsigned int uhr_capab_present:1;
+	unsigned int uhr_oper_present:1;
 	unsigned int bearing_present:1;
 	unsigned int bss_term_present:1;
 #ifdef CONFIG_MBO

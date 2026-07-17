@@ -1727,6 +1727,7 @@ hostapd_regdom_restore_iface(struct hostapd_iface *iface)
 #endif
 void hostapd_no_ir_cleanup(struct hostapd_data *bss);
 
+bool hostapd_is_6ghz_chan_txable(const struct hostapd_channel_data *c);
 /**
  * hostapd_handle_afc_channel_change - Handle retail AFC channel change.
  *
@@ -2081,6 +2082,8 @@ int hostapd_update_monitor_channel(struct hostapd_data *hapd,
 void hostapd_clear_old_bss(struct hostapd_data *bss);
 struct hostapd_data * hostapd_mbssid_get_bss(struct hostapd_data *hapd, size_t i);
 
+bool hostapd_is_lpi_chans_available(struct hostapd_iface *iface);
+bool hostapd_is_indoor_sp_pwr_mode(struct hostapd_data *hapd);
 #ifdef CONFIG_IEEE80211AX
 /**
  * hostapd_set_current_6ghz_pwr_type - Set 6 GHz power mode when BPM is disabled

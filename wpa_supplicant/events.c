@@ -2167,10 +2167,16 @@ static int wpas_sta_cac_get_link_chandef(struct wpa_supplicant *wpa_s,
 		punc_bitmap = link->punc_bitmap;
 	}
 
-	if (cf1_idx)
-		params->center_freq1 = 5000 + 5 * cf1_idx;
-	if (cf2_idx)
-		params->center_freq2 = 5000 + 5 * cf2_idx;
+#ifdef CONFIG_QCN_EXTN
+	if (!wpas_sta_cac_5g_320mhz_update_freq_params_extn(width, cf2_idx, params)) {
+#endif /* CONFIG_QCN_EXTN */
+		if (cf1_idx)
+			params->center_freq1 = 5000 + 5 * cf1_idx;
+		if (cf2_idx)
+			params->center_freq2 = 5000 + 5 * cf2_idx;
+#ifdef CONFIG_QCN_EXTN
+	}
+#endif /* CONFIG_QCN_EXTN */
 	params->punct_bitmap = le_to_host16(punc_bitmap);
 
 	if (width == CHAN_WIDTH_40 && params->center_freq1 != params->freq)
@@ -4195,6 +4201,8 @@ static void wpas_parse_connection_info(struct wpa_supplicant *wpa_s,
 		resp_elems.eht_capabilities;
 	if (req_elems.rrm_enabled)
 		wpa_s->rrm.rrm_used = 1;
+	wpa_s->connection_uhr = req_elems.uhr_capabilities &&
+		resp_elems.uhr_capabilities;
 
 	max_nss_rx_req = get_max_nss_capability(&req_elems, 1);
 	max_nss_rx_resp = get_max_nss_capability(&resp_elems, 1);
@@ -8314,6 +8322,9 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 
 		wpas_p2p_update_channel_list(wpa_s, WPAS_P2P_CHANNEL_UPDATE_CS);
 		wnm_clear_coloc_intf_reporting(wpa_s);
+#ifdef CONFIG_QCN_EXTN
+		wpas_ch_switch_5g_320mhz_vendor_ie_extn(wpa_s, data);
+#endif /* CONFIG_QCN_EXTN */
 		break;
 	case EVENT_DFS_RADAR_DETECTED:
 		if (data) {
