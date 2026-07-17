@@ -53,8 +53,8 @@ int uhr_cur_start_iap_msg_timer(struct sta_info *sta,
         ap_info->uhr_st_iap_timer_ongoing = true;
         ap_info->uhr_st_iap_timeout_occurred = false;
 
-        if (eloop_register_timeout(0,
-                                   UHR_ST_IAP_TIMEOUT_MS,
+        if (eloop_register_timeout(UHR_ST_IAP_TIMEOUT_MS / 1000000,
+                                   0,
                                    uhr_st_iap_timeout_handler,
                                    sta, ap_info) < 0) {
                 ap_info->uhr_st_iap_timer_ongoing = false;
@@ -121,7 +121,7 @@ static void uhr_st_prep_timeout_handler(void *eloop_ctx, void *timeout_ctx)
 }
 
 
-int uhr_cur_start_st_prep_timer(struct sta_info *sta, const u8 *ap_mld_addr)
+int uhr_cur_start_st_prep_timer(struct sta_info *sta, const u8 *ap_mld_addr, u32 seconds)
 {
 	struct smd_roam_ap_info *ap_info;
 	if (!sta || !ap_mld_addr) {
@@ -142,14 +142,14 @@ int uhr_cur_start_st_prep_timer(struct sta_info *sta, const u8 *ap_mld_addr)
 	ap_info->uhr_st_prep_timeout_occurred = false;
 	ap_info->uhr_st_prep_timer_ongoing = true;
 	/* Start new timeout */
-	if (eloop_register_timeout((sta->smd_info.smd_timeout * 64)/1000, 0,
+	if (eloop_register_timeout(seconds, 0,
 				   uhr_st_prep_timeout_handler, sta, ap_info) < 0) {
 		wpa_printf(MSG_ERROR, "UHR: Failed to register ST prep timeout");
 		ap_info->uhr_st_prep_timer_ongoing = false;
 		return -1;
 	}
-	wpa_printf(MSG_DEBUG, "UHR: Started ST prep timeout (%d msec) for AP " MACSTR,
-		   (sta->smd_info.smd_timeout * 64)/1000, MAC2STR(ap_mld_addr));
+	wpa_printf(MSG_DEBUG, "UHR: Started ST prep timeout (%d sec) for AP " MACSTR,
+		   seconds, MAC2STR(ap_mld_addr));
 	
 	return 0;
 }
@@ -718,7 +718,7 @@ void uhr_tgt_start_st_prep_timer(struct hostapd_data *hapd,
        if (!sta)
                return;
 
-       timeout_sec = (sta->smd_info.smd_timeout * 64)/1000;
+       timeout_sec = (hapd->conf->smd.smd_prep_timeout * 64)/1000;
 
        addr_copy = os_memdup(sta_addr, ETH_ALEN);
        if (!addr_copy)

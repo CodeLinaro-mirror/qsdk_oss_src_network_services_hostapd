@@ -124,7 +124,7 @@ int uhr_parse_reconfig_mle(const struct ieee802_11_elems *elems,
 
 
 /* Timeout management functions */
-int uhr_cur_start_st_prep_timer(struct sta_info *sta, const u8 *ap_mld_addr);
+int uhr_cur_start_st_prep_timer(struct sta_info *sta, const u8 *ap_mld_addr, u32 seconds);
 void uhr_cancel_st_prep_timeout(struct sta_info *sta, const u8 *ap_mld_addr);
 
 /* AP list management functions */

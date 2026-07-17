@@ -189,7 +189,7 @@ void hostapd_parse_smd_ie(struct hostapd_data * hapd, struct sta_info *sta, cons
 	sta->smd_info.caps.ptk_mode = !!(smd_cap_byte & BIT(5));
 
 	/* Timeout Value (1 octet, units of 64 TUs) */
-	sta->smd_info.smd_timeout = *pos++;
+	sta->smd_info.smd_timeout = hapd->conf->smd.smd_prep_timeout;
 
 	sta->smd_info.smd_sta = true;
 
