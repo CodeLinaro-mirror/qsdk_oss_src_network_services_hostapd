@@ -1067,6 +1067,7 @@ OBJS += ../src/ap/ttlm.o
 endif
 ifdef CONFIG_IEEE80211BN
 OBJS += ../src/ap/ieee802_11_uhr.o
+OBJS += ../src/ap/uhr_neighbor_update.o
 OBJS += ../src/ap/uhr_utils.o
 OBJS += ../src/ap/uhr_oui_transport.o
 OBJS += ../src/ap/uhr_iap.o
