@@ -1,4 +1,9 @@
 ALL=hostapd hostapd_cli
+ifdef CONFIG_MQTT
+ALL += mqtt_test
+ALL += external_hif_mqtt_test_client
+endif
+
 CONFIG_FILE = .config
 
 -include $(if $(MULTICALL), ../wpa_supplicant/.config)
@@ -426,6 +431,17 @@ ifdef CONFIG_ATF_OFFLOAD
 CFLAGS += -DCONFIG_ATF_OFFLOAD
 OBJS += ../src/atf/atf_offload.o
 OBJS += ../src/atf/atf_offload_config.o
+endif
+
+ifdef CONFIG_MQTT
+CFLAGS += -DCONFIG_MQTT
+ifdef CONFIG_MQTT_TEST_APP_FORK
+CFLAGS += -DCONFIG_MQTT_TEST_APP_FORK=1
+endif
+OBJS   += ../src/utils/mqtt_eloop.o
+OBJS   += ../src/ap/hostapd_mqtt.o
+OBJS   += ../src/hostapd_if/hostapd_if_mqtt.o
+LIBS   += -lmosquitto
 endif
 
 ifndef MULTICALL
@@ -1615,9 +1631,28 @@ sae_pk_gen: $(SOBJS)
 lcov-html:
 	lcov -c -d $(BUILDDIR) > lcov.info
 	genhtml lcov.info --output-directory lcov-html
+ifdef CONFIG_MQTT
+ifdef STAGING_DIR
+MQTT_TEST_INC := -I$(STAGING_DIR)/usr/include
+MQTT_TEST_LIB := -L$(STAGING_DIR)/usr/lib
+else ifdef MOSQUITTO_DIR
+MQTT_TEST_INC := -I$(MOSQUITTO_DIR)/include
+MQTT_TEST_LIB := -L$(MOSQUITTO_DIR)/lib
+else
+MQTT_TEST_INC :=
+MQTT_TEST_LIB :=
+endif
+
+mqtt_test: mqtt_test.c
+	$(CC) $(CFLAGS) -Wall $(MQTT_TEST_INC) -o $@ $< $(MQTT_TEST_LIB) -lmosquitto
+
+external_hif_mqtt_test_client: external_hif_mqtt_test_client.c
+	$(CC) $(CFLAGS) -Wall $(MQTT_TEST_INC) -o $@ $< $(MQTT_TEST_LIB) -lmosquitto
+endif
 
 clean: common-clean
 	rm -f core *~ nt_password_hash hlr_auc_gw
 	rm -f sae_pk_gen
+	rm -f mqtt_test external_hif_mqtt_test_client
 	rm -f lcov.info
 	rm -rf lcov-html
