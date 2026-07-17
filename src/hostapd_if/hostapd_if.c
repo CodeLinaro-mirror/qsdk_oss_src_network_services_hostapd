@@ -2310,10 +2310,20 @@ void __hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 	/* Set the MSK in the EAPOL key location so ieee802_1x_get_key
 	 * can retrieve it, then signal keyRun and keyAvailable so the
 	 * WPA PTK state machine can transition AUTHENTICATION2 ->
-	 * INITPMK -> PTKSTART without a full RADIUS exchange. */
+	 * INITPMK -> PTKSTART without a full RADIUS exchange.
+	 *
+	 * The external application provides either the xxkey (FT) or
+	 * PMK(non-FT). We must reconstruct
+	 * the MSK buffer layout that INITPMK expects:
+	 *   - non-FT: PMK occupies the first half of the MSK
+	 *   - FT: PMK occupies the second half of the MSK
+	 *
+	 * Total buffer must be 2*PMK_LEN (64) so the len >= 2*PMK_LEN guard in
+	 * INITPMK passes and sm->xxkey gets set.
+	 */
 	bin_clear_free(eapol->eap_if->eapKeyData, eapol->eap_if->eapKeyDataLen);
 	eapol->eap_if->eapKeyDataLen = 0;
-	eapol->eap_if->eapKeyData = os_memdup(pmk, pmk_len);
+	eapol->eap_if->eapKeyData = os_zalloc(2 * PMK_LEN);
 	if (!eapol->eap_if->eapKeyData) {
 		wpa_printf(MSG_ERROR,
 				"hostapd_if: set_pmk - failed to set eapKeyData for STA "
@@ -2322,7 +2332,12 @@ void __hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 		eapol->eap_if->eapKeyDataLen = 0;
 		goto __hostapd_if_set_pmk_exit;
 	}
-	eapol->eap_if->eapKeyDataLen = pmk_len;
+	if ((pmk_len <= PMK_LEN) &&
+	    wpa_key_mgmt_ft(wpa_auth_sta_key_mgmt(sta->wpa_sm)))
+		os_memcpy(eapol->eap_if->eapKeyData + PMK_LEN, pmk, pmk_len);
+	else
+		os_memcpy(eapol->eap_if->eapKeyData, pmk, pmk_len);
+	eapol->eap_if->eapKeyDataLen = 2 * PMK_LEN;
 	eapol->eap_if->eapKeyAvailable = true;
 	eapol->keyRun = true;
 
