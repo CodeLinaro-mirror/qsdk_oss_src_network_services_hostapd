@@ -206,7 +206,6 @@ struct smd_roam_ap_info {
 	bool smd_ctx_valid;
 	struct sta_smd_ctx_info *smd_ctx;  /* SMD context for this AP MLD transition */
 	bool uhr_st_iap_timer_ongoing;
-	bool uhr_st_iap_timeout_occurred;
 };
 
 

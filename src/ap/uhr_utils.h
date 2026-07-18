@@ -38,7 +38,7 @@ enum uhr_smd_st_type {
 	UHR_SMD_ST_EXEC_RESP = 3,
 };
 
-#define UHR_ST_IAP_TIMEOUT_MS 1000000
+#define UHR_ST_IAP_TIMEOUT_USEC 1000000
 
 struct uhr_smd_bss_transition_element {
 	u16 listen_interval;

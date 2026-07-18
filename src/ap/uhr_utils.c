@@ -25,11 +25,26 @@ static void uhr_st_iap_timeout_handler(void *eloop_ctx,
         struct smd_roam_ap_info *ap_info = timeout_ctx;
 
         ap_info->uhr_st_iap_timer_ongoing = false;
-        ap_info->uhr_st_iap_timeout_occurred = true;
 
         wpa_printf(MSG_DEBUG,
                    "UHR: ST IAP timeout fired for AP " MACSTR,
                    MAC2STR(ap_info->ap_mld_addr));
+
+        /*
+         * If the IAP response never arrived during ST Execute, the target AP
+         * may have already authorized the STA and cancelled its own prep timer.
+         * Send a ROAM_CLEANUP so the target AP can undo that state before the
+         * ap_info entry is freed.
+         */
+        if (ap_info->state == SMD_AP_STATE_ST_EXEC_IAP_PENDING &&
+            ap_info->st_prep_hapd) {
+                wpa_printf(MSG_DEBUG,
+                           "UHR: ST IAP timeout in EXEC phase, sending ROAM CLEANUP to " MACSTR,
+                           MAC2STR(ap_info->ap_mld_addr));
+                uhr_iap_send_st_roam_cleanup(ap_info->st_prep_hapd,
+                                             ap_info->ap_mld_addr,
+                                             sta->addr);
+        }
 
         uhr_remove_ap_from_list(sta, ap_info->ap_mld_addr);
 }
@@ -51,10 +66,9 @@ int uhr_cur_start_iap_msg_timer(struct sta_info *sta,
                 return 0;
 
         ap_info->uhr_st_iap_timer_ongoing = true;
-        ap_info->uhr_st_iap_timeout_occurred = false;
 
-        if (eloop_register_timeout(UHR_ST_IAP_TIMEOUT_MS / 1000000,
-                                   0,
+        if (eloop_register_timeout(0,
+                                   UHR_ST_IAP_TIMEOUT_USEC,
                                    uhr_st_iap_timeout_handler,
                                    sta, ap_info) < 0) {
                 ap_info->uhr_st_iap_timer_ongoing = false;
@@ -63,7 +77,7 @@ int uhr_cur_start_iap_msg_timer(struct sta_info *sta,
 
         wpa_printf(MSG_DEBUG,
                    "UHR: Started ST IAP timeout (%u ms) for AP " MACSTR,
-                   UHR_ST_IAP_TIMEOUT_MS / 1000,
+                   UHR_ST_IAP_TIMEOUT_USEC / 1000,
                    MAC2STR(ap_mld_addr));
 
         return 0;
@@ -85,7 +99,6 @@ void uhr_cancel_iap_timeout(struct sta_info *sta,
         eloop_cancel_timeout(uhr_st_iap_timeout_handler, sta, ap_info);
 
         ap_info->uhr_st_iap_timer_ongoing = false;
-        ap_info->uhr_st_iap_timeout_occurred = false;
 }
 
 static void uhr_st_prep_timeout_handler(void *eloop_ctx, void *timeout_ctx)
@@ -230,6 +243,7 @@ int uhr_remove_ap_from_list(struct sta_info *sta, const u8 *ap_mld_addr)
 	while (ap_info) {
 		if (ether_addr_equal(ap_info->ap_mld_addr, ap_mld_addr)) {
 			eloop_cancel_timeout(uhr_st_iap_timeout_handler, sta, ap_info);
+			eloop_cancel_timeout(uhr_st_prep_timeout_handler, sta, ap_info);
 			if (prev)
 				prev->next = ap_info->next;
 			else
@@ -263,8 +277,9 @@ void uhr_cleanup_sta_roam_contexts(struct sta_info *sta)
 	ap_info = sta->smd_info.ap_list;
 	while (ap_info) {
 		next = ap_info->next;
-		/* Cancel all pending timers before freeing*/
+		/* Cancel all pending timers before freeing */
 		eloop_cancel_timeout(uhr_st_iap_timeout_handler, sta, ap_info);
+		eloop_cancel_timeout(uhr_st_prep_timeout_handler, sta, ap_info);
 		wpa_printf(MSG_DEBUG, "UHR: Freeing roam context for AP " MACSTR,
 			   MAC2STR(ap_info->ap_mld_addr));
 		os_free(ap_info);
