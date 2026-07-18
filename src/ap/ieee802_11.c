@@ -10063,7 +10063,6 @@ static void handle_assoc(struct hostapd_data *hapd,
 					resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
 					goto fail;
 				}
-				osta->skip_sa_query = 0;
 				sta->skip_sa_query = 0;
 			}
 		}
