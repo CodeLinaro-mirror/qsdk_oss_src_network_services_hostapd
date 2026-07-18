@@ -1782,6 +1782,53 @@ struct hostapd_config {
 };
 
 
+#ifdef CONFIG_IEEE80211BN
+/* NPCA is channel-specific; call on every channel change so a stale
+ * primary channel/puncture bitmap from the old channel is never
+ * advertised. The AP may re-enable NPCA later via a UHR Parameters
+ * Update ECU on the new channel.
+ */
+static inline void hostapd_disable_npca(struct hostapd_config *conf)
+{
+	conf->npca_enable = false;
+	conf->npca_primary_channel = 0;
+	conf->npca_punct_bitmap = 0;
+	conf->npca_primary_chan_offset = -1;
+}
+
+/* struct hostapd_npca_state - snapshot of conf's NPCA fields
+ *
+ * Used to temporarily disable NPCA (e.g. while building a beacon for
+ * a channel that has not actually been switched to yet) and restore
+ * the prior state afterwards.
+ */
+struct hostapd_npca_state {
+	bool npca_enable;
+	u8 npca_primary_channel;
+	u16 npca_punct_bitmap;
+	u8 npca_primary_chan_offset;
+};
+
+static inline void hostapd_save_npca(struct hostapd_config *conf,
+				     struct hostapd_npca_state *state)
+{
+	state->npca_enable = conf->npca_enable;
+	state->npca_primary_channel = conf->npca_primary_channel;
+	state->npca_punct_bitmap = conf->npca_punct_bitmap;
+	state->npca_primary_chan_offset = conf->npca_primary_chan_offset;
+}
+
+static inline void hostapd_restore_npca(struct hostapd_config *conf,
+					const struct hostapd_npca_state *state)
+{
+	conf->npca_enable = state->npca_enable;
+	conf->npca_primary_channel = state->npca_primary_channel;
+	conf->npca_punct_bitmap = state->npca_punct_bitmap;
+	conf->npca_primary_chan_offset = state->npca_primary_chan_offset;
+}
+#endif /* CONFIG_IEEE80211BN */
+
+
 static inline enum oper_chan_width
 hostapd_get_oper_chwidth(struct hostapd_config *conf)
 {

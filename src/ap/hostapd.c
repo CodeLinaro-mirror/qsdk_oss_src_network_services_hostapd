@@ -8873,6 +8873,9 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 	u8 chan, old_reg_6ghz_power_mode;
 	int sec_channel_offset = settings->freq_params.sec_channel_offset;
 	u8 tpe_config = 0;
+#ifdef CONFIG_IEEE80211BN
+	struct hostapd_npca_state old_npca;
+#endif /* CONFIG_IEEE80211BN */
 
 	os_memset(&old_freq, 0, sizeof(old_freq));
 	if (!iface || !iface->freq || hapd->csa_in_progress)
@@ -8985,6 +8988,11 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 		hapd->conf->tpe_ie_config.local_tpe_config = 0;
 	}
 
+#ifdef CONFIG_IEEE80211BN
+	hostapd_save_npca(iface->conf, &old_npca);
+	hostapd_disable_npca(iface->conf);
+#endif /* CONFIG_IEEE80211BN */
+
 	ret = hostapd_build_beacon_data(hapd, &settings->beacon_after);
 	if (settings->beacon_after.elemid_modified_bmap)
 		settings->beacon_after_cu = 1;
@@ -8994,6 +9002,10 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 	/* change back the configuration */
 	hostapd_change_config_freq(iface->bss[0], iface->conf,
 				   &old_freq, NULL);
+
+#ifdef CONFIG_IEEE80211BN
+	hostapd_restore_npca(iface->conf, &old_npca);
+#endif /* CONFIG_IEEE80211BN */
 
 	if (tpe_config)
 		hapd->conf->tpe_ie_config.local_tpe_config = tpe_config;
@@ -9375,6 +9387,9 @@ hostapd_switch_channel_fallback(struct hostapd_iface *iface,
 	iface->conf->bandwidth_device = freq_params->bandwidth_device;
 	iface->conf->center_freq_device = freq_params->center_freq_device;
 	iface->conf->punct_bitmap = freq_params->punct_bitmap;
+#ifdef CONFIG_IEEE80211BN
+	hostapd_disable_npca(iface->conf);
+#endif /* CONFIG_IEEE80211BN */
 
 	/*
 	 * cs_params must not be cleared earlier because the freq_params
