@@ -3540,6 +3540,9 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 						      &oper_centr_freq_seg1_idx,
 						      NULL);
 
+		if (iface->skip_mesh_dfs)
+			return 0;
+
 		if (iface->cac_started) {
 
 			wpa_printf(MSG_DEBUG, "radar detected during cac,"
@@ -3600,6 +3603,9 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 				wpa_printf(MSG_INFO,
 					   "DFS: Radar detected, BW reduction successful - Ch %d",
 					    channel->chan);
+				if (iface->skip_mesh_dfs)
+					return 0;
+
 				return hostapd_dfs_request_channel_switch(
 							iface, channel->chan,
 							channel->freq,
@@ -3616,8 +3622,12 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 		 * so treat this as radar affecting the current operating
 		 * bandwidth.
 		 */
-		if (!radar_bitmap && !iface->conf->disable_csa_dfs)
+		if (!radar_bitmap && !iface->conf->disable_csa_dfs) {
+			if (iface->skip_mesh_dfs)
+				return 0;
+
 			return hostapd_dfs_start_channel_switch(iface);
+		}
 
 		/* Radar detected on non-operating portion. No action needed. */
 		if (radar_bitmap && !radar_bitmap_oper)
@@ -3639,6 +3649,9 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			}
 			return 0;
 		}
+
+		if (iface->skip_mesh_dfs)
+			return 0;
 
 		/* Radar detected while operating, switch the channel. */
 		return hostapd_dfs_start_channel_switch(iface);
