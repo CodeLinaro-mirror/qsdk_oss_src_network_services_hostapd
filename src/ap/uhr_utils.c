@@ -684,7 +684,7 @@ void uhr_tgt_st_prep_timer_cleanup(void *eloop_ctx, void *timeout_ctx)
                        if (sta) {
 			       struct hostapd_data *assoc_hapd;
 			       struct sta_info *assoc_sta = NULL;
-			       enum tgt_smd_roam_state state;
+			       enum tgt_smd_roam_state state = SMD_STA_ST_NONE;
 
 			       assoc_sta = hostapd_ml_get_assoc_sta(bss, sta, &assoc_hapd);
 			       if (assoc_sta)
@@ -732,6 +732,21 @@ void uhr_tgt_start_st_prep_timer(struct hostapd_data *hapd,
        sta = ap_get_sta(hapd, sta_addr);
        if (!sta)
                return;
+
+       /* Cancel any existing timer before registering a new one.
+        * On re-prep the old eloop entry and its addr_copy must be
+        * discarded, otherwise two timers fire against the same STA. */
+       if (sta->smd_info.uhr_target_prep_timer) {
+               struct hostapd_data *old_hapd =
+                       sta->smd_info.tgt_prep_timer_hapd
+                       ? sta->smd_info.tgt_prep_timer_hapd : hapd;
+               eloop_cancel_timeout(uhr_tgt_st_prep_timer_cleanup, old_hapd,
+                                    sta->smd_info.tgt_prep_timer_ctx);
+               os_free(sta->smd_info.tgt_prep_timer_ctx);
+               sta->smd_info.tgt_prep_timer_ctx = NULL;
+               sta->smd_info.tgt_prep_timer_hapd = NULL;
+               sta->smd_info.uhr_target_prep_timer = 0;
+       }
 
        timeout_sec = (hapd->conf->smd.smd_prep_timeout * 64)/1000;
 
