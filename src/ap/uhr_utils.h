@@ -95,7 +95,8 @@ void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
 
 /* ST Execute - Target AP Functions */
 void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
-                                const struct uhr_iap_frame *iap);
+                                const struct uhr_iap_frame *iap,
+                                u16 frame_len);
 
 /* ST Roam Cleanup - Target AP handler */
 void uhr_tgt_ap_handle_st_roam_cleanup(struct hostapd_data *hapd,
