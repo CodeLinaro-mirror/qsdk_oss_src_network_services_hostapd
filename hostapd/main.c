@@ -35,6 +35,7 @@
 #include "build_features.h"
 #include "ap/robust_av.h"
 #include "hostapd_if/hostapd_if.h"
+#include "hostapd_if/hostapd_if_mqtt.h"
 #include "ap/nft.h"
 
 #include "atf/atf_offload.h"
@@ -892,6 +893,11 @@ int main(int argc, char *argv[])
 #ifdef CONFIG_HOSTAPD_IF
 	bool plugin_enable = false;
 #endif
+#ifdef CONFIG_MQTT
+#ifdef CONFIG_MQTT_TEST_APP_FORK
+	bool mqtt_plugin_enable = false;
+#endif /* CONFIG_MQTT_TEST_APP_FORK */
+#endif /* CONFIG_MQTT */
 
 	if (os_program_init())
 		return -1;
@@ -933,7 +939,7 @@ int main(int argc, char *argv[])
 	wpa_supplicant_event = hostapd_wpa_event;
 	wpa_supplicant_event_global = hostapd_wpa_event_global;
 	for (;;) {
-		c = getopt(argc, argv, "b:Bde:f:hHi:KP:sSTtu:g:G:qvz::");
+		c = getopt(argc, argv, "b:Bde:f:hHi:KMP:sSTtu:g:G:qvz::");
 		if (c < 0)
 			break;
 		switch (c) {
@@ -944,6 +950,13 @@ int main(int argc, char *argv[])
 		case 'H':
 			plugin_enable = true;
 			break;
+#endif
+#ifdef CONFIG_MQTT
+#ifdef CONFIG_MQTT_TEST_APP_FORK
+		case 'M':
+			mqtt_plugin_enable = true;
+			break;
+#endif /* CONFIG_MQTT_TEST_APP_FORK */
 #endif
 		case 'd':
 			debug++;
@@ -1102,6 +1115,15 @@ int main(int argc, char *argv[])
 	}
 #endif
 
+#ifdef CONFIG_MQTT
+#ifdef CONFIG_MQTT_TEST_APP_FORK
+	if (mqtt_plugin_enable) {
+		if (hostapd_if_start_mqtt_hif_client() < 0)
+			goto out;
+	}
+#endif /* CONFIG_MQTT_TEST_APP_FORK */
+#endif /* CONFIG_MQTT */
+
 	/* Allocate and parse configuration for full interface files */
 	for (i = 0; i < interfaces.count; i++) {
 		char *if_name = NULL;
@@ -1219,6 +1241,12 @@ int main(int argc, char *argv[])
 
  out:
 	hostapd_global_ctrl_iface_deinit(&interfaces);
+#ifdef CONFIG_MQTT
+#ifdef CONFIG_MQTT_TEST_APP_FORK
+	if (mqtt_plugin_enable)
+		hostapd_if_stop_mqtt_hif_client();
+#endif /* CONFIG_MQTT_TEST_APP_FORK */
+#endif /* CONFIG_MQTT */
 	/* Sending deauth to all stations before deinit */
 	hostapd_deauthenticate_stations(&interfaces);
 	/* Deinitialize all interfaces */

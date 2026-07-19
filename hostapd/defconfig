@@ -439,3 +439,8 @@ CONFIG_DPP2=y
 
 # MQTT eloop integration (libmosquitto direct eloop, Approach B)
 CONFIG_MQTT=y
+
+# Fork and exec external_hif_mqtt_test_client at hostapd startup as a child
+# process. The child is tied to hostapd's lifetime via PR_SET_PDEATHSIG so it
+# respawns together with hostapd. Disable if the client is managed externally.
+CONFIG_MQTT_TEST_APP_FORK=y
