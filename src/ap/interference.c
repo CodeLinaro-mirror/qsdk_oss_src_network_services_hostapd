@@ -1136,7 +1136,7 @@ static void set_csa_param(struct csa_settings *settings,
 			  int centre_freq)
 {
 	os_memset(settings, 0, sizeof(*settings));
-	settings->cs_count = 5;
+	settings->cs_count = 10;
 	settings->freq_params.freq = chan_data->freq;
 	settings->freq_params.bandwidth = channel_width_to_int(chan_width);
 	settings->freq_params.center_freq1 = centre_freq;
