@@ -73,6 +73,9 @@
 #endif /* CONFIG_IEEE80211BN */
 #include "../../qcn_extns/cmn.h"
 #include "nft.h"
+#ifdef CONFIG_IEEE80211BN
+#include "mapc.h"
+#endif /* CONFIG_IEEE80211BN */
 
 static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason);
 #ifdef CONFIG_WEP
@@ -579,8 +582,10 @@ static void hostapd_reload_bss(struct hostapd_data *hapd)
 #ifdef CONFIG_IEEE80211BN
 	if (hapd->smd_neighbor_update_ctx)
 		smd_neighbor_update_notify_own_report_changed(hapd);
-#endif /* CONFIG_IEEE80211BN */
 
+	mapc_deinit(hapd);
+	mapc_init(hapd);
+#endif /* CONFIG_IEEE80211BN */
 	ieee802_11_set_beacon(hapd);
 	hostapd_update_wps(hapd);
 
@@ -1711,6 +1716,10 @@ static void hostapd_cleanup(struct hostapd_data *hapd)
 #if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211AC)
 	hostapd_mu_cap_war_sta_list_flush_extn(hapd);
 #endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
+
+#ifdef CONFIG_IEEE80211BN
+	mapc_deinit(hapd);
+#endif /* CONFIG_IEEE80211BN */
 	hostapd_free_hapd_data(hapd);
 }
 
@@ -2460,6 +2469,14 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
 
 	hostapd_ubus_add_bss(hapd);
 	hostapd_ucode_add_bss(hapd);
+#ifdef CONFIG_IEEE80211BN
+	if (mapc_init(hapd) < 0) {
+		wpa_printf(MSG_ERROR, "MAPC: init failed for BSS %s",
+			   hapd->conf->iface);
+		return -1;
+	}
+#endif /* CONFIG_IEEE80211BN */
+
 	return 0;
 }
 
@@ -3256,6 +3273,9 @@ void hostapd_no_ir_cleanup(struct hostapd_data *bss)
 {
 	hostapd_bss_deinit_no_free(bss);
 	hostapd_bss_link_deinit(bss);
+#ifdef CONFIG_IEEE80211BN
+	mapc_deinit(bss);
+#endif /* CONFIG_IEEE80211BN */
 	hostapd_free_hapd_data(bss);
 }
 
@@ -5305,6 +5325,10 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 
 	prev_addr = hapd->own_addr;
 
+#ifdef CONFIG_IEEE80211BN
+	mapc_iface_init(iface);
+#endif /* CONFIG_IEEE80211BN */
+
 	for (j = 0; j < iface->num_bss; j++) {
 		hapd = iface->bss[j];
 		if (j)
@@ -5805,6 +5829,12 @@ void hostapd_interface_deinit(struct hostapd_iface *iface)
 	hostapd_stop_setup_timers(iface);
 	eloop_cancel_timeout(ap_ht2040_timeout, iface, NULL);
 #endif /* NEED_AP_MLME */
+
+#ifdef CONFIG_IEEE80211BN
+	/* All per-BSS mapc_deinit() calls have completed inside
+	 * hostapd_bss_deinit() above; now tear down radio-level MAPC state. */
+	mapc_iface_deinit(iface);
+#endif /* CONFIG_IEEE80211BN */
 }
 
 
@@ -7360,6 +7390,9 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt, const char *event)
 	hostapd_drv_stop_ap(hapd);
 
 	/* Deinitialize higher-level BSS state but keep netdev/link. */
+#ifdef CONFIG_IEEE80211BN
+	mapc_deinit(hapd);
+#endif /* CONFIG_IEEE80211BN */
 	hostapd_bss_deinit_no_free(hapd);
 	hapd->reenable = REENABLE_REUSE_LINK;
 	hostapd_bss_link_deinit(hapd);
@@ -7604,6 +7637,9 @@ int hostapd_disable_iface(struct hostapd_iface *hapd_iface)
 	/* same as hostapd_interface_deinit without deinitializing ctrl-iface */
 	for (j = 0; j < hapd_iface->num_bss; j++) {
 		struct hostapd_data *hapd = hapd_iface->bss[j];
+#ifdef CONFIG_IEEE80211BN
+		mapc_deinit(hapd);
+#endif /* CONFIG_IEEE80211BN */
 		hapd->reenable = REENABLE_DEINIT;
 		hostapd_bss_deinit_no_free(hapd);
 		hostapd_bss_link_deinit(hapd);
@@ -9002,6 +9038,33 @@ int hostapd_change_config_freq(struct hostapd_data *hapd,
 
 	return 0;
 }
+
+#ifdef CONFIG_IEEE80211BN
+bool hostapd_is_mapc_action(const struct ieee80211_mgmt *mgmt, size_t len)
+{
+	u8 category, action;
+
+	if (len < IEEE80211_HDRLEN + 2)
+		return false;
+
+	category = mgmt->u.action.category;
+
+	if (category != WLAN_ACTION_PUBLIC &&
+		category != WLAN_ACTION_PROTECTED_DUAL)
+		return false;
+
+	action = mgmt->u.action.u.public_action.action;
+	switch (action) {
+	case WLAN_PA_MAPC_DISCOVERY_REQ:
+	case WLAN_PA_MAPC_DISCOVERY_RESP:
+	case WLAN_PA_MAPC_NEGOTIATION_REQ:
+	case WLAN_PA_MAPC_NEGOTIATION_RESP:
+		return true;
+	default:
+		return false;
+    	}
+}
+#endif /* CONFIG_IEEE80211BN */
 
 
 enum oper_chan_width

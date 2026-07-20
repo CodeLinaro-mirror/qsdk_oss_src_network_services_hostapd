@@ -637,6 +637,14 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 	params.vht_opmode_enabled = !!(flags & WLAN_STA_VHT_OPMODE_ENABLED);
 	params.vht_opmode = vht_opmode;
 	params.flags = hostapd_sta_flags_to_drv(flags, 0);
+#ifdef CONFIG_IEEE80211BN
+	sta = ap_get_sta(hapd, addr);
+	if (sta && sta->is_mapc_peer) {
+		params.flags |= WPA_STA_MAPC_PEER;
+		wpa_printf(MSG_DEBUG, "hostapd_add_sta: WPA_STA_MAPC_PEER set for " MACSTR,
+			   MAC2STR(addr));
+	}
+#endif /* CONFIG_IEEE80211BN */
 	params.qosinfo = qosinfo;
 	params.support_p2p_ps = supp_p2p_ps;
 	params.set = set;
@@ -972,6 +980,17 @@ int hostapd_sta_set_flags(struct hostapd_data *hapd, u8 *addr,
 }
 
 
+#ifdef CONFIG_IEEE80211BN
+int hostapd_sta_set_mapc_params(struct hostapd_data *hapd, const u8 *addr,
+				const struct mapc_parameters *params)
+{
+	if (!hapd->driver || !hapd->driver->sta_set_mapc_params)
+		return 0;
+	return hapd->driver->sta_set_mapc_params(hapd->drv_priv, addr, params);
+}
+#endif /* CONFIG_IEEE80211BN */
+
+
 int hostapd_sta_set_airtime_weight(struct hostapd_data *hapd, const u8 *addr,
 				   unsigned int weight)
 {
@@ -1267,6 +1286,21 @@ static bool hostapd_is_action_frame_link_agnostic(const u8 *data, size_t len)
 }
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BN
+static bool mapc_action_frame(u8 action_code)
+{
+	switch (action_code) {
+	case WLAN_PA_MAPC_DISCOVERY_REQ:
+	case WLAN_PA_MAPC_DISCOVERY_RESP:
+	case WLAN_PA_MAPC_NEGOTIATION_REQ:
+	case WLAN_PA_MAPC_NEGOTIATION_RESP:
+		return true;
+	default:
+		return false;
+	}
+}
+#endif /* CONFIG_IEEE80211BN */
+
 
 static int hapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 				unsigned int wait, const u8 *dst,
@@ -1287,7 +1321,11 @@ static int hapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 	if (forced_a3) {
 		bssid = forced_a3;
 	} else if (!addr3_ap && !is_multicast_ether_addr(dst) &&
-		   len > 0 && data[0] == WLAN_ACTION_PUBLIC) {
+		   len > 0 && data[0] == WLAN_ACTION_PUBLIC
+#ifdef CONFIG_IEEE80211BN
+		   && !mapc_action_frame(data[1])
+#endif
+		   ) {
 		/*
 		 * Public Action frames to a STA that is not a member of the BSS
 		 * shall use wildcard BSSID value.
@@ -1296,7 +1334,11 @@ static int hapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 		if (!sta || !(sta->flags & WLAN_STA_ASSOC))
 			bssid = wildcard_bssid;
 	} else if (!addr3_ap && is_broadcast_ether_addr(dst) &&
-		   len > 0 && data[0] == WLAN_ACTION_PUBLIC) {
+		   len > 0 && data[0] == WLAN_ACTION_PUBLIC
+#ifdef CONFIG_IEEE80211BN
+		   && !mapc_action_frame(data[1])
+#endif
+		   ) {
 		/*
 		 * The only current use case of Public Action frames with
 		 * broadcast destination address is DPP PKEX. That case is
