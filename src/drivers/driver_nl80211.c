@@ -10205,6 +10205,9 @@ static int get_sta_handler(struct nl_msg *msg, void *arg)
 		[NL80211_RATE_INFO_HE_NSS] = { .type = NLA_U8 },
 		[NL80211_RATE_INFO_HE_GI] = { .type = NLA_U8 },
 		[NL80211_RATE_INFO_HE_DCM] = { .type = NLA_U8 },
+		[NL80211_RATE_INFO_EHT_MCS] = { .type = NLA_U8 },
+		[NL80211_RATE_INFO_EHT_NSS] = { .type = NLA_U8 },
+		[NL80211_RATE_INFO_EHT_GI] = { .type = NLA_U8 },
 	};
 
 	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
@@ -10377,6 +10380,30 @@ static int get_sta_handler(struct nl_msg *msg, void *arg)
 				nla_get_u8(rate[NL80211_RATE_INFO_HE_DCM]);
 			data->flags |= STA_DRV_DATA_TX_HE_DCM;
 		}
+		if (rate[NL80211_RATE_INFO_EHT_MCS]) {
+			data->tx_ehtmcs =
+				nla_get_u8(rate[NL80211_RATE_INFO_EHT_MCS]);
+			data->flags |= STA_DRV_DATA_TX_EHT_MCS;
+		}
+		if (rate[NL80211_RATE_INFO_EHT_NSS]) {
+			data->tx_eht_nss =
+				nla_get_u8(rate[NL80211_RATE_INFO_EHT_NSS]);
+			data->flags |= STA_DRV_DATA_TX_EHT_NSS;
+		}
+		if (rate[NL80211_RATE_INFO_EHT_GI]) {
+			switch (nla_get_u8(rate[NL80211_RATE_INFO_EHT_GI])) {
+			case NL80211_RATE_INFO_EHT_GI_0_8:
+				data->tx_guard_interval = GUARD_INTERVAL_0_8;
+				break;
+			case NL80211_RATE_INFO_EHT_GI_1_6:
+				data->tx_guard_interval = GUARD_INTERVAL_1_6;
+				break;
+			case NL80211_RATE_INFO_EHT_GI_3_2:
+				data->tx_guard_interval = GUARD_INTERVAL_3_2;
+				break;
+			}
+			data->flags |= STA_DRV_DATA_TX_EHT_GI;
+		}
 	}
 
 	if (stats[NL80211_STA_INFO_RX_BITRATE] &&
@@ -10440,6 +10467,30 @@ static int get_sta_handler(struct nl_msg *msg, void *arg)
 			data->rx_dcm =
 				nla_get_u8(rate[NL80211_RATE_INFO_HE_DCM]);
 			data->flags |= STA_DRV_DATA_RX_HE_DCM;
+		}
+		if (rate[NL80211_RATE_INFO_EHT_MCS]) {
+			data->rx_ehtmcs =
+				nla_get_u8(rate[NL80211_RATE_INFO_EHT_MCS]);
+			data->flags |= STA_DRV_DATA_RX_EHT_MCS;
+		}
+		if (rate[NL80211_RATE_INFO_EHT_NSS]) {
+			data->rx_eht_nss =
+				nla_get_u8(rate[NL80211_RATE_INFO_EHT_NSS]);
+			data->flags |= STA_DRV_DATA_RX_EHT_NSS;
+		}
+		if (rate[NL80211_RATE_INFO_EHT_GI]) {
+			switch (nla_get_u8(rate[NL80211_RATE_INFO_EHT_GI])) {
+			case NL80211_RATE_INFO_EHT_GI_0_8:
+				data->rx_guard_interval = GUARD_INTERVAL_0_8;
+				break;
+			case NL80211_RATE_INFO_EHT_GI_1_6:
+				data->rx_guard_interval = GUARD_INTERVAL_1_6;
+				break;
+			case NL80211_RATE_INFO_EHT_GI_3_2:
+				data->rx_guard_interval = GUARD_INTERVAL_3_2;
+				break;
+			}
+			data->flags |= STA_DRV_DATA_RX_EHT_GI;
 		}
 	}
 
