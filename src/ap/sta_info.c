@@ -383,7 +383,7 @@ static void hostapd_free_mscs_data(struct hostapd_data *hapd,
 	if (!sta->mscs_ctxt)
 		return;
 
-	hostapd_mscs_delete_all_rules(hapd, sta);
+	hostapd_mscs_delete_nft_rules(hapd, sta);
 	sta->mscs_session_exists = false;
 	os_free(sta->mscs_ctxt);
 	sta->mscs_ctxt = NULL;

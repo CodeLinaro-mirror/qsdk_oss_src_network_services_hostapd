@@ -1140,7 +1140,7 @@ static int hostapd_ctrl_iface_send_mscs_resp(struct hostapd_data *hapd,
 		ret = hostapd_copy_and_send_mscs_data(hapd, sta, QM_REMOVE_REQ,
 						      0);
 		sta->mscs_session_exists = false;
-		hostapd_mscs_delete_all_rules(hapd, sta);
+		hostapd_mscs_delete_nft_rules(hapd, sta);
 		os_free(sta->mscs_ctxt);
 		sta->mscs_ctxt = NULL;
 	}
