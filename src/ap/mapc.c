@@ -282,6 +282,10 @@ static void mapc_negotiation_timeout_cb(void *eloop_data, void *user_data)
 	if (sta->mapc_params.peer_state == MAPC_PEER_STATE_DISCOVERED) {
 		if (sta->mapc_params.apid != 0)
 			mapc_release_aid(hapd, sta);
+#ifdef CONFIG_QCN_EXTN
+		if (sta->mapc_params.vendor.vendor_apid)
+			mapc_release_vendor_aid(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
 	}
 
 	/* ACTIVE peer: AID and vendor AID remain valid; only reset neg_state. */
@@ -299,7 +303,6 @@ static void mapc_delete_active_peer(struct hostapd_data *hapd, struct sta_info *
 
 	eloop_cancel_timeout(mapc_inactivity_cb, hapd, sta);
 	eloop_cancel_timeout(mapc_negotiation_timeout_cb, hapd, sta);
-
 
 	if (hapd->iface->mapc_active_peer_count > 0)
 		hapd->iface->mapc_active_peer_count--;
@@ -425,6 +428,10 @@ static int mapc_add_drv_sta(struct hostapd_data *hapd,
 			   mapc_conf->max_mapc_co_ap_peer,
 			   MAC2STR(sta->addr));
 		mapc_release_aid(hapd, sta);
+#ifdef CONFIG_QCN_EXTN
+		if (sta->mapc_params.vendor.vendor_apid)
+			mapc_release_vendor_aid(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
 		return -ENOSPC;
 	}
 
@@ -437,6 +444,10 @@ static int mapc_add_drv_sta(struct hostapd_data *hapd,
 			   mapc_conf->max_mapc_ctdma_peer,
 			   MAC2STR(sta->addr));
 		mapc_release_aid(hapd, sta);
+#ifdef CONFIG_QCN_EXTN
+		if (sta->mapc_params.vendor.vendor_apid)
+			mapc_release_vendor_aid(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
 		return -ENOSPC;
 	}
 
@@ -552,6 +563,10 @@ static int mapc_add_drv_sta(struct hostapd_data *hapd,
 		sta->mapc_params.apid      = 0;
 		sta->mapc_params.neg_state = MAPC_NEG_IDLE;
 		sta->mapc_params.peer_state = MAPC_PEER_STATE_DISCOVERED;
+#ifdef CONFIG_QCN_EXTN
+		if (sta->mapc_params.vendor.vendor_apid)
+			mapc_release_vendor_aid(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
 		return -1;
 	}
 
@@ -574,6 +589,12 @@ static int mapc_add_drv_sta(struct hostapd_data *hapd,
 		wpa_printf(MSG_ERROR,
 			   "MAPC: SET_STATION MAPC params failed for " MACSTR,
 			   MAC2STR(sta->addr));
+#ifdef CONFIG_QCN_EXTN
+	if (mapc_set_vendor_params(hapd, sta))
+		wpa_printf(MSG_ERROR,
+			   "MAPC: vendor params failed at promotion for " MACSTR,
+			   MAC2STR(sta->addr));
+#endif /* CONFIG_QCN_EXTN */
 
 	/*
 	 * Snapshot our current Co-TDMA params so cotdma_has_params_changed()
@@ -1266,6 +1287,10 @@ static int mapc_build_ie(struct wpabuf *buf, struct hostapd_data *hapd,
 				hapd, &ie_params->schemes[i]);
 	}
 
+	/* Vendor subelement appended here so it is counted in ie_body_len */
+#ifdef CONFIG_QCN_EXTN
+	mapc_vendor_append_subelement(buf, sta, action_code);
+#endif /* CONFIG_QCN_EXTN */
 
 	/* Patch outer MAPC IE Length */
 	ie_body_len = wpabuf_len(buf) - body_start;
@@ -1468,6 +1493,13 @@ static int mapc_parse_ie(const u8 *buf, size_t len,
 			wpa_printf(MSG_DEBUG,
 					   "MAPC: parse_ie: Traffic Profile subelement"
 					   " (sub_len=%u) — not yet implemented", sub_len);
+			break;
+
+		case MAPC_SUBELEM_VENDOR_SPECIFIC:
+#ifdef CONFIG_QCN_EXTN
+			if (sub_len >= 3 && target)
+				mapc_vendor_parse_subelement(&buf[pos], sub_len, target);
+#endif /* CONFIG_QCN_EXTN */
 			break;
 
 		default:
@@ -1740,6 +1772,12 @@ static void mapc_update_active_peer_params(struct hostapd_data *hapd,
 			wpa_printf(MSG_ERROR,
 				   "MAPC: SET_STATION MAPC update failed "
 				   MACSTR, MAC2STR(src));
+#ifdef CONFIG_QCN_EXTN
+		if (mapc_set_vendor_params(hapd, sta))
+			wpa_printf(MSG_ERROR,
+				   "MAPC: vendor params update failed "
+				   MACSTR, MAC2STR(src));
+#endif /* CONFIG_QCN_EXTN */
 	} else {
 		wpa_printf(MSG_DEBUG,
 			   "MAPC: %s: no param change for " MACSTR
@@ -2280,6 +2318,7 @@ int mapc_send_negotiation_request(struct hostapd_data *hapd, const u8 *dst,
 			sta->mapc_params.apid = apid;
 
 #ifdef CONFIG_QCN_EXTN
+			mapc_vendor_alloc_peer_aid(hapd, sta);
 #endif /* CONFIG_QCN_EXTN */
 		}
 	}
@@ -2287,6 +2326,10 @@ int mapc_send_negotiation_request(struct hostapd_data *hapd, const u8 *dst,
 	buf = wpabuf_alloc(MAPC_NEGO_FRAME_MAX_LEN);
 	if (!buf) {
 		mapc_release_aid(hapd, sta);
+#ifdef CONFIG_QCN_EXTN
+		if (sta->mapc_params.vendor.vendor_apid)
+			mapc_release_vendor_aid(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
 		return -ENOMEM;
 	}
 
@@ -2296,6 +2339,10 @@ int mapc_send_negotiation_request(struct hostapd_data *hapd, const u8 *dst,
 		wpabuf_free(buf);
 		if (need_apid) {
 			mapc_release_aid(hapd, sta);
+#ifdef CONFIG_QCN_EXTN
+			if (sta->mapc_params.vendor.vendor_apid)
+				mapc_release_vendor_aid(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
 		}
 		return -EBUSY;
 	}
@@ -2325,6 +2372,10 @@ int mapc_send_negotiation_request(struct hostapd_data *hapd, const u8 *dst,
 		wpabuf_free(buf);
 		if (need_apid) {
 			mapc_release_aid(hapd, sta);
+#ifdef CONFIG_QCN_EXTN
+			if (sta->mapc_params.vendor.vendor_apid)
+				mapc_release_vendor_aid(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
 		}
 		return -EINVAL;
 	}
@@ -2341,6 +2392,10 @@ int mapc_send_negotiation_request(struct hostapd_data *hapd, const u8 *dst,
 			   "MAPC: Negotiation Request TX failed: %d", ret);
 		if (need_apid) {
 			mapc_release_aid(hapd, sta);
+#ifdef CONFIG_QCN_EXTN
+			if (sta->mapc_params.vendor.vendor_apid)
+				mapc_release_vendor_aid(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
 		}
 		return ret;
 	}
@@ -2447,6 +2502,7 @@ static int mapc_send_negotiation_response(struct hostapd_data *hapd,
 				apid = sta->aid;
 				sta->mapc_params.apid = apid;
 #ifdef CONFIG_QCN_EXTN
+				mapc_vendor_alloc_peer_aid(hapd, sta);
 #endif /* CONFIG_QCN_EXTN */
 			}
 		}
@@ -2456,6 +2512,10 @@ static int mapc_send_negotiation_response(struct hostapd_data *hapd,
 	if (!buf) {
 		if (need_apid) {
 			mapc_release_aid(hapd, sta);
+#ifdef CONFIG_QCN_EXTN
+			if (sta->mapc_params.vendor.vendor_apid)
+				mapc_release_vendor_aid(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
 		}
 		return -ENOMEM;
 	}
@@ -2498,6 +2558,10 @@ static int mapc_send_negotiation_response(struct hostapd_data *hapd,
 		wpabuf_free(buf);
 		if (need_apid) {
 			mapc_release_aid(hapd, sta);
+#ifdef CONFIG_QCN_EXTN
+			if (sta->mapc_params.vendor.vendor_apid)
+				mapc_release_vendor_aid(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
 		}
 		return -EINVAL;
 	}
@@ -2516,6 +2580,10 @@ static int mapc_send_negotiation_response(struct hostapd_data *hapd,
 		wpa_printf(MSG_ERROR, "MAPC: Negotiation Resp TX failed: %d", ret);
 		if (need_apid) {
 			mapc_release_aid(hapd, sta);
+#ifdef CONFIG_QCN_EXTN
+			if (sta->mapc_params.vendor.vendor_apid)
+				mapc_release_vendor_aid(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
 		}
 		return ret;
 	}
@@ -2536,6 +2604,10 @@ static void mapc_collision_cancel_establish(struct hostapd_data *hapd,
 		mapc_release_aid(hapd, sta);
 
 	/* Release Q2Q vendor AID if present */
+#ifdef CONFIG_QCN_EXTN
+	if (sta->mapc_params.vendor.vendor_apid)
+		mapc_release_vendor_aid(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
 }
 
 static void mapc_handle_negotiation_req_frame(struct hostapd_data *hapd,
@@ -2802,6 +2874,12 @@ scheme_decided:
 				wpa_printf(MSG_ERROR,
 					   "MAPC: UPDATE SET_STATION failed "
 					   MACSTR, MAC2STR(src));
+#ifdef CONFIG_QCN_EXTN
+			if (mapc_set_vendor_params(hapd, sta))
+				wpa_printf(MSG_ERROR,
+					   "MAPC: UPDATE vendor params failed "
+					   MACSTR, MAC2STR(src));
+#endif /* CONFIG_QCN_EXTN */
 			mapc_snapshot_local_cotdma(hapd, sta);
 			if (mapc_conf->max_mapc_ap_inactivity > 0) {
 				eloop_cancel_timeout(mapc_inactivity_cb, hapd, sta);
@@ -2847,6 +2925,10 @@ scheme_decided:
 			 * vendor-AID that mapc_send_negotiation_response()
 			 * allocated before the TX succeeded.
 			 */
+#ifdef CONFIG_QCN_EXTN
+			if (sta->mapc_params.vendor.vendor_apid)
+				mapc_release_vendor_aid(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
 			sta = NULL;
 			/* Wire frame was ACCEPT but driver promotion failed —
 			 * report as unsuccessful to avoid misleading the caller. */
@@ -2992,6 +3074,12 @@ static void mapc_handle_negotiation_resp_frame(struct hostapd_data *hapd,
 						wpa_printf(MSG_ERROR,
 							   "MAPC: UPDATE resp: SET_STATION"
 							   " failed " MACSTR, MAC2STR(src));
+#ifdef CONFIG_QCN_EXTN
+					if (mapc_set_vendor_params(hapd, sta))
+						wpa_printf(MSG_ERROR,
+							   "MAPC: UPDATE resp: vendor params"
+							   " failed " MACSTR, MAC2STR(src));
+#endif /* CONFIG_QCN_EXTN */
 				}
 				mapc_snapshot_local_cotdma(hapd, sta);
 				break;
@@ -3450,6 +3538,10 @@ void mapc_deinit(struct hostapd_data *hapd)
 		}
 
 		/* Release Q2Q vendor AID and free all resources for this peer */
+#ifdef CONFIG_QCN_EXTN
+		if (sta->mapc_params.vendor.vendor_apid)
+			mapc_release_vendor_aid(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
 		ap_free_sta(hapd, sta);
 	}
 

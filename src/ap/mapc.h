@@ -14,6 +14,9 @@
 
 #include "utils/common.h"
 #include "utils/list.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../../qcn_extns/mapc_extn.h"
+#endif /* CONFIG_QCN_EXTN */
 
 struct hostapd_data;
 struct hostapd_iface;
@@ -359,7 +362,9 @@ struct  mapc_parameters {
 	/* Dialog token from last seen Discovery frame (for logging / dedup) */
 	u8 discovery_dialog_token_last;
 
-
+#ifdef CONFIG_QCN_EXTN
+	struct mapc_vendor_peer_ctx vendor;
+#endif /* CONFIG_QCN_EXTN */
 	struct mapc_ctdma_profile last_sent_cotdma;
 };
 
