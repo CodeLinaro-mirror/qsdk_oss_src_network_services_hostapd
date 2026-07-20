@@ -3328,8 +3328,10 @@ static u8 * hostapd_gen_fils_discovery(struct hostapd_data *hapd, size_t *len)
 static u8 * hostapd_fils_discovery(struct hostapd_data *hapd,
 				   struct wpa_driver_ap_params *params)
 {
-	/* Do not enable Fils discovery for 6GHz AP if its colocated
-	 * with lower band APs.
+	/*
+	 * Fils discovery for 6GHz AP can be enabled even if its colocated
+	 * with lower band APs if user sets force_disable_in_band_discovery
+	 * to zero.
 	 */
 
 	if (is_6ghz_op_class(hapd->iconf->op_class) &&
@@ -4672,6 +4674,11 @@ fail1:
 
 void ieee802_11_set_beacon_per_bss_only(struct hostapd_data *hapd)
 {
+	if (!hapd->started && !hapd->beacon_set_done) {
+		wpa_printf(MSG_ERROR, "BSS not started hapd:%s", hapd->conf->iface);
+		return;
+	}
+
 	__ieee802_11_set_beacon(hapd);
 }
 

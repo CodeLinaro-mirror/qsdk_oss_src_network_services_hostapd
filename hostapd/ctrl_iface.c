@@ -2076,7 +2076,84 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			wpa_printf(MSG_INFO, "Updated RSSI deauth grace samples to %d", val);
 			hostapd_ctrl_iface_update_rssi_monitor(hapd);
 		}
+#ifdef CONFIG_FILS
+	} else if (os_strcasecmp(cmd, "fils_discovery_max_interval") == 0) {
+		int val = atoi(value);
+
+		if (!is_6ghz_op_class(hapd->iconf->op_class)) {
+			wpa_printf(MSG_ERROR,
+				   "Fils are not supported in current band!");
+			hapd->conf->fils_discovery_max_int = 0;
+			return -1;
+		}
+
+		if (hapd != tx_hapd) {
+			wpa_printf(MSG_ERROR,
+				   "Fils are allowed to enable only on Tx BSS");
+			hapd->conf->fils_discovery_max_int = 0;
+			return -1;
+		}
+
+		if (val < 0 || val > FD_MAX_INTERVAL_6GHZ) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid fils_discovery_max_int value");
+			return -1;
+		}
+
+		/* To force enable fils set force_disable_in_band_discovery to 0 */
+		hapd->conf->fils_discovery_max_int = val;
+
+		if (hapd->conf->fils_discovery_max_int) {
+			/* Disable UBPR if its enabled during fils enablement */
+			if (hapd->conf->ubpr_state == FILS_UBPR_ENABLED)
+				hapd->conf->unsol_bcast_probe_resp_interval = 0;
+		}
+
+		/* Fils can be enabled even when there are lower band BSSs present */
+		ieee802_11_set_beacon_per_bss_only(hapd);
+
+		return ret;
+#endif /* CONFIG_FILS */
 #ifdef CONFIG_IEEE80211AX
+	} else if (os_strcasecmp(cmd, "unsol_bcast_probe_resp_interval") == 0) {
+		int val = atoi(value);
+
+		if (!is_6ghz_op_class(hapd->iconf->op_class)) {
+			wpa_printf(MSG_ERROR,
+				   "UBPR is not supported in current band!");
+			hapd->conf->unsol_bcast_probe_resp_interval = 0;
+			return -1;
+		}
+
+		if (hapd != tx_hapd) {
+			wpa_printf(MSG_ERROR,
+				   "UBPRs are allowed to enable only on Tx BSS");
+			hapd->conf->unsol_bcast_probe_resp_interval = 0;
+			return -1;
+		}
+
+		if (val < 0 || val > 20) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid  unsol_bcast_probe_resp_interval value");
+			return -1;
+		}
+
+		hapd->conf->unsol_bcast_probe_resp_interval = val;
+
+		/* To force enable UBPR set force_disable_in_band_discovery to 0 */
+		if (hapd->conf->unsol_bcast_probe_resp_interval) {
+			/* Disable fils if its enabled during UBPR enablement */
+			if (hapd->conf->fils_state == FILS_UBPR_ENABLED)
+				hapd->conf->fils_discovery_max_int = 0;
+		} else {
+			if (hapd->conf->fils_state != FILS_UBPR_ENABLED)
+				hapd->conf->fils_discovery_max_int = FD_MAX_INTERVAL_6GHZ;
+		}
+
+		ieee802_11_set_beacon_per_bss_only(tx_hapd);
+
+		return ret;
+
 	} else if (os_strcasecmp(cmd, "he_6ghz_min_rate") == 0) {
 		if (!is_6ghz_op_class(hapd->iconf->op_class)) {
 			wpa_printf(MSG_ERROR,

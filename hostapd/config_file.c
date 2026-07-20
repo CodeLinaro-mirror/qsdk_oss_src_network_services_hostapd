@@ -5226,7 +5226,16 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "fils_discovery_min_interval") == 0) {
 		bss->fils_discovery_min_int = atoi(pos);
 	} else if (os_strcmp(buf, "fils_discovery_max_interval") == 0) {
-		bss->fils_discovery_max_int = atoi(pos);
+		int val = atoi(pos);
+
+		if (val < 0 || val > FD_MAX_INTERVAL_6GHZ) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid fils_discovery_max_interval value",
+				   line);
+			return 1;
+		}
+
+		bss->fils_discovery_max_int = val;
 #endif /* CONFIG_FILS */
 	} else if (os_strcmp(buf, "force_disable_in_band_discovery") == 0) {
 		bss->force_disable_in_band_discovery = atoi(pos);
