@@ -11500,7 +11500,7 @@ static int hostapd_remove_vendor_elements(struct hostapd_bss_config *conf,  stru
 		entry_len = wpabuf_len(entry);
 
 		if (entry_len == needle_len &&
-		    os_memcmp(entry_data + 2, needle + 2, needle_len) == 0) {
+		    os_memcmp(entry_data + 2, needle + 2, needle_len - 2) == 0) {
 			conf->vendor_elements_len -= wpabuf_len(conf->vendor_elements[i]);
 			wpabuf_free(entry);
 			os_remove_in_array(conf->vendor_elements, conf->vendor_elements_count,
