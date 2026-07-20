@@ -160,6 +160,15 @@ struct sta_info;
 #define MAPC_MAX_COTDMA_PEER             12
 #define MAPC_MAX_CO_AP_ACTIVE_PEER       12
 
+#define MAPC_CFG_KEY_MAX    16
+#define MAPC_CFG_VAL_MAX    16
+#define MAPC_CFG_PARAMS_MAX 12
+
+struct mapc_cfg_req {
+	char key[MAPC_CFG_KEY_MAX];
+	char val[MAPC_CFG_VAL_MAX];
+};
+
 #define MAPC_DEFAULT_COTDMA_ENABLE                    0    /* Co-TDMA off; enable via conf or CLI */
 #define MAPC_DEFAULT_DISCOVERY_REQUEST_INTERVAL_SEC   60   /* periodic discovery interval (s) */
 #define MAPC_DEFAULT_DISCOVERY_MODE                   0    /* 0 = auto */
@@ -456,6 +465,10 @@ void mapc_deinit(struct hostapd_data *hapd);
 int mapc_start_periodic_discovery(struct hostapd_data *hapd,
 		unsigned int interval_secs);
 void mapc_stop_periodic_discovery(struct hostapd_data *hapd);
+bool mapc_is_periodic_disc_running(struct hostapd_data *hapd);
+int mapc_set_config(struct hostapd_data *hapd,
+		    const struct mapc_cfg_req *reqs, int count,
+		    char *reply, size_t reply_size);
 /* Tx helpers */
 int mapc_send_discovery_request(struct hostapd_data *hapd, const u8 *dst);
 
@@ -495,6 +508,8 @@ static inline int mapc_start_periodic_discovery(struct hostapd_data *hapd,
 						 unsigned int interval_secs)
 { return 0; }
 static inline void mapc_stop_periodic_discovery(struct hostapd_data *hapd) {}
+static inline bool mapc_is_periodic_disc_running(struct hostapd_data *hapd)
+{ (void)hapd; return false; }
 static inline int mapc_send_discovery_request(struct hostapd_data *hapd,
 					       const u8 *dst) { return 0; }
 static inline int mapc_handle_negotiation_update(struct hostapd_data *hapd,

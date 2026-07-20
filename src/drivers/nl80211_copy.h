@@ -3380,6 +3380,14 @@ enum nl80211_commands {
  * @NL80211_ATTR_SMD_STA_DL_DATA_FWD: Flag attribute to indicate driver supports
  *	SMD DL DATA forward feature.
  *
+ * @NL80211_ATTR_STA_MAPC: Indicate whether particular peer is a MAPC peer
+ *
+ * @NL80211_ATTR_MAPC_HW_CAPS: u32 MAPC hardware capability bitmap reported by
+ *	driver. 0 means not supported.
+ *
+ * @NL80211_ATTR_MAPC_MAX_CTDMA_PEERS: u8 maximum number of Co-TDMA peers
+ *	supported by the hardware. 0 means not reported.
+ *
  * @NL80211_ATTR_STA_DFS_EN: whether STA_DFS_EN is enabled (u8, 0 or 1)
  *
  * @NL80211_ATTR_CU_TYPE: (u8) Critical Update type, see &enum nl80211_cu_type.
@@ -4147,6 +4155,9 @@ enum nl80211_attrs {
 	NL80211_ATTR_SMD_DISCOVERY_TARGETS,
 	NL80211_ATTR_SMD_AP,
 	NL80211_ATTR_SMD_PARAMS,
+	NL80211_ATTR_STA_MAPC,
+	NL80211_ATTR_MAPC_HW_CAPS,
+	NL80211_ATTR_MAPC_MAX_CTDMA_PEERS,
 	NL80211_ATTR_STA_DFS_EN,
 
 	NL80211_ATTR_MAX_CH_SWITCH_TIME,
@@ -4336,6 +4347,7 @@ enum nl80211_iftype {
  * @NL80211_STA_FLAG_SMD: station participates in Shared Multi-band Device
  *	(SMD) operation; set when the station has been identified as an SMD
  *	peer and is subject to SMD roaming coordination
+ * @NL80211_STA_FLAG_MAPC_PEER: station is a MAPC peer
  * @NL80211_STA_FLAG_MAX: highest station flag number currently defined
  * @__NL80211_STA_FLAG_AFTER_LAST: internal use
  */
@@ -4353,6 +4365,7 @@ enum nl80211_sta_flags {
 	NL80211_STA_FLAG_FT_AUTH,
 	NL80211_STA_FLAG_CFP,
 	NL80211_STA_FLAG_SMD,
+	NL80211_STA_FLAG_MAPC_PEER,
 
 	/* keep last */
 	__NL80211_STA_FLAG_AFTER_LAST,
@@ -4374,6 +4387,48 @@ enum nl80211_sta_p2p_ps_status {
 };
 
 #define NL80211_STA_FLAG_MAX_OLD_API	NL80211_STA_FLAG_TDLS_PEER
+
+/**
+ * enum nl80211_sta_mapc_attr - MAPC station parameter attributes
+ * @__NL80211_STA_MAPC_INVALID: invalid number for nested attribute
+ * @NL80211_STA_MAPC_APID: u16, APID assigned to peer AP
+ * @NL80211_STA_MAPC_REMOTE_APID: u16, APID assigned by the remote AP
+ * @NL80211_STA_MAPC_CAPABILITY_BITMAP: u16, peer capability bitmap
+ * @NL80211_STA_MAPC_COTDMA: nested Co-TDMA profile
+ */
+enum nl80211_sta_mapc_attr {
+	__NL80211_STA_MAPC_INVALID,
+	NL80211_STA_MAPC_APID,
+	NL80211_STA_MAPC_REMOTE_APID,
+	NL80211_STA_MAPC_CAPABILITY_BITMAP,
+	NL80211_STA_MAPC_COTDMA,
+
+	/* keep last */
+	__NL80211_STA_MAPC_AFTER_LAST,
+	NL80211_STA_MAPC_MAX = __NL80211_STA_MAPC_AFTER_LAST - 1
+};
+
+/**
+ * enum nl80211_sta_mapc_cotdma_attr - Co-TDMA profile attributes
+ * @NL80211_STA_MAPC_COTDMA_CHANNEL_WIDTH: u8, channel width
+ * @NL80211_STA_MAPC_COTDMA_CCFS: u8, center channel frequency segment
+ * @NL80211_STA_MAPC_COTDMA_DISABLE_SUBCHAN_BITMAP: u16, punctured subchannels
+ * @NL80211_STA_MAPC_COTDMA_BSS_COLOR: u8, BSS color
+ * @NL80211_STA_MAPC_COTDMA_RX_TXOP_RETURN: flag, Rx TXOP return support
+ */
+enum nl80211_sta_mapc_cotdma_attr {
+	__NL80211_STA_MAPC_COTDMA_INVALID,
+	NL80211_STA_MAPC_COTDMA_CHANNEL_WIDTH,
+	NL80211_STA_MAPC_COTDMA_CCFS,
+	NL80211_STA_MAPC_COTDMA_DISABLE_SUBCHAN_BITMAP,
+	NL80211_STA_MAPC_COTDMA_BSS_COLOR,
+	NL80211_STA_MAPC_COTDMA_RX_TXOP_RETURN,
+
+	/* keep last */
+	__NL80211_STA_MAPC_COTDMA_AFTER_LAST,
+	NL80211_STA_MAPC_COTDMA_MAX =
+		__NL80211_STA_MAPC_COTDMA_AFTER_LAST - 1
+};
 
 /**
  * struct nl80211_sta_flag_update - station flags mask/set
