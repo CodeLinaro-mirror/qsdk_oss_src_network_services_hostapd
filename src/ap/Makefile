@@ -71,4 +71,8 @@ LIB_OBJS= \
 	dscp_policy.o \
 	nft.o
 
+ifdef CONFIG_IEEE80211BN
+LIB_OBJS += mapc.o
+endif
+
 include ../lib.rules
