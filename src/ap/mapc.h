@@ -13,6 +13,7 @@
 #ifdef CONFIG_IEEE80211BN
 
 #include "utils/common.h"
+#include "utils/list.h"
 #include "ap_config.h"
 
 struct hostapd_data;
@@ -88,6 +89,9 @@ struct sta_info;
 #define MAPC_SUBELEM_PER_SCHEME_PROFILE     0   /* extensible */
 #define MAPC_SUBELEM_SECURITY_PROFILE       1   /* extensible */
 #define MAPC_SUBELEM_TRAFFIC_PROFILE        2   /* extensible; added in D1.4 */
+/* 3-220: Reserved */
+#define MAPC_SUBELEM_VENDOR_SPECIFIC        221 /* vendor defined */
+/* 222-253: Reserved */
 #define MAPC_SUBELEM_FRAGMENT               254
 /* 255: Reserved */
 
@@ -408,6 +412,34 @@ struct mapc_scheme_ops {
 	 */
 	bool (*has_params_changed)(const struct hostapd_data *hapd,
 			const struct sta_info *sta);
+};
+
+struct mapc_discovery_req {
+	struct dl_list list;
+	u8 dialog_token;
+	u8 dst_addr[ETH_ALEN];
+	struct hostapd_data *hapd;
+};
+
+struct mapc_scheme_request_entry {
+	u8        op_type;
+	bool      per_scheme_info_present;
+	u8        per_scheme_info;
+	const u8 *param_set;
+	size_t    param_set_len;
+};
+
+struct mapc_scheme_request_set {
+	bool include;
+	u8   count;
+	struct mapc_scheme_request_entry requests[MAPC_MAX_SCHEME_REQUESTS];
+};
+
+/* mapc_ie_params - Parameters for mapc_build_ie() */
+struct mapc_ie_params {
+	u8   mapc_ctrl_bitmap;
+	u16  apid;
+	struct mapc_scheme_request_set schemes[MAPC_SCHEME_MAX];
 };
 
 void mapc_iface_init(struct hostapd_iface *iface);
