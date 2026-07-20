@@ -932,6 +932,17 @@ static int hostapd_config_bss(struct hostapd_config *conf, const char *ifname)
 		return -1;
 	}
 
+#ifdef CONFIG_IEEE80211BN
+	hostapd_mapc_config_defaults_bss(bss);
+	if (!bss->mapc_conf) {
+		wpa_printf(MSG_ERROR, "Failed to allocate mapc_conf for "
+			   "multi-BSS entry");
+		os_free(bss->radius);
+		os_free(bss);
+		return -1;
+	}
+#endif /* CONFIG_IEEE80211BN */
+
 	conf->bss[conf->num_bss++] = bss;
 	conf->last_bss = bss;
 
@@ -3725,6 +3736,181 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 #endif /* CONFIG_QCN_EXTN */
 	} else if (os_strcmp(buf, "use_driver_iface_addr") == 0) {
 		conf->use_driver_iface_addr = atoi(pos);
+#ifdef CONFIG_IEEE80211BN
+	} else if (os_strcmp(buf, "mapc_cotdma_enable") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_cotdma_enable", line);
+			return 1;
+		}
+		int v = atoi(pos);
+
+		if (v < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_cotdma_enable must be 0 or 1", line);
+			return 1;
+		}
+		bss->mapc_conf->mapc_cotdma_enable = v;
+	} else if (os_strcmp(buf, "mapc_disc_req_interval_sec") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_disc_req_interval_sec", line);
+			return 1;
+		}
+		int v = atoi(pos);
+
+		if (v < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_disc_req_interval_sec must be non-negative", line);
+			return 1;
+		}
+		bss->mapc_conf->mapc_disc_req_interval_sec = (unsigned int) v;
+	} else if (os_strcmp(buf, "mapc_discovery_mode") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_discovery_mode", line);
+			return 1;
+		}
+		int v = atoi(pos);
+
+		if (v < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_discovery_mode must be non-negative", line);
+			return 1;
+		}
+		bss->mapc_conf->discovery_mode = v;
+	} else if (os_strcmp(buf, "mapc_negotiation_mode") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_negotiation_mode", line);
+			return 1;
+		}
+		int v = atoi(pos);
+
+		if (v < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_negotiation_mode must be non-negative", line);
+			return 1;
+		}
+		bss->mapc_conf->negotiation_mode = v;
+	} else if (os_strcmp(buf, "mapc_max_co_ap_peer") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_max_co_ap_peer", line);
+			return 1;
+		}
+		{
+			int v = atoi(pos);
+			if (v < 0 || v > MAPC_MAX_CO_AP_PEER) {
+				wpa_printf(MSG_ERROR,
+					   "Line %d: mapc_max_co_ap_peer out of range [0..%d]",
+					   line, MAPC_MAX_CO_AP_PEER);
+				return 1;
+			}
+			bss->mapc_conf->max_mapc_co_ap_peer = v;
+		}
+	} else if (os_strcmp(buf, "mapc_max_discovered_ap") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_max_discovered_ap", line);
+			return 1;
+		}
+		{
+			int v = atoi(pos);
+			if (v < 0 || v > MAPC_MAX_CO_AP_DISCOVERED_PEER) {
+				wpa_printf(MSG_ERROR,
+					   "Line %d: mapc_max_discovered_ap out of range [0..%d]",
+					   line, MAPC_MAX_CO_AP_DISCOVERED_PEER);
+				return 1;
+			}
+			bss->mapc_conf->max_mapc_discovered_ap_peer = v;
+		}
+	} else if (os_strcmp(buf, "mapc_max_ctdma_peers") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_max_ctdma_peers", line);
+			return 1;
+		}
+		{
+			int v = atoi(pos);
+			if (v < 0 || v > MAPC_MAX_COTDMA_PEER) {
+				wpa_printf(MSG_ERROR,
+					   "Line %d: mapc_max_ctdma_peers out of range [0..%d]"
+					   " (0 = Co-TDMA disabled)",
+					   line, MAPC_MAX_COTDMA_PEER);
+				return 1;
+			}
+			bss->mapc_conf->max_mapc_ctdma_peer = (u8)v;
+		}
+	} else if (os_strcmp(buf, "mapc_discovery_req_timeout") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_discovery_req_timeout", line);
+			return 1;
+		}
+		int v = atoi(pos);
+
+		if (v < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_discovery_req_timeout must be non-negative", line);
+			return 1;
+		}
+		bss->mapc_conf->discovery_req_timeout = (unsigned int) v;
+	} else if (os_strcmp(buf, "mapc_negotiation_req_timeout") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_negotiation_req_timeout", line);
+			return 1;
+		}
+		int v = atoi(pos);
+
+		if (v < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_negotiation_req_timeout must be non-negative", line);
+			return 1;
+		}
+		bss->mapc_conf->negotiation_req_timeout = (unsigned int) v;
+	} else if (os_strcmp(buf, "max_mapc_ap_inactivity") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for max_mapc_ap_inactivity", line);
+			return 1;
+		}
+		int v = atoi(pos);
+
+		if (v < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: max_mapc_ap_inactivity must be non-negative", line);
+			return 1;
+		}
+		bss->mapc_conf->max_mapc_ap_inactivity = (unsigned int) v;
+	} else if (os_strcmp(buf, "mapc_valid_coap_list") == 0) {
+		/* Comma-separated list of MAC addresses, e.g.
+		 * mapc_valid_coap_list=aa:bb:cc:dd:ee:ff,11:22:33:44:55:66 */
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_valid_coap_list", line);
+			return 1;
+		}
+		bss->mapc_conf->valid_ap_count = 0;
+		{
+			char *list_copy = os_strdup(pos);
+			char *tok, *saveptr = NULL;
+			if (!list_copy) {
+				wpa_printf(MSG_ERROR, "Line %d: OOM parsing mapc_valid_coap_list", line);
+				return 1;
+			}
+			tok = strtok_r(list_copy, ",", &saveptr);
+			while (tok && bss->mapc_conf->valid_ap_count < MAPC_MAX_VALID_AP_LIST) {
+				/* trim leading spaces */
+				while (*tok == ' ') tok++;
+				if (hwaddr_aton(tok,
+					bss->mapc_conf->valid_coap_list[bss->mapc_conf->valid_ap_count]) == 0) {
+					bss->mapc_conf->valid_ap_count++;
+				} else {
+					wpa_printf(MSG_ERROR,
+						   "Line %d: invalid MAC in mapc_valid_coap_list: '%s'",
+						   line, tok);
+				}
+				tok = strtok_r(NULL, ",", &saveptr);
+			}
+			os_free(list_copy);
+		}
+	} else if (os_strcmp(buf, "mapc_cotdma_enable_discovery_scheme_profile") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_cotdma_enable_discovery_scheme_profile", line);
+			return 1;
+		}
+		int v = atoi(pos);
+
+		if (v < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_cotdma_enable_discovery_scheme_profile must be 0 or 1", line);
+			return 1;
+		}
+		bss->mapc_conf->enable_disc_cotdma_scheme_profile = v;
+#endif /* CONFIG_IEEE80211BN */
 	} else if (os_strcmp(buf, "ieee80211w") == 0) {
 		bss->ieee80211w = atoi(pos);
 	} else if (os_strcmp(buf, "rsn_override_mfp") == 0) {

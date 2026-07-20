@@ -2392,6 +2392,116 @@ static int hostapd_cli_cmd_reset_afc(struct wpa_ctrl *ctrl,
 }
 
 
+#ifdef CONFIG_IEEE80211BN
+static int hostapd_cli_cmd_get_mapc_configs(struct wpa_ctrl *ctrl,
+					    int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_MAPC_CONFIGS");
+}
+
+
+static int hostapd_cli_cmd_set_mapc_configs(struct wpa_ctrl *ctrl,
+					    int argc, char *argv[])
+{
+	char cmd[256];
+	int res, i, len = 0;
+
+	if (argc < 1) {
+		printf("usage: set_mapc_configs <key>=<value>"
+		       " [<key>=<value> ...]\n"
+		       "keys: cotdma_en disc_interval disc_mode neg_mode\n"
+		       "      max_co_ap max_ctdma max_disc_ap disc_timeout\n"
+		       "      neg_timeout inact_timeout disc_cotdma_prof\n"
+		       "note: session-only; update hostapd.conf to persist\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SET_MAPC_CONFIGS");
+	if (os_snprintf_error(sizeof(cmd), res))
+		return -1;
+	len = res;
+
+	for (i = 0; i < argc; i++) {
+		if (!os_strchr(argv[i], '=')) {
+			printf("error: '%s' missing '='\n", argv[i]);
+			return -1;
+		}
+		res = os_snprintf(cmd + len, sizeof(cmd) - len,
+				  " %s", argv[i]);
+		if (os_snprintf_error(sizeof(cmd) - len, res)) {
+			printf("error: command too long\n");
+			return -1;
+		}
+		len += res;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+
+static int hostapd_cli_cmd_get_mapc_valid_coap_list(struct wpa_ctrl *ctrl,
+							int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_MAPC_VALID_COAP_LIST");
+}
+
+
+static int hostapd_cli_cmd_set_mapc_valid_coap_list(struct wpa_ctrl *ctrl,
+							int argc, char *argv[])
+{
+	char cmd[256];
+	int res, i, len = 0;
+
+	if (argc < 1) {
+		printf("Invalid 'set_mapc_valid_coap_list' command - usage:\n"
+		       "  set_mapc_valid_coap_list <MAC0> [MAC1 ... MACN]\n"
+		       "  Replaces the entire valid COAP peer list.\n"
+		       "  At least one MAC address is required.\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SET_MAPC_VALID_COAP_LIST");
+	if (os_snprintf_error(sizeof(cmd), res))
+		return -1;
+	len = res;
+
+	for (i = 0; i < argc; i++) {
+		res = os_snprintf(cmd + len, sizeof(cmd) - len, " %s", argv[i]);
+		if (os_snprintf_error(sizeof(cmd) - len, res)) {
+			printf("Command too long\n");
+			return -1;
+		}
+		len += res;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_set_mapc_sta(struct wpa_ctrl *ctrl,
+					int argc, char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 2) {
+		printf("Invalid 'set_mapc_sta' command - usage:\n"
+		       "  set_mapc_sta <bssid> cotdma=<0|1>\n"
+		       "  Requires mapc_negotiation_mode=1\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SET_MAPC_STA %s %s",
+			  argv[0], argv[1]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command error (SET_MAPC_STA too long)\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+#endif /* CONFIG_IEEE80211BN */
+
+
 #ifdef CONFIG_IEEE80211AX
 static int hostapd_cli_cmd_dump_scs(struct wpa_ctrl *ctrl, int argc,
 				    char *argv[])
@@ -3974,6 +4084,25 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<1/0> = enable/disable Puncturing feature for DFS channels" },
 	{ "dfs_disable_auto_unpunc", hostapd_cli_cmd_dfs_disable_auto_unpunc, NULL,
 	  "<0|1> = disable/enable automatic unpuncturing of DFS channels after CAC" },
+#ifdef CONFIG_IEEE80211BN
+	{ "get_mapc_configs", hostapd_cli_cmd_get_mapc_configs, NULL,
+	  "= get MAPC config (set_mapc_configs keys) and runtime state (bitmaps/counters/timer)" },
+	{ "set_mapc_configs", hostapd_cli_cmd_set_mapc_configs, NULL,
+	  "<key>=<value> [<key>=<value> ...] = set MAPC config at runtime\n"
+	  "  cotdma_en [0|1]        disc_interval [0..3600]\n"
+	  "  disc_mode [0|1]        neg_mode      [0|1]\n"
+	  "  max_co_ap [1..12]      max_ctdma     [0..12]\n"
+	  "  max_disc_ap [1..12]    disc_timeout  [1..300]\n"
+	  "  neg_timeout [1..300]   inact_timeout [0..86400]\n"
+	  "  disc_cotdma_prof [0|1]" },
+	{ "get_mapc_valid_coap_list", hostapd_cli_cmd_get_mapc_valid_coap_list, NULL,
+	  "= get the MAPC valid COAP list" },
+	{ "set_mapc_valid_coap_list", hostapd_cli_cmd_set_mapc_valid_coap_list, NULL,
+	  "<MAC0> [MAC1 ... MACN] = replace the valid COAP peer list (full replace)" },
+	{ "set_mapc_sta", hostapd_cli_cmd_set_mapc_sta, NULL,
+	  "<bssid> cotdma=<0|1> = establish (1) or teardown (0) Co-TDMA agreement\n"
+	  "  Requires mapc_negotiation_mode=1 (manual mode)" },
+#endif /* CONFIG_IEEE80211BN */
 	{ NULL, NULL, NULL, NULL }
 };
 

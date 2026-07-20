@@ -81,6 +81,10 @@
 #include "ap/interference.h"
 #include <limits.h>
 
+#ifdef CONFIG_IEEE80211BN
+#include "ap/mapc.h"
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef CONFIG_ATF_OFFLOAD
 #include "atf/atf_offload_config.h"
 #endif
@@ -10691,6 +10695,404 @@ static int hostapd_ctrl_iface_puncture_sources(struct hostapd_data *hapd,
 	return pos - reply;
 }
 
+#ifdef CONFIG_IEEE80211BN
+static int
+hostapd_ctrl_iface_get_mapc_configs(struct hostapd_data *hapd,
+				    char *buf, size_t buflen)
+{
+	const struct mapc_bss_config *mc;
+	char *pos = buf, *end = buf + buflen;
+	int ret;
+
+	if (!hapd->conf || !hapd->conf->mapc_conf) {
+		wpa_printf(MSG_DEBUG, "MAPC: mapc_conf not allocated");
+		return -1;
+	}
+	mc = hapd->conf->mapc_conf;
+
+	ret = os_snprintf(pos, end - pos,
+			  "cotdma_en=%d\n"
+			  "disc_interval=%u\n"
+			  "disc_mode=%d\n"
+			  "neg_mode=%d\n"
+			  "max_co_ap=%d\n"
+			  "max_ctdma=%u\n"
+			  "max_disc_ap=%d\n"
+			  "disc_timeout=%u\n"
+			  "neg_timeout=%u\n"
+			  "inact_timeout=%u\n"
+			  "disc_cotdma_prof=%d\n"
+			  "initialized=%d\n"
+			  "usr_bitmap=0x%04x\n"
+			  "cap_bitmap=0x%04x\n"
+			  "param_bitmap=0x%04x\n"
+			  "active_peers=%u\n"
+			  "cotdma_active=%u\n"
+			  "disc_timer=%s\n",
+			  mc->mapc_cotdma_enable,
+			  mc->mapc_disc_req_interval_sec,
+			  mc->discovery_mode,
+			  mc->negotiation_mode,
+			  mc->max_mapc_co_ap_peer,
+			  (unsigned int)mc->max_mapc_ctdma_peer,
+			  mc->max_mapc_discovered_ap_peer,
+			  mc->discovery_req_timeout,
+			  mc->negotiation_req_timeout,
+			  mc->max_mapc_ap_inactivity,
+			  mc->enable_disc_cotdma_scheme_profile,
+			  hapd->mapc_initialized ? 1 : 0,
+			  mc->mapc_usr_enabled_bitmap,
+			  mc->mapc_capability_bitmap,
+			  mc->mapc_parameter_bitmap,
+			  (unsigned int)hapd->bss_active_peer_count,
+			  (unsigned int)hapd->bss_cotdma_active_count,
+			  mapc_is_periodic_disc_running(hapd) ? "running" : "stopped");
+	if (os_snprintf_error(end - pos, ret))
+		return pos - buf;
+	pos += ret;
+
+	return pos - buf;
+}
+
+static int
+hostapd_ctrl_iface_set_mapc_configs(struct hostapd_data *hapd,
+				    const char *cmd,
+				    char *reply, size_t reply_size)
+{
+	struct mapc_cfg_req reqs[MAPC_CFG_PARAMS_MAX];
+	int count = 0;
+	const char *p = cmd;
+	const char *tok, *eq;
+	size_t toklen, klen, vlen, j;
+
+	while (*p && count < MAPC_CFG_PARAMS_MAX) {
+		while (*p == ' ')
+			p++;
+		if (!*p)
+			break;
+		tok = p;
+		while (*p && *p != ' ')
+			p++;
+		toklen = (size_t)(p - tok);
+		eq = NULL;
+		for (j = 0; j < toklen; j++) {
+			if (tok[j] == '=') {
+				eq = tok + j;
+				break;
+			}
+		}
+		if (!eq)
+			return os_snprintf(reply, reply_size,
+					   "FAIL: '%.*s' missing '='\n",
+					   (int)toklen, tok);
+		klen = (size_t)(eq - tok);
+		vlen = toklen - klen - 1;
+		if (klen == 0 || klen >= MAPC_CFG_KEY_MAX ||
+		    vlen == 0 || vlen >= MAPC_CFG_VAL_MAX)
+			return os_snprintf(reply, reply_size,
+					   "FAIL: token too long or empty\n");
+		os_memcpy(reqs[count].key, tok, klen);
+		reqs[count].key[klen] = '\0';
+		os_memcpy(reqs[count].val, eq + 1, vlen);
+		reqs[count].val[vlen] = '\0';
+		count++;
+	}
+
+	if (count == 0)
+		return os_snprintf(reply, reply_size,
+				   "FAIL: expected key=value\n");
+
+	return mapc_set_config(hapd, reqs, count, reply, reply_size);
+}
+
+static int
+hostapd_ctrl_iface_get_mapc_valid_coap_list(struct hostapd_data *hapd,
+					    char *buf, size_t buflen)
+{
+	const struct mapc_bss_config *mc;
+	char *pos = buf, *end = buf + buflen;
+	int ret, i;
+
+	if (!hapd->conf || !hapd->conf->mapc_conf) {
+		wpa_printf(MSG_DEBUG, "MAPC: mapc_conf not allocated");
+		return -1;
+	}
+	mc = hapd->conf->mapc_conf;
+
+	ret = os_snprintf(pos, end - pos, "valid_ap_count=%d\n",
+			  mc->valid_ap_count);
+	if (os_snprintf_error(end - pos, ret))
+		return pos - buf;
+	pos += ret;
+
+	if (mc->valid_ap_count == 0) {
+		ret = os_snprintf(pos, end - pos, "valid_coap_list=(none)\n");
+		if (os_snprintf_error(end - pos, ret))
+			return pos - buf;
+		pos += ret;
+		return pos - buf;
+	}
+
+	ret = os_snprintf(pos, end - pos, "valid_coap_list=");
+	if (os_snprintf_error(end - pos, ret))
+		return pos - buf;
+	pos += ret;
+
+	for (i = 0; i < mc->valid_ap_count; i++) {
+		ret = os_snprintf(pos, end - pos, "%s" MACSTR,
+				  i ? "," : "",
+				  MAC2STR(mc->valid_coap_list[i]));
+		if (os_snprintf_error(end - pos, ret))
+			return pos - buf;
+		pos += ret;
+	}
+
+	ret = os_snprintf(pos, end - pos, "\n");
+	if (os_snprintf_error(end - pos, ret))
+		return pos - buf;
+	pos += ret;
+
+	return pos - buf;
+}
+
+static int
+hostapd_ctrl_iface_set_mapc_valid_coap_list(struct hostapd_data *hapd,
+					    const char *cmd)
+{
+	u8 macs[MAPC_MAX_VALID_AP_LIST][ETH_ALEN];
+	int count = 0;
+	const char *pos = cmd;
+	char mac_str[18];
+
+	if (!hapd->conf || !hapd->conf->mapc_conf) {
+		wpa_printf(MSG_DEBUG, "MAPC: mapc_conf not allocated");
+		return -1;
+	}
+
+	while (*pos == ' ')
+		pos++;
+
+	if (*pos == '\0') {
+		wpa_printf(MSG_ERROR,
+			   "SET_MAPC_VALID_COAP_LIST: no arguments — "
+			   "at least one MAC required");
+		return -1;
+	}
+
+	while (*pos) {
+		if (sscanf(pos, "%17s", mac_str) != 1)
+			break;
+		if (count >= MAPC_MAX_VALID_AP_LIST) {
+			wpa_printf(MSG_ERROR,
+				   "SET_MAPC_VALID_COAP_LIST: too many MACs "
+				   "(max %d)", MAPC_MAX_VALID_AP_LIST);
+			return -1;
+		}
+		if (hwaddr_aton(mac_str, macs[count])) {
+			wpa_printf(MSG_ERROR,
+				   "SET_MAPC_VALID_COAP_LIST: invalid MAC '%s'",
+				   mac_str);
+			return -1;
+		}
+		count++;
+		pos += os_strlen(mac_str);
+		while (*pos == ' ')
+			pos++;
+	}
+
+	return mapc_set_valid_coap_list(hapd, macs, count);
+}
+
+static int
+hostapd_ctrl_iface_set_mapc_sta(struct hostapd_data *hapd, const char *cmd,
+				char *buf, size_t buflen)
+{
+	struct mapc_bss_config *mc;
+	struct sta_info *sta;
+	struct mapc_scheme_nego_req reqs[MAPC_SCHEME_MAX];
+	u8 peer_addr[ETH_ALEN];
+	const char *p;
+	int cotdma, ret;
+
+	/* ---- Parse BSSID ("XX:XX:XX:XX:XX:XX") ---- */
+	if (hwaddr_aton(cmd, peer_addr)) {
+		wpa_printf(MSG_ERROR, "SET_MAPC_STA: invalid BSSID");
+		return os_snprintf(buf, buflen, "FAIL invalid BSSID\n");
+	}
+
+	/* ---- Parse " cotdma=<0|1>" ---- */
+	if (os_strlen(cmd) < 18 || cmd[17] != ' ') {
+		return os_snprintf(buf, buflen,
+				   "FAIL usage: SET_MAPC_STA <bssid> cotdma=<0|1>\n");
+	}
+	p = os_strstr(cmd + 18, "cotdma=");
+	if (!p) {
+		return os_snprintf(buf, buflen,
+				   "FAIL missing cotdma parameter\n");
+	}
+	cotdma = atoi(p + 7);
+	if (cotdma != 0 && cotdma != 1) {
+		return os_snprintf(buf, buflen,
+				   "FAIL cotdma must be 0 or 1\n");
+	}
+
+	/* ---- Sanity checks ---- */
+	if (!hapd->conf->mapc_conf) {
+		return os_snprintf(buf, buflen, "FAIL MAPC not configured\n");
+	}
+	mc = hapd->conf->mapc_conf;
+
+	if (mc->negotiation_mode != 1) {
+		return os_snprintf(buf, buflen,
+				   "FAIL mapc_negotiation_mode must be 1 for manual trigger\n");
+	}
+
+	if (os_memcmp(peer_addr, hapd->own_addr, ETH_ALEN) == 0) {
+		return os_snprintf(buf, buflen,
+				   "FAIL cannot target own BSSID\n");
+	}
+
+#ifdef CONFIG_IEEE80211BE
+	/*
+	 * MLO: if peer's sta_info lives on a different link (e.g. command
+	 * arrived on MLD anchor socket without -l flag), resolve to that
+	 * link hapd so all subsequent operations (ap_get_sta, discovery,
+	 * negotiation) target the correct link and its sta_list.
+	 * Non-MLO: mapc_find_link_hapd() returns hapd unchanged.
+	 */
+	hapd = mapc_find_link_hapd(hapd, peer_addr);
+	mc   = hapd->conf->mapc_conf;
+	if (!mc) {
+		return os_snprintf(buf, buflen,
+				   "FAIL MAPC not configured on resolved link\n");
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	sta = ap_get_sta(hapd, peer_addr);
+
+	if (cotdma == 1) {
+		if (!mc->mapc_cotdma_enable) {
+			return os_snprintf(buf, buflen,
+					   "FAIL Co-TDMA disabled (mapc_cotdma_enable=0)\n");
+		}
+
+		if (!mapc_is_valid_coap_peer(mc, peer_addr)) {
+			if (mc->valid_ap_count >= MAPC_MAX_VALID_AP_LIST) {
+				wpa_printf(MSG_ERROR,
+					   "SET_MAPC_STA: valid_coap_list full "
+					   "(max %d) — remove an entry first",
+					   MAPC_MAX_VALID_AP_LIST);
+				return os_snprintf(buf, buflen,
+						   "FAIL valid_coap_list full "
+						   "(max %d) — remove an entry "
+						   "first\n",
+						   MAPC_MAX_VALID_AP_LIST);
+			}
+			os_memcpy(mc->valid_coap_list[mc->valid_ap_count],
+				  peer_addr, ETH_ALEN);
+			mc->valid_ap_count++;
+			wpa_printf(MSG_INFO,
+				   "SET_MAPC_STA: auto-added " MACSTR
+				   " to valid_coap_list (count=%d)",
+				   MAC2STR(peer_addr), mc->valid_ap_count);
+		}
+
+		if (!sta || !sta->is_mapc_peer) {
+			wpa_printf(MSG_INFO,
+				   "SET_MAPC_STA: " MACSTR " not discovered, "
+				   "sending unicast discovery",
+				   MAC2STR(peer_addr));
+			ret = mapc_send_discovery_request(hapd, peer_addr);
+			if (ret < 0) {
+				wpa_printf(MSG_ERROR,
+					   "SET_MAPC_STA: discovery request failed (ret=%d)",
+					   ret);
+				return os_snprintf(buf, buflen,
+						   "FAIL discovery request failed (ret=%d)\n",
+						   ret);
+			}
+			return os_snprintf(buf, buflen,
+					   "OK discovery initiated - "
+					   "reissue set_mapc_sta after MAPC-DISCOVERY-REPORT\n");
+		}
+
+		/* Peer exists — check Co-TDMA capability */
+		if (!(sta->mapc_params.mapc_capability_bitmap &
+		      BIT(MAPC_CAPABILITY_COTDMA_SUPPORT))) {
+			return os_snprintf(buf, buflen,
+					   "FAIL peer " MACSTR
+					   " does not support Co-TDMA\n",
+					   MAC2STR(peer_addr));
+		}
+
+		/* Idempotent: agreement already active */
+		if (sta->mapc_params.agreement_cnt[MAPC_SCHEME_CO_TDMA] > 0) {
+			wpa_printf(MSG_INFO,
+				   "SET_MAPC_STA: Co-TDMA agreement with "
+				   MACSTR " already active",
+				   MAC2STR(peer_addr));
+			wpa_msg(hapd->msg_ctx, MSG_INFO,
+				"MAPC-NEGOTIATION-STATUS negotiation_status=1 "
+				"src_bssid=" MACSTR " dst_bssid=" MACSTR,
+				MAC2STR(hapd->own_addr), MAC2STR(peer_addr));
+			return os_snprintf(buf, buflen, "OK already established\n");
+		}
+
+		/* Trigger Co-TDMA ESTABLISHMENT negotiation */
+		os_memset(reqs, 0, sizeof(reqs));
+		reqs[MAPC_SCHEME_CO_TDMA].include = true;
+		reqs[MAPC_SCHEME_CO_TDMA].op_type = MAPC_OP_AGREEMENT_ESTABLISHMENT;
+		ret = mapc_send_negotiation_request(hapd, peer_addr, reqs);
+		if (ret < 0) {
+			wpa_printf(MSG_ERROR,
+				   "SET_MAPC_STA: negotiation request failed (ret=%d)",
+				   ret);
+			return os_snprintf(buf, buflen,
+					   "FAIL negotiation request failed (ret=%d)\n",
+					   ret);
+		}
+		wpa_printf(MSG_INFO,
+			   "SET_MAPC_STA: Co-TDMA ESTABLISHMENT initiated with "
+			   MACSTR, MAC2STR(peer_addr));
+		return os_snprintf(buf, buflen,
+				   "OK Co-TDMA negotiation initiated\n");
+	}
+
+	if (!sta || !sta->is_mapc_peer ||
+	    sta->mapc_params.peer_state != MAPC_PEER_STATE_ACTIVE ||
+	    sta->mapc_params.agreement_cnt[MAPC_SCHEME_CO_TDMA] == 0) {
+		wpa_printf(MSG_INFO,
+			   "SET_MAPC_STA: no active Co-TDMA agreement with "
+			   MACSTR " — nothing to do", MAC2STR(peer_addr));
+		return os_snprintf(buf, buflen,
+				   "OK no active Co-TDMA agreement\n");
+	}
+
+	/* Cannot teardown while another negotiation is in progress */
+	if (sta->mapc_params.neg_state != MAPC_NEG_IDLE) {
+		wpa_printf(MSG_INFO,
+			   "SET_MAPC_STA: negotiation in progress for " MACSTR
+			   " (state=%d) - retry later",
+			   MAC2STR(peer_addr), sta->mapc_params.neg_state);
+		return os_snprintf(buf, buflen,
+				   "FAIL negotiation in progress, retry later\n");
+	}
+
+	os_memset(reqs, 0, sizeof(reqs));
+	reqs[MAPC_SCHEME_CO_TDMA].include = true;
+	reqs[MAPC_SCHEME_CO_TDMA].op_type = MAPC_OP_AGREEMENT_TEARDOWN;
+	ret = mapc_send_negotiation_request(hapd, peer_addr, reqs);
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR,
+			   "SET_MAPC_STA: teardown request failed (ret=%d)", ret);
+		return os_snprintf(buf, buflen,
+				   "FAIL teardown request failed (ret=%d)\n", ret);
+	}
+
+	return os_snprintf(buf, buflen, "OK Co-TDMA teardown initiated\n");
+}
+#endif /* CONFIG_IEEE80211BN */
+
 static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 					      char *buf, char *reply,
 					      int reply_size,
@@ -11706,6 +12108,25 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 			reply_len = -1;
 	} else if (os_strcmp(buf, "GET_PUNCTURE_SOURCES") == 0) {
 		reply_len = hostapd_ctrl_iface_puncture_sources(hapd, reply, reply_size);
+#ifdef CONFIG_IEEE80211BN
+	} else if (os_strcmp(buf, "GET_MAPC_CONFIGS") == 0) {
+		reply_len = hostapd_ctrl_iface_get_mapc_configs(
+			hapd, reply, reply_size);
+	} else if (os_strncmp(buf, "SET_MAPC_CONFIGS ", 17) == 0) {
+		reply_len = hostapd_ctrl_iface_set_mapc_configs(
+			hapd, buf + 17, reply, reply_size);
+	} else if (os_strcmp(buf, "GET_MAPC_VALID_COAP_LIST") == 0) {
+		reply_len = hostapd_ctrl_iface_get_mapc_valid_coap_list(
+			hapd, reply, reply_size);
+	} else if (os_strncmp(buf, "SET_MAPC_VALID_COAP_LIST ", 25) == 0) {
+		if (hostapd_ctrl_iface_set_mapc_valid_coap_list(hapd,
+								buf + 25))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "SET_MAPC_STA ", 13) == 0) {
+		reply_len = hostapd_ctrl_iface_set_mapc_sta(
+			hapd, buf + 13, reply, reply_size);
+
+#endif /* CONFIG_IEEE80211BN */
 	} else {
 		if (!hostapd_ctrl_iface_receive_process_extn(hapd, buf, reply,
 							     reply_size,

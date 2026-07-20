@@ -126,17 +126,9 @@ static void mapc_release_aid(struct hostapd_data *hapd, struct sta_info *sta)
  */
 static bool mapc_check_cotdma_disallow(const struct hostapd_data *hapd)
 {
-	const struct hostapd_iface   *iface = hapd->iface;
 	const struct mapc_bss_config *mapc_conf    = hapd->conf->mapc_conf;
 
 	if (!mapc_conf)
-		return true;
-
-	/* Gate 1: global limit.
-	 * 0 means no reported limit yet — treat as no limit (pass),
-	 * consistent with mapc_check_co_ordination_allow() Gate 1 semantics. */
-	if (iface->mapc_max_ctdma_peers > 0 &&
-	    iface->mapc_cotdma_active_count >= iface->mapc_max_ctdma_peers)
 		return true;
 
 	/* Gate 2: per-BSS operator ceiling — 0 means disabled for this BSS */
@@ -154,7 +146,6 @@ static bool mapc_check_cotdma_disallow(const struct hostapd_data *hapd)
  */
 static bool mapc_check_co_ordination_allow(const struct hostapd_data *hapd)
 {
-	const struct hostapd_iface   *iface = hapd->iface;
 	const struct mapc_bss_config *mapc_conf    = hapd->conf->mapc_conf;
 
 	if (!mapc_conf)
@@ -428,9 +419,8 @@ static int mapc_add_drv_sta(struct hostapd_data *hapd,
 
 	if (mapc_check_co_ordination_allow(hapd)) {
 		wpa_printf(MSG_INFO,
-			   "MAPC: max active peers reached (iface=%u bss=%u/%d)"
+			   "MAPC: max active peers reached (bss=%u/%d)"
 			   ", cannot promote " MACSTR,
-			   hapd->iface->mapc_active_peer_count,
 			   hapd->bss_active_peer_count,
 			   mapc_conf->max_mapc_co_ap_peer,
 			   MAC2STR(sta->addr));
@@ -442,9 +432,7 @@ static int mapc_add_drv_sta(struct hostapd_data *hapd,
 	    mapc_check_cotdma_disallow(hapd)) {
 		wpa_printf(MSG_INFO,
 			   "MAPC: Co-TDMA capacity reached"
-			   " (iface=%u/%u bss=%u/%u), cannot promote " MACSTR,
-			   hapd->iface->mapc_cotdma_active_count,
-			   hapd->iface->mapc_max_ctdma_peers,
+			   " (bss=%u/%u), cannot promote " MACSTR,
 			   hapd->bss_cotdma_active_count,
 			   mapc_conf->max_mapc_ctdma_peer,
 			   MAC2STR(sta->addr));
@@ -1274,6 +1262,9 @@ static int mapc_build_ie(struct wpabuf *buf, struct hostapd_data *hapd,
 	ie_body_len = wpabuf_len(buf) - body_start;
 	data = wpabuf_mhead_u8(buf);
 	data[ie_start + 1] = (u8)ie_body_len;
+
+	wpa_printf(MSG_DEBUG, "MAPC: IE built for action_code=%u (%zu bytes)",
+		   action_code, wpabuf_len(buf) - ie_start);
 
 	wpa_printf(MSG_DEBUG, "MAPC: IE built for action_code=%u (%zu bytes)",
 		   action_code, wpabuf_len(buf) - ie_start);
@@ -2227,10 +2218,8 @@ int mapc_send_negotiation_request(struct hostapd_data *hapd, const u8 *dst,
 			if (i == MAPC_SCHEME_CO_TDMA && mapc_check_cotdma_disallow(hapd)) {
 				wpa_printf(MSG_INFO,
 					   "MAPC: Co-TDMA capacity reached"
-					   " (iface=%u/%u bss=%u/%u), cannot ESTABLISH with "
+					   " (bss=%u/%u), cannot ESTABLISH with "
 					   MACSTR,
-					   hapd->iface->mapc_cotdma_active_count,
-					   hapd->iface->mapc_max_ctdma_peers,
 					   hapd->bss_cotdma_active_count,
 					   hapd->conf->mapc_conf->max_mapc_ctdma_peer,
 					   MAC2STR(dst));
@@ -3151,7 +3140,7 @@ void hostapd_mapc_handle_action(struct hostapd_data *hapd, const u8 *src,
 		return;
 	}
 
-	wpa_hexdump(MSG_ERROR, "MAPC: RX action frame: Final-2", buf, len);
+	wpa_hexdump(MSG_DEBUG, "MAPC: RX action frame: ", buf, len);
 
 	action   = buf[1];
 	token    = buf[2];
@@ -3293,9 +3282,16 @@ void mapc_stop_periodic_discovery(struct hostapd_data *hapd)
 	eloop_cancel_timeout(mapc_periodic_discovery_cb, hapd, NULL);
 }
 
+bool mapc_is_periodic_disc_running(struct hostapd_data *hapd)
+{
+	if (!hapd)
+		return false;
+	return eloop_is_timeout_registered(mapc_periodic_discovery_cb,
+					   hapd, NULL) > 0;
+}
+
 void mapc_update_hw_capability_bitmap(struct hostapd_data *hapd,
 				      u32 hw_cap_bitmap,
-				      u8 max_co_ap_peers,
 				      u8 max_ctdma_peers)
 {
 	struct mapc_bss_config *mapc_conf;
@@ -3316,46 +3312,10 @@ void mapc_update_hw_capability_bitmap(struct hostapd_data *hapd,
 			   iface->mapc_hw_capability_bitmap, hw_cap_bitmap);
 	}
 
-	if (max_co_ap_peers && iface->mapc_max_co_ap_peers == 0) {
-		iface->mapc_max_co_ap_peers =
-			(max_co_ap_peers < MAPC_MAX_CO_AP_PEER)
-			? max_co_ap_peers : (u16)MAPC_MAX_CO_AP_PEER;
-	}
 	if (max_ctdma_peers && iface->mapc_max_ctdma_peers == 0) {
 		iface->mapc_max_ctdma_peers =
 			(max_ctdma_peers < MAPC_MAX_COTDMA_PEER)
 			? max_ctdma_peers : (u8)MAPC_MAX_COTDMA_PEER;
-	}
-
-	if (iface->mapc_max_co_ap_peers) {
-		int fw_ceil = (int)iface->mapc_max_co_ap_peers;
-
-		if (mapc_conf->max_mapc_co_ap_peer > fw_ceil) {
-			wpa_printf(MSG_WARNING,
-				   "MAPC: max_mapc_co_ap_peer %d > FW ceiling %d"
-				   " on BSS %s, clamping",
-				   mapc_conf->max_mapc_co_ap_peer, fw_ceil,
-				   hapd->conf->iface);
-			mapc_conf->max_mapc_co_ap_peer = fw_ceil;
-		}
-	} else {
-		if (mapc_conf->max_mapc_co_ap_peer > MAPC_MAX_CO_AP_PEER)
-			mapc_conf->max_mapc_co_ap_peer = MAPC_MAX_CO_AP_PEER;
-	}
-
-	if (iface->mapc_max_ctdma_peers) {
-		u8 fw_ceil = iface->mapc_max_ctdma_peers;
-		if (mapc_conf->max_mapc_ctdma_peer > fw_ceil) {
-			wpa_printf(MSG_WARNING,
-				   "MAPC: max_mapc_ctdma_peer %u > FW ceiling %u"
-				   " on BSS %s, clamping",
-				   mapc_conf->max_mapc_ctdma_peer, fw_ceil,
-				   hapd->conf->iface);
-			mapc_conf->max_mapc_ctdma_peer = fw_ceil;
-		}
-	} else {
-		if (mapc_conf->max_mapc_ctdma_peer > MAPC_MAX_COTDMA_PEER)
-			mapc_conf->max_mapc_ctdma_peer = MAPC_MAX_COTDMA_PEER;
 	}
 
 	/* Co-TDMA peer count must not exceed total AP limit */
@@ -3384,7 +3344,6 @@ void mapc_iface_init(struct hostapd_iface *iface)
 	}
 
 	iface->mapc_hw_capability_bitmap = 0;
-	iface->mapc_max_co_ap_peers      = 0;
 	iface->mapc_max_ctdma_peers      = 0;
 	iface->mapc_active_peer_count    = 0;
 	iface->mapc_cotdma_active_count  = 0;
@@ -3405,7 +3364,6 @@ void mapc_iface_deinit(struct hostapd_iface *iface)
 		   iface->mapc_cotdma_active_count);
 
 	iface->mapc_hw_capability_bitmap = 0;
-	iface->mapc_max_co_ap_peers      = 0;
 	iface->mapc_max_ctdma_peers      = 0;
 	iface->mapc_active_peer_count    = 0;
 	iface->mapc_cotdma_active_count  = 0;
@@ -3548,14 +3506,12 @@ int mapc_init(struct hostapd_data *hapd)
 		if (hapd->driver->get_capa(hapd->drv_priv, &capa) == 0 &&
 		    capa.mapc_hw_cap_bitmap) {
 			wpa_printf(MSG_INFO,
-				   "MAPC: hw_cap=0x%08x max_co_ap=%u max_ctdma=%u for BSS %s",
+				   "MAPC: hw_cap=0x%08x max_ctdma=%u for BSS %s",
 				   capa.mapc_hw_cap_bitmap,
-				   capa.mapc_max_co_ap_peers,
 				   capa.mapc_max_ctdma_peers,
 				   hapd->conf->iface);
 			mapc_update_hw_capability_bitmap(hapd,
 							 capa.mapc_hw_cap_bitmap,
-							 capa.mapc_max_co_ap_peers,
 							 capa.mapc_max_ctdma_peers);
 		}
 	}
@@ -3580,4 +3536,468 @@ int mapc_init(struct hostapd_data *hapd)
 
 	hapd->mapc_initialized = true;
 	return 0;
+}
+
+int mapc_set_config(struct hostapd_data *hapd,
+		    const struct mapc_cfg_req *reqs, int count,
+		    char *reply, size_t reply_size)
+{
+	struct mapc_bss_config *mc;
+	struct {
+		bool has_cotdma_en, has_max_ctdma;
+		bool has_disc_interval, has_disc_mode, has_neg_mode;
+		bool has_disc_timeout, has_neg_timeout, has_inact_timeout;
+		bool has_max_co_ap, has_max_disc_ap, has_disc_cotdma_prof;
+		int  cotdma_en, max_ctdma, disc_mode, neg_mode;
+		int  max_co_ap, max_disc_ap, disc_cotdma_prof;
+		unsigned int disc_interval, disc_timeout;
+		unsigned int neg_timeout, inact_timeout;
+	} p;
+	char *pos = reply, *end = reply + reply_size;
+	int errors = 0, i, ret;
+	long lval;
+	char *endp;
+
+	if (!hapd || !hapd->conf || !hapd->conf->mapc_conf)
+		return os_snprintf(reply, reply_size,
+				   "FAIL: MAPC not configured\n");
+	if (!hapd->mapc_initialized)
+		return os_snprintf(reply, reply_size,
+				   "FAIL: MAPC not initialized on %s\n",
+				   hapd->conf->iface);
+
+	mc = hapd->conf->mapc_conf;
+	os_memset(&p, 0, sizeof(p));
+
+	for (i = 0; i < count; i++) {
+		const char *key = reqs[i].key;
+		const char *val = reqs[i].val;
+
+		lval = strtol(val, &endp, 10);
+		if (*endp != '\0' || endp == val) {
+			ret = os_snprintf(pos, end - pos,
+					  "FAIL: %s value '%s' not integer\n",
+					  key, val);
+			if (!os_snprintf_error(end - pos, ret))
+				pos += ret;
+			errors++;
+			continue;
+		}
+
+		if (os_strcmp(key, "cotdma_en") == 0) {
+			if (lval != 0 && lval != 1) {
+				ret = os_snprintf(pos, end - pos,
+						  "FAIL: cotdma_en [0|1]\n");
+				if (!os_snprintf_error(end - pos, ret))
+					pos += ret;
+				errors++;
+				continue;
+			}
+			if (lval == 0 && lval != (long)mc->mapc_cotdma_enable &&
+			    hapd->bss_cotdma_active_count > 0) {
+				ret = os_snprintf(pos, end - pos,
+						  "FAIL: cotdma_en cannot disable"
+						  " with %u active Co-TDMA"
+						  " agreement(s) — set_mapc_sta"
+						  " <mac> cotdma=0 first\n",
+						  (unsigned int)hapd->bss_cotdma_active_count);
+				if (!os_snprintf_error(end - pos, ret))
+					pos += ret;
+				errors++;
+				continue;
+			}
+			p.has_cotdma_en = true;
+			p.cotdma_en = (int)lval;
+		} else if (os_strcmp(key, "max_ctdma") == 0) {
+			if (lval < 0 || lval > MAPC_MAX_COTDMA_PEER) {
+				ret = os_snprintf(pos, end - pos,
+						  "FAIL: max_ctdma [0..%d]\n",
+						  MAPC_MAX_COTDMA_PEER);
+				if (!os_snprintf_error(end - pos, ret))
+					pos += ret;
+				errors++;
+				continue;
+			}
+			if (lval == 0 &&
+			    lval != (long)mc->max_mapc_ctdma_peer &&
+			    hapd->bss_cotdma_active_count > 0) {
+				ret = os_snprintf(pos, end - pos,
+						  "FAIL: max_ctdma cannot set 0"
+						  " with %u active Co-TDMA"
+						  " agreement(s)\n",
+						  (unsigned int)hapd->bss_cotdma_active_count);
+				if (!os_snprintf_error(end - pos, ret))
+					pos += ret;
+				errors++;
+				continue;
+			}
+			p.has_max_ctdma = true;
+			p.max_ctdma = (int)lval;
+		} else if (os_strcmp(key, "disc_interval") == 0) {
+			if (lval < 0 || lval > 3600) {
+				ret = os_snprintf(pos, end - pos,
+						  "FAIL: disc_interval [0..3600]\n");
+				if (!os_snprintf_error(end - pos, ret))
+					pos += ret;
+				errors++;
+				continue;
+			}
+			p.has_disc_interval = true;
+			p.disc_interval = (unsigned int)lval;
+		} else if (os_strcmp(key, "disc_mode") == 0) {
+			if (lval != 0 && lval != 1) {
+				ret = os_snprintf(pos, end - pos,
+						  "FAIL: disc_mode [0|1]\n");
+				if (!os_snprintf_error(end - pos, ret))
+					pos += ret;
+				errors++;
+				continue;
+			}
+			p.has_disc_mode = true;
+			p.disc_mode = (int)lval;
+		} else if (os_strcmp(key, "neg_mode") == 0) {
+			if (lval != 0 && lval != 1) {
+				ret = os_snprintf(pos, end - pos,
+						  "FAIL: neg_mode [0|1]\n");
+				if (!os_snprintf_error(end - pos, ret))
+					pos += ret;
+				errors++;
+				continue;
+			}
+			p.has_neg_mode = true;
+			p.neg_mode = (int)lval;
+		} else if (os_strcmp(key, "disc_timeout") == 0) {
+			if (lval < 1 || lval > 300) {
+				ret = os_snprintf(pos, end - pos,
+						  "FAIL: disc_timeout [1..300]\n");
+				if (!os_snprintf_error(end - pos, ret))
+					pos += ret;
+				errors++;
+				continue;
+			}
+			p.has_disc_timeout = true;
+			p.disc_timeout = (unsigned int)lval;
+		} else if (os_strcmp(key, "neg_timeout") == 0) {
+			if (lval < 1 || lval > 300) {
+				ret = os_snprintf(pos, end - pos,
+						  "FAIL: neg_timeout [1..300]\n");
+				if (!os_snprintf_error(end - pos, ret))
+					pos += ret;
+				errors++;
+				continue;
+			}
+			p.has_neg_timeout = true;
+			p.neg_timeout = (unsigned int)lval;
+		} else if (os_strcmp(key, "inact_timeout") == 0) {
+			if (lval < 0 || lval > 86400) {
+				ret = os_snprintf(pos, end - pos,
+						  "FAIL: inact_timeout [0..86400]\n");
+				if (!os_snprintf_error(end - pos, ret))
+					pos += ret;
+				errors++;
+				continue;
+			}
+			p.has_inact_timeout = true;
+			p.inact_timeout = (unsigned int)lval;
+		} else if (os_strcmp(key, "max_co_ap") == 0) {
+			if (lval < 1 || lval > MAPC_MAX_CO_AP_PEER) {
+				ret = os_snprintf(pos, end - pos,
+						  "FAIL: max_co_ap [1..%d]\n",
+						  MAPC_MAX_CO_AP_PEER);
+				if (!os_snprintf_error(end - pos, ret))
+					pos += ret;
+				errors++;
+				continue;
+			}
+			p.has_max_co_ap = true;
+			p.max_co_ap = (int)lval;
+		} else if (os_strcmp(key, "max_disc_ap") == 0) {
+			if (lval < 1 || lval > MAPC_MAX_CO_AP_DISCOVERED_PEER) {
+				ret = os_snprintf(pos, end - pos,
+						  "FAIL: max_disc_ap [1..%d]\n",
+						  MAPC_MAX_CO_AP_DISCOVERED_PEER);
+				if (!os_snprintf_error(end - pos, ret))
+					pos += ret;
+				errors++;
+				continue;
+			}
+			p.has_max_disc_ap = true;
+			p.max_disc_ap = (int)lval;
+		} else if (os_strcmp(key, "disc_cotdma_prof") == 0) {
+			if (lval != 0 && lval != 1) {
+				ret = os_snprintf(pos, end - pos,
+						  "FAIL: disc_cotdma_prof [0|1]\n");
+				if (!os_snprintf_error(end - pos, ret))
+					pos += ret;
+				errors++;
+				continue;
+			}
+			p.has_disc_cotdma_prof = true;
+			p.disc_cotdma_prof = (int)lval;
+		} else {
+			ret = os_snprintf(pos, end - pos,
+					  "FAIL: unknown key '%s'\n"
+					  "valid: cotdma_en disc_interval"
+					  " disc_mode neg_mode max_co_ap"
+					  " max_ctdma max_disc_ap disc_timeout"
+					  " neg_timeout inact_timeout"
+					  " disc_cotdma_prof\n",
+					  key);
+			if (!os_snprintf_error(end - pos, ret))
+				pos += ret;
+			errors++;
+		}
+	}
+
+	if (errors)
+		return pos - reply;
+
+	bool need_bitmap_rebuild = false;
+
+	if (p.has_cotdma_en) {
+		if (p.cotdma_en != mc->mapc_cotdma_enable) {
+			int old = mc->mapc_cotdma_enable;
+			mc->mapc_cotdma_enable = p.cotdma_en;
+			if (p.cotdma_en == 1) {
+				if (mc->mapc_usr_enabled_bitmap == 0) {
+					mapc_deinit(hapd);
+					if (mapc_init(hapd) != 0) {
+						ret = os_snprintf(pos, end - pos,
+								  "FAIL: cotdma_en"
+								  " mapc_init"
+								  " failed\n");
+						if (!os_snprintf_error(end - pos, ret))
+							pos += ret;
+						return pos - reply;
+					}
+					ret = os_snprintf(pos, end - pos,
+							  "OK: cotdma_en %d -> %d"
+							  " [deinit+init]\n",
+							  old, p.cotdma_en);
+				} else {
+					mc->mapc_usr_enabled_bitmap |=
+						BIT(MAPC_CAPABILITY_COTDMA_SUPPORT);
+					need_bitmap_rebuild = true;
+					ret = os_snprintf(pos, end - pos,
+							  "OK: cotdma_en %d -> %d\n",
+							  old, p.cotdma_en);
+				}
+			} else {
+				if ((mc->mapc_usr_enabled_bitmap &
+				     ~BIT(MAPC_CAPABILITY_COTDMA_SUPPORT)) == 0) {
+					mc->mapc_usr_enabled_bitmap &=
+						~BIT(MAPC_CAPABILITY_COTDMA_SUPPORT);
+					mapc_deinit(hapd);
+					mapc_get_common_info_bitmap(hapd);
+					hapd->mapc_initialized = false;
+					ret = os_snprintf(pos, end - pos,
+							  "OK: cotdma_en %d -> %d"
+							  " [deinit]\n",
+							  old, p.cotdma_en);
+				} else {
+					mc->mapc_usr_enabled_bitmap &=
+						~BIT(MAPC_CAPABILITY_COTDMA_SUPPORT);
+					need_bitmap_rebuild = true;
+					ret = os_snprintf(pos, end - pos,
+							  "OK: cotdma_en %d -> %d\n",
+							  old, p.cotdma_en);
+				}
+			}
+		} else {
+			ret = os_snprintf(pos, end - pos,
+					  "OK: cotdma_en unchanged (%d)\n",
+					  mc->mapc_cotdma_enable);
+		}
+		if (!os_snprintf_error(end - pos, ret))
+			pos += ret;
+	}
+
+	if (p.has_max_ctdma) {
+		int cval = p.max_ctdma;
+		if (cval != (int)mc->max_mapc_ctdma_peer) {
+			int old = (int)mc->max_mapc_ctdma_peer;
+			mc->max_mapc_ctdma_peer = (u8)cval;
+			need_bitmap_rebuild = true;
+			ret = os_snprintf(pos, end - pos,
+					  "OK: max_ctdma %d -> %d\n",
+					  old, cval);
+		} else {
+			ret = os_snprintf(pos, end - pos,
+					  "OK: max_ctdma unchanged (%d)\n",
+					  cval);
+		}
+		if (!os_snprintf_error(end - pos, ret))
+			pos += ret;
+	}
+
+	if (need_bitmap_rebuild)
+		mapc_get_common_info_bitmap(hapd);
+
+	if (p.has_disc_interval) {
+		if (p.disc_interval != mc->mapc_disc_req_interval_sec) {
+			unsigned int old = mc->mapc_disc_req_interval_sec;
+			mc->mapc_disc_req_interval_sec = p.disc_interval;
+			mapc_stop_periodic_discovery(hapd);
+			if (p.disc_interval > 0 &&
+			    mc->mapc_capability_bitmap &&
+			    mc->discovery_mode == 0)
+				mapc_start_periodic_discovery(hapd,
+							      p.disc_interval);
+			ret = os_snprintf(pos, end - pos,
+					  "OK: disc_interval %u -> %u"
+					  " [disc_timer=%s]\n",
+					  old, p.disc_interval,
+					  mapc_is_periodic_disc_running(hapd) ?
+					  "started" : "stopped");
+		} else {
+			ret = os_snprintf(pos, end - pos,
+					  "OK: disc_interval unchanged (%u)\n",
+					  p.disc_interval);
+		}
+		if (!os_snprintf_error(end - pos, ret))
+			pos += ret;
+	}
+
+	if (p.has_disc_mode) {
+		if (p.disc_mode != mc->discovery_mode) {
+			int old = mc->discovery_mode;
+			mc->discovery_mode = p.disc_mode;
+			if (p.disc_mode == 1) {
+				mapc_stop_periodic_discovery(hapd);
+			} else {
+				if (mc->mapc_capability_bitmap &&
+				    mc->mapc_disc_req_interval_sec > 0)
+					mapc_start_periodic_discovery(
+						hapd,
+						mc->mapc_disc_req_interval_sec);
+			}
+			ret = os_snprintf(pos, end - pos,
+					  "OK: disc_mode %d -> %d"
+					  " [disc_timer=%s]\n",
+					  old, p.disc_mode,
+					  mapc_is_periodic_disc_running(hapd) ?
+					  "running" : "stopped");
+		} else {
+			ret = os_snprintf(pos, end - pos,
+					  "OK: disc_mode unchanged (%d)\n",
+					  p.disc_mode);
+		}
+		if (!os_snprintf_error(end - pos, ret))
+			pos += ret;
+	}
+
+	if (p.has_neg_mode) {
+		if (p.neg_mode != mc->negotiation_mode) {
+			int old = mc->negotiation_mode;
+			mc->negotiation_mode = p.neg_mode;
+			ret = os_snprintf(pos, end - pos,
+					  "OK: neg_mode %d -> %d\n",
+					  old, p.neg_mode);
+		} else {
+			ret = os_snprintf(pos, end - pos,
+					  "OK: neg_mode unchanged (%d)\n",
+					  p.neg_mode);
+		}
+		if (!os_snprintf_error(end - pos, ret))
+			pos += ret;
+	}
+
+	if (p.has_disc_timeout) {
+		if (p.disc_timeout != mc->discovery_req_timeout) {
+			unsigned int old = mc->discovery_req_timeout;
+			mc->discovery_req_timeout = p.disc_timeout;
+			ret = os_snprintf(pos, end - pos,
+					  "OK: disc_timeout %u -> %u\n",
+					  old, p.disc_timeout);
+		} else {
+			ret = os_snprintf(pos, end - pos,
+					  "OK: disc_timeout unchanged (%u)\n",
+					  p.disc_timeout);
+		}
+		if (!os_snprintf_error(end - pos, ret))
+			pos += ret;
+	}
+
+	if (p.has_neg_timeout) {
+		if (p.neg_timeout != mc->negotiation_req_timeout) {
+			unsigned int old = mc->negotiation_req_timeout;
+			mc->negotiation_req_timeout = p.neg_timeout;
+			ret = os_snprintf(pos, end - pos,
+					  "OK: neg_timeout %u -> %u\n",
+					  old, p.neg_timeout);
+		} else {
+			ret = os_snprintf(pos, end - pos,
+					  "OK: neg_timeout unchanged (%u)\n",
+					  p.neg_timeout);
+		}
+		if (!os_snprintf_error(end - pos, ret))
+			pos += ret;
+	}
+
+	if (p.has_inact_timeout) {
+		if (p.inact_timeout != mc->max_mapc_ap_inactivity) {
+			unsigned int old = mc->max_mapc_ap_inactivity;
+			mc->max_mapc_ap_inactivity = p.inact_timeout;
+			ret = os_snprintf(pos, end - pos,
+					  "OK: inact_timeout %u -> %u\n",
+					  old, p.inact_timeout);
+		} else {
+			ret = os_snprintf(pos, end - pos,
+					  "OK: inact_timeout unchanged (%u)\n",
+					  p.inact_timeout);
+		}
+		if (!os_snprintf_error(end - pos, ret))
+			pos += ret;
+	}
+
+	if (p.has_max_co_ap) {
+		int cval = p.max_co_ap;
+		if (cval != mc->max_mapc_co_ap_peer) {
+			int old = mc->max_mapc_co_ap_peer;
+			mc->max_mapc_co_ap_peer = cval;
+			ret = os_snprintf(pos, end - pos,
+					  "OK: max_co_ap %d -> %d\n",
+					  old, cval);
+		} else {
+			ret = os_snprintf(pos, end - pos,
+					  "OK: max_co_ap unchanged (%d)\n",
+					  cval);
+		}
+		if (!os_snprintf_error(end - pos, ret))
+			pos += ret;
+	}
+
+	if (p.has_max_disc_ap) {
+		if (p.max_disc_ap != mc->max_mapc_discovered_ap_peer) {
+			int old = mc->max_mapc_discovered_ap_peer;
+			mc->max_mapc_discovered_ap_peer = p.max_disc_ap;
+			ret = os_snprintf(pos, end - pos,
+					  "OK: max_disc_ap %d -> %d\n",
+					  old, p.max_disc_ap);
+		} else {
+			ret = os_snprintf(pos, end - pos,
+					  "OK: max_disc_ap unchanged (%d)\n",
+					  p.max_disc_ap);
+		}
+		if (!os_snprintf_error(end - pos, ret))
+			pos += ret;
+	}
+
+	if (p.has_disc_cotdma_prof) {
+		if (p.disc_cotdma_prof != mc->enable_disc_cotdma_scheme_profile) {
+			int old = mc->enable_disc_cotdma_scheme_profile;
+			mc->enable_disc_cotdma_scheme_profile = p.disc_cotdma_prof;
+			ret = os_snprintf(pos, end - pos,
+					  "OK: disc_cotdma_prof %d -> %d\n",
+					  old, p.disc_cotdma_prof);
+		} else {
+			ret = os_snprintf(pos, end - pos,
+					  "OK: disc_cotdma_prof unchanged (%d)\n",
+					  p.disc_cotdma_prof);
+		}
+		if (!os_snprintf_error(end - pos, ret))
+			pos += ret;
+	}
+
+	return pos - reply;
 }
