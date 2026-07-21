@@ -1320,6 +1320,7 @@ void check_and_add_uniibands(band_info_t uniiband)
 	}
 }
 
+#ifdef CONFIG_TAXONOMY
 static int is_wpa_oui(const u8 *ie)
 {
 	if (ie[1] < 4)
@@ -1392,6 +1393,7 @@ static int print_sta_ies_compact(const u8 *ies, size_t ies_len,
 
 	return len;
 }
+#endif /* CONFIG_TAXONOMY */
 static int hostapd_ctrl_iface_sta_mib(struct hostapd_data *hapd,
 				      struct sta_info *sta,
 				      char *buf, size_t buflen)
