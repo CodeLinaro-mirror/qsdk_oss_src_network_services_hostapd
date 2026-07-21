@@ -558,6 +558,14 @@ uc_hostapd_iface_add_bss(uc_vm_t *vm, size_t nargs)
 
 	bss = conf->bss[idx];
 
+	if (!iface->num_bss || !iface->bss[0] ||
+	    !iface->bss[0]->driver || !iface->bss[0]->drv_priv) {
+		wpa_printf(MSG_ERROR,
+				"%s: bss[0] driver/drv_priv not initialized, cannot add %s",
+				__func__, bss->iface);
+		goto free_conf;
+	}
+
 	/*
 	 * Add the new BSS config to iface->conf->bss[] BEFORE calling
 	 * hostapd_setup_bss().  Inside hostapd_setup_bss(), when the iface is
