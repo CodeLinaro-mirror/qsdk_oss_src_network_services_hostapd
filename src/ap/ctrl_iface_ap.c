@@ -306,6 +306,7 @@ static int hostapd_get_sta_phy_mode(struct sta_info *sta,
 	return len;
 }
 
+#endif /* CONFIG_CTRL_IFACE_MIB */
 
 static u8 hostapd_htmaxmcs(const u8 *mcs_set)
 {
@@ -347,6 +348,7 @@ static u8 hostapd_vhtmaxmcs(u16 rx_vht_mcs_map, u16 tx_vht_mcs_map)
 
 	return 0;
 }
+#ifdef CONFIG_CTRL_IFACE_MIB
 
 
 static unsigned int hostapd_mcs_map_max_nss(u16 mcs_map,
