@@ -10750,8 +10750,10 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		if (hostapd_ctrl_iface_disable(hapd->iface))
 			reply_len = -1;
 	} else if (os_strcmp(buf, "UPDATE_BEACON") == 0) {
+		hapd->is_update_beacon = true;
 		if (ieee802_11_set_beacon(hapd))
 			reply_len = -1;
+		hapd->is_update_beacon = false;
 #ifdef CONFIG_IEEE80211BN
 	} else if (os_strncmp(buf, "UPDATE_UHR_FEATURES ", 20) == 0) {
 		if (hostapd_ctrl_iface_update_uhr_features(hapd, buf + 20))
