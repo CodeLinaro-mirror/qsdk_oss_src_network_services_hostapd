@@ -614,18 +614,33 @@ struct uhr_npca_info {
 };
 
 /**
- * struct npca_link_config - Per-link NPCA configuration
+ * struct uhr_params_link_config - Per-link NPCA/DSO configuration
  * @link_id: MLO link ID (-1 means apply to all links)
  * @npca_enable: true = enable NPCA, false = disable NPCA
  * @npca_switch_delay: NPCA switch delay in TUs (0 = use driver default)
  * @npca_switchback_delay: NPCA switch-back delay in TUs (0 = use driver default)
+ * @npca_update: true if NPCA parameters for this link should be sent
+ * @dso_enable: true = enable DSO, false = disable DSO
+ * @dso_update: true if the DSO parameters for this link should be sent
+ * @dso_subband: preferred 80 MHz subband index (0-3) for DSO operation,
+ *	or UHR_DSO_SUBBAND_UNSET if not given (optional parameter)
+ * @dso_padding_delay: DSO padding delay in units of 4 us,
+ * @dso_switch_back_delay: DSO switch-back delay in units of 4 us,
  */
-struct npca_link_config {
+struct uhr_params_link_config {
 	int link_id;
 	bool npca_enable;
 	u8 npca_switch_delay;
 	u8 npca_switchback_delay;
+	bool npca_update;
+	bool dso_enable;
+	bool dso_update;
+	u8 dso_subband;
+	u8 dso_padding_delay;
+	u8 dso_switch_back_delay;
 };
+
+#define UHR_DSO_SUBBAND_UNSET 0xff
 
 #define HOSTAPD_MODE_FLAG_HT_INFO_KNOWN BIT(0)
 #define HOSTAPD_MODE_FLAG_VHT_INFO_KNOWN BIT(1)
@@ -6813,17 +6828,19 @@ struct wpa_driver_ops {
 	int (*set_epcs_cfg)(void *priv, bool epcs_cfg_value);
 
 	/**
-	 * uhr_mode_update - Send UHR mode update (NPCA enable/disable) per link
+	 * uhr_mode_update - Send UHR mode update (NPCA/DSO) per link
 	 * @priv: Private driver interface data
-	 * @links: Array of per-link NPCA configurations
+	 * @links: Array of per-link NPCA/DSO configurations
 	 * @num_links: Number of entries in the links array
 	 * Returns: 0 on success, negative value on failure
 	 *
 	 * This function sends NL80211_CMD_UHR_MODE_UPDATE with per-link NPCA
-	 * parameters. Each entry in @links specifies the link ID and the NPCA
-	 * enable/disable state along with optional delay parameters.
+	 * and/or DSO parameters. Each entry in @links specifies the link ID
+	 * and the NPCA enable/disable state and optional delay parameters
+	 * (gated by @npca_update) and/or the DSO enable/disable state (gated
+	 * by @dso_update).
 	 */
-	int (*uhr_mode_update)(void *priv, struct npca_link_config *links,
+	int (*uhr_mode_update)(void *priv, struct uhr_params_link_config *links,
 			       int num_links);
 
 	/**

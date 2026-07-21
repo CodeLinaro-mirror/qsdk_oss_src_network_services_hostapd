@@ -1329,7 +1329,7 @@ static inline int wpa_drv_set_epcs_cfg(struct wpa_supplicant *wpa_s,
 }
 
 static inline int wpa_drv_uhr_mode_update(struct wpa_supplicant *wpa_s,
-					  struct npca_link_config *links,
+					  struct uhr_params_link_config *links,
 					  int num_links)
 {
 	if (!wpa_s->driver->uhr_mode_update)
