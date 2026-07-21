@@ -73,6 +73,15 @@ u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 		 UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK);
 
 	os_memcpy(cap->phy_cap, uhr_cap->phy_cap, sizeof(cap->phy_cap));
+
+	if ((hapd->conf->uhr_phy_capab_mask & UHR_PHY_BSS_OVR_2XLDPC_TX) &&
+	    !hapd->conf->uhr_phy_capab.uhr_2xldpc_tx)
+		cap->phy_cap[UHR_PHYCAP_2XLDPC_TX_SUPP_IDX] &= ~UHR_PHYCAP_2XLDPC_TX_SUPP;
+
+	if ((hapd->conf->uhr_phy_capab_mask & UHR_PHY_BSS_OVR_2XLDPC_RX) &&
+	    !hapd->conf->uhr_phy_capab.uhr_2xldpc_rx)
+		cap->phy_cap[UHR_PHYCAP_2XLDPC_RX_SUPP_IDX] &= ~UHR_PHYCAP_2XLDPC_RX_SUPP;
+
 	pos += sizeof(struct ieee80211_uhr_capabilities);
 
 	*length_pos = pos - (eid + 2);
