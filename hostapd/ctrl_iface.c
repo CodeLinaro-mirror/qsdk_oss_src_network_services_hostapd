@@ -5915,6 +5915,7 @@ static int hostapd_ctrl_iface_set_bw(struct hostapd_iface *iface, char *pos)
 #endif /* CONFIG_TESTING_OPTIONS */
 
 
+#ifdef CONFIG_CTRL_IFACE_MIB
 static int hostapd_ctrl_iface_mib(struct hostapd_data *hapd, char *reply,
 				  int reply_size, const char *param)
 {
@@ -5926,6 +5927,7 @@ static int hostapd_ctrl_iface_mib(struct hostapd_data *hapd, char *reply,
 #endif /* RADIUS_SERVER */
 	return -1;
 }
+#endif /* CONFIG_CTRL_IFACE_MIB */
 
 
 static int hostapd_ctrl_iface_vendor(struct hostapd_data *hapd, char *cmd,
@@ -11197,7 +11199,10 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 					      struct sockaddr_storage *from,
 					      socklen_t fromlen)
 {
-	int reply_len, res;
+	int reply_len;
+#if defined(CONFIG_CTRL_IFACE_MIB) || defined(CONFIG_DPP)
+	int res;
+#endif /* CONFIG_CTRL_IFACE_MIB || CONFIG_DPP */
 
 	os_memcpy(reply, "OK\n", 3);
 	reply_len = 3;
