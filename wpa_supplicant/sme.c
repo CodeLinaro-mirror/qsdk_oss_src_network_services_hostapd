@@ -3427,12 +3427,74 @@ void sme_event_assoc_reject(struct wpa_supplicant *wpa_s,
 }
 
 
+static bool sme_other_mld_ap_candidate_available(struct wpa_supplicant *wpa_s)
+{
+	struct wpa_ssid *ssid = wpa_s->current_ssid;
+	size_t i;
+
+	if (!ssid)
+		return false;
+
+	for (i = 0; i < wpa_s->last_scan_res_used; i++) {
+		struct wpa_bss *bss = wpa_s->last_scan_res[i];
+
+		if (is_zero_ether_addr(bss->mld_addr))
+			continue;
+		if (ether_addr_equal(bss->mld_addr, wpa_s->ap_mld_addr))
+			continue;
+
+		/* Only a candidate if it matches the network we are
+		 * trying to connect to. */
+		if (ssid->ssid_len == 0 ||
+		    bss->ssid_len != ssid->ssid_len ||
+		    os_memcmp(bss->ssid, ssid->ssid, ssid->ssid_len) != 0)
+			continue;
+
+		return true;
+	}
+
+	return false;
+}
+
+
+static void sme_collect_mld_link_bssids(struct wpa_supplicant *wpa_s,
+					const u8 **link_bssids, int *n)
+{
+	int i;
+
+	*n = 0;
+	if (!wpa_s->valid_links)
+		return;
+
+	/*
+	 * Only worth ignore-listing every link of this MLD AP if there is
+	 * another MLD AP candidate to fall back to; otherwise this AP is
+	 * the only option and cycling through its links keeps it eligible
+	 * sooner.
+	 */
+	if (!sme_other_mld_ap_candidate_available(wpa_s))
+		return;
+
+	for_each_link(wpa_s->valid_links, i) {
+		if (!ether_addr_equal(wpa_s->links[i].bssid,
+				      wpa_s->pending_bssid))
+			link_bssids[(*n)++] = wpa_s->links[i].bssid;
+	}
+	link_bssids[*n] = NULL;
+}
+
+
 void sme_event_auth_timed_out(struct wpa_supplicant *wpa_s,
 			      union wpa_event_data *data)
 {
+	const u8 *link_bssids[MAX_NUM_MLD_LINKS + 1];
+	int n;
+
 	wpa_dbg(wpa_s, MSG_DEBUG, "SME: Authentication timed out");
 	wpa_supplicant_set_state(wpa_s, WPA_DISCONNECTED);
-	wpas_connection_failed(wpa_s, wpa_s->pending_bssid, NULL);
+	sme_collect_mld_link_bssids(wpa_s, link_bssids, &n);
+	wpas_connection_failed(wpa_s, wpa_s->pending_bssid,
+			       n ? link_bssids : NULL);
 	wpa_supplicant_mark_disassoc(wpa_s);
 }
 
@@ -3440,9 +3502,14 @@ void sme_event_auth_timed_out(struct wpa_supplicant *wpa_s,
 void sme_event_assoc_timed_out(struct wpa_supplicant *wpa_s,
 			       union wpa_event_data *data)
 {
+	const u8 *link_bssids[MAX_NUM_MLD_LINKS + 1];
+	int n;
+
 	wpa_dbg(wpa_s, MSG_DEBUG, "SME: Association timed out");
 	wpa_supplicant_set_state(wpa_s, WPA_DISCONNECTED);
-	wpas_connection_failed(wpa_s, wpa_s->pending_bssid, NULL);
+	sme_collect_mld_link_bssids(wpa_s, link_bssids, &n);
+	wpas_connection_failed(wpa_s, wpa_s->pending_bssid,
+			       n ? link_bssids : NULL);
 	wpa_supplicant_mark_disassoc(wpa_s);
 }
 
