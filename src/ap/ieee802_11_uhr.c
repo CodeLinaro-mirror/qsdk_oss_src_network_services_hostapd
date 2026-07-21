@@ -98,6 +98,16 @@ u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 		  UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_SHIFT) &
 		 UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK);
 
+	if ((hapd->conf->uhr_phy_capab_mask & UHR_PHY_BSS_OVR_2XLDPC_TX) &&
+	    !hapd->conf->uhr_phy_capab.uhr_2xldpc_tx)
+		cap->phy[UHR_PHYCAP_2XLDPC_TX_SUPP_IDX] &=
+			~UHR_PHYCAP_2XLDPC_TX_SUPP;
+
+	if ((hapd->conf->uhr_phy_capab_mask & UHR_PHY_BSS_OVR_2XLDPC_RX) &&
+	    !hapd->conf->uhr_phy_capab.uhr_2xldpc_rx)
+		cap->phy[UHR_PHYCAP_2XLDPC_RX_SUPP_IDX] &=
+			~UHR_PHYCAP_2XLDPC_RX_SUPP;
+
 	pos += sizeof(*cap);
 
 	if (opmode == IEEE80211_MODE_AP &&

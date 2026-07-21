@@ -409,6 +409,13 @@ struct eht_phy_capabilities_info {
 };
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BN
+struct uhr_phy_capabilities_info {
+	int uhr_2xldpc_tx;
+	int uhr_2xldpc_rx;
+};
+#endif /* CONFIG_IEEE80211BN */
+
 #define FEATURE_DISABLED	0
 #define FEATURE_ENABLED		1
 
@@ -639,6 +646,13 @@ struct hostapd_bss_config {
 #define EHT_PHY_BSS_OVR_MCS14_DUP_IN_6GHZ BIT(24)
 	u32 eht_phy_capab_mask;
 #endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_IEEE80211BN
+	struct uhr_phy_capabilities_info uhr_phy_capab;
+#define UHR_PHY_BSS_OVR_2XLDPC_TX   BIT(0)
+#define UHR_PHY_BSS_OVR_2XLDPC_RX   BIT(1)
+	u32 uhr_phy_capab_mask;
+#endif /* CONFIG_IEEE80211BN */
 
 	enum macaddr_acl macaddr_acl;
 	struct mac_acl_entry *accept_mac;

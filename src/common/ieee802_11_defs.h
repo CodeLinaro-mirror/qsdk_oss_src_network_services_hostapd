@@ -3909,6 +3909,12 @@ struct ieee80211_uhr_capabilities {
 	/* Followed by DBE Capability Parameters [0, 1, 4 or 7] */
 } STRUCT_PACKED;
 
+/* UHR PHY Capabilities Information byte 1 (P802.11bn_D1.5 section 9.4.2.357.3) */
+#define UHR_PHYCAP_2XLDPC_TX_SUPP_IDX	1
+#define UHR_PHYCAP_2XLDPC_TX_SUPP	((u8) BIT(3))
+#define UHR_PHYCAP_2XLDPC_RX_SUPP_IDX	1
+#define UHR_PHYCAP_2XLDPC_RX_SUPP	((u8) BIT(4))
+
 /* UHR Operation Control field */
 #define UHR_OPER_CTRL_DPS_ENA               0x0001
 #define UHR_OPER_CTRL_NPCA_ENA              0x0002
