@@ -7575,6 +7575,19 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 	enum bss_enable_state enable_state;
 	size_t i;
 
+	/*
+	 * Channel list update pending - hw_features have not been fetched yet
+	 * and current_mode is NULL. setup_interface2() will re-enable all
+	 * BSSes via hostapd_setup_bss() once the update completes. No reenable
+	 * state is needed here unlike CAC/HT_SCAN deferral since
+	 * setup_interface2() unconditionally sets up all BSSes.
+	 */
+	if (hapd->iface->wait_channel_update) {
+		wpa_printf(MSG_INFO, "Channel update pending, cannot enable BSS %s",
+			   hapd->conf->iface);
+		return 0;
+	}
+
 	if (hapd->started) {
 		wpa_printf(MSG_INFO, "BSS %s already enabled",
 			   hapd->conf->iface);
