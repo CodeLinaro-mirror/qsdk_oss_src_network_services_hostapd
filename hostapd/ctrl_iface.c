@@ -2076,6 +2076,20 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			wpa_printf(MSG_INFO, "Updated RSSI deauth grace samples to %d", val);
 			hostapd_ctrl_iface_update_rssi_monitor(hapd);
 		}
+#ifdef CONFIG_IEEE80211AX
+	} else if (os_strcasecmp(cmd, "he_6ghz_min_rate") == 0) {
+		if (!is_6ghz_op_class(hapd->iconf->op_class)) {
+			wpa_printf(MSG_ERROR,
+				   "he_6ghz_min_rate is applicable for 6 GHz only");
+			return -1;
+		}
+		ret = hostapd_set_iface(hapd->iconf, hapd->conf, cmd, value);
+		if (ret)
+			return ret;
+		if (!hapd->conf->is_cmn_param)
+			ieee802_11_update_beacons(tx_hapd->iface);
+		return 0;
+#endif /* CONFIG_IEEE80211AX */
 	} else {
 		if (hapd->iface->conf->disable_csa_dfs &&
 		    ((os_strcmp(cmd, "channel") == 0) &&
@@ -2136,9 +2150,6 @@ vht_rollback:
 			return -1;
 #endif /* CONFIG_IEEE80211AC */
 #ifdef CONFIG_IEEE80211AX
-		} else if (os_strcasecmp(cmd, "he_6ghz_min_rate") == 0 &&
-			   is_6ghz_op_class(hapd->iconf->op_class) && !hapd->conf->is_cmn_param) {
-			ieee802_11_update_beacons(tx_hapd->iface);
 		} else if (os_strcasecmp(cmd, "bss_he_su_beamformer") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_su_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_mu_beamformer") == 0 ||
