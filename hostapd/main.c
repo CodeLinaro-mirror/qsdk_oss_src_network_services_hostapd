@@ -44,6 +44,10 @@
 #include "../../qcn_extns/cmn.h"
 #endif
 
+#ifdef CONFIG_UDBG_ENH
+#include "../qcn_extns/udbg_enh.h"
+#endif /* CONFIG_UDBG_ENH */
+
 struct hapd_global {
 	void **drv_priv;
 	size_t drv_count;
@@ -638,6 +642,9 @@ static int hostapd_global_run(struct hapd_interfaces *ifaces, int daemonize,
 				   strerror(errno));
 			return -1;
 		}
+#ifdef CONFIG_UDBG_ENH
+		hostapd_udbg_enh_post_daemonize_extn();
+#endif /* CONFIG_UDBG_ENH */
 	}
 
 	eloop_run();
@@ -702,7 +709,6 @@ static void usage(void)
 
 	exit(1);
 }
-
 
 static const char * hostapd_msg_ifname_cb(void *ctx)
 {
@@ -867,7 +873,6 @@ static void hostapd_global_cleanup_mld(struct hapd_interfaces *interfaces)
 #endif /* CONFIG_IEEE80211BE */
 }
 
-
 int main(int argc, char *argv[])
 {
 	struct hapd_interfaces interfaces;
@@ -899,7 +904,6 @@ int main(int argc, char *argv[])
 	bool mqtt_plugin_enable = false;
 #endif /* CONFIG_MQTT_TEST_APP_FORK */
 #endif /* CONFIG_MQTT */
-
 	if (os_program_init())
 		return -1;
 
@@ -1183,6 +1187,11 @@ int main(int argc, char *argv[])
 		}
 	}
 
+
+#ifdef CONFIG_UDBG_ENH
+	hostapd_udbg_enh_init_extn(&interfaces, daemonize);
+#endif /* CONFIG_UDBG_ENH */
+
 	/*
 	 * Enable configured interfaces. Depending on channel configuration,
 	 * this may complete full initialization before returning or use a
@@ -1244,6 +1253,10 @@ int main(int argc, char *argv[])
 #endif
 
  out:
+#ifdef CONFIG_UDBG_ENH
+	hostapd_udbg_enh_deinit_extn();
+#endif /* CONFIG_UDBG_ENH */
+
 	hostapd_global_ctrl_iface_deinit(&interfaces);
 #ifdef CONFIG_MQTT
 #ifdef CONFIG_MQTT_TEST_APP_FORK
