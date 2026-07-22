@@ -1757,13 +1757,14 @@ static int hostapd_cli_cmd_update_beacon(struct wpa_ctrl *ctrl, int argc,
  *
  * Usage:
  *   hostapd_cli -i <intf> [-l <link_id>] update_uhr_features \
-*       [NPCA enable=<0|1> [primary_chan=<chan|freq_mhz>]
-*             [min_dur=<0-15>] [switch_delay=<0-63>] [switch_back=<0-63>]
-*             [init_qsrc=<0-3>] [moplen=<0|1>] [disabled_subch_bitmap=<0xHHHH>]]
+ *       [NPCA enable=<0|1>
+ *             (enable=1: primary_chan=<chan|freq_mhz> min_dur=<0-15>
+ *                        switch_delay=<0-63> switch_back=<0-63>
+ *                        [init_qsrc=<0-3>] [moplen=<0|1>] [bitmap=<0xHHHH>])
+ *             (enable=0: no additional parameters allowed)]
  *
- * At least one of NPCA must be specified.  The NPCA parameters map
- * directly to the Figure 9-aa4 NPCA Operation Parameters field defined in
- * IEEE P802.11bn D1.4 ss9.4.2.355.2.
+ * When enable=1, primary_chan, min_dur, switch_delay, and switch_back are
+ * mandatory.  When enable=0, no additional parameters are allowed.
  */
 static int hostapd_cli_cmd_update_uhr_features(struct wpa_ctrl *ctrl,
 					       int argc, char *argv[])
@@ -1774,9 +1775,11 @@ static int hostapd_cli_cmd_update_uhr_features(struct wpa_ctrl *ctrl,
 
 	if (argc < 1) {
 		printf("Usage: update_uhr_features "
-		       "[NPCA enable=<0|1> [primary_chan=<chan|freq_mhz>]\n"
-		       "  [min_dur=<0-15>] [switch_delay=<0-63>] [switch_back=<0-63>]\n"
-		       "  [init_qsrc=<0-3>] [moplen=<0|1>] [bitmap=<0xHHHH>]]\n");
+		       "[NPCA enable=<0|1>\n"
+		       "  enable=1: primary_chan=<chan|freq_mhz> min_dur=<0-15>\n"
+		       "           switch_delay=<0-63> switch_back=<0-63>\n"
+		       "           [init_qsrc=<0-3>] [moplen=<0|1>] [bitmap=<0xHHHH>]\n"
+		       "  enable=0: no additional parameters allowed\n");
 		return -1;
 	}
 
