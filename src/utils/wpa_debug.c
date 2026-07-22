@@ -31,6 +31,13 @@ void (*wpa_hexdump_hook)(int level, const char *title, const void *buf,
 			 size_t len);
 void (*wpa_netlink_hook)(int tx, const void *data, size_t len);
 
+#if defined(CONFIG_UDBG_ENH)
+void (*hostapd_udbg_enh_wpa_printf_hook)(int level, const char *fmt,
+					 va_list ap);
+void (*hostapd_udbg_enh_wpa_hexdump_hook)(int level, const char *title,
+					  const void *buf, size_t len);
+#endif /* CONFIG_UDBG_ENH */
+
 int wpa_debug_level = MSG_INFO;
 int wpa_debug_show_keys = 0;
 int wpa_debug_timestamp = 0;
@@ -228,6 +235,14 @@ void _wpa_printf(int level, const char *fmt, ...)
 {
 	va_list ap;
 
+#if defined(CONFIG_UDBG_ENH)
+	if (level >= wpa_debug_level && hostapd_udbg_enh_wpa_printf_hook) {
+		va_start(ap, fmt);
+		hostapd_udbg_enh_wpa_printf_hook(level, fmt, ap);
+		va_end(ap);
+	}
+#endif /* CONFIG_UDBG_ENH */
+
 	if (wpa_printf_hook) {
 		va_start(ap, fmt);
 		wpa_printf_hook(level, fmt, ap);
@@ -306,6 +321,11 @@ void _wpa_hexdump(int level, const char *title, const u8 *buf,
 			 size_t len, int show, int only_syslog)
 {
 	size_t i;
+
+#if defined(CONFIG_UDBG_ENH)
+	if (level >= wpa_debug_level && hostapd_udbg_enh_wpa_hexdump_hook)
+		hostapd_udbg_enh_wpa_hexdump_hook(level, title, buf, len);
+#endif /* CONFIG_UDBG_ENH */
 
 	if (wpa_hexdump_hook)
 		wpa_hexdump_hook(level, title, buf, len);
