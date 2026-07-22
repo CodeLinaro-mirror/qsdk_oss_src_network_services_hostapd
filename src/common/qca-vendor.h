@@ -4450,6 +4450,10 @@ enum qca_nl80211_vendor_config_generic_command {
 	 * Value is from enum qca_wlan_vendor_iface_mode.
 	 */
 	QCA_WLAN_VENDOR_WIFI_PARAM_INTERFACE_EN_DIS_MODE = 611,
+	/* RTT responder role bitmask. Used with
+	 * %QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION.
+	 */
+	QCA_WLAN_VENDOR_WIFI_PARAM_RTT_RESPONDER_ROLE = 612,
 };
 
 enum qca_wlan_vendor_iface_mode {

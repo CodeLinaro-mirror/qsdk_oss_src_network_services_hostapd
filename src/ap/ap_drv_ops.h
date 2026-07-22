@@ -727,5 +727,6 @@ int hostapd_drv_critical_update(struct hostapd_data *hapd, u8 link_id,
 
 int hostapd_drv_set_smd_ctx(struct hostapd_data *hapd, struct sta_info *sta,
 			    const struct sta_smd_ctx_info *ctx);
+int hostapd_drv_set_rtt_responder_role(struct hostapd_data *hapd, int role);
 
 #endif /* AP_DRV_OPS */

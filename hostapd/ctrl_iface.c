@@ -11366,6 +11366,74 @@ hostapd_ctrl_iface_set_mapc_sta(struct hostapd_data *hapd, const char *cmd,
 }
 #endif /* CONFIG_IEEE80211BN */
 
+static int hostapd_ctrl_iface_set_rtt_responder_role(struct hostapd_data *hapd,
+						     char *value)
+{
+	char *end = NULL;
+	long role;
+	int ret;
+
+	if (!hapd || !hapd->conf || !hapd->iface || !value)
+		return -1;
+
+	errno = 0;
+	role = strtol(value, &end, 0);
+	if (errno || end == value) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_RTT_RESPONDER_ROLE: invalid value");
+		return -1;
+	}
+	while (end && (*end == ' ' || *end == '\n' || *end == '\r' ||
+		       *end == '\t'))
+		end++;
+	if (end && *end != '\0') {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_RTT_RESPONDER_ROLE: trailing characters");
+		return -1;
+	}
+	if (role < 0 || role > 0x7) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_RTT_RESPONDER_ROLE: value must be 0..0x7");
+		return -1;
+	}
+	if (hapd->conf->rtt_responder_role == (int)role)
+		return 0;
+
+	ret = hostapd_drv_set_rtt_responder_role(hapd, (int)role);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_RTT_RESPONDER_ROLE: vendor cmd failed (%d)",
+			   ret);
+		return -1;
+	}
+
+	hapd->conf->rtt_responder_role = (int)role;
+	hapd->rtt_role_fw_sent = true;
+	if (ieee802_11_update_beacons(hapd->iface)) {
+		hapd->rtt_role_fw_sent = false;
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_RTT_RESPONDER_ROLE: beacon update failed");
+		return -1;
+	}
+	hapd->rtt_role_fw_sent = false;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_rtt_responder_role(struct hostapd_data *hapd,
+						     char *reply,
+						     size_t reply_size)
+{
+	int role;
+
+	if (!hapd || !hapd->conf || !reply)
+		return -1;
+
+	role = hapd->conf->rtt_responder_role;
+
+	return os_snprintf(reply, reply_size, "0x%x\n", role);
+}
+
 static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 					      char *buf, char *reply,
 					      int reply_size,
@@ -11795,6 +11863,12 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "REQ_RANGE ", 10) == 0) {
 		if (hostapd_ctrl_iface_req_range(hapd, buf + 10))
 			reply_len = -1;
+	} else if (os_strncmp(buf, "SET_RTT_RESPONDER_ROLE ", 23) == 0) {
+		if (hostapd_ctrl_iface_set_rtt_responder_role(hapd, buf + 23))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "GET_RTT_RESPONDER_ROLE") == 0) {
+		reply_len = hostapd_ctrl_iface_get_rtt_responder_role(
+			hapd, reply, reply_size);
 	} else if (os_strncmp(buf, "REQ_BEACON ", 11) == 0) {
 		reply_len = hostapd_ctrl_iface_req_beacon(hapd, buf + 11,
 							  reply, reply_size);
