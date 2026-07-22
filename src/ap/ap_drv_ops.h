@@ -730,4 +730,6 @@ static inline int hostapd_drv_get_smd_ctx(struct hostapd_data *hapd,
 					 rx_tid_bitmap, out_ctx);
 }
 
+int hostapd_drv_set_rtt_responder_role(struct hostapd_data *hapd, int role);
+
 #endif /* AP_DRV_OPS */

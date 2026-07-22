@@ -4363,6 +4363,20 @@ ieee802_11_configure_ttlm_on_non_tx(struct hostapd_data *hapd)
 }
 #endif
 
+static void hostapd_apply_rtt_responder_role(struct hostapd_data *hapd)
+{
+	int ret;
+
+	if (hapd->rtt_role_fw_sent)
+		return;
+
+	ret = hostapd_drv_set_rtt_responder_role(hapd,
+						 hapd->conf->rtt_responder_role);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "Failed to set RTT responder role: %d", ret);
+}
+
 static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 {
 	struct wpa_driver_ap_params params;
@@ -4744,8 +4758,10 @@ fail2:
 		wpa_printf(MSG_ERROR,
 			   "%s: Failed to set beacon parameters (ret=%d)",
 			   hapd->conf->iface, res);
-	else
+	else {
+		hostapd_apply_rtt_responder_role(hapd);
 		ret = 0;
+	}
 fail1:
 	ieee802_11_free_ap_params(&params);
 	return ret;
