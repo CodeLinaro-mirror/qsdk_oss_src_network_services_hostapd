@@ -141,6 +141,103 @@ fail:
 	return -1;
 }
 
+void hostapd_free_neighbor_db_nonself_scoped(struct hostapd_data *hapd,
+					     u8 has_smd,
+					     u8 has_mld,
+					     u8 has_bssid,
+					     const u8 *addr)
+{
+	struct hostapd_neighbor_entry *nr, *prev;
+	int count = 0;
+
+	if (!hapd)
+		return;
+
+	if (has_smd) {
+		if (!addr || is_zero_ether_addr(addr)) {
+			wpa_printf(MSG_WARNING,
+				   "NeighborDB: invalid SMD for non-self clear");
+			return;
+		}
+
+		dl_list_for_each_safe(nr, prev, &hapd->nr_db,
+				      struct hostapd_neighbor_entry, list) {
+			if (nr->self_entry)
+				continue;
+			if (is_zero_ether_addr(nr->smd_id))
+				continue;
+			if (!ether_addr_equal(nr->smd_id, addr))
+				continue;
+			hostapd_neighbor_free(nr);
+			count++;
+		}
+
+		wpa_printf(MSG_INFO,
+			   "NeighborDB: Cleared %d non-self entries by SMD=" MACSTR,
+			   count, MAC2STR(addr));
+		return;
+	}
+
+	if (has_mld) {
+		if (!addr || is_zero_ether_addr(addr)) {
+			wpa_printf(MSG_WARNING,
+				   "NeighborDB: invalid MLD for non-self clear");
+			return;
+		}
+
+		dl_list_for_each_safe(nr, prev, &hapd->nr_db,
+				      struct hostapd_neighbor_entry, list) {
+			if (nr->self_entry)
+				continue;
+			if (is_zero_ether_addr(nr->mld_addr))
+				continue;
+			if (!ether_addr_equal(nr->mld_addr, addr))
+				continue;
+			hostapd_neighbor_free(nr);
+			count++;
+		}
+
+		wpa_printf(MSG_INFO,
+			   "NeighborDB: Cleared %d non-self entries by MLD=" MACSTR,
+			   count, MAC2STR(addr));
+		return;
+	}
+
+	if (has_bssid) {
+		if (!addr || is_zero_ether_addr(addr)) {
+			wpa_printf(MSG_WARNING,
+				   "NeighborDB: invalid BSSID for non-self clear");
+			return;
+		}
+
+		dl_list_for_each_safe(nr, prev, &hapd->nr_db,
+				      struct hostapd_neighbor_entry, list) {
+			if (nr->self_entry)
+				continue;
+			if (!ether_addr_equal(nr->bssid, addr))
+				continue;
+			hostapd_neighbor_free(nr);
+			count++;
+		}
+
+		wpa_printf(MSG_INFO,
+			   "NeighborDB: Cleared %d non-self entries by BSSID=" MACSTR,
+			   count, MAC2STR(addr));
+		return;
+	}
+
+	dl_list_for_each_safe(nr, prev, &hapd->nr_db,
+			      struct hostapd_neighbor_entry, list) {
+		if (nr->self_entry)
+			continue;
+		hostapd_neighbor_free(nr);
+		count++;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "NeighborDB: Cleared %d non-self entries (global)", count);
+}
+
 /**
  * hostapd_neighbor_get_all_by_smd_id - Get all neighbor entries by SMD ID
  * @hapd: hostapd data
@@ -178,7 +275,6 @@ int hostapd_neighbor_get_all_by_smd_id(struct hostapd_data *hapd,
 
 	return count;
 }
-
 
 /**
  * hostapd_neighbor_get_all_by_mld_addr - Get all neighbor entries by MLD address
@@ -219,7 +315,6 @@ int hostapd_neighbor_get_all_by_mld_addr(struct hostapd_data *hapd,
 
 	return count;
 }
-
 
 /**
  * hostapd_neighbor_count - Count total entries in neighbor database
@@ -432,7 +527,6 @@ void hostapd_free_neighbor_db(struct hostapd_data *hapd)
 		hostapd_neighbor_free(nr);
 	}
 }
-
 
 #ifdef NEED_AP_MLME
 static enum nr_chan_width
