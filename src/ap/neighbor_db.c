@@ -18,6 +18,10 @@
 #include "beacon.h"
 #include "utils/eloop.h"
 
+static void hostapd_neighbor_clear_entry(struct hostapd_neighbor_entry *nr);
+static struct hostapd_neighbor_entry *hostapd_neighbor_add(struct hostapd_data *hapd);
+static void hostapd_neighbor_free(struct hostapd_neighbor_entry *nr);
+
 struct hostapd_neighbor_entry *
 hostapd_neighbor_get(struct hostapd_data *hapd, const u8 *bssid,
 		     const struct wpa_ssid_value *ssid)
@@ -36,6 +40,115 @@ hostapd_neighbor_get(struct hostapd_data *hapd, const u8 *bssid,
 	return NULL;
 }
 
+/**
+ * hostapd_neighbor_set_mld - Add/update neighbor entry with MLD info
+ * @hapd: hostapd data
+ * @bssid: BSSID of the neighbor
+ * @ssid: SSID of the neighbor
+ * @nr: Neighbor Report element
+ * @mld_addr: MLD MAC address
+ * @smd_id: SMD ID
+ * @lci: LCI subelement or NULL
+ * @civic: Civic location subelement or NULL
+ * @stationary: Stationary flag
+ * @bss_parameters: BSS parameters
+ * Returns: 0 on success, -1 on failure
+ */
+int hostapd_neighbor_set_mld(struct hostapd_data *hapd, const u8 *bssid,
+		const struct wpa_ssid_value *ssid,
+		const struct wpabuf *nr,
+		const u8 *mld_addr,
+		const u8 *smd_id,
+		const struct wpabuf *lci,
+		const struct wpabuf *civic,
+		int stationary,
+		u8 bss_parameters)
+{
+	struct hostapd_neighbor_entry *entry;
+
+	wpa_printf(MSG_DEBUG,
+		   "NeighborDB set_mld: req bssid=" MACSTR " mld=" MACSTR
+		   " has_smd=%u smd=" MACSTR " nr_len=%u",
+		   MAC2STR(bssid),
+		   MAC2STR(mld_addr ? mld_addr : (const u8 *) "\0\0\0\0\0\0"),
+		   smd_id && !is_zero_ether_addr(smd_id),
+		   MAC2STR((smd_id && !is_zero_ether_addr(smd_id)) ?
+			   smd_id : (const u8 *) "\0\0\0\0\0\0"),
+		   nr ? (unsigned int) wpabuf_len(nr) : 0);
+
+	/* Try to find existing entry by BSSID */
+	entry = hostapd_neighbor_get(hapd, bssid, ssid);
+	if (!entry) {
+		entry = hostapd_neighbor_add(hapd);
+		if(!entry)
+			return -1;
+	} else
+		hostapd_neighbor_clear_entry(entry);
+
+	wpa_printf(MSG_DEBUG,
+		   "NeighborDB set_mld: using %s entry for bssid=" MACSTR,
+		   hostapd_neighbor_get(hapd, bssid, ssid) ? "existing" : "new",
+		   MAC2STR(bssid));
+
+	/* Set basic fields */
+	os_memcpy(entry->bssid, bssid, ETH_ALEN);
+	os_memcpy(&entry->ssid, ssid, sizeof(entry->ssid));
+	entry->short_ssid = ieee80211_crc32(ssid->ssid, ssid->ssid_len);
+
+	/* Set MLD fields */
+	if (mld_addr)
+		os_memcpy(entry->mld_addr, mld_addr, ETH_ALEN);
+	else
+		os_memset(entry->mld_addr, 0, ETH_ALEN);
+
+	if (smd_id && !is_zero_ether_addr(smd_id))
+		os_memcpy(entry->smd_id, smd_id, ETH_ALEN);
+	else
+		os_memset(entry->smd_id, 0, ETH_ALEN);
+
+	/* Set neighbor report */
+	entry->nr = wpabuf_dup(nr);
+	if (!entry->nr)
+		goto fail;
+
+	/* Set optional LCI */
+	if (lci && wpabuf_len(lci)) {
+		entry->lci = wpabuf_dup(lci);
+		if (!entry->lci || os_get_time(&entry->lci_date))
+			goto fail;
+	}
+
+	/* Set optional civic location */
+	if (civic && wpabuf_len(civic)) {
+		entry->civic = wpabuf_dup(civic);
+		if (!entry->civic)
+			goto fail;
+	}
+
+	entry->stationary = stationary;
+	entry->bss_parameters = bss_parameters;
+
+	wpa_printf(MSG_DEBUG,
+			"NeighborDB: Added/updated entry BSSID=" MACSTR
+			" MLD=" MACSTR " has_smd=%u SMD=" MACSTR,
+			MAC2STR(entry->bssid), MAC2STR(entry->mld_addr),
+			!is_zero_ether_addr(entry->smd_id), MAC2STR(entry->smd_id));
+
+	return 0;
+
+fail:
+	hostapd_neighbor_remove(hapd, bssid, ssid);
+	return -1;
+}
+
+/**
+ * hostapd_neighbor_get_all_by_smd_id - Get all neighbor entries by SMD ID
+ * @hapd: hostapd data
+ * @smd_id: SMD ID (6 bytes)
+ * @entries: Array to store pointers to matching entries
+ * @max_entries: Maximum number of entries the array can hold
+ * Returns: Number of entries found (may be more than max_entries)
+ */
 
 int hostapd_neighbor_show(struct hostapd_data *hapd, char *buf, size_t buflen)
 {
@@ -101,6 +214,9 @@ static void hostapd_neighbor_clear_entry(struct hostapd_neighbor_entry *nr)
 	nr->civic = NULL;
 	os_memset(nr->bssid, 0, sizeof(nr->bssid));
 	os_memset(&nr->ssid, 0, sizeof(nr->ssid));
+	os_memset(nr->mld_addr, 0, sizeof(nr->mld_addr));
+	os_memset(nr->smd_id, 0, sizeof(nr->smd_id));
+	nr->self_entry = 0;
 	os_memset(&nr->lci_date, 0, sizeof(nr->lci_date));
 	nr->stationary = 0;
 	nr->short_ssid = 0;
@@ -433,6 +549,8 @@ void hostapd_neighbor_set_own_report_for(struct hostapd_data *dest,
 	int he = hostapd_is_he_enabled(src);
 	bool eht = he && hostapd_is_eht_enabled(src);
 	struct wpa_ssid_value ssid;
+	const u8 *own_mld_addr = NULL;
+	const u8 *own_smd_id = NULL;
 	u8 channel, op_class;
 	u8 center_freq1_idx = 0, center_freq2_idx = 0;
 	enum oper_chan_width oper_chwidth;
@@ -440,6 +558,7 @@ void hostapd_neighbor_set_own_report_for(struct hostapd_data *dest,
 	int secondary_channel;
 	u32 bssid_info;
 	struct wpabuf *nr;
+	struct hostapd_neighbor_entry *own_entry;
 
 	/*
 	 * The dest radio must advertise RRM Neighbor Report capability;
@@ -540,6 +659,15 @@ void hostapd_neighbor_set_own_report_for(struct hostapd_data *dest,
 	ssid.ssid_len = src->conf->ssid.ssid_len;
 	os_memcpy(ssid.ssid, src->conf->ssid.ssid, ssid.ssid_len);
 
+	if (hostapd_is_multiple_link_mld(src) && src->mld)
+		own_mld_addr = src->mld->mld_addr;
+
+#ifdef CONFIG_IEEE80211BN
+	if (src->conf->smd.enabled) {
+		own_smd_id = src->conf->smd.smd_identifier;
+	}
+#endif /* CONFIG_IEEE80211BN */
+
 	/*
 	 * Neighbor Report element size = BSSID + BSSID info + op_class + chan +
 	 * phy type + wide bandwidth channel subelement.
@@ -586,13 +714,16 @@ void hostapd_neighbor_set_own_report_for(struct hostapd_data *dest,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
-	if (hostapd_neighbor_set(dest, src->own_addr, &ssid, nr,
+	if (hostapd_neighbor_set_mld(dest, src->own_addr, &ssid, nr,
+                                 own_mld_addr, own_smd_id,
 				 src->iconf->lci, src->iconf->civic,
 				 src->iconf->stationary_ap, 0) < 0)
 		wpa_printf(MSG_DEBUG,
 			   "NR: failed to set own report for " MACSTR " in %s DB",
 			   MAC2STR(src->own_addr), dest->conf->iface);
-
+        own_entry = hostapd_neighbor_get(hapd, hapd->own_addr, &ssid);
+	if (own_entry)
+		own_entry->self_entry = 1;
 	wpabuf_free(nr);
 #endif /* NEED_AP_MLME */
 }

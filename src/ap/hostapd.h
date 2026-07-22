@@ -203,6 +203,9 @@ struct hostapd_neighbor_entry {
 	int stationary;
 	u32 short_ssid;
 	u8 bss_parameters;
+	u8 mld_addr[ETH_ALEN];      /* MLD MAC address */
+	u8 smd_id[ETH_ALEN];        /* SMD ID (all zero means absent) */
+	u8 self_entry;              /* Flag: 1 if own/self AP NR entry */
 };
 
 struct hostapd_bcn_report_entry {
