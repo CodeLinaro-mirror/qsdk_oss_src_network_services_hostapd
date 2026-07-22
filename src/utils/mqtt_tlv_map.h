@@ -819,6 +819,31 @@ enum mqtt_tlv_neighbor_db_set_resp {
 	_TLV_NEIGHBOR_DB_SET_RESP_MAX
 };
 
+/* ── SMD: CMD_ID_NEIGHBOR_DB_GET ───────────────────────────────────────── */
+enum mqtt_tlv_neighbor_db_get {
+	TLV_NEIGHBOR_DB_GET_AP_ALID         = 1, /* 6 B */
+	TLV_NEIGHBOR_DB_GET_HAS_SMD_ID      = 2, /* 1 B */
+	TLV_NEIGHBOR_DB_GET_SMD_ID          = 3, /* 6 B optional */
+	TLV_NEIGHBOR_DB_GET_GLOBAL_ENTRIES  = 4, /* 1 B, valid only if has_smd_id=1 */
+	TLV_NEIGHBOR_DB_GET_HAS_MLD_ADDR    = 5, /* 1 B */
+	TLV_NEIGHBOR_DB_GET_MLD_ADDR        = 6, /* 6 B optional */
+	TLV_NEIGHBOR_DB_GET_HAS_BSSID       = 7, /* 1 B */
+	TLV_NEIGHBOR_DB_GET_BSSID           = 8, /* 6 B optional */
+	_TLV_NEIGHBOR_DB_GET_MAX
+};
+
+enum mqtt_tlv_neighbor_db_get_resp {
+	TLV_NEIGHBOR_DB_GET_RESP_STATUS    = 1, /* 1 B */
+	TLV_NEIGHBOR_DB_GET_RESP_NRE_COUNT = 2, /* 2 B */
+	TLV_NEIGHBOR_DB_GET_RESP_NRE_ENTRY = 3, /* container */
+	_TLV_NEIGHBOR_DB_GET_RESP_MAX
+};
+
+enum mqtt_tlv_neighbor_db_get_resp_entry {
+	TLV_NEIGHBOR_DB_GET_RESP_ENTRY_NRE_LEN = MQTT_TLV_INNER(1), /* 2 B */
+	TLV_NEIGHBOR_DB_GET_RESP_ENTRY_NRE     = MQTT_TLV_INNER(2), /* binary */
+	_TLV_NEIGHBOR_DB_GET_RESP_ENTRY_MAX    = MQTT_TLV_INNER(3)
+};
 
 
 /* ── HOSTAPD_IF: EVT_ID_HIF_NOTIFY_AUTH ───────────────────────────────────── */
