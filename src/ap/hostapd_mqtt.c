@@ -1,11 +1,6 @@
 /*
  * hostapd_mqtt.c - hostapd-specific MQTT command/event handling
  *
- * Implements the message and connection-state callbacks registered with
- * mqtt_eloop, the per-feature command dispatchers, and the global MQTT
- * connection lifecycle.  See hostapd_mqtt.h for the module boundary
- * rationale.
- *
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -17,157 +12,390 @@
 #include "utils/mqtt_feature_map.h"
 #include "hostapd.h"
 #include "hostapd_mqtt.h"
-#include "hostapd_if/hostapd_if.h"
-#include "hostapd_if/hostapd_if_mqtt.h"
+#include "beacon.h"
+#include "neighbor_db.h"
 
-/*
- * hostapd_mqtt_handle_sys_ping - respond to CMD_ID_SYS_PING.
- *
- * System-wide ping — no BSS context needed.  Counts all BSSes across all
- * interfaces and replies with EVT_ID_SYS_HOSTAPD_STARTED on
- * hostapd/transmit/SYS.
- */
-static void
-hostapd_mqtt_handle_sys_ping(struct hapd_interfaces *interfaces)
+#define EZHIF_STATUS_OK            0
+#define EZHIF_STATUS_INVALID_PARAM 1
+#define EZHIF_STATUS_NOT_FOUND     2
+#define EZHIF_STATUS_NO_RESOURCE   3
+#define EZHIF_STATUS_INTERNAL      4
+
+static struct mqtt_eloop_ctx *hostapd_mqtt_ctx(const struct hostapd_data *hapd)
+{
+	if (!hapd || !hapd->iface || !hapd->iface->interfaces)
+		return NULL;
+	return hapd->iface->interfaces->mqtt_ctx;
+}
+
+static void mqtt_publish_simple_status(struct hostapd_data *hapd,
+				       uint16_t evt_id,
+				       uint16_t tlv_status,
+				       u8 status)
 {
 	struct mqtt_tlv_message *resp;
-	char    topic[64];
-	uint8_t buf[256];
-	uint16_t num_ifaces = 0;
-	size_t  i;
-	int     len;
+	char topic[64];
+	u8 out[128];
+	int len;
 
-	for (i = 0; i < interfaces->count; i++)
-		num_ifaces += (uint16_t)interfaces->iface[i]->num_bss;
-
-	wpa_printf(MSG_DEBUG,
-		   "MQTT CMD: handling CMD_ID_SYS_PING, num_ifaces=%u",
-		   num_ifaces);
-
-	resp = mqtt_tlv_message_alloc(EVT_ID_SYS_HOSTAPD_STARTED);
-	if (!resp) {
-		wpa_printf(MSG_ERROR, "MQTT CMD: alloc failed for ping response");
+	resp = mqtt_tlv_message_alloc(evt_id);
+	if (!resp)
 		return;
-	}
 
-	mqtt_tlv_add_string(resp, TLV_SYS_HOSTAPD_STARTED_VERSION, "hostapd-2.10");
-	mqtt_tlv_add_u16(resp, TLV_SYS_HOSTAPD_STARTED_NUM_IFACES, num_ifaces);
-
-	mqtt_build_transmit_topic(MQTT_FEATURE_SYS, topic, sizeof(topic));
-	len = mqtt_tlv_serialize(resp, buf, sizeof(buf));
+	mqtt_tlv_add_u8(resp, tlv_status, status);
+	mqtt_build_transmit_topic(MQTT_FEATURE_SMD, topic, sizeof(topic));
+	len = mqtt_tlv_serialize(resp, out, sizeof(out));
 	if (len > 0) {
 		wpa_printf(MSG_INFO,
-			   "MQTT CMD: ping response %d bytes -> topic='%s'",
-			   len, topic);
-		mqtt_eloop_publish(interfaces->mqtt_ctx, topic, buf, len, 0, false);
-	} else {
-		wpa_printf(MSG_WARNING,
-			   "MQTT CMD: ping response serialization failed");
+			   "MQTT: publish status evt=0x%04x status=%u topic=%s len=%d",
+			   evt_id, status, topic, len);
+		mqtt_eloop_publish(hostapd_mqtt_ctx(hapd), topic, out, len, 0, false);
 	}
 	mqtt_tlv_message_free(resp);
 }
 
-/*
- * Per-feature CMD dispatchers.
- *
- * Each feature owns its own switch statement.  The main callback
- * (hostapd_mqtt_msg_cb) routes by MQTT_MSG_FEATURE(msg_type) and calls the
- * appropriate dispatcher.  Adding a new feature requires:
- *   1. A new static dispatcher function here.
- *   2. A new case in hostapd_mqtt_msg_cb().
- */
-
-static void
-hostapd_mqtt_sys_cmd(struct hapd_interfaces *interfaces,
-		     uint16_t msg_type,
-		     struct mqtt_tlv_message *msg)
+static void hostapd_mqtt_handle_sys_ping(struct hapd_interfaces *interfaces)
 {
-	(void)msg; /* CMD_ID_SYS_PING carries no payload TLVs */
+	struct mqtt_tlv_message *resp;
+	char topic[64];
+	uint8_t buf[256];
+	uint16_t num_ifaces = 0;
+	size_t i;
+	int len;
+
+	for (i = 0; i < interfaces->count; i++)
+		num_ifaces += (uint16_t)interfaces->iface[i]->num_bss;
+	wpa_printf(MSG_INFO, "MQTT: CMD_SYS_PING received num_ifaces=%u", num_ifaces);
+
+	resp = mqtt_tlv_message_alloc(EVT_ID_SYS_HOSTAPD_STARTED);
+	if (!resp)
+		return;
+
+	mqtt_tlv_add_string(resp, TLV_SYS_HOSTAPD_STARTED_VERSION, "hostapd-2.10");
+	mqtt_tlv_add_u16(resp, TLV_SYS_HOSTAPD_STARTED_NUM_IFACES, num_ifaces);
+	mqtt_build_transmit_topic(MQTT_FEATURE_SYS, topic, sizeof(topic));
+	len = mqtt_tlv_serialize(resp, buf, sizeof(buf));
+	if (len > 0) {
+		wpa_printf(MSG_INFO,
+			   "MQTT: publish EVT_SYS_HOSTAPD_STARTED topic=%s len=%d",
+			   topic, len);
+		mqtt_eloop_publish(interfaces->mqtt_ctx, topic, buf, len, 0, false);
+	}
+	mqtt_tlv_message_free(resp);
+}
+
+static void hostapd_mqtt_handle_neighbor_db_set(struct hostapd_data *hapd,
+						struct mqtt_tlv_message *msg)
+{
+	u8 ap_alid[ETH_ALEN], smd_id[ETH_ALEN], tuple_mld_addr[ETH_ALEN];
+	u8 tuple_bssid[ETH_ALEN];
+	u8 has_smd_id = 0, tuple_has_mld_addr = 0, status = EZHIF_STATUS_OK;
+	u16 tuple_nre_len = 0;
+	u16 num_nre = 0;
+	u16 bare;
+	int parse_state;
+	int tuple_count = 0;
+	int payload_seen = 0;
+	int apply_count = 0;
+	struct wpabuf *nr_buf = NULL;
+	struct wpa_ssid_value ssid;
+	struct mqtt_tlv_entry *e;
+
+	enum {
+		NR_SET_EXPECT_HAS_MLD = 0,
+		NR_SET_EXPECT_MLD_ADDR,
+		NR_SET_EXPECT_BSSID,
+		NR_SET_EXPECT_NRE_LEN,
+		NR_SET_EXPECT_NRE
+	};
+
+	wpa_printf(MSG_INFO, "MQTT: CMD_NEIGHBOR_DB_SET received");
+
+	if (mqtt_tlv_get_mac(msg, TLV_NEIGHBOR_DB_SET_AP_ALID, ap_alid) < 0 ||
+	    mqtt_tlv_get_u8(msg, TLV_NEIGHBOR_DB_SET_HAS_SMD_ID, &has_smd_id) < 0 ||
+	    mqtt_tlv_get_u16(msg, TLV_NEIGHBOR_DB_SET_NUM_NRE, &num_nre) < 0) {
+		status = EZHIF_STATUS_INVALID_PARAM;
+		goto out;
+	}
+
+	if (has_smd_id) {
+		if (mqtt_tlv_get_mac(msg, TLV_NEIGHBOR_DB_SET_SMD_ID, smd_id) < 0) {
+			status = EZHIF_STATUS_INVALID_PARAM;
+			goto out;
+		}
+	} else {
+		os_memset(smd_id, 0, ETH_ALEN);
+	}
+	if (num_nre == 0) {
+		status = EZHIF_STATUS_INVALID_PARAM;
+		goto out;
+	}
+	wpa_printf(MSG_INFO,
+		   "NeighborDB SET: ap_alid=" MACSTR " has_smd=%u smd_id=" MACSTR
+		   " num_nre=%u",
+		   MAC2STR(ap_alid), has_smd_id, MAC2STR(smd_id), num_nre);
+
+	os_memset(&ssid, 0, sizeof(ssid));
+
+	parse_state = NR_SET_EXPECT_HAS_MLD;
+	tuple_has_mld_addr = 0;
+	os_memset(tuple_mld_addr, 0, ETH_ALEN);
+	os_memset(tuple_bssid, 0, ETH_ALEN);
+	tuple_nre_len = 0;
+	dl_list_for_each(e, &msg->tlvs, struct mqtt_tlv_entry, list) {
+		bare = MQTT_TLV_DECODE_TYPE(e->type);
+		if (MQTT_TLV_IS_GLOBAL(bare))
+			continue;
+
+		if (bare == TLV_NEIGHBOR_DB_SET_AP_ALID ||
+		    bare == TLV_NEIGHBOR_DB_SET_HAS_SMD_ID ||
+		    bare == TLV_NEIGHBOR_DB_SET_SMD_ID ||
+		    bare == TLV_NEIGHBOR_DB_SET_NUM_NRE) {
+			if (payload_seen) {
+				status = EZHIF_STATUS_INVALID_PARAM;
+				goto out;
+			}
+			continue;
+		}
+
+		payload_seen = 1;
+		if (parse_state == NR_SET_EXPECT_HAS_MLD) {
+			if (bare != TLV_NEIGHBOR_DB_SET_HAS_MLD_ADDR || e->length != 1) {
+				status = EZHIF_STATUS_INVALID_PARAM;
+				goto out;
+			}
+			tuple_has_mld_addr = e->value[0] ? 1 : 0;
+			parse_state = tuple_has_mld_addr ? NR_SET_EXPECT_MLD_ADDR :
+							   NR_SET_EXPECT_BSSID;
+			continue;
+		}
+
+		if (parse_state == NR_SET_EXPECT_MLD_ADDR) {
+			if (bare != TLV_NEIGHBOR_DB_SET_MLD_ADDR ||
+			    e->length != ETH_ALEN) {
+				status = EZHIF_STATUS_INVALID_PARAM;
+				goto out;
+			}
+			os_memcpy(tuple_mld_addr, e->value, ETH_ALEN);
+			parse_state = NR_SET_EXPECT_BSSID;
+			continue;
+		}
+
+		if (parse_state == NR_SET_EXPECT_BSSID) {
+			if (bare != TLV_NEIGHBOR_DB_SET_BSSID || e->length != ETH_ALEN) {
+				status = EZHIF_STATUS_INVALID_PARAM;
+				goto out;
+			}
+			os_memcpy(tuple_bssid, e->value, ETH_ALEN);
+			parse_state = NR_SET_EXPECT_NRE_LEN;
+			continue;
+		}
+
+		if (parse_state == NR_SET_EXPECT_NRE_LEN) {
+			if (bare != TLV_NEIGHBOR_DB_SET_NRE_LEN || e->length != 2) {
+				status = EZHIF_STATUS_INVALID_PARAM;
+				goto out;
+			}
+			tuple_nre_len = mqtt_get_be16(e->value);
+			if (tuple_nre_len < 13 || tuple_nre_len > 255) {
+				status = EZHIF_STATUS_INVALID_PARAM;
+				goto out;
+			}
+			parse_state = NR_SET_EXPECT_NRE;
+			continue;
+		}
+
+		if (bare != TLV_NEIGHBOR_DB_SET_NRE ||
+		    e->length != tuple_nre_len ||
+		    os_memcmp(e->value, tuple_bssid, ETH_ALEN) != 0) {
+			status = EZHIF_STATUS_INVALID_PARAM;
+			goto out;
+		}
+
+		tuple_count++;
+		wpa_printf(MSG_INFO,
+			   "NeighborDB SET: validated tuple[%d] bssid=" MACSTR
+			   " has_mld=%u mld=" MACSTR " nre_len=%u",
+			   tuple_count - 1, MAC2STR(tuple_bssid), tuple_has_mld_addr,
+			   MAC2STR(tuple_mld_addr), tuple_nre_len);
+		parse_state = NR_SET_EXPECT_HAS_MLD;
+	}
+
+	if (!payload_seen || parse_state != NR_SET_EXPECT_HAS_MLD || tuple_count == 0 ||
+	    tuple_count != num_nre) {
+		status = EZHIF_STATUS_INVALID_PARAM;
+		goto out;
+	}
+
+	parse_state = NR_SET_EXPECT_HAS_MLD;
+	tuple_has_mld_addr = 0;
+	os_memset(tuple_mld_addr, 0, ETH_ALEN);
+	os_memset(tuple_bssid, 0, ETH_ALEN);
+	tuple_nre_len = 0;
+	dl_list_for_each(e, &msg->tlvs, struct mqtt_tlv_entry, list) {
+		bare = MQTT_TLV_DECODE_TYPE(e->type);
+
+		if (MQTT_TLV_IS_GLOBAL(bare))
+			continue;
+		if (bare == TLV_NEIGHBOR_DB_SET_AP_ALID ||
+		    bare == TLV_NEIGHBOR_DB_SET_HAS_SMD_ID ||
+		    bare == TLV_NEIGHBOR_DB_SET_SMD_ID ||
+		    bare == TLV_NEIGHBOR_DB_SET_NUM_NRE)
+			continue;
+
+		if (parse_state == NR_SET_EXPECT_HAS_MLD) {
+			tuple_has_mld_addr = e->value[0] ? 1 : 0;
+			parse_state = tuple_has_mld_addr ? NR_SET_EXPECT_MLD_ADDR :
+							   NR_SET_EXPECT_BSSID;
+			continue;
+		}
+		if (parse_state == NR_SET_EXPECT_MLD_ADDR) {
+			os_memcpy(tuple_mld_addr, e->value, ETH_ALEN);
+			parse_state = NR_SET_EXPECT_BSSID;
+			continue;
+		}
+		if (parse_state == NR_SET_EXPECT_BSSID) {
+			os_memcpy(tuple_bssid, e->value, ETH_ALEN);
+			parse_state = NR_SET_EXPECT_NRE_LEN;
+			continue;
+		}
+		if (parse_state == NR_SET_EXPECT_NRE_LEN) {
+			tuple_nre_len = mqtt_get_be16(e->value);
+			parse_state = NR_SET_EXPECT_NRE;
+			continue;
+		}
+
+		nr_buf = wpabuf_alloc_copy(e->value, tuple_nre_len);
+		if (!nr_buf) {
+			status = EZHIF_STATUS_NO_RESOURCE;
+			goto out;
+		}
+
+		if (hostapd_neighbor_set_mld(hapd, tuple_bssid, &ssid, nr_buf,
+					     tuple_has_mld_addr ? tuple_mld_addr : NULL,
+					     has_smd_id ? smd_id : NULL,
+					     NULL, NULL, 0, 0) < 0) {
+			status = EZHIF_STATUS_INTERNAL;
+			goto out;
+		}
+		wpa_printf(MSG_INFO,
+			   "NeighborDB SET: applied tuple[%d] bssid=" MACSTR
+			   " has_mld=%u mld=" MACSTR " nre_len=%u",
+			   apply_count, MAC2STR(tuple_bssid), tuple_has_mld_addr,
+			   MAC2STR(tuple_mld_addr), tuple_nre_len);
+
+		wpabuf_free(nr_buf);
+		nr_buf = NULL;
+		apply_count++;
+		tuple_has_mld_addr = 0;
+		os_memset(tuple_mld_addr, 0, ETH_ALEN);
+		parse_state = NR_SET_EXPECT_HAS_MLD;
+	}
+
+	if (apply_count > 0)
+		ieee802_11_set_beacon(hapd);
+
+out:
+	wpa_printf(MSG_INFO,
+		   "NeighborDB SET: complete status=%u applied=%d validated=%d",
+		   status, apply_count, tuple_count);
+	mqtt_publish_simple_status(hapd, EVT_ID_NEIGHBOR_DB_SET_RESP,
+				   TLV_NEIGHBOR_DB_SET_RESP_STATUS, status);
+	wpabuf_free(nr_buf);
+}
+
+
+
+static void hostapd_mqtt_sys_cmd(struct hapd_interfaces *interfaces,
+				 uint16_t msg_type,
+				 struct mqtt_tlv_message *msg)
+{
+	(void)msg;
+	wpa_printf(MSG_INFO, "MQTT: SYS dispatch msg_type=0x%04x", msg_type);
 	switch (msg_type) {
 	case CMD_ID_SYS_PING:
 		hostapd_mqtt_handle_sys_ping(interfaces);
 		break;
 	default:
-		wpa_printf(MSG_DEBUG,
-			   "MQTT SYS: unhandled msg_type=0x%04x", msg_type);
 		break;
 	}
 }
 
-/*
- * hostapd_mqtt_msg_cb - incoming MQTT message dispatcher.
- *
- * Registered with mqtt_eloop_init() as the message callback.  Receives
- * hapd_interfaces as userdata and routes by MQTT_MSG_FEATURE(msg_type) to
- * the appropriate per-feature dispatcher.
- *
- * The interface/BSS context is NOT resolved here.  CMD_ID_SYS_PING is
- * system-wide and needs no BSS.  A future command that targets a specific
- * BSS should resolve it from an interface-name TLV carried in the message,
- * inside that command's own handler.
- */
-static void
-hostapd_mqtt_msg_cb(const char *topic, const void *payload, int payloadlen,
-		    void *userdata)
+static void hostapd_mqtt_smd_cmd(struct hostapd_data *hapd,
+				 uint16_t msg_type,
+				 struct mqtt_tlv_message *msg)
 {
-	struct hapd_interfaces  *interfaces = userdata;
+	wpa_printf(MSG_INFO, "MQTT: SMD dispatch msg_type=0x%04x", msg_type);
+	switch (msg_type) {
+	case CMD_ID_NEIGHBOR_DB_SET:
+		hostapd_mqtt_handle_neighbor_db_set(hapd, msg);
+		break;
+	default:
+		break;
+	}
+}
+
+static void hostapd_mqtt_msg_cb(const char *topic, const void *payload, int payloadlen,
+				void *userdata)
+{
+	struct hapd_interfaces *interfaces = userdata;
+	struct hostapd_data *hapd;
 	struct mqtt_tlv_message *msg;
-	const char              *feature;
-	uint16_t                 msg_type;
+	const char *feature;
+	uint16_t msg_type;
 
 	if (!payload || payloadlen < 6) {
-		wpa_printf(MSG_WARNING,
-			   "MQTT RX: payload too short (%d B), discarding",
-			   payloadlen);
+		wpa_printf(MSG_ERROR,
+			   "MQTT RX: drop short payload topic=%s len=%d",
+			   topic ? topic : "<null>", payloadlen);
 		return;
 	}
 
+	if (!interfaces || !interfaces->count || !interfaces->iface[0] ||
+	    !interfaces->iface[0]->num_bss || !interfaces->iface[0]->bss[0])
+		return;
+	hapd = interfaces->iface[0]->bss[0];
+
 	feature = mqtt_feature_from_topic(topic);
 	if (!feature) {
-		wpa_printf(MSG_WARNING,
-			   "MQTT RX: unrecognised topic '%s', discarding", topic);
+		wpa_printf(MSG_INFO, "MQTT RX: drop unknown topic=%s", topic);
 		return;
 	}
 
 	msg = mqtt_tlv_deserialize((const uint8_t *)payload, (size_t)payloadlen);
 	if (!msg) {
-		wpa_printf(MSG_WARNING,
-			   "MQTT RX: TLV deserialization failed for topic '%s'",
-			   topic);
+		wpa_printf(MSG_INFO, "MQTT RX: TLV deserialize failed topic=%s", topic);
 		return;
 	}
 
 	msg_type = mqtt_tlv_msg_type(msg);
-
-	wpa_printf(MSG_DEBUG, "MQTT RX: msg_type=0x%04x feature=%s",
-		   msg_type, feature);
-
+	wpa_printf(MSG_INFO,
+		   "MQTT RX: topic=%s feature=%s msg_type=0x%04x len=%d",
+		   topic, feature, msg_type, payloadlen);
 	if (mqtt_feature_validate_cmd(feature, msg_type) < 0) {
-		wpa_printf(MSG_WARNING,
-			   "MQTT RX: msg_type=0x%04x not valid for feature=%s, "
-			   "discarding", msg_type, feature);
+		wpa_printf(MSG_INFO,
+			   "MQTT RX: feature validation failed feature=%s msg_type=0x%04x",
+			   feature, msg_type);
 		goto done;
 	}
-
 	if (mqtt_msg_validate_if_policy(msg_type, msg) < 0) {
-		wpa_printf(MSG_WARNING,
-			   "MQTT RX: msg_type=0x%04x failed policy validation",
+		wpa_printf(MSG_INFO,
+			   "MQTT RX: policy validation failed msg_type=0x%04x",
 			   msg_type);
 		goto done;
 	}
 
-	/* Route to the per-feature handler by feature nibble */
 	switch (MQTT_MSG_FEATURE(msg_type)) {
 	case MQTT_FEAT_SYS:
 		hostapd_mqtt_sys_cmd(interfaces, msg_type, msg);
 		break;
-	case MQTT_FEAT_HOSTAPD_IF:
-		hostapd_mqtt_hif_cmd(interfaces, msg_type, msg);
+	case MQTT_FEAT_SMD:
+		hostapd_mqtt_smd_cmd(hapd, msg_type, msg);
 		break;
 	default:
-		wpa_printf(MSG_DEBUG,
-			   "MQTT RX: no handler for feature %u msg_type=0x%04x",
-			   MQTT_MSG_FEATURE(msg_type), msg_type);
+		wpa_printf(MSG_INFO,
+			   "MQTT RX: no dispatch handler for msg_type=0x%04x feature_nibble=%u",
+			   msg_type, MQTT_MSG_FEATURE(msg_type));
 		break;
 	}
 
@@ -175,70 +403,40 @@ done:
 	mqtt_tlv_message_free(msg);
 }
 
-/*
- * hostapd_mqtt_state_cb - MQTT connection state change notification.
- *
- * On connect, publishes EVT_ID_SYS_HOSTAPD_STARTED so any already-subscribed
- * clients immediately know the daemon is live.
- *
- * userdata is hapd_interfaces (the global process context), matching what
- * was passed to mqtt_eloop_init().
- */
-static void
-hostapd_mqtt_state_cb(bool connected, void *userdata)
+static void hostapd_mqtt_state_cb(bool connected, void *userdata)
 {
-	struct hapd_interfaces  *interfaces = userdata;
+	struct hapd_interfaces *interfaces = userdata;
 	struct mqtt_tlv_message *msg;
-	char    topic[64];
+	char topic[64];
 	uint8_t buf[256];
 	uint16_t num_ifaces = 0;
-	size_t  i, j;
-	int     len;
+	size_t i;
+	int len;
 
-	if (connected) {
-		for (i = 0; i < interfaces->count; i++)
-			num_ifaces += (uint16_t)interfaces->iface[i]->num_bss;
-
-		wpa_printf(MSG_INFO,
-			   "MQTT: connected to broker, publishing STARTED event "
-			   "(num_ifaces=%u)", num_ifaces);
-
-		msg = mqtt_tlv_message_alloc(EVT_ID_SYS_HOSTAPD_STARTED);
-		if (!msg)
-			return;
-
-		mqtt_tlv_add_string(msg, TLV_SYS_HOSTAPD_STARTED_VERSION,
-				    "hostapd-2.10");
-		mqtt_tlv_add_u16(msg, TLV_SYS_HOSTAPD_STARTED_NUM_IFACES,
-				 num_ifaces);
-
-		mqtt_build_transmit_topic(MQTT_FEATURE_SYS, topic, sizeof(topic));
-		len = mqtt_tlv_serialize(msg, buf, sizeof(buf));
-		if (len > 0) {
-			wpa_printf(MSG_DEBUG,
-				   "MQTT: publishing EVT_ID_SYS_HOSTAPD_STARTED "
-				   "(%d bytes) on '%s'", len, topic);
-			mqtt_eloop_publish(interfaces->mqtt_ctx, topic, buf,
-					   len, 0, false);
-		}
-		mqtt_tlv_message_free(msg);
-
-		for (i = 0; i < interfaces->count; i++) {
-			struct hostapd_iface *iface;
-
-			iface = interfaces->iface[i];
-			if (!iface)
-				continue;
-
-			for (j = 0; j < iface->num_bss; j++) {
-				if (!iface->bss[j])
-					continue;
-				hostapd_if_interface_create(iface->bss[j]);
-			}
-		}
-	} else {
-		wpa_printf(MSG_WARNING, "MQTT: disconnected from broker");
+	if (!interfaces)
+		return;
+	if (!connected) {
+		wpa_printf(MSG_INFO, "MQTT: broker disconnected");
+		return;
 	}
+
+	for (i = 0; i < interfaces->count; i++)
+		num_ifaces += (uint16_t)interfaces->iface[i]->num_bss;
+
+	msg = mqtt_tlv_message_alloc(EVT_ID_SYS_HOSTAPD_STARTED);
+	if (!msg)
+		return;
+	mqtt_tlv_add_string(msg, TLV_SYS_HOSTAPD_STARTED_VERSION, "hostapd-2.10");
+	mqtt_tlv_add_u16(msg, TLV_SYS_HOSTAPD_STARTED_NUM_IFACES, num_ifaces);
+	mqtt_build_transmit_topic(MQTT_FEATURE_SYS, topic, sizeof(topic));
+	len = mqtt_tlv_serialize(msg, buf, sizeof(buf));
+	if (len > 0) {
+		wpa_printf(MSG_INFO,
+			   "MQTT: connected, publish EVT_SYS_HOSTAPD_STARTED topic=%s len=%d num_ifaces=%u",
+			   topic, len, num_ifaces);
+		mqtt_eloop_publish(interfaces->mqtt_ctx, topic, buf, len, 0, false);
+	}
+	mqtt_tlv_message_free(msg);
 }
 
 void hostapd_mqtt_init(struct hostapd_iface *iface)
@@ -246,6 +444,9 @@ void hostapd_mqtt_init(struct hostapd_iface *iface)
 	char client_id[64];
 	const char *host;
 	int port;
+
+	if (!iface || !iface->interfaces || !iface->conf)
+		return;
 
 	if (!iface->conf->mqtt_enabled || iface->interfaces->mqtt_ctx)
 		return;
@@ -256,31 +457,39 @@ void hostapd_mqtt_init(struct hostapd_iface *iface)
 	       iface->conf->mqtt_broker_port : 1883;
 
 	os_snprintf(client_id, sizeof(client_id), "hostapd-%d", getpid());
-
 	iface->interfaces->mqtt_ctx = mqtt_eloop_init(
 		host, port, client_id, 60,
 		hostapd_mqtt_msg_cb,
 		hostapd_mqtt_state_cb,
-		iface->interfaces);   /* global userdata, not per-BSS */
+		iface->interfaces);
 
 	if (!iface->interfaces->mqtt_ctx) {
-		wpa_printf(MSG_ERROR,
-			   "MQTT: mqtt_eloop_init failed (broker=%s:%d)",
-			   host, port);
+		wpa_printf(MSG_INFO,
+			   "MQTT: init failed broker=%s:%d client_id=%s",
+			   host, port, client_id);
 		return;
 	}
+	wpa_printf(MSG_INFO,
+		   "MQTT: init success broker=%s:%d client_id=%s",
+		   host, port, client_id);
 
 	mqtt_eloop_subscribe(iface->interfaces->mqtt_ctx,
-			     MQTT_TOPIC_RECEIVE "/#", 1);
+			     MQTT_TOPIC_RECEIVE "/" MQTT_FEATURE_SMD, 1);
+	mqtt_eloop_subscribe(iface->interfaces->mqtt_ctx,
+			     MQTT_TOPIC_RECEIVE "/" MQTT_FEATURE_SYS, 1);
+	wpa_printf(MSG_INFO,
+		   "MQTT: subscribed topics=%s/%s and %s/%s",
+		   MQTT_TOPIC_RECEIVE, MQTT_FEATURE_SMD,
+		   MQTT_TOPIC_RECEIVE, MQTT_FEATURE_SYS);
 	mqtt_eloop_connect(iface->interfaces->mqtt_ctx);
-	wpa_printf(MSG_INFO, "MQTT: global context initialised (broker=%s:%d)",
-		   host, port);
+	wpa_printf(MSG_INFO, "MQTT: connect requested");
 }
 
 void hostapd_mqtt_deinit(struct hapd_interfaces *interfaces)
 {
-	if (!interfaces->mqtt_ctx)
+	if (!interfaces || !interfaces->mqtt_ctx)
 		return;
+	wpa_printf(MSG_INFO, "MQTT: deinit");
 	mqtt_eloop_deinit(interfaces->mqtt_ctx);
 	interfaces->mqtt_ctx = NULL;
 }

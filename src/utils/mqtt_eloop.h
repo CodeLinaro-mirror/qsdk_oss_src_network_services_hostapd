@@ -33,6 +33,10 @@
  */
 struct mqtt_eloop_ctx;
 
+typedef void (*mqtt_eloop_msg_cb_t)(const char *topic, const void *payload,
+				    int payloadlen, void *userdata);
+typedef void (*mqtt_eloop_state_cb_t)(bool connected, void *userdata);
+
 /**
  * mqtt_eloop_init - Allocate and configure a new MQTT eloop client.
  * @broker_host: MQTT broker hostname or IP address (NULL → "localhost")
@@ -73,9 +77,8 @@ mqtt_eloop_init(const char *broker_host,
 		int broker_port,
 		const char *client_id,
 		int keepalive,
-		void (*msg_cb)(const char *topic, const void *payload,
-			       int payloadlen, void *userdata),
-		void (*state_cb)(bool connected, void *userdata),
+		mqtt_eloop_msg_cb_t msg_cb,
+		mqtt_eloop_state_cb_t state_cb,
 		void *userdata);
 
 /**

@@ -38,5 +38,20 @@ int hostapd_neighbor_set_ifaces_scan_report(struct hostapd_data *hapd,
 void hostapd_oce_survey_timer(void *eloop_ctx, void *timeout_ctx);
 void hostapd_oce_survey_timer_start(struct hostapd_iface *iface);
 void hostapd_oce_survey_timer_cancel(struct hostapd_iface *iface);
+/**
+ * Count total entries in database
+ * Returns: Number of entries
+ */
+int hostapd_neighbor_count(struct hostapd_data *hapd);
+int hostapd_neighbor_set_mld(struct hostapd_data *hapd, const u8 *bssid,
+		const struct wpa_ssid_value *ssid,
+		const struct wpabuf *nr,
+		const u8 *mld_addr,
+		const u8 *smd_id,
+		const struct wpabuf *lci,
+		const struct wpabuf *civic,
+		int stationary,
+		u8 bss_parameters);
+
 
 #endif /* NEIGHBOR_DB_H */

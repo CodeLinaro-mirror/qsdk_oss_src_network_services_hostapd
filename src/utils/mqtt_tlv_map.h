@@ -800,6 +800,27 @@ static inline int mqtt_tlv_validate_message(const struct mqtt_tlv_message *msg)
  * inner-leaf TLVs that are only valid inside a container.
  * ════════════════════════════════════════════════════════════════════════════ */
 
+/* ── SMD: CMD_ID_NEIGHBOR_DB_SET ───────────────────────────────────────── */
+enum mqtt_tlv_neighbor_db_set {
+	TLV_NEIGHBOR_DB_SET_AP_ALID      = 1, /* 6 B */
+	TLV_NEIGHBOR_DB_SET_HAS_SMD_ID   = 2, /* 1 B */
+	TLV_NEIGHBOR_DB_SET_SMD_ID       = 3, /* 6 B optional if has_smd_id=1 */
+	TLV_NEIGHBOR_DB_SET_NUM_NRE      = 4, /* 2 B */
+	TLV_NEIGHBOR_DB_SET_HAS_MLD_ADDR = 5, /* 1 B per tuple */
+	TLV_NEIGHBOR_DB_SET_MLD_ADDR     = 6, /* 6 B optional per tuple */
+	TLV_NEIGHBOR_DB_SET_BSSID        = 7, /* 6 B per tuple */
+	TLV_NEIGHBOR_DB_SET_NRE_LEN      = 8, /* 2 B per tuple */
+	TLV_NEIGHBOR_DB_SET_NRE          = 9, /* binary per tuple */
+	_TLV_NEIGHBOR_DB_SET_MAX
+};
+
+enum mqtt_tlv_neighbor_db_set_resp {
+	TLV_NEIGHBOR_DB_SET_RESP_STATUS = 1, /* 1 B */
+	_TLV_NEIGHBOR_DB_SET_RESP_MAX
+};
+
+
+
 /* ── HOSTAPD_IF: EVT_ID_HIF_NOTIFY_AUTH ───────────────────────────────────── */
 /*
  * Dedicated authentication indication for the hostapd_if notify path.
