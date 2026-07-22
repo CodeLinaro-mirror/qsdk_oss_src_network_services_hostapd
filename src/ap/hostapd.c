@@ -2564,7 +2564,6 @@ int hostapd_setup_bss(struct hostapd_data *hapd, bool first, bool start_beacon)
 	char force_ifname[IFNAMSIZ];
 	u8 if_addr[ETH_ALEN];
 	int flush_old_stations = 1;
-	struct hostapd_data *tx_hapd;
 	bool is_mesh = false;
 
 #ifdef CONFIG_MESH
@@ -3035,8 +3034,6 @@ setup_mld:
 		return -1;
 	}
 
-	tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
-
 #ifdef CONFIG_IEEE80211AX
 	char buf[128] = {0};
 
@@ -3052,8 +3049,8 @@ setup_mld:
 
 	/* If TX BSS is already beaconing, update it with newly added profile
 	 */
-	if (start_beacon && tx_hapd && tx_hapd != hapd && tx_hapd->beacon_set_done)
-		ieee802_11_set_beacon(tx_hapd);
+	if (start_beacon)
+		ieee802_11_update_beacon_mbssid(hapd);
 
 	if (start_beacon && hostapd_start_beacon(hapd, flush_old_stations) < 0)
 		return -1;
@@ -7346,8 +7343,9 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt, const char *event)
 			  sizeof(hapd->iface->radar_background));
 		hostapd_interface_update_fils_ubpr(hapd->iface, false);
 	}
+	ieee802_11_update_beacon_mbssid(hapd);
 
-	hostapd_refresh_all_iface_beacons(hapd->iface);
+	ieee802_11_set_beacon(hapd);
 
 	return 0;
 }
@@ -7531,8 +7529,6 @@ setup_bss:
 	hostapd_neighbor_set_own_report(hapd);
 	if (i == hapd_iface->num_bss)
 		hostapd_interface_update_fils_ubpr(hapd_iface, true);
-
-	hostapd_refresh_all_iface_beacons(hapd_iface);
 
 	return 0;
 }

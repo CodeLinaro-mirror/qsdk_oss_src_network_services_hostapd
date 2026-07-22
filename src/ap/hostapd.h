@@ -777,6 +777,8 @@ struct hostapd_data {
 	struct smd_neighbor_update_ctx *smd_neighbor_update_ctx;
 	struct uhr_oui_ctx *uhr_oui_ctx;
 #endif /* CONFIG_IEEE80211BN */
+
+	bool is_update_beacon; /* To indentify whether its from UPDATE_BEACON comamnd */
 };
 
 
