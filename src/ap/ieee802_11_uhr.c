@@ -1075,7 +1075,7 @@ void uhr_cur_ap_handle_st_prep_resp(struct hostapd_data *hapd,
 	ap_info->st_prep_link_id = lhapd->mld_link_id;
 	ap_info->st_prep_hapd = lhapd;
 
-	if (uhr_cur_start_st_prep_timer(sta, iap->target_ap_mld_addr) < 0) {
+	if (uhr_cur_start_st_prep_timer(sta, iap->target_ap_mld_addr, hapd->conf->smd.smd_prep_timeout) < 0) {
 		wpa_printf(MSG_ERROR,
 			   "UHR Current AP: Failed to start ST prep timeout");
 	}
