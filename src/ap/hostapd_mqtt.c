@@ -304,6 +304,218 @@ out:
 	wpabuf_free(nr_buf);
 }
 
+static int
+hostapd_mqtt_collect_by_smd_id(struct hapd_interfaces *interfaces,
+		const u8 *smd_id, u8 get_global_entries,
+		struct hostapd_neighbor_entry **out_entries,
+		size_t out_max)
+{
+	struct hostapd_neighbor_entry *tmp_entries[256];
+	int total_filtered = 0;
+	size_t out_count = 0;
+	size_t i;
+
+	if (!interfaces || !smd_id || !out_entries)
+		return 0;
+
+	for (i = 0; i < interfaces->count; i++) {
+		struct hostapd_iface *iface = interfaces->iface[i];
+		size_t j;
+
+		if (!iface || !iface->bss)
+			continue;
+
+		for (j = 0; j < iface->num_bss; j++) {
+			struct hostapd_data *bss_hapd = iface->bss[j];
+			int raw_count;
+			int k;
+
+			if (!bss_hapd)
+				continue;
+
+			os_memset(tmp_entries, 0, sizeof(tmp_entries));
+			raw_count = hostapd_neighbor_get_all_by_smd_id(
+				bss_hapd, smd_id, tmp_entries,
+				ARRAY_SIZE(tmp_entries));
+
+			for (k = 0; k < raw_count &&
+			     k < (int) ARRAY_SIZE(tmp_entries); k++) {
+				struct hostapd_neighbor_entry *nr = tmp_entries[k];
+
+				if (!nr)
+					continue;
+				if (get_global_entries) {
+					if (nr->self_entry) {
+						continue;
+					}
+				} else if (!nr->self_entry) {
+					continue;
+				}
+
+				if (out_count < out_max)
+					out_entries[out_count++] = nr;
+				total_filtered++;
+			}
+		}
+	}
+	return total_filtered;
+}
+
+static void hostapd_mqtt_handle_neighbor_db_get(struct hapd_interfaces *interfaces,
+						struct hostapd_data *hapd,
+						struct mqtt_tlv_message *msg)
+{
+	u8 ap_alid[ETH_ALEN], smd_id[ETH_ALEN], bssid[ETH_ALEN], mld_addr[ETH_ALEN];
+	u8 has_smd_id = 0, get_global_entries = 0;
+	u8 has_mld_addr = 0, has_bssid = 0, status = EZHIF_STATUS_OK;
+	struct mqtt_tlv_message *resp;
+	struct hostapd_neighbor_entry *nr_single = NULL;
+	struct hostapd_neighbor_entry *nr_array[256];
+	int nr_count = 0;
+	char topic[64];
+	u8 out[8192];
+	int len;
+	int i;
+
+	wpa_printf(MSG_INFO, "MQTT: CMD_NEIGHBOR_DB_GET received");
+	os_memset(nr_array, 0, sizeof(nr_array));
+
+	if (mqtt_tlv_get_mac(msg, TLV_NEIGHBOR_DB_GET_AP_ALID, ap_alid) < 0 ||
+	    mqtt_tlv_get_u8(msg, TLV_NEIGHBOR_DB_GET_HAS_SMD_ID, &has_smd_id) < 0) {
+		status = EZHIF_STATUS_INVALID_PARAM;
+		goto build_resp;
+	}
+
+	if (has_smd_id) {
+		if (mqtt_tlv_get_mac(msg, TLV_NEIGHBOR_DB_GET_SMD_ID, smd_id) < 0) {
+			status = EZHIF_STATUS_INVALID_PARAM;
+			goto build_resp;
+		}
+		if (mqtt_tlv_get_u8(msg, TLV_NEIGHBOR_DB_GET_GLOBAL_ENTRIES,
+				    &get_global_entries) < 0)
+			get_global_entries = 0;
+	} else {
+		os_memset(smd_id, 0, ETH_ALEN);
+		get_global_entries = 0;
+	}
+
+	if (mqtt_tlv_get_u8(msg, TLV_NEIGHBOR_DB_GET_HAS_MLD_ADDR, &has_mld_addr) < 0) {
+		status = EZHIF_STATUS_INVALID_PARAM;
+		goto build_resp;
+	}
+	if (has_mld_addr) {
+		if (mqtt_tlv_get_mac(msg, TLV_NEIGHBOR_DB_GET_MLD_ADDR, mld_addr) < 0) {
+			status = EZHIF_STATUS_INVALID_PARAM;
+			goto build_resp;
+		}
+	} else {
+		os_memset(mld_addr, 0, ETH_ALEN);
+	}
+
+	if (mqtt_tlv_get_u8(msg, TLV_NEIGHBOR_DB_GET_HAS_BSSID, &has_bssid) < 0) {
+		status = EZHIF_STATUS_INVALID_PARAM;
+		goto build_resp;
+	}
+	if (has_bssid) {
+		if (mqtt_tlv_get_mac(msg, TLV_NEIGHBOR_DB_GET_BSSID, bssid) < 0) {
+			status = EZHIF_STATUS_INVALID_PARAM;
+			goto build_resp;
+		}
+	} else {
+		os_memset(bssid, 0, ETH_ALEN);
+	}
+	wpa_printf(MSG_INFO,
+		   "NeighborDB GET: ap_alid=" MACSTR " has_smd=%u smd_id=" MACSTR
+		   " get_global=%u has_mld=%u mld=" MACSTR " has_bssid=%u bssid=" MACSTR,
+		   MAC2STR(ap_alid), has_smd_id, MAC2STR(smd_id), get_global_entries,
+		   has_mld_addr, MAC2STR(mld_addr), has_bssid, MAC2STR(bssid));
+
+	if (has_smd_id) {
+		if (is_zero_ether_addr(smd_id)) {
+			status = EZHIF_STATUS_INVALID_PARAM;
+			goto build_resp;
+		}
+		nr_count = hostapd_mqtt_collect_by_smd_id(interfaces, smd_id,
+                                                           get_global_entries,
+                                                           nr_array,
+                                                           ARRAY_SIZE(nr_array));
+		wpa_printf(MSG_INFO, "NeighborDB GET: scope=SMD result_count=%d", nr_count);
+	} else if (has_mld_addr) {
+		if (is_zero_ether_addr(mld_addr)) {
+			status = EZHIF_STATUS_INVALID_PARAM;
+			goto build_resp;
+		}
+		nr_count = hostapd_neighbor_get_all_by_mld_addr(hapd, mld_addr,
+								nr_array,
+								ARRAY_SIZE(nr_array));
+		wpa_printf(MSG_INFO, "NeighborDB GET: scope=MLD result_count=%d", nr_count);
+	} else if (has_bssid) {
+		if (is_zero_ether_addr(bssid)) {
+			status = EZHIF_STATUS_INVALID_PARAM;
+			goto build_resp;
+		}
+		nr_single = hostapd_neighbor_get(hapd, bssid, NULL);
+		if (nr_single) {
+			nr_array[0] = nr_single;
+			nr_count = 1;
+		}
+		wpa_printf(MSG_INFO, "NeighborDB GET: scope=BSSID result_count=%d", nr_count);
+	} else {
+		status = EZHIF_STATUS_INVALID_PARAM;
+		goto build_resp;
+	}
+
+build_resp:
+	resp = mqtt_tlv_message_alloc(EVT_ID_NEIGHBOR_DB_GET_RESP);
+	if (!resp)
+		return;
+
+	if (status != EZHIF_STATUS_OK) {
+		mqtt_tlv_add_u8(resp, TLV_NEIGHBOR_DB_GET_RESP_STATUS, status);
+		mqtt_tlv_add_u16(resp, TLV_NEIGHBOR_DB_GET_RESP_NRE_COUNT, 0);
+	} else if (nr_count == 0) {
+		mqtt_tlv_add_u8(resp, TLV_NEIGHBOR_DB_GET_RESP_STATUS, EZHIF_STATUS_NOT_FOUND);
+		mqtt_tlv_add_u16(resp, TLV_NEIGHBOR_DB_GET_RESP_NRE_COUNT, 0);
+	} else {
+		u16 actual_count = nr_count > (int)ARRAY_SIZE(nr_array) ?
+				   (u16)ARRAY_SIZE(nr_array) : (u16)nr_count;
+		mqtt_tlv_add_u8(resp, TLV_NEIGHBOR_DB_GET_RESP_STATUS, EZHIF_STATUS_OK);
+		mqtt_tlv_add_u16(resp, TLV_NEIGHBOR_DB_GET_RESP_NRE_COUNT, actual_count);
+
+		for (i = 0; i < (int)actual_count; i++) {
+			struct hostapd_neighbor_entry *nr = nr_array[i];
+			struct mqtt_tlv_entry *container_entry;
+			u16 nre_len;
+
+			if (!nr || !nr->nr)
+				continue;
+			nre_len = (u16) wpabuf_len(nr->nr);
+
+			container_entry = mqtt_tlv_add_container(resp,
+								 TLV_NEIGHBOR_DB_GET_RESP_NRE_ENTRY);
+			if (!container_entry)
+				continue;
+			mqtt_tlv_container_add_u16(container_entry,
+						   TLV_NEIGHBOR_DB_GET_RESP_ENTRY_NRE_LEN,
+						   nre_len);
+			mqtt_tlv_container_add_binary(container_entry,
+						      TLV_NEIGHBOR_DB_GET_RESP_ENTRY_NRE,
+						      wpabuf_head_u8(nr->nr), nre_len);
+		}
+	}
+
+	mqtt_build_transmit_topic(MQTT_FEATURE_SMD, topic, sizeof(topic));
+	len = mqtt_tlv_serialize(resp, out, sizeof(out));
+	if (len > 0) {
+		wpa_printf(MSG_INFO,
+			   "NeighborDB GET: publish resp status=%u count=%d topic=%s len=%d",
+			   status == EZHIF_STATUS_OK ?
+			   (nr_count > 0 ? EZHIF_STATUS_OK : EZHIF_STATUS_NOT_FOUND) : status,
+			   nr_count, topic, len);
+		mqtt_eloop_publish(hostapd_mqtt_ctx(hapd), topic, out, len, 0, false);
+	}
+	mqtt_tlv_message_free(resp);
+}
 
 
 static void hostapd_mqtt_sys_cmd(struct hapd_interfaces *interfaces,
@@ -321,7 +533,8 @@ static void hostapd_mqtt_sys_cmd(struct hapd_interfaces *interfaces,
 	}
 }
 
-static void hostapd_mqtt_smd_cmd(struct hostapd_data *hapd,
+static void hostapd_mqtt_smd_cmd(struct hapd_interfaces *interfaces,
+				 struct hostapd_data *hapd,
 				 uint16_t msg_type,
 				 struct mqtt_tlv_message *msg)
 {
@@ -329,6 +542,9 @@ static void hostapd_mqtt_smd_cmd(struct hostapd_data *hapd,
 	switch (msg_type) {
 	case CMD_ID_NEIGHBOR_DB_SET:
 		hostapd_mqtt_handle_neighbor_db_set(hapd, msg);
+		break;
+	case CMD_ID_NEIGHBOR_DB_GET:
+		hostapd_mqtt_handle_neighbor_db_get(interfaces, hapd, msg);
 		break;
 	default:
 		break;
@@ -390,7 +606,7 @@ static void hostapd_mqtt_msg_cb(const char *topic, const void *payload, int payl
 		hostapd_mqtt_sys_cmd(interfaces, msg_type, msg);
 		break;
 	case MQTT_FEAT_SMD:
-		hostapd_mqtt_smd_cmd(hapd, msg_type, msg);
+		hostapd_mqtt_smd_cmd(interfaces, hapd, msg_type, msg);
 		break;
 	default:
 		wpa_printf(MSG_INFO,

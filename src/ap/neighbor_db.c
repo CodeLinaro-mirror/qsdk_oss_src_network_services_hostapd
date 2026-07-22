@@ -149,6 +149,94 @@ fail:
  * @max_entries: Maximum number of entries the array can hold
  * Returns: Number of entries found (may be more than max_entries)
  */
+int hostapd_neighbor_get_all_by_smd_id(struct hostapd_data *hapd,
+		const u8 *smd_id,
+		struct hostapd_neighbor_entry **entries,
+		size_t max_entries)
+{
+	struct hostapd_neighbor_entry *nr;
+	int count = 0;
+
+	if (!smd_id || !entries)
+		return 0;
+
+	dl_list_for_each(nr, &hapd->nr_db, struct hostapd_neighbor_entry, list) {
+		if (!is_zero_ether_addr(nr->smd_id) &&
+				ether_addr_equal(smd_id, nr->smd_id)) {
+			wpa_printf(MSG_DEBUG,
+					"NeighborDB by_smd: match bssid=" MACSTR " mld=" MACSTR,
+					MAC2STR(nr->bssid), MAC2STR(nr->mld_addr));
+			if (count < (int)max_entries)
+				entries[count] = nr;
+			count++;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG,
+			"NeighborDB: Found %d entries with SMD_ID=" MACSTR,
+			count, MAC2STR(smd_id));
+
+	return count;
+}
+
+
+/**
+ * hostapd_neighbor_get_all_by_mld_addr - Get all neighbor entries by MLD address
+ * @hapd: hostapd data
+ * @mld_addr: MLD MAC address (6 bytes)
+ * @entries: Array to store pointers to matching entries
+ * @max_entries: Maximum number of entries the array can hold
+ * Returns: Number of entries found (may be more than max_entries)
+ */
+int hostapd_neighbor_get_all_by_mld_addr(struct hostapd_data *hapd,
+		const u8 *mld_addr,
+		struct hostapd_neighbor_entry **entries,
+		size_t max_entries)
+{
+	struct hostapd_neighbor_entry *nr;
+	int count = 0;
+
+	if (!mld_addr || !entries)
+		return 0;
+
+	dl_list_for_each(nr, &hapd->nr_db, struct hostapd_neighbor_entry, list) {
+		if (!is_zero_ether_addr(nr->mld_addr) &&
+				ether_addr_equal(mld_addr, nr->mld_addr)) {
+			wpa_printf(MSG_DEBUG,
+					"NeighborDB by_mld: match bssid=" MACSTR " has_smd=%u smd=" MACSTR,
+					MAC2STR(nr->bssid),
+					!is_zero_ether_addr(nr->smd_id),
+					MAC2STR(nr->smd_id));
+			if (count < (int)max_entries)
+				entries[count] = nr;
+			count++;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG,
+			"NeighborDB: Found %d entries with MLD_ADDR=" MACSTR,
+			count, MAC2STR(mld_addr));
+
+	return count;
+}
+
+
+/**
+ * hostapd_neighbor_count - Count total entries in neighbor database
+ * @hapd: hostapd data
+ * Returns: Number of entries in the database
+ */
+int hostapd_neighbor_count(struct hostapd_data *hapd)
+{
+	struct hostapd_neighbor_entry *nr;
+	int count = 0;
+
+	dl_list_for_each(nr, &hapd->nr_db, struct hostapd_neighbor_entry, list) {
+		count++;
+	}
+
+	return count;
+}
 
 int hostapd_neighbor_show(struct hostapd_data *hapd, char *buf, size_t buflen)
 {
@@ -165,6 +253,7 @@ int hostapd_neighbor_show(struct hostapd_data *hapd, char *buf, size_t buflen)
 		char lci[2 * 255 + 1];
 		char civic[2 * 255 + 1];
 		char ssid[SSID_MAX_LEN * 2 + 1];
+		char smd[sizeof(" smd_id=xx:xx:xx:xx:xx:xx")];
 
 		ssid[0] = '\0';
 		wpa_snprintf_hex(ssid, sizeof(ssid), nr->ssid.ssid,
@@ -188,9 +277,16 @@ int hostapd_neighbor_show(struct hostapd_data *hapd, char *buf, size_t buflen)
 					 wpabuf_head(nr->civic),
 					 wpabuf_len(nr->civic));
 
+		smd[0] = '\0';
+		if (!is_zero_ether_addr(nr->smd_id))
+			os_snprintf(smd, sizeof(smd), " smd_id=" MACSTR,
+				    MAC2STR(nr->smd_id));
+
 		ret = os_snprintf(pos, end - pos, MACSTR
-				  " ssid=%s%s%s%s%s%s%s%s\n",
-				  MAC2STR(nr->bssid), ssid,
+				  " ssid=%s%s%s%s%s%s%s%s%s\n",
+				  MAC2STR(nr->bssid),
+				  ssid,
+				  smd,
 				  nr->nr ? " nr=" : "", nrie,
 				  nr->lci ? " lci=" : "", lci,
 				  nr->civic ? " civic=" : "", civic,
@@ -721,7 +817,7 @@ void hostapd_neighbor_set_own_report_for(struct hostapd_data *dest,
 		wpa_printf(MSG_DEBUG,
 			   "NR: failed to set own report for " MACSTR " in %s DB",
 			   MAC2STR(src->own_addr), dest->conf->iface);
-        own_entry = hostapd_neighbor_get(hapd, hapd->own_addr, &ssid);
+        own_entry = hostapd_neighbor_get(dest, dest->own_addr, &ssid);
 	if (own_entry)
 		own_entry->self_entry = 1;
 	wpabuf_free(nr);
@@ -873,15 +969,23 @@ int hostapd_add_candidate_own(struct hostapd_data *hapd, int pref,
 }
 
 static struct hostapd_neighbor_entry *
-hostapd_neighbor_get_diff_short_ssid(struct hostapd_data *hapd, const u8 *bssid)
+hostapd_neighbor_db_get_diff(struct hostapd_data *hapd, const u8 *bssid)
 {
 	struct hostapd_neighbor_entry *nr;
 
 	dl_list_for_each(nr, &hapd->nr_db, struct hostapd_neighbor_entry,
-			 list) {
-		if (ether_addr_equal(bssid, nr->bssid) &&
-		    nr->short_ssid != hapd->conf->ssid.short_ssid)
+			list) {
+		if (!ether_addr_equal(bssid, nr->bssid))
+			continue;
+
+		if (nr->short_ssid != hapd->conf->ssid.short_ssid)
 			return nr;
+
+#ifdef CONFIG_IEEE80211BN
+		if (os_memcmp(nr->smd_id, hapd->conf->smd.smd_identifier,
+					ETH_ALEN) != 0)
+			return nr;
+#endif
 	}
 	return NULL;
 }
@@ -891,7 +995,7 @@ int hostapd_neighbor_sync_own_report(struct hostapd_data *hapd)
 {
 	struct hostapd_neighbor_entry *nr;
 
-	nr = hostapd_neighbor_get_diff_short_ssid(hapd, hapd->own_addr);
+	nr = hostapd_neighbor_db_get_diff(hapd, hapd->own_addr);
 	if (!nr)
 		return -1;
 

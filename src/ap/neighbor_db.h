@@ -38,6 +38,24 @@ int hostapd_neighbor_set_ifaces_scan_report(struct hostapd_data *hapd,
 void hostapd_oce_survey_timer(void *eloop_ctx, void *timeout_ctx);
 void hostapd_oce_survey_timer_start(struct hostapd_iface *iface);
 void hostapd_oce_survey_timer_cancel(struct hostapd_iface *iface);
+/**   
+ * Get all neighbor entries matching SMD_ID
+ * Returns: Number of entries found
+ */
+int hostapd_neighbor_get_all_by_smd_id(struct hostapd_data *hapd,
+		const u8 *smd_id,
+		struct hostapd_neighbor_entry **entries,
+		size_t max_entries);
+
+/**
+ * Get all neighbor entries matching MLD address
+ * Returns: Number of entries found
+ */
+int hostapd_neighbor_get_all_by_mld_addr(struct hostapd_data *hapd,
+		const u8 *mld_addr,
+		struct hostapd_neighbor_entry **entries,
+		size_t max_entries);
+
 /**
  * Count total entries in database
  * Returns: Number of entries
@@ -52,6 +70,4 @@ int hostapd_neighbor_set_mld(struct hostapd_data *hapd, const u8 *bssid,
 		const struct wpabuf *civic,
 		int stationary,
 		u8 bss_parameters);
-
-
 #endif /* NEIGHBOR_DB_H */
