@@ -742,7 +742,9 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 #ifdef CONFIG_QCN_EXTN
 	uc_value_t *wpa_state_val;
 	char *wpa_state = NULL;
+	bool rpt_max_phy_override = false;
 #endif
+	uint64_t intval;
 	int i;
 
 	if (!iface || ucv_type(info) != UC_OBJECT)
@@ -762,7 +764,12 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 				sizeof(iface->iface_extn.sta_wpa_state));
 	}
 
-	if (iface->conf->conf_extn.ind_rptr)
+	intval = ucv_int64_get(ucv_object_get(info, "rpt_max_phy_override", NULL));
+	if (!errno)
+		rpt_max_phy_override = intval;
+
+	wpa_printf(MSG_DEBUG, "%s: rpt_max_phy_override: %d", __func__, rpt_max_phy_override);
+	if (iface->conf->conf_extn.ind_rptr && !rpt_max_phy_override)
 		return NULL;
 #endif
 
@@ -796,6 +803,7 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	u32 mcst = 0;
 	uc_value_t *wpa_state_val;
 	char *wpa_state = NULL;
+	bool rpt_max_phy_override = false;
 #endif
 	uint64_t intval;
 	int i, ret;
@@ -830,7 +838,13 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	if (!errno)
 		mcst = intval;
 
-	if (iface->conf->conf_extn.ind_rptr)
+	intval = ucv_int64_get(ucv_object_get(info, "rpt_max_phy_override", NULL));
+	if (!errno)
+		rpt_max_phy_override = intval;
+
+	wpa_printf(MSG_DEBUG, "%s: rpt_max_phy_override: %d", __func__, rpt_max_phy_override);
+
+	if (iface->conf->conf_extn.ind_rptr && !rpt_max_phy_override)
 		return NULL;
 #endif
 #define UPDATE_VAL(field, name)							\
