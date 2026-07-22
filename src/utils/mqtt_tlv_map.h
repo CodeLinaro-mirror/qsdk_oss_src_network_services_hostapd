@@ -845,6 +845,22 @@ enum mqtt_tlv_neighbor_db_get_resp_entry {
 	_TLV_NEIGHBOR_DB_GET_RESP_ENTRY_MAX    = MQTT_TLV_INNER(3)
 };
 
+/* ── SMD: CMD_ID_NEIGHBOR_DB_CLEAR ─────────────────────────────────────── */
+enum mqtt_tlv_neighbor_db_clear {
+	TLV_NEIGHBOR_DB_CLEAR_AP_ALID      = 1, /* 6 B */
+	TLV_NEIGHBOR_DB_CLEAR_HAS_SMD_ID   = 2, /* 1 B */
+	TLV_NEIGHBOR_DB_CLEAR_SMD_ID       = 3, /* 6 B optional */
+	TLV_NEIGHBOR_DB_CLEAR_HAS_MLD_ADDR = 4, /* 1 B */
+	TLV_NEIGHBOR_DB_CLEAR_MLD_ADDR     = 5, /* 6 B optional */
+	TLV_NEIGHBOR_DB_CLEAR_HAS_BSSID    = 6, /* 1 B */
+	TLV_NEIGHBOR_DB_CLEAR_BSSID        = 7, /* 6 B optional */
+	_TLV_NEIGHBOR_DB_CLEAR_MAX
+};
+
+enum mqtt_tlv_neighbor_db_clear_resp {
+	TLV_NEIGHBOR_DB_CLEAR_RESP_STATUS = 1, /* 1 B */
+	_TLV_NEIGHBOR_DB_CLEAR_RESP_MAX
+};
 
 /* ── HOSTAPD_IF: EVT_ID_HIF_NOTIFY_AUTH ───────────────────────────────────── */
 /*

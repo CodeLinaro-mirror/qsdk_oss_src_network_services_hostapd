@@ -443,54 +443,97 @@ static int cmd_neighbor_db_set(struct test_ctx *ctx,
 }
 
 static int cmd_neighbor_db_get(struct test_ctx *ctx,
-                const uint8_t ap_alid[6],
-                uint8_t has_smd_id,
-                const uint8_t smd_id[6],
-                uint8_t get_global_entries,
-                uint8_t has_mld_addr,
-                const uint8_t mld_addr[6],
-                uint8_t has_bssid,
-                const uint8_t bssid[6])
-  {
-        uint8_t buf[256];
-        size_t off = 6;
-        int mlen;
+		const uint8_t ap_alid[6],
+		uint8_t has_smd_id,
+		const uint8_t smd_id[6],
+		uint8_t get_global_entries,
+		uint8_t has_mld_addr,
+		const uint8_t mld_addr[6],
+		uint8_t has_bssid,
+		const uint8_t bssid[6])
+{
+	uint8_t buf[256];
+	size_t off = 6;
+	int mlen;
 
-        printf("inside CMD_ID_NEIGHBOR_DB_GET func()");
+	printf("inside CMD_ID_NEIGHBOR_DB_GET func()");
 
-        if (!ctx->connected) return -1;
+	if (!ctx->connected) return -1;
 
-        put_u16(buf, TLV_GLOBAL_MSG_ID);
-        put_u16(buf + 2, 2);
-        put_u16(buf + 4, CMD_ID_NEIGHBOR_DB_GET);
+	put_u16(buf, TLV_GLOBAL_MSG_ID);
+	put_u16(buf + 2, 2);
+	put_u16(buf + 4, CMD_ID_NEIGHBOR_DB_GET);
 
 	if(put_tlv_mac(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_GET_AP_ALID, ap_alid) < 0 ||
 			put_tlv_u8(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_GET_HAS_SMD_ID, has_smd_id) < 0) {
 		fprintf(stderr, "[ERR] buffer overflow building GET request\n");
 		return -1;
 	}
-        if (has_smd_id) {
-                put_tlv_mac(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_GET_SMD_ID, smd_id);
-                put_tlv_u8(buf, sizeof(buf), &off,
-                           TLV_NEIGHBOR_DB_GET_GLOBAL_ENTRIES, get_global_entries);
-        }
+	if (has_smd_id) {
+		put_tlv_mac(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_GET_SMD_ID, smd_id);
+		put_tlv_u8(buf, sizeof(buf), &off,
+				TLV_NEIGHBOR_DB_GET_GLOBAL_ENTRIES, get_global_entries);
+	}
 
-        put_tlv_u8(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_GET_HAS_MLD_ADDR, has_mld_addr);
-        if (has_mld_addr)
-                put_tlv_mac(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_GET_MLD_ADDR, mld_addr);
-        put_tlv_u8(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_GET_HAS_BSSID, has_bssid);
-        if (has_bssid)
-                put_tlv_mac(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_GET_BSSID, bssid);
+	put_tlv_u8(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_GET_HAS_MLD_ADDR, has_mld_addr);
+	if (has_mld_addr)
+		put_tlv_mac(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_GET_MLD_ADDR, mld_addr);
+	put_tlv_u8(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_GET_HAS_BSSID, has_bssid);
+	if (has_bssid)
+		put_tlv_mac(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_GET_BSSID, bssid);
 
-        mlen = (int) off;
-        if (mosquitto_publish(ctx->mosq, NULL, MQTT_TOPIC_RECEIVE "/" MQTT_FEATURE_SMD,
-                                mlen, buf, 0, false) != MOSQ_ERR_SUCCESS)
-                return -1;
+	mlen = (int) off;
+	if (mosquitto_publish(ctx->mosq, NULL, MQTT_TOPIC_RECEIVE "/" MQTT_FEATURE_SMD,
+				mlen, buf, 0, false) != MOSQ_ERR_SUCCESS)
+		return -1;
 
-        ctx->tx_count++;
-        printf("[TX ] CMD_NEIGHBOR_DB_GET -> " MQTT_TOPIC_RECEIVE "/" MQTT_FEATURE_SMD
-                        " (%d bytes)\n", mlen);
-        return 0;
+	ctx->tx_count++;
+	printf("[TX ] CMD_NEIGHBOR_DB_GET -> " MQTT_TOPIC_RECEIVE "/" MQTT_FEATURE_SMD
+			" (%d bytes)\n", mlen);
+	return 0;
+}
+
+
+static int cmd_neighbor_db_clear(struct test_ctx *ctx,
+		const uint8_t ap_alid[6],
+		uint8_t has_smd_id,
+		const uint8_t smd_id[6],
+		uint8_t has_mld_addr,
+		const uint8_t mld_addr[6],
+		uint8_t has_bssid,
+		const uint8_t bssid[6])
+{
+	uint8_t buf[256];
+	size_t off = 6;
+	int mlen;
+
+	printf("inside CMD_ID_NEIGHBOR_DB_CLEAR func()");
+	if (!ctx->connected) return -1;
+
+	put_u16(buf, TLV_GLOBAL_MSG_ID);
+	put_u16(buf + 2, 2);
+	put_u16(buf + 4, CMD_ID_NEIGHBOR_DB_CLEAR);
+
+	put_tlv_mac(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_CLEAR_AP_ALID, ap_alid);
+	put_tlv_u8(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_CLEAR_HAS_SMD_ID, has_smd_id);
+	if (has_smd_id)
+		put_tlv_mac(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_CLEAR_SMD_ID, smd_id);
+	put_tlv_u8(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_CLEAR_HAS_MLD_ADDR, has_mld_addr);
+	if (has_mld_addr)
+		put_tlv_mac(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_CLEAR_MLD_ADDR, mld_addr);
+	put_tlv_u8(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_CLEAR_HAS_BSSID, has_bssid);
+	if (has_bssid)
+		put_tlv_mac(buf, sizeof(buf), &off, TLV_NEIGHBOR_DB_CLEAR_BSSID, bssid);
+
+	mlen = (int) off;
+	if (mosquitto_publish(ctx->mosq, NULL, MQTT_TOPIC_RECEIVE "/" MQTT_FEATURE_SMD,
+				mlen, buf, 0, false) != MOSQ_ERR_SUCCESS)
+		return -1;
+
+	ctx->tx_count++;
+	printf("[TX ] CMD_NEIGHBOR_DB_CLEAR -> " MQTT_TOPIC_RECEIVE "/" MQTT_FEATURE_SMD
+			" (%d bytes)\n", mlen);
+	return 0;
 }
 
 static void decode_and_print(const char *topic,
@@ -688,6 +731,16 @@ static void print_help(void)
 				"                    Example (MLD):        ndb_get 00:00:00:00:00:00 0 1 11:22:33:44:55:01 0\n"
 				"                    Example (BSSID):      ndb_get 00:00:00:00:00:00 0 0 1 11:22:33:44:55:02\n"
 			"\n"
+			"  ndb_clear <ap_alid> <has_smd_id> [smd_id] <has_mld_addr> [mld_addr] <has_bssid> [bssid]\n"
+			"                    Scope priority (non-self entries only):\n"
+			"                      1. SMD_ID (has_smd_id=1)\n"
+			"                      2. MLD_ADDR (has_smd_id=0 and has_mld_addr=1)\n"
+			"                      3. BSSID (has_smd_id=0, has_mld_addr=0 and has_bssid=1)\n"
+			"                      4. none set -> clear all non-self entries\n"
+			"                    Example (SMD):   ndb_clear 00:00:00:00:00:00 1 aa:bb:cc:dd:ee:01 0 0\n"
+			"                    Example (MLD):   ndb_clear 00:00:00:00:00:00 0 1 11:22:33:44:55:01 0\n"
+			"                    Example (BSSID): ndb_clear 00:00:00:00:00:00 0 0 1 11:22:33:44:55:02\n"
+			"                    Example (all):   ndb_clear 00:00:00:00:00:00 0 0 0\n"
 			"\n"
 			"  quit              Disconnect and exit  (also: q)\n");
 }
@@ -928,6 +981,59 @@ ndb_set_out:
 	  ndb_get_out: ;
 	                        }
 	                }
+		else if (strcmp(av[0], "ndb_clear") == 0) {
+			int idx;
+			uint8_t has_mld_addr = 0;
+			uint8_t has_bssid = 0;
+			/* ndb_clear ap_alid has_smd_id [smd_id] has_mld_addr [mld_addr] has_bssid [bssid] */
+			printf("inside ndb_clear if block");
+			if ((has_smd && (ac < 6 || ac > 8)) || (!has_smd && (ac < 5 || ac > 7))) {
+				fprintf(stderr, "[ERR] usage: ndb_clear <ap_alid> <has_smd_id> [smd_id] <has_mld_addr> [mld_addr] <has_bssid> [bssid]\n");
+			} else if (parse_mac(av[1], ap_alid) < 0) {
+				fprintf(stderr, "[ERR] bad ap_alid\n");
+			} else {
+				idx = 3;
+				if (has_smd) {
+					if (parse_mac(av[idx++], smd_id) < 0) {
+						fprintf(stderr, "[ERR] bad smd_id\n");
+						goto ndb_clear_out;
+					}
+				} else {
+					memcpy(smd_id, zero_mac, 6);
+				}
+
+				has_mld_addr = (uint8_t) atoi(av[idx++]);
+				if (has_mld_addr) {
+					if (idx >= ac || parse_mac(av[idx++], mld_addr) < 0) {
+						fprintf(stderr, "[ERR] bad mld_addr\n");
+						goto ndb_clear_out;
+					}
+				} else {
+					memcpy(mld_addr, zero_mac, 6);
+				}
+
+				has_bssid = (uint8_t) atoi(av[idx++]);
+				if (has_bssid) {
+					if (idx >= ac || parse_mac(av[idx++], bssid) < 0) {
+						fprintf(stderr, "[ERR] bad bssid\n");
+						goto ndb_clear_out;
+					}
+				} else {
+					memcpy(bssid, zero_mac, 6);
+				}
+
+				if (idx != ac) {
+					fprintf(stderr, "[ERR] unexpected extra args\n");
+					goto ndb_clear_out;
+				}
+
+				printf("invoking ndb_clear func()");
+				cmd_neighbor_db_clear(ctx, ap_alid, has_smd, smd_id,
+						      has_mld_addr, mld_addr,
+						      has_bssid, bssid);
+ndb_clear_out: ;
+			}
+		} else {
 			fprintf(stderr, "[ERR] Unknown command '%s'. "
 					"Type 'help' for usage.\n", p);
 		}

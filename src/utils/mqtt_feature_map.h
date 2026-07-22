@@ -101,6 +101,7 @@ enum mqtt_cmd_id {
 	/* SMD NeighborDB commands */
 	CMD_ID_NEIGHBOR_DB_SET   = MQTT_CMD_ID(MQTT_FEAT_SMD, 1), /* 0x0201 */
 	CMD_ID_NEIGHBOR_DB_GET   = MQTT_CMD_ID(MQTT_FEAT_SMD, 2), /* 0x0202 */
+	CMD_ID_NEIGHBOR_DB_CLEAR = MQTT_CMD_ID(MQTT_FEAT_SMD, 3), /* 0x0203 */
 
 	/* HOSTAPD_IF — southbound interface commands */
 	CMD_ID_HIF_REGISTER_FRAME = MQTT_CMD_ID(MQTT_FEAT_HOSTAPD_IF, 1), /* 0x0501 */
@@ -118,6 +119,7 @@ enum mqtt_evt_id {
 	/* SMD NeighborDB responses (EZHIF low-16 values) */
 	EVT_ID_NEIGHBOR_DB_SET_RESP   = 0x0081,
 	EVT_ID_NEIGHBOR_DB_GET_RESP   = 0x0082,
+	EVT_ID_NEIGHBOR_DB_CLEAR_RESP = 0x0083,
 
 	/* HOSTAPD_IF — southbound interface events */
 	EVT_ID_HIF_INTERFACE_CREATE        = MQTT_EVT_ID(MQTT_FEAT_HOSTAPD_IF, 1), /* 0x8501 */
@@ -142,8 +144,10 @@ struct mqtt_feature_entry {
 static const uint16_t mqtt_smd_msg_ids[] = {
 	(uint16_t)CMD_ID_NEIGHBOR_DB_SET,
 	(uint16_t)CMD_ID_NEIGHBOR_DB_GET,
+	(uint16_t)CMD_ID_NEIGHBOR_DB_CLEAR,
 	(uint16_t)EVT_ID_NEIGHBOR_DB_SET_RESP,
 	(uint16_t)EVT_ID_NEIGHBOR_DB_GET_RESP,
+	(uint16_t)EVT_ID_NEIGHBOR_DB_CLEAR_RESP,
 };
 static const uint16_t mqtt_mlme_msg_ids[] = { 0 };
 
@@ -174,7 +178,7 @@ static const uint16_t mqtt_hostapd_if_msg_ids[] = {
 #define MQTT_ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
 static const struct mqtt_feature_entry mqtt_feature_table[] = {
-	{ MQTT_FEATURE_SMD,  mqtt_smd_msg_ids,  0 /* reserved, no active msgs */ },
+	{ MQTT_FEATURE_SMD,  mqtt_smd_msg_ids,  MQTT_ARRAY_SIZE(mqtt_smd_msg_ids) },
 	{ MQTT_FEATURE_MLME, mqtt_mlme_msg_ids, 0 /* reserved, no active msgs */ },
 	{ MQTT_FEATURE_MAPC, mqtt_mapc_msg_ids, 0 /* reserved, no active msgs */ },
 	{ MQTT_FEATURE_HOSTAPD_IF, mqtt_hostapd_if_msg_ids, MQTT_ARRAY_SIZE(mqtt_hostapd_if_msg_ids) },
@@ -294,6 +298,15 @@ static const struct mqtt_tlv_policy mqtt_pol_neighbor_db_get[] = {
 	{ TLV_NEIGHBOR_DB_GET_BSSID,           MQTT_TLV_VAL_MAC, 6, 0, 0, 0 },
 };
 
+static const struct mqtt_tlv_policy mqtt_pol_neighbor_db_clear[] = {
+	{ TLV_NEIGHBOR_DB_CLEAR_AP_ALID,      MQTT_TLV_VAL_MAC, 6, 1, 0, 0 },
+	{ TLV_NEIGHBOR_DB_CLEAR_HAS_SMD_ID,   MQTT_TLV_VAL_U8,  1, 1, 0, 0 },
+	{ TLV_NEIGHBOR_DB_CLEAR_SMD_ID,       MQTT_TLV_VAL_MAC, 6, 0, 0, 0 },
+	{ TLV_NEIGHBOR_DB_CLEAR_HAS_MLD_ADDR, MQTT_TLV_VAL_U8,  1, 1, 0, 0 },
+	{ TLV_NEIGHBOR_DB_CLEAR_MLD_ADDR,     MQTT_TLV_VAL_MAC, 6, 0, 0, 0 },
+	{ TLV_NEIGHBOR_DB_CLEAR_HAS_BSSID,    MQTT_TLV_VAL_U8,  1, 1, 0, 0 },
+	{ TLV_NEIGHBOR_DB_CLEAR_BSSID,        MQTT_TLV_VAL_MAC, 6, 0, 0, 0 },
+};
 
 /* ── CMD policy registry ────────────────────────────────────────────────── */
 
@@ -303,6 +316,8 @@ static const struct mqtt_msg_policy mqtt_cmd_policy_table[] = {
 	  (uint8_t)MQTT_ARRAY_SIZE(mqtt_pol_neighbor_db_set) },
 	{ (uint16_t)CMD_ID_NEIGHBOR_DB_GET, mqtt_pol_neighbor_db_get,
 	  (uint8_t)MQTT_ARRAY_SIZE(mqtt_pol_neighbor_db_get) },
+	{ (uint16_t)CMD_ID_NEIGHBOR_DB_CLEAR, mqtt_pol_neighbor_db_clear,
+	  (uint8_t)MQTT_ARRAY_SIZE(mqtt_pol_neighbor_db_clear) },
 	{ (uint16_t)CMD_ID_HIF_REGISTER_FRAME, mqtt_pol_hif_register_frame,
 	  (uint8_t)MQTT_ARRAY_SIZE(mqtt_pol_hif_register_frame) },
 	{ (uint16_t)CMD_ID_HIF_REGISTER_EVENT, mqtt_pol_hif_register_event,

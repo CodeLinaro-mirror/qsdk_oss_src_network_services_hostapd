@@ -68,6 +68,26 @@ int hostapd_neighbor_set_mld(struct hostapd_data *hapd, const u8 *bssid,
 		const u8 *smd_id,
 		const struct wpabuf *lci,
 		const struct wpabuf *civic,
+                             int stationary,
+                             u8 bss_parameters);
+
+void hostapd_free_neighbor_db_nonself_scoped(struct hostapd_data *hapd,
+					     u8 has_smd,
+					     u8 has_mld,
+					     u8 has_bssid,
+					     const u8 *addr);
+/**
+ * Count total entries in database
+ * Returns: Number of entries
+ */
+int hostapd_neighbor_count(struct hostapd_data *hapd);
+int hostapd_neighbor_set_mld(struct hostapd_data *hapd, const u8 *bssid,
+		const struct wpa_ssid_value *ssid,
+		const struct wpabuf *nr,
+		const u8 *mld_addr,
+		const u8 *smd_id,
+		const struct wpabuf *lci,
+		const struct wpabuf *civic,
 		int stationary,
 		u8 bss_parameters);
 #endif /* NEIGHBOR_DB_H */
