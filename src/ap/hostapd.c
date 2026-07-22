@@ -10016,7 +10016,7 @@ void hostapd_mld_interface_freed(struct hostapd_data *hapd)
 {
 	struct hostapd_data *link_bss = NULL;
 
-	if (!hapd || !hapd->conf->mld_ap)
+	if (!hapd || !hapd->conf || !hapd->conf->mld_ap)
 		return;
 
 #ifdef CONFIG_QCN_EXTN
