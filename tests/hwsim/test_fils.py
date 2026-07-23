@@ -22,6 +22,13 @@ from test_eap import check_eap_capa
 from test_erp import start_erp_as
 from test_ap_hs20 import ip_checksum
 
+def is_6ghz_bss_params(params):
+    if 'op_class' not in params:
+        return False
+
+    op_class = int(params['op_class'])
+    return 131 <= op_class <= 137
+
 def test_fils_sk_full_auth(dev, apdev, params):
     """FILS SK full authentication"""
     check_fils_capa(dev[0])
@@ -2472,8 +2479,9 @@ def test_fils_discovery_frame(dev, apdev, params):
     params['erp_domain'] = 'example.com'
     params['fils_realm'] = 'example.com'
     params['wpa_group_rekey'] = '1'
-    params['fils_discovery_min_interval'] = '20'
-    params['fils_discovery_max_interval'] = '20'
+    if is_6ghz_bss_params(params):
+        params['fils_discovery_min_interval'] = '20'
+        params['fils_discovery_max_interval'] = '20'
     hapd = hostapd.add_ap(apdev[0], params, no_enable=True)
 
     if "OK" not in hapd.request("ENABLE"):
