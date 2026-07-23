@@ -1035,7 +1035,7 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 			buflen += hostapd_eid_eht_ml_beacon_len(
 				params->mld_ap, params->mld_info,
 				!!params->mld_ap, param_ext_cap,
-				params->is_uhr_sta);
+				params->is_uhr_sta, true);
 			if (params->mld_ap->iface->drv_flags2 &
 			    WPA_DRIVER_FLAGS2_MLD_LINK_REMOVAL_OFFLOAD)
 				buflen += hostapd_eid_eht_ml_reconfig_len(params->mld_ap);
@@ -1043,7 +1043,7 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 			if (hapd->conf->mld_ap)
 				buflen += hostapd_eid_eht_ml_beacon_len(
 					hapd, NULL, false, include_ext_cap,
-					params->is_uhr_sta);
+					params->is_uhr_sta, true);
 
 			/* For Max Channel Switch Time element during channel
 			 * switch */
@@ -1051,7 +1051,7 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 		} else if (hapd->conf->mld_ap) {
 			buflen += hostapd_eid_eht_ml_beacon_len(
 				hapd, params->mld_info, false, include_ext_cap,
-				params->is_uhr_sta);
+				params->is_uhr_sta, true);
 
 			/* For Max Channel Switch Time element during channel
 			 * switch */
@@ -1495,7 +1495,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 			pos = hostapd_eid_eht_ml_beacon(
 				params->mld_ap, params->mld_info,
 				pos, !!params->mld_ap, p_ext_cap,
-				params->is_uhr_sta);
+				params->is_uhr_sta, true);
 			if (params->mld_ap->iface->drv_flags2 &
 			    WPA_DRIVER_FLAGS2_MLD_LINK_REMOVAL_OFFLOAD)
 				pos = hostapd_eid_eht_reconf_ml(params->mld_ap, pos);
@@ -1503,13 +1503,13 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 			if (hapd->conf->mld_ap)
 				pos = hostapd_eid_eht_ml_beacon(
 					hapd, NULL, pos, false, ext_cap,
-					params->is_uhr_sta);
+					params->is_uhr_sta, true);
 
 		} else if (hapd->conf->mld_ap) {
 			pos = hostapd_eid_eht_ml_beacon(hapd,
 							params->mld_info,
 							pos, false, ext_cap,
-							params->is_uhr_sta);
+							params->is_uhr_sta, true);
 		}
 		/* ML reconfigure feature */
 		/* Software removal is already included by the ML beacon helper. */
@@ -3921,7 +3921,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 			     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 			tailpos = hostapd_eid_eht_ml_beacon(hapd, NULL,
-							    tailpos, false, ext_cap, true);
+							    tailpos, false, ext_cap, true, true);
 			hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
 						   tailpos-startpos, ELEMID_CU_PARAM_EXT_ML);
 		}
