@@ -90,7 +90,7 @@ struct hostapd_nft_rule_params {
 	u8 dscp;
 	u8 weight;
 	u64 handle;
-	int scs_idx;
+	u8 qm_idx;
 	int tclas_ele_idx;
 	u32 set_id;
 };

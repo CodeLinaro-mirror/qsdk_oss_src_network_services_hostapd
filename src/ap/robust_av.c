@@ -1233,7 +1233,7 @@ static int hostapd_mscs_add_flow_info(struct sta_info *sta,
 	available_idx = sta->mscs_ctxt->available_idx;
 
 	if (available_idx >= HOSTAPD_MSCS_MAX_FLOW_ENTRIES)
-	    return -EINVAL;
+		return -EINVAL;
 
 	os_memcpy(&sta->mscs_ctxt->flow_info[available_idx], new_te,
 		  sizeof(struct hostapd_tclas_elements));
@@ -1242,102 +1242,55 @@ static int hostapd_mscs_add_flow_info(struct sta_info *sta,
 	return 0;
 }
 
-static int hostapd_mscs_add_nft_rule(struct hostapd_data *hapd,
-				     struct sta_info *sta,
-				     struct hostapd_tclas_elements *te)
+static int hostapd_nft_rule_get_cap_for_count(int count)
 {
-	struct hostapd_nft_rule_params rule = {0};
-	u8 flow_idx;
-	u8 tid = te->up;
+	int cap;
 
-	if (!sta || !sta->mscs_ctxt || !sta->mscs_session_exists) {
-		wpa_printf(MSG_ERROR, "MSCS: Missing context for STA");
-		return -EINVAL;
-	}
+	if (count == 0)
+		return 0;
 
-	if (hostapd_mscs_flow_exists(hapd, sta, te))
-	    return -EEXIST;
-
-	if (hostapd_mscs_add_flow_info(sta, te)) {
-		wpa_printf(MSG_ERROR, "MSCS: Rule could not be programmed\n");
-		return -EINVAL;
-	}
-
-	os_memset(&rule, 0, sizeof(rule));
-
-	hostapd_qm_prepare_nft_rule(hapd, sta, te, &rule,
-				    tid, HOSTAPD_QOS_MSCS_TAG);
-
-	hostapd_config_nft_rule(&rule, true);
-
-	flow_idx = sta->mscs_ctxt->available_idx -1;
-
-	if (sta->mscs_ctxt->flow_info[flow_idx].num_rules == 0) {
-		sta->mscs_ctxt->flow_info[flow_idx].rule_handle[0] = rule.handle;
-		sta->mscs_ctxt->flow_info[flow_idx].num_rules++;
-	} else {
-		wpa_printf(MSG_ERROR, "MSCS: num rules count is high, count : %d\n",
-			   sta->mscs_ctxt->flow_info[flow_idx].num_rules);
-	}
-
-	wpa_printf(MSG_INFO, "tid:%u rule valid flag : 0x%x ", tid,
-		   rule.valid_flags);
-
-	return 0;
+	cap = 8;
+	while (cap < count)
+		cap <<= 1;
+	return cap;
 }
 
-int hostapd_mscs_delete_all_rules(struct hostapd_data *hapd,
-				       struct sta_info *sta)
+static void hostapd_qm_add_nft_rule_list(struct hostapd_nft_rule_params *rule,
+					 struct hostapd_nft_rule_params **rules,
+					 int *rule_count)
 {
-	struct hostapd_tclas_elements te;
-	struct hostapd_nft_rule_params rule = {0};
-	int i = 0;
+	struct hostapd_nft_rule_params *tmp;
+	int cur_cap, new_cap;
 
-	if (!sta || !sta->mscs_ctxt)
-	    return -EINVAL;
-
-	for (i = 0; i < sta->mscs_ctxt->available_idx; i++) {
-
-		te = sta->mscs_ctxt->flow_info[i];
-
-		rule.handle = te.rule_handle[0];
-
-		os_snprintf(rule.chain, sizeof(rule.chain), "%s_%s", CHAIN_NAME,
-			    hapd->conf->iface);
-		os_snprintf(rule.table, sizeof(rule.table), "%s", TABLE_NAME);
-
-		rule.nf_family = NFPROTO_NETDEV;
-
-		hostapd_config_nft_rule(&rule, false);
-		os_memset(&sta->mscs_ctxt->flow_info[i], 0,
-			  sizeof(struct hostapd_tclas_elements));
-	}
-
-	wpa_printf(MSG_INFO, "MSCS: # of rules deleted %u\n", i);
-
-	return 0;
-}
-
-
-void hostapd_scs_add_nft_rule_list(struct hostapd_nft_rule_params *rule,
-				   struct hostapd_nft_rule_params *rules,
-				   int *rule_count)
-{
 	if (!rule || !rules || !rule_count) {
 		wpa_printf(MSG_ERROR, "Invalid rule input to add rule");
 		return;
 	}
 
-
 	if (*rule_count >= NFT_MAX_RULE_COUNT) {
-		wpa_printf(MSG_ERROR, "SCS: Rule count exceeded max limit %d",
+		wpa_printf(MSG_ERROR, "QM: Rule count exceeded max limit %d",
 			   NFT_MAX_RULE_COUNT);
 		return;
 	}
 
-	rules[*rule_count] = *rule;
+	cur_cap = hostapd_nft_rule_get_cap_for_count(*rule_count);
+	new_cap = hostapd_nft_rule_get_cap_for_count(*rule_count + 1);
 
-	wpa_printf(MSG_INFO, "SCS: Rule added at index %u with weight %u",
+	if (new_cap > cur_cap) {
+		tmp = os_realloc(*rules,
+				 new_cap * sizeof(struct hostapd_nft_rule_params));
+		if (!tmp) {
+			wpa_printf(MSG_ERROR,
+				   "QM: Failed to grow rules array to %d",
+				   new_cap);
+			return;
+		}
+		*rules = tmp;
+	}
+
+	(*rules)[*rule_count] = *rule;
+
+	wpa_printf(MSG_INFO, "QM: Rule added at index %u with weight %u",
 		   *rule_count, rule->weight);
 
 	(*rule_count)++;
@@ -1345,8 +1298,8 @@ void hostapd_scs_add_nft_rule_list(struct hostapd_nft_rule_params *rule,
 
 
 static int hostapd_scs_add_nft_rule(struct hostapd_data *hapd,
-				    struct sta_info *sta, int scs_idx,
-				    struct hostapd_nft_rule_params *rules,
+				    struct sta_info *sta, u8 scs_idx,
+				    struct hostapd_nft_rule_params **rules,
 				    int *rule_count)
 {
 	struct hostapd_scs_req_desc_data *scs_req_desc = sta->scs_req_desc[scs_idx];
@@ -1359,7 +1312,7 @@ static int hostapd_scs_add_nft_rule(struct hostapd_data *hapd,
 
 		te = scs_req_desc->tclas[i];
 
-		rule.scs_idx = scs_idx;
+		rule.qm_idx = scs_idx;
 		rule.tclas_ele_idx = i;
 
 		hostapd_qm_prepare_nft_rule(hapd, sta, &te, &rule,
@@ -1374,17 +1327,17 @@ static int hostapd_scs_add_nft_rule(struct hostapd_data *hapd,
 				rule.valid_flags |= NFT_RULE_PARAM_PROTO;
 
 				rule.proto = IPPROTO_UDP;
-				hostapd_scs_add_nft_rule_list(&rule, rules,
-							      rule_count);
+				hostapd_qm_add_nft_rule_list(&rule, rules,
+							     rule_count);
 				rule.proto = IPPROTO_TCP;
 			} else if (te.classifier_type == QM_TCLAS_CLASSIFIER_TYPE10) {
 				rule.ip_family = 4;
-				hostapd_scs_add_nft_rule_list(&rule, rules,
-							      rule_count);
+				hostapd_qm_add_nft_rule_list(&rule, rules,
+							     rule_count);
 				rule.ip_family = 6;
 			}
 
-			hostapd_scs_add_nft_rule_list(&rule, rules, rule_count);
+			hostapd_qm_add_nft_rule_list(&rule, rules, rule_count);
 
 			os_memset(&rule, 0, sizeof(rule));
 		}
@@ -1401,16 +1354,16 @@ static int hostapd_scs_add_nft_rule(struct hostapd_data *hapd,
 			rule.valid_flags |= NFT_RULE_PARAM_PROTO;
 
 			rule.proto = IPPROTO_UDP;
-			hostapd_scs_add_nft_rule_list(&rule, rules, rule_count);
+			hostapd_qm_add_nft_rule_list(&rule, rules, rule_count);
 
 			rule.proto = IPPROTO_TCP;
 		} else if (!rule.ip_family) {
 			rule.ip_family = 4;
-			hostapd_scs_add_nft_rule_list(&rule, rules, rule_count);
+			hostapd_qm_add_nft_rule_list(&rule, rules, rule_count);
 			rule.ip_family = 6;
 		}
 
-		hostapd_scs_add_nft_rule_list(&rule, rules, rule_count);
+		hostapd_qm_add_nft_rule_list(&rule, rules, rule_count);
 
 		wpa_printf(MSG_INFO, "scs_id:%u rule valid flag : 0x%x ",
 			   scs_req_desc->scs_id, rule.valid_flags);
@@ -1573,12 +1526,75 @@ hostapd_process_scs_change(struct hostapd_data *hapd, struct sta_info *sta,
 }
 
 
+void
+hostapd_mscs_delete_nft_rules(struct hostapd_data *hapd, struct sta_info *sta)
+{
+	struct hostapd_nft_rule_params rule;
+	struct hostapd_tclas_elements *te;
+	int idx, j;
+
+	if (!sta->mscs_ctxt)
+		return;
+
+	for (idx = 0; idx < sta->mscs_ctxt->available_idx; idx++) {
+		te = &sta->mscs_ctxt->flow_info[idx];
+		os_memset(&rule, 0, sizeof(rule));
+		os_snprintf(rule.chain, sizeof(rule.chain), "%s_%s",
+			    CHAIN_NAME, hapd->conf->iface);
+		os_snprintf(rule.table, sizeof(rule.table), "%s", TABLE_NAME);
+		rule.nf_family = NFPROTO_NETDEV;
+
+		for (j = 0; j < te->num_rules; j++) {
+			rule.handle = te->rule_handle[j];
+			hostapd_config_nft_rule(&rule, false);
+			te->rule_handle[j] = 0;
+		}
+		te->num_rules = 0;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "MSCS: Deleted rules for %d flows for STA " MACSTR,
+		   sta->mscs_ctxt->available_idx, MAC2STR(sta->addr));
+}
+
+
+static void
+hostapd_mscs_add_nft_rules(struct hostapd_data *hapd, struct sta_info *sta,
+				struct hostapd_nft_rule_params **rules,
+				int *rule_count)
+{
+	struct hostapd_tclas_elements *te;
+	struct hostapd_nft_rule_params rule;
+	u8 tid;
+	u8 idx;
+
+	if (sta->scs_session_count == 0 || !sta->mscs_ctxt)
+		return;
+
+	/* Collect MSCS flow rules into the shared sorted list so they share a
+	 * single delete-all/reinsert cycle with SCS rules.
+	 */
+	for (idx = 0; idx < sta->mscs_ctxt->available_idx; idx++) {
+		te = &sta->mscs_ctxt->flow_info[idx];
+		os_memset(&rule, 0, sizeof(rule));
+
+		tid = te->up;
+		rule.qm_idx = idx;
+		rule.tclas_ele_idx = idx;
+
+		hostapd_qm_prepare_nft_rule(hapd, sta, te, &rule,
+					    tid, HOSTAPD_QOS_MSCS_TAG);
+
+		hostapd_qm_add_nft_rule_list(&rule, rules, rule_count);
+	}
+}
+
 static void
 hostapd_prepare_nft_rule_list(struct hostapd_data *hapd, struct sta_info *sta,
-			      struct hostapd_nft_rule_params *rules,
+			      struct hostapd_nft_rule_params **rules,
 			      int *rule_count)
 {
-	int idx;
+	u8 idx;
 
 	for (idx = 0; idx < sta->scs_session_count; idx++) {
 		/* SCS Uplink descriptors do not have TCLAS elements and do not
@@ -1589,8 +1605,9 @@ hostapd_prepare_nft_rule_list(struct hostapd_data *hapd, struct sta_info *sta,
 
 		hostapd_scs_add_nft_rule(hapd, sta, idx, rules, rule_count);
 	}
-}
 
+	hostapd_mscs_add_nft_rules(hapd, sta, rules, rule_count);
+}
 
 static int compare_rule_weight(const void *a, const void *b)
 {
@@ -1598,8 +1615,25 @@ static int compare_rule_weight(const void *a, const void *b)
 			(const struct hostapd_nft_rule_params *)a;
 	const struct hostapd_nft_rule_params *rule_b =
 			(const struct hostapd_nft_rule_params *)b;
+	int pri_a, pri_b;
+	u8 tag_a, tag_b;
 
-	return (rule_a->weight > rule_b->weight) - (rule_a->weight < rule_b->weight);
+	tag_a = rule_a->mark & 0xff;
+	tag_b = rule_b->mark & 0xff;
+
+	/*
+	 * Primary sort: MSCS rules before SCS rules.  nftables uses
+	 * last-write-wins semantics, so SCS handles must be inserted last
+	 * (i.e. have higher nftables handles) to take precedence.
+	 */
+	pri_a = (tag_a == HOSTAPD_QOS_SCS_TAG) ? 1 : 0;
+	pri_b = (tag_b == HOSTAPD_QOS_SCS_TAG) ? 1 : 0;
+	if (pri_a != pri_b)
+		return pri_a - pri_b;
+
+	/* Secondary sort: ascending weight within each tag group. */
+	return (rule_a->weight > rule_b->weight) -
+	       (rule_a->weight < rule_b->weight);
 }
 
 
@@ -1608,71 +1642,70 @@ hostapd_sort_nft_rule_list(struct hostapd_nft_rule_params *rules,
 			   int rule_count)
 {
 	if (!rules || rule_count <= 0) {
-		wpa_printf(MSG_INFO, "SCS: No rules to sort");
+		wpa_printf(MSG_INFO, "QM: No rules to sort");
 		return;
 	}
 
 	qsort(rules, rule_count, sizeof(struct hostapd_nft_rule_params),
 	      compare_rule_weight);
 
-	wpa_printf(MSG_DEBUG, "SCS: Sorted %u rules by weight", rule_count);
+	wpa_printf(MSG_DEBUG, "QM: Sorted %u rules by weight", rule_count);
 }
 
-
-/**
- * hostapd_delete_all_scs_nft_rules - Delete all nftables rules for SCS sessions
+/*
+ * hostapd_delete_all_qm_nft_rules - Delete all nftables rules for SCS and MSCS
  * @hapd: Pointer to hostapd data
  * @sta: Pointer to station info
  *
- * This function deletes all existing nftables rules for all SCS sessions
- * of the station. It skips uplink descriptors that don't have TCLAS elements.
+ * Deletes all existing nftables rules for every SCS and MSCS session of the
+ * station.  SCS uplink descriptors without TCLAS elements are skipped.
  */
 static void
-hostapd_delete_all_scs_nft_rules(struct hostapd_data *hapd,
+hostapd_delete_all_qm_nft_rules(struct hostapd_data *hapd,
 				 struct sta_info *sta)
 {
 	int idx;
 
-	/* Delete existing rules for all SCS sessions */
 	for (idx = 0; idx < sta->scs_session_count; idx++) {
 		if (!sta->scs_req_desc[idx]) {
 			wpa_printf(MSG_ERROR,
-				   "SCS: NULL scs_req_desc at index %d", idx);
+				   "QM: NULL scs_req_desc at index %d", idx);
 			continue;
 		}
 
-		/* SCS Uplink descriptors do not have TCLAS elements and do not
-		 * need rule deletion
+		/* SCS uplink descriptors carry no TCLAS elements and require
+		 * no rule deletion.
 		 */
 		if (!sta->scs_req_desc[idx]->num_tclas_elements) {
 			wpa_printf(MSG_DEBUG,
-				   "SCS: Skipping uplink descriptor at index %d (no TCLAS elements)",
+				   "QM: Skipping uplink descriptor at index %d (no TCLAS elements)",
 				   idx);
 			continue;
 		}
 
 		wpa_printf(MSG_DEBUG,
-			   "SCS: Deleting existing rules for session index %d (SCS ID %u)",
+			   "QM: Deleting existing rules for session index %d (SCS ID %u)",
 			   idx, sta->scs_req_desc[idx]->scs_id);
 		hostapd_scs_delete_nft_rule(hapd, sta, idx);
 	}
 
+	hostapd_mscs_delete_nft_rules(hapd, sta);
+
 	wpa_printf(MSG_DEBUG,
-		   "SCS: Completed deletion of all nftables rules for STA " MACSTR,
+		   "QOS: Completed deletion of all nftables rules for STA " MACSTR,
 		   MAC2STR(sta->addr));
 }
 
-
-/**
- * hostapd_configure_nft_rule_list - Configure nftables rules for SCS
+/*
+ * hostapd_configure_nft_rule_list - Configure nftables rules for SCS and MSCS
  * @hapd: Pointer to hostapd data
  * @sta: Pointer to station info
- * @rules: Array of nftables rules to configure
- * @rule_count: Number of rules in the array
+ * @rules: Array of prepared nftables rule parameters
+ * @rule_count: Number of rules in @rules
  *
- * This function deletes existing nftables rules for the station and creates
- * new rules based on the sorted rule list. It also stores rule handles for
- * future deletion.
+ * Deletes all existing SCS and MSCS nftables rules for the station, then
+ * inserts the pre-sorted @rules in order and stores their handles for later
+ * deletion.
  */
 static void
 hostapd_configure_nft_rule_list(struct hostapd_data *hapd,
@@ -1687,50 +1720,79 @@ hostapd_configure_nft_rule_list(struct hostapd_data *hapd,
 	struct hostapd_tclas_elements *te;
 
 	wpa_printf(MSG_DEBUG,
-		   "SCS: Configuring %d nftables rules for STA " MACSTR,
+		   "QM: Configuring %d nftables rules for STA " MACSTR,
 		   rule_count, MAC2STR(sta->addr));
 
-	/* Delete existing rules for all SCS sessions */
-	hostapd_delete_all_scs_nft_rules(hapd, sta);
+	/* Delete existing rules for all SCS and MSCS sessions */
+	hostapd_delete_all_qm_nft_rules(hapd, sta);
 
 	/* Create new rules and store their handles */
 	for (idx = 0; idx < rule_count; idx++) {
 		rule = &rules[idx];
 
 		wpa_printf(MSG_DEBUG,
-			   "SCS: Creating rule %d/%d - scs_idx=%d tclas_idx=%d weight=%u valid_flags=0x%x",
-			   idx + 1, rule_count, rule->scs_idx,
+			   "QM: Creating rule %d/%d - qm_idx=%u tclas_idx=%d weight=%u valid_flags=0x%x",
+			   idx + 1, rule_count, rule->qm_idx,
 			   rule->tclas_ele_idx, rule->weight, rule->valid_flags);
 
 		ret = hostapd_config_nft_rule(rule, true);
 		if (ret) {
 			wpa_printf(MSG_ERROR,
-				   "SCS: Rule creation failed table='%s', chain='%s'",
+				   "QM: Rule creation failed table='%s', chain='%s'",
 				   rule->table, rule->chain);
 			continue;
 		}
 
-		if (rule->scs_idx < 0 ||
-		    rule->scs_idx >= sta->scs_session_count) {
+		if ((rule->mark & 0xff) == HOSTAPD_QOS_MSCS_TAG) {
+			u8 flow_idx = rule->qm_idx;
+
+			if (!sta->mscs_ctxt ||
+			    flow_idx >= sta->mscs_ctxt->available_idx) {
+				wpa_printf(MSG_ERROR,
+					   "MSCS: Invalid flow_idx %u for rule %d",
+					   flow_idx, idx);
+				continue;
+			}
+
+			te = &sta->mscs_ctxt->flow_info[flow_idx];
+
+			if (te->num_rules >= HOSTAPD_MAX_RULES_PER_TCLAS) {
+				wpa_printf(MSG_ERROR,
+					   "MSCS: Maximum rules per flow exceeded (%u) for rule %d",
+					   te->num_rules, idx);
+				continue;
+			}
+
+			te->rule_handle[te->num_rules] = rule->handle;
+			te->num_rules++;
+
+			wpa_printf(MSG_DEBUG,
+				   "MSCS: Stored rule handle %llu at flow_idx=%u pos=%u",
+				   (unsigned long long) rule->handle,
+				   flow_idx, te->num_rules - 1);
+			continue;
+		}
+
+		if (rule->qm_idx >= sta->scs_session_count) {
 			wpa_printf(MSG_ERROR,
-				   "SCS: Invalid scs_idx %d (valid range: 0-%d) for rule %d",
-				   rule->scs_idx, sta->scs_session_count - 1,
+				   "QM: Invalid qm_idx %u (valid range: 0-%d) for rule %d",
+				   rule->qm_idx, sta->scs_session_count - 1,
 				   idx);
 			continue;
 		}
 
-		scs_req_desc = sta->scs_req_desc[rule->scs_idx];
+		scs_req_desc = sta->scs_req_desc[rule->qm_idx];
 		if (!scs_req_desc) {
 			wpa_printf(MSG_ERROR,
-				   "SCS: NULL scs_req_desc at scs_idx %d for rule %d",
-				   rule->scs_idx, idx);
+				   "QM: NULL scs_req_desc at qm_idx %u for rule %d",
+				   rule->qm_idx, idx);
 			continue;
 		}
 
 		if (rule->tclas_ele_idx < 0 ||
 		    rule->tclas_ele_idx >= scs_req_desc->num_tclas_elements) {
 			wpa_printf(MSG_ERROR,
-				   "SCS: Invalid tclas_ele_idx %d (valid range: 0-%d) for rule %d",
+				   "QM: Invalid tclas_ele_idx %d (valid range: 0-%d) for rule %d",
 				   rule->tclas_ele_idx,
 				   scs_req_desc->num_tclas_elements - 1, idx);
 			continue;
@@ -1740,8 +1802,8 @@ hostapd_configure_nft_rule_list(struct hostapd_data *hapd,
 
 		if (te->num_rules >= HOSTAPD_MAX_RULES_PER_TCLAS) {
 			wpa_printf(MSG_ERROR,
-				   "SCS: Maximum rules per TCLAS exceeded (%u) for rule %d (scs_idx=%d, tclas_idx=%d)",
-				   te->num_rules, idx, rule->scs_idx,
+				   "QM: Maximum rules per TCLAS exceeded (%u) for rule %d (qm_idx=%u, tclas_idx=%d)",
+				   te->num_rules, idx, rule->qm_idx,
 				   rule->tclas_ele_idx);
 			continue;
 		}
@@ -1750,29 +1812,78 @@ hostapd_configure_nft_rule_list(struct hostapd_data *hapd,
 		te->num_rules++;
 
 		wpa_printf(MSG_DEBUG,
-			   "SCS: Stored rule handle %llu at position %u (scs_idx=%d, tclas_idx=%d, SCS_ID=%u)",
+			   "QM: Stored rule handle %llu at position %u (qm_idx=%u, tclas_idx=%d, SCS_ID=%u)",
 			   (unsigned long long) rule->handle, te->num_rules - 1,
-			   rule->scs_idx, rule->tclas_ele_idx,
+			   rule->qm_idx, rule->tclas_ele_idx,
 			   scs_req_desc->scs_id);
 	}
 
 	wpa_printf(MSG_DEBUG,
-		   "SCS: Successfully configured %d nftables rules for STA " MACSTR,
+		   "QM: Successfully configured %d nftables rules for STA " MACSTR,
 		   rule_count, MAC2STR(sta->addr));
 }
-
 
 static void hostapd_process_nft_rules(struct hostapd_data *hapd,
 				      struct sta_info *sta)
 {
-	struct hostapd_nft_rule_params rules[NFT_MAX_RULE_COUNT];
+	struct hostapd_nft_rule_params *rules = NULL;
 	int rule_count = 0;
 
-	hostapd_prepare_nft_rule_list(hapd, sta, rules, &rule_count);
+	hostapd_prepare_nft_rule_list(hapd, sta, &rules, &rule_count);
 	hostapd_sort_nft_rule_list(rules, rule_count);
 	hostapd_configure_nft_rule_list(hapd, sta, rules, rule_count);
+
+	os_free(rules);
 }
 
+static int hostapd_mscs_add_nft_rule(struct hostapd_data *hapd,
+				     struct sta_info *sta,
+				     struct hostapd_tclas_elements *te)
+{
+	struct hostapd_nft_rule_params rule = {0};
+	u8 flow_idx;
+	u8 tid = te->up;
+
+	if (!sta || !sta->mscs_ctxt || !sta->mscs_session_exists) {
+		wpa_printf(MSG_ERROR, "MSCS: Missing context for STA");
+		return -EINVAL;
+	}
+
+	if (hostapd_mscs_flow_exists(hapd, sta, te))
+		return -EEXIST;
+
+	if (hostapd_mscs_add_flow_info(sta, te)) {
+		wpa_printf(MSG_ERROR, "MSCS: Rule could not be programmed");
+		return -EINVAL;
+	}
+
+	if (sta->scs_session_count > 0) {
+		/*
+		 * SCS sessions are active - rebuild the full sorted rule set
+		 * so MSCS and SCS rules get consistent nftables handles.
+		 * Pipeline: prepare (SCS + MSCS) -> sort by tag/weight ->
+		 * delete-all -> reinsert.
+		 */
+		hostapd_process_nft_rules(hapd, sta);
+	} else {
+		hostapd_qm_prepare_nft_rule(hapd, sta, te, &rule,
+					    tid, HOSTAPD_QOS_MSCS_TAG);
+		hostapd_config_nft_rule(&rule, true);
+		flow_idx = sta->mscs_ctxt->available_idx - 1;
+		if (sta->mscs_ctxt->flow_info[flow_idx].num_rules == 0) {
+			sta->mscs_ctxt->flow_info[flow_idx].rule_handle[0] =
+				rule.handle;
+			sta->mscs_ctxt->flow_info[flow_idx].num_rules++;
+		} else {
+			wpa_printf(MSG_ERROR,
+				   "MSCS: Unexpected rule count %d at flow_idx %u",
+				   sta->mscs_ctxt->flow_info[flow_idx].num_rules,
+				   flow_idx);
+		}
+	}
+
+	return 0;
+}
 
 static void hostapd_process_scs_req(struct hostapd_data *hapd,
 				    struct sta_info *sta,
@@ -2115,7 +2226,7 @@ int hostapd_process_mscs_req(struct hostapd_data *hapd,
 		ret = hostapd_copy_and_send_mscs_data(hapd, sta, req_type,
 						      dialog_token);
 		sta->mscs_session_exists = false;
-		hostapd_mscs_delete_all_rules(hapd, sta);
+		hostapd_mscs_delete_nft_rules(hapd, sta);
 		os_free(sta->mscs_ctxt);
 		sta->mscs_ctxt = NULL;
 		wpa_printf(MSG_INFO, "MSCS:Session deleted for "MACSTR,
