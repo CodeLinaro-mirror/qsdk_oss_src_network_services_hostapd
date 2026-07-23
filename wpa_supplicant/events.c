@@ -5498,6 +5498,9 @@ static void wpa_supplicant_event_assoc(struct wpa_supplicant *wpa_s,
 
 	eloop_cancel_timeout(wpas_network_reenabled, wpa_s, NULL);
 	wpa_s->own_reconnect_req = 0;
+	/* Association succeeded: refresh the one-shot OCE RSSI-reject
+	 * MLO retry budget for the next connection lifecycle. */
+	wpa_s->mlo_rssi_rej_retry = 0;
 
 	ft_completed = wpa_ft_is_completed(wpa_s->wpa);
 
@@ -7807,36 +7810,74 @@ static void wpas_event_assoc_reject(struct wpa_supplicant *wpa_s,
 				   MACSTR " (Delta RSSI: %u, Retry Delay: %u)",
 				   MAC2STR(reject_bss->bssid),
 				   rssi_rej[2], rssi_rej[3]);
-			wpa_bss_tmp_disallow(wpa_s,
-					     reject_bss->bssid,
-					     rssi_rej[3],
-					     rssi_rej[2] + reject_bss->level);
+			wpa_printf(MSG_DEBUG,
+				   "MLO-DBG: OCE retry check: valid_links=0x%x rejected_link=%d level=%d guard=%d drv_sme=%d",
+				   reject_bss->valid_links,
+				   reject_bss->mld_link_id,
+				   reject_bss->level,
+				   wpa_s->mlo_rssi_rej_retry,
+				   !!(wpa_s->drv_flags & WPA_DRIVER_FLAGS_SME));
 
-			/* For MLO, immediately retry on another link of the
-			 * same AP MLD instead of waiting for the Retry Delay
-			 * on the rejected link.
+			/* For MLO, immediately retry using another link of the
+			 * same AP MLD as the association link instead of waiting
+			 * for the Retry Delay on the rejected link. The full
+			 * usable link set is rebuilt on the retry, so the STA
+			 * still requests all links (including the rejected one).
+			 * To keep the rejected link eligible, it is deliberately
+			 * NOT placed on the temporary-disallow list here. This is
+			 * bounded to a single immediate retry: a second
+			 * consecutive OCE rejection falls through to the normal
+			 * Retry-Delay handling below.
 			 */
-			if (reject_bss->valid_links) {
+			if (reject_bss->valid_links &&
+			    !wpa_s->mlo_rssi_rej_retry) {
 				struct wpa_ssid *ssid = wpa_s->current_ssid;
+				struct wpa_bss *alt_bss = NULL;
+				u8 alt_link_id = 0;
 				u8 link_id;
 
+				/* Pick the strongest non-rejected link as the
+				 * association link for the retry rather than the
+				 * first one found, so a weak link (e.g. the
+				 * lowest-indexed 2.4 GHz link) is not preferred
+				 * over a better 5 GHz link.
+				 */
 				for_each_link(reject_bss->valid_links, link_id) {
-					struct wpa_bss *alt_bss;
+					struct wpa_bss *cand;
 
 					if (link_id == reject_bss->mld_link_id)
 						continue;
 
-					alt_bss = wpa_bss_get_bssid(
+					cand = wpa_bss_get_bssid(
 						wpa_s,
 						reject_bss->mld_links[link_id].bssid);
-					if (!alt_bss)
+					if (!cand)
 						continue;
 
+					if (!alt_bss || cand->level > alt_bss->level) {
+						alt_bss = cand;
+						alt_link_id = link_id;
+					}
+				}
+
+				if (!alt_bss)
+					wpa_printf(MSG_DEBUG,
+						   "MLO-DBG: no alternative link BSS found for immediate retry (valid_links=0x%x rejected_link=%d) - falling back to Retry-Delay handling",
+						   reject_bss->valid_links,
+						   reject_bss->mld_link_id);
+
+				if (alt_bss) {
 					wpa_printf(MSG_DEBUG,
 						   "MLO: OCE rejection on link %d, retrying on link %d "
-						   MACSTR,
+						   MACSTR " (level %d)",
 						   reject_bss->mld_link_id,
-						   link_id,
+						   alt_link_id,
+						   MAC2STR(alt_bss->bssid),
+						   alt_bss->level);
+					wpa_s->mlo_rssi_rej_retry = 1;
+					wpa_printf(MSG_DEBUG,
+						   "MLO-DBG: starting immediate all-link retry via link %d " MACSTR " (full usable link set rebuilt in sme_send_authentication)",
+						   alt_link_id,
 						   MAC2STR(alt_bss->bssid));
 					wpas_connect_work_done(wpa_s);
 					wpa_supplicant_mark_disassoc(wpa_s);
@@ -7845,6 +7886,17 @@ static void wpas_event_assoc_reject(struct wpa_supplicant *wpa_s,
 					return;
 				}
 			}
+
+			/* Non-MLO connection, or a second consecutive OCE
+			 * rejection on an MLO link: back off the rejected BSS for
+			 * the advertised Retry Delay and fall through to the
+			 * normal connection-failure handling.
+			 */
+			wpa_s->mlo_rssi_rej_retry = 0;
+			wpa_bss_tmp_disallow(wpa_s,
+					     reject_bss->bssid,
+					     rssi_rej[3],
+					     rssi_rej[2] + reject_bss->level);
 		}
 	}
 #endif /* CONFIG_MBO */

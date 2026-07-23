@@ -1821,6 +1821,12 @@ struct wpa_supplicant {
 
 	unsigned int ml_neigh_retries;
 	u8 ml_neigh_retry_bssid[ETH_ALEN];
+
+	/* One immediate all-link retry after an OCE RSSI-based association
+	 * rejection on an MLO link, so the rejected link is not excluded for
+	 * the full Retry Delay. Reset on successful association and on a new
+	 * user-initiated connection. */
+	unsigned int mlo_rssi_rej_retry:1;
 	struct hostapd_multi_hw_info *multi_hw_info;
 	u8 num_multi_hws;
 
