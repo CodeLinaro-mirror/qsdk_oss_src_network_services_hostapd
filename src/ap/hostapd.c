@@ -1649,7 +1649,6 @@ void hostapd_bss_link_deinit(struct hostapd_data *hapd)
 {
 #ifdef CONFIG_IEEE80211BE
 	int i;
-	bool linked;
 
 	if (!hapd->conf || !hapd->conf->mld_ap)
 		return;
@@ -1665,15 +1664,6 @@ void hostapd_bss_link_deinit(struct hostapd_data *hapd)
 	if (!hapd->mld || hapd_reenable_pending(hapd))
 		return;
 
-	linked = hapd->link.next && hapd->link.prev;
-
-	/* If not started, not yet linked to the MLD. However, the first
-	 * BSS is always linked since it is linked during driver_init(), and
-	 * hence, need to remove it from the AP MLD.
-	 */
-	if (!hapd->started && hapd->iface->bss[0] != hapd && !linked)
-		return;
-
 	/* The first BSS can also be only linked when at least driver_init() is
 	 * executed. But if previous interface fails, it is not, and hence,
 	 * safe to skip.
@@ -1681,6 +1671,14 @@ void hostapd_bss_link_deinit(struct hostapd_data *hapd)
 	if (hapd->iface->bss[0] == hapd && !hapd->drv_priv)
 		return;
 
+	/*
+	 * hapd->mld being set here means hostapd_bss_setup_multi_link()
+	 * already allocated a link ID for this BSS (it clears hapd->mld
+	 * on allocation failure). That ID must always be released, even
+	 * if this BSS was never started or never linked into the MLD's
+	 * list -- hostapd_mld_remove_link() itself handles that case and
+	 * frees the ID accordingly.
+	 */
 	hostapd_mld_remove_link(hapd);
 #endif /* CONFIG_IEEE80211BE */
 }
