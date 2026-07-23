@@ -79,6 +79,31 @@ u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 	return pos;
 }
 
+size_t hostapd_eid_tx_power_indication_len(void)
+{
+	/* EID(1) + Len(1) + EID_Extension(1) + AP Conducted Tx Power(1) */
+	return 4;
+}
+
+u8 * hostapd_eid_tx_power_indication(struct hostapd_data *hapd, u8 *eid)
+{
+	u8 fval = UHR_TX_PWR_IND_DEFAULT_FVAL;
+
+	/* PTX = -20 + 2*Fval  per S9.4.2.364 */
+	*eid++ = WLAN_EID_EXTENSION;
+
+	/* EID_Extension(1) + AP Conducted Tx Power(1) */
+	*eid++ = 2;
+	*eid++ = WLAN_EID_EXT_TX_POWER_INDICATION;
+
+	/* bits 0-4: FVal[Range: 0-30: value 31 reserved];
+	 * bits 5-7 reserved set to 0
+	 */
+	fval = fval > 30 ? 30: fval;
+	*eid++ = fval & 0x1f;
+	return eid;
+}
+
 u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn)
 {
 	struct ieee80211_uhr_operation *oper;

@@ -1076,6 +1076,7 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 				buflen += IEEE80211_UHR_NPCA_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
 		}
 		buflen += hostapd_eid_uhr_params_update_len(hapd, false, false);
+		buflen += hostapd_eid_tx_power_indication_len();
 	}
 	buflen += hostapd_smd_ie_len(hapd);
 #endif /* CONFIG_IEEE80211BN */
@@ -1536,6 +1537,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 		pos = hostapd_eid_uhr_capab(hapd, pos, IEEE80211_MODE_AP);
 		pos = hostapd_eid_uhr_operation(hapd, pos, false);
 		pos = hostapd_eid_uhr_params_update(hapd, pos, false, false);
+		pos = hostapd_eid_tx_power_indication(hapd, pos);
 	}
 #endif /* CONFIG_IEEE80211BN */
 	pos = hostapd_eid_security_profile(hapd, pos);
@@ -3640,8 +3642,10 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hostapd_is_uhr_enabled(hapd))
+	if (hostapd_is_uhr_enabled(hapd)) {
 		tail_len += (3 + sizeof(struct ieee80211_uhr_operation));
+		tail_len += hostapd_eid_tx_power_indication_len();
+	}
 #endif /* CONFIG_IEEE80211BN */
 
 #ifdef RDK_ONEWIFI
@@ -3947,7 +3951,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 			os_free(params->uhr_cap);
 			params->uhr_cap = NULL;
 		}
-
+		tailpos = hostapd_eid_tx_power_indication(hapd, tailpos);
 	}
 #endif /* CONFIG_IEEE80211BN */
 
