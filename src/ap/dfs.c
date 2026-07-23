@@ -1882,6 +1882,9 @@ int hostapd_is_dfs_chan_available(struct hostapd_iface *iface)
 	int n_chans, n_chans1, start_chan_idx, start_chan_idx1;
 	int chan_width = hostapd_get_oper_chwidth(iface->conf);
 
+	if (!iface->current_mode)
+		return 0;
+
 	/* Get the start (first) channel for current configuration */
 	start_chan_idx = dfs_get_start_chan_idx(iface, &start_chan_idx1,
 						chan_width,
