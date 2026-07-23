@@ -8037,8 +8037,11 @@ static int hostapd_prepare_successor_pre_beacon(struct hostapd_iface *iface)
 		return -1;
 
 	if (bss_succ->drv_priv != NULL &&
-	    bss_succ->drv_priv != iface->bss[0]->drv_priv)
+	    bss_succ->drv_priv != iface->bss[0]->drv_priv) {
+		if (bss_succ->started)
+			return 1;
 		return 0;
+	}
 
 	addr = bss_succ->own_addr;
 	wpa_printf(MSG_INFO, "iface is in pre-beacon state, prepare successor BSS");
@@ -8197,14 +8200,19 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 		if (hapd->iface->bss[0] == hapd &&
 		    hostapd_iface_in_pre_beacon_state(iface) &&
 		    iface->num_bss > 1) {
-			if (hostapd_prepare_successor_pre_beacon(iface) != 0) {
+			int prepare_ret;
+
+			prepare_ret =
+				hostapd_prepare_successor_pre_beacon(iface);
+			if (prepare_ret == 0)
+				successor_prepared = true;
+			else if (prepare_ret < 0) {
 				wpa_printf(MSG_ERROR,
 					  "iface is in pre-beacon state & initialization of successor BSS failed. Hence, removing iface");
 				if (hostapd_remove_hapd_iface(iface) == 0)
 					return 1;
 				return -1;
 			}
-			successor_prepared = true;
 		}
 		hapd->reenable = REENABLE_DEINIT;
 		hostapd_bss_deinit(hapd);
