@@ -38,7 +38,10 @@ enum uhr_smd_st_type {
 	UHR_SMD_ST_EXEC_RESP = 3,
 };
 
-#define UHR_ST_IAP_TIMEOUT_USEC 1000000
+#define UHR_ST_IAP_TIMEOUT_USEC 5000000
+
+/* UHR ST preparation timeout fallback when smd_timeout is not configured (5 seconds) */
+#define UHR_ST_PREP_TIMEOUT_SEC 5
 
 struct uhr_smd_bss_transition_element {
 	u16 listen_interval;

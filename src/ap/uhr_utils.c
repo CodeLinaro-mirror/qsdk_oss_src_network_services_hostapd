@@ -137,6 +137,8 @@ static void uhr_st_prep_timeout_handler(void *eloop_ctx, void *timeout_ctx)
 int uhr_cur_start_st_prep_timer(struct sta_info *sta, const u8 *ap_mld_addr, u32 seconds)
 {
 	struct smd_roam_ap_info *ap_info;
+	unsigned int timeout_sec = UHR_ST_PREP_TIMEOUT_SEC;
+
 	if (!sta || !ap_mld_addr) {
 		wpa_printf(MSG_ERROR, "UHR: Invalid parameters for ST prep timeout");
 		return -1;
@@ -154,15 +156,27 @@ int uhr_cur_start_st_prep_timer(struct sta_info *sta, const u8 *ap_mld_addr, u32
 	os_get_reltime(&ap_info->uhr_st_prep_start);
 	ap_info->uhr_st_prep_timeout_occurred = false;
 	ap_info->uhr_st_prep_timer_ongoing = true;
+
+
+	/* Derive timeout from smd_prep_timeout conf (units of 64 TUs, 1 TU = 1024 us);
+	 * fall back to UHR_ST_PREP_TIMEOUT_SEC when not configured. */
+	if (ap_info->st_prep_hapd &&
+	    ap_info->st_prep_hapd->conf->smd.smd_prep_timeout > 0) {
+		timeout_sec = ((unsigned int)ap_info->st_prep_hapd->conf->smd.smd_prep_timeout
+			       * 64 * 1024) / 1000000;
+		if (timeout_sec == 0)
+			timeout_sec = UHR_ST_PREP_TIMEOUT_SEC;
+	}
+
 	/* Start new timeout */
-	if (eloop_register_timeout(seconds, 0,
+	if (eloop_register_timeout(timeout_sec, 0,
 				   uhr_st_prep_timeout_handler, sta, ap_info) < 0) {
 		wpa_printf(MSG_ERROR, "UHR: Failed to register ST prep timeout");
 		ap_info->uhr_st_prep_timer_ongoing = false;
 		return -1;
 	}
 	wpa_printf(MSG_DEBUG, "UHR: Started ST prep timeout (%d sec) for AP " MACSTR,
-		   seconds, MAC2STR(ap_mld_addr));
+		   timeout_sec, MAC2STR(ap_mld_addr));
 	
 	return 0;
 }
@@ -714,7 +728,7 @@ void uhr_tgt_st_prep_timer_cleanup(void *eloop_ctx, void *timeout_ctx)
 
 
 /**
- * uhr_tgt_start_st_prep_timer - Start target prep timer
+ *_uhr_tgtart_st_prep_timer_start_st_prep_timer - Start target prep timer
  * @hapd: hostapd data
  * @sta_addr: Station MAC address
  *
@@ -733,6 +747,7 @@ void uhr_tgt_start_st_prep_timer(struct hostapd_data *hapd,
        if (!sta)
                return;
 
+
        /* Cancel any existing timer before registering a new one.
         * On re-prep the old eloop entry and its addr_copy must be
         * discarded, otherwise two timers fire against the same STA. */
@@ -748,8 +763,14 @@ void uhr_tgt_start_st_prep_timer(struct hostapd_data *hapd,
                sta->smd_info.uhr_target_prep_timer = 0;
        }
 
-       timeout_sec = (hapd->conf->smd.smd_prep_timeout * 64)/1000;
-
+       timeout_sec = UHR_ST_PREP_TIMEOUT_SEC;
+       if (hapd->conf->smd.smd_prep_timeout > 0) {
+               timeout_sec = ((unsigned int)hapd->conf->smd.smd_prep_timeout
+                              * 64 * 1024) / 1000000;
+               if (timeout_sec == 0)
+                       timeout_sec = UHR_ST_PREP_TIMEOUT_SEC;
+       }
+       			
        addr_copy = os_memdup(sta_addr, ETH_ALEN);
        if (!addr_copy)
                return;
