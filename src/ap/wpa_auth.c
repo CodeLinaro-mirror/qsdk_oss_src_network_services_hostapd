@@ -91,8 +91,10 @@ static const u32 eapol_key_timeout_no_retrans = 4000; /* ms */
 
 /* TODO: make these configurable */
 static const int dot11RSNAConfigPMKLifetime = 43200;
+#ifdef CONFIG_CTRL_IFACE_MIB
 static const int dot11RSNAConfigPMKReauthThreshold = 70;
 static const int dot11RSNAConfigSATimeout = 60;
+#endif /* CONFIG_CTRL_IFACE_MIB */
 
 
 static void wpa_gkeydone_sta(struct wpa_state_machine *sm)
@@ -7251,12 +7253,12 @@ void wpa_gtk_rekey(struct wpa_authenticator *wpa_auth)
 }
 
 
+#ifdef CONFIG_CTRL_IFACE_MIB
 static const char * wpa_bool_txt(int val)
 {
 	return val ? "TRUE" : "FALSE";
 }
 
-#ifdef CONFIG_CTRL_IFACE_MIB
 
 #define RSN_SUITE "%02x-%02x-%02x-%d"
 #define RSN_SUITE_ARG(s) \
