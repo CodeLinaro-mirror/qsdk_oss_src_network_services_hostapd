@@ -4377,6 +4377,7 @@ static void qca_nl80211_p2p_lo_stop_event(struct wpa_driver_nl80211_data *drv,
 	wpa_supplicant_event(drv->ctx, EVENT_P2P_LO_STOP, &event);
 }
 
+#endif /* CONFIG_DRIVER_NL80211_QCA */
 
 #ifdef CONFIG_PASN
 
@@ -4499,6 +4500,7 @@ fail:
 
 #endif /* CONFIG_PASN */
 
+#ifdef CONFIG_DRIVER_NL80211_QCA
 
 /* Converts nl80211_auth_type to WLAN_AUTH_* format */
 static int get_auth_algo(enum nl80211_auth_type auth_alg)
@@ -5380,11 +5382,6 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 	case QCA_NL80211_VENDOR_SUBCMD_P2P_LISTEN_OFFLOAD_STOP:
 		qca_nl80211_p2p_lo_stop_event(bss->drv, data, len);
 		break;
-#ifdef CONFIG_PASN
-	case QCA_NL80211_VENDOR_SUBCMD_PASN:
-		qca_nl80211_pasn_auth(bss, data, len);
-		break;
-#endif /* CONFIG_PASN */
 	case QCA_NL80211_VENDOR_SUBCMD_TID_TO_LINK_MAP:
 		qca_nl80211_tid_to_link_map_event(bss->drv, data, len);
 		break;
@@ -5401,6 +5398,11 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 		qca_nl80211_chain_mask_changed_event(bss, data, len);
 		break;
 #endif /* CONFIG_DRIVER_NL80211_QCA */
+#ifdef CONFIG_PASN
+	case QCA_NL80211_VENDOR_SUBCMD_PASN:
+		qca_nl80211_pasn_auth(bss, data, len);
+		break;
+#endif /* CONFIG_PASN */
 	default:
 #ifdef CONFIG_QCN_EXTN
 		if (!nl80211_vendor_event_qca_extn(bss, subcmd, data, len))
