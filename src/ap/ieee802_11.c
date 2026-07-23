@@ -697,6 +697,8 @@ static u16 validate_security_profile_common(
 		   " in %s auth",
 		   MAC2STR(addr), auth_context);
 
+	sta->sp_ie_validated = 1;
+
 	/* UHR Security Profile validated successfully */
 	if (sta->wpa_sm) {
 		sta->wpa_sm->security_profile_indication = 1;
@@ -4832,6 +4834,7 @@ static void hapd_pasn_update_params(struct hostapd_data *hapd,
 	struct wpabuf *wrapped_data = NULL;
 #endif /* CONFIG_FILS */
 	int akmp;
+	int has_security_profiles = hapd->conf->security_profiles ? 1 : 0;
 
 	if (ieee802_11_parse_elems(mgmt->u.auth.variable,
 				   len - offsetof(struct ieee80211_mgmt,
@@ -4849,10 +4852,21 @@ static void hapd_pasn_update_params(struct hostapd_data *hapd,
 		return;
 	}
 
-	if (!(rsn_data.key_mgmt & pasn->wpa_key_mgmt) ||
-	    !(rsn_data.pairwise_cipher & pasn->rsn_pairwise)) {
-		wpa_printf(MSG_DEBUG, "PASN: Mismatch in AKMP/cipher");
+	if (!(rsn_data.key_mgmt & pasn->wpa_key_mgmt)) {
+		wpa_printf(MSG_DEBUG, "PASN: Mismatch in AKMP");
 		return;
+	}
+
+	if (has_security_profiles && sta->sp_ie_validated) {
+		if (!(rsn_data.pairwise_cipher & (WPA_CIPHER_GCMP_256))) {
+			wpa_printf(MSG_DEBUG, "PASN: Pairwise cipher not allowed for Security Profile");
+			return;
+		}
+	} else {
+		if (!(rsn_data.pairwise_cipher & pasn->rsn_pairwise)) {
+			wpa_printf(MSG_DEBUG, "PASN: Mismatch in cipher");
+			return;
+		}
 	}
 
 #ifdef CONFIG_ENC_ASSOC
@@ -4977,8 +4991,6 @@ static void handle_auth_pasn(struct hostapd_data *hapd, struct sta_info *sta,
 
 		hapd_initialize_pasn(hapd, sta);
 
-		hapd_pasn_update_params(hapd, sta, mgmt, len);
-
 		/* UHR Security Profile validation during PASN frame 1.
 		 * Spec: if the first Authentication frame includes RSNE, RSNXE,
 		 * and a Security Profile element the AP must verify it matches
@@ -5007,6 +5019,11 @@ static void handle_auth_pasn(struct hostapd_data *hapd, struct sta_info *sta,
 				return;
 			}
 		}
+
+		if (sta->sp_ie_validated)
+			sta->pasn->sp_ie_in_pasn_activated = 1;
+
+		hapd_pasn_update_params(hapd, sta, mgmt, len);
 
 		ret = handle_auth_pasn_1(sta->pasn, hapd->own_addr, sta->addr,
 					 mgmt, len, false);

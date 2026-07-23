@@ -837,6 +837,9 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 	int ret, inc_y;
 	bool derive_keys;
 	u32 i;
+	int has_security_profiles = 0;
+	struct hostapd_data *hapd = (struct hostapd_data *)pasn->cb_ctx;
+	has_security_profiles = (hapd && hapd->conf && hapd->conf->security_profiles) ? 1 : 0;
 
 	if (!groups)
 		groups = default_groups;
@@ -894,11 +897,25 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 	}
 #endif /* CONFIG_ENC_ASSOC */
 
-	if (!(rsn_data.key_mgmt & pasn->wpa_key_mgmt) ||
-	    !(rsn_data.pairwise_cipher & pasn->rsn_pairwise)) {
-		wpa_printf(MSG_DEBUG, "PASN: Mismatch in AKMP/cipher");
+	if (!(rsn_data.key_mgmt & pasn->wpa_key_mgmt)) {
+		wpa_printf(MSG_DEBUG, "PASN: Mismatch in AKMP");
 		status = WLAN_STATUS_INVALID_RSNIE;
 		goto send_resp;
+	}
+
+
+	if (has_security_profiles && pasn->sp_ie_in_pasn_activated) {
+		if (!(rsn_data.pairwise_cipher & (WPA_CIPHER_GCMP_256))) {
+			wpa_printf(MSG_DEBUG, "PASN: Pairwise cipher not allowed for Security Profile");
+			status = WLAN_STATUS_INVALID_RSNIE;
+			goto send_resp;
+		}
+	} else {
+		if (!(rsn_data.pairwise_cipher & pasn->rsn_pairwise)) {
+			wpa_printf(MSG_DEBUG, "PASN: Mismatch in pairwise cipher");
+			status = WLAN_STATUS_INVALID_RSNIE;
+			goto send_resp;
+		}
 	}
 
 	pasn->akmp = rsn_data.key_mgmt;

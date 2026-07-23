@@ -299,6 +299,7 @@ struct sta_info {
 	unsigned int ft_over_ds:1;
 	unsigned int external_dh_updated:1;
 	unsigned int post_csa_sa_query:1;
+	unsigned int sp_ie_validated:1;
 
 	u16 auth_alg;
 
