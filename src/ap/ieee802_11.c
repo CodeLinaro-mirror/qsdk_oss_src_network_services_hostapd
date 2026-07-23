@@ -649,27 +649,20 @@ static bool validate_sta_security_profile(
 static u16 validate_security_profile_common(
 	struct hostapd_data *hapd,
 	struct sta_info *sta,
-	const u8 *ies,
-	size_t ies_len,
+	struct ieee802_11_elems *elems,
 	const char *auth_context,
 	struct security_profile_entry_ap *profile_matched)
 {
 	u8 *addr;
 
+
 	addr = sta->addr;
-
-	struct ieee802_11_elems elems;
-
-	if (ieee802_11_parse_elems(ies, ies_len, &elems, 1) == ParseFailed) {
-		wpa_printf(MSG_DEBUG, "Failed to parse IEs in %s", __func__);
-		return WLAN_STATUS_UNSPECIFIED_FAILURE;
-	}
 
 	/* Skip validation if no Security Profiles are configured */
 	if (!hapd->conf->security_profiles)
 		return WLAN_STATUS_SUCCESS;
 
-	if (!elems.security_profile_ie) {
+	if (!elems->security_profile_ie) {
 		/* No Security Profile element present - validation not needed */
 		return WLAN_STATUS_SUCCESS;
 	}
@@ -677,14 +670,14 @@ static u16 validate_security_profile_common(
 	wpa_printf(MSG_DEBUG,
 		   "UHR: Validating Security Profile from " MACSTR
 		   " in %s auth (body_len=%zu)",
-		   MAC2STR(addr), auth_context, elems.security_profile_ie_len);
+		   MAC2STR(addr), auth_context, elems->security_profile_ie_len);
 
 	/* Perform validation */
 	if (!validate_sta_security_profile(
 		    hapd, addr,
-		    elems.rsn_ie, elems.rsn_ie_len,
-		    elems.rsnxe, elems.rsnxe_len,
-		    elems.security_profile_ie, elems.security_profile_ie_len,
+		    elems->rsn_ie, elems->rsn_ie_len,
+		    elems->rsnxe, elems->rsnxe_len,
+		    elems->security_profile_ie, elems->security_profile_ie_len,
 		    profile_matched)) {
 		wpa_printf(MSG_INFO,
 			   "UHR: Rejecting %s auth from " MACSTR
@@ -711,6 +704,7 @@ static u16 validate_security_profile_common(
 
 	return WLAN_STATUS_SUCCESS;
 }
+
 
 u8 * hostapd_eid_supp_rates(struct hostapd_data *hapd, u8 *eid)
 {
@@ -2755,7 +2749,13 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 
 			if (pos) {
 				ies_len = remaining_len - (pos - mgmt->u.auth.variable);
-				resp = validate_security_profile_common(hapd, sta, pos, ies_len,
+				struct ieee802_11_elems elems;
+				if (ieee802_11_parse_elems(pos, ies_len, &elems, 1) == ParseFailed) {
+					wpa_printf(MSG_DEBUG, "Failed to parse IEs");
+					resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+					goto reply;
+				}
+				resp = validate_security_profile_common(hapd, sta, &elems,
 									"SAE", NULL);
 
 				if (resp != WLAN_STATUS_SUCCESS)
@@ -3948,8 +3948,8 @@ void handle_auth_fils(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 
 	if (hapd->conf->security_profiles) {
-		resp = validate_security_profile_common(hapd, sta, pos, len, "FILS", NULL);
-		if (!resp)
+		resp = validate_security_profile_common(hapd, sta, &elems, "FILS", NULL);
+		if (resp)
 			goto fail;
 	}
 
@@ -5011,8 +5011,12 @@ static void handle_auth_pasn(struct hostapd_data *hapd, struct sta_info *sta,
 			const u8 *var = mgmt->u.auth.variable;
 			size_t var_len = ((const u8 *) mgmt) + len - var;
 
-			if (validate_security_profile_common(hapd, sta,
-								 var, var_len, "PASN", NULL)) {
+			struct ieee802_11_elems elems;
+			if (ieee802_11_parse_elems(var, var_len, &elems, 1) == ParseFailed) {
+				wpa_printf(MSG_DEBUG, "Failed to parse IEs");
+				return;
+			}
+			if (validate_security_profile_common(hapd, sta, &elems, "PASN", NULL)) {
 
 				wpa_printf(MSG_INFO,
 						"UHR: Rejecting PASN auth from "
@@ -5724,9 +5728,14 @@ static void handle_auth(struct hostapd_data *hapd,
 #endif
 
 		if (hapd->conf->security_profiles) {
-			if (validate_security_profile_common(hapd, sta, mgmt->u.auth.variable,
-							     len - IEEE80211_HDRLEN - sizeof(mgmt->u.auth),
-							     "FT", NULL)) {
+			struct ieee802_11_elems elems;
+			size_t auth_var_len = len - IEEE80211_HDRLEN - sizeof(mgmt->u.auth);
+			if (ieee802_11_parse_elems(mgmt->u.auth.variable, auth_var_len, &elems, 1) == ParseFailed) {
+				wpa_printf(MSG_DEBUG, "Failed to parse IEs");
+				resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+				goto fail;
+			}
+			if (validate_security_profile_common(hapd, sta, &elems, "FT", NULL)) {
 				resp = WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE; 
 				goto fail;
 			}
@@ -5799,10 +5808,17 @@ static void handle_auth(struct hostapd_data *hapd,
 	}
 
 	if (hapd->conf->security_profiles) {
-		if (validate_security_profile_common(hapd, sta, mgmt->u.auth.variable,
-						     len - IEEE80211_HDRLEN - sizeof(mgmt->u.auth),
-						     "OTHER_Security Profiles", NULL))
+			struct ieee802_11_elems elems;
+			size_t auth_var_len = len - IEEE80211_HDRLEN - sizeof(mgmt->u.auth);
+			if (ieee802_11_parse_elems(mgmt->u.auth.variable, auth_var_len, &elems, 1) == ParseFailed) {
+				wpa_printf(MSG_DEBUG, "Failed to parse IEs");
+				resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+				goto fail;
+			}
+			if (validate_security_profile_common(hapd, sta, &elems, "Open", NULL)) {
+			resp = WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE;
 			goto fail;
+		}
 	}
 
  fail:
@@ -7229,13 +7245,10 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
-		bool is_assoc_link = (hapd->mld_link_id == sta->mld_assoc_link_id);
 
-		if ((hapd->conf->security_profiles && is_assoc_link)
-		    || (hapd->conf->security_profiles && !(ap_sta_is_mld(hapd,sta)))) {
+		if (hapd->conf->security_profiles) {
 
-			resp = validate_security_profile_common(hapd, sta,
-								ies, ies_len,
+			resp = validate_security_profile_common(hapd, sta, elems,
 								type == LINK_PARSE_REASSOC ?
 								"Reassoc" : "Assoc", &matched_profile);
 			if (resp != WLAN_STATUS_SUCCESS) {
@@ -7502,9 +7515,9 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		 * AP's rsn_pairwise setting.
 		 */
 		if (hapd->conf->security_profiles && !security_profile_matched &&
-		    elems->security_profile_ie && is_assoc_link) {
+		    elems->security_profile_ie) {
 			u16 sp_resp = validate_security_profile_common(
-				hapd, sta, ies, ies_len,
+				hapd, sta, elems,
 				type == LINK_PARSE_REASSOC ? "Reassoc" : "Assoc",
 				&matched_profile);
 
