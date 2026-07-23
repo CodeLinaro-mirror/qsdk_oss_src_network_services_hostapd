@@ -3166,6 +3166,95 @@ bool hostapd_dfs_intercac_agile_complete(struct hostapd_iface *iface,
 	return true;
 }
 
+int hostapd_dfs_intercac_defer_non_radar_switch(struct hostapd_iface *iface,
+						struct csa_settings *settings)
+{
+	struct hostapd_freq_params *freq;
+	enum oper_chan_width width, cur_oper_width;
+	int chan, n_chans, n_chans1, first_chan_idx, bw_mhz;
+	int n_chans_oper, n_chans_rcac;
+
+	if (!iface || !settings || !dfs_use_radar_background(iface) ||
+	    !dfs_is_agile_cac_enabled(iface))
+		return 0;
+
+	/* Radar-triggered switches are time-critical and must not be deferred. */
+	if (iface->radar_detected)
+		return 0;
+
+	freq = &settings->freq_params;
+	chan = freq->channel;
+	if (!chan || chan == iface->conf->channel)
+		return 0;
+
+	width = hostapd_chan_width_from_freq_params(freq);
+	n_chans = dfs_get_used_n_chans(iface, &n_chans1, width);
+	cur_oper_width = hostapd_get_oper_chwidth(iface->conf);
+	n_chans_oper = dfs_get_used_n_chans(iface, &n_chans1,
+					    cur_oper_width);
+	if (n_chans <= 0 || n_chans_oper <= 0)
+		return 0;
+	/*
+	 * Reuse the Inter CAC preferred-channel helper only to locate the
+	 * first channel index of the requested target block. Since completed
+	 * channel and preferred channel are both @chan and n_chans_oper equals
+	 * n_chans, this is equivalent to finding the preferred block start
+	 * while avoiding another open-coded channel-index lookup.
+	 */
+	if (!hostapd_dfs_intercac_is_pref_chan(iface->current_mode, chan, chan,
+					       n_chans, n_chans,
+					       &first_chan_idx))
+		return 0;
+
+	if (dfs_chan_range_available(iface->current_mode, first_chan_idx,
+				     n_chans, DFS_AVAILABLE)) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: requested ch %d width %d already available; allow switch",
+			   chan, width);
+		return 0;
+	}
+
+	/*
+	 * Do not switch to the requested channel now. Treat it as the new
+	 * Inter CAC preferred target and let the existing agile-complete path
+	 * perform step switching or final switching after CAC succeeds.
+	 */
+	iface->preferred_chan = chan;
+	iface->preferred_chan_width = width;
+	iface->user_rcac_channel = chan;
+
+	if (iface->radar_background.cac_started &&
+	    iface->radar_background.channel == chan) {
+		wpa_printf(MSG_INFO,
+			   "intercac: bg CAC already running on requested ch %d; keep it and defer switch",
+			   chan);
+		return 1;
+	}
+
+	if (iface->radar_background.cac_started ||
+	    iface->radar_background.channel > 0)
+		hostapd_abort_background_cac(iface);
+	n_chans_rcac = n_chans_oper < n_chans ? n_chans_oper : n_chans;
+	bw_mhz = n_chans_rcac * 20;
+
+	wpa_printf(MSG_INFO,
+		   "intercac: defer non-radar switch to ch %d width %d; start bg CAC with %dBW%d",
+		   chan, width, bw_mhz, cur_oper_width);
+
+	if (hostapd_start_rcac_on_channel(iface, chan, bw_mhz) == 0)
+		return 1;
+
+	wpa_printf(MSG_WARNING,
+		   "intercac: failed to start bg CAC for deferred ch %d; allow original switch",
+		   chan);
+	iface->preferred_chan = 0;
+	iface->user_rcac_channel = 0;
+	iface->preferred_chan_width = CONF_OPER_CHWIDTH_USE_HT;
+
+	return 0;
+}
+
+
 /**
  * hostapd_agile_complete - Handle Agile CAC (RCAC/PreCAC) completion
  * @iface: Pointer to hostapd interface data
