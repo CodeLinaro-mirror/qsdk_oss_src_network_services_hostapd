@@ -28,6 +28,17 @@
 #define EHT_MCS_NSS_MAP_UNSET 0xffffU
 #define EHT_MCS_NSS_SET 3
 
+#define HE_MCS_NSS_MAP_UNSET 0xffffffffU
+#define HE_MCS_NSS_SET 2
+
+#ifdef CONFIG_IEEE80211AX
+static inline bool hostapd_he_mcs_nss_set_is_set(const u32 mcs_nss_set[HE_MCS_NSS_SET])
+{
+	return mcs_nss_set[0] != HE_MCS_NSS_MAP_UNSET ||
+		mcs_nss_set[1] != HE_MCS_NSS_MAP_UNSET;
+}
+#endif /* CONFIG_IEEE80211AX */
+
 #ifdef CONFIG_IEEE80211BE
 static inline bool hostapd_eht_mcs_nss_set_is_set(const u16 mcs_nss_set[EHT_MCS_NSS_SET])
 {
@@ -1317,6 +1328,10 @@ struct hostapd_bss_config {
 	u16 vht_mcs_nss_set;
 #endif /* CONFIG_IEEE80211AC */
 	u32 ht_mcs_nss_set;
+#ifdef CONFIG_IEEE80211AX
+	u32 he_tx_mcs_nss_set[HE_MCS_NSS_SET];
+	u32 he_rx_mcs_nss_set[HE_MCS_NSS_SET];
+#endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
 	u16 eht_tx_mcs_nss_set[EHT_MCS_NSS_SET];
 	u16 eht_rx_mcs_nss_set[EHT_MCS_NSS_SET];

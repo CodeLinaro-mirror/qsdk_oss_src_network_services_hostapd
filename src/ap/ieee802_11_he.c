@@ -98,6 +98,51 @@ static bool hostapd_conf_he_btwt_enabled(struct hostapd_data *hapd)
 	return (hapd->conf->twt_responder_caps >= TWT_ITWT_BTWT_ENABLED);
 }
 
+static void intersect_he_mcs_map(u8 *pos, const u8 *hw_mcs, size_t mcs_len,
+				 const u32 *usr_tx_mcs, const u32 *usr_rx_mcs)
+{
+	size_t bw, bw_idx, byte_off;
+	u16 hw_rx, hw_tx, usr_rx, usr_tx, out_rx, out_tx;
+	int nss;
+
+	for (bw = 0; bw < mcs_len / 4; bw++) {
+		byte_off = bw * 4;
+		bw_idx = bw < HE_MCS_NSS_SET ? bw : HE_MCS_NSS_SET - 1;
+
+		hw_rx  = WPA_GET_LE16(hw_mcs + byte_off);
+		hw_tx  = WPA_GET_LE16(hw_mcs + byte_off + 2);
+		/* HE_MCS_NSS_MAP_UNSET is both the default (no config) and the
+		 * explicit user value to request hardware defaults for a slot. */
+		usr_rx = (u16)(usr_rx_mcs[bw_idx] == HE_MCS_NSS_MAP_UNSET ?
+			       hw_rx : usr_rx_mcs[bw_idx]);
+		usr_tx = (u16)(usr_tx_mcs[bw_idx] == HE_MCS_NSS_MAP_UNSET ?
+			       hw_tx : usr_tx_mcs[bw_idx]);
+
+		out_rx = 0;
+		out_tx = 0;
+		for (nss = 0; nss < 8; nss++) {
+			u16 hw_rx_nss  = (hw_rx >> (nss * 2)) & 0x3;
+			u16 hw_tx_nss  = (hw_tx >> (nss * 2)) & 0x3;
+			u16 usr_rx_nss = (usr_rx >> (nss * 2)) & 0x3;
+			u16 usr_tx_nss = (usr_tx >> (nss * 2)) & 0x3;
+
+			if (hw_rx_nss == 0x3 || usr_rx_nss == 0x3)
+				out_rx |= (u16)0x3 << (nss * 2);
+			else
+				out_rx |= (u16)MIN(hw_rx_nss, usr_rx_nss) <<
+					  (nss * 2);
+
+			if (hw_tx_nss == 0x3 || usr_tx_nss == 0x3)
+				out_tx |= (u16)0x3 << (nss * 2);
+			else
+				out_tx |= (u16)MIN(hw_tx_nss, usr_tx_nss) <<
+					  (nss * 2);
+		}
+		WPA_PUT_LE16(pos + byte_off, out_rx);
+		WPA_PUT_LE16(pos + byte_off + 2, out_tx);
+	}
+}
+
 u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
 			  enum ieee80211_op_mode opmode)
 {
@@ -143,7 +188,13 @@ u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
 	os_memcpy(cap->he_phy_capab_info, he_capab->phy_cap,
 		  HE_MAX_PHY_CAPAB_SIZE);
 	epos = (u8 *) &cap->he_basic_supported_mcs_set;
-	os_memcpy(epos, he_capab->mcs, mcs_nss_size);
+	if (hostapd_he_mcs_nss_set_is_set(hapd->conf->he_tx_mcs_nss_set) ||
+	    hostapd_he_mcs_nss_set_is_set(hapd->conf->he_rx_mcs_nss_set))
+		intersect_he_mcs_map(epos, he_capab->mcs, mcs_nss_size,
+				     hapd->conf->he_tx_mcs_nss_set,
+				     hapd->conf->he_rx_mcs_nss_set);
+	else
+		os_memcpy(epos, he_capab->mcs, mcs_nss_size);
 	epos += mcs_nss_size;
 
 	if (ppet_size)
