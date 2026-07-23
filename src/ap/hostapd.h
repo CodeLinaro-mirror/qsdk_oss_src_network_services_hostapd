@@ -1029,6 +1029,7 @@ struct hostapd_iface {
 	u64 last_channel_time;
 	u64 last_channel_time_busy;
 	u8 channel_utilization;
+	struct os_reltime ch_util_update_time;
 
 	unsigned int chan_util_samples_sum;
 	unsigned int chan_util_num_sample_periods;
