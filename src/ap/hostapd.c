@@ -10169,6 +10169,9 @@ int hostapd_mld_link_config_check(struct hostapd_data *hapd)
 int hostapd_mld_add_link(struct hostapd_data *hapd)
 {
 	struct hostapd_mld *mld = hapd->mld;
+#ifdef CONFIG_IEEE80211BN
+	struct hostapd_data *first;
+#endif /* CONFIG_IEEE80211BN */
 
 	if (!hapd->conf->mld_ap)
 		return 0;
@@ -10179,6 +10182,28 @@ int hostapd_mld_add_link(struct hostapd_data *hapd)
 
 	if (mld->fbss && hostapd_mld_link_config_check(hapd) < 0)
 		return -1;
+
+#ifdef CONFIG_IEEE80211BN
+	first = mld->fbss;
+	if (first) {
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
+			first = NULL;
+		else if (hostapd_is_repurpose_disabled_11be_extn(first->conf))
+			first = hostapd_get_non_repurposed_link_of_mld_extn(hapd);
+#endif /* CONFIG_QCN_EXTN */
+
+		if (first &&
+		    hapd->iconf->ieee80211bn != first->iconf->ieee80211bn) {
+			wpa_printf(MSG_ERROR,
+				   "AP MLD %s: Mixed Wi-Fi generation modes not allowed (link %d: ieee80211bn=%d, first link: ieee80211bn=%d)",
+				   mld->name, hapd->mld_link_id,
+				   hapd->iconf->ieee80211bn,
+				   first->iconf->ieee80211bn);
+			return -1;
+		}
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 	dl_list_add_tail(&mld->links, &hapd->link);
 	mld->num_links++;
