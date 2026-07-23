@@ -7141,18 +7141,50 @@ static s8 validate_user_eirp_tx_power(struct hostapd_data *hapd, s8 *local_tx_pw
 				      u8 local_max_txpwr_count,
 				      u8 ext_tx_pwr_val_count,
 				      enum max_tx_pwr_interpretation tx_pwr_intrpn,
-				      u8 client_mode)
+				      u8 client_mode, u8 tx_pwr_count)
 {
 	s8 max_eirp_pwr[TPE_NUM_POWER_SUPP_IN_11BE] = {0};
 	struct hostapd_iface *iface = hapd->iface;
 	struct hostapd_config *iconf = iface->conf;
 	enum chan_width ch_width;
-	u8 cen320, pwr_type;
+	u8 cen320, pwr_type, expected_tx_pwr_count = 0;
 	u16 freq;
 	u8 i = 0;
 
 	pwr_type = iface->conf->he_6ghz_reg_pwr_type;
 	ch_width = hostapd_get_chan_width_from_oper_chan_width(hapd->iconf);
+
+	switch (ch_width) {
+		case CHAN_WIDTH_20:
+			expected_tx_pwr_count = 0;
+			break;
+		case CHAN_WIDTH_40:
+			expected_tx_pwr_count = 1;
+			break;
+		case CHAN_WIDTH_80:
+			expected_tx_pwr_count = 2;
+			break;
+		case CHAN_WIDTH_160:
+			expected_tx_pwr_count = 3;
+			break;
+		case CHAN_WIDTH_320:
+			expected_tx_pwr_count = 4;
+			break;
+		default:
+			wpa_printf(MSG_ERROR,
+					"TPE: Unsupported channel width %d for LOCAL_EIRP",
+					ch_width);
+			return -1;
+	}
+
+	if (tx_pwr_count != expected_tx_pwr_count) {
+		wpa_printf(MSG_ERROR,
+				"TPE: Invalid tx_pwr_count %d for current channel "
+				"configuration, expected %d (ch_width=%d)",
+				tx_pwr_count, expected_tx_pwr_count,
+				ch_width);
+		return -1;
+	}
 
 	if (ext_tx_pwr_val_count && ch_width < CHAN_WIDTH_320) {
 		wpa_printf(MSG_ERROR, "Extended tx power is not applicable for current bw");
@@ -7185,7 +7217,7 @@ static s8 validate_user_psd_tx_power(struct hostapd_data *hapd,
 				     u8 local_max_txpwr_count,
 				     u8 ext_tx_pwr_val_count,
 				     enum max_tx_pwr_interpretation tx_pwr_intrpn,
-				     s8 client_mode)
+				     s8 client_mode, u8 tx_pwr_count)
 {
 	struct hostapd_iface *iface = hapd->iface;
 	s8 max_tx_pwr_ext[MAX_PSD_TPE_EXT_POWER_COUNT] = {0};
@@ -7194,9 +7226,10 @@ static s8 validate_user_psd_tx_power(struct hostapd_data *hapd,
 	int non_11be_start_idx = 0, chan_start_idx = 0;
 	u8 pwr_mode = iface->conf->he_6ghz_reg_pwr_type;
 	s8 max_tx_pwr[MAX_PSD_TPE_POWER_COUNT] = {0};
-	u8 tx_pwr_count = 0, tx_pwr_ext_count = 0;
+	u8 computed_tx_pwr_count = 0, tx_pwr_ext_count = 0;
 	struct ieee_chan_data chan_data;
 	s8 i = 0, j = 0, ret;
+	u8 expected_tx_pwr_count = 0;
 	s8 tpe_11ax_count;
 
 	tpe_11ax_count = local_max_txpwr_count - ext_tx_pwr_val_count;
@@ -7218,9 +7251,41 @@ static s8 validate_user_psd_tx_power(struct hostapd_data *hapd,
 		goto free;
 	}
 
+	switch (non_11be_chan_count) {
+		case 1:
+			expected_tx_pwr_count = 1;
+			break;
+		case 2:
+			expected_tx_pwr_count = 2;
+			break;
+		case 4:
+			expected_tx_pwr_count = 3;
+			break;
+		case 8:
+			expected_tx_pwr_count = 4;
+			break;
+		default:
+			wpa_printf(MSG_ERROR,
+					"TPE: Unsupported non-11BE channel count %d",
+					non_11be_chan_count);
+			ret = -1;
+			goto free;
+	}
+
+	if (tx_pwr_count != expected_tx_pwr_count) {
+		wpa_printf(MSG_ERROR,
+				"TPE: Invalid tx_pwr_count %d for current channel "
+				"configuration, expected %d (non_11be_chan_count=%d)",
+				tx_pwr_count, expected_tx_pwr_count,
+				non_11be_chan_count);
+		ret = -1;
+		goto free;
+	}
+
 	ret = get_psd_values(hapd, non_11be_start_idx, chan_start_idx,
-			     non_11be_chan_count, total_chan_count, &tx_pwr_count,
-			     max_tx_pwr, &tx_pwr_ext_count, max_tx_pwr_ext,
+			     non_11be_chan_count, total_chan_count,
+			     &computed_tx_pwr_count, max_tx_pwr,
+			     &tx_pwr_ext_count, max_tx_pwr_ext,
 			     client_mode, chan_data, pwr_mode, tx_pwr_intrpn);
 	if (ret) {
 		wpa_printf(MSG_ERROR, "failed to get the PSD values");
@@ -8124,7 +8189,8 @@ static s8 validate_user_max_tx_pwr(struct hostapd_data *hapd,
 				   u8 local_max_txpwr_count,
 				   u8 ext_tx_pwr_val_count,
 				   u8 txpwr_cat,
-				   enum max_tx_pwr_interpretation tx_pwr_intrpn)
+				   enum max_tx_pwr_interpretation tx_pwr_intrpn,
+				   u8 tx_pwr_count)
 {
 	u8 client_mode;
 	s8 ret;
@@ -8142,14 +8208,14 @@ static s8 validate_user_max_tx_pwr(struct hostapd_data *hapd,
 						  local_max_txpwr_count,
 						  ext_tx_pwr_val_count,
 						  tx_pwr_intrpn,
-						  client_mode);
+						  client_mode, tx_pwr_count);
 	else if (tx_pwr_intrpn == LOCAL_EIRP_PSD)
 		ret = validate_user_psd_tx_power(hapd,
 						 local_max_txpwr,
 						 local_max_txpwr_count,
 						 ext_tx_pwr_val_count,
 						 tx_pwr_intrpn,
-						 client_mode);
+						 client_mode, tx_pwr_count);
 
 	return ret;
 }
@@ -8315,7 +8381,7 @@ int hostapd_ctrl_iface_set_tpe(struct hostapd_data *hapd, char *cmd)
 				       local_max_txpwr_count,
 				       ext_tx_pwr_val_count,
 				       txpwr_cat,
-				       tx_pwr_intrpn);
+				       tx_pwr_intrpn, tx_pwr_count);
 	if (ret < 0)
 		return -1;
 
