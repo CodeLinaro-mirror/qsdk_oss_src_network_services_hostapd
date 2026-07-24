@@ -2729,59 +2729,86 @@ int hostapd_dfs_precac_restart_after_radar(struct hostapd_iface *iface,
 	return hostapd_dfs_start_precac(iface);
 }
 
-static bool hostapd_dfs_intercac_preferred_chan_usable(struct hostapd_iface *iface,
-						       int preferred_chan,
-						       enum oper_chan_width preferred_width)
+static bool
+hostapd_dfs_intercac_is_pref_chan(struct hostapd_hw_modes *mode,
+				  int completed_chan,
+				  int preferred_chan,
+				  int n_chans_pref,
+				  int n_chans_oper,
+				  int *first_chan_idx)
 {
-	struct hostapd_hw_modes *mode;
-	int n_chans, n_chans1, first_chan_idx, i;
+	int i;
 
-	wpa_printf(MSG_DEBUG,
-		   "intercac: check_fully_available(ch %d, width %d)",
-		   preferred_chan, preferred_width);
-
-	if (!iface->current_mode)
-		return false;
-
-	mode = iface->current_mode;
-
-	n_chans = dfs_get_used_n_chans(iface, &n_chans1, preferred_width);
-	if (n_chans <= 0) {
-		wpa_printf(MSG_ERROR,
-			   "intercac: check_fully_available: n_chans failed for width %d",
-			   preferred_width);
-		return false;
-	}
-
-	first_chan_idx = -1;
+	*first_chan_idx = -1;
 	for (i = 0; i < mode->num_channels; i++) {
 		if (mode->channels[i].chan == preferred_chan) {
-			first_chan_idx = i;
+			*first_chan_idx = i;
 			break;
 		}
 	}
-	if (first_chan_idx < 0) {
+
+	if (*first_chan_idx < 0)
+		return false;
+
+	for (i = 0; i < n_chans_pref; i += n_chans_oper) {
+		if (*first_chan_idx + i >= mode->num_channels)
+			break;
+		if (mode->channels[*first_chan_idx + i].chan == completed_chan)
+			return true;
+	}
+
+	return false;
+}
+
+static bool
+hostapd_dfs_intercac_check_pref_block(struct hostapd_iface *iface,
+				      int pref_chan,
+				      enum oper_chan_width chan_width,
+				      int *n_chans_out,
+				      bool *all_available)
+{
+	int n_chans, n_chans1, start_chan_idx, radar_chans;
+
+	/*
+	 * DFS state is stored per 20 MHz channel in hostapd_channel_data.
+	 * hw_mode_get_channel() returns only the single channel entry matching
+	 * a frequency. For Inter CAC boot, validate the whole preferred
+	 * operating bandwidth block instead of only the primary channel.
+	 */
+	n_chans = dfs_get_used_n_chans(iface, &n_chans1, chan_width);
+	if (n_chans <= 0) {
 		wpa_printf(MSG_ERROR,
-			   "intercac: check_fully_available: ch %d not found in channel list",
-			   preferred_chan);
+			   "intercac: boot: preferred n_chans failed for width %d",
+			   chan_width);
 		return false;
 	}
 
-	wpa_printf(MSG_DEBUG,
-		   "intercac: check_fully_available: ch %d width %d n_chans=%d first_idx=%d",
-		   preferred_chan, preferred_width, n_chans, first_chan_idx);
-
-	if (!dfs_chan_range_available(mode, first_chan_idx, n_chans,
-				      DFS_AVAILABLE)) {
+	start_chan_idx = dfs_get_start_chan_idx(iface, &n_chans1,
+						chan_width,
+						pref_chan, false);
+	if (start_chan_idx < 0) {
 		wpa_printf(MSG_DEBUG,
-			   "intercac: check_fully_available: ch %d not fully available",
-			   preferred_chan);
+			   "intercac: boot: preferred ch %d width %d not usable",
+			   pref_chan, chan_width);
 		return false;
 	}
 
-	wpa_printf(MSG_INFO,
-		   "intercac: check_fully_available: ALL %d sub-chans of ch %d (width %d) DFS_AVAILABLE",
-		   n_chans, preferred_chan, preferred_width);
+	radar_chans = dfs_check_chans_radar(iface, start_chan_idx, n_chans);
+	wpa_printf(MSG_DEBUG,
+		   "intercac: boot: preferred block ch %d width %d has %d DFS channels",
+		   pref_chan, chan_width, radar_chans);
+	if (!radar_chans)
+		return false;
+
+	*all_available = dfs_check_chans_available(iface, start_chan_idx,
+						   n_chans);
+	if (*all_available)
+		wpa_printf(MSG_INFO,
+			   "intercac: preferred block ch %d width %d already DFS available",
+			   pref_chan, chan_width);
+
+	if (n_chans_out)
+		*n_chans_out = n_chans;
 
 	return true;
 }
@@ -2790,10 +2817,10 @@ bool hostapd_dfs_intercac_boot(struct hostapd_iface *iface)
 {
 	struct hostapd_config *conf;
 	enum oper_chan_width chan_width, inter_width;
-	struct hostapd_channel_data *chan;
 	int inter_freq, inter_sec, inter_bw_mhz;
 	u8 inter_seg0;
 	int n_chans, n_chans1;
+	bool pref_block_available;
 
 	wpa_printf(MSG_DEBUG, "intercac: boot called");
 
@@ -2815,36 +2842,21 @@ bool hostapd_dfs_intercac_boot(struct hostapd_iface *iface)
 		return false;
 	}
 
-	chan = hw_mode_get_channel(iface->current_mode, iface->freq, NULL);
-	if (!chan || !(chan->flag & HOSTAPD_CHAN_RADAR)) {
-		wpa_printf(MSG_DEBUG,
-			   "intercac: boot: ch %d not DFS, skip",
-			   conf->channel);
-		return false;
-	}
-
-	if ((chan->flag & HOSTAPD_CHAN_DFS_MASK) == HOSTAPD_CHAN_DFS_AVAILABLE) {
-		wpa_printf(MSG_INFO,
-			   "intercac: preferred chan %d already DFS available flags=0x%x",
-			   chan->chan, chan->flag);
-		return false;
-	}
-
 	chan_width = hostapd_get_oper_chwidth(conf);
 	wpa_printf(MSG_DEBUG,
 		   "intercac: boot: DFS ch %d chan_width=%d intercac_chwidth=%d",
 		   conf->channel, chan_width, conf->intercac_chwidth);
 
-	/* Currently only (precac bw = operation bw) is supported */
-	if (conf->intercac_chwidth != chan_width) {
+	if (!hostapd_dfs_intercac_check_pref_block(iface, conf->channel, chan_width,
+						   NULL, &pref_block_available)) {
 		wpa_printf(MSG_DEBUG,
-			   "intercac: boot: BW mismatch (inter=%d chan=%d), not supported",
-			   conf->intercac_chwidth, chan_width);
+			   "intercac: boot: preferred block ch %d width %d does not need DFS, skip",
+			   conf->channel, chan_width);
 		return false;
 	}
 
-	/* Use dfs_get_used_n_chans() to derive BW in MHz from chan_width.
-	 * Returns 4 for 80 MHz, 8 for 160 MHz, 2 for HT40. */
+	if (pref_block_available)
+		return false;
 
 	n_chans = dfs_get_used_n_chans(iface, &n_chans1,
 			conf->intercac_chwidth);
@@ -2895,6 +2907,74 @@ bool hostapd_dfs_intercac_boot(struct hostapd_iface *iface)
 	return true;
 }
 
+static void
+hostapd_dfs_intercac_step_subchan(struct hostapd_iface *iface,
+				  int preferred_chan,
+				  enum oper_chan_width preferred_width,
+				  int completed_chan,
+				  enum oper_chan_width cur_oper_width,
+				  int first_chan_idx,
+				  int n_chans_pref,
+				  int n_chans_oper)
+{
+	struct hostapd_hw_modes *mode = iface->current_mode;
+	int i, next_chan = 0, freq, bw_mhz;
+	enum oper_chan_width oper_width;
+	struct hostapd_channel_data *chan_data;
+	u8 seg0;
+	int sec;
+
+	/* Walk sub-blocks to find first uncleaned one */
+	for (i = 0; i < n_chans_pref; i += n_chans_oper) {
+		if (first_chan_idx + i >= mode->num_channels)
+			break;
+		if (!dfs_chan_range_available(mode, first_chan_idx + i,
+					     n_chans_oper, DFS_AVAILABLE)) {
+			next_chan = mode->channels[first_chan_idx + i].chan;
+			break;
+		}
+	}
+
+	freq = hostapd_hw_get_freq(iface->bss[0], completed_chan);
+	if (freq <= 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: step_subchan: freq lookup failed for ch %d",
+			   completed_chan);
+		return;
+	}
+
+	bw_mhz = n_chans_oper * 20;
+
+	if (hostapd_dfs_compute_bgcac_chan_params(completed_chan, bw_mhz,
+						  &oper_width, &seg0, &sec) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: step_subchan: compute params failed for ch %d",
+			   completed_chan);
+		return;
+	}
+
+	chan_data = hw_mode_get_channel(iface->current_mode, freq, NULL);
+	if (chan_data) {
+		int refined = dfs_is_chan_allowed(chan_data, 2) ? 1 : -1;
+
+		wpa_printf(MSG_DEBUG,
+			   "intercac: step_subchan: refined sec %d->%d via dfs_is_chan_allowed",
+			   sec, refined);
+		sec = refined;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "intercac: STEPPING to sub-chan %d (width %d), next RCAC ch %d, preferred ch %d (width %d) pending",
+		   completed_chan, cur_oper_width, next_chan,
+		   preferred_chan, preferred_width);
+
+	/* Pin RCAC to next uncleaned sub-channel */
+	iface->user_rcac_channel = next_chan;
+
+	hostapd_dfs_request_channel_switch(iface, completed_chan, freq,
+					   sec, cur_oper_width, seg0, 0, 0);
+}
+
 bool hostapd_dfs_intercac_agile_complete(struct hostapd_iface *iface,
 					 int success)
 {
@@ -2905,7 +2985,11 @@ bool hostapd_dfs_intercac_agile_complete(struct hostapd_iface *iface,
 	u8 seg0;
 	int sec;
 	struct hostapd_channel_data *chan_data = NULL;
-	int n_chans, n_chans1;
+	enum oper_chan_width cur_oper_width;
+	int completed_chan;
+	int n_chans_pref, n_chans_oper, n_chans1;
+	int first_chan_idx;
+	struct hostapd_hw_modes *mode;
 
 	wpa_printf(MSG_DEBUG,
 		   "intercac: agile_complete(success=%d)", success);
@@ -2928,12 +3012,50 @@ bool hostapd_dfs_intercac_agile_complete(struct hostapd_iface *iface,
 		return false;
 	}
 
-	if (!hostapd_dfs_intercac_preferred_chan_usable(iface, preferred_chan,
-							preferred_width)) {
-		wpa_printf(MSG_DEBUG,
-			   "intercac: agile_complete: full BW not ready, waiting");
+	cur_oper_width = hostapd_get_oper_chwidth(iface->conf);
+	completed_chan = iface->radar_background.channel;
+	mode = iface->current_mode;
+
+	wpa_printf(MSG_DEBUG,
+		   "intercac: agile_complete: cur_oper_width=%d completed_chan=%d",
+		   cur_oper_width, completed_chan);
+
+	n_chans_pref = dfs_get_used_n_chans(iface, &n_chans1, preferred_width);
+	n_chans_oper = dfs_get_used_n_chans(iface, &n_chans1, cur_oper_width);
+	bw_mhz = n_chans_pref * 20;
+	if (n_chans_pref <= 0 || n_chans_oper <= 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: agile_complete: n_chans failed (pref=%d oper=%d)",
+			   n_chans_pref, n_chans_oper);
 		return false;
 	}
+
+	if (!hostapd_dfs_intercac_is_pref_chan(mode, completed_chan,
+					       preferred_chan,
+					       n_chans_pref, n_chans_oper,
+					       &first_chan_idx)) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: agile_complete: completed ch %d not a sub-block of preferred ch %d, ignoring",
+			   completed_chan, preferred_chan);
+		return false;
+	}
+
+	if (!dfs_chan_range_available(mode, first_chan_idx, n_chans_pref,
+				      DFS_AVAILABLE)) {
+		/* Preferred block not fully available yet: intermediate step */
+		hostapd_dfs_intercac_step_subchan(iface, preferred_chan,
+						  preferred_width,
+						  completed_chan,
+						  cur_oper_width,
+						  first_chan_idx,
+						  n_chans_pref, n_chans_oper);
+		return true;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "intercac: agile_complete: all sub-chans cleared, upgrading to ch %d (width %d)",
+		   preferred_chan, preferred_width);
+
 
 	freq = hostapd_hw_get_freq(iface->bss[0], preferred_chan);
 	if (freq <= 0) {
@@ -2942,15 +3064,6 @@ bool hostapd_dfs_intercac_agile_complete(struct hostapd_iface *iface,
 			   preferred_chan);
 		return false;
 	}
-
-	n_chans = dfs_get_used_n_chans(iface, &n_chans1, preferred_width);
-	if (n_chans <= 0) {
-		wpa_printf(MSG_ERROR,
-				"intercac: agile_complete: n_chans failed for width %d",
-				preferred_width);
-		return false;
-	}
-	bw_mhz = n_chans * 20;
 
 	if (hostapd_dfs_compute_bgcac_chan_params(preferred_chan, bw_mhz,
 						  &oper_width, &seg0, &sec) < 0) {
@@ -2970,9 +3083,8 @@ bool hostapd_dfs_intercac_agile_complete(struct hostapd_iface *iface,
 	}
 
 	wpa_printf(MSG_INFO,
-		   "intercac: SWITCHING - full BW ready for ch %d width %d, intermediate ch %d",
-		   preferred_chan, preferred_width,
-		   iface->conf->channel);
+		   "intercac: SWITCHING to ch %d width %d",
+		   preferred_chan, preferred_width);
 
 	iface->preferred_chan = 0;
 	hostapd_dfs_request_channel_switch(iface, preferred_chan, freq,
