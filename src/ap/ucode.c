@@ -761,6 +761,14 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 		os_strlcpy(iface->iface_extn.sta_wpa_state, wpa_state,
 				sizeof(iface->iface_extn.sta_wpa_state));
 	}
+	iface->iface_extn.dfs_available_from_sta = false;
+
+	wpa_printf(MSG_INFO,
+		   "%s: state=%d sta_wpa_state=\"%s\" ind_rptr=%d rpt_max_phy=%d",
+		   __func__, iface->state,
+		   iface->iface_extn.sta_wpa_state,
+		   iface->conf->conf_extn.ind_rptr,
+		   iface->conf->conf_extn.rpt_max_phy);
 
 	if (iface->conf->conf_extn.ind_rptr)
 		return NULL;
@@ -825,13 +833,32 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 		os_strlcpy(iface->iface_extn.sta_wpa_state, wpa_state,
 				sizeof(iface->iface_extn.sta_wpa_state));
 	}
+        intval = ucv_int64_get(ucv_object_get(info, "frequency", NULL));
+        if (!errno)
+                iface->freq = intval;
+        else
+                iface->freq = 0;
+
+
+	wpa_printf(MSG_INFO,
+		   "%s: freq=%d, state=%d sta_wpa_state=\"%s\" ind_rptr=%d rpt_max_phy=%d",
+		   __func__, iface->freq, iface->state,
+		   iface->iface_extn.sta_wpa_state,
+		   iface->conf->conf_extn.ind_rptr,
+		   iface->conf->conf_extn.rpt_max_phy);
+
+        if (iface->conf->conf_extn.ind_rptr)
+                return NULL;
+
+	if (info && !iface->freq) {
+		conf = iface->conf;
+		goto out;
+	}
 
 	intval = ucv_int64_get(ucv_object_get(info, "mcst", NULL));
 	if (!errno)
 		mcst = intval;
 
-	if (iface->conf->conf_extn.ind_rptr)
-		return NULL;
 #endif
 #define UPDATE_VAL(field, name)							\
 	if ((intval = ucv_int64_get(ucv_object_get(info, name, NULL))) &&	\
@@ -875,11 +902,6 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	if (!errno)
 		hostapd_set_oper_chwidth(conf, intval);
 
-	intval = ucv_int64_get(ucv_object_get(info, "frequency", NULL));
-	if (!errno)
-		iface->freq = intval;
-	else
-		iface->freq = 0;
 	conf->acs = 0;
 
 	intval = ucv_int64_get(ucv_object_get(info, "punct_bitmap", NULL));
@@ -902,7 +924,7 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	}
 
 	if (!errno && conf->conf_extn.skip_cac)
-		skip_cac_rep = is_dfs && !iface->mcst;
+		skip_cac_rep = iface->iface_extn.dfs_available_from_sta = is_dfs && !iface->mcst;
 	wpa_printf(MSG_INFO, "%s: is_dfs=%d mcst=%u TU cs_time=%u ms skip_cac_rep=%d",
 		   __func__, is_dfs, iface->mcst, iface->cs_time, skip_cac_rep);
 #endif

@@ -1458,6 +1458,7 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 			   iface->mcst);
 	} else {
 		data.skip_cac = (iface->cac_type != HAPD_CAC_COMPLETE_AFTER_CSA) &&
+				iface->iface_extn.dfs_available_from_sta &&
 				 iface->conf->conf_extn.skip_cac;
 		if (is_dfs && iface->mcst &&
 		    iface->conf->conf_extn.skip_cac) {
