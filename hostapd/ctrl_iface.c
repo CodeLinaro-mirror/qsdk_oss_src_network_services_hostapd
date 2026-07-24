@@ -1583,9 +1583,14 @@ static int hostapd_ctrl_iface_log_peer(struct hostapd_data *hapd,
 	if (os_strcmp(cmd, "clear") == 0) {
 		hapd->log_peer_filter_set = 0;
 		os_memset(hapd->log_peer_addr, 0, ETH_ALEN);
+#ifdef CONFIG_QCN_EXTN
+		hostapd_log_trigger_clear(hapd, NULL);
+#endif /* CONFIG_QCN_EXTN */
 		return 0;
 	}
 	if (hwaddr_aton(cmd, addr) < 0)
+		return -1;
+	if (is_multicast_ether_addr(addr))
 		return -1;
 	hapd->log_peer_filter_set = 1;
 	os_memcpy(hapd->log_peer_addr, addr, ETH_ALEN);
