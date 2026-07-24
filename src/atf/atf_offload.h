@@ -71,6 +71,8 @@ enum atf_offload_update_flag {
 #define ATF_CLEAR_STA_UPDATED(sta) (sta.is_updated = false)
 #define ATF_IS_STA_UPDATED(sta) (sta.is_updated)
 
+#define ATF_AC_IS_BIT_SET(bmap, ac) ((bmap) & ((u8)(1 << (ac))))
+
 #define GENMASK(h, l) (((INT32_C(1) << ((h) - (l) + 1)) - 1) << (l))
 #define LEN GENMASK(15, 0)
 #define TAG GENMASK(31, 16)
@@ -108,8 +110,8 @@ struct atf_consumption {
  * @struct atf_airtime_consumption - airtime used
  */
 struct atf_airtime_consumption {
-	struct atf_consumption tx_consumption[4];
-	struct atf_consumption rx_consumption[4];
+	struct atf_consumption tx_consumption[WMM_AC_NUM];
+	struct atf_consumption rx_consumption[WMM_AC_NUM];
 };
 
 struct atf_peer_config {
@@ -140,6 +142,7 @@ struct atf_peer {
 	struct atf_peer_config *peer_cfg_ref;
 	struct sta_info *sta;
 	u32 calculated_airtime;
+	u32 calculated_ac_airtime[WMM_AC_NUM];
 	struct hostapd_data *bss;
 	struct atf_airtime_consumption peer_airtime;
 	u8 actual_airtime;
@@ -199,6 +202,13 @@ struct atf_group {
 	u8 ul_airtime;
 	u32 actual_duration;
 	u32 actual_ul_duration;
+
+	/* Per-AC airtime configuration and calculated values. */
+	u8 ac_bitmap;
+	u32 ac_airtime[WMM_AC_NUM];
+	u32 ac_actual_airtime[WMM_AC_NUM];
+	u32 ac_ul_airtime[WMM_AC_NUM];
+	u32 calculated_ac_airtime[WMM_AC_NUM];
 
 	/* set when ssid is valid and up and running */
 	bool is_configured;
@@ -336,6 +346,7 @@ int nl80211_atf_offload_enable_disable(void *priv, u8 radio_index, u8 value);
 void atf_offload_set_ssid_sched_policy(struct hostapd_data *hapd);
 
 int atf_timer_start(struct hostapd_iface *iface);
+void atf_reset_group_ac_config(struct atf_group *group);
 void atf_timer_stop(struct hostapd_iface *iface);
 void atf_trigger_config_timer(struct hostapd_iface *iface);
 void atf_join_leave_update(struct hostapd_iface *iface, struct sta_info *sta,
