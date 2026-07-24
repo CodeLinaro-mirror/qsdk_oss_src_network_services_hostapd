@@ -1115,6 +1115,15 @@ struct hostapd_iface {
 	char monitor_iface[IFNAMSIZ + 1];
 	int monitor_ifindex;
 	bool monitor_iface_configured;
+
+	/*
+	 * When boot/CSA target is a DFS channel,
+	 * preferred channel/width are saved here while AP temporarily operates
+	 * on conf->intercac_chan.
+	 * 0 means Inter CAC is not active.
+	 */
+	int preferred_chan;
+	enum oper_chan_width preferred_chan_width;
 };
 
 
