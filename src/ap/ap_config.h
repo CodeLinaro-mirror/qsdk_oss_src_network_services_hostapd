@@ -1259,6 +1259,7 @@ struct hostapd_bss_config {
 	u8 ml_max_rec_links;
 
 	bool single_link_emlsr;
+	bool disable_eml;
 
 	/* User-configured link ID; -1 means auto-allocate */
 	int mld_link_id;
