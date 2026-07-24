@@ -10137,7 +10137,7 @@ u8 hostapd_get_active_links(struct hostapd_data *hapd)
 	struct hostapd_data *link_bss;
 	u8 active_links = 0;
 
-	if (!hapd || !hapd->conf->mld_ap)
+	if (!hapd || !hapd->conf || !hapd->conf->mld_ap || !hapd->mld)
 		return 0;
 
 #ifdef CONFIG_QCN_EXTN
