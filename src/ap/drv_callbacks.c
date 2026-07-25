@@ -4687,11 +4687,6 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 				data->link_removal_event.link_removal_count;
 		break;
 	}
-	case EVENT_MLD_INTERFACE_FREED:
-		wpa_printf(MSG_DEBUG, "MLD: Interface %s freed",
-			   hapd->conf->iface);
-		hostapd_mld_interface_freed(hapd);
-		break;
 	case EVENT_TTLM_UPDATE:
 		if (!data)
 			break;
