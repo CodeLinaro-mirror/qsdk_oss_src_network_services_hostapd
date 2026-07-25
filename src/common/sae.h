@@ -131,6 +131,9 @@ struct sae_data {
 	unsigned int h2e:1;
 	unsigned int pk:1;
 	unsigned int no_pw_id:1;
+#ifdef CONFIG_HOSTAPD_IF
+	unsigned int plugin_wait:1;
+#endif /* CONFIG_HOSTAPD_IF */
 	struct sae_temporary_data *tmp;
 };
 

@@ -6330,6 +6330,18 @@ static void handle_auth(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_ENC_ASSOC || CONFIG_IEEE8021X_AUTH */
 
+#ifdef CONFIG_HOSTAPD_IF
+#ifdef CONFIG_SAE
+	/* Drop SAE frames while a plugin response is pending for this STA. */
+	if (sta && sta->sae && sta->sae->plugin_wait) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: SAE " MACSTR " - dropping frame, plugin response pending",
+			   __func__, MAC2STR(sta->addr));
+		return;
+	}
+#endif /* CONFIG_SAE */
+#endif /* CONFIG_HOSTAPD_IF */
+
 #ifdef CONFIG_IEEE80211BE
 	/* Set the non-AP MLD information based on the initial Authentication
 	 * frame. Once the STA entry has been added to the driver, the driver
