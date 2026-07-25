@@ -610,6 +610,47 @@ hostapd_if_notify_get_policy_decision(struct hostapd_data *hapd, u16 auth_alg,
 	return decision;
 }
 
+#ifdef CONFIG_SAE
+#define SAE_PLUGIN_WAIT_TIMEOUT_SEC 1
+
+static void __sae_plugin_wait_timeout(void *eloop_ctx, void *timeout_ctx)
+{
+	struct hostapd_data *hapd = eloop_ctx;
+	struct sta_info *sta = timeout_ctx;
+
+	if (!sta->sae)
+		return;
+
+	wpa_printf(MSG_INFO,
+		   "%s: SAE plugin response timeout for " MACSTR
+		   " - sending deauth and removing STA",
+		   __func__, MAC2STR(sta->addr));
+
+	hostapd_drv_sta_deauth(hapd, sta->addr,
+			       WLAN_REASON_PREV_AUTH_NOT_VALID);
+	wpa_printf(MSG_DEBUG,
+		   "%s: " MACSTR " - deauth sent, freeing STA",
+		   __func__, MAC2STR(sta->addr));
+	ap_free_sta(hapd, sta);
+}
+
+
+void hostapd_if_sae_clear_plugin_wait(struct hostapd_data *hapd,
+				      struct sta_info *sta)
+{
+	if (!sta->sae)
+	       return;
+
+	wpa_printf(MSG_DEBUG,
+		   "%s: " MACSTR " - plugin responded, cancelling guard timer",
+		   __func__, MAC2STR(sta->addr));
+	sta->sae->plugin_wait = 0;
+	eloop_cancel_timeout(__sae_plugin_wait_timeout, hapd, sta);
+}
+
+#endif /* CONFIG_SAE */
+
+
 enum hostapd_if_frame_processing_decision
 hostapd_if_notify_auth(struct hostapd_data *hapd,
 		       struct sta_info *sta,
@@ -662,6 +703,14 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 	os_memcpy(ctx_req.data.auth_req.sta_assoc_link_mac,
 		  sa, ETH_ALEN);
 
+#ifdef CONFIG_SAE
+	if (policy == HOSTAPD_IF_FRAME_INVOKE && auth_alg == WLAN_AUTH_SAE &&
+	    auth_transaction == WLAN_AUTH_TR_SEQ_SAE_CONFIRM) {
+		decision = HOSTAPD_IF_FRAME_PROCESSING_CONTINUE;
+		policy = HOSTAPD_IF_FRAME_NOTIFY;
+	}
+#endif /* CONFIG_SAE */
+
 	if (policy == HOSTAPD_IF_FRAME_NOTIFY) {
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 		if (hostapd_if_plugin && hostapd_if_plugin->notify_auth) {
@@ -677,6 +726,19 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 		 */
 		if (hostapd_if_plugin &&
 		    hostapd_if_plugin->invoke_auth) {
+#ifdef CONFIG_SAE
+			if (auth_alg == WLAN_AUTH_SAE && sta && sta->sae) {
+				wpa_printf(MSG_DEBUG,
+					   "%s: SAE " MACSTR " - arming %ds wait timer before plugin invoke",
+					   __func__, MAC2STR(sta->addr),
+					   SAE_PLUGIN_WAIT_TIMEOUT_SEC);
+				sta->sae->plugin_wait = 1;
+				eloop_register_timeout(SAE_PLUGIN_WAIT_TIMEOUT_SEC,
+							0,
+							__sae_plugin_wait_timeout,
+							hapd, sta);
+			}
+#endif /* CONFIG_SAE */
 			/*
 			 * Pass computed context by pointer
 			 */
@@ -1299,6 +1361,9 @@ __send_sae_auth_response(struct hostapd_data *hapd, struct sta_info *sta,
 	int sta_removed = 0;
 	bool success_status;
 	const u8 *dst = ctx->data.auth_resp.sta_assoc_link_mac;
+
+	/* Plugin responded - cancel the guard timer before processing. */
+	hostapd_if_sae_clear_plugin_wait(hapd, sta);
 
 	resp = sae_sm_step(hapd, sta, ctx->data.auth_resp.auth_transaction,
 			   ctx->status_code, ctx->data.auth_resp.allow_reuse,

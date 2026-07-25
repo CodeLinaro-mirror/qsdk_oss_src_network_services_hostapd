@@ -82,6 +82,8 @@ void hostapd_if_notify_deauth(struct hostapd_data *hapd,
 			      const void *frame,
 			      size_t frame_len);
 
+void hostapd_if_sae_clear_plugin_wait(struct hostapd_data *hapd,
+				      struct sta_info *sta);
 void hostapd_if_notify_disassoc(struct hostapd_data *hapd,
 				struct sta_info *sta,
 				const void *frame,
@@ -325,6 +327,9 @@ hostapd_if_assoc_resp_tail_len(struct sta_info *sta)
 {
 	return 0;
 }
+static inline void
+hostapd_if_sae_clear_plugin_wait(struct hostapd_data *hapd,
+				 struct sta_info *sta) {}
 #endif /* CONFIG_QCN_EXTN */
 
 #endif /* HOSTAPD_IF_H */
