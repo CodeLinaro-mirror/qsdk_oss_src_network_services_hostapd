@@ -4547,11 +4547,6 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		ieee802_11_set_beacon(hapd);
 		break;
 #ifdef CONFIG_IEEE80211BE
-	case EVENT_MLD_INTERFACE_FREED:
-		wpa_printf(MSG_DEBUG, "MLD: Interface %s freed",
-			   hapd->conf->iface);
-		hostapd_mld_interface_freed(hapd);
-		break;
 	case EVENT_TTLM_UPDATE:
 		if (!data)
 			break;

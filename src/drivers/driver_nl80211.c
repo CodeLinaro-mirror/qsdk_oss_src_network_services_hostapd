@@ -13756,7 +13756,6 @@ static int driver_nl80211_link_remove(void *priv, enum wpa_driver_if_type type,
 {
 	struct i802_bss *bss = priv;
 	struct wpa_driver_nl80211_data *drv = bss->drv;
-	int ret;
 
 	if (type == WPA_IF_AP_VLAN)
 		return wpa_driver_nl80211_if_remove(bss, type, ifname);
@@ -13780,27 +13779,9 @@ static int driver_nl80211_link_remove(void *priv, enum wpa_driver_if_type type,
 	}
 
 	if (!bss->valid_links) {
-		void *ctx = bss->ctx;
-
 		wpa_printf(MSG_DEBUG,
 			   "nl80211: No more links remaining, so remove interface");
-		ret = wpa_driver_nl80211_if_remove(bss, type, ifname);
-		if (ret)
-			return ret;
-
-		/*
-		 * Notify that the MLD interface is removed.  Guard against a
-		 * stale ctx: if the hapd this link pointed to was already freed
-		 * during a sibling iface's teardown, nl80211_remove_link() will
-		 * have NULLed bss->flink->ctx, leaving ctx == NULL here.
-		 * Firing the event with a freed pointer causes a use-after-free
-		 * SIGSEGV in hostapd_wpa_event().
-		 */
-		if (ctx)
-			wpa_supplicant_event(ctx, EVENT_MLD_INTERFACE_FREED, NULL);
-		else
-			wpa_printf(MSG_DEBUG,
-				   "nl80211: MLD ctx already freed, skip EVENT_MLD_INTERFACE_FREED");
+		return wpa_driver_nl80211_if_remove(bss, type, ifname);
 	}
 
 	return 0;
