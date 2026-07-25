@@ -186,6 +186,9 @@ int hostapd_drv_mark_ppe_vp_type(struct hostapd_data *hapd);
 #ifdef CONFIG_IEEE80211AX
 int hostapd_drv_rule_config_notify(struct hostapd_data *hapd, u8 *mac);
 #endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_IEEE80211BN
+int hostapd_drv_notify_iface_state(struct hostapd_data *hapd, u32 bss_mode);
+#endif /* CONFIG_IEEE80211BN */
 
 #include "drivers/driver.h"
 

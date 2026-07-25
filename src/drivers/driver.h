@@ -37,6 +37,7 @@
 struct nan_subscribe_params;
 struct nan_publish_params;
 struct pr_pasn_ranging_params;
+struct mapc_parameters;
 
 #define HOSTAPD_CHAN_DISABLED 0x00000001
 #define HOSTAPD_CHAN_NO_IR 0x00000002
@@ -7143,7 +7144,7 @@ struct wpa_driver_ops {
 	 * Returns: 0 on success, negative value on failure
 	 */
 	int (*set_qos)(void *priv, struct qm_req_data *qm_req,
-		       struct qm_resp_data *qm_resp);
+			       struct qm_resp_data *qm_resp);
 
 #ifdef CONFIG_IEEE80211BN
 	/**
@@ -7196,6 +7197,24 @@ struct wpa_driver_ops {
 	 * Return: Value of set_beacon of driver interface data
 	 */
 	bool (*read_link_set_beacon)(void *priv, u8 mld_link_id);
+
+#ifdef CONFIG_IEEE80211BN
+		/**
+	 * notify_iface_state - Notify driver that AP interface entered ENABLED/DISABLED state
+	 * @priv: Private driver interface data
+	 * @vendor_id: Vendor ID
+	 * @subcmd: Vendor sub-command
+	 * @generic_cmd: Generic command ID for SET_WIFI_CONFIGURATION
+	 * @bss_mode: BSS mode value from enum qca_wlan_vendor_iface_mode
+	 * @link_id: Link ID of the specified link; -1 for non-MLD
+	 * @ifname: Interface name
+	 * Returns: 0 on success, negative value on failure
+	 */
+	int (*notify_iface_state)(void *priv, unsigned int vendor_id,
+				    unsigned int subcmd, u32 generic_cmd,
+				    u32 bss_mode, int link_id,
+				    const char *ifname);
+	#endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_QCN_EXTN
 	/**
