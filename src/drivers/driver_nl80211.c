@@ -14885,6 +14885,81 @@ fail:
 }
 #endif /* CONFIG_IEEE80211AX */
 
+static int nl80211_vendor_cmd_iface_enabled_notify(void *priv,
+						   unsigned int vendor_id,
+						   unsigned int subcmd,
+						   u32 generic_cmd,
+						   u32 bss_mode,
+						   int link_id,
+						   const char *ifname)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv;
+	struct nlattr *vendor_data;
+	struct nl_msg *msg = NULL;
+	int ret = -ENOBUFS;
+
+	if (!bss || !bss->drv) {
+		wpa_printf(MSG_ERROR, "nl80211: Invalid drv in %s", __func__);
+		return -EINVAL;
+	}
+	drv = bss->drv;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: iface enabled notify ifname=%s generic_cmd=%u mode=%u link_id=%d",
+		   ifname ? ifname : "N/A", generic_cmd, bss_mode, link_id);
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg) {
+		wpa_printf(MSG_DEBUG, "nl80211: Failed to build vendor cmd message");
+		goto fail;
+	}
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, vendor_id) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD, subcmd))
+	{
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Failed to put iface enabled vendor subcommand");
+		goto fail;
+	}
+
+	vendor_data = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!vendor_data) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Failed to nest start iface enabled vendor data");
+		goto fail;
+	}
+
+	if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND,
+			generic_cmd) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_VALUE,
+			bss_mode) ||
+	    ((link_id != NL80211_DRV_LINK_ID_NA) &&
+	     nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID,
+		        link_id))) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Failed to put iface enabled generic data");
+		goto fail;
+	}
+
+	nla_nest_end(msg, vendor_data);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "nl80211: iface enabled notify failed err=%d (%s)",
+			   ret, strerror(-ret));
+	else
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: iface enabled notify sent for %s",
+			   ifname ? ifname : "N/A");
+	return ret;
+
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
 
 static int nl80211_vendor_cmd_if_offload_type(void *priv,  unsigned int vendor_id,
 					      unsigned int subcmd,
@@ -19616,6 +19691,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #ifdef CONFIG_IEEE80211AX
 	.rule_config_notify = nl80211_vendor_cmd_rule_config_notify,
 #endif /* CONFIG_IEEE80211AX */
+	.notify_iface_state = nl80211_vendor_cmd_iface_enabled_notify,
 #ifdef CONFIG_QCN_EXTN
 	.set_muedca_mode = nl80211_set_muedca_mode,
 #endif /* CONFIG_QCN_EXTN */

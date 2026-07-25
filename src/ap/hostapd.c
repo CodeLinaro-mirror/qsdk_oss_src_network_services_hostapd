@@ -16,6 +16,7 @@
 #include "utils/eloop.h"
 #include "utils/crc32.h"
 #include "common/ieee802_11_defs.h"
+#include "common/qca-vendor.h"
 #include "common/wpa_ctrl.h"
 #include "common/hw_features_common.h"
 #include "radius/radius_client.h"
@@ -8619,13 +8620,55 @@ const char * hostapd_state_text(enum hostapd_iface_state s)
 	return "UNKNOWN";
 }
 
+static u32 hostapd_get_bss_iface_mode(const struct hostapd_data *hapd)
+{
+	if (!hapd || !hapd->conf)
+		return QCA_WLAN_VENDOR_IFACE_MODE_OPEN;
+
+	return (hapd->conf->wpa || hapd->conf->ieee802_1x) ?
+	       QCA_WLAN_VENDOR_IFACE_MODE_SECURED :
+	       QCA_WLAN_VENDOR_IFACE_MODE_OPEN;
+}
 
 void hostapd_set_state(struct hostapd_iface *iface, enum hostapd_iface_state s)
 {
+	enum hostapd_iface_state old_state = iface->state;
+	bool notify_enabled, notify_disabled;
+	unsigned int i;
+
 	wpa_printf(MSG_INFO, "%s: interface state %s->%s",
 		   iface->conf ? iface->conf->bss[0]->iface : "N/A",
-		   hostapd_state_text(iface->state), hostapd_state_text(s));
+		   hostapd_state_text(old_state), hostapd_state_text(s));
 	iface->state = s;
+
+	notify_enabled = old_state != HAPD_IFACE_ENABLED &&
+			 s == HAPD_IFACE_ENABLED;
+	notify_disabled = old_state != HAPD_IFACE_DISABLED &&
+			 s == HAPD_IFACE_DISABLED;
+	if (!notify_enabled && !notify_disabled)
+		return;
+
+	if (!iface->bss)
+		return;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		struct hostapd_data *hapd = iface->bss[i];
+		u32 bss_mode;
+
+		if (!hapd || !hapd->conf || !hapd->drv_priv)
+			continue;
+
+		if (notify_disabled)
+			bss_mode = QCA_WLAN_VENDOR_IFACE_MODE_CLEAR;
+		else
+			bss_mode = hostapd_get_bss_iface_mode(hapd);
+
+		if (hostapd_drv_notify_iface_state(hapd, bss_mode))
+			wpa_printf(MSG_ERROR,
+				   "%s: Failed to notify iface enabled mode for %s: %s->%s",
+				   __func__, hapd->conf->iface,
+				   hostapd_state_text(old_state), hostapd_state_text(s));
+	}
 }
 
 

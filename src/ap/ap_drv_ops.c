@@ -510,6 +510,25 @@ int hostapd_drv_rule_config_notify(struct hostapd_data *hapd, u8 *mac)
 }
 #endif /* CONFIG_IEEE80211AX */
 
+int hostapd_drv_notify_iface_state(struct hostapd_data *hapd, u32 bss_mode)
+{
+	int link_id = -1;
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap)
+		link_id = hapd->mld_link_id;
+#endif /* CONFIG_IEEE80211BE */
+
+	if (hapd->driver == NULL || hapd->driver->notify_iface_state == NULL)
+		return -1;
+
+	return hapd->driver->notify_iface_state(
+		hapd->drv_priv, OUI_QCA,
+		QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
+		QCA_WLAN_VENDOR_WIFI_PARAM_INTERFACE_EN_DIS_MODE,
+		bss_mode, link_id, hapd->conf->iface);
+}
+
 
 int hostapd_sta_auth(struct hostapd_data *hapd, const u8 *addr,
 		     u16 seq, u16 status, const u8 *ie, size_t len)
