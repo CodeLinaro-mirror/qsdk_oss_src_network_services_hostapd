@@ -22,6 +22,7 @@
 #include "l2_packet/l2_packet.h"
 #include "eth_p_oui.h"
 #include "hostapd.h"
+#include "hostapd_log.h"
 #include "ieee802_1x.h"
 #include "preauth_auth.h"
 #include "sta_info.h"
@@ -434,6 +435,12 @@ static void hostapd_wpa_auth_disconnect(void *ctx, const u8 *addr,
 	wpa_printf(MSG_DEBUG, "%s: WPA authenticator requests disconnect: "
 		   "STA " MACSTR " reason %d",
 		   __func__, MAC2STR(addr), reason);
+#ifdef CONFIG_QCN_EXTN
+	if (reason == WLAN_REASON_4WAY_HANDSHAKE_TIMEOUT ||
+	    reason == WLAN_REASON_PREV_AUTH_NOT_VALID)
+		hostapd_log_trigger_emit(hapd, addr,
+					 HOSTAPD_LOG_TRIG_4WAY_FAIL);
+#endif /* CONFIG_QCN_EXTN */
 	ap_sta_disconnect(hapd, NULL, addr, reason);
 }
 
@@ -453,6 +460,9 @@ static void hostapd_wpa_auth_psk_failure_report(void *ctx, const u8 *addr)
 #ifdef RDK_ONEWIFI
 	hostapd_drv_sta_notify_deauth(hapd, addr, WLAN_REASON_PREV_AUTH_NOT_VALID);
 #endif
+#ifdef CONFIG_QCN_EXTN
+	hostapd_log_trigger_emit(hapd, addr, HOSTAPD_LOG_TRIG_4WAY_FAIL);
+#endif /* CONFIG_QCN_EXTN */
 	hostapd_ubus_notify(hapd, "key-mismatch", addr);
 }
 
