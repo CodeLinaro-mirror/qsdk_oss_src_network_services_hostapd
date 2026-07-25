@@ -67,7 +67,9 @@
 #include "uhr_utils.h"
 #include "uhr_oui_transport.h"
 #endif /* CONFIG_IEEE80211BN */
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #include "nft.h"
 
 static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason);
@@ -1675,7 +1677,7 @@ static void hostapd_cleanup(struct hostapd_data *hapd)
 		wpa_msg(hapd->msg_ctx, MSG_INFO, WPA_EVENT_TERMINATING);
 		hapd->iface->interfaces->ctrl_iface_deinit(hapd);
 	}
-#ifdef CONFIG_HOSTAPD_IF
+#if defined(CONFIG_HOSTAPD_IF) && defined(CONFIG_QCN_EXTN)
 	hostapd_if_interface_remove(hapd);
 #endif
 
@@ -3513,7 +3515,6 @@ static void channel_list_update_timeout(void *eloop_ctx, void *timeout_ctx)
 static int hostapd_find_random_chan_and_switch(struct hostapd_iface *iface)
 {
 	u8 best_power_mode;
-	int ret;
 
 	if (!is_6ghz_freq(iface->freq)) {
 		wpa_printf(MSG_DEBUG, "Not a 6GHz iface");
@@ -3532,9 +3533,13 @@ static int hostapd_find_random_chan_and_switch(struct hostapd_iface *iface)
 	 * (2) Calculate the best power mode for the channel.
 	 * (3) Switch to the new channel in the computed power mode.
 	 */
-	ret = hostapd_intf_afc_received(iface);
-	if (!ret)
-		return ret;
+#ifdef CONFIG_QCN_EXTN
+	{
+		int ret = hostapd_intf_afc_received(iface);
+		if (!ret)
+			return ret;
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	wpa_printf(MSG_ERROR, "Failed to select a random channel");
 	best_power_mode = hostapd_get_best_ap_6ghz_power_mode_for_iface(iface);
@@ -4213,6 +4218,7 @@ static int configured_fixed_chan_to_freq(struct hostapd_iface *iface)
 	return -1;
 }
 
+#ifdef CONFIG_QCN_EXTN
 /**
  * hostapd_handle_regchannel_update - Handle channel list update.
  *
@@ -4273,9 +4279,12 @@ static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 	for (i = 0; i < iface->num_bss; i++) {
 		if (!iface->bss[i])
 			continue;
+#ifdef CONFIG_QCN_EXTN
 		hostapd_sync_country_from_driver(iface->bss[i]);
+#endif /* CONFIG_QCN_EXTN */
 	}
 
+#ifdef CONFIG_QCN_EXTN
 	if (!hostapd_is_iface_regdom_supported(iface)) {
 		if (!hostapd_regdom_move_iface_to_supported_channel(iface)) {
 			if (regdom_reenable) {
@@ -4307,6 +4316,7 @@ static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 							 "configured channel unsupported");
 		return 0;
 	}
+#endif /* CONFIG_QCN_EXTN */
 
 	if (regdom_reenable) {
 		ret = hostapd_regdom_restore_iface(iface);
@@ -4334,6 +4344,7 @@ static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 
 	return ret;
 }
+#endif /* CONFIG_QCN_EXTN */
 
 #ifdef HOSTAPD
 static int
@@ -4421,8 +4432,10 @@ void hostapd_channel_list_updated(struct hostapd_iface *iface, int initiator)
 
 		wpa_printf(MSG_DEBUG, "Reg change event received for phy %s through %s",
 			   phy_name, iface->phy);
+#ifdef CONFIG_QCN_EXTN
 		hostapd_for_each_iface_on_phy(iface->interfaces, phy_name,
 					      hostapd_handle_regchannel_update, NULL);
+#endif /* CONFIG_QCN_EXTN */
 #ifdef HOSTAPD
 		hostapd_for_each_iface_on_phy(iface->interfaces, phy_name,
 					      hostapd_run_pending_repeater_afc_power_sync,
@@ -6845,6 +6858,9 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 			if (hostapd_tx_bss_only(hapd, "ht_mcs_nss_set") < 0)
 				goto fail;
 		}
+#if defined(CONFIG_HOSTAPD_IF) && defined(CONFIG_QCN_EXTN)
+		hostapd_if_interface_create(hapd);
+#endif
 	}
 
 	hapd_iface->is_ch_switch_dfs = false;

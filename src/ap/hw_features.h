@@ -11,6 +11,9 @@
 #ifndef HW_FEATURES_H
 #define HW_FEATURES_H
 
+struct hostapd_iface;
+struct hostapd_data;
+
 #ifdef NEED_AP_MLME
 void hostapd_free_hw_features(struct hostapd_hw_modes *hw_features,
 			      size_t num_hw_features);

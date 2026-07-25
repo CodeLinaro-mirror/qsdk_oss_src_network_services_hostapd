@@ -61,6 +61,13 @@ static int dfs_get_precac_channel_by_state(struct hostapd_iface *iface,
 #ifndef CONFIG_QCN_EXTN
 static int dfs_get_start_chan_idx(struct hostapd_iface *iface, int *seg1_start,
 				  int chan_width, int channel_no, bool is_offloaded_cac);
+static int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
+					      int channel, int freq,
+					      int secondary_channel,
+					      u8 current_vht_oper_chwidth,
+					      u8 oper_centr_freq_seg0_idx,
+					      u8 oper_centr_freq_seg1_idx,
+					      u16 punct_bitmap);
 #endif
 /*
  * dfs_is_agile_cac_enabled - Check whether Agile CAC is enabled.
@@ -335,8 +342,10 @@ int dfs_get_used_n_chans(struct hostapd_iface *iface, int *seg1,
 			*seg1 = 4;
 			break;
 		default:
+#ifdef CONFIG_QCN_EXTN
 			hostapd_get_n_chans_and_frequency_extn(chan_width, 0,
 							       &n_chans, NULL);
+#endif /* CONFIG_QCN_EXTN */
 
 			break;
 		}
@@ -416,10 +425,12 @@ static int dfs_is_chan_allowed(struct hostapd_channel_data *chan, int n_chans)
 		allowed_no = ARRAY_SIZE(allowed_160);
 		break;
 	default:
+#ifdef CONFIG_QCN_EXTN
 		if (!hostapd_dfs_get_allowed_channels_extn(n_chans,
 							   allowed,
 							   &allowed_no))
 			break;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_DEBUG, "Unknown width for %d channels", n_chans);
 		break;
@@ -858,10 +869,12 @@ static void dfs_adjust_center_freq(struct hostapd_iface *iface,
 		break;
 
 	default:
+#ifdef CONFIG_QCN_EXTN
 		if (!hostapd_dfs_adjust_center_freq_extn(
 			hostapd_get_oper_chwidth(iface->conf), chan->chan,
 			oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx))
 			break;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_INFO,
 			   "DFS: Unsupported channel width configuration");
@@ -1548,10 +1561,12 @@ int set_dfs_state(struct hostapd_iface *iface, int freq, int ht_enabled,
 		frequency = cf1 - 70;
 		break;
 	default:
+#ifdef CONFIG_QCN_EXTN
 		if (!hostapd_get_n_chans_and_frequency_extn(
 			convert_to_oper_chan_width(chan_width),
 			cf1, &n_chans, &frequency))
 			break;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_INFO, "DFS chan_width %d not supported",
 			   chan_width);
@@ -1632,10 +1647,12 @@ static int dfs_are_channels_overlapped(struct hostapd_iface *iface, int freq, in
 		frequency = cf1 - 70;
 		break;
 	default:
+#ifdef CONFIG_QCN_EXTN
 		if (!hostapd_get_n_chans_and_frequency_extn(
 			convert_to_oper_chan_width(chan_width),
 			cf1, &radar_n_chans, &frequency))
 			break;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_INFO, "DFS chan_width %d not supported",
 			   chan_width);
@@ -3532,10 +3549,12 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 
 		chan_width = convert_to_oper_chan_width(chan_width);
 
+#ifdef CONFIG_QCN_EXTN
 		hostapd_get_oper_center_freq_seg_extn(iface->conf,
 						      &oper_centr_freq_seg0_idx,
 						      &oper_centr_freq_seg1_idx,
 						      NULL);
+#endif /* CONFIG_QCN_EXTN */
 
 		if (iface->cac_started) {
 
@@ -4390,7 +4409,9 @@ int hostapd_is_dfs_overlap(struct hostapd_iface *iface, enum chan_width width,
 		half_width = 80;
 		break;
 	default:
+#ifdef CONFIG_QCN_EXTN
 		half_width = hostapd_get_dfs_half_chwidth_extn(width);
+#endif /* CONFIG_QCN_EXTN */
 		if (half_width)
 			break;
 

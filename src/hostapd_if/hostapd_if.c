@@ -24,14 +24,21 @@
 #include "eap_server/eap.h"
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
+#ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/hostapd_external_interface.h"
+#endif /* CONFIG_QCN_EXTN */
 #endif
 #include "hostapd_if.h"
 #include "radius/radius.h"
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
+#ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/hostapd_if_eloop.h"
+#endif /* CONFIG_QCN_EXTN */
 #endif
 #include <stdlib.h>
+
+
+#ifdef CONFIG_QCN_EXTN
 
 /*
  * State and declarations for ASYNC dispatch system
@@ -3633,4 +3640,4 @@ size_t hostapd_if_assoc_resp_tail_len(struct sta_info *sta, size_t current_len)
 	return tail_len;
 }
 
-
+#endif /* CONFIG_QCN_EXTN */

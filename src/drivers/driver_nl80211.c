@@ -42,7 +42,9 @@
 #include "radiotap_iter.h"
 #include "rfkill.h"
 #include "driver_nl80211.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_AP
 #include "ap/hostapd.h"
 #include "ap/beacon.h"
@@ -8022,7 +8024,9 @@ static int wpa_driver_nl80211_sta_add(void *priv,
 	u8 cmd;
 	const char *cmd_string;
 
+#ifdef CONFIG_QCN_EXTN
 	wpa_driver_nl80211_sta_add_extn(priv, params);
+#endif /* CONFIG_QCN_EXTN */
 
 	if (params->mld_link_sta) {
 		cmd = params->set ? NL80211_CMD_MODIFY_LINK_STA :
@@ -13319,10 +13323,17 @@ static int nl80211_start_radar_detection(void *priv,
 	int ret;
 	u16 valid_links;
 
+	#ifdef CONFIG_QCN_EXTN
 	wpa_printf(MSG_DEBUG, "nl80211: Start radar detection (CAC) %d MHz (ht_enabled=%d, vht_enabled=%d, he_enabled=%d, bandwidth=%d MHz, cf1=%d MHz, cf2=%d MHz skip_cac=%d mcst=%u)",
 		   freq->freq, freq->ht_enabled, freq->vht_enabled, freq->he_enabled,
 		   freq->bandwidth, freq->center_freq1, freq->center_freq2,
 		   freq->skip_cac, freq->mcst);
+#else
+	wpa_printf(MSG_DEBUG, "nl80211: Start radar detection (CAC) %d MHz (ht_enabled=%d, vht_enabled=%d, he_enabled=%d, bandwidth=%d MHz, cf1=%d MHz, cf2=%d MHz)",
+		   freq->freq, freq->ht_enabled, freq->vht_enabled, freq->he_enabled,
+		   freq->bandwidth, freq->center_freq1, freq->center_freq2);
+#endif /* CONFIG_QCN_EXTN */
+
 
 	if (!(drv->capa.flags & WPA_DRIVER_FLAGS_RADAR)) {
 		wpa_printf(MSG_DEBUG, "nl80211: Driver does not support radar "
@@ -14277,7 +14288,11 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 	u32 cu_bmap = BIT(settings->bss_idx);
 
 	wpa_printf(MSG_DEBUG,
-		   "nl80211: Channel switch request (cs_count=%u block_tx=%u freq=%d channel=%d sec_channel_offset=%d width=%d cf1=%d cf2=%d puncturing_bitmap=0x%04x skip_cac=%d link_id=%d%s%s%s)",
+		   "nl80211: Channel switch request (cs_count=%u block_tx=%u freq=%d channel=%d sec_channel_offset=%d width=%d cf1=%d cf2=%d puncturing_bitmap=0x%04x"
+#ifdef CONFIG_QCN_EXTN
+		   " skip_cac=%d"
+#endif /* CONFIG_QCN_EXTN */
+		   " link_id=%d%s%s%s)",
 		   settings->cs_count, settings->block_tx,
 		   settings->freq_params.freq,
 		   settings->freq_params.channel,
@@ -14286,7 +14301,9 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 		   settings->freq_params.center_freq1,
 		   settings->freq_params.center_freq2,
 		   settings->freq_params.punct_bitmap,
+#ifdef CONFIG_QCN_EXTN
 		   settings->freq_params.skip_cac,
+#endif /* CONFIG_QCN_EXTN */
 		   settings->link_id,
 		   settings->freq_params.ht_enabled ? " ht" : "",
 		   settings->freq_params.vht_enabled ? " vht" : "",
