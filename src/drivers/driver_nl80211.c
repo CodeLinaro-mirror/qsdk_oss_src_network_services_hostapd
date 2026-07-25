@@ -6832,8 +6832,8 @@ wpa_driver_nl80211_set_ap_nlmsg_len(struct i802_bss *bss,
 		len += nl80211_attr_len_flag();
 
 #ifdef CONFIG_IEEE80211BN
-	if (!params->dps_assist)
-		len += nl80211_attr_len_u8();
+	/* DPS Assist parameter */
+	len += nl80211_attr_len_u8();
 #endif /* CONFIG_IEEE80211BN */
 
 	/* Len for NL80211_ATTR_SOCKET_OWNER */
@@ -7431,12 +7431,11 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 		     params->uhr_cap + 3))
 		goto fail;
 
-	if (!params->dps_assist) {
-		wpa_printf(MSG_DEBUG, "nl80211: disable DPS Assist");
-		if (nla_put_u8(msg, NL80211_ATTR_DPS_ASSIST,
-			       params->dps_assist))
-			goto fail;
-	}
+	wpa_printf(MSG_DEBUG, "nl80211: %s DPS Assist",
+			   params->dps_assist? "Enable": "Disable");
+
+	if (nla_put_u8(msg, NL80211_ATTR_DPS_ASSIST, params->dps_assist))
+		goto fail;
 
        /* Set SMD parameters if configured */
        if (nl80211_put_smd_params(msg, &params->smd) < 0) {
