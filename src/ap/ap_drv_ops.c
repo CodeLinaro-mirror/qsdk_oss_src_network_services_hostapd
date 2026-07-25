@@ -24,6 +24,7 @@
 #include "hw_features.h"
 #include "ap_drv_ops.h"
 #include "../../qcn_extns/cmn.h"
+#include "hostapd_if/hostapd_if.h"
 
 #ifdef CONFIG_IEEE80211BE
 #include "common/qca-vendor.h"
@@ -327,10 +328,13 @@ bool hostapd_sta_is_link_sta(struct hostapd_data *hapd,
 	return false;
 }
 
-
+static
+int __hostapd_set_authorized(struct hostapd_data *hapd,
+			     struct sta_info *sta, int authorized);
 int hostapd_set_authorized(struct hostapd_data *hapd,
 			   struct sta_info *sta, int authorized)
 {
+	int ret;
 	/*
 	 * The WPA_STA_AUTHORIZED flag is relevant only for the MLD station and
 	 * not to the link stations (as the authorization is done between the
@@ -343,6 +347,21 @@ int hostapd_set_authorized(struct hostapd_data *hapd,
 			   __func__, MAC2STR(sta->addr));
 		return 0;
 	}
+
+	ret = __hostapd_set_authorized(hapd, sta, authorized);
+#ifdef CONFIG_HOSTAPD_IF
+	if (!ret)
+		hostapd_if_event_authorize_completion(hapd, sta->addr,
+						      authorized);
+#endif
+
+	return ret;
+}
+
+static
+int __hostapd_set_authorized(struct hostapd_data *hapd,
+			     struct sta_info *sta, int authorized)
+{
 
 	if (authorized) {
 		return hostapd_sta_set_flags(hapd, sta->addr,
