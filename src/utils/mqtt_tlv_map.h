@@ -490,6 +490,15 @@ static inline int mqtt_tlv_container_add_u32(struct mqtt_tlv_entry *c, uint16_t 
 	mqtt_put_be32(b, v);
 	return mqtt_tlv_list_add_leaf(&c->children, t, b, 4);
 }
+static inline int mqtt_tlv_container_add_s32(struct mqtt_tlv_entry *c, uint16_t t, int32_t v)
+{
+	uint8_t b[4];
+
+	if (!c || !MQTT_TLV_IS_CONTAINER(c->type))
+		return -1;
+	mqtt_put_be32(b, (uint32_t)v);
+	return mqtt_tlv_list_add_leaf(&c->children, t, b, 4);
+}
 static inline int mqtt_tlv_container_add_string(struct mqtt_tlv_entry *c, uint16_t t,
                                                   const char *str)
 {
@@ -790,6 +799,180 @@ static inline int mqtt_tlv_validate_message(const struct mqtt_tlv_message *msg)
  * Indices are 1-based decimal.  MQTT_TLV_INNER(n) sets bit 13 (IF) for
  * inner-leaf TLVs that are only valid inside a container.
  * ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── HOSTAPD_IF: EVT_ID_HIF_NOTIFY_AUTH ───────────────────────────────────── */
+/*
+ * Dedicated authentication indication for the hostapd_if notify path.
+ * Carries the computed hostapd_if auth context that is not guaranteed to be
+ * recoverable from the raw frame alone.
+ *
+ * TLV_HIF_AUTH_IND_RSSI_DBM is encoded on the wire as the two's-complement
+ * bit pattern of a signed 32-bit dBm value.
+ */
+enum mqtt_tlv_hif_auth_ind {
+	TLV_HIF_AUTH_IND_IFACE              = 1,  /* var — interface name string */
+	TLV_HIF_AUTH_IND_STA_MAC            = 2,  /* 6 B — notify_auth() STA MAC */
+	TLV_HIF_AUTH_IND_STATUS_CODE        = 3,  /* 2 B — ctx->status_code */
+	TLV_HIF_AUTH_IND_AUTH_TRANSACTION   = 4,  /* 2 B — ctx->data.auth_req.auth_transaction */
+	TLV_HIF_AUTH_IND_ALLOW_REUSE        = 5,  /* 1 B — ctx->data.auth_req.allow_reuse */
+	TLV_HIF_AUTH_IND_AUTH_ALG           = 6,  /* 2 B — ctx->data.auth_req.auth_alg */
+	TLV_HIF_AUTH_IND_RSSI_DBM           = 7,  /* 4 B — signed dBm, encoded as int32 bits */
+	TLV_HIF_AUTH_IND_RX_LINK_ID         = 8,  /* 4 B — ctx->rx_link_id */
+	TLV_HIF_AUTH_IND_STA_ASSOC_LINK_MAC = 9,  /* 6 B — ctx->data.auth_req.sta_assoc_link_mac */
+	TLV_HIF_AUTH_IND_FRAME              = 10, /* var — full raw 802.11 auth frame */
+	TLV_HIF_AUTH_IND_FRAME_LEN         = 11, /* 2 B — frame_len in bytes */
+	_TLV_HIF_AUTH_IND_MAX
+};
+
+/* ── HOSTAPD_IF: EVT_ID_HIF_NOTIFY_ASSOC ──────────────────────────────────── */
+/*
+ * Association indication for the hostapd_if notify path.
+ * Carries the computed hostapd_if assoc context including MLO per-link MACs.
+ *
+ * TLV_HIF_ASSOC_IND_RSSI_DBM is encoded as the two's-complement bit pattern
+ * of a signed 32-bit dBm value (same convention as auth ind RSSI).
+ * TLV_HIF_ASSOC_IND_STA_LINK_MACS is a flat blob of MAX_MLO_LINKS * 6 bytes,
+ * only the links whose bit is set in valid_link_bitmap carry a real address;
+ * the rest are zero-filled.
+ */
+enum mqtt_tlv_hif_assoc_ind {
+	TLV_HIF_ASSOC_IND_IFACE             = 1,  /* var — interface name string */
+	TLV_HIF_ASSOC_IND_STA_MAC           = 2,  /* 6 B — STA MAC (sta->addr) */
+	TLV_HIF_ASSOC_IND_STATUS_CODE       = 3,  /* 2 B — ctx->status_code */
+	TLV_HIF_ASSOC_IND_IS_REASSOC        = 4,  /* 1 B — ctx->data.assoc_req.is_reassoc */
+	TLV_HIF_ASSOC_IND_RSSI_DBM          = 5,  /* 4 B — signed dBm, encoded as int32 bits */
+	TLV_HIF_ASSOC_IND_RX_LINK_ID        = 6,  /* 4 B — ctx->rx_link_id */
+	TLV_HIF_ASSOC_IND_VALID_LINK_BITMAP = 7,  /* 4 B — ctx->data.assoc_req.valid_link_bitmap */
+	TLV_HIF_ASSOC_IND_STA_ASSOC_LINK_MAC = 8, /* 6 B — ctx->data.assoc_req.sta_assoc_link_mac */
+	TLV_HIF_ASSOC_IND_STA_LINK_MACS    = 9,  /* MAX_MLO_LINKS*6 B — per-link MACs flat array */
+	TLV_HIF_ASSOC_IND_FRAME             = 10, /* var — full raw 802.11 assoc/reassoc frame */
+	TLV_HIF_ASSOC_IND_FRAME_LEN        = 11, /* 2 B — frame_len in bytes */
+	_TLV_HIF_ASSOC_IND_MAX
+};
+
+/* ── HOSTAPD_IF: EVT_ID_HIF_NOTIFY_DEAUTH ─────────────────────────────── */
+/*
+ * Deauthentication indication for the hostapd_if notify path.
+ * TLV_HIF_DEAUTH_IND_REASON_CODE is extracted from the raw 802.11 frame body
+ * (2 bytes at offset 24, little-endian) when frame is available.
+ */
+enum mqtt_tlv_hif_deauth_ind {
+	TLV_HIF_DEAUTH_IND_IFACE       = 1,  /* var — interface name string */
+	TLV_HIF_DEAUTH_IND_STA_MAC     = 2,  /* 6 B — STA MAC address */
+	TLV_HIF_DEAUTH_IND_RX_LINK_ID  = 3,  /* 4 B — ctx->rx_link_id */
+	TLV_HIF_DEAUTH_IND_REASON_CODE = 4,  /* 2 B — reason code from frame body */
+	TLV_HIF_DEAUTH_IND_FRAME       = 5,  /* var — full raw 802.11 deauth frame */
+	TLV_HIF_DEAUTH_IND_FRAME_LEN  = 6,  /* 2 B — frame_len in bytes */
+	_TLV_HIF_DEAUTH_IND_MAX
+};
+
+/* ── HOSTAPD_IF: EVT_ID_HIF_NOTIFY_DISASSOC ───────────────────────────── */
+/*
+ * Disassociation indication for the hostapd_if notify path.
+ * TLV_HIF_DISASSOC_IND_REASON_CODE is extracted from the raw 802.11 frame body
+ * (2 bytes at offset 24, little-endian) when frame is available.
+ */
+enum mqtt_tlv_hif_disassoc_ind {
+	TLV_HIF_DISASSOC_IND_IFACE       = 1,  /* var — interface name string */
+	TLV_HIF_DISASSOC_IND_STA_MAC     = 2,  /* 6 B — STA MAC address */
+	TLV_HIF_DISASSOC_IND_RX_LINK_ID  = 3,  /* 4 B — ctx->rx_link_id */
+	TLV_HIF_DISASSOC_IND_REASON_CODE = 4,  /* 2 B — reason code from frame body */
+	TLV_HIF_DISASSOC_IND_FRAME       = 5,  /* var — full raw 802.11 disassoc frame */
+	TLV_HIF_DISASSOC_IND_FRAME_LEN  = 6,  /* 2 B — frame_len in bytes */
+	_TLV_HIF_DISASSOC_IND_MAX
+};
+
+/* ── HOSTAPD_IF: EVT_ID_HIF_INTERFACE_CREATE ───────────────────────────── */
+enum mqtt_tlv_hif_interface_create {
+	TLV_HIF_INTERFACE_CREATE_IFNAME = 1, /* var — interface name string */
+	_TLV_HIF_INTERFACE_CREATE_MAX
+};
+
+/* ── HOSTAPD_IF: EVT_ID_HIF_EVENT_ASSOC_TX_COMPLETE ───────────────────── */
+/*
+ * Assoc response TX completion event.
+ * Signals whether the assoc response frame was successfully transmitted.
+ */
+enum mqtt_tlv_hif_assoc_tx_complete {
+	TLV_HIF_ASSOC_TX_COMPLETE_IFNAME  = 1, /* var — interface name string */
+	TLV_HIF_ASSOC_TX_COMPLETE_STA_MAC = 2, /* 6 B — STA MAC address */
+	TLV_HIF_ASSOC_TX_COMPLETE_OK      = 3, /* 1 B — 1=success, 0=failure */
+	TLV_HIF_ASSOC_TX_COMPLETE_STATUS  = 4, /* 2 B — status code */
+	TLV_HIF_ASSOC_TX_COMPLETE_AID     = 5, /* 2 B — association ID */
+	_TLV_HIF_ASSOC_TX_COMPLETE_MAX
+};
+
+/* ── HOSTAPD_IF: EVT_ID_HIF_EVENT_DEAUTH / EVT_ID_HIF_EVENT_DISASSOC ──── */
+/*
+ * Shared TLV layout for deauth and disassoc event notifications.
+ * Used by both hostapd_if_event_deauth() and hostapd_if_event_disassoc().
+ * Carries deauth_disassoc struct fields: link_id, link_mac, reason_code,
+ * disconnect type, and TX status when applicable.
+ * The message ID (EVT_ID_HIF_EVENT_DEAUTH vs EVT_ID_HIF_EVENT_DISASSOC)
+ * distinguishes the frame type on the wire.
+ */
+enum mqtt_tlv_hif_deauth_disassoc_event {
+	TLV_HIF_DEAUTH_DISASSOC_EVT_IFNAME          = 1, /* var — interface name string */
+	TLV_HIF_DEAUTH_DISASSOC_EVT_STA_MAC         = 2, /* 6 B — STA MAC (evt.sta_mac) */
+	TLV_HIF_DEAUTH_DISASSOC_EVT_LINK_ID         = 3, /* 4 B — deauth_disassoc.link_id */
+	TLV_HIF_DEAUTH_DISASSOC_EVT_LINK_MAC        = 4, /* 6 B — deauth_disassoc.link_mac (MLO) */
+	TLV_HIF_DEAUTH_DISASSOC_EVT_REASON_CODE     = 5, /* 2 B — deauth_disassoc.reason_code */
+	TLV_HIF_DEAUTH_DISASSOC_EVT_DISCONNECT_TYPE = 6, /* 4 B — deauth_disassoc.type */
+	TLV_HIF_DEAUTH_DISASSOC_EVT_IS_TX_STATUS    = 7, /* 1 B — deauth_disassoc.is_tx_status */
+	TLV_HIF_DEAUTH_DISASSOC_EVT_TX_STATUS_OK    = 8, /* 4 B — deauth_disassoc.tx_status_ok */
+	_TLV_HIF_DEAUTH_DISASSOC_EVT_MAX
+};
+
+/* ── HOSTAPD_IF: EVT_ID_HIF_EVENT_AUTH_TX_COMPLETE ────────────────────── */
+/*
+ * Auth response TX completion event from hostapd_if_event_auth_tx_complete().
+ */
+enum mqtt_tlv_hif_auth_tx_complete {
+	TLV_HIF_AUTH_TX_COMPLETE_IFNAME  = 1, /* var — interface name string */
+	TLV_HIF_AUTH_TX_COMPLETE_STA_MAC = 2, /* 6 B — STA MAC address */
+	_TLV_HIF_AUTH_TX_COMPLETE_MAX
+};
+
+/*
+ * ── HOSTAPD_IF: Common TLVs shared across multiple HIF messages ──────────
+ *
+ * These TLVs carry fields that appear in more than one HIF command or event
+ * (e.g. interface name in REGISTER_POLICY_*, ASSOC_COMPLETED_EVENT, …).
+ * Indices are independent of per-message enums above; the message ID
+ * always determines how a TLV is interpreted.
+ */
+enum mqtt_tlv_hif_common {
+	TLV_HIF_IFNAME = 1, /* var — interface name string */
+	_TLV_HIF_COMMON_MAX
+};
+
+/* ── HOSTAPD_IF: CMD_ID_HIF_REGISTER_POLICY ────────────────────────────── */
+/*
+ * Maps to register_frame(ifname_ctx, cat, policy).
+ * One message = one register_frame() call.
+ * TLV_HIF_REGISTER_POLICY_IFNAME scopes the registration to a specific
+ * interface.  Using a message-scoped ID (3) avoids collision with the
+ * per-message TLVs at IDs 1 and 2.
+ */
+enum mqtt_hif_register_frame_tlv {
+	TLV_HIF_REGISTER_FRAME_FRAME_TYPE = 1, /* 1 B — frame type (HIF_FRAME_TYPE_*) */
+	TLV_HIF_REGISTER_FRAME_POLICY     = 2, /* 1 B — policy (HIF_POLICY_*)         */
+	TLV_HIF_REGISTER_FRAME_IFNAME     = 3, /* var — interface name string          */
+	_TLV_HIF_REGISTER_FRAME_MAX
+};
+
+
+/* ── HOSTAPD_IF: CMD_ID_HIF_REGISTER_EVENT ─────────────────────────────── */
+/*
+ * Maps to register_event(ifname_ctx, type, set).
+ * One message = one register_event() call.
+ */
+enum mqtt_hif_register_event_tlv {
+	TLV_HIF_REGISTER_EVENT_TYPE   = 1, /* 1 B — event type (HIF_EVENT_*) */
+	TLV_HIF_REGISTER_EVENT_SET    = 2, /* 1 B — 1=register, 0=unregister */
+	TLV_HIF_REGISTER_EVENT_IFNAME = 3, /* var — interface name string     */
+	_TLV_HIF_REGISTER_EVENT_MAX
+};
 
 /* ── SYS: EVT_ID_SYS_HOSTAPD_STARTED ───────────────────────────────────── */
 /* Also used as the response to CMD_ID_SYS_PING. */
