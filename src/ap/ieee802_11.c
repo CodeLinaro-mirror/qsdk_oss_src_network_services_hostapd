@@ -5112,6 +5112,9 @@ static void handle_auth(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BE */
 	int ft_auth_resp;
 	bool deferred_auth_response = false;
+#ifdef CONFIG_HOSTAPD_IF
+	bool hapd_if_notified = false;
+#endif
 	struct hostapd_ubus_request req = {
 		.type = HOSTAPD_UBUS_AUTH_REQ,
 		.mgmt_frame = mgmt,
@@ -5648,6 +5651,7 @@ static void handle_auth(struct hostapd_data *hapd,
 					WLAN_AUTH_OPEN, mgmt->sa) ==
 					HOSTAPD_IF_FRAME_PROCESSING_WAIT)
 			return;
+		hapd_if_notified = true;
 #endif
 		sta->flags |= WLAN_STA_AUTH;
 		wpa_auth_sm_event(sta->wpa_sm, WPA_AUTH);
@@ -5787,6 +5791,15 @@ static void handle_auth(struct hostapd_data *hapd,
 	}
 
  fail:
+
+#ifdef CONFIG_HOSTAPD_IF
+	if (!hapd_if_notified &&
+	    hostapd_if_notify_auth(hapd, sta, (const u8 *) mgmt, len, rssi,
+				   resp, auth_transaction, 0,
+				   auth_alg, mgmt->sa) == HOSTAPD_IF_FRAME_PROCESSING_WAIT)
+		return;
+#endif
+
 	dst = mgmt->sa;
 
 	reply_res = send_auth_reply(hapd, sta, dst, auth_alg,
