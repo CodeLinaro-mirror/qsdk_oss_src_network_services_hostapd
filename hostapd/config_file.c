@@ -27,9 +27,9 @@
 #include "config_file.h"
 #include "ap/uhr_utils.h"
 
-#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+#if defined(HOSTAPD_EXTERNAL_PLUGIN_TESTAPP) && defined(CONFIG_QCN_EXTN)
 #include "../qcn_extns/hostapd_if_plugin.h"
-#endif
+#endif /* HOSTAPD_EXTERNAL_PLUGIN_TESTAPP && CONFIG_QCN_EXTN */
 
 #ifndef CONFIG_NO_VLAN
 static int hostapd_config_read_vlan_file(struct hostapd_bss_config *bss,
@@ -6948,13 +6948,15 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "report_connection_failures") == 0) {
 		bss->report_connection_failures = !!atoi(pos);
 	} else {
+#ifdef CONFIG_QCN_EXTN
 		if (!hostapd_config_fill_extn(conf, bss, buf, pos, line))
 			return 0;
+#endif /* CONFIG_QCN_EXTN */
 
-#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+#if defined(HOSTAPD_EXTERNAL_PLUGIN_TESTAPP) && defined(CONFIG_QCN_EXTN)
 		if (!hostapd_config_fill_plugin(bss, buf, pos))
 			return 0;
-#endif
+#endif /* HOSTAPD_EXTERNAL_PLUGIN_TESTAPP && CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_ERROR,
 			   "Line %d: unknown configuration item '%s'",

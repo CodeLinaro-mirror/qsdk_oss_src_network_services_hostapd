@@ -13,7 +13,9 @@
 
 #include "common/wpa_ctrl.h"
 #include "common/ieee802_11_defs.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/hostapd_cli_extn.h"
+#endif /* CONFIG_QCN_EXTN */
 #include "utils/common.h"
 #include "utils/eloop.h"
 #include "utils/edit.h"
@@ -254,10 +256,6 @@ int hostapd_cli_cmd(struct wpa_ctrl *ctrl, const char *cmd,
 #else
 	char buf[4096];
 #endif /* CONFIG_QCN_EXTN */
-	{ "use_ru_puncture_dfs", hostapd_cli_cmd_use_ru_puncture_dfs, NULL,
-	  "<1/0> = enable/disable Puncturing feature for DFS channels" },
-	{ "dfs_disable_auto_unpunc", hostapd_cli_cmd_dfs_disable_auto_unpunc, NULL,
-	  "<0|1> = disable/enable automatic unpuncturing of DFS channels after CAC" },
 
 	if (argc < min_args) {
 		printf("Invalid %s command - at least %d argument%s required.\n",
@@ -2836,6 +2834,9 @@ static int hostapd_cli_cmd_set_he_max_ampdu_len_exp(struct wpa_ctrl *ctrl,
 	return wpa_ctrl_command(ctrl, cmd);
 }
 
+#endif /* CONFIG_IEEE80211AX */
+
+#ifdef CONFIG_QCN_EXTN
 /**
  * hostapd_cli_cmd_use_ru_puncture_dfs - Send runtime RU puncture DFS command
  * @ctrl: Pointer to the control interface connection
@@ -2863,7 +2864,9 @@ static int hostapd_cli_cmd_dfs_disable_auto_unpunc(struct wpa_ctrl *ctrl,
 {
 	return hostapd_cli_cmd(ctrl, "DFS_DISABLE_AUTO_UNPUNC", 1, argc, argv);
 }
+#endif /* CONFIG_QCN_EXTN */
 
+#ifdef CONFIG_IEEE80211AX
 static int hostapd_cli_cmd_get_he_max_ampdu_len_exp(struct wpa_ctrl *ctrl,
 						     int argc, char *argv[])
 {
@@ -3191,6 +3194,7 @@ static int hostapd_cli_cmd_get_he_max_nc_suprt(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, "get_he_max_nc_suprt");
 }
 
+#ifdef CONFIG_QCN_EXTN
 static int hostapd_cli_cmd_set_he_er_su_disable(struct wpa_ctrl *ctrl, int argc,
 						char *argv[])
 {
@@ -3382,9 +3386,11 @@ static int hostapd_cli_cmd_get_he_bsr_support(struct wpa_ctrl *ctrl, int argc,
 
 	return wpa_ctrl_command(ctrl, "get_he_bsr_support");
 }
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211AX */
 
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
 static int hostapd_cli_cmd_set_eht_ndp_4x_eht_ltf_and_320nsgi(
 	struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
@@ -3609,6 +3615,7 @@ static int hostapd_cli_cmd_get_eht_mcs14_dup_in_6ghz(struct wpa_ctrl *ctrl,
 
 	return wpa_ctrl_command(ctrl, "get_eht_mcs14_dup_in_6ghz");
 }
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 
@@ -3961,7 +3968,9 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "deny_acl", hostapd_cli_cmd_deny_macacl, NULL,
 	  "=Add/Delete/Show/Clear deny MAC ACL" },
 
+#ifdef CONFIG_QCN_EXTN
 	HOSTAPD_CLI_CMDS_EXTN
+#endif /* CONFIG_QCN_EXTN */
 
 	{ "poll_sta", hostapd_cli_cmd_poll_sta, hostapd_complete_stations,
 	  "<addr> = poll a STA to check connectivity with a QoS null frame" },
@@ -4135,6 +4144,7 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<0-7> = set HE max NC support" },
 	{ "get_he_max_nc_suprt", hostapd_cli_cmd_get_he_max_nc_suprt, NULL,
 	  "= get HE max NC support" },
+#ifdef CONFIG_QCN_EXTN
 	{ "set_he_er_su_disable", hostapd_cli_cmd_set_he_er_su_disable, NULL,
 	  "<0|1> = set HE ER SU disable" },
 	{ "get_he_er_su_disable", hostapd_cli_cmd_get_he_er_su_disable, NULL,
@@ -4167,8 +4177,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<0|1> = set HE BSR support" },
 	{ "get_he_bsr_support", hostapd_cli_cmd_get_he_bsr_support, NULL,
 	  "= get HE BSR support" },
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
 	{ "set_eht_ndp_4x_eht_ltf_and_320nsgi",
 	  hostapd_cli_cmd_set_eht_ndp_4x_eht_ltf_and_320nsgi, NULL,
 	  "<0|1> = set EHT NDP 4x EHT-LTF and 320ns GI support" },
@@ -4207,6 +4219,7 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "get_eht_mcs14_dup_in_6ghz",
 	  hostapd_cli_cmd_get_eht_mcs14_dup_in_6ghz, NULL,
 	  "= get EHT MCS14 duplicate support in 6GHz" },
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_QCN_EXTN
 	{ "set_edca_mode", hostapd_cli_cmd_set_muedca_mode, NULL,
@@ -4222,6 +4235,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<ac> <param> = get HE MU EDCA parameter value\n"
 	  "<ac>: Access category (be, bk, vi, vo)\n"
 	  "<param>: Parameter name (aifsn, ecwmin, ecwmax, timer, acm)\n" },
+	{ "use_ru_puncture_dfs", hostapd_cli_cmd_use_ru_puncture_dfs, NULL,
+	  "<1/0> = enable/disable Puncturing feature for DFS channels" },
+	{ "dfs_disable_auto_unpunc", hostapd_cli_cmd_dfs_disable_auto_unpunc, NULL,
+	  "<0|1> = disable/enable automatic unpuncturing of DFS channels after CAC" },
 #endif /* CONFIG_QCN_EXTN */
 	{ NULL, NULL, NULL, NULL }
 };

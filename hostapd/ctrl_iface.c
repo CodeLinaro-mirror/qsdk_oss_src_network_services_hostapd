@@ -45,7 +45,9 @@
 #include "common/nan_de.h"
 #include "common/proc_coord.h"
 #ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+#ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/hostapd_if_plugin.h"
+#endif /* CONFIG_QCN_EXTN */
 #endif
 #include "crypto/tls.h"
 #include "drivers/driver.h"
@@ -916,6 +918,7 @@ static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 	sta = ap_get_sta(hapd, addr);
 #ifdef CONFIG_IEEE80211BE
 	/* To find link STA when MLD addr is provided */
+#ifdef CONFIG_QCN_EXTN
 	if (!sta && hapd->conf->mld_ap) {
 #ifdef CONFIG_QCN_EXTN
 		for_each_mld_link_include_repurposed(lhapd, hapd) {
@@ -929,6 +932,7 @@ static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 			}
 		}
 	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 	if (!sta) {
 		wpa_printf(MSG_DEBUG, "DSCP: STA " MACSTR " not capable", MAC2STR(addr));
@@ -1135,7 +1139,10 @@ static int hostapd_ctrl_send_unsolicited_dscp_req(struct hostapd_data *hapd,
 static int hostapd_ctrl_send_unsolicited_dscp_req(struct hostapd_data *hapd, const char *cmd)
 {
 	struct sta_info *sta;
-	struct hostapd_data *lhapd, *assoc_hapd = hapd;
+	struct hostapd_data *assoc_hapd = hapd;
+#ifdef CONFIG_QCN_EXTN
+	struct hostapd_data *lhapd;
+#endif /* CONFIG_QCN_EXTN */
 	u8 addr[ETH_ALEN];
 	int reset = 0;
 	int policy_ids[10];
@@ -1191,6 +1198,7 @@ static int hostapd_ctrl_send_unsolicited_dscp_req(struct hostapd_data *hapd, con
 
 	sta = ap_get_sta(hapd, addr);
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
 	if (!sta && hapd->conf->mld_ap) {
 #ifdef CONFIG_QCN_EXTN
 		for_each_mld_link_include_repurposed(lhapd, hapd) {
@@ -1204,6 +1212,7 @@ static int hostapd_ctrl_send_unsolicited_dscp_req(struct hostapd_data *hapd, con
 			}
 		}
 	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 	if (!sta) {
 		wpa_printf(MSG_DEBUG, "DSCP: STA " MACSTR " not capable", MAC2STR(addr));
@@ -12243,9 +12252,11 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 			reply_len = -1;
 	} else if (os_strcmp(buf, "GET_CHAIN_MASK") == 0) {
 		reply_len = hostapd_ctrl_get_chain_mask(hapd, reply, reply_size);
+#ifdef CONFIG_QCN_EXTN
 	} else if (os_strncmp(buf, "AFC ", 4) == 0) {
 		reply_len = hostapd_afc_handle_cli(hapd, buf + 4,
 						   reply, reply_size);
+#endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_TESTING_OPTIONS
 	} else if (os_strncmp(buf, "LINK_ENABLE ", 12) == 0) {
@@ -12529,11 +12540,13 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 			reply_len = -1;
 #endif /* CONFIG_IEEE80211AX */
 	} else {
+#ifdef CONFIG_QCN_EXTN
 		if (!hostapd_ctrl_iface_receive_process_extn(hapd, buf, reply,
 							     reply_size,
 							     from, fromlen,
 							     &reply_len))
 			return reply_len;
+#endif /* CONFIG_QCN_EXTN */
 
 		os_memcpy(reply, "UNKNOWN COMMAND\n", 16);
 		reply_len = 16;
