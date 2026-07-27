@@ -1644,10 +1644,10 @@ MQTT_TEST_LIB :=
 endif
 
 mqtt_test: mqtt_test.c
-	$(CC) $(CFLAGS) -Wall $(MQTT_TEST_INC) -o $@ $< $(MQTT_TEST_LIB) -lmosquitto
+	$(CC) $(CFLAGS) -Wall -fPIE $(MQTT_TEST_INC) -o $@ $< $(MQTT_TEST_LIB) -lmosquitto -pie
 
 external_hif_mqtt_test_client: external_hif_mqtt_test_client.c
-	$(CC) $(CFLAGS) -Wall $(MQTT_TEST_INC) -o $@ $< $(MQTT_TEST_LIB) -lmosquitto
+	$(CC) $(CFLAGS) -Wall -fPIE $(MQTT_TEST_INC) -o $@ $< $(MQTT_TEST_LIB) -lmosquitto -pie
 endif
 
 clean: common-clean
