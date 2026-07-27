@@ -196,9 +196,15 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 	if (!hostapd_conf_eht_rtwt_enabled(hapd))
 		cap->mac_cap &= ~EHT_MACCAP_TWT_RESTRICTED;
 
-	if (!is_6ghz_op_class(hapd->iconf->op_class))
+	if (!is_6ghz_op_class(hapd->iconf->op_class)) {
 		cap->phy_cap[EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_IDX] &=
 			~EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_MASK;
+	} else if ((hapd->conf->eht_phy_capab_mask &
+		    EHT_PHY_BSS_OVR_CHWIDTH_320MHZ_6G) &&
+		   !hapd->conf->eht_phy_capab.eht_chwidth_320mhz_6g) {
+			cap->phy_cap[EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_IDX] &=
+				~EHT_PHYCAP_320MHZ_IN_6GHZ_SUPPORT_MASK;
+	}
 
 
 	/* For non-transmitting BSSs in MBSSID, inherit BSS-level overrides
