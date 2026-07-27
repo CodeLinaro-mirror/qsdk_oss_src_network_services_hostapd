@@ -6109,6 +6109,9 @@ int nl80211_update_beacons_on_chain_mask_change(struct i802_bss *bss, int hw_idx
 		return -1;
 	}
 
+	if (!is_ap_interface(bss->drv->nlmode))
+		return 0;
+
 	/* Chain mask change is a wiphy-level event and can be dispatched to all
 	 * BSSes. Process it once per driver to avoid duplicate beacon refreshes.
 	 */
