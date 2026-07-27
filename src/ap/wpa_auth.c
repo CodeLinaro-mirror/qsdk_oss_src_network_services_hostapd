@@ -2826,6 +2826,7 @@ static void wpa_group_ensure_init(struct wpa_authenticator *wpa_auth,
 		group->reject_4way_hs_for_entropy = true;
 	} else {
 		group->first_sta_seen = true;
+		group->keys_refreshed = true;
 		group->reject_4way_hs_for_entropy = false;
 	}
 
@@ -2834,6 +2835,7 @@ static void wpa_group_ensure_init(struct wpa_authenticator *wpa_auth,
 	    wpa_group_config_group_keys(wpa_auth, group) < 0) {
 		wpa_printf(MSG_INFO, "WPA: GMK/GTK setup failed");
 		group->first_sta_seen = false;
+		group->keys_refreshed = false;
 		group->reject_4way_hs_for_entropy = true;
 	}
 }
@@ -4412,6 +4414,7 @@ static u8 * ieee80211w_kde_add(struct wpa_state_machine *sm, u8 *pos)
 	struct wpa_authenticator *wpa_auth = sm->wpa_auth;
 	struct wpa_auth_config *conf = &wpa_auth->conf;
 	size_t len = wpa_cipher_key_len(conf->group_mgmt_cipher);
+	bool igtk_fresh;
 
 	if (!sm->mgmt_frame_prot)
 		return pos;
@@ -4423,7 +4426,19 @@ static u8 * ieee80211w_kde_add(struct wpa_state_machine *sm, u8 *pos)
 
 	igtk.keyid[0] = gsm->GN_igtk;
 	igtk.keyid[1] = 0;
-	if (gsm->wpa_group_state != WPA_GROUP_SETKEYSDONE ||
+	/*
+	 * gsm->keys_refreshed means this group's keys were just
+	 * (re)installed in FW, which resets PN, so skip the FW read and
+	 * send PN=0 instead - unless a CONFIG_TESTING_OPTIONS RSC override
+	 * is configured, which must still be allowed to apply.
+	 */
+	igtk_fresh = gsm->keys_refreshed;
+#ifdef CONFIG_TESTING_OPTIONS
+	if (wpa_auth->conf.igtk_rsc_override_set)
+		igtk_fresh = false;
+#endif /* CONFIG_TESTING_OPTIONS */
+	if (igtk_fresh ||
+	    gsm->wpa_group_state != WPA_GROUP_SETKEYSDONE ||
 	    wpa_auth_get_seqnum(sm->wpa_auth, NULL, gsm->GN_igtk, rsc) < 0)
 		os_memset(igtk.pn, 0, sizeof(igtk.pn));
 	else
@@ -4459,7 +4474,8 @@ static u8 * ieee80211w_kde_add(struct wpa_state_machine *sm, u8 *pos)
 
 	bigtk.keyid[0] = gsm->GN_bigtk;
 	bigtk.keyid[1] = 0;
-	if (gsm->wpa_group_state != WPA_GROUP_SETKEYSDONE ||
+	if (gsm->keys_refreshed ||
+	    gsm->wpa_group_state != WPA_GROUP_SETKEYSDONE ||
 	    wpa_auth_get_seqnum(wpa_auth, NULL, gsm->GN_bigtk, rsc) < 0)
 		os_memset(bigtk.pn, 0, sizeof(bigtk.pn));
 	else
@@ -4487,8 +4503,9 @@ static u8 * ieee80211w_kde_add(struct wpa_state_machine *sm, u8 *pos)
 
 	sm->wpa_auth->cigtk_seq_num = true;
 
-	if (gsm->wpa_group_state != WPA_GROUP_SETKEYSDONE ||
-		wpa_auth_get_seqnum(sm->wpa_auth, NULL, gsm->GN_cigtk, rsc) < 0) {
+	if (gsm->keys_refreshed ||
+	    gsm->wpa_group_state != WPA_GROUP_SETKEYSDONE ||
+	    wpa_auth_get_seqnum(sm->wpa_auth, NULL, gsm->GN_cigtk, rsc) < 0) {
 		os_memset(cigtk.pn, 0, sizeof(cigtk.pn));
 	} else {
 		os_memcpy(cigtk.pn, rsc, sizeof(cigtk.pn));
@@ -4733,6 +4750,25 @@ u8 * wpa_auth_ml_group_kdes(struct wpa_state_machine *sm, u8 *pos,
 	unsigned int i, link_id;
 	u8 *start = pos;
 	bool rekey = sm->wpa_ptk_group_state == WPA_PTK_GROUP_REKEYNEGOTIATING;
+
+	/*
+	 * If this group's keys were just (re)installed in FW (which resets
+	 * PN), skip the FW PN read for this M3 and send PN=0 instead.
+	 */
+	if (sm->group->keys_refreshed) {
+		rekey = true;
+		sm->group->keys_refreshed = false;
+	}
+#ifdef CONFIG_IEEE80211BE
+	for_each_sm_auth(sm, link_id) {
+		struct wpa_group *g = sm->mld_links[link_id].wpa_auth->group;
+
+		if (g->keys_refreshed) {
+			rekey = true;
+			g->keys_refreshed = false;
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
 
 	/* First fetch the key information from all the authenticators */
 	os_memset(&ml_key_info, 0, sizeof(ml_key_info));
@@ -5374,6 +5410,7 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 	int secure, gtkidx, encr = 0;
 	u8 *wpa_ie_buf = NULL, *wpa_ie_buf2 = NULL, *wpa_ie_buf3 = NULL;
 	u8 hdr[2];
+	bool gtk_fresh;
 	struct wpa_auth_config *conf = &sm->wpa_auth->conf;
 #ifdef CONFIG_IEEE80211BE
 	bool is_mld = sm->mld_assoc_link_id >= 0;
@@ -5403,6 +5440,20 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 	 */
 	os_memset(rsc, 0, WPA_KEY_RSC_LEN);
 	wpa_auth_get_seqnum(sm->wpa_auth, NULL, gsm->GN, rsc);
+	/*
+	 * gsm->keys_refreshed means this group's keys were just
+	 * (re)installed in FW, which resets PN, so the live FW read above
+	 * may race with that reset and return a stale value - discard it
+	 * and send PN=0 instead, unless a CONFIG_TESTING_OPTIONS RSC
+	 * override is configured (already applied above), which must win.
+	 */
+	gtk_fresh = gsm->keys_refreshed;
+#ifdef CONFIG_TESTING_OPTIONS
+	if (sm->wpa_auth->conf.gtk_rsc_override_set)
+		gtk_fresh = false;
+#endif /* CONFIG_TESTING_OPTIONS */
+	if (gtk_fresh)
+		os_memset(rsc, 0, WPA_KEY_RSC_LEN);
 	/* If FT is used, wpa_auth->wpa_ie includes both RSNIE and MDIE */
 	if (!is_mld) {
 		wpa_ie = sm->wpa_auth->wpa_ie;
@@ -5648,6 +5699,14 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 				  gtk, gtk_len);
 	}
 	pos = ieee80211w_kde_add(sm, pos);
+	/*
+	 * This M3 has now read (or intentionally skipped, for
+	 * disabled PMF/beacon/ctrl-frame-protection) every non-ML KDE
+	 * derived from gsm for this station, so consume the flag here.
+	 */
+	if (!is_mld)
+		gsm->keys_refreshed = false;
+
 	if (ocv_oci_add(sm, &pos, conf->oci_freq_override_eapol_m3) < 0)
 		goto done;
 
