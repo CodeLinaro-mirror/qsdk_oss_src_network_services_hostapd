@@ -10,7 +10,9 @@
 #define IEEE802_11_COMMON_H
 
 #include "defs.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #include "ieee802_11_defs.h"
 #include "utils/list.h"
 
@@ -50,7 +52,9 @@ struct ieee802_11_elems {
 	const u8 *ssid;
 	const u8 *supp_rates;
 
+#ifdef CONFIG_QCN_EXTN
 	struct ieee802_11_elems_extn elems_extn;
+#endif /* CONFIG_QCN_EXTN */
 
 	const u8 *ds_params;
 	const u8 *challenge;

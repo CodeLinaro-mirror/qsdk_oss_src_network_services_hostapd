@@ -225,9 +225,11 @@ static int ieee802_11_parse_vendor_specific(const u8 *pos, size_t elen,
 		break;
 
 	default:
+#ifdef CONFIG_QCN_EXTN
 		if (!ieee802_11_parse_vendor_specific_elems_extn(elems, oui,
 								 pos, elen))
 			break;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_EXCESSIVE, "unknown vendor specific "
 			   "information element ignored (vendor OUI "
