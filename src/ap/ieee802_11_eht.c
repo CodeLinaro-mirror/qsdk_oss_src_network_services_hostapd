@@ -2247,7 +2247,7 @@ void hostapd_link_reconf_resp_tx_status(struct hostapd_data *hapd,
 #endif /* CONFIG_QCN_EXTN */
 
 			if (lsta)
-				ap_free_sta(lhapd, lsta);
+				ap_free_sta_link(lhapd, lsta);
 		}
 		goto exit;
 	}
@@ -2344,7 +2344,7 @@ void hostapd_link_reconf_resp_tx_status(struct hostapd_data *hapd,
 		wpa_msg(hapd->msg_ctx, MSG_INFO,
 			WPA_EVENT_LINK_STA_REMOVED "sta=" MACSTR " link_id=%u",
 			MAC2STR(lsta->addr), link_id);
-		ap_free_sta(lhapd, lsta);
+		ap_free_sta_link(lhapd, lsta);
 
 		for_each_mld_link(other_hapd, lhapd) {
 			struct mld_link_info *link;
@@ -2492,7 +2492,7 @@ hostapd_reject_all_reconf_req(struct hostapd_data *hapd, u8 *pos,
 						  req_list->sta_mld_addr);
 
 			if (lsta)
-				ap_free_sta(lhapd, lsta);
+				ap_free_sta_link(lhapd, lsta);
 
 			info->status = WLAN_STATUS_UNSPECIFIED_FAILURE;
 		}
@@ -3237,7 +3237,7 @@ hostapd_validate_link_reconf_req(struct hostapd_data *hapd,
 #endif /* CONFIG_QCN_EXTN */
 
 			if (lsta)
-				ap_free_sta(lhapd, lsta);
+				ap_free_sta_link(lhapd, lsta);
 		} else {
 			total_kde_len += link_kde_len;
 			links_add_ok |= BIT(info->link_id);
