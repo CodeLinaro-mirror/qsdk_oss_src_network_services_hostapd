@@ -239,6 +239,9 @@ struct wpa_smd_prepared_target {
 	 * deferred to EXEC when state was PENDING at PREP time.
 	 */
 	bool partner_ptk_installed;
+	/* GTK installed for transitioning (partner) links at exec response time.
+	 * Allows early PM=0 dynamic context before primary link transitions. */
+	bool partner_gtk_installed;
 };
 
 int smd_enabled(struct wpa_supplicant *wpa_s);
