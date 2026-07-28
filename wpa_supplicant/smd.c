@@ -2593,40 +2593,18 @@ smd_handle_transition_complete(struct wpa_supplicant *wpa_s,
 	/* Install PTK unless already done: exec_path=1 pre-installs it before
 	 * the Exec Request, and MLO partner links install it at PREP time.
 	 * IEEE 802.11bn D1.4 §37.15.7/8 requires "strictly once". */
-	if (target->ptk_set) {
-		wpa_printf(MSG_DEBUG,
-			   "SMD: Primary link: installing PTK at transition complete for target "
-			    MACSTR,
-			   MAC2STR(target->target_mld_addr));
-		if (smd_install_target_ptk(wpa_s, target) < 0) {
-			wpa_printf(MSG_ERROR,
-				   "SMD: Failed to install PTK for primary link target "
-				    MACSTR,
-				   MAC2STR(target->target_mld_addr));
-			/* Non-fatal: continue - GTK install and state update
-			 * should still proceed */
-		}
-	}
-
 	os_memcpy(wpa_s->bssid, target->target_mld_addr, ETH_ALEN);
 	os_memcpy(wpa_s->ap_mld_addr, target->target_mld_addr, ETH_ALEN);
-	os_memset(wpa_s->pending_bssid, 0, ETH_ALEN);
 
-	wpa_printf(MSG_DEBUG, "SMD: Updated BSSID/AP_MLD to " MACSTR,
+	wpa_printf(MSG_DEBUG,
+		   "SMD: key-install: updated BSSID/AP_MLD to " MACSTR
+		   " before PTK install",
 		   MAC2STR(wpa_s->bssid));
 
-	wpa_s->current_bss = wpa_bss_get_bssid(wpa_s, target->target_mld_addr);
-	if (!wpa_s->current_bss) {
-		wpa_printf(MSG_DEBUG,
-			   "SMD: Target BSS not in scan cache (non-fatal)");
-	}
-
-	/*
-	 * Query MLO info from driver BEFORE wpa_sm_notify_smd_transition_complete().
-	 * nl80211_get_sta_mlo_info() updates drv->sta_mlo_info with the new AP's
-	 * MLD address.  wpa_driver_nl80211_set_supp_port() uses
-	 * drv->sta_mlo_info.ap_mld_addr (when valid_links != 0) to determine
-	 * which AP to authorize, so this must happen first.
+	/* Query MLO info from driver BEFORE PTK/GTK install.
+	 * drv->sta_mlo_info.ap_mld_addr must reflect the NEW AP so nl80211
+	 * set_key (link_id=-1) can find the correct STA peer. This also
+	 * ensures wpa_driver_nl80211_set_supp_port() uses the correct address.
 	 */
 	{
 		struct driver_sta_mlo_info mlo;
@@ -2668,6 +2646,32 @@ smd_handle_transition_complete(struct wpa_supplicant *wpa_s,
 		}
 	}
 
+	if (target->ptk_set) {
+		wpa_printf(MSG_DEBUG,
+			   "SMD: Primary link: PTK fallback install at COMPLETE for "
+			   MACSTR " (mac80211 install may have already succeeded)",
+			   MAC2STR(target->target_mld_addr));
+		if (smd_install_target_ptk(wpa_s, target) < 0) {
+			wpa_printf(MSG_DEBUG,
+				   "SMD: PTK install at COMPLETE skipped/failed for "
+				   MACSTR " (likely already installed by mac80211)",
+				   MAC2STR(target->target_mld_addr));
+			/* Non-fatal: mac80211 already installed it before T2 */
+		}
+	}
+	os_memset(wpa_s->pending_bssid, 0, ETH_ALEN);
+
+	wpa_printf(MSG_DEBUG, "SMD: Updated BSSID/AP_MLD to " MACSTR,
+		   MAC2STR(wpa_s->bssid));
+
+	wpa_s->current_bss = wpa_bss_get_bssid(wpa_s, target->target_mld_addr);
+	if (!wpa_s->current_bss) {
+		wpa_printf(MSG_DEBUG,
+			   "SMD: Target BSS not in scan cache (non-fatal)");
+	}
+
+
+
 	if (wpa_s->mlo_assoc_link_id < SMD_MAX_LINKS) {
 		wpa_s->assoc_freq = wpa_s->links[wpa_s->mlo_assoc_link_id].freq;
 		wpa_printf(MSG_DEBUG,
@@ -2702,19 +2706,15 @@ smd_handle_transition_complete(struct wpa_supplicant *wpa_s,
 	wpa_drv_set_supp_port(wpa_s, 1);
 
 	if (target->gkd && target->gkd_len > 0) {
-		wpa_printf(MSG_DEBUG,
-			   "SMD: Installing GTK on primary link %u",
-			   target->primary_link_id);
+		u16 gtk_links = target->partner_gtk_installed
+			? BIT(target->primary_link_id) : wpa_s->valid_links;
 
-		/* Clear cached MLO GTK state for all valid links before
-		 * installing target AP keys.  The KRACK protection check in
-		 * wpa_supplicant_install_mlo_gtk() compares the incoming GTK
-		 * against the stored pre-transition value and skips install
-		 * on a match.  During SMD BSS transition the stored values
-		 * are stale (old AP); clearing them forces a clean install
-		 * for every link, avoiding broadcast decrypt failures in the
-		 * cross-link scenario where old and new GTK bytes coincide. */
-		for_each_link(wpa_s->valid_links, i) {
+		wpa_printf(MSG_DEBUG,
+			   "SMD: Installing GTK on links=0x%04x (primary=%u partner_gtk=%d)",
+			   gtk_links, target->primary_link_id,
+			   target->partner_gtk_installed);
+
+		for_each_link(gtk_links, i) {
 			os_memset(&sm->mlo.links[i].gtk, 0,
 				  sizeof(sm->mlo.links[i].gtk));
 			os_memset(&sm->mlo.links[i].gtk_wnm_sleep, 0,
@@ -2723,10 +2723,10 @@ smd_handle_transition_complete(struct wpa_supplicant *wpa_s,
 
 		if (wpa_sm_install_mlo_group_keys(sm, target->gkd,
 						  target->gkd_len,
-						  wpa_s->valid_links) < 0) {
+						  gtk_links) < 0) {
 			wpa_printf(MSG_ERROR,
-				   "SMD: Failed to install GTK for valid_links=0x%04x",
-				   wpa_s->valid_links);
+				   "SMD: Failed to install GTK for links=0x%04x",
+				   gtk_links);
 			target->state = SMD_TARGET_FAILED;
 			return;
 		}
@@ -2789,6 +2789,9 @@ void smd_handle_transition_status(struct wpa_supplicant *wpa_s,
 {
 	struct wpa_smd_prepared_target *target;
 
+#define SMD_TRANSITION_COMPLETE 2
+#define SMD_TRANSITION_ABORT	3
+
 	if (!smd_enabled(wpa_s)) {
 		wpa_printf(MSG_DEBUG,
 			   "SMD: Transition status received but SMD disabled");
@@ -2809,8 +2812,6 @@ void smd_handle_transition_status(struct wpa_supplicant *wpa_s,
 		   info->type, info->status_code,
 		   MAC2STR(info->target_mld_addr), target->state);
 
-#define SMD_TRANSITION_COMPLETE 2
-#define SMD_TRANSITION_ABORT	3
 	switch (info->type) {
 	case SMD_TRANSITION_COMPLETE:
 		/*
@@ -4334,6 +4335,32 @@ static void smd_handle_execute_response(struct wpa_supplicant *wpa_s,
 				wpa_printf(MSG_ERROR,
 					   "UHR: SMD: PTK install for partner "
 					   "links failed at EXEC");
+		}
+
+		if (!target->partner_gtk_installed &&
+		    target->partner_ptk_installed &&
+		    target->transitioning_links &&
+		    target->gkd && target->gkd_len > 0) {
+			struct wpa_sm *sm = wpa_s->wpa;
+			int i;
+
+			for_each_link(target->transitioning_links, i)
+				os_memset(&sm->mlo.links[i].gtk, 0,
+					  sizeof(sm->mlo.links[i].gtk));
+			if (wpa_sm_install_mlo_group_keys(
+				    sm, target->gkd, target->gkd_len,
+				    target->transitioning_links) == 0) {
+				target->partner_gtk_installed = true;
+				wpa_printf(MSG_INFO,
+					   "UHR: SMD: Partner GTK installed "
+					   "links=0x%04x (early PM=0)",
+					   target->transitioning_links);
+			} else {
+				wpa_printf(MSG_ERROR,
+					   "UHR: SMD: Partner GTK install "
+					   "failed links=0x%04x",
+					   target->transitioning_links);
+			}
 		}
 		target->state = SMD_TARGET_DRAINING;
 		/* Start watchdog: if the driver never sends TRANSITION_COMPLETE
