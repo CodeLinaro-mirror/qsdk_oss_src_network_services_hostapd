@@ -1486,6 +1486,7 @@ struct hostapd_bss_config {
 	bool is_cmn_param;
 	int cmn_param_id;
 	int cmn_param_val[2];
+	unsigned int report_connection_failures:1;
 };
 
 /**

@@ -355,6 +355,7 @@ struct wpa_auth_config {
 	int smd_capable;
 	u8 smd_domain_id[ETH_ALEN];
 	int smd_ptk_mode;
+	unsigned int report_connection_failures:1;
 };
 
 typedef enum {

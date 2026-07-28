@@ -263,6 +263,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->wmm_ac_params[1] = ac_bk;
 	bss->wmm_ac_params[2] = ac_vi;
 	bss->wmm_ac_params[3] = ac_vo;
+	bss->report_connection_failures = 0;
 	bss->enable_dscp_policy_capa = false;
 	bss->twt_responder_caps = TWT_ITWT_ENABLED;
 	bss->bss_priority = 0;
