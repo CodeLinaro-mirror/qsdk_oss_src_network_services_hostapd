@@ -6710,6 +6710,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		if (get_u16(pos, line, &conf->npca_punct_bitmap))
 			return 1;
 #endif /* CONFIG_IEEE80211BN */
+	} else if (os_strcmp(buf, "report_connection_failures") == 0) {
+		bss->report_connection_failures = !!atoi(pos);
 	} else {
 		if (!hostapd_config_fill_extn(conf, bss, buf, pos, line))
 			return 0;

@@ -1466,6 +1466,7 @@ struct hostapd_bss_config {
 	unsigned int pmksa_caching_privacy:1;
 	unsigned int eap_using_authentication_frames:1;
 #endif /* CONFIG_ENC_ASSOC  */
+	unsigned int report_connection_failures:1;
 };
 
 /**

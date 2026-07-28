@@ -400,6 +400,7 @@ static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
 	os_memcpy(wconf->smd_domain_id, conf->smd.smd_identifier, ETH_ALEN);
 	wconf->smd_ptk_mode = conf->smd.caps.ptk_mode;
 #endif /* CONFIG_IEEE80211BN */
+	wconf->report_connection_failures = conf->report_connection_failures;
 }
 
 
