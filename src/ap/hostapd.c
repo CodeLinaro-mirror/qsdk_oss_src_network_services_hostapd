@@ -9285,13 +9285,6 @@ int hostapd_switch_channel(struct hostapd_data *hapd,
 		return -1;
 	}
 
-#ifdef CONFIG_QCN_EXTN
-	hostapd_uplink_cancel_disconnect_timeout_extn(hapd->iface);
-#ifdef CONFIG_IEEE80211BE
-	hostapd_ttlm_restore_default_mapping_for_5g_cac(hapd, settings);
-#endif /* CONFIG_IEEE80211BE */
-#endif /* CONFIG_QCN_EXTN */
-
 	ret = hostapd_fill_csa_settings(hapd, settings);
 	if (ret)
 		return ret;
@@ -9301,7 +9294,30 @@ int hostapd_switch_channel(struct hostapd_data *hapd,
 						   hapd->iface->radar_bit_pattern;
 	}
 
+	/* interCAC handling: The interCAC feature may decide not to
+	 * switch the channel. In such cases, it returns early without
+	 * performing a channel switch.
+	 *
+	 * Any handling that assumes a channel switch will occur should
+	 * be added after this condition.
+	 */
+	if (hostapd_dfs_intercac_defer_non_radar_switch(hapd->iface,
+							settings)) {
+		free_beacon_data(&settings->beacon_csa);
+		free_beacon_data(&settings->beacon_after);
+#ifdef CONFIG_IEEE80211AX
+		os_free(settings->ubpr.unsol_bcast_probe_resp_tmpl);
+		settings->ubpr.unsol_bcast_probe_resp_tmpl = NULL;
+#endif /* CONFIG_IEEE80211AX */
+		hostapd_cleanup_cs_params(hapd);
+		return 0;
+	}
+
 #ifdef CONFIG_QCN_EXTN
+	hostapd_uplink_cancel_disconnect_timeout_extn(hapd->iface);
+#ifdef CONFIG_IEEE80211BE
+	hostapd_ttlm_restore_default_mapping_for_5g_cac(hapd, settings);
+#endif /* CONFIG_IEEE80211BE */
 	hostapd_ignorecac_switch_channel_extn(hapd, settings);
 #endif /* CONFIG_QCN_EXTN */
 
