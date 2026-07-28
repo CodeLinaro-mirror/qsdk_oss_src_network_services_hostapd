@@ -12886,15 +12886,66 @@ static int wpas_ctrl_iface_epcs(struct wpa_supplicant *wpa_s, char *pos,
 }
 
 /**
+ * npca_build_link_config - Resolve NPCA params for a link
+ * @wpa_s: Pointer to wpa_supplicant data
+ * @link_id: MLO link ID to build config for
+ * @enable: NPCA enable/disable value to apply to this link
+ * @switch_delay: Explicit switch delay override in TUs, or -1 to use the
+ * FW-advertised default
+ * @switchback_delay: Explicit switch-back delay override in TUs, or -1 to
+ * use the FW-advertised default
+ * @cfg: Output link configuration
+ * Returns: 0 on success (cfg filled in), -1 if the link is not usable for
+ * NPCA (no hw mode found or NPCA not supported on this link)
+ */
+static int npca_build_link_config(struct wpa_supplicant *wpa_s, int link_id,
+				  bool enable, int switch_delay,
+				  int switchback_delay,
+				  struct npca_link_config *cfg)
+{
+	struct hostapd_hw_modes *mode;
+
+	mode = get_mode_with_freq(wpa_s->hw.modes, wpa_s->hw.num_modes,
+				  wpa_s->links[link_id].freq);
+	if (!mode) {
+		wpa_printf(MSG_DEBUG,
+			   "NPCA: no hw mode for link %d freq %u",
+			   link_id, wpa_s->links[link_id].freq);
+		return -1;
+	}
+
+	if (!mode->npca_info[IEEE80211_MODE_INFRA].npca_supported) {
+		wpa_printf(MSG_DEBUG,
+			   "NPCA: link %d does not support NPCA",
+			   link_id);
+		return -1;
+	}
+
+	cfg->link_id = link_id;
+	cfg->npca_enable = enable;
+	cfg->npca_switch_delay = switch_delay >= 0 ? (u8) switch_delay :
+		mode->npca_info[IEEE80211_MODE_INFRA].npca_switch_delay;
+	cfg->npca_switchback_delay = switchback_delay >= 0 ?
+		(u8) switchback_delay :
+		mode->npca_info[IEEE80211_MODE_INFRA].npca_switch_back_delay;
+	return 0;
+}
+
+/**
  * wpas_ctrl_iface_npca_enable - Handle NPCA ctrl_iface command
  *
  * Command format:
- *   NPCA <0|1> [link_id=<id> [switch_delay=<delay>]
- *                      [switchback_delay=<delay>]] ...
+ *   NPCA <0|1> [link_id=<id> enable=<0|1> [switch_delay=<d>]
+ *                      [switchback_delay=<d>]] ...
  *
- * The global enable/disable flag is applied to all MLO links that have NPCA
- * capability. Per-link overrides can be specified with link_id= tokens.
- * switch_delay and switchback_delay are optional per-link parameters (in TUs).
+ * With no link_id= groups, the <0|1> value is applied to all MLO links
+ * that have NPCA capability. If one or more link_id=<id> enable=<0|1>
+ * groups are given, only those links are touched, each with its own
+ * enable value; the leading <0|1> is ignored in that case.
+ *
+ * switch_delay and switchback_delay are optional per-link overrides (in
+ * TUs). When omitted, the FW-advertised NPCA capability for the link's
+ * radio is used instead.
  *
  * Returns 0 on success, -1 on failure.
  */
@@ -12906,6 +12957,11 @@ static int wpas_ctrl_iface_npca_enable(struct wpa_supplicant *wpa_s,
 	struct npca_link_config links[MAX_NUM_MLD_LINKS];
 	int num_links = 0;
 	int i;
+	int explicit_link_id[MAX_NUM_MLD_LINKS];
+	int explicit_enable[MAX_NUM_MLD_LINKS];
+	int explicit_switch_delay[MAX_NUM_MLD_LINKS];
+	int explicit_switchback_delay[MAX_NUM_MLD_LINKS];
+	int num_explicit = 0;
 
 	/* Parse global enable/disable flag */
 	pos = cmd;
@@ -12917,53 +12973,18 @@ static int wpas_ctrl_iface_npca_enable(struct wpa_supplicant *wpa_s,
 	while (*pos && isspace((unsigned char)*pos))
 		pos++;
 
-	/* Build per-link config array from valid_links */
 	if (!wpa_s->valid_links) {
 		wpa_printf(MSG_DEBUG,
 			   "NPCA: no MLO links associated, cannot apply");
 		return -1;
 	}
 
-	/* Initialize link configs from valid_links with global enable value */
-	for_each_link(wpa_s->valid_links, i) {
-		struct hostapd_hw_modes *mode;
-
-		/* Get hardware mode for this link's frequency */
-		mode = get_mode_with_freq(wpa_s->hw.modes, wpa_s->hw.num_modes,
-					  wpa_s->links[i].freq);
-		if (!mode) {
-			wpa_printf(MSG_DEBUG,
-				   "NPCA: no hw mode for link %d freq %u",
-				   i, wpa_s->links[i].freq);
-			continue;
-		}
-
-		/* Check NPCA capability for STA mode */
-		if (!mode->npca_info[IEEE80211_MODE_INFRA].npca_supported) {
-			wpa_printf(MSG_DEBUG,
-				   "NPCA: link %d does not support NPCA",
-				   i);
-			continue;
-		}
-
-		links[num_links].link_id = i;
-		links[num_links].npca_enable = !!global_enable;
-		links[num_links].npca_switch_delay = 0;
-		links[num_links].npca_switchback_delay = 0;
-		num_links++;
-	}
-
-	if (num_links == 0) {
-		wpa_printf(MSG_DEBUG,
-			   "NPCA: no NPCA-capable links found");
-		return -1;
-	}
-
-	/* Parse optional per-link overrides: link_id=<id> [switch_delay=<d>]
-	 * [switchback_delay=<d>] */
+	/* Parse optional per-link groups: link_id=<id> enable=<0|1>
+	 * [switch_delay=<d>] [switchback_delay=<d>] */
 	token = pos;
 	while (*token) {
-		int link_id = -1, sw_delay = 0, swb_delay = 0;
+		int link_id = -1, enable = -1;
+		int switch_delay = -1, switchback_delay = -1;
 		char *next;
 
 		/* Skip whitespace */
@@ -12981,21 +13002,41 @@ static int wpas_ctrl_iface_npca_enable(struct wpa_supplicant *wpa_s,
 				next++;
 			token = next;
 
-			/* Look for optional switch_delay and switchback_delay
-			 * that follow this link_id */
+			/* Skip whitespace before the expected enable= token */
+			while (*token && isspace((unsigned char)*token))
+				token++;
+
+			if (os_strncmp(token, "enable=", 7) == 0) {
+				enable = atoi(token + 7);
+				next = token + 7;
+				while (*next && !isspace((unsigned char)*next))
+					next++;
+				token = next;
+			}
+
+			if (enable < 0) {
+				wpa_printf(MSG_DEBUG,
+					   "NPCA: link_id=%d missing enable=, skipping",
+					   link_id);
+				continue;
+			}
+
+			/* Look for optional switch_delay and
+			 * switchback_delay that follow this link's
+			 * enable= token */
 			while (*token) {
 				while (*token && isspace((unsigned char)*token))
 					token++;
 				if (!*token)
 					break;
 				if (os_strncmp(token, "switch_delay=", 13) == 0) {
-					sw_delay = atoi(token + 13);
+					switch_delay = atoi(token + 13);
 					next = token + 13;
 					while (*next && !isspace((unsigned char)*next))
 						next++;
 					token = next;
 				} else if (os_strncmp(token, "switchback_delay=", 17) == 0) {
-					swb_delay = atoi(token + 17);
+					switchback_delay = atoi(token + 17);
 					next = token + 17;
 					while (*next && !isspace((unsigned char)*next))
 						next++;
@@ -13006,19 +13047,20 @@ static int wpas_ctrl_iface_npca_enable(struct wpa_supplicant *wpa_s,
 				}
 			}
 
-			/* Apply per-link override */
-			if (link_id >= 0 && link_id < MAX_NUM_MLD_LINKS) {
-				for (i = 0; i < num_links; i++) {
-					if (links[i].link_id == link_id) {
-						links[i].npca_enable =
-							!!global_enable;
-						links[i].npca_switch_delay =
-							(u8)sw_delay;
-						links[i].npca_switchback_delay =
-							(u8)swb_delay;
-						break;
-					}
-				}
+			if (link_id < 0 || link_id >= MAX_NUM_MLD_LINKS ||
+			    !(wpa_s->valid_links & BIT(link_id))) {
+				wpa_printf(MSG_DEBUG,
+					   "NPCA: link_id=%d not a valid associated link, skipping",
+					   link_id);
+				continue;
+			}
+
+			if (num_explicit < MAX_NUM_MLD_LINKS) {
+				explicit_link_id[num_explicit] = link_id;
+				explicit_enable[num_explicit] = enable;
+				explicit_switch_delay[num_explicit] = switch_delay;
+				explicit_switchback_delay[num_explicit] = switchback_delay;
+				num_explicit++;
 			}
 		} else {
 			/* Unknown token, skip it */
@@ -13027,9 +13069,53 @@ static int wpas_ctrl_iface_npca_enable(struct wpa_supplicant *wpa_s,
 		}
 	}
 
-	wpa_printf(MSG_DEBUG,
-		   "NPCA: sending uhr_mode_update for %d link(s), global_enable=%d",
-		   num_links, global_enable);
+	if (num_explicit > 0) {
+		/* Only touch the explicitly listed links */
+		for (i = 0; i < num_explicit; i++) {
+			if (npca_build_link_config(wpa_s, explicit_link_id[i],
+						   !!explicit_enable[i],
+						   explicit_switch_delay[i],
+						   explicit_switchback_delay[i],
+						   &links[num_links]) == 0)
+				num_links++;
+		}
+	} else {
+		/* No per-link groups: apply global_enable to every
+		 * NPCA-capable link */
+		for_each_link(wpa_s->valid_links, i) {
+			if (npca_build_link_config(wpa_s, i, !!global_enable,
+						   -1, -1,
+						   &links[num_links]) == 0)
+				num_links++;
+		}
+	}
+
+	if (num_links == 0) {
+		wpa_printf(MSG_DEBUG,
+			   "NPCA: no NPCA-capable links found");
+		return -1;
+	}
+
+	{
+		char status[MAX_NUM_MLD_LINKS * 16];
+		int pos_len = 0, ret;
+
+		for (i = 0; i < num_links; i++) {
+			ret = os_snprintf(status + pos_len,
+					  sizeof(status) - pos_len,
+					  "%slink%d=%s", i ? " " : "",
+					  links[i].link_id,
+					  links[i].npca_enable ? "enabled" :
+					  "disabled");
+			if (os_snprintf_error(sizeof(status) - pos_len, ret))
+				break;
+			pos_len += ret;
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "NPCA: sending uhr_mode_update for %d link(s): %s",
+			   num_links, status);
+	}
 
 	return wpa_drv_uhr_mode_update(wpa_s, links, num_links);
 }

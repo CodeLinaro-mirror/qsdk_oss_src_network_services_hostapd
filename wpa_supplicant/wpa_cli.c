@@ -490,11 +490,15 @@ static int wpa_cli_cmd_epcs(struct wpa_ctrl *ctrl, int argc,
  * wpa_cli_cmd_npca - Handle npca wpa_cli command
  *
  * Usage:
- *   npca <0|1> [link_id=<id> [switch_delay=<d>]
+ *   npca <0|1> [link_id=<id> enable=<0|1> [switch_delay=<d>]
  *                      [switchback_delay=<d>]] ...
  *
- * Enables or disables NPCA on all MLO links that support it.
- * Optional per-link overrides can be specified with link_id= tokens.
+ * With no link_id= groups, enables or disables NPCA on all MLO links
+ * that support it. If one or more link_id=<id> enable=<0|1> groups are
+ * given, only those links are enabled/disabled, each with its own value.
+ * switch_delay and switchback_delay are optional per-link overrides (in
+ * TUs); if omitted, the FW-advertised NPCA capability for the link's
+ * radio is used instead.
  */
 static int wpa_cli_cmd_npca(struct wpa_ctrl *ctrl, int argc,
 				   char *argv[])
@@ -4626,8 +4630,8 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	  " =enable/disable EPCS session" },
 	{ "npca", wpa_cli_cmd_npca, NULL,
 	  cli_cmd_flag_none,
-	  "  <0|1> [link_id=<id> [switch_delay=<d>] [switchback_delay=<d>]] ...\n"
-	  " =enable(1)/disable(0) NPCA on all MLO links with optional per-link config" },
+	  "  <0|1> [link_id=<id> enable=<0|1> [switch_delay=<d>] [switchback_delay=<d>]] ...\n"
+	  " =enable(1)/disable(0) NPCA on all MLO links, or per-link if link_id= given" },
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_QCN_EXTN
 	{ "get_freq_list", wpa_cli_cmd_get_freq_list, NULL,
