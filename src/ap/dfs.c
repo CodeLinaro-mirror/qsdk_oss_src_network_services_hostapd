@@ -2133,6 +2133,9 @@ hostapd_dfs_get_preferred_precac_channel(struct hostapd_iface *iface)
 	if (!iface || !iface->user_rcac_channel)
 		return NULL;
 
+	if (!iface->conf->intercac_chan)
+		return NULL;
+
 	mode = iface->current_mode;
 	if (!mode)
 		return NULL;
@@ -3179,6 +3182,9 @@ int hostapd_dfs_intercac_defer_non_radar_switch(struct hostapd_iface *iface,
 
 	if (!iface || !settings || !dfs_use_radar_background(iface) ||
 	    !dfs_is_agile_cac_enabled(iface))
+		return 0;
+
+	if (!iface->conf->intercac_chan)
 		return 0;
 
 	/* Radar-triggered switches are time-critical and must not be deferred. */
