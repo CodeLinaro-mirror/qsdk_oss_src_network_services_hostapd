@@ -22,6 +22,7 @@
 #include "common/wpa_ctrl.h"
 #ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/cmn.h"
+#include "../qcn_extns/wpa_supplicant_extn.h"
 #endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_DPP
 #include "common/dpp.h"
@@ -13702,6 +13703,60 @@ static int wpas_ctrl_nan_unpause_publish(struct wpa_supplicant *wpa_s,
 
 #endif /* CONFIG_NAN_USD */
 
+#ifdef CONFIG_QCN_EXTN
+static int wpa_supplicant_ctrl_iface_send_uplink_csa(struct wpa_supplicant *wpa_s,
+						     const char *cmd)
+{
+	int freq;
+	int cs_count;
+	unsigned int new_ch_width;
+	unsigned int ch_seg_0;
+	unsigned int ch_seg_1;
+	const char *pos;
+
+	pos = os_strstr(cmd, "freq=");
+	if (!pos ||
+	    sscanf(pos + os_strlen("freq="), "%d", &freq) != 1 || freq <= 0)
+		return -1;
+
+	pos = os_strstr(cmd, "cs_count=");
+	if (!pos ||
+	    sscanf(pos + os_strlen("cs_count="), "%d",
+		   &cs_count) != 1 || cs_count < 0 || cs_count > 255)
+		return -1;
+
+	pos = os_strstr(cmd, "chan_width=");
+	if (!pos ||
+	    sscanf(pos + os_strlen("chan_width="), "%u",
+		   &new_ch_width) != 1 || new_ch_width > 255)
+		return -1;
+
+	pos = os_strstr(cmd, "cf1=");
+	if (!pos ||
+	    sscanf(pos + os_strlen("cf1="), "%u",
+		   &ch_seg_0) != 1 || ch_seg_0 > 255)
+		return -1;
+
+	pos = os_strstr(cmd, "cf2=");
+	if (!pos ||
+	    sscanf(pos + os_strlen("cf2="), "%u",
+		   &ch_seg_1) != 1 || ch_seg_1 > 255)
+		return -1;
+
+	wpa_printf(MSG_INFO,
+		   "UPLINK_CSA: freq=%d cs_count=%d chan_width=%u cf1=%u cf2=%u",
+		   freq, cs_count, new_ch_width, ch_seg_0, ch_seg_1);
+
+	if (wpa_drv_send_uplink_csa(wpa_s, freq, (u8) cs_count, (u8) ch_seg_0,
+				    (u8) ch_seg_1, (u8) new_ch_width,
+				    NULL, 0, 0) < 0) {
+		wpa_printf(MSG_ERROR, "UPLINK_CSA: send failed");
+		return -1;
+	}
+
+	return 0;
+}
+#endif /* CONFIG_QCN_EXTN */
 
 char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 					 char *buf, size_t *resp_len)
@@ -14260,6 +14315,11 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 	} else if (os_strncmp(buf, "BSS ", 4) == 0) {
 		reply_len = wpa_supplicant_ctrl_iface_bss(
 			wpa_s, buf + 4, reply, reply_size);
+#ifdef CONFIG_QCN_EXTN
+	} else if (os_strncmp(buf, "UPLINK_CSA ", 11) == 0) {
+		if (wpa_supplicant_ctrl_iface_send_uplink_csa(wpa_s, buf + 11))
+			reply_len = -1;
+#endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_AP
 #ifdef CONFIG_CTRL_IFACE_MIB
 	} else if (os_strcmp(buf, "STA-FIRST") == 0) {
