@@ -1469,8 +1469,13 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 {
 	u8 *pos = eid;
 	bool sae_pk = false;
+	bool preserve_sae_h2e = false;
+#ifdef CONFIG_SAE_PK
+	bool preserve_sae_pk = false;
+#endif /* CONFIG_SAE_PK */
 	u64 capab = 0, tmp;
 	size_t flen;
+
 
 	if (!(hapd->conf->wpa & WPA_PROTO_RSN))
 		return eid;
@@ -1511,28 +1516,59 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 	    hapd->conf->control_frame_prot)
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
 
-	capab &= capab_mask;
-
+	/* Per 802.11bn D1.4, when Security Profile IE is present with
+	 * SAE-EXT-KEY base AKM, the SAE_H2E capability must not be suppressed
+	 * in the beacon RSNXE, as SAE-EXT-KEY requires H2E. */
+	if (wpa_key_mgmt_sae_ext_key(hapd->conf->wpa_key_mgmt) &&
+	    (capab & BIT(WLAN_RSNX_CAPAB_SAE_H2E))) {
+		preserve_sae_h2e = true;
+	}
+#ifdef CONFIG_SAE_PK
+	if ((capab & BIT(WLAN_RSNX_CAPAB_SAE_PK))) {
+		preserve_sae_pk = true;
+	}
+#endif /* CONFIG_SAE_PK */
 #ifdef CONFIG_ENC_ASSOC
 	/* Per IEEE 802.11bi/D4.0, 12.16.7 (PMKSA caching privacy)
 	 * a STA that sets the PMKSA Caching Privacy Support
 	 * field in the RSNXE to 1 shall set the (Re)Association
 	 * Frame Encryption Support field in the RSNXE to 1.
+	 * Only apply capab_mask to ASSOC_FRAME_ENCRYPTION and PMKSA_CACHING_PRIVACY bits.
 	 */
-	if ((hapd->iface->drv_flags2 &
+	if ((hapd->sp_ie_activated_sta ?
+	     (capab_mask & BIT(WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION)) : true) &&
+	    (hapd->iface->drv_flags2 &
 	     WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION) &&
 	    (hapd->conf->assoc_frame_encryption ||
 	    hapd->conf->pmksa_caching_privacy)) {
 		capab |= BIT(WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION);
+	}
+	if ((hapd->sp_ie_activated_sta ?
+	     (capab_mask & BIT(WLAN_RSNX_CAPAB_KEK_IN_PASN)) : true) &&
+	    (hapd->iface->drv_flags2 &
+	     WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION) &&
+	    (hapd->conf->assoc_frame_encryption ||
+	    hapd->conf->pmksa_caching_privacy)) {
 		capab |= BIT(WLAN_RSNX_CAPAB_KEK_IN_PASN);
 	}
-	if (hapd->conf->pmksa_caching_privacy)
+	if ((hapd->sp_ie_activated_sta ?
+	     (capab_mask & BIT(WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY)) : true) &&
+	    hapd->conf->pmksa_caching_privacy)
 		capab |= BIT(WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY);
 	if (hapd->conf->eap_using_authentication_frames)
 		capab |= BIT(WLAN_RSNX_CAPAB_802_1X_IN_AUTH_FRAMES);
 	if (hapd->conf->eppke_unauth)
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_UNAUTH_EPPKE);
 #endif /* CONFIG_ENC_ASSOC */
+
+	if (preserve_sae_h2e) {
+		capab |= BIT(WLAN_RSNX_CAPAB_SAE_H2E);
+	}
+#ifdef CONFIG_SAE_PK
+	if (preserve_sae_pk) {
+		capab |= BIT(WLAN_RSNX_CAPAB_SAE_PK);
+	}
+#endif /* CONFIG_SAE_PK */
 
 	if (!capab)
 		return eid; /* no supported extended RSN capabilities */

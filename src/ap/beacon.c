@@ -1094,6 +1094,7 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 	buflen += hostapd_get_rsnxe_override_len(hapd);
 	buflen += hostapd_wfa_cap_ie_len(hapd, NULL);
 	buflen += hostapd_tpc_report_len(hapd);
+	buflen += hostapd_security_profile_ie_len(hapd);
 #ifdef CONFIG_QCN_EXTN
 	buflen += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
 	/* WDS vendor IE */
