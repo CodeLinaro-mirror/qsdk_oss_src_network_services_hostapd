@@ -13,6 +13,9 @@
 #define HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR 500000
 #define HAPD_AGILE_CAC_RESTART_DELAY_SECS 3
 
+/* CSA count for uplink CSA notification to wpa_supplicant */
+#define HAPD_DFS_UPLINK_CSA_COUNT 5
+
 /* DFS_RANDOM_CH_FLAG bits passed to dfs_get_valid_channel() */
 #define DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH   0x00000001 /* exclude current operating channel */
 #define DFS_RANDOM_CH_FLAG_NO_DFS_CH        0x00000002 /* exclude DFS channels */
