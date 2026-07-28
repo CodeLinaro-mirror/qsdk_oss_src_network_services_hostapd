@@ -1035,6 +1035,16 @@ void ap_handle_timer(void *eloop_ctx, void *timeout_ctx)
 				MAC2STR(sta->addr), inactive_sec,
 				max_inactivity);
 
+			if (hapd->conf->skip_disconnect) {
+				wpa_msg(hapd->msg_ctx, MSG_INFO,
+					"AP-STA-IDLE-TIMEOUT " MACSTR,
+					MAC2STR(sta->addr));
+				sta->timeout_next = STA_NULLFUNC;
+				eloop_register_timeout(max_inactivity, 0,
+						       ap_handle_timer, hapd, sta);
+				return;
+			}
+
 			if (hapd->conf->skip_inactivity_poll)
 				sta->timeout_next = STA_DISASSOC;
 		}
