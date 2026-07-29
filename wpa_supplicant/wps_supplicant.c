@@ -633,6 +633,7 @@ static int wpa_supplicant_wps_cred(void *ctx,
 		}
 	}
 	ssid->priority = wpa_s->conf->wps_priority;
+	ssid->scan_ssid = 1;
 
 	wpas_wps_security_workaround(wpa_s, ssid, cred);
 
