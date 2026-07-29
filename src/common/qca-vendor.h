@@ -4446,6 +4446,16 @@ enum qca_wlan_vendor_attr_config {
  */
 enum qca_nl80211_vendor_config_generic_command {
 	QCA_WLAN_VENDOR_WIFI_PARAM_ALLOW_SCAN_ON_DFS_CHAN = 609,
+	/* Notify driver that AP interface is enabled/disabled with BSS security mode.
+	 * Value is from enum qca_wlan_vendor_iface_mode.
+	 */
+	QCA_WLAN_VENDOR_WIFI_PARAM_INTERFACE_EN_DIS_MODE = 611,
+};
+
+enum qca_wlan_vendor_iface_mode {
+	QCA_WLAN_VENDOR_IFACE_MODE_CLEAR = 0,
+	QCA_WLAN_VENDOR_IFACE_MODE_OPEN = 1,
+	QCA_WLAN_VENDOR_IFACE_MODE_SECURED = 2,
 };
 
 /* Compatibility defines for previously used incorrect enum

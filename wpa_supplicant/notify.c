@@ -115,6 +115,26 @@ void wpas_notify_state_changed(struct wpa_supplicant *wpa_s,
 		wpas_p2p_notif_disconnected(wpa_s);
 	}
 
+	if (old_state != WPA_COMPLETED && new_state == WPA_COMPLETED) {
+		u32 bss_mode;
+
+		bss_mode = (ssid && (ssid->key_mgmt & ~WPA_KEY_MGMT_NONE)) ?
+			   QCA_WLAN_VENDOR_IFACE_MODE_SECURED :
+			   QCA_WLAN_VENDOR_IFACE_MODE_OPEN;
+		if (wpa_drv_notify_iface_state(wpa_s, bss_mode))
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"Failed to notify iface enabled state %s->%s",
+				wpa_supplicant_state_txt(old_state),
+				wpa_supplicant_state_txt(new_state));
+	} else if (old_state == WPA_COMPLETED && new_state != WPA_COMPLETED) {
+		if (wpa_drv_notify_iface_state(wpa_s,
+					       QCA_WLAN_VENDOR_IFACE_MODE_CLEAR))
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"Failed to notify iface disabled state %s->%s",
+				wpa_supplicant_state_txt(old_state),
+				wpa_supplicant_state_txt(new_state));
+	}
+
 	sme_state_changed(wpa_s);
 
 #ifdef ANDROID

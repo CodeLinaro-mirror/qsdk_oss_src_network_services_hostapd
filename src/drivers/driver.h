@@ -6927,6 +6927,22 @@ struct wpa_driver_ops {
 				  struct wpabuf *buf, u8* mac, const char *ifname);
 #endif /* CONFIG_IEEE80211AX */
 
+	/**
+	 * notify_iface_state - Notify driver that AP interface entered ENABLED/DISABLED state
+	 * @priv: Private driver interface data
+	 * @vendor_id: Vendor ID
+	 * @subcmd: Vendor sub-command
+	 * @generic_cmd: Generic command ID for SET_WIFI_CONFIGURATION
+	 * @bss_mode: BSS mode value from enum qca_wlan_vendor_iface_mode
+	 * @link_id: Link ID of the specified link; -1 for non-MLD
+	 * @ifname: Interface name
+	 * Returns: 0 on success, negative value on failure
+	 */
+	int (*notify_iface_state)(void *priv, unsigned int vendor_id,
+				    unsigned int subcmd, u32 generic_cmd,
+				    u32 bss_mode, int link_id,
+				    const char *ifname);
+
 	/*
 	 * is_retail_afc_supported - Check if the driver supports retail AFC
 	 * @priv: Private driver interface data
