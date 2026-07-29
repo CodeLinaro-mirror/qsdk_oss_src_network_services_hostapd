@@ -1856,7 +1856,7 @@ static void nl80211_parse_smd_ctx_ba_params(struct nlattr *tb,
 			[NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE] =
 				{ .type = NLA_U16 },
 			[NL80211_SMD_CTX_BA_ATTR_POLICY] =
-				{ .type = NLA_FLAG },
+				{ .type = NLA_U8 },
 			[NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT] =
 				{ .type = NLA_FLAG },
 			[NL80211_SMD_CTX_BA_ATTR_TIMEOUT] =
@@ -1887,7 +1887,9 @@ static void nl80211_parse_smd_ctx_ba_params(struct nlattr *tb,
 		if (ba_param_attr)
 			ba[tid].buffer_size = nla_get_u16(ba_param_attr);
 
-		ba[tid].ba_policy = !!ba_tb[NL80211_SMD_CTX_BA_ATTR_POLICY];
+		ba_param_attr = ba_tb[NL80211_SMD_CTX_BA_ATTR_POLICY];
+		if (ba_param_attr)
+			ba[tid].ba_policy = nla_get_u8(ba_param_attr);
 
 		ba[tid].amsdu_supported =
 			!!ba_tb[NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT];
