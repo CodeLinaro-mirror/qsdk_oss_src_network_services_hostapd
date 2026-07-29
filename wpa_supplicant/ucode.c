@@ -615,7 +615,7 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 	uc_value_t *ret, *val;
 	uc_value_t *radio_id = uc_fn_arg(0);
 	s8 hw_idx;
-	int freq, sec_chan, i;
+	int freq, sec_chan, i, poll_ret = 0;
 #ifdef CONFIG_QCN_EXTN
 	bool is_dfs = false;
 #endif
@@ -645,7 +645,8 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 #ifdef CONFIG_QCN_EXTN
 				ucv_object_add(ret, "mcst", ucv_int64_new(mcst));
 #endif
-				if (wpa_drv_mlo_signal_poll(wpa_s, &mlo_si) == 0) {
+				if ((poll_ret = wpa_drv_mlo_signal_poll(wpa_s,
+									&mlo_si)) == 0) {
 					if (mlo_si.links[i].chanwidth != CHAN_WIDTH_UNKNOWN) {
 						ucv_object_add(ret, "chan_width", ucv_int64_new(mlo_si.links[i].chanwidth));
 						ucv_object_add(ret, "center_freq1", ucv_int64_new(mlo_si.links[i].center_frq1));
@@ -659,6 +660,13 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 						ucv_object_add(ret, "is_dfs", ucv_boolean_new(is_dfs));
 #endif
 					}
+				} else {
+					wpa_printf(MSG_INFO,
+						   "%s: MLO_SIGNAL_POLL failed ifname=%s hw_idx=%hhd link_id=%d ret=%d",
+						   __func__, wpa_s->ifname, hw_idx, i,
+						   poll_ret);
+					ucv_put(ret);
+					return NULL;
 				}
 			}
 		}
@@ -677,7 +685,7 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 		ucv_object_add(ret, "sec_chan_offset", ucv_int64_new(sec_chan));
 		ucv_object_add(ret, "frequency", ucv_int64_new(bss->freq));
 		if (wpa_s->wpa_state == WPA_COMPLETED &&
-		    wpa_drv_signal_poll(wpa_s, &si) == 0) {
+		    (poll_ret = wpa_drv_signal_poll(wpa_s, &si)) == 0) {
 			if (si.chanwidth != CHAN_WIDTH_UNKNOWN) {
 				ucv_object_add(ret, "chan_width",
 					       ucv_int64_new(si.chanwidth));
@@ -694,6 +702,13 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 				ucv_object_add(ret, "is_dfs", ucv_boolean_new(is_dfs));
 #endif
 			}
+		} else if (wpa_s->wpa_state == WPA_COMPLETED) {
+			wpa_printf(MSG_INFO,
+				   "%s: SIGNAL_POLL failed ifname=%s hw_idx=%hhd freq=%d ret=%d",
+				   __func__, wpa_s->ifname, hw_idx, bss->freq,
+				   poll_ret);
+			ucv_put(ret);
+			return NULL;
 		}
 	}
 
