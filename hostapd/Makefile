@@ -101,6 +101,7 @@ OBJS += ../src/common/ptksa_cache.o
 # hostapd external interface and mgmt/action lookup
 ifdef CONFIG_HOSTAPD_IF
 OBJS += ../src/hostapd_if/hostapd_if.o
+OBJS += ../src/utils/bitfield.o
 CFLAGS += -DCONFIG_HOSTAPD_IF
 endif
 
