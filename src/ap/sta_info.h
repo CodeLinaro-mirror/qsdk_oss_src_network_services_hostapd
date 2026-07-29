@@ -161,6 +161,10 @@ enum smd_ap_state {
        SMD_AP_STATE_ST_EXEC_COMPLETE,
        SMD_AP_STATE_DL_DRAIN_ACTIVE,      /* DL Drain timeout active */
        SMD_AP_STATE_TRANSITION_COMPLETE,  /* Transition complete */
+
+	/* ST Execute via Target AP-MLD states */
+	SMD_AP_STATE_ST_EXEC_VIA_TGT_STARTED,
+	SMD_AP_STATE_ST_EXEC_VIA_TGT_COMPLETE,
 };
 
 /**
