@@ -3171,6 +3171,10 @@ static u16 hostapd_fils_discovery_cap(struct hostapd_data *hapd)
 	cap_info |= chwidth << FD_CAP_BSS_CHWIDTH_SHIFT;
 	cap_info |= hostapd_gen_fils_discovery_nss(mode, phy_index,
 						   he_mcs_nss_size);
+
+	if (hapd->iconf->mbssid != MBSSID_DISABLED)
+		cap_info |= FD_CAP_MULTI_BSSID_PRESENT;
+
 	return cap_info;
 }
 
