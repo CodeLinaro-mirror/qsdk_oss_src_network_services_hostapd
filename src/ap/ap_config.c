@@ -534,7 +534,6 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->npca_enable = 0;
 	conf->npca_primary_channel = 0;
 	conf->npca_punct_bitmap = 0;
-	conf->npca_primary_chan_offset = -1;
 #endif /* CONFIG_IEEE80211BN */
 
 	bss->rate_type = BEACON_RATE_LEGACY;
@@ -2124,7 +2123,7 @@ int hostapd_config_check_npca_config(struct hostapd_config *conf)
 	enum oper_chan_width chwidth;
 	int seg0, npca_chan;
 	bool in_secondary;
-	int bw_mhz, num20, first_20_chan;
+	int bw_mhz;
 
 	if (!conf->npca_enable)
 		return 0;
@@ -2200,12 +2199,6 @@ int hostapd_config_check_npca_config(struct hostapd_config *conf)
 			   npca_chan, seg0, bw_mhz);
 		return -1;
 	}
-
-	num20 = bw_mhz / 20;
-	first_20_chan = seg0 - 2 * (num20 - 1);
-
-	conf->npca_primary_chan_offset =
-		(npca_chan - first_20_chan) / 4;
 
 	return 0;
 }

@@ -3971,10 +3971,15 @@ struct ieee80211_uhr_operation {
 #define IEEE80211_UHR_OPER_MAX_SIZE	\
 	(sizeof(struct ieee80211_uhr_operation) + 1 + 4 + 6 + 3 + 3)
 
-/* IEEE P802.11bn/D1.5, Figure 9-aa6 (NPCA Operation Parameters field format) */
+/*
+ * IEEE P802.11bn/D1.5, Figure 9-aa4 (NPCA Operation Parameters field
+ * format), section 9.4.2.356.2. NPCA Primary Channel widened from 4 to
+ * 8 bits relative to D1.3/D1.4, shifting all subsequent subfields by
+ * 4 bits. This same field layout is reused, per 9.4.2.363.3, for the
+ * NPCA Mode Specific Parameters of the UHR Parameters Update element's
+ * Mode Tuple (see uhr_put_npca_mode_tuple()).
+ */
 #define UHR_OPER_PARAMS_NPCA_PRI_CHAN			0x000000FF
-#define UHR_OPER_PARAMS_NPCA_PRI_CHAN_OFFS		UHR_OPER_PARAMS_NPCA_PRI_CHAN
-#define UHR_OPER_PARAMS_NPCA_PRI_CHAN_OFFS_SHIFT	UHR_OPER_PARAMS_NPCA_PRI_CHAN_SHIFT
 #define UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH	0x00000F00
 #define UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY		0x0003F000
 #define UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY	0x00FC0000

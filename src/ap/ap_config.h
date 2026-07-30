@@ -1817,7 +1817,6 @@ struct hostapd_config {
 	bool npca_enable;
 	u8 npca_primary_channel;
 	u16 npca_punct_bitmap;
-	u8 npca_primary_chan_offset;
 #endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_MQTT
@@ -1894,7 +1893,6 @@ static inline void hostapd_disable_npca(struct hostapd_config *conf)
 	conf->npca_enable = false;
 	conf->npca_primary_channel = 0;
 	conf->npca_punct_bitmap = 0;
-	conf->npca_primary_chan_offset = -1;
 }
 
 /* struct hostapd_npca_state - snapshot of conf's NPCA fields */
@@ -1902,7 +1900,6 @@ struct hostapd_npca_state {
 	bool npca_enable;
 	u8 npca_primary_channel;
 	u16 npca_punct_bitmap;
-	u8 npca_primary_chan_offset;
 };
 
 static inline void hostapd_save_npca(struct hostapd_config *conf,
@@ -1911,7 +1908,6 @@ static inline void hostapd_save_npca(struct hostapd_config *conf,
 	state->npca_enable = conf->npca_enable;
 	state->npca_primary_channel = conf->npca_primary_channel;
 	state->npca_punct_bitmap = conf->npca_punct_bitmap;
-	state->npca_primary_chan_offset = conf->npca_primary_chan_offset;
 }
 
 static inline void hostapd_restore_npca(struct hostapd_config *conf,
@@ -1920,7 +1916,6 @@ static inline void hostapd_restore_npca(struct hostapd_config *conf,
 	conf->npca_enable = state->npca_enable;
 	conf->npca_primary_channel = state->npca_primary_channel;
 	conf->npca_punct_bitmap = state->npca_punct_bitmap;
-	conf->npca_primary_chan_offset = state->npca_primary_chan_offset;
 }
 #endif /* CONFIG_IEEE80211BN */
 
