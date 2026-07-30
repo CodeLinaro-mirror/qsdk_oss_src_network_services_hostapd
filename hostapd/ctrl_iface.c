@@ -5615,18 +5615,18 @@ parse_npca_params(struct hostapd_data *hapd,
 				break;
 			}
 		} else if (os_strncmp(token, "primary_chan=", 13) == 0) {
-			int subchan_idx =
-				hostapd_npca_primary_chan_to_subchan_idx(
+			int npca_chan =
+				hostapd_npca_primary_chan_validate(
 					hapd, token + 13);
 
-			if (subchan_idx < 0)
+			if (npca_chan < 0)
 				return -1;
 			primary_chan_set = true;
 			npca->params =
 				(npca->params &
-				 ~UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS) |
-				((u32) subchan_idx <<
-				 UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS_SHIFT);
+				 ~UHR_OPER_PARAMS_NPCA_PRIMARY_CHAN) |
+				((u32) npca_chan <<
+				 UHR_OPER_PARAMS_NPCA_PRIMARY_CHAN_SHIFT);
 		} else if (os_strncmp(token, "min_dur=", 8) == 0) {
 			u32 v = (u32) atoi(token + 8) &
 				(UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH >>
