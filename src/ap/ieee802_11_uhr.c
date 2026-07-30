@@ -1215,7 +1215,7 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 	 * proceeds but without automatic cleanup if no response arrives. */
 	if (uhr_cur_start_iap_msg_timer(sta, mle.target_ap_mld_addr) < 0) {
 		wpa_printf(MSG_ERROR,
-			   "UHR Current AP: Failed to start ST prep timeout");
+			   "UHR Current AP: Failed to start ST exec IAP timeout");
 	}
 	return ret;
 }
@@ -2609,12 +2609,19 @@ void uhr_tgt_ap_handle_st_roam_cleanup(struct hostapd_data *hapd,
 		return;
 	}
 
-	if (assoc_sta->smd_info.state == SMD_STA_ST_EXEC_DONE) {
+	/*
+	 * A cleanup must proceed even when the STA is in ST_EXEC_DONE.
+	 * In that state the target AP has already authorized the STA, but if
+	 * the IAP response never reached the current AP the STA has not yet
+	 * transitioned.  The current AP sends this cleanup to undo that
+	 * authorization.  The normal success path never reaches here for the
+	 * winning AP because uhr_cur_ap_purge_ap_list() skips DL_DRAIN_ACTIVE
+	 * entries.
+	 */
+	if (assoc_sta->smd_info.state == SMD_STA_ST_EXEC_DONE)
 		wpa_printf(MSG_DEBUG,
-			   "UHR ROAM CLEANUP: STA " MACSTR " already exec-done, skipping",
+			   "UHR ROAM CLEANUP: STA " MACSTR " in EXEC_DONE, current AP timed out — undoing authorization",
 			   MAC2STR(iap->sta_addr));
-		return;
-	}
 
 	uhr_tgt_cancel_st_prep_timer(assoc_hapd, iap->sta_addr);
 
