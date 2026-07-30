@@ -1029,12 +1029,12 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 			buflen += hostapd_eid_eht_ml_beacon_len(
 				params->mld_ap, params->mld_info,
 				!!params->mld_ap, param_ext_cap,
-				params->is_uhr_sta, true);
+				true, true);
 
 			if (hapd->conf->mld_ap)
 				buflen += hostapd_eid_eht_ml_beacon_len(
 					hapd, NULL, false, include_ext_cap,
-					params->is_uhr_sta, true);
+					true, true);
 
 			/* For Max Channel Switch Time element during channel
 			 * switch */
@@ -1042,7 +1042,7 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 		} else if (hapd->conf->mld_ap) {
 			buflen += hostapd_eid_eht_ml_beacon_len(
 				hapd, params->mld_info, false, include_ext_cap,
-				params->is_uhr_sta, true);
+				true, true);
 
 			/* For Max Channel Switch Time element during channel
 			 * switch */
@@ -1498,18 +1498,18 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 			pos = hostapd_eid_eht_ml_beacon(
 				params->mld_ap, params->mld_info,
 				pos, !!params->mld_ap, p_ext_cap,
-				params->is_uhr_sta, true);
+				true, true);
 
 			if (hapd->conf->mld_ap)
 				pos = hostapd_eid_eht_ml_beacon(
 					hapd, NULL, pos, false, ext_cap,
-					params->is_uhr_sta, true);
+					true, true);
 
 		} else if (hapd->conf->mld_ap) {
 			pos = hostapd_eid_eht_ml_beacon(hapd,
 							params->mld_info,
 							pos, false, ext_cap,
-							params->is_uhr_sta, true);
+							true, true);
 		}
 		/* ML reconfigure feature */
 		if (hapd->conf->mld_ap)
@@ -2735,11 +2735,6 @@ void handle_probe_req(struct hostapd_data *hapd,
 
 	params.req = mgmt;
 	params.is_p2p = !!elems.p2p;
-
-#ifdef CONFIG_IEEE80211BN
-	if (elems.uhr_capabilities)
-		params.is_uhr_sta = true;
-#endif /* CONFIG_IEEE80211BN */
 
 	params.known_bss = elems.mbssid_known_bss;
 	params.known_bss_len = elems.mbssid_known_bss_len;

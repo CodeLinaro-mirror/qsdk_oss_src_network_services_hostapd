@@ -16382,7 +16382,6 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 
 	u8 ext_cap;
 	size_t len, i;
-	bool is_uhr_sta = false;
 
 	/* Element ID: 1 octet
 	 * Length: 1 octet
@@ -16398,7 +16397,6 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 	if (frame_type == WLAN_FC_STYPE_PROBE_RESP && params) {
 		probe_params = (struct probe_resp_params *) params;
 		is_ml_probe = probe_params->is_ml_probe;
-		is_uhr_sta = probe_params->is_uhr_sta;
 	}
 
 	for (i = *bss_index; i < num_bss; i++) {
@@ -16473,7 +16471,7 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 			}
 
 			nontx_profile_len += hostapd_eid_eht_basic_ml_len(
-				bss, NULL, true, false, ext_cap, is_uhr_sta,
+				bss, NULL, true, false, ext_cap, true,
 				false);
 			if (bss->eht_mld_link_removal_inprogress)
 				nontx_profile_len += hostapd_eid_eht_ml_reconfig_len(bss);
@@ -16664,7 +16662,6 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 	u8 *eid_len_offset, *max_bssid_indicator_offset, *startpos;
 	u8 ext_cap;
 	size_t i;
-	bool is_uhr_sta = false;
 
 	*eid++ = WLAN_EID_MULTIPLE_BSSID;
 	eid_len_offset = eid++;
@@ -16673,7 +16670,6 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 	if (frame_type == WLAN_FC_STYPE_PROBE_RESP && params) {
 		probe_params = (struct probe_resp_params *) params;
 		is_ml_probe = probe_params->is_ml_probe;
-		is_uhr_sta = probe_params->is_uhr_sta;
 	}
 
 	for (i = *bss_index; i < num_bss; i++) {
@@ -16782,7 +16778,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 
 			eid = hostapd_eid_eht_basic_ml_common(bss, eid, NULL,
 							      true, false, ext_cap, false,
-							      is_uhr_sta, false);
+							      true, false);
 			if (bss->eht_mld_link_removal_inprogress)
 				eid = hostapd_eid_eht_reconf_ml(bss, eid);
 		}
