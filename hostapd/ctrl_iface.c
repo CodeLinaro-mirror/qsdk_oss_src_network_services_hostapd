@@ -1854,6 +1854,9 @@ static int hostapd_ctrl_iface_set_rcac_freq(struct hostapd_data *hapd,
 	case CONF_OPER_CHWIDTH_160MHZ:
 		home_bw = 160;
 		break;
+	case CONF_OPER_CHWIDTH_320MHZ:
+		home_bw = 320;
+		break;
 	default:
 		home_bw = 80;
 		break;
