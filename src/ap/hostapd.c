@@ -8137,34 +8137,31 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 						 false);
 		}
 #endif
-
+		/*
+		 * If the First BSS is being removed while the interface is
+		 * in a pre‑beacon state (ACS/DFS/HT scan/country update),
+		 * the driver context may not be fully initialized yet.
+		 * In such cases, successor BSS #1 must be minimally prepared
+		 * so that hostapd’s internal iface model and driver link
+		 * state remain consistent during the transition.
+		 */
+		if (hapd->iface->bss[0] == hapd &&
+		    hostapd_iface_in_pre_beacon_state(iface) &&
+		    iface->num_bss > 1) {
+			if (hostapd_prepare_successor_pre_beacon(iface) != 0) {
+				wpa_printf(MSG_ERROR,
+					  "iface is in pre-beacon state & initialization of successor BSS failed. Hence, removing iface");
+				if (hostapd_remove_hapd_iface(iface) == 0)
+					return 1;
+				return -1;
+			}
+			successor_prepared = true;
+		}
 		hapd->reenable = REENABLE_DEINIT;
 		hostapd_bss_deinit(hapd);
 		wpa_printf(MSG_DEBUG, "%s: free hapd %p (%s)",
 			   __func__, hapd, hapd->conf->iface);
-
 		if (hapd->iface->bss[0] == hapd) {
-			/*
-			 * If the First BSS is being removed while the interface is
-			 * in a pre‑beacon state (ACS/DFS/HT scan/country update),
-			 * the driver context may not be fully initialized yet.
-			 * In such cases, successor BSS #1 must be minimally prepared
-			 * so that hostapd’s internal iface model and driver link
-			 * state remain consistent during the transition.
-			 */
-			if (hostapd_iface_in_pre_beacon_state(iface) &&
-			    iface->num_bss > 1) {
-				if (hostapd_prepare_successor_pre_beacon(iface) == 0)
-					successor_prepared = true;
-				else {
-					wpa_printf(MSG_ERROR,
-						   "iface is in pre-beacon state & initialization of successor BSS failed. Hence, removing iface");
-					if (hostapd_remove_hapd_iface(iface) == 0)
-						return 1;
-					else
-						return -1;
-				}
-			}
 #ifdef CONFIG_IEEE80211BE
 			/* If first bss is removed, if_link_remove/hostapd_if_remove
 			 * will not be called in hostapd_remove_bss, hence call
