@@ -802,6 +802,49 @@ u8 hostapd_npca_get_primary_chan(struct hostapd_data *hapd,
 	return (u8)primary_chan;
 }
 
+/* Build and send an OTA ST Prep Response with failure status to the STA.
+ * Used when the current AP rejects a new prep request due to an in-flight
+ * operation for the same target AP. */
+static void uhr_cur_ap_send_st_prep_fail(struct hostapd_data *hapd,
+					  struct sta_info *sta,
+					  const u8 *frame, size_t frame_len)
+{
+	/* hdr(24) + category(1) + action(1) + token(1) + type(1) + status(2) + count(1) */
+	u8 resp_buf[IEEE80211_HDRLEN + 7];
+	struct ieee80211_mgmt *mgmt;
+	u8 *pos;
+	const struct ieee80211_mgmt *req;
+
+	if (frame_len < WLAN_ST_PREP_MIN_LEN) {
+		wpa_printf(MSG_ERROR,
+			   "UHR Current AP: ST Prep fail frame too short (%zu)", frame_len);
+		return;
+	}
+
+	req = (const struct ieee80211_mgmt *) frame;
+
+	os_memset(resp_buf, 0, sizeof(resp_buf));
+	mgmt = (struct ieee80211_mgmt *)resp_buf;
+	mgmt->frame_control = host_to_le16((WLAN_FC_TYPE_MGMT << 2) |
+					   (WLAN_FC_STYPE_ACTION << 4));
+	os_memcpy(mgmt->da, sta->addr, ETH_ALEN);
+	os_memcpy(mgmt->sa, hapd->mld->mld_addr, ETH_ALEN);
+	os_memcpy(mgmt->bssid, hapd->mld->mld_addr, ETH_ALEN);
+
+	pos = (u8 *)&mgmt->u.action;
+	*pos++ = WLAN_ACTION_PROTECTED_UHR;
+	*pos++ = WLAN_PROT_UHR_LINK_RECONFIG_RESPONSE; /* Action */
+	*pos++ = req->u.action.u.uhr_link_reconf_req.dialog_token;
+	*pos++ = UHR_LINK_RECONFIG_TYPE_PREP;          /* Type = ST Preparation */
+	WPA_PUT_LE16(pos, WLAN_STATUS_UNSPECIFIED_FAILURE);
+	pos += 2;
+	*pos   = 0;               /* Count = 0 */
+
+	hostapd_drv_send_mlme(hapd, resp_buf, sizeof(resp_buf),
+			      0, NULL, 0, 0, 0, 0);
+}
+
+
 int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 				   struct sta_info *sta,
 				   const u8 *frame, size_t frame_len,
@@ -885,6 +928,20 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG,
 			   "UHR Current AP: Created ap_info for " MACSTR ,
 			   MAC2STR(ap_info->ap_mld_addr));
+	}
+
+	/* Reject a new prep while a previous prep or exec for this target is
+	 * still in flight.  ST_PREP_COMPLETE is the only existing state that
+	 * is legal to re-enter (STA re-prep after full OTA round-trip). */
+	if (!is_new_ap &&
+	    ap_info->state != SMD_AP_STATE_IDLE &&
+	    ap_info->state != SMD_AP_STATE_ST_PREP_COMPLETE) {
+		wpa_printf(MSG_DEBUG,
+			   "UHR Current AP: ST Prep for " MACSTR
+			   " rejected, in-flight state %d",
+			   MAC2STR(mle.target_ap_mld_addr), ap_info->state);
+		uhr_cur_ap_send_st_prep_fail(hapd, sta, frame, frame_len);
+		return 0;
 	}
 	if (smd_ctx) {
 		uhr_smd_ctx_dump(smd_ctx, "UHR ST Prep");
