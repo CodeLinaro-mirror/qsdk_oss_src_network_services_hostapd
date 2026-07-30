@@ -7240,12 +7240,12 @@ void hostapd_interface_deinit_free(struct hostapd_iface *iface)
 	hostapd_uplink_cancel_disconnect_timeout_extn(iface);
 #endif /* CONFIG_QCN_EXTN */
 	driver = iface->bss[0]->driver;
-	drv_priv = iface->bss[0]->drv_priv;
+	atf_offload_disable_atf_stats(iface);
 	hostapd_ubus_free_iface(iface);
 	hostapd_interface_deinit(iface);
+	drv_priv = iface->bss[0]->drv_priv;
 	wpa_printf(MSG_DEBUG, "%s: driver=%p drv_priv=%p -> hapd_deinit",
 		   __func__, driver, drv_priv);
-	atf_offload_disable_atf_stats(iface);
 	hostapd_cleanup_driver(driver, drv_priv, iface);
 	hostapd_interface_free(iface);
 }
