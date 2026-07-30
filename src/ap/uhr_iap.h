@@ -76,7 +76,7 @@ struct uhr_iap_frame {
 
        struct uhr_iap_security_ctx sec_ctx;
 
-       u16 frame_len;
+       __le16 frame_len;
 	__le16 smd_ctx_len;
 	u8  frame_ctx_data[];
 } __attribute__((packed));

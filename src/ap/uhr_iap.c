@@ -413,6 +413,20 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
                return -1;
 	}
 
+	if (!uhr_oui_peer_exists(hapd->uhr_oui_ctx, target_ap_mld_addr)) {
+		wpa_printf(MSG_ERROR,
+			   "UHR IAP: ST EXEC REQ: Target AP " MACSTR " not in peer list",
+			   MAC2STR(target_ap_mld_addr));
+		return -1;
+	}
+
+	if (frame_len > UHR_IAP_MAX_FRAME_LEN) {
+		wpa_printf(MSG_ERROR,
+			   "UHR IAP: ST EXEC REQ: Frame too large (%zu > %d)",
+			   frame_len, UHR_IAP_MAX_FRAME_LEN);
+		return -1;
+	}
+
 	smd_ctx = target_info->smd_ctx;
 	if (target_info->smd_ctx_valid && smd_ctx)
 		smd_ctx_len = sizeof(*smd_ctx) + smd_ctx->vendor_ctx_len;
@@ -495,6 +509,20 @@ int uhr_iap_send_st_exec_resp(struct hostapd_data *hapd,
                           "SMD IAP: Invalid parameters for send_exec_response");
                return -1;
        }
+
+	if (!uhr_oui_peer_exists(hapd->uhr_oui_ctx, current_ap_mld_addr)) {
+		wpa_printf(MSG_ERROR,
+			   "UHR IAP: ST EXEC RESP: Current AP " MACSTR " not in peer list",
+			   MAC2STR(current_ap_mld_addr));
+		return -1;
+	}
+
+	if (frame_len > UHR_IAP_MAX_FRAME_LEN) {
+		wpa_printf(MSG_ERROR,
+			   "UHR IAP: ST EXEC RESP: Frame too large (%zu > %d)",
+			   frame_len, UHR_IAP_MAX_FRAME_LEN);
+		return -1;
+	}
 
        /* Allocate buffer for IAP frame */
        iap_len = sizeof(*iap) + frame_len;
@@ -675,7 +703,7 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
        case UHR_IAP_MSG_ST_EXEC_REQUEST:
                wpa_printf(MSG_DEBUG, "UHR IAP: Processing ST EXEC REQUEST (txn=%u)",
                           iap->iap_transaction_id);
-               uhr_tgt_ap_handle_st_exec_req(hapd, iap);
+               uhr_tgt_ap_handle_st_exec_req(hapd, iap, frame_len);
                break;
 
        case UHR_IAP_MSG_ST_EXEC_RESPONSE:

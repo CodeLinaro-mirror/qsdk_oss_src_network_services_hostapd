@@ -3015,7 +3015,8 @@ static u8 * hostapd_eid_smd_bss_trans_exec_resp(u8 *pos,
 
 
 void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
-                                const struct uhr_iap_frame *iap)
+                                const struct uhr_iap_frame *iap,
+                                u16 frame_len)
 {
 	struct sta_info *sta = NULL;
 	struct hostapd_data *lhapd = NULL;
@@ -3082,7 +3083,7 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 		}
 		/* smd_ctx may already have been applied via UHR_IAP_MSG_ST_PREP_CTX
 		 * (type 9); the driver call is idempotent. */
-		smd_ctx = (struct sta_smd_ctx_info *)(iap->frame_ctx_data + le_to_host16(iap->frame_len));
+		smd_ctx = (struct sta_smd_ctx_info *)(iap->frame_ctx_data + frame_len);
 		/* Subtract is safe: smd_ctx_len >= sizeof(*smd_ctx) confirmed above */
 		if (smd_ctx->vendor_ctx_len > (size_t)(smd_ctx_len - sizeof(*smd_ctx))) {
 			wpa_printf(MSG_ERROR,
