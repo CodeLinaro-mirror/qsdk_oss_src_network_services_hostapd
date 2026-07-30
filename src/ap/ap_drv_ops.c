@@ -1515,8 +1515,9 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 		.eht.cap = cmode ? &cmode->eht_capab[IEEE80211_MODE_AP] : NULL,
 		.bandwidth_device = bandwidth_device,
 		.center_freq_device = center_freq_device,
-		.eht.punct_bitmap = hostapd_get_punct_bitmap(hapd) |
-			iface->radar_bit_pattern,
+		.eht.punct_bitmap = radar_background ? 0 :
+			(hostapd_get_punct_bitmap(hapd) |
+			 iface->radar_bit_pattern),
 		.he_6ghz_reg_pwr_type = hapd->iconf->he_6ghz_reg_pwr_type,
 	};
 
