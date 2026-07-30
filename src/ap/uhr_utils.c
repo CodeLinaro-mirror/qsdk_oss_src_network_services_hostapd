@@ -484,8 +484,8 @@ int uhr_parse_reconfig_mle(const struct ieee802_11_elems *elems,
 	u16 ml_control, presence_bitmap;
 	const u8 *pos;
 	int ret = -1;
-	u8 bmlie[30];
-	os_memset(bmlie, 0, 30);
+	u8 bmlie[UHR_BMLIE_BUF_LEN];
+	os_memset(bmlie, 0, sizeof(bmlie));
 
 	/* NULL pointer checks */
 	if (!elems || !mle) {
