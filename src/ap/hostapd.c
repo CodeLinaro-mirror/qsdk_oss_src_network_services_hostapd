@@ -8196,6 +8196,7 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 
 		for (i = idx; i < iface->num_bss; i++)
 			iface->bss[i] = iface->bss[i + 1];
+		iface->bss[iface->num_bss] = NULL;
 #ifdef CONFIG_IEEE80211BE
 		/* update ML Max recommended links */
 		if (phapd && active_links < phapd->conf->ml_max_rec_links)

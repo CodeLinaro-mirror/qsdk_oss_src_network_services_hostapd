@@ -15795,6 +15795,9 @@ static u8 * hostapd_eid_rnr_mlo(struct hostapd_data *hapd, u32 type,
 		    hapd->iface->freq == iface->freq)
 			continue;
 
+		if (!iface->num_bss)
+			continue;
+
 		eid = hostapd_eid_rnr_iface(iface->bss[0], hapd, eid,
 					    current_len, skip_profiles, true,
 					    type, num_rnr);
