@@ -2585,6 +2585,7 @@ static void hostapd_single_channel_get_survey(struct hostapd_iface *iface,
 		iface->channel_utilization = dividend * 255 / divisor;
 		wpa_printf(MSG_DEBUG, "Channel Utilization: %d",
 			   iface->channel_utilization);
+		os_get_reltime(&iface->ch_util_update_time);
 	}
 	iface->last_channel_time = survey->channel_time;
 	iface->last_channel_time_busy = survey->channel_time_busy;

@@ -16473,7 +16473,8 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 			}
 
 			nontx_profile_len += hostapd_eid_eht_basic_ml_len(
-				bss, NULL, true, false, ext_cap, is_uhr_sta);
+				bss, NULL, true, false, ext_cap, is_uhr_sta,
+				false);
 			if (bss->eht_mld_link_removal_inprogress)
 				nontx_profile_len += hostapd_eid_eht_ml_reconfig_len(bss);
 		}
@@ -16781,7 +16782,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 
 			eid = hostapd_eid_eht_basic_ml_common(bss, eid, NULL,
 							      true, false, ext_cap, false,
-							      is_uhr_sta);
+							      is_uhr_sta, false);
 			if (bss->eht_mld_link_removal_inprogress)
 				eid = hostapd_eid_eht_reconf_ml(bss, eid);
 		}
