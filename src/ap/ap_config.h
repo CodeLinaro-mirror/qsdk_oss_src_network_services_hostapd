@@ -644,6 +644,8 @@ struct hostapd_bss_config {
 #define HE_PHY_BSS_OVR_1024QAM_LT242RU_RX_ENABLE BIT(24)
 #define HE_PHY_BSS_OVR_BSR_SUPPORT BIT(25)
 	u32 he_phy_capab_mask;
+
+	bool mbssid_tx_bss;
 #endif /* CONFIG_IEEE80211AX */
 
 #ifdef CONFIG_IEEE80211BE
@@ -1886,6 +1888,7 @@ struct hostapd_config {
 		MULTI_MBSSID_GROUP_ENABLED = 3,
 	} mbssid;
 	unsigned int mbssid_max;
+	bool disable_auto_mbssid_tx_bss;
 
 	/* Config to enable composite AP mode.
 	 * Will be enabled by default if not explicitly disabled in the
