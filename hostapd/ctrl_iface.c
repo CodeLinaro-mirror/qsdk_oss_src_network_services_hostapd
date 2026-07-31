@@ -2452,6 +2452,27 @@ eht_generic_rollback:
 			hapd->conf->eht_phy_capab_mask = old_eht_generic_capab_mask;
 			return -1;
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_IEEE80211BN
+		} else if (os_strcasecmp(cmd, "bss_uhr_2xldpc_tx") == 0 ||
+			   os_strcasecmp(cmd, "bss_uhr_2xldpc_rx") == 0) {
+			/* Save old values for rollback on failure */
+			struct uhr_phy_capabilities_info old_uhr_phy_capab =
+					hapd->conf->uhr_phy_capab;
+			u32 old_uhr_phy_capab_mask = hapd->conf->uhr_phy_capab_mask;
+
+			if (hostapd_validate_bss_capab(hapd) < 0)
+				goto uhr_2xldpc_rollback;
+
+			if (!hapd->conf->is_cmn_param &&
+			    hostapd_reload_bss_only(hapd) < 0)
+				goto uhr_2xldpc_rollback;
+
+			return 0;
+uhr_2xldpc_rollback:
+			hapd->conf->uhr_phy_capab = old_uhr_phy_capab;
+			hapd->conf->uhr_phy_capab_mask = old_uhr_phy_capab_mask;
+			return -1;
+#endif /* CONFIG_IEEE80211BN */
 		} else if (os_strcasecmp(cmd, "ht_mcs_nss_set") == 0) {
 			if (!hapd->conf->is_cmn_param)
 				return hostapd_reload_bss_only(hapd);

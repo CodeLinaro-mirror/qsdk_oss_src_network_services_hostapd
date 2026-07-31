@@ -272,6 +272,8 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 #endif
 
 #ifdef CONFIG_IEEE80211BN
+	bss->uhr_phy_capab.uhr_2xldpc_tx = 1;
+	bss->uhr_phy_capab.uhr_2xldpc_rx = 1;
 	bss->dps_assist = FEATURE_ENABLED;
 
 	/* UHR intervals are represented as TUs */

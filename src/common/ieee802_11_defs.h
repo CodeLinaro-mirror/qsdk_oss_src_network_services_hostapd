@@ -3531,6 +3531,12 @@ struct ieee80211_uhr_operation {
 #define UHR_MAC_CAPAB_LEN	6
 #define UHR_PHY_CAPAB_LEN	5
 
+/* UHR PHY Capabilities Information byte 1 (P802.11bn_D1.5 section 9.4.2.357.3) */
+#define UHR_PHYCAP_2XLDPC_TX_SUPP_IDX	1
+#define UHR_PHYCAP_2XLDPC_TX_SUPP	((u8) BIT(3))
+#define UHR_PHYCAP_2XLDPC_RX_SUPP_IDX	1
+#define UHR_PHYCAP_2XLDPC_RX_SUPP	((u8) BIT(4))
+
 #define IEEE80211_UHR_CAP_MAX_SIZE	sizeof(struct ieee80211_uhr_capabilities)
 
 /* Figure 9-aa8: UHR Capabilities element format P802.11bn_D1.4 section 9.4.2.356 */

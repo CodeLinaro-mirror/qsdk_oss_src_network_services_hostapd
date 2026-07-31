@@ -6303,6 +6303,24 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->dps_assist = val;
+	} else if (os_strcmp(buf, "bss_uhr_2xldpc_tx") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid value for bss_uhr_2xldpc_tx");
+			return 1;
+		}
+		bss->uhr_phy_capab.uhr_2xldpc_tx = val;
+		bss->uhr_phy_capab_mask |= UHR_PHY_BSS_OVR_2XLDPC_TX;
+	} else if (os_strcmp(buf, "bss_uhr_2xldpc_rx") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid value for bss_uhr_2xldpc_rx");
+			return 1;
+		}
+		bss->uhr_phy_capab.uhr_2xldpc_rx = val;
+		bss->uhr_phy_capab_mask |= UHR_PHY_BSS_OVR_2XLDPC_RX;
 	} else if (os_strcmp(buf, "smd_neighbor_update") == 0) {
 		bss->smd_neighbor_update_enabled = atoi(pos);
 	} else if (os_strcmp(buf, "smd_neighbor_expiry_time") == 0) {

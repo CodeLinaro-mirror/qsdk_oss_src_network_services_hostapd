@@ -784,6 +784,14 @@ static int ieee80211bn_supported_uhr_capab(struct hostapd_iface *iface)
 {
 	return iface->current_mode->uhr_capab[IEEE80211_MODE_AP].uhr_supported;
 }
+
+static int _ieee80211uhr_cap_check(const u8 *hw, u32 offset, u8 bits)
+{
+	if (bits & hw[offset])
+		return 1;
+
+	return 0;
+}
 #endif /* CONFIG_IEEE80211BN */
 
 
@@ -1620,6 +1628,48 @@ static int hostapd_validate_bss_eht_capab(struct hostapd_data *hapd)
 }
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BN
+static int hostapd_validate_bss_uhr_capab(struct hostapd_data *hapd)
+{
+	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
+	struct uhr_capabilities *hw_uhr;
+	u32 mask;
+
+	if (!mode || !hapd->conf->uhr_phy_capab_mask)
+		return 0;
+
+	hw_uhr = &mode->uhr_capab[IEEE80211_MODE_AP];
+	mask = hapd->conf->uhr_phy_capab_mask;
+
+	if (!hw_uhr->uhr_supported) {
+		wpa_printf(MSG_ERROR,
+			   "Driver does not support UHR but BSS UHR params configured");
+		return -1;
+	}
+
+	if ((mask & UHR_PHY_BSS_OVR_2XLDPC_TX) &&
+	    hapd->conf->uhr_phy_capab.uhr_2xldpc_tx &&
+	    !_ieee80211uhr_cap_check(hw_uhr->phy_cap,
+				UHR_PHYCAP_2XLDPC_TX_SUPP_IDX,
+				UHR_PHYCAP_2XLDPC_TX_SUPP)) {
+		wpa_printf(MSG_ERROR,
+			   "Driver does not support uhr_2xldpc_tx");
+		return -1;
+	}
+
+	if ((mask & UHR_PHY_BSS_OVR_2XLDPC_RX) &&
+	    hapd->conf->uhr_phy_capab.uhr_2xldpc_rx &&
+	    !_ieee80211uhr_cap_check(hw_uhr->phy_cap,
+				UHR_PHYCAP_2XLDPC_RX_SUPP_IDX,
+				UHR_PHYCAP_2XLDPC_RX_SUPP)) {
+		wpa_printf(MSG_ERROR,
+			   "Driver does not support uhr_2xldpc_rx");
+		return -1;
+	}
+
+	return 0;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 /**
  * hostapd_validate_bss_capab - Validate all BSS-level capability overrides
@@ -1648,6 +1698,11 @@ int hostapd_validate_bss_capab(struct hostapd_data *hapd)
 	if (hostapd_validate_bss_eht_capab(hapd) < 0)
 		return -1;
 #endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_IEEE80211BN
+	if (hostapd_validate_bss_uhr_capab(hapd) < 0)
+		return -1;
+#endif /* CONFIG_IEEE80211BN */
 
 	return 0;
 }
