@@ -14840,67 +14840,320 @@ static bool is_cmd_with_nested_attrs(unsigned int vendor_id,
 	}
 }
 
-
 #ifdef CONFIG_IEEE80211AX
-static int nl80211_vendor_cmd_rule_config_notify(void *priv,
-						 unsigned int vendor_id,
-						 unsigned int subcmd,
-						 const u8 *data,
-						 size_t data_len,
-						 enum nested_attr nested_attr,
-						 struct wpabuf *buf, u8 *mac,
-						 const char *ifname)
+
+/*
+ * nl80211_add_tclas_attrs - Add one TCLAS element's attributes to a netlink
+ * message
+ * Returns 0 on success, -1 on failure.
+ */
+static int nl80211_add_tclas_attrs(struct nl_msg *msg,
+				   const struct qm_tclas_elements *te)
 {
-	struct i802_bss *bss = priv;
-	struct wpa_driver_nl80211_data *drv = bss->drv;
-	struct nlattr *attr;
-	struct nl_msg *msg;
-	int ifidx;
-	int ret;
+	if (nla_put_u8(msg,
+		       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_CLASSIFIER_TYPE,
+		       te->classifier_type))
+		return -1;
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: SCS tclas attr: CLASSIFIER_TYPE=%u",
+		   te->classifier_type);
 
-	if (!drv)
-		return -EINVAL;
+	if (te->classifier_type == QM_TCLAS_CLASSIFIER_TYPE4) {
+		const struct qm_tclas_type4_params *t4 =
+			&te->tclas_elem.type4_params;
 
-	ifidx = if_nametoindex(ifname);
-	if (ifidx == 0) {
-		wpa_printf(MSG_ERROR, "nl80211: Failed to find interface index for %s", ifname);
-		return -ENODEV;
+		if (nla_put_u8(msg,
+			       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_VERSION,
+			       t4->ip_ver))
+			return -1;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: SCS tclas4 attr: VERSION=%u classifier_mask=0x%x",
+			   t4->ip_ver, t4->classifier_mask);
+
+		if (t4->ip_ver == IP_VERSION_4) {
+			if (t4->classifier_mask & BIT(1)) {
+				if (nla_put(msg,
+					    QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_SRC_IPV4_ADDR,
+					    IPV4_LEN, t4->src_ip.ipv4))
+					return -1;
+				wpa_printf(MSG_DEBUG,
+					   "nl80211: SCS tclas4 attr: SRC_IPV4=%u.%u.%u.%u",
+					   t4->src_ip.ipv4[0], t4->src_ip.ipv4[1],
+					   t4->src_ip.ipv4[2], t4->src_ip.ipv4[3]);
+			}
+			if (t4->classifier_mask & BIT(2)) {
+				if (nla_put(msg,
+					    QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_DST_IPV4_ADDR,
+					    IPV4_LEN, t4->dst_ip.ipv4))
+					return -1;
+				wpa_printf(MSG_DEBUG,
+					   "nl80211: SCS tclas4 attr: DST_IPV4=%u.%u.%u.%u",
+					   t4->dst_ip.ipv4[0], t4->dst_ip.ipv4[1],
+					   t4->dst_ip.ipv4[2], t4->dst_ip.ipv4[3]);
+			}
+		} else if (t4->ip_ver == IP_VERSION_6) {
+			if (t4->classifier_mask & BIT(1)) {
+				if (nla_put(msg,
+					    QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_SRC_IPV6_ADDR,
+					    IPV6_LEN, t4->src_ip.ipv6))
+					return -1;
+				wpa_hexdump(MSG_DEBUG,
+					    "nl80211: SCS tclas4 attr: SRC_IPV6",
+					    t4->src_ip.ipv6, IPV6_LEN);
+			}
+			if (t4->classifier_mask & BIT(2)) {
+				if (nla_put(msg,
+					    QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_DST_IPV6_ADDR,
+					    IPV6_LEN, t4->dst_ip.ipv6))
+					return -1;
+				wpa_hexdump(MSG_DEBUG,
+					    "nl80211: SCS tclas4 attr: DST_IPV6",
+					    t4->dst_ip.ipv6, IPV6_LEN);
+			}
+			if (t4->classifier_mask & BIT(7)) {
+				if (nla_put(msg,
+					    QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_FLOW_LABEL,
+					    TCLAS4_FLOW_LABEL_SIZE,
+					    t4->flow_label))
+					return -1;
+				wpa_hexdump(MSG_DEBUG,
+					    "nl80211: SCS tclas4 attr: FLOW_LABEL",
+					    t4->flow_label,
+					    TCLAS4_FLOW_LABEL_SIZE);
+			}
+		}
+
+		if (t4->classifier_mask & BIT(3)) {
+			if (nla_put_u16(msg,
+					QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_SRC_PORT,
+					t4->src_port))
+				return -1;
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: SCS tclas4 attr: SRC_PORT=%u",
+				   t4->src_port);
+		}
+		if (t4->classifier_mask & BIT(4)) {
+			if (nla_put_u16(msg,
+					QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_DST_PORT,
+					t4->dst_port))
+				return -1;
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: SCS tclas4 attr: DST_PORT=%u",
+				   t4->dst_port);
+		}
+		if (t4->classifier_mask & BIT(5)) {
+			if (nla_put_u8(msg,
+				       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_DSCP,
+				       t4->dscp))
+				return -1;
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: SCS tclas4 attr: DSCP=%u",
+				   t4->dscp);
+		}
+		if (t4->classifier_mask & BIT(6)) {
+			u8 next_hdr = (t4->ip_ver == IP_VERSION_4) ?
+				      t4->protocol : t4->next_header;
+
+			if (nla_put_u8(msg,
+				       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_NEXT_HEADER,
+				       next_hdr))
+				return -1;
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: SCS tclas4 attr: NEXT_HEADER=%u",
+				   next_hdr);
+		}
+
+	} else if (te->classifier_type == QM_TCLAS_CLASSIFIER_TYPE10) {
+		const struct qm_tclas_type10_params *t10 =
+			&te->tclas_elem.type10_params;
+
+		if (nla_put_u8(msg,
+			       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS10_PROTOCOL_INSTANCE,
+			       t10->protocol_instance) ||
+		    nla_put_u8(msg,
+			       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS10_NEXT_HEADER,
+			       t10->protocol_number) ||
+		    nla_put(msg,
+			    QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS10_FILTER_MASK,
+			    t10->filter_len, t10->filter_mask) ||
+		    nla_put(msg,
+			    QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS10_FILTER_VALUE,
+			    t10->filter_len, t10->filter_value))
+			return -1;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: SCS tclas10 attr: proto_instance=%u next_header=%u filter_len=%u",
+			   t10->protocol_instance, t10->protocol_number,
+			   t10->filter_len);
+		wpa_hexdump(MSG_DEBUG,
+			    "nl80211: SCS tclas10 attr: filter_mask",
+			    t10->filter_mask, t10->filter_len);
+		wpa_hexdump(MSG_DEBUG,
+			    "nl80211: SCS tclas10 attr: filter_value",
+			    t10->filter_value, t10->filter_len);
 	}
+
+	return 0;
+}
+
+/*
+ * nl80211_send_scs_rule_cmd - Build and send one SCS rule vendor command.
+ * @tclas_start: index of first TCLAS element to include
+ * @tclas_count: number of TCLAS elements to include (0 = none)
+ *
+ * When tclas_processing != 0 (AND logic), all TCLAS elements are combined
+ * into one message.
+ */
+static int nl80211_send_scs_rule_cmd(
+	struct wpa_driver_nl80211_data *drv,
+	unsigned int vendor_id, unsigned int subcmd,
+	int ifidx, const u8 *mac,
+	const struct qm_req_desc_data *qm_desc,
+	enum qos_mgmt_type qm_type,
+	int tclas_start, int tclas_count)
+{
+	struct nl_msg *msg;
+	struct nlattr *attr;
+	int i, ret;
 
 	msg = nlmsg_alloc();
 	if (!msg)
-		return -EINVAL;
+		return -ENOBUFS;
 
 	if (!genlmsg_put(msg, 0, 0, drv->global->nl80211_id,
-			0,  0, NL80211_CMD_VENDOR, 0))
+			 0, 0, NL80211_CMD_VENDOR, 0))
 		goto fail;
 
 	if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, ifidx) ||
 	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, vendor_id) ||
 	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD, subcmd))
 		goto fail;
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: SCS rule cmd: ifidx=%d vendor_id=0x%x subcmd=%u",
+		   ifidx, vendor_id, subcmd);
 
 	attr = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
 	if (!attr)
 		goto fail;
 
-	if (nla_put(msg, QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_DST_MAC_ADDR,
-		    ETH_ALEN, mac))
+	if (mac && nla_put(msg,
+			   QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_DST_MAC_ADDR,
+			   ETH_ALEN, mac))
 		goto fail;
+	if (mac)
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: SCS rule cmd: dst_mac=" MACSTR,
+			   MAC2STR(mac));
+
+	if (qm_desc) {
+		if (nla_put_u8(msg,
+			       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_RULE_ID,
+			       qm_type) ||
+		    nla_put_u16(msg,
+				QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_SERVICE_CLASS_ID,
+				qm_desc->qm_id) ||
+		    nla_put_u8(msg,
+			       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_REQUEST_TYPE,
+			       qm_desc->request_type) ||
+		    nla_put_u8(msg,
+			       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_OUTPUT_TID,
+			       qm_desc->priority))
+			goto fail;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: SCS rule cmd: rule_id(qm_type)=%u svc_class_id=%u request_type=%u output_tid=%u tclas[%d..%d]",
+			   qm_type, qm_desc->qm_id, qm_desc->request_type,
+			   qm_desc->priority,
+			   tclas_start, tclas_start + tclas_count - 1);
+
+		for (i = tclas_start; i < tclas_start + tclas_count; i++) {
+			if (nl80211_add_tclas_attrs(msg,
+						    &qm_desc->tclas[i]) < 0)
+				goto fail;
+		}
+	}
 
 	nla_nest_end(msg, attr);
 
 	ret = send_and_recv_cmd(drv, msg);
 	if (ret)
-		wpa_printf(MSG_ERROR, "nl80211: vendor sub command %d failed err=%d",
+		wpa_printf(MSG_ERROR,
+			   "nl80211: vendor sub command %d failed err=%d",
 			   subcmd, ret);
 	else
-		wpa_printf(MSG_INFO, "nl80211: vendor sub command %d scs_rule_config success",
+		wpa_printf(MSG_INFO,
+			   "nl80211: vendor sub command %d scs_rule_config success",
 			   subcmd);
 	return ret;
 fail:
 	nlmsg_free(msg);
 	return -ENOBUFS;
+}
+
+static int nl80211_vendor_cmd_rule_config_notify(void *priv,
+					 unsigned int vendor_id,
+					 unsigned int subcmd,
+					 const u8 *data,
+					 size_t data_len,
+					 enum nested_attr nested_attr,
+					 struct wpabuf *buf, const u8 *mac,
+					 const char *ifname,
+					 const struct qm_req_desc_data *qm_desc,
+					 enum qos_mgmt_type qm_type)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	int ifidx;
+	int ret = 0;
+	int i;
+
+	if (!drv)
+		return -EINVAL;
+
+	ifidx = if_nametoindex(ifname);
+	if (ifidx == 0) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to find interface index for %s",
+			   ifname);
+		return -ENODEV;
+	}
+
+	if (!qm_desc || qm_desc->num_tclas_elements == 0) {
+		/*
+		 * No TCLAS elements (e.g., EPCS/MSCS or remove request):
+		 * send a single vendor command with MAC addr and SCS header.
+		 */
+		return nl80211_send_scs_rule_cmd(drv, vendor_id, subcmd,
+						 ifidx, mac, qm_desc,
+						 qm_type, 0, 0);
+	}
+
+	if (qm_desc->tclas_processing != 0) {
+		/*
+		 * tclas_processing != 0 (AND logic): all TCLAS elements are
+		 * combined to form one rule (e.g., TCLAS4 5-tuple AND TCLAS10
+		 * filter). TCLAS4 and TCLAS10 use distinct attribute IDs so
+		 * they can coexist in a single vendor command without conflict.
+		 */
+		return nl80211_send_scs_rule_cmd(drv, vendor_id, subcmd,
+						 ifidx, mac, qm_desc,
+						 qm_type, 0,
+						 qm_desc->num_tclas_elements);
+	}
+
+	/*
+	 * tclas_processing == 0 (OR logic): each TCLAS element is independent.
+	 * Send one vendor command per TCLAS element to avoid attribute
+	 * overwriting when multiple elements of the same classifier type are
+	 * present.
+	 */
+	for (i = 0; i < qm_desc->num_tclas_elements; i++) {
+		ret = nl80211_send_scs_rule_cmd(drv, vendor_id, subcmd,
+						ifidx, mac, qm_desc,
+						qm_type, i, 1);
+		if (ret)
+			return ret;
+	}
+
+	return ret;
 }
 #endif /* CONFIG_IEEE80211AX */
 

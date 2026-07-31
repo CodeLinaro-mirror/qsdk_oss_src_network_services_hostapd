@@ -498,15 +498,18 @@ int hostapd_drv_mark_ppe_vp_type(struct hostapd_data *hapd)
 
 
 #ifdef CONFIG_IEEE80211AX
-int hostapd_drv_rule_config_notify(struct hostapd_data *hapd, u8 *mac)
+int hostapd_drv_rule_config_notify(struct hostapd_data *hapd, const u8 *mac,
+				   const struct qm_req_desc_data *qm_desc,
+				   enum qos_mgmt_type qm_type)
 {
-	if (hapd->driver == NULL)
+	if (hapd->driver == NULL || !hapd->driver->rule_config_notify)
 		return -1;
 
 	return hapd->driver->rule_config_notify(hapd->drv_priv,
 			OUI_QCA,
 			QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG,
-			NULL, 0, 0, NULL, mac, hapd->conf->iface);
+			NULL, 0, 0, NULL, mac, hapd->conf->iface, qm_desc,
+			qm_type);
 }
 #endif /* CONFIG_IEEE80211AX */
 

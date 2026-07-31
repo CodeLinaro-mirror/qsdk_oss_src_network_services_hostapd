@@ -187,7 +187,10 @@ int hostapd_drv_mark_ppe_vp_type(struct hostapd_data *hapd);
 #endif
 
 #ifdef CONFIG_IEEE80211AX
-int hostapd_drv_rule_config_notify(struct hostapd_data *hapd, u8 *mac);
+struct qm_req_desc_data;
+int hostapd_drv_rule_config_notify(struct hostapd_data *hapd, const u8 *mac,
+				   const struct qm_req_desc_data *qm_desc,
+				   enum qos_mgmt_type qm_type);
 #endif /* CONFIG_IEEE80211AX */
 int hostapd_drv_notify_iface_state(struct hostapd_data *hapd, u32 bss_mode);
 
