@@ -329,7 +329,7 @@ struct hostapd_data * hostapd_mbssid_get_tx_bss(struct hostapd_data *hapd)
 		if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
 			return hapd->mbssid_group? hapd->mbssid_group->txbss : NULL;
 		else
-			return hapd->iface->bss[0];
+			return hapd->iface->tx_bss;
 	}
 	return hapd;
 }
@@ -6317,6 +6317,8 @@ static void hostapd_multi_mbssid_set_mbssid_index(struct hostapd_data *hapd,
 
 		if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
 			hapd->mbssid_group->txbss = hapd;
+		else
+			hapd->iface->tx_bss = hapd;
 
 		return;
 	}

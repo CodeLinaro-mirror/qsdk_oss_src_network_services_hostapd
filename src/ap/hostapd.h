@@ -933,6 +933,7 @@ struct hostapd_iface {
 
 	size_t num_bss;
 	struct hostapd_data **bss;
+	struct hostapd_data *tx_bss;
 
 #ifdef CONFIG_QCN_EXTN
 	/* Bitmask of used vendor BSSID indices (non-MBSSID) */
