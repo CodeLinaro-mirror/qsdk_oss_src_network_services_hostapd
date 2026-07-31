@@ -782,6 +782,7 @@ struct hostapd_data {
 #endif /* CONFIG_IEEE80211BN */
 
 	bool is_update_beacon; /* To indentify whether its from UPDATE_BEACON comamnd */
+	bool sp_ie_activated_sta;  /* Set when processing STA with validated SP IE */
 };
 
 

@@ -4752,7 +4752,8 @@ static void hapd_initialize_pasn(struct hostapd_data *hapd,
 		pasn_set_own_mld_addr(pasn, hapd->mld->mld_addr);
 #endif /* CONFIG_IEEE80211BE && CONFIG_ENC_ASSOC */
 	pasn_set_peer_addr(pasn, sta->addr);
-	pasn_set_wpa_key_mgmt(pasn, hapd->conf->wpa_key_mgmt);
+	pasn_set_wpa_key_mgmt(pasn, hapd->conf->wpa_key_mgmt |
+			      hostapd_sp_implied_key_mgmt(hapd->conf));
 	pasn_set_rsn_pairwise(pasn, hapd->conf->rsn_pairwise);
 	pasn_set_mfp(pasn, hapd->conf->ieee80211w);
 	os_free(pasn->pasn_groups);
@@ -5264,7 +5265,8 @@ static void handle_auth(struct hostapd_data *hapd,
 #endif /* CONFIG_PASN */
 #ifdef CONFIG_ENC_ASSOC
 	      (hapd->conf->wpa &&
-	       (hapd->conf->wpa_key_mgmt & WPA_KEY_MGMT_EPPKE) &&
+	       ((hapd->conf->wpa_key_mgmt & WPA_KEY_MGMT_EPPKE) ||
+		(hostapd_sp_implied_key_mgmt(hapd->conf) & WPA_KEY_MGMT_EPPKE)) &&
 	       hapd->conf->assoc_frame_encryption &&
 	       auth_alg == WLAN_AUTH_EPPKE) ||
 #endif /* CONFIG_ENC_ASSOC */
@@ -8838,13 +8840,16 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 		goto rsnxe_done;
 	}
 #endif /* CONFIG_TESTING_OPTIONS */
-	if (!omit_rsnxe)
+	if (!omit_rsnxe) {
+		hapd->sp_ie_activated_sta = (sta && sta->sp_ie_validated);
 #ifdef CONFIG_TESTING_OPTIONS
 		p = hostapd_eid_rsnxe(hapd, p, buf + buflen - p,
 				      hapd->conf->rsnxe_capab_mask);
 #else /* CONFIG_TESTING_OPTIONS */
 		p = hostapd_eid_rsnxe(hapd, p, buf + buflen - p, ~0ULL);
 #endif /* CONFIG_TESTING_OPTIONS */
+		hapd->sp_ie_activated_sta = false;
+	}
 #ifdef CONFIG_TESTING_OPTIONS
 rsnxe_done:
 #endif /* CONFIG_TESTING_OPTIONS */
