@@ -4143,9 +4143,9 @@ enum nl80211_attrs {
 	NL80211_ATTR_ADVERTISED_TTLM_EXPEC_DUR_UPDATE,
 
 	NL80211_ATTR_QOS_MGMT,
-#ifdef CONFIG_QCN_EXTN
+
 	NL80211_ATTR_SKIP_CAC,
-#endif
+
 
 	/* add attributes here, update the policy in nl80211.c */
 
