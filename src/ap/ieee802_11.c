@@ -18165,7 +18165,7 @@ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd_probed, u32 frame_type,
 			      bool *is_len_calc_failed)
 {
 	struct hostapd_data *hapd = hostapd_mbssid_get_tx_bss(hapd_probed);
-	size_t len = 0, bss_index = 1;
+	size_t len = 0, bss_index = 0;
 	size_t num_bss, elem_len = 0;
 	bool skip_rnr = false;
 	bool rnr_override = true;
@@ -18508,7 +18508,7 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 			void *params)
 {
 	struct hostapd_data *hapd = hostapd_mbssid_get_tx_bss(hapd_probed);
-	size_t bss_index = 1, cur_len = 0;
+	size_t bss_index = 0, cur_len = 0;
 	u8 elem_index = 0, *rnr_start_eid = rnr_eid;
 	bool add_rnr;
 	size_t num_bss;
