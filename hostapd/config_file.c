@@ -4573,6 +4573,19 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line);
 			return 1;
 		}
+	} else if (os_strcmp(buf, "disable_auto_mbssid_tx_bss") == 0) {
+		u8 disable_auto_tx_bss = atoi(pos);
+
+		if (conf->num_bss > 1 &&
+		    ((!disable_auto_tx_bss && conf->disable_auto_mbssid_tx_bss) ||
+		     (disable_auto_tx_bss && !conf->disable_auto_mbssid_tx_bss))) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: cannot change disable_auto_mbssid_tx_bss",
+				   line);
+			return 1;
+		}
+
+		conf->disable_auto_mbssid_tx_bss = disable_auto_tx_bss;
 	} else if (os_strcmp(buf, "reg_def_cli_eirp_psd") == 0) {
 		conf->reg_def_cli_eirp_psd = atoi(pos);
 	} else if (os_strcmp(buf, "reg_sub_cli_eirp_psd") == 0) {
@@ -4651,6 +4664,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->group_size = group_size;
 	} else if (os_strcmp(buf, "mbssid_max") == 0) {
 		conf->mbssid_max = atoi(pos);
+	} else if (os_strcmp(buf, "mbssid_tx_bss") == 0) {
+		bss->mbssid_tx_bss = atoi(pos);
 	} else if (os_strcmp(buf, "he_tx_mcs_nss_set") == 0) {
 		if (hostapd_parse_he_mcs_nss_set(pos, bss->he_tx_mcs_nss_set,
 						 "he_tx_mcs_nss_set")) {
