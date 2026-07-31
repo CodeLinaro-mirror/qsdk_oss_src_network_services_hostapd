@@ -2767,6 +2767,9 @@ setup_mld:
 			wpa_printf(MSG_ERROR,
 				   "MLD: Failed to add link %d in MLD %s",
 				   hapd->mld_link_id, hapd->conf->iface);
+#ifdef CONFIG_QCN_EXTN
+			hostapd_free_bss_index_extn(hapd);
+#endif /* CONFIG_QCN_EXTN */
 			/* For non first link the drv_priv is already assigned from
 			 * hhapd, hence, we have to reset in failure.
 			 */
@@ -7909,6 +7912,8 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 				goto fail;
 			}
 		} else {
+			int ret;
+
 			/* Assign new BSS with bss[0]'s driver info */
 			hapd = hapd_iface->bss[hapd_iface->num_bss - 1];
 			hapd->driver = hapd_iface->bss[0]->driver;
@@ -7922,9 +7927,16 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 				hostapd_bootup_cac_enabled_extn(hapd_iface);
 #endif /* CONFIG_QCN_EXTN */
 
-			if (start_ctrl_iface_bss(hapd) < 0 ||
-			    (setup_bss &&
-			     hostapd_setup_bss(hapd, false, true))) {
+			ret = start_ctrl_iface_bss(hapd);
+			if (!ret && setup_bss) {
+				ret = hostapd_setup_bss(hapd, false, true);
+#ifdef CONFIG_QCN_EXTN
+				if (ret)
+					hostapd_free_bss_index_extn(hapd);
+#endif /* CONFIG_QCN_EXTN */
+			}
+
+			if (ret) {
 #ifdef CONFIG_QCN_EXTN
 				hostapd_log_trigger_emit(hapd, NULL,
 							 HOSTAPD_LOG_TRIG_VAP_CREATE_FAIL);
