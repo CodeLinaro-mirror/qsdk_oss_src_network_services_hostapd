@@ -1736,7 +1736,7 @@ fail:
 #ifdef CONFIG_QCN_EXTN
 	if (!acs_handle_channel_change_failed_extn(iface, ideal_chan, err))
 		return;
-#endif /* CONFIG_QCN_EXTN */
+#endif
 	/*
 	 * hostapd_setup_interface_complete() will return -1 on failure,
 	 * 0 on success and 0 is HOSTAPD_CHAN_VALID :)
