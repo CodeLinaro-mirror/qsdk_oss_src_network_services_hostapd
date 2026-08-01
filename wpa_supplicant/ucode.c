@@ -234,21 +234,6 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 					return;
 				if (bss->mld_links[i].freq == 0)
 					continue;
-				state = wpa_supplicant_state_txt(wpa_s->wpa_state);
-				uc_value_push(ucv_get(ucv_string_new(wpa_s->ifname)));
-				hw_idx = wpa_get_hw_idx_by_freq(wpa_s, bss->mld_links[i].freq);
-				if (hw_idx == -1)
-					hw_idx = 0;
-				uc_value_push(ucv_get(ucv_int64_new(hw_idx)));
-				uc_value_push(ucv_get(val));
-				uc_value_push(ucv_get(ucv_string_new(state)));
-				info = ucv_object_new(vm);
-				uc_value_push(ucv_get(info));
-				uc_value_push(ucv_get(ucv_int64_new(vap_type)));
-				ucv_object_add(info, "frequency",
-					       ucv_int64_new(bss->mld_links[i].freq));
-				ucv_object_add(info, "chan_width",
-					       ucv_int64_new(bss->mld_links[i].width));
 
 				/* Reset per-link before computing center freqs */
 				center_freq1 = 0;
@@ -276,6 +261,32 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 					center_freq2 = ieee80211_chan_to_freq(NULL, op_class,
 									      bss->mld_links[i].center_freq2_idx);
 				}
+
+				if (wpas_link_uses_nol_channel_extn(wpa_s,
+								    bss->mld_links[i].freq,
+								    bss->mld_links[i].width,
+								    center_freq1, center_freq2)) {
+					wpa_printf(MSG_DEBUG,
+						   "NOL: MLO pre-connect link %d freq=%d in NOL - skip",
+						   i, bss->mld_links[i].freq);
+					continue;
+				}
+
+				state = wpa_supplicant_state_txt(wpa_s->wpa_state);
+				uc_value_push(ucv_get(ucv_string_new(wpa_s->ifname)));
+				hw_idx = wpa_get_hw_idx_by_freq(wpa_s, bss->mld_links[i].freq);
+				if (hw_idx == -1)
+					hw_idx = 0;
+				uc_value_push(ucv_get(ucv_int64_new(hw_idx)));
+				uc_value_push(ucv_get(val));
+				uc_value_push(ucv_get(ucv_string_new(state)));
+				info = ucv_object_new(vm);
+				uc_value_push(ucv_get(info));
+				uc_value_push(ucv_get(ucv_int64_new(vap_type)));
+				ucv_object_add(info, "frequency",
+					       ucv_int64_new(bss->mld_links[i].freq));
+				ucv_object_add(info, "chan_width",
+					       ucv_int64_new(bss->mld_links[i].width));
 				ucv_object_add(info, "center_freq1",
 					       ucv_int64_new(center_freq1));
 				ucv_object_add(info, "center_freq2",
