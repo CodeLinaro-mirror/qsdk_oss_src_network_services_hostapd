@@ -4315,9 +4315,6 @@ static void qca_nl80211_pasn_auth(struct i802_bss *bss, u8 *data, size_t len)
 		event.pasn_auth.action =
 			PASN_ACTION_DELETE_SECURE_RANGING_CONTEXT;
 		break;
-	case QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT:
-		qca_nl80211_afc_power_update_completed(drv, data, len);
-		break;
 	default:
 		return;
 	}
