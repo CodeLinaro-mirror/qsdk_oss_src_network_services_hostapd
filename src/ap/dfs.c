@@ -2061,12 +2061,6 @@ hostapd_dfs_intercac_check_pref_block(struct hostapd_iface *iface,
 	int n_chans, n_chans1, start_chan_idx, radar_chans;
 	bool range_ok;
 
-	/*
-	 * DFS state is stored per 20 MHz channel in hostapd_channel_data.
-	 * hw_mode_get_channel() returns only the single channel entry matching
-	 * a frequency. For Inter CAC boot, validate the whole preferred
-	 * operating bandwidth block instead of only the primary channel.
-	 */
 	n_chans = dfs_get_used_n_chans(iface, &n_chans1, chan_width);
 	if (n_chans <= 0) {
 		wpa_printf(MSG_ERROR,
@@ -2123,12 +2117,45 @@ hostapd_dfs_intercac_check_pref_block(struct hostapd_iface *iface,
 	return true;
 }
 
+static bool
+hostapd_dfs_intercac_is_pref_chan(struct hostapd_hw_modes *mode,
+				  int completed_chan,
+				  int preferred_chan,
+				  int n_chans_pref,
+				  int n_chans_oper,
+				  int *first_chan_idx)
+{
+	int i;
+
+	*first_chan_idx = -1;
+	for (i = 0; i < mode->num_channels; i++) {
+		if (mode->channels[i].chan == preferred_chan) {
+			*first_chan_idx = i;
+			break;
+		}
+	}
+
+	if (*first_chan_idx < 0)
+		return false;
+
+	for (i = 0; i < n_chans_pref; i += n_chans_oper) {
+		if (*first_chan_idx + i >= mode->num_channels)
+			break;
+		if (mode->channels[*first_chan_idx + i].chan == completed_chan)
+			return true;
+	}
+
+	return false;
+}
+
 static struct hostapd_channel_data *
 hostapd_dfs_get_preferred_precac_channel(struct hostapd_iface *iface)
 {
 	struct hostapd_hw_modes *mode;
 	struct hostapd_channel_data *chan;
 	int idx;
+	enum oper_chan_width preferred_width, rcac_width;
+	int n_chans1, n_chans_pref, n_chans_oper;
 
 	if (!iface || !iface->user_rcac_channel)
 		return NULL;
@@ -2146,16 +2173,36 @@ hostapd_dfs_get_preferred_precac_channel(struct hostapd_iface *iface)
 	 * to prioritize the configured/preferred channel before random
 	 * selection.
 	 */
+	preferred_width = iface->preferred_chan_width;
+	rcac_width = hostapd_get_oper_chwidth(iface->conf);
+
+	n_chans_pref = dfs_get_used_n_chans(iface, &n_chans1,
+					    preferred_width);
+	n_chans_oper = dfs_get_used_n_chans(iface, &n_chans1,
+					    rcac_width);
+	if (n_chans_pref <= 0 || n_chans_oper <= 0)
+		return NULL;
+
+	if (!hostapd_dfs_intercac_is_pref_chan(mode,
+					       iface->user_rcac_channel,
+					       iface->preferred_chan,
+					       n_chans_pref,
+					       n_chans_oper,
+					       &idx)) {
+		wpa_printf(MSG_DEBUG,
+			   "PRECAC_Preferred agile CAC channel %d not in preferred block %d",
+			   iface->user_rcac_channel, iface->preferred_chan);
+		return NULL;
+	}
+
+
 	for (idx = 0; idx < mode->num_channels; idx++) {
 		chan = &mode->channels[idx];
 
 		if (chan->chan != iface->user_rcac_channel)
 			continue;
-
-		if (hostapd_dfs_intercac_check_pref_block(iface,
-							  iface->user_rcac_channel,
-							  hostapd_get_oper_chwidth(iface->conf),
-							  NULL, DFS_NO_CAC_YET)) {
+		if (dfs_chan_range_available(mode, idx, n_chans_oper,
+					     DFS_NO_CAC_YET)) {
 			wpa_printf(MSG_INFO,
 				   "PRECAC_Using preferred agile CAC channel %d",
 				   iface->user_rcac_channel);
@@ -2860,37 +2907,6 @@ int hostapd_dfs_precac_restart_after_radar(struct hostapd_iface *iface,
 	return hostapd_dfs_start_precac(iface);
 }
 
-static bool
-hostapd_dfs_intercac_is_pref_chan(struct hostapd_hw_modes *mode,
-				  int completed_chan,
-				  int preferred_chan,
-				  int n_chans_pref,
-				  int n_chans_oper,
-				  int *first_chan_idx)
-{
-	int i;
-
-	*first_chan_idx = -1;
-	for (i = 0; i < mode->num_channels; i++) {
-		if (mode->channels[i].chan == preferred_chan) {
-			*first_chan_idx = i;
-			break;
-		}
-	}
-
-	if (*first_chan_idx < 0)
-		return false;
-
-	for (i = 0; i < n_chans_pref; i += n_chans_oper) {
-		if (*first_chan_idx + i >= mode->num_channels)
-			break;
-		if (mode->channels[*first_chan_idx + i].chan == completed_chan)
-			return true;
-	}
-
-	return false;
-}
-
 bool hostapd_dfs_intercac_boot(struct hostapd_iface *iface)
 {
 	struct hostapd_config *conf;
@@ -3167,6 +3183,8 @@ bool hostapd_dfs_intercac_agile_complete(struct hostapd_iface *iface,
 		   preferred_chan, preferred_width);
 
 	iface->preferred_chan = 0;
+	iface->preferred_chan_width = CONF_OPER_CHWIDTH_USE_HT;
+	iface->user_rcac_channel = 0;
 	hostapd_dfs_request_channel_switch(iface, preferred_chan, freq,
 					   sec, preferred_width, seg0, 0, 0);
 	return true;
