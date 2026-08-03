@@ -2042,7 +2042,7 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 }
 
 #ifdef CONFIG_IEEE80211BN
-static int hostapd_config_check_npca_config(struct hostapd_config *conf)
+int hostapd_config_check_npca_config(struct hostapd_config *conf)
 {
 	enum oper_chan_width chwidth;
 	int seg0, npca_chan;

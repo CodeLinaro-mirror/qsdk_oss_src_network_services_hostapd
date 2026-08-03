@@ -1462,6 +1462,31 @@ static void acs_study(struct hostapd_iface *iface)
 			err = -1;
 			goto fail;
 		}
+
+#ifdef CONFIG_IEEE80211BN
+#ifdef CONFIG_QCN_EXTN
+		if (iface->conf->npca_enable && iface->conf->conf_extn.qacs_enable) {
+			u8 npca_channel = 0;
+			u16 npca_puncture_bitmap = 0;
+			if (!qacs_select_best_npca_chan(iface, iface->current_mode,
+						ideal_chan,
+						hostapd_get_oper_chwidth(iface->conf),
+						&npca_channel,
+						&npca_puncture_bitmap)) {
+				iface->conf->npca_primary_channel = npca_channel;
+				iface->conf->npca_punct_bitmap = npca_puncture_bitmap;
+				if (hostapd_config_check_npca_config(iface->conf) != 0) {
+					wpa_printf(MSG_WARNING,
+							"QACS NPCA: selected channel %u failed "
+							"validation, disabling NPCA",
+							iface->conf->npca_primary_channel);
+					hostapd_disable_npca(iface->conf);
+				}
+			}
+		}
+#endif /* CONFIG_QCN_EXTN */
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef CONFIG_QCN_EXTN
 	}
 #endif
