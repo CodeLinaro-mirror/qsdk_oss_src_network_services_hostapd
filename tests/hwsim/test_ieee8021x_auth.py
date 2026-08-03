@@ -4,7 +4,9 @@
 # This software may be distributed under the terms of the BSD license.
 # See README for more details.
 
+import binascii
 import logging
+import struct
 import time
 
 import hostapd
@@ -1665,5 +1667,110 @@ def test_ieee8021x_auth_alg_eap_tls_security_profile_19(dev, apdev):
     if "EAP-PQC" not in key_mgmt:
         raise HwsimSkip(f"EAP-PQC not supported: {key_mgmt}")
 
-    _run_ieee8021x_auth_security_profile_pqc(dev, apdev, "EAP-PQC",
-                                             "00-0f-ac-31", 19, 3)
+    _run_ieee8021x_auth_security_profile_pqc(dev, apdev,
+                                             "00-0f-ac-31", 19)
+
+WLAN_AUTH_802_1X = 8
+
+def mgmt_rx_process(hapd, frame):
+    cmd = "MGMT_RX_PROCESS freq=2412 datarate=0 ssi_signal=-30 frame=" + frame
+    if "OK" not in hapd.request(cmd):
+        raise Exception("MGMT_RX_PROCESS failed")
+
+def build_802_1x_auth_frame(hapd, addr, auth_transaction=1, status=0, body=b''):
+    bssid = hapd.own_addr().replace(':', '')
+    hdr = "b0003a01" + bssid + addr.replace(':', '') + bssid + "1000"
+    fixed = struct.pack("<HHH", WLAN_AUTH_802_1X, auth_transaction, status)
+    return hdr + binascii.hexlify(fixed + body).decode()
+
+def eapol_start_encap():
+    """Encapsulation Length field followed by an EAPOL-Start PDU"""
+    pdu = struct.pack(">BBH", 2, 1, 0)
+    return struct.pack("<H", len(pdu)) + pdu
+
+def test_ieee8021x_auth_alg_not_enabled(dev, apdev):
+    """IEEE 802.1X over Authentication frames when the AP has not enabled them"""
+    ssid = "test-ieee8021x-auth-not-enabled"
+
+    params = hostapd.wpa2_eap_params(ssid=ssid)
+    params["wpa_key_mgmt"] = "WPA-EAP-SHA256"
+    params["ieee80211w"] = "2"
+
+    hapd = hostapd.add_ap(apdev[0], params)
+    hapd.set("ext_mgmt_frame_handling", "1")
+
+    # The AP rejects the frame before a STA entry has been allocated.
+    mgmt_rx_process(hapd, build_802_1x_auth_frame(hapd, "02:03:04:05:06:07",
+                                                  body=eapol_start_encap()))
+
+    if "PONG" not in hapd.request("PING"):
+        raise Exception("hostapd did not survive the Authentication frame")
+
+    hapd.set("ext_mgmt_frame_handling", "0")
+
+    dev[0].connect(ssid,
+                   key_mgmt="WPA-EAP-SHA256",
+                   ieee80211w="2",
+                   eap="TLS",
+                   identity="tls user",
+                   ca_cert="auth_serv/ca.pem",
+                   client_cert="auth_serv/user.pem",
+                   private_key="auth_serv/user.key",
+                   scan_freq="2412")
+
+def test_ieee8021x_auth_pqc_akm_without_pqc_element(dev, apdev):
+    """IEEE 802.1X over Authentication frames with a PQC AKM and no PQC Parameters element"""
+    if "EAP-PQC" not in dev[0].get_capability("key_mgmt"):
+        raise HwsimSkip("EAP-PQC not supported")
+
+    ssid = "test-ieee8021x-auth-pqc-no-elem"
+
+    params = hostapd.wpa2_eap_params(ssid=ssid)
+    params["wpa_key_mgmt"] = "EAP-PQC"
+    params["rsn_pairwise"] = "GCMP-256"
+    params["group_cipher"] = "GCMP-256"
+    params["ieee80211w"] = "2"
+    params["security_profiles"] = "18"
+    params["eap_using_authentication_frames"] = "1"
+    params["assoc_frame_encryption"] = "1"
+    params["pmksa_caching_privacy"] = "1"
+    params["supported_pqc_constraints"] = "2"
+
+    hapd = hostapd.add_ap(apdev[0], params)
+    hapd.set("ext_mgmt_frame_handling", "1")
+
+    # AKM Suite Selector element advertising 00-0F-AC:31 without the PQC
+    # Parameters element that carries the security profile.
+    akm = struct.pack(">BBBBBBB", 255, 5, 114, 0x00, 0x0f, 0xac, 31)
+    body = eapol_start_encap() + akm
+
+    mgmt_rx_process(hapd, build_802_1x_auth_frame(hapd, "02:03:04:05:06:07",
+                                                  body=body))
+
+    hapd.set("ext_mgmt_frame_handling", "0")
+
+    dev[0].set("security_profiles", "1")
+    dev[0].connect(ssid,
+                   key_mgmt="EAP-PQC",
+                   ieee80211w="2",
+                   pairwise="GCMP-256",
+                   group="GCMP-256",
+                   eap="TLS",
+                   identity="tls user",
+                   ca_cert="auth_serv/ca.pem",
+                   client_cert="auth_serv/user.pem",
+                   private_key="auth_serv/user.key",
+                   scan_freq="2412",
+                   pmksa_privacy="1",
+                   eap_over_auth_frame="1",
+                   supported_pqc_constraints="2")
+
+    hapd.wait_sta()
+    sta = hapd.get_sta(dev[0].own_addr())
+    if sta["AKMSuiteSelector"] != "00-0f-ac-31":
+        raise Exception("Incorrect AKMSuiteSelector value: " +
+                        sta["AKMSuiteSelector"])
+
+    val = dev[0].get_status_field("security_profile")
+    if val != "18":
+        raise Exception("Unexpected security_profile: " + str(val))
