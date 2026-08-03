@@ -227,6 +227,9 @@ void wpa_debug_close_linux_tracing(void)
 void _wpa_printf(int level, const char *fmt, ...)
 {
 	va_list ap;
+#ifdef RDK_ONEWIFI
+	FILE *fpg = NULL;
+#endif
 
 	if (wpa_printf_hook) {
 		va_start(ap, fmt);
@@ -234,21 +237,19 @@ void _wpa_printf(int level, const char *fmt, ...)
 		va_end(ap);
 	}
 #ifdef RDK_ONEWIFI
-		FILE *fpg = NULL;
 
-
-		if ((access("/nvram/wifiLibhostapDbg", R_OK)) == 0) {
-			fpg = fopen("/tmp/wifilibhostap", "a+");
-			if (fpg == NULL) {
-				return;
-			}
-            va_start(ap, fmt);
-            vfprintf(fpg, fmt, ap);
-            va_end(ap);
-            fprintf(fpg, "\n");
-            fflush(fpg);
-            fclose(fpg);
+	if ((access("/nvram/wifiLibhostapDbg", R_OK)) == 0) {
+		fpg = fopen("/tmp/wifilibhostap", "a+");
+		if (fpg == NULL) {
+			return;
 		}
+		va_start(ap, fmt);
+		vfprintf(fpg, fmt, ap);
+		va_end(ap);
+		fprintf(fpg, "\n");
+		fflush(fpg);
+		fclose(fpg);
+	}
 #endif
 
 	if (level >= wpa_debug_level) {
@@ -306,11 +307,13 @@ void _wpa_hexdump(int level, const char *title, const u8 *buf,
 			 size_t len, int show, int only_syslog)
 {
 	size_t i;
+#ifdef RDK_ONEWIFI
+	static FILE *fpg = NULL;
+#endif
 
 	if (wpa_hexdump_hook)
 		wpa_hexdump_hook(level, title, buf, len);
 #ifdef RDK_ONEWIFI
-    static FILE *fpg = NULL;
 
     if ((access("/nvram/wifiLibhostapDbg", R_OK)) == 0) {
         if (fpg == NULL) {
