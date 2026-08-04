@@ -2621,6 +2621,9 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "openssl_ecdh_curves") == 0) {
 		os_free(bss->openssl_ecdh_curves);
 		bss->openssl_ecdh_curves = os_strdup(pos);
+	} else if (os_strcmp(buf, "openssl_sigalgs") == 0) {
+		os_free(bss->openssl_sigalgs);
+		bss->openssl_sigalgs = os_strdup(pos);
 	} else if (os_strcmp(buf, "fragment_size") == 0) {
 		bss->fragment_size = atoi(pos);
 #ifdef EAP_SERVER_FAST
