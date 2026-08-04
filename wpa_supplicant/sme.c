@@ -663,6 +663,16 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 
 	os_memset(&params, 0, sizeof(params));
 
+	/*
+	 * Reset the ML neighbor retry counter whenever this is a genuinely
+	 * new connection attempt (different target BSSID than the one the
+	 * retry counter is currently tracking).
+	 */
+	if (!ether_addr_equal(bss->bssid, wpa_s->ml_neigh_retry_bssid)) {
+		wpa_s->ml_neigh_retries = 0;
+		os_memcpy(wpa_s->ml_neigh_retry_bssid, bss->bssid, ETH_ALEN);
+	}
+
 	wpas_sme_set_mlo_links(wpa_s, bss, ssid, &missing_links);
 
 	if (missing_links && wpa_s->ml_neigh_retries <= 5) {
@@ -673,6 +683,15 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 		wpa_supplicant_cancel_scan(wpa_s);
 		wpa_supplicant_cancel_sched_scan(wpa_s);
 		wpa_s->ml_neigh_retries++;
+		/*
+		 * Set reassociate so that after the scan completes,
+		 * wpas_select_network_from_last_scan() enters the association
+		 * branch and calls wpa_supplicant_connect_ml_missing(), which
+		 * sets up a directed ML probe (ml_probe_bssid / ml_probe_links)
+		 * targeting only the missing link IDs.  A plain wildcard scan
+		 * without this flag bypasses the ML probe path entirely.
+		 */
+		wpa_s->reassociate = 1;
 		wpa_supplicant_req_scan(wpa_s, 0, 0);
 		return;
 	}
@@ -1535,6 +1554,35 @@ void sme_authenticate(struct wpa_supplicant *wpa_s,
 
 #ifdef CONFIG_QCN_EXTN
 	if (wpa_s->conf->ind_rptr) {
+		/*
+		 * In ind_rptr mode the rptr_mgr socket drives the auth flow
+		 * externally, bypassing wpas_select_network_from_last_scan()
+		 * and therefore wpa_supplicant_connect_ml_missing().  Check
+		 * for missing MLD partner links here, before notifying the
+		 * rptr_mgr, so the directed ML probe path is taken instead of
+		 * entering PRE_CONNECT with an incomplete link set.
+		 */
+		if (wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_MLO) {
+			u16 ind_missing_links = 0;
+
+			wpa_bss_get_usable_links(wpa_s, bss, ssid,
+						 &ind_missing_links);
+			if (ind_missing_links &&
+			    wpa_s->ml_neigh_retries <= 5) {
+				wpa_printf(MSG_DEBUG,
+					   "MLD: ind_rptr: missing links 0x%04x before PRE_CONNECT, retry %u",
+					   ind_missing_links,
+					   wpa_s->ml_neigh_retries);
+				wpa_s->ml_neigh_retries++;
+				wpa_s->reassociate = 1;
+				wpas_connect_work_free(cwork);
+				wpa_supplicant_cancel_scan(wpa_s);
+				wpa_supplicant_cancel_sched_scan(wpa_s);
+				wpa_supplicant_req_scan(wpa_s, 0, 0);
+				return;
+			}
+		}
+
 		if (wpa_s->conf->rptr_mgr_comm_mode == RPTR_MGR_MODE_COMM_SOCK) {
 			wpa_supp_pre_connect_state_handle_extn(wpa_s, bss);
 		}
