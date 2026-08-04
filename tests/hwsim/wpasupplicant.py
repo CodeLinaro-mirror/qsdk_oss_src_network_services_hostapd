@@ -1111,6 +1111,7 @@ class WpaSupplicant:
                   "private_key2", "phase1", "phase2", "domain_suffix_match",
                   "altsubject_match", "subject_match", "pac_file",
                   "bgscan", "ht_mcs", "id_str", "openssl_ciphers",
+                  "openssl_ecdh_curves",
                   "domain_match", "dpp_connector", "sae_password",
                   "sae_password_id", "check_cert_subject",
                   "machine_ca_cert", "machine_client_cert",

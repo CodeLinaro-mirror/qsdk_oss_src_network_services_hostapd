@@ -695,6 +695,16 @@ struct eap_peer_config {
 	char *openssl_ciphers;
 
 	/**
+	 * openssl_ecdh_curves - OpenSSL ECDH curve/group list
+	 *
+	 * This is an OpenSSL specific configuration option for configuring the
+	 * supported TLS groups for this connection as a colon separated list.
+	 * If not set, the default group list is used. An empty string can be
+	 * used to disable the group configuration.
+	 */
+	char *openssl_ecdh_curves;
+
+	/**
 	 * erp - Whether EAP Re-authentication Protocol (ERP) is enabled
 	 */
 	int erp;
