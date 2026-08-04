@@ -6032,9 +6032,22 @@ static const char * openssl_pkey_type_str(const EVP_PKEY *pkey)
 		return "DH";
 	case EVP_PKEY_EC:
 		return "EC";
-	default:
-		return "?";
 	}
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	/*
+	 * Algorithms implemented in a provider, e.g., ML-DSA, do not have a
+	 * built-in EVP_PKEY type.
+	 */
+	{
+		const char *name = EVP_PKEY_get0_type_name(pkey);
+
+		if (name)
+			return name;
+	}
+#endif /* OpenSSL >= 3.0 */
+
+	return "?";
 }
 
 
