@@ -818,8 +818,13 @@ int hostapd_if_link_remove(struct hostapd_data *hapd,
 	if (!hapd->driver || !hapd->drv_priv || !hapd->driver->link_remove)
 		return -1;
 
-	return hapd->driver->link_remove(hapd->drv_priv, type, ifname,
-					 hapd->mld_link_id);
+	if (!hapd->driver->link_remove(hapd->drv_priv, type, ifname,
+					 hapd->mld_link_id)) {
+		hapd->drv_priv = NULL;
+		return 0;
+	}
+
+	return -1;
 }
 #endif /* CONFIG_IEEE80211BE */
 

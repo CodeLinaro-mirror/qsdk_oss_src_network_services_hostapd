@@ -7621,11 +7621,6 @@ enum wpa_event_type {
 	EVENT_LINK_RECONFIG,
 
 	/**
-	 * EVENT_MLD_INTERFACE_FREED - Notification of AP MLD interface removal
-	 */
-	EVENT_MLD_INTERFACE_FREED,
-
-	/**
 	 * EVENT_SETUP_LINK_RECONFIG - Notification that new AP links added
 	 */
 	EVENT_SETUP_LINK_RECONFIG,

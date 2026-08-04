@@ -1553,9 +1553,14 @@ remove_if:
 	if (hapd->reenable != REENABLE_REUSE_LINK && hapd->conf &&
 	    hapd->conf->mld_ap &&
 	    !hapd->interface_added && hapd->iface->bss[0] != hapd &&
-	    hapd->drv_priv != hapd->iface->bss[0]->drv_priv)
-		hostapd_if_link_remove(hapd, WPA_IF_AP_BSS, hapd->conf->iface,
-				       hapd->mld_link_id);
+	    hapd->drv_priv != hapd->iface->bss[0]->drv_priv) {
+		if (hostapd_if_link_remove(hapd, WPA_IF_AP_BSS,
+					   hapd->conf->iface,
+					   hapd->mld_link_id))
+			wpa_printf(MSG_WARNING,
+				   "Failed to remove link BSS interface %s",
+				   hapd->conf->iface);
+	}
 #endif /* CONFIG_IEEE80211BE */
 
 	if (skip_unstarted_bss_cleanup)
@@ -2731,6 +2736,11 @@ setup_mld:
 			wpa_printf(MSG_ERROR,
 				   "MLD: Failed to add link %d in MLD %s",
 				   hapd->mld_link_id, hapd->conf->iface);
+			/* For non first link the drv_priv is already assigned from
+			 * hhapd, hence, we have to reset in failure.
+			 */
+			hapd->interface_added = 0;
+			hapd->drv_priv = NULL;
 			return -1;
 		}
 
@@ -8174,13 +8184,20 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 			 * first bss is removed.
 			 */
 			if (hapd->conf->mld_ap) {
-				hostapd_if_link_remove(hapd, WPA_IF_AP_BSS,
-						       hapd->conf->iface,
-						       hapd->mld_link_id);
-			} else
+				if (hostapd_if_link_remove(hapd, WPA_IF_AP_BSS,
+							   hapd->conf->iface,
+							   hapd->mld_link_id))
+					wpa_printf(MSG_WARNING,
+						   "Failed to remove link BSS interface %s",
+						   hapd->conf->iface);
+			} else {
 #endif /* CONFIG_IEEE80211BE */
-				hostapd_if_remove(hapd, WPA_IF_AP_BSS,
-						  hapd->conf->iface);
+				if (hostapd_if_remove(hapd, WPA_IF_AP_BSS,
+						      hapd->conf->iface))
+					wpa_printf(MSG_WARNING,
+						   "Failed to remove BSS interface %s",
+						   hapd->conf->iface);
+			}
 		}
 
 		hostapd_multi_mbssid_remove_bss(hapd);
