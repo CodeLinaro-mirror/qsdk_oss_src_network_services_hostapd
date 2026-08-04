@@ -585,7 +585,9 @@ static void hostapd_reload_bss(struct hostapd_data *hapd)
 		smd_neighbor_update_notify_own_report_changed(hapd);
 
 	mapc_deinit(hapd);
-	mapc_init(hapd);
+	if (mapc_init(hapd) < 0)
+		wpa_printf(MSG_ERROR, "MAPC: reinit failed for BSS %s",
+			   hapd->conf->iface);
 #endif /* CONFIG_IEEE80211BN */
 	ieee802_11_set_beacon(hapd);
 	hostapd_update_wps(hapd);
