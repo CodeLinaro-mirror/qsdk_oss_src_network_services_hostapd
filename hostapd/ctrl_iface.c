@@ -5109,7 +5109,11 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 
 	hostapd_get_channel_switch_time(iface, &settings.freq_params);
 
+#ifdef CONFIG_QCN_EXTN
+	if (iface->cac_started || iface->bootup_cac_in_progress)
+#else
 	if (iface->cac_started)
+#endif /* CONFIG_QCN_EXTN */
 		return hostapd_abort_cac_for_channel_switch(iface, &settings);
 
 	/*
