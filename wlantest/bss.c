@@ -314,7 +314,7 @@ void bss_update(struct wlantest *wt, struct wlantest_bss *bss,
 		   "pairwise=%s%s%s%s%s%s%s"
 		   "group=%s%s%s%s%s%s%s%s%s"
 		   "mgmt_group_cipher=%s%s%s%s%s"
-		   "key_mgmt=%s%s%s%s%s%s%s%s%s%s%s%s%s%s"
+		   "key_mgmt=%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s"
 		   "rsn_capab=%s%s%s%s%s%s%s%s%s%s",
 		   MAC2STR(bss->bssid),
 		   bss->proto == 0 ? "OPEN " : "",
@@ -366,6 +366,9 @@ void bss_update(struct wlantest *wt, struct wlantest_bss *bss,
 		   "EAP-SUITE-B-192 " : "",
 		   bss->key_mgmt & WPA_KEY_MGMT_IEEE8021X_SHA384 ?
 		   "EAP-SHA384 " : "",
+		   bss->key_mgmt & WPA_KEY_MGMT_802_1X_PQC ? "EAP-PQC " : "",
+		   bss->key_mgmt & WPA_KEY_MGMT_FT_802_1X_PQC ?
+		   "FT-EAP-PQC " : "",
 		   bss->rsn_capab & WPA_CAPABILITY_PREAUTH ? "PREAUTH " : "",
 		   bss->rsn_capab & WPA_CAPABILITY_NO_PAIRWISE ?
 		   "NO_PAIRWISE " : "",
