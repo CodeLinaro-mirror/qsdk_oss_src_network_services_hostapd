@@ -373,7 +373,9 @@ uc_hostapd_bss_set_config(uc_vm_t *vm, size_t nargs)
 				 struct hostapd_data, mbssid_bss) {
 			if (non_tx == hapd || !non_tx->started || !non_tx->conf)
 				continue;
+#ifdef CONFIG_QCN_EXTN
 			hostapd_disable_bss(non_tx, 0, AP_EVENT_DISABLED);
+#endif /* CONFIG_QCN_EXTN */
 		}
 	}
 #endif /* CONFIG_IEEE80211BE */
@@ -751,8 +753,8 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 	uc_value_t *wpa_state_val;
 	char *wpa_state = NULL;
 	bool rpt_max_phy_override = false;
-#endif
 	uint64_t intval;
+#endif
 	int i;
 
 	if (!iface || ucv_type(info) != UC_OBJECT)

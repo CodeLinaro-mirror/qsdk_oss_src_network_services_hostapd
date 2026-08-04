@@ -69,9 +69,7 @@ bool hostapd_is_backhaul_sta_conn(struct hostapd_iface *iface)
 	return false;
 }
 
-#ifndef CONFIG_QCN_EXTN
-static
-#endif
+#ifdef CONFIG_QCN_EXTN
 bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
 {
 	int chan_disabled = 1;
@@ -88,6 +86,7 @@ bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
 	}
 	return chan_disabled;
 }
+#endif /* CONFIG_QCN_EXTN */
 
 /*
  * intf_chan_range_available_6g - check whether the channel can operate
@@ -95,9 +94,7 @@ bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
  * @first_chan_idx - channel index of the first 20Mhz channel in a segment
  * @num_chans - number of 20Mhz channels needed for the operating bandwidth
  */
-#ifndef CONFIG_QCN_EXTN
-static
-#endif
+#ifdef CONFIG_QCN_EXTN
 int intf_chan_range_available_6g(struct hostapd_hw_modes *mode,
 				 int first_chan_idx, int num_chans)
 {
@@ -252,9 +249,7 @@ static int is_interference_in_chanlist(int freq_start, int freq_end,
  * @chan_width - channel width to be checked
  * @chandef_list - pointer array to hold the list of valid available chandef
  */
-#ifndef CONFIG_QCN_EXTN
-static
-#endif
+#ifdef CONFIG_QCN_EXTN
 int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 				       struct hostapd_channel_data ***chandef_list,
 				       int *awgn_interference_freqs)
@@ -336,12 +331,10 @@ int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 			continue;
 		}
 
-#ifdef CONFIG_QCN_EXTN
 		if (!hostapd_hwbl_validate_6ghz(iface, chan, bw,
 						new_centre_freq, 0,
 						iface->conf->he_6ghz_reg_pwr_type))
 			continue;
-#endif
 
 		wpa_printf(MSG_DEBUG, "AWGN: Adding channel %d (%d) to valid chandef list",
 			   chan->freq, chan->chan);
@@ -350,6 +343,7 @@ int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 	}
 	return channel_idx;
 }
+#endif /* CONFIG_QCN_EXTN */
 
 int convert_chwidth_to_20MHz_nchans(enum chan_width chan_width)
 {
@@ -750,6 +744,7 @@ int intf_afc_find_channel_list(struct hostapd_iface *iface,
 
 	return 0;
 }
+#endif /* CONFIG_QCN_EXTN */
 
 enum chan_seg {
 	SEG_PRI20		  = 0x1,
@@ -773,6 +768,7 @@ enum chan_seg {
 	SEG_SEC160		  = 0xFF00,
 };
 
+#ifdef CONFIG_QCN_EXTN
 /*
  * hostapd_intf_awgn_detected - awgn interference is detected in the operating channel.
  * The interference channel information is available as a
@@ -835,12 +831,10 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 		}
 	}
 
-#ifdef CONFIG_QCN_EXTN
 	if (dcs_get_bw_reduction_ctrl_extn(iface->conf, DCS_AWGN_INTF) == false) {
 		wpa_printf(MSG_DEBUG, "DCS Bandwidth reduction is not set");
 		channel_switch = 1;
 	}
-#endif
 
 	/* check whether interference has occurred in primary 20Mhz channel */
 	if (!chan_bw_interference_bitmap || (chan_bw_interference_bitmap & SEG_PRI20))
@@ -854,10 +848,8 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 	}
 
 	if (channel_switch) {
-#ifdef CONFIG_QCN_EXTN
 		if (hostapd_dcs_awgn_handle_rand_chan_disabled_extn(iface))
 			goto exit;
-#endif
 		/* store frequencies with interference in awgn_interference_freqs */
 		current_start_freq = (cf1 - channel_width_to_int(chan_width) / 2) + 10;
 		for (i = 0; i < BW_INTERFERENCE_MAXBITS; i++) {
@@ -940,10 +932,8 @@ int hostapd_intf_awgn_detected(struct hostapd_iface *iface, int freq, int chan_w
 				   "AWGN: bandwidth reduction not needed/possible (cur=%d new=%d)",
 				   chan_width, new_chan_width);
 
-#ifdef CONFIG_QCN_EXTN
 			if (hostapd_dcs_awgn_handle_rand_chan_disabled_extn(iface))
 				goto exit;
-#endif
 
 			/* Bring down the vap since all channels are blocked for switch */
 			hostapd_drv_stop_ap(iface->bss[0]);
@@ -1687,13 +1677,11 @@ int hostapd_intf_afc_received(struct hostapd_iface *iface)
 		return -1;
 	}
 
-#ifdef CONFIG_QCN_EXTN
 	if (!(iface->conf->conf_extn.dcs_conf.dcs_random_chan_bitmap &
 	      DCS_AFC_INTF)) {
 		hostapd_trigger_dynamic_acs(iface->bss[0], CHANNEL_CHANGE_CSA);
 		return 0;
 	}
-#endif
 
 	chan_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
 	wpa_printf(MSG_DEBUG, "chan_width=%d", chan_width);
@@ -1761,3 +1749,5 @@ free_chan_data:
 
 	return ret;
 }
+
+#endif /* CONFIG_QCN_EXTN */

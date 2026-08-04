@@ -37,7 +37,9 @@
 #include "mbo_ap.h"
 #include "ndisc_snoop.h"
 #include "sta_info.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #include "vlan.h"
 #include "wps_hostapd.h"
 #include "dscp_policy.h"
@@ -710,7 +712,9 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	os_free(sta->eht_capab);
 	os_free(sta->uhr_capab);
 
+#ifdef CONFIG_QCN_EXTN
 	hostapd_sta_os_free_extn(&sta->sta_extn);
+#endif /* CONFIG_QCN_EXTN */
 
 	hostapd_free_psk_list(sta->psk);
 	os_free(sta->identity);

@@ -1796,11 +1796,13 @@ static int hostapd_wpa_auth_pull_pmk_r1(void *ctx, const u8 *sta_addr,
 }
 
 
+#ifdef CONFIG_QCN_EXTN
 static int hostapd_wpa_auth_frame_fwd_decision(void *ctx, u16 auth_alg)
 {
 	return hostapd_if_frame_fwd_decision(ctx, auth_alg,
 					     HOSTAPD_IF_FRAME_TYPE_REMOTE_AUTH);
 }
+#endif /* CONFIG_QCN_EXTN */
 
 
 static int hostapd_wpa_auth_notify_remote_auth(void *ctx, const u8 *sta_addr,
@@ -2111,7 +2113,9 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 		.get_session_timeout = hostapd_wpa_auth_get_session_timeout,
 #ifdef CONFIG_HOSTAPD_IF
 		.pull_pmk_r1 = hostapd_wpa_auth_pull_pmk_r1,
+#ifdef CONFIG_QCN_EXTN
 		.frame_fwd_decision = hostapd_wpa_auth_frame_fwd_decision,
+#endif /* CONFIG_QCN_EXTN */
 		.notify_remote_auth = hostapd_wpa_auth_notify_remote_auth,
 #endif
 #ifdef CONFIG_QCN_EXTN
