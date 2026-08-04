@@ -7624,6 +7624,8 @@ static u32 sta_flags_nl80211(int flags)
 		f |= BIT(NL80211_STA_FLAG_CFP);
 	if (flags & WPA_STA_SMD)
 		f |= BIT(NL80211_STA_FLAG_SMD);
+	if (flags & WPA_STA_MAPC_PEER)
+		f |= BIT(NL80211_STA_FLAG_MAPC_PEER);
 
 	return f;
 }
@@ -8067,6 +8069,76 @@ fail:
 	nlmsg_free(msg);
 	return ret;
 }
+
+
+#ifdef CONFIG_IEEE80211BN
+static int nl80211_sta_set_mapc_params(void *priv, const u8 *addr,
+				       const struct mapc_parameters *mp)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	struct nlattr *mapc_nest, *cotdma_nest;
+	int ret = -ENOBUFS;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: SET_STATION MAPC params for " MACSTR
+		   " cap=0x%04x remote_apid=%u",
+		   MAC2STR(addr),
+		   mp->mapc_capability_bitmap,
+		   mp->remote_assigned_apid);
+
+	msg = nl80211_cmd_msg(bss, 0, NL80211_CMD_SET_STATION);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, addr))
+		goto fail;
+
+	mapc_nest = nla_nest_start(msg, NL80211_ATTR_STA_MAPC);
+	if (!mapc_nest)
+		goto fail;
+
+	if (nla_put_u16(msg, NL80211_STA_MAPC_APID,
+			mp->apid)||
+	    nla_put_u16(msg, NL80211_STA_MAPC_REMOTE_APID,
+			mp->remote_assigned_apid) ||
+	    nla_put_u16(msg, NL80211_STA_MAPC_CAPABILITY_BITMAP,
+			mp->mapc_capability_bitmap))
+		goto fail;
+
+	cotdma_nest = nla_nest_start(msg, NL80211_STA_MAPC_COTDMA);
+	if (!cotdma_nest)
+		goto fail;
+
+	if (nla_put_u8(msg, NL80211_STA_MAPC_COTDMA_CHANNEL_WIDTH,
+		       mp->ctdma_profile.channel_width) ||
+	    nla_put_u8(msg, NL80211_STA_MAPC_COTDMA_CCFS,
+		       mp->ctdma_profile.ccfs) ||
+	    nla_put_u16(msg, NL80211_STA_MAPC_COTDMA_DISABLE_SUBCHAN_BITMAP,
+			mp->ctdma_profile.disable_subchannel_bitmap) ||
+	    nla_put_u8(msg, NL80211_STA_MAPC_COTDMA_BSS_COLOR,
+		       mp->ctdma_profile.bss_color))
+		goto fail;
+
+	if (mp->ctdma_profile.rx_txop_return_support)
+		if (nla_put_flag(msg, NL80211_STA_MAPC_COTDMA_RX_TXOP_RETURN))
+			goto fail;
+
+	nla_nest_end(msg, cotdma_nest);
+	nla_nest_end(msg, mapc_nest);
+
+	ret = send_and_recv_cmd(drv, msg);
+	msg = NULL;
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "nl80211: SET_STATION MAPC params failed: %d (%s)",
+			   ret, strerror(-ret));
+fail:
+	nlmsg_free(msg);
+	return ret;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 
 static void rtnl_neigh_delete_fdb_entry(struct i802_bss *bss, const u8 *addr,
@@ -11783,6 +11855,7 @@ static int wpa_driver_nl80211_send_action(struct i802_bss *bss,
 	os_memcpy(hdr->addr2, src, ETH_ALEN);
 	os_memcpy(hdr->addr3, bssid, ETH_ALEN);
 
+	wpa_hexdump(MSG_ERROR, "MPAC FRAME HEXDUMP:", buf, 24+data_len);
 	if (!ether_addr_equal(bss->addr, src)) {
 		wpa_printf(MSG_DEBUG, "nl80211: Use random TA " MACSTR,
 			   MAC2STR(src));
@@ -19948,6 +20021,9 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.set_muedca_mode = nl80211_set_muedca_mode,
 #endif /* CONFIG_QCN_EXTN */
 	.abort_cac = nl80211_abort_cac,
+#ifdef CONFIG_IEEE80211BN
+	.sta_set_mapc_params        = nl80211_sta_set_mapc_params,
+#endif /* CONFIG_IEEE80211BN */
 	.notify_radar = nl80211_notify_radar,
 #ifdef CONFIG_IEEE80211BN
 	.critical_update = nl80211_critical_update,

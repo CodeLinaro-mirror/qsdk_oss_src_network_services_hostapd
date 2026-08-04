@@ -1084,6 +1084,22 @@ static int wiphy_info_handler(struct nl_msg *msg, void *arg)
 	wiphy_info_akm_suites(info, tb[NL80211_ATTR_AKM_SUITES]);
 	wiphy_info_iftype_akm_suites(info, tb[NL80211_ATTR_IFTYPE_AKM_SUITES]);
 
+#ifdef CONFIG_IEEE80211BN
+	if (tb[NL80211_ATTR_MAPC_HW_CAPS])
+		capa->mapc_hw_cap_bitmap =
+			nla_get_u32(tb[NL80211_ATTR_MAPC_HW_CAPS]);
+	if (tb[NL80211_ATTR_MAPC_MAX_CTDMA_PEERS])
+		capa->mapc_max_ctdma_peers =
+			nla_get_u8(tb[NL80211_ATTR_MAPC_MAX_CTDMA_PEERS]);
+
+	if (capa->mapc_hw_cap_bitmap || capa->mapc_max_ctdma_peers)
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: MAPC: wiphy_info_handler: "
+			   "hw_caps=0x%08x max_ctdma_peers=%u",
+			   capa->mapc_hw_cap_bitmap,
+			   capa->mapc_max_ctdma_peers);
+#endif /* CONFIG_IEEE80211BN */
+
 	if (tb[NL80211_ATTR_OFFCHANNEL_TX_OK]) {
 		wpa_printf(MSG_DEBUG, "nl80211: Using driver-based "
 			   "off-channel TX");

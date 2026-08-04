@@ -54,6 +54,10 @@
 #include "ap/uhr_utils.h"
 #include "uhr_neighbor_update.h"
 
+#ifdef CONFIG_IEEE80211BN
+#include "mapc.h"
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef CONFIG_FILS
 void hostapd_notify_assoc_fils_finish(struct hostapd_data *hapd,
 				      struct sta_info *sta)
@@ -1722,8 +1726,20 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 	update_chan_params(hapd, cf1, cf2, hostapd_get_chan_width_from_oper_chan_width(hapd->iconf));
 #endif
 
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->conf->mapc_conf)
+		mapc_handle_primary_channel_change(hapd);
+#endif /* CONFIG_IEEE80211BN */
+
 	hostapd_chan_switch_complete(hapd, power_mode_6ghz, width,
 				     width_device, is_dfs0, is_dfs);
+
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->conf->mapc_conf) {
+		if (!mapc_handle_primary_channel_change(hapd))
+			mapc_handle_negotiation_update(hapd, MAPC_SCHEME_CO_TDMA);
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_QCN_EXTN
 	hostapd_periodic_acs_schedule(hapd->iface);
@@ -2341,13 +2357,59 @@ static int hostapd_mgmt_rx(struct hostapd_data *hapd, struct rx_mgmt *rx_mgmt)
 		u16 fc = le_to_host16(hdr->frame_control);
 
 		/*
-		 * Drop frames to unknown BSSIDs except for Beacon frames which
+		 * Drop frames to unknown BSSIDs except for Beacon & MAPC frames which
 		 * could be used to update neighbor information.
 		 */
 		if (WLAN_FC_GET_TYPE(fc) == WLAN_FC_TYPE_MGMT &&
-		    WLAN_FC_GET_STYPE(fc) == WLAN_FC_STYPE_BEACON)
-			hapd = iface->bss[0];
-		else
+		    (WLAN_FC_GET_STYPE(fc) == WLAN_FC_STYPE_BEACON ||
+#ifdef CONFIG_IEEE80211BN
+		     (WLAN_FC_GET_STYPE(fc) == WLAN_FC_STYPE_ACTION &&
+		      hostapd_is_mapc_action((const struct ieee80211_mgmt *) rx_mgmt->frame,
+			                      rx_mgmt->frame_len))
+#else
+		     0
+#endif
+		     )) {
+			/*
+			 * For MAPC frames, route to the hapd whose own_addr
+			 * matches the DA (A1). This ensures the request/response
+			 * reaches the intended hapd/BSS.
+			 */
+			if (WLAN_FC_GET_STYPE(fc) == WLAN_FC_STYPE_ACTION) {
+				size_t i;
+
+				for (i = 0; i < iface->num_bss; i++) {
+					if (iface->bss[i] &&
+					    ether_addr_equal(hdr->addr1,
+							    iface->bss[i]->own_addr)) {
+						hapd = iface->bss[i];
+						break;
+					}
+				}
+			}
+			if (!hapd) {
+#ifdef CONFIG_IEEE80211BN
+				if (WLAN_FC_GET_STYPE(fc) == WLAN_FC_STYPE_ACTION &&
+				    is_broadcast_ether_addr(hdr->addr1)) {
+					size_t j;
+
+					for (j = 0; j < iface->num_bss; j++) {
+						struct hostapd_data *b = iface->bss[j];
+
+						if (b && b->conf &&
+						    b->conf->mapc_conf &&
+						    (b->conf->mapc_conf->mapc_capability_bitmap &
+						     MAPC_SCHEME_CAP_MASK)) {
+							hapd = b;
+							break;
+						}
+					}
+				}
+				if (!hapd)
+#endif /* CONFIG_IEEE80211BN */
+					hapd = iface->bss[0];
+			}
+		} else
 			return 0;
 	}
 
@@ -3602,6 +3664,15 @@ static void hostapd_event_color_change(struct hostapd_data *hapd, bool success)
 			bss->cca_in_progress = 1;
 		} else {
 			hostapd_cleanup_cca_params(bss);
+#ifdef CONFIG_IEEE80211BN
+			/*
+			 * Trigger MAPC Co-TDMA Agreement Update so that
+			 * coordinating peers updated with new BSS color.
+			 */
+			if (success && bss->conf->mapc_conf)
+				mapc_handle_negotiation_update(
+					bss, MAPC_SCHEME_CO_TDMA);
+#endif /* CONFIG_IEEE80211BN */
 		}
 	}
 }

@@ -72,6 +72,10 @@
 #include "dscp_policy.h"
 #include "ap/ctrl_iface_ap.h"
 
+#ifdef CONFIG_IEEE80211BN
+#include "mapc.h"
+#endif /* CONFIG_IEEE80211BN */
+
 #define CIPIE_ELEMENT_ID 0
 #define CIPIE_LENGTH 1
 #define CIPIE_ELEMENT_ID_EXTENSION 2
@@ -10772,6 +10776,11 @@ static void handle_beacon(struct hostapd_data *hapd,
 				      0);
 
 	ap_list_process_beacon(hapd->iface, mgmt, &elems, fi);
+
+#ifdef CONFIG_IEEE80211BN
+	mapc_handle_neighbor_beacon(hapd, mgmt->sa);
+#endif /* CONFIG_IEEE80211BN */
+
 }
 
 static void hostapd_dscp_action(struct hostapd_data *hapd,
@@ -11110,6 +11119,22 @@ static int handle_action(struct hostapd_data *hapd,
 			return 1;
 		}
 #endif /* CONFIG_NAN_USD */
+#ifdef CONFIG_IEEE80211BN
+		if (mgmt->u.action.u.public_action.action ==
+		    WLAN_PA_MAPC_DISCOVERY_REQ ||
+		    mgmt->u.action.u.public_action.action ==
+		    WLAN_PA_MAPC_DISCOVERY_RESP ||
+                    mgmt->u.action.u.public_action.action ==
+		    WLAN_PA_MAPC_NEGOTIATION_REQ ||
+		    mgmt->u.action.u.public_action.action ==
+		    WLAN_PA_MAPC_NEGOTIATION_RESP) {
+			const u8 *pos, *end;
+			pos = (const u8 *) &mgmt->u.action.category;
+			end = ((const u8 *) mgmt) + len;
+			hostapd_mapc_handle_action(hapd, mgmt->sa, pos, end - pos);
+			return 1;
+                }
+#endif /* CONFIG_IEEE80211BN */
 		if (hapd->public_action_cb) {
 			hapd->public_action_cb(hapd->public_action_cb_ctx,
 					       (u8 *) mgmt, len, freq);
@@ -11474,7 +11499,12 @@ int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 #endif /* CONFIG_QCN_EXTN */
 	      ether_addr_equal(hapd->mld->mld_addr, mgmt->bssid)) &&
 #endif /* CONFIG_IEEE80211BE */
-	    !ether_addr_equal(mgmt->bssid, hapd->own_addr)) {
+	    !ether_addr_equal(mgmt->bssid, hapd->own_addr)
+#ifdef CONFIG_IEEE80211BN
+	    && !(stype == WLAN_FC_STYPE_ACTION &&
+		 hostapd_is_mapc_action(mgmt, len))
+#endif /* CONFIG_IEEE80211BN */
+	    ) {
 		wpa_printf(MSG_INFO, "MGMT: BSSID=" MACSTR " not our address",
 			   MAC2STR(mgmt->bssid));
 		return 0;
