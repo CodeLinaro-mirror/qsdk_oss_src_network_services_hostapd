@@ -168,6 +168,9 @@ struct tls_config {
  * @openssl_ciphers: OpenSSL cipher configuration
  * @openssl_ecdh_curves: OpenSSL ECDH curve configuration. %NULL for auto if
  *	supported, empty string to disable, or a colon-separated curve list.
+ * @openssl_sigalgs: OpenSSL signature algorithm configuration. %NULL to use
+ *	the library defaults or a colon-separated list of signature algorithm
+ *	names (e.g., "ecdsa_secp384r1_sha384:mldsa87").
  * @flags: Parameter options (TLS_CONN_*)
  * @ocsp_stapling_response: DER encoded file with cached OCSP stapling response
  *	or %NULL if OCSP is not enabled
@@ -214,6 +217,7 @@ struct tls_connection_params {
 	const char *ca_cert_id;
 	const char *openssl_ciphers;
 	const char *openssl_ecdh_curves;
+	const char *openssl_sigalgs;
 
 	unsigned int flags;
 	const char *ocsp_stapling_response;

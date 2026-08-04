@@ -254,6 +254,12 @@ int tls_connection_set_params(void *tls_ctx, struct tls_connection *conn,
 		return -1;
 	}
 
+	if (params->openssl_sigalgs) {
+		wpa_printf(MSG_INFO, "TLS: openssl_sigalgs not supported");
+		tlsv1_cred_free(cred);
+		return -1;
+	}
+
 	if (tlsv1_set_ca_cert(cred, params->ca_cert,
 			      params->ca_cert_blob, params->ca_cert_blob_len,
 			      params->ca_path)) {

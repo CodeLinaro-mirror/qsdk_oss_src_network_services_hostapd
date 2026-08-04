@@ -5715,6 +5715,40 @@ static int is_tpm2_key(const char *path)
 }
 
 
+static int openssl_set_sigalgs(SSL_CTX *ssl_ctx, SSL *ssl,
+			       const char *sigalgs)
+{
+	if (!sigalgs || !sigalgs[0])
+		return 0;
+
+#if defined(OPENSSL_IS_BORINGSSL) || defined(LIBRESSL_VERSION_NUMBER)
+	wpa_printf(MSG_INFO, "OpenSSL: openssl_sigalgs not supported");
+	return -1;
+#else /* OPENSSL_IS_BORINGSSL || LIBRESSL_VERSION_NUMBER */
+
+	wpa_printf(MSG_DEBUG, "OpenSSL: Set signature algorithms '%s'",
+		   sigalgs);
+
+	if (ssl) {
+		if (SSL_set1_sigalgs_list(ssl, sigalgs) != 1 ||
+		    SSL_set1_client_sigalgs_list(ssl, sigalgs) != 1)
+			goto fail;
+	} else {
+		if (SSL_CTX_set1_sigalgs_list(ssl_ctx, sigalgs) != 1 ||
+		    SSL_CTX_set1_client_sigalgs_list(ssl_ctx, sigalgs) != 1)
+			goto fail;
+	}
+
+	return 0;
+fail:
+	wpa_printf(MSG_INFO,
+		   "OpenSSL: Failed to set signature algorithms '%s'",
+		   sigalgs);
+	return -1;
+#endif /* OPENSSL_IS_BORINGSSL || LIBRESSL_VERSION_NUMBER */
+}
+
+
 int tls_connection_set_params(void *tls_ctx, struct tls_connection *conn,
 			      const struct tls_connection_params *params)
 {
@@ -5922,6 +5956,9 @@ int tls_connection_set_params(void *tls_ctx, struct tls_connection *conn,
 #endif /* OPENSSL_NO_EC */
 #endif /* OPENSSL_IS_BORINGSSL */
 	}
+
+	if (openssl_set_sigalgs(NULL, conn->ssl, params->openssl_sigalgs) < 0)
+		return -1;
 
 #ifdef OPENSSL_IS_BORINGSSL
 	if (params->flags & TLS_CONN_REQUEST_OCSP) {
@@ -6153,6 +6190,9 @@ int tls_global_set_params(void *tls_ctx,
 #endif /* OPENSSL_NO_EC */
 #endif /* OPENSSL_IS_BORINGSSL */
 	}
+
+	if (openssl_set_sigalgs(ssl_ctx, NULL, params->openssl_sigalgs) < 0)
+		return -1;
 
 #ifdef SSL_OP_NO_TICKET
 	if (params->flags & TLS_CONN_DISABLE_SESSION_TICKET)
