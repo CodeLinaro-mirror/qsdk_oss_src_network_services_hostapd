@@ -1457,7 +1457,7 @@ static const char *network_fields[] = {
 	"pcsc", "pin", "engine_id", "key_id", "cert_id", "ca_cert_id",
 	"pin2", "engine2_id", "key2_id", "cert2_id", "ca_cert2_id",
 	"engine", "engine2", "eapol_flags", "sim_num",
-	"openssl_ciphers", "openssl_ecdh_curves", "erp",
+	"openssl_ciphers", "openssl_ecdh_curves", "openssl_sigalgs", "erp",
 #endif /* IEEE8021X_EAPOL */
 	"wep_key0", "wep_key1", "wep_key2", "wep_key3",
 	"wep_tx_keyidx", "priority",

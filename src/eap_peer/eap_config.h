@@ -705,6 +705,17 @@ struct eap_peer_config {
 	char *openssl_ecdh_curves;
 
 	/**
+	 * openssl_sigalgs - OpenSSL signature algorithm list
+	 *
+	 * This is an OpenSSL specific configuration option for configuring the
+	 * TLS signature algorithms for this connection as a colon separated
+	 * list. The same list is used for own signatures and for the
+	 * algorithms that are accepted in the server certificate chain. If not
+	 * set, the default signature algorithm list is used.
+	 */
+	char *openssl_sigalgs;
+
+	/**
 	 * erp - Whether EAP Re-authentication Protocol (ERP) is enabled
 	 */
 	int erp;

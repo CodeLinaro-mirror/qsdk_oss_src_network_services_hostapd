@@ -885,6 +885,7 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid,
 	INT_DEF(eapol_flags, DEFAULT_EAPOL_FLAGS);
 	STR(openssl_ciphers);
 	STR(openssl_ecdh_curves);
+	STR(openssl_sigalgs);
 	INTe(erp, erp);
 #endif /* IEEE8021X_EAPOL */
 #ifdef CONFIG_WEP

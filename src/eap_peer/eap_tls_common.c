@@ -233,6 +233,7 @@ static int eap_tls_params_from_conf(struct eap_sm *sm,
 
 	params->openssl_ciphers = config->openssl_ciphers;
 	params->openssl_ecdh_curves = config->openssl_ecdh_curves;
+	params->openssl_sigalgs = config->openssl_sigalgs;
 
 	sm->ext_cert_check = !!(params->flags & TLS_CONN_EXT_CERT_CHECK);
 

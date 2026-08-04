@@ -2859,6 +2859,7 @@ static const struct parse_data ssid_fields[] = {
 	{ STRe(imsi_privacy_attr, imsi_privacy_attr) },
 	{ STRe(openssl_ciphers, openssl_ciphers) },
 	{ STRe(openssl_ecdh_curves, openssl_ecdh_curves) },
+	{ STRe(openssl_sigalgs, openssl_sigalgs) },
 	{ INTe(erp, erp) },
 #endif /* IEEE8021X_EAPOL */
 #ifdef CONFIG_WEP
@@ -3175,6 +3176,7 @@ static void eap_peer_config_free(struct eap_peer_config *eap)
 	str_clear_free(eap->external_sim_resp);
 	os_free(eap->openssl_ciphers);
 	os_free(eap->openssl_ecdh_curves);
+	os_free(eap->openssl_sigalgs);
 }
 
 #endif /* IEEE8021X_EAPOL */
