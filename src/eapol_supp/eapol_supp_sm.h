@@ -266,6 +266,20 @@ struct eapol_ctx {
 	int cert_in_cb;
 
 	/**
+	 * max_auth_rounds - Maximum number of EAP authentication rounds
+	 *
+	 * 0 = use the default value.
+	 */
+	int max_auth_rounds;
+
+	/**
+	 * max_auth_rounds_short - Maximum number of short EAP rounds
+	 *
+	 * 0 = use the default value.
+	 */
+	int max_auth_rounds_short;
+
+	/**
 	 * status_cb - Notification of a change in EAP status
 	 * @ctx: Callback context (ctx)
 	 * @status: Step in the process of EAP authentication

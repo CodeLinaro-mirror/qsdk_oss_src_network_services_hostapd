@@ -372,6 +372,8 @@ struct eap_sm {
 
 	int num_rounds;
 	int num_rounds_short;
+	int max_auth_rounds;
+	int max_auth_rounds_short;
 	int force_disabled;
 
 	struct wps_context *wps;

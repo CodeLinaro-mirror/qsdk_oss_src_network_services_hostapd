@@ -1255,6 +1255,8 @@ int wpa_supplicant_init_eapol(struct wpa_supplicant *wpa_s)
 	ctx->cb = wpa_supplicant_eapol_cb;
 	ctx->cert_cb = wpa_supplicant_cert_cb;
 	ctx->cert_in_cb = wpa_s->conf->cert_in_cb;
+	ctx->max_auth_rounds = wpa_s->conf->max_auth_rounds;
+	ctx->max_auth_rounds_short = wpa_s->conf->max_auth_rounds_short;
 	ctx->status_cb = wpa_supplicant_status_cb;
 	ctx->eap_error_cb = wpa_supplicant_eap_error_cb;
 	ctx->confirm_auth_cb = wpa_supplicant_eap_auth_start_cb;

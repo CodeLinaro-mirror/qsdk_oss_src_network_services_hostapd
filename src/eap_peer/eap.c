@@ -1367,7 +1367,7 @@ SM_STEP(EAP)
 		SM_ENTER_GLOBAL(EAP, INITIALIZE);
 	else if (!eapol_get_bool(sm, EAPOL_portEnabled) || sm->force_disabled)
 		SM_ENTER_GLOBAL(EAP, DISABLED);
-	else if (sm->num_rounds > EAP_MAX_AUTH_ROUNDS) {
+	else if (sm->num_rounds > sm->max_auth_rounds) {
 		/* RFC 4137 does not place any limit on number of EAP messages
 		 * in an authentication session. However, some error cases have
 		 * ended up in a state were EAP messages were sent between the
@@ -1376,18 +1376,18 @@ SM_STEP(EAP)
 		 * total number of EAP round-trips and abort authentication if
 		 * this limit is exceeded.
 		 */
-		if (sm->num_rounds == EAP_MAX_AUTH_ROUNDS + 1) {
+		if (sm->num_rounds == sm->max_auth_rounds + 1) {
 			wpa_msg(sm->msg_ctx, MSG_INFO, "EAP: more than %d "
 				"authentication rounds - abort",
-				EAP_MAX_AUTH_ROUNDS);
+				sm->max_auth_rounds);
 			sm->num_rounds++;
 			SM_ENTER_GLOBAL(EAP, FAILURE);
 		}
-	} else if (sm->num_rounds_short > EAP_MAX_AUTH_ROUNDS_SHORT) {
-		if (sm->num_rounds_short == EAP_MAX_AUTH_ROUNDS_SHORT + 1) {
+	} else if (sm->num_rounds_short > sm->max_auth_rounds_short) {
+		if (sm->num_rounds_short == sm->max_auth_rounds_short + 1) {
 			wpa_msg(sm->msg_ctx, MSG_INFO,
 				"EAP: more than %d authentication rounds (short) - abort",
-				EAP_MAX_AUTH_ROUNDS_SHORT);
+				sm->max_auth_rounds_short);
 			sm->num_rounds_short++;
 			SM_ENTER_GLOBAL(EAP, FAILURE);
 		}
@@ -2233,6 +2233,10 @@ struct eap_sm * eap_peer_sm_init(void *eapol_ctx,
 	sm->eapol_cb = eapol_cb;
 	sm->msg_ctx = msg_ctx;
 	sm->ClientTimeout = EAP_CLIENT_TIMEOUT_DEFAULT;
+	sm->max_auth_rounds = conf->max_auth_rounds ? conf->max_auth_rounds :
+		EAP_MAX_AUTH_ROUNDS;
+	sm->max_auth_rounds_short = conf->max_auth_rounds_short ?
+		conf->max_auth_rounds_short : EAP_MAX_AUTH_ROUNDS_SHORT;
 	sm->wps = conf->wps;
 	dl_list_init(&sm->erp_keys);
 

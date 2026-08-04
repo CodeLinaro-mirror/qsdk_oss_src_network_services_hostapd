@@ -1530,6 +1530,20 @@ struct wpa_config {
 	int cert_in_cb;
 
 	/**
+	 * max_auth_rounds - Maximum number of EAP authentication rounds
+	 *
+	 * 0 = use the default value (100).
+	 */
+	int max_auth_rounds;
+
+	/**
+	 * max_auth_rounds_short - Maximum number of short EAP rounds
+	 *
+	 * 0 = use the default value (50).
+	 */
+	int max_auth_rounds_short;
+
+	/**
 	 * mesh_max_inactivity - Timeout in seconds to detect STA inactivity
 	 *
 	 * This timeout value is used in mesh STA to clean up inactive stations.

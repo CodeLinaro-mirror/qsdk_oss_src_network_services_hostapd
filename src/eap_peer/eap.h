@@ -324,6 +324,20 @@ struct eap_config {
 	 * cert_in_cb - Include server certificates in callback
 	 */
 	int cert_in_cb;
+
+	/**
+	 * max_auth_rounds - Maximum number of EAP authentication rounds
+	 *
+	 * 0 = use the default value.
+	 */
+	int max_auth_rounds;
+
+	/**
+	 * max_auth_rounds_short - Maximum number of short EAP rounds
+	 *
+	 * 0 = use the default value.
+	 */
+	int max_auth_rounds_short;
 };
 
 struct eap_sm * eap_peer_sm_init(void *eapol_ctx,

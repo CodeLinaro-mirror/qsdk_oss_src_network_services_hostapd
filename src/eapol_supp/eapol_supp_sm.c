@@ -2181,6 +2181,8 @@ struct eapol_sm *eapol_sm_init(struct eapol_ctx *ctx)
 	conf.openssl_ciphers = ctx->openssl_ciphers;
 	conf.wps = ctx->wps;
 	conf.cert_in_cb = ctx->cert_in_cb;
+	conf.max_auth_rounds = ctx->max_auth_rounds;
+	conf.max_auth_rounds_short = ctx->max_auth_rounds_short;
 
 	sm->eap = eap_peer_sm_init(sm, &eapol_cb, sm->ctx->msg_ctx, &conf);
 	if (sm->eap == NULL) {
