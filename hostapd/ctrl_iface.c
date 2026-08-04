@@ -3811,6 +3811,72 @@ static int hostapd_ctrl_iface_radar(struct hostapd_data *hapd, char *cmd)
 }
 
 
+static int hostapd_ctrl_iface_awgn(struct hostapd_data *hapd, char *cmd)
+{
+	union wpa_event_data data;
+	char *pos, *param, *end;
+	const char *val = NULL;
+
+	wpa_printf(MSG_DEBUG, "AWGN TEST: %s", cmd);
+
+	os_memset(&data, 0, sizeof(data));
+	data.awgn_event.link_id = -1;
+
+	param = os_strchr(cmd, ' ');
+	if (!param)
+		return -1;
+	*param++ = '\0';
+
+	if (os_strcmp(cmd, "DETECTED") != 0) {
+		wpa_printf(MSG_DEBUG, "Unsupported AWGN test command: %s",
+			   cmd);
+		return -1;
+	}
+
+	pos = os_strstr(param, "freq=");
+	if (!pos)
+		return -1;
+	data.awgn_event.freq = atoi(pos + 5);
+
+	pos = os_strstr(param, "chan_width=");
+	if (!pos)
+		return -1;
+	data.awgn_event.chan_width = atoi(pos + 11);
+
+	pos = os_strstr(param, "cf1=");
+	if (!pos)
+		return -1;
+	data.awgn_event.cf1 = atoi(pos + 4);
+
+	pos = os_strstr(param, "cf2=");
+	if (pos)
+		data.awgn_event.cf2 = atoi(pos + 4);
+
+	pos = os_strstr(param, "bitmap=");
+	if (pos)
+		val = pos + 7;
+	else {
+		pos = os_strstr(param, "chan_bw_interference_bitmap=");
+		if (pos)
+			val = pos + 28;
+	}
+	if (!val)
+		return -1;
+	data.awgn_event.chan_bw_interference_bitmap =
+		strtoul(val, &end, 0);
+	if (val == end)
+		return -1;
+
+	pos = os_strstr(param, "link_id=");
+	if (pos)
+		data.awgn_event.link_id = atoi(pos + 8);
+
+	wpa_supplicant_event(hapd, EVENT_AWGN_DETECTED, &data);
+
+	return 0;
+}
+
+
 static int hostapd_ctrl_iface_mgmt_tx(struct hostapd_data *hapd, char *cmd)
 {
 	size_t len;
@@ -11473,6 +11539,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 #ifdef CONFIG_TESTING_OPTIONS
 	} else if (os_strncmp(buf, "RADAR ", 6) == 0) {
 		if (hostapd_ctrl_iface_radar(hapd, buf + 6))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "AWGN ", 5) == 0) {
+		if (hostapd_ctrl_iface_awgn(hapd, buf + 5))
 			reply_len = -1;
 	} else if (os_strncmp(buf, "MGMT_TX ", 8) == 0) {
 		if (hostapd_ctrl_iface_mgmt_tx(hapd, buf + 8))
