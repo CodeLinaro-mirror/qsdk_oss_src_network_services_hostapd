@@ -15,8 +15,24 @@ from utils import *
 from wpasupplicant import WpaSupplicant
 from hwsim import HWSimRadio
 from test_eht import eht_mld_ap_wpa2_params, eht_mld_enable_ap, eht_verify_status
+from test_eap_pqc import check_mldsa_support
 
 logger = logging.getLogger()
+
+# ML-DSA certificates require TLS v1.3, which is not enabled by default. The
+# shared RADIUS server does not have ML-DSA credentials, so use the integrated
+# EAP server for these tests.
+MLDSA_AP_PARAMS = {"eap_server": "1",
+                   "eap_user_file": "auth_serv/eap_user.conf",
+                   "ca_cert": "auth_serv/mldsa-ca.pem",
+                   "server_cert": "auth_serv/mldsa-server.pem",
+                   "private_key": "auth_serv/mldsa-server.key",
+                   "tls_flags": "[ENABLE-TLSv1.3]"}
+
+MLDSA_STA_CERTS = {"ca_cert": "auth_serv/mldsa-ca.pem",
+                   "client_cert": "auth_serv/mldsa-user.pem",
+                   "private_key": "auth_serv/mldsa-user.key",
+                   "phase1": "tls_disable_tlsv1_3=0"}
 
 def check_hlr_auc_gw_support():
     if not os.path.exists("/tmp/hlr_auc_gw.sock"):
@@ -1557,13 +1573,13 @@ def test_ieee8021x_auth_mixed_concurrent(dev, apdev):
     hwsim_utils.test_connectivity(dev[0], dev[1])
     hwsim_utils.test_connectivity(dev[1], dev[0])
 
-def _run_ieee8021x_auth_security_profile_pqc(dev, apdev, key_mgmt,
-                                             expected_akm, expected_profile,
-                                             pqc_constraint):
+def _run_ieee8021x_auth_security_profile_pqc(dev, apdev, expected_akm,
+                                             expected_profile, mldsa=False):
     ssid = "test-ieee8021x-auth-secprof-pqc"
 
     params = hostapd.wpa2_eap_params(ssid=ssid)
-    params["wpa_key_mgmt"] = key_mgmt
+    # The PQC AKM and the PQC constraint are implied by the security profile.
+    params["wpa_key_mgmt"] = ""
     params["rsn_pairwise"] = "GCMP-256"
     params["group_cipher"] = "GCMP-256"
     params["ieee80211w"] = "2"
@@ -1571,9 +1587,18 @@ def _run_ieee8021x_auth_security_profile_pqc(dev, apdev, key_mgmt,
     params["eap_using_authentication_frames"] = "1"
     params["assoc_frame_encryption"] = "1"
     params["pmksa_caching_privacy"] = "1"
-    params["supported_pqc_constraints"] = str(pqc_constraint)
+    if mldsa:
+        params.update(MLDSA_AP_PARAMS)
 
     hapd = hostapd.add_ap(apdev[0], params)
+    if mldsa:
+        check_mldsa_support(hapd)
+        check_mldsa_support(dev[0])
+        certs = MLDSA_STA_CERTS
+    else:
+        certs = {"ca_cert": "auth_serv/ca.pem",
+                 "client_cert": "auth_serv/user.pem",
+                 "private_key": "auth_serv/user.key"}
 
     try:
         dev[0].set("security_profiles", "1")
@@ -1581,19 +1606,17 @@ def _run_ieee8021x_auth_security_profile_pqc(dev, apdev, key_mgmt,
         raise HwsimSkip("Security profiles not supported")
 
     dev[0].connect(ssid,
-                   key_mgmt=key_mgmt,
+                   key_mgmt="WPA-EAP",
                    ieee80211w="2",
                    pairwise="GCMP-256",
                    group="GCMP-256",
                    eap="TLS",
                    identity="tls user",
-                   ca_cert="auth_serv/ca.pem",
-                   client_cert="auth_serv/user.pem",
-                   private_key="auth_serv/user.key",
                    scan_freq="2412",
                    pmksa_privacy="1",
                    eap_over_auth_frame="1",
-                   supported_pqc_constraints=str(pqc_constraint))
+                   security_profiles=str(expected_profile),
+                   **certs)
 
     hapd.wait_sta()
     sta = hapd.get_sta(dev[0].own_addr())
@@ -1669,6 +1692,58 @@ def test_ieee8021x_auth_alg_eap_tls_security_profile_19(dev, apdev):
 
     _run_ieee8021x_auth_security_profile_pqc(dev, apdev,
                                              "00-0f-ac-31", 19)
+
+def test_ieee8021x_auth_alg_eap_tls_mldsa(dev, apdev):
+    """IEEE 802.1X authentication using Authentication frames with ML-DSA certificates"""
+    ssid = "test-ieee8021x-auth-mldsa"
+
+    params = hostapd.wpa2_eap_params(ssid=ssid)
+    params["wpa_key_mgmt"] = "WPA-EAP-SHA256"
+    params["eap_using_authentication_frames"] = "1"
+    params["assoc_frame_encryption"] = "1"
+    params.update(MLDSA_AP_PARAMS)
+
+    hapd = hostapd.add_ap(apdev[0], params)
+    check_mldsa_support(hapd)
+    check_mldsa_support(dev[0])
+
+    dev[0].connect(ssid,
+                   key_mgmt="WPA-EAP-SHA256",
+                   eap="TLS",
+                   identity="tls user",
+                   scan_freq="2412",
+                   eap_over_auth_frame="1",
+                   **MLDSA_STA_CERTS)
+
+    hapd.wait_sta()
+    sta = hapd.get_sta(dev[0].own_addr())
+
+    if sta["AKMSuiteSelector"] != '00-0f-ac-5':
+        raise Exception("Incorrect AKMSuiteSelector value: " + sta["AKMSuiteSelector"])
+
+    ver = dev[0].get_status_field("eap_tls_version")
+    if ver != "TLSv1.3":
+        raise Exception("Unexpected TLS version: " + str(ver))
+
+def test_ieee8021x_auth_alg_eap_tls_mldsa_security_profile_18(dev, apdev):
+    """IEEE 802.1X authentication with Security Profile 18 and ML-DSA certificates"""
+    key_mgmt = dev[0].get_capability("key_mgmt")
+    if "EAP-PQC" not in key_mgmt:
+        raise HwsimSkip(f"EAP-PQC not supported: {key_mgmt}")
+
+    # Fully post-quantum: ML-KEM in the PTK derivation and ML-DSA in the
+    # credential used for the EAP authentication.
+    _run_ieee8021x_auth_security_profile_pqc(dev, apdev,
+                                             "00-0f-ac-31", 18, mldsa=True)
+
+def test_ieee8021x_auth_alg_eap_tls_mldsa_security_profile_19(dev, apdev):
+    """IEEE 802.1X authentication with Security Profile 19 and ML-DSA certificates"""
+    key_mgmt = dev[0].get_capability("key_mgmt")
+    if "EAP-PQC" not in key_mgmt:
+        raise HwsimSkip(f"EAP-PQC not supported: {key_mgmt}")
+
+    _run_ieee8021x_auth_security_profile_pqc(dev, apdev,
+                                             "00-0f-ac-31", 19, mldsa=True)
 
 WLAN_AUTH_802_1X = 8
 
