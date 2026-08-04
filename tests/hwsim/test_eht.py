@@ -2770,6 +2770,111 @@ def test_eht_6ghz_320mhz_3(dev, apdev):
     """EHT with 320 MHz channel width on 6 GHz center 31 primary 37"""
     _test_eht_6ghz(dev, apdev, 37, 137, 31)
 
+def eht_6ghz_awgn_notify_check(hapd, freq, chan_width, cf1, cf2=0,
+                               bitmap=0x1):
+    hapd.dump_monitor()
+
+    cmd = "AWGN DETECTED freq=%d chan_width=%d cf1=%d cf2=%d bitmap=0x%x" % (
+        freq, chan_width, cf1, cf2, bitmap)
+    if "OK" not in hapd.request(cmd):
+        raise Exception("Failed to inject AWGN event")
+
+    ev = hapd.wait_event(["INTERFERENCE-DETECTED"], timeout=10)
+    if ev is None:
+        raise Exception("INTERFERENCE-DETECTED event not reported")
+
+    expected = ["type=AWGN",
+                "freq=%d" % freq,
+                "chan_width=%d" % chan_width,
+                "cf1=%d" % cf1,
+                "cf2=%d" % cf2,
+                "bitmap=0x%x" % bitmap]
+    for field in expected:
+        if field not in ev:
+            raise Exception("Unexpected AWGN event: " + ev)
+
+def _eht_6ghz_awgn_bw_vectors():
+    return [
+        {"name": "20", "op_class": 131, "channel": 5, "ccfs1": 5,
+         "chan_width": 1},
+        {"name": "40", "op_class": 132, "channel": 5, "ccfs1": 3,
+         "chan_width": 2},
+        {"name": "80", "op_class": 133, "channel": 5, "ccfs1": 7,
+         "chan_width": 3},
+        {"name": "160", "op_class": 134, "channel": 5, "ccfs1": 15,
+         "chan_width": 5},
+        {"name": "320", "op_class": 137, "channel": 5, "ccfs1": 31,
+         "chan_width": 10},
+    ]
+
+def _run_eht_6ghz_awgn_all_bw(dev, apdev, with_sta):
+    check_sae_capab(dev[0])
+    tested = 0
+
+    for cfg in _eht_6ghz_awgn_bw_vectors():
+        if cfg["name"] == "320" and not eht_320mhz_supported():
+            logger.info("EHT 6 GHz 320 MHz not supported - skipping")
+            continue
+
+        hapd = None
+        freq = 5950 + cfg["channel"] * 5
+        cf1 = 5950 + cfg["ccfs1"] * 5
+        ssid = "eht-awgn-" + cfg["name"]
+        passphrase = "12345678"
+
+        try:
+            dev[0].cmd_execute(['iw', 'reg', 'set', 'CA'])
+            wait_regdom_changes(dev[0])
+            if not he_6ghz_supported(freq):
+                raise HwsimSkip("6 GHz frequency is not supported")
+
+            params = hostapd.he_wpa2_params(ssid=ssid, passphrase=passphrase)
+            params["ieee80211be"] = "1"
+            params["country_code"] = "CA"
+            params["op_class"] = str(cfg["op_class"])
+            params["channel"] = str(cfg["channel"])
+            params["he_oper_centr_freq_seg0_idx"] = str(cfg["ccfs1"])
+            params["eht_oper_centr_freq_seg0_idx"] = str(cfg["ccfs1"])
+            params["discard_6g_awgn_event"] = "1"
+            hapd = hostapd.add_ap(apdev[0], params)
+
+            if with_sta:
+                dev[0].set("sae_pwe", "1")
+                dev[0].set("sae_groups", "")
+                dev[0].connect(ssid, key_mgmt="SAE", psk=passphrase,
+                               ieee80211w="2", scan_freq=str(freq))
+                hwsim_utils.test_connectivity(dev[0], hapd)
+
+            eht_6ghz_awgn_notify_check(hapd, freq=freq,
+                                       chan_width=cfg["chan_width"],
+                                       cf1=cf1)
+
+            if with_sta and dev[0].get_status_field("wpa_state") != "COMPLETED":
+                raise Exception("STA did not remain connected after AWGN event")
+
+            tested += 1
+        except Exception as e:
+            if isinstance(e, Exception) and str(e) == "AP startup failed":
+                logger.info("EHT 6 GHz %s MHz not supported - skipping",
+                            cfg["name"])
+                continue
+            raise
+        finally:
+            dev[0].request("DISCONNECT")
+            dev[0].set("sae_pwe", "0")
+            clear_regdom(hapd, dev)
+
+    if tested == 0:
+        raise HwsimSkip("No supported EHT 6 GHz bandwidth found")
+
+def test_eht_6ghz_awgn_event_ap_mode(dev, apdev):
+    """EHT 6 GHz AWGN event detection notification in AP mode for all supported bandwidths"""
+    _run_eht_6ghz_awgn_all_bw(dev, apdev, with_sta=False)
+
+def test_eht_6ghz_awgn_event_sta_mode(dev, apdev):
+    """EHT 6 GHz AWGN event detection notification with associated STA for all supported bandwidths"""
+    _run_eht_6ghz_awgn_all_bw(dev, apdev, with_sta=True)
+
 def check_anqp(dev, bssid):
     if "OK" not in dev.request("ANQP_GET " + bssid + " 258"):
         raise Exception("ANQP_GET command failed")
