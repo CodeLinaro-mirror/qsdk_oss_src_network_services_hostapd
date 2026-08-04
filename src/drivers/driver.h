@@ -30,6 +30,9 @@
 #include "utils/list.h"
 #include "drivers/nl80211_copy.h"
 #include "../../qcn_extns/cmn.h"
+#ifdef CONFIG_IEEE80211BN
+#include "ap/mapc.h"
+#endif /* CONFIG_IEEE80211BN */
 
 /* SMD context definitions - IEEE 802.11bn compliant */
 #define SMD_NUM_TIDS 8
@@ -3406,6 +3409,16 @@ struct wpa_driver_capa {
 	u8 max_rx_sts_gt_80;
 	u8 max_tx_sts_le_80;
 	u8 max_tx_sts_gt_80;
+
+#ifdef CONFIG_IEEE80211BN
+	/* MAPC hardware capability bitmap from driver (NL80211_ATTR_MAPC_HW_CAPS).
+	 * Bits 0-15: MAPC_CAPABILITY_* spec positions; bits 16+: MAPC_HW_CAP_*
+	 * extended HW-only bits. 0 = not reported by driver. */
+	u32 mapc_hw_cap_bitmap;
+
+	/* Maximum Co-TDMA peers supported by HW. 0 = not reported. */
+	u8 mapc_max_ctdma_peers;
+#endif /* CONFIG_IEEE80211BN */
 };
 
 
@@ -3616,6 +3629,7 @@ struct wpa_bss_params {
 #define WPA_STA_FT_AUTH BIT(8)
 #define WPA_STA_CFP BIT(9)
 #define WPA_STA_SMD BIT(10)
+#define WPA_STA_MAPC_PEER BIT(11)
 
 enum tdls_oper {
 	TDLS_DISCOVERY_REQ,
@@ -5007,6 +5021,19 @@ struct wpa_driver_ops {
 	 * client state).
 	 */
 	int (*sta_add)(void *priv, struct hostapd_sta_add_params *params);
+
+#ifdef CONFIG_IEEE80211BN
+	/**
+	 * sta_set_mapc_params - Deliver MAPC coordination parameters for a peer
+	 * @priv: Private driver interface data from init()
+	 * @addr: MAC address of the MAPC peer (must already exist via sta_add)
+	 * @params: MAPC parameters to deliver
+	 * Returns: 0 on success, negative on failure
+	 */
+	int (*sta_set_mapc_params)(void *priv, const u8 *addr,
+				   const struct mapc_parameters *params);
+
+#endif /* CONFIG_IEEE80211BN */
 
 	/**
 	 * get_inact_sec - Get station inactivity duration (AP only)

@@ -779,6 +779,12 @@ struct hostapd_data {
 #ifdef CONFIG_IEEE80211BN
 	struct smd_neighbor_update_ctx *smd_neighbor_update_ctx;
 	struct uhr_oui_ctx *uhr_oui_ctx;
+	struct dl_list mapc_discovery_reqs;
+	u16 mapc_discovered_ap_count;
+	u16 bss_active_peer_count;
+	u8  bss_cotdma_active_count;
+	u8  mapc_dialog_token_count;
+	bool mapc_initialized;
 #endif /* CONFIG_IEEE80211BN */
 
 	bool is_update_beacon; /* To indentify whether its from UPDATE_BEACON comamnd */
@@ -1129,6 +1135,13 @@ struct hostapd_iface {
 	 */
 	int preferred_chan;
 	enum oper_chan_width preferred_chan_width;
+#ifdef CONFIG_IEEE80211BN
+	u32  mapc_hw_capability_bitmap;
+	u8   mapc_max_ctdma_peers;
+	u16  mapc_active_peer_count;
+	u8   mapc_cotdma_active_count;
+	bool mapc_iface_initialized;
+#endif /* CONFIG_IEEE80211BN */
 };
 
 
@@ -1294,6 +1307,10 @@ int hostapd_change_config_freq(struct hostapd_data *hapd,
 			       struct hostapd_config *conf,
 			       struct hostapd_freq_params *params,
 			       struct hostapd_freq_params *old_params);
+
+#ifdef CONFIG_IEEE80211BN
+bool hostapd_is_mapc_action(const struct ieee80211_mgmt *mgmt, size_t len);
+#endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_FST
 void fst_hostapd_fill_iface_obj(struct hostapd_data *hapd,
 				struct fst_wpa_obj *iface_obj);

@@ -548,6 +548,10 @@ struct sta_info {
 	struct os_time rssi_reject_timeout;
 	struct wpabuf *sae_pw_id;
 	unsigned int sae_pw_id_counter;
+#ifdef CONFIG_IEEE80211BN
+	bool is_mapc_peer;
+	struct mapc_parameters mapc_params;
+#endif /* CONFIG_IEEE80211BN */
 
 	u32 flags_ext;
 #ifdef CONFIG_IEEE80211BN

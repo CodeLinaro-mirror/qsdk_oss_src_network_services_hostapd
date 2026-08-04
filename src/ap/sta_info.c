@@ -601,6 +601,10 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	eloop_cancel_timeout(ap_handle_timer, hapd, sta);
 	eloop_cancel_timeout(ap_handle_session_timer, hapd, sta);
 	eloop_cancel_timeout(ap_handle_session_warning_timer, hapd, sta);
+#ifdef CONFIG_IEEE80211BN
+	if (sta->is_mapc_peer)
+		mapc_cancel_sta_timers(hapd, sta);
+#endif /* CONFIG_IEEE80211BN */
 	ap_sta_clear_disconnect_timeouts(hapd, sta);
 	ap_sta_clear_assoc_timeout(hapd, sta);
 	sae_clear_retransmit_timer(hapd, sta);
@@ -967,6 +971,15 @@ void ap_handle_timer(void *eloop_ctx, void *timeout_ctx)
 		return;
 	}
 #endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_IEEE80211BN
+	if (sta->is_mapc_peer) {
+		wpa_printf(MSG_ERROR,
+			   "%s: Skipping inactivity handling for MAPC peer "
+			   MACSTR, hapd->conf->iface, MAC2STR(sta->addr));
+		return;
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 	if (sta->timeout_next == STA_REMOVE) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
@@ -1517,6 +1530,12 @@ static int ap_sta_remove(struct hostapd_data *hapd, struct sta_info *sta)
 {
 	ieee802_1x_notify_port_enabled(sta->eapol_sm, 0);
 
+	/* MAPC DISCOVERED peers are never added in the kernel driver */
+#ifdef CONFIG_IEEE80211BN
+	if (sta->mapc_params.peer_state == MAPC_PEER_STATE_DISCOVERED)
+		return 0;
+#endif /* CONFIG_IEEE80211BN */
+
 	if (sta->ipaddr)
 		hostapd_drv_br_delete_ip_neigh(hapd, 4, (u8 *) &sta->ipaddr);
 	ap_sta_ip6addr_del(hapd, sta);
@@ -1551,6 +1570,10 @@ static void ap_sta_remove_in_other_bss(struct hostapd_data *hapd,
 		if (bss == hapd || bss == NULL)
 			continue;
 		sta2 = ap_get_sta(bss, sta->addr);
+#ifdef CONFIG_IEEE80211BN
+		if (sta2 && sta2->mapc_params.peer_state != MAPC_PEER_STATE_NONE)
+			continue;
+#endif /* CONFIG_IEEE80211BN */
 		/* Authorized MFP STAs need special handling before disconnect */
 		if (!sta2 || ((sta2->flags & WLAN_STA_MFP) &&
 			      ap_sta_is_authorized(sta2)))

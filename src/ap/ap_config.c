@@ -53,6 +53,42 @@ static void hostapd_config_free_vlan(struct hostapd_bss_config *bss)
 #define DEFAULT_WPA_DISABLE_EAPOL_KEY_RETRIES 0
 #endif /* DEFAULT_WPA_DISABLE_EAPOL_KEY_RETRIES */
 
+#ifdef CONFIG_IEEE80211BN
+int hostapd_mapc_config_defaults_bss(struct hostapd_bss_config *bss)
+{
+	bss->mapc_conf = os_zalloc(sizeof(*bss->mapc_conf));
+	if (!bss->mapc_conf) {
+		wpa_printf(MSG_ERROR, "failed to alloc mapc_conf");
+		return -ENOMEM;
+	}
+
+	bss->mapc_conf->mapc_cotdma_enable  =
+				MAPC_DEFAULT_COTDMA_ENABLE;
+	bss->mapc_conf->max_mapc_ctdma_peer =
+				MAPC_MAX_COTDMA_PEER;
+	bss->mapc_conf->mapc_disc_req_interval_sec =
+				MAPC_DEFAULT_DISCOVERY_REQUEST_INTERVAL_SEC;
+	bss->mapc_conf->discovery_mode =
+				MAPC_DEFAULT_DISCOVERY_MODE;
+	bss->mapc_conf->negotiation_mode =
+				MAPC_DEFAULT_NEGOTIATION_MODE;
+	bss->mapc_conf->max_mapc_co_ap_peer =
+				MAPC_MAX_CO_AP_PEER;
+	bss->mapc_conf->max_mapc_discovered_ap_peer =
+				MAPC_MAX_CO_AP_DISCOVERED_PEER;
+	bss->mapc_conf->discovery_req_timeout =
+				MAPC_DEFAULT_DISCOVERY_REQ_TIMEOUT;
+	bss->mapc_conf->negotiation_req_timeout =
+				MAPC_DEFAULT_NEGOTIATION_REQ_TIMEOUT;
+	bss->mapc_conf->max_mapc_ap_inactivity =
+				MAPC_DEFAULT_MAX_AP_INACTIVITY;
+	bss->mapc_conf->enable_disc_cotdma_scheme_profile =
+				MAPC_DEFAULT_COTDMA_DISCOVERY_SCHEME_PROFILE;
+	return 0;
+}
+#endif /* CONFIG_IEEE80211BN */
+
+
 void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 {
 	dl_list_init(&bss->anqp_elem);
@@ -386,6 +422,16 @@ struct hostapd_config * hostapd_config_defaults(void)
 		os_free(bss);
 		return NULL;
 	}
+
+#ifdef CONFIG_IEEE80211BN
+	if (hostapd_mapc_config_defaults_bss(bss) < 0) {
+		os_free(bss->radius);
+		os_free(conf->bss);
+		os_free(conf);
+		os_free(bss);
+		return NULL;
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 	hostapd_config_defaults_bss(bss);
 #ifdef CONFIG_QCN_EXTN
@@ -1264,8 +1310,9 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 			partner = next;
 		}
 	}
-#endif /* CONFIG_IEEE80211BN */
 
+	os_free(conf->mapc_conf);
+#endif /* CONFIG_IEEE80211BN */
 	os_free(conf);
 }
 

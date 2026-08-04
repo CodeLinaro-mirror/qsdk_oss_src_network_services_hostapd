@@ -24,6 +24,9 @@
 #ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
 #include "../../qcn_extns/hostapd_if_plugin.h"
 #endif
+#ifdef CONFIG_IEEE80211BN
+#include "mapc.h"
+#endif /* CONFIG_IEEE80211BN */
 
 #define EHT_MCS_NSS_MAP_UNSET 0xffffU
 #define EHT_MCS_NSS_SET 3
@@ -486,7 +489,9 @@ struct hostapd_bss_config {
 	struct hostapd_ip_addr radius_das_client_addr;
 	u8 *radius_das_shared_secret;
 	size_t radius_das_shared_secret_len;
-
+#ifdef CONFIG_IEEE80211BN
+	struct mapc_bss_config *mapc_conf;
+#endif /* CONFIG_IEEE80211BN */
 	struct hostapd_ssid ssid;
 
 	int *supported_rates;
@@ -2021,6 +2026,9 @@ hostapd_set_and_check_bw320_offset(struct hostapd_config *conf,
 int hostapd_mac_comp(const void *a, const void *b);
 struct hostapd_config * hostapd_config_defaults(void);
 void hostapd_config_defaults_bss(struct hostapd_bss_config *bss);
+#ifdef CONFIG_IEEE80211BN
+int hostapd_mapc_config_defaults_bss(struct hostapd_bss_config *bss);
+#endif /* CONFIG_IEEE80211BN */
 void hostapd_config_free_radius_attr(struct hostapd_radius_attr *attr);
 void hostapd_config_free_eap_user(struct hostapd_eap_user *user);
 void hostapd_config_free_eap_users(struct hostapd_eap_user *user);
