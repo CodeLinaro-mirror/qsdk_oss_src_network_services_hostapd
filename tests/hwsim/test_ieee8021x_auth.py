@@ -863,6 +863,77 @@ def test_ieee8021x_auth_mlo_connect_disconnect_reconnect(dev, apdev):
                     pass
             hwsim_utils.test_connectivity(wpas, hapd0)
 
+def test_ieee8021x_auth_mlo_pqc(dev, apdev):
+    """IEEE 802.1X Authentication frames: MLO with a PQC AKM"""
+    key_mgmt = dev[0].get_capability("key_mgmt")
+    if "EAP-PQC" not in key_mgmt:
+        raise HwsimSkip(f"EAP-PQC not supported: {key_mgmt}")
+
+    ssid = "test-ieee8021x-auth-mlo-pqc"
+    with HWSimRadio(use_mlo=True) as (hapd_radio, hapd_iface), \
+         HWSimRadio(use_mlo=True) as (wpas_radio, wpas_iface):
+
+        params = eht_mld_ap_wpa2_params(ssid, key_mgmt="")
+        params.update(hostapd.radius_params())
+        params["ieee8021x"] = "1"
+        params["rsn_pairwise"] = "GCMP-256"
+        params["group_cipher"] = "GCMP-256"
+        # Only BIP-GMAC-256 is accepted once a security profile is selected.
+        params["group_mgmt_cipher"] = "BIP-GMAC-256"
+        params["security_profiles"] = "18"
+        params["eap_using_authentication_frames"] = "1"
+        params["assoc_frame_encryption"] = "1"
+        params["pmksa_caching_privacy"] = "1"
+
+        hapd0 = eht_mld_enable_ap(hapd_iface, 0, params)
+
+        wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+        wpas.interface_add(wpas_iface)
+        wpas.set("security_profiles", "1")
+
+        wpas.connect(ssid,
+                     key_mgmt="WPA-EAP",
+                     ieee80211w="2",
+                     pairwise="GCMP-256",
+                     group="GCMP-256",
+                     eap="TLS",
+                     identity="tls user",
+                     ca_cert="auth_serv/ca.pem",
+                     client_cert="auth_serv/user.pem",
+                     private_key="auth_serv/user.key",
+                     scan_freq="2412",
+                     pmksa_privacy="1",
+                     eap_over_auth_frame="1",
+                     security_profiles="18")
+
+        hapd0.wait_sta()
+
+        sta = hapd0.get_sta(wpas.own_addr())
+        if sta["AKMSuiteSelector"] != '00-0f-ac-31':
+            raise Exception("Incorrect AKMSuiteSelector: " +
+                            sta["AKMSuiteSelector"])
+
+        val = wpas.get_status_field("security_profile")
+        if val != "18":
+            raise Exception("Unexpected security_profile: " + str(val))
+
+        eht_verify_status(wpas, hapd0, 2412, 20, is_ht=True, mld=True,
+                          valid_links=1, active_links=1)
+
+        # The PTK is derived over the Authentication frame transcript, so a
+        # transcript mismatch only shows up as a data path failure here.
+        hwsim_utils.test_connectivity(wpas, hapd0)
+
+        # Exercise the EAPOL-Key integrity and key wrap algorithms, which for
+        # the PQC AKMs are AKM defined rather than derived from the cipher.
+        if "OK" not in hapd0.request("REKEY_GTK"):
+            raise Exception("REKEY_GTK failed")
+        ev = wpas.wait_event(["RSN: Group rekeying completed"], timeout=5)
+        if ev is None:
+            raise Exception("GTK rekey timed out")
+
+        hwsim_utils.test_connectivity(wpas, hapd0)
+
 def test_ieee8021x_auth_connect_disconnect_reconnect(dev, apdev):
     """IEEE 802.1X Authentication frames: non-MLO connect/disconnect/reconnect"""
     ssid = "test-ieee8021x-auth-cdr"
