@@ -68,6 +68,10 @@ void atf_offload_deinitialize_peer(struct sta_info *sta)
 	}
 	dl_list_del(&sta->atf_candidate_list);
 	dl_list_init(&sta->atf_candidate_list);
+
+	sta->atf_peer.atf_configured = false;
+	sta->atf_peer.peer_cfg_ref = NULL;
+	sta->atf_peer.group = NULL;
 }
 
 
@@ -367,6 +371,7 @@ atf_reset_group_values(struct atf_group *group)
 {
 	group->calculated_airtime = 0;
 	group->total_explicit_airtime = 0;
+	group->vip_cal_airtime = 0;
 
 	atf_clear_candidate_list(group);
 	if (!dl_list_empty(&group->implicit_peers) ||
@@ -918,6 +923,8 @@ atf_reset_groups(struct atf_algo *algo)
 	struct atf_group *group;
 
 	algo->no_of_peers = 0;
+	algo->num_vip_sta = 0;
+	algo->total_assoc_peers = 0;
 
 	if (dl_list_empty(&algo->groups))
 		return;
@@ -1066,7 +1073,15 @@ atf_update_interfaces_to_group(struct atf_algo *algo)
 				ret = 1;
 				continue;
 			}
-			bss->atf_configured = 0;
+			/*
+			 * In VIP infra mode no SSID is linked to the VIP group
+			 * (peers are assigned by MAC).  The SSID correctly falls
+			 * to default-group for implicit peer routing, but the BSS
+			 * must still be marked atf_configured so that
+			 * atf_update_peer_cfg_to_peer can find associated VIP STAs
+			 * when it iterates the BSS list.
+			 */
+			bss->atf_configured = algo->vip_infra_enabled ? 1 : 0;
 		} else {
 			group->is_configured = 1;
 			bss->atf_configured = 1;
@@ -1137,6 +1152,14 @@ atf_update_peer(struct hostapd_data *hapd, struct sta_info *sta, void *ctx)
 	    (ATF_OFFLOAD_IS_JOIN_UPDATE(algo) && ATF_IS_STA_UPDATED(sta->atf_peer)))
 		algo->no_of_peers++;
 
+	algo->total_assoc_peers++;
+
+	if (algo->vip_infra_enabled && sta->atf_peer.atf_configured &&
+	    sta->atf_peer.peer_cfg_ref &&
+	    os_strncmp(sta->atf_peer.peer_cfg_ref->group->name, "default-group",
+		       strlen("default-group")) != 0)
+		algo->num_vip_sta++;
+
 	wpa_printf(MSG_DEBUG, "ATF: update peer " MACSTR "peer->is_configured %d",
 			MAC2STR(sta->addr), sta->atf_peer.atf_configured);
 
@@ -1162,7 +1185,10 @@ atf_update_peer(struct hostapd_data *hapd, struct sta_info *sta, void *ctx)
 			return -1;
 		}
 		sta->atf_peer.group = group;
-		group->num_expl_peers++;
+		if (algo->vip_infra_enabled)
+			group->num_impl_peers++;
+		else
+			group->num_expl_peers++;
 	}
 
 	return 0;
@@ -1241,12 +1267,19 @@ atf_update_peer_cfg_to_peer(struct atf_algo *algo, struct atf_peer_config *peer_
 	os_memcpy(ssid_buf, ssid->ssid, ssid->ssid_len);
 	ssid_buf[ssid->ssid_len] = '\0';
 
-	group = atf_find_group(algo, ssid_buf);
-	if (!group)
-		return;
+	if (algo->vip_infra_enabled) {
+		/* In VIP infra mode the peer group is assigned by MAC config
+		 * during addsta, not derived from SSID. Use it directly.
+		 */
+		group = peer_cfg->group;
+	} else {
+		group = atf_find_group(algo, ssid_buf);
+		if (!group)
+			return;
 
-	if (peer_cfg->group != group)
-		return;
+		if (peer_cfg->group != group)
+			return;
+	}
 
 	sta->atf_peer.atf_configured = true;
 	sta->atf_peer.peer_cfg_ref = peer_cfg;
@@ -1254,8 +1287,10 @@ atf_update_peer_cfg_to_peer(struct atf_algo *algo, struct atf_peer_config *peer_
 	peer_cfg->algo = algo;
 	peer_cfg->calculated_for_airtime = true;
 
-	/*update to the group candidate list*/
-	dl_list_add(&peer_cfg->group->explicit_peers, &sta->atf_candidate_list);
+	if (algo->vip_infra_enabled)
+		dl_list_add(&peer_cfg->group->implicit_peers, &sta->atf_candidate_list);
+	else
+		dl_list_add(&peer_cfg->group->explicit_peers, &sta->atf_candidate_list);
 
 	return;
 }
@@ -1283,6 +1318,32 @@ atf_update_bh_peer(struct atf_algo *algo, struct atf_bh_peer *bh)
 	return 0;
 }
 
+static void
+atf_mark_vip_groups_configured(struct atf_algo *algo)
+{
+	struct atf_group *vip_grp;
+	struct atf_peer_config *pc;
+
+	/*
+	 * In VIP infra mode the VIP group has no SSIDs so
+	 * atf_update_interfaces_to_group never sets is_configured on it.
+	 * Mark every non-default group that has at least one peer config as
+	 * is_configured so atf_distribute_airtime processes it.
+	 */
+	dl_list_for_each(vip_grp, &algo->groups, struct atf_group, list) {
+		if (os_strncmp(vip_grp->name, "default-group",
+			       os_strlen("default-group")) == 0)
+			continue;
+		dl_list_for_each(pc, &algo->peer_cfgs,
+				 struct atf_peer_config, list) {
+			if (pc->group == vip_grp) {
+				vip_grp->is_configured = 1;
+				break;
+			}
+		}
+	}
+}
+
 static int
 atf_build_candidate_list(struct hostapd_iface *iface)
 {
@@ -1306,6 +1367,9 @@ atf_build_candidate_list(struct hostapd_iface *iface)
 	if (!dl_list_empty(&algo->peer_cfgs)) {
 		atf_iterate_peer_config(algo, atf_update_peer_cfg_to_peer);
 	}
+
+	if (algo->vip_infra_enabled)
+		atf_mark_vip_groups_configured(algo);
 
 	for (i = 0; i < iface->num_bss; i++) {
 		hapd = iface->bss[i];
@@ -1497,18 +1561,74 @@ atf_cal_ac_airtime_for_group(struct atf_group *group)
 	}
 }
 
+static int
+atf_update_vip_group_airtime(struct atf_algo *algo, struct atf_group *group,
+			     int iface_airtime, u16 peer_total_cnt,
+			     u16 non_vip_sta_cnt)
+{
+	u32 residual;
+	u32 vip_cal_airtime;
+	u32 remaining;
+
+	if (!algo->num_vip_sta) {
+		/* no VIP STAs — full budget falls to default-group */
+		group->vip_cal_airtime = 0;
+		iface_airtime = ATF_RADIO_DEFAULT_AIRTIME;
+	} else {
+		if (!peer_total_cnt)
+			return iface_airtime;
+
+		/* residual: budget after VIP group configured value */
+		if (group->user_cfg_airtime > iface_airtime) {
+			wpa_printf(MSG_ERROR,
+				   "ATF VIP: user_cfg=%u greater than"
+				   " maximum airtime %u",
+				   group->user_cfg_airtime,
+				   iface_airtime);
+			return -1;
+		}
+		residual = iface_airtime - group->user_cfg_airtime;
+		vip_cal_airtime = group->user_cfg_airtime +
+			(residual / peer_total_cnt) * algo->num_vip_sta;
+		remaining = ATF_RADIO_DEFAULT_AIRTIME - vip_cal_airtime;
+
+		/* safety floor: 1 unit per non-VIP STA */
+		if (non_vip_sta_cnt && remaining < non_vip_sta_cnt) {
+			vip_cal_airtime = ATF_RADIO_DEFAULT_AIRTIME -
+				non_vip_sta_cnt;
+			remaining = non_vip_sta_cnt;
+		}
+		group->vip_cal_airtime = vip_cal_airtime;
+		iface_airtime = remaining;
+		wpa_printf(MSG_DEBUG,
+			   "ATF VIP: peer_total=%u vip_sta=%u non_vip=%u "
+			   "user_cfg=%u residual=%u vip_cal=%u remaining=%u",
+			   peer_total_cnt, algo->num_vip_sta,
+			   non_vip_sta_cnt,
+			   group->user_cfg_airtime, residual,
+			   vip_cal_airtime, remaining);
+	}
+
+	return iface_airtime;
+}
+
 int
 atf_distribute_airtime(struct hostapd_iface *iface)
 {
 	struct atf_algo *algo = iface->atf_algo;
 	struct atf_group *group, *def_group = NULL;
-	u16 iface_airtime = ATF_RADIO_DEFAULT_AIRTIME;
+	int iface_airtime = ATF_RADIO_DEFAULT_AIRTIME;
 	u32 per_peer_airtime;
+	u16 peer_total_cnt;
+	u16 non_vip_sta_cnt;
 
 	if (dl_list_empty(&algo->groups)) {
 		wpa_printf(MSG_ERROR, "ATF: group list is empty");
 		return -1;
 	}
+
+	peer_total_cnt = algo->total_assoc_peers;
+	non_vip_sta_cnt = peer_total_cnt - algo->num_vip_sta;
 
 	dl_list_for_each(group, &algo->groups, struct atf_group, list)
 	{
@@ -1522,14 +1642,25 @@ atf_distribute_airtime(struct hostapd_iface *iface)
 			       strlen("default-group")) == 0) {
 			def_group = group;
 		} else {
-			iface_airtime = iface_airtime - group->user_cfg_airtime;
+			int calc_airtime;
+
+			if (algo->vip_infra_enabled) {
+				calc_airtime = atf_update_vip_group_airtime(
+					algo, group, iface_airtime, peer_total_cnt,
+					non_vip_sta_cnt);
+				if (calc_airtime < 0)
+					return -1;
+			} else {
+				calc_airtime = iface_airtime - group->user_cfg_airtime;
+			}
+			iface_airtime = calc_airtime;
 			group->calculated_airtime = group->user_cfg_airtime;
 			atf_cal_explicit_peers(group);
 			atf_cal_ac_airtime_for_group(group);
 			atf_adjust_impl_airtime_for_ac(group);
-			atf_cal_implicit_peers(group,
-				group->num_impl_peers ?
-				group->calculated_airtime / group->num_impl_peers : 0);
+			atf_cal_implicit_peers(group, group->num_impl_peers ?
+					       group->calculated_airtime /
+					       group->num_impl_peers : 0);
 		}
 	}
 
@@ -1606,12 +1737,11 @@ atf_offload_build_peer_config(struct hostapd_iface *iface,
 				}
 
 				sta->atf_peer.bss = hapd;
-				peer_info[num_peers].percentage_peer =
-				    sta->atf_peer.calculated_airtime;
+				peer_info[num_peers].percentage_peer = sta->atf_peer.calculated_airtime;
 				peer_info[num_peers].group_index = group->index;
 
 				if (sta->atf_peer.atf_configured)
-					peer_info[num_peers].explicit_peer_flag = 1;
+					peer_info[num_peers].explicit_peer_flag = algo->vip_infra_enabled ? 0 : 1;
 
 				wpa_printf(MSG_DEBUG, "ATF: build peer " MACSTR " airtime %d group id %d %d",
 					   MAC2STR(peer_info[num_peers].peer_macaddr), sta->atf_peer.calculated_airtime, group->index,
@@ -1714,7 +1844,15 @@ atf_offload_build_group_config(struct hostapd_iface *iface,
 			continue;
 
 		group_info[i].group_index  = group->index;
-		group_info[i].group_airtime = group->user_cfg_airtime;
+		/* in VIP infra mode use dynamically calculated airtime
+		 * for non-default groups, not the user configured value.
+		 */
+		if (algo->vip_infra_enabled &&
+		    os_strncmp(group->name, "default-group",
+			       strlen("default-group")) != 0)
+			group_info[i].group_airtime = group->vip_cal_airtime;
+		else
+			group_info[i].group_airtime = group->user_cfg_airtime;
 		group_info[i].total_implicit_peers = group->num_impl_peers;
 		group_info[i].total_explicit_peers = group->num_expl_peers;
 		group_info[i].group_policy = group->sched_policy;

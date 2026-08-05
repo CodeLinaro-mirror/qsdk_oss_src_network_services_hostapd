@@ -23,6 +23,11 @@
 #define ATF_MAX_SSID 16
 #define ATF_MAX_PEER 512
 
+/* Maximum number of groups that can exist when VIP infra is enabled.
+ * One VIP group and default group makes a total of 2.
+ */
+#define ATF_MAX_VIP_GROUP 2
+
 /* Percentage value scaled by 10 to avoid decimals. (e.g., 10.5% → 105)
  * So, one digit after the decimal is accounted and represented as integer.
  */
@@ -203,6 +208,7 @@ struct atf_group {
 	u32 num_of_ssid;
 	char ssidname[WLAN_SSID_MAX][WLAN_SSID_MAX_LEN + 1];
 	u32 user_cfg_airtime;
+	u32 vip_cal_airtime;
 	u32 sched_policy;
 	u32 expl_peers_airtime;
 	u8 actual_airtime;
@@ -262,6 +268,7 @@ struct atf_algo {
 
 	/* Feature flags */
 	bool ssid_group_enabled;
+	bool vip_infra_enabled;
 	bool atfstrictsched_enabled;
 	bool atf_stats_enabled;
 	u8 atf_stats_timeout;
@@ -279,6 +286,11 @@ struct atf_algo {
 
 	/* no. of peers to be updated to driver*/
 	u16 no_of_peers;
+
+	/* total associated peers across all groups */
+	u16 total_assoc_peers;
+	/* no. of VIP stations when VIP infra is enabled */
+	u16 num_vip_sta;
 
 	/* used for ATF config parsing*/
 	struct atf_group *last_group;

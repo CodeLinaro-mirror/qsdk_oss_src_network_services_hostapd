@@ -223,7 +223,22 @@ atf_read_config(struct atf_algo *algo, const char *conf_file)
 		*pos = '\0';
 		pos++;
 
-		if (os_strcmp(buffer, "atf-group") == 0) {
+		if (os_strcmp(buffer, "atf-vip-infra") == 0) {
+			val = atoi(pos);
+			if (val != 0 && val != 1) {
+				wpa_printf(MSG_ERROR,
+					   "ATF: invalid atf-vip-infra value");
+				invalid_config++;
+				continue;
+			}
+			if (algo->vip_infra_enabled != (bool)val) {
+				atf_free_algo_configs(algo, true);
+				wpa_printf(MSG_INFO, "ATF: group config is cleared");
+			}
+			algo->vip_infra_enabled = (bool)val;
+			wpa_printf(MSG_INFO, "ATF: VIP infra is %s",
+				   algo->vip_infra_enabled ? "enabled" : "disabled");
+		} else if (os_strcmp(buffer, "atf-group") == 0) {
 			if (!algo->ssid_group_enabled) {
 				wpa_printf(MSG_ERROR, "ATF: ssid group config is not enabled");
 				invalid_config++;
@@ -416,14 +431,17 @@ atf_read_config(struct atf_algo *algo, const char *conf_file)
 
 			scaled_airtime = SCALE_PERCENTAGE_TO_U32(val);
 
-			if (!atf_validate_peer_configured_airtime(algo->last_peer_cfg->group,
-								  algo->last_peer_cfg,
-								  scaled_airtime)) {
-				invalid_config++;
-				goto exit;
+			if (!algo->vip_infra_enabled) {
+				if (!atf_validate_peer_configured_airtime(
+					    algo->last_peer_cfg->group,
+					    algo->last_peer_cfg,
+					    scaled_airtime)) {
+					invalid_config++;
+					goto exit;
+				}
+				atf_group = algo->last_peer_cfg->group;
+				atf_group->expl_peers_airtime += scaled_airtime;
 			}
-			atf_group = algo->last_peer_cfg->group;
-			atf_group->expl_peers_airtime += scaled_airtime;
 			algo->last_peer_cfg->user_cfg_airtime = scaled_airtime;
 		} else if (os_strcmp(buffer, "atf-sta-ssid") == 0) {
 			if (*pos != '\0') {
@@ -440,9 +458,11 @@ atf_read_config(struct atf_algo *algo, const char *conf_file)
 				}
 
 				if (peer_config->group && peer_config->group != atf_group) {
-                                        peer_config->group->expl_peers_airtime -= peer_config->user_cfg_airtime;
-                                        peer_config->user_cfg_airtime = 0;
-                                }
+					if (!algo->vip_infra_enabled)
+						peer_config->group->expl_peers_airtime -=
+							peer_config->user_cfg_airtime;
+					peer_config->user_cfg_airtime = 0;
+				}
 
 				os_strlcpy(algo->last_peer_cfg->group_name, pos,
 				           WLAN_SSID_MAX_LEN);
@@ -690,6 +710,64 @@ hostapd_ctrl_iface_atf_offload_g_atfssidgroup(struct hostapd_data *hapd,
 
 
 static int
+hostapd_ctrl_iface_atf_offload_atfvipinfra(struct hostapd_data *hapd,
+					   const char *cmd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	u8 enable;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+	enable = atoi(cmd);
+
+	if (enable != 0 && enable != 1) {
+		wpa_printf(MSG_ERROR, "ATF: Invalid input for atfvipinfra\n");
+		return -1;
+	}
+
+	if (algo->vip_infra_enabled != enable) {
+		atf_free_algo_configs(algo, true);
+	}
+
+	algo->vip_infra_enabled = enable;
+
+	wpa_printf(MSG_INFO, "ATF: VIP infra is %s\n",
+		   algo->vip_infra_enabled ? "enabled" : "disabled");
+
+	return 0;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_g_atfvipinfra(struct hostapd_data *hapd,
+					     char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	int ret, len = 0;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	ret = os_snprintf(buf, buflen, "ATF VIP infra is %s\n",
+			  algo->vip_infra_enabled ? "enabled" : "disabled");
+	if (!os_snprintf_error(buflen, ret))
+		len += ret;
+
+	return len;
+}
+
+
+static int
 hostapd_ctrl_iface_atf_offload_addatfgroup(struct hostapd_data *hapd,
 					   const char *cmd, char *buf, size_t buflen)
 {
@@ -705,8 +783,17 @@ hostapd_ctrl_iface_atf_offload_addatfgroup(struct hostapd_data *hapd,
 
 	algo = iface->atf_algo;
 
-	if (!algo->ssid_group_enabled) {
-		wpa_printf(MSG_ERROR, "ATF: ATF ssid group is not enabled\n");
+	if (!algo->ssid_group_enabled && !algo->vip_infra_enabled) {
+		wpa_printf(MSG_ERROR,
+			   "ATF: SSID group or VIP infra must be enabled before adding a group\n");
+		return -1;
+	}
+
+	if (algo->vip_infra_enabled &&
+	    algo->num_group_cfg >= ATF_MAX_VIP_GROUP) {
+		wpa_printf(MSG_ERROR,
+			   "ATF: Max user configurable group in vip_infra is %d\n",
+			   ATF_MAX_VIP_GROUP - 1);
 		return -1;
 	}
 
@@ -725,36 +812,49 @@ hostapd_ctrl_iface_atf_offload_addatfgroup(struct hostapd_data *hapd,
 		goto fail;
 	}
 
-	ssid_name = str_token(input, " ", &context);
-	if (!ssid_name) {
-		wpa_printf(MSG_ERROR, "ATF: SSID name not found\n");
-		goto fail;
-	}
-
-	if (os_strlen(ssid_name) > WLAN_SSID_MAX_LEN) {
-		wpa_printf(MSG_ERROR, "ATF: SSID length exceeds the allowed limit");
-		goto fail;
-	}
-
 	group = atf_find_group_by_name(group_name, algo);
 	if (group) {
-		if (group->num_of_ssid == WLAN_SSID_MAX) {
-			wpa_printf(MSG_ERROR, "ATF: group has maximum allowed number of SSIDs\n");
-			return -1;
+		if (!algo->vip_infra_enabled) {
+			if (group->num_of_ssid == WLAN_SSID_MAX) {
+				wpa_printf(MSG_ERROR,
+					   "ATF: group has maximum allowed number of SSIDs\n");
+				goto fail;
+			}
+			ssid_name = str_token(input, " ", &context);
+			if (!ssid_name) {
+				wpa_printf(MSG_ERROR, "ATF: SSID name not found\n");
+				goto fail;
+			}
+			if (os_strlen(ssid_name) > WLAN_SSID_MAX_LEN) {
+				wpa_printf(MSG_ERROR,
+					   "ATF: SSID length exceeds the allowed limit");
+				goto fail;
+			}
+			atf_delete_ssid_from_group(algo, ssid_name);
+			atf_add_ssid_to_group(group, ssid_name);
 		}
-
-		atf_delete_ssid_from_group(algo, ssid_name);
-		atf_add_ssid_to_group(group, ssid_name);
 	} else {
 		group = atf_allocate_group(group_name, algo);
 		if (!group) {
 			wpa_printf(MSG_ERROR, "ATF: Failed to allocate greoup config\n");
 			goto fail;
 		}
-		atf_delete_ssid_from_group(algo, ssid_name);
-		atf_add_ssid_to_group(group, ssid_name);
-		wpa_printf(MSG_INFO, "ATF: group name %s num_of_ssid %d\n",
-			   group->name, group->num_of_ssid);
+		if (!algo->vip_infra_enabled) {
+			ssid_name = str_token(input, " ", &context);
+			if (!ssid_name) {
+				wpa_printf(MSG_ERROR, "ATF: SSID name not found\n");
+				goto fail;
+			}
+			if (os_strlen(ssid_name) > WLAN_SSID_MAX_LEN) {
+				wpa_printf(MSG_ERROR,
+					   "ATF: SSID length exceeds the allowed limit");
+				goto fail;
+			}
+			atf_delete_ssid_from_group(algo, ssid_name);
+			atf_add_ssid_to_group(group, ssid_name);
+			wpa_printf(MSG_INFO, "ATF: group name %s num_of_ssid %d\n",
+				   group->name, group->num_of_ssid);
+		}
 	}
 
 	os_free(input);
@@ -783,8 +883,8 @@ hostapd_ctrl_iface_atf_offload_configatfgroup(struct hostapd_data *hapd,
 
 	algo = iface->atf_algo;
 
-	if (!algo->ssid_group_enabled) {
-		wpa_printf(MSG_ERROR, "ATF: ATF ssid group is not enabled\n");
+	if (!algo->ssid_group_enabled && !algo->vip_infra_enabled) {
+		wpa_printf(MSG_ERROR, "ATF: ATF ssid group or VIP infra must be enabled\n");
 		return -1;
 	}
 
@@ -850,8 +950,8 @@ hostapd_ctrl_iface_atf_offload_delatfgroup(struct hostapd_data *hapd,
 
 	algo = iface->atf_algo;
 
-	if (!algo->ssid_group_enabled) {
-		wpa_printf(MSG_ERROR, "ATF: ATF ssid group is not enabled\n");
+	if (!algo->ssid_group_enabled && !algo->vip_infra_enabled) {
+		wpa_printf(MSG_ERROR, "ATF: ATF ssid group or VIP infra must be enabled\n");
 		return -1;
 	}
 
@@ -896,8 +996,8 @@ hostapd_ctrl_iface_atf_offload_showatfgroup(struct hostapd_data *hapd, char *buf
 		return -1;
 	}
 
-	if (!algo->ssid_group_enabled) {
-		wpa_printf(MSG_ERROR, "ATF: ATF Group is not enabled\n");
+	if (!algo->ssid_group_enabled && !algo->vip_infra_enabled) {
+		wpa_printf(MSG_ERROR, "ATF: ATF ssid group or VIP infra must be enabled\n");
 		return -1;
 	}
 
@@ -955,8 +1055,8 @@ hostapd_ctrl_iface_atf_offload_atfgroupsched(struct hostapd_data *hapd,
 
 	algo = iface->atf_algo;
 
-	if (!algo->ssid_group_enabled) {
-		wpa_printf(MSG_ERROR, "ATF: ATF ssid group is not enabled\n");
+	if (!algo->ssid_group_enabled && !algo->vip_infra_enabled) {
+		wpa_printf(MSG_ERROR, "ATF: ATF ssid group or VIP infra must be enabled\n");
 		return -1;
 	}
 
@@ -1294,7 +1394,7 @@ hostapd_ctrl_iface_atf_offload_addsta(struct hostapd_data *hapd,
 	airtime = atoi(a_time);
 	scaled_airtime = SCALE_PERCENTAGE_TO_U32(airtime);
 
-	if (algo->ssid_group_enabled) {
+	if (algo->vip_infra_enabled || algo->ssid_group_enabled) {
 		group = atf_find_group_by_name(name, algo);
 		if (!group) {
 			wpa_printf(MSG_ERROR, "ATF: Invalid group name\n");
@@ -1320,30 +1420,39 @@ hostapd_ctrl_iface_atf_offload_addsta(struct hostapd_data *hapd,
 			goto fail;
 		}
 
-		if (!atf_validate_peer_configured_airtime(group, peer_config, scaled_airtime)) {
-			atf_free_peer_config(peer_config);
-			ret = -1;
-			goto fail;
+		if (!algo->vip_infra_enabled) {
+			if (!atf_validate_peer_configured_airtime(group, peer_config,
+								  scaled_airtime)) {
+				atf_free_peer_config(peer_config);
+				ret = -1;
+				goto fail;
+			}
 		}
 
 		peer_config->user_cfg_airtime = scaled_airtime;
 	} else {
 		if (peer_config->group != group) {
-			peer_config->group->expl_peers_airtime -= peer_config->user_cfg_airtime;
+			if (!algo->vip_infra_enabled)
+				peer_config->group->expl_peers_airtime -=
+					peer_config->user_cfg_airtime;
 			peer_config->user_cfg_airtime = 0;
 		}
 
-		if (!atf_validate_peer_configured_airtime(group, peer_config, scaled_airtime)) {
-			ret = -1;
-			goto fail;
+		if (!algo->vip_infra_enabled) {
+			if (!atf_validate_peer_configured_airtime(group, peer_config,
+								  scaled_airtime)) {
+				ret = -1;
+				goto fail;
+			}
+			group->expl_peers_airtime -= peer_config->user_cfg_airtime;
 		}
 
-		group->expl_peers_airtime -= peer_config->user_cfg_airtime;
 		peer_config->user_cfg_airtime = scaled_airtime;
 	}
 
 	peer_config->group = group;
-	group->expl_peers_airtime += scaled_airtime;
+	if (!algo->vip_infra_enabled)
+		group->expl_peers_airtime += scaled_airtime;
 
 fail:
 	os_free(input);
@@ -1391,7 +1500,9 @@ hostapd_ctrl_iface_atf_offload_delsta(struct hostapd_data *hapd,
 		ret = -1;
 		goto fail;
 	} else {
-		peer_config->group->expl_peers_airtime -= peer_config->user_cfg_airtime;
+		if (!algo->vip_infra_enabled)
+			peer_config->group->expl_peers_airtime -=
+				peer_config->user_cfg_airtime;
 		atf_free_peer_config(peer_config);
 	}
 
@@ -2407,6 +2518,10 @@ hostapd_ctrl_iface_config_atf_offload(struct hostapd_data *hapd,
 		return hostapd_ctrl_iface_atf_offload_atfssidgroup(hapd, cmd + 13, buf, buflen);
 	else if (os_strncmp(cmd, "g_atfssidgroup", 14) == 0)
 		return hostapd_ctrl_iface_atf_offload_g_atfssidgroup(hapd, buf, buflen);
+	else if (os_strncmp(cmd, "atfvipinfra ", 12) == 0)
+		return hostapd_ctrl_iface_atf_offload_atfvipinfra(hapd, cmd + 12, buf, buflen);
+	else if (os_strncmp(cmd, "g_atfvipinfra", 13) == 0)
+		return hostapd_ctrl_iface_atf_offload_g_atfvipinfra(hapd, buf, buflen);
 	else if (os_strncmp(cmd, "addatfgroup ", 12) == 0)
 		return hostapd_ctrl_iface_atf_offload_addatfgroup(hapd, cmd + 12, buf, buflen);
 	else if (os_strncmp(cmd, "configatfgroup ", 15) == 0)
