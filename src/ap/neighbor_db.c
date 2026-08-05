@@ -415,14 +415,23 @@ static void hostapd_neighbor_add_11bn_subelements(struct hostapd_data *hapd,
 }
 #endif /* CONFIG_IEEE80211BN */
 
-void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
+/*
+ * hostapd_neighbor_set_own_report_for - Build an authoritative NR entry from
+ * src's BSSID, frequency, and capabilities and insert it into dest's NR DB.
+ *
+ * When dest == src this is the normal "own report" path.  When dest != src
+ * the entry describes a co-located radio (e.g. 5 GHz inserted into the 2.4 GHz
+ * NR DB) so that STAs can discover and roam to co-located BSSes.
+ */
+void hostapd_neighbor_set_own_report_for(struct hostapd_data *dest,
+					 struct hostapd_data *src)
 {
 #ifdef NEED_AP_MLME
-	u16 capab = hostapd_own_capab_info(hapd);
-	int ht = hostapd_is_ht_enabled(hapd);
-	int vht = hostapd_is_vht_enabled(hapd);
-	int he = hostapd_is_he_enabled(hapd);
-	bool eht = he && hostapd_is_eht_enabled(hapd);
+	u16 capab = hostapd_own_capab_info(src);
+	int ht = hostapd_is_ht_enabled(src);
+	int vht = hostapd_is_vht_enabled(src);
+	int he = hostapd_is_he_enabled(src);
+	bool eht = he && hostapd_is_eht_enabled(src);
 	struct wpa_ssid_value ssid;
 	u8 channel, op_class;
 	u8 center_freq1_idx = 0, center_freq2_idx = 0;
@@ -432,9 +441,30 @@ void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
 	u32 bssid_info;
 	struct wpabuf *nr;
 
-	if (!(hapd->conf->radio_measurements[0] &
+	/*
+	 * The dest radio must advertise RRM Neighbor Report capability;
+	 * it owns the NR DB that will be sent to STAs.
+	 */
+	if (!(dest->conf->radio_measurements[0] &
 	      WLAN_RRM_CAPS_NEIGHBOR_REPORT))
 		return;
+
+	/*
+	 * For cross-radio entries (dest != src): skip hidden BSSes and BSSes
+	 * with a different SSID.  A STA associated to dest's SSID should only
+	 * be steered to a co-located BSS advertising the same SSID.
+	 * Use ignore_broadcast_ssid rather than raw ssid_len so that mode-2
+	 * (zero-length SSID in beacon, responds to directed probes) is also
+	 * excluded correctly.
+	 */
+	if (dest != src) {
+		if (src->conf->ignore_broadcast_ssid)
+			return;
+		if (src->conf->ssid.ssid_len != dest->conf->ssid.ssid_len ||
+		    os_memcmp(src->conf->ssid.ssid, dest->conf->ssid.ssid,
+			      dest->conf->ssid.ssid_len) != 0)
+			return;
+	}
 
 	bssid_info = 3; /* AP is reachable */
 	bssid_info |= NEI_REP_BSSID_INFO_SECURITY; /* "same as the AP" */
@@ -445,11 +475,11 @@ void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
 
 	bssid_info |= NEI_REP_BSSID_INFO_RM; /* RRM is supported */
 
-	if (hapd->conf->wmm_enabled) {
+	if (src->conf->wmm_enabled) {
 		bssid_info |= NEI_REP_BSSID_INFO_QOS;
 
-		if (hapd->conf->wmm_uapsd &&
-		    (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_AP_UAPSD))
+		if (src->conf->wmm_uapsd &&
+		    (src->iface->drv_flags & WPA_DRIVER_FLAGS_AP_UAPSD))
 			bssid_info |= NEI_REP_BSSID_INFO_APSD;
 	}
 
@@ -463,33 +493,38 @@ void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
 		bssid_info |= NEI_REP_BSSID_INFO_HE;
 	if (eht)
 		bssid_info |= NEI_REP_BSSID_INFO_EHT;
+
+	/* Signal to the STA that this entry describes a co-located AP */
+	if (dest != src)
+		bssid_info |= NEI_REP_BSSID_INFO_COLOCATED_AP;
+
 #ifdef CONFIG_IEEE80211BN
 	/* This AP is SMD-enabled, so it is by definition in the same SMD as
 	 * itself. Set SAME_SMD in the own neighbor report entry sent to STAs. */
-	if (hapd->conf->smd.enabled)
+	if (src->conf->smd.enabled)
 		bssid_info |= NEI_REP_BSSID_INFO_SAME_SMD;
 
 	/* Set UHR bit if this is a UHR AP */
-	if (hapd->iconf->ieee80211bn)
+	if (src->iconf->ieee80211bn)
 		bssid_info |= NEI_REP_BSSID_INFO_UHR;
 #endif /* CONFIG_IEEE80211BN */
 	/* TODO: Set NEI_REP_BSSID_INFO_MOBILITY_DOMAIN if MDE is set */
 
-	hostapd_get_oper_chan_info_of_bss(hapd, &oper_chwidth,
+	hostapd_get_oper_chan_info_of_bss(src, &oper_chwidth,
 					  &center_freq1_idx, &center_freq2_idx);
-	secondary_channel = hapd->iconf->secondary_channel;
+	secondary_channel = src->iconf->secondary_channel;
 
-	if (center_freq1_idx == hapd->iconf->channel &&
+	if (center_freq1_idx == src->iconf->channel &&
 	    oper_chwidth == CONF_OPER_CHWIDTH_USE_HT)
 		secondary_channel = 0;
 
-	if (ieee80211_freq_to_channel_ext(hapd->iface->freq,
+	if (ieee80211_freq_to_channel_ext(src->iface->freq,
 					  secondary_channel,
 					  oper_chwidth,
 					  &op_class, &channel) ==
 	    NUM_HOSTAPD_MODES)
 		return;
-	width = hostapd_get_nr_chan_width(hapd, ht, vht, he, oper_chwidth,
+	width = hostapd_get_nr_chan_width(src, ht, vht, he, oper_chwidth,
 					  secondary_channel);
 
 	if (width != NR_CHAN_WIDTH_80P80)
@@ -497,13 +532,13 @@ void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
 
 	if (!vht && ht) {
 		center_freq1_idx = 0;
-		ieee80211_freq_to_chan(hapd->iface->freq +
+		ieee80211_freq_to_chan(src->iface->freq +
 				       10 * secondary_channel,
 				       &center_freq1_idx);
 	}
 
-	ssid.ssid_len = hapd->conf->ssid.ssid_len;
-	os_memcpy(ssid.ssid, hapd->conf->ssid.ssid, ssid.ssid_len);
+	ssid.ssid_len = src->conf->ssid.ssid_len;
+	os_memcpy(ssid.ssid, src->conf->ssid.ssid, ssid.ssid_len);
 
 	/*
 	 * Neighbor Report element size = BSSID + BSSID info + op_class + chan +
@@ -513,11 +548,11 @@ void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
 	if (!nr)
 		return;
 
-	wpabuf_put_data(nr, hapd->own_addr, ETH_ALEN);
+	wpabuf_put_data(nr, src->own_addr, ETH_ALEN);
 	wpabuf_put_le32(nr, bssid_info);
 	wpabuf_put_u8(nr, op_class);
 	wpabuf_put_u8(nr, channel);
-	wpabuf_put_u8(nr, ieee80211_get_phy_type(hapd->iface->freq, ht, vht, eht));
+	wpabuf_put_u8(nr, ieee80211_get_phy_type(src->iface->freq, ht, vht, eht));
 
 	/*
 	 * Wide Bandwidth Channel subelement may be needed to allow the
@@ -530,16 +565,42 @@ void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
 	wpabuf_put_u8(nr, center_freq1_idx);
 	wpabuf_put_u8(nr, center_freq2_idx);
 
-	hostapd_neighbor_add_op_capab_subelements(hapd, nr, ht, vht, he, eht);
+	hostapd_neighbor_add_op_capab_subelements(src, nr, ht, vht, he, eht);
 #ifdef CONFIG_IEEE80211BN
-	hostapd_neighbor_add_11bn_subelements(hapd, nr);
+	hostapd_neighbor_add_11bn_subelements(src, nr);
 #endif /* CONFIG_IEEE80211BN */
 
-	hostapd_neighbor_set(hapd, hapd->own_addr, &ssid, nr, hapd->iconf->lci,
-			     hapd->iconf->civic, hapd->iconf->stationary_ap, 0);
+#ifdef CONFIG_IEEE80211BE
+	/*
+	 * For a co-located MLD AP, append a Basic Multi-Link subelement so
+	 * the STA can perform ML setup when roaming to this BSS.
+	 * Use hostapd_is_multiple_link_mld() rather than conf->mld_ap directly
+	 * so the QSDK repurpose guard is respected.
+	 */
+	if (dest != src && hostapd_is_multiple_link_mld(src)) {
+		wpabuf_put_u8(nr, WNM_NEIGHBOR_MULTI_LINK);
+		wpabuf_put_u8(nr, 9);
+		wpabuf_put_le16(nr, MULTI_LINK_CONTROL_TYPE_BASIC);
+		wpabuf_put_u8(nr, 6); /* Common Info Length */
+		wpabuf_put_data(nr, src->mld->mld_addr, ETH_ALEN);
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	if (hostapd_neighbor_set(dest, src->own_addr, &ssid, nr,
+				 src->iconf->lci, src->iconf->civic,
+				 src->iconf->stationary_ap, 0) < 0)
+		wpa_printf(MSG_DEBUG,
+			   "NR: failed to set own report for " MACSTR " in %s DB",
+			   MAC2STR(src->own_addr), dest->conf->iface);
 
 	wpabuf_free(nr);
 #endif /* NEED_AP_MLME */
+}
+
+
+void hostapd_neighbor_set_own_report(struct hostapd_data *hapd)
+{
+	hostapd_neighbor_set_own_report_for(hapd, hapd);
 }
 
 int hostapd_add_candidate_own(struct hostapd_data *hapd, int pref,
@@ -1081,6 +1142,7 @@ int hostapd_neighbor_set_ifaces_scan_report(struct hostapd_data *hapd,
 	/* Iterate over other radio interfaces and get the scan results */
 	for (i = 0; i < interfaces->count; i++) {
 		struct hostapd_iface *iface = interfaces->iface[i];
+		int j;
 
 		if (!iface)
 			continue;
@@ -1102,6 +1164,21 @@ int hostapd_neighbor_set_ifaces_scan_report(struct hostapd_data *hapd,
 			wpa_scan_results_free(scan_res);
 			if (ret)
 				return -1;
+		}
+
+		/*
+		 * Scan results never include the scanning radio's own BSSIDs.
+		 * Inject an authoritative NR entry for every BSS on this
+		 * other-band interface into hapd's NR DB so that co-located
+		 * radios are visible to STAs as roam candidates
+		 * (e.g. 2.4/5/6 GHz in a 3-link MLO deployment).
+		 */
+		for (j = 0; j < iface->num_bss; j++) {
+			struct hostapd_data *other_hapd = iface->bss[j];
+
+			if (other_hapd && other_hapd->started)
+				hostapd_neighbor_set_own_report_for(hapd,
+								    other_hapd);
 		}
 	}
 
