@@ -1719,6 +1719,7 @@ wpa_bss_validate_rsne_ml(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 	int rsne_type;
 	const u8 *ies_pos = wpa_bss_ie_ptr(bss);
 	size_t ies_len = bss->ie_len ? bss->ie_len : bss->beacon_ie_len;
+	bool sec_profile;
 
 	if (ieee802_11_parse_elems(ies_pos, ies_len, &elems, 0) ==
 	    ParseFailed) {
@@ -1760,45 +1761,15 @@ wpa_bss_validate_rsne_ml(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 	}
 
 	/*
-	 * Security Profile element preference (IEEE P802.11bn/D2.0, 37.33):
-	 * If this link's AP advertises a Security Profile element whose
-	 * profile number implies an AKM/cipher that matches the STA's
-	 * config, augment wpa_ie.key_mgmt/pairwise_cipher so the checks below
-	 * pass even when the RSNE/RSNOE/RSNO2E does not explicitly list those
-	 * values. Without this, an AP MLD that only advertises CCMP/legacy AKMs
-	 * in its RSNE but supports GCMP-256 via a Security Profile would have
-	 * this link (and potentially all links, since they share the same
-	 * requirement) wrongly excluded from the usable-links bitmap.
+	 * Without this, an AP MLD that advertises a matching AKM only through a
+	 * Security Profile would have all of its links excluded here.
 	 */
-	if (wpas_security_profile_active(wpa_s)) {
-		const u8 *sp;
-		int sp_key_mgmt;
-
-		sp = wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_SECURITY_PROFILE);
-
-		sp_key_mgmt = security_profile_get_key_mgmt(sp, ssid);
-		if (!sp_key_mgmt ||
-		    !(ssid->pairwise_cipher & WPA_CIPHER_GCMP_256))
-			goto no_sp_match;
-
-		if (!(wpa_ie.pairwise_cipher & WPA_CIPHER_GCMP_256)) {
-			wpa_dbg(wpa_s, MSG_DEBUG,
-				"MLD: Security Profile element overrides RSNE pairwise cipher (GCMP-256)");
-			wpa_ie.pairwise_cipher |= WPA_CIPHER_GCMP_256;
-		}
-
-		if (!(wpa_ie.key_mgmt & ssid->key_mgmt)) {
-			wpa_dbg(wpa_s, MSG_DEBUG,
-				"MLD: Security Profile element overrides RSN element AKM (key_mgmt=0x%x)",
-				sp_key_mgmt);
-			wpa_ie.key_mgmt |= sp_key_mgmt;
-		}
-	no_sp_match:
-	}
+	sec_profile = wpas_security_profile_override_rsne(wpa_s, ssid, bss,
+							  &wpa_ie, 0);
 
 	wpa_ie.key_mgmt &= ~(WPA_KEY_MGMT_PSK | WPA_KEY_MGMT_FT_PSK |
 			     WPA_KEY_MGMT_PSK_SHA256);
-	if (!(wpa_ie.key_mgmt & ssid->key_mgmt)) {
+	if (!sec_profile && !(wpa_ie.key_mgmt & ssid->key_mgmt)) {
 		wpa_dbg(wpa_s, MSG_DEBUG, "MLD: No valid key management");
 		return false;
 	}
@@ -1817,7 +1788,7 @@ wpa_bss_validate_rsne_ml(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 		*rsne_type_p = rsne_type;
 	} else {
 		/* Verify the neighbor given rsne_type_p and ref_rsne */
-		if (!(wpa_ie.key_mgmt & ref_rsne->key_mgmt)) {
+		if (!sec_profile && !(wpa_ie.key_mgmt & ref_rsne->key_mgmt)) {
 			wpa_dbg(wpa_s, MSG_DEBUG,
 				"MLD: Neighbor without common AKM");
 			return false;

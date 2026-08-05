@@ -811,6 +811,55 @@ size_t wpas_ssid_pqc_constraints(struct wpa_ssid *ssid, u8 *constraints,
 }
 
 
+/*
+ * An AKM negotiated through a Security Profile is not listed in the AKM Suite
+ * List field of the RSNE, so augment @ie with what the matching profile
+ * implies. Returns false if no advertised profile matches @ssid.
+ */
+bool wpas_security_profile_override_rsne(struct wpa_supplicant *wpa_s,
+					 struct wpa_ssid *ssid,
+					 struct wpa_bss *bss,
+					 struct wpa_ie_data *ie,
+					 int debug_print)
+{
+	const u8 *sp;
+	int sp_key_mgmt;
+
+	if (!ssid || !wpas_security_profile_active(wpa_s))
+		return false;
+
+	sp = wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_SECURITY_PROFILE);
+	sp_key_mgmt = security_profile_get_key_mgmt(sp, ssid);
+
+	/* All defined profiles mandate GCMP-256 as the pairwise cipher */
+	if (!sp_key_mgmt || !(ssid->pairwise_cipher & WPA_CIPHER_GCMP_256)) {
+		if (debug_print)
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"   No match between AP and STA security profiles");
+		return false;
+	}
+
+	if (!(ie->pairwise_cipher & WPA_CIPHER_GCMP_256)) {
+		if (debug_print)
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"   Security Profile element overrides RSNE pairwise cipher");
+		ie->pairwise_cipher |= WPA_CIPHER_GCMP_256;
+	}
+
+	if (!(ie->key_mgmt & ssid->key_mgmt)) {
+		if (debug_print)
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"   Security Profile element overrides RSNE key_mgmt");
+		ie->key_mgmt |= sp_key_mgmt;
+	}
+
+	/* All defined profiles mandate MFPC=1/MFPR=1 */
+	ie->capabilities |= WPA_CAPABILITY_MFPC | WPA_CAPABILITY_MFPR;
+
+	return true;
+}
+
+
 static int wpa_supplicant_ssid_bss_match(struct wpa_supplicant *wpa_s,
 					 struct wpa_ssid *ssid,
 					 struct wpa_bss *bss, int debug_print)
@@ -904,43 +953,10 @@ static int wpa_supplicant_ssid_bss_match(struct wpa_supplicant *wpa_s,
 			break;
 		}
 
-		/*
-		 * Security Profile element preference (IEEE P802.11bn/D2.0,
-		 * 37.33):
-		 * If the AP advertises a Security Profile element whose profile
-		 * number implies an AKM/cipher that matches the STA's config,
-		 * augment ie.pairwise_cipher, ie.key_mgmt, and ie.capabilities
-		 * so the checks below pass even when the RSNE/RSNOE/RSNO2E
-		 * does not explicitly list those values.
-		 */
-		if (sp) {
-			int sp_key_mgmt =
-				security_profile_get_key_mgmt(sp, ssid);
-
-			if (!sp_key_mgmt ||
-			    !(ssid->pairwise_cipher & WPA_CIPHER_GCMP_256)) {
-				if (debug_print)
-					wpa_dbg(wpa_s, MSG_DEBUG,
-						"   No match between AP and STA security profiles");
-				break;
-			}
-
-			if (!(ie.pairwise_cipher & WPA_CIPHER_GCMP_256)) {
-				if (debug_print)
-					wpa_dbg(wpa_s, MSG_DEBUG,
-						"   Security Profile element overrides RSNE pairwise cipher");
-				ie.pairwise_cipher |= WPA_CIPHER_GCMP_256;
-			}
-			if (!(ie.key_mgmt & ssid->key_mgmt)) {
-				if (debug_print)
-					wpa_dbg(wpa_s, MSG_DEBUG,
-						"   Security Profile element overrides RSNE key_mgmt");
-				ie.key_mgmt |= sp_key_mgmt;
-			}
-			/* All defined profiles mandate MFPC=1/MFPR=1 */
-			ie.capabilities |= WPA_CAPABILITY_MFPC |
-				WPA_CAPABILITY_MFPR;
-		}
+		if (sp &&
+		    !wpas_security_profile_override_rsne(wpa_s, ssid, bss, &ie,
+							debug_print))
+			break;
 
 		if (!(ie.pairwise_cipher & ssid->pairwise_cipher)) {
 			if (debug_print)
