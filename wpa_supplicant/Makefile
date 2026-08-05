@@ -1072,6 +1072,7 @@ OBJS += ../src/ap/uhr_utils.o
 OBJS += ../src/ap/uhr_oui_transport.o
 OBJS += ../src/ap/uhr_iap.o
 #OBJS += ../src/ap/uhr_current_ap.o
+OBJS += ../src/ap/mapc.o
 endif
 OBJS += ../src/ap/dscp_policy.o
 ifdef CONFIG_WNM_AP
