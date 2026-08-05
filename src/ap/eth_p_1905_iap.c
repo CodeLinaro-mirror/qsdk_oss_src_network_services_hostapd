@@ -60,10 +60,13 @@ static int encode_reconfig_frame_tlv(struct wpabuf *buf,
 				     const u8 *dst_mld_addr,
 				     const u8 *dst_bssid,
 				     u8 frame_type,
+				     u8 link_id,
 				     const u8 *frame, u16 frame_len)
 {
+	/* value: subtype(2) + dst_mld(6) + dst_bssid(6) + frame_type(1) +
+	 *        link_id(1) + frame_length(2) + frame_body */
 	u16 val_len = WIFI8_TLV_SUBTYPE_LEN + ETH_ALEN + ETH_ALEN +
-		      1 + 2 + frame_len;
+		      1 + 1 + 2 + frame_len;
 
 	if (wpabuf_tailroom(buf) < WIFI8_TLV_HDR_LEN + val_len)
 		return -1;
@@ -75,6 +78,7 @@ static int encode_reconfig_frame_tlv(struct wpabuf *buf,
 	/* dst_bssid: use caller-supplied value or zeros if not known */
 	wpabuf_put_data(buf, dst_bssid ? dst_bssid : zero_addr, ETH_ALEN);
 	wpabuf_put_u8(buf, frame_type);
+	wpabuf_put_u8(buf, link_id);
 	wpabuf_put_be16(buf, frame_len);
 	if (frame && frame_len > 0)
 		wpabuf_put_data(buf, frame, frame_len);
@@ -352,12 +356,13 @@ static int encode_datapath_ctx_tlv(struct wpabuf *buf,
 
 static int decode_reconfig_frame_tlv(const u8 *val, u16 val_len,
 				     u8 *out_frame_type,
+				     u8 *out_link_id,
 				     const u8 **out_frame,
 				     u16 *out_frame_len)
 {
 	/* min_len = subtype(2) + dst_mld_addr(6) + dst_bssid(6) +
-	 *           frame_type(1) + frame_length(2) = 17 bytes */
-	const size_t min_len = WIFI8_TLV_SUBTYPE_LEN + ETH_ALEN + ETH_ALEN + 1 + 2;
+	 *           frame_type(1) + link_id(1) + frame_length(2) = 18 bytes */
+	const size_t min_len = WIFI8_TLV_SUBTYPE_LEN + ETH_ALEN + ETH_ALEN + 1 + 1 + 2;
 	u16 flen;
 
 	if (val_len < min_len)
@@ -365,6 +370,7 @@ static int decode_reconfig_frame_tlv(const u8 *val, u16 val_len,
 
 	val += WIFI8_TLV_SUBTYPE_LEN + ETH_ALEN + ETH_ALEN;
 	*out_frame_type = *val++;
+	*out_link_id    = *val++;
 	flen = WPA_GET_BE16(val);
 	val += 2;
 
@@ -670,9 +676,9 @@ static size_t eth_p_1905_payload_len(const struct uhr_iap_frame *iap)
 	u16 frame_len = le_to_host16(iap->frame_len);
 	size_t len = 0;
 
-	/* Reconfig Frame TLV: frame_type(1) + frame_len_field(2) + frame_data */
+	/* Reconfig Frame TLV: frame_type(1) + link_id(1) + frame_len_field(2) + frame_data */
 	if (frame_len > 0)
-		len += WIFI8_TLV_OVERHEAD + 1 + 2 + frame_len;
+		len += WIFI8_TLV_OVERHEAD + 1 + 1 + 2 + frame_len;
 
 	/* Client Security Ctx TLV: sizeof(uhr_iap_security_ctx) as upper bound */
 	if (iap->flags & UHR_IAP_FLAG_HAS_SEC_CTX)
@@ -723,6 +729,7 @@ struct wpabuf *eth_p_1905_iap_encode_prep_req(struct hostapd_data *hapd,
 	if ((frame_len > 0 &&
 	     encode_reconfig_frame_tlv(buf, iap->target_ap_mld_addr, NULL,
 				       WIFI8_RECONFIG_FRAME_TYPE_REQUEST,
+				       iap->current_link_id,
 				       frame, frame_len) < 0) ||
 	    ((iap->flags & UHR_IAP_FLAG_HAS_SEC_CTX) &&
 	     encode_client_sec_ctx_tlv(buf, iap->target_ap_mld_addr, NULL,
@@ -755,6 +762,7 @@ struct wpabuf *eth_p_1905_iap_encode_prep_resp(const struct uhr_iap_frame *iap)
 
 	if (encode_reconfig_frame_tlv(buf, iap->current_ap_mld_addr, NULL,
 				      WIFI8_RECONFIG_FRAME_TYPE_RESPONSE,
+				      iap->current_link_id,
 				      frame, frame_len) < 0) {
 		wpabuf_free(buf);
 		return NULL;
@@ -792,6 +800,7 @@ struct wpabuf *eth_p_1905_iap_encode_exec_req(struct hostapd_data *hapd,
 	if ((frame_len > 0 &&
 	     encode_reconfig_frame_tlv(buf, iap->target_ap_mld_addr, NULL,
 				       WIFI8_RECONFIG_FRAME_TYPE_REQUEST,
+				       iap->current_link_id,
 				       frame, frame_len) < 0) ||
 	    ((iap->flags & UHR_IAP_FLAG_HAS_SEC_CTX) &&
 	     encode_client_sec_ctx_tlv(buf, iap->target_ap_mld_addr, NULL,
@@ -866,6 +875,7 @@ struct wpabuf *eth_p_1905_iap_encode_exec_resp(struct hostapd_data *hapd,
 		if (encode_reconfig_frame_tlv(buf, iap->current_ap_mld_addr,
 					      NULL,
 					      WIFI8_RECONFIG_FRAME_TYPE_RESPONSE,
+					      iap->current_link_id,
 					      frame, frame_len) < 0) {
 			wpabuf_free(buf);
 			return NULL;
@@ -951,6 +961,7 @@ static struct uhr_iap_frame *decode_smd_msg(struct hostapd_data *hapd,
 	u16 reconfig_frame_len = 0;
 	u8 reconfig_frame_type = 0;
 	bool has_reconfig_frame = false;
+	u8 reconfig_link_id = 0;
 
 	u8 client_mld_addr[ETH_ALEN];
 	u8 ap_smd_addr[ETH_ALEN];
@@ -1000,9 +1011,12 @@ static struct uhr_iap_frame *decode_smd_msg(struct hostapd_data *hapd,
 		case WIFI8_TLV_SUBTYPE_RECONFIG_FRAME:
 			if (decode_reconfig_frame_tlv(tlv_val, tlv_len,
 						      &reconfig_frame_type,
+						      &reconfig_link_id,
 						      &reconfig_frame,
-						      &reconfig_frame_len) == 0)
+						      &reconfig_frame_len) == 0) {
 				has_reconfig_frame = true;
+				client_link_id = reconfig_link_id;
+			}
 			break;
 
 		case WIFI8_TLV_SUBTYPE_CLIENT_IDENTIFIER:
@@ -1060,9 +1074,30 @@ static struct uhr_iap_frame *decode_smd_msg(struct hostapd_data *hapd,
 		return NULL;
 	}
 
-	/* Common header fields */
-	os_memcpy(iap->current_ap_mld_addr, src_addr, ETH_ALEN);
-	os_memcpy(iap->target_ap_mld_addr, dst_addr, ETH_ALEN);
+	/* Common header fields
+	 *
+	 * Determine sender role from TLV content rather than message type,
+	 * because EXEC_REQ and EXEC_RESP can flow in either direction:
+	 *
+	 *   SAP sends: SecCtx present, ClientId present, RoamCleanup present,
+	 *              or DatapathCtx-only (PREP_CTX — no ReconfFrame).
+	 *   TAP sends: ReconfFrame only (PREP_RESP, EXEC_REQ from TAP,
+	 *              EXEC_RESP from TAP).
+	 *
+	 * src_addr and dst_addr are already MLD addresses because
+	 * eth_p_1905_send() uses hapd->mld->mld_addr as the Ethernet SA.
+	 */
+	bool sender_is_sap = has_sec_ctx || has_datapath_ctx || has_client_id || has_roam_cleanup;
+
+	if (sender_is_sap) {
+		os_memcpy(iap->current_ap_mld_addr, src_addr, ETH_ALEN);
+		os_memcpy(iap->target_ap_mld_addr,  dst_addr, ETH_ALEN);
+	} else {
+		/* Sender is TAP */
+		os_memcpy(iap->target_ap_mld_addr,  src_addr, ETH_ALEN);
+		os_memcpy(iap->current_ap_mld_addr, dst_addr, ETH_ALEN);
+	}
+
 	iap->iap_transaction_id = 0;
 	iap->sequence_number    = 0;
 	iap->status_code        = 0;
@@ -1083,7 +1118,8 @@ static struct uhr_iap_frame *decode_smd_msg(struct hostapd_data *hapd,
 		int sta_offset = (reconfig_frame_type ==
 				  WIFI8_RECONFIG_FRAME_TYPE_RESPONSE) ? 4 : 10;
 		os_memcpy(iap->sta_addr, reconfig_frame + sta_offset, ETH_ALEN);
-		iap->current_link_id = hapd->mld_link_id;
+		/* client_link_id was populated from the Reconfig Frame TLV */
+		iap->current_link_id = client_link_id;
 	} else {
 		iap->current_link_id = hapd->mld_link_id;
 	}
