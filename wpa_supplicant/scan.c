@@ -4434,7 +4434,9 @@ wpa_bss_alloc_from_scan_res(struct wpa_supplicant *wpa_s,
 		os_memcpy(bss->ies, (const u8 *) (res + 1), ie_total);
 
 	/* Populate channel operation information required by the NOL check. */
+#ifdef CONFIG_QCN_EXTN
 	wpa_get_bss_channel_oper_info_extn(wpa_s, bss);
+#endif
 
 	return bss;
 }

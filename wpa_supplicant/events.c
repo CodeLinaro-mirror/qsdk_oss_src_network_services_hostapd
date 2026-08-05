@@ -57,7 +57,9 @@
 #include "dpp_supplicant.h"
 #include "pr_supplicant.h"
 #include "nan_supplicant.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 
 
 #define MAX_OWE_TRANSITION_BSS_SELECT_COUNT 5
