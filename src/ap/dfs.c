@@ -3592,6 +3592,7 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 					hostapd_cleanup_cs_params(iface->bss[0]);
 #endif
 					hostapd_set_state(iface, HAPD_IFACE_ENABLED);
+					wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
 					iface->cac_type = 0;
 
 					for (size_t i = 0; i < iface->num_bss; i++) {
@@ -3631,14 +3632,11 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 		iface->radar_background.cac_started = 0;
 		if (iface->conf->enable_background_radar)
 			hostapd_dfs_update_background_chain(iface);
-	} else if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_CSA ||
-		   iface->radar_detected) {
+	} else {
 		iface->cac_started = 0;
 		iface->cac_type = 0;
-	} else {
 #ifdef CONFIG_QCN_EXTN
-		if (iface->bootup_cac_in_progress)
-			iface->bootup_cac_in_progress = 0;
+		iface->bootup_cac_in_progress = 0;
 #endif /* CONFIG_QCN_EXTN */
 	}
 

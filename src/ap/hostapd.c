@@ -75,6 +75,7 @@
 #endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#include "../../qcn_extns/dfs_extn.h"
 #endif /* CONFIG_QCN_EXTN */
 #include "nft.h"
 #ifdef CONFIG_IEEE80211BN
@@ -7579,6 +7580,11 @@ hostapd_enable_bss_handle_cac(struct hostapd_data *hapd)
 
 	/* Handle DFS only if it is not offloaded to the driver */
 	if (!(iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD)) {
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_bootup_cac_start_extn(iface))
+			return ENABLE_BSS_SETUP;
+#endif /* CONFIG_QCN_EXTN */
+
 		/* Check DFS */
 		set_dfs_state_freq(iface, iface->freq,
 				   HOSTAPD_CHAN_DFS_USABLE);
@@ -7631,7 +7637,7 @@ hostapd_enable_bss_handle_cac(struct hostapd_data *hapd)
 
 int hostapd_enable_bss(struct hostapd_data *hapd)
 {
-	struct hostapd_iface *hapd_iface;
+	struct hostapd_iface *hapd_iface = hapd->iface;
 	enum bss_enable_state enable_state;
 	size_t i;
 
@@ -7649,12 +7655,20 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 	}
 
 	if (hapd->started) {
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_bootup_cac_enabled_extn(hapd_iface) &&
+		    hapd_iface->bootup_cac_in_progress) {
+			wpa_printf(MSG_DEBUG,
+				   "BSS %s already staged during CAC",
+				   hapd->conf->iface);
+			return 0;
+		}
+#endif /* CONFIG_QCN_EXTN */
 		wpa_printf(MSG_INFO, "BSS %s already enabled",
 			   hapd->conf->iface);
 		return -1;
 	}
 
-	hapd_iface = hapd->iface;
 	for (i = 0; i < hapd_iface->num_bss; i++) {
 		if (hapd_iface->bss[i]->started)
 			break;
@@ -7663,6 +7677,16 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 	wpa_printf(MSG_DEBUG, "Enable BSS %s", hapd->conf->iface);
 
 	/* Enable flow: HT scan -> CAC/DFS -> setup_bss. */
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_bootup_cac_enabled_extn(hapd_iface) &&
+	    hapd_iface->bootup_cac_in_progress) {
+		wpa_printf(MSG_DEBUG,
+			   "CAC in progress: setting up BSS %s",
+			   hapd->conf->iface);
+		goto setup_bss;
+	}
+#endif /* CONFIG_QCN_EXTN */
+
 	if (hapd_iface->cac_started) {
 		hapd->reenable = REENABLE_CAC;
 		wpa_printf(MSG_INFO, "CAC in progress, cannot enable BSS");
@@ -7716,7 +7740,12 @@ setup_bss:
 
 	hapd->reenable = REENABLE_NONE;
 	hapd->disabled = 0;
+#ifdef CONFIG_QCN_EXTN
+	if (!hapd_iface->bootup_cac_in_progress)
+		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
+#else
 	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
+#endif
 
 	hostapd_neighbor_set_own_report(hapd);
 	if (i == hapd_iface->num_bss)
