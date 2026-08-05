@@ -538,7 +538,9 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->original_chan_width = 0;
 
 	hostapd_set_and_check_bw320_offset(conf, 0);
+#ifdef CONFIG_QCN_EXTN
 	hostapd_config_defaults_extn(conf);
+#endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_IEEE80211BE
 	/* set ML max rec links as Invalid */
@@ -1824,12 +1826,14 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 			   "Cannot enable mld_ap when IEEE 802.11be is disabled");
 		return -1;
 	}
+#ifdef CONFIG_QCN_EXTN
 	/* Validate mld_addr is configured when use_driver_vendor_addr is enabled */
 	if (bss->mld_ap && conf->use_driver_vendor_addr &&
 			is_zero_ether_addr(bss->mld_addr)) {
 		wpa_printf(MSG_ERROR, "MLD: mld_addr must be configured when use_driver_vendor_addr is enabled");
 		return -1;
 	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 #if defined(CONFIG_IEEE80211BE) && defined(CONFIG_QCN_EXTN)

@@ -371,7 +371,9 @@ static void acs_fail(struct hostapd_iface *iface)
 	 * This handles scenarios with 2 or 3 radios where ACS may complete in
 	 * different orders: (pass, fail, pass), (pass, pass, fail), etc.
 	 */
+#ifdef CONFIG_QCN_EXTN
 	hostapd_ml_acs_check_and_notify(iface, false);
+#endif /* CONFIG_QCN_EXTN */
 }
 
 
@@ -907,8 +909,10 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 				continue;
 			}
 		}
+#ifdef CONFIG_QCN_EXTN
 		n_chans = hostapd_modify_n_chans_for_240mhz_extn(iface,
 								 n_chans);
+#endif /* CONFIG_QCN_EXTN */
 		factor = 0;
 		best = NULL;
 
@@ -1497,8 +1501,10 @@ static void acs_study(struct hostapd_iface *iface)
 #endif
 	err = 0;
 fail:
+#ifdef CONFIG_QCN_EXTN
 	if (!acs_handle_channel_change_failed_extn(iface, err))
 		return;
+#endif /* CONFIG_QCN_EXTN */
 	/*
 	 * hostapd_setup_interface_complete() will return -1 on failure,
 	 * 0 on success and 0 is HOSTAPD_CHAN_VALID :)
@@ -1790,8 +1796,10 @@ enum hostapd_chan_status acs_init(struct hostapd_iface *iface)
 			return HOSTAPD_CHAN_INVALID_NO_IR;
 		return HOSTAPD_CHAN_INVALID;
 	}
+#ifdef CONFIG_QCN_EXTN
 	if (!iface->iface_extn.dynamic_acs_action)
 		hostapd_set_state(iface, HAPD_IFACE_ACS);
+#endif /* CONFIG_QCN_EXTN */
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, ACS_EVENT_STARTED);
 
 	return HOSTAPD_CHAN_ACS;

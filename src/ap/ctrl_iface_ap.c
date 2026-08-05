@@ -3475,6 +3475,7 @@ static int hostapd_parse_candidate_partner_links(struct hostapd_data *hapd,
 			tmp = os_strchr(pos, ',');
 			if (tmp && (!end || tmp < end)) {
 				pos = tmp + 1;
+#ifdef CONFIG_QCN_EXTN
 				/* check if atoi(pos) is the link id of
 				 * repurposed link, if so, return error as we
 				 * have request with invalid link
@@ -3484,6 +3485,7 @@ static int hostapd_parse_candidate_partner_links(struct hostapd_data *hapd,
 						   "link set has repurposed link, fail");
 					return -1;
 				}
+#endif /* CONFIG_QCN_EXTN */
 				link_set[i] = atoi(pos);
 				num_links++;
 			} else {
