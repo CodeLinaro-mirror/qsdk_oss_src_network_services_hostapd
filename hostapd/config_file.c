@@ -2625,7 +2625,15 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		os_free(bss->openssl_sigalgs);
 		bss->openssl_sigalgs = os_strdup(pos);
 	} else if (os_strcmp(buf, "fragment_size") == 0) {
-		bss->fragment_size = atoi(pos);
+		int val = atoi(pos);
+
+		if (val < 0 || val > 65535) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid fragment_size value",
+				   line);
+			return 1;
+		}
+		bss->fragment_size = val;
 #ifdef EAP_SERVER_FAST
 	} else if (os_strcmp(buf, "pac_opaque_encr_key") == 0) {
 		os_free(bss->pac_opaque_encr_key);

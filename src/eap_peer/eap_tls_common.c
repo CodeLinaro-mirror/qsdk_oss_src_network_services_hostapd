@@ -323,7 +323,8 @@ int eap_peer_tls_ssl_init(struct eap_sm *sm, struct eap_ssl_data *data,
 	if (eap_tls_init_connection(sm, data, config, &params) < 0)
 		return -1;
 
-	data->tls_out_limit = config->fragment_size;
+	data->tls_out_limit = config->fragment_size > 0 ?
+		config->fragment_size : 1398;
 	if (data->phase2) {
 		/* Limit the fragment size in the inner TLS authentication
 		 * since the outer authentication with EAP-PEAP does not yet

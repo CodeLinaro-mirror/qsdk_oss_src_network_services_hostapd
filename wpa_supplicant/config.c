@@ -2704,9 +2704,14 @@ static char * wpa_config_write_security_profiles(const struct parse_data *data,
 #ifdef NO_CONFIG_WRITE
 #define INT_RANGE(f, min, max) #f, wpa_config_parse_int_range, OFFSET(f), \
 	(void *) 0, (void *) (min), (void *) (max), 0
+#define INT_RANGEe(f, m, min, max) #f, wpa_config_parse_int_range, \
+	OFFSET(eap.m), (void *) 0, (void *) (min), (void *) (max), 0
 #else /* NO_CONFIG_WRITE */
 #define INT_RANGE(f, min, max) #f, wpa_config_parse_int_range, \
 	wpa_config_write_int, OFFSET(f),	       \
+	(void *) 0, (void *) (min), (void *) (max), 0
+#define INT_RANGEe(f, m, min, max) #f, wpa_config_parse_int_range, \
+	wpa_config_write_int, OFFSET(eap.m),	       \
 	(void *) 0, (void *) (min), (void *) (max), 0
 #endif /* NO_CONFIG_WRITE */
 
@@ -2873,7 +2878,7 @@ static const struct parse_data ssid_fields[] = {
 #ifdef IEEE8021X_EAPOL
 	{ INT(eap_workaround) },
 	{ STRe(pac_file, pac_file) },
-	{ INTe(fragment_size, fragment_size) },
+	{ INT_RANGEe(fragment_size, fragment_size, 0, 65535) },
 	{ INTe(ocsp, cert.ocsp) },
 	{ INTe(ocsp2, phase2_cert.ocsp) },
 #endif /* IEEE8021X_EAPOL */
