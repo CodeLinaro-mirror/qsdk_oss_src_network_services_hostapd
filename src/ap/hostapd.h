@@ -1383,6 +1383,7 @@ void hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface,
 void hostapd_set_no_ir_state(struct hostapd_iface *iface);
 bool hostapd_regdom_channel_supported(struct hostapd_iface *iface,
 				      struct hostapd_channel_data *chan);
+#ifdef CONFIG_QCN_EXTN
 bool hostapd_is_iface_regdom_supported(struct hostapd_iface *iface);
 struct hostapd_channel_data *
 hostapd_regdom_first_supported_channel(struct hostapd_iface *iface);
@@ -1419,6 +1420,7 @@ int hostapd_handle_afc_channel_change(struct hostapd_iface *iface);
  * @timeout_ctx: Pointer to timeout context (not used)
  */
 void afc_channel_change_timeout(void *eloop_ctx, void *timeout_ctx);
+#endif /* CONFIG_QCN_EXTN */
 #else
 static inline bool
 hostapd_regdom_channel_supported(struct hostapd_iface *iface,
@@ -1928,8 +1930,10 @@ hostapd_get_valid_puncture_pattern_arr(u16 bw, u16 *num_pp, u16 *pp_mask);
  *
  * Return: Response length
  */
+#ifdef CONFIG_QCN_EXTN
 int hostapd_afc_handle_cli(struct hostapd_data *hapd, char *pos,
 			   char *buf, size_t buflen);
+#endif /* CONFIG_QCN_EXTN */
 /**
  * Vendor element format: ID (1 byte), length (1 byte), OUI (3 bytes),
  * and at least one byte of data.

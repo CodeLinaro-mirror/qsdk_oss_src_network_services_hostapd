@@ -69,7 +69,9 @@
 #include "ttlm.h"
 #include "dscp_policy.h"
 #include "ap/ctrl_iface_ap.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #include "robust_av.h"
 #include "wpa_auth_i.h"
 
@@ -6468,7 +6470,7 @@ static void handle_auth(struct hostapd_data *hapd,
 						      "FT", NULL))
 				goto fail;
 		}
-	#ifdef CONFIG_HOSTAPD_IF
+#if defined(CONFIG_HOSTAPD_IF) && defined(CONFIG_QCN_EXTN)
 		if (hostapd_if_frame_fwd_decision(hapd, auth_alg,
 						  HOSTAPD_IF_FRAME_TYPE_AUTH))
 			deferred_auth_response = true;
@@ -7826,9 +7828,11 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			return WLAN_STATUS_DENIED_EHT_NOT_SUPPORTED;
 		}
 
+#ifdef CONFIG_QCN_EXTN
 		resp = hostapd_copy_sta_eht_240mhz_cap_extn(hapd, sta,
 							    IEEE80211_MODE_AP,
 							    &elems->elems_extn);
+#endif /* CONFIG_QCN_EXTN */
 		if (resp != WLAN_STATUS_SUCCESS)
 			goto out;
 
@@ -11509,8 +11513,8 @@ static int hostapd_action_vs(struct hostapd_data *hapd,
 #endif /* CONFIG_ROBUST_AV */
 	default:
 #ifdef CONFIG_QCN_EXTN
-		if (!handle_action_vs_extn(hapd, sta, mgmt, len, freq,
-					   protected) == 0)
+		if (handle_action_vs_extn(hapd, sta, mgmt, len, freq,
+					  protected) == 0)
 			return 0;
 #endif /* CONFIG_QCN_EXTN */
 

@@ -50,7 +50,9 @@
 #include "interference.h"
 #include "ttlm.h"
 #include "robust_av.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #include "ap/uhr_utils.h"
 #include "uhr_neighbor_update.h"
 
@@ -2741,10 +2743,12 @@ static void hostapd_event_dfs_radar_detected(struct hostapd_data *hapd,
 }
 
 
+#ifdef CONFIG_QCN_EXTN
 static void hostapd_event_afc_received(struct hostapd_data *hapd)
 {
 	hostapd_intf_afc_received(hapd->iface);
 }
+#endif /* CONFIG_QCN_EXTN */
 
 static void hostapd_event_dfs_pre_cac_expired(struct hostapd_data *hapd,
 					      struct dfs_event *radar)
@@ -2980,6 +2984,7 @@ static void hostapd_event_6ghz_power_mode(struct hostapd_data *hapd,
 	iface->power_mode_6ghz_before_change = -1;
 }
 
+#ifdef CONFIG_QCN_EXTN
 static int hostapd_allocate_afc_rsp_info(struct hostapd_iface *iface,
 					 struct afc_sp_reg_info *afc_rsp_info)
 {
@@ -3567,6 +3572,7 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 		hostapd_set_no_ir_state(iface);
 	}
 }
+#endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_OWE
 static int hostapd_notif_update_dh_ie(struct hostapd_data *hapd,
@@ -4577,9 +4583,11 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		hapd = switch_link_hapd(hapd, data->dfs_event.link_id);
 		hostapd_event_dfs_nop_finished(hapd, &data->dfs_event);
 		break;
+#ifdef CONFIG_QCN_EXTN
 	case EVENT_AFC_RECEIVED:
 		hostapd_event_afc_received(hapd);
 		break;
+#endif /* CONFIG_QCN_EXTN */
 	case EVENT_CHANNEL_LIST_CHANGED:
 		/* channel list changed (regulatory?), update channel list */
 		/* TODO: check this. hostapd_get_hw_features() initializes
@@ -4671,6 +4679,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 			   hapd->conf->iface);
 		hostapd_event_color_change(hapd, true);
 		break;
+#ifdef CONFIG_QCN_EXTN
 	case EVENT_AFC_POWER_UPDATE_COMPLETE_NOTIFY:
 		hostapd_event_afc_update_complete(hapd,
 						  &data->afc_info);
@@ -4678,6 +4687,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 	case EVENT_AFC_PAYLOAD_RESET:
 		hostapd_event_afc_payload_reset(hapd, &data->afc_info);
 		break;
+#endif /* CONFIG_QCN_EXTN */
 	case EVENT_6GHZ_POWER_MODE_NOTIFY:
 		hapd = switch_link_hapd(hapd,
 					data->ap_6ghz_pwr_mode_event.link_id);
@@ -4794,8 +4804,10 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		break;
 #endif /* CONFIG_IEEE80211BN */
 	default:
+#ifdef CONFIG_QCN_EXTN
 		if (!hostapd_wpa_event_extn(ctx, event, data))
 			break;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_DEBUG, "Unknown event %d", event);
 		break;

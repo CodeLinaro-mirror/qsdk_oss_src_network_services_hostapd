@@ -2197,12 +2197,14 @@ bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface)
 			start_chan = conf->eht_oper_centr_freq_seg0_idx - 14;
 			break;
 		default:
+#ifdef CONFIG_QCN_EXTN
 			if (hostapd_get_bw_and_startchan_for_240mhz_extn(
 				conf->eht_oper_chwidth,
 				conf->eht_oper_centr_freq_seg0_idx,
 				&bw, &start_chan))
 
 			return false;
+#endif /* CONFIG_QCN_EXTN */
 		}
 	}
 
@@ -2514,13 +2516,17 @@ int hostapd_acs_completed(struct hostapd_iface *iface, int err)
 			} else {
 				wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
 					"ACS: with CAC already done, notify now");
+#ifdef CONFIG_QCN_EXTN
 				hostapd_ml_acs_check_and_notify(iface, true);
+#endif /* CONFIG_QCN_EXTN */
 			}
 		} else {
 			wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
 				"ACS: non-DFS channel/BW: AP will start immediately,"
 				" notify now");
+#ifdef CONFIG_QCN_EXTN
 			hostapd_ml_acs_check_and_notify(iface, true);
+#endif /* CONFIG_QCN_EXTN */
 		}
 		break;
 	case HOSTAPD_CHAN_ACS:
