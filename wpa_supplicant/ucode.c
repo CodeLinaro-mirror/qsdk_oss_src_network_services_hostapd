@@ -293,11 +293,13 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 					       ucv_int64_new(center_freq2));
 				ucv_object_add(info, "punct_bitmap",
 				ucv_int64_new(bss->mld_links[i].punc_bitmap));
+#ifdef CONFIG_QCN_EXTN
 				is_dfs = wpas_ucode_is_dfs_chandef(bss->mld_links[i].freq,
 								   bss->mld_links[i].width,
 								   center_freq1,
 								   center_freq2);
 				ucv_object_add(info, "is_dfs", ucv_boolean_new(is_dfs));
+#endif /* CONFIG_QCN_EXTN */
 				ucv_object_add(info, "mcst",
 					       ucv_int64_new(wpa_bss_get_mld_link_mcst_extn(bss, i)));
 				sec_chan_offset = compute_sec_channel_offset_extn(bss->mld_links[i].freq,
@@ -358,12 +360,14 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 				       ucv_int64_new(center_freq2));
 			ucv_object_add(info, "punct_bitmap",
 				       ucv_int64_new(bss->punc_bitmap));
-			is_dfs = wpas_ucode_is_dfs_chandef(bss->freq,
+#ifdef CONFIG_QCN_EXTN
+	is_dfs = wpas_ucode_is_dfs_chandef(bss->freq,
 							   bss->max_cw,
 							   center_freq1,
 							   center_freq2);
 			ucv_object_add(info, "is_dfs",
 				       ucv_boolean_new(is_dfs));
+#endif /* CONFIG_QCN_EXTN */
 			sec_chan_offset = compute_sec_channel_offset_extn(bss->freq,
 									  center_freq1,
 									  bss->max_cw);
@@ -754,7 +758,6 @@ uc_wpas_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 	struct wpa_supplicant *wpa_s = uc_fn_thisval("wpas.iface");
 	uc_value_t *info = uc_fn_arg(0);
 	struct csa_settings csa;
-	enum chan_width width = CHAN_WIDTH_UNKNOWN;
 	int val;
 	bool boolval;
 
@@ -817,6 +820,8 @@ uc_wpas_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 
 	if (!uc_wpas_object_get_int(info, "sec_chan_offset",
 				    &csa.freq_params.sec_channel_offset)) {
+#ifdef CONFIG_QCN_EXTN
+		enum chan_width width;
 		switch (csa.freq_params.bandwidth) {
 		case 20:
 			width = CHAN_WIDTH_20;
@@ -837,8 +842,6 @@ uc_wpas_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 			width = CHAN_WIDTH_UNKNOWN;
 			break;
 		}
-
-#ifdef CONFIG_QCN_EXTN
 		csa.freq_params.sec_channel_offset =
 			compute_sec_channel_offset_extn(
 				csa.freq_params.freq,
