@@ -196,6 +196,12 @@ struct eap_sm {
 	bool initiate_reauth_start_sent;
 	bool try_initiate_reauth;
 
+	/*
+	 * Whether IEEE 802.1X data is carried in Authentication frames instead
+	 * of EAPOL frames
+	 */
+	bool eap_in_auth_frames;
+
 #ifdef CONFIG_TESTING_OPTIONS
 	u32 tls_test_flags;
 #endif /* CONFIG_TESTING_OPTIONS */

@@ -9,6 +9,7 @@
 #include "includes.h"
 
 #include "common.h"
+#include "common/wpa_common.h"
 #include "crypto/sha1.h"
 #include "crypto/tls.h"
 #include "eap_i.h"
@@ -81,8 +82,13 @@ int eap_server_tls_ssl_init(struct eap_sm *sm, struct eap_ssl_data *data,
 		return -1;
 	}
 
-	data->tls_out_limit = sm->cfg->fragment_size > 0 ?
-		sm->cfg->fragment_size : 1398;
+	if (sm->eap_in_auth_frames)
+		data->tls_out_limit = WPA_1X_AUTH_MAX_EAP_FRAG_LEN;
+	else if (sm->cfg->fragment_size > 0)
+		data->tls_out_limit = sm->cfg->fragment_size;
+	else
+		data->tls_out_limit = 1398;
+
 	if (data->phase2) {
 		/* Limit the fragment size in the inner TLS authentication
 		 * since the outer authentication with EAP-PEAP does not yet

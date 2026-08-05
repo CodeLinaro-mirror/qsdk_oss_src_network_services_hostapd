@@ -1870,6 +1870,7 @@ struct eap_sm * eap_server_sm_init(void *eapol_ctx,
 		sm->assoc_p2p_ie = wpabuf_dup(sess->assoc_p2p_ie);
 	if (sess->peer_addr)
 		os_memcpy(sm->peer_addr, sess->peer_addr, ETH_ALEN);
+	sm->eap_in_auth_frames = sess->eap_in_auth_frames;
 #ifdef CONFIG_TESTING_OPTIONS
 	sm->tls_test_flags = sess->tls_test_flags;
 #endif /* CONFIG_TESTING_OPTIONS */

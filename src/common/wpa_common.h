@@ -28,6 +28,16 @@
 #define WPA_MAX_RSNXE_LEN 4
 #define WPA_1X_MAX_MIC_LEN 32
 
+/*
+ * Largest EAP-TLS fragment that still fits in an Authentication frame carrying
+ * IEEE 802.1X data, i.e., the maximum MMPDU size without the MAC header, the
+ * Authentication frame fixed fields, the Encapsulation Length field, the MIC
+ * element that may be appended to the frame and the EAP header.
+ */
+#define WPA_1X_AUTH_MAX_EAP_FRAG_LEN \
+	(IEEE80211_MAX_MMPDU_SIZE - IEEE80211_HDRLEN - 2 - 2 - 2 - 2 - \
+	 2 - WPA_1X_MAX_MIC_LEN - 5)
+
 #define OWE_DH_GROUP 19
 
 #define PASN_GROUP_NOT_SPECIFIED 0

@@ -1061,6 +1061,10 @@ ieee802_1x_alloc_eapol_sm(struct hostapd_data *hapd, struct sta_info *sta)
 		if (wpa_auth_sta_get_pmksa(sta->wpa_sm))
 			flags |= EAPOL_SM_FROM_PMKSA_CACHE;
 	}
+#ifdef CONFIG_IEEE8021X_AUTH
+	if (sta->eap_auth_data.akm)
+		flags |= EAPOL_SM_802_1X_IN_AUTH;
+#endif /* CONFIG_IEEE8021X_AUTH */
 	return eapol_auth_alloc(hapd->eapol_auth, sta->addr, flags,
 				sta->wps_ie, sta->p2p_ie, sta,
 				sta->identity, sta->radius_cui);

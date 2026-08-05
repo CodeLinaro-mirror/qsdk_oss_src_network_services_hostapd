@@ -9,6 +9,8 @@
 #ifndef EAP_CONFIG_H
 #define EAP_CONFIG_H
 
+#define EAP_DEFAULT_FRAGMENT_SIZE 1398
+
 /**
  * struct eap_peer_cert_config - EAP peer certificate configuration/credential
  */
@@ -638,13 +640,14 @@ struct eap_peer_config {
 	size_t new_password_len;
 
 	/**
-	 * fragment_size - Maximum EAP fragment size in bytes (default 1398)
+	 * fragment_size - Maximum EAP fragment size in bytes (default: 1398)
 	 *
 	 * This value limits the fragment size for EAP methods that support
 	 * fragmentation (e.g., EAP-TLS and EAP-PEAP). This value should be set
 	 * small enough to make the EAP messages fit in MTU of the network
-	 * interface used for EAPOL. The default value is suitable for most
-	 * cases.
+	 * interface used for EAPOL. If this is left at the default value, a
+	 * fragment size that suits the transport that carries the EAP messages
+	 * may be used instead.
 	 */
 	int fragment_size;
 

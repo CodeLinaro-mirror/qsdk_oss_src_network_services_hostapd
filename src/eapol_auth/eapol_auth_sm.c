@@ -845,6 +845,7 @@ eapol_auth_alloc(struct eapol_authenticator *eapol, const u8 *addr,
 	eap_sess.assoc_wps_ie = assoc_wps_ie;
 	eap_sess.assoc_p2p_ie = assoc_p2p_ie;
 	eap_sess.peer_addr = addr;
+	eap_sess.eap_in_auth_frames = !!(flags & EAPOL_SM_802_1X_IN_AUTH);
 	sm->eap = eap_server_sm_init(sm, &eapol_cb, eapol->conf.eap_cfg,
 				     &eap_sess);
 	if (sm->eap == NULL) {

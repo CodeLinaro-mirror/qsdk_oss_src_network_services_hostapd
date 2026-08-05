@@ -13,6 +13,7 @@
 #define EAPOL_SM_WAIT_START BIT(1)
 #define EAPOL_SM_USES_WPA BIT(2)
 #define EAPOL_SM_FROM_PMKSA_CACHE BIT(3)
+#define EAPOL_SM_802_1X_IN_AUTH BIT(4)
 
 struct eapol_auth_config {
 	const struct eap_config *eap_cfg;

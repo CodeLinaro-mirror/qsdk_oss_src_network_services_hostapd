@@ -274,6 +274,7 @@ struct eap_session_data {
 	const struct wpabuf *assoc_wps_ie;
 	const struct wpabuf *assoc_p2p_ie;
 	const u8 *peer_addr;
+	bool eap_in_auth_frames;
 #ifdef CONFIG_TESTING_OPTIONS
 	u32 tls_test_flags;
 #endif /* CONFIG_TESTING_OPTIONS */

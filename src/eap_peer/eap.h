@@ -281,6 +281,12 @@ struct eapol_callbacks {
 	 * @len: Length of anonymous identity in octets
 	 */
 	void (*set_anon_id)(void *ctx, const u8 *id, size_t len);
+
+	/**
+	 * eap_in_auth_frames - Whether EAP is carried in Authentication frames
+	 * @ctx: eapol_ctx from eap_peer_sm_init() call
+	 */
+	bool (*eap_in_auth_frames)(void *ctx);
 };
 
 /**

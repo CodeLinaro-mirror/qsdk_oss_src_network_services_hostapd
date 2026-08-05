@@ -9,6 +9,7 @@
 #include "includes.h"
 
 #include "common.h"
+#include "common/wpa_common.h"
 #include "crypto/sha1.h"
 #include "crypto/tls.h"
 #include "eap_i.h"
@@ -323,8 +324,19 @@ int eap_peer_tls_ssl_init(struct eap_sm *sm, struct eap_ssl_data *data,
 	if (eap_tls_init_connection(sm, data, config, &params) < 0)
 		return -1;
 
-	data->tls_out_limit = config->fragment_size > 0 ?
-		config->fragment_size : 1398;
+	/*
+	 * Give precenedence to fragment sizes supported when 802.1X is carried
+	 * in authentication frame. Otherwise, give prescedence to explicitly
+	 * configured fragment size.
+	 */
+	if (sm->eapol_cb->eap_in_auth_frames &&
+	    sm->eapol_cb->eap_in_auth_frames(sm->eapol_ctx))
+		data->tls_out_limit = WPA_1X_AUTH_MAX_EAP_FRAG_LEN;
+	else if (config->fragment_size)
+		data->tls_out_limit = config->fragment_size;
+	else
+		data->tls_out_limit = EAP_DEFAULT_FRAGMENT_SIZE;
+
 	if (data->phase2) {
 		/* Limit the fragment size in the inner TLS authentication
 		 * since the outer authentication with EAP-PEAP does not yet

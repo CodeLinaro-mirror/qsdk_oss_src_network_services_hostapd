@@ -2117,6 +2117,18 @@ static void eapol_sm_set_anon_id(void *ctx, const u8 *id, size_t len)
 }
 
 
+static bool eapol_sm_eap_in_auth_frames(void *ctx)
+{
+#ifdef CONFIG_IEEE8021X_AUTH
+	struct eapol_sm *sm = ctx;
+
+	return sm->eap_over_auth_frame;
+#else /* CONFIG_IEEE8021X_AUTH */
+	return false;
+#endif /* CONFIG_IEEE8021X_AUTH */
+}
+
+
 static const struct eapol_callbacks eapol_cb =
 {
 	eapol_sm_get_config,
@@ -2137,7 +2149,8 @@ static const struct eapol_callbacks eapol_cb =
 	eapol_sm_eap_proxy_notify_sim_status,
 	eapol_sm_get_eap_proxy_imsi,
 #endif /* CONFIG_EAP_PROXY */
-	eapol_sm_set_anon_id
+	eapol_sm_set_anon_id,
+	eapol_sm_eap_in_auth_frames
 };
 
 
