@@ -1098,7 +1098,9 @@ struct hostapd_iface {
 	/* Cached PSD value for RNR */
 	s8 rnr_psd;
 
+#ifdef CONFIG_QCN_EXTN
 	struct hostapd_iface_extn iface_extn;
+#endif /* CONFIG_QCN_EXTN */
 
 	/* Configured freq of interface is NO_IR */
 	bool is_no_ir;
