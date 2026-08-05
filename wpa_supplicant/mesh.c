@@ -183,6 +183,15 @@ static int wpas_mesh_init_rsn(struct wpa_supplicant *wpa_s)
 	len = os_strlen(password);
 	bss->conf->ssid.wpa_passphrase = dup_binstr(password, len);
 
+	os_memcpy(bss->conf->ssid.ssid, ssid->ssid, ssid->ssid_len);
+	bss->conf->ssid.ssid_len = ssid->ssid_len;
+	bss->conf->sae_pwe = (enum sae_pwe) wpas_get_ssid_sae_pwe(wpa_s, ssid);
+	if (hostapd_setup_sae_pt(bss->conf) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "mesh: Failed to derive SAE PT");
+		return -1;
+	}
+
 	wpa_s->mesh_rsn = mesh_rsn_auth_init(wpa_s, ifmsh->mconf);
 	return !wpa_s->mesh_rsn ? -1 : 0;
 }

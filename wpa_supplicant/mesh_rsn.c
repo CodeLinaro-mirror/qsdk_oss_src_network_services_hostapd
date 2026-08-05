@@ -340,6 +340,7 @@ static int mesh_rsn_build_sae_commit(struct wpa_supplicant *wpa_s,
 				     struct wpa_ssid *ssid,
 				     struct sta_info *sta)
 {
+	enum sae_pwe sae_pwe;
 	const char *password;
 
 	password = ssid->sae_password;
@@ -360,6 +361,16 @@ static int mesh_rsn_build_sae_commit(struct wpa_supplicant *wpa_s,
 		if (!sta->sae->tmp->pw_id)
 			return -1;
 		sta->sae->tmp->pw_id_len = os_strlen(ssid->sae_password_id);
+	}
+	sae_pwe = wpas_get_ssid_sae_pwe(wpa_s, ssid);
+	if (sae_pwe == SAE_PWE_HASH_TO_ELEMENT ||
+	    sae_pwe == SAE_PWE_BOTH) {
+		if (!ssid->pt)
+			wpa_s_setup_sae_pt(wpa_s, ssid, true);
+		if (ssid->pt)
+			return sae_prepare_commit_pt(sta->sae, ssid->pt,
+						     wpa_s->own_addr, sta->addr,
+						     NULL, NULL);
 	}
 	return sae_prepare_commit(wpa_s->own_addr, sta->addr,
 				  (u8 *) password, os_strlen(password),
