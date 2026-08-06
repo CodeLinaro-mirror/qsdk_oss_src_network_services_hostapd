@@ -934,6 +934,99 @@ def test_ieee8021x_auth_mlo_pqc(dev, apdev):
 
         hwsim_utils.test_connectivity(wpas, hapd0)
 
+def test_ieee8021x_auth_mlo_pqc_implied_config(dev, apdev):
+    """IEEE 802.1X Authentication frames: PQC AKM with implied configuration"""
+    key_mgmt = dev[0].get_capability("key_mgmt")
+    if "EAP-PQC" not in key_mgmt:
+        raise HwsimSkip(f"EAP-PQC not supported: {key_mgmt}")
+
+    ssid = "test-ieee8021x-auth-pqc-implied"
+    with HWSimRadio(use_mlo=True) as (hapd_radio, hapd_iface), \
+         HWSimRadio(use_mlo=True) as (wpas_radio, wpas_iface):
+
+        params = eht_mld_ap_wpa2_params(ssid, key_mgmt="")
+        params.update(hostapd.radius_params())
+        params["ieee8021x"] = "1"
+        params["rsn_pairwise"] = "GCMP-256"
+        params["group_cipher"] = "GCMP-256"
+        # Only BIP-GMAC-256 is accepted once a security profile is selected.
+        params["group_mgmt_cipher"] = "BIP-GMAC-256"
+        params["security_profiles"] = "18"
+        params["eap_using_authentication_frames"] = "1"
+        params["assoc_frame_encryption"] = "1"
+        params["pmksa_caching_privacy"] = "1"
+
+        hapd0 = eht_mld_enable_ap(hapd_iface, 0, params)
+
+        wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+        wpas.interface_add(wpas_iface)
+        wpas.set("security_profiles", "1")
+
+        # ieee80211w, pmksa_privacy and eap_over_auth_frame are implied by the
+        # PQC security profile and are not configured here.
+        wpas.connect(ssid,
+                     key_mgmt="WPA-EAP",
+                     pairwise="GCMP-256",
+                     group="GCMP-256",
+                     eap="TLS",
+                     identity="tls user",
+                     ca_cert="auth_serv/ca.pem",
+                     client_cert="auth_serv/user.pem",
+                     private_key="auth_serv/user.key",
+                     scan_freq="2412",
+                     security_profiles="18")
+
+        hapd0.wait_sta()
+
+        sta = hapd0.get_sta(wpas.own_addr())
+        if sta["AKMSuiteSelector"] != '00-0f-ac-31':
+            raise Exception("Incorrect AKMSuiteSelector: " +
+                            sta["AKMSuiteSelector"])
+
+        val = wpas.get_status_field("security_profile")
+        if val != "18":
+            raise Exception("Unexpected security_profile: " + str(val))
+
+        hwsim_utils.test_connectivity(wpas, hapd0)
+
+def test_ieee8021x_auth_pqc_config_errors(dev, apdev):
+    """IEEE 802.1X Authentication frames: PQC AKM configuration errors"""
+    key_mgmt = dev[0].get_capability("key_mgmt")
+    if "EAP-PQC" not in key_mgmt:
+        raise HwsimSkip(f"EAP-PQC not supported: {key_mgmt}")
+
+    base = {"ssid": "test-ieee8021x-auth-pqc-config",
+            "wpa": "2",
+            "wpa_key_mgmt": "",
+            "ieee8021x": "1",
+            "rsn_pairwise": "GCMP-256",
+            "group_cipher": "GCMP-256",
+            "ieee80211w": "2",
+            "security_profiles": "18",
+            "eap_using_authentication_frames": "1",
+            "assoc_frame_encryption": "1",
+            "pmksa_caching_privacy": "1"}
+    base.update(hostapd.radius_params())
+
+    # A None value drops the parameter instead of overriding it.
+    for param, value in [("ieee80211w", "1"),
+                         ("eap_using_authentication_frames", "0"),
+                         ("assoc_frame_encryption", "0"),
+                         ("pmksa_caching_privacy", "0")]:
+        params = dict(base)
+        if value is None:
+            del params[param]
+        else:
+            params[param] = value
+        hapd = hostapd.add_ap(apdev[0], params, no_enable=True)
+        if "FAIL" not in hapd.request("ENABLE"):
+            raise Exception("Unexpected ENABLE success with %s=%s" % (param,
+                                                                     value))
+        hostapd.remove_bss(apdev[0])
+
+    hapd = hostapd.add_ap(apdev[0], base, no_enable=True)
+    hapd.enable()
+
 def test_ieee8021x_auth_connect_disconnect_reconnect(dev, apdev):
     """IEEE 802.1X Authentication frames: non-MLO connect/disconnect/reconnect"""
     ssid = "test-ieee8021x-auth-cdr"
