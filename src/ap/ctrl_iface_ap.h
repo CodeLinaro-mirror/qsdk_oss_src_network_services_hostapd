@@ -85,6 +85,12 @@ int hostapd_ctrl_iface_sta(struct hostapd_data *hapd, const char *txtaddr,
 			   char *buf, size_t buflen);
 int hostapd_ctrl_iface_sta_next(struct hostapd_data *hapd, const char *txtaddr,
 				char *buf, size_t buflen);
+int hostapd_ctrl_iface_sta_smd_stats(struct hostapd_data *hapd,
+				     const char *txtaddr,
+				     char *buf, size_t buflen);
+int hostapd_ctrl_iface_smd_mld_stats(struct hostapd_data *hapd,
+				     char *buf, size_t buflen);
+int hostapd_ctrl_iface_smd_stats_reset(struct hostapd_data *hapd);
 int hostapd_ctrl_iface_deauthenticate(struct hostapd_data *hapd,
 				      const char *txtaddr);
 int hostapd_ctrl_iface_disassociate(struct hostapd_data *hapd,
