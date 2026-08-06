@@ -1745,6 +1745,13 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 			   "capabilities");
 	}
 
+	if (full_config && (!conf->ieee80211n || bss->disable_11n) &&
+	    bss->bss_require_ht) {
+		bss->bss_require_ht = false;
+		wpa_printf(MSG_INFO,
+			   "Disabling bss_require_ht as IEEE 802.11n is disabled for this BSS");
+	}
+
 #ifdef CONFIG_IEEE80211AC
 #ifdef CONFIG_WEP
 	if (full_config && conf->ieee80211ac &&
@@ -1763,6 +1770,13 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 		bss->disable_11ac = true;
 		wpa_printf(MSG_ERROR,
 			   "VHT (IEEE 802.11ac) with WPA/WPA2 requires CCMP/GCMP to be enabled, disabling VHT capabilities");
+	}
+
+	if (full_config && (!conf->ieee80211ac || bss->disable_11ac) &&
+	    bss->bss_require_vht) {
+		bss->bss_require_vht = false;
+		wpa_printf(MSG_INFO,
+			   "Disabling bss_require_vht as IEEE 802.11ac is disabled for this BSS");
 	}
 
 	if (bss->vht_mcs_nss_set) {
@@ -1812,6 +1826,13 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 		bss->disable_11ax = true;
 		wpa_printf(MSG_ERROR,
 			   "HE (IEEE 802.11ax) with WPA/WPA2 requires CCMP/GCMP to be enabled, disabling HE capabilities");
+	}
+
+	if (full_config && (!conf->ieee80211ax || bss->disable_11ax) &&
+	    bss->bss_require_he) {
+		bss->bss_require_he = false;
+		wpa_printf(MSG_INFO,
+			   "Disabling bss_require_he as IEEE 802.11ax is disabled for this BSS");
 	}
 #endif /* CONFIG_IEEE80211AX */
 

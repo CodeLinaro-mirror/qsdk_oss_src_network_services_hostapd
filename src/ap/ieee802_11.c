@@ -324,14 +324,17 @@ static size_t hostapd_supp_rates(struct hostapd_data *hapd, u8 *buf)
 		pos++;
 	}
 
-	if (hapd->iconf->ieee80211n && hapd->iconf->require_ht)
+	if (hapd->iconf->ieee80211n &&
+	    (hapd->iconf->require_ht || hapd->conf->bss_require_ht))
 		*pos++ = 0x80 | BSS_MEMBERSHIP_SELECTOR_HT_PHY;
 
-	if (hapd->iconf->ieee80211ac && hapd->iconf->require_vht)
+	if (hapd->iconf->ieee80211ac &&
+	    (hapd->iconf->require_vht || hapd->conf->bss_require_vht))
 		*pos++ = 0x80 | BSS_MEMBERSHIP_SELECTOR_VHT_PHY;
 
 #ifdef CONFIG_IEEE80211AX
-	if (hapd->iconf->ieee80211ax && hapd->iconf->require_he)
+	if (hapd->iconf->ieee80211ax &&
+	    (hapd->iconf->require_he || hapd->conf->bss_require_he))
 		*pos++ = 0x80 | BSS_MEMBERSHIP_SELECTOR_HE_PHY;
 #endif /* CONFIG_IEEE80211AX */
 
@@ -7256,7 +7259,7 @@ static bool hostapd_deny_non_ht_assoc(struct hostapd_data *hapd,
 	if (!hapd->iconf->ieee80211n)
 		return false;
 
-	require_ht = hapd->iconf->require_ht;
+	require_ht = hapd->iconf->require_ht || hapd->conf->bss_require_ht;
 #ifdef CONFIG_QCN_EXTN
 	if (hapd->conf->bss_extn.puren_bss.is_overridden)
 		require_ht |= hapd->conf->bss_extn.puren_bss.value;
@@ -7275,7 +7278,7 @@ static bool hostapd_deny_non_vht_assoc(struct hostapd_data *hapd,
 	if (!hapd->iconf->ieee80211ac)
 		return false;
 
-	require_vht = hapd->iconf->require_vht;
+	require_vht = hapd->iconf->require_vht || hapd->conf->bss_require_vht;
 #ifdef CONFIG_QCN_EXTN
 	if (hapd->conf->bss_extn.pure11ac_bss.is_overridden)
 		require_vht |= hapd->conf->bss_extn.pure11ac_bss.value;
@@ -7294,7 +7297,7 @@ static bool hostapd_deny_non_he_assoc(struct hostapd_data *hapd,
 	if (!hostapd_is_he_enabled(hapd))
 		return false;
 
-	require_he = hapd->iconf->require_he;
+	require_he = hapd->iconf->require_he || hapd->conf->bss_require_he;
 #ifdef CONFIG_QCN_EXTN
 	if (hapd->conf->bss_extn.pure11ax_bss.is_overridden)
 		require_he |= hapd->conf->bss_extn.pure11ax_bss.value;
