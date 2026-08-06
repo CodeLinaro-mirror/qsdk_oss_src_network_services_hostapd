@@ -11723,6 +11723,8 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "MLD_ADD_LINK ", 13) == 0) {
 		if (hostapd_ctrl_iface_add(hapd->iface->interfaces, buf + 13))
 			reply_len = -1;
+		else
+			hostapd_ucode_update_interfaces();
 #ifdef CONFIG_TESTING_OPTIONS
 	} else if (os_strncmp(buf, "RADAR ", 6) == 0) {
 		if (hostapd_ctrl_iface_radar(hapd, buf + 6))
@@ -12196,6 +12198,8 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "LINK_REMOVE ", 12) == 0) {
 		if (hostapd_ctrl_iface_link_remove(hapd, buf + 12))
 			reply_len = -1;
+		else
+			hostapd_ucode_update_interfaces();
 	} else if (os_strncmp(buf, "EPCS ", 5) == 0) {
 		reply_len = hostapd_epcs_handle_cli(hapd, buf + 5,
 						    reply, reply_size);
