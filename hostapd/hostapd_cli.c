@@ -10,6 +10,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <limits.h>
+#include <glob.h>
 
 #include "common/wpa_ctrl.h"
 #include "common/ieee802_11_defs.h"
@@ -201,6 +202,34 @@ static void hostapd_cli_msg_cb(char *msg, size_t len)
 }
 
 
+static int hostapd_cli_recovery_in_progress(void)
+{
+	glob_t g;
+	size_t i;
+	FILE *f;
+	char val;
+	int found = 0;
+
+	if (glob("/sys/kernel/debug/ath12k/*/recovery_in_progress",
+		 0, NULL, &g) != 0)
+		return 0;
+
+	for (i = 0; i < g.gl_pathc; i++) {
+		f = fopen(g.gl_pathv[i], "r");
+		if (!f)
+			continue;
+		if (fread(&val, 1, 1, f) == 1 && val == '1')
+			found = 1;
+		fclose(f);
+		if (found)
+			break;
+	}
+
+	globfree(&g);
+	return found;
+}
+
+
 static int _wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd, int print)
 {
 #ifdef CONFIG_QCN_EXTN
@@ -213,6 +242,11 @@ static int _wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd, int print)
 
 	if (ctrl_conn == NULL) {
 		printf("Not connected to hostapd - command dropped.\n");
+		return -1;
+	}
+	if (hostapd_cli_recovery_in_progress()) {
+		printf("'%s' command dropped: ath12k recovery in progress.\n",
+		       cmd);
 		return -1;
 	}
 	len = sizeof(buf) - 1;
