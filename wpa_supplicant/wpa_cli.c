@@ -466,6 +466,17 @@ static int wpa_cli_cmd_smd_list_prepared(struct wpa_ctrl *ctrl, int argc, char *
 {
 	return wpa_ctrl_command(ctrl, "SMD_LIST_PREPARED");
 }
+
+static int wpa_cli_cmd_smd_stats(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "SMD_STATS");
+}
+
+static int wpa_cli_cmd_smd_stats_reset(struct wpa_ctrl *ctrl, int argc,
+					char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "SMD_STATS_RESET");
+}
 #endif /* CONFIG_IEEE80211BN */
 
 static int wpa_cli_cmd_setup_link_reconfig(struct wpa_ctrl *ctrl, int argc,
@@ -4663,6 +4674,12 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
          { "smd_list_prepared", wpa_cli_cmd_smd_list_prepared, NULL,
            cli_cmd_flag_none,
            "= list all currently prepared SMD targets and their state = SMD_LIST_PREPARED" },
+	{ "smd_stats", wpa_cli_cmd_smd_stats, NULL,
+	  cli_cmd_flag_none,
+	  "= dump SMD roaming debug counters with timestamps and latencies" },
+	{ "smd_stats_reset", wpa_cli_cmd_smd_stats_reset, NULL,
+	  cli_cmd_flag_none,
+	  "= reset all SMD roaming debug counters" },
 #endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_NAN_USD
 	{ "nan_publish", wpa_cli_cmd_nan_publish, NULL,

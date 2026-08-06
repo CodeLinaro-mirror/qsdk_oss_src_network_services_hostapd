@@ -928,6 +928,8 @@ int wpa_auth_802_1x_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const u8 *spa,
  *              u64 ts = (u64)t.sec * 1000000ULL + t.usec; */
 #define SMD_TS_RING_SIZE  8
 
+#define SMD_DRVTS2USR(ts) (((u64)(ts).ts_hi << 32) | (ts).ts_lo)
+
 struct smd_ts_ring {
 	uint64_t ts[SMD_TS_RING_SIZE]; /* circular buffer of µs-since-boot timestamps */
 	uint8_t  head;  /* next write slot (0 .. SMD_TS_RING_SIZE-1) */

@@ -14135,6 +14135,13 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 			reply_len = wpa_supplicant_ctrl_iface_status(
 				wpa_s, buf + 6, reply, reply_size);
 		}
+#ifdef CONFIG_IEEE80211BN
+	} else if (os_strcmp(buf, "SMD_STATS") == 0) {
+		reply_len = smd_ctrl_iface_stats(wpa_s, reply, reply_size);
+	} else if (os_strcmp(buf, "SMD_STATS_RESET") == 0) {
+		if (smd_ctrl_iface_stats_reset(wpa_s))
+			reply_len = -1;
+#endif /* CONFIG_IEEE80211BN */
 	} else if (os_strcmp(buf, "PMKSA") == 0) {
 		reply_len = wpas_ctrl_iface_pmksa(wpa_s, reply, reply_size);
 	} else if (os_strcmp(buf, "PMKSA_FLUSH") == 0) {
