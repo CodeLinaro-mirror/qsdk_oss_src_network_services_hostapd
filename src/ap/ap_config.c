@@ -1597,6 +1597,35 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 	if (bss->wmm_override && hostapd_config_check_bss_wmm_params(bss))
 		return -1;
 
+#ifdef CONFIG_PQC
+	/*
+	 * The PQC AKMs are usable only through a security profile, and every
+	 * PQC security profile requires these capabilities. See Table 9-bb18
+	 * as modified by 9.4.2.365 in Draft P802.11bt D1.0.
+	 */
+	if (full_config && wpa_key_mgmt_pqc(bss->wpa_key_mgmt)) {
+		const char *missing = NULL;
+
+		if (!bss->security_profiles)
+			missing = "security_profiles";
+		else if (bss->ieee80211w != MGMT_FRAME_PROTECTION_REQUIRED)
+			missing = "ieee80211w=2";
+		else if (!bss->eap_using_authentication_frames)
+			missing = "eap_using_authentication_frames";
+		else if (!bss->assoc_frame_encryption)
+			missing = "assoc_frame_encryption";
+		else if (!bss->pmksa_caching_privacy)
+			missing = "pmksa_caching_privacy";
+
+		if (missing) {
+			wpa_printf(MSG_ERROR,
+				   "A PQC AKM requires %s to be enabled",
+				   missing);
+			return -1;
+		}
+	}
+#endif /* CONFIG_PQC */
+
 	return 0;
 }
 
