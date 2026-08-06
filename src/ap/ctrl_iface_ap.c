@@ -4733,8 +4733,7 @@ static const char * const smd_drv_ctx_fail_str[] = {
  * SMD_INLINE_TS_DRV: wrapper for timestamps of type &struct nl80211_smd_ts_ring
  */
 #define SMD_INLINE_TS_DRV(pos, end, r) \
-	__SMD_INLINE_TS(pos, end, r, \
-		((u64)(r).ts[_slot].ts_hi << 32) | (u64)(r).ts[_slot].ts_lo)
+	__SMD_INLINE_TS(pos, end, r, SMD_DRVTS2USR((r).ts[_slot]))
 
 /* Write sap+tap counters in roam-flow order into buf.
  * pos/end follow the snprintf-accumulation idiom.

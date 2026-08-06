@@ -409,4 +409,12 @@ int wpas_smd_roam(struct wpa_supplicant *wpa_s, const u8 *peer_mld_addr,
 		  u32 role, u32 type,
 		  bool dl_sn_not_transferred, bool ul_sn_not_transferred,
 		  u32 dl_drain_time);
+
+int smd_ctrl_iface_stats(struct wpa_supplicant *wpa_s, char *buf, size_t buflen);
+int smd_ctrl_iface_stats_reset(struct wpa_supplicant *wpa_s);
+/** WPAS_SMD_TS - record a timestamp into a smd_ts_ring on wpa_s->smd_stats */
+#define WPAS_SMD_TS(ring_field) \
+	smd_ts_record(&wpa_s->smd_stats.ring_field, smd_ts_now())
+
+
 #endif /* SMD_H */
