@@ -8096,6 +8096,78 @@ fail:
 }
 #endif /* CONFIG_IEEE80211BN */
 
+#ifdef CONFIG_IEEE80211BN
+static int wpa_driver_nl80211_smd_stats_reset(void *priv)
+{
+	struct i802_bss *bss = priv;
+	struct nl_msg *msg;
+	int ret;
+
+	msg = nl80211_cmd_msg(bss, 0, NL80211_CMD_SMD_STATS_RESET);
+	if (!msg)
+		return -1;
+
+	ret = send_and_recv_cmd(bss->drv, msg);
+	if (ret)
+		wpa_printf(MSG_DEBUG, "nl80211: SMD_STATS_RESET failed: %d", ret);
+	return ret;
+}
+
+struct smd_stats_get_ctx {
+	struct nl80211_smd_stats *out;
+	int ok;
+};
+
+static int smd_stats_get_handler(struct nl_msg *msg, void *arg)
+{
+	struct smd_stats_get_ctx *ctx = arg;
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+
+	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		  genlmsg_attrlen(gnlh, 0), NULL);
+	if (!tb[NL80211_ATTR_SMD_STATS] ||
+	    nla_len(tb[NL80211_ATTR_SMD_STATS]) < (int)sizeof(*ctx->out))
+		return NL_SKIP;
+
+	os_memcpy(ctx->out, nla_data(tb[NL80211_ATTR_SMD_STATS]),
+		  sizeof(*ctx->out));
+	ctx->ok = 1;
+	return NL_SKIP;
+}
+
+static int wpa_driver_nl80211_smd_stats_get(void *priv, const u8 *sta_addr,
+					    struct nl80211_smd_stats *out)
+{
+	struct i802_bss *bss = priv;
+	struct smd_stats_get_ctx ctx = { .out = out, .ok = 0 };
+	struct nl_msg *msg;
+	int ret;
+
+	if (!out)
+		return -1;
+
+	msg = nl80211_cmd_msg(bss, 0, NL80211_CMD_SMD_STATS_GET);
+	if (!msg)
+		return -1;
+	if (sta_addr && nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, sta_addr)) {
+		nlmsg_free(msg);
+		return -1;
+	}
+
+	ret = send_and_recv_resp(bss->drv, msg, smd_stats_get_handler, &ctx);
+	if (ret) {
+		wpa_printf(MSG_DEBUG, "nl80211: SMD_STATS_GET failed: %d", ret);
+		return -1;
+	}
+	if (!ctx.ok) {
+		wpa_printf(MSG_DEBUG, "nl80211: SMD_STATS_GET: no stats attribute in response");
+		return -1;
+	}
+	return 0;
+}
+#endif /* CONFIG_IEEE80211BN */
+
 static int wpa_driver_nl80211_sta_add(void *priv,
 				      struct hostapd_sta_add_params *params)
 {
@@ -20148,6 +20220,8 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.trigger_smd_discovery = wpa_driver_nl80211_trigger_smd_discovery,
 	.uhr_reconfig_req = wpa_driver_nl80211_uhr_reconfig_req,
 	.smd_roam = wpa_driver_nl80211_smd_roam,
+	.smd_stats_reset = wpa_driver_nl80211_smd_stats_reset,
+	.smd_stats_get   = wpa_driver_nl80211_smd_stats_get,
 #endif /* CONFIG_IEEE80211BN */
 	.get_scan_results = wpa_driver_nl80211_get_scan_results,
 	.abort_scan = wpa_driver_nl80211_abort_scan,
