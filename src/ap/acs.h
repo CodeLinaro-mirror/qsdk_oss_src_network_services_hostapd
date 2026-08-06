@@ -27,6 +27,10 @@ void acs_cleanup_mode(struct hostapd_hw_modes *mode);
 #define ACS_SCAN_RETRY_MAX_COUNT	15
 #define ACS_SCAN_RETRY_INTERVAL		5
 
+#ifdef CONFIG_IEEE80211BN
+void hostapd_npca_auto_select(struct hostapd_iface *iface);
+#endif /* CONFIG_IEEE80211BN */
+
 #else /* CONFIG_ACS */
 
 static inline enum hostapd_chan_status acs_init(struct hostapd_iface *iface)

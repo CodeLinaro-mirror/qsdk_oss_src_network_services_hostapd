@@ -5269,6 +5269,11 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 		}
 #endif /* CONFIG_MESH */
 
+#ifdef CONFIG_IEEE80211BN
+		if (iface->conf->npca_enable)
+			hostapd_npca_auto_select(iface);
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef CONFIG_IEEE80211AX
 		/* Check AFC for 6 GHz channels. */
 		res = hostapd_afc_handle_request(iface);
