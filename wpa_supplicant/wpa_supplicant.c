@@ -66,14 +66,14 @@
 #include "wnm_sta.h"
 #include "wpas_kay.h"
 #include "mesh.h"
-#include "ap/hw_features.h"
 #include "dpp_supplicant.h"
 #include "nan_usd.h"
 #include "pr_supplicant.h"
 #include "smd.h"
+#include "ap/hostapd.h"
+#include "ap/hw_features.h"
 #ifdef CONFIG_MESH
 #include "ap/ap_config.h"
-#include "ap/hostapd.h"
 #endif /* CONFIG_MESH */
 
 const char *const wpa_supplicant_version =
