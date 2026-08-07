@@ -240,6 +240,14 @@ static int nl80211_vendor_cmd_if_offload_type(void *priv,  unsigned int vendor_i
 					      struct wpabuf *buf, const char *ifname,
 					      int ppe_vp_type, bool is_bss);
 
+#ifdef CONFIG_QCN_EXTN
+extern int nl80211_vendor_cmd_diagnostic_sta_vap_extn(void *priv, unsigned int vendor_id,
+						      unsigned int subcmd,
+						      const char *ifname,
+						      int enable, bool is_bss);
+#endif /* CONFIG_QCN_EXTN */
+
+
 /* Converts nl80211_chan_width to a common format */
 enum chan_width convert2width(int width)
 {
@@ -20267,6 +20275,9 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.get_multi_hw_info = wpa_driver_get_multi_hw_info,
 	.get_channel_switch_time = nl80211_get_channel_switch_time,
 	.is_retail_afc_supported = nl80211_is_retail_afc_supported,
+#ifdef CONFIG_QCN_EXTN
+	.mark_diagnostic_sta_vap = nl80211_vendor_cmd_diagnostic_sta_vap_extn,
+#endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_IEEE80211BE
 	.set_epcs_cfg = wpa_driver_set_epcs_cfg,
 	.uhr_mode_update = wpa_driver_nl80211_uhr_mode_update,

@@ -4514,6 +4514,13 @@ enum qca_wlan_vendor_attr_config {
 	 * station add. Requires QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_MAC.
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_HE_CAP_INFO_INTERNAL = 155,
+	/* 8-bit unsigned value to mark a STA vif as a diagnostic
+	 * client-serving STA VAP. The vif must never participate in or block
+	 * a co-channel-context AP's channel switch/other events like AWGN/RADAR
+	 * and its scan/connect must stay pinned to that AP's operating channel.
+	 * 1 = enable, 0 = disable (default).
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_DIAGNOSTIC_STA_VAP = 156,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,

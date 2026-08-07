@@ -32,6 +32,9 @@
 #include "wpa_supplicant_i.h"
 #include "driver_i.h"
 #include "ctrl_iface.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../qcn_extns/wpa_supplicant_extn.h"
+#endif /* CONFIG_QCN_EXTN */
 #include "pcsc_funcs.h"
 #include "common/version.h"
 #include "rsn_supp/preauth.h"
@@ -7283,6 +7286,14 @@ int wpa_supplicant_driver_init(struct wpa_supplicant *wpa_s)
 		wpa_supplicant_set_state(wpa_s, WPA_INACTIVE);
 
 	wpa_drv_mark_ppe_vp_type(wpa_s, wpa_s->conf->ppe_vp);
+#ifdef CONFIG_QCN_EXTN
+	if (wpa_s->conf->diagnostic_sta_vap) {
+		wpa_printf(MSG_DEBUG,
+			   "DEBUG_DIAG_STA: wpa_supplicant_driver_init ifname=%s conf->diagnostic_sta_vap=%d",
+			   wpa_s->ifname, wpa_s->conf->diagnostic_sta_vap);
+		wpa_drv_mark_diagnostic_sta_vap(wpa_s, 1);
+	}
+#endif /* CONFIG_QCN_EXTN */
 	return 0;
 }
 
