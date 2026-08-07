@@ -18140,12 +18140,18 @@ wpa_driver_nl80211_uhr_reconfig_req(void *priv,
 	 * For ST Execution (type=1), Reconfiguration MLE shall NOT contain per-STA profiles.
 	 */
 	if (params->type == 1) {
-		if (nla_put_u8(msg, NL80211_ATTR_SMD_EXEC_PATH, params->exec_path) ||
-		    nla_put_u8(msg, NL80211_ATTR_SMD_DL_TID_BITMAP, params->dl_tid_bitmap))
+		if (nla_put_u8(msg, NL80211_ATTR_SMD_DL_TID_BITMAP, params->dl_tid_bitmap))
 			goto nla_fail;
 		wpa_printf(MSG_DEBUG,
 			   "nl80211: ST Execution exec_path=%u dl_tid_bitmap=0x%02x",
 			   params->exec_path, params->dl_tid_bitmap);
+	}
+
+	if (params->exec_path) {
+		if (nla_put_u8(msg, NL80211_ATTR_SMD_EXEC_PATH, params->exec_path))
+			goto nla_fail;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: ST %s set exec_path", params->type ? "EXEC" : "PREP");
 	}
 
 	if (params->target_mld_addr) {
