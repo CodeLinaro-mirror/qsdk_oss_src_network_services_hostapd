@@ -7134,6 +7134,22 @@ struct wpa_driver_ops {
 					  const struct drv_adv_ttlm_params *est_ttlm,
 					  bool send_default_mapping);
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_QCN_EXTN
+	/**
+	 * mark_diagnostic_sta_vap - Mark a STA vif as diagnostic_sta_vap
+	 *			  (diagnostic client-serving STA VAP)
+	 * @priv: Private driver interface data
+	 * @vendor_id: Vendor ID (OUI_QCA)
+	 * @subcmd: Vendor subcommand
+	 * @ifname: Interface name of the STA vif to mark
+	 * @enable: 1 to enable CSA isolation, 0 to disable
+	 * @is_bss: true if @priv is a struct i802_bss pointer
+	 * Returns: 0 on success, negative value on failure
+	 */
+	int (*mark_diagnostic_sta_vap)(void *priv, unsigned int vendor_id,
+				       unsigned int subcmd, const char *ifname,
+				       int enable, bool is_bss);
+#endif
 
 	/**
 	 * get_channel_switch_time - Get estimated channel switch timing from driver
