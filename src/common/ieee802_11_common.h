@@ -470,6 +470,11 @@ struct hostapd_multi_mbssid_group {
 	/* List of bss in the group */
 	struct dl_list bss_list;
 	u32 mbssid_idx_bmap;
+	/* Set once when this slot is created for a mesh VAP; stays set
+	 * across mesh VAP remove so the retained, emptied slot can be
+	 * reused on the next mesh VAP add instead of growing the group
+	 * array again. */
+	bool is_mesh_group;
 };
 
 /**
