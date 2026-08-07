@@ -6771,10 +6771,20 @@ static bool check_sa_query(struct hostapd_data *hapd, struct sta_info *sta,
 
 #ifdef CONFIG_ENC_ASSOC
 	if (enc_assoc && sta->epp_sta) {
-		/* Skip SA Query since either the STA knows the PTK that is in
-		 * use in the existing association or a new EPPKE authentication
-		 * has already authenticated the STA and has replaced the TK and
-		 * there is not really any point in starting SA Query procedure.
+		/*
+		 * Skip SA Query and association comeback since either:
+		 * - For a protected (Re)Association without a new EPPKE
+		 *   Authentication, the STA has already demonstrated
+		 *   possession of the PTK that is in use by the existing
+		 *   association; or
+		 * - For a (Re)Association following a new EPPKE Authentication,
+		 *   the authentication exchange has already authenticated the
+		 *   STA, with the Authentication comeback procedures providing
+		 *   protection for the existing association covering the MAC
+	         *   addresses indicated in the Authentication frame. Any
+		 *   additional addresses indicated in the (Re)Association
+		 *   Request frame are covered by the AP MLD rejection rules for
+		 *   ML (re)setup procedures in IEEE P802.11-REVmf/D2.1, 35.3.5.1.
 		 */
 		return false;
 	}
