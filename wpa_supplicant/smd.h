@@ -242,6 +242,16 @@ struct wpa_smd_prepared_target {
 	/* GTK installed for transitioning (partner) links at exec response time.
 	 * Allows early PM=0 dynamic context before primary link transitions. */
 	bool partner_gtk_installed;
+
+	/*
+	 * transition_complete_pending: set when NL80211_CMD_SMD_TRANSITION_DONE
+	 * (COMPLETE) arrives before the ST Execution Response has been processed.
+	 * This happens in exec_path=1 (SLO) where the kernel fires the DONE event
+	 * ahead of delivering the EXEC Response frame.  When set,
+	 * smd_handle_transition_complete() is deferred and called from
+	 * smd_handle_execute_response() once the response has been parsed.
+	 */
+	bool transition_complete_pending;
 };
 
 int smd_enabled(struct wpa_supplicant *wpa_s);
@@ -387,4 +397,16 @@ int smd_ctrl_iface_cancel_prepare(struct wpa_supplicant *wpa_s, char *cmd,
 
 int wpas_smd_bss_transition(struct wpa_supplicant *wpa_s, const u8 *bssid,
 			   u8 exec_path, char *buf, size_t buflen);
+
+/**
+ * wpas_smd_roam - Notify the driver of an SMD roam phase from supplicant.
+ *
+ * Thin wrapper around wpa_driver_ops::smd_roam that takes a supplicant
+ * context and a peer MLD address.  Used to inform the kernel/firmware of
+ * per-phase SMD roam progress (mirrors hostapd_smd_roam() on the AP side).
+ */
+int wpas_smd_roam(struct wpa_supplicant *wpa_s, const u8 *peer_mld_addr,
+		  u32 role, u32 type,
+		  bool dl_sn_not_transferred, bool ul_sn_not_transferred,
+		  u32 dl_drain_time);
 #endif /* SMD_H */
