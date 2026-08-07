@@ -14,9 +14,9 @@
 
 #include "utils/common.h"
 #include "utils/list.h"
-#include "ap_config.h"
 
 struct hostapd_data;
+struct hostapd_iface;
 struct sta_info;
 
 /* MAPC Control Field (IEEE80211BN_D1.4 §9.4.2.357.2, Figure 9-aa13)

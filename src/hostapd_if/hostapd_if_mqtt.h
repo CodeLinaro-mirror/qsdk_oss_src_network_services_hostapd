@@ -11,6 +11,8 @@
 struct hapd_interfaces;
 struct mqtt_tlv_message;
 
+#ifdef CONFIG_QCN_EXTN
+
 void hostapd_mqtt_hif_cmd(struct hapd_interfaces *interfaces,
 			  uint16_t msg_type,
 			  struct mqtt_tlv_message *msg);
@@ -20,5 +22,18 @@ enum hostapd_if_eloop_type hostapd_if_mqtt_init(void *arg);
 int hostapd_if_start_mqtt_hif_client(void);
 void hostapd_if_stop_mqtt_hif_client(void);
 #endif /* CONFIG_MQTT_TEST_APP_FORK */
+
+#else /* CONFIG_QCN_EXTN */
+
+static inline void
+hostapd_mqtt_hif_cmd(struct hapd_interfaces *interfaces,
+		     uint16_t msg_type,
+		     struct mqtt_tlv_message *msg) {}
+static inline enum hostapd_if_eloop_type
+hostapd_if_mqtt_init(void *arg) { return HOSTAPD_IF_ELOOP_ROUTING; }
+static inline int hostapd_if_start_mqtt_hif_client(void) { return 0; }
+static inline void hostapd_if_stop_mqtt_hif_client(void) {}
+
+#endif /* CONFIG_QCN_EXTN */
 
 #endif /* HOSTAPD_IF_MQTT_H */

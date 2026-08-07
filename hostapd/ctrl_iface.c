@@ -41,7 +41,6 @@
 #include "common/wpa_ctrl.h"
 #include "common/ptksa_cache.h"
 #include "common/hw_features_common.h"
-#include "ap/hw_features.h"
 #include "common/nan_de.h"
 #include "common/proc_coord.h"
 #ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
@@ -56,6 +55,7 @@
 #include "radius/radius_server.h"
 #include "l2_packet/l2_packet.h"
 #include "ap/hostapd.h"
+#include "ap/hw_features.h"
 #include "ap/hostapd_log.h"
 #include "ap/ap_config.h"
 #include "ap/ieee802_1x.h"

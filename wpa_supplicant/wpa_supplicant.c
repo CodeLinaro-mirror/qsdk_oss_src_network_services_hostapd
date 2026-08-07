@@ -70,10 +70,10 @@
 #include "pr_supplicant.h"
 #include "nan_supplicant.h"
 #include "smd.h"
-#ifdef CONFIG_MESH
-#include "ap/ap_config.h"
 #include "ap/hostapd.h"
 #include "ap/hw_features.h"
+#ifdef CONFIG_MESH
+#include "ap/ap_config.h"
 #endif /* CONFIG_MESH */
 
 const char *const wpa_supplicant_version =
