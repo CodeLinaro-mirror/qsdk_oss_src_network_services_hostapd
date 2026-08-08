@@ -437,6 +437,11 @@ u64 wpa_sm_get_rsnxe_capab(struct wpa_sm *sm)
 #endif /* CONFIG_ENC_ASSOC */
 	if (sm->control_frame_prot)
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
+	if (sm->smd_enabled) {
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"RSN: Adding SMD capability to own RSNXE");
+		capab |= BIT_ULL(WLAN_RSNX_CAPAB_SMD);
+	}
 
 	return capab;
 }

@@ -232,6 +232,18 @@ struct smd_info {
 	enum tgt_smd_roam_state state; /* non-AP STA state in Tgt AP */
 	bool flag;
 	u8 current_ap_mld_addr[ETH_ALEN]; /* Current AP MLD addr at time of ST Prep */
+	u8 st_exec_dialog_token; /* Dialog token from STA's ST Execute frame */
+
+	/* Pending async GET_SMD_CTX request (Via-TAP path).
+	 * Set when uhr_handle_st_exec_req() fires get_smd_ctx and cleared
+	 * when uhr_handle_get_smd_ctx_done() delivers the result. */
+	struct smd_get_ctx_pending {
+		bool active;
+		u8 target_ap_mld_addr[ETH_ALEN];
+		u8 iap_transaction_id;
+	} get_ctx_pending;
+	bool smd_rsnx_bit;   /* SMD bit (37) set in peer's Extended RSN Capabilities in the request */
+	bool smd_enc_assoc;  /* (Re)Association Request/Response exchange is encrypted */
 };
 #endif /* CONFIG_IEEE80211BN */
 

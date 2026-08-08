@@ -827,6 +827,8 @@ struct wpa_eapol_ie_parse {
 	/* Security Profile element (802.11bn D1.4, 9.4.2.364, EID ext=162) */
 	const u8 *security_profile_ie;
 	size_t security_profile_ie_len;
+	const u8 *smd_ie;
+	size_t smd_ie_len;
 };
 
 int wpa_parse_kde_ies(const u8 *buf, size_t len, struct wpa_eapol_ie_parse *ie);

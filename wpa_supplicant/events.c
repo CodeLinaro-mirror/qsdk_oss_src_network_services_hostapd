@@ -4317,6 +4317,27 @@ static void wpas_parse_connection_info(struct wpa_supplicant *wpa_s,
 	wpabuf_free(resp_mlbuf);
 }
 
+#ifdef CONFIG_IEEE80211BN
+static int wpa_supplicant_validate_assoc_resp_smd(
+	struct wpa_supplicant *wpa_s,
+	const struct ieee802_11_elems *elems)
+{
+	const u8 *smd_ie = NULL;
+	size_t smd_ie_len = 0;
+
+	if (!wpa_s || !wpa_s->wpa || !elems)
+		return -1;
+
+	if (elems->smd && elems->smd_len) {
+		smd_ie = elems->smd;
+		smd_ie_len = elems->smd_len;
+	}
+
+	return wpa_sm_validate_assoc_resp_smd(wpa_s->wpa,
+					      smd_ie,
+					      smd_ie_len);
+}
+#endif /* CONFIG_IEEE80211BN */
 
 static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 					  union wpa_event_data *data)
@@ -4391,14 +4412,21 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 	}
 
 	{
+#ifdef CONFIG_IEEE80211BN
 		struct ieee802_11_elems elems;
 		if (ieee802_11_parse_elems(data->assoc_info.resp_ies,
 					   data->assoc_info.resp_ies_len, &elems,
 					   0) != ParseFailed) {
-			if (elems.smd && elems.smd_len >= 10) {
+			if (elems.smd && elems.smd_len >= 6) {
 				u8 smd_id[6];
 				u8 ptk_mode, capabilities;
 				u16 timeout;
+
+				if (wpa_supplicant_validate_assoc_resp_smd(wpa_s, &elems) < 0) {
+					wpa_supplicant_deauthenticate(wpa_s,
+								      WLAN_REASON_INVALID_IE);
+					return -1;
+				}
 
 				if (wpas_parse_smd_ie(elems.smd, elems.smd_len,
 						     smd_id, &ptk_mode,
@@ -4422,6 +4450,7 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 			}
 
 		}
+#endif /* CONFIG_IEEE80211BN */
 	}
 
 	if (data->assoc_info.beacon_ies)
@@ -5289,7 +5318,6 @@ static bool is_all_links_associated(struct wpa_supplicant *wpa_s)
 
 	return false;
 }
-
 
 static void wpa_supplicant_event_assoc(struct wpa_supplicant *wpa_s,
 				       union wpa_event_data *data)

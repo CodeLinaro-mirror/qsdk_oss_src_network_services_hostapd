@@ -5417,6 +5417,40 @@ fail:
 }
 #endif /* CONFIG_SAE */
 
+#ifdef CONFIG_IEEE80211BN
+bool hostapd_smd_msg3_allowed(struct hostapd_data *hapd,
+			      struct wpa_state_machine *sm)
+{
+	return hapd &&
+	       hapd->conf->smd.enabled &&
+	       sm &&
+	       sm->smd_info.smd_rsnx_bit &&
+	       !sm->smd_info.smd_enc_assoc;
+}
+
+static bool wpa_smd_m3_required(struct wpa_state_machine *sm)
+{
+	struct hostapd_data *hapd;
+	bool required;
+
+	if (!sm || !sm->wpa_auth)
+		return false;
+
+	hapd = sm->wpa_auth->cb_ctx;
+	if (!hapd || !hapd->conf)
+		return false;
+
+	required = hostapd_smd_msg3_allowed(hapd, sm);
+
+	wpa_printf(MSG_DEBUG,
+		   "SMD: message-3 IE required=%d - smd.enabled=%d "
+		   "smd_rsnx_bit=%d smd_enc_assoc=%d",
+		   required, hapd->conf->smd.enabled,
+		   sm->smd_info.smd_rsnx_bit, sm->smd_info.smd_enc_assoc);
+
+	return required;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 {
@@ -5429,6 +5463,9 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 	u8 hdr[2];
 	bool gtk_fresh;
 	struct wpa_auth_config *conf = &sm->wpa_auth->conf;
+#ifdef CONFIG_IEEE80211BN
+	struct hostapd_data *smd_hapd = sm->wpa_auth->cb_ctx;
+#endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_IEEE80211BE
 	bool is_mld = sm->mld_assoc_link_id >= 0;
 #else /* CONFIG_IEEE80211BE */
@@ -5678,6 +5715,11 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 			kde_len += security_ie_len;
 	}
 
+#ifdef CONFIG_IEEE80211BN
+	if (wpa_smd_m3_required(sm))
+		kde_len += SMD_IE_LEN;
+#endif /* CONFIG_IEEE80211BN */
+
 	kde = os_malloc(kde_len);
 	if (!kde)
 		goto done;
@@ -5878,6 +5920,27 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 				   security_profile_ie_len - 2);
 		}
 	}
+
+#ifdef CONFIG_IEEE80211BN
+	wpa_printf(MSG_INFO, "UHR: SMD: Adding SMD IE to M3");
+        if (wpa_smd_m3_required(sm)) {
+		u8 smd_ie[SMD_IE_LEN];
+		size_t smd_ie_len;
+		u8 *smd_ie_end;
+
+		smd_ie_end = hostapd_eid_smd(smd_hapd, smd_ie);
+		smd_ie_len = smd_ie_end - smd_ie;
+		wpa_hexdump(MSG_DEBUG,
+			    "SMD: Received SMD IE",
+			    smd_ie, smd_ie_len);
+
+		if (smd_ie_len > 0) {
+			os_memcpy(pos, smd_ie, smd_ie_len);
+			pos += smd_ie_len;
+		wpa_printf(MSG_INFO, "UHR: SMD: Added SMD IE to M3");
+		}
+        }
+#endif /* CONFIG_IEEE80211BN */
 
 	wpa_send_eapol(sm->wpa_auth, sm,
 		       (secure ? WPA_KEY_INFO_SECURE : 0) |
@@ -8572,6 +8635,8 @@ void wpa_auth_set_smd_info(struct wpa_state_machine *sm, struct sta_info *sta)
 		sta->smd_info.caps.max_prep_target_apmlds;
 	sm->smd_info.caps.smd_type = sta->smd_info.caps.smd_type;
 	sm->smd_info.caps.ptk_mode = sta->smd_info.caps.ptk_mode;
+	sm->smd_info.smd_rsnx_bit = sta->smd_info.smd_rsnx_bit;
+	sm->smd_info.smd_enc_assoc = sta->smd_info.smd_enc_assoc;
 }
 #endif /* CONFIG_IEEE80211BN */
 

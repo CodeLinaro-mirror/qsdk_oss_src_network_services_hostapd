@@ -691,6 +691,7 @@
 #define WLAN_RSNX_CAPAB_CIGTK 33
 #define WLAN_RSNX_CAPAB_SAE_PW_ID_CHANGE 34
 #define WLAN_RSNX_CAPAB_UNAUTH_EPPKE 36
+#define WLAN_RSNX_CAPAB_SMD 37
 
 /*
  * Security Profile Number values (802.11bn D1.4, Table 9-bb14).

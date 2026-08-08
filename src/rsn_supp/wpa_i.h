@@ -128,8 +128,12 @@ struct wpa_sm {
 	u8 smd_kdk[PMK_LEN_MAX];
 	size_t smd_kdk_len;
 
+	bool assoc_frame_encrypted;
 	/* SMD-ME association context per IEEE80211 bn */
+	size_t ap_smd_ie_len;
+	u8 *ap_smd_ie;
 	u8 smd_me_initial_ap_mld_addr[ETH_ALEN];
+	bool ap_smd_rsnx_bit;
 
 	u8 *assoc_wpa_ie; /* Own WPA/RSN IE from (Re)AssocReq */
 	size_t assoc_wpa_ie_len;
