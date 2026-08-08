@@ -23,7 +23,9 @@
 #include "wpa_auth.h"
 #include "hw_features.h"
 #include "ap_drv_ops.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #include "hostapd_if/hostapd_if.h"
 
 #ifdef CONFIG_IEEE80211BE
@@ -679,7 +681,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 
 #ifdef CONFIG_QCN_EXTN
 	hostapd_copy_sta_add_params_extn(&params.params_extn, sta_extn);
-#endif
+#endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_IEEE80211BE
 	/*

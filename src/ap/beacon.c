@@ -37,7 +37,9 @@
 #include "taxonomy.h"
 #include "ieee802_11_auth.h"
 #include "dscp_policy.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_HOSTAPD_IF
 #include "hostapd_if/hostapd_if.h"
 #endif
@@ -1101,7 +1103,9 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 	buflen += hostapd_wds_ie_len_extn(hapd);
 #endif /* CONFIG_QCN_EXTN */
 	/* Estimated Service Parameters (ESP) IE */
+#ifdef CONFIG_QCN_EXTN
 	buflen += hostapd_esp_ie_len_extn(hapd);
+#endif /* CONFIG_QCN_EXTN */
 
 	return buflen;
 }
@@ -1154,8 +1158,8 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 	buflen += hostapd_get_rsne_override_2_len(hapd);
 	buflen += hostapd_get_rsnxe_override_len(hapd);
 	buflen += hostapd_wfa_cap_ie_len(hapd, NULL);
-	buflen += hostapd_esp_ie_len_extn(hapd);
 #ifdef CONFIG_QCN_EXTN
+	buflen += hostapd_esp_ie_len_extn(hapd);
 	buflen += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
 #endif /* CONFIG_QCN_EXTN */
 
@@ -1606,7 +1610,9 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 #endif /* CONFIG_IEEE80211BN */
 
 	/* Add Estimated Service Parameters (ESP) IE in Probe Response when enabled */
+#ifdef CONFIG_QCN_EXTN
 	pos = hostapd_eid_esp_extn(hapd, pos, epos - pos);
+#endif /* CONFIG_QCN_EXTN */
 
 	/* Use plugin vendor elements if set, otherwise use conf vendor elements */
 	if (hapd->plugin_vendor_elements) {
@@ -4030,8 +4036,10 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	tailpos = hostapd_eid_smd_ie(hapd, tailpos);
 #endif /* CONFIG_IEEE80211BN */
 
+#ifdef CONFIG_QCN_EXTN
 	tailpos = hostapd_eid_esp_extn(hapd, tailpos,
 				       tail + tail_len - tailpos);
+#endif /* CONFIG_QCN_EXTN */
 
 	/* Use plugin vendor elements if set, otherwise use conf vendor elements */
 	if (hapd->plugin_vendor_elements) {
