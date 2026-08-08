@@ -1545,7 +1545,7 @@ static s8 wpas_smd_pick_exec_link(struct wpa_supplicant *wpa_s)
 	non_assoc_links = wpa_s->valid_links & ~BIT(wpa_s->mlo_assoc_link_id);
 	if (!non_assoc_links) {
 		wpa_printf(MSG_ERROR,
-			   "santy SMD: ST Exec TX: no non-assoc link available "
+			   "SMD: ST Exec TX: no non-assoc link available "
 			   "(valid_links=0x%04x assoc_link=%u), "
 			   "falling back to assoc link",
 			   wpa_s->valid_links, wpa_s->mlo_assoc_link_id);
@@ -1556,7 +1556,7 @@ static s8 wpas_smd_pick_exec_link(struct wpa_supplicant *wpa_s)
 	for (link_id = 0; link_id < MAX_NUM_MLD_LINKS; link_id++) {
 		if (non_assoc_links & BIT(link_id)) {
 			wpa_printf(MSG_ERROR,
-				   "santy SMD: ST Exec TX: selected link_id=%u "
+				   "SMD: ST Exec TX: selected link_id=%u "
 				   "(assoc_link=%u valid_links=0x%04x)",
 				   link_id, wpa_s->mlo_assoc_link_id,
 				   wpa_s->valid_links);
@@ -2136,8 +2136,7 @@ int smd_ctrl_iface_prepare(struct wpa_supplicant *wpa_s, char *cmd,
 			reconfig_info.force_diff_tx = 1;
 			reconfig_ptr = &reconfig_info;
 			wpa_printf(MSG_ERROR,
-				   "santy SMD: PREPARE FORCE_DIFF_TX set: ST Exec "
-				   "will use non-assoc link");
+				   "SMD: Prep force_diff_tx set, use non-assoc link");
 		}
 		pos = tmp;
 	}
