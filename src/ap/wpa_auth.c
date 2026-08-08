@@ -9413,7 +9413,7 @@ void wpa_auth_connection_fail_event(struct wpa_authenticator *wpa_auth,
 	char *hex = NULL;
 	size_t hexlen = 0;
 
-	if (!wpa_auth ||
+	if (!wpa_auth || !wpa_auth->conf.report_connection_failures ||
 	    !wpa_auth->conf.msg_ctx || !sta_addr || !bssid || !frame_type)
 		return;
 

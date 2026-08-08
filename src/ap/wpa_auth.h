@@ -352,6 +352,7 @@ struct wpa_auth_config {
 	bool eppke_unauth;
 #endif /* CONFIG_PASN */
 #endif /* CONFIG_ENC_ASSOC */
+	unsigned int report_connection_failures:1;
 };
 
 typedef enum {
