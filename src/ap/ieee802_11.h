@@ -589,8 +589,8 @@ u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
 				   bool skip_post_phase, bool from_user);
 size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,
 					 bool no_post_phase, bool from_user);
-int hostapd_npca_primary_chan_to_subchan_idx(struct hostapd_data *hapd,
-					     const char *val_str);
+int hostapd_npca_primary_chan_validate(struct hostapd_data *hapd,
+				       const char *val_str);
 u8 hostapd_npca_get_primary_chan(struct hostapd_data *hapd,
 				 const struct hostapd_uhr_npca_params *npca);
 u16 copy_sta_eht_capab(struct hostapd_data *hapd, struct sta_info *sta,

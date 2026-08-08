@@ -120,7 +120,6 @@ u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn)
 	struct hostapd_hw_modes *mode;
 	struct uhr_npca_info *npca_info;
 	bool npca_present;
-	int offs;
 
 	mode = hapd->iface->current_mode;
 	if (!mode)
@@ -136,11 +135,9 @@ u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn)
 	npca_info = &mode->npca_info[IEEE80211_MODE_AP];
 	npca_present = npca_info->npca_supported &&
 		       hapd->iconf->npca_enable;
-	offs = hapd->iconf->npca_primary_chan_offset;
-	if (npca_present && offs < 0) {
+	if (npca_present && !hapd->iconf->npca_primary_channel) {
 		wpa_printf(MSG_DEBUG,
-			   "NPCA: invalid primary channel %d for current BW, skipping NPCA params",
-			   hapd->iconf->npca_primary_channel);
+			   "NPCA: no primary channel configured, skipping NPCA params");
 		npca_present = false;
 	}
 	if (npca_present)
@@ -160,16 +157,23 @@ u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn)
 		oper->uhr_oper_params |=
 			host_to_le16(UHR_OPER_NPCA_OPER_PRESENT);
 
-		npca_params |= (u32) offs & UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS;
-		npca_params |= ((u32)npca_info->npca_min_dur_threshold << 4) &
+		npca_params |= ((u32) hapd->iconf->npca_primary_channel <<
+				UHR_OPER_PARAMS_NPCA_PRIMARY_CHAN_SHIFT) &
+			       UHR_OPER_PARAMS_NPCA_PRIMARY_CHAN;
+		npca_params |= ((u32)npca_info->npca_min_dur_threshold <<
+				UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH_SHIFT) &
 			       UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH;
-		npca_params |= ((u32)npca_info->npca_switch_delay << 8) &
+		npca_params |= ((u32)npca_info->npca_switch_delay <<
+				UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY_SHIFT) &
 			       UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY;
-		npca_params |= ((u32)npca_info->npca_switch_back_delay << 14) &
+		npca_params |= ((u32)npca_info->npca_switch_back_delay <<
+				UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY_SHIFT) &
 			       UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY;
-		npca_params |= ((u32)npca_info->npca_initial_qsrc << 20) &
+		npca_params |= ((u32)npca_info->npca_initial_qsrc <<
+				UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC_SHIFT) &
 			       UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC;
-		npca_params |= ((u32)npca_info->npca_moplen << 22) &
+		npca_params |= ((u32)npca_info->npca_moplen <<
+				UHR_OPER_PARAMS_NPCA_MOPLEN_NPCA_SHIFT) &
 			       UHR_OPER_PARAMS_NPCA_MOPLEN_NPCA;
 		if (hapd->iconf->npca_punct_bitmap)
 			npca_params |= UHR_OPER_PARAMS_NPCA_DIS_SUBCH_BITMAP_PRES;
@@ -398,9 +402,6 @@ void hostapd_update_ecu_params(struct hostapd_data *hapd)
 		hapd->iconf->npca_enable = npca->enable;
 		hapd->iconf->npca_primary_channel =
 			hostapd_npca_get_primary_chan(hapd, npca);
-		hapd->iconf->npca_primary_chan_offset =
-			(npca->params &
-			 UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS);
 		hapd->iconf->npca_punct_bitmap =
 			(npca->params &
 			 UHR_OPER_PARAMS_NPCA_DIS_SUBCH_BITMAP_PRES) ?
@@ -586,9 +587,8 @@ u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
 }
 
 /**
- * hostapd_npca_primary_chan_to_subchan_idx - Convert a user-supplied NPCA
- * primary channel value to a 0-based 20 MHz subchannel index within the BSS
- * bandwidth.
+ * hostapd_npca_primary_chan_validate - Validate and resolve a user-supplied
+ * NPCA primary channel value to a channel number.
  *
  * @hapd: hostapd BSS data
  * @val_str: string containing a frequency in MHz (> 233) or a channel number
@@ -601,20 +601,20 @@ u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
  *  - The NPCA primary lies in the half of the BSS bandwidth that is opposite
  *    to the BSS primary channel (secondary half).
  *
- * Returns: subchannel index (0-15) on success, -1 on error.
+ * Returns: NPCA primary channel number (1-255) on success, -1 on error.
  */
-int hostapd_npca_primary_chan_to_subchan_idx(struct hostapd_data *hapd,
-					     const char *val_str)
+int hostapd_npca_primary_chan_validate(struct hostapd_data *hapd,
+				       const char *val_str)
 {
 	int user_val = atoi(val_str);
 	int target_freq;
+	int target_chan;
 	u8 center_chan_no = hostapd_get_oper_centr_freq_seg0_idx(hapd->iconf);
 	int bss_freq = ieee80211_chan_to_freq(NULL, hapd->iconf->op_class,
 					     center_chan_no);
 	enum oper_chan_width chwidth;
 	int bss_bw_mhz;
 	int lowest_freq;
-	int subchan_idx;
 	int half;
 	int bss_primary_freq;
 	bool primary_in_lower;
@@ -673,7 +673,15 @@ int hostapd_npca_primary_chan_to_subchan_idx(struct hostapd_data *hapd,
 	 */
 	if (user_val > 233) {
 		target_freq = user_val;
+
+		if (is_6ghz_freq(target_freq))
+			target_chan = (target_freq - 5950) / 5;
+		else if (is_5ghz_freq(target_freq))
+			target_chan = (target_freq - 5000) / 5;
+		else
+			target_chan = (target_freq - 2407) / 5;
 	} else {
+		target_chan = user_val;
 		target_freq = ieee80211_chan_to_freq(NULL, hapd->iconf->op_class,
 						    (u8) user_val);
 		if (target_freq < 0) {
@@ -688,17 +696,20 @@ int hostapd_npca_primary_chan_to_subchan_idx(struct hostapd_data *hapd,
 		}
 	}
 
+	if (target_chan <= 0 || target_chan > 255) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES: primary_chan resolves to "
+			   "invalid channel number %d", target_chan);
+		return -1;
+	}
+
 	/*
 	 * Compute the lowest 20 MHz subchannel frequency of the BSS:
 	 * center_freq - bss_bw/2 + 10 MHz.
 	 */
 	lowest_freq = bss_freq - bss_bw_mhz / 2 + 10;
 
-	/* Subchannel index = distance from lowest in 20 MHz steps */
-	subchan_idx = (target_freq - lowest_freq) / 20;
-
-	if (subchan_idx < 0 || subchan_idx > 15 ||
-	    target_freq < lowest_freq ||
+	if (target_freq < lowest_freq ||
 	    target_freq >= lowest_freq + bss_bw_mhz ||
 	    (target_freq - lowest_freq) % 20 != 0) {
 		wpa_printf(MSG_ERROR,
@@ -753,62 +764,27 @@ int hostapd_npca_primary_chan_to_subchan_idx(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	return subchan_idx;
+	return target_chan;
 }
 
+/**
+ * hostapd_npca_get_primary_chan - Extract the NPCA primary channel number
+ * from a received NPCA Operation Parameters field
+ * @hapd: hostapd BSS data (unused; kept for API symmetry with callers that
+ *	previously needed BSS bandwidth context to recover a subchannel index)
+ * @npca: parsed NPCA parameters, with @npca->params holding the raw wire
+ *	value of the NPCA Operation Parameters field
+ *
+ * Per IEEE P802.11bn/D1.5, the NPCA Primary Channel field carries the real
+ * channel number directly (0-255), not a subchannel index, so this is a
+ * straight bitfield extraction.
+ *
+ * Returns: the NPCA primary channel number
+ */
 u8 hostapd_npca_get_primary_chan(struct hostapd_data *hapd,
 				 const struct hostapd_uhr_npca_params *npca)
 {
-	u8 subchan_idx;
-	u8 center_chan;
-	int bss_bw_mhz;
-	int num_20mhz;
-	int lowest_chan;
-	int primary_chan;
-	enum oper_chan_width chwidth;
-
-	subchan_idx = (u8)(npca->params & UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS);
-
-	center_chan = hostapd_get_oper_centr_freq_seg0_idx(hapd->iconf);
-
-	chwidth = hostapd_get_oper_chwidth(hapd->iconf);
-	switch (chwidth) {
-	case CONF_OPER_CHWIDTH_320MHZ:
-		bss_bw_mhz = 320;
-		break;
-	case CONF_OPER_CHWIDTH_160MHZ:
-		bss_bw_mhz = 160;
-		break;
-	case CONF_OPER_CHWIDTH_80MHZ:
-		bss_bw_mhz = 80;
-		break;
-	default:
-		wpa_printf(MSG_DEBUG,
-			   "NPCA: BW < 80 MHz, cannot recover primary channel");
-		return 0;
-	}
-
-	num_20mhz = bss_bw_mhz / 20;
-	if (subchan_idx >= (u8)num_20mhz) {
-		wpa_printf(MSG_DEBUG,
-			   "NPCA: subchan_idx %u out of range for %d MHz BW",
-			   subchan_idx, bss_bw_mhz);
-		return 0;
-	}
-
-	/* Channel numbers increase by 4 per 20 MHz step; the lowest subchannel
-	 * is (num_20mhz - 1) * 2 channel numbers below the center. */
-	lowest_chan = (int)center_chan - (num_20mhz - 1) * 2;
-	primary_chan = lowest_chan + (int)subchan_idx * 4;
-
-	if (primary_chan <= 0 || primary_chan > 255) {
-		wpa_printf(MSG_DEBUG,
-			   "NPCA: recovered channel %d out of range",
-			   primary_chan);
-		return 0;
-	}
-
-	return (u8)primary_chan;
+	return (u8)(npca->params & UHR_OPER_PARAMS_NPCA_PRIMARY_CHAN);
 }
 
 /* Build and send an OTA ST Prep Response with failure status to the STA.
