@@ -29,7 +29,9 @@
 #endif /* CONFIG_MACSEC */
 #include "utils/list.h"
 #include "drivers/nl80211_copy.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_IEEE80211BN
 #include "ap/mapc.h"
 #endif /* CONFIG_IEEE80211BN */
@@ -479,10 +481,10 @@ struct hostapd_channel_data {
 
 #ifdef CONFIG_QCN_EXTN
 	/**
-	 * extn - Extensiom hostapd channel data
+	 * extn - Extension hostapd channel data
 	 */
 	struct hostapd_channel_data_extn extn;
-#endif
+#endif /* CONFIG_QCN_EXTN */
 
 	/**
 	 * allowed_bw - Allowed channel width bitmask
@@ -3524,7 +3526,9 @@ struct hostapd_sta_add_params {
 	const u8 *addr;
 	u16 aid;
 
+#ifdef CONFIG_QCN_EXTN
 	struct hostapd_sta_add_params_extn params_extn;
+#endif /* CONFIG_QCN_EXTN */
 
 	u16 capability;
 	const u8 *supp_rates;
@@ -6921,6 +6925,7 @@ struct wpa_driver_ops {
 	 * Returns: 0 on success, -1 on failure
 	 */
 	int (*dcs_sim)(void *priv, u8 link_id, struct driver_dcs_sim *params);
+
 	/**
 	 * set_cbs - Send the CBS params to driver in order to trigger scan.
 	 * @priv: Private driver interface data
@@ -6933,7 +6938,7 @@ struct wpa_driver_ops {
 		       const struct cbs_params_extn *params,
 		       int *freq_list,
 		       int link_id);
-#endif
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211AX
@@ -9010,7 +9015,9 @@ union wpa_event_data {
 	 *
 	 * This field is used for extension events
 	 */
+#ifdef CONFIG_QCN_EXTN
 	union wpa_event_data_extn event_data_extn;
+#endif /* CONFIG_QCN_EXTN */
 
 	/**
 	 * Data for AP Power Save update
