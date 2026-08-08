@@ -187,6 +187,10 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 	
 	/* Set flags and status */
 	iap->flags = UHR_IAP_FLAG_HAS_SEC_CTX;
+	/* Signal pre-existing 4addr intent to the target so it can create
+	 * and program AP_VLAN in ST_PREP instead of waiting for reactive flow. */
+	if ((sta->flags & WLAN_STA_WDS) || sta->pending_wds_enable)
+		iap->flags |= UHR_IAP_FLAG_STA_4ADDR;
 	iap->status_code = 0;
 	
 	/* Extract and fill security context */

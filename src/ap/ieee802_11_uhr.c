@@ -2636,6 +2636,56 @@ static int uhr_target_ap_set_smd_ctx(struct hostapd_data *hapd, const u8 *sta_ad
 	return 0;
 }
 
+/* Enable 4addr/WDS immediately in ST_PREP once target-side STA entry exists.
+ * This avoids waiting for reactive NL80211_CMD_UNEXPECTED_4ADDR_FRAME flow
+ * and ensures firmware sees 4addr programming before ST_EXEC. */
+static int uhr_tgt_ap_enable_prep_wds(struct hostapd_data *assoc_hapd,
+				      struct sta_info *assoc_sta)
+{
+	char ifname_wds[IFNAMSIZ + 1];
+	int aid;
+	int ret;
+
+	if (!assoc_hapd || !assoc_sta)
+		return -1;
+
+	if (!assoc_hapd->conf->wds_sta) {
+		wpa_printf(MSG_DEBUG,
+			   "SMD ST PREP Target AP: WDS disabled in config; skipping prep-time 4addr for " MACSTR,
+			   MAC2STR(assoc_sta->addr));
+		return 0;
+	}
+
+	if (assoc_sta->flags & WLAN_STA_WDS)
+		return 0;
+
+	if (assoc_hapd->conf->mld_ap) {
+		if (hostapd_get_wds_mld_sta_uid(assoc_hapd, assoc_sta) < 0) {
+			wpa_printf(MSG_ERROR,
+				   "SMD ST PREP Target AP: No WDS UID for prep-time 4addr STA " MACSTR,
+				   MAC2STR(assoc_sta->addr));
+			return -1;
+		}
+		aid = assoc_sta->wds_mld_uid;
+	} else {
+		aid = assoc_sta->aid;
+	}
+
+	assoc_sta->pending_wds_enable = 0;
+	assoc_sta->flags |= WLAN_STA_WDS;
+	hostapd_set_sta_flag_to_partner_links(assoc_hapd, assoc_sta);
+
+	ret = hostapd_set_wds_sta(assoc_hapd, ifname_wds, assoc_sta->addr, aid, 1);
+	if (ret) {
+		assoc_sta->pending_wds_enable = 1;
+		assoc_sta->flags &= ~WLAN_STA_WDS;
+		hostapd_set_sta_flag_to_partner_links(assoc_hapd, assoc_sta);
+		return ret;
+	}
+
+	return 0;
+}
+
 static bool hostapd_mld_find_assoc_sta(struct hostapd_data *rx_hapd,
 				const u8 *addr,
 				struct hostapd_data **assoc_hapd,
@@ -2874,6 +2924,17 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
        /* Update flags based on the flags */
        sta->dl_sn_not_transferred = sbte.dl_sn_not_transferred;
        sta->ul_sn_not_transferred = sbte.ul_sn_not_transferred;
+
+	/* Serving AP explicitly indicated 4addr intent in IAP metadata. */
+	if (iap->flags & UHR_IAP_FLAG_STA_4ADDR) {
+		if (uhr_tgt_ap_enable_prep_wds(assoc_hapd, assoc_sta)) {
+			wpa_printf(MSG_ERROR,
+				   "SMD ST PREP Target AP: prep-time WDS enable failed for " MACSTR,
+				   MAC2STR(sta->addr));
+			status_code = 1;
+			goto send_response;
+		}
+	}
 
 	if (smd_ctx_len) {
 		if (smd_ctx_len < sizeof(struct sta_smd_ctx_info)) {

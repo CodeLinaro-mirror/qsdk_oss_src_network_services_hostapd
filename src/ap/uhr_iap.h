@@ -84,6 +84,7 @@ struct uhr_iap_frame {
 /* Flags for uhr_iap_frame */
 #define UHR_IAP_FLAG_HAS_SEC_CTX      0x01
 #define UHR_IAP_FLAG_HAS_DYNAMIC_CTX  0x02
+#define UHR_IAP_FLAG_STA_4ADDR        0x04
 
 /* IAP status codes */
 #define UHR_IAP_STATUS_SUCCESS           0
@@ -134,4 +135,3 @@ int uhr_iap_send_st_prep_ctx(struct hostapd_data *hapd,
 			      size_t smd_ctx_len);
 
 #endif /* UHR_IAP_H */
-
