@@ -142,5 +142,22 @@ int uhr_iap_send_st_prep_ctx(struct hostapd_data *hapd,
 			      const struct sta_smd_ctx_info *smd_ctx,
 			      size_t smd_ctx_len);
 
+/* ST Execute via Target AP-MLD IAP send functions */
+int uhr_iap_send_st_ctx_request(struct hostapd_data *hapd,
+				const u8 *current_ap_mld_addr,
+				const u8 *sta_addr,
+				u8 iap_transaction_id);
+
+int uhr_iap_send_st_ctx_response(struct hostapd_data *hapd,
+				 const u8 *target_ap_mld_addr,
+				 const u8 *sta_addr,
+				 u8 iap_transaction_id,
+				 const struct sta_smd_ctx_info *smd_ctx);
+
+int uhr_iap_send_st_exec_via_tgt_done(struct hostapd_data *hapd,
+				      const u8 *current_ap_mld_addr,
+				      const u8 *sta_addr,
+				      u8 iap_transaction_id);
+
 #endif /* UHR_IAP_H */
 
