@@ -1607,6 +1607,13 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 	    hapd->conf->control_frame_prot)
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
 
+#ifdef CONFIG_IEEE80211BN
+	/* Suppress SMD bit in base RSNXE when SP IE is activated;
+	 * SMD support is indicated via SP IE's RSNXE field instead */
+	if (hapd->conf->smd.enabled && !hapd->sp_ie_activated_sta)
+		capab |= BIT_ULL(WLAN_RSNX_CAPAB_SMD);
+#endif /* CONFIG_IEEE80211BN */
+
 	/* Per 802.11bn D1.4, when Security Profile IE is present with
 	 * SAE-EXT-KEY base AKM, the SAE_H2E capability must not be suppressed
 	 * in the beacon RSNXE, as SAE-EXT-KEY requires H2E. */

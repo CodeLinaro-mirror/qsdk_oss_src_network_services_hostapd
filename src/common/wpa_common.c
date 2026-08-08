@@ -4254,6 +4254,14 @@ int wpa_parse_kde_ies(const u8 *buf, size_t len, struct wpa_eapol_ie_parse *ie)
 				    "WPA: Security Profile element in EAPOL-Key",
 				    ie->security_profile_ie,
 				    ie->security_profile_ie_len);
+		} else if (*pos == WLAN_EID_EXTENSION &&
+			   pos[1] >= 2 &&
+			   pos[2] == WLAN_EID_EXT_SMD) {
+			ie->smd_ie = pos;
+			ie->smd_ie_len = pos[1] + 2;
+			wpa_hexdump(MSG_DEBUG,
+				    "WPA: SMD Information element in EAPOL-Key",
+				    ie->smd_ie, ie->smd_ie_len);
 		} else if (*pos == WLAN_EID_QOS && pos[1] >= 1) {
 			ie->qosinfo = pos[2];
 		} else if (*pos == WLAN_EID_SUPPORTED_CHANNELS) {

@@ -360,6 +360,24 @@ int smd_establish_smd_me_association(struct wpa_supplicant *wpa_s,
 		return -1;
 	}
 
+	/*
+	 * Per 802.11bn D2.0 37.16.3, the SMD Identifier is the one
+	 * advertised by the AP MLD's SMD Information element (Beacon or
+	 * Probe Response) - a locally configured smd_id (network profile
+	 * pre-provisioning) is only a hint and must not override it. Warn
+	 * if the two disagree so a stale/incorrect config value is visible,
+	 * but always take the AP-advertised identifier as authoritative.
+	 */
+	if (!is_zero_ether_addr(ssid->smd_id) &&
+	    os_memcmp(ssid->smd_id, bss->smd_identifier, ETH_ALEN) != 0) {
+		wpa_printf(MSG_WARNING,
+			   "SMD: Configured smd_id " MACSTR
+			   " does not match AP-advertised SMD Identifier "
+			   MACSTR " - using AP-advertised value",
+			   MAC2STR(ssid->smd_id),
+			   MAC2STR(bss->smd_identifier));
+	}
+
 	os_memcpy(wpa_s->smd_id, bss->smd_identifier, ETH_ALEN);
 
 	ap_mld_addr = bss->bssid;
