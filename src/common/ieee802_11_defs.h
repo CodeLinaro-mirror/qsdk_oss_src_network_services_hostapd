@@ -696,6 +696,7 @@
 #define WLAN_RSNX_CAPAB_CIGTK 33
 #define WLAN_RSNX_CAPAB_SAE_PW_ID_CHANGE 34
 #define WLAN_RSNX_CAPAB_UNAUTH_EPPKE 36
+#define WLAN_RSNX_CAPAB_SMD 37
 
 /* Security Profile element fields (IEEE P802.11bn/D2.0, 9.4.2.369) */
 /* Reduced RSN Capabilities field bits (Figure 9-aa75) */
