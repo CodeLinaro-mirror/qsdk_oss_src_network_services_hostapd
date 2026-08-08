@@ -890,7 +890,7 @@ int main(int argc, char *argv[])
 #ifdef CONFIG_PROCESS_COORDINATION
 	const char *proc_coord_dir = NULL;
 #endif
-#ifdef CONFIG_HOSTAPD_IF
+#if defined(CONFIG_HOSTAPD_IF) && defined(CONFIG_QCN_EXTN)
 	bool plugin_enable = false;
 #endif
 #ifdef CONFIG_MQTT
@@ -946,7 +946,7 @@ int main(int argc, char *argv[])
 		case 'h':
 			usage();
 			break;
-#ifdef CONFIG_HOSTAPD_IF
+#if defined(CONFIG_HOSTAPD_IF) && defined(CONFIG_QCN_EXTN)
 		case 'H':
 			plugin_enable = true;
 			break;
@@ -1107,7 +1107,7 @@ int main(int argc, char *argv[])
 		wpa_printf(MSG_WARNING, "Failed to add CLI FST ctrl");
 #endif /* CONFIG_FST && CONFIG_CTRL_IFACE */
 
-#ifdef CONFIG_HOSTAPD_IF
+#if defined(CONFIG_HOSTAPD_IF) && defined(CONFIG_QCN_EXTN)
 	/* Initialize action frame registry before parsing configs */
 	if (hostapd_if_init(&interfaces, plugin_enable) < 0) {
 		wpa_printf(MSG_ERROR, "Failed to init action frame registry");
@@ -1268,7 +1268,7 @@ int main(int argc, char *argv[])
 	hostapd_global_cleanup_mld(&interfaces);
 	hostapd_ucode_free();
 
-#ifdef CONFIG_HOSTAPD_IF
+#if defined(CONFIG_HOSTAPD_IF) && defined(CONFIG_QCN_EXTN)
 	hostapd_if_deinit();
 #endif
 #ifdef CONFIG_DPP
