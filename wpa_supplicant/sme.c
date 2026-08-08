@@ -1345,6 +1345,8 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 		}
 	}
 
+	wpa_sm_set_assoc_frame_encrypted(wpa_s->wpa, false);
+
 #ifdef CONFIG_HS20
 	if (is_hs20_network(wpa_s, ssid, bss)) {
 		struct wpabuf *hs20;
@@ -1558,12 +1560,7 @@ no_fils:
 #endif /* CONFIG_FILS */
 
 	if (wpa_s->smd_capable) {
-		u8 auth_ies[512];
-		size_t auth_ies_len = 0;
-		u8 *smd_ie;
-		size_t smd_ie_len;
 		u8 ptk_mode = 0;
-		u8 capabilities = bss->smd_capabilities ? bss->smd_capabilities : 0x01;
 		u16 timeout = bss->smd_timeout ? bss->smd_timeout : 1000;
 
 		if (ssid->smd_ptk_mode == 1)
@@ -1576,38 +1573,6 @@ no_fils:
 		params.smd.caps.max_prep_target_apmlds = 0;
 		params.smd.caps.smd_type = ssid->smd_ptk_mode;
 		params.smd.caps.ptk_mode = ptk_mode;
-
-		if (params.ie && params.ie_len > 0) {
-			if (params.ie_len <= sizeof(auth_ies)) {
-				os_memcpy(auth_ies, params.ie, params.ie_len);
-				auth_ies_len = params.ie_len;
-			} else {
-				wpa_printf(MSG_WARNING, "SME: Existing auth IEs too large");
-				goto skip_smd_ie;
-			}
-		}
-
-		smd_ie = wpas_build_smd_ie(bss->smd_identifier, ptk_mode, capabilities,
-					  timeout, &smd_ie_len);
-		if (smd_ie) {
-			if (auth_ies_len + smd_ie_len < sizeof(auth_ies)) {
-				os_memcpy(auth_ies + auth_ies_len, smd_ie,
-					  smd_ie_len);
-				auth_ies_len += smd_ie_len;
-
-				params.ie = auth_ies;
-				params.ie_len = auth_ies_len;
-
-				wpa_printf(MSG_DEBUG,
-					   "SME: Added SMD IE to authentication frame");
-			} else {
-				wpa_printf(MSG_WARNING, "SME: Auth IEs buffer tpp small for SMD IE");
-			}
-
-			os_free(smd_ie);
-		}
-
-	skip_smd_ie:;
 	}
 
 	wpa_supplicant_cancel_sched_scan(wpa_s);
@@ -3548,11 +3513,7 @@ mscs_fail:
 	wpas_add_qcn_ie_assoc_req_extn(wpa_s);
 #endif /* CONFIG_QCN_EXTN */
 	if (wpa_s->current_bss && wpa_s->smd_capable) {
-		u8 *smd_ie;
-		size_t smd_ie_len;
 		u8 ptk_mode = 0;
-		u8 capabilities = wpa_s->current_bss->smd_capabilities ?
-			wpa_s->current_bss->smd_capabilities : 0x01;
 		u16 timeout = wpa_s->current_bss->smd_timeout ?
 			wpa_s->current_bss->smd_timeout : 1000;
 
@@ -3565,22 +3526,6 @@ mscs_fail:
 		params.smd.caps.max_prep_target_apmlds = 0;
 		params.smd.caps.smd_type = wpa_s->current_bss->smd_type;
 		params.smd.caps.ptk_mode = ptk_mode;
-		smd_ie = wpas_build_smd_ie(wpa_s->current_bss->smd_identifier,
-					   ptk_mode, capabilities, timeout, &smd_ie_len);
-		if (smd_ie) {
-			if (wpa_s->sme.assoc_req_ie_len + smd_ie_len <=
-			    sizeof(wpa_s->sme.assoc_req_ie)) {
-				os_memcpy(wpa_s->sme.assoc_req_ie + wpa_s->sme.assoc_req_ie_len,
-					  smd_ie, smd_ie_len);
-				wpa_s->sme.assoc_req_ie_len += smd_ie_len;
-				wpa_printf(MSG_DEBUG, "SME: Added SMD IE to association request (PTK Mode %u)",
-					   ptk_mode);
-			} else {
-				wpa_printf(MSG_WARNING, "SME: Not enough buffer space for SMD IE in association request");
-			}
-
-			os_free(smd_ie);
-		}
 	}
 #ifdef CONFIG_PMKSA_PRIVACY
 	ap_rsnxe = wpa_bss_get_rsnxe(wpa_s, wpa_s->current_bss,

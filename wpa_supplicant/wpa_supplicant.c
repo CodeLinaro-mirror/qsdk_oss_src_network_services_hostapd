@@ -427,6 +427,7 @@ void wpa_supplicant_set_non_wpa_policy(struct wpa_supplicant *wpa_s,
 	wpa_sm_set_ap_rsne_override_2(wpa_s->wpa, NULL, 0);
 	wpa_sm_set_ap_rsnxe_override(wpa_s->wpa, NULL, 0);
 	wpa_sm_set_ap_security_profile_ie(wpa_s->wpa, NULL, 0);
+	wpa_sm_clear_ap_smd_info(wpa_s->wpa);
 	wpa_sm_set_assoc_wpa_ie(wpa_s->wpa, NULL, 0);
 #ifndef CONFIG_NO_WPA
 	wpa_sm_set_assoc_rsnxe(wpa_s->wpa, NULL, 0);
@@ -2308,6 +2309,7 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 	if (bss || !wpa_s->ap_ies_from_associnfo) {
 		const u8 *rsnoe = NULL, *rsno2e = NULL, *rsnxoe = NULL;
 		const u8 *sec_prof = NULL;
+		const u8 *smd_info = NULL;
 
 		if (bss) {
 			bss_rsn = wpa_bss_get_ie(bss, WLAN_EID_RSN);
@@ -2320,6 +2322,15 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 				bss, RSNXE_OVERRIDE_IE_VENDOR_TYPE);
 			sec_prof = wpa_bss_get_ie_ext(
 				bss, WLAN_EID_EXT_SECURITY_PROFILE);
+			smd_info = wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_SMD);
+
+			wpa_printf(MSG_DEBUG,
+				   "SMD: set_suites() caching from BSS "
+				   MACSTR " - smd_ie_present=%d "
+				   "bss_rsnx_smd_bit=%d",
+				   MAC2STR(bss->bssid), !!smd_info,
+				   ieee802_11_rsnx_capab(bss_rsnx,
+							 WLAN_RSNX_CAPAB_SMD));
 		}
 
 		if (wpa_sm_set_ap_wpa_ie(wpa_s->wpa, bss_wpa,
@@ -2335,7 +2346,10 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		    wpa_sm_set_ap_rsnxe_override(wpa_s->wpa, rsnxoe,
 						 rsnxoe ? 2 + rsnxoe[1] : 0)||
 		    wpa_sm_set_ap_security_profile_ie(wpa_s->wpa, sec_prof,
-						      sec_prof ? 2 + sec_prof[1] : 0))
+						      sec_prof ? 2 + sec_prof[1] : 0) ||
+		    wpa_sm_set_ap_smd_info(wpa_s->wpa,
+					   smd_info,
+					   smd_info ? 2 + smd_info[1] : 0))
 			return -1;
 	}
 

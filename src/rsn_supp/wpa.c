@@ -2527,6 +2527,9 @@ static int wpa_supplicant_validate_ie(struct wpa_sm *sm,
 		}
 	}
 
+        if (wpa_sm_validate_msg3_smd(sm, ie->smd_ie, ie->smd_ie_len) < 0)
+		return -1;
+
 #ifdef CONFIG_IEEE80211R
 	if (wpa_key_mgmt_ft(sm->key_mgmt) &&
 	    wpa_supplicant_validate_ie_ft(sm, src_addr, ie) < 0)
@@ -3098,6 +3101,9 @@ static void wpa_supplicant_process_3_of_4(struct wpa_sm *sm,
 	    wpa_supplicant_validate_ie_ft(sm, sm->bssid, &ie) < 0)
 		goto failed;
 #endif /* CONFIG_IEEE80211R */
+
+        if (mlo && wpa_sm_validate_msg3_smd(sm, ie.smd_ie, ie.smd_ie_len) < 0)
+		goto failed;
 
 	if (!mlo && ie.gtk && !(key_info & WPA_KEY_INFO_ENCR_KEY_DATA)) {
 		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
@@ -5979,6 +5985,8 @@ int wpa_sm_set_ap_rsnxe(struct wpa_sm *sm, const u8 *ie, size_t len)
 			return -1;
 
 		sm->ap_rsnxe_len = len;
+		sm->ap_smd_rsnx_bit = ieee802_11_rsnx_capab(sm->ap_rsnxe,
+							    WLAN_RSNX_CAPAB_SMD);
 	}
 
 	return 0;
@@ -6096,6 +6104,224 @@ int wpa_sm_set_ap_security_profile_ie(struct wpa_sm *sm, const u8 *ie, size_t le
 	return 0;
 }
 
+void wpa_sm_set_assoc_frame_encrypted(struct wpa_sm *sm, bool encrypted)
+{
+	if (!sm)
+		return;
+
+	sm->assoc_frame_encrypted = encrypted;
+}
+
+static int wpa_sm_validate_smd_ie(struct wpa_sm *sm,
+				  const u8 *ie, size_t ie_len,
+				  const char *source)
+{
+	if (!sm)
+		return -1;
+
+	/*
+	 * SMD validation applies only when both the Non-AP MLD and
+	 * AP advertised SMD capability.
+	 */
+	if (!sm->smd_enabled ||
+	    !sm->assoc_rsnxe ||
+	    !ieee802_11_rsnx_capab(sm->assoc_rsnxe,
+				    WLAN_RSNX_CAPAB_SMD) ||
+	    !sm->ap_smd_rsnx_bit) {
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"SMD: Skipping validation for %s - smd_enabled=%d "
+			"own_assoc_rsnxe_present=%d own_rsnx_smd_bit=%d "
+			"ap_smd_rsnx_bit=%d",
+			source, sm->smd_enabled, !!sm->assoc_rsnxe,
+			sm->assoc_rsnxe ?
+			ieee802_11_rsnx_capab(sm->assoc_rsnxe,
+					      WLAN_RSNX_CAPAB_SMD) : 0,
+			sm->ap_smd_rsnx_bit);
+		return 0;
+	}
+
+	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+		"SMD: Validating %s - cached Beacon/ProbeResp IE len=%zu, "
+		"received IE len=%zu", source,
+		sm->ap_smd_ie ? sm->ap_smd_ie_len : 0, ie_len);
+
+	if (!sm->ap_smd_ie || sm->ap_smd_ie_len == 0) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"SMD: No cached Beacon/Probe Response SMD IE");
+		return -1;
+	}
+
+	if (!ie || ie_len == 0) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"SMD: Missing SMD IE in %s", source);
+		return -1;
+	}
+
+	if (ie_len != sm->ap_smd_ie_len ||
+	    os_memcmp(ie, sm->ap_smd_ie,
+		      sm->ap_smd_ie_len) != 0) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"SMD: SMD IE mismatch in %s", source);
+
+		wpa_hexdump(MSG_DEBUG,
+			    "SMD: Cached Beacon/Probe Response IE",
+			    sm->ap_smd_ie, sm->ap_smd_ie_len);
+		wpa_hexdump(MSG_DEBUG,
+			    "SMD: Received SMD IE",
+			    ie, ie_len);
+		return -1;
+	}
+
+	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+		"SMD: SMD IE in %s matches Beacon/Probe Response",
+		source);
+
+	return 0;
+}
+
+int wpa_sm_validate_assoc_resp_smd(struct wpa_sm *sm,
+				   const u8 *ie, size_t ie_len)
+{
+	if (!sm)
+		return 0;
+
+	wpa_hexdump(MSG_DEBUG, "SMD: Received SMD IE in Association Response",
+		    ie, ie_len);
+
+	if (!sm->assoc_frame_encrypted) {
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"SMD: Skipping Association Response validation - "
+			"assoc_frame_encrypted=0");
+		return 0;
+	}
+
+	return wpa_sm_validate_smd_ie(sm, ie, ie_len,
+				      "encrypted Association Response");
+}
+
+int wpa_sm_validate_msg3_smd(struct wpa_sm *sm,
+			     const u8 *ie, size_t ie_len)
+{
+	if (!sm)
+		return 0;
+
+	wpa_hexdump(MSG_DEBUG, "SMD: Received SMD IE in EAPOL-Key message 3",
+		    ie, ie_len);
+
+	if (sm->assoc_frame_encrypted) {
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"SMD: Skipping EAPOL-Key message 3 validation - "
+			"assoc_frame_encrypted=1");
+		return 0;
+	}
+
+	return wpa_sm_validate_smd_ie(sm, ie, ie_len,
+				      "EAPOL-Key message 3");
+}
+
+int wpa_sm_validate_ap_smd_ie(struct wpa_sm *sm,
+			      const u8 *ie, size_t ie_len)
+{
+	if (!sm)
+		return -1;
+
+	/* SMD validation is applicable only when the Non-AP MLD
+	 * advertised SMD in its own Association Request and the AP
+	 * advertised SMD capability.
+	 */
+	if (!sm->smd_enabled ||
+	    !sm->assoc_rsnxe ||
+	    !ieee802_11_rsnx_capab(sm->assoc_rsnxe,
+				    WLAN_RSNX_CAPAB_SMD) ||
+	    !sm->ap_smd_rsnx_bit)
+		return 0;
+
+	if (!sm->ap_smd_ie || sm->ap_smd_ie_len == 0) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"SMD: No cached Beacon/Probe Response SMD IE");
+		return -1;
+	}
+
+	if (!ie || ie_len == 0) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"SMD: Missing SMD IE in Association Response");
+		return -1;
+	}
+
+	if (ie_len != sm->ap_smd_ie_len ||
+	    os_memcmp(ie, sm->ap_smd_ie, sm->ap_smd_ie_len) != 0) {
+		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+			"SMD: Association Response SMD IE mismatch");
+
+		wpa_hexdump(MSG_DEBUG,
+			    "SMD: Cached Beacon/Probe Response IE",
+			    sm->ap_smd_ie, sm->ap_smd_ie_len);
+		wpa_hexdump(MSG_DEBUG,
+			    "SMD: Association Response IE",
+			    ie, ie_len);
+		return -1;
+	}
+
+	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+		"SMD: Association Response SMD IE matches Beacon/Probe Response");
+
+	return 0;
+}
+
+int wpa_sm_set_ap_smd_ie(struct wpa_sm *sm, const u8 *ie, size_t len)
+{
+	if (!sm)
+		return -1;
+
+	os_free(sm->ap_smd_ie);
+	if (!ie || len == 0) {
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"RSN: Clearing AP SMD Information element");
+		sm->ap_smd_ie = NULL;
+		sm->ap_smd_ie_len = 0;
+	} else {
+		wpa_hexdump(MSG_DEBUG,
+			    "RSN: Set AP SMD Information element",
+			    ie, len);
+		sm->ap_smd_ie = os_memdup(ie, len);
+		if (!sm->ap_smd_ie) {
+			sm->ap_smd_ie_len = 0;
+			return -1;
+		}
+
+		sm->ap_smd_ie_len = len;
+	}
+
+	return 0;
+}
+
+void wpa_sm_clear_ap_smd_info(struct wpa_sm *sm)
+{
+	if (!sm)
+		return;
+
+	wpa_sm_set_ap_smd_ie(sm, NULL, 0);
+	sm->ap_smd_rsnx_bit = false;
+}
+
+int wpa_sm_set_ap_smd_info(struct wpa_sm *sm,
+			   const u8 *smd_ie, size_t smd_ie_len)
+{
+	int ret;
+
+	if (!sm)
+		return -1;
+
+	ret = wpa_sm_set_ap_smd_ie(sm, smd_ie, smd_ie_len);
+	if (ret)
+		return ret;
+
+	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+		"RSN: AP SMD RSNXE bit: %d",
+		sm->ap_smd_rsnx_bit);
+
+	return 0;
+}
 
 /**
  * wpa_sm_parse_own_wpa_ie - Parse own WPA/RSN IE
