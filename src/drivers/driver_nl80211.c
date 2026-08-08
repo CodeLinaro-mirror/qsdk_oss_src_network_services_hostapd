@@ -18124,7 +18124,7 @@ wpa_driver_nl80211_uhr_reconfig_req(void *priv,
 			       (u8) params->tx_link_id))
 			goto nla_fail;
 		wpa_printf(MSG_INFO,
-			   "santy nl80211: UHR_LINK_RECONFIG_REQ tx_link_id=%d "
+			   "nl80211: UHR_LINK_RECONFIG_REQ tx_link_id=%d "
 			   "(type=%u)", params->tx_link_id, params->type);
 	}
 
