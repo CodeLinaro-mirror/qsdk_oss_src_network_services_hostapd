@@ -723,7 +723,15 @@ static void mapc_get_local_cotdma_channel_params(const struct hostapd_data *hapd
 		prof->channel_width = MAPC_CHANNEL_WIDTH_20MHZ;
 		break;
 	}
-	prof->ccfs                      = hostapd_get_oper_centr_freq_seg0_idx(hapd->iconf);
+	prof->ccfs = hostapd_get_oper_centr_freq_seg0_idx(hapd->iconf);
+	/*
+	 * For 20 MHz operation hostapd sets centr_freq_seg0_idx to 0 (meaning
+	 * "no segment" in the VHT/HE/EHT sense). IEEE P802.11bn Co-TDMA
+	 * requires CCFS to identify the operating channel; for 20 MHz the
+	 * primary channel number is the correct value to encode.
+	 */
+	if (prof->channel_width == MAPC_CHANNEL_WIDTH_20MHZ && prof->ccfs == 0)
+		prof->ccfs = hapd->iconf->channel;
 	prof->disable_subchannel_bitmap = hapd->iconf->punct_bitmap;
 	prof->bss_color                 = hapd->iconf->he_op.he_bss_color;
 }
@@ -1262,12 +1270,6 @@ static int mapc_build_ie(struct wpabuf *buf, struct hostapd_data *hapd,
 	ie_body_len = wpabuf_len(buf) - body_start;
 	data = wpabuf_mhead_u8(buf);
 	data[ie_start + 1] = (u8)ie_body_len;
-
-	wpa_printf(MSG_DEBUG, "MAPC: IE built for action_code=%u (%zu bytes)",
-		   action_code, wpabuf_len(buf) - ie_start);
-
-	wpa_printf(MSG_DEBUG, "MAPC: IE built for action_code=%u (%zu bytes)",
-		   action_code, wpabuf_len(buf) - ie_start);
 
 	wpa_printf(MSG_DEBUG, "MAPC: IE built for action_code=%u (%zu bytes)",
 		   action_code, wpabuf_len(buf) - ie_start);
