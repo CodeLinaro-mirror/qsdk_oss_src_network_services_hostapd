@@ -1108,7 +1108,9 @@ struct hostapd_iface {
 	/* Cached PSD value for RNR */
 	s8 rnr_psd;
 
+#ifdef CONFIG_QCN_EXTN
 	struct hostapd_iface_extn iface_extn;
+#endif /* CONFIG_QCN_EXTN */
 
 	struct hostapd_multi_hw_info *multi_hw_info;
 	unsigned int num_multi_hws;
