@@ -7504,10 +7504,15 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 	struct hostapd_data *bss;
 	struct sta_info *lsta;
 	int i, j, k;
-	bool triggered = false;
+	bool triggered = false, epp_sta = false;
 
 	if (sta->auth_alg == WLAN_AUTH_FT)
 		return false;
+
+#ifdef CONFIG_ENC_ASSOC
+	if (sta->epp_sta)
+		epp_sta = true;
+#endif /* CONFIG_ENC_ASSOC */
 
 	if (sta->mld_info.mld_sta &&
 	    sta->unadded_sta &&
@@ -7517,7 +7522,17 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 				continue;
 			lsta = ap_get_sta(bss, sta->addr);
 			if (lsta && check_sa_query(bss, lsta, type, ies, ies_len,
-						 false, sta))
+						   /* enc_assoc -
+						    * check_sa_query_partner_link is
+						    * called from (Re)Association Request
+						    * processing. For EPP peer, the driver
+						    * ensures that all (Re)Asscoation
+						    * Request frames received for an EPP
+						    * peer are encrypted. Hence it would
+						    * suffice to check if the frame was
+						    * received from an EPP peer
+						    */
+						 epp_sta ? true : false, sta))
 				return true;
 		}
 	}
@@ -7600,7 +7615,17 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 
 					if (check_sa_query(hapd_ptr, osta,
 							   type, ies, ies_len,
-							   false, sta)) {
+						/* enc_assoc -
+						 * check_sa_query_partner_link is
+						 * called from (Re)Association Request
+						 * processing. For EPP peer, the driver
+						 * ensures that all (Re)Asscoation
+						 * Request frames received for an EPP
+						 * peer are encrypted. Hence it would
+						 * suffice to check if the frame was
+						 * received from an EPP peer
+						 */
+							   epp_sta ? true : false, sta)) {
 						triggered = true;
 						sta->link_addr_conflict_bitmap |= BIT(k);
 					}
