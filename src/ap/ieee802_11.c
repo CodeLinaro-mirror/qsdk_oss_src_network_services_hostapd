@@ -6705,7 +6705,7 @@ static bool hostapd_skip_sa_query(struct hostapd_data *hapd,
 
 static bool check_sa_query(struct hostapd_data *hapd, struct sta_info *sta,
 			   int reassoc, const u8 *ies, size_t ies_len,
-			   struct sta_info *current_sta)
+			   struct sta_info *current_sta, bool enc_assoc)
 {
 	struct hostapd_data *assoc_hapd;
 	struct sta_info *assoc_sta;
@@ -6720,6 +6720,17 @@ static bool check_sa_query(struct hostapd_data *hapd, struct sta_info *sta,
 	     (WLAN_STA_ASSOC | WLAN_STA_MFP | WLAN_STA_AUTHORIZED)) !=
 	    (WLAN_STA_ASSOC | WLAN_STA_MFP | WLAN_STA_AUTHORIZED))
 		return false;
+
+#ifdef CONFIG_ENC_ASSOC
+	if (enc_assoc && sta->epp_sta) {
+		/* Skip SA Query since either the STA knows the PTK that is in
+		 * use in the existing association or a new EPPKE authentication
+		 * has already authenticated the STA and has replaced the TK and
+		 * there is not really any point in starting SA Query procedure.
+		 */
+		return false;
+	}
+#endif /* CONFIG_ENC_ASSOC */
 
 	if (!sta->sa_query_timed_out && sta->sa_query_count > 0)
 		ap_check_sa_query_timeout(hapd, sta);
@@ -6772,10 +6783,15 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 	struct hostapd_data *bss;
 	struct sta_info *lsta;
 	int i, j, k;
-	bool triggered = false;
+	bool triggered = false, epp_sta = false;
 
 	if (sta->auth_alg == WLAN_AUTH_FT)
 		return false;
+
+#ifdef CONFIG_ENC_ASSOC
+	if (sta->epp_sta)
+		epp_sta = true;
+#endif /* CONFIG_ENC_ASSOC */
 
 	if (sta->unadded_sta &&
 	    (sta->flags & WLAN_STA_AUTH)) {
@@ -6783,7 +6799,18 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 			if (bss == hapd)
 				continue;
 			lsta = ap_get_sta(bss, sta->addr);
-			if (lsta && check_sa_query(bss, lsta, type, ies, ies_len, sta))
+			if (lsta && check_sa_query(bss, lsta, type, ies, ies_len, sta,
+						   /* enc_assoc -
+						    * check_sa_query_partner_link is
+						    * called from (Re)Association Request
+						    * processing. For EPP peer, the driver
+						    * ensures that all (Re)Asscoation
+						    * Request frames received for an EPP
+						    * peer are encrypted. Hence it would
+						    * suffice to check if the frame was
+						    * received from an EPP peer
+						    */
+						   epp_sta ? true : false))
 				return true;
 		}
 	}
@@ -6866,7 +6893,18 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 
 					if (check_sa_query(hapd_ptr, osta,
 							   type, ies, ies_len,
-							   sta)) {
+							   sta,
+						/* enc_assoc -
+						 * check_sa_query_partner_link is
+						 * called from (Re)Association Request
+						 * processing. For EPP peer, the driver
+						 * ensures that all (Re)Asscoation
+						 * Request frames received for an EPP
+						 * peer are encrypted. Hence it would
+						 * suffice to check if the frame was
+						 * received from an EPP peer
+						 */
+						epp_sta ? true : false)) {
 						triggered = true;
 						sta->link_addr_conflict_bitmap |= BIT(k);
 					}
@@ -10192,7 +10230,8 @@ static void handle_assoc(struct hostapd_data *hapd,
 				  " but sta is already associated in %s",
 				  MAC2STR(sta->addr), ohapd->conf->iface);
 			/* for an ML STA do SA procedure in Assoc link sta  */
-			if (check_sa_query(ohapd, osta, reassoc, pos, left, sta)) {
+			if (check_sa_query(ohapd, osta, reassoc, pos, left, sta,
+					   fc & WLAN_FC_PROTECTED)) {
 				wpa_printf(MSG_DEBUG, "SA query triggered for "MACSTR" on %s",
 					   MAC2STR(osta->addr), ohapd->conf->iface);
 				resp = WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY;
@@ -10216,7 +10255,8 @@ static void handle_assoc(struct hostapd_data *hapd,
 
 	}
 
-	if (hapd->conf->wpa && check_sa_query(hapd, sta, reassoc, pos, left, sta)) {
+	if (hapd->conf->wpa && check_sa_query(hapd, sta, reassoc, pos, left, sta,
+					      fc & WLAN_FC_PROTECTED)) {
 		resp = WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY;
 		goto fail;
 	}
