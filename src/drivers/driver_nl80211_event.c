@@ -1503,6 +1503,37 @@ static void mlme_event_uhr_reconfig_resp(struct wpa_driver_nl80211_data *drv,
 	wpa_supplicant_event(drv->ctx, EVENT_UHR_RECONFIG_RESP, &event);
 }
 
+#ifdef CONFIG_IEEE80211BN
+static void
+nl80211_get_smd_ctx_done(struct i802_bss *bss, struct nlattr **tb)
+{
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	union wpa_event_data event;
+
+	if (!tb[NL80211_ATTR_MAC] ||
+	    nla_len(tb[NL80211_ATTR_MAC]) < ETH_ALEN) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: GET_SMD_CTX_DONE missing MAC");
+		return;
+	}
+
+	os_memset(&event, 0, sizeof(event));
+	os_memcpy(event.get_smd_ctx_done.sta_addr,
+		  nla_data(tb[NL80211_ATTR_MAC]), ETH_ALEN);
+
+	if (tb[NL80211_ATTR_SMD_CTX])
+		event.get_smd_ctx_done.ctx =
+			nl80211_parse_smd_ctx(tb[NL80211_ATTR_SMD_CTX]);
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: GET_SMD_CTX_DONE for " MACSTR " ctx=%s",
+		   MAC2STR(event.get_smd_ctx_done.sta_addr),
+		   event.get_smd_ctx_done.ctx ? "present" : "NULL");
+
+	wpa_supplicant_event(drv->ctx, EVENT_GET_SMD_CTX_DONE, &event);
+}
+#endif /* CONFIG_IEEE80211BN */
+
 static void
 nl80211_smd_transition_status(struct i802_bss *bss,
 			      struct nlattr **tb)
@@ -6339,6 +6370,11 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 	case NL80211_CMD_SMD_TRANSITION_DONE:
 		nl80211_smd_transition_status(bss, tb);
 		break;
+#ifdef CONFIG_IEEE80211BN
+	case NL80211_CMD_GET_SMD_CTX:
+		nl80211_get_smd_ctx_done(bss, tb);
+		break;
+#endif /* CONFIG_IEEE80211BN */
 	default:
 		wpa_dbg(drv->ctx, MSG_DEBUG, "nl80211: Ignored unknown event "
 			"(cmd=%d)", cmd);

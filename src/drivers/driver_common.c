@@ -136,6 +136,7 @@ const char * event_to_string(enum wpa_event_type event)
 #endif /* CONFIG_IEEE80211BN */
 	E2S(UHR_RECONFIG_RESP);
 	E2S(SMD_TRANSITION_DONE);
+	E2S(GET_SMD_CTX_DONE);
 	}
 
 	return "UNKNOWN";

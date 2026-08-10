@@ -7014,16 +7014,17 @@ struct wpa_driver_ops {
 			   const struct sta_smd_ctx_info *ctx);
 
 	/**
-	 * get_smd_ctx - Get SMD context from driver for a station
+	 * get_smd_ctx - Get SMD context from driver for a station (async)
 	 * @priv: Private driver interface data
 	 * @sta_addr: station address
+	 * @type: ST type (0=PREP, 1=EXEC)
 	 * @valid_ctx_bitmap: bitmap indicating which context fields to fetch
 	 * @tx_tid_bitmap: TX TIDs to include
 	 * @rx_tid_bitmap: RX TIDs to include
 	 * @out_ctx: returned allocated sta_smd_ctx_info; caller must os_free()
 	 * Returns: 0 on success, -1 on failure
 	 */
-	int (*get_smd_ctx)(void *priv, const u8 *sta_addr,
+	int (*get_smd_ctx)(void *priv, const u8 *sta_addr, u8 type,
 			   u8 valid_ctx_bitmap, u8 tx_tid_bitmap,
 			   u8 rx_tid_bitmap,
 			   struct sta_smd_ctx_info **out_ctx);
@@ -7850,6 +7851,15 @@ enum wpa_event_type {
 	 * PREP/EXEC notifications are handled via separate MLME event path.
 	 */
 	EVENT_SMD_TRANSITION_DONE,
+
+	/**
+	 * EVENT_GET_SMD_CTX_DONE - Async GET_SMD_CTX collection complete
+	 *
+	 * Fired when the kernel sends a NL80211_CMD_GET_SMD_CTX event back
+	 * to userspace after completing async HW context collection.  The
+	 * collected context is in data->get_smd_ctx_done.ctx (NULL on failure).
+	 */
+	EVENT_GET_SMD_CTX_DONE,
 };
 
 
@@ -9026,6 +9036,17 @@ union wpa_event_data {
 		u16 status_code;
 		u8 type;
 	} st_transition;
+
+	/**
+	 * struct get_smd_ctx_done - Data for EVENT_GET_SMD_CTX_DONE
+	 * @sta_addr: non-AP MLD address the context was collected for
+	 * @ctx: collected SMD context; NULL if collection failed.
+	 *       Caller must os_free(ctx) after use.
+	 */
+	struct {
+		u8 sta_addr[ETH_ALEN];
+		struct sta_smd_ctx_info *ctx;
+	} get_smd_ctx_done;
 
 	/**
 	 * event_data_extn - Extension event data for vendor-specific events

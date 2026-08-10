@@ -1918,6 +1918,21 @@ int hostapd_drv_set_smd_ctx(struct hostapd_data *hapd, struct sta_info *sta,
 	return hapd->driver->set_smd_ctx(hapd->drv_priv, sta->addr, ctx);
 }
 
+int hostapd_drv_get_smd_ctx(struct hostapd_data *hapd, const u8 *sta_addr,
+			    u8 type, u8 valid_ctx_bitmap, u8 dl_tid_bitmap,
+			    u8 ul_tid_bitmap, struct sta_smd_ctx_info **out_ctx)
+{
+	if (!hapd->driver || !hapd->drv_priv || !hapd->driver->get_smd_ctx)
+		return -1;
+
+	if (!sta_addr)
+		return -1;
+
+	return hapd->driver->get_smd_ctx(hapd->drv_priv, sta_addr, type,
+					 valid_ctx_bitmap, dl_tid_bitmap,
+					 ul_tid_bitmap, out_ctx);
+}
+
 #ifdef CONFIG_QCN_EXTN
 int hostapd_drv_set_muedca_mode(struct hostapd_data *hapd, int mode, int radio_idx)
 {
