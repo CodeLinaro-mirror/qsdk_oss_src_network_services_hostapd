@@ -1549,6 +1549,13 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 			data.skip_cac = 1;
 		}
 
+		/* CSwOpts 0x4: AP must perform CAC on STA-triggered bring-up.
+		 * Override any skip_cac set above; the config-file skip_cac=1 may
+		 * have been restored by a config reload after the runtime CSwOpts
+		 * command cleared it to 0. */
+		if (IS_CSH_CAC_APUP_BYSTA_ENABLED(iface->conf->conf_extn.cswopts))
+			data.skip_cac = 0;
+
 		wpa_printf(MSG_INFO, "Dep Rptr: skip_cac = %d cac_type = %d"
 			   " conf_extn.skip_cac = %d mcst = %u", data.skip_cac,
 			   iface->cac_type, iface->conf->conf_extn.skip_cac, iface->mcst);
