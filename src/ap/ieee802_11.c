@@ -82,6 +82,9 @@
 #define CIPIE_PADDING_DELAY 3
 #define CIP_CAPAB_LEN 4
 
+/* Buffer slack over the mgmt header for assoc-resp variable elements */
+#define ASSOC_RESP_BUF_SLACK	2048
+
 #define SECURITY_PROFILE_INDICATION 2
 #define SECURITY_PROFILE_BITMAP 3
 
@@ -8695,7 +8698,7 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 	u8 *p;
 	u16 res = WLAN_STATUS_SUCCESS;
 
-	buflen = sizeof(struct ieee80211_mgmt) + 2048;
+	buflen = sizeof(struct ieee80211_mgmt) + ASSOC_RESP_BUF_SLACK;
 #ifdef CONFIG_FILS
 	if (sta && sta->fils_hlp_resp)
 		buflen += wpabuf_len(sta->fils_hlp_resp);
@@ -8745,7 +8748,7 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 #endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_HOSTAPD_IF
-	buflen += hostapd_if_assoc_resp_tail_len(sta, buflen);
+	buflen += hostapd_if_assoc_resp_tail_len(sta);
 #endif
 #ifdef CONFIG_QCN_EXTN
 	buflen += hostapd_modify_buflen_for_qcn_ie_extn(hapd);

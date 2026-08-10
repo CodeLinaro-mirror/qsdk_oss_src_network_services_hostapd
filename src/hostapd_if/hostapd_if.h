@@ -200,7 +200,7 @@ void hostapd_if_auth_reply_add_tail(struct sta_info *sta, size_t offset,
 				    struct ieee80211_mgmt *reply);
 void hostapd_if_assoc_resp_tail(struct sta_info *sta, size_t buflen,
 				size_t current_len, u8 **p);
-size_t hostapd_if_assoc_resp_tail_len(struct sta_info *sta, size_t current_len);
+size_t hostapd_if_assoc_resp_tail_len(struct sta_info *sta);
 
 struct hostapd_data *__hostapd_get_link_iface(const char *ifname, int link_id);
 

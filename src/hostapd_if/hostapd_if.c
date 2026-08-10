@@ -3640,11 +3640,12 @@ void hostapd_if_assoc_resp_tail(struct sta_info *sta, size_t buflen,
 		return;
 	}
 
-	if ((current_len + tail_len) > buflen) {
-		/* Not enough preallocated tailroom; drop with error */
+	if ((current_len + tail_len) > buflen ||
+	    (current_len + tail_len) > IEEE80211_MAX_MGMT_LEN_NO_FCS) {
 		wpa_printf(MSG_ERROR,
-			"Assoc Response additional IEs exceed local buffer;"
-			" dropping\n");
+			"Assoc Response additional IEs exceed max mgmt"
+			" frame length; dropping (current=%zu tail=%zu"
+			" buf=%zu)", current_len, tail_len, buflen);
 		return;
 	}
 
@@ -3652,7 +3653,7 @@ void hostapd_if_assoc_resp_tail(struct sta_info *sta, size_t buflen,
 	*p = (pos + tail_len);
 }
 
-size_t hostapd_if_assoc_resp_tail_len(struct sta_info *sta, size_t current_len)
+size_t hostapd_if_assoc_resp_tail_len(struct sta_info *sta)
 {
 	size_t tail_len;
 
@@ -3663,13 +3664,6 @@ size_t hostapd_if_assoc_resp_tail_len(struct sta_info *sta, size_t current_len)
 	if (!sta->ext_assoc_tail || !tail_len) {
 		wpa_printf(MSG_MSGDUMP, "%s: No tail %p %zu", __func__,
 			sta->ext_assoc_tail, tail_len);
-		return 0;
-	}
-
-	/* Enforce max mgmt frame size for additional IEs; drop tail if it would overflow */
-	if (current_len + tail_len > 2300) {
-		wpa_printf(MSG_ERROR, "Assoc Response additional IEs exceed"
-			" max mgmt frame length; dropping\n");
 		return 0;
 	}
 
