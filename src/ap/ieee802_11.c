@@ -6677,8 +6677,10 @@ static bool hostapd_skip_sa_query(struct hostapd_data *hapd,
 				  struct sta_info *current_sta)
 {
 
-	if (hapd->conf->disable_sa_query &&
-	    current_sta->auth_alg == WLAN_AUTH_SAE) {
+	if (!hapd->conf->disable_sa_query || !current_sta)
+		return false;
+
+	if (current_sta->auth_alg == WLAN_AUTH_SAE) {
 		/*
 		 * Skip SA Query for SAE only after authentication confirm
 		 * completed, but force the cleanup path for already associated
@@ -6750,13 +6752,110 @@ static bool check_sa_query(struct hostapd_data *hapd, struct sta_info *sta,
 		if (sta->sa_query_count == 0)
 			ap_sta_start_sa_query(hapd, sta);
 
-		current_sta->sa_query_triggered_sta = sta;
+		if (current_sta)
+			current_sta->sa_query_triggered_sta = sta;
 
 		return true;
 	}
 
 	return false;
 }
+
+
+#if defined(CONFIG_ENC_ASSOC) || defined(CONFIG_IEEE8021X_AUTH)
+/* Return True if Authentication comeback is needed */
+bool hostapd_find_auth_comeback_sta(struct hostapd_data *hapd, const u8 *addr,
+				    const u8 *ies, size_t ies_len,
+				    struct hostapd_data **o_hapd,
+				    struct sta_info **o_sta)
+{
+	struct hostapd_data *t_hapd = NULL;
+	struct sta_info *t_sta = NULL;
+	bool sa_query_need = false;
+	int i, j;
+
+	if (!hapd || !hapd->iface || !hapd->iface->interfaces || !addr ||
+	    is_zero_ether_addr(addr))
+		return false;
+
+	for (i = 0; i < hapd->iface->interfaces->count; i++) {
+		for (j = 0; j < hapd->iface->interfaces->iface[i]->num_bss; j++)
+		{
+			t_hapd = hapd->iface->interfaces->iface[i]->bss[j];
+			if (!t_hapd || !t_hapd->started)
+				continue;
+
+			t_sta = ap_get_sta(t_hapd, addr);
+			if (t_sta) {
+				wpa_printf(MSG_DEBUG, "Found an existing STA "
+					   MACSTR, MAC2STR(addr));
+				sa_query_need = check_sa_query(t_hapd, t_sta, 0,
+							       ies, ies_len, NULL,
+							       false);
+				if (!sa_query_need) {
+#ifdef CONFIG_IEEE80211BE
+					/* Remove older Association on all
+					 * affiliated AP MLD links */
+					if (t_hapd->conf->mld_ap)
+						ap_sta_remove_link_sta(t_hapd,
+								       t_sta, 0, false);
+#endif /* CONFIG_IEEE80211BE */
+					ap_free_sta(t_hapd, t_sta);
+					return false;
+				}
+
+				*o_hapd = t_hapd;
+				*o_sta = t_sta;
+				return true;
+			}
+#ifdef CONFIG_IEEE80211BE
+			/* Check for an existing link STA with ‘addr’ */
+			else {
+				for (t_sta = t_hapd->sta_list; t_sta;
+				     t_sta = t_sta->next) {
+					struct mld_info *mld_info =
+							&t_sta->mld_info;
+					int i;
+
+					for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+						if (!mld_info->links[i].valid ||
+						    !ether_addr_equal(
+							mld_info->links[i].peer_addr, addr))
+						continue;
+
+						wpa_printf(MSG_DEBUG, "Found an "
+							   "existing link STA " MACSTR,
+							   MAC2STR(addr));
+						sa_query_need = check_sa_query(t_hapd,
+									       t_sta, 0,
+									       ies,
+									       ies_len,
+									       NULL,
+									       false);
+						if (!sa_query_need) {
+							/* Remove older Association
+							 * on all affiliated AP MLD
+							 * links */
+							if (t_hapd->conf->mld_ap)
+								ap_sta_remove_link_sta(
+									t_hapd, t_sta, 0, false);
+							ap_free_sta(t_hapd, t_sta);
+							return false;
+						}
+
+						*o_hapd = t_hapd;
+						*o_sta = t_sta;
+						return true;
+					}
+				}
+			}
+#endif /* CONFIG_IEEE80211BE */
+		}
+	}
+	return false;
+}
+#endif /* CONFIG_ENC_ASSOC || CONFIG_IEEE8021X_AUTH */
+
 
 int start_unsolicited_sa_query(struct hostapd_data *hapd, struct sta_info *sta)
 {
