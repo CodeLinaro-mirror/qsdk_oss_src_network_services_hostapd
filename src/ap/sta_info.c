@@ -320,7 +320,7 @@ void ap_free_unadded_link_sta(struct hostapd_data *hapd, struct sta_info *sta)
 static void __ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 {
 #ifdef CONFIG_IEEE80211BE
-	if (hostapd_sta_is_link_sta(hapd, sta)) {
+	if (hostapd_sta_is_link_sta(hapd, sta) && !sta->skip_kernel_delete) {
 		hostapd_drv_link_sta_remove(hapd, sta->addr);
 		return;
 	}
@@ -415,7 +415,9 @@ int ap_sta_check_link_sta(struct hostapd_data *hapd, struct sta_info *sta,
 	if (lsta && lsta != sta) {
 		if (!ap_sta_is_authorized(lsta)) {
 			hostapd_drv_sta_deauth(hapd, lsta->addr, WLAN_REASON_PREV_AUTH_NOT_VALID);
-			ap_sta_remove_link_sta(hapd, lsta, false);
+			hostapd_drv_sta_remove(hapd, lsta->addr);
+			ap_sta_remove_link_sta(hapd, lsta, false, true);
+			lsta->skip_kernel_delete = true;
 			ap_free_sta(hapd, lsta);
 		} else
 			return 1;
@@ -2713,9 +2715,8 @@ int ap_sta_pending_delayed_1x_auth_fail_disconnect(struct hostapd_data *hapd,
 
 
 #ifdef CONFIG_IEEE80211BE
-void ap_sta_remove_link_sta(struct hostapd_data *hapd,
-			    struct sta_info *sta,
-			    int check_authorized)
+void ap_sta_remove_link_sta(struct hostapd_data *hapd, struct sta_info *sta,
+			    int check_authorized, bool skip_kernel_delete)
 {
 	struct hostapd_data *tmp_hapd;
 
@@ -2740,6 +2741,13 @@ void ap_sta_remove_link_sta(struct hostapd_data *hapd,
 
 			if(check_authorized && ap_sta_is_authorized(tmp_sta))
 				continue;
+
+			/* If this is set it mean complete drv entry of station is
+			 * removed using  DEL STA. Link by link removal can be
+			 * prevented to avoid NL overload and delays introduced in driver.
+			 */
+			if (skip_kernel_delete)
+				tmp_sta->skip_kernel_delete = true;
 
 			ap_free_sta(tmp_hapd, tmp_sta);
 			break;
@@ -2766,12 +2774,14 @@ int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_aut
 	 * completed association.
 	 */
 
+	ap_sta_set_authorized(hapd, sta, 0);
+	hostapd_drv_sta_remove(hapd, sta->addr);
 #ifdef CONFIG_IEEE80211BE
 	/*
 	 * In case the AP is affiliated with an AP MLD, we need to
 	 * remove the station from all relevant links/APs.
 	 */
-	ap_sta_remove_link_sta(hapd, sta, check_authorized);
+	ap_sta_remove_link_sta(hapd, sta, check_authorized, true);
 
 	if (ap_sta_is_mld(hapd, sta)) {
 		u8 mld_link_id = hapd->mld_link_id;
@@ -2782,8 +2792,6 @@ int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_aut
 	}
 #endif /* CONFIG_IEEE80211BE */
 
-	ap_sta_set_authorized(hapd, sta, 0);
-	hostapd_drv_sta_remove(hapd, sta->addr);
 	sta->flags &= ~(WLAN_STA_ASSOC | WLAN_STA_AUTH | WLAN_STA_AUTHORIZED);
 
 	if (hostapd_sta_add(hapd, sta->addr, 0, 0,
@@ -2859,8 +2867,14 @@ void ap_sta_cleanup_all(struct hostapd_data *ohapd, struct sta_info *osta,
 				continue;
 
 			if (lsta && ap_sta_is_mld(lhapd, lsta) &&
-			    lsta->mld_assoc_link_id == ohapd->mld_link_id)
+			    lsta->mld_assoc_link_id == ohapd->mld_link_id) {
+				/* Station entry is already removed from driver with
+				 * the above call so prevent link remove again to
+				 * prevent NL flooding
+				 */
+				lsta->skip_kernel_delete = true;
 				ap_free_sta(lhapd, lsta);
+			}
 
 		}
 	}
