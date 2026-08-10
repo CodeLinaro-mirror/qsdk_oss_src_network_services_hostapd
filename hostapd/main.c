@@ -706,6 +706,9 @@ static void usage(void)
 #ifdef CONFIG_PROCESS_COORDINATION
 		"   -z   process coordination directory\n"
 #endif /* CONFIG_PROCESS_COORDINATION */
+#ifdef CONFIG_HOSTAPD_IF
+		"   -L   external plugin eloop type: direct call (default: routing)\n"
+#endif /* CONFIG_HOSTAPD_IF */
 		"   -q   show less debug messages (-qq for even less)\n");
 
 	exit(1);
@@ -899,6 +902,7 @@ int main(int argc, char *argv[])
 #endif
 #if defined(CONFIG_HOSTAPD_IF) && defined(CONFIG_QCN_EXTN)
 	bool plugin_enable = false;
+	enum hostapd_if_eloop_type eloop_type = HOSTAPD_IF_ELOOP_ROUTING;
 #endif
 #ifdef CONFIG_MQTT
 #ifdef CONFIG_MQTT_TEST_APP_FORK
@@ -948,7 +952,7 @@ int main(int argc, char *argv[])
 	wpa_supplicant_event = hostapd_wpa_event;
 	wpa_supplicant_event_global = hostapd_wpa_event_global;
 	for (;;) {
-		c = getopt(argc, argv, "b:Bde:f:hHi:KMP:sSTtu:g:G:qvz::");
+		c = getopt(argc, argv, "b:Bde:f:hHi:KLMP:sSTtu:g:G:qvz::");
 		if (c < 0)
 			break;
 		switch (c) {
@@ -958,6 +962,9 @@ int main(int argc, char *argv[])
 #if defined(CONFIG_HOSTAPD_IF) && defined(CONFIG_QCN_EXTN)
 		case 'H':
 			plugin_enable = true;
+			break;
+		case 'L':
+			eloop_type = HOSTAPD_IF_ELOOP_DIRECT_CALL;
 			break;
 #endif
 #ifdef CONFIG_MQTT
@@ -1118,7 +1125,7 @@ int main(int argc, char *argv[])
 
 #if defined(CONFIG_HOSTAPD_IF) && defined(CONFIG_QCN_EXTN)
 	/* Initialize action frame registry before parsing configs */
-	if (hostapd_if_init(&interfaces, plugin_enable) < 0) {
+	if (hostapd_if_init(&interfaces, plugin_enable, eloop_type) < 0) {
 		wpa_printf(MSG_ERROR, "Failed to init action frame registry");
 		goto out;
 	}

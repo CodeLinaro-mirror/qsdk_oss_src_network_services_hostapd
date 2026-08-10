@@ -649,7 +649,7 @@ static void notify_disassoc(void *hapd, char *ifname, uint8_t *sta_mac,
 }
 
 /* Called during hostapd startup to register MQTT callbacks */
-enum hostapd_if_eloop_type hostapd_if_mqtt_init(void *arg)
+void hostapd_if_mqtt_init(void *arg)
 {
 
 	/*
@@ -667,8 +667,6 @@ enum hostapd_if_eloop_type hostapd_if_mqtt_init(void *arg)
 	mqtt_plugin.interface_create     = interface_create,
 
 	hostapd_plugin_register(&mqtt_plugin);
-
-	return HOSTAPD_IF_ELOOP_ROUTING;
 }
 
 void handle_register_frame(struct mqtt_tlv_message *msg,
