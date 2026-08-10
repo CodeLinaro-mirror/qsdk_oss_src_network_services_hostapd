@@ -680,9 +680,10 @@ int uhr_iap_send_st_ctx_response(struct hostapd_data *hapd,
 				 const u8 *target_ap_mld_addr,
 				 const u8 *sta_addr,
 				 u8 iap_transaction_id,
+				 u8 status,
 				 const struct sta_smd_ctx_info *smd_ctx)
 {
-	size_t ctx_len = smd_ctx ? sizeof(*smd_ctx) : 0;
+	size_t ctx_len = smd_ctx ? sizeof(*smd_ctx) + smd_ctx->vendor_ctx_len: 0;
 	size_t total = sizeof(struct uhr_iap_frame) + ctx_len;
 	struct uhr_iap_frame *frame;
 	int ret;
@@ -696,6 +697,7 @@ int uhr_iap_send_st_ctx_response(struct hostapd_data *hapd,
 	os_memcpy(frame->current_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
 	os_memcpy(frame->target_ap_mld_addr, target_ap_mld_addr, ETH_ALEN);
 	os_memcpy(frame->sta_addr, sta_addr, ETH_ALEN);
+	frame->status_code = status;
 
 	if (smd_ctx) {
 		frame->flags |= UHR_IAP_FLAG_HAS_DYNAMIC_CTX;

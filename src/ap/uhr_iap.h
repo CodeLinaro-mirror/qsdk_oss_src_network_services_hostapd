@@ -153,6 +153,7 @@ int uhr_iap_send_st_ctx_response(struct hostapd_data *hapd,
 				 const u8 *target_ap_mld_addr,
 				 const u8 *sta_addr,
 				 u8 iap_transaction_id,
+				 u8 status,
 				 const struct sta_smd_ctx_info *smd_ctx);
 
 int uhr_iap_send_st_exec_via_tgt_done(struct hostapd_data *hapd,

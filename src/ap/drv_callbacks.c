@@ -29,6 +29,7 @@
 #include "hostapd.h"
 #include "ieee802_11.h"
 #include "ieee802_11_auth.h"
+#include "uhr_utils.h"
 #include "sta_info.h"
 #include "accounting.h"
 #include "tkip_countermeasures.h"
@@ -4808,6 +4809,12 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		if (link_hapd)
 			hostapd_handle_critical_update_notify(link_hapd,
 							      &data->cu_notify_event);
+		break;
+	case EVENT_GET_SMD_CTX_DONE:
+		if (data)
+			uhr_handle_get_smd_ctx_done(hapd,
+						    data->get_smd_ctx_done.sta_addr,
+						    data->get_smd_ctx_done.ctx);
 		break;
 #endif /* CONFIG_IEEE80211BN */
 	default:

@@ -160,6 +160,10 @@ enum smd_ap_state {
        SMD_AP_STATE_TRANSITION_COMPLETE,  /* Transition complete */
 
        /* ST Execute via Target AP-MLD states */
+       SMD_AP_STATE_ST_EXEC_VIA_TGT_CURR_CTX_REQ,   /* Current AP received CTX_REQUEST */
+       SMD_AP_STATE_ST_EXEC_VIA_TGT_CURR_CTX_WAIT,  /* Current AP awaiting driver response */
+       SMD_AP_STATE_ST_EXEC_VIA_TGT_CURR_CTX_RESP,  /* Current AP sent CTX_RESP */
+
        SMD_AP_STATE_ST_EXEC_VIA_TGT_STARTED,   /* CTX_REQUEST sent to Current AP */
        SMD_AP_STATE_ST_EXEC_VIA_TGT_COMPLETE,  /* CTX_RESPONSE received, exec done */
 };
@@ -237,6 +241,15 @@ struct smd_info {
 	bool flag;
 	u8 current_ap_mld_addr[ETH_ALEN]; /* Current AP MLD addr at time of ST Prep */
 	u8 st_exec_dialog_token; /* Dialog token from STA's ST Execute frame */
+
+	/* Pending async GET_SMD_CTX request (Via-TAP path).
+	 * Set when uhr_handle_st_exec_req() fires get_smd_ctx and cleared
+	 * when uhr_handle_get_smd_ctx_done() delivers the result. */
+	struct smd_get_ctx_pending {
+		bool active;
+		u8 target_ap_mld_addr[ETH_ALEN];
+		u8 iap_transaction_id;
+	} get_ctx_pending;
 };
 #endif /* CONFIG_IEEE80211BN */
 

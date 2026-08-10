@@ -40,6 +40,8 @@ enum uhr_smd_st_type {
 
 #define UHR_ST_IAP_TIMEOUT_USEC 5000000
 
+#define UHR_ST_GET_CTX_TIMEOUT_USEC 20000
+
 /* UHR ST preparation timeout fallback when smd_timeout is not configured (5 seconds) */
 #define UHR_ST_PREP_TIMEOUT_SEC 5
 
@@ -90,7 +92,9 @@ void uhr_cancel_iap_timeout(struct sta_info *sta, const u8 *ap_mld_addr);
 int uhr_handle_st_exec_req(struct hostapd_data *hapd,
                                  struct sta_info *sta,
 				  const u8 *buf, size_t len, struct sta_smd_ctx_info *smd_ctx);
-
+void uhr_handle_get_smd_ctx_done(struct hostapd_data *hapd,
+				 const u8 *sta_addr,
+				 struct sta_smd_ctx_info *ctx);
 
 void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
                                     const struct uhr_iap_frame *iap,
@@ -169,10 +173,12 @@ struct smd_roam_ap_info *uhr_find_ap_in_list(struct sta_info *sta, const u8 *ap_
 int uhr_remove_ap_from_list(struct sta_info *sta, const u8 *ap_mld_addr);
 
 /* Cleanup function for sta_info.c */
-void uhr_cleanup_sta_roam_contexts(struct sta_info *sta);
+void uhr_cleanup_sta_roam_contexts(struct hostapd_data *hapd, struct sta_info *sta);
 
 /* Target AP IAP receive handlers */
 void uhr_tgt_ap_handle_st_prep_ctx(struct hostapd_data *hapd,
 				    const struct uhr_iap_frame *iap);
+
+void uhr_cur_get_ctx_timeout(void *eloop_ctx, void *timeout_ctx);
 
 #endif /* UHR_LINK_RECONFIG_H */
