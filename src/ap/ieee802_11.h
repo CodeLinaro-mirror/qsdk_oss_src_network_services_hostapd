@@ -723,4 +723,8 @@ u8 * hostapd_eid_mbssid_nontx_optional_ie(struct hostapd_data *bss,
 					  u8 *eid, ssize_t *nontx_prof_len,
 					  u8 frame_type);
 
+bool hostapd_find_auth_comeback_sta(struct hostapd_data *hapd, const u8 *addr,
+				    const u8 *ies, size_t ies_len,
+				    struct hostapd_data **o_hapd,
+				    struct sta_info **o_sta);
 #endif /* IEEE802_11_H */
