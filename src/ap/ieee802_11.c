@@ -6189,7 +6189,9 @@ static void handle_auth(struct hostapd_data *hapd,
 			if (osta->flags & WLAN_STA_ASSOC)
 				hostapd_drv_sta_deauth(ohapd, osta->addr,
 						       WLAN_REASON_PREV_AUTH_NOT_VALID);
-			ap_sta_remove_link_sta(ohapd, osta, false);
+			hostapd_drv_sta_remove(ohapd, osta->addr);
+			ap_sta_remove_link_sta(ohapd, osta, false, true);
+			osta->skip_kernel_delete = true;
 			ap_free_sta(ohapd, osta);
 			osta = NULL;
 		}
@@ -8994,8 +8996,8 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 				   reassoc);
 			/* Clean up all link STAs in the kernel and add them
 			 * later during ML processing. */
-			ap_sta_remove_link_sta(hapd, sta, 0);
 			hostapd_drv_sta_remove(hapd, sta->addr);
+			ap_sta_remove_link_sta(hapd, sta, 0, true);
 			sta->flags &= ~(WLAN_STA_ASSOC | WLAN_STA_AUTHORIZED);
 			sta->unadded_sta = false;
 
@@ -9137,7 +9139,7 @@ int add_associated_sta(struct hostapd_data *hapd,
 	}
 
 	if (sta->unadded_sta) {
-		ap_sta_remove_link_sta(hapd, sta, 0);
+		ap_sta_remove_link_sta(hapd, sta, 0, false);
 		sta->unadded_sta = false;
 	}
 #endif /* CONFIG_IEEE80211BE */
@@ -10438,8 +10440,8 @@ static int hostapd_reset_sta_for_skip_sa_query(struct hostapd_data *hapd,
 	wpa_auth_sta_deinit(sta->wpa_sm);
 	sta->wpa_sm = NULL;
 	SET_EACH_PARTNER_STA_OBJ(hapd, sta, wpa_sm, NULL);
-	ap_sta_remove_link_sta(hapd, sta, 0);
 	hostapd_drv_sta_remove(hapd, sta->addr);
+	ap_sta_remove_link_sta(hapd, sta, 0, true);
 
 	if (handle_assoc_sa_query_timeout_ml_setup(
 				hapd, sta, mgmt, pos, left, mld_addr,
@@ -10834,8 +10836,8 @@ static void handle_assoc(struct hostapd_data *hapd,
 		wpa_auth_sta_deinit(sta->wpa_sm);
 		sta->wpa_sm = NULL;
 		SET_EACH_PARTNER_STA_OBJ(hapd, sta, wpa_sm, NULL);
-		ap_sta_remove_link_sta(hapd, sta, 0);
 		hostapd_drv_sta_remove(hapd, sta->addr);
+		ap_sta_remove_link_sta(hapd, sta, 0, true);
 
 		if (handle_assoc_sa_query_timeout_ml_setup(
 			    hapd, sta, mgmt, pos, left, mld_addr,
