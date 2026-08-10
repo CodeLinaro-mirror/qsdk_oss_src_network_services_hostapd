@@ -1893,6 +1893,39 @@ wpa_bss_validate_rsne_ml(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 		return false;
 	}
 
+	/*
+	 * Security Profile element preference (802.11bn D1.4, 37.32):
+	 * The RSNE-only key_mgmt/pairwise_cipher check below does not know
+	 * about a Security Profile element that bridges the AP's base AKM
+	 * to the STA's configured AKM (e.g. SAE -> SAE-EXT via profile 9).
+	 * Without this, wpa_bss_get_usable_links() rejects the MLD outright
+	 * ("MLD: No valid key management") before the per-link loop below
+	 * ever runs, and the connection proceeds on a single link instead of
+	 * waiting for all AP MLD links to be validated/discovered.
+	 * Merge the SP IE override here the same way
+	 * wpa_supplicant_ssid_bss_match() (events.c) and sme.c do for the
+	 * non-MLO RSNE check.
+	 */
+	if (wpas_security_profile_active(wpa_s)) {
+		const u8 *sp_ie = wpa_bss_get_ie_ext(
+			bss, WLAN_EID_EXT_SECURITY_PROFILE);
+		int sp_key_mgmt = sp_ie ? security_profile_ie_get_key_mgmt(
+			sp_ie, ssid->key_mgmt) : 0;
+
+		if (sp_key_mgmt) {
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"MLD: Security Profile element overrides RSN IE key_mgmt/pairwise cipher for link %u (bssid " MACSTR ")",
+				bss->mld_link_id, MAC2STR(bss->bssid));
+			wpa_ie.key_mgmt |= sp_key_mgmt;
+			/* All defined profiles mandate GCMP-256 pairwise cipher
+			 * and MFPC=1/MFPR=1 (802.11bn D1.4, 37.32); this is fixed
+			 * per spec, not derived from the profile bitmap. */
+			wpa_ie.pairwise_cipher |= WPA_CIPHER_GCMP_256;
+			wpa_ie.capabilities |= WPA_CAPABILITY_MFPC |
+						WPA_CAPABILITY_MFPR;
+		}
+	}
+
 	wpa_ie.key_mgmt &= ~(WPA_KEY_MGMT_PSK | WPA_KEY_MGMT_FT_PSK |
 			     WPA_KEY_MGMT_PSK_SHA256);
 	if (!(wpa_ie.key_mgmt & ssid->key_mgmt)) {
