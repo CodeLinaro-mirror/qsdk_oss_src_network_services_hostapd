@@ -106,7 +106,8 @@ hostapd_if_notify_assoc(struct hostapd_data *hapd,
 			bool set_beacon,
 			const u8 *sa);
 
-int hostapd_if_init(struct hapd_interfaces *interfaces, bool plugin_enable);
+int hostapd_if_init(struct hapd_interfaces *interfaces, bool plugin_enable,
+		    enum hostapd_if_eloop_type eloop_type);
 int hostapd_if_deinit(void);
 
 void hostapd_if_interface_remove(struct hostapd_data *hapd);
