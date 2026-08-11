@@ -114,6 +114,11 @@
 
 #define WLAN_AUTH_CHALLENGE_LEN 128
 
+/* Buffer large enough to hold PASN Parameters Element carrying
+ * Comeback After subfield and no Comeback cookie.
+ */
+#define WLAN_PASN_COMEBACK_INFO_BUF_LEN 32
+
 /* IEEE Std 802.11-2024, 9.4.1.4 (Capability Information field) */
 #define WLAN_CAPABILITY_ESS BIT(0)
 #define WLAN_CAPABILITY_IBSS BIT(1)
@@ -256,6 +261,7 @@
 #define WLAN_STATUS_POW_REQUIRED 166
 #define WLAN_STATUS_UNSUPPORTED_ML_KEM_PARAMETER 167
 #define WLAN_STATUS_INVALID_ML_KEM_PARAMETER 168
+#define WLAN_STATUS_AUTH_REFUSED_TEMPORARILY 169
 
 /* Reason codes (IEEE Std 802.11-2020, 9.4.1.7, Table 9-90) */
 #define WLAN_REASON_UNSPECIFIED 1
@@ -949,6 +955,7 @@ static inline bool sec_prof_is_sae(int p)
 #define WLAN_TIMEOUT_REASSOC_DEADLINE 1
 #define WLAN_TIMEOUT_KEY_LIFETIME 2
 #define WLAN_TIMEOUT_ASSOC_COMEBACK 3
+#define WLAN_TIMEOUT_AUTH_COMEBACK 6
 
 /* Interworking element (IEEE Std 802.11-2020, 9.4.2.91) -
  * Access Network Options */
