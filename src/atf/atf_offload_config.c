@@ -1413,6 +1413,7 @@ hostapd_ctrl_iface_atf_offload_showatftable(struct hostapd_data *hapd,
 	struct hostapd_data *bss;
 	u8 addr[ETH_ALEN];
 	int len = 0, ret;
+	struct atf_bh_peer *bh;
 
 	if (!iface || !iface->atf_algo) {
 		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
@@ -1495,7 +1496,15 @@ explicit_peers:
 		}
 	}
 
+	/* Print backhaul peers (root AP) stored in algo->bh_peers */
+	dl_list_for_each(bh, &algo->bh_peers, struct atf_bh_peer, list) {
+		wpa_printf(MSG_INFO, "%-20s" MACSTR " %-12s %-20.1f %-24d %s\n",
+			   "", MAC2STR(bh->addr), " ",
+			   bh->atf_peer.calculated_airtime / 10.0, 0, "1");
+	}
+
 	ret = os_snprintf(buf, buflen, "Check hostapd logs for atf table\n");
+
 	if (!os_snprintf_error(buflen, ret))
 		len += ret;
 

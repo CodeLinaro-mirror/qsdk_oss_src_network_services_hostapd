@@ -34,6 +34,9 @@
 #include "atf_offload.h"
 #include "atf_offload_config.h"
 
+#include "ap/ubus.h"
+#include "ap/interference.h"
+
 struct atf_offload *atf = NULL;
 
 /* one second timeout for Airtime distribution */
@@ -373,6 +376,7 @@ atf_reset_group_values(struct atf_group *group)
 	dl_list_init(&group->explicit_peers);
 	group->num_impl_peers = 0;
 	group->num_expl_peers = 0;
+	group->num_bh_peers = 0;
 }
 
 
@@ -435,6 +439,20 @@ atf_free_peer_configs(struct atf_algo *algo)
 		atf_free_peer_config(peer);
 }
 
+static void
+atf_free_bh_peers(struct atf_algo *algo)
+{
+	struct atf_bh_peer *bh, *tmp;
+
+	if (dl_list_empty(&algo->bh_peers))
+		return;
+
+	dl_list_for_each_safe(bh, tmp, &algo->bh_peers, struct atf_bh_peer, list) {
+		dl_list_del(&bh->list);
+		os_free(bh);
+	}
+}
+
 
 static void
 atf_free_ssid_configs(struct atf_algo *algo)
@@ -480,6 +498,11 @@ atf_free_algo_configs(struct atf_algo *algo, bool skip_default)
 	}
 	algo->num_peer_cfg = 0;
 	dl_list_init(&algo->peer_cfgs);
+
+	atf_free_bh_peers(algo);
+	if (!dl_list_empty(&algo->bh_peers))
+		wpa_printf(MSG_ERROR, "ATF: bh_peers not cleared!\n");
+	dl_list_init(&algo->bh_peers);
 
 	atf_free_ssid_configs(algo);
 
@@ -570,6 +593,7 @@ atf_allocate_algo()
 	dl_list_init(&algo->ssid_cfgs);
 	algo->num_peer_cfg = 0;
 	dl_list_init(&algo->peer_cfgs);
+	dl_list_init(&algo->bh_peers);
 	algo->init_update_done = 0;
 
 	return algo;
@@ -620,6 +644,237 @@ atf_join_leave_update(struct hostapd_iface *iface, struct sta_info *sta, bool is
 		ATF_OFFLOAD_SET_JOIN_UPDATE(iface->atf_algo);
 	} else {
 		atf_offload_deinitialize_peer(sta);
+		ATF_OFFLOAD_SET_LEAVE_UPDATE(iface->atf_algo);
+	}
+
+	atf_trigger_config_timer(iface);
+}
+
+/*
+ * atf_get_root_ap_addr - Fetch the Root AP link BSSID via the wpa_supplicant
+ * control interface of the backhaul STA.
+ *
+ * For MLO connections the ap_link_addr whose frequency matches iface->freq
+ * is selected from MLO_STATUS.
+ * For non-MLO connections the bssid field from STATUS is used as a fallback.
+ *
+ * @iface: AP interface of the repeater
+ * @addr: Output buffer (ETH_ALEN bytes) to store the Root AP link BSSID
+ *
+ * Returns 0 on success, -1 on failure.
+ */
+static int atf_get_root_ap_addr(struct hostapd_iface *iface, u8 *addr)
+{
+	char ctrl_path[128];
+	char reply[512];
+	size_t reply_len;
+	struct wpa_ctrl *ctrl;
+	char *ifname = NULL;
+	char *line, *saveptr;
+	int ret = -1;
+
+#ifdef UBUS_SUPPORT
+	ifname = hostapd_ubus_bhsta_ifname(iface);
+#endif /* UBUS_SUPPORT */
+	if (!ifname) {
+		wpa_printf(MSG_DEBUG,
+			   "ATF: bhsta ifname not available, skip adding root AP to sta list");
+		return -1;
+	}
+
+	if (os_snprintf(ctrl_path, sizeof(ctrl_path),
+			"/var/run/wpa_supplicant/%s", ifname) >=
+	    (int)sizeof(ctrl_path)) {
+		wpa_printf(MSG_ERROR, "ATF: bhsta ctrl path too long");
+		free(ifname);
+		return -1;
+	}
+	free(ifname);
+
+	ctrl = wpa_ctrl_open(ctrl_path);
+	if (!ctrl) {
+		wpa_printf(MSG_DEBUG, "ATF: cannot open bhsta ctrl %s",
+			   ctrl_path);
+		return -1;
+	}
+
+	reply_len = sizeof(reply) - 1;
+	if (wpa_ctrl_request(ctrl, "MLO_STATUS", 10, reply, &reply_len,
+			     NULL) == 0) {
+		u8 ap_link_addr[ETH_ALEN];
+		int link_freq = -1;
+		bool found_addr = false;
+
+		reply[reply_len] = '\0';
+		for (line = strtok_r(reply, "\n", &saveptr); line;
+		     line = strtok_r(NULL, "\n", &saveptr)) {
+			if (os_strncmp(line, "freq=", 5) == 0) {
+				link_freq = atoi(line + 5);
+			} else if (os_strncmp(line, "ap_link_addr=", 13) == 0) {
+				if (hwaddr_aton(line + 13, ap_link_addr) == 0)
+					found_addr = true;
+			} else if (os_strncmp(line, "link_id=", 8) == 0) {
+				/* start of a new link block - reset state */
+				link_freq = -1;
+				found_addr = false;
+			}
+			if (found_addr && link_freq == iface->freq) {
+				os_memcpy(addr, ap_link_addr, ETH_ALEN);
+				ret = 0;
+				break;
+			}
+		}
+	}
+
+	/* For legacy non-MLD root AP, call STATUS instead */
+	if (ret != 0) {
+		u8 ap_bssid[ETH_ALEN];
+		int sta_freq = -1;
+		bool found_bssid = false;
+
+		reply_len = sizeof(reply) - 1;
+		if (wpa_ctrl_request(ctrl, "STATUS", 6, reply, &reply_len,
+				     NULL) < 0) {
+			wpa_printf(MSG_ERROR,
+				   "ATF: STATUS request to bhsta failed");
+			wpa_ctrl_close(ctrl);
+			return -1;
+		}
+		reply[reply_len] = '\0';
+		for (line = strtok_r(reply, "\n", &saveptr); line;
+		     line = strtok_r(NULL, "\n", &saveptr)) {
+			if (os_strncmp(line, "bssid=", 6) == 0) {
+				if (hwaddr_aton(line + 6, ap_bssid) == 0)
+					found_bssid = true;
+			} else if (os_strncmp(line, "freq=", 5) == 0) {
+				sta_freq = atoi(line + 5);
+			}
+			if (found_bssid && sta_freq == iface->freq) {
+				os_memcpy(addr, ap_bssid, ETH_ALEN);
+				ret = 0;
+				break;
+			}
+		}
+		if (ret != 0)
+			wpa_printf(MSG_DEBUG,
+				   "ATF: bssid not found in bhsta STATUS");
+	}
+
+	wpa_ctrl_close(ctrl);
+
+	return ret;
+}
+
+
+/*
+ * atf_add_bhsta_to_bh_peers - Add an atf_bh_peer record for the Root AP
+ * BSSID into algo->bh_peers so that the ATF engine accounts for the upstream
+ * backhaul link.  ATF-internal only - never touches hapd->sta_list.
+ *
+ * Only called when the backhaul STA is fully associated with the Root AP
+ * (hostapd_is_backhaul_sta_conn() == true, i.e. wpa_state == COMPLETED).
+ *
+ * @iface: AP interface of the repeater
+ */
+void atf_add_bhsta_to_bh_peers(struct hostapd_iface *iface)
+{
+	struct atf_algo *algo;
+	struct atf_bh_peer *bh;
+	u8 addr[ETH_ALEN];
+
+	if (!iface || !iface->atf_algo)
+		return;
+
+	algo = iface->atf_algo;
+
+	if (atf_get_root_ap_addr(iface, addr) != 0) {
+		wpa_printf(MSG_DEBUG, "ATF: could not get root AP BSSID");
+		return;
+	}
+
+	dl_list_for_each(bh, &algo->bh_peers, struct atf_bh_peer, list) {
+		if (ether_addr_equal(bh->addr, addr)) {
+			wpa_printf(MSG_DEBUG,
+				   "ATF: root AP " MACSTR " already in bh_peers",
+				   MAC2STR(addr));
+			return;
+		}
+	}
+
+	bh = os_zalloc(sizeof(*bh));
+	if (!bh) {
+		wpa_printf(MSG_ERROR, "ATF: failed to alloc bh_peer for root AP");
+		return;
+	}
+
+	os_memcpy(bh->addr, addr, ETH_ALEN);
+	dl_list_add_tail(&algo->bh_peers, &bh->list);
+	ATF_SET_STA_TO_UPDATE(bh->atf_peer);
+
+	wpa_printf(MSG_INFO,
+		   "ATF: added root AP " MACSTR " to bh_peers",
+		   MAC2STR(addr));
+}
+
+
+/*
+ * atf_remove_bhsta_from_bh_peers - Remove all bh_peer entries from
+ * algo->bh_peers.
+ *
+ * @iface: AP interface of the repeater
+ */
+void atf_remove_bhsta_from_bh_peers(struct hostapd_iface *iface)
+{
+	if (!iface || !iface->atf_algo)
+		return;
+
+	atf_free_bh_peers(iface->atf_algo);
+}
+
+
+/*
+ * atf_sync_bhsta_bh_peers - Ensure the bh_peer entry for the Root AP is
+ * present when the backhaul STA is up, and absent when it is not.
+ * Always flushes the existing list first so that a roam to a new root AP
+ * does not leave the old BSSID in bh_peers alongside the new one.
+ * Called at the start of every candidate-list build.
+ */
+static void atf_sync_bhsta_bh_peers(struct hostapd_iface *iface)
+{
+	atf_remove_bhsta_from_bh_peers(iface);
+	if (hostapd_is_backhaul_sta_conn(iface))
+		atf_add_bhsta_to_bh_peers(iface);
+}
+
+/*
+ * atf_bh_join_leave_update - Notify ATF that the backhaul STA has connected to or
+ * disconnected from the Root AP.
+ *
+ * Mirrors atf_join_leave_update() for regular STAs.  On connect, syncs the
+ * bh_peers list and triggers a full ATF update.  On disconnect, removes the
+ * Root AP from bh_peers and triggers a leave update.
+ *
+ * @iface:   AP interface of the repeater
+ * @is_conn: true when the backhaul STA has just connected, false on disconnect
+ */
+void
+atf_bh_join_leave_update(struct hostapd_iface *iface, bool is_conn)
+{
+	if (!iface || !iface->atf_algo)
+		return;
+
+	wpa_printf(MSG_DEBUG, "ATF: bhsta %s", is_conn ? "connected" : "disconnected");
+
+	if (is_conn) {
+		atf_add_bhsta_to_bh_peers(iface);
+		if (!iface->atf_algo->init_update_done) {
+			ATF_OFFLOAD_SET_FULL_UPDATE(iface->atf_algo);
+			iface->atf_algo->init_update_done = 1;
+		} else {
+			ATF_OFFLOAD_SET_JOIN_UPDATE(iface->atf_algo);
+		}
+	} else {
+		atf_remove_bhsta_from_bh_peers(iface);
 		ATF_OFFLOAD_SET_LEAVE_UPDATE(iface->atf_algo);
 	}
 
@@ -989,10 +1244,33 @@ atf_update_peer_cfg_to_peer(struct atf_algo *algo, struct atf_peer_config *peer_
 
 
 static int
+atf_update_bh_peer(struct atf_algo *algo, struct atf_bh_peer *bh)
+{
+	struct atf_group *group;
+
+	if (ATF_OFFLOAD_IS_FULL_UPDATE(algo) ||
+	    (ATF_OFFLOAD_IS_JOIN_UPDATE(algo) && ATF_IS_STA_UPDATED(bh->atf_peer)))
+		algo->no_of_peers++;
+
+	group = atf_find_group_by_name("default-group", algo);
+	if (!group) {
+		wpa_printf(MSG_ERROR,
+			   "ATF: default-group not found for bh_peer " MACSTR,
+			   MAC2STR(bh->addr));
+		return -1;
+	}
+
+	bh->atf_peer.group = group;
+	group->num_bh_peers++;
+	return 0;
+}
+
+static int
 atf_build_candidate_list(struct hostapd_iface *iface)
 {
 	struct atf_algo *algo;
 	struct hostapd_data *hapd;
+	struct atf_bh_peer *bh;
 	int i;
 
 	if (!iface || !iface->atf_algo)
@@ -1019,6 +1297,10 @@ atf_build_candidate_list(struct hostapd_iface *iface)
 		if (ap_for_each_sta(hapd, atf_update_peer, NULL))
 			return -1;
 	}
+
+	dl_list_for_each(bh, &algo->bh_peers, struct atf_bh_peer, list)
+		if (atf_update_bh_peer(algo, bh))
+			return -1;
 
 	return 0;
 }
@@ -1074,22 +1356,12 @@ atf_implicit_peer_cfg(u8 *mac, struct hostapd_data *hapd)
 
 
 void
-atf_cal_implicit_peers(struct atf_group *group)
+atf_cal_implicit_peers(struct atf_group *group, u32 per_peer_airtime)
 {
 	struct sta_info *sta;
-	u32 airtime;
-
-	if (dl_list_empty(&group->implicit_peers)) {
-		return;
-	}
-
-	if (group->num_impl_peers == 0)
-		return;
-
-	airtime = group->calculated_airtime / group->num_impl_peers;
 
 	dl_list_for_each(sta, &group->implicit_peers, struct sta_info, atf_candidate_list)
-		sta->atf_peer.calculated_airtime = airtime;
+		sta->atf_peer.calculated_airtime = per_peer_airtime;
 }
 
 void
@@ -1117,12 +1389,22 @@ atf_cal_explicit_peers(struct atf_group *group)
 	}
 }
 
+static void
+atf_cal_bh_peers(struct atf_algo *algo, u32 per_peer_airtime)
+{
+	struct atf_bh_peer *bh;
+
+	dl_list_for_each(bh, &algo->bh_peers, struct atf_bh_peer, list)
+		bh->atf_peer.calculated_airtime = per_peer_airtime;
+}
+
 int
 atf_distribute_airtime(struct hostapd_iface *iface)
 {
 	struct atf_algo *algo = iface->atf_algo;
 	struct atf_group *group, *def_group = NULL;
 	u16 iface_airtime = ATF_RADIO_DEFAULT_AIRTIME;
+	u32 per_peer_airtime;
 
 	if (dl_list_empty(&algo->groups)) {
 		wpa_printf(MSG_ERROR, "ATF: group list is empty");
@@ -1144,7 +1426,9 @@ atf_distribute_airtime(struct hostapd_iface *iface)
 			iface_airtime = iface_airtime - group->user_cfg_airtime;
 			group->calculated_airtime = group->user_cfg_airtime;
 			atf_cal_explicit_peers(group);
-			atf_cal_implicit_peers(group);
+			atf_cal_implicit_peers(group,
+				group->num_impl_peers ?
+				group->calculated_airtime / group->num_impl_peers : 0);
 		}
 	}
 
@@ -1157,7 +1441,10 @@ atf_distribute_airtime(struct hostapd_iface *iface)
 
 	group->user_cfg_airtime = iface_airtime;
 	group->calculated_airtime = iface_airtime;
-	atf_cal_implicit_peers(group);
+	per_peer_airtime = (group->num_impl_peers + group->num_bh_peers) ?
+		group->calculated_airtime / (group->num_impl_peers + group->num_bh_peers) : 0;
+	atf_cal_implicit_peers(group, per_peer_airtime);
+	atf_cal_bh_peers(algo, per_peer_airtime);
 	return 0;
 }
 
@@ -1172,6 +1459,7 @@ atf_offload_build_peer_config(struct hostapd_iface *iface,
 	struct atf_algo *algo = NULL;
 	struct hostapd_data *hapd;
 	struct sta_info *sta;
+	struct atf_bh_peer *bh;
 
 	if (!iface->atf_algo) {
 		wpa_printf(MSG_ERROR, "ATF: algo is null");
@@ -1229,6 +1517,32 @@ atf_offload_build_peer_config(struct hostapd_iface *iface,
 				num_peers++;
 			}
 		}
+	}
+
+	dl_list_for_each(bh, &algo->bh_peers, struct atf_bh_peer, list) {
+		group = bh->atf_peer.group;
+		if (!group)
+			continue;
+
+		if (ATF_OFFLOAD_IS_LEAVE_UPDATE(algo) ||
+		    (ATF_OFFLOAD_IS_JOIN_UPDATE(algo) &&
+		     !ATF_IS_STA_UPDATED(bh->atf_peer)))
+			continue;
+
+		if (num_peers >= algo->no_of_peers) {
+			wpa_printf(MSG_ERROR, "ATF: bh_peer count exceeds no_of_peers");
+			goto err_cleanup;
+		}
+
+		ATF_CLEAR_STA_UPDATED(bh->atf_peer);
+		os_memcpy(peer_info[num_peers].peer_macaddr, bh->addr, ETH_ALEN);
+		peer_info[num_peers].percentage_peer = bh->atf_peer.calculated_airtime;
+		peer_info[num_peers].group_index = group->index;
+
+		wpa_printf(MSG_INFO, "ATF: build bh_peer " MACSTR " airtime %d group id %d",
+			   MAC2STR(bh->addr), bh->atf_peer.calculated_airtime,
+			   group->index);
+		num_peers++;
 	}
 
 	if (ATF_OFFLOAD_IS_FULL_UPDATE(algo) && algo->no_of_peers != num_peers) {
@@ -2053,7 +2367,9 @@ atf_cfg_timeout_handler(void *eloop_ctx, void *timeout_ctx)
 
 	wpa_printf(MSG_DEBUG, "ATF: Hitting the timeout handler for iface %p", iface);
 
-	if (!hostapd_iface_num_sta(iface)) {
+	atf_sync_bhsta_bh_peers(iface);
+
+	if (!hostapd_iface_num_sta(iface) && dl_list_empty(&algo->bh_peers)) {
 		wpa_printf(MSG_INFO,
 			   "ATF: There is no peer associated in this iface, Skip distribution");
 		goto out;
