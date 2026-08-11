@@ -430,6 +430,24 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 				~EHT_PHYCAP_RX_1024_AND_4096_QAM_LS_242_TONE_RU;
 	}
 
+	if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_NON_TRIG_CQI_FB) {
+		if (!hapd->conf->eht_phy_capab.eht_non_trig_cqi_fb)
+			cap->phy_cap[EHT_PHYCAP_NON_TRIG_CQI_FB_IDX] &=
+				~EHT_PHYCAP_NON_TRIG_CQI_FB;
+	}
+
+	if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_TRIG_SU_BF_FB) {
+		if (!hapd->conf->eht_phy_capab.eht_trig_su_bf_fb)
+			cap->phy_cap[EHT_PHYCAP_TRIG_SU_BF_FB_IDX] &=
+				~EHT_PHYCAP_TRIG_SU_BF_FB;
+	}
+
+	if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_TRIG_CQI_FB) {
+		if (!hapd->conf->eht_phy_capab.eht_trig_cqi_fb)
+			cap->phy_cap[EHT_PHYCAP_TRIG_CQI_FB_IDX] &=
+				~EHT_PHYCAP_TRIG_CQI_FB;
+	}
+
 	if (hapd->conf->eht_phy_capab_mask & EHT_PHY_BSS_OVR_DL_OFDMA_TXBF) {
 		if (hapd->conf->eht_phy_capab.eht_dl_ofdma_txbf)
 			cap->phy_cap[EHT_PHYCAP_TRIG_MU_BF_PART_BW_FB_IDX] |=
