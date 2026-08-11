@@ -132,6 +132,18 @@ struct hapd_interfaces {
 #ifdef CONFIG_ATF_OFFLOAD
 	struct atf_offload atf;
 #endif
+#ifdef CONFIG_MQTT
+	/*
+	 * Single global MQTT connection for the entire hostapd instance.
+	 * Shared by all interfaces and BSSes. Initialised on the first
+	 * interface setup if mqtt_enabled=1; deinitialized on teardown.
+	 */
+	struct mqtt_eloop_ctx *mqtt_ctx;
+#endif /* CONFIG_MQTT */
+#ifdef CONFIG_QCN_EXTN
+	struct hapd_interfaces_extn interfaces_extn;
+#endif /* CONFIG_QCN_EXTN */
+
 };
 
 enum hostapd_chan_status {
@@ -700,14 +712,6 @@ struct hostapd_data {
 #ifdef CONFIG_ATF_OFFLOAD
 	bool atf_configured;
 #endif
-#ifdef CONFIG_MQTT
-	/*
-	 * Single global MQTT connection for the entire hostapd instance.
-	 * Shared by all interfaces and BSSes. Initialised on the first
-	 * interface setup if mqtt_enabled=1; deinitialized on teardown.
-	 */
-	struct mqtt_eloop_ctx *mqtt_ctx;
-#endif /* CONFIG_MQTT */
 
 	u8 last_1x_eapol_key_replay_counter[8];
 
