@@ -5787,6 +5787,24 @@ hostapd_validate_uhr_cu_state(struct hostapd_data *hapd) {
 }
 
 static int
+hostapd_validate_mld_uhr_cu_state(struct hostapd_data *hapd)
+{
+	struct hostapd_data *link;
+
+	for_each_mld_link(link, hapd) {
+		if (!hostapd_is_uhr_enabled(link))
+			continue;
+		if (link->uhr_ecu.state != UHR_ECU_IDLE) {
+			wpa_printf(MSG_ERROR,
+				   "UPDATE_UHR_FEATURES: ECU already in progress on link %u (%s), try again later",
+				   link->mld_link_id, link->conf->iface);
+			return -1;
+		}
+	}
+	return 0;
+}
+
+static int
 hostapd_send_uhr_params_critical_update(struct hostapd_data *hapd)
 {
 	size_t elem_len;
@@ -5847,6 +5865,9 @@ hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 	struct uhr_npca_info *npca_info;
 
 	if (hostapd_validate_uhr_cu_state(hapd) < 0)
+		return -1;
+
+	if (hostapd_validate_mld_uhr_cu_state(hapd) < 0)
 		return -1;
 
 	pos = cmd;
