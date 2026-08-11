@@ -770,6 +770,7 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 	if (wpa_state) {
 		os_strlcpy(iface->iface_extn.sta_wpa_state, wpa_state,
 				sizeof(iface->iface_extn.sta_wpa_state));
+		hostapd_update_bh_sta_connected_extn(iface, wpa_state);
 	}
 	iface->iface_extn.dfs_available_from_sta = false;
 
@@ -848,6 +849,7 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	if (wpa_state) {
 		os_strlcpy(iface->iface_extn.sta_wpa_state, wpa_state,
 				sizeof(iface->iface_extn.sta_wpa_state));
+		hostapd_update_bh_sta_connected_extn(iface, wpa_state);
 	}
         intval = ucv_int64_get(ucv_object_get(info, "frequency", NULL));
         if (!errno)
@@ -1109,6 +1111,7 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 	if (wpa_state) {
 		os_strlcpy(iface->iface_extn.sta_wpa_state, wpa_state,
 				sizeof(iface->iface_extn.sta_wpa_state));
+		hostapd_update_bh_sta_connected_extn(iface, wpa_state);
 	}
 
 	ret = uc_hostapd_iface_switch_channel_extn(iface, is_dfs,
