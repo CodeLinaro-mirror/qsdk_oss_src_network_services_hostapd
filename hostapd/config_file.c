@@ -6100,6 +6100,17 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		bss->mld_max_links_per_sta = val;
 		wpa_printf(MSG_DEBUG, "MLD: mld_max_links_per_sta=%d", val);
+	} else if (os_strcmp(buf, "mld_link_rej_mode") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid mld_link_rej_mode %d (expected 0 or 1)",
+				   line, val);
+			return 1;
+		}
+		bss->mld_link_rej_mode = val;
+		wpa_printf(MSG_DEBUG, "MLD: mld_link_rej_mode=%d", val);
 	} else if (os_strcmp(buf, "mld_addr") == 0) {
 		if (hwaddr_aton(pos, bss->mld_addr)) {
 			wpa_printf(MSG_ERROR, "Line %d: Invalid mld_addr",
