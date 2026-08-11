@@ -6313,6 +6313,39 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		bss->eht_phy_capab.eht_dl_ofdma_txbf = val;
 		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_DL_OFDMA_TXBF;
+	} else if (os_strcmp(buf, "bss_eht_trig_su_bf_fb") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_trig_su_bf_fb %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_trig_su_bf_fb = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_TRIG_SU_BF_FB;
+	} else if (os_strcmp(buf, "bss_eht_trig_cqi_fb") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_trig_cqi_fb %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_trig_cqi_fb = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_TRIG_CQI_FB;
+	} else if (os_strcmp(buf, "bss_eht_non_trig_cqi_fb") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid bss_eht_non_trig_cqi_fb %d (expected 0..1)",
+				   line, val);
+			return 1;
+		}
+		bss->eht_phy_capab.eht_non_trig_cqi_fb = val;
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_NON_TRIG_CQI_FB;
 	} else if (os_strcmp(buf, "bss_eht_sup_mcs15_in_mru") == 0 ||
 		   os_strcmp(buf, "bss_eht_mcs15_supp") == 0) {
 		int val = atoi(pos);

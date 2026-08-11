@@ -404,6 +404,9 @@ struct eht_phy_capabilities_info {
 	u8 eht_4x_eht_ltf_and_800ns_gi;
 	u8 eht_rx_1024_and_4096_qam_ls_242_tone_ru;
 	u8 eht_dl_ofdma_txbf;
+	u8 eht_trig_su_bf_fb;
+	u8 eht_trig_cqi_fb;
+	u8 eht_non_trig_cqi_fb;
 	u8 eht_sup_mcs15_in_mru;
 	u8 eht_mcs14_dup_in_6ghz;
 };
@@ -586,6 +589,9 @@ struct hostapd_bss_config {
 #define EHT_PHY_BSS_OVR_DL_OFDMA_TXBF BIT(22)
 #define EHT_PHY_BSS_OVR_SUP_MCS15_IN_MRU BIT(23)
 #define EHT_PHY_BSS_OVR_MCS14_DUP_IN_6GHZ BIT(24)
+#define EHT_PHY_BSS_OVR_TRIG_SU_BF_FB BIT(25)
+#define EHT_PHY_BSS_OVR_TRIG_CQI_FB BIT(26)
+#define EHT_PHY_BSS_OVR_NON_TRIG_CQI_FB BIT(27)
 	u32 eht_phy_capab_mask;
 #endif /* CONFIG_IEEE80211BE */
 

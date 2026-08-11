@@ -1644,6 +1644,42 @@ static int hostapd_validate_bss_eht_capab(struct hostapd_data *hapd)
 		}
 	}
 
+	if (mask & EHT_PHY_BSS_OVR_TRIG_SU_BF_FB) {
+		if (hapd->conf->eht_phy_capab.eht_trig_su_bf_fb &&
+		    !_ieee80211eht_cap_check(
+			    hw_eht->phy_cap,
+			    EHT_PHYCAP_TRIG_SU_BF_FB_IDX,
+			    EHT_PHYCAP_TRIG_SU_BF_FB)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_eht_trig_su_bf_fb");
+			return -1;
+		}
+	}
+
+	if (mask & EHT_PHY_BSS_OVR_TRIG_CQI_FB) {
+		if (hapd->conf->eht_phy_capab.eht_trig_cqi_fb &&
+		    !_ieee80211eht_cap_check(
+			    hw_eht->phy_cap,
+			    EHT_PHYCAP_TRIG_CQI_FB_IDX,
+			    EHT_PHYCAP_TRIG_CQI_FB)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_eht_trig_cqi_fb");
+			return -1;
+		}
+	}
+
+	if (mask & EHT_PHY_BSS_OVR_NON_TRIG_CQI_FB) {
+		if (hapd->conf->eht_phy_capab.eht_non_trig_cqi_fb &&
+		    !_ieee80211eht_cap_check(
+			    hw_eht->phy_cap,
+			    EHT_PHYCAP_NON_TRIG_CQI_FB_IDX,
+			    EHT_PHYCAP_NON_TRIG_CQI_FB)) {
+			wpa_printf(MSG_ERROR,
+				   "Driver does not support bss_eht_non_trig_cqi_fb");
+			return -1;
+		}
+	}
+
 	hw_sup_mcs15_in_mru =
 		(hw_eht->phy_cap[EHT_PHYCAP_SUP_MCS15_IN_MRU_IDX] &
 		 EHT_PHYCAP_SUP_MCS15_IN_MRU_MASK) >>
