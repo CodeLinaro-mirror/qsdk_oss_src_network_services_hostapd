@@ -9044,8 +9044,11 @@ void wpa_auth_set_ml_link_rejected(struct wpa_state_machine *sm, u8 link_id,
 		return;
 
 	link = &sm->mld_links[link_id];
-	if (!link->valid)
+	if (!link->valid && rejected)
 		return;
+
+	if (!rejected && !link->valid)
+		link->valid = true;  /* restore valid on stale rejection clear */
 
 	link->rejected = rejected;
 #endif /* CONFIG_IEEE80211BE */
