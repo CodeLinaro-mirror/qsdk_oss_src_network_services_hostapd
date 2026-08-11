@@ -3776,8 +3776,17 @@ static void nl80211_link_removal_event(struct i802_bss *bss,
 	    nla_len(tb[NL80211_ATTR_MLO_LINK_ID]) < 1)
 		return;
 	link_id = nla_get_u8(tb[NL80211_ATTR_MLO_LINK_ID]);
-	if (link_id >= MAX_NUM_MLD_LINKS || !(bss->valid_links & BIT(link_id)))
+
+	/*
+	 * Verify the link received is not removed or stopped while
+	 * host sends the link removal started/completed event.
+	 */
+	if (link_id >= MAX_NUM_MLD_LINKS || !(bss->valid_links & BIT(link_id)) ||
+	    !(bss->active_links & BIT(link_id))) {
+		wpa_printf(MSG_DEBUG,
+			   "ignoring link removal event from link_id:%d", link_id);
 		return;
+	}
 	link = nl80211_get_link(bss, link_id);
 	if (!link || !link->ctx)
 		return;
