@@ -4822,9 +4822,13 @@ void wpa_pasn_add_rsnxe(struct wpabuf *buf, u64 capab)
 void wpa_pasn_add_own_supported_groups(struct wpabuf *buf, int *pasn_groups)
 {
 	int count, i;
+	int default_groups[] = { 19, 0, 0 };
 
-	if (!buf || !pasn_groups)
+	if (!buf)
 		return;
+
+	if (!pasn_groups)
+		pasn_groups = default_groups;
 
 	count = int_array_len(pasn_groups);
 	if (wpabuf_tailroom(buf) < 2 + 1 + (count * 2))
