@@ -510,6 +510,13 @@ struct rrm_data {
 	u64 chan_load_end_time;
 	u64 chan_load_end_time_busy;
 	struct os_reltime chan_load_start;
+
+	/* Noise Histogram measurement state */
+	u8 noise_hist_token;
+	u8 noise_hist_op_class;
+	u8 noise_hist_channel;
+	u16 noise_hist_duration;
+	s8 noise_hist_anpi;
 };
 
 enum wpa_supplicant_test_failure {

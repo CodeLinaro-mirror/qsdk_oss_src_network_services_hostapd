@@ -23,6 +23,10 @@ static void wpas_rrm_channel_load_timeout(void *eloop_ctx, void *timeout_ctx);
 static int wpas_rrm_handle_channel_load_req(struct wpa_supplicant *wpa_s,
 					    const struct rrm_measurement_request_element *req,
 					    struct wpabuf **buf);
+static void wpas_rrm_noise_histogram_timeout(void *eloop_ctx, void *timeout_ctx);
+static int wpas_rrm_handle_noise_histogram_req(struct wpa_supplicant *wpa_s,
+					       const struct rrm_measurement_request_element *req,
+					       struct wpabuf **buf);
 
 
 static void wpas_rrm_neighbor_rep_timeout_handler(void *data, void *user_ctx)
@@ -59,6 +63,8 @@ void wpas_rrm_reset(struct wpa_supplicant *wpa_s)
 	wpas_clear_beacon_rep_data(wpa_s);
 	eloop_cancel_timeout(wpas_rrm_channel_load_timeout, wpa_s, NULL);
 	wpa_s->rrm.chan_load_token = 0;
+	eloop_cancel_timeout(wpas_rrm_noise_histogram_timeout, wpa_s, NULL);
+	wpa_s->rrm.noise_hist_token = 0;
 }
 
 
@@ -1368,6 +1374,8 @@ wpas_rrm_handle_msr_req_element(
 		return wpas_rrm_build_lci_report(wpa_s, req, buf);
 	case MEASURE_TYPE_CHANNEL_LOAD:
 		return wpas_rrm_handle_channel_load_req(wpa_s, req, buf);
+	case MEASURE_TYPE_NOISE_HIST:
+		return wpas_rrm_handle_noise_histogram_req(wpa_s, req, buf);
 	case MEASURE_TYPE_BEACON:
 		if (duration_mandatory &&
 		    !(wpa_s->drv_rrm_flags &
@@ -1775,18 +1783,27 @@ void wpas_rrm_handle_survey_results(struct wpa_supplicant *wpa_s,
 	struct rrm_data *rrm = &wpa_s->rrm;
 	struct freq_survey *survey;
 
-	if (!rrm->chan_load_token)
+	if (!rrm->chan_load_token && !rrm->noise_hist_token)
 		return;
 
 	dl_list_for_each(survey, &survey_results->survey_list,
 			 struct freq_survey, list) {
 		if (survey->freq != wpa_s->assoc_freq)
 			continue;
-		if (!(survey->filled & SURVEY_HAS_CHAN_TIME) ||
-		    !(survey->filled & SURVEY_HAS_CHAN_TIME_BUSY))
-			break;
-		rrm->chan_load_end_time = survey->channel_time;
-		rrm->chan_load_end_time_busy = survey->channel_time_busy;
+
+		/* Channel Load: capture cumulative counters */
+		if (rrm->chan_load_token &&
+		    (survey->filled & SURVEY_HAS_CHAN_TIME) &&
+		    (survey->filled & SURVEY_HAS_CHAN_TIME_BUSY)) {
+			rrm->chan_load_end_time = survey->channel_time;
+			rrm->chan_load_end_time_busy = survey->channel_time_busy;
+		}
+
+		/* Noise Histogram: capture point-in-time noise floor */
+		if (rrm->noise_hist_token &&
+		    (survey->filled & SURVEY_HAS_NF))
+			rrm->noise_hist_anpi = (s8) survey->nf;
+
 		break;
 	}
 }
@@ -1871,6 +1888,129 @@ incapable:
 	    wpas_rrm_report_elem(buf, req->token,
 				 MEASUREMENT_REPORT_MODE_REJECT_INCAPABLE,
 				 MEASURE_TYPE_CHANNEL_LOAD, NULL, 0) < 0) {
+		wpa_printf(MSG_DEBUG, "RRM: Failed to add report element");
+		return -1;
+	}
+
+	return 0;
+}
+
+
+static void wpas_rrm_noise_histogram_timeout(void *eloop_ctx, void *timeout_ctx)
+{
+	struct wpa_supplicant *wpa_s = eloop_ctx;
+	struct rrm_data *rrm = &wpa_s->rrm;
+	struct wpabuf *buf = NULL;
+	u8 report[22]; /* op_class(1)+chan(1)+start_time(8)+duration(2)+
+			* antenna_id(1)+anpi(1)+ipi[0..7](8) = 22 bytes */
+
+	wpa_printf(MSG_DEBUG,
+		   "RRM: Noise Histogram measurement window expired, sending report");
+
+	if (!rrm->noise_hist_token) {
+		wpa_printf(MSG_DEBUG, "RRM: No pending Noise Histogram measurement");
+		return;
+	}
+
+	/* End-of-window survey poll to get ANPI */
+	wpa_drv_get_survey(wpa_s, wpa_s->assoc_freq);
+
+	/* Build Noise Histogram Report body (IEEE Std 802.11-2020, 9.4.2.22.3) */
+	report[0] = rrm->noise_hist_op_class;
+	report[1] = rrm->noise_hist_channel;
+	/* Actual Measurement Start Time: TSF not available, use 0 */
+	os_memset(&report[2], 0, 8);
+	WPA_PUT_LE16(&report[10], rrm->noise_hist_duration);
+	report[12] = 0xFF; /* Antenna ID: unknown */
+	report[13] = (u8) rrm->noise_hist_anpi; /* ANPI (s8 as u8) */
+	/* IPI[0..7]: not available from ath12k, set to 0 */
+	os_memset(&report[14], 0, 8);
+
+	wpa_printf(MSG_DEBUG,
+		   "RRM: Noise Histogram report: op_class=%u chan=%u ANPI=%d dBm",
+		   rrm->noise_hist_op_class, rrm->noise_hist_channel,
+		   (int) rrm->noise_hist_anpi);
+
+	if (wpas_rrm_report_elem(&buf, rrm->noise_hist_token,
+				 MEASUREMENT_REPORT_MODE_ACCEPT,
+				 MEASURE_TYPE_NOISE_HIST,
+				 report, sizeof(report)) < 0) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Noise Histogram: failed to build report element");
+	} else {
+		wpas_rrm_send_msr_report(wpa_s, buf);
+		wpabuf_free(buf);
+	}
+
+	rrm->noise_hist_token = 0;
+}
+
+
+static int wpas_rrm_handle_noise_histogram_req(struct wpa_supplicant *wpa_s,
+					       const struct rrm_measurement_request_element *req,
+					       struct wpabuf **buf)
+{
+	struct rrm_data *rrm = &wpa_s->rrm;
+	const u8 *pos = req->variable;
+	size_t len = req->len - 3;
+	u8 op_class, channel;
+	u16 rand_interval, duration;
+	u32 interval_usec;
+	u32 _rand;
+
+	if (len < 6) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Noise Histogram request too short (%zu)", len);
+		goto incapable;
+	}
+
+	op_class = pos[0];
+	channel = pos[1];
+	rand_interval = WPA_GET_LE16(&pos[2]);
+	duration = WPA_GET_LE16(&pos[4]);
+
+	wpa_printf(MSG_DEBUG,
+		   "RRM: Noise Histogram request: op_class=%u channel=%u rand_interval=%u duration=%u",
+		   op_class, channel, rand_interval, duration);
+
+	/* Only support measurement on the current operating channel */
+	if (wpa_s->wpa_state != WPA_COMPLETED || !wpa_s->current_bss ||
+	    ieee80211_chan_to_freq(NULL, op_class, channel) != (int) wpa_s->assoc_freq) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Noise Histogram: requested channel %u (op_class %u) is not current channel",
+			   channel, op_class);
+		goto incapable;
+	}
+
+	if (duration == 0) {
+		wpa_printf(MSG_DEBUG, "RRM: Noise Histogram: duration is 0");
+		goto incapable;
+	}
+
+	/* Cancel any pending measurement */
+	eloop_cancel_timeout(wpas_rrm_noise_histogram_timeout, wpa_s, NULL);
+
+	rrm->noise_hist_token = req->token;
+	rrm->noise_hist_op_class = op_class;
+	rrm->noise_hist_channel = channel;
+	rrm->noise_hist_duration = duration;
+	rrm->noise_hist_anpi = 0;
+
+	if (os_get_random((u8 *) &_rand, sizeof(_rand)) < 0)
+		_rand = os_random();
+	interval_usec = (_rand % (rand_interval + 1)) * 1024;
+
+	/* duration is in TUs (1024 us) */
+	eloop_register_timeout(0, interval_usec + (u32) duration * 1024,
+			       wpas_rrm_noise_histogram_timeout, wpa_s, NULL);
+
+	return 1;
+
+incapable:
+	if (!is_multicast_ether_addr(rrm->dst_addr) &&
+	    wpas_rrm_report_elem(buf, req->token,
+				 MEASUREMENT_REPORT_MODE_REJECT_INCAPABLE,
+				 MEASURE_TYPE_NOISE_HIST, NULL, 0) < 0) {
 		wpa_printf(MSG_DEBUG, "RRM: Failed to add report element");
 		return -1;
 	}

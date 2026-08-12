@@ -417,6 +417,7 @@ static void sme_auth_handle_rrm(struct wpa_supplicant *wpa_s,
 		WLAN_RRM_CAPS_BEACON_REPORT_TABLE;
 
 	*pos |= WLAN_RRM_CAPS_CHANNEL_LOAD;
+	pos[1] |= WLAN_RRM_CAPS_NOISE_HISTOGRAM;
 
 	if (wpa_s->lci)
 		pos[1] |= WLAN_RRM_CAPS_LCI_MEASUREMENT;

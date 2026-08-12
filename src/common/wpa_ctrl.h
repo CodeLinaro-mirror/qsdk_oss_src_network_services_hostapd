@@ -443,6 +443,9 @@ extern "C" {
 /* parameters: <STA address> <dialog token> <channel load> */
 #define CHANNEL_LOAD_RESP_RX "CHANNEL-LOAD-RESP-RX "
 
+/* parameters: <STA address> <dialog token> <anpi> <ipi0..ipi7> */
+#define NOISE_HIST_RESP_RX "NOISE-HIST-RESP-RX "
+
 /* PMKSA cache entry added; parameters: <BSSID> <network_id> */
 #define PMKSA_CACHE_ADDED "PMKSA-CACHE-ADDED "
 /* PMKSA cache entry removed; parameters: <BSSID> <network_id> */

@@ -5434,6 +5434,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		if (atoi(pos))
 			bss->radio_measurements[0] |=
 				WLAN_RRM_CAPS_CHANNEL_LOAD;
+	} else if (os_strcmp(buf, "rrm_noise_histogram") == 0) {
+		if (atoi(pos))
+			bss->radio_measurements[1] |=
+				WLAN_RRM_CAPS_NOISE_HISTOGRAM;
 	} else if (os_strcmp(buf, "rrm_beacon_report") == 0) {
 		if (atoi(pos))
 			bss->radio_measurements[0] |=

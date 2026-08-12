@@ -2282,6 +2282,13 @@ static int hostapd_cli_cmd_req_channel_load(struct wpa_ctrl *ctrl, int argc,
 }
 
 
+static int hostapd_cli_cmd_req_noise_histogram(struct wpa_ctrl *ctrl, int argc,
+					       char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "REQ_NOISE_HISTOGRAM", 5, argc, argv);
+}
+
+
 static int hostapd_cli_cmd_reload_wpa_psk(struct wpa_ctrl *ctrl, int argc,
 					  char *argv[])
 {
@@ -3901,6 +3908,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<addr> = send a link measurement report request to a station"},
 	{ "req_channel_load", hostapd_cli_cmd_req_channel_load, NULL,
 	  "<addr> <op_class> <channel> <rand_interval> <duration> = send a channel load request to a station"},
+	{ "req_noise_histogram", hostapd_cli_cmd_req_noise_histogram, NULL,
+	  "<addr> <op_class> <channel> <random_interval> <duration> = send a noise histogram report request to a station" },
 	{ "reload_wpa_psk", hostapd_cli_cmd_reload_wpa_psk, NULL,
 	  "= reload wpa_psk_file only" },
 #ifdef CONFIG_IEEE80211R_AP
