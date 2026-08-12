@@ -26,6 +26,7 @@
 #include "eapol_auth/eapol_auth_sm_i.h"
 #include "fst/fst.h"
 #include "hostapd.h"
+#include "hostapd_log.h"
 #include "authsrv.h"
 #include "sta_info.h"
 #include "accounting.h"
@@ -5520,6 +5521,10 @@ dfs_offload:
 
 fail:
 	wpa_printf(MSG_ERROR, "Interface initialization failed");
+#ifdef CONFIG_QCN_EXTN
+	hostapd_log_trigger_emit(iface->bss[0], NULL,
+				 HOSTAPD_LOG_TRIG_VAP_UP_FAIL);
+#endif /* CONFIG_QCN_EXTN */
 	hostapd_ubus_free_iface(iface);
 #ifdef CONFIG_QCN_EXTN
 	iface->bootup_cac_in_progress = 0;
@@ -5672,6 +5677,10 @@ int hostapd_setup_interface(struct hostapd_iface *iface)
 	if (ret) {
 		wpa_printf(MSG_ERROR, "%s: Unable to setup interface.",
 			   iface->conf->bss[0]->iface);
+#ifdef CONFIG_QCN_EXTN
+		hostapd_log_trigger_emit(iface->bss[0], NULL,
+					 HOSTAPD_LOG_TRIG_VAP_UP_FAIL);
+#endif /* CONFIG_QCN_EXTN */
 		return -1;
 	}
 
@@ -7332,6 +7341,10 @@ int hostapd_enable_iface(struct hostapd_iface *hapd_iface)
 		hostapd_deinit_driver(hapd_iface->bss[0]->driver,
 				      hapd_iface->bss[0]->drv_priv,
 				      hapd_iface);
+#ifdef CONFIG_QCN_EXTN
+		hostapd_log_trigger_emit(hapd_iface->bss[0], NULL,
+					 HOSTAPD_LOG_TRIG_VAP_UP_FAIL);
+#endif /* CONFIG_QCN_EXTN */
 		return -1;
 	}
 
@@ -7841,6 +7854,10 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 
 		if (new_iface) {
 			if (interfaces->driver_init(hapd_iface)) {
+#ifdef CONFIG_QCN_EXTN
+				hostapd_log_trigger_emit(hapd_iface->bss[0], NULL,
+						 HOSTAPD_LOG_TRIG_VAP_UP_FAIL);
+#endif /* CONFIG_QCN_EXTN */
 				hostapd_deinit_driver(
 					hapd_iface->bss[0]->driver,
 					hapd_iface->bss[0]->drv_priv,
@@ -7872,6 +7889,10 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 			if (start_ctrl_iface_bss(hapd) < 0 ||
 			    (hapd_iface->state == HAPD_IFACE_ENABLED &&
 			     hostapd_setup_bss(hapd, false, true))) {
+#ifdef CONFIG_QCN_EXTN
+				hostapd_log_trigger_emit(hapd, NULL,
+							 HOSTAPD_LOG_TRIG_VAP_CREATE_FAIL);
+#endif /* CONFIG_QCN_EXTN */
 				hostapd_bss_link_deinit(hapd);
 				hostapd_cleanup(hapd);
 				hapd_iface->bss[hapd_iface->num_bss - 1] = NULL;
