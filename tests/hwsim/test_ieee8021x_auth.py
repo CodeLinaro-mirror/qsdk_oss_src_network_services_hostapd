@@ -2453,3 +2453,35 @@ def test_ieee8021x_auth_pqc_akm_not_in_rsne(dev, apdev):
     if sta["AKMSuiteSelector"] != "00-0f-ac-31":
         raise Exception("Incorrect AKMSuiteSelector value: " +
                         sta["AKMSuiteSelector"])
+
+def test_ieee8021x_auth_pqc_rsnxe_capab(dev, apdev):
+    """RSNXE capabilities for IEEE 802.1X over Authentication frames"""
+    check_pqc_capab(dev[0])
+
+    ssid = "test-8021x-pqc-rsnxe"
+    hapd = hostapd.add_ap(apdev[0], pqc_ap_params(ssid))
+    bssid = apdev[0]['bssid']
+
+    dev[0].scan_for_bss(bssid, freq=2412)
+
+    for field in ["ie", "beacon_ie"]:
+        rsnxe = get_bss_elem(dev[0], bssid, WLAN_EID_RSNX, field=field)
+        if rsnxe is None:
+            if field == "beacon_ie":
+                continue
+            raise Exception("No RSNXE in " + field)
+        logger.info("%s RSNXE: %s" % (field, binascii.hexlify(rsnxe).decode()))
+        # Draft P802.11bt D1.0, 12.12.10 requires the IEEE 802.1X
+        # Authentication Utilizing Authentication Frame Support field to be
+        # set when the AP supports IEEE 802.1X over Authentication frames.
+        for (bit, name) in [(WLAN_RSNX_CAPAB_802_1X_IN_AUTH_FRAMES,
+                             "802.1X in Authentication frames"),
+                            (WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION,
+                             "(Re)Association frame encryption"),
+                            (WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY,
+                             "PMKSA caching privacy")]:
+            if not rsnxe_capab(rsnxe, bit):
+                raise Exception("%s not indicated in the %s RSNXE" %
+                                (name, field))
+
+    pqc_connect(dev[0], ssid)
