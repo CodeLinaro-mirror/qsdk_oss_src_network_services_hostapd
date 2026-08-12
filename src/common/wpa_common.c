@@ -4747,9 +4747,13 @@ int wpa_pasn_parse_parameter_ie(const u8 *data, u8 len, bool from_ap,
 
 		pasn_params->comeback_len = *pos++;
 		len--;
-		pasn_params->comeback = pos;
-		len -=  pasn_params->comeback_len;
-		pos += pasn_params->comeback_len;
+		if (pasn_params->comeback_len) {
+			pasn_params->comeback = pos;
+			len -=  pasn_params->comeback_len;
+			pos += pasn_params->comeback_len;
+		} else {
+			pasn_params->comeback = NULL;
+		}
 	}
 
 	if (params->control & WPA_PASN_CTRL_GROUP_AND_KEY_PRESENT) {
