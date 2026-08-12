@@ -3929,3 +3929,88 @@ def test_eht_ml_setup_reconfig_AB_A_AB(dev, apdev, params):
                                  timeout=2)
             if ev is None:
                 raise Exception("GTK rekey timed out after link addition")
+
+def eht_mld_preferred_bssid_connectivity(hapd0, hapd1, wpas, ssid, passphrase,
+                                         valid_links=3, bssid=None):
+        wpas.connect(ssid, sae_password=passphrase, scan_freq="2412 2437",
+                     key_mgmt="SAE", ieee80211w="2", beacon_prot="1",
+                     bssid=bssid)
+        eht_verify_status(wpas, hapd0, 2412, 20, is_ht=True, mld=True,
+                          valid_links=valid_links, active_links=valid_links)
+        eht_verify_wifi_version(wpas)
+
+        traffic_test(wpas, hapd0)
+        traffic_test(wpas, hapd1)
+
+def test_eht_mld_preferred_bssid(dev, apdev):
+    """EHT Non-AP MLD with Preferred BSSID and AP MLD"""
+    with HWSimRadio(use_mlo=True) as (hapd_radio, hapd_iface), \
+        HWSimRadio(use_mlo=True) as (wpas_radio, wpas_iface):
+
+        ap_link0_bssid = "02:00:00:01:00:01"
+        ap_link1_bssid = "02:00:00:01:00:02"
+        ap_mld_addr = "02:00:00:00:01:28"
+        unknown_bssid = "02:00:00:00:01:43"
+
+        wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+        wpas.interface_add(wpas_iface)
+        check_sae_capab(wpas)
+
+        passphrase = 'qwertyuiop'
+        ssid = "mld_ap_sae_two_link"
+        params = eht_mld_ap_wpa2_params(ssid, passphrase,
+                                        key_mgmt="SAE", mfp="2", pwe='1',
+                                        beacon_prot=1)
+        params["bssid"] = ap_link0_bssid
+        params["mld_addr"] = ap_mld_addr
+
+        hapd0 = eht_mld_enable_ap(hapd_iface, 0, params)
+
+        params['channel'] = '6'
+        params["bssid"] = ap_link1_bssid
+
+        hapd1 = eht_mld_enable_ap(hapd_iface, 1, params)
+
+        wpas.set("sae_pwe", "1")
+
+        # Case 1: Don't force any BSSID
+        try:
+            eht_mld_preferred_bssid_connectivity(hapd0, hapd1, wpas, ssid, passphrase)
+        except:
+            raise Exception("Connection failed without forcing any BSSID!")
+        else:
+            logger.info("Connection OK without forcing any BSSID")
+
+        wpas.request("DISCONNECT")
+        wpas.wait_disconnected()
+
+        # Case 2: Force ap_link0_bssid
+        try:
+            eht_mld_preferred_bssid_connectivity(hapd0, hapd1, wpas, ssid, passphrase,
+                                                 bssid=ap_link0_bssid)
+        except:
+            raise Exception(f"Connection failed while forcing link0 BSSID: {ap_link0_bssid}")
+        else:
+            logger.info(f"Connection OK while forcing link0 BSSID: {ap_link0_bssid}")
+
+        wpas.request("DISCONNECT")
+        wpas.wait_disconnected()
+
+        # Case 3: Force ap_link1_bssid
+        try:
+            eht_mld_preferred_bssid_connectivity(hapd0, hapd1, wpas, ssid, passphrase,
+                                                 bssid=ap_link1_bssid)
+        except:
+            raise Exception(f"Connection failed while forcing link1 BSSID: {ap_link1_bssid}")
+        else:
+            logger.info(f"Connection OK while forcing link1 BSSID: {ap_link1_bssid}")
+
+        wpas.request("DISCONNECT")
+        wpas.wait_disconnected()
+
+        # Case 4: Force an unknown BSSID, not expecting connection
+        try:
+            eht_mld_preferred_bssid_connectivity(hapd0, hapd1, wpas, ssid, passphrase,
+                                                 bssid=unknown_bssid)
+        except:
+            logger.info(f"Connection failed as expected with unknown bssid: {unknown_bssid}")
