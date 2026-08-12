@@ -42,6 +42,8 @@ void hostapd_log(struct hostapd_data *hapd, const u8 *addr,
 #define HOSTAPD_LOG_TRIG_AUTH_REJECT    "auth_reject"
 #define HOSTAPD_LOG_TRIG_ASSOC_REJECT   "assoc_reject"
 #define HOSTAPD_LOG_TRIG_4WAY_FAIL      "4way_fail"
+#define HOSTAPD_LOG_TRIG_VAP_CREATE_FAIL "vap_create_fail"
+#define HOSTAPD_LOG_TRIG_VAP_UP_FAIL    "vap_up_fail"
 
 void hostapd_log_extn_init(struct hostapd_data *hapd);
 void hostapd_log_extn_deinit(struct hostapd_data *hapd);
