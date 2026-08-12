@@ -2557,3 +2557,83 @@ def test_ieee8021x_auth_pqc_constraint_mismatch(dev, apdev):
     val = dev[0].get_status_field("security_profile")
     if val != str(SECURITY_PROFILE_8021X_PQC_0):
         raise Exception("Unexpected security_profile: " + str(val))
+
+def _run_pqc_transcript(dev, hapd, ssid, tamper):
+    """Forward Authentication frames to the AP, optionally modifying one
+
+    The transcript covers the Authentication frame bodies exchanged during
+    IEEE 802.1X authentication (Draft P802.11bt D1.0, 12.17.5), so appending
+    an element that both sides otherwise ignore makes the AP and the STA
+    derive the PTK from different transcripts.
+    """
+
+    # A Vendor Specific element with an unassigned OUI that is ignored by the
+    # receiver but is still part of the Authentication frame body.
+    extra = struct.pack("BBBBB", WLAN_EID_VENDOR_SPECIFIC, 3, 0x00, 0x11, 0x22)
+    tampered = False
+    restarted = False
+
+    hapd.set("ext_mgmt_frame_handling", "1")
+    pqc_connect(dev, ssid, eap_params=EAP_PSK_PARAMS, wait_connect=False)
+
+    ev = None
+    for i in range(50):
+        req = hapd.mgmt_rx(timeout=5)
+        if req is None:
+            break
+        frame = req['frame']
+        if req['subtype'] == 11 and len(frame) >= 30 and \
+           struct.unpack("<H", frame[24:26])[0] == WLAN_AUTH_802_1X:
+            trans = struct.unpack("<H", frame[26:28])[0]
+            if tamper and not tampered and trans > 1:
+                logger.info("Appending an element to Authentication frame %d" %
+                            trans)
+                frame += extra
+                tampered = True
+            elif tampered and trans == 1:
+                # The STA gave up and started a new exchange that is not
+                # modified, so the modified one has already been rejected.
+                restarted = True
+                break
+        mgmt_rx_process(hapd, binascii.hexlify(frame).decode())
+        ev = dev.wait_event(["CTRL-EVENT-CONNECTED", "CTRL-EVENT-DISCONNECTED",
+                             "CTRL-EVENT-AUTH-REJECT",
+                             "CTRL-EVENT-ASSOC-REJECT"], timeout=0.1)
+        if ev:
+            break
+
+    if tamper and not tampered:
+        raise Exception("No Authentication frame was modified")
+
+    if ev is None and not restarted:
+        ev = dev.wait_event(["CTRL-EVENT-CONNECTED", "CTRL-EVENT-DISCONNECTED",
+                             "CTRL-EVENT-AUTH-REJECT",
+                             "CTRL-EVENT-ASSOC-REJECT"], timeout=10)
+
+    hapd.set("ext_mgmt_frame_handling", "0")
+    return ev is not None and "CTRL-EVENT-CONNECTED" in ev
+
+def test_ieee8021x_auth_pqc_transcript_mismatch(dev, apdev):
+    """IEEE 802.1X over Authentication frames with PQC and a modified transcript"""
+    check_pqc_capab(dev[0])
+
+    ssid = "test-8021x-pqc-transcript"
+    hapd = hostapd.add_ap(apdev[0], pqc_ap_params(ssid))
+
+    # Verify that forwarding the frames unmodified results in a successful
+    # connection so that the negative case below cannot pass for the wrong
+    # reason.
+    if not _run_pqc_transcript(dev[0], hapd, ssid, False):
+        raise Exception("Connection failed without modifying the transcript")
+
+    dev[0].request("DISCONNECT")
+    dev[0].wait_disconnected()
+    dev[0].request("REMOVE_NETWORK all")
+    dev[0].dump_monitor()
+    hapd.dump_monitor()
+
+    if _run_pqc_transcript(dev[0], hapd, ssid, True):
+        raise Exception("Connection succeeded with a modified transcript")
+
+    if "PONG" not in hapd.request("PING"):
+        raise Exception("hostapd did not survive the modified transcript")
