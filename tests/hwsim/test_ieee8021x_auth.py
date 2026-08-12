@@ -2485,3 +2485,75 @@ def test_ieee8021x_auth_pqc_rsnxe_capab(dev, apdev):
                                 (name, field))
 
     pqc_connect(dev[0], ssid)
+
+def test_ieee8021x_auth_pqc_constraint_negotiation(dev, apdev):
+    """IEEE 802.1X over Authentication frames with PQC constraint negotiation"""
+    check_pqc_capab(dev[0])
+
+    ssid = "test-8021x-pqc-negotiation"
+
+    # The AP advertises only security profile 19.
+    prof3 = str(SECURITY_PROFILE_8021X_PQC_3)
+    hapd = hostapd.add_ap(apdev[0], pqc_ap_params(ssid, profiles=prof3))
+    pqc_connect(dev[0], ssid,
+                profiles="%d %d" % (SECURITY_PROFILE_8021X_PQC_1,
+                                    SECURITY_PROFILE_8021X_PQC_3))
+    val = dev[0].get_status_field("security_profile")
+    if val != str(SECURITY_PROFILE_8021X_PQC_3):
+        raise Exception("Unexpected security_profile: " + str(val))
+    hapd.wait_sta()
+    hwsim_utils.test_connectivity(dev[0], hapd)
+
+    # Draft P802.11bt D1.0, 12.12.10: PQC constraint 2 is mandatory, so
+    # security profile 18 is the default when neither side configures one.
+    hapd2 = hostapd.add_ap(apdev[1], pqc_ap_params(ssid + "-2"))
+    pqc_connect(dev[1], ssid + "-2")
+    val = dev[1].get_status_field("security_profile")
+    if val != str(SECURITY_PROFILE_8021X_PQC_2):
+        raise Exception("Unexpected default security_profile: " + str(val))
+    hapd2.wait_sta()
+    hwsim_utils.test_connectivity(dev[1], hapd2)
+
+def test_ieee8021x_auth_pqc_constraint_preference(dev, apdev):
+    """IEEE 802.1X over Authentication frames with an unsupported PQC constraint"""
+    check_pqc_capab(dev[0])
+
+    ssid = "test-8021x-pqc-preference"
+
+    # The AP advertises security profiles 16 and 19, but only 19 is supported
+    # locally, so security profile 19 has to be selected.
+    profiles = "%d %d" % (SECURITY_PROFILE_8021X_PQC_0,
+                          SECURITY_PROFILE_8021X_PQC_3)
+    hostapd.add_ap(apdev[0], pqc_ap_params(ssid, profiles=profiles))
+    pqc_connect(dev[0], ssid, profiles=str(SECURITY_PROFILE_8021X_PQC_3))
+    val = dev[0].get_status_field("security_profile")
+    if val != str(SECURITY_PROFILE_8021X_PQC_3):
+        raise Exception("Unexpected security_profile: " + str(val))
+
+def test_ieee8021x_auth_pqc_constraint_mismatch(dev, apdev):
+    """IEEE 802.1X over Authentication frames with no common PQC constraint"""
+    check_pqc_capab(dev[0])
+
+    ssid = "test-8021x-pqc-mismatch"
+    hostapd.add_ap(apdev[0],
+                   pqc_ap_params(ssid,
+                                 profiles=str(SECURITY_PROFILE_8021X_PQC_0)))
+
+    # The AP does not advertise a security profile that matches the locally
+    # configured one, so the BSS must not be selected.
+    pqc_connect(dev[0], ssid, profiles=str(SECURITY_PROFILE_8021X_PQC_1),
+                wait_connect=False)
+    ev = dev[0].wait_event(["CTRL-EVENT-CONNECTED",
+                            "CTRL-EVENT-NETWORK-NOT-FOUND"], timeout=10)
+    if ev and "CTRL-EVENT-CONNECTED" in ev:
+        raise Exception("Unexpected connection without a common PQC constraint")
+
+    dev[0].request("DISCONNECT")
+    dev[0].request("REMOVE_NETWORK all")
+    dev[0].dump_monitor()
+
+    # The same AP is usable once a matching security profile is configured.
+    pqc_connect(dev[0], ssid, profiles=str(SECURITY_PROFILE_8021X_PQC_0))
+    val = dev[0].get_status_field("security_profile")
+    if val != str(SECURITY_PROFILE_8021X_PQC_0):
+        raise Exception("Unexpected security_profile: " + str(val))
