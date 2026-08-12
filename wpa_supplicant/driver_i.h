@@ -1369,4 +1369,12 @@ static inline int wpa_drv_notify_iface_state(struct wpa_supplicant *wpa_s,
 		bss_mode, -1, wpa_s->ifname);
 }
 
+static inline int wpa_drv_get_survey(struct wpa_supplicant *wpa_s,
+				     unsigned int freq)
+{
+	if (!wpa_s->driver->get_survey)
+		return -1;
+	return wpa_s->driver->get_survey(wpa_s->drv_priv, freq);
+}
+
 #endif /* DRIVER_I_H */

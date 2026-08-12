@@ -8833,11 +8833,11 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 		break;
 	case EVENT_SURVEY:
 #ifdef CONFIG_AP
-		if (!wpa_s->ap_iface)
-			break;
-		hostapd_event_get_survey(wpa_s->ap_iface,
-					 &data->survey_results);
+		if (wpa_s->ap_iface)
+			hostapd_event_get_survey(wpa_s->ap_iface,
+						 &data->survey_results);
 #endif /* CONFIG_AP */
+		wpas_rrm_handle_survey_results(wpa_s, &data->survey_results);
 		break;
 	case EVENT_ACS_CHANNEL_SELECTED:
 #ifdef CONFIG_AP
