@@ -2764,8 +2764,10 @@ setup_mld:
 		}
 
 #ifdef CONFIG_QCN_EXTN
-		if (!hapd_reenable_pending(hapd))
-			hostapd_notify_link_repurpose(hapd, "hostapd_setup_bss");
+		if (!hapd_reenable_pending(hapd)) {
+			if (hostapd_notify_link_repurpose(hapd, "hostapd_setup_bss"))
+				return -1;
+		}
 #endif /* CONFIG_QCN_EXTN */
 
 		if (!hapd_reenable_pending(hapd)) {
@@ -12128,13 +12130,9 @@ void hostapd_get_oper_chan_info_of_bss(struct hostapd_data *hapd,
 	}
 
 #ifdef CONFIG_QCN_EXTN
-		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
 			hostapd_get_oper_info_of_repurposed_bss_extn(
 					hapd, width, seg0, seg1);
-			wpa_printf(MSG_DEBUG,
-				   "Repurpose: chwidth %d seg0 %d seg1 %d",
-				   *width, *seg0, *seg1);
-		}
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 }

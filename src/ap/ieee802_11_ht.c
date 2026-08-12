@@ -142,11 +142,8 @@ no_update:
 	 * secondary channel information
 	 */
 	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf) &&
-	    hostapd_get_repurpose_width_extn(hapd) == 20) {
-		wpa_printf(MSG_DEBUG,
-			   "Repurpose: HT OP: repurpose width is 20MHz, so do not add sec channel info");
+	    hostapd_get_repurpose_width_extn(hapd) == 20)
 		return;
-	}
 #endif /* CONFIG_QCN_EXTN */
 
 	if (secondary_channel == 1)
@@ -189,8 +186,6 @@ u8 * hostapd_eid_ht_operation(struct hostapd_data *hapd, u8 *eid)
 	if (hostapd_repurpose_update_ht_operation_mode_extn(hapd,
 							    vht_capabilities_info,
 							    oper)) {
-		wpa_printf(MSG_DEBUG,
-			   "Repurpose: updated ht operation mode");
 	} else
 #endif /* CONFIG_QCN_EXTN */
 	if (vht_capabilities_info & VHT_CAP_EXTENDED_NSS_BW_SUPPORT

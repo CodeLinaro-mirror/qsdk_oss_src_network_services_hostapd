@@ -225,14 +225,10 @@ u8 * hostapd_eid_vht_operation(struct hostapd_data *hapd, u8 *eid)
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_QCN_EXTN
-	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
 		hostapd_get_oper_info_of_repurposed_bss_extn(
 				hapd, &oper_chwidth,
 				&seg0, &seg1);
-		wpa_printf(MSG_DEBUG,
-			   "Repurpose: VHT OP chwidth %d seg0 %d seg1 %d",
-			   oper_chwidth, seg0, seg1);
-	}
 #endif /* CONFIG_QCN_EXTN */
 
 	/*
