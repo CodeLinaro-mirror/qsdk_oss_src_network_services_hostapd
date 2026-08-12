@@ -2349,3 +2349,59 @@ def test_ieee8021x_auth_pqc_invalid_parameters(dev, apdev):
 
     hapd.set("ext_mgmt_frame_handling", "0")
     pqc_connect(dev[0], ssid)
+
+def test_ieee8021x_auth_pqc_ext_len_elem_parsing(dev, apdev):
+    """IEEE 802.1X over Authentication frames with a malformed Extended Length Element"""
+    check_pqc_capab(dev[0])
+
+    ssid = "test-8021x-pqc-ele"
+    profiles = "%d %d" % (SECURITY_PROFILE_8021X_PQC_0,
+                          SECURITY_PROFILE_8021X_PQC_2)
+    hapd = hostapd.add_ap(apdev[0], pqc_ap_params(ssid, profiles=profiles))
+
+    # A PQC Parameters element without any Content Present information
+    valid = pqc_parameters_elem(SECURITY_PROFILE_8021X_PQC_0, 0)
+
+    tests = [("Truncated Extended Length Element header",
+              struct.pack("<BH", WLAN_EID_EXT_LEN_ELEM,
+                          WLAN_EID_EXT_LEN_PQC_PARAMETERS), False),
+             ("Length field beyond the end of the frame",
+              pqc_parameters_elem(SECURITY_PROFILE_8021X_PQC_0, 0,
+                                  datalen=1000), False),
+             ("Zero length PQC Parameters element",
+              pqc_parameters_elem(SECURITY_PROFILE_8021X_PQC_0, 0)[:5], False),
+             ("PQC Parameters element without the Content Present field",
+              struct.pack("<BHH", WLAN_EID_EXT_LEN_ELEM,
+                          WLAN_EID_EXT_LEN_PQC_PARAMETERS, 1) + b'\x10',
+              False),
+             ("Unknown Extended Length Element ID",
+              struct.pack("<BHH", WLAN_EID_EXT_LEN_ELEM, 0xffff, 2) +
+              b'\x10\x00', False),
+             # An unknown Extended Length Element is skipped based on its
+             # Length field, so the elements that follow it are still parsed.
+             ("Unknown Extended Length Element ID before a valid element",
+              struct.pack("<BHH", WLAN_EID_EXT_LEN_ELEM, 0xffff, 0) + valid,
+              True)]
+
+    hapd.set("ext_mgmt_frame_handling", "1")
+    for i, (note, elem, accept) in enumerate(tests):
+        logger.info(note)
+        addr = "02:03:04:05:07:%02x" % i
+        hapd.dump_monitor()
+        mgmt_rx_process(hapd,
+                        build_802_1x_auth_frame(hapd, addr,
+                                                body=enc_assoc_auth_body(elem)))
+        status = auth_resp_status(hapd, timeout=1)
+        if accept:
+            if status != 0:
+                raise Exception("AP rejected the frame (status %s) for: %s" %
+                                (str(status), note))
+        elif status == 0:
+            # The AP may either drop the frame or reject it, but it must not
+            # accept it.
+            raise Exception("AP accepted the frame for: " + note)
+        if "PONG" not in hapd.request("PING"):
+            raise Exception("hostapd did not survive: " + note)
+
+    hapd.set("ext_mgmt_frame_handling", "0")
+    pqc_connect(dev[0], ssid)
