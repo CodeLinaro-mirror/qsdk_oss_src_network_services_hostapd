@@ -30,10 +30,6 @@
  */
 struct hostapd_scs_req_desc_data;
 struct hostapd_mscs_ctxt;
-/* Must match #define HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER in ap/robust_av.h */
-#ifndef HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER
-#define HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER 10
-#endif
 
 /* STA flags */
 #define WLAN_STA_AUTH BIT_ULL(0)
@@ -571,9 +567,8 @@ struct sta_info {
 #endif
 
 #ifdef CONFIG_IEEE80211AX
-	struct hostapd_scs_req_desc_data
-		*scs_req_desc[HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER];
-	u8 scs_session_count;
+	struct dl_list scs_req_desc; /* list of hostapd_scs_req_desc_data */
+	u16 scs_session_count;
 	struct hostapd_mscs_ctxt *mscs_ctxt;
 	bool mscs_session_exists;
 #endif

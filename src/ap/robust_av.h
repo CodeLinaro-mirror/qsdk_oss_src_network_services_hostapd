@@ -14,6 +14,8 @@
 struct hostapd_data;
 struct sta_info;
 
+#include "utils/list.h"
+
 #define CLASSIFIER_TYPE_4	4
 
 /* Bit positions for classifier mask */
@@ -157,7 +159,7 @@ u8 *hostapd_add_wfa_cap_ie(struct hostapd_data *hapd, struct sta_info *sta,
 				 u8 *eid);
 
 #ifdef CONFIG_IEEE80211AX
-#define HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER		10
+#define HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER		255
 #define HOSTAPD_SCS_MAX_DESCPRIPTORS_PER_REQUEST	4
 #define HOSTAPD_SCS_MAX_TCLAS_ELEMENTS_PER_DESCRIPTOR	2
 
@@ -328,6 +330,7 @@ struct hostapd_scs_req_desc_data {
 #ifdef CONFIG_IEEE80211BE
 	struct hostapd_scs_qos_attributes qos_attr;
 #endif /* CONFIG_IEEE80211BE */
+	struct dl_list list;
 };
 
 struct hostapd_scs_req_data {
