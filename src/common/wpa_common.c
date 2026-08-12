@@ -4463,8 +4463,9 @@ int wpa_pasn_add_rsne(struct wpabuf *buf, const u8 *pmkid, int akmp, int cipher)
  *     compressed (only x coordinate is included) or not (both x and y
  *     coordinates are included)
  * @comeback: A buffer holding the comeback token. Can be NULL
- * @after: If comeback is set, defined the comeback time in seconds. -1 to not
- *	include the Comeback After field (frames from non-AP STA).
+ * @after: Comeback after subfield value after which the non-AP STA is requested
+ *	to retry PASN authentication, defined the comeback time in seconds.
+ *	-1 to not include the Comeback After field (frames from non-AP STA).
  */
 void wpa_pasn_add_parameter_ie(struct wpabuf *buf, u16 pasn_group,
 			       u8 wrapped_data_format,
@@ -4483,22 +4484,31 @@ void wpa_pasn_add_parameter_ie(struct wpabuf *buf, u16 pasn_group,
 	params->control = 0;
 	params->wrapped_data_format = wrapped_data_format;
 
-	if (comeback) {
+	if (comeback || after >= 0) {
+		u8 cookie_len = comeback ? wpabuf_len(comeback) : 0;
+
 		wpa_printf(MSG_DEBUG, "PASN: Adding comeback data");
 
 		/*
-		 * 2 octets for the 'after' field + 1 octet for the length +
-		 * actual cookie data
+		 * 2 octets for the 'after' field + 1 octet for the cookie
+		 * length + optional cookie value where the cookie Length
+		 * subfield value is the length of the following cookie
+		 * subfield. If the cookie Length subfield is 0, it indicates
+		 * that there is no cookie subfield
 		 */
 		if (after >= 0)
 			params->len += 2;
-		params->len += 1 + wpabuf_len(comeback);
+		params->len += 1;
+		if (comeback)
+			params->len += wpabuf_len(comeback);
 		params->control |= WPA_PASN_CTRL_COMEBACK_INFO_PRESENT;
 
 		if (after >= 0)
 			wpabuf_put_le16(buf, after);
-		wpabuf_put_u8(buf, wpabuf_len(comeback));
-		wpabuf_put_buf(buf, comeback);
+
+		wpabuf_put_u8(buf, cookie_len);
+		if (comeback)
+			wpabuf_put_buf(buf, comeback);
 	}
 
 	if (pubkey) {
