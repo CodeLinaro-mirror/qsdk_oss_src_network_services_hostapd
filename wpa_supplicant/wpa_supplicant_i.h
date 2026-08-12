@@ -47,6 +47,7 @@ struct wpa_scan_results;
 struct hostapd_hw_modes;
 struct wpa_driver_associate_params;
 struct wpa_cred;
+struct survey_results;
 
 /*
  * Forward declarations of private structures used within the ctrl_iface
@@ -517,6 +518,17 @@ struct rrm_data {
 
 	/* destination address of the current radio measurement request */
 	u8 dst_addr[ETH_ALEN];
+
+	/* Channel Load measurement state */
+	u8 chan_load_token;
+	u8 chan_load_op_class;
+	u8 chan_load_channel;
+	u16 chan_load_duration;
+	u64 chan_load_last_time;
+	u64 chan_load_last_time_busy;
+	u64 chan_load_end_time;
+	u64 chan_load_end_time_busy;
+	struct os_reltime chan_load_start;
 };
 
 enum wpa_supplicant_test_failure {
@@ -2448,6 +2460,11 @@ const u8 * security_profile_get_rsnx(const u8 *sp, size_t *rsnx_len);
 int security_profile_get_rsn_caps(const u8 *sp);
 bool sec_prof_list_has_eap_over_auth(const int *numbers);
 bool security_profile_is_enabled(const u8 *sp, int profile);
+
+void wpas_rrm_handle_survey_results(struct wpa_supplicant *wpa_s,
+				    struct survey_results *survey_results);
+void wpas_rrm_build_channel_load_report(struct wpa_supplicant *wpa_s,
+					struct wpabuf **buf);
 
 void wpas_scan_for_rnr_entries(void *eloop_ctx, void *timeout_ctx);
 
