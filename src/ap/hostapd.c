@@ -11845,7 +11845,8 @@ hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
 	return true;
 }
 
-static int hostapd_remove_vendor_elements(struct hostapd_bss_config *conf,  struct wpabuf *buf)
+static int hostapd_remove_vendor_elements(struct hostapd_bss_config *conf,  struct wpabuf *buf,
+					  bool remove)
 {
 	const u8 *needle = wpabuf_head_u8(buf);
 	size_t needle_len = wpabuf_len(buf);
@@ -11872,9 +11873,14 @@ static int hostapd_remove_vendor_elements(struct hostapd_bss_config *conf,  stru
 			return 0;
 		}
 	}
-	wpa_printf(MSG_ERROR, "Vendor elements entry not found count=%zu",
-		   conf->vendor_elements_count);
-	return -1;
+
+	if (remove) {
+		wpa_printf(MSG_ERROR, "Vendor elements entry not found count=%zu",
+			   conf->vendor_elements_count);
+		return -1;
+	}
+
+	return 0;
 }
 
 
@@ -11932,7 +11938,7 @@ static int hostapd_handle_vendor_elements_remove(struct hostapd_bss_config *conf
 		if (!b)
 			return -1;
 
-		if (hostapd_remove_vendor_elements(conf, b) < 0) {
+		if (hostapd_remove_vendor_elements(conf, b, true) < 0) {
 			wpabuf_free(b);
 			return -1;
 		}
@@ -11990,7 +11996,7 @@ static int hostapd_handle_vendor_elements_add(struct hostapd_data *hapd,
 		if (!b)
 			return -1;
 
-		hostapd_remove_vendor_elements(conf, b);
+		hostapd_remove_vendor_elements(conf, b, false);
 		if (conf->vendor_elements_count >= MAX_VENDOR_ELEM_ALLOWED) {
 			wpa_printf(MSG_ERROR, "Vendor elements limit exceeds(%zu) max_count (%d)",
 				   conf->vendor_elements_count, MAX_VENDOR_ELEM_ALLOWED);
