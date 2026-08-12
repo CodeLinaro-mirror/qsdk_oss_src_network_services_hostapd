@@ -49,7 +49,9 @@
 #include "ap/hostapd.h"
 #include "ap/beacon.h"
 #endif /* CONFIG_AP */
-
+#if defined(CONFIG_UDBG_ENH) && defined(HOSTAPD)
+#include "../qcn_extns/udbg_enh.h"
+#endif /* CONFIG_UDBG_ENH */
 
 #ifndef NETLINK_CAP_ACK
 #define NETLINK_CAP_ACK 10
@@ -482,6 +484,9 @@ static int no_seq_check(struct nl_msg *msg, void *arg)
 
 static int debug_handler(struct nl_msg *msg, void *arg)
 {
+#if defined(CONFIG_UDBG_ENH) && defined(HOSTAPD)
+	hostapd_udbg_enh_nlmsg_dump_extn(msg, 0);
+#endif
 	handle_nl_debug_hook(msg, 0);
 	return NL_OK;
 }
@@ -712,6 +717,11 @@ int send_and_recv_glb(struct nl80211_global *global,
 		os_sleep(1, 0);
 
 	err.err = nl_send_auto_complete(nl_handle, msg);
+
+#if defined(CONFIG_UDBG_ENH) && defined(HOSTAPD)
+	hostapd_udbg_enh_nlmsg_dump_extn(msg, 1);
+#endif /* CONFIG_UDBG_ENH */
+
 	if (err.err < 0) {
 		wpa_printf(MSG_INFO,
 			   "nl80211: nl_send_auto_complete() failed: %s",
