@@ -2405,3 +2405,51 @@ def test_ieee8021x_auth_pqc_ext_len_elem_parsing(dev, apdev):
 
     hapd.set("ext_mgmt_frame_handling", "0")
     pqc_connect(dev[0], ssid)
+
+def test_ieee8021x_auth_pqc_akm_not_in_rsne(dev, apdev):
+    """PQC AKMs are not advertised in the RSNE of Beacon and Probe Response frames"""
+    check_pqc_capab(dev[0])
+
+    ssid = "test-8021x-pqc-rsne"
+    hapd = hostapd.add_ap(apdev[0], pqc_ap_params(ssid))
+    bssid = apdev[0]['bssid']
+
+    dev[0].scan_for_bss(bssid, freq=2412)
+
+    for field in ["ie", "beacon_ie"]:
+        rsne = get_bss_elem(dev[0], bssid, WLAN_EID_RSN, field=field)
+        if rsne is None:
+            if field == "beacon_ie":
+                continue
+            raise Exception("No RSNE in " + field)
+        akms = rsne_akm_suites(rsne)
+        logger.info("%s RSNE AKM suites: %s" %
+                    (field, [binascii.hexlify(a).decode() for a in akms]))
+        # Draft P802.11bt D1.0, 12.12.10: the PQC AKM suite selectors are not
+        # advertised in the RSNE; the Security Profile element is used instead.
+        for akm in [RSN_AKM_802_1X_PQC, RSN_AKM_FT_802_1X_PQC]:
+            if akm in akms:
+                raise Exception("PQC AKM %s advertised in the %s RSNE" %
+                                (binascii.hexlify(akm).decode(), field))
+
+        secp = get_bss_elem(dev[0], bssid, WLAN_EID_EXTENSION,
+                            ext_id=WLAN_EID_EXT_SECURITY_PROFILE, field=field)
+        if secp is None:
+            raise Exception("No Security Profile element in " + field)
+        # [reduced RSN capabilities][indication][bitmap]
+        bitmap_octets = secp[1] & 0x0f
+        if not bitmap_octets or len(secp) < 2 + bitmap_octets:
+            raise Exception("Invalid Security Profile element in " + field)
+        bitmap = secp[2:2 + bitmap_octets]
+        prof = SECURITY_PROFILE_8021X_PQC_2
+        if not bitmap[prof // 8] & (1 << (prof % 8)):
+            raise Exception("Security Profile %d not advertised in %s" %
+                            (prof, field))
+
+    # The AKM is still usable even though it is not advertised in the RSNE.
+    pqc_connect(dev[0], ssid)
+    hapd.wait_sta()
+    sta = hapd.get_sta(dev[0].own_addr())
+    if sta["AKMSuiteSelector"] != "00-0f-ac-31":
+        raise Exception("Incorrect AKMSuiteSelector value: " +
+                        sta["AKMSuiteSelector"])
