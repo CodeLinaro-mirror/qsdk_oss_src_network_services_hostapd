@@ -1339,7 +1339,7 @@ hostapd_wpa_auth_add_sta_ml(struct hostapd_data *hapd, const u8 *sta_mld)
 		 */
 		wpa_printf(MSG_DEBUG, "Remove STA "MACSTR" to make source to"
 			   " target roaming", MAC2STR(sta_mld));
-		ap_sta_remove_link_sta(hapd, sta_ml_obj, 0);
+		ap_sta_remove_link_sta(hapd, sta_ml_obj, 0, false);
 		ap_free_sta(hapd, sta_ml_obj);
 		sta_ml_obj = NULL;
 	}

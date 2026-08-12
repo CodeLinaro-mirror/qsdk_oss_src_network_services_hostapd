@@ -1308,7 +1308,7 @@ static void uhr_dl_drain_timeout(void *eloop_ctx, void *timeout_ctx)
        wpa_printf(MSG_INFO,
                   "UHR DL DRAIN: Station " MACSTR " fully transitioned to Target AP, deleting ML station", MAC2STR(sta->addr));
 	/* Delete ML station from all serving AP links */
-       ap_sta_remove_link_sta(hapd, sta, 0);
+       ap_sta_remove_link_sta(hapd, sta, 0, false);
        ap_free_sta(hapd, sta);
 }
 

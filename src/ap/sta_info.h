@@ -727,7 +727,7 @@ static inline void ap_sta_set_mld(struct sta_info *sta, bool mld)
 #ifdef CONFIG_IEEE80211BE
 void ap_sta_remove_link_sta(struct hostapd_data *hapd,
                             struct sta_info *sta,
-			    int check_authorized);
+			    int check_authorized, bool skip_kernel_delete);
 int ap_sta_check_link_sta(struct hostapd_data *hapd,
 			  struct sta_info *sta, const u8 *link_addr);
 #endif
