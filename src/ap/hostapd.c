@@ -8255,6 +8255,14 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 			hostapd_set_ml_max_rec_links(phapd,
 						     active_links);
 #endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_IEEE80211BE
+		/* BSS REMOVE can drop the last reference to an AP MLD.
+		 * Clean up unused MLD objects so their ctrl socket is removed.
+		 */
+		hostapd_cleanup_unused_mlds(iface->interfaces);
+#endif /* CONFIG_IEEE80211BE */
+
 	} else {
 		hostapd_config_free_bss(iface->conf->bss[idx]);
 		iface->conf->bss[idx] = NULL;
