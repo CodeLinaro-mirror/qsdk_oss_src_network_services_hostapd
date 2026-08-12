@@ -4435,7 +4435,9 @@ wpa_bss_alloc_from_scan_res(struct wpa_supplicant *wpa_s,
 
 	/* Parse channel operation IEs to populate center_freq1/2_idx
 	 * and max_cw needed for NOL check. */
+#ifdef CONFIG_QCN_EXTN
 	wpa_get_bss_channel_oper_info_extn(wpa_s, bss);
+#endif
 
 	return bss;
 }

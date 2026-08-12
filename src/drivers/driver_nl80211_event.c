@@ -5084,8 +5084,10 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 		qca_nl80211_chain_mask_changed_event(bss, data, len);
 		break;
 	default:
+#ifdef CONFIG_QCN_EXTN
 		if (!nl80211_vendor_event_qca_extn(bss, subcmd, data, len))
 			break;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_DEBUG,
 			   "nl80211: Ignore unsupported QCA vendor event %u",
