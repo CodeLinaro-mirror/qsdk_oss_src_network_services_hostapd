@@ -2281,3 +2281,71 @@ def auth_resp_status(hapd, timeout=5):
     if alg != WLAN_AUTH_802_1X:
         raise Exception("Unexpected authentication algorithm %d" % alg)
     return status
+
+def test_ieee8021x_auth_pqc_invalid_parameters(dev, apdev):
+    """IEEE 802.1X over Authentication frames with an invalid PQC Parameters element"""
+    check_pqc_capab(dev[0])
+
+    ssid = "test-8021x-pqc-invalid"
+    # Advertise a profile without an ECP group (16) and one with an ECP group
+    # (18) so that both Content Present variants can be exercised.
+    profiles = "%d %d" % (SECURITY_PROFILE_8021X_PQC_0,
+                          SECURITY_PROFILE_8021X_PQC_2)
+    hapd = hostapd.add_ap(apdev[0], pqc_ap_params(ssid, profiles=profiles))
+
+    # The ECDH public key is the x coordinate of the point, i.e., the prime
+    # length of ECP group 20 (P-384) used by security profile 18.
+    p384_x = 48 * b'\xff'
+
+    tests = [("Security profile number above the maximum",
+              pqc_parameters_elem(SECURITY_PROFILE_MAX + 1, 1),
+              WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE),
+             ("Security profile not advertised by the AP",
+              pqc_parameters_elem(SECURITY_PROFILE_8021X_PQC_1, 3),
+              WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE),
+             ("Security profile without a PQC constraint",
+              pqc_parameters_elem(3, 1),
+              WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE),
+             ("Invalid Content Present value",
+              pqc_parameters_elem(SECURITY_PROFILE_8021X_PQC_0, 7),
+              WLAN_STATUS_UNSPECIFIED_FAILURE),
+             ("Missing ECDH public key for a profile with an ECP group",
+              pqc_parameters_elem(SECURITY_PROFILE_8021X_PQC_2, 1,
+                                  32 * b'\x00'),
+              WLAN_STATUS_UNSPECIFIED_FAILURE),
+             ("Unexpected ECDH public key for a profile without an ECP group",
+              pqc_parameters_elem(SECURITY_PROFILE_8021X_PQC_0, 3, p384_x),
+              WLAN_STATUS_UNSPECIFIED_FAILURE),
+             ("Truncated ECDH public key",
+              pqc_parameters_elem(SECURITY_PROFILE_8021X_PQC_2, 3,
+                                  8 * b'\x00'),
+              WLAN_STATUS_INVALID_PUBLIC_KEY),
+             ("Invalid ECDH public key",
+              pqc_parameters_elem(SECURITY_PROFILE_8021X_PQC_2, 3,
+                                  p384_x + 32 * b'\x00'),
+              WLAN_STATUS_INVALID_PUBLIC_KEY),
+             ("Invalid ML-KEM encapsulation key",
+              pqc_parameters_elem(SECURITY_PROFILE_8021X_PQC_0, 1,
+                                  32 * b'\x00'),
+              WLAN_STATUS_INVALID_ML_KEM_PARAMETER)]
+
+    hapd.set("ext_mgmt_frame_handling", "1")
+    for i, (note, elem, expected) in enumerate(tests):
+        logger.info(note)
+        # Use a separate address for each case so that the AP always starts
+        # from a new STA entry.
+        addr = "02:03:04:05:06:%02x" % i
+        hapd.dump_monitor()
+        mgmt_rx_process(hapd,
+                        build_802_1x_auth_frame(hapd, addr,
+                                                body=enc_assoc_auth_body(elem)))
+        status = auth_resp_status(hapd)
+        if status != expected:
+            raise Exception("Unexpected status code %s (expected %d) for: %s" %
+                            (str(status), expected, note))
+
+    if "PONG" not in hapd.request("PING"):
+        raise Exception("hostapd did not survive the Authentication frames")
+
+    hapd.set("ext_mgmt_frame_handling", "0")
+    pqc_connect(dev[0], ssid)
