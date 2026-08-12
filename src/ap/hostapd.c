@@ -7802,6 +7802,7 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 	struct hostapd_config *conf = NULL;
 	struct hostapd_iface *hapd_iface = NULL, *new_iface = NULL;
 	struct hostapd_data *hapd;
+	bool setup_bss;
 	char *ptr;
 	size_t i, j;
 	const char *conf_file = NULL, *phy_name = NULL;
@@ -7869,8 +7870,14 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 			os_memcpy(hapd->own_addr, hapd_iface->bss[0]->own_addr,
 				  ETH_ALEN);
 
+			setup_bss = hapd_iface->state == HAPD_IFACE_ENABLED;
+#ifdef CONFIG_QCN_EXTN
+			setup_bss |=
+				hostapd_bootup_cac_enabled_extn(hapd_iface);
+#endif /* CONFIG_QCN_EXTN */
+
 			if (start_ctrl_iface_bss(hapd) < 0 ||
-			    (hapd_iface->state == HAPD_IFACE_ENABLED &&
+			    (setup_bss &&
 			     hostapd_setup_bss(hapd, false, true))) {
 				hostapd_bss_link_deinit(hapd);
 				hostapd_cleanup(hapd);
