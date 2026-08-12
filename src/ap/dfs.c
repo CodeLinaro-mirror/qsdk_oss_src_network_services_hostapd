@@ -3998,14 +3998,224 @@ static u32 hostapd_radar_bitmap_oper(int chan_width, int cf1, u16 radar_bitmap,
 }
 
 
+/**
+ * hostapd_dfs_get_radar_bitmap_oper() - Remap a radar bitmap onto the operating channel
+ * @chan_width: Channel bandwidth reported with the radar event
+ * @cf1: Center frequency reported with the radar event, in MHz
+ * @radar_bitmap: Radar bitmap as reported by the driver
+ * @chan_width_device: Channel bandwidth of the device
+ * @cf_device: Center frequency of the device
+ * @device_params_present: Set to %true if @chan_width_device/@cf_device differ
+ *                          from @chan_width/@cf1
+ *
+ * Return: @radar_bitmap unchanged if the device channel parameters match the
+ * reported ones, otherwise @radar_bitmap remapped onto the device's actual
+ * subchannel bit positions.
+ */
+static u16 hostapd_dfs_get_radar_bitmap_oper(int chan_width, int cf1,
+					     u16 radar_bitmap,
+					     int chan_width_device,
+					     int cf_device,
+					     bool *device_params_present)
+{
+	*device_params_present = hostapd_is_device_params_present(chan_width,
+								  cf1,
+								  chan_width_device,
+								  cf_device);
+	if (*device_params_present)
+		return hostapd_radar_bitmap_oper(chan_width, cf1, radar_bitmap,
+						 chan_width_device, cf_device);
+
+	return radar_bitmap;
+}
+
+
+/**
+ * hostapd_dfs_radar_update_punct_bitmap() - Update puncture bitmap for a radar event
+ * @iface: Pointer to hostapd interface
+ * @radar_bitmap_oper: Radar bitmap remapped onto the operating channel's subchannels
+ *
+ * Return: %true if the radar hit a subchannel that was already punctured.
+ * 	   %false if the puncture bitmap is different.
+ */
+static bool hostapd_dfs_radar_update_punct_bitmap(struct hostapd_iface *iface,
+						   u16 radar_bitmap_oper)
+{
+	u16 radar_bit_pattern;
+
+	if (!iface->conf->use_ru_puncture_dfs || !radar_bitmap_oper)
+		return false;
+
+	radar_bit_pattern = iface->radar_bit_pattern | iface->conf->punct_bitmap;
+	/* Radar detected already punctured sub channel */
+	if (radar_bitmap_oper && !(radar_bitmap_oper & ~radar_bit_pattern))
+		return true;
+
+	radar_bit_pattern |= radar_bitmap_oper;
+	iface->conf->punct_bitmap = radar_bit_pattern;
+	return false;
+}
+
+
+/**
+ * hostapd_dfs_radar_handle_puncturing() - Try to handle a radar event by dfs puncturing
+ * @iface: Pointer to hostapd interface
+ * @freq: Primary channel frequency in MHz
+ * @chan_width: Channel bandwidth
+ * @radar_bitmap_oper: Radar bitmap
+ * @cur_punct_bits: Puncture bitmap to restore on iface->conf before proceeding
+ *
+ * Punctures the affected subchannel(s) instead of switching to a new channel.
+ *
+ * Return: 0 on success and error on failure
+ */
+static int hostapd_dfs_radar_handle_puncturing(struct hostapd_iface *iface,
+					       int freq, int chan_width,
+					       u16 radar_bitmap_oper,
+					       u16 cur_punct_bits)
+{
+	u8 oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx;
+
+	iface->radar_bit_pattern = radar_bitmap_oper;
+	iface->conf->punct_bitmap = cur_punct_bits;
+	if (hostapd_csa_in_progress(iface)) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: radar detected during CSA, deferring puncture channel switch");
+		return 0;
+	}
+
+	if (iface->skip_mesh_dfs)
+		return 0;
+
+	oper_centr_freq_seg0_idx = iface->conf->vht_oper_centr_freq_seg0_idx;
+	oper_centr_freq_seg1_idx = iface->conf->vht_oper_centr_freq_seg1_idx;
+	chan_width = convert_to_oper_chan_width(chan_width);
+#ifdef CONFIG_QCN_EXTN
+	hostapd_get_oper_center_freq_seg_extn(iface->conf,
+					      &oper_centr_freq_seg0_idx,
+					      &oper_centr_freq_seg1_idx,
+					      NULL);
+#endif
+
+	if (iface->cac_started) {
+		wpa_printf(MSG_DEBUG, "radar detected during cac,"
+			   "it restarted with valid puncturing bitmap :%d",
+			   iface->conf->punct_bitmap | iface->radar_bit_pattern);
+
+		iface->cac_started = 0;
+#ifdef CONFIG_QCN_EXTN
+		iface->iface_extn.cac_abort = 0;
+#endif
+		return hostapd_start_dfs_cac(iface, iface->conf->hw_mode,
+					     iface->freq, iface->conf->channel,
+					     iface->conf->ieee80211n,
+					     iface->conf->ieee80211ac,
+					     iface->conf->ieee80211ax,
+					     iface->conf->ieee80211be,
+					     iface->conf->ieee80211bn,
+					     iface->conf->secondary_channel,
+					     hostapd_get_oper_chwidth(iface->conf),
+					     hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
+					     hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
+					     dfs_use_radar_background(iface),
+					     iface->conf->bandwidth_device,
+					     iface->conf->center_freq_device);
+	}
+
+	return hostapd_dfs_request_channel_switch(
+		iface, iface->conf->channel, freq,
+		iface->conf->secondary_channel, chan_width,
+		oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx,
+		hostapd_get_punct_bitmap(iface->bss[0]));
+}
+
+
+/**
+ * hostapd_dfs_radar_reduce_bandwidth() - Try to switch to a reduced-bandwidth channel
+ * @iface: Pointer to hostapd interface
+ * @ret: Set to the reduced-bandwidth channel switch's return value, when found
+ *
+ * Looks for an available channel at a lower bandwidth than the current
+ * operating bandwidth and, if found, issues a channel switch request to it.
+ *
+ * Return: %true  if a reduced-bandwidth channel was found and a switch was
+ * 	          issued or skipped for mesh.
+ * 	   %false if bandwidth reduction is disabled or no reduced-bandwidth
+ * 	          channel is available.
+ * 	   %ret   0 on successful channel siwtch, error on failure.
+ */
+static bool hostapd_dfs_radar_reduce_bandwidth(struct hostapd_iface *iface,
+					       int *ret)
+{
+	struct hostapd_channel_data *channel;
+	int secondary_channel;
+	u8 oper_centr_freq_seg0_idx = 0;
+	u8 oper_centr_freq_seg1_idx = 0;
+
+	if (!iface->conf->dfs_bw_reduce_en)
+		return false;
+
+	if (iface->skip_mesh_dfs) {
+		*ret = 0;
+		return true;
+	}
+
+	channel = dfs_find_bw_reduced_channel(iface, &secondary_channel,
+					      &oper_centr_freq_seg0_idx,
+					      &oper_centr_freq_seg1_idx);
+	if (!channel)
+		return false;
+
+	wpa_printf(MSG_INFO, "DFS: Radar detected, BW reduction successful - Ch %d",
+		   channel->chan);
+	*ret = hostapd_dfs_request_channel_switch(
+		iface, channel->chan, channel->freq, secondary_channel,
+		hostapd_get_oper_chwidth(iface->conf),
+		oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx,
+		hostapd_get_punct_bitmap(iface->bss[0]));
+	return true;
+}
+
+
+/**
+ * hostapd_dfs_radar_handle_disable_csa_dfs() - Defer radar channel switch handling
+ * via a timeout
+ * @iface: Pointer to hostapd interface
+ *
+ * Called when disable_csa_dfs is configured, so the channel switch is not
+ * issued immediately from radar detection context. The AP will wait for
+ * HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR duration.
+ *
+ * Return: %0 always.
+ */
+static int hostapd_dfs_radar_handle_disable_csa_dfs(struct hostapd_iface *iface)
+{
+	if (hostapd_csa_in_progress(iface)) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: radar detected, but CSA already in progress - skip timeout");
+		return 0;
+	}
+
+	if (!eloop_is_timeout_registered(hostapd_dfs_radar_handling_timeout,
+					 iface, NULL))
+		eloop_register_timeout(0, HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR,
+				       hostapd_dfs_radar_handling_timeout,
+				       iface, NULL);
+
+	return 0;
+}
+
+
 int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			       int ht_enabled, int chan_offset, int chan_width,
 			       int cf1, int cf2, u16 radar_bitmap,
 			       int chan_width_device, int cf_device)
 {
-	u16 radar_bit_pattern, radar_bitmap_oper = 0;
+	int ret;
 	u16 cur_punct_bits = iface->conf->punct_bitmap;
+	u16 radar_bitmap_oper;
 	bool device_params_present;
+	bool is_dfs_puncture_en = iface->conf->use_ru_puncture_dfs;
 
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_RADAR_DETECTED
 		"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d radar_bitmap:%d"
@@ -4013,19 +4223,12 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 		freq, ht_enabled, chan_offset, chan_width, cf1, cf2, radar_bitmap,
 		chan_width_device, cf_device, iface->cac_started);
 
-	radar_bitmap_oper = radar_bitmap;
-	device_params_present = hostapd_is_device_params_present(chan_width,
-								 cf1,
-								 chan_width_device,
-								 cf_device);
-
-	if (device_params_present)
-		radar_bitmap_oper = hostapd_radar_bitmap_oper(chan_width, cf1,
+	radar_bitmap_oper = hostapd_dfs_get_radar_bitmap_oper(chan_width, cf1,
 							      radar_bitmap,
 							      chan_width_device,
-							      cf_device);
-
-	if (iface->conf->use_ru_puncture_dfs) {
+							      cf_device,
+							      &device_params_present);
+	if (is_dfs_puncture_en) {
 		wpa_printf(MSG_DEBUG,
 			   "DFS: Update puncture source for Radar puncture bitmap=0x%04x",
 			   radar_bitmap_oper | iface->radar_bit_pattern);
@@ -4035,7 +4238,6 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	}
 
 	iface->radar_detected = true;
-
 	/* Proceed only if DFS is not offloaded to the driver */
 	if (iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD)
 		return 0;
@@ -4055,22 +4257,13 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			return 0;
 	}
 
-	if (iface->conf->use_ru_puncture_dfs && radar_bitmap_oper) {
-		radar_bit_pattern = iface->radar_bit_pattern | iface->conf->punct_bitmap;
+	if (hostapd_dfs_radar_update_punct_bitmap(iface, radar_bitmap_oper))
+		return 0;
 
-		/* Radar detected already punctured sub channel*/
-		if (radar_bitmap_oper && !(radar_bitmap_oper & ~radar_bit_pattern))
-			return 0;
-
-		radar_bit_pattern |= radar_bitmap_oper;
-		iface->conf->punct_bitmap = radar_bit_pattern;
-	}
-
-	 if (iface->conf->dfs_test_mode) {
+	 if (iface->conf->dfs_test_mode)
 		 set_dfs_state(iface, freq, ht_enabled, chan_offset,
 			       chan_width, cf1, cf2,
 			       HOSTAPD_CHAN_DFS_AVAILABLE, radar_bitmap);
-	 }
 
 	if (!hostapd_dfs_is_background_event(iface, freq)) {
 		/* Skip if reported radar event not overlapped our channels */
@@ -4089,67 +4282,15 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			hostapd_get_punct_bitmap(iface->bss[0]), radar_bitmap_oper);
 #endif
 
-	if (iface->conf->use_ru_puncture_dfs && hostapd_is_usable_punct_bitmap(iface)) {
-		iface->radar_bit_pattern = radar_bitmap_oper;
-		iface->conf->punct_bitmap = cur_punct_bits;
+	if (is_dfs_puncture_en) {
+		if (hostapd_is_usable_punct_bitmap(iface))
+			return hostapd_dfs_radar_handle_puncturing(iface, freq,
+								   chan_width,
+								   radar_bitmap_oper,
+								   cur_punct_bits);
 
-		if (hostapd_csa_in_progress(iface)) {
-			wpa_printf(MSG_DEBUG,
-				   "DFS: radar detected during CSA, deferring puncture channel switch");
-			return 0;
-		}
-
-		u8 oper_centr_freq_seg0_idx = iface->conf->vht_oper_centr_freq_seg0_idx;
-		u8 oper_centr_freq_seg1_idx = iface->conf->vht_oper_centr_freq_seg1_idx;
-
-		chan_width = convert_to_oper_chan_width(chan_width);
-
-#ifdef CONFIG_QCN_EXTN
-		hostapd_get_oper_center_freq_seg_extn(iface->conf,
-						      &oper_centr_freq_seg0_idx,
-						      &oper_centr_freq_seg1_idx,
-						      NULL);
-#endif /* CONFIG_QCN_EXTN */
-
-		if (iface->skip_mesh_dfs)
-			return 0;
-
-		if (iface->cac_started) {
-
-			wpa_printf(MSG_DEBUG, "radar detected during cac,"
-				   "it restarted with valid puncturing bitmap :%d",
-				   iface->conf->punct_bitmap |
-				   iface->radar_bit_pattern);
-
-			iface->cac_started = 0;
-#ifdef CONFIG_QCN_EXTN
-			iface->iface_extn.cac_abort = 0;
-#endif
-			return hostapd_start_dfs_cac(iface, iface->conf->hw_mode,
-						     iface->freq, iface->conf->channel,
-						     iface->conf->ieee80211n,
-						     iface->conf->ieee80211ac,
-						     iface->conf->ieee80211ax,
-						     iface->conf->ieee80211be,
-						     iface->conf->ieee80211bn,
-						     iface->conf->secondary_channel,
-						     hostapd_get_oper_chwidth(iface->conf),
-						     hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
-						     hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
-						     dfs_use_radar_background(iface),
-						     iface->conf->bandwidth_device,
-						     iface->conf->center_freq_device);
-		}
-
-		return hostapd_dfs_request_channel_switch(
-			iface, iface->conf->channel, freq,
-			iface->conf->secondary_channel, chan_width,
-			oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx,
-			hostapd_get_punct_bitmap(iface->bss[0]));
-	}
-
-	if (iface->conf->use_ru_puncture_dfs && !hostapd_is_usable_punct_bitmap(iface))
 		dfs_reset_punc_bitmap_src(iface, ALL_SUBCHANS_PUNC);
+	}
 
 	/* Switch channel with random channel selection for invalid puncturing pattern */
 	iface->radar_bit_pattern = 0;
@@ -4159,76 +4300,36 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	iface->radar_bit_pattern_extn = radar_bitmap_oper;
 #endif
 
-	if (hostapd_dfs_background_start_channel_switch(iface, freq)) {
-		if (iface->conf->dfs_bw_reduce_en) {
-			struct hostapd_channel_data *channel = NULL;
-			int secondary_channel;
-			u8 oper_centr_freq_seg0_idx = 0;
-			u8 oper_centr_freq_seg1_idx = 0;
+	if (!hostapd_dfs_background_start_channel_switch(iface, freq))
+		return 0;
 
-			channel = dfs_find_bw_reduced_channel(iface,
-							      &secondary_channel,
-							      &oper_centr_freq_seg0_idx,
-							      &oper_centr_freq_seg1_idx);
-			if (channel) {
-				wpa_printf(MSG_INFO,
-					   "DFS: Radar detected, BW reduction successful - Ch %d",
-					    channel->chan);
-				if (iface->skip_mesh_dfs)
-					return 0;
+	if (hostapd_dfs_radar_reduce_bandwidth(iface, &ret))
+		return ret;
 
-				return hostapd_dfs_request_channel_switch(
-							iface, channel->chan,
-							channel->freq,
-							secondary_channel,
-							hostapd_get_oper_chwidth(iface->conf),
-							oper_centr_freq_seg0_idx,
-							oper_centr_freq_seg1_idx,
-							hostapd_get_punct_bitmap(iface->bss[0]));
-			}
-		}
-
-		/*
-		 * radar_bitmap == 0 is reported for full-band radar events,
-		 * so treat this as radar affecting the current operating
-		 * bandwidth.
-		 */
-		if (!radar_bitmap && !iface->conf->disable_csa_dfs) {
-			if (iface->skip_mesh_dfs)
-				return 0;
-
-			return hostapd_dfs_start_channel_switch(iface);
-		}
-
-		/* Radar detected on non-operating portion. No action needed. */
-		if (radar_bitmap && !radar_bitmap_oper)
-			return 0;
-
-		if (iface->conf->disable_csa_dfs) {
-			if (hostapd_csa_in_progress(iface)) {
-				wpa_printf(MSG_DEBUG,
-					   "DFS: radar detected, but CSA"
-					   "already in progress - skip timeout");
-				return 0;
-			}
-
-			if (!eloop_is_timeout_registered(hostapd_dfs_radar_handling_timeout,
-							 iface, NULL)) {
-				eloop_register_timeout(0, HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR,
-						       hostapd_dfs_radar_handling_timeout,
-						       iface, NULL);
-			}
-			return 0;
-		}
-
+	/*
+	 * radar_bitmap == 0 is reported for full-band radar events,
+	 * so treat this as radar affecting the current operating
+	 * bandwidth.
+	 */
+	if (!radar_bitmap && !iface->conf->disable_csa_dfs) {
 		if (iface->skip_mesh_dfs)
 			return 0;
 
-		/* Radar detected while operating, switch the channel. */
 		return hostapd_dfs_start_channel_switch(iface);
 	}
 
-	return 0;
+	/* Radar detected on non-operating portion. No action needed. */
+	if (radar_bitmap && !radar_bitmap_oper)
+		return 0;
+
+	if (iface->conf->disable_csa_dfs)
+		return hostapd_dfs_radar_handle_disable_csa_dfs(iface);
+
+	if (iface->skip_mesh_dfs)
+		return 0;
+
+	/* Radar detected while operating, switch the channel. */
+	return hostapd_dfs_start_channel_switch(iface);
 }
 
 /*
