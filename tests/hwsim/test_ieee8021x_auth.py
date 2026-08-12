@@ -2637,3 +2637,169 @@ def test_ieee8021x_auth_pqc_transcript_mismatch(dev, apdev):
 
     if "PONG" not in hapd.request("PING"):
         raise Exception("hostapd did not survive the modified transcript")
+
+def build_802_1x_auth_resp(hapd, addr, auth_transaction=2, status=0, body=b''):
+    """Build an IEEE 802.1X Authentication frame sent by the AP to the STA"""
+    bssid = hapd.own_addr().replace(':', '')
+    hdr = "b0003a01" + addr.replace(':', '') + bssid + bssid + "1000"
+    fixed = struct.pack("<HHH", WLAN_AUTH_802_1X, auth_transaction, status)
+    return binascii.unhexlify(hdr) + fixed + body
+
+def auth_resp_body(rsne, pqc_elem=b'', nonce=None):
+    """Build the body of an Authentication frame sent by the AP"""
+    if nonce is None:
+        nonce = nonce_elem()
+    return struct.pack("<H", 0) + rsne + nonce + pqc_elem
+
+def sta_auth_frame(hapd, timeout=5):
+    """Wait for an IEEE 802.1X Authentication frame sent by the STA"""
+    for i in range(10):
+        req = hapd.mgmt_rx(timeout=timeout)
+        if req is None:
+            return None
+        if req['subtype'] == 11 and len(req['frame']) >= 30 and \
+           struct.unpack("<H", req['frame'][24:26])[0] == WLAN_AUTH_802_1X:
+            return req
+    return None
+
+def auth_frame_rsne(req):
+    """Get the RSNE from an Authentication frame sent by the STA"""
+    body = req['frame'][30:]
+    if len(body) < 2:
+        raise Exception("Too short Authentication frame from the STA")
+    encap_len, = struct.unpack("<H", body[0:2])
+    for (eid, ext, data) in parse_elems(body[2 + encap_len:]):
+        if eid == WLAN_EID_RSN:
+            return struct.pack("BB", WLAN_EID_RSN, len(data)) + data
+    raise Exception("No RSNE in the Authentication frame from the STA")
+
+def _run_pqc_sta_auth_resp(dev, hapd, sock, ssid, build_body, expected, note):
+    """Inject a crafted AP Authentication frame and check the STA reaction
+
+    The AP is kept in external management frame handling mode so that it does
+    not respond by itself and the STA only processes the injected frame. The
+    body is built from the RSNE that the STA used so that it is only rejected
+    for the reason under test.
+    """
+    dev.dump_monitor()
+    hapd.dump_monitor()
+    pqc_connect(dev, ssid, wait_connect=False)
+
+    req = sta_auth_frame(hapd)
+    if req is None:
+        raise Exception("No Authentication frame from the STA for: " + note)
+
+    sock.send(radiotap_build() +
+              build_802_1x_auth_resp(hapd, req['sa'],
+                                     body=build_body(auth_frame_rsne(req))))
+
+    ev = dev.wait_event([expected, "CTRL-EVENT-CONNECTED"], timeout=5)
+    if ev is None:
+        raise Exception("STA did not report the expected failure for: " + note)
+    if "CTRL-EVENT-CONNECTED" in ev:
+        raise Exception("STA accepted the frame for: " + note)
+
+    dev.request("DISCONNECT")
+    dev.request("REMOVE_NETWORK all")
+    dev.dump_monitor()
+
+def _pqc_sta_prepare(dev, apdev, ssid):
+    """Start a PQC AP and a monitor interface for injecting AP frames"""
+    # Reset apdev[1] into a known state before using it as monitor interface.
+    hapd2 = hostapd.add_ap(apdev[1], {"ssid": "monitor"})
+    hapd2.disable()
+
+    hapd = hostapd.add_ap(apdev[0], pqc_ap_params(ssid))
+    dev.scan_for_bss(hapd.own_addr(), freq=2412)
+    hapd.set("ext_mgmt_frame_handling", "1")
+    return hapd, start_monitor(apdev[1]["ifname"])
+
+def test_ieee8021x_auth_pqc_sta_invalid_parameters(dev, apdev):
+    """IEEE 802.1X over Authentication frames with an invalid PQC Parameters element from the AP"""
+    check_pqc_capab(dev[0])
+
+    ssid = "test-8021x-pqc-sta-params"
+    hapd, sock = _pqc_sta_prepare(dev[0], apdev, ssid)
+
+    # The STA uses the mandatory PQC constraint 2, i.e., security profile 18,
+    # which uses ECP group 20 (P-384) with a 48 octet public key and ML-KEM-768.
+    prof = SECURITY_PROFILE_8021X_PQC_2
+    p384_x = 48 * b'\xff'
+
+    tests = [("Missing PQC Parameters element", b'',
+              "IEEE 802.1X: Missing or too short PQC Parameters element"),
+             # A truncated element makes the whole frame malformed, while an
+             # element that is well formed but too short is ignored.
+             ("Truncated Extended Length Element",
+              pqc_parameters_elem(prof, 2)[:6],
+              "IEEE 802.1X: Failed to parse Authentication frame elements"),
+             ("PQC Parameters element without the Content Present field",
+              pqc_parameters_elem(prof, 2, datalen=1)[:6],
+              "IEEE 802.1X: Missing or too short PQC Parameters element"),
+             ("Security profile not the one selected by the STA",
+              pqc_parameters_elem(SECURITY_PROFILE_8021X_PQC_0, 2),
+              "IEEE 802.1X: PQC security profile mismatch"),
+             ("Content Present value used only by the STA",
+              pqc_parameters_elem(prof, 1),
+              "IEEE 802.1X: Unexpected PQC content present value"),
+             ("Truncated ECDH public key",
+              pqc_parameters_elem(prof, 4, 8 * b'\x00'),
+              "IEEE 802.1X: PQC DH pubkey too short"),
+             ("Invalid ECDH public key",
+              pqc_parameters_elem(prof, 4, p384_x + 32 * b'\x00'),
+              "IEEE 802.1X: Failed to compute PQC DH shared secret"),
+             ("Missing ML-KEM ciphertext",
+              pqc_parameters_elem(prof, 2),
+              "IEEE 802.1X: Missing ML-KEM ciphertext"),
+             ("Invalid ML-KEM ciphertext",
+              pqc_parameters_elem(prof, 2, 100 * b'\x00'),
+              "IEEE 802.1X: ML-KEM decapsulation failed")]
+
+    try:
+        for note, elem, expected in tests:
+            logger.info(note)
+            _run_pqc_sta_auth_resp(dev[0], hapd, sock, ssid,
+                                   lambda rsne, e=elem: auth_resp_body(rsne, e),
+                                   expected, note)
+    finally:
+        stop_monitor(apdev[1]["ifname"])
+
+    hapd.set("ext_mgmt_frame_handling", "0")
+    pqc_connect(dev[0], ssid)
+
+def test_ieee8021x_auth_pqc_sta_invalid_elements(dev, apdev):
+    """IEEE 802.1X over Authentication frames with invalid elements from the AP"""
+    check_pqc_capab(dev[0])
+
+    ssid = "test-8021x-pqc-sta-elems"
+    hapd, sock = _pqc_sta_prepare(dev[0], apdev, ssid)
+
+    # A PQC Parameters element that is not the reason for rejecting the frame.
+    pqc = pqc_parameters_elem(SECURITY_PROFILE_8021X_PQC_2, 2, 100 * b'\x00')
+
+    tests = [("Encapsulated data longer than the frame",
+              lambda rsne: struct.pack("<H", 1000),
+              "IEEE 802.1X: Encapsulated data exceeds frame length"),
+             ("Missing RSNE",
+              lambda rsne: struct.pack("<H", 0) + nonce_elem() + pqc,
+              "IEEE 802.1X: Missing required elements"),
+             ("Missing Nonce element",
+              lambda rsne: struct.pack("<H", 0) + rsne + pqc,
+              "IEEE 802.1X: Missing required elements"),
+             ("Too short Nonce element",
+              lambda rsne: auth_resp_body(rsne, pqc, nonce_elem(16 * b'\x11')),
+              "IEEE 802.1X: Missing required elements"),
+             ("RSNE that does not match the one sent by the STA",
+              lambda rsne: auth_resp_body(rsne_elem(RSN_AKM_FT_802_1X_PQC), pqc),
+              "IEEE 802.1X: RSNE mismatch")]
+
+    try:
+        for note, build_body, expected in tests:
+            logger.info(note)
+            _run_pqc_sta_auth_resp(dev[0], hapd, sock, ssid, build_body,
+                                   expected, note)
+    finally:
+        stop_monitor(apdev[1]["ifname"])
+
+    hapd.set("ext_mgmt_frame_handling", "0")
+    pqc_connect(dev[0], ssid)
