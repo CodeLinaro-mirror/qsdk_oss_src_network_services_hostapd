@@ -10125,6 +10125,11 @@ static int i802_flush(void *priv, int link_id)
 	struct nl_msg *msg;
 	int res;
 
+	if (!bss->drv) {
+		wpa_printf(MSG_ERROR, "nl80211: bss->drv is NULL");
+		return -1;
+	}
+
 	if (link_id == NL80211_DRV_LINK_ID_NA)
 		wpa_printf(MSG_DEBUG, "nl80211: flush -> DEL_STATION %s (all)",
 			   bss->ifname);
