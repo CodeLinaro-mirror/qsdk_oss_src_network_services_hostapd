@@ -2077,8 +2077,6 @@ def test_ieee8021x_auth_alg_eap_tls_mldsa_security_profile_19(dev, apdev):
     _run_ieee8021x_auth_security_profile_pqc(dev, apdev,
                                              "00-0f-ac-31", 19, mldsa=True)
 
-WLAN_AUTH_802_1X = 8
-
 def mgmt_rx_process(hapd, frame):
     cmd = "MGMT_RX_PROCESS freq=2412 datarate=0 ssi_signal=-30 frame=" + frame
     if "OK" not in hapd.request(cmd):
@@ -2133,7 +2131,7 @@ def test_ieee8021x_auth_pqc_akm_without_pqc_element(dev, apdev):
     ssid = "test-ieee8021x-auth-pqc-no-elem"
 
     params = hostapd.wpa2_eap_params(ssid=ssid)
-    params["wpa_key_mgmt"] = "EAP-PQC"
+    params["wpa_key_mgmt"] = ""
     params["rsn_pairwise"] = "GCMP-256"
     params["group_cipher"] = "GCMP-256"
     params["ieee80211w"] = "2"
@@ -2141,7 +2139,6 @@ def test_ieee8021x_auth_pqc_akm_without_pqc_element(dev, apdev):
     params["eap_using_authentication_frames"] = "1"
     params["assoc_frame_encryption"] = "1"
     params["pmksa_caching_privacy"] = "1"
-    params["supported_pqc_constraints"] = "2"
 
     hapd = hostapd.add_ap(apdev[0], params)
     hapd.set("ext_mgmt_frame_handling", "1")
@@ -2158,7 +2155,7 @@ def test_ieee8021x_auth_pqc_akm_without_pqc_element(dev, apdev):
 
     dev[0].set("security_profiles", "1")
     dev[0].connect(ssid,
-                   key_mgmt="EAP-PQC",
+                   key_mgmt="WPA-EAP",
                    ieee80211w="2",
                    pairwise="GCMP-256",
                    group="GCMP-256",
@@ -2170,7 +2167,7 @@ def test_ieee8021x_auth_pqc_akm_without_pqc_element(dev, apdev):
                    scan_freq="2412",
                    pmksa_privacy="1",
                    eap_over_auth_frame="1",
-                   supported_pqc_constraints="2")
+                   security_profiles="18")
 
     hapd.wait_sta()
     sta = hapd.get_sta(dev[0].own_addr())
@@ -2181,3 +2178,106 @@ def test_ieee8021x_auth_pqc_akm_without_pqc_element(dev, apdev):
     val = dev[0].get_status_field("security_profile")
     if val != "18":
         raise Exception("Unexpected security_profile: " + str(val))
+
+SECURITY_PROFILE_MAX = 23
+SECURITY_PROFILE_8021X_PQC_0 = 16
+SECURITY_PROFILE_8021X_PQC_1 = 17
+SECURITY_PROFILE_8021X_PQC_2 = 18
+SECURITY_PROFILE_8021X_PQC_3 = 19
+
+RSN_AKM_802_1X_PQC = b'\x00\x0f\xac\x1f'
+RSN_AKM_FT_802_1X_PQC = b'\x00\x0f\xac\x20'
+RSN_CIPHER_GCMP_256 = b'\x00\x0f\xac\x09'
+
+def pqc_ap_params(ssid, profiles=str(SECURITY_PROFILE_8021X_PQC_2)):
+    """AP parameters for IEEE 802.1X over Authentication frames with EAP-PQC"""
+    params = hostapd.wpa2_eap_params(ssid=ssid)
+    # The PQC AKM has no wpa_key_mgmt name of its own; it is implied by the
+    # configured security profiles.
+    params["wpa_key_mgmt"] = ""
+    # Only BIP-GMAC-256 is accepted once a security profile is selected.
+    params["group_mgmt_cipher"] = "BIP-GMAC-256"
+    params["rsn_pairwise"] = "GCMP-256"
+    params["group_cipher"] = "GCMP-256"
+    params["ieee80211w"] = "2"
+    params["security_profiles"] = profiles
+    params["eap_using_authentication_frames"] = "1"
+    params["assoc_frame_encryption"] = "1"
+    params["pmksa_caching_privacy"] = "1"
+    return params
+
+# EAP-PSK keeps the Authentication frames small enough to be forwarded over
+# the control interface, unlike the certificate exchange of EAP-TLS.
+EAP_PSK_PARAMS = {"eap": "PSK",
+                  "identity": "psk.user@example.com",
+                  "password_hex": "0123456789abcdef0123456789abcdef"}
+
+EAP_TLS_PARAMS = {"eap": "TLS",
+                  "identity": "tls user",
+                  "ca_cert": "auth_serv/ca.pem",
+                  "client_cert": "auth_serv/user.pem",
+                  "private_key": "auth_serv/user.key"}
+
+def pqc_connect(dev, ssid, profiles=str(SECURITY_PROFILE_8021X_PQC_2),
+                eap_params=EAP_TLS_PARAMS, **kwargs):
+    """Connect with EAP-PQC using IEEE 802.1X over Authentication frames"""
+    kwargs.setdefault("security_profiles", profiles)
+    dev.set("security_profiles", "1")
+    dev.connect(ssid, key_mgmt="WPA-EAP", ieee80211w="2", pairwise="GCMP-256",
+                group="GCMP-256", scan_freq="2412", pmksa_privacy="1",
+                eap_over_auth_frame="1", **eap_params, **kwargs)
+
+def rsne_elem(akm=RSN_AKM_802_1X_PQC):
+    """Build an RSNE with GCMP-256 and the given AKM suite selector"""
+    data = struct.pack("<H", 1) + RSN_CIPHER_GCMP_256
+    data += struct.pack("<H", 1) + RSN_CIPHER_GCMP_256
+    data += struct.pack("<H", 1) + akm
+    data += struct.pack("<H", 0x00c0)
+    return struct.pack("BB", WLAN_EID_RSN, len(data)) + data
+
+def nonce_elem(nonce=32 * b'\x11'):
+    """Build a Nonce element"""
+    return struct.pack("BBB", WLAN_EID_EXTENSION, 1 + len(nonce),
+                       WLAN_EID_EXT_NONCE) + nonce
+
+def akm_suite_selector_elem(akm=RSN_AKM_802_1X_PQC):
+    """Build an AKM Suite Selector element"""
+    return struct.pack("BBB", WLAN_EID_EXTENSION, 1 + len(akm),
+                       WLAN_EID_EXT_AKM_SUITE_SELECTOR) + akm
+
+def pqc_parameters_elem(sec_prof, content_present, payload=b'', datalen=None):
+    """Build a PQC Parameters element carried in an Extended Length Element"""
+    data = struct.pack("BB", sec_prof, content_present) + payload
+    if datalen is None:
+        datalen = len(data)
+    return struct.pack("<BHH", WLAN_EID_EXT_LEN_ELEM,
+                       WLAN_EID_EXT_LEN_PQC_PARAMETERS, datalen) + data
+
+def enc_assoc_auth_body(pqc_elem):
+    """Build the body of the first IEEE 802.1X Authentication frame
+
+    The AP only processes the PQC Parameters element when the STA indicates
+    support for (Re)Association frame encryption and includes an RSNE and a
+    Nonce element.
+    """
+    return eapol_start_encap() + \
+        rsnxe_elem([WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION,
+                    WLAN_RSNX_CAPAB_802_1X_IN_AUTH_FRAMES,
+                    WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY]) + \
+        rsne_elem() + nonce_elem() + pqc_elem
+
+def auth_resp_status(hapd, timeout=5):
+    """Get the status code of the Authentication frame sent by the AP
+
+    Returns None if the AP did not respond.
+    """
+    ev = hapd.wait_event(["MGMT-TX-STATUS"], timeout=timeout)
+    if ev is None:
+        return None
+    buf = binascii.unhexlify(ev.split("buf=")[1].split(' ')[0])
+    if len(buf) < 30:
+        raise Exception("Too short Authentication frame from the AP")
+    alg, transaction, status = struct.unpack("<HHH", buf[24:30])
+    if alg != WLAN_AUTH_802_1X:
+        raise Exception("Unexpected authentication algorithm %d" % alg)
+    return status

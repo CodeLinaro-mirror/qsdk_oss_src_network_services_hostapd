@@ -16,6 +16,30 @@ import re
 logger = logging.getLogger()
 import hostapd
 
+WLAN_AUTH_802_1X = 8
+
+WLAN_EID_RSN = 48
+WLAN_EID_VENDOR_SPECIFIC = 221
+WLAN_EID_RSNX = 244
+WLAN_EID_EXT_LEN_ELEM = 227
+WLAN_EID_EXTENSION = 255
+
+WLAN_EID_EXT_NONCE = 13
+WLAN_EID_EXT_AKM_SUITE_SELECTOR = 114
+WLAN_EID_EXT_SECURITY_PROFILE = 162
+
+# Extended Length Element ID Extension values
+WLAN_EID_EXT_LEN_PQC_PARAMETERS = 0
+
+WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION = 27
+WLAN_RSNX_CAPAB_802_1X_IN_AUTH_FRAMES = 28
+WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY = 29
+
+WLAN_STATUS_UNSPECIFIED_FAILURE = 1
+WLAN_STATUS_INVALID_PUBLIC_KEY = 136
+WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE = 159
+WLAN_STATUS_INVALID_ML_KEM_PARAMETER = 168
+
 def get_ifnames():
     ifnames = []
     with open("/proc/net/dev", "r") as f:
@@ -126,6 +150,10 @@ def check_owe_capab(dev):
     if "OWE" not in dev.get_capability("key_mgmt"):
         raise HwsimSkip("OWE not supported")
 
+def check_pqc_capab(dev):
+    if "EAP-PQC" not in dev.get_capability("key_mgmt"):
+        raise HwsimSkip("EAP-PQC not supported")
+
 def check_erp_capa(dev):
     capab = dev.get_capability("erp")
     if not capab or 'ERP' not in capab:
@@ -224,6 +252,93 @@ def parse_ie(buf):
         ret[ie] = data[0:elen]
         data = data[elen:]
     return ret
+
+def parse_elems(ies):
+    """Parse elements, including Extended Length Elements
+
+    Returns a list of (element id, extended id, data) tuples. The extended id
+    is None for elements that do not use an Element ID Extension field.
+    """
+    elems = []
+    pos = 0
+    while pos + 2 <= len(ies):
+        eid = ies[pos]
+        if eid == WLAN_EID_EXT_LEN_ELEM:
+            if pos + 5 > len(ies):
+                break
+            ext_id, dlen = struct.unpack("<HH", ies[pos + 1:pos + 5])
+            elems.append((eid, ext_id, ies[pos + 5:pos + 5 + dlen]))
+            pos += 5 + dlen
+        elif eid == WLAN_EID_EXTENSION:
+            dlen = ies[pos + 1]
+            if dlen < 1:
+                break
+            elems.append((eid, ies[pos + 2], ies[pos + 3:pos + 2 + dlen]))
+            pos += 2 + dlen
+        else:
+            dlen = ies[pos + 1]
+            elems.append((eid, None, ies[pos + 2:pos + 2 + dlen]))
+            pos += 2 + dlen
+    return elems
+
+def get_bss_elem(dev, bssid, eid, ext_id=None, field="ie"):
+    """Get the payload of an element advertised by the AP"""
+    bss = dev.get_bss(bssid)
+    if bss is None:
+        raise Exception("Could not get the BSS entry")
+    if field not in bss:
+        return None
+    for (i, ext, data) in parse_elems(binascii.unhexlify(bss[field])):
+        if i == eid and ext == ext_id:
+            return data
+    return None
+
+def rsne_akm_suites(rsne):
+    """List the AKM suite selectors of an RSNE payload"""
+    pos = 2 + 4
+    count, = struct.unpack("<H", rsne[pos:pos + 2])
+    pos += 2 + 4 * count
+    count, = struct.unpack("<H", rsne[pos:pos + 2])
+    pos += 2
+    return [rsne[pos + 4 * i:pos + 4 * (i + 1)] for i in range(count)]
+
+def rsnxe_capab(rsnxe, bit):
+    """Check whether an Extended RSN Capabilities bit is set"""
+    if rsnxe is None or bit // 8 >= len(rsnxe):
+        return False
+    return (rsnxe[bit // 8] & (1 << (bit % 8))) != 0
+
+def rsnxe_elem(bits):
+    """Build an RSNXE with the given Extended RSN Capabilities bits set"""
+    octets = bytearray((max(bits) // 8) + 1)
+    for bit in bits:
+        octets[bit // 8] |= 1 << (bit % 8)
+    octets[0] |= len(octets) - 1
+    return struct.pack("BB", WLAN_EID_RSNX, len(octets)) + bytes(octets)
+
+def replace_ie(buf, eid, new):
+    ret = []
+    new = binascii.unhexlify(new)
+
+    data = binascii.unhexlify(buf)
+    while len(data) >= 2:
+        cur_eid, elen = struct.unpack('BB', data[0:2])
+        if elen > len(data) - 2:
+            break
+        if cur_eid == 255 and elen >= 1:
+            cur_eid = (255, data[2])
+
+        if cur_eid == eid:
+            if isinstance(eid, tuple):
+                ret.append(struct.pack('BBB', eid[0], len(new) + 1, eid[1]) + new)
+            else:
+                ret.append(struct.pack('BB', eid, len(new)) + new)
+        else:
+            ret.append(data[:elen + 2])
+
+        data = data[elen + 2:]
+
+    return binascii.hexlify(b''.join(ret)).decode()
 
 def wait_regdom_changes(dev):
     for i in range(10):
