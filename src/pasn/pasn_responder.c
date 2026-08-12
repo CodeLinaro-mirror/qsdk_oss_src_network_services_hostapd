@@ -434,7 +434,8 @@ pasn_derive_keys(struct pasn_data *pasn,
 		 const u8 *cached_pmk, size_t cached_pmk_len,
 		 struct wpa_pasn_params_data *pasn_data,
 		 struct wpabuf *wrapped_data,
-		 struct wpabuf *secret)
+		 struct wpabuf *secret,
+		 const u8 *smd_identifier)
 {
 	static const u8 pasn_default_pmk[] = {'P', 'M', 'K', 'z'};
 	u8 pmk[PMK_LEN_MAX];
@@ -496,7 +497,8 @@ pasn_derive_keys(struct pasn_data *pasn,
 			      &pasn->ptk, pasn->akmp,
 			      pasn->cipher, pasn->kdk_len, pasn->kek_len,
 			      &pasn->hash_alg,
-			      pasn->auth_alg == WLAN_AUTH_EPPKE);
+			      pasn->auth_alg == WLAN_AUTH_EPPKE,
+			      smd_identifier);
 	if (ret) {
 		wpa_printf(MSG_DEBUG, "PASN: Failed to derive PTK");
 		return -1;
@@ -838,8 +840,13 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 	bool derive_keys;
 	u32 i;
 	int has_security_profiles = 0;
+	const u8 *smd_identifier = NULL;
 	struct hostapd_data *hapd = (struct hostapd_data *)pasn->cb_ctx;
 	has_security_profiles = (hapd && hapd->conf && hapd->conf->security_profiles) ? 1 : 0;
+#ifdef CONFIG_IEEE80211BN
+	if (!is_zero_ether_addr(hapd->conf->smd.smd_identifier))
+		smd_identifier = hapd->conf->smd.smd_identifier;
+#endif /* CONFIG_IEEE80211BN */
 
 	if (!groups)
 		groups = default_groups;
@@ -1177,7 +1184,8 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 
 	ret = pasn_derive_keys(pasn, own_addr, peer_addr,
 			       cached_pmk, cached_pmk_len,
-			       &pasn_params, wrapped_data, secret);
+			       &pasn_params, wrapped_data, secret,
+			       smd_identifier);
 	if (ret) {
 		wpa_printf(MSG_DEBUG, "PASN: Failed to derive keys");
 		status = WLAN_STATUS_PASN_BASE_AKMP_FAILED;

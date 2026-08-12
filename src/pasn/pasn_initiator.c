@@ -1413,7 +1413,8 @@ int wpas_parse_pasn_frame(struct pasn_data *pasn, u16 auth_type,
 			      wpabuf_head(secret), wpabuf_len(secret),
 			      &pasn->ptk, pasn->akmp, pasn->cipher,
 			      pasn->kdk_len, pasn->kek_len, &pasn->hash_alg,
-			      pasn->auth_alg == WLAN_AUTH_EPPKE);
+			      pasn->auth_alg == WLAN_AUTH_EPPKE,
+			      NULL);
 	if (ret) {
 		wpa_printf(MSG_DEBUG, "PASN: Failed to derive PTK");
 		goto fail;

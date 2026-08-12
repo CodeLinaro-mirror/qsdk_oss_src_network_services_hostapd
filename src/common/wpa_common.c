@@ -1711,7 +1711,8 @@ int pasn_pmk_to_ptk(const u8 *pmk, size_t pmk_len,
 		    const u8 *dhss, size_t dhss_len,
 		    struct wpa_ptk *ptk, int akmp, int cipher,
 		    size_t kdk_len, size_t kek_len, enum rsn_hash_alg *alg,
-		    bool is_eppke)
+		    bool is_eppke,
+		    const u8 *smd_id)
 {
 	u8 tmp[WPA_KCK_MAX_LEN + WPA_KEK_MAX_LEN + WPA_TK_MAX_LEN +
 	       WPA_KDK_MAX_LEN];
@@ -1739,13 +1740,15 @@ int pasn_pmk_to_ptk(const u8 *pmk, size_t pmk_len,
 	 * MLO, the non-AP MLD MAC address is used instead of the SPA and the
 	 * AP MLD MAC address instead of the BSSID.
 	 *
-	 * PASN-PTK = KDF(PMK, “PASN PTK Derivation”, SPA || BSSID || DHss)
+	 * PASN-PTK = KDF(PMK, “PASN PTK Derivation”, SPA || BSSID || DHss ||
+	 * 		  SMD Identifier)
 	 *
 	 * KCK = L(PASN-PTK, 0, 256)
 	 * TK = L(PASN-PTK, 256, TK_bits)
 	 * KDK = L(PASN-PTK, 256 + TK_bits, kdk_len * 8)
+	 * SMD_Identifier = L(ETH_ALEN)
 	 */
-	data_len = 2 * ETH_ALEN + dhss_len;
+	data_len = 2 * ETH_ALEN + dhss_len + ETH_ALEN;
 	data = os_zalloc(data_len);
 	if (!data)
 		return -1;
@@ -1753,6 +1756,11 @@ int pasn_pmk_to_ptk(const u8 *pmk, size_t pmk_len,
 	os_memcpy(data, spa, ETH_ALEN);
 	os_memcpy(data + ETH_ALEN, bssid, ETH_ALEN);
 	os_memcpy(data + 2 * ETH_ALEN, dhss, dhss_len);
+	if (smd_id) {
+		os_memcpy(data + 2 * ETH_ALEN + dhss_len, smd_id, ETH_ALEN);
+		wpa_hexdump(MSG_DEBUG, "PASN: SMD Identifier in PTK derivation",
+			    smd_id, ETH_ALEN);
+	}
 
 	ptk->kck_len = WPA_PASN_KCK_LEN;
 	ptk->tk_len = wpa_cipher_key_len(cipher);
