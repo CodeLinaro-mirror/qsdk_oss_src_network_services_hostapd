@@ -813,6 +813,10 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 	}
 
 	iface->cac_type = 0;
+
+#ifdef CONFIG_QCN_EXTN
+	iface->bootup_cac_in_progress = 0;
+#endif /* CONFIG_QCN_EXTN */
 	return NULL;
 }
 
