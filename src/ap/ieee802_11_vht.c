@@ -216,8 +216,10 @@ u8 * hostapd_eid_vht_operation(struct hostapd_data *hapd, u8 *eid)
 
 #ifdef CONFIG_IEEE80211BE
 	if (punct_bitmap) {
+#ifdef CONFIG_QCN_EXTN
 		hostapd_get_oper_center_freq_seg_extn(hapd->iconf, &seg0, &seg1,
 						      &oper_chwidth);
+#endif /* CONFIG_QCN_EXTN */
 		punct_update_legacy_bw(punct_bitmap,
 				       hapd->iconf->channel,
 				       &oper_chwidth, &seg0, &seg1);
