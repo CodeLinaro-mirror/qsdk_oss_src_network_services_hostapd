@@ -13344,11 +13344,7 @@ static void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 	struct sockaddr_storage from;
 	socklen_t fromlen = sizeof(from);
 	char *reply, *pos = buf;
-#ifdef CONFIG_QCN_EXTN
-	const int reply_size = 16384;
-#else
-	const int reply_size = 8192;
-#endif /* CONFIG_QCN_EXTN */
+	int reply_size;
 	int reply_len, cmn_param_id;
 	char get_str[256];
 	int level = MSG_DEBUG;
@@ -13364,6 +13360,12 @@ static void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 		return;
 	}
 	buf[res] = '\0';
+#ifdef CONFIG_QCN_EXTN
+	reply_size = os_strstr(buf, "AFC get_afc_6g_chan_list") ?
+		MAX_REPLY_EXTN_BUF : 16384;
+#else
+	reply_size = 8192;
+#endif /* CONFIG_QCN_EXTN */
 
 	reply = os_malloc(reply_size);
 	if (reply == NULL) {
@@ -13540,11 +13542,7 @@ static void hostapd_mld_ctrl_iface_receive(int sock, void *eloop_ctx,
 	struct sockaddr_storage from;
 	socklen_t fromlen = sizeof(from);
 	char *reply, *pos = buf;
-#ifdef CONFIG_QCN_EXTN
-	const size_t reply_size = 16384;
-#else
-	const size_t reply_size = 8192;
-#endif /* CONFIG_QCN_EXTN */
+	size_t reply_size;
 	int reply_len;
 	int level = MSG_DEBUG;
 
@@ -13556,6 +13554,12 @@ static void hostapd_mld_ctrl_iface_receive(int sock, void *eloop_ctx,
 		return;
 	}
 	buf[res] = '\0';
+#ifdef CONFIG_QCN_EXTN
+	reply_size = os_strstr(buf, "AFC get_afc_6g_chan_list") ?
+		MAX_REPLY_EXTN_BUF : 16384;
+#else
+	reply_size = 8192;
+#endif /* CONFIG_QCN_EXTN */
 
 	reply = os_malloc(reply_size);
 	if (!reply) {
@@ -14450,11 +14454,7 @@ static void hostapd_global_ctrl_iface_receive(int sock, void *eloop_ctx,
 	socklen_t fromlen = sizeof(from);
 	char *reply;
 	int reply_len;
-#ifdef CONFIG_QCN_EXTN
-	const int reply_size = 16384;
-#else
-	const int reply_size = 8192;
-#endif /* CONFIG_QCN_EXTN */
+	int reply_size;
 #ifdef CONFIG_CTRL_IFACE_UDP
 	unsigned char lcookie[CTRL_IFACE_COOKIE_LEN];
 #endif /* CONFIG_CTRL_IFACE_UDP */
@@ -14468,6 +14468,12 @@ static void hostapd_global_ctrl_iface_receive(int sock, void *eloop_ctx,
 	}
 	buf[res] = '\0';
 	wpa_printf(MSG_DEBUG, "Global ctrl_iface command: %s", buf);
+#ifdef CONFIG_QCN_EXTN
+	reply_size = os_strstr(buf, "AFC get_afc_6g_chan_list") ?
+		MAX_REPLY_EXTN_BUF : 16384;
+#else
+	reply_size = 8192;
+#endif /* CONFIG_QCN_EXTN */
 
 	reply = os_malloc(reply_size);
 	if (reply == NULL) {
