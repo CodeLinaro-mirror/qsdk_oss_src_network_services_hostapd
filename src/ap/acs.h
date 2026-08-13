@@ -25,6 +25,11 @@ void acs_cleanup(struct hostapd_iface *iface);
 void acs_cleanup_mode(struct hostapd_hw_modes *mode);
 void acs_update_bw_downgrade_config(struct hostapd_iface *iface, u32 bw);
 
+#ifdef CONFIG_IEEE80211BN
+int acs_npca_select_primary_chan(struct hostapd_iface *iface, u8 *npca_channel,
+				 u16 *npca_punct_bitmap);
+#endif /* CONFIG_IEEE80211BN */
+
 #define ACS_SCAN_RETRY_MAX_COUNT	15
 #define ACS_SCAN_RETRY_INTERVAL		5
 
