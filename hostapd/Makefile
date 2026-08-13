@@ -1,7 +1,9 @@
 ALL=hostapd hostapd_cli
 ifdef CONFIG_MQTT
 ALL += mqtt_test
+ifdef CONFIG_QCN_EXTN
 ALL += external_hif_mqtt_test_client
+endif
 endif
 
 CONFIG_FILE = .config

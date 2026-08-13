@@ -11,6 +11,7 @@
  * startup by calling hostapd_plugin_register().
  *
  */
+#ifdef CONFIG_QCN_EXTN
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -845,3 +846,4 @@ void hostapd_if_stop_mqtt_hif_client(void)
 #endif /* CONFIG_MQTT_TEST_APP_FORK */
 
 #endif
+#endif /* CONFIG_QCN_EXTN */
