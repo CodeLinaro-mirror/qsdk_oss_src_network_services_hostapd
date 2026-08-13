@@ -6020,6 +6020,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 #ifdef CONFIG_IEEE80211BE
 	} else if (os_strcmp(buf, "ieee80211be") == 0) {
 		conf->ieee80211be = atoi(pos);
+	} else if (os_strcmp(buf, "require_eht") == 0) {
+		conf->require_eht = atoi(pos);
 	} else if (os_strcmp(buf, "eht_tx_mcs_nss_set") == 0) {
 		if (hostapd_parse_eht_mcs_nss_set(pos, bss->eht_tx_mcs_nss_set,
 						  "eht_tx_mcs_nss_set")) {
