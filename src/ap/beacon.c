@@ -1173,6 +1173,8 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 	buflen += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
 #endif /* CONFIG_QCN_EXTN */
 
+	buflen += hostapd_security_profile_len(hapd);
+
 	nontx_probe_params->resp = os_zalloc(buflen);
 	if (!nontx_probe_params->resp) {
 		nontx_probe_params->resp_len = 0;
@@ -1299,7 +1301,15 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 	pos = hostapd_eid_qcn_vendor_ie_extn(hapd, pos, IEEE80211_MODE_AP);
 #endif /* CONFIG_QCN_EXTN */
 
+	pos = hostapd_eid_security_profile(hapd, pos);
+
 	/* Final length */
+	if (!pos) {
+		os_free(nontx_probe_params->resp);
+		nontx_probe_params->resp = NULL;
+		nontx_probe_params->resp_len = 0;
+		return -1;
+	}
 	nontx_probe_params->resp_len = pos - (u8 *) nontx_probe_params->resp;
 	if (nontx_probe_params->resp_len > buflen) {
 		wpa_printf(MSG_ERROR,
@@ -3448,6 +3458,8 @@ int ieee802_11_build_nontx_bss_params(struct hostapd_data *hapd,
 	tail_len += hostapd_smd_ie_len(hapd);
 #endif /* CONFIG_IEEE80211BN */
 
+	tail_len += hostapd_security_profile_len(hapd);
+
 	tailpos = tail = os_malloc(tail_len);
 	if (tail == NULL) {
 		wpa_printf(MSG_ERROR,
@@ -3568,6 +3580,12 @@ int ieee802_11_build_nontx_bss_params(struct hostapd_data *hapd,
 	tailpos = hostapd_eid_qcn_vendor_ie_extn(hapd, tailpos, IEEE80211_MODE_AP);
 #endif /* CONFIG_QCN_EXTN */
 
+	tailpos = hostapd_eid_security_profile(hapd, tailpos);
+
+	if (!tailpos) {
+		os_free(tail);
+		return -1;
+	}
 	tail_len = tailpos > tail ? tailpos - tail : 0;
 #endif /* NEED_AP_MLME */
 
