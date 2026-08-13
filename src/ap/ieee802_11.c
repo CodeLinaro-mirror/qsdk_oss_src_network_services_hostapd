@@ -346,7 +346,7 @@ static const struct security_profile_entry_ap security_profile_table[MAX_SECURIT
 
      /* 0: EPPKE (AKM 29), unauth‑EPPKE allowed */
 	[0]  = { 0,  WPA_KEY_MGMT_EPPKE,			  WPA_CIPHER_GCMP_256,
-		true, false, true,  true,  true,  true,  true },
+		true, false, false,  true,  true,  true,  true },
 
     /* 1: EPPKE + SAE (AKM 29+24) */
 	[1]  = { 1,  WPA_KEY_MGMT_EPPKE | WPA_KEY_MGMT_SAE_EXT_KEY,
