@@ -321,7 +321,7 @@ hostapd_if_assoc_resp_tail(struct sta_info *sta, size_t buflen,
 {
 }
 static inline size_t
-hostapd_if_assoc_resp_tail_len(struct sta_info *sta, size_t current_len)
+hostapd_if_assoc_resp_tail_len(struct sta_info *sta)
 {
 	return 0;
 }

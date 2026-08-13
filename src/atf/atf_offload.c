@@ -27,6 +27,7 @@
 
 #include "common/ieee802_11_common.h"
 #include "common/wpa_common.h"
+#include "common/wpa_ctrl.h"
 #include "common/qca-vendor.h"
 #include "common/qca-vendor-attr.h"
 #include "../src/drivers/driver_nl80211.h"
