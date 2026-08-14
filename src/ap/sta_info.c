@@ -459,6 +459,20 @@ int ap_sta_check_link_sta(struct hostapd_data *hapd, struct sta_info *sta,
 #endif
 }
 
+static void reset_aid_bitmap(struct hostapd_data *hapd, u16 sta_aid)
+{
+	struct hostapd_data *hapd_aid = hapd;
+
+	if (hapd->iconf->mbssid)
+		hapd_aid = hostapd_mbssid_get_tx_bss(hapd);
+
+	if (hapd_aid) {
+		hapd_aid->sta_aid[sta_aid / 32] &= ~BIT(sta_aid % 32);
+
+		wpa_printf(MSG_DEBUG, "AID bitmap is cleared for hapd:%s sta->aid:%u",
+			   hapd_aid->conf->iface, sta_aid);
+	}
+}
 
 void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 {
@@ -534,8 +548,7 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	ap_sta_list_del(hapd, sta);
 
 	if (sta->aid > 0)
-		hapd->sta_aid[sta->aid / 32] &=
-			~BIT(sta->aid % 32);
+		reset_aid_bitmap(hapd, sta->aid);
 
 #ifdef CONFIG_IEEE80211BE
 	if (sta->wds_ifname_id > 0 && remove) {
