@@ -432,7 +432,8 @@ setup_mld:
 			return -1;
 		}
 #ifdef CONFIG_QCN_EXTN
-		hostapd_notify_link_repurpose(hapd, "hostapd_driver_init");
+		if (hostapd_notify_link_repurpose(hapd, "hostapd_driver_init"))
+			return -1;
 #endif /* CONFIG_QCN_EXTN */
 		if (hostapd_mld_add_link(hapd) < 0) {
 			hostapd_mld_remove_link(hapd);
