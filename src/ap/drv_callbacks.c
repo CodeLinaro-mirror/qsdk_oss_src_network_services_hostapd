@@ -3231,6 +3231,14 @@ hostapd_afc_find_iface_event(struct hostapd_data *hapd, int hw_idx)
 	return NULL;
 }
 
+#if defined(CONFIG_QCN_EXTN) && defined(HOSTAPD)
+struct hostapd_iface *
+hostapd_afc_find_iface(struct hostapd_data *hapd, int hw_idx)
+{
+	return hostapd_afc_find_iface_event(hapd, hw_idx);
+}
+#endif /* CONFIG_QCN_EXTN && HOSTAPD */
+
 static void hostapd_event_afc_update_complete(
 		struct hostapd_data *hapd,
 		struct afc_info *afc_info)
@@ -3256,6 +3264,10 @@ static void hostapd_event_afc_update_complete(
 	iface->is_afc_power_event_received =
 		afc_rsp_info->target_status_code ==
 		QCA_WLAN_VENDOR_AFC_EVT_STATUS_CODE_SUCCESS;
+
+#ifdef CONFIG_QCN_EXTN
+	hostapd_set_afc_regd_wait(iface);
+#endif /* CONFIG_QCN_EXTN */
 
 	hapd = iface->bss[0];
 	if (!iface->is_afc_power_event_received) {
@@ -3582,6 +3594,10 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 		/* Clear AFC payload */
 		hostapd_free_afc_data(iface);
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	hostapd_set_afc_regd_wait(iface);
+#endif /* CONFIG_QCN_EXTN */
 
 	iface->is_afc_power_event_received = false;
 	iface->is_afc_repeater_power_sync_pending = false;

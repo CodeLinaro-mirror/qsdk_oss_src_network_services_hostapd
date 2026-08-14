@@ -1145,8 +1145,6 @@ struct hostapd_iface {
 
 	/* Configured freq of interface is NO_IR */
 	bool is_no_ir;
-	/* Interface was brought down due regulatory incompatibility */
-	bool is_regdom_forced_down;
 
 	bool is_ch_switch_dfs; /* Channel switch from ACS to DFS */
 	/* 6 GHz AFC information */
@@ -1406,7 +1404,6 @@ void hostapd_mld_ref_dec(struct hostapd_mld *mld);
 void hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface,
 					bool iface_enabled);
 #ifdef HOSTAPD
-#define HOSTAPD_IFACE_RELOAD_LINKID_REGDOM 0xFE
 /**
  * hostapd_set_no_ir_state - Set the NO_IR state for the interface
  * and bring down the corresponding 6 GHz link.
@@ -1415,16 +1412,7 @@ void hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface,
  * Return: None
  */
 void hostapd_set_no_ir_state(struct hostapd_iface *iface);
-bool hostapd_regdom_channel_supported(struct hostapd_iface *iface,
-				      struct hostapd_channel_data *chan);
 #ifdef CONFIG_QCN_EXTN
-bool hostapd_is_iface_regdom_supported(struct hostapd_iface *iface);
-struct hostapd_channel_data *
-hostapd_regdom_first_supported_channel(struct hostapd_iface *iface);
-int hostapd_regdom_move_iface_to_supported_channel(struct hostapd_iface *iface);
-void hostapd_regdom_force_disable_iface(struct hostapd_iface *iface,
-						 const char *reason);
-int hostapd_regdom_restore_iface(struct hostapd_iface *iface);
 /**
  * hostapd_handle_afc_channel_change - Handle retail AFC channel change.
  *
@@ -1456,43 +1444,6 @@ int hostapd_handle_afc_channel_change(struct hostapd_iface *iface);
 void afc_channel_change_timeout(void *eloop_ctx, void *timeout_ctx);
 #endif /* CONFIG_QCN_EXTN */
 #else
-static inline bool
-hostapd_regdom_channel_supported(struct hostapd_iface *iface,
-				      struct hostapd_channel_data *chan)
-{
-	return false;
-}
-
-static inline bool
-hostapd_is_iface_regdom_supported(struct hostapd_iface *iface)
-{
-	return false;
-}
-
-static inline struct hostapd_channel_data *
-hostapd_regdom_first_supported_channel(struct hostapd_iface *iface)
-{
-	return NULL;
-}
-
-static inline int
-hostapd_regdom_move_iface_to_supported_channel(struct hostapd_iface *iface)
-{
-	return -1;
-}
-
-static inline void
-hostapd_regdom_force_disable_iface(struct hostapd_iface *iface,
-						 const char *reason)
-{
-}
-
-static inline int
-hostapd_regdom_restore_iface(struct hostapd_iface *iface)
-{
-	return 0;
-}
-
 static inline void hostapd_set_no_ir_state(struct hostapd_iface *iface)
 {
 	/* No-op if hostapd is not defined */
