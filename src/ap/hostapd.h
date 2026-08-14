@@ -138,6 +138,10 @@ struct hapd_interfaces {
 	 */
 	struct mqtt_eloop_ctx *mqtt_ctx;
 #endif /* CONFIG_MQTT */
+#ifdef CONFIG_QCN_EXTN
+	struct hapd_interfaces_extn interfaces_extn;
+#endif /* CONFIG_QCN_EXTN */
+
 };
 
 enum hostapd_chan_status {

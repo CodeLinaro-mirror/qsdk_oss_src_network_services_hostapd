@@ -2391,11 +2391,15 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
 	 */
 	if (hapd->iface->conf->conf_extn.repeater &&
 	    !hapd->iface->conf->conf_extn.ind_rptr &&
-	    os_strncmp(hapd->iface->iface_extn.sta_wpa_state, "COMPLETED", 9) != 0) {
+	    os_strncmp(hapd->iface->iface_extn.sta_wpa_state, "COMPLETED", 9) != 0 &&
+	    (!hapd->iface->interfaces ||
+	     !hapd->iface->interfaces->interfaces_extn.bh_sta_connected)) {
 		wpa_printf(MSG_INFO,
 			   "%s: repeater FH AP, BH STA not connected"
-			   " (sta_wpa_state=\"%s\"), skipping start_ap for %s",
+			   " (sta_wpa_state=\"%s\" bh_sta_connected=%d), skipping start_ap for %s",
 			   __func__, hapd->iface->iface_extn.sta_wpa_state,
+			   hapd->iface->interfaces ?
+			   hapd->iface->interfaces->interfaces_extn.bh_sta_connected : 0,
 			   conf->iface);
 		return 0;
 	}
