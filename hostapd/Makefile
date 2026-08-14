@@ -202,6 +202,10 @@ OBJS += ../src/ap/ubus.o
 ifdef CONFIG_QCN_EXTN
 OBJS += qcn_extns/ubus_extn.o
 endif
+
+ifdef CONFIG_ATH12K_SMD_DP_DEBUG
+CFLAGS += -DCONFIG_ATH12K_SMD_DP_DEBUG
+endif
 LIBS += -lubus
 NEED_ULOOP:=y
 endif
