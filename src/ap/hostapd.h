@@ -663,9 +663,11 @@ struct hostapd_data {
 	u8 lci_req_token;
 	u8 range_req_token;
 	u8 link_measurement_req_token;
+	u8 chan_load_req_token;
 	unsigned int lci_req_active:1;
 	unsigned int range_req_active:1;
 	unsigned int link_mesr_req_active:1;
+	unsigned int chan_load_req_active:1;
 
 	int dhcp_sock; /* UDP socket used with the DHCP server */
 

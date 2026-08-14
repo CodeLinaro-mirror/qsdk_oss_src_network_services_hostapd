@@ -11,11 +11,18 @@
 #include "utils/common.h"
 #include "utils/eloop.h"
 #include "common/ieee802_11_common.h"
+#include "common/wpa_ctrl.h"
 #include "wpa_supplicant_i.h"
 #include "driver_i.h"
 #include "bss.h"
 #include "scan.h"
 #include "p2p_supplicant.h"
+
+/* Forward declarations */
+static void wpas_rrm_channel_load_timeout(void *eloop_ctx, void *timeout_ctx);
+static int wpas_rrm_handle_channel_load_req(struct wpa_supplicant *wpa_s,
+					    const struct rrm_measurement_request_element *req,
+					    struct wpabuf **buf);
 
 
 static void wpas_rrm_neighbor_rep_timeout_handler(void *data, void *user_ctx)
@@ -50,6 +57,8 @@ void wpas_rrm_reset(struct wpa_supplicant *wpa_s)
 		wpas_rrm_neighbor_rep_timeout_handler(&wpa_s->rrm, NULL);
 	wpa_s->rrm.next_neighbor_rep_token = 1;
 	wpas_clear_beacon_rep_data(wpa_s);
+	eloop_cancel_timeout(wpas_rrm_channel_load_timeout, wpa_s, NULL);
+	wpa_s->rrm.chan_load_token = 0;
 }
 
 
@@ -1357,6 +1366,8 @@ wpas_rrm_handle_msr_req_element(
 	switch (req->type) {
 	case MEASURE_TYPE_LCI:
 		return wpas_rrm_build_lci_report(wpa_s, req, buf);
+	case MEASURE_TYPE_CHANNEL_LOAD:
+		return wpas_rrm_handle_channel_load_req(wpa_s, req, buf);
 	case MEASURE_TYPE_BEACON:
 		if (duration_mandatory &&
 		    !(wpa_s->drv_rrm_flags &
@@ -1677,4 +1688,192 @@ void wpas_clear_beacon_rep_data(struct wpa_supplicant *wpa_s)
 	bitfield_free(data->ext_eids);
 	os_free(data->scan_params.freqs);
 	os_memset(data, 0, sizeof(*data));
+}
+
+
+static void wpas_rrm_channel_load_timeout(void *eloop_ctx, void *timeout_ctx)
+{
+	struct wpa_supplicant *wpa_s = eloop_ctx;
+	struct wpabuf *buf = NULL;
+
+	wpa_printf(MSG_DEBUG,
+		   "RRM: Channel Load measurement timeout, sending report");
+	wpas_rrm_build_channel_load_report(wpa_s, &buf);
+	if (buf) {
+		wpas_rrm_send_msr_report(wpa_s, buf);
+		wpabuf_free(buf);
+	}
+	wpa_s->rrm.chan_load_token = 0;
+}
+
+
+void wpas_rrm_build_channel_load_report(struct wpa_supplicant *wpa_s,
+					struct wpabuf **buf)
+{
+	struct rrm_data *rrm = &wpa_s->rrm;
+	u64 time_delta, busy_delta;
+	u8 channel_load;
+	u8 report[13]; /* op_class(1)+chan(1)+start_time(8)+duration(2)+load(1) */
+
+	if (!rrm->chan_load_token) {
+		wpa_printf(MSG_DEBUG, "RRM: No pending Channel Load measurement");
+		return;
+	}
+
+	if (rrm->chan_load_end_time == 0)
+		wpa_drv_get_survey(wpa_s, wpa_s->assoc_freq);
+
+	if (rrm->chan_load_last_time == 0 || rrm->chan_load_end_time == 0 ||
+	    rrm->chan_load_end_time <= rrm->chan_load_last_time) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Channel Load: insufficient survey data, sending Incapable");
+		goto incapable;
+	}
+
+	time_delta = rrm->chan_load_end_time - rrm->chan_load_last_time;
+	busy_delta = rrm->chan_load_end_time_busy - rrm->chan_load_last_time_busy;
+
+	/* Scale to 0-255 per IEEE Std 802.11-2020, 11.11.8.3 */
+	if (time_delta > 0)
+		channel_load = (u8) (busy_delta * 255 / time_delta);
+	else
+		channel_load = 0;
+
+	/* Build Channel Load Report body */
+	report[0] = rrm->chan_load_op_class;
+	report[1] = rrm->chan_load_channel;
+	/* Actual Measurement Start Time: TSF not available, use 0 */
+	os_memset(&report[2], 0, 8);
+	WPA_PUT_LE16(&report[10], rrm->chan_load_duration);
+	report[12] = channel_load;
+
+	wpa_printf(MSG_DEBUG,
+		   "RRM: Channel Load report: op_class=%u chan=%u load=%u",
+		   rrm->chan_load_op_class, rrm->chan_load_channel,
+		   channel_load);
+
+	if (wpas_rrm_report_elem(buf, rrm->chan_load_token,
+				 MEASUREMENT_REPORT_MODE_ACCEPT,
+				 MEASURE_TYPE_CHANNEL_LOAD,
+				 report, sizeof(report)) < 0)
+		wpa_printf(MSG_DEBUG, "RRM: Channel Load: failed to build report element");
+	rrm->chan_load_token = 0;
+	return;
+
+incapable:
+	if (!is_multicast_ether_addr(rrm->dst_addr))
+		wpas_rrm_report_elem(buf, rrm->chan_load_token,
+				     MEASUREMENT_REPORT_MODE_REJECT_INCAPABLE,
+				     MEASURE_TYPE_CHANNEL_LOAD, NULL, 0);
+	rrm->chan_load_token = 0;
+}
+
+
+void wpas_rrm_handle_survey_results(struct wpa_supplicant *wpa_s,
+				    struct survey_results *survey_results)
+{
+	struct rrm_data *rrm = &wpa_s->rrm;
+	struct freq_survey *survey;
+
+	if (!rrm->chan_load_token)
+		return;
+
+	dl_list_for_each(survey, &survey_results->survey_list,
+			 struct freq_survey, list) {
+		if (survey->freq != wpa_s->assoc_freq)
+			continue;
+		if (!(survey->filled & SURVEY_HAS_CHAN_TIME) ||
+		    !(survey->filled & SURVEY_HAS_CHAN_TIME_BUSY))
+			break;
+		rrm->chan_load_end_time = survey->channel_time;
+		rrm->chan_load_end_time_busy = survey->channel_time_busy;
+		break;
+	}
+}
+
+
+static int wpas_rrm_handle_channel_load_req(struct wpa_supplicant *wpa_s,
+					    const struct rrm_measurement_request_element *req,
+					    struct wpabuf **buf)
+{
+	struct rrm_data *rrm = &wpa_s->rrm;
+	const u8 *pos = req->variable;
+	size_t len = req->len - 3;
+	u8 op_class, channel;
+	u16 rand_interval, duration;
+	u32 interval_usec;
+	u32 _rand;
+
+	if (len < 6) {
+		wpa_printf(MSG_DEBUG, "RRM: Channel Load request too short (%zu)", len);
+		goto incapable;
+	}
+
+	op_class = pos[0];
+	channel = pos[1];
+	rand_interval = WPA_GET_LE16(&pos[2]);
+	duration = WPA_GET_LE16(&pos[4]);
+
+	wpa_printf(MSG_DEBUG,
+		   "RRM: Channel Load request: op_class=%u channel=%u rand_interval=%u duration=%u",
+		   op_class, channel, rand_interval, duration);
+
+	/* Only support measurement on the current operating channel */
+	if (wpa_s->wpa_state != WPA_COMPLETED || !wpa_s->current_bss ||
+	    ieee80211_chan_to_freq(NULL, op_class, channel) != (int) wpa_s->assoc_freq) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Channel Load: requested channel %u (op_class %u) is not current channel",
+			   channel, op_class);
+		goto incapable;
+	}
+
+	if (duration == 0) {
+		wpa_printf(MSG_DEBUG, "RRM: Channel Load: duration is 0");
+		goto incapable;
+	}
+
+	/* Cancel any pending measurement */
+	eloop_cancel_timeout(wpas_rrm_channel_load_timeout, wpa_s, NULL);
+
+	rrm->chan_load_token = req->token;
+	rrm->chan_load_op_class = op_class;
+	rrm->chan_load_channel = channel;
+	rrm->chan_load_duration = duration;
+	rrm->chan_load_last_time = 0;
+	rrm->chan_load_last_time_busy = 0;
+	rrm->chan_load_end_time = 0;
+	rrm->chan_load_end_time_busy = 0;
+
+	/* Trigger a baseline survey snapshot */
+	wpa_drv_get_survey(wpa_s, wpa_s->assoc_freq);
+
+	if (rrm->chan_load_end_time > 0) {
+		rrm->chan_load_last_time = rrm->chan_load_end_time;
+		rrm->chan_load_last_time_busy = rrm->chan_load_end_time_busy;
+		rrm->chan_load_end_time = 0;
+		rrm->chan_load_end_time_busy = 0;
+	}
+
+	os_get_reltime(&rrm->chan_load_start);
+
+	if (os_get_random((u8 *) &_rand, sizeof(_rand)) < 0)
+		_rand = os_random();
+	interval_usec = (_rand % (rand_interval + 1)) * 1024;
+
+	/* duration is in TUs (1024 us) */
+	eloop_register_timeout(0, interval_usec + (u32) duration * 1024,
+			       wpas_rrm_channel_load_timeout, wpa_s, NULL);
+
+	return 1;
+
+incapable:
+	if (!is_multicast_ether_addr(rrm->dst_addr) &&
+	    wpas_rrm_report_elem(buf, req->token,
+				 MEASUREMENT_REPORT_MODE_REJECT_INCAPABLE,
+				 MEASURE_TYPE_CHANNEL_LOAD, NULL, 0) < 0) {
+		wpa_printf(MSG_DEBUG, "RRM: Failed to add report element");
+		return -1;
+	}
+
+	return 0;
 }

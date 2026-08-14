@@ -21,6 +21,14 @@
 
 #define HOSTAPD_RRM_REQUEST_TIMEOUT 5
 
+/* Forward declarations */
+static void hostapd_chan_load_rep_timeout_handler(void *eloop_data,
+						  void *user_ctx);
+static void hostapd_handle_channel_load_report(struct hostapd_data *hapd,
+					       const u8 *addr, u8 token,
+					       u8 rep_mode, const u8 *pos,
+					       size_t len);
+
 
 static void hostapd_lci_rep_timeout_handler(void *eloop_data, void *user_ctx)
 {
@@ -282,6 +290,11 @@ static void hostapd_handle_radio_msmt_report(struct hostapd_data *hapd,
 			break;
 		case MEASURE_TYPE_FTM_RANGE:
 			hostapd_handle_range_report(hapd, token, ie + 2, ie[1]);
+			break;
+		case MEASURE_TYPE_CHANNEL_LOAD:
+			hostapd_handle_channel_load_report(hapd, mgmt->sa,
+							   token, rep_mode,
+							   ie + 2, ie[1]);
 			break;
 		case MEASURE_TYPE_BEACON:
 			hostapd_handle_beacon_report(hapd, mgmt->sa, token,
@@ -781,6 +794,8 @@ void hostapd_clean_rrm(struct hostapd_data *hapd)
 	eloop_cancel_timeout(hostapd_range_rep_timeout_handler, hapd, NULL);
 	hapd->range_req_active = 0;
 	eloop_cancel_timeout(hostapd_link_mesr_rep_timeout_handler, hapd, NULL);
+	eloop_cancel_timeout(hostapd_chan_load_rep_timeout_handler, hapd, NULL);
+	hapd->chan_load_req_active = 0;
 	hostapd_free_bcn_report_db(hapd);
 }
 
@@ -899,6 +914,154 @@ void hostapd_rrm_beacon_req_tx_status(struct hostapd_data *hapd,
 	wpa_msg(hapd->msg_ctx, MSG_INFO, BEACON_REQ_TX_STATUS MACSTR
 		" %u ack=%d", MAC2STR(mgmt->da),
 		mgmt->u.action.u.rrm.dialog_token, ok);
+}
+
+
+static void hostapd_chan_load_rep_timeout_handler(void *eloop_data,
+						  void *user_ctx)
+{
+	struct hostapd_data *hapd = eloop_data;
+
+	wpa_printf(MSG_DEBUG,
+		   "RRM: Channel Load request (token %u) timed out",
+		   hapd->chan_load_req_token);
+	hapd->chan_load_req_active = 0;
+}
+
+
+static void hostapd_handle_channel_load_report(struct hostapd_data *hapd,
+					       const u8 *addr, u8 token,
+					       u8 rep_mode, const u8 *pos,
+					       size_t len)
+{
+	u8 channel_load;
+
+	if (!hapd->chan_load_req_active ||
+	    hapd->chan_load_req_token != token) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Unexpected Channel Load report, token %u",
+			   token);
+		return;
+	}
+
+	hapd->chan_load_req_active = 0;
+	eloop_cancel_timeout(hostapd_chan_load_rep_timeout_handler, hapd, NULL);
+
+	/*
+	 * Channel Load Report body (IEEE Std 802.11-2020, 9.4.2.22.4):
+	 * pos[0]=token, pos[1]=mode, pos[2]=type, pos[3..]=report body.
+	 * Report body: op_class(1) chan(1) start_time(8) duration(2)
+	 * channel_load(1) = 13 bytes; total with header = 3+13 = 16.
+	 */
+	if (len < 3 + 13) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Channel Load report too short (len=%zu)",
+			   len);
+		return;
+	}
+
+	if (rep_mode & (MEASUREMENT_REPORT_MODE_REJECT_INCAPABLE |
+			MEASUREMENT_REPORT_MODE_REJECT_REFUSED)) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Channel Load report refused/incapable from "
+			   MACSTR " mode=0x%02x",
+			   MAC2STR(addr), rep_mode);
+		return;
+	}
+
+	/* op_class(1) + chan(1) + start_time(8) + duration(2) = 12 bytes
+	 * before channel_load in the report body (pos[3] = start of body) */
+	channel_load = pos[3 + 12];
+
+	wpa_msg(hapd->msg_ctx, MSG_INFO,
+		CHANNEL_LOAD_RESP_RX MACSTR " %u %u",
+		MAC2STR(addr), token, channel_load);
+}
+
+
+int hostapd_send_channel_load_req(struct hostapd_data *hapd, const u8 *addr,
+				  u8 op_class, u8 channel,
+				  u16 random_interval, u16 duration)
+{
+	struct wpabuf *buf;
+	struct sta_info *sta;
+	int ret;
+
+	wpa_printf(MSG_DEBUG,
+		   "RRM: Channel Load request: dest=" MACSTR
+		   " op_class=%u channel=%u rand_interval=%u duration=%u",
+		   MAC2STR(addr), op_class, channel, random_interval, duration);
+
+	sta = ap_get_sta(hapd, addr);
+	if (!sta || !(sta->flags & WLAN_STA_AUTHORIZED)) {
+		wpa_printf(MSG_INFO,
+			   "RRM: Channel Load request: " MACSTR
+			   " is not connected", MAC2STR(addr));
+		return -1;
+	}
+
+	if (!(sta->rrm_enabled_capa[0] & WLAN_RRM_CAPS_CHANNEL_LOAD)) {
+		wpa_printf(MSG_INFO,
+			   "RRM: Channel Load request: " MACSTR
+			   " does not support Channel Load measurement",
+			   MAC2STR(addr));
+		return -1;
+	}
+
+	if (hapd->chan_load_req_active) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Channel Load request already in progress - overriding");
+		hapd->chan_load_req_active = 0;
+		eloop_cancel_timeout(hostapd_chan_load_rep_timeout_handler,
+				     hapd, NULL);
+	}
+
+	/*
+	 * Action(1) + Action type(1) + Dialog Token(1) + Repetitions(2) +
+	 * Measurement Request IE header(2) + token(1) + mode(1) + type(1) +
+	 * Channel Load Request body: op_class(1) + channel(1) +
+	 * rand_interval(2) + duration(2) = 16 bytes total
+	 */
+	buf = wpabuf_alloc(16);
+	if (!buf)
+		return -1;
+
+	hapd->chan_load_req_token++;
+	if (!hapd->chan_load_req_token)
+		hapd->chan_load_req_token++;
+
+	/* IEEE Std 802.11-2020, 9.6.6.2 - Radio Measurement Request frame */
+	wpabuf_put_u8(buf, WLAN_ACTION_RADIO_MEASUREMENT);
+	wpabuf_put_u8(buf, WLAN_RRM_RADIO_MEASUREMENT_REQUEST);
+	wpabuf_put_u8(buf, hapd->chan_load_req_token); /* Dialog Token */
+	wpabuf_put_le16(buf, 0); /* Number of Repetitions */
+
+	/* IEEE Std 802.11-2020, 9.4.2.19 - Measurement Request element */
+	wpabuf_put_u8(buf, WLAN_EID_MEASURE_REQUEST);
+	wpabuf_put_u8(buf, 3 + 6); /* len: token+mode+type + body */
+	wpabuf_put_u8(buf, 1); /* Measurement Token */
+	wpabuf_put_u8(buf, 0); /* Measurement Request Mode */
+	wpabuf_put_u8(buf, MEASURE_TYPE_CHANNEL_LOAD); /* Measurement Type */
+
+	/* IEEE Std 802.11-2020, 9.4.2.19.4 - Channel Load request body */
+	wpabuf_put_u8(buf, op_class);
+	wpabuf_put_u8(buf, channel);
+	wpabuf_put_le16(buf, random_interval);
+	wpabuf_put_le16(buf, duration);
+
+	ret = hostapd_drv_send_action(hapd, hapd->iface->freq, 0, addr,
+				      wpabuf_head(buf), wpabuf_len(buf));
+	wpabuf_free(buf);
+	if (ret)
+		return ret;
+
+	hapd->chan_load_req_active = 1;
+
+	eloop_register_timeout(HOSTAPD_RRM_REQUEST_TIMEOUT, 0,
+			       hostapd_chan_load_rep_timeout_handler, hapd,
+			       NULL);
+
+	return hapd->chan_load_req_token;
 }
 
 
