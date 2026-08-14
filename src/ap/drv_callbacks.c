@@ -3129,7 +3129,11 @@ afc_channel_change_timeout(void *eloop_ctx, void *timeout_ctx)
  * 2. multi_hw_info present, current_hw_info set: match current_hw_info->hw_idx.
  * 3. multi_hw_info present, current_hw_info NULL: match conf->radio_idx.
  */
+#ifdef CONFIG_QCN_EXTN
+struct hostapd_iface *
+#else
 static struct hostapd_iface *
+#endif /* CONFIG_QCN_EXTN */
 hostapd_afc_find_iface(struct hostapd_data *hapd, int hw_idx)
 {
 	const char *phy_name = hostapd_drv_get_radio_name(hapd);
@@ -3203,6 +3207,10 @@ static void hostapd_event_afc_update_complete(
 	iface->is_afc_power_event_received =
 		afc_rsp_info->target_status_code ==
 		QCA_WLAN_VENDOR_AFC_EVT_STATUS_CODE_SUCCESS;
+
+#ifdef CONFIG_QCN_EXTN
+	hostapd_set_afc_regd_wait(iface);
+#endif /* CONFIG_QCN_EXTN */
 
 	hapd = iface->bss[0];
 	if (!iface->is_afc_power_event_received) {
@@ -3523,6 +3531,10 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 		/* Clear AFC payload */
 		hostapd_free_afc_data(iface);
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	hostapd_set_afc_regd_wait(iface);
+#endif /* CONFIG_QCN_EXTN */
 
 	iface->is_afc_power_event_received = false;
 	iface->is_afc_repeater_power_sync_pending = false;
