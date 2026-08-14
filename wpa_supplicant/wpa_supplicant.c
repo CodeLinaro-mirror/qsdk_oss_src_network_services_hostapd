@@ -8696,6 +8696,10 @@ static int wpa_supplicant_init_iface(struct wpa_supplicant *wpa_s,
 	if (wpas_init_driver(wpa_s, iface) < 0)
 		return -1;
 
+#ifdef CONFIG_QCN_EXTN
+	wpas_country_change_init_active_alpha2_extn(wpa_s);
+#endif /* CONFIG_QCN_EXTN */
+
 	if (wpa_supplicant_init_wpa(wpa_s) < 0)
 		return -1;
 

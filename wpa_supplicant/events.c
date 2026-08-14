@@ -6722,6 +6722,8 @@ void wpa_supplicant_update_channel_list(struct wpa_supplicant *wpa_s,
 #ifdef CONFIG_QCN_EXTN
 		if (ifs->is_6ghz_enabled)
 			wpas_query_hw_blocklist_extn(ifs);
+
+		wpas_country_change_check_current_bss(ifs, info);
 #endif
 
 		/* Restart PNO/sched_scan with updated channel list */
