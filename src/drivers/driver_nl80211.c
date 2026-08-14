@@ -8126,9 +8126,19 @@ static int smd_stats_get_handler(struct nl_msg *msg, void *arg)
 
 	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
 		  genlmsg_attrlen(gnlh, 0), NULL);
-	if (!tb[NL80211_ATTR_SMD_STATS] ||
-	    nla_len(tb[NL80211_ATTR_SMD_STATS]) < (int)sizeof(*ctx->out))
+	if (!tb[NL80211_ATTR_SMD_STATS]) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: SMD_STATS_GET: no SMD_STATS attribute in response");
 		return NL_SKIP;
+	}
+	if (nla_len(tb[NL80211_ATTR_SMD_STATS]) < (int)sizeof(*ctx->out)) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: SMD_STATS_GET: blob size mismatch — "
+			   "kernel sent %d bytes, userspace expects %zu bytes",
+			   nla_len(tb[NL80211_ATTR_SMD_STATS]),
+			   sizeof(*ctx->out));
+		return NL_SKIP;
+	}
 
 	os_memcpy(ctx->out, nla_data(tb[NL80211_ATTR_SMD_STATS]),
 		  sizeof(*ctx->out));
