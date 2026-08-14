@@ -346,6 +346,63 @@ static int ieee80211n_check_40mhz_2g4(struct hostapd_iface *iface,
 }
 
 
+static int
+hostapd_setup_interface_complete_or_defer(struct hostapd_iface *iface, int err)
+{
+#ifdef CONFIG_IEEE80211BE
+	if (!err && iface->bss[0]->conf->mld_ap && iface->interfaces &&
+	    (iface->drv_flags2 & WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN)) {
+		unsigned int i;
+		bool partner_in_acs = false;
+
+		for (i = 0; i < iface->interfaces->count; i++) {
+			struct hostapd_iface *h = iface->interfaces->iface[i];
+			struct hostapd_data *h_hapd;
+
+			if (!h || h == iface || !h->num_bss)
+				continue;
+			h_hapd = h->bss[0];
+			if (!hostapd_is_ml_partner(iface->bss[0], h_hapd))
+				continue;
+			if (h->state == HAPD_IFACE_ACS &&
+			    !h->acs_setup_deferred) {
+				partner_in_acs = true;
+				break;
+			}
+		}
+
+		if (partner_in_acs) {
+			wpa_printf(MSG_DEBUG,
+				   "ACS: deferring interface setup for %d MHz, "
+				   "partner link still in ACS",
+				   iface->freq);
+			iface->acs_setup_deferred = 1;
+			return 0;
+		}
+
+		/* Re-trigger any partner whose setup was deferred */
+		for (i = 0; i < iface->interfaces->count; i++) {
+			struct hostapd_iface *h = iface->interfaces->iface[i];
+			struct hostapd_data *h_hapd;
+
+			if (!h || h == iface || !h->num_bss)
+				continue;
+			h_hapd = h->bss[0];
+			if (!hostapd_is_ml_partner(iface->bss[0], h_hapd))
+				continue;
+			if (!h->acs_setup_deferred)
+				continue;
+			h->acs_setup_deferred = 0;
+			wpa_printf(MSG_DEBUG,
+				   "ACS: re-triggering deferred interface "
+				   "setup for %d MHz", h->freq);
+			hostapd_setup_interface_complete(h, 0);
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+	return hostapd_setup_interface_complete(iface, err);
+}
+
 static void ieee80211n_check_scan(struct hostapd_iface *iface)
 {
 	struct wpa_scan_results *scan_res;
@@ -2288,7 +2345,7 @@ int hostapd_acs_completed(struct hostapd_iface *iface, int err)
 
 	ret = 0;
 out:
-	return hostapd_setup_interface_complete(iface, ret);
+	return hostapd_setup_interface_complete_or_defer(iface, ret);
 }
 
 

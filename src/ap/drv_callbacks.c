@@ -2223,24 +2223,78 @@ get_link_hapd(struct hostapd_data *hapd, const u8 *ies, size_t len,
 }
 
 static struct hostapd_data *
-switch_link_scan(struct hostapd_data *hapd, u64 scan_cookie)
+switch_link_scan(struct hostapd_data *hapd, u64 scan_cookie,
+		 const union wpa_event_data *data)
 {
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->conf->mld_ap && scan_cookie != 0) {
+	if (hapd->conf->mld_ap && hapd->iface->interfaces) {
 		unsigned int i;
 
-		for (i = 0; i < hapd->iface->interfaces->count; i++) {
-			struct hostapd_iface *h;
-			struct hostapd_data *h_hapd;
+		/* Primary: cookie-based match */
+		if (scan_cookie != 0) {
+			for (i = 0; i < hapd->iface->interfaces->count; i++) {
+				struct hostapd_iface *h;
+				struct hostapd_data *h_hapd;
 
-			h = hapd->iface->interfaces->iface[i];
-			h_hapd = h->bss[0];
-			if (!hostapd_is_ml_partner(hapd, h_hapd))
-				continue;
+				h = hapd->iface->interfaces->iface[i];
+				h_hapd = h->bss[0];
+				if (!hostapd_is_ml_partner(hapd, h_hapd))
+					continue;
 
-			if (h_hapd->scan_cookie == scan_cookie) {
-				h_hapd->scan_cookie = 0;
-				return h_hapd;
+				if (h_hapd->scan_cookie == scan_cookie) {
+					h_hapd->scan_cookie = 0;
+					return h_hapd;
+				}
+			}
+		}
+
+		/*
+		 * Fallback: frequency-based match.
+		 *
+		 * When the driver does not provide a scan cookie (cookie == 0)
+		 * or no partner matched the cookie, try to identify the link
+		 * that requested the scan by checking whether the first
+		 * reported scan frequency belongs to a partner link's hardware
+		 * mode channel list.
+		 *
+		 * This relies on the assumption that each MLD link scans a
+		 * disjoint set of frequencies (e.g., link A → 2.4 GHz,
+		 * link B → 5 GHz, link C → 6 GHz).
+		 */
+		if (data && data->scan_info.freqs &&
+		    data->scan_info.num_freqs > 0) {
+			int first_freq = data->scan_info.freqs[0];
+
+			for (i = 0; i < hapd->iface->interfaces->count; i++) {
+				struct hostapd_iface *h;
+				struct hostapd_data *h_hapd;
+				int j, k;
+
+				h = hapd->iface->interfaces->iface[i];
+				h_hapd = h->bss[0];
+				if (!hostapd_is_ml_partner(hapd, h_hapd))
+					continue;
+
+				for (j = 0; j < h_hapd->iface->num_hw_features;
+				     j++) {
+					struct hostapd_hw_modes *mode =
+						&h_hapd->iface->hw_features[j];
+
+					if (hostapd_hw_skip_mode(h_hapd->iface,
+								 mode))
+						continue;
+					for (k = 0; k < mode->num_channels;
+					     k++) {
+						if (mode->channels[k].freq ==
+						    first_freq) {
+							wpa_printf(MSG_DEBUG,
+								   "switch_link_scan: freq-based match link_id=%d freq=%d",
+								   h_hapd->mld_link_id,
+								   first_freq);
+							return h_hapd;
+						}
+					}
+				}
 			}
 		}
 	}
@@ -4286,7 +4340,8 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 #ifdef NEED_AP_MLME
 		if (data)
 			hapd = switch_link_scan(hapd,
-						data->scan_info.scan_cookie);
+						data->scan_info.scan_cookie,
+						data);
 #endif /* NEED_AP_MLME */
 		/* Latch whether the last scan was aborted to allow ACS logic to react */
 		if (data)
@@ -4305,7 +4360,8 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 				struct hostapd_data *h_hapd = h->bss[0];
 
 				if (hostapd_is_ml_partner(hapd, h_hapd) &&
-				    h_hapd->iface->scan_cb)
+				    h_hapd->iface->scan_cb &&
+				    h_hapd->iface->state != HAPD_IFACE_ACS)
 					h_hapd->iface->scan_cb(h_hapd->iface);
 			}
 		}

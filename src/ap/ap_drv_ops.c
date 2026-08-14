@@ -1099,8 +1099,8 @@ int hostapd_driver_scan(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211BE
 	if (hapd->conf->mld_ap)
 		params->link_id = hapd->mld_link_id;
-
-	if (!hapd->iface->scan_cb && hapd->conf->mld_ap &&
+	if (!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN) &&
+	    !hapd->iface->scan_cb && hapd->conf->mld_ap &&
 	    hapd->iface->interfaces) {
 		/* Other links may be waiting for scan results */
 		unsigned int i;

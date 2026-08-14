@@ -1060,6 +1060,8 @@ struct hostapd_iface {
 #ifdef CONFIG_ACS
 	unsigned int acs_num_completed_scans;
 	unsigned int acs_num_retries;
+	/* Parallel scan: defer setup until all MLD partners complete ACS */
+	unsigned int acs_setup_deferred:1;
 #endif /* CONFIG_ACS */
 
 	void (*scan_cb)(struct hostapd_iface *iface);
