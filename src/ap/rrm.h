@@ -34,6 +34,9 @@ int hostapd_send_link_measurement_req(struct hostapd_data *hapd,
 int hostapd_send_channel_load_req(struct hostapd_data *hapd, const u8 *addr,
 				  u8 op_class, u8 channel,
 				  u16 random_interval, u16 duration);
+int hostapd_send_noise_histogram_req(struct hostapd_data *hapd, const u8 *addr,
+				     u8 op_class, u8 channel,
+				     u16 random_interval, u16 duration);
 int hostapd_show_rrm_bcn_report(struct hostapd_data *hapd,
 				char *buf, size_t buflen);
 void hostapd_free_bcn_report_db(struct hostapd_data *hapd);

@@ -28,6 +28,12 @@ static void hostapd_handle_channel_load_report(struct hostapd_data *hapd,
 					       const u8 *addr, u8 token,
 					       u8 rep_mode, const u8 *pos,
 					       size_t len);
+static void hostapd_noise_hist_rep_timeout_handler(void *eloop_data,
+						   void *user_ctx);
+static void hostapd_handle_noise_histogram_report(struct hostapd_data *hapd,
+						  const u8 *addr, u8 token,
+						  u8 rep_mode, const u8 *pos,
+						  size_t len);
 
 
 static void hostapd_lci_rep_timeout_handler(void *eloop_data, void *user_ctx)
@@ -295,6 +301,11 @@ static void hostapd_handle_radio_msmt_report(struct hostapd_data *hapd,
 			hostapd_handle_channel_load_report(hapd, mgmt->sa,
 							   token, rep_mode,
 							   ie + 2, ie[1]);
+			break;
+		case MEASURE_TYPE_NOISE_HIST:
+			hostapd_handle_noise_histogram_report(hapd, mgmt->sa,
+							      token, rep_mode,
+							      ie + 2, ie[1]);
 			break;
 		case MEASURE_TYPE_BEACON:
 			hostapd_handle_beacon_report(hapd, mgmt->sa, token,
@@ -796,6 +807,8 @@ void hostapd_clean_rrm(struct hostapd_data *hapd)
 	eloop_cancel_timeout(hostapd_link_mesr_rep_timeout_handler, hapd, NULL);
 	eloop_cancel_timeout(hostapd_chan_load_rep_timeout_handler, hapd, NULL);
 	hapd->chan_load_req_active = 0;
+	eloop_cancel_timeout(hostapd_noise_hist_rep_timeout_handler, hapd, NULL);
+	hapd->noise_hist_req_active = 0;
 	hostapd_free_bcn_report_db(hapd);
 }
 
@@ -933,6 +946,85 @@ void hostapd_rrm_beacon_req_tx_status(struct hostapd_data *hapd,
 	wpa_msg(hapd->msg_ctx, MSG_INFO, BEACON_REQ_TX_STATUS MACSTR
 		" %u ack=%d", MAC2STR(mgmt->da),
 		mgmt->u.action.u.rrm.dialog_token, ok);
+}
+
+
+static void hostapd_noise_hist_rep_timeout_handler(void *eloop_data,
+						   void *user_ctx)
+{
+	struct hostapd_data *hapd = eloop_data;
+
+	wpa_printf(MSG_DEBUG,
+		   "RRM: Noise Histogram request (token %u) timed out",
+		   hapd->noise_hist_req_token);
+	hapd->noise_hist_req_active = 0;
+}
+
+
+static void hostapd_handle_noise_histogram_report(struct hostapd_data *hapd,
+						  const u8 *addr, u8 token,
+						  u8 rep_mode, const u8 *pos,
+						  size_t len)
+{
+	s8 anpi;
+	int i;
+
+	if (!hapd->noise_hist_req_active ||
+	    hapd->noise_hist_req_token != token) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Unexpected Noise Histogram report, token %u",
+			   token);
+		return;
+	}
+
+	hapd->noise_hist_req_active = 0;
+	eloop_cancel_timeout(hostapd_noise_hist_rep_timeout_handler, hapd,
+			     NULL);
+
+	/*
+	 * Noise Histogram Report body (IEEE Std 802.11-2020, 9.4.2.22.3):
+	 * pos[0]=token, pos[1]=mode, pos[2]=type, pos[3..]=report body.
+	 * Report body: op_class(1) chan(1) start_time(8) duration(2)
+	 * antenna_id(1) anpi(1) ipi[0..7](8) = 22 bytes;
+	 * total with header = 3+22 = 25.
+	 */
+	if (len < 3 + 22) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Noise Histogram report too short (len=%zu)",
+			   len);
+		return;
+	}
+
+	if (rep_mode & (MEASUREMENT_REPORT_MODE_REJECT_INCAPABLE |
+			MEASUREMENT_REPORT_MODE_REJECT_REFUSED)) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Noise Histogram report refused/incapable from "
+			   MACSTR " mode=0x%02x",
+			   MAC2STR(addr), rep_mode);
+		return;
+	}
+
+	/*
+	 * Report body offsets (pos[3] = start of body):
+	 * op_class(1) + chan(1) + start_time(8) + duration(2) + antenna_id(1)
+	 * = 13 bytes before anpi; ipi[0..7] follow at pos[3+14..3+21]
+	 */
+	anpi = (s8) pos[3 + 13];
+
+	wpa_msg(hapd->msg_ctx, MSG_INFO,
+		NOISE_HIST_RESP_RX MACSTR " %u %d %u %u %u %u %u %u %u %u",
+		MAC2STR(addr), token, (int) anpi,
+		pos[3 + 14], pos[3 + 15], pos[3 + 16], pos[3 + 17],
+		pos[3 + 18], pos[3 + 19], pos[3 + 20], pos[3 + 21]);
+
+	wpa_printf(MSG_DEBUG,
+		   "RRM: Noise Histogram from " MACSTR
+		   " token=%u ANPI=%d dBm IPI=[%u %u %u %u %u %u %u %u]",
+		   MAC2STR(addr), token, (int) anpi,
+		   pos[3 + 14], pos[3 + 15], pos[3 + 16], pos[3 + 17],
+		   pos[3 + 18], pos[3 + 19], pos[3 + 20], pos[3 + 21]);
+
+	(void) i; /* suppress unused-variable warning */
 }
 
 
@@ -1081,6 +1173,92 @@ int hostapd_send_channel_load_req(struct hostapd_data *hapd, const u8 *addr,
 			       NULL);
 
 	return hapd->chan_load_req_token;
+}
+
+
+int hostapd_send_noise_histogram_req(struct hostapd_data *hapd, const u8 *addr,
+				     u8 op_class, u8 channel,
+				     u16 random_interval, u16 duration)
+{
+	struct wpabuf *buf;
+	struct sta_info *sta;
+	int ret;
+
+	wpa_printf(MSG_DEBUG,
+		   "RRM: Noise Histogram request: dest=" MACSTR
+		   " op_class=%u channel=%u rand_interval=%u duration=%u",
+		   MAC2STR(addr), op_class, channel, random_interval, duration);
+
+	sta = ap_get_sta(hapd, addr);
+	if (!sta || !(sta->flags & WLAN_STA_AUTHORIZED)) {
+		wpa_printf(MSG_INFO,
+			   "RRM: Noise Histogram request: " MACSTR
+			   " is not connected", MAC2STR(addr));
+		return -1;
+	}
+
+	if (!(sta->rrm_enabled_capa[1] & WLAN_RRM_CAPS_NOISE_HISTOGRAM)) {
+		wpa_printf(MSG_INFO,
+			   "RRM: Noise Histogram request: " MACSTR
+			   " does not support Noise Histogram measurement",
+			   MAC2STR(addr));
+		return -1;
+	}
+
+	if (hapd->noise_hist_req_active) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Noise Histogram request already in progress - overriding");
+		hapd->noise_hist_req_active = 0;
+		eloop_cancel_timeout(hostapd_noise_hist_rep_timeout_handler,
+				     hapd, NULL);
+	}
+
+	/*
+	 * Action(1) + Action type(1) + Dialog Token(1) + Repetitions(2) +
+	 * Measurement Request IE header(2) + token(1) + mode(1) + type(1) +
+	 * Noise Histogram Request body: op_class(1) + channel(1) +
+	 * rand_interval(2) + duration(2) = 16 bytes total
+	 */
+	buf = wpabuf_alloc(16);
+	if (!buf)
+		return -1;
+
+	hapd->noise_hist_req_token++;
+	if (!hapd->noise_hist_req_token)
+		hapd->noise_hist_req_token++;
+
+	/* IEEE Std 802.11-2020, 9.6.6.2 - Radio Measurement Request frame */
+	wpabuf_put_u8(buf, WLAN_ACTION_RADIO_MEASUREMENT);
+	wpabuf_put_u8(buf, WLAN_RRM_RADIO_MEASUREMENT_REQUEST);
+	wpabuf_put_u8(buf, hapd->noise_hist_req_token); /* Dialog Token */
+	wpabuf_put_le16(buf, 0); /* Number of Repetitions */
+
+	/* IEEE Std 802.11-2020, 9.4.2.19 - Measurement Request element */
+	wpabuf_put_u8(buf, WLAN_EID_MEASURE_REQUEST);
+	wpabuf_put_u8(buf, 3 + 6); /* len: token+mode+type + body */
+	wpabuf_put_u8(buf, hapd->noise_hist_req_token); /* Measurement Token */
+	wpabuf_put_u8(buf, 0); /* Measurement Request Mode */
+	wpabuf_put_u8(buf, MEASURE_TYPE_NOISE_HIST); /* Measurement Type */
+
+	/* IEEE Std 802.11-2020, 9.4.2.19.3 - Noise Histogram request body */
+	wpabuf_put_u8(buf, op_class);
+	wpabuf_put_u8(buf, channel);
+	wpabuf_put_le16(buf, random_interval);
+	wpabuf_put_le16(buf, duration);
+
+	ret = hostapd_drv_send_action(hapd, hapd->iface->freq, 0, addr,
+				      wpabuf_head(buf), wpabuf_len(buf));
+	wpabuf_free(buf);
+	if (ret)
+		return ret;
+
+	hapd->noise_hist_req_active = 1;
+
+	eloop_register_timeout(HOSTAPD_RRM_REQUEST_TIMEOUT, 0,
+			       hostapd_noise_hist_rep_timeout_handler, hapd,
+			       NULL);
+
+	return hapd->noise_hist_req_token;
 }
 
 
