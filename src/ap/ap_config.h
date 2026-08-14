@@ -1286,6 +1286,16 @@ struct hostapd_bss_config {
 	bool single_link_emlsr;
 	bool disable_eml;
 
+/*
+ * Bitmask controlling inclusion of UHR extension fields (i.e. fields added
+ * by UHR to extend elements that existed pre-UHR, e.g. Enhanced Critical
+ * Update Information and Age of BSS Load fields in the Basic Multi-Link
+ * element).
+ */
+#define SKIP_UHR_EXTN_BCN        BIT(0)
+#define SKIP_UHR_EXTN_PROBE_RESP BIT(1)
+	u8 skip_uhr_extn;
+
 	/* User-configured link ID; -1 means auto-allocate */
 	int mld_link_id;
 

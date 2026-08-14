@@ -2473,7 +2473,7 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 		}
 		
 		mle_len = hostapd_eid_eht_ml_len(hapd, &mld, false, true, 0, false,
-						  false);
+						  false, false);
 		len += mle_len;
 	}
 
@@ -2537,7 +2537,7 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 	if (mle_len) {
 		pos = hostapd_eid_eht_basic_ml_common(hapd, pos, &mld,
 						      false, true, 0, true, false,
-						      false);
+						      false, false);
 		wpa_printf(MSG_DEBUG,
 			   "SMD ST PREP Target AP: Added ML-IE (len=%zu)",
 			   mle_len);

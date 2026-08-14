@@ -1031,12 +1031,14 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 			buflen += hostapd_eid_eht_ml_beacon_len(
 				params->mld_ap, params->mld_info,
 				!!params->mld_ap, param_ext_cap,
-				true, true);
+				true, true,
+				!!(params->mld_ap->conf->skip_uhr_extn & SKIP_UHR_EXTN_PROBE_RESP));
 
 			if (hapd->conf->mld_ap)
 				buflen += hostapd_eid_eht_ml_beacon_len(
 					hapd, NULL, false, include_ext_cap,
-					true, true);
+					true, true,
+					!!(hapd->conf->skip_uhr_extn & SKIP_UHR_EXTN_PROBE_RESP));
 
 			/* For Max Channel Switch Time element during channel
 			 * switch */
@@ -1044,7 +1046,8 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 		} else if (hapd->conf->mld_ap) {
 			buflen += hostapd_eid_eht_ml_beacon_len(
 				hapd, params->mld_info, false, include_ext_cap,
-				true, true);
+				true, true,
+				!!(hapd->conf->skip_uhr_extn & SKIP_UHR_EXTN_PROBE_RESP));
 
 			/* For Max Channel Switch Time element during channel
 			 * switch */
@@ -1507,18 +1510,21 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 			pos = hostapd_eid_eht_ml_beacon(
 				params->mld_ap, params->mld_info,
 				pos, !!params->mld_ap, p_ext_cap,
-				true, true);
+				true, true,
+				!!(params->mld_ap->conf->skip_uhr_extn & SKIP_UHR_EXTN_PROBE_RESP));
 
 			if (hapd->conf->mld_ap)
 				pos = hostapd_eid_eht_ml_beacon(
 					hapd, NULL, pos, false, ext_cap,
-					true, true);
+					true, true,
+					!!(hapd->conf->skip_uhr_extn & SKIP_UHR_EXTN_PROBE_RESP));
 
 		} else if (hapd->conf->mld_ap) {
 			pos = hostapd_eid_eht_ml_beacon(hapd,
 							params->mld_info,
 							pos, false, ext_cap,
-							true, true);
+							true, true,
+							!!(hapd->conf->skip_uhr_extn & SKIP_UHR_EXTN_PROBE_RESP));
 		}
 		/* ML reconfigure feature */
 		if (hapd->conf->mld_ap)
@@ -3938,7 +3944,8 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 
 			tailpos = hostapd_eid_eht_ml_beacon(hapd, NULL,
 							    tailpos, false,
-							    ext_cap, true, true);
+							    ext_cap, true, true,
+							    !!(hapd->conf->skip_uhr_extn & SKIP_UHR_EXTN_BCN));
 			hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
 						   tailpos-startpos, ELEMID_CU_PARAM_EXT_ML);
 		}
