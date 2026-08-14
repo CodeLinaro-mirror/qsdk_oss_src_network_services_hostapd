@@ -11928,6 +11928,73 @@ ieee80211_validate_chan_bw_in_afc_response(struct hostapd_iface *iface,
 }
 
 bool
+hostapd_validate_non_6ghz_chan_bw(struct hostapd_iface *iface, u16 freq,
+				  u16 center_freq, u16 bw, u16 pp)
+{
+	int start_freq, num_bw_chans;
+	u8 i;
+
+	if (bw == 20) {
+		start_freq = freq;
+		num_bw_chans = 1;
+	} else {
+		start_freq = center_freq - (bw / 2) + 10;
+		num_bw_chans = bw / 20;
+	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (bw == 320 &&
+	    hostapd_get_n_chans_and_frequency_extn(CONF_OPER_CHWIDTH_320MHZ,
+						   center_freq,
+						   &num_bw_chans,
+						   &start_freq))
+		return false;
+#endif
+
+	if (!hostapd_get_bonded_chan_center_freq(freq, bw, 0, 0)) {
+		wpa_printf(MSG_ERROR,
+			   "non-6ghz validate: freq %u no bonded center at bw %u",
+			   freq, bw);
+		return false;
+	}
+
+	for (i = 0; i < num_bw_chans; i++) {
+		struct hostapd_channel_data *chan;
+		int sub_freq = start_freq + i * 20;
+
+		if (pp & BIT(i))
+			continue;
+
+		chan = hw_get_channel_freq(iface->conf->hw_mode, sub_freq, NULL,
+					   iface->hw_features,
+					   iface->num_hw_features);
+		if (!chan) {
+			wpa_printf(MSG_ERROR,
+				   "non-6ghz validate: freq %u not found in hw_features",
+				   sub_freq);
+			return false;
+		}
+
+		if (!chan_pri_allowed(chan)) {
+			wpa_printf(MSG_ERROR,
+				   "non-6ghz validate: freq %u not pri-allowed flag=0x%x bw=0x%x",
+				   sub_freq, chan->flag, chan->allowed_bw);
+			return false;
+		}
+
+		if ((chan->flag & HOSTAPD_CHAN_DFS_MASK) ==
+		    HOSTAPD_CHAN_DFS_UNAVAILABLE) {
+			wpa_printf(MSG_ERROR,
+				   "non-6ghz validate: freq %u DFS_UNAVAILABLE flag=0x%x",
+				   sub_freq, chan->flag);
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool
 hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
 				     u16 center_freq, u16 bw, u16 pp,
 				     u8 pwr_type)
@@ -11935,10 +12002,33 @@ hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
 	u16 start_freq = (bw == 20) ? freq : center_freq - (bw / 2) + 10;
 	u8 num_channels_6ghz, chan_idx, i, num_bw_chans = bw / 20;
 	struct hostapd_channel_data *chan_6ghz = NULL;
+	u16 pri_chan_pos = (freq - start_freq) / 20;
 
 	wpa_printf(MSG_INFO,
 		   "Validating power mode: %d, Freq: %d, cf: %d, BW: %d, pp: 0x%x",
 		   pwr_type, iface->freq, center_freq, bw, pp);
+
+	if (!is_punct_bitmap_valid(bw, pri_chan_pos, pp)) {
+		wpa_printf(MSG_ERROR, "pp 0x%x invalid for freq %d BW %d",
+			   pp, freq, bw);
+		return false;
+	}
+
+	if (!is_6ghz_freq(freq))
+		return hostapd_validate_non_6ghz_chan_bw(iface, freq,
+							 center_freq, bw, pp);
+
+	if (bw > 20) {
+		u16 cen = hostapd_get_bonded_chan_center_freq(freq, bw, 0, 0);
+
+		if (!cen) {
+			wpa_printf(MSG_ERROR,
+				   "validate_chan_bw 6G: freq %u no bonded center at bw %u",
+				   freq, bw);
+			return false;
+		}
+	}
+
 	chan_6ghz = hostapd_iface_get_6ghz_chan_list(iface,
 						     start_freq,
 						     pwr_type,
