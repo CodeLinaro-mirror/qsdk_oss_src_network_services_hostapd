@@ -3062,18 +3062,105 @@ static u8 * hostapd_eid_smd_bss_trans_exec_resp(u8 *pos,
 }
 
 
+/*
+ * uhr_tgt_build_st_exec_resp_frame - Build OTA ST Execution Response frame
+ *
+ * Shared between the IAP-forwarded path (uhr_tgt_ap_handle_st_exec_req) and
+ * the via-Target path (uhr_tgt_ap_handle_st_ctx_response).
+ *
+ * Returns an os_malloc'd buffer of *out_len bytes on success, NULL on failure.
+ * Caller must os_free() the returned buffer.
+ */
+static u8 *uhr_tgt_build_st_exec_resp_frame(struct hostapd_data *lhapd,
+					    struct sta_info *sta,
+					    u8 dialog_token,
+					    size_t *out_len)
+{
+	u8 *resp_buf, *pos, *rcsl_count;
+	struct ieee80211_mgmt *mgmt;
+	int i, n = 0;
+	size_t key_deliv_len;
+	size_t len;
+
+	if (!lhapd || !sta || !out_len)
+		return NULL;
+
+	*out_len = 0;
+
+	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+		if (sta->mld_info.links[i].valid)
+			n++;
+	}
+
+	key_deliv_len = sta->wpa_sm ?
+		wpa_auth_key_delivery_elem_len(sta->wpa_sm, 0xFFFF) : 0;
+
+	len = IEEE80211_HDRLEN +
+	      1 +		/* Category */
+	      1 +		/* Action */
+	      1 +		/* Dialog Token */
+	      1 +		/* Type */
+	      2 +		/* Status Code */
+	      1 +		/* Count */
+	      (3 * n) +		/* RCSL: Link ID(1) + Status(2) per link */
+	      key_deliv_len +	/* Key Delivery element (9.4.2.184) */
+	      6;		/* SMD BSS Transition IE */
+
+	resp_buf = os_zalloc(len);
+	if (!resp_buf)
+		return NULL;
+
+	mgmt = (struct ieee80211_mgmt *) resp_buf;
+	mgmt->frame_control = host_to_le16((WLAN_FC_TYPE_MGMT << 2) |
+					   (WLAN_FC_STYPE_ACTION << 4));
+	os_memcpy(mgmt->da, sta->addr, ETH_ALEN);
+	os_memcpy(mgmt->sa, lhapd->mld->mld_addr, ETH_ALEN);
+	os_memcpy(mgmt->bssid, lhapd->mld->mld_addr, ETH_ALEN);
+
+	pos = (u8 *) &mgmt->u.action;
+	*pos++ = WLAN_ACTION_PROTECTED_UHR;
+	*pos++ = 1;
+	*pos++ = dialog_token;
+	*pos++ = 1; /* Type = ST Execution */
+	WPA_PUT_LE16(pos, WLAN_STATUS_SUCCESS);
+	pos += 2;
+
+	rcsl_count = pos;
+	*rcsl_count = 0;
+	pos++;
+
+	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+		if (!sta->mld_info.links[i].valid)
+			continue;
+		*pos++ = (u8) i;
+		WPA_PUT_LE16(pos, WLAN_STATUS_SUCCESS);
+		pos += 2;
+		(*rcsl_count)++;
+	}
+
+	if (key_deliv_len && sta->wpa_sm)
+		pos = wpa_auth_build_key_delivery_elem(sta->wpa_sm, 0xFFFF, pos);
+
+	pos = hostapd_eid_smd_bss_trans_exec_resp(
+		pos, lhapd->conf->smd.uhr_dl_drain_duration_tu);
+
+	*out_len = (size_t)(pos - resp_buf);
+	return resp_buf;
+}
+
+
 void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
                                 const struct uhr_iap_frame *iap,
                                 u16 frame_len)
 {
 	struct sta_info *sta = NULL;
 	struct hostapd_data *lhapd = NULL;
-	u8 *resp_buf, *pos;
+	u8 *resp_buf;
 	const u8 *frame;
 	int ret;
-	struct ieee80211_mgmt *mgmt;
 	u16 smd_ctx_len = 0;
 	struct sta_smd_ctx_info *smd_ctx;
+	size_t resp_len;
 
         wpa_printf(MSG_DEBUG,
                   "UHR ST EXEC: Received IAP REQUEST (txn=%u)",
@@ -3178,97 +3265,23 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG, "UHR Current AP: Failed to send WMI roam notification - not skipping for now.");
 	}
 
-	/*
-	 * Extract IAP frame:
-	 * [00-23] WLAN Header
-         * [24-24] Category
-         * [25-25] Action Type
-         * [26-26] Dialog Token
-         * [27-27] UHR Reconfiguration Type
-         * [28-~~] Reconfiguration ML IE
-         * [~~-~~] SMD BSS Transition Parameters IE (TBD)
-	 * [~~-~~] Diffie-Helman Parameters IE (TBD)
-	 * [~~-~~] Nonce Element IE (TBD)
-	 */
 	frame = iap->frame_ctx_data;
-
-
-	int i = 0, n = 0;
-	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
-		if (sta->mld_info.links[i].valid)
-			n++;
-	}
-	wpa_printf(MSG_DEBUG, "UHR ST EXEC: MLD link count: %d", n);
-
-
-
-	size_t key_deliv_len = sta->wpa_sm ?
-		wpa_auth_key_delivery_elem_len(sta->wpa_sm, 0xFFFF) : 0;
-
-	size_t len = IEEE80211_HDRLEN + // Header
-			1 +		// Category
-			1 +		// Action
-			1 + 		// Dialog Token
-			1 + 		// Type
-			2 +		// Status Code
-			1 + 		// Count
-			(3 * n) +	// Reconfiguration Status List
-			key_deliv_len + // Key Delivery element (9.4.2.184)
-			6;		// SMD BSS Transition IE
-
-        resp_buf = os_zalloc(len);
-        if (!resp_buf) {
-                uhr_iap_send_st_exec_resp(lhapd,
-                                          iap->current_ap_mld_addr,
-                                          iap->sta_addr,
-                                          iap->iap_transaction_id,
-                                          le_to_host64(iap->sequence_number),
+	resp_buf = uhr_tgt_build_st_exec_resp_frame(lhapd, sta, frame[26], &resp_len);
+	if (!resp_buf) {
+		uhr_iap_send_st_exec_resp(lhapd,
+					  iap->current_ap_mld_addr,
+					  iap->sta_addr,
+					  iap->iap_transaction_id,
+					  le_to_host64(iap->sequence_number),
 					  WLAN_STATUS_UNSPECIFIED_FAILURE,
-                                          iap->current_link_id,
+					  iap->current_link_id,
 					  NULL, 0);
-                return;
-        }
+		return;
+	}
 
-	mgmt = (struct ieee80211_mgmt *)resp_buf;
-
-        /* Fill MAC header */
-        mgmt->frame_control = host_to_le16((WLAN_FC_TYPE_MGMT << 2) | (WLAN_FC_STYPE_ACTION << 4));
-        os_memcpy(mgmt->da, sta->addr, ETH_ALEN);
-        os_memcpy(mgmt->sa, lhapd->mld->mld_addr, ETH_ALEN);
-        os_memcpy(mgmt->bssid, lhapd->mld->mld_addr, ETH_ALEN);
-	pos = (u8 *) &mgmt->u.action;
-	*pos++ = WLAN_ACTION_PROTECTED_UHR;
-	*pos++ = 1;
-	*pos++ = frame[26];
-
-	*pos++ = 1; /* Type = ST Execution */
-	WPA_PUT_LE16(pos, WLAN_STATUS_SUCCESS); /* Status Code */
-	pos += 2;
-
-	// Count
-	u8 *rcsl_count = pos;
-	pos++;
-
-	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
-		if (!sta->mld_info.links[i].valid)
-			continue;
-		*pos++ = (u8) i;
-		WPA_PUT_LE16(pos, WLAN_STATUS_SUCCESS);
-		pos += 2;
-		*rcsl_count += 1;
- 	}
- 
-	/* Key Delivery element (9.4.2.184): RSC + MLO GTK/IGTK/BIGTK KDEs */
-	if (key_deliv_len && sta->wpa_sm)
-		pos = wpa_auth_build_key_delivery_elem(sta->wpa_sm, 0xFFFF, pos);
-
+	/* Frame is complete; advance state before sending */
 	sta->smd_info.state = SMD_STA_ST_EXEC_DONE;
 
-	pos = hostapd_eid_smd_bss_trans_exec_resp(pos, lhapd->conf->smd.uhr_dl_drain_duration_tu);
-
-
-	/* Send IAP RESPONSE back to Current AP */
-	size_t resp_len = (size_t)(pos - resp_buf);
 	ret = uhr_iap_send_st_exec_resp(lhapd,
 					iap->current_ap_mld_addr,
 					iap->sta_addr,
@@ -3277,8 +3290,8 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 					0,
 					iap->current_link_id,
 					resp_buf, resp_len);
-       os_free(resp_buf);
 
+	os_free(resp_buf);
 
 	if (ret < 0) {
 		wpa_printf(MSG_ERROR,
