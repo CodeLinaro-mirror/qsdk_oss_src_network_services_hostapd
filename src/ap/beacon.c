@@ -3588,6 +3588,17 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 #endif /* NEED_AP_MLME */
 
 	os_memset(params, 0, sizeof(*params));
+
+	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED &&
+	    !hapd->mbssid_group) {
+		wpa_printf(MSG_ERROR,
+			   "MBSSID: mbssid_group is null for %s op_class:%u chan:%u num_bss:%zu, started:%u beacon_set_done:%d, csa_in_progress:%d ",
+			   hapd->conf->iface, hapd->iconf->op_class, hapd->iconf->channel,
+			   hapd->iface->num_bss, hapd->started, hapd->beacon_set_done,
+			   hapd->csa_in_progress);
+		return -1;
+	}
+
 	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
 
 #ifdef NEED_AP_MLME
