@@ -5909,8 +5909,8 @@ hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 			bss->conf->uhr_params_update.mode_changed |= BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA);
 			bss->conf->uhr_params_update.npca = new_npca;
 
-			if (!hapd->started)
-				hostapd_update_ecu_params(hapd);
+			if (!bss->started)
+				hostapd_update_ecu_params(bss);
 
 			/* TODO: Add the changes for to update bss specific uhr_params_update features e.g DPS */
 
