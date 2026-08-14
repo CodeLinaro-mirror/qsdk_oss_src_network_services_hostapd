@@ -46,9 +46,14 @@ static void hostapd_lci_rep_timeout_handler(void *eloop_data, void *user_ctx)
 }
 
 
-static void hostapd_handle_lci_report(struct hostapd_data *hapd, u8 token,
-				      const u8 *pos, size_t len)
+static void hostapd_handle_lci_report(struct hostapd_data *hapd,
+				      const u8 *addr, u8 token,
+				      u8 rep_mode, const u8 *pos,
+				      size_t len)
 {
+	char *hex;
+	size_t body_len;
+
 	if (!hapd->lci_req_active || hapd->lci_req_token != token) {
 		wpa_printf(MSG_DEBUG, "Unexpected LCI report, token %u", token);
 		return;
@@ -56,7 +61,41 @@ static void hostapd_handle_lci_report(struct hostapd_data *hapd, u8 token,
 
 	hapd->lci_req_active = 0;
 	eloop_cancel_timeout(hostapd_lci_rep_timeout_handler, hapd, NULL);
+
 	wpa_printf(MSG_DEBUG, "LCI report token %u len %zu", token, len);
+
+	if (rep_mode & (MEASUREMENT_REPORT_MODE_REJECT_INCAPABLE |
+			MEASUREMENT_REPORT_MODE_REJECT_REFUSED)) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: LCI report refused/incapable from "
+			   MACSTR " mode=0x%02x",
+			   MAC2STR(addr), rep_mode);
+		wpa_msg(hapd->msg_ctx, MSG_INFO,
+			LCI_RESP_RX MACSTR " %u 0x%02x",
+			MAC2STR(addr), token, rep_mode);
+		return;
+	}
+
+	/*
+	 * pos[0]=msr_token, pos[1]=rep_mode, pos[2]=type, pos[3..]=body.
+	 * Body is a sequence of subelements; emit as hex for the application.
+	 */
+	if (len < 3) {
+		wpa_printf(MSG_DEBUG, "RRM: LCI report too short (len=%zu)", len);
+		return;
+	}
+
+	body_len = len - 3;
+	hex = os_zalloc(body_len * 2 + 1);
+	if (!hex)
+		return;
+	wpa_snprintf_hex(hex, body_len * 2 + 1, pos + 3, body_len);
+
+	wpa_msg(hapd->msg_ctx, MSG_INFO,
+		LCI_RESP_RX MACSTR " %u 0x%02x %s",
+		MAC2STR(addr), token, rep_mode, hex);
+
+	os_free(hex);
 }
 
 
@@ -292,7 +331,8 @@ static void hostapd_handle_radio_msmt_report(struct hostapd_data *hapd,
 
 		switch (ie[4]) {
 		case MEASURE_TYPE_LCI:
-			hostapd_handle_lci_report(hapd, token, ie + 2, ie[1]);
+			hostapd_handle_lci_report(hapd, mgmt->sa, token,
+						  rep_mode, ie + 2, ie[1]);
 			break;
 		case MEASURE_TYPE_FTM_RANGE:
 			hostapd_handle_range_report(hapd, token, ie + 2, ie[1]);
