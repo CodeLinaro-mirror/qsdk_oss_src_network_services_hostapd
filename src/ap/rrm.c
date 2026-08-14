@@ -805,6 +805,7 @@ int hostapd_send_beacon_req(struct hostapd_data *hapd, const u8 *addr,
 {
 	struct wpabuf *buf;
 	struct sta_info *sta = ap_get_sta(hapd, addr);
+	struct hostapd_data *link_hapd = hapd;
 	int ret;
 	enum beacon_report_mode mode;
 	const u8 *pos;
@@ -824,6 +825,23 @@ int hostapd_send_beacon_req(struct hostapd_data *hapd, const u8 *addr,
 	if (!sta) {
 		if (hapd->mld)
 			sta = ap_get_link_sta(hapd, addr);
+#ifdef CONFIG_IEEE80211BE
+		/* In MLO, sta_info may be on a partner link hapd.
+		 * Walk all MLD links to find the STA and track its hapd. */
+		if (!sta && hapd->mld) {
+			struct hostapd_data *lhapd;
+
+			for_each_mld_link(lhapd, hapd) {
+				sta = ap_get_sta(lhapd, addr);
+				if (!sta)
+					sta = ap_get_link_sta(lhapd, addr);
+				if (sta) {
+					link_hapd = lhapd;
+					break;
+				}
+			}
+		}
+#endif /* CONFIG_IEEE80211BE */
 		if (!sta || !(sta->flags & WLAN_STA_AUTHORIZED)) {
 			wpa_printf(MSG_INFO,
 				   "Beacon request: " MACSTR " is not connected",
@@ -873,13 +891,13 @@ int hostapd_send_beacon_req(struct hostapd_data *hapd, const u8 *addr,
 	if (!buf)
 		return -1;
 
-	hapd->beacon_req_token++;
-	if (!hapd->beacon_req_token)
-		hapd->beacon_req_token++;
+	link_hapd->beacon_req_token++;
+	if (!link_hapd->beacon_req_token)
+		link_hapd->beacon_req_token++;
 
 	wpabuf_put_u8(buf, WLAN_ACTION_RADIO_MEASUREMENT);
 	wpabuf_put_u8(buf, WLAN_RRM_RADIO_MEASUREMENT_REQUEST);
-	wpabuf_put_u8(buf, hapd->beacon_req_token);
+	wpabuf_put_u8(buf, link_hapd->beacon_req_token);
 	wpabuf_put_le16(buf, 0); /* Number of repetitions */
 
 	/* Measurement Request element */
@@ -893,15 +911,16 @@ int hostapd_send_beacon_req(struct hostapd_data *hapd, const u8 *addr,
 	/* flush previous Beacon reports before sending new Beacon
 	 * Report Request.
 	 */
-	hostapd_free_bcn_report_db(hapd);
+	hostapd_free_bcn_report_db(link_hapd);
 
-	ret = hostapd_drv_send_action(hapd, hapd->iface->freq, 0, sta->addr,
-				      wpabuf_head(buf), wpabuf_len(buf));
+	ret = hostapd_drv_send_action(link_hapd, link_hapd->iface->freq, 0,
+				      sta->addr, wpabuf_head(buf),
+				      wpabuf_len(buf));
 	wpabuf_free(buf);
 	if (ret < 0)
 		return ret;
 
-	return hapd->beacon_req_token;
+	return link_hapd->beacon_req_token;
 }
 
 
