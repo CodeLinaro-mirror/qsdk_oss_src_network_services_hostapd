@@ -670,6 +670,13 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 				}
 			}
 		}
+		if (!ucv_object_get(ret, "frequency", NULL)) {
+			wpa_printf(MSG_ERROR,
+				   "%s: hw_idx=%hhd not found in any MLO link (valid_links=0x%x)",
+				   __func__, hw_idx, wpa_s->valid_links);
+			ucv_put(ret);
+			return NULL;
+		}
 		goto out;
 	}
 
