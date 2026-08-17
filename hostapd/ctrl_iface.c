@@ -2207,6 +2207,135 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			ieee802_11_update_beacons(tx_hapd->iface);
 		return 0;
 #endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_IEEE80211AC
+	} else if (os_strcasecmp(cmd, "bss_vht_mu_beamformer") == 0 ||
+		   os_strcasecmp(cmd, "bss_vht_su_beamformer") == 0 ||
+		   os_strcasecmp(cmd, "bss_vht_su_beamformee") == 0 ||
+		   os_strcasecmp(cmd, "bss_vht_sounding_dimension") == 0 ||
+		   os_strcasecmp(cmd, "bss_vht_beamformee_sts") == 0) {
+
+		/* Save old values for rollback on failure */
+		u32 old_vht_capab = hapd->conf->vht_capab;
+		u32 old_vht_capab_mask = hapd->conf->vht_capab_mask;
+
+		if (hostapd_set_iface(hapd->iconf, hapd->conf, cmd, value))
+			goto vht_rollback;
+
+		if (hostapd_validate_bss_capab(hapd) < 0)
+			goto vht_rollback;
+
+		if (!hapd->conf->is_cmn_param && hostapd_reload_bss_only(hapd) < 0)
+			goto vht_rollback;
+
+		return 0;
+vht_rollback:
+		hapd->conf->vht_capab = old_vht_capab;
+		hapd->conf->vht_capab_mask = old_vht_capab_mask;
+		return -1;
+#endif /* CONFIG_IEEE80211AC */
+#ifdef CONFIG_IEEE80211AX
+	} else if (os_strcasecmp(cmd, "bss_he_su_beamformer") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_su_beamformee") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_mu_beamformer") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_ul_mumimo") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_full_bw_ul_mumimo") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_bfee_sts_lteq80") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_bfee_sts_gt80") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_subfee_sts_lteq80") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_subfee_sts_gt80") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_multi_tid_aggr") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_multi_tid_aggr_tx") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_max_ampdu_len_exp") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_su_ppdu_1x_ltf_800ns_gi") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_su_mu_ppdu_4x_ltf_800ns_gi") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_max_frag_msdu") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_min_frag_size") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_omi") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_ndp_4x_ltf_3200ns_gi") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_fragmentation") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_amsdu_in_ampdu_suprt") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_amsdu_in_ampdu_supp") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_max_nc_suprt") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_er_su_disable") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_er_su_ppdu_1x_ltf_800ns_gi") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_er_su_ppdu_4x_ltf_800ns_gi") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_1024qam_lt242ru_rx_enable") == 0 ||
+		   os_strcasecmp(cmd, "bss_he_bsr_support") == 0) {
+		/* Save old values for rollback on failure */
+		struct he_phy_capabilities_info old_he_phy_capab = hapd->conf->he_phy_capab;
+		u32 old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
+
+		if (hostapd_set_iface(hapd->iconf, hapd->conf, cmd, value))
+			goto he_rollback;
+
+		if (hostapd_validate_bss_capab(hapd) < 0)
+			goto he_rollback;
+
+		if (!hapd->conf->is_cmn_param && hostapd_reload_bss_only(hapd) < 0)
+			goto he_rollback;
+
+		return 0;
+he_rollback:
+		hapd->conf->he_phy_capab = old_he_phy_capab;
+		hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
+		return -1;
+#endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_IEEE80211BE
+	} else if (os_strcasecmp(cmd, "bss_eht_su_beamformer") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_su_beamformee") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_mu_beamformer") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_ndp_4x_eht_ltf_and_320nsgi") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_num_sd_lt80") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_num_sd_160") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_num_sd_320") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_4x_eht_ltf_and_800ns_gi") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_rx_1024_and_4096_qam_ls_242_tone_ru") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_dl_ofdma_txbf") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_sup_mcs15_in_mru") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_mcs15_supp") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_mcs14_dup_in_6ghz") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_ltf") == 0) {
+		/* Save old values for rollback on failure */
+		struct eht_phy_capabilities_info old_eht_generic_capab = hapd->conf->eht_phy_capab;
+		u32 old_eht_generic_capab_mask = hapd->conf->eht_phy_capab_mask;
+
+		if (hostapd_set_iface(hapd->iconf, hapd->conf, cmd, value))
+			goto eht_generic_rollback;
+
+		if (hostapd_validate_bss_capab(hapd) < 0)
+			goto eht_generic_rollback;
+
+		if (!hapd->conf->is_cmn_param && hostapd_reload_bss_only(hapd) < 0)
+			goto eht_generic_rollback;
+
+		return 0;
+eht_generic_rollback:
+		hapd->conf->eht_phy_capab = old_eht_generic_capab;
+		hapd->conf->eht_phy_capab_mask = old_eht_generic_capab_mask;
+		return -1;
+#endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_IEEE80211BN
+	} else if (os_strcasecmp(cmd, "bss_uhr_2xldpc_tx") == 0 ||
+		   os_strcasecmp(cmd, "bss_uhr_2xldpc_rx") == 0) {
+		/* Save old values for rollback on failure */
+		struct uhr_phy_capabilities_info old_uhr_phy_capab = hapd->conf->uhr_phy_capab;
+		u32 old_uhr_phy_capab_mask = hapd->conf->uhr_phy_capab_mask;
+
+		if (hostapd_set_iface(hapd->iconf, hapd->conf, cmd, value))
+			goto uhr_2xldpc_rollback;
+
+		if (hostapd_validate_bss_capab(hapd) < 0)
+			goto uhr_2xldpc_rollback;
+
+		if (!hapd->conf->is_cmn_param && hostapd_reload_bss_only(hapd) < 0)
+			goto uhr_2xldpc_rollback;
+
+		return 0;
+uhr_2xldpc_rollback:
+		hapd->conf->uhr_phy_capab = old_uhr_phy_capab;
+		hapd->conf->uhr_phy_capab_mask = old_uhr_phy_capab_mask;
+		return -1;
+#endif /* CONFIG_IEEE80211BN */
 	} else {
 		if (hapd->iface->conf->disable_csa_dfs &&
 		    ((os_strcmp(cmd, "channel") == 0) &&
@@ -2247,70 +2376,8 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 		} else if (os_strcasecmp(cmd, "vht_mcs_nss_set") == 0) {
 			if (!hapd->conf->is_cmn_param)
 				return hostapd_reload_bss_only(hapd);
-		} else if (os_strcasecmp(cmd, "bss_vht_mu_beamformer") == 0 ||
-			   os_strcasecmp(cmd, "bss_vht_su_beamformer") == 0 ||
-			   os_strcasecmp(cmd, "bss_vht_su_beamformee") == 0 ||
-			   os_strcasecmp(cmd, "bss_vht_sounding_dimension") == 0 ||
-			   os_strcasecmp(cmd, "bss_vht_beamformee_sts") == 0) {
-			/* Save old values for rollback on failure */
-			u32 old_vht_capab = hapd->conf->vht_capab;
-			u32 old_vht_capab_mask = hapd->conf->vht_capab_mask;
-
-			if (hostapd_validate_bss_capab(hapd) < 0)
-				goto vht_rollback;
-
-			if (!hapd->conf->is_cmn_param && hostapd_reload_bss_only(hapd) < 0)
-				goto vht_rollback;
-
-			return 0;
-vht_rollback:
-			hapd->conf->vht_capab = old_vht_capab;
-			hapd->conf->vht_capab_mask = old_vht_capab_mask;
-			return -1;
 #endif /* CONFIG_IEEE80211AC */
 #ifdef CONFIG_IEEE80211AX
-		} else if (os_strcasecmp(cmd, "bss_he_su_beamformer") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_su_beamformee") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_mu_beamformer") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_ul_mumimo") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_full_bw_ul_mumimo") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_bfee_sts_lteq80") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_bfee_sts_gt80") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_subfee_sts_lteq80") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_subfee_sts_gt80") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_multi_tid_aggr") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_multi_tid_aggr_tx") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_max_ampdu_len_exp") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_su_ppdu_1x_ltf_800ns_gi") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_su_mu_ppdu_4x_ltf_800ns_gi") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_max_frag_msdu") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_min_frag_size") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_omi") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_ndp_4x_ltf_3200ns_gi") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_fragmentation") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_amsdu_in_ampdu_suprt") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_amsdu_in_ampdu_supp") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_max_nc_suprt") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_er_su_disable") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_er_su_ppdu_1x_ltf_800ns_gi") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_er_su_ppdu_4x_ltf_800ns_gi") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_1024qam_lt242ru_rx_enable") == 0 ||
-			   os_strcasecmp(cmd, "bss_he_bsr_support") == 0) {
-			/* Save old values for rollback on failure */
-			struct he_phy_capabilities_info old_he_phy_capab = hapd->conf->he_phy_capab;
-			u32 old_he_phy_capab_mask = hapd->conf->he_phy_capab_mask;
-
-			if (hostapd_validate_bss_capab(hapd) < 0)
-				goto he_rollback;
-
-			if (!hapd->conf->is_cmn_param && hostapd_reload_bss_only(hapd) < 0)
-				goto he_rollback;
-
-			return 0;
-he_rollback:
-			hapd->conf->he_phy_capab = old_he_phy_capab;
-			hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
-			return -1;
 		} else if (os_strcasecmp(cmd, "he_tx_mcs_nss_set") == 0 ||
 			   os_strcasecmp(cmd, "he_rx_mcs_nss_set") == 0) {
 			if (hostapd_tx_bss_only(hapd, cmd) < 0)
@@ -2437,57 +2504,7 @@ eht_bfme_ss_rollback:
 			if (hostapd_tx_bss_only(hapd, cmd) < 0)
 				return -1;
 			return hostapd_reload_bss_only(hapd);
-		} else if (os_strcasecmp(cmd, "bss_eht_su_beamformer") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_su_beamformee") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_mu_beamformer") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_ndp_4x_eht_ltf_and_320nsgi") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_num_sd_lt80") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_num_sd_160") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_num_sd_320") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_4x_eht_ltf_and_800ns_gi") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_rx_1024_and_4096_qam_ls_242_tone_ru") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_dl_ofdma_txbf") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_sup_mcs15_in_mru") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_mcs15_supp") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_mcs14_dup_in_6ghz") == 0 ||
-			   os_strcasecmp(cmd, "bss_eht_ltf") == 0) {
-			/* Save old values for rollback on failure */
-			struct eht_phy_capabilities_info old_eht_generic_capab = hapd->conf->eht_phy_capab;
-			u32 old_eht_generic_capab_mask = hapd->conf->eht_phy_capab_mask;
-
-			if (hostapd_validate_bss_capab(hapd) < 0)
-				goto eht_generic_rollback;
-
-			if (!hapd->conf->is_cmn_param && hostapd_reload_bss_only(hapd) < 0)
-				goto eht_generic_rollback;
-
-			return 0;
-eht_generic_rollback:
-			hapd->conf->eht_phy_capab = old_eht_generic_capab;
-			hapd->conf->eht_phy_capab_mask = old_eht_generic_capab_mask;
-			return -1;
 #endif /* CONFIG_IEEE80211BE */
-#ifdef CONFIG_IEEE80211BN
-		} else if (os_strcasecmp(cmd, "bss_uhr_2xldpc_tx") == 0 ||
-			   os_strcasecmp(cmd, "bss_uhr_2xldpc_rx") == 0) {
-			/* Save old values for rollback on failure */
-			struct uhr_phy_capabilities_info old_uhr_phy_capab =
-					hapd->conf->uhr_phy_capab;
-			u32 old_uhr_phy_capab_mask = hapd->conf->uhr_phy_capab_mask;
-
-			if (hostapd_validate_bss_capab(hapd) < 0)
-				goto uhr_2xldpc_rollback;
-
-			if (!hapd->conf->is_cmn_param &&
-			    hostapd_reload_bss_only(hapd) < 0)
-				goto uhr_2xldpc_rollback;
-
-			return 0;
-uhr_2xldpc_rollback:
-			hapd->conf->uhr_phy_capab = old_uhr_phy_capab;
-			hapd->conf->uhr_phy_capab_mask = old_uhr_phy_capab_mask;
-			return -1;
-#endif /* CONFIG_IEEE80211BN */
 		} else if (os_strcasecmp(cmd, "ht_mcs_nss_set") == 0) {
 			if (!hapd->conf->is_cmn_param)
 				return hostapd_reload_bss_only(hapd);
