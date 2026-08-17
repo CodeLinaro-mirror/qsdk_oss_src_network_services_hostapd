@@ -2241,6 +2241,8 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			ieee802_11_set_beacon(hapd);
 		} else if (os_strcasecmp(cmd, "rnr_ie_allowed") == 0) {
 			ieee802_11_set_beacon(hapd);
+		} else if (os_strcasecmp(cmd, "dtim_period") == 0) {
+			ieee802_11_set_beacon(hapd);
 #ifdef CONFIG_IEEE80211AC
 		} else if (os_strcasecmp(cmd, "vht_mcs_nss_set") == 0) {
 			if (!hapd->conf->is_cmn_param)
