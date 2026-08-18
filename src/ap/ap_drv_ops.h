@@ -728,4 +728,19 @@ int hostapd_drv_critical_update(struct hostapd_data *hapd, u8 link_id,
 int hostapd_drv_set_smd_ctx(struct hostapd_data *hapd, struct sta_info *sta,
 			    const struct sta_smd_ctx_info *ctx);
 
+
+static inline int hostapd_drv_get_smd_ctx(struct hostapd_data *hapd,
+					  const u8 *sta_addr,
+					  u8 valid_ctx_bitmap,
+					  u8 tx_tid_bitmap,
+					  u8 rx_tid_bitmap,
+					  struct sta_smd_ctx_info **out_ctx)
+{
+	if (!hapd->driver || !hapd->driver->get_smd_ctx)
+		return -1;
+	return hapd->driver->get_smd_ctx(hapd->drv_priv, sta_addr,
+					 valid_ctx_bitmap, tx_tid_bitmap,
+					 rx_tid_bitmap, out_ctx);
+}
+
 #endif /* AP_DRV_OPS */

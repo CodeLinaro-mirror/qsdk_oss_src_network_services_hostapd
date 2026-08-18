@@ -19836,6 +19836,81 @@ fail:
 	nlmsg_free(msg);
 	return -ENOBUFS;
 }
+
+static int get_smd_ctx_handler(struct nl_msg *msg, void *arg)
+{
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	struct sta_smd_ctx_info **out_ctx = arg;
+
+	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		  genlmsg_attrlen(gnlh, 0), NULL);
+
+	if (!tb[NL80211_ATTR_SMD_CTX])
+		return NL_SKIP;
+
+	*out_ctx = nl80211_parse_smd_ctx(tb[NL80211_ATTR_SMD_CTX]);
+	return NL_OK;
+}
+
+static int nl80211_get_smd_ctx(void *priv, const u8 *sta_addr,
+			       u8 valid_ctx_bitmap, u8 tx_tid_bitmap,
+			       u8 rx_tid_bitmap,
+			       struct sta_smd_ctx_info **out_ctx)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	struct nlattr *smd_nest, *tx_nest, *rx_nest;
+	int ret;
+
+	*out_ctx = NULL;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_GET_SMD_CTX);
+	if (!msg)
+		return -ENOBUFS;
+
+	if (nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, sta_addr))
+		goto fail;
+
+	smd_nest = nla_nest_start(msg, NL80211_ATTR_SMD_CTX);
+	if (!smd_nest)
+		goto fail;
+
+	if (nla_put_u8(msg, NL80211_SMD_CTX_ATTR_VALID_CTX, valid_ctx_bitmap))
+		goto fail;
+
+	tx_nest = nla_nest_start(msg, NL80211_SMD_CTX_ATTR_DL);
+	if (!tx_nest)
+		goto fail;
+	if (nla_put_u8(msg, NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP,
+		       tx_tid_bitmap))
+		goto fail;
+	nla_nest_end(msg, tx_nest);
+
+	rx_nest = nla_nest_start(msg, NL80211_SMD_CTX_ATTR_UL);
+	if (!rx_nest)
+		goto fail;
+	if (nla_put_u8(msg, NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP,
+		       rx_tid_bitmap))
+		goto fail;
+	nla_nest_end(msg, rx_nest);
+
+	nla_nest_end(msg, smd_nest);
+
+	ret = send_and_recv_resp(drv, msg, get_smd_ctx_handler, out_ctx);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "nl80211: GET_SMD_CTX failed: %d", ret);
+		return ret;
+	}
+	if (!*out_ctx)
+		return -ENODATA;
+	return 0;
+
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
 #endif /* CONFIG_IEEE80211BN */
 
 const struct wpa_driver_ops wpa_driver_nl80211_ops = {
@@ -20065,5 +20140,6 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_IEEE80211BN
 	.set_smd_ctx = nl80211_set_smd_ctx,
+	.get_smd_ctx = nl80211_get_smd_ctx,
 #endif
 };
