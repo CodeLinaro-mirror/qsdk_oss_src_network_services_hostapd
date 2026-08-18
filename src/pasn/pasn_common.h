@@ -154,6 +154,9 @@ struct pasn_data {
 	u16 comeback_idx;
 	u16 *comeback_pending_idx;
 	struct wpabuf *frame;
+#ifdef CONFIG_QCN_EXTN
+	u8 reply_addr[6];
+#endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_ENC_ASSOC
 	bool authorized;
 	bool tk_configured;

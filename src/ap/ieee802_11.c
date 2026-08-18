@@ -1222,7 +1222,14 @@ static void send_8021x_auth_reply(struct hostapd_data *hapd,
 				  u16 auth_transaction, u16 resp,
 				  struct wpabuf *ies)
 {
-	send_auth_reply(hapd, sta, sta->addr, WLAN_AUTH_802_1X,
+	const u8 *dst = sta->addr;
+
+#if defined(CONFIG_QCN_EXTN) && defined(CONFIG_IEEE80211BE)
+	if (ap_sta_is_mld(hapd, sta))
+		dst = sta->reply_addr;
+#endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211BE */
+
+	send_auth_reply(hapd, sta, dst, WLAN_AUTH_802_1X,
 			auth_transaction, resp, wpabuf_head(ies),
 			wpabuf_len(ies), "send-8021x-auth-reply");
 
@@ -4899,6 +4906,9 @@ static void hapd_pasn_update_params(struct hostapd_data *hapd,
 		}
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	os_memcpy(pasn->reply_addr, mgmt->sa, ETH_ALEN);
+#endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_ENC_ASSOC
 	pasn->auth_alg = mgmt->u.auth.auth_alg;
 	pasn->authorized = ap_sta_is_authorized(sta);

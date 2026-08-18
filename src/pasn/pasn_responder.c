@@ -579,7 +579,7 @@ int handle_auth_pasn_resp(struct pasn_data *pasn, const u8 *own_addr,
 	u8 mic[WPA_PASN_MAX_MIC_LEN];
 	u8 mic_len;
 	u8 *ptr;
-	const u8 *frame, *data, *rsn_ie, *rsnxe_ie;
+	const u8 *frame, *data, *rsn_ie, *rsnxe_ie, *dst = pasn->peer_addr;
 	u8 *data_buf = NULL;
 	size_t frame_len, data_len;
 	int ret;
@@ -591,8 +591,13 @@ int handle_auth_pasn_resp(struct pasn_data *pasn, const u8 *own_addr,
 	if (!buf)
 		goto fail;
 
-	wpa_pasn_build_auth_header(buf, pasn->bssid, own_addr, peer_addr, 2,
-				   status, pasn->auth_alg == WLAN_AUTH_EPPKE);
+#ifdef CONFIG_QCN_EXTN
+	if (pasn->is_ml_peer)
+		dst = pasn->reply_addr;
+#endif /* CONFIG_QCN_EXTN */
+
+	wpa_pasn_build_auth_header(buf, pasn->bssid, own_addr, dst,
+				   2, status, pasn->auth_alg == WLAN_AUTH_EPPKE);
 
 	if (status == WLAN_STATUS_FINITE_CYCLIC_GROUP_NOT_SUPPORTED)
 		wpa_pasn_add_own_supported_groups(buf, pasn->pasn_groups);
