@@ -557,11 +557,32 @@ struct nl80211_pending_event {
 };
 
 
+static void nl80211_free_pending_event(struct nl80211_pending_event *event)
+{
+	nlmsg_free(event->msg);
+	os_free(event);
+}
+
+
 static void nl80211_remove_pending_event(struct nl80211_pending_event *event)
 {
 	dl_list_del(&event->list);
-	nlmsg_free(event->msg);
-	os_free(event);
+	nl80211_free_pending_event(event);
+}
+
+
+static void
+nl80211_remove_pending_events_by_data(struct dl_list *events, void *data)
+{
+	struct nl80211_pending_event *event, *next;
+
+	dl_list_for_each_safe(event, next, events,
+			      struct nl80211_pending_event, list) {
+		if (event->data != data)
+			continue;
+
+		nl80211_remove_pending_event(event);
+	}
 }
 
 
@@ -584,16 +605,19 @@ static void nl80211_deliver_pending_events(void *eloop_ctx, void *data)
 	pending_events.next = global->pending_events.next;
 	pending_events.prev = global->pending_events.prev;
 	dl_list_init(&global->pending_events);
+	global->pending_events_in_delivery = &pending_events;
 
 	while (!dl_list_empty(&pending_events)) {
 		struct nl80211_pending_event *event =
 			dl_list_first(&pending_events,
 				      struct nl80211_pending_event, list);
 
+		dl_list_del(&event->list);
 		event->handler(event->msg, event->data);
-		nl80211_remove_pending_event(event);
+		nl80211_free_pending_event(event);
 	}
 
+	global->pending_events_in_delivery = NULL;
 	global->delivering_pending_events = false;
 }
 
@@ -2572,7 +2596,7 @@ static int nl80211_init_bss(struct i802_bss *bss)
 
 static void nl80211_destroy_bss(struct i802_bss *bss)
 {
-	struct nl80211_pending_event *event, *next;
+	struct nl80211_global *global = bss->drv->global;
 
 	nl_cb_put(bss->nl_cb);
 	bss->nl_cb = NULL;
@@ -2580,13 +2604,10 @@ static void nl80211_destroy_bss(struct i802_bss *bss)
 	if (bss->nl_connect)
 		nl80211_destroy_eloop_handle(&bss->nl_connect, 1);
 
-	dl_list_for_each_safe(event, next, &bss->drv->global->pending_events,
-			      struct nl80211_pending_event, list) {
-		if (event->data != bss)
-			continue;
-
-		nl80211_remove_pending_event(event);
-	}
+	nl80211_remove_pending_events_by_data(&global->pending_events, bss);
+	if (global->pending_events_in_delivery)
+		nl80211_remove_pending_events_by_data(
+			global->pending_events_in_delivery, bss);
 }
 
 
