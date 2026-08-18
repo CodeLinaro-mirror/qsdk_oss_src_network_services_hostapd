@@ -17087,6 +17087,7 @@ fail:
 }
 
 #endif /* CONFIG_MBO */
+#endif /* CONFIG_DRIVER_NL80211_QCA */
 
 
 #ifdef CONFIG_PASN
@@ -17274,6 +17275,8 @@ fail:
 }
 
 #endif /* CONFIG_PASN */
+
+#ifdef CONFIG_DRIVER_NL80211_QCA
 
 #ifdef CONFIG_NAN_USD
 
@@ -20057,10 +20060,6 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #endif /* CONFIG_MBO */
 	.set_bssid_tmp_disallow = nl80211_set_bssid_tmp_disallow,
 	.add_sta_node = nl80211_add_sta_node,
-#ifdef CONFIG_PASN
-	.send_pasn_resp = nl80211_send_pasn_resp,
-	.set_secure_ranging_ctx = nl80211_set_secure_ranging_ctx,
-#endif /* CONFIG_PASN */
 #ifdef CONFIG_NAN_USD
 	.nan_flush = nl80211_nan_flush,
 	.nan_publish = nl80211_nan_publish,
@@ -20070,6 +20069,10 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.nan_cancel_subscribe = nl80211_nan_cancel_subscribe,
 #endif /* CONFIG_NAN_USD */
 #endif /* CONFIG_DRIVER_NL80211_QCA */
+#ifdef CONFIG_PASN
+	.send_pasn_resp = nl80211_send_pasn_resp,
+	.set_secure_ranging_ctx = nl80211_set_secure_ranging_ctx,
+#endif /* CONFIG_PASN */
 	.do_acs = nl80211_do_acs,
 #ifdef CONFIG_MBO
 	.get_bss_transition_status = nl80211_get_bss_transition_status,

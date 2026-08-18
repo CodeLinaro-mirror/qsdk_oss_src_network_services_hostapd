@@ -4283,6 +4283,7 @@ static void qca_nl80211_p2p_lo_stop_event(struct wpa_driver_nl80211_data *drv,
 	wpa_supplicant_event(drv->ctx, EVENT_P2P_LO_STOP, &event);
 }
 
+#endif /* CONFIG_DRIVER_NL80211_QCA */
 
 #ifdef CONFIG_PASN
 
@@ -4404,7 +4405,6 @@ fail:
 }
 
 #endif /* CONFIG_PASN */
-#endif /* CONFIG_DRIVER_NL80211_QCA */
 
 static void
 qca_nl80211_6ghz_pwr_mode_change_completed(struct i802_bss *bss,
@@ -5057,11 +5057,6 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 	case QCA_NL80211_VENDOR_SUBCMD_P2P_LISTEN_OFFLOAD_STOP:
 		qca_nl80211_p2p_lo_stop_event(bss->drv, data, len);
 		break;
-#ifdef CONFIG_PASN
-	case QCA_NL80211_VENDOR_SUBCMD_PASN:
-		qca_nl80211_pasn_auth(bss, data, len);
-		break;
-#endif /* CONFIG_PASN */
 	case QCA_NL80211_VENDOR_SUBCMD_TID_TO_LINK_MAP:
 		qca_nl80211_tid_to_link_map_event(bss->drv, data, len);
 		break;
@@ -5069,6 +5064,11 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 		qca_nl80211_link_reconfig_event(bss->drv, data, len);
 		break;
 #endif /* CONFIG_DRIVER_NL80211_QCA */
+#ifdef CONFIG_PASN
+	case QCA_NL80211_VENDOR_SUBCMD_PASN:
+		qca_nl80211_pasn_auth(bss, data, len);
+		break;
+#endif /* CONFIG_PASN */
 	case QCA_NL80211_VENDOR_SUBCMD_POWER_MODE_CHANGE_COMPLETED:
 		qca_nl80211_6ghz_pwr_mode_change_completed(bss, data, len);
 		break;
