@@ -8735,6 +8735,25 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 	}
 
 	/*
+	 * Reject the whole association if the STA requests fewer links than
+	 * the configured minimum. The TX link counts as 1, so total requested
+	 * links = partner_link_count + 1.
+	 */
+	if (hapd->conf->mld_min_links_per_sta &&
+	    tx_link_status == WLAN_STATUS_SUCCESS) {
+		unsigned int partner_link_count = 0;
+		int pi;
+
+		for (pi = 0; pi < MAX_NUM_MLD_LINKS; pi++) {
+			if (sta->mld_info.links[pi].valid &&
+			    pi != sta->mld_assoc_link_id)
+				partner_link_count++;
+		}
+		if ((partner_link_count + 1) < hapd->conf->mld_min_links_per_sta)
+			return -1;
+	}
+
+	/*
 	 * Process each partner link independently.  A failure on one link
 	 * must not abort the association on the remaining links (IEEE
 	 * 802.11be-2024 §35.3.6).  For every rejected link we:
