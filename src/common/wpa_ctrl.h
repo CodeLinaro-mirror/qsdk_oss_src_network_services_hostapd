@@ -196,6 +196,8 @@ extern "C" {
 #define WPA_EVENT_SCS_RESULT "CTRL-EVENT-SCS-RESULT "
 /** Deferred SCS request notification to application */
 #define WPA_EVENT_SCS_REQUEST_NOTIFY "CTRL-EVENT-SCS-REQUEST-NOTIFY "
+/** SCS installation status notification to application */
+#define WPA_EVENT_SCS_STATUS_NOTIFY "CTRL-EVENT-SCS-STATUS-NOTIFY "
 /* Event indicating DSCP policy */
 #define WPA_EVENT_DSCP_POLICY "CTRL-EVENT-DSCP-POLICY "
 
