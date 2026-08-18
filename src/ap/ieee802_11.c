@@ -8337,8 +8337,17 @@ out:
 		ieee80211_ml_build_assoc_resp(hapd, phapd, sta, link);
 
 	wpa_printf(MSG_DEBUG, "MLD: link: status=%u", status);
-	if (status != WLAN_STATUS_SUCCESS && sta) {
-		ap_free_sta(hapd, sta);
+	if (status != WLAN_STATUS_SUCCESS) {
+		/*
+		 * Per-link failure (capability mismatch, capacity, policy).
+		 * Free the partially-initialised partner STA, mark the link as
+		 * rejected in mld_link_info so the caller can continue the
+		 * association on the remaining links, and return -1 so the
+		 * caller knows this specific link was not accepted.
+		 */
+		link->rejected = true;
+		if (sta)
+			ap_free_sta(hapd, sta);
 		return -1;
 	}
 	/* if link sta removed and re-added again in reassoc,
@@ -8398,6 +8407,7 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 	const u8 *mld_link_addr = NULL;
 	bool mld_link_sta = false;
 	u16 eml_cap = 0;
+	unsigned int accepted_links = 0;
 
 	if (!hapd->conf->mld_ap)
 		return 0;
@@ -8462,7 +8472,22 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 				return -1;
 			}
 		}
+
+		accepted_links = 1;
 	}
+
+	/*
+	 * Process each partner link independently.  A failure on one link
+	 * must not abort the association on the remaining links (IEEE
+	 * 802.11be-2024 §35.3.6).  For every rejected link we:
+	 *   1. Set the per-link Status Code in mld_link_info.
+	 *   2. Mark mld_link_info.rejected so downstream code (assoc-cb,
+	 *      4-way HS KDE processing) can skip it cleanly.
+	 *   3. Build the per-STA profile response with the error status.
+	 *   4. Release the RSN authenticator reference for that link.
+	 * Only if the TX (assoc) link itself fails do we propagate -1 to
+	 * the caller and abort the whole association.
+	 */
 	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
 		struct hostapd_data *bss = NULL;
 		struct mld_link_info *link = &sta->mld_info.links[i];
@@ -8474,38 +8499,97 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 		for_each_mld_link(bss, hapd) {
 			if (bss == hapd)
 				continue;
-
 			if (bss->mld_link_id != i)
 				continue;
-
-			if(!bss->started)
+			if (!bss->started)
 				continue;
-
 			link_bss_found = true;
 			break;
 		}
 
 		if (!link_bss_found || TEST_FAIL()) {
+			/* Requested link ID not present in this AP MLD */
 			wpa_printf(MSG_DEBUG,
-				   "MLD: No link match for link_id=%u", i);
-
+				   "MLD: No BSS for link_id=%u, rejecting", i);
 			link->status = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			link->rejected = true;
 			if (!offload)
 				ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link);
 		} else if (tx_link_status != WLAN_STATUS_SUCCESS) {
-			/* TX link rejected the connection */
+			/*
+			 * TX link was rejected; per spec all partner links must
+			 * also be rejected with DENIED_TX_LINK_NOT_ACCEPTED.
+			 */
 			link->status = WLAN_STATUS_DENIED_TX_LINK_NOT_ACCEPTED;
+			link->rejected = true;
 			if (!offload)
 				ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link);
 		} else {
-			if (ieee80211_ml_process_link(
-				    bss, hapd, sta, link, ies, ies_len,
-				    reassoc ? LINK_PARSE_REASSOC :
-				    LINK_PARSE_ASSOC, offload, set_beacon))
-				ret = -1;
+			/*
+			 * Operator policy: cap the number of links per STA.
+			 * The TX link always counts as one accepted link, so
+			 * accepted_links is initialised to 1 above.
+			 */
+			if (hapd->conf->mld_max_links_per_sta &&
+			    accepted_links >= hapd->conf->mld_max_links_per_sta) {
+				wpa_printf(MSG_DEBUG,
+					   "MLD: link_id=%u rejected: max links (%u) reached",
+					   i, hapd->conf->mld_max_links_per_sta);
+				link->status = WLAN_STATUS_DENIED_TX_LINK_NOT_ACCEPTED;
+				link->rejected = true;
+				if (!offload)
+					ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link);
+				goto release_ref;
+			}
+
+			/*
+			 * Capacity check: reject only this link if the partner
+			 * BSS is full; the association on other links continues.
+			 */
+			if (hostapd_check_max_sta(bss)) {
+				wpa_printf(MSG_DEBUG,
+					   "MLD: link_id=%u rejected: BSS at capacity",
+					   i);
+				link->status = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
+				link->rejected = true;
+				if (!offload)
+					ieee80211_ml_build_assoc_resp(hapd, NULL, sta, link);
+				goto release_ref;
+			}
+
+			/*
+			 * Attempt to set up the partner link.  On failure the
+			 * link is already marked rejected inside
+			 * ieee802_11_ml_process_link() and -1 is returned.
+			 * Treat this as a soft per-link rejection: continue
+			 * processing remaining links and do NOT propagate the
+			 * error to the caller (the TX-link association stands).
+			 */
+			if (ieee80211_ml_process_link(bss, hapd, sta, link,
+						      ies, ies_len,
+						      reassoc ? LINK_PARSE_REASSOC :
+						      LINK_PARSE_ASSOC,
+						      offload, set_beacon)) {
+				/* link->rejected already set by callee */
+				wpa_printf(MSG_DEBUG,
+					   "MLD: link_id=%u process failed, rejected",
+					   i);
+			} else {
+				accepted_links++;
+			}
 		}
 
-		if (link->status != WLAN_STATUS_SUCCESS)
+release_ref:
+		/*
+		 * Sync the rejected flag into the RSN state machine so the
+		 * 4-way handshake KDE processing can skip rejected links.
+		 * Must be called before wpa_release_link_auth_ref() because
+		 * that call clears link->wpa_auth.
+		 */
+		if (sta->wpa_sm && link->rejected)
+			wpa_auth_set_ml_link_rejected(sta->wpa_sm, i, true);
+
+		if (link->rejected)
 			wpa_release_link_auth_ref(sta->wpa_sm, i, true);
 	}
 #endif /* CONFIG_IEEE80211BE */
@@ -11807,7 +11891,7 @@ static void hostapd_ml_handle_assoc_cb(struct hostapd_data *hapd,
 			continue;
 
 		link = &sta->mld_info.links[tmp_hapd->mld_link_id];
-		if (!link->valid)
+		if (!link->valid || link->rejected)
 			continue;
 
 		for (tmp_sta = tmp_hapd->sta_list; tmp_sta;

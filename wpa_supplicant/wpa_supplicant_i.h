@@ -846,6 +846,7 @@ struct wpa_supplicant {
 	u8 ap_mld_addr[ETH_ALEN];
 	u8 mlo_assoc_link_id;
 	u16 valid_links; /* bitmap of valid MLO link IDs */
+	u16 ap_rejected_links; /* bitmap of links rejected by AP MLD in assoc resp */
 	struct {
 		u8 addr[ETH_ALEN];
 		u8 bssid[ETH_ALEN];

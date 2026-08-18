@@ -1277,7 +1277,11 @@ struct hostapd_bss_config {
 	u8 mld_addr[ETH_ALEN];
 
 	bool enable_aal;
+
+	/* MLD link-count limits */
 	u8 ml_max_rec_links;
+	/* Maximum accepted partner links per non-AP MLD STA (0 = unlimited) */
+	u8 mld_max_links_per_sta;
 
 	bool single_link_emlsr;
 	bool disable_eml;

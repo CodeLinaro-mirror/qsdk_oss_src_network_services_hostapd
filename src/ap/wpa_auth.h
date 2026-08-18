@@ -811,6 +811,8 @@ void wpa_auth_set_ml_info_link(struct wpa_state_machine *sm,
 void wpa_auth_set_ml_info(struct wpa_state_machine *sm,
 			  u8 mld_assoc_link_id, struct mld_info *info);
 void wpa_auth_reset_ml_link_info(struct wpa_state_machine *sm, u8 mld_assoc_link_id);
+void wpa_auth_set_ml_link_rejected(struct wpa_state_machine *sm, u8 link_id,
+				   bool rejected);
 void wpa_auth_ml_get_key_info(struct wpa_authenticator *a,
 			      struct wpa_auth_ml_link_key_info *info,
 			      bool mgmt_frame_prot, bool beacon_prot,

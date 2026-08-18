@@ -230,6 +230,7 @@ struct hostapd_sae_commit_queue {
 
 struct mld_link_info {
 	u8 valid:1;
+	u8 rejected:1;
 	u8 nstr_bitmap_len:2;
 	u8 local_addr[ETH_ALEN];
 	u8 peer_addr[ETH_ALEN];
@@ -945,6 +946,9 @@ struct hostapd_iface {
 	u64 drv_flags;
 	u64 drv_flags2;
 	unsigned int drv_rrm_flags;
+
+	/* Maximum number of stations supported by driver (AP mode) */
+	unsigned int drv_max_stations;
 
 	/*
 	 * A bitmap of supported protocols for probe response offload. See
