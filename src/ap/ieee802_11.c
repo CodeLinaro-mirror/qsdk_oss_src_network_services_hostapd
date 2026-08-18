@@ -5154,7 +5154,8 @@ static void handle_auth(struct hostapd_data *hapd,
 	int res, reply_res, ubus_resp;
 	u16 fc;
 	const u8 *challenge = NULL;
-	u8 resp_ies[2 + WLAN_AUTH_CHALLENGE_LEN];
+	u8 resp_ies[2 + WLAN_AUTH_CHALLENGE_LEN +
+		    WLAN_PASN_COMEBACK_INFO_BUF_LEN];
 	size_t resp_ies_len = 0;
 	u16 seq_ctrl;
 	struct radius_sta rad_info;
@@ -5503,6 +5504,51 @@ static void handle_auth(struct hostapd_data *hapd,
 		}
 
 	}
+
+#if defined(CONFIG_ENC_ASSOC) || defined(CONFIG_IEEE8021X_AUTH)
+	if (auth_transaction == 1 &&
+	    (auth_alg == WLAN_AUTH_EPPKE || auth_alg == WLAN_AUTH_802_1X)) {
+		struct hostapd_data *ohapd;
+		struct sta_info *osta;
+		u8 *pos;
+
+		/*
+		 * On an AP, determine if there exists a non-AP STA identified
+		 * by the source STA MAC address that requires an Authentication
+		 * comeback.
+		 *
+		 * On an AP MLD, determine if there exists a non-AP STA or
+		 * non-AP link STA identified by the source STA MAC address or
+		 * STA MLD address in the Authentication frame that requires an
+		 * Authentication comeback.
+		 */
+		if (hostapd_find_auth_comeback_sta(hapd, mgmt->sa,
+						   mgmt->u.auth.variable,
+						   len - IEEE80211_HDRLEN -
+						   sizeof(mgmt->u.auth),
+						   &ohapd, &osta) ||
+		    (mld_sta && !ether_addr_equal(mgmt->sa, sa) &&
+		     hostapd_find_auth_comeback_sta(hapd, sa,
+						    mgmt->u.auth.variable,
+						    len - IEEE80211_HDRLEN -
+						    sizeof(mgmt->u.auth),
+						    &ohapd, &osta))) {
+			resp = WLAN_STATUS_AUTH_REFUSED_TEMPORARILY;
+
+			pos = hostapd_add_auth_comeback(ohapd, osta, resp_ies,
+							sizeof(resp_ies), auth_alg);
+			if (!pos) {
+				wpa_printf(MSG_ERROR, "Failed to add "
+					   "Authentication comeback info (auth_alg=%u)",
+					   auth_alg);
+				return;
+			} else {
+				resp_ies_len = pos - resp_ies;
+			}
+			goto fail;
+		}
+	}
+#endif /* CONFIG_ENC_ASSOC || CONFIG_IEEE8021X_AUTH */
 
 	sta = ap_get_sta(hapd, sa);
 	if (sta) {

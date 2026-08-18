@@ -67,6 +67,72 @@ u8 * hostapd_eid_assoc_comeback_time(struct hostapd_data *hapd,
 }
 
 
+#if defined(CONFIG_ENC_ASSOC) || defined(CONFIG_IEEE8021X_AUTH)
+static u8 * hostapd_eid_pasn_comeback(u8 *pos, size_t max_len, u32 timeout)
+{
+	struct wpabuf *ie;
+
+	/* Temporary buffer large enough to hold PASN Parameters
+	 * Element containing only a Comeback Info field with a Comeback After
+	 * subfield and no actual cookie data
+	 */
+	ie = wpabuf_alloc(WLAN_PASN_COMEBACK_INFO_BUF_LEN);
+	if (!ie)
+		return NULL;
+
+	wpa_pasn_add_parameter_ie(ie, 0,
+				  WPA_PASN_WRAPPED_DATA_NO,
+				  NULL, false,
+				  NULL,
+				  timeout);
+
+	if (wpabuf_len(ie) > max_len) {
+		wpa_printf(MSG_ERROR, "PASN: No room left to insert Comeback "
+			   "Info");
+		wpabuf_free(ie);
+		return NULL;
+	}
+	os_memcpy(pos, wpabuf_head(ie), wpabuf_len(ie));
+	pos += wpabuf_len(ie);
+	wpabuf_free(ie);
+
+	return pos;
+}
+
+
+u8 * hostapd_add_auth_comeback(struct hostapd_data *hapd, struct sta_info *sta,
+			       u8 *pos, size_t max_len, u16 auth_alg)
+{
+	u32 timeout, tu;
+	struct os_reltime now, passed;
+
+	os_get_reltime(&now);
+	os_reltime_sub(&now, &sta->sa_query_start, &passed);
+	tu = (passed.sec * 1000000 + passed.usec) / 1024;
+	if (hapd->conf->assoc_sa_query_max_timeout > tu)
+		timeout = hapd->conf->assoc_sa_query_max_timeout - tu;
+	else
+		timeout = 0;
+	if (timeout < hapd->conf->assoc_sa_query_max_timeout)
+		timeout++; /* add some extra time for local timers */
+
+        switch (auth_alg) {
+        case WLAN_AUTH_EPPKE:
+                return hostapd_eid_pasn_comeback(pos, max_len, timeout);
+        case WLAN_AUTH_802_1X:
+		if (max_len < 7)
+			return NULL;
+                return hostapd_eid_timeout_interval(pos, WLAN_TIMEOUT_AUTH_COMEBACK,
+						    timeout);
+	default:
+		wpa_printf(MSG_ERROR, "Unexpected auth_alg=%u for Authentication "
+			   "comeback procedure", auth_alg);
+		return NULL;
+        }
+}
+#endif /* CONFIG_ENC_ASSOC || CONFIG_IEEE8021X_AUTH */
+
+
 /* MLME-SAQuery.request */
 void ieee802_11_send_sa_query_req(struct hostapd_data *hapd,
 				  const u8 *addr, const u8 *trans_id)
