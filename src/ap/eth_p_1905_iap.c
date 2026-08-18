@@ -653,6 +653,40 @@ static int encode_roam_cleanup_tlv(struct wpabuf *buf,
 	return 0;
 }
 
+/**
+ * encode_vendor_ctx_tlv - Encode Vendor Context TLV (subtype 0x000C)
+ *
+ * Wire layout of value field:
+ *   subtype(2) | dst_mld_addr(6) | dst_bssid(6) | vendor_ctx_data(var)
+ *
+ * Carries opaque vendor-specific context that is not part of the standard
+ * Datapath Context TLV.  The receiver may process or silently ignore this
+ * TLV without affecting standard interoperability.
+ *
+ * @dst_bssid: destination link address.  Pass NULL to encode zeros.
+ */
+static int encode_vendor_ctx_tlv(struct wpabuf *buf,
+				  const u8 *dst_mld_addr,
+				  const u8 *dst_bssid,
+				  const u8 *vendor_ctx,
+				  u16 vendor_ctx_len)
+{
+	u16 val_len = WIFI8_TLV_SUBTYPE_LEN + ETH_ALEN + ETH_ALEN + vendor_ctx_len;
+
+	if (wpabuf_tailroom(buf) < WIFI8_TLV_HDR_LEN + val_len)
+		return -1;
+
+	wpabuf_put_u8(buf, WIFI8_TLV_TYPE);
+	wpabuf_put_be16(buf, val_len);
+	wpabuf_put_be16(buf, WIFI8_TLV_SUBTYPE_VENDOR_CTX);
+	wpabuf_put_data(buf, dst_mld_addr, ETH_ALEN);
+	/* dst_bssid: use caller-supplied value or zeros if not known */
+	wpabuf_put_data(buf, dst_bssid ? dst_bssid : zero_addr, ETH_ALEN);
+	wpabuf_put_data(buf, vendor_ctx, vendor_ctx_len);
+
+	return 0;
+}
+
 /* -------------------------------------------------------------------------
  * Internal: payload length helper
  * ------------------------------------------------------------------------- */
@@ -741,6 +775,16 @@ struct wpabuf *eth_p_1905_iap_encode_prep_req(struct hostapd_data *hapd,
 		return NULL;
 	}
 
+	/* Vendor Context TLV: separate TLV appended after Datapath Ctx TLV */
+	if ((iap->flags & UHR_IAP_FLAG_HAS_DYNAMIC_CTX) &&
+	    smd_ctx && smd_ctx->vendor_ctx_len > 0 &&
+	    encode_vendor_ctx_tlv(buf, iap->target_ap_mld_addr, NULL,
+				  smd_ctx->vendor_ctx,
+				  (u16)smd_ctx->vendor_ctx_len) < 0) {
+		wpabuf_free(buf);
+		return NULL;
+	}
+
 	return buf;
 }
 
@@ -812,6 +856,16 @@ struct wpabuf *eth_p_1905_iap_encode_exec_req(struct hostapd_data *hapd,
 		return NULL;
 	}
 
+	/* Vendor Context TLV: separate TLV appended after Datapath Ctx TLV */
+	if ((iap->flags & UHR_IAP_FLAG_HAS_DYNAMIC_CTX) &&
+	    smd_ctx && smd_ctx->vendor_ctx_len > 0 &&
+	    encode_vendor_ctx_tlv(buf, iap->target_ap_mld_addr, NULL,
+				  smd_ctx->vendor_ctx,
+				  (u16)smd_ctx->vendor_ctx_len) < 0) {
+		wpabuf_free(buf);
+		return NULL;
+	}
+
 	return buf;
 }
 
@@ -864,6 +918,15 @@ struct wpabuf *eth_p_1905_iap_encode_exec_resp(struct hostapd_data *hapd,
 			wpabuf_free(buf);
 			return NULL;
 		}
+
+		/* Vendor Context TLV: separate TLV appended after Datapath Ctx TLV */
+		if (smd_ctx->vendor_ctx_len > 0 &&
+		    encode_vendor_ctx_tlv(buf, iap->current_ap_mld_addr, NULL,
+					  smd_ctx->vendor_ctx,
+					  (u16)smd_ctx->vendor_ctx_len) < 0) {
+			wpabuf_free(buf);
+			return NULL;
+		}
 	} else {
 		/* Target AP role */
 		const u8 *frame = (frame_len > 0) ? iap->frame_ctx_data : NULL;
@@ -904,6 +967,15 @@ struct wpabuf *eth_p_1905_iap_encode_prep_ctx(const struct uhr_iap_frame *iap)
 
 	if (encode_datapath_ctx_tlv(buf, iap->target_ap_mld_addr, NULL,
 				    smd_ctx, smd_ctx_len) < 0) {
+		wpabuf_free(buf);
+		return NULL;
+	}
+
+	/* Vendor Context TLV: separate TLV appended after Datapath Ctx TLV */
+	if (smd_ctx->vendor_ctx_len > 0 &&
+	    encode_vendor_ctx_tlv(buf, iap->target_ap_mld_addr, NULL,
+				  smd_ctx->vendor_ctx,
+				  (u16)smd_ctx->vendor_ctx_len) < 0) {
 		wpabuf_free(buf);
 		return NULL;
 	}
@@ -973,6 +1045,11 @@ static struct uhr_iap_frame *decode_smd_msg(struct hostapd_data *hapd,
 
 	struct sta_smd_ctx_info smd_ctx_decoded;
 	bool has_datapath_ctx = false;
+
+	os_memset(&smd_ctx_decoded, 0, sizeof(smd_ctx_decoded));
+
+	const u8 *vendor_ctx_data = NULL;
+	u16 vendor_ctx_len = 0;
 
 	u8 sta_mld_addr[ETH_ALEN];
 	bool has_roam_cleanup = false;
@@ -1049,6 +1126,16 @@ static struct uhr_iap_frame *decode_smd_msg(struct hostapd_data *hapd,
 			}
 			break;
 
+		case WIFI8_TLV_SUBTYPE_VENDOR_CTX:
+			/* Value: subtype(2) + dst_mld(6) + dst_bssid(6) + vendor_ctx_data(var) */
+			if (tlv_len > WIFI8_TLV_SUBTYPE_LEN + ETH_ALEN + ETH_ALEN) {
+				vendor_ctx_data = tlv_val + WIFI8_TLV_SUBTYPE_LEN +
+						  ETH_ALEN + ETH_ALEN;
+				vendor_ctx_len  = tlv_len - WIFI8_TLV_SUBTYPE_LEN -
+						  ETH_ALEN - ETH_ALEN;
+			}
+			break;
+
 		default:
 			wpa_printf(MSG_DEBUG,
 				   "1905 SMD IAP: Unknown Wi-Fi 8 TLV subtype 0x%04x",
@@ -1064,8 +1151,14 @@ static struct uhr_iap_frame *decode_smd_msg(struct hostapd_data *hapd,
 	 *   [0 .. frame_len-1]                 : 802.11 frame body
 	 *   [frame_len .. frame_len+smd_ctx-1] : sta_smd_ctx_info (if present)
 	 * ---------------------------------------------------------------- */
-	iap_buf_size = sizeof(*iap) + reconfig_frame_len +
-		       (has_datapath_ctx ? sizeof(smd_ctx_decoded) : 0);
+	size_t ctx_len = 0;
+
+	if (has_datapath_ctx || vendor_ctx_len > 0)
+		ctx_len += sizeof(smd_ctx_decoded);
+	if (vendor_ctx_len > 0)
+		ctx_len += vendor_ctx_len;
+
+	iap_buf_size = sizeof(*iap) + reconfig_frame_len + ctx_len;
 
 	iap = os_zalloc(iap_buf_size);
 	if (!iap) {
@@ -1138,12 +1231,25 @@ static struct uhr_iap_frame *decode_smd_msg(struct hostapd_data *hapd,
 		pos += reconfig_frame_len;
 	}
 
-	/* Datapath context (smd_ctx) placed after frame body */
-	if (has_datapath_ctx) {
+	/* Datapath context (smd_ctx) placed after frame body.
+	 * vendor_ctx[] is a flexible array member — copying the struct followed
+	 * by the vendor bytes produces the correct in-memory layout.
+	 *
+	 * The struct header is written whenever datapath ctx OR vendor ctx is
+	 * present (e.g. Prep messages carry vendor ctx but no datapath ctx).
+	 * A zeroed struct is written in the vendor-ctx-only case so the upper
+	 * layer can always cast frame_ctx_data+frame_len to sta_smd_ctx_info *. */
+	if (has_datapath_ctx || vendor_ctx_len > 0) {
 		iap->flags |= UHR_IAP_FLAG_HAS_DYNAMIC_CTX;
-		iap->smd_ctx_len = sizeof(smd_ctx_decoded);
+		smd_ctx_decoded.vendor_ctx_len = vendor_ctx_len;
+		iap->smd_ctx_len = sizeof(smd_ctx_decoded) + vendor_ctx_len;
 		os_memcpy(pos, &smd_ctx_decoded, sizeof(smd_ctx_decoded));
+		pos += sizeof(smd_ctx_decoded);
 	}
+
+	/* Vendor ctx data written independently after the struct */
+	if (vendor_ctx_len > 0 && vendor_ctx_data)
+		os_memcpy(pos, vendor_ctx_data, vendor_ctx_len);
 
 	/* Set msg_type in the reconstructed frame */
 	switch (msg_type) {
