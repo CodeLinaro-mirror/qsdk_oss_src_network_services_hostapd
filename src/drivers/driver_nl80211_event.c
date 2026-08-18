@@ -3616,6 +3616,7 @@ static void nl80211_link_removal_event(struct i802_bss *bss, struct nlattr **tb,
 	union wpa_event_data data;
 	struct i802_link *mld_link = bss->flink;
 	void *ctx = bss->ctx;
+	int link_id;
 
 	os_memset(&data, 0, sizeof(data));
 
@@ -3636,10 +3637,20 @@ static void nl80211_link_removal_event(struct i802_bss *bss, struct nlattr **tb,
 		nla_get_u64(tb[NL80211_ATTR_TSF]);
 
 	if (tb[NL80211_ATTR_MLO_LINK_ID]) {
-		data.link_removal_event.link_id =
+		link_id = data.link_removal_event.link_id =
 			nla_get_u8(tb[NL80211_ATTR_MLO_LINK_ID]);
-		mld_link = nl80211_get_link(bss,
-					    data.link_removal_event.link_id);
+
+		/*
+		 * Verify the link received is not removed or stopped while
+		 * host sends the link removal started/completed event.
+		 */
+		if (!nl80211_link_valid(bss->valid_links, link_id) ||
+		    !(bss->active_links & BIT(link_id))) {
+			wpa_printf(MSG_DEBUG,
+				   "ignoring link removal event from link_id:%d", link_id);
+			return;
+		}
+		mld_link = nl80211_get_link(bss, link_id);
 		ctx = mld_link->ctx;
 
 		wpa_supplicant_event(ctx, started ? EVENT_LINK_REMOVAL_STARTED:
