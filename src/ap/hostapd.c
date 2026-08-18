@@ -7441,6 +7441,8 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt, const char *event)
 	hapd->disabled = 1;
 	wpa_msg(hapd->msg_ctx, MSG_INFO, "%s", event);
 
+	hostapd_bss_deinit_no_free(hapd);
+
 	/* Stop AP at driver level: no more beacons/tx for this BSS. */
 	hostapd_drv_stop_ap(hapd);
 
@@ -7448,7 +7450,6 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt, const char *event)
 #ifdef CONFIG_IEEE80211BN
 	mapc_deinit(hapd);
 #endif /* CONFIG_IEEE80211BN */
-	hostapd_bss_deinit_no_free(hapd);
 	hapd->reenable = REENABLE_REUSE_LINK;
 	hostapd_bss_link_deinit(hapd);
 	hostapd_free_hapd_data(hapd);
