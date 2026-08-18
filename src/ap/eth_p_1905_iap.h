@@ -33,6 +33,7 @@ struct uhr_iap_frame;
 #define WIFI8_TLV_SUBTYPE_CLIENT_SEC_CTX    0x0009  /* Client Security Context TLV */
 #define WIFI8_TLV_SUBTYPE_DATAPATH_CTX      0x000A  /* Data Path Context TLV     */
 #define WIFI8_TLV_SUBTYPE_ROAM_CLEANUP      0x000B  /* Roam Cleanup TLV          */
+#define WIFI8_TLV_SUBTYPE_VENDOR_CTX        0x000C  /* Vendor Context TLV        */
 
 /* -------------------------------------------------------------------------
  * Reconfiguration Frame TLV — frame_type field values
