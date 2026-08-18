@@ -26,6 +26,15 @@
 #define UHR_IAP_MTU_THRESHOLD     1400
 
 #define UHR_IAP_MAX_FRAME_LEN 1500
+
+/* ST Roam Cleanup - notify non-exec TAPs to free prepped STA state */
+#define UHR_IAP_MSG_ST_ROAM_CLEANUP  5
+
+/* ST Execute via Target AP-MLD IAP message types */
+#define UHR_IAP_MSG_ST_EXEC_VIA_TGT_DONE  6  /* Target -> Current: transition complete */
+#define UHR_IAP_MSG_ST_CTX_REQUEST        7  /* Target -> Current: fetch SMD context */
+#define UHR_IAP_MSG_ST_CTX_RESPONSE       8  /* Current -> Target: deliver SMD context */
+
 #define MAX_IE_LEN 60
 
 /**
