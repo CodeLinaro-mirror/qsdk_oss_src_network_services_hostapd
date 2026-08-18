@@ -1296,6 +1296,14 @@ struct hostapd_bss_config {
 	u8 ml_max_rec_links;
 	/* Maximum accepted partner links per non-AP MLD STA (0 = unlimited) */
 	u8 mld_max_links_per_sta;
+	/* Minimum required partner links per non-AP MLD STA (0 = no minimum) */
+	u8 mld_min_links_per_sta;
+	/*
+	 * Link rejection mode when mld_max_links_per_sta cap is hit.
+	 * 0 = default: reject 2G first, keep 5G/6G (band-priority)
+	 * 1 = range:   never reject 2G, reject 5G first (qca-wifi MLO_LINK_REJ_RANGE)
+	 */
+	u8 mld_link_rej_mode;
 
 	bool single_link_emlsr;
 	bool disable_eml;

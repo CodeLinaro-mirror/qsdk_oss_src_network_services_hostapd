@@ -8602,6 +8602,56 @@ bool hostapd_is_multiple_link_mld(struct hostapd_data *hapd)
 #endif /* CONFIG_IEEE80211BE */
 
 
+/*
+ * hostapd_mlo_link_rej_prio - Return band rejection priority for a link.
+ *
+ * Two rejection modes are supported:
+ *
+ * Mode 0 — default band-priority:
+ *   6G (3) > 5G (2) > 2G (1)
+ *   When the mld_max_links_per_sta cap is hit, 2G is rejected first.
+ *
+ * Mode 1 — range mode (mirrors qca-wifi MLO_LINK_REJ_RANGE):
+ *   6G (3) > 2G (2) > 5G (1)
+ *   2G is never rejected; 5G is rejected first when the cap is hit.
+ *
+ * Higher priority = kept longer; lowest priority = rejected first.
+ * Returns 2 (5G default) if the link BSS frequency cannot be determined.
+ */
+static u8 hostapd_mlo_link_rej_prio(struct hostapd_data *hapd,
+				     struct hostapd_data *link_bss)
+{
+	u8 mode = hapd->conf->mld_link_rej_mode;
+	int freq;
+	u8 prio;
+
+	if (!link_bss || !link_bss->iface)
+		return 2;
+
+	freq = link_bss->iface->freq;
+
+	if (mode == 1) {
+		/* Range mode: never reject 2G, reject 5G first */
+		if (IS_2P4GHZ(freq))
+			prio = 2;
+		else if (is_6ghz_freq(freq))
+			prio = 3;
+		else
+			prio = 1; /* 5G: lowest priority, rejected first */
+		return prio;
+	}
+
+	/* Default mode: reject 2G first */
+	if (IS_2P4GHZ(freq))
+		prio = 1;
+	else if (is_6ghz_freq(freq))
+		prio = 3;
+	else
+		prio = 2;
+	return prio;
+}
+
+
 int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 				  struct sta_info *sta,
 				  const u8 *ies, size_t ies_len,
@@ -8696,10 +8746,49 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 	 * Only if the TX (assoc) link itself fails do we propagate -1 to
 	 * the caller and abort the whole association.
 	 */
-	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+	{
+		u8 sorted_links[MAX_NUM_MLD_LINKS];
+		u8 sorted_prio[MAX_NUM_MLD_LINKS];
+		unsigned int n_sorted = 0, si;
 		struct hostapd_data *bss = NULL;
-		struct mld_link_info *link = &sta->mld_info.links[i];
+		struct mld_link_info *link = NULL;
 		bool link_bss_found = false;
+
+		for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+			struct mld_link_info *slink = &sta->mld_info.links[i];
+			struct hostapd_data *bss2 = NULL;
+			u8 prio = 2; /* default: 5G */
+
+			if (!slink->valid || i == sta->mld_assoc_link_id)
+				continue;
+
+			for_each_mld_link(bss2, hapd) {
+				if (bss2 == hapd || bss2->mld_link_id != i ||
+				    !bss2->started)
+					continue;
+				break;
+			}
+
+			if (bss2 && bss2->mld_link_id == i && bss2->started)
+				prio = hostapd_mlo_link_rej_prio(hapd, bss2);
+
+			/* insertion sort by descending priority (highest first) */
+			si = n_sorted;
+			while (si > 0 && sorted_prio[si - 1] < prio) {
+				sorted_links[si] = sorted_links[si - 1];
+				sorted_prio[si] = sorted_prio[si - 1];
+				si--;
+			}
+			sorted_links[si] = i;
+			sorted_prio[si] = prio;
+			n_sorted++;
+		}
+
+	for (si = 0; si < n_sorted; si++) {
+		i = sorted_links[si];
+		link = &sta->mld_info.links[i];
+		bss = NULL;
+		link_bss_found = false;
 
 		if (!link->valid || i == sta->mld_assoc_link_id)
 			continue;
@@ -8800,6 +8889,7 @@ release_ref:
 		if (link->rejected)
 			wpa_release_link_auth_ref(sta->wpa_sm, i, true);
 	}
+	} /* end band-priority block */
 #endif /* CONFIG_IEEE80211BE */
 
 	return ret;
