@@ -95,6 +95,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 #if CONFIG_MBO
 	bss->oce_tx_power = -128; /* -128 = not set, use regulatory max */
 #endif
+	bss->rtt_responder_role = 0;
 
 	bss->logger_syslog_level = HOSTAPD_LEVEL_INFO;
 	bss->logger_stdout_level = HOSTAPD_LEVEL_INFO;

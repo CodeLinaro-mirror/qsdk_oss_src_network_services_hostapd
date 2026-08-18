@@ -2075,6 +2075,23 @@ static int hostapd_cli_cmd_req_range(struct wpa_ctrl *ctrl, int argc,
 }
 
 
+static int hostapd_cli_cmd_set_rtt_responder_role(struct wpa_ctrl *ctrl,
+						  int argc, char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "SET_RTT_RESPONDER_ROLE", 1, argc, argv);
+}
+
+static int hostapd_cli_cmd_get_rtt_responder_role(struct wpa_ctrl *ctrl,
+						  int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid get_rtt_responder_role command: no arguments expected\n");
+		return -1;
+	}
+	return wpa_ctrl_command(ctrl, "GET_RTT_RESPONDER_ROLE");
+}
+
+
 #ifdef CONFIG_IEEE80211BE
 static int hostapd_cli_cmd_mld_add_link(struct wpa_ctrl *ctrl, int argc,
 					char *argv[])
@@ -3867,6 +3884,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<addr> = send LCI request to a station"},
 	{ "req_range", hostapd_cli_cmd_req_range, NULL,
 	  " = send FTM range request"},
+	{ "set_rtt_responder_role", hostapd_cli_cmd_set_rtt_responder_role, NULL,
+	  "<0..0x7> = set RTT responder role bitmask (0=disable)" },
+	{ "get_rtt_responder_role", hostapd_cli_cmd_get_rtt_responder_role, NULL,
+	  "= get RTT responder role bitmask" },
 	{ "driver_flags", hostapd_cli_cmd_driver_flags, NULL,
 	  " = show supported driver flags"},
 	{ "driver_flags2", hostapd_cli_cmd_driver_flags2, NULL,

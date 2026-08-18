@@ -624,6 +624,31 @@ u8 * hostapd_eid_ext_capab(struct hostapd_data *hapd, u8 *eid,
 		if (i == 9 && !hostapd_get_he_twt_responder(hapd, IEEE80211_MODE_AP) &&
 		    !hostapd_get_ht_vht_twt_responder(hapd))
 			*pos &= ~0x40;
+
+		if (hapd->conf->rtt_responder_role > 0) {
+			int rtt_role = hapd->conf->rtt_responder_role;
+
+			if (i == WLAN_EXT_CAPAB_FTM_RESPONDER / 8 &&
+			    (!hapd->conf->ftm_responder ||
+			     !(rtt_role & HOSTAPD_RTT_RESPONDER_ROLE_11MC)))
+				*pos &= ~BIT(WLAN_EXT_CAPAB_FTM_RESPONDER % 8);
+
+			if (i == WLAN_EXT_CAPAB_NTB_RANGING_RESPONDER / 8) {
+				if (rtt_role & HOSTAPD_RTT_RESPONDER_ROLE_11AZ_NTB)
+					*pos |= BIT(WLAN_EXT_CAPAB_NTB_RANGING_RESPONDER % 8);
+				else
+					*pos &= ~BIT(WLAN_EXT_CAPAB_NTB_RANGING_RESPONDER % 8);
+				if (rtt_role & HOSTAPD_RTT_RESPONDER_ROLE_11AZ_TB)
+					*pos |= BIT(WLAN_EXT_CAPAB_TB_RANGING_RESPONDER % 8);
+				else
+					*pos &= ~BIT(WLAN_EXT_CAPAB_TB_RANGING_RESPONDER % 8);
+			}
+		} else {
+			if (i == WLAN_EXT_CAPAB_NTB_RANGING_RESPONDER / 8) {
+				*pos &= ~BIT(WLAN_EXT_CAPAB_NTB_RANGING_RESPONDER % 8);
+				*pos &= ~BIT(WLAN_EXT_CAPAB_TB_RANGING_RESPONDER % 8);
+			}
+		}
 	}
 
 	while (len > 0 && eid[1 + len] == 0) {

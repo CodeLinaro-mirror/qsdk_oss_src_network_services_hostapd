@@ -439,6 +439,11 @@ struct uhr_params_update_config {
 	/* TODO: Add DPS, DUO, P-EDCA, DBE, AP PUO, ELR mode param structs */
 };
 
+/* RTT responder role bitmask bits for hostapd_bss_config::rtt_responder_role */
+#define HOSTAPD_RTT_RESPONDER_ROLE_11MC     BIT(0)
+#define HOSTAPD_RTT_RESPONDER_ROLE_11AZ_NTB BIT(1)
+#define HOSTAPD_RTT_RESPONDER_ROLE_11AZ_TB  BIT(2)
+
 /**
  * struct hostapd_bss_config - Per-BSS configuration
  */
@@ -1028,6 +1033,12 @@ struct hostapd_bss_config {
 
 	int ftm_responder;
 	int ftm_initiator;
+
+	/* RTT responder role bitmask;
+	 * bit 0 (HOSTAPD_RTT_RESPONDER_ROLE_11MC): 11mc FTM responder,
+	 * bit 1 (HOSTAPD_RTT_RESPONDER_ROLE_11AZ_NTB): 11az NTB,
+	 * bit 2 (HOSTAPD_RTT_RESPONDER_ROLE_11AZ_TB): 11az TB */
+	int rtt_responder_role;
 
 #ifdef CONFIG_FILS
 	u8 fils_cache_id[FILS_CACHE_ID_LEN];

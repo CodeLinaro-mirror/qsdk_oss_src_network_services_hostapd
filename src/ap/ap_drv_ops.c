@@ -1927,3 +1927,22 @@ int hostapd_drv_set_muedca_mode(struct hostapd_data *hapd, int mode, int radio_i
 	return hapd->driver->set_muedca_mode(hapd->drv_priv, mode, radio_idx);
 }
 #endif /* CONFIG_QCN_EXTN */
+
+int hostapd_drv_set_rtt_responder_role(struct hostapd_data *hapd, int role)
+{
+	int link_id = -1;
+
+	if (!hapd->driver || !hapd->driver->notify_iface_state)
+		return -1;
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap)
+		link_id = hapd->mld_link_id;
+#endif /* CONFIG_IEEE80211BE */
+
+	return hapd->driver->notify_iface_state(
+		hapd->drv_priv, OUI_QCA,
+		QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
+		QCA_WLAN_VENDOR_WIFI_PARAM_RTT_RESPONDER_ROLE,
+		(u32)role, link_id, hapd->conf->iface);
+}
