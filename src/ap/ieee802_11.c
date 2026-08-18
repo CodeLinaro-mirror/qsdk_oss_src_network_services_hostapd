@@ -8790,6 +8790,14 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 		bss = NULL;
 		link_bss_found = false;
 
+		/* Clear stale rejected flag from a previous association attempt
+		 * so a retry starts with a clean state. */
+		if (link->rejected) {
+			link->rejected = false;
+			if (sta->wpa_sm)
+				wpa_auth_set_ml_link_rejected(sta->wpa_sm, i, false);
+		}
+
 		if (!link->valid || i == sta->mld_assoc_link_id)
 			continue;
 
