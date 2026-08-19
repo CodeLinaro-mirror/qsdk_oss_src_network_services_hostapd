@@ -1073,6 +1073,9 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid,
 	}
 #endif /* CONFIG_SAE */
 	STR(bgscan_freq);
+#ifdef CONFIG_PMKSA_PRIVACY
+	INT(pmksa_privacy);
+#endif /* CONFIG_PMKSA_PRIVACY */
 #undef STR
 #undef INT
 #undef INT_DEF

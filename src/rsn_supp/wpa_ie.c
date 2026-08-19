@@ -435,6 +435,10 @@ u64 wpa_sm_get_rsnxe_capab(struct wpa_sm *sm)
 		capab |= BIT(WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION) |
 			BIT(WLAN_RSNX_CAPAB_KEK_IN_PASN);
 #endif /* CONFIG_ENC_ASSOC */
+#ifdef CONFIG_PMKSA_PRIVACY
+	if (sm->pmksa_privacy)
+		capab |= BIT(WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY);
+#endif /* CONFIG_PMKSA_PRIVACY */
 	if (sm->control_frame_prot)
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
 

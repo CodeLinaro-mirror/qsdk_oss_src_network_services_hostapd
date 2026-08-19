@@ -148,6 +148,7 @@ enum wpa_sm_conf_params {
 	WPA_PARAM_SAE_PW_ID_CHANGE,
 	WPA_PARAM_SECURITY_PROFILE_ACTIVE,
 	WPA_PARAM_ASSOC_ENC,
+	WPA_PARAM_PMKSA_CACHING_PRIVACY,
 };
 
 enum wpa_rsn_override {
@@ -716,4 +717,6 @@ void wpa_sm_notify_smd_transition_complete(struct wpa_sm *sm,
 					   const u8 *target_addr);
 void wpa_sm_smd_notify_ptk_installed(struct wpa_sm *sm,
 				     const u8 *target_addr);
+bool wpa_sm_pmksa_privacy_supported(struct wpa_sm *sm);
+
 #endif /* WPA_H */
