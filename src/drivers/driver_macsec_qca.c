@@ -717,6 +717,10 @@ static int macsec_qca_set_param(struct macsec_qca_data *drv, const char *param)
 }
 #endif /* HOSTAPD */
 
+#ifdef HOSTAPD
+static void macsec_qca_hapd_deinit(void *priv);
+#endif /* HOSTAPD */
+
 static void * macsec_qca_hapd_init(struct hostapd_data *hapd,
 				   struct wpa_init_params *params)
 {
@@ -743,6 +747,8 @@ static void * macsec_qca_hapd_init(struct hostapd_data *hapd,
 	drv->use_pae_group_addr = params->use_pae_group_addr;
 
 #ifdef HOSTAPD
+	drv->ioctl_sock = -1;
+
 	if (macsec_qca_set_param(drv, params->driver_params) < 0) {
 		os_free(drv);
 		return NULL;
@@ -756,18 +762,22 @@ static void * macsec_qca_hapd_init(struct hostapd_data *hapd,
 
 #ifdef HOSTAPD
 	if ((drv->authorize_policy == 1) && macsec_qca_init_genl(drv) < 0) {
-		os_free(drv);
-		return NULL;
+		goto fail;
 	}
 	if ((drv->ioctl_sock = open(SW_SWITCH_IOCTL_DEV_NAME, O_RDWR)) < 0) {
-		os_free(drv);
-		return NULL;
+		goto fail;
 	}
 	/* deny all mac address and accept eapol */
 	u8 mac[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 	macsec_qca_set_sta_acl_policy(drv, mac, 0);
 #endif /* HOSTAPD */
 	return drv;
+
+#ifdef HOSTAPD
+fail:
+	macsec_qca_hapd_deinit(drv);
+	return NULL;
+#endif /* HOSTAPD */
 }
 
 
