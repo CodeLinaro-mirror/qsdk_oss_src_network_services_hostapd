@@ -1804,6 +1804,11 @@ int hostapd_drv_set_secure_ranging_ctx(struct hostapd_data *hapd,
 	params.ltf_keyseed_len = ltf_keyseed_len;
 	params.ltf_keyseed = ltf_keyseed;
 	params.action = action;
+	params.link_id = -1;
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap)
+		params.link_id = hapd->mld_link_id;
+#endif /* CONFIG_IEEE80211BE */
 
 	return hapd->driver->set_secure_ranging_ctx(hapd->drv_priv, &params);
 }

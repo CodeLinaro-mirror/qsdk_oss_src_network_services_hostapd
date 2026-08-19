@@ -17206,8 +17206,8 @@ static int nl80211_set_secure_ranging_ctx(void *priv,
 		return -1;
 
 	wpa_dbg(drv->ctx, MSG_DEBUG,
-		"nl80211: Secure ranging context for " MACSTR,
-		MAC2STR(params->peer_addr));
+		"nl80211: Secure ranging context for " MACSTR " link_id=%d",
+		MAC2STR(params->peer_addr), params->link_id);
 
 	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
 	if (!msg ||
@@ -17226,6 +17226,11 @@ static int nl80211_set_secure_ranging_ctx(void *priv,
 		    ETH_ALEN, params->own_addr) ||
 	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_ACTION,
 			params->action))
+		goto fail;
+
+	if (params->link_id >= 0 &&
+	    nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_SECURE_RANGING_CTX_LINK_ID,
+			params->link_id))
 		goto fail;
 
 	if (params->cipher) {
