@@ -203,11 +203,12 @@ static int hostapd_for_each_iface_on_phy(struct hapd_interfaces *interfaces,
 }
 
 
+/* Callers must check the return value for NULL. */
 struct hostapd_data * hostapd_mbssid_get_tx_bss(struct hostapd_data *hapd)
 {
 	if (hapd->iconf->mbssid) {
 		if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
-			return hapd->mbssid_group ? hapd->mbssid_group->txbss : hapd;
+			return hapd->mbssid_group? hapd->mbssid_group->txbss : NULL;
 		else
 			return hapd->iface->bss[0];
 	}
@@ -6553,7 +6554,7 @@ int hostapd_mbssid_setup_bss(struct hostapd_data *hapd)
 	 * on Tx VAP
 	 */
 	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
-	if (tx_bss != hapd)
+	if (!tx_bss || tx_bss != hapd)
 		return 0;
 
 	num_bss = (1 << hostapd_max_bssid_indicator(tx_bss));
@@ -8941,6 +8942,14 @@ int hostapd_build_beacon_data(struct hostapd_data *hapd,
 	int ret;
 
 	os_memset(beacon, 0, sizeof(*beacon));
+
+	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+	if (!tx_bss) {
+		wpa_printf(MSG_ERROR, "TX BSS not set for %s",
+			   hapd->conf->iface);
+		return -1;
+	}
+
 	ret = ieee802_11_build_ap_params(hapd, &params);
 	if (ret < 0)
 		return ret;
@@ -9008,7 +9017,6 @@ int hostapd_build_beacon_data(struct hostapd_data *hapd,
 	if (!params.mbssid.mbssid_elem_len)
 		goto done;
 
-	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
 	beacon->mbssid.mbssid_tx_iface = tx_bss->conf->iface;
 	beacon->mbssid.mbssid_tx_iface_linkid =
 		params.mbssid.mbssid_tx_iface_linkid;
@@ -10553,7 +10561,7 @@ void hostapd_set_ml_max_rec_links(struct hostapd_data *hapd, u8 ml_max_rec_links
 	for_each_mld_link(link_bss, hapd) {
 		/* if link bss is non-tx bss, get Tx BSS */
 		tx_hapd = hostapd_mbssid_get_tx_bss(link_bss);
-		if ((link_bss != tx_hapd) && tx_hapd->beacon_set_done)
+		if (tx_hapd && (link_bss != tx_hapd) && tx_hapd->beacon_set_done)
 			ieee802_11_set_beacon(tx_hapd);
 	}
 }

@@ -203,7 +203,7 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 
 	/* For non-transmitting BSSs in MBSSID, inherit BSS-level overrides
 	 * from the transmitting BSS */
-	if (tx_hapd != hapd) {
+	if (tx_hapd && tx_hapd != hapd) {
 		if (tx_hapd->conf->eht_phy_capab_mask) {
 			hapd->conf->eht_phy_capab = tx_hapd->conf->eht_phy_capab;
 			hapd->conf->eht_phy_capab_mask = tx_hapd->conf->eht_phy_capab_mask;

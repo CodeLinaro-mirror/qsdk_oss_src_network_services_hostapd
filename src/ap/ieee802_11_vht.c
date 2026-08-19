@@ -93,7 +93,7 @@ u8 * hostapd_eid_vht_capabilities(struct hostapd_data *hapd, u8 *eid, u32 nsts)
 
 	/* For non-transmitting BSSs in MBSSID, inherit BSS-level overrides
 	 * from the transmitting BSS */
-	if (tx_hapd != hapd && tx_hapd->conf->vht_capab_mask) {
+	if (tx_hapd && tx_hapd != hapd && tx_hapd->conf->vht_capab_mask) {
 		hapd->conf->vht_capab = tx_hapd->conf->vht_capab;
 		hapd->conf->vht_capab_mask = tx_hapd->conf->vht_capab_mask;
 	}
@@ -168,7 +168,7 @@ u8 * hostapd_eid_vht_capabilities(struct hostapd_data *hapd, u8 *eid, u32 nsts)
 	/* Supported MCS set comes from hw */
 	os_memcpy(&cap->vht_supported_mcs_set, mode->vht_mcs_set, 8);
 
-	if (tx_hapd != hapd)
+	if (tx_hapd && tx_hapd != hapd)
 		hapd->conf->vht_mcs_nss_set = tx_hapd->conf->vht_mcs_nss_set;
 
 	if (hapd->conf->vht_mcs_nss_set) {

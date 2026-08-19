@@ -51,7 +51,7 @@ u8 * hostapd_eid_ht_capabilities(struct hostapd_data *hapd, u8 *eid)
 	os_memcpy(cap->supported_mcs_set, hapd->iface->current_mode->mcs_set,
 		  16);
 
-	if (tx_hapd != hapd)
+	if (tx_hapd && tx_hapd != hapd)
 		hapd->conf->ht_mcs_nss_set = tx_hapd->conf->ht_mcs_nss_set;
 
 	/* Apply the user specified HT mcs mask (if any) */
