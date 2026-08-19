@@ -600,6 +600,9 @@ static void hostapd_reload_bss(struct hostapd_data *hapd)
 		wpa_printf(MSG_ERROR, "Could not set SSID for kernel driver");
 		/* try to continue */
 	}
+#ifdef CONFIG_DPP2
+	hostapd_dpp_reload_controllers(hapd);
+#endif /* CONFIG_DPP2 */
 	wpa_printf(MSG_DEBUG, "Reconfigured interface %s", hapd->conf->iface);
 }
 
