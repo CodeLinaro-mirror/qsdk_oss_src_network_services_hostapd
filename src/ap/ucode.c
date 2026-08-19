@@ -13,6 +13,9 @@
 #include <libubox/uloop.h>
 #include "sta_info.h"
 #include "../atf/atf_offload.h"
+#ifdef CONFIG_IEEE80211BN
+#include "mapc.h"
+#endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
 #endif
@@ -1031,6 +1034,13 @@ out:
 		ret = ieee802_11_set_beacon(hapd);
 		wpa_printf(MSG_DEBUG, "set beacon called for bssid " MACSTR " ret %d \n",
 			   MAC2STR(hapd->own_addr), ret);
+#ifdef CONFIG_IEEE80211BN
+		if (ret == 0 && !hapd->mapc_initialized) {
+			if (mapc_init(hapd) < 0)
+				wpa_printf(MSG_ERROR, "MAPC: init failed for BSS %s",
+					   hapd->conf->iface);
+		}
+#endif /* CONFIG_IEEE80211BN */
 	}
 
 	atf_bh_join_leave_update(iface, true);
