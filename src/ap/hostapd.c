@@ -2817,6 +2817,12 @@ setup_mld:
 			   hapd->conf->iface);
 		return -1;
 	}
+	if (hapd->conf->bss_extn.non_beacon_bss &&
+	    hostapd_drv_set_non_beacon_bss_extn(hapd)) {
+		wpa_printf(MSG_ERROR, "non_beacon_bss vendor command failed: %s",
+			   hapd->conf->iface);
+		return -1;
+	}
 #endif /* CONFIG_QCN_EXTN */
 	/* AID 0 is never valid; reserve it on every BSS.
 	 * For MBSSID, the TX BSS handles this in hostapd_mbssid_setup_bss(). */
