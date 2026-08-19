@@ -18150,6 +18150,27 @@ fail:
 }
 
 
+static int nl80211_add_to_bridge(void *priv, const char *bridge_ifname)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+
+	wpa_printf(MSG_DEBUG, "nl80211: add interface to bridge (bridge_ifname: %s)",
+		   bridge_ifname);
+
+	if (!bridge_ifname[0])
+		return 0;
+
+	if (bss->added_if_into_bridge)
+		return 0;
+
+	if (i802_check_bridge(drv, bss, bridge_ifname, bss->ifname) < 0)
+		return -1;
+
+	return 0;
+}
+
+
 static bool nl80211_is_retail_afc_supported(void *priv)
 {
 	struct i802_bss *bss = priv;
@@ -20246,6 +20267,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.update_connect_params = nl80211_update_connection_params,
 	.send_external_auth_status = nl80211_send_external_auth_status,
 	.set_4addr_mode = nl80211_set_4addr_mode,
+	.add_to_bridge = nl80211_add_to_bridge,
 #ifdef CONFIG_DPP
 	.dpp_listen = nl80211_dpp_listen,
 #endif /* CONFIG_DPP */

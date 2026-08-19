@@ -1729,6 +1729,7 @@ struct wpa_supplicant {
 #endif /* CONFIG_FILS */
 	unsigned int ieee80211ac:1;
 	unsigned int enabled_4addr_mode:1;
+	unsigned int extap_enabled:1;
 	unsigned int multi_bss_support:1;
 	unsigned int drv_authorized_port:1;
 	unsigned int multi_ap_ie:1;

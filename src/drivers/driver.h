@@ -6552,6 +6552,17 @@ struct wpa_driver_ops {
 	int (*set_4addr_mode)(void *priv, const char *bridge_ifname, int val);
 
 	/**
+	 * add_to_bridge - Add interface to bridge without 4addr mode
+	 * @priv: Private driver interface data
+	 * @bridge_ifname: Bridge interface name
+	 * Returns: 0 on success, < 0 on failure
+	 *
+	 * This is used for ExtAP to add the interface to bridge while keeping
+	 * 3-address mode (not 4-address mode like WDS).
+	 */
+	int (*add_to_bridge)(void *priv, const char *bridge_ifname);
+
+	/**
 	 * update_dh_ie - Update DH IE
 	 * @priv: Private driver interface data
 	 * @peer_mac: Peer MAC address

@@ -1384,6 +1384,24 @@ struct wpa_ssid {
 	int enable_4addr_mode;
 
 	/**
+	 * extap_mode - Enable ExtAP MAC address translation after association
+	 * 0 = Disabled (default)
+	 * 1 = Enable ExtAP; send vendor cmd 540 to driver post-association
+	 *
+	 * ExtAP allows multiple wired clients behind a STA VAP to communicate
+	 * through a single upstream AP using 3-address frames with SMAC/DMAC
+	 * translation. Mutually exclusive with enable_4addr_mode.
+	 */
+	int extap_mode;
+
+	/**
+	 * extap_max_clients - Maximum number of clients ExtAP tracks
+	 * 0 = Use driver default (MAC_DB_ENTRIES = 512)
+	 * 1..512 = Limit the IP-to-MAC table to this many entries
+	 */
+	int extap_max_clients;
+
+	/**
 	 * max_idle - BSS max idle period to request
 	 *
 	 * If nonzero, request the specified number of 1000 TU (i.e., 1.024 s)
