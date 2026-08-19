@@ -9524,6 +9524,63 @@ static int hostapd_ctrl_iface_dump_scs_info(struct hostapd_data *hapd,
 	return hostapd_dump_scs_info(temp_hapd, sta, buf, buflen, scs_id);
 }
 
+static int hostapd_ctrl_iface_dump_scs_qm_info(struct hostapd_data *hapd,
+					       const char *cmd, char *buf,
+					       size_t buflen)
+{
+	struct hostapd_data *temp_hapd = hapd;
+	struct sta_info *sta = NULL;
+	char *token, *context = NULL;
+	unsigned int qm_id_val;
+	u8 addr[ETH_ALEN];
+
+	if (!hapd->conf->scs || !hapd->conf->deferred_scs) {
+		wpa_printf(MSG_ERROR, "SCS feature/Deferred SCS is disabled");
+		return -1;
+	}
+
+	token = str_token((char *)cmd, " ", &context);
+	if (!token || hwaddr_aton(token, addr) != 0) {
+		wpa_printf(MSG_ERROR, "Invalid MAC address");
+		return -1;
+	}
+
+	token = str_token((char *)cmd, " ", &context);
+	if (!token || sscanf(token, "%u", &qm_id_val) != 1 ||
+	    qm_id_val < 0 || qm_id_val > 0xFF) {
+		wpa_printf(MSG_ERROR, "Invalid QM ID");
+		return -1;
+	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (hapd->conf->mld_ap) {
+		for_each_mld_link_include_repurposed(temp_hapd, hapd) {
+			sta = ap_get_sta(temp_hapd, addr);
+			if (sta)
+				break;
+		}
+	} else
+		sta = ap_get_sta(temp_hapd, addr);
+#else
+	if (hapd->conf->mld_ap) {
+		for_each_mld_link(temp_hapd, hapd) {
+			sta = ap_get_sta(temp_hapd, addr);
+			if (sta)
+				break;
+		}
+	} else
+		sta = ap_get_sta(temp_hapd, addr);
+#endif
+
+	if (!sta) {
+		wpa_printf(MSG_ERROR, "STA not found");
+		return -1;
+	}
+
+	return hostapd_dump_scs_qm_info(temp_hapd, sta, buf, buflen,
+					(u16)qm_id_val);
+}
+
 
 static int hostapd_ctrl_iface_send_scs_resp(struct hostapd_data *hapd,
 					    const char *cmd)
@@ -12856,6 +12913,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "DUMP_SCS_INFO ", 14) == 0) {
 		reply_len = hostapd_ctrl_iface_dump_scs_info(hapd, buf + 14,
 							     reply, reply_size);
+	} else if (os_strncmp(buf, "DUMP_SCS_QM_INFO ", 17) == 0) {
+		reply_len = hostapd_ctrl_iface_dump_scs_qm_info(hapd, buf + 17,
+								reply, reply_size);
 	} else if (os_strncmp(buf, "SEND_UNSOLICITED_SCS_RESP ", 26) == 0) {
 		if (hostapd_ctrl_iface_send_scs_resp(hapd, buf + 26))
 			reply_len = -1;

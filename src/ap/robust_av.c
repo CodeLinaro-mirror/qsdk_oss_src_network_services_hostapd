@@ -122,9 +122,15 @@ int hostapd_dump_scs_list(struct hostapd_data *hapd, struct sta_info *sta,
 
 	dl_list_for_each(desc, &assoc_sta->scs_req_desc,
 			 struct hostapd_scs_req_desc_data, list) {
-		res = os_snprintf(buf + reply_len, buflen - reply_len,
-				  "  Index: %d, SCS ID: %u\n",
-				  i++, desc->scs_id);
+		if (!hapd->conf->deferred_scs)
+			res = os_snprintf(buf + reply_len, buflen - reply_len,
+					  "  Index: %d, SCS ID: %u\n",
+					  i++, desc->scs_id);
+
+		else
+			res = os_snprintf(buf + reply_len, buflen - reply_len,
+					  "  Index: %d, SCS ID: %u, QM ID: %u\n",
+					  i++, desc->scs_id, desc->qm_id);
 		if (os_snprintf_error(buflen - reply_len, res))
 			return -1;
 		reply_len += res;
@@ -134,50 +140,14 @@ int hostapd_dump_scs_list(struct hostapd_data *hapd, struct sta_info *sta,
 }
 
 
-int hostapd_dump_scs_info(struct hostapd_data *hapd, struct sta_info *sta,
-			  char *buf, size_t buflen, u8 scs_id)
+static int
+hostapd_dump_scs_desc_info(struct hostapd_data *hapd,
+			   struct sta_info *assoc_sta,
+			   struct hostapd_scs_req_desc_data *desc,
+			   char *buf, size_t buflen)
 {
-	struct hostapd_scs_req_desc_data *desc;
-	struct sta_info *assoc_sta = NULL;
 	const char *qos_type, *direction;
-	struct hostapd_data *assoc_hapd;
 	int reply_len = 0, res;
-
-#ifdef CONFIG_IEEE80211BE
-	if (!sta->mld_info.mld_sta) {
-		wpa_printf(MSG_DEBUG,
-			   "Assign sta to assoc_sta for Non-MLD STA");
-		assoc_sta = sta;
-	}
-#endif
-
-	assoc_hapd = hapd;
-
-	if (!assoc_sta) {
-		assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd);
-		if (!assoc_sta) {
-			wpa_printf(MSG_ERROR,
-				   "Assoc STA not found to dump scs info");
-			return -1;
-		}
-	}
-
-	if (!assoc_sta->scs_session_count) {
-		res = os_snprintf(buf + reply_len, buflen - reply_len,
-				  "No SCS sessions configured\n");
-		if (os_snprintf_error(buflen - reply_len, res))
-			return -1;
-
-		reply_len += res;
-		return reply_len;
-	}
-
-	desc = hostapd_scs_find_by_id(assoc_sta, scs_id);
-	if (!desc) {
-		wpa_printf(MSG_ERROR, "SCS ID %u not found for STA " MACSTR,
-			   scs_id, MAC2STR(assoc_sta->addr));
-		return -1;
-	}
 
 #define APPEND(...) \
 	do { \
@@ -203,7 +173,19 @@ int hostapd_dump_scs_info(struct hostapd_data *hapd, struct sta_info *sta,
 
 	APPEND("Descriptor type: %s %s\n", qos_type, direction);
 	APPEND("  SCS ID: %u\n", desc->scs_id);
+	if (hapd->conf->deferred_scs) {
+		if (desc->qm_id != 0xFFFF)
+			APPEND("  QM ID: %u\n", desc->qm_id);
+		else
+			APPEND("  QM ID: unassigned\n");
+	}
 	APPEND("  Request Type: %u\n", desc->request_type);
+	if (hapd->conf->deferred_scs) {
+		APPEND("  Request Pending: %s\n",
+		       desc->request_pending ? "yes" : "no");
+		APPEND("  Client Initiated: %s\n",
+		       desc->client_initiated_scs ? "yes" : "no");
+	}
 	APPEND("  Intra Access Priority: %u\n",
 	       desc->intra_access_priority);
 	APPEND("  TCLAS Processing: %u\n",
@@ -330,6 +312,101 @@ int hostapd_dump_scs_info(struct hostapd_data *hapd, struct sta_info *sta,
 	APPEND("\n");
 
 	return reply_len;
+}
+
+int hostapd_dump_scs_info(struct hostapd_data *hapd, struct sta_info *sta,
+			  char *buf, size_t buflen, u8 scs_id)
+{
+	struct hostapd_scs_req_desc_data *desc;
+	struct sta_info *assoc_sta = NULL;
+	struct hostapd_data *assoc_hapd;
+	int reply_len = 0, res;
+
+#ifdef CONFIG_IEEE80211BE
+	if (!sta->mld_info.mld_sta) {
+		wpa_printf(MSG_DEBUG,
+			   "Assign sta to assoc_sta for Non-MLD STA");
+		assoc_sta = sta;
+	}
+#endif
+
+	assoc_hapd = hapd;
+
+	if (!assoc_sta) {
+		assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd);
+		if (!assoc_sta) {
+			wpa_printf(MSG_ERROR,
+				   "Assoc STA not found to dump scs info");
+			return -1;
+		}
+	}
+
+	if (!assoc_sta->scs_session_count) {
+		res = os_snprintf(buf + reply_len, buflen - reply_len,
+				  "No SCS sessions configured\n");
+		if (os_snprintf_error(buflen - reply_len, res))
+			return -1;
+
+		reply_len += res;
+		return reply_len;
+	}
+
+	desc = hostapd_scs_find_by_id(assoc_sta, scs_id);
+	if (!desc) {
+		wpa_printf(MSG_ERROR, "SCS ID %u not found for STA " MACSTR,
+			   scs_id, MAC2STR(assoc_sta->addr));
+		return -1;
+	}
+
+	return hostapd_dump_scs_desc_info(hapd, assoc_sta, desc, buf, buflen);
+}
+
+
+int hostapd_dump_scs_qm_info(struct hostapd_data *hapd, struct sta_info *sta,
+			     char *buf, size_t buflen, u16 qm_id)
+{
+	struct hostapd_scs_req_desc_data *desc;
+	struct sta_info *assoc_sta = NULL;
+	struct hostapd_data *assoc_hapd;
+	int reply_len = 0, res;
+
+#ifdef CONFIG_IEEE80211BE
+	if (!sta->mld_info.mld_sta) {
+		wpa_printf(MSG_DEBUG,
+			   "Assign sta to assoc_sta for Non-MLD STA");
+		assoc_sta = sta;
+	}
+#endif
+
+	assoc_hapd = hapd;
+
+	if (!assoc_sta) {
+		assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd);
+		if (!assoc_sta) {
+			wpa_printf(MSG_ERROR,
+				   "Assoc STA not found to dump scs qm info");
+			return -1;
+		}
+	}
+
+	if (!assoc_sta->scs_session_count) {
+		res = os_snprintf(buf + reply_len, buflen - reply_len,
+				  "No SCS sessions configured\n");
+		if (os_snprintf_error(buflen - reply_len, res))
+			return -1;
+
+		reply_len += res;
+		return reply_len;
+	}
+
+	desc = hostapd_scs_find_by_qmid(assoc_sta, qm_id);
+	if (!desc) {
+		wpa_printf(MSG_ERROR, "QM ID %u not found for STA " MACSTR,
+			   qm_id, MAC2STR(assoc_sta->addr));
+		return -1;
+	}
+
+	return hostapd_dump_scs_desc_info(hapd, assoc_sta, desc, buf, buflen);
 }
 
 
