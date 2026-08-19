@@ -4247,6 +4247,12 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 	}
 
 	tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
+	if (!tx_hapd) {
+		wpa_printf(MSG_ERROR, "TX BSS not found for %s",
+			   hapd->conf->iface);
+		return -1;
+	}
+
 	if (tx_hapd == hapd) {
 		wpa_printf(MSG_INFO,
 			   "%s is already the transmitted profile of MBSSID group",

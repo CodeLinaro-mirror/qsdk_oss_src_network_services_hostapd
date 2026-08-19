@@ -6104,6 +6104,8 @@ static u32 hostapd_get_aid_word(struct hostapd_data *hapd,
 			}
 #endif /* CONFIG_QCN_EXTN */
 			link_bss = hostapd_mbssid_get_tx_bss(link_bss);
+			if (!link_bss)
+				continue;
 			aid_word |= link_bss->sta_aid[i];
 		}
 
@@ -6245,6 +6247,8 @@ int hostapd_get_aid(struct hostapd_data *hapd, struct sta_info *sta)
 	 * use the shared storage in the transmitted BSS to find the next
 	 * available value. */
 	hapd = hostapd_mbssid_get_tx_bss(hapd);
+	if (!hapd)
+		return -1;
 
 	/* get a unique AID */
 	if (sta->aid > 0) {
@@ -17204,6 +17208,9 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 	u8 ext_cap;
 	size_t len, i;
 
+	if (!tx_bss)
+		return 0;
+
 	/* Element ID: 1 octet
 	 * Length: 1 octet
 	 * MaxBSSID Indicator: 1 octet
@@ -17358,6 +17365,9 @@ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd_probed, u32 frame_type,
 	bool rnr_override = true;
 	size_t num_bss, elem_len = 0;
 
+	if (!hapd)
+		return 0;
+
 #ifdef CONFIG_QCN_EXTN
 	skip_rnr = hostapd_skip_rnr_6ghz_colocated_extn(hapd, frame_type);
 	rnr_override = hostapd_rnr_6ghz_override_extn(hapd);
@@ -17483,6 +17493,9 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 	u8 *eid_len_offset, *max_bssid_indicator_offset, *startpos;
 	u8 ext_cap;
 	size_t i;
+
+	if (!tx_bss)
+		return eid;
 
 	*eid++ = WLAN_EID_MULTIPLE_BSSID;
 	eid_len_offset = eid++;
@@ -17688,6 +17701,9 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 	bool skip_rnr = false, rnr_override = true;
 	bool add_rnr;
 	size_t num_bss;
+
+	if (!hapd)
+		return eid;
 
 #ifdef CONFIG_QCN_EXTN
 	skip_rnr = hostapd_skip_rnr_6ghz_colocated_extn(hapd, frame_stype);

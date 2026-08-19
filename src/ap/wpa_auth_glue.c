@@ -49,7 +49,7 @@ static void hostapd_wpa_auth_config_update(struct hostapd_data *hapd,
 
 	_conf->msg_ctx = hapd->msg_ctx;
 	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
-	if (tx_bss != hapd)
+	if (tx_bss && tx_bss != hapd)
 		_conf->tx_bss_auth = tx_bss->wpa_auth;
 	if (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_EAPOL_TX_STATUS)
 		_conf->tx_status = 1;
