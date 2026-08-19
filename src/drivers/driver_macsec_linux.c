@@ -206,10 +206,9 @@ static int try_commit(struct macsec_drv_data *drv)
 			rtnl_link_unset_flags(change, IFF_UP);
 
 		err = rtnl_link_change(drv->sk, change, change, 0);
+		rtnl_link_put(change);
 		if (err < 0)
 			return err;
-
-		rtnl_link_put(change);
 
 		drv->controlled_port_enabled_set = false;
 	}
