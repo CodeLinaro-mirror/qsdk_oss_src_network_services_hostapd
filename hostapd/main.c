@@ -367,6 +367,12 @@ setup_mld:
 			wpa_printf(MSG_DEBUG,
 				   "Fetch and set vendor BSSID failed");
 	}
+	if (conf->bss_extn.non_beacon_bss &&
+	    hostapd_drv_set_non_beacon_bss_extn(hapd)) {
+		wpa_printf(MSG_ERROR, "non_beacon_bss vendor command failed: %s",
+			   conf->iface);
+		return -1;
+	}
 #endif /* CONFIG_QCN_EXTN */
 
 	if (hapd->driver->get_capa &&

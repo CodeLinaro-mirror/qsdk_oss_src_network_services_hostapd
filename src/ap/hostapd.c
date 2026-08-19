@@ -2844,6 +2844,12 @@ setup_mld:
 			   hapd->conf->iface);
 		return -1;
 	}
+	if (hapd->conf->bss_extn.non_beacon_bss &&
+	    hostapd_drv_set_non_beacon_bss_extn(hapd)) {
+		wpa_printf(MSG_ERROR, "non_beacon_bss vendor command failed: %s",
+			   hapd->conf->iface);
+		return -1;
+	}
 #endif /* CONFIG_QCN_EXTN */
 	/* MBSSID setup already done during reenable*/
 	if (!hapd_reenable_pending(hapd) &&
