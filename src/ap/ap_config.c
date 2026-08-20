@@ -498,6 +498,8 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->reg_def_cli_eirp = -1;
 #endif /* CONFIG_IEEE80211AX */
 
+	conf->next_radar_freq = -1;
+	conf->next_radar_width = -1;
 
 	/* The third octet of the country string uses an ASCII space character
 	 * by default to indicate that the regulations encompass all

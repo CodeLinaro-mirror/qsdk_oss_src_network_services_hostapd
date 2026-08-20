@@ -1816,6 +1816,22 @@ struct hostapd_config {
 	unsigned int ch_switch_uhr_config;
 	int disable_csa_dfs;
 
+	/**
+	 * @next_radar_freq: Frequency (MHz) the AP switches to immediately
+	 * upon radar detection on the operating channel.
+	 *
+	 * -1 by default
+	 */
+	int next_radar_freq;
+
+	/**
+	 * @next_radar_width: Bandwidth (MHz) the AP switches to immediately
+	 * upon radar detection on the operating channel.
+	 *
+	 * -1 by default
+	 */
+	int next_radar_width;
+
 	enum mbssid {
 		MBSSID_DISABLED = 0,
 		MBSSID_ENABLED = 1,
