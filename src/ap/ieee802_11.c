@@ -5506,6 +5506,8 @@ static void handle_auth(struct hostapd_data *hapd,
 			if (osta->flags & WLAN_STA_ASSOC)
 				hostapd_drv_sta_deauth(ohapd, osta->addr,
 						       WLAN_REASON_PREV_AUTH_NOT_VALID);
+			mlme_deauthenticate_indication(ohapd, osta,
+						       WLAN_REASON_PREV_AUTH_NOT_VALID);
 			hostapd_drv_sta_remove(ohapd, osta->addr);
 			ap_sta_remove_link_sta(ohapd, osta, false, true);
 			osta->skip_kernel_delete = true;
