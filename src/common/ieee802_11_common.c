@@ -1481,6 +1481,10 @@ int hostapd_config_he_mu_edca(struct ieee80211_he_mu_edca_parameter_set *params,
 		ac_param[2] = (u8)v;
 	}
 	else if (os_strcmp(pos, "acm") == 0) {
+		if (v < 0 || v > 1) {
+			wpa_printf(MSG_ERROR, "MU-EDCA: Invalid ACM value %d (must be 0-1)", v);
+			return -1;
+		}
 		if (v)
 			ac_param[0] |= 0x10;
 		else
