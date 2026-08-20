@@ -6745,6 +6745,19 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 #endif /* CONFIG_IEEE80211BN */
 	} else if (os_strcmp(buf, "report_connection_failures") == 0) {
 		bss->report_connection_failures = !!atoi(pos);
+	} else if (os_strcmp(buf, "post_nol_freq") == 0) {
+		conf->post_nol_freq = atoi(pos);
+	} else if (os_strcmp(buf, "post_nol_width") == 0) {
+		conf->post_nol_width = atoi(pos);
+	} else if (os_strcmp(buf, "post_nol_bgcac_en") == 0) {
+		int val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid post_nol_bgcac_en %d (0 or 1)",
+				   line, val);
+			return 1;
+		}
+		conf->post_nol_bgcac_en = val;
 	} else {
 #ifdef CONFIG_QCN_EXTN
 		if (!hostapd_config_fill_extn(conf, bss, buf, pos, line))

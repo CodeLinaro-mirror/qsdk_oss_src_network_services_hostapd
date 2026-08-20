@@ -1934,6 +1934,105 @@ static int hostapd_set_bw_reduce_en(struct hostapd_data *hapd, const char *value
 }
 
 
+/**
+ * hostapd_ctrl_iface_set_post_nol_freq - Set the post_nol frequency
+ * @hapd: Pointer to hostapd BSS data
+ * @value: Frequency in MHz
+ *
+ * Parse and apply the user provided value for post_nol_freq. Rejected on
+ * any non-5 GHz link.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int hostapd_ctrl_iface_set_post_nol_freq(struct hostapd_data *hapd,
+						const char *value)
+{
+	int val;
+	char *end = NULL;
+
+	if (!is_5ghz_freq(hapd->iface->freq)) {
+		wpa_printf(MSG_ERROR,
+			   "post_nol_freq is only applicable to the 5 GHz link");
+		return -1;
+	}
+
+	val = strtol(value, &end, 10);
+	if (value == end) {
+		wpa_printf(MSG_ERROR, "Invalid post_nol_freq value: %s", value);
+		return -1;
+	}
+
+	if (val != -1 &&
+	    (!hapd->iface->current_mode ||
+	     !hw_mode_get_channel(hapd->iface->current_mode, val, NULL)))
+		return -1;
+
+	hapd->iface->conf->post_nol_freq = val;
+	return 0;
+}
+
+
+/**
+ * hostapd_ctrl_iface_set_post_nol_width - Set the post_nol bandwidth
+ * @hapd: Pointer to hostapd BSS data
+ * @value: Bandwidth in MHz,
+ *
+ * Parse and apply the user provided value for post_nol_width. Rejected on
+ * any non-5 GHz link request.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int hostapd_ctrl_iface_set_post_nol_width(struct hostapd_data *hapd,
+						 const char *value)
+{
+	int val;
+	char *end = NULL;
+
+	if (!is_5ghz_freq(hapd->iface->freq)) {
+		wpa_printf(MSG_ERROR,
+			   "post_nol_width is only applicable to the 5 GHz link");
+		return -1;
+	}
+
+	val = strtol(value, &end, 10);
+	if (value == end) {
+		wpa_printf(MSG_ERROR, "Invalid post_nol_width value: %s", value);
+		return -1;
+	}
+
+	hapd->iface->conf->post_nol_width = val;
+	return 0;
+}
+
+
+/**
+ * hostapd_ctrl_iface_set_post_nol_bgcac_en - Enable/disable Agile CAC for
+ * post_nol channel switch
+ * @hapd: Pointer to hostapd BSS data
+ * @value: "0" to disable, "1" to enable
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int
+hostapd_ctrl_iface_set_post_nol_bgcac_en(struct hostapd_data *hapd,
+					    const char *value)
+{
+	int val;
+	char *end = NULL;
+
+	val = strtol(value, &end, 10);
+	if (value == end || *end != '\0' || (val != 0 && val != 1)) {
+		wpa_printf(MSG_ERROR,
+			   "Invalid post_nol_bgcac_en value: %s (use 0 or 1)",
+			   value);
+		return -1;
+	}
+
+	hapd->iface->conf->post_nol_bgcac_en = val;
+	return 0;
+}
+
+
 static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 {
 	char *value;
@@ -2507,6 +2606,12 @@ uhr_2xldpc_rollback:
 							hapd->conf->transition_disable);
 		} else if (os_strcasecmp(cmd, "dfs_bw_reduce_en") == 0) {
 			ret = hostapd_set_bw_reduce_en(hapd, value);
+		} else if (os_strcasecmp(cmd, "post_nol_freq") == 0) {
+			ret = hostapd_ctrl_iface_set_post_nol_freq(hapd, value);
+		} else if (os_strcasecmp(cmd, "post_nol_width") == 0) {
+			ret = hostapd_ctrl_iface_set_post_nol_width(hapd, value);
+		} else if (os_strcasecmp(cmd, "post_nol_bgcac_en") == 0) {
+			ret = hostapd_ctrl_iface_set_post_nol_bgcac_en(hapd, value);
 #ifdef CONFIG_QCN_EXTN
 		} else {
 			ret = hostapd_ctrl_iface_set_extn(hapd, cmd, value);
@@ -3509,6 +3614,22 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 	} else if (os_strcasecmp(cmd, "beacon_int") == 0) {
 		res = os_snprintf(buf, buflen, "beacon_int = %u\n",
 				  hapd->iconf->beacon_int);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "post_nol_freq") == 0) {
+		res = os_snprintf(buf, buflen, "%d\n", hapd->iface->conf->post_nol_freq);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "post_nol_width") == 0) {
+		res = os_snprintf(buf, buflen, "%d\n", hapd->iface->conf->post_nol_width);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "post_nol_bgcac_en") == 0) {
+		res = os_snprintf(buf, buflen, "%d\n",
+				  hapd->iface->conf->post_nol_bgcac_en);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
