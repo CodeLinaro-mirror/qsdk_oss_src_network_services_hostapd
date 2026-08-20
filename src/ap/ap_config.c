@@ -498,6 +498,7 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->reg_def_cli_eirp = -1;
 #endif /* CONFIG_IEEE80211AX */
 
+
 	/* The third octet of the country string uses an ASCII space character
 	 * by default to indicate that the regulations encompass all
 	 * environments for the current frequency band in the country. */
