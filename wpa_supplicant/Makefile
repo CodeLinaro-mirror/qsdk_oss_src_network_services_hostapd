@@ -462,9 +462,15 @@ endif
 endif
 
 ifdef CONFIG_PQC
-CONFIG_IEEE8021X_AUTH=y
 CONFIG_PMKSA_PRIVACY=y
+CONFIG_IEEE8021X_AUTH=y
+CONFIG_ENC_ASSOC=y
 CFLAGS += -DCONFIG_PQC
+NEED_HMAC_SHA384_KDF=y
+NEED_HMAC_SHA512_KDF=y
+NEED_SHA384=y
+NEED_SHA512=y
+NEED_OPENSSL_3_5=y
 endif
 
 ifdef CONFIG_PMKSA_PRIVACY
@@ -1278,6 +1284,16 @@ endif
 
 ifeq ($(CONFIG_TLS), openssl)
 CFLAGS += -DCRYPTO_RSA_OAEP_SHA256
+ifdef NEED_OPENSSL_3_5
+ifneq ($(OPENSSL_PREFIX),)
+CFLAGS += -I$(OPENSSL_PREFIX)/include
+LDFLAGS += -L$(OPENSSL_PREFIX)/lib -Wl,-rpath,$(OPENSSL_PREFIX)/lib
+else
+ifeq ($(shell pkg-config --atleast-version=3.5 openssl 2>/dev/null && echo yes),)
+$(error CONFIG_PQC requires OpenSSL >= 3.5; set OPENSSL_PREFIX or install OpenSSL 3.5)
+endif
+endif
+endif
 ifdef TLS_FUNCS
 CFLAGS += -DEAP_TLS_OPENSSL
 OBJS += ../src/crypto/tls_openssl.o
