@@ -10724,7 +10724,7 @@ static int i802_read_sta_data(struct i802_bss *bss,
 				return -ENOBUFS;
 		}
 	} else {
-		if (nl80211_get_sta_info(bss, data, 0, addr))
+		if (nl80211_get_sta_info(bss, data, 0xff, addr))
 			return -ENOBUFS;
 	}
 
