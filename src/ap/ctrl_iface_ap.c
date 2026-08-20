@@ -4205,7 +4205,7 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 	char *token, *context = NULL;
 	u32 mbssid_idx_disabled_bmap = 0, *mbssid_idx_bmap;
 	int ret, i, j, reorder_done_index = -1;
-	size_t num_bss;
+	size_t num_bss, max_num_bss;
 
 	if (!hapd || !hapd->iconf || !hapd->iface || !hapd->conf) {
 		wpa_printf(MSG_ERROR, "Invalid BSS");
@@ -4352,6 +4352,14 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 
 	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
 		group->txbss = hapd;
+
+	max_num_bss = (1 << hostapd_max_bssid_indicator(hapd));
+
+	/* Clear previous Tx BSS(tx_hapd) AID bitmap and init AID bitmap for new Tx BSS */
+	for (i = 0; i < max_num_bss; i++) {
+		tx_hapd->sta_aid[0] &= ~BIT(i);
+		hapd->sta_aid[0] |= BIT(i);
+	}
 
 	if (!auto_start)
 		return 0;

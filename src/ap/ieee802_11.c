@@ -6137,7 +6137,8 @@ int hostapd_get_aid(struct hostapd_data *hapd, struct sta_info *sta)
 
 	sta->aid = aid;
 	hapd->sta_aid[i] |= BIT(j);
-	wpa_printf(MSG_DEBUG, "  new AID %d", sta->aid);
+	wpa_printf(MSG_DEBUG, " new AID %d hapd:%s hapd->sta_aid[%d]:%u",
+		   sta->aid, hapd->conf->iface, i, hapd->sta_aid[i]);
 	return 0;
 }
 
