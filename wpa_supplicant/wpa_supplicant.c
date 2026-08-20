@@ -7316,10 +7316,19 @@ int wpa_supplicant_driver_init(struct wpa_supplicant *wpa_s)
 
 	wpa_drv_mark_ppe_vp_type(wpa_s, wpa_s->conf->ppe_vp);
 #ifdef CONFIG_QCN_EXTN
+	wpa_printf(MSG_DEBUG,
+		   "DEBUG_DIAG_STA: wpa_supplicant_driver_init ifname=%s conf->diagnostic_sta_vap=%d\n",
+		   wpa_s->ifname, wpa_s->conf->diagnostic_sta_vap);
 	if (wpa_s->conf->diagnostic_sta_vap) {
 		wpa_printf(MSG_DEBUG,
 			   "DEBUG_DIAG_STA: wpa_supplicant_driver_init ifname=%s conf->diagnostic_sta_vap=%d",
 			   wpa_s->ifname, wpa_s->conf->diagnostic_sta_vap);
+		if (wpas_diagnostic_sta_vap_has_mlo_network_extn(wpa_s)) {
+			wpa_printf(MSG_ERROR,
+				   "DEBUG_DIAG_STA: ifname=%s refusing to enable -- MLO STA network configured",
+				   wpa_s->ifname);
+			return -1;
+		}
 		wpa_drv_mark_diagnostic_sta_vap(wpa_s, 1);
 	}
 #endif /* CONFIG_QCN_EXTN */
