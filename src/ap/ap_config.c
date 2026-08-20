@@ -542,6 +542,8 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->post_nol_freq = -1;
 	conf->post_nol_width = -1;
 	conf->post_nol_bgcac_en = 1;
+	conf->next_radar_freq = -1;
+	conf->next_radar_width = -1;
 
 	hostapd_set_and_check_bw320_offset(conf, 0);
 #ifdef CONFIG_QCN_EXTN

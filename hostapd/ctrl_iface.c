@@ -2033,6 +2033,81 @@ hostapd_ctrl_iface_set_post_nol_bgcac_en(struct hostapd_data *hapd,
 }
 
 
+/**
+ * hostapd_ctrl_iface_set_next_radar_freq - Set the next-radar frequency
+ * @hapd: Pointer to hostapd BSS data
+ * @value: Frequency in MHz
+ *
+ * Parse and apply the user provided value for next_radar_freq.
+ * Rejected on any non-5 GHz link, and if @value does not resolve to a
+ * channel known in the current mode.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int hostapd_ctrl_iface_set_next_radar_freq(struct hostapd_data *hapd,
+						   const char *value)
+{
+	int val;
+	char *end = NULL;
+
+	if (!is_5ghz_freq(hapd->iface->freq)) {
+		wpa_printf(MSG_ERROR,
+			   "next_radar_freq is only applicable to the 5 GHz link");
+		return -1;
+	}
+
+	val = strtol(value, &end, 10);
+	if (value == end) {
+		wpa_printf(MSG_ERROR, "Invalid next_radar_freq value: %s",
+			   value);
+		return -1;
+	}
+
+	if (val != -1 &&
+	    (!hapd->iface->current_mode ||
+	     !hw_mode_get_channel(hapd->iface->current_mode, val, NULL)))
+		return -1;
+
+	hapd->iface->conf->next_radar_freq = val;
+	return 0;
+}
+
+
+/**
+ * hostapd_ctrl_iface_set_next_radar_width - Set the target next-radar
+ * bandwidth
+ * @hapd: Pointer to hostapd BSS data
+ * @value: Bandwidth in MHz
+ *
+ * Parse and apply the user provided value for next_radar_width.
+ * Rejected on any non-5 GHz link request.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int hostapd_ctrl_iface_set_next_radar_width(struct hostapd_data *hapd,
+						    const char *value)
+{
+	int val;
+	char *end = NULL;
+
+	if (!is_5ghz_freq(hapd->iface->freq)) {
+		wpa_printf(MSG_ERROR,
+			   "next_radar_width is only applicable to the 5 GHz link");
+		return -1;
+	}
+
+	val = strtol(value, &end, 10);
+	if (value == end) {
+		wpa_printf(MSG_ERROR, "Invalid next_radar_width value: %s",
+			   value);
+		return -1;
+	}
+
+	hapd->iface->conf->next_radar_width = val;
+	return 0;
+}
+
+
 static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 {
 	char *value;
@@ -2612,6 +2687,10 @@ uhr_2xldpc_rollback:
 			ret = hostapd_ctrl_iface_set_post_nol_width(hapd, value);
 		} else if (os_strcasecmp(cmd, "post_nol_bgcac_en") == 0) {
 			ret = hostapd_ctrl_iface_set_post_nol_bgcac_en(hapd, value);
+		} else if (os_strcasecmp(cmd, "next_radar_freq") == 0) {
+			ret = hostapd_ctrl_iface_set_next_radar_freq(hapd, value);
+		} else if (os_strcasecmp(cmd, "next_radar_width") == 0) {
+			ret = hostapd_ctrl_iface_set_next_radar_width(hapd, value);
 #ifdef CONFIG_QCN_EXTN
 		} else {
 			ret = hostapd_ctrl_iface_set_extn(hapd, cmd, value);
@@ -3630,6 +3709,15 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 	} else if (os_strcasecmp(cmd, "post_nol_bgcac_en") == 0) {
 		res = os_snprintf(buf, buflen, "%d\n",
 				  hapd->iface->conf->post_nol_bgcac_en);
+	} else if (os_strcmp(cmd, "next_radar_freq") == 0) {
+		res = os_snprintf(buf, buflen, "%d\n",
+				  hapd->iface->conf->next_radar_freq);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcmp(cmd, "next_radar_width") == 0) {
+		res = os_snprintf(buf, buflen, "%d\n",
+				  hapd->iface->conf->next_radar_width);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
