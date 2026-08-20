@@ -230,8 +230,6 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 		bss = wpa_s->cache_cwork->bss;
 		if (!is_zero_ether_addr(bss->mld_addr)) {
 			for_each_link(bss->valid_links, i) {
-				if (wpa_ucode_call_prepare("pre_connect_state"))
-					return;
 				if (bss->mld_links[i].freq == 0)
 					continue;
 
@@ -262,6 +260,19 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 									      bss->mld_links[i].center_freq2_idx);
 				}
 
+				if (bss->mld_links[i].width == CHAN_WIDTH_UNKNOWN ||
+				    center_freq1 <= 0) {
+					wpa_printf(MSG_INFO,
+						   "%s: skip PRE_CONNECT notify for MLO link %d due to incomplete "
+						   "chandef freq=%d width=%d cf1_idx=%u cf2_idx=%u cf1=%d cf2=%d",
+						   __func__, i, bss->mld_links[i].freq,
+						   bss->mld_links[i].width,
+						   bss->mld_links[i].center_freq1_idx,
+						   bss->mld_links[i].center_freq2_idx,
+						   center_freq1, center_freq2);
+					continue;
+				}
+
 				if (wpas_link_uses_nol_channel_extn(wpa_s,
 								    bss->mld_links[i].freq,
 								    bss->mld_links[i].width,
@@ -271,6 +282,9 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 						   i, bss->mld_links[i].freq);
 					continue;
 				}
+
+				if (wpa_ucode_call_prepare("pre_connect_state"))
+					return;
 
 				state = wpa_supplicant_state_txt(wpa_s->wpa_state);
 				uc_value_push(ucv_get(ucv_string_new(wpa_s->ifname)));
