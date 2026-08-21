@@ -1194,6 +1194,7 @@ static inline int wpa_drv_set_secure_ranging_ctx(struct wpa_supplicant *wpa_s,
 	params.tk = tk;
 	params.ltf_keyseed_len = ltf_keyseed_len;
 	params.ltf_keyseed = ltf_keyseed;
+	params.link_id = -1;
 
 	return wpa_s->driver->set_secure_ranging_ctx(wpa_s->drv_priv, &params);
 }

@@ -4141,6 +4141,7 @@ struct pasn_auth {
  * @tk: Temporal key buffer.
  * @ltf_keyseed_len: Length of LTF keyseed.
  * @ltf_keyeed: LTF keyseed buffer.
+ * @link_id: MLO link ID, or -1 if not applicable.
  */
 struct secure_ranging_params {
 	u32 action;
@@ -4151,6 +4152,7 @@ struct secure_ranging_params {
 	const u8 *tk;
 	u8 ltf_keyseed_len;
 	const u8 *ltf_keyseed;
+	int link_id;
 };
 
 /* enum nested_attr - Used to specify if subcommand uses nested attributes */
