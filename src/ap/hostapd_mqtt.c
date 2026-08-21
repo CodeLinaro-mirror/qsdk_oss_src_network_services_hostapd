@@ -517,6 +517,90 @@ build_resp:
 	mqtt_tlv_message_free(resp);
 }
 
+static void hostapd_mqtt_handle_neighbor_db_clear(struct hostapd_data *hapd,
+						  struct mqtt_tlv_message *msg)
+{
+	u8 ap_alid[ETH_ALEN], smd_id[ETH_ALEN], mld_addr[ETH_ALEN], bssid[ETH_ALEN];
+	u8 has_smd_id = 0, has_mld_addr = 0, has_bssid = 0;
+	u8 status = EZHIF_STATUS_OK;
+	const u8 *scope_addr = NULL;
+
+	wpa_printf(MSG_INFO, "MQTT: CMD_NEIGHBOR_DB_CLEAR received");
+	if (mqtt_tlv_get_mac(msg, TLV_NEIGHBOR_DB_CLEAR_AP_ALID, ap_alid) < 0 ||
+	    mqtt_tlv_get_u8(msg, TLV_NEIGHBOR_DB_CLEAR_HAS_SMD_ID, &has_smd_id) < 0) {
+		status = EZHIF_STATUS_INVALID_PARAM;
+		goto out;
+	}
+
+	if (has_smd_id) {
+		if (mqtt_tlv_get_mac(msg, TLV_NEIGHBOR_DB_CLEAR_SMD_ID, smd_id) < 0) {
+			status = EZHIF_STATUS_INVALID_PARAM;
+			goto out;
+		}
+	} else {
+		os_memset(smd_id, 0, ETH_ALEN);
+	}
+
+	if (mqtt_tlv_get_u8(msg, TLV_NEIGHBOR_DB_CLEAR_HAS_MLD_ADDR, &has_mld_addr) < 0) {
+		status = EZHIF_STATUS_INVALID_PARAM;
+		goto out;
+	}
+	if (has_mld_addr) {
+		if (mqtt_tlv_get_mac(msg, TLV_NEIGHBOR_DB_CLEAR_MLD_ADDR, mld_addr) < 0) {
+			status = EZHIF_STATUS_INVALID_PARAM;
+			goto out;
+		}
+	} else {
+		os_memset(mld_addr, 0, ETH_ALEN);
+	}
+
+	if (mqtt_tlv_get_u8(msg, TLV_NEIGHBOR_DB_CLEAR_HAS_BSSID, &has_bssid) < 0) {
+		status = EZHIF_STATUS_INVALID_PARAM;
+		goto out;
+	}
+	if (has_bssid) {
+		if (mqtt_tlv_get_mac(msg, TLV_NEIGHBOR_DB_CLEAR_BSSID, bssid) < 0) {
+			status = EZHIF_STATUS_INVALID_PARAM;
+			goto out;
+		}
+	} else {
+		os_memset(bssid, 0, ETH_ALEN);
+	}
+	wpa_printf(MSG_INFO,
+		   "NeighborDB CLEAR: ap_alid=" MACSTR " has_smd=%u smd_id=" MACSTR
+		   " has_mld=%u mld=" MACSTR " has_bssid=%u bssid=" MACSTR,
+		   MAC2STR(ap_alid), has_smd_id, MAC2STR(smd_id),
+		   has_mld_addr, MAC2STR(mld_addr), has_bssid, MAC2STR(bssid));
+
+	if (has_smd_id) {
+		if (is_zero_ether_addr(smd_id)) {
+			status = EZHIF_STATUS_INVALID_PARAM;
+			goto out;
+		}
+		scope_addr = smd_id;
+	} else if (has_mld_addr) {
+		if (is_zero_ether_addr(mld_addr)) {
+			status = EZHIF_STATUS_INVALID_PARAM;
+			goto out;
+		}
+		scope_addr = mld_addr;
+	} else if (has_bssid) {
+		if (is_zero_ether_addr(bssid)) {
+			status = EZHIF_STATUS_INVALID_PARAM;
+			goto out;
+		}
+		scope_addr = bssid;
+	}
+	hostapd_free_neighbor_db_nonself_scoped(hapd, has_smd_id, has_mld_addr,
+						has_bssid, scope_addr);
+
+	ieee802_11_set_beacon(hapd);
+
+out:
+	wpa_printf(MSG_INFO, "NeighborDB CLEAR: complete status=%u", status);
+	mqtt_publish_simple_status(hapd, EVT_ID_NEIGHBOR_DB_CLEAR_RESP,
+				   TLV_NEIGHBOR_DB_CLEAR_RESP_STATUS, status);
+}
 
 static void hostapd_mqtt_sys_cmd(struct hapd_interfaces *interfaces,
 				 uint16_t msg_type,
@@ -545,6 +629,9 @@ static void hostapd_mqtt_smd_cmd(struct hapd_interfaces *interfaces,
 		break;
 	case CMD_ID_NEIGHBOR_DB_GET:
 		hostapd_mqtt_handle_neighbor_db_get(interfaces, hapd, msg);
+		break;
+	case CMD_ID_NEIGHBOR_DB_CLEAR:
+		hostapd_mqtt_handle_neighbor_db_clear(hapd, msg);
 		break;
 	default:
 		break;
