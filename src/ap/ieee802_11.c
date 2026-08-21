@@ -5620,6 +5620,20 @@ static void handle_auth(struct hostapd_data *hapd,
 			goto fail;
 		}
 	}
+#ifdef CONFIG_HOSTAPD_IF
+#ifdef CONFIG_SAE
+	/*
+	 * If a plugin response is still pending for this STA, drop the frame
+	 * immediately without forwarding it.
+	 */
+	if (sta && sta->sae && sta->sae->plugin_wait) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: SAE " MACSTR " - dropping frame, plugin response pending",
+			   __func__, MAC2STR(sta->addr));
+		return;
+	}
+#endif /* CONFIG_SAE */
+#endif
 
 #if defined(CONFIG_ENC_ASSOC) || defined(CONFIG_IEEE8021X_AUTH)
 	if (auth_alg == WLAN_AUTH_EPPKE || auth_alg == WLAN_AUTH_802_1X) {

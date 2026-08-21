@@ -625,6 +625,11 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	ap_sta_clear_disconnect_timeouts(hapd, sta);
 	ap_sta_clear_assoc_timeout(hapd, sta);
 	sae_clear_retransmit_timer(hapd, sta);
+#ifdef CONFIG_HOSTAPD_IF
+#ifdef CONFIG_SAE
+	hostapd_if_sae_clear_plugin_wait(hapd, sta);
+#endif /* CONFIG_SAE */
+#endif /* CONFIG_HOSTAPD_IF */
 	if (hapd->iface->drv_flags == WPA_DRIVER_FLAGS_WIRED) {
 		eloop_cancel_timeout(hostapd_mac_auth_timeout, hapd, sta);
 	}
