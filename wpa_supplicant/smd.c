@@ -1576,6 +1576,7 @@ int wpas_smd_request_prepare(struct wpa_supplicant *wpa_s, const u8 *bssid,
 	int ret = -1;
 	size_t prepared_count = 0;
 	struct wpa_bss *target_bss;
+	u8 target_mld_addr[ETH_ALEN];
 
 	if (!wpa_s || !bssid) {
 		wpa_printf(MSG_ERROR, "SMD: Invalid parameters for SMD preparation");
@@ -1660,8 +1661,20 @@ int wpas_smd_request_prepare(struct wpa_supplicant *wpa_s, const u8 *bssid,
 		os_memcpy(target->serving_bssid, wpa_s->bssid, ETH_ALEN);
 
 	os_memset(&params, 0, sizeof(params));
+
+        /* Derive target MLD address from target BSS - copy to local static array */
+        if (!is_zero_ether_addr(target_bss->mld_addr)) {
+                os_memcpy(target_mld_addr, target_bss->mld_addr, ETH_ALEN);
+        } else {
+                /* Fallback to BSSID if MLD address not available */
+                os_memcpy(target_mld_addr, target_bss->bssid, ETH_ALEN);
+        }
+
+	wpa_printf(MSG_DEBUG, "SMD: target MLD address: " MACSTR, MAC2STR(target_mld_addr));
+        os_memcpy(target->target_mld_addr, target_mld_addr, ETH_ALEN);
+
 	params.bssid = target->bssid;
-	params.target_mld_addr = NULL; /* Derive as needed */
+	params.target_mld_addr = target_mld_addr;
 	params.no_dl_sn = no_dl_sn;
 	params.no_ul_sn = no_ul_sn;
 	params.is_preferred_target = 1;
@@ -2274,10 +2287,10 @@ static void smd_bss_transition_work_cb(struct wpa_radio_work *work, int deinit)
 
 	if (ctx->is_exec) {
 		target = wpas_smd_get_prepared_target(wpa_s, ctx->bssid);
-		if (!target || target->state != SMD_TARGET_PREPARED) {
+		if (!target) {
 			wpa_printf(MSG_ERROR,
 				   "SMD: smd-bss-transition work: EXEC target "
-				   MACSTR " not in PREPARED state",
+				   MACSTR " not in PREPARED or EXEC Pending or invalid state",
 				   MAC2STR(ctx->bssid));
 			goto done;
 		}
@@ -2316,16 +2329,48 @@ static void smd_bss_transition_work_cb(struct wpa_radio_work *work, int deinit)
 			   MACSTR, MAC2STR(ctx->bssid));
 	}
 
-	if (ctx->is_exec)
+	if (ctx->is_exec && ctx->exec_path &&
+	    target->state == SMD_TARGET_PREPARED &&
+	    target->state != SMD_TARGET_EXEC_PENDING) {
+		/*
+		 * exec_path=1 (direct to target AP): first drive all links to
+		 * the TAP via wpas_smd_roam(role=3) — the kernel/driver
+		 * transitions every link locally and synchronously (mirrors
+		 * the auto-roam path in smd_handle_prepare_response()).  Only
+		 * once the STA is actually present on the TAP links can the
+		 * ST Execution Request frame be sent to it, so the OTA send
+		 * below must be chained after wpas_smd_roam() succeeds rather
+		 * than substituted for it.
+		 */
+		ret = wpas_smd_roam(wpa_s, target->target_mld_addr,
+				    3, ctx->exec_path, true, true, 0);
+		if (ret)
+			wpa_printf(MSG_DEBUG,
+				   "SMD: wpas_smd_roam failed for " MACSTR,
+				   MAC2STR(target->target_mld_addr));
+		else {
+			target = wpas_smd_get_prepared_target(wpa_s, ctx->bssid);
+			if (target) {
+				target->auto_exec_path = ctx->exec_path;
+				target->state = SMD_TARGET_EXEC_PENDING;
+			}
+			wpa_printf(MSG_DEBUG,
+				   "SMD: wpas_smd_roam notified driver for , exec path: %d"
+				   MACSTR, MAC2STR(target->target_mld_addr),
+				   target->auto_exec_path);
+		}
+	} else if (ctx->is_exec) {
 		ret = wpas_uhr_link_reconfig_exec_request(wpa_s, ctx->bssid,
 							  no_dl_sn, no_ul_sn,
 							  reconfig_ptr, preferred);
-	else
+	} else {
 		ret = wpas_uhr_link_reconfig_prep_request(wpa_s, ctx->bssid,
 							  no_dl_sn, no_ul_sn,
 							  NULL, reconfig_ptr,
 							  NULL, NULL,
 							  max_links, preferred);
+	}
+
 	if (ret < 0) {
 		wpa_printf(MSG_ERROR,
 			   "SMD: smd-bss-transition work: %s failed",
@@ -2580,8 +2625,9 @@ smd_handle_transition_complete(struct wpa_supplicant *wpa_s,
 	smd_cancel_drain_watchdog(wpa_s, target);
 
 	wpa_printf(MSG_INFO,
-		   "SMD: Transition complete for target " MACSTR "ptk set: %d",
-		   MAC2STR(target->target_mld_addr), target->ptk_set);
+		   "SMD: Transition complete for target " MACSTR "ptk set: %d auto exec path: %d",
+		   MAC2STR(target->target_mld_addr), target->ptk_set,
+		   target->auto_exec_path);
 
 	/* Primary link PTK installation: when there are no transitioning
 	 * links (single-link or all-primary case), PTK was not installed
@@ -2703,6 +2749,34 @@ smd_handle_transition_complete(struct wpa_supplicant *wpa_s,
 	 * the driver uses the correct (new) AP MLD address.
 	 */
 	wpa_drv_set_supp_port(wpa_s, 1);
+
+	wpa_printf(MSG_DEBUG, "UHR: SMD: "
+		   "state=%d is roam=%d ST execute with - target=" MACSTR,
+		   target->state, wpa_s->roam_in_progress,
+		   MAC2STR(target->target_mld_addr));
+	if (target->auto_exec_path &&
+	    target->state == SMD_TARGET_EXEC_PENDING) {
+		/*
+		 * ROAM ST path: auto-execute is imminent, begin transition
+		 * tracking now so roam latency is measured correctly.
+		 */
+		target->transition_complete_pending = true;
+		smd_set_state(wpa_s, SMD_STATE_TRANSITIONING);
+		os_get_reltime(&wpa_s->roam_start);
+		wpa_s->roam_in_progress = 1;
+		os_memcpy(wpa_s->pending_bssid, target->target_mld_addr,
+			  ETH_ALEN);
+
+		wpa_printf(MSG_DEBUG, "UHR: SMD:"
+			   " state=%d is roam=%d ST execute with - target=" MACSTR,
+			   target->state, wpa_s->roam_in_progress,
+			   MAC2STR(target->target_mld_addr));
+
+		eloop_cancel_timeout(smd_st_roam_execute_work, wpa_s, NULL);
+		eloop_register_timeout(0, 0, smd_st_roam_execute_work,
+				       wpa_s, NULL);
+		return;
+	}
 
 	if (target->gkd && target->gkd_len > 0) {
 		u16 gtk_links = target->partner_gtk_installed
@@ -2828,6 +2902,23 @@ void smd_handle_transition_status(struct wpa_supplicant *wpa_s,
 				   MAC2STR(info->target_mld_addr));
 			break;
 		}
+		/*
+		 * exec_path=1 race: the kernel fires NL80211_CMD_SMD_TRANSITION_DONE
+		 * before delivering the ST Execution Response frame.  If the EXEC
+		 * response has not been processed yet (state is still EXEC_PENDING),
+		 * defer the complete handler; smd_handle_execute_response() will call
+		 * it once the response has been parsed.
+		 */
+		if (target->state == SMD_TARGET_EXEC_PENDING &&
+		    !target->auto_exec_path) {
+			wpa_printf(MSG_DEBUG,
+				   "SMD: TRANSITION_DONE arrived before EXEC "
+				   "response for " MACSTR " — deferring",
+				   MAC2STR(info->target_mld_addr));
+			target->transition_complete_pending = true;
+			break;
+		}
+
 		smd_handle_transition_complete(wpa_s, target);
 		break;
 	case SMD_TRANSITION_ABORT:
@@ -3538,10 +3629,10 @@ static void smd_st_roam_execute_work(void *eloop_ctx, void *timeout_ctx)
 	 * preferred target — the ROAM command is for a specific AP.
 	 */
 	target = wpas_smd_get_prepared_target(wpa_s, wpa_s->pending_bssid);
-	if (!target || target->state != SMD_TARGET_PREPARED) {
+	if (!target) {
 		wpa_printf(MSG_WARNING,
 			   "SMD: ST roam execute work: " MACSTR
-			   " not in PREPARED state",
+			   " not in PREPARED/EXEC Pending state or target is invalid",
 			   MAC2STR(wpa_s->pending_bssid));
 		return;
 	}
@@ -3554,6 +3645,50 @@ static void smd_st_roam_execute_work(void *eloop_ctx, void *timeout_ctx)
 				     target->auto_exec_path, 0xFF) < 0)
 		wpa_printf(MSG_ERROR,
 			   "SMD: ST roam execute work: failed to send ST Execute");
+}
+
+/**
+ * wpas_smd_roam - Issue NL80211_CMD_SMD_ROAM from supplicant context.
+ * @wpa_s: supplicant instance
+ * @peer_mld_addr: MLD address of the AP that is the subject of this
+ *                 notification (SAP for pre-transition, TAP for
+ *                 post-transition, depending on @role/@type)
+ * @role: SMD role encoding expected by the driver
+ *        (matches ath12k's SMD_ROAM_CONFIG_ROLE_*)
+ * @type: driver-defined phase/type (matches ath12k's SMD_ROAM_CONFIG_TYPE_*)
+ * @dl_sn_not_transferred: true if DL sequence numbers were NOT transferred
+ * @ul_sn_not_transferred: true if UL sequence numbers were NOT transferred
+ * @dl_drain_time: DL drain duration in TU, 0 if unused for this phase
+ *
+ * Thin wpa_supplicant-side counterpart of hostapd_smd_roam().  Builds a
+ * hostapd_smd_roam_params (the struct is shared, declared in driver.h) and
+ * dispatches to the shared nl80211 driver op registered by
+ * wpa_driver_nl80211_ops.smd_roam.
+ *
+ * Returns 0 on success, -1 if the driver has no smd_roam op or the
+ * command failed.
+ */
+int wpas_smd_roam(struct wpa_supplicant *wpa_s, const u8 *peer_mld_addr,
+		  u32 role, u32 type,
+		  bool dl_sn_not_transferred, bool ul_sn_not_transferred,
+		  u32 dl_drain_time)
+{
+	struct hostapd_smd_roam_params params;
+
+	if (!wpa_s || !peer_mld_addr || !wpa_s->driver ||
+	    !wpa_s->driver->smd_roam)
+		return -1;
+
+	os_memset(&params, 0, sizeof(params));
+	params.role = 3; //STA specific
+	params.type = type;
+	params.dl_sn_not_transferred = dl_sn_not_transferred;
+	params.ul_sn_not_transferred = ul_sn_not_transferred;
+	params.dl_drain_time = dl_drain_time;
+	params.n_macs = 1;
+	os_memcpy(params.mac[0], peer_mld_addr, ETH_ALEN);
+
+	return wpa_s->driver->smd_roam(wpa_s->drv_priv, &params);
 }
 
 static void smd_handle_prepare_response(struct wpa_supplicant *wpa_s,
@@ -3932,27 +4067,34 @@ static void smd_handle_prepare_response(struct wpa_supplicant *wpa_s,
 		MAC2STR(target->target_mld_addr), target->aid,
 		target->prepared_links);
 
-	if (target->is_preferred_target) {
-		/*
-		 * ROAM ST path: auto-execute is imminent, begin transition
-		 * tracking now so roam latency is measured correctly.
-		 */
-		smd_set_state(wpa_s, SMD_STATE_TRANSITIONING);
-		os_get_reltime(&wpa_s->roam_start);
-		wpa_s->roam_in_progress = 1;
-		os_memcpy(wpa_s->pending_bssid, target->target_mld_addr,
-			  ETH_ALEN);
+	if (!target->is_preferred_target)
+		return;
 
-		wpa_printf(MSG_DEBUG, "UHR: SMD: ST Preparation - target=" MACSTR
-			   " state=%d is roam=%d ST execute with - target=" MACSTR,
-			   MAC2STR(target->target_mld_addr), target->state,
-			   wpa_s->roam_in_progress,
-			   MAC2STR(target->target_mld_addr));
+	/*
+	 * ROAM ST path (both exec_path=0 via SAP and exec_path=1 via TAP):
+	 * auto-execute is imminent, begin transition tracking now so roam
+	 * latency is measured correctly.  smd_st_roam_execute_work() calls
+	 * wpas_smd_request_execute(), which queues smd_bss_transition_work_cb()
+	 * — that callback drives the driver roam notification (wpas_smd_roam())
+	 * for exec_path=1 AND sends the ST Execution Request frame for both
+	 * exec paths.  Do not short-circuit to wpas_smd_roam() directly here:
+	 * that would notify the driver but never enqueue the OTA frame.
+	 */
+	smd_set_state(wpa_s, SMD_STATE_TRANSITIONING);
+	os_get_reltime(&wpa_s->roam_start);
+	wpa_s->roam_in_progress = 1;
+	os_memcpy(wpa_s->pending_bssid, target->target_mld_addr,
+		  ETH_ALEN);
 
-		eloop_cancel_timeout(smd_st_roam_execute_work, wpa_s, NULL);
-		eloop_register_timeout(0, 0, smd_st_roam_execute_work,
-				       wpa_s, NULL);
-	}
+	wpa_printf(MSG_DEBUG, "UHR: SMD: ST Preparation - target=" MACSTR
+		   " state=%d is roam=%d ST execute with - target=" MACSTR,
+		   MAC2STR(target->target_mld_addr), target->state,
+		   wpa_s->roam_in_progress,
+		   MAC2STR(target->target_mld_addr));
+
+	eloop_cancel_timeout(smd_st_roam_execute_work, wpa_s, NULL);
+	eloop_register_timeout(0, 0, smd_st_roam_execute_work,
+			       wpa_s, NULL);
 	/*
 	 * Non-preferred (SMD_PREPARE path): stay in ASSOCIATED state.
 	 * Transition tracking begins when the user calls SMD_EXECUTE.
@@ -4001,14 +4143,6 @@ int wpas_smd_request_execute(struct wpa_supplicant *wpa_s,
 		return -1;
 	}
 
-	if (target->state != SMD_TARGET_PREPARED) {
-		wpa_printf(MSG_ERROR,
-			   "SMD: Cannot execute - target " MACSTR
-			   " not in PREPARED state (current: %d)",
-			   MAC2STR(bssid), target->state);
-		return -1;
-	}
-
 	wpa_printf(MSG_INFO,
 		   "SMD: ST Execution queued for " MACSTR
 		   " (path=%d dl_tid_bitmap=0x%02x)",
@@ -4025,6 +4159,7 @@ int wpas_smd_request_execute(struct wpa_supplicant *wpa_s,
 	os_memcpy(ctx->bssid, bssid, ETH_ALEN);
 	ctx->is_exec = true;
 	ctx->exec_path = exec_path;
+	target->auto_exec_path = exec_path;
 	ctx->dl_tid_bitmap = dl_tid_bitmap;
 
 	if (radio_add_work(wpa_s, 0, "smd-bss-transition", 1,
@@ -4318,7 +4453,8 @@ static void smd_handle_execute_response(struct wpa_supplicant *wpa_s,
 		}
 	}
 
-	if (target->dl_drain_duration_valid && target->dl_drain_duration > 0) {
+	if (target->dl_drain_duration_valid && target->dl_drain_duration > 0 &&
+	    !target->auto_exec_path) {
 		/*
 		 * Install PTK for partner links if deferred from PREP
 		 * (PENDING state at PREP time: non-preferred target or SLO).
@@ -4395,6 +4531,20 @@ static void smd_handle_execute_response(struct wpa_supplicant *wpa_s,
 			   MAC2STR(target->target_mld_addr),
 			   target->transitioning_links,
 			   target->latest_ul_sn_tid_bitmap);
+	}
+
+	/*
+	 * exec_path=1 deferred completion: if NL80211_CMD_SMD_TRANSITION_DONE
+	 * arrived before this EXEC response was processed, fire the complete
+	 * handler now that all EXEC response state has been installed.
+	 */
+	if (target->transition_complete_pending) {
+		wpa_printf(MSG_DEBUG,
+			   "SMD: Firing deferred TRANSITION_DONE for " MACSTR,
+			   MAC2STR(target->target_mld_addr));
+		target->transition_complete_pending = false;
+		smd_handle_transition_complete(wpa_s, target);
+		return;
 	}
 
 	/* Notify control interface and upper layers */
