@@ -25,6 +25,7 @@
 #ifdef CONFIG_IEEE80211AX
 #include "robust_av.h"
 #endif
+#include "uhr_utils.h"
 
 /* STA flags */
 #define WLAN_STA_AUTH BIT(0)
@@ -228,8 +229,6 @@ struct smd_caps {
 };
 
 /* SMD (Seamless Mobility Domain) station information */
-
-#include "uhr_utils.h"
 
 /* SMD (Seamless Multiband Device) station information */
 struct smd_info {
