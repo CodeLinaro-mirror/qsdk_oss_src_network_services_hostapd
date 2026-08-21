@@ -28,6 +28,9 @@
 #include "ap/ap_config.h"
 #include "ap/ap_drv_ops.h"
 #include "ap/dpp_hostapd.h"
+#ifdef CONFIG_IEEE80211BN
+#include "common/uhr_stats.h"
+#endif /* CONFIG_IEEE80211BN */
 #include "fst/fst.h"
 #include "config_file.h"
 #include "eap_register.h"
@@ -575,6 +578,11 @@ static int hostapd_global_init(struct hapd_interfaces *interfaces,
 	global.drv_priv = os_calloc(global.drv_count, sizeof(void *));
 	if (global.drv_priv == NULL)
 		return -1;
+
+#ifdef CONFIG_IEEE80211BN
+	dl_list_init(&interfaces->smd_sta_roam_records);
+	interfaces->smd_sta_roam_max_records = SMD_ARCHIVE_MAX_RECORDS;
+#endif /* CONFIG_IEEE80211BN */
 
 	return 0;
 }
@@ -1306,6 +1314,9 @@ int main(int argc, char *argv[])
 
 	if (interfaces.eloop_initialized)
 		eloop_cancel_timeout(hostapd_periodic, &interfaces, NULL);
+#ifdef CONFIG_IEEE80211BN
+	hostapd_interfaces_smd_archive_free(&interfaces);
+#endif /* CONFIG_IEEE80211BN */
 	hostapd_global_deinit(pid_file, interfaces.eloop_initialized);
 	os_free(pid_file);
 

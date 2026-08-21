@@ -9409,7 +9409,6 @@ struct nl80211_smd_ts_ring {
 	__u8  pad[6];
 } __attribute__((packed));
 
-#ifdef CONFIG_ATH12K_SMD_DP_DEBUG
 /**
  * struct nl80211_smd_vendor_ctx - vendor-specific context fields
  *
@@ -9430,9 +9429,7 @@ struct nl80211_smd_vendor_ctx {
 	__u8  ul_mgmt_pn[16];
 	__u16 dl_data_lsn_offset[8];
 } __attribute__((packed));
-#endif /* CONFIG_ATH12K_SMD_DP_DEBUG */
 
-#ifdef CONFIG_ATH12K_SMD_DP_DEBUG
 /**
  * struct nl80211_smd_ctx_snapshot - transport container for one ath12k_smd_ctx.
  *
@@ -9468,7 +9465,6 @@ struct nl80211_smd_ctx_snapshot {
 	/* Vendor ctx v1 scalars (ul_reo_bmap excluded — use kernel debugfs) */
 	struct nl80211_smd_vendor_ctx vendor;
 } __attribute__((packed));
-#endif /* CONFIG_ATH12K_SMD_DP_DEBUG */
 
 struct nl80211_smd_stats {
 	__u32 iface_type;
@@ -9595,13 +9591,11 @@ struct nl80211_smd_stats {
 	__u16 mac_ap_pad[1]; /* was [2]; one slot consumed by mac_ap_l2_update_sent */
 	struct nl80211_smd_ts_ring mac_ap_l2_update_sent_ts;
 
-#ifdef CONFIG_ATH12K_SMD_DP_DEBUG
 	/* DP context snapshots — only populated on per-STA queries (valid == 1) */
 	struct nl80211_smd_ctx_snapshot sap_prep_ctx;
 	struct nl80211_smd_ctx_snapshot sap_exec_ctx;
 	struct nl80211_smd_ctx_snapshot tap_prep_ctx;
 	struct nl80211_smd_ctx_snapshot tap_exec_ctx;
-#endif /* CONFIG_ATH12K_SMD_DP_DEBUG */
 } __attribute__((packed));
 
 /**

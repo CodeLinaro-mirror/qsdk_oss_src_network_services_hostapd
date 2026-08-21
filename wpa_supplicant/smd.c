@@ -1383,89 +1383,6 @@ int smd_ctrl_iface_status(struct wpa_supplicant *wpa_s,
 	return pos - buf;
 }
 
-
-/* Append "(reason1,reason2,...)" from a reason ring directly after a counter.
- * Writes nothing if the ring is empty. */
-#define WPAS_DISP_REASONS(buf, len, buflen, ring, head, str_arr) do {    \
-	int _i, _n = 0;                                                  \
-	int _vals[SMD_REASON_SIZE];                                      \
-	for (_i = 0; _i < SMD_REASON_SIZE; _i++) {                       \
-		int _sl = ((int)(head) - 1 - _i +                       \
-			   SMD_REASON_SIZE * 2) % SMD_REASON_SIZE;       \
-		unsigned int _v = (unsigned int)(ring)[_sl];             \
-		if (_v == 0) break;                                      \
-		_vals[_n++] = (int)_v;                                   \
-	}                                                                \
-	if (_n > 0) {                                                    \
-		int _r = os_snprintf((buf) + (len), (buflen) - (len),   \
-				     "(");                               \
-		if (_r > 0 && (size_t)_r < (buflen) - (len)) (len) += _r;\
-		for (_i = 0; _i < _n; _i++) {                            \
-			unsigned int _v = (unsigned int)_vals[_i];       \
-			const char *_s = (_v < ARRAY_SIZE(str_arr))      \
-					 ? (str_arr)[_v] : "?";          \
-			_r = os_snprintf((buf) + (len), (buflen) - (len),\
-					 "%s%s", _i ? "," : "", _s);    \
-			if (_r > 0 && (size_t)_r < (buflen) - (len))    \
-				(len) += _r;                             \
-		}                                                        \
-		_r = os_snprintf((buf) + (len), (buflen) - (len), ")"); \
-		if (_r > 0 && (size_t)_r < (buflen) - (len)) (len) += _r;\
-	}                                                                \
-} while (0)
-
-/**
- * __WPAS_DISP_TS - core body to write timestamps of different types
- * @buf: output buffer
- * @len: current write offset into buf
- * @buflen: total size of buf
- * @ring: ring entry
- * @ts_expr: expression that evaluates to a single timestamp for index _sl
- *
- * Appends "(ts1 ts2 ...)" newest-first directly after a counter value.
- * Writes nothing when the ring is empty.
- * Shared print core. ts_expr must evaluate to a u64 for index _sl.
- */
-#define __WPAS_DISP_TS(buf, len, buflen, ring, ts_expr) do {             \
-	if ((ring).count > 0) {                                          \
-		int _i;                                                  \
-		int _r = os_snprintf((buf) + (len), (buflen) - (len),   \
-				     "(");                               \
-		if (_r > 0 && (size_t)_r < (buflen) - (len)) (len) += _r;\
-		for (_i = 0; _i < (ring).count; _i++) {                  \
-			int _sl = ((int)(ring).head - 1 - _i +           \
-				   SMD_TS_RING_SIZE * 2)                 \
-				  % SMD_TS_RING_SIZE;                    \
-			_r = os_snprintf((buf) + (len), (buflen) - (len),\
-					 "%s%llu", _i ? " " : "",       \
-					 (unsigned long long)(ts_expr)); \
-			if (_r > 0 && (size_t)_r < (buflen) - (len))    \
-				(len) += _r;                             \
-		}                                                        \
-		_r = os_snprintf((buf) + (len), (buflen) - (len), ")"); \
-		if (_r > 0 && (size_t)_r < (buflen) - (len)) (len) += _r;\
-	}                                                                \
-} while (0)
-
-/**
- * WPAS_DISP_TS - wrapper for timestamps of type &struct smd_ts_ring
- */
-#define WPAS_DISP_TS(buf, len, buflen, ring) \
-	__WPAS_DISP_TS(buf, len, buflen, ring, (ring).ts[_sl])
-
-/**
- * WPAS_DISP_TS_DRV - wrapper for timestamps of type &struct nl80211_smd_ts_ring
- */
-#define WPAS_DISP_TS_DRV(buf, len, buflen, ring) \
-	__WPAS_DISP_TS(buf, len, buflen, ring, SMD_DRVTS2USR((ring).ts[_sl]))
-
-/* Append a fixed string, advancing len. */
-#define WPAS_DISP_W(buf, len, buflen, ...) do {                          \
-	int _r = os_snprintf((buf) + (len), (buflen) - (len),           \
-			     __VA_ARGS__);                               \
-	if (_r > 0 && (size_t)_r < (buflen) - (len)) (len) += _r;      \
-} while (0)
-
 /* Reason string tables — values must match kernel enums in core.h / ieee80211_i.h */
 static const char * const mac_prep_resp_fail_str[] = {
 	"NONE", "NO_TARGET", "ALL_LINKS_REJECTED", "IE_PARSE", "SETUP",
@@ -1731,9 +1648,9 @@ int smd_ctrl_iface_stats(struct wpa_supplicant *wpa_s, char *buf, size_t buflen)
 				    _outcome_str);
 
 			if (has_kernel &&
-                    k.drv_prep_mgmt_wmi_send_ok_ts.count == s->transition_complete_ts.count &&
-                    k.drv_prep_mgmt_wmi_send_ok_ts.count > (unsigned int)_ri &&
-                    k.drv_prep_mgmt_resp_rx_ts.count > (unsigned int)_ri) {
+			    k.drv_prep_mgmt_wmi_send_ok_ts.count == s->transition_complete_ts.count &&
+			    k.drv_prep_mgmt_wmi_send_ok_ts.count > (unsigned int)_ri &&
+			    k.drv_prep_mgmt_resp_rx_ts.count > (unsigned int)_ri) {
 				/* prep latency: wmi_send_ok -> resp_rx */
 				if (k.drv_prep_mgmt_wmi_send_ok_ts.count > (unsigned int)_ri &&
 				    k.drv_prep_mgmt_resp_rx_ts.count > (unsigned int)_ri) {
@@ -3089,8 +3006,7 @@ static void wpas_smd_add_roam_record(struct wpa_supplicant *wpa_s,
 				      struct wpa_smd_roam_record, list);
         if (!old) {
             wpa_s->smd_roam_record_count = 0;
-        }
-        else {
+        } else {
 		    dl_list_del(&old->list);
 		    os_free(old);
 		    wpa_s->smd_roam_record_count--;
