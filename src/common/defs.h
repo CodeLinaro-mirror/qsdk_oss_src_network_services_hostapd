@@ -218,6 +218,11 @@ static inline int wpa_key_mgmt_only_enhanced_open(int akm)
 			  WPA_KEY_MGMT_EPPKE));
 }
 
+static inline bool wpa_key_mgmt_eppke(int akm)
+{
+	return !!(akm & WPA_KEY_MGMT_EPPKE);
+}
+
 #define WPA_PROTO_WPA BIT(0)
 #define WPA_PROTO_RSN BIT(1)
 #define WPA_PROTO_WAPI BIT(2)

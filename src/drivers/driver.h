@@ -2065,6 +2065,11 @@ struct wpa_driver_associate_params {
 	 */
 	bool security_profile_active;
 	struct wpa_smd_params smd;
+
+	/**
+	 * eppke_supported - Whether EPPKE authentication is supported
+	 */
+	bool eppke_supported;
 };
 
 enum hide_ssid {
