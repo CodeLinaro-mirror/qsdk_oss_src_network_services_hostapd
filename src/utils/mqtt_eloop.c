@@ -61,15 +61,6 @@
 
 /* ── Internal data structures ─────────────────────────────────────────── */
 
-/** Callback invoked when a message is received. See mqtt_eloop_init(). */
-typedef void (*mqtt_eloop_msg_cb_t)(const char *topic,
-				    const void *payload,
-				    int payloadlen,
-				    void *userdata);
-
-/** Callback invoked on connection state changes. See mqtt_eloop_init(). */
-typedef void (*mqtt_eloop_state_cb_t)(bool connected, void *userdata);
-
 /** One stored subscription entry. */
 struct mqtt_sub_entry {
 	char *topic;	/**< Heap-allocated topic filter string. */
@@ -635,7 +626,8 @@ int mqtt_eloop_connect(struct mqtt_eloop_ctx *ctx)
 				     ctx->keepalive);
 	if (rc != MOSQ_ERR_SUCCESS) {
 		wpa_printf(MSG_ERROR,
-			   "MQTT: mosquitto_connect_async() failed rc=%d", rc);
+			   "MQTT: mosquitto_connect_async() failed rc=%d (%s), errno=%d (%s)",
+			   rc, mosquitto_strerror(rc), errno, strerror(errno));
 		return -1;
 	}
 
@@ -663,6 +655,33 @@ int mqtt_eloop_connect(struct mqtt_eloop_ctx *ctx)
 			       mqtt_eloop_misc_cb, ctx, NULL);
 
 	return 0;
+}
+
+
+void mqtt_eloop_disconnect(struct mqtt_eloop_ctx *ctx)
+{
+	if (!ctx)
+		return;
+
+	/*
+	 * Set shutting_down so on_disconnect does not schedule a reconnect
+	 * when it fires in response to mosquitto_disconnect() below.
+	 */
+	ctx->shutting_down = true;
+
+	/* Cancel pending timers. */
+	eloop_cancel_timeout(mqtt_reconnect_cb,  ctx, NULL);
+	eloop_cancel_timeout(mqtt_eloop_misc_cb, ctx, NULL);
+
+	/* Unregister socket from eloop. */
+	mqtt_unregister_fd(ctx);
+
+	/* Send MQTT DISCONNECT packet to the broker. */
+	if (ctx->mosq)
+		mosquitto_disconnect(ctx->mosq);
+
+	ctx->connected     = false;
+	ctx->shutting_down = false; /* Allow reconnect via mqtt_eloop_connect() */
 }
 
 
@@ -778,4 +797,67 @@ send_subscribe:
 	}
 
 	return 0;
+}
+
+
+int mqtt_eloop_unsubscribe(struct mqtt_eloop_ctx *ctx, const char *topic)
+{
+	int i, found = -1;
+
+	if (!ctx || !topic)
+		return -1;
+
+	for (i = 0; i < ctx->num_subs; i++) {
+		if (os_strcmp(ctx->subs[i].topic, topic) == 0) {
+			found = i;
+			break;
+		}
+	}
+
+	if (found < 0) {
+		wpa_printf(MSG_DEBUG,
+			   "MQTT: unsubscribe '%s' — not in table", topic);
+		return -1;
+	}
+
+	os_free(ctx->subs[found].topic);
+
+	/* Compact the subscription array. */
+	for (i = found; i < ctx->num_subs - 1; i++)
+		ctx->subs[i] = ctx->subs[i + 1];
+	ctx->num_subs--;
+
+	if (ctx->connected) {
+		int rc = mosquitto_unsubscribe(ctx->mosq, NULL, topic);
+		if (rc != MOSQ_ERR_SUCCESS) {
+			wpa_printf(MSG_WARNING,
+				   "MQTT: unsubscribe('%s') failed rc=%d",
+				   topic, rc);
+			return -1;
+		}
+		mqtt_flush_write(ctx);
+		wpa_printf(MSG_DEBUG,
+			   "MQTT: unsubscribed from '%s'", topic);
+	}
+
+	return 0;
+}
+
+
+bool mqtt_eloop_is_connected(const struct mqtt_eloop_ctx *ctx)
+{
+	return ctx != NULL && ctx->connected;
+}
+
+
+void mqtt_eloop_get_stats(const struct mqtt_eloop_ctx *ctx,
+			  unsigned long *tx_count,
+			  unsigned long *rx_count)
+{
+	if (!ctx)
+		return;
+	if (tx_count)
+		*tx_count = ctx->tx_count;
+	if (rx_count)
+		*rx_count = ctx->rx_count;
 }
