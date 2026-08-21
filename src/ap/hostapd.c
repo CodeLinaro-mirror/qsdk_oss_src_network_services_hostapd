@@ -7038,7 +7038,11 @@ static bool hostapd_check_dup_link(struct hostapd_data *tmp_hapd,
 	 * link's and the hw_idx matches the new BSS iface, reject the link
 	 * addition
 	 */
+#ifdef CONFIG_QCN_EXTN
+	for_each_mld_link_include_repurposed(phapd, tmp_hapd) {
+#else
 	for_each_mld_link(phapd, tmp_hapd) {
+#endif
 		new_freq = hostapd_hw_get_freq(phapd, new_channel);
 		if (new_freq && phapd->iface->current_hw_info &&
 		    phapd->iface->current_hw_info->hw_idx == hw_idx) {
