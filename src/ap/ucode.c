@@ -836,6 +836,7 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	uc_value_t *wpa_state_val;
 	char *wpa_state = NULL;
 	bool rpt_max_phy_override = false;
+	int event_freq = 0;
 #endif
 	uint64_t intval;
 	int i, ret;
@@ -866,26 +867,26 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 				sizeof(iface->iface_extn.sta_wpa_state));
 		hostapd_update_bh_sta_connected_extn(iface, wpa_state);
 	}
-        intval = ucv_int64_get(ucv_object_get(info, "frequency", NULL));
-        if (!errno)
-                iface->freq = intval;
-        else
-                iface->freq = 0;
+	intval = ucv_int64_get(ucv_object_get(info, "rpt_max_phy_override", NULL));
+	if (!errno)
+		rpt_max_phy_override = intval;
 
-
-        intval = ucv_int64_get(ucv_object_get(info, "rpt_max_phy_override", NULL));
-        if (!errno)
-                rpt_max_phy_override = intval;
+	intval = ucv_int64_get(ucv_object_get(info, "frequency", NULL));
+	if (!errno)
+		event_freq = intval;
 
 	wpa_printf(MSG_INFO,
 		   "%s: freq=%d, state=%d sta_wpa_state=\"%s\" ind_rptr=%d rpt_max_phy=%d rpt_max_phy_override=%d",
-		   __func__, iface->freq, iface->state,
+		   __func__, event_freq, iface->state,
 		   iface->iface_extn.sta_wpa_state,
 		   iface->conf->conf_extn.ind_rptr,
 		   iface->conf->conf_extn.rpt_max_phy, rpt_max_phy_override);
 
+	/* Independent repeaters keep their configured fronthaul channel. */
 	if (iface->conf->conf_extn.ind_rptr && !rpt_max_phy_override)
-                return NULL;
+		return NULL;
+
+	iface->freq = event_freq;
 
 	if (info && !iface->freq) {
 		conf = iface->conf;
