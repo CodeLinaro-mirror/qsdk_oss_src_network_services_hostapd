@@ -424,6 +424,7 @@ OBJS += ../src/ap/uhr_neighbor_update.o
 OBJS += ../src/ap/uhr_utils.o
 OBJS += ../src/ap/uhr_iap.o
 OBJS += ../src/ap/mapc.o
+OBJS += ../src/ap/uhr_stats.o
 endif
 
 ifdef CONFIG_IEEE80211BE

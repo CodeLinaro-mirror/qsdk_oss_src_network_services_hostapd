@@ -22,6 +22,7 @@
 #ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
 #endif /* CONFIG_QCN_EXTN */
+#include "uhr_utils.h"
 
 /* sta_info.h must not include ap/robust_av.h: supplicant TUs (mesh_mpm.c,
  * mesh_rsn.c) include this header and robust_av.h's types collide with the
@@ -230,8 +231,6 @@ struct smd_caps {
 };
 
 /* SMD (Seamless Mobility Domain) station information */
-
-#include "uhr_utils.h"
 
 /* SMD (Seamless Multiband Device) station information */
 struct smd_info {
