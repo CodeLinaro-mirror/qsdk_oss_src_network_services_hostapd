@@ -182,28 +182,29 @@ u8 * hostapd_eid_eht_ml_beacon(struct hostapd_data *hapd,
 			       struct mld_info *mld_info,
 			       u8 *eid, bool include_mld_id,
 			       u8 include_ext_cap, bool is_uhr_sta,
-			       bool include_bss_load_age);
+			       bool include_bss_load_age, bool skip_uhr_extn);
 u8 * hostapd_eid_eht_ml_assoc(struct hostapd_data *hapd, struct sta_info *info,
 			      u8 *eid, u8 include_ext_cap);
 size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 				    struct sta_info *info,
 				    bool include_mld_id, bool include_pbcc,
 				    u8 include_ext_cap, bool is_uhr_sta,
-				    bool include_bss_load_age);
+				    bool include_bss_load_age, bool skip_uhr_extn);
 size_t hostapd_eid_eht_ml_beacon_len(struct hostapd_data *hapd,
 				     struct mld_info *info,
 				     bool include_mld_id,
 				     u8 include_ext_cap, bool is_uhr_sta,
-				     bool include_bss_load_age);
+				     bool include_bss_load_age, bool skip_uhr_extn);
 size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd, struct mld_info *info,
 			      bool include_mld_id, bool include_bpcc,
 			      u8 include_ext_cap, bool is_uhr_sta,
-			      bool include_bss_load_age);
+			      bool include_bss_load_age, bool skip_uhr_extn);
 u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 				     u8 *eid, struct mld_info *mld_info,
 				     bool include_mld_id, bool include_bpcc,
 				     u8 include_ext_cap, bool is_smd,
-				     bool is_uhr_sta, bool include_bss_load_age);
+				     bool is_uhr_sta, bool include_bss_load_age,
+				     bool skip_uhr_extn);
 struct wpabuf * hostapd_ml_auth_resp(struct hostapd_data *hapd);
 const u8 * auth_skip_fixed_fields(struct hostapd_data *hapd,
 				  const struct ieee80211_mgmt *mgmt,
