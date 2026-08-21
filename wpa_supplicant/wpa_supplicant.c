@@ -1548,6 +1548,8 @@ int wpa_supplicant_reload_configuration(struct wpa_supplicant *wpa_s)
 	rsn_preauth_deinit(wpa_s->wpa);
 
 	old_ap_scan = wpa_s->conf->ap_scan;
+	wpa_s->last_ssid = NULL;
+	wpa_s->next_ssid = NULL;
 	wpa_config_free(wpa_s->conf);
 	wpa_s->conf = conf;
 	if (old_ap_scan != wpa_s->conf->ap_scan)
