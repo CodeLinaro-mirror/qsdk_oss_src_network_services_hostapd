@@ -630,6 +630,9 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	hostapd_if_sae_clear_plugin_wait(hapd, sta);
 #endif /* CONFIG_SAE */
 #endif /* CONFIG_HOSTAPD_IF */
+	if (sta->ext_auth_tail)
+		os_free((void *) sta->ext_auth_tail);
+
 	if (hapd->iface->drv_flags == WPA_DRIVER_FLAGS_WIRED) {
 		eloop_cancel_timeout(hostapd_mac_auth_timeout, hapd, sta);
 	}

@@ -1436,6 +1436,9 @@ void __hostapd_if_auth_response(char *ifname, uint8_t *sta_mac,
 		 * Use incoming buffer directly; TX path will free
 		 * one-shot tail
 		 */
+		if (sta->ext_auth_tail)
+			os_free((void *) sta->ext_auth_tail);
+
 		sta->ext_auth_tail =
 			ctx->data.auth_resp.additional_ies;
 		sta->ext_auth_tail_len =
@@ -1495,15 +1498,11 @@ void __hostapd_if_auth_response(char *ifname, uint8_t *sta_mac,
 		 */
 		break;
 	}
-	sta->ext_auth_tail = NULL;
-	sta->ext_auth_tail_len = 0;
 __hostapd_if_auth_response_exit:
 	/*
 	 * Free ctx handed in from plugin
 	 * (tail will be freed in TX path)
 	 */
-	if (ctx->data.auth_resp.additional_ies)
-		os_free((void *)ctx->data.auth_resp.additional_ies);
 	os_free((void *)ctx);
 }
 
