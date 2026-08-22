@@ -1400,9 +1400,6 @@ void uhr_handle_get_smd_ctx_done(struct hostapd_data *hapd,
 	wpa_printf(MSG_INFO,
 		   "UHR GET_SMD_CTX_DONE: ctx received for " MACSTR,
 		   MAC2STR(sta_addr));
-	if (ctx)
-		uhr_smd_ctx_dump(ctx, "UHR GET_SMD_CTX_DONE");
-
 	sta = ap_get_sta(hapd, sta_addr);
 	if (!sta) {
 		wpa_printf(MSG_DEBUG,
@@ -1423,6 +1420,9 @@ void uhr_handle_get_smd_ctx_done(struct hostapd_data *hapd,
 	eloop_cancel_timeout(uhr_cur_get_ctx_timeout, hapd, sta);
 	pending = &sta->smd_info.get_ctx_pending;
 	pending->active = false;
+
+	if (ctx)
+		uhr_smd_ctx_dump(ctx, "UHR GET_SMD_CTX_DONE");
 
 	target_info = uhr_find_ap_in_list(sta, pending->target_ap_mld_addr);
 	if (!target_info) {
@@ -3666,11 +3666,6 @@ void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
 		wpa_printf(MSG_ERROR,
 			   "UHR CTX RESP: Failed to apply SMD context");
 		goto send_exec_fail;
-	}
-
-	if (ap_sta_set_authorized_flag(lhapd, sta, 1)) {
-		sta->flags_ext |= WLAN_STA_SMD;
-		hostapd_set_sta_flags(lhapd, sta);
 	}
 
 	/* dialog token is in the STA's saved ST Exec request — use 0 if unavailable */
