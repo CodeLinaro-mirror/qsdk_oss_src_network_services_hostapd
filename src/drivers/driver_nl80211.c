@@ -19949,15 +19949,19 @@ static int get_smd_ctx_handler(struct nl_msg *msg, void *arg)
 }
 
 static int nl80211_get_smd_ctx(void *priv, const u8 *sta_addr,
-			       u8 valid_ctx_bitmap, u8 tx_tid_bitmap,
-			       u8 rx_tid_bitmap,
+			       u8 type, u8 valid_ctx_bitmap, u8 dl_tid_bitmap,
+			       u8 ul_tid_bitmap,
 			       struct sta_smd_ctx_info **out_ctx)
 {
 	struct i802_bss *bss = priv;
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	struct nl_msg *msg;
-	struct nlattr *smd_nest, *tx_nest, *rx_nest;
+	struct nlattr *smd_nest, *dl_nest, *ul_nest;
 	int ret;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: GET_SMD_CTX for " MACSTR " type=%u ctx=0x%02x dl_tids=0x%02x ul_tids=0x%02x",
+		   MAC2STR(sta_addr), type, valid_ctx_bitmap, dl_tid_bitmap, ul_tid_bitmap);
 
 	*out_ctx = NULL;
 
@@ -19972,34 +19976,44 @@ static int nl80211_get_smd_ctx(void *priv, const u8 *sta_addr,
 	if (!smd_nest)
 		goto fail;
 
+	if (nla_put_u8(msg, NL80211_SMD_CTX_ATTR_TYPE, type))
+		goto fail;
+
 	if (nla_put_u8(msg, NL80211_SMD_CTX_ATTR_VALID_CTX, valid_ctx_bitmap))
 		goto fail;
 
-	tx_nest = nla_nest_start(msg, NL80211_SMD_CTX_ATTR_DL);
-	if (!tx_nest)
+	dl_nest = nla_nest_start(msg, NL80211_SMD_CTX_ATTR_DL);
+	if (!dl_nest)
 		goto fail;
 	if (nla_put_u8(msg, NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP,
-		       tx_tid_bitmap))
+		       dl_tid_bitmap))
 		goto fail;
-	nla_nest_end(msg, tx_nest);
+	nla_nest_end(msg, dl_nest);
 
-	rx_nest = nla_nest_start(msg, NL80211_SMD_CTX_ATTR_UL);
-	if (!rx_nest)
+	ul_nest = nla_nest_start(msg, NL80211_SMD_CTX_ATTR_UL);
+	if (!ul_nest)
 		goto fail;
 	if (nla_put_u8(msg, NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP,
-		       rx_tid_bitmap))
+		       ul_tid_bitmap))
 		goto fail;
-	nla_nest_end(msg, rx_nest);
+	nla_nest_end(msg, ul_nest);
 
 	nla_nest_end(msg, smd_nest);
 
+	/*
+	 * send_and_recv_msgs: kernel returns immediately (reply is the async
+	 * NL80211_CMD_GET_SMD_CTX event, not the ack).  We expect -EINPROGRESS
+	 * or 0 (cache hit).
+	 */
 	ret = send_and_recv_resp(drv, msg, get_smd_ctx_handler, out_ctx);
-	if (ret) {
+	if (ret && ret != -EINPROGRESS) {
 		wpa_printf(MSG_ERROR, "nl80211: GET_SMD_CTX failed: %d", ret);
 		return ret;
 	}
-	if (!*out_ctx)
+
+	if (!ret && !*out_ctx)
 		return -ENODATA;
+
 	return 0;
 
 fail:

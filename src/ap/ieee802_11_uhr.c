@@ -3421,8 +3421,8 @@ void uhr_cur_ap_handle_st_ctx_request(struct hostapd_data *hapd,
 
 	target_info->state = SMD_AP_STATE_ST_EXEC_VIA_TGT_STARTED;
 
-	if (hostapd_drv_get_smd_ctx(hapd, sta->addr,
-				    0xFF, 0xFF, 0xFF, &smd_ctx) < 0)
+	if (hostapd_drv_get_smd_ctx(hapd, sta->addr, 1, 0xFF, 0xFF, 0xFF,
+				    &smd_ctx) < 0)
 		smd_ctx = NULL;
 
 	ret = uhr_iap_send_st_ctx_response(hapd,
