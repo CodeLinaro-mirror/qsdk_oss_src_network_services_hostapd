@@ -3476,6 +3476,7 @@ void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
 		if (uhr_target_ap_set_smd_ctx(lhapd, iap->sta_addr, smd_ctx)) {
 			wpa_printf(MSG_ERROR,
 				   "UHR CTX RESP: Failed to apply SMD context");
+			uhr_tgt_cancel_st_prep_timer(lhapd, iap->sta_addr);
 			return;
 		}
 	}
@@ -3493,6 +3494,7 @@ void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
 	if (!resp_buf) {
 		wpa_printf(MSG_ERROR,
 			   "UHR CTX RESP: Failed to build ST Exec Response");
+		uhr_tgt_cancel_st_prep_timer(lhapd, iap->sta_addr);
 		return;
 	}
 
@@ -3506,6 +3508,7 @@ void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
 	if (ret < 0) {
 		wpa_printf(MSG_ERROR,
 			   "UHR CTX RESP: Failed to send OTA ST Exec Response");
+		uhr_tgt_cancel_st_prep_timer(lhapd, iap->sta_addr);
 		return;
 	}
 
