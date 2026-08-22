@@ -698,18 +698,16 @@ void uhr_tgt_st_prep_timer_cleanup(void *eloop_ctx, void *timeout_ctx)
                        if (sta) {
 			       struct hostapd_data *assoc_hapd;
 			       struct sta_info *assoc_sta = NULL;
-			       enum tgt_smd_roam_state state = SMD_STA_ST_NONE;
 
 			       assoc_sta = hostapd_ml_get_assoc_sta(bss, sta, &assoc_hapd);
-			       if (assoc_sta)
-				       state = assoc_sta->smd_info.state;
 
 			       /* Clear timer reference */
                                sta->smd_info.uhr_target_prep_timer = 0;
                                sta->smd_info.tgt_prep_timer_ctx = NULL;
                                sta->smd_info.tgt_prep_timer_hapd = NULL;
 
-			       if (state == SMD_STA_ST_EXEC_DONE)
+			       if (assoc_sta &&
+				   assoc_sta->smd_info.state == SMD_STA_ST_EXEC_DONE)
 				       continue;
 
                                wpa_printf(MSG_DEBUG,
