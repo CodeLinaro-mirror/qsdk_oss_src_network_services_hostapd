@@ -1361,9 +1361,23 @@ __send_sae_auth_response(struct hostapd_data *hapd, struct sta_info *sta,
 	int sta_removed = 0;
 	bool success_status;
 	const u8 *dst = ctx->data.auth_resp.sta_assoc_link_mac;
-
+	u16 auth_transaction = ctx->data.auth_resp.auth_transaction;
 	/* Plugin responded - cancel the guard timer before processing. */
 	hostapd_if_sae_clear_plugin_wait(hapd, sta);
+	if (ctx->status_code != WLAN_STATUS_SUCCESS &&
+	    ctx->status_code != WLAN_STATUS_SAE_HASH_TO_ELEMENT &&
+	    ctx->status_code != WLAN_STATUS_SAE_PK) {
+		sae_clear_data(sta->sae);
+		os_free(sta->sae);
+		sta->sae = NULL;
+		send_auth_reply(hapd, sta, dst, WLAN_AUTH_SAE,
+				auth_transaction, ctx->status_code, NULL, 0, "auth-sae");
+		if (sta->added_unassoc) {
+			hostapd_drv_sta_remove(hapd, sta->addr);
+			sta->added_unassoc = 0;
+		}
+		return;
+	}
 
 	resp = sae_sm_step(hapd, sta, ctx->data.auth_resp.auth_transaction,
 			   ctx->status_code, ctx->data.auth_resp.allow_reuse,
@@ -1377,7 +1391,7 @@ __send_sae_auth_response(struct hostapd_data *hapd, struct sta_info *sta,
 		sae_sme_send_external_auth_status(hapd, sta, resp);
 	}
 
-	if (ctx->data.auth_resp.auth_transaction == 1)
+	if (auth_transaction == 1)
 		success_status = sae_status_success(hapd, ctx->status_code);
 	else
 		success_status = ctx->status_code == WLAN_STATUS_SUCCESS;
