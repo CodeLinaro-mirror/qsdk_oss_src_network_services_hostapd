@@ -1376,9 +1376,99 @@ static void uhr_cur_ap_purge_ap_list(struct hostapd_data *lhapd,
 			continue;
 		partner_sta = ap_get_sta(partner_hapd, sta->addr);
 		if (partner_sta)
-			uhr_cleanup_sta_roam_contexts(partner_sta);
+			uhr_cleanup_sta_roam_contexts(partner_hapd, partner_sta);
 	}
 
+}
+
+/**
+ * uhr_handle_get_smd_ctx_done - Resume Via-TAP ST Exec after async ctx fetch
+ *
+ * Completion notification for the context request. Send an IAP response to the
+ * TAP to resume roaming.
+ */
+void uhr_handle_get_smd_ctx_done(struct hostapd_data *hapd,
+				 const u8 *sta_addr,
+				 struct sta_smd_ctx_info *ctx)
+{
+	struct sta_info *sta;
+	struct smd_get_ctx_pending *pending;
+	struct smd_roam_ap_info *target_info;
+	u8 status = UHR_IAP_STATUS_FAILURE;
+	int ret;
+
+	wpa_printf(MSG_INFO,
+		   "UHR GET_SMD_CTX_DONE: ctx received for " MACSTR,
+		   MAC2STR(sta_addr));
+	if (ctx)
+		uhr_smd_ctx_dump(ctx, "UHR GET_SMD_CTX_DONE");
+
+	sta = ap_get_sta(hapd, sta_addr);
+	if (!sta) {
+		wpa_printf(MSG_DEBUG,
+			   "UHR GET_SMD_CTX_DONE: STA " MACSTR " not found",
+			   MAC2STR(sta_addr));
+		os_free(ctx);
+		return;
+	}
+
+	if (!sta->smd_info.get_ctx_pending.active) {
+		wpa_printf(MSG_DEBUG,
+			   "UHR GET_SMD_CTX_DONE: No pending request for " MACSTR,
+			   MAC2STR(sta_addr));
+		os_free(ctx);
+		return;
+	}
+
+	eloop_cancel_timeout(uhr_cur_get_ctx_timeout, hapd, sta);
+	pending = &sta->smd_info.get_ctx_pending;
+	pending->active = false;
+
+	target_info = uhr_find_ap_in_list(sta, pending->target_ap_mld_addr);
+	if (!target_info) {
+		wpa_printf(MSG_ERROR,
+			   "UHR GET_SMD_CTX_DONE: target AP " MACSTR " gone for " MACSTR,
+			   MAC2STR(pending->target_ap_mld_addr),
+			   MAC2STR(sta_addr));
+		os_free(ctx);
+		return;
+	}
+
+	if (target_info->state != SMD_AP_STATE_ST_EXEC_VIA_TGT_CURR_CTX_WAIT) {
+		wpa_printf(MSG_ERROR,
+			   "UHR GET_SMD_CTX_DONE: Invalid state %u", target_info->state);
+		os_free(ctx);
+		return;
+	}
+
+	if (!ctx) {
+		wpa_printf(MSG_ERROR,
+			   "UHR GET_SMD_CTX_DONE: ctx fetch failed for " MACSTR
+			   " — rolling back to ST_PREP_COMPLETE",
+			   MAC2STR(sta_addr));
+		target_info->state = SMD_AP_STATE_ST_PREP_COMPLETE;
+	} else {
+		status = UHR_IAP_STATUS_SUCCESS;
+	}
+
+	ret = uhr_iap_send_st_ctx_response(hapd,
+					   pending->target_ap_mld_addr,
+					   sta->addr,
+					   pending->iap_transaction_id,
+					   status,
+					   ctx);
+	os_free(ctx);
+
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "UHR GET_SMD_CTX_DONE: IAP send failed, to ST_PREP_COMPLETE");
+		target_info->state = SMD_AP_STATE_ST_PREP_COMPLETE;
+		return;
+	}
+
+	target_info->state = SMD_AP_STATE_ST_EXEC_VIA_TGT_CURR_CTX_RESP;
+	wpa_printf(MSG_DEBUG,
+		   "UHR GET_SMD_CTX_DONE: ST_EXEC_VIA_TGT_CURR_CTX_WAIT -> ST_EXEC_VIA_TGT_CURR_CTX_RESP");
 }
 
 void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
@@ -3081,6 +3171,7 @@ static u8 * hostapd_eid_smd_bss_trans_exec_resp(u8 *pos,
 static u8 *uhr_tgt_build_st_exec_resp_frame(struct hostapd_data *lhapd,
 					    struct sta_info *sta,
 					    u8 dialog_token,
+					    u16 status,
 					    size_t *out_len)
 {
 	u8 *resp_buf, *pos, *rcsl_count;
@@ -3129,7 +3220,7 @@ static u8 *uhr_tgt_build_st_exec_resp_frame(struct hostapd_data *lhapd,
 	*pos++ = 1;
 	*pos++ = dialog_token;
 	*pos++ = 1; /* Type = ST Execution */
-	WPA_PUT_LE16(pos, WLAN_STATUS_SUCCESS);
+	WPA_PUT_LE16(pos, status);
 	pos += 2;
 
 	rcsl_count = pos;
@@ -3273,7 +3364,8 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 	}
 
 	frame = iap->frame_ctx_data;
-	resp_buf = uhr_tgt_build_st_exec_resp_frame(lhapd, sta, frame[26], &resp_len);
+	resp_buf = uhr_tgt_build_st_exec_resp_frame(lhapd, sta, frame[26],
+						    WLAN_STATUS_SUCCESS,&resp_len);
 	if (!resp_buf) {
 		uhr_iap_send_st_exec_resp(lhapd,
 					  iap->current_ap_mld_addr,
@@ -3321,12 +3413,19 @@ int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd, struct sta_info *sta,
 	struct ieee802_11_elems elems;
 	struct uhr_reconfig_mle mle;
 	struct hostapd_data *assoc_hapd = NULL;
+	struct smd_roam_ap_info *ap_info;
 	const u8 *ies;
 	size_t ies_len;
+	int ret;
 
 	wpa_printf(MSG_DEBUG,
 		   "UHR ST EXEC via Target AP: Processing Execute from " MACSTR,
 		   MAC2STR(sta->addr));
+
+	if (!hostapd_mld_find_assoc_sta(hapd, sta->addr, &assoc_hapd, &sta) || !sta) {
+		wpa_printf(MSG_ERROR, "UHR ST EXEC (tgt): Assoc STA not found");
+		return -1;
+	}
 
 	if (len < IEEE80211_HDRLEN + 4) {
 		wpa_printf(MSG_ERROR, "UHR ST EXEC (tgt): Frame too short");
@@ -3360,6 +3459,29 @@ int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd, struct sta_info *sta,
 		return -1;
 	}
 
+	ap_info = uhr_find_ap_in_list(sta, sta->smd_info.current_ap_mld_addr);
+	if (ap_info) {
+		wpa_printf(MSG_DEBUG,
+			   "UHR ST EXEC (tgt): Current AP " MACSTR " already in list; ignore",
+			   MAC2STR(sta->smd_info.current_ap_mld_addr));
+		return -1;
+	}
+
+	ap_info = os_zalloc(sizeof(*ap_info));
+	if (!ap_info) {
+		wpa_printf(MSG_ERROR,
+			   "UHR ST EXEC (tgt): Failed to allocate ap_info");
+		return -1;
+	}
+
+	ap_info->state = SMD_AP_STATE_IDLE;
+	os_memcpy(ap_info->ap_mld_addr,
+		  sta->smd_info.current_ap_mld_addr, ETH_ALEN);
+	os_get_reltime(&ap_info->last_seen);
+
+	ap_info->next = sta->smd_info.ap_list;
+	sta->smd_info.ap_list = ap_info;
+
 	wpa_printf(MSG_INFO,
 		   "UHR ST EXEC (tgt): STA " MACSTR
 		   " — sending CTX_REQUEST to Current AP " MACSTR,
@@ -3372,12 +3494,23 @@ int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd, struct sta_info *sta,
 	 * the exchange, call ap_free_sta(), and leave the CTX_RESPONSE handler
 	 * with a dangling sta_info pointer.
 	 */
-	if (hostapd_mld_find_assoc_sta(hapd, sta->addr, &assoc_hapd, &sta))
-		uhr_tgt_cancel_st_prep_timer(assoc_hapd, sta->addr);
+	uhr_tgt_cancel_st_prep_timer(assoc_hapd, sta->addr);
 
-	return uhr_iap_send_st_ctx_request(hapd,
-					   sta->smd_info.current_ap_mld_addr,
-					   sta->addr, 0);
+	ret = uhr_iap_send_st_ctx_request(hapd,
+					  sta->smd_info.current_ap_mld_addr,
+					  sta->addr, 0);
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR, "UHR ST EXEC (tgt): Failed to send IAP Ctx Request");
+		uhr_remove_ap_from_list(sta, sta->smd_info.current_ap_mld_addr);
+		return -1;
+	}
+
+	ap_info->state = SMD_AP_STATE_ST_EXEC_VIA_TGT_STARTED;
+
+	if (uhr_cur_start_iap_msg_timer(sta, sta->smd_info.current_ap_mld_addr) < 0)
+		wpa_printf(MSG_ERROR, "UHR ST EXEC (tgt): Failed to start IAP timer");
+
+	return 0;
 }
 
 
@@ -3388,7 +3521,9 @@ void uhr_cur_ap_handle_st_ctx_request(struct hostapd_data *hapd,
 	struct sta_info *sta;
 	struct smd_roam_ap_info *target_info;
 	struct sta_smd_ctx_info *smd_ctx = NULL;
-	int ret;
+	u8 status = UHR_IAP_STATUS_FAILURE;
+	u8 valid_ctx_bmap = 0xff;
+	int ret = 0;
 
 	wpa_printf(MSG_DEBUG,
 		   "UHR: ST CTX REQUEST from Target AP " MACSTR
@@ -3419,28 +3554,62 @@ void uhr_cur_ap_handle_st_ctx_request(struct hostapd_data *hapd,
 		return;
 	}
 
-	target_info->state = SMD_AP_STATE_ST_EXEC_VIA_TGT_STARTED;
+	target_info->state = SMD_AP_STATE_ST_EXEC_VIA_TGT_CURR_CTX_REQ;
 
-	if (hostapd_drv_get_smd_ctx(hapd, sta->addr, 1, 0xFF, 0xFF, 0xFF,
-				    &smd_ctx) < 0)
-		smd_ctx = NULL;
+	/*
+	 * 1. if ret=0 and smd_ctx is valid, driver has sent an immediate response;
+	 *	send the IAP response with the received context.
+	 * 2. if ret=0 and smd_ctx is not valid, driver will send the response later;
+	 *	return and wait for the event.
+	 * 3. otherwise, it is a failure; send the response with empty context (failure).
+	 */
+	if (sta->dl_sn_not_transferred)
+		valid_ctx_bmap &= ~SMD_CTX_VALID_DL_SN;
+	if (sta->ul_sn_not_transferred)
+		valid_ctx_bmap &= ~SMD_CTX_VALID_UL_SN;
+
+	ret = hostapd_drv_get_smd_ctx(hapd, sta->addr, 1, valid_ctx_bmap, 0xff, 0xff, &smd_ctx);
+	if (!ret && !smd_ctx) {
+		wpa_printf(MSG_INFO,
+			   "UHR CTX REQ: waiting for driver ctx completion for " MACSTR,
+			   MAC2STR(sta->addr));
+		target_info->state = SMD_AP_STATE_ST_EXEC_VIA_TGT_CURR_CTX_WAIT;
+
+		eloop_cancel_timeout(uhr_cur_get_ctx_timeout, hapd, sta);
+		eloop_register_timeout(0, UHR_ST_GET_CTX_TIMEOUT_USEC,
+				       uhr_cur_get_ctx_timeout,
+				       hapd, sta);
+
+		sta->smd_info.get_ctx_pending.active = true;
+		os_memcpy(sta->smd_info.get_ctx_pending.target_ap_mld_addr,
+			  iap->target_ap_mld_addr,
+			  ETH_ALEN);
+		sta->smd_info.get_ctx_pending.iap_transaction_id =
+			iap->iap_transaction_id;
+		return;
+	} else if (!ret && smd_ctx) {
+		status = UHR_IAP_STATUS_SUCCESS;
+		target_info->state = SMD_AP_STATE_ST_EXEC_VIA_TGT_CURR_CTX_RESP;
+	}
 
 	ret = uhr_iap_send_st_ctx_response(hapd,
 					   iap->target_ap_mld_addr,
 					   iap->sta_addr,
 					   iap->iap_transaction_id,
+					   status,
 					   smd_ctx);
+
 	os_free(smd_ctx);
 
 	if (ret < 0) {
-		wpa_printf(MSG_ERROR, "UHR CTX REQ: Failed to send CTX_RESPONSE");
+		wpa_printf(MSG_ERROR, "UHR CTX REQ: Failed to send CTX_RESPONSE. ST_EXEC_VIA_TGT_CURR_CTX_REQ -> ST_PREP_COMPLETE");
 		target_info->state = SMD_AP_STATE_ST_PREP_COMPLETE;
 		return;
 	}
 
-	target_info->state = SMD_AP_STATE_ST_EXEC_VIA_TGT_COMPLETE;
 	wpa_printf(MSG_INFO,
-		   "UHR CTX REQ: Sent CTX_RESPONSE to Target AP " MACSTR,
+		   "UHR CTX REQ: Sent CTX_RESPONSE to Target AP " MACSTR ", "
+		   "ST_EXEC_VIA_TGT_CURR_CTX_REQ -> ST_EXEC_VIA_TGT_CURR_CTX_RESP",
 		   MAC2STR(iap->target_ap_mld_addr));
 }
 
@@ -3451,6 +3620,7 @@ void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
 {
 	struct sta_info *sta = NULL;
 	struct hostapd_data *lhapd = NULL;
+	struct smd_roam_ap_info *ap_info;
 	struct sta_smd_ctx_info *smd_ctx;
 	u8 *resp_buf;
 	size_t resp_len;
@@ -3459,9 +3629,9 @@ void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
 
 	wpa_printf(MSG_DEBUG,
 		   "UHR: ST CTX RESPONSE from Current AP " MACSTR
-		   " for STA " MACSTR,
+		   " for STA " MACSTR " status=%u",
 		   MAC2STR(iap->current_ap_mld_addr),
-		   MAC2STR(iap->sta_addr));
+		   MAC2STR(iap->sta_addr), iap->status_code);
 
 	if (!hostapd_mld_find_assoc_sta(hapd, iap->sta_addr, &lhapd, &sta) ||
 	    !sta) {
@@ -3471,14 +3641,31 @@ void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
 		return;
 	}
 
-	if (iap->flags & UHR_IAP_FLAG_HAS_DYNAMIC_CTX) {
-		smd_ctx = (struct sta_smd_ctx_info *) iap->frame_ctx_data;
-		if (uhr_target_ap_set_smd_ctx(lhapd, iap->sta_addr, smd_ctx)) {
-			wpa_printf(MSG_ERROR,
-				   "UHR CTX RESP: Failed to apply SMD context");
-			uhr_tgt_cancel_st_prep_timer(lhapd, iap->sta_addr);
-			return;
-		}
+	uhr_cancel_iap_timeout(sta, sta->smd_info.current_ap_mld_addr);
+
+	ap_info = uhr_find_ap_in_list(sta, sta->smd_info.current_ap_mld_addr);
+	if (!ap_info) {
+		wpa_printf(MSG_ERROR, "UHR CTX RESP: Current AP info not found for " MACSTR,
+			   MAC2STR(sta->smd_info.current_ap_mld_addr));
+		return;
+	}
+
+	if (ap_info->state != SMD_AP_STATE_ST_EXEC_VIA_TGT_STARTED) {
+		wpa_printf(MSG_ERROR, "UHR CTX RESP: Invalid state %u", ap_info->state);
+		goto send_exec_fail;
+	}
+
+	if (iap->status_code != UHR_IAP_STATUS_SUCCESS ||
+	    !(iap->flags & UHR_IAP_FLAG_HAS_DYNAMIC_CTX)) {
+		wpa_printf(MSG_ERROR, "UHR CTX RESP: Context fetch failed");
+		goto send_exec_fail;
+	}
+
+	smd_ctx = (struct sta_smd_ctx_info *) iap->frame_ctx_data;
+	if (uhr_target_ap_set_smd_ctx(lhapd, iap->sta_addr, smd_ctx)) {
+		wpa_printf(MSG_ERROR,
+			   "UHR CTX RESP: Failed to apply SMD context");
+		goto send_exec_fail;
 	}
 
 	if (ap_sta_set_authorized_flag(lhapd, sta, 1)) {
@@ -3490,11 +3677,12 @@ void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
 	dialog_token = sta->smd_info.st_exec_dialog_token;
 
 	resp_buf = uhr_tgt_build_st_exec_resp_frame(lhapd, sta, dialog_token,
+						    WLAN_STATUS_SUCCESS,
 						    &resp_len);
 	if (!resp_buf) {
 		wpa_printf(MSG_ERROR,
 			   "UHR CTX RESP: Failed to build ST Exec Response");
-		uhr_tgt_cancel_st_prep_timer(lhapd, iap->sta_addr);
+		uhr_remove_ap_from_list(sta, sta->smd_info.current_ap_mld_addr);
 		return;
 	}
 
@@ -3527,9 +3715,12 @@ void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
 	if (ret < 0) {
 		wpa_printf(MSG_ERROR,
 			   "UHR CTX RESP: Failed to send OTA ST Exec Response");
-		uhr_tgt_cancel_st_prep_timer(lhapd, iap->sta_addr);
+		uhr_remove_ap_from_list(sta, sta->smd_info.current_ap_mld_addr);
 		return;
 	}
+
+	uhr_tgt_cancel_st_prep_timer(lhapd, iap->sta_addr);
+	uhr_remove_ap_from_list(sta, sta->smd_info.current_ap_mld_addr);
 
 	wpa_printf(MSG_INFO,
 		   "UHR CTX RESP: Sent OTA ST Exec Response to STA " MACSTR,
@@ -3546,6 +3737,27 @@ void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
 					  iap->current_ap_mld_addr,
 					  iap->sta_addr,
 					  iap->iap_transaction_id);
+	return;
+
+send_exec_fail:
+	uhr_remove_ap_from_list(sta, sta->smd_info.current_ap_mld_addr);
+
+	dialog_token = sta->smd_info.st_exec_dialog_token;
+	resp_buf = uhr_tgt_build_st_exec_resp_frame(lhapd, sta, dialog_token,
+						    WLAN_STATUS_UNSPECIFIED_FAILURE,
+						    &resp_len);
+	if (!resp_buf) {
+		wpa_printf(MSG_ERROR,
+			   "UHR CTX RESP: Failed to build failure ST Exec Response");
+		uhr_tgt_cancel_st_prep_timer(lhapd, iap->sta_addr);
+		return;
+	}
+
+	os_memcpy(((struct ieee80211_mgmt *) resp_buf)->da,
+		  iap->sta_addr, ETH_ALEN);
+
+	hostapd_drv_send_mlme(lhapd, resp_buf, resp_len, 0, NULL, 0, 0, 0, 0);
+	os_free(resp_buf);
 }
 
 
@@ -3572,7 +3784,7 @@ void uhr_cur_ap_handle_st_exec_via_tgt_done(struct hostapd_data *hapd,
 
 	chosen = uhr_find_ap_in_list(sta, iap->target_ap_mld_addr);
 	if (!chosen ||
-	    chosen->state != SMD_AP_STATE_ST_EXEC_VIA_TGT_STARTED) {
+	    chosen->state != SMD_AP_STATE_ST_EXEC_VIA_TGT_CURR_CTX_RESP) {
 		wpa_printf(MSG_ERROR,
 			   "UHR VIA TGT DONE: Target AP " MACSTR
 			   " not in expected state",

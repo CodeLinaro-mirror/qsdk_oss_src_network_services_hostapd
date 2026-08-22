@@ -278,16 +278,21 @@ int uhr_remove_ap_from_list(struct sta_info *sta, const u8 *ap_mld_addr)
 
 /**
  * uhr_cleanup_sta_roam_contexts - Clean up all roaming contexts for a station
+ * @hapd: Hostapd data
  * @sta: Station info
  *
  * Public cleanup function called from sta_info.c when freeing a station.
  * Cancels all pending timeouts and frees all AP entries in the roaming list.
  */
-void uhr_cleanup_sta_roam_contexts(struct sta_info *sta)
+void uhr_cleanup_sta_roam_contexts(struct hostapd_data *hapd, struct sta_info *sta)
 {
 	struct smd_roam_ap_info *ap_info, *next;
+
 	if (!sta)
 		return;
+
+	eloop_cancel_timeout(uhr_cur_get_ctx_timeout, hapd, sta);
+
 	ap_info = sta->smd_info.ap_list;
 	while (ap_info) {
 		next = ap_info->next;
@@ -816,3 +821,45 @@ void uhr_tgt_cancel_st_prep_timer(struct hostapd_data *hapd,
                   MAC2STR(sta_addr));
 }
 
+/**
+ * uhr_cur_get_ctx_timeout - Cancels current AP GET_SMD_CTX timer and sends IAP
+ * @eloop_ctx: ctx for eloop timer (@hapd)
+ * @timeout_ctx: ctx for timeout (@sta)
+ */
+void uhr_cur_get_ctx_timeout(void *eloop_ctx, void *timeout_ctx)
+{
+	struct hostapd_data *hapd = eloop_ctx;
+	struct sta_info *sta = timeout_ctx;
+	struct smd_roam_ap_info *ap_info;
+	const u8 *target_ap_mld_addr =
+		sta->smd_info.get_ctx_pending.target_ap_mld_addr;
+
+	wpa_printf(MSG_ERROR,
+		   "GET_SMD_CTX timeout for target " MACSTR " (STA " MACSTR ")",
+		   MAC2STR(target_ap_mld_addr), MAC2STR(sta->addr));
+
+	ap_info = uhr_find_ap_in_list(sta, target_ap_mld_addr);
+	if (!ap_info) {
+		wpa_printf(MSG_ERROR, "GET_SMD_CTX timeout: No ap_info for " MACSTR,
+			   MAC2STR(target_ap_mld_addr));
+		return;
+	}
+
+	if (ap_info->state != SMD_AP_STATE_ST_EXEC_VIA_TGT_CURR_CTX_WAIT ||
+	    !sta->smd_info.get_ctx_pending.active) {
+		wpa_printf(MSG_ERROR, "GET_SMD_CTX timeout: Invalid state %u (pending=%d)",
+			   ap_info->state, sta->smd_info.get_ctx_pending.active);
+		return;
+	}
+
+	sta->smd_info.get_ctx_pending.active = false;
+	ap_info->state = SMD_AP_STATE_ST_PREP_COMPLETE;
+	wpa_printf(MSG_DEBUG, "GET_SMD_CTX timeout: Rolling back to ST_PREP_COMPLETE");
+
+	uhr_iap_send_st_ctx_response(hapd,
+				     target_ap_mld_addr,
+				     sta->addr,
+				     sta->smd_info.get_ctx_pending.iap_transaction_id,
+				     UHR_IAP_STATUS_FAILURE,
+				     NULL);
+}

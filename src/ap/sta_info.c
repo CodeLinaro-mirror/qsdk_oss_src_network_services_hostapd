@@ -467,7 +467,8 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 
 #ifdef CONFIG_IEEE80211BN
 	/* Clean up UHR roaming contexts */
-	uhr_cleanup_sta_roam_contexts(sta);
+	uhr_cleanup_sta_roam_contexts(hapd, sta);
+
 #endif /* CONFIG_IEEE80211BN */
 
 
