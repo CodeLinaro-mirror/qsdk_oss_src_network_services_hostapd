@@ -3372,7 +3372,7 @@ int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd, struct sta_info *sta,
 	 * the exchange, call ap_free_sta(), and leave the CTX_RESPONSE handler
 	 * with a dangling sta_info pointer.
 	 */
-	if (hostapd_mld_find_assoc_sta(hapd, sta->addr, &assoc_hapd))
+	if (hostapd_mld_find_assoc_sta(hapd, sta->addr, &assoc_hapd, &sta))
 		uhr_tgt_cancel_st_prep_timer(assoc_hapd, sta->addr);
 
 	return uhr_iap_send_st_ctx_request(hapd,
@@ -3501,21 +3501,6 @@ void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
 	os_memcpy(((struct ieee80211_mgmt *) resp_buf)->da,
 		  iap->sta_addr, ETH_ALEN);
 
-	ret = hostapd_drv_send_mlme(lhapd, resp_buf, resp_len,
-				    0, NULL, 0, 0, 0, 0);
-	os_free(resp_buf);
-
-	if (ret < 0) {
-		wpa_printf(MSG_ERROR,
-			   "UHR CTX RESP: Failed to send OTA ST Exec Response");
-		uhr_tgt_cancel_st_prep_timer(lhapd, iap->sta_addr);
-		return;
-	}
-
-	wpa_printf(MSG_INFO,
-		   "UHR CTX RESP: Sent OTA ST Exec Response to STA " MACSTR,
-		   MAC2STR(iap->sta_addr));
-
 	/*
 	 * Notify the firmware that the TAP-side transition is complete.
 	 * role=2 (Target AP), type=4 (DYNAMIC_CONTEXT) — mirrors the call
@@ -3533,6 +3518,26 @@ void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
 			   "UHR CTX RESP: Failed to send DYNAMIC_CONTEXT WMI for STA "
 			   MACSTR, MAC2STR(iap->sta_addr));
 		return;
+	}
+
+	ret = hostapd_drv_send_mlme(lhapd, resp_buf, resp_len,
+			    0, NULL, 0, 0, 0, 0);
+	os_free(resp_buf);
+
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR,
+			   "UHR CTX RESP: Failed to send OTA ST Exec Response");
+		uhr_tgt_cancel_st_prep_timer(lhapd, iap->sta_addr);
+		return;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "UHR CTX RESP: Sent OTA ST Exec Response to STA " MACSTR,
+		   MAC2STR(iap->sta_addr));
+
+	if (ap_sta_set_authorized_flag(lhapd, sta, 1)) {
+		sta->flags_ext |= WLAN_STA_SMD;
+		hostapd_set_sta_flags(lhapd, sta);
 	}
 
 	uhr_tgt_cancel_st_prep_timer(lhapd, iap->sta_addr);
@@ -3585,4 +3590,11 @@ void uhr_cur_ap_handle_st_exec_via_tgt_done(struct hostapd_data *hapd,
 	uhr_cur_ap_cancel_st_prep_for_entry(hapd, sta, chosen);
 	uhr_remove_ap_from_list(sta, iap->target_ap_mld_addr);
 	uhr_cur_ap_purge_ap_list(hapd, sta);
+
+	wpa_printf(MSG_INFO,
+		   "UHR VIA TGT DONE: STA " MACSTR
+		   " fully transitioned, deleting ML station",
+		   MAC2STR(iap->sta_addr));
+	ap_sta_remove_link_sta(hapd, sta, 0, false);
+	ap_free_sta(hapd, sta);
 }
