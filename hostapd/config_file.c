@@ -2285,6 +2285,19 @@ static int smd_derive_key(const char *pos, u8 *key, size_t key_len)
 #endif /* CONFIG_IEEE80211BN */
 
 
+static int parse_acm_val(const char *pos, const char *param_name, int line)
+{
+	int val = atoi(pos);
+
+	if (val < 0 || val > 1) {
+		wpa_printf(MSG_ERROR, "Line %d: invalid %s %d (expected 0 or 1)",
+			   line, param_name, val);
+		return -1;
+	}
+	return val;
+}
+
+
 static int hostapd_config_fill(struct hostapd_config *conf,
 				struct hostapd_bss_config *bss,
 				const char *buf, char *pos, int line)
@@ -4386,8 +4399,11 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->he_mu_edca.he_mu_ac_be_param[HE_MU_AC_PARAM_ACI_IDX] |=
 			set_he_cap(atoi(pos), HE_MU_AC_PARAM_AIFSN);
 	} else if (os_strcmp(buf, "he_mu_edca_ac_be_acm") == 0) {
+		int acm_val = parse_acm_val(pos, "he_mu_edca_ac_be_acm", line);
+		if (acm_val < 0)
+			return 1;
 		conf->he_mu_edca.he_mu_ac_be_param[HE_MU_AC_PARAM_ACI_IDX] |=
-			set_he_cap(atoi(pos), HE_MU_AC_PARAM_ACM);
+			set_he_cap(acm_val, HE_MU_AC_PARAM_ACM);
 	} else if (os_strcmp(buf, "he_mu_edca_ac_be_aci") == 0) {
 		conf->he_mu_edca.he_mu_ac_be_param[HE_MU_AC_PARAM_ACI_IDX] |=
 			set_he_cap(atoi(pos), HE_MU_AC_PARAM_ACI);
@@ -4404,8 +4420,11 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->he_mu_edca.he_mu_ac_bk_param[HE_MU_AC_PARAM_ACI_IDX] |=
 			set_he_cap(atoi(pos), HE_MU_AC_PARAM_AIFSN);
 	} else if (os_strcmp(buf, "he_mu_edca_ac_bk_acm") == 0) {
+		int acm_val = parse_acm_val(pos, "he_mu_edca_ac_bk_acm", line);
+		if (acm_val < 0)
+			return 1;
 		conf->he_mu_edca.he_mu_ac_bk_param[HE_MU_AC_PARAM_ACI_IDX] |=
-			set_he_cap(atoi(pos), HE_MU_AC_PARAM_ACM);
+			set_he_cap(acm_val, HE_MU_AC_PARAM_ACM);
 	} else if (os_strcmp(buf, "he_mu_edca_ac_bk_aci") == 0) {
 		conf->he_mu_edca.he_mu_ac_bk_param[HE_MU_AC_PARAM_ACI_IDX] |=
 			set_he_cap(atoi(pos), HE_MU_AC_PARAM_ACI);
@@ -4422,8 +4441,11 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->he_mu_edca.he_mu_ac_vi_param[HE_MU_AC_PARAM_ACI_IDX] |=
 			set_he_cap(atoi(pos), HE_MU_AC_PARAM_AIFSN);
 	} else if (os_strcmp(buf, "he_mu_edca_ac_vi_acm") == 0) {
+		int acm_val = parse_acm_val(pos, "he_mu_edca_ac_vi_acm", line);
+		if (acm_val < 0)
+			return 1;
 		conf->he_mu_edca.he_mu_ac_vi_param[HE_MU_AC_PARAM_ACI_IDX] |=
-			set_he_cap(atoi(pos), HE_MU_AC_PARAM_ACM);
+			set_he_cap(acm_val, HE_MU_AC_PARAM_ACM);
 	} else if (os_strcmp(buf, "he_mu_edca_ac_vi_aci") == 0) {
 		conf->he_mu_edca.he_mu_ac_vi_param[HE_MU_AC_PARAM_ACI_IDX] |=
 			set_he_cap(atoi(pos), HE_MU_AC_PARAM_ACI);
@@ -4440,8 +4462,11 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->he_mu_edca.he_mu_ac_vo_param[HE_MU_AC_PARAM_ACI_IDX] |=
 			set_he_cap(atoi(pos), HE_MU_AC_PARAM_AIFSN);
 	} else if (os_strcmp(buf, "he_mu_edca_ac_vo_acm") == 0) {
+		int acm_val = parse_acm_val(pos, "he_mu_edca_ac_vo_acm", line);
+		if (acm_val < 0)
+			return 1;
 		conf->he_mu_edca.he_mu_ac_vo_param[HE_MU_AC_PARAM_ACI_IDX] |=
-			set_he_cap(atoi(pos), HE_MU_AC_PARAM_ACM);
+			set_he_cap(acm_val, HE_MU_AC_PARAM_ACM);
 	} else if (os_strcmp(buf, "he_mu_edca_ac_vo_aci") == 0) {
 		conf->he_mu_edca.he_mu_ac_vo_param[HE_MU_AC_PARAM_ACI_IDX] |=
 			set_he_cap(atoi(pos), HE_MU_AC_PARAM_ACI);
@@ -6362,10 +6387,13 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->epcs_he_mu_edca.he_mu_ac_be_param[HE_MU_AC_PARAM_ACI_IDX] |=
 			set_he_cap(atoi(pos), HE_MU_AC_PARAM_AIFSN);
 	} else if (os_strcmp(buf, "epcs_he_mu_edca_ac_be_acm") == 0) {
+		int acm_val = parse_acm_val(pos, "epcs_he_mu_edca_ac_be_acm", line);
+		if (acm_val < 0)
+			return 1;
 		bss->epcs_he_mu_edca.he_mu_ac_be_param[HE_MU_AC_PARAM_ACI_IDX] &=
 			~HE_MU_AC_PARAM_ACM;
 		bss->epcs_he_mu_edca.he_mu_ac_be_param[HE_MU_AC_PARAM_ACI_IDX] |=
-			set_he_cap(atoi(pos), HE_MU_AC_PARAM_ACM);
+			set_he_cap(acm_val, HE_MU_AC_PARAM_ACM);
 	} else if (os_strcmp(buf, "epcs_he_mu_edca_ac_be_aci") == 0) {
 		bss->epcs_he_mu_edca.he_mu_ac_be_param[HE_MU_AC_PARAM_ACI_IDX] &=
 			~HE_MU_AC_PARAM_ACI;
@@ -6391,10 +6419,13 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->epcs_he_mu_edca.he_mu_ac_bk_param[HE_MU_AC_PARAM_ACI_IDX] |=
 			set_he_cap(atoi(pos), HE_MU_AC_PARAM_AIFSN);
 	} else if (os_strcmp(buf, "epcs_he_mu_edca_ac_bk_acm") == 0) {
+		int acm_val = parse_acm_val(pos, "epcs_he_mu_edca_ac_bk_acm", line);
+		if (acm_val < 0)
+			return 1;
 		bss->epcs_he_mu_edca.he_mu_ac_bk_param[HE_MU_AC_PARAM_ACI_IDX] &=
 			~HE_MU_AC_PARAM_ACM;
 		bss->epcs_he_mu_edca.he_mu_ac_bk_param[HE_MU_AC_PARAM_ACI_IDX] |=
-			set_he_cap(atoi(pos), HE_MU_AC_PARAM_ACM);
+			set_he_cap(acm_val, HE_MU_AC_PARAM_ACM);
 	} else if (os_strcmp(buf, "epcs_he_mu_edca_ac_bk_aci") == 0) {
 		bss->epcs_he_mu_edca.he_mu_ac_bk_param[HE_MU_AC_PARAM_ACI_IDX] &=
 			~HE_MU_AC_PARAM_ACI;
@@ -6420,10 +6451,13 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->epcs_he_mu_edca.he_mu_ac_vi_param[HE_MU_AC_PARAM_ACI_IDX] |=
 			set_he_cap(atoi(pos), HE_MU_AC_PARAM_AIFSN);
 	} else if (os_strcmp(buf, "epcs_he_mu_edca_ac_vi_acm") == 0) {
+		int acm_val = parse_acm_val(pos, "epcs_he_mu_edca_ac_vi_acm", line);
+		if (acm_val < 0)
+			return 1;
 		bss->epcs_he_mu_edca.he_mu_ac_vi_param[HE_MU_AC_PARAM_ACI_IDX] &=
 			~HE_MU_AC_PARAM_ACM;
 		bss->epcs_he_mu_edca.he_mu_ac_vi_param[HE_MU_AC_PARAM_ACI_IDX] |=
-			set_he_cap(atoi(pos), HE_MU_AC_PARAM_ACM);
+			set_he_cap(acm_val, HE_MU_AC_PARAM_ACM);
 	} else if (os_strcmp(buf, "epcs_he_mu_edca_ac_vi_aci") == 0) {
 		bss->epcs_he_mu_edca.he_mu_ac_vi_param[HE_MU_AC_PARAM_ACI_IDX] &=
 			~HE_MU_AC_PARAM_ACI;
@@ -6449,10 +6483,13 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->epcs_he_mu_edca.he_mu_ac_vo_param[HE_MU_AC_PARAM_ACI_IDX] |=
 			set_he_cap(atoi(pos), HE_MU_AC_PARAM_AIFSN);
 	} else if (os_strcmp(buf, "epcs_he_mu_edca_ac_vo_acm") == 0) {
+		int acm_val = parse_acm_val(pos, "epcs_he_mu_edca_ac_vo_acm", line);
+		if (acm_val < 0)
+			return 1;
 		bss->epcs_he_mu_edca.he_mu_ac_vo_param[HE_MU_AC_PARAM_ACI_IDX] &=
 			~HE_MU_AC_PARAM_ACM;
 		bss->epcs_he_mu_edca.he_mu_ac_vo_param[HE_MU_AC_PARAM_ACI_IDX] |=
-			set_he_cap(atoi(pos), HE_MU_AC_PARAM_ACM);
+			set_he_cap(acm_val, HE_MU_AC_PARAM_ACM);
 	} else if (os_strcmp(buf, "epcs_he_mu_edca_ac_vo_aci") == 0) {
 		bss->epcs_he_mu_edca.he_mu_ac_vo_param[HE_MU_AC_PARAM_ACI_IDX] &=
 			~HE_MU_AC_PARAM_ACI;
