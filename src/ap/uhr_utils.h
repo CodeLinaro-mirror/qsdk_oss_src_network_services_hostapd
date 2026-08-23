@@ -40,7 +40,7 @@ enum uhr_smd_st_type {
 
 #define UHR_ST_IAP_TIMEOUT_USEC 5000000
 
-#define UHR_ST_GET_CTX_TIMEOUT_USEC 20000
+#define UHR_ST_GET_CTX_TIMEOUT_USEC 50000
 
 /* UHR ST preparation timeout fallback when smd_timeout is not configured (5 seconds) */
 #define UHR_ST_PREP_TIMEOUT_SEC 5
