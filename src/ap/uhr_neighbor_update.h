@@ -46,7 +46,7 @@ int smd_neighbor_update_send(struct hostapd_data *hapd,
 
 void smd_neighbor_update_rx(struct hostapd_data *hapd, const u8 *src_addr,
 			    const u8 *dst_addr, const u8 *data, size_t data_len,
-			    u8 oui_suffix);
+			    u16 msg_type);
 
 int smd_neighbor_update_send_pull_bcast(struct hostapd_data *hapd);
 int smd_neighbor_update_send_pull_ucast(struct hostapd_data *hapd,
