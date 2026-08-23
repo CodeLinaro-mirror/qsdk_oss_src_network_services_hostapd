@@ -55,6 +55,10 @@ struct ieee1905_hdr {
 #define ETH_P_1905_SMD_ST_EXEC_REQ_MSG   0xFF03  /* placeholder */
 #define ETH_P_1905_SMD_ST_EXEC_REP_MSG   0xFF04  /* placeholder */
 
+/* SMD Neighbor Update/Fetch 1905 message types. */
+#define ETH_P_1905_SMD_NEIGHBOR_UPDATE_MSG   0xFF08
+#define ETH_P_1905_SMD_NEIGHBOR_FETCH_MSG    0xFF09
+
 struct eth_p_1905_ctx;
 struct hostapd_data;
 

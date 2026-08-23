@@ -13,7 +13,8 @@
 #include "wpa_auth.h"
 #include "wpa_auth_i.h"
 #include "uhr_utils.h"
-#include "uhr_oui_transport.h"
+#include "eth_p_1905.h"
+#include "uhr_neighbor_update.h"
 
 
 /* Global IAP transaction ID counter */
@@ -132,7 +133,7 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 	}
 
 	/* FIX: Peer validation before send */
-	if (!uhr_oui_peer_exists(hapd->uhr_oui_ctx, target_ap_mld_addr)) {
+	if (!eth_p_1905_peer_exists(hapd->eth_p_1905_ctx, target_ap_mld_addr)) {
 		wpa_printf(MSG_ERROR,
 			   "SMD IAP: Target AP " MACSTR " not in peer list",
 			   MAC2STR(target_ap_mld_addr));
@@ -206,9 +207,9 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 		   frame_len);
 
 	/* Send via native OUI transport with suffix 0x06 */
-	ret = uhr_oui_send(hapd->uhr_oui_ctx, target_ap_mld_addr,
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, target_ap_mld_addr,
                            hapd->mld->mld_addr,
-			   UHR_IAP_SUFFIX_REQUEST, buf, iap_len);
+			   ETH_P_1905_IAP_MSG_REQUEST, buf, iap_len);
 
 	os_free(buf);
 
@@ -325,7 +326,7 @@ int uhr_iap_send_st_prep_resp(struct hostapd_data *hapd,
 	}
 
 	/* FIX: Peer validation before send */
-	if (!uhr_oui_peer_exists(hapd->uhr_oui_ctx, current_ap_mld_addr)) {
+	if (!eth_p_1905_peer_exists(hapd->eth_p_1905_ctx, current_ap_mld_addr)) {
 		wpa_printf(MSG_ERROR,
 			   "SMD IAP: Current AP " MACSTR " not in peer list",
 			   MAC2STR(current_ap_mld_addr));
@@ -376,9 +377,9 @@ int uhr_iap_send_st_prep_resp(struct hostapd_data *hapd,
 		   status_code, frame_len);
 
 	/* Send via native OUI transport with suffix 0x07 */
-	ret = uhr_oui_send(hapd->uhr_oui_ctx, current_ap_mld_addr,
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, current_ap_mld_addr,
                            hapd->mld->mld_addr,
-			   UHR_IAP_SUFFIX_RESPONSE, buf, iap_len);
+			   ETH_P_1905_IAP_MSG_RESPONSE, buf, iap_len);
 
 	os_free(buf);
 
@@ -409,7 +410,7 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
                return -1;
 	}
 
-	if (!uhr_oui_peer_exists(hapd->uhr_oui_ctx, target_ap_mld_addr)) {
+	if (!eth_p_1905_peer_exists(hapd->eth_p_1905_ctx, target_ap_mld_addr)) {
 		wpa_printf(MSG_ERROR,
 			   "UHR IAP: ST EXEC REQ: Target AP " MACSTR " not in peer list",
 			   MAC2STR(target_ap_mld_addr));
@@ -470,9 +471,9 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
                   MAC2STR(target_ap_mld_addr), iap->iap_transaction_id);
 
        /* Send via native OUI transport with suffix 0x06 (REQUEST) */
-       ret = uhr_oui_send(hapd->uhr_oui_ctx, target_ap_mld_addr,
+       ret = eth_p_1905_send(hapd->eth_p_1905_ctx, target_ap_mld_addr,
 			  hapd->mld->mld_addr,
-                          UHR_IAP_SUFFIX_REQUEST,
+                          ETH_P_1905_IAP_MSG_REQUEST,
                           buf, iap_len);
 
        os_free(buf);
@@ -506,7 +507,7 @@ int uhr_iap_send_st_exec_resp(struct hostapd_data *hapd,
                return -1;
        }
 
-	if (!uhr_oui_peer_exists(hapd->uhr_oui_ctx, current_ap_mld_addr)) {
+	if (!eth_p_1905_peer_exists(hapd->eth_p_1905_ctx, current_ap_mld_addr)) {
 		wpa_printf(MSG_ERROR,
 			   "UHR IAP: ST EXEC RESP: Current AP " MACSTR " not in peer list",
 			   MAC2STR(current_ap_mld_addr));
@@ -554,9 +555,9 @@ int uhr_iap_send_st_exec_resp(struct hostapd_data *hapd,
                   status_code, frame_len);
 
        /* Send via native OUI transport with suffix 0x07 (RESPONSE) */
-       ret = uhr_oui_send(hapd->uhr_oui_ctx, current_ap_mld_addr,
+       ret = eth_p_1905_send(hapd->eth_p_1905_ctx, current_ap_mld_addr,
 			  hapd->mld->mld_addr,
-                          UHR_IAP_SUFFIX_RESPONSE,
+                          ETH_P_1905_IAP_MSG_RESPONSE,
                           buf, iap_len);
 
        os_free(buf);
@@ -583,7 +584,7 @@ int uhr_iap_send_st_roam_cleanup(struct hostapd_data *hapd,
 	if (!hapd || !target_ap_mld_addr || !sta_mld_addr)
 		return -1;
 
-	if (!uhr_oui_peer_exists(hapd->uhr_oui_ctx, target_ap_mld_addr)) {
+	if (!eth_p_1905_peer_exists(hapd->eth_p_1905_ctx, target_ap_mld_addr)) {
 		wpa_printf(MSG_DEBUG,
 			   "UHR IAP: ST ROAM CLEANUP: Target AP " MACSTR " not in peer list",
 			   MAC2STR(target_ap_mld_addr));
@@ -613,9 +614,9 @@ int uhr_iap_send_st_roam_cleanup(struct hostapd_data *hapd,
 		   "UHR IAP: Sending ST ROAM CLEANUP to " MACSTR " for STA " MACSTR,
 		   MAC2STR(target_ap_mld_addr), MAC2STR(sta_mld_addr));
 
-	ret = uhr_oui_send(hapd->uhr_oui_ctx, target_ap_mld_addr,
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, target_ap_mld_addr,
 			   hapd->mld->mld_addr,
-			   UHR_IAP_SUFFIX_REQUEST, buf, iap_len);
+			   ETH_P_1905_IAP_MSG_REQUEST, buf, iap_len);
 	os_free(buf);
 
 	if (ret < 0) {
@@ -650,10 +651,10 @@ int uhr_iap_send_st_ctx_request(struct hostapd_data *hapd,
 	os_memcpy(iap->target_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
 	os_memcpy(iap->sta_addr, sta_addr, ETH_ALEN);
 
-	ret = uhr_oui_send(hapd->uhr_oui_ctx, current_ap_mld_addr,
-			   hapd->own_addr,
-			   UHR_IAP_SUFFIX_REQUEST,
-			   (const u8 *) iap, iap_len);
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, current_ap_mld_addr,
+			      hapd->own_addr,
+			      ETH_P_1905_IAP_MSG_REQUEST,
+			      (const u8 *) iap, iap_len);
 	os_free(iap);
 
 	if (ret < 0) {
@@ -697,10 +698,10 @@ int uhr_iap_send_st_ctx_response(struct hostapd_data *hapd,
 		os_memcpy(frame->frame_ctx_data, smd_ctx, ctx_len);
 	}
 
-	ret = uhr_oui_send(hapd->uhr_oui_ctx, target_ap_mld_addr,
-			   hapd->own_addr,
-			   UHR_IAP_SUFFIX_RESPONSE,
-			   (const u8 *) frame, total);
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, target_ap_mld_addr,
+			      hapd->own_addr,
+			      ETH_P_1905_IAP_MSG_RESPONSE,
+			      (const u8 *) frame, total);
 	os_free(frame);
 
 	if (ret < 0) {
@@ -733,10 +734,10 @@ int uhr_iap_send_st_exec_via_tgt_done(struct hostapd_data *hapd,
 	os_memcpy(iap->target_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
 	os_memcpy(iap->sta_addr, sta_addr, ETH_ALEN);
 
-	ret = uhr_oui_send(hapd->uhr_oui_ctx, current_ap_mld_addr,
-			   hapd->own_addr,
-			   UHR_IAP_SUFFIX_RESPONSE,
-			   (const u8 *) iap, iap_len);
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, current_ap_mld_addr,
+			      hapd->own_addr,
+			      ETH_P_1905_IAP_MSG_RESPONSE,
+			      (const u8 *) iap, iap_len);
 	os_free(iap);
 
 	if (ret < 0) {
@@ -758,11 +759,18 @@ int uhr_iap_send_st_exec_via_tgt_done(struct hostapd_data *hapd,
  * Validates frame and dispatches to appropriate handler.
  */
 void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_addr,
-		const u8 *data, size_t data_len) // u8 oui_suffix)
+		const u8 *data, size_t data_len, u16 msg_type)
 {
 	const struct uhr_iap_frame *iap;
 	u16 smd_ctx_len = 0;
 	u16 frame_len;
+
+	if (msg_type == ETH_P_1905_SMD_NEIGHBOR_UPDATE_MSG ||
+	    msg_type == ETH_P_1905_SMD_NEIGHBOR_FETCH_MSG) {
+		smd_neighbor_update_rx(hapd, src_addr, dst_addr, data, data_len,
+				       msg_type);
+		return;
+	}
 
 	wpa_printf(MSG_DEBUG,
 		   "SMD IAP: Received frame from " MACSTR " (len=%zu)",
@@ -783,7 +791,7 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
 	frame_len = le_to_host16(iap->frame_len);
 
 	/* Promote sender's MLD addr to a concrete peer entry (wildcard path). */
-	if (uhr_oui_clone_peer(hapd->uhr_oui_ctx, src_addr,
+	if (eth_p_1905_clone_peer(hapd->eth_p_1905_ctx, src_addr,
 			       iap->current_ap_mld_addr) < 0) {
 		wpa_printf(MSG_WARNING,
 			   "SMD IAP: Failed to register MLD addr " MACSTR " in smd_partner list",
