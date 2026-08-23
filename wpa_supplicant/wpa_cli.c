@@ -2495,6 +2495,12 @@ static int wpa_cli_cmd_resume(struct wpa_ctrl *ctrl, int argc, char *argv[])
 	return wpa_ctrl_command(ctrl, "RESUME");
 }
 
+#ifdef CONFIG_QCN_EXTN
+static int wpa_cli_cmd_uplink_csa(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "UPLINK_CSA", 5, argc, argv);
+}
+#endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_TESTING_OPTIONS
 
@@ -4185,6 +4191,11 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	  "= notification of suspend/hibernate" },
 	{ "resume", wpa_cli_cmd_resume, NULL, cli_cmd_flag_none,
 	  "= notification of resume/thaw" },
+#ifdef CONFIG_QCN_EXTN
+	{ "uplink_csa", wpa_cli_cmd_uplink_csa, NULL, cli_cmd_flag_none,
+	  "<freq=MHz> <cs_count=count> <chan_width=width>"
+	  " <cf1=seg0> <cf2=seg1> = send UPLINK_CSA" },
+#endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_TESTING_OPTIONS
 	{ "drop_sa", wpa_cli_cmd_drop_sa, NULL, cli_cmd_flag_none,
 	  "= drop SA without deauth/disassoc (test command)" },
