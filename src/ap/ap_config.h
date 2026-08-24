@@ -1316,6 +1316,7 @@ struct hostapd_bss_config {
  */
 #define SKIP_UHR_EXTN_BCN        BIT(0)
 #define SKIP_UHR_EXTN_PROBE_RESP BIT(1)
+#define SKIP_UHR_EXTN_RNR        BIT(2)
 	u8 skip_uhr_extn;
 
 	/* User-configured link ID; -1 means auto-allocate */
