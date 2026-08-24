@@ -1326,6 +1326,7 @@ static char ** hostapd_complete_set(const char *str, int pos)
 		"mbo_assoc_disallow", "mbo_trans_reason", "mbo_assoc_retry",
 #endif /* CONFIG_MBO */
 		"deny_mac_file", "accept_mac_file",
+		"post_nol_freq", "post_nol_width", "post_nol_bgcac_en",
 #ifdef CONFIG_QCN_EXTN
 		HOSTAPD_CLI_CMD_FIELDS_EXTN
 #endif /* CONFIG_QCN_EXTN */

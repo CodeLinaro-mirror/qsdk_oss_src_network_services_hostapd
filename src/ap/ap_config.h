@@ -1795,6 +1795,30 @@ struct hostapd_config {
 	unsigned int ch_switch_eht_config;
 	int disable_csa_dfs;
 
+	/**
+	 * @post_nol_freq: Frequency (MHz) the AP switches to once the
+	 * NOL entry for this channel expires.
+	 *
+	 * -1 by default.
+	 */
+	int post_nol_freq;
+
+	/**
+	 * @post_nol_width: Bandwidth (MHz) the AP switches to once the
+	 * NOL entry for post_nol_freq expires.
+	 *
+	 * -1 by default.
+	 */
+	int post_nol_width;
+
+	/**
+	 * @post_nol_bgcac_en: Whether to use Agile CAC for the post_nol_freq
+	 * channel switch on NOL expiry.
+	 *
+	 * Enabled (1) by default.
+	 */
+	bool post_nol_bgcac_en;
+
 #define CH_SWITCH_UHR_ENABLED BIT(0)
 #define CH_SWITCH_UHR_DISABLED BIT(1)
 	unsigned int ch_switch_uhr_config;
