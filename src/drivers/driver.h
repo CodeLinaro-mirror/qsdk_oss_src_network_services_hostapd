@@ -1329,6 +1329,13 @@ struct wpa_driver_auth_params {
 	const u8 *ap_mld_addr;
 
 	struct wpa_smd_params smd;
+
+	/**
+	 * sta_max_bw - Requested maximum station bandwidth in MHz
+	 *
+	 * 0 = not specified; valid values: 20, 40, 80, 160, 320.
+	 */
+	int sta_max_bw;
 };
 
 /**
@@ -1846,6 +1853,13 @@ struct wpa_driver_associate_params {
 	 * disable_ht - Disable HT (IEEE 802.11n) for this connection
 	 */
 	int disable_ht;
+
+	/**
+	 * sta_max_bw - Requested maximum station bandwidth in MHz
+	 *
+	 * 0 = not specified; valid values: 20, 40, 80, 160, 320.
+	 */
+	int sta_max_bw;
 
 	/**
 	 * htcaps - HT Capabilities over-rides
