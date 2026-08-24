@@ -16203,7 +16203,8 @@ hostapd_eid_rnr_iface_len(struct hostapd_data *hapd,
 	u8 max_rnr = reporting_hapd->conf->rnr_ie_allowed;
 
 	if (mld_update)
-		tbtt_info_len = hostapd_is_uhr_enabled(hapd) ?
+		tbtt_info_len = hostapd_is_uhr_enabled(hapd) &&
+			!(hapd->conf->skip_uhr_extn & SKIP_UHR_EXTN_RNR) ?
 			RNR_TBTT_INFO_MLD_ECU_LEN : RNR_TBTT_INFO_MLD_LEN;
 	else
 		tbtt_info_len = RNR_TBTT_INFO_LEN;
@@ -16319,7 +16320,8 @@ repeat_rnr_len:
 	 */
 	if (!mld_update && tbtt_info_len == RNR_TBTT_INFO_LEN &&
 	    reporting_ap_mld) {
-		tbtt_info_len = hostapd_is_uhr_enabled(hapd) ?
+		tbtt_info_len = hostapd_is_uhr_enabled(hapd) &&
+			!(hapd->conf->skip_uhr_extn & SKIP_UHR_EXTN_RNR) ?
 			RNR_TBTT_INFO_MLD_ECU_LEN : RNR_TBTT_INFO_MLD_LEN;
 		goto repeat_rnr_len;
 	}
@@ -16842,7 +16844,8 @@ static u8 * hostapd_eid_rnr_iface(struct hostapd_data *hapd,
 	u8 max_rnr = reporting_hapd->conf->rnr_ie_allowed;
 
 	if (mld_update)
-		tbtt_info_len = hostapd_is_uhr_enabled(hapd) ?
+		tbtt_info_len = hostapd_is_uhr_enabled(hapd) &&
+			!(hapd->conf->skip_uhr_extn & SKIP_UHR_EXTN_RNR) ?
 			RNR_TBTT_INFO_MLD_ECU_LEN : RNR_TBTT_INFO_MLD_LEN;
 	else
 		tbtt_info_len = RNR_TBTT_INFO_LEN;
@@ -16962,7 +16965,8 @@ repeat_rnr:
 	 */
 	if (!mld_update && tbtt_info_len == RNR_TBTT_INFO_LEN &&
 	    reporting_ap_mld) {
-		tbtt_info_len = hostapd_is_uhr_enabled(hapd) ?
+		tbtt_info_len = hostapd_is_uhr_enabled(hapd) &&
+			!(hapd->conf->skip_uhr_extn & SKIP_UHR_EXTN_RNR) ?
 			RNR_TBTT_INFO_MLD_ECU_LEN : RNR_TBTT_INFO_MLD_LEN;
 		goto repeat_rnr;
 	}
