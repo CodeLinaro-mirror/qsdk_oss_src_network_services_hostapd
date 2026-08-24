@@ -762,17 +762,19 @@ static int wpa_derive_ptk(struct wpa_sm *sm, const unsigned char *src_addr,
 				"WPA: SMD PTK derivation AA=" MACSTR,
 				MAC2STR(wpa_sm_get_auth_addr(sm)));
 
-		/* Per-AP MLD PTK mode - derive SMD_KDK */
+		/* Per-AP MLD PTK mode - derive SMD_KDK.
+		 * Use WPA_KDK_MAX_LEN (32) rather than pmk_len to stay within
+		 * the ptk->kdk[] buffer; SHA-384 PMKs (48 B) would overflow it. */
 		if (sm->smd_ptk_mode == 1) {
-			kdk_len = sm->pmk_len;  /* KDK length = PMK length per spec */
+			kdk_len = WPA_KDK_MAX_LEN;
 			wpa_printf(MSG_DEBUG,
-				"SMD: Setting kdk_len=%zu for Per-AP MLD PTK mode",
+				"SMD: Per-AP MLD PTK mode, kdk_len=%zu",
 				kdk_len);
 		} else {
-			/* Per-SMD PTK mode - no KDK derivation */
-			kdk_len = 0;
+			/* Per-SMD PTK mode - KDK derived only if secure_ltf requires it */
 			wpa_printf(MSG_DEBUG,
-				"SMD: Setting kdk_len=0 for Per-SMD PTK mode");
+				"SMD: Per-SMD PTK mode, kdk_len=%zu (secure_ltf driven)",
+				kdk_len);
 		}
 
 		ret = wpa_pmk_to_ptk(sm->pmk, sm->pmk_len, "Pairwise key expansion",
