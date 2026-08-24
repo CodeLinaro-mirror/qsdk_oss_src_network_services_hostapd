@@ -517,6 +517,9 @@ struct rrm_data {
 	u8 noise_hist_channel;
 	u16 noise_hist_duration;
 	s8 noise_hist_anpi;
+
+	/* Requested frequency derived from Beacon Request operating class/channel */
+	unsigned int req_freq;
 };
 
 enum wpa_supplicant_test_failure {
