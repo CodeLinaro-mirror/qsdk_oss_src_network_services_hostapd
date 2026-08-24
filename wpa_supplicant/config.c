@@ -2755,6 +2755,69 @@ static char * wpa_config_write_pasn_groups(const struct parse_data *data,
 #endif /* NO_CONFIG_WRITE */
 #endif /* CONFIG_PASN */
 
+static bool wpa_config_valid_sta_max_bw(int value)
+{
+	switch (value) {
+	case 0:
+	case 20:
+	case 40:
+	case 80:
+	case 160:
+	case 320:
+		return true;
+	default:
+		return false;
+	}
+}
+
+
+static int wpa_config_parse_sta_max_bw(const struct parse_data *data,
+				       struct wpa_ssid *ssid, int line,
+				       const char *value)
+{
+	int val;
+	char *end;
+
+	val = strtol(value, &end, 0);
+	if (*end || !wpa_config_valid_sta_max_bw(val)) {
+		wpa_printf(MSG_ERROR,
+			   "force_bw: Line %d: invalid sta_max_bw '%s' "
+			   "(expected 0, 20, 40, 80, 160, or 320)",
+			   line, value);
+		return -1;
+	}
+
+
+	if (ssid->sta_max_bw == val)
+		return 1;
+
+	ssid->sta_max_bw = val;
+	return 0;
+}
+
+
+#ifndef NO_CONFIG_WRITE
+static char * wpa_config_write_sta_max_bw(const struct parse_data *data,
+					  struct wpa_ssid *ssid)
+{
+	char *value;
+	int res;
+
+	value = os_malloc(20);
+	if (!value)
+		return NULL;
+
+	res = os_snprintf(value, 20, "%d", ssid->sta_max_bw);
+	if (os_snprintf_error(20, res)) {
+		os_free(value);
+		return NULL;
+	}
+
+	value[20 - 1] = '\0';
+	return value;
+}
+#endif /* NO_CONFIG_WRITE */
+
 /* Helper macros for network block parser */
 
 #ifdef OFFSET
@@ -3066,6 +3129,7 @@ static const struct parse_data ssid_fields[] = {
 #ifdef CONFIG_HE_OVERRIDES
 	{ INT_RANGE(disable_he, 0, 1)},
 #endif /* CONFIG_HE_OVERRIDES */
+	{ FUNC(sta_max_bw) },
 	{ INT(ap_max_inactivity) },
 	{ INT(dtim_period) },
 	{ INT(beacon_int) },

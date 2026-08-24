@@ -882,6 +882,15 @@ struct wpa_ssid {
 #endif /* CONFIG_HE_OVERRIDES */
 
 	/**
+	 * sta_max_bw - Maximum station channel bandwidth in MHz
+	 *
+	 * 0 = not specified; valid values: 20, 40, 80, 160, 320.
+	 * When set, the STA uses at most this bandwidth.
+	 * The configured value must match the AP's PHY mode.
+	 */
+	int sta_max_bw;
+
+	/**
 	 * ap_max_inactivity - Timeout in seconds to detect STA's inactivity
 	 *
 	 * This timeout value is used in AP mode to clean up inactive stations.

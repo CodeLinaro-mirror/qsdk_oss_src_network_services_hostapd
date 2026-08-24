@@ -4397,6 +4397,7 @@ static void nl80211_copy_auth_params(struct wpa_driver_nl80211_data *drv,
 	drv->auth_wep_tx_keyidx = params->wep_tx_keyidx;
 	drv->auth_local_state_change = params->local_state_change;
 	drv->auth_p2p = params->p2p;
+	drv->auth_sta_max_bw = params->sta_max_bw;
 
 	if (params->bssid)
 		os_memcpy(drv->auth_bssid_, params->bssid, ETH_ALEN);
@@ -4609,6 +4610,25 @@ static int nl80211_put_smd_params(struct nl_msg *msg,
 }
 #endif /* CONFIG_IEEE80211BN */
 
+static u32 nl80211_sta_max_bw_to_chan_width(int sta_max_bw)
+{
+	switch (sta_max_bw) {
+	case 20:
+		return NL80211_CHAN_WIDTH_20;
+	case 40:
+		return NL80211_CHAN_WIDTH_40;
+	case 80:
+		return NL80211_CHAN_WIDTH_80;
+	case 160:
+		return NL80211_CHAN_WIDTH_160;
+	case 320:
+		return NL80211_CHAN_WIDTH_320;
+	default:
+		return 0; /* 0 = not specified */
+	}
+}
+
+
 static int wpa_driver_nl80211_authenticate(
 	struct i802_bss *bss, struct wpa_driver_auth_params *params)
 {
@@ -4692,6 +4712,12 @@ retry:
 	if (params->ie &&
 	    nla_put(msg, NL80211_ATTR_IE, params->ie_len, params->ie))
 		goto fail;
+	if (params->sta_max_bw) {
+		u32 cw = nl80211_sta_max_bw_to_chan_width(params->sta_max_bw);
+
+		if (cw && nla_put_u32(msg, NL80211_ATTR_CHANNEL_WIDTH, cw))
+			goto fail;
+	}
 	if (params->auth_data) {
 		wpa_hexdump(MSG_DEBUG, "  * auth_data", params->auth_data,
 			    params->auth_data_len);
@@ -4831,6 +4857,7 @@ int wpa_driver_nl80211_authenticate_retry(struct wpa_driver_nl80211_data *drv)
 	params.wep_tx_keyidx = drv->auth_wep_tx_keyidx;
 	params.local_state_change = drv->auth_local_state_change;
 	params.p2p = drv->auth_p2p;
+	params.sta_max_bw = drv->auth_sta_max_bw;
 
 	if (!is_zero_ether_addr(drv->auth_bssid_))
 		params.bssid = drv->auth_bssid_;
@@ -9120,6 +9147,13 @@ static int nl80211_connect_common(struct wpa_driver_nl80211_data *drv,
 			       params->freq.edmg.channels) ||
 		    nla_put_u8(msg, NL80211_ATTR_WIPHY_EDMG_BW_CONFIG,
 			       params->freq.edmg.bw_config))
+			return -1;
+	}
+
+	if (params->sta_max_bw) {
+		u32 cw = nl80211_sta_max_bw_to_chan_width(params->sta_max_bw);
+
+		if (cw && nla_put_u32(msg, NL80211_ATTR_CHANNEL_WIDTH, cw))
 			return -1;
 	}
 

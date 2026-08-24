@@ -1000,6 +1000,7 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 	params.ssid = bss->ssid;
 	params.ssid_len = bss->ssid_len;
 	params.p2p = ssid->p2p_group;
+	params.sta_max_bw = ssid->sta_max_bw;
 
 	if (wpa_s->sme.ssid_len != params.ssid_len ||
 	    os_memcmp(wpa_s->sme.ssid, params.ssid, params.ssid_len) != 0)
@@ -3598,6 +3599,7 @@ mscs_fail:
 	params.ssid_len = wpa_s->sme.ssid_len;
 	params.freq.freq = wpa_s->sme.freq;
 	params.bg_scan_period = ssid ? ssid->bg_scan_period : -1;
+	params.sta_max_bw = ssid ? ssid->sta_max_bw : 0;
 	params.wpa_ie = wpa_s->sme.assoc_req_ie_len ?
 		wpa_s->sme.assoc_req_ie : NULL;
 	params.wpa_ie_len = wpa_s->sme.assoc_req_ie_len;
