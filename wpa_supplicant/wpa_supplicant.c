@@ -5617,6 +5617,7 @@ static void wpas_start_assoc_cb(struct wpa_radio_work *work, int deinit)
 	wpa_s->auth_alg = params.auth_alg;
 	params.mode = ssid->mode;
 	params.bg_scan_period = ssid->bg_scan_period;
+	params.sta_max_bw = ssid->sta_max_bw;
 #ifdef CONFIG_WEP
 	{
 		int i;
@@ -7634,6 +7635,7 @@ void wpa_supplicant_apply_ht_overrides(
 		return;
 
 	params->disable_ht = ssid->disable_ht;
+	params->sta_max_bw = ssid->sta_max_bw;
 	if (!params->htcaps || !params->htcaps_mask)
 		return;
 
