@@ -3187,20 +3187,21 @@ static int wpa_derive_ptk(struct wpa_state_machine *sm, const u8 *snonce,
 
 	/* Set kdk_len based on SMD PTK mode */
 	if (sm->smd_enabled && sm->smd_ptk_mode == 1) {
-		/* Per-AP MLD PTK mode - derive SMD_KDK */
-		kdk_len = sm->pmk_len;  /* KDK length = PMK length per spec */
-		wpa_printf(MSG_DEBUG,
-			   "SMD: Setting kdk_len=%zu for Per-AP MLD PTK mode",
-			   kdk_len);
-	} else if (sm->smd_enabled && sm->smd_ptk_mode == 0) {
-		/* Per-SMD PTK mode - no KDK derivation */
-		kdk_len = 0;
+		/* Per-AP MLD PTK mode - derive SMD_KDK.
+		 * Use WPA_KDK_MAX_LEN (32) rather than pmk_len to stay within
+		 * the ptk->kdk[] buffer; SHA-384 PMKs (48 B) would overflow it. */
+		kdk_len = WPA_KDK_MAX_LEN;
 	} else if (sm->wpa_auth->conf.force_kdk_derivation ||
 	    (!no_kdk && sm->wpa_auth->conf.secure_ltf &&
 	     ieee802_11_rsnx_capab(sm->rsnxe, WLAN_RSNX_CAPAB_SECURE_LTF)))
 		kdk_len = WPA_KDK_MAX_LEN;
 	else
 		kdk_len = 0;
+
+	if (sm->smd_enabled)
+		wpa_printf(MSG_DEBUG,
+			   "SMD: Per-SMD PTK mode=%d, kdk_len=%zu",
+			   sm->smd_ptk_mode, kdk_len);
 
 #ifdef CONFIG_IEEE80211R_AP
 	if (wpa_key_mgmt_ft(sm->wpa_key_mgmt)) {
