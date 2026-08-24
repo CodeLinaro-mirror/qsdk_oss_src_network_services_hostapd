@@ -18,7 +18,9 @@
 #include "crypto/sha384.h"
 #include "pasn/pasn_common.h"
 #include "hostapd.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #include "ttlm.h"
 #ifdef CONFIG_IEEE80211AX
 #include "robust_av.h"
@@ -156,6 +158,10 @@ enum smd_ap_state {
        SMD_AP_STATE_ST_EXEC_COMPLETE,
        SMD_AP_STATE_DL_DRAIN_ACTIVE,      /* DL Drain timeout active */
        SMD_AP_STATE_TRANSITION_COMPLETE,  /* Transition complete */
+
+       /* ST Execute via Target AP-MLD states */
+       SMD_AP_STATE_ST_EXEC_VIA_TGT_STARTED,   /* CTX_REQUEST sent to Current AP */
+       SMD_AP_STATE_ST_EXEC_VIA_TGT_COMPLETE,  /* CTX_RESPONSE received, exec done */
 };
 
 /**
@@ -206,7 +212,6 @@ struct smd_roam_ap_info {
 	bool smd_ctx_valid;
 	struct sta_smd_ctx_info *smd_ctx;  /* SMD context for this AP MLD transition */
 	bool uhr_st_iap_timer_ongoing;
-	bool uhr_st_iap_timeout_occurred;
 };
 
 
@@ -230,6 +235,7 @@ struct smd_info {
 	struct hostapd_data *tgt_prep_timer_hapd; /* assoc-link hapd at timer registration */
 	enum tgt_smd_roam_state state; /* non-AP STA state in Tgt AP */
 	bool flag;
+	u8 current_ap_mld_addr[ETH_ALEN]; /* Current AP MLD addr at time of ST Prep */
 };
 #endif /* CONFIG_IEEE80211BN */
 
@@ -237,7 +243,9 @@ struct sta_info {
 	struct sta_info *next; /* next entry in sta list */
 	struct sta_info *hnext; /* next entry in hash table list */
 
+#ifdef CONFIG_QCN_EXTN
         struct sta_info_extn sta_extn;
+#endif /* CONFIG_QCN_EXTN */
 
 	u8 addr[6];
 	be32 ipaddr;
@@ -299,6 +307,7 @@ struct sta_info {
 	unsigned int ft_over_ds:1;
 	unsigned int external_dh_updated:1;
 	unsigned int post_csa_sa_query:1;
+	unsigned int sp_ie_validated:1;
 
 	u16 auth_alg;
 
@@ -548,6 +557,10 @@ struct sta_info {
 	struct os_time rssi_reject_timeout;
 	struct wpabuf *sae_pw_id;
 	unsigned int sae_pw_id_counter;
+#ifdef CONFIG_IEEE80211BN
+	bool is_mapc_peer;
+	struct mapc_parameters mapc_params;
+#endif /* CONFIG_IEEE80211BN */
 
 	u32 flags_ext;
 #ifdef CONFIG_IEEE80211BN
@@ -723,7 +736,7 @@ static inline void ap_sta_set_mld(struct sta_info *sta, bool mld)
 #ifdef CONFIG_IEEE80211BE
 void ap_sta_remove_link_sta(struct hostapd_data *hapd,
                             struct sta_info *sta,
-			    int check_authorized);
+			    int check_authorized, bool skip_kernel_delete);
 int ap_sta_check_link_sta(struct hostapd_data *hapd,
 			  struct sta_info *sta, const u8 *link_addr);
 #endif

@@ -549,3 +549,8 @@ int nl80211_update_beacons_on_chain_mask_change(struct i802_bss *bss, int hw_idx
 						int ifindex);
 
 #endif /* DRIVER_NL80211_H */
+
+#ifdef CONFIG_IEEE80211BN
+struct nlattr;
+struct sta_smd_ctx_info *nl80211_parse_smd_ctx(struct nlattr *smd_attr);
+#endif

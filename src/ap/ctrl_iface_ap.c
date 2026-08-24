@@ -18,6 +18,7 @@
 #include "hostapd.h"
 #include "ieee802_1x.h"
 #include "wpa_auth.h"
+#include "wpa_auth_i.h"
 #include "ieee802_11.h"
 #include "sta_info.h"
 #include "wps_hostapd.h"
@@ -306,6 +307,7 @@ static int hostapd_get_sta_phy_mode(struct sta_info *sta,
 	return len;
 }
 
+#endif /* CONFIG_CTRL_IFACE_MIB */
 
 static u8 hostapd_htmaxmcs(const u8 *mcs_set)
 {
@@ -347,6 +349,7 @@ static u8 hostapd_vhtmaxmcs(u16 rx_vht_mcs_map, u16 tx_vht_mcs_map)
 
 	return 0;
 }
+#ifdef CONFIG_CTRL_IFACE_MIB
 
 
 static unsigned int hostapd_mcs_map_max_nss(u16 mcs_map,
@@ -1144,6 +1147,72 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 		if (!os_snprintf_error(buflen - len, ret))
 			len += ret;
 	}
+	if (data.flags & STA_DRV_DATA_RX_HE_MCS) {
+		ret = os_snprintf(buf + len, buflen - len, " hemcs %u",
+				  data.rx_hemcs);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_RX_HE_NSS) {
+		ret = os_snprintf(buf + len, buflen - len, " henss %u",
+				  data.rx_he_nss);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_RX_HE_GI) {
+		const char *gi_str;
+
+		switch (data.rx_guard_interval) {
+		case GUARD_INTERVAL_0_8:
+			gi_str = "0.8";
+			break;
+		case GUARD_INTERVAL_1_6:
+			gi_str = "1.6";
+			break;
+		case GUARD_INTERVAL_3_2:
+			gi_str = "3.2";
+			break;
+		default:
+			gi_str = "unknown";
+			break;
+		}
+		ret = os_snprintf(buf + len, buflen - len, " hegi %s", gi_str);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_RX_EHT_MCS) {
+		ret = os_snprintf(buf + len, buflen - len, " ehtmcs %u",
+				  data.rx_ehtmcs);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_RX_EHT_NSS) {
+		ret = os_snprintf(buf + len, buflen - len, " ehtnss %u",
+				  data.rx_eht_nss);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_RX_EHT_GI) {
+		const char *gi_str;
+
+		switch (data.rx_guard_interval) {
+		case GUARD_INTERVAL_0_8:
+			gi_str = "0.8";
+			break;
+		case GUARD_INTERVAL_1_6:
+			gi_str = "1.6";
+			break;
+		case GUARD_INTERVAL_3_2:
+			gi_str = "3.2";
+			break;
+		default:
+			gi_str = "unknown";
+			break;
+		}
+		ret = os_snprintf(buf + len, buflen - len, " ehtgi %s", gi_str);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
 	ret = os_snprintf(buf + len, buflen - len, "\n");
 	if (!os_snprintf_error(buflen - len, ret))
 		len += ret;
@@ -1218,6 +1287,72 @@ static int hostapd_get_sta_info(struct hostapd_data *hapd,
 	}
 	if (data.flags & STA_DRV_DATA_TX_SHORT_GI) {
 		ret = os_snprintf(buf + len, buflen - len, " shortGI");
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_TX_HE_MCS) {
+		ret = os_snprintf(buf + len, buflen - len, " hemcs %u",
+				  data.tx_hemcs);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_TX_HE_NSS) {
+		ret = os_snprintf(buf + len, buflen - len, " henss %u",
+				  data.tx_he_nss);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_TX_HE_GI) {
+		const char *gi_str;
+
+		switch (data.tx_guard_interval) {
+		case GUARD_INTERVAL_0_8:
+			gi_str = "0.8";
+			break;
+		case GUARD_INTERVAL_1_6:
+			gi_str = "1.6";
+			break;
+		case GUARD_INTERVAL_3_2:
+			gi_str = "3.2";
+			break;
+		default:
+			gi_str = "unknown";
+			break;
+		}
+		ret = os_snprintf(buf + len, buflen - len, " hegi %s", gi_str);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_TX_EHT_MCS) {
+		ret = os_snprintf(buf + len, buflen - len, " ehtmcs %u",
+				  data.tx_ehtmcs);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_TX_EHT_NSS) {
+		ret = os_snprintf(buf + len, buflen - len, " ehtnss %u",
+				  data.tx_eht_nss);
+		if (!os_snprintf_error(buflen - len, ret))
+			len += ret;
+	}
+	if (data.flags & STA_DRV_DATA_TX_EHT_GI) {
+		const char *gi_str;
+
+		switch (data.tx_guard_interval) {
+		case GUARD_INTERVAL_0_8:
+			gi_str = "0.8";
+			break;
+		case GUARD_INTERVAL_1_6:
+			gi_str = "1.6";
+			break;
+		case GUARD_INTERVAL_3_2:
+			gi_str = "3.2";
+			break;
+		default:
+			gi_str = "unknown";
+			break;
+		}
+		ret = os_snprintf(buf + len, buflen - len, " ehtgi %s", gi_str);
 		if (!os_snprintf_error(buflen - len, ret))
 			len += ret;
 	}
@@ -1320,6 +1455,7 @@ void check_and_add_uniibands(band_info_t uniiband)
 	}
 }
 
+#ifdef CONFIG_TAXONOMY
 static int is_wpa_oui(const u8 *ie)
 {
 	if (ie[1] < 4)
@@ -1392,6 +1528,7 @@ static int print_sta_ies_compact(const u8 *ies, size_t ies_len,
 
 	return len;
 }
+#endif /* CONFIG_TAXONOMY */
 static int hostapd_ctrl_iface_sta_mib(struct hostapd_data *hapd,
 				      struct sta_info *sta,
 				      char *buf, size_t buflen)
@@ -3019,6 +3156,14 @@ int hostapd_parse_csa_settings(struct hostapd_iface *iface,
 		return ret;
 	}
 
+#ifdef CONFIG_IEEE80211BN
+	if (settings->freq_params.uhr_enabled && !iface->conf->ieee80211bn) {
+		wpa_printf(MSG_ERROR,
+			   "chanswitch: UHR is not allowed when VAP is operating in EHT mode");
+		return -1;
+	}
+#endif /* CONFIG_IEEE80211BN */
+
 #define SET_CSA_SETTING_EXT(str) \
 	do { \
 		const char *pos2 = os_strstr(pos, " " #str "="); \
@@ -3080,6 +3225,129 @@ int hostapd_ctrl_iface_stop_ap(struct hostapd_data *hapd)
 
 	ieee802_11_update_beacon_mbssid(hapd);
 	return 0;
+}
+
+int hostapd_ctrl_iface_dump_tk(struct hostapd_data *hapd, const char *cmd,
+			       char *buf, size_t buflen)
+{
+	u8 addr[ETH_ALEN];
+	struct sta_info *sta;
+	int key_idx;
+	const char *pos;
+	struct wpa_state_machine *sm;
+	size_t tk_len = 0;
+	u8 tk[WPA_TK_MAX_LEN]; /* Temporal Key (TK) */
+	int ret;
+
+	/* Verify hapd is valid */
+	if (!hapd) {
+		wpa_printf(MSG_ERROR, "DUMP_TK: Invalid hapd pointer");
+		return -1;
+	}
+
+	/* Parse MAC address - format: <sta_addr> <key_idx> */
+	if (hwaddr_aton(cmd, addr)) {
+		wpa_printf(MSG_ERROR, "DUMP_TK: Invalid STA address");
+		return os_snprintf(buf, buflen, "FAIL-INVALID-MAC\n");
+	}
+
+	/* Skip past MAC address by locating the first space delimiter */
+	pos = os_strchr(cmd, ' ');
+	if (!pos) {
+		wpa_printf(MSG_ERROR, "DUMP_TK: Missing key index");
+		return os_snprintf(buf, buflen, "FAIL-MISSING-KEY-IDX\n");
+	}
+	pos++;
+	while (*pos == ' ')
+		pos++;
+
+	if (*pos == '\0') {
+		wpa_printf(MSG_ERROR, "DUMP_TK: Missing key index");
+		return os_snprintf(buf, buflen, "FAIL-MISSING-KEY-IDX\n");
+	}
+
+	/* Parse key index */
+	key_idx = atoi(pos);
+	if (key_idx < 0 || key_idx > 3) {
+		wpa_printf(MSG_ERROR, "DUMP_TK: Invalid key index %d", key_idx);
+		return os_snprintf(buf, buflen, "FAIL-INVALID-KEY-IDX\n");
+	}
+
+	/* Look up station */
+	sta = ap_get_sta(hapd, addr);
+	if (!sta) {
+		wpa_printf(MSG_DEBUG, "DUMP_TK: Station " MACSTR " not found",
+			   MAC2STR(addr));
+		return os_snprintf(buf, buflen, "FAIL-STA-NOT-FOUND\n");
+	}
+
+#ifdef CONFIG_ENC_ASSOC
+	if (sta->epp_sta) {
+		/* Get key from pasn data */
+		struct pasn_data *pasn;
+		struct hostapd_data *assoc_hapd;
+		struct sta_info *assoc_sta =
+			hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd);
+
+		switch (sta->auth_alg) {
+		case WLAN_AUTH_EPPKE:
+			if (assoc_sta)
+				pasn = assoc_sta->pasn;
+			else
+				pasn = sta->pasn;
+
+			if (!pasn) {
+				wpa_printf(MSG_DEBUG, "DUMP_TK: No PASN data for " MACSTR,
+					   MAC2STR(addr));
+				return os_snprintf(buf, buflen, "FAIL-NO-PASN-DATA\n");
+			}
+			tk_len = pasn->ptk.tk_len;
+			os_memcpy(tk, pasn->ptk.tk, tk_len);
+			break;
+#ifdef CONFIG_IEEE8021X_AUTH
+		case WLAN_AUTH_802_1X:
+			if (assoc_sta) {
+				tk_len = assoc_sta->eap_auth_data.ptk.tk_len;
+				os_memcpy(tk, assoc_sta->eap_auth_data.ptk.tk, tk_len);
+			} else {
+				tk_len = sta->eap_auth_data.ptk.tk_len;
+				os_memcpy(tk, sta->eap_auth_data.ptk.tk, tk_len);
+			}
+			break;
+#endif /* CONFIG_IEEE8021X_AUTH */
+		default:
+			wpa_printf(MSG_ERROR, "Unsupported Auth algo "
+				   "for an EPP station");
+			return -1;
+		}
+	} else
+#endif /* CONFIG_ENC_ASSOC */
+	{
+		/* Get key from WPA state machine */
+		sm = sta->wpa_sm;
+		if (!sm) {
+			wpa_printf(MSG_DEBUG, "DUMP_TK: No WPA state machine for " MACSTR,
+				   MAC2STR(addr));
+			return os_snprintf(buf, buflen, "FAIL-NO-WPA-SM\n");
+		}
+		tk_len = sm->PTK.tk_len;
+		os_memcpy(tk, sm->PTK.tk, tk_len);
+	}
+	/* Get TK length and verify it's installed */
+	if (tk_len == 0) {
+		wpa_printf(MSG_DEBUG, "DUMP_TK: No TK installed for " MACSTR,
+			   MAC2STR(addr));
+		return os_snprintf(buf, buflen, "FAIL-NO-TK\n");
+	}
+	/* Return TK in hex format with newline */
+	ret = wpa_snprintf_hex(buf, buflen, tk, tk_len);
+	if (ret > 0 && (size_t) ret < buflen - 1) {
+		buf[ret] = '\n';
+		buf[ret + 1] = '\0';
+		ret++;
+	}
+
+	return ret;
 }
 
 
@@ -3343,6 +3611,7 @@ static int hostapd_parse_candidate_partner_links(struct hostapd_data *hapd,
 			tmp = os_strchr(pos, ',');
 			if (tmp && (!end || tmp < end)) {
 				pos = tmp + 1;
+#ifdef CONFIG_QCN_EXTN
 				/* check if atoi(pos) is the link id of
 				 * repurposed link, if so, return error as we
 				 * have request with invalid link
@@ -3352,6 +3621,7 @@ static int hostapd_parse_candidate_partner_links(struct hostapd_data *hapd,
 						   "link set has repurposed link, fail");
 					return -1;
 				}
+#endif /* CONFIG_QCN_EXTN */
 				link_set[i] = atoi(pos);
 				num_links++;
 			} else {
@@ -3935,7 +4205,7 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 	char *token, *context = NULL;
 	u32 mbssid_idx_disabled_bmap = 0, *mbssid_idx_bmap;
 	int ret, i, j, reorder_done_index = -1;
-	size_t num_bss;
+	size_t num_bss, max_num_bss;
 
 	if (!hapd || !hapd->iconf || !hapd->iface || !hapd->conf) {
 		wpa_printf(MSG_ERROR, "Invalid BSS");
@@ -4082,6 +4352,14 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 
 	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
 		group->txbss = hapd;
+
+	max_num_bss = (1 << hostapd_max_bssid_indicator(hapd));
+
+	/* Clear previous Tx BSS(tx_hapd) AID bitmap and init AID bitmap for new Tx BSS */
+	for (i = 0; i < max_num_bss; i++) {
+		tx_hapd->sta_aid[0] &= ~BIT(i);
+		hapd->sta_aid[0] |= BIT(i);
+	}
 
 	if (!auto_start)
 		return 0;

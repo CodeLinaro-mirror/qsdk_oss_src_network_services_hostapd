@@ -67,6 +67,72 @@ u8 * hostapd_eid_assoc_comeback_time(struct hostapd_data *hapd,
 }
 
 
+#if defined(CONFIG_ENC_ASSOC) || defined(CONFIG_IEEE8021X_AUTH)
+static u8 * hostapd_eid_pasn_comeback(u8 *pos, size_t max_len, u32 timeout)
+{
+	struct wpabuf *ie;
+
+	/* Temporary buffer large enough to hold PASN Parameters
+	 * Element containing only a Comeback Info field with a Comeback After
+	 * subfield and no actual cookie data
+	 */
+	ie = wpabuf_alloc(WLAN_PASN_COMEBACK_INFO_BUF_LEN);
+	if (!ie)
+		return NULL;
+
+	wpa_pasn_add_parameter_ie(ie, 0,
+				  WPA_PASN_WRAPPED_DATA_NO,
+				  NULL, false,
+				  NULL,
+				  timeout);
+
+	if (wpabuf_len(ie) > max_len) {
+		wpa_printf(MSG_ERROR, "PASN: No room left to insert Comeback "
+			   "Info");
+		wpabuf_free(ie);
+		return NULL;
+	}
+	os_memcpy(pos, wpabuf_head(ie), wpabuf_len(ie));
+	pos += wpabuf_len(ie);
+	wpabuf_free(ie);
+
+	return pos;
+}
+
+
+u8 * hostapd_add_auth_comeback(struct hostapd_data *hapd, struct sta_info *sta,
+			       u8 *pos, size_t max_len, u16 auth_alg)
+{
+	u32 timeout, tu;
+	struct os_reltime now, passed;
+
+	os_get_reltime(&now);
+	os_reltime_sub(&now, &sta->sa_query_start, &passed);
+	tu = (passed.sec * 1000000 + passed.usec) / 1024;
+	if (hapd->conf->assoc_sa_query_max_timeout > tu)
+		timeout = hapd->conf->assoc_sa_query_max_timeout - tu;
+	else
+		timeout = 0;
+	if (timeout < hapd->conf->assoc_sa_query_max_timeout)
+		timeout++; /* add some extra time for local timers */
+
+        switch (auth_alg) {
+        case WLAN_AUTH_EPPKE:
+                return hostapd_eid_pasn_comeback(pos, max_len, timeout);
+        case WLAN_AUTH_802_1X:
+		if (max_len < 7)
+			return NULL;
+                return hostapd_eid_timeout_interval(pos, WLAN_TIMEOUT_AUTH_COMEBACK,
+						    timeout);
+	default:
+		wpa_printf(MSG_ERROR, "Unexpected auth_alg=%u for Authentication "
+			   "comeback procedure", auth_alg);
+		return NULL;
+        }
+}
+#endif /* CONFIG_ENC_ASSOC || CONFIG_IEEE8021X_AUTH */
+
+
 /* MLME-SAQuery.request */
 void ieee802_11_send_sa_query_req(struct hostapd_data *hapd,
 				  const u8 *addr, const u8 *trans_id)
@@ -558,6 +624,31 @@ u8 * hostapd_eid_ext_capab(struct hostapd_data *hapd, u8 *eid,
 		if (i == 9 && !hostapd_get_he_twt_responder(hapd, IEEE80211_MODE_AP) &&
 		    !hostapd_get_ht_vht_twt_responder(hapd))
 			*pos &= ~0x40;
+
+		if (hapd->conf->rtt_responder_role > 0) {
+			int rtt_role = hapd->conf->rtt_responder_role;
+
+			if (i == WLAN_EXT_CAPAB_FTM_RESPONDER / 8 &&
+			    (!hapd->conf->ftm_responder ||
+			     !(rtt_role & HOSTAPD_RTT_RESPONDER_ROLE_11MC)))
+				*pos &= ~BIT(WLAN_EXT_CAPAB_FTM_RESPONDER % 8);
+
+			if (i == WLAN_EXT_CAPAB_NTB_RANGING_RESPONDER / 8) {
+				if (rtt_role & HOSTAPD_RTT_RESPONDER_ROLE_11AZ_NTB)
+					*pos |= BIT(WLAN_EXT_CAPAB_NTB_RANGING_RESPONDER % 8);
+				else
+					*pos &= ~BIT(WLAN_EXT_CAPAB_NTB_RANGING_RESPONDER % 8);
+				if (rtt_role & HOSTAPD_RTT_RESPONDER_ROLE_11AZ_TB)
+					*pos |= BIT(WLAN_EXT_CAPAB_TB_RANGING_RESPONDER % 8);
+				else
+					*pos &= ~BIT(WLAN_EXT_CAPAB_TB_RANGING_RESPONDER % 8);
+			}
+		} else {
+			if (i == WLAN_EXT_CAPAB_NTB_RANGING_RESPONDER / 8) {
+				*pos &= ~BIT(WLAN_EXT_CAPAB_NTB_RANGING_RESPONDER % 8);
+				*pos &= ~BIT(WLAN_EXT_CAPAB_TB_RANGING_RESPONDER % 8);
+			}
+		}
 	}
 
 	while (len > 0 && eid[1 + len] == 0) {
@@ -1469,8 +1560,13 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 {
 	u8 *pos = eid;
 	bool sae_pk = false;
+	bool preserve_sae_h2e = false;
+#ifdef CONFIG_SAE_PK
+	bool preserve_sae_pk = false;
+#endif /* CONFIG_SAE_PK */
 	u64 capab = 0, tmp;
 	size_t flen;
+
 
 	if (!(hapd->conf->wpa & WPA_PROTO_RSN))
 		return eid;
@@ -1511,28 +1607,59 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 	    hapd->conf->control_frame_prot)
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
 
-	capab &= capab_mask;
-
+	/* Per 802.11bn D1.4, when Security Profile IE is present with
+	 * SAE-EXT-KEY base AKM, the SAE_H2E capability must not be suppressed
+	 * in the beacon RSNXE, as SAE-EXT-KEY requires H2E. */
+	if (wpa_key_mgmt_sae_ext_key(hapd->conf->wpa_key_mgmt) &&
+	    (capab & BIT(WLAN_RSNX_CAPAB_SAE_H2E))) {
+		preserve_sae_h2e = true;
+	}
+#ifdef CONFIG_SAE_PK
+	if ((capab & BIT(WLAN_RSNX_CAPAB_SAE_PK))) {
+		preserve_sae_pk = true;
+	}
+#endif /* CONFIG_SAE_PK */
 #ifdef CONFIG_ENC_ASSOC
 	/* Per IEEE 802.11bi/D4.0, 12.16.7 (PMKSA caching privacy)
 	 * a STA that sets the PMKSA Caching Privacy Support
 	 * field in the RSNXE to 1 shall set the (Re)Association
 	 * Frame Encryption Support field in the RSNXE to 1.
+	 * Only apply capab_mask to ASSOC_FRAME_ENCRYPTION and PMKSA_CACHING_PRIVACY bits.
 	 */
-	if ((hapd->iface->drv_flags2 &
+	if ((hapd->sp_ie_activated_sta ?
+	     (capab_mask & BIT(WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION)) : true) &&
+	    (hapd->iface->drv_flags2 &
 	     WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION) &&
 	    (hapd->conf->assoc_frame_encryption ||
 	    hapd->conf->pmksa_caching_privacy)) {
 		capab |= BIT(WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION);
+	}
+	if ((hapd->sp_ie_activated_sta ?
+	     (capab_mask & BIT(WLAN_RSNX_CAPAB_KEK_IN_PASN)) : true) &&
+	    (hapd->iface->drv_flags2 &
+	     WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION) &&
+	    (hapd->conf->assoc_frame_encryption ||
+	    hapd->conf->pmksa_caching_privacy)) {
 		capab |= BIT(WLAN_RSNX_CAPAB_KEK_IN_PASN);
 	}
-	if (hapd->conf->pmksa_caching_privacy)
+	if ((hapd->sp_ie_activated_sta ?
+	     (capab_mask & BIT(WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY)) : true) &&
+	    hapd->conf->pmksa_caching_privacy)
 		capab |= BIT(WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY);
 	if (hapd->conf->eap_using_authentication_frames)
 		capab |= BIT(WLAN_RSNX_CAPAB_802_1X_IN_AUTH_FRAMES);
 	if (hapd->conf->eppke_unauth)
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_UNAUTH_EPPKE);
 #endif /* CONFIG_ENC_ASSOC */
+
+	if (preserve_sae_h2e) {
+		capab |= BIT(WLAN_RSNX_CAPAB_SAE_H2E);
+	}
+#ifdef CONFIG_SAE_PK
+	if (preserve_sae_pk) {
+		capab |= BIT(WLAN_RSNX_CAPAB_SAE_PK);
+	}
+#endif /* CONFIG_SAE_PK */
 
 	if (!capab)
 		return eid; /* no supported extended RSN capabilities */

@@ -23,7 +23,10 @@
 #include "wpa_auth.h"
 #include "hw_features.h"
 #include "ap_drv_ops.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
+#include "hostapd_if/hostapd_if.h"
 
 #ifdef CONFIG_IEEE80211BE
 #include "common/qca-vendor.h"
@@ -327,10 +330,13 @@ bool hostapd_sta_is_link_sta(struct hostapd_data *hapd,
 	return false;
 }
 
-
+static
+int __hostapd_set_authorized(struct hostapd_data *hapd,
+			     struct sta_info *sta, int authorized);
 int hostapd_set_authorized(struct hostapd_data *hapd,
 			   struct sta_info *sta, int authorized)
 {
+	int ret;
 	/*
 	 * The WPA_STA_AUTHORIZED flag is relevant only for the MLD station and
 	 * not to the link stations (as the authorization is done between the
@@ -343,6 +349,21 @@ int hostapd_set_authorized(struct hostapd_data *hapd,
 			   __func__, MAC2STR(sta->addr));
 		return 0;
 	}
+
+	ret = __hostapd_set_authorized(hapd, sta, authorized);
+#ifdef CONFIG_HOSTAPD_IF
+	if (!ret)
+		hostapd_if_event_authorize_completion(hapd, sta->addr,
+						      authorized);
+#endif
+
+	return ret;
+}
+
+static
+int __hostapd_set_authorized(struct hostapd_data *hapd,
+			     struct sta_info *sta, int authorized)
+{
 
 	if (authorized) {
 		return hostapd_sta_set_flags(hapd, sta->addr,
@@ -479,17 +500,39 @@ int hostapd_drv_mark_ppe_vp_type(struct hostapd_data *hapd)
 
 
 #ifdef CONFIG_IEEE80211AX
-int hostapd_drv_rule_config_notify(struct hostapd_data *hapd, u8 *mac)
+int hostapd_drv_rule_config_notify(struct hostapd_data *hapd, const u8 *mac,
+				   const struct qm_req_desc_data *qm_desc,
+				   enum qos_mgmt_type qm_type)
 {
-	if (hapd->driver == NULL)
+	if (hapd->driver == NULL || !hapd->driver->rule_config_notify)
 		return -1;
 
 	return hapd->driver->rule_config_notify(hapd->drv_priv,
 			OUI_QCA,
 			QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG,
-			NULL, 0, 0, NULL, mac, hapd->conf->iface);
+			NULL, 0, 0, NULL, mac, hapd->conf->iface, qm_desc,
+			qm_type);
 }
 #endif /* CONFIG_IEEE80211AX */
+
+int hostapd_drv_notify_iface_state(struct hostapd_data *hapd, u32 bss_mode)
+{
+	int link_id = -1;
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap)
+		link_id = hapd->mld_link_id;
+#endif /* CONFIG_IEEE80211BE */
+
+	if (hapd->driver == NULL || hapd->driver->notify_iface_state == NULL)
+		return -1;
+
+	return hapd->driver->notify_iface_state(
+		hapd->drv_priv, OUI_QCA,
+		QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
+		QCA_WLAN_VENDOR_WIFI_PARAM_INTERFACE_EN_DIS_MODE,
+		bss_mode, link_id, hapd->conf->iface);
+}
 
 
 int hostapd_sta_auth(struct hostapd_data *hapd, const u8 *addr,
@@ -618,6 +661,14 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 	params.vht_opmode_enabled = !!(flags & WLAN_STA_VHT_OPMODE_ENABLED);
 	params.vht_opmode = vht_opmode;
 	params.flags = hostapd_sta_flags_to_drv(flags, 0);
+#ifdef CONFIG_IEEE80211BN
+	sta = ap_get_sta(hapd, addr);
+	if (sta && sta->is_mapc_peer) {
+		params.flags |= WPA_STA_MAPC_PEER;
+		wpa_printf(MSG_DEBUG, "hostapd_add_sta: WPA_STA_MAPC_PEER set for " MACSTR,
+			   MAC2STR(addr));
+	}
+#endif /* CONFIG_IEEE80211BN */
 	params.qosinfo = qosinfo;
 	params.support_p2p_ps = supp_p2p_ps;
 	params.set = set;
@@ -630,7 +681,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 
 #ifdef CONFIG_QCN_EXTN
 	hostapd_copy_sta_add_params_extn(&params.params_extn, sta_extn);
-#endif
+#endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_IEEE80211BE
 	/*
@@ -777,8 +828,13 @@ int hostapd_if_link_remove(struct hostapd_data *hapd,
 	if (!hapd->driver || !hapd->drv_priv || !hapd->driver->link_remove)
 		return -1;
 
-	return hapd->driver->link_remove(hapd->drv_priv, type, ifname,
-					 hapd->mld_link_id);
+	if (!hapd->driver->link_remove(hapd->drv_priv, type, ifname,
+					 hapd->mld_link_id)) {
+		hapd->drv_priv = NULL;
+		return 0;
+	}
+
+	return -1;
 }
 #endif /* CONFIG_IEEE80211BE */
 
@@ -953,6 +1009,17 @@ int hostapd_sta_set_flags(struct hostapd_data *hapd, u8 *addr,
 }
 
 
+#ifdef CONFIG_IEEE80211BN
+int hostapd_sta_set_mapc_params(struct hostapd_data *hapd, const u8 *addr,
+				const struct mapc_parameters *params)
+{
+	if (!hapd->driver || !hapd->driver->sta_set_mapc_params)
+		return 0;
+	return hapd->driver->sta_set_mapc_params(hapd->drv_priv, addr, params);
+}
+#endif /* CONFIG_IEEE80211BN */
+
+
 int hostapd_sta_set_airtime_weight(struct hostapd_data *hapd, const u8 *addr,
 				   unsigned int weight)
 {
@@ -1032,8 +1099,8 @@ int hostapd_driver_scan(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211BE
 	if (hapd->conf->mld_ap)
 		params->link_id = hapd->mld_link_id;
-
-	if (!hapd->iface->scan_cb && hapd->conf->mld_ap &&
+	if (!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN) &&
+	    !hapd->iface->scan_cb && hapd->conf->mld_ap &&
 	    hapd->iface->interfaces) {
 		/* Other links may be waiting for scan results */
 		unsigned int i;
@@ -1248,6 +1315,21 @@ static bool hostapd_is_action_frame_link_agnostic(const u8 *data, size_t len)
 }
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BN
+static bool mapc_action_frame(u8 action_code)
+{
+	switch (action_code) {
+	case WLAN_PA_MAPC_DISCOVERY_REQ:
+	case WLAN_PA_MAPC_DISCOVERY_RESP:
+	case WLAN_PA_MAPC_NEGOTIATION_REQ:
+	case WLAN_PA_MAPC_NEGOTIATION_RESP:
+		return true;
+	default:
+		return false;
+	}
+}
+#endif /* CONFIG_IEEE80211BN */
+
 
 static int hapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 				unsigned int wait, const u8 *dst,
@@ -1268,7 +1350,11 @@ static int hapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 	if (forced_a3) {
 		bssid = forced_a3;
 	} else if (!addr3_ap && !is_multicast_ether_addr(dst) &&
-		   len > 0 && data[0] == WLAN_ACTION_PUBLIC) {
+		   len > 0 && data[0] == WLAN_ACTION_PUBLIC
+#ifdef CONFIG_IEEE80211BN
+		   && !mapc_action_frame(data[1])
+#endif
+		   ) {
 		/*
 		 * Public Action frames to a STA that is not a member of the BSS
 		 * shall use wildcard BSSID value.
@@ -1277,7 +1363,11 @@ static int hapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 		if (!sta || !(sta->flags & WLAN_STA_ASSOC))
 			bssid = wildcard_bssid;
 	} else if (!addr3_ap && is_broadcast_ether_addr(dst) &&
-		   len > 0 && data[0] == WLAN_ACTION_PUBLIC) {
+		   len > 0 && data[0] == WLAN_ACTION_PUBLIC
+#ifdef CONFIG_IEEE80211BN
+		   && !mapc_action_frame(data[1])
+#endif
+		   ) {
 		/*
 		 * The only current use case of Public Action frames with
 		 * broadcast destination address is DPP PKEX. That case is
@@ -1325,16 +1415,6 @@ int hostapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 {
 	return hapd_drv_send_action(hapd, freq, wait, dst, data, len, false,
 				    NULL);
-}
-
-int hostapd_drv_notify_radar(struct hostapd_data *hapd,
-			     struct hostapd_freq_params *freq,
-			     u16 radar_bitmap)
-{
-	if (!hapd->driver || !hapd->driver->notify_radar || !hapd->drv_priv)
-		return -1;
-
-	return hapd->driver->notify_radar(hapd->drv_priv, freq, radar_bitmap);
 }
 
 int hostapd_drv_send_action_addr3_ap(struct hostapd_data *hapd,
@@ -1458,6 +1538,7 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 			   iface->mcst);
 	} else {
 		data.skip_cac = (iface->cac_type != HAPD_CAC_COMPLETE_AFTER_CSA) &&
+				iface->iface_extn.dfs_available_from_sta &&
 				 iface->conf->conf_extn.skip_cac;
 		if (is_dfs && iface->mcst &&
 		    iface->conf->conf_extn.skip_cac) {
@@ -1469,6 +1550,13 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 			/* Skip CAC for DFS based on MCST - PreCAC case */
 			data.skip_cac = 1;
 		}
+
+		/* CSwOpts 0x4: AP must perform CAC on STA-triggered bring-up.
+		 * Override any skip_cac set above; the config-file skip_cac=1 may
+		 * have been restored by a config reload after the runtime CSwOpts
+		 * command cleared it to 0. */
+		if (IS_CSH_CAC_APUP_BYSTA_ENABLED(iface->conf->conf_extn.cswopts))
+			data.skip_cac = 0;
 
 		wpa_printf(MSG_INFO, "Dep Rptr: skip_cac = %d cac_type = %d"
 			   " conf_extn.skip_cac = %d mcst = %u", data.skip_cac,
@@ -1839,3 +1927,22 @@ int hostapd_drv_set_muedca_mode(struct hostapd_data *hapd, int mode, int radio_i
 	return hapd->driver->set_muedca_mode(hapd->drv_priv, mode, radio_idx);
 }
 #endif /* CONFIG_QCN_EXTN */
+
+int hostapd_drv_set_rtt_responder_role(struct hostapd_data *hapd, int role)
+{
+	int link_id = -1;
+
+	if (!hapd->driver || !hapd->driver->notify_iface_state)
+		return -1;
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap)
+		link_id = hapd->mld_link_id;
+#endif /* CONFIG_IEEE80211BE */
+
+	return hapd->driver->notify_iface_state(
+		hapd->drv_priv, OUI_QCA,
+		QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
+		QCA_WLAN_VENDOR_WIFI_PARAM_RTT_RESPONDER_ROLE,
+		(u32)role, link_id, hapd->conf->iface);
+}

@@ -102,6 +102,10 @@ int hostapd_set_rts(struct hostapd_data *hapd, int rts);
 int hostapd_set_frag(struct hostapd_data *hapd, int frag);
 int hostapd_sta_set_flags(struct hostapd_data *hapd, u8 *addr,
 			  int total_flags, int flags_or, int flags_and);
+#ifdef CONFIG_IEEE80211BN
+int hostapd_sta_set_mapc_params(struct hostapd_data *hapd, const u8 *addr,
+				const struct mapc_parameters *params);
+#endif /* CONFIG_IEEE80211BN */
 int hostapd_sta_set_airtime_weight(struct hostapd_data *hapd, const u8 *addr,
 				   unsigned int weight);
 int hostapd_set_country(struct hostapd_data *hapd, const char *country);
@@ -138,23 +142,6 @@ int hostapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 			    unsigned int wait, const u8 *dst, const u8 *data,
 			    size_t len);
 
-/**
- * hostapd_drv_notify_radar - Notify driver about radar detection
- * @hapd: hostapd data
- * @freq: Frequency parameters of the radar channel (primary/secondary,
- *	channel width, center frequencies)
- * @radar_bitmap: Bitmap of segments on which radar was detected (driver/
- *	implementation specific)
- *
- * This is used to inform the driver about radar detection on the current
- * operating channel so that the driver can initiate DFS related actions (e.g.,
- * channel switch and marking the channel as unavailable).
- *
- * Return: 0 on success, -1 on failure.
- */
-int hostapd_drv_notify_radar(struct hostapd_data *hapd,
-			     struct hostapd_freq_params *freq,
-			     u16 radar_bitmap);
 int hostapd_drv_send_action_addr3_ap(struct hostapd_data *hapd,
 				     unsigned int freq,
 				     unsigned int wait, const u8 *dst,
@@ -204,8 +191,12 @@ int hostapd_drv_mark_ppe_vp_type(struct hostapd_data *hapd);
 #endif
 
 #ifdef CONFIG_IEEE80211AX
-int hostapd_drv_rule_config_notify(struct hostapd_data *hapd, u8 *mac);
+struct qm_req_desc_data;
+int hostapd_drv_rule_config_notify(struct hostapd_data *hapd, const u8 *mac,
+				   const struct qm_req_desc_data *qm_desc,
+				   enum qos_mgmt_type qm_type);
 #endif /* CONFIG_IEEE80211AX */
+int hostapd_drv_notify_iface_state(struct hostapd_data *hapd, u32 bss_mode);
 
 #include "drivers/driver.h"
 
@@ -689,24 +680,24 @@ hostapd_drv_fetch_afc_power_event(struct hostapd_data *hapd, uint8_t radio_idx)
 }
 
 #ifdef CONFIG_QCN_EXTN
-static inline void hostapd_notify_link_repurpose(struct hostapd_data *hapd,
-						 const char *context)
+static inline int hostapd_notify_link_repurpose(struct hostapd_data *hapd,
+						const char *context)
 {
 	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
-		return;
+		return 0;
 
 	if (hostapd_drv_notify_link_repurpose_extn(hapd, hapd->mld_link_id)) {
 		wpa_printf(MSG_ERROR,
 			   "MLD:%s Failed to notify link %d of %s as repurposed",
 			   context, hapd->mld_link_id, hapd->conf->iface);
-		return;
+		return -1;
 	}
 
 	wpa_printf(MSG_DEBUG,
 		   "MLD:%s notified link %d of %s as repurposed",
 		   context, hapd->mld_link_id, hapd->conf->iface);
 
-	return;
+	return 0;
 }
 #endif /* CONFIG_QCN_EXTN */
 
@@ -736,5 +727,21 @@ int hostapd_drv_critical_update(struct hostapd_data *hapd, u8 link_id,
 
 int hostapd_drv_set_smd_ctx(struct hostapd_data *hapd, struct sta_info *sta,
 			    const struct sta_smd_ctx_info *ctx);
+int hostapd_drv_set_rtt_responder_role(struct hostapd_data *hapd, int role);
+
+
+static inline int hostapd_drv_get_smd_ctx(struct hostapd_data *hapd,
+					  const u8 *sta_addr,
+					  u8 valid_ctx_bitmap,
+					  u8 tx_tid_bitmap,
+					  u8 rx_tid_bitmap,
+					  struct sta_smd_ctx_info **out_ctx)
+{
+	if (!hapd->driver || !hapd->driver->get_smd_ctx)
+		return -1;
+	return hapd->driver->get_smd_ctx(hapd->drv_priv, sta_addr,
+					 valid_ctx_bitmap, tx_tid_bitmap,
+					 rx_tid_bitmap, out_ctx);
+}
 
 #endif /* AP_DRV_OPS */

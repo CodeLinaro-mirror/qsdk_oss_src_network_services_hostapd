@@ -816,6 +816,21 @@ def test_hapd_ctrl_radar(dev, apdev):
     for t in tests:
         hapd.request("RADAR " + t)
 
+def test_hapd_ctrl_awgn(dev, apdev):
+    """hostapd and AWGN ctrl_iface command"""
+    ssid = "hapd-ctrl"
+    params = {"ssid": ssid,
+              "discard_6g_awgn_event": "1"}
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    tests = ["foo", "foo bar", "DETECTED freq=5975 chan_width=1 cf1=5975"]
+    for t in tests:
+        if "FAIL" not in hapd.request("AWGN " + t):
+            raise Exception("Invalid AWGN command accepted: " + t)
+
+    if "OK" not in hapd.request("AWGN DETECTED freq=5975 chan_width=1 cf1=5975 cf2=0 bitmap=0x1"):
+        raise Exception("Failed to inject AWGN event")
+
 def test_hapd_ctrl_ext_io_errors(dev, apdev):
     """hostapd and external I/O errors"""
     ssid = "hapd-ctrl"

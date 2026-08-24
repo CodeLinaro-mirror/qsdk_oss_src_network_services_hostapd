@@ -225,9 +225,11 @@ static int ieee802_11_parse_vendor_specific(const u8 *pos, size_t elen,
 		break;
 
 	default:
+#ifdef CONFIG_QCN_EXTN
 		if (!ieee802_11_parse_vendor_specific_elems_extn(elems, oui,
 								 pos, elen))
 			break;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_EXCESSIVE, "unknown vendor specific "
 			   "information element ignored (vendor OUI "
@@ -497,6 +499,12 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
 			break;
 		elems->akm_suite_selector = pos;
 		elems->akm_suite_selector_len = elen;
+		break;
+	case WLAN_EID_EXT_SUPPORTED_GROUPS:
+		if (elen < 2 || elen % 2 != 0)
+			break;
+		elems->supported_groups = pos;
+		elems->supported_groups_len = elen;
 		break;
 	default:
 		if (show_errors) {
@@ -1091,9 +1099,10 @@ void ieee802_11_elems_clear_ext_ids(struct ieee802_11_elems *elems,
 }
 
 
-ParseRes ieee802_11_parse_link_assoc_req(struct ieee802_11_elems *elems,
-					 struct wpabuf *mlbuf,
-					 u8 link_id, bool show_errors)
+static ParseRes ieee802_11_parse_link_profile(struct ieee802_11_elems *elems,
+					      struct wpabuf *mlbuf,
+					      u8 link_id, bool show_errors,
+					      bool is_assoc_resp)
 {
 	const struct ieee80211_eht_ml *ml;
 	const u8 *pos;
@@ -1191,6 +1200,28 @@ ParseRes ieee802_11_parse_link_assoc_req(struct ieee802_11_elems *elems,
 		pos += 2;
 		sub_elem_len -= 2;
 
+		/* For association response, check status code */
+		if (is_assoc_resp) {
+			u16 status_code;
+
+			if (sub_elem_len < 2) {
+				if (show_errors)
+					wpa_printf(MSG_DEBUG,
+						   "MLD: missing status code");
+				goto out;
+			}
+
+			status_code = WPA_GET_LE16(pos);
+			if (status_code != WLAN_STATUS_SUCCESS) {
+				wpa_printf(MSG_DEBUG,
+					   "MLD: status code %u", status_code);
+				goto out;
+			}
+
+			pos += 2;
+			sub_elem_len -= 2;
+		}
+
 		/* Handle non-inheritance */
 		non_inherit = get_ie_ext(pos, sub_elem_len,
 					 WLAN_EID_EXT_NON_INHERITANCE);
@@ -1247,6 +1278,26 @@ ParseRes ieee802_11_parse_link_assoc_req(struct ieee802_11_elems *elems,
 
 out:
 	return res;
+}
+
+
+ParseRes ieee802_11_parse_link_assoc_req(struct ieee802_11_elems *elems,
+					 struct wpabuf *mlbuf,
+					 u8 link_id, bool show_errors)
+{
+	return ieee802_11_parse_link_profile(elems, mlbuf, link_id,
+					     show_errors, false);
+}
+
+
+ParseRes ieee802_11_parse_link_assoc_resp(struct ieee802_11_elems *elems,
+				  struct wpabuf *mlbuf,
+					  u8 link_id, bool show_errors)
+{
+	/* ieee802_11_defrag_mle_subelem() handles subelement defragmentation
+	 * in-place within mlbuf */
+	return ieee802_11_parse_link_profile(elems, mlbuf, link_id,
+					     show_errors, true);
 }
 
 

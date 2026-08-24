@@ -604,12 +604,22 @@ static u64 rsnxe_capab(struct wpa_auth_config *conf, int key_mgmt)
 int wpa_write_rsnxe(struct wpa_auth_config *conf, u8 *buf, size_t len)
 {
 	u8 *pos = buf;
-	u64 capab = 0, tmp;
+	u64 capab = 0, tmp, preserve_sae_h2e = 0;
 	size_t flen;
 
 	capab = rsnxe_capab(conf, conf->wpa_key_mgmt);
+
+	/* Per 802.11bn D1.4, when Security Profile IE is present with
+	 * SAE-EXT-KEY base AKM, the SAE_H2E capability must not be
+	 * suppressed in the beacon/probe-response RSNXE, as SAE-EXT-KEY
+	 * requires H2E. */
+	if (wpa_key_mgmt_sae_ext_key(conf->wpa_key_mgmt) &&
+	    (capab & BIT(WLAN_RSNX_CAPAB_SAE_H2E))) {
+		preserve_sae_h2e = BIT(WLAN_RSNX_CAPAB_SAE_H2E);
+	}
 #ifdef CONFIG_TESTING_OPTIONS
 	capab &= conf->rsnxe_capab_mask;
+	capab |= preserve_sae_h2e;
 #endif /* CONFIG_TESTING_OPTIONS */
 
 	if (!capab)

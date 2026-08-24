@@ -2770,6 +2770,111 @@ def test_eht_6ghz_320mhz_3(dev, apdev):
     """EHT with 320 MHz channel width on 6 GHz center 31 primary 37"""
     _test_eht_6ghz(dev, apdev, 37, 137, 31)
 
+def eht_6ghz_awgn_notify_check(hapd, freq, chan_width, cf1, cf2=0,
+                               bitmap=0x1):
+    hapd.dump_monitor()
+
+    cmd = "AWGN DETECTED freq=%d chan_width=%d cf1=%d cf2=%d bitmap=0x%x" % (
+        freq, chan_width, cf1, cf2, bitmap)
+    if "OK" not in hapd.request(cmd):
+        raise Exception("Failed to inject AWGN event")
+
+    ev = hapd.wait_event(["INTERFERENCE-DETECTED"], timeout=10)
+    if ev is None:
+        raise Exception("INTERFERENCE-DETECTED event not reported")
+
+    expected = ["type=AWGN",
+                "freq=%d" % freq,
+                "chan_width=%d" % chan_width,
+                "cf1=%d" % cf1,
+                "cf2=%d" % cf2,
+                "bitmap=0x%x" % bitmap]
+    for field in expected:
+        if field not in ev:
+            raise Exception("Unexpected AWGN event: " + ev)
+
+def _eht_6ghz_awgn_bw_vectors():
+    return [
+        {"name": "20", "op_class": 131, "channel": 5, "ccfs1": 5,
+         "chan_width": 1},
+        {"name": "40", "op_class": 132, "channel": 5, "ccfs1": 3,
+         "chan_width": 2},
+        {"name": "80", "op_class": 133, "channel": 5, "ccfs1": 7,
+         "chan_width": 3},
+        {"name": "160", "op_class": 134, "channel": 5, "ccfs1": 15,
+         "chan_width": 5},
+        {"name": "320", "op_class": 137, "channel": 5, "ccfs1": 31,
+         "chan_width": 10},
+    ]
+
+def _run_eht_6ghz_awgn_all_bw(dev, apdev, with_sta):
+    check_sae_capab(dev[0])
+    tested = 0
+
+    for cfg in _eht_6ghz_awgn_bw_vectors():
+        if cfg["name"] == "320" and not eht_320mhz_supported():
+            logger.info("EHT 6 GHz 320 MHz not supported - skipping")
+            continue
+
+        hapd = None
+        freq = 5950 + cfg["channel"] * 5
+        cf1 = 5950 + cfg["ccfs1"] * 5
+        ssid = "eht-awgn-" + cfg["name"]
+        passphrase = "12345678"
+
+        try:
+            dev[0].cmd_execute(['iw', 'reg', 'set', 'CA'])
+            wait_regdom_changes(dev[0])
+            if not he_6ghz_supported(freq):
+                raise HwsimSkip("6 GHz frequency is not supported")
+
+            params = hostapd.he_wpa2_params(ssid=ssid, passphrase=passphrase)
+            params["ieee80211be"] = "1"
+            params["country_code"] = "CA"
+            params["op_class"] = str(cfg["op_class"])
+            params["channel"] = str(cfg["channel"])
+            params["he_oper_centr_freq_seg0_idx"] = str(cfg["ccfs1"])
+            params["eht_oper_centr_freq_seg0_idx"] = str(cfg["ccfs1"])
+            params["discard_6g_awgn_event"] = "1"
+            hapd = hostapd.add_ap(apdev[0], params)
+
+            if with_sta:
+                dev[0].set("sae_pwe", "1")
+                dev[0].set("sae_groups", "")
+                dev[0].connect(ssid, key_mgmt="SAE", psk=passphrase,
+                               ieee80211w="2", scan_freq=str(freq))
+                hwsim_utils.test_connectivity(dev[0], hapd)
+
+            eht_6ghz_awgn_notify_check(hapd, freq=freq,
+                                       chan_width=cfg["chan_width"],
+                                       cf1=cf1)
+
+            if with_sta and dev[0].get_status_field("wpa_state") != "COMPLETED":
+                raise Exception("STA did not remain connected after AWGN event")
+
+            tested += 1
+        except Exception as e:
+            if isinstance(e, Exception) and str(e) == "AP startup failed":
+                logger.info("EHT 6 GHz %s MHz not supported - skipping",
+                            cfg["name"])
+                continue
+            raise
+        finally:
+            dev[0].request("DISCONNECT")
+            dev[0].set("sae_pwe", "0")
+            clear_regdom(hapd, dev)
+
+    if tested == 0:
+        raise HwsimSkip("No supported EHT 6 GHz bandwidth found")
+
+def test_eht_6ghz_awgn_event_ap_mode(dev, apdev):
+    """EHT 6 GHz AWGN event detection notification in AP mode for all supported bandwidths"""
+    _run_eht_6ghz_awgn_all_bw(dev, apdev, with_sta=False)
+
+def test_eht_6ghz_awgn_event_sta_mode(dev, apdev):
+    """EHT 6 GHz AWGN event detection notification with associated STA for all supported bandwidths"""
+    _run_eht_6ghz_awgn_all_bw(dev, apdev, with_sta=True)
+
 def check_anqp(dev, bssid):
     if "OK" not in dev.request("ANQP_GET " + bssid + " 258"):
         raise Exception("ANQP_GET command failed")
@@ -3929,3 +4034,88 @@ def test_eht_ml_setup_reconfig_AB_A_AB(dev, apdev, params):
                                  timeout=2)
             if ev is None:
                 raise Exception("GTK rekey timed out after link addition")
+
+def eht_mld_preferred_bssid_connectivity(hapd0, hapd1, wpas, ssid, passphrase,
+                                         valid_links=3, bssid=None):
+        wpas.connect(ssid, sae_password=passphrase, scan_freq="2412 2437",
+                     key_mgmt="SAE", ieee80211w="2", beacon_prot="1",
+                     bssid=bssid)
+        eht_verify_status(wpas, hapd0, 2412, 20, is_ht=True, mld=True,
+                          valid_links=valid_links, active_links=valid_links)
+        eht_verify_wifi_version(wpas)
+
+        traffic_test(wpas, hapd0)
+        traffic_test(wpas, hapd1)
+
+def test_eht_mld_preferred_bssid(dev, apdev):
+    """EHT Non-AP MLD with Preferred BSSID and AP MLD"""
+    with HWSimRadio(use_mlo=True) as (hapd_radio, hapd_iface), \
+        HWSimRadio(use_mlo=True) as (wpas_radio, wpas_iface):
+
+        ap_link0_bssid = "02:00:00:01:00:01"
+        ap_link1_bssid = "02:00:00:01:00:02"
+        ap_mld_addr = "02:00:00:00:01:28"
+        unknown_bssid = "02:00:00:00:01:43"
+
+        wpas = WpaSupplicant(global_iface='/tmp/wpas-wlan5')
+        wpas.interface_add(wpas_iface)
+        check_sae_capab(wpas)
+
+        passphrase = 'qwertyuiop'
+        ssid = "mld_ap_sae_two_link"
+        params = eht_mld_ap_wpa2_params(ssid, passphrase,
+                                        key_mgmt="SAE", mfp="2", pwe='1',
+                                        beacon_prot=1)
+        params["bssid"] = ap_link0_bssid
+        params["mld_addr"] = ap_mld_addr
+
+        hapd0 = eht_mld_enable_ap(hapd_iface, 0, params)
+
+        params['channel'] = '6'
+        params["bssid"] = ap_link1_bssid
+
+        hapd1 = eht_mld_enable_ap(hapd_iface, 1, params)
+
+        wpas.set("sae_pwe", "1")
+
+        # Case 1: Don't force any BSSID
+        try:
+            eht_mld_preferred_bssid_connectivity(hapd0, hapd1, wpas, ssid, passphrase)
+        except:
+            raise Exception("Connection failed without forcing any BSSID!")
+        else:
+            logger.info("Connection OK without forcing any BSSID")
+
+        wpas.request("DISCONNECT")
+        wpas.wait_disconnected()
+
+        # Case 2: Force ap_link0_bssid
+        try:
+            eht_mld_preferred_bssid_connectivity(hapd0, hapd1, wpas, ssid, passphrase,
+                                                 bssid=ap_link0_bssid)
+        except:
+            raise Exception(f"Connection failed while forcing link0 BSSID: {ap_link0_bssid}")
+        else:
+            logger.info(f"Connection OK while forcing link0 BSSID: {ap_link0_bssid}")
+
+        wpas.request("DISCONNECT")
+        wpas.wait_disconnected()
+
+        # Case 3: Force ap_link1_bssid
+        try:
+            eht_mld_preferred_bssid_connectivity(hapd0, hapd1, wpas, ssid, passphrase,
+                                                 bssid=ap_link1_bssid)
+        except:
+            raise Exception(f"Connection failed while forcing link1 BSSID: {ap_link1_bssid}")
+        else:
+            logger.info(f"Connection OK while forcing link1 BSSID: {ap_link1_bssid}")
+
+        wpas.request("DISCONNECT")
+        wpas.wait_disconnected()
+
+        # Case 4: Force an unknown BSSID, not expecting connection
+        try:
+            eht_mld_preferred_bssid_connectivity(hapd0, hapd1, wpas, ssid, passphrase,
+                                                 bssid=unknown_bssid)
+        except:
+            logger.info(f"Connection failed as expected with unknown bssid: {unknown_bssid}")

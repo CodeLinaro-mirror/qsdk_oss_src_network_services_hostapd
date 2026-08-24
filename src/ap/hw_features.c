@@ -212,7 +212,9 @@ int hostapd_get_hw_features(struct hostapd_iface *iface)
 			   __func__);
 	}
 
+#ifdef CONFIG_QCN_EXTN
 	hostapd_update_primary_chanlist_flags(iface->bss[0]);
+#endif /* CONFIG_QCN_EXTN */
 
 	multi_hw_info = hostapd_get_multi_hw_info(hapd, &num_multi_hws);
 	if (!multi_hw_info) {
@@ -343,6 +345,63 @@ static int ieee80211n_check_40mhz_2g4(struct hostapd_iface *iface,
 			       );
 }
 
+
+static int
+hostapd_setup_interface_complete_or_defer(struct hostapd_iface *iface, int err)
+{
+#ifdef CONFIG_IEEE80211BE
+	if (!err && iface->bss[0]->conf->mld_ap && iface->interfaces &&
+	    (iface->drv_flags2 & WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN)) {
+		unsigned int i;
+		bool partner_in_acs = false;
+
+		for (i = 0; i < iface->interfaces->count; i++) {
+			struct hostapd_iface *h = iface->interfaces->iface[i];
+			struct hostapd_data *h_hapd;
+
+			if (!h || h == iface || !h->num_bss)
+				continue;
+			h_hapd = h->bss[0];
+			if (!hostapd_is_ml_partner(iface->bss[0], h_hapd))
+				continue;
+			if (h->state == HAPD_IFACE_ACS &&
+			    !h->acs_setup_deferred) {
+				partner_in_acs = true;
+				break;
+			}
+		}
+
+		if (partner_in_acs) {
+			wpa_printf(MSG_DEBUG,
+				   "ACS: deferring interface setup for %d MHz, "
+				   "partner link still in ACS",
+				   iface->freq);
+			iface->acs_setup_deferred = 1;
+			return 0;
+		}
+
+		/* Re-trigger any partner whose setup was deferred */
+		for (i = 0; i < iface->interfaces->count; i++) {
+			struct hostapd_iface *h = iface->interfaces->iface[i];
+			struct hostapd_data *h_hapd;
+
+			if (!h || h == iface || !h->num_bss)
+				continue;
+			h_hapd = h->bss[0];
+			if (!hostapd_is_ml_partner(iface->bss[0], h_hapd))
+				continue;
+			if (!h->acs_setup_deferred)
+				continue;
+			h->acs_setup_deferred = 0;
+			wpa_printf(MSG_DEBUG,
+				   "ACS: re-triggering deferred interface "
+				   "setup for %d MHz", h->freq);
+			hostapd_setup_interface_complete(h, 0);
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+	return hostapd_setup_interface_complete(iface, err);
+}
 
 static void ieee80211n_check_scan(struct hostapd_iface *iface)
 {
@@ -783,6 +842,14 @@ static int _ieee80211eht_cap_check(const u8 *hw, u32 offset, u8 bits)
 static int ieee80211bn_supported_uhr_capab(struct hostapd_iface *iface)
 {
 	return iface->current_mode->uhr_capab[IEEE80211_MODE_AP].uhr_supported;
+}
+
+static int _ieee80211uhr_cap_check(const u8 *hw, u32 offset, u8 bits)
+{
+	if (bits & hw[offset])
+		return 1;
+
+	return 0;
 }
 #endif /* CONFIG_IEEE80211BN */
 
@@ -1620,6 +1687,48 @@ static int hostapd_validate_bss_eht_capab(struct hostapd_data *hapd)
 }
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BN
+static int hostapd_validate_bss_uhr_capab(struct hostapd_data *hapd)
+{
+	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
+	struct uhr_capabilities *hw_uhr;
+	u32 mask;
+
+	if (!mode || !hapd->conf->uhr_phy_capab_mask)
+		return 0;
+
+	hw_uhr = &mode->uhr_capab[IEEE80211_MODE_AP];
+	mask = hapd->conf->uhr_phy_capab_mask;
+
+	if (!hw_uhr->uhr_supported) {
+		wpa_printf(MSG_ERROR,
+			   "Driver does not support UHR but BSS UHR params configured");
+		return -1;
+	}
+
+	if ((mask & UHR_PHY_BSS_OVR_2XLDPC_TX) &&
+	    hapd->conf->uhr_phy_capab.uhr_2xldpc_tx &&
+	    !_ieee80211uhr_cap_check(hw_uhr->phy_cap,
+				UHR_PHYCAP_2XLDPC_TX_SUPP_IDX,
+				UHR_PHYCAP_2XLDPC_TX_SUPP)) {
+		wpa_printf(MSG_ERROR,
+			   "Driver does not support uhr_2xldpc_tx");
+		return -1;
+	}
+
+	if ((mask & UHR_PHY_BSS_OVR_2XLDPC_RX) &&
+	    hapd->conf->uhr_phy_capab.uhr_2xldpc_rx &&
+	    !_ieee80211uhr_cap_check(hw_uhr->phy_cap,
+				UHR_PHYCAP_2XLDPC_RX_SUPP_IDX,
+				UHR_PHYCAP_2XLDPC_RX_SUPP)) {
+		wpa_printf(MSG_ERROR,
+			   "Driver does not support uhr_2xldpc_rx");
+		return -1;
+	}
+
+	return 0;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 /**
  * hostapd_validate_bss_capab - Validate all BSS-level capability overrides
@@ -1648,6 +1757,11 @@ int hostapd_validate_bss_capab(struct hostapd_data *hapd)
 	if (hostapd_validate_bss_eht_capab(hapd) < 0)
 		return -1;
 #endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_IEEE80211BN
+	if (hostapd_validate_bss_uhr_capab(hapd) < 0)
+		return -1;
+#endif /* CONFIG_IEEE80211BN */
 
 	return 0;
 }
@@ -1958,12 +2072,14 @@ bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface)
 			start_chan = conf->eht_oper_centr_freq_seg0_idx - 14;
 			break;
 		default:
+#ifdef CONFIG_QCN_EXTN
 			if (hostapd_get_bw_and_startchan_for_240mhz_extn(
 				conf->eht_oper_chwidth,
 				conf->eht_oper_centr_freq_seg0_idx,
 				&bw, &start_chan))
 
 			return false;
+#endif /* CONFIG_QCN_EXTN */
 		}
 	}
 
@@ -2190,13 +2306,17 @@ int hostapd_acs_completed(struct hostapd_iface *iface, int err)
 			} else {
 				wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
 					"ACS: with CAC already done, notify now");
+#ifdef CONFIG_QCN_EXTN
 				hostapd_ml_acs_check_and_notify(iface, true);
+#endif /* CONFIG_QCN_EXTN */
 			}
 		} else {
 			wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
 				"ACS: non-DFS channel/BW: AP will start immediately,"
 				" notify now");
+#ifdef CONFIG_QCN_EXTN
 			hostapd_ml_acs_check_and_notify(iface, true);
+#endif /* CONFIG_QCN_EXTN */
 		}
 		break;
 	case HOSTAPD_CHAN_ACS:
@@ -2225,7 +2345,7 @@ int hostapd_acs_completed(struct hostapd_iface *iface, int err)
 
 	ret = 0;
 out:
-	return hostapd_setup_interface_complete(iface, ret);
+	return hostapd_setup_interface_complete_or_defer(iface, ret);
 }
 
 

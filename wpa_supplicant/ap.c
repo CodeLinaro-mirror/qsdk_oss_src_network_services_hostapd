@@ -2300,8 +2300,7 @@ void wpas_ap_event_dfs_radar_detected(struct wpa_supplicant *wpa_s,
 		return;
 	}
 
-	if (wpas_mesh_ignore_dfs_event(wpa_s))
-		return;
+	iface->skip_mesh_dfs = wpas_mesh_ignore_dfs_event(wpa_s);
 
 	wpa_printf(MSG_DEBUG, "DFS radar detected on %d MHz", radar->freq);
 	hostapd_dfs_radar_detected(iface, radar->freq,
@@ -2310,6 +2309,7 @@ void wpas_ap_event_dfs_radar_detected(struct wpa_supplicant *wpa_s,
 				   radar->cf1, radar->cf2,
 				   radar->radar_bitmap,
 				   radar->chan_width_device, radar->cf_device);
+	iface->skip_mesh_dfs = false;
 }
 
 

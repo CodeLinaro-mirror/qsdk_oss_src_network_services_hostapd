@@ -165,6 +165,15 @@ struct atf_peer {
 };
 
 /**
+ * @struct atf_bh_peer - atf backhaul peer config reference (Root AP BSSID)
+ */
+struct atf_bh_peer {
+	struct dl_list list;
+	u8 addr[ETH_ALEN];
+	struct atf_peer atf_peer;
+};
+
+/**
  * @struct atf_ssid_config - per ssid config when group is not enabled.
  */
 struct atf_ssid_config {
@@ -206,6 +215,7 @@ struct atf_group {
 	u16 num_impl_peers;
 	struct dl_list explicit_peers;
 	u16 num_expl_peers;
+	u16 num_bh_peers;
 	u32 calculated_airtime;
 	u32 total_explicit_airtime;
 
@@ -231,6 +241,7 @@ struct atf_algo {
 	u8 num_ssid_cfg;
 	struct dl_list peer_cfgs;
 	u16 num_peer_cfg;
+	struct dl_list bh_peers;
 
 	/* Used to validate combined airtime of SSIDs/SSID
 	 * groups is betweeon 0 and 1000.
@@ -394,6 +405,10 @@ void atf_offload_disable_atf_stats(struct hostapd_iface *ifaces);
 int nl80211_atf_offload_stats_timeout(void *priv, u8 radio_index, u8 value);
 
 int nl80211_atf_offload_showatfstats(void *priv, u8 radio_index, struct hostapd_data *hapd);
+
+void atf_add_bhsta_to_bh_peers(struct hostapd_iface *iface);
+void atf_remove_bhsta_from_bh_peers(struct hostapd_iface *iface);
+void atf_bh_join_leave_update(struct hostapd_iface *iface, bool is_conn);
 #else
 static inline void atf_offload_disable_atf_stats(struct hostapd_iface *ifaces)
 {
@@ -417,6 +432,10 @@ static inline void atf_deinit_algo(struct hostapd_iface *iface)
 
 static inline void atf_join_leave_update(struct hostapd_iface *iface, struct sta_info *sta,
 					 bool is_join)
+{
+}
+
+static inline void atf_bh_join_leave_update(struct hostapd_iface *iface, bool is_conn)
 {
 }
 

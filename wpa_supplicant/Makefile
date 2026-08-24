@@ -467,6 +467,7 @@ NEED_HMAC_SHA256_KDF=y
 NEED_HMAC_SHA384_KDF=y
 NEED_SHA256=y
 NEED_SHA384=y
+NEED_DRAGONFLY=y
 OBJS += ../src/pasn/pasn_initiator.o
 OBJS += ../src/pasn/pasn_common.o
 OBJS += pasn_supplicant.o
@@ -1067,10 +1068,12 @@ OBJS += ../src/ap/ttlm.o
 endif
 ifdef CONFIG_IEEE80211BN
 OBJS += ../src/ap/ieee802_11_uhr.o
+OBJS += ../src/ap/uhr_neighbor_update.o
 OBJS += ../src/ap/uhr_utils.o
 OBJS += ../src/ap/uhr_oui_transport.o
 OBJS += ../src/ap/uhr_iap.o
 #OBJS += ../src/ap/uhr_current_ap.o
+OBJS += ../src/ap/mapc.o
 endif
 OBJS += ../src/ap/dscp_policy.o
 ifdef CONFIG_WNM_AP

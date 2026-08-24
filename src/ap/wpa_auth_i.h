@@ -267,6 +267,12 @@ struct wpa_group {
 	u8 GNonce[WPA_NONCE_LEN];
 	bool changed;
 	bool first_sta_seen;
+	/* One-shot companion to first_sta_seen: true only from the moment
+	 * GTK/IGTK/BIGTK/CIGTK are freshly (re)installed in FW (which resets
+	 * PN) until the first M3 KDE build consumes it. Kept separate from
+	 * first_sta_seen because that flag is sticky by design, while this
+	 * one must fire exactly once. */
+	bool keys_refreshed;
 	bool reject_4way_hs_for_entropy;
 	u8 IGTK[2][WPA_IGTK_MAX_LEN];
 	u8 BIGTK[2][WPA_IGTK_MAX_LEN];

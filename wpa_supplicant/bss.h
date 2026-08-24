@@ -31,6 +31,16 @@ struct wpa_scan_res;
 #define WPA_BSS_IES_CHANGED_FLAG	BIT(8)
 #define WPA_BSS_BEACON_LEN_CHANGED_FLAG	BIT(9)
 
+#ifdef CONFIG_QCN_EXTN
+/*
+ * Conservative threshold (seconds) below which a wpa_s BSS entry is
+ * considered fresh enough for the kernel cfg80211 cache to still hold it.
+ * The kernel expires BSS entries after IEEE80211_SCAN_RESULT_EXPIRE (30 s);
+ * use 25 s to account for processing latency between scan and association.
+ */
+#define WPA_MLD_BSS_KERNEL_CACHE_EXPIRE_SECS 25
+#endif /* CONFIG_QCN_EXTN */
+
 struct wpa_bss_anqp_elem {
 	struct dl_list list;
 	u16 infoid;

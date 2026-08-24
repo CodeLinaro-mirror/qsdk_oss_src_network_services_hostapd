@@ -26,6 +26,15 @@
 #define UHR_IAP_MTU_THRESHOLD     1400
 
 #define UHR_IAP_MAX_FRAME_LEN 1500
+
+/* ST Roam Cleanup - notify non-exec TAPs to free prepped STA state */
+#define UHR_IAP_MSG_ST_ROAM_CLEANUP  5
+
+/* ST Execute via Target AP-MLD IAP message types */
+#define UHR_IAP_MSG_ST_EXEC_VIA_TGT_DONE  6  /* Target -> Current: transition complete */
+#define UHR_IAP_MSG_ST_CTX_REQUEST        7  /* Target -> Current: fetch SMD context */
+#define UHR_IAP_MSG_ST_CTX_RESPONSE       8  /* Current -> Target: deliver SMD context */
+
 #define MAX_IE_LEN 60
 
 /**
@@ -76,7 +85,7 @@ struct uhr_iap_frame {
 
        struct uhr_iap_security_ctx sec_ctx;
 
-       u16 frame_len;
+       __le16 frame_len;
 	__le16 smd_ctx_len;
 	u8  frame_ctx_data[];
 } __attribute__((packed));
@@ -84,6 +93,7 @@ struct uhr_iap_frame {
 /* Flags for uhr_iap_frame */
 #define UHR_IAP_FLAG_HAS_SEC_CTX      0x01
 #define UHR_IAP_FLAG_HAS_DYNAMIC_CTX  0x02
+#define UHR_IAP_FLAG_STA_4ADDR        0x04
 
 /* IAP status codes */
 #define UHR_IAP_STATUS_SUCCESS           0
@@ -133,5 +143,21 @@ int uhr_iap_send_st_prep_ctx(struct hostapd_data *hapd,
 			      const struct sta_smd_ctx_info *smd_ctx,
 			      size_t smd_ctx_len);
 
-#endif /* UHR_IAP_H */
+/* ST Execute via Target AP-MLD IAP send functions */
+int uhr_iap_send_st_ctx_request(struct hostapd_data *hapd,
+				const u8 *current_ap_mld_addr,
+				const u8 *sta_addr,
+				u8 iap_transaction_id);
 
+int uhr_iap_send_st_ctx_response(struct hostapd_data *hapd,
+				 const u8 *target_ap_mld_addr,
+				 const u8 *sta_addr,
+				 u8 iap_transaction_id,
+				 const struct sta_smd_ctx_info *smd_ctx);
+
+int uhr_iap_send_st_exec_via_tgt_done(struct hostapd_data *hapd,
+				      const u8 *current_ap_mld_addr,
+				      const u8 *sta_addr,
+				      u8 iap_transaction_id);
+
+#endif /* UHR_IAP_H */

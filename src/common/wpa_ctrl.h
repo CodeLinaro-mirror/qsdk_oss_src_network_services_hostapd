@@ -127,7 +127,8 @@ extern "C" {
 /** Ind Rep - WDS STA Pre-connect State */
 #define WPA_EVENT_PRE_CONNECTING "CTRL-EVENT-PRE-CONNECTING "
 #endif
-
+/** Authentication/Association/4WH failures */
+#define WPA_EVENT_CONNECTION_FAIL "CTRL-EVENT-CONNECTION-FAIL "
 
 /** IP subnet status change notification
  *
@@ -438,6 +439,15 @@ extern "C" {
 
 /* parameters: <STA address> <dialog token> <link measurement report> */
 #define LINK_MSR_RESP_RX "LINK-MSR-RESP-RX "
+
+/* parameters: <STA address> <dialog token> <report mode> <LCI data hex> */
+#define LCI_RESP_RX "LCI-RESP-RX "
+
+/* parameters: <STA address> <dialog token> <channel load> */
+#define CHANNEL_LOAD_RESP_RX "CHANNEL-LOAD-RESP-RX "
+
+/* parameters: <STA address> <dialog token> <anpi> <ipi0..ipi7> */
+#define NOISE_HIST_RESP_RX "NOISE-HIST-RESP-RX "
 
 /* PMKSA cache entry added; parameters: <BSSID> <network_id> */
 #define PMKSA_CACHE_ADDED "PMKSA-CACHE-ADDED "

@@ -63,4 +63,8 @@ LIB_OBJS= \
 	robust_av.o \
 	nft.o
 
+ifdef CONFIG_IEEE80211BN
+LIB_OBJS += mapc.o
+endif
+
 include ../lib.rules

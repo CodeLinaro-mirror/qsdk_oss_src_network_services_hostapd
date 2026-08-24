@@ -29,7 +29,12 @@
 #endif /* CONFIG_MACSEC */
 #include "utils/list.h"
 #include "drivers/nl80211_copy.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
+#ifdef CONFIG_IEEE80211BN
+#include "ap/mapc.h"
+#endif /* CONFIG_IEEE80211BN */
 
 /* SMD context definitions - IEEE 802.11bn compliant */
 #define SMD_NUM_TIDS 8
@@ -476,10 +481,10 @@ struct hostapd_channel_data {
 
 #ifdef CONFIG_QCN_EXTN
 	/**
-	 * extn - Extensiom hostapd channel data
+	 * extn - Extension hostapd channel data
 	 */
 	struct hostapd_channel_data_extn extn;
-#endif
+#endif /* CONFIG_QCN_EXTN */
 
 	/**
 	 * allowed_bw - Allowed channel width bitmask
@@ -3254,6 +3259,10 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_SMD_DL_DATA_FWD       0x0000040000000000ULL
 /** Driver supports (Re)Association Request/Response frame encryption */
 #define WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION 0x0000080000000000ULL
+/** Driver supports EPPKE authentication */
+#define WPA_DRIVER_FLAGS2_EPPKE				0x0000100000000000ULL
+/** Driver supports parallel hardware scan across MLD links */
+#define WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN             0x0000200000000000ULL
 	u64 flags2;
 
 #define FULL_AP_CLIENT_STATE_SUPP(drv_flags) \
@@ -3404,6 +3413,16 @@ struct wpa_driver_capa {
 	u8 max_rx_sts_gt_80;
 	u8 max_tx_sts_le_80;
 	u8 max_tx_sts_gt_80;
+
+#ifdef CONFIG_IEEE80211BN
+	/* MAPC hardware capability bitmap from driver (NL80211_ATTR_MAPC_HW_CAPS).
+	 * Bits 0-15: MAPC_CAPABILITY_* spec positions; bits 16+: MAPC_HW_CAP_*
+	 * extended HW-only bits. 0 = not reported by driver. */
+	u32 mapc_hw_cap_bitmap;
+
+	/* Maximum Co-TDMA peers supported by HW. 0 = not reported. */
+	u8 mapc_max_ctdma_peers;
+#endif /* CONFIG_IEEE80211BN */
 };
 
 
@@ -3434,6 +3453,12 @@ enum guard_interval {
 #define STA_DRV_DATA_RX_HE_DCM BIT(15)
 #define STA_DRV_DATA_TX_HE_GI BIT(16)
 #define STA_DRV_DATA_RX_HE_GI BIT(17)
+#define STA_DRV_DATA_TX_EHT_MCS BIT(18)
+#define STA_DRV_DATA_RX_EHT_MCS BIT(19)
+#define STA_DRV_DATA_TX_EHT_NSS BIT(20)
+#define STA_DRV_DATA_RX_EHT_NSS BIT(21)
+#define STA_DRV_DATA_TX_EHT_GI BIT(22)
+#define STA_DRV_DATA_RX_EHT_GI BIT(23)
 
 struct hostap_sta_driver_data {
 	unsigned long rx_packets, tx_packets;
@@ -3468,6 +3493,10 @@ struct hostap_sta_driver_data {
 	u8 tx_he_nss;
 	u8 rx_vht_nss;
 	u8 tx_vht_nss;
+	u8 rx_ehtmcs;
+	u8 tx_ehtmcs;
+	u8 rx_eht_nss;
+	u8 tx_eht_nss;
 	s8 avg_signal; /* dBm */
 	s8 avg_beacon_signal; /* dBm */
 	s8 avg_ack_signal; /* dBm */
@@ -3499,7 +3528,9 @@ struct hostapd_sta_add_params {
 	const u8 *addr;
 	u16 aid;
 
+#ifdef CONFIG_QCN_EXTN
 	struct hostapd_sta_add_params_extn params_extn;
+#endif /* CONFIG_QCN_EXTN */
 
 	u16 capability;
 	const u8 *supp_rates;
@@ -3604,6 +3635,7 @@ struct wpa_bss_params {
 #define WPA_STA_FT_AUTH BIT(8)
 #define WPA_STA_CFP BIT(9)
 #define WPA_STA_SMD BIT(10)
+#define WPA_STA_MAPC_PEER BIT(11)
 
 enum tdls_oper {
 	TDLS_DISCOVERY_REQ,
@@ -4995,6 +5027,19 @@ struct wpa_driver_ops {
 	 * client state).
 	 */
 	int (*sta_add)(void *priv, struct hostapd_sta_add_params *params);
+
+#ifdef CONFIG_IEEE80211BN
+	/**
+	 * sta_set_mapc_params - Deliver MAPC coordination parameters for a peer
+	 * @priv: Private driver interface data from init()
+	 * @addr: MAC address of the MAPC peer (must already exist via sta_add)
+	 * @params: MAPC parameters to deliver
+	 * Returns: 0 on success, negative on failure
+	 */
+	int (*sta_set_mapc_params)(void *priv, const u8 *addr,
+				   const struct mapc_parameters *params);
+
+#endif /* CONFIG_IEEE80211BN */
 
 	/**
 	 * get_inact_sec - Get station inactivity duration (AP only)
@@ -6882,6 +6927,7 @@ struct wpa_driver_ops {
 	 * Returns: 0 on success, -1 on failure
 	 */
 	int (*dcs_sim)(void *priv, u8 link_id, struct driver_dcs_sim *params);
+
 	/**
 	 * set_cbs - Send the CBS params to driver in order to trigger scan.
 	 * @priv: Private driver interface data
@@ -6894,13 +6940,13 @@ struct wpa_driver_ops {
 		       const struct cbs_params_extn *params,
 		       int *freq_list,
 		       int link_id);
-#endif
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211AX
 	/**
 	 * rule_config_notify - Notify driver on nft rule config for Qos features
-	 * 			like SCS/MSCS.
+	 * 		like SCS/MSCS.
 	 * @priv: Private driver interface data
 	 * @vendor_id : vendor id
 	 * @subcmd: vendor subcmd
@@ -6909,13 +6955,32 @@ struct wpa_driver_ops {
 	 * @buf: buffer data
 	 * @mac: mac address
 	 * @ifname: interface name
+	 * @qm_desc: QM rule descriptor with TCLAS/5-tuple info (may be NULL)
 	 */
 	int (*rule_config_notify)(void *priv, unsigned int vendor_id,
 				  unsigned int subcmd, const u8 *data,
 				  size_t data_len,
 				  enum nested_attr nested_attr_flag,
-				  struct wpabuf *buf, u8* mac, const char *ifname);
+				  struct wpabuf *buf, const u8 *mac, const char *ifname,
+				  const struct qm_req_desc_data *qm_desc,
+				  enum qos_mgmt_type qm_type);
 #endif /* CONFIG_IEEE80211AX */
+
+	/**
+	 * notify_iface_state - Notify driver that AP interface entered ENABLED/DISABLED state
+	 * @priv: Private driver interface data
+	 * @vendor_id: Vendor ID
+	 * @subcmd: Vendor sub-command
+	 * @generic_cmd: Generic command ID for SET_WIFI_CONFIGURATION
+	 * @bss_mode: BSS mode value from enum qca_wlan_vendor_iface_mode
+	 * @link_id: Link ID of the specified link; -1 for non-MLD
+	 * @ifname: Interface name
+	 * Returns: 0 on success, negative value on failure
+	 */
+	int (*notify_iface_state)(void *priv, unsigned int vendor_id,
+				    unsigned int subcmd, u32 generic_cmd,
+				    u32 bss_mode, int link_id,
+				    const char *ifname);
 
 	/*
 	 * is_retail_afc_supported - Check if the driver supports retail AFC
@@ -6947,6 +7012,21 @@ struct wpa_driver_ops {
 	 */
 	int (*set_smd_ctx)(void *priv, const u8 *sta_addr,
 			   const struct sta_smd_ctx_info *ctx);
+
+	/**
+	 * get_smd_ctx - Get SMD context from driver for a station
+	 * @priv: Private driver interface data
+	 * @sta_addr: station address
+	 * @valid_ctx_bitmap: bitmap indicating which context fields to fetch
+	 * @tx_tid_bitmap: TX TIDs to include
+	 * @rx_tid_bitmap: RX TIDs to include
+	 * @out_ctx: returned allocated sta_smd_ctx_info; caller must os_free()
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*get_smd_ctx)(void *priv, const u8 *sta_addr,
+			   u8 valid_ctx_bitmap, u8 tx_tid_bitmap,
+			   u8 rx_tid_bitmap,
+			   struct sta_smd_ctx_info **out_ctx);
 };
 
 /**
@@ -7590,11 +7670,6 @@ enum wpa_event_type {
 	 * EVENT_LINK_RECONFIG - Notification that AP links removed
 	 */
 	EVENT_LINK_RECONFIG,
-
-	/**
-	 * EVENT_MLD_INTERFACE_FREED - Notification of AP MLD interface removal
-	 */
-	EVENT_MLD_INTERFACE_FREED,
 
 	/**
 	 * EVENT_SETUP_LINK_RECONFIG - Notification that new AP links added
@@ -8957,7 +9032,9 @@ union wpa_event_data {
 	 *
 	 * This field is used for extension events
 	 */
+#ifdef CONFIG_QCN_EXTN
 	union wpa_event_data_extn event_data_extn;
+#endif /* CONFIG_QCN_EXTN */
 
 	/**
 	 * Data for AP Power Save update

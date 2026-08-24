@@ -42,12 +42,16 @@
 #include "radiotap_iter.h"
 #include "rfkill.h"
 #include "driver_nl80211.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_AP
 #include "ap/hostapd.h"
 #include "ap/beacon.h"
 #endif /* CONFIG_AP */
-
+#if defined(CONFIG_UDBG_ENH) && defined(HOSTAPD)
+#include "../qcn_extns/udbg_enh.h"
+#endif /* CONFIG_UDBG_ENH */
 
 #ifndef NETLINK_CAP_ACK
 #define NETLINK_CAP_ACK 10
@@ -480,6 +484,9 @@ static int no_seq_check(struct nl_msg *msg, void *arg)
 
 static int debug_handler(struct nl_msg *msg, void *arg)
 {
+#if defined(CONFIG_UDBG_ENH) && defined(HOSTAPD)
+	hostapd_udbg_enh_nlmsg_dump_extn(msg, 0);
+#endif
 	handle_nl_debug_hook(msg, 0);
 	return NL_OK;
 }
@@ -710,6 +717,11 @@ int send_and_recv_glb(struct nl80211_global *global,
 		os_sleep(1, 0);
 
 	err.err = nl_send_auto_complete(nl_handle, msg);
+
+#if defined(CONFIG_UDBG_ENH) && defined(HOSTAPD)
+	hostapd_udbg_enh_nlmsg_dump_extn(msg, 1);
+#endif /* CONFIG_UDBG_ENH */
+
 	if (err.err < 0) {
 		wpa_printf(MSG_INFO,
 			   "nl80211: nl_send_auto_complete() failed: %s",
@@ -6109,6 +6121,9 @@ int nl80211_update_beacons_on_chain_mask_change(struct i802_bss *bss, int hw_idx
 		return -1;
 	}
 
+	if (!is_ap_interface(bss->drv->nlmode))
+		return 0;
+
 	/* Chain mask change is a wiphy-level event and can be dispatched to all
 	 * BSSes. Process it once per driver to avoid duplicate beacon refreshes.
 	 */
@@ -6832,8 +6847,8 @@ wpa_driver_nl80211_set_ap_nlmsg_len(struct i802_bss *bss,
 		len += nl80211_attr_len_flag();
 
 #ifdef CONFIG_IEEE80211BN
-	if (!params->dps_assist)
-		len += nl80211_attr_len_u8();
+	/* DPS Assist parameter */
+	len += nl80211_attr_len_u8();
 #endif /* CONFIG_IEEE80211BN */
 
 	/* Len for NL80211_ATTR_SOCKET_OWNER */
@@ -7431,12 +7446,11 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 		     params->uhr_cap + 3))
 		goto fail;
 
-	if (!params->dps_assist) {
-		wpa_printf(MSG_DEBUG, "nl80211: disable DPS Assist");
-		if (nla_put_u8(msg, NL80211_ATTR_DPS_ASSIST,
-			       params->dps_assist))
-			goto fail;
-	}
+	wpa_printf(MSG_DEBUG, "nl80211: %s DPS Assist",
+			   params->dps_assist? "Enable": "Disable");
+
+	if (nla_put_u8(msg, NL80211_ATTR_DPS_ASSIST, params->dps_assist))
+		goto fail;
 
        /* Set SMD parameters if configured */
        if (nl80211_put_smd_params(msg, &params->smd) < 0) {
@@ -7622,6 +7636,8 @@ static u32 sta_flags_nl80211(int flags)
 		f |= BIT(NL80211_STA_FLAG_CFP);
 	if (flags & WPA_STA_SMD)
 		f |= BIT(NL80211_STA_FLAG_SMD);
+	if (flags & WPA_STA_MAPC_PEER)
+		f |= BIT(NL80211_STA_FLAG_MAPC_PEER);
 
 	return f;
 }
@@ -8022,7 +8038,9 @@ static int wpa_driver_nl80211_sta_add(void *priv,
 	u8 cmd;
 	const char *cmd_string;
 
+#ifdef CONFIG_QCN_EXTN
 	wpa_driver_nl80211_sta_add_extn(priv, params);
+#endif /* CONFIG_QCN_EXTN */
 
 	if (params->mld_link_sta) {
 		cmd = params->set ? NL80211_CMD_MODIFY_LINK_STA :
@@ -8065,6 +8083,76 @@ fail:
 	nlmsg_free(msg);
 	return ret;
 }
+
+
+#ifdef CONFIG_IEEE80211BN
+static int nl80211_sta_set_mapc_params(void *priv, const u8 *addr,
+				       const struct mapc_parameters *mp)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	struct nlattr *mapc_nest, *cotdma_nest;
+	int ret = -ENOBUFS;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: SET_STATION MAPC params for " MACSTR
+		   " cap=0x%04x remote_apid=%u",
+		   MAC2STR(addr),
+		   mp->mapc_capability_bitmap,
+		   mp->remote_assigned_apid);
+
+	msg = nl80211_cmd_msg(bss, 0, NL80211_CMD_SET_STATION);
+	if (!msg)
+		return -ENOMEM;
+
+	if (nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, addr))
+		goto fail;
+
+	mapc_nest = nla_nest_start(msg, NL80211_ATTR_STA_MAPC);
+	if (!mapc_nest)
+		goto fail;
+
+	if (nla_put_u16(msg, NL80211_STA_MAPC_APID,
+			mp->apid)||
+	    nla_put_u16(msg, NL80211_STA_MAPC_REMOTE_APID,
+			mp->remote_assigned_apid) ||
+	    nla_put_u16(msg, NL80211_STA_MAPC_CAPABILITY_BITMAP,
+			mp->mapc_capability_bitmap))
+		goto fail;
+
+	cotdma_nest = nla_nest_start(msg, NL80211_STA_MAPC_COTDMA);
+	if (!cotdma_nest)
+		goto fail;
+
+	if (nla_put_u8(msg, NL80211_STA_MAPC_COTDMA_CHANNEL_WIDTH,
+		       mp->ctdma_profile.channel_width) ||
+	    nla_put_u8(msg, NL80211_STA_MAPC_COTDMA_CCFS,
+		       mp->ctdma_profile.ccfs) ||
+	    nla_put_u16(msg, NL80211_STA_MAPC_COTDMA_DISABLE_SUBCHAN_BITMAP,
+			mp->ctdma_profile.disable_subchannel_bitmap) ||
+	    nla_put_u8(msg, NL80211_STA_MAPC_COTDMA_BSS_COLOR,
+		       mp->ctdma_profile.bss_color))
+		goto fail;
+
+	if (mp->ctdma_profile.rx_txop_return_support)
+		if (nla_put_flag(msg, NL80211_STA_MAPC_COTDMA_RX_TXOP_RETURN))
+			goto fail;
+
+	nla_nest_end(msg, cotdma_nest);
+	nla_nest_end(msg, mapc_nest);
+
+	ret = send_and_recv_cmd(drv, msg);
+	msg = NULL;
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "nl80211: SET_STATION MAPC params failed: %d (%s)",
+			   ret, strerror(-ret));
+fail:
+	nlmsg_free(msg);
+	return ret;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 
 static void rtnl_neigh_delete_fdb_entry(struct i802_bss *bss, const u8 *addr,
@@ -10037,6 +10125,11 @@ static int i802_flush(void *priv, int link_id)
 	struct nl_msg *msg;
 	int res;
 
+	if (!bss->drv) {
+		wpa_printf(MSG_ERROR, "nl80211: bss->drv is NULL");
+		return -1;
+	}
+
 	if (link_id == NL80211_DRV_LINK_ID_NA)
 		wpa_printf(MSG_DEBUG, "nl80211: flush -> DEL_STATION %s (all)",
 			   bss->ifname);
@@ -10205,6 +10298,9 @@ static int get_sta_handler(struct nl_msg *msg, void *arg)
 		[NL80211_RATE_INFO_HE_NSS] = { .type = NLA_U8 },
 		[NL80211_RATE_INFO_HE_GI] = { .type = NLA_U8 },
 		[NL80211_RATE_INFO_HE_DCM] = { .type = NLA_U8 },
+		[NL80211_RATE_INFO_EHT_MCS] = { .type = NLA_U8 },
+		[NL80211_RATE_INFO_EHT_NSS] = { .type = NLA_U8 },
+		[NL80211_RATE_INFO_EHT_GI] = { .type = NLA_U8 },
 	};
 
 	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
@@ -10377,6 +10473,30 @@ static int get_sta_handler(struct nl_msg *msg, void *arg)
 				nla_get_u8(rate[NL80211_RATE_INFO_HE_DCM]);
 			data->flags |= STA_DRV_DATA_TX_HE_DCM;
 		}
+		if (rate[NL80211_RATE_INFO_EHT_MCS]) {
+			data->tx_ehtmcs =
+				nla_get_u8(rate[NL80211_RATE_INFO_EHT_MCS]);
+			data->flags |= STA_DRV_DATA_TX_EHT_MCS;
+		}
+		if (rate[NL80211_RATE_INFO_EHT_NSS]) {
+			data->tx_eht_nss =
+				nla_get_u8(rate[NL80211_RATE_INFO_EHT_NSS]);
+			data->flags |= STA_DRV_DATA_TX_EHT_NSS;
+		}
+		if (rate[NL80211_RATE_INFO_EHT_GI]) {
+			switch (nla_get_u8(rate[NL80211_RATE_INFO_EHT_GI])) {
+			case NL80211_RATE_INFO_EHT_GI_0_8:
+				data->tx_guard_interval = GUARD_INTERVAL_0_8;
+				break;
+			case NL80211_RATE_INFO_EHT_GI_1_6:
+				data->tx_guard_interval = GUARD_INTERVAL_1_6;
+				break;
+			case NL80211_RATE_INFO_EHT_GI_3_2:
+				data->tx_guard_interval = GUARD_INTERVAL_3_2;
+				break;
+			}
+			data->flags |= STA_DRV_DATA_TX_EHT_GI;
+		}
 	}
 
 	if (stats[NL80211_STA_INFO_RX_BITRATE] &&
@@ -10440,6 +10560,30 @@ static int get_sta_handler(struct nl_msg *msg, void *arg)
 			data->rx_dcm =
 				nla_get_u8(rate[NL80211_RATE_INFO_HE_DCM]);
 			data->flags |= STA_DRV_DATA_RX_HE_DCM;
+		}
+		if (rate[NL80211_RATE_INFO_EHT_MCS]) {
+			data->rx_ehtmcs =
+				nla_get_u8(rate[NL80211_RATE_INFO_EHT_MCS]);
+			data->flags |= STA_DRV_DATA_RX_EHT_MCS;
+		}
+		if (rate[NL80211_RATE_INFO_EHT_NSS]) {
+			data->rx_eht_nss =
+				nla_get_u8(rate[NL80211_RATE_INFO_EHT_NSS]);
+			data->flags |= STA_DRV_DATA_RX_EHT_NSS;
+		}
+		if (rate[NL80211_RATE_INFO_EHT_GI]) {
+			switch (nla_get_u8(rate[NL80211_RATE_INFO_EHT_GI])) {
+			case NL80211_RATE_INFO_EHT_GI_0_8:
+				data->rx_guard_interval = GUARD_INTERVAL_0_8;
+				break;
+			case NL80211_RATE_INFO_EHT_GI_1_6:
+				data->rx_guard_interval = GUARD_INTERVAL_1_6;
+				break;
+			case NL80211_RATE_INFO_EHT_GI_3_2:
+				data->rx_guard_interval = GUARD_INTERVAL_3_2;
+				break;
+			}
+			data->flags |= STA_DRV_DATA_RX_EHT_GI;
 		}
 	}
 
@@ -10580,7 +10724,7 @@ static int i802_read_sta_data(struct i802_bss *bss,
 				return -ENOBUFS;
 		}
 	} else {
-		if (nl80211_get_sta_info(bss, data, 0, addr))
+		if (nl80211_get_sta_info(bss, data, 0xff, addr))
 			return -ENOBUFS;
 	}
 
@@ -11467,6 +11611,9 @@ static int wpa_driver_nl80211_if_remove(struct i802_bss *bss,
 
 	wpa_printf(MSG_DEBUG, "nl80211: %s(type=%d ifname=%s) ifindex=%d added_if=%d",
 		   __func__, type, ifname, ifindex, bss->added_if);
+
+	eloop_cancel_timeout(wpa_driver_nl80211_scan_timeout, drv, bss->ctx);
+
 	if (ifindex > 0 && (bss->added_if || bss->ifindex != ifindex))
 		nl80211_remove_iface(drv, ifindex);
 	else if (ifindex > 0 && !bss->added_if) {
@@ -11730,6 +11877,7 @@ static int wpa_driver_nl80211_send_action(struct i802_bss *bss,
 	os_memcpy(hdr->addr2, src, ETH_ALEN);
 	os_memcpy(hdr->addr3, bssid, ETH_ALEN);
 
+	wpa_hexdump(MSG_ERROR, "MPAC FRAME HEXDUMP:", buf, 24+data_len);
 	if (!ether_addr_equal(bss->addr, src)) {
 		wpa_printf(MSG_DEBUG, "nl80211: Use random TA " MACSTR,
 			   MAC2STR(src));
@@ -12107,6 +12255,12 @@ int nl80211_remove_link(struct i802_bss *bss, int link_id)
 			os_memcpy(bss->flink, link, sizeof(*link));
 
 		os_memcpy(bss->flink->addr, bss->addr, ETH_ALEN);
+		/*
+		 * Clear the ctx pointer so that driver_nl80211_link_remove()
+		 * does not pick up a stale hapd pointer via bss->flink->ctx
+		 * after the hapd has been freed by a different iface's teardown.
+		 */
+		bss->flink->ctx = NULL;
 	}
 
 	/* Remove the link from the kernel */
@@ -13319,10 +13473,17 @@ static int nl80211_start_radar_detection(void *priv,
 	int ret;
 	u16 valid_links;
 
+#ifdef CONFIG_QCN_EXTN
 	wpa_printf(MSG_DEBUG, "nl80211: Start radar detection (CAC) %d MHz (ht_enabled=%d, vht_enabled=%d, he_enabled=%d, bandwidth=%d MHz, cf1=%d MHz, cf2=%d MHz skip_cac=%d mcst=%u)",
 		   freq->freq, freq->ht_enabled, freq->vht_enabled, freq->he_enabled,
 		   freq->bandwidth, freq->center_freq1, freq->center_freq2,
 		   freq->skip_cac, freq->mcst);
+#else
+	wpa_printf(MSG_DEBUG, "nl80211: Start radar detection (CAC) %d MHz (ht_enabled=%d, vht_enabled=%d, he_enabled=%d, bandwidth=%d MHz, cf1=%d MHz, cf2=%d MHz)",
+		   freq->freq, freq->ht_enabled, freq->vht_enabled, freq->he_enabled,
+		   freq->bandwidth, freq->center_freq1, freq->center_freq2);
+#endif /* CONFIG_QCN_EXTN */
+
 
 	if (!(drv->capa.flags & WPA_DRIVER_FLAGS_RADAR)) {
 		wpa_printf(MSG_DEBUG, "nl80211: Driver does not support radar "
@@ -13700,7 +13861,6 @@ static int driver_nl80211_link_remove(void *priv, enum wpa_driver_if_type type,
 {
 	struct i802_bss *bss = priv;
 	struct wpa_driver_nl80211_data *drv = bss->drv;
-	int ret;
 
 	if (type == WPA_IF_AP_VLAN)
 		return wpa_driver_nl80211_if_remove(bss, type, ifname);
@@ -13724,16 +13884,9 @@ static int driver_nl80211_link_remove(void *priv, enum wpa_driver_if_type type,
 	}
 
 	if (!bss->valid_links) {
-		void *ctx = bss->ctx;
-
 		wpa_printf(MSG_DEBUG,
 			   "nl80211: No more links remaining, so remove interface");
-		ret = wpa_driver_nl80211_if_remove(bss, type, ifname);
-		if (ret)
-			return ret;
-
-		/* Notify that the MLD interface is removed */
-		wpa_supplicant_event(ctx, EVENT_MLD_INTERFACE_FREED, NULL);
+		return wpa_driver_nl80211_if_remove(bss, type, ifname);
 	}
 
 	return 0;
@@ -14277,7 +14430,11 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 	u32 cu_bmap = BIT(settings->bss_idx);
 
 	wpa_printf(MSG_DEBUG,
-		   "nl80211: Channel switch request (cs_count=%u block_tx=%u freq=%d channel=%d sec_channel_offset=%d width=%d cf1=%d cf2=%d puncturing_bitmap=0x%04x skip_cac=%d link_id=%d%s%s%s)",
+		   "nl80211: Channel switch request (cs_count=%u block_tx=%u freq=%d channel=%d sec_channel_offset=%d width=%d cf1=%d cf2=%d puncturing_bitmap=0x%04x"
+#ifdef CONFIG_QCN_EXTN
+		   " skip_cac=%d"
+#endif /* CONFIG_QCN_EXTN */
+		   " link_id=%d%s%s%s)",
 		   settings->cs_count, settings->block_tx,
 		   settings->freq_params.freq,
 		   settings->freq_params.channel,
@@ -14286,7 +14443,9 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 		   settings->freq_params.center_freq1,
 		   settings->freq_params.center_freq2,
 		   settings->freq_params.punct_bitmap,
+#ifdef CONFIG_QCN_EXTN
 		   settings->freq_params.skip_cac,
+#endif /* CONFIG_QCN_EXTN */
 		   settings->link_id,
 		   settings->freq_params.ht_enabled ? " ht" : "",
 		   settings->freq_params.vht_enabled ? " vht" : "",
@@ -14770,69 +14929,397 @@ static bool is_cmd_with_nested_attrs(unsigned int vendor_id,
 	}
 }
 
-
 #ifdef CONFIG_IEEE80211AX
-static int nl80211_vendor_cmd_rule_config_notify(void *priv,
-						 unsigned int vendor_id,
-						 unsigned int subcmd,
-						 const u8 *data,
-						 size_t data_len,
-						 enum nested_attr nested_attr,
-						 struct wpabuf *buf, u8 *mac,
-						 const char *ifname)
+
+/*
+ * nl80211_add_tclas_attrs - Add one TCLAS element's attributes to a netlink
+ * message
+ * Returns 0 on success, -1 on failure.
+ */
+static int nl80211_add_tclas_attrs(struct nl_msg *msg,
+				   const struct qm_tclas_elements *te)
 {
-	struct i802_bss *bss = priv;
-	struct wpa_driver_nl80211_data *drv = bss->drv;
-	struct nlattr *attr;
-	struct nl_msg *msg;
-	int ifidx;
-	int ret;
+	if (nla_put_u8(msg,
+		       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_CLASSIFIER_TYPE,
+		       te->classifier_type))
+		return -1;
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: SCS tclas attr: CLASSIFIER_TYPE=%u",
+		   te->classifier_type);
 
-	if (!drv)
-		return -EINVAL;
+	if (te->classifier_type == QM_TCLAS_CLASSIFIER_TYPE4) {
+		const struct qm_tclas_type4_params *t4 =
+			&te->tclas_elem.type4_params;
 
-	ifidx = if_nametoindex(ifname);
-	if (ifidx == 0) {
-		wpa_printf(MSG_ERROR, "nl80211: Failed to find interface index for %s", ifname);
-		return -ENODEV;
+		if (nla_put_u8(msg,
+			       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_VERSION,
+			       t4->ip_ver))
+			return -1;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: SCS tclas4 attr: VERSION=%u classifier_mask=0x%x",
+			   t4->ip_ver, t4->classifier_mask);
+
+		if (t4->ip_ver == IP_VERSION_4) {
+			if (t4->classifier_mask & BIT(1)) {
+				if (nla_put(msg,
+					    QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_SRC_IPV4_ADDR,
+					    IPV4_LEN, t4->src_ip.ipv4))
+					return -1;
+				wpa_printf(MSG_DEBUG,
+					   "nl80211: SCS tclas4 attr: SRC_IPV4=%u.%u.%u.%u",
+					   t4->src_ip.ipv4[0], t4->src_ip.ipv4[1],
+					   t4->src_ip.ipv4[2], t4->src_ip.ipv4[3]);
+			}
+			if (t4->classifier_mask & BIT(2)) {
+				if (nla_put(msg,
+					    QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_DST_IPV4_ADDR,
+					    IPV4_LEN, t4->dst_ip.ipv4))
+					return -1;
+				wpa_printf(MSG_DEBUG,
+					   "nl80211: SCS tclas4 attr: DST_IPV4=%u.%u.%u.%u",
+					   t4->dst_ip.ipv4[0], t4->dst_ip.ipv4[1],
+					   t4->dst_ip.ipv4[2], t4->dst_ip.ipv4[3]);
+			}
+		} else if (t4->ip_ver == IP_VERSION_6) {
+			if (t4->classifier_mask & BIT(1)) {
+				if (nla_put(msg,
+					    QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_SRC_IPV6_ADDR,
+					    IPV6_LEN, t4->src_ip.ipv6))
+					return -1;
+				wpa_hexdump(MSG_DEBUG,
+					    "nl80211: SCS tclas4 attr: SRC_IPV6",
+					    t4->src_ip.ipv6, IPV6_LEN);
+			}
+			if (t4->classifier_mask & BIT(2)) {
+				if (nla_put(msg,
+					    QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_DST_IPV6_ADDR,
+					    IPV6_LEN, t4->dst_ip.ipv6))
+					return -1;
+				wpa_hexdump(MSG_DEBUG,
+					    "nl80211: SCS tclas4 attr: DST_IPV6",
+					    t4->dst_ip.ipv6, IPV6_LEN);
+			}
+			if (t4->classifier_mask & BIT(7)) {
+				if (nla_put(msg,
+					    QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_FLOW_LABEL,
+					    TCLAS4_FLOW_LABEL_SIZE,
+					    t4->flow_label))
+					return -1;
+				wpa_hexdump(MSG_DEBUG,
+					    "nl80211: SCS tclas4 attr: FLOW_LABEL",
+					    t4->flow_label,
+					    TCLAS4_FLOW_LABEL_SIZE);
+			}
+		}
+
+		if (t4->classifier_mask & BIT(3)) {
+			if (nla_put_u16(msg,
+					QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_SRC_PORT,
+					t4->src_port))
+				return -1;
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: SCS tclas4 attr: SRC_PORT=%u",
+				   t4->src_port);
+		}
+		if (t4->classifier_mask & BIT(4)) {
+			if (nla_put_u16(msg,
+					QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_DST_PORT,
+					t4->dst_port))
+				return -1;
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: SCS tclas4 attr: DST_PORT=%u",
+				   t4->dst_port);
+		}
+		if (t4->classifier_mask & BIT(5)) {
+			if (nla_put_u8(msg,
+				       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_DSCP,
+				       t4->dscp))
+				return -1;
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: SCS tclas4 attr: DSCP=%u",
+				   t4->dscp);
+		}
+		if (t4->classifier_mask & BIT(6)) {
+			u8 next_hdr = (t4->ip_ver == IP_VERSION_4) ?
+				      t4->protocol : t4->next_header;
+
+			if (nla_put_u8(msg,
+				       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS4_NEXT_HEADER,
+				       next_hdr))
+				return -1;
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: SCS tclas4 attr: NEXT_HEADER=%u",
+				   next_hdr);
+		}
+
+	} else if (te->classifier_type == QM_TCLAS_CLASSIFIER_TYPE10) {
+		const struct qm_tclas_type10_params *t10 =
+			&te->tclas_elem.type10_params;
+
+		if (nla_put_u8(msg,
+			       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS10_PROTOCOL_INSTANCE,
+			       t10->protocol_instance) ||
+		    nla_put_u8(msg,
+			       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS10_NEXT_HEADER,
+			       t10->protocol_number) ||
+		    nla_put(msg,
+			    QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS10_FILTER_MASK,
+			    t10->filter_len, t10->filter_mask) ||
+		    nla_put(msg,
+			    QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_TCLAS10_FILTER_VALUE,
+			    t10->filter_len, t10->filter_value))
+			return -1;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: SCS tclas10 attr: proto_instance=%u next_header=%u filter_len=%u",
+			   t10->protocol_instance, t10->protocol_number,
+			   t10->filter_len);
+		wpa_hexdump(MSG_DEBUG,
+			    "nl80211: SCS tclas10 attr: filter_mask",
+			    t10->filter_mask, t10->filter_len);
+		wpa_hexdump(MSG_DEBUG,
+			    "nl80211: SCS tclas10 attr: filter_value",
+			    t10->filter_value, t10->filter_len);
 	}
+
+	return 0;
+}
+
+/*
+ * nl80211_send_scs_rule_cmd - Build and send one SCS rule vendor command.
+ * @tclas_start: index of first TCLAS element to include
+ * @tclas_count: number of TCLAS elements to include (0 = none)
+ *
+ * When tclas_processing != 0 (AND logic), all TCLAS elements are combined
+ * into one message.
+ */
+static int nl80211_send_scs_rule_cmd(
+	struct wpa_driver_nl80211_data *drv,
+	unsigned int vendor_id, unsigned int subcmd,
+	int ifidx, const u8 *mac,
+	const struct qm_req_desc_data *qm_desc,
+	enum qos_mgmt_type qm_type,
+	int tclas_start, int tclas_count)
+{
+	struct nl_msg *msg;
+	struct nlattr *attr;
+	int i, ret;
 
 	msg = nlmsg_alloc();
 	if (!msg)
-		return -EINVAL;
+		return -ENOBUFS;
 
 	if (!genlmsg_put(msg, 0, 0, drv->global->nl80211_id,
-			0,  0, NL80211_CMD_VENDOR, 0))
+			 0, 0, NL80211_CMD_VENDOR, 0))
 		goto fail;
 
 	if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, ifidx) ||
 	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, vendor_id) ||
 	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD, subcmd))
 		goto fail;
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: SCS rule cmd: ifidx=%d vendor_id=0x%x subcmd=%u",
+		   ifidx, vendor_id, subcmd);
 
 	attr = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
 	if (!attr)
 		goto fail;
 
-	if (nla_put(msg, QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_DST_MAC_ADDR,
-		    ETH_ALEN, mac))
+	if (mac && nla_put(msg,
+			   QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_DST_MAC_ADDR,
+			   ETH_ALEN, mac))
 		goto fail;
+	if (mac)
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: SCS rule cmd: dst_mac=" MACSTR,
+			   MAC2STR(mac));
+
+	if (qm_desc) {
+		if (nla_put_u8(msg,
+			       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_RULE_ID,
+			       qm_type) ||
+		    nla_put_u16(msg,
+				QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_SERVICE_CLASS_ID,
+				qm_desc->qm_id) ||
+		    nla_put_u8(msg,
+			       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_REQUEST_TYPE,
+			       qm_desc->request_type) ||
+		    nla_put_u8(msg,
+			       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_OUTPUT_TID,
+			       qm_desc->priority))
+			goto fail;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: SCS rule cmd: rule_id(qm_type)=%u svc_class_id=%u request_type=%u output_tid=%u tclas[%d..%d]",
+			   qm_type, qm_desc->qm_id, qm_desc->request_type,
+			   qm_desc->priority,
+			   tclas_start, tclas_start + tclas_count - 1);
+
+		for (i = tclas_start; i < tclas_start + tclas_count; i++) {
+			if (nl80211_add_tclas_attrs(msg,
+						    &qm_desc->tclas[i]) < 0)
+				goto fail;
+		}
+	}
 
 	nla_nest_end(msg, attr);
 
 	ret = send_and_recv_cmd(drv, msg);
 	if (ret)
-		wpa_printf(MSG_ERROR, "nl80211: vendor sub command %d failed err=%d",
+		wpa_printf(MSG_ERROR,
+			   "nl80211: vendor sub command %d failed err=%d",
 			   subcmd, ret);
 	else
-		wpa_printf(MSG_INFO, "nl80211: vendor sub command %d scs_rule_config success",
+		wpa_printf(MSG_INFO,
+			   "nl80211: vendor sub command %d scs_rule_config success",
 			   subcmd);
 	return ret;
 fail:
 	nlmsg_free(msg);
 	return -ENOBUFS;
 }
+
+static int nl80211_vendor_cmd_rule_config_notify(void *priv,
+					 unsigned int vendor_id,
+					 unsigned int subcmd,
+					 const u8 *data,
+					 size_t data_len,
+					 enum nested_attr nested_attr,
+					 struct wpabuf *buf, const u8 *mac,
+					 const char *ifname,
+					 const struct qm_req_desc_data *qm_desc,
+					 enum qos_mgmt_type qm_type)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	int ifidx;
+	int ret = 0;
+	int i;
+
+	if (!drv)
+		return -EINVAL;
+
+	ifidx = if_nametoindex(ifname);
+	if (ifidx == 0) {
+		wpa_printf(MSG_ERROR,
+			   "nl80211: Failed to find interface index for %s",
+			   ifname);
+		return -ENODEV;
+	}
+
+	if (!qm_desc || qm_desc->num_tclas_elements == 0) {
+		/*
+		 * No TCLAS elements (e.g., EPCS/MSCS or remove request):
+		 * send a single vendor command with MAC addr and SCS header.
+		 */
+		return nl80211_send_scs_rule_cmd(drv, vendor_id, subcmd,
+						 ifidx, mac, qm_desc,
+						 qm_type, 0, 0);
+	}
+
+	if (qm_desc->tclas_processing != 0) {
+		/*
+		 * tclas_processing != 0 (AND logic): all TCLAS elements are
+		 * combined to form one rule (e.g., TCLAS4 5-tuple AND TCLAS10
+		 * filter). TCLAS4 and TCLAS10 use distinct attribute IDs so
+		 * they can coexist in a single vendor command without conflict.
+		 */
+		return nl80211_send_scs_rule_cmd(drv, vendor_id, subcmd,
+						 ifidx, mac, qm_desc,
+						 qm_type, 0,
+						 qm_desc->num_tclas_elements);
+	}
+
+	/*
+	 * tclas_processing == 0 (OR logic): each TCLAS element is independent.
+	 * Send one vendor command per TCLAS element to avoid attribute
+	 * overwriting when multiple elements of the same classifier type are
+	 * present.
+	 */
+	for (i = 0; i < qm_desc->num_tclas_elements; i++) {
+		ret = nl80211_send_scs_rule_cmd(drv, vendor_id, subcmd,
+						ifidx, mac, qm_desc,
+						qm_type, i, 1);
+		if (ret)
+			return ret;
+	}
+
+	return ret;
+}
 #endif /* CONFIG_IEEE80211AX */
+
+static int nl80211_vendor_cmd_iface_enabled_notify(void *priv,
+						   unsigned int vendor_id,
+						   unsigned int subcmd,
+						   u32 generic_cmd,
+						   u32 bss_mode,
+						   int link_id,
+						   const char *ifname)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv;
+	struct nlattr *vendor_data;
+	struct nl_msg *msg = NULL;
+	int ret = -ENOBUFS;
+
+	if (!bss || !bss->drv) {
+		wpa_printf(MSG_ERROR, "nl80211: Invalid drv in %s", __func__);
+		return -EINVAL;
+	}
+	drv = bss->drv;
+
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: iface enabled notify ifname=%s generic_cmd=%u mode=%u link_id=%d",
+		   ifname ? ifname : "N/A", generic_cmd, bss_mode, link_id);
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_VENDOR);
+	if (!msg) {
+		wpa_printf(MSG_DEBUG, "nl80211: Failed to build vendor cmd message");
+		goto fail;
+	}
+
+	if (nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, vendor_id) ||
+	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD, subcmd))
+	{
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Failed to put iface enabled vendor subcommand");
+		goto fail;
+	}
+
+	vendor_data = nla_nest_start(msg, NL80211_ATTR_VENDOR_DATA);
+	if (!vendor_data) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Failed to nest start iface enabled vendor data");
+		goto fail;
+	}
+
+	if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND,
+			generic_cmd) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_VALUE,
+			bss_mode) ||
+	    ((link_id != NL80211_DRV_LINK_ID_NA) &&
+	     nla_put_u8(msg, QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID,
+		        link_id))) {
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: Failed to put iface enabled generic data");
+		goto fail;
+	}
+
+	nla_nest_end(msg, vendor_data);
+
+	ret = send_and_recv_cmd(drv, msg);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "nl80211: iface enabled notify failed err=%d (%s)",
+			   ret, strerror(-ret));
+	else
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: iface enabled notify sent for %s",
+			   ifname ? ifname : "N/A");
+	return ret;
+
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
 
 
 static int nl80211_vendor_cmd_if_offload_type(void *priv,  unsigned int vendor_id,
@@ -16600,6 +17087,7 @@ fail:
 }
 
 #endif /* CONFIG_MBO */
+#endif /* CONFIG_DRIVER_NL80211_QCA */
 
 
 #ifdef CONFIG_PASN
@@ -16787,6 +17275,8 @@ fail:
 }
 
 #endif /* CONFIG_PASN */
+
+#ifdef CONFIG_DRIVER_NL80211_QCA
 
 #ifdef CONFIG_NAN_USD
 
@@ -17637,7 +18127,7 @@ wpa_driver_nl80211_uhr_reconfig_req(void *priv,
 			       (u8) params->tx_link_id))
 			goto nla_fail;
 		wpa_printf(MSG_INFO,
-			   "santy nl80211: UHR_LINK_RECONFIG_REQ tx_link_id=%d "
+			   "nl80211: UHR_LINK_RECONFIG_REQ tx_link_id=%d "
 			   "(type=%u)", params->tx_link_id, params->type);
 	}
 
@@ -19177,8 +19667,7 @@ static int nl80211_put_smd_ba_params(struct nl_msg *msg, int tid,
 
 	if (nla_put_u16(msg, NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE,
 			ba->buffer_size) ||
-	    (ba->ba_policy &&
-	     nla_put_flag(msg, NL80211_SMD_CTX_BA_ATTR_POLICY)) ||
+	    nla_put_u8(msg, NL80211_SMD_CTX_BA_ATTR_POLICY, ba->ba_policy) ||
 	    (ba->amsdu_supported &&
 	     nla_put_flag(msg, NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT)) ||
 	    nla_put_u16(msg, NL80211_SMD_CTX_BA_ATTR_TIMEOUT, ba->timeout) ||
@@ -19350,6 +19839,81 @@ fail:
 	nlmsg_free(msg);
 	return -ENOBUFS;
 }
+
+static int get_smd_ctx_handler(struct nl_msg *msg, void *arg)
+{
+	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+	struct sta_smd_ctx_info **out_ctx = arg;
+
+	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+		  genlmsg_attrlen(gnlh, 0), NULL);
+
+	if (!tb[NL80211_ATTR_SMD_CTX])
+		return NL_SKIP;
+
+	*out_ctx = nl80211_parse_smd_ctx(tb[NL80211_ATTR_SMD_CTX]);
+	return NL_OK;
+}
+
+static int nl80211_get_smd_ctx(void *priv, const u8 *sta_addr,
+			       u8 valid_ctx_bitmap, u8 tx_tid_bitmap,
+			       u8 rx_tid_bitmap,
+			       struct sta_smd_ctx_info **out_ctx)
+{
+	struct i802_bss *bss = priv;
+	struct wpa_driver_nl80211_data *drv = bss->drv;
+	struct nl_msg *msg;
+	struct nlattr *smd_nest, *tx_nest, *rx_nest;
+	int ret;
+
+	*out_ctx = NULL;
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_GET_SMD_CTX);
+	if (!msg)
+		return -ENOBUFS;
+
+	if (nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, sta_addr))
+		goto fail;
+
+	smd_nest = nla_nest_start(msg, NL80211_ATTR_SMD_CTX);
+	if (!smd_nest)
+		goto fail;
+
+	if (nla_put_u8(msg, NL80211_SMD_CTX_ATTR_VALID_CTX, valid_ctx_bitmap))
+		goto fail;
+
+	tx_nest = nla_nest_start(msg, NL80211_SMD_CTX_ATTR_DL);
+	if (!tx_nest)
+		goto fail;
+	if (nla_put_u8(msg, NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP,
+		       tx_tid_bitmap))
+		goto fail;
+	nla_nest_end(msg, tx_nest);
+
+	rx_nest = nla_nest_start(msg, NL80211_SMD_CTX_ATTR_UL);
+	if (!rx_nest)
+		goto fail;
+	if (nla_put_u8(msg, NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP,
+		       rx_tid_bitmap))
+		goto fail;
+	nla_nest_end(msg, rx_nest);
+
+	nla_nest_end(msg, smd_nest);
+
+	ret = send_and_recv_resp(drv, msg, get_smd_ctx_handler, out_ctx);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "nl80211: GET_SMD_CTX failed: %d", ret);
+		return ret;
+	}
+	if (!*out_ctx)
+		return -ENODATA;
+	return 0;
+
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
 #endif /* CONFIG_IEEE80211BN */
 
 const struct wpa_driver_ops wpa_driver_nl80211_ops = {
@@ -19496,10 +20060,6 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #endif /* CONFIG_MBO */
 	.set_bssid_tmp_disallow = nl80211_set_bssid_tmp_disallow,
 	.add_sta_node = nl80211_add_sta_node,
-#ifdef CONFIG_PASN
-	.send_pasn_resp = nl80211_send_pasn_resp,
-	.set_secure_ranging_ctx = nl80211_set_secure_ranging_ctx,
-#endif /* CONFIG_PASN */
 #ifdef CONFIG_NAN_USD
 	.nan_flush = nl80211_nan_flush,
 	.nan_publish = nl80211_nan_publish,
@@ -19509,6 +20069,10 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.nan_cancel_subscribe = nl80211_nan_cancel_subscribe,
 #endif /* CONFIG_NAN_USD */
 #endif /* CONFIG_DRIVER_NL80211_QCA */
+#ifdef CONFIG_PASN
+	.send_pasn_resp = nl80211_send_pasn_resp,
+	.set_secure_ranging_ctx = nl80211_set_secure_ranging_ctx,
+#endif /* CONFIG_PASN */
 	.do_acs = nl80211_do_acs,
 #ifdef CONFIG_MBO
 	.get_bss_transition_status = nl80211_get_bss_transition_status,
@@ -19565,15 +20129,20 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #ifdef CONFIG_IEEE80211AX
 	.rule_config_notify = nl80211_vendor_cmd_rule_config_notify,
 #endif /* CONFIG_IEEE80211AX */
+	.notify_iface_state = nl80211_vendor_cmd_iface_enabled_notify,
 #ifdef CONFIG_QCN_EXTN
 	.set_muedca_mode = nl80211_set_muedca_mode,
 #endif /* CONFIG_QCN_EXTN */
 	.abort_cac = nl80211_abort_cac,
+#ifdef CONFIG_IEEE80211BN
+	.sta_set_mapc_params        = nl80211_sta_set_mapc_params,
+#endif /* CONFIG_IEEE80211BN */
 	.notify_radar = nl80211_notify_radar,
 #ifdef CONFIG_IEEE80211BN
 	.critical_update = nl80211_critical_update,
 #endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_IEEE80211BN
 	.set_smd_ctx = nl80211_set_smd_ctx,
+	.get_smd_ctx = nl80211_get_smd_ctx,
 #endif
 };

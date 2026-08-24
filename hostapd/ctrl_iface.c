@@ -41,7 +41,6 @@
 #include "common/wpa_ctrl.h"
 #include "common/ptksa_cache.h"
 #include "common/hw_features_common.h"
-#include "ap/hw_features.h"
 #include "common/nan_de.h"
 #include "crypto/tls.h"
 #include "drivers/driver.h"
@@ -50,6 +49,8 @@
 #include "radius/radius_server.h"
 #include "l2_packet/l2_packet.h"
 #include "ap/hostapd.h"
+#include "ap/hw_features.h"
+#include "ap/hostapd_log.h"
 #include "ap/ap_config.h"
 #include "ap/ieee802_1x.h"
 #include "ap/wpa_auth.h"
@@ -80,6 +81,10 @@
 #include "ap/interference.h"
 #include <limits.h>
 
+#ifdef CONFIG_IEEE80211BN
+#include "ap/mapc.h"
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef CONFIG_ATF_OFFLOAD
 #include "atf/atf_offload_config.h"
 #endif
@@ -87,7 +92,9 @@
 #ifdef CONFIG_PROCESS_COORDINATION
 #include "common/proc_coord.h"
 #ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+#ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/hostapd_if_plugin.h"
+#endif /* CONFIG_QCN_EXTN */
 #endif
 #endif
 
@@ -910,6 +917,7 @@ static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 	sta = ap_get_sta(hapd, addr);
 #ifdef CONFIG_IEEE80211BE
 	/* To find link STA when MLD addr is provided */
+#ifdef CONFIG_QCN_EXTN
 	if (!sta && hapd->conf->mld_ap) {
 		for_each_mld_link_include_repurposed(lhapd, hapd) {
 			sta = ap_get_sta(lhapd, addr);
@@ -919,6 +927,7 @@ static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 			}
 		}
 	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 	if (!sta) {
 		wpa_printf(MSG_DEBUG, "DSCP: STA " MACSTR " not capable", MAC2STR(addr));
@@ -977,7 +986,10 @@ static int hostapd_ctrl_iface_set_dscp_policy(struct hostapd_data *hapd,
 static int hostapd_ctrl_send_unsolicited_dscp_req(struct hostapd_data *hapd, const char *cmd)
 {
 	struct sta_info *sta;
-	struct hostapd_data *lhapd, *assoc_hapd = hapd;
+	struct hostapd_data *assoc_hapd = hapd;
+#ifdef CONFIG_QCN_EXTN
+	struct hostapd_data *lhapd;
+#endif /* CONFIG_QCN_EXTN */
 	u8 addr[ETH_ALEN];
 	int reset = 0;
 	int policy_ids[10];
@@ -1033,6 +1045,7 @@ static int hostapd_ctrl_send_unsolicited_dscp_req(struct hostapd_data *hapd, con
 
 	sta = ap_get_sta(hapd, addr);
 #ifdef CONFIG_IEEE80211BE
+#ifdef CONFIG_QCN_EXTN
 	if (!sta && hapd->conf->mld_ap) {
 		for_each_mld_link_include_repurposed(lhapd, hapd) {
 			sta = ap_get_sta(lhapd, addr);
@@ -1042,6 +1055,7 @@ static int hostapd_ctrl_send_unsolicited_dscp_req(struct hostapd_data *hapd, con
 			}
 		}
 	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 	if (!sta) {
 		wpa_printf(MSG_DEBUG, "DSCP: STA " MACSTR " not capable", MAC2STR(addr));
@@ -1140,7 +1154,7 @@ static int hostapd_ctrl_iface_send_mscs_resp(struct hostapd_data *hapd,
 		ret = hostapd_copy_and_send_mscs_data(hapd, sta, QM_REMOVE_REQ,
 						      0);
 		sta->mscs_session_exists = false;
-		hostapd_mscs_delete_all_rules(hapd, sta);
+		hostapd_mscs_delete_nft_rules(hapd, sta);
 		os_free(sta->mscs_ctxt);
 		sta->mscs_ctxt = NULL;
 	}
@@ -1568,6 +1582,32 @@ static int hostapd_ctrl_iface_get_config(struct hostapd_data *hapd,
 #endif /* CONFIG_QCN_EXTN */
 
 	return pos - buf;
+}
+
+
+/* LOG_PEER restricts logging to a single STA at a time. Only one filter
+ * address is stored; issuing LOG_PEER <new_addr> replaces the previous one.
+ * LOG_PEER clear removes the restriction and restores per-BSS logging. */
+static int hostapd_ctrl_iface_log_peer(struct hostapd_data *hapd,
+				       const char *cmd)
+{
+	u8 addr[ETH_ALEN];
+
+	if (os_strcmp(cmd, "clear") == 0) {
+		hapd->log_peer_filter_set = 0;
+		os_memset(hapd->log_peer_addr, 0, ETH_ALEN);
+#ifdef CONFIG_QCN_EXTN
+		hostapd_log_trigger_clear(hapd, NULL);
+#endif /* CONFIG_QCN_EXTN */
+		return 0;
+	}
+	if (hwaddr_aton(cmd, addr) < 0)
+		return -1;
+	if (is_multicast_ether_addr(addr))
+		return -1;
+	hapd->log_peer_filter_set = 1;
+	os_memcpy(hapd->log_peer_addr, addr, ETH_ALEN);
+	return 0;
 }
 
 
@@ -2076,6 +2116,97 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			wpa_printf(MSG_INFO, "Updated RSSI deauth grace samples to %d", val);
 			hostapd_ctrl_iface_update_rssi_monitor(hapd);
 		}
+#ifdef CONFIG_FILS
+	} else if (os_strcasecmp(cmd, "fils_discovery_max_interval") == 0) {
+		int val = atoi(value);
+
+		if (!is_6ghz_op_class(hapd->iconf->op_class)) {
+			wpa_printf(MSG_ERROR,
+				   "Fils are not supported in current band!");
+			hapd->conf->fils_discovery_max_int = 0;
+			return -1;
+		}
+
+		if (hapd != tx_hapd) {
+			wpa_printf(MSG_ERROR,
+				   "Fils are allowed to enable only on Tx BSS");
+			hapd->conf->fils_discovery_max_int = 0;
+			return -1;
+		}
+
+		if (val < 0 || val > FD_MAX_INTERVAL_6GHZ) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid fils_discovery_max_int value");
+			return -1;
+		}
+
+		/* To force enable fils set force_disable_in_band_discovery to 0 */
+		hapd->conf->fils_discovery_max_int = val;
+
+		if (hapd->conf->fils_discovery_max_int) {
+			/* Disable UBPR if its enabled during fils enablement */
+			if (hapd->conf->ubpr_state == FILS_UBPR_ENABLED)
+				hapd->conf->unsol_bcast_probe_resp_interval = 0;
+		}
+
+		/* Fils can be enabled even when there are lower band BSSs present */
+		ieee802_11_set_beacon_per_bss_only(hapd);
+
+		return ret;
+#endif /* CONFIG_FILS */
+#ifdef CONFIG_IEEE80211AX
+	} else if (os_strcasecmp(cmd, "unsol_bcast_probe_resp_interval") == 0) {
+		int val = atoi(value);
+
+		if (!is_6ghz_op_class(hapd->iconf->op_class)) {
+			wpa_printf(MSG_ERROR,
+				   "UBPR is not supported in current band!");
+			hapd->conf->unsol_bcast_probe_resp_interval = 0;
+			return -1;
+		}
+
+		if (hapd != tx_hapd) {
+			wpa_printf(MSG_ERROR,
+				   "UBPRs are allowed to enable only on Tx BSS");
+			hapd->conf->unsol_bcast_probe_resp_interval = 0;
+			return -1;
+		}
+
+		if (val < 0 || val > 20) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid  unsol_bcast_probe_resp_interval value");
+			return -1;
+		}
+
+		hapd->conf->unsol_bcast_probe_resp_interval = val;
+
+		/* To force enable UBPR set force_disable_in_band_discovery to 0 */
+		if (hapd->conf->unsol_bcast_probe_resp_interval) {
+			/* Disable fils if its enabled during UBPR enablement */
+			if (hapd->conf->fils_state == FILS_UBPR_ENABLED)
+				hapd->conf->fils_discovery_max_int = 0;
+		} else {
+			if (hapd->conf->fils_state != FILS_UBPR_ENABLED)
+				hapd->conf->fils_discovery_max_int = FD_MAX_INTERVAL_6GHZ;
+		}
+
+		ieee802_11_set_beacon_per_bss_only(tx_hapd);
+
+		return ret;
+
+	} else if (os_strcasecmp(cmd, "he_6ghz_min_rate") == 0) {
+		if (!is_6ghz_op_class(hapd->iconf->op_class)) {
+			wpa_printf(MSG_ERROR,
+				   "he_6ghz_min_rate is applicable for 6 GHz only");
+			return -1;
+		}
+		ret = hostapd_set_iface(hapd->iconf, hapd->conf, cmd, value);
+		if (ret)
+			return ret;
+		if (!hapd->conf->is_cmn_param)
+			ieee802_11_update_beacons(tx_hapd->iface);
+		return 0;
+#endif /* CONFIG_IEEE80211AX */
 	} else {
 		if (hapd->iface->conf->disable_csa_dfs &&
 		    ((os_strcmp(cmd, "channel") == 0) &&
@@ -2110,6 +2241,8 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			ieee802_11_set_beacon(hapd);
 		} else if (os_strcasecmp(cmd, "rnr_ie_allowed") == 0) {
 			ieee802_11_set_beacon(hapd);
+		} else if (os_strcasecmp(cmd, "dtim_period") == 0) {
+			ieee802_11_set_beacon(hapd);
 #ifdef CONFIG_IEEE80211AC
 		} else if (os_strcasecmp(cmd, "vht_mcs_nss_set") == 0) {
 			if (!hapd->conf->is_cmn_param)
@@ -2136,9 +2269,6 @@ vht_rollback:
 			return -1;
 #endif /* CONFIG_IEEE80211AC */
 #ifdef CONFIG_IEEE80211AX
-		} else if (os_strcasecmp(cmd, "he_6ghz_min_rate") == 0 &&
-			   is_6ghz_op_class(hapd->iconf->op_class) && !hapd->conf->is_cmn_param) {
-			ieee802_11_update_beacons(tx_hapd->iface);
 		} else if (os_strcasecmp(cmd, "bss_he_su_beamformer") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_su_beamformee") == 0 ||
 			   os_strcasecmp(cmd, "bss_he_mu_beamformer") == 0 ||
@@ -2181,6 +2311,11 @@ he_rollback:
 			hapd->conf->he_phy_capab = old_he_phy_capab;
 			hapd->conf->he_phy_capab_mask = old_he_phy_capab_mask;
 			return -1;
+		} else if (os_strcasecmp(cmd, "he_tx_mcs_nss_set") == 0 ||
+			   os_strcasecmp(cmd, "he_rx_mcs_nss_set") == 0) {
+			if (hostapd_tx_bss_only(hapd, cmd) < 0)
+				return -1;
+			return hostapd_reload_bss_only(hapd);
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
 		} else if (os_strcasecmp(cmd, "bss_eht_mu_mimo") == 0) {
@@ -2332,6 +2467,27 @@ eht_generic_rollback:
 			hapd->conf->eht_phy_capab_mask = old_eht_generic_capab_mask;
 			return -1;
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_IEEE80211BN
+		} else if (os_strcasecmp(cmd, "bss_uhr_2xldpc_tx") == 0 ||
+			   os_strcasecmp(cmd, "bss_uhr_2xldpc_rx") == 0) {
+			/* Save old values for rollback on failure */
+			struct uhr_phy_capabilities_info old_uhr_phy_capab =
+					hapd->conf->uhr_phy_capab;
+			u32 old_uhr_phy_capab_mask = hapd->conf->uhr_phy_capab_mask;
+
+			if (hostapd_validate_bss_capab(hapd) < 0)
+				goto uhr_2xldpc_rollback;
+
+			if (!hapd->conf->is_cmn_param &&
+			    hostapd_reload_bss_only(hapd) < 0)
+				goto uhr_2xldpc_rollback;
+
+			return 0;
+uhr_2xldpc_rollback:
+			hapd->conf->uhr_phy_capab = old_uhr_phy_capab;
+			hapd->conf->uhr_phy_capab_mask = old_uhr_phy_capab_mask;
+			return -1;
+#endif /* CONFIG_IEEE80211BN */
 		} else if (os_strcasecmp(cmd, "ht_mcs_nss_set") == 0) {
 			if (!hapd->conf->is_cmn_param)
 				return hostapd_reload_bss_only(hapd);
@@ -2931,6 +3087,22 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 
 		res = os_snprintf(buf, buflen, "he_6ghz_min_rate = %u\n",
 				  hapd->iconf->he_6ghz_min_rate);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "he_tx_mcs_nss_set") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "he_tx_mcs_nss_set = 0x%04x(<=80 mhz) 0x%04x(160 mhz)\n",
+				  hapd->conf->he_tx_mcs_nss_set[0],
+				  hapd->conf->he_tx_mcs_nss_set[1]);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "he_rx_mcs_nss_set") == 0) {
+		res = os_snprintf(buf, buflen,
+				  "he_rx_mcs_nss_set = 0x%04x(<=80 mhz) 0x%04x(160 mhz)\n",
+				  hapd->conf->he_rx_mcs_nss_set[0],
+				  hapd->conf->he_rx_mcs_nss_set[1]);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
@@ -3636,6 +3808,72 @@ static int hostapd_ctrl_iface_radar(struct hostapd_data *hapd, char *cmd)
 		data.dfs_event.cf2 = atoi(pos + 4);
 
 	wpa_supplicant_event(hapd, event, &data);
+
+	return 0;
+}
+
+
+static int hostapd_ctrl_iface_awgn(struct hostapd_data *hapd, char *cmd)
+{
+	union wpa_event_data data;
+	char *pos, *param, *end;
+	const char *val = NULL;
+
+	wpa_printf(MSG_DEBUG, "AWGN TEST: %s", cmd);
+
+	os_memset(&data, 0, sizeof(data));
+	data.awgn_event.link_id = -1;
+
+	param = os_strchr(cmd, ' ');
+	if (!param)
+		return -1;
+	*param++ = '\0';
+
+	if (os_strcmp(cmd, "DETECTED") != 0) {
+		wpa_printf(MSG_DEBUG, "Unsupported AWGN test command: %s",
+			   cmd);
+		return -1;
+	}
+
+	pos = os_strstr(param, "freq=");
+	if (!pos)
+		return -1;
+	data.awgn_event.freq = atoi(pos + 5);
+
+	pos = os_strstr(param, "chan_width=");
+	if (!pos)
+		return -1;
+	data.awgn_event.chan_width = atoi(pos + 11);
+
+	pos = os_strstr(param, "cf1=");
+	if (!pos)
+		return -1;
+	data.awgn_event.cf1 = atoi(pos + 4);
+
+	pos = os_strstr(param, "cf2=");
+	if (pos)
+		data.awgn_event.cf2 = atoi(pos + 4);
+
+	pos = os_strstr(param, "bitmap=");
+	if (pos)
+		val = pos + 7;
+	else {
+		pos = os_strstr(param, "chan_bw_interference_bitmap=");
+		if (pos)
+			val = pos + 28;
+	}
+	if (!val)
+		return -1;
+	data.awgn_event.chan_bw_interference_bitmap =
+		strtoul(val, &end, 0);
+	if (val == end)
+		return -1;
+
+	pos = os_strstr(param, "link_id=");
+	if (pos)
+		data.awgn_event.link_id = atoi(pos + 8);
+
+	wpa_supplicant_event(hapd, EVENT_AWGN_DETECTED, &data);
 
 	return 0;
 }
@@ -4952,7 +5190,11 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 
 	hostapd_get_channel_switch_time(iface, &settings.freq_params);
 
+#ifdef CONFIG_QCN_EXTN
+	if (iface->cac_started || iface->bootup_cac_in_progress)
+#else
 	if (iface->cac_started)
+#endif /* CONFIG_QCN_EXTN */
 		return hostapd_abort_cac_for_channel_switch(iface, &settings);
 
 	/*
@@ -5389,6 +5631,31 @@ static bool is_uhr_section_keyword(const char *s)
 	       os_strncmp(s, "ELR ", 4) == 0;
 }
 
+static void
+npca_params_from_mode(struct hostapd_uhr_npca_params *npca,
+		      const struct uhr_npca_info *info)
+{
+	u32 params = 0;
+
+	params |= ((u32)info->npca_min_dur_threshold <<
+		   UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH_SHIFT) &
+		  UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH;
+	params |= ((u32)info->npca_switch_delay <<
+		   UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY_SHIFT) &
+		  UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_DELAY;
+	params |= ((u32)info->npca_switch_back_delay <<
+		   UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY_SHIFT) &
+		  UHR_OPER_PARAMS_NPCA_NPCA_SWITCH_BACK_DELAY;
+	params |= ((u32)info->npca_initial_qsrc <<
+		   UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC_SHIFT) &
+		  UHR_OPER_PARAMS_NPCA_INIT_NPCA_QRSC;
+	if (info->npca_moplen)
+		params |= UHR_OPER_PARAMS_NPCA_MOPLEN_NPCA;
+
+	os_memset(npca, 0, sizeof(*npca));
+	npca->params = params;
+}
+
 static int
 parse_npca_params(struct hostapd_data *hapd,
 		  struct hostapd_uhr_npca_params *npca,
@@ -5396,6 +5663,8 @@ parse_npca_params(struct hostapd_data *hapd,
 {
 	char *cur = *pos;
 	char *end, *token;
+	bool primary_chan_set = false;
+	bool enable_seen = false;
 
 	while (*cur) {
 		while (*cur == ' ')
@@ -5415,21 +5684,30 @@ parse_npca_params(struct hostapd_data *hapd,
 
 		if (os_strncmp(token, "enable=", 7) == 0) {
 			npca->enable = atoi(token + 7) != 0;
+			enable_seen = true;
 			if (!npca->enable) {
+				while (*cur == ' ')
+					cur++;
+				if (*cur && !is_uhr_section_keyword(cur)) {
+					wpa_printf(MSG_ERROR,
+						   "UPDATE_UHR_FEATURES: NPCA enable=0 must not be followed by additional parameters");
+					return -1;
+				}
 				break;
 			}
 		} else if (os_strncmp(token, "primary_chan=", 13) == 0) {
-			int subchan_idx =
-				hostapd_npca_primary_chan_to_subchan_idx(
+			int npca_chan =
+				hostapd_npca_primary_chan_validate(
 					hapd, token + 13);
 
-			if (subchan_idx < 0)
+			if (npca_chan < 0)
 				return -1;
+			primary_chan_set = true;
 			npca->params =
 				(npca->params &
-				 ~UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS) |
-				((u32) subchan_idx <<
-				 UHR_OPER_PARAMS_NPCA_PRIM_CHAN_OFFS_SHIFT);
+				 ~UHR_OPER_PARAMS_NPCA_PRIMARY_CHAN) |
+				((u32) npca_chan <<
+				 UHR_OPER_PARAMS_NPCA_PRIMARY_CHAN_SHIFT);
 		} else if (os_strncmp(token, "min_dur=", 8) == 0) {
 			u32 v = (u32) atoi(token + 8) &
 				(UHR_OPER_PARAMS_NPCA_NPCA_MIN_DUR_THRESH >>
@@ -5484,6 +5762,14 @@ parse_npca_params(struct hostapd_data *hapd,
 		}
 	}
 
+	if (enable_seen && npca->enable &&
+	    !primary_chan_set) {
+		wpa_printf(MSG_ERROR,
+			   "UPDATE_UHR_FEATURES: NPCA enable=1 requires "
+			   "primary_chan to be specified");
+		return -1;
+	}
+
 	*pos = cur;
 	return 0;
 }
@@ -5503,6 +5789,24 @@ hostapd_validate_uhr_cu_state(struct hostapd_data *hapd) {
 		return -1;
 	}
 
+	return 0;
+}
+
+static int
+hostapd_validate_mld_uhr_cu_state(struct hostapd_data *hapd)
+{
+	struct hostapd_data *link;
+
+	for_each_mld_link(link, hapd) {
+		if (!hostapd_is_uhr_enabled(link))
+			continue;
+		if (link->uhr_ecu.state != UHR_ECU_IDLE) {
+			wpa_printf(MSG_ERROR,
+				   "UPDATE_UHR_FEATURES: ECU already in progress on link %u (%s), try again later",
+				   link->mld_link_id, link->conf->iface);
+			return -1;
+		}
+	}
 	return 0;
 }
 
@@ -5563,8 +5867,13 @@ hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 	u16 mode_changed = 0;
 	char *pos;
 	int i;
+	struct hostapd_hw_modes *mode;
+	struct uhr_npca_info *npca_info;
 
 	if (hostapd_validate_uhr_cu_state(hapd) < 0)
+		return -1;
+
+	if (hostapd_validate_mld_uhr_cu_state(hapd) < 0)
 		return -1;
 
 	pos = cmd;
@@ -5580,7 +5889,15 @@ hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 			pos += 5;
 			struct hostapd_uhr_npca_params prev_npca = upd->npca;
 
-			os_memset(&new_npca, 0, sizeof(new_npca));
+			mode = hapd->iface->current_mode;
+			npca_info = mode ?
+				&mode->npca_info[IEEE80211_MODE_AP] : NULL;
+			if (!npca_info || !npca_info->npca_supported) {
+				wpa_printf(MSG_ERROR,
+					   "UPDATE_UHR_FEATURES: NPCA not supported by the driver");
+				return -1;
+			}
+			npca_params_from_mode(&new_npca, npca_info);
 			if (parse_npca_params(hapd, &new_npca, &pos) < 0)
 				return -1;
 			if (!(upd->mode_changed & BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA)) ||
@@ -5619,8 +5936,8 @@ hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 			bss->conf->uhr_params_update.mode_changed |= BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA);
 			bss->conf->uhr_params_update.npca = new_npca;
 
-			if (!hapd->started)
-				hostapd_update_ecu_params(hapd);
+			if (!bss->started)
+				hostapd_update_ecu_params(bss);
 
 			/* TODO: Add the changes for to update bss specific uhr_params_update features e.g DPS */
 
@@ -5700,6 +6017,7 @@ static int hostapd_ctrl_iface_set_bw(struct hostapd_iface *iface, char *pos)
 #endif /* CONFIG_TESTING_OPTIONS */
 
 
+#ifdef CONFIG_CTRL_IFACE_MIB
 static int hostapd_ctrl_iface_mib(struct hostapd_data *hapd, char *reply,
 				  int reply_size, const char *param)
 {
@@ -5711,6 +6029,7 @@ static int hostapd_ctrl_iface_mib(struct hostapd_data *hapd, char *reply,
 #endif /* RADIUS_SERVER */
 	return -1;
 }
+#endif /* CONFIG_CTRL_IFACE_MIB */
 
 
 static int hostapd_ctrl_iface_vendor(struct hostapd_data *hapd, char *cmd,
@@ -6069,6 +6388,102 @@ static int hostapd_ctrl_iface_req_link_measurement(struct hostapd_data *hapd,
 	}
 
 	ret = hostapd_send_link_measurement_req(hapd, addr);
+	if (ret >= 0)
+		ret = os_snprintf(reply, reply_size, "%d", ret);
+	return ret;
+}
+
+
+static int hostapd_ctrl_iface_req_channel_load(struct hostapd_data *hapd,
+					       const char *cmd, char *reply,
+					       size_t reply_size)
+{
+	u8 addr[ETH_ALEN];
+	const char *pos;
+	int op_class, channel, random_interval, duration;
+	int ret;
+
+	if (hwaddr_aton(cmd, addr)) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: REQ_CHANNEL_LOAD: Invalid MAC address");
+		return -1;
+	}
+
+	pos = os_strchr(cmd, ' ');
+	if (!pos)
+		return -1;
+	pos++;
+
+	op_class = atoi(pos);
+	pos = os_strchr(pos, ' ');
+	if (!pos)
+		return -1;
+	pos++;
+
+	channel = atoi(pos);
+	pos = os_strchr(pos, ' ');
+	if (!pos)
+		return -1;
+	pos++;
+
+	random_interval = atoi(pos);
+	pos = os_strchr(pos, ' ');
+	if (!pos)
+		return -1;
+	pos++;
+
+	duration = atoi(pos);
+
+	ret = hostapd_send_channel_load_req(hapd, addr, op_class, channel,
+					    random_interval, duration);
+	if (ret >= 0)
+		ret = os_snprintf(reply, reply_size, "%d", ret);
+	return ret;
+}
+
+
+static int hostapd_ctrl_iface_req_noise_histogram(struct hostapd_data *hapd,
+						  const char *cmd, char *reply,
+						  size_t reply_size)
+{
+	u8 addr[ETH_ALEN];
+	const char *pos;
+	int op_class, channel, random_interval, duration;
+	int ret;
+
+	if (hwaddr_aton(cmd, addr)) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: REQ_NOISE_HISTOGRAM: Invalid MAC address");
+		return -1;
+	}
+
+	pos = os_strchr(cmd, ' ');
+	if (!pos)
+		return -1;
+	pos++;
+
+	op_class = atoi(pos);
+	pos = os_strchr(pos, ' ');
+	if (!pos)
+		return -1;
+	pos++;
+
+	channel = atoi(pos);
+	pos = os_strchr(pos, ' ');
+	if (!pos)
+		return -1;
+	pos++;
+
+	random_interval = atoi(pos);
+	pos = os_strchr(pos, ' ');
+	if (!pos)
+		return -1;
+	pos++;
+
+	duration = atoi(pos);
+
+	ret = hostapd_send_noise_histogram_req(hapd, addr, op_class, channel,
+					       random_interval, duration);
 	if (ret >= 0)
 		ret = os_snprintf(reply, reply_size, "%d", ret);
 	return ret;
@@ -7055,18 +7470,50 @@ static s8 validate_user_eirp_tx_power(struct hostapd_data *hapd, s8 *local_tx_pw
 				      u8 local_max_txpwr_count,
 				      u8 ext_tx_pwr_val_count,
 				      enum max_tx_pwr_interpretation tx_pwr_intrpn,
-				      u8 client_mode)
+				      u8 client_mode, u8 tx_pwr_count)
 {
 	s8 max_eirp_pwr[TPE_NUM_POWER_SUPP_IN_11BE] = {0};
 	struct hostapd_iface *iface = hapd->iface;
 	struct hostapd_config *iconf = iface->conf;
 	enum chan_width ch_width;
-	u8 cen320, pwr_type;
+	u8 cen320, pwr_type, expected_tx_pwr_count = 0;
 	u16 freq;
 	u8 i = 0;
 
 	pwr_type = iface->conf->he_6ghz_reg_pwr_type;
 	ch_width = hostapd_get_chan_width_from_oper_chan_width(hapd->iconf);
+
+	switch (ch_width) {
+		case CHAN_WIDTH_20:
+			expected_tx_pwr_count = 0;
+			break;
+		case CHAN_WIDTH_40:
+			expected_tx_pwr_count = 1;
+			break;
+		case CHAN_WIDTH_80:
+			expected_tx_pwr_count = 2;
+			break;
+		case CHAN_WIDTH_160:
+			expected_tx_pwr_count = 3;
+			break;
+		case CHAN_WIDTH_320:
+			expected_tx_pwr_count = 4;
+			break;
+		default:
+			wpa_printf(MSG_ERROR,
+					"TPE: Unsupported channel width %d for LOCAL_EIRP",
+					ch_width);
+			return -1;
+	}
+
+	if (tx_pwr_count != expected_tx_pwr_count) {
+		wpa_printf(MSG_ERROR,
+				"TPE: Invalid tx_pwr_count %d for current channel "
+				"configuration, expected %d (ch_width=%d)",
+				tx_pwr_count, expected_tx_pwr_count,
+				ch_width);
+		return -1;
+	}
 
 	if (ext_tx_pwr_val_count && ch_width < CHAN_WIDTH_320) {
 		wpa_printf(MSG_ERROR, "Extended tx power is not applicable for current bw");
@@ -7099,7 +7546,7 @@ static s8 validate_user_psd_tx_power(struct hostapd_data *hapd,
 				     u8 local_max_txpwr_count,
 				     u8 ext_tx_pwr_val_count,
 				     enum max_tx_pwr_interpretation tx_pwr_intrpn,
-				     s8 client_mode)
+				     s8 client_mode, u8 tx_pwr_count)
 {
 	struct hostapd_iface *iface = hapd->iface;
 	s8 max_tx_pwr_ext[MAX_PSD_TPE_EXT_POWER_COUNT] = {0};
@@ -7108,9 +7555,10 @@ static s8 validate_user_psd_tx_power(struct hostapd_data *hapd,
 	int non_11be_start_idx = 0, chan_start_idx = 0;
 	u8 pwr_mode = iface->conf->he_6ghz_reg_pwr_type;
 	s8 max_tx_pwr[MAX_PSD_TPE_POWER_COUNT] = {0};
-	u8 tx_pwr_count = 0, tx_pwr_ext_count = 0;
+	u8 computed_tx_pwr_count = 0, tx_pwr_ext_count = 0;
 	struct ieee_chan_data chan_data;
 	s8 i = 0, j = 0, ret;
+	u8 expected_tx_pwr_count = 0;
 	s8 tpe_11ax_count;
 
 	tpe_11ax_count = local_max_txpwr_count - ext_tx_pwr_val_count;
@@ -7132,9 +7580,41 @@ static s8 validate_user_psd_tx_power(struct hostapd_data *hapd,
 		goto free;
 	}
 
+	switch (non_11be_chan_count) {
+		case 1:
+			expected_tx_pwr_count = 1;
+			break;
+		case 2:
+			expected_tx_pwr_count = 2;
+			break;
+		case 4:
+			expected_tx_pwr_count = 3;
+			break;
+		case 8:
+			expected_tx_pwr_count = 4;
+			break;
+		default:
+			wpa_printf(MSG_ERROR,
+					"TPE: Unsupported non-11BE channel count %d",
+					non_11be_chan_count);
+			ret = -1;
+			goto free;
+	}
+
+	if (tx_pwr_count != expected_tx_pwr_count) {
+		wpa_printf(MSG_ERROR,
+				"TPE: Invalid tx_pwr_count %d for current channel "
+				"configuration, expected %d (non_11be_chan_count=%d)",
+				tx_pwr_count, expected_tx_pwr_count,
+				non_11be_chan_count);
+		ret = -1;
+		goto free;
+	}
+
 	ret = get_psd_values(hapd, non_11be_start_idx, chan_start_idx,
-			     non_11be_chan_count, total_chan_count, &tx_pwr_count,
-			     max_tx_pwr, &tx_pwr_ext_count, max_tx_pwr_ext,
+			     non_11be_chan_count, total_chan_count,
+			     &computed_tx_pwr_count, max_tx_pwr,
+			     &tx_pwr_ext_count, max_tx_pwr_ext,
 			     client_mode, chan_data, pwr_mode, tx_pwr_intrpn);
 	if (ret) {
 		wpa_printf(MSG_ERROR, "failed to get the PSD values");
@@ -7176,7 +7656,11 @@ static int hostapd_ctrl_iface_stop_mld(struct hostapd_data *hapd)
 		return -1;
 	}
 
+#ifdef CONFIG_QCN_EXTN
 	for_each_mld_link_include_repurposed(link, hapd) {
+#else
+	for_each_mld_link(link, hapd) {
+#endif /* CONFIG_QCN_EXTN */
 		ret = hostapd_drv_stop_ap(link);
 		if (ret) {
 			wpa_printf(MSG_ERROR, "Failed to stop %s link %u",
@@ -7768,9 +8252,16 @@ static int hostapd_ctrl_iface_negotiated_ttlm(struct hostapd_data *hapd, const c
 static int hostapd_ctrl_iface_conf_ml_rec_links(struct hostapd_data *hapd,
 						const char *links)
 {
-	int links_val;
+	char *endptr;
+	long links_val;
 
-	links_val = atoi(links);
+	errno = 0;
+	links_val = strtol(links, &endptr, 10);
+	if (endptr == links || *endptr != '\0' || errno != 0) {
+		wpa_printf(MSG_ERROR,
+			   "ml_max_rec_links: invalid value '%s'", links);
+		return -1;
+	}
 
 	if (!hapd->conf->mld_ap || !hapd->conf->enable_aal) {
 		wpa_printf(MSG_ERROR,
@@ -7788,20 +8279,21 @@ static int hostapd_ctrl_iface_conf_ml_rec_links(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_QCN_EXTN */
 
-	if (links_val > ML_IE_MAX_SUPPORT_MAX_REC_LINKS) {
+	if (links_val < 0 || links_val > ML_IE_MAX_SUPPORT_MAX_REC_LINKS ||
+			links_val > hapd->mld->num_links) {
 		wpa_printf(MSG_ERROR,
-			   "configured max rec links is %d greater than %d", links_val,
+			   "configured max rec links is %ld greater than %d", links_val,
 			   ML_IE_MAX_SUPPORT_MAX_REC_LINKS);
 		return -1;
 	}
 
 	if (links_val == ML_IE_RSVD_MAX_REC_LINKS) {
 		wpa_printf(MSG_ERROR,
-			   "configured max rec links is %d reserved value", links_val);
+			   "configured max rec links is %ld reserved value", links_val);
 		return -1;
 	}
 
-	hostapd_set_ml_max_rec_links(hapd, links_val);
+	hostapd_set_ml_max_rec_links(hapd, (u8)links_val);
 
 	return 0;
 }
@@ -8030,7 +8522,8 @@ static s8 validate_user_max_tx_pwr(struct hostapd_data *hapd,
 				   u8 local_max_txpwr_count,
 				   u8 ext_tx_pwr_val_count,
 				   u8 txpwr_cat,
-				   enum max_tx_pwr_interpretation tx_pwr_intrpn)
+				   enum max_tx_pwr_interpretation tx_pwr_intrpn,
+				   u8 tx_pwr_count)
 {
 	u8 client_mode;
 	s8 ret;
@@ -8048,14 +8541,14 @@ static s8 validate_user_max_tx_pwr(struct hostapd_data *hapd,
 						  local_max_txpwr_count,
 						  ext_tx_pwr_val_count,
 						  tx_pwr_intrpn,
-						  client_mode);
+						  client_mode, tx_pwr_count);
 	else if (tx_pwr_intrpn == LOCAL_EIRP_PSD)
 		ret = validate_user_psd_tx_power(hapd,
 						 local_max_txpwr,
 						 local_max_txpwr_count,
 						 ext_tx_pwr_val_count,
 						 tx_pwr_intrpn,
-						 client_mode);
+						 client_mode, tx_pwr_count);
 
 	return ret;
 }
@@ -8221,7 +8714,7 @@ int hostapd_ctrl_iface_set_tpe(struct hostapd_data *hapd, char *cmd)
 				       local_max_txpwr_count,
 				       ext_tx_pwr_val_count,
 				       txpwr_cat,
-				       tx_pwr_intrpn);
+				       tx_pwr_intrpn, tx_pwr_count);
 	if (ret < 0)
 		return -1;
 
@@ -10504,13 +10997,482 @@ static int hostapd_ctrl_iface_puncture_sources(struct hostapd_data *hapd,
 	return pos - reply;
 }
 
+#ifdef CONFIG_IEEE80211BN
+static int
+hostapd_ctrl_iface_get_mapc_configs(struct hostapd_data *hapd,
+				    char *buf, size_t buflen)
+{
+	const struct mapc_bss_config *mc;
+	char *pos = buf, *end = buf + buflen;
+	int ret;
+
+	if (!hapd->conf || !hapd->conf->mapc_conf) {
+		wpa_printf(MSG_DEBUG, "MAPC: mapc_conf not allocated");
+		return -1;
+	}
+	mc = hapd->conf->mapc_conf;
+
+	ret = os_snprintf(pos, end - pos,
+			  "cotdma_en=%d\n"
+			  "disc_interval=%u\n"
+			  "disc_mode=%d\n"
+			  "neg_mode=%d\n"
+			  "max_co_ap=%d\n"
+			  "max_ctdma=%u\n"
+			  "max_disc_ap=%d\n"
+			  "disc_timeout=%u\n"
+			  "neg_timeout=%u\n"
+			  "inact_timeout=%u\n"
+			  "disc_cotdma_prof=%d\n"
+			  "initialized=%d\n"
+			  "usr_bitmap=0x%04x\n"
+			  "cap_bitmap=0x%04x\n"
+			  "param_bitmap=0x%04x\n"
+			  "active_peers=%u\n"
+			  "cotdma_active=%u\n"
+			  "disc_timer=%s\n",
+			  mc->mapc_cotdma_enable,
+			  mc->mapc_disc_req_interval_sec,
+			  mc->discovery_mode,
+			  mc->negotiation_mode,
+			  mc->max_mapc_co_ap_peer,
+			  (unsigned int)mc->max_mapc_ctdma_peer,
+			  mc->max_mapc_discovered_ap_peer,
+			  mc->discovery_req_timeout,
+			  mc->negotiation_req_timeout,
+			  mc->max_mapc_ap_inactivity,
+			  mc->enable_disc_cotdma_scheme_profile,
+			  hapd->mapc_initialized ? 1 : 0,
+			  mc->mapc_usr_enabled_bitmap,
+			  mc->mapc_capability_bitmap,
+			  mc->mapc_parameter_bitmap,
+			  (unsigned int)hapd->bss_active_peer_count,
+			  (unsigned int)hapd->bss_cotdma_active_count,
+			  mapc_is_periodic_disc_running(hapd) ? "running" : "stopped");
+	if (os_snprintf_error(end - pos, ret))
+		return pos - buf;
+	pos += ret;
+
+	return pos - buf;
+}
+
+static int
+hostapd_ctrl_iface_set_mapc_configs(struct hostapd_data *hapd,
+				    const char *cmd,
+				    char *reply, size_t reply_size)
+{
+	struct mapc_cfg_req reqs[MAPC_CFG_PARAMS_MAX];
+	int count = 0;
+	const char *p = cmd;
+	const char *tok, *eq;
+	size_t toklen, klen, vlen, j;
+
+	while (*p && count < MAPC_CFG_PARAMS_MAX) {
+		while (*p == ' ')
+			p++;
+		if (!*p)
+			break;
+		tok = p;
+		while (*p && *p != ' ')
+			p++;
+		toklen = (size_t)(p - tok);
+		eq = NULL;
+		for (j = 0; j < toklen; j++) {
+			if (tok[j] == '=') {
+				eq = tok + j;
+				break;
+			}
+		}
+		if (!eq)
+			return os_snprintf(reply, reply_size,
+					   "FAIL: '%.*s' missing '='\n",
+					   (int)toklen, tok);
+		klen = (size_t)(eq - tok);
+		vlen = toklen - klen - 1;
+		if (klen == 0 || klen >= MAPC_CFG_KEY_MAX ||
+		    vlen == 0 || vlen >= MAPC_CFG_VAL_MAX)
+			return os_snprintf(reply, reply_size,
+					   "FAIL: token too long or empty\n");
+		os_memcpy(reqs[count].key, tok, klen);
+		reqs[count].key[klen] = '\0';
+		os_memcpy(reqs[count].val, eq + 1, vlen);
+		reqs[count].val[vlen] = '\0';
+		count++;
+	}
+
+	if (count == 0)
+		return os_snprintf(reply, reply_size,
+				   "FAIL: expected key=value\n");
+
+	return mapc_set_config(hapd, reqs, count, reply, reply_size);
+}
+
+static int
+hostapd_ctrl_iface_get_mapc_valid_coap_list(struct hostapd_data *hapd,
+					    char *buf, size_t buflen)
+{
+	const struct mapc_bss_config *mc;
+	char *pos = buf, *end = buf + buflen;
+	int ret, i;
+
+	if (!hapd->conf || !hapd->conf->mapc_conf) {
+		wpa_printf(MSG_DEBUG, "MAPC: mapc_conf not allocated");
+		return -1;
+	}
+	mc = hapd->conf->mapc_conf;
+
+	ret = os_snprintf(pos, end - pos, "valid_ap_count=%d\n",
+			  mc->valid_ap_count);
+	if (os_snprintf_error(end - pos, ret))
+		return pos - buf;
+	pos += ret;
+
+	if (mc->valid_ap_count == 0) {
+		ret = os_snprintf(pos, end - pos, "valid_coap_list=(none)\n");
+		if (os_snprintf_error(end - pos, ret))
+			return pos - buf;
+		pos += ret;
+		return pos - buf;
+	}
+
+	ret = os_snprintf(pos, end - pos, "valid_coap_list=");
+	if (os_snprintf_error(end - pos, ret))
+		return pos - buf;
+	pos += ret;
+
+	for (i = 0; i < mc->valid_ap_count; i++) {
+		ret = os_snprintf(pos, end - pos, "%s" MACSTR,
+				  i ? "," : "",
+				  MAC2STR(mc->valid_coap_list[i]));
+		if (os_snprintf_error(end - pos, ret))
+			return pos - buf;
+		pos += ret;
+	}
+
+	ret = os_snprintf(pos, end - pos, "\n");
+	if (os_snprintf_error(end - pos, ret))
+		return pos - buf;
+	pos += ret;
+
+	return pos - buf;
+}
+
+static int
+hostapd_ctrl_iface_set_mapc_valid_coap_list(struct hostapd_data *hapd,
+					    const char *cmd)
+{
+	u8 macs[MAPC_MAX_VALID_AP_LIST][ETH_ALEN];
+	int count = 0;
+	const char *pos = cmd;
+	char mac_str[18];
+
+	if (!hapd->conf || !hapd->conf->mapc_conf) {
+		wpa_printf(MSG_DEBUG, "MAPC: mapc_conf not allocated");
+		return -1;
+	}
+
+	while (*pos == ' ')
+		pos++;
+
+	if (*pos == '\0') {
+		wpa_printf(MSG_ERROR,
+			   "SET_MAPC_VALID_COAP_LIST: no arguments — "
+			   "at least one MAC required");
+		return -1;
+	}
+
+	while (*pos) {
+		if (sscanf(pos, "%17s", mac_str) != 1)
+			break;
+		if (count >= MAPC_MAX_VALID_AP_LIST) {
+			wpa_printf(MSG_ERROR,
+				   "SET_MAPC_VALID_COAP_LIST: too many MACs "
+				   "(max %d)", MAPC_MAX_VALID_AP_LIST);
+			return -1;
+		}
+		if (hwaddr_aton(mac_str, macs[count])) {
+			wpa_printf(MSG_ERROR,
+				   "SET_MAPC_VALID_COAP_LIST: invalid MAC '%s'",
+				   mac_str);
+			return -1;
+		}
+		count++;
+		pos += os_strlen(mac_str);
+		while (*pos == ' ')
+			pos++;
+	}
+
+	return mapc_set_valid_coap_list(hapd, macs, count);
+}
+
+static int
+hostapd_ctrl_iface_set_mapc_sta(struct hostapd_data *hapd, const char *cmd,
+				char *buf, size_t buflen)
+{
+	struct mapc_bss_config *mc;
+	struct sta_info *sta;
+	struct mapc_scheme_nego_req reqs[MAPC_SCHEME_MAX];
+	u8 peer_addr[ETH_ALEN];
+	const char *p;
+	int cotdma, ret;
+
+	/* ---- Parse BSSID ("XX:XX:XX:XX:XX:XX") ---- */
+	if (hwaddr_aton(cmd, peer_addr)) {
+		wpa_printf(MSG_ERROR, "SET_MAPC_STA: invalid BSSID");
+		return os_snprintf(buf, buflen, "FAIL invalid BSSID\n");
+	}
+
+	/* ---- Parse " cotdma=<0|1>" ---- */
+	if (os_strlen(cmd) < 18 || cmd[17] != ' ') {
+		return os_snprintf(buf, buflen,
+				   "FAIL usage: SET_MAPC_STA <bssid> cotdma=<0|1>\n");
+	}
+	p = os_strstr(cmd + 18, "cotdma=");
+	if (!p) {
+		return os_snprintf(buf, buflen,
+				   "FAIL missing cotdma parameter\n");
+	}
+	cotdma = atoi(p + 7);
+	if (cotdma != 0 && cotdma != 1) {
+		return os_snprintf(buf, buflen,
+				   "FAIL cotdma must be 0 or 1\n");
+	}
+
+	/* ---- Sanity checks ---- */
+	if (!hapd->conf->mapc_conf) {
+		return os_snprintf(buf, buflen, "FAIL MAPC not configured\n");
+	}
+	mc = hapd->conf->mapc_conf;
+
+	if (mc->negotiation_mode != 1) {
+		return os_snprintf(buf, buflen,
+				   "FAIL mapc_negotiation_mode must be 1 for manual trigger\n");
+	}
+
+	if (os_memcmp(peer_addr, hapd->own_addr, ETH_ALEN) == 0) {
+		return os_snprintf(buf, buflen,
+				   "FAIL cannot target own BSSID\n");
+	}
+
+#ifdef CONFIG_IEEE80211BE
+	/*
+	 * MLO: if peer's sta_info lives on a different link (e.g. command
+	 * arrived on MLD anchor socket without -l flag), resolve to that
+	 * link hapd so all subsequent operations (ap_get_sta, discovery,
+	 * negotiation) target the correct link and its sta_list.
+	 * Non-MLO: mapc_find_link_hapd() returns hapd unchanged.
+	 */
+	hapd = mapc_find_link_hapd(hapd, peer_addr);
+	mc   = hapd->conf->mapc_conf;
+	if (!mc) {
+		return os_snprintf(buf, buflen,
+				   "FAIL MAPC not configured on resolved link\n");
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	sta = ap_get_sta(hapd, peer_addr);
+
+	if (cotdma == 1) {
+		if (!mc->mapc_cotdma_enable) {
+			return os_snprintf(buf, buflen,
+					   "FAIL Co-TDMA disabled (mapc_cotdma_enable=0)\n");
+		}
+
+		if (!mapc_is_valid_coap_peer(mc, peer_addr)) {
+			if (mc->valid_ap_count >= MAPC_MAX_VALID_AP_LIST) {
+				wpa_printf(MSG_ERROR,
+					   "SET_MAPC_STA: valid_coap_list full "
+					   "(max %d) — remove an entry first",
+					   MAPC_MAX_VALID_AP_LIST);
+				return os_snprintf(buf, buflen,
+						   "FAIL valid_coap_list full "
+						   "(max %d) — remove an entry "
+						   "first\n",
+						   MAPC_MAX_VALID_AP_LIST);
+			}
+			os_memcpy(mc->valid_coap_list[mc->valid_ap_count],
+				  peer_addr, ETH_ALEN);
+			mc->valid_ap_count++;
+			wpa_printf(MSG_INFO,
+				   "SET_MAPC_STA: auto-added " MACSTR
+				   " to valid_coap_list (count=%d)",
+				   MAC2STR(peer_addr), mc->valid_ap_count);
+		}
+
+		if (!sta || !sta->is_mapc_peer) {
+			wpa_printf(MSG_INFO,
+				   "SET_MAPC_STA: " MACSTR " not discovered, "
+				   "sending unicast discovery",
+				   MAC2STR(peer_addr));
+			ret = mapc_send_discovery_request(hapd, peer_addr);
+			if (ret < 0) {
+				wpa_printf(MSG_ERROR,
+					   "SET_MAPC_STA: discovery request failed (ret=%d)",
+					   ret);
+				return os_snprintf(buf, buflen,
+						   "FAIL discovery request failed (ret=%d)\n",
+						   ret);
+			}
+			return os_snprintf(buf, buflen,
+					   "OK discovery initiated - "
+					   "reissue set_mapc_sta after MAPC-DISCOVERY-REPORT\n");
+		}
+
+		/* Peer exists — check Co-TDMA capability */
+		if (!(sta->mapc_params.mapc_capability_bitmap &
+		      BIT(MAPC_CAPABILITY_COTDMA_SUPPORT))) {
+			return os_snprintf(buf, buflen,
+					   "FAIL peer " MACSTR
+					   " does not support Co-TDMA\n",
+					   MAC2STR(peer_addr));
+		}
+
+		/* Idempotent: agreement already active */
+		if (sta->mapc_params.agreement_cnt[MAPC_SCHEME_CO_TDMA] > 0) {
+			wpa_printf(MSG_INFO,
+				   "SET_MAPC_STA: Co-TDMA agreement with "
+				   MACSTR " already active",
+				   MAC2STR(peer_addr));
+			wpa_msg(hapd->msg_ctx, MSG_INFO,
+				"MAPC-NEGOTIATION-STATUS negotiation_status=1 "
+				"src_bssid=" MACSTR " dst_bssid=" MACSTR,
+				MAC2STR(hapd->own_addr), MAC2STR(peer_addr));
+			return os_snprintf(buf, buflen, "OK already established\n");
+		}
+
+		/* Trigger Co-TDMA ESTABLISHMENT negotiation */
+		os_memset(reqs, 0, sizeof(reqs));
+		reqs[MAPC_SCHEME_CO_TDMA].include = true;
+		reqs[MAPC_SCHEME_CO_TDMA].op_type = MAPC_OP_AGREEMENT_ESTABLISHMENT;
+		ret = mapc_send_negotiation_request(hapd, peer_addr, reqs);
+		if (ret < 0) {
+			wpa_printf(MSG_ERROR,
+				   "SET_MAPC_STA: negotiation request failed (ret=%d)",
+				   ret);
+			return os_snprintf(buf, buflen,
+					   "FAIL negotiation request failed (ret=%d)\n",
+					   ret);
+		}
+		wpa_printf(MSG_INFO,
+			   "SET_MAPC_STA: Co-TDMA ESTABLISHMENT initiated with "
+			   MACSTR, MAC2STR(peer_addr));
+		return os_snprintf(buf, buflen,
+				   "OK Co-TDMA negotiation initiated\n");
+	}
+
+	if (!sta || !sta->is_mapc_peer ||
+	    sta->mapc_params.peer_state != MAPC_PEER_STATE_ACTIVE ||
+	    sta->mapc_params.agreement_cnt[MAPC_SCHEME_CO_TDMA] == 0) {
+		wpa_printf(MSG_INFO,
+			   "SET_MAPC_STA: no active Co-TDMA agreement with "
+			   MACSTR " — nothing to do", MAC2STR(peer_addr));
+		return os_snprintf(buf, buflen,
+				   "OK no active Co-TDMA agreement\n");
+	}
+
+	/* Cannot teardown while another negotiation is in progress */
+	if (sta->mapc_params.neg_state != MAPC_NEG_IDLE) {
+		wpa_printf(MSG_INFO,
+			   "SET_MAPC_STA: negotiation in progress for " MACSTR
+			   " (state=%d) - retry later",
+			   MAC2STR(peer_addr), sta->mapc_params.neg_state);
+		return os_snprintf(buf, buflen,
+				   "FAIL negotiation in progress, retry later\n");
+	}
+
+	os_memset(reqs, 0, sizeof(reqs));
+	reqs[MAPC_SCHEME_CO_TDMA].include = true;
+	reqs[MAPC_SCHEME_CO_TDMA].op_type = MAPC_OP_AGREEMENT_TEARDOWN;
+	ret = mapc_send_negotiation_request(hapd, peer_addr, reqs);
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR,
+			   "SET_MAPC_STA: teardown request failed (ret=%d)", ret);
+		return os_snprintf(buf, buflen,
+				   "FAIL teardown request failed (ret=%d)\n", ret);
+	}
+
+	return os_snprintf(buf, buflen, "OK Co-TDMA teardown initiated\n");
+}
+#endif /* CONFIG_IEEE80211BN */
+
+static int hostapd_ctrl_iface_set_rtt_responder_role(struct hostapd_data *hapd,
+						     char *value)
+{
+	char *end = NULL;
+	long role;
+	int ret;
+
+	if (!hapd || !hapd->conf || !hapd->iface || !value)
+		return -1;
+
+	errno = 0;
+	role = strtol(value, &end, 0);
+	if (errno || end == value) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_RTT_RESPONDER_ROLE: invalid value");
+		return -1;
+	}
+	while (end && (*end == ' ' || *end == '\n' || *end == '\r' ||
+		       *end == '\t'))
+		end++;
+	if (end && *end != '\0') {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_RTT_RESPONDER_ROLE: trailing characters");
+		return -1;
+	}
+	if (role < 0 || role > 0x7) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_RTT_RESPONDER_ROLE: value must be 0..0x7");
+		return -1;
+	}
+	if (hapd->conf->rtt_responder_role == (int)role)
+		return 0;
+
+	ret = hostapd_drv_set_rtt_responder_role(hapd, (int)role);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_RTT_RESPONDER_ROLE: vendor cmd failed (%d)",
+			   ret);
+		return -1;
+	}
+
+	hapd->conf->rtt_responder_role = (int)role;
+	hapd->rtt_role_fw_sent = true;
+	if (ieee802_11_update_beacons(hapd->iface)) {
+		hapd->rtt_role_fw_sent = false;
+		wpa_printf(MSG_ERROR,
+			   "CTRL: SET_RTT_RESPONDER_ROLE: beacon update failed");
+		return -1;
+	}
+	hapd->rtt_role_fw_sent = false;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_get_rtt_responder_role(struct hostapd_data *hapd,
+						     char *reply,
+						     size_t reply_size)
+{
+	int role;
+
+	if (!hapd || !hapd->conf || !reply)
+		return -1;
+
+	role = hapd->conf->rtt_responder_role;
+
+	return os_snprintf(reply, reply_size, "0x%x\n", role);
+}
+
 static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 					      char *buf, char *reply,
 					      int reply_size,
 					      struct sockaddr_storage *from,
 					      socklen_t fromlen)
 {
-	int reply_len, res;
+	int reply_len;
+#if defined(CONFIG_CTRL_IFACE_MIB) || defined(CONFIG_DPP)
+	int res;
+#endif /* CONFIG_CTRL_IFACE_MIB || CONFIG_DPP */
 
 	os_memcpy(reply, "OK\n", 3);
 	reply_len = 3;
@@ -10604,8 +11566,11 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 #ifdef CONFIG_TAXONOMY
 	} else if (os_strncmp(buf, "SIGNATURE ", 10) == 0) {
 		reply_len = hostapd_ctrl_iface_signature(hapd, buf + 10,
-							 reply, reply_size);
+							reply, reply_size);
 #endif /* CONFIG_TAXONOMY */
+	} else if (os_strncmp(buf, "DUMP_TK ", 8) == 0) {
+		reply_len = hostapd_ctrl_iface_dump_tk(hapd, buf + 8,
+						       reply, reply_size);
 	} else if (os_strncmp(buf, "POLL_STA ", 9) == 0) {
 		if (hostapd_ctrl_iface_poll_sta(hapd, buf + 9))
 			reply_len = -1;
@@ -10702,6 +11667,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "SET ", 4) == 0) {
 		if (hostapd_ctrl_iface_set(hapd, buf + 4))
 			reply_len = -1;
+	} else if (os_strncmp(buf, "LOG_PEER ", 9) == 0) {
+		if (hostapd_ctrl_iface_log_peer(hapd, buf + 9))
+			reply_len = -1;
 	} else if (os_strncmp(buf, "GET ", 4) == 0) {
 		reply_len = hostapd_ctrl_iface_get(hapd, buf + 4, reply,
 						   reply_size);
@@ -10750,8 +11718,10 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		if (hostapd_ctrl_iface_disable(hapd->iface))
 			reply_len = -1;
 	} else if (os_strcmp(buf, "UPDATE_BEACON") == 0) {
+		hapd->is_update_beacon = true;
 		if (ieee802_11_set_beacon(hapd))
 			reply_len = -1;
+		hapd->is_update_beacon = false;
 #ifdef CONFIG_IEEE80211BN
 	} else if (os_strncmp(buf, "UPDATE_UHR_FEATURES ", 20) == 0) {
 		if (hostapd_ctrl_iface_update_uhr_features(hapd, buf + 20))
@@ -10760,9 +11730,14 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "MLD_ADD_LINK ", 13) == 0) {
 		if (hostapd_ctrl_iface_add(hapd->iface->interfaces, buf + 13))
 			reply_len = -1;
+		else
+			hostapd_ucode_update_interfaces();
 #ifdef CONFIG_TESTING_OPTIONS
 	} else if (os_strncmp(buf, "RADAR ", 6) == 0) {
 		if (hostapd_ctrl_iface_radar(hapd, buf + 6))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "AWGN ", 5) == 0) {
+		if (hostapd_ctrl_iface_awgn(hapd, buf + 5))
 			reply_len = -1;
 	} else if (os_strncmp(buf, "MGMT_TX ", 8) == 0) {
 		if (hostapd_ctrl_iface_mgmt_tx(hapd, buf + 8))
@@ -10920,6 +11895,12 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "REQ_RANGE ", 10) == 0) {
 		if (hostapd_ctrl_iface_req_range(hapd, buf + 10))
 			reply_len = -1;
+	} else if (os_strncmp(buf, "SET_RTT_RESPONDER_ROLE ", 23) == 0) {
+		if (hostapd_ctrl_iface_set_rtt_responder_role(hapd, buf + 23))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "GET_RTT_RESPONDER_ROLE") == 0) {
+		reply_len = hostapd_ctrl_iface_get_rtt_responder_role(
+			hapd, reply, reply_size);
 	} else if (os_strncmp(buf, "REQ_BEACON ", 11) == 0) {
 		reply_len = hostapd_ctrl_iface_req_beacon(hapd, buf + 11,
 							  reply, reply_size);
@@ -10930,6 +11911,12 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "REQ_LINK_MEASUREMENT ", 21) == 0) {
 		reply_len = hostapd_ctrl_iface_req_link_measurement(
 			hapd, buf + 21, reply, reply_size);
+	} else if (os_strncmp(buf, "REQ_CHANNEL_LOAD ", 17) == 0) {
+		reply_len = hostapd_ctrl_iface_req_channel_load(
+			hapd, buf + 17, reply, reply_size);
+	} else if (os_strncmp(buf, "REQ_NOISE_HISTOGRAM ", 20) == 0) {
+		reply_len = hostapd_ctrl_iface_req_noise_histogram(
+			hapd, buf + 20, reply, reply_size);
 	} else if (os_strcmp(buf, "DRIVER_FLAGS") == 0) {
 		reply_len = hostapd_ctrl_driver_flags(hapd->iface, reply,
 						      reply_size);
@@ -11234,6 +12221,8 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		if (hostapd_ctrl_iface_link_remove(hapd, buf + 12,
 						   reply, reply_size))
 			reply_len = -1;
+		else
+			hostapd_ucode_update_interfaces();
 	} else if (os_strncmp(buf, "EPCS ", 5) == 0) {
 		reply_len = hostapd_epcs_handle_cli(hapd, buf + 5,
 						    reply, reply_size);
@@ -11274,9 +12263,11 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 			reply_len = -1;
 	} else if (os_strcmp(buf, "GET_CHAIN_MASK") == 0) {
 		reply_len = hostapd_ctrl_get_chain_mask(hapd, reply, reply_size);
+#ifdef CONFIG_QCN_EXTN
 	} else if (os_strncmp(buf, "AFC ", 4) == 0) {
 		reply_len = hostapd_afc_handle_cli(hapd, buf + 4,
 						   reply, reply_size);
+#endif /* CONFIG_QCN_EXTN */
 	} else if (os_strncmp(buf, "CLEAR_AFC_PAYLOAD", 17) == 0) {
 		if (hostapd_ctrl_iface_clear_afc_payload(hapd, buf + 17))
 			reply_len = -1;
@@ -11514,12 +12505,33 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 			reply_len = -1;
 	} else if (os_strcmp(buf, "GET_PUNCTURE_SOURCES") == 0) {
 		reply_len = hostapd_ctrl_iface_puncture_sources(hapd, reply, reply_size);
+#ifdef CONFIG_IEEE80211BN
+	} else if (os_strcmp(buf, "GET_MAPC_CONFIGS") == 0) {
+		reply_len = hostapd_ctrl_iface_get_mapc_configs(
+			hapd, reply, reply_size);
+	} else if (os_strncmp(buf, "SET_MAPC_CONFIGS ", 17) == 0) {
+		reply_len = hostapd_ctrl_iface_set_mapc_configs(
+			hapd, buf + 17, reply, reply_size);
+	} else if (os_strcmp(buf, "GET_MAPC_VALID_COAP_LIST") == 0) {
+		reply_len = hostapd_ctrl_iface_get_mapc_valid_coap_list(
+			hapd, reply, reply_size);
+	} else if (os_strncmp(buf, "SET_MAPC_VALID_COAP_LIST ", 25) == 0) {
+		if (hostapd_ctrl_iface_set_mapc_valid_coap_list(hapd,
+								buf + 25))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "SET_MAPC_STA ", 13) == 0) {
+		reply_len = hostapd_ctrl_iface_set_mapc_sta(
+			hapd, buf + 13, reply, reply_size);
+
+#endif /* CONFIG_IEEE80211BN */
 	} else {
+#ifdef CONFIG_QCN_EXTN
 		if (!hostapd_ctrl_iface_receive_process_extn(hapd, buf, reply,
 							     reply_size,
 							     from, fromlen,
 							     &reply_len))
 			return reply_len;
+#endif /* CONFIG_QCN_EXTN */
 
 		os_memcpy(reply, "UNKNOWN COMMAND\n", 16);
 		reply_len = 16;

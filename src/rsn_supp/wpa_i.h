@@ -120,6 +120,8 @@ struct wpa_sm {
 	unsigned int ssid_protection:1;
 	unsigned int spp_amsdu:1;
 	unsigned int sae_pw_id_change:1;
+	unsigned int assoc_encryption:1;
+	unsigned int pmksa_privacy:1;
 
 	unsigned int smd_enabled:1;
 	u8 smd_id[6];
@@ -253,6 +255,9 @@ struct wpa_sm {
 	u8 fils_ft[FILS_FT_MAX_LEN];
 	size_t fils_ft_len;
 #endif /* CONFIG_FILS */
+#ifdef CONFIG_ENC_ASSOC
+	unsigned int eppke_completed:1;
+#endif /* CONFIG_ENC_ASSOC */
 
 #ifdef CONFIG_OWE
 	struct crypto_ecdh *owe_ecdh;

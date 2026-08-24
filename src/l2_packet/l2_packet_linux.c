@@ -513,3 +513,27 @@ int l2_packet_set_packet_filter(struct l2_packet_data *l2,
 
 	return 0;
 }
+
+
+int l2_packet_set_bpf_filter(struct l2_packet_data *l2,
+			      const void *insns,
+			      unsigned short len)
+{
+	struct sock_fprog prog;
+
+	if (!l2 || !insns || len == 0)
+		return -1;
+
+	os_memset(&prog, 0, sizeof(prog));
+	prog.len    = len;
+	prog.filter = (struct sock_filter *) insns;
+
+	if (setsockopt(l2->fd, SOL_SOCKET, SO_ATTACH_FILTER,
+		       &prog, sizeof(prog)) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "l2_packet: setsockopt(SO_ATTACH_FILTER) failed: %s",
+			   strerror(errno));
+		return -1;
+	}
+	return 0;
+}

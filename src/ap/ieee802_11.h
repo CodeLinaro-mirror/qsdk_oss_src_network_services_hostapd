@@ -56,7 +56,7 @@ enum link_parse_type {
 #define LINK_RECONF_GROUP_KDE_MAX_LEN 255
 
 #define MBSSID_NON_TX_DEF_OPTIONAL_ELEM_SIZE 160
-#define MBSSID_NON_TX_DEF_VENDOR_ELEM_SIZE 70
+#define MBSSID_NON_TX_DEF_VENDOR_ELEM_SIZE 128
 #define MAX_MBSSID_NONINHERIT_ELEM_SIZE 100
 
 #ifdef CONFIG_QCN_EXTN
@@ -181,24 +181,29 @@ int add_associated_sta(struct hostapd_data *hapd,
 u8 * hostapd_eid_eht_ml_beacon(struct hostapd_data *hapd,
 			       struct mld_info *mld_info,
 			       u8 *eid, bool include_mld_id,
-			       u8 include_ext_cap);
+			       u8 include_ext_cap, bool is_uhr_sta,
+			       bool include_bss_load_age);
 u8 * hostapd_eid_eht_ml_assoc(struct hostapd_data *hapd, struct sta_info *info,
 			      u8 *eid, u8 include_ext_cap);
 size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 				    struct sta_info *info,
 				    bool include_mld_id, bool include_pbcc,
-				    u8 include_ext_cap);
+				    u8 include_ext_cap, bool is_uhr_sta,
+				    bool include_bss_load_age);
 size_t hostapd_eid_eht_ml_beacon_len(struct hostapd_data *hapd,
 				     struct mld_info *info,
 				     bool include_mld_id,
-				     u8 include_ext_cap);
+				     u8 include_ext_cap, bool is_uhr_sta,
+				     bool include_bss_load_age);
 size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd, struct mld_info *info,
 			      bool include_mld_id, bool include_bpcc,
-			      u8 include_ext_cap);
+			      u8 include_ext_cap, bool is_uhr_sta,
+			      bool include_bss_load_age);
 u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 				     u8 *eid, struct mld_info *mld_info,
 				     bool include_mld_id, bool include_bpcc,
-				     u8 include_ext_cap, bool is_smd);
+				     u8 include_ext_cap, bool is_smd,
+				     bool is_uhr_sta, bool include_bss_load_age);
 struct wpabuf * hostapd_ml_auth_resp(struct hostapd_data *hapd);
 const u8 * auth_skip_fixed_fields(struct hostapd_data *hapd,
 				  const struct ieee80211_mgmt *mgmt,
@@ -576,14 +581,16 @@ u16 hostapd_ml_process_reconf_link(struct hostapd_data *hapd,
 u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 			   enum ieee80211_op_mode opmode);
 u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn);
+u8 * hostapd_eid_tx_power_indication(struct hostapd_data *hapd, u8 *eid);
+size_t hostapd_eid_tx_power_indication_len(void);
 size_t hostapd_security_profile_ie_len(struct hostapd_data *hapd);
 u8 *hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid);
 u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
 				   bool skip_post_phase, bool from_user);
 size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,
 					 bool no_post_phase, bool from_user);
-int hostapd_npca_primary_chan_to_subchan_idx(struct hostapd_data *hapd,
-					     const char *val_str);
+int hostapd_npca_primary_chan_validate(struct hostapd_data *hapd,
+				       const char *val_str);
 u8 hostapd_npca_get_primary_chan(struct hostapd_data *hapd,
 				 const struct hostapd_uhr_npca_params *npca);
 u16 copy_sta_eht_capab(struct hostapd_data *hapd, struct sta_info *sta,
@@ -701,4 +708,11 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 			    struct rsn_pmksa_cache_entry *cached_pmk,
 			    const u8 *eap_req, size_t eap_req_len);
 
+bool hostapd_find_auth_comeback_sta(struct hostapd_data *hapd, const u8 *addr,
+				    const u8 *ies, size_t ies_len,
+				    struct hostapd_data **o_hapd,
+				    struct sta_info **o_sta);
+
+u8 * hostapd_add_auth_comeback(struct hostapd_data *hapd, struct sta_info *sta,
+			       u8 *pos, size_t max_len, u16 auth_alg);
 #endif /* IEEE802_11_H */

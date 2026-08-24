@@ -216,8 +216,10 @@ u8 * hostapd_eid_vht_operation(struct hostapd_data *hapd, u8 *eid)
 
 #ifdef CONFIG_IEEE80211BE
 	if (punct_bitmap) {
+#ifdef CONFIG_QCN_EXTN
 		hostapd_get_oper_center_freq_seg_extn(hapd->iconf, &seg0, &seg1,
 						      &oper_chwidth);
+#endif /* CONFIG_QCN_EXTN */
 		punct_update_legacy_bw(punct_bitmap,
 				       hapd->iconf->channel,
 				       &oper_chwidth, &seg0, &seg1);
@@ -225,14 +227,10 @@ u8 * hostapd_eid_vht_operation(struct hostapd_data *hapd, u8 *eid)
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_QCN_EXTN
-	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf))
 		hostapd_get_oper_info_of_repurposed_bss_extn(
 				hapd, &oper_chwidth,
 				&seg0, &seg1);
-		wpa_printf(MSG_DEBUG,
-			   "Repurpose: VHT OP chwidth %d seg0 %d seg1 %d",
-			   oper_chwidth, seg0, seg1);
-	}
 #endif /* CONFIG_QCN_EXTN */
 
 	/*

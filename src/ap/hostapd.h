@@ -93,6 +93,9 @@ struct hapd_interfaces {
 #ifdef CONFIG_ETH_P_OUI
 	struct dl_list eth_p_oui; /* OUI Extended EtherType handlers */
 #endif /* CONFIG_ETH_P_OUI */
+#ifdef CONFIG_ETH_P_1905
+	struct dl_list eth_p_1905; /* IEEE 1905.1 CMDU transport handlers */
+#endif /* CONFIG_ETH_P_1905 */
 	int eloop_initialized;
 
 #ifdef CONFIG_DPP
@@ -126,6 +129,18 @@ struct hapd_interfaces {
 #ifdef CONFIG_PROCESS_COORDINATION
 	struct proc_coord *pc;
 #endif /* CONFIG_PROCESS_COORDINATION */
+
+#ifdef CONFIG_MQTT
+	/*
+	 * Single global MQTT connection for the entire hostapd instance.
+	 * Shared by all interfaces and BSSes.  Initialised on the first
+	 * interface setup if mqtt_enabled=1; deinitialized on teardown.
+	 */
+	struct mqtt_eloop_ctx *mqtt_ctx;
+#endif /* CONFIG_MQTT */
+#ifdef CONFIG_QCN_EXTN
+	struct hapd_interfaces_extn interfaces_extn;
+#endif /* CONFIG_QCN_EXTN */
 
 };
 
@@ -215,6 +230,7 @@ struct hostapd_sae_commit_queue {
 
 struct mld_link_info {
 	u8 valid:1;
+	u8 rejected:1;
 	u8 nstr_bitmap_len:2;
 	u8 local_addr[ETH_ALEN];
 	u8 peer_addr[ETH_ALEN];
@@ -652,9 +668,13 @@ struct hostapd_data {
 	u8 lci_req_token;
 	u8 range_req_token;
 	u8 link_measurement_req_token;
+	u8 chan_load_req_token;
+	u8 noise_hist_req_token;
 	unsigned int lci_req_active:1;
 	unsigned int range_req_active:1;
 	unsigned int link_mesr_req_active:1;
+	unsigned int chan_load_req_active:1;
+	unsigned int noise_hist_req_active:1;
 
 	int dhcp_sock; /* UDP socket used with the DHCP server */
 
@@ -752,6 +772,9 @@ struct hostapd_data {
 	 * are suppressed regardless of the global level. Set via
 	 * LOG_LEVEL <module> <level> ctrl_iface command. */
 	int log_module_level[HOSTAPD_MOD_MAX];
+	/* Per-peer log filter. Set by LOG_PEER ctrl command. */
+	u8  log_peer_filter_set;
+	u8  log_peer_addr[ETH_ALEN];
 
 	u64 scan_cookie; /* Scan instance identifier for the ongoing HT40 scan
 			  */
@@ -768,7 +791,20 @@ struct hostapd_data {
 #ifdef CONFIG_IEEE80211BN
 	struct smd_neighbor_update_ctx *smd_neighbor_update_ctx;
 	struct uhr_oui_ctx *uhr_oui_ctx;
+	struct dl_list mapc_discovery_reqs;
+	u16 mapc_discovered_ap_count;
+	u16 bss_active_peer_count;
+	u8  bss_cotdma_active_count;
+	u8  mapc_dialog_token_count;
+	bool mapc_initialized;
+	struct eth_p_1905_ctx *eth_p_1905_ctx;
 #endif /* CONFIG_IEEE80211BN */
+
+	bool is_update_beacon; /* To indentify whether its from UPDATE_BEACON comamnd */
+	bool sp_ie_activated_sta;  /* Set when processing STA with validated SP IE */
+	/* Transient guard: set during SET_RTT_RESPONDER_ROLE runtime update to
+	 * suppress duplicate vendor cmd during the triggered beacon rebuild. */
+	bool rtt_role_fw_sent;
 };
 
 
@@ -886,6 +922,7 @@ struct hostapd_iface {
 
 	unsigned int wait_channel_update:1;
 	unsigned int cac_started:1;
+	unsigned int skip_mesh_dfs:1;
 #ifdef CONFIG_FST
 	struct fst_iface *fst;
 	const struct wpabuf *fst_ies;
@@ -913,6 +950,9 @@ struct hostapd_iface {
 	u64 drv_flags;
 	u64 drv_flags2;
 	unsigned int drv_rrm_flags;
+
+	/* Maximum number of stations supported by driver (AP mode) */
+	unsigned int drv_max_stations;
 
 	/*
 	 * A bitmap of supported protocols for probe response offload. See
@@ -1015,6 +1055,7 @@ struct hostapd_iface {
 	u64 last_channel_time;
 	u64 last_channel_time_busy;
 	u8 channel_utilization;
+	struct os_reltime ch_util_update_time;
 
 	unsigned int chan_util_samples_sum;
 	unsigned int chan_util_num_sample_periods;
@@ -1033,6 +1074,8 @@ struct hostapd_iface {
 #ifdef CONFIG_ACS
 	unsigned int acs_num_completed_scans;
 	unsigned int acs_num_retries;
+	/* Parallel scan: defer setup until all MLD partners complete ACS */
+	unsigned int acs_setup_deferred:1;
 #endif /* CONFIG_ACS */
 
 	void (*scan_cb)(struct hostapd_iface *iface);
@@ -1086,7 +1129,9 @@ struct hostapd_iface {
 	/* Cached PSD value for RNR */
 	s8 rnr_psd;
 
+#ifdef CONFIG_QCN_EXTN
 	struct hostapd_iface_extn iface_extn;
+#endif /* CONFIG_QCN_EXTN */
 
 	struct hostapd_multi_hw_info *multi_hw_info;
 	unsigned int num_multi_hws;
@@ -1104,6 +1149,22 @@ struct hostapd_iface {
 	char monitor_iface[IFNAMSIZ + 1];
 	int monitor_ifindex;
 	bool monitor_iface_configured;
+
+	/*
+	 * When boot/CSA target is a DFS channel,
+	 * preferred channel/width are saved here while AP temporarily operates
+	 * on conf->intercac_chan.
+	 * 0 means Inter CAC is not active.
+	 */
+	int preferred_chan;
+	enum oper_chan_width preferred_chan_width;
+#ifdef CONFIG_IEEE80211BN
+	u32  mapc_hw_capability_bitmap;
+	u8   mapc_max_ctdma_peers;
+	u16  mapc_active_peer_count;
+	u8   mapc_cotdma_active_count;
+	bool mapc_iface_initialized;
+#endif /* CONFIG_IEEE80211BN */
 };
 
 
@@ -1269,6 +1330,10 @@ int hostapd_change_config_freq(struct hostapd_data *hapd,
 			       struct hostapd_config *conf,
 			       struct hostapd_freq_params *params,
 			       struct hostapd_freq_params *old_params);
+
+#ifdef CONFIG_IEEE80211BN
+bool hostapd_is_mapc_action(const struct ieee80211_mgmt *mgmt, size_t len);
+#endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_FST
 void fst_hostapd_fill_iface_obj(struct hostapd_data *hapd,
 				struct fst_wpa_obj *iface_obj);
@@ -1512,15 +1577,26 @@ int hostapd_switch_power_mode(struct hostapd_data *hapd);
 
 /**
  * enum hostapd_afc_power_sync_result - AFC power sync result
- * @HOSTAPD_AFC_PWR_SYNC_NOOP: No change was required
- * @HOSTAPD_AFC_PWR_SYNC_UPDATED: Power mode update was triggered
- * @HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT: Current channel tuple is invalid in
- * the current power mode
- * @HOSTAPD_AFC_PWR_SYNC_ERROR: Power sync failed
+ * @HOSTAPD_AFC_PWR_SYNC_NOOP: No action required. iface is not 6 GHz,
+ *   current mode is not SP, or fallback target equals current mode.
+ * @HOSTAPD_AFC_PWR_SYNC_UPDATED: Power mode CSA successfully initiated.
+ * @HOSTAPD_AFC_PWR_SYNC_DEFERRED: Fallback blocked by a transient condition
+ *   (CSA already in progress or a prior power-mode switch is still pending).
+ *   For hostapd_force_afc_non_sp_power_mode(), is_afc_repeater_power_sync_pending
+ *   is set by the function itself. For hostapd_sync_current_afc_power_mode(),
+ *   the pending-repeater-sync caller re-arms it on receiving DEFERRED.
+ *   Retry fires on the next REGDOM_SET_BY_DRIVER event. Valid only for
+ *   connected-repeater contexts which have a guaranteed retry path.
+ *   Root AP + BPM disabled callers must treat this as NO_IR (fail-safe).
+ * @HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT: Current mode is SP but no valid
+ *   non-SP mode exists for the current channel/BW/puncture tuple.
+ * @HOSTAPD_AFC_PWR_SYNC_ERROR: Hard internal failure (iface/bss NULL,
+ *   hw_features, select_hw_mode, or driver switch failed). No retry armed.
  */
 enum hostapd_afc_power_sync_result {
 	HOSTAPD_AFC_PWR_SYNC_NOOP,
 	HOSTAPD_AFC_PWR_SYNC_UPDATED,
+	HOSTAPD_AFC_PWR_SYNC_DEFERRED,
 	HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT,
 	HOSTAPD_AFC_PWR_SYNC_ERROR,
 };
@@ -1538,6 +1614,9 @@ enum hostapd_afc_power_sync_result {
  * Return:
  * * %HOSTAPD_AFC_PWR_SYNC_NOOP when no update is needed
  * * %HOSTAPD_AFC_PWR_SYNC_UPDATED when a power update is started
+ * * %HOSTAPD_AFC_PWR_SYNC_DEFERRED when a CSA or pending power switch
+ *   prevents evaluation; the pending-repeater-sync caller re-arms the
+ *   retry flag
  * * %HOSTAPD_AFC_PWR_SYNC_INVALID_CURRENT when the current tuple cannot
  *   operate in the current power mode
  * * %HOSTAPD_AFC_PWR_SYNC_ERROR on internal failure
@@ -1674,6 +1753,7 @@ void hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface,
 void hostapd_set_no_ir_state(struct hostapd_iface *iface);
 bool hostapd_regdom_channel_supported(struct hostapd_iface *iface,
 				      struct hostapd_channel_data *chan);
+#ifdef CONFIG_QCN_EXTN
 bool hostapd_is_iface_regdom_supported(struct hostapd_iface *iface);
 struct hostapd_channel_data *
 hostapd_regdom_first_supported_channel(struct hostapd_iface *iface);
@@ -1681,6 +1761,7 @@ int hostapd_regdom_move_iface_to_supported_channel(struct hostapd_iface *iface);
 void hostapd_regdom_force_disable_iface(struct hostapd_iface *iface,
 						 const char *reason);
 int hostapd_regdom_restore_iface(struct hostapd_iface *iface);
+#endif /* CONFIG_QCN_EXTN */
 #else
 static inline void
 hostapd_set_no_ir_state(struct hostapd_iface *iface)
@@ -1861,8 +1942,10 @@ hostapd_get_valid_puncture_pattern_arr(u16 bw, u16 *num_pp, u16 *pp_mask);
  *
  * Return: Response length
  */
+#ifdef CONFIG_QCN_EXTN
 int hostapd_afc_handle_cli(struct hostapd_data *hapd, char *pos,
 			   char *buf, size_t buflen);
+#endif /* CONFIG_QCN_EXTN */
 
 /**
  * hostapd_get_tpe_11ax_count() - Validate the input Tx power count

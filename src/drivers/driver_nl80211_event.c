@@ -213,6 +213,7 @@ static const char * nl80211_command_to_string(enum nl80211_commands cmd)
 	C2S(NL80211_CMD_SMD_TRANSITION_DONE)
 	C2S(NL80211_CMD_SMD_ROAM)
 	C2S(NL80211_CMD_SET_SMD_CTX)
+	C2S(NL80211_CMD_GET_SMD_CTX)
 	C2S(__NL80211_CMD_AFTER_LAST)
 	}
 #undef C2S
@@ -1856,7 +1857,7 @@ static void nl80211_parse_smd_ctx_ba_params(struct nlattr *tb,
 			[NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE] =
 				{ .type = NLA_U16 },
 			[NL80211_SMD_CTX_BA_ATTR_POLICY] =
-				{ .type = NLA_FLAG },
+				{ .type = NLA_U8 },
 			[NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT] =
 				{ .type = NLA_FLAG },
 			[NL80211_SMD_CTX_BA_ATTR_TIMEOUT] =
@@ -1887,7 +1888,9 @@ static void nl80211_parse_smd_ctx_ba_params(struct nlattr *tb,
 		if (ba_param_attr)
 			ba[tid].buffer_size = nla_get_u16(ba_param_attr);
 
-		ba[tid].ba_policy = !!ba_tb[NL80211_SMD_CTX_BA_ATTR_POLICY];
+		ba_param_attr = ba_tb[NL80211_SMD_CTX_BA_ATTR_POLICY];
+		if (ba_param_attr)
+			ba[tid].ba_policy = nla_get_u8(ba_param_attr);
 
 		ba[tid].amsdu_supported =
 			!!ba_tb[NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT];
@@ -1920,7 +1923,7 @@ static void nl80211_parse_smd_ctx_ba_params(struct nlattr *tb,
  * hostapd's internal sta_smd_ctx_info structure. The caller must free
  * the returned structure.
  */
-static struct sta_smd_ctx_info * nl80211_parse_smd_ctx(struct nlattr *smd_attr)
+struct sta_smd_ctx_info * nl80211_parse_smd_ctx(struct nlattr *smd_attr)
 {
 	struct nlattr *tb[NL80211_SMD_CTX_ATTR_MAX + 1];
 	struct nlattr *dl_tb[NL80211_SMD_CTX_DL_ATTR_MAX + 1];
@@ -3613,6 +3616,7 @@ static void nl80211_link_removal_event(struct i802_bss *bss, struct nlattr **tb,
 	union wpa_event_data data;
 	struct i802_link *mld_link = bss->flink;
 	void *ctx = bss->ctx;
+	int link_id;
 
 	os_memset(&data, 0, sizeof(data));
 
@@ -3633,10 +3637,20 @@ static void nl80211_link_removal_event(struct i802_bss *bss, struct nlattr **tb,
 		nla_get_u64(tb[NL80211_ATTR_TSF]);
 
 	if (tb[NL80211_ATTR_MLO_LINK_ID]) {
-		data.link_removal_event.link_id =
+		link_id = data.link_removal_event.link_id =
 			nla_get_u8(tb[NL80211_ATTR_MLO_LINK_ID]);
-		mld_link = nl80211_get_link(bss,
-					    data.link_removal_event.link_id);
+
+		/*
+		 * Verify the link received is not removed or stopped while
+		 * host sends the link removal started/completed event.
+		 */
+		if (!nl80211_link_valid(bss->valid_links, link_id) ||
+		    !(bss->active_links & BIT(link_id))) {
+			wpa_printf(MSG_DEBUG,
+				   "ignoring link removal event from link_id:%d", link_id);
+			return;
+		}
+		mld_link = nl80211_get_link(bss, link_id);
 		ctx = mld_link->ctx;
 
 		wpa_supplicant_event(ctx, started ? EVENT_LINK_REMOVAL_STARTED:
@@ -4280,6 +4294,7 @@ static void qca_nl80211_p2p_lo_stop_event(struct wpa_driver_nl80211_data *drv,
 	wpa_supplicant_event(drv->ctx, EVENT_P2P_LO_STOP, &event);
 }
 
+#endif /* CONFIG_DRIVER_NL80211_QCA */
 
 #ifdef CONFIG_PASN
 
@@ -4312,9 +4327,6 @@ static void qca_nl80211_pasn_auth(struct i802_bss *bss, u8 *data, size_t len)
 	case QCA_WLAN_VENDOR_PASN_ACTION_DELETE_SECURE_RANGING_CONTEXT:
 		event.pasn_auth.action =
 			PASN_ACTION_DELETE_SECURE_RANGING_CONTEXT;
-		break;
-	case QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT:
-		qca_nl80211_afc_power_update_completed(drv, data, len);
 		break;
 	default:
 		return;
@@ -4404,7 +4416,6 @@ fail:
 }
 
 #endif /* CONFIG_PASN */
-#endif /* CONFIG_DRIVER_NL80211_QCA */
 
 static void
 qca_nl80211_6ghz_pwr_mode_change_completed(struct i802_bss *bss,
@@ -5057,11 +5068,6 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 	case QCA_NL80211_VENDOR_SUBCMD_P2P_LISTEN_OFFLOAD_STOP:
 		qca_nl80211_p2p_lo_stop_event(bss->drv, data, len);
 		break;
-#ifdef CONFIG_PASN
-	case QCA_NL80211_VENDOR_SUBCMD_PASN:
-		qca_nl80211_pasn_auth(bss, data, len);
-		break;
-#endif /* CONFIG_PASN */
 	case QCA_NL80211_VENDOR_SUBCMD_TID_TO_LINK_MAP:
 		qca_nl80211_tid_to_link_map_event(bss->drv, data, len);
 		break;
@@ -5069,6 +5075,11 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 		qca_nl80211_link_reconfig_event(bss->drv, data, len);
 		break;
 #endif /* CONFIG_DRIVER_NL80211_QCA */
+#ifdef CONFIG_PASN
+	case QCA_NL80211_VENDOR_SUBCMD_PASN:
+		qca_nl80211_pasn_auth(bss, data, len);
+		break;
+#endif /* CONFIG_PASN */
 	case QCA_NL80211_VENDOR_SUBCMD_POWER_MODE_CHANGE_COMPLETED:
 		qca_nl80211_6ghz_pwr_mode_change_completed(bss, data, len);
 		break;
@@ -5085,8 +5096,10 @@ static void nl80211_vendor_event_qca(struct i802_bss *bss,
 		qca_nl80211_chain_mask_changed_event(bss, data, len);
 		break;
 	default:
+#ifdef CONFIG_QCN_EXTN
 		if (!nl80211_vendor_event_qca_extn(bss, subcmd, data, len))
 			break;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_DEBUG,
 			   "nl80211: Ignore unsupported QCA vendor event %u",

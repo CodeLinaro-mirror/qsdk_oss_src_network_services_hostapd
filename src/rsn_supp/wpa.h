@@ -147,6 +147,8 @@ enum wpa_sm_conf_params {
 	WPA_PARAM_URNM_MFPR_X20,
 	WPA_PARAM_SAE_PW_ID_CHANGE,
 	WPA_PARAM_SECURITY_PROFILE_ACTIVE,
+	WPA_PARAM_ASSOC_ENC,
+	WPA_PARAM_PMKSA_CACHING_PRIVACY,
 };
 
 enum wpa_rsn_override {
@@ -288,6 +290,7 @@ void wpa_sm_set_ptk_kck_kek(struct wpa_sm *sm, enum rsn_hash_alg hash,
 			    const u8 *ptk_kck, size_t ptk_kck_len,
 			    const u8 *ptk_kek, size_t ptk_kek_len);
 int wpa_fils_is_completed(struct wpa_sm *sm);
+bool wpa_eppke_is_completed(struct wpa_sm *sm);
 void wpa_sm_pmksa_cache_reconfig(struct wpa_sm *sm);
 int wpa_sm_set_mlo_params(struct wpa_sm *sm, const struct wpa_sm_mlo *mlo);
 void wpa_sm_set_driver_bss_selection(struct wpa_sm *sm,
@@ -539,6 +542,11 @@ static inline int wpa_fils_is_completed(struct wpa_sm *sm)
 	return 0;
 }
 
+static inline bool wpa_eppke_is_completed(struct wpa_sm *sm)
+{
+	return false;
+}
+
 static inline void wpa_sm_pmksa_cache_reconfig(struct wpa_sm *sm)
 {
 }
@@ -685,6 +693,8 @@ struct wpabuf * fils_build_assoc_req(struct wpa_sm *sm, const u8 **kek,
 				     const struct wpabuf **hlp,
 				     unsigned int num_hlp);
 int fils_process_assoc_resp(struct wpa_sm *sm, const u8 *resp, size_t len);
+int process_encrypted_assoc_resp(struct wpa_sm *sm, int link_id,
+				 const u8 *ies, size_t ies_len);
 
 struct wpabuf * owe_build_assoc_req(struct wpa_sm *sm, u16 group);
 int owe_process_assoc_resp(struct wpa_sm *sm, const u8 *bssid,
@@ -707,4 +717,6 @@ void wpa_sm_notify_smd_transition_complete(struct wpa_sm *sm,
 					   const u8 *target_addr);
 void wpa_sm_smd_notify_ptk_installed(struct wpa_sm *sm,
 				     const u8 *target_addr);
+bool wpa_sm_pmksa_privacy_supported(struct wpa_sm *sm);
+
 #endif /* WPA_H */

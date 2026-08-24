@@ -869,10 +869,39 @@ u8 *hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd,
  * beacon interval (2) + TSF offset (8) + DTIM info (2)
  */
 #define EHT_ML_STA_INFO_LEN 21
+
+#ifdef CONFIG_IEEE80211BN
+static u8 hostapd_bss_load_age(struct os_reltime *ch_util_update_time)
+{
+	static const u32 threshold[] = {
+		5000, 10000, 20000, 30000, 60000
+	};
+	struct os_reltime age;
+	u64 tu;
+	u8 i;
+
+	/* If channel_utilization was never updated return 0 */
+	if (!os_reltime_initialized(ch_util_update_time))
+		return 0;
+
+	os_reltime_age(ch_util_update_time, &age);
+	tu = USEC_TO_TU((u64) age.sec * 1000000ULL + age.usec);
+
+	/* IEEE 802.11bn D1.5 Table 9-468a: Age of BSS Load encoding */
+	for (i = 0; i < ARRAY_SIZE(threshold); i++) {
+		if (tu < threshold[i])
+			return i;
+	}
+
+	return ARRAY_SIZE(threshold);
+}
+#endif /* CONFIG_IEEE80211BN */
+
 u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 				     u8 *eid, struct mld_info *mld_info,
 				     bool include_mld_id, bool include_bpcc,
-				     u8 include_ext_cap, bool is_smd)
+				     u8 include_ext_cap, bool is_smd,
+				     bool is_uhr_sta, bool include_bss_load_age)
 {
 	struct wpabuf *buf;
 	u16 control;
@@ -925,12 +954,12 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		common_info_len += 2;
 	}
 
-	if (hostapd_is_uhr_enabled(hapd)) {
+	if (hostapd_is_uhr_enabled(hapd) && is_uhr_sta) {
 		/* Enhanced Critical Updates Information */
 		control |= BASIC_MULTI_LINK_CTRL_PRES_ENH_CRIT_UPD;
 		common_info_len++;
 
-		if (hapd->conf->bss_load_update_period) {
+		if (include_bss_load_age && hapd->conf->bss_load_update_period) {
 			/* Age of BSS Load Present */
 			control |= BASIC_MULTI_LINK_CTRL_PRES_AGE_OF_BSS_LOAD;
 			common_info_len++;
@@ -958,6 +987,10 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 	 */
 	hapd->iface->mld_eml_capa &= ~EHT_ML_EML_CAPA_EMLSR_TRANS_DELAY_MASK;
 	hapd->iface->mld_eml_capa &= ~EHT_ML_EML_CAPA_EMLSR_PADDING_DELAY_MASK;
+
+	/* Disable all EML capabilities (EMLSR + EMLMR) if configured */
+	if (hapd->conf->disable_eml)
+		hapd->iface->mld_eml_capa = 0;
 
 	wpa_printf(MSG_DEBUG, "MLD: EML Capabilities=0x%x",
 		   hapd->iface->mld_eml_capa);
@@ -1021,12 +1054,15 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		wpabuf_put_le16(buf, ext_mld_cap);
 	}
 
-	if (hostapd_is_uhr_enabled(hapd)) {
+#ifdef CONFIG_IEEE80211BN
+	if (hostapd_is_uhr_enabled(hapd) && is_uhr_sta) {
 		/* Currently hard-code Enhanced Critical Updates Information to zero */
 		wpabuf_put_u8(buf, 0);
-		if (hapd->conf->bss_load_update_period)
-			wpabuf_put_u8(buf, 0); /* Age of BSS Load */
+		if (include_bss_load_age && hapd->conf->bss_load_update_period)
+			wpabuf_put_u8(buf, hostapd_bss_load_age(
+					&hapd->iface->ch_util_update_time));
 	}
+#endif /* CONFIG_IEEE80211BN */
 
 	if (!mld_info)
 		goto out;
@@ -1067,7 +1103,8 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		if (include_bpcc)
 			sta_info_len++;
 		/* Enhanced Critical Updates Information */
-		if (include_bpcc && hostapd_is_uhr_enabled(hapd))
+		if (include_bpcc && hostapd_is_uhr_enabled(hapd) &&
+		    is_uhr_sta)
 			sta_info_len++;
 
 		total_len = sta_info_len + link->resp_sta_profile_len;
@@ -1090,7 +1127,8 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 
 		if (include_bpcc)
 			control |= BASIC_MLE_STA_CTRL_PRES_BSS_PARAM_COUNT;
-		if (include_bpcc && hostapd_is_uhr_enabled(hapd))
+		if (include_bpcc && hostapd_is_uhr_enabled(hapd) &&
+		    is_uhr_sta)
 			control |= BASIC_MLE_STA_CTRL_PRES_ENH_CRIT_UPD;
 
 		wpabuf_put_le16(buf, control);
@@ -1117,7 +1155,8 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		if (include_bpcc)
 			wpabuf_put_u8(buf, link_bss->rx_cu_param.bpcc);
 		/* Enhanced Critical Updates Information */
-		if (include_bpcc && hostapd_is_uhr_enabled(hapd))
+		if (include_bpcc && hostapd_is_uhr_enabled(hapd) &&
+		    is_uhr_sta)
 			wpabuf_put_u8(buf, 0);
 
 		if (!link->resp_sta_profile)
@@ -1165,7 +1204,8 @@ out:
 size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 				    struct sta_info *info,
 				    bool include_mld_id, bool include_bpcc,
-				    u8 include_ext_cap)
+				    u8 include_ext_cap, bool is_uhr_sta,
+				    bool include_bss_load_age)
 {
 	int link_id;
 	size_t len, num_frags;
@@ -1190,10 +1230,10 @@ size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 	if (include_ext_cap)
 		len += 2;
 
-	if (hostapd_is_uhr_enabled(hapd)) {
+	if (hostapd_is_uhr_enabled(hapd) && is_uhr_sta) {
 		/* Enhanced Critical Updates Information */
 		len++;
-		if (hapd->conf->bss_load_update_period)
+		if (include_bss_load_age && hapd->conf->bss_load_update_period)
 			len++; /* Age of BSS Load */
 	}
 
@@ -1232,7 +1272,8 @@ size_t hostapd_eid_eht_basic_ml_len(struct hostapd_data *hapd,
 			sta_prof_len++;
 
 		/* Enhanced Critical Updates Information */
-		if (include_bpcc && hostapd_is_uhr_enabled(hapd))
+		if (include_bpcc && hostapd_is_uhr_enabled(hapd) &&
+		    is_uhr_sta)
 			sta_prof_len++;
 
 		/* Per-STA Profile Subelement(1), Length (1) */
@@ -1261,7 +1302,8 @@ out:
 
 size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd, struct mld_info *info,
 			      bool include_mld_id, bool include_bpcc,
-			      u8 include_ext_cap)
+			      u8 include_ext_cap, bool is_uhr_sta,
+			      bool include_bss_load_age)
 {
 	size_t len = 0;
 	size_t eht_ml_len = 2 + EHT_ML_COMMON_INFO_LEN;
@@ -1273,10 +1315,10 @@ size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd, struct mld_info *info,
 	if (include_ext_cap)
 		eht_ml_len += 2;
 
-	if (hostapd_is_uhr_enabled(hapd)) {
+	if (hostapd_is_uhr_enabled(hapd) && is_uhr_sta) {
 		/* Enhanced Critical Updates Information (1) in common info */
 		eht_ml_len++;
-		if (hapd->conf->bss_load_update_period)
+		if (include_bss_load_age && hapd->conf->bss_load_update_period)
 			eht_ml_len++; /* Age of BSS Load */
 	}
 
@@ -1297,7 +1339,8 @@ size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd, struct mld_info *info,
 			sta_len++;
 
 		/* Enhanced Critical Updates Information (1) in per-STA profile */
-		if (include_bpcc && hostapd_is_uhr_enabled(hapd))
+		if (include_bpcc && hostapd_is_uhr_enabled(hapd) &&
+		    is_uhr_sta)
 			sta_len++;
 
 		/* Element data and (fragmentation) headers */
@@ -1323,10 +1366,12 @@ size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd, struct mld_info *info,
 u8 * hostapd_eid_eht_ml_beacon(struct hostapd_data *hapd,
 			       struct mld_info *info,
 			       u8 *eid, bool include_mld_id,
-			       u8 include_ext_cap)
+			       u8 include_ext_cap, bool is_uhr_sta,
+			       bool include_bss_load_age)
 {
 	eid = hostapd_eid_eht_basic_ml_common(hapd, eid, info, include_mld_id,
-					      false, include_ext_cap, false);
+					      false, include_ext_cap, false,
+					      is_uhr_sta, include_bss_load_age);
 
 	if (hapd->iface->drv_flags2 & WPA_DRIVER_FLAG2_MLD_LINK_REMOVAL_OFFLOAD)
 		return eid;
@@ -1338,11 +1383,16 @@ u8 * hostapd_eid_eht_ml_beacon(struct hostapd_data *hapd,
 u8 * hostapd_eid_eht_ml_assoc(struct hostapd_data *hapd, struct sta_info *info,
 			      u8 *eid, u8 include_ext_cap)
 {
+	bool is_uhr_sta;
+
 	if (!ap_sta_is_mld(hapd, info))
 		return eid;
 
+	is_uhr_sta = !!(info->flags & WLAN_STA_UHR);
+
 	eid = hostapd_eid_eht_basic_ml_common(hapd, eid, &info->mld_info,
-					      false, true, include_ext_cap, false);
+					      false, true, include_ext_cap, false,
+					      is_uhr_sta, false);
 	ap_sta_free_sta_profile(&info->mld_info);
 	return eid;
 }
@@ -1351,10 +1401,12 @@ u8 * hostapd_eid_eht_ml_assoc(struct hostapd_data *hapd, struct sta_info *info,
 size_t hostapd_eid_eht_ml_beacon_len(struct hostapd_data *hapd,
 				     struct mld_info *info,
 				     bool include_mld_id,
-				     u8 include_ext_cap)
+				     u8 include_ext_cap, bool is_uhr_sta,
+				     bool include_bss_load_age)
 {
 	return hostapd_eid_eht_ml_len(hapd, info, include_mld_id, false,
-				       include_ext_cap);
+				       include_ext_cap, is_uhr_sta,
+				       include_bss_load_age);
 }
 
 
@@ -1685,9 +1737,15 @@ static int hostapd_mld_validate_assoc_info(struct hostapd_data *hapd,
 
 		other_hapd = hostapd_mld_get_link_bss(hapd, link_id);
 		if (!other_hapd) {
-			wpa_printf(MSG_DEBUG, "MLD: Invalid link ID=%u",
+			/**
+			 * STA requested a link ID that does not exist in this AP MLD.
+			 * Per IEEE 802.11be, do not fail the entire association; instead
+			 * allow association to proceed and reject this link explicitly in
+			 * per-link response handling.
+			 */
+			wpa_printf(MSG_DEBUG, "MLD: Unsupported link ID=%u; will reject per-link",
 				   link_id);
-			return -1;
+			continue;
 		}
 
 #ifdef CONFIG_QCN_EXTN
@@ -1785,7 +1843,7 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 	int ret = -1;
 	u16 ml_control;
 	const u8 *ml_end;
-	unsigned int i;
+	u8 saved_peer_addr[ETH_ALEN];
 
 	mlbuf = ieee802_11_defrag(elems->basic_mle, elems->basic_mle_len, true);
 	if (!mlbuf)
@@ -1894,14 +1952,24 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 		goto out;
 	}
 	/*
-	 * When a station initially connected as a 3-link STA
-	 * re-associates as a single-link STA, it is not valid.
-	 * Reset the valid flag
+	 * Reset all per-link state before parsing the new ML IE. A STA may
+	 * send back-to-back reassoc-reqs with different ML IEs (e.g., fewer
+	 * links or without NSTR). The valid-flag-only reset left stale fields
+	 * (nstr_bitmap_len, peer_addr, nstr_bitmap, capability) in non-assoc
+	 * link slots and leaked resp_sta_profile heap allocations. Free those
+	 * allocations and zero all link slots. The assoc link's peer_addr
+	 * holds the link-specific MAC (set from mgmt->sa at auth time, before
+	 * driver address translation) and must be saved and restored.
 	 */
-	for (i = 0; i < MAX_NUM_MLD_LINKS; i++)
-		info->links[i].valid = false;
-
+	os_memcpy(saved_peer_addr,
+		  info->links[hapd->mld_link_id].peer_addr, ETH_ALEN);
+	ap_sta_free_sta_profile(info);
+	os_memset(info->links, 0, sizeof(info->links));
 	info->links[hapd->mld_link_id].valid = 1;
+	os_memcpy(info->links[hapd->mld_link_id].local_addr,
+		  hapd->own_addr, ETH_ALEN);
+	os_memcpy(info->links[hapd->mld_link_id].peer_addr,
+		  saved_peer_addr, ETH_ALEN);
 
 	/* Parse the Link Info field that starts after the end of the variable
 	 * length Common Info field. */
@@ -1911,6 +1979,7 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 		u16 control;
 		const u8 *sub_elem_end;
 		int num_frag_subelems;
+		u8 link_id;
 
 		num_frag_subelems =
 			ieee802_11_defrag_mle_subelem(mlbuf, pos,
@@ -1962,8 +2031,13 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 			goto out;
 		}
 		control = WPA_GET_LE16(pos);
-		link_info = &info->links[control &
-					 BASIC_MLE_STA_CTRL_LINK_ID_MASK];
+		link_id = control & BASIC_MLE_STA_CTRL_LINK_ID_MASK;
+		if (link_id >= MAX_NUM_MLD_LINKS) {
+			wpa_printf(MSG_DEBUG,
+				   "MLD: Invalid Link ID in Per-STA Profile subelement");
+			goto out;
+		}
+		link_info = &info->links[link_id];
 		pos += 2;
 
 		if (!(control & BASIC_MLE_STA_CTRL_COMPLETE_PROFILE)) {
@@ -2046,6 +2120,7 @@ u16 hostapd_process_ml_assoc_req(struct hostapd_data *hapd,
 out:
 	wpabuf_free(mlbuf);
 	if (ret) {
+		ap_sta_free_sta_profile(info);
 		os_memset(info, 0, sizeof(*info));
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
@@ -2528,7 +2603,8 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 		 * once mac80211 is fixed to match the standard (or this comment
 		 * be removed if the standard is modified to match
 		 * implementation). */
-		mle_len = hostapd_eid_eht_ml_len(hapd, &mld, false, true, 0);
+		mle_len = hostapd_eid_eht_ml_len(hapd, &mld, false, true, 0, false,
+						  false);
 		len += mle_len;
 	}
 
@@ -2634,7 +2710,8 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 		 * be removed if the standard is modified to match
 		 * implementation). */
 		mle_pos = hostapd_eid_eht_basic_ml_common(hapd, mle_pos, &mld,
-							  false, true, 0, false);
+							  false, true, 0, false,
+							  false, false);
 		if ((size_t) (mle_pos - pos) != mle_len) {
 			wpa_printf(MSG_DEBUG,
 				   "MLD: Unexpected MLE length: %ld != %zu",
@@ -3766,7 +3843,8 @@ int hostapd_configure_epcs(struct hostapd_data *hapd,
 		rule.handle = sta->mld_info.epcs.rule_handle;
 		sta->mld_info.epcs.rule_handle = 0;
 		hostapd_config_nft_rule(&rule, false);
-		hostapd_drv_rule_config_notify(hapd, sta->addr);
+		hostapd_drv_rule_config_notify(hapd, sta->addr, NULL,
+					       HOSTAPD_QM_TYPE_MSCS);
 	}
 
 	/* Send the QoS request */
@@ -3798,7 +3876,8 @@ int hostapd_configure_epcs(struct hostapd_data *hapd,
 		rule.mark = (EPCS_QM_ID << 8) | HOSTAPD_QOS_SCS_TAG;
 		rule.nf_family = NFPROTO_NETDEV;
 		hostapd_config_nft_rule(&rule, true);
-		hostapd_drv_rule_config_notify(hapd, sta->addr);
+		hostapd_drv_rule_config_notify(hapd, sta->addr, NULL,
+					       HOSTAPD_QM_TYPE_MSCS);
 		sta->mld_info.epcs.rule_handle = rule.handle;
 	}
 

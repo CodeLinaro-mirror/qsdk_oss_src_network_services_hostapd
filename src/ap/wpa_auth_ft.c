@@ -30,6 +30,7 @@
 #include "pmksa_cache_auth.h"
 #include "sta_info.h"
 #include "hostapd.h"
+#include "ap_drv_ops.h"
 
 #ifdef CONFIG_IEEE80211R_AP
 
@@ -5588,8 +5589,11 @@ static int wpa_ft_rrb_rx_roam_indication(struct wpa_authenticator *wpa_auth,
 	if (!sta)
 		return 0;
 
-	if (ap_sta_is_mld(hapd, sta))
-		ap_sta_remove_link_sta(hapd, sta, 0);
+	if (ap_sta_is_mld(hapd, sta)) {
+		hostapd_drv_sta_remove(hapd, sta->addr);
+		ap_sta_remove_link_sta(hapd, sta, 0, true);
+		sta->skip_kernel_delete = true;
+	}
 
 	ap_free_sta(hapd, sta);
 	return 0;

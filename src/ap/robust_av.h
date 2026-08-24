@@ -93,8 +93,7 @@ struct sta_info;
 #define HOSTAPD_QOS_SCS_TAG	0xB9
 #define HOSTAPD_QOS_MSCS_TAG	0x58
 
-#define NFT_MAX_RULE_COUNT	(HOSTAPD_SCS_MAX_TCLAS_ELEMENTS_PER_DESCRIPTOR * \
-				 HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER * 2)
+#define NFT_MAX_RULE_COUNT	256
 #define NFT_RULE_MAX_WEIGHT	8
 
 #define HOSTAPD_MSCS_WLAN_EID_SUBELEMENT 0
@@ -257,8 +256,6 @@ int hostapd_send_unsolicited_scs_resp(struct hostapd_data *hapd,
 void
 hostapd_handle_robust_av(struct hostapd_data *hapd, const u8 *buf, size_t len);
 void hostapd_handle_mscs(struct hostapd_data *hapd, const u8 *buf, size_t len);
-int hostapd_mscs_delete_all_rules(struct hostapd_data *hapd,
-				  struct sta_info *sta);
 void hostapd_process_mscs_flow(struct hostapd_data *hapd,
 			       struct hostapd_tclas_elements *tclas,
 			       u8 *addr, u8 tid);
@@ -273,4 +270,6 @@ u8 *hostapd_add_mscs_desc(struct hostapd_data *hapd, u8 *eid,
 int hostapd_handle_mscs_ie_assoc(struct hostapd_data *hapd,
 				 struct sta_info *sta,
 				 const u8 *buf, u8 len);
+void hostapd_mscs_delete_nft_rules(struct hostapd_data *hapd,
+				    struct sta_info *sta);
 #endif

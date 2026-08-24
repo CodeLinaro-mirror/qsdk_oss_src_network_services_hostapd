@@ -12,6 +12,10 @@
 #include "robust_av.h"
 #include <libubox/uloop.h>
 #include "sta_info.h"
+#include "../atf/atf_offload.h"
+#ifdef CONFIG_IEEE80211BN
+#include "mapc.h"
+#endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
 #endif
@@ -373,7 +377,9 @@ uc_hostapd_bss_set_config(uc_vm_t *vm, size_t nargs)
 				 struct hostapd_data, mbssid_bss) {
 			if (non_tx == hapd || !non_tx->started || !non_tx->conf)
 				continue;
+#ifdef CONFIG_QCN_EXTN
 			hostapd_disable_bss(non_tx, 0, AP_EVENT_DISABLED);
+#endif /* CONFIG_QCN_EXTN */
 		}
 	}
 #endif /* CONFIG_IEEE80211BE */
@@ -557,6 +563,14 @@ uc_hostapd_iface_add_bss(uc_vm_t *vm, size_t nargs)
 		goto free_conf;
 
 	bss = conf->bss[idx];
+
+	if (!iface->num_bss || !iface->bss[0] ||
+	    !iface->bss[0]->driver || !iface->bss[0]->drv_priv) {
+		wpa_printf(MSG_ERROR,
+				"%s: bss[0] driver/drv_priv not initialized, cannot add %s",
+				__func__, bss->iface);
+		goto free_conf;
+	}
 
 	/*
 	 * Add the new BSS config to iface->conf->bss[] BEFORE calling
@@ -742,6 +756,8 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 #ifdef CONFIG_QCN_EXTN
 	uc_value_t *wpa_state_val;
 	char *wpa_state = NULL;
+	bool rpt_max_phy_override = false;
+	uint64_t intval;
 #endif
 	int i;
 
@@ -760,9 +776,28 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 	if (wpa_state) {
 		os_strlcpy(iface->iface_extn.sta_wpa_state, wpa_state,
 				sizeof(iface->iface_extn.sta_wpa_state));
+		hostapd_update_bh_sta_connected_extn(iface, wpa_state);
 	}
+	iface->iface_extn.dfs_available_from_sta = false;
 
-	if (iface->conf->conf_extn.ind_rptr)
+	wpa_printf(MSG_INFO,
+		   "%s: state=%d sta_wpa_state=\"%s\" ind_rptr=%d rpt_max_phy=%d",
+		   __func__, iface->state,
+		   iface->iface_extn.sta_wpa_state,
+		   iface->conf->conf_extn.ind_rptr,
+		   iface->conf->conf_extn.rpt_max_phy);
+
+	intval = ucv_int64_get(ucv_object_get(info, "rpt_max_phy_override", NULL));
+	if (!errno)
+		rpt_max_phy_override = intval;
+
+	wpa_printf(MSG_DEBUG, "%s: rpt_max_phy_override: %d", __func__, rpt_max_phy_override);
+#endif
+
+	atf_bh_join_leave_update(iface, false);
+
+#ifdef CONFIG_QCN_EXTN
+	if (iface->conf->conf_extn.ind_rptr && !rpt_max_phy_override)
 		return NULL;
 #endif
 
@@ -781,6 +816,10 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 	}
 
 	iface->cac_type = 0;
+
+#ifdef CONFIG_QCN_EXTN
+	iface->bootup_cac_in_progress = 0;
+#endif /* CONFIG_QCN_EXTN */
 	return NULL;
 }
 
@@ -796,6 +835,7 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	u32 mcst = 0;
 	uc_value_t *wpa_state_val;
 	char *wpa_state = NULL;
+	bool rpt_max_phy_override = false;
 #endif
 	uint64_t intval;
 	int i, ret;
@@ -824,14 +864,38 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	if (wpa_state) {
 		os_strlcpy(iface->iface_extn.sta_wpa_state, wpa_state,
 				sizeof(iface->iface_extn.sta_wpa_state));
+		hostapd_update_bh_sta_connected_extn(iface, wpa_state);
+	}
+        intval = ucv_int64_get(ucv_object_get(info, "frequency", NULL));
+        if (!errno)
+                iface->freq = intval;
+        else
+                iface->freq = 0;
+
+
+        intval = ucv_int64_get(ucv_object_get(info, "rpt_max_phy_override", NULL));
+        if (!errno)
+                rpt_max_phy_override = intval;
+
+	wpa_printf(MSG_INFO,
+		   "%s: freq=%d, state=%d sta_wpa_state=\"%s\" ind_rptr=%d rpt_max_phy=%d rpt_max_phy_override=%d",
+		   __func__, iface->freq, iface->state,
+		   iface->iface_extn.sta_wpa_state,
+		   iface->conf->conf_extn.ind_rptr,
+		   iface->conf->conf_extn.rpt_max_phy, rpt_max_phy_override);
+
+	if (iface->conf->conf_extn.ind_rptr && !rpt_max_phy_override)
+                return NULL;
+
+	if (info && !iface->freq) {
+		conf = iface->conf;
+		goto out;
 	}
 
 	intval = ucv_int64_get(ucv_object_get(info, "mcst", NULL));
 	if (!errno)
 		mcst = intval;
 
-	if (iface->conf->conf_extn.ind_rptr)
-		return NULL;
 #endif
 #define UPDATE_VAL(field, name)							\
 	if ((intval = ucv_int64_get(ucv_object_get(info, name, NULL))) &&	\
@@ -875,11 +939,6 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	if (!errno)
 		hostapd_set_oper_chwidth(conf, intval);
 
-	intval = ucv_int64_get(ucv_object_get(info, "frequency", NULL));
-	if (!errno)
-		iface->freq = intval;
-	else
-		iface->freq = 0;
 	conf->acs = 0;
 
 	intval = ucv_int64_get(ucv_object_get(info, "punct_bitmap", NULL));
@@ -902,7 +961,7 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	}
 
 	if (!errno && conf->conf_extn.skip_cac)
-		skip_cac_rep = is_dfs && !iface->mcst;
+		skip_cac_rep = iface->iface_extn.dfs_available_from_sta = is_dfs && !iface->mcst;
 	wpa_printf(MSG_INFO, "%s: is_dfs=%d mcst=%u TU cs_time=%u ms skip_cac_rep=%d",
 		   __func__, is_dfs, iface->mcst, iface->cs_time, skip_cac_rep);
 #endif
@@ -975,8 +1034,16 @@ out:
 		ret = ieee802_11_set_beacon(hapd);
 		wpa_printf(MSG_DEBUG, "set beacon called for bssid " MACSTR " ret %d \n",
 			   MAC2STR(hapd->own_addr), ret);
+#ifdef CONFIG_IEEE80211BN
+		if (ret == 0 && !hapd->mapc_initialized) {
+			if (mapc_init(hapd) < 0)
+				wpa_printf(MSG_ERROR, "MAPC: init failed for BSS %s",
+					   hapd->conf->iface);
+		}
+#endif /* CONFIG_IEEE80211BN */
 	}
 
+	atf_bh_join_leave_update(iface, true);
 	return ucv_boolean_new(true);
 }
 
@@ -1067,6 +1134,7 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 	if (wpa_state) {
 		os_strlcpy(iface->iface_extn.sta_wpa_state, wpa_state,
 				sizeof(iface->iface_extn.sta_wpa_state));
+		hostapd_update_bh_sta_connected_extn(iface, wpa_state);
 	}
 
 	ret = uc_hostapd_iface_switch_channel_extn(iface, is_dfs,

@@ -61,6 +61,13 @@ static int dfs_get_precac_channel_by_state(struct hostapd_iface *iface,
 #ifndef CONFIG_QCN_EXTN
 static int dfs_get_start_chan_idx(struct hostapd_iface *iface, int *seg1_start,
 				  int chan_width, int channel_no, bool is_offloaded_cac);
+static int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
+					      int channel, int freq,
+					      int secondary_channel,
+					      u8 current_vht_oper_chwidth,
+					      u8 oper_centr_freq_seg0_idx,
+					      u8 oper_centr_freq_seg1_idx,
+					      u16 punct_bitmap);
 #endif
 /*
  * dfs_is_agile_cac_enabled - Check whether Agile CAC is enabled.
@@ -335,8 +342,10 @@ int dfs_get_used_n_chans(struct hostapd_iface *iface, int *seg1,
 			*seg1 = 4;
 			break;
 		default:
+#ifdef CONFIG_QCN_EXTN
 			hostapd_get_n_chans_and_frequency_extn(chan_width, 0,
 							       &n_chans, NULL);
+#endif /* CONFIG_QCN_EXTN */
 
 			break;
 		}
@@ -416,10 +425,12 @@ static int dfs_is_chan_allowed(struct hostapd_channel_data *chan, int n_chans)
 		allowed_no = ARRAY_SIZE(allowed_160);
 		break;
 	default:
+#ifdef CONFIG_QCN_EXTN
 		if (!hostapd_dfs_get_allowed_channels_extn(n_chans,
 							   allowed,
 							   &allowed_no))
 			break;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_DEBUG, "Unknown width for %d channels", n_chans);
 		break;
@@ -858,10 +869,12 @@ static void dfs_adjust_center_freq(struct hostapd_iface *iface,
 		break;
 
 	default:
+#ifdef CONFIG_QCN_EXTN
 		if (!hostapd_dfs_adjust_center_freq_extn(
 			hostapd_get_oper_chwidth(iface->conf), chan->chan,
 			oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx))
 			break;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_INFO,
 			   "DFS: Unsupported channel width configuration");
@@ -1548,10 +1561,12 @@ int set_dfs_state(struct hostapd_iface *iface, int freq, int ht_enabled,
 		frequency = cf1 - 70;
 		break;
 	default:
+#ifdef CONFIG_QCN_EXTN
 		if (!hostapd_get_n_chans_and_frequency_extn(
 			convert_to_oper_chan_width(chan_width),
 			cf1, &n_chans, &frequency))
 			break;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_INFO, "DFS chan_width %d not supported",
 			   chan_width);
@@ -1632,10 +1647,12 @@ static int dfs_are_channels_overlapped(struct hostapd_iface *iface, int freq, in
 		frequency = cf1 - 70;
 		break;
 	default:
+#ifdef CONFIG_QCN_EXTN
 		if (!hostapd_get_n_chans_and_frequency_extn(
 			convert_to_oper_chan_width(chan_width),
 			cf1, &radar_n_chans, &frequency))
 			break;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_INFO, "DFS chan_width %d not supported",
 			   chan_width);
@@ -1882,6 +1899,9 @@ int hostapd_is_dfs_chan_available(struct hostapd_iface *iface)
 	int n_chans, n_chans1, start_chan_idx, start_chan_idx1;
 	int chan_width = hostapd_get_oper_chwidth(iface->conf);
 
+	if (!iface->current_mode)
+		return 0;
+
 	/* Get the start (first) channel for current configuration */
 	start_chan_idx = dfs_get_start_chan_idx(iface, &start_chan_idx1,
 						chan_width,
@@ -2048,6 +2068,173 @@ int hostapd_dfs_count_precac_channels(struct hostapd_iface *iface)
 	return num_usable;
 }
 
+static bool
+hostapd_dfs_intercac_check_pref_block(struct hostapd_iface *iface,
+				      int pref_chan,
+				      enum oper_chan_width chan_width,
+				      bool *all_available,
+				      enum dfs_channel_type type)
+{
+	int n_chans, n_chans1, start_chan_idx, radar_chans;
+	bool range_ok;
+
+	n_chans = dfs_get_used_n_chans(iface, &n_chans1, chan_width);
+	if (n_chans <= 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: boot: preferred n_chans failed for width %d",
+			   chan_width);
+		return false;
+	}
+
+	start_chan_idx = dfs_get_start_chan_idx(iface, &n_chans1,
+						chan_width,
+						pref_chan, false);
+	if (start_chan_idx < 0) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: boot: preferred ch %d width %d not usable",
+			   pref_chan, chan_width);
+		return false;
+	}
+
+	radar_chans = dfs_check_chans_radar(iface, start_chan_idx, n_chans);
+	wpa_printf(MSG_DEBUG,
+		   "intercac: boot: preferred block ch %d width %d has %d DFS channels",
+		   pref_chan, chan_width, radar_chans);
+	if (!radar_chans)
+		return false;
+
+	if (type == DFS_AVAILABLE) {
+		if (!all_available)
+			return dfs_chan_range_available(iface->current_mode,
+							start_chan_idx, n_chans,
+							DFS_AVAILABLE);
+
+		*all_available = dfs_check_chans_available(iface,
+							   start_chan_idx,
+							   n_chans);
+		if (*all_available)
+			wpa_printf(MSG_INFO,
+				   "intercac: preferred block ch %d width %d already DFS available",
+				   pref_chan, chan_width);
+	} else {
+		range_ok = dfs_chan_range_available(iface->current_mode,
+						    start_chan_idx, n_chans,
+						    type);
+		if (!range_ok) {
+			wpa_printf(MSG_DEBUG,
+				   "intercac: preferred block ch %d width %d not valid for type %d",
+				   pref_chan, chan_width, type);
+			return false;
+		}
+
+		if (all_available)
+			*all_available = false;
+	}
+
+	return true;
+}
+
+static bool
+hostapd_dfs_intercac_is_pref_chan(struct hostapd_hw_modes *mode,
+				  int completed_chan,
+				  int preferred_chan,
+				  int n_chans_pref,
+				  int n_chans_oper,
+				  int *first_chan_idx)
+{
+	int i;
+
+	*first_chan_idx = -1;
+	for (i = 0; i < mode->num_channels; i++) {
+		if (mode->channels[i].chan == preferred_chan) {
+			*first_chan_idx = i;
+			break;
+		}
+	}
+
+	if (*first_chan_idx < 0)
+		return false;
+
+	for (i = 0; i < n_chans_pref; i += n_chans_oper) {
+		if (*first_chan_idx + i >= mode->num_channels)
+			break;
+		if (mode->channels[*first_chan_idx + i].chan == completed_chan)
+			return true;
+	}
+
+	return false;
+}
+
+static struct hostapd_channel_data *
+hostapd_dfs_get_preferred_precac_channel(struct hostapd_iface *iface)
+{
+	struct hostapd_hw_modes *mode;
+	struct hostapd_channel_data *chan;
+	int idx;
+	enum oper_chan_width preferred_width, rcac_width;
+	int n_chans1, n_chans_pref, n_chans_oper;
+
+	if (!iface || !iface->user_rcac_channel)
+		return NULL;
+
+	if (!iface->conf->intercac_chan)
+		return NULL;
+
+	mode = iface->current_mode;
+	if (!mode)
+		return NULL;
+
+	/*
+	 * Reuse user_rcac_channel as a preferred agile CAC channel selector.
+	 * Despite the rcac name, this is also used for PreCAC in ETSI domain
+	 * to prioritize the configured/preferred channel before random
+	 * selection.
+	 */
+	preferred_width = iface->preferred_chan_width;
+	rcac_width = hostapd_get_oper_chwidth(iface->conf);
+
+	n_chans_pref = dfs_get_used_n_chans(iface, &n_chans1,
+					    preferred_width);
+	n_chans_oper = dfs_get_used_n_chans(iface, &n_chans1,
+					    rcac_width);
+	if (n_chans_pref <= 0 || n_chans_oper <= 0)
+		return NULL;
+
+	if (!hostapd_dfs_intercac_is_pref_chan(mode,
+					       iface->user_rcac_channel,
+					       iface->preferred_chan,
+					       n_chans_pref,
+					       n_chans_oper,
+					       &idx)) {
+		wpa_printf(MSG_DEBUG,
+			   "PRECAC_Preferred agile CAC channel %d not in preferred block %d",
+			   iface->user_rcac_channel, iface->preferred_chan);
+		return NULL;
+	}
+
+
+	for (idx = 0; idx < mode->num_channels; idx++) {
+		chan = &mode->channels[idx];
+
+		if (chan->chan != iface->user_rcac_channel)
+			continue;
+		if (dfs_chan_range_available(mode, idx, n_chans_oper,
+					     DFS_NO_CAC_YET)) {
+			wpa_printf(MSG_INFO,
+				   "PRECAC_Using preferred agile CAC channel %d",
+				   iface->user_rcac_channel);
+			return chan;
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "PRECAC_Preferred agile CAC channel %d not eligible",
+			   iface->user_rcac_channel);
+		break;
+	}
+
+	return NULL;
+}
+
 static struct hostapd_channel_data *
 hostapd_dfs_get_next_precac_channel(struct hostapd_iface *iface,
 				    u8 *oper_centr_freq_seg0_idx,
@@ -2061,6 +2248,12 @@ hostapd_dfs_get_next_precac_channel(struct hostapd_iface *iface,
 	enum oper_chan_width oper_width_tmp;
 
 	wpa_printf(MSG_INFO, "PRECAC_Performing Precac on the DFS Channel list");
+
+
+	chan = hostapd_dfs_get_preferred_precac_channel(iface);
+	if (chan)
+		goto found;
+
 	total = dfs_find_channel(iface, NULL, 0, DFS_NO_CAC_YET,
 				 DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
 	if (total == 0) {
@@ -2087,6 +2280,8 @@ hostapd_dfs_get_next_precac_channel(struct hostapd_iface *iface,
 		wpa_printf(MSG_INFO, "PRECAC_No eligible channel found");
 		return NULL;
 	}
+
+found:
 	wpa_printf(MSG_INFO,
 		   "PRECAC_Checking channel %d (freq=%d MHz)",
 		   chan->chan, chan->freq);
@@ -2729,6 +2924,381 @@ int hostapd_dfs_precac_restart_after_radar(struct hostapd_iface *iface,
 	return hostapd_dfs_start_precac(iface);
 }
 
+bool hostapd_dfs_intercac_boot(struct hostapd_iface *iface)
+{
+	struct hostapd_config *conf;
+	enum oper_chan_width chan_width, inter_width;
+	int inter_freq, inter_sec, inter_bw_mhz;
+	u8 inter_seg0;
+	int n_chans, n_chans1;
+	bool pref_block_available;
+
+	wpa_printf(MSG_DEBUG, "intercac: boot called");
+
+	conf = iface->conf;
+	if (!conf->intercac_chan) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: boot: not configured, skip");
+		return false;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "intercac: boot: intercac_chan=%d chwidth=%d current_chan=%d freq=%d",
+		   conf->intercac_chan, conf->intercac_chwidth,
+		   conf->channel, iface->freq);
+
+	if (!dfs_use_radar_background(iface)) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: boot: agile CAC not supported");
+		return false;
+	}
+
+	chan_width = hostapd_get_oper_chwidth(conf);
+	wpa_printf(MSG_DEBUG,
+		   "intercac: boot: DFS ch %d chan_width=%d intercac_chwidth=%d",
+		   conf->channel, chan_width, conf->intercac_chwidth);
+
+	if (!hostapd_dfs_intercac_check_pref_block(iface, conf->channel,
+						   chan_width,
+						   &pref_block_available,
+						   DFS_AVAILABLE)) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: boot: preferred block ch %d width %d does not need DFS, skip",
+			   conf->channel, chan_width);
+		return false;
+	}
+
+	if (pref_block_available)
+		return false;
+
+	n_chans = dfs_get_used_n_chans(iface, &n_chans1,
+			conf->intercac_chwidth);
+	if (n_chans <= 0) {
+		wpa_printf(MSG_ERROR,
+				"intercac: boot: n_chans failed for width %d",
+				conf->intercac_chwidth);
+		return false;
+	}
+	inter_bw_mhz = n_chans * 20;
+
+	if (hostapd_dfs_compute_bgcac_chan_params(conf->intercac_chan,
+						  inter_bw_mhz, &inter_width,
+						  &inter_seg0, &inter_sec) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: boot: compute params failed for ch %d bw %d",
+			   conf->intercac_chan, inter_bw_mhz);
+		return false;
+	}
+
+	inter_freq = hostapd_hw_get_freq(iface->bss[0], conf->intercac_chan);
+	if (inter_freq <= 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: boot: freq lookup failed for ch %d",
+			   conf->intercac_chan);
+		return false;
+	}
+
+	iface->preferred_chan = conf->channel;
+	iface->preferred_chan_width = chan_width;
+
+	wpa_printf(MSG_INFO,
+		   "intercac: ACTIVATING - intermediate ch %d (%d MHz bw %d), preferred DFS ch %d (width %d), RCAC->ch %d",
+		   conf->intercac_chan, inter_freq, inter_bw_mhz,
+		   conf->channel, chan_width, conf->channel);
+
+	conf->channel = conf->intercac_chan;
+	iface->freq = inter_freq;
+	conf->secondary_channel = inter_sec;
+	hostapd_set_oper_chwidth(conf, inter_width);
+	hostapd_set_oper_centr_freq_seg0_idx(conf, inter_seg0);
+	hostapd_set_oper_centr_freq_seg1_idx(conf, 0);
+	iface->user_rcac_channel = iface->preferred_chan;
+
+	wpa_printf(MSG_INFO,
+		   "intercac: boot done - AP on ch %d, RCAC pinned to ch %d",
+		   conf->channel, iface->user_rcac_channel);
+	return true;
+}
+
+static void
+hostapd_dfs_intercac_step_subchan(struct hostapd_iface *iface,
+				  int preferred_chan,
+				  enum oper_chan_width preferred_width,
+				  int completed_chan,
+				  enum oper_chan_width cur_oper_width,
+				  int first_chan_idx,
+				  int n_chans_pref,
+				  int n_chans_oper)
+{
+	struct hostapd_hw_modes *mode = iface->current_mode;
+	int i, next_chan = 0, freq, bw_mhz;
+	enum oper_chan_width oper_width;
+	struct hostapd_channel_data *chan_data;
+	u8 seg0;
+	int sec;
+
+	/* Walk sub-blocks to find first uncleaned one */
+	for (i = 0; i < n_chans_pref; i += n_chans_oper) {
+		if (first_chan_idx + i >= mode->num_channels)
+			break;
+		if (!dfs_chan_range_available(mode, first_chan_idx + i,
+					     n_chans_oper, DFS_AVAILABLE)) {
+			next_chan = mode->channels[first_chan_idx + i].chan;
+			break;
+		}
+	}
+
+	freq = hostapd_hw_get_freq(iface->bss[0], completed_chan);
+	if (freq <= 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: step_subchan: freq lookup failed for ch %d",
+			   completed_chan);
+		return;
+	}
+
+	bw_mhz = n_chans_oper * 20;
+
+	if (hostapd_dfs_compute_bgcac_chan_params(completed_chan, bw_mhz,
+						  &oper_width, &seg0, &sec) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: step_subchan: compute params failed for ch %d",
+			   completed_chan);
+		return;
+	}
+
+	chan_data = hw_mode_get_channel(iface->current_mode, freq, NULL);
+	if (chan_data) {
+		int refined = dfs_is_chan_allowed(chan_data, 2) ? 1 : -1;
+
+		wpa_printf(MSG_DEBUG,
+			   "intercac: step_subchan: refined sec %d->%d via dfs_is_chan_allowed",
+			   sec, refined);
+		sec = refined;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "intercac: STEPPING to sub-chan %d (width %d), next RCAC ch %d, preferred ch %d (width %d) pending",
+		   completed_chan, cur_oper_width, next_chan,
+		   preferred_chan, preferred_width);
+
+	/* Pin RCAC to next uncleaned sub-channel */
+	iface->user_rcac_channel = next_chan;
+
+	hostapd_dfs_request_channel_switch(iface, completed_chan, freq,
+					   sec, cur_oper_width, seg0, 0, 0);
+}
+
+bool hostapd_dfs_intercac_agile_complete(struct hostapd_iface *iface,
+					 int success)
+{
+	int preferred_chan;
+	enum oper_chan_width preferred_width;
+	int freq, bw_mhz;
+	enum oper_chan_width oper_width;
+	u8 seg0;
+	int sec;
+	struct hostapd_channel_data *chan_data = NULL;
+	enum oper_chan_width cur_oper_width;
+	int completed_chan;
+	int n_chans_pref, n_chans_oper, n_chans1;
+	int first_chan_idx;
+	struct hostapd_hw_modes *mode;
+
+	wpa_printf(MSG_DEBUG,
+		   "intercac: agile_complete(success=%d)", success);
+
+	preferred_chan = iface->preferred_chan;
+	preferred_width = iface->preferred_chan_width;
+
+	wpa_printf(MSG_DEBUG,
+		   "intercac: agile_complete: preferred_chan=%d width=%d",
+		   preferred_chan, preferred_width);
+
+	if (!preferred_chan) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: agile_complete: not active");
+		return false;
+	}
+	if (!success) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: agile_complete: agile CAC failed");
+		return false;
+	}
+
+	cur_oper_width = hostapd_get_oper_chwidth(iface->conf);
+	completed_chan = iface->radar_background.channel;
+	mode = iface->current_mode;
+
+	wpa_printf(MSG_DEBUG,
+		   "intercac: agile_complete: cur_oper_width=%d completed_chan=%d",
+		   cur_oper_width, completed_chan);
+
+	n_chans_pref = dfs_get_used_n_chans(iface, &n_chans1, preferred_width);
+	n_chans_oper = dfs_get_used_n_chans(iface, &n_chans1, cur_oper_width);
+	bw_mhz = n_chans_pref * 20;
+	if (n_chans_pref <= 0 || n_chans_oper <= 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: agile_complete: n_chans failed (pref=%d oper=%d)",
+			   n_chans_pref, n_chans_oper);
+		return false;
+	}
+
+	if (!hostapd_dfs_intercac_is_pref_chan(mode, completed_chan,
+					       preferred_chan,
+					       n_chans_pref, n_chans_oper,
+					       &first_chan_idx)) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: agile_complete: completed ch %d not a sub-block of preferred ch %d, ignoring",
+			   completed_chan, preferred_chan);
+		return false;
+	}
+
+	if (!dfs_chan_range_available(mode, first_chan_idx, n_chans_pref,
+				      DFS_AVAILABLE)) {
+		/* Preferred block not fully available yet: intermediate step */
+		hostapd_dfs_intercac_step_subchan(iface, preferred_chan,
+						  preferred_width,
+						  completed_chan,
+						  cur_oper_width,
+						  first_chan_idx,
+						  n_chans_pref, n_chans_oper);
+		return true;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "intercac: agile_complete: all sub-chans cleared, upgrading to ch %d (width %d)",
+		   preferred_chan, preferred_width);
+
+
+	freq = hostapd_hw_get_freq(iface->bss[0], preferred_chan);
+	if (freq <= 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: agile_complete: freq lookup failed for ch %d",
+			   preferred_chan);
+		return false;
+	}
+
+	if (hostapd_dfs_compute_bgcac_chan_params(preferred_chan, bw_mhz,
+						  &oper_width, &seg0, &sec) < 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: agile_complete: compute params failed");
+		return false;
+	}
+
+	chan_data = hw_mode_get_channel(iface->current_mode, freq, NULL);
+	if (chan_data) {
+		int refined = dfs_is_chan_allowed(chan_data, 2) ? 1 : -1;
+
+		wpa_printf(MSG_DEBUG,
+			   "intercac: agile_complete: refined sec %d->%d via dfs_is_chan_allowed",
+			   sec, refined);
+		sec = refined;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "intercac: SWITCHING to ch %d width %d",
+		   preferred_chan, preferred_width);
+
+	iface->preferred_chan = 0;
+	iface->preferred_chan_width = CONF_OPER_CHWIDTH_USE_HT;
+	iface->user_rcac_channel = 0;
+	hostapd_dfs_request_channel_switch(iface, preferred_chan, freq,
+					   sec, preferred_width, seg0, 0, 0);
+	return true;
+}
+
+int hostapd_dfs_intercac_defer_non_radar_switch(struct hostapd_iface *iface,
+						struct csa_settings *settings)
+{
+	struct hostapd_freq_params *freq;
+	enum oper_chan_width width, cur_oper_width;
+	int chan, n_chans, n_chans1, first_chan_idx, bw_mhz;
+	int n_chans_oper, n_chans_rcac;
+
+	if (!iface || !settings || !dfs_use_radar_background(iface) ||
+	    !dfs_is_agile_cac_enabled(iface))
+		return 0;
+
+	if (!iface->conf->intercac_chan)
+		return 0;
+
+	/* Radar-triggered switches are time-critical and must not be deferred. */
+	if (iface->radar_detected)
+		return 0;
+
+	freq = &settings->freq_params;
+	chan = freq->channel;
+	if (!chan || chan == iface->conf->channel)
+		return 0;
+
+	width = hostapd_chan_width_from_freq_params(freq);
+	n_chans = dfs_get_used_n_chans(iface, &n_chans1, width);
+	cur_oper_width = hostapd_get_oper_chwidth(iface->conf);
+	n_chans_oper = dfs_get_used_n_chans(iface, &n_chans1,
+					    cur_oper_width);
+	if (n_chans <= 0 || n_chans_oper <= 0)
+		return 0;
+	/*
+	 * Reuse the Inter CAC preferred-channel helper only to locate the
+	 * first channel index of the requested target block. Since completed
+	 * channel and preferred channel are both @chan and n_chans_oper equals
+	 * n_chans, this is equivalent to finding the preferred block start
+	 * while avoiding another open-coded channel-index lookup.
+	 */
+	if (!hostapd_dfs_intercac_is_pref_chan(iface->current_mode, chan, chan,
+					       n_chans, n_chans,
+					       &first_chan_idx))
+		return 0;
+
+	if (dfs_chan_range_available(iface->current_mode, first_chan_idx,
+				     n_chans, DFS_AVAILABLE)) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: requested ch %d width %d already available; allow switch",
+			   chan, width);
+		return 0;
+	}
+
+	/*
+	 * Do not switch to the requested channel now. Treat it as the new
+	 * Inter CAC preferred target and let the existing agile-complete path
+	 * perform step switching or final switching after CAC succeeds.
+	 */
+	iface->preferred_chan = chan;
+	iface->preferred_chan_width = width;
+	iface->user_rcac_channel = chan;
+
+	if (iface->radar_background.cac_started &&
+	    iface->radar_background.channel == chan) {
+		wpa_printf(MSG_INFO,
+			   "intercac: bg CAC already running on requested ch %d; keep it and defer switch",
+			   chan);
+		return 1;
+	}
+
+	if (iface->radar_background.cac_started ||
+	    iface->radar_background.channel > 0)
+		hostapd_abort_background_cac(iface);
+	n_chans_rcac = n_chans_oper < n_chans ? n_chans_oper : n_chans;
+	bw_mhz = n_chans_rcac * 20;
+
+	wpa_printf(MSG_INFO,
+		   "intercac: defer non-radar switch to ch %d width %d; start bg CAC with %dBW%d",
+		   chan, width, bw_mhz, cur_oper_width);
+
+	if (hostapd_start_rcac_on_channel(iface, chan, bw_mhz) == 0)
+		return 1;
+
+	wpa_printf(MSG_WARNING,
+		   "intercac: failed to start bg CAC for deferred ch %d; allow original switch",
+		   chan);
+	iface->preferred_chan = 0;
+	iface->user_rcac_channel = 0;
+	iface->preferred_chan_width = CONF_OPER_CHWIDTH_USE_HT;
+
+	return 0;
+}
+
+
 /**
  * hostapd_agile_complete - Handle Agile CAC (RCAC/PreCAC) completion
  * @iface: Pointer to hostapd interface data
@@ -2745,6 +3315,8 @@ static int hostapd_agile_complete(struct hostapd_iface *iface, int success,
 {
 	int precac_channel = iface->radar_background.channel;
 	int precac_freq = iface->radar_background.freq;
+
+	hostapd_dfs_intercac_agile_complete(iface, success);
 
 	if (!success) {
 		if (freq > 0 && iface->radar_background.freq > 0 &&
@@ -2951,6 +3523,20 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			if (iface->bootup_cac_in_progress &&
 			    hostapd_is_dfs_chan_available(iface)) {
 				hostapd_bootup_cac_complete_extn(iface);
+				/*
+				 * Only notify Rptr STA, if this CAC was directly triggered
+				 * by ACS selecting a DFS channel at initial startup.
+				 * acs_dfs_cac_pending is a one-shot flag: set only in
+				 * hostapd_acs_completed() for DFS channel, cleared here.
+				 */
+				if (iface->iface_extn.acs_dfs_cac_pending) {
+					iface->iface_extn.acs_dfs_cac_pending = false;
+					wpa_printf(MSG_DEBUG,
+					"ACS-selected DFS channel CAC "
+					"completed on %d MHz — notify Rptr STA", freq);
+					hostapd_ml_acs_check_and_notify(iface, true);
+				}
+
 				goto cac_done;
 			}
 #endif /* CONFIG_QCN_EXTN */
@@ -2971,23 +3557,6 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 				if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_BSS) {
 					ieee80211_freq_to_chan(cf1, &seg0);
 					hostapd_set_oper_centr_freq_seg0_idx(iface->conf, seg0);
-					/*
-					 * Only notify Rptr STA, if this CAC was directly triggered
-					 * by ACS selecting a DFS channel at initial startup.
-					 * acs_dfs_cac_pending is a one-shot flag: set only in
-					 * hostapd_acs_completed() for DFS channel, cleared here.
-					 */
-#ifdef CONFIG_QCN_EXTN
-					if (iface->iface_extn.acs_dfs_cac_pending) {
-						iface->iface_extn.acs_dfs_cac_pending = false;
-#endif
-						wpa_printf(MSG_DEBUG,
-							"ACS-selected DFS channel CAC"
-							"completed on %d MHz — notify Rptr STA", freq);
-						hostapd_ml_acs_check_and_notify(iface, true);
-#ifdef CONFIG_QCN_EXTN
-					}
-#endif
 					if (hostapd_check_reenable_bss(iface))
 						hostapd_dfs_enable_pending_bss(iface);
 					else
@@ -3429,14 +3998,224 @@ static u32 hostapd_radar_bitmap_oper(int chan_width, int cf1, u16 radar_bitmap,
 }
 
 
+/**
+ * hostapd_dfs_get_radar_bitmap_oper() - Remap a radar bitmap onto the operating channel
+ * @chan_width: Channel bandwidth reported with the radar event
+ * @cf1: Center frequency reported with the radar event, in MHz
+ * @radar_bitmap: Radar bitmap as reported by the driver
+ * @chan_width_device: Channel bandwidth of the device
+ * @cf_device: Center frequency of the device
+ * @device_params_present: Set to %true if @chan_width_device/@cf_device differ
+ *                          from @chan_width/@cf1
+ *
+ * Return: @radar_bitmap unchanged if the device channel parameters match the
+ * reported ones, otherwise @radar_bitmap remapped onto the device's actual
+ * subchannel bit positions.
+ */
+static u16 hostapd_dfs_get_radar_bitmap_oper(int chan_width, int cf1,
+					     u16 radar_bitmap,
+					     int chan_width_device,
+					     int cf_device,
+					     bool *device_params_present)
+{
+	*device_params_present = hostapd_is_device_params_present(chan_width,
+								  cf1,
+								  chan_width_device,
+								  cf_device);
+	if (*device_params_present)
+		return hostapd_radar_bitmap_oper(chan_width, cf1, radar_bitmap,
+						 chan_width_device, cf_device);
+
+	return radar_bitmap;
+}
+
+
+/**
+ * hostapd_dfs_radar_update_punct_bitmap() - Update puncture bitmap for a radar event
+ * @iface: Pointer to hostapd interface
+ * @radar_bitmap_oper: Radar bitmap remapped onto the operating channel's subchannels
+ *
+ * Return: %true if the radar hit a subchannel that was already punctured.
+ * 	   %false if the puncture bitmap is different.
+ */
+static bool hostapd_dfs_radar_update_punct_bitmap(struct hostapd_iface *iface,
+						   u16 radar_bitmap_oper)
+{
+	u16 radar_bit_pattern;
+
+	if (!iface->conf->use_ru_puncture_dfs || !radar_bitmap_oper)
+		return false;
+
+	radar_bit_pattern = iface->radar_bit_pattern | iface->conf->punct_bitmap;
+	/* Radar detected already punctured sub channel */
+	if (radar_bitmap_oper && !(radar_bitmap_oper & ~radar_bit_pattern))
+		return true;
+
+	radar_bit_pattern |= radar_bitmap_oper;
+	iface->conf->punct_bitmap = radar_bit_pattern;
+	return false;
+}
+
+
+/**
+ * hostapd_dfs_radar_handle_puncturing() - Try to handle a radar event by dfs puncturing
+ * @iface: Pointer to hostapd interface
+ * @freq: Primary channel frequency in MHz
+ * @chan_width: Channel bandwidth
+ * @radar_bitmap_oper: Radar bitmap
+ * @cur_punct_bits: Puncture bitmap to restore on iface->conf before proceeding
+ *
+ * Punctures the affected subchannel(s) instead of switching to a new channel.
+ *
+ * Return: 0 on success and error on failure
+ */
+static int hostapd_dfs_radar_handle_puncturing(struct hostapd_iface *iface,
+					       int freq, int chan_width,
+					       u16 radar_bitmap_oper,
+					       u16 cur_punct_bits)
+{
+	u8 oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx;
+
+	iface->radar_bit_pattern = radar_bitmap_oper;
+	iface->conf->punct_bitmap = cur_punct_bits;
+	if (hostapd_csa_in_progress(iface)) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: radar detected during CSA, deferring puncture channel switch");
+		return 0;
+	}
+
+	if (iface->skip_mesh_dfs)
+		return 0;
+
+	oper_centr_freq_seg0_idx = iface->conf->vht_oper_centr_freq_seg0_idx;
+	oper_centr_freq_seg1_idx = iface->conf->vht_oper_centr_freq_seg1_idx;
+	chan_width = convert_to_oper_chan_width(chan_width);
+#ifdef CONFIG_QCN_EXTN
+	hostapd_get_oper_center_freq_seg_extn(iface->conf,
+					      &oper_centr_freq_seg0_idx,
+					      &oper_centr_freq_seg1_idx,
+					      NULL);
+#endif
+
+	if (iface->cac_started) {
+		wpa_printf(MSG_DEBUG, "radar detected during cac,"
+			   "it restarted with valid puncturing bitmap :%d",
+			   iface->conf->punct_bitmap | iface->radar_bit_pattern);
+
+		iface->cac_started = 0;
+#ifdef CONFIG_QCN_EXTN
+		iface->iface_extn.cac_abort = 0;
+#endif
+		return hostapd_start_dfs_cac(iface, iface->conf->hw_mode,
+					     iface->freq, iface->conf->channel,
+					     iface->conf->ieee80211n,
+					     iface->conf->ieee80211ac,
+					     iface->conf->ieee80211ax,
+					     iface->conf->ieee80211be,
+					     iface->conf->ieee80211bn,
+					     iface->conf->secondary_channel,
+					     hostapd_get_oper_chwidth(iface->conf),
+					     hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
+					     hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
+					     dfs_use_radar_background(iface),
+					     iface->conf->bandwidth_device,
+					     iface->conf->center_freq_device);
+	}
+
+	return hostapd_dfs_request_channel_switch(
+		iface, iface->conf->channel, freq,
+		iface->conf->secondary_channel, chan_width,
+		oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx,
+		hostapd_get_punct_bitmap(iface->bss[0]));
+}
+
+
+/**
+ * hostapd_dfs_radar_reduce_bandwidth() - Try to switch to a reduced-bandwidth channel
+ * @iface: Pointer to hostapd interface
+ * @ret: Set to the reduced-bandwidth channel switch's return value, when found
+ *
+ * Looks for an available channel at a lower bandwidth than the current
+ * operating bandwidth and, if found, issues a channel switch request to it.
+ *
+ * Return: %true  if a reduced-bandwidth channel was found and a switch was
+ * 	          issued or skipped for mesh.
+ * 	   %false if bandwidth reduction is disabled or no reduced-bandwidth
+ * 	          channel is available.
+ * 	   %ret   0 on successful channel siwtch, error on failure.
+ */
+static bool hostapd_dfs_radar_reduce_bandwidth(struct hostapd_iface *iface,
+					       int *ret)
+{
+	struct hostapd_channel_data *channel;
+	int secondary_channel;
+	u8 oper_centr_freq_seg0_idx = 0;
+	u8 oper_centr_freq_seg1_idx = 0;
+
+	if (!iface->conf->dfs_bw_reduce_en)
+		return false;
+
+	if (iface->skip_mesh_dfs) {
+		*ret = 0;
+		return true;
+	}
+
+	channel = dfs_find_bw_reduced_channel(iface, &secondary_channel,
+					      &oper_centr_freq_seg0_idx,
+					      &oper_centr_freq_seg1_idx);
+	if (!channel)
+		return false;
+
+	wpa_printf(MSG_INFO, "DFS: Radar detected, BW reduction successful - Ch %d",
+		   channel->chan);
+	*ret = hostapd_dfs_request_channel_switch(
+		iface, channel->chan, channel->freq, secondary_channel,
+		hostapd_get_oper_chwidth(iface->conf),
+		oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx,
+		hostapd_get_punct_bitmap(iface->bss[0]));
+	return true;
+}
+
+
+/**
+ * hostapd_dfs_radar_handle_disable_csa_dfs() - Defer radar channel switch handling
+ * via a timeout
+ * @iface: Pointer to hostapd interface
+ *
+ * Called when disable_csa_dfs is configured, so the channel switch is not
+ * issued immediately from radar detection context. The AP will wait for
+ * HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR duration.
+ *
+ * Return: %0 always.
+ */
+static int hostapd_dfs_radar_handle_disable_csa_dfs(struct hostapd_iface *iface)
+{
+	if (hostapd_csa_in_progress(iface)) {
+		wpa_printf(MSG_DEBUG,
+			   "DFS: radar detected, but CSA already in progress - skip timeout");
+		return 0;
+	}
+
+	if (!eloop_is_timeout_registered(hostapd_dfs_radar_handling_timeout,
+					 iface, NULL))
+		eloop_register_timeout(0, HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR,
+				       hostapd_dfs_radar_handling_timeout,
+				       iface, NULL);
+
+	return 0;
+}
+
+
 int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			       int ht_enabled, int chan_offset, int chan_width,
 			       int cf1, int cf2, u16 radar_bitmap,
 			       int chan_width_device, int cf_device)
 {
-	u16 radar_bit_pattern, radar_bitmap_oper = 0;
+	int ret;
 	u16 cur_punct_bits = iface->conf->punct_bitmap;
+	u16 radar_bitmap_oper;
 	bool device_params_present;
+	bool is_dfs_puncture_en = iface->conf->use_ru_puncture_dfs;
 
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_RADAR_DETECTED
 		"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d radar_bitmap:%d"
@@ -3444,19 +4223,12 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 		freq, ht_enabled, chan_offset, chan_width, cf1, cf2, radar_bitmap,
 		chan_width_device, cf_device, iface->cac_started);
 
-	radar_bitmap_oper = radar_bitmap;
-	device_params_present = hostapd_is_device_params_present(chan_width,
-								 cf1,
-								 chan_width_device,
-								 cf_device);
-
-	if (device_params_present)
-		radar_bitmap_oper = hostapd_radar_bitmap_oper(chan_width, cf1,
+	radar_bitmap_oper = hostapd_dfs_get_radar_bitmap_oper(chan_width, cf1,
 							      radar_bitmap,
 							      chan_width_device,
-							      cf_device);
-
-	if (iface->conf->use_ru_puncture_dfs) {
+							      cf_device,
+							      &device_params_present);
+	if (is_dfs_puncture_en) {
 		wpa_printf(MSG_DEBUG,
 			   "DFS: Update puncture source for Radar puncture bitmap=0x%04x",
 			   radar_bitmap_oper | iface->radar_bit_pattern);
@@ -3466,7 +4238,6 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	}
 
 	iface->radar_detected = true;
-
 	/* Proceed only if DFS is not offloaded to the driver */
 	if (iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD)
 		return 0;
@@ -3486,22 +4257,13 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			return 0;
 	}
 
-	if (iface->conf->use_ru_puncture_dfs && radar_bitmap_oper) {
-		radar_bit_pattern = iface->radar_bit_pattern | iface->conf->punct_bitmap;
+	if (hostapd_dfs_radar_update_punct_bitmap(iface, radar_bitmap_oper))
+		return 0;
 
-		/* Radar detected already punctured sub channel*/
-		if (radar_bitmap_oper && !(radar_bitmap_oper & ~radar_bit_pattern))
-			return 0;
-
-		radar_bit_pattern |= radar_bitmap_oper;
-		iface->conf->punct_bitmap = radar_bit_pattern;
-	}
-
-	 if (iface->conf->dfs_test_mode) {
+	 if (iface->conf->dfs_test_mode)
 		 set_dfs_state(iface, freq, ht_enabled, chan_offset,
 			       chan_width, cf1, cf2,
 			       HOSTAPD_CHAN_DFS_AVAILABLE, radar_bitmap);
-	 }
 
 	if (!hostapd_dfs_is_background_event(iface, freq)) {
 		/* Skip if reported radar event not overlapped our channels */
@@ -3520,62 +4282,15 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			hostapd_get_punct_bitmap(iface->bss[0]), radar_bitmap_oper);
 #endif
 
-	if (iface->conf->use_ru_puncture_dfs && hostapd_is_usable_punct_bitmap(iface)) {
-		iface->radar_bit_pattern = radar_bitmap_oper;
-		iface->conf->punct_bitmap = cur_punct_bits;
+	if (is_dfs_puncture_en) {
+		if (hostapd_is_usable_punct_bitmap(iface))
+			return hostapd_dfs_radar_handle_puncturing(iface, freq,
+								   chan_width,
+								   radar_bitmap_oper,
+								   cur_punct_bits);
 
-		if (hostapd_csa_in_progress(iface)) {
-			wpa_printf(MSG_DEBUG,
-				   "DFS: radar detected during CSA, deferring puncture channel switch");
-			return 0;
-		}
-
-		u8 oper_centr_freq_seg0_idx = iface->conf->vht_oper_centr_freq_seg0_idx;
-		u8 oper_centr_freq_seg1_idx = iface->conf->vht_oper_centr_freq_seg1_idx;
-
-		chan_width = convert_to_oper_chan_width(chan_width);
-
-		hostapd_get_oper_center_freq_seg_extn(iface->conf,
-						      &oper_centr_freq_seg0_idx,
-						      &oper_centr_freq_seg1_idx,
-						      NULL);
-
-		if (iface->cac_started) {
-
-			wpa_printf(MSG_DEBUG, "radar detected during cac,"
-				   "it restarted with valid puncturing bitmap :%d",
-				   iface->conf->punct_bitmap |
-				   iface->radar_bit_pattern);
-
-			iface->cac_started = 0;
-#ifdef CONFIG_QCN_EXTN
-			iface->iface_extn.cac_abort = 0;
-#endif
-			return hostapd_start_dfs_cac(iface, iface->conf->hw_mode,
-						     iface->freq, iface->conf->channel,
-						     iface->conf->ieee80211n,
-						     iface->conf->ieee80211ac,
-						     iface->conf->ieee80211ax,
-						     iface->conf->ieee80211be,
-						     iface->conf->ieee80211bn,
-						     iface->conf->secondary_channel,
-						     hostapd_get_oper_chwidth(iface->conf),
-						     hostapd_get_oper_centr_freq_seg0_idx(iface->conf),
-						     hostapd_get_oper_centr_freq_seg1_idx(iface->conf),
-						     dfs_use_radar_background(iface),
-						     iface->conf->bandwidth_device,
-						     iface->conf->center_freq_device);
-		}
-
-		return hostapd_dfs_request_channel_switch(
-			iface, iface->conf->channel, freq,
-			iface->conf->secondary_channel, chan_width,
-			oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx,
-			hostapd_get_punct_bitmap(iface->bss[0]));
-	}
-
-	if (iface->conf->use_ru_puncture_dfs && !hostapd_is_usable_punct_bitmap(iface))
 		dfs_reset_punc_bitmap_src(iface, ALL_SUBCHANS_PUNC);
+	}
 
 	/* Switch channel with random channel selection for invalid puncturing pattern */
 	iface->radar_bit_pattern = 0;
@@ -3585,66 +4300,36 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	iface->radar_bit_pattern_extn = radar_bitmap_oper;
 #endif
 
-	if (hostapd_dfs_background_start_channel_switch(iface, freq)) {
-		if (iface->conf->dfs_bw_reduce_en) {
-			struct hostapd_channel_data *channel = NULL;
-			int secondary_channel;
-			u8 oper_centr_freq_seg0_idx = 0;
-			u8 oper_centr_freq_seg1_idx = 0;
+	if (!hostapd_dfs_background_start_channel_switch(iface, freq))
+		return 0;
 
-			channel = dfs_find_bw_reduced_channel(iface,
-							      &secondary_channel,
-							      &oper_centr_freq_seg0_idx,
-							      &oper_centr_freq_seg1_idx);
-			if (channel) {
-				wpa_printf(MSG_INFO,
-					   "DFS: Radar detected, BW reduction successful - Ch %d",
-					    channel->chan);
-				return hostapd_dfs_request_channel_switch(
-							iface, channel->chan,
-							channel->freq,
-							secondary_channel,
-							hostapd_get_oper_chwidth(iface->conf),
-							oper_centr_freq_seg0_idx,
-							oper_centr_freq_seg1_idx,
-							hostapd_get_punct_bitmap(iface->bss[0]));
-			}
-		}
+	if (hostapd_dfs_radar_reduce_bandwidth(iface, &ret))
+		return ret;
 
-		/*
-		 * radar_bitmap == 0 is reported for full-band radar events,
-		 * so treat this as radar affecting the current operating
-		 * bandwidth.
-		 */
-		if (!radar_bitmap && !iface->conf->disable_csa_dfs)
-			return hostapd_dfs_start_channel_switch(iface);
-
-		/* Radar detected on non-operating portion. No action needed. */
-		if (radar_bitmap && !radar_bitmap_oper)
+	/*
+	 * radar_bitmap == 0 is reported for full-band radar events,
+	 * so treat this as radar affecting the current operating
+	 * bandwidth.
+	 */
+	if (!radar_bitmap && !iface->conf->disable_csa_dfs) {
+		if (iface->skip_mesh_dfs)
 			return 0;
 
-		if (iface->conf->disable_csa_dfs) {
-			if (hostapd_csa_in_progress(iface)) {
-				wpa_printf(MSG_DEBUG,
-					   "DFS: radar detected, but CSA"
-					   "already in progress - skip timeout");
-				return 0;
-			}
-
-			if (!eloop_is_timeout_registered(hostapd_dfs_radar_handling_timeout,
-							 iface, NULL)) {
-				eloop_register_timeout(0, HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR,
-						       hostapd_dfs_radar_handling_timeout,
-						       iface, NULL);
-			}
-			return 0;
-		}
-
-		/* Radar detected while operating, switch the channel. */
 		return hostapd_dfs_start_channel_switch(iface);
 	}
 
-	return 0;
+	/* Radar detected on non-operating portion. No action needed. */
+	if (radar_bitmap && !radar_bitmap_oper)
+		return 0;
+
+	if (iface->conf->disable_csa_dfs)
+		return hostapd_dfs_radar_handle_disable_csa_dfs(iface);
+
+	if (iface->skip_mesh_dfs)
+		return 0;
+
+	/* Radar detected while operating, switch the channel. */
+	return hostapd_dfs_start_channel_switch(iface);
 }
 
 /*
@@ -4393,7 +5078,9 @@ int hostapd_is_dfs_overlap(struct hostapd_iface *iface, enum chan_width width,
 		half_width = 80;
 		break;
 	default:
+#ifdef CONFIG_QCN_EXTN
 		half_width = hostapd_get_dfs_half_chwidth_extn(width);
+#endif /* CONFIG_QCN_EXTN */
 		if (half_width)
 			break;
 

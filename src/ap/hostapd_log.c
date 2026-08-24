@@ -45,6 +45,11 @@ void hostapd_log(struct hostapd_data *hapd, const u8 *addr,
 
 		if (threshold >= 0 && level < threshold)
 			return;
+
+		/* Filter active: suppress non-matching peers; when not set, all pass. */
+		if (hapd->log_peer_filter_set && addr &&
+		    os_memcmp(hapd->log_peer_addr, addr, ETH_ALEN) != 0)
+			return;
 	}
 
 	va_start(ap, fmt);

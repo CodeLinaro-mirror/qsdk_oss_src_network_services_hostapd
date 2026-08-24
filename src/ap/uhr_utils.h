@@ -22,6 +22,8 @@
 /* Maximum DL Drain Duration (in TU) (NEW in V25) */
 #define UHR_DL_DRAIN_DURATION_TU_MAX 65535
 
+/* Default Tx power indication value until the actual value is retrieved */
+#define UHR_TX_PWR_IND_DEFAULT_FVAL 19
 
 /* Extract IEs from frame
  * Frame format: MAC header + Category + Action + Dialog Token + Type + IEs
@@ -36,7 +38,10 @@ enum uhr_smd_st_type {
 	UHR_SMD_ST_EXEC_RESP = 3,
 };
 
-#define UHR_ST_IAP_TIMEOUT_MS 1000000
+#define UHR_ST_IAP_TIMEOUT_USEC 5000000
+
+/* UHR ST preparation timeout fallback when smd_timeout is not configured (5 seconds) */
+#define UHR_ST_PREP_TIMEOUT_SEC 5
 
 struct uhr_smd_bss_transition_element {
 	u16 listen_interval;
@@ -93,11 +98,33 @@ void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
 
 /* ST Execute - Target AP Functions */
 void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
-                                const struct uhr_iap_frame *iap);
+                                const struct uhr_iap_frame *iap,
+                                u16 frame_len);
 
 /* ST Roam Cleanup - Target AP handler */
 void uhr_tgt_ap_handle_st_roam_cleanup(struct hostapd_data *hapd,
 					const struct uhr_iap_frame *iap);
+
+
+/* ST Execute via Target AP */
+int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd,
+				struct sta_info *sta,
+				const u8 *buf, size_t len);
+
+/* ST Ctx - Current AP handler (receives CTX REQUEST from target AP) */
+void uhr_cur_ap_handle_st_ctx_request(struct hostapd_data *hapd,
+				      const struct uhr_iap_frame *iap,
+				      u16 frame_len);
+
+/* ST Ctx - Target AP handler (receives CTX RESPONSE from current AP) */
+void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
+					const struct uhr_iap_frame *iap,
+					u16 frame_len);
+
+/* Current AP handler for ST EXEC VIA TGT DONE notification */
+void uhr_cur_ap_handle_st_exec_via_tgt_done(struct hostapd_data *hapd,
+					     const struct uhr_iap_frame *iap,
+					     u16 frame_len);
 
 
 /* Current AP Functions */
@@ -115,6 +142,16 @@ void uhr_tgt_start_st_prep_timer(struct hostapd_data *hapd,
                                 const u8 *sta_addr);
 void uhr_tgt_cancel_st_prep_timer(struct hostapd_data *hapd, const u8 *sta_addr);
 
+/* Basic Multi-Link IE max buffer size:
+ * Element ID (1) + Length (1) + Extension ID (1) + Multi-Link Control (2) +
+ * Common Info Length (1) + MLD MAC Address (ETH_ALEN) + Link ID Info (1) +
+ * BSS Parameters Change Count (1) + Medium Sync Delay Info (2) +
+ * EML Capabilities (2) + MLD Capabilities (2) + AP MLD ID (1) +
+ * Extended MLD Capabilities (2) + Enhanced Critical Update (1) +
+ * Age of BSS Load (1) + Future Extensions (8)
+ */
+#define UHR_BMLIE_BUF_LEN  (1 + 1 + 1 + 2 + 1 + ETH_ALEN + 1 + 1 + 2 + 2 + 2 + 1 + 2 + 1 + 1 + 8)
+
 size_t hostapd_uhr_eid_bmlie_from_rmlie(const struct wpabuf *mlbuf,
 						u8 link_id,
 						u8 *bmlie);
@@ -124,7 +161,7 @@ int uhr_parse_reconfig_mle(const struct ieee802_11_elems *elems,
 
 
 /* Timeout management functions */
-int uhr_cur_start_st_prep_timer(struct sta_info *sta, const u8 *ap_mld_addr);
+int uhr_cur_start_st_prep_timer(struct sta_info *sta, const u8 *ap_mld_addr, u32 seconds);
 void uhr_cancel_st_prep_timeout(struct sta_info *sta, const u8 *ap_mld_addr);
 
 /* AP list management functions */

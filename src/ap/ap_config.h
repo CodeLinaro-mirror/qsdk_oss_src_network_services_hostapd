@@ -20,13 +20,29 @@
 #include "wps/wps.h"
 #include "fst/fst.h"
 #include "vlan.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
-#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+#endif /* CONFIG_QCN_EXTN */
+#if defined(HOSTAPD_EXTERNAL_PLUGIN_TESTAPP) && defined(CONFIG_QCN_EXTN)
 #include "../../qcn_extns/hostapd_if_plugin.h"
-#endif
+#endif /* HOSTAPD_EXTERNAL_PLUGIN_TESTAPP && CONFIG_QCN_EXTN */
+#ifdef CONFIG_IEEE80211BN
+#include "mapc.h"
+#endif /* CONFIG_IEEE80211BN */
 
 #define EHT_MCS_NSS_MAP_UNSET 0xffffU
 #define EHT_MCS_NSS_SET 3
+
+#define HE_MCS_NSS_MAP_UNSET 0xffffffffU
+#define HE_MCS_NSS_SET 2
+
+#ifdef CONFIG_IEEE80211AX
+static inline bool hostapd_he_mcs_nss_set_is_set(const u32 mcs_nss_set[HE_MCS_NSS_SET])
+{
+	return mcs_nss_set[0] != HE_MCS_NSS_MAP_UNSET ||
+		mcs_nss_set[1] != HE_MCS_NSS_MAP_UNSET;
+}
+#endif /* CONFIG_IEEE80211AX */
 
 #ifdef CONFIG_IEEE80211BE
 static inline bool hostapd_eht_mcs_nss_set_is_set(const u16 mcs_nss_set[EHT_MCS_NSS_SET])
@@ -393,7 +409,13 @@ struct eht_phy_capabilities_info {
 };
 #endif /* CONFIG_IEEE80211BE */
 
-#define DRIVER_DEFINED		-1
+#ifdef CONFIG_IEEE80211BN
+struct uhr_phy_capabilities_info {
+	int uhr_2xldpc_tx;
+	int uhr_2xldpc_rx;
+};
+#endif /* CONFIG_IEEE80211BN */
+
 #define FEATURE_DISABLED	0
 #define FEATURE_ENABLED		1
 
@@ -417,6 +439,11 @@ struct uhr_params_update_config {
 	/* TODO: Add DPS, DUO, P-EDCA, DBE, AP PUO, ELR mode param structs */
 };
 
+/* RTT responder role bitmask bits for hostapd_bss_config::rtt_responder_role */
+#define HOSTAPD_RTT_RESPONDER_ROLE_11MC     BIT(0)
+#define HOSTAPD_RTT_RESPONDER_ROLE_11AZ_NTB BIT(1)
+#define HOSTAPD_RTT_RESPONDER_ROLE_11AZ_TB  BIT(2)
+
 /**
  * struct hostapd_bss_config - Per-BSS configuration
  */
@@ -427,7 +454,9 @@ struct hostapd_bss_config {
 	char snoop_iface[IFNAMSIZ + 1];
 	char vlan_bridge[IFNAMSIZ + 1];
 	char wds_bridge[IFNAMSIZ + 1];
+#ifdef CONFIG_QCN_EXTN
 	struct hostapd_bss_config_extn bss_extn;
+#endif /* CONFIG_QCN_EXTN */
 	int bridge_hairpin; /* hairpin_mode on bridge members */
 
 	enum hostapd_logger_level logger_syslog_level, logger_stdout_level;
@@ -467,7 +496,9 @@ struct hostapd_bss_config {
 	struct hostapd_ip_addr radius_das_client_addr;
 	u8 *radius_das_shared_secret;
 	size_t radius_das_shared_secret_len;
-
+#ifdef CONFIG_IEEE80211BN
+	struct mapc_bss_config *mapc_conf;
+#endif /* CONFIG_IEEE80211BN */
 	struct hostapd_ssid ssid;
 
 	int *supported_rates;
@@ -557,6 +588,13 @@ struct hostapd_bss_config {
 #define EHT_PHY_BSS_OVR_MCS14_DUP_IN_6GHZ BIT(24)
 	u32 eht_phy_capab_mask;
 #endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_IEEE80211BN
+	struct uhr_phy_capabilities_info uhr_phy_capab;
+#define UHR_PHY_BSS_OVR_2XLDPC_TX   BIT(0)
+#define UHR_PHY_BSS_OVR_2XLDPC_RX   BIT(1)
+	u32 uhr_phy_capab_mask;
+#endif /* CONFIG_IEEE80211BN */
 
 	enum macaddr_acl macaddr_acl;
 	struct mac_acl_entry *accept_mac;
@@ -786,6 +824,7 @@ struct hostapd_bss_config {
 
 	int disassoc_low_ack;
 	int skip_inactivity_poll;
+	bool skip_disconnect;
 
 #define TDLS_PROHIBIT BIT(0)
 #define TDLS_PROHIBIT_CHAN_SWITCH BIT(1)
@@ -795,6 +834,9 @@ struct hostapd_bss_config {
 	bool disable_11ax;
 	bool disable_11be;
 	bool disable_11bn;
+#ifdef CONFIG_IEEE80211BE
+	bool bss_require_eht;
+#endif /* CONFIG_IEEE80211BE */		 
 
 	/* IEEE 802.11v */
 	int time_advertisement;
@@ -991,6 +1033,12 @@ struct hostapd_bss_config {
 
 	int ftm_responder;
 	int ftm_initiator;
+
+	/* RTT responder role bitmask;
+	 * bit 0 (HOSTAPD_RTT_RESPONDER_ROLE_11MC): 11mc FTM responder,
+	 * bit 1 (HOSTAPD_RTT_RESPONDER_ROLE_11AZ_NTB): 11az NTB,
+	 * bit 2 (HOSTAPD_RTT_RESPONDER_ROLE_11AZ_TB): 11az TB */
+	int rtt_responder_role;
 
 #ifdef CONFIG_FILS
 	u8 fils_cache_id[FILS_CACHE_ID_LEN];
@@ -1243,9 +1291,22 @@ struct hostapd_bss_config {
 	u8 mld_addr[ETH_ALEN];
 
 	bool enable_aal;
+
+	/* MLD link-count limits */
 	u8 ml_max_rec_links;
+	/* Maximum accepted partner links per non-AP MLD STA (0 = unlimited) */
+	u8 mld_max_links_per_sta;
+	/* Minimum required partner links per non-AP MLD STA (0 = no minimum) */
+	u8 mld_min_links_per_sta;
+	/*
+	 * Link rejection mode when mld_max_links_per_sta cap is hit.
+	 * 0 = default: reject 2G first, keep 5G/6G (band-priority)
+	 * 1 = range:   never reject 2G, reject 5G first (qca-wifi MLO_LINK_REJ_RANGE)
+	 */
+	u8 mld_link_rej_mode;
 
 	bool single_link_emlsr;
+	bool disable_eml;
 
 	/* User-configured link ID; -1 means auto-allocate */
 	int mld_link_id;
@@ -1315,6 +1376,10 @@ struct hostapd_bss_config {
 	u16 vht_mcs_nss_set;
 #endif /* CONFIG_IEEE80211AC */
 	u32 ht_mcs_nss_set;
+#ifdef CONFIG_IEEE80211AX
+	u32 he_tx_mcs_nss_set[HE_MCS_NSS_SET];
+	u32 he_rx_mcs_nss_set[HE_MCS_NSS_SET];
+#endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
 	u16 eht_tx_mcs_nss_set[EHT_MCS_NSS_SET];
 	u16 eht_rx_mcs_nss_set[EHT_MCS_NSS_SET];
@@ -1365,16 +1430,15 @@ struct hostapd_bss_config {
 	 */
 	int rssi_deauth_grace_samples;
 
+#ifdef CONFIG_IEEE80211BN
 	/**
 	 * dps_assist - DPS Assist Support
 	 *
-	 * This is an override for per-BSS support for DPS Assist for AP.
-	 * If set to -1, fallback to driver support. If driver support is set,
+	 * Per-BSS support for DPS Assist for AP. If driver support is set,
 	 * 0 and 1 are used to enable and disable support.
 	 */
 	int dps_assist;
 
-#ifdef CONFIG_IEEE80211BN
 	/**
 	 * uhr_params_update - UHR params update configuration
 	 *
@@ -1428,6 +1492,7 @@ struct hostapd_bss_config {
 	unsigned int pmksa_caching_privacy:1;
 	unsigned int eap_using_authentication_frames:1;
 #endif /* CONFIG_ENC_ASSOC  */
+	unsigned int report_connection_failures:1;
 };
 
 /**
@@ -1465,7 +1530,9 @@ struct hostapd_config {
 	struct hostapd_bss_config **bss, *last_bss;
 	size_t num_bss;
 
+#ifdef CONFIG_QCN_EXTN
 	struct hostapd_config_extn conf_extn;
+#endif /* CONFIG_QCN_EXTN */
 	u16 beacon_int;
 	int rts_threshold;
 	int fragm_threshold;
@@ -1707,6 +1774,7 @@ struct hostapd_config {
 	u8 punct_acs_threshold;
 	u8 eht_default_pe_duration;
 	u8 eht_bw320_offset;
+	bool require_eht;
 #endif /* CONFIG_IEEE80211BE */
 
 	int ieee80211bn;
@@ -1777,9 +1845,68 @@ struct hostapd_config {
 	bool npca_enable;
 	u8 npca_primary_channel;
 	u16 npca_punct_bitmap;
-	u8 npca_primary_chan_offset;
 #endif /* CONFIG_IEEE80211BN */
+
+#ifdef CONFIG_MQTT
+	/*
+	 * Global MQTT settings — one connection per hostapd instance.
+	 * Set in the interface config block (before any bss= line).
+	 *
+	 * mqtt_enabled=1          enable MQTT on startup
+	 * mqtt_broker_host=<h>    broker hostname or IP (default: localhost)
+	 * mqtt_broker_port=<p>    broker TCP port (default: 1883)
+	 */
+	int   mqtt_enabled;
+	char *mqtt_broker_host;
+	int   mqtt_broker_port;
+#endif /* CONFIG_MQTT */
+	/* intermediate non-DFS channel to be used to boot-up quickly */
+	int intercac_chan;
+	int intercac_chwidth;
 };
+
+
+#ifdef CONFIG_IEEE80211BN
+/* NPCA is channel-specific; call on every channel change so a stale
+ * primary channel/puncture bitmap from the old channel is never
+ * advertised. The AP may re-enable NPCA later via a UHR Parameters
+ * Update ECU on the new channel.
+ */
+static inline void hostapd_disable_npca(struct hostapd_config *conf)
+{
+	conf->npca_enable = false;
+	conf->npca_primary_channel = 0;
+	conf->npca_punct_bitmap = 0;
+}
+
+/* struct hostapd_npca_state - snapshot of conf's NPCA fields
+ *
+ * Used to temporarily disable NPCA (e.g. while building a beacon for
+ * a channel that has not actually been switched to yet) and restore
+ * the prior state afterwards.
+ */
+struct hostapd_npca_state {
+	bool npca_enable;
+	u8 npca_primary_channel;
+	u16 npca_punct_bitmap;
+};
+
+static inline void hostapd_save_npca(struct hostapd_config *conf,
+				     struct hostapd_npca_state *state)
+{
+	state->npca_enable = conf->npca_enable;
+	state->npca_primary_channel = conf->npca_primary_channel;
+	state->npca_punct_bitmap = conf->npca_punct_bitmap;
+}
+
+static inline void hostapd_restore_npca(struct hostapd_config *conf,
+					const struct hostapd_npca_state *state)
+{
+	conf->npca_enable = state->npca_enable;
+	conf->npca_primary_channel = state->npca_primary_channel;
+	conf->npca_punct_bitmap = state->npca_punct_bitmap;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 
 static inline enum oper_chan_width
@@ -1842,9 +1969,11 @@ hostapd_set_oper_centr_freq_seg0_idx(struct hostapd_config *conf,
 		oper_centr_freq_seg0_idx +=
 			conf->channel > oper_centr_freq_seg0_idx ? 16 : -16;
 
+#ifdef CONFIG_QCN_EXTN
 	oper_centr_freq_seg0_idx =
 		hostapd_set_legacy_oper_centr_freq_seg0_extn(
 			conf, oper_centr_freq_seg0_idx);
+#endif /* CONFIG_QCN_EXTN */
 
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_IEEE80211AX
@@ -1924,6 +2053,9 @@ hostapd_set_and_check_bw320_offset(struct hostapd_config *conf,
 int hostapd_mac_comp(const void *a, const void *b);
 struct hostapd_config * hostapd_config_defaults(void);
 void hostapd_config_defaults_bss(struct hostapd_bss_config *bss);
+#ifdef CONFIG_IEEE80211BN
+int hostapd_mapc_config_defaults_bss(struct hostapd_bss_config *bss);
+#endif /* CONFIG_IEEE80211BN */
 void hostapd_config_free_radius_attr(struct hostapd_radius_attr *attr);
 void hostapd_config_free_eap_user(struct hostapd_eap_user *user);
 void hostapd_config_free_eap_users(struct hostapd_eap_user *user);
@@ -1947,6 +2079,7 @@ struct hostapd_radius_attr *
 hostapd_config_get_radius_attr(struct hostapd_radius_attr *attr, u8 type);
 struct hostapd_radius_attr * hostapd_parse_radius_attr(const char *value);
 int hostapd_config_check(struct hostapd_config *conf, int full_config);
+int hostapd_config_check_npca_config(struct hostapd_config *conf);
 void hostapd_set_security_params(struct hostapd_bss_config *bss,
 				 int full_config);
 int hostapd_sae_pw_id_in_use(struct hostapd_bss_config *conf);

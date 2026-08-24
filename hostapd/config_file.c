@@ -27,9 +27,9 @@
 #include "config_file.h"
 #include "ap/uhr_utils.h"
 
-#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+#if defined(HOSTAPD_EXTERNAL_PLUGIN_TESTAPP) && defined(CONFIG_QCN_EXTN)
 #include "../qcn_extns/hostapd_if_plugin.h"
-#endif
+#endif /* HOSTAPD_EXTERNAL_PLUGIN_TESTAPP && CONFIG_QCN_EXTN */
 
 #ifndef CONFIG_NO_VLAN
 static int hostapd_config_read_vlan_file(struct hostapd_bss_config *bss,
@@ -793,10 +793,35 @@ static int hostapd_parse_eht_mcs_nss_set(const char *pos,
 		}
 	}
 	os_memcpy(mcs_nss_set, tmp, sizeof(tmp));
+
 	return 0;
 }
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211AX
+static int hostapd_parse_he_mcs_nss_set(const char *pos,
+					 u32 mcs_nss_set[HE_MCS_NSS_SET],
+					 const char *config_name)
+{
+	u32 tmp[HE_MCS_NSS_SET];
+	int i;
+
+	if (sscanf(pos, "%x %x", &tmp[0], &tmp[1]) != 2) {
+		wpa_printf(MSG_ERROR, "%s: expected 2 hex values", config_name);
+		return -1;
+	}
+	for (i = 0; i < HE_MCS_NSS_SET; i++) {
+		if (tmp[i] != HE_MCS_NSS_MAP_UNSET && tmp[i] > 0xffff) {
+			wpa_printf(MSG_ERROR,
+				   "%s: slot %d value 0x%x out of range (use 0x0000-0xffff or 0xffffffff)",
+				   config_name, i, tmp[i]);
+			return -1;
+		}
+	}
+	os_memcpy(mcs_nss_set, tmp, sizeof(tmp));
+	return 0;
+}
+#endif /* CONFIG_IEEE80211AX */
 
 static int hostapd_parse_intlist(int **int_list, char *val)
 {
@@ -906,6 +931,17 @@ static int hostapd_config_bss(struct hostapd_config *conf, const char *ifname)
 		os_free(bss);
 		return -1;
 	}
+
+#ifdef CONFIG_IEEE80211BN
+	hostapd_mapc_config_defaults_bss(bss);
+	if (!bss->mapc_conf) {
+		wpa_printf(MSG_ERROR, "Failed to allocate mapc_conf for "
+			   "multi-BSS entry");
+		os_free(bss->radius);
+		os_free(bss);
+		return -1;
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 	conf->bss[conf->num_bss++] = bss;
 	conf->last_bss = bss;
@@ -2399,6 +2435,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->ap_max_inactivity = atoi(pos);
 	} else if (os_strcmp(buf, "skip_inactivity_poll") == 0) {
 		bss->skip_inactivity_poll = atoi(pos);
+	} else if (os_strcmp(buf, "skip_disconnect") == 0) {
+		bss->skip_disconnect = atoi(pos);
 	} else if (os_strcmp(buf, "bss_max_idle") == 0) {
 		int val = atoi(pos);
 
@@ -3361,6 +3399,19 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->acs_exclude_6ghz_non_psc = atoi(pos);
 	} else if (os_strcmp(buf, "enable_background_radar") == 0) {
 		conf->enable_background_radar = atoi(pos);
+	} else if (os_strcmp(buf, "interCACChan") == 0) {
+		int val = atoi(pos);
+
+		if (val && (!conf->bgcac_en ||
+			    !conf->enable_background_radar)) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: intercac_chan requires bgcac_en=1 and enable_background_radar=1",
+				   line);
+			return 1;
+		}
+
+		conf->intercac_chan = val;
+		conf->intercac_chwidth = CONF_OPER_CHWIDTH_80MHZ;
 	} else if (os_strcmp(buf, "bgcac_en") == 0) {
 		conf->bgcac_en = atoi(pos);
 		/* bgcac_en=1 also implies enable_background_radar */
@@ -3687,6 +3738,181 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 #endif /* CONFIG_QCN_EXTN */
 	} else if (os_strcmp(buf, "use_driver_iface_addr") == 0) {
 		conf->use_driver_iface_addr = atoi(pos);
+#ifdef CONFIG_IEEE80211BN
+	} else if (os_strcmp(buf, "mapc_cotdma_enable") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_cotdma_enable", line);
+			return 1;
+		}
+		int v = atoi(pos);
+
+		if (v < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_cotdma_enable must be 0 or 1", line);
+			return 1;
+		}
+		bss->mapc_conf->mapc_cotdma_enable = v;
+	} else if (os_strcmp(buf, "mapc_disc_req_interval_sec") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_disc_req_interval_sec", line);
+			return 1;
+		}
+		int v = atoi(pos);
+
+		if (v < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_disc_req_interval_sec must be non-negative", line);
+			return 1;
+		}
+		bss->mapc_conf->mapc_disc_req_interval_sec = (unsigned int) v;
+	} else if (os_strcmp(buf, "mapc_discovery_mode") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_discovery_mode", line);
+			return 1;
+		}
+		int v = atoi(pos);
+
+		if (v < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_discovery_mode must be non-negative", line);
+			return 1;
+		}
+		bss->mapc_conf->discovery_mode = v;
+	} else if (os_strcmp(buf, "mapc_negotiation_mode") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_negotiation_mode", line);
+			return 1;
+		}
+		int v = atoi(pos);
+
+		if (v < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_negotiation_mode must be non-negative", line);
+			return 1;
+		}
+		bss->mapc_conf->negotiation_mode = v;
+	} else if (os_strcmp(buf, "mapc_max_co_ap_peer") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_max_co_ap_peer", line);
+			return 1;
+		}
+		{
+			int v = atoi(pos);
+			if (v < 0 || v > MAPC_MAX_CO_AP_PEER) {
+				wpa_printf(MSG_ERROR,
+					   "Line %d: mapc_max_co_ap_peer out of range [0..%d]",
+					   line, MAPC_MAX_CO_AP_PEER);
+				return 1;
+			}
+			bss->mapc_conf->max_mapc_co_ap_peer = v;
+		}
+	} else if (os_strcmp(buf, "mapc_max_discovered_ap") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_max_discovered_ap", line);
+			return 1;
+		}
+		{
+			int v = atoi(pos);
+			if (v < 0 || v > MAPC_MAX_CO_AP_DISCOVERED_PEER) {
+				wpa_printf(MSG_ERROR,
+					   "Line %d: mapc_max_discovered_ap out of range [0..%d]",
+					   line, MAPC_MAX_CO_AP_DISCOVERED_PEER);
+				return 1;
+			}
+			bss->mapc_conf->max_mapc_discovered_ap_peer = v;
+		}
+	} else if (os_strcmp(buf, "mapc_max_ctdma_peers") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_max_ctdma_peers", line);
+			return 1;
+		}
+		{
+			int v = atoi(pos);
+			if (v < 0 || v > MAPC_MAX_COTDMA_PEER) {
+				wpa_printf(MSG_ERROR,
+					   "Line %d: mapc_max_ctdma_peers out of range [0..%d]"
+					   " (0 = Co-TDMA disabled)",
+					   line, MAPC_MAX_COTDMA_PEER);
+				return 1;
+			}
+			bss->mapc_conf->max_mapc_ctdma_peer = (u8)v;
+		}
+	} else if (os_strcmp(buf, "mapc_discovery_req_timeout") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_discovery_req_timeout", line);
+			return 1;
+		}
+		int v = atoi(pos);
+
+		if (v < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_discovery_req_timeout must be non-negative", line);
+			return 1;
+		}
+		bss->mapc_conf->discovery_req_timeout = (unsigned int) v;
+	} else if (os_strcmp(buf, "mapc_negotiation_req_timeout") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_negotiation_req_timeout", line);
+			return 1;
+		}
+		int v = atoi(pos);
+
+		if (v < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_negotiation_req_timeout must be non-negative", line);
+			return 1;
+		}
+		bss->mapc_conf->negotiation_req_timeout = (unsigned int) v;
+	} else if (os_strcmp(buf, "max_mapc_ap_inactivity") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for max_mapc_ap_inactivity", line);
+			return 1;
+		}
+		int v = atoi(pos);
+
+		if (v < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: max_mapc_ap_inactivity must be non-negative", line);
+			return 1;
+		}
+		bss->mapc_conf->max_mapc_ap_inactivity = (unsigned int) v;
+	} else if (os_strcmp(buf, "mapc_valid_coap_list") == 0) {
+		/* Comma-separated list of MAC addresses, e.g.
+		 * mapc_valid_coap_list=aa:bb:cc:dd:ee:ff,11:22:33:44:55:66 */
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_valid_coap_list", line);
+			return 1;
+		}
+		bss->mapc_conf->valid_ap_count = 0;
+		{
+			char *list_copy = os_strdup(pos);
+			char *tok, *saveptr = NULL;
+			if (!list_copy) {
+				wpa_printf(MSG_ERROR, "Line %d: OOM parsing mapc_valid_coap_list", line);
+				return 1;
+			}
+			tok = strtok_r(list_copy, ",", &saveptr);
+			while (tok && bss->mapc_conf->valid_ap_count < MAPC_MAX_VALID_AP_LIST) {
+				/* trim leading spaces */
+				while (*tok == ' ') tok++;
+				if (hwaddr_aton(tok,
+					bss->mapc_conf->valid_coap_list[bss->mapc_conf->valid_ap_count]) == 0) {
+					bss->mapc_conf->valid_ap_count++;
+				} else {
+					wpa_printf(MSG_ERROR,
+						   "Line %d: invalid MAC in mapc_valid_coap_list: '%s'",
+						   line, tok);
+				}
+				tok = strtok_r(NULL, ",", &saveptr);
+			}
+			os_free(list_copy);
+		}
+	} else if (os_strcmp(buf, "mapc_cotdma_enable_discovery_scheme_profile") == 0) {
+		if (!bss->mapc_conf) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_conf not allocated for mapc_cotdma_enable_discovery_scheme_profile", line);
+			return 1;
+		}
+		int v = atoi(pos);
+
+		if (v < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: mapc_cotdma_enable_discovery_scheme_profile must be 0 or 1", line);
+			return 1;
+		}
+		bss->mapc_conf->enable_disc_cotdma_scheme_profile = v;
+#endif /* CONFIG_IEEE80211BN */
 	} else if (os_strcmp(buf, "ieee80211w") == 0) {
 		bss->ieee80211w = atoi(pos);
 	} else if (os_strcmp(buf, "rsn_override_mfp") == 0) {
@@ -4343,6 +4569,22 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->group_size = group_size;
 	} else if (os_strcmp(buf, "mbssid_max") == 0) {
 		conf->mbssid_max = atoi(pos);
+	} else if (os_strcmp(buf, "he_tx_mcs_nss_set") == 0) {
+		if (hostapd_parse_he_mcs_nss_set(pos, bss->he_tx_mcs_nss_set,
+						 "he_tx_mcs_nss_set")) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid he_tx_mcs_nss_set '%s'",
+				   line, pos);
+			return 1;
+		}
+	} else if (os_strcmp(buf, "he_rx_mcs_nss_set") == 0) {
+		if (hostapd_parse_he_mcs_nss_set(pos, bss->he_rx_mcs_nss_set,
+						 "he_rx_mcs_nss_set")) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid he_rx_mcs_nss_set '%s'",
+				   line, pos);
+			return 1;
+		}
 #endif /* CONFIG_IEEE80211AX */
 	} else if (os_strcmp(buf, "max_listen_interval") == 0) {
 		bss->max_listen_interval = atoi(pos);
@@ -5176,6 +5418,14 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		if (atoi(pos))
 			bss->radio_measurements[0] |=
 				WLAN_RRM_CAPS_NEIGHBOR_REPORT;
+	} else if (os_strcmp(buf, "rrm_channel_load") == 0) {
+		if (atoi(pos))
+			bss->radio_measurements[0] |=
+				WLAN_RRM_CAPS_CHANNEL_LOAD;
+	} else if (os_strcmp(buf, "rrm_noise_histogram") == 0) {
+		if (atoi(pos))
+			bss->radio_measurements[1] |=
+				WLAN_RRM_CAPS_NOISE_HISTOGRAM;
 	} else if (os_strcmp(buf, "rrm_beacon_report") == 0) {
 		if (atoi(pos))
 			bss->radio_measurements[0] |=
@@ -5192,6 +5442,18 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->stationary_ap = atoi(pos);
 	} else if (os_strcmp(buf, "ftm_responder") == 0) {
 		bss->ftm_responder = atoi(pos);
+	} else if (os_strcmp(buf, "rtt_responder_role") == 0) {
+		char *endp;
+		long int role;
+
+		role = strtol(pos, &endp, 0);
+		if (*endp || role < 0 || role > 0x7) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid rtt_responder_role '%s'",
+				   line, pos);
+			return 1;
+		}
+		bss->rtt_responder_role = (int)role;
 	} else if (os_strcmp(buf, "ftm_initiator") == 0) {
 		bss->ftm_initiator = atoi(pos);
 #ifdef CONFIG_FILS
@@ -5226,7 +5488,16 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "fils_discovery_min_interval") == 0) {
 		bss->fils_discovery_min_int = atoi(pos);
 	} else if (os_strcmp(buf, "fils_discovery_max_interval") == 0) {
-		bss->fils_discovery_max_int = atoi(pos);
+		int val = atoi(pos);
+
+		if (val < 0 || val > FD_MAX_INTERVAL_6GHZ) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid fils_discovery_max_interval value",
+				   line);
+			return 1;
+		}
+
+		bss->fils_discovery_max_int = val;
 #endif /* CONFIG_FILS */
 	} else if (os_strcmp(buf, "force_disable_in_band_discovery") == 0) {
 		bss->force_disable_in_band_discovery = atoi(pos);
@@ -5552,6 +5823,15 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 
 		conf->atf_strict_sched = val;
 #endif /* CONFIG_ATF_OFFLOAD */
+#ifdef CONFIG_MQTT
+	} else if (os_strcmp(buf, "mqtt_enabled") == 0) {
+		conf->mqtt_enabled = atoi(pos);
+	} else if (os_strcmp(buf, "mqtt_broker_host") == 0) {
+		os_free(conf->mqtt_broker_host);
+		conf->mqtt_broker_host = os_strdup(pos);
+	} else if (os_strcmp(buf, "mqtt_broker_port") == 0) {
+		conf->mqtt_broker_port = atoi(pos);
+#endif /* CONFIG_MQTT */
 #ifdef CONFIG_MACSEC
 	} else if (os_strcmp(buf, "macsec_policy") == 0) {
 		int macsec_policy = atoi(pos);
@@ -5760,6 +6040,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 #ifdef CONFIG_IEEE80211BE
 	} else if (os_strcmp(buf, "ieee80211be") == 0) {
 		conf->ieee80211be = atoi(pos);
+	} else if (os_strcmp(buf, "require_eht") == 0) {
+		conf->require_eht = atoi(pos);
+	} else if (os_strcmp(buf, "bss_require_eht") == 0) {
+		bss->bss_require_eht = atoi(pos);
 	} else if (os_strcmp(buf, "eht_tx_mcs_nss_set") == 0) {
 		if (hostapd_parse_eht_mcs_nss_set(pos, bss->eht_tx_mcs_nss_set,
 						  "eht_tx_mcs_nss_set")) {
@@ -5820,6 +6104,38 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->punct_acs_threshold = val;
 	} else if (os_strcmp(buf, "mld_ap") == 0) {
 		bss->mld_ap = !!atoi(pos);
+	} else if (os_strcmp(buf, "mld_max_links_per_sta") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > MAX_NUM_MLD_LINKS) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid mld_max_links_per_sta %d (expected 0..%d)",
+				   line, val, MAX_NUM_MLD_LINKS);
+			return 1;
+		}
+		bss->mld_max_links_per_sta = val;
+		wpa_printf(MSG_DEBUG, "MLD: mld_max_links_per_sta=%d", val);
+	} else if (os_strcmp(buf, "mld_link_rej_mode") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid mld_link_rej_mode %d (expected 0 or 1)",
+				   line, val);
+			return 1;
+		}
+		bss->mld_link_rej_mode = val;
+		wpa_printf(MSG_DEBUG, "MLD: mld_link_rej_mode=%d", val);
+	} else if (os_strcmp(buf, "mld_min_links_per_sta") == 0) {
+		int val = atoi(pos);
+
+		if (val < 0 || val > MAX_NUM_MLD_LINKS) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid mld_min_links_per_sta %d (expected 0..%d)",
+				   line, val, MAX_NUM_MLD_LINKS);
+			return 1;
+		}
+		bss->mld_min_links_per_sta = val;
+		wpa_printf(MSG_DEBUG, "MLD: mld_min_links_per_sta=%d", val);
 	} else if (os_strcmp(buf, "mld_addr") == 0) {
 		if (hwaddr_aton(pos, bss->mld_addr)) {
 			wpa_printf(MSG_ERROR, "Line %d: Invalid mld_addr",
@@ -6190,6 +6506,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->ttlm_enable = atoi(pos);
 	} else if (os_strcmp(buf, "single_link_emlsr") == 0) {
 		bss->single_link_emlsr = atoi(pos);
+	} else if (os_strcmp(buf, "disable_eml") == 0) {
+		bss->disable_eml = atoi(pos);
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
@@ -6200,10 +6518,28 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		val = atoi(pos);
 		if (val < FEATURE_DISABLED || val > FEATURE_ENABLED) {
 			wpa_printf(MSG_ERROR,
-				   "Invallid value for dps_assist");
+				   "Invalid value for dps_assist");
 			return 1;
 		}
 		bss->dps_assist = val;
+	} else if (os_strcmp(buf, "bss_uhr_2xldpc_tx") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid value for bss_uhr_2xldpc_tx");
+			return 1;
+		}
+		bss->uhr_phy_capab.uhr_2xldpc_tx = val;
+		bss->uhr_phy_capab_mask |= UHR_PHY_BSS_OVR_2XLDPC_TX;
+	} else if (os_strcmp(buf, "bss_uhr_2xldpc_rx") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Invalid value for bss_uhr_2xldpc_rx");
+			return 1;
+		}
+		bss->uhr_phy_capab.uhr_2xldpc_rx = val;
+		bss->uhr_phy_capab_mask |= UHR_PHY_BSS_OVR_2XLDPC_RX;
 	} else if (os_strcmp(buf, "smd_neighbor_update") == 0) {
 		bss->smd_neighbor_update_enabled = atoi(pos);
 	} else if (os_strcmp(buf, "smd_neighbor_expiry_time") == 0) {
@@ -6407,14 +6743,18 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		if (get_u16(pos, line, &conf->npca_punct_bitmap))
 			return 1;
 #endif /* CONFIG_IEEE80211BN */
+	} else if (os_strcmp(buf, "report_connection_failures") == 0) {
+		bss->report_connection_failures = !!atoi(pos);
 	} else {
+#ifdef CONFIG_QCN_EXTN
 		if (!hostapd_config_fill_extn(conf, bss, buf, pos, line))
 			return 0;
+#endif /* CONFIG_QCN_EXTN */
 
-#ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
+#if defined(HOSTAPD_EXTERNAL_PLUGIN_TESTAPP) && defined(CONFIG_QCN_EXTN)
 		if (!hostapd_config_fill_plugin(bss, buf, pos))
 			return 0;
-#endif
+#endif /* HOSTAPD_EXTERNAL_PLUGIN_TESTAPP && CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_ERROR,
 			   "Line %d: unknown configuration item '%s'",

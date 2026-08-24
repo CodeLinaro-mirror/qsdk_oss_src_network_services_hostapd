@@ -50,9 +50,15 @@
 #include "interference.h"
 #include "ttlm.h"
 #include "robust_av.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #include "ap/uhr_utils.h"
 #include "uhr_neighbor_update.h"
+
+#ifdef CONFIG_IEEE80211BN
+#include "mapc.h"
+#endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_FILS
 void hostapd_notify_assoc_fils_finish(struct hostapd_data *hapd,
@@ -1673,6 +1679,9 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 	hapd->iconf->ch_switch_he_config = 0;
 	hapd->iconf->ch_switch_eht_config = 0;
 	hapd->iconf->ch_switch_uhr_config = 0;
+#ifdef CONFIG_IEEE80211BN
+	hostapd_disable_npca(hapd->iconf);
+#endif /* CONFIG_IEEE80211BN */
 
 	if (width == CHAN_WIDTH_40 || width == CHAN_WIDTH_80 ||
 	    width == CHAN_WIDTH_80P80 || width == CHAN_WIDTH_160 ||
@@ -1719,8 +1728,20 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 	update_chan_params(hapd, cf1, cf2, hostapd_get_chan_width_from_oper_chan_width(hapd->iconf));
 #endif
 
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->conf->mapc_conf)
+		mapc_handle_primary_channel_change(hapd);
+#endif /* CONFIG_IEEE80211BN */
+
 	hostapd_chan_switch_complete(hapd, power_mode_6ghz, width,
 				     width_device, is_dfs0, is_dfs);
+
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->conf->mapc_conf) {
+		if (!mapc_handle_primary_channel_change(hapd))
+			mapc_handle_negotiation_update(hapd, MAPC_SCHEME_CO_TDMA);
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_QCN_EXTN
 	hostapd_periodic_acs_schedule(hapd->iface);
@@ -2202,24 +2223,78 @@ get_link_hapd(struct hostapd_data *hapd, const u8 *ies, size_t len,
 }
 
 static struct hostapd_data *
-switch_link_scan(struct hostapd_data *hapd, u64 scan_cookie)
+switch_link_scan(struct hostapd_data *hapd, u64 scan_cookie,
+		 const union wpa_event_data *data)
 {
 #ifdef CONFIG_IEEE80211BE
-	if (hapd->conf->mld_ap && scan_cookie != 0) {
+	if (hapd->conf->mld_ap && hapd->iface->interfaces) {
 		unsigned int i;
 
-		for (i = 0; i < hapd->iface->interfaces->count; i++) {
-			struct hostapd_iface *h;
-			struct hostapd_data *h_hapd;
+		/* Primary: cookie-based match */
+		if (scan_cookie != 0) {
+			for (i = 0; i < hapd->iface->interfaces->count; i++) {
+				struct hostapd_iface *h;
+				struct hostapd_data *h_hapd;
 
-			h = hapd->iface->interfaces->iface[i];
-			h_hapd = h->bss[0];
-			if (!hostapd_is_ml_partner(hapd, h_hapd))
-				continue;
+				h = hapd->iface->interfaces->iface[i];
+				h_hapd = h->bss[0];
+				if (!hostapd_is_ml_partner(hapd, h_hapd))
+					continue;
 
-			if (h_hapd->scan_cookie == scan_cookie) {
-				h_hapd->scan_cookie = 0;
-				return h_hapd;
+				if (h_hapd->scan_cookie == scan_cookie) {
+					h_hapd->scan_cookie = 0;
+					return h_hapd;
+				}
+			}
+		}
+
+		/*
+		 * Fallback: frequency-based match.
+		 *
+		 * When the driver does not provide a scan cookie (cookie == 0)
+		 * or no partner matched the cookie, try to identify the link
+		 * that requested the scan by checking whether the first
+		 * reported scan frequency belongs to a partner link's hardware
+		 * mode channel list.
+		 *
+		 * This relies on the assumption that each MLD link scans a
+		 * disjoint set of frequencies (e.g., link A → 2.4 GHz,
+		 * link B → 5 GHz, link C → 6 GHz).
+		 */
+		if (data && data->scan_info.freqs &&
+		    data->scan_info.num_freqs > 0) {
+			int first_freq = data->scan_info.freqs[0];
+
+			for (i = 0; i < hapd->iface->interfaces->count; i++) {
+				struct hostapd_iface *h;
+				struct hostapd_data *h_hapd;
+				int j, k;
+
+				h = hapd->iface->interfaces->iface[i];
+				h_hapd = h->bss[0];
+				if (!hostapd_is_ml_partner(hapd, h_hapd))
+					continue;
+
+				for (j = 0; j < h_hapd->iface->num_hw_features;
+				     j++) {
+					struct hostapd_hw_modes *mode =
+						&h_hapd->iface->hw_features[j];
+
+					if (hostapd_hw_skip_mode(h_hapd->iface,
+								 mode))
+						continue;
+					for (k = 0; k < mode->num_channels;
+					     k++) {
+						if (mode->channels[k].freq ==
+						    first_freq) {
+							wpa_printf(MSG_DEBUG,
+								   "switch_link_scan: freq-based match link_id=%d freq=%d",
+								   h_hapd->mld_link_id,
+								   first_freq);
+							return h_hapd;
+						}
+					}
+				}
 			}
 		}
 	}
@@ -2338,13 +2413,59 @@ static int hostapd_mgmt_rx(struct hostapd_data *hapd, struct rx_mgmt *rx_mgmt)
 		u16 fc = le_to_host16(hdr->frame_control);
 
 		/*
-		 * Drop frames to unknown BSSIDs except for Beacon frames which
+		 * Drop frames to unknown BSSIDs except for Beacon & MAPC frames which
 		 * could be used to update neighbor information.
 		 */
 		if (WLAN_FC_GET_TYPE(fc) == WLAN_FC_TYPE_MGMT &&
-		    WLAN_FC_GET_STYPE(fc) == WLAN_FC_STYPE_BEACON)
-			hapd = iface->bss[0];
-		else
+		    (WLAN_FC_GET_STYPE(fc) == WLAN_FC_STYPE_BEACON ||
+#ifdef CONFIG_IEEE80211BN
+		     (WLAN_FC_GET_STYPE(fc) == WLAN_FC_STYPE_ACTION &&
+		      hostapd_is_mapc_action((const struct ieee80211_mgmt *) rx_mgmt->frame,
+			                      rx_mgmt->frame_len))
+#else
+		     0
+#endif
+		     )) {
+			/*
+			 * For MAPC frames, route to the hapd whose own_addr
+			 * matches the DA (A1). This ensures the request/response
+			 * reaches the intended hapd/BSS.
+			 */
+			if (WLAN_FC_GET_STYPE(fc) == WLAN_FC_STYPE_ACTION) {
+				size_t i;
+
+				for (i = 0; i < iface->num_bss; i++) {
+					if (iface->bss[i] &&
+					    ether_addr_equal(hdr->addr1,
+							    iface->bss[i]->own_addr)) {
+						hapd = iface->bss[i];
+						break;
+					}
+				}
+			}
+			if (!hapd) {
+#ifdef CONFIG_IEEE80211BN
+				if (WLAN_FC_GET_STYPE(fc) == WLAN_FC_STYPE_ACTION &&
+				    is_broadcast_ether_addr(hdr->addr1)) {
+					size_t j;
+
+					for (j = 0; j < iface->num_bss; j++) {
+						struct hostapd_data *b = iface->bss[j];
+
+						if (b && b->conf &&
+						    b->conf->mapc_conf &&
+						    (b->conf->mapc_conf->mapc_capability_bitmap &
+						     MAPC_SCHEME_CAP_MASK)) {
+							hapd = b;
+							break;
+						}
+					}
+				}
+				if (!hapd)
+#endif /* CONFIG_IEEE80211BN */
+					hapd = iface->bss[0];
+			}
+		} else
 			return 0;
 	}
 
@@ -2582,6 +2703,7 @@ static void hostapd_single_channel_get_survey(struct hostapd_iface *iface,
 		iface->channel_utilization = dividend * 255 / divisor;
 		wpa_printf(MSG_DEBUG, "Channel Utilization: %d",
 			   iface->channel_utilization);
+		os_get_reltime(&iface->ch_util_update_time);
 	}
 	iface->last_channel_time = survey->channel_time;
 	iface->last_channel_time_busy = survey->channel_time_busy;
@@ -2664,6 +2786,7 @@ static void hostapd_event_dfs_radar_detected(struct hostapd_data *hapd,
     radar->is_dfs_event_on_curr_hw = true;
 }
 
+#ifdef CONFIG_QCN_EXTN
 static void hostapd_event_awgn_detected(struct hostapd_data *hapd,
 					 struct awgn_event *awgn_info)
 {
@@ -2676,6 +2799,7 @@ static void hostapd_event_afc_received(struct hostapd_data *hapd)
 {
 	hostapd_intf_afc_received(hapd->iface);
 }
+#endif /* CONFIG_QCN_EXTN */
 
 static void hostapd_event_dfs_pre_cac_expired(struct hostapd_data *hapd,
 					      struct dfs_event *radar)
@@ -3075,40 +3199,73 @@ static void hostapd_event_afc_update_complete(
 			   afc_rsp_info->serv_resp_code);
 		iface->is_afc_channel_change_pending = false;
 		iface->is_afc_repeater_power_sync_pending = false;
-		sync_result = hostapd_force_afc_non_sp_power_mode(iface);
-		if (sync_result == HOSTAPD_AFC_PWR_SYNC_UPDATED ||
-		    sync_result == HOSTAPD_AFC_PWR_SYNC_NOOP ||
-		    sync_result == HOSTAPD_AFC_PWR_SYNC_ERROR) {
+
+		if (!hostapd_drv_is_retail_afc_supported(iface->bss[0]))
+			return;
+
+		if (hostapd_iface_has_connected_backhaul_sta(iface)) {
 			/*
-			 * Non-SP fallback handled:
-			 * UPDATED - CSA to non-SP mode started
-			 * NOOP    - already in a valid non-SP mode, no change
-			 *           needed
-			 * ERROR   - power change deferred (e.g. CSA already in
-			 *           progress); will be retried on next event
+			 * Connected repeater: channel switch is unsafe while
+			 * the backhaul STA is active.  Try same-channel non-SP
+			 * fallback; disconnect backhaul if no mode is valid.
 			 */
+			sync_result = hostapd_force_afc_non_sp_power_mode(iface);
+			if (sync_result == HOSTAPD_AFC_PWR_SYNC_UPDATED ||
+			    sync_result == HOSTAPD_AFC_PWR_SYNC_NOOP ||
+			    sync_result == HOSTAPD_AFC_PWR_SYNC_DEFERRED)
+				return;
+
+			/* INVALID_CURRENT or ERROR: no valid fallback */
+			wpa_printf(MSG_ERROR,
+				   "AFC power update failed: fallback unavailable, disconnect backhaul STA iface=%s result=%d",
+				   iface->phy, sync_result);
+			if (hostapd_disconnect_backhaul_sta(iface))
+				wpa_printf(MSG_ERROR,
+					   "AFC power update failed: backhaul disconnect failed iface=%s",
+					   iface->phy);
 			return;
 		}
 
-		if (!hostapd_iface_has_connected_backhaul_sta(iface)) {
+		/*
+		 * Root AP path: mirror payload reset by gating on SP mode.
+		 * A non-SP root AP has no regulatory urgency — return.
+		 */
+		if (!he_reg_is_sp(iface->conf->he_6ghz_reg_pwr_type))
+			return;
+
+		if (iface->conf->enable_best_power_mode) {
 			/*
-			 * Standalone AP with no valid non-SP fallback.
-			 * Remain in current mode until the next AFC response
-			 * or regulatory update triggers a retry.
+			 * Root SP AP + BPM enabled: run channel-selection
+			 * recovery directly; do not attempt same-channel
+			 * fallback first.
 			 */
 			wpa_printf(MSG_INFO,
-				   "AFC power update failed: no fallback, standalone AP iface=%s result=%d",
-				   iface->phy, sync_result);
+				   "AFC power update failed: BPM channel recovery iface=%s",
+				   iface->phy);
+			iface->is_afc_channel_change_pending = true;
+			/* Wait for NL80211_WIPHY_REG_CHANGE to get updated channel list */
+			eloop_register_timeout(5, 0,
+					       afc_channel_change_timeout,
+					       iface, NULL);
 			return;
 		}
 
+		/* Root SP AP + BPM disabled: same-channel fallback then NO_IR */
+		sync_result = hostapd_force_afc_non_sp_power_mode(iface);
+		if (sync_result == HOSTAPD_AFC_PWR_SYNC_UPDATED ||
+		    sync_result == HOSTAPD_AFC_PWR_SYNC_NOOP)
+			return;
+
+		/*
+		 * DEFERRED, INVALID_CURRENT, or ERROR: no retry path exists
+		 * for root AP + BPM disabled. Clear the pending flag before
+		 * setting NO_IR to keep the repeater-pending invariant clean.
+		 */
+		iface->is_afc_repeater_power_sync_pending = false;
 		wpa_printf(MSG_ERROR,
-			   "AFC power update failed: fallback unavailable, disconnect backhaul STA iface=%s result=%d",
+			   "AFC power update failed: no valid non-SP fallback iface=%s result=%d",
 			   iface->phy, sync_result);
-		if (hostapd_disconnect_backhaul_sta(iface))
-			wpa_printf(MSG_ERROR,
-				   "AFC power update failed: backhaul disconnect failed iface=%s",
-				   iface->phy);
+		hostapd_set_no_ir_state(iface);
 		return;
 	}
 
@@ -3135,7 +3292,18 @@ static void hostapd_event_afc_update_complete(
 			hapd->driver->is_only_afc_power_fetch(hapd->drv_priv);
 
 		if (is_only_afc_power_fetch) {
-			hostapd_sync_current_afc_power_mode(iface, false);
+			enum hostapd_afc_power_sync_result power_sync_result =
+				hostapd_sync_current_afc_power_mode(iface, false);
+
+			/*
+			 * Result intentionally ignored: this path is advisory
+			 * (retail mode, power-fetch only). Log any non-NOOP
+			 * result for diagnosability.
+			 */
+			if (power_sync_result != HOSTAPD_AFC_PWR_SYNC_NOOP)
+				wpa_printf(MSG_DEBUG,
+					   "AFC power fetch sync result %d iface=%s",
+					   power_sync_result, iface->phy);
 			return;
 		}
 	}
@@ -3352,9 +3520,9 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 	 * A payload reset means AFC data is no longer valid. For a
 	 * connected repeater, do not trigger a channel change as that
 	 * would tear down the dual-channel state while the backhaul
-	 * STA is still active and cause a crash. Instead clear the
-	 * pending flags and disconnect the backhaul STA so the
-	 * repeater can re-associate and re-run AFC from a clean state.
+	 * STA is still active and cause a crash. Attempt same-channel
+	 * non-SP fallback first; disconnect the backhaul STA only if
+	 * no valid non-SP mode exists (INVALID_CURRENT or hard ERROR).
 	 */
 	if (hostapd_iface_has_connected_backhaul_sta(iface)) {
 		enum hostapd_afc_power_sync_result sync_result;
@@ -3366,18 +3534,16 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 		sync_result = hostapd_force_afc_non_sp_power_mode(iface);
 		if (sync_result == HOSTAPD_AFC_PWR_SYNC_UPDATED ||
 		    sync_result == HOSTAPD_AFC_PWR_SYNC_NOOP ||
-		    sync_result == HOSTAPD_AFC_PWR_SYNC_ERROR) {
+		    sync_result == HOSTAPD_AFC_PWR_SYNC_DEFERRED) {
 			/*
-			 * Non-SP fallback handled:
-			 * UPDATED - CSA to non-SP mode started
-			 * NOOP    - already in a valid non-SP mode, no change
-			 *           needed
-			 * ERROR   - power change deferred (e.g. CSA already in
-			 *           progress); will be retried on next event
+			 * UPDATED  - CSA to non-SP mode started
+			 * NOOP     - already in a valid non-SP mode
+			 * DEFERRED - transient (CSA/pending switch); retry armed
 			 */
 			return;
 		}
 
+		/* INVALID_CURRENT or ERROR: no valid fallback */
 		wpa_printf(MSG_ERROR,
 			   "AFC payload reset: fallback unavailable, disconnect backhaul STA iface=%s result=%d",
 			   iface->phy, sync_result);
@@ -3391,26 +3557,43 @@ hostapd_event_afc_payload_reset(struct hostapd_data *hapd,
 	if (he_reg_is_sp(iface->conf->he_6ghz_reg_pwr_type)) {
 		enum hostapd_afc_power_sync_result sync_result;
 
+		if (iface->conf->enable_best_power_mode) {
+			/*
+			 * BPM enabled: run channel-selection recovery directly.
+			 * Do not do same-channel fallback first; let the BPM
+			 * path pick the best available channel and mode.
+			 */
+			wpa_printf(MSG_INFO,
+				   "AFC payload reset: BPM channel recovery iface=%s",
+				   iface->phy);
+			iface->is_afc_channel_change_pending = true;
+			/* Wait for NL80211_WIPHY_REG_CHANGE to get updated channel list */
+			eloop_register_timeout(5, 0,
+					       afc_channel_change_timeout,
+					       iface, NULL);
+			return;
+		}
+
+		/* BPM disabled: try same-channel non-SP fallback */
 		wpa_printf(MSG_INFO,
-			   "AFC payload reset: fallback SP AP iface=%s",
+			   "AFC payload reset: BPM disabled, same-channel fallback iface=%s",
 			   iface->phy);
 		sync_result = hostapd_force_afc_non_sp_power_mode(iface);
 		if (sync_result == HOSTAPD_AFC_PWR_SYNC_UPDATED ||
 		    sync_result == HOSTAPD_AFC_PWR_SYNC_NOOP)
 			return;
-		wpa_printf(MSG_ERROR,
-			   "AFC payload reset: SP AP fallback unavailable iface=%s result=%d",
-			   iface->phy, sync_result);
-	}
 
-	if (iface->conf->enable_best_power_mode) {
-		iface->is_afc_channel_change_pending = true;
-		/* Wait for NL8011_WIPHY_REG_CHANGE event to get the updated channel list */
-		eloop_register_timeout(5, 0,
-				       afc_channel_change_timeout, iface, NULL);
-	} else {
+		/*
+		 * DEFERRED, INVALID_CURRENT, or ERROR: no retry path exists
+		 * for root AP + BPM disabled after CSA completes.
+		 * Clear the pending flag before setting NO_IR to keep the
+		 * repeater-pending invariant clean.
+		 */
+		iface->is_afc_repeater_power_sync_pending = false;
 		wpa_printf(MSG_ERROR,
-			   "Skip payload reset action for retail AFC use cases - BPM not enabled");
+			   "AFC payload reset: no valid non-SP fallback iface=%s result=%d",
+			   iface->phy, sync_result);
+		hostapd_set_no_ir_state(iface);
 	}
 }
 
@@ -3539,6 +3722,15 @@ static void hostapd_event_color_change(struct hostapd_data *hapd, bool success)
 			bss->cca_in_progress = 1;
 		} else {
 			hostapd_cleanup_cca_params(bss);
+#ifdef CONFIG_IEEE80211BN
+			/*
+			 * Trigger MAPC Co-TDMA Agreement Update so that
+			 * coordinating peers updated with new BSS color.
+			 */
+			if (success && bss->conf->mapc_conf)
+				mapc_handle_negotiation_update(
+					bss, MAPC_SCHEME_CO_TDMA);
+#endif /* CONFIG_IEEE80211BN */
 		}
 	}
 }
@@ -3608,7 +3800,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 					      struct link_removal_event *ev,
 					      enum wpa_event_type event)
 {
-	struct hostapd_data *phapd, *tx_hapd;
+	struct hostapd_data *phapd, *tx_hapd, *thapd;
 	struct hostapd_iface *iface, **tmp;
 	unsigned int i;
 	struct hapd_interfaces *interfaces;
@@ -3617,6 +3809,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 	u8 req_mode;
 	u32 total_us;
 #endif
+	bool is_6g = false;
 
 	if (event == EVENT_LINK_REMOVAL_STARTED) {
 #ifdef CONFIG_WNM_AP
@@ -3651,14 +3844,18 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 
 		iface = hapd->iface;
 		interfaces = iface->interfaces;
+		/* check this to verify if the removed BSS is 6 GHz,
+		 * otherwise updating only the partner beacon,
+		 * irrespective of the band is suffice.
+		 */
+		is_6g = is_6ghz_op_class(iface->conf->op_class);
 
-			/* Only disable the link instead of removing */
-			if (hapd->removal_type == HAPD_LINK_DISABLE) {
-				hostapd_free_link_stas(hapd);
-				hostapd_disable_bss(hapd, 0, AP_EVENT_DISABLED);
-				phapd = hapd;
-				goto refresh_beacon;
-			}
+		/* Only disable the link instead of removing */
+		if (hapd->removal_type == HAPD_LINK_DISABLE) {
+			hostapd_free_link_stas(hapd);
+			hostapd_disable_bss(hapd, 0, AP_EVENT_DISABLED);
+			return;
+		}
 
 		/* Save one of the partner bss to update the beacon */
 		for_each_mld_link(phapd, hapd)
@@ -3673,6 +3870,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 			for (i = 0; i < interfaces->count; i++) {
 				if (interfaces->iface[i] == iface) {
 					hostapd_interface_deinit_free(iface);
+					iface = NULL;
 					os_remove_in_array(interfaces->iface, interfaces->count, sizeof(struct hostapd_iface *), i);
 					interfaces->count--;
 					tmp = os_realloc_array(interfaces->iface,
@@ -3710,10 +3908,22 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 				ieee802_11_update_beacon_mbssid(tx_hapd);
 		}
 
-refresh_beacon:
-		/* Refresh all the partner beacons */
-		if (interfaces->count > 0)
-			hostapd_refresh_all_iface_beacons(interfaces->iface[0]);
+		/* For 6G, OOB advertisement also needs to be refreshed in all
+		 * enabled lower bands, hence invoke other iface beacon refresh
+		 * to update all the entries properly
+		 */
+		if (is_6g) {
+			if (!iface && interfaces->count > 0)
+				hostapd_refresh_all_iface_beacons(interfaces->iface[0]);
+			else
+				hostapd_refresh_other_iface_beacons(iface);
+		} else {
+			/* Refresh all partner beacons */
+			for_each_mld_link(thapd, phapd) {
+				ieee802_11_set_beacon_per_bss_only(thapd);
+				hostapd_gen_per_sta_profiles(thapd);
+			}
+		}
 	}
 }
 #endif /* CONFIG_IEEE80211BE */
@@ -3910,6 +4120,25 @@ static void hostapd_update_ap_powersave(struct hostapd_data *hapd,
 					struct ap_powersave_event *ap_ps_event)
 {
 	if (ap_ps_event->dps_assist_updated) {
+		struct hostapd_hw_modes *mode = hapd->iface->current_mode;
+		struct uhr_capabilities *uhr_cap;
+
+		if (!mode) {
+			wpa_printf(MSG_ERROR,
+				   "Failed to %s DPS Assist feature due to feature not supported by HW",
+				   ap_ps_event->dps_assist ? "enable" : "disable");
+			return;
+		}
+
+		uhr_cap = &mode->uhr_capab[IEEE80211_MODE_AP];
+		if (!uhr_cap->uhr_supported ||
+		    !(uhr_cap->mac_cap[0] & UHR_MACCAP_DPS_ASSIST)) {
+			wpa_printf(MSG_ERROR,
+				   "Failed to %s DPS Assist feature due to feature not supported by HW",
+				   ap_ps_event->dps_assist ? "enable" : "disable");
+			return;
+		}
+
 		hapd->conf->dps_assist = ap_ps_event->dps_assist;
 		/* Update beacon with updated DPS Assist Support Bit */
 		if (ieee802_11_update_beacons(hapd->iface))
@@ -4043,6 +4272,37 @@ void hostapd_rx_free_smd_ctx(struct sta_smd_ctx_info *smd_ctx)
 	os_free(smd_ctx);
 }
 
+static bool hostapd_event_tpc_eirp_notify(struct hostapd_data *hapd,
+					  s32 tpc_dbm, int link_id)
+{
+	size_t i;
+	bool changed = false;
+
+	if (!hapd->iface)
+		return false;
+
+	for (i = 0; i < hapd->iface->num_bss; i++) {
+		struct hostapd_data *bss = hapd->iface->bss[i];
+
+		if (!bss || !bss->started)
+			continue;
+
+#ifdef CONFIG_IEEE80211BE
+		if (link_id >= 0 && bss->conf->mld_ap &&
+		    bss->mld_link_id != link_id)
+			continue;
+#endif /* CONFIG_IEEE80211BE */
+
+		if (!bss->tpc_eirp_valid || bss->tpc_eirp_dbm != tpc_dbm) {
+			bss->tpc_eirp_dbm = tpc_dbm;
+			bss->tpc_eirp_valid = true;
+			changed = true;
+		}
+	}
+
+	return changed;
+}
+
 void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		       union wpa_event_data *data)
 {
@@ -4080,7 +4340,8 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 #ifdef NEED_AP_MLME
 		if (data)
 			hapd = switch_link_scan(hapd,
-						data->scan_info.scan_cookie);
+						data->scan_info.scan_cookie,
+						data);
 #endif /* NEED_AP_MLME */
 		/* Latch whether the last scan was aborted to allow ACS logic to react */
 		if (data)
@@ -4099,7 +4360,8 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 				struct hostapd_data *h_hapd = h->bss[0];
 
 				if (hostapd_is_ml_partner(hapd, h_hapd) &&
-				    h_hapd->iface->scan_cb)
+				    h_hapd->iface->scan_cb &&
+				    h_hapd->iface->state != HAPD_IFACE_ACS)
 					h_hapd->iface->scan_cb(h_hapd->iface);
 			}
 		}
@@ -4314,6 +4576,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		hapd = switch_link_hapd(hapd, data->dfs_event.link_id);
 		hostapd_event_dfs_radar_detected(hapd, &data->dfs_event);
 		break;
+#ifdef CONFIG_QCN_EXTN
 	case EVENT_AWGN_DETECTED:
 		if (!data)
 			break;
@@ -4323,6 +4586,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 	case EVENT_AFC_RECEIVED:
 		hostapd_event_afc_received(hapd);
 		break;
+#endif /* CONFIG_QCN_EXTN */
 	case EVENT_DFS_PRE_CAC_EXPIRED:
 		if (!data)
 			break;
@@ -4440,19 +4704,18 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		break;
 #endif /* CONFIG_IEEE80211AX */
 	case EVENT_TPC_EIRP_NOTIFY:
-		hapd = switch_link_hapd(hapd, data->tpc_eirp_event.link_id);
-		if (!hapd)
+		if (!data)
 			break;
-		hapd->tpc_eirp_dbm = data->tpc_eirp_event.tpc_dbm;
-		hapd->tpc_eirp_valid = true;
-		ieee802_11_set_beacon(hapd);
-		break;
+		hapd = switch_link_hapd(hapd, data->tpc_eirp_event.link_id);
+		if (!hapd || !hapd->iface)
+			break;
+		if (!hostapd_event_tpc_eirp_notify(hapd,
+					data->tpc_eirp_event.tpc_dbm,
+					data->tpc_eirp_event.link_id))
+			break;
+		if (ieee802_11_update_beacons(hapd->iface))
+			break;
 #ifdef CONFIG_IEEE80211BE
-	case EVENT_MLD_INTERFACE_FREED:
-		wpa_printf(MSG_DEBUG, "MLD: Interface %s freed",
-			   hapd->conf->iface);
-		hostapd_mld_interface_freed(hapd);
-		break;
 	case EVENT_TTLM_UPDATE:
 		if (!data)
 			break;
@@ -4548,8 +4811,10 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 		break;
 #endif /* CONFIG_IEEE80211BN */
 	default:
+#ifdef CONFIG_QCN_EXTN
 		if (!hostapd_wpa_event_extn(ctx, event, data))
 			break;
+#endif /* CONFIG_QCN_EXTN */
 
 		wpa_printf(MSG_DEBUG, "Unknown event %d", event);
 		break;

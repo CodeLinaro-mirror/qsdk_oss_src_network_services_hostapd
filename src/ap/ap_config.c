@@ -53,12 +53,49 @@ static void hostapd_config_free_vlan(struct hostapd_bss_config *bss)
 #define DEFAULT_WPA_DISABLE_EAPOL_KEY_RETRIES 0
 #endif /* DEFAULT_WPA_DISABLE_EAPOL_KEY_RETRIES */
 
+#ifdef CONFIG_IEEE80211BN
+int hostapd_mapc_config_defaults_bss(struct hostapd_bss_config *bss)
+{
+	bss->mapc_conf = os_zalloc(sizeof(*bss->mapc_conf));
+	if (!bss->mapc_conf) {
+		wpa_printf(MSG_ERROR, "failed to alloc mapc_conf");
+		return -ENOMEM;
+	}
+
+	bss->mapc_conf->mapc_cotdma_enable  =
+				MAPC_DEFAULT_COTDMA_ENABLE;
+	bss->mapc_conf->max_mapc_ctdma_peer =
+				MAPC_MAX_COTDMA_PEER;
+	bss->mapc_conf->mapc_disc_req_interval_sec =
+				MAPC_DEFAULT_DISCOVERY_REQUEST_INTERVAL_SEC;
+	bss->mapc_conf->discovery_mode =
+				MAPC_DEFAULT_DISCOVERY_MODE;
+	bss->mapc_conf->negotiation_mode =
+				MAPC_DEFAULT_NEGOTIATION_MODE;
+	bss->mapc_conf->max_mapc_co_ap_peer =
+				MAPC_MAX_CO_AP_PEER;
+	bss->mapc_conf->max_mapc_discovered_ap_peer =
+				MAPC_MAX_CO_AP_DISCOVERED_PEER;
+	bss->mapc_conf->discovery_req_timeout =
+				MAPC_DEFAULT_DISCOVERY_REQ_TIMEOUT;
+	bss->mapc_conf->negotiation_req_timeout =
+				MAPC_DEFAULT_NEGOTIATION_REQ_TIMEOUT;
+	bss->mapc_conf->max_mapc_ap_inactivity =
+				MAPC_DEFAULT_MAX_AP_INACTIVITY;
+	bss->mapc_conf->enable_disc_cotdma_scheme_profile =
+				MAPC_DEFAULT_COTDMA_DISCOVERY_SCHEME_PROFILE;
+	return 0;
+}
+#endif /* CONFIG_IEEE80211BN */
+
+
 void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 {
 	dl_list_init(&bss->anqp_elem);
 #if CONFIG_MBO
 	bss->oce_tx_power = -128; /* -128 = not set, use regulatory max */
 #endif
+	bss->rtt_responder_role = 0;
 
 	bss->logger_syslog_level = HOSTAPD_LEVEL_INFO;
 	bss->logger_stdout_level = HOSTAPD_LEVEL_INFO;
@@ -241,6 +278,10 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 #ifdef CONFIG_IEEE80211AX
 	os_memset(&bss->he_phy_capab, 0, sizeof(bss->he_phy_capab));
 	bss->he_phy_capab_mask = 0;
+	os_memset(bss->he_tx_mcs_nss_set, 0xff,
+		  sizeof(bss->he_tx_mcs_nss_set));
+	os_memset(bss->he_rx_mcs_nss_set, 0xff,
+		  sizeof(bss->he_rx_mcs_nss_set));
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
 	os_memset(bss->eht_tx_mcs_nss_set, 0xff, sizeof(bss->eht_tx_mcs_nss_set));
@@ -252,6 +293,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->eht_phy_capab.mu_beamformer = 1;
 
 	bss->single_link_emlsr = false;
+	bss->disable_eml = false;
 	bss->mld_link_id = -1; /* -1 = auto-allocate */
 #endif /* CONFIG_IEEE80211BE */
 	bss->ht_mcs_nss_set = 0;
@@ -267,7 +309,9 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 #endif
 
 #ifdef CONFIG_IEEE80211BN
-	bss->dps_assist = DRIVER_DEFINED;
+	bss->uhr_phy_capab.uhr_2xldpc_tx = 1;
+	bss->uhr_phy_capab.uhr_2xldpc_rx = 1;
+	bss->dps_assist = FEATURE_ENABLED;
 
 	/* UHR intervals are represented as TUs */
 	bss->uhr_params_update.adv_notification_interval = 10;
@@ -285,6 +329,8 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->pmksa_caching_privacy = 0;
 	bss->eap_using_authentication_frames = 0;
 #endif /* CONFIG_ENC_ASSOC */
+
+	bss->report_connection_failures = 0;
 }
 
 #ifdef CONFIG_IEEE80211BE
@@ -379,6 +425,16 @@ struct hostapd_config * hostapd_config_defaults(void)
 		os_free(bss);
 		return NULL;
 	}
+
+#ifdef CONFIG_IEEE80211BN
+	if (hostapd_mapc_config_defaults_bss(bss) < 0) {
+		os_free(bss->radius);
+		os_free(conf->bss);
+		os_free(conf);
+		os_free(bss);
+		return NULL;
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 	hostapd_config_defaults_bss(bss);
 #ifdef CONFIG_QCN_EXTN
@@ -485,7 +541,9 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->original_chan_width = 0;
 
 	hostapd_set_and_check_bw320_offset(conf, 0);
+#ifdef CONFIG_QCN_EXTN
 	hostapd_config_defaults_extn(conf);
+#endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_IEEE80211BE
 	/* set ML max rec links as Invalid */
@@ -498,7 +556,6 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->npca_enable = 0;
 	conf->npca_primary_channel = 0;
 	conf->npca_punct_bitmap = 0;
-	conf->npca_primary_chan_offset = -1;
 #endif /* CONFIG_IEEE80211BN */
 
 	bss->rate_type = BEACON_RATE_LEGACY;
@@ -1257,8 +1314,9 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 			partner = next;
 		}
 	}
-#endif /* CONFIG_IEEE80211BN */
 
+	os_free(conf->mapc_conf);
+#endif /* CONFIG_IEEE80211BN */
 	os_free(conf);
 }
 
@@ -1765,17 +1823,26 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 			   "Disabling IEEE 802.11be as IEEE 802.11ax is disabled for this BSS");
 	}
 
+	if (full_config && (!conf->ieee80211be || bss->disable_11be) &&
+	    bss->bss_require_eht) {
+		bss->bss_require_eht = false;
+		wpa_printf(MSG_INFO,
+			   "Disabling bss_require_eht as IEEE 802.11be is disabled for this BSS");
+	}
+
 	if ((!conf->ieee80211be || bss->disable_11be) && bss->mld_ap) {
 		wpa_printf(MSG_INFO,
 			   "Cannot enable mld_ap when IEEE 802.11be is disabled");
 		return -1;
 	}
+#ifdef CONFIG_QCN_EXTN
 	/* Validate mld_addr is configured when use_driver_vendor_addr is enabled */
 	if (bss->mld_ap && conf->use_driver_vendor_addr &&
 			is_zero_ether_addr(bss->mld_addr)) {
 		wpa_printf(MSG_ERROR, "MLD: mld_addr must be configured when use_driver_vendor_addr is enabled");
 		return -1;
 	}
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 
 #if defined(CONFIG_IEEE80211BE) && defined(CONFIG_QCN_EXTN)
@@ -2035,12 +2102,12 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 }
 
 #ifdef CONFIG_IEEE80211BN
-static int hostapd_config_check_npca_config(struct hostapd_config *conf)
+int hostapd_config_check_npca_config(struct hostapd_config *conf)
 {
 	enum oper_chan_width chwidth;
 	int seg0, npca_chan;
 	bool in_secondary;
-	int bw_mhz, num20, first_20_chan;
+	int bw_mhz;
 
 	if (!conf->npca_enable)
 		return 0;
@@ -2048,7 +2115,13 @@ static int hostapd_config_check_npca_config(struct hostapd_config *conf)
         if (!conf->npca_primary_channel)
 		return 0;
 
-	chwidth = hostapd_get_oper_chwidth(conf);
+	/* For 6 GHz op_class the bandwidth is defined by op_class, not by the
+	 * explicit eht_oper_chwidth config knob, so derive it the same way the
+	 * rest of the stack does (ieee802_11_eht.c, repurpose.c). */
+	if (is_6ghz_op_class(conf->op_class))
+		chwidth = op_class_to_ch_width(conf->op_class);
+	else
+		chwidth = hostapd_get_oper_chwidth(conf);
 	if (chwidth != CONF_OPER_CHWIDTH_80MHZ &&
 	    chwidth != CONF_OPER_CHWIDTH_160MHZ &&
 	    chwidth != CONF_OPER_CHWIDTH_320MHZ) {
@@ -2110,12 +2183,6 @@ static int hostapd_config_check_npca_config(struct hostapd_config *conf)
 			   npca_chan, seg0, bw_mhz);
 		return -1;
 	}
-
-	num20 = bw_mhz / 20;
-	first_20_chan = seg0 - 2 * (num20 - 1);
-
-	conf->npca_primary_chan_offset =
-		(npca_chan - first_20_chan) / 4;
 
 	return 0;
 }

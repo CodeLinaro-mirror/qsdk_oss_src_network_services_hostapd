@@ -1,4 +1,11 @@
 ALL=hostapd hostapd_cli
+ifdef CONFIG_MQTT
+ALL += mqtt_test
+ifdef CONFIG_QCN_EXTN
+ALL += external_hif_mqtt_test_client
+endif
+endif
+
 CONFIG_FILE = .config
 
 -include $(if $(MULTICALL), ../wpa_supplicant/.config)
@@ -96,6 +103,7 @@ OBJS += ../src/common/ptksa_cache.o
 # hostapd external interface and mgmt/action lookup
 ifdef CONFIG_HOSTAPD_IF
 OBJS += ../src/hostapd_if/hostapd_if.o
+OBJS += ../src/utils/bitfield.o
 CFLAGS += -DCONFIG_HOSTAPD_IF
 endif
 
@@ -340,6 +348,19 @@ CFLAGS += -DCONFIG_ETH_P_OUI
 OBJS += ../src/ap/eth_p_oui.o
 endif
 
+# IEEE 1905.1 CMDU transport (used by SMD and any future feature needing
+# 1905 frame exchange from hostapd).  Set NEED_ETH_P_1905=y from any
+# feature block that requires it (e.g. CONFIG_SMD below).
+ifdef CONFIG_IEEE80211BN
+NEED_ETH_P_1905=y
+endif
+
+ifdef NEED_ETH_P_1905
+CFLAGS += -DCONFIG_ETH_P_1905
+OBJS   += ../src/ap/eth_p_1905.o
+OBJS   += ../src/ap/eth_p_1905_iap.o
+endif
+
 ifdef CONFIG_SAE
 CFLAGS += -DCONFIG_SAE
 OBJS += ../src/common/sae.o
@@ -399,6 +420,7 @@ OBJS += ../src/ap/uhr_neighbor_update.o
 OBJS += ../src/ap/uhr_utils.o
 OBJS += ../src/ap/uhr_oui_transport.o
 OBJS += ../src/ap/uhr_iap.o
+OBJS += ../src/ap/mapc.o
 endif
 
 ifdef CONFIG_IEEE80211BE
@@ -426,6 +448,17 @@ ifdef CONFIG_ATF_OFFLOAD
 CFLAGS += -DCONFIG_ATF_OFFLOAD
 OBJS += ../src/atf/atf_offload.o
 OBJS += ../src/atf/atf_offload_config.o
+endif
+
+ifdef CONFIG_MQTT
+CFLAGS += -DCONFIG_MQTT
+ifdef CONFIG_MQTT_TEST_APP_FORK
+CFLAGS += -DCONFIG_MQTT_TEST_APP_FORK=1
+endif
+OBJS   += ../src/utils/mqtt_eloop.o
+OBJS   += ../src/ap/hostapd_mqtt.o
+OBJS   += ../src/hostapd_if/hostapd_if_mqtt.o
+LIBS   += -lmosquitto
 endif
 
 ifndef MULTICALL
@@ -1615,9 +1648,28 @@ sae_pk_gen: $(SOBJS)
 lcov-html:
 	lcov -c -d $(BUILDDIR) > lcov.info
 	genhtml lcov.info --output-directory lcov-html
+ifdef CONFIG_MQTT
+ifdef STAGING_DIR
+MQTT_TEST_INC := -I$(STAGING_DIR)/usr/include
+MQTT_TEST_LIB := -L$(STAGING_DIR)/usr/lib
+else ifdef MOSQUITTO_DIR
+MQTT_TEST_INC := -I$(MOSQUITTO_DIR)/include
+MQTT_TEST_LIB := -L$(MOSQUITTO_DIR)/lib
+else
+MQTT_TEST_INC :=
+MQTT_TEST_LIB :=
+endif
+
+mqtt_test: mqtt_test.c
+	$(CC) $(CFLAGS) -Wall -fPIE $(MQTT_TEST_INC) -o $@ $< $(MQTT_TEST_LIB) -lmosquitto -pie
+
+external_hif_mqtt_test_client: external_hif_mqtt_test_client.c
+	$(CC) $(CFLAGS) -Wall -fPIE $(MQTT_TEST_INC) -o $@ $< $(MQTT_TEST_LIB) -lmosquitto -pie
+endif
 
 clean: common-clean
 	rm -f core *~ nt_password_hash hlr_auc_gw
 	rm -f sae_pk_gen
+	rm -f mqtt_test external_hif_mqtt_test_client
 	rm -f lcov.info
 	rm -rf lcov-html

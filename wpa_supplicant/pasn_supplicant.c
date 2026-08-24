@@ -153,6 +153,29 @@ static int wpas_pasn_sae_setup_pt(struct wpa_ssid *ssid, int group)
 #endif /* CONFIG_SAE */
 
 
+static int wpas_pasn_get_group(struct wpa_supplicant *wpa_s,
+			       struct wpa_ssid *ssid)
+{
+	int i;
+	const int *groups;
+
+	if (ssid && ssid->pasn_groups)
+		groups = ssid->pasn_groups;
+	else if (wpa_s->conf->pasn_groups)
+		groups = wpa_s->conf->pasn_groups;
+	else
+		return 19;
+
+	for (i = 0; groups[i]; i++) {
+		if (dragonfly_suitable_group(groups[i], 1))
+			return groups[i];
+	}
+
+	/* pasn_groups configured but no suitable group found - failure */
+	return 0;
+}
+
+
 static int wpas_pasn_get_params_from_bss(struct wpa_supplicant *wpa_s,
 					 struct pasn_peer *peer,
 					 struct wpa_bss *bss,
@@ -162,7 +185,16 @@ static int wpas_pasn_get_params_from_bss(struct wpa_supplicant *wpa_s,
 	const u8 *rsne, *rsnxe;
 	struct wpa_ie_data rsne_data;
 	int sel, key_mgmt, pairwise_cipher;
-	int group = 19;
+	int group;
+
+	group = wpas_pasn_get_group(wpa_s, ssid);
+	if (!group) {
+		wpa_printf(MSG_INFO,
+			   "PASN: No suitable group found; cannot start authentication");
+		return -1;
+	}
+
+	wpa_printf(MSG_DEBUG, "PASN: Selected group %d", group);
 
 	rsne = wpa_bss_get_rsne(wpa_s, bss, NULL, false);
 	if (!rsne) {
@@ -985,7 +1017,7 @@ int wpas_pasn_auth_rx(struct wpa_supplicant *wpa_s,
 				pasn_get_ptk(pasn),
 				wpa_s->pasn_params ? wpas_pasn_deauth_cb : NULL,
 				wpa_s->pasn_params ? wpa_s : NULL,
-				pasn_get_akmp(pasn));
+				pasn_get_akmp(pasn), pasn->auth_alg);
 
 		if (pasn->pmksa_entry)
 			wpa_sm_set_cur_pmksa(wpa_s->wpa, pasn->pmksa_entry);

@@ -46,6 +46,7 @@ struct wpa_scan_results;
 struct hostapd_hw_modes;
 struct wpa_driver_associate_params;
 struct wpa_cred;
+struct survey_results;
 
 /*
  * Forward declarations of private structures used within the ctrl_iface
@@ -498,6 +499,24 @@ struct rrm_data {
 
 	/* destination address of the current radio measurement request */
 	u8 dst_addr[ETH_ALEN];
+
+	/* Channel Load measurement state */
+	u8 chan_load_token;
+	u8 chan_load_op_class;
+	u8 chan_load_channel;
+	u16 chan_load_duration;
+	u64 chan_load_last_time;
+	u64 chan_load_last_time_busy;
+	u64 chan_load_end_time;
+	u64 chan_load_end_time_busy;
+	struct os_reltime chan_load_start;
+
+	/* Noise Histogram measurement state */
+	u8 noise_hist_token;
+	u8 noise_hist_op_class;
+	u8 noise_hist_channel;
+	u16 noise_hist_duration;
+	s8 noise_hist_anpi;
 };
 
 enum wpa_supplicant_test_failure {
@@ -710,8 +729,20 @@ struct last_scan_ssid {
 	size_t ssid_len;
 };
 
-#define STA_CAC_NOT_STARTED 0
-#define STA_CAC_STARTED 1
+/**
+ * enum sta_cac_result - Return values for wpas_sta_cac_start()
+ * @STA_CAC_NOT_STARTED: STA CAC is not applicable for the selected connect
+ *	request; caller can proceed with normal association flow.
+ * @STA_CAC_STARTED: STA CAC context has been armed; auth/assoc must stay
+ *	blocked until CAC completion or radar handling advances the flow.
+ * @STA_CAC_RETRY: driver rejected the CAC start; sta_cac state cleared and
+ *	a new scan scheduled so the connect flow retries from scan.
+ */
+enum sta_cac_result {
+	STA_CAC_NOT_STARTED,
+	STA_CAC_STARTED,
+	STA_CAC_RETRY,
+};
 
 /**
  * struct station_cac_params - STA CAC pending-connect context
@@ -777,6 +808,7 @@ struct wpa_supplicant {
 	char ifname[100];
 	struct wpas_ubus_bss ubus;
 	struct wpas_ucode_bss ucode;
+	u8 hw_dfs_domain;
 #ifdef CONFIG_MATCH_IFACE
 	int matched;
 #endif /* CONFIG_MATCH_IFACE */
@@ -815,6 +847,7 @@ struct wpa_supplicant {
 	u8 ap_mld_addr[ETH_ALEN];
 	u8 mlo_assoc_link_id;
 	u16 valid_links; /* bitmap of valid MLO link IDs */
+	u16 ap_rejected_links; /* bitmap of links rejected by AP MLD in assoc resp */
 	struct {
 		u8 addr[ETH_ALEN];
 		u8 bssid[ETH_ALEN];
@@ -825,6 +858,9 @@ struct wpa_supplicant {
 #ifdef CONFIG_QCN_EXTN
 		unsigned int pending_ch_switch_freq;
 #endif
+		unsigned int max_nss_rx:4;
+		unsigned int max_nss_tx:4;
+		enum chan_width channel_bandwidth;
 	} links[MAX_NUM_MLD_LINKS];
 	u8 *last_con_fail_realm;
 	size_t last_con_fail_realm_len;
@@ -1750,6 +1786,14 @@ struct wpa_supplicant {
 	bool last_scan_all_chan;
 	bool last_scan_non_coloc_6ghz;
 	bool support_6ghz;
+	bool allow_p2p_assisted_dfs;
+	char device_country[3];
+	bool device_country_set;
+	bool assisted_dfs;
+
+	bool dfs_ap_connected;
+	int sta_connected_freq;
+	enum chan_width sta_connected_chan_width;
 
 	struct wpa_signal_info last_signal_info;
 
@@ -1776,6 +1820,7 @@ struct wpa_supplicant {
 	unsigned int next_beacon_check;
 
 	unsigned int ml_neigh_retries;
+	u8 ml_neigh_retry_bssid[ETH_ALEN];
 	struct hostapd_multi_hw_info *multi_hw_info;
 	u8 num_multi_hws;
 
@@ -1815,6 +1860,21 @@ struct wpa_supplicant {
 	u8 smd_prep_dialog_token;
 	unsigned int smd_st_requested:1; /* ST roam requested via ROAM <bssid> ST */
 	u8 smd_st_exec_path;             /* exec_path: 0=via serving AP, 1=via target AP */
+#ifdef CONFIG_NAN
+	u32 nan_drv_flags;
+	struct nan_data *nan;
+	struct nan_cluster_config nan_config;
+#endif /* CONFIG_NAN */
+#ifdef CONFIG_ENC_ASSOC
+	bool assoc_resp_encrypted; /* Whether (Re)Association Response frame
+				    * is encrypted. */
+#endif /* CONFIG_ENC_ASSOC */
+#ifdef CONFIG_PMKSA_PRIVACY
+	u8 pmkid_snonce[NONCE_LEN];
+	bool pmkid_snonce_set;
+	u8 pmkid_anonce[NONCE_LEN];
+	bool pmkid_anonce_set;
+#endif /* CONFIG_PMKSA_PRIVACY */
 };
 
 
@@ -2232,6 +2292,9 @@ bool wpas_ap_supports_rsn_overriding_2(struct wpa_supplicant *wpa_s,
 				       struct wpa_bss *bss);
 int wpas_get_owe_trans_network(const u8 *owe_ie, const u8 **bssid,
 			       const u8 **ssid, size_t *ssid_len);
+void wpas_update_dfs_ap_info(struct wpa_supplicant *wpa_s, int freq,
+			     enum chan_width ap_ch_width,
+			     bool disconnect_evt);
 
 void wpas_scan_for_rnr_entries(void *eloop_ctx, void *timeout_ctx);
 
@@ -2268,5 +2331,10 @@ static inline bool wpas_security_profile_active(struct wpa_supplicant *wpa_s)
 int security_profile_ie_get_key_mgmt(const u8 *sp_ie, int ssid_key_mgmt);
 const u8 *security_profile_ie_get_rsnx(const u8 *sp_ie, size_t *rsnx_len);
 int security_profile_ie_get_rsn_caps(const u8 *sp_ie);
+
+void wpas_rrm_handle_survey_results(struct wpa_supplicant *wpa_s,
+				    struct survey_results *survey_results);
+void wpas_rrm_build_channel_load_report(struct wpa_supplicant *wpa_s,
+					struct wpabuf **buf);
 
 #endif /* WPA_SUPPLICANT_I_H */

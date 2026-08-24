@@ -21,7 +21,9 @@
 #include "bssid_ignore.h"
 #include "bss.h"
 #include "smd.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 
 static void wpa_bss_set_hessid(struct wpa_bss *bss)
 {
@@ -1893,6 +1895,39 @@ wpa_bss_validate_rsne_ml(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 		return false;
 	}
 
+	/*
+	 * Security Profile element preference (802.11bn D1.4, 37.32):
+	 * The RSNE-only key_mgmt/pairwise_cipher check below does not know
+	 * about a Security Profile element that bridges the AP's base AKM
+	 * to the STA's configured AKM (e.g. SAE -> SAE-EXT via profile 9).
+	 * Without this, wpa_bss_get_usable_links() rejects the MLD outright
+	 * ("MLD: No valid key management") before the per-link loop below
+	 * ever runs, and the connection proceeds on a single link instead of
+	 * waiting for all AP MLD links to be validated/discovered.
+	 * Merge the SP IE override here the same way
+	 * wpa_supplicant_ssid_bss_match() (events.c) and sme.c do for the
+	 * non-MLO RSNE check.
+	 */
+	if (wpas_security_profile_active(wpa_s)) {
+		const u8 *sp_ie = wpa_bss_get_ie_ext(
+			bss, WLAN_EID_EXT_SECURITY_PROFILE);
+		int sp_key_mgmt = sp_ie ? security_profile_ie_get_key_mgmt(
+			sp_ie, ssid->key_mgmt) : 0;
+
+		if (sp_key_mgmt) {
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"MLD: Security Profile element overrides RSN IE key_mgmt/pairwise cipher for link %u (bssid " MACSTR ")",
+				bss->mld_link_id, MAC2STR(bss->bssid));
+			wpa_ie.key_mgmt |= sp_key_mgmt;
+			/* All defined profiles mandate GCMP-256 pairwise cipher
+			 * and MFPC=1/MFPR=1 (802.11bn D1.4, 37.32); this is fixed
+			 * per spec, not derived from the profile bitmap. */
+			wpa_ie.pairwise_cipher |= WPA_CIPHER_GCMP_256;
+			wpa_ie.capabilities |= WPA_CAPABILITY_MFPC |
+						WPA_CAPABILITY_MFPR;
+		}
+	}
+
 	wpa_ie.key_mgmt &= ~(WPA_KEY_MGMT_PSK | WPA_KEY_MGMT_FT_PSK |
 			     WPA_KEY_MGMT_PSK_SHA256);
 	if (!(wpa_ie.key_mgmt & ssid->key_mgmt)) {
@@ -1984,6 +2019,78 @@ u16 wpa_bss_get_usable_links(struct wpa_supplicant *wpa_s, struct wpa_bss *bss,
 				*missing_links |= BIT(link_id);
 			continue;
 		}
+
+#ifdef CONFIG_QCN_EXTN
+		/*
+		 * The BSS entry found by wpa_bss_get() may be for the same
+		 * BSSID but at a different frequency than the one advertised
+		 * in the MLD element (bss->mld_links[link_id].freq). This
+		 * happens when the AP transmits on one channel but the RNR
+		 * stub in the wpa_s BSS table was created from a beacon on a
+		 * different channel. The kernel's nl80211_assoc_bss() calls
+		 * cfg80211_get_bss() with the MLD-advertised frequency; if
+		 * the only BSS entry at that frequency has an empty SSID
+		 * (RNR-derived stub), cfg80211 returns NULL and the
+		 * association fails with ENOENT. Treat a frequency mismatch
+		 * as a missing link to force a directed probe/rescan at the
+		 * correct channel.
+		 */
+		if (neigh_bss->freq != bss->mld_links[link_id].freq) {
+			wpa_dbg(wpa_s, MSG_INFO,
+				"MLD: Link %u BSS entry freq mismatch (found %d MHz, MLD advertises %d MHz), treating as missing",
+				link_id, neigh_bss->freq,
+				bss->mld_links[link_id].freq);
+			if (missing_links)
+				*missing_links |= BIT(link_id);
+			continue;
+		}
+
+		/*
+		 * The kernel's cfg80211 BSS cache expires entries after
+		 * IEEE80211_SCAN_RESULT_EXPIRE (30 s). If the wpa_s BSS entry
+		 * is older than that threshold the kernel will reject the
+		 * association with ENOENT even though wpa_s still holds the
+		 * entry. Treat such a stale entry as a missing link so that
+		 * the missing_links retry path triggers a fresh scan.
+		 */
+		{
+			struct os_reltime now;
+
+			os_get_reltime(&now);
+			if (os_reltime_expired(&now, &neigh_bss->last_update,
+					       WPA_MLD_BSS_KERNEL_CACHE_EXPIRE_SECS)) {
+				struct os_reltime age;
+
+				os_reltime_sub(&now, &neigh_bss->last_update,
+					       &age);
+				wpa_dbg(wpa_s, MSG_INFO,
+					"MLD: Link %u BSS entry is stale (%u s old), treating as missing",
+					link_id, (unsigned int) age.sec);
+				if (missing_links)
+					*missing_links |= BIT(link_id);
+				continue;
+			}
+		}
+
+		/*
+		 * An empty-SSID BSS entry is a colocated/RNR-derived stub
+		 * that was never directly scanned. The kernel's cfg80211 will
+		 * reject the association (ENOENT) because its is_bss() check
+		 * requires a matching SSID element. Treat such an entry as a
+		 * missing link to trigger a directed probe/rescan.
+		 * Skip this check when the configured SSID is empty (hidden
+		 * SSID AP): in that case the AP legitimately broadcasts an
+		 * empty SSID in beacons and the BSS entry is valid.
+		 */
+		if (neigh_bss->ssid_len == 0 && ssid && ssid->ssid_len) {
+			wpa_dbg(wpa_s, MSG_INFO,
+				"MLD: Link %u BSS entry has empty SSID (RNR stub), treating as missing",
+				link_id);
+			if (missing_links)
+				*missing_links |= BIT(link_id);
+			continue;
+		}
+#endif /* CONFIG_QCN_EXTN */
 
 		/* Check that the affiliated links are for the same AP MLD and
 		 * the information matches */

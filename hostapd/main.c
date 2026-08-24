@@ -35,12 +35,17 @@
 #include "build_features.h"
 #include "ap/robust_av.h"
 #include "hostapd_if/hostapd_if.h"
+#include "hostapd_if/hostapd_if_mqtt.h"
 #include "ap/nft.h"
 
 #include "atf/atf_offload.h"
 #ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
 #endif
+
+#ifdef CONFIG_UDBG_ENH
+#include "../qcn_extns/udbg_enh.h"
+#endif /* CONFIG_UDBG_ENH */
 
 struct hapd_global {
 	void **drv_priv;
@@ -376,6 +381,7 @@ setup_mld:
 		iface->extended_capa_mask = capa.extended_capa_mask;
 		iface->extended_capa_len = capa.extended_capa_len;
 		iface->drv_max_acl_mac_addrs = capa.max_acl_mac_addrs;
+		iface->drv_max_stations = capa.max_stations;
 
 		/*
 		 * Override extended capa with per-interface type (AP), if
@@ -427,7 +433,8 @@ setup_mld:
 			return -1;
 		}
 #ifdef CONFIG_QCN_EXTN
-		hostapd_notify_link_repurpose(hapd, "hostapd_driver_init");
+		if (hostapd_notify_link_repurpose(hapd, "hostapd_driver_init"))
+			return -1;
 #endif /* CONFIG_QCN_EXTN */
 		if (hostapd_mld_add_link(hapd) < 0) {
 			hostapd_mld_remove_link(hapd);
@@ -636,6 +643,9 @@ static int hostapd_global_run(struct hapd_interfaces *ifaces, int daemonize,
 				   strerror(errno));
 			return -1;
 		}
+#ifdef CONFIG_UDBG_ENH
+		hostapd_udbg_enh_post_daemonize_extn();
+#endif /* CONFIG_UDBG_ENH */
 	}
 
 	eloop_run();
@@ -700,7 +710,6 @@ static void usage(void)
 
 	exit(1);
 }
-
 
 static const char * hostapd_msg_ifname_cb(void *ctx)
 {
@@ -865,7 +874,6 @@ static void hostapd_global_cleanup_mld(struct hapd_interfaces *interfaces)
 #endif /* CONFIG_IEEE80211BE */
 }
 
-
 int main(int argc, char *argv[])
 {
 	struct hapd_interfaces interfaces;
@@ -889,10 +897,14 @@ int main(int argc, char *argv[])
 #ifdef CONFIG_PROCESS_COORDINATION
 	const char *proc_coord_dir = NULL;
 #endif
-#ifdef CONFIG_HOSTAPD_IF
+#if defined(CONFIG_HOSTAPD_IF) && defined(CONFIG_QCN_EXTN)
 	bool plugin_enable = false;
 #endif
-
+#ifdef CONFIG_MQTT
+#ifdef CONFIG_MQTT_TEST_APP_FORK
+	bool mqtt_plugin_enable = false;
+#endif /* CONFIG_MQTT_TEST_APP_FORK */
+#endif /* CONFIG_MQTT */
 	if (os_program_init())
 		return -1;
 
@@ -919,6 +931,9 @@ int main(int argc, char *argv[])
 #ifdef CONFIG_ETH_P_OUI
 	dl_list_init(&interfaces.eth_p_oui);
 #endif /* CONFIG_ETH_P_OUI */
+#ifdef CONFIG_ETH_P_1905
+	dl_list_init(&interfaces.eth_p_1905);
+#endif /* CONFIG_ETH_P_1905 */
 #ifdef CONFIG_DPP
 	os_memset(&dpp_conf, 0, sizeof(dpp_conf));
 	dpp_conf.cb_ctx = &interfaces;
@@ -933,17 +948,24 @@ int main(int argc, char *argv[])
 	wpa_supplicant_event = hostapd_wpa_event;
 	wpa_supplicant_event_global = hostapd_wpa_event_global;
 	for (;;) {
-		c = getopt(argc, argv, "b:Bde:f:hHi:KP:sSTtu:g:G:qvz::");
+		c = getopt(argc, argv, "b:Bde:f:hHi:KMP:sSTtu:g:G:qvz::");
 		if (c < 0)
 			break;
 		switch (c) {
 		case 'h':
 			usage();
 			break;
-#ifdef CONFIG_HOSTAPD_IF
+#if defined(CONFIG_HOSTAPD_IF) && defined(CONFIG_QCN_EXTN)
 		case 'H':
 			plugin_enable = true;
 			break;
+#endif
+#ifdef CONFIG_MQTT
+#ifdef CONFIG_MQTT_TEST_APP_FORK
+		case 'M':
+			mqtt_plugin_enable = true;
+			break;
+#endif /* CONFIG_MQTT_TEST_APP_FORK */
 #endif
 		case 'd':
 			debug++;
@@ -1094,13 +1116,22 @@ int main(int argc, char *argv[])
 		wpa_printf(MSG_WARNING, "Failed to add CLI FST ctrl");
 #endif /* CONFIG_FST && CONFIG_CTRL_IFACE */
 
-#ifdef CONFIG_HOSTAPD_IF
+#if defined(CONFIG_HOSTAPD_IF) && defined(CONFIG_QCN_EXTN)
 	/* Initialize action frame registry before parsing configs */
 	if (hostapd_if_init(&interfaces, plugin_enable) < 0) {
 		wpa_printf(MSG_ERROR, "Failed to init action frame registry");
 		goto out;
 	}
 #endif
+
+#ifdef CONFIG_MQTT
+#ifdef CONFIG_MQTT_TEST_APP_FORK
+	if (mqtt_plugin_enable) {
+		if (hostapd_if_start_mqtt_hif_client() < 0)
+			goto out;
+	}
+#endif /* CONFIG_MQTT_TEST_APP_FORK */
+#endif /* CONFIG_MQTT */
 
 	/* Allocate and parse configuration for full interface files */
 	for (i = 0; i < interfaces.count; i++) {
@@ -1156,6 +1187,11 @@ int main(int argc, char *argv[])
 			interfaces.iface[interfaces.count++] = iface;
 		}
 	}
+
+
+#ifdef CONFIG_UDBG_ENH
+	hostapd_udbg_enh_init_extn(&interfaces, daemonize);
+#endif /* CONFIG_UDBG_ENH */
 
 	/*
 	 * Enable configured interfaces. Depending on channel configuration,
@@ -1218,7 +1254,17 @@ int main(int argc, char *argv[])
 #endif
 
  out:
+#ifdef CONFIG_UDBG_ENH
+	hostapd_udbg_enh_deinit_extn();
+#endif /* CONFIG_UDBG_ENH */
+
 	hostapd_global_ctrl_iface_deinit(&interfaces);
+#ifdef CONFIG_MQTT
+#ifdef CONFIG_MQTT_TEST_APP_FORK
+	if (mqtt_plugin_enable)
+		hostapd_if_stop_mqtt_hif_client();
+#endif /* CONFIG_MQTT_TEST_APP_FORK */
+#endif /* CONFIG_MQTT */
 	/* Sending deauth to all stations before deinit */
 	hostapd_deauthenticate_stations(&interfaces);
 	/* Deinitialize all interfaces */
@@ -1240,7 +1286,7 @@ int main(int argc, char *argv[])
 	hostapd_global_cleanup_mld(&interfaces);
 	hostapd_ucode_free();
 
-#ifdef CONFIG_HOSTAPD_IF
+#if defined(CONFIG_HOSTAPD_IF) && defined(CONFIG_QCN_EXTN)
 	hostapd_if_deinit();
 #endif
 #ifdef CONFIG_DPP

@@ -66,14 +66,14 @@
 #include "wnm_sta.h"
 #include "wpas_kay.h"
 #include "mesh.h"
-#include "ap/hw_features.h"
 #include "dpp_supplicant.h"
 #include "nan_usd.h"
 #include "pr_supplicant.h"
 #include "smd.h"
+#include "ap/hostapd.h"
+#include "ap/hw_features.h"
 #ifdef CONFIG_MESH
 #include "ap/ap_config.h"
-#include "ap/hostapd.h"
 #endif /* CONFIG_MESH */
 
 const char *const wpa_supplicant_version =
@@ -460,6 +460,7 @@ void wpa_supplicant_set_non_wpa_policy(struct wpa_supplicant *wpa_s,
 	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_MGMT_GROUP,
 			 wpa_s->mgmt_group_cipher);
 	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_SSID_PROTECTION, 0);
+	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_ASSOC_ENC, 0);
 
 	pmksa_cache_clear_current(wpa_s->wpa);
 	os_memset(&mlo, 0, sizeof(mlo));
@@ -2667,6 +2668,27 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_SSID_PROTECTION, false);
 	}
 
+#ifdef CONFIG_ENC_ASSOC
+	if (proto == WPA_PROTO_RSN &&
+	    (wpa_s->drv_flags2 &
+	     WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION)) {
+		bool assoc_enc;
+
+		/* Enable association frame encryption based on the AP
+		 * advertising support for it to avoid potential
+		 * interoperability issues with incorrect AP behavior if we
+		 * were to send an "unexpected" RSNXE with multiple octets of
+		 * payload. */
+		assoc_enc = ieee802_11_rsnx_capab(
+			bss_rsnx, WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION);
+		if (!skip_default_rsne)
+			wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_ASSOC_ENC,
+					 assoc_enc);
+	} else {
+		wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_ASSOC_ENC, false);
+	}
+#endif /* CONFIG_ENC_ASSOC */
+
 	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_SPP_AMSDU,
 			 (wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_SPP_AMSDU) &&
 			 ieee802_11_rsnx_capab(bss_rsnx,
@@ -2679,6 +2701,10 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 
 	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_SAE_PW_ID_CHANGE,
 			 ssid->sae_password_id && ssid->sae_password_id_change);
+#ifdef CONFIG_PMKSA_PRIVACY
+	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_PMKSA_CACHING_PRIVACY,
+			 ssid->pmksa_privacy);
+#endif /* CONFIG_PMKSA_PRIVACY */
 
 	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_SECURITY_PROFILE_ACTIVE,
 			 wpas_security_profile_active(wpa_s) ? 1 : 0);
@@ -6648,6 +6674,28 @@ static int owe_trans_ssid_match(struct wpa_supplicant *wpa_s, const u8 *bssid,
 #endif /* CONFIG_OWE */
 
 
+/* Note: @ssid->bssid_set is expected to be set */
+static bool wpas_get_ssid_match_bssid(struct wpa_supplicant *wpa_s,
+				      struct wpa_ssid *ssid,
+				      const u8 *assoc_bssid)
+{
+	u8 link_id;
+
+	if (ether_addr_equal(assoc_bssid, ssid->bssid))
+		return true;
+
+	if (!wpa_s->valid_links)
+		return false;
+
+	for_each_link(wpa_s->valid_links, link_id) {
+		if (ether_addr_equal(wpa_s->links[link_id].bssid,
+				     ssid->bssid))
+			return true;
+	}
+
+	return false;
+}
+
 /**
  * wpa_supplicant_get_ssid - Get a pointer to the current network structure
  * @wpa_s: Pointer to wpa_supplicant data
@@ -6687,14 +6735,14 @@ struct wpa_ssid * wpa_supplicant_get_ssid(struct wpa_supplicant *wpa_s)
 		       os_memcmp(ssid, entry->ssid, ssid_len) == 0)) ||
 		     wired) &&
 		    (!entry->bssid_set ||
-		     ether_addr_equal(bssid, entry->bssid)))
+		     wpas_get_ssid_match_bssid(wpa_s, entry, bssid)))
 			return entry;
 #ifdef CONFIG_WPS
 		if (!wpas_network_disabled(wpa_s, entry) &&
 		    (entry->key_mgmt & WPA_KEY_MGMT_WPS) &&
 		    (entry->ssid == NULL || entry->ssid_len == 0) &&
 		    (!entry->bssid_set ||
-		     ether_addr_equal(bssid, entry->bssid)))
+		     wpas_get_ssid_match_bssid(wpa_s, entry, bssid)))
 			return entry;
 #endif /* CONFIG_WPS */
 
@@ -6704,13 +6752,13 @@ struct wpa_ssid * wpa_supplicant_get_ssid(struct wpa_supplicant *wpa_s)
 		     owe_trans_ssid_match(wpa_s, bssid, entry->ssid,
 					  entry->ssid_len)) &&
 		    (!entry->bssid_set ||
-		     ether_addr_equal(bssid, entry->bssid)))
+		     wpas_get_ssid_match_bssid(wpa_s, entry, bssid)))
 			return entry;
 #endif /* CONFIG_OWE */
 
 		if (!wpas_network_disabled(wpa_s, entry) && entry->bssid_set &&
 		    entry->ssid_len == 0 &&
-		    ether_addr_equal(bssid, entry->bssid))
+		    wpas_get_ssid_match_bssid(wpa_s, entry, bssid))
 			return entry;
 
 		entry = entry->next;
@@ -8060,6 +8108,21 @@ static struct wpa_radio_work * radio_work_get_next_work(struct wpa_radio *radio)
 			continue;
 		}
 		/*
+		 * Allow parallel scan across interfaces sharing the same wiphy
+		 * when the driver advertises parallel hardware scan support.
+		 */
+		if (radio_work_is_scan(active_work) &&
+		    radio_work_is_scan(tmp) &&
+		    active_work->wpa_s != tmp->wpa_s &&
+		    (active_work->wpa_s->drv_flags2 &
+		     WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN)) {
+			wpa_dbg(active_work->wpa_s, MSG_DEBUG,
+				"Allow parallel scan for %s alongside %s",
+				tmp->wpa_s->ifname,
+				active_work->wpa_s->ifname);
+			return tmp;
+		}
+		/*
 		 * Check that the radio works are distinct and
 		 * on different bands.
 		 */
@@ -8108,8 +8171,24 @@ static void radio_start_next_work(void *eloop_ctx, void *timeout_ctx)
 
 	if (!(wpa_s &&
 	      wpa_s->drv_flags & WPA_DRIVER_FLAGS_OFFCHANNEL_SIMULTANEOUS)) {
-		if (work->started)
-			return; /* already started and still in progress */
+		if (work->started) {
+			/*
+			 * Allow a concurrent scan to start alongside an already
+			 * running scan when the driver supports parallel HW scan
+			 * and the next work is a scan on a different interface.
+			 */
+			if (radio_work_is_scan(work) &&
+			    (wpa_s->drv_flags2 &
+			     WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN) &&
+			    radio->num_active_works <
+			    dl_list_len(&radio->ifaces)) {
+				work = radio_work_get_next_work(radio);
+				if (!work)
+					return;
+			} else {
+				return; /* already started and still in progress */
+			}
+		}
 
 		if (wpa_s && external_scan_running(wpa_s->radio)) {
 			wpa_printf(MSG_DEBUG, "Delay radio work start until externally triggered scan completes");
@@ -8139,6 +8218,9 @@ static void radio_start_next_work(void *eloop_ctx, void *timeout_ctx)
 
 	if ((wpa_s->drv_flags & WPA_DRIVER_FLAGS_OFFCHANNEL_SIMULTANEOUS) &&
 	    radio->num_active_works < MAX_ACTIVE_WORKS)
+		radio_work_check_next(wpa_s);
+	else if ((wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN) &&
+		 radio->num_active_works < dl_list_len(&radio->ifaces))
 		radio_work_check_next(wpa_s);
 }
 
@@ -8329,6 +8411,13 @@ int radio_add_work(struct wpa_supplicant *wpa_s, unsigned int freq,
 		   && radio->num_active_works < MAX_ACTIVE_WORKS) {
 		wpa_dbg(wpa_s, MSG_DEBUG,
 			"Try to schedule a radio work (num_active_works=%u)",
+			radio->num_active_works);
+		radio_work_check_next(wpa_s);
+	} else if ((wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN) &&
+		   radio_work_is_scan(work) &&
+		   radio->num_active_works < dl_list_len(&radio->ifaces)) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"Try to schedule parallel scan work (num_active_works=%u)",
 			radio->num_active_works);
 		radio_work_check_next(wpa_s);
 	}
@@ -8634,6 +8723,7 @@ static int wpa_supplicant_init_iface(struct wpa_supplicant *wpa_s,
 						      &wpa_s->hw.num_modes,
 						      &wpa_s->hw.flags,
 						      &dfs_domain);
+	wpa_s->hw_dfs_domain = dfs_domain;
 	if (wpa_s->hw.modes) {
 		u16 i;
 
@@ -10334,6 +10424,9 @@ void wpas_request_connection(struct wpa_supplicant *wpa_s)
 	wpa_s->disconnected = 0;
 	wpa_s->reassociate = 1;
 	wpa_s->last_owe_group = 0;
+#ifdef CONFIG_PASN
+	wpa_pasn_reset(&wpa_s->pasn);
+#endif /* CONFIG_PASN */
 
 	if (wpa_supplicant_fast_associate(wpa_s) != 1)
 		wpa_supplicant_req_scan(wpa_s, 0, 0);
@@ -11001,4 +11094,26 @@ int wpas_get_owe_trans_network(const u8 *owe_ie, const u8 **bssid,
 #else /* CONFIG_OWE */
 	return -1;
 #endif /* CONFIG_OWE */
+}
+
+
+void wpas_update_dfs_ap_info(struct wpa_supplicant *wpa_s, int freq,
+			     enum chan_width ap_ch_width,
+			     bool disconnect_evt)
+{
+	if (disconnect_evt) {
+		wpa_printf(MSG_DEBUG, "Disconnect event of DFS AP");
+		wpa_s->sta_connected_freq = 0;
+		wpa_s->sta_connected_chan_width = CHAN_WIDTH_UNKNOWN;
+	} else {
+		wpa_s->sta_connected_freq = freq;
+		wpa_s->sta_connected_chan_width = ap_ch_width;
+	}
+	wpa_s->dfs_ap_connected = !disconnect_evt;
+
+#ifdef CONFIG_P2P
+	if (wpa_s->global->p2p)
+		p2p_update_dfs_ap_info(wpa_s->global->p2p, freq, ap_ch_width,
+				       disconnect_evt);
+#endif /* CONFIG_P2P */
 }

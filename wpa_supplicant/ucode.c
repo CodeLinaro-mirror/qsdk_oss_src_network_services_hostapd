@@ -234,21 +234,6 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 					return;
 				if (bss->mld_links[i].freq == 0)
 					continue;
-				state = wpa_supplicant_state_txt(wpa_s->wpa_state);
-				uc_value_push(ucv_get(ucv_string_new(wpa_s->ifname)));
-				hw_idx = wpa_get_hw_idx_by_freq(wpa_s, bss->mld_links[i].freq);
-				if (hw_idx == -1)
-					hw_idx = 0;
-				uc_value_push(ucv_get(ucv_int64_new(hw_idx)));
-				uc_value_push(ucv_get(val));
-				uc_value_push(ucv_get(ucv_string_new(state)));
-				info = ucv_object_new(vm);
-				uc_value_push(ucv_get(info));
-				uc_value_push(ucv_get(ucv_int64_new(vap_type)));
-				ucv_object_add(info, "frequency",
-					       ucv_int64_new(bss->mld_links[i].freq));
-				ucv_object_add(info, "chan_width",
-					       ucv_int64_new(bss->mld_links[i].width));
 
 				/* Reset per-link before computing center freqs */
 				center_freq1 = 0;
@@ -276,17 +261,45 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 					center_freq2 = ieee80211_chan_to_freq(NULL, op_class,
 									      bss->mld_links[i].center_freq2_idx);
 				}
+
+				if (wpas_link_uses_nol_channel_extn(wpa_s,
+								    bss->mld_links[i].freq,
+								    bss->mld_links[i].width,
+								    center_freq1, center_freq2)) {
+					wpa_printf(MSG_DEBUG,
+						   "NOL: MLO pre-connect link %d freq=%d in NOL - skip",
+						   i, bss->mld_links[i].freq);
+					continue;
+				}
+
+				state = wpa_supplicant_state_txt(wpa_s->wpa_state);
+				uc_value_push(ucv_get(ucv_string_new(wpa_s->ifname)));
+				hw_idx = wpa_get_hw_idx_by_freq(wpa_s, bss->mld_links[i].freq);
+				if (hw_idx == -1)
+					hw_idx = 0;
+				uc_value_push(ucv_get(ucv_int64_new(hw_idx)));
+				uc_value_push(ucv_get(val));
+				uc_value_push(ucv_get(ucv_string_new(state)));
+				info = ucv_object_new(vm);
+				uc_value_push(ucv_get(info));
+				uc_value_push(ucv_get(ucv_int64_new(vap_type)));
+				ucv_object_add(info, "frequency",
+					       ucv_int64_new(bss->mld_links[i].freq));
+				ucv_object_add(info, "chan_width",
+					       ucv_int64_new(bss->mld_links[i].width));
 				ucv_object_add(info, "center_freq1",
 					       ucv_int64_new(center_freq1));
 				ucv_object_add(info, "center_freq2",
 					       ucv_int64_new(center_freq2));
 				ucv_object_add(info, "punct_bitmap",
 				ucv_int64_new(bss->mld_links[i].punc_bitmap));
+#ifdef CONFIG_QCN_EXTN
 				is_dfs = wpas_ucode_is_dfs_chandef(bss->mld_links[i].freq,
 								   bss->mld_links[i].width,
 								   center_freq1,
 								   center_freq2);
 				ucv_object_add(info, "is_dfs", ucv_boolean_new(is_dfs));
+#endif /* CONFIG_QCN_EXTN */
 				ucv_object_add(info, "mcst",
 					       ucv_int64_new(wpa_bss_get_mld_link_mcst_extn(bss, i)));
 				sec_chan_offset = compute_sec_channel_offset_extn(bss->mld_links[i].freq,
@@ -347,12 +360,14 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 				       ucv_int64_new(center_freq2));
 			ucv_object_add(info, "punct_bitmap",
 				       ucv_int64_new(bss->punc_bitmap));
-			is_dfs = wpas_ucode_is_dfs_chandef(bss->freq,
+#ifdef CONFIG_QCN_EXTN
+	is_dfs = wpas_ucode_is_dfs_chandef(bss->freq,
 							   bss->max_cw,
 							   center_freq1,
 							   center_freq2);
 			ucv_object_add(info, "is_dfs",
 				       ucv_boolean_new(is_dfs));
+#endif /* CONFIG_QCN_EXTN */
 			sec_chan_offset = compute_sec_channel_offset_extn(bss->freq,
 									  center_freq1,
 									  bss->max_cw);
@@ -615,7 +630,7 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 	uc_value_t *ret, *val;
 	uc_value_t *radio_id = uc_fn_arg(0);
 	s8 hw_idx;
-	int freq, sec_chan, i;
+	int freq, sec_chan, i, poll_ret = 0;
 #ifdef CONFIG_QCN_EXTN
 	bool is_dfs = false;
 #endif
@@ -645,7 +660,8 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 #ifdef CONFIG_QCN_EXTN
 				ucv_object_add(ret, "mcst", ucv_int64_new(mcst));
 #endif
-				if (wpa_drv_mlo_signal_poll(wpa_s, &mlo_si) == 0) {
+				if ((poll_ret = wpa_drv_mlo_signal_poll(wpa_s,
+									&mlo_si)) == 0) {
 					if (mlo_si.links[i].chanwidth != CHAN_WIDTH_UNKNOWN) {
 						ucv_object_add(ret, "chan_width", ucv_int64_new(mlo_si.links[i].chanwidth));
 						ucv_object_add(ret, "center_freq1", ucv_int64_new(mlo_si.links[i].center_frq1));
@@ -659,6 +675,13 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 						ucv_object_add(ret, "is_dfs", ucv_boolean_new(is_dfs));
 #endif
 					}
+				} else {
+					wpa_printf(MSG_INFO,
+						   "%s: MLO_SIGNAL_POLL failed ifname=%s hw_idx=%hhd link_id=%d ret=%d",
+						   __func__, wpa_s->ifname, hw_idx, i,
+						   poll_ret);
+					ucv_put(ret);
+					return NULL;
 				}
 			}
 		}
@@ -677,7 +700,7 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 		ucv_object_add(ret, "sec_chan_offset", ucv_int64_new(sec_chan));
 		ucv_object_add(ret, "frequency", ucv_int64_new(bss->freq));
 		if (wpa_s->wpa_state == WPA_COMPLETED &&
-		    wpa_drv_signal_poll(wpa_s, &si) == 0) {
+		    (poll_ret = wpa_drv_signal_poll(wpa_s, &si)) == 0) {
 			if (si.chanwidth != CHAN_WIDTH_UNKNOWN) {
 				ucv_object_add(ret, "chan_width",
 					       ucv_int64_new(si.chanwidth));
@@ -694,6 +717,13 @@ uc_wpas_iface_status(uc_vm_t *vm, size_t nargs)
 				ucv_object_add(ret, "is_dfs", ucv_boolean_new(is_dfs));
 #endif
 			}
+		} else if (wpa_s->wpa_state == WPA_COMPLETED) {
+			wpa_printf(MSG_INFO,
+				   "%s: SIGNAL_POLL failed ifname=%s hw_idx=%hhd freq=%d ret=%d",
+				   __func__, wpa_s->ifname, hw_idx, bss->freq,
+				   poll_ret);
+			ucv_put(ret);
+			return NULL;
 		}
 	}
 
@@ -728,7 +758,6 @@ uc_wpas_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 	struct wpa_supplicant *wpa_s = uc_fn_thisval("wpas.iface");
 	uc_value_t *info = uc_fn_arg(0);
 	struct csa_settings csa;
-	enum chan_width width = CHAN_WIDTH_UNKNOWN;
 	int val;
 	bool boolval;
 
@@ -791,6 +820,8 @@ uc_wpas_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 
 	if (!uc_wpas_object_get_int(info, "sec_chan_offset",
 				    &csa.freq_params.sec_channel_offset)) {
+#ifdef CONFIG_QCN_EXTN
+		enum chan_width width;
 		switch (csa.freq_params.bandwidth) {
 		case 20:
 			width = CHAN_WIDTH_20;
@@ -811,8 +842,6 @@ uc_wpas_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 			width = CHAN_WIDTH_UNKNOWN;
 			break;
 		}
-
-#ifdef CONFIG_QCN_EXTN
 		csa.freq_params.sec_channel_offset =
 			compute_sec_channel_offset_extn(
 				csa.freq_params.freq,

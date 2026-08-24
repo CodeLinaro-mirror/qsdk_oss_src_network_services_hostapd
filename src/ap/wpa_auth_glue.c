@@ -22,6 +22,7 @@
 #include "l2_packet/l2_packet.h"
 #include "eth_p_oui.h"
 #include "hostapd.h"
+#include "hostapd_log.h"
 #include "ieee802_1x.h"
 #include "preauth_auth.h"
 #include "sta_info.h"
@@ -399,6 +400,7 @@ static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
 	os_memcpy(wconf->smd_domain_id, conf->smd.smd_identifier, ETH_ALEN);
 	wconf->smd_ptk_mode = conf->smd.caps.ptk_mode;
 #endif /* CONFIG_IEEE80211BN */
+	wconf->report_connection_failures = conf->report_connection_failures;
 }
 
 
@@ -434,6 +436,12 @@ static void hostapd_wpa_auth_disconnect(void *ctx, const u8 *addr,
 	wpa_printf(MSG_DEBUG, "%s: WPA authenticator requests disconnect: "
 		   "STA " MACSTR " reason %d",
 		   __func__, MAC2STR(addr), reason);
+#ifdef CONFIG_QCN_EXTN
+	if (reason == WLAN_REASON_4WAY_HANDSHAKE_TIMEOUT ||
+	    reason == WLAN_REASON_PREV_AUTH_NOT_VALID)
+		hostapd_log_trigger_emit(hapd, addr,
+					 HOSTAPD_LOG_TRIG_4WAY_FAIL);
+#endif /* CONFIG_QCN_EXTN */
 	ap_sta_disconnect(hapd, NULL, addr, reason);
 }
 
@@ -453,6 +461,9 @@ static void hostapd_wpa_auth_psk_failure_report(void *ctx, const u8 *addr)
 #ifdef RDK_ONEWIFI
 	hostapd_drv_sta_notify_deauth(hapd, addr, WLAN_REASON_PREV_AUTH_NOT_VALID);
 #endif
+#ifdef CONFIG_QCN_EXTN
+	hostapd_log_trigger_emit(hapd, addr, HOSTAPD_LOG_TRIG_4WAY_FAIL);
+#endif /* CONFIG_QCN_EXTN */
 	hostapd_ubus_notify(hapd, "key-mismatch", addr);
 }
 
@@ -1180,7 +1191,7 @@ static void hostapd_store_ptksa(void *ctx, const u8 *addr,int cipher,
 	struct hostapd_data *hapd = ctx;
 
 	ptksa_cache_add(hapd->ptksa, hapd->own_addr, addr, cipher, life_time,
-			ptk, NULL, NULL, 0);
+			ptk, NULL, NULL, 0, 0);
 }
 
 
@@ -1328,7 +1339,7 @@ hostapd_wpa_auth_add_sta_ml(struct hostapd_data *hapd, const u8 *sta_mld)
 		 */
 		wpa_printf(MSG_DEBUG, "Remove STA "MACSTR" to make source to"
 			   " target roaming", MAC2STR(sta_mld));
-		ap_sta_remove_link_sta(hapd, sta_ml_obj, 0);
+		ap_sta_remove_link_sta(hapd, sta_ml_obj, 0, false);
 		ap_free_sta(hapd, sta_ml_obj);
 		sta_ml_obj = NULL;
 	}
@@ -1786,11 +1797,13 @@ static int hostapd_wpa_auth_pull_pmk_r1(void *ctx, const u8 *sta_addr,
 }
 
 
+#ifdef CONFIG_QCN_EXTN
 static int hostapd_wpa_auth_frame_fwd_decision(void *ctx, u16 auth_alg)
 {
 	return hostapd_if_frame_fwd_decision(ctx, auth_alg,
 					     HOSTAPD_IF_FRAME_TYPE_REMOTE_AUTH);
 }
+#endif /* CONFIG_QCN_EXTN */
 
 
 static int hostapd_wpa_auth_notify_remote_auth(void *ctx, const u8 *sta_addr,
@@ -1816,7 +1829,7 @@ static u8 *hostapd_wpa_ft_add_bmle(void *ctx, u8 *bmle_ie, u8 type, void *mle_da
 		return bmle_ie;
 #endif /* CONFIG_QCN_EXTN */
 
-	return hostapd_eid_eht_ml_beacon(hapd, NULL, bmle_ie, true, 0);
+	return hostapd_eid_eht_ml_beacon(hapd, NULL, bmle_ie, true, 0, false, false);
 }
 
 
@@ -1829,7 +1842,7 @@ static size_t hostapd_wpa_ft_add_bmle_len(void *ctx, u8 type, void *mle_data)
 		return 0;
 #endif /* CONFIG_QCN_EXTN */
 
-	return hostapd_eid_eht_ml_beacon_len(hapd, NULL, true, 0);
+	return hostapd_eid_eht_ml_beacon_len(hapd, NULL, true, 0, false, false);
 }
 
 
@@ -2101,7 +2114,9 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 		.get_session_timeout = hostapd_wpa_auth_get_session_timeout,
 #ifdef CONFIG_HOSTAPD_IF
 		.pull_pmk_r1 = hostapd_wpa_auth_pull_pmk_r1,
+#ifdef CONFIG_QCN_EXTN
 		.frame_fwd_decision = hostapd_wpa_auth_frame_fwd_decision,
+#endif /* CONFIG_QCN_EXTN */
 		.notify_remote_auth = hostapd_wpa_auth_notify_remote_auth,
 #endif
 #ifdef CONFIG_QCN_EXTN

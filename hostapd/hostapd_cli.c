@@ -10,10 +10,13 @@
 #include <dirent.h>
 #include <errno.h>
 #include <limits.h>
+#include <glob.h>
 
 #include "common/wpa_ctrl.h"
 #include "common/ieee802_11_defs.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/hostapd_cli_extn.h"
+#endif /* CONFIG_QCN_EXTN */
 #include "utils/common.h"
 #include "utils/eloop.h"
 #include "utils/edit.h"
@@ -201,6 +204,34 @@ static void hostapd_cli_msg_cb(char *msg, size_t len)
 }
 
 
+static int hostapd_cli_recovery_in_progress(void)
+{
+	glob_t g;
+	size_t i;
+	FILE *f;
+	char val;
+	int found = 0;
+
+	if (glob("/sys/kernel/debug/ath12k/*/recovery_in_progress",
+		 0, NULL, &g) != 0)
+		return 0;
+
+	for (i = 0; i < g.gl_pathc; i++) {
+		f = fopen(g.gl_pathv[i], "r");
+		if (!f)
+			continue;
+		if (fread(&val, 1, 1, f) == 1 && val == '1')
+			found = 1;
+		fclose(f);
+		if (found)
+			break;
+	}
+
+	globfree(&g);
+	return found;
+}
+
+
 static int _wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd, int print)
 {
 #ifdef CONFIG_QCN_EXTN
@@ -213,6 +244,11 @@ static int _wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd, int print)
 
 	if (ctrl_conn == NULL) {
 		printf("Not connected to hostapd - command dropped.\n");
+		return -1;
+	}
+	if (hostapd_cli_recovery_in_progress()) {
+		printf("'%s' command dropped: ath12k recovery in progress.\n",
+		       cmd);
 		return -1;
 	}
 	len = sizeof(buf) - 1;
@@ -781,6 +817,27 @@ static int hostapd_cli_cmd_get_config(struct wpa_ctrl *ctrl, int argc,
 				      char *argv[])
 {
 	return wpa_ctrl_command(ctrl, "GET_CONFIG");
+}
+
+static int hostapd_cli_cmd_dump_tk(struct wpa_ctrl *ctrl, int argc,
+				   char *argv[])
+{
+	char buf[300];
+	int res;
+
+	if (argc != 2) {
+		printf("Invalid DUMP_TK command: needs two arguments "
+		       "(STA address and key index)\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "DUMP_TK %s %s", argv[0], argv[1]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("Too long DUMP_TK command.\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
 }
 
 
@@ -1757,13 +1814,14 @@ static int hostapd_cli_cmd_update_beacon(struct wpa_ctrl *ctrl, int argc,
  *
  * Usage:
  *   hostapd_cli -i <intf> [-l <link_id>] update_uhr_features \
-*       [NPCA enable=<0|1> [primary_chan=<chan|freq_mhz>]
-*             [min_dur=<0-15>] [switch_delay=<0-63>] [switch_back=<0-63>]
-*             [init_qsrc=<0-3>] [moplen=<0|1>] [disabled_subch_bitmap=<0xHHHH>]]
+ *       [NPCA enable=<0|1>
+ *             (enable=1: primary_chan=<chan|freq_mhz> min_dur=<0-15>
+ *                        switch_delay=<0-63> switch_back=<0-63>
+ *                        [init_qsrc=<0-3>] [moplen=<0|1>] [bitmap=<0xHHHH>])
+ *             (enable=0: no additional parameters allowed)]
  *
- * At least one of NPCA must be specified.  The NPCA parameters map
- * directly to the Figure 9-aa4 NPCA Operation Parameters field defined in
- * IEEE P802.11bn D1.4 ss9.4.2.355.2.
+ * When enable=1, primary_chan, min_dur, switch_delay, and switch_back are
+ * mandatory.  When enable=0, no additional parameters are allowed.
  */
 static int hostapd_cli_cmd_update_uhr_features(struct wpa_ctrl *ctrl,
 					       int argc, char *argv[])
@@ -1774,9 +1832,11 @@ static int hostapd_cli_cmd_update_uhr_features(struct wpa_ctrl *ctrl,
 
 	if (argc < 1) {
 		printf("Usage: update_uhr_features "
-		       "[NPCA enable=<0|1> [primary_chan=<chan|freq_mhz>]\n"
-		       "  [min_dur=<0-15>] [switch_delay=<0-63>] [switch_back=<0-63>]\n"
-		       "  [init_qsrc=<0-3>] [moplen=<0|1>] [bitmap=<0xHHHH>]]\n");
+		       "[NPCA enable=<0|1>\n"
+		       "  enable=1: primary_chan=<chan|freq_mhz> min_dur=<0-15>\n"
+		       "           switch_delay=<0-63> switch_back=<0-63>\n"
+		       "           [init_qsrc=<0-3>] [moplen=<0|1>] [bitmap=<0xHHHH>]\n"
+		       "  enable=0: no additional parameters allowed\n");
 		return -1;
 	}
 
@@ -1903,6 +1963,23 @@ static int hostapd_cli_cmd_log_level(struct wpa_ctrl *ctrl, int argc,
 }
 
 
+static int hostapd_cli_cmd_log_peer(struct wpa_ctrl *ctrl, int argc,
+				    char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc < 1) {
+		printf("Usage: log_peer <addr>|clear\n");
+		return -1;
+	}
+	res = os_snprintf(cmd, sizeof(cmd), "LOG_PEER %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res))
+		return -1;
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+
 static int hostapd_cli_cmd_raw(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	if (argc == 0)
@@ -1995,6 +2072,23 @@ static int hostapd_cli_cmd_req_range(struct wpa_ctrl *ctrl, int argc,
 	}
 
 	return hostapd_cli_cmd(ctrl, "REQ_RANGE", 4, argc, argv);
+}
+
+
+static int hostapd_cli_cmd_set_rtt_responder_role(struct wpa_ctrl *ctrl,
+						  int argc, char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "SET_RTT_RESPONDER_ROLE", 1, argc, argv);
+}
+
+static int hostapd_cli_cmd_get_rtt_responder_role(struct wpa_ctrl *ctrl,
+						  int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid get_rtt_responder_role command: no arguments expected\n");
+		return -1;
+	}
+	return wpa_ctrl_command(ctrl, "GET_RTT_RESPONDER_ROLE");
 }
 
 
@@ -2232,6 +2326,20 @@ static int hostapd_cli_cmd_req_link_measurement(struct wpa_ctrl *ctrl, int argc,
 }
 
 
+static int hostapd_cli_cmd_req_channel_load(struct wpa_ctrl *ctrl, int argc,
+					    char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "REQ_CHANNEL_LOAD", 5, argc, argv);
+}
+
+
+static int hostapd_cli_cmd_req_noise_histogram(struct wpa_ctrl *ctrl, int argc,
+					       char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "REQ_NOISE_HISTOGRAM", 5, argc, argv);
+}
+
+
 static int hostapd_cli_cmd_reload_wpa_psk(struct wpa_ctrl *ctrl, int argc,
 					  char *argv[])
 {
@@ -2370,6 +2478,116 @@ static int hostapd_cli_cmd_reset_afc(struct wpa_ctrl *ctrl,
 	ret = wpa_ctrl_command(ctrl, cmd);
 	return ret;
 }
+
+
+#ifdef CONFIG_IEEE80211BN
+static int hostapd_cli_cmd_get_mapc_configs(struct wpa_ctrl *ctrl,
+					    int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_MAPC_CONFIGS");
+}
+
+
+static int hostapd_cli_cmd_set_mapc_configs(struct wpa_ctrl *ctrl,
+					    int argc, char *argv[])
+{
+	char cmd[256];
+	int res, i, len = 0;
+
+	if (argc < 1) {
+		printf("usage: set_mapc_configs <key>=<value>"
+		       " [<key>=<value> ...]\n"
+		       "keys: cotdma_en disc_interval disc_mode neg_mode\n"
+		       "      max_co_ap max_ctdma max_disc_ap disc_timeout\n"
+		       "      neg_timeout inact_timeout disc_cotdma_prof\n"
+		       "note: session-only; update hostapd.conf to persist\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SET_MAPC_CONFIGS");
+	if (os_snprintf_error(sizeof(cmd), res))
+		return -1;
+	len = res;
+
+	for (i = 0; i < argc; i++) {
+		if (!os_strchr(argv[i], '=')) {
+			printf("error: '%s' missing '='\n", argv[i]);
+			return -1;
+		}
+		res = os_snprintf(cmd + len, sizeof(cmd) - len,
+				  " %s", argv[i]);
+		if (os_snprintf_error(sizeof(cmd) - len, res)) {
+			printf("error: command too long\n");
+			return -1;
+		}
+		len += res;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+
+static int hostapd_cli_cmd_get_mapc_valid_coap_list(struct wpa_ctrl *ctrl,
+							int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "GET_MAPC_VALID_COAP_LIST");
+}
+
+
+static int hostapd_cli_cmd_set_mapc_valid_coap_list(struct wpa_ctrl *ctrl,
+							int argc, char *argv[])
+{
+	char cmd[256];
+	int res, i, len = 0;
+
+	if (argc < 1) {
+		printf("Invalid 'set_mapc_valid_coap_list' command - usage:\n"
+		       "  set_mapc_valid_coap_list <MAC0> [MAC1 ... MACN]\n"
+		       "  Replaces the entire valid COAP peer list.\n"
+		       "  At least one MAC address is required.\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SET_MAPC_VALID_COAP_LIST");
+	if (os_snprintf_error(sizeof(cmd), res))
+		return -1;
+	len = res;
+
+	for (i = 0; i < argc; i++) {
+		res = os_snprintf(cmd + len, sizeof(cmd) - len, " %s", argv[i]);
+		if (os_snprintf_error(sizeof(cmd) - len, res)) {
+			printf("Command too long\n");
+			return -1;
+		}
+		len += res;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_set_mapc_sta(struct wpa_ctrl *ctrl,
+					int argc, char *argv[])
+{
+	char cmd[64];
+	int res;
+
+	if (argc != 2) {
+		printf("Invalid 'set_mapc_sta' command - usage:\n"
+		       "  set_mapc_sta <bssid> cotdma=<0|1>\n"
+		       "  Requires mapc_negotiation_mode=1\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "SET_MAPC_STA %s %s",
+			  argv[0], argv[1]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command error (SET_MAPC_STA too long)\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+#endif /* CONFIG_IEEE80211BN */
 
 
 #ifdef CONFIG_IEEE80211AX
@@ -2928,6 +3146,7 @@ static int hostapd_cli_cmd_get_he_max_nc_suprt(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, "get_he_max_nc_suprt");
 }
 
+#ifdef CONFIG_QCN_EXTN
 static int hostapd_cli_cmd_set_he_er_su_disable(struct wpa_ctrl *ctrl, int argc,
 						char *argv[])
 {
@@ -3422,7 +3641,9 @@ static int hostapd_cli_cmd_get_he_mu_edca(struct wpa_ctrl *ctrl, int argc, char 
 	return wpa_ctrl_command(ctrl, cmd);
 }
 #endif /* CONFIG_QCN_EXTN */
+#endif /* CONFIG_IEEE80211AX */
 
+#ifdef CONFIG_QCN_EXTN
 /**
  * hostapd_cli_cmd_use_ru_puncture_dfs - Send runtime RU puncture DFS command
  * @ctrl: Pointer to the control interface connection
@@ -3450,6 +3671,7 @@ static int hostapd_cli_cmd_dfs_disable_auto_unpunc(struct wpa_ctrl *ctrl,
 {
 	return hostapd_cli_cmd(ctrl, "DFS_DISABLE_AUTO_UNPUNC", 1, argc, argv);
 }
+#endif /* CONFIG_QCN_EXTN */
 
 struct hostapd_cli_cmd {
 	const char *cmd;
@@ -3521,6 +3743,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "= send BSS Transition Management Request" },
 	{ "get_config", hostapd_cli_cmd_get_config, NULL,
 	  "= show current configuration" },
+	{ "dump_tk", hostapd_cli_cmd_dump_tk, NULL,
+	  "<addr> <key_idx> = dump TK for station (debug only)" },
 	{ "help", hostapd_cli_cmd_help, hostapd_cli_complete_help,
 	  "= show this usage help" },
 	{ "interface", hostapd_cli_cmd_interface, hostapd_complete_interface,
@@ -3641,6 +3865,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "= drop all ERP keys"},
 	{ "log_level", hostapd_cli_cmd_log_level, NULL,
 	  "[level] = show/change log verbosity level" },
+	{ "log_peer", hostapd_cli_cmd_log_peer, NULL,
+	  "<addr>|clear = restrict/clear per-peer log filter" },
 	{ "pmksa", hostapd_cli_cmd_pmksa, NULL,
 	  " = show PMKSA cache entries" },
 	{ "pmksa_flush", hostapd_cli_cmd_pmksa_flush, NULL,
@@ -3658,6 +3884,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<addr> = send LCI request to a station"},
 	{ "req_range", hostapd_cli_cmd_req_range, NULL,
 	  " = send FTM range request"},
+	{ "set_rtt_responder_role", hostapd_cli_cmd_set_rtt_responder_role, NULL,
+	  "<0..0x7> = set RTT responder role bitmask (0=disable)" },
+	{ "get_rtt_responder_role", hostapd_cli_cmd_get_rtt_responder_role, NULL,
+	  "= get RTT responder role bitmask" },
 	{ "driver_flags", hostapd_cli_cmd_driver_flags, NULL,
 	  " = show supported driver flags"},
 	{ "driver_flags2", hostapd_cli_cmd_driver_flags2, NULL,
@@ -3717,7 +3947,9 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "deny_acl", hostapd_cli_cmd_deny_macacl, NULL,
 	  "=Add/Delete/Show/Clear deny MAC ACL" },
 
+#ifdef CONFIG_QCN_EXTN
 	HOSTAPD_CLI_CMDS_EXTN
+#endif /* CONFIG_QCN_EXTN */
 
 	{ "poll_sta", hostapd_cli_cmd_poll_sta, hostapd_complete_stations,
 	  "<addr> = poll a STA to check connectivity with a QoS null frame" },
@@ -3729,6 +3961,10 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "= show recent received RRM Beacon Report"},
 	{ "req_link_measurement", hostapd_cli_cmd_req_link_measurement, NULL,
 	  "<addr> = send a link measurement report request to a station"},
+	{ "req_channel_load", hostapd_cli_cmd_req_channel_load, NULL,
+	  "<addr> <op_class> <channel> <rand_interval> <duration> = send a channel load request to a station"},
+	{ "req_noise_histogram", hostapd_cli_cmd_req_noise_histogram, NULL,
+	  "<addr> <op_class> <channel> <random_interval> <duration> = send a noise histogram report request to a station" },
 	{ "reload_wpa_psk", hostapd_cli_cmd_reload_wpa_psk, NULL,
 	  "= reload wpa_psk_file only" },
 #ifdef CONFIG_IEEE80211R_AP
@@ -3860,6 +4096,7 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<0-7> = set HE max NC support" },
 	{ "get_he_max_nc_suprt", hostapd_cli_cmd_get_he_max_nc_suprt, NULL,
 	  "= get HE max NC support" },
+#ifdef CONFIG_QCN_EXTN
 	{ "set_he_er_su_disable", hostapd_cli_cmd_set_he_er_su_disable, NULL,
 	  "<0|1> = set HE ER SU disable" },
 	{ "get_he_er_su_disable", hostapd_cli_cmd_get_he_er_su_disable, NULL,
@@ -3932,6 +4169,7 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "get_eht_mcs14_dup_in_6ghz",
 	  hostapd_cli_cmd_get_eht_mcs14_dup_in_6ghz, NULL,
 	  "= get EHT MCS14 duplicate support in 6GHz" },
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_QCN_EXTN
 	{ "set_edca_mode", hostapd_cli_cmd_set_muedca_mode, NULL,
@@ -3947,11 +4185,30 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<ac> <param> = get HE MU EDCA parameter value\n"
 	  "<ac>: Access category (be, bk, vi, vo)\n"
 	  "<param>: Parameter name (aifsn, ecwmin, ecwmax, timer, acm)\n" },
-#endif /* CONFIG_QCN_EXTN */
 	{ "use_ru_puncture_dfs", hostapd_cli_cmd_use_ru_puncture_dfs, NULL,
 	  "<1/0> = enable/disable Puncturing feature for DFS channels" },
 	{ "dfs_disable_auto_unpunc", hostapd_cli_cmd_dfs_disable_auto_unpunc, NULL,
 	  "<0|1> = disable/enable automatic unpuncturing of DFS channels after CAC" },
+#endif /* CONFIG_QCN_EXTN */
+#ifdef CONFIG_IEEE80211BN
+	{ "get_mapc_configs", hostapd_cli_cmd_get_mapc_configs, NULL,
+	  "= get MAPC config (set_mapc_configs keys) and runtime state (bitmaps/counters/timer)" },
+	{ "set_mapc_configs", hostapd_cli_cmd_set_mapc_configs, NULL,
+	  "<key>=<value> [<key>=<value> ...] = set MAPC config at runtime\n"
+	  "  cotdma_en [0|1]        disc_interval [0..3600]\n"
+	  "  disc_mode [0|1]        neg_mode      [0|1]\n"
+	  "  max_co_ap [1..12]      max_ctdma     [0..12]\n"
+	  "  max_disc_ap [1..12]    disc_timeout  [1..300]\n"
+	  "  neg_timeout [1..300]   inact_timeout [0..86400]\n"
+	  "  disc_cotdma_prof [0|1]" },
+	{ "get_mapc_valid_coap_list", hostapd_cli_cmd_get_mapc_valid_coap_list, NULL,
+	  "= get the MAPC valid COAP list" },
+	{ "set_mapc_valid_coap_list", hostapd_cli_cmd_set_mapc_valid_coap_list, NULL,
+	  "<MAC0> [MAC1 ... MACN] = replace the valid COAP peer list (full replace)" },
+	{ "set_mapc_sta", hostapd_cli_cmd_set_mapc_sta, NULL,
+	  "<bssid> cotdma=<0|1> = establish (1) or teardown (0) Co-TDMA agreement\n"
+	  "  Requires mapc_negotiation_mode=1 (manual mode)" },
+#endif /* CONFIG_IEEE80211BN */
 	{ NULL, NULL, NULL, NULL }
 };
 

@@ -10,7 +10,9 @@
 #define IEEE802_11_COMMON_H
 
 #include "defs.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #include "ieee802_11_defs.h"
 #include "utils/list.h"
 
@@ -50,7 +52,9 @@ struct ieee802_11_elems {
 	const u8 *ssid;
 	const u8 *supp_rates;
 
+#ifdef CONFIG_QCN_EXTN
 	struct ieee802_11_elems_extn elems_extn;
+#endif /* CONFIG_QCN_EXTN */
 
 	const u8 *ds_params;
 	const u8 *challenge;
@@ -145,6 +149,7 @@ struct ieee802_11_elems {
 	const u8 *smd;
 	const u8 *smd_bsstransparams;
 	const u8 *akm_suite_selector;
+	const u8 *supported_groups;
 
 	u8 ssid_len;
 	u8 supp_rates_len;
@@ -224,6 +229,7 @@ struct ieee802_11_elems {
 
 	/* Security Profile element (802.11bn D1.4, 9.4.2.364, EID ext=162) */
 	size_t security_profile_ie_len;
+	u8 supported_groups_len;
 
 	struct mb_ies_info mb_ies;
 
@@ -256,6 +262,9 @@ void ieee802_11_elems_clear_ext_ids(struct ieee802_11_elems *elems,
 ParseRes ieee802_11_parse_link_assoc_req(struct ieee802_11_elems *elems,
 					 struct wpabuf *mlbuf,
 					 u8 link_id, bool show_errors);
+ParseRes ieee802_11_parse_link_assoc_resp(struct ieee802_11_elems *elems,
+					  struct wpabuf *mlbuf,
+					  u8 link_id, bool show_errors);
 int ieee802_11_ie_count(const u8 *ies, size_t ies_len);
 struct wpabuf * ieee802_11_vendor_ie_concat(const u8 *ies, size_t ies_len,
 					    u32 oui_type);

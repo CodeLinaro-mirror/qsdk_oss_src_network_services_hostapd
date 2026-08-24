@@ -352,6 +352,7 @@ struct wpa_auth_config {
 	bool eppke_unauth;
 #endif /* CONFIG_PASN */
 #endif /* CONFIG_ENC_ASSOC */
+	unsigned int report_connection_failures:1;
 };
 
 typedef enum {
@@ -773,6 +774,7 @@ void wpa_store_eppke_pmk_ptk_sm(struct wpa_state_machine *sm,
 int wpa_auth_epp_derive_new_pmkid(const u8 *anonce, const u8 *snonce,
 				  int akmp, size_t pmk_len, u8 *pmkid);
 bool wpa_auth_ap_sta_support_assoc_enc(struct wpa_state_machine *sm);
+void wpa_auth_ensure_group_init(struct wpa_state_machine *sm);
 
 int wpa_auth_resend_m1(struct wpa_state_machine *sm, int change_anonce,
 		       void (*cb)(void *ctx1, void *ctx2),
@@ -809,6 +811,8 @@ void wpa_auth_set_ml_info_link(struct wpa_state_machine *sm,
 void wpa_auth_set_ml_info(struct wpa_state_machine *sm,
 			  u8 mld_assoc_link_id, struct mld_info *info);
 void wpa_auth_reset_ml_link_info(struct wpa_state_machine *sm, u8 mld_assoc_link_id);
+void wpa_auth_set_ml_link_rejected(struct wpa_state_machine *sm, u8 link_id,
+				   bool rejected);
 void wpa_auth_ml_get_key_info(struct wpa_authenticator *a,
 			      struct wpa_auth_ml_link_key_info *info,
 			      bool mgmt_frame_prot, bool beacon_prot,
@@ -872,4 +876,9 @@ int wpa_write_eppke_rsne(const u8 *wpa_ie, size_t wpa_ie_len,
 			 const u8 *pmkid, int akmp,
 			 int pairwise_cipher, enum mfp_options mfp);
 
+void wpa_auth_connection_fail_event(struct wpa_authenticator *wpa_auth,
+				    size_t frame_len, const char *frame_type,
+				    const u8 *frame_body, const u8 *sta_addr,
+				    const u8 *bssid, u16 conn_code,
+				    bool has_status);
 #endif /* WPA_AUTH_H */

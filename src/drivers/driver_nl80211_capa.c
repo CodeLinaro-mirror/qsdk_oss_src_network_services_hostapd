@@ -777,6 +777,16 @@ static void wiphy_info_ext_feature_flags(struct wiphy_info_data *info,
 	if (ext_feature_isset(ext_features, len,
 			      NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION))
 		capa->flags2 |= WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION;
+
+	if (ext_feature_isset(ext_features, len, NL80211_EXT_FEATURE_EPPKE) &&
+	    ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION)) {
+		capa->flags2 |= WPA_DRIVER_FLAGS2_EPPKE;
+	}
+
+	if (ext_feature_isset(ext_features, len,
+			      NL80211_EXT_FEATURE_PARALLEL_HW_SCAN))
+		capa->flags2 |= WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN;
 }
 
 
@@ -1078,6 +1088,22 @@ static int wiphy_info_handler(struct nl_msg *msg, void *arg)
 	wiphy_info_akm_suites(info, tb[NL80211_ATTR_AKM_SUITES]);
 	wiphy_info_iftype_akm_suites(info, tb[NL80211_ATTR_IFTYPE_AKM_SUITES]);
 
+#ifdef CONFIG_IEEE80211BN
+	if (tb[NL80211_ATTR_MAPC_HW_CAPS])
+		capa->mapc_hw_cap_bitmap =
+			nla_get_u32(tb[NL80211_ATTR_MAPC_HW_CAPS]);
+	if (tb[NL80211_ATTR_MAPC_MAX_CTDMA_PEERS])
+		capa->mapc_max_ctdma_peers =
+			nla_get_u8(tb[NL80211_ATTR_MAPC_MAX_CTDMA_PEERS]);
+
+	if (capa->mapc_hw_cap_bitmap || capa->mapc_max_ctdma_peers)
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: MAPC: wiphy_info_handler: "
+			   "hw_caps=0x%08x max_ctdma_peers=%u",
+			   capa->mapc_hw_cap_bitmap,
+			   capa->mapc_max_ctdma_peers);
+#endif /* CONFIG_IEEE80211BN */
+
 	if (tb[NL80211_ATTR_OFFCHANNEL_TX_OK]) {
 		wpa_printf(MSG_DEBUG, "nl80211: Using driver-based "
 			   "off-channel TX");
@@ -1204,13 +1230,13 @@ static int wiphy_info_handler(struct nl_msg *msg, void *arg)
 				case QCA_NL80211_VENDOR_SUBCMD_GET_STA_INFO:
 					drv->get_sta_info_vendor_cmd_avail = 1;
 					break;
-				case QCA_NL80211_VENDOR_SUBCMD_SECURE_RANGING_CONTEXT:
-					drv->secure_ranging_ctx_vendor_cmd_avail = 1;
-					break;
 				case QCA_NL80211_VENDOR_SUBCMD_CONNECT_EXT:
 					drv->connect_ext_vendor_cmd_avail = 1;
 					break;
 #endif /* CONFIG_DRIVER_NL80211_QCA */
+				case QCA_NL80211_VENDOR_SUBCMD_SECURE_RANGING_CONTEXT:
+					drv->secure_ranging_ctx_vendor_cmd_avail = 1;
+					break;
 #ifdef CONFIG_QCN_EXTN
 				default:
 					wiphy_info_qca_vendor_command_extn(drv, vinfo);

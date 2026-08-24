@@ -37,7 +37,9 @@
 #include "mbo_ap.h"
 #include "ndisc_snoop.h"
 #include "sta_info.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 #include "vlan.h"
 #include "wps_hostapd.h"
 #include "dscp_policy.h"
@@ -320,7 +322,7 @@ void ap_free_unadded_link_sta(struct hostapd_data *hapd, struct sta_info *sta)
 static void __ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 {
 #ifdef CONFIG_IEEE80211BE
-	if (hostapd_sta_is_link_sta(hapd, sta)) {
+	if (hostapd_sta_is_link_sta(hapd, sta) && !sta->skip_kernel_delete) {
 		hostapd_drv_link_sta_remove(hapd, sta->addr);
 		return;
 	}
@@ -383,7 +385,7 @@ static void hostapd_free_mscs_data(struct hostapd_data *hapd,
 	if (!sta->mscs_ctxt)
 		return;
 
-	hostapd_mscs_delete_all_rules(hapd, sta);
+	hostapd_mscs_delete_nft_rules(hapd, sta);
 	sta->mscs_session_exists = false;
 	os_free(sta->mscs_ctxt);
 	sta->mscs_ctxt = NULL;
@@ -415,7 +417,9 @@ int ap_sta_check_link_sta(struct hostapd_data *hapd, struct sta_info *sta,
 	if (lsta && lsta != sta) {
 		if (!ap_sta_is_authorized(lsta)) {
 			hostapd_drv_sta_deauth(hapd, lsta->addr, WLAN_REASON_PREV_AUTH_NOT_VALID);
-			ap_sta_remove_link_sta(hapd, lsta, false);
+			hostapd_drv_sta_remove(hapd, lsta->addr);
+			ap_sta_remove_link_sta(hapd, lsta, false, true);
+			lsta->skip_kernel_delete = true;
 			ap_free_sta(hapd, lsta);
 		} else
 			return 1;
@@ -427,6 +431,20 @@ int ap_sta_check_link_sta(struct hostapd_data *hapd, struct sta_info *sta,
 #endif
 }
 
+static void reset_aid_bitmap(struct hostapd_data *hapd, u16 sta_aid)
+{
+	struct hostapd_data *hapd_aid = hapd;
+
+	if (hapd->iconf->mbssid)
+		hapd_aid = hostapd_mbssid_get_tx_bss(hapd);
+
+	if (hapd_aid) {
+		hapd_aid->sta_aid[sta_aid / 32] &= ~BIT(sta_aid % 32);
+
+		wpa_printf(MSG_DEBUG, "AID bitmap is cleared for hapd:%s sta->aid:%u",
+			   hapd_aid->conf->iface, sta_aid);
+	}
+}
 
 void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 {
@@ -437,6 +455,9 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	struct hostapd_data *phapd;
 	struct sta_info *psta;
 	bool remove = true;
+#ifdef CONFIG_QCN_EXTN
+	hostapd_log_trigger_clear(hapd, sta->addr);
+#endif /* CONFIG_QCN_EXTN */
 
 	accounting_sta_stop(hapd, sta);
 
@@ -497,8 +518,7 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	ap_sta_list_del(hapd, sta);
 
 	if (sta->aid > 0)
-		hapd->sta_aid[sta->aid / 32] &=
-			~BIT(sta->aid % 32);
+		reset_aid_bitmap(hapd, sta->aid);
 
 	if (sta->wds_mld_uid > 0) {
 #ifdef CONFIG_QCN_EXTN
@@ -598,6 +618,10 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	eloop_cancel_timeout(ap_handle_timer, hapd, sta);
 	eloop_cancel_timeout(ap_handle_session_timer, hapd, sta);
 	eloop_cancel_timeout(ap_handle_session_warning_timer, hapd, sta);
+#ifdef CONFIG_IEEE80211BN
+	if (sta->is_mapc_peer)
+		mapc_cancel_sta_timers(hapd, sta);
+#endif /* CONFIG_IEEE80211BN */
 	ap_sta_clear_disconnect_timeouts(hapd, sta);
 	ap_sta_clear_assoc_timeout(hapd, sta);
 	sae_clear_retransmit_timer(hapd, sta);
@@ -703,7 +727,9 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	os_free(sta->eht_capab);
 	os_free(sta->uhr_capab);
 
+#ifdef CONFIG_QCN_EXTN
 	hostapd_sta_os_free_extn(&sta->sta_extn);
+#endif /* CONFIG_QCN_EXTN */
 
 	hostapd_free_psk_list(sta->psk);
 	os_free(sta->identity);
@@ -965,6 +991,15 @@ void ap_handle_timer(void *eloop_ctx, void *timeout_ctx)
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BN
+	if (sta->is_mapc_peer) {
+		wpa_printf(MSG_ERROR,
+			   "%s: Skipping inactivity handling for MAPC peer "
+			   MACSTR, hapd->conf->iface, MAC2STR(sta->addr));
+		return;
+	}
+#endif /* CONFIG_IEEE80211BN */
+
 	if (sta->timeout_next == STA_REMOVE) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_INFO, "deauthenticated due to "
@@ -1031,6 +1066,16 @@ void ap_handle_timer(void *eloop_ctx, void *timeout_ctx)
 				"inactive too long: %d sec, max allowed: %d",
 				MAC2STR(sta->addr), inactive_sec,
 				max_inactivity);
+
+			if (hapd->conf->skip_disconnect) {
+				wpa_msg(hapd->msg_ctx, MSG_INFO,
+					"AP-STA-IDLE-TIMEOUT " MACSTR,
+					MAC2STR(sta->addr));
+				sta->timeout_next = STA_NULLFUNC;
+				eloop_register_timeout(max_inactivity, 0,
+						       ap_handle_timer, hapd, sta);
+				return;
+			}
 
 			if (hapd->conf->skip_inactivity_poll)
 				sta->timeout_next = STA_DISASSOC;
@@ -1504,6 +1549,12 @@ static int ap_sta_remove(struct hostapd_data *hapd, struct sta_info *sta)
 {
 	ieee802_1x_notify_port_enabled(sta->eapol_sm, 0);
 
+	/* MAPC DISCOVERED peers are never added in the kernel driver */
+#ifdef CONFIG_IEEE80211BN
+	if (sta->mapc_params.peer_state == MAPC_PEER_STATE_DISCOVERED)
+		return 0;
+#endif /* CONFIG_IEEE80211BN */
+
 	if (sta->ipaddr)
 		hostapd_drv_br_delete_ip_neigh(hapd, 4, (u8 *) &sta->ipaddr);
 	ap_sta_ip6addr_del(hapd, sta);
@@ -1538,6 +1589,10 @@ static void ap_sta_remove_in_other_bss(struct hostapd_data *hapd,
 		if (bss == hapd || bss == NULL)
 			continue;
 		sta2 = ap_get_sta(bss, sta->addr);
+#ifdef CONFIG_IEEE80211BN
+		if (sta2 && sta2->mapc_params.peer_state != MAPC_PEER_STATE_NONE)
+			continue;
+#endif /* CONFIG_IEEE80211BN */
 		/* Authorized MFP STAs need special handling before disconnect */
 		if (!sta2 || ((sta2->flags & WLAN_STA_MFP) &&
 			      ap_sta_is_authorized(sta2)))
@@ -2677,9 +2732,8 @@ int ap_sta_pending_delayed_1x_auth_fail_disconnect(struct hostapd_data *hapd,
 
 
 #ifdef CONFIG_IEEE80211BE
-void ap_sta_remove_link_sta(struct hostapd_data *hapd,
-			    struct sta_info *sta,
-			    int check_authorized)
+void ap_sta_remove_link_sta(struct hostapd_data *hapd, struct sta_info *sta,
+			    int check_authorized, bool skip_kernel_delete)
 {
 	struct hostapd_data *tmp_hapd;
 
@@ -2704,6 +2758,13 @@ void ap_sta_remove_link_sta(struct hostapd_data *hapd,
 
 			if(check_authorized && ap_sta_is_authorized(tmp_sta))
 				continue;
+
+			/* If this is set it mean complete drv entry of station is
+			 * removed using  DEL STA. Link by link removal can be
+			 * prevented to avoid NL overload and delays introduced in driver.
+			 */
+			if (skip_kernel_delete)
+				tmp_sta->skip_kernel_delete = true;
 
 			ap_free_sta(tmp_hapd, tmp_sta);
 			break;
@@ -2730,12 +2791,14 @@ int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_aut
 	 * completed association.
 	 */
 
+	ap_sta_set_authorized(hapd, sta, 0);
+	hostapd_drv_sta_remove(hapd, sta->addr);
 #ifdef CONFIG_IEEE80211BE
 	/*
 	 * In case the AP is affiliated with an AP MLD, we need to
 	 * remove the station from all relevant links/APs.
 	 */
-	ap_sta_remove_link_sta(hapd, sta, check_authorized);
+	ap_sta_remove_link_sta(hapd, sta, check_authorized, true);
 
 	if (ap_sta_is_mld(hapd, sta)) {
 		u8 mld_link_id = hapd->mld_link_id;
@@ -2746,8 +2809,6 @@ int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_aut
 	}
 #endif /* CONFIG_IEEE80211BE */
 
-	ap_sta_set_authorized(hapd, sta, 0);
-	hostapd_drv_sta_remove(hapd, sta->addr);
 	sta->flags &= ~(WLAN_STA_ASSOC | WLAN_STA_AUTH | WLAN_STA_AUTHORIZED);
 
 	if (hostapd_sta_add(hapd, sta->addr, 0, 0,
@@ -2823,8 +2884,14 @@ void ap_sta_cleanup_all(struct hostapd_data *ohapd, struct sta_info *osta,
 				continue;
 
 			if (lsta && ap_sta_is_mld(lhapd, lsta) &&
-			    lsta->mld_assoc_link_id == ohapd->mld_link_id)
+			    lsta->mld_assoc_link_id == ohapd->mld_link_id) {
+				/* Station entry is already removed from driver with
+				 * the above call so prevent link remove again to
+				 * prevent NL flooding
+				 */
+				lsta->skip_kernel_delete = true;
 				ap_free_sta(lhapd, lsta);
+			}
 
 		}
 	}

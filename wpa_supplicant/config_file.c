@@ -1073,6 +1073,9 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid,
 	}
 #endif /* CONFIG_SAE */
 	STR(bgscan_freq);
+#ifdef CONFIG_PMKSA_PRIVACY
+	INT(pmksa_privacy);
+#endif /* CONFIG_PMKSA_PRIVACY */
 #undef STR
 #undef INT
 #undef INT_DEF
@@ -1837,6 +1840,19 @@ static void wpa_config_write_global(FILE *f, struct wpa_config *config)
 		fprintf(f, "pr_pasn_type=%d\n", config->pr_pasn_type);
 	if (config->pr_preferred_role)
 		fprintf(f, "pr_preferred_role=%d\n", config->pr_preferred_role);
+
+#ifdef CONFIG_PASN
+	if (config->pasn_groups) {
+		int i;
+
+		fprintf(f, "pasn_groups=");
+		for (i = 0; config->pasn_groups[i] > 0; i++) {
+			fprintf(f, "%s%d", i > 0 ? " " : "",
+				config->pasn_groups[i]);
+		}
+		fprintf(f, "\n");
+	}
+#endif /* CONFIG_PASN */
 }
 
 static void wpa_config_write_identity(FILE *f, struct wpa_dev_ik *dev_ik)
@@ -1871,6 +1887,7 @@ int wpa_config_write(const char *name, struct wpa_config *config)
 	int tmp_len;
 	char *tmp_name;
 	char *conf_file;
+	int used_tmp_fallback = 0;
 
 	if (!name) {
 		wpa_printf(MSG_ERROR, "No configuration file for writing");
@@ -1919,6 +1936,7 @@ int wpa_config_write(const char *name, struct wpa_config *config)
 			os_free(tmp_name);
 			return -1;
 		}
+		used_tmp_fallback = 1;
 	}
 
 
@@ -1973,8 +1991,19 @@ int wpa_config_write(const char *name, struct wpa_config *config)
 		chmod_ret = chmod(tmp_name,
 				  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 #endif /* ANDROID */
-		if (chmod_ret != 0 || rename(tmp_name, orig_name) != 0)
-			ret = -1;
+		if (chmod_ret != 0 || rename(tmp_name, orig_name) != 0) {
+			/*
+			 * rename() fails with EXDEV when the /tmp/ fallback path
+			 * was used and /tmp and the config directory are on
+			 * different filesystems.  The configuration was written
+			 * successfully to the fallback path; do not propagate the
+			 * rename error as a config-write failure in that case so
+			 * that callers such as WPS credential processing do not
+			 * abort unnecessarily.
+			 */
+			if (!used_tmp_fallback || errno != EXDEV)
+				ret = -1;
+		}
 
 		os_free(tmp_name);
 	}

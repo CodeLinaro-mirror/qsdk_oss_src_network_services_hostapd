@@ -187,6 +187,10 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 	
 	/* Set flags and status */
 	iap->flags = UHR_IAP_FLAG_HAS_SEC_CTX;
+	/* Signal pre-existing 4addr intent to the target so it can create
+	 * and program AP_VLAN in ST_PREP instead of waiting for reactive flow. */
+	if ((sta->flags & WLAN_STA_WDS) || sta->pending_wds_enable)
+		iap->flags |= UHR_IAP_FLAG_STA_4ADDR;
 	iap->status_code = 0;
 	
 	/* Extract and fill security context */
@@ -413,6 +417,20 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
                return -1;
 	}
 
+	if (!uhr_oui_peer_exists(hapd->uhr_oui_ctx, target_ap_mld_addr)) {
+		wpa_printf(MSG_ERROR,
+			   "UHR IAP: ST EXEC REQ: Target AP " MACSTR " not in peer list",
+			   MAC2STR(target_ap_mld_addr));
+		return -1;
+	}
+
+	if (frame_len > UHR_IAP_MAX_FRAME_LEN) {
+		wpa_printf(MSG_ERROR,
+			   "UHR IAP: ST EXEC REQ: Frame too large (%zu > %d)",
+			   frame_len, UHR_IAP_MAX_FRAME_LEN);
+		return -1;
+	}
+
 	smd_ctx = target_info->smd_ctx;
 	if (target_info->smd_ctx_valid && smd_ctx)
 		smd_ctx_len = sizeof(*smd_ctx) + smd_ctx->vendor_ctx_len;
@@ -495,6 +513,20 @@ int uhr_iap_send_st_exec_resp(struct hostapd_data *hapd,
                           "SMD IAP: Invalid parameters for send_exec_response");
                return -1;
        }
+
+	if (!uhr_oui_peer_exists(hapd->uhr_oui_ctx, current_ap_mld_addr)) {
+		wpa_printf(MSG_ERROR,
+			   "UHR IAP: ST EXEC RESP: Current AP " MACSTR " not in peer list",
+			   MAC2STR(current_ap_mld_addr));
+		return -1;
+	}
+
+	if (frame_len > UHR_IAP_MAX_FRAME_LEN) {
+		wpa_printf(MSG_ERROR,
+			   "UHR IAP: ST EXEC RESP: Frame too large (%zu > %d)",
+			   frame_len, UHR_IAP_MAX_FRAME_LEN);
+		return -1;
+	}
 
        /* Allocate buffer for IAP frame */
        iap_len = sizeof(*iap) + frame_len;
@@ -604,7 +636,124 @@ int uhr_iap_send_st_roam_cleanup(struct hostapd_data *hapd,
 
 
 /**
- * uhr_iap_rx - Receive and dispatch IAP frame
+ * uhr_iap_send_st_ctx_request - Send ST_CTX_REQUEST from Target to Current AP
+ * Target AP sends this to ask the Current AP for the STA's SMD context.
+ */
+int uhr_iap_send_st_ctx_request(struct hostapd_data *hapd,
+				const u8 *current_ap_mld_addr,
+				const u8 *sta_addr,
+				u8 iap_transaction_id)
+{
+	struct uhr_iap_frame *iap;
+	size_t iap_len = sizeof(*iap);
+	int ret;
+
+	iap = os_zalloc(iap_len);
+	if (!iap)
+		return -1;
+
+	iap->msg_type = UHR_IAP_MSG_ST_CTX_REQUEST;
+	iap->iap_transaction_id = iap_transaction_id;
+	os_memcpy(iap->current_ap_mld_addr, current_ap_mld_addr, ETH_ALEN);
+	os_memcpy(iap->target_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
+	os_memcpy(iap->sta_addr, sta_addr, ETH_ALEN);
+
+	ret = uhr_oui_send(hapd->uhr_oui_ctx, current_ap_mld_addr,
+			   hapd->own_addr,
+			   UHR_IAP_SUFFIX_REQUEST,
+			   (const u8 *) iap, iap_len);
+	os_free(iap);
+
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR, "UHR IAP: Failed to send ST CTX REQUEST");
+		return -1;
+	}
+	return 0;
+}
+
+
+/**
+ * uhr_iap_send_st_ctx_response - Send ST_CTX_RESPONSE from Current to Target AP
+ * Current AP delivers the STA's SMD context to the Target AP.
+ */
+int uhr_iap_send_st_ctx_response(struct hostapd_data *hapd,
+				 const u8 *target_ap_mld_addr,
+				 const u8 *sta_addr,
+				 u8 iap_transaction_id,
+				 const struct sta_smd_ctx_info *smd_ctx)
+{
+	size_t ctx_len = smd_ctx ? sizeof(*smd_ctx) : 0;
+	size_t total = sizeof(struct uhr_iap_frame) + ctx_len;
+	struct uhr_iap_frame *frame;
+	int ret;
+
+	frame = os_zalloc(total);
+	if (!frame)
+		return -1;
+
+	frame->msg_type = UHR_IAP_MSG_ST_CTX_RESPONSE;
+	frame->iap_transaction_id = iap_transaction_id;
+	os_memcpy(frame->current_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
+	os_memcpy(frame->target_ap_mld_addr, target_ap_mld_addr, ETH_ALEN);
+	os_memcpy(frame->sta_addr, sta_addr, ETH_ALEN);
+
+	if (smd_ctx) {
+		frame->flags |= UHR_IAP_FLAG_HAS_DYNAMIC_CTX;
+		frame->smd_ctx_len = (u16) ctx_len;
+		os_memcpy(frame->frame_ctx_data, smd_ctx, ctx_len);
+	}
+
+	ret = uhr_oui_send(hapd->uhr_oui_ctx, target_ap_mld_addr,
+			   hapd->own_addr,
+			   UHR_IAP_SUFFIX_RESPONSE,
+			   (const u8 *) frame, total);
+	os_free(frame);
+
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR, "UHR IAP: Failed to send ST CTX RESPONSE");
+		return -1;
+	}
+	return 0;
+}
+
+/**
+ * uhr_iap_send_st_exec_via_tgt_done - Notify Current AP that via-target exec is done
+ * Target AP sends this after successfully completing ST Execute for the STA.
+ */
+int uhr_iap_send_st_exec_via_tgt_done(struct hostapd_data *hapd,
+				      const u8 *current_ap_mld_addr,
+				      const u8 *sta_addr,
+				      u8 iap_transaction_id)
+{
+	struct uhr_iap_frame *iap;
+	size_t iap_len = sizeof(*iap);
+	int ret;
+
+	iap = os_zalloc(iap_len);
+	if (!iap)
+		return -1;
+
+	iap->msg_type = UHR_IAP_MSG_ST_EXEC_VIA_TGT_DONE;
+	iap->iap_transaction_id = iap_transaction_id;
+	os_memcpy(iap->current_ap_mld_addr, current_ap_mld_addr, ETH_ALEN);
+	os_memcpy(iap->target_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
+	os_memcpy(iap->sta_addr, sta_addr, ETH_ALEN);
+
+	ret = uhr_oui_send(hapd->uhr_oui_ctx, current_ap_mld_addr,
+			   hapd->own_addr,
+			   UHR_IAP_SUFFIX_RESPONSE,
+			   (const u8 *) iap, iap_len);
+	os_free(iap);
+
+	if (ret < 0) {
+		wpa_printf(MSG_ERROR,
+			   "UHR IAP: Failed to send ST EXEC VIA TGT DONE");
+		return -1;
+	}
+	return 0;
+}
+
+/**
  * @hapd: hostapd data
  * @src_addr: Source MAC address
  * @data: IAP frame data
@@ -675,7 +824,7 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
        case UHR_IAP_MSG_ST_EXEC_REQUEST:
                wpa_printf(MSG_DEBUG, "UHR IAP: Processing ST EXEC REQUEST (txn=%u)",
                           iap->iap_transaction_id);
-               uhr_tgt_ap_handle_st_exec_req(hapd, iap);
+               uhr_tgt_ap_handle_st_exec_req(hapd, iap, frame_len);
                break;
 
        case UHR_IAP_MSG_ST_EXEC_RESPONSE:
@@ -683,7 +832,6 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
                           iap->iap_transaction_id);
                uhr_cur_ap_handle_st_exec_resp(hapd, iap, frame_len);
                break;
-
 
 	case UHR_IAP_MSG_ST_ROAM_CLEANUP:
 		wpa_printf(MSG_DEBUG, "UHR IAP: Processing ST ROAM CLEANUP (txn=%u)",
@@ -698,6 +846,26 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
 		uhr_tgt_ap_handle_st_prep_ctx(hapd, iap);
 		break;
 
+	case UHR_IAP_MSG_ST_EXEC_VIA_TGT_DONE:
+		wpa_printf(MSG_DEBUG,
+			   "UHR IAP: Processing ST EXEC VIA TGT DONE (txn=%u)",
+			   iap->iap_transaction_id);
+		uhr_cur_ap_handle_st_exec_via_tgt_done(hapd, iap, frame_len);
+		break;
+
+	case UHR_IAP_MSG_ST_CTX_REQUEST:
+		wpa_printf(MSG_DEBUG,
+			   "UHR IAP: Processing ST CTX REQUEST (txn=%u)",
+			   iap->iap_transaction_id);
+		uhr_cur_ap_handle_st_ctx_request(hapd, iap, frame_len);
+		break;
+
+	case UHR_IAP_MSG_ST_CTX_RESPONSE:
+		wpa_printf(MSG_DEBUG,
+			   "UHR IAP: Processing ST CTX RESPONSE (txn=%u)",
+			   iap->iap_transaction_id);
+		uhr_tgt_ap_handle_st_ctx_response(hapd, iap, frame_len);
+		break;
 
 	default:
 		wpa_printf(MSG_ERROR, "SMD IAP: Unknown message type %u",

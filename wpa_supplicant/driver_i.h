@@ -1357,4 +1357,24 @@ static inline int wpa_drv_uhr_reconfig_req(struct wpa_supplicant *wpa_s,
 	return wpa_s->driver->uhr_reconfig_req(wpa_s->drv_priv, params);
 }
 
+static inline int wpa_drv_notify_iface_state(struct wpa_supplicant *wpa_s,
+					     u32 bss_mode)
+{
+	if (!wpa_s->driver->notify_iface_state)
+		return -1;
+	return wpa_s->driver->notify_iface_state(
+		wpa_s->drv_priv, OUI_QCA,
+		QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
+		QCA_WLAN_VENDOR_WIFI_PARAM_INTERFACE_EN_DIS_MODE,
+		bss_mode, -1, wpa_s->ifname);
+}
+
+static inline int wpa_drv_get_survey(struct wpa_supplicant *wpa_s,
+				     unsigned int freq)
+{
+	if (!wpa_s->driver->get_survey)
+		return -1;
+	return wpa_s->driver->get_survey(wpa_s->drv_priv, freq);
+}
+
 #endif /* DRIVER_I_H */
