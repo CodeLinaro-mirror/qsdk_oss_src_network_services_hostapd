@@ -8633,6 +8633,7 @@ out:
 		 * caller knows this specific link was not accepted.
 		 */
 		link->rejected = true;
+		wpa_release_link_auth_ref(origin_sta->wpa_sm, hapd->mld_link_id, true);
 		if (sta)
 			ap_free_sta(hapd, sta);
 		return -1;
