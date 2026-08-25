@@ -42,6 +42,7 @@ void sme_external_auth_trigger(struct wpa_supplicant *wpa_s,
 			       union wpa_event_data *data);
 void sme_external_auth_mgmt_rx(struct wpa_supplicant *wpa_s,
 			       const u8 *auth_frame, size_t len);
+void sme_send_external_auth_status(struct wpa_supplicant *wpa_s, u16 status);
 
 #ifdef CONFIG_QCN_EXTN
 void sme_schedule_auth_radio_work(struct wpa_supplicant *wpa_s,
@@ -127,6 +128,11 @@ static inline void sme_external_auth_trigger(struct wpa_supplicant *wpa_s,
 
 static inline void sme_external_auth_mgmt_rx(struct wpa_supplicant *wpa_s,
 					     const u8 *auth_frame, size_t len)
+{
+}
+
+static inline void sme_send_external_auth_status(struct wpa_supplicant *wpa_s,
+						 u16 status)
 {
 }
 
