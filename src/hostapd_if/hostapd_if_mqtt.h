@@ -16,7 +16,7 @@ struct mqtt_tlv_message;
 void hostapd_mqtt_hif_cmd(struct hapd_interfaces *interfaces,
 			  uint16_t msg_type,
 			  struct mqtt_tlv_message *msg);
-enum hostapd_if_eloop_type hostapd_if_mqtt_init(void *arg);
+void hostapd_if_mqtt_init(void *arg);
 
 #ifdef CONFIG_MQTT_TEST_APP_FORK
 int hostapd_if_start_mqtt_hif_client(void);
@@ -29,8 +29,8 @@ static inline void
 hostapd_mqtt_hif_cmd(struct hapd_interfaces *interfaces,
 		     uint16_t msg_type,
 		     struct mqtt_tlv_message *msg) {}
-static inline enum hostapd_if_eloop_type
-hostapd_if_mqtt_init(void *arg) { return HOSTAPD_IF_ELOOP_ROUTING; }
+static inline void
+hostapd_if_mqtt_init(void *arg) {}
 static inline int hostapd_if_start_mqtt_hif_client(void) { return 0; }
 static inline void hostapd_if_stop_mqtt_hif_client(void) {}
 

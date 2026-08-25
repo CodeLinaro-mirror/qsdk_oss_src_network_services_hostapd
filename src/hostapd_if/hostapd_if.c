@@ -376,7 +376,7 @@ void hostapd_if_register_event(void *ifname_ctx,
 }
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
-enum hostapd_if_eloop_type hostapd_if_plugin_init(void *);
+void hostapd_if_plugin_init(void *);
 void hostapd_if_plugin_deinit(void);
 #endif
 
@@ -388,9 +388,9 @@ bool hostapd_if_mqtt_enable = true;
 /*
  * Call this once at startup (from hostapd_if_init)
  */
-int hostapd_if_init(struct hapd_interfaces *interfaces, bool plugin_enable)
+int hostapd_if_init(struct hapd_interfaces *interfaces, bool plugin_enable,
+		    enum hostapd_if_eloop_type eloop_type)
 {
-	enum hostapd_if_eloop_type eloop_type = HOSTAPD_IF_ELOOP_ROUTING;
 	wpa_printf(MSG_ERROR, "%s", __func__);
 	hostapd_if_ifaces = interfaces;
 
@@ -399,12 +399,12 @@ int hostapd_if_init(struct hapd_interfaces *interfaces, bool plugin_enable)
 #ifdef HOSTAPD_EXTERNAL_PLUGIN_TESTAPP
 	hostapd_if_plugin_enable = (plugin_enable || global_plugin_enable);
 	if (hostapd_if_plugin_enable)
-		eloop_type = hostapd_if_plugin_init(interfaces);
+		hostapd_if_plugin_init(interfaces);
 	else
 #endif
 #ifdef CONFIG_MQTT
 	if (hostapd_if_mqtt_enable)
-		eloop_type = hostapd_if_mqtt_init(interfaces);
+		hostapd_if_mqtt_init(interfaces);
 #endif
 	if (hostapd_if_eloop_init(eloop_type) < 0)
 		return -1;
