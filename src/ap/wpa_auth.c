@@ -9132,8 +9132,12 @@ int wpa_auth_reconfig_wpa_auth_sm(struct hostapd_data *rhapd,
 #ifdef CONFIG_IEEE80211BE
 	struct wpa_authenticator *wpa_auth = (struct wpa_authenticator *)data;
 
-	if (lsta->wpa_sm)
+	if (lsta->wpa_sm) {
 		lsta->wpa_sm->wpa_auth = wpa_auth;
+		wpa_group_put_sm(lsta->wpa_sm);
+		lsta->wpa_sm->group = wpa_auth->group;
+		wpa_group_get_sm(lsta->wpa_sm);
+	}
 #endif /* CONFIG_IEEE80211BE */
 	return 0;
 }
@@ -9316,8 +9320,11 @@ void wpa_reset_assoc_sm_info(struct wpa_state_machine *assoc_sm,
 			     u8 mld_assoc_link_id)
 {
 #ifdef CONFIG_IEEE80211BE
+	wpa_group_put_sm(assoc_sm);
 	assoc_sm->wpa_auth = wpa_auth;
+	assoc_sm->group = wpa_auth->group;
 	assoc_sm->mld_assoc_link_id = mld_assoc_link_id;
+	wpa_group_get_sm(assoc_sm);
 #endif /* CONFIG_IEEE80211BE */
 }
 
