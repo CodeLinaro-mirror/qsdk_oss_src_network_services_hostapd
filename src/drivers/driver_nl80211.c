@@ -18774,14 +18774,14 @@ failed:
 
 #ifdef CONFIG_IEEE80211BE
 /**
- * wpa_driver_nl80211_uhr_mode_update - Send UHR mode update (NPCA) per link
+ * wpa_driver_nl80211_uhr_mode_update - Send UHR mode update (NPCA/DSO) per link
  *
- * Sends NL80211_CMD_UHR_MODE_UPDATE with per-link NPCA parameters.
- * The NL80211_ATTR_UHR_MODE_UPDATE_PARAMS attribute is a nested array
- * where each element contains per-link attributes.
+ * Sends NL80211_CMD_UHR_MODE_UPDATE with per-link NPCA and/or DSO
+ * parameters. The NL80211_ATTR_UHR_MODE_UPDATE_PARAMS attribute is a
+ * nested array where each element contains per-link attributes.
  */
 static int wpa_driver_nl80211_uhr_mode_update(void *priv,
-					      struct npca_link_config *links,
+					      struct uhr_params_link_config *links,
 					      int num_links)
 {
 	struct i802_bss *bss = priv;
@@ -18821,21 +18821,45 @@ static int wpa_driver_nl80211_uhr_mode_update(void *priv,
 			       (u8)links[i].link_id))
 			goto failed;
 
-		if (links[i].npca_enable &&
-		    nla_put_flag(msg, NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE))
-			goto failed;
+		if (links[i].npca_update) {
+			if (links[i].npca_enable &&
+			    nla_put_flag(msg,
+					 NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE))
+				goto failed;
 
-		if (links[i].npca_switch_delay &&
-		    nla_put_u8(msg,
-			       NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY,
-			       links[i].npca_switch_delay))
-			goto failed;
+			if (links[i].npca_switch_delay &&
+			    nla_put_u8(msg,
+				       NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY,
+				       links[i].npca_switch_delay))
+				goto failed;
 
-		if (links[i].npca_switchback_delay &&
-		    nla_put_u8(msg,
-			       NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY,
-			       links[i].npca_switchback_delay))
-			goto failed;
+			if (links[i].npca_switchback_delay &&
+			    nla_put_u8(msg,
+				       NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY,
+				       links[i].npca_switchback_delay))
+				goto failed;
+		}
+
+		if (links[i].dso_update) {
+			if (nla_put_u8(msg, NL80211_UHR_MODE_UPDATE_ATTR_DSO_ENABLE,
+				       links[i].dso_enable ? 1 : 0))
+				goto failed;
+
+			if (links[i].dso_subband != UHR_DSO_SUBBAND_UNSET &&
+			    nla_put_u8(msg, NL80211_UHR_MODE_UPDATE_ATTR_DSO_SUBBAND,
+				       links[i].dso_subband))
+				goto failed;
+
+			if (links[i].dso_padding_delay &&
+			    nla_put_u8(msg, NL80211_UHR_MODE_UPDATE_ATTR_DSO_PADDING_DELAY,
+				       links[i].dso_padding_delay))
+				goto failed;
+
+			if (links[i].dso_switch_back_delay &&
+			    nla_put_u8(msg, NL80211_UHR_MODE_UPDATE_ATTR_DSO_SWITCH_BACK_DELAY,
+				       links[i].dso_switch_back_delay))
+				goto failed;
+		}
 
 		nla_nest_end(msg, link_attr);
 	}

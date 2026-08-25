@@ -510,6 +510,30 @@ static int wpa_cli_cmd_npca(struct wpa_ctrl *ctrl, int argc,
 	}
 	return wpa_cli_cmd(ctrl, "NPCA", 1, argc, argv);
 }
+
+/**
+ * wpa_cli_cmd_dso - Handle dso wpa_cli command
+ *
+ * Usage:
+ *   dso <0|1> [subband=<0-3>]
+ *       [link_id=<id> enable=<0|1> [subband=<0-3>]
+ *        [padding_delay=<0-63>] [switchback_delay=<0-63>]] ...
+ *
+ * With no link_id= groups, enables or disables DSO on all MLO links.
+ * If one or more link_id= groups are given, only those links are
+ * configured, each with its own enable, subband, padding_delay, and
+ * switchback_delay values.
+ */
+static int wpa_cli_cmd_dso(struct wpa_ctrl *ctrl, int argc,
+				  char *argv[])
+{
+	if (argc < 1) {
+		printf("Invalid DSO command: needs at least 1 argument "
+		       "(0 or 1 to disable/enable)\n");
+		return -1;
+	}
+	return wpa_cli_cmd(ctrl, "DSO", 1, argc, argv);
+}
 #endif /* CONFIG_IEEE80211BE */
 
 static int wpa_cli_cmd_set_scan_freq(struct wpa_ctrl *ctrl, int argc,
@@ -4643,6 +4667,12 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	  cli_cmd_flag_none,
 	  "  <0|1> [link_id=<id> enable=<0|1> [switch_delay=<d>] [switchback_delay=<d>]] ...\n"
 	  " =enable(1)/disable(0) NPCA on all MLO links, or per-link if link_id= given" },
+	{ "dso", wpa_cli_cmd_dso, NULL,
+	  cli_cmd_flag_none,
+	  "  <0|1> [subband=<0-3>] [link_id=<id> enable=<0|1> [subband=<0-3>]\n"
+	  "   [padding_delay=<0-63>] [switchback_delay=<0-63>]] ...\n"
+	  " =enable(1)/disable(0) DSO on all MLO links, or per-link if link_id= given;\n"
+	  " optional subband=<0-3> sets the preferred 80 MHz DSO subband" },
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_QCN_EXTN
 	{ "get_freq_list", wpa_cli_cmd_get_freq_list, NULL,

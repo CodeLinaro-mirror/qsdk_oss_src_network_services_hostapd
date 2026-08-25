@@ -12918,9 +12918,11 @@ static int wpas_ctrl_iface_epcs(struct wpa_supplicant *wpa_s, char *pos,
 static int npca_build_link_config(struct wpa_supplicant *wpa_s, int link_id,
 				  bool enable, int switch_delay,
 				  int switchback_delay,
-				  struct npca_link_config *cfg)
+				  struct uhr_params_link_config *cfg)
 {
 	struct hostapd_hw_modes *mode;
+
+	os_memset(cfg, 0, sizeof(*cfg));
 
 	mode = get_mode_with_freq(wpa_s->hw.modes, wpa_s->hw.num_modes,
 				  wpa_s->links[link_id].freq);
@@ -12939,6 +12941,7 @@ static int npca_build_link_config(struct wpa_supplicant *wpa_s, int link_id,
 	}
 
 	cfg->link_id = link_id;
+	cfg->npca_update = true;
 	cfg->npca_enable = enable;
 	cfg->npca_switch_delay = switch_delay >= 0 ? (u8) switch_delay :
 		mode->npca_info[IEEE80211_MODE_INFRA].npca_switch_delay;
@@ -12971,7 +12974,7 @@ static int wpas_ctrl_iface_npca_enable(struct wpa_supplicant *wpa_s,
 {
 	int global_enable;
 	char *pos, *token;
-	struct npca_link_config links[MAX_NUM_MLD_LINKS];
+	struct uhr_params_link_config links[MAX_NUM_MLD_LINKS];
 	int num_links = 0;
 	int i;
 	int explicit_link_id[MAX_NUM_MLD_LINKS];
@@ -13133,6 +13136,246 @@ static int wpas_ctrl_iface_npca_enable(struct wpa_supplicant *wpa_s,
 			   "NPCA: sending uhr_mode_update for %d link(s): %s",
 			   num_links, status);
 	}
+
+	return wpa_drv_uhr_mode_update(wpa_s, links, num_links);
+}
+
+/**
+ * dso_build_link_config - Build DSO link config for a link
+ * @wpa_s: Pointer to wpa_supplicant data
+ * @link_id: MLO link ID to build config for
+ * @enable: DSO enable/disable value to apply to this link
+ * @subband: preferred 80 MHz subband index (0-3), or -1 if not given
+ * @cfg: Output link configuration
+ */
+static void dso_build_link_config(struct wpa_supplicant *wpa_s, int link_id,
+				 bool enable, int subband,
+				 int padding_delay, int switch_back_delay,
+				 struct uhr_params_link_config *cfg)
+{
+	os_memset(cfg, 0, sizeof(*cfg));
+	cfg->link_id = link_id;
+	cfg->dso_update = true;
+	cfg->dso_enable = enable;
+	cfg->dso_subband = subband >= 0 ? subband : UHR_DSO_SUBBAND_UNSET;
+	cfg->dso_padding_delay = padding_delay >= 0 ? (u8)padding_delay : 0;
+	cfg->dso_switch_back_delay = switch_back_delay >= 0 ? (u8)switch_back_delay : 0;
+}
+
+/**
+ * wpas_ctrl_iface_dso_enable - Handle DSO ctrl_iface command
+ *
+ * Command format:
+ *   DSO <0|1> [subband=<0-3>]
+ *       [link_id=<id> enable=<0|1> [subband=<0-3>]]
+ *       [link_id=<id> enable=<0|1> [subband=<0-3>]] ...
+ *
+ * With no link_id= groups, the <0|1> value and the optional global
+ * subband= value are applied to all MLO links. If one or more
+ * link_id=<id> enable=<0|1> groups are given, only those links are
+ * touched, each with its own enable value and optional subband= value;
+ * the leading <0|1> and any global subband= are ignored in that case.
+ *
+ * Returns 0 on success, -1 on failure.
+ */
+static int wpas_ctrl_iface_dso_enable(struct wpa_supplicant *wpa_s,
+				      char *cmd)
+{
+	int global_enable, global_subband = -1;
+	char *pos, *token;
+	struct uhr_params_link_config links[MAX_NUM_MLD_LINKS];
+	int num_links = 0;
+	int i;
+	int explicit_link_id[MAX_NUM_MLD_LINKS];
+	int explicit_enable[MAX_NUM_MLD_LINKS];
+	int explicit_subband[MAX_NUM_MLD_LINKS];
+	int explicit_padding_delay[MAX_NUM_MLD_LINKS];
+	int explicit_switch_back_delay[MAX_NUM_MLD_LINKS];
+	int num_explicit = 0;
+	char status[MAX_NUM_MLD_LINKS * 32];
+	int pos_len = 0, ret;
+
+	if (!wpa_s->valid_links) {
+		wpa_printf(MSG_ERROR,
+			   "DSO: no MLO links associated, cannot apply");
+		return -1;
+	}
+
+	/* Parse global enable/disable flag */
+	pos = cmd;
+	global_enable = atoi(pos);
+
+	/* Skip past the enable value */
+	while (*pos && !isspace((unsigned char)*pos))
+		pos++;
+	while (*pos && isspace((unsigned char)*pos))
+		pos++;
+
+	/* Optional global subband=<0-3>, only meaningful when no link_id=
+	 * groups follow */
+	if (os_strncmp(pos, "subband=", 8) == 0) {
+		global_subband = atoi(pos + 8);
+		pos += 8;
+		while (*pos && !isspace((unsigned char)*pos))
+			pos++;
+		while (*pos && isspace((unsigned char)*pos))
+			pos++;
+	}
+
+	/* Parse optional per-link groups: link_id=<id> enable=<0|1>
+	 * [subband=<0-3>] */
+	token = pos;
+	while (*token) {
+		int link_id = -1, enable = -1, subband = -1, padding_delay = -1, switch_back_delay = -1;
+		char *next;
+
+		/* Skip whitespace */
+		while (*token && isspace((unsigned char)*token))
+			token++;
+		if (!*token)
+			break;
+
+		if (os_strncmp(token, "link_id=", 8) == 0) {
+			link_id = atoi(token + 8);
+
+			/* Advance past link_id=<val> */
+			next = token + 8;
+			while (*next && !isspace((unsigned char)*next))
+				next++;
+			token = next;
+
+			/* Skip whitespace before the expected enable= token */
+			while (*token && isspace((unsigned char)*token))
+				token++;
+
+			if (os_strncmp(token, "enable=", 7) == 0) {
+				enable = atoi(token + 7);
+				next = token + 7;
+				while (*next && !isspace((unsigned char)*next))
+					next++;
+				token = next;
+			}
+
+			if (enable < 0) {
+				wpa_printf(MSG_DEBUG,
+					   "DSO: link_id=%d missing enable=, skipping",
+					   link_id);
+				continue;
+			}
+
+			/* Skip whitespace before an optional subband= token */
+			while (*token && isspace((unsigned char)*token))
+				token++;
+
+			if (os_strncmp(token, "subband=", 8) == 0) {
+				subband = atoi(token + 8);
+				next = token + 8;
+				while (*next && !isspace((unsigned char)*next))
+					next++;
+				token = next;
+			}
+
+			/* Skip whitespace before optional padding_delay= */
+			while (*token && isspace((unsigned char)*token))
+				token++;
+
+			if (os_strncmp(token, "padding_delay=", 14) == 0) {
+				padding_delay = atoi(token + 14);
+				next = token + 14;
+				while (*next && !isspace((unsigned char)*next))
+					next++;
+				token = next;
+			}
+
+			/* Skip whitespace before optional switchback_delay= */
+			while (*token && isspace((unsigned char)*token))
+				token++;
+
+			if (os_strncmp(token, "switchback_delay=", 17) == 0) {
+				switch_back_delay = atoi(token + 17);
+				next = token + 17;
+				while (*next && !isspace((unsigned char)*next))
+					next++;
+				token = next;
+			}
+
+			if (link_id < 0 || link_id >= MAX_NUM_MLD_LINKS ||
+			    !(wpa_s->valid_links & BIT(link_id))) {
+				wpa_printf(MSG_DEBUG,
+					   "DSO: link_id=%d not a valid associated link, skipping",
+					   link_id);
+				continue;
+			}
+
+			if (num_explicit < MAX_NUM_MLD_LINKS) {
+				explicit_link_id[num_explicit] = link_id;
+				explicit_enable[num_explicit] = enable;
+				explicit_subband[num_explicit] = subband;
+				explicit_padding_delay[num_explicit] = padding_delay;
+				explicit_switch_back_delay[num_explicit] = switch_back_delay;
+				num_explicit++;
+			}
+		} else {
+			/* Unknown token, skip it */
+			while (*token && !isspace((unsigned char)*token))
+				token++;
+		}
+	}
+
+	if (num_explicit > 0) {
+		/* Only touch the explicitly listed links */
+		for (i = 0; i < num_explicit; i++) {
+			dso_build_link_config(wpa_s, explicit_link_id[i],
+					      !!explicit_enable[i],
+					      explicit_subband[i],
+					      explicit_padding_delay[i],
+					      explicit_switch_back_delay[i],
+					      &links[num_links]);
+			num_links++;
+		}
+	} else {
+		/* No per-link groups: apply global_enable/global_subband to
+		 * every link */
+		for_each_link(wpa_s->valid_links, i) {
+			dso_build_link_config(wpa_s, i, !!global_enable,
+					      global_subband,
+					      -1, -1,
+					      &links[num_links]);
+			num_links++;
+		}
+	}
+
+	if (num_links == 0) {
+		wpa_printf(MSG_ERROR,
+			   "DSO: no links found");
+		return -1;
+	}
+
+	for (i = 0; i < num_links; i++) {
+		if (links[i].dso_subband != UHR_DSO_SUBBAND_UNSET)
+			ret = os_snprintf(status + pos_len,
+					  sizeof(status) - pos_len,
+					  "%slink%d=%s,subband=%u",
+					  i ? " " : "",
+					  links[i].link_id,
+					  links[i].dso_enable ?
+					  "enabled" : "disabled",
+					  links[i].dso_subband);
+		else
+			ret = os_snprintf(status + pos_len,
+					  sizeof(status) - pos_len,
+					  "%slink%d=%s", i ? " " : "",
+					  links[i].link_id,
+					  links[i].dso_enable ? "enabled" :
+					  "disabled");
+		if (os_snprintf_error(sizeof(status) - pos_len, ret))
+			break;
+		pos_len += ret;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "DSO: sending uhr_mode_update for %d link(s): %s",
+		   num_links, status);
 
 	return wpa_drv_uhr_mode_update(wpa_s, links, num_links);
 }
@@ -14905,6 +15148,9 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 						 reply_size);
 	} else if (os_strncmp(buf, "NPCA ", 5) == 0) {
 		if (wpas_ctrl_iface_npca_enable(wpa_s, buf + 5) < 0)
+			reply_len = -1;
+	} else if (os_strncmp(buf, "DSO ", 4) == 0) {
+		if (wpas_ctrl_iface_dso_enable(wpa_s, buf + 4) < 0)
 			reply_len = -1;
 #endif /* CONFIG_IEEE80211BE */
 #ifdef CONFIG_QCN_EXTN
