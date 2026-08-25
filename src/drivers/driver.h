@@ -3268,6 +3268,8 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS2_EPPKE				0x0000100000000000ULL
 /** Driver supports parallel hardware scan across MLD links */
 #define WPA_DRIVER_FLAGS2_PARALLEL_HW_SCAN             0x0000200000000000ULL
+/** Driver supports PMKSA caching privacy */
+#define WPA_DRIVER_FLAGS2_PMKSA_PRIVACY		0x0000400000000000ULL
 	u64 flags2;
 
 #define FULL_AP_CLIENT_STATE_SUPP(drv_flags) \
