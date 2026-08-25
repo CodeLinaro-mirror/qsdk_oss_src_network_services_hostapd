@@ -764,6 +764,8 @@ int dpp_relay_add_controller(struct dpp_global *dpp,
 			     struct dpp_relay_config *config);
 void dpp_relay_remove_controller(struct dpp_global *dpp,
 				 const struct hostapd_ip_addr *addr);
+void dpp_relay_flush_controller_ctx(struct dpp_global *dpp, void *cb_ctx);
+void dpp_relay_update_ctx(struct dpp_global *dpp, void *cb_ctx, void *msg_ctx);
 int dpp_relay_listen(struct dpp_global *dpp, int port,
 		     struct dpp_relay_config *config);
 void dpp_relay_stop_listen(struct dpp_global *dpp);

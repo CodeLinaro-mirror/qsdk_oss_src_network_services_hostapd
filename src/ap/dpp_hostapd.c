@@ -3536,6 +3536,32 @@ void hostapd_dpp_remove_controller(struct hostapd_data *hapd, const char *cmd)
 		ieee802_11_update_beacons(hapd->iface);
 }
 
+
+void hostapd_dpp_reload_controllers(struct hostapd_data *hapd)
+{
+	struct dpp_global *dpp;
+	bool prev_state, new_state;
+
+	if (!hapd->dpp_init_done)
+		return;
+	if (!hapd->iface->interfaces)
+		return;
+	dpp = hapd->iface->interfaces->dpp;
+	if (!dpp)
+		return;
+
+	prev_state = dpp_relay_controller_available(dpp);
+	dpp_relay_flush_controller_ctx(dpp, hapd);
+	/* Update relay listen socket callbacks if this hapd owns them */
+	dpp_relay_update_ctx(dpp, hapd, hapd->msg_ctx);
+	if (hostapd_dpp_add_controllers(hapd) < 0)
+		wpa_printf(MSG_WARNING, "DPP: Failed to reload controllers for %s",
+			   hapd->conf->iface);
+	new_state = dpp_relay_controller_available(dpp);
+	if (new_state != prev_state)
+		ieee802_11_update_beacons(hapd->iface);
+}
+
 #endif /* CONFIG_DPP2 */
 
 

@@ -2392,6 +2392,47 @@ void dpp_relay_flush_controllers(struct dpp_global *dpp)
 }
 
 
+void dpp_relay_flush_controller_ctx(struct dpp_global *dpp, void *cb_ctx)
+{
+	struct dpp_relay_controller *ctrl, *tmp;
+	struct dpp_connection *conn, *ctmp;
+
+	if (!dpp)
+		return;
+
+	dl_list_for_each_safe(conn, ctmp, &dpp->tcp_init,
+			      struct dpp_connection, list) {
+		if (conn->cb_ctx == cb_ctx)
+			dpp_connection_remove(conn);
+	}
+
+	dl_list_for_each_safe(ctrl, tmp, &dpp->controllers,
+			      struct dpp_relay_controller, list) {
+		if (ctrl->cb_ctx == cb_ctx) {
+			dl_list_del(&ctrl->list);
+			dpp_relay_controller_free(ctrl);
+		}
+	}
+
+	if (dpp->tmp_controller && dpp->tmp_controller->cb_ctx == cb_ctx) {
+		dpp_relay_controller_free(dpp->tmp_controller);
+		dpp->tmp_controller = NULL;
+	}
+}
+
+
+void dpp_relay_update_ctx(struct dpp_global *dpp, void *cb_ctx, void *msg_ctx)
+{
+	if (!dpp)
+		return;
+
+	if (dpp->relay_cb_ctx == cb_ctx) {
+		dpp->relay_cb_ctx = cb_ctx;
+		dpp->relay_msg_ctx = msg_ctx;
+	}
+}
+
+
 void dpp_relay_remove_controller(struct dpp_global *dpp,
 				 const struct hostapd_ip_addr *addr)
 {
