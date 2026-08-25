@@ -2330,6 +2330,9 @@ static bool dfs_precac_try_half_bw(struct hostapd_iface *iface)
 	case 80:
 		half_width = CONF_OPER_CHWIDTH_80MHZ;
 		break;
+	case 160:
+		half_width = CONF_OPER_CHWIDTH_160MHZ;
+		break;
 	default:
 		return false;
 	}
@@ -2446,9 +2449,10 @@ int hostapd_dfs_start_precac(struct hostapd_iface *iface)
 /*
  * dfs_try_user_rcac_channel - Start RCAC on the user-configured channel.
  *
- * Always uses home channel BW. If the channel is unavailable at home BW
- * (e.g. NOL sub-channel), returns false to fall back to random channel
- * selection which will try half-BW automatically if needed.
+ * Tries home channel BW first. If that fails and home BW is 320 MHz (which
+ * is not supported for RCAC), retries at half BW (160 MHz). Returns false
+ * to fall back to random channel selection only if both attempts fail or the
+ * channel overlaps with the home block.
  *
  * Returns true if RCAC was started successfully, false to fall back to
  * random channel selection.
@@ -2485,12 +2489,12 @@ static bool dfs_try_user_rcac_channel(struct hostapd_iface *iface,
 /*
  * dfs_rcac_try_half_bw - Try RCAC at half the home bandwidth.
  * @iface: Pointer to hostapd interface
- * @home_bw: Home channel bandwidth in MHz (40/80/160)
+ * @home_bw: Home channel bandwidth in MHz (40/80/160/320)
  * @orig_oper_chwidth: Original channel width, restored after channel search
  *
  * Searches for a DFS_NO_CAC_YET channel (DFS_ANY_CHANNEL as fallback) at
  * home_bw / 2, excluding the home channel range and the active RCAC channel.
- * Supported half-BW values: 20, 40, 80 MHz.
+ * Supported half-BW values: 20, 40, 80, 160 MHz.
  *
  * Returns: true if half-BW RCAC started, false if no suitable channel found.
  */
@@ -2516,6 +2520,7 @@ static bool dfs_rcac_try_half_bw(struct hostapd_iface *iface,
 	case 20: half_width = CONF_OPER_CHWIDTH_USE_HT; break;
 	case 40: half_width = CONF_OPER_CHWIDTH_USE_HT; break;
 	case 80: half_width = CONF_OPER_CHWIDTH_80MHZ; break;
+	case 160: half_width = CONF_OPER_CHWIDTH_160MHZ; break;
 	default: return false;
 	}
 
@@ -4575,8 +4580,15 @@ int hostapd_start_rcac_on_channel(struct hostapd_iface *iface, int chan,
 		return -1;
 	}
 
-	if (hostapd_dfs_compute_bgcac_chan_params(chan, bw_mhz, &oper_width, &seg0, &sec) < 0)
+	if (hostapd_dfs_compute_bgcac_chan_params(chan, bw_mhz, &oper_width, &seg0, &sec) < 0) {
+		if (bw_mhz == 320) {
+			wpa_printf(MSG_INFO,
+				   "RCAC_DFS: 320 MHz not supported, retrying chan %d at 160 MHz",
+				   chan);
+			return hostapd_start_rcac_on_channel(iface, chan, 160);
+		}
 		return -1;
+	}
 
 	block_base_freq = (seg0 * 5 + 5000) - bw_mhz / 2 + 10;
 
