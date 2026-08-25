@@ -3448,6 +3448,12 @@ enum nl80211_commands {
  * @NL80211_ATTR_PEER_SMD_DL_DATA_FWD: Flag attribute indicating the peer AP
  *	supports SMD DL data forwarding.
  *
+ * @NL80211_ATTR_SMD_ROAM_STA: Flag attribute indicating this station was
+ *	created via SMD Station Transition Preparation (IAP) at the Target
+ *	AP-MLD, not via a regular association. Used in %NL80211_CMD_NEW_STA and
+ *	%NL80211_CMD_ADD_LINK_STA to set up the appropriate peer context for
+ *	an in-progress BSS transition.
+ *
  * @NL80211_ATTR_UHR_RECONFIG_TYPE: u32 attribute indicating the UHR Link
  *	Reconfiguration type (0 = ST Preparation, 1 = ST Execution).
  *
@@ -4194,6 +4200,7 @@ enum nl80211_attrs {
 	NL80211_ATTR_SMD_LINK_TRANSITION_STATE,
 	NL80211_ATTR_SMD_CTX,
 
+	NL80211_ATTR_SMD_ROAM_STA,
 	__NL80211_ATTR_AFTER_LAST,
 	NUM_NL80211_ATTR = __NL80211_ATTR_AFTER_LAST,
 	NL80211_ATTR_MAX = __NL80211_ATTR_AFTER_LAST - 1

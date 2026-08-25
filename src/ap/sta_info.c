@@ -2889,8 +2889,9 @@ int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_aut
 			    sta->smd_info.smd_sta,
 			    sta->smd_info.caps.dl_data_fwd,
 			    sta->smd_info.smd_identifier,
+			    sta->smd_info.roam_sta,
 #else
-			    false, false, NULL,
+			    false, false, NULL, false,
 #endif
 			    NULL,
 			    sta->flags, 0, 0, 0, 0,

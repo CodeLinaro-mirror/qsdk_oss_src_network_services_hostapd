@@ -56,6 +56,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    struct sta_info_extn *sta_extn,
 #endif
 		    bool smd_sta, bool dl_data_fwd, const u8 *smd_mac_addr,
+		    bool smd_roam_sta,
 		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
 		    u64 flags, u8 qosinfo, u8 vht_opmode,
 		    int supp_p2p_ps,
