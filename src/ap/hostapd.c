@@ -12369,3 +12369,15 @@ struct hostapd_data * hostapd_mbssid_get_bss(struct hostapd_data *hapd, size_t i
 
 	return bss;
 }
+
+int hostapd_get_channel_idx(struct hostapd_hw_modes *mode, int channel_num)
+{
+	int  j=0;
+
+	for(j = 0; j < mode->num_channels; j++) {
+	       struct hostapd_channel_data *chan = &mode->channels[j];
+	       if(chan->chan == channel_num)
+			return j;
+	}
+	return -1;
+}

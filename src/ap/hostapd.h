@@ -2233,4 +2233,15 @@ hostapd_set_current_6ghz_pwr_type(struct hostapd_iface *iface,
 }
 #endif /* CONFIG_IEEE80211AX */
 
+/**
+ * hostapd_get_channel_idx - Find the index of a channel in the current mode's
+ * 			     channel array.
+ * @mode: Hardware mode.
+ * @channel_num: Channel number.
+ *
+ * Return: Index of the matching channel.
+ * 	   %-1 if @chan_num is not present in the current mode.
+ */
+int hostapd_get_channel_idx(struct hostapd_hw_modes *mode, int channel_num);
+
 #endif /* HOSTAPD_H */
