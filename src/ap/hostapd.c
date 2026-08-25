@@ -10243,6 +10243,17 @@ int hostapd_mld_link_config_check(struct hostapd_data *hapd)
 	}
 #endif /* CONFIG_QCN_EXTN */
 
+#ifdef CONFIG_IEEE80211BN
+	if (hapd->iconf->ieee80211bn != first->iconf->ieee80211bn) {
+		wpa_printf(MSG_ERROR,
+			   "AP MLD %s: Mixed Wi-Fi generation modes not allowed (link %d: ieee80211bn=%d, first link: ieee80211bn=%d)",
+			   mld->name, hapd->mld_link_id,
+			   hapd->iconf->ieee80211bn,
+			   first->iconf->ieee80211bn);
+		return -1;
+	}
+#endif /* CONFIG_IEEE80211BN */
+
 	if (hapd->conf->ssid.ssid_len != first->conf->ssid.ssid_len ||
 	    os_memcmp(hapd->conf->ssid.ssid, first->conf->ssid.ssid,
 		      first->conf->ssid.ssid_len) != 0) {
