@@ -1406,6 +1406,7 @@ int hostapd_link_remove(struct hostapd_data *hapd, u32 count,
 			enum link_reconfigure_type removal_type);
 void hostapd_free_mbssid_idx(struct hostapd_data *hapd);
 void hostapd_multi_mbssid_remove_bss(struct hostapd_data *hapd);
+int hostapd_multi_mbssid_update_mbssid_tx_bss_indices(struct hostapd_data *hapd);
 void hostapd_mld_ref_dec(struct hostapd_mld *mld);
 void hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface,
 					bool iface_enabled);
