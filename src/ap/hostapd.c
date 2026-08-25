@@ -4735,6 +4735,9 @@ static int setup_interface2(struct hostapd_iface *iface)
 		if (iface->conf->ieee80211h)
 			wpa_printf(MSG_DEBUG, "DFS support is enabled");
 	}
+
+	hostapd_dfs_chan_recovery_update_target(iface, iface->conf->channel,
+						hostapd_get_oper_chwidth(iface->conf));
 	return hostapd_setup_interface_complete(iface, 0);
 
 fail:

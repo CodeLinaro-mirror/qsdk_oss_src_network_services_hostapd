@@ -5171,6 +5171,24 @@ void hostapd_start_device_cac_background(struct hostapd_iface *iface)
 		hostapd_get_oper_centr_freq_seg1_idx(iface->conf);
 }
 
+void hostapd_dfs_chan_recovery_update_target(struct hostapd_iface *iface,
+					     int chan,
+					     enum oper_chan_width chwidth)
+{
+	struct dfs_chan_recovery_config *cfg = &iface->conf->dfs_chan_recovery;
+
+	if (!cfg->feature_en)
+		return;
+
+	if (!is_5ghz_freq(GET_FREQ_CHAN_5G(chan)))
+		return;
+
+	wpa_printf(MSG_INFO,
+		   "DFS: chan recovery: update_target: chan=%d -> %d chwidth=%u -> %u",
+		   cfg->chan, chan, cfg->chwidth, chwidth);
+	cfg->chan = chan;
+	cfg->chwidth = chwidth;
+}
 
 /**
  * hostapd_start_background_cac - Runtime entry point to start Agile CAC.

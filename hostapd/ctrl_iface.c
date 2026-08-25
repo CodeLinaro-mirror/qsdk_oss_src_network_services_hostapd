@@ -1921,6 +1921,43 @@ static int hostapd_ctrl_iface_set_rcac_freq(struct hostapd_data *hapd,
 	return 0;
 }
 #endif /* NEED_AP_MLME */
+
+/**
+ * hostapd_set_dfs_chan_recovery - Handle SET dfs_chan_recovery command
+ * @hapd: Pointer to hostapd_data
+ * @value: Command value string ("0" to disable, "1" to enable)
+ *
+ * Enables or disables the DFS channel recovery feature.
+ * On enable, sets feature_en=1 and clears saved target parameters
+ * so they are re-populated when the arm gate runs.
+ * On disable, clears all DFS channel recovery configuration fields.
+ *
+ * Returns: 0 on success, -1 on invalid value
+ */
+static int hostapd_set_dfs_chan_recovery(struct hostapd_data *hapd,
+					 const char *value)
+{
+	struct dfs_chan_recovery_config *cfg = &hapd->iface->conf->dfs_chan_recovery;
+	bool enable = atoi(value);
+
+	if (!enable) {
+		cfg->feature_en = false;
+		cfg->chan = 0;
+		cfg->chwidth = 0;
+		wpa_printf(MSG_INFO, "DFS: chan recovery disabled");
+	} else {
+		enum oper_chan_width oper_chwidth = hostapd_get_oper_chwidth(hapd->iface->conf);
+
+		cfg->feature_en = true;
+		hostapd_dfs_chan_recovery_update_target(hapd->iface,
+							hapd->iface->conf->channel,
+							oper_chwidth);
+		wpa_printf(MSG_INFO, "DFS: chan recovery enabled: target chan=%d chwidth=%u",
+			   cfg->chan, cfg->chwidth);
+	}
+	return 0;
+}
+
 static int hostapd_set_bw_reduce_en(struct hostapd_data *hapd, const char *value)
 {
 	int val;
@@ -2616,6 +2653,8 @@ eht_bfme_ss_rollback:
 			ret = hostapd_ctrl_iface_set_next_radar_freq(hapd, value);
 		} else if (os_strcasecmp(cmd, "next_radar_width") == 0) {
 			ret = hostapd_ctrl_iface_set_next_radar_width(hapd, value);
+		} else if (os_strcasecmp(cmd, "dfs_chan_recovery") == 0) {
+			ret = hostapd_set_dfs_chan_recovery(hapd, value);
 #ifdef CONFIG_QCN_EXTN
 		} else {
 			ret = hostapd_ctrl_iface_set_extn(hapd, cmd, value);
@@ -3664,6 +3703,14 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 	} else if (os_strcmp(cmd, "next_radar_width") == 0) {
 		res = os_snprintf(buf, buflen, "%d\n",
 				  hapd->iface->conf->next_radar_chan.width);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "dfs_chan_recovery") == 0) {
+		res = os_snprintf(buf, buflen, "Status: %d, target_chan: %d, target_bw: %d\n",
+				  hapd->iface->conf->dfs_chan_recovery.feature_en,
+				  hapd->iface->conf->dfs_chan_recovery.chan,
+				  hapd->iface->conf->dfs_chan_recovery.chwidth);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
@@ -5373,6 +5420,13 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 
 	/* Trigger mesh CSA before AP channel switch if mesh VAP present */
 	hostapd_ubus_mesh_switch_channel(iface, &settings);
+
+	if (settings.freq_params.channel)
+		hostapd_dfs_chan_recovery_update_target(
+			iface,
+			settings.freq_params.channel,
+			hostapd_chan_width_from_freq_params(&settings.freq_params));
+
 	for (i = 0; i < iface->num_bss; i++) {
 
 		/* Save CHAN_SWITCH VHT, HE, and EHT config */
@@ -6161,6 +6215,8 @@ static int hostapd_ctrl_iface_set_bw(struct hostapd_iface *iface, char *pos)
 					 &freq_params, NULL);
 	if (ret)
 		return ret;
+
+	hostapd_dfs_chan_recovery_update_target(iface, chan, chanwidth);
 
 	ieee802_11_set_beacons(iface);
 	return 0;

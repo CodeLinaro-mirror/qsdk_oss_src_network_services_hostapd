@@ -6901,6 +6901,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->next_radar_chan.freq = atoi(pos);
 	} else if (os_strcmp(buf, "next_radar_width") == 0) {
 		conf->next_radar_chan.width = atoi(pos);
+	} else if (os_strcmp(buf, "dfs_chan_recovery") == 0) {
+		conf->dfs_chan_recovery.feature_en = atoi(pos);
 	} else {
 #ifdef CONFIG_QCN_EXTN
 		if (!hostapd_config_fill_extn(conf, bss, buf, pos, line))
