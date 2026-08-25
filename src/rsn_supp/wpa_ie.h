@@ -19,5 +19,9 @@ int security_profile_akm_matches(int profile_num, int key_mgmt);
 int security_profile_build_sta_ie(struct wpa_sm *sm,
 				  int selected_profile_num,
 				  u8 *buf, size_t buf_len);
+int wpa_external_auth_add_rsne(u8 *rsne, size_t rsne_len, struct wpa_sm *sm,
+			       int akmp, int pairwise_cipher,
+			       int group_cipher, int group_mgmt_cipher,
+			       u16 rsn_capab);
 
 #endif /* WPA_IE_H */
