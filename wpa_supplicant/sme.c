@@ -2698,6 +2698,39 @@ static int sme_sae_set_pmk(struct wpa_supplicant *wpa_s, const u8 *bssid)
 }
 
 
+#ifdef CONFIG_ENC_ASSOC
+static void sme_handle_eppke_unknown_password_id(struct wpa_supplicant *wpa_s,
+						 bool external)
+{
+	struct wpa_ssid *ssid = wpa_s->current_ssid;
+	const u8 *bssid = wpa_s->pending_bssid;
+
+	if (ssid && ssid->alt_sae_password_ids &&
+	    ssid->alt_sae_passwords_ids_used) {
+		wpa_printf(MSG_DEBUG,
+			   "EPPKE: Remove alternative password identifier (idx=%u) due to rejection",
+			   ssid->alt_sae_passwords_ids_idx);
+		wpabuf_array_remove(ssid->alt_sae_password_ids,
+				    ssid->alt_sae_passwords_ids_idx);
+
+#ifndef CONFIG_NO_CONFIG_WRITE
+		if (wpa_s->conf->update_config &&
+		    wpa_config_write(wpa_s->confname, wpa_s->conf))
+			wpa_printf(MSG_DEBUG,
+				   "EPPKE: Failed to update configuration");
+#endif /* CONFIG_NO_CONFIG_WRITE */
+	}
+
+	wpa_msg(wpa_s, MSG_INFO,
+		WPA_EVENT_SAE_UNKNOWN_PASSWORD_IDENTIFIER MACSTR,
+		MAC2STR(bssid));
+
+	wpas_connection_failed(wpa_s, bssid, NULL);
+	wpa_supplicant_set_state(wpa_s, WPA_DISCONNECTED);
+}
+#endif /* CONFIG_ENC_ASSOC */
+
+
 void sme_external_auth_mgmt_rx(struct wpa_supplicant *wpa_s,
 			       const u8 *auth_frame, size_t len)
 {
@@ -2802,6 +2835,17 @@ void sme_event_auth(struct wpa_supplicant *wpa_s, union wpa_event_data *data)
 		int res;
 		enum wpa_alg alg;
 		struct ptksa_cache_entry *entry;
+
+		/*
+		 * Handle unknown password identifier rejection for EPPKE:
+		 * remove the rejected alternative password identifier and
+		 * report the event.
+		 */
+		if (data->auth.status_code ==
+		    WLAN_STATUS_UNKNOWN_PASSWORD_IDENTIFIER) {
+			sme_handle_eppke_unknown_password_id(wpa_s, false);
+			return;
+		}
 
 		res = wpas_parse_pasn_frame(pasn, data->auth.auth_type,
 					    data->auth.auth_transaction,
