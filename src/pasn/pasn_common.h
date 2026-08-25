@@ -144,6 +144,7 @@ struct pasn_data {
 	int corrupt_mic;
 #endif /* CONFIG_TESTING_OPTIONS */
 	int network_id;
+	void *network_ctx;
 
 	u8 wrapped_data_format;
 	struct wpabuf *secret;
