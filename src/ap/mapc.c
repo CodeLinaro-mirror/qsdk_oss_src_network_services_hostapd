@@ -538,7 +538,7 @@ static int mapc_add_drv_sta(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 				(struct sta_info_extn *)&sta->sta_extn,
 #endif
-				false, false, NULL,
+				false, false, NULL, false,
 				NULL,
 				sta->flags | WLAN_STA_ASSOC, sta->qosinfo,
 				sta->vht_opmode, 0,

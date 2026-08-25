@@ -8530,6 +8530,11 @@ int ieee80211_ml_process_link(struct hostapd_data *hapd,
 		}
 	}
 
+#ifdef CONFIG_IEEE80211BN
+	if (type == LINK_PARSE_UHR_RECONF_LINK)
+		sta->smd_info.roam_sta = origin_sta->smd_info.roam_sta;
+#endif /* CONFIG_IEEE80211BN */
+
 	if (!offload) {
 		/*
 		 * Get the AID from the station on which the association was
@@ -8745,8 +8750,9 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 					    sta->smd_info.smd_sta,
 					    sta->smd_info.caps.dl_data_fwd,
 					    sta->smd_info.smd_identifier,
+					    false,
 #else
-					    false, false, NULL,
+					    false, false, NULL, false,
 #endif /* CONFIG_IEEE80211BN */
 					    NULL, sta->flags, 0, 0, 0, 0,
 					    mld_link_addr, mld_link_sta,
@@ -9108,8 +9114,9 @@ int add_associated_sta(struct hostapd_data *hapd,
 #endif
 #ifdef CONFIG_IEEE80211BN
                            sta->smd_info.smd_sta, sta->smd_info.caps.dl_data_fwd, sta->smd_info.smd_identifier,
+                           sta->smd_info.roam_sta,
 #else
-                           false, false, NULL,
+                           false, false, NULL, false,
 #endif /*CONFIG_IEEE80211 */
 			    sta->he_6ghz_capab,
 			    sta->flags | WLAN_STA_ASSOC, sta->qosinfo,
@@ -10285,8 +10292,9 @@ handle_assoc_sa_query_timeout_ml_setup(struct hostapd_data *hapd,
 #endif
 #ifdef CONFIG_IEEE80211BN
                             sta->smd_info.smd_sta, sta->smd_info.caps.dl_data_fwd, sta->smd_info.smd_identifier,
+                            false,
 #else
-                            0, 0, NULL,
+                            0, 0, NULL, false,
 #endif
 			    NULL, sta->flags, 0, 0, 0, 0,
 			    mld_link_addr, mld_link_sta,

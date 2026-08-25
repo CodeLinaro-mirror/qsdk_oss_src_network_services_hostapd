@@ -2834,8 +2834,9 @@ int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_aut
 			    sta->smd_info.smd_sta,
 			    sta->smd_info.caps.dl_data_fwd,
 			    sta->smd_info.smd_identifier,
+			    sta->smd_info.roam_sta,
 #else
-			    false, false, NULL,
+			    false, false, NULL, false,
 #endif /* CONFIG_IEEE80211BN */
 			    NULL, sta->flags, 0, 0, 0, 0,
 			    mld_link_addr, mld_link_sta, eml_cap, 0, CONTROL_MIC_PAD_NOT_SET,

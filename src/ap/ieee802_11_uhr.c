@@ -2174,6 +2174,7 @@ static int uhr_process_reconf_req_list(
                         sta->capability = info->capability;
                         uhr_mark_smd_features(hapd_link, sta,
 					      current_ap_mld_addr);
+                        sta->smd_info.roam_sta = true;
 
                         *assoc_link_found = true;
                         *assoc_link_id = info->link_id;
@@ -3380,6 +3381,7 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 
 	/* Frame is complete; advance state before sending */
 	sta->smd_info.state = SMD_STA_ST_EXEC_DONE;
+	sta->smd_info.roam_sta = false;
 
 	ret = uhr_iap_send_st_exec_resp(lhapd,
 					iap->current_ap_mld_addr,
