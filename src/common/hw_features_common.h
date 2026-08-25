@@ -12,6 +12,17 @@
 
 #include "drivers/driver.h"
 
+/* 5 GHz UNII-2-Extended band channel range */
+#define UNII_2_EXT_START_CHAN 100
+#define UNII_2_EXT_END_CHAN 144
+
+/*
+ * Secondary channel offset (HT40+ / HT40-) for a primary channel within a
+ * block, based on its position relative to the block's start channel.
+ */
+#define GET_SEC_CHAN_OFFSET(chan, block_start) \
+	(((chan) - (block_start)) % 8 == 0 ? 1 : -1)
+
 struct hostapd_channel_data * hw_get_channel_chan(struct hostapd_hw_modes *mode,
 						  int chan, int *freq);
 struct hostapd_channel_data *
