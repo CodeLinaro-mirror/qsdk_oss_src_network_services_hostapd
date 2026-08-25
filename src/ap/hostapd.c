@@ -6392,10 +6392,10 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 		}
 #ifdef CONFIG_QCN_EXTN
 		else if (is_mesh_vap) {
-			if (hostapd_mesh_mbssid_grow_group_extn(hapd, multi_mbssid,
-								max_bssid_indicator,
-								&group_index,
-								&prefix_mask))
+			if (hostapd_mesh_mbssid_grow_or_reuse_group_extn(hapd, multi_mbssid,
+									 max_bssid_indicator,
+									 &group_index,
+									 &prefix_mask))
 				return -1;
 		}
 #endif
@@ -6410,6 +6410,10 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 			group->group_id = group_index;
 			group->txbss = hapd;
 			dl_list_init(&group->bss_list);
+#ifdef CONFIG_QCN_EXTN
+			if (is_mesh_vap)
+				hostapd_mesh_mbssid_mark_group_extn(hapd, group);
+#endif
 		}
 
 		hapd->mbssid_group = group;
