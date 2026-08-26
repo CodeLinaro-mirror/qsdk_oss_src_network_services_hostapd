@@ -1412,6 +1412,47 @@ __send_sae_auth_response(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 }
 
+static void __send_802_1x_auth_response(struct hostapd_data *hapd,
+					struct sta_info *sta,
+					struct hostapd_if_frame_ctx *ctx)
+{
+	u16 auth_transaction = ctx->data.auth_resp.auth_transaction;
+	struct __hostapd_if_pmk *pmk = &ctx->data.auth_resp.pmk;
+
+	if (pmk->pmk) {
+		size_t pmk_len;
+		struct rsn_pmksa_cache_entry *
+		tmp_entry = os_zalloc(sizeof(*tmp_entry));
+
+		if (!tmp_entry) {
+			wpa_printf(MSG_ERROR, "OUT-OF-MEMORY %s\n", __func__);
+			goto free_eap_ctx;
+		}
+
+		pmk_len =
+		(pmk->pmk_len < PMK_LEN_MAX) ? pmk->pmk_len : PMK_LEN_MAX;
+		os_memcpy(tmp_entry->pmk, pmk->pmk, pmk_len);
+		tmp_entry->pmk_len = pmk_len;
+		if (pmk->pmkid)
+			os_memcpy(tmp_entry->pmkid, pmk->pmkid, PMKID_LEN);
+		set_pmk_802_1x_auth(hapd, sta, auth_transaction, tmp_entry);
+		os_free(tmp_entry);
+	} else {
+		if (!hapd->conf->plugin_eap_offload)
+			/* Pass it through EAP State machine */
+			handle_auth_802_1x_eapol(hapd, sta);
+		else if (hapd->send_eap_req)
+			hapd->send_eap_req(hapd, sta, IEEE802_1X_TYPE_EAP_PACKET,
+					   auth_transaction + 1,
+					   WLAN_STATUS_SUCCESS, NULL,
+					   (const u8 *) ctx->data.auth_resp.eap,
+					   ctx->data.auth_resp.eap_len);
+	}
+free_eap_ctx:
+	os_free(ctx->data.auth_resp.eap);
+	os_free(sta->eap_auth_data.eapol_pdu);
+	sta->eap_auth_data.eapol_pdu = NULL;
+}
 
 /*
  * Use MLD mac in sta_mac, in case the STA is 11be
@@ -1513,6 +1554,9 @@ void __hostapd_if_auth_response(char *ifname, uint8_t *sta_mac,
 		ft_finish_pull(sta->wpa_sm, status_code);
 		break;
 	}
+	case WLAN_AUTH_802_1X:
+		__send_802_1x_auth_response(hapd, sta, ctx);
+		break;
 	default:
 		wpa_printf(MSG_ERROR, "%s: ERROR! Unsupported algorithm\n",
 			__func__);

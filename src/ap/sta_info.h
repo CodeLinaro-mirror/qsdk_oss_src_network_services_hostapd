@@ -14,6 +14,7 @@
 #include "vlan.h"
 #include "common/wpa_common.h"
 #include "common/ieee802_11_defs.h"
+#include "common/eapol_common.h"
 #include "common/sae.h"
 #include "crypto/sha384.h"
 #include "pasn/pasn_common.h"
@@ -111,6 +112,8 @@ struct eap_over_auth_data {
 	bool add_mic;
 	u8 epp_pmkid_cur[PMKID_LEN];
 	u8 epp_pmkid_next[PMKID_LEN];
+	struct ieee802_1x_hdr *eapol_pdu;
+	u16 eap_len;
 };
 
 #define EHT_ML_MAX_STA_PROF_LEN 1024
