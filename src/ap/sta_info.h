@@ -230,6 +230,7 @@ struct smd_caps {
 /* SMD (Seamless Multiband Device) station information */
 struct smd_info {
 	bool smd_sta; /* Station supports SMD */
+	bool roam_sta; /* Station created via ST Prep (IAP) at Target AP */
 	u8 smd_identifier[ETH_ALEN]; /* SMD Identifier from STA */
 	u8 smd_timeout; /* Preparation Timeout, units of 64 TUs */
 	struct smd_caps caps; /* SMD capabilities */

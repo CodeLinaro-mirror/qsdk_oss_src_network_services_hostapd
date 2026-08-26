@@ -7987,6 +7987,7 @@ static int wpa_driver_nl80211_build_sta(struct wpa_driver_nl80211_data *drv,
 			goto fail;
 	}
 
+#ifdef CONFIG_IEEE80211BN
 	if (params->set && params->smd_sta) {
 		wpa_printf(MSG_DEBUG, "  * SMD enabled:%d", params->smd_sta);
 		if (nla_put_u8(msg, NL80211_ATTR_PEER_SMD_ENABLED, params->smd_sta))
@@ -8002,6 +8003,13 @@ static int wpa_driver_nl80211_build_sta(struct wpa_driver_nl80211_data *drv,
 				goto fail;
 		}
 	}
+
+	if (!params->set && params->smd_roam_sta) {
+		wpa_printf(MSG_DEBUG, "  * smd_roam_sta: ST Prep (IAP) peer");
+		if (nla_put_flag(msg, NL80211_ATTR_SMD_ROAM_STA))
+			goto fail;
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 	ret = 0;
 fail:

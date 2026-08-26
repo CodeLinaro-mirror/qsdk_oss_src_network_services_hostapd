@@ -3597,6 +3597,7 @@ struct hostapd_sta_add_params {
 	bool smd_sta;
 	bool dl_data_fwd;
 	const u8 *smd_mac_addr;
+	bool smd_roam_sta;
 };
 
 struct ml_reconf_req {

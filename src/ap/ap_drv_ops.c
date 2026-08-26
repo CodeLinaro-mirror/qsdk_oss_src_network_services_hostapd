@@ -628,6 +628,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    struct sta_info_extn *sta_extn,
 #endif
 		    bool smd_sta, bool dl_data_fwd, const u8 *smd_mac_addr,
+		    bool smd_roam_sta,
 		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
 		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
 		    int set, const u8 *link_addr, bool mld_link_sta,
@@ -700,6 +701,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 	params.smd_sta = smd_sta;
 	params.dl_data_fwd = dl_data_fwd;
 	params.smd_mac_addr = smd_mac_addr;
+	params.smd_roam_sta = smd_roam_sta;
 
 	if (type == LINK_PARSE_RECONF) {
 		sta = ap_get_sta(hapd, addr);
