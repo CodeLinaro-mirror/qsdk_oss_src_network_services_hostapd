@@ -622,6 +622,31 @@ static int decode_datapath_ctx_tlv(const u8 *val, u16 val_len,
 	return 0;
 }
 
+/**
+ * encode_roam_cleanup_tlv - Encode Roam Cleanup TLV (subtype 0x000B)
+ *
+ * Wire layout of value field:
+ *   subtype(2) | dst_mld_addr(6) | dst_bssid(6) | sta_mld_addr(6)
+ */
+static int encode_roam_cleanup_tlv(struct wpabuf *buf,
+				   const u8 *dst_mld_addr,
+				   const u8 *sta_mld_addr)
+{
+	u16 val_len = WIFI8_TLV_SUBTYPE_LEN + ETH_ALEN + ETH_ALEN + ETH_ALEN;
+
+	if (wpabuf_tailroom(buf) < WIFI8_TLV_HDR_LEN + val_len)
+		return -1;
+
+	wpabuf_put_u8(buf, WIFI8_TLV_TYPE);
+	wpabuf_put_be16(buf, val_len);
+	wpabuf_put_be16(buf, WIFI8_TLV_SUBTYPE_ROAM_CLEANUP);
+	wpabuf_put_data(buf, dst_mld_addr, ETH_ALEN);
+	wpabuf_put_data(buf, zero_addr, ETH_ALEN);  /* dst_bssid not applicable */
+	wpabuf_put_data(buf, sta_mld_addr, ETH_ALEN);
+
+	return 0;
+}
+
 /* -------------------------------------------------------------------------
  * Internal: payload length helper
  * ------------------------------------------------------------------------- */
@@ -850,6 +875,55 @@ struct wpabuf *eth_p_1905_iap_encode_exec_resp(struct hostapd_data *hapd,
 	return buf;
 }
 
+struct wpabuf *eth_p_1905_iap_encode_prep_ctx(const struct uhr_iap_frame *iap)
+{
+	const struct sta_smd_ctx_info *smd_ctx;
+	size_t smd_ctx_len;
+	struct wpabuf *buf;
+
+	if (!iap || !(iap->flags & UHR_IAP_FLAG_HAS_DYNAMIC_CTX))
+		return NULL;
+
+	/* frame_len is 0 for PREP_CTX; smd_ctx starts at frame_ctx_data[0] */
+	smd_ctx = (const struct sta_smd_ctx_info *) iap->frame_ctx_data;
+	smd_ctx_len = le_to_host16(iap->smd_ctx_len);
+
+	buf = wpabuf_alloc(eth_p_1905_payload_len(iap));
+	if (!buf)
+		return NULL;
+
+	if (encode_datapath_ctx_tlv(buf, iap->target_ap_mld_addr, NULL,
+				    smd_ctx, smd_ctx_len) < 0) {
+		wpabuf_free(buf);
+		return NULL;
+	}
+
+	return buf;
+}
+
+struct wpabuf *eth_p_1905_iap_encode_roam_cleanup(const struct uhr_iap_frame *iap)
+{
+	struct wpabuf *buf;
+	/* Fixed size: HDR(3) + subtype(2) + dst_mld(6) + dst_bssid(6) + sta_mld(6) */
+	size_t alloc_len = WIFI8_TLV_HDR_LEN + WIFI8_TLV_SUBTYPE_LEN +
+			   ETH_ALEN + ETH_ALEN + ETH_ALEN;
+
+	if (!iap)
+		return NULL;
+
+	buf = wpabuf_alloc(alloc_len);
+	if (!buf)
+		return NULL;
+
+	if (encode_roam_cleanup_tlv(buf, iap->target_ap_mld_addr,
+				    iap->sta_addr) < 0) {
+		wpabuf_free(buf);
+		return NULL;
+	}
+
+	return buf;
+}
+
 /* -------------------------------------------------------------------------
  * SMD-specific 1905 message decode handler
  *
@@ -888,6 +962,9 @@ static struct uhr_iap_frame *decode_smd_msg(struct hostapd_data *hapd,
 
 	struct sta_smd_ctx_info smd_ctx_decoded;
 	bool has_datapath_ctx = false;
+
+	u8 sta_mld_addr[ETH_ALEN];
+	bool has_roam_cleanup = false;
 
 	/* Reconstructed IAP frame */
 	struct uhr_iap_frame *iap = NULL;
@@ -947,6 +1024,15 @@ static struct uhr_iap_frame *decode_smd_msg(struct hostapd_data *hapd,
 						    msg_type,
 						    &smd_ctx_decoded) == 0)
 				has_datapath_ctx = true;
+			break;
+
+		case WIFI8_TLV_SUBTYPE_ROAM_CLEANUP:
+			if (tlv_len >= WIFI8_TLV_SUBTYPE_LEN + ETH_ALEN + ETH_ALEN + ETH_ALEN) {
+				os_memcpy(sta_mld_addr,
+					  tlv_val + WIFI8_TLV_SUBTYPE_LEN + ETH_ALEN + ETH_ALEN,
+					  ETH_ALEN);
+				has_roam_cleanup = true;
+			}
 			break;
 
 		default:
@@ -1032,6 +1118,14 @@ static struct uhr_iap_frame *decode_smd_msg(struct hostapd_data *hapd,
 	case ETH_P_1905_SMD_ST_EXEC_REP_MSG:
 		iap->msg_type = UHR_IAP_MSG_ST_EXEC_RESPONSE;
 		break;
+	case ETH_P_1905_SMD_ST_PREP_CTX_MSG:
+		iap->msg_type = UHR_IAP_MSG_ST_PREP_CTX;
+		break;
+	case ETH_P_1905_SMD_ST_ROAM_CLEANUP_MSG:
+		iap->msg_type = UHR_IAP_MSG_ST_ROAM_CLEANUP;
+		if (has_roam_cleanup)
+			os_memcpy(iap->sta_addr, sta_mld_addr, ETH_ALEN);
+		break;
 	default:
 		wpa_printf(MSG_ERROR,
 			   "1905 SMD IAP: Unexpected msg_type 0x%04x", msg_type);
@@ -1075,6 +1169,8 @@ struct uhr_iap_frame *eth_p_1905_msg_rx(struct hostapd_data *hapd,
 	case ETH_P_1905_SMD_ST_PREP_REP_MSG:
 	case ETH_P_1905_SMD_ST_EXEC_REQ_MSG:
 	case ETH_P_1905_SMD_ST_EXEC_REP_MSG:
+	case ETH_P_1905_SMD_ST_PREP_CTX_MSG:
+	case ETH_P_1905_SMD_ST_ROAM_CLEANUP_MSG:
 		return decode_smd_msg(hapd, src_addr, dst_addr, msg_type,
 				      data, data_len);
 

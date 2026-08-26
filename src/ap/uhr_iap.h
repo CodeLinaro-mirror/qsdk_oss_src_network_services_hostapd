@@ -160,6 +160,6 @@ int uhr_iap_send_st_exec_via_tgt_done(struct hostapd_data *hapd,
 
 
 void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_addr,
-		const u8 *data, size_t data_len, u16 msg_type);
+		u16 msg_type, const u8 *data, size_t data_len);
 
 #endif /* UHR_IAP_H */
