@@ -272,6 +272,7 @@ struct rx_ecu_param {
 	bool critical_update;
 	u8 ebpcc;
 	u8 countdown;
+	bool all_updates_included;
 };
 
 /**
@@ -2024,6 +2025,30 @@ static inline bool
 hostapd_is_uhr_enabled(struct hostapd_data *hapd)
 {
 	return (hapd->iconf->ieee80211bn && !hapd->conf->disable_11bn);
+}
+
+static inline u8
+hostapd_get_ecu_info(const struct rx_ecu_param *ecu_param)
+{
+	u8 ecu_info = ecu_param->ebpcc & UHR_ECU_INFO_ENHANCED_BPCC_MASK;
+
+	if (ecu_param->critical_update)
+		ecu_info |= (UHR_CRITICAL_UPDATE_TYPE_UHR_MODE <<
+			     UHR_ECU_INFO_CRITICAL_UPDATE_TYPE_SHIFT) &
+			    UHR_ECU_INFO_CRITICAL_UPDATE_TYPE_MASK;
+
+	/*
+	 * B7: Enhanced All Updates Included — set only while the UHR
+	 * Parameters Update element is actually present in the frame
+	 * (advance- and post-notification phases).  Using a dedicated
+	 * flag rather than critical_update avoids incorrectly setting
+	 * B7 during UHR_ECU_UPDATE_IND_IN_TIM when the element has
+	 * already been dropped from the frame.
+	 */
+	if (ecu_param->all_updates_included)
+		ecu_info |= UHR_ECU_INFO_ENHANCED_ALL_UPDATES_INCLUDED;
+
+	return ecu_info;
 }
 
 /**

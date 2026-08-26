@@ -1057,8 +1057,9 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 
 #ifdef CONFIG_IEEE80211BN
 	if (hostapd_is_uhr_enabled(hapd) && is_uhr_sta && !skip_uhr_extn) {
-		/* Currently hard-code Enhanced Critical Updates Information to zero */
-		wpabuf_put_u8(buf, 0);
+		u8 ecu_info = include_bpcc ?
+			      hostapd_get_ecu_info(&hapd->rx_ecu_param) : 0;
+		wpabuf_put_u8(buf, ecu_info);
 		if (include_bss_load_age && hapd->conf->bss_load_update_period)
 			wpabuf_put_u8(buf, hostapd_bss_load_age(
 					&hapd->iface->ch_util_update_time));
@@ -1158,7 +1159,7 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		/* Enhanced Critical Updates Information */
 		if (include_bpcc && hostapd_is_uhr_enabled(hapd) &&
 		    !skip_uhr_extn && is_uhr_sta)
-			wpabuf_put_u8(buf, 0);
+			wpabuf_put_u8(buf, hostapd_get_ecu_info(&link_bss->rx_ecu_param));
 
 		if (!link->resp_sta_profile)
 			continue;
