@@ -3538,6 +3538,106 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 	os_free(data);
 }
 
+#ifdef CONFIG_IEEE8021X_AUTH
+void set_pmk_802_1x_auth(struct hostapd_data *hapd, struct sta_info *sta,
+		  u16 auth_transaction,
+		  struct rsn_pmksa_cache_entry *cached_pmk)
+{
+	const u8 *aa;
+	enum wpa_alg alg;
+	size_t key_len, kdk_len;
+	u16 resp = WLAN_STATUS_SUCCESS;
+	struct wpabuf *reply;
+
+	aa = hapd->own_addr;
+	alg = wpa_cipher_to_alg(sta->eap_auth_data.cipher);
+	key_len = wpa_cipher_key_len(sta->eap_auth_data.cipher);
+
+#ifdef CONFIG_IEEE80211BE
+	if (ap_sta_is_mld(hapd, sta))
+		aa = hapd->mld->mld_addr;
+#endif /* CONFIG_IEEE80211BE */
+	wpa_printf(MSG_DEBUG,
+			"Found a matching PMKSA cache entry");
+	os_memcpy(sta->eap_auth_data.epp_pmkid_cur,
+			cached_pmk->pmkid, PMKID_LEN);
+	reply = prepare_802_1x_auth_resp(
+			hapd, sta, auth_transaction + 1,
+			WLAN_STATUS_SUCCESS, cached_pmk, NULL, 0);
+	if (!reply) {
+		wpa_printf(MSG_INFO,
+				"Failed to prepare IEEE 802.1X Authentication frame");
+		return;
+	}
+
+	if (hapd->conf->force_kdk_derivation ||
+			(wpa_auth_ap_support_secure_ltf(hapd->wpa_auth) &&
+			 ieee802_11_rsnx_capab(sta->eap_auth_data.rsnxe,
+				 WLAN_RSNX_CAPAB_SECURE_LTF)))
+		kdk_len = WPA_KDK_MAX_LEN;
+	else
+		kdk_len = 0;
+
+	if (wpa_auth_802_1x_pmk_to_ptk(
+				cached_pmk->pmk, cached_pmk->pmk_len,
+				sta->addr, aa,
+				sta->eap_auth_data.snonce,
+				sta->eap_auth_data.anonce,
+				sta->eap_auth_data.akm,
+				sta->eap_auth_data.cipher,
+				wpabuf_head_u8(sta->eap_auth_data.dhss),
+				wpabuf_len(sta->eap_auth_data.dhss),
+				&sta->eap_auth_data.ptk, kdk_len)) {
+		wpa_printf(MSG_INFO, "Failed to derive PTK");
+		resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+		goto fail;
+	}
+	wpa_printf(MSG_DEBUG, "PTK derived successfully");
+
+	if (wpa_auth_802_1x_set_key(hapd->wpa_auth, alg,
+				sta->addr,
+				sta->eap_auth_data.ptk.tk,
+				key_len)) {
+		wpa_printf(MSG_INFO,
+				"Failed to set TK to driver");
+		resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+		goto fail;
+	}
+
+	sta->flags |= WLAN_STA_AUTH;
+	sta->auth_alg = WLAN_AUTH_802_1X;
+	sta->eap_auth_data.add_mic = true;
+	send_8021x_auth_reply(hapd, sta, auth_transaction + 1,
+			WLAN_STATUS_SUCCESS, reply);
+	/* Delete DHss after successful PTK derivation */
+	wpabuf_clear_free(sta->eap_auth_data.dhss);
+	sta->eap_auth_data.dhss = NULL;
+	return;
+
+fail:
+	wpabuf_free(reply);
+	reply = prepare_802_1x_auth_resp(hapd, sta, auth_transaction + 1,
+					 resp, NULL, NULL, 0);
+	if (reply)
+		send_8021x_auth_reply(hapd, sta, auth_transaction + 1, resp,
+				      reply);
+
+}
+
+static bool __initialize_eapol_sm_802_1x_auth(struct hostapd_data *hapd,
+					      struct sta_info *sta)
+{
+	if (!sta->eapol_sm) {
+		sta->eapol_sm = ieee802_1x_alloc_eapol_sm(hapd, sta);
+		if (!sta->eapol_sm)
+			return false;
+	}
+
+	ieee802_1x_eapol_sm_set_port_enabled(sta->eapol_sm, true);
+	return true;
+}
+
+#endif /* CONFIG_IEEE8021X_AUTH */
 
 static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 			       const u8 *pos, size_t len, u16 auth_alg,
@@ -3653,10 +3753,6 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 		}
 
 		for (i = 0; i < data.num_pmkid; i++) {
-			const u8 *aa;
-			enum wpa_alg alg;
-			size_t key_len, kdk_len;
-
 			wpa_hexdump(MSG_DEBUG, "RSNE: STA PMKID",
 				    &data.pmkid[i * PMKID_LEN], PMKID_LEN);
 
@@ -3666,80 +3762,12 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 			if (!cached_pmk)
 				continue;
 
-			aa = hapd->own_addr;
-			alg = wpa_cipher_to_alg(sta->eap_auth_data.cipher);
-			key_len = wpa_cipher_key_len(sta->eap_auth_data.cipher);
-
-#ifdef CONFIG_IEEE80211BE
-			if (ap_sta_is_mld(hapd, sta))
-				aa = hapd->mld->mld_addr;
-#endif /* CONFIG_IEEE80211BE */
-			wpa_printf(MSG_DEBUG,
-				   "Found a matching PMKSA cache entry");
-			os_memcpy(sta->eap_auth_data.epp_pmkid_cur,
-				  cached_pmk->pmkid, PMKID_LEN);
-			reply = prepare_802_1x_auth_resp(
-				hapd, sta, auth_transaction + 1,
-				WLAN_STATUS_SUCCESS, cached_pmk, NULL, 0);
-			if (!reply) {
-				wpa_printf(MSG_INFO,
-					   "Failed to prepare IEEE 802.1X Authentication frame");
-				return;
-			}
-
-			if (hapd->conf->force_kdk_derivation ||
-			    (wpa_auth_ap_support_secure_ltf(hapd->wpa_auth) &&
-			     ieee802_11_rsnx_capab(sta->eap_auth_data.rsnxe,
-						   WLAN_RSNX_CAPAB_SECURE_LTF)))
-				kdk_len = WPA_KDK_MAX_LEN;
-			else
-				kdk_len = 0;
-
-			if (wpa_auth_802_1x_pmk_to_ptk(
-				    cached_pmk->pmk, cached_pmk->pmk_len,
-				    sta->addr, aa,
-				    sta->eap_auth_data.snonce,
-				    sta->eap_auth_data.anonce,
-				    sta->eap_auth_data.akm,
-				    sta->eap_auth_data.cipher,
-				    wpabuf_head_u8(sta->eap_auth_data.dhss),
-				    wpabuf_len(sta->eap_auth_data.dhss),
-				    &sta->eap_auth_data.ptk, kdk_len)) {
-				wpa_printf(MSG_INFO, "Failed to derive PTK");
-				resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
-				goto fail;
-			}
-			wpa_printf(MSG_DEBUG, "PTK derived successfully");
-
-			if (wpa_auth_802_1x_set_key(hapd->wpa_auth, alg,
-						    sta->addr,
-						    sta->eap_auth_data.ptk.tk,
-						    key_len)) {
-				wpa_printf(MSG_INFO,
-					   "Failed to set TK to driver");
-				resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
-				goto fail;
-			}
-
-			sta->flags |= WLAN_STA_AUTH;
-			sta->auth_alg = WLAN_AUTH_802_1X;
-			sta->eap_auth_data.add_mic = true;
-			send_8021x_auth_reply(hapd, sta, auth_transaction + 1,
-					      WLAN_STATUS_SUCCESS, reply);
-			/* Delete DHss after successful PTK derivation */
-			wpabuf_clear_free(sta->eap_auth_data.dhss);
-			sta->eap_auth_data.dhss = NULL;
+			set_pmk_802_1x_auth(hapd, sta, auth_transaction, cached_pmk);
 			return;
 		}
 
-		/* Start EAPOL SM to process EAPOL PDU */
-		if (!sta->eapol_sm) {
-			sta->eapol_sm = ieee802_1x_alloc_eapol_sm(hapd, sta);
-			if (!sta->eapol_sm)
-				return;
-		}
-
-		ieee802_1x_eapol_sm_set_port_enabled(sta->eapol_sm, true);
+		if (!__initialize_eapol_sm_802_1x_auth(hapd, sta))
+			return;
 	}
 
 	/* Forward the extracted EAP PDU to AS */
