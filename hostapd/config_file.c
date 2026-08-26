@@ -3998,6 +3998,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->ht_mcs_nss_set = (u32) val;
 	} else if (os_strcmp(buf, "require_ht") == 0) {
 		conf->require_ht = atoi(pos);
+	} else if (os_strcmp(buf, "bss_require_ht") == 0) {
+		bss->bss_require_ht = atoi(pos);
 	} else if (os_strcmp(buf, "ht_vht_twt_responder") == 0) {
 		conf->ht_vht_twt_responder = atoi(pos);
 	} else if (os_strcmp(buf, "obss_interval") == 0) {
@@ -4015,6 +4017,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 	} else if (os_strcmp(buf, "require_vht") == 0) {
 		conf->require_vht = atoi(pos);
+	} else if (os_strcmp(buf, "bss_require_vht") == 0) {
+		bss->bss_require_vht = atoi(pos);
 	} else if (os_strcmp(buf, "vht_oper_chwidth") == 0) {
 		conf->vht_oper_chwidth = atoi(pos);
 	} else if (os_strcmp(buf, "vht_oper_centr_freq_seg0_idx") == 0) {
@@ -4081,6 +4085,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->ieee80211ax = atoi(pos);
 	} else if (os_strcmp(buf, "require_he") == 0) {
 		conf->require_he = atoi(pos);
+	} else if (os_strcmp(buf, "bss_require_he") == 0) {
+		bss->bss_require_he = atoi(pos);
 	} else if (os_strcmp(buf, "he_su_beamformer") == 0) {
 		conf->he_phy_capab.he_su_beamformer = atoi(pos);
 	} else if (os_strcmp(buf, "he_su_beamformee") == 0) {
