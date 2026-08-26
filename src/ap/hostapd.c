@@ -259,20 +259,6 @@ static int hostapd_get_bss_index(struct hostapd_data *bss)
 }
 
 
-bool hostapd_check_reenable_bss(struct hostapd_iface *iface)
-{
-	int b;
-
-	for (b = 0; b < iface->num_bss; b++) {
-		if (iface->bss[b]->reenable == REENABLE_REUSE_LINK ||
-		    iface->bss[b]->reenable == REENABLE_HT_SCAN ||
-		    iface->bss[b]->reenable == REENABLE_CAC)
-			return true;
-	}
-
-	return false;
-}
-
 static inline bool hapd_reenable_pending(const struct hostapd_data *hapd)
 {
 	return hapd->reenable == REENABLE_REUSE_LINK ||
@@ -280,8 +266,26 @@ static inline bool hapd_reenable_pending(const struct hostapd_data *hapd)
 		hapd->reenable == REENABLE_CAC;
 }
 
+bool hostapd_check_reenable_bss(struct hostapd_iface *iface,
+				enum hostapd_reenable_mode reason)
+{
+	int b;
+
+	for (b = 0; b < iface->num_bss; b++) {
+		if (reason == REENABLE_NONE) {
+			if (hapd_reenable_pending(iface->bss[b]))
+				return true;
+			continue;
+		}
+		if (iface->bss[b]->reenable == reason)
+			return true;
+	}
+
+	return false;
+}
+
 int hostapd_switch_pending_bss(struct hostapd_iface *iface,
-				      struct csa_settings *settings)
+			      struct csa_settings *settings)
 {
 	int b, err = 0, num_err = 0;
 
@@ -300,15 +304,21 @@ int hostapd_switch_pending_bss(struct hostapd_iface *iface,
 }
 
 
-bool hostapd_enable_pending_bss(struct hostapd_iface *iface)
+bool hostapd_enable_pending_bss(struct hostapd_iface *iface,
+				enum hostapd_reenable_mode reason,
+				bool dfs_cleanup)
 {
 	int b;
 
 	for (b = 0; b < iface->num_bss; b++) {
 		struct hostapd_data *hapd = iface->bss[b];
 
-		if (!hapd_reenable_pending(hapd))
+		if (reason == REENABLE_NONE) {
+			if (!hapd_reenable_pending(hapd))
+				continue;
+		} else if (hapd->reenable != reason) {
 			continue;
+		}
 
 		if (hostapd_enable_bss(hapd) < 0)
 			wpa_printf(MSG_ERROR, "Enabling of BSS %s failed",
@@ -3370,7 +3380,7 @@ static int hostapd_enable_no_ir_bsses(struct hostapd_iface *iface)
 	if (ret)
 		return ret;
 
-	if (!hostapd_check_reenable_bss(iface))
+	if (!hostapd_check_reenable_bss(iface, REENABLE_NONE))
 		hostapd_set_state(iface, HAPD_IFACE_ENABLED);
 
 	return ret;
@@ -3505,7 +3515,7 @@ int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 
 		wpa_printf(MSG_DEBUG,
 			   "NO_IR: Re-enabling interface after channel list update");
-		if (!hostapd_check_reenable_bss(iface))
+		if (!hostapd_check_reenable_bss(iface, REENABLE_NONE))
 			setup_interface2(iface);
 		else
 			ret = hostapd_enable_no_ir_bsses(iface);

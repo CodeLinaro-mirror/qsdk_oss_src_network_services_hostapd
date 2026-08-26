@@ -604,8 +604,9 @@ static void ieee80211n_check_scan(struct hostapd_iface *iface)
 
 	scan_res = hostapd_driver_get_scan_results(iface->bss[0]);
 	if (scan_res == NULL) {
-		if (hostapd_check_reenable_bss(iface))
-			hostapd_enable_pending_bss(iface);
+		if (hostapd_check_reenable_bss(iface, REENABLE_HT_SCAN))
+			hostapd_enable_pending_bss(iface, REENABLE_HT_SCAN,
+						   false);
 		else
 			hostapd_setup_interface_complete(iface, 1);
 		return;
@@ -661,8 +662,8 @@ static void ieee80211n_check_scan(struct hostapd_iface *iface)
 		wpa_printf(MSG_INFO, "Fallback to 20 MHz");
 	}
 
-	if (hostapd_check_reenable_bss(iface))
-		hostapd_enable_pending_bss(iface);
+	if (hostapd_check_reenable_bss(iface, REENABLE_HT_SCAN))
+		hostapd_enable_pending_bss(iface, REENABLE_HT_SCAN, false);
 	else
 		hostapd_setup_interface_complete(iface, !res);
 }
@@ -799,8 +800,8 @@ static void ap_ht40_scan_retry(void *eloop_data, void *user_data)
 	hostapd_set_oper_chwidth(iface->conf, CONF_OPER_CHWIDTH_USE_HT);
 	iface->conf->secondary_channel = 0;
 	iface->conf->ht_capab &= ~HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET;
-	if (hostapd_check_reenable_bss(iface))
-		hostapd_enable_pending_bss(iface);
+	if (hostapd_check_reenable_bss(iface, REENABLE_HT_SCAN))
+		hostapd_enable_pending_bss(iface, REENABLE_HT_SCAN, false);
 	else
 		hostapd_setup_interface_complete(iface, 0);
 }

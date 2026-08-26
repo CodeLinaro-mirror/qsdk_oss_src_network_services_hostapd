@@ -1535,10 +1535,13 @@ void hostapd_switch_color_timeout_handler(void *eloop_data, void *user_ctx);
 bool hostapd_is_cca_in_progress(struct hostapd_iface *iface);
 void hostapd_refresh_all_iface_beacons(struct hostapd_iface *hapd_iface);
 
-bool hostapd_check_reenable_bss(struct hostapd_iface *iface);
+bool hostapd_check_reenable_bss(struct hostapd_iface *iface,
+				enum hostapd_reenable_mode reason);
 int hostapd_switch_pending_bss(struct hostapd_iface *iface,
 			       struct csa_settings *settings);
-bool hostapd_enable_pending_bss(struct hostapd_iface *iface);
+bool hostapd_enable_pending_bss(struct hostapd_iface *iface,
+				enum hostapd_reenable_mode reason,
+				bool dfs_cleanup);
 int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface);
 #ifdef CONFIG_IEEE80211BE
 
