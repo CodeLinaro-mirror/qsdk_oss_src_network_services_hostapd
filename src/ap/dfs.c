@@ -4260,10 +4260,12 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	if (hostapd_dfs_radar_update_punct_bitmap(iface, radar_bitmap_oper))
 		return 0;
 
-	 if (iface->conf->dfs_test_mode)
-		 set_dfs_state(iface, freq, ht_enabled, chan_offset,
-			       chan_width, cf1, cf2,
-			       HOSTAPD_CHAN_DFS_AVAILABLE, radar_bitmap);
+	if (iface->conf->dfs_test_mode) {
+		set_dfs_state(iface, freq, ht_enabled, chan_offset,
+			      chan_width, cf1, cf2,
+			      HOSTAPD_CHAN_DFS_AVAILABLE, radar_bitmap);
+		return hostapd_dfs_start_channel_switch(iface);
+	}
 
 	if (!hostapd_dfs_is_background_event(iface, freq)) {
 		/* Skip if reported radar event not overlapped our channels */
