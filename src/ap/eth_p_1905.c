@@ -550,11 +550,11 @@ static void eth_p_1905_rx(void *priv, const u8 *src_addr,
 				   MAC2STR(ethhdr->h_source));
 
 		uhr_iap_rx(ctx->hapd, ethhdr->h_source, ethhdr->h_dest,
-			   plain, plain_len, msg_type);
+			   msg_type, plain, plain_len);
 		os_free(plain);
 	} else {
 		uhr_iap_rx(ctx->hapd, ethhdr->h_source, ethhdr->h_dest,
-			   payload, payload_len, msg_type);
+			   msg_type, payload, payload_len);
 	}
 }
 

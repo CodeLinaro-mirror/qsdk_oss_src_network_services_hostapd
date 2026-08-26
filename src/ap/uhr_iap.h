@@ -135,7 +135,7 @@ int uhr_iap_send_st_roam_cleanup(struct hostapd_data *hapd,
 
 
 void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_addr,
-		const u8 *data, size_t data_len, u16 msg_type);
+		u16 msg_type, const u8 *data, size_t data_len);
 
 int uhr_iap_send_st_prep_ctx(struct hostapd_data *hapd,
 			      const u8 *target_ap_mld_addr,
