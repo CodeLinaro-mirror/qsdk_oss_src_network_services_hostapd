@@ -7129,6 +7129,20 @@ wpa_driver_nl80211_set_ap_nlmsg_len(struct i802_bss *bss,
 		len += nl80211_attr_len_flag();
 
 #ifdef CONFIG_IEEE80211BN
+	if (params->uhr_cap && params->uhr_cap[1] >= 2)
+		len += nl80211_attr_len(params->uhr_cap[1] - 1);
+
+	if (params->smd.enabled) {
+		len += nl80211_attr_len_flag();
+		len += nl80211_attr_len(nl80211_attr_len(ETH_ALEN) +
+					nl80211_attr_len_u16() +
+					(params->smd.caps.dl_data_fwd ?
+					 nl80211_attr_len_flag() : 0) +
+					nl80211_attr_len_u8() +
+					nl80211_attr_len_u8() +
+					nl80211_attr_len_u8());
+	}
+
 	/* DPS Assist parameter */
 	len += nl80211_attr_len_u8();
 #endif /* CONFIG_IEEE80211BN */
@@ -7702,7 +7716,7 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 	}
 
 #ifdef CONFIG_IEEE80211BN
-	if (params->uhr_cap &&
+	if (params->uhr_cap && params->uhr_cap[1] >= 2 &&
 	    nla_put(msg, NL80211_ATTR_UHR_CAPABILITY,
 		    /* nl80211 wants it without the extended element header */
 		    params->uhr_cap[1] - 1,
