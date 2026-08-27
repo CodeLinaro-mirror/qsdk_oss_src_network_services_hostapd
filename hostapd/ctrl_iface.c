@@ -2468,6 +2468,9 @@ he_rollback:
 		   os_strcasecmp(cmd, "bss_eht_4x_eht_ltf_and_800ns_gi") == 0 ||
 		   os_strcasecmp(cmd, "bss_eht_rx_1024_and_4096_qam_ls_242_tone_ru") == 0 ||
 		   os_strcasecmp(cmd, "bss_eht_dl_ofdma_txbf") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_trig_su_bf_fb") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_trig_cqi_fb") == 0 ||
+		   os_strcasecmp(cmd, "bss_eht_non_trig_cqi_fb") == 0 ||
 		   os_strcasecmp(cmd, "bss_eht_sup_mcs15_in_mru") == 0 ||
 		   os_strcasecmp(cmd, "bss_eht_mcs15_supp") == 0 ||
 		   os_strcasecmp(cmd, "bss_eht_mcs14_dup_in_6ghz") == 0 ||
@@ -3449,6 +3452,24 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 	} else if (os_strcasecmp(cmd, "bss_eht_dl_ofdma_txbf") == 0) {
 		res = os_snprintf(buf, buflen, "bss_eht_dl_ofdma_txbf = %u\n",
 				  hapd->conf->eht_phy_capab.eht_dl_ofdma_txbf);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_trig_su_bf_fb") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_trig_su_bf_fb = %u\n",
+				  hapd->conf->eht_phy_capab.eht_trig_su_bf_fb);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_trig_cqi_fb") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_trig_cqi_fb = %u\n",
+				  hapd->conf->eht_phy_capab.eht_trig_cqi_fb);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_eht_non_trig_cqi_fb") == 0) {
+		res = os_snprintf(buf, buflen, "bss_eht_non_trig_cqi_fb = %u\n",
+				  hapd->conf->eht_phy_capab.eht_non_trig_cqi_fb);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
@@ -10851,6 +10872,57 @@ static int hostapd_ctrl_iface_get_eht_dl_ofdma_txbf(
 		reply, reply_size, hapd->conf->eht_phy_capab.eht_dl_ofdma_txbf);
 }
 
+static int hostapd_ctrl_iface_set_eht_trig_su_bf_fb(
+	struct hostapd_data *hapd, char *cmd)
+{
+	return hostapd_ctrl_iface_set_eht_u8_field(
+		hapd, cmd, "set_eht_trig_su_bf_fb",
+		"Usage: set_eht_trig_su_bf_fb <value 0|1>",
+		&hapd->conf->eht_phy_capab.eht_trig_su_bf_fb,
+		EHT_PHY_BSS_OVR_TRIG_SU_BF_FB, 0, 1);
+}
+
+static int hostapd_ctrl_iface_get_eht_trig_su_bf_fb(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_eht_u8_hex(
+		reply, reply_size, hapd->conf->eht_phy_capab.eht_trig_su_bf_fb);
+}
+
+static int hostapd_ctrl_iface_set_eht_trig_cqi_fb(
+	struct hostapd_data *hapd, char *cmd)
+{
+	return hostapd_ctrl_iface_set_eht_u8_field(
+		hapd, cmd, "set_eht_trig_cqi_fb",
+		"Usage: set_eht_trig_cqi_fb <value 0|1>",
+		&hapd->conf->eht_phy_capab.eht_trig_cqi_fb,
+		EHT_PHY_BSS_OVR_TRIG_CQI_FB, 0, 1);
+}
+
+static int hostapd_ctrl_iface_get_eht_trig_cqi_fb(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_eht_u8_hex(
+		reply, reply_size, hapd->conf->eht_phy_capab.eht_trig_cqi_fb);
+}
+
+static int hostapd_ctrl_iface_set_eht_non_trig_cqi_fb(
+	struct hostapd_data *hapd, char *cmd)
+{
+	return hostapd_ctrl_iface_set_eht_u8_field(
+		hapd, cmd, "set_eht_non_trig_cqi_fb",
+		"Usage: set_eht_non_trig_cqi_fb <value 0|1>",
+		&hapd->conf->eht_phy_capab.eht_non_trig_cqi_fb,
+		EHT_PHY_BSS_OVR_NON_TRIG_CQI_FB, 0, 1);
+}
+
+static int hostapd_ctrl_iface_get_eht_non_trig_cqi_fb(
+	struct hostapd_data *hapd, char *reply, int reply_size)
+{
+	return hostapd_ctrl_iface_get_eht_u8_hex(
+		reply, reply_size, hapd->conf->eht_phy_capab.eht_non_trig_cqi_fb);
+}
+
 static int hostapd_ctrl_iface_set_eht_sup_mcs15_in_mru(
 	struct hostapd_data *hapd, char *cmd)
 {
@@ -12673,6 +12745,24 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 			reply_len = -1;
 	} else if (os_strcasecmp(buf, "get_eht_dl_ofdma_txbf") == 0) {
 		reply_len = hostapd_ctrl_iface_get_eht_dl_ofdma_txbf(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_eht_trig_su_bf_fb ", 22) == 0) {
+		if (hostapd_ctrl_iface_set_eht_trig_su_bf_fb(hapd, buf + 22) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_eht_trig_su_bf_fb") == 0) {
+		reply_len = hostapd_ctrl_iface_get_eht_trig_su_bf_fb(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_eht_trig_cqi_fb ", 20) == 0) {
+		if (hostapd_ctrl_iface_set_eht_trig_cqi_fb(hapd, buf + 20) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_eht_trig_cqi_fb") == 0) {
+		reply_len = hostapd_ctrl_iface_get_eht_trig_cqi_fb(
+			hapd, reply, reply_size);
+	} else if (os_strncasecmp(buf, "set_eht_non_trig_cqi_fb ", 24) == 0) {
+		if (hostapd_ctrl_iface_set_eht_non_trig_cqi_fb(hapd, buf + 24) < 0)
+			reply_len = -1;
+	} else if (os_strcasecmp(buf, "get_eht_non_trig_cqi_fb") == 0) {
+		reply_len = hostapd_ctrl_iface_get_eht_non_trig_cqi_fb(
 			hapd, reply, reply_size);
 	} else if (os_strncasecmp(buf, "set_eht_sup_mcs15_in_mru ", 25) == 0) {
 		if (hostapd_ctrl_iface_set_eht_sup_mcs15_in_mru(

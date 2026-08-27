@@ -6905,6 +6905,24 @@ static int hostapd_validate_bss_tx_params(struct hostapd_data *hapd)
 
 	if (hostapd_require_tx_bss(hapd,
 				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_TRIG_SU_BF_FB,
+				   "bss_eht_trig_su_bf_fb") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_TRIG_CQI_FB,
+				   "bss_eht_trig_cqi_fb") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
+				   EHT_PHY_BSS_OVR_NON_TRIG_CQI_FB,
+				   "bss_eht_non_trig_cqi_fb") < 0)
+		return -1;
+
+	if (hostapd_require_tx_bss(hapd,
+				   hapd->conf->eht_phy_capab_mask &
 				   EHT_PHY_BSS_OVR_SUP_MCS15_IN_MRU,
 				   "bss_eht_sup_mcs15_in_mru") < 0)
 		return -1;

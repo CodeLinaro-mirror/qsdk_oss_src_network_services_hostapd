@@ -3504,6 +3504,100 @@ static int hostapd_cli_cmd_get_eht_dl_ofdma_txbf(struct wpa_ctrl *ctrl,
 	return wpa_ctrl_command(ctrl, "get_eht_dl_ofdma_txbf");
 }
 
+static int hostapd_cli_cmd_set_eht_trig_su_bf_fb(struct wpa_ctrl *ctrl,
+						 int argc, char *argv[])
+{
+	char cmd[80];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_eht_trig_su_bf_fb <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_eht_trig_su_bf_fb %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_eht_trig_su_bf_fb(struct wpa_ctrl *ctrl,
+						 int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_eht_trig_su_bf_fb\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_eht_trig_su_bf_fb");
+}
+
+static int hostapd_cli_cmd_set_eht_trig_cqi_fb(struct wpa_ctrl *ctrl,
+					       int argc, char *argv[])
+{
+	char cmd[80];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_eht_trig_cqi_fb <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_eht_trig_cqi_fb %s", argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_eht_trig_cqi_fb(struct wpa_ctrl *ctrl,
+					       int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_eht_trig_cqi_fb\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_eht_trig_cqi_fb");
+}
+
+static int hostapd_cli_cmd_set_eht_non_trig_cqi_fb(struct wpa_ctrl *ctrl,
+						   int argc, char *argv[])
+{
+	char cmd[80];
+	int res;
+
+	if (argc != 1) {
+		printf("Invalid usage: set_eht_non_trig_cqi_fb <0|1>\n");
+		return -1;
+	}
+
+	res = os_snprintf(cmd, sizeof(cmd), "set_eht_non_trig_cqi_fb %s",
+			  argv[0]);
+	if (os_snprintf_error(sizeof(cmd), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_get_eht_non_trig_cqi_fb(struct wpa_ctrl *ctrl,
+						   int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid usage: get_eht_non_trig_cqi_fb\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, "get_eht_non_trig_cqi_fb");
+}
+
 static int hostapd_cli_cmd_set_eht_sup_mcs15_in_mru(struct wpa_ctrl *ctrl,
 						    int argc, char *argv[])
 {
@@ -4159,6 +4253,20 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<0|1> = set EHT DL OFDMA TX beamforming support" },
 	{ "get_eht_dl_ofdma_txbf", hostapd_cli_cmd_get_eht_dl_ofdma_txbf, NULL,
 	  "= get EHT DL OFDMA TX beamforming support" },
+	{ "set_eht_trig_su_bf_fb", hostapd_cli_cmd_set_eht_trig_su_bf_fb, NULL,
+	  "<0|1> = set EHT triggered SU beamforming feedback support" },
+	{ "get_eht_trig_su_bf_fb", hostapd_cli_cmd_get_eht_trig_su_bf_fb, NULL,
+	  "= get EHT triggered SU beamforming feedback support" },
+	{ "set_eht_trig_cqi_fb", hostapd_cli_cmd_set_eht_trig_cqi_fb, NULL,
+	  "<0|1> = set EHT triggered CQI feedback support" },
+	{ "get_eht_trig_cqi_fb", hostapd_cli_cmd_get_eht_trig_cqi_fb, NULL,
+	  "= get EHT triggered CQI feedback support" },
+	{ "set_eht_non_trig_cqi_fb", hostapd_cli_cmd_set_eht_non_trig_cqi_fb,
+	  NULL,
+	  "<0|1> = set EHT non-triggered CQI feedback support" },
+	{ "get_eht_non_trig_cqi_fb", hostapd_cli_cmd_get_eht_non_trig_cqi_fb,
+	  NULL,
+	  "= get EHT non-triggered CQI feedback support" },
 	{ "set_eht_sup_mcs15_in_mru",
 	  hostapd_cli_cmd_set_eht_sup_mcs15_in_mru, NULL,
 	  "<0|1> = set EHT MCS15 support in MRU" },
