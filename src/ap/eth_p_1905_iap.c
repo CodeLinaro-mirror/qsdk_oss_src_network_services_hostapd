@@ -1068,16 +1068,21 @@ static struct uhr_iap_frame *decode_smd_msg(struct hostapd_data *hapd,
 	iap->status_code        = 0;
 
 	/*
-	 * sta_addr: from Client Identifier TLV if present (exec_resp path),
-	 * otherwise extract SA (Address 2) from the 802.11 MAC header.
+	 * sta_addr: from Client Identifier TLV if present, otherwise
+	 * extract from the 802.11 MAC header inside the Reconfig Frame TLV.
 	 */
 	if (has_client_id) {
 		os_memcpy(iap->sta_addr, client_mld_addr, ETH_ALEN);
 		iap->current_link_id = client_link_id;
 	} else if (has_reconfig_frame && reconfig_frame &&
 		   reconfig_frame_len >= IEEE80211_HDRLEN) {
-		/* Address 2 (SA) is at offset 10 in the 802.11 MAC header */
-		os_memcpy(iap->sta_addr, reconfig_frame + 10, ETH_ALEN);
+		/*
+		 * REQUEST (reassoc request):  SA = addr2 (offset 10) = STA MAC
+		 * RESPONSE (reassoc response): DA = addr1 (offset 4)  = STA MAC
+		 */
+		int sta_offset = (reconfig_frame_type ==
+				  WIFI8_RECONFIG_FRAME_TYPE_RESPONSE) ? 4 : 10;
+		os_memcpy(iap->sta_addr, reconfig_frame + sta_offset, ETH_ALEN);
 		iap->current_link_id = hapd->mld_link_id;
 	} else {
 		iap->current_link_id = hapd->mld_link_id;
