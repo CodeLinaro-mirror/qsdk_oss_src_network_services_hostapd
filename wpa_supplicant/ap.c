@@ -284,6 +284,22 @@ static void wpas_conf_ap_he_6ghz(struct wpa_supplicant *wpa_s,
 #endif
 }
 
+#ifdef CONFIG_IEEE80211BN
+static bool wpas_mesh_can_use_uhr(struct hostapd_hw_modes *mode,
+				  struct wpa_ssid *ssid)
+{
+	int ieee80211_mode;
+
+	if (ssid->mode != WPAS_MODE_MESH || !ssid->eht || !ssid->uhr)
+		return false;
+
+	ieee80211_mode = wpas_mode_to_ieee80211_mode(ssid->mode);
+
+	return mode->eht_capab[ieee80211_mode].eht_supported &&
+	       mode->uhr_capab[ieee80211_mode].uhr_supported;
+}
+#endif /* CONFIG_IEEE80211BN */
+
 
 int wpa_supplicant_conf_ap_ht(struct wpa_supplicant *wpa_s,
 			      struct wpa_ssid *ssid,
@@ -367,6 +383,13 @@ int wpa_supplicant_conf_ap_ht(struct wpa_supplicant *wpa_s,
 					    ssid->mode)].eht_supported &&
 			    ssid->eht)
 				conf->ieee80211be = 1;
+
+#ifdef CONFIG_IEEE80211BN
+			if (wpas_mesh_can_use_uhr(mode, ssid)) {
+				conf->ieee80211be = 1;
+				conf->ieee80211bn = 1;
+			}
+#endif /* CONFIG_IEEE80211BN */
 
 			if (mode->he_capab[wpas_mode_to_ieee80211_mode(
 					    ssid->mode)].he_supported &&
@@ -459,6 +482,13 @@ int wpa_supplicant_conf_ap_ht(struct wpa_supplicant *wpa_s,
 				conf->use_ru_puncture_dfs = ssid->use_ru_puncture_dfs;
 #endif
 			}
+
+#ifdef CONFIG_IEEE80211BN
+			if (wpas_mesh_can_use_uhr(mode, ssid)) {
+				conf->ieee80211be = 1;
+				conf->ieee80211bn = 1;
+			}
+#endif /* CONFIG_IEEE80211BN */
 
 			if (mode->he_capab[wpas_mode_to_ieee80211_mode(
 					    ssid->mode)].he_supported &&
