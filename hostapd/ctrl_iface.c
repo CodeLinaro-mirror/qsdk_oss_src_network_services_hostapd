@@ -9748,6 +9748,7 @@ static int hostapd_ctrl_iface_scs_configure(struct hostapd_data *hapd,
 	u16 qm_id;
 	u8 desc_buf[256];
 	size_t desc_len;
+	bool dedicated_queue = false;
 
 	/* peer_mac */
 	token = str_token((char *)cmd, " ", &context);
@@ -9785,8 +9786,12 @@ static int hostapd_ctrl_iface_scs_configure(struct hostapd_data *hapd,
 		return -1;
 	}
 
+	token = str_token((char *)cmd, " ", &context);
+	if (token)
+		dedicated_queue = !!atoi(token);
+
 	return hostapd_scs_configure(hapd, peer_mac, scs_sta_mac, qm_id,
-				     desc_buf, (u8)desc_len);
+				     desc_buf, (u8) desc_len, dedicated_queue);
 }
 #endif /* CONFIG_IEEE80211AX */
 
