@@ -7137,6 +7137,12 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 			return NULL;
 		}
 
+		if (hostapd_csa_in_progress(iface)) {
+			wpa_printf(MSG_ERROR, "Channel switch in progress, cannot add bss");
+			hostapd_config_free(conf);
+			return NULL;
+		}
+
 		ifname = conf->bss[0]->iface;
 		if (ifname[0] == '\0') {
 			wpa_printf(MSG_ERROR,
