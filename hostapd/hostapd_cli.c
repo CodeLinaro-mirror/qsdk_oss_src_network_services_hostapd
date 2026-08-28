@@ -2666,6 +2666,36 @@ static int hostapd_cli_cmd_send_unsolicited_scs_resp(struct wpa_ctrl *ctrl,
 }
 
 
+static int hostapd_cli_cmd_scs_configure(struct wpa_ctrl *ctrl, int argc,
+					 char *argv[])
+{
+	char buf[1024];
+	int res;
+
+	if (argc < 4 || argc > 5) {
+		printf("Usage: scs_configure <peer_mac> <scs_sta_mac> <qm_id> "
+		       "<scs_desc_hex> [dedicated_queue]\n");
+		return -1;
+	}
+
+	if (argc == 5)
+		res = os_snprintf(buf, sizeof(buf),
+				  "SCS_CONFIGURE %s %s %s %s %s",
+				  argv[0], argv[1], argv[2],
+				  argv[3], argv[4]);
+	else
+		res = os_snprintf(buf, sizeof(buf),
+				  "SCS_CONFIGURE %s %s %s %s",
+				  argv[0], argv[1], argv[2], argv[3]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("scs_configure cmd failedw\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+
 int hostapd_cli_cmd_set_mbssid_tx(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	char cmd[48];
@@ -4119,6 +4149,9 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "send_unsolicited_scs_resp", hostapd_cli_cmd_send_unsolicited_scs_resp,
 	  NULL, "<addr> --scsid <scsid> --req_type <req_type> = "
 	  "Send unsolicited SCS response to the STA" },
+	{ "scs_configure", hostapd_cli_cmd_scs_configure, NULL,
+	  "<peer_mac> <scs_sta_mac> <qm_id> <scs_desc_hex> = "
+	  "Configure SCS session via application" },
 	{ "set_mbssid_tx", hostapd_cli_cmd_set_mbssid_tx, NULL,
 	  "[auto_stop] [auto_start]\n"
 	  "= Stop all profiles from MBSSID group if auto_stop option is given, "
