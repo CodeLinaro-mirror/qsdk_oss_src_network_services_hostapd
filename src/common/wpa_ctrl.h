@@ -193,6 +193,8 @@ extern "C" {
 #define WPS_EVENT_DPP_NO_URI "WPS-DPP-NO-URI "
 /** Result of SCS setup */
 #define WPA_EVENT_SCS_RESULT "CTRL-EVENT-SCS-RESULT "
+/** Deferred SCS request notification to application */
+#define WPA_EVENT_SCS_REQUEST_NOTIFY "CTRL-EVENT-SCS-REQUEST-NOTIFY "
 /* Event indicating DSCP policy */
 #define WPA_EVENT_DSCP_POLICY "CTRL-EVENT-DSCP-POLICY "
 

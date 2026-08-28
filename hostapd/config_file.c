@@ -6633,6 +6633,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->scs = atoi(pos);
 	} else if (os_strcmp(buf, "enable_mscs") == 0) {
 		bss->mscs = atoi(pos);
+	} else if (os_strcmp(buf, "deferred_scs") == 0) {
+		bss->deferred_scs = atoi(pos);
 #endif /* CONFIG_IEEE80211AX */
 	} else if (os_strcmp(buf, "bss_priority") == 0) {
 		bss->bss_priority = atoi(pos);

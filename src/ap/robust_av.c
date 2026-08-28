@@ -4,6 +4,7 @@
 
 #include "utils/includes.h"
 #include "utils/common.h"
+#include "common/wpa_ctrl.h"
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
 #include "hostapd.h"
@@ -28,9 +29,26 @@ hostapd_scs_find_by_id(struct sta_info *sta, u8 scs_id)
 }
 
 
-static bool hostapd_is_scs_present(struct sta_info *sta, u8 scs_id)
+
+
+
+/*
+ * hostapd_scs_find_client_initiated - find a client-initiated pending entry.
+ *
+ * Returns the descriptor with matching scs_id that has client_initiated_scs
+ * set, or NULL if not found.
+ */
+static struct hostapd_scs_req_desc_data *
+hostapd_scs_find_client_initiated(struct sta_info *sta, u8 scs_id)
 {
-	return hostapd_scs_find_by_id(sta, scs_id) != NULL;
+	struct hostapd_scs_req_desc_data *desc;
+
+	dl_list_for_each(desc, &sta->scs_req_desc,
+			 struct hostapd_scs_req_desc_data, list) {
+		if (desc->scs_id == scs_id && desc->client_initiated_scs)
+			return desc;
+	}
+	return NULL;
 }
 
 
@@ -721,13 +739,100 @@ fail:
 #endif /* CONFIG_IEEE80211BE */
 
 
+
+/*
+ * hostapd_scs_validate_desc - validate SCS descriptor against DB state.
+ *
+ * Encapsulates all DB-state checks for SCS ADD/UPDATE/DELETE across
+ * non-deferred, deferred client-frame and deferred CLI paths.
+ *
+ * Returns 0 if the operation is permitted, -1 if it should be declined.
+ */
+static int hostapd_scs_validate_desc(struct sta_info *sta,
+				     u8 scs_id, u8 req_type,
+				     bool deferred_scs,
+				     bool is_action_frame_from_sta,
+				     u16 qm_id)
+{
+	struct hostapd_scs_req_desc_data *client_entry;
+
+	if (!deferred_scs) {
+		/*
+		 * Non-deferred path — SCS ID is the key.
+		 * Only client can send SCS requests; one entry per scs_id.
+		 */
+		client_entry = hostapd_scs_find_client_initiated(sta, scs_id);
+
+		if (req_type == QM_ADD_REQ) {
+			if (sta->scs_session_count >=
+					HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER) {
+				wpa_printf(MSG_ERROR,
+					   "AP has already configured maximum "
+					   "supported SCS desc per peer");
+				return -1;
+			}
+			if (client_entry) {
+				wpa_printf(MSG_ERROR,
+					   "Client-initiated entry already "
+					   "exists for scs_id:%u", scs_id);
+				return -1;
+			}
+		} else {
+			/* UPDATE or DELETE */
+			if (!sta->scs_session_count) {
+				wpa_printf(MSG_ERROR,
+					   "Request Declined: SCS session "
+					   "inactive");
+				return -1;
+			}
+			if (!client_entry) {
+				wpa_printf(MSG_ERROR,
+					   "Request Declined: no client-initiated "
+					   "entry for scs_id:%u", scs_id);
+				return -1;
+			}
+		}
+
+	} else {
+		if (is_action_frame_from_sta) {
+			/*
+			 * Deferred path, client SCS frame — qm_id not available.
+			 * Use client_initiated flag as discriminator.
+			 */
+			client_entry = hostapd_scs_find_client_initiated(sta,
+									  scs_id);
+
+			if (req_type == QM_ADD_REQ) {
+				if (client_entry) {
+					wpa_printf(MSG_ERROR,
+						   "Deferred SCS: client-initiated "
+						   "entry already exists for "
+						   "scs_id:%u", scs_id);
+					return -1;
+				}
+			} else {
+				/* UPDATE or DELETE */
+				if (!client_entry) {
+					wpa_printf(MSG_ERROR,
+						   "Deferred SCS: no client-initiated "
+						   "entry for scs_id:%u", scs_id);
+					return -1;
+				}
+			}
+
+		}
+	}
+
+	return 0;
+}
+
 static int hostapd_parse_scs_desc(
 		const u8 *payload, struct sta_info *sta,
-		struct hostapd_scs_req_desc_data *scs_req_desc, u8 len)
+		struct hostapd_scs_req_desc_data *scs_req_desc, u8 len,
+		bool deferred_scs, bool is_action_frame_from_sta, u16 qm_id)
 {
 	int ret = WLAN_STATUS_REQUEST_DECLINED;
 	u8 scs_id, req_type;
-	bool scs_avail;
 	u8 elem_id;
 
 	wpa_hexdump(MSG_MSGDUMP, "SCS Request - Descriptor wise dump",
@@ -739,41 +844,19 @@ static int hostapd_parse_scs_desc(
 	scs_req_desc->request_type = *payload++;
 	len -= 2;
 
+	/* Default QM ID — updated when application assigns one */
+	scs_req_desc->qm_id = 0xFFFF;
+
 	scs_id = scs_req_desc->scs_id;
 	req_type = scs_req_desc->request_type;
 
-	scs_avail = hostapd_is_scs_present(sta, scs_id);
+	wpa_printf(MSG_INFO, "SCS ID:%u, Request type:%u, len:%u",
+		   scs_id, req_type, len);
 
-	wpa_printf(MSG_INFO, "SCS ID:%u, Request type:%u, Present:%u, len:%u",
-		   scs_id, req_type, scs_avail, len);
-
-	if (req_type == QM_REMOVE_REQ || req_type == QM_CHANGE_REQ) {
-		if (!sta->scs_session_count) {
-			wpa_printf(MSG_ERROR, "Request Declined: SCS session "
-				   "inactive");
-			goto decline;
-		}
-
-		if (!scs_avail) {
-			wpa_printf(MSG_ERROR, "SCS id %d is not found",
-				   scs_id);
-			goto decline;
-		}
-
-	} else if (req_type == QM_ADD_REQ) {
-		if (sta->scs_session_count >=
-				HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER) {
-			wpa_printf(MSG_ERROR, "AP has already configured "
-				   "maximum supported SCS desc per peer");
-			goto decline;
-		}
-
-		if (scs_avail) {
-			wpa_printf(MSG_ERROR, "scs id %d is already present",
-				   scs_id);
-			goto decline;
-		}
-	}
+	if (hostapd_scs_validate_desc(sta, scs_id, req_type,
+				      deferred_scs, is_action_frame_from_sta,
+				      qm_id) != 0)
+		goto decline;
 
 	/* Only SCS ID and request type are present in Remove request */
 	if (req_type == SCS_REQ_REMOVE)
@@ -2410,6 +2493,139 @@ int hostapd_handle_mscs_ie_assoc(struct hostapd_data *hapd,
 
 }
 
+
+/*
+ * hostapd_handle_scs_req_deferred - process a parsed SCS request frame
+ * when deferred_scs is enabled.
+ *
+ * Stores each descriptor in the STA database, sets request_pending and
+ * client_initiated_scs flags, fires a CTRL-EVENT-SCS-REQUEST-NOTIFY event
+ * per descriptor, and sends the SCS Response frame to the station.
+ * The driver is NOT programmed; the application is expected to call
+ * SCS_CONFIGURE once it has assigned QM IDs.
+ *
+ * Returns 0 on success, negative on send failure.
+ */
+static int
+hostapd_handle_scs_req_deferred(struct hostapd_data *hapd,
+				const struct ieee80211_mgmt *mgmt,
+				struct hostapd_data *assoc_hapd,
+				struct sta_info *assoc_sta,
+				struct hostapd_scs_req_data *scs_req,
+				struct hostapd_scs_resp_data *scs_resp,
+				const struct hostapd_scs_raw_desc *raw_desc)
+{
+	u8 index;
+	int ret;
+
+	scs_resp->dialog_token = scs_req->dialog_token;
+	scs_resp->num_scs_desc = scs_req->num_scs_desc;
+
+	for (index = 0; index < scs_req->num_scs_desc; index++) {
+		struct hostapd_scs_req_desc_data *desc =
+			&scs_req->scs_req_desc[index];
+		struct hostapd_scs_req_desc_data *stored;
+		char *hex;
+
+		scs_resp->scs_resp_desc[index].scs_id = desc->scs_id;
+
+		/*
+		 * If a client-initiated request is already pending for
+		 * this scs_id, decline the new request regardless of
+		 * type — stacking requests adds complexity and the
+		 * pending one must be resolved first.
+		 */
+		stored = hostapd_scs_find_client_initiated(assoc_sta,
+							   desc->scs_id);
+		if (stored && stored->request_pending) {
+			wpa_printf(MSG_ERROR,
+				   "Deferred SCS: request already pending "
+				   "for SCS ID:%u, declining",
+				   desc->scs_id);
+			scs_resp->scs_resp_desc[index].status =
+				WLAN_STATUS_REQUEST_DECLINED;
+			continue;
+		}
+
+		if (desc->request_type == QM_ADD_REQ) {
+			ret = hostapd_process_scs_add(assoc_hapd, assoc_sta,
+						      desc,
+						      HOSTAPD_QM_STATUS_SUCCESS);
+			if (ret) {
+				wpa_printf(MSG_ERROR,
+					   "Deferred SCS: store failed for SCS ID:%u",
+					   desc->scs_id);
+				scs_resp->scs_resp_desc[index].status =
+					WLAN_STATUS_REQUEST_DECLINED;
+				continue;
+			}
+
+			/* Set flags on the newly stored entry.*/
+			stored = dl_list_last(&assoc_sta->scs_req_desc,
+					      struct hostapd_scs_req_desc_data,
+					      list);
+			if (stored) {
+				stored->request_pending = 1;
+				stored->client_initiated_scs = 1;
+			}
+
+			scs_resp->scs_resp_desc[index].status = WLAN_STATUS_SUCCESS;
+		} else if (desc->request_type == QM_REMOVE_REQ ||
+			   desc->request_type == QM_CHANGE_REQ) {
+			if (!stored) {
+				wpa_printf(MSG_ERROR,
+					   "Deferred SCS: no client-initiated "
+					   "descriptor found for SCS ID:%u",
+					   desc->scs_id);
+				scs_resp->scs_resp_desc[index].status =
+					WLAN_STATUS_REQUEST_DECLINED;
+				continue;
+			}
+
+			stored->request_pending = 1;
+			scs_resp->scs_resp_desc[index].status =
+				(desc->request_type == QM_REMOVE_REQ) ?
+				WLAN_STATUS_TCLAS_PROCESSING_TERMINATED :
+				WLAN_STATUS_SUCCESS;
+		} else {
+			wpa_printf(MSG_ERROR,
+				   "Deferred SCS: unknown request type %u for SCS ID:%u",
+				   desc->request_type, desc->scs_id);
+			scs_resp->scs_resp_desc[index].status =
+				WLAN_STATUS_REQUEST_DECLINED;
+			continue;
+		}
+
+		/* Notify application once per descriptor */
+		hex = os_malloc(raw_desc[index].len * 2 + 1);
+		if (!hex) {
+			wpa_printf(MSG_ERROR,
+				   "Deferred SCS: hex alloc failed for SCS ID:%u",
+				   desc->scs_id);
+			continue;
+		}
+		wpa_snprintf_hex(hex, raw_desc[index].len * 2 + 1,
+				 raw_desc[index].data,
+				 raw_desc[index].len);
+		wpa_msg(hapd->msg_ctx, MSG_INFO,
+			WPA_EVENT_SCS_REQUEST_NOTIFY
+			"sta_mac=" MACSTR " bssid=" MACSTR
+			" scs_desc=%s",
+			MAC2STR(mgmt->sa),
+			MAC2STR(hapd->own_addr),
+			hex);
+		os_free(hex);
+	}
+
+	ret = hostapd_send_scs_response(hapd, mgmt->sa, scs_resp);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "Deferred SCS response frame send failed, ret:%d",
+			   ret);
+	return ret;
+}
+
+
 static int hostapd_handle_scs_req(struct hostapd_data *hapd, const u8 *buf,
 				  size_t frame_length)
 {
@@ -2420,6 +2636,8 @@ static int hostapd_handle_scs_req(struct hostapd_data *hapd, const u8 *buf,
 	struct sta_info *assoc_sta = NULL;
 	struct hostapd_data *assoc_hapd;
 	struct sta_info *sta = NULL;
+	struct hostapd_scs_raw_desc
+		raw_desc[HOSTAPD_SCS_MAX_DESCPRIPTORS_PER_REQUEST];
 	u8 elem_id, elem_len;
 	u8 index = 0;
 	int ret = 0;
@@ -2487,12 +2705,18 @@ static int hostapd_handle_scs_req(struct hostapd_data *hapd, const u8 *buf,
 
 		ret = hostapd_parse_scs_desc(payload, assoc_sta,
 					     &scs_req.scs_req_desc[index],
-					     elem_len);
+					     elem_len,
+					     hapd->conf->deferred_scs,
+					     true, 0xFFFF);
 		if (ret != HOSTAPD_QM_STATUS_SUCCESS) {
 			wpa_printf(MSG_ERROR, "Parsing failure: SCS ID:%u, "
 				   "Index:%u, status:%d", scs_id, index, ret);
 			return ret;
 		}
+
+		/* capture raw element bytes (EID + len + payload) */
+		raw_desc[index].data = payload_start;
+		raw_desc[index].len  = elem_len + 2;
 
 		payload_start += (elem_len + 2);
 		frame_length -= (elem_len + 2);
@@ -2501,6 +2725,13 @@ static int hostapd_handle_scs_req(struct hostapd_data *hapd, const u8 *buf,
 	}
 
 	scs_req.num_scs_desc = index;
+
+	if (hapd->conf->deferred_scs)
+		return hostapd_handle_scs_req_deferred(hapd, mgmt,
+						       assoc_hapd, assoc_sta,
+						       &scs_req, &scs_resp,
+						       raw_desc);
+
 
 	ret = hostapd_copy_and_send_scs_data(assoc_hapd, &scs_req, &scs_resp);
 	if (ret) {

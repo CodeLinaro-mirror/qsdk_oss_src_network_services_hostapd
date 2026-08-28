@@ -1381,6 +1381,7 @@ struct hostapd_bss_config {
 #ifdef CONFIG_IEEE80211AX
 	bool scs;
 	bool mscs;
+	bool deferred_scs;
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211AC
 	u16 vht_mcs_nss_set;

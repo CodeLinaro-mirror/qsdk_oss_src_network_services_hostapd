@@ -185,6 +185,9 @@ struct hostapd_scs_req_desc_data {
 	struct hostapd_scs_qos_attributes qos_attr;
 #endif /* CONFIG_IEEE80211BE */
 	struct dl_list list;
+	u8 request_pending:1,      /* deferred; not yet programmed */
+	   client_initiated_scs:1; /* request originated from STA */
+	u16 qm_id;                 /* QM identifier; 0xFFFF = unassigned */
 };
 
 struct hostapd_scs_req_data {
@@ -205,6 +208,11 @@ struct hostapd_scs_resp_data {
 	u8 num_scs_desc;
 	struct hostapd_scs_resp_desc_data
 			scs_resp_desc[HOSTAPD_SCS_MAX_DESCPRIPTORS_PER_REQUEST];
+};
+
+struct hostapd_scs_raw_desc {
+	const u8 *data;
+	u16 len;
 };
 
 struct hostapd_mscs_resp {
