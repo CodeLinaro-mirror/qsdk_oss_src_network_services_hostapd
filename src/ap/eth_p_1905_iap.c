@@ -1006,6 +1006,100 @@ struct wpabuf *eth_p_1905_iap_encode_roam_cleanup(const struct uhr_iap_frame *ia
 	return buf;
 }
 
+/* Size of one Client Identifier TLV (type + length + value):
+ * subtype(2) + dst_mld(6) + dst_bssid(6) + client_mld(6) + ap_smd(6) + link_id(1) = 27 bytes value
+ * total = WIFI8_TLV_HDR_LEN(3) + 27 = 30 bytes */
+#define CLIENT_ID_TLV_SIZE  (WIFI8_TLV_HDR_LEN + WIFI8_TLV_SUBTYPE_LEN + \
+                             4 * ETH_ALEN + 1)
+
+struct wpabuf *eth_p_1905_iap_encode_ctx_req(const struct uhr_iap_frame *iap)
+{
+	struct wpabuf *buf;
+
+	if (!iap)
+		return NULL;
+
+	buf = wpabuf_alloc(CLIENT_ID_TLV_SIZE);
+	if (!buf)
+		return NULL;
+
+	/* Client Identifier TLV: dst=current_ap, sta=iap->sta_addr */
+	if (encode_client_identifier_tlv(buf, iap->current_ap_mld_addr, NULL,
+					 iap->sta_addr, iap->target_ap_mld_addr,
+					 0) < 0) {
+		wpabuf_free(buf);
+		return NULL;
+	}
+
+	return buf;
+}
+
+struct wpabuf *eth_p_1905_iap_encode_ctx_resp(const struct uhr_iap_frame *iap)
+{
+	const struct sta_smd_ctx_info *smd_ctx = NULL;
+	size_t smd_ctx_len = 0;
+	struct wpabuf *buf;
+
+	if (!iap)
+		return NULL;
+
+	if (iap->flags & UHR_IAP_FLAG_HAS_DYNAMIC_CTX) {
+		smd_ctx = (const struct sta_smd_ctx_info *) iap->frame_ctx_data;
+		smd_ctx_len = iap->smd_ctx_len;
+	}
+
+	buf = wpabuf_alloc(CLIENT_ID_TLV_SIZE + eth_p_1905_payload_len(iap));
+	if (!buf)
+		return NULL;
+
+	/* Client Identifier TLV: dst=target_ap, sta=iap->sta_addr */
+	if (encode_client_identifier_tlv(buf, iap->target_ap_mld_addr, NULL,
+					 iap->sta_addr, iap->current_ap_mld_addr,
+					 0) < 0) {
+		wpabuf_free(buf);
+		return NULL;
+	}
+
+	if (smd_ctx && smd_ctx_len > 0) {
+		if (encode_datapath_ctx_tlv(buf, iap->target_ap_mld_addr, NULL,
+					    smd_ctx, smd_ctx_len) < 0) {
+			wpabuf_free(buf);
+			return NULL;
+		}
+		if (smd_ctx->vendor_ctx_len > 0 &&
+		    encode_vendor_ctx_tlv(buf, iap->target_ap_mld_addr, NULL,
+					  smd_ctx->vendor_ctx,
+					  (u16)smd_ctx->vendor_ctx_len) < 0) {
+			wpabuf_free(buf);
+			return NULL;
+		}
+	}
+
+	return buf;
+}
+
+struct wpabuf *eth_p_1905_iap_encode_exec_via_tgt_done(const struct uhr_iap_frame *iap)
+{
+	struct wpabuf *buf;
+
+	if (!iap)
+		return NULL;
+
+	buf = wpabuf_alloc(CLIENT_ID_TLV_SIZE);
+	if (!buf)
+		return NULL;
+
+	/* Client Identifier TLV: dst=current_ap, sta=iap->sta_addr */
+	if (encode_client_identifier_tlv(buf, iap->current_ap_mld_addr, NULL,
+					 iap->sta_addr, iap->target_ap_mld_addr,
+					 0) < 0) {
+		wpabuf_free(buf);
+		return NULL;
+	}
+
+	return buf;
+}
+
 /* -------------------------------------------------------------------------
  * SMD-specific 1905 message decode handler
  *
@@ -1191,6 +1285,16 @@ static struct uhr_iap_frame *decode_smd_msg(struct hostapd_data *hapd,
 		os_memcpy(iap->current_ap_mld_addr, dst_addr, ETH_ALEN);
 	}
 
+	/* CTX_REQ and EXEC_VIA_TGT_DONE are sent by the Target AP but carry a
+	 * Client Identifier TLV (which would set sender_is_sap=true above).
+	 * Override the assignment so target_ap_mld_addr always reflects the
+	 * actual sender. */
+	if (msg_type == ETH_P_1905_SMD_ST_CTX_REQ_MSG ||
+	    msg_type == ETH_P_1905_SMD_ST_EXEC_VIA_TGT_DONE_MSG) {
+		os_memcpy(iap->target_ap_mld_addr,  src_addr, ETH_ALEN);
+		os_memcpy(iap->current_ap_mld_addr, dst_addr, ETH_ALEN);
+	}
+
 	iap->iap_transaction_id = 0;
 	iap->sequence_number    = 0;
 	iap->status_code        = 0;
@@ -1273,6 +1377,17 @@ static struct uhr_iap_frame *decode_smd_msg(struct hostapd_data *hapd,
 		if (has_roam_cleanup)
 			os_memcpy(iap->sta_addr, sta_mld_addr, ETH_ALEN);
 		break;
+	case ETH_P_1905_SMD_ST_CTX_REQ_MSG:
+		iap->msg_type = UHR_IAP_MSG_ST_CTX_REQUEST;
+		break;
+	case ETH_P_1905_SMD_ST_CTX_REP_MSG:
+		iap->msg_type = UHR_IAP_MSG_ST_CTX_RESPONSE;
+		iap->status_code = has_datapath_ctx ? UHR_IAP_STATUS_SUCCESS
+						    : UHR_IAP_STATUS_FAILURE;
+		break;
+	case ETH_P_1905_SMD_ST_EXEC_VIA_TGT_DONE_MSG:
+		iap->msg_type = UHR_IAP_MSG_ST_EXEC_VIA_TGT_DONE;
+		break;
 	default:
 		wpa_printf(MSG_ERROR,
 			   "1905 SMD IAP: Unexpected msg_type 0x%04x", msg_type);
@@ -1318,6 +1433,10 @@ struct uhr_iap_frame *eth_p_1905_msg_rx(struct hostapd_data *hapd,
 	case ETH_P_1905_SMD_ST_EXEC_REP_MSG:
 	case ETH_P_1905_SMD_ST_PREP_CTX_MSG:
 	case ETH_P_1905_SMD_ST_ROAM_CLEANUP_MSG:
+	/* SMD ST context / via-target completion messages */
+	case ETH_P_1905_SMD_ST_CTX_REQ_MSG:
+	case ETH_P_1905_SMD_ST_CTX_REP_MSG:
+	case ETH_P_1905_SMD_ST_EXEC_VIA_TGT_DONE_MSG:
 		return decode_smd_msg(hapd, src_addr, dst_addr, msg_type,
 				      data, data_len);
 

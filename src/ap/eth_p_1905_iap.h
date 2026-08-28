@@ -147,6 +147,37 @@ struct wpabuf *eth_p_1905_iap_encode_prep_ctx(const struct uhr_iap_frame *iap);
  */
 struct wpabuf *eth_p_1905_iap_encode_roam_cleanup(const struct uhr_iap_frame *iap);
 
+/**
+ * eth_p_1905_iap_encode_ctx_req - Encode ST Context Request TLV payload
+ *
+ * Target AP → Current AP: request the STA's SMD context.
+ * TLVs included: Client Identifier TLV (carries sta_addr).
+ *
+ * Returns allocated wpabuf on success, NULL on failure.
+ */
+struct wpabuf *eth_p_1905_iap_encode_ctx_req(const struct uhr_iap_frame *iap);
+
+/**
+ * eth_p_1905_iap_encode_ctx_resp - Encode ST Context Response TLV payload
+ *
+ * Current AP → Target AP: deliver the STA's SMD context.
+ * TLVs included: Client Identifier TLV (always) + Datapath Ctx TLV +
+ * Vendor Ctx TLV (when context is present).
+ *
+ * Returns allocated wpabuf on success, NULL on failure.
+ */
+struct wpabuf *eth_p_1905_iap_encode_ctx_resp(const struct uhr_iap_frame *iap);
+
+/**
+ * eth_p_1905_iap_encode_exec_via_tgt_done - Encode ST Exec-via-Target Done TLV payload
+ *
+ * Target AP → Current AP: notify that the via-target transition is complete.
+ * TLVs included: Client Identifier TLV (carries sta_addr).
+ *
+ * Returns allocated wpabuf on success, NULL on failure.
+ */
+struct wpabuf *eth_p_1905_iap_encode_exec_via_tgt_done(const struct uhr_iap_frame *iap);
+
 /* =========================================================================
  * TLV decode API
  *
