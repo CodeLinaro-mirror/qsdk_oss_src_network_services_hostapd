@@ -14,6 +14,9 @@
 #include "hostapd_mqtt.h"
 #include "beacon.h"
 #include "neighbor_db.h"
+#ifdef CONFIG_IEEE80211BN
+#include "eth_p_1905.h"
+#endif /* CONFIG_IEEE80211BN */
 
 #define EZHIF_STATUS_OK            0
 #define EZHIF_STATUS_INVALID_PARAM 1
@@ -53,6 +56,42 @@ static void mqtt_publish_simple_status(struct hostapd_data *hapd,
 	}
 	mqtt_tlv_message_free(resp);
 }
+
+#ifdef CONFIG_IEEE80211BN
+static int hostapd_mqtt_add_smd_partner(struct hostapd_data *hapd,
+					       const u8 *mld_addr)
+{
+	struct smd_partner_entry *partner;
+
+	if (!hapd || !hapd->conf || !mld_addr || is_zero_ether_addr(mld_addr))
+		return -1;
+
+	for (partner = hapd->conf->smd_partners; partner; partner = partner->next) {
+		if (ether_addr_equal(partner->mac_addr, mld_addr))
+			return 0;
+	}
+
+	partner = os_zalloc(sizeof(*partner));
+	if (!partner)
+		return -1;
+
+	os_memcpy(partner->mac_addr, mld_addr, ETH_ALEN);
+	partner->next = hapd->conf->smd_partners;
+	hapd->conf->smd_partners = partner;
+
+	/* MQTT dynamic peers have no key material and are plain-text peers. */
+	if (hapd->eth_p_1905_ctx &&
+	    eth_p_1905_add_peer(hapd->eth_p_1905_ctx, mld_addr, NULL, false) < 0) {
+		wpa_printf(MSG_WARNING,
+			   "MQTT: Failed to add runtime plain smd_partner " MACSTR,
+			   MAC2STR(mld_addr));
+	}
+
+	wpa_printf(MSG_INFO, "MQTT: Added plain smd_partner " MACSTR,
+		   MAC2STR(mld_addr));
+	return 0;
+}
+#endif /* CONFIG_IEEE80211BN */
 
 static void hostapd_mqtt_handle_sys_ping(struct hapd_interfaces *interfaces)
 {
@@ -283,6 +322,35 @@ static void hostapd_mqtt_handle_neighbor_db_set(struct hostapd_data *hapd,
 			   " has_mld=%u mld=" MACSTR " nre_len=%u",
 			   apply_count, MAC2STR(tuple_bssid), tuple_has_mld_addr,
 			   MAC2STR(tuple_mld_addr), tuple_nre_len);
+
+#ifdef CONFIG_IEEE80211BN
+		if (tuple_has_mld_addr) {
+			bool same_smd = false;
+
+			if (hapd->conf->smd.enabled &&
+			    has_smd_id &&
+			    !is_zero_ether_addr(smd_id) &&
+			    !is_zero_ether_addr(hapd->conf->smd.smd_identifier) &&
+			    ether_addr_equal(smd_id, hapd->conf->smd.smd_identifier))
+				same_smd = true;
+
+			if (same_smd) {
+				if (hostapd_mqtt_add_smd_partner(hapd,
+								       tuple_mld_addr) < 0) {
+					status = EZHIF_STATUS_NO_RESOURCE;
+					goto out;
+				}
+			} else {
+				wpa_printf(MSG_INFO,
+					   "MQTT: Skip smd_partner add for MLD " MACSTR
+					   " (incoming_smd=" MACSTR
+					   " own_smd=" MACSTR " has_smd=%u)",
+					   MAC2STR(tuple_mld_addr), MAC2STR(smd_id),
+					   MAC2STR(hapd->conf->smd.smd_identifier),
+					   has_smd_id);
+			}
+		}
+#endif /* CONFIG_IEEE80211BN */
 
 		wpabuf_free(nr_buf);
 		nr_buf = NULL;
