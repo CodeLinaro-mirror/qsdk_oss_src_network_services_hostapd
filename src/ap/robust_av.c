@@ -1435,7 +1435,7 @@ static void hostapd_qm_prepare_nft_rule(struct hostapd_data *hapd,
 	rule->valid_flags |= NFT_RULE_PARAM_DMAC;
 	rule->mark = (qm_id << 8) | qm_tag;
 	os_snprintf(rule->chain, sizeof(rule->chain), "%s_%s", CHAIN_NAME,
-		    hapd->conf->iface);
+		    (sta && sta->ifname_wds) ? sta->ifname_wds : hapd->conf->iface);
 	os_snprintf(rule->table, sizeof(rule->table), "%s", TABLE_NAME);
 	rule->nf_family = NFPROTO_NETDEV;
 }
@@ -1615,6 +1615,7 @@ static int hostapd_scs_add_nft_rule(struct hostapd_data *hapd,
 }
 
 static int hostapd_scs_delete_nft_rule(struct hostapd_data *hapd,
+				       struct sta_info *sta,
 				       struct hostapd_scs_req_desc_data *scs_data)
 {
 	struct hostapd_tclas_elements *te;
@@ -1630,7 +1631,7 @@ static int hostapd_scs_delete_nft_rule(struct hostapd_data *hapd,
 		te = &scs_data->tclas[i];
 
 		os_snprintf(rule.chain, sizeof(rule.chain), "%s_%s", CHAIN_NAME,
-			    hapd->conf->iface);
+			    (sta && sta->ifname_wds) ? sta->ifname_wds : hapd->conf->iface);
 		os_snprintf(rule.table, sizeof(rule.table), "%s", TABLE_NAME);
 		rule.nf_family = NFPROTO_NETDEV;
 
@@ -1710,7 +1711,7 @@ hostapd_process_scs_remove(struct hostapd_data *hapd, struct sta_info *sta,
 		return -EINVAL;
 	}
 
-	hostapd_scs_delete_nft_rule(hapd, scs_req_desc);
+	hostapd_scs_delete_nft_rule(hapd, sta, scs_req_desc);
 
 	wpa_printf(MSG_DEBUG, "Freeing memory for SCS ID:%u", scs_id);
 	dl_list_del(&scs_req_desc->list);
@@ -1753,7 +1754,7 @@ hostapd_process_scs_change(struct hostapd_data *hapd, struct sta_info *sta,
 		return -EINVAL;
 	}
 
-	hostapd_scs_delete_nft_rule(hapd, scs_req_desc);
+	hostapd_scs_delete_nft_rule(hapd, sta, scs_req_desc);
 
 	os_memset(&qm_desc, 0, sizeof(qm_desc));
 	hostapd_copy_scs_desc(hapd, &qm_desc, *scs_req_desc);
@@ -1929,7 +1930,7 @@ hostapd_delete_all_qm_nft_rules(struct hostapd_data *hapd,
 		}
 		wpa_printf(MSG_DEBUG,
 			   "QM: Deleting rules for SCS ID %u", desc->scs_id);
-		hostapd_scs_delete_nft_rule(hapd, desc);
+		hostapd_scs_delete_nft_rule(hapd, sta, desc);
 	}
 
 	hostapd_mscs_delete_nft_rules(hapd, sta);
@@ -2960,6 +2961,7 @@ int hostapd_scs_configure(struct hostapd_data *hapd, const u8 *peer_mac,
 	struct sta_info *sta = NULL;
 	u8 elem_id, elem_len;
 	int ret;
+	const u8 *drv_peer_mac;
 
 	if (!hapd->conf->scs || !hapd->conf->deferred_scs) {
 		wpa_printf(MSG_ERROR, "SCS_CONFIGURE: SCS feature disabled or Deferred SCS not configured");
@@ -2973,6 +2975,19 @@ int hostapd_scs_configure(struct hostapd_data *hapd, const u8 *peer_mac,
 			   MAC2STR(peer_mac));
 		return -1;
 	}
+
+	/*
+	 * The kernel sta_info_get_bss() lookup is keyed on sta->sta.addr
+	 * which is the MLD MAC for MLD STAs.  Translate peer_mac to the
+	 * MLD MAC so the NL set_qos call succeeds regardless of whether
+	 * the operator passed a link MAC or the MLD MAC on the CLI.
+	 */
+#ifdef CONFIG_IEEE80211BE
+	if (sta->mld_info.mld_sta)
+		drv_peer_mac = sta->mld_info.common_info.mld_addr;
+	else
+#endif
+		drv_peer_mac = peer_mac;
 
 	if (desc_len < 2) {
 		wpa_printf(MSG_ERROR, "SCS_CONFIGURE: Invalid SCS frame, lower len");
@@ -3018,10 +3033,10 @@ int hostapd_scs_configure(struct hostapd_data *hapd, const u8 *peer_mac,
 	desc = hostapd_scs_find_by_qmid(sta, qm_id);
 	if (desc)
 		return hostapd_scs_configure_qmid_found(temp_hapd, sta,
-							peer_mac, &scs_desc,
+							drv_peer_mac, &scs_desc,
 							desc);
 
-	return hostapd_scs_configure_qmid_not_found(temp_hapd, sta, peer_mac,
+	return hostapd_scs_configure_qmid_not_found(temp_hapd, sta, drv_peer_mac,
 						    &scs_desc);
 }
 
