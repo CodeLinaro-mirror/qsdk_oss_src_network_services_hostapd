@@ -58,6 +58,8 @@ int hostapd_config_nft_table(char *table, bool add);
 int hostapd_config_nft_chain(struct hostapd_data *hapd,
 			     char *table, char *chain,
 			     bool add);
+int hostapd_config_nft_chain_for_dev(char *table, char *chain,
+				     char *dev_name, bool add);
 
 /* Rule parameter flags */
 #define NFT_RULE_PARAM_SADDR	(1 << 0)
