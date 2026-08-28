@@ -438,6 +438,7 @@ struct qm_req_desc_data {
 	u8 user_priority_bitmap;
 	u8 user_priority_limit;
 	u8 tclas_mask;
+	bool dedicated_queue;
 };
 
 struct qm_req_data {

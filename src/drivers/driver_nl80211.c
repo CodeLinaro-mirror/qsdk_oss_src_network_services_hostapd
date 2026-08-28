@@ -19307,6 +19307,10 @@ static int nl80211_set_qm_desc(struct nl_msg *msg,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+	if (qm_req_desc.dedicated_queue &&
+	    nla_put_flag(msg, NL80211_QM_DESC_ATTR_DEDICATED_QUEUE))
+		goto nla_fail;
+
 nla_end:
 	nla_nest_end(msg, qm_desc_entry);
 	return 0;
