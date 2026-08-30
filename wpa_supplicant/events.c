@@ -2223,6 +2223,7 @@ static int wpas_sta_cac_get_link_chandef(struct wpa_supplicant *wpa_s,
 	params->vht_enabled = !!(wpa_s->hw_capab & BIT(CAPAB_VHT));
 	params->ht_enabled  = !!(wpa_s->hw_capab & BIT(CAPAB_HT));
 	params->he_enabled  = !!(wpa_s->hw_capab & BIT(CAPAB_HE));
+	params->eht_enabled = !!(wpa_s->hw_capab & BIT(CAPAB_EHT));
 
 	if (!wpa_bss_get_ie(selected, WLAN_EID_HT_CAP))
 		params->ht_enabled = 0;
@@ -2236,6 +2237,14 @@ static int wpas_sta_cac_get_link_chandef(struct wpa_supplicant *wpa_s,
 	if (!wpa_bss_get_ie_ext(selected, WLAN_EID_EXT_HE_CAPABILITIES))
 		params->he_enabled = 0;
 #endif /* CONFIG_IEEE80211AX */
+
+#ifdef CONFIG_IEEE80211BE
+	if (!wpa_bss_get_ie_ext(selected, WLAN_EID_EXT_EHT_CAPABILITIES))
+		params->eht_enabled = 0;
+#endif /* CONFIG_IEEE80211BE */
+
+	if (!params->he_enabled)
+		params->eht_enabled = 0;
 
 	return 0;
 }
@@ -7483,20 +7492,6 @@ static void wpas_event_dfs_cac_finished(struct wpa_supplicant *wpa_s,
 			struct wpa_bss *selected;
 			u16 bit;
 
-			selected = wpa_bss_get_id(wpa_s, wpa_s->sta_cac.selected_bssid);
-			if (!selected) {
-				wpas_sta_cac_clear(wpa_s);
-				wpa_supplicant_req_new_scan(wpa_s, 0, 0);
-				return;
-			}
-
-			bit = wpas_sta_cac_get_link_for_event(wpa_s, radar,
-							      selected);
-			if (!bit)
-				return;
-
-			wpa_s->sta_cac.cac_completed_links |= bit;
-
 			wpa_dbg(wpa_s, MSG_DEBUG,
 				"STA-DFS: radar detected on %d MHz (no AP iface) - "
 				"updating hw channel states directly: "
@@ -7519,6 +7514,20 @@ static void wpas_event_dfs_cac_finished(struct wpa_supplicant *wpa_s,
 					   HOSTAPD_CHAN_DFS_AVAILABLE,
 					   radar->radar_bitmap);
 #endif
+
+			selected = wpa_bss_get_id(wpa_s, wpa_s->sta_cac.selected_bssid);
+			if (!selected) {
+				wpas_sta_cac_clear(wpa_s);
+				wpa_supplicant_req_new_scan(wpa_s, 0, 0);
+				return;
+			}
+
+			bit = wpas_sta_cac_get_link_for_event(wpa_s, radar,
+							      selected);
+			if (!bit)
+				return;
+
+			wpa_s->sta_cac.cac_completed_links |= bit;
 			wpa_dbg(wpa_s, MSG_DEBUG,
 				"STA-DFS: CAC finished bit=0x%x req=0x%x done=0x%x",
 				bit, wpa_s->sta_cac.dfs_links,
