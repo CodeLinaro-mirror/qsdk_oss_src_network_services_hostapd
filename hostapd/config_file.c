@@ -6593,14 +6593,15 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->disable_eml = atoi(pos);
 	} else if (os_strcmp(buf, "skip_uhr_extn_in_bcn") == 0) {
 		if (atoi(pos))
-			bss->skip_uhr_extn |= SKIP_UHR_EXTN_BCN | SKIP_UHR_EXTN_PROBE_RESP |
-					      SKIP_UHR_EXTN_RNR;
+			bss->skip_uhr_extn |= SKIP_UHR_EXTN_BCN | SKIP_UHR_EXTN_PROBE_RESP;
 	} else if (os_strcmp(buf, "skip_uhr_extn_in_probe_resp") == 0) {
 		if (atoi(pos))
-			bss->skip_uhr_extn |= SKIP_UHR_EXTN_PROBE_RESP | SKIP_UHR_EXTN_RNR;
+			bss->skip_uhr_extn |= SKIP_UHR_EXTN_PROBE_RESP;
 	} else if (os_strcmp(buf, "skip_uhr_extn_in_rnr") == 0) {
 		if (atoi(pos))
 			bss->skip_uhr_extn |= SKIP_UHR_EXTN_RNR;
+		else
+			bss->skip_uhr_extn &= ~SKIP_UHR_EXTN_RNR;
 #endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_IEEE80211BN
