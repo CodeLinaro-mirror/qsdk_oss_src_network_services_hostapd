@@ -32,6 +32,7 @@ struct uhr_iap_frame;
 #define WIFI8_TLV_SUBTYPE_CLIENT_IDENTIFIER 0x0007  /* Client Identifier TLV     */
 #define WIFI8_TLV_SUBTYPE_CLIENT_SEC_CTX    0x0009  /* Client Security Context TLV */
 #define WIFI8_TLV_SUBTYPE_DATAPATH_CTX      0x000A  /* Data Path Context TLV     */
+#define WIFI8_TLV_SUBTYPE_ROAM_CLEANUP      0x000B  /* Roam Cleanup TLV          */
 
 /* -------------------------------------------------------------------------
  * Reconfiguration Frame TLV — frame_type field values
@@ -102,18 +103,48 @@ struct wpabuf *eth_p_1905_iap_encode_exec_req(struct hostapd_data *hapd,
 /**
  * eth_p_1905_iap_encode_exec_resp - Encode ST Execute Response TLV payload
  *
- * Target AP → Serving AP.  TLVs included:
- *   Client Identifier TLV     (always)
- *   Client Security Ctx TLV   (if UHR_IAP_FLAG_HAS_SEC_CTX)
- *   Datapath Ctx TLV          (if UHR_IAP_FLAG_HAS_DYNAMIC_CTX)
+ * Role-dependent encoding based on iap->flags:
  *
- * @hapd: hostapd instance (for smd_identifier)
+ * Serving AP → Target AP  (UHR_IAP_FLAG_HAS_SEC_CTX | UHR_IAP_FLAG_HAS_DYNAMIC_CTX set):
+ *   Client Identifier TLV + Client Security Ctx TLV + Datapath Ctx TLV
+ *
+ * Target AP → Serving AP  (flags = 0):
+ *   Reconfig Frame TLV only
+ *
+ * @hapd: hostapd instance (for smd_identifier, used on Serving AP path)
  * @iap:  IAP frame; iap->current_ap_mld_addr is the destination.
  *
  * Returns allocated wpabuf on success, NULL on failure.
  */
 struct wpabuf *eth_p_1905_iap_encode_exec_resp(struct hostapd_data *hapd,
 					       const struct uhr_iap_frame *iap);
+
+/**
+ * eth_p_1905_iap_encode_prep_ctx - Encode ST Preparation Context TLV payload
+ *
+ * Serving AP → Target AP (deferred SMD context after MTU split).
+ * TLVs included:
+ *   Datapath Ctx TLV  (always — iap->flags must have UHR_IAP_FLAG_HAS_DYNAMIC_CTX)
+ *
+ * @iap: IAP frame with UHR_IAP_FLAG_HAS_DYNAMIC_CTX set and frame_len = 0;
+ *       iap->target_ap_mld_addr is the destination.
+ *
+ * Returns allocated wpabuf on success, NULL on failure.
+ */
+struct wpabuf *eth_p_1905_iap_encode_prep_ctx(const struct uhr_iap_frame *iap);
+
+/**
+ * eth_p_1905_iap_encode_roam_cleanup - Encode ST Roam Cleanup TLV payload
+ *
+ * Serving AP → non-exec Target APs.  TLVs included:
+ *   Roam Cleanup TLV  (always)
+ *
+ * @iap: IAP frame; iap->target_ap_mld_addr is the destination,
+ *       iap->sta_addr is the STA MLD address to clean up.
+ *
+ * Returns allocated wpabuf on success, NULL on failure.
+ */
+struct wpabuf *eth_p_1905_iap_encode_roam_cleanup(const struct uhr_iap_frame *iap);
 
 /* =========================================================================
  * TLV decode API
