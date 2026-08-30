@@ -1070,9 +1070,9 @@ ifdef CONFIG_IEEE80211BN
 OBJS += ../src/ap/ieee802_11_uhr.o
 OBJS += ../src/ap/uhr_neighbor_update.o
 OBJS += ../src/ap/uhr_utils.o
-OBJS += ../src/ap/uhr_oui_transport.o
 OBJS += ../src/ap/uhr_iap.o
-#OBJS += ../src/ap/uhr_current_ap.o
+OBJS += ../src/ap/eth_p_1905.o
+OBJS += ../src/ap/eth_p_1905_iap.o
 OBJS += ../src/ap/mapc.o
 endif
 OBJS += ../src/ap/dscp_policy.o

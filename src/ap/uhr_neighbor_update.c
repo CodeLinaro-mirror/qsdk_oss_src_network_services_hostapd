@@ -12,7 +12,7 @@
 #include "hostapd.h"
 #include "neighbor_db.h"
 #include "uhr_neighbor_update.h"
-#include "uhr_oui_transport.h"
+#include "eth_p_1905.h"
 
 
 /*
@@ -555,19 +555,21 @@ static void smd_neighbor_fetch_rx_frame(struct smd_neighbor_update_ctx *ctx,
 	/* Respond with our current neighbor info */
 	ret = smd_neighbor_update_build_tlv(hapd, SMD_NEIGHBOR_UPDATE_MODIFY_AP,
 					    &tlv);
-	if (ret < 0)
+	if (ret < 0) {
+		wpa_printf(MSG_WARNING, "SMD Neighbor: fetch response TLV build failed");
 		return;
+	}
 
-	uhr_oui_send(hapd->uhr_oui_ctx, src_addr, hapd->own_addr,
-		     UHR_IAP_SUFFIX_NEIGHBOR_UPDATE,
-		     wpabuf_head(tlv), wpabuf_len(tlv));
+	eth_p_1905_send(hapd->eth_p_1905_ctx, src_addr, hapd->own_addr,
+			ETH_P_1905_SMD_NEIGHBOR_UPDATE_MSG,
+			wpabuf_head(tlv), wpabuf_len(tlv));
 	wpabuf_free(tlv);
 }
 
 
 void smd_neighbor_update_rx(struct hostapd_data *hapd, const u8 *src_addr,
 			      const u8 *dst_addr, const u8 *data, size_t data_len,
-			      u8 oui_suffix)
+			      u16 msg_type)
 {
 	struct smd_neighbor_update_ctx *ctx;
 
@@ -576,16 +578,16 @@ void smd_neighbor_update_rx(struct hostapd_data *hapd, const u8 *src_addr,
 
 	ctx = hapd->smd_neighbor_update_ctx;
 
-	switch (oui_suffix) {
-	case UHR_IAP_SUFFIX_NEIGHBOR_FETCH:
+	switch (msg_type) {
+	case ETH_P_1905_SMD_NEIGHBOR_FETCH_MSG:
 		smd_neighbor_fetch_rx_frame(ctx, src_addr, dst_addr, data, data_len);
 		break;
-	case UHR_IAP_SUFFIX_NEIGHBOR_UPDATE:
+	case ETH_P_1905_SMD_NEIGHBOR_UPDATE_MSG:
 		smd_neighbor_update_rx_frame(ctx, src_addr, dst_addr, data, data_len);
 		break;
 	default:
 		wpa_printf(MSG_DEBUG,
-			   "SMD Neighbor: Incorrect OUI suffix %u", oui_suffix);
+			   "SMD Neighbor: unknown msg_type 0x%04x", msg_type);
 		break;
 	}
 }
@@ -597,9 +599,9 @@ int smd_neighbor_update_send(struct hostapd_data *hapd,
 	int ret;
 	const u8 bcast[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
-	if (!hapd || !hapd->uhr_oui_ctx) {
+	if (!hapd || !hapd->eth_p_1905_ctx) {
 		wpa_printf(MSG_ERROR,
-			   "SMD Neighbor: hapd or oui ctx is NULL");
+			   "SMD Neighbor: hapd or 1905 transport context is NULL");
 		return -1;
 	}
 
@@ -610,9 +612,9 @@ int smd_neighbor_update_send(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	ret = uhr_oui_send(hapd->uhr_oui_ctx, bcast, hapd->own_addr,
-			   UHR_IAP_SUFFIX_NEIGHBOR_UPDATE,
-			   wpabuf_head(tlv), wpabuf_len(tlv));
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, bcast, hapd->own_addr,
+			      ETH_P_1905_SMD_NEIGHBOR_UPDATE_MSG,
+			      wpabuf_head(tlv), wpabuf_len(tlv));
 	wpabuf_free(tlv);
 	return ret;
 }
@@ -622,11 +624,11 @@ int smd_neighbor_update_send_pull_ucast(struct hostapd_data *hapd,
 {
 	const u8 dummy = 0;
 
-	if (!hapd || !hapd->uhr_oui_ctx || !hapd->smd_neighbor_update_ctx || !dst_addr)
+	if (!hapd || !hapd->eth_p_1905_ctx || !hapd->smd_neighbor_update_ctx || !dst_addr)
 		return -1;
 
-	return uhr_oui_send(hapd->uhr_oui_ctx, dst_addr, hapd->own_addr,
-			    UHR_IAP_SUFFIX_NEIGHBOR_FETCH, &dummy, 1);
+	return eth_p_1905_send(hapd->eth_p_1905_ctx, dst_addr, hapd->own_addr,
+			       ETH_P_1905_SMD_NEIGHBOR_FETCH_MSG, &dummy, 1);
 }
 
 void smd_neighbor_update_notify_own_report_changed(struct hostapd_data *hapd)
@@ -651,9 +653,9 @@ int smd_neighbor_update_init(struct hostapd_data *hapd)
 {
 	struct smd_neighbor_update_ctx *ctx;
 
-	if (!hapd || !hapd->uhr_oui_ctx) {
+	if (!hapd || !hapd->eth_p_1905_ctx) {
 		wpa_printf(MSG_ERROR,
-			   "SMD Neighbor: hapd or oui ctx is NULL");
+			   "SMD Neighbor: hapd or 1905 transport context is NULL");
 		return -1;
 	}
 

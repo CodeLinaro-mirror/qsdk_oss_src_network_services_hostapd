@@ -70,7 +70,7 @@
 #include "atf/atf_offload.h"
 #ifdef CONFIG_IEEE80211BN
 #include "uhr_utils.h"
-#include "uhr_oui_transport.h"
+#include "eth_p_1905.h"
 #include "uhr_neighbor_update.h"
 #endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_QCN_EXTN
@@ -1504,13 +1504,13 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 
 	wpa_printf(MSG_DEBUG, "%s(%s)", __func__, hapd->conf->iface);
 #ifdef CONFIG_IEEE80211BN
-       if (hapd->uhr_oui_ctx) {
+	if (hapd->eth_p_1905_ctx) {
 		smd_neighbor_update_deinit(hapd);
-               wpa_printf(MSG_DEBUG, "SMD: Deinitializing roaming transport");
-	       if (hostapd_mld_is_first_bss(hapd))
-		       uhr_oui_deinit(hapd->uhr_oui_ctx);
-               hapd->uhr_oui_ctx = NULL;
-       }
+		wpa_printf(MSG_DEBUG, "SMD: Deinitializing roaming transport");
+		if (hostapd_mld_is_first_bss(hapd))
+			eth_p_1905_deinit(hapd->eth_p_1905_ctx);
+		hapd->eth_p_1905_ctx = NULL;
+	}
 #endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_QCN_EXTN
 	hostapd_log_extn_deinit(hapd);
@@ -2434,56 +2434,49 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
 	}
 
 #ifdef CONFIG_IEEE80211BN
-       /* Initialize SMD Roaming transport if configured */
-	/* In hostapd_start_beacon() or similar initialization */
+	/* Initialize SMD Roaming transport if configured */
 	if (conf->smd_partners) {
-	    wpa_printf(MSG_DEBUG, "SMD: Initializing roaming transport");
+		static const u16 iap_msg_types[] = {
+			ETH_P_1905_IAP_MSG_REQUEST,
+			ETH_P_1905_IAP_MSG_RESPONSE,
+			ETH_P_1905_SMD_NEIGHBOR_UPDATE_MSG,
+			ETH_P_1905_SMD_NEIGHBOR_FETCH_MSG,
+			ETH_P_1905_SMD_ST_PREP_REP_MSG,
+			ETH_P_1905_SMD_ST_EXEC_REQ_MSG,
+			ETH_P_1905_SMD_ST_EXEC_REP_MSG,
+		};
+		struct hostapd_data *f_bss;
 
-	    if (hostapd_mld_is_first_bss(hapd)) {
-        	/* Initialize OUI context only for first BSS */
+		wpa_printf(MSG_DEBUG, "SMD: Initializing roaming transport");
 
-               if (hapd->uhr_oui_ctx) {
-                       wpa_printf(MSG_WARNING, "SMD: Socket is already created for first BSS");
-               } else {
-                       hapd->uhr_oui_ctx = uhr_oui_init(hapd);
-                       if (!hapd->uhr_oui_ctx) {
-                           wpa_printf(MSG_ERROR, "SMD: Failed to initialize OUI transport");
-                           return -1;
-                       }
-               }
-        	/* Load configured partner APs */
-	        uhr_load_partners(hapd);
-		if (conf->smd_neighbor_update_enabled &&
+		f_bss = hostapd_mld_is_first_bss(hapd) ? hapd :
+			hostapd_mld_get_first_bss(hapd);
+		if (!f_bss) {
+			wpa_printf(MSG_ERROR, "SMD: First BSS context not initialized");
+			return -1;
+		}
+		if (!f_bss->eth_p_1905_ctx) {
+			f_bss->eth_p_1905_ctx = eth_p_1905_init(f_bss, iap_msg_types,
+								 ARRAY_SIZE(iap_msg_types));
+			if (!f_bss->eth_p_1905_ctx) {
+				wpa_printf(MSG_ERROR, "SMD: Failed to initialize 1905 transport");
+				return -1;
+			}
+		}
+		eth_p_1905_load_partners(f_bss->eth_p_1905_ctx, f_bss);
+		hapd->eth_p_1905_ctx = f_bss->eth_p_1905_ctx;
+		if (hapd != f_bss)
+			wpa_printf(MSG_DEBUG,
+				   "SMD: Using 1905 context from first BSS (link_id=%d)",
+				   f_bss->mld_link_id);
+
+		if (hostapd_mld_is_first_bss(hapd) &&
+		    conf->smd_neighbor_update_enabled &&
 		    smd_neighbor_update_init(hapd) < 0) {
 			wpa_printf(MSG_ERROR,
 				   "SMD: Failed to initialize neighbor update");
 			return -1;
 		}
-	    } else {
-	        /* Affiliated links share the first BSS's context */
-        	struct hostapd_data *f_bss = hostapd_mld_get_first_bss(hapd);
-	        if (!f_bss) {
-        	    wpa_printf(MSG_ERROR, "SMD: First BSS OUI context not initialized");
-	            return -1;
-        	}
-
-               if (!f_bss->uhr_oui_ctx) {
-                       wpa_printf(MSG_INFO, "SMD: Could not find socket for first BSS, creating it");
-                       f_bss->uhr_oui_ctx = uhr_oui_init(f_bss);
-                       if (!f_bss->uhr_oui_ctx) {
-                               wpa_printf(MSG_ERROR, "SMD: Failed to initialize OUI transport");
-                               return -1;
-                       }
-               }
-
-
-	        wpa_printf(MSG_DEBUG, "SMD: Using OUI context from first BSS (link_id=%d)",
-        	           f_bss->mld_link_id);
-	        hapd->uhr_oui_ctx = f_bss->uhr_oui_ctx;
-
-        	/* Load configured partner APs */
-	        uhr_load_partners(hapd);
-	    }
 	}
 #endif /* CONFIG_IEEE80211BN */
 
