@@ -4021,6 +4021,40 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->bss_require_vht = atoi(pos);
 	} else if (os_strcmp(buf, "vht_oper_chwidth") == 0) {
 		conf->vht_oper_chwidth = atoi(pos);
+#ifdef CONFIG_QCN_EXTN
+	} else if (os_strcmp(buf, "vht_mcs_10_11_supp") == 0) {
+		int val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid vht_mcs_10_11_supp %d (allowed 0 or 1)",
+				   line, val);
+			return 1;
+		}
+		bss->bss_extn.vht_mcs_10_11_supp = val;
+	} else if (os_strcmp(buf, "vht_mcs_10_11_nq2q_peer_supp") == 0) {
+		int val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid vht_mcs_10_11_nq2q_peer_supp %d (allowed 0 or 1)",
+				   line, val);
+			return 1;
+		}
+		bss->bss_extn.vht_mcs_10_11_nq2q_peer_supp = val;
+	} else if (os_strcmp(buf, "he_400ns_sgi_supp") == 0) {
+		int val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid he_400ns_sgi_supp %d (allowed 0 or 1)",
+				   line, val);
+			return 1;
+		}
+		bss->bss_extn.he_400ns_sgi_supp = val;
+	} else if (os_strcmp(buf, "he_2xltf_160_80p80_supp") == 0) {
+		int val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid he_2xltf_160_80p80_supp %d (allowed 0 or 1)",
+				   line, val);
+			return 1;
+		}
+		bss->bss_extn.he_2xltf_160_80p80_supp = val;
+#endif /* CONFIG_QCN_EXTN */
 	} else if (os_strcmp(buf, "vht_oper_centr_freq_seg0_idx") == 0) {
 		conf->vht_oper_centr_freq_seg0_idx = atoi(pos);
 	} else if (os_strcmp(buf, "vht_oper_centr_freq_seg1_idx") == 0) {

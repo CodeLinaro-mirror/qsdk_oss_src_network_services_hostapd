@@ -7442,6 +7442,8 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 #ifdef CONFIG_QCN_EXTN
 	if (is_mu_cap_war_active(hapd) && is_sta_vht_only(sta))
 		hostapd_mu_cap_war_client_cap_extn(hapd, sta);
+
+	hostapd_drv_set_vht_mcs_10_11_supp_extn(hapd, sta, &elems->elems_extn);
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211AC */
 
@@ -7455,6 +7457,9 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 
 #ifdef CONFIG_QCN_EXTN
 		hostapd_drv_set_peer_he_mcs_12_13_cap_extn(hapd, &elems->elems_extn);
+
+		hostapd_drv_set_he_400ns_sig_2xltf_160_supp_extn(hapd, sta,
+								 &elems->elems_extn);
 #endif /* CONFIG_QCN_EXTN */
 		if (hostapd_deny_non_he_assoc(hapd, sta)) {
 			hostapd_logger(hapd, sta->addr,
@@ -9094,6 +9099,16 @@ int add_associated_sta(struct hostapd_data *hapd,
 		hostapd_get_uhr_capab(sta->uhr_capab, &uhr_cap,
 				      sta->uhr_capab_len);
 #endif /* CONFIG_IEEE80211BN */
+
+#ifdef CONFIG_QCN_EXTN
+	/* Notify the driver of the negotiated non-standard VHT MCS10/11
+	 * capability and HE cap BEFORE hostapd_sta_add() so the driver has
+	 * the value when mac80211 triggers the AUTH->ASSOC sta_state
+	 * transition and WMI peer assoc is sent. This cannot go with
+	 * hostapd_sta_add().
+	 */
+	hostapd_set_sta_vht_mcs10_11_and_he_cap_internal_extn(hapd, sta);
+#endif /* CONFIG_QCN_EXTN */
 
 	/*
 	 * Add the station with forced WLAN_STA_ASSOC flag. The sta->flags

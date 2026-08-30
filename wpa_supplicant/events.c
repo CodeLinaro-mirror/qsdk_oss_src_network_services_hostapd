@@ -4504,6 +4504,10 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 							data->assoc_info.freq,
 							data->assoc_info.resp_ies,
 							data->assoc_info.resp_ies_len);
+		wpas_drv_set_peer_vht_mcs10_11_and_he_cap_internal_extn(
+							wpa_s,
+							data->assoc_info.resp_ies,
+							data->assoc_info.resp_ies_len);
 		/* WDS vendor IE: parse from assoc response */
 		wds_ie_process_assoc_resp_extn(wpa_s,
 					       data->assoc_info.resp_ies,
