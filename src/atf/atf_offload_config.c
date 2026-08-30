@@ -1733,6 +1733,36 @@ hostapd_ctrl_iface_atf_offload_g_atf_stats_timeout(struct hostapd_data *hapd,
 }
 
 
+/*
+ * atf_update_group_ac_airtime - Update per-AC airtime accumulators for a group.
+ *
+ * When peer_stats is NULL the accumulators are zeroed (reset mode), which
+ * must be done once per group at the start of each stats update cycle.
+ * Otherwise peer_stats contributions are added to the existing values.
+ *
+ * @group:       Group whose accumulators are updated.
+ * @peer_stats:  Per-peer airtime consumption, or NULL to reset.
+ */
+static void
+atf_update_group_ac_airtime(struct atf_group *group,
+			    struct atf_airtime_consumption *peer_stats)
+{
+	int ac;
+
+	for (ac = 0; ac < WMM_AC_NUM; ac++) {
+		if (!peer_stats) {
+			group->ac_actual_airtime[ac] = 0;
+			group->ac_ul_airtime[ac] = 0;
+		} else {
+			group->ac_actual_airtime[ac] +=
+				peer_stats->tx_consumption[ac].consumption;
+			group->ac_ul_airtime[ac] +=
+				peer_stats->rx_consumption[ac].consumption;
+		}
+	}
+}
+
+
 static int atf_offload_update_peer_airtime(struct hostapd_data *hapd)
 {
 	struct hostapd_iface *iface = hapd->iface;
@@ -1758,7 +1788,7 @@ static int atf_offload_update_peer_airtime(struct hostapd_data *hapd)
 		return -1;
 	}
 
-	for (ac = 0; ac < 4; ac++) {
+	for (ac = 0; ac < WMM_AC_NUM; ac++) {
 		radio_actual_airtime += airtime_stats->tx_consumption[ac].consumption;
 		radio_ul_airtime += airtime_stats->rx_consumption[ac].consumption;
 	}
@@ -1768,6 +1798,8 @@ static int atf_offload_update_peer_airtime(struct hostapd_data *hapd)
 		group->ul_airtime = 0;
 		group->actual_duration = 0;
 		group->actual_ul_duration = 0;
+
+		atf_update_group_ac_airtime(group, NULL);
 
 		if (dl_list_empty(&group->explicit_peers))
 			goto implicit_peers;
@@ -1780,7 +1812,7 @@ static int atf_offload_update_peer_airtime(struct hostapd_data *hapd)
 				peer_airtime = 0;
 				peer_ul_airtime = 0;
 
-				for (ac = 0; ac < 4; ac++) {
+				for (ac = 0; ac < WMM_AC_NUM; ac++) {
 					peer_airtime +=
 						airtime_stats->tx_consumption[ac].consumption;
 					peer_ul_airtime +=
@@ -1811,6 +1843,8 @@ static int atf_offload_update_peer_airtime(struct hostapd_data *hapd)
 				group->ul_airtime += peer_config->ul_airtime;
 				group->actual_duration += peer_config->actual_duration;
 				group->actual_ul_duration += peer_config->actual_ul_duration;
+
+				atf_update_group_ac_airtime(group, airtime_stats);
 			}
 		}
 implicit_peers:
@@ -1825,7 +1859,7 @@ implicit_peers:
 				peer_airtime = 0;
 				peer_ul_airtime = 0;
 
-				for (ac = 0; ac < 4; ac++) {
+				for (ac = 0; ac < WMM_AC_NUM; ac++) {
 					peer_airtime +=
 						airtime_stats->tx_consumption[ac].consumption;
 					peer_ul_airtime +=
@@ -1856,11 +1890,82 @@ implicit_peers:
 				group->ul_airtime += implicit_peer->ul_airtime;
 				group->actual_duration += implicit_peer->actual_duration;
 				group->actual_ul_duration += implicit_peer->actual_ul_duration;
+
+				atf_update_group_ac_airtime(group, airtime_stats);
 			}
 		}
 	}
 
 	return 0;
+}
+
+
+static void atf_offload_print_ac_stats(struct hostapd_data *hapd)
+{
+	struct atf_algo *algo;
+	struct atf_group *group;
+	const char *ac_names[WMM_AC_NUM] = { "BE", "BK", "VI", "VO" };
+	u32 radio_actual_airtime, radio_ul_airtime, actual_airtime;
+	u32 ul_airtime;
+	int ac, borrowed, unused;
+
+	if (!hapd->iface || !hapd->iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return;
+	}
+
+	algo = hapd->iface->atf_algo;
+
+	radio_actual_airtime = 0;
+	radio_ul_airtime = 0;
+	for (ac = 0; ac < WMM_AC_NUM; ac++) {
+		radio_actual_airtime +=
+			algo->radio_airtime.tx_consumption[ac].consumption;
+		radio_ul_airtime +=
+			algo->radio_airtime.rx_consumption[ac].consumption;
+	}
+	if (!radio_actual_airtime)
+		radio_actual_airtime = 1;
+	if (!radio_ul_airtime)
+		radio_ul_airtime = 1;
+
+	wpa_printf(MSG_INFO, "\n\nSHOW ATF AC TABLE\n");
+	wpa_printf(MSG_INFO, "%-30s %6s %4s %16s %16s %10s %8s %14s %12s %16s",
+		   "Group/SSID", "Group%", "AC", "Alloted%", "Actual%", "Borrowed",
+		   "Unused", "Duration(us)", "UL%", "UL Duration(us)");
+
+	dl_list_for_each(group, &algo->groups, struct atf_group, list) {
+		wpa_printf(MSG_INFO, "%-30s %u.%u",
+			   group->name,
+			   group->user_cfg_airtime / 10,
+			   group->user_cfg_airtime % 10);
+
+		for (ac = 0; ac < WMM_AC_NUM; ac++) {
+			if (!(group->calculated_ac_airtime[ac]))
+				continue;
+
+			actual_airtime = (group->ac_actual_airtime[ac] * 100) /
+				 radio_actual_airtime;
+			ul_airtime = (group->ac_ul_airtime[ac] * 100) /
+				     radio_ul_airtime;
+
+			borrowed = 0;
+			unused = 0;
+			if (actual_airtime > group->calculated_ac_airtime[ac] / 10)
+				borrowed = actual_airtime - group->calculated_ac_airtime[ac] / 10;
+			else
+				unused = group->calculated_ac_airtime[ac] / 10 - actual_airtime;
+
+			wpa_printf(MSG_INFO,
+				   "%-30s %6s %-4s %13u.%u %13u.%u %10d %8d %14u %12u %16u",
+				   "", "", ac_names[ac], group->calculated_ac_airtime[ac] / 10,
+				   group->calculated_ac_airtime[ac] % 10, actual_airtime,
+				   ((group->ac_actual_airtime[ac] * 100) % radio_actual_airtime) % 10,
+				   borrowed, unused, group->ac_actual_airtime[ac], ul_airtime,
+				   group->ac_ul_airtime[ac]);
+		}
+		wpa_printf(MSG_INFO, "\n");
+	}
 }
 
 
@@ -1977,6 +2082,282 @@ impilicit_peers:
 }
 
 
+/*
+ * atf_ac_str_to_id - convert AC name string to AC index
+ * Returns 0-3 on success, -1 on invalid name.
+ * AC index: 0=BE, 1=BK, 2=VI, 3=VO
+ */
+static int atf_ac_str_to_id(const char *ac_str)
+{
+	if (os_strcasecmp(ac_str, "BE") == 0)
+		return WMM_AC_BE;
+	if (os_strcasecmp(ac_str, "BK") == 0)
+		return WMM_AC_BK;
+	if (os_strcasecmp(ac_str, "VI") == 0)
+		return WMM_AC_VI;
+	if (os_strcasecmp(ac_str, "VO") == 0)
+		return WMM_AC_VO;
+	return -1;
+}
+
+
+
+static int
+hostapd_ctrl_iface_atf_offload_addac(struct hostapd_data *hapd,
+				     const char *cmd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	struct atf_group *group;
+	char *input, *token, *context = NULL;
+	char *name, *colon;
+	char ac_name[WMM_AC_NUM];
+	int ac_id, airtime, ret = 0, i, num_ac = 0;
+	/* Staging array: index by AC id, -1 means not provided in this call */
+	int new_ac[WMM_AC_NUM] = { -1, -1, -1, -1 };
+	u32 total;
+
+	if (!iface || !iface->conf || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	if (!iface->conf->atf_offload) {
+		wpa_printf(MSG_ERROR, "ATF: ATF is not enabled\n");
+		return -1;
+	}
+
+	input = os_strdup(cmd);
+	if (!input)
+		return -1;
+
+	name = str_token(input, " ", &context);
+	if (!name || os_strlen(name) > WLAN_SSID_MAX_LEN) {
+		wpa_printf(MSG_ERROR, "ATF: Invalid or missing SSID/group name\n");
+		ret = -1;
+		goto fail;
+	}
+
+	group = atf_find_group(algo, name);
+	if (!group) {
+		wpa_printf(MSG_ERROR,
+			   "ATF: Group/SSID %s not found - configure airtime first\n",
+			   name);
+		ret = -1;
+		goto fail;
+	}
+
+	if (!group->is_configured || !group->user_cfg_airtime) {
+		wpa_printf(MSG_ERROR,
+			   "ATF: Group %s has no airtime configured - run addssid/configatfgroup first\n",
+			   group->name);
+		ret = -1;
+		goto fail;
+	}
+
+	/* Remaining tokens: AC:<val> pairs, 1 to 4 */
+	while ((token = str_token(input, " ", &context)) != NULL) {
+		colon = os_strchr(token, ':');
+		if (!colon) {
+			wpa_printf(MSG_ERROR,
+				   "ATF: Malformed AC token %s, expected AC:<val>\n",
+				   token);
+			ret = -1;
+			goto fail;
+		}
+
+		/* Split at : */
+		*colon = '\0';
+		os_strlcpy(ac_name, token, sizeof(ac_name));
+		airtime = atoi(colon + 1);
+
+		ac_id = atf_ac_str_to_id(ac_name);
+		if (ac_id < 0) {
+			wpa_printf(MSG_ERROR,
+				   "ATF: Unknown AC name %s, expected BE/BK/VI/VO\n",
+				   ac_name);
+			ret = -1;
+			goto fail;
+		}
+
+		if (airtime < 0 || airtime > 100) {
+			wpa_printf(MSG_ERROR,
+				   "ATF: AC %s value %d out of range (0-100)\n",
+				   ac_name, airtime);
+			ret = -1;
+			goto fail;
+		}
+
+		new_ac[ac_id] = airtime;
+		num_ac++;
+	}
+
+	if (num_ac == 0) {
+		wpa_printf(MSG_ERROR,
+			   "ATF: No AC tokens provided, expected AC:<val> pairs\n");
+		ret = -1;
+		goto fail;
+	}
+
+	/*
+	 * Validate: sum already-configured ACs (not being overwritten) plus
+	 * all new values must not exceed 100% (1000 units).
+	 */
+	total = 0;
+	for (i = 0; i < WMM_AC_NUM; i++) {
+		if (new_ac[i] >= 0)
+			total += (u32)(new_ac[i] * 10);
+		else if (ATF_AC_IS_BIT_SET(group->ac_bitmap, i))
+			total += group->ac_airtime[i];
+	}
+	if (total > ATF_RADIO_DEFAULT_AIRTIME) {
+		wpa_printf(MSG_ERROR,
+			   "ATF: Total AC airtime for group %s would exceed 100%% (%u > %d)",
+			   group->name, total, ATF_RADIO_DEFAULT_AIRTIME);
+		ret = -1;
+		goto fail;
+	}
+
+	/* Commit: all values validated, now write to group */
+	for (i = 0; i < WMM_AC_NUM; i++) {
+		if (new_ac[i] < 0)
+			continue;
+		group->ac_airtime[i] = (u32)(new_ac[i] * 10);
+		group->ac_bitmap |= (u8)(1 << i);
+		wpa_printf(MSG_INFO, "ATF: Group %s AC %d configured to %d%%",
+			   group->name, i, new_ac[i]);
+	}
+
+fail:
+	os_free(input);
+	return ret;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_delac(struct hostapd_data *hapd,
+				     const char *cmd, char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	struct atf_group *group;
+	char *input, *name, *context = NULL;
+	int ret = 0, len = 0;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	if (!iface->conf->atf_offload) {
+		wpa_printf(MSG_ERROR, "ATF: ATF is not enabled\n");
+		return -1;
+	}
+
+	input = os_strdup(cmd);
+	if (!input)
+		return -1;
+
+	name = str_token(input, " ", &context);
+	if (!name || os_strlen(name) > WLAN_SSID_MAX_LEN) {
+		wpa_printf(MSG_ERROR, "ATF: Invalid or missing SSID/group name\n");
+		ret = -1;
+		goto fail;
+	}
+
+	group = atf_find_group(algo, name);
+	if (!group) {
+		wpa_printf(MSG_ERROR,
+			   "ATF: Group/SSID %s not found\n", name);
+		ret = -1;
+		goto fail;
+	}
+
+	if (!group->is_configured) {
+		wpa_printf(MSG_ERROR,
+			   "ATF: Group %s has no airtime configured\n",
+			   group->name);
+		ret = -1;
+		goto fail;
+	}
+
+	/* Clear all AC config for this group */
+	atf_reset_group_ac_config(group);
+	wpa_printf(MSG_INFO, "ATF: Group %s all AC config cleared",
+		   group->name);
+
+	os_free(input);
+	return len;
+
+fail:
+	os_free(input);
+	return ret;
+}
+
+
+static int
+hostapd_ctrl_iface_atf_offload_showatfacstats(struct hostapd_data *hapd,
+					      char *buf, size_t buflen)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	struct atf_algo *algo;
+	int ret, len = 0;
+
+	if (!iface || !iface->atf_algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
+
+	algo = iface->atf_algo;
+
+	if (!iface->conf->atf_offload) {
+		wpa_printf(MSG_ERROR, "ATF: ATF is not enabled\n");
+		return -1;
+	}
+
+	if (!algo->atf_stats_enabled) {
+		wpa_printf(MSG_ERROR, "ATF: ATF stats is not enabled\n");
+		return -1;
+	}
+
+	if (dl_list_empty(&algo->groups)) {
+		wpa_printf(MSG_ERROR, "ATF: No groups configured\n");
+		return -1;
+	}
+
+	if (!hapd->iface->current_hw_info) {
+		wpa_printf(MSG_ERROR, "ATF: Failed to get configured radio\n");
+		return -1;
+	}
+
+	ret = nl80211_atf_offload_showatfstats(hapd->drv_priv,
+					       hapd->iface->current_hw_info->hw_idx,
+					       hapd);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "ATF: Failed to dump ATF stats\n");
+		return ret;
+	}
+
+	ret = atf_offload_update_peer_airtime(hapd);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "ATF: failed to update ATF stats\n");
+		return ret;
+	}
+
+	atf_offload_print_ac_stats(hapd);
+
+	ret = os_snprintf(buf, buflen, "Check hostapd logs for atf ac stats\n");
+	if (!os_snprintf_error(buflen, ret))
+		len = ret;
+
+	return len;
+}
+
+
 int hostapd_ctrl_iface_atf_offload_showatfstats(struct hostapd_data *hapd,
                                                char *buf, size_t buflen)
 {
@@ -2067,7 +2448,12 @@ hostapd_ctrl_iface_config_atf_offload(struct hostapd_data *hapd,
 		return hostapd_ctrl_iface_atf_offload_g_atf_stats_timeout(hapd, buf, buflen);
 	else if (os_strncmp(cmd, "showatfstats", 12) == 0)
 		return hostapd_ctrl_iface_atf_offload_showatfstats(hapd, buf, buflen);
+	else if (os_strncmp(cmd, "addac ", 6) == 0)
+		return hostapd_ctrl_iface_atf_offload_addac(hapd, cmd + 6, buf, buflen);
+	else if (os_strncmp(cmd, "delac ", 6) == 0)
+		return hostapd_ctrl_iface_atf_offload_delac(hapd, cmd + 6, buf, buflen);
+	else if (os_strncmp(cmd, "showatfacstats", 14) == 0)
+		return hostapd_ctrl_iface_atf_offload_showatfacstats(hapd, buf, buflen);
 
 	return -1;
 }
-

@@ -380,6 +380,21 @@ atf_reset_group_values(struct atf_group *group)
 	group->num_bh_peers = 0;
 }
 
+void
+atf_reset_group_ac_config(struct atf_group *group)
+{
+	u8 i;
+
+	for (i = 0; i < WMM_AC_NUM; i++) {
+		group->ac_airtime[i] = 0;
+		group->ac_actual_airtime[i] = 0;
+		group->ac_ul_airtime[i] = 0;
+		group->calculated_ac_airtime[i] = 0;
+	}
+
+	group->ac_bitmap = 0;
+}
+
 
 struct atf_group *
 atf_allocate_group(const char *name, struct atf_algo *algo)
@@ -403,6 +418,7 @@ atf_allocate_group(const char *name, struct atf_algo *algo)
 
 	dl_list_init(&group->implicit_peers);
 	dl_list_init(&group->explicit_peers);
+	atf_reset_group_ac_config(group);
 	atf_reset_group_values(group);
 
 	wpa_printf(MSG_INFO, "ATF: Added group %s [%d], no of groups %d", group->name,
@@ -420,6 +436,7 @@ atf_free_group(struct atf_group *group)
 	if (!algo->num_group_cfg)
 		return;
 
+	atf_reset_group_ac_config(group);
 	atf_reset_group_values(group);
 	algo->num_group_cfg--;
 	dl_list_del(&group->list);
@@ -1399,6 +1416,87 @@ atf_cal_bh_peers(struct atf_algo *algo, u32 per_peer_airtime)
 		bh->atf_peer.calculated_airtime = per_peer_airtime;
 }
 
+/*
+ * atf_adjust_impl_airtime_for_ac - Reduce implicit-peer airtime budget by the
+ * fraction consumed by AC-level ATF constraints.
+ *
+ * When a group has both implicit peers and per-AC airtime configured, the
+ * AC weights "carve out" a portion of the group airtime for AC scheduling.
+ * The remaining (non-AC) budget available to implicit peers is:
+ *
+ *   calculated_airtime *= (1000 - tot_ac_val) / 1000
+ *
+ * This is a no-op when no AC is configured (ac_bitmap == 0 or tot_ac_val == 0)
+ * or when tot_ac_val would exceed the radio budget (sanity guard).
+ */
+static void
+atf_adjust_impl_airtime_for_ac(struct atf_group *group)
+{
+	u32 tot_ac_val = 0;
+	u8 ac;
+
+	if (!group->num_impl_peers || !group->ac_bitmap)
+		return;
+
+	for (ac = 0; ac < WMM_AC_NUM; ac++) {
+		if (ATF_AC_IS_BIT_SET(group->ac_bitmap, ac))
+			tot_ac_val += group->ac_airtime[ac];
+	}
+
+	if (tot_ac_val == 0 || tot_ac_val > ATF_RADIO_DEFAULT_AIRTIME)
+		return;
+
+	group->calculated_airtime =
+		((ATF_RADIO_DEFAULT_AIRTIME - tot_ac_val) *
+		 group->calculated_airtime) /
+		ATF_RADIO_DEFAULT_AIRTIME;
+}
+
+/*
+ * atf_cal_ac_airtime_for_group - Compute per-peer per-AC airtime for a group.
+ *
+ * For each implicit peer in the group, derive the per-AC airtime from the
+ * group AC percentage and the group calculated_airtime (residual after
+ * explicit peers are accounted for).
+ *
+ * Formula (per configured AC):
+ *   peer->calculated_ac_airtime[ac] =
+ *       (group->ac_airtime[ac] * group->calculated_airtime)
+ *       / ATF_RADIO_DEFAULT_AIRTIME
+ *
+ * Unconfigured ACs (bit not set in ac_bitmap) are left as zero, meaning no
+ * per-AC ATF constraint is applied for those ACs.
+ */
+static void
+atf_cal_ac_airtime_for_group(struct atf_group *group)
+{
+	struct sta_info *sta;
+	u8 ac;
+
+	if (!group->ac_bitmap)
+		return;
+
+	for (ac = 0; ac < WMM_AC_NUM; ac++) {
+		if (ATF_AC_IS_BIT_SET(group->ac_bitmap, ac))
+			group->calculated_ac_airtime[ac] = group->ac_airtime[ac];
+		else
+			group->calculated_ac_airtime[ac] = 0;
+	}
+
+	dl_list_for_each(sta, &group->implicit_peers, struct sta_info,
+			 atf_candidate_list) {
+		for (ac = 0; ac < WMM_AC_NUM; ac++) {
+			if (ATF_AC_IS_BIT_SET(group->ac_bitmap, ac))
+				sta->atf_peer.calculated_ac_airtime[ac] =
+					(group->ac_airtime[ac] *
+					 group->calculated_airtime) /
+					ATF_RADIO_DEFAULT_AIRTIME;
+			else
+				sta->atf_peer.calculated_ac_airtime[ac] = 0;
+		}
+	}
+}
+
 int
 atf_distribute_airtime(struct hostapd_iface *iface)
 {
@@ -1427,6 +1525,8 @@ atf_distribute_airtime(struct hostapd_iface *iface)
 			iface_airtime = iface_airtime - group->user_cfg_airtime;
 			group->calculated_airtime = group->user_cfg_airtime;
 			atf_cal_explicit_peers(group);
+			atf_cal_ac_airtime_for_group(group);
+			atf_adjust_impl_airtime_for_ac(group);
 			atf_cal_implicit_peers(group,
 				group->num_impl_peers ?
 				group->calculated_airtime / group->num_impl_peers : 0);
@@ -1442,6 +1542,7 @@ atf_distribute_airtime(struct hostapd_iface *iface)
 
 	group->user_cfg_airtime = iface_airtime;
 	group->calculated_airtime = iface_airtime;
+	atf_cal_ac_airtime_for_group(group);
 	per_peer_airtime = (group->num_impl_peers + group->num_bh_peers) ?
 		group->calculated_airtime / (group->num_impl_peers + group->num_bh_peers) : 0;
 	atf_cal_implicit_peers(group, per_peer_airtime);
@@ -1515,6 +1616,14 @@ atf_offload_build_peer_config(struct hostapd_iface *iface,
 				wpa_printf(MSG_DEBUG, "ATF: build peer " MACSTR " airtime %d group id %d %d",
 					   MAC2STR(peer_info[num_peers].peer_macaddr), sta->atf_peer.calculated_airtime, group->index,
 					   peer_info[num_peers].explicit_peer_flag);
+				if (group->ac_bitmap)
+					wpa_printf(MSG_DEBUG,
+						   "ATF: build peer " MACSTR " AC airtime BE:%u BK:%u VI:%u VO:%u",
+						   MAC2STR(peer_info[num_peers].peer_macaddr),
+						   sta->atf_peer.calculated_ac_airtime[WMM_AC_BE],
+						   sta->atf_peer.calculated_ac_airtime[WMM_AC_BK],
+						   sta->atf_peer.calculated_ac_airtime[WMM_AC_VI],
+						   sta->atf_peer.calculated_ac_airtime[WMM_AC_VO]);
 				num_peers++;
 			}
 		}
@@ -1874,6 +1983,13 @@ atf_offload_build_wmm_ac_config(struct hostapd_iface *iface,
 {
 	struct atf_group_wmm_ac_config *wmm_ac_cfg;
 	struct atf_algo *algo = iface->atf_algo;
+	struct atf_group *group;
+	u8 i;
+
+	if (!algo) {
+		wpa_printf(MSG_ERROR, "ATF: Missing atf algo\n");
+		return -1;
+	}
 
 	if (dl_list_empty(&algo->groups)) {
 		wpa_printf(MSG_ERROR, "ATF: %s group list is empty", __func__);
@@ -1888,7 +2004,18 @@ atf_offload_build_wmm_ac_config(struct hostapd_iface *iface,
 
 	wmm_ac_param->num_groups = algo->num_group_cfg;
 
-	/* TODO: Logic to update all the ac values in future */
+	dl_list_for_each(group, &algo->groups, struct atf_group, list) {
+		i = group->index;
+		wmm_ac_cfg[i].ac_be = ATF_AC_IS_BIT_SET(group->ac_bitmap, WMM_AC_BE) ? group->ac_airtime[WMM_AC_BE] : 0;
+		wmm_ac_cfg[i].ac_bk = ATF_AC_IS_BIT_SET(group->ac_bitmap, WMM_AC_BK) ? group->ac_airtime[WMM_AC_BK] : 0;
+		wmm_ac_cfg[i].ac_vi = ATF_AC_IS_BIT_SET(group->ac_bitmap, WMM_AC_VI) ? group->ac_airtime[WMM_AC_VI] : 0;
+		wmm_ac_cfg[i].ac_vo = ATF_AC_IS_BIT_SET(group->ac_bitmap, WMM_AC_VO) ? group->ac_airtime[WMM_AC_VO] : 0;
+		wpa_printf(MSG_DEBUG,
+			   "ATF: WMM AC config group %s index %u BE:%u BK:%u VI:%u VO:%u",
+			   group->name, i,
+			   wmm_ac_cfg[i].ac_be, wmm_ac_cfg[i].ac_bk,
+			   wmm_ac_cfg[i].ac_vi, wmm_ac_cfg[i].ac_vo);
+	}
 
 	wmm_ac_param->wmm_ac_cfg = wmm_ac_cfg;
 	return 0;
@@ -2131,17 +2258,14 @@ nl80211_atf_offload_send_wmm_ac_config(void *priv, u8 radio_index,
 
 	group_info = (struct atf_group_wmm_ac_info *)ptr;
 
-	/* TODO: WMM ac configurations will be updated in phase 2.
-	 * Sending this because FW expects peer, ssid group and WMM ac configs.
-	 */
 	for (i = 0; i < param->num_groups; i++) {
 		group_info->header = PREP(TAG_ATF_GROUP_WMM_AC_INFO,
 					  sizeof(*group_info) - HDR_SIZE);
 		group_info->atf_group_id = i;
-		group_info->atf_units_be = 0;
-		group_info->atf_units_bk = 0;
-		group_info->atf_units_vi = 0;
-		group_info->atf_units_vo = 0;
+		group_info->atf_units_be = param->wmm_ac_cfg[i].ac_be;
+		group_info->atf_units_bk = param->wmm_ac_cfg[i].ac_bk;
+		group_info->atf_units_vi = param->wmm_ac_cfg[i].ac_vi;
+		group_info->atf_units_vo = param->wmm_ac_cfg[i].ac_vo;
 		group_info++;
 	}
 
