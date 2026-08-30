@@ -23,6 +23,7 @@ enum bw_type {
 enum hostapd_chan_status acs_init(struct hostapd_iface *iface);
 void acs_cleanup(struct hostapd_iface *iface);
 void acs_cleanup_mode(struct hostapd_hw_modes *mode);
+void acs_update_bw_downgrade_config(struct hostapd_iface *iface, u32 bw);
 
 #define ACS_SCAN_RETRY_MAX_COUNT	15
 #define ACS_SCAN_RETRY_INTERVAL		5
