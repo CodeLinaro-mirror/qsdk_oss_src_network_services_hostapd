@@ -83,6 +83,9 @@
 
 #ifdef CONFIG_IEEE80211BN
 #include "ap/mapc.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../qcn_extns/mapc_extn.h"
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_ATF_OFFLOAD
