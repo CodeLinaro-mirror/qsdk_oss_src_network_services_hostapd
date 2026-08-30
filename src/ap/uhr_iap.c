@@ -229,6 +229,8 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 		os_free(buf);
 		return -1;
 	}
+	wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+		   ETH_P_1905_SMD_ST_PREP_REQ_MSG, wpabuf_len(tbuf));
 	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, target_ap_mld_addr,
                            hapd->mld->mld_addr,
 			   ETH_P_1905_SMD_ST_PREP_REQ_MSG,
@@ -308,6 +310,8 @@ int uhr_iap_send_st_prep_ctx(struct hostapd_data *hapd,
 		os_free(iap);
 		return -1;
 	}
+	wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+		   ETH_P_1905_SMD_ST_PREP_CTX_MSG, wpabuf_len(tbuf));
 	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, target_ap_mld_addr,
 			   hapd->mld->mld_addr,
 			   ETH_P_1905_SMD_ST_PREP_CTX_MSG,
@@ -408,6 +412,8 @@ int uhr_iap_send_st_prep_resp(struct hostapd_data *hapd,
 		os_free(buf);
 		return -1;
 	}
+	wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+		   ETH_P_1905_SMD_ST_PREP_REP_MSG, wpabuf_len(tbuf));
 	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, current_ap_mld_addr,
                            hapd->mld->mld_addr,
 			   ETH_P_1905_SMD_ST_PREP_REP_MSG,
@@ -510,6 +516,8 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
                os_free(buf);
                return -1;
        }
+       wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+                  ETH_P_1905_SMD_ST_EXEC_REQ_MSG, wpabuf_len(tbuf));
        ret = eth_p_1905_send(hapd->eth_p_1905_ctx, target_ap_mld_addr,
 			  hapd->mld->mld_addr,
                           ETH_P_1905_SMD_ST_EXEC_REQ_MSG,
@@ -601,6 +609,8 @@ int uhr_iap_send_st_exec_resp(struct hostapd_data *hapd,
                os_free(buf);
                return -1;
        }
+       wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+                  ETH_P_1905_SMD_ST_EXEC_REP_MSG, wpabuf_len(tbuf));
        ret = eth_p_1905_send(hapd->eth_p_1905_ctx, current_ap_mld_addr,
 			  hapd->mld->mld_addr,
                           ETH_P_1905_SMD_ST_EXEC_REP_MSG,
@@ -668,6 +678,8 @@ int uhr_iap_send_st_roam_cleanup(struct hostapd_data *hapd,
 		os_free(buf);
 		return -1;
 	}
+	wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+		   ETH_P_1905_SMD_ST_ROAM_CLEANUP_MSG, wpabuf_len(tbuf));
 	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, target_ap_mld_addr,
 			   hapd->mld->mld_addr,
 			   ETH_P_1905_SMD_ST_ROAM_CLEANUP_MSG,
@@ -840,31 +852,17 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
 		return;
 	}
 
-	switch (msg_type) {
-	case ETH_P_1905_SMD_ST_PREP_REQ_MSG:
-	case ETH_P_1905_SMD_ST_PREP_REP_MSG:
-	case ETH_P_1905_SMD_ST_EXEC_REQ_MSG:
-	case ETH_P_1905_SMD_ST_EXEC_REP_MSG:
-	case ETH_P_1905_SMD_ST_PREP_CTX_MSG:
-	case ETH_P_1905_SMD_ST_ROAM_CLEANUP_MSG:
-		decoded = eth_p_1905_msg_rx(hapd, src_addr, dst_addr,
-					    msg_type, data, data_len);
-		if (!decoded) {
-			wpa_printf(MSG_ERROR, "SMD IAP: TLV decode failed");
-			return;
-		}
-		iap = decoded;
-		break;
-	default:
-		/* Legacy raw-blob path (OUI transport, roam_cleanup) */
-		if (data_len < sizeof(*iap)) {
-			wpa_printf(MSG_ERROR, "SMD IAP: Frame too short (%zu < %zu)",
-				   data_len, sizeof(*iap));
-			return;
-		}
-		iap = (const struct uhr_iap_frame *) data;
-		break;
+	decoded = eth_p_1905_msg_rx(hapd, src_addr, dst_addr,
+				    msg_type, data, data_len);
+	if (!decoded) {
+		wpa_printf(MSG_ERROR, "SMD IAP: TLV decode failed");
+		return;
 	}
+
+	iap = decoded;
+	wpa_printf(MSG_DEBUG, "SMD IAP: TLV DECAP 0x%04x from " MACSTR " (%zu B)",
+		   msg_type, MAC2STR(src_addr), data_len);
+	
 	frame_len = le_to_host16(iap->frame_len);
 
 	/* Promote sender's MLD addr to a concrete peer entry (wildcard path). */
@@ -875,27 +873,6 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
 			   MAC2STR(iap->current_ap_mld_addr));
 	}
 
-	/*
-	 * Bounds check only applies to the legacy raw-blob path.  On the TLV
-	 * decoded path (decoded != NULL) the buffer size was already validated
-	 * by decode_smd_msg, and data_len refers to the wire TLV payload — not
-	 * the reconstructed frame — so the check would be meaningless and would
-	 * also leak |decoded| on an early return.
-	 */
-	if (!decoded) {
-		u16 smd_ctx_len = 0;
-
-		if (iap->flags & UHR_IAP_FLAG_HAS_DYNAMIC_CTX)
-			smd_ctx_len = le_to_host16(iap->smd_ctx_len);
-
-		if (data_len < sizeof(*iap) + frame_len + smd_ctx_len) {
-			wpa_printf(MSG_ERROR,
-				   "SMD IAP: Invalid frame_len (%u > %zu)",
-				   frame_len, data_len - sizeof(*iap));
-			return;
-		}
-	}
-	
 	switch (iap->msg_type) {
 	case UHR_IAP_MSG_ST_PREP_REQUEST:
 		wpa_printf(MSG_DEBUG,
