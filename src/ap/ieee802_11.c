@@ -8861,7 +8861,7 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 				continue;
 			if (bss->mld_link_id != i)
 				continue;
-			if (!bss->started)
+			if (!bss->started || !bss->beacon_set_done)
 				continue;
 			link_bss_found = true;
 			break;
