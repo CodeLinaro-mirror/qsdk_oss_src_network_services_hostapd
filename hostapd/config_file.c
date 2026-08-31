@@ -3204,6 +3204,14 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "security_profile_ocvc") == 0) {
 		bss->security_profile_ocvc = atoi(pos);
 #ifdef CONFIG_IEEE80211R_AP
+	} else if (os_strcmp(buf, "security_profile_alt_behavior") == 0) {
+		bss->security_profile_alt_behavior = atoi(pos);
+		if (bss->security_profile_alt_behavior < -1 || bss->security_profile_alt_behavior > 2) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid security_profile_alt_behavior value (must be -1, 1, or 2)",
+				   line);
+			return 1;
+		}
 	} else if (os_strcmp(buf, "ft_iface") == 0) {
 		os_strlcpy(bss->ft_iface, pos, sizeof(bss->ft_iface));
 	} else if (os_strcmp(buf, "mobility_domain") == 0) {

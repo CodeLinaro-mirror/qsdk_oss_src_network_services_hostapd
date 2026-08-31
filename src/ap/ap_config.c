@@ -444,6 +444,7 @@ struct hostapd_config * hostapd_config_defaults(void)
 	bss->security_profiles = NULL;
 	bss->security_profile_ext_key_id = 0;
 	bss->security_profile_ocvc = 0;
+	bss->security_profile_alt_behavior = -1;
 
 	conf->num_bss = 1;
 

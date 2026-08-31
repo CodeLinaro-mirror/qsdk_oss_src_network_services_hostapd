@@ -585,6 +585,7 @@ u8 * hostapd_eid_tx_power_indication(struct hostapd_data *hapd, u8 *eid);
 size_t hostapd_eid_tx_power_indication_len(void);
 size_t hostapd_security_profile_ie_len(struct hostapd_data *hapd);
 u8 *hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid);
+u8 *hostapd_eid_security_profile_override(struct hostapd_data *hapd, u8 *eid, int profile_id);
 u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
 				   bool skip_post_phase, bool from_user);
 size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,

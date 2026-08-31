@@ -793,7 +793,16 @@ static u16 validate_security_profile_common(
 		return WLAN_STATUS_SUCCESS;
 
 	if (!elems->security_profile_ie) {
-		/* No Security Profile element present - validation not needed */
+		/* If AP supports Security Profiles, STA MUST include SP IE during PASN auth */
+		if (hapd->conf->security_profiles &&
+		    strcmp(auth_context, "PASN") == 0) {
+			wpa_printf(MSG_INFO,
+				   "UHR: Rejecting %s auth from " MACSTR
+				   " - Security Profile element missing (AP requires it)",
+				   auth_context, MAC2STR(addr));
+			return WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE;
+		}
+		/* For SAE/other auth or no security_profiles configured - SP IE not required */
 		return WLAN_STATUS_SUCCESS;
 	}
 
@@ -7037,6 +7046,81 @@ size_t hostapd_security_profile_ie_len(struct hostapd_data *hapd)
  * Writes the D1.4 bitmap-format Security Profile element into @eid and
  * returns a pointer past the last written byte.
  */
+
+/*
+ * hostapd_eid_security_profile_override - Build SP IE with a single profile ID
+ *
+ * Builds a Security Profile element with only the specified profile_id.
+ * Used for alt_behavior testing where only one profile should be included.
+ */
+u8 *hostapd_eid_security_profile_override(struct hostapd_data *hapd, u8 *eid, int profile_id)
+{
+	u8 *pos = eid;
+	u8 *len_pos;
+	u8 reduced_rsn_capab = 0;
+	u8 ext_rsn_capab[256];
+	size_t ext_rsn_capab_len = 0;
+	u8 bitmap[16]; /* max 128 profiles */
+	size_t bitmap_len = 0;
+	u8 rsnxe_buf[2 + sizeof(u64)];
+	u8 *rsnxe_end;
+
+	if (!hapd || !eid || profile_id < 0 || profile_id > 127)
+		return eid;
+	wpa_printf(MSG_ERROR, "UHR: Building SP IE with override profile_id=%d", profile_id);
+
+	/* Build bitmap with only the specified profile */
+	bitmap_len = (profile_id / 8) + 1;
+	if (bitmap_len > sizeof(bitmap))
+		bitmap_len = sizeof(bitmap);
+	os_memset(bitmap, 0, bitmap_len);
+	bitmap[profile_id / 8] |= BIT(profile_id % 8);
+	wpa_printf(MSG_ERROR, "UHR: SP IE bitmap built: profile_id=%d, bitmap_len=%zu, bitmap[0]=0x%02x", profile_id, bitmap_len, bitmap[0]);
+
+	rsnxe_end = hostapd_eid_rsnxe(hapd, rsnxe_buf, sizeof(rsnxe_buf), ~0ULL);
+	if (rsnxe_end > rsnxe_buf + 2) {
+		ext_rsn_capab_len = rsnxe_end - rsnxe_buf - 2;
+		if (ext_rsn_capab_len > sizeof(ext_rsn_capab))
+			ext_rsn_capab_len = sizeof(ext_rsn_capab);
+		os_memcpy(ext_rsn_capab, rsnxe_buf + 2, ext_rsn_capab_len);
+	}
+
+	/* If the override profile mandates SAE-H2E, force the H2E bit */
+	if (profile_id == SECURITY_PROFILE_NUM_EPPKE_SAE ||
+	    profile_id == SECURITY_PROFILE_NUM_EPPKE_FT_SAE ||
+	    profile_id == SECURITY_PROFILE_NUM_SAE ||
+	    profile_id == SECURITY_PROFILE_NUM_FT_SAE) {
+		if (ext_rsn_capab_len < 1) {
+			ext_rsn_capab_len = 1;
+			os_memset(ext_rsn_capab, 0, 1);
+		}
+		ext_rsn_capab[0] |= BIT(WLAN_RSNX_CAPAB_SAE_H2E);
+	}
+
+	/* Build Reduced RSN Capabilities */
+	if (hapd->conf->security_profile_ext_key_id)
+		reduced_rsn_capab |= WLAN_SEC_PROF_REDUCED_RSN_CAPA_EXTENDED_KEY_ID;
+	if (hapd->conf->security_profile_ocvc)
+		reduced_rsn_capab |= WLAN_SEC_PROF_REDUCED_RSN_CAPA_OCVC;
+
+	/* Build the element */
+	*pos++ = WLAN_EID_EXTENSION;
+	len_pos = pos++;
+	*pos++ = WLAN_EID_EXT_SECURITY_PROFILE;
+	*pos++ = reduced_rsn_capab;
+	*pos++ = (u8) bitmap_len; /* Security Profile Indication: number of octets in bitmap */
+	os_memcpy(pos, bitmap, bitmap_len);
+	pos += bitmap_len;
+	if (ext_rsn_capab_len > 0) {
+		os_memcpy(pos, ext_rsn_capab, ext_rsn_capab_len);
+		pos += ext_rsn_capab_len;
+	}
+	*len_pos = pos - len_pos - 1;
+	wpa_printf(MSG_ERROR, "UHR: SP IE override complete: ie_len=%zu", (size_t)(pos - eid));
+
+	return pos;
+}
+
 u8 *hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid)
 {
 	u8 *pos = eid;
@@ -9466,13 +9550,21 @@ rsnxe_done:
 
 	if (hapd->conf->security_profiles) {
 		u8 *sec_prof_start = p;
-		p = hostapd_eid_security_profile(hapd, p);
-		send_len += (p - sec_prof_start);
-		wpa_printf(MSG_ERROR,
-			   "UHR: Added Security Profile IE to Association Response (len=%zu)",
-			   (size_t)(p - sec_prof_start));
-	}
+		if (hapd->conf->security_profile_alt_behavior == 2) {
+			/* Alt behavior: include only profile 9 in assoc response */
+			p = hostapd_eid_security_profile_override(hapd, p, 9);
+		} else {
+			/* Default or alt_behavior==1: include all configured profiles */
+			p = hostapd_eid_security_profile(hapd, p);
+		}
 
+		if (p > sec_prof_start) {
+			send_len += (p - sec_prof_start);
+			wpa_printf(MSG_ERROR,
+				   "UHR: Added Security Profile IE to Association Response (len=%zu, alt_behavior=%d)",
+				   (size_t)(p - sec_prof_start), hapd->conf->security_profile_alt_behavior);
+		}
+	}
 
 	if (hostapd_drv_send_mlme(hapd, reply, send_len, 0, NULL, 0, 0, 0, 0) < 0) {
 		wpa_printf(MSG_INFO, "Failed to send assoc resp: %s",

@@ -5902,12 +5902,19 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 		size_t security_profile_ie_len;
 
 		security_profile_ie_start = security_profile_ie;
-		security_profile_ie_end = hostapd_eid_security_profile(hapd, security_profile_ie_start);
+
+		if (hapd->conf->security_profile_alt_behavior == 1) {
+			/* Alt behavior: include only profile 1 in M3 */
+			security_profile_ie_end = hostapd_eid_security_profile_override(hapd, security_profile_ie_start, 1);
+		} else {
+			/* Default: include all configured profiles */
+			security_profile_ie_end = hostapd_eid_security_profile(hapd, security_profile_ie_start);
+		}
 		security_profile_ie_len = security_profile_ie_end - security_profile_ie_start;
 
 		wpa_printf(MSG_ERROR,
-			   "UHR: Adding UHR Security KDE to M3 (ie_len=%zu)",
-			   security_profile_ie_len);
+			   "UHR: Adding UHR Security KDE to M3 (ie_len=%zu, alt_behavior=%d)",
+			   security_profile_ie_len, hapd->conf->security_profile_alt_behavior);
 		if (security_profile_ie_len > 0)
 			wpa_hexdump(MSG_ERROR, "UHR: UHR Security IE",
 				    security_profile_ie, security_profile_ie_len);

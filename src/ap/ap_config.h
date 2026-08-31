@@ -1438,6 +1438,7 @@ struct hostapd_bss_config {
 	int *security_profiles;       /* NULL-terminated array from hostapd_parse_intlist */
 	int security_profile_ext_key_id; /* Reduced RSN Capabilities bit 0 */
 	int security_profile_ocvc;    /* Reduced RSN Capabilities bit 1 */
+	int security_profile_alt_behavior; /* -1=default, 1=profile 1 in M3, 2=profile 9 in assoc */
 	/* AP side */
 #ifdef CONFIG_IEEE80211BN
 	struct {
