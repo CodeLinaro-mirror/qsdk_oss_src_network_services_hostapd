@@ -2012,7 +2012,7 @@ int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 	 * radar detection. Cannot wait for mesh TBTT (1000 TU). */
 	hostapd_ubus_mesh_switch_channel(iface, &csa_settings);
 
-	if (hostapd_check_reenable_bss(iface)) {
+	if (hostapd_check_reenable_bss(iface, REENABLE_NONE)) {
 		num_err = hostapd_switch_pending_bss(iface, &csa_settings);
 	} else {
 		for (i = 0; i < iface->num_bss; i++) {
@@ -2852,7 +2852,7 @@ bool hostapd_is_device_params_present(int chan_width, int cf1, int chan_width_de
 
 static void hostapd_dfs_enable_pending_bss(struct hostapd_iface *iface)
 {
-	hostapd_enable_pending_bss(iface);
+	hostapd_enable_pending_bss(iface, REENABLE_NONE, false);
 
 	/* Enabling non-first bss starts CAC in first BSS
 	 * which enables the vif in driver.
@@ -3478,8 +3478,10 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			 */
 			if (iface->state != HAPD_IFACE_ENABLED &&
 			    !iface->radar_detected) {
-				if (hostapd_check_reenable_bss(iface))
-					hostapd_enable_pending_bss(iface);
+				if (hostapd_check_reenable_bss(iface,
+							       REENABLE_NONE))
+					hostapd_enable_pending_bss(
+						iface, REENABLE_NONE, false);
 				else
 					hostapd_setup_interface_complete(iface, 0);
 			}
@@ -3562,7 +3564,8 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 				if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_BSS) {
 					ieee80211_freq_to_chan(cf1, &seg0);
 					hostapd_set_oper_centr_freq_seg0_idx(iface->conf, seg0);
-					if (hostapd_check_reenable_bss(iface))
+					if (hostapd_check_reenable_bss(
+						    iface, REENABLE_NONE))
 						hostapd_dfs_enable_pending_bss(iface);
 					else
 						hostapd_setup_interface_complete(iface, 0);
@@ -3800,8 +3803,8 @@ static int hostapd_dfs_start_channel_switch_cac(struct hostapd_iface *iface)
 	err = 0;
 
 
-	if (hostapd_check_reenable_bss(iface))
-		hostapd_enable_pending_bss(iface);
+	if (hostapd_check_reenable_bss(iface, REENABLE_NONE))
+		hostapd_enable_pending_bss(iface, REENABLE_NONE, false);
 	else
 		hostapd_setup_interface_complete(iface, err);
 
