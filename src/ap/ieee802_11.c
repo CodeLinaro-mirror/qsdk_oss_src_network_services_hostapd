@@ -9440,7 +9440,11 @@ rsnxe_done:
 
 #ifdef CONFIG_IEEE80211BN
 	/* Add SMD IE to association response if both AP and STA support SMD */
+
+	u8 *smd_start = p;
 	p = hostapd_eid_smd_ie_response(hapd, sta, p);
+	send_len += (p - smd_start);
+
 #endif /* CONFIG_IEEE80211BN */
 
 	if (hapd->conf->control_frame_prot &&
