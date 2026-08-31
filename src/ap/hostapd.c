@@ -2846,6 +2846,11 @@ setup_mld:
 		return -1;
 	}
 #endif /* CONFIG_QCN_EXTN */
+	/* AID 0 is never valid; reserve it on every BSS.
+	 * For MBSSID, the TX BSS handles this in hostapd_mbssid_setup_bss(). */
+	if (!hapd->iconf->mbssid)
+		hapd->sta_aid[0] |= BIT(0);
+
 	/* MBSSID setup already done during reenable*/
 	if (!hapd_reenable_pending(hapd) &&
 	    hostapd_mbssid_setup_bss(hapd))
