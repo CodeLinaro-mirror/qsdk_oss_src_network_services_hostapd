@@ -379,6 +379,15 @@ struct hostapd_uhr_ecu {
 struct uhr_oui_ctx;
 #endif /* CONFIG_IEEE80211BN */
 
+/* Transaction Key (TK) storage for testbed negative tests */
+struct tk_record {
+	u8 ap_mac[ETH_ALEN];
+	u8 tk[32];
+	size_t tk_len;
+	unsigned long timestamp;
+	struct dl_list list;
+};
+
 /**
  * struct hostapd_data - hostapd per-BSS data structure
  */
@@ -801,6 +810,11 @@ struct hostapd_data {
 
 	bool is_update_beacon; /* To indentify whether its from UPDATE_BEACON comamnd */
 	bool sp_ie_activated_sta;  /* Set when processing STA with validated SP IE */
+	/* Transient guard: set during SET_RTT_RESPONDER_ROLE runtime update to
+	 * suppress duplicate vendor cmd during the triggered beacon rebuild. */
+	bool rtt_role_fw_sent;
+
+	struct dl_list tk_records; /* Transaction Key storage for testbed */
 };
 
 

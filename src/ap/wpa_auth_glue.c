@@ -708,6 +708,13 @@ static int hostapd_wpa_auth_set_key(void *ctx, int vlan_id, enum wpa_alg alg,
 		hapd->last_gtk_len = key_len;
 	}
 #endif /* CONFIG_TESTING_OPTIONS */
+
+	/* Store TK for testbed negative tests (PreviousTK). Only cache
+	 * unicast pairwise TK installs, not GTK/IGTK/BIGTK/key-clear. */
+	if (addr && key && key_len > 0 && !is_broadcast_ether_addr(addr) &&
+	    !(key_flag & KEY_FLAG_MODIFY))
+		hostapd_store_tk(hapd, addr, key, key_len);
+
 	return hostapd_drv_set_key(ifname, hapd, alg, addr, idx, vlan_id,
 				   set_tx, NULL, 0, key, key_len, key_flag);
 }

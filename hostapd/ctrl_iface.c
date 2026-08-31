@@ -11440,6 +11440,74 @@ hostapd_ctrl_iface_set_mapc_sta(struct hostapd_data *hapd, const char *cmd,
 }
 #endif /* CONFIG_IEEE80211BN */
 
+static int hostapd_ctrl_iface_get_previous_tk(struct hostapd_data *hapd,
+					       const char *txtaddr,
+					       char *reply, int reply_size)
+{
+	u8 ap_mac[ETH_ALEN];
+	struct tk_record *rec;
+	struct hostapd_data *link_hapd;
+	int reply_len = 0;
+
+	wpa_printf(MSG_DEBUG, "CTRL_IFACE GET_PREVIOUS_TK %s", txtaddr);
+
+	if (hwaddr_aton(txtaddr, ap_mac)) {
+		wpa_printf(MSG_ERROR, "Invalid MAC address: %s", txtaddr);
+		return -1;
+	}
+
+	/* TK is stored only on the link that owns the STA's wpa_sm
+	 * (typically the first/primary MLD link). Search this link first,
+	 * then fall back to searching partner links so the command works
+	 * regardless of which link's hostapd_cli is used. */
+	dl_list_for_each(rec, &hapd->tk_records, struct tk_record, list) {
+		if (os_memcmp(rec->ap_mac, ap_mac, ETH_ALEN) == 0)
+			goto found;
+	}
+
+	if (hapd->mld) {
+		for_each_mld_link(link_hapd, hapd) {
+			if (link_hapd == hapd)
+				continue;
+			dl_list_for_each(rec, &link_hapd->tk_records,
+					 struct tk_record, list) {
+				if (os_memcmp(rec->ap_mac, ap_mac,
+					      ETH_ALEN) == 0)
+					goto found;
+			}
+		}
+	}
+
+	/* TK not found */
+	wpa_printf(MSG_DEBUG, "TK not found for MAC " MACSTR, MAC2STR(ap_mac));
+	os_snprintf(reply, reply_size, "FAIL\nNot found\n");
+	return os_strlen(reply);
+
+found:
+	{
+		int i;
+
+		reply_len = os_snprintf(reply, reply_size, "OK\nTK=");
+		if (reply_len < 0 || reply_len >= reply_size)
+			return -1;
+
+		for (i = 0; i < (int) rec->tk_len; i++) {
+			int res = os_snprintf(reply + reply_len,
+					      reply_size - reply_len,
+					      "%02x", rec->tk[i]);
+			if (res < 0 || res >= reply_size - reply_len)
+				return -1;
+			reply_len += res;
+		}
+		reply_len += os_snprintf(reply + reply_len,
+					 reply_size - reply_len, "\n");
+		if (reply_len < 0 || reply_len >= reply_size)
+			return -1;
+		return reply_len;
+	}
+}
+
+
 static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 					      char *buf, char *reply,
 					      int reply_size,
@@ -11545,6 +11613,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "DUMP_TK ", 8) == 0) {
 		reply_len = hostapd_ctrl_iface_dump_tk(hapd, buf + 8,
 						       reply, reply_size);
+	} else if (os_strncmp(buf, "GET_PREVIOUS_TK ", 16) == 0) {
+		reply_len = hostapd_ctrl_iface_get_previous_tk(hapd, buf + 16,
+									 reply, reply_size);
 	} else if (os_strncmp(buf, "POLL_STA ", 9) == 0) {
 		if (hostapd_ctrl_iface_poll_sta(hapd, buf + 9))
 			reply_len = -1;

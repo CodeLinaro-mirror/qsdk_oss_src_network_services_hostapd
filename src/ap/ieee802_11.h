@@ -709,4 +709,15 @@ void ieee80211_send_eap_req(struct hostapd_data *hapd, struct sta_info *sta,
 			    struct rsn_pmksa_cache_entry *cached_pmk,
 			    const u8 *eap_req, size_t eap_req_len);
 
+bool hostapd_find_auth_comeback_sta(struct hostapd_data *hapd, const u8 *addr,
+				    const u8 *ies, size_t ies_len,
+				    struct hostapd_data **o_hapd,
+				    struct sta_info **o_sta);
+
+u8 * hostapd_add_auth_comeback(struct hostapd_data *hapd, struct sta_info *sta,
+			       u8 *pos, size_t max_len, u16 auth_alg);
+
+void hostapd_store_tk(struct hostapd_data *hapd, const u8 *ap_mac,
+		      const u8 *tk, size_t tk_len);
+
 #endif /* IEEE802_11_H */

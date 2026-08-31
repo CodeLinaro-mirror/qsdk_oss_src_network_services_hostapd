@@ -17401,4 +17401,58 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 	return eid;
 }
 
+
+void hostapd_store_tk(struct hostapd_data *hapd, const u8 *ap_mac,
+		      const u8 *tk, size_t tk_len)
+{
+	struct tk_record *rec, *existing = NULL;
+
+	if (!hapd || !ap_mac || !tk || tk_len == 0 || tk_len > 32) {
+		wpa_printf(MSG_INFO,
+			   "UHR-TK-DEBUG: hostapd_store_tk early-return hapd=%p ap_mac=%p tk=%p tk_len=%zu",
+			   hapd, ap_mac, tk, tk_len);
+		return;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "UHR-TK-DEBUG: hostapd_store_tk called on iface=%s sta="
+		   MACSTR " tk_len=%zu",
+		   hapd->conf->iface, MAC2STR(ap_mac), tk_len);
+
+	/* Check if we already have a record for this AP MAC */
+	dl_list_for_each(rec, &hapd->tk_records, struct tk_record, list) {
+		if (os_memcmp(rec->ap_mac, ap_mac, ETH_ALEN) == 0) {
+			existing = rec;
+			break;
+		}
+	}
+
+	if (existing) {
+		/* Update existing record */
+		os_memcpy(existing->tk, tk, tk_len);
+		existing->tk_len = tk_len;
+		existing->timestamp = time(NULL);
+		wpa_printf(MSG_INFO,
+			   "UHR-TK-DEBUG: Updated TK on iface=%s for " MACSTR
+			   " tk_len=%zu",
+			   hapd->conf->iface, MAC2STR(ap_mac), tk_len);
+	} else {
+		/* Create new record */
+		rec = os_zalloc(sizeof(*rec));
+		if (!rec)
+			return;
+
+		os_memcpy(rec->ap_mac, ap_mac, ETH_ALEN);
+		os_memcpy(rec->tk, tk, tk_len);
+		rec->tk_len = tk_len;
+		rec->timestamp = time(NULL);
+		dl_list_add(&hapd->tk_records, &rec->list);
+		wpa_printf(MSG_INFO,
+			   "UHR-TK-DEBUG: Stored NEW TK on iface=%s for " MACSTR
+			   " tk_len=%zu",
+			   hapd->conf->iface, MAC2STR(ap_mac), tk_len);
+	}
+}
+
+
 #endif /* CONFIG_NATIVE_WINDOWS */

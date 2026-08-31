@@ -3280,6 +3280,7 @@ static int wpa_derive_ptk(struct wpa_state_machine *sm, const u8 *snonce,
 		}
 	}
 #endif /* CONFIG_PASN */
+
 	return ret;
 }
 
