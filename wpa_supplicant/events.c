@@ -7563,7 +7563,13 @@ static void wpas_event_dfs_cac_finished(struct wpa_supplicant *wpa_s,
 					   HOSTAPD_CHAN_DFS_AVAILABLE,
 					   radar->radar_bitmap);
 #endif
-			wpa_dbg(wpa_s, MSG_DEBUG,"STA-DFS: CSA CAC finished");
+			wpa_msg(wpa_s, MSG_INFO, DFS_EVENT_CAC_COMPLETED
+				"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d radar_detected=%d"
+				" chan_width_device=%d cf_device=%d radar_bitmap=%d",
+				radar->freq, radar->ht_enabled, radar->chan_offset,
+				radar->chan_width, radar->cf1, radar->cf2, 0,
+				radar->chan_width_device, radar->cf_device, radar->radar_bitmap);
+
 			if (radar->link_id >= 0 &&
 			    radar->link_id < MAX_NUM_MLD_LINKS) {
 				eloop_cancel_timeout(
@@ -8758,8 +8764,6 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 		break;
 	case EVENT_DFS_RADAR_DETECTED:
 		if (data) {
-			wpa_msg(wpa_s, MSG_INFO, "%s on %d MHz", DFS_EVENT_RADAR_DETECTED,
-					data->dfs_event.freq);
 #ifdef CONFIG_AP
 #ifdef NEED_AP_MLME
 			wpas_ap_event_dfs_radar_detected(wpa_s,
@@ -8770,6 +8774,21 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 				break;
 
 			if (wpa_s->sta_dfs_en) {
+				wpa_msg(wpa_s, MSG_INFO, DFS_EVENT_RADAR_DETECTED
+					"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d "
+					"cf1=%d cf2=%d radar_bitmap:%d"
+					" chan_width_device=%d cf_device=%d cac_started=%d",
+					data->dfs_event.freq,
+					data->dfs_event.ht_enabled,
+					data->dfs_event.chan_offset,
+					data->dfs_event.chan_width,
+					data->dfs_event.cf1,
+					data->dfs_event.cf2,
+					data->dfs_event.radar_bitmap,
+					data->dfs_event.chan_width_device,
+					data->dfs_event.cf_device,
+					wpa_s->wpa_state == WPA_STACACING);
+
 				wpas_mark_chan_nolhistory(wpa_s,
 						data->dfs_event.freq,
 						data->dfs_event.chan_width,
