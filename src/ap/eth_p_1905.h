@@ -32,7 +32,7 @@ struct ieee1905_hdr {
 #define IEEE1905_FLAG_RELAY           BIT(7)
 
 /* Maximum distinct message types that can be registered in a single context */
-#define ETH_P_1905_MAX_MSG_TYPES      8
+#define ETH_P_1905_MAX_MSG_TYPES      16
 
 /* Duplicate-detection ring buffer depth */
 #define ETH_P_1905_DEDUP_SIZE         32

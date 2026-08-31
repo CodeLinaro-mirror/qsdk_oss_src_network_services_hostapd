@@ -2445,6 +2445,8 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
 			ETH_P_1905_SMD_ST_PREP_REP_MSG,
 			ETH_P_1905_SMD_ST_EXEC_REQ_MSG,
 			ETH_P_1905_SMD_ST_EXEC_REP_MSG,
+			ETH_P_1905_SMD_ST_PREP_CTX_MSG,
+			ETH_P_1905_SMD_ST_ROAM_CLEANUP_MSG,
 		};
 		struct hostapd_data *f_bss;
 
