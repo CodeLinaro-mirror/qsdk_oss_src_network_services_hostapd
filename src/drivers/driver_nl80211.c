@@ -15185,7 +15185,7 @@ static int nl80211_send_scs_rule_cmd(
 		if (nla_put_u8(msg,
 			       QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_RULE_ID,
 			       qm_type) ||
-		    nla_put_u16(msg,
+		    nla_put_u8(msg,
 				QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_SERVICE_CLASS_ID,
 				qm_desc->qm_id) ||
 		    nla_put_u8(msg,
