@@ -614,6 +614,11 @@ static void wpas_sme_set_mlo_links(struct wpa_supplicant *wpa_s,
 		else
 			wpa_s->links[i].bss = wpa_bss_get_bssid(wpa_s, bssid);
 	}
+
+	wpa_printf(MSG_DEBUG,
+		   "MLO-DBG: set MLO links for (re)assoc: assoc_link_id=%d requested valid_links=0x%x usable_links=0x%x missing_links=0x%x",
+		   wpa_s->mlo_assoc_link_id, wpa_s->valid_links, usable_links,
+		   missing_links ? *missing_links : 0);
 }
 
 
