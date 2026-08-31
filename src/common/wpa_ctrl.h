@@ -126,6 +126,7 @@ extern "C" {
 #ifdef CONFIG_QCN_EXTN
 /** Ind Rep - WDS STA Pre-connect State */
 #define WPA_EVENT_PRE_CONNECTING "CTRL-EVENT-PRE-CONNECTING "
+#define MAX_REPLY_EXTN_BUF (320 * 1024)
 #endif
 /** Authentication/Association/4WH failures */
 #define WPA_EVENT_CONNECTION_FAIL "CTRL-EVENT-CONNECTION-FAIL "
@@ -721,4 +722,6 @@ char * wpa_ctrl_get_remote_ifname(struct wpa_ctrl *ctrl);
 }
 #endif
 
+int hostapd_cli_recovery_in_progress(void);
+void hostapd_cli_msg_cb(char *msg, size_t len);
 #endif /* WPA_CTRL_H */

@@ -29,7 +29,7 @@ static const char *const hostapd_cli_version =
 "hostapd_cli v" VERSION_STR "\n"
 "Copyright (c) 2004-2024, Jouni Malinen <j@w1.fi> and contributors";
 
-static struct wpa_ctrl *ctrl_conn;
+struct wpa_ctrl *ctrl_conn;
 static int hostapd_cli_quit = 0;
 static int hostapd_cli_attached = 0;
 
@@ -197,14 +197,14 @@ static int hostapd_cli_reconnect(const char *ifname)
 }
 
 
-static void hostapd_cli_msg_cb(char *msg, size_t len)
+void hostapd_cli_msg_cb(char *msg, size_t len)
 {
 	cli_event(msg);
 	printf("%s\n", msg);
 }
 
 
-static int hostapd_cli_recovery_in_progress(void)
+int hostapd_cli_recovery_in_progress(void)
 {
 	glob_t g;
 	size_t i;
@@ -267,7 +267,6 @@ static int _wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd, int print)
 	}
 	return 0;
 }
-
 
 #ifndef CONFIG_QCN_EXTN
 static inline
@@ -2428,6 +2427,10 @@ static int hostapd_cli_cmd_afc(struct wpa_ctrl *ctrl, int argc, char *argv[])
 		return -1;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (os_strcmp(argv[0], "get_afc_6g_chan_list") == 0)
+		return _wpa_ctrl_command_large(ctrl, "AFC get_afc_6g_chan_list", 1);
+#endif /* CONFIG_QCN_EXTN */
 	return hostapd_cli_cmd(ctrl, "AFC", 1, argc, argv);
 }
 
