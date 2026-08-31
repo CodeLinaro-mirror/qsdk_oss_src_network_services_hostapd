@@ -5775,6 +5775,8 @@ hostapd_alloc_bss_data(struct hostapd_iface *hapd_iface,
 #endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 #ifdef CONFIG_QCN_EXTN
 	hostapd_log_extn_init(hapd);
+	hapd->muedca_mode_all = 2;
+	hapd->muedca_mode_all_valid = 1;
 #endif /* CONFIG_QCN_EXTN */
 
 	if (conf && conf->ieee80211ax)
