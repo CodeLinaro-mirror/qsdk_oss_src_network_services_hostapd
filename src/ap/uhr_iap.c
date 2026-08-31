@@ -707,6 +707,7 @@ int uhr_iap_send_st_ctx_request(struct hostapd_data *hapd,
 {
 	struct uhr_iap_frame *iap;
 	size_t iap_len = sizeof(*iap);
+	struct wpabuf *tbuf;
 	int ret;
 
 	iap = os_zalloc(iap_len);
@@ -719,11 +720,19 @@ int uhr_iap_send_st_ctx_request(struct hostapd_data *hapd,
 	os_memcpy(iap->target_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
 	os_memcpy(iap->sta_addr, sta_addr, ETH_ALEN);
 
-	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, current_ap_mld_addr,
-			      hapd->own_addr,
-			      ETH_P_1905_IAP_MSG_REQUEST,
-			      (const u8 *) iap, iap_len);
+	tbuf = eth_p_1905_iap_encode_ctx_req(iap);
 	os_free(iap);
+	if (!tbuf) {
+		wpa_printf(MSG_ERROR, "UHR IAP: Failed to encode ST CTX REQUEST");
+		return -1;
+	}
+	wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+		   ETH_P_1905_SMD_ST_CTX_REQ_MSG, wpabuf_len(tbuf));
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, current_ap_mld_addr,
+			      hapd->mld->mld_addr,
+			      ETH_P_1905_SMD_ST_CTX_REQ_MSG,
+			      wpabuf_head(tbuf), wpabuf_len(tbuf));
+	wpabuf_free(tbuf);
 
 	if (ret < 0) {
 		wpa_printf(MSG_ERROR, "UHR IAP: Failed to send ST CTX REQUEST");
@@ -747,6 +756,7 @@ int uhr_iap_send_st_ctx_response(struct hostapd_data *hapd,
 	size_t ctx_len = smd_ctx ? sizeof(*smd_ctx) + smd_ctx->vendor_ctx_len: 0;
 	size_t total = sizeof(struct uhr_iap_frame) + ctx_len;
 	struct uhr_iap_frame *frame;
+	struct wpabuf *tbuf;
 	int ret;
 
 	frame = os_zalloc(total);
@@ -766,11 +776,19 @@ int uhr_iap_send_st_ctx_response(struct hostapd_data *hapd,
 		os_memcpy(frame->frame_ctx_data, smd_ctx, ctx_len);
 	}
 
-	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, target_ap_mld_addr,
-			      hapd->own_addr,
-			      ETH_P_1905_IAP_MSG_RESPONSE,
-			      (const u8 *) frame, total);
+	tbuf = eth_p_1905_iap_encode_ctx_resp(frame);
 	os_free(frame);
+	if (!tbuf) {
+		wpa_printf(MSG_ERROR, "UHR IAP: Failed to encode ST CTX RESPONSE");
+		return -1;
+	}
+	wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+		   ETH_P_1905_SMD_ST_CTX_REP_MSG, wpabuf_len(tbuf));
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, target_ap_mld_addr,
+			      hapd->mld->mld_addr,
+			      ETH_P_1905_SMD_ST_CTX_REP_MSG,
+			      wpabuf_head(tbuf), wpabuf_len(tbuf));
+	wpabuf_free(tbuf);
 
 	if (ret < 0) {
 		wpa_printf(MSG_ERROR, "UHR IAP: Failed to send ST CTX RESPONSE");
@@ -790,6 +808,7 @@ int uhr_iap_send_st_exec_via_tgt_done(struct hostapd_data *hapd,
 {
 	struct uhr_iap_frame *iap;
 	size_t iap_len = sizeof(*iap);
+	struct wpabuf *tbuf;
 	int ret;
 
 	iap = os_zalloc(iap_len);
@@ -802,11 +821,20 @@ int uhr_iap_send_st_exec_via_tgt_done(struct hostapd_data *hapd,
 	os_memcpy(iap->target_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
 	os_memcpy(iap->sta_addr, sta_addr, ETH_ALEN);
 
-	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, current_ap_mld_addr,
-			      hapd->own_addr,
-			      ETH_P_1905_IAP_MSG_RESPONSE,
-			      (const u8 *) iap, iap_len);
+	tbuf = eth_p_1905_iap_encode_exec_via_tgt_done(iap);
 	os_free(iap);
+	if (!tbuf) {
+		wpa_printf(MSG_ERROR,
+			   "UHR IAP: Failed to encode ST EXEC VIA TGT DONE");
+		return -1;
+	}
+	wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+		   ETH_P_1905_SMD_ST_EXEC_VIA_TGT_DONE_MSG, wpabuf_len(tbuf));
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, current_ap_mld_addr,
+			      hapd->mld->mld_addr,
+			      ETH_P_1905_SMD_ST_EXEC_VIA_TGT_DONE_MSG,
+			      wpabuf_head(tbuf), wpabuf_len(tbuf));
+	wpabuf_free(tbuf);
 
 	if (ret < 0) {
 		wpa_printf(MSG_ERROR,
