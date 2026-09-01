@@ -1521,8 +1521,8 @@ static int acs_npca_build_punct_bitmap(struct hostapd_iface *iface,
  *
  * Does nothing if npca_enable=0 or npca_primary_channel already set.
  */
-static int acs_npca_select_primary_chan(struct hostapd_iface *iface,
-				       u8 *npca_channel, u16 *npca_punct_bitmap)
+int acs_npca_select_primary_chan(struct hostapd_iface *iface,
+				 u8 *npca_channel, u16 *npca_punct_bitmap)
 {
 	struct hostapd_config *conf = iface->conf;
 	struct hostapd_hw_modes *mode;
@@ -1634,14 +1634,62 @@ static int acs_npca_select_primary_chan(struct hostapd_iface *iface,
 }
 #endif /* CONFIG_IEEE80211BN */
 
+#ifdef CONFIG_IEEE80211BN
+/*
+ * hostapd_npca_auto_select - Select and apply NPCA primary channel.
+ *
+ * @primary_chan: channel data for the selected primary channel
+ *               or the configured fixed channel.
+ */
+void hostapd_npca_auto_select(struct hostapd_iface *iface)
+{
+	u8 npca_channel = 0;
+	u16 npca_punct_bitmap = 0;
+
+	if (!iface->conf->npca_enable || iface->conf->npca_primary_channel)
+		return;
+
+	if (!iface->current_mode)
+		return;
+
+#ifdef CONFIG_QCN_EXTN
+	if (iface->conf->conf_extn.qacs_enable) {
+		struct hostapd_channel_data *primary_chan;
+
+		primary_chan = hw_get_channel_chan(iface->current_mode,
+						  iface->conf->channel, NULL);
+		if (!primary_chan)
+			return;
+
+		qacs_select_best_npca_chan(iface,
+				iface->current_mode,
+				primary_chan,
+				hostapd_get_oper_chwidth(iface->conf),
+				&npca_channel,
+				&npca_punct_bitmap);
+	} else
+#endif /* CONFIG_QCN_EXTN */
+		acs_npca_select_primary_chan(iface, &npca_channel,
+					     &npca_punct_bitmap);
+
+	if (npca_channel) {
+		iface->conf->npca_primary_channel = npca_channel;
+		iface->conf->npca_punct_bitmap = npca_punct_bitmap;
+	}
+
+	if (hostapd_config_check_npca_config(iface->conf) != 0) {
+		wpa_printf(MSG_WARNING,
+			   "ACS NPCA: selected channel %u failed validation, disabling NPCA",
+			   iface->conf->npca_primary_channel);
+		hostapd_disable_npca(iface->conf);
+	}
+}
+#endif /* CONFIG_IEEE80211BN */
+
 static void acs_study(struct hostapd_iface *iface)
 {
 	struct hostapd_channel_data *ideal_chan;
 	int err;
-#ifdef CONFIG_IEEE80211BN
-	u8 npca_channel = 0;
-	u16 npca_punct_bitmap = 0;
-#endif /* CONFIG_IEEE80211BN */
 
 	err = acs_study_options(iface);
 	if (err < 0) {
@@ -1688,34 +1736,8 @@ static void acs_study(struct hostapd_iface *iface)
 		}
 
 #ifdef CONFIG_IEEE80211BN
-		if (iface->conf->npca_enable) {
-#ifdef CONFIG_QCN_EXTN
-			if (iface->conf->conf_extn.qacs_enable)
-				qacs_select_best_npca_chan(iface,
-						iface->current_mode,
-						ideal_chan,
-						hostapd_get_oper_chwidth(iface->conf),
-						&npca_channel,
-						&npca_punct_bitmap);
-			else
-#endif /* CONFIG_QCN_EXTN */
-				acs_npca_select_primary_chan(iface,
-						&npca_channel,
-						&npca_punct_bitmap);
-
-			if (npca_channel) {
-				iface->conf->npca_primary_channel = npca_channel;
-				iface->conf->npca_punct_bitmap = npca_punct_bitmap;
-			}
-
-			if (hostapd_config_check_npca_config(iface->conf) != 0) {
-				wpa_printf(MSG_WARNING,
-						"ACS NPCA: selected channel %u failed "
-						"validation, disabling NPCA",
-						iface->conf->npca_primary_channel);
-				hostapd_disable_npca(iface->conf);
-			}
-		}
+		if (iface->conf->npca_enable)
+			hostapd_npca_auto_select(iface);
 #endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_QCN_EXTN
