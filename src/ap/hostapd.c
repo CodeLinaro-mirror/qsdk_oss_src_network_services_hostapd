@@ -7011,6 +7011,50 @@ fail:
 
 
 /**
+ * hostapd_check_dup_link - Check if an MLD link add request is a duplicate
+ * @tmp_hapd: Existing hostapd_data for the ifname requested for the new link
+ * @new_channel: Channel of new BSS
+ * @hw_idx: Iface hw_idx of new BSS
+ *
+ * tmp_hapd may already be operating on a different frequency as another
+ * link of the same MLD sharing this ifname - that is a legitimate
+ * additional link, not a duplicate. This only flags a duplicate when an
+ * existing link of the same MLD is already enabled on the very same
+ * frequency that is being requested here.
+ *
+ * Returns: true if the requested link is a duplicate of an existing link,
+ * false otherwise.
+ */
+static bool hostapd_check_dup_link(struct hostapd_data *tmp_hapd,
+				   const u8 new_channel,
+				   const u8 hw_idx)
+{
+	struct hostapd_data *phapd;
+	int new_freq = 0;
+
+	/*
+	 * Look up the new link's frequency from an existing partner link's
+	 * iface channel table, if the frequency is found in any of the partner
+	 * link's and the hw_idx matches the new BSS iface, reject the link
+	 * addition
+	 */
+	for_each_mld_link(phapd, tmp_hapd) {
+		new_freq = hostapd_hw_get_freq(phapd, new_channel);
+		if (new_freq && phapd->iface->current_hw_info &&
+		    phapd->iface->current_hw_info->hw_idx == hw_idx) {
+			wpa_printf(MSG_ERROR, "Found another link in the same MLD, rejecting the link addition freq %d hw_idx %u new_hw_idx:%u",
+				   phapd->iface->freq,
+				   phapd->iface->current_hw_info->hw_idx, hw_idx);
+			return true;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG, "Proceed setup for ML AP link addition");
+	return false;
+}
+
+
+/**
  * hostapd_interface_init_bss - Read configuration file and init BSS data
  *
  * This function is used to parse configuration file for a BSS. This BSS is
@@ -7072,9 +7116,10 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 		if (tmp_hapd) {
 			wpa_printf(MSG_ERROR,
 				   "Interface name %s already in use", ifname);
-			if (conf->bss[0]->mld_ap && tmp_hapd->conf->mld_ap)
-				wpa_printf(MSG_ERROR, "Proceed setup for ML AP link addition");
-			else {
+			if (!conf->bss[0]->mld_ap || !tmp_hapd->conf->mld_ap ||
+			    (iface->current_hw_info &&
+			     hostapd_check_dup_link(tmp_hapd, conf->channel,
+						    iface->current_hw_info->hw_idx))) {
 				hostapd_config_free(conf);
 				return NULL;
 			}
