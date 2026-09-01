@@ -1722,6 +1722,18 @@ int pasn_pmk_to_ptk(const u8 *pmk, size_t pmk_len,
 	int ret = -1;
 	const char *label = is_eppke ? "EPPKE PTK Derivation" :
 		"PASN PTK Derivation";
+	static const u8 zero_addr[ETH_ALEN] = { 0 };
+
+	wpa_printf(MSG_ERROR,
+		   "PASN: pasn_pmk_to_ptk() args: pmk_len=%zu spa=" MACSTR
+		   " bssid=" MACSTR " dhss_len=%zu ptk=%p akmp=0x%x "
+		   "cipher=0x%x kdk_len=%zu kek_len=%zu alg=%d is_eppke=%d "
+		   "smd_id=" MACSTR,
+		   pmk_len, MAC2STR(spa), MAC2STR(bssid), dhss_len, ptk,
+		   akmp, cipher, kdk_len, kek_len, alg ? (int) *alg : -1,
+		   is_eppke, MAC2STR(smd_id ? smd_id : zero_addr));
+	wpa_hexdump_key(MSG_ERROR, "PASN: pasn_pmk_to_ptk() pmk", pmk, pmk_len);
+	wpa_hexdump_key(MSG_ERROR, "PASN: pasn_pmk_to_ptk() dhss", dhss, dhss_len);
 
 	if (!pmk || !pmk_len) {
 		wpa_printf(MSG_ERROR, "PASN: No PMK set for PTK derivation");
@@ -1748,7 +1760,13 @@ int pasn_pmk_to_ptk(const u8 *pmk, size_t pmk_len,
 	 * KDK = L(PASN-PTK, 256 + TK_bits, kdk_len * 8)
 	 * SMD_Identifier = L(ETH_ALEN)
 	 */
-	data_len = 2 * ETH_ALEN + dhss_len + ETH_ALEN;
+	if (smd_id) {
+		wpa_printf(MSG_ERROR,"%s %d \n",__func__,__LINE__);
+		data_len = 2 * ETH_ALEN + dhss_len + ETH_ALEN;
+	} else {
+		 wpa_printf(MSG_ERROR,"%s %d \n",__func__,__LINE__);
+		 data_len = 2 * ETH_ALEN + dhss_len;
+	}
 	data = os_zalloc(data_len);
 	if (!data)
 		return -1;

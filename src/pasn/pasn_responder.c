@@ -843,10 +843,6 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 	const u8 *smd_identifier = NULL;
 	struct hostapd_data *hapd = (struct hostapd_data *)pasn->cb_ctx;
 	has_security_profiles = (hapd && hapd->conf && hapd->conf->security_profiles) ? 1 : 0;
-#ifdef CONFIG_IEEE80211BN
-	if (!is_zero_ether_addr(hapd->conf->smd.smd_identifier))
-		smd_identifier = hapd->conf->smd.smd_identifier;
-#endif /* CONFIG_IEEE80211BN */
 
 	if (!groups)
 		groups = default_groups;
@@ -866,6 +862,26 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 		status = WLAN_STATUS_UNSPECIFIED_FAILURE;
 		goto send_resp;
 	}
+	wpa_printf(MSG_ERROR,"%s %d \n",__func__,__LINE__);
+#ifdef CONFIG_IEEE80211BN
+	/* Only include the SMD Identifier in PTK derivation if the peer
+	 * actually advertised SMD support via RSNXE bit 37; otherwise the
+	 * AP and STA would derive mismatching PTKs. */
+	if (!is_zero_ether_addr(hapd->conf->smd.smd_identifier)) {
+		if (ieee802_11_rsnx_capab_len(elems.rsnxe, elems.rsnxe_len,
+					      WLAN_RSNX_CAPAB_SMD)) {
+			smd_identifier = hapd->conf->smd.smd_identifier;
+		} else {
+			wpa_printf(MSG_ERROR,
+				   "PASN: SMD configured (ID=" MACSTR
+				   ") but peer " MACSTR
+				   " did not advertise RSNXE SMD bit - "
+				   "excluding SMD Identifier from PTK derivation",
+				   MAC2STR(hapd->conf->smd.smd_identifier),
+				   MAC2STR(peer_addr));
+		}
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 	if (!elems.rsn_ie) {
 		wpa_printf(MSG_DEBUG, "PASN: No RSNE");
