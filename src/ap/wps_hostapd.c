@@ -884,6 +884,40 @@ static void hostapd_wps_event_fail(struct hostapd_data *hapd,
 			WPS_EVENT_FAIL "msg=%d config_error=%d",
 			fail->msg, fail->config_error);
 	}
+
+	/*
+	 * After WPS failure, remove the STA from the PBC session list on all
+	 * MLD links. This prevents the WPS ACL bypass from firing for
+	 * subsequent reconnections (e.g., when the STA reconnects with
+	 * credentials from a previous WPS session), which would allow a STA
+	 * in the deny list to bypass ACL enforcement in mode 1 and mode 3.
+	 * If the STA wants to retry WPS it will send a new WPS PBC probe
+	 * request and be re-added to the list.
+	 *
+	 * Exception: do NOT remove the PBC session entry when the failure is
+	 * due to PBC overlap (WPS_CFG_MULTIPLE_PBC_DETECTED). Removing it
+	 * would clear the overlap condition and allow the second enrollee to
+	 * proceed with WPS unchecked.
+	 */
+	if (fail->config_error != WPS_CFG_MULTIPLE_PBC_DETECTED) {
+		if (hapd->wps && hapd->wps->registrar)
+			wps_registrar_remove_pbc_session_by_addr(
+				hapd->wps->registrar, fail->peer_macaddr);
+#ifdef CONFIG_IEEE80211BE
+		if (hapd->mld) {
+			struct hostapd_data *link_hapd;
+
+			for_each_mld_link(link_hapd, hapd) {
+				if (link_hapd == hapd)
+					continue;
+				if (link_hapd->wps && link_hapd->wps->registrar)
+					wps_registrar_remove_pbc_session_by_addr(
+						link_hapd->wps->registrar,
+						fail->peer_macaddr);
+			}
+		}
+#endif /* CONFIG_IEEE80211BE */
+	}
 }
 
 
@@ -2318,3 +2352,72 @@ void hostapd_wps_nfc_token_disable(struct hostapd_data *hapd)
 }
 
 #endif /* CONFIG_WPS_NFC */
+
+
+/**
+ * hostapd_acl_allow_wps_pbc_sta - Check whether ACL enforcement should
+ * be bypassed for an active WPS PBC enrollee
+ * @hapd: Pointer to the BSS context
+ * @addr: STA MAC address
+ *
+ * Per WFA requirements, an active WPS PBC enrollee must be allowed to
+ * complete the WPS exchange even if the station is present in the ACL
+ * deny list. This helper checks whether the specified STA is currently
+ * registered as a WPS PBC enrollee on the local link or on any partner
+ * link of an AP MLD.
+ *
+ * The check covers:
+ * - The current link's WPS registrar.
+ * - All partner MLD links' WPS registrars.
+ *
+ * Once the WPS PBC session completes or expires, the enrollee is removed
+ * from the registrar's active PBC session list and normal ACL enforcement
+ * applies on subsequent connections.
+ *
+ * Return: true if the STA is an active WPS PBC enrollee and should bypass
+ * ACL enforcement; false otherwise.
+ */
+bool hostapd_acl_allow_wps_pbc_sta(struct hostapd_data *hapd,
+				   const u8 *addr)
+{
+	bool is_pbc_enrollee = false;
+#ifdef CONFIG_IEEE80211BE
+	struct hostapd_data *link_hapd;
+#endif /* CONFIG_IEEE80211BE */
+
+	if (!hapd || !addr)
+		return false;
+
+	if (hapd->wps_stats.pbc_status == WPS_PBC_STATUS_ACTIVE &&
+	    hapd->wps && hapd->wps->registrar &&
+	    wps_registrar_is_pbc_enrollee(hapd->wps->registrar, addr))
+		is_pbc_enrollee = true;
+
+#ifdef CONFIG_IEEE80211BE
+	if (!is_pbc_enrollee && hapd->mld) {
+		for_each_mld_link(link_hapd, hapd) {
+			if (link_hapd == hapd)
+				continue;
+			if (link_hapd->wps_stats.pbc_status ==
+			    WPS_PBC_STATUS_ACTIVE &&
+			    link_hapd->wps &&
+			    link_hapd->wps->registrar &&
+			    wps_registrar_is_pbc_enrollee(
+				    link_hapd->wps->registrar, addr)) {
+				is_pbc_enrollee = true;
+				break;
+			}
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	if (is_pbc_enrollee) {
+		wpa_printf(MSG_DEBUG,
+			   "ACL: WPS PBC bypass for " MACSTR
+			   " - active WPS PBC enrollee",
+			   MAC2STR(addr));
+		return true;
+	}
+
+	return false;
+}
