@@ -1023,9 +1023,6 @@ static int hostapd_parse_ttlm_elem(struct hostapd_data *hapd,
 	pos = (void *)ttlm->optional;
 	control = ttlm->control;
 
-	if (control == 0)
-		return -1;
-
 	if (control & (TTLM_CONTROL_MAPPING_SWITCH_TIME_PRESENT_MASK |
 		       TTLM_CONTROL_EXPECTED_DURATION_PRESENT_MASK)) {
 		wpa_printf(MSG_ERROR, "Invalid TTLM element");
