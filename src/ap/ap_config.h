@@ -686,6 +686,9 @@ struct hostapd_bss_config {
 	struct acl_timed_deny_entry *acl_timed_deny_list;
 	int wds_sta;
 	int isolate;
+	/* Pre-association isolation list */
+	macaddr *isolated_sta_list;
+	unsigned int num_isolated_sta;
 	int start_disabled;
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 	int external_plugin_enable; /* Enable external plugin for this BSS */
@@ -2246,5 +2249,7 @@ bool hostapd_pqc_enabled(const struct hostapd_bss_config *conf);
 bool hostapd_is_beacon_tx_rate_preamble_valid(
 	const struct hostapd_config *iconf,
 	const struct hostapd_bss_config *bss);
+bool hostapd_sta_is_pre_isolated(struct hostapd_bss_config *conf,
+				  const u8 *addr);
 
 #endif /* HOSTAPD_CONFIG_H */

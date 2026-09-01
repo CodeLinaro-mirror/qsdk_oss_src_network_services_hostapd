@@ -599,6 +599,7 @@ struct sta_info {
 	bool dl_sn_not_transferred;
 	bool ul_sn_not_transferred;
 #endif /* CONFIG_IEEE80211BN */
+	bool isolated; /* Station is isolated from other stations */
 
 #ifdef CONFIG_IEEE8021X_AUTH
 	struct eap_over_auth_data eap_auth_data;

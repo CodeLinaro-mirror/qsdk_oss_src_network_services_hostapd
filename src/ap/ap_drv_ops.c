@@ -650,7 +650,8 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    u64 flags, u8 qosinfo, u8 vht_opmode,
 		    int supp_p2p_ps,
 		    int set, const u8 *link_addr, bool mld_link_sta,
-		    u16 eml_cap, bool epp_sta, int type, u8 control_mic_pad)
+		    u16 eml_cap, bool epp_sta, int type, u8 control_mic_pad,
+		    bool isolated)
 {
 	struct hostapd_sta_add_params params;
 #ifdef CONFIG_IEEE80211BE
@@ -701,6 +702,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 	params.epp_sta = epp_sta;
 #endif /* CONFIG_ENC_ASSOC */
 	params.control_mic_pad = control_mic_pad;
+	params.isolated = isolated;
 
 #ifdef CONFIG_QCN_EXTN
 	hostapd_copy_sta_add_params_extn(&params.params_extn, sta_extn);

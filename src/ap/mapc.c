@@ -555,7 +555,8 @@ static int mapc_add_drv_sta(struct hostapd_data *hapd,
 				sta->flags | WLAN_STA_ASSOC, sta->qosinfo,
 				sta->vht_opmode, 0,
 				0, NULL, false, 0, false,
-				LINK_PARSE_ASSOC, sta->control_mic_pad)) {
+				LINK_PARSE_ASSOC, sta->control_mic_pad,
+				sta->isolated)) {
 		wpa_printf(MSG_ERROR, "MAPC: hostapd_sta_add failed for " MACSTR,
 			   MAC2STR(sta->addr));
 		hapd->sta_aid[sta->aid / 32] &= ~BIT(sta->aid % 32);
