@@ -539,26 +539,7 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	if (sta->aid > 0)
 		reset_aid_bitmap(hapd, sta->aid);
 
-	if (sta->wds_mld_uid > 0) {
-#ifdef CONFIG_QCN_EXTN
-		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
-			u32 uid_base = WDS_STA_UID_REPURPOSED_BASE +
-				       (hapd->mld_link_id *
-					WDS_STA_UID_REPURPOSED_PER_LINK);
-
-			if (sta->wds_mld_uid >= uid_base &&
-			    sta->wds_mld_uid <
-			    uid_base + WDS_STA_UID_REPURPOSED_PER_LINK) {
-				int uid_offset = sta->wds_mld_uid - uid_base;
-
-				hapd->wds_sta_uid_repurpose[uid_offset / 32] &=
-					~BIT(uid_offset % 32);
-			}
-		} else
-#endif /* CONFIG_QCN_EXTN */
-		hapd->wds_sta_uid[(sta->wds_mld_uid - 1) / 32] &=
-			~BIT((sta->wds_mld_uid - 1) % 32);
-	}
+	hostapd_free_wds_mld_sta_uid(hapd, sta);
 
 	hapd->num_sta--;
 	if (sta->nonerp_set) {

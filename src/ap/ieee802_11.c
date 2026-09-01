@@ -6117,6 +6117,33 @@ int hostapd_get_wds_mld_sta_uid(struct hostapd_data *hapd, struct sta_info *sta)
 	return 0;
 }
 
+void hostapd_free_wds_mld_sta_uid(struct hostapd_data *hapd,
+				  struct sta_info *sta)
+{
+	if (sta->wds_mld_uid == 0)
+		return;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		u32 uid_base = WDS_STA_UID_REPURPOSED_BASE +
+			       (hapd->mld_link_id *
+				WDS_STA_UID_REPURPOSED_PER_LINK);
+
+		if (sta->wds_mld_uid >= uid_base &&
+		    sta->wds_mld_uid <
+		    uid_base + WDS_STA_UID_REPURPOSED_PER_LINK) {
+			int uid_offset = sta->wds_mld_uid - uid_base;
+
+			hapd->wds_sta_uid_repurpose[uid_offset / 32] &=
+				~BIT(uid_offset % 32);
+		}
+	} else
+#endif /* CONFIG_QCN_EXTN */
+	hapd->wds_sta_uid[(sta->wds_mld_uid - 1) / 32] &=
+		~BIT((sta->wds_mld_uid - 1) % 32);
+
+	sta->wds_mld_uid = 0;
+}
 
 int hostapd_get_aid(struct hostapd_data *hapd, struct sta_info *sta)
 {
@@ -12616,6 +12643,26 @@ skip_update:
 			aid = sta->aid;
 		}
 
+#ifdef CONFIG_QCN_EXTN
+		/*
+		 * Stale WDS teardown: STA had a general-WDS interface from a
+		 * prior association but has returned with WDS_IE enabled while
+		 * this AP only supports general WDS (wds_ie=0). The mutual
+		 * WDS_IE path will not run for this AP so the AP_VLAN must be
+		 * torn down here rather than silently reused.
+		 */
+		if (sta->sta_extn.wds_ie_peer && !hapd->conf->bss_extn.wds_ie) {
+			wpa_printf(MSG_INFO,
+				   "WDS: %s - STA " MACSTR " returned with "
+				   "WDS_IE but AP is not WDS_IE capable; "
+				   "tearing down stale WDS interface (aid=%d)",
+				   hapd->conf->iface, MAC2STR(sta->addr), aid);
+			hostapd_set_wds_sta(hapd, NULL, sta->addr, aid, 0);
+			hostapd_free_wds_mld_sta_uid(hapd, sta);
+			sta->flags &= ~WLAN_STA_WDS;
+			set_sta_flag_to_partner_links(hapd, sta);
+		} else {
+#endif /* CONFIG_QCN_EXTN */
 		wpa_printf(MSG_DEBUG, "Reenable 4-address WDS mode for STA "
 			   MACSTR " (aid %u)",
 			   MAC2STR(sta->addr), aid);
@@ -12624,6 +12671,9 @@ skip_update:
 					  aid, 1);
 		if (!ret)
 			hostapd_set_wds_encryption(hapd, sta, ifname_wds);
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif /* CONFIG_QCN_EXTN */
 	}
 
 	if (sta->auth_alg == WLAN_AUTH_FT)
