@@ -16547,6 +16547,8 @@ static bool ieee802_11_mbssid_is_elem_inherited(u8 id, u8 ext_id, bool is_non_tx
 		case WLAN_EID_EXT_MULTI_LINK:
 		case WLAN_EID_EXT_EHT_CAPABILITIES:
 		case WLAN_EID_EXT_EHT_OPERATION:
+		case WLAN_EID_EXT_UHR_CAPABILITIES:
+		case WLAN_EID_EXT_UHR_OPERATION:
 			break;
 		default:
 			return false;
