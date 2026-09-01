@@ -3523,15 +3523,31 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		return res;
 	}
 	else if (os_strcasecmp(cmd, "rssi_reject_assoc_timeout" ) == 0) {
-		res = os_snprintf(buf, buflen, "rssi_reject_assoc_timeout= %d\n",
+		res = os_snprintf(buf, buflen,
+				  "rssi_reject_assoc_timeout= %d\n",
+				  hapd->conf->rssi_reject_assoc_timeout ?
+				  hapd->conf->rssi_reject_assoc_timeout :
 				  hapd->iconf->rssi_reject_assoc_timeout);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
 	}
 	else if (os_strcasecmp(cmd, "rssi_reject_assoc_rssi" ) == 0) {
-		res = os_snprintf(buf, buflen, "rssi_reject_assoc_rssi= %d\n",
+		res = os_snprintf(buf, buflen,
+				  "rssi_reject_assoc_rssi= %d\n",
+				  hapd->conf->rssi_reject_assoc_rssi ?
+				  hapd->conf->rssi_reject_assoc_rssi :
 				  hapd->iconf->rssi_reject_assoc_rssi);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	}
+	else if (os_strcasecmp(cmd, "rssi_deauth_grace_samples" ) == 0) {
+		res = os_snprintf(buf, buflen,
+				  "rssi_deauth_grace_samples=%d\n",
+				  hapd->conf->rssi_deauth_grace_samples ?
+				  hapd->conf->rssi_deauth_grace_samples :
+				  hapd->iconf->rssi_deauth_grace_samples);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
