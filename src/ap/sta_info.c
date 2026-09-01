@@ -366,13 +366,12 @@ void clear_wpa_sm_for_each_partner_link(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211AX
 static void hostapd_free_scs_data(struct sta_info *sta)
 {
-	int i;
+	struct hostapd_scs_req_desc_data *desc, *tmp;
 
-	for (i = 0; i < HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER; i++) {
-		if (sta->scs_req_desc[i]) {
-			os_free(sta->scs_req_desc[i]);
-			sta->scs_req_desc[i] = NULL;
-		}
+	dl_list_for_each_safe(desc, tmp, &sta->scs_req_desc,
+			      struct hostapd_scs_req_desc_data, list) {
+		dl_list_del(&desc->list);
+		os_free(desc);
 	}
 
 	sta->scs_session_count = 0;
@@ -1486,6 +1485,7 @@ struct sta_info * ap_sta_add(struct hostapd_data *hapd, const u8 *addr)
 	sta->last_seq_ctrl = WLAN_INVALID_MGMT_SEQ;
 	atf_offload_initialize_peer(sta);
 	dl_list_init(&sta->ip6addr);
+	dl_list_init(&sta->scs_req_desc);
 	sta->mld_assoc_link_id = -1;
 	sta->policies = NULL;
 	sta->num_dscp_policies = 0;

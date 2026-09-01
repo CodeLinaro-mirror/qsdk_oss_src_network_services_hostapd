@@ -8,10 +8,12 @@
 struct hostapd_data;
 struct sta_info;
 
+#include "utils/list.h"
+
 #define LOW_BYTE(val)    ((val & 0x000000ff))
 #define HIGH_BYTE(val)   ((val & 0x0000ff00) >> 8)
 
-#define HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER		10
+#define HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER		255
 #define HOSTAPD_SCS_MAX_DESCPRIPTORS_PER_REQUEST	4
 #define HOSTAPD_SCS_MAX_TCLAS_ELEMENTS_PER_DESCRIPTOR	2
 
@@ -182,6 +184,7 @@ struct hostapd_scs_req_desc_data {
 #ifdef CONFIG_IEEE80211BE
 	struct hostapd_scs_qos_attributes qos_attr;
 #endif /* CONFIG_IEEE80211BE */
+	struct dl_list list;
 };
 
 struct hostapd_scs_req_data {

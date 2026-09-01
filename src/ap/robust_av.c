@@ -14,41 +14,34 @@
 #include <linux/netfilter.h>
 
 
-static u8 hostapd_get_scs_index(struct sta_info *sta, u8 scs_id)
+static struct hostapd_scs_req_desc_data *
+hostapd_scs_find_by_id(struct sta_info *sta, u8 scs_id)
 {
-	u8 idx = 0;
+	struct hostapd_scs_req_desc_data *desc;
 
-	if (!sta || !sta->scs_session_count)
-		return HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER;
-
-	while (idx < sta->scs_session_count) {
-		if (!sta->scs_req_desc[idx])
-			return HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER;
-		if (scs_id == sta->scs_req_desc[idx]->scs_id)
-			return idx;
-		idx++;
+	dl_list_for_each(desc, &sta->scs_req_desc,
+			 struct hostapd_scs_req_desc_data, list) {
+		if (desc->scs_id == scs_id)
+			return desc;
 	}
-
-	return HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER;
+	return NULL;
 }
 
 
 static bool hostapd_is_scs_present(struct sta_info *sta, u8 scs_id)
 {
-	if (hostapd_get_scs_index(sta, scs_id) >=
-				HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER)
-		return false;
-
-	return true;
+	return hostapd_scs_find_by_id(sta, scs_id) != NULL;
 }
 
 
 int hostapd_dump_scs_list(struct hostapd_data *hapd, struct sta_info *sta,
 			  char *buf, size_t buflen)
 {
+	struct hostapd_scs_req_desc_data *desc;
 	struct sta_info *assoc_sta = NULL;
 	struct hostapd_data *assoc_hapd;
 	int reply_len = 0, res;
+	int i = 0;
 
 #ifdef CONFIG_IEEE80211BE
 	if (!sta->mld_info.mld_sta) {
@@ -87,12 +80,11 @@ int hostapd_dump_scs_list(struct hostapd_data *hapd, struct sta_info *sta,
 		return -1;
 	reply_len += res;
 
-	for (int i = 0; i < assoc_sta->scs_session_count; i++) {
-		struct hostapd_scs_req_desc_data *desc = assoc_sta->scs_req_desc[i];
-
+	dl_list_for_each(desc, &assoc_sta->scs_req_desc,
+			 struct hostapd_scs_req_desc_data, list) {
 		res = os_snprintf(buf + reply_len, buflen - reply_len,
 				  "  Index: %d, SCS ID: %u\n",
-				  i, desc->scs_id);
+				  i++, desc->scs_id);
 		if (os_snprintf_error(buflen - reply_len, res))
 			return -1;
 		reply_len += res;
@@ -110,7 +102,6 @@ int hostapd_dump_scs_info(struct hostapd_data *hapd, struct sta_info *sta,
 	const char *qos_type, *direction;
 	struct hostapd_data *assoc_hapd;
 	int reply_len = 0, res;
-	int index = -1;
 
 #ifdef CONFIG_IEEE80211BE
 	if (!sta->mld_info.mld_sta) {
@@ -141,15 +132,8 @@ int hostapd_dump_scs_info(struct hostapd_data *hapd, struct sta_info *sta,
 		return reply_len;
 	}
 
-	for (int i = 0; i < assoc_sta->scs_session_count; i++) {
-		desc = assoc_sta->scs_req_desc[i];
-		if (desc->scs_id == scs_id) {
-			index = i;
-			break;
-		}
-	}
-
-	if (index == -1) {
+	desc = hostapd_scs_find_by_id(assoc_sta, scs_id);
+	if (!desc) {
 		wpa_printf(MSG_ERROR, "SCS ID %u not found for STA " MACSTR,
 			   scs_id, MAC2STR(assoc_sta->addr));
 		return -1;
@@ -777,7 +761,7 @@ static int hostapd_parse_scs_desc(
 		}
 
 	} else if (req_type == QM_ADD_REQ) {
-		if (sta->scs_session_count ==
+		if (sta->scs_session_count >=
 				HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER) {
 			wpa_printf(MSG_ERROR, "AP has already configured "
 				   "maximum supported SCS desc per peer");
@@ -1298,11 +1282,11 @@ static void hostapd_qm_add_nft_rule_list(struct hostapd_nft_rule_params *rule,
 
 
 static int hostapd_scs_add_nft_rule(struct hostapd_data *hapd,
-				    struct sta_info *sta, u8 scs_idx,
+				    struct sta_info *sta,
+				    struct hostapd_scs_req_desc_data *scs_req_desc,
 				    struct hostapd_nft_rule_params **rules,
 				    int *rule_count)
 {
-	struct hostapd_scs_req_desc_data *scs_req_desc = sta->scs_req_desc[scs_idx];
 	struct hostapd_tclas_elements te;
 	int i = 0;
 
@@ -1312,7 +1296,7 @@ static int hostapd_scs_add_nft_rule(struct hostapd_data *hapd,
 
 		te = scs_req_desc->tclas[i];
 
-		rule.qm_idx = scs_idx;
+		rule.scs_desc = scs_req_desc;
 		rule.tclas_ele_idx = i;
 
 		hostapd_qm_prepare_nft_rule(hapd, sta, &te, &rule,
@@ -1372,14 +1356,15 @@ static int hostapd_scs_add_nft_rule(struct hostapd_data *hapd,
 }
 
 static int hostapd_scs_delete_nft_rule(struct hostapd_data *hapd,
-				       struct sta_info *sta, int scs_idx)
+				       struct hostapd_scs_req_desc_data *scs_data)
 {
-	struct hostapd_scs_req_desc_data *scs_data;
 	struct hostapd_tclas_elements *te;
 	struct hostapd_nft_rule_params rule = {0};
-	int i,j;
+	int i, j;
 
-	scs_data = sta->scs_req_desc[scs_idx];
+	if (!scs_data)
+		return -EINVAL;
+
 
 	for (i = 0; i < scs_data->num_tclas_elements; i++) {
 
@@ -1410,7 +1395,6 @@ hostapd_process_scs_add(struct hostapd_data *hapd, struct sta_info *sta,
 {
 	struct hostapd_scs_req_desc_data *scs_req_desc;
 	u8 scs_id = scs_req_desc_tmp->scs_id;
-	int idx;
 
 	if (status != HOSTAPD_QM_STATUS_SUCCESS) {
 		wpa_printf(MSG_ERROR, "SCS add request failed for scs_id:%u, "
@@ -1418,11 +1402,9 @@ hostapd_process_scs_add(struct hostapd_data *hapd, struct sta_info *sta,
 		return -EINVAL;
 	}
 
-	idx = sta->scs_session_count;
-
-	if (idx >= HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER) {
+	if (sta->scs_session_count >= HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER) {
 		wpa_printf(MSG_ERROR, "SCS add request failed for scs_id:%u, "
-			   "maximum index exceeded", scs_id);
+			   "maximum sessions per peer reached", scs_id);
 		return -EINVAL;
 	}
 
@@ -1433,13 +1415,14 @@ hostapd_process_scs_add(struct hostapd_data *hapd, struct sta_info *sta,
 		return -ENOMEM;
 	}
 
-	/* Attach SCS data to STA node */
-	sta->scs_req_desc[idx] = scs_req_desc;
+	dl_list_init(&scs_req_desc->list);
+
+	dl_list_add_tail(&sta->scs_req_desc, &scs_req_desc->list);
 	sta->scs_session_count++;
 
 	wpa_printf(MSG_DEBUG, "STA MAC: " MACSTR, MAC2STR(sta->addr));
 	wpa_printf(MSG_DEBUG, "SCS add success - SCS ID: %u, Session count: %u",
-		   sta->scs_req_desc[idx]->scs_id, sta->scs_session_count);
+		   scs_req_desc->scs_id, sta->scs_session_count);
 
 	return 0;
 }
@@ -1447,39 +1430,30 @@ hostapd_process_scs_add(struct hostapd_data *hapd, struct sta_info *sta,
 
 static int
 hostapd_process_scs_remove(struct hostapd_data *hapd, struct sta_info *sta,
-			   struct hostapd_scs_req_desc_data *scs_req_desc,
+			   struct hostapd_scs_req_desc_data *scs_req_desc_tmp,
 			   u8 status)
 {
-	u8 scs_session_count = sta->scs_session_count;
-	u8 scs_id = scs_req_desc->scs_id;
-	int idx;
+	u8 scs_id = scs_req_desc_tmp->scs_id;
+	struct hostapd_scs_req_desc_data *scs_req_desc;
 
 	if (status != HOSTAPD_QM_STATUS_SUCCESS) {
 		wpa_printf(MSG_ERROR, "SCS del request failed for scs_id:%u, "
 			   "status:%u - Declined in driver", scs_id, status);
 	}
 
-	idx = hostapd_get_scs_index(sta, scs_id);
-
-	if (idx >= HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER) {
+	scs_req_desc = hostapd_scs_find_by_id(sta, scs_id);
+	if (!scs_req_desc) {
 		wpa_printf(MSG_ERROR, "SCS del request failed for scs_id:%u, "
-			   "unable to find idx", scs_id);
+			   "entry not found", scs_id);
 		return -EINVAL;
 	}
 
-	hostapd_scs_delete_nft_rule(hapd, sta, idx);
+	hostapd_scs_delete_nft_rule(hapd, scs_req_desc);
 
-	wpa_printf(MSG_DEBUG, "Freeing memory for SCS ID:%u at Index: %d",
-		   scs_id, idx);
-	os_free(sta->scs_req_desc[idx]);
-
-	while (idx < (scs_session_count - 1)) {
-		sta->scs_req_desc[idx] = sta->scs_req_desc[idx + 1];
-		idx++;
-	}
-
+	wpa_printf(MSG_DEBUG, "Freeing memory for SCS ID:%u", scs_id);
+	dl_list_del(&scs_req_desc->list);
+	os_free(scs_req_desc);
 	sta->scs_session_count--;
-	sta->scs_req_desc[idx] = NULL;
 
 	wpa_printf(MSG_DEBUG, "STA MAC: " MACSTR, MAC2STR(sta->addr));
 	wpa_printf(MSG_DEBUG, "SCS del success - SCS ID: %u, Session count: %u",
@@ -1494,7 +1468,6 @@ hostapd_process_scs_change(struct hostapd_data *hapd, struct sta_info *sta,
 			   struct hostapd_scs_req_desc_data *scs_req_desc_tmp,
 			   u8 status)
 {
-	int idx;
 	u8 scs_id = scs_req_desc_tmp->scs_id;
 	struct qm_req_desc_data qm_desc;
 
@@ -1505,23 +1478,28 @@ hostapd_process_scs_change(struct hostapd_data *hapd, struct sta_info *sta,
 		return -EINVAL;
 	}
 
-	idx = hostapd_get_scs_index(sta, scs_id);
+	struct hostapd_scs_req_desc_data *scs_req_desc;
+	struct dl_list saved_list;
 
-	if (idx >= HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER) {
+	scs_req_desc = hostapd_scs_find_by_id(sta, scs_id);
+	if (!scs_req_desc) {
 		wpa_printf(MSG_ERROR, "SCS change request failed for scs_id:%u,"
-			   " unable to find existing idx", scs_id);
+			   " entry not found", scs_id);
 		return -EINVAL;
 	}
 
-	hostapd_scs_delete_nft_rule(hapd, sta, idx);
+	hostapd_scs_delete_nft_rule(hapd, scs_req_desc);
 
 	os_memset(&qm_desc, 0, sizeof(qm_desc));
-	hostapd_copy_scs_desc(&qm_desc, *sta->scs_req_desc[idx]);
+	hostapd_copy_scs_desc(&qm_desc, *scs_req_desc);
 	hostapd_drv_rule_config_notify(hapd, sta->addr, &qm_desc,
 				       HOSTAPD_QM_TYPE_SCS);
 
-	os_memcpy(sta->scs_req_desc[idx], scs_req_desc_tmp,
-		  sizeof(*scs_req_desc_tmp));
+	/* Save the list node, overwrite the descriptor content, restore
+	 * the node so the entry stays linked in the list. */
+	saved_list = scs_req_desc->list;
+	os_memcpy(scs_req_desc, scs_req_desc_tmp, sizeof(*scs_req_desc_tmp));
+	scs_req_desc->list = saved_list;
 
 	wpa_printf(MSG_DEBUG, "STA MAC: " MACSTR, MAC2STR(sta->addr));
 	wpa_printf(MSG_DEBUG,
@@ -1585,7 +1563,7 @@ hostapd_mscs_add_nft_rules(struct hostapd_data *hapd, struct sta_info *sta,
 		os_memset(&rule, 0, sizeof(rule));
 
 		tid = te->up;
-		rule.qm_idx = idx;
+		rule.flow_idx = idx;
 		rule.tclas_ele_idx = idx;
 
 		hostapd_qm_prepare_nft_rule(hapd, sta, te, &rule,
@@ -1600,16 +1578,16 @@ hostapd_prepare_nft_rule_list(struct hostapd_data *hapd, struct sta_info *sta,
 			      struct hostapd_nft_rule_params **rules,
 			      int *rule_count)
 {
-	u8 idx;
+	struct hostapd_scs_req_desc_data *desc;
 
-	for (idx = 0; idx < sta->scs_session_count; idx++) {
+	dl_list_for_each(desc, &sta->scs_req_desc,
+			 struct hostapd_scs_req_desc_data, list) {
 		/* SCS Uplink descriptors do not have TCLAS elements and do not
 		 * need rule prepare for NF table programming.
 		 */
-		if (!sta->scs_req_desc[idx]->num_tclas_elements)
+		if (!desc->num_tclas_elements)
 			continue;
-
-		hostapd_scs_add_nft_rule(hapd, sta, idx, rules, rule_count);
+		hostapd_scs_add_nft_rule(hapd, sta, desc, rules, rule_count);
 	}
 
 	hostapd_mscs_add_nft_rules(hapd, sta, rules, rule_count);
@@ -1670,29 +1648,22 @@ static void
 hostapd_delete_all_qm_nft_rules(struct hostapd_data *hapd,
 				 struct sta_info *sta)
 {
-	int idx;
+	struct hostapd_scs_req_desc_data *desc;
 
-	for (idx = 0; idx < sta->scs_session_count; idx++) {
-		if (!sta->scs_req_desc[idx]) {
-			wpa_printf(MSG_ERROR,
-				   "QM: NULL scs_req_desc at index %d", idx);
-			continue;
-		}
-
+	dl_list_for_each(desc, &sta->scs_req_desc,
+			 struct hostapd_scs_req_desc_data, list) {
 		/* SCS uplink descriptors carry no TCLAS elements and require
 		 * no rule deletion.
 		 */
-		if (!sta->scs_req_desc[idx]->num_tclas_elements) {
+		if (!desc->num_tclas_elements) {
 			wpa_printf(MSG_DEBUG,
-				   "QM: Skipping uplink descriptor at index %d (no TCLAS elements)",
-				   idx);
+				   "QM: Skipping uplink descriptor SCS ID %u (no TCLAS)",
+				   desc->scs_id);
 			continue;
 		}
-
 		wpa_printf(MSG_DEBUG,
-			   "QM: Deleting existing rules for session index %d (SCS ID %u)",
-			   idx, sta->scs_req_desc[idx]->scs_id);
-		hostapd_scs_delete_nft_rule(hapd, sta, idx);
+			   "QM: Deleting rules for SCS ID %u", desc->scs_id);
+		hostapd_scs_delete_nft_rule(hapd, desc);
 	}
 
 	hostapd_mscs_delete_nft_rules(hapd, sta);
@@ -1737,8 +1708,13 @@ hostapd_configure_nft_rule_list(struct hostapd_data *hapd,
 		rule = &rules[idx];
 
 		wpa_printf(MSG_DEBUG,
-			   "QM: Creating rule %d/%d - qm_idx=%u tclas_idx=%d weight=%u valid_flags=0x%x",
-			   idx + 1, rule_count, rule->qm_idx,
+			   "QM: Creating rule %d/%d - %s=%u tclas_idx=%d weight=%u valid_flags=0x%x",
+			   idx + 1, rule_count,
+			   ((rule->mark & 0xff) == HOSTAPD_QOS_MSCS_TAG) ?
+			   "flow_idx" : "scs_id",
+			   ((rule->mark & 0xff) == HOSTAPD_QOS_MSCS_TAG) ?
+			   (unsigned int)rule->flow_idx :
+			   (rule->scs_desc ? (unsigned int)rule->scs_desc->scs_id : 0xff),
 			   rule->tclas_ele_idx, rule->weight, rule->valid_flags);
 
 		ret = hostapd_config_nft_rule(rule, true);
@@ -1750,7 +1726,7 @@ hostapd_configure_nft_rule_list(struct hostapd_data *hapd,
 		}
 
 		if ((rule->mark & 0xff) == HOSTAPD_QOS_MSCS_TAG) {
-			u8 flow_idx = rule->qm_idx;
+			u8 flow_idx = rule->flow_idx;
 
 			if (!sta->mscs_ctxt ||
 			    flow_idx >= sta->mscs_ctxt->available_idx) {
@@ -1779,21 +1755,13 @@ hostapd_configure_nft_rule_list(struct hostapd_data *hapd,
 			continue;
 		}
 
-		if (rule->qm_idx >= sta->scs_session_count) {
+		scs_req_desc = rule->scs_desc;
+		if (!scs_req_desc) {
 			wpa_printf(MSG_ERROR,
-				   "QM: Invalid qm_idx %u (valid range: 0-%d) for rule %d",
-				   rule->qm_idx, sta->scs_session_count - 1,
-				   idx);
+				   "QM: NULL scs_desc in rule %d", idx);
 			continue;
 		}
 
-		scs_req_desc = sta->scs_req_desc[rule->qm_idx];
-		if (!scs_req_desc) {
-			wpa_printf(MSG_ERROR,
-				   "QM: NULL scs_req_desc at qm_idx %u for rule %d",
-				   rule->qm_idx, idx);
-			continue;
-		}
 
 		if (rule->tclas_ele_idx < 0 ||
 		    rule->tclas_ele_idx >= scs_req_desc->num_tclas_elements) {
@@ -1808,8 +1776,9 @@ hostapd_configure_nft_rule_list(struct hostapd_data *hapd,
 
 		if (te->num_rules >= HOSTAPD_MAX_RULES_PER_TCLAS) {
 			wpa_printf(MSG_ERROR,
-				   "QM: Maximum rules per TCLAS exceeded (%u) for rule %d (qm_idx=%u, tclas_idx=%d)",
-				   te->num_rules, idx, rule->qm_idx,
+				   "QM: Maximum rules per TCLAS exceeded (%u) for rule %d (scs_id=%u, tclas_idx=%d)",
+				   te->num_rules, idx,
+				   scs_req_desc->scs_id,
 				   rule->tclas_ele_idx);
 			continue;
 		}
@@ -1818,10 +1787,9 @@ hostapd_configure_nft_rule_list(struct hostapd_data *hapd,
 		te->num_rules++;
 
 		wpa_printf(MSG_DEBUG,
-			   "QM: Stored rule handle %llu at position %u (qm_idx=%u, tclas_idx=%d, SCS_ID=%u)",
+			   "QM: Stored rule handle %llu at position %u (tclas_idx=%d, SCS_ID=%u)",
 			   (unsigned long long) rule->handle, te->num_rules - 1,
-			   rule->qm_idx, rule->tclas_ele_idx,
-			   scs_req_desc->scs_id);
+			   rule->tclas_ele_idx, scs_req_desc->scs_id);
 	}
 
 	wpa_printf(MSG_DEBUG,
@@ -2561,7 +2529,7 @@ int hostapd_send_unsolicited_scs_resp(struct hostapd_data *hapd,
 	struct hostapd_scs_req_data scs_req = {0};
 	struct sta_info *assoc_sta = NULL;
 	struct hostapd_data *assoc_hapd;
-	int idx, ret;
+	int ret;
 	u8 addr[6];
 
 	wpa_printf(MSG_INFO, "Received SCS unsolicited Resp cmd from:" MACSTR,
@@ -2573,8 +2541,7 @@ int hostapd_send_unsolicited_scs_resp(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	idx = hostapd_get_scs_index(sta, scs_id);
-	if (idx >= HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER) {
+	if (!hostapd_scs_find_by_id(sta, scs_id)) {
 		wpa_printf(MSG_ERROR, "SCS resp cmd failed for scs_id:%u, "
 			   "Not active", scs_id);
 		return -1;
