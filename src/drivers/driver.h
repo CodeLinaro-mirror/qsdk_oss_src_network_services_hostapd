@@ -3579,6 +3579,7 @@ struct hostapd_sta_add_params {
 #ifdef CONFIG_ENC_ASSOC
 	bool epp_sta;
 #endif /* CONFIG_ENC_ASSOC */
+	bool isolated; /* Station should be isolated from other stations */
 #ifdef CONFIG_MESH
 	enum mesh_plink_state plink_state;
 	u16 peer_aid;
@@ -7074,6 +7075,15 @@ struct wpa_driver_ops {
 			   u8 valid_ctx_bitmap, u8 tx_tid_bitmap,
 			   u8 rx_tid_bitmap,
 			   struct sta_smd_ctx_info **out_ctx);
+
+	/** 
+	 * set_sta_isolated - Set per-station isolation state
+	 * @priv: Private driver interface data
+	 * @addr: Station MAC address
+	 * @isolated: 1 to isolate the station, 0 to unisolate
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*set_sta_isolated)(void *priv, const u8 *addr, bool isolated);
 };
 
 /**

@@ -1070,6 +1070,195 @@ static int hostapd_ctrl_send_unsolicited_dscp_req(struct hostapd_data *hapd, con
 	return 0;
 }
 
+static int hostapd_ctrl_iface_set_sta_isolated(struct hostapd_data *hapd,
+					       const char *cmd)
+{
+	u8 addr[ETH_ALEN];
+	struct sta_info *sta;
+	const char *pos;
+	int isolated;
+
+	if (hwaddr_aton(cmd, addr))
+		return -1;
+
+	/*
+	 * The command format is:
+	 *
+	 * SET_STA_ISOLATED <MAC address> <0|1>
+	 */
+	pos = cmd + 17; /* Skip MAC address */
+	if (*pos != ' ')
+		return -1;
+
+	while (*pos == ' ')
+		pos++;
+
+	if (*pos == '\0')
+		return -1;
+
+	if (os_strcmp(pos, "0") == 0)
+		isolated = 0;
+	else if (os_strcmp(pos, "1") == 0)
+		isolated = 1;
+	else
+		return -1;
+
+	sta = ap_get_sta(hapd, addr);
+	if (!sta) {
+		wpa_printf(MSG_DEBUG, "SET_STA_ISOLATED: Station " MACSTR
+			   " is not associated", MAC2STR(addr));
+		return -1;
+	}
+
+	if (hostapd_drv_set_sta_isolated(hapd, addr, isolated)) {
+		wpa_printf(MSG_ERROR, "SET_STA_ISOLATED: Failed to set isolation for "
+			   MACSTR " to %d", MAC2STR(addr), isolated);
+		return -1;
+	}
+
+	sta->isolated = !!isolated;
+
+	wpa_printf(MSG_INFO, "SET_STA_ISOLATED: Station " MACSTR " isolated=%d",
+		   MAC2STR(addr), sta->isolated);
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_add_isolated_sta(struct hostapd_data *hapd,
+					       const char *cmd)
+{
+	struct sta_info *sta;
+	u8 addr[ETH_ALEN];
+	macaddr *new_list;
+	int ret;
+
+	if (hwaddr_aton(cmd, addr))
+		return -1;
+
+	if (hostapd_sta_is_pre_isolated(hapd->conf, addr)) {
+		wpa_printf(MSG_DEBUG, "ADD_ISOLATED_STA: " MACSTR " already present",
+			   MAC2STR(addr));
+		return 0;
+	}
+
+	sta = ap_get_sta(hapd, addr);
+	if (sta) {
+		ret = hostapd_drv_set_sta_isolated(hapd, addr, true);
+		if (ret) {
+			wpa_printf(MSG_ERROR, "ADD_ISOLATED_STA: Failed to set isolation for "
+				   MACSTR, MAC2STR(addr));
+			return -1;
+		}
+	} else {
+		wpa_printf(MSG_DEBUG, "ADD_ISOLATED_STA: Station " MACSTR
+			   " not associated, adding to pre-isolated list",
+			   MAC2STR(addr));
+	}
+
+	/* add to list */
+	new_list = os_realloc_array(hapd->conf->isolated_sta_list,
+				    hapd->conf->num_isolated_sta + 1,
+				    sizeof(macaddr));
+	if (!new_list)
+		return -1;
+
+	hapd->conf->isolated_sta_list = new_list;
+	os_memcpy(hapd->conf->isolated_sta_list[hapd->conf->num_isolated_sta],
+		  addr, ETH_ALEN);
+	hapd->conf->num_isolated_sta++;
+
+	wpa_printf(MSG_INFO, "ADD_ISOLATED_STA: added " MACSTR, MAC2STR(addr));
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_del_isolated_sta(struct hostapd_data *hapd,
+					       const char *cmd)
+{
+	struct sta_info *sta;
+	u8 addr[ETH_ALEN];
+	unsigned int i;
+	int ret;
+
+	if (hwaddr_aton(cmd, addr))
+		return -1;
+
+	for (i = 0; i < hapd->conf->num_isolated_sta; i++) {
+		if (!ether_addr_equal(hapd->conf->isolated_sta_list[i], addr))
+			continue;
+
+		/*
+		 * If the station is associated, unset its runtime isolation
+		 * state before removing the address from the configured list.
+		 */
+		sta = ap_get_sta(hapd, addr);
+		if (sta) {
+			ret = hostapd_drv_set_sta_isolated(hapd, addr, false);
+			if (ret) {
+				wpa_printf(MSG_ERROR,
+					   "DEL_ISOLATED_STA: Failed to unset "
+					   "isolation for " MACSTR,
+					   MAC2STR(addr));
+				return -1;
+			}
+		} else {
+			wpa_printf(MSG_DEBUG,
+				   "DEL_ISOLATED_STA: Station " MACSTR
+				   " is not associated; removing from list",
+				   MAC2STR(addr));
+		}
+
+		if (i + 1 < hapd->conf->num_isolated_sta) {
+			os_memmove(&hapd->conf->isolated_sta_list[i],
+				   &hapd->conf->isolated_sta_list[i + 1],
+				   (hapd->conf->num_isolated_sta - i - 1) *
+				   sizeof(macaddr));
+		}
+
+		hapd->conf->num_isolated_sta--;
+
+		wpa_printf(MSG_INFO,
+			   "DEL_ISOLATED_STA: removed " MACSTR,
+			   MAC2STR(addr));
+
+		return 0;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "DEL_ISOLATED_STA: " MACSTR " not in list",
+		   MAC2STR(addr));
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_show_isolated_sta(struct hostapd_data *hapd,
+		char *reply,
+		size_t reply_size)
+{
+	unsigned int i;
+	int len = 0;
+	int ret;
+
+	for (i = 0; i < hapd->conf->num_isolated_sta; i++) {
+		ret = os_snprintf(reply + len, reply_size - len, MACSTR "\n",
+				  MAC2STR(hapd->conf->isolated_sta_list[i]));
+		if (os_snprintf_error(reply_size - len, ret))
+			return -1;
+
+		len += ret;
+	}
+
+	if (len == 0) {
+		ret = os_snprintf(reply, reply_size, "EMPTY\n");
+		if (os_snprintf_error(reply_size, ret))
+			return -1;
+
+		len = ret;
+	}
+
+	return len;
+}
+
 static int hostapd_ctrl_iface_dump_mscs_ctxt(struct hostapd_data *hapd,
 					     char *buf, size_t buflen)
 {
@@ -12722,6 +12911,18 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "SEND_UNSOLICITED_DSCP_REQ ", 26) == 0) {
 		if (hostapd_ctrl_send_unsolicited_dscp_req(hapd, buf + 26))
 			reply_len = -1;
+	} else if (os_strncmp(buf, "SET_STA_ISOLATED ", 17) == 0) {
+		if (hostapd_ctrl_iface_set_sta_isolated(hapd, buf + 17))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "ADD_ISOLATED_STA ", 17) == 0) {
+		if (hostapd_ctrl_iface_add_isolated_sta(hapd, buf + 17))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "DEL_ISOLATED_STA ", 17) == 0) {
+		if (hostapd_ctrl_iface_del_isolated_sta(hapd, buf + 17))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "SHOW_ISOLATED_STA") == 0) {
+		reply_len = hostapd_ctrl_iface_show_isolated_sta(hapd,
+								reply, reply_size);
 	} else if (os_strncmp(buf, "CHAIN_MASK ", 11) == 0) {
 		if (hostapd_ctrl_set_tx_rx_chain_mask(hapd, buf+11,
 						     reply, reply_size))

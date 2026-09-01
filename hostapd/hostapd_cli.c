@@ -2300,6 +2300,32 @@ static int hostapd_cli_cmd_deny_macacl(struct wpa_ctrl *ctrl, int argc,
 	return hostapd_cli_cmd(ctrl, "DENY_ACL", 1, argc, argv);
 }
 
+static int hostapd_cli_cmd_set_sta_isolated(struct wpa_ctrl *ctrl, int argc,
+					    char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "SET_STA_ISOLATED", 1, argc, argv);
+}
+
+static int hostapd_cli_cmd_add_isolated_sta(struct wpa_ctrl *ctrl, int argc,
+					    char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "ADD_ISOLATED_STA", 1, argc, argv);
+}
+
+
+static int hostapd_cli_cmd_del_isolated_sta(struct wpa_ctrl *ctrl, int argc,
+					    char *argv[])
+{
+	return hostapd_cli_cmd(ctrl, "DEL_ISOLATED_STA", 1, argc, argv);
+}
+
+
+static int hostapd_cli_cmd_show_isolated_sta(struct wpa_ctrl *ctrl, int argc,
+					     char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "SHOW_ISOLATED_STA");
+}
+
 
 static int hostapd_cli_cmd_poll_sta(struct wpa_ctrl *ctrl, int argc,
 				    char *argv[])
@@ -4112,6 +4138,17 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "=Add/Delete/Show/Clear accept MAC ACL" },
 	{ "deny_acl", hostapd_cli_cmd_deny_macacl, NULL,
 	  "=Add/Delete/Show/Clear deny MAC ACL" },
+	{ "set_sta_isolated", hostapd_cli_cmd_set_sta_isolated,
+	  hostapd_complete_stations,
+	  "<addr> = isolate a MAC to from intra-bss" },
+	{ "add_isolated_sta", hostapd_cli_cmd_add_isolated_sta,
+	  hostapd_complete_stations,
+	  "<addr> = add a MAC to the pre-association isolation list" },
+	{ "del_isolated_sta", hostapd_cli_cmd_del_isolated_sta,
+	  hostapd_complete_stations,
+	  "<addr> = remove a MAC from the pre-association isolation list" },
+	{ "show_isolated_sta", hostapd_cli_cmd_show_isolated_sta, NULL,
+	  "= show the pre-association isolation list" },
 
 #ifdef CONFIG_QCN_EXTN
 	HOSTAPD_CLI_CMDS_EXTN
