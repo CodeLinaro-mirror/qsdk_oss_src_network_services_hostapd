@@ -4725,6 +4725,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 			break;
 		if (ieee802_11_update_beacons(hapd->iface))
 			break;
+		break;
 #ifdef CONFIG_IEEE80211BE
 	case EVENT_TTLM_UPDATE:
 		if (!data)
