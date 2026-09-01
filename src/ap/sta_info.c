@@ -570,30 +570,8 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 		reset_aid_bitmap(hapd, sta->aid);
 
 #ifdef CONFIG_IEEE80211BE
-	if (sta->wds_ifname_id > 0 && remove) {
-		struct hostapd_mld *mld = hapd->mld;
-
-#ifdef CONFIG_QCN_EXTN
-		if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
-			u32 uid_base = WDS_STA_UID_REPURPOSED_BASE +
-				       (hapd->mld_link_id *
-					WDS_STA_UID_REPURPOSED_PER_LINK);
-
-			if (sta->wds_ifname_id >= uid_base &&
-			    sta->wds_ifname_id <
-			    uid_base + WDS_STA_UID_REPURPOSED_PER_LINK) {
-				int uid_offset = sta->wds_ifname_id - uid_base;
-
-				hapd->wds_sta_uid_repurpose[uid_offset / 32] &=
-					~BIT(uid_offset % 32);
-			}
-		} else
-#endif /* CONFIG_QCN_EXTN */
-		if (mld) {
-			mld->wds_ifname_id[(sta->wds_ifname_id - 1) / 32] &=
-				~BIT((sta->wds_ifname_id - 1) % 32);
-		}
-	}
+	if (remove)
+		hostapd_free_wds_mld_ifname_id(hapd, sta);
 #endif /* CONFIG_IEEE80211BE */
 
 	hapd->num_sta--;

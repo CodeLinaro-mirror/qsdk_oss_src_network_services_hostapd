@@ -6826,6 +6826,38 @@ int hostapd_get_wds_mld_ifname_id(struct hostapd_data *hapd,
 }
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BE
+void hostapd_free_wds_mld_ifname_id(struct hostapd_data *hapd,
+				    struct sta_info *sta)
+{
+	struct hostapd_mld *mld = hapd->mld;
+
+	if (sta->wds_ifname_id == 0)
+		return;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
+		u32 uid_base = WDS_STA_UID_REPURPOSED_BASE +
+			       (hapd->mld_link_id *
+				WDS_STA_UID_REPURPOSED_PER_LINK);
+
+		if (sta->wds_ifname_id >= uid_base &&
+		    sta->wds_ifname_id <
+		    uid_base + WDS_STA_UID_REPURPOSED_PER_LINK) {
+			int uid_offset = sta->wds_ifname_id - uid_base;
+
+			hapd->wds_sta_uid_repurpose[uid_offset / 32] &=
+				~BIT(uid_offset % 32);
+		}
+	} else
+#endif /* CONFIG_QCN_EXTN */
+	if (mld)
+		mld->wds_ifname_id[(sta->wds_ifname_id - 1) / 32] &=
+			~BIT((sta->wds_ifname_id - 1) % 32);
+
+	sta->wds_ifname_id = 0;
+}
+#endif /* CONFIG_IEEE80211BE */
 
 int hostapd_get_aid(struct hostapd_data *hapd, struct sta_info *sta)
 {
@@ -13254,6 +13286,32 @@ skip_update:
 		}
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_QCN_EXTN
+		/*
+		 * Stale WDS teardown: STA had a general-WDS interface from a
+		 * prior association but has returned with WDS_IE enabled while
+		 * this AP only supports general WDS (wds_ie=0). The mutual
+		 * WDS_IE path will not run for this AP so the AP_VLAN must be
+		 * torn down here rather than silently reused.
+		 */
+		if (sta->sta_extn.wds_ie_peer && !hapd->conf->bss_extn.wds_ie) {
+			wpa_printf(MSG_INFO,
+				   "WDS: %s - STA " MACSTR " returned with "
+				   "WDS_IE but AP is not WDS_IE capable; "
+				   "tearing down stale WDS interface (ifname_id=%d)",
+				   hapd->conf->iface, MAC2STR(sta->addr), ifname_id);
+			hostapd_set_wds_sta(hapd, NULL, sta->addr,
+					    ifname_id, 0);
+#ifdef CONFIG_IEEE80211BE
+			if (hapd->conf->mld_ap)
+				hostapd_free_wds_mld_ifname_id(hapd, sta);
+#endif /* CONFIG_IEEE80211BE */
+			sta->flags &= ~WLAN_STA_WDS;
+#ifdef CONFIG_IEEE80211BE
+			set_sta_flag_to_partner_links(hapd, sta);
+#endif /* CONFIG_IEEE80211BE */
+		} else {
+#endif /* CONFIG_QCN_EXTN */
 		wpa_printf(MSG_DEBUG, "Reenable 4-address WDS mode for STA "
 			   MACSTR " (ifname_id %u)",
 			   MAC2STR(sta->addr), ifname_id);
@@ -13265,6 +13323,9 @@ skip_update:
 					  ifname_id, 1);
 		if (!ret)
 			hostapd_set_wds_encryption(hapd, sta, ifname_wds);
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif /* CONFIG_QCN_EXTN */
 	}
 
 	if (sta->auth_alg == WLAN_AUTH_FT)

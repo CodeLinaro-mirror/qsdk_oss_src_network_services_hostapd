@@ -219,6 +219,8 @@ int hostapd_get_aid(struct hostapd_data *hapd, struct sta_info *sta);
 #ifdef CONFIG_IEEE80211BE
 int hostapd_get_wds_mld_ifname_id(struct hostapd_data *hapd,
 				  struct sta_info *sta);
+void hostapd_free_wds_mld_ifname_id(struct hostapd_data *hapd,
+				    struct sta_info *sta);
 void hostapd_set_sta_flag_to_partner_links(struct hostapd_data *hapd,
 					   struct sta_info *sta);
 #endif /* CONFIG_IEEE80211BE */
