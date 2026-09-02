@@ -673,7 +673,7 @@ int handle_auth_pasn_resp(struct pasn_data *pasn, const u8 *own_addr,
 
 	wpa_pasn_add_parameter_ie(buf, pasn->group,
 				  pasn->wrapped_data_format,
-				  pubkey, true, NULL, 0);
+				  pubkey, true, NULL, -1);
 
 	wpabuf_free(pubkey);
 	pubkey = NULL;
