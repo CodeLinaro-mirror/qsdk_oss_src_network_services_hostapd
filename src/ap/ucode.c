@@ -811,6 +811,7 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 	for (i = 0; i < iface->num_bss; i++) {
 		struct hostapd_data *hapd = iface->bss[i];
 
+		hostapd_bss_deinit_no_free(hapd);
 		hostapd_drv_stop_ap(hapd);
 		hapd->beacon_set_done = 0;
 	}
