@@ -146,17 +146,7 @@ dfs_get_punc_subchan(struct hostapd_iface *iface,
 
 	if (!center_freq) {
 		u8 seg0_idx = hostapd_get_oper_centr_freq_seg0_idx(iface->conf);
-		enum oper_chan_width chanwidth = hostapd_get_oper_chwidth(iface->conf);
-		u8 op_class, op_channel;
-
-		if (ieee80211_freq_to_channel_ext(iface->freq,
-						  iface->conf->secondary_channel,
-						  chanwidth, &op_class,
-						  &op_channel) == NUM_HOSTAPD_MODES)
-			return NULL;
-		center_freq = ieee80211_chan_to_freq(NULL, op_class, seg0_idx);
-		if (center_freq < 0)
-			return NULL;
+		center_freq = (seg0_idx * 5) + 5000;
 		bw = channel_width_to_int(
 			hostapd_get_chan_width_from_oper_chan_width(iface->conf));
 	}
