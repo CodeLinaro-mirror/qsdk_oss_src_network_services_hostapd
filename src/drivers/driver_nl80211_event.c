@@ -3381,11 +3381,11 @@ static void nl80211_stop_ap(struct i802_bss *bss, struct nlattr **tb)
 
 		mld_link = nl80211_get_link(bss, link_id);
 		wpa_printf(MSG_DEBUG,
-			   "nl80211: STOP_AP event on link %d", link_id);
+			   "nl80211: STOP_AP event on link_id %d", link_id);
 		ctx = mld_link->ctx;
 
 		/* Bring down the active link */
-		nl80211_update_active_links(bss, link_id);
+		nl80211_update_active_links(bss, link_id, false);
 	}
 
 	wpa_supplicant_event(ctx, EVENT_INTERFACE_UNAVAILABLE, NULL);
@@ -6136,6 +6136,28 @@ static void nl80211_critical_update_notify_event(struct i802_bss *bss,
 }
 #endif /* CONFIG_IEEE80211BN */
 
+
+static void nl80211_start_ap(struct i802_bss *bss, struct nlattr **tb)
+{
+	int link_id;
+
+	if (tb[NL80211_ATTR_MLO_LINK_ID]) {
+		link_id = nla_get_u8(tb[NL80211_ATTR_MLO_LINK_ID]);
+		if (!nl80211_link_valid(bss->valid_links, link_id)) {
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: Ignoring START_AP event for invalid link ID %d (valid: 0x%04x)",
+				   link_id, bss->valid_links);
+			return;
+		}
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: START_AP event on link %d", link_id);
+
+		/* Update the active link */
+		nl80211_update_active_links(bss, link_id, true);
+	}
+}
+
+
 static void do_process_drv_event(struct i802_bss *bss, int cmd,
 				 struct nlattr **tb,
 				 bool *event_handled)
@@ -6148,7 +6170,8 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 		   cmd, nl80211_command_to_string(cmd), bss->ifname);
 
 	*event_handled = false;
-	if (bss->valid_links && !bss->active_links) {
+	if (bss->valid_links && !bss->active_links &&
+	    cmd != NL80211_CMD_START_AP) {
 		wpa_printf(MSG_ERROR, "nl80211: Ignoring BSS Event %d (%s) received for %s",
 			   cmd, nl80211_command_to_string(cmd),
 			   bss->ifname);
@@ -6485,6 +6508,9 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 		nl80211_get_smd_ctx_done(bss, tb);
 		break;
 #endif /* CONFIG_IEEE80211BN */
+	case NL80211_CMD_START_AP:
+		nl80211_start_ap(bss, tb);
+		break;
 	default:
 		wpa_dbg(drv->ctx, MSG_DEBUG, "nl80211: Ignored unknown event "
 			"(cmd=%d)", cmd);
