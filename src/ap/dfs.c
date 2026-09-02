@@ -1437,8 +1437,23 @@ dfs_find_bw_reduced_channel(struct hostapd_iface *iface,
 
 		if (dfs_chan_range_available(mode, first_chan_idx,
 					     n_chans, DFS_AVAILABLE)) {
-			if (target_chwidth == CONF_OPER_CHWIDTH_USE_HT)
-				*secondary_channel = (channel < temp_seg0_idx) ? 1 : -1;
+			/*
+			 * Every target bandwidth above 20 MHz is built from an
+			 * HT40 pair, so secondary_channel must be derived here
+			 * for all of them, not just CONF_OPER_CHWIDTH_USE_HT -
+			 * hostapd_set_freq_params() rejects 80/160/320 MHz
+			 * configs with no secondary channel offset. But
+			 * CONF_OPER_CHWIDTH_USE_HT itself covers both HT40
+			 * (n_chans == 2) and plain 20 MHz (n_chans == 1), so
+			 * +1/-1 is only valid when the target is actually
+			 * HT40 - otherwise it must stay 0.
+			 */
+			if (target_chwidth == CONF_OPER_CHWIDTH_USE_HT &&
+			    n_chans == 1)
+				*secondary_channel = 0;
+			else
+				*secondary_channel =
+					(channel < temp_seg0_idx) ? 1 : -1;
 
 			hostapd_set_oper_chwidth(iface->conf, target_chwidth);
 			dfs_adjust_center_freq(iface, chan,
