@@ -755,5 +755,6 @@ int hostapd_drv_get_smd_ctx(struct hostapd_data *hapd, const u8 *sta_addr,
 			    u8 ul_tid_bitmap, struct sta_smd_ctx_info **out_ctx);
 
 int hostapd_drv_set_rtt_responder_role(struct hostapd_data *hapd, int role);
+int hostapd_drv_set_rtt_initiator_role(struct hostapd_data *hapd, int role);
 
 #endif /* AP_DRV_OPS */

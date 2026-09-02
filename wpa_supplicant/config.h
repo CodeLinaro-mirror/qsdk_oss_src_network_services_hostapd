@@ -1670,6 +1670,15 @@ struct wpa_config {
 	int ftm_initiator;
 
 	/**
+	 * rtt_initiator_role - RTT initiator role override
+	 *
+	 * Values:
+	 * 0 - disabled (Default)
+	 * 1 - enabled
+	 */
+	int rtt_initiator_role;
+
+	/**
 	 * gas_rand_addr_lifetime - Lifetime of random MAC address for ANQP in
 	 *	seconds
 	 */

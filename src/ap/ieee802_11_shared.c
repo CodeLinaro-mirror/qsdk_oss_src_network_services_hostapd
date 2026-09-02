@@ -652,6 +652,14 @@ u8 * hostapd_eid_ext_capab(struct hostapd_data *hapd, u8 *eid,
 				*pos &= ~BIT(WLAN_EXT_CAPAB_TB_RANGING_RESPONDER % 8);
 			}
 		}
+
+		if (hapd->conf->rtt_initiator_role > 0 &&
+		    i == WLAN_EXT_CAPAB_FTM_INITIATOR / 8) {
+			*pos |= BIT(WLAN_EXT_CAPAB_FTM_INITIATOR % 8);
+		} else {
+			if( i == WLAN_EXT_CAPAB_FTM_INITIATOR / 8)
+				*pos |= ~BIT(WLAN_EXT_CAPAB_FTM_INITIATOR % 8);
+		}
 	}
 
 	while (len > 0 && eid[1 + len] == 0) {

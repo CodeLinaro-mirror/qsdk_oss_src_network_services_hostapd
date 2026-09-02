@@ -1994,7 +1994,8 @@ int hostapd_drv_set_muedca_mode(struct hostapd_data *hapd, int mode, int radio_i
 }
 #endif /* CONFIG_QCN_EXTN */
 
-int hostapd_drv_set_rtt_responder_role(struct hostapd_data *hapd, int role)
+static int hostapd_drv_set_rtt_role_common(struct hostapd_data *hapd, int role,
+					   u32 wifi_param)
 {
 	int link_id = -1;
 
@@ -2009,6 +2010,18 @@ int hostapd_drv_set_rtt_responder_role(struct hostapd_data *hapd, int role)
 	return hapd->driver->notify_iface_state(
 		hapd->drv_priv, OUI_QCA,
 		QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
-		QCA_WLAN_VENDOR_WIFI_PARAM_RTT_RESPONDER_ROLE,
+		wifi_param,
 		(u32)role, link_id, hapd->conf->iface);
+}
+
+int hostapd_drv_set_rtt_responder_role(struct hostapd_data *hapd, int role)
+{
+	return hostapd_drv_set_rtt_role_common(
+		hapd, role, QCA_WLAN_VENDOR_WIFI_PARAM_RTT_RESPONDER_ROLE);
+}
+
+int hostapd_drv_set_rtt_initiator_role(struct hostapd_data *hapd, int role)
+{
+	return hostapd_drv_set_rtt_role_common(
+		hapd, role, QCA_WLAN_VENDOR_WIFI_PARAM_RTT_INITIATOR_ROLE);
 }

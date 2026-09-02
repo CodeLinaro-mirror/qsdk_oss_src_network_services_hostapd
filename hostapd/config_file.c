@@ -5528,6 +5528,18 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->rtt_responder_role = (int)role;
+	} else if (os_strcmp(buf, "rtt_initiator_role") == 0) {
+		char *endp;
+		long int role;
+
+		role = strtol(pos, &endp, 0);
+		if (*endp || role < 0 || role > 0x1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: invalid rtt_initiator_role '%s'",
+				   line, pos);
+			return 1;
+		}
+		bss->rtt_initiator_role = (int)role;
 	} else if (os_strcmp(buf, "ftm_initiator") == 0) {
 		bss->ftm_initiator = atoi(pos);
 #ifdef CONFIG_FILS

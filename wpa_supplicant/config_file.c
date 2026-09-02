@@ -1760,6 +1760,8 @@ static void wpa_config_write_global(FILE *f, struct wpa_config *config)
 		fprintf(f, "ftm_responder=%d\n", config->ftm_responder);
 	if (config->ftm_initiator)
 		fprintf(f, "ftm_initiator=%d\n", config->ftm_initiator);
+	if (config->rtt_initiator_role)
+		fprintf(f, "rtt_initiator_role=%d\n", config->rtt_initiator_role);
 
 	if (config->twt_requester)
 		fprintf(f, "twt_requester=%d\n", config->twt_requester);

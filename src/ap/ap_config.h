@@ -1053,6 +1053,8 @@ struct hostapd_bss_config {
 	 * bit 1 (HOSTAPD_RTT_RESPONDER_ROLE_11AZ_NTB): 11az NTB,
 	 * bit 2 (HOSTAPD_RTT_RESPONDER_ROLE_11AZ_TB): 11az TB */
 	int rtt_responder_role;
+	/* RTT initiator role; 0 = disabled, 1 = enabled */
+	int rtt_initiator_role;
 
 #ifdef CONFIG_FILS
 	u8 fils_cache_id[FILS_CACHE_ID_LEN];
