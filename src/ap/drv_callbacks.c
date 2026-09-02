@@ -1411,6 +1411,29 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 #endif /* CONFIG_QCN_EXTN */
 				hostapd_cleanup_cs_params(hapd);
 				hapd->disable_cu = 1;
+
+				/*
+				 * When CSA completed on the same channel and bandwidth
+				 * with only the puncture pattern changed (punct_bitmap != 0),
+				 * the channel remains operational with punched subchannels.
+				 * Set state to HAPD_IFACE_ENABLED — no new CAC is needed.
+				 * Calling hostapd_start_dfs_cac() on the already-active
+				 * chanctx returns -EINVAL which corrupts the chanctx state
+				 * and causes subsequent NL80211_CMD_RADAR_DETECT events to
+				 * be dropped as "DFS event on unknown freq".
+				 */
+				if (hapd->iface->radar_bit_pattern) {
+					wpa_printf(MSG_INFO,
+						   "DFS: Same-channel radar puncture CSA completed — "
+						   "setting HAPD_IFACE_ENABLED, skipping CAC "
+						   "radar_bit_pattern=0x%04x punct_bitmap=0x%04x",
+						   hapd->iface->radar_bit_pattern,
+						   hapd->iface->conf->punct_bitmap);
+					hostapd_set_state(hapd->iface, HAPD_IFACE_ENABLED);
+					ieee802_11_set_beacon(hapd);
+					return;
+				}
+
 				hostapd_set_state(hapd->iface, HAPD_IFACE_DFS);
 				hapd->iface->cac_type = HAPD_CAC_COMPLETE_AFTER_CSA;
 				ieee802_11_set_beacon(hapd);
