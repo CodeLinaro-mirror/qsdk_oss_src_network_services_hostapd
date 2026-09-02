@@ -6836,8 +6836,20 @@ static bool check_sa_query(struct hostapd_data *hapd, struct sta_info *sta,
 	if (!sta->sa_query_timed_out && sta->sa_query_count > 0)
 		ap_check_sa_query_timeout(hapd, sta);
 
+	/*
+	 * For an FT reassociation, the (Re)Association Request is already
+	 * protected by the FT authentication that just completed, so an SA
+	 * Query must not be initiated. Note that hostapd_ml_get_assoc_sta()
+	 * above may have replaced 'sta' with the assoc-link STA whose auth_alg
+	 * still reflects the previous (non-FT) association; check the auth_alg
+	 * of the incoming (Re)Association attempt (current_sta) as well so a
+	 * successful FT roam onto a different link of an AP MLD is not rejected
+	 * temporarily with a spurious SA Query.
+	 */
 	if (!sta->sa_query_timed_out &&
-	    (!reassoc || sta->auth_alg != WLAN_AUTH_FT)) {
+	    (!reassoc ||
+	     (sta->auth_alg != WLAN_AUTH_FT &&
+	      (!current_sta || current_sta->auth_alg != WLAN_AUTH_FT)))) {
 		if (hapd_is_known_sta(hapd, sta, ies, ies_len))
 			return false;
 
