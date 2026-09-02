@@ -791,21 +791,21 @@ static u16 validate_security_profile_common(
 	/* Skip validation if no Security Profiles are configured */
 	if (!hapd->conf->security_profiles)
 		return WLAN_STATUS_SUCCESS;
-
 	if (!elems->security_profile_ie) {
-		/* If AP supports Security Profiles, STA MUST include SP IE during PASN auth */
+		/* SP IE is mandatory during PASN auth, and during (Re)Assoc */
 		if (hapd->conf->security_profiles &&
-		    strcmp(auth_context, "PASN") == 0) {
+		    (strcmp(auth_context, "PASN") == 0 ||
+		     strcmp(auth_context, "Assoc") == 0 ||
+		     strcmp(auth_context, "Reassoc") == 0)) {
 			wpa_printf(MSG_INFO,
 				   "UHR: Rejecting %s auth from " MACSTR
 				   " - Security Profile element missing (AP requires it)",
 				   auth_context, MAC2STR(addr));
-			return WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE;
+			return WLAN_STATUS_ASSOC_DENIED_UNSPEC;
 		}
 		/* For SAE/other auth or no security_profiles configured - SP IE not required */
 		return WLAN_STATUS_SUCCESS;
 	}
-
 	wpa_printf(MSG_DEBUG,
 		   "UHR: Validating Security Profile from " MACSTR
 		   " in %s auth (body_len=%zu)",
