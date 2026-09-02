@@ -1894,6 +1894,30 @@ void sme_authenticate(struct wpa_supplicant *wpa_s,
 			wpa_supp_pre_connect_state_handle_extn(wpa_s, bss);
 		}
 		wpa_s->cache_cwork = cwork;
+		/*
+		 * Snapshot the target frequencies now: bss->freq/mld_links are
+		 * live values in the scan cache and can be rewritten by a
+		 * background scan while this connection attempt is still
+		 * pending in PRE_CONNECT. For an MLD BSS, one channel-switch-
+		 * result event per valid link is expected (matching the
+		 * per-link pre_connect_cnt increments above), so snapshot
+		 * every valid link's frequency, not just bss->freq.
+		 */
+		wpa_s->pre_connect_target_freq_count = 0;
+		if (!is_zero_ether_addr(bss->mld_addr)) {
+			u8 link_id;
+
+			for_each_link(bss->valid_links, link_id) {
+				if (bss->mld_links[link_id].freq == 0)
+					continue;
+				wpa_s->pre_connect_target_freqs[
+					wpa_s->pre_connect_target_freq_count++] =
+					bss->mld_links[link_id].freq;
+			}
+		}
+		if (!wpa_s->pre_connect_target_freq_count)
+			wpa_s->pre_connect_target_freqs[
+				wpa_s->pre_connect_target_freq_count++] = bss->freq;
 		wpa_supplicant_set_state(wpa_s, WPA_PRE_CONNECT);
 
 		eloop_register_timeout(SME_PRE_CONNECT_TIMEOUT, 0, sme_pre_connect_timer_extn,

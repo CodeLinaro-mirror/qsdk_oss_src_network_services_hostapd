@@ -249,6 +249,18 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 					} else {
 						center_freq1 = bss->mld_links[i].freq;
 					}
+				} else if (bss->mld_links[i].width == CHAN_WIDTH_20_NOHT ||
+					   bss->mld_links[i].width == CHAN_WIDTH_20) {
+					/*
+					 * A stale VHT/HE Operation center freq
+					 * index from the BSS entry must not be
+					 * used once the operating width has
+					 * narrowed to 20 MHz, or the resulting
+					 * center_freq1 mismatches freq/width and
+					 * the kernel rejects the channel
+					 * switch with -EINVAL.
+					 */
+					center_freq1 = bss->mld_links[i].freq;
 				} else if (bss->mld_links[i].width == CHAN_WIDTH_160 ||
 					   bss->mld_links[i].width == CHAN_WIDTH_320) {
 					center_freq1 = ieee80211_chan_to_freq(NULL, op_class,
@@ -358,6 +370,17 @@ void wpas_ucode_update_pre_connect_state(struct wpa_supplicant *wpa_s)
 				} else {
 					center_freq1 = bss->freq;
 				}
+			} else if (bss->max_cw == CHAN_WIDTH_20_NOHT ||
+				   bss->max_cw == CHAN_WIDTH_20) {
+				/*
+				 * A stale VHT/HE Operation center freq index
+				 * from the BSS entry must not be used once the
+				 * operating width has narrowed to 20 MHz, or
+				 * the resulting center_freq1 mismatches
+				 * freq/width and the kernel rejects the
+				 * channel switch with -EINVAL.
+				 */
+				center_freq1 = bss->freq;
 			} else if (bss->max_cw == CHAN_WIDTH_160 ||
 				   bss->max_cw == CHAN_WIDTH_320) {
 				center_freq1 = ieee80211_chan_to_freq(NULL, op_class,
@@ -901,6 +924,8 @@ uc_wpas_recvd_ch_sw_result_ev(uc_vm_t *vm, size_t nargs)
 	int freq = 0;
 	int ret = -1;
 	int chsw_ret = 0;
+	unsigned int i;
+	bool is_target_freq;
 
 	/* Validate global context */
 	if (!wpa_global || !wpa_global->ifaces) {
@@ -955,11 +980,40 @@ uc_wpas_recvd_ch_sw_result_ev(uc_vm_t *vm, size_t nargs)
 			continue;
 		if (!wpa_s->cache_cwork->bss)
 			continue;
+		/*
+		 * Match on the frequencies snapshotted when this interface
+		 * entered PRE_CONNECT, not on cache_cwork->bss->freq/
+		 * mld_links: those are live values in the scan cache and a
+		 * background scan can rewrite them in place while this
+		 * connection attempt is still pending (e.g. during
+		 * independent-repeater bring-up when the fronthaul AP's own
+		 * CSA to the root AP's channel has not yet completed).
+		 * Comparing against live values would then reject the
+		 * legitimate match. On multi-radio setups, another interface
+		 * may also hold an unrelated stale cache_cwork targeting a
+		 * different frequency; without this check that interface can
+		 * steal the event meant for the one actually waiting on this
+		 * frequency, starving it until it hits
+		 * SME_PRE_CONNECT_TIMEOUT. For an MLD BSS, a completion event
+		 * arrives once per valid link at a distinct frequency, so
+		 * match against membership in the snapshotted set rather
+		 * than a single scalar; a single-scalar match would only
+		 * ever satisfy one of the pre_connect_cnt link increments and
+		 * the rest would starve until timeout.
+		 */
+		is_target_freq = false;
+		for (i = 0; i < wpa_s->pre_connect_target_freq_count; i++) {
+			if (wpa_s->pre_connect_target_freqs[i] == freq) {
+				is_target_freq = true;
+				break;
+			}
+		}
+		if (!is_target_freq)
+			continue;
 
 		wpa_printf(MSG_INFO,
-			   "Recv chan sw result: ifname=%s state=%d bss_freq=%d target_freq=%d",
-			   wpa_s->ifname, wpa_s->wpa_state,
-			   wpa_s->cache_cwork->bss->freq, freq);
+			   "Recv chan sw result: ifname=%s state=%d freq=%d",
+			   wpa_s->ifname, wpa_s->wpa_state, freq);
 
 		/* On failure, reset pre_connect_cnt and trigger a fresh scan */
 		if (chsw_ret) {
