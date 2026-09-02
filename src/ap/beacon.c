@@ -4337,7 +4337,7 @@ static void hostapd_apply_rtt_responder_role(struct hostapd_data *hapd)
 	ret = hostapd_drv_set_rtt_responder_role(hapd,
 						 hapd->conf->rtt_responder_role);
 	if (ret)
-		wpa_printf(MSG_ERROR,
+		wpa_printf(MSG_DEBUG,
 			   "Failed to set RTT responder role: %d", ret);
 }
 
