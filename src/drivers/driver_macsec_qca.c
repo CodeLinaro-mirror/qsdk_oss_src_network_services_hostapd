@@ -432,6 +432,13 @@ static void macsec_qca_deinit(void *priv)
 }
 
 #ifdef HOSTAPD
+static struct nla_policy ssdk_event_policy[SSDK_ATTR_MAX] = {
+	[SSDK_ATTR_MACADDR] = {
+		.minlen = ETH_ALEN,
+		.maxlen = ETH_ALEN,
+	},
+};
+
 static int process_genl_event(struct nl_msg *msg, void *arg)
 {
 	struct macsec_qca_data *drv = arg;
@@ -445,7 +452,8 @@ static int process_genl_event(struct nl_msg *msg, void *arg)
 	nl_hdr = nlmsg_hdr(msg);
 	genl_hdr = genlmsg_hdr(nl_hdr);
 
-	error = genlmsg_parse(nl_hdr, 0, attrs, SSDK_ATTR_MAX - 1, NULL);
+	error = genlmsg_parse(nl_hdr, 0, attrs, SSDK_ATTR_MAX - 1,
+			      ssdk_event_policy);
 	if (error < 0) {
 		wpa_printf(MSG_DEBUG, "genlmsg_parse fail: %s", nl_geterror(error));
 		return error;
@@ -454,7 +462,7 @@ static int process_genl_event(struct nl_msg *msg, void *arg)
 		if (genl_hdr->cmd == SSDK_COMMAND_NEW_MAC) {
 			if (attrs[SSDK_ATTR_MACADDR]) {
 				os_memcpy(addr, nla_data(attrs[SSDK_ATTR_MACADDR]),
-					nla_len(attrs[SSDK_ATTR_MACADDR]));
+					ETH_ALEN);
 			}
 			if (attrs[SSDK_ATTR_IFNAME] && os_memcmp(drv->common.ifname,
 				nla_get_string(attrs[SSDK_ATTR_IFNAME]),
@@ -471,7 +479,7 @@ static int process_genl_event(struct nl_msg *msg, void *arg)
 		if (genl_hdr->cmd == SSDK_COMMAND_EXPIRE_MAC) {
 			if (attrs[SSDK_ATTR_MACADDR]) {
 				os_memcpy(addr, nla_data(attrs[SSDK_ATTR_MACADDR]),
-					nla_len(attrs[SSDK_ATTR_MACADDR]));
+					ETH_ALEN);
 			}
 			if (attrs[SSDK_ATTR_IFNAME] && os_memcmp(drv->common.ifname,
 				nla_get_string(attrs[SSDK_ATTR_IFNAME]),
