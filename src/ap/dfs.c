@@ -36,17 +36,21 @@
 /**
  * struct hostapd_dfs_next_radar_channel - Next-radar CSA/CAC target.
  * @channel: Target channel data.
+ * @oper_chwidth: Target operating channel width.
  * @secondary_channel: Target secondary channel offset.
+ * @bw_mhz: Target bandwidth in MHz.
+ * @punct_bitmap: Target puncture bitmap.
  * @seg0_idx: Target center frequency segment 0 index.
  * @seg1_idx: Target center frequency segment 1 index.
- * @oper_chwidth: Target operating channel width.
  */
 struct hostapd_dfs_next_radar_channel {
 	struct hostapd_channel_data *channel;
+	enum oper_chan_width oper_chwidth;
 	int secondary_channel;
+	int bw_mhz;
+	u16 punct_bitmap;
 	u8 seg0_idx;
 	u8 seg1_idx;
-	enum oper_chan_width oper_chwidth;
 };
 
 static struct hostapd_channel_data *
@@ -111,24 +115,23 @@ bool dfs_use_radar_background(struct hostapd_iface *iface)
 	;
 }
 
-int dfs_get_subchannel_count(int bandwidth)
+/**
+ * dfs_get_num_chans() - Get the number of 20 MHz subchannels
+ * @bw_mhz: Channel bandwidth in MHz
+ *
+ * Returns the number of 20 MHz subchannels corresponding to the
+ * specified channel bandwidth.
+ *
+ * Return: Number of 20 MHz subchannels.
+ */
+static int dfs_get_num_chans(int bw_mhz)
 {
-	switch (bandwidth) {
-	case CHAN_WIDTH_20_NOHT:
-	case CHAN_WIDTH_20:
-		return 1;
-	case CHAN_WIDTH_40:
-		return 2;
-	case CHAN_WIDTH_80:
-	case CHAN_WIDTH_80P80:
-		return 4;
-	case CHAN_WIDTH_160:
-		return 8;
-	case CHAN_WIDTH_320:
-		return 16;
-	default:
-		return 0;
-	}
+#ifdef CONFIG_QCN_EXTN
+	if (bw_mhz == CHWIDTH_320)
+		return N_CHANS_5GHZ_240MHZ;
+	else
+#endif
+		return (bw_mhz / CHWIDTH_20);
 }
 
 /**
@@ -200,26 +203,24 @@ static void dfs_update_subchan_punc_src(struct hostapd_channel_data *chan,
 }
 
 int dfs_update_puncture_source(struct hostapd_iface *iface,
-			       u16 center_freq, int bandwidth,
+			       u16 center_freq, int bw_mhz,
 			       u16 new_punct_bitmap,
 			       enum dfs_chan_puncture_source source)
 {
-	struct hostapd_channel_data *chan;
 	int bit;
-	int subchannel_count;
-	int bw;
+	int subchannel_count = bw_mhz / CHWIDTH_20;
 
-	subchannel_count = dfs_get_subchannel_count(bandwidth);
 	if (!subchannel_count) {
 		wpa_printf(MSG_ERROR,
 			   "DFS: puncture source update failed (bw=%d)",
-			   bandwidth);
+			   bw_mhz);
 		return -1;
 	}
 
-	bw = channel_width_to_int(bandwidth);
 	for (bit = 0; bit < subchannel_count; bit++) {
-		chan = dfs_get_punc_subchan(iface, bit, center_freq, bw);
+		struct hostapd_channel_data *chan;
+
+		chan = dfs_get_punc_subchan(iface, bit, center_freq, bw_mhz);
 		if (!chan)
 			continue;
 
@@ -4092,7 +4093,6 @@ static int hostapd_dfs_start_channel_switch_cac(struct hostapd_iface *iface,
 #ifndef CONFIG_QCN_EXTN
 	iface->cac_started = 0;
 #endif
-	iface->conf->punct_bitmap = 0;
 
 	if (req) {
 		channel = req->channel;
@@ -4100,7 +4100,9 @@ static int hostapd_dfs_start_channel_switch_cac(struct hostapd_iface *iface,
 		oper_centr_freq_seg0_idx = req->seg0_idx;
 		oper_centr_freq_seg1_idx = req->seg1_idx;
 		current_vht_oper_chwidth = req->oper_chwidth;
+		iface->conf->punct_bitmap = req->punct_bitmap;
 	} else {
+		iface->conf->punct_bitmap = 0;
 		channel = dfs_get_valid_channel(iface, &secondary_channel,
 						&oper_centr_freq_seg0_idx,
 						&oper_centr_freq_seg1_idx,
@@ -4122,7 +4124,8 @@ static int hostapd_dfs_start_channel_switch_cac(struct hostapd_iface *iface,
 	if (!hostapd_send_rcsa_extn(iface, channel->chan, channel->freq, secondary_channel,
 				    current_vht_oper_chwidth,
 				    oper_centr_freq_seg0_idx,
-				    oper_centr_freq_seg1_idx, 0)) {
+				    oper_centr_freq_seg1_idx,
+				    iface->conf->punct_bitmap)) {
 		iface->cac_started = 0;
 		return 0;
 	}
@@ -4462,6 +4465,7 @@ static int hostapd_dfs_radar_handle_puncturing(struct hostapd_iface *iface,
 					       u16 center_freq)
 {
 	u8 oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx;
+	int bw_mhz = channel_width_to_int((enum chan_width) chan_width);
 
 	iface->radar_bit_pattern = radar_bitmap_oper;
 	iface->conf->punct_bitmap = cur_punct_bits;
@@ -4477,7 +4481,7 @@ static int hostapd_dfs_radar_handle_puncturing(struct hostapd_iface *iface,
 	wpa_printf(MSG_DEBUG,
 			"DFS: Update puncture source for Radar puncture bitmap=0x%04x",
 			radar_bitmap_oper | iface->radar_bit_pattern);
-	dfs_update_puncture_source(iface, center_freq, chan_width,
+	dfs_update_puncture_source(iface, center_freq, bw_mhz,
 				   radar_bitmap_oper | iface->conf->punct_bitmap,
 				   DFS_CHAN_PUNC_RADAR);
 	oper_centr_freq_seg0_idx = iface->conf->vht_oper_centr_freq_seg0_idx;
@@ -4685,20 +4689,86 @@ dfs_get_next_radar_start_width(struct hostapd_iface *iface,
 
 
 /**
- * dfs_select_next_radar_chanwidth() - Check if the given width can be used for
- * 				next-radar channel selection.
+ * dfs_is_valid_punct_pattern_available - Check if puncturing is possible.
  * @iface: Hostapd interface.
- * @chan:  Primary channel.
+ * @mode: Hardware mode.
+ * @start_chan_idx: Index of the first channel in the block.
+ * @bw_mhz: Requested bandwidth in MHz.
+ * @n_sub: Number of 20 MHz sub-channels present in the block.
+ * @pri_chan_pos: Primary channel position within the block.
+ * @punct_bitmap: In/out puncturing bitmap [used to check whether any static
+ * 		  puncturing is done and update the final bitmap].
+ *
+ * If one or more sub-channels are unavailable due to NOL, determines
+ * whether a valid puncture pattern exists that allows the AP to use the
+ * same bandwidth requested (@bw_mhz).
+ *
+ * Return: %true if puncturing is possible.
+ *         %false otherwise.
+ */
+static bool dfs_is_valid_punct_pattern_available(struct hostapd_iface *iface,
+						 struct hostapd_hw_modes *mode,
+						 int start_chan_idx, int bw_mhz,
+						 int n_sub, int pri_chan_pos,
+						 u16 *punct_bitmap)
+{
+	struct hostapd_channel_data *first_chan = &mode->channels[start_chan_idx];
+	int freq;
+	int i;
+	u16 nol_bitmap = 0;
+
+	if (!iface->conf->use_ru_puncture_dfs || !iface->conf->ieee80211be)
+		return false;
+
+	freq = first_chan->freq;
+	for (i = 0; i < n_sub; i++, freq += CHWIDTH_20) {
+		struct hostapd_channel_data *chan;
+
+		chan = dfs_get_chan_data(mode, freq, start_chan_idx);
+		if ((chan->flag & HOSTAPD_CHAN_RADAR) &&
+		    (chan->flag & HOSTAPD_CHAN_DFS_MASK) ==
+		    HOSTAPD_CHAN_DFS_UNAVAILABLE)
+			nol_bitmap |= BIT(i);
+	}
+
+	if (!nol_bitmap)
+		return false;
+	else
+		nol_bitmap |= *punct_bitmap;
+
+	if (!is_punct_bitmap_valid(bw_mhz, pri_chan_pos, nol_bitmap))
+		return false;
+
+	*punct_bitmap = nol_bitmap;
+	return true;
+}
+
+
+/**
+ * dfs_select_next_radar_chanwidth() - Validate a channel/bandwidth
+ *                                     combination for channel switch.
+ * @iface: Hostapd interface.
+ * @chan: Primary channel.
  * @width: Channel width.
- * @is_40mhz: non-zero for 40 MHz.
- * 		   zero for other bw.
+ * @is_40mhz: Non-zero for 40 MHz, zero for other bandwidths.
  * @target: Output structure populated on success.
  *
- * Checks whether all channels required for @width are available.
- * On success, stores the corresponding channel switch parameters in @target.
+ * Checks whether the specified channel range can be used for a channel
+ * switch. All sub-channels required by the requested bandwidth must be
+ * available and allowed for transmission.
  *
- * Return: %true on success.
- * 	   %false if the requested width is not available.
+ * The 320 MHz 100-144 block only spans 240 MHz of real channels; its
+ * upper 80 MHz is always punctured since no real channels exist there.
+ *
+ * Returns failure if the primary channel is not allowed, the requested
+ * bandwidth is not permitted, any required channel is disabled, or the
+ * channel range cannot be used even with puncturing.
+ *
+ * If the given channel and bandwidth can be used for channel switch
+ * update the hostapd_dfs_next_radar_channel with the channel params.
+ *
+ * Return: %true if the requested channel configuration is usable.
+ *         %false if the requested channel configuration is unusable.
  */
 static bool
 dfs_select_next_radar_chanwidth(struct hostapd_iface *iface,
@@ -4708,24 +4778,24 @@ dfs_select_next_radar_chanwidth(struct hostapd_iface *iface,
 				struct hostapd_dfs_next_radar_channel *target)
 {
 	struct hostapd_hw_modes *mode = iface->current_mode;
-	int bw_mhz = dfs_convert_chwidth_to_mhz(width, is_40mhz);
-	int start_chan_idx, block_start, sec, n_chans;
+	int bw_mhz = hostapd_get_bw_from_oper_width(width, is_40mhz);
+	int start_chan_idx, block_start, sec, n_chans, chan_pos;
+	u16 punct_bitmap = 0;
 	u8 seg0;
+	bool is_fullchan_valid;
 
 #ifdef CONFIG_QCN_EXTN
 	if (bw_mhz == CHWIDTH_320)
 	{
-		block_start = dfs_compute_chan_params_320mhz(chan->chan,
-							     &width,
+		block_start = dfs_compute_chan_params_320mhz(chan->chan, &width,
 							     &seg0, &sec);
-		n_chans = 12;
+		punct_bitmap = RIGHT80_240MHZ_PUNC;
 	}
 	else
 #endif
 	{
 		block_start = dfs_compute_chan_params(chan->chan, bw_mhz, &width,
 						      &seg0, &sec);
-		n_chans = bw_mhz / CHWIDTH_20;
 	}
 
 	if (block_start < 0)
@@ -4735,17 +4805,26 @@ dfs_select_next_radar_chanwidth(struct hostapd_iface *iface,
 	if (start_chan_idx < 0)
 		return false;
 
-	if (!dfs_chan_range_available(mode, start_chan_idx, n_chans,
-				      DFS_ANY_CHANNEL))
-		return false;
+	n_chans = dfs_get_num_chans(bw_mhz);
+	is_fullchan_valid = dfs_chan_range_available(mode, start_chan_idx,
+						     n_chans, DFS_ANY_CHANNEL);
+	chan_pos = (chan->chan - block_start) / 4;
+	if (is_fullchan_valid ||
+	    dfs_is_valid_punct_pattern_available(iface, mode, start_chan_idx, bw_mhz,
+		    				 n_chans, chan_pos, &punct_bitmap)) {
+		target->channel = chan;
+		target->secondary_channel = sec;
+		target->oper_chwidth = width;
+		target->seg0_idx = seg0;
+		target->seg1_idx = 0;
+		target->punct_bitmap = punct_bitmap;
+		target->bw_mhz = bw_mhz;
+		dfs_update_puncture_source(iface, GET_FREQ_CHAN_5G(seg0), bw_mhz,
+					   punct_bitmap, DFS_CHAN_PUNC_RADAR);
+		return true;
+	}
 
-	target->channel = chan;
-	target->secondary_channel = sec;
-	target->oper_chwidth = width;
-	target->seg0_idx = seg0;
-	target->seg1_idx = 0;
-
-	return true;
+	return false;
 }
 
 
@@ -4807,7 +4886,6 @@ dfs_find_next_radar_channel(struct hostapd_iface *iface,
 	return false;
 }
 
-
 /**
  * dfs_convert_chwidth_to_mhz() - Convert channel width enum to bandwidth in MHz.
  * @width: Operating channel width.
@@ -4863,7 +4941,6 @@ static int dfs_convert_chwidth_to_mhz(enum oper_chan_width width,
 static bool dfs_switch_next_radar_channel(struct hostapd_iface *iface)
 {
 	struct hostapd_dfs_next_radar_channel target;
-	int nxt_bw_mhz, nxt_base_freq;
 
 	if (iface->conf->next_radar_chan.freq == -1 ||
 	    iface->conf->disable_csa_dfs || iface->skip_mesh_dfs)
@@ -4872,13 +4949,8 @@ static bool dfs_switch_next_radar_channel(struct hostapd_iface *iface)
 	if (!dfs_find_next_radar_channel(iface, &target))
 		return false;
 
-	nxt_bw_mhz = dfs_convert_chwidth_to_mhz(target.oper_chwidth,
-						target.secondary_channel);
-	nxt_base_freq = GET_FREQ_CHAN_5G(target.seg0_idx) - nxt_bw_mhz / 2 +
-			(CHWIDTH_20 / 2);
-
-	if (dfs_check_radar_flag_chan(iface->current_mode, nxt_base_freq,
-				      nxt_bw_mhz)) {
+	if (dfs_check_radar_flag_chan(iface->current_mode, target.channel->freq,
+				      target.bw_mhz)) {
 		iface->conf->next_radar_chan.freq = -1;
 		iface->conf->next_radar_chan.width = -1;
 	}
@@ -4893,7 +4965,8 @@ static bool dfs_switch_next_radar_channel(struct hostapd_iface *iface)
 					   target.secondary_channel,
 					   target.oper_chwidth,
 					   target.seg0_idx,
-					   target.seg1_idx, 0);
+					   target.seg1_idx,
+					   target.punct_bitmap);
 	return true;
 }
 
