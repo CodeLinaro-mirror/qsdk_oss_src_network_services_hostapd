@@ -1841,6 +1841,21 @@ struct wpa_supplicant {
 #ifdef CONFIG_QCN_EXTN
 	struct wpa_connect_work *cache_cwork;
 	int pre_connect_cnt;
+	/*
+	 * Target frequencies snapshotted when cache_cwork was set on entry to
+	 * WPA_PRE_CONNECT. cache_cwork->bss is a live pointer into the scan
+	 * cache and its freq (and per-link freqs) can be rewritten in place
+	 * by a background scan while PRE_CONNECT is still pending, so the
+	 * channel-switch-result event must be matched against this stable
+	 * snapshot, not against cache_cwork->bss->freq/mld_links directly.
+	 * For an MLD BSS, one entry per valid link is populated (matching
+	 * the per-link pre_connect_cnt increments in
+	 * wpas_ucode_update_pre_connect_state()/
+	 * wpa_supp_pre_connect_state_handle_extn()); for a legacy BSS, only
+	 * pre_connect_target_freqs[0] is populated.
+	 */
+	int pre_connect_target_freqs[MAX_NUM_MLD_LINKS];
+	unsigned int pre_connect_target_freq_count;
 	struct wpa_supplicant_extn wpas_extn;
 #endif
 
