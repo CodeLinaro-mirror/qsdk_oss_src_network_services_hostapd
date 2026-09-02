@@ -3572,7 +3572,7 @@ static void nl80211_stop_ap(struct i802_bss *bss, struct nlattr **tb)
 
 		mld_link = nl80211_get_link(bss, link_id);
 		wpa_printf(MSG_DEBUG,
-			   "nl80211: STOP_AP event on link %d", link_id);
+			   "nl80211: STOP_AP event on link_id %d", link_id);
 		ctx = mld_link->ctx;
 
 		/* Bring down the active link */
@@ -6783,7 +6783,8 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
 	wpa_printf(MSG_DEBUG, "nl80211: Drv Event %d (%s) received for %s",
 		   cmd, nl80211_command_to_string(cmd), bss->ifname);
 
-	if (bss->valid_links && !bss->active_links) {
+	if (bss->valid_links && !bss->active_links &&
+	    cmd != NL80211_CMD_START_AP) {
 		wpa_printf(MSG_ERROR, "nl80211: Ignoring BSS Event %d (%s) received for %s",
 			   cmd, nl80211_command_to_string(cmd),
 			   bss->ifname);
