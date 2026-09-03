@@ -1067,6 +1067,12 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
 
 		factor /= total_weight;
 
+#ifdef CONFIG_QCN_EXTN
+		factor *= (100.0L +
+			   hostapd_get_dcs_channel_penalty_extn(iface, chan)) /
+			  100.0L;
+#endif /* CONFIG_QCN_EXTN */
+
 		bias = NULL;
 		if (iface->conf->acs_chan_bias) {
 			for (k = 0; k < iface->conf->num_acs_chan_bias; k++) {
