@@ -1722,9 +1722,18 @@ static void acs_study(struct hostapd_iface *iface)
 
 		if (iface->conf->ieee80211ac || iface->conf->ieee80211ax ||
 		    iface->conf->ieee80211be || iface->conf->ieee80211bn) {
-			acs_adjust_secondary(iface);
+
+#ifdef CONFIG_QCN_EXTN
+			if (iface->conf->conf_extn.qacs_enable)
+				qacs_adjust_sec_chan_and_eht320_offset(
+					iface, ideal_chan);
+			else
+#endif
+
+				acs_adjust_secondary(iface);
 			acs_adjust_center_freq(iface);
 		}
+
 
 		err = hostapd_select_hw_mode(iface);
 		if (err) {
