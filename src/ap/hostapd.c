@@ -1805,6 +1805,12 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 	iface->csa_pending_on_cac_abort = false;
 	os_memset(&iface->csa_settings, 0, sizeof(struct csa_settings));
 	os_memset(&iface->radar_background, 0, sizeof(iface->radar_background));
+	/*
+	 * channel == -1 is the sentinel the DFS background-radar code checks
+	 * for "no cached channel"; os_memset() above leaves it 0, which is a
+	 * channel number, not the sentinel.
+	 */
+	iface->radar_background.channel = -1;
 #ifdef CONFIG_QCN_EXTN
 	hostapd_iface_deinit_extn(iface);
 #endif /* CONFIG_QCN_EXTN */
@@ -6035,6 +6041,13 @@ struct hostapd_iface * hostapd_alloc_iface(void)
 	hapd_iface->is_afc_power_event_received = false;
 	hapd_iface->is_afc_repeater_power_sync_pending = false;
 
+	/*
+	 * channel == -1 is the sentinel the DFS background-radar code checks
+	 * for "no cached channel"; os_zalloc() above leaves it 0, which is a
+	 * channel number, not the sentinel.
+	 */
+	hapd_iface->radar_background.channel = -1;
+
 #ifdef CONFIG_QCN_EXTN
 	hostapd_iface_init_extn(hapd_iface);
 	hapd_iface->vendor_bssid_used_mask = 0;
@@ -7480,6 +7493,12 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt, const char *event)
 		os_memset(&hapd->iface->csa_settings, 0, sizeof(struct csa_settings));
 		os_memset(&hapd->iface->radar_background, 0,
 			  sizeof(hapd->iface->radar_background));
+		/*
+		 * channel == -1 is the sentinel the DFS background-radar code
+		 * checks for "no cached channel"; os_memset() above leaves it
+		 * 0, which is a channel number, not the sentinel.
+		 */
+		hapd->iface->radar_background.channel = -1;
 		hostapd_interface_update_fils_ubpr(hapd->iface, false);
 	}
 	ieee802_11_update_beacon_mbssid(hapd);
