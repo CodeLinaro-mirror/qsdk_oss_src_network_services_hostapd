@@ -165,6 +165,10 @@ struct nan_publish_params;
 
 #define HOSTAPD_CHAN_PSD 0x00200000
 
+#define HOSTAPD_CHAN_NO_HE  0x01000000
+#define HOSTAPD_CHAN_NO_EHT 0x02000000
+#define HOSTAPD_CHAN_NO_UHR 0x04000000
+
 /**
  * enum dfs_chan_puncture_source - Source of channel puncturing
  * @DFS_CHAN_PUNC_NONE: Channel is not punctured

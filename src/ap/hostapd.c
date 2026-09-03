@@ -11927,12 +11927,46 @@ ieee80211_validate_chan_bw_in_afc_response(struct hostapd_iface *iface,
 	return valid;
 }
 
+static bool chan_phy_mode_valid(struct hostapd_iface *iface,
+				struct hostapd_channel_data *chan)
+{
+#ifdef CONFIG_IEEE80211BN
+	if (iface->conf->ieee80211bn && chan->flag & HOSTAPD_CHAN_NO_UHR) {
+		wpa_printf(MSG_DEBUG,
+			   "Channel %d MHz is not allowed for UHR operation",
+			   chan->freq);
+		return false;
+	}
+#endif /* CONFIG_IEEE80211BN */
+
+#ifdef CONFIG_IEEE80211BE
+	if (iface->conf->ieee80211be && chan->flag & HOSTAPD_CHAN_NO_EHT) {
+		wpa_printf(MSG_DEBUG,
+			   "Channel %d MHz is not allowed for EHT operation",
+			   chan->freq);
+		return false;
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+#ifdef CONFIG_IEEE80211AX
+	if (iface->conf->ieee80211ax && chan->flag & HOSTAPD_CHAN_NO_HE) {
+		wpa_printf(MSG_DEBUG,
+			   "Channel %d MHz is not allowed for HE operation",
+			   chan->freq);
+		return false;
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	return true;
+}
+
 bool
 hostapd_validate_non_6ghz_chan_bw(struct hostapd_iface *iface, u16 freq,
 				  u16 center_freq, u16 bw, u16 pp)
 {
 	int start_freq, num_bw_chans;
 	u8 i;
+	s8 sec_chan_offset = 0;
 
 	if (bw == 20) {
 		start_freq = freq;
@@ -11951,7 +11985,14 @@ hostapd_validate_non_6ghz_chan_bw(struct hostapd_iface *iface, u16 freq,
 		return false;
 #endif
 
-	if (!hostapd_get_bonded_chan_center_freq(freq, bw, 0, 0)) {
+	if (bw == 40) {
+		if (center_freq > freq)
+			sec_chan_offset = 1;
+		else if (center_freq < freq)
+			sec_chan_offset = -1;
+	}
+
+	if (!hostapd_get_bonded_chan_center_freq(freq, bw, 0, sec_chan_offset)) {
 		wpa_printf(MSG_ERROR,
 			   "non-6ghz validate: freq %u no bonded center at bw %u",
 			   freq, bw);
@@ -11982,6 +12023,16 @@ hostapd_validate_non_6ghz_chan_bw(struct hostapd_iface *iface, u16 freq,
 			return false;
 		}
 
+		if (!chan_bw_allowed(chan, bw, sec_chan_offset == 1, sub_freq == freq)) {
+			wpa_printf(MSG_ERROR,
+				   "non-6ghz validate: freq %u BW %u is not supported",
+				   sub_freq, bw);
+			return false;
+		}
+
+		if (!chan_phy_mode_valid(iface, chan))
+			return false;
+
 		if ((chan->flag & HOSTAPD_CHAN_DFS_MASK) ==
 		    HOSTAPD_CHAN_DFS_UNAVAILABLE) {
 			wpa_printf(MSG_ERROR,
@@ -12003,10 +12054,11 @@ hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
 	u8 num_channels_6ghz, chan_idx, i, num_bw_chans = bw / 20;
 	struct hostapd_channel_data *chan_6ghz = NULL;
 	u16 pri_chan_pos = (freq - start_freq) / 20;
+	int ht40_plus = 0;
 
 	wpa_printf(MSG_INFO,
 		   "Validating power mode: %d, Freq: %d, cf: %d, BW: %d, pp: 0x%x",
-		   pwr_type, iface->freq, center_freq, bw, pp);
+		   pwr_type, freq, center_freq, bw, pp);
 
 	if (!is_punct_bitmap_valid(bw, pri_chan_pos, pp)) {
 		wpa_printf(MSG_ERROR, "pp 0x%x invalid for freq %d BW %d",
@@ -12019,7 +12071,8 @@ hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
 							 center_freq, bw, pp);
 
 	if (bw > 20) {
-		u16 cen = hostapd_get_bonded_chan_center_freq(freq, bw, 0, 0);
+		u16 cen = hostapd_get_bonded_chan_center_freq(freq, bw,
+							      center_freq, 0);
 
 		if (!cen) {
 			wpa_printf(MSG_ERROR,
@@ -12049,7 +12102,16 @@ hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
 		return false;
 	}
 
+	if (bw == 40) {
+		if (center_freq > freq)
+			ht40_plus = 1;
+		else if (center_freq < freq)
+			ht40_plus = 0;
+	}
+
 	for (i = 0; i < num_bw_chans; i++) {
+		int sub_freq = start_freq + i * 20;
+
 		if (pp & BIT(i)) {
 			wpa_printf(MSG_INFO,
 				   "Channel idx: %d is punctured. PP: 0x%x", i, pp);
@@ -12064,6 +12126,16 @@ hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
 				   chan_6ghz->freq, chan_6ghz->flag, pwr_type);
 			return false;
 		}
+
+		if (!chan_bw_allowed(chan_6ghz, bw, ht40_plus, sub_freq == freq)) {
+			wpa_printf(MSG_ERROR,
+				   "validate_chan_bw 6G: freq %u BW %u is not supported",
+				   sub_freq, bw);
+			return false;
+		}
+
+		if (!chan_phy_mode_valid(iface, chan_6ghz))
+			return false;
 
 		chan_6ghz++;
 	}
