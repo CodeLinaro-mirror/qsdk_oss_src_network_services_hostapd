@@ -11982,7 +11982,7 @@ static int hostapd_remove_vendor_elements(struct hostapd_bss_config *conf,  stru
 		entry_len = wpabuf_len(entry);
 
 		if (entry_len == needle_len &&
-		    os_memcmp(entry_data + 2, needle + 2, needle_len - 2) == 0) {
+		    os_memcmp(entry_data, needle, needle_len) == 0) {
 			conf->vendor_elements_len -= wpabuf_len(conf->vendor_elements[i]);
 			wpabuf_free(entry);
 			os_remove_in_array(conf->vendor_elements, conf->vendor_elements_count,
@@ -12007,20 +12007,12 @@ static int hostapd_remove_vendor_elements(struct hostapd_bss_config *conf,  stru
 static bool hostapd_validate_vendor_elements(struct hostapd_bss_config *conf, struct wpabuf *buf)
 {
 	const u8 *data;
-	u8 id;
 	size_t pos = 0, total;
 
 	data = wpabuf_head_u8(buf);
 	total = wpabuf_len(buf);
 
 	while (pos < total) {
-		id = data[pos];
-		if (id != WLAN_EID_VENDOR_SPECIFIC) {
-			wpa_printf(MSG_ERROR, "Invalid vendor ID:%u: Expected:%d",
-				   id, WLAN_EID_VENDOR_SPECIFIC);
-			return false;
-		}
-
 		pos += data[pos + 1] + IEEE80211_ELEM_HEADER_LEN;
 		if (pos > total) {
 			wpa_printf(MSG_ERROR, "Vendor IE Truncated: total=%zu ie_len=%zu",
