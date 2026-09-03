@@ -4512,6 +4512,13 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 
 	changes = wpa_bss_compare_res(bss, res);
 	bss = wpa_bss_update(wpa_s, bss, res, fetch_time, true);
+
+	if (disabled_freq(wpa_s, bss->freq)) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"RNR Ignore - Freq %d disabled", bss->freq);
+		non_assoc_links &= ~BIT(link_id);
+	}
+
 	if (!wpa_is_6ghz_power_mode_match(wpa_s, bss)) {
 		wpa_dbg(wpa_s, MSG_DEBUG,
 			"RNR 6 GHz Power Mode mismatch - Ignore");
@@ -4619,6 +4626,16 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 						}
 						wpa_printf(MSG_DEBUG,
 							   "ML pbss: using temporary scan result");
+					}
+
+					if (disabled_freq(wpa_s, pbss->freq)) {
+						wpa_dbg(wpa_s, MSG_DEBUG,
+							"ML RNR Ignore - Freq %d disabled",
+							pbss->freq);
+						non_assoc_links &= ~BIT(link_id);
+						if (pbss_tmp)
+							os_free(pbss);
+						goto cont;
 					}
 
 					if (!wpa_is_6ghz_power_mode_match(wpa_s, pbss)) {
