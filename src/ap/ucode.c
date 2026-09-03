@@ -1065,6 +1065,80 @@ out:
 }
 
 static uc_value_t *
+uc_hostapd_iface_validate_freq(uc_vm_t *vm, size_t nargs)
+{
+	struct hostapd_iface *iface = uc_fn_thisval("hostapd.iface");
+	uc_value_t *info = uc_fn_arg(0);
+	struct hostapd_config *conf;
+	uint64_t intval;
+	u16 freq = 0, center_freq = 0, bw = 20, pp = 0;
+	int sec_channel = 0;
+	u8 pwr_mode;
+	bool valid = true;
+
+	if (!iface || ucv_type(info) != UC_OBJECT)
+		return ucv_boolean_new(false);
+
+	conf = iface->conf;
+	if (!conf)
+		return ucv_boolean_new(false);
+
+	errno = 0;
+	intval = ucv_int64_get(ucv_object_get(info, "frequency", NULL));
+	if (errno || !intval)
+		return ucv_boolean_new(false);
+	freq = intval;
+
+	errno = 0;
+	intval = ucv_int64_get(ucv_object_get(info, "sec_channel", NULL));
+	if (!errno)
+		sec_channel = intval;
+
+	errno = 0;
+	intval = ucv_int64_get(ucv_object_get(info, "oper_chwidth", NULL));
+	if (errno) {
+		errno = 0;
+		intval = hostapd_get_oper_chwidth(conf);
+	}
+	if (intval == CONF_OPER_CHWIDTH_320MHZ)
+		bw = 320;
+	else if (intval == CONF_OPER_CHWIDTH_80MHZ)
+		bw = 80;
+	else if (intval == CONF_OPER_CHWIDTH_160MHZ ||
+		 intval == CONF_OPER_CHWIDTH_80P80MHZ)
+		bw = 160;
+	else
+		bw = sec_channel ? 40 : 20;
+
+	errno = 0;
+	intval = ucv_int64_get(ucv_object_get(info, "center_freq1", NULL));
+	if (!errno && intval)
+		center_freq = intval;
+	else if (bw == 20)
+		center_freq = freq;
+	else
+		center_freq = freq + (sec_channel * 10);
+
+	errno = 0;
+	intval = ucv_int64_get(ucv_object_get(info, "punct_bitmap", NULL));
+	if (!errno)
+		pp = intval;
+
+	pwr_mode = is_6ghz_freq(freq) ? conf->he_6ghz_reg_pwr_type :
+					NL80211_REG_NUM_POWER_MODES;
+	errno = 0;
+	intval = ucv_int64_get(ucv_object_get(info, "power_mode", NULL));
+	if (!errno && intval < NL80211_REG_NUM_POWER_MODES)
+		pwr_mode = intval;
+
+	valid = hostapd_validate_chan_bw_in_pwr_mode(iface, freq,
+						     center_freq, bw, pp,
+						     pwr_mode);
+
+	return ucv_boolean_new(valid);
+}
+
+static uc_value_t *
 uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 {
 	struct hostapd_iface *iface = uc_fn_thisval("hostapd.iface");
@@ -1238,6 +1312,7 @@ int hostapd_ucode_init(struct hapd_interfaces *ifaces)
 		{ "add_bss", uc_hostapd_iface_add_bss },
 		{ "stop", uc_hostapd_iface_stop },
 		{ "start", uc_hostapd_iface_start },
+		{ "validate_freq", uc_hostapd_iface_validate_freq },
 		{ "switch_channel", uc_hostapd_iface_switch_channel },
 	};
 
