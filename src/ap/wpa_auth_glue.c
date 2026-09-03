@@ -1212,6 +1212,15 @@ static void hostapd_clear_ptksa(void *ctx, const u8 *addr, int cipher)
 #endif /* CONFIG_PASN */
 
 
+static void hostapd_wpa_auth_store_pmk(void *ctx, const u8 *addr,
+				       const u8 *pmk, size_t pmk_len)
+{
+	struct hostapd_data *hapd = ctx;
+
+	hostapd_store_pmk(hapd, addr, pmk, pmk_len);
+}
+
+
 static int hostapd_wpa_auth_update_vlan(void *ctx, const u8 *addr, int vlan_id)
 {
 #ifndef CONFIG_NO_VLAN
@@ -2096,6 +2105,7 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 		.send_oui = hostapd_wpa_auth_send_oui,
 		.channel_info = hostapd_channel_info,
 		.update_vlan = hostapd_wpa_auth_update_vlan,
+		.store_pmk = hostapd_wpa_auth_store_pmk,
 #ifdef CONFIG_PASN
 		.store_ptksa = hostapd_store_ptksa,
 		.clear_ptksa = hostapd_clear_ptksa,

@@ -388,6 +388,16 @@ struct tk_record {
 	struct dl_list list;
 };
 
+/* PMK storage for testbed negative tests, keyed by STA MLD MAC address
+ * (or per-link address for non-MLO STAs). */
+struct pmk_record {
+	u8 mld_mac[ETH_ALEN];
+	u8 pmk[PMK_LEN_MAX];
+	size_t pmk_len;
+	unsigned long timestamp;
+	struct dl_list list;
+};
+
 /**
  * struct hostapd_data - hostapd per-BSS data structure
  */
@@ -815,6 +825,7 @@ struct hostapd_data {
 	bool rtt_role_fw_sent;
 
 	struct dl_list tk_records; /* Transaction Key storage for testbed */
+	struct dl_list pmk_records; /* PMK storage for testbed, keyed by MLD MAC */
 };
 
 

@@ -11508,6 +11508,52 @@ found:
 }
 
 
+static int hostapd_ctrl_iface_get_previous_pmk(struct hostapd_data *hapd,
+						const char *txtaddr,
+						char *reply, int reply_size)
+{
+	u8 mld_mac[ETH_ALEN];
+	struct pmk_record *rec;
+	int reply_len = 0;
+	int i;
+
+	wpa_printf(MSG_DEBUG, "CTRL_IFACE GET_PREVIOUS_PMK %s", txtaddr);
+
+	if (hwaddr_aton(txtaddr, mld_mac)) {
+		wpa_printf(MSG_ERROR, "Invalid MAC address: %s", txtaddr);
+		return -1;
+	}
+
+	dl_list_for_each(rec, &hapd->pmk_records, struct pmk_record, list) {
+		if (os_memcmp(rec->mld_mac, mld_mac, ETH_ALEN) == 0)
+			goto found;
+	}
+
+	wpa_printf(MSG_DEBUG, "PMK not found for MAC " MACSTR, MAC2STR(mld_mac));
+	os_snprintf(reply, reply_size, "FAIL\nNot found\n");
+	return os_strlen(reply);
+
+found:
+	reply_len = os_snprintf(reply, reply_size, "OK\nPMK=");
+	if (reply_len < 0 || reply_len >= reply_size)
+		return -1;
+
+	for (i = 0; i < (int) rec->pmk_len; i++) {
+		int res = os_snprintf(reply + reply_len,
+				      reply_size - reply_len,
+				      "%02x", rec->pmk[i]);
+		if (res < 0 || res >= reply_size - reply_len)
+			return -1;
+		reply_len += res;
+	}
+	reply_len += os_snprintf(reply + reply_len,
+				 reply_size - reply_len, "\n");
+	if (reply_len < 0 || reply_len >= reply_size)
+		return -1;
+	return reply_len;
+}
+
+
 static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 					      char *buf, char *reply,
 					      int reply_size,
@@ -11615,6 +11661,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 						       reply, reply_size);
 	} else if (os_strncmp(buf, "GET_PREVIOUS_TK ", 16) == 0) {
 		reply_len = hostapd_ctrl_iface_get_previous_tk(hapd, buf + 16,
+									 reply, reply_size);
+	} else if (os_strncmp(buf, "GET_PREVIOUS_PMK ", 17) == 0) {
+		reply_len = hostapd_ctrl_iface_get_previous_pmk(hapd, buf + 17,
 									 reply, reply_size);
 	} else if (os_strncmp(buf, "POLL_STA ", 9) == 0) {
 		if (hostapd_ctrl_iface_poll_sta(hapd, buf + 9))

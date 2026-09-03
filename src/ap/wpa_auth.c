@@ -459,6 +459,14 @@ void wpa_auth_store_ptksa(struct wpa_authenticator *wpa_auth,
 }
 
 
+void wpa_auth_store_pmk(struct wpa_authenticator *wpa_auth,
+			const u8 *addr, const u8 *pmk, size_t pmk_len)
+{
+	if (wpa_auth->cb->store_pmk)
+		wpa_auth->cb->store_pmk(wpa_auth->cb_ctx, addr, pmk, pmk_len);
+}
+
+
 static void wpa_auth_remove_ptksa(struct wpa_authenticator *wpa_auth,
 				  const u8 *addr, int cipher)
 {
@@ -1147,6 +1155,7 @@ void wpa_store_eppke_pmk_ptk_sm(struct wpa_state_machine *sm,
 	sm->PTK_valid = true;
 	sm->pairwise_set = true;
 	sm->hash_alg = ptk->hash_alg;
+	wpa_auth_store_pmk(sm->wpa_auth, wpa_auth_get_spa(sm), sm->PMK, sm->pmk_len);
 }
 #endif /* CONFIG_ENC_ASSOC */
 
@@ -3849,6 +3858,7 @@ int fils_set_tk(struct wpa_state_machine *sm)
 
 	wpa_auth_store_ptksa(sm->wpa_auth, sm->addr, sm->pairwise,
 			     dot11RSNAConfigPMKLifetime, &sm->PTK);
+	wpa_auth_store_pmk(sm->wpa_auth, wpa_auth_get_spa(sm), sm->PMK, sm->pmk_len);
 
 	return 0;
 }
@@ -6076,6 +6086,8 @@ SM_STATE(WPA_PTK, PTKINITDONE)
 		wpa_auth_set_ptk_rekey_timer(sm);
 		wpa_auth_store_ptksa(sm->wpa_auth, sm->addr, sm->pairwise,
 				     dot11RSNAConfigPMKLifetime, &sm->PTK);
+		wpa_auth_store_pmk(sm->wpa_auth, wpa_auth_get_spa(sm), sm->PMK,
+				   sm->pmk_len);
 
 		if (wpa_key_mgmt_wpa_psk(sm->wpa_key_mgmt) ||
 		    sm->wpa_key_mgmt == WPA_KEY_MGMT_DPP ||

@@ -401,6 +401,8 @@ int wpa_auth_for_each_partner_auth(struct wpa_authenticator *wpa_auth,
 void wpa_auth_store_ptksa(struct wpa_authenticator *wpa_auth,
 			  const u8 *addr, int cipher,
 			  u32 life_time, const struct wpa_ptk *ptk);
+void wpa_auth_store_pmk(struct wpa_authenticator *wpa_auth,
+			const u8 *addr, const u8 *pmk, size_t pmk_len);
 
 #ifdef CONFIG_IEEE80211R_AP
 int wpa_write_mdie(struct wpa_auth_config *conf, u8 *buf, size_t len);

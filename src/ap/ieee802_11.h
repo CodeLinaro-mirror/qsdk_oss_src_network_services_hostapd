@@ -720,4 +720,7 @@ u8 * hostapd_add_auth_comeback(struct hostapd_data *hapd, struct sta_info *sta,
 void hostapd_store_tk(struct hostapd_data *hapd, const u8 *ap_mac,
 		      const u8 *tk, size_t tk_len);
 
+void hostapd_store_pmk(struct hostapd_data *hapd, const u8 *mld_mac,
+		       const u8 *pmk, size_t pmk_len);
+
 #endif /* IEEE802_11_H */

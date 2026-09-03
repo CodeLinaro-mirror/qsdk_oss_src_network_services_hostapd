@@ -436,6 +436,8 @@ struct wpa_auth_callbacks {
 	void (*store_ptksa)(void *ctx, const u8 *addr, int cipher,
 			    u32 life_time, const struct wpa_ptk *ptk);
 	void (*clear_ptksa)(void *ctx, const u8 *addr, int cipher);
+	void (*store_pmk)(void *ctx, const u8 *addr, const u8 *pmk,
+			  size_t pmk_len);
 	void (*request_radius_psk)(void *ctx, const u8 *addr, int key_mgmt,
 				   const u8 *anonce,
 				   const u8 *eapol, size_t eapol_len);
