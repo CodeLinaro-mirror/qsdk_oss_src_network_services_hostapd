@@ -15371,7 +15371,7 @@ static int nl80211_vendor_cmd_iface_enabled_notify(void *priv,
 
 	ret = send_and_recv_cmd(drv, msg);
 	if (ret)
-		wpa_printf(MSG_ERROR,
+		wpa_printf(MSG_DEBUG,
 			   "nl80211: iface enabled notify failed err=%d (%s)",
 			   ret, strerror(-ret));
 	else
