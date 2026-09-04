@@ -9596,6 +9596,56 @@ static int hostapd_ctrl_iface_send_scs_resp(struct hostapd_data *hapd,
 
 	return 0;
 }
+
+
+static int hostapd_ctrl_iface_scs_configure(struct hostapd_data *hapd,
+					    const char *cmd)
+{
+	u8 peer_mac[ETH_ALEN], scs_sta_mac[ETH_ALEN];
+	char *token, *context = NULL;
+	u16 qm_id;
+	u8 desc_buf[256];
+	size_t desc_len;
+
+	/* peer_mac */
+	token = str_token((char *)cmd, " ", &context);
+	if (!token || hwaddr_aton(token, peer_mac) != 0) {
+		wpa_printf(MSG_ERROR, "SCS_CONFIGURE: invalid peer_mac");
+		return -1;
+	}
+
+	/* scs_sta_mac */
+	token = str_token((char *)cmd, " ", &context);
+	if (!token || hwaddr_aton(token, scs_sta_mac) != 0) {
+		wpa_printf(MSG_ERROR, "SCS_CONFIGURE: invalid scs_sta_mac");
+		return -1;
+	}
+
+	/* qm_id limited to 0xFF for now, to be enhanced later if required */
+	token = str_token((char *)cmd, " ", &context);
+	if (!token || sscanf(token, "%hu", &qm_id) != 1 ||
+	    qm_id > 0xFF) {
+		wpa_printf(MSG_ERROR,
+			   "SCS_CONFIGURE: invalid QM ID");
+		return -1;
+	}
+
+	/* scs_desc_hex */
+	token = str_token((char *)cmd, " ", &context);
+	if (!token) {
+		wpa_printf(MSG_ERROR, "SCS_CONFIGURE: missing scs_desc_hex");
+		return -1;
+	}
+	desc_len = os_strlen(token) / 2;
+	if (desc_len == 0 || desc_len > sizeof(desc_buf) ||
+	    hexstr2bin(token, desc_buf, desc_len) < 0) {
+		wpa_printf(MSG_ERROR, "SCS_CONFIGURE: invalid scs_desc_hex");
+		return -1;
+	}
+
+	return hostapd_scs_configure(hapd, peer_mac, scs_sta_mac, qm_id,
+				     desc_buf, (u8)desc_len);
+}
 #endif /* CONFIG_IEEE80211AX */
 
 #ifdef CONFIG_TESTING_OPTIONS
@@ -12802,6 +12852,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 							     reply, reply_size);
 	} else if (os_strncmp(buf, "SEND_UNSOLICITED_SCS_RESP ", 26) == 0) {
 		if (hostapd_ctrl_iface_send_scs_resp(hapd, buf + 26))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "SCS_CONFIGURE ", 14) == 0) {
+		if (hostapd_ctrl_iface_scs_configure(hapd, buf + 14))
 			reply_len = -1;
 	} else if (os_strncmp(buf, "SET_MBSSID_TX", 13) == 0) {
 		if (hostapd_ctrl_iface_set_mbssid_tx(hapd, buf + 13))

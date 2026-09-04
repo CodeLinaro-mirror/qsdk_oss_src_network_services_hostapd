@@ -51,6 +51,28 @@ hostapd_scs_find_client_initiated(struct sta_info *sta, u8 scs_id)
 	return NULL;
 }
 
+/*
+ * hostapd_scs_find_by_qmid - find a stored descriptor by QM ID.
+ *
+ * Returns the descriptor whose qm_id matches, or NULL if not found
+ * (including when qm_id == 0xFFFF which means unassigned).
+ */
+static struct hostapd_scs_req_desc_data *
+hostapd_scs_find_by_qmid(struct sta_info *sta, u16 qm_id)
+{
+	struct hostapd_scs_req_desc_data *desc;
+
+	if (qm_id == 0xFFFF)
+		return NULL;
+
+	dl_list_for_each(desc, &sta->scs_req_desc,
+			 struct hostapd_scs_req_desc_data, list) {
+		if (desc->qm_id == qm_id)
+			return desc;
+	}
+	return NULL;
+}
+
 
 int hostapd_dump_scs_list(struct hostapd_data *hapd, struct sta_info *sta,
 			  char *buf, size_t buflen)
@@ -755,6 +777,7 @@ static int hostapd_scs_validate_desc(struct sta_info *sta,
 				     u16 qm_id)
 {
 	struct hostapd_scs_req_desc_data *client_entry;
+	struct hostapd_scs_req_desc_data *qmid_entry;
 
 	if (!deferred_scs) {
 		/*
@@ -820,6 +843,48 @@ static int hostapd_scs_validate_desc(struct sta_info *sta,
 				}
 			}
 
+		} else {
+			/*
+			 * Deferred path, CLI/controller — qm_id is the key.
+			 */
+			qmid_entry   = hostapd_scs_find_by_qmid(sta, qm_id);
+			client_entry = hostapd_scs_find_client_initiated(sta,
+									 scs_id);
+
+			if (req_type == QM_ADD_REQ) {
+				if (qmid_entry) {
+					wpa_printf(MSG_ERROR,
+						   "SCS_CONFIGURE ADD: qm_id=%u "
+						   "already exists", qm_id);
+					return -1;
+				}
+				if (client_entry && client_entry->request_pending) {
+					wpa_printf(MSG_ERROR,
+						   "SCS_CONFIGURE ADD: client-initiated "
+						   "entry exists and pending for scs_id=%u, "
+						   "use UPDATE", scs_id);
+					return -1;
+				}
+			} else if (req_type == QM_CHANGE_REQ) {
+				if (!qmid_entry) {
+					if (!(client_entry &&
+					      client_entry->request_pending)) {
+						wpa_printf(MSG_ERROR,
+							   "SCS_CONFIGURE UPDATE: no "
+							   "valid entry for scs_id=%u "
+							   "qm_id=%u", scs_id, qm_id);
+						return -1;
+					}
+				}
+			} else {
+				/* DELETE */
+				if (!qmid_entry) {
+					wpa_printf(MSG_ERROR,
+						   "SCS_CONFIGURE DELETE: qm_id=%u "
+						   "not found", qm_id);
+					return -1;
+				}
+			}
 		}
 	}
 
@@ -846,6 +911,9 @@ static int hostapd_parse_scs_desc(
 
 	/* Default QM ID — updated when application assigns one */
 	scs_req_desc->qm_id = 0xFFFF;
+	/* Default scs_sta_mac to the directly associated STA; overridden
+	 * by hostapd_scs_configure for the intermediate (repeater) case */
+	os_memcpy(scs_req_desc->scs_sta_mac, sta->addr, ETH_ALEN);
 
 	scs_id = scs_req_desc->scs_id;
 	req_type = scs_req_desc->request_type;
@@ -1028,12 +1096,16 @@ static void hostapd_copy_scs_qos_attr(
 }
 
 
-static void hostapd_copy_scs_desc(struct qm_req_desc_data *qm_data,
+static void hostapd_copy_scs_desc(struct hostapd_data *hapd,
+				  struct qm_req_desc_data *qm_data,
 				  struct hostapd_scs_req_desc_data scs_data)
 {
 	int tclas_idx;
 
-	qm_data->qm_id = scs_data.scs_id;
+	if (hapd->conf->deferred_scs)
+		qm_data->qm_id = scs_data.qm_id;
+	else
+		qm_data->qm_id = scs_data.scs_id;
 	qm_data->request_type = scs_data.request_type;
 	qm_data->priority = scs_data.intra_access_priority;
 	qm_data->num_tclas_elements = scs_data.num_tclas_elements;
@@ -1123,15 +1195,36 @@ hostapd_copy_and_send_scs_data(struct hostapd_data *hapd,
 		   qm_req.qm_type, qm_req.dialog_token, qm_req.num_qm_desc);
 
 	for (idx = 0; idx < qm_req.num_qm_desc; idx++) {
-		hostapd_copy_scs_desc(&qm_req.qm_req_desc[idx],
+		hostapd_copy_scs_desc(hapd, &qm_req.qm_req_desc[idx],
 				      scs_req->scs_req_desc[idx]);
 	}
 
 	ret = hostapd_drv_set_qos(hapd, &qm_req, &qm_resp);
-	if (ret == 0)
+	if (ret == 0) {
+		int ridx, qidx;
+
 		hostapd_copy_scs_resp(scs_resp, qm_resp);
-	else
+
+		/* In deferred mode the driver echoes back qm_id in the
+		 * response. Translate it to scs_id so that
+		 * hostapd_process_scs_req can match resp to req
+		 * descriptors by scs_id as it always does. */
+		if (hapd->conf->deferred_scs) {
+			for (ridx = 0; ridx < scs_resp->num_scs_desc; ridx++) {
+				u16 qm_id = scs_resp->scs_resp_desc[ridx].scs_id;
+
+				for (qidx = 0; qidx < scs_req->num_scs_desc; qidx++) {
+					if (scs_req->scs_req_desc[qidx].qm_id == qm_id) {
+						scs_resp->scs_resp_desc[ridx].scs_id =
+							scs_req->scs_req_desc[qidx].scs_id;
+						break;
+					}
+				}
+			}
+		}
+	} else {
 		wpa_printf(MSG_ERROR, "set_qos failed, ret: %d", ret);
+	}
 
 	return ret;
 }
@@ -1140,7 +1233,8 @@ static void hostapd_qm_prepare_nft_rule(struct hostapd_data *hapd,
 					struct sta_info *sta,
 					struct hostapd_tclas_elements *te,
 					struct hostapd_nft_rule_params *rule,
-					u8 qm_id, u8 qm_tag)
+					u8 qm_id, u8 qm_tag,
+					const u8 *scs_sta_mac)
 {
 	struct hostapd_tclas4_params *type4_params = &te->tclas_elem.type4_params;
 	struct hostapd_tclas10_params *type10_params = &te->tclas_elem.type10_params;
@@ -1258,7 +1352,7 @@ static void hostapd_qm_prepare_nft_rule(struct hostapd_data *hapd,
 	if (rule->weight > NFT_RULE_MAX_WEIGHT)
 		rule->weight = NFT_RULE_MAX_WEIGHT;
 
-	memcpy(rule->dmac, sta->addr, ETH_ALEN);
+	memcpy(rule->dmac, scs_sta_mac, ETH_ALEN);
 	rule->valid_flags |= NFT_RULE_PARAM_DMAC;
 	rule->mark = (qm_id << 8) | qm_tag;
 	os_snprintf(rule->chain, sizeof(rule->chain), "%s_%s", CHAIN_NAME,
@@ -1383,8 +1477,11 @@ static int hostapd_scs_add_nft_rule(struct hostapd_data *hapd,
 		rule.tclas_ele_idx = i;
 
 		hostapd_qm_prepare_nft_rule(hapd, sta, &te, &rule,
+					    hapd->conf->deferred_scs ?
+					    scs_req_desc->qm_id :
 					    scs_req_desc->scs_id,
-					    HOSTAPD_QOS_SCS_TAG);
+					    HOSTAPD_QOS_SCS_TAG,
+					    scs_req_desc->scs_sta_mac);
 
 		if (scs_req_desc->tclas_processing != 0) {
 			if ((rule.valid_flags & NFT_RULE_PARAM_DPORT ||
@@ -1524,7 +1621,10 @@ hostapd_process_scs_remove(struct hostapd_data *hapd, struct sta_info *sta,
 			   "status:%u - Declined in driver", scs_id, status);
 	}
 
-	scs_req_desc = hostapd_scs_find_by_id(sta, scs_id);
+	scs_req_desc = (hapd->conf->deferred_scs &&
+			scs_req_desc_tmp->qm_id != 0xFFFF)
+			? hostapd_scs_find_by_qmid(sta, scs_req_desc_tmp->qm_id)
+			: hostapd_scs_find_by_id(sta, scs_id);
 	if (!scs_req_desc) {
 		wpa_printf(MSG_ERROR, "SCS del request failed for scs_id:%u, "
 			   "entry not found", scs_id);
@@ -1564,7 +1664,10 @@ hostapd_process_scs_change(struct hostapd_data *hapd, struct sta_info *sta,
 	struct hostapd_scs_req_desc_data *scs_req_desc;
 	struct dl_list saved_list;
 
-	scs_req_desc = hostapd_scs_find_by_id(sta, scs_id);
+	scs_req_desc = (hapd->conf->deferred_scs &&
+			scs_req_desc_tmp->qm_id != 0xFFFF)
+			? hostapd_scs_find_by_qmid(sta, scs_req_desc_tmp->qm_id)
+			: hostapd_scs_find_by_id(sta, scs_id);
 	if (!scs_req_desc) {
 		wpa_printf(MSG_ERROR, "SCS change request failed for scs_id:%u,"
 			   " entry not found", scs_id);
@@ -1574,7 +1677,7 @@ hostapd_process_scs_change(struct hostapd_data *hapd, struct sta_info *sta,
 	hostapd_scs_delete_nft_rule(hapd, scs_req_desc);
 
 	os_memset(&qm_desc, 0, sizeof(qm_desc));
-	hostapd_copy_scs_desc(&qm_desc, *scs_req_desc);
+	hostapd_copy_scs_desc(hapd, &qm_desc, *scs_req_desc);
 	hostapd_drv_rule_config_notify(hapd, sta->addr, &qm_desc,
 				       HOSTAPD_QM_TYPE_SCS);
 
@@ -1650,7 +1753,8 @@ hostapd_mscs_add_nft_rules(struct hostapd_data *hapd, struct sta_info *sta,
 		rule.tclas_ele_idx = idx;
 
 		hostapd_qm_prepare_nft_rule(hapd, sta, te, &rule,
-					    tid, HOSTAPD_QOS_MSCS_TAG);
+					    tid, HOSTAPD_QOS_MSCS_TAG,
+					    sta->addr);
 
 		hostapd_qm_add_nft_rule_list(&rule, rules, rule_count);
 	}
@@ -1924,7 +2028,8 @@ static int hostapd_mscs_add_nft_rule(struct hostapd_data *hapd,
 		hostapd_process_nft_rules(hapd, sta);
 	} else {
 		hostapd_qm_prepare_nft_rule(hapd, sta, te, &rule,
-					    tid, HOSTAPD_QOS_MSCS_TAG);
+					    tid, HOSTAPD_QOS_MSCS_TAG,
+					    sta->addr);
 		hostapd_config_nft_rule(&rule, true);
 		flow_idx = sta->mscs_ctxt->available_idx - 1;
 		if (sta->mscs_ctxt->flow_info[flow_idx].num_rules == 0) {
@@ -2050,7 +2155,7 @@ static void hostapd_process_scs_req(struct hostapd_data *hapd,
 
 	for (idx = 0; idx < notify_count; idx++) {
 		os_memset(&qm_desc, 0, sizeof(qm_desc));
-		hostapd_copy_scs_desc(&qm_desc, notify_descs[idx]);
+		hostapd_copy_scs_desc(hapd, &qm_desc, notify_descs[idx]);
 		hostapd_drv_rule_config_notify(hapd, sta->addr, &qm_desc,
 					       HOSTAPD_QM_TYPE_SCS);
 	}
@@ -2493,6 +2598,330 @@ int hostapd_handle_mscs_ie_assoc(struct hostapd_data *hapd,
 
 }
 
+/*
+ * hostapd_scs_get_sta - MLD-aware STA lookup.
+ * If out_hapd is non-NULL it is updated to the link hapd that owns the STA.
+ */
+static struct sta_info *
+hostapd_scs_get_sta(struct hostapd_data *hapd,
+		    struct hostapd_data **out_hapd,
+		    const u8 *addr)
+{
+	struct hostapd_data *temp_hapd = hapd;
+	struct sta_info *sta = NULL;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hapd->conf->mld_ap) {
+		for_each_mld_link_include_repurposed(temp_hapd, hapd) {
+			sta = ap_get_sta(temp_hapd, addr);
+			if (sta)
+				break;
+		}
+	} else
+		sta = ap_get_sta(temp_hapd, addr);
+#else
+	if (hapd->conf->mld_ap) {
+		for_each_mld_link(temp_hapd, hapd) {
+			sta = ap_get_sta(temp_hapd, addr);
+			if (sta)
+				break;
+		}
+	} else
+		sta = ap_get_sta(temp_hapd, addr);
+#endif
+
+	if (out_hapd)
+		*out_hapd = temp_hapd;
+	return sta;
+}
+
+
+/*
+ * hostapd_scs_configure_send - populate scs_req from desc and send to driver.
+ * Calls hostapd_copy_and_send_scs_data then hostapd_process_scs_req.
+ * Returns 0 on success, -1 on driver failure.
+ */
+static int
+hostapd_scs_configure_send(struct hostapd_data *hapd,
+			   struct sta_info *sta,
+			   const u8 *peer_mac,
+			   struct hostapd_scs_req_desc_data *desc)
+{
+	struct hostapd_scs_resp_data scs_resp = {0};
+	struct hostapd_scs_req_data scs_req = {0};
+	int ret;
+
+	os_memcpy(scs_req.peer_mac, peer_mac, ETH_ALEN);
+	scs_req.num_scs_desc = 1;
+	scs_req.scs_req_desc[0] = *desc;
+
+	ret = hostapd_copy_and_send_scs_data(hapd, &scs_req, &scs_resp);
+	if (ret) {
+		wpa_printf(MSG_ERROR,
+			   "SCS_CONFIGURE: set_qos failed, ret:%d", ret);
+		return -1;
+	}
+
+	hostapd_process_scs_req(hapd, sta, &scs_req, &scs_resp);
+
+	return 0;
+}
+
+
+/*
+ * hostapd_scs_configure_qmid_found - handle SCS_CONFIGURE when the incoming
+ * qm_id already exists in the STA's descriptor database.
+ *
+ * *desc points to the stored entry that matched the qm_id.
+ *
+ * ADD    - reject (duplicate qm_id)
+ * UPDATE - reprogram driver + NFT, clear request_pending
+ * DELETE - reprogram driver + NFT; if client-initiated and terminating
+ *          node, send unsolicited SCS REMOVE to the STA
+ */
+static int
+hostapd_scs_configure_qmid_found(struct hostapd_data *hapd,
+				 struct sta_info *sta, const u8 *peer_mac,
+				 struct hostapd_scs_req_desc_data *scs_desc,
+				 struct hostapd_scs_req_desc_data *desc)
+{
+	int ret;
+
+	switch (scs_desc->request_type) {
+
+	case QM_ADD_REQ:
+		wpa_printf(MSG_ERROR,
+			   "SCS_CONFIGURE ADD: qm_id=%u already exists",
+			   desc->qm_id);
+		return -1;
+
+	case QM_CHANGE_REQ:
+		wpa_printf(MSG_DEBUG,
+			   "SCS_CONFIGURE UPDATE: qm_id=%u found, updating",
+			   desc->qm_id);
+		ret = hostapd_scs_configure_send(hapd, sta, peer_mac, scs_desc);
+		if (!ret) {
+			if (desc->request_pending)
+				desc->request_pending = 0;
+		}
+		//Todo: To review all the request_pending clearing areas to handle zombie states
+		//Todo: To think of timer logic for proper clearance and notification to EM
+		return ret;
+
+	case QM_REMOVE_REQ: {
+		struct hostapd_scs_resp_data scs_resp = {0};
+		struct hostapd_scs_req_data  scs_req  = {0};
+		u8 client_initiated = desc->client_initiated_scs;
+
+		wpa_printf(MSG_DEBUG,
+			   "SCS_CONFIGURE DELETE: qm_id=%u found, deleting",
+			   desc->qm_id);
+
+		os_memcpy(scs_req.peer_mac, peer_mac, ETH_ALEN);
+		scs_req.num_scs_desc = 1;
+		scs_req.scs_req_desc[0] = *scs_desc;
+
+		ret = hostapd_copy_and_send_scs_data(hapd, &scs_req, &scs_resp);
+		if (ret) {
+			wpa_printf(MSG_ERROR,
+				   "SCS_CONFIGURE DELETE: set_qos failed, ret:%d",
+				   ret);
+			return -1;
+		}
+
+		hostapd_process_scs_req(hapd, sta, &scs_req, &scs_resp);
+
+		/*
+		 * If this was a client-initiated session on the terminating
+		 * node (peer_mac == scs_sta_mac), send the 802.11 SCS Response
+		 * frame directly to the STA. scs_resp already has
+		 * WLAN_STATUS_TCLAS_PROCESSING_TERMINATED set by
+		 * process_scs_req.
+		 */
+		if (client_initiated &&
+		    os_memcmp(peer_mac, scs_desc->scs_sta_mac, ETH_ALEN) == 0)
+			hostapd_send_scs_response(hapd, sta->addr, &scs_resp);
+
+		return 0;
+	}
+
+	default:
+		wpa_printf(MSG_ERROR,
+			   "SCS_CONFIGURE: unknown request_type=%u",
+			   scs_desc->request_type);
+		return -1;
+	}
+}
+
+
+/*
+ * hostapd_scs_configure_qmid_not_found - handle SCS_CONFIGURE when the
+ * incoming qm_id is not yet in the STA's descriptor database.
+ *
+ * ADD    - controller-initiated ADD; reject if a client-initiated entry
+ *          already exists for this scs_id (agent should use UPDATE)
+ * UPDATE - deferred client-initiated path: a pending client entry must
+ *          exist; assign qm_id and send as ADD to driver (first time)
+ * DELETE - reject (nothing to remove)
+ */
+static int
+hostapd_scs_configure_qmid_not_found(struct hostapd_data *hapd,
+				     struct sta_info *sta,
+				     const u8 *peer_mac,
+				     struct hostapd_scs_req_desc_data *scs_desc)
+{
+	struct hostapd_scs_req_desc_data *desc;
+	int ret;
+
+	switch (scs_desc->request_type) {
+
+	case QM_ADD_REQ:
+		wpa_printf(MSG_DEBUG,
+			   "SCS_CONFIGURE ADD: controller-initiated, "
+			   "scs_id=%u qm_id=%u",
+			   scs_desc->scs_id, scs_desc->qm_id);
+
+		return hostapd_scs_configure_send(hapd, sta, peer_mac, scs_desc);
+
+	case QM_CHANGE_REQ:
+		/*
+		 * Deferred path: Controller assigns qm_id for the first time
+		 * to a pending client-initiated descriptor. The driver has
+		 * never seen this session so we send ADD (not CHANGE).
+		 */
+		desc = hostapd_scs_find_client_initiated(sta, scs_desc->scs_id);
+		if (! (desc && desc->request_pending)) {
+			wpa_printf(MSG_ERROR,
+				   "SCS_CONFIGURE UPDATE: no pending "
+				   "client-initiated entry for scs_id=%u",
+				   scs_desc->scs_id);
+			return -1;
+		}
+		wpa_printf(MSG_DEBUG,
+			   "SCS_CONFIGURE UPDATE (deferred): assigning "
+			   "qm_id=%u to scs_id=%u",
+			   scs_desc->qm_id, scs_desc->scs_id);
+
+		/*
+		 * Step 1: Send ADD to driver - first time this session
+		 * is programmed. Use the incoming scs_desc which carries
+		 * the full TCLAS/QoS content from the controller.
+		 */
+		struct hostapd_scs_resp_data scs_resp = {0};
+		struct hostapd_scs_req_data  scs_req  = {0};
+
+		scs_desc->request_type      = QM_ADD_REQ;
+		os_memcpy(scs_req.peer_mac, peer_mac, ETH_ALEN);
+		scs_req.num_scs_desc        = 1;
+		scs_req.scs_req_desc[0]     = *scs_desc;
+
+		ret = hostapd_copy_and_send_scs_data(hapd, &scs_req, &scs_resp);
+		if (ret) {
+			wpa_printf(MSG_ERROR,
+				   "SCS_CONFIGURE UPDATE (deferred): "
+				   "set_qos failed, ret:%d", ret);
+			return -1;
+		}
+
+		/*
+		 * Step 2: Update stored entry in-place via process_scs_req with
+		 * QM_CHANGE_REQ - routes to hostapd_process_scs_change which
+		 * does os_memcpy over the existing list entry and rebuilds NFT.
+		 * No duplicate is added to the list.
+		 */
+		scs_desc->request_type      = QM_CHANGE_REQ;
+		hostapd_process_scs_req(hapd, sta, &scs_req, &scs_resp);
+
+		desc->request_pending = 0;
+		return 0;
+
+	case QM_REMOVE_REQ:
+		wpa_printf(MSG_ERROR,
+			   "SCS_CONFIGURE DELETE: qm_id=%u not found",
+			   scs_desc->qm_id);
+		return -1;
+
+	default:
+		wpa_printf(MSG_ERROR, "SCS_CONFIGURE: unknown request_type=%u",
+			   scs_desc->request_type);
+		return -1;
+	}
+}
+
+
+int hostapd_scs_configure(struct hostapd_data *hapd, const u8 *peer_mac,
+			  const u8 *scs_sta_mac, u16 qm_id, const u8 *desc_buf,
+			  u8 desc_len)
+{
+	struct hostapd_scs_req_desc_data scs_desc = {0};
+	struct hostapd_scs_req_desc_data *desc;
+	struct hostapd_data *temp_hapd = hapd;
+	struct sta_info *sta = NULL;
+	u8 elem_id, elem_len;
+	int ret;
+
+	if (!hapd->conf->scs || !hapd->conf->deferred_scs) {
+		wpa_printf(MSG_ERROR, "SCS_CONFIGURE: SCS feature disabled or Deferred SCS not configured");
+		return -1;
+	}
+
+	sta = hostapd_scs_get_sta(hapd, &temp_hapd, peer_mac);
+	if (!sta) {
+		wpa_printf(MSG_ERROR,
+			   "SCS_CONFIGURE: peer " MACSTR " not found",
+			   MAC2STR(peer_mac));
+		return -1;
+	}
+
+	if (desc_len < 2) {
+		wpa_printf(MSG_ERROR, "SCS_CONFIGURE: Invalid SCS frame, lower len");
+		return -1;
+	}
+
+	elem_id = *desc_buf++;
+
+	if (elem_id != WLAN_EID_SCS_DESCRIPTOR) {
+		wpa_printf(MSG_ERROR, "SCS_CONFIGURE: unexpected EID %u", elem_id);
+		return -1;
+	}
+
+	elem_len = *desc_buf++;
+
+	/* Parse the SCS descriptor */
+	ret = hostapd_parse_scs_desc(desc_buf, sta, &scs_desc, elem_len,
+				     true, false, qm_id);
+	if (ret != WLAN_STATUS_SUCCESS) {
+		wpa_printf(MSG_ERROR,
+			   "SCS_CONFIGURE: descriptor parse failed, ret:%d",
+			   ret);
+		return -1;
+	}
+
+	scs_desc.qm_id = qm_id;
+	os_memcpy(scs_desc.scs_sta_mac, scs_sta_mac, ETH_ALEN);
+
+	desc_len -= (elem_len + 2);
+	if (desc_len != 0) {
+		wpa_printf(MSG_ERROR,
+			   "SCS_CONFIGURE: Todo: Desc len to be checked later, "
+			   "desc_len:%u, elem_len:%u", desc_len, elem_len);
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "SCS_CONFIGURE: peer=" MACSTR " sta=" MACSTR
+		   " qm_id=%u scs_id=%u req_type=%u",
+		   MAC2STR(peer_mac), MAC2STR(scs_sta_mac),
+		   qm_id, scs_desc.scs_id, scs_desc.request_type);
+
+	desc = hostapd_scs_find_by_qmid(sta, qm_id);
+	if (desc)
+		return hostapd_scs_configure_qmid_found(temp_hapd, sta,
+							peer_mac, &scs_desc,
+							desc);
+
+	return hostapd_scs_configure_qmid_not_found(temp_hapd, sta, peer_mac,
+						    &scs_desc);
+}
 
 /*
  * hostapd_handle_scs_req_deferred - process a parsed SCS request frame

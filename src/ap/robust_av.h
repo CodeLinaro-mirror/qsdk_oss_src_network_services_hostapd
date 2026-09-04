@@ -188,6 +188,9 @@ struct hostapd_scs_req_desc_data {
 	u8 request_pending:1,      /* deferred; not yet programmed */
 	   client_initiated_scs:1; /* request originated from STA */
 	u16 qm_id;                 /* QM identifier; 0xFFFF = unassigned */
+	u8 scs_sta_mac[ETH_ALEN];  /* end-client STA MAC; used as NFT dmac
+				    * equals sta->addr for terminating node,
+				    * end-client MAC for intermediate node */
 };
 
 struct hostapd_scs_req_data {
@@ -255,6 +258,9 @@ u8 *hostapd_add_wfa_cap_ie(struct hostapd_data *hapd,
                            struct sta_info *sta,
                            u8 *eid);
 
+int hostapd_scs_configure(struct hostapd_data *hapd, const u8 *peer_mac,
+			  const u8 *scs_sta_mac, u16 qm_id, const u8 *desc_buf,
+			  u8 desc_len);
 int hostapd_dump_scs_list(struct hostapd_data *hapd, struct sta_info *sta,
 			  char *buf, size_t buflen);
 
