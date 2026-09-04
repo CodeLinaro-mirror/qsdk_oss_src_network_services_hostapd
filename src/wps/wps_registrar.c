@@ -3505,6 +3505,47 @@ int wps_registrar_update_ie(struct wps_registrar *reg)
 
 
 /**
+ * wps_registrar_remove_pbc_session_by_addr - Remove PBC session by MAC address
+ * @reg: Registrar data from wps_registrar_init()
+ * @addr: MAC address of the station to remove
+ *
+ * Removes all PBC session list entries matching the given MAC address.
+ * Called after WPS failure to ensure the WPS ACL bypass does not fire for
+ * subsequent reconnections (e.g., when the STA reconnects with credentials
+ * from a previous WPS session). If the STA wants to retry WPS it will send
+ * a new WPS PBC probe request and be re-added to the list.
+ */
+void wps_registrar_remove_pbc_session_by_addr(struct wps_registrar *reg,
+					      const u8 *addr)
+{
+	struct wps_pbc_session *pbc, *prev = NULL, *tmp;
+
+	if (!reg || !addr)
+		return;
+
+	pbc = reg->pbc_sessions;
+	while (pbc) {
+		if (ether_addr_equal(pbc->addr, addr)) {
+			if (prev)
+				prev->next = pbc->next;
+			else
+				reg->pbc_sessions = pbc->next;
+			tmp = pbc;
+			pbc = pbc->next;
+			wpa_printf(MSG_DEBUG,
+				   "WPS: Removing PBC session for " MACSTR
+				   " after WPS failure (ACL bypass cleanup)",
+				   MAC2STR(tmp->addr));
+			os_free(tmp);
+			continue;
+		}
+		prev = pbc;
+		pbc = pbc->next;
+	}
+}
+
+
+/**
  * wps_registrar_is_pbc_enrollee - Check if a station is a WPS PBC enrollee
  * @reg: Registrar data from wps_registrar_init()
  * @addr: MAC address of the station to check

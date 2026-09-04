@@ -43,6 +43,7 @@ int hostapd_wps_nfc_report_handover(struct hostapd_data *hapd,
 struct wpabuf * hostapd_wps_nfc_token_gen(struct hostapd_data *hapd, int ndef);
 int hostapd_wps_nfc_token_enable(struct hostapd_data *hapd);
 void hostapd_wps_nfc_token_disable(struct hostapd_data *hapd);
+bool hostapd_acl_allow_wps_pbc_sta(struct hostapd_data *hapd, const u8 *addr);
 
 #else /* CONFIG_WPS */
 
@@ -87,6 +88,11 @@ static inline int hostapd_wps_cancel(struct hostapd_data *hapd)
 	return 0;
 }
 
+static inline bool hostapd_acl_allow_wps_pbc_sta(struct hostapd_data *hapd,
+						 const u8 *addr)
+{
+	return false;
+}
 #endif /* CONFIG_WPS */
 
 #endif /* WPS_HOSTAPD_H */

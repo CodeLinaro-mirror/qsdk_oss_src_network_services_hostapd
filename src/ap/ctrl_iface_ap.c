@@ -4435,6 +4435,9 @@ int hostapd_disassoc_accept_mac(struct hostapd_data *hapd)
 
 		disconnect_sta = false;
 
+		if (hostapd_acl_allow_wps_pbc_sta(hapd, sta->addr))
+			continue;
+
 		if (!hostapd_acl_maclist_found(hapd->conf, true,
 					       sta->addr, &vlan_id) ||
 		    (vlan_id.notempty &&
@@ -4481,6 +4484,9 @@ int hostapd_disassoc_deny_mac(struct hostapd_data *hapd)
 		int link_id;
 		struct mld_link_info *info;
 #endif /* CONFIG_IEEE80211BE */
+
+		if (hostapd_acl_allow_wps_pbc_sta(hapd, sta->addr))
+			continue;
 
 		/*
 		 * The accept list takes priority over the deny list in all
