@@ -3778,7 +3778,7 @@ static int hostapd_sm_link_reconfigure(struct hostapd_data *hapd,
 {
 	struct hostapd_data *phapd = (struct hostapd_data *)ctx;
 
-	if (!sta || !sta->mld_info.mld_sta)
+	if (!phapd || !sta || !sta->mld_info.mld_sta)
 		/* No action needed for legacy station */
 		return 0;
 
@@ -3801,7 +3801,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 					      struct link_removal_event *ev,
 					      enum wpa_event_type event)
 {
-	struct hostapd_data *phapd, *tx_hapd, *thapd;
+	struct hostapd_data *phapd = NULL, *tx_hapd = NULL, *thapd = NULL;
 	struct hostapd_iface *iface, **tmp;
 	unsigned int i;
 	struct hapd_interfaces *interfaces;
@@ -3859,9 +3859,12 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 		}
 
 		/* Save one of the partner bss to update the beacon */
-		for_each_mld_link(phapd, hapd)
-			if (phapd != hapd)
-				break;
+		if (hapd->mld->num_links > 1) {
+			for_each_mld_link(phapd, hapd) {
+				if (phapd != hapd)
+					break;
+			}
+		}
 
 		if (iface->num_bss == 1) {
 
@@ -3918,8 +3921,12 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 				hostapd_refresh_all_iface_beacons(interfaces->iface[0]);
 			else
 				hostapd_refresh_other_iface_beacons(iface);
-		} else {
-			/* Refresh all partner beacons */
+		} else if (phapd && phapd != hapd) {
+			/* Refresh all partner beacons.
+			 * Skip when phapd == hapd: that means hapd was the only
+			 * remaining MLD link and hostapd_remove_bss() already freed
+			 * hapd, making phapd a dangling pointer.
+			 */
 			for_each_mld_link(thapd, phapd) {
 				ieee802_11_set_beacon_per_bss_only(thapd);
 				hostapd_gen_per_sta_profiles(thapd);
