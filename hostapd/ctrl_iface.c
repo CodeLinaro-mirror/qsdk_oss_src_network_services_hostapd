@@ -11159,7 +11159,103 @@ static int hostapd_ctrl_iface_set_muedca_mode(struct hostapd_data *hapd, char *c
 		return -1;
 	}
 
+	if (radio_idx < 0) {
+		hapd->muedca_mode_all = mode;
+		hapd->muedca_mode_all_valid = 1;
+		os_memset(hapd->muedca_mode_radio_valid, 0,
+			  sizeof(hapd->muedca_mode_radio_valid));
+	} else {
+		if (!hapd->muedca_mode_all_valid) {
+			hapd->muedca_mode_all = 2;
+			hapd->muedca_mode_all_valid = 1;
+		}
+
+		if (mode == hapd->muedca_mode_all) {
+			hapd->muedca_mode_radio_valid[radio_idx] = 0;
+		} else {
+			hapd->muedca_mode_radio[radio_idx] = mode;
+			hapd->muedca_mode_radio_valid[radio_idx] = 1;
+		}
+	}
+
 	return 0;
+}
+
+static int hostapd_ctrl_iface_get_muedca_mode(struct hostapd_data *hapd, char *cmd,
+					      char *reply, int reply_size)
+{
+	char *pos = cmd;
+	int mode, radio_idx = -1;
+	size_t i;
+	int len, ret;
+	bool has_overrides = false;
+
+	if (!hapd || !reply || reply_size <= 0)
+		return -1;
+
+	if (!hapd->muedca_mode_all_valid) {
+		hapd->muedca_mode_all = 2;
+		hapd->muedca_mode_all_valid = 1;
+	}
+
+	if (cmd && *cmd != '\0') {
+		if (os_strncmp(cmd, "radio ", 6) != 0) {
+			wpa_printf(MSG_ERROR,
+				   "EDCA: Invalid usage, expected: [radio <n>]");
+			return -1;
+		}
+
+		if (hapd_parse_int_edca("radio", cmd + 6, 0,
+					NL80211_WIPHY_RADIO_ID_MAX - 1,
+					&radio_idx, &pos) < 0) {
+			wpa_printf(MSG_ERROR, "EDCA: Invalid radio index");
+			return -1;
+		}
+
+		if (*pos != '\0') {
+			wpa_printf(MSG_ERROR,
+				   "EDCA: Invalid usage, expected: [radio <n>]");
+			return -1;
+		}
+	}
+
+	if (radio_idx >= 0) {
+		mode = hapd->muedca_mode_radio_valid[radio_idx] ?
+			hapd->muedca_mode_radio[radio_idx] :
+			hapd->muedca_mode_all;
+		ret = os_snprintf(reply, reply_size, "%d\n", mode);
+		return os_snprintf_error(reply_size, ret) ? -1 : ret;
+	}
+
+	for (i = 0; i < sizeof(hapd->muedca_mode_radio_valid); i++) {
+		if (!hapd->muedca_mode_radio_valid[i])
+			continue;
+		has_overrides = true;
+		break;
+	}
+
+	if (!has_overrides) {
+		ret = os_snprintf(reply, reply_size, "%d\n",
+				  hapd->muedca_mode_all);
+		return os_snprintf_error(reply_size, ret) ? -1 : ret;
+	}
+
+	len = os_snprintf(reply, reply_size, "all %d\n", hapd->muedca_mode_all);
+	if (os_snprintf_error(reply_size, len))
+		return -1;
+
+	for (i = 0; i < sizeof(hapd->muedca_mode_radio_valid); i++) {
+		if (!hapd->muedca_mode_radio_valid[i])
+			continue;
+		ret = os_snprintf(reply + len, reply_size - len,
+				  "radio %zu %d\n", i,
+				  hapd->muedca_mode_radio[i]);
+		if (os_snprintf_error(reply_size - len, ret))
+			return -1;
+		len += ret;
+	}
+
+	return len;
 }
 
 int hostapd_ctrl_iface_set_he_muedca(struct hostapd_data *hapd, char *buf)
@@ -12899,6 +12995,12 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "SET_EDCA_MODE ", 14) == 0) {
 		if (hostapd_ctrl_iface_set_muedca_mode(hapd, buf + 14) < 0)
 			reply_len = -1;
+	} else if (os_strcmp(buf, "GET_EDCA_MODE") == 0) {
+		reply_len = hostapd_ctrl_iface_get_muedca_mode(hapd, "",
+							      reply, reply_size);
+	} else if (os_strncmp(buf, "GET_EDCA_MODE ", 14) == 0) {
+		reply_len = hostapd_ctrl_iface_get_muedca_mode(hapd, buf + 14,
+							      reply, reply_size);
 	} else if (os_strncmp(buf, "SET_MU_EDCA ", 12) == 0) {
 		if (hostapd_ctrl_iface_set_he_muedca(hapd, buf + 12) < 0)
 			reply_len = -1;

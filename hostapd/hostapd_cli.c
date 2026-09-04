@@ -3736,6 +3736,35 @@ static int hostapd_cli_cmd_set_muedca_mode(struct wpa_ctrl *ctrl,
 	return wpa_ctrl_command(ctrl, buf);
 }
 
+static int hostapd_cli_cmd_get_muedca_mode(struct wpa_ctrl *ctrl,
+					   int argc, char *argv[])
+{
+	char buf[64];
+	int res;
+
+	if (argc != 0 && argc != 2) {
+		printf("Invalid 'get_edca_mode' command - usage: [radio <n>]\n");
+		return -1;
+	}
+
+	if (argc == 2 && os_strcasecmp(argv[0], "radio") != 0) {
+		printf("Invalid argument '%s' - expected 'radio'\n", argv[0]);
+		return -1;
+	}
+
+	if (argc == 0)
+		return wpa_ctrl_command(ctrl, "GET_EDCA_MODE");
+
+	res = os_snprintf(buf, sizeof(buf), "GET_EDCA_MODE %s %s",
+			  argv[0], argv[1]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("Command too long\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
 static int hostapd_cli_cmd_set_he_mu_edca(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	char cmd[256];
@@ -4330,6 +4359,9 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<mode> [radio <n>] = set MU-EDCA mode\n"
 	  "mode: 0=user, 1=host, 2=firmware (default)\n"
 	  "radio: optional radio index (omit for all radios)" },
+	{ "get_edca_mode", hostapd_cli_cmd_get_muedca_mode, NULL,
+	  "[radio <n>] = get MU-EDCA mode\n"
+	  "radio: optional radio index; omit to show global/all-radios mode" },
 	{ "set_mu_edca", hostapd_cli_cmd_set_he_mu_edca, NULL,
 	  "<ac> <param> <value> = set HE MU EDCA parameters"
 	  "<ac>: Access category (be, bk, vi, vo)\n"

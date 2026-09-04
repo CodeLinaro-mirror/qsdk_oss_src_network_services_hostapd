@@ -25,6 +25,7 @@
 #include "hostapd_log.h"
 #ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/cmn.h"
+#define HOSTAPD_MUEDCA_MAX_RADIOS 255
 #endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_MBO
@@ -769,6 +770,14 @@ struct hostapd_data {
 #ifdef CONFIG_NAN_USD
 	struct nan_de *nan_de;
 #endif /* CONFIG_NAN_USD */
+
+#ifdef CONFIG_QCN_EXTN
+	/* Cached EDCA mode: global mode plus per-radio overrides. */
+	int muedca_mode_all;
+	u8 muedca_mode_all_valid;
+	int muedca_mode_radio[HOSTAPD_MUEDCA_MAX_RADIOS];
+	u8 muedca_mode_radio_valid[HOSTAPD_MUEDCA_MAX_RADIOS];
+#endif /* CONFIG_QCN_EXTN */
 
 	/* Per-module log level overrides. -1 means no override is set for
 	 * that module and logging falls back to the global wpa_debug_level.
