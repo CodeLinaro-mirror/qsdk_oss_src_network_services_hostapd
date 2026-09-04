@@ -267,6 +267,9 @@ int hostapd_dump_scs_list(struct hostapd_data *hapd, struct sta_info *sta,
 
 int hostapd_dump_scs_info(struct hostapd_data *hapd, struct sta_info *sta,
 			  char *buf, size_t buflen, u8 scs_id);
+int hostapd_dump_scs_qm_info(struct hostapd_data *hapd,
+			     struct sta_info *sta,
+			     char *buf, size_t buflen, u16 qm_id);
 
 int hostapd_send_unsolicited_scs_resp(struct hostapd_data *hapd,
 				      struct sta_info *sta, u8 scs_id,

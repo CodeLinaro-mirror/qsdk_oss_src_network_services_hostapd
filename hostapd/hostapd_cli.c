@@ -2604,7 +2604,7 @@ static int hostapd_cli_cmd_dump_scs(struct wpa_ctrl *ctrl, int argc,
 
 	if (argc < 2 || argc > 3) {
 		printf("Invalid 'dump_scs' command - usage: dump_scs <addr> "
-		       "scs_list | scs_info <scs_id>\n");
+		       "scs_list | scs_info <scs_id> | qm_info <qm_id>\n");
 		return -1;
 	}
 
@@ -2624,6 +2624,14 @@ static int hostapd_cli_cmd_dump_scs(struct wpa_ctrl *ctrl, int argc,
 		}
 
 		res = os_snprintf(buf, sizeof(buf), "DUMP_SCS_INFO %s %s",
+				  argv[0], argv[2]);
+
+	} else if (os_strcmp(argv[1], "qm_info") == 0) {
+		if (argc != 3) {
+			printf("Invalid 'dump_scs <addr> qm_info <qm_id>' usage\n");
+			return -1;
+		}
+		res = os_snprintf(buf, sizeof(buf), "DUMP_SCS_QM_INFO %s %s",
 				  argv[0], argv[2]);
 
 	} else {
@@ -4144,8 +4152,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "= Reset AFC in target\n"},
 #ifdef CONFIG_IEEE80211AX
 	{ "dump_scs", hostapd_cli_cmd_dump_scs, NULL,
-	  "<addr> scs_list | scs_info <scs_id> = Dump SCS list or specific SCS "
-	  "descriptor info of the STA" },
+	  "<addr> scs_list | scs_info <scs_id> | qm_info <qm_id> = "
+	  "Dump SCS list or descriptor info by SCS ID or QM ID" },
 	{ "send_unsolicited_scs_resp", hostapd_cli_cmd_send_unsolicited_scs_resp,
 	  NULL, "<addr> --scsid <scsid> --req_type <req_type> = "
 	  "Send unsolicited SCS response to the STA" },
