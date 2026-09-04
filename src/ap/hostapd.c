@@ -3305,11 +3305,11 @@ static int start_ctrl_iface(struct hostapd_iface *iface)
  */
 void hostapd_no_ir_cleanup(struct hostapd_data *bss)
 {
-	hostapd_bss_deinit_no_free(bss);
-	hostapd_bss_link_deinit(bss);
 #ifdef CONFIG_IEEE80211BN
 	mapc_deinit(bss);
 #endif /* CONFIG_IEEE80211BN */
+	hostapd_bss_deinit_no_free(bss);
+	hostapd_bss_link_deinit(bss);
 	hostapd_free_hapd_data(bss);
 }
 
@@ -5790,6 +5790,9 @@ void hostapd_bss_deinit(struct hostapd_data *hapd)
 		return;
 	wpa_printf(MSG_DEBUG, "%s: deinit bss %s", __func__,
 		   hapd->conf ? hapd->conf->iface : "N/A");
+#ifdef CONFIG_IEEE80211BN
+	mapc_deinit(hapd);
+#endif /* CONFIG_IEEE80211BN */
 	hostapd_bss_deinit_no_free(hapd);
 	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_DISABLED);
 #ifdef CONFIG_SQLITE
@@ -7467,15 +7470,16 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt, const char *event)
 	hapd->disabled = 1;
 	wpa_msg(hapd->msg_ctx, MSG_INFO, "%s", event);
 
+#ifdef CONFIG_IEEE80211BN
+	mapc_deinit(hapd);
+#endif /* CONFIG_IEEE80211BN */
+
 	hostapd_bss_deinit_no_free(hapd);
 
 	/* Stop AP at driver level: no more beacons/tx for this BSS. */
 	hostapd_drv_stop_ap(hapd);
 
 	/* Deinitialize higher-level BSS state but keep netdev/link. */
-#ifdef CONFIG_IEEE80211BN
-	mapc_deinit(hapd);
-#endif /* CONFIG_IEEE80211BN */
 	hapd->reenable = REENABLE_REUSE_LINK;
 	hostapd_bss_link_deinit(hapd);
 	hostapd_free_hapd_data(hapd);
