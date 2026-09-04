@@ -1137,6 +1137,8 @@ static void hostapd_copy_scs_desc(struct hostapd_data *hapd,
 		hostapd_copy_scs_qos_attr(&qm_data->qos_attr,
 					  scs_data.qos_attr);
 #endif
+
+	qm_data->dedicated_queue = scs_data.dedicated_queue;
 }
 
 
@@ -2851,7 +2853,7 @@ hostapd_scs_configure_qmid_not_found(struct hostapd_data *hapd,
 
 int hostapd_scs_configure(struct hostapd_data *hapd, const u8 *peer_mac,
 			  const u8 *scs_sta_mac, u16 qm_id, const u8 *desc_buf,
-			  u8 desc_len)
+			  u8 desc_len, bool dedicated_queue)
 {
 	struct hostapd_scs_req_desc_data scs_desc = {0};
 	struct hostapd_scs_req_desc_data *desc;
@@ -2898,6 +2900,7 @@ int hostapd_scs_configure(struct hostapd_data *hapd, const u8 *peer_mac,
 	}
 
 	scs_desc.qm_id = qm_id;
+	scs_desc.dedicated_queue = dedicated_queue;
 	os_memcpy(scs_desc.scs_sta_mac, scs_sta_mac, ETH_ALEN);
 
 	desc_len -= (elem_len + 2);

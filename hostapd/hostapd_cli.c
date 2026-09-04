@@ -4150,8 +4150,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  NULL, "<addr> --scsid <scsid> --req_type <req_type> = "
 	  "Send unsolicited SCS response to the STA" },
 	{ "scs_configure", hostapd_cli_cmd_scs_configure, NULL,
-	  "<peer_mac> <scs_sta_mac> <qm_id> <scs_desc_hex> = "
-	  "Configure SCS session via application" },
+	  "<peer_mac> <scs_sta_mac> <qm_id> <scs_desc_hex> "
+	  "[<dedicated_queue>] = Configure SCS session via application" },
 	{ "set_mbssid_tx", hostapd_cli_cmd_set_mbssid_tx, NULL,
 	  "[auto_stop] [auto_start]\n"
 	  "= Stop all profiles from MBSSID group if auto_stop option is given, "
