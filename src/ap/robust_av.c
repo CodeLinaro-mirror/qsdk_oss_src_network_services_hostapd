@@ -2743,6 +2743,13 @@ hostapd_scs_configure_send(struct hostapd_data *hapd,
 
 	hostapd_process_scs_req(hapd, sta, &scs_req, &scs_resp);
 
+	wpa_msg(hapd->msg_ctx, MSG_INFO,
+		WPA_EVENT_SCS_STATUS_NOTIFY
+		"sta_mac=" MACSTR " bssid=" MACSTR
+		" qm_id=%u status=%u",
+		MAC2STR(peer_mac), MAC2STR(hapd->own_addr),
+		desc->qm_id, scs_resp.scs_resp_desc[0].status);
+
 	return 0;
 }
 
@@ -2820,6 +2827,13 @@ hostapd_scs_configure_qmid_found(struct hostapd_data *hapd,
 		if (client_initiated &&
 		    os_memcmp(peer_mac, scs_desc->scs_sta_mac, ETH_ALEN) == 0)
 			hostapd_send_scs_response(hapd, sta->addr, &scs_resp);
+
+		wpa_msg(hapd->msg_ctx, MSG_INFO,
+			WPA_EVENT_SCS_STATUS_NOTIFY
+			"sta_mac=" MACSTR " bssid=" MACSTR
+			" qm_id=%u status=%u",
+			MAC2STR(peer_mac), MAC2STR(hapd->own_addr),
+			desc->qm_id, scs_resp.scs_resp_desc[0].status);
 
 		return 0;
 	}
@@ -2912,6 +2926,14 @@ hostapd_scs_configure_qmid_not_found(struct hostapd_data *hapd,
 		hostapd_process_scs_req(hapd, sta, &scs_req, &scs_resp);
 
 		desc->request_pending = 0;
+
+		wpa_msg(hapd->msg_ctx, MSG_INFO,
+			WPA_EVENT_SCS_STATUS_NOTIFY
+			"sta_mac=" MACSTR " bssid=" MACSTR
+			" qm_id=%u status=%u",
+			MAC2STR(peer_mac), MAC2STR(hapd->own_addr),
+			scs_desc->qm_id, scs_resp.scs_resp_desc[0].status);
+
 		return 0;
 
 	case QM_REMOVE_REQ:
