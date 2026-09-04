@@ -3267,6 +3267,10 @@ enum qca_vendor_attr_txpower_decr_db {
  * @QCA_WLAN_VENDOR_VAP_SUBMODE_MESH: VAP operates in mesh mode for mesh networking.
  * @QCA_WLAN_VENDOR_VAP_SUBMODE_SCAN: VAP operates in scan mode, typically for
  *     off-channel scanning / scan radio specific operations.
+ * @QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_ETH_OFFLOAD_MESH: VAP operates in
+ *     eth offload mesh.
+ * @QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_RAW_MODE_MESH: VAP operates in
+ *     raw mode mesh.
  *
  * @QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_AFTER_LAST: Internal marker for the end of
  *     valid submode attributes. Not to be used directly.
@@ -3277,6 +3281,8 @@ enum qca_wlan_vendor_vap_submode_type {
 	QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_NONE = 0,
 	QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MESH = 1,
 	QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_SCAN = 2,
+	QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_ETH_OFFLOAD_MESH = 3,
+	QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_RAW_MODE_MESH = 4,
 
 	QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MAX =
