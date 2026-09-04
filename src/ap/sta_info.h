@@ -651,6 +651,19 @@ struct sta_info * ap_get_link_sta(struct hostapd_data *hapd,
 struct sta_info * ap_get_sta_p2p(struct hostapd_data *hapd, const u8 *addr);
 void ap_sta_hash_add(struct hostapd_data *hapd, struct sta_info *sta);
 void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta);
+#ifdef CONFIG_IEEE80211BE
+/*
+ * ap_free_sta_link - remove a single link from an MLD STA
+ *
+ * Use for per-link removal (ML link removal, ML reconfiguration) where the
+ * STA remains connected on other links. Issues NL80211_CMD_REMOVE_LINK_STA
+ * then cleans up hostapd state via ap_free_sta().
+ *
+ * Do NOT use for a full MLD disconnect — use ap_free_sta() on the assoc link
+ * which issues NL80211_CMD_DEL_STATION (MLD-level) atomically.
+ */
+void ap_free_sta_link(struct hostapd_data *hapd, struct sta_info *sta);
+#endif /* CONFIG_IEEE80211BE */
 void ap_free_unadded_link_sta(struct hostapd_data *hapd, struct sta_info *sta);
 void ap_sta_ip6addr_del(struct hostapd_data *hapd, struct sta_info *sta);
 void hostapd_free_stas(struct hostapd_data *hapd);

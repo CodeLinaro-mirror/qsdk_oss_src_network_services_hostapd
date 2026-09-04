@@ -1085,7 +1085,7 @@ void hostapd_notif_disassoc_mld(struct hostapd_data *assoc_hapd,
 			ap_free_sta(tmp_hapd, tmp_sta);
 	}
 
-	/* Remove STA in assoc link */
+	/* Remove STA in assoc link — issues single MLD-level sta_remove() */
 	hostapd_remove_sta(assoc_hapd, sta);
 }
 #endif /* CONFIG_IEEE80211BE */
