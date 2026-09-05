@@ -2142,8 +2142,21 @@ int hostapd_if_get_ptk(char *ifname, uint8_t *sta_mac,
 		return -1;
 	}
 
-	return wpa_auth_get_ptk_full(sta->wpa_sm, kck, kck_len, kek, kek_len,
-				     tk, tk_len);
+	if (sta->auth_alg == WLAN_AUTH_802_1X) {
+		os_memcpy(kck, sta->eap_auth_data.ptk.kck,
+			  sta->eap_auth_data.ptk.kck_len);
+		*kck_len = sta->eap_auth_data.ptk.kck_len;
+		os_memcpy(kek, sta->eap_auth_data.ptk.kek,
+			  sta->eap_auth_data.ptk.kek_len);
+		*kek_len = sta->eap_auth_data.ptk.kek_len;
+		os_memcpy(tk, sta->eap_auth_data.ptk.tk,
+			  sta->eap_auth_data.ptk.tk_len);
+		*tk_len = sta->eap_auth_data.ptk.tk_len;
+		return 0;
+	} else {
+		return wpa_auth_get_ptk_full(sta->wpa_sm, kck, kck_len, kek, kek_len,
+					     tk, tk_len);
+	}
 }
 
 
