@@ -1160,6 +1160,13 @@ int dfs_check_chans_available(struct hostapd_iface *iface,
 		if (!(channel->flag & HOSTAPD_CHAN_RADAR))
 			continue;
 
+		/* Punctured sub-channels are excluded from the operating block;
+		 * their DFS state does not block the remaining channels from
+		 * being considered available.
+		 */
+		if (channel->puncture_source != DFS_CHAN_PUNC_NONE)
+			continue;
+
 		if ((channel->flag & HOSTAPD_CHAN_DFS_MASK) !=
 		    HOSTAPD_CHAN_DFS_AVAILABLE)
 			break;
@@ -1517,6 +1524,14 @@ int set_dfs_state_freq(struct hostapd_iface *iface, int freq, u32 state)
 		chan = &iface->current_mode->channels[i];
 		if (chan->freq == freq) {
 			if (chan->flag & HOSTAPD_CHAN_RADAR) {
+				if (state == HOSTAPD_CHAN_DFS_AVAILABLE &&
+				    (chan->flag & HOSTAPD_CHAN_DFS_MASK) ==
+				    HOSTAPD_CHAN_DFS_UNAVAILABLE) {
+					wpa_printf(MSG_DEBUG,
+						   "set_dfs_state: skip AVAILABLE for %d MHz - channel in NOL",
+						   freq);
+					return 1;
+				}
 				chan->flag &= ~HOSTAPD_CHAN_DFS_MASK;
 				chan->flag |= state;
 				return 1; /* Channel found */
