@@ -1222,7 +1222,8 @@ void ieee802_1x_receive(struct hostapd_data *hapd, const u8 *sa, const u8 *buf,
 
 #ifdef CONFIG_HOSTAPD_IF
 	if(hapd->conf->plugin_eap_offload) {
-		hostapd_if_eapol_rx(hapd, sa, buf, len);
+		hostapd_if_eapol_rx(hapd, sa, buf, len,
+				    sta->eap_auth_data.auth_transaction);
 		return;
 	}
 #endif /* CONFIG_HOSTAPD_IF */
