@@ -4145,6 +4145,8 @@ struct ieee80211_ttlm_elem {
 
 /* Max TX power count valid for EIRP interpretation */
 #define IEEE80211_TPE_EIRP_MAX_POWER_COUNT_IN_11AX   3
+/* BW320 (11BE) needs count=4 to encode 5 EIRP values (20/40/80/160/320 MHz) */
+#define IEEE80211_TPE_EIRP_MAX_POWER_COUNT_IN_11BE   4
 
 /* Max TX power count valid for EIRP PSD interpretation */
 #define IEEE80211_TPE_PSD_MAX_POWER_COUNT_IN_11AX    4
