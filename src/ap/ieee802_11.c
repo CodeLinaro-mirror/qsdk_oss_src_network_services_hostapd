@@ -2830,7 +2830,7 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 		/* Link context will be computed inside hostapd_if_notify_auth() */
 		if (hostapd_if_notify_auth(hapd, sta, (const u8 *) mgmt, len,
 				rssi, status_code, auth_transaction,
-				allow_reuse, WLAN_AUTH_SAE, dst) ==
+				allow_reuse, WLAN_AUTH_SAE, dst, 0, 0) ==
 				HOSTAPD_IF_FRAME_PROCESSING_WAIT)
 			return;
 #endif
@@ -2893,7 +2893,7 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 #ifdef CONFIG_HOSTAPD_IF
 		if (hostapd_if_notify_auth(hapd, sta, (const u8 *) mgmt, len,
 					rssi, status_code, auth_transaction, 0,
-					WLAN_AUTH_SAE, dst) ==
+					WLAN_AUTH_SAE, dst, 0, 0) ==
 					HOSTAPD_IF_FRAME_PROCESSING_WAIT)
 			return;
 #endif
@@ -3770,7 +3770,9 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 					   auth_frame_len, rssi,
 					   WLAN_STATUS_SUCCESS,
 					   auth_transaction, 0,
-					   auth_alg, sta->addr) ==
+					   auth_alg, sta->addr,
+					   (uint8_t *)eapol_pdu - auth_frame,
+					   encap_len) ==
 		    HOSTAPD_IF_FRAME_PROCESSING_WAIT) {
 			if (!hapd->conf->plugin_eap_offload) {
 				os_free(sta->eap_auth_data.eapol_pdu);
@@ -5852,7 +5854,7 @@ static void handle_auth(struct hostapd_data *hapd,
 #ifdef CONFIG_HOSTAPD_IF
 		if (hostapd_if_notify_auth(hapd, sta, (const u8 *) mgmt, len,
 					rssi, WLAN_STATUS_SUCCESS, 2, 0,
-					WLAN_AUTH_OPEN, mgmt->sa) ==
+					WLAN_AUTH_OPEN, mgmt->sa, 0, 0) ==
 					HOSTAPD_IF_FRAME_PROCESSING_WAIT)
 			return;
 		hapd_if_notified = true;
@@ -5938,7 +5940,7 @@ static void handle_auth(struct hostapd_data *hapd,
 			hostapd_if_notify_auth(hapd, sta, (const u8 *) mgmt,
 					       len, rssi, (u16) ft_auth_resp,
 					       1, 0,
-					       auth_alg, mgmt->sa);
+					       auth_alg, mgmt->sa, 0, 0);
 #endif
 		}
 		return;
@@ -6013,7 +6015,8 @@ static void handle_auth(struct hostapd_data *hapd,
 	if (!hapd_if_notified &&
 	    hostapd_if_notify_auth(hapd, sta, (const u8 *) mgmt, len, rssi,
 				   resp, auth_transaction, 0,
-				   auth_alg, mgmt->sa) == HOSTAPD_IF_FRAME_PROCESSING_WAIT)
+				   auth_alg, mgmt->sa, 0, 0) ==
+	    HOSTAPD_IF_FRAME_PROCESSING_WAIT)
 		return;
 #endif
 
