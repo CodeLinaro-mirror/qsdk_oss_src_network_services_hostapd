@@ -226,6 +226,7 @@ int hostapd_get_hw_features(struct hostapd_iface *iface)
 	}
 
 	hostapd_free_multi_hw_info(iface->multi_hw_info);
+	iface->current_hw_info = NULL;
 	iface->multi_hw_info = multi_hw_info;
 	iface->num_multi_hws = num_multi_hws;
 
