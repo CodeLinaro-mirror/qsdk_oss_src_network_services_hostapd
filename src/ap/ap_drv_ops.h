@@ -143,6 +143,18 @@ int hostapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 			    unsigned int wait, const u8 *dst, const u8 *data,
 			    size_t len);
 
+/**
+ * hostapd_drv_notify_radar - Notify driver about radar detection
+ * @hapd: hostapd data
+ * @freq: Frequency parameters of the radar channel
+ * @radar_bitmap: Bitmap of 20 MHz segments on which radar was detected
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int hostapd_drv_notify_radar(struct hostapd_data *hapd,
+			     struct hostapd_freq_params *freq,
+			     u16 radar_bitmap);
+
 int hostapd_drv_send_action_addr3_ap(struct hostapd_data *hapd,
 				     unsigned int freq,
 				     unsigned int wait, const u8 *dst,
