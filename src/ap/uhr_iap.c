@@ -866,6 +866,15 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
 
 	if (msg_type == ETH_P_1905_SMD_NEIGHBOR_UPDATE_MSG ||
 	    msg_type == ETH_P_1905_SMD_NEIGHBOR_FETCH_MSG) {
+		if (!is_broadcast_ether_addr(dst_addr) &&
+		    hapd->eth_p_1905_ctx &&
+		    eth_p_1905_clone_peer(hapd->eth_p_1905_ctx, src_addr,
+					  src_addr) < 0) {
+			wpa_printf(MSG_WARNING,
+				   "SMD IAP: Failed to register Neighbor sender "
+				   MACSTR " in smd_partner list",
+				   MAC2STR(src_addr));
+		}
 		smd_neighbor_update_rx(hapd, src_addr, dst_addr, data, data_len,
 				       msg_type);
 		return;

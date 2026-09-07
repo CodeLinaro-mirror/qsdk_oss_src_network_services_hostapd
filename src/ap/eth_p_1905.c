@@ -478,6 +478,19 @@ static void eth_p_1905_rx(void *priv, const u8 *src_addr,
 		   msg_type, msg_id, MAC2STR(ethhdr->h_source), payload_len);
 
 	peer = eth_p_1905_get_peer(ctx, ethhdr->h_source);
+	if (is_broadcast_ether_addr(ethhdr->h_dest)) {
+		/* Broadcast-destination CMDUs use the wildcard/shared key path. */
+		struct eth_p_1905_peer *wildcard =
+			eth_p_1905_get_wildcard_peer(ctx);
+
+		if (wildcard && wildcard->has_key) {
+			wpa_printf(MSG_INFO,
+				   "1905: Broadcast frame from " MACSTR
+				   " - decrypting with wildcard key",
+				   MAC2STR(ethhdr->h_source));
+			peer = wildcard;
+		}
+	}
 	if (!peer) {
 		/* No exact match — try wildcard (all-zero MAC).  The wildcard
 		 * supplies the shared key; the sender's MLD address is promoted
@@ -543,11 +556,15 @@ static void eth_p_1905_rx(void *priv, const u8 *src_addr,
 			return;
 		}
 
-		if (is_zero_ether_addr(peer->mac_addr))
+		if (is_zero_ether_addr(peer->mac_addr)) {
 			wpa_printf(MSG_INFO,
 				   "1905: Wildcard decryption succeeded for "
-				   MACSTR " — MLD addr will be promoted",
-				   MAC2STR(ethhdr->h_source));
+				   MACSTR, MAC2STR(ethhdr->h_source));
+			if (!is_broadcast_ether_addr(ethhdr->h_dest))
+				wpa_printf(MSG_INFO,
+					   "1905: MLD addr "MACSTR " will be promoted",
+					   MAC2STR(ethhdr->h_source));
+		}
 
 		uhr_iap_rx(ctx->hapd, ethhdr->h_source, ethhdr->h_dest,
 			   msg_type, plain, plain_len);
