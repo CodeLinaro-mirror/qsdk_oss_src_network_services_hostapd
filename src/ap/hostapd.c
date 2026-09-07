@@ -5169,6 +5169,13 @@ void hostapd_check_get_afc_details(struct hostapd_data *hapd)
 	if (iface->is_afc_power_event_received)
 		return;
 
+	if (!is_6ghz_op_class(iface->conf->op_class)) {
+		wpa_printf(MSG_DEBUG,
+			   "Skip AFC power fetch on non-6 GHz interface (op_class=%u)",
+			   iface->conf->op_class);
+		return;
+	}
+
 	if (!hostapd_is_sp_chans_available(iface)) {
 		wpa_printf(MSG_DEBUG, "No SP Channels available");
 		return;
