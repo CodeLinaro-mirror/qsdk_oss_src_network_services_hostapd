@@ -1437,8 +1437,23 @@ dfs_find_bw_reduced_channel(struct hostapd_iface *iface,
 
 		if (dfs_chan_range_available(mode, first_chan_idx,
 					     n_chans, DFS_AVAILABLE)) {
-			if (target_chwidth == CONF_OPER_CHWIDTH_USE_HT)
-				*secondary_channel = (channel < temp_seg0_idx) ? 1 : -1;
+			/*
+			 * Every target bandwidth above 20 MHz is built from an
+			 * HT40 pair, so secondary_channel must be derived here
+			 * for all of them, not just CONF_OPER_CHWIDTH_USE_HT -
+			 * hostapd_set_freq_params() rejects 80/160/320 MHz
+			 * configs with no secondary channel offset. But
+			 * CONF_OPER_CHWIDTH_USE_HT itself covers both HT40
+			 * (n_chans == 2) and plain 20 MHz (n_chans == 1), so
+			 * +1/-1 is only valid when the target is actually
+			 * HT40 - otherwise it must stay 0.
+			 */
+			if (target_chwidth == CONF_OPER_CHWIDTH_USE_HT &&
+			    n_chans == 1)
+				*secondary_channel = 0;
+			else
+				*secondary_channel =
+					(channel < temp_seg0_idx) ? 1 : -1;
 
 			hostapd_set_oper_chwidth(iface->conf, target_chwidth);
 			dfs_adjust_center_freq(iface, chan,
@@ -2012,7 +2027,7 @@ int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 	 * radar detection. Cannot wait for mesh TBTT (1000 TU). */
 	hostapd_ubus_mesh_switch_channel(iface, &csa_settings);
 
-	if (hostapd_check_reenable_bss(iface)) {
+	if (hostapd_check_reenable_bss(iface, REENABLE_NONE)) {
 		num_err = hostapd_switch_pending_bss(iface, &csa_settings);
 	} else {
 		for (i = 0; i < iface->num_bss; i++) {
@@ -2852,7 +2867,7 @@ bool hostapd_is_device_params_present(int chan_width, int cf1, int chan_width_de
 
 static void hostapd_dfs_enable_pending_bss(struct hostapd_iface *iface)
 {
-	hostapd_enable_pending_bss(iface);
+	hostapd_enable_pending_bss(iface, REENABLE_NONE, false);
 
 	/* Enabling non-first bss starts CAC in first BSS
 	 * which enables the vif in driver.
@@ -3478,8 +3493,10 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			 */
 			if (iface->state != HAPD_IFACE_ENABLED &&
 			    !iface->radar_detected) {
-				if (hostapd_check_reenable_bss(iface))
-					hostapd_enable_pending_bss(iface);
+				if (hostapd_check_reenable_bss(iface,
+							       REENABLE_NONE))
+					hostapd_enable_pending_bss(
+						iface, REENABLE_NONE, false);
 				else
 					hostapd_setup_interface_complete(iface, 0);
 			}
@@ -3562,7 +3579,8 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 				if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_BSS) {
 					ieee80211_freq_to_chan(cf1, &seg0);
 					hostapd_set_oper_centr_freq_seg0_idx(iface->conf, seg0);
-					if (hostapd_check_reenable_bss(iface))
+					if (hostapd_check_reenable_bss(
+						    iface, REENABLE_NONE))
 						hostapd_dfs_enable_pending_bss(iface);
 					else
 						hostapd_setup_interface_complete(iface, 0);
@@ -3800,8 +3818,8 @@ static int hostapd_dfs_start_channel_switch_cac(struct hostapd_iface *iface)
 	err = 0;
 
 
-	if (hostapd_check_reenable_bss(iface))
-		hostapd_enable_pending_bss(iface);
+	if (hostapd_check_reenable_bss(iface, REENABLE_NONE))
+		hostapd_enable_pending_bss(iface, REENABLE_NONE, false);
 	else
 		hostapd_setup_interface_complete(iface, err);
 
@@ -4265,10 +4283,12 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	if (hostapd_dfs_radar_update_punct_bitmap(iface, radar_bitmap_oper))
 		return 0;
 
-	 if (iface->conf->dfs_test_mode)
-		 set_dfs_state(iface, freq, ht_enabled, chan_offset,
-			       chan_width, cf1, cf2,
-			       HOSTAPD_CHAN_DFS_AVAILABLE, radar_bitmap);
+	if (iface->conf->dfs_test_mode) {
+		set_dfs_state(iface, freq, ht_enabled, chan_offset,
+			      chan_width, cf1, cf2,
+			      HOSTAPD_CHAN_DFS_AVAILABLE, radar_bitmap);
+		return hostapd_dfs_start_channel_switch(iface);
+	}
 
 	if (!hostapd_dfs_is_background_event(iface, freq)) {
 		/* Skip if reported radar event not overlapped our channels */

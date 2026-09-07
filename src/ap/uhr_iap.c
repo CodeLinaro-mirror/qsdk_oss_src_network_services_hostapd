@@ -13,7 +13,9 @@
 #include "wpa_auth.h"
 #include "wpa_auth_i.h"
 #include "uhr_utils.h"
-#include "uhr_oui_transport.h"
+#include "eth_p_1905.h"
+#include "eth_p_1905_iap.h"
+#include "uhr_neighbor_update.h"
 
 
 /* Global IAP transaction ID counter */
@@ -132,7 +134,7 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 	}
 	
 	/* FIX: Peer validation before send */
-	if (!uhr_oui_peer_exists(hapd->uhr_oui_ctx, target_ap_mld_addr)) {
+	if (!eth_p_1905_peer_exists(hapd->eth_p_1905_ctx, target_ap_mld_addr)) {
 		wpa_printf(MSG_ERROR,
 			   "SMD IAP: Target AP " MACSTR " not in peer list",
 			   MAC2STR(target_ap_mld_addr));
@@ -220,11 +222,21 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 		   MAC2STR(target_ap_mld_addr), iap->iap_transaction_id,
 		   frame_len);
 	
-	/* Send via native OUI transport with suffix 0x06 */
-	ret = uhr_oui_send(hapd->uhr_oui_ctx, target_ap_mld_addr,
+	/* TLV-encode and send via IEEE 1905.1 (ETH_P_1905_SMD_ST_PREP_REQ_MSG) */
+	struct wpabuf *tbuf = eth_p_1905_iap_encode_prep_req(hapd, iap);
+	if (!tbuf) {
+		wpa_printf(MSG_ERROR, "SMD IAP: Failed to encode ST PREP REQ TLV");
+		os_free(buf);
+		return -1;
+	}
+	wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+		   ETH_P_1905_SMD_ST_PREP_REQ_MSG, wpabuf_len(tbuf));
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, target_ap_mld_addr,
                            hapd->mld->mld_addr,
-			   UHR_IAP_SUFFIX_REQUEST, buf, iap_len);
-	
+			   ETH_P_1905_SMD_ST_PREP_REQ_MSG,
+			   wpabuf_head(tbuf), wpabuf_len(tbuf));
+	wpabuf_free(tbuf);
+
 	os_free(buf);
 	
 	if (ret < 0) {
@@ -262,7 +274,7 @@ int uhr_iap_send_st_prep_ctx(struct hostapd_data *hapd,
 	if (!hapd || !target_ap_mld_addr || !sta_addr || !smd_ctx || smd_ctx_len == 0)
 		return -1;
 
-	if (!uhr_oui_peer_exists(hapd->uhr_oui_ctx, target_ap_mld_addr)) {
+	if (!eth_p_1905_peer_exists(hapd->eth_p_1905_ctx, target_ap_mld_addr)) {
 		wpa_printf(MSG_ERROR,
 			   "IAP: ST PREP CTX: Target AP " MACSTR " not in peer list",
 			   MAC2STR(target_ap_mld_addr));
@@ -291,10 +303,20 @@ int uhr_iap_send_st_prep_ctx(struct hostapd_data *hapd,
 		   "IAP: Sending ST PREP CTX to " MACSTR " (%zu bytes)",
 		   MAC2STR(target_ap_mld_addr), smd_ctx_len);
 
-	ret = uhr_oui_send(hapd->uhr_oui_ctx, target_ap_mld_addr,
+	/* TLV-encode and send via IEEE 1905.1 (ETH_P_1905_SMD_ST_PREP_CTX_MSG) */
+	struct wpabuf *tbuf = eth_p_1905_iap_encode_prep_ctx(iap);
+	if (!tbuf) {
+		wpa_printf(MSG_ERROR, "IAP: Failed to encode ST PREP CTX TLV");
+		os_free(iap);
+		return -1;
+	}
+	wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+		   ETH_P_1905_SMD_ST_PREP_CTX_MSG, wpabuf_len(tbuf));
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, target_ap_mld_addr,
 			   hapd->mld->mld_addr,
-			   UHR_IAP_SUFFIX_REQUEST,
-			   (const u8 *) iap, iap_len);
+			   ETH_P_1905_SMD_ST_PREP_CTX_MSG,
+			   wpabuf_head(tbuf), wpabuf_len(tbuf));
+	wpabuf_free(tbuf);
 	os_free(iap);
 
 	if (ret < 0) {
@@ -333,7 +355,7 @@ int uhr_iap_send_st_prep_resp(struct hostapd_data *hapd,
 	}
 	
 	/* FIX: Peer validation before send */
-	if (!uhr_oui_peer_exists(hapd->uhr_oui_ctx, current_ap_mld_addr)) {
+	if (!eth_p_1905_peer_exists(hapd->eth_p_1905_ctx, current_ap_mld_addr)) {
 		wpa_printf(MSG_ERROR,
 			   "SMD IAP: Current AP " MACSTR " not in peer list",
 			   MAC2STR(current_ap_mld_addr));
@@ -383,11 +405,21 @@ int uhr_iap_send_st_prep_resp(struct hostapd_data *hapd,
 		   MAC2STR(current_ap_mld_addr), iap_transaction_id,
 		   status_code, frame_len);
 	
-	/* Send via native OUI transport with suffix 0x07 */
-	ret = uhr_oui_send(hapd->uhr_oui_ctx, current_ap_mld_addr,
+	/* TLV-encode and send via IEEE 1905.1 (ETH_P_1905_SMD_ST_PREP_REP_MSG) */
+	struct wpabuf *tbuf = eth_p_1905_iap_encode_prep_resp(iap);
+	if (!tbuf) {
+		wpa_printf(MSG_ERROR, "SMD IAP: Failed to encode ST PREP RESP TLV");
+		os_free(buf);
+		return -1;
+	}
+	wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+		   ETH_P_1905_SMD_ST_PREP_REP_MSG, wpabuf_len(tbuf));
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, current_ap_mld_addr,
                            hapd->mld->mld_addr,
-			   UHR_IAP_SUFFIX_RESPONSE, buf, iap_len);
-	
+			   ETH_P_1905_SMD_ST_PREP_REP_MSG,
+			   wpabuf_head(tbuf), wpabuf_len(tbuf));
+	wpabuf_free(tbuf);
+
 	os_free(buf);
 	
 	if (ret < 0) {
@@ -417,7 +449,7 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
                return -1;
 	}
 
-	if (!uhr_oui_peer_exists(hapd->uhr_oui_ctx, target_ap_mld_addr)) {
+	if (!eth_p_1905_peer_exists(hapd->eth_p_1905_ctx, target_ap_mld_addr)) {
 		wpa_printf(MSG_ERROR,
 			   "UHR IAP: ST EXEC REQ: Target AP " MACSTR " not in peer list",
 			   MAC2STR(target_ap_mld_addr));
@@ -477,11 +509,20 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
                   "UHR IAP: Sending ST EXEC REQUEST to " MACSTR " (txn=%u)",
                   MAC2STR(target_ap_mld_addr), iap->iap_transaction_id);
 
-       /* Send via native OUI transport with suffix 0x06 (REQUEST) */
-       ret = uhr_oui_send(hapd->uhr_oui_ctx, target_ap_mld_addr,
+       /* TLV-encode and send via IEEE 1905.1 (ETH_P_1905_SMD_ST_EXEC_REQ_MSG) */
+       struct wpabuf *tbuf = eth_p_1905_iap_encode_exec_req(hapd, iap);
+       if (!tbuf) {
+               wpa_printf(MSG_ERROR, "SMD IAP: Failed to encode ST EXEC REQ TLV");
+               os_free(buf);
+               return -1;
+       }
+       wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+                  ETH_P_1905_SMD_ST_EXEC_REQ_MSG, wpabuf_len(tbuf));
+       ret = eth_p_1905_send(hapd->eth_p_1905_ctx, target_ap_mld_addr,
 			  hapd->mld->mld_addr,
-                          UHR_IAP_SUFFIX_REQUEST,
-                          buf, iap_len);
+                          ETH_P_1905_SMD_ST_EXEC_REQ_MSG,
+                          wpabuf_head(tbuf), wpabuf_len(tbuf));
+       wpabuf_free(tbuf);
 
        os_free(buf);
 
@@ -514,7 +555,7 @@ int uhr_iap_send_st_exec_resp(struct hostapd_data *hapd,
                return -1;
        }
 
-	if (!uhr_oui_peer_exists(hapd->uhr_oui_ctx, current_ap_mld_addr)) {
+	if (!eth_p_1905_peer_exists(hapd->eth_p_1905_ctx, current_ap_mld_addr)) {
 		wpa_printf(MSG_ERROR,
 			   "UHR IAP: ST EXEC RESP: Current AP " MACSTR " not in peer list",
 			   MAC2STR(current_ap_mld_addr));
@@ -561,11 +602,20 @@ int uhr_iap_send_st_exec_resp(struct hostapd_data *hapd,
                   MAC2STR(current_ap_mld_addr), iap_transaction_id,
                   status_code, frame_len);
 
-       /* Send via native OUI transport with suffix 0x07 (RESPONSE) */
-       ret = uhr_oui_send(hapd->uhr_oui_ctx, current_ap_mld_addr,
+       /* TLV-encode and send via IEEE 1905.1 (ETH_P_1905_SMD_ST_EXEC_REP_MSG) */
+       struct wpabuf *tbuf = eth_p_1905_iap_encode_exec_resp(hapd, iap);
+       if (!tbuf) {
+               wpa_printf(MSG_ERROR, "SMD IAP: Failed to encode ST EXEC RESP TLV");
+               os_free(buf);
+               return -1;
+       }
+       wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+                  ETH_P_1905_SMD_ST_EXEC_REP_MSG, wpabuf_len(tbuf));
+       ret = eth_p_1905_send(hapd->eth_p_1905_ctx, current_ap_mld_addr,
 			  hapd->mld->mld_addr,
-                          UHR_IAP_SUFFIX_RESPONSE,
-                          buf, iap_len);
+                          ETH_P_1905_SMD_ST_EXEC_REP_MSG,
+                          wpabuf_head(tbuf), wpabuf_len(tbuf));
+       wpabuf_free(tbuf);
 
        os_free(buf);
 
@@ -591,7 +641,7 @@ int uhr_iap_send_st_roam_cleanup(struct hostapd_data *hapd,
 	if (!hapd || !target_ap_mld_addr || !sta_mld_addr)
 		return -1;
 
-	if (!uhr_oui_peer_exists(hapd->uhr_oui_ctx, target_ap_mld_addr)) {
+	if (!eth_p_1905_peer_exists(hapd->eth_p_1905_ctx, target_ap_mld_addr)) {
 		wpa_printf(MSG_DEBUG,
 			   "UHR IAP: ST ROAM CLEANUP: Target AP " MACSTR " not in peer list",
 			   MAC2STR(target_ap_mld_addr));
@@ -621,9 +671,20 @@ int uhr_iap_send_st_roam_cleanup(struct hostapd_data *hapd,
 		   "UHR IAP: Sending ST ROAM CLEANUP to " MACSTR " for STA " MACSTR,
 		   MAC2STR(target_ap_mld_addr), MAC2STR(sta_mld_addr));
 
-	ret = uhr_oui_send(hapd->uhr_oui_ctx, target_ap_mld_addr,
+	/* TLV-encode and send via IEEE 1905.1 (ETH_P_1905_SMD_ST_ROAM_CLEANUP_MSG) */
+	struct wpabuf *tbuf = eth_p_1905_iap_encode_roam_cleanup(iap);
+	if (!tbuf) {
+		wpa_printf(MSG_ERROR, "UHR IAP: Failed to encode ST ROAM CLEANUP TLV");
+		os_free(buf);
+		return -1;
+	}
+	wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+		   ETH_P_1905_SMD_ST_ROAM_CLEANUP_MSG, wpabuf_len(tbuf));
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, target_ap_mld_addr,
 			   hapd->mld->mld_addr,
-			   UHR_IAP_SUFFIX_REQUEST, buf, iap_len);
+			   ETH_P_1905_SMD_ST_ROAM_CLEANUP_MSG,
+			   wpabuf_head(tbuf), wpabuf_len(tbuf));
+	wpabuf_free(tbuf);
 	os_free(buf);
 
 	if (ret < 0) {
@@ -646,6 +707,7 @@ int uhr_iap_send_st_ctx_request(struct hostapd_data *hapd,
 {
 	struct uhr_iap_frame *iap;
 	size_t iap_len = sizeof(*iap);
+	struct wpabuf *tbuf;
 	int ret;
 
 	iap = os_zalloc(iap_len);
@@ -658,11 +720,19 @@ int uhr_iap_send_st_ctx_request(struct hostapd_data *hapd,
 	os_memcpy(iap->target_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
 	os_memcpy(iap->sta_addr, sta_addr, ETH_ALEN);
 
-	ret = uhr_oui_send(hapd->uhr_oui_ctx, current_ap_mld_addr,
-			   hapd->own_addr,
-			   UHR_IAP_SUFFIX_REQUEST,
-			   (const u8 *) iap, iap_len);
+	tbuf = eth_p_1905_iap_encode_ctx_req(iap);
 	os_free(iap);
+	if (!tbuf) {
+		wpa_printf(MSG_ERROR, "UHR IAP: Failed to encode ST CTX REQUEST");
+		return -1;
+	}
+	wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+		   ETH_P_1905_SMD_ST_CTX_REQ_MSG, wpabuf_len(tbuf));
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, current_ap_mld_addr,
+			      hapd->mld->mld_addr,
+			      ETH_P_1905_SMD_ST_CTX_REQ_MSG,
+			      wpabuf_head(tbuf), wpabuf_len(tbuf));
+	wpabuf_free(tbuf);
 
 	if (ret < 0) {
 		wpa_printf(MSG_ERROR, "UHR IAP: Failed to send ST CTX REQUEST");
@@ -686,6 +756,7 @@ int uhr_iap_send_st_ctx_response(struct hostapd_data *hapd,
 	size_t ctx_len = smd_ctx ? sizeof(*smd_ctx) + smd_ctx->vendor_ctx_len: 0;
 	size_t total = sizeof(struct uhr_iap_frame) + ctx_len;
 	struct uhr_iap_frame *frame;
+	struct wpabuf *tbuf;
 	int ret;
 
 	frame = os_zalloc(total);
@@ -705,11 +776,19 @@ int uhr_iap_send_st_ctx_response(struct hostapd_data *hapd,
 		os_memcpy(frame->frame_ctx_data, smd_ctx, ctx_len);
 	}
 
-	ret = uhr_oui_send(hapd->uhr_oui_ctx, target_ap_mld_addr,
-			   hapd->own_addr,
-			   UHR_IAP_SUFFIX_RESPONSE,
-			   (const u8 *) frame, total);
+	tbuf = eth_p_1905_iap_encode_ctx_resp(frame);
 	os_free(frame);
+	if (!tbuf) {
+		wpa_printf(MSG_ERROR, "UHR IAP: Failed to encode ST CTX RESPONSE");
+		return -1;
+	}
+	wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+		   ETH_P_1905_SMD_ST_CTX_REP_MSG, wpabuf_len(tbuf));
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, target_ap_mld_addr,
+			      hapd->mld->mld_addr,
+			      ETH_P_1905_SMD_ST_CTX_REP_MSG,
+			      wpabuf_head(tbuf), wpabuf_len(tbuf));
+	wpabuf_free(tbuf);
 
 	if (ret < 0) {
 		wpa_printf(MSG_ERROR, "UHR IAP: Failed to send ST CTX RESPONSE");
@@ -729,6 +808,7 @@ int uhr_iap_send_st_exec_via_tgt_done(struct hostapd_data *hapd,
 {
 	struct uhr_iap_frame *iap;
 	size_t iap_len = sizeof(*iap);
+	struct wpabuf *tbuf;
 	int ret;
 
 	iap = os_zalloc(iap_len);
@@ -741,11 +821,20 @@ int uhr_iap_send_st_exec_via_tgt_done(struct hostapd_data *hapd,
 	os_memcpy(iap->target_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
 	os_memcpy(iap->sta_addr, sta_addr, ETH_ALEN);
 
-	ret = uhr_oui_send(hapd->uhr_oui_ctx, current_ap_mld_addr,
-			   hapd->own_addr,
-			   UHR_IAP_SUFFIX_RESPONSE,
-			   (const u8 *) iap, iap_len);
+	tbuf = eth_p_1905_iap_encode_exec_via_tgt_done(iap);
 	os_free(iap);
+	if (!tbuf) {
+		wpa_printf(MSG_ERROR,
+			   "UHR IAP: Failed to encode ST EXEC VIA TGT DONE");
+		return -1;
+	}
+	wpa_printf(MSG_DEBUG, "SMD IAP: TLV ENCAP 0x%04x (%zu B)",
+		   ETH_P_1905_SMD_ST_EXEC_VIA_TGT_DONE_MSG, wpabuf_len(tbuf));
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, current_ap_mld_addr,
+			      hapd->mld->mld_addr,
+			      ETH_P_1905_SMD_ST_EXEC_VIA_TGT_DONE_MSG,
+			      wpabuf_head(tbuf), wpabuf_len(tbuf));
+	wpabuf_free(tbuf);
 
 	if (ret < 0) {
 		wpa_printf(MSG_ERROR,
@@ -758,20 +847,30 @@ int uhr_iap_send_st_exec_via_tgt_done(struct hostapd_data *hapd,
 /**
  * @hapd: hostapd data
  * @src_addr: Source MAC address
- * @data: IAP frame data
- * @data_len: IAP frame length
- * @oui_suffix: OUI suffix
+ * @dst_addr: Destination MAC address
+ * @msg_type: 1905 CMDU message type (ETH_P_1905_SMD_ST_* for TLV path, 0 for legacy OUI path)
+ * @data: frame payload
+ * @data_len: frame payload length
  *
- * Called by native OUI transport when SMD IAP frame is received.
- * Validates frame and dispatches to appropriate handler.
+ * Called from both the IEEE 1905.1 transport (eth_p_1905.c) and the legacy
+ * OUI transport (uhr_oui_transport.c).  SMD message types (0xFF01-0xFF06)
+ * are TLV-decoded via eth_p_1905_msg_rx(); all other values take the legacy
+ * raw-blob cast path.
  */
 void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_addr,
-		const u8 *data, size_t data_len) // u8 oui_suffix)
+		u16 msg_type, const u8 *data, size_t data_len)
 {
-	const struct uhr_iap_frame *iap;
-	u16 smd_ctx_len = 0;
+	const struct uhr_iap_frame *iap = NULL;
+	struct uhr_iap_frame *decoded = NULL;
 	u16 frame_len;
-	
+
+	if (msg_type == ETH_P_1905_SMD_NEIGHBOR_UPDATE_MSG ||
+	    msg_type == ETH_P_1905_SMD_NEIGHBOR_FETCH_MSG) {
+		smd_neighbor_update_rx(hapd, src_addr, dst_addr, data, data_len,
+				       msg_type);
+		return;
+	}
+
 	wpa_printf(MSG_DEBUG,
 		   "SMD IAP: Received frame from " MACSTR " (len=%zu)",
 		   MAC2STR(src_addr), data_len);
@@ -780,34 +879,28 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
 		wpa_printf(MSG_ERROR, "SMD IAP: Not for this interface");
 		return;
 	}
-	
-	if (data_len < sizeof(*iap)) {
-		wpa_printf(MSG_ERROR, "SMD IAP: Frame too short (%zu < %zu)",
-			   data_len, sizeof(*iap));
+
+	decoded = eth_p_1905_msg_rx(hapd, src_addr, dst_addr,
+				    msg_type, data, data_len);
+	if (!decoded) {
+		wpa_printf(MSG_ERROR, "SMD IAP: TLV decode failed");
 		return;
 	}
 
-	iap = (const struct uhr_iap_frame *) data;
+	iap = decoded;
+	wpa_printf(MSG_DEBUG, "SMD IAP: TLV DECAP 0x%04x from " MACSTR " (%zu B)",
+		   msg_type, MAC2STR(src_addr), data_len);
+	
 	frame_len = le_to_host16(iap->frame_len);
 
 	/* Promote sender's MLD addr to a concrete peer entry (wildcard path). */
-	if (uhr_oui_clone_peer(hapd->uhr_oui_ctx, src_addr,
+	if (eth_p_1905_clone_peer(hapd->eth_p_1905_ctx, src_addr,
 			       iap->current_ap_mld_addr) < 0) {
 		wpa_printf(MSG_WARNING,
 			   "SMD IAP: Failed to register MLD addr " MACSTR " in smd_partner list",
 			   MAC2STR(iap->current_ap_mld_addr));
 	}
 
-	if (iap->flags & UHR_IAP_FLAG_HAS_DYNAMIC_CTX)
-		smd_ctx_len = le_to_host16(iap->smd_ctx_len);
-	
-	if (data_len < sizeof(*iap) + frame_len + smd_ctx_len) {
-		wpa_printf(MSG_ERROR,
-			   "SMD IAP: Invalid frame_len (%u > %zu)",
-			   frame_len, data_len - sizeof(*iap));
-		return;
-	}
-	
 	switch (iap->msg_type) {
 	case UHR_IAP_MSG_ST_PREP_REQUEST:
 		wpa_printf(MSG_DEBUG,
@@ -874,4 +967,5 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
 			   iap->msg_type);
 		break;
 	}
+	os_free(decoded);  /* NULL on legacy path, allocated on TLV path */
 }

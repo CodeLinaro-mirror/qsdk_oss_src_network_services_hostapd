@@ -2223,6 +2223,7 @@ static int wpas_sta_cac_get_link_chandef(struct wpa_supplicant *wpa_s,
 	params->vht_enabled = !!(wpa_s->hw_capab & BIT(CAPAB_VHT));
 	params->ht_enabled  = !!(wpa_s->hw_capab & BIT(CAPAB_HT));
 	params->he_enabled  = !!(wpa_s->hw_capab & BIT(CAPAB_HE));
+	params->eht_enabled = !!(wpa_s->hw_capab & BIT(CAPAB_EHT));
 
 	if (!wpa_bss_get_ie(selected, WLAN_EID_HT_CAP))
 		params->ht_enabled = 0;
@@ -2236,6 +2237,14 @@ static int wpas_sta_cac_get_link_chandef(struct wpa_supplicant *wpa_s,
 	if (!wpa_bss_get_ie_ext(selected, WLAN_EID_EXT_HE_CAPABILITIES))
 		params->he_enabled = 0;
 #endif /* CONFIG_IEEE80211AX */
+
+#ifdef CONFIG_IEEE80211BE
+	if (!wpa_bss_get_ie_ext(selected, WLAN_EID_EXT_EHT_CAPABILITIES))
+		params->eht_enabled = 0;
+#endif /* CONFIG_IEEE80211BE */
+
+	if (!params->he_enabled)
+		params->eht_enabled = 0;
 
 	return 0;
 }
@@ -4495,6 +4504,10 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 							data->assoc_info.freq,
 							data->assoc_info.resp_ies,
 							data->assoc_info.resp_ies_len);
+		wpas_drv_set_peer_vht_mcs10_11_and_he_cap_internal_extn(
+							wpa_s,
+							data->assoc_info.resp_ies,
+							data->assoc_info.resp_ies_len);
 		/* WDS vendor IE: parse from assoc response */
 		wds_ie_process_assoc_resp_extn(wpa_s,
 					       data->assoc_info.resp_ies,
@@ -5505,6 +5518,9 @@ static void wpa_supplicant_event_assoc(struct wpa_supplicant *wpa_s,
 
 	eloop_cancel_timeout(wpas_network_reenabled, wpa_s, NULL);
 	wpa_s->own_reconnect_req = 0;
+	/* Association succeeded: refresh the one-shot OCE RSSI-reject
+	 * MLO retry budget for the next connection lifecycle. */
+	wpa_s->mlo_rssi_rej_retry = 0;
 
 	ft_completed = wpa_ft_is_completed(wpa_s->wpa);
 
@@ -7483,20 +7499,6 @@ static void wpas_event_dfs_cac_finished(struct wpa_supplicant *wpa_s,
 			struct wpa_bss *selected;
 			u16 bit;
 
-			selected = wpa_bss_get_id(wpa_s, wpa_s->sta_cac.selected_bssid);
-			if (!selected) {
-				wpas_sta_cac_clear(wpa_s);
-				wpa_supplicant_req_new_scan(wpa_s, 0, 0);
-				return;
-			}
-
-			bit = wpas_sta_cac_get_link_for_event(wpa_s, radar,
-							      selected);
-			if (!bit)
-				return;
-
-			wpa_s->sta_cac.cac_completed_links |= bit;
-
 			wpa_dbg(wpa_s, MSG_DEBUG,
 				"STA-DFS: radar detected on %d MHz (no AP iface) - "
 				"updating hw channel states directly: "
@@ -7519,6 +7521,20 @@ static void wpas_event_dfs_cac_finished(struct wpa_supplicant *wpa_s,
 					   HOSTAPD_CHAN_DFS_AVAILABLE,
 					   radar->radar_bitmap);
 #endif
+
+			selected = wpa_bss_get_id(wpa_s, wpa_s->sta_cac.selected_bssid);
+			if (!selected) {
+				wpas_sta_cac_clear(wpa_s);
+				wpa_supplicant_req_new_scan(wpa_s, 0, 0);
+				return;
+			}
+
+			bit = wpas_sta_cac_get_link_for_event(wpa_s, radar,
+							      selected);
+			if (!bit)
+				return;
+
+			wpa_s->sta_cac.cac_completed_links |= bit;
 			wpa_dbg(wpa_s, MSG_DEBUG,
 				"STA-DFS: CAC finished bit=0x%x req=0x%x done=0x%x",
 				bit, wpa_s->sta_cac.dfs_links,
@@ -7547,7 +7563,13 @@ static void wpas_event_dfs_cac_finished(struct wpa_supplicant *wpa_s,
 					   HOSTAPD_CHAN_DFS_AVAILABLE,
 					   radar->radar_bitmap);
 #endif
-			wpa_dbg(wpa_s, MSG_DEBUG,"STA-DFS: CSA CAC finished");
+			wpa_msg(wpa_s, MSG_INFO, DFS_EVENT_CAC_COMPLETED
+				"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d radar_detected=%d"
+				" chan_width_device=%d cf_device=%d radar_bitmap=%d",
+				radar->freq, radar->ht_enabled, radar->chan_offset,
+				radar->chan_width, radar->cf1, radar->cf2, 0,
+				radar->chan_width_device, radar->cf_device, radar->radar_bitmap);
+
 			if (radar->link_id >= 0 &&
 			    radar->link_id < MAX_NUM_MLD_LINKS) {
 				eloop_cancel_timeout(
@@ -7816,36 +7838,74 @@ static void wpas_event_assoc_reject(struct wpa_supplicant *wpa_s,
 				   MACSTR " (Delta RSSI: %u, Retry Delay: %u)",
 				   MAC2STR(reject_bss->bssid),
 				   rssi_rej[2], rssi_rej[3]);
-			wpa_bss_tmp_disallow(wpa_s,
-					     reject_bss->bssid,
-					     rssi_rej[3],
-					     rssi_rej[2] + reject_bss->level);
+			wpa_printf(MSG_DEBUG,
+				   "MLO-DBG: OCE retry check: valid_links=0x%x rejected_link=%d level=%d guard=%d drv_sme=%d",
+				   reject_bss->valid_links,
+				   reject_bss->mld_link_id,
+				   reject_bss->level,
+				   wpa_s->mlo_rssi_rej_retry,
+				   !!(wpa_s->drv_flags & WPA_DRIVER_FLAGS_SME));
 
-			/* For MLO, immediately retry on another link of the
-			 * same AP MLD instead of waiting for the Retry Delay
-			 * on the rejected link.
+			/* For MLO, immediately retry using another link of the
+			 * same AP MLD as the association link instead of waiting
+			 * for the Retry Delay on the rejected link. The full
+			 * usable link set is rebuilt on the retry, so the STA
+			 * still requests all links (including the rejected one).
+			 * To keep the rejected link eligible, it is deliberately
+			 * NOT placed on the temporary-disallow list here. This is
+			 * bounded to a single immediate retry: a second
+			 * consecutive OCE rejection falls through to the normal
+			 * Retry-Delay handling below.
 			 */
-			if (reject_bss->valid_links) {
+			if (reject_bss->valid_links &&
+			    !wpa_s->mlo_rssi_rej_retry) {
 				struct wpa_ssid *ssid = wpa_s->current_ssid;
+				struct wpa_bss *alt_bss = NULL;
+				u8 alt_link_id = 0;
 				u8 link_id;
 
+				/* Pick the strongest non-rejected link as the
+				 * association link for the retry rather than the
+				 * first one found, so a weak link (e.g. the
+				 * lowest-indexed 2.4 GHz link) is not preferred
+				 * over a better 5 GHz link.
+				 */
 				for_each_link(reject_bss->valid_links, link_id) {
-					struct wpa_bss *alt_bss;
+					struct wpa_bss *cand;
 
 					if (link_id == reject_bss->mld_link_id)
 						continue;
 
-					alt_bss = wpa_bss_get_bssid(
+					cand = wpa_bss_get_bssid(
 						wpa_s,
 						reject_bss->mld_links[link_id].bssid);
-					if (!alt_bss)
+					if (!cand)
 						continue;
 
+					if (!alt_bss || cand->level > alt_bss->level) {
+						alt_bss = cand;
+						alt_link_id = link_id;
+					}
+				}
+
+				if (!alt_bss)
+					wpa_printf(MSG_DEBUG,
+						   "MLO-DBG: no alternative link BSS found for immediate retry (valid_links=0x%x rejected_link=%d) - falling back to Retry-Delay handling",
+						   reject_bss->valid_links,
+						   reject_bss->mld_link_id);
+
+				if (alt_bss) {
 					wpa_printf(MSG_DEBUG,
 						   "MLO: OCE rejection on link %d, retrying on link %d "
-						   MACSTR,
+						   MACSTR " (level %d)",
 						   reject_bss->mld_link_id,
-						   link_id,
+						   alt_link_id,
+						   MAC2STR(alt_bss->bssid),
+						   alt_bss->level);
+					wpa_s->mlo_rssi_rej_retry = 1;
+					wpa_printf(MSG_DEBUG,
+						   "MLO-DBG: starting immediate all-link retry via link %d " MACSTR " (full usable link set rebuilt in sme_send_authentication)",
+						   alt_link_id,
 						   MAC2STR(alt_bss->bssid));
 					wpas_connect_work_done(wpa_s);
 					wpa_supplicant_mark_disassoc(wpa_s);
@@ -7854,6 +7914,17 @@ static void wpas_event_assoc_reject(struct wpa_supplicant *wpa_s,
 					return;
 				}
 			}
+
+			/* Non-MLO connection, or a second consecutive OCE
+			 * rejection on an MLO link: back off the rejected BSS for
+			 * the advertised Retry Delay and fall through to the
+			 * normal connection-failure handling.
+			 */
+			wpa_s->mlo_rssi_rej_retry = 0;
+			wpa_bss_tmp_disallow(wpa_s,
+					     reject_bss->bssid,
+					     rssi_rej[3],
+					     rssi_rej[2] + reject_bss->level);
 		}
 	}
 #endif /* CONFIG_MBO */
@@ -8693,8 +8764,6 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 		break;
 	case EVENT_DFS_RADAR_DETECTED:
 		if (data) {
-			wpa_msg(wpa_s, MSG_INFO, "%s on %d MHz", DFS_EVENT_RADAR_DETECTED,
-					data->dfs_event.freq);
 #ifdef CONFIG_AP
 #ifdef NEED_AP_MLME
 			wpas_ap_event_dfs_radar_detected(wpa_s,
@@ -8705,6 +8774,21 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 				break;
 
 			if (wpa_s->sta_dfs_en) {
+				wpa_msg(wpa_s, MSG_INFO, DFS_EVENT_RADAR_DETECTED
+					"freq=%d ht_enabled=%d chan_offset=%d chan_width=%d "
+					"cf1=%d cf2=%d radar_bitmap:%d"
+					" chan_width_device=%d cf_device=%d cac_started=%d",
+					data->dfs_event.freq,
+					data->dfs_event.ht_enabled,
+					data->dfs_event.chan_offset,
+					data->dfs_event.chan_width,
+					data->dfs_event.cf1,
+					data->dfs_event.cf2,
+					data->dfs_event.radar_bitmap,
+					data->dfs_event.chan_width_device,
+					data->dfs_event.cf_device,
+					wpa_s->wpa_state == WPA_STACACING);
+
 				wpas_mark_chan_nolhistory(wpa_s,
 						data->dfs_event.freq,
 						data->dfs_event.chan_width,

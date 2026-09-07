@@ -1395,6 +1395,7 @@ struct hostapd_bss_config {
 #ifdef CONFIG_IEEE80211AX
 	bool scs;
 	bool mscs;
+	bool deferred_scs;
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211AC
 	u16 vht_mcs_nss_set;
@@ -1970,6 +1971,10 @@ static inline void hostapd_restore_npca(struct hostapd_config *conf,
 	conf->npca_primary_channel = state->npca_primary_channel;
 	conf->npca_punct_bitmap = state->npca_punct_bitmap;
 }
+
+int acs_npca_select_primary_chan(struct hostapd_iface *iface,
+				 u8 *npca_channel,
+				 u16 *npca_punct_bitmap);
 #endif /* CONFIG_IEEE80211BN */
 
 

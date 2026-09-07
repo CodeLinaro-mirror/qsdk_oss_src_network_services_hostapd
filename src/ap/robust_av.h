@@ -8,10 +8,12 @@
 struct hostapd_data;
 struct sta_info;
 
+#include "utils/list.h"
+
 #define LOW_BYTE(val)    ((val & 0x000000ff))
 #define HIGH_BYTE(val)   ((val & 0x0000ff00) >> 8)
 
-#define HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER		10
+#define HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER		255
 #define HOSTAPD_SCS_MAX_DESCPRIPTORS_PER_REQUEST	4
 #define HOSTAPD_SCS_MAX_TCLAS_ELEMENTS_PER_DESCRIPTOR	2
 
@@ -182,6 +184,14 @@ struct hostapd_scs_req_desc_data {
 #ifdef CONFIG_IEEE80211BE
 	struct hostapd_scs_qos_attributes qos_attr;
 #endif /* CONFIG_IEEE80211BE */
+	struct dl_list list;
+	u8 request_pending:1,      /* deferred; not yet programmed */
+	   client_initiated_scs:1; /* request originated from STA */
+	u16 qm_id;                 /* QM identifier; 0xFFFF = unassigned */
+	u8 scs_sta_mac[ETH_ALEN];  /* end-client STA MAC; used as NFT dmac
+				    * equals sta->addr for terminating node,
+				    * end-client MAC for intermediate node */
+	bool dedicated_queue;
 };
 
 struct hostapd_scs_req_data {
@@ -202,6 +212,11 @@ struct hostapd_scs_resp_data {
 	u8 num_scs_desc;
 	struct hostapd_scs_resp_desc_data
 			scs_resp_desc[HOSTAPD_SCS_MAX_DESCPRIPTORS_PER_REQUEST];
+};
+
+struct hostapd_scs_raw_desc {
+	const u8 *data;
+	u16 len;
 };
 
 struct hostapd_mscs_resp {
@@ -244,11 +259,17 @@ u8 *hostapd_add_wfa_cap_ie(struct hostapd_data *hapd,
                            struct sta_info *sta,
                            u8 *eid);
 
+int hostapd_scs_configure(struct hostapd_data *hapd, const u8 *peer_mac,
+			  const u8 *scs_sta_mac, u16 qm_id, const u8 *desc_buf,
+			  u8 desc_len, bool dedicated_queue);
 int hostapd_dump_scs_list(struct hostapd_data *hapd, struct sta_info *sta,
 			  char *buf, size_t buflen);
 
 int hostapd_dump_scs_info(struct hostapd_data *hapd, struct sta_info *sta,
 			  char *buf, size_t buflen, u8 scs_id);
+int hostapd_dump_scs_qm_info(struct hostapd_data *hapd,
+			     struct sta_info *sta,
+			     char *buf, size_t buflen, u16 qm_id);
 
 int hostapd_send_unsolicited_scs_resp(struct hostapd_data *hapd,
 				      struct sta_info *sta, u8 scs_id,

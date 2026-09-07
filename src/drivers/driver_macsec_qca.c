@@ -319,7 +319,7 @@ static int macsec_qca_init_sockets(struct macsec_qca_data *drv, u8 *own_addr)
 	if (eloop_register_read_sock(drv->common.sock, macsec_qca_handle_read,
 				     drv->common.ctx, NULL)) {
 		wpa_printf(MSG_INFO, "Could not register read socket");
-		return -1;
+		goto fail;
 	}
 
 	os_memset(&ifr, 0, sizeof(ifr));
@@ -327,7 +327,7 @@ static int macsec_qca_init_sockets(struct macsec_qca_data *drv, u8 *own_addr)
 	if (ioctl(drv->common.sock, SIOCGIFINDEX, &ifr) != 0) {
 		wpa_printf(MSG_ERROR, "ioctl(SIOCGIFINDEX): %s",
 			   strerror(errno));
-		return -1;
+		goto fail;
 	}
 
 	os_memset(&addr, 0, sizeof(addr));
@@ -339,7 +339,7 @@ static int macsec_qca_init_sockets(struct macsec_qca_data *drv, u8 *own_addr)
 	if (bind(drv->common.sock, (struct sockaddr *) &addr,
 		 sizeof(addr)) < 0) {
 		wpa_printf(MSG_ERROR, "macsec_qca: bind: %s", strerror(errno));
-		return -1;
+		goto fail;
 	}
 
 	/* filter multicast address */
@@ -347,7 +347,7 @@ static int macsec_qca_init_sockets(struct macsec_qca_data *drv, u8 *own_addr)
 				       pae_group_addr, 1) < 0) {
 		wpa_printf(MSG_ERROR,
 			"macsec_qca_init_sockets: Failed to add multicast group membership");
-		return -1;
+		goto fail;
 	}
 
 	os_memset(&ifr, 0, sizeof(ifr));
@@ -355,17 +355,23 @@ static int macsec_qca_init_sockets(struct macsec_qca_data *drv, u8 *own_addr)
 	if (ioctl(drv->common.sock, SIOCGIFHWADDR, &ifr) != 0) {
 		wpa_printf(MSG_ERROR, "ioctl(SIOCGIFHWADDR): %s",
 			   strerror(errno));
-		return -1;
+		goto fail;
 	}
 
 	if (ifr.ifr_hwaddr.sa_family != ARPHRD_ETHER) {
 		wpa_printf(MSG_INFO, "Invalid HW-addr family 0x%04x",
 			   ifr.ifr_hwaddr.sa_family);
-		return -1;
+		goto fail;
 	}
 	os_memcpy(own_addr, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
 
 	return 0;
+
+fail:
+	eloop_unregister_read_sock(drv->common.sock);
+	close(drv->common.sock);
+	drv->common.sock = -1;
+	return -1;
 #else /* __linux__ */
 	return -1;
 #endif /* __linux__ */
@@ -432,6 +438,13 @@ static void macsec_qca_deinit(void *priv)
 }
 
 #ifdef HOSTAPD
+static struct nla_policy ssdk_event_policy[SSDK_ATTR_MAX] = {
+	[SSDK_ATTR_MACADDR] = {
+		.minlen = ETH_ALEN,
+		.maxlen = ETH_ALEN,
+	},
+};
+
 static int process_genl_event(struct nl_msg *msg, void *arg)
 {
 	struct macsec_qca_data *drv = arg;
@@ -445,7 +458,8 @@ static int process_genl_event(struct nl_msg *msg, void *arg)
 	nl_hdr = nlmsg_hdr(msg);
 	genl_hdr = genlmsg_hdr(nl_hdr);
 
-	error = genlmsg_parse(nl_hdr, 0, attrs, SSDK_ATTR_MAX - 1, NULL);
+	error = genlmsg_parse(nl_hdr, 0, attrs, SSDK_ATTR_MAX - 1,
+			      ssdk_event_policy);
 	if (error < 0) {
 		wpa_printf(MSG_DEBUG, "genlmsg_parse fail: %s", nl_geterror(error));
 		return error;
@@ -454,7 +468,7 @@ static int process_genl_event(struct nl_msg *msg, void *arg)
 		if (genl_hdr->cmd == SSDK_COMMAND_NEW_MAC) {
 			if (attrs[SSDK_ATTR_MACADDR]) {
 				os_memcpy(addr, nla_data(attrs[SSDK_ATTR_MACADDR]),
-					nla_len(attrs[SSDK_ATTR_MACADDR]));
+					ETH_ALEN);
 			}
 			if (attrs[SSDK_ATTR_IFNAME] && os_memcmp(drv->common.ifname,
 				nla_get_string(attrs[SSDK_ATTR_IFNAME]),
@@ -471,7 +485,7 @@ static int process_genl_event(struct nl_msg *msg, void *arg)
 		if (genl_hdr->cmd == SSDK_COMMAND_EXPIRE_MAC) {
 			if (attrs[SSDK_ATTR_MACADDR]) {
 				os_memcpy(addr, nla_data(attrs[SSDK_ATTR_MACADDR]),
-					nla_len(attrs[SSDK_ATTR_MACADDR]));
+					ETH_ALEN);
 			}
 			if (attrs[SSDK_ATTR_IFNAME] && os_memcmp(drv->common.ifname,
 				nla_get_string(attrs[SSDK_ATTR_IFNAME]),
@@ -703,6 +717,10 @@ static int macsec_qca_set_param(struct macsec_qca_data *drv, const char *param)
 }
 #endif /* HOSTAPD */
 
+#ifdef HOSTAPD
+static void macsec_qca_hapd_deinit(void *priv);
+#endif /* HOSTAPD */
+
 static void * macsec_qca_hapd_init(struct hostapd_data *hapd,
 				   struct wpa_init_params *params)
 {
@@ -729,6 +747,8 @@ static void * macsec_qca_hapd_init(struct hostapd_data *hapd,
 	drv->use_pae_group_addr = params->use_pae_group_addr;
 
 #ifdef HOSTAPD
+	drv->ioctl_sock = -1;
+
 	if (macsec_qca_set_param(drv, params->driver_params) < 0) {
 		os_free(drv);
 		return NULL;
@@ -742,18 +762,22 @@ static void * macsec_qca_hapd_init(struct hostapd_data *hapd,
 
 #ifdef HOSTAPD
 	if ((drv->authorize_policy == 1) && macsec_qca_init_genl(drv) < 0) {
-		os_free(drv);
-		return NULL;
+		goto fail;
 	}
 	if ((drv->ioctl_sock = open(SW_SWITCH_IOCTL_DEV_NAME, O_RDWR)) < 0) {
-		os_free(drv);
-		return NULL;
+		goto fail;
 	}
 	/* deny all mac address and accept eapol */
 	u8 mac[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 	macsec_qca_set_sta_acl_policy(drv, mac, 0);
 #endif /* HOSTAPD */
 	return drv;
+
+#ifdef HOSTAPD
+fail:
+	macsec_qca_hapd_deinit(drv);
+	return NULL;
+#endif /* HOSTAPD */
 }
 
 

@@ -29,7 +29,7 @@ static const char *const hostapd_cli_version =
 "hostapd_cli v" VERSION_STR "\n"
 "Copyright (c) 2004-2024, Jouni Malinen <j@w1.fi> and contributors";
 
-static struct wpa_ctrl *ctrl_conn;
+struct wpa_ctrl *ctrl_conn;
 static int hostapd_cli_quit = 0;
 static int hostapd_cli_attached = 0;
 
@@ -197,14 +197,14 @@ static int hostapd_cli_reconnect(const char *ifname)
 }
 
 
-static void hostapd_cli_msg_cb(char *msg, size_t len)
+void hostapd_cli_msg_cb(char *msg, size_t len)
 {
 	cli_event(msg);
 	printf("%s\n", msg);
 }
 
 
-static int hostapd_cli_recovery_in_progress(void)
+int hostapd_cli_recovery_in_progress(void)
 {
 	glob_t g;
 	size_t i;
@@ -267,7 +267,6 @@ static int _wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd, int print)
 	}
 	return 0;
 }
-
 
 #ifndef CONFIG_QCN_EXTN
 static inline
@@ -2428,6 +2427,10 @@ static int hostapd_cli_cmd_afc(struct wpa_ctrl *ctrl, int argc, char *argv[])
 		return -1;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	if (os_strcmp(argv[0], "get_afc_6g_chan_list") == 0)
+		return _wpa_ctrl_command_large(ctrl, "AFC get_afc_6g_chan_list", 1);
+#endif /* CONFIG_QCN_EXTN */
 	return hostapd_cli_cmd(ctrl, "AFC", 1, argc, argv);
 }
 
@@ -2601,7 +2604,7 @@ static int hostapd_cli_cmd_dump_scs(struct wpa_ctrl *ctrl, int argc,
 
 	if (argc < 2 || argc > 3) {
 		printf("Invalid 'dump_scs' command - usage: dump_scs <addr> "
-		       "scs_list | scs_info <scs_id>\n");
+		       "scs_list | scs_info <scs_id> | qm_info <qm_id>\n");
 		return -1;
 	}
 
@@ -2621,6 +2624,14 @@ static int hostapd_cli_cmd_dump_scs(struct wpa_ctrl *ctrl, int argc,
 		}
 
 		res = os_snprintf(buf, sizeof(buf), "DUMP_SCS_INFO %s %s",
+				  argv[0], argv[2]);
+
+	} else if (os_strcmp(argv[1], "qm_info") == 0) {
+		if (argc != 3) {
+			printf("Invalid 'dump_scs <addr> qm_info <qm_id>' usage\n");
+			return -1;
+		}
+		res = os_snprintf(buf, sizeof(buf), "DUMP_SCS_QM_INFO %s %s",
 				  argv[0], argv[2]);
 
 	} else {
@@ -2656,6 +2667,36 @@ static int hostapd_cli_cmd_send_unsolicited_scs_resp(struct wpa_ctrl *ctrl,
 
 	if (os_snprintf_error(sizeof(buf), res)) {
 		printf("send_unsolicited_scs_resp cmd failed\n");
+		return -1;
+	}
+
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+
+static int hostapd_cli_cmd_scs_configure(struct wpa_ctrl *ctrl, int argc,
+					 char *argv[])
+{
+	char buf[1024];
+	int res;
+
+	if (argc < 4 || argc > 5) {
+		printf("Usage: scs_configure <peer_mac> <scs_sta_mac> <qm_id> "
+		       "<scs_desc_hex> [dedicated_queue]\n");
+		return -1;
+	}
+
+	if (argc == 5)
+		res = os_snprintf(buf, sizeof(buf),
+				  "SCS_CONFIGURE %s %s %s %s %s",
+				  argv[0], argv[1], argv[2],
+				  argv[3], argv[4]);
+	else
+		res = os_snprintf(buf, sizeof(buf),
+				  "SCS_CONFIGURE %s %s %s %s",
+				  argv[0], argv[1], argv[2], argv[3]);
+	if (os_snprintf_error(sizeof(buf), res)) {
+		printf("scs_configure cmd failedw\n");
 		return -1;
 	}
 
@@ -4111,11 +4152,14 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "= Reset AFC in target\n"},
 #ifdef CONFIG_IEEE80211AX
 	{ "dump_scs", hostapd_cli_cmd_dump_scs, NULL,
-	  "<addr> scs_list | scs_info <scs_id> = Dump SCS list or specific SCS "
-	  "descriptor info of the STA" },
+	  "<addr> scs_list | scs_info <scs_id> | qm_info <qm_id> = "
+	  "Dump SCS list or descriptor info by SCS ID or QM ID" },
 	{ "send_unsolicited_scs_resp", hostapd_cli_cmd_send_unsolicited_scs_resp,
 	  NULL, "<addr> --scsid <scsid> --req_type <req_type> = "
 	  "Send unsolicited SCS response to the STA" },
+	{ "scs_configure", hostapd_cli_cmd_scs_configure, NULL,
+	  "<peer_mac> <scs_sta_mac> <qm_id> <scs_desc_hex> "
+	  "[<dedicated_queue>] = Configure SCS session via application" },
 	{ "set_mbssid_tx", hostapd_cli_cmd_set_mbssid_tx, NULL,
 	  "[auto_stop] [auto_start]\n"
 	  "= Stop all profiles from MBSSID group if auto_stop option is given, "

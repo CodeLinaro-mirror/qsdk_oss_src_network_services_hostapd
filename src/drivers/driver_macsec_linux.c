@@ -206,10 +206,9 @@ static int try_commit(struct macsec_drv_data *drv)
 			rtnl_link_unset_flags(change, IFF_UP);
 
 		err = rtnl_link_change(drv->sk, change, change, 0);
+		rtnl_link_put(change);
 		if (err < 0)
 			return err;
-
-		rtnl_link_put(change);
 
 		drv->controlled_port_enabled_set = false;
 	}
@@ -1548,7 +1547,7 @@ static int macsec_drv_init_sockets(struct macsec_drv_data *drv, u8 *own_addr)
 	if (eloop_register_read_sock(drv->common.sock, macsec_drv_handle_read,
 				     drv->common.ctx, NULL)) {
 		wpa_printf(MSG_INFO, "Could not register read socket");
-		return -1;
+		goto fail;
 	}
 
 	os_memset(&ifr, 0, sizeof(ifr));
@@ -1556,7 +1555,7 @@ static int macsec_drv_init_sockets(struct macsec_drv_data *drv, u8 *own_addr)
 	if (ioctl(drv->common.sock, SIOCGIFINDEX, &ifr) != 0) {
 		wpa_printf(MSG_ERROR, "ioctl(SIOCGIFINDEX): %s",
 			   strerror(errno));
-		return -1;
+		goto fail;
 	}
 
 	os_memset(&addr, 0, sizeof(addr));
@@ -1568,7 +1567,7 @@ static int macsec_drv_init_sockets(struct macsec_drv_data *drv, u8 *own_addr)
 	if (bind(drv->common.sock, (struct sockaddr *) &addr, sizeof(addr)) < 0)
 	{
 		wpa_printf(MSG_ERROR, "bind: %s", strerror(errno));
-		return -1;
+		goto fail;
 	}
 
 	/* filter multicast address */
@@ -1576,7 +1575,7 @@ static int macsec_drv_init_sockets(struct macsec_drv_data *drv, u8 *own_addr)
 				       pae_group_addr, 1) < 0) {
 		wpa_printf(MSG_ERROR, "wired: Failed to add multicast group "
 			   "membership");
-		return -1;
+		goto fail;
 	}
 
 	os_memset(&ifr, 0, sizeof(ifr));
@@ -1584,17 +1583,23 @@ static int macsec_drv_init_sockets(struct macsec_drv_data *drv, u8 *own_addr)
 	if (ioctl(drv->common.sock, SIOCGIFHWADDR, &ifr) != 0) {
 		wpa_printf(MSG_ERROR, "ioctl(SIOCGIFHWADDR): %s",
 			   strerror(errno));
-		return -1;
+		goto fail;
 	}
 
 	if (ifr.ifr_hwaddr.sa_family != ARPHRD_ETHER) {
 		wpa_printf(MSG_INFO, "Invalid HW-addr family 0x%04x",
 			   ifr.ifr_hwaddr.sa_family);
-		return -1;
+		goto fail;
 	}
 	os_memcpy(own_addr, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
 
 	return 0;
+
+fail:
+	eloop_unregister_read_sock(drv->common.sock);
+	close(drv->common.sock);
+	drv->common.sock = -1;
+	return -1;
 #else /* __linux__ */
 	return -1;
 #endif /* __linux__ */

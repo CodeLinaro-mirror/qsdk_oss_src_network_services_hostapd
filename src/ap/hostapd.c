@@ -70,7 +70,7 @@
 #include "atf/atf_offload.h"
 #ifdef CONFIG_IEEE80211BN
 #include "uhr_utils.h"
-#include "uhr_oui_transport.h"
+#include "eth_p_1905.h"
 #include "uhr_neighbor_update.h"
 #endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_QCN_EXTN
@@ -411,20 +411,6 @@ hostapd_get_multi_group_bss(struct hostapd_multi_mbssid_group *group,
 	return NULL;
 }
 
-bool hostapd_check_reenable_bss(struct hostapd_iface *iface)
-{
-	int b;
-
-	for (b = 0; b < iface->num_bss; b++) {
-		if (iface->bss[b]->reenable == REENABLE_REUSE_LINK ||
-		    iface->bss[b]->reenable == REENABLE_HT_SCAN ||
-		    iface->bss[b]->reenable == REENABLE_CAC)
-			return true;
-	}
-
-	return false;
-}
-
 static inline bool hapd_reenable_pending(const struct hostapd_data *hapd)
 {
 	return hapd->reenable == REENABLE_REUSE_LINK ||
@@ -432,8 +418,26 @@ static inline bool hapd_reenable_pending(const struct hostapd_data *hapd)
 		hapd->reenable == REENABLE_CAC;
 }
 
+bool hostapd_check_reenable_bss(struct hostapd_iface *iface,
+				enum hostapd_reenable_mode reason)
+{
+	int b;
+
+	for (b = 0; b < iface->num_bss; b++) {
+		if (reason == REENABLE_NONE) {
+			if (hapd_reenable_pending(iface->bss[b]))
+				return true;
+			continue;
+		}
+		if (iface->bss[b]->reenable == reason)
+			return true;
+	}
+
+	return false;
+}
+
 int hostapd_switch_pending_bss(struct hostapd_iface *iface,
-				      struct csa_settings *settings)
+			      struct csa_settings *settings)
 {
 	int b, err = 0, num_err = 0;
 
@@ -452,15 +456,21 @@ int hostapd_switch_pending_bss(struct hostapd_iface *iface,
 }
 
 
-bool hostapd_enable_pending_bss(struct hostapd_iface *iface)
+bool hostapd_enable_pending_bss(struct hostapd_iface *iface,
+				enum hostapd_reenable_mode reason,
+				bool dfs_cleanup)
 {
 	int b;
 
 	for (b = 0; b < iface->num_bss; b++) {
 		struct hostapd_data *hapd = iface->bss[b];
 
-		if (!hapd_reenable_pending(hapd))
+		if (reason == REENABLE_NONE) {
+			if (!hapd_reenable_pending(hapd))
+				continue;
+		} else if (hapd->reenable != reason) {
 			continue;
+		}
 
 		if (hostapd_enable_bss(hapd) < 0)
 			wpa_printf(MSG_ERROR, "Enabling of BSS %s failed",
@@ -1504,13 +1514,13 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 
 	wpa_printf(MSG_DEBUG, "%s(%s)", __func__, hapd->conf->iface);
 #ifdef CONFIG_IEEE80211BN
-       if (hapd->uhr_oui_ctx) {
+	if (hapd->eth_p_1905_ctx) {
 		smd_neighbor_update_deinit(hapd);
-               wpa_printf(MSG_DEBUG, "SMD: Deinitializing roaming transport");
-	       if (hostapd_mld_is_first_bss(hapd))
-		       uhr_oui_deinit(hapd->uhr_oui_ctx);
-               hapd->uhr_oui_ctx = NULL;
-       }
+		wpa_printf(MSG_DEBUG, "SMD: Deinitializing roaming transport");
+		if (hostapd_mld_is_first_bss(hapd))
+			eth_p_1905_deinit(hapd->eth_p_1905_ctx);
+		hapd->eth_p_1905_ctx = NULL;
+	}
 #endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_QCN_EXTN
 	hostapd_log_extn_deinit(hapd);
@@ -1795,6 +1805,12 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 	iface->csa_pending_on_cac_abort = false;
 	os_memset(&iface->csa_settings, 0, sizeof(struct csa_settings));
 	os_memset(&iface->radar_background, 0, sizeof(iface->radar_background));
+	/*
+	 * channel == -1 is the sentinel the DFS background-radar code checks
+	 * for "no cached channel"; os_memset() above leaves it 0, which is a
+	 * channel number, not the sentinel.
+	 */
+	iface->radar_background.channel = -1;
 #ifdef CONFIG_QCN_EXTN
 	hostapd_iface_deinit_extn(iface);
 #endif /* CONFIG_QCN_EXTN */
@@ -2434,56 +2450,55 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
 	}
 
 #ifdef CONFIG_IEEE80211BN
-       /* Initialize SMD Roaming transport if configured */
-	/* In hostapd_start_beacon() or similar initialization */
+	/* Initialize SMD Roaming transport if configured */
 	if (conf->smd_partners) {
-	    wpa_printf(MSG_DEBUG, "SMD: Initializing roaming transport");
+		static const u16 iap_msg_types[] = {
+			ETH_P_1905_IAP_MSG_REQUEST,
+			ETH_P_1905_IAP_MSG_RESPONSE,
+			ETH_P_1905_SMD_NEIGHBOR_UPDATE_MSG,
+			ETH_P_1905_SMD_NEIGHBOR_FETCH_MSG,
+			ETH_P_1905_SMD_ST_PREP_REQ_MSG,
+			ETH_P_1905_SMD_ST_PREP_REP_MSG,
+			ETH_P_1905_SMD_ST_EXEC_REQ_MSG,
+			ETH_P_1905_SMD_ST_EXEC_REP_MSG,
+			ETH_P_1905_SMD_ST_PREP_CTX_MSG,
+			ETH_P_1905_SMD_ST_ROAM_CLEANUP_MSG,
+			ETH_P_1905_SMD_ST_CTX_REQ_MSG,
+			ETH_P_1905_SMD_ST_CTX_REP_MSG,
+			ETH_P_1905_SMD_ST_EXEC_VIA_TGT_DONE_MSG,
+		};
+		struct hostapd_data *f_bss;
 
-	    if (hostapd_mld_is_first_bss(hapd)) {
-        	/* Initialize OUI context only for first BSS */
+		wpa_printf(MSG_DEBUG, "SMD: Initializing roaming transport");
 
-               if (hapd->uhr_oui_ctx) {
-                       wpa_printf(MSG_WARNING, "SMD: Socket is already created for first BSS");
-               } else {
-                       hapd->uhr_oui_ctx = uhr_oui_init(hapd);
-                       if (!hapd->uhr_oui_ctx) {
-                           wpa_printf(MSG_ERROR, "SMD: Failed to initialize OUI transport");
-                           return -1;
-                       }
-               }
-        	/* Load configured partner APs */
-	        uhr_load_partners(hapd);
-		if (conf->smd_neighbor_update_enabled &&
+		f_bss = hostapd_mld_is_first_bss(hapd) ? hapd :
+			hostapd_mld_get_first_bss(hapd);
+		if (!f_bss) {
+			wpa_printf(MSG_ERROR, "SMD: First BSS context not initialized");
+			return -1;
+		}
+		if (!f_bss->eth_p_1905_ctx) {
+			f_bss->eth_p_1905_ctx = eth_p_1905_init(f_bss, iap_msg_types,
+								 ARRAY_SIZE(iap_msg_types));
+			if (!f_bss->eth_p_1905_ctx) {
+				wpa_printf(MSG_ERROR, "SMD: Failed to initialize 1905 transport");
+				return -1;
+			}
+		}
+		eth_p_1905_load_partners(f_bss->eth_p_1905_ctx, f_bss);
+		hapd->eth_p_1905_ctx = f_bss->eth_p_1905_ctx;
+		if (hapd != f_bss)
+			wpa_printf(MSG_DEBUG,
+				   "SMD: Using 1905 context from first BSS (link_id=%d)",
+				   f_bss->mld_link_id);
+
+		if (hostapd_mld_is_first_bss(hapd) &&
+		    conf->smd_neighbor_update_enabled &&
 		    smd_neighbor_update_init(hapd) < 0) {
 			wpa_printf(MSG_ERROR,
 				   "SMD: Failed to initialize neighbor update");
 			return -1;
 		}
-	    } else {
-	        /* Affiliated links share the first BSS's context */
-        	struct hostapd_data *f_bss = hostapd_mld_get_first_bss(hapd);
-	        if (!f_bss) {
-        	    wpa_printf(MSG_ERROR, "SMD: First BSS OUI context not initialized");
-	            return -1;
-        	}
-
-               if (!f_bss->uhr_oui_ctx) {
-                       wpa_printf(MSG_INFO, "SMD: Could not find socket for first BSS, creating it");
-                       f_bss->uhr_oui_ctx = uhr_oui_init(f_bss);
-                       if (!f_bss->uhr_oui_ctx) {
-                               wpa_printf(MSG_ERROR, "SMD: Failed to initialize OUI transport");
-                               return -1;
-                       }
-               }
-
-
-	        wpa_printf(MSG_DEBUG, "SMD: Using OUI context from first BSS (link_id=%d)",
-        	           f_bss->mld_link_id);
-	        hapd->uhr_oui_ctx = f_bss->uhr_oui_ctx;
-
-        	/* Load configured partner APs */
-	        uhr_load_partners(hapd);
-	    }
 	}
 #endif /* CONFIG_IEEE80211BN */
 
@@ -3022,21 +3037,6 @@ setup_mld:
 	hapd->send_eap_req = ieee80211_send_eap_req;
 #endif /* CONFIG_IEEE8021X_AUTH */
 
-	/* Extend wpa_key_mgmt based on Security Profile IE configuration.
-	 * AKMs implied by security_profiles (e.g., OWE via SP8) are added
-	 * directly to conf->wpa_key_mgmt so that ALL subsequent checks
-	 * (beacon RSN IE, assoc processing, probe responses) see them. */
-	if (conf->security_profiles) {
-		int sp_km = hostapd_sp_implied_key_mgmt(conf);
-
-		if ((sp_km & WPA_KEY_MGMT_OWE) &&
-		    !(conf->wpa_key_mgmt & WPA_KEY_MGMT_OWE)) {
-			wpa_printf(MSG_DEBUG,
-				   "SP8: adding OWE to wpa_key_mgmt from security_profiles");
-			conf->wpa_key_mgmt |= WPA_KEY_MGMT_OWE;
-		}
-	}
-
 	if (conf->wpa && hostapd_setup_wpa(hapd))
 		return -1;
 
@@ -3305,11 +3305,11 @@ static int start_ctrl_iface(struct hostapd_iface *iface)
  */
 void hostapd_no_ir_cleanup(struct hostapd_data *bss)
 {
-	hostapd_bss_deinit_no_free(bss);
-	hostapd_bss_link_deinit(bss);
 #ifdef CONFIG_IEEE80211BN
 	mapc_deinit(bss);
 #endif /* CONFIG_IEEE80211BN */
+	hostapd_bss_deinit_no_free(bss);
+	hostapd_bss_link_deinit(bss);
 	hostapd_free_hapd_data(bss);
 }
 
@@ -3444,7 +3444,7 @@ static int hostapd_enable_no_ir_bsses(struct hostapd_iface *iface)
 	if (ret)
 		return ret;
 
-	if (!hostapd_check_reenable_bss(iface))
+	if (!hostapd_check_reenable_bss(iface, REENABLE_NONE))
 		hostapd_set_state(iface, HAPD_IFACE_ENABLED);
 
 	return ret;
@@ -3579,7 +3579,7 @@ int hostapd_no_ir_channel_list_updated(struct hostapd_iface *iface)
 
 		wpa_printf(MSG_DEBUG,
 			   "NO_IR: Re-enabling interface after channel list update");
-		if (!hostapd_check_reenable_bss(iface))
+		if (!hostapd_check_reenable_bss(iface, REENABLE_NONE))
 			setup_interface2(iface);
 		else
 			ret = hostapd_enable_no_ir_bsses(iface);
@@ -5295,6 +5295,11 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 		}
 #endif /* CONFIG_MESH */
 
+#ifdef CONFIG_IEEE80211BN
+		if (iface->conf->npca_enable)
+			hostapd_npca_auto_select(iface);
+#endif /* CONFIG_IEEE80211BN */
+
 		if (is_6ghz_freq(iface->freq) && iface->conf->enable_best_power_mode) {
 			u8 best_power_mode;
 			enum chan_width ch_width;
@@ -5785,6 +5790,9 @@ void hostapd_bss_deinit(struct hostapd_data *hapd)
 		return;
 	wpa_printf(MSG_DEBUG, "%s: deinit bss %s", __func__,
 		   hapd->conf ? hapd->conf->iface : "N/A");
+#ifdef CONFIG_IEEE80211BN
+	mapc_deinit(hapd);
+#endif /* CONFIG_IEEE80211BN */
 	hostapd_bss_deinit_no_free(hapd);
 	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_DISABLED);
 #ifdef CONFIG_SQLITE
@@ -6035,6 +6043,13 @@ struct hostapd_iface * hostapd_alloc_iface(void)
 
 	hapd_iface->is_afc_power_event_received = false;
 	hapd_iface->is_afc_repeater_power_sync_pending = false;
+
+	/*
+	 * channel == -1 is the sentinel the DFS background-radar code checks
+	 * for "no cached channel"; os_zalloc() above leaves it 0, which is a
+	 * channel number, not the sentinel.
+	 */
+	hapd_iface->radar_background.channel = -1;
 
 #ifdef CONFIG_QCN_EXTN
 	hostapd_iface_init_extn(hapd_iface);
@@ -7017,6 +7032,54 @@ fail:
 
 
 /**
+ * hostapd_check_dup_link - Check if an MLD link add request is a duplicate
+ * @tmp_hapd: Existing hostapd_data for the ifname requested for the new link
+ * @new_channel: Channel of new BSS
+ * @hw_idx: Iface hw_idx of new BSS
+ *
+ * tmp_hapd may already be operating on a different frequency as another
+ * link of the same MLD sharing this ifname - that is a legitimate
+ * additional link, not a duplicate. This only flags a duplicate when an
+ * existing link of the same MLD is already enabled on the very same
+ * frequency that is being requested here.
+ *
+ * Returns: true if the requested link is a duplicate of an existing link,
+ * false otherwise.
+ */
+static bool hostapd_check_dup_link(struct hostapd_data *tmp_hapd,
+				   const u8 new_channel,
+				   const u8 hw_idx)
+{
+	struct hostapd_data *phapd;
+	int new_freq = 0;
+
+	/*
+	 * Look up the new link's frequency from an existing partner link's
+	 * iface channel table, if the frequency is found in any of the partner
+	 * link's and the hw_idx matches the new BSS iface, reject the link
+	 * addition
+	 */
+#ifdef CONFIG_QCN_EXTN
+	for_each_mld_link_include_repurposed(phapd, tmp_hapd) {
+#else
+	for_each_mld_link(phapd, tmp_hapd) {
+#endif
+		new_freq = hostapd_hw_get_freq(phapd, new_channel);
+		if (new_freq && phapd->iface->current_hw_info &&
+		    phapd->iface->current_hw_info->hw_idx == hw_idx) {
+			wpa_printf(MSG_ERROR, "Found another link in the same MLD, rejecting the link addition freq %d hw_idx %u new_hw_idx:%u",
+				   phapd->iface->freq,
+				   phapd->iface->current_hw_info->hw_idx, hw_idx);
+			return true;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG, "Proceed setup for ML AP link addition");
+	return false;
+}
+
+
+/**
  * hostapd_interface_init_bss - Read configuration file and init BSS data
  *
  * This function is used to parse configuration file for a BSS. This BSS is
@@ -7078,9 +7141,10 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 		if (tmp_hapd) {
 			wpa_printf(MSG_ERROR,
 				   "Interface name %s already in use", ifname);
-			if (conf->bss[0]->mld_ap && tmp_hapd->conf->mld_ap)
-				wpa_printf(MSG_ERROR, "Proceed setup for ML AP link addition");
-			else {
+			if (!conf->bss[0]->mld_ap || !tmp_hapd->conf->mld_ap ||
+			    (iface->current_hw_info &&
+			     hostapd_check_dup_link(tmp_hapd, conf->channel,
+						    iface->current_hw_info->hw_idx))) {
 				hostapd_config_free(conf);
 				return NULL;
 			}
@@ -7406,15 +7470,16 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt, const char *event)
 	hapd->disabled = 1;
 	wpa_msg(hapd->msg_ctx, MSG_INFO, "%s", event);
 
+#ifdef CONFIG_IEEE80211BN
+	mapc_deinit(hapd);
+#endif /* CONFIG_IEEE80211BN */
+
 	hostapd_bss_deinit_no_free(hapd);
 
 	/* Stop AP at driver level: no more beacons/tx for this BSS. */
 	hostapd_drv_stop_ap(hapd);
 
 	/* Deinitialize higher-level BSS state but keep netdev/link. */
-#ifdef CONFIG_IEEE80211BN
-	mapc_deinit(hapd);
-#endif /* CONFIG_IEEE80211BN */
 	hapd->reenable = REENABLE_REUSE_LINK;
 	hostapd_bss_link_deinit(hapd);
 	hostapd_free_hapd_data(hapd);
@@ -7432,6 +7497,12 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt, const char *event)
 		os_memset(&hapd->iface->csa_settings, 0, sizeof(struct csa_settings));
 		os_memset(&hapd->iface->radar_background, 0,
 			  sizeof(hapd->iface->radar_background));
+		/*
+		 * channel == -1 is the sentinel the DFS background-radar code
+		 * checks for "no cached channel"; os_memset() above leaves it
+		 * 0, which is a channel number, not the sentinel.
+		 */
+		hapd->iface->radar_background.channel = -1;
 		hostapd_interface_update_fils_ubpr(hapd->iface, false);
 	}
 	ieee802_11_update_beacon_mbssid(hapd);
@@ -11934,7 +12005,7 @@ static int hostapd_remove_vendor_elements(struct hostapd_bss_config *conf,  stru
 		entry_len = wpabuf_len(entry);
 
 		if (entry_len == needle_len &&
-		    os_memcmp(entry_data + 2, needle + 2, needle_len - 2) == 0) {
+		    os_memcmp(entry_data, needle, needle_len) == 0) {
 			conf->vendor_elements_len -= wpabuf_len(conf->vendor_elements[i]);
 			wpabuf_free(entry);
 			os_remove_in_array(conf->vendor_elements, conf->vendor_elements_count,
@@ -11959,20 +12030,12 @@ static int hostapd_remove_vendor_elements(struct hostapd_bss_config *conf,  stru
 static bool hostapd_validate_vendor_elements(struct hostapd_bss_config *conf, struct wpabuf *buf)
 {
 	const u8 *data;
-	u8 id;
 	size_t pos = 0, total;
 
 	data = wpabuf_head_u8(buf);
 	total = wpabuf_len(buf);
 
 	while (pos < total) {
-		id = data[pos];
-		if (id != WLAN_EID_VENDOR_SPECIFIC) {
-			wpa_printf(MSG_ERROR, "Invalid vendor ID:%u: Expected:%d",
-				   id, WLAN_EID_VENDOR_SPECIFIC);
-			return false;
-		}
-
 		pos += data[pos + 1] + IEEE80211_ELEM_HEADER_LEN;
 		if (pos > total) {
 			wpa_printf(MSG_ERROR, "Vendor IE Truncated: total=%zu ie_len=%zu",

@@ -6,6 +6,8 @@
 #ifndef NFT_H
 #define NFT_H
 
+struct hostapd_scs_req_desc_data;
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -90,7 +92,8 @@ struct hostapd_nft_rule_params {
 	u8 dscp;
 	u8 weight;
 	u64 handle;
-	u8 qm_idx;
+	u8 flow_idx;
+	struct hostapd_scs_req_desc_data *scs_desc;
 	int tclas_ele_idx;
 	u32 set_id;
 };

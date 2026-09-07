@@ -32,7 +32,7 @@ struct ieee1905_hdr {
 #define IEEE1905_FLAG_RELAY           BIT(7)
 
 /* Maximum distinct message types that can be registered in a single context */
-#define ETH_P_1905_MAX_MSG_TYPES      8
+#define ETH_P_1905_MAX_MSG_TYPES      16
 
 /* Duplicate-detection ring buffer depth */
 #define ETH_P_1905_DEDUP_SIZE         32
@@ -50,10 +50,19 @@ struct ieee1905_hdr {
 /* SMD ST Preparation/Execution 1905 message types (Wi-Fi 8 / SMD feature).
  * TODO: Replace placeholder values with actual 1905 spec message type IDs
  * once the spec assigns them. */
-#define ETH_P_1905_SMD_ST_PREP_REQ_MSG   0xFF01  /* placeholder */
-#define ETH_P_1905_SMD_ST_PREP_REP_MSG   0xFF02  /* placeholder */
-#define ETH_P_1905_SMD_ST_EXEC_REQ_MSG   0xFF03  /* placeholder */
-#define ETH_P_1905_SMD_ST_EXEC_REP_MSG   0xFF04  /* placeholder */
+#define ETH_P_1905_SMD_ST_PREP_REQ_MSG      0xFF01  /* placeholder */
+#define ETH_P_1905_SMD_ST_PREP_REP_MSG      0xFF02  /* placeholder */
+#define ETH_P_1905_SMD_ST_EXEC_REQ_MSG      0xFF03  /* placeholder */
+#define ETH_P_1905_SMD_ST_EXEC_REP_MSG      0xFF04  /* placeholder */
+#define ETH_P_1905_SMD_ST_PREP_CTX_MSG      0xFF05  /* placeholder */
+#define ETH_P_1905_SMD_ST_ROAM_CLEANUP_MSG       0xFF06  /* placeholder */
+#define ETH_P_1905_SMD_ST_CTX_REQ_MSG            0xFF07  /* placeholder */
+#define ETH_P_1905_SMD_ST_CTX_REP_MSG            0xFF0A  /* placeholder */
+#define ETH_P_1905_SMD_ST_EXEC_VIA_TGT_DONE_MSG  0xFF0B  /* placeholder */
+
+/* SMD Neighbor Update/Fetch 1905 message types. */
+#define ETH_P_1905_SMD_NEIGHBOR_UPDATE_MSG   0xFF08
+#define ETH_P_1905_SMD_NEIGHBOR_FETCH_MSG    0xFF09
 
 struct eth_p_1905_ctx;
 struct hostapd_data;

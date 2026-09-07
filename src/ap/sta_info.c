@@ -318,22 +318,29 @@ void ap_free_unadded_link_sta(struct hostapd_data *hapd, struct sta_info *sta)
 }
 #endif /* CONFIG_IEEE80211BE */
 
-
-static void __ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
+#ifdef CONFIG_IEEE80211BE
+/*
+ * ap_free_sta_link - remove a single link from an MLD STA
+ *
+ * Use this when the STA remains connected on other links (e.g. 802.11be
+ * ML link removal, ML reconfiguration). It issues NL80211_CMD_REMOVE_LINK_STA
+ * for the link being removed, then calls ap_free_sta() to clean up hostapd
+ * state. ap_free_sta() itself no longer calls link_sta_remove, so this is
+ * the only path that does so.
+ *
+ * Do NOT use this for a full MLD disconnect — use ap_free_sta() directly on
+ * the assoc link, which issues NL80211_CMD_DEL_STATION (MLD-level) and
+ * removes all links atomically.
+ */
+void ap_free_sta_link(struct hostapd_data *hapd, struct sta_info *sta)
 {
-#ifdef CONFIG_IEEE80211BE
-	if (hostapd_sta_is_link_sta(hapd, sta) && !sta->skip_kernel_delete) {
-		hostapd_drv_link_sta_remove(hapd, sta->addr);
-		return;
-	}
-#endif /* CONFIG_IEEE80211BE */
-	if (!sta->skip_kernel_delete)
-		hostapd_drv_sta_remove(hapd, sta->addr);
+	hostapd_drv_link_sta_remove(hapd, sta->addr);
+	ap_free_sta(hapd, sta);
 }
+#endif /* CONFIG_IEEE80211BE */
 
 
 #ifdef CONFIG_IEEE80211BE
-
 void set_wpa_sm_for_each_partner_link(struct hostapd_data *hapd,
 				      struct sta_info *psta, void *wpa_sm)
 {
@@ -366,13 +373,12 @@ void clear_wpa_sm_for_each_partner_link(struct hostapd_data *hapd,
 #ifdef CONFIG_IEEE80211AX
 static void hostapd_free_scs_data(struct sta_info *sta)
 {
-	int i;
+	struct hostapd_scs_req_desc_data *desc, *tmp;
 
-	for (i = 0; i < HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER; i++) {
-		if (sta->scs_req_desc[i]) {
-			os_free(sta->scs_req_desc[i]);
-			sta->scs_req_desc[i] = NULL;
-		}
+	dl_list_for_each_safe(desc, tmp, &sta->scs_req_desc,
+			      struct hostapd_scs_req_desc_data, list) {
+		dl_list_del(&desc->list);
+		os_free(desc);
 	}
 
 	sta->scs_session_count = 0;
@@ -511,7 +517,19 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 
 	if (!hapd->iface->driver_ap_teardown &&
 	    !(sta->flags & WLAN_STA_PREAUTH)) {
-		__ap_free_sta(hapd, sta);
+#ifdef CONFIG_IEEE80211BE
+		/*
+		 * For non-assoc link STAs skip all driver calls: in a full MLD
+		 * disconnect the assoc link's sta_remove() removes the entire MLD
+		 * peer atomically; in per-link removal (ap_free_sta_link) the
+		 * caller already issued link_sta_remove() before calling ap_free_sta().
+		 */
+		if (!hostapd_sta_is_link_sta(hapd, sta) && !sta->skip_kernel_delete)
+			hostapd_drv_sta_remove(hapd, sta->addr);
+#else /* CONFIG_IEEE80211BE */
+		if (!sta->skip_kernel_delete)
+			hostapd_drv_sta_remove(hapd, sta->addr);
+#endif /* CONFIG_IEEE80211BE */
 		sta->added_unassoc = 0;
 	}
 
@@ -883,7 +901,7 @@ void hostapd_free_link_stas(struct hostapd_data *hapd)
 
 		wpa_printf(MSG_DEBUG, "Removing link station from MLD " MACSTR,
 			   MAC2STR(prev->addr));
-		ap_free_sta(hapd, prev);
+		ap_free_sta_link(hapd, prev);
 	}
 }
 
@@ -1486,6 +1504,7 @@ struct sta_info * ap_sta_add(struct hostapd_data *hapd, const u8 *addr)
 	sta->last_seq_ctrl = WLAN_INVALID_MGMT_SEQ;
 	atf_offload_initialize_peer(sta);
 	dl_list_init(&sta->ip6addr);
+	dl_list_init(&sta->scs_req_desc);
 	sta->mld_assoc_link_id = -1;
 	sta->policies = NULL;
 	sta->num_dscp_policies = 0;

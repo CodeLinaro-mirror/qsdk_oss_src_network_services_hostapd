@@ -83,6 +83,9 @@
 
 #ifdef CONFIG_IEEE80211BN
 #include "ap/mapc.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../qcn_extns/mapc_extn.h"
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_ATF_OFFLOAD
@@ -9521,6 +9524,63 @@ static int hostapd_ctrl_iface_dump_scs_info(struct hostapd_data *hapd,
 	return hostapd_dump_scs_info(temp_hapd, sta, buf, buflen, scs_id);
 }
 
+static int hostapd_ctrl_iface_dump_scs_qm_info(struct hostapd_data *hapd,
+					       const char *cmd, char *buf,
+					       size_t buflen)
+{
+	struct hostapd_data *temp_hapd = hapd;
+	struct sta_info *sta = NULL;
+	char *token, *context = NULL;
+	unsigned int qm_id_val;
+	u8 addr[ETH_ALEN];
+
+	if (!hapd->conf->scs || !hapd->conf->deferred_scs) {
+		wpa_printf(MSG_ERROR, "SCS feature/Deferred SCS is disabled");
+		return -1;
+	}
+
+	token = str_token((char *)cmd, " ", &context);
+	if (!token || hwaddr_aton(token, addr) != 0) {
+		wpa_printf(MSG_ERROR, "Invalid MAC address");
+		return -1;
+	}
+
+	token = str_token((char *)cmd, " ", &context);
+	if (!token || sscanf(token, "%u", &qm_id_val) != 1 ||
+	    qm_id_val < 0 || qm_id_val > 0xFF) {
+		wpa_printf(MSG_ERROR, "Invalid QM ID");
+		return -1;
+	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (hapd->conf->mld_ap) {
+		for_each_mld_link_include_repurposed(temp_hapd, hapd) {
+			sta = ap_get_sta(temp_hapd, addr);
+			if (sta)
+				break;
+		}
+	} else
+		sta = ap_get_sta(temp_hapd, addr);
+#else
+	if (hapd->conf->mld_ap) {
+		for_each_mld_link(temp_hapd, hapd) {
+			sta = ap_get_sta(temp_hapd, addr);
+			if (sta)
+				break;
+		}
+	} else
+		sta = ap_get_sta(temp_hapd, addr);
+#endif
+
+	if (!sta) {
+		wpa_printf(MSG_ERROR, "STA not found");
+		return -1;
+	}
+
+	return hostapd_dump_scs_qm_info(temp_hapd, sta, buf, buflen,
+					(u16)qm_id_val);
+}
+
 
 static int hostapd_ctrl_iface_send_scs_resp(struct hostapd_data *hapd,
 					    const char *cmd)
@@ -9592,6 +9652,62 @@ static int hostapd_ctrl_iface_send_scs_resp(struct hostapd_data *hapd,
 	}
 
 	return 0;
+}
+
+
+static int hostapd_ctrl_iface_scs_configure(struct hostapd_data *hapd,
+					    const char *cmd)
+{
+	u8 peer_mac[ETH_ALEN], scs_sta_mac[ETH_ALEN];
+	char *token, *context = NULL;
+	u16 qm_id;
+	u8 desc_buf[256];
+	size_t desc_len;
+	bool dedicated_queue = false;
+
+	/* peer_mac */
+	token = str_token((char *)cmd, " ", &context);
+	if (!token || hwaddr_aton(token, peer_mac) != 0) {
+		wpa_printf(MSG_ERROR, "SCS_CONFIGURE: invalid peer_mac");
+		return -1;
+	}
+
+	/* scs_sta_mac */
+	token = str_token((char *)cmd, " ", &context);
+	if (!token || hwaddr_aton(token, scs_sta_mac) != 0) {
+		wpa_printf(MSG_ERROR, "SCS_CONFIGURE: invalid scs_sta_mac");
+		return -1;
+	}
+
+	/* qm_id limited to 0xFF for now, to be enhanced later if required */
+	token = str_token((char *)cmd, " ", &context);
+	if (!token || sscanf(token, "%hu", &qm_id) != 1 ||
+	    qm_id > 0xFF) {
+		wpa_printf(MSG_ERROR,
+			   "SCS_CONFIGURE: invalid QM ID");
+		return -1;
+	}
+
+	/* scs_desc_hex */
+	token = str_token((char *)cmd, " ", &context);
+	if (!token) {
+		wpa_printf(MSG_ERROR, "SCS_CONFIGURE: missing scs_desc_hex");
+		return -1;
+	}
+	desc_len = os_strlen(token) / 2;
+	if (desc_len == 0 || desc_len > sizeof(desc_buf) ||
+	    hexstr2bin(token, desc_buf, desc_len) < 0) {
+		wpa_printf(MSG_ERROR, "SCS_CONFIGURE: invalid scs_desc_hex");
+		return -1;
+	}
+
+	/* dedicated_queue — optional, default false */
+	token = str_token((char *)cmd, " ", &context);
+	if (token)
+		dedicated_queue = !!atoi(token);
+
+	return hostapd_scs_configure(hapd, peer_mac, scs_sta_mac, qm_id,
+				     desc_buf, (u8)desc_len, dedicated_queue);
 }
 #endif /* CONFIG_IEEE80211AX */
 
@@ -12797,8 +12913,14 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "DUMP_SCS_INFO ", 14) == 0) {
 		reply_len = hostapd_ctrl_iface_dump_scs_info(hapd, buf + 14,
 							     reply, reply_size);
+	} else if (os_strncmp(buf, "DUMP_SCS_QM_INFO ", 17) == 0) {
+		reply_len = hostapd_ctrl_iface_dump_scs_qm_info(hapd, buf + 17,
+								reply, reply_size);
 	} else if (os_strncmp(buf, "SEND_UNSOLICITED_SCS_RESP ", 26) == 0) {
 		if (hostapd_ctrl_iface_send_scs_resp(hapd, buf + 26))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "SCS_CONFIGURE ", 14) == 0) {
+		if (hostapd_ctrl_iface_scs_configure(hapd, buf + 14))
 			reply_len = -1;
 	} else if (os_strncmp(buf, "SET_MBSSID_TX", 13) == 0) {
 		if (hostapd_ctrl_iface_set_mbssid_tx(hapd, buf + 13))
@@ -13241,13 +13363,9 @@ static void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 	struct sockaddr_storage from;
 	socklen_t fromlen = sizeof(from);
 	char *reply, *pos = buf;
-#ifdef CONFIG_QCN_EXTN
-	const int reply_size = 16384;
-#else
-	const int reply_size = 4096;
-#endif /* CONFIG_QCN_EXTN */
 	int reply_len, cmn_param_id;
 	int level = MSG_DEBUG;
+	int reply_size;
 #ifdef CONFIG_CTRL_IFACE_UDP
 	unsigned char lcookie[CTRL_IFACE_COOKIE_LEN];
 #endif /* CONFIG_CTRL_IFACE_UDP */
@@ -13261,6 +13379,12 @@ static void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 		return;
 	}
 	buf[res] = '\0';
+#ifdef CONFIG_QCN_EXTN
+	reply_size = os_strstr(buf, "AFC get_afc_6g_chan_list") ?
+		MAX_REPLY_EXTN_BUF : 16384;
+#else
+	reply_size = 4096;
+#endif /* CONFIG_QCN_EXTN */
 
 	reply = os_malloc(reply_size);
 	if (reply == NULL) {
@@ -13437,13 +13561,9 @@ static void hostapd_mld_ctrl_iface_receive(int sock, void *eloop_ctx,
 	struct sockaddr_storage from;
 	socklen_t fromlen = sizeof(from);
 	char *reply, *pos = buf;
-#ifdef CONFIG_QCN_EXTN
-	const size_t reply_size = 16384;
-#else
-	const size_t reply_size = 4096;
-#endif /* CONFIG_QCN_EXTN */
 	int reply_len;
 	int level = MSG_DEBUG;
+	size_t reply_size;
 
 	res = recvfrom(sock, buf, sizeof(buf) - 1, 0,
 		       (struct sockaddr *) &from, &fromlen);
@@ -13453,6 +13573,12 @@ static void hostapd_mld_ctrl_iface_receive(int sock, void *eloop_ctx,
 		return;
 	}
 	buf[res] = '\0';
+#ifdef CONFIG_QCN_EXTN
+	reply_size = os_strstr(buf, "AFC get_afc_6g_chan_list") ?
+		MAX_REPLY_EXTN_BUF : 16384;
+#else
+	reply_size = 4096;
+#endif /* CONFIG_QCN_EXTN */
 
 	reply = os_malloc(reply_size);
 	if (!reply) {
@@ -14347,11 +14473,7 @@ static void hostapd_global_ctrl_iface_receive(int sock, void *eloop_ctx,
 	socklen_t fromlen = sizeof(from);
 	char *reply;
 	int reply_len;
-#ifdef CONFIG_QCN_EXTN
-	const int reply_size = 16384;
-#else
-	const int reply_size = 4096;
-#endif /* CONFIG_QCN_EXTN */
+	int reply_size;
 #ifdef CONFIG_CTRL_IFACE_UDP
 	unsigned char lcookie[CTRL_IFACE_COOKIE_LEN];
 #endif /* CONFIG_CTRL_IFACE_UDP */
@@ -14365,6 +14487,12 @@ static void hostapd_global_ctrl_iface_receive(int sock, void *eloop_ctx,
 	}
 	buf[res] = '\0';
 	wpa_printf(MSG_DEBUG, "Global ctrl_iface command: %s", buf);
+#ifdef CONFIG_QCN_EXTN
+	reply_size = os_strstr(buf, "AFC get_afc_6g_chan_list") ?
+		MAX_REPLY_EXTN_BUF : 16384;
+#else
+	reply_size = 4096;
+#endif /* CONFIG_QCN_EXTN */
 
 	reply = os_malloc(reply_size);
 	if (reply == NULL) {
