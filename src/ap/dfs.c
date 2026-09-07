@@ -2138,72 +2138,6 @@ int hostapd_dfs_count_precac_channels(struct hostapd_iface *iface)
 }
 
 static bool
-hostapd_dfs_intercac_check_pref_block(struct hostapd_iface *iface,
-				      int pref_chan,
-				      enum oper_chan_width chan_width,
-				      bool *all_available,
-				      enum dfs_channel_type type)
-{
-	int n_chans, n_chans1, start_chan_idx, radar_chans;
-	bool range_ok;
-
-	n_chans = dfs_get_used_n_chans(iface, &n_chans1, chan_width);
-	if (n_chans <= 0) {
-		wpa_printf(MSG_ERROR,
-			   "intercac: boot: preferred n_chans failed for width %d",
-			   chan_width);
-		return false;
-	}
-
-	start_chan_idx = dfs_get_start_chan_idx(iface, &n_chans1,
-						chan_width,
-						pref_chan, false);
-	if (start_chan_idx < 0) {
-		wpa_printf(MSG_DEBUG,
-			   "intercac: boot: preferred ch %d width %d not usable",
-			   pref_chan, chan_width);
-		return false;
-	}
-
-	radar_chans = dfs_check_chans_radar(iface, start_chan_idx, n_chans);
-	wpa_printf(MSG_DEBUG,
-		   "intercac: boot: preferred block ch %d width %d has %d DFS channels",
-		   pref_chan, chan_width, radar_chans);
-	if (!radar_chans)
-		return false;
-
-	if (type == DFS_AVAILABLE) {
-		if (!all_available)
-			return dfs_chan_range_available(iface->current_mode,
-							start_chan_idx, n_chans,
-							DFS_AVAILABLE);
-
-		*all_available = dfs_check_chans_available(iface,
-							   start_chan_idx,
-							   n_chans);
-		if (*all_available)
-			wpa_printf(MSG_INFO,
-				   "intercac: preferred block ch %d width %d already DFS available",
-				   pref_chan, chan_width);
-	} else {
-		range_ok = dfs_chan_range_available(iface->current_mode,
-						    start_chan_idx, n_chans,
-						    type);
-		if (!range_ok) {
-			wpa_printf(MSG_DEBUG,
-				   "intercac: preferred block ch %d width %d not valid for type %d",
-				   pref_chan, chan_width, type);
-			return false;
-		}
-
-		if (all_available)
-			*all_available = false;
-	}
-
-	return true;
-}
-
-static bool
 hostapd_dfs_intercac_is_pref_chan(struct hostapd_hw_modes *mode,
 				  int completed_chan,
 				  int preferred_chan,
@@ -3248,14 +3182,105 @@ int hostapd_dfs_precac_restart_after_radar(struct hostapd_iface *iface,
 	return hostapd_dfs_start_precac(iface);
 }
 
+/**
+ * intercac_find_first_cac_needed_subchan - Find first RCAC-bandwidth sub-block
+ *   of the preferred channel that still needs CAC.
+ *
+ * @iface: Pointer to hostapd interface
+ * @preferred_chan: Preferred channel number
+ * @preferred_bw_mhz: Preferred channel bandwidth in MHz (e.g. 160)
+ * @rcac_bw_mhz: RCAC bandwidth in MHz (e.g. 80)
+ *
+ * Iterates through the rcac_bw_mhz-wide sub-blocks of the preferred channel
+ * block and returns the primary channel of the first sub-block that:
+ *   - contains at least one DFS channel, AND
+ *   - has at least one DFS channel not yet DFS_AVAILABLE.
+ *
+ * When preferred_bw_mhz == rcac_bw_mhz the function checks the single block
+ * directly (n_sub_blocks = 1).
+ *
+ * Returns the first channel of the first CAC-needed sub-block, or 0 if all
+ * sub-blocks are either non-DFS or already fully available.
+ */
+static int
+intercac_find_first_cac_needed_subchan(struct hostapd_iface *iface,
+				       int preferred_chan,
+				       int preferred_bw_mhz,
+				       int rcac_bw_mhz)
+{
+	struct hostapd_hw_modes *mode = iface->current_mode;
+	enum oper_chan_width oper_width;
+	u8 seg0 = 0;
+	int sec;
+	int center_freq, block_base_freq;
+	int n_sub_blocks, i;
+
+	if (!mode || preferred_bw_mhz < rcac_bw_mhz || rcac_bw_mhz <= 0) {
+		wpa_printf(MSG_INFO,
+			   "%s: intercac: invalid input", __func__);
+		return 0;
+	}
+
+	if ((dfs_compute_chan_params(preferred_chan,
+				     preferred_bw_mhz,
+				     &oper_width, &seg0, &sec)) < 0) {
+		wpa_printf(MSG_INFO,
+			   "%s: intercac: failed to derive block_start", __func__);
+		return 0;
+	}
+
+	center_freq = seg0 * 5 + 5000;
+	block_base_freq = center_freq - preferred_bw_mhz / 2 + 10;
+	n_sub_blocks = preferred_bw_mhz / rcac_bw_mhz;
+
+	for (i = 0; i < n_sub_blocks; i++) {
+		int sub_base = block_base_freq + i * rcac_bw_mhz;
+		int n_sub = rcac_bw_mhz / 20;
+		int j;
+		bool has_dfs = false, needs_cac = false;
+
+		for (j = 0; j < n_sub; j++) {
+			int f = sub_base + j * 20;
+			struct hostapd_channel_data *ch =
+				hw_mode_get_channel(mode, f, NULL);
+
+			if (!ch || (ch->flag & HOSTAPD_CHAN_DISABLED))
+				return 0;
+
+			if (!(ch->flag & HOSTAPD_CHAN_RADAR))
+				continue;
+
+			has_dfs = true;
+			if ((ch->flag & HOSTAPD_CHAN_DFS_MASK) ==
+			    HOSTAPD_CHAN_DFS_UNAVAILABLE)
+				return 0;
+
+			if ((ch->flag & HOSTAPD_CHAN_DFS_MASK) ==
+			    HOSTAPD_CHAN_DFS_USABLE)
+				needs_cac = true;
+		}
+
+		if (has_dfs && needs_cac) {
+			u8 sub_chan_no = 0;
+
+			if (ieee80211_freq_to_chan(sub_base, &sub_chan_no) !=
+			    NUM_HOSTAPD_MODES)
+				return sub_chan_no;
+		}
+	}
+
+	return 0; /* No sub-block needs CAC */
+}
+
 bool hostapd_dfs_intercac_boot(struct hostapd_iface *iface)
 {
 	struct hostapd_config *conf;
 	enum oper_chan_width chan_width, inter_width;
 	int inter_freq, inter_sec, inter_bw_mhz;
+	int pref_bw_mhz = 0;
 	u8 inter_seg0;
 	int n_chans, n_chans1;
-	bool pref_block_available;
+	int rcac_chan = 0;
 
 	wpa_printf(MSG_DEBUG, "intercac: boot called");
 
@@ -3282,19 +3307,6 @@ bool hostapd_dfs_intercac_boot(struct hostapd_iface *iface)
 		   "intercac: boot: DFS ch %d chan_width=%d intercac_chwidth=%d",
 		   conf->channel, chan_width, conf->intercac_chwidth);
 
-	if (!hostapd_dfs_intercac_check_pref_block(iface, conf->channel,
-						   chan_width,
-						   &pref_block_available,
-						   DFS_AVAILABLE)) {
-		wpa_printf(MSG_DEBUG,
-			   "intercac: boot: preferred block ch %d width %d does not need DFS, skip",
-			   conf->channel, chan_width);
-		return false;
-	}
-
-	if (pref_block_available)
-		return false;
-
 	n_chans = dfs_get_used_n_chans(iface, &n_chans1,
 			conf->intercac_chwidth);
 	if (n_chans <= 0) {
@@ -3303,7 +3315,27 @@ bool hostapd_dfs_intercac_boot(struct hostapd_iface *iface)
 				conf->intercac_chwidth);
 		return false;
 	}
+
 	inter_bw_mhz = n_chans * 20;
+
+	n_chans = dfs_get_used_n_chans(iface, &n_chans1, chan_width);
+	if (n_chans <= 0) {
+		wpa_printf(MSG_ERROR,
+			   "intercac: boot: n_chans failed for width %d",
+			   chan_width);
+		return false;
+	}
+	pref_bw_mhz = n_chans * 20;
+	rcac_chan = intercac_find_first_cac_needed_subchan(iface,
+							   conf->channel,
+							   pref_bw_mhz,
+							   inter_bw_mhz);
+	if (!rcac_chan) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: boot: preferred block ch %d width %d already available, skip",
+			   conf->channel, chan_width);
+		return false;
+	}
 
 	if (dfs_compute_chan_params(conf->intercac_chan, inter_bw_mhz,
 				    &inter_width, &inter_seg0, &inter_sec) < 0) {
@@ -3327,7 +3359,7 @@ bool hostapd_dfs_intercac_boot(struct hostapd_iface *iface)
 	wpa_printf(MSG_INFO,
 		   "intercac: ACTIVATING - intermediate ch %d (%d MHz bw %d), preferred DFS ch %d (width %d), RCAC->ch %d",
 		   conf->intercac_chan, inter_freq, inter_bw_mhz,
-		   conf->channel, chan_width, conf->channel);
+		   conf->channel, chan_width, rcac_chan);
 
 	conf->channel = conf->intercac_chan;
 	iface->freq = inter_freq;
@@ -3335,7 +3367,7 @@ bool hostapd_dfs_intercac_boot(struct hostapd_iface *iface)
 	hostapd_set_oper_chwidth(conf, inter_width);
 	hostapd_set_oper_centr_freq_seg0_idx(conf, inter_seg0);
 	hostapd_set_oper_centr_freq_seg1_idx(conf, 0);
-	iface->user_rcac_channel = iface->preferred_chan;
+	iface->user_rcac_channel = rcac_chan;
 
 	wpa_printf(MSG_INFO,
 		   "intercac: boot done - AP on ch %d, RCAC pinned to ch %d",
@@ -3365,27 +3397,27 @@ hostapd_dfs_intercac_step_subchan(struct hostapd_iface *iface,
 		if (first_chan_idx + i >= mode->num_channels)
 			break;
 		if (!dfs_chan_range_available(mode, first_chan_idx + i,
-					     n_chans_oper, DFS_AVAILABLE)) {
+					      n_chans_oper, DFS_AVAILABLE)) {
 			next_chan = mode->channels[first_chan_idx + i].chan;
 			break;
 		}
 	}
 
-	freq = hostapd_hw_get_freq(iface->bss[0], completed_chan);
+	freq = hostapd_hw_get_freq(iface->bss[0], preferred_chan);
 	if (freq <= 0) {
 		wpa_printf(MSG_ERROR,
 			   "intercac: step_subchan: freq lookup failed for ch %d",
-			   completed_chan);
+			   preferred_chan);
 		return;
 	}
 
 	bw_mhz = n_chans_oper * 20;
 
-	if (dfs_compute_chan_params(completed_chan, bw_mhz, &oper_width, &seg0,
+	if (dfs_compute_chan_params(preferred_chan, bw_mhz, &oper_width, &seg0,
 				    &sec) < 0) {
 		wpa_printf(MSG_ERROR,
 			   "intercac: step_subchan: compute params failed for ch %d",
-			   completed_chan);
+			   preferred_chan);
 		return;
 	}
 
@@ -3401,13 +3433,13 @@ hostapd_dfs_intercac_step_subchan(struct hostapd_iface *iface,
 
 	wpa_printf(MSG_INFO,
 		   "intercac: STEPPING to sub-chan %d (width %d), next RCAC ch %d, preferred ch %d (width %d) pending",
-		   completed_chan, cur_oper_width, next_chan,
+		   preferred_chan, cur_oper_width, next_chan,
 		   preferred_chan, preferred_width);
 
 	/* Pin RCAC to next uncleaned sub-channel */
 	iface->user_rcac_channel = next_chan;
 
-	hostapd_dfs_request_channel_switch(iface, completed_chan, freq,
+	hostapd_dfs_request_channel_switch(iface, preferred_chan, freq,
 					   sec, cur_oper_width, seg0, 0, 0);
 }
 
@@ -3535,6 +3567,7 @@ int hostapd_dfs_intercac_defer_non_radar_switch(struct hostapd_iface *iface,
 	struct hostapd_freq_params *freq;
 	enum oper_chan_width width, cur_oper_width;
 	int chan, n_chans, n_chans1, first_chan_idx, bw_mhz;
+	int rcac_chan = 0;
 	int n_chans_oper, n_chans_rcac;
 
 	if (!iface || !settings || !dfs_use_radar_background(iface) ||
@@ -3580,27 +3613,45 @@ int hostapd_dfs_intercac_defer_non_radar_switch(struct hostapd_iface *iface,
 	 */
 	iface->preferred_chan = chan;
 	iface->preferred_chan_width = width;
-	iface->user_rcac_channel = chan;
+
+	n_chans_rcac = n_chans_oper < n_chans ? n_chans_oper : n_chans;
+	bw_mhz = n_chans_rcac * 20;
+
+	/*
+	 * Find the first sub-block of the preferred channel that actually
+	 * needs CAC. For wider preferred channels (e.g. 160MHz preferred,
+	 * 80MHz RCAC), this may be a different sub-block than the primary
+	 * channel (e.g. ch52 instead of ch44 for ch44 bw160).
+	 */
+	rcac_chan = intercac_find_first_cac_needed_subchan(iface,
+							   chan,
+							   n_chans * 20,
+							   bw_mhz);
+	if (rcac_chan > 0) {
+		wpa_printf(MSG_DEBUG,
+			   "intercac: defer switch: pinning RCAC to first CAC-needed sub-block ch %d (preferred ch %d bw%d)",
+			   rcac_chan, chan, n_chans * 20);
+		iface->user_rcac_channel = rcac_chan;
+	}
 
 	if (iface->radar_background.cac_started &&
-	    iface->radar_background.channel == chan) {
+	    iface->radar_background.channel == iface->user_rcac_channel) {
 		wpa_printf(MSG_INFO,
 			   "intercac: bg CAC already running on requested ch %d; keep it and defer switch",
-			   chan);
+			   iface->user_rcac_channel);
 		return 1;
 	}
 
 	if (iface->radar_background.cac_started ||
 	    iface->radar_background.channel > 0)
 		hostapd_abort_background_cac(iface);
-	n_chans_rcac = n_chans_oper < n_chans ? n_chans_oper : n_chans;
-	bw_mhz = n_chans_rcac * 20;
 
 	wpa_printf(MSG_INFO,
 		   "intercac: defer non-radar switch to ch %d width %d; start bg CAC with %dBW%d",
 		   chan, width, bw_mhz, cur_oper_width);
 
-	if (hostapd_start_rcac_on_channel(iface, chan, bw_mhz) == 0)
+	if (hostapd_start_rcac_on_channel(iface, iface->user_rcac_channel,
+					  bw_mhz) == 0)
 		return 1;
 
 	wpa_printf(MSG_WARNING,
