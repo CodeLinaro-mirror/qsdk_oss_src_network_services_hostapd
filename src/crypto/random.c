@@ -167,6 +167,8 @@ int random_get_bytes(void *buf, size_t len)
 
 	/* Start with assumed strong randomness from OS */
 	ret = os_get_random(buf, len);
+	if (ret < 0)
+		return ret;
 	wpa_hexdump_key(MSG_EXCESSIVE, "random from os_get_random",
 			buf, len);
 
