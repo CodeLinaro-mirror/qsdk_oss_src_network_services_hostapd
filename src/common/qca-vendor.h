@@ -14910,6 +14910,25 @@ enum qca_wlan_vendor_attr_update_sta_info {
  * @QCA_DISCONNECT_REASON_HOST_OCI_MISMATCH: Disconnect occurred due to a
  * mismatch in Operating Channel Information between the AP and STA, violating
  * channel coordination.
+ *
+ * @QCA_STA_DISCONNECT_REASON_CSA: A Repeater STA or diagnostic-STA vif (a
+ * client-serving STA vif) was disconnected because a co-located AP vif (or its
+ * own Root AP, over the air) initiated a channel switch.
+ *
+ * @QCA_STA_DISCONNECT_REASON_RADAR: A Repeater STA or diagnostic-STA vif was
+ * disconnected because DFS radar was detected on the co-channel-context AP's
+ * operating channel.
+ *
+ * @QCA_STA_DISCONNECT_REASON_AWGN: A Repeater STA or diagnostic-STA vif was
+ * disconnected because AWGN/CW interference was detected on the
+ * co-channel-context AP's operating channel.
+ *
+ * @QCA_STA_DISCONNECT_REASON_USERSPACE_CHANGE: A Repeater STA or diagnostic-STA
+ * vif was disconnected because userspace changed the co-channel-context AP's
+ * channel/bandwidth outside of CSA (e.g. NL80211_CMD_SET_CHANNEL).
+ *
+ * @QCA_STA_DISCONNECT_REASON_PDEV_RESTART: A Repeater STA or diagnostic-STA vif
+ * was disconnected due to a PDEV/firmware-recovery (SSR) restart.
  */
 enum qca_disconnect_reason_codes {
 	QCA_DISCONNECT_REASON_UNSPECIFIED = 0,
@@ -14933,20 +14952,25 @@ enum qca_disconnect_reason_codes {
 	QCA_DISCONNECT_REASON_FW_TRIGGERED_LINK_SWITCH = 18,
 	QCA_DISCONNECT_REASON_HOST_TRIGGERED_LINK_DELETE = 19,
 	QCA_DISCONNECT_REASON_HOST_OCI_MISMATCH = 20,
+	QCA_STA_DISCONNECT_REASON_CSA = 21,
+	QCA_STA_DISCONNECT_REASON_RADAR = 22,
+	QCA_STA_DISCONNECT_REASON_AWGN = 23,
+	QCA_STA_DISCONNECT_REASON_USERSPACE_CHANGE = 24,
+	QCA_STA_DISCONNECT_REASON_PDEV_RESTART = 25,
 };
 
 /**
  * enum qca_wlan_vendor_attr_driver_disconnect_reason - Defines attributes
  * used by %QCA_NL80211_VENDOR_SUBCMD_DRIVER_DISCONNECT_REASON vendor command.
  *
- * @QCA_WLAN_VENDOR_ATTR_DRIVER_DISCONNECT_REASCON_CODE: u32 attribute.
+ * @QCA_WLAN_VENDOR_ATTR_DRIVER_DISCONNECT_REASON_CODE: u32 attribute.
  * This attribute represents the driver specific reason codes (local
  * driver/firmware initiated reasons for disconnection) defined
  * in enum qca_disconnect_reason_codes.
  */
 enum qca_wlan_vendor_attr_driver_disconnect_reason {
 	QCA_WLAN_VENDOR_ATTR_DRIVER_DISCONNECT_REASON_INVALID = 0,
-	QCA_WLAN_VENDOR_ATTR_DRIVER_DISCONNECT_REASCON_CODE = 1,
+	QCA_WLAN_VENDOR_ATTR_DRIVER_DISCONNECT_REASON_CODE = 1,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_DRIVER_DISCONNECT_REASON_AFTER_LAST,
@@ -24688,6 +24712,7 @@ enum qca_nl80211_vendor_events {
 	QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE_INDEX = 25,
 	QCA_NL80211_VENDOR_SUBCMD_SCAN_RADIO_CHAN_STATS_INDEX = 26,
 	QCA_NL80211_VENDOR_SUBCMD_PASN_EVENT_INDEX = 27,
+	QCA_NL80211_VENDOR_SUBCMD_DRIVER_DISCONNECT_REASON_INDEX = 28,
 };
 
 /**
