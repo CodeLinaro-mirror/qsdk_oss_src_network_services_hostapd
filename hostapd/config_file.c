@@ -6678,22 +6678,31 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 #ifdef CONFIG_IEEE80211BN
 	} else if (os_strcmp(buf, "uhr_adv_notification_interval") == 0) {
 		int val = atoi(pos);
-		if (val < 5 || val > 31) {
+		if (val < 2 || val > 31) {
 			wpa_printf(MSG_ERROR,
-				   "Line %d: uhr_adv_notification_interval must be 5-31",
+				   "Line %d: uhr_adv_notification_interval must be 2-31",
 				   line);
 			return 1;
 		}
 		bss->uhr_params_update.adv_notification_interval = (u8) val;
 	} else if (os_strcmp(buf, "uhr_update_in_tim_interval") == 0) {
 		int val = atoi(pos);
-		if (val < 5 || val > 31) {
+		if (val < 10 || val > 31) {
 			wpa_printf(MSG_ERROR,
-				   "Line %d: uhr_update_in_tim_interval must be 5-31",
+				   "Line %d: uhr_update_in_tim_interval must be 10-31",
 				   line);
 			return 1;
 		}
 		bss->uhr_params_update.update_in_tim_interval = (u8) val;
+	} else if (os_strcmp(buf, "uhr_adv_notification_duration_ms") == 0) {
+		int val = atoi(pos);
+		if (val <= 0 || (u32)val > UINT32_MAX / 1000) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: uhr_adv_notification_duration_ms must be in range [1, %u]",
+				   line, UINT32_MAX / 1000);
+			return 1;
+		}
+		bss->uhr_params_update.adv_notification_duration_ms = (u32) val;
 #endif /* CONFIG_IEEE80211BN */
 
 	} else if (os_strcmp(buf, "enable_dscp_policy_capa") == 0) {

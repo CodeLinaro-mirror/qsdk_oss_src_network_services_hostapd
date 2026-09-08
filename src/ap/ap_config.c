@@ -314,9 +314,14 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->uhr_phy_capab.uhr_2xldpc_rx = 1;
 	bss->dps_assist = FEATURE_ENABLED;
 
-	/* UHR intervals are represented as TUs */
+	/*
+	 * Default UHR intervals (in beacon-interval units, 5-bit field).
+	 * adv_notification_interval is overridden at config-check time when
+	 * uhr_adv_notification_duration_ms is configured (see
+	 * hostapd_uhr_derive_adv_notification_interval).
+	 */
 	bss->uhr_params_update.adv_notification_interval = 10;
-	bss->uhr_params_update.update_in_tim_interval = 10;
+	bss->uhr_params_update.update_in_tim_interval = 20;
 #endif /* CONFIG_IEEE80211BN */
 
 	/* This max size includes wmm and user configured vendor elements */
@@ -1636,6 +1641,59 @@ bool hostapd_config_check_bss_6g(struct hostapd_bss_config *bss)
 }
 
 
+#ifdef CONFIG_IEEE80211BN
+/**
+ * hostapd_uhr_derive_adv_notification_interval - Derive per-link
+ * adv_notification_interval from the MLD-level duration in milliseconds.
+ *
+ * Per IEEE 802.11bn D2.0 section 37.31.2.2, the AP MLD shall select the
+ * dot11UHRParamUpdateAdvNotificationInterval for each affiliated AP such
+ * that the difference between the advance notification durations of all
+ * affiliated APs does not exceed the smallest beacon interval among them.
+ * Deriving each link's interval as:
+ *   ceil(duration_ms / (beacon_int_TU * 1.024))
+ * ensures the actual covered duration is the same across all links.
+ *
+ * @bss:       BSS configuration to update.
+ * @beacon_int: Beacon interval of this BSS in TUs (1 TU = 1024 us).
+ */
+static void
+hostapd_uhr_derive_adv_notification_interval(struct hostapd_bss_config *bss,
+					     u16 beacon_int)
+{
+	u32 duration_ms;
+	u32 beacon_us;
+	u32 interval;
+
+	if (!bss->uhr_params_update.adv_notification_duration_ms)
+		return;
+
+	duration_ms = bss->uhr_params_update.adv_notification_duration_ms;
+
+	/*
+	 * 1 TU = 1024 us = 1.024 ms.
+	 * beacon_us = beacon_int * 1024 (beacon duration in microseconds).
+	 * interval = ceil(duration_ms * 1000 / beacon_us)
+	 *           = ceil(duration_ms * 1000 / (beacon_int * 1024))
+	 */
+	beacon_us = (u32)beacon_int * 1024;
+	interval = (duration_ms * 1000 + beacon_us - 1) / beacon_us;
+
+	/* Clamp to the 5-bit field range [2, 31] */
+	if (interval < 2)
+		interval = 2;
+	else if (interval > 31)
+		interval = 31;
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR: adv_notification_interval derived as %u "
+		   "(duration_ms=%u beacon_int=%u TU)",
+		   interval, duration_ms, beacon_int);
+
+	bss->uhr_params_update.adv_notification_interval = (u8)interval;
+}
+#endif /* CONFIG_IEEE80211BN */
+
 static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 				    struct hostapd_config *conf,
 				    int full_config)
@@ -2049,6 +2107,18 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 			return -1;
 		}
 	}
+
+	/*
+	 * Derive per-link adv_notification_interval from the MLD-level
+	 * duration when the user has configured
+	 * uhr_adv_notification_duration_ms.  This satisfies the IEEE
+	 * 802.11bn D2.0 requirement (37.31.2.2) that the difference between
+	 * affiliated APs' advance-notification durations does not exceed the
+	 * smallest beacon interval of the AP MLD.
+	 */
+	if (full_config)
+		hostapd_uhr_derive_adv_notification_interval(bss,
+							     conf->beacon_int);
 #endif
 
 	/* Do not advertise SPP A-MSDU support if not using CCMP/GCMP */
