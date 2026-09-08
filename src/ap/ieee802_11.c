@@ -8149,6 +8149,8 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		hostapd_mu_cap_war_client_cap_extn(hapd, sta);
 
 	hostapd_drv_set_vht_mcs_10_11_supp_extn(hapd, sta, &elems->elems_extn);
+	if (elems->elems_extn.cck_tx_5g_peer_cap)
+		sta->sta_extn.cck_tx_5g_peer_cap = 1;
 #endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211AC */
 
@@ -9126,6 +9128,11 @@ omit_rsnxe:
 
 	if (sta)
 		p = hostapd_eid_wfa_capab(hapd, sta, p);
+#ifdef CONFIG_QCN_EXTN
+		p = hostapd_eid_qcn_vendor_ie_assocresp_extn(hapd, p,
+							  IEEE80211_MODE_AP,
+							  sta);
+#endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_IEEE80211BN
 	p = hostapd_eid_smd_ie_response(hapd, sta, p);
@@ -10172,6 +10179,11 @@ rsnxe_done:
 	}
 #endif /* CONFIG_IEEE80211BN */
 
+#ifdef CONFIG_QCN_EXTN
+		p = hostapd_eid_qcn_vendor_ie_assocresp_extn(hapd, p,
+							  IEEE80211_MODE_AP,
+							  sta);
+#endif /* CONFIG_QCN_EXTN */
 #ifdef CONFIG_OWE
 	if (((hostapd_config_all_key_mgmt(hapd->conf)) & WPA_KEY_MGMT_OWE) &&
 	    sta && sta->owe_ecdh && status_code == WLAN_STATUS_SUCCESS &&
