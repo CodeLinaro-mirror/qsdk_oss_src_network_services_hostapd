@@ -1432,7 +1432,7 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 					hapd->iface->dfs_cac_ms / 1000,
 					hapd->iface->conf->punct_bitmap);
 
-				hostapd_start_dfs_cac(hapd->iface, hapd->iface->conf->hw_mode,
+				if (hostapd_start_dfs_cac(hapd->iface, hapd->iface->conf->hw_mode,
 						     hapd->iface->freq,
 						     hapd->iconf->channel,
 						     hapd->iface->conf->ieee80211n,
@@ -1445,7 +1445,39 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 						     hostapd_get_oper_centr_freq_seg0_idx(hapd->iface->conf),
 						     hostapd_get_oper_centr_freq_seg1_idx(hapd->iface->conf),
 						     false, width_device,
-						     hapd->iconf->center_freq_device);
+						     hapd->iconf->center_freq_device)) {
+					wpa_printf(MSG_ERROR,
+						   "DFS: Failed to start CAC after CSA on freq=%d, disabling interface",
+						   freq);
+					/*
+					 * disable_cu was set above for the beacon
+					 * update that never happened (that call
+					 * skipped it, and CAC never reached
+					 * completion to consume the flag). Clear it
+					 * before re-enabling below: hostapd_enable_iface()
+					 * itself sends a beacon for this hapd once
+					 * cac_type/state no longer match the skipped-
+					 * update check, so a stale 1 here would still
+					 * be read by that beacon update and incorrectly
+					 * suppress the critical-update bitmap on it.
+					 */
+					hapd->disable_cu = 0;
+					/*
+					 * hostapd_disable_iface() tears down every BSS
+					 * on this iface in one call, including clearing
+					 * csa_in_progress for all of them via
+					 * hostapd_cleanup_cs_params(). Since hostapd is
+					 * single-threaded, any other VAP's pending
+					 * CH_SWITCH_NOTIFY for this same CSA is handled
+					 * after this call returns and will see
+					 * csa_in_progress already cleared, so it won't
+					 * re-enter this branch and re-trigger disable
+					 * and enable.
+					 */
+					hostapd_disable_iface(hapd->iface);
+					hostapd_enable_iface(hapd->iface);
+					return;
+				}
 				hostapd_schedule_agile_cac_restart(hapd->iface);
 			} else {
 				hostapd_disable_iface(hapd->iface);
