@@ -231,6 +231,9 @@ struct wpa_auth_config {
 	int ft_psk_generate_local;
 #endif /* CONFIG_IEEE80211R_AP */
 	int disable_gtk;
+#ifdef CONFIG_QCN_EXTN
+	int skip_gtk_install;
+#endif /* CONFIG_QCN_EXTN */
 	int ap_mlme;
 #ifdef CONFIG_TESTING_OPTIONS
 	double corrupt_gtk_rekey_mic_probability;

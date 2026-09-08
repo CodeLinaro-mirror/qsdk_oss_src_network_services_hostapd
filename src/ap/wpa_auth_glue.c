@@ -124,6 +124,9 @@ static void hostapd_wpa_auth_config_update(struct hostapd_data *hapd,
 	}
 #endif
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_QCN_EXTN
+	_conf->skip_gtk_install = hostapd_is_mesh_vap_extn(hapd->conf);
+#endif /* CONFIG_QCN_EXTN */
 
 	pos = hostapd_eid_security_profile(hapd, _conf->security_profile);
 	_conf->security_profile_len = pos - _conf->security_profile;
