@@ -793,8 +793,8 @@ struct hostapd_data {
 	void *hostapd_if_data; /* for per-interface/MLD frame_reg_table, opaque */
 	bool is_update_beacon;
 	bool sp_ie_activated_sta; /* Set when processing STA with validated SP IE */
-	/* Transient guard: set during SET_RTT_RESPONDER_ROLE runtime update to
-	 * suppress duplicate vendor cmd during the triggered beacon rebuild. */
+	/* Tracks whether the configured RTT responder role has already been sent
+	 * to the driver; also suppresses duplicate sends during beacon updates. */
 	bool rtt_role_fw_sent;
 
 #ifdef CONFIG_IEEE80211BN
