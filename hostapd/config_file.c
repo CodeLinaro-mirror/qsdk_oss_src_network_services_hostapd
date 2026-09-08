@@ -4054,6 +4054,14 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			return 1;
 		}
 		bss->bss_extn.he_2xltf_160_80p80_supp = val;
+	} else if (os_strcmp(buf, "cck_rx_5g_supp") == 0) {
+		int val = atoi(pos);
+		if (val != 0 && val != 1) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid cck_rx_5g_supp %d (allowed 0 or 1)",
+				   line, val);
+			return 1;
+		}
+		bss->bss_extn.cck_rx_5g_supp = val;
 #endif /* CONFIG_QCN_EXTN */
 	} else if (os_strcmp(buf, "vht_oper_centr_freq_seg0_idx") == 0) {
 		conf->vht_oper_centr_freq_seg0_idx = atoi(pos);
