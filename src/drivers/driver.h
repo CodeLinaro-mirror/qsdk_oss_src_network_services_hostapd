@@ -6870,6 +6870,10 @@ struct wpa_driver_ops {
 					  bool send_default_mapping);
 
 #endif /* CONFIG_IEEE80211BE */
+#ifdef RDK_ONEWIFI
+	int (*atf_sta_update)(void *priv, const u8 *sta_addr, bool is_join);
+#endif /* RDK_ONEWIFI */
+
 	/**
 	 * set_qos - Send QoS management request data to driver and get back
 	 * 	     response data filled from driver.
