@@ -11925,7 +11925,6 @@ static int hostapd_ctrl_iface_set_rtt_responder_role(struct hostapd_data *hapd,
 			   "CTRL: SET_RTT_RESPONDER_ROLE: beacon update failed");
 		return -1;
 	}
-	hapd->rtt_role_fw_sent = false;
 
 	return 0;
 }

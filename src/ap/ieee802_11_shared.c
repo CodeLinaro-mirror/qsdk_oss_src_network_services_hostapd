@@ -628,10 +628,13 @@ u8 * hostapd_eid_ext_capab(struct hostapd_data *hapd, u8 *eid,
 		if (hapd->conf->rtt_responder_role > 0) {
 			int rtt_role = hapd->conf->rtt_responder_role;
 
-			if (i == WLAN_EXT_CAPAB_FTM_RESPONDER / 8 &&
-			    (!hapd->conf->ftm_responder ||
-			     !(rtt_role & HOSTAPD_RTT_RESPONDER_ROLE_11MC)))
-				*pos &= ~BIT(WLAN_EXT_CAPAB_FTM_RESPONDER % 8);
+			if (i == WLAN_EXT_CAPAB_FTM_RESPONDER / 8) {
+				if (!hapd->conf->ftm_responder &&
+				    !(rtt_role & HOSTAPD_RTT_RESPONDER_ROLE_11MC))
+					*pos &= ~BIT(WLAN_EXT_CAPAB_FTM_RESPONDER % 8);
+				else
+					*pos |= BIT(WLAN_EXT_CAPAB_FTM_RESPONDER % 8);
+			}
 
 			if (i == WLAN_EXT_CAPAB_NTB_RANGING_RESPONDER / 8) {
 				if (rtt_role & HOSTAPD_RTT_RESPONDER_ROLE_11AZ_NTB)
