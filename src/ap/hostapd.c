@@ -11413,15 +11413,19 @@ int hostapd_get_tpe_11ax_count(u8 tx_pwr_intrpn, u8 tx_pwr_count)
 		return tx_pwr_count ? 1 << (tx_pwr_count - 1) : 1;
 	case LOCAL_EIRP:
 	case REGULATORY_CLIENT_EIRP:
-	case REGULATORY_CLIENT_ADDITIONAL_EIRP:
-		if (tx_pwr_count > IEEE80211_TPE_EIRP_MAX_POWER_COUNT_IN_11AX) {
+	case REGULATORY_CLIENT_ADDITIONAL_EIRP: {
+		u8 eirp_max = IEEE80211_TPE_EIRP_MAX_POWER_COUNT_IN_11AX;
+#ifdef CONFIG_IEEE80211BE
+		eirp_max = IEEE80211_TPE_EIRP_MAX_POWER_COUNT_IN_11BE;
+#endif
+		if (tx_pwr_count > eirp_max) {
 			wpa_printf(MSG_ERROR,
 				   "Invalid Tx Power count %d, Interpretation %d supports up to %d",
-				   tx_pwr_count, tx_pwr_intrpn,
-				   IEEE80211_TPE_EIRP_MAX_POWER_COUNT_IN_11AX);
+				   tx_pwr_count, tx_pwr_intrpn, eirp_max);
 			return -1;
 		}
 		return tx_pwr_count + 1;
+	}
 	default:
 		wpa_printf(MSG_ERROR, "Invalid Tx power interpretation:%d", tx_pwr_intrpn);
 		return -1;
