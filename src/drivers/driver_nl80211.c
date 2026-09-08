@@ -2710,6 +2710,8 @@ static void * wpa_driver_nl80211_drv_init(void *ctx, const char *ifname,
 		return NULL;
 	drv->global = global_priv;
 	drv->ctx = ctx;
+	wpa_printf(MSG_DEBUG, "nl80211: drv->ctx allocated/assigned: drv=%p ctx=%p",
+		   drv, drv->ctx);
 	drv->hostapd = !!hostapd;
 	drv->eapol_sock = -1;
 	drv->unique_drv_id = next_unique_drv_id++;
@@ -2733,6 +2735,8 @@ static void * wpa_driver_nl80211_drv_init(void *ctx, const char *ifname,
 	bss = drv->first_bss;
 	bss->drv = drv;
 	bss->ctx = ctx;
+	wpa_printf(MSG_DEBUG, "nl80211: bss->ctx allocated/assigned: bss=%p ctx=%p",
+		   bss, bss->ctx);
 	bss->ppe_vp_type = ppe_vp_type;
 
 	os_strlcpy(bss->ifname, ifname, sizeof(bss->ifname));
@@ -2787,6 +2791,8 @@ skip_wifi_status:
 	bss->active_links = 0;
 	bss->flink = &bss->links[0];
 	bss->flink->ctx = ctx;
+	wpa_printf(MSG_DEBUG, "nl80211: bss->flink allocated/assigned: bss=%p flink=%p flink->ctx=%p",
+		   bss, bss->flink, bss->flink->ctx);
 	os_memcpy(bss->flink->addr, bss->addr, ETH_ALEN);
 
 	return bss;
@@ -11615,6 +11621,10 @@ static int wpa_driver_nl80211_if_add(void *priv, enum wpa_driver_if_type type,
 		new_bss->flink->freq = drv->first_bss->flink->freq;
 		new_bss->ctx = bss_ctx;
 		new_bss->flink->ctx = bss_ctx;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: new_bss allocated/assigned: new_bss=%p flink=%p bss->ctx=%p flink->ctx=%p",
+			   new_bss, new_bss->flink, new_bss->ctx,
+			   new_bss->flink->ctx);
 		new_bss->added_if = added;
 		new_bss->ppe_vp_type = ppe_vp_type;
 
@@ -11728,10 +11738,13 @@ static int wpa_driver_nl80211_if_remove(struct i802_bss *bss,
 				if (!bss->added_if)
 					i802_set_iface_flags(bss, 0);
 				if (drv->nlmode != NL80211_IFTYPE_P2P_DEVICE &&
-				    bss->start_mode_sta)
+				    bss->start_mode_sta) {
+					wpa_printf(MSG_DEBUG,
+						   "nl80211: if_remove: STA hapd ctx reassigned (start_mode_sta): bss=%p ctx=%p",
+						   bss, bss->ctx);
 					wpa_driver_nl80211_set_mode(bss,
 								    NL80211_IFTYPE_STATION);
-				else
+				} else
 					/* Unsubscribe management frames */
 					nl80211_teardown_ap(bss);
 				nl80211_destroy_bss(bss);
@@ -11752,10 +11765,13 @@ static int wpa_driver_nl80211_if_remove(struct i802_bss *bss,
 		if (!bss->start_iface_up)
 			i802_set_iface_flags(bss, 0);
 		if (drv->nlmode != NL80211_IFTYPE_P2P_DEVICE &&
-		    bss->start_mode_sta)
+		    bss->start_mode_sta) {
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: if_remove: STA hapd ctx reassigned (first BSS, start_mode_sta): bss=%p ctx=%p",
+				   bss, bss->ctx);
 			wpa_driver_nl80211_set_mode(bss,
 						    NL80211_IFTYPE_STATION);
-		else
+		} else
 			nl80211_teardown_ap(bss);
 		nl80211_destroy_bss(bss);
 		drv->nlmode = nlmode;
@@ -11765,6 +11781,9 @@ static int wpa_driver_nl80211_if_remove(struct i802_bss *bss,
 		if (drv->first_bss->next) {
 			drv->first_bss = drv->first_bss->next;
 			drv->ctx = drv->first_bss->ctx;
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: drv->ctx remapped (first BSS reassign): drv=%p ctx=%p",
+				   drv, drv->ctx);
 			drv->ifindex = drv->first_bss->ifindex;
 			drv->start_mode_sta = drv->first_bss->start_mode_sta;
 			os_free(bss);
@@ -12323,6 +12342,10 @@ int nl80211_remove_link(struct i802_bss *bss, int link_id)
 			bss->flink = &bss->links[i];
 			break;
 		}
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: bss->flink remapped (link remove): bss=%p flink=%p flink->ctx=%p",
+			   bss, bss->flink,
+			   (bss->flink != link) ? bss->flink->ctx : NULL);
 	}
 
 	/* If this was the last link, reset default link */
@@ -12338,6 +12361,9 @@ int nl80211_remove_link(struct i802_bss *bss, int link_id)
 		 * after the hapd has been freed by a different iface's teardown.
 		 */
 		bss->flink->ctx = NULL;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: bss->flink->ctx cleared (last link removed): bss=%p flink=%p",
+			   bss, bss->flink);
 	}
 
 	/* Remove the link from the kernel */
@@ -13956,8 +13982,14 @@ static int driver_nl80211_link_remove(void *priv, enum wpa_driver_if_type type,
 				     drv, drv->ctx);
 		bss->ctx = bss->flink->ctx;
 		drv->ctx = bss->ctx;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: drv->ctx and bss->ctx remapped (teardown AP link, shared ctx): drv=%p bss=%p ctx=%p flink=%p",
+			   drv, bss, drv->ctx, bss->flink);
 	} else {
 		bss->ctx = bss->flink->ctx;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: bss->ctx remapped (teardown AP link): bss=%p ctx=%p flink=%p",
+			   bss, bss->ctx, bss->flink);
 	}
 
 	if (!bss->valid_links) {
@@ -14040,6 +14072,9 @@ static int driver_nl80211_set_first_bss(void *priv)
 		bss->next = drv->first_bss;
 		drv->first_bss = bss;
 		drv->ctx = bss->ctx;
+		wpa_printf(MSG_DEBUG,
+			   "nl80211: drv->ctx remapped (set_first_bss): drv=%p bss=%p ctx=%p",
+			   drv, bss, drv->ctx);
 		return 0;
 	}
 
@@ -18498,6 +18533,10 @@ static int nl80211_link_add(void *priv, u8 link_id, const u8 *addr,
 	bss->valid_links |= BIT(link_id);
 	bss->active_links |= BIT(link_id);
 	bss->links[link_id].ctx = bss_ctx;
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: link_add: bss=%p link_id=%u flink=%p link->ctx=%p bss->flink->ctx=%p",
+		   bss, link_id, bss->flink, bss->links[link_id].ctx,
+		   bss->flink->ctx);
 
 	wpa_printf(MSG_DEBUG,
 		   "nl80211: MLD: valid_links=0x%04x active_links=0x%04x on %s",
@@ -18619,6 +18658,9 @@ static bool wpa_driver_nl80211_can_share_drv(void *ctx,
 		return false;
 	drv->global = params->global_priv;
 	drv->ctx = ctx;
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: can_share_drv: temp drv->ctx assigned: drv=%p ctx=%p",
+		   drv, drv->ctx);
 
 	drv->first_bss = os_zalloc(sizeof(*drv->first_bss));
 	if (!drv->first_bss) {
@@ -18629,6 +18671,9 @@ static bool wpa_driver_nl80211_can_share_drv(void *ctx,
 	bss = drv->first_bss;
 	bss->drv = drv;
 	bss->ctx = ctx;
+	wpa_printf(MSG_DEBUG,
+		   "nl80211: can_share_drv: temp bss->ctx assigned: bss=%p ctx=%p",
+		   bss, bss->ctx);
 
 	os_strlcpy(bss->ifname, params->ifname, sizeof(bss->ifname));
 

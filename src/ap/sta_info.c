@@ -1520,8 +1520,15 @@ void set_link_id_for_each_partner_link_sta(struct hostapd_data *hapd,
 			continue;
 
 		lsta = ap_get_sta(lhapd, psta->addr);
-		if (lsta && (psta->mld_assoc_link_id == lsta->mld_assoc_link_id))
+		if (lsta && (psta->mld_assoc_link_id == lsta->mld_assoc_link_id)) {
 			lsta->mld_assoc_link_id = link_id;
+			wpa_printf(MSG_INFO, "partner_hapd=%s sta=" MACSTR
+					      " link_id=%u",
+					      lhapd->conf->iface,
+					      MAC2STR(lsta->addr),
+					      lsta->mld_assoc_link_id);
+		}
+
 	}
 }
 
