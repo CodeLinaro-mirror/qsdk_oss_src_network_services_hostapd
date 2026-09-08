@@ -2363,11 +2363,15 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 		/* To force enable UBPR set force_disable_in_band_discovery to 0 */
 		if (hapd->conf->unsol_bcast_probe_resp_interval) {
 			/* Disable fils if its enabled during UBPR enablement */
+#ifdef CONFIG_FILS
 			if (hapd->conf->fils_state == FILS_UBPR_ENABLED)
 				hapd->conf->fils_discovery_max_int = 0;
+#endif /* CONFIG_FILS */
 		} else {
+#ifdef CONFIG_FILS
 			if (hapd->conf->fils_state != FILS_UBPR_ENABLED)
 				hapd->conf->fils_discovery_max_int = FD_MAX_INTERVAL_6GHZ;
+#endif /* CONFIG_FILS */
 		}
 
 		ieee802_11_set_beacon_per_bss_only(tx_hapd);
