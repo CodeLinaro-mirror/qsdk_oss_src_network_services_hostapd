@@ -4538,6 +4538,10 @@ struct driver_reconfig_link_removal_params {
  * in this wrapper.
  */
 struct wpa_driver_ops {
+#ifdef RDK_ONEWIFI
+	int (*atf_sta_update)(void *priv, const u8 *sta_addr, bool is_join);
+#endif /* RDK_ONEWIFI */
+
 	/** Name of the driver interface */
 	const char *name;
 	/** One line description of the driver interface */
