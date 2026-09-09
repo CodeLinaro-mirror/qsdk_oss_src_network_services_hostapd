@@ -865,7 +865,7 @@ int pasn_pmk_to_ptk(const u8 *pmk, size_t pmk_len,
 		    const u8 *dhss, size_t dhss_len,
 		    struct wpa_ptk *ptk, int akmp, int cipher,
 		    size_t kdk_len, size_t kek_len, enum rsn_hash_alg *alg,
-		    bool is_eppke);
+		    bool is_eppke, const u8 *smd_id);
 
 size_t pasn_mic_len(enum rsn_hash_alg alg);
 

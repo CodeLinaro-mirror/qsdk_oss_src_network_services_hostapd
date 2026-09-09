@@ -434,7 +434,8 @@ pasn_derive_keys(struct pasn_data *pasn,
 		 const u8 *cached_pmk, size_t cached_pmk_len,
 		 struct wpa_pasn_params_data *pasn_data,
 		 struct wpabuf *wrapped_data,
-		 struct wpabuf *secret)
+		 struct wpabuf *secret,
+		 const u8 *smd_identifier)
 {
 	static const u8 pasn_default_pmk[] = {'P', 'M', 'K', 'z'};
 	u8 pmk[PMK_LEN_MAX];
@@ -496,7 +497,8 @@ pasn_derive_keys(struct pasn_data *pasn,
 			      &pasn->ptk, pasn->akmp,
 			      pasn->cipher, pasn->kdk_len, pasn->kek_len,
 			      &pasn->hash_alg,
-			      pasn->auth_alg == WLAN_AUTH_EPPKE);
+			      pasn->auth_alg == WLAN_AUTH_EPPKE,
+			      smd_identifier);
 	if (ret) {
 		wpa_printf(MSG_DEBUG, "PASN: Failed to derive PTK");
 		return -1;
@@ -843,6 +845,7 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 	bool derive_keys;
 	u32 i;
 	int has_security_profiles = 0;
+	const u8 *smd_identifier = NULL;
 	struct hostapd_data *hapd = (struct hostapd_data *)pasn->cb_ctx;
 	has_security_profiles = (hapd && hapd->conf && hapd->conf->security_profiles) ? 1 : 0;
 
@@ -864,6 +867,25 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 		status = WLAN_STATUS_UNSPECIFIED_FAILURE;
 		goto send_resp;
 	}
+#ifdef CONFIG_IEEE80211BN
+	/* Only include the SMD Identifier in PTK derivation if the peer
+	 * actually advertised SMD support via RSNXE bit 37; otherwise the
+	 * AP and STA would derive mismatching PTKs. */
+	if (!is_zero_ether_addr(hapd->conf->smd.smd_identifier)) {
+		if (ieee802_11_rsnx_capab_len(elems.rsnxe, elems.rsnxe_len,
+					      WLAN_RSNX_CAPAB_SMD)) {
+			smd_identifier = hapd->conf->smd.smd_identifier;
+		} else {
+			wpa_printf(MSG_ERROR,
+				   "PASN: SMD configured (ID=" MACSTR
+				   ") but peer " MACSTR
+				   " did not advertise RSNXE SMD bit - "
+				   "excluding SMD Identifier from PTK derivation",
+				   MAC2STR(hapd->conf->smd.smd_identifier),
+				   MAC2STR(peer_addr));
+		}
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 	if (!elems.rsn_ie) {
 		wpa_printf(MSG_DEBUG, "PASN: No RSNE");
@@ -1182,7 +1204,8 @@ int handle_auth_pasn_1(struct pasn_data *pasn,
 
 	ret = pasn_derive_keys(pasn, own_addr, peer_addr,
 			       cached_pmk, cached_pmk_len,
-			       &pasn_params, wrapped_data, secret);
+			       &pasn_params, wrapped_data, secret,
+			       smd_identifier);
 	if (ret) {
 		wpa_printf(MSG_DEBUG, "PASN: Failed to derive keys");
 		status = WLAN_STATUS_PASN_BASE_AKMP_FAILED;
