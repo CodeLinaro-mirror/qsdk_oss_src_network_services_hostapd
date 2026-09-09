@@ -400,10 +400,9 @@ int hostapd_if_init(struct hapd_interfaces *interfaces, bool plugin_enable,
 	hostapd_if_plugin_enable = (plugin_enable || global_plugin_enable);
 	if (hostapd_if_plugin_enable)
 		hostapd_if_plugin_init(interfaces);
-	else
 #endif
 #ifdef CONFIG_MQTT
-	if (hostapd_if_mqtt_enable)
+	if (!hostapd_if_plugin_enable && hostapd_if_mqtt_enable)
 		hostapd_if_mqtt_init(interfaces);
 #endif
 	if (hostapd_if_eloop_init(eloop_type) < 0)
