@@ -794,6 +794,7 @@ static u16 validate_security_profile_common(
 	if (!elems->security_profile_ie) {
 		/* SP IE is mandatory during PASN auth, and during (Re)Assoc */
 		if (hapd->conf->security_profiles &&
+		    elems->uhr_capabilities &&
 		    (strcmp(auth_context, "PASN") == 0 ||
 		     strcmp(auth_context, "Assoc") == 0 ||
 		     strcmp(auth_context, "Reassoc") == 0)) {
