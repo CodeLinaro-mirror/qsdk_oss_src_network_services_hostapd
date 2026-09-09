@@ -735,6 +735,10 @@ uc_hostapd_disable_iface(struct hostapd_iface *iface)
 {
 	switch (iface->state) {
 	case HAPD_IFACE_DISABLED:
+#ifdef CONFIG_QCN_EXTN
+	/* Do not disable an interface which is in NO IR for future recovery */
+	case HAPD_IFACE_NO_IR:
+#endif
 		break;
 #ifdef CONFIG_ACS
 	case HAPD_IFACE_ACS:
