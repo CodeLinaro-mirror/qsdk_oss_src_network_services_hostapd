@@ -1148,7 +1148,7 @@ acs_find_ideal_chan_mode(struct hostapd_iface *iface,
  * option (survey, BSS, spectral, ...). chan->interference factor must be
  * summable (i.e., must be always greater than zero).
  */
-static void acs_update_bw_downgrade_config(struct hostapd_iface *iface, u32 bw)
+void acs_update_bw_downgrade_config(struct hostapd_iface *iface, u32 bw)
 {
 	switch (bw) {
 	case 20:
