@@ -1549,6 +1549,21 @@ struct spatial_reuse {
 };
 
 /**
+ * struct next_radar_chan - User-configured channel to switch after
+ * 			    radar detection.
+ * @freq: Frequency (MHz) the AP switches to immediately upon radar
+ *        detection on the operating channel.
+ *        -1 by default.
+ * @width: Bandwidth (MHz) the AP switches to immediately upon radar
+ *         detection on the operating channel.
+ *         -1 by default.
+ */
+struct next_radar_chan {
+	int freq;
+	int width;
+};
+
+/**
  * struct hostapd_config - Per-radio interface configuration
  */
 struct hostapd_config {
@@ -1835,20 +1850,10 @@ struct hostapd_config {
 	bool post_nol_bgcac_en;
 
 	/**
-	 * @next_radar_freq: Frequency (MHz) the AP switches to immediately
-	 * upon radar detection on the operating channel.
-	 *
-	 * -1 by default
+	 * @next_radar_chan: User-configured channel to switch after radar
+	 * detection (frequency and bandwidth).
 	 */
-	int next_radar_freq;
-
-	/**
-	 * @next_radar_width: Bandwidth (MHz) the AP switches to immediately
-	 * upon radar detection on the operating channel.
-	 *
-	 * -1 by default
-	 */
-	int next_radar_width;
+	struct next_radar_chan next_radar_chan;
 
 #define CH_SWITCH_UHR_ENABLED BIT(0)
 #define CH_SWITCH_UHR_DISABLED BIT(1)
@@ -1990,6 +1995,40 @@ hostapd_get_oper_chwidth(struct hostapd_config *conf)
 		return conf->he_oper_chwidth;
 #endif /* CONFIG_IEEE80211AX */
 	return conf->vht_oper_chwidth;
+}
+
+/**
+ * hostapd_get_max_oper_chwidth_5ghz() - Get the maximum channel width
+ * supported by the highest enabled PHY generation.
+ * @conf: Hostapd configuration.
+ *
+ * Returns the widest operating channel width that can be supported based
+ * on the enabled PHY features (VHT/HE/EHT).
+ *
+ * Return:
+ * * %CONF_OPER_CHWIDTH_320MHZ if EHT is enabled.
+ * * %CONF_OPER_CHWIDTH_160MHZ if HE or VHT is enabled.
+ * * %CONF_OPER_CHWIDTH_USE_HT otherwise.
+ */
+static inline enum oper_chan_width
+hostapd_get_max_oper_chwidth_5ghz(struct hostapd_config *conf)
+{
+#ifdef CONFIG_IEEE80211BE
+	if (conf->ieee80211be)
+#ifdef CONFIG_QCN_EXTN
+		return CONF_OPER_CHWIDTH_320MHZ;
+#else
+		return CONF_OPER_CHWIDTH_160MHZ;
+#endif
+#endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_IEEE80211AX
+	if (conf->ieee80211ax)
+		return CONF_OPER_CHWIDTH_160MHZ;
+#endif /* CONFIG_IEEE80211AX */
+	if (conf->ieee80211ac)
+		return CONF_OPER_CHWIDTH_160MHZ;
+
+	return CONF_OPER_CHWIDTH_USE_HT;
 }
 
 static inline void

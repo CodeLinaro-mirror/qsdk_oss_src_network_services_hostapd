@@ -2074,7 +2074,7 @@ static int hostapd_ctrl_iface_set_next_radar_freq(struct hostapd_data *hapd,
 	     !hw_mode_get_channel(hapd->iface->current_mode, val, NULL)))
 		return -1;
 
-	hapd->iface->conf->next_radar_freq = val;
+	hapd->iface->conf->next_radar_chan.freq = val;
 	return 0;
 }
 
@@ -2109,7 +2109,7 @@ static int hostapd_ctrl_iface_set_next_radar_width(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	hapd->iface->conf->next_radar_width = val;
+	hapd->iface->conf->next_radar_chan.width = val;
 	return 0;
 }
 
@@ -3755,13 +3755,13 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 				  hapd->iface->conf->post_nol_bgcac_en);
 	} else if (os_strcmp(cmd, "next_radar_freq") == 0) {
 		res = os_snprintf(buf, buflen, "%d\n",
-				  hapd->iface->conf->next_radar_freq);
+				  hapd->iface->conf->next_radar_chan.freq);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
 	} else if (os_strcmp(cmd, "next_radar_width") == 0) {
 		res = os_snprintf(buf, buflen, "%d\n",
-				  hapd->iface->conf->next_radar_width);
+				  hapd->iface->conf->next_radar_chan.width);
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
@@ -6934,22 +6934,6 @@ static int hostapd_2ghz_channel_bw(struct hostapd_hw_modes *mode, char *buf,
 		len += ret;
 	}
 	return len;
-}
-
-#ifndef CONFIG_QCN_EXTN
-static
-#endif
-int hostapd_get_channel_idx(struct hostapd_hw_modes *mode,
-			    int channel_num)
-{
-	int  j=0;
-
-	for(j = 0; j < mode->num_channels; j++) {
-	       struct hostapd_channel_data *chan = &mode->channels[j];
-	       if(chan->chan == channel_num)
-			return j;
-	}
-	return -1;
 }
 
 static int hostapd_5ghz_vht_80_channel_bw(struct hostapd_hw_modes *mode,
