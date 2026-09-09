@@ -61,6 +61,7 @@ static void wpas_dpp_chirp_start(struct wpa_supplicant *wpa_s);
 #endif /* CONFIG_DPP2 */
 #ifdef CONFIG_DPP3
 static void wpas_dpp_pb_next(void *eloop_ctx, void *timeout_ctx);
+static void wpas_dpp_remove_pb_hash(struct wpa_supplicant *wpa_s);
 #endif /* CONFIG_DPP3 */
 
 static const u8 broadcast[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
@@ -548,6 +549,19 @@ static void wpas_dpp_tx_status(struct wpa_supplicant *wpa_s,
 #ifdef CONFIG_DPP2
 	if (auth->connect_on_tx_status) {
 		auth->connect_on_tx_status = 0;
+		/*
+		 * EasyMesh: emit DPP-1905-CONNECTOR now — after DPP-TX-STATUS
+		 * SUCCESS but before the bSTA connection attempt.  The
+		 * prplMesh agent receives the 1905 connector here and can
+		 * initiate 1905-layer security setup while the bSTA connects
+		 * in parallel.  The bSTA network profile is already created
+		 * at this point so the agent will not restart wpa_supplicant.
+		 */
+		if (wpa_s->conf->dpp_1905_connector) {
+			wpa_msg(wpa_s, MSG_INFO,
+				DPP_EVENT_1905_CONNECTOR "%s",
+				wpa_s->conf->dpp_1905_connector);
+		}
 		wpa_printf(MSG_DEBUG,
 			   "DPP: Try to connect after completed configuration result");
 		wpas_dpp_try_to_connect(wpa_s);
@@ -582,6 +596,18 @@ static void wpas_dpp_tx_status(struct wpa_supplicant *wpa_s,
 				     wpa_s, NULL);
 #endif /* CONFIG_DPP2 */
 		offchannel_send_action_done(wpa_s);
+		/*
+		 * EasyMesh: emit DPP-1905-CONNECTOR here too. This branch is
+		 * taken whenever dpp_config_processing < 2 (network profile
+		 * managed externally), which is exactly the configuration the
+		 * EasyMesh agent runs with, so it is the only place this event
+		 * would ever reach the ctrl socket for that setup.
+		 */
+		if (wpa_s->conf->dpp_1905_connector) {
+			wpa_msg(wpa_s, MSG_INFO,
+				DPP_EVENT_1905_CONNECTOR "%s",
+				wpa_s->conf->dpp_1905_connector);
+		}
 		dpp_auth_deinit(wpa_s->dpp_auth);
 		wpa_s->dpp_auth = NULL;
 		return;
@@ -1468,6 +1494,18 @@ static struct wpa_ssid * wpas_dpp_add_network(struct wpa_supplicant *wpa_s,
 	os_memcpy(ssid->ssid, conf->ssid, conf->ssid_len);
 	ssid->ssid_len = conf->ssid_len;
 
+	/*
+	 * EasyMesh: a backhaul STA credential object (netRole=mapBackhaulSta)
+	 * must associate to the backhaul BSS with a Multi-AP element
+	 * (capability=MULTI_AP_BACKHAUL_STA) in the Association Request, or
+	 * a backhaul-only BSS rejects the STA with
+	 * WLAN_STATUS_ASSOC_DENIED_UNSPEC (see check_multi_ap() in
+	 * src/ap/ieee802_11.c). Setting multi_ap_backhaul_sta here is what
+	 * makes wpas_populate_assoc_ies() include that element.
+	 */
+	if (os_strcmp(conf->connector_netrole, "mapBackhaulSta") == 0)
+		ssid->multi_ap_backhaul_sta = 1;
+
 #ifdef CONFIG_DPP3
 	if (conf->akm == DPP_AKM_SAE && conf->password_id[0]) {
 		size_t len = os_strlen(conf->password_id);
@@ -1673,6 +1711,28 @@ static int wpas_dpp_process_config(struct wpa_supplicant *wpa_s,
 	if (wpa_s->conf->dpp_config_processing < 1)
 		return 0;
 
+	/* EasyMesh: never build a Wi-Fi network profile from the
+	 * mapAgent (1905-layer) connector - it carries no SSID/credential
+	 * to associate with and must not be treated as backhaul STA
+	 * credentials. */
+	if (os_strcmp(conf->connector_netrole, "mapAgent") == 0) {
+		wpa_printf(MSG_DEBUG,
+			   "DPP: EasyMesh: skipping network add - this conf_obj is the mapAgent 1905 connector");
+		return 0;
+	}
+
+	/*
+	 * EasyMesh: a conf_obj with no SSID carries no Wi-Fi credential (it
+	 * is the mapAgent 1905-layer connector handled above, or otherwise
+	 * has nothing to build a network profile from) - a legacy "infra"
+	 * conf_obj always has an SSID by this point, so this never triggers
+	 * for plain sta/ap DPP.
+	 */
+	if (conf->ssid_len == 0) {
+		wpa_printf(MSG_DEBUG, "DPP: Skipping network add for 1905-layer config (no SSID)");
+		return 0;
+	}
+
 	ssid = wpas_dpp_add_network(wpa_s, auth, conf);
 	if (!ssid)
 		return -1;
@@ -1694,6 +1754,9 @@ static int wpas_dpp_process_config(struct wpa_supplicant *wpa_s,
 static void wpas_dpp_post_process_config(struct wpa_supplicant *wpa_s,
 					 struct dpp_authentication *auth)
 {
+	unsigned int i;
+	int has_ssid = 0;
+
 #ifdef CONFIG_DPP2
 	if (auth->reconfig && wpa_s->dpp_reconfig_ssid &&
 	    wpa_config_get_network(wpa_s->conf, wpa_s->dpp_reconfig_ssid_id) ==
@@ -1720,6 +1783,25 @@ static void wpas_dpp_post_process_config(struct wpa_supplicant *wpa_s,
 	}
 #endif /* CONFIG_DPP2 */
 
+	/*
+	 * EasyMesh: a mapAgent-only Configuration Response produces no
+	 * conf_obj with an SSID, so there is nothing to associate to - skip
+	 * wpas_dpp_try_to_connect() in that case instead of connecting with
+	 * a stale/unrelated network profile. Legacy sta/ap flows always have
+	 * exactly one conf_obj with an SSID, so has_ssid is always true and
+	 * this falls through to try_to_connect() as before.
+	 */
+	for (i = 0; i < auth->num_conf_obj; i++) {
+		if (auth->conf_obj[i].ssid_len > 0) {
+			has_ssid = 1;
+			break;
+		}
+	}
+	if (!has_ssid) {
+		wpa_printf(MSG_DEBUG, "DPP: No Wi-Fi network to connect to (EasyMesh 1905-only config)");
+		return;
+	}
+
 	wpas_dpp_try_to_connect(wpa_s);
 }
 
@@ -1728,132 +1810,224 @@ static int wpas_dpp_handle_config_obj(struct wpa_supplicant *wpa_s,
 				      struct dpp_authentication *auth,
 				      struct dpp_config_obj *conf)
 {
-	wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CONF_RECEIVED);
-	wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CONFOBJ_AKM "%s",
-		dpp_akm_str(conf->akm));
-	if (conf->ssid_len)
-		wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CONFOBJ_SSID "%s",
-			wpa_ssid_txt(conf->ssid, conf->ssid_len));
-	if (conf->ssid_charset)
-		wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CONFOBJ_SSID_CHARSET "%d",
-			conf->ssid_charset);
-	if (conf->connector) {
-		/* TODO: Save the Connector and consider using a command
-		 * to fetch the value instead of sending an event with
-		 * it. The Connector could end up being larger than what
-		 * most clients are ready to receive as an event
-		 * message. */
-		wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CONNECTOR "%s",
-			conf->connector);
-	}
-	if (conf->passphrase[0]) {
-		char hex[64 * 2 + 1];
+	/*
+	 * EasyMesh: a Configuration Response can carry two distinct
+	 * configuration objects for a Multi-AP Agent enrollee - one whose
+	 * connector has netRole=mapAgent (the 1905-layer connector, with no
+	 * SSID/credential to associate with) and one whose connector has
+	 * netRole=mapBackhaulSta (the actual Wi-Fi backhaul STA credential
+	 * used to associate to the backhaul BSS). The mapAgent connector
+	 * must not be parsed/treated as a Wi-Fi credential - it is only
+	 * relevant to the 1905 layer above wpa_supplicant (its signedConnector
+	 * is reported separately via DPP-1905-CONNECTOR) - so skip all of the
+	 * per-field Wi-Fi credential events below for it entirely.
+	 */
+	int is_map_agent = os_strcmp(conf->connector_netrole, "mapAgent") == 0;
 
-		wpa_snprintf_hex(hex, sizeof(hex),
-				 (const u8 *) conf->passphrase,
-				 os_strlen(conf->passphrase));
-		wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CONFOBJ_PASS "%s",
-			hex);
-	} else if (conf->psk_set) {
-		char hex[PMK_LEN * 2 + 1];
+	/*
+	 * EasyMesh: suppress DPP-CONF-RECEIVED for the mapAgent conf_obj.
+	 * The mapAgent object carries no Wi-Fi credentials and emitting the
+	 * event for it causes the EasyMesh agent to see two DPP-CONF-RECEIVED
+	 * events, which can confuse credential-collection logic.  Only emit
+	 * the event for conf_obj entries that carry actual Wi-Fi credentials
+	 * (i.e. non-mapAgent roles such as mapBackhaulSta).
+	 */
+	if (!is_map_agent)
+		wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CONF_RECEIVED);
 
-		wpa_snprintf_hex(hex, sizeof(hex), conf->psk, PMK_LEN);
-		wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CONFOBJ_PSK "%s",
-			hex);
-	}
-#ifdef CONFIG_DPP3
-	if (conf->password_id[0]) {
-		wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CONFOBJ_IDPASS "%s",
-			conf->password_id);
-	}
-#endif /* CONFIG_DPP3 */
-	if (conf->sae_pwe) {
-		wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_SAE_PWE "%d", conf->sae_pwe);
-	}
-	if (conf->c_sign_key) {
-		char *hex;
-		size_t hexlen;
+	if (!is_map_agent) {
+		wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CONFOBJ_AKM "%s",
+			dpp_akm_str(conf->akm));
+		if (conf->ssid_len)
+			wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CONFOBJ_SSID "%s",
+				wpa_ssid_txt(conf->ssid, conf->ssid_len));
+		if (conf->ssid_charset)
+			wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CONFOBJ_SSID_CHARSET "%d",
+				conf->ssid_charset);
+		if (conf->connector) {
+			/* TODO: Save the Connector and consider using a command
+			 * to fetch the value instead of sending an event with
+			 * it. The Connector could end up being larger than what
+			 * most clients are ready to receive as an event
+			 * message. */
+			wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CONNECTOR "%s",
+				conf->connector);
+		}
+		if (conf->passphrase[0]) {
+			char hex[64 * 2 + 1];
 
-		hexlen = 2 * wpabuf_len(conf->c_sign_key) + 1;
-		hex = os_malloc(hexlen);
-		if (hex) {
-			wpa_snprintf_hex(hex, hexlen,
-					 wpabuf_head(conf->c_sign_key),
-					 wpabuf_len(conf->c_sign_key));
-			wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_C_SIGN_KEY "%s",
+			wpa_snprintf_hex(hex, sizeof(hex),
+					 (const u8 *) conf->passphrase,
+					 os_strlen(conf->passphrase));
+			wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CONFOBJ_PASS "%s",
 				hex);
-			os_free(hex);
-		}
-	}
-	if (conf->pp_key) {
-		char *hex;
-		size_t hexlen;
+		} else if (conf->psk_set) {
+			char hex[PMK_LEN * 2 + 1];
 
-		hexlen = 2 * wpabuf_len(conf->pp_key) + 1;
-		hex = os_malloc(hexlen);
-		if (hex) {
-			wpa_snprintf_hex(hex, hexlen,
-					 wpabuf_head(conf->pp_key),
-					 wpabuf_len(conf->pp_key));
-			wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_PP_KEY "%s", hex);
-			os_free(hex);
+			wpa_snprintf_hex(hex, sizeof(hex), conf->psk, PMK_LEN);
+			wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CONFOBJ_PSK "%s",
+				hex);
 		}
-	}
-	if (auth->net_access_key) {
-		char *hex;
-		size_t hexlen;
+#ifdef CONFIG_DPP3
+		if (conf->password_id[0]) {
+			wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CONFOBJ_IDPASS "%s",
+				conf->password_id);
+		}
+#endif /* CONFIG_DPP3 */
+		if (conf->sae_pwe) {
+			wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_SAE_PWE "%d", conf->sae_pwe);
+		}
+		if (conf->c_sign_key) {
+			char *hex;
+			size_t hexlen;
 
-		hexlen = 2 * wpabuf_len(auth->net_access_key) + 1;
-		hex = os_malloc(hexlen);
-		if (hex) {
-			wpa_snprintf_hex(hex, hexlen,
-					 wpabuf_head(auth->net_access_key),
-					 wpabuf_len(auth->net_access_key));
-			if (auth->net_access_key_expiry)
-				wpa_msg(wpa_s, MSG_INFO,
-					DPP_EVENT_NET_ACCESS_KEY "%s %lu", hex,
-					(long unsigned)
-					auth->net_access_key_expiry);
-			else
-				wpa_msg(wpa_s, MSG_INFO,
-					DPP_EVENT_NET_ACCESS_KEY "%s", hex);
-			os_free(hex);
+			hexlen = 2 * wpabuf_len(conf->c_sign_key) + 1;
+			hex = os_malloc(hexlen);
+			if (hex) {
+				wpa_snprintf_hex(hex, hexlen,
+						 wpabuf_head(conf->c_sign_key),
+						 wpabuf_len(conf->c_sign_key));
+				wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_C_SIGN_KEY "%s",
+					hex);
+				os_free(hex);
+			}
 		}
-	}
+		if (conf->pp_key) {
+			char *hex;
+			size_t hexlen;
+
+			hexlen = 2 * wpabuf_len(conf->pp_key) + 1;
+			hex = os_malloc(hexlen);
+			if (hex) {
+				wpa_snprintf_hex(hex, hexlen,
+						 wpabuf_head(conf->pp_key),
+						 wpabuf_len(conf->pp_key));
+				wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_PP_KEY "%s", hex);
+				os_free(hex);
+			}
+		}
+		if (auth->net_access_key) {
+			char *hex;
+			size_t hexlen;
+
+			hexlen = 2 * wpabuf_len(auth->net_access_key) + 1;
+			hex = os_malloc(hexlen);
+			if (hex) {
+				wpa_snprintf_hex(hex, hexlen,
+						 wpabuf_head(auth->net_access_key),
+						 wpabuf_len(auth->net_access_key));
+				if (auth->net_access_key_expiry)
+					wpa_msg(wpa_s, MSG_INFO,
+						DPP_EVENT_NET_ACCESS_KEY "%s %lu", hex,
+						(long unsigned)
+						auth->net_access_key_expiry);
+				else
+					wpa_msg(wpa_s, MSG_INFO,
+						DPP_EVENT_NET_ACCESS_KEY "%s", hex);
+				os_free(hex);
+			}
+		}
 
 #ifdef CONFIG_DPP2
-	if (conf->certbag) {
-		char *b64;
+		if (conf->certbag) {
+			char *b64;
 
-		b64 = base64_encode_no_lf(wpabuf_head(conf->certbag),
-					  wpabuf_len(conf->certbag), NULL);
-		if (b64)
-			wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CERTBAG "%s", b64);
-		os_free(b64);
-	}
+			b64 = base64_encode_no_lf(wpabuf_head(conf->certbag),
+						  wpabuf_len(conf->certbag), NULL);
+			if (b64)
+				wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CERTBAG "%s", b64);
+			os_free(b64);
+		}
 
-	if (conf->cacert) {
-		char *b64;
+		if (conf->cacert) {
+			char *b64;
 
-		b64 = base64_encode_no_lf(wpabuf_head(conf->cacert),
-					  wpabuf_len(conf->cacert), NULL);
-		if (b64)
-			wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CACERT "%s", b64);
-		os_free(b64);
-	}
+			b64 = base64_encode_no_lf(wpabuf_head(conf->cacert),
+						  wpabuf_len(conf->cacert), NULL);
+			if (b64)
+				wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_CACERT "%s", b64);
+			os_free(b64);
+		}
 
-	if (conf->server_name)
-		wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_SERVER_NAME "%s",
-			conf->server_name);
+		if (conf->server_name)
+			wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_SERVER_NAME "%s",
+				conf->server_name);
 #endif /* CONFIG_DPP2 */
 
 #ifdef CONFIG_DPP3
-	if (!wpa_s->dpp_pb_result_indicated) {
-		wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_PB_RESULT "success");
-		wpa_s->dpp_pb_result_indicated = true;
-	}
-
+		/*
+		 * EasyMesh: emit DPP-PB-RESULT success after all credential
+		 * events have been sent but before the Configuration Result TX
+		 * (DPP-TX type=11).  This matches the passing non-EasyMesh
+		 * behavior where the agent uses DPP-PB-RESULT success as a
+		 * signal to wait for DPP-TX-STATUS SUCCESS before calling
+		 * REMOVE_NETWORK all.  Restrict the extra !dpp_pb_configurator
+		 * condition to the mapAgent (EasyMesh) netrole so plain DPP3
+		 * push-button behavior for non-EasyMesh pairings is unchanged.
+		 */
+		if (!wpa_s->dpp_pb_result_indicated &&
+		    (wpa_s->dpp_netrole != DPP_NETROLE_MAP_AGENT ||
+		     !wpa_s->dpp_pb_configurator)) {
+			wpa_msg(wpa_s, MSG_INFO, DPP_EVENT_PB_RESULT "success");
+			wpa_s->dpp_pb_result_indicated = true;
+		}
 #endif /* CONFIG_DPP3 */
+
+	} else {
+		/*
+		 * EasyMesh: for the mapAgent (1905-layer) conf_obj, emit only
+		 * the fields needed for 1905 DPP peer discovery/encryption -
+		 * the C-sign-key (to verify peer connectors), the net access
+		 * key (to derive the 1905 PMK), and dfCounterThreshold. Each
+		 * field has its own DPP-1905-* event name (mirroring
+		 * signedConnector's DPP-1905-CONNECTOR) so an external
+		 * application can consume them directly. All other Wi-Fi
+		 * credential events are intentionally skipped for this
+		 * conf_obj since it carries no SSID/credential to associate
+		 * with.
+		 */
+		if (conf->c_sign_key) {
+			char *hex;
+			size_t hexlen;
+
+			hexlen = 2 * wpabuf_len(conf->c_sign_key) + 1;
+			hex = os_malloc(hexlen);
+			if (hex) {
+				wpa_snprintf_hex(hex, hexlen,
+						 wpabuf_head(conf->c_sign_key),
+						 wpabuf_len(conf->c_sign_key));
+				wpa_msg(wpa_s, MSG_INFO,
+					DPP_EVENT_1905_C_SIGN_KEY "%s", hex);
+				os_free(hex);
+			}
+		}
+		if (auth->net_access_key) {
+			char *hex;
+			size_t hexlen;
+
+			hexlen = 2 * wpabuf_len(auth->net_access_key) + 1;
+			hex = os_malloc(hexlen);
+			if (hex) {
+				wpa_snprintf_hex(hex, hexlen,
+						 wpabuf_head(auth->net_access_key),
+						 wpabuf_len(auth->net_access_key));
+				if (auth->net_access_key_expiry)
+					wpa_msg(wpa_s, MSG_INFO,
+						DPP_EVENT_1905_NET_ACCESS_KEY "%s %lu",
+						hex,
+						(long unsigned)
+						auth->net_access_key_expiry);
+				else
+					wpa_msg(wpa_s, MSG_INFO,
+						DPP_EVENT_1905_NET_ACCESS_KEY "%s", hex);
+				os_free(hex);
+			}
+		}
+		if (conf->df_counter_threshold > 0)
+			wpa_msg(wpa_s, MSG_INFO,
+				DPP_EVENT_1905_DF_COUNTER_THRESHOLD "%d",
+				conf->df_counter_threshold);
+	} /* !is_map_agent */
 
 	return wpas_dpp_process_config(wpa_s, auth, conf);
 }
@@ -1999,6 +2173,20 @@ static void wpas_dpp_gas_resp_cb(void *ctx, const u8 *addr, u8 dialog_token,
 		if (res < 0)
 			goto fail;
 	}
+	os_free(wpa_s->conf->dpp_1905_connector);
+	if (auth->dpp_1905_connector) {
+		wpa_s->conf->dpp_1905_connector =
+			os_strdup(auth->dpp_1905_connector);
+		/*
+		 * EasyMesh: DPP-1905-CONNECTOR is emitted later in
+		 * wpas_dpp_tx_status() after DPP-TX-STATUS SUCCESS fires.
+		 * This matches the passing-case event sequence where the agent
+		 * sees DPP-TX-STATUS SUCCESS before DPP-1905-CONNECTOR, which
+		 * allows it to call REMOVE_NETWORK all at the right time.
+		 */
+	} else {
+		wpa_s->conf->dpp_1905_connector = NULL;
+	}
 	if (auth->num_conf_obj)
 		wpas_dpp_post_process_config(wpa_s, auth);
 	if (wpas_dpp_handle_key_pkg(wpa_s, auth->conf_key_pkg) < 0)
@@ -2024,6 +2212,20 @@ fail:
 		if (!msg)
 			goto fail2;
 
+		/*
+		 * EasyMesh: cancel any pending scan radio work before sending
+		 * the DPP Configuration Result.  In the EasyMesh case a
+		 * periodic scan is queued and starts immediately after the
+		 * gas-query work finishes, inserting ~130 log lines between
+		 * DPP-TX type=11 and DPP-TX-STATUS SUCCESS.  The EasyMesh agent
+		 * calls REMOVE_NETWORK all during that window (before TX status
+		 * arrives), then fails to complete the network configuration.
+		 * Removing the pending scan ensures DPP-TX-STATUS SUCCESS
+		 * arrives quickly — matching the passing-case event order where
+		 * the agent calls REMOVE_NETWORK all only after TX status.
+		 */
+		if (wpa_s->dpp_netrole == DPP_NETROLE_MAP_AGENT)
+			radio_remove_works(wpa_s, "scan", 0);
 		wpa_msg(wpa_s, MSG_INFO,
 			DPP_EVENT_TX "dst=" MACSTR " freq=%u type=%d",
 			MAC2STR(addr), auth->curr_freq,
@@ -2079,6 +2281,11 @@ static void wpas_dpp_start_gas_client(struct wpa_supplicant *wpa_s)
 #else /* CONFIG_NO_RRM */
 	supp_op_classes = wpas_supp_op_classes(wpa_s);
 #endif /* CONFIG_NO_RRM */
+
+	/* EasyMesh MLO: pass the bSTAList through auth->bsta_list rather than
+	 * as a function parameter - see the comment on that field in dpp.h. */
+	auth->bsta_list = wpa_s->conf->dpp_bsta_list;
+
 	buf = dpp_build_conf_req_helper(auth, wpa_s->conf->dpp_name,
 					wpa_s->dpp_netrole,
 					wpa_s->conf->dpp_mud_url,
@@ -2104,6 +2311,22 @@ static void wpas_dpp_start_gas_client(struct wpa_supplicant *wpa_s)
 	 * Configurator to determine what kind of configuration to provide. */
 	eloop_register_timeout(120, 0, wpas_dpp_gas_client_timeout,
 			       wpa_s, NULL);
+
+	/*
+	 * EasyMesh: cancel any pending scan radio work before sending the DPP
+	 * Configuration Request. With no network enabled yet, wpa_supplicant's
+	 * own idle behavior queues periodic scan radio work continuously; if
+	 * one is already queued/running when Authentication succeeds, it can
+	 * delay this GAS query's own radio work by 20+ seconds - long enough
+	 * to miss the DPP Controller Relay's fixed 20-second connection
+	 * timeout (dpp_relay_conn_timeout() on the Controller/Relay side),
+	 * which then drops the Configuration Request as "No matching
+	 * exchange in progress". Removing the pending scan here mirrors the
+	 * same protection already used before sending the Configuration
+	 * Result in wpas_dpp_gas_resp_cb().
+	 */
+	if (wpa_s->dpp_netrole == DPP_NETROLE_MAP_AGENT)
+		radio_remove_works(wpa_s, "scan", 0);
 
 	res = gas_query_req(wpa_s->gas, auth->peer_mac_addr, auth->curr_freq,
 			    1, 1, buf, wpas_dpp_gas_resp_cb, wpa_s);
@@ -2434,6 +2657,16 @@ static int wpas_dpp_process_conf_obj(void *ctx,
 						 &auth->conf_obj[i]);
 		if (res)
 			break;
+	}
+	os_free(wpa_s->conf->dpp_1905_connector);
+	if (auth->dpp_1905_connector) {
+		wpa_s->conf->dpp_1905_connector =
+			os_strdup(auth->dpp_1905_connector);
+		wpa_msg(wpa_s, MSG_INFO,
+			DPP_EVENT_1905_CONNECTOR "%s",
+			auth->dpp_1905_connector);
+	} else {
+		wpa_s->conf->dpp_1905_connector = NULL;
 	}
 	if (!res)
 		wpas_dpp_post_process_config(wpa_s, auth);
@@ -5397,6 +5630,7 @@ void wpas_dpp_chirp_next(void *eloop_ctx, void *timeout_ctx)
 int wpas_dpp_chirp(struct wpa_supplicant *wpa_s, const char *cmd)
 {
 	const char *pos;
+	const char *nr_pos;
 	int iter = 3, listen_freq = 0;
 	struct dpp_bootstrap_info *bi;
 
@@ -5427,7 +5661,18 @@ int wpas_dpp_chirp(struct wpa_supplicant *wpa_s, const char *cmd)
 
 	wpas_dpp_chirp_stop(wpa_s, 0);
 	wpa_s->dpp_allowed_roles = DPP_CAPAB_ENROLLEE;
-	wpa_s->dpp_netrole = DPP_NETROLE_STA;
+
+	/*
+	 * EasyMesh: the 1905 layer requests Multi-AP Agent onboarding by
+	 * passing "netrole=mapAgent" on the chirp command; any other/no
+	 * netrole keeps the plain STA enrollee behavior below unchanged.
+	 */
+	nr_pos = os_strstr(cmd, " netrole=");
+	if (nr_pos && os_strncmp(nr_pos + 9, "mapAgent", 8) == 0)
+		wpa_s->dpp_netrole = DPP_NETROLE_MAP_AGENT;
+	else
+		wpa_s->dpp_netrole = DPP_NETROLE_STA;
+
 	wpa_s->dpp_qr_mutual = 0;
 	wpa_s->dpp_chirp_bi = bi;
 	wpa_s->dpp_presence_announcement = dpp_build_presence_announcement(bi);

@@ -975,7 +975,13 @@ struct wpabuf * dpp_build_conf_req_helper(struct dpp_authentication *auth,
 					  const char *extra_value)
 {
 	size_t len, name_len;
-	const char *tech = "infra";
+	const char *bsta_list = auth->bsta_list;
+	/*
+	 * EasyMesh R4 §9.3: wi-fi_tech MUST be "map" when the enrollee is
+	 * requesting Multi-AP (mapAgent) provisioning. Use "infra" only for
+	 * standard infrastructure (STA/AP) roles.
+	 */
+	const char *tech = netrole == DPP_NETROLE_MAP_AGENT ? "map" : "infra";
 	const char *dpp_name;
 	struct wpabuf *buf = NULL, *json = NULL;
 	char *csr = NULL;
@@ -997,6 +1003,8 @@ struct wpabuf * dpp_build_conf_req_helper(struct dpp_authentication *auth,
 		len += 10 + os_strlen(mud_url);
 	if (extra_name && extra_value && extra_name[0] && extra_value[0])
 		len += 10 + os_strlen(extra_name) + os_strlen(extra_value);
+	if (bsta_list && bsta_list[0])
+		len += 15 + os_strlen(bsta_list);
 #ifdef CONFIG_DPP2
 	if (auth->csr) {
 		size_t csr_len;
@@ -1019,6 +1027,31 @@ struct wpabuf * dpp_build_conf_req_helper(struct dpp_authentication *auth,
 	json_add_string(json, "wi-fi_tech", tech);
 	json_value_sep(json);
 	json_add_string(json, "netRole", dpp_netrole_str(netrole));
+	if (netrole == DPP_NETROLE_MAP_AGENT && bsta_list && bsta_list[0]) {
+		size_t bsta_list_len = os_strlen(bsta_list);
+
+		/*
+		 * EasyMesh MLO: raw passthrough of the bSTAList array (as
+		 * built by the 1905 layer, which knows the device's radios
+		 * and MLO capabilities). Including bSTA_Maximum_Links here
+		 * signals the Controller to return a Backhaul_STA_MLD_Config
+		 * object in the Configuration Response.
+		 *
+		 * bsta_list comes from local config (dpp_bsta_list, set by
+		 * the 1905 layer), not from the network - a full JSON parse
+		 * isn't warranted, but a cheap shape check keeps a malformed
+		 * value from being forwarded as-is inside the Config Request
+		 * object.
+		 */
+		if (bsta_list[0] != '[' || bsta_list[bsta_list_len - 1] != ']') {
+			wpa_printf(MSG_DEBUG,
+				   "DPP: EasyMesh: dpp_bsta_list is not a JSON array, skipping bSTAList");
+		} else {
+			json_value_sep(json);
+			wpabuf_put_str(json, "\"bSTAList\":");
+			wpabuf_put_str(json, bsta_list);
+		}
+	}
 	if (mud_url && mud_url[0]) {
 		json_value_sep(json);
 		json_add_string(json, "mudurl", mud_url);
@@ -1525,6 +1558,7 @@ void dpp_auth_deinit(struct dpp_authentication *auth)
 		os_free(conf->server_name);
 		wpabuf_free(conf->pp_key);
 	}
+	os_free(auth->dpp_1905_connector);
 #ifdef CONFIG_DPP2
 	dpp_free_asymmetric_key(auth->conf_key_pkg);
 	os_free(auth->csrattrs);
@@ -1670,6 +1704,8 @@ const char * dpp_netrole_str(enum dpp_netrole netrole)
 		return "ap";
 	case DPP_NETROLE_CONFIGURATOR:
 		return "configurator";
+	case DPP_NETROLE_MAP_AGENT:
+		return "mapAgent";
 	default:
 		return "??";
 	}
@@ -2883,6 +2919,13 @@ static int dpp_parse_connector(struct dpp_authentication *auth,
 		wpa_printf(MSG_DEBUG,
 			   "DPP: connector group: groupId='%s' netRole='%s'",
 			   id->string, role->string);
+		/* EasyMesh: remember this connector's own netRole (e.g.
+		 * "mapAgent" or "mapBackhaulSta") so the caller can tell the
+		 * 1905 connector object apart from the backhaul STA
+		 * credential object when both are returned together. */
+		if (!conf->connector_netrole[0])
+			os_strlcpy(conf->connector_netrole, role->string,
+				   sizeof(conf->connector_netrole));
 		rules++;
 	}
 skip_groups:
@@ -3273,6 +3316,7 @@ static int dpp_parse_conf_obj(struct dpp_authentication *auth,
 	struct dpp_config_obj *conf;
 	struct wpabuf *ssid64 = NULL;
 	int legacy;
+	int is_map;
 
 	root = json_parse((const char *) conf_obj, conf_obj_len);
 	if (!root)
@@ -3287,40 +3331,57 @@ static int dpp_parse_conf_obj(struct dpp_authentication *auth,
 		dpp_auth_fail(auth, "No wi-fi_tech string value found");
 		goto fail;
 	}
-	if (os_strcmp(token->string, "infra") != 0) {
+	if (os_strcmp(token->string, "infra") != 0 &&
+	    os_strcmp(token->string, "map") != 0 &&
+	    os_strcmp(token->string, "inframap") != 0) {
 		wpa_printf(MSG_DEBUG, "DPP: Unsupported wi-fi_tech value: '%s'",
 			   token->string);
 		dpp_auth_fail(auth, "Unsupported wi-fi_tech value");
 		goto fail;
 	}
+	/* EasyMesh: wi-fi_tech=map/inframap indicates Multi-AP config object */
+	is_map = (os_strcmp(token->string, "map") == 0 ||
+		  os_strcmp(token->string, "inframap") == 0);
 
 	discovery = json_get_member(root, "discovery");
-	if (!discovery || discovery->type != JSON_OBJECT) {
-		dpp_auth_fail(auth, "No discovery object in JSON");
-		goto fail;
-	}
-
-	ssid64 = json_get_member_base64url(discovery, "ssid64");
-	if (ssid64) {
-		wpa_hexdump_ascii(MSG_DEBUG, "DPP: discovery::ssid64",
-				  wpabuf_head(ssid64), wpabuf_len(ssid64));
-		if (wpabuf_len(ssid64) > SSID_MAX_LEN) {
-			dpp_auth_fail(auth, "Too long discovery::ssid64 value");
+	if (!is_map) {
+		/* infra/inframap: discovery.ssid is required */
+		if (!discovery || discovery->type != JSON_OBJECT) {
+			dpp_auth_fail(auth, "No discovery object in JSON");
 			goto fail;
+		}
+
+		ssid64 = json_get_member_base64url(discovery, "ssid64");
+		if (ssid64) {
+			wpa_hexdump_ascii(MSG_DEBUG, "DPP: discovery::ssid64",
+					  wpabuf_head(ssid64), wpabuf_len(ssid64));
+			if (wpabuf_len(ssid64) > SSID_MAX_LEN) {
+				dpp_auth_fail(auth, "Too long discovery::ssid64 value");
+				goto fail;
+			}
+		} else {
+			token = json_get_member(discovery, "ssid");
+			if (!token || token->type != JSON_STRING) {
+				dpp_auth_fail(auth,
+					      "No discovery::ssid string value found");
+				goto fail;
+			}
+			wpa_hexdump_ascii(MSG_DEBUG, "DPP: discovery::ssid",
+					  (u8 *)token->string, os_strlen(token->string));
+			if (os_strlen(token->string) > SSID_MAX_LEN) {
+				dpp_auth_fail(auth,
+					      "Too long discovery::ssid string value");
+				goto fail;
+			}
 		}
 	} else {
-		token = json_get_member(discovery, "ssid");
-		if (!token || token->type != JSON_STRING) {
-			dpp_auth_fail(auth,
-				      "No discovery::ssid string value found");
-			goto fail;
-		}
-		wpa_hexdump_ascii(MSG_DEBUG, "DPP: discovery::ssid",
-				  (u8 *)token->string, os_strlen(token->string));
-		if (os_strlen(token->string) > SSID_MAX_LEN) {
-			dpp_auth_fail(auth,
-				      "Too long discovery::ssid string value");
-			goto fail;
+		/* wi-fi_tech=map: discovery.ssid is optional (1905-layer has no SSID) */
+		ssid64 = NULL;
+		token  = NULL;
+		if (discovery && discovery->type == JSON_OBJECT) {
+			ssid64 = json_get_member_base64url(discovery, "ssid64");
+			if (!ssid64)
+				token = json_get_member(discovery, "ssid");
 		}
 	}
 
@@ -3335,16 +3396,30 @@ static int dpp_parse_conf_obj(struct dpp_authentication *auth,
 	if (ssid64) {
 		conf->ssid_len = wpabuf_len(ssid64);
 		os_memcpy(conf->ssid, wpabuf_head(ssid64), conf->ssid_len);
-	} else {
+	} else if (token) {
+		/*
+		 * token is NULL for MAP config objects that have no
+		 * discovery/ssid element (valid per EasyMesh — MAP uses the
+		 * 1905 layer and does not require an SSID in the config
+		 * object).  Guard against the NULL dereference here and leave
+		 * ssid_len = 0 in that case.
+		 */
 		conf->ssid_len = os_strlen(token->string);
 		os_memcpy(conf->ssid, token->string, conf->ssid_len);
 	}
+	/* else: MAP config without SSID — ssid_len stays 0, which is valid */
 
-	token = json_get_member(discovery, "ssid_charset");
-	if (token && token->type == JSON_NUMBER) {
-		conf->ssid_charset = token->number;
-		wpa_printf(MSG_DEBUG, "DPP: ssid_charset=%d",
-			   conf->ssid_charset);
+	/*
+	 * Guard against NULL discovery pointer: for MAP config objects the
+	 * discovery element is optional, so discovery may be NULL here.
+	 */
+	if (discovery && discovery->type == JSON_OBJECT) {
+		token = json_get_member(discovery, "ssid_charset");
+		if (token && token->type == JSON_NUMBER) {
+			conf->ssid_charset = token->number;
+			wpa_printf(MSG_DEBUG, "DPP: ssid_charset=%d",
+				   conf->ssid_charset);
+		}
 	}
 
 	cred = json_get_member(root, "cred");
@@ -3392,6 +3467,26 @@ static int dpp_parse_conf_obj(struct dpp_authentication *auth,
 	}
 
 	wpa_printf(MSG_DEBUG, "DPP: JSON parsing completed successfully");
+
+	/*
+	 * EasyMesh: the mapAgent config object carries no SSID/credential to
+	 * associate with - it is consumed by the 1905 layer above
+	 * wpa_supplicant/hostapd. Forward its signedConnector (already
+	 * parsed into conf->connector above) via DPP-1905-CONNECTOR, and its
+	 * dfCounterThreshold via DPP-MAP-DFCOUNTER - the mapAgent-only
+	 * counterparts of the DPP-CONNECTOR/credential events already
+	 * emitted for the mapBackhaulSta object.
+	 */
+	if (os_strcmp(conf->connector_netrole, "mapAgent") == 0) {
+		os_free(auth->dpp_1905_connector);
+		auth->dpp_1905_connector = conf->connector ?
+			os_strdup(conf->connector) : NULL;
+
+		token = json_get_member(root, "dfCounterThreshold");
+		if (token && token->type == JSON_NUMBER)
+			conf->df_counter_threshold = token->number;
+	}
+
 	ret = 0;
 fail:
 	wpabuf_free(ssid64);
@@ -4149,7 +4244,15 @@ fail:
 static int dpp_compatible_netrole(const char *role1, const char *role2)
 {
 	return (os_strcmp(role1, "sta") == 0 && os_strcmp(role2, "ap") == 0) ||
-		(os_strcmp(role1, "ap") == 0 && os_strcmp(role2, "sta") == 0);
+		(os_strcmp(role1, "ap") == 0 && os_strcmp(role2, "sta") == 0) ||
+		/* EasyMesh spec Table 8: backhaul STA <-> backhaul BSS */
+		(os_strcmp(role1, "mapBackhaulSta") == 0 &&
+		 os_strcmp(role2, "mapBackhaulBss") == 0) ||
+		(os_strcmp(role1, "mapBackhaulBss") == 0 &&
+		 os_strcmp(role2, "mapBackhaulSta") == 0) ||
+		/* EasyMesh spec Table 8: agent <-> agent (1905 layer) */
+		(os_strcmp(role1, "mapAgent") == 0 &&
+		 os_strcmp(role2, "mapAgent") == 0);
 }
 
 
