@@ -1826,30 +1826,6 @@ struct hostapd_config {
 	int disable_csa_dfs;
 
 	/**
-	 * @post_nol_freq: Frequency (MHz) the AP switches to once the
-	 * NOL entry for this channel expires.
-	 *
-	 * -1 by default.
-	 */
-	int post_nol_freq;
-
-	/**
-	 * @post_nol_width: Bandwidth (MHz) the AP switches to once the
-	 * NOL entry for post_nol_freq expires.
-	 *
-	 * -1 by default.
-	 */
-	int post_nol_width;
-
-	/**
-	 * @post_nol_bgcac_en: Whether to use Agile CAC for the post_nol_freq
-	 * channel switch on NOL expiry.
-	 *
-	 * Enabled (1) by default.
-	 */
-	bool post_nol_bgcac_en;
-
-	/**
 	 * @next_radar_chan: User-configured channel to switch after radar
 	 * detection (frequency and bandwidth).
 	 */
