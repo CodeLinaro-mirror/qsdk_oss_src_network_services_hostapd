@@ -909,23 +909,32 @@ static void dfs_adjust_center_freq(struct hostapd_iface *iface,
 }
 
 static int dfs_is_home_chan(struct hostapd_iface *iface,
-			    struct hostapd_channel_data *chan)
+			    struct hostapd_channel_data *chan,
+			    enum oper_chan_width home_chwidth)
 {
 	struct hostapd_hw_modes *mode = iface->current_mode;
 	int seg1_start = -1;
-	int cur_chan_width = hostapd_get_oper_chwidth(iface->conf);
+	int home_chan = iface->conf->channel;
 	int home_start_idx, n_home_chans, k;
 
 	if (!mode)
 		return 0;
 
+	/*
+	 * dfs_precac_try_half_bw() temporarily reduces oper_chwidth before
+	 * calling us, so iface->conf->oper_chwidth cannot be trusted here.
+	 * The caller passes the true home bandwidth as home_chwidth.
+	 *
+	 * ETSI EN 301 893 §4.7.3.6: background CAC shall not use any
+	 * sub-channel of the current home operating block.
+	 */
 	home_start_idx = dfs_get_start_chan_idx(iface, &seg1_start,
-						cur_chan_width,
-						iface->conf->channel, false);
+						home_chwidth,
+						home_chan, false);
 	if (home_start_idx < 0)
 		return 0;
 
-	n_home_chans = dfs_get_used_n_chans(iface, &seg1_start, cur_chan_width);
+	n_home_chans = dfs_get_used_n_chans(iface, &seg1_start, home_chwidth);
 
 	for (k = 0; k < n_home_chans; k++) {
 		if (chan->chan == mode->channels[home_start_idx + k].chan)
@@ -993,7 +1002,7 @@ static int dfs_get_precac_channel_by_state(struct hostapd_iface *iface,
 		}
 
 		/* Skip all sub-channels of the home BW block */
-		if (dfs_is_home_chan(iface, chan)) {
+		if (dfs_is_home_chan(iface, chan, hostapd_get_oper_chwidth(iface->conf))) {
 			i++;
 			continue;
 		}
@@ -2310,7 +2319,8 @@ static struct hostapd_channel_data *
 hostapd_dfs_get_next_precac_channel(struct hostapd_iface *iface,
 				    u8 *oper_centr_freq_seg0_idx,
 				    u8 *oper_centr_freq_seg1_idx,
-				    int *secondary_channel)
+				    int *secondary_channel,
+				    enum oper_chan_width home_chwidth)
 {
 	struct hostapd_channel_data *chan = NULL;
 	int total, idx;
@@ -2337,7 +2347,7 @@ hostapd_dfs_get_next_precac_channel(struct hostapd_iface *iface,
 				 DFS_RANDOM_CH_FLAG_NO_CURR_OPE_CH);
 		if (!chan)
 			continue;
-		if (dfs_is_home_chan(iface, chan)) {
+		if (dfs_is_home_chan(iface, chan, home_chwidth)) {
 			wpa_printf(MSG_DEBUG,
 				   "PRECAC_Skipping home channel block %d",
 				   chan->chan);
@@ -2417,7 +2427,8 @@ static bool dfs_precac_try_half_bw(struct hostapd_iface *iface)
 	if (half_bw == 20)
 		iface->conf->secondary_channel = 0;
 
-	chan = hostapd_dfs_get_next_precac_channel(iface, &seg0, &seg1, &sec);
+	chan = hostapd_dfs_get_next_precac_channel(iface, &seg0, &seg1, &sec,
+						   orig_oper_chwidth);
 	if (!chan) {
 		wpa_printf(MSG_DEBUG,
 			   "PRECAC_No half-BW channel available either");
@@ -2471,7 +2482,8 @@ int hostapd_dfs_start_precac(struct hostapd_iface *iface)
 	int sec = 0;
 	int ret;
 
-	chan = hostapd_dfs_get_next_precac_channel(iface, &seg0, &seg1, &sec);
+	chan = hostapd_dfs_get_next_precac_channel(iface, &seg0, &seg1, &sec,
+						   hostapd_get_oper_chwidth(iface->conf));
 	if (!chan) {
 		if (dfs_precac_try_half_bw(iface))
 			return 0;
