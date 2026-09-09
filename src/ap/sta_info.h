@@ -251,6 +251,8 @@ struct smd_info {
 		u8 target_ap_mld_addr[ETH_ALEN];
 		u8 iap_transaction_id;
 	} get_ctx_pending;
+	bool smd_rsnx_bit;   /* SMD bit (37) set in peer's Extended RSN Capabilities in the request */
+	bool smd_enc_assoc;  /* (Re)Association Request/Response exchange is encrypted */
 };
 #endif /* CONFIG_IEEE80211BN */
 

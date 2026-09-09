@@ -137,6 +137,8 @@ void hostapd_parse_smd_ie(struct hostapd_data * hapd, struct sta_info *sta, cons
 	const u8 *smd_ie;
 	const u8 *pos;
 	u8 smd_cap_byte;
+	const u8 *rsnxe;
+	size_t rsnxe_len;
 
 	if (!sta || !ies)
 		return;
@@ -207,6 +209,17 @@ void hostapd_parse_smd_ie(struct hostapd_data * hapd, struct sta_info *sta, cons
 	/* Timeout Value (1 octet, units of 64 TUs) */
 	sta->smd_info.smd_timeout = hapd->conf->smd.smd_prep_timeout;
 
+	rsnxe_len = 0;
+	rsnxe = get_ie(ies, ies_len, WLAN_EID_RSNX);
+	if (rsnxe)
+		rsnxe_len = rsnxe[1];
+
+	sta->smd_info.smd_rsnx_bit =
+		ieee802_11_rsnx_capab(rsnxe, WLAN_RSNX_CAPAB_SMD);
+	sta->smd_info.smd_enc_assoc =
+		ap_sta_support_enc_assoc(hapd, rsnxe ? rsnxe + 2 : NULL,
+					 rsnxe_len);
+
 	sta->smd_info.smd_sta = true;
 
 	os_memcpy(sta->smd_info.current_ap_mld_addr, hapd->mld->mld_addr, ETH_ALEN);
@@ -224,21 +237,124 @@ void hostapd_parse_smd_ie(struct hostapd_data * hapd, struct sta_info *sta, cons
 	return;
 }
 
-
-/**
- * hostapd_eid_smd_ie_response - Add SMD IE to authentication or association response
- * @hapd: BSS data
- * @sta: Station info
- * @eid: Pointer to current position in buffer
- * Returns: Pointer to next position in buffer
- */
-static u8 * hostapd_eid_smd_ie_response(struct hostapd_data *hapd,
-					struct sta_info *sta, u8 *eid)
+static bool hostapd_smd_assoc_allowed(struct hostapd_data *hapd,
+				      struct sta_info *sta)
 {
-	if (!hapd->conf->smd.enabled || !sta || !sta->smd_info.smd_sta)
-		return eid;
+	return hapd &&
+	       hapd->conf->smd.enabled &&
+	       sta &&
+	       sta->smd_info.smd_rsnx_bit;
+}
 
-	if (!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_SMD))
+static bool hostapd_smd_assoc_resp_allowed(struct hostapd_data *hapd,
+					   struct sta_info *sta)
+{
+	bool allowed = hostapd_smd_assoc_allowed(hapd, sta) &&
+		       sta->smd_info.smd_enc_assoc;
+
+	if (sta)
+		wpa_printf(MSG_DEBUG,
+			   "SMD: Assoc/Auth Response IE allowed=%d for "
+			   MACSTR " - smd_sta=%d smd_rsnx_bit=%d "
+			   "smd_enc_assoc=%d",
+			   allowed, MAC2STR(sta->addr),
+			   sta->smd_info.smd_sta, sta->smd_info.smd_rsnx_bit,
+			   sta->smd_info.smd_enc_assoc);
+
+	return allowed;
+}
+
+void hostapd_parse_smd_request(struct hostapd_data *hapd,
+			       struct sta_info *sta,
+			       const u8 *ies, size_t ies_len)
+{
+	size_t rsnxe_len = 0;
+	u8 smd_cap_byte;
+	const u8 *rsnxe;
+
+	if (!hapd || !sta || !ies)
+		return;
+
+	os_memset(&sta->smd_info, 0, sizeof(sta->smd_info));
+
+	if (!hapd->conf->smd.enabled) {
+		wpa_printf(MSG_DEBUG,
+			   "SMD: disabled in AP configuration for "
+			   MACSTR, MAC2STR(sta->addr));
+		return;
+	}
+
+	if (!(hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_SMD)) {
+		wpa_printf(MSG_DEBUG,
+			   "SMD: driver does not support SMD for "
+			   MACSTR, MAC2STR(sta->addr));
+		return;
+	}
+
+	rsnxe = get_ie(ies, ies_len, WLAN_EID_RSNX);
+	if (rsnxe)
+		rsnxe_len = rsnxe[1];
+
+	if (rsnxe) {
+		wpa_hexdump(MSG_DEBUG,
+			    "SMD: Peer RSNXE from Authentication/Association Request",
+			    rsnxe, rsnxe_len + 2);
+	} else {
+		wpa_printf(MSG_DEBUG,
+			   "SMD: No RSNXE in Authentication/Association Request from "
+			   MACSTR, MAC2STR(sta->addr));
+	}
+	sta->smd_info.smd_rsnx_bit =
+		ieee802_11_rsnx_capab(rsnxe, WLAN_RSNX_CAPAB_SMD);
+
+	sta->smd_info.smd_enc_assoc =
+		ap_sta_support_enc_assoc(hapd, rsnxe ? rsnxe + 2 : NULL,
+					 rsnxe_len);
+
+	/* The peer advertises SMD support using RSNXE bit 37 per 11bn 2.0 */
+	if (!sta->smd_info.smd_rsnx_bit) {
+		wpa_printf(MSG_DEBUG,
+			   "SMD: RSNXE: WLAN_RSNX_CAPAB_SMD not set for " MACSTR,
+			   MAC2STR(sta->addr));
+		return;
+	}
+
+	sta->smd_info.smd_sta = true;
+	os_memcpy(sta->smd_info.smd_identifier,
+		  hapd->conf->smd.smd_identifier, ETH_ALEN);
+
+	smd_cap_byte = 0;
+	if (hapd->conf->smd.caps.dl_data_fwd)
+		smd_cap_byte |= BIT(0);
+	smd_cap_byte |= (hapd->conf->smd.caps.max_prep_target_apmlds & 0x07) << 1;
+	if (hapd->conf->smd.caps.smd_type)
+		smd_cap_byte |= BIT(4);
+	if (hapd->conf->smd.caps.ptk_mode)
+		smd_cap_byte |= BIT(5);
+
+	sta->smd_info.smd_timeout = hapd->conf->smd.smd_prep_timeout;
+	wpa_printf(MSG_INFO,
+		   "SMD: peer " MACSTR " advertises SMD support: "
+		   "RSNXE bit 37=%d, encrypted association=%d",
+		   MAC2STR(sta->addr),
+		   sta->smd_info.smd_rsnx_bit,
+		   sta->smd_info.smd_enc_assoc);
+	wpa_printf(MSG_INFO,
+		   "SMD IE: Parsed from " MACSTR " - ID: " MACSTR
+		   ", DL Fwd: %d, Max Peer AP MLDs: %u, Type: %d, PTK Mode: %d, Timeout: %u TU",
+		   MAC2STR(sta->addr),
+		   MAC2STR(sta->smd_info.smd_identifier),
+		   sta->smd_info.caps.dl_data_fwd,
+		   sta->smd_info.caps.max_prep_target_apmlds,
+		   sta->smd_info.caps.smd_type,
+		   sta->smd_info.caps.ptk_mode,
+		   sta->smd_info.smd_timeout);
+}
+
+u8 *hostapd_eid_smd_ie_response(struct hostapd_data *hapd,
+				struct sta_info *sta, u8 *eid)
+{
+	if (!hostapd_smd_assoc_resp_allowed(hapd, sta))
 		return eid;
 
 	return hostapd_eid_smd(hapd, eid);
@@ -1026,9 +1142,7 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 	int reply_res = WLAN_STATUS_UNSPECIFIED_FAILURE;
 	const u8 *sa = hapd->own_addr;
 	struct wpabuf *ml_resp = NULL;
-	struct wpabuf *smd_resp = NULL;
 	size_t ml_resp_len = 0;
-	size_t smd_resp_len = 0;
 #ifdef CONFIG_IEEE8021X_AUTH
 	size_t mic_len = 0;
 #endif /* CONFIG_IEEE8021X_AUTH */
@@ -1042,27 +1156,8 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
-#ifdef CONFIG_IEEE80211BN
-        /* Add SMD IE if both AP and STA support SMD */
-        if (hapd->conf->smd.enabled && sta && sta->smd_info.smd_sta) {
-                u8 smd_buf[SMD_IE_LEN];
-                u8 *smd_end = hostapd_eid_smd(hapd, smd_buf);
-                size_t smd_len = smd_end - smd_buf;
-
-                if (smd_len > 0) {
-                        smd_resp = wpabuf_alloc(smd_len);
-                        if (!smd_resp) {
-                                wpabuf_free(ml_resp);
-                                return -1;
-                        }
-                        wpabuf_put_data(smd_resp, smd_buf, smd_len);
-			smd_resp_len = wpabuf_len(smd_resp);
-                }
-        }
-#endif /* CONFIG_IEEE80211BN */
-
 	rlen = IEEE80211_HDRLEN + sizeof(reply->u.auth) + ies_len +
-	       ml_resp_len + smd_resp_len;
+	       ml_resp_len;
 #ifdef CONFIG_IEEE8021X_AUTH
 	/* Add MIC element for an Authentication frame carrying an EAP-Success
 	 * message and for an Authentication frame with transaction sequence
@@ -1086,7 +1181,6 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 	buf = os_zalloc(rlen);
 	if (!buf) {
 		wpabuf_free(ml_resp);
-		wpabuf_free(smd_resp);
 		return -1;
 	}
 
@@ -1108,17 +1202,10 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 		ml_len = wpabuf_len(ml_resp);
 		os_memcpy(reply->u.auth.variable + ies_len,
 				wpabuf_head(ml_resp), ml_len);
-#ifdef CONFIG_IEEE80211BN
-		/* SMD requires ML as mandatory */
-		if (smd_resp)
-			os_memcpy(reply->u.auth.variable + ies_len + wpabuf_len(ml_resp),
-				  wpabuf_head(smd_resp), wpabuf_len(smd_resp));
-#endif /* CONFIG_IEEE80211BN */
 	}
 #endif /* CONFIG_IEEE80211BE */
 
         wpabuf_free(ml_resp);
-        wpabuf_free(smd_resp);
 
 #ifdef CONFIG_HOSTAPD_IF
 	hostapd_if_auth_reply_add_tail(sta, ies_len + ml_len, tail_len, reply);
@@ -8466,11 +8553,7 @@ omit_rsnxe:
 #endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_IEEE80211BN
-	if (hapd->conf->smd.enabled) {
-		struct sta_info *sta = ap_get_sta(hapd, link->peer_addr);
-		if (sta && sta->smd_info.smd_sta)
-			p = hostapd_eid_smd_ie_response(hapd, sta, p);
-	}
+	p = hostapd_eid_smd_ie_response(hapd, sta, p);
 #endif
 
 	if (hapd->conf->assocresp_elements &&
@@ -9199,6 +9282,18 @@ int add_associated_sta(struct hostapd_data *hapd,
 	return 0;
 }
 
+#ifdef CONFIG_IEEE80211BN
+static bool hostapd_sta_smd_ie_response_allowed(struct hostapd_data *hapd,
+						struct sta_info *sta)
+{
+	return hapd->conf->smd.enabled &&
+	       sta &&
+	       sta->smd_info.smd_sta &&
+	       sta->smd_info.smd_rsnx_bit &&
+	       sta->smd_info.smd_enc_assoc;
+}
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef RDK_ONEWIFI
 u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta, const u8 *addr, u16 status_code, int reassoc,
                            const u8 *ies, size_t ies_len, int rssi,
@@ -9257,12 +9352,12 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 				buflen += IEEE80211_UHR_NPCA_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
 		}
 		buflen += hostapd_eid_uhr_params_update_len(hapd, true, false);
-	}
-	/* Add SMD IE if both AP and STA support SMD */
-	if (hapd->conf->smd.enabled && sta && sta->smd_info.smd_sta) {
-		wpa_printf(MSG_DEBUG,
-			   "SMD: Len: %d of SMD IEs", SMD_IE_LEN);
-		buflen += SMD_IE_LEN;
+		/* Add SMD IE if both AP and STA support SMD in case of enc assoc */
+		if (hostapd_sta_smd_ie_response_allowed(hapd, sta)) {
+			wpa_printf(MSG_DEBUG,
+				   "SMD: Len: %d of SMD IEs", SMD_IE_LEN);
+			buflen += SMD_IE_LEN;
+		}
 	}
 #endif /* CONFIG_IEEE80211BN */
 
@@ -9757,9 +9852,10 @@ rsnxe_done:
 
 #ifdef CONFIG_IEEE80211BN
 	/* Add SMD IE to association response if both AP and STA support SMD */
-	if (hapd->conf->smd.enabled && sta && sta->smd_info.smd_sta) {
+	{
+		u8 *smd_start = p;
 		p = hostapd_eid_smd_ie_response(hapd, sta, p);
-		send_len += SMD_IE_LEN;
+		send_len += (p - smd_start);
 	}
 #endif /* CONFIG_IEEE80211BN */
 
@@ -10809,8 +10905,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 		omit_rsnxe = 1;
 
 #ifdef CONFIG_IEEE80211BN
-	/* Parse SMD IE if present in association request */
-	hostapd_parse_smd_ie(hapd, sta, pos, left);
+	hostapd_parse_smd_request(hapd, sta, pos, left);
 
 	/*
 	 * Transfer SMD info to wpa_state_machine after parsing.
