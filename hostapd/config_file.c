@@ -3968,8 +3968,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line);
 			return 1;
 		}
-	} else if (os_strcmp(buf, "disable_sa_query") == 0) {
-		bss->disable_sa_query = !!atoi(pos);
+	} else if (os_strcmp(buf, "enable_sa_query_for_sae") == 0) {
+		bss->enable_sa_query_for_sae = !!atoi(pos);
 #ifdef CONFIG_OCV
 	} else if (os_strcmp(buf, "ocv") == 0) {
 		bss->ocv = atoi(pos);
