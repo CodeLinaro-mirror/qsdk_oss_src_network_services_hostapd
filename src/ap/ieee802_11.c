@@ -6762,20 +6762,22 @@ static bool hostapd_skip_sa_query(struct hostapd_data *hapd,
 				  struct sta_info *sta,
 				  struct sta_info *current_sta)
 {
-
-	if (!hapd->conf->disable_sa_query || !current_sta)
+	if (hapd->conf->enable_sa_query_for_sae || !current_sta)
 		return false;
 
 	if (current_sta->auth_alg == WLAN_AUTH_SAE) {
 		/*
-		 * Skip SA Query for SAE only after authentication confirm
-		 * completed, but force the cleanup path for already associated
-		 * MFP STAs to avoid stale peer state on immediate reassociation.
+		 * By default, skip SA Query for SAE once authentication
+		 * confirm has completed, but force the cleanup path for
+		 * already associated MFP STAs to avoid stale peer state on
+		 * immediate reassociation. enable_sa_query_for_sae=1
+		 * restores the classic SA Query challenge for SAE too.
 		 */
 		if (!current_sta->sae || current_sta->sae->state != SAE_ACCEPTED) {
 			wpa_printf(MSG_DEBUG,
-				   "SA Query disabled but SAE not accepted for STA "
-				   MACSTR, MAC2STR(current_sta->addr));
+				   "SAE not accepted yet for STA " MACSTR
+				   ", not skipping SA Query",
+				   MAC2STR(current_sta->addr));
 			return false;
 		}
 

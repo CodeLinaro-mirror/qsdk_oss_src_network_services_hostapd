@@ -638,8 +638,11 @@ struct hostapd_bss_config {
 	unsigned int assoc_sa_query_max_timeout;
 	/* dot11AssociationSAQueryRetryTimeout (in TUs) */
 	int assoc_sa_query_retry_timeout;
-	/* Disable SA Query processing for WPA3 reassoc/MLD roam */
-	int disable_sa_query;
+	/* Force the classic SA Query challenge for SAE reassoc/MLD link
+	 * roam. Default (0): once SAE reauthentication reaches
+	 * SAE_ACCEPTED, skip SA Query and clear the stale association
+	 * directly. Set to 1 to keep doing SA Query for SAE too. */
+	int enable_sa_query_for_sae;
 #ifdef CONFIG_OCV
 	int ocv; /* Operating Channel Validation */
 #endif /* CONFIG_OCV */
