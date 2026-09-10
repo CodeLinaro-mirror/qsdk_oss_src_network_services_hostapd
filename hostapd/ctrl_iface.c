@@ -111,7 +111,7 @@
 #endif /* CONFIG_CTRL_IFACE_UDP */
 
 #ifdef CONFIG_IEEE80211BE
-#define MIN_ML_RECONF_COUNT 5
+#define MIN_ML_RECONF_COUNT 4
 #define MAX_ML_RECONF_COUNT 50
 #endif /* CONFIG_IEEE80211BE */
 
@@ -8140,6 +8140,7 @@ static int hostapd_ctrl_iface_link_remove(struct hostapd_data *hapd, char *cmd,
 		ret = os_snprintf(buf, buflen, "%s\n", "FAIL");
 		if (os_snprintf_error(buflen, ret))
 			return -1;
+		return -1;
 	} else if (!hapd->conf->mld_ap) {
 		wpa_printf(MSG_ERROR, "ML reconfigure is not supported in non-MLO case\n");
 		ret = os_snprintf(buf, buflen, "%s\n", "FAIL");
