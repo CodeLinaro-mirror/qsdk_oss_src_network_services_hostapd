@@ -45,7 +45,7 @@
 
 #ifdef CONFIG_QCN_EXTN
 /* Pre-connect timeout for Independent Repeater flow */
-#define SME_PRE_CONNECT_TIMEOUT 5
+#define SME_PRE_CONNECT_TIMEOUT 8
 #endif
 
 #ifdef CONFIG_ENC_ASSOC
