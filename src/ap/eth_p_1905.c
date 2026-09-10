@@ -131,6 +131,34 @@ static void eth_p_1905_record_seen(struct eth_p_1905_ctx *ctx,
 	ctx->dedup_idx = (ctx->dedup_idx + 1) % ETH_P_1905_DEDUP_SIZE;
 }
 
+void eth_p_1905_flush_peer_dedup(struct eth_p_1905_ctx *ctx, const u8 *peer_mac)
+{
+	unsigned int i;
+	unsigned int flushed = 0;
+
+	if (!ctx || !peer_mac)
+		return;
+
+	for (i = 0; i < ETH_P_1905_DEDUP_SIZE; i++) {
+		struct eth_p_1905_dedup_entry *e = &ctx->dedup_cache[i];
+
+		if (e->valid && os_memcmp(e->src_mac, peer_mac, ETH_ALEN) == 0) {
+			wpa_printf(MSG_EXCESSIVE,
+				   "1905: Flush dedup entry[%u] type=0x%04x mid=%u from " MACSTR
+				   " (stale — next response from this peer expected at mid>=1)",
+				   i, e->message_type, e->message_id,
+				   MAC2STR(peer_mac));
+			e->valid = 0;
+			flushed++;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "1905: Flushed %u dedup entries for peer " MACSTR
+		   " — new exchange starting, first response mid will be recorded fresh",
+		   flushed, MAC2STR(peer_mac));
+}
+
 /* ------------------------------------------------------------------ */
 /* BPF filter construction                                              */
 /* ------------------------------------------------------------------ */
@@ -462,11 +490,26 @@ static void eth_p_1905_rx(void *priv, const u8 *src_addr,
 	/* IEEE 1905.1 spec: silently discard duplicate CMDUs */
 	if (eth_p_1905_is_duplicate(ctx, ethhdr->h_source,
 				    msg_type, msg_id)) {
-		wpa_printf(MSG_DEBUG,
-			   "1905: Drop duplicate CMDU type=0x%04x mid=%u "
-			   "from " MACSTR,
-			   msg_type, msg_id, MAC2STR(ethhdr->h_source));
-		return;
+		if (msg_id == 1) {
+			/* In PrplMesh implementation of 1905 code when a new agent is added or
+			* agent reboots or restarts the agent sends the starting mid it uses as a
+			* message because of this signal we know that this is not a replay attack
+			* but rather agent restarted we need similar mechanism here for the
+			* proper fix. For WAR fix we consider msg id 1 as a restart agent and
+			* flush the dedup cache.
+			*/
+
+			wpa_printf(MSG_DEBUG,
+				   "1905: flushing the dedup cache as we encountered mid = 1");
+			eth_p_1905_flush_peer_dedup(ctx, ethhdr->h_source);
+		}
+		else {
+			wpa_printf(MSG_DEBUG,
+				   "1905: Drop duplicate CMDU type=0x%04x mid=%u "
+				   "from " MACSTR,
+				   msg_type, msg_id, MAC2STR(ethhdr->h_source));
+			return;
+		}
 	}
 	eth_p_1905_record_seen(ctx, ethhdr->h_source, msg_type, msg_id);
 
