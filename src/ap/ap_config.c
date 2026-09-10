@@ -540,9 +540,6 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->cur_chan_eirp = CHAN_MIN_EIRP_POWER;
 	conf->afc_chan_sel_config = HOSTAPD_AFC_CHAN_SEL_ALL;
 	conf->original_chan_width = 0;
-	conf->post_nol_freq = -1;
-	conf->post_nol_width = -1;
-	conf->post_nol_bgcac_en = 1;
 	conf->next_radar_chan.freq = -1;
 	conf->next_radar_chan.width = -1;
 
