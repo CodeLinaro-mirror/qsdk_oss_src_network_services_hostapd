@@ -310,6 +310,20 @@ int intf_awgn_find_channel_list(struct hostapd_iface *iface, int chan_width,
 			continue;
 		}
 
+		if (hostapd_acs_is_chan_blocked(iface, chan->chan)) {
+			wpa_printf(MSG_DEBUG,
+					"AWGN: channel %d (%d) is in block list, skipping",
+					chan->freq, chan->chan);
+			continue;
+		}
+
+		if (!hostapd_is_chan_in_primary_list(iface, chan->freq)) {
+			wpa_printf(MSG_DEBUG,
+					"AWGN: channel %d (%d) is not in primary list, skipping",
+					chan->freq, chan->chan);
+			continue;
+		}
+
 		ret = get_centre_freq(chan, chan_width, &new_centre_freq);
 		if (ret) {
 			wpa_printf(MSG_ERROR,
