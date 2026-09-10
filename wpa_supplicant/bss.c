@@ -1727,7 +1727,22 @@ s8 wpa_get_hw_idx_by_freq(struct wpa_supplicant *wpa_s, int partner_freq)
 		hw_info = &wpa_s->multi_hw_info[i];
 		if (partner_freq >= hw_info->start_freq &&
 		    partner_freq <= hw_info->end_freq)
-			return i;
+			/*
+			 * Return the kernel-reported radio index
+			 * (NL80211_WIPHY_RADIO_ATTR_INDEX, populated into
+			 * hw_info->hw_idx by phy_multi_hw_info_parse()), not
+			 * the loop position in wpa_s->multi_hw_info[]. This
+			 * value is sent to external consumers (qca-rptr-mgr
+			 * via CTRL-EVENT-PRE-CONNECTING, ubus "radio") that
+			 * match it against hostapd's current_hw_info->hw_idx
+			 * - itself the same kernel-reported field, not an
+			 * array position (see hostapd_set_current_hw_info()).
+			 * Returning the loop index here silently breaks that
+			 * cross-process match whenever the kernel's radio
+			 * index for a given band does not equal its position
+			 * in the wiphy dump order.
+			 */
+			return hw_info->hw_idx;
 	}
 
 	return -1;
