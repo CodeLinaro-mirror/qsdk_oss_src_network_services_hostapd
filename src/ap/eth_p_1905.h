@@ -184,4 +184,8 @@ int eth_p_1905_send(struct eth_p_1905_ctx *ctx,
 int eth_p_1905_load_partners(struct eth_p_1905_ctx *ctx,
 			     struct hostapd_data *hapd);
 
+/* Invalidate all dedup-cache entries for peer_mac. */
+void eth_p_1905_flush_peer_dedup(struct eth_p_1905_ctx *ctx,
+				 const u8 *peer_mac);
+
 #endif /* ETH_P_1905_H */
