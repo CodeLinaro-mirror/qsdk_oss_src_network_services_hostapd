@@ -7612,7 +7612,7 @@ static bool hostapd_skip_sa_query(struct hostapd_data *hapd,
 				  struct sta_info *sta,
 				  struct sta_info *current_sta)
 {
-	if (!hapd->conf->disable_sa_query || !current_sta)
+	if (hapd->conf->enable_sa_query_for_sae || !current_sta)
 		return false;
 
 	if (current_sta->auth_alg == WLAN_AUTH_SAE) {
