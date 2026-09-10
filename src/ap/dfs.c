@@ -33,12 +33,6 @@
 
 #define IEEE80211_DFS_MIN_CAC_TIME_MS  60000
 
-enum dfs_channel_type {
-	DFS_ANY_CHANNEL,
-	DFS_AVAILABLE, /* non-radar or radar-available */
-	DFS_NO_CAC_YET, /* radar-not-yet-available */
-};
-
 /**
  * struct hostapd_dfs_next_radar_channel - Next-radar CSA/CAC target.
  * @channel: Target channel data.
@@ -63,9 +57,12 @@ dfs_downgrade_bandwidth(struct hostapd_iface *iface, int *secondary_channel,
 			enum dfs_channel_type *channel_type);
 
 static void hostapd_dfs_update_background_chain(struct hostapd_iface *iface);
-static int dfs_compute_chan_params(int chan, int bw_mhz,
-				   enum oper_chan_width *oper_width,
-				   u8 *seg0, int *sec);
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int dfs_compute_chan_params(int chan, int bw_mhz,
+			    enum oper_chan_width *oper_width,
+			    u8 *seg0, int *sec);
 static int dfs_get_precac_channel_by_state(struct hostapd_iface *iface,
 					   u32 dfs_state,
 					   int *channel, int *freq,
@@ -482,9 +479,12 @@ dfs_get_chan_data(struct hostapd_hw_modes *mode, int freq, int first_chan_idx)
 }
 
 
-static int dfs_chan_range_available(struct hostapd_hw_modes *mode,
-				    int first_chan_idx, int num_chans,
-				    enum dfs_channel_type type)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int dfs_chan_range_available(struct hostapd_hw_modes *mode,
+			     int first_chan_idx, int num_chans,
+			     enum dfs_channel_type type)
 {
 	struct hostapd_channel_data *first_chan, *chan;
 	int i;
@@ -4444,6 +4444,7 @@ dfs_select_next_radar_chanwidth(struct hostapd_iface *iface,
 	if (bw_mhz == CHWIDTH_320)
 	{
 		block_start = dfs_compute_chan_params_320mhz(chan->chan,
+							     &width,
 							     &seg0, &sec);
 		n_chans = 12;
 	}
@@ -4799,9 +4800,12 @@ static void rcac_update_background_state(struct hostapd_iface *iface,
  * Returns the block-start channel number on success, -1 if bw_mhz is
  * unsupported or @chan is not in a valid block for @bw_mhz.
  */
-static int dfs_compute_chan_params(int chan, int bw_mhz,
-				   enum oper_chan_width *oper_width,
-				   u8 *seg0, int *sec)
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int dfs_compute_chan_params(int chan, int bw_mhz,
+			    enum oper_chan_width *oper_width,
+			    u8 *seg0, int *sec)
 {
 	int block_start;
 
@@ -5295,6 +5299,10 @@ int hostapd_dfs_nop_finished(struct hostapd_iface *iface, int freq,
 		}
 #endif
 		hostapd_handle_dfs(iface);
+#ifdef CONFIG_QCN_EXTN
+	} else if (dfs_switch_to_postnol_chan_extn(iface)) {
+		return 0;
+#endif
 	} else if (iface->dfs_domain == HOSTAPD_DFS_REGION_ETSI &&
 		   iface->conf->bgcac_en &&
 		   !iface->radar_background.cac_started) {

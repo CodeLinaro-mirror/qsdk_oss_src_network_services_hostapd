@@ -545,6 +545,12 @@ enum oper_chan_width {
 	CONF_OPER_CHWIDTH_320MHZ,
 };
 
+enum dfs_channel_type {
+	DFS_ANY_CHANNEL,
+	DFS_AVAILABLE, /* non-radar or radar-available */
+	DFS_NO_CAC_YET, /* radar-not-yet-available */
+};
+
 enum key_flag {
 	KEY_FLAG_MODIFY			= BIT(0),
 	KEY_FLAG_DEFAULT		= BIT(1),
