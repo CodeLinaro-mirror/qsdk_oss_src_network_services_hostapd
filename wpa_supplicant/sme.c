@@ -54,7 +54,7 @@ static const int dot11RSNAConfigPMKLifetime = 43200;
 
 #ifdef CONFIG_QCN_EXTN
 /* Pre-connect timeout for Independent Repeater flow */
-#define SME_PRE_CONNECT_TIMEOUT 5
+#define SME_PRE_CONNECT_TIMEOUT 8
 #endif
 
 static void sme_auth_timer(void *eloop_ctx, void *timeout_ctx);
