@@ -5984,6 +5984,7 @@ int hostapd_parse_link_id(char *buf)
 
 void hostapd_multi_mbssid_remove_bss(struct hostapd_data *hapd)
 {
+	struct hostapd_data *next_txbss;
 	struct hostapd_multi_mbssid_group *group;
 
 	if (!hapd)
@@ -6002,55 +6003,39 @@ void hostapd_multi_mbssid_remove_bss(struct hostapd_data *hapd)
 
 	wpa_printf(MSG_DEBUG, "BSS[%s] removed from MBSSID group %d",
 		   hapd->conf->iface, group->group_id);
+	if (group->txbss != hapd)
+		return;
 
-	if (group->txbss == hapd)
+	/* If len is 0, all BSSes are removed */
+	if (!dl_list_len(&group->bss_list)) {
 		group->txbss = NULL;
+	} else {
+		next_txbss = dl_list_entry(group->bss_list.next, struct hostapd_data,
+					   mbssid_bss);
+		group->txbss = next_txbss;
+		wpa_printf(MSG_DEBUG, "Set BSS[%s] as TX bss on group %d",
+			   group->txbss->conf->iface, group->group_id);
+	}
 }
 
-static void hostapd_interface_free_mbssid_bss(struct hostapd_iface *iface)
+
+void hostapd_interface_free(struct hostapd_iface *iface)
 {
-	struct hostapd_data *tx_bss, *bss, *tmp;
-	struct hostapd_multi_mbssid_group *group;
 	size_t j, num_groups;
-
-	if (iface->conf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
-		for (j = 0; j < iface->multi_mbssid.num_mbssid_groups; j++) {
-			group = iface->multi_mbssid.group[j];
-			if (!group)
-				continue;
-
-			tx_bss = group->txbss;
-			if (!tx_bss) {
-				wpa_printf(MSG_ERROR, "%s Tx BSS is NULL", __func__);
-				continue;
-			}
-
-			dl_list_for_each_safe(bss, tmp, &group->bss_list,
-					      struct hostapd_data, mbssid_bss) {
-				if (!bss || bss == tx_bss)
-					continue;
-
-				/* Remove Non-tx BSS first */
-				hostapd_multi_mbssid_remove_bss(bss);
-			}
-
-			/* Remove Tx BSS */
-			hostapd_multi_mbssid_remove_bss(tx_bss);
-		}
-	}
-
+	struct hostapd_multi_mbssid_group *group;
+	wpa_printf(MSG_DEBUG, "%s(%p)", __func__, iface);
 	for (j = 0; j < iface->num_bss; j++) {
-		if (!iface->bss || !iface->bss[j])
+		if (!iface->bss)
 			break;
 #ifdef CONFIG_IEEE80211BE
-		hostapd_mld_ref_dec(iface->bss[j]->mld);
+		if (iface->bss[j])
+			hostapd_mld_ref_dec(iface->bss[j]->mld);
 #endif /* CONFIG_IEEE80211BE */
-
-		wpa_printf(MSG_DEBUG, "%s: free hapd %p", __func__, iface->bss[j]);
+		wpa_printf(MSG_DEBUG, "%s: free hapd %p",
+			   __func__, iface->bss[j]);
+		hostapd_multi_mbssid_remove_bss(iface->bss[j]);
 		os_free(iface->bss[j]);
-		iface->bss[j] = NULL;
 	}
-
 	num_groups = iface->multi_mbssid.num_mbssid_groups;
 	for (j = 0; j < iface->multi_mbssid.num_mbssid_groups; j++) {
 		group = iface->multi_mbssid.group[j];
@@ -6061,40 +6046,10 @@ static void hostapd_interface_free_mbssid_bss(struct hostapd_iface *iface)
 		iface->multi_mbssid.group[j] = NULL;
 		num_groups--;
 	}
-
 	if (!num_groups) {
 		iface->multi_mbssid.num_mbssid_groups = 0;
 		os_free(iface->multi_mbssid.group);
 		iface->multi_mbssid.group = NULL;
-	}
-}
-
-void hostapd_interface_free(struct hostapd_iface *iface)
-{
-	size_t j;
-
-	wpa_printf(MSG_DEBUG, "%s(%p)", __func__, iface);
-
-	if (!iface) {
-		wpa_printf(MSG_ERROR, "%s, iface is NULL",__func__);
-		return;
-	}
-
-	if (iface->conf && iface->conf->mbssid) {
-		hostapd_interface_free_mbssid_bss(iface);
-	} else {
-		for (j = 0; j < iface->num_bss; j++) {
-			if (!iface->bss || !iface->bss[j])
-				break;
-
-#ifdef CONFIG_IEEE80211BE
-			hostapd_mld_ref_dec(iface->bss[j]->mld);
-#endif /* CONFIG_IEEE80211BE */
-
-			wpa_printf(MSG_DEBUG, "%s: free hapd %p", __func__, iface->bss[j]);
-			os_free(iface->bss[j]);
-			iface->bss[j] = NULL;
-		}
 	}
 
 	hostapd_cleanup_iface(iface);
