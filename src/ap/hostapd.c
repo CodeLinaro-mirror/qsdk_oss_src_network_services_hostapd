@@ -1272,6 +1272,13 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 	hapd->p2p_probe_resp_ie = NULL;
 #endif /* CONFIG_P2P */
 
+#ifdef CONFIG_IEEE80211AX
+	if (hapd->reenable == REENABLE_NONE ||
+	    hapd->reenable == REENABLE_DEINIT)
+		eloop_cancel_timeout(hostapd_switch_color_timeout_handler,
+				     hapd, NULL);
+#endif /* CONFIG_IEEE80211AX */
+
 	/* Skip unstarted cleanup unless reenable/deinit state requires it. */
 	if (!hapd->started && hapd->reenable == REENABLE_NONE)
 		return;
@@ -1442,15 +1449,13 @@ remove_if:
 #endif /* CONFIG_SAE */
 
 #ifdef CONFIG_IEEE80211AX
-	eloop_cancel_timeout(hostapd_switch_color_timeout_handler, hapd, NULL);
 	hapd->no_free_color = 0;
+#endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211BE
 	eloop_cancel_timeout(hostapd_link_remove_timeout_handler, hapd, NULL);
 	hapd->eht_mld_link_removal_inprogress = false;
 	hapd->eht_mld_link_removal_count = 0;
 #endif /* CONFIG_IEEE80211BE */
-
-#endif /* CONFIG_IEEE80211AX */
 }
 
 
