@@ -6159,8 +6159,16 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "eht_mu_beamformer") == 0) {
 		conf->eht_phy_capab.mu_beamformer = atoi(pos);
 	} else if (os_strcmp(buf, "bss_eht_mu_beamformer") == 0) {
-		bss->eht_phy_capab.mu_beamformer = atoi(pos);
+		int val = atoi(pos);
+		bss->eht_phy_capab.mu_beamformer = val;
 		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_MU_BEAMFORMER;
+		/* Auto-clear the mask when mu_beamformer is disabled */
+		if (!val) {
+			bss->eht_phy_capab.eht_mu_bfmr_mask = 0;
+		} else {
+			bss->eht_phy_capab.eht_mu_bfmr_mask = 0x7;
+		}
+		bss->eht_phy_capab_mask |= EHT_PHY_BSS_OVR_MU_BFMR_MASK;
 	} else if (os_strcmp(buf, "eht_default_pe_duration") == 0) {
 		conf->eht_default_pe_duration = atoi(pos);
 	} else if (os_strcmp(buf, "punct_bitmap") == 0) {
