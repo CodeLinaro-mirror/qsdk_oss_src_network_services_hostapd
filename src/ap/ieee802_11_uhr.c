@@ -2768,16 +2768,30 @@ static bool hostapd_mld_find_assoc_sta(struct hostapd_data *rx_hapd,
 				struct sta_info **assoc_sta)
 {
 	struct hostapd_data *hapd;
+	struct sta_info *sta;
 
 	if (!rx_hapd || !rx_hapd->mld)
 		return false;
 
 	for_each_mld_link(hapd, rx_hapd) {
-		*assoc_sta = ap_get_sta(hapd, addr);
-		if (*assoc_sta && ((*assoc_sta)->flags & WLAN_STA_ASSOC)) {
-			*assoc_hapd = hapd;
+		sta = ap_get_sta(hapd, addr);
+		if (!sta || !(sta->flags & WLAN_STA_ASSOC))
+			continue;
+
+		/*
+		 * During SMD ST Prep, add_associated_sta copies WLAN_STA_ASSOC
+		 * to all link STAs, so the flag alone cannot identify the true
+		 * assoc STA.  Resolve via mld_assoc_link_id, which is always
+		 * set authoritatively on every STA created during ST Prep.
+		 */
+		*assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta, assoc_hapd);
+		if (*assoc_sta)
 			return true;
-		}
+
+		/* Non-MLD STA: return as-is */
+		*assoc_hapd = hapd;
+		*assoc_sta = sta;
+		return true;
 	}
 
 	return false;
@@ -3112,8 +3126,8 @@ send_response:
 	
 	if (status_code == 0) {
 		/*
-		 * Start prep timer only on success, anchored to the assoc link so that
-		 * uhr_tgt_cancel_st_prep_timer (which also resolves via
+		 * Start prep timer only on success, anchored to the assoc link
+		 * so that uhr_tgt_cancel_st_prep_timer (which resolves via
 		 * hostapd_mld_find_assoc_sta) cancels the correct eloop entry.
 		 */
 		wpa_printf(MSG_INFO,

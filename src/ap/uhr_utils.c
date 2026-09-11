@@ -804,8 +804,22 @@ void uhr_tgt_cancel_st_prep_timer(struct hostapd_data *hapd,
        struct hostapd_data *timer_hapd;
 
        sta = ap_get_sta(hapd, sta_addr);
-       if (!sta || !sta->smd_info.uhr_target_prep_timer)
+       if (!sta)
                return;
+
+       if (!sta->smd_info.uhr_target_prep_timer) {
+               /* During ST Prep, WLAN_STA_ASSOC is copied to all link STAs,
+                * so hostapd_mld_find_assoc_sta may have resolved to a
+                * non-assoc link whose STA has no timer.  Use
+                * mld_assoc_link_id to reach the real assoc STA. */
+               struct hostapd_data *assoc_hapd;
+               struct sta_info *assoc_sta =
+                       hostapd_ml_get_assoc_sta(hapd, sta, &assoc_hapd);
+               if (!assoc_sta || !assoc_sta->smd_info.uhr_target_prep_timer)
+                       return;
+               sta = assoc_sta;
+               hapd = assoc_hapd;
+       }
 
        timer_hapd = sta->smd_info.tgt_prep_timer_hapd
 		    ? sta->smd_info.tgt_prep_timer_hapd : hapd;
