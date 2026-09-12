@@ -29,6 +29,7 @@
 #endif /* CONFIG_QCN_EXTN */
 #include "ieee802_11.h"
 #include "uhr_neighbor_update.h"
+#include "vlan_init.h"
 
 static void hostapd_config_free_vlan(struct hostapd_bss_config *bss)
 {
@@ -39,6 +40,7 @@ static void hostapd_config_free_vlan(struct hostapd_bss_config *bss)
 	while (vlan) {
 		prev = vlan;
 		vlan = vlan->next;
+		vlan_cancel_cleanup_for_vlan(prev);
 		os_free(prev);
 	}
 
@@ -333,6 +335,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 
 	/* This max size includes wmm and user configured vendor elements */
 	bss->available_vendor_elem_size = MBSSID_NON_TX_DEF_VENDOR_ELEM_SIZE;
+	bss->vlan_idle_cleanup = 30;
 }
 
 #ifdef CONFIG_IEEE80211BE
