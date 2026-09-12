@@ -612,6 +612,16 @@ static inline int hostapd_drv_get_wiphy_idx(struct hostapd_data *hapd)
 }
 
 
+#ifdef RDK_ONEWIFI
+static inline int hostapd_drv_atf_sta_update(struct hostapd_data *hapd,
+					     const u8 *sta_addr, bool is_join)
+{
+	if (!hapd->driver || !hapd->driver->atf_sta_update || !hapd->drv_priv)
+		return 0;
+	return hapd->driver->atf_sta_update(hapd->drv_priv, sta_addr, is_join);
+}
+#endif /* RDK_ONEWIFI */
+
 #ifdef CONFIG_IEEE80211BE
 
 static inline int hostapd_drv_link_add(struct hostapd_data *hapd,

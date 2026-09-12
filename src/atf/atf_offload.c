@@ -637,7 +637,28 @@ atf_get_algo_entry(struct hostapd_iface *iface)
 void
 atf_join_leave_update(struct hostapd_iface *iface, struct sta_info *sta, bool is_join)
 {
-	if (!iface || !iface->atf_algo || !sta)
+	if (!iface || !sta)
+		return;
+
+#ifdef RDK_ONEWIFI
+	if (!iface->bss || !iface->bss[0])
+		return;
+
+    const u8 *addr = sta->addr;
+
+#ifdef CONFIG_IEEE80211BE
+    if (ap_sta_is_mld(iface->bss[0], sta)) {
+        int link_id = iface->bss[0]->mld_link_id;
+        if (link_id >= 0 && link_id < MAX_NUM_MLD_LINKS)
+            addr = sta->mld_info.links[link_id].peer_addr;
+    }
+#endif /* CONFIG_IEEE80211BE */
+
+    hostapd_drv_atf_sta_update(iface->bss[0], addr, is_join);
+	return;
+#endif /* RDK_ONEWIFI */
+
+	if (!iface->atf_algo)
 		return;
 
 	wpa_printf(MSG_DEBUG, "ATF: sta %p is %s %p", sta,
