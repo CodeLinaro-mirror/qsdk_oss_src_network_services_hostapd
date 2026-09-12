@@ -17,6 +17,7 @@
 #include "wpa_auth.h"
 #include "vlan_init.h"
 #include "vlan_util.h"
+#include "utils/eloop.h"
 
 
 static int vlan_if_add(struct hostapd_data *hapd, struct hostapd_vlan *vlan,
@@ -240,6 +241,46 @@ struct hostapd_vlan * vlan_add_dynamic(struct hostapd_data *hapd,
 }
 
 
+void vlan_cleanup(void *eloop_ctx, void *timeout_ctx)
+{
+	struct hostapd_vlan *vlan = eloop_ctx;
+	struct hostapd_data *hapd = timeout_ctx;
+
+	/* One or more STAs are currently using this VLAN again.
+	 * Skip idle cleanup and retain the VLAN interface.
+	 */
+	if (vlan->dynamic_vlan) {
+		wpa_printf(MSG_DEBUG,
+                   "VLAN: vlan_id=%d is in use "
+                   "(active_sta_count=%d), skipping idle cleanup",
+                   vlan->vlan_id, vlan->dynamic_vlan);
+		return;
+	}
+	wpa_printf(MSG_DEBUG, "VLAN: idle cleanup timer expired for vlan_id=%d",
+		   vlan->vlan_id);
+
+	vlan_if_remove(hapd, vlan);
+#ifdef CONFIG_FULL_DYNAMIC_VLAN
+	vlan_dellink(vlan->ifname, hapd);
+#endif /* CONFIG_FULL_DYNAMIC_VLAN */
+}
+
+void vlan_cancel_cleanup_for_hapd(struct hostapd_data *hapd)
+{
+        eloop_cancel_timeout(vlan_cleanup,
+                             ELOOP_ALL_CTX,
+                             hapd);
+}
+
+
+void vlan_cancel_cleanup_for_vlan(struct hostapd_vlan *vlan)
+{
+        eloop_cancel_timeout(vlan_cleanup,
+                             vlan,
+                             ELOOP_ALL_CTX);
+}
+
+
 int vlan_remove_dynamic(struct hostapd_data *hapd, int vlan_id)
 {
 	struct hostapd_vlan *vlan;
@@ -262,11 +303,17 @@ int vlan_remove_dynamic(struct hostapd_data *hapd, int vlan_id)
 	if (vlan == NULL)
 		return 1;
 
+	/* At this point there are no STAs on this VLAN, Remove the VLAN
+	 * interface after a VLAN idle timeout.
+	 */
 	if (vlan->dynamic_vlan == 0) {
-		vlan_if_remove(hapd, vlan);
-#ifdef CONFIG_FULL_DYNAMIC_VLAN
-		vlan_dellink(vlan->ifname, hapd);
-#endif /* CONFIG_FULL_DYNAMIC_VLAN */
+		wpa_printf(MSG_DEBUG, "VLAN: vlan_id=%d no active STAs, "
+			   "starting %d second idle cleanup timer", vlan_id,
+			   hapd->conf->vlan_idle_cleanup);
+
+		eloop_cancel_timeout(vlan_cleanup, vlan, hapd);
+		eloop_register_timeout(hapd->conf->vlan_idle_cleanup, 0,
+				       vlan_cleanup, vlan, hapd);
 	}
 
 	return 0;
