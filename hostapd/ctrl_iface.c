@@ -11781,7 +11781,7 @@ static int hostapd_ctrl_iface_parse_rtt_role(const char *value, int min_role,
 		return -1;
 	}
 	while (end && (*end == ' ' || *end == '\n' || *end == '\r' ||
-		       *end == '\t'))
+				*end == '\t'))
 		end++;
 	if (end && *end != '\0') {
 		wpa_printf(MSG_ERROR, "CTRL: %s: trailing characters", cmd);
@@ -11789,11 +11789,57 @@ static int hostapd_ctrl_iface_parse_rtt_role(const char *value, int min_role,
 	}
 	if (role < min_role || role > max_role) {
 		wpa_printf(MSG_ERROR, "CTRL: %s: value must be %d..0x%x",
-			   cmd, min_role, max_role);
+				cmd, min_role, max_role);
 		return -1;
 	}
 
 	*role_out = role;
+	return 0;
+}
+
+static int hostapd_ctrl_iface_validate_rtt_role_mix(struct hostapd_iface *iface,
+						struct hostapd_data *updated_hapd,
+						int new_rtt_initiator,
+						int new_rtt_responder_role)
+{
+	size_t i;
+	bool has_initiator = false;
+	bool has_responder = false;
+
+	if (!iface || !iface->bss)
+		return 0;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		struct hostapd_data *bss = iface->bss[i];
+		int rtt_initiator;
+		int rtt_responder_role;
+
+		if (!bss || !bss->conf)
+			continue;
+
+		rtt_initiator = bss->conf->rtt_initiator_role;
+		rtt_responder_role = bss->conf->rtt_responder_role;
+
+		if (bss == updated_hapd) {
+			if (new_rtt_initiator >= 0)
+				rtt_initiator = new_rtt_initiator;
+			if (new_rtt_responder_role >= 0)
+				rtt_responder_role = new_rtt_responder_role;
+		}
+
+		if (rtt_initiator)
+			has_initiator = true;
+		if (rtt_responder_role > 0)
+			has_responder = true;
+
+		if (has_initiator && has_responder) {
+			wpa_printf(MSG_ERROR,
+					"CTRL: RTT role conflict on phy %s: initiator and responder cannot be mixed across VAPs",
+					iface->phy);
+			return -1;
+		}
+	}
+
 	return 0;
 }
 
@@ -11818,6 +11864,13 @@ static int hostapd_ctrl_iface_set_rtt_role_common(struct hostapd_data *hapd,
 
 	if (*conf_role == (int) role)
 		return 0;
+
+	if (hostapd_ctrl_iface_validate_rtt_role_mix(hapd->iface, hapd, -1,
+				(int)role) < 0) {
+		wpa_printf(MSG_ERROR,
+				"CTRL: %s rejected due to RTT role conflict", cmd);
+		return -1;
+	}
 
 	ret = drv_set(hapd, (int) role);
 	if (ret) {

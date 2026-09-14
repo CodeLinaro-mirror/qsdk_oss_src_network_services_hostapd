@@ -2236,6 +2236,35 @@ static int hostapd_config_check_cw(struct hostapd_config *conf, int queue)
 	return 0;
 }
 
+static int hostapd_config_check_rtt_role_mix(struct hostapd_config *conf)
+{
+	size_t i;
+	bool has_initiator = false;
+	bool has_responder = false;
+
+	if (!conf || !conf->bss)
+		return 0;
+
+	for (i = 0; i < conf->num_bss; i++) {
+		struct hostapd_bss_config *bss = conf->bss[i];
+
+		if (!bss)
+			continue;
+
+		if (bss->rtt_initiator_role)
+			has_initiator = true;
+		if (bss->rtt_responder_role > 0)
+			has_responder = true;
+
+		if (has_initiator && has_responder) {
+			wpa_printf(MSG_ERROR,
+				"RTT role conflict: cannot mix rtt roles");
+			return -1;
+		}
+	}
+
+	return 0;
+}
 
 int hostapd_config_check(struct hostapd_config *conf, int full_config)
 {
@@ -2319,6 +2348,9 @@ int hostapd_config_check(struct hostapd_config *conf, int full_config)
 		if (hostapd_config_check_bss(conf->bss[i], conf, full_config))
 			return -1;
 	}
+
+	if (hostapd_config_check_rtt_role_mix(conf) < 0)
+		return -1;
 
 #ifdef CONFIG_QCN_EXTN
 	if (full_config && conf->use_driver_vendor_addr &&
