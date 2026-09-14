@@ -3035,7 +3035,8 @@ static void wpas_ext_capab_byte(struct wpa_supplicant *wpa_s, u8 *pos, int idx,
 	case 8: /* Bits 64-71 */
 		if (wpa_s->conf->ftm_responder)
 			*pos |= 0x40; /* Bit 70 - FTM responder */
-		if (wpa_s->conf->ftm_initiator)
+		if (wpa_s->conf->ftm_initiator ||
+		    wpa_s->conf->rtt_initiator_role)
 			*pos |= 0x80; /* Bit 71 - FTM initiator */
 		break;
 	case 9: /* Bits 72-79 */

@@ -4334,7 +4334,7 @@ static void hostapd_apply_rtt_responder_role(struct hostapd_data *hapd)
 	if (!hapd->conf->rtt_responder_role)
 		return;
 
-	if (hapd->rtt_role_fw_sent)
+	if (hapd->rtt_responder_role_fw_sent)
 		return;
 
 	ret = hostapd_drv_set_rtt_responder_role(hapd,
@@ -4343,7 +4343,21 @@ static void hostapd_apply_rtt_responder_role(struct hostapd_data *hapd)
 		wpa_printf(MSG_DEBUG,
 			   "Failed to set RTT responder role: %d", ret);
 	else
-		hapd->rtt_role_fw_sent = true;
+		hapd->rtt_responder_role_fw_sent= true;
+}
+
+static void hostapd_apply_rtt_initiator_role(struct hostapd_data *hapd)
+{
+	int ret;
+
+	if (hapd->rtt_initiator_role_fw_sent)
+		return;
+
+	ret = hostapd_drv_set_rtt_initiator_role(hapd,
+						 hapd->conf->rtt_initiator_role);
+	if (ret)
+		wpa_printf(MSG_ERROR,
+			   "Failed to set RTT initiator role: %d", ret);
 }
 
 static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
@@ -4720,6 +4734,7 @@ set_ap:
 			   hapd->conf->iface, res);
 	else {
 		hostapd_apply_rtt_responder_role(hapd);
+		hostapd_apply_rtt_initiator_role(hapd);
 		ret = 0;
 	}
 fail2:

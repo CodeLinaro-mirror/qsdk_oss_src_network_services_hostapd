@@ -815,9 +815,12 @@ struct hostapd_data {
 
 	bool is_update_beacon; /* To indentify whether its from UPDATE_BEACON comamnd */
 	bool sp_ie_activated_sta;  /* Set when processing STA with validated SP IE */
-	/* Tracks whether the configured RTT responder role has already been sent
-	 * to the driver; also suppresses duplicate sends during beacon updates. */
-	bool rtt_role_fw_sent;
+	/* Transient guard: set during SET_RTT_RESPONDER_ROLE runtime update to
+	 * suppress duplicate vendor cmd during the triggered beacon rebuild. */
+	bool rtt_responder_role_fw_sent;
+	/* Transient guard: set during SET_RTT_INITIATOR_ROLE runtime update to
+	 * suppress duplicate vendor cmd during the triggered beacon rebuild. */
+	bool rtt_initiator_role_fw_sent;
 };
 /* True if hapd has a pending re-enable for any reason (user-disabled,
  * HT-scan deferred, or CAC in progress). */

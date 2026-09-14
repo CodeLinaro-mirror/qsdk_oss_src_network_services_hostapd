@@ -84,7 +84,6 @@ static int wpa_supplicant_global_iface_interfaces(struct wpa_global *global,
 static int * freq_range_to_channel_list(struct wpa_supplicant *wpa_s,
 					char *val);
 
-
 static int set_bssid_filter(struct wpa_supplicant *wpa_s, char *val)
 {
 	char *pos;
@@ -499,6 +498,42 @@ static int wpas_ctrl_iface_set_dso(struct wpa_supplicant *wpa_s,
 }
 #endif /* CONFIG_TESTING_OPTIONS */
 
+static int
+wpas_ctrl_iface_set_rtt_initiator_role(struct wpa_supplicant *wpa_s,
+                                                 const char *value)
+{
+        char *end = NULL;
+        long role;
+
+        if (!wpa_s || !wpa_s->conf || !value)
+                return -1;
+
+        errno = 0;
+        role = strtol(value, &end, 0);
+        if (errno || end == value)
+                return -1;
+        while (end && (*end == ' ' || *end == '\n' || *end == '\r' ||
+                       *end == '\t'))
+                end++;
+        if (end && *end != '\0')
+                return -1;
+
+        if (role < 0 || role > 0x1)
+                return -1;
+
+        if (wpa_drv_set_rtt_initiator_role(wpa_s, (u32) role)) {
+                wpa_printf(MSG_ERROR,
+                           "CTRL: failed to set RTT initiator role %ld", role);
+                return -1;
+        }
+
+        wpa_s->conf->rtt_initiator_role = (int) role;
+
+        /*refresh STA-side advertised IEs after rtt_initiator_role changes*/
+        wpa_supplicant_set_default_scan_ies(wpa_s);
+
+        return 0;
+}
 
 static int wpa_supplicant_ctrl_iface_set(struct wpa_supplicant *wpa_s,
 					 char *cmd)
@@ -987,6 +1022,18 @@ static int wpa_supplicant_ctrl_iface_set(struct wpa_supplicant *wpa_s,
 #endif /* CONFIG_MBO */
 	} else if (os_strcasecmp(cmd, "lci") == 0) {
 		ret = wpas_ctrl_iface_set_lci(wpa_s, value);
+	} else if (os_strcasecmp(cmd, "rtt_initiator_role") == 0) {
+		ret = wpas_ctrl_iface_set_rtt_initiator_role(wpa_s, value);
+		if (!ret) {
+			value[-1] = '=';
+			ret = wpa_config_process_global(
+				wpa_s->conf, cmd, -1,
+				wpa_s->global->params.show_details);
+			if (ret == 0)
+				wpa_supplicant_update_config(wpa_s);
+			else if (ret == 1)
+				ret = 0;
+		}
 	} else if (os_strcasecmp(cmd, "tdls_trigger_control") == 0) {
 		ret = wpa_drv_set_tdls_mode(wpa_s, atoi(value));
 	} else if (os_strcasecmp(cmd, "relative_rssi") == 0) {
@@ -1108,6 +1155,18 @@ static int wpa_supplicant_ctrl_iface_get(struct wpa_supplicant *wpa_s,
 	if (os_snprintf_error(buflen, res))
 		return -1;
 	return res;
+}
+
+static int
+wpa_supplicant_ctrl_iface_get_rtt_initiator_role(struct wpa_supplicant *wpa_s,
+						  char *reply,
+						  size_t reply_size)
+{
+	if (!wpa_s || !wpa_s->conf || !reply)
+		return -1;
+
+	return os_snprintf(reply, reply_size, "0x%x\n",
+			   wpa_s->conf->rtt_initiator_role);
 }
 
 
@@ -14564,6 +14623,13 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 		if (wpa_supplicant_ctrl_iface_send_uplink_csa(wpa_s, buf + 11))
 			reply_len = -1;
 #endif /* CONFIG_QCN_EXTN */
+	} else if (os_strncmp(buf, "SET_RTT_INITIATOR_ROLE ", 23) == 0) {
+		if (wpas_ctrl_iface_set_rtt_initiator_role(
+			    wpa_s, buf + 23))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "GET_RTT_INITIATOR_ROLE") == 0) {
+		reply_len = wpa_supplicant_ctrl_iface_get_rtt_initiator_role(
+			wpa_s, reply, reply_size);
 #ifdef CONFIG_AP
 #ifdef CONFIG_CTRL_IFACE_MIB
 	} else if (os_strcmp(buf, "STA-FIRST") == 0) {

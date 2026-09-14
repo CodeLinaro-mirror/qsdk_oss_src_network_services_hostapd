@@ -930,6 +930,7 @@ static char ** wpa_cli_complete_set(const char *str, int pos)
 #endif /* CONFIG_TESTING_OPTIONS */
 		"relative_rssi", "relative_band_adjust",
 		"extended_key_id",
+		"rtt_initiator_role",
 		"disable_op_classes_80_80_mhz",
 #ifdef CONFIG_QCN_EXTN
 		WPA_CLI_CMD_FIELDS_EXTN
@@ -1035,6 +1036,7 @@ static char ** wpa_cli_complete_get(const char *str, int pos)
 		"p2p_search_delay", "mac_addr", "rand_addr_lifetime",
 		"preassoc_mac_addr", "key_mgmt_offload", "passive_scan",
 		"reassoc_same_bss_optim", "extended_key_id",
+		"rtt_initiator_role",
 		"disable_op_classes_80_80_mhz",
 #ifdef CONFIG_QCN_EXTN
 		WPA_CLI_CMD_FIELDS_EXTN
@@ -2489,6 +2491,22 @@ static int wpa_cli_cmd_update_beacon(struct wpa_ctrl *ctrl, int argc,
 				     char *argv[])
 {
 	return wpa_ctrl_command(ctrl, "UPDATE_BEACON");
+}
+
+static int wpa_cli_cmd_set_rtt_initiator_role(struct wpa_ctrl *ctrl,
+					       int argc, char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "SET_RTT_INITIATOR_ROLE", 1, argc, argv);
+}
+
+static int wpa_cli_cmd_get_rtt_initiator_role(struct wpa_ctrl *ctrl,
+					       int argc, char *argv[])
+{
+	if (argc != 0) {
+		printf("Invalid get_rtt_initiator_role command: no arguments expected\n");
+		return -1;
+	}
+	return wpa_ctrl_command(ctrl, "GET_RTT_INITIATOR_ROLE");
 }
 
 
@@ -4206,6 +4224,12 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	{ "update_beacon", wpa_cli_cmd_update_beacon, NULL,
 	  cli_cmd_flag_none,
 	  "= update Beacon frame contents"},
+	{ "set_rtt_initiator_role", wpa_cli_cmd_set_rtt_initiator_role, NULL,
+	  cli_cmd_flag_none,
+	  "<0|1> = set RTT initiator role (0=disable, 1=enable)" },
+	{ "get_rtt_initiator_role", wpa_cli_cmd_get_rtt_initiator_role, NULL,
+	  cli_cmd_flag_none,
+	  "= get RTT initiator role" },
 	{ "accept_acl", wpa_cli_cmd_accept_macacl, NULL, cli_cmd_flag_none,
 	  "=Add/Delete/Show/Clear allow MAC ACL" },
 	{ "deny_acl", wpa_cli_cmd_deny_macacl, NULL, cli_cmd_flag_none,
