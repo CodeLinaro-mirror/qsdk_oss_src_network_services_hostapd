@@ -2915,6 +2915,9 @@ setup_mld:
 		if (!hapd_reenable_pending(hapd)) {
 			if (hostapd_mld_add_link(hapd) < 0) {
 				hostapd_mld_remove_link(hapd);
+				hostapd_if_link_remove(hapd, WPA_IF_AP_BSS,
+						       hapd->conf->iface,
+						       hapd->mld_link_id);
 				return -1;
 			}
 		}
@@ -8824,6 +8827,9 @@ setup_mld:
 		}
 		if (hostapd_mld_add_link(bss_succ) < 0) {
 			hostapd_mld_remove_link(bss_succ);
+			hostapd_if_link_remove(bss_succ, WPA_IF_AP_BSS,
+					       bss_succ->conf->iface,
+					       bss_succ->mld_link_id);
 			return -1;
 		}
 		hostapd_validate_update_ml_max_rec_links(bss_succ);
