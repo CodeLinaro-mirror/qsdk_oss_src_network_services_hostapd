@@ -441,6 +441,8 @@ setup_mld:
 #endif /* CONFIG_QCN_EXTN */
 		if (hostapd_mld_add_link(hapd) < 0) {
 			hostapd_mld_remove_link(hapd);
+			hostapd_if_link_remove(hapd, WPA_IF_AP_BSS,
+				hapd->conf->iface, hapd->mld_link_id);
 			return -1;
 		}
 
