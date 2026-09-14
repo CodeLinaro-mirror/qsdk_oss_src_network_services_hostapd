@@ -1490,6 +1490,7 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 	size_t b;
 #ifdef CONFIG_QCN_EXTN
 	bool is_dfs = false;
+	bool mcst_allows_skip_cac = false;
 	enum chan_width chanwidth;
 #endif
 
@@ -1554,17 +1555,18 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 	if (!is_dfs && channel_width_to_int(chanwidth) == 160)
 		is_dfs = ieee80211_is_dfs(freq + 80, NULL, 0);
 
+	mcst_allows_skip_cac =
+		hostapd_mcst_allows_skip_cac_extn(iface->mcst,
+						  iface->conf->beacon_int, is_dfs);
+
 	if (iface->conf->conf_extn.ind_rptr) {
 		data.skip_cac = ((iface->iface_extn.csa_bitmap ||
 				 iface->iface_extn.dfs_available_from_sta) &&
 				 iface->conf->conf_extn.skip_cac);
-		if (is_dfs && iface->mcst &&
-		    iface->conf->conf_extn.skip_cac) {
+		if (iface->mcst && iface->conf->conf_extn.skip_cac &&
+		    !mcst_allows_skip_cac)
 			data.skip_cac = 0;
-		} else if (!data.skip_cac &&
-		    hostapd_mcst_allows_skip_cac_extn(iface->mcst,
-						      iface->conf->beacon_int,
-						      is_dfs)) {
+		else if (!data.skip_cac && mcst_allows_skip_cac) {
 			/* Skip CAC for DFS based on MCST - PreCAC case */
 			data.skip_cac = 1;
 		}
@@ -1586,13 +1588,10 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 		data.skip_cac = (iface->cac_type != HAPD_CAC_COMPLETE_AFTER_CSA) &&
 				iface->iface_extn.dfs_available_from_sta &&
 				 iface->conf->conf_extn.skip_cac;
-		if (is_dfs && iface->mcst &&
-		    iface->conf->conf_extn.skip_cac) {
+		if (iface->mcst && iface->conf->conf_extn.skip_cac &&
+		    !mcst_allows_skip_cac)
 			data.skip_cac = 0;
-		} else if (!data.skip_cac &&
-		    hostapd_mcst_allows_skip_cac_extn(iface->mcst,
-						      iface->conf->beacon_int,
-						      is_dfs)) {
+		else if (!data.skip_cac && mcst_allows_skip_cac) {
 			/* Skip CAC for DFS based on MCST - PreCAC case */
 			data.skip_cac = 1;
 		}
