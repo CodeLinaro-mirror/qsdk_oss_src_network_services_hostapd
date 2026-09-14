@@ -1782,9 +1782,7 @@ int hostapd_set_dfs_cac_time(struct hostapd_iface *iface)
 	/* Setup CAC time */
 	if (iface->mcst && iface->cs_time) {
 		iface->dfs_cac_ms = iface->cs_time;
-	} else if (iface->conf->conf_extn.skip_cac)
-		iface->dfs_cac_ms = 0;
-	else
+	} else
 #endif /* CONFIG_QCN_EXTN */
 		iface->dfs_cac_ms = dfs_get_cac_time(iface, start_chan_idx,
 						     n_chans);
