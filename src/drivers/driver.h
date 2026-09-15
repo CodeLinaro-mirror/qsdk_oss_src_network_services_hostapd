@@ -4381,6 +4381,20 @@ struct wpa_driver_ops {
 	int (*smd_roam)(void *priv, struct hostapd_smd_roam_params *param);
 
 	/**
+	 * smd_stats_reset - Send NL80211_CMD_SMD_STATS_RESET to kernel
+	 */
+	int (*smd_stats_reset)(void *priv);
+
+	/**
+	 * smd_stats_get - Fetch kernel SMD counters via NL80211_CMD_SMD_STATS_GET.
+	 * @sta_addr: STA MLD MAC for per-STA AP query; NULL for STA-mode or aggregate.
+	 * @out: Caller-allocated struct, zeroed before call; filled on success.
+	 * Returns 0 on success, -1 on error.
+	 */
+	int (*smd_stats_get)(void *priv, const u8 *sta_addr,
+			     struct nl80211_smd_stats *out);
+
+	/**
 	 * init - Initialize driver interface
 	 * @ctx: context to be used when calling wpa_supplicant functions,
 	 * e.g., wpa_supplicant_event()
