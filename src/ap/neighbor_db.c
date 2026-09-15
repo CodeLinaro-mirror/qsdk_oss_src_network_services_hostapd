@@ -1424,6 +1424,25 @@ static void hostapd_oce_update_channel_info(struct hostapd_data *hapd)
 		   "OCE channel info: non_oce_ap_present=%d 11b_ap_present=%d",
 		   hapd->non_oce_ap_present, hapd->ap_11b_present);
 }
+
+void hostapd_oce_update_channel_info_all(struct hostapd_iface *iface)
+{
+	int i;
+
+	if (!iface)
+		return;
+
+	for (i = 0; i < iface->num_bss; i++) {
+		struct hostapd_data *hapd = iface->bss[i];
+
+		if (!hapd || !hapd->started || !OCE_AP_ENABLED(hapd))
+			continue;
+
+		hostapd_oce_update_channel_info(hapd);
+		ieee802_11_set_beacon(hapd);
+	}
+}
+
 #endif /* NEED_AP_MLME */
 
 int hostapd_neighbor_set_ifaces_scan_report(struct hostapd_data *hapd,

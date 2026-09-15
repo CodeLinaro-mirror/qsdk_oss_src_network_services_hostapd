@@ -38,6 +38,7 @@ int hostapd_neighbor_set_ifaces_scan_report(struct hostapd_data *hapd,
 void hostapd_oce_survey_timer(void *eloop_ctx, void *timeout_ctx);
 void hostapd_oce_survey_timer_start(struct hostapd_iface *iface);
 void hostapd_oce_survey_timer_cancel(struct hostapd_iface *iface);
+void hostapd_oce_update_channel_info_all(struct hostapd_iface *iface);
 /**
  * Get all neighbor entries matching SMD_ID
  * Returns: Number of entries found
