@@ -3977,6 +3977,8 @@ enum mscs_description_subelem {
 #define FD_FRAME_CTL_RSN_INFO_PRESENT			((u16) BIT(11))
 #define FD_FRAME_CTL_LENGTH_PRESENT			((u16) BIT(12))
 #define FD_FRAME_CTL_MD_PRESENT				((u16) BIT(13))
+#define FD_FRAME_CTL_11B_AP_PRESENT			((u16) BIT(14))
+#define FD_FRAME_CTL_NON_OCE_AP_PRESENT			((u16) BIT(15))
 
 /*
  * IEEE Std 802.11-2020, 9.6.7.36 FILS Discovery frame format,
