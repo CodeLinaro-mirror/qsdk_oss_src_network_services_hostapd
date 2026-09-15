@@ -2907,14 +2907,28 @@ static void hostapd_event_wds_sta_interface_status(struct hostapd_data *hapd,
 						   const u8 *addr)
 {
 	struct sta_info *sta = ap_get_sta(hapd, addr);
+	char chain[32];
 
 	if (sta) {
 		os_free(sta->ifname_wds);
-		if (istatus == INTERFACE_ADDED)
+		if (istatus == INTERFACE_ADDED) {
 			sta->ifname_wds = os_strdup(ifname);
-		else
+		} else {
 			sta->ifname_wds = NULL;
+		}
 	}
+
+#ifdef CONFIG_IEEE80211AX
+	if (hapd->conf->scs) {
+		os_snprintf(chain, sizeof(chain), "%s_%s", CHAIN_NAME, ifname);
+		if (istatus == INTERFACE_ADDED)
+			hostapd_config_nft_chain_for_dev(TABLE_NAME, chain,
+							 (char *)ifname, true);
+		else
+			hostapd_config_nft_chain_for_dev(TABLE_NAME, chain,
+							 (char *)ifname, false);
+	}
+#endif
 
 	wpa_msg(hapd->msg_ctx, MSG_INFO, "%sifname=%s sta_addr=" MACSTR,
 		istatus == INTERFACE_ADDED ?

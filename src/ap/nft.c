@@ -827,6 +827,40 @@ int hostapd_config_nft_chain(struct hostapd_data *hapd,
 	return ret;
 }
 
+int hostapd_config_nft_chain_for_dev(char *table, char *chain,
+				     char *dev_name, bool add)
+{
+	int ret;
+
+	if (!hostapd_is_nft_initialized()) {
+		wpa_printf(MSG_ERROR,
+			   "NFT: Chain config failed - NFT not initialized");
+		return -EPERM;
+	}
+
+	if (!table || !table[0] || !chain || !chain[0] ||
+	    !dev_name || !dev_name[0]) {
+		wpa_printf(MSG_ERROR,
+			   "NFT: Invalid table, chain or device name");
+		return -EINVAL;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "NFT: %s chain '%s' in table '%s' for device %s",
+		   add ? "Creating" : "Deleting", chain, table, dev_name);
+
+	ret = hostapd_set_nft_chain(table, chain, dev_name, add);
+	if (ret < 0)
+		wpa_printf(MSG_ERROR,
+			   "NFT: Failed to %s chain '%s' for device %s: %d",
+			   add ? "create" : "delete", chain, dev_name, ret);
+	else
+		wpa_printf(MSG_INFO,
+			   "NFT: Chain '%s' %s successfully for device %s",
+			   chain, add ? "created" : "deleted", dev_name);
+	return ret;
+}
+
 
 /* hostapd_nft_add_cmp_expr - Add a comparison expression
  * @nlh: Netlink message header
@@ -1891,6 +1925,16 @@ int hostapd_config_nft_rule(struct hostapd_nft_rule_params *rparams,
 	wpa_printf(MSG_DEBUG,
 		   "NFT: Rule operation '%s' not supported on kernel < 5.16",
 		   add ? "add" : "delete");
+	return -EOPNOTSUPP;
+}
+
+
+int hostapd_config_nft_chain_for_dev(char *table, char *chain,
+				     char *dev_name, bool add)
+{
+	wpa_printf(MSG_INFO,
+		   "NFT: Chain-for-dev operation '%s' not supported on kernel < 5.16",
+		   add ? "create" : "delete");
 	return -EOPNOTSUPP;
 }
 #endif
