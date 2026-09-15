@@ -12116,6 +12116,8 @@ static int hostapd_ctrl_iface_set_rtt_role_common(struct hostapd_data *hapd,
 {
 	long role;
 	int ret;
+	int new_rtt_initiator = -1;
+	int new_rtt_responder_role = -1;
 
 	if (!hapd || !hapd->conf || !hapd->iface || !value || !conf_role ||
 	    !fw_sent || !drv_set || !cmd)
@@ -12128,8 +12130,15 @@ static int hostapd_ctrl_iface_set_rtt_role_common(struct hostapd_data *hapd,
 	if (*conf_role == (int) role)
 		return 0;
 
-	if (hostapd_ctrl_iface_validate_rtt_role_mix(hapd->iface, hapd, -1,
-				(int)role) < 0) {
+	if (os_strcmp(cmd, "SET_RTT_INITIATOR_ROLE") == 0)
+		new_rtt_initiator = (int) role;
+	else if (os_strcmp(cmd, "SET_RTT_RESPONDER_ROLE") == 0)
+		new_rtt_responder_role = (int) role;
+	else
+		return -1; /* unexpected caller */
+
+	if (hostapd_ctrl_iface_validate_rtt_role_mix(hapd->iface, hapd, new_rtt_initiator,
+				new_rtt_responder_role) < 0) {
 		wpa_printf(MSG_ERROR,
 				"CTRL: %s rejected due to RTT role conflict", cmd);
 		return -1;
@@ -12149,7 +12158,6 @@ static int hostapd_ctrl_iface_set_rtt_role_common(struct hostapd_data *hapd,
 		wpa_printf(MSG_ERROR, "CTRL: %s: beacon update failed", cmd);
 		return -1;
 	}
-	*fw_sent = false;
 
 	return 0;
 }

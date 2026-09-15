@@ -4382,6 +4382,9 @@ static void hostapd_apply_rtt_initiator_role(struct hostapd_data *hapd)
 {
 	int ret;
 
+	if(!hapd->conf->rtt_initiator_role)
+		return;
+
 	if (hapd->rtt_initiator_role_fw_sent)
 		return;
 
@@ -4390,6 +4393,8 @@ static void hostapd_apply_rtt_initiator_role(struct hostapd_data *hapd)
 	if (ret)
 		wpa_printf(MSG_ERROR,
 			   "Failed to set RTT initiator role: %d", ret);
+	else
+		hapd->rtt_initiator_role_fw_sent = true;
 }
 
 static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
