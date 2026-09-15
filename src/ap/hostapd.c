@@ -7710,6 +7710,14 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 	enum bss_enable_state enable_state;
 	size_t i;
 
+	if (hapd_iface->state == HAPD_IFACE_DISABLED ||
+	    hapd_iface->state == HAPD_IFACE_ACS) {
+		hostapd_log(hapd, NULL, HOSTAPD_MODULE_MLME,
+			HOSTAPD_LEVEL_INFO, "Cannot enable BSS %s while interface state is %s",
+			hapd->conf->iface, hostapd_state_text(hapd_iface->state));
+		return -1;
+	}
+
 	/*
 	 * Channel list update pending - hw_features have not been fetched yet
 	 * and current_mode is NULL. setup_interface2() will re-enable all
