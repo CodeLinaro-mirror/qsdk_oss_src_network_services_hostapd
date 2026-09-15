@@ -1056,34 +1056,6 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 		return;
 	}
 
-	if (start && wpas_security_profile_active(wpa_s) &&
-	    ssid->security_profiles &&
-	    wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_SECURITY_PROFILE)) {
-		bool try_opportunistic;
-		const u8 *cache_id = NULL;
-
-		try_opportunistic = ssid->proactive_key_caching < 0 ?
-			wpa_s->conf->okc : ssid->proactive_key_caching;
-		if (pmksa_cache_set_current(wpa_s->wpa, NULL,
-					    params.mld ? params.ap_mld_addr :
-					    bss->bssid,
-					    wpa_s->current_ssid,
-					    try_opportunistic, cache_id,
-					    0, false) == 0)
-			eapol_sm_notify_pmkid_attempt(wpa_s->eapol);
-		wpa_s->sme.assoc_req_ie_len = sizeof(wpa_s->sme.assoc_req_ie);
-		if (wpa_supplicant_set_suites(wpa_s, bss, ssid,
-					      wpa_s->sme.assoc_req_ie,
-					      &wpa_s->sme.assoc_req_ie_len,
-					      false)) {
-			wpa_msg(wpa_s, MSG_WARNING,
-				"SME: Failed to set key management and encryption suites");
-			wpas_connect_work_done(wpa_s);
-			return;
-		}
-		set_suites_done = true;
-	}
-
 	os_memset(&params, 0, sizeof(params));
 
 	/*
@@ -1134,6 +1106,34 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 		params.mld_link_id = wpa_s->mlo_assoc_link_id;
 		params.ap_mld_addr = wpa_s->ap_mld_addr;
 		wpas_ml_handle_removed_links(wpa_s, bss);
+	}
+
+	if (start && wpas_security_profile_active(wpa_s) &&
+	    ssid->security_profiles &&
+	    wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_SECURITY_PROFILE)) {
+		bool try_opportunistic;
+		const u8 *cache_id = NULL;
+
+		try_opportunistic = ssid->proactive_key_caching < 0 ?
+			wpa_s->conf->okc : ssid->proactive_key_caching;
+		if (pmksa_cache_set_current(wpa_s->wpa, NULL,
+					    params.mld ? params.ap_mld_addr :
+					    bss->bssid,
+					    wpa_s->current_ssid,
+					    try_opportunistic, cache_id,
+					    0, false) == 0)
+			eapol_sm_notify_pmkid_attempt(wpa_s->eapol);
+		wpa_s->sme.assoc_req_ie_len = sizeof(wpa_s->sme.assoc_req_ie);
+		if (wpa_supplicant_set_suites(wpa_s, bss, ssid,
+					      wpa_s->sme.assoc_req_ie,
+					      &wpa_s->sme.assoc_req_ie_len,
+					      false)) {
+			wpa_msg(wpa_s, MSG_WARNING,
+				"SME: Failed to set key management and encryption suites");
+			wpas_connect_work_done(wpa_s);
+			return;
+		}
+		set_suites_done = true;
 	}
 
 	skip_auth = wpa_s->conf->reassoc_same_bss_optim &&
