@@ -1215,15 +1215,15 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 	else
 		sm->wpa_key_mgmt = WPA_KEY_MGMT_PSK;
 
-	if (version == WPA_PROTO_RSN && sm->rsn_override_2)
+	if (version == WPA_PROTO_RSN && security_profile)
+		/* Restrict pairwise cipher to exactly what the matched UHR profile mandates */
+		ciphers = data.pairwise_cipher & security_profile->pairwise_cipher;
+	else if (version == WPA_PROTO_RSN && sm->rsn_override_2)
 		ciphers = data.pairwise_cipher &
 			wpa_auth->conf.rsn_override_pairwise_2;
 	else if (version == WPA_PROTO_RSN && sm->rsn_override)
 		ciphers = data.pairwise_cipher &
 			wpa_auth->conf.rsn_override_pairwise;
-	else if (version == WPA_PROTO_RSN && security_profile)
-		/* Restrict pairwise cipher to exactly what the matched UHR profile mandates */
-		ciphers = data.pairwise_cipher & security_profile->pairwise_cipher;
 	else if (version == WPA_PROTO_RSN)
 		ciphers = data.pairwise_cipher & wpa_auth->conf.rsn_pairwise;
 	else
