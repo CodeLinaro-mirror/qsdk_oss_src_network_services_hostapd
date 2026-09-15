@@ -1571,7 +1571,7 @@ static int * wpa_config_parse_int_array_helper(const char *value,
 					       int terminator)
 {
 	int *vals;
-	size_t used, len;
+	size_t used, len, i;
 	const char *pos;
 
 	used = 0;
@@ -1580,13 +1580,15 @@ static int * wpa_config_parse_int_array_helper(const char *value,
 	if (!vals)
 		return NULL;
 
+	for (i = 0; i <= len; i++)
+		vals[i] = terminator;
+
 	pos = value;
 	while (pos) {
 		while (*pos == ' ')
 			pos++;
 		if (used == len) {
 			int *n;
-			size_t i;
 
 			n = os_realloc_array(vals, len * 2 + 1, sizeof(int));
 			if (!n) {
