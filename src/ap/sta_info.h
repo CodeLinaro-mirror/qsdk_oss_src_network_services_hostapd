@@ -227,6 +227,10 @@ struct smd_caps {
 	bool ptk_mode; /* PTK Mode field */
 };
 
+/* SMD (Seamless Mobility Domain) station information */
+
+#include "uhr_utils.h"
+
 /* SMD (Seamless Multiband Device) station information */
 struct smd_info {
 	bool smd_sta; /* Station supports SMD */
@@ -253,6 +257,11 @@ struct smd_info {
 	} get_ctx_pending;
 	bool smd_rsnx_bit;   /* SMD bit (37) set in peer's Extended RSN Capabilities in the request */
 	bool smd_enc_assoc;  /* (Re)Association Request/Response exchange is encrypted */
+
+	/* Per-STA debug counters — both roles coexist since the same
+	 * sta_info entry exists on each AP with potentially different roles. */
+	struct smd_sap_roam_stats sap_stats; /* counters for SAP role on this link */
+	struct smd_tap_roam_stats tap_stats; /* counters for TAP role on this link */
 };
 #endif /* CONFIG_IEEE80211BN */
 
