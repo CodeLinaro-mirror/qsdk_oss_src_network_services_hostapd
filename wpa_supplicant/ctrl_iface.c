@@ -504,6 +504,7 @@ wpas_ctrl_iface_set_rtt_initiator_role(struct wpa_supplicant *wpa_s,
 {
         char *end = NULL;
         long role;
+	bool assoc_ready;
 
         if (!wpa_s || !wpa_s->conf || !value)
                 return -1;
@@ -521,11 +522,18 @@ wpas_ctrl_iface_set_rtt_initiator_role(struct wpa_supplicant *wpa_s,
         if (role < 0 || role > 0x1)
                 return -1;
 
-        if (wpa_drv_set_rtt_initiator_role(wpa_s, (u32) role)) {
-                wpa_printf(MSG_ERROR,
-                           "CTRL: failed to set RTT initiator role %ld", role);
-                return -1;
-        }
+	if(wpa_s->conf->rtt_initiator_role == (int) role)
+		return 0;
+
+	assoc_ready = (wpa_s->wpa_state == WPA_COMPLETED &&
+			wpa_s->current_ssid &&
+			!is_zero_ether_addr(wpa_s->bssid));
+
+	if (assoc_ready && wpa_drv_set_rtt_initiator_role(wpa_s, (u32) role)) {
+		wpa_printf(MSG_ERROR,
+				"CTRL: failed to set RTT initiator role %ld", role);
+		return -1;
+	}
 
         wpa_s->conf->rtt_initiator_role = (int) role;
 
