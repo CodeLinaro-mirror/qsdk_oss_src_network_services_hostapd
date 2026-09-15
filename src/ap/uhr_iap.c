@@ -122,28 +122,45 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 	    frame_len == 0) {
 		wpa_printf(MSG_ERROR,
 			   "SMD IAP: Invalid parameters for send_request");
+		sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail_reasons,
+			   sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail_reasons_head,
+			   SMD_IAP_TX_FAIL_INVALID_PARAMS);
 		return -1;
 	}
-	
+
 	/* FIX: Buffer overflow protection */
 	if (frame_len > UHR_IAP_MAX_FRAME_LEN) {
 		wpa_printf(MSG_ERROR,
 			   "SMD IAP: Frame too large (%zu > %d)",
 			   frame_len, UHR_IAP_MAX_FRAME_LEN);
+		sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail_reasons,
+			   sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail_reasons_head,
+			   SMD_IAP_TX_FAIL_FRAME_TOO_LARGE);
 		return -1;
 	}
-	
+
 	/* FIX: Peer validation before send */
 	if (!eth_p_1905_peer_exists(hapd->eth_p_1905_ctx, target_ap_mld_addr)) {
 		wpa_printf(MSG_ERROR,
 			   "SMD IAP: Target AP " MACSTR " not in peer list",
 			   MAC2STR(target_ap_mld_addr));
+		sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail_reasons,
+			   sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail_reasons_head,
+			   SMD_IAP_TX_FAIL_PEER_NOT_FOUND);
 		return -1;
 	}
 
 	ap_info = uhr_find_ap_in_list(sta, target_ap_mld_addr);
-	if (!ap_info)
+	if (!ap_info) {
+		sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail_reasons,
+			   sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail_reasons_head,
+			   SMD_IAP_TX_FAIL_NO_AP_INFO);
 		return -1;
+	}
 
 	smd_ctx = ap_info->smd_ctx;
 	if (ap_info->smd_ctx_valid && smd_ctx)
@@ -169,6 +186,10 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 	buf = os_zalloc(iap_len);
 	if (!buf) {
 		wpa_printf(MSG_ERROR, "SMD IAP: Failed to allocate IAP frame len = %zu", iap_len);
+		sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail_reasons,
+			   sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail_reasons_head,
+			   SMD_IAP_TX_FAIL_ALLOC);
 		return -1;
 	}
 	
@@ -200,6 +221,10 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 		wpa_printf(MSG_ERROR,
 			   "SMD IAP: Failed to extract security context");
 		os_free(buf);
+		sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail_reasons,
+			   sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail_reasons_head,
+			   SMD_IAP_TX_FAIL_SEC_CTX);
 		return -1;
 	}
 	
@@ -238,9 +263,13 @@ int uhr_iap_send_st_prep_req(struct hostapd_data *hapd,
 	wpabuf_free(tbuf);
 
 	os_free(buf);
-	
+
 	if (ret < 0) {
 		wpa_printf(MSG_ERROR, "SMD IAP: Failed to send REQUEST");
+		sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail_reasons,
+			   sta->smd_info.sap_stats.sap_iap_prep_req_tx_fail_reasons_head,
+			   SMD_IAP_TX_FAIL_L2_SEND);
 		return -1;
 	}
 
@@ -336,6 +365,7 @@ int uhr_iap_send_st_prep_resp(struct hostapd_data *hapd,
 			  const u8 *frame, size_t frame_len)
 {
 	struct uhr_iap_frame *iap;
+	struct sta_info *sta = ap_get_sta(hapd, sta_addr);
 	size_t iap_len;
 	u8 *buf;
 	int ret;
@@ -346,6 +376,7 @@ int uhr_iap_send_st_prep_resp(struct hostapd_data *hapd,
 		return -1;
 	}
 	
+
 	/* FIX: Buffer overflow protection */
 	if (frame_len > UHR_IAP_MAX_FRAME_LEN) {
 		wpa_printf(MSG_ERROR,
@@ -362,6 +393,8 @@ int uhr_iap_send_st_prep_resp(struct hostapd_data *hapd,
 		return -1;
 	}
 	
+	sta = ap_get_sta(hapd, sta_addr);
+
 	/* Allocate buffer for IAP frame */
 	iap_len = sizeof(*iap) + frame_len;
 	buf = os_zalloc(iap_len);
@@ -421,12 +454,23 @@ int uhr_iap_send_st_prep_resp(struct hostapd_data *hapd,
 	wpabuf_free(tbuf);
 
 	os_free(buf);
-	
+
 	if (ret < 0) {
 		wpa_printf(MSG_ERROR, "SMD IAP: Failed to send RESPONSE");
-		return -1;
+		if (sta) {
+			sta->smd_info.tap_stats.tap_iap_prep_resp_tx_fail++;
+			SMD_REASON(sta->smd_info.tap_stats.tap_iap_prep_resp_tx_fail_reasons,
+				   sta->smd_info.tap_stats.tap_iap_prep_resp_tx_fail_reasons_head,
+				   SMD_IAP_TX_FAIL_L2_SEND);
+		}
+		return ret;
 	}
-	
+
+	if (sta) {
+		sta->smd_info.tap_stats.tap_iap_prep_resp_tx_ok++;
+		smd_ts_record(&sta->smd_info.tap_stats.tap_iap_prep_resp_tx_ok_ts, smd_ts_now());
+	}
+
 	wpa_printf(MSG_DEBUG, "SMD IAP: RESPONSE sent successfully");
 	return 0;
 }
@@ -528,6 +572,10 @@ int uhr_iap_send_st_exec_req(struct hostapd_data *hapd,
 
        if (ret < 0) {
                wpa_printf(MSG_ERROR, "UHR IAP: Failed to send ST EXEC REQUEST");
+               sta->smd_info.sap_stats.sap_iap_exec_req_tx_fail++;
+               SMD_REASON(sta->smd_info.sap_stats.sap_iap_exec_req_tx_fail_reasons,
+                          sta->smd_info.sap_stats.sap_iap_exec_req_tx_fail_reasons_head,
+                          SMD_IAP_TX_FAIL_L2_SEND);
                return -1;
        }
 
@@ -545,6 +593,7 @@ int uhr_iap_send_st_exec_resp(struct hostapd_data *hapd,
                               const u8 *frame, size_t frame_len)
 {
        struct uhr_iap_frame *iap;
+       struct sta_info *sta;
        size_t iap_len;
        u8 *buf;
        int ret;
@@ -616,12 +665,22 @@ int uhr_iap_send_st_exec_resp(struct hostapd_data *hapd,
                           ETH_P_1905_SMD_ST_EXEC_REP_MSG,
                           wpabuf_head(tbuf), wpabuf_len(tbuf));
        wpabuf_free(tbuf);
-
        os_free(buf);
 
        if (ret < 0) {
                wpa_printf(MSG_ERROR, "UHR IAP: Failed to send ST EXEC RESPONSE");
+               if (sta) {
+                       sta->smd_info.tap_stats.tap_iap_exec_resp_tx_fail++;
+                       SMD_REASON(sta->smd_info.tap_stats.tap_iap_exec_resp_tx_fail_reasons,
+                                  sta->smd_info.tap_stats.tap_iap_exec_resp_tx_fail_reasons_head,
+                                  SMD_IAP_TX_FAIL_L2_SEND);
+               }
                return -1;
+       }
+
+       if (sta) {
+               sta->smd_info.tap_stats.tap_iap_exec_resp_tx_ok++;
+               smd_ts_record(&sta->smd_info.tap_stats.tap_iap_exec_resp_tx_ok_ts, smd_ts_now());
        }
 
        wpa_printf(MSG_DEBUG, "UHR IAP: ST EXEC RESPONSE sent successfully");
@@ -862,7 +921,15 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
 {
 	const struct uhr_iap_frame *iap = NULL;
 	struct uhr_iap_frame *decoded = NULL;
+	struct sta_info *sta = NULL;
+	struct hostapd_data *link;
 	u16 frame_len;
+
+	if (!hapd->mld) {
+		wpa_printf(MSG_ERROR,
+			   "SMD IAP: AP is not affiliated to an MLD! drop the message");
+		return;
+	}
 
 	if (msg_type == ETH_P_1905_SMD_NEIGHBOR_UPDATE_MSG ||
 	    msg_type == ETH_P_1905_SMD_NEIGHBOR_FETCH_MSG) {
@@ -910,6 +977,16 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
 			   MAC2STR(iap->current_ap_mld_addr));
 	}
 
+	/*
+	 * Resolve STA from the first available link since the IAP socket is
+	 * owned by only the first-BSS of the MLD.
+	 */
+	for_each_mld_link(link, hapd) {
+		sta = ap_get_sta(link, iap->sta_addr);
+		if (sta)
+			break;
+	}
+
 	switch (iap->msg_type) {
 	case UHR_IAP_MSG_ST_PREP_REQUEST:
 		wpa_printf(MSG_DEBUG,
@@ -922,18 +999,34 @@ void uhr_iap_rx(struct hostapd_data *hapd, const u8 *src_addr, const u8 *dst_add
 		wpa_printf(MSG_DEBUG,
 			   "SMD IAP: Processing RESPONSE (txn=%u, status=%u)",
 			   iap->iap_transaction_id, iap->status_code);
+		if (sta) {
+			sta->smd_info.sap_stats.sap_iap_prep_resp_rx_ok++;
+			smd_ts_record(&sta->smd_info.sap_stats.sap_iap_prep_resp_rx_ok_ts,
+				      smd_ts_now());
+		}
 		uhr_cur_ap_handle_st_prep_resp(hapd, iap, frame_len);
 		break;
 
        case UHR_IAP_MSG_ST_EXEC_REQUEST:
                wpa_printf(MSG_DEBUG, "UHR IAP: Processing ST EXEC REQUEST (txn=%u)",
                           iap->iap_transaction_id);
+		if (sta) {
+			sta->smd_info.tap_stats.tap_iap_exec_req_rx_ok++;
+			smd_ts_record(&sta->smd_info.tap_stats.tap_iap_exec_req_rx_ok_ts,
+				      smd_ts_now());
+		}
                uhr_tgt_ap_handle_st_exec_req(hapd, iap, frame_len);
                break;
 
        case UHR_IAP_MSG_ST_EXEC_RESPONSE:
                wpa_printf(MSG_DEBUG, "UHR IAP: Processing ST EXEC RESPONSE (txn=%u)",
                           iap->iap_transaction_id);
+		if (sta) {
+			sta->smd_info.sap_stats.sap_iap_exec_resp_rx_ok++;
+			smd_ts_record(&sta->smd_info.sap_stats.sap_iap_exec_resp_rx_ok_ts,
+				      smd_ts_now());
+			sta->smd_info.sap_stats.sap_exec_iap_resp_rx++;
+		}
                uhr_cur_ap_handle_st_exec_resp(hapd, iap, frame_len);
                break;
 
