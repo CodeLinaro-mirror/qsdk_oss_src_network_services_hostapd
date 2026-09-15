@@ -38,6 +38,12 @@
 /* Maximum frame body length */
 #define IAP_1905_MAX_FRAME_LEN 1500
 
+/* Size of one Client Identifier TLV (type + length + value):
+ * subtype(2) + dst_mld(6) + dst_bssid(6) + client_mld(6) + ap_smd(6) + link_id(1) = 27 bytes value
+ * total = WIFI8_TLV_HDR_LEN(3) + 27 = 30 bytes */
+#define CLIENT_ID_TLV_SIZE  (WIFI8_TLV_HDR_LEN + WIFI8_TLV_SUBTYPE_LEN + \
+                             4 * ETH_ALEN + 1)
+
 /* Zero-filled constants (zero-initialized by static storage class, C99 §6.7.9) */
 static const u8 zero_addr[ETH_ALEN];      /* zero MAC — used when BSSID not known */
 static const u8 zero_pn_buf[IAP_1905_PN_LEN]; /* zero PN — used for PN padding    */
@@ -948,22 +954,34 @@ struct wpabuf *eth_p_1905_iap_encode_exec_resp(struct hostapd_data *hapd,
 	return buf;
 }
 
-struct wpabuf *eth_p_1905_iap_encode_prep_ctx(const struct uhr_iap_frame *iap)
+struct wpabuf *eth_p_1905_iap_encode_prep_ctx(struct hostapd_data *hapd,
+					      const struct uhr_iap_frame *iap)
 {
 	const struct sta_smd_ctx_info *smd_ctx;
 	size_t smd_ctx_len;
 	struct wpabuf *buf;
 
-	if (!iap || !(iap->flags & UHR_IAP_FLAG_HAS_DYNAMIC_CTX))
+	if (!hapd || !iap || !(iap->flags & UHR_IAP_FLAG_HAS_DYNAMIC_CTX))
 		return NULL;
 
 	/* frame_len is 0 for PREP_CTX; smd_ctx starts at frame_ctx_data[0] */
 	smd_ctx = (const struct sta_smd_ctx_info *) iap->frame_ctx_data;
 	smd_ctx_len = le_to_host16(iap->smd_ctx_len);
 
-	buf = wpabuf_alloc(eth_p_1905_payload_len(iap));
+	/* Allocate space for Client Identifier TLV + Datapath Ctx TLV (+ Vendor Ctx TLV) */
+	buf = wpabuf_alloc(CLIENT_ID_TLV_SIZE + eth_p_1905_payload_len(iap));
 	if (!buf)
 		return NULL;
+
+	if (encode_client_identifier_tlv(buf,
+					 iap->target_ap_mld_addr,
+					 NULL,
+					 iap->sta_addr,
+					 hapd->conf->smd.smd_identifier,
+					 iap->current_link_id) < 0) {
+		wpabuf_free(buf);
+		return NULL;
+	}
 
 	if (encode_datapath_ctx_tlv(buf, iap->target_ap_mld_addr, NULL,
 				    smd_ctx, smd_ctx_len) < 0) {
@@ -1005,12 +1023,6 @@ struct wpabuf *eth_p_1905_iap_encode_roam_cleanup(const struct uhr_iap_frame *ia
 
 	return buf;
 }
-
-/* Size of one Client Identifier TLV (type + length + value):
- * subtype(2) + dst_mld(6) + dst_bssid(6) + client_mld(6) + ap_smd(6) + link_id(1) = 27 bytes value
- * total = WIFI8_TLV_HDR_LEN(3) + 27 = 30 bytes */
-#define CLIENT_ID_TLV_SIZE  (WIFI8_TLV_HDR_LEN + WIFI8_TLV_SUBTYPE_LEN + \
-                             4 * ETH_ALEN + 1)
 
 struct wpabuf *eth_p_1905_iap_encode_ctx_req(const struct uhr_iap_frame *iap)
 {
