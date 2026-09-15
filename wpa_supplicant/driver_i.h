@@ -1383,6 +1383,7 @@ wpa_drv_set_rtt_initiator_role(struct wpa_supplicant *wpa_s, u32 role)
 {
 	if (!wpa_s->driver->notify_iface_state)
 		return -1;
+
 	return wpa_s->driver->notify_iface_state(
 		wpa_s->drv_priv, OUI_QCA,
 		QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
