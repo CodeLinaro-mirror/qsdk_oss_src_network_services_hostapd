@@ -77,6 +77,35 @@ static int wpa_config_validate_network(struct wpa_ssid *ssid, int line)
 	}
 #endif /* CONFIG_OCV */
 
+#ifdef CONFIG_PQC
+	/*
+	 * The PQC AKMs are usable only through a security profile, and every
+	 * PQC security profile requires these capabilities. See Table 9-bb18
+	 * as modified by 9.4.2.365 in Draft P802.11bt D1.0.
+	 */
+	if (ssid->security_profiles &&
+	    wpa_key_mgmt_pqc(sec_prof_implied_key_mgmt(
+				     ssid->security_profiles))) {
+		const char *missing = NULL;
+
+		if (ssid->ieee80211w != MGMT_FRAME_PROTECTION_REQUIRED)
+			missing = "ieee80211w=2";
+#ifdef CONFIG_IEEE8021X_AUTH
+		else if (!ssid->eap_over_auth_frame)
+			missing = "eap_over_auth_frame";
+#endif /* CONFIG_IEEE8021X_AUTH */
+		else if (!ssid->pmksa_privacy)
+			missing = "pmksa_privacy";
+
+		if (missing) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: a PQC AKM requires %s to be enabled",
+				   line, missing);
+			errors++;
+		}
+	}
+#endif /* CONFIG_PQC */
+
 	return errors;
 }
 
