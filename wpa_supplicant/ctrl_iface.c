@@ -8859,6 +8859,29 @@ static int wpas_ctrl_iface_wnm_sleep(struct wpa_supplicant *wpa_s, char *cmd)
 }
 
 
+static int wpas_ctrl_iface_wnm_tim_bcast(struct wpa_supplicant *wpa_s,
+					  char *cmd)
+{
+	int interval;
+	char *pos;
+
+	pos = os_strstr(cmd, "interval=");
+	if (!pos) {
+		wpa_printf(MSG_DEBUG,
+			   "WNM_TIM_BCAST: missing interval= parameter");
+		return -1;
+	}
+	interval = atoi(pos + 9);
+	if (interval < 0 || interval > 255) {
+		wpa_printf(MSG_DEBUG,
+			   "WNM_TIM_BCAST: invalid interval %d", interval);
+		return -1;
+	}
+
+	return ieee802_11_send_wnm_tim_bcast_req(wpa_s, (u8) interval);
+}
+
+
 static int wpas_ctrl_iface_wnm_bss_query(struct wpa_supplicant *wpa_s, char *cmd)
 {
 	int query_reason, list = 0;
@@ -14834,6 +14857,9 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 #ifdef CONFIG_WNM
 	} else if (os_strncmp(buf, "WNM_SLEEP ", 10) == 0) {
 		if (wpas_ctrl_iface_wnm_sleep(wpa_s, buf + 10))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "WNM_TIM_BCAST ", 14) == 0) {
+		if (wpas_ctrl_iface_wnm_tim_bcast(wpa_s, buf + 14))
 			reply_len = -1;
 	} else if (os_strncmp(buf, "WNM_BSS_QUERY ", 14) == 0) {
 		if (wpas_ctrl_iface_wnm_bss_query(wpa_s, buf + 14))

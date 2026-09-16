@@ -2472,6 +2472,18 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
 	if (!conf->start_disabled && ieee802_11_set_beacon(hapd) < 0)
 		return -1;
 
+	/* Notify driver that WNM TIM Broadcast is enabled so it can
+	 * subscribe to SWBA events from firmware.
+	 */
+	if (conf->wnm_tim_bcast) {
+		if (hostapd_drv_wnm_tim_bcast_ap_enable(hapd, 1))
+			wpa_printf(MSG_WARNING,
+				   "WNM: Failed to enable TIM Broadcast in driver");
+		else
+			wpa_printf(MSG_DEBUG,
+				   "WNM: TIM Broadcast enabled in driver");
+	}
+
 	if (flush_old_stations && !conf->start_disabled &&
 	    conf->broadcast_deauth) {
 		u8 addr[ETH_ALEN];

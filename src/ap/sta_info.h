@@ -497,6 +497,13 @@ struct sta_info {
 	u8 *ext_capability;
 	char *ifname_wds; /* WDS ifname, if in use */
 
+	/* WNM TIM Broadcast agreement (IEEE 802.11-2024 §11.21.10) */
+	int tim_bcast_enabled;
+	u8 tim_bcast_interval;
+	u8 tim_bcast_offset;
+	u8 tim_bcast_high_rate;
+	u8 tim_bcast_low_rate;
+
 #ifdef CONFIG_DPP2
 	struct dpp_pfs *dpp_pfs;
 #endif /* CONFIG_DPP2 */

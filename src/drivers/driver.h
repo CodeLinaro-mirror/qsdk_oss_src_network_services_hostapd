@@ -5627,6 +5627,30 @@ struct wpa_driver_ops {
 			u8 *buf, u16 *buf_len);
 
 	/**
+	 * wnm_tim_bcast_set - Configure per-STA TIM Broadcast in the driver
+	 * @priv: Private driver interface data
+	 * @peer: STA MAC address
+	 * @interval: Negotiated TIM Broadcast interval (DTIM multiplier); 0=disable
+	 * @offset: Negotiated offset within interval
+	 * @high_rate: AP high-rate DTIM multiplier
+	 * @low_rate: AP low-rate DTIM multiplier
+	 * @enable: 1 to enable, 0 to disable
+	 * Returns: 0 on success, negative on failure
+	 */
+	int (*wnm_tim_bcast_set)(void *priv, const u8 *peer,
+				 u8 interval, u8 offset,
+				 u8 high_rate, u8 low_rate,
+				 int enable);
+
+	/**
+	 * wnm_tim_bcast_ap_enable - Enable/disable WNM TIM Broadcast at AP level
+	 * @priv: Private driver interface data
+	 * @enable: 1 to enable SWBA subscription, 0 to disable
+	 * Returns: 0 on success, negative on failure
+	 */
+	int (*wnm_tim_bcast_ap_enable)(void *priv, int enable);
+
+	/**
 	 * set_qos_map - Set QoS Map
 	 * @priv: Private driver interface data
 	 * @qos_map_set: QoS Map

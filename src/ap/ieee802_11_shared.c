@@ -471,6 +471,8 @@ static void hostapd_ext_capab_byte(struct hostapd_data *hapd, u8 *pos, int idx,
 	case 2: /* Bits 16-23 */
 		if (hapd->conf->wnm_sleep_mode)
 			*pos |= 0x02; /* Bit 17 - WNM-Sleep Mode */
+		if (hapd->conf->wnm_tim_bcast)
+			*pos |= 0x04; /* Bit 18 - TIM Broadcast */
 		if (hapd->conf->bss_transition)
 			*pos |= 0x08; /* Bit 19 - BSS Transition */
 		if (hapd->iconf->mbssid)
