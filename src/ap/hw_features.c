@@ -1953,7 +1953,10 @@ int hostapd_check_he_6ghz_capab(struct hostapd_iface *iface)
  * 0 = not usable
  * -1 = not currently usable due to 6 GHz NO-IR
  */
-static int hostapd_is_usable_chan(struct hostapd_iface *iface,
+#ifndef CONFIG_QCN_EXTN
+static
+#endif
+int hostapd_is_usable_chan(struct hostapd_iface *iface,
 				  int frequency, int primary)
 {
 	struct hostapd_channel_data *chan;

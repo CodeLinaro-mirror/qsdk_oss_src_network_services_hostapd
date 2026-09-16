@@ -3547,37 +3547,6 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 					return hostapd_dfs_start_channel_switch_background(iface);
 			}
 
-#ifdef CONFIG_QCN_EXTN
-			/*
-			 * Boot-up CAC path: all BSSes were already created
-			 * before CAC started.  Complete the bring-up here,
-			 * before the state check below, so that
-			 * iface->state == HAPD_IFACE_ENABLED after this call
-			 * and the hostapd_setup_interface_complete() re-entry
-			 * in the HAPD_CAC_COMPLETE_AFTER_BSS branch is
-			 * naturally skipped.
-			 */
-			if (iface->bootup_cac_in_progress &&
-			    hostapd_is_dfs_chan_available(iface)) {
-				hostapd_bootup_cac_complete_extn(iface);
-				/*
-				 * Only notify Rptr STA, if this CAC was directly triggered
-				 * by ACS selecting a DFS channel at initial startup.
-				 * acs_dfs_cac_pending is a one-shot flag: set only in
-				 * hostapd_acs_completed() for DFS channel, cleared here.
-				 */
-				if (iface->iface_extn.acs_dfs_cac_pending) {
-					iface->iface_extn.acs_dfs_cac_pending = false;
-					wpa_printf(MSG_DEBUG,
-					"ACS-selected DFS channel CAC "
-					"completed on %d MHz — notify Rptr STA", freq);
-					hostapd_ml_acs_check_and_notify(iface, true);
-				}
-
-				goto cac_done;
-			}
-#endif /* CONFIG_QCN_EXTN */
-
 			/*
 			 * Just mark the channel available when CAC completion
 			 * event is received in enabled state. CAC result could
@@ -3592,6 +3561,35 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			    hostapd_is_dfs_chan_available(iface)) {
 				iface->cac_started = 0;
 				if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_BSS) {
+#ifdef CONFIG_QCN_EXTN
+					/*
+					 * Only notify Rptr STA, if this CAC was directly triggered
+					 * by ACS selecting a DFS channel at initial startup.
+					 * acs_dfs_cac_pending is a one-shot flag: set only in
+					 * hostapd_acs_completed() for DFS channel, cleared here.
+					 */
+					if (iface->iface_extn.acs_dfs_cac_pending) {
+						iface->iface_extn.acs_dfs_cac_pending = false;
+						wpa_printf(MSG_DEBUG,
+						"ACS-selected DFS channel CAC "
+						"completed on %d MHz — notify Rptr STA", freq);
+						hostapd_ml_acs_check_and_notify(iface, true);
+					}
+
+					/*
+					 * Boot-up CAC path: all BSSes were already created
+					 * before CAC started.  Complete the bring-up here,
+					 * before the state check below, so that
+					 * iface->state == HAPD_IFACE_ENABLED after this call
+					 * and the hostapd_setup_interface_complete() re-entry
+					 * in the HAPD_CAC_COMPLETE_AFTER_BSS branch is
+					 * naturally skipped.
+					 */
+					if (hostapd_bootup_cac_enabled_extn(iface)) {
+						hostapd_bootup_cac_complete_extn(iface);
+						goto cac_done;
+					}
+#endif /* CONFIG_QCN_EXTN */
 					ieee80211_freq_to_chan(cf1, &seg0);
 					hostapd_set_oper_centr_freq_seg0_idx(iface->conf, seg0);
 					if (hostapd_check_reenable_bss(
@@ -3665,6 +3663,12 @@ cac_done:
 		hapd->iface->csa_pending_on_cac_abort = false;
 		os_memset(&hapd->iface->csa_settings, 0, sizeof(struct csa_settings));
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (!success && iface->iface_extn.country_change_post_cac_abort &&
+	    freq == iface->freq)
+		hostapd_country_change_post_cac_abort_extn(iface);
+#endif /* CONFIG_QCN_EXTN */
 
 	return 0;
 }

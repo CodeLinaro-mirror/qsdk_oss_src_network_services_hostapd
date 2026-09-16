@@ -1790,6 +1790,7 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 	iface->cac_type = 0;
 #ifdef CONFIG_QCN_EXTN
 	iface->iface_extn.cac_abort = 0;
+	iface->bootup_cac_in_progress = 0;
 #endif
 	ap_list_deinit(iface);
 	sta_track_deinit(iface);
@@ -4325,7 +4326,6 @@ static int configured_fixed_chan_to_freq(struct hostapd_iface *iface)
 	return -1;
 }
 
-#ifdef CONFIG_QCN_EXTN
 /**
  * hostapd_handle_regchannel_update - Handle channel list update.
  *
@@ -4335,6 +4335,12 @@ static int configured_fixed_chan_to_freq(struct hostapd_iface *iface)
  * If not, then invoke no_ir_channel_list_updated() to handle
  * NO_IR channel list update.
  *
+ * Country change detection, channel re-selection, and regdom restore are
+ * delegated to the extn layer via hostapd_handle_regchannel_update_extn().
+ * The extn returns non-zero when it has fully handled the event (country
+ * change or forced-down recovery); in that case the NO_IR / AFC paths below
+ * are skipped.
+ *
  * @param iface: Pointer to hostapd interface data
  * @param ctx:   Pointer to context
  *
@@ -4343,9 +4349,15 @@ static int configured_fixed_chan_to_freq(struct hostapd_iface *iface)
 static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 					    void *ctx)
 {
-	int i;
 	int ret;
-	bool regdom_reenable = iface->is_regdom_forced_down;
+#ifdef CONFIG_QCN_EXTN
+	bool afc_regd = false;
+
+	if (iface->iface_extn.is_waiting_for_afc_regd) {
+		afc_regd = true;
+		iface->iface_extn.is_waiting_for_afc_regd = false;
+	}
+#endif /* CONFIG_QCN_EXTN */
 
 	ret = hostapd_get_hw_features(iface);
 	if (ret) {
@@ -4358,8 +4370,6 @@ static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 		if (ret) {
 			wpa_printf(MSG_ERROR, "Configured channel is not valid (%d)",
 				   ret);
-			hostapd_regdom_force_disable_iface(iface,
-							   "configured channel invalid");
 			return ret;
 		}
 	}
@@ -4367,74 +4377,31 @@ static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 	ret = hostapd_select_hw_mode(iface);
 	if (ret < 0 && !iface->is_no_ir) {
 		wpa_printf(MSG_ERROR, "Failed to select hardware mode (%d)", ret);
-		hostapd_regdom_force_disable_iface(iface,
-						   "no valid hardware mode");
+#ifdef CONFIG_QCN_EXTN
+		ret = hostapd_handle_regchannel_update_extn(iface, afc_regd);
+		return ret > 0 ? 0 : ret;
+#else
 		return ret;
+#endif /* CONFIG_QCN_EXTN */
 	}
 
 	if (ret == 1)
-		return 0;
+		return 0; /* ACS will run and complete asynchronously */
 
 	ret = hostapd_set_current_hw_info(iface, iface->freq);
 	if (ret) {
 		wpa_printf(MSG_ERROR, "Failed to set current hw info (%d)", ret);
-		hostapd_regdom_force_disable_iface(iface,
-						 "failed to set hw info");
+#ifdef CONFIG_QCN_EXTN
+		hostapd_regdom_bringup_failed_extn(iface);
+#endif /* CONFIG_QCN_EXTN */
 		return ret;
 	}
 
-	for (i = 0; i < iface->num_bss; i++) {
-		if (!iface->bss[i])
-			continue;
 #ifdef CONFIG_QCN_EXTN
-		hostapd_sync_country_from_driver(iface->bss[i]);
+	ret = hostapd_handle_regchannel_update_extn(iface, afc_regd);
+	if (ret)
+		return ret > 0 ? 0 : ret;
 #endif /* CONFIG_QCN_EXTN */
-	}
-
-#ifdef CONFIG_QCN_EXTN
-	if (!hostapd_is_iface_regdom_supported(iface)) {
-		if (!hostapd_regdom_move_iface_to_supported_channel(iface)) {
-			if (regdom_reenable) {
-				ret = hostapd_regdom_restore_iface(iface);
-				if (ret) {
-					wpa_printf(MSG_ERROR,
-						   "REGDOM: Failed to re-enable interface %s on fallback channel",
-						   iface->conf->bss[0]->iface);
-				}
-				return ret;
-			}
-
-			if (iface->state == HAPD_IFACE_ENABLED)
-				hostapd_regdom_force_disable_iface(iface,
-								 "switching to fallback channel");
-
-			if (iface->state == HAPD_IFACE_NO_IR) {
-				ret = hostapd_no_ir_channel_list_updated(iface);
-				if (ret)
-					wpa_printf(MSG_ERROR,
-						   "REGDOM: Failed NO_IR update for %s on fallback channel",
-						   iface->conf->bss[0]->iface);
-			}
-
-			return ret;
-		}
-
-		hostapd_regdom_force_disable_iface(iface,
-							 "configured channel unsupported");
-		return 0;
-	}
-#endif /* CONFIG_QCN_EXTN */
-
-	if (regdom_reenable) {
-		ret = hostapd_regdom_restore_iface(iface);
-		if (ret) {
-			wpa_printf(MSG_ERROR,
-				   "REGDOM: Failed to re-enable interface %s",
-				   iface->conf->bss[0]->iface);
-			return ret;
-		}
-		return 0;
-	}
 
 	wpa_printf(MSG_DEBUG, "Handling NOIR Channel List Update");
 	ret = hostapd_no_ir_channel_list_updated(iface);
@@ -4451,9 +4418,8 @@ static int hostapd_handle_regchannel_update(struct hostapd_iface *iface,
 
 	return ret;
 }
-#endif /* CONFIG_QCN_EXTN */
 
-#ifdef HOSTAPD
+#if defined(CONFIG_QCN_EXTN) && defined(HOSTAPD)
 static int
 hostapd_run_pending_repeater_afc_power_sync(struct hostapd_iface *iface,
 					    void *ctx)
@@ -4539,15 +4505,13 @@ void hostapd_channel_list_updated(struct hostapd_iface *iface, int initiator)
 
 		wpa_printf(MSG_DEBUG, "Reg change event received for phy %s through %s",
 			   phy_name, iface->phy);
-#ifdef CONFIG_QCN_EXTN
 		hostapd_for_each_iface_on_phy(iface->interfaces, phy_name,
 					      hostapd_handle_regchannel_update, NULL);
-#endif /* CONFIG_QCN_EXTN */
-#ifdef HOSTAPD
+#if defined(CONFIG_QCN_EXTN) && defined(HOSTAPD)
 		hostapd_for_each_iface_on_phy(iface->interfaces, phy_name,
 					      hostapd_run_pending_repeater_afc_power_sync,
 					      NULL);
-#endif
+#endif /* CONFIG_QCN_EXTN */
 		return;
 	}
 
@@ -4760,11 +4724,25 @@ static int setup_interface2(struct hostapd_iface *iface)
 fail:
 	if (iface->is_no_ir) {
 		/* If AP is in NO_IR state, it can be reenabled by the driver
-		 * regulatory update and EVENT_CHANNEL_LIST_CHANGED. */
+		 * regulatory update and EVENT_CHANNEL_LIST_CHANGED.
+		 * Note: is_no_ir is only set for 6 GHz NO_IR channels; 5 GHz
+		 * unavailable channels return HAPD_CHAN_INVALID (not NO_IR). */
 		hostapd_set_state(iface, HAPD_IFACE_NO_IR);
 		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, AP_EVENT_NO_IR);
 		return 0;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * Bring-up failed — the configured channel may be regulatory-disabled
+	 * in the current country. Park to NO_IR and mark is_regdom_forced_down
+	 * so the next REGULATORY event triggers full channel selection and come
+	 * back up. Without this, the iface would stay DISABLED with no recovery.
+	 */
+	if (!regdom_subchans_valid(iface) &&
+	    hostapd_regdom_bringup_failed_extn(iface))
+		return 0;
+#endif /* CONFIG_QCN_EXTN */
 
 	hostapd_set_state(iface, HAPD_IFACE_DISABLED);
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, AP_EVENT_DISABLED);
@@ -5206,6 +5184,7 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 		goto fail;
 
 #ifdef CONFIG_QCN_EXTN
+	hostapd_iface_init_extn(iface);
 	hostapd_ignorecac_init_iface_extn(iface);
 #endif /* CONFIG_QCN_EXTN */
 
@@ -5581,6 +5560,18 @@ fail:
 		return 0;
 	}
 
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * Bring-up failed — the configured channel may be regulatory-disabled
+	 * in the current country. Park to NO_IR and mark is_regdom_forced_down
+	 * so the next REGULATORY event triggers full channel selection and come
+	 * back up. Without this, the iface would stay DISABLED with no recovery.
+	 */
+	if (!regdom_subchans_valid(iface) &&
+	    hostapd_regdom_bringup_failed_extn(iface))
+		return 0;
+#endif /* CONFIG_QCN_EXTN */
+
 	hostapd_set_state(iface, HAPD_IFACE_DISABLED);
 	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_DISABLED);
 #ifdef CONFIG_FST
@@ -5633,6 +5624,18 @@ int hostapd_setup_interface_complete(struct hostapd_iface *iface, int err)
 			wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_NO_IR);
 			return 0;
 		}
+
+#ifdef CONFIG_QCN_EXTN
+		/*
+		 * Bring-up failed — the configured channel may be regulatory-disabled
+		 * in the current country. Park to NO_IR and mark is_regdom_forced_down
+		 * so the next REGULATORY event triggers full channel selection and come
+		 * back up. Without this, the iface would stay DISABLED with no recovery.
+		 */
+		if (!regdom_subchans_valid(iface) &&
+		    hostapd_regdom_bringup_failed_extn(iface))
+			return 0;
+#endif /* CONFIG_QCN_EXTN */
 
 		hostapd_set_state(iface, HAPD_IFACE_DISABLED);
 		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_DISABLED);

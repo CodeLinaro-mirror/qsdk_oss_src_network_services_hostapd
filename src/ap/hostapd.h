@@ -1112,8 +1112,6 @@ struct hostapd_iface {
 
 	/* Configured freq of interface is NO_IR */
 	bool is_no_ir;
-	/* Interface was brought down due regulatory incompatibility */
-	bool is_regdom_forced_down;
 
 	bool is_ch_switch_dfs; /* Channel switch from ACS to DFS */
 	/* 6 GHz AFC information */
@@ -1755,61 +1753,12 @@ void hostapd_interface_update_fils_ubpr(struct hostapd_iface *iface,
  * Return: None
  */
 #ifdef HOSTAPD
-#define HOSTAPD_IFACE_RELOAD_LINKID_REGDOM 0xFE
 void hostapd_set_no_ir_state(struct hostapd_iface *iface);
-bool hostapd_regdom_channel_supported(struct hostapd_iface *iface,
-				      struct hostapd_channel_data *chan);
-#ifdef CONFIG_QCN_EXTN
-bool hostapd_is_iface_regdom_supported(struct hostapd_iface *iface);
-struct hostapd_channel_data *
-hostapd_regdom_first_supported_channel(struct hostapd_iface *iface);
-int hostapd_regdom_move_iface_to_supported_channel(struct hostapd_iface *iface);
-void hostapd_regdom_force_disable_iface(struct hostapd_iface *iface,
-						 const char *reason);
-int hostapd_regdom_restore_iface(struct hostapd_iface *iface);
-#endif /* CONFIG_QCN_EXTN */
 #else
 static inline void
 hostapd_set_no_ir_state(struct hostapd_iface *iface)
 {
 	/* No-op if hostapd is not defined */
-}
-
-static inline bool
-hostapd_regdom_channel_supported(struct hostapd_iface *iface,
-				      struct hostapd_channel_data *chan)
-{
-	return false;
-}
-
-static inline bool
-hostapd_is_iface_regdom_supported(struct hostapd_iface *iface)
-{
-	return false;
-}
-
-static inline struct hostapd_channel_data *
-hostapd_regdom_first_supported_channel(struct hostapd_iface *iface)
-{
-	return NULL;
-}
-
-static inline int
-hostapd_regdom_move_iface_to_supported_channel(struct hostapd_iface *iface)
-{
-	return -1;
-}
-
-static inline void
-hostapd_regdom_force_disable_iface(struct hostapd_iface *iface,
-						 const char *reason)
-{
-}
-
-static inline int
-hostapd_regdom_restore_iface(struct hostapd_iface *iface)
-{
-	return 0;
 }
 #endif
 void hostapd_no_ir_cleanup(struct hostapd_data *bss);
