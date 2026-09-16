@@ -3976,9 +3976,9 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 
 	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, DFS_EVENT_CAC_COMPLETED
 		"success=%d freq=%d ht_enabled=%d chan_offset=%d chan_width=%d cf1=%d cf2=%d radar_detected=%d"
-		" chan_width_device=%d cf_device=%d cac_started=%d",
+		" chan_width_device=%d cf_device=%d cac_started=%d, unpunc_bitmap=0x%04x",
 		success, freq, ht_enabled, chan_offset, chan_width, cf1, cf2,
-		iface->radar_detected, chan_width_device, cf_device, iface->cac_started);
+		iface->radar_detected, chan_width_device, cf_device, iface->cac_started, unpunc_bitmap);
 
 #ifdef CONFIG_QCN_EXTN
 	/* Set cac_abort flag when CAC fails (success=0) */
