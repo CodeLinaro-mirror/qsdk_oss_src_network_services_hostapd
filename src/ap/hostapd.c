@@ -1787,6 +1787,7 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 	iface->num_hw_features = 0;
 	iface->current_mode = NULL;
 	iface->cac_started = 0;
+	iface->cac_type = 0;
 #ifdef CONFIG_QCN_EXTN
 	iface->iface_extn.cac_abort = 0;
 #endif
