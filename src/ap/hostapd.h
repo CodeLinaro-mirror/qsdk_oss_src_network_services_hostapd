@@ -1986,6 +1986,21 @@ hostapd_validate_chan_bw_in_pwr_mode(struct hostapd_iface *iface, u16 freq,
 				     u16 center_freq, u16 bw, u16 pp,
 				     u8 pwr_type);
 
+/*
+ * hostapd_validate_non_6ghz_chan_bw - Validate a 2.4/5 GHz channel+BW.
+ *
+ * This API checks if the input channel parameters are valid.
+ *
+ * Punctured sub-channels (pp bitmap) are skipped.
+ * Bonded center is validated via hostapd_get_bonded_chan_center_freq() for
+ * BW > 20 MHz.
+ *
+ * Return: true if all non-punctured sub-channels are usable.
+ */
+bool
+hostapd_validate_non_6ghz_chan_bw(struct hostapd_iface *iface, u16 freq,
+				  u16 center_freq, u16 bw, u16 pp);
+
 void hostapd_remove_non_tx_bsses(struct hostapd_data *tx_bss);
 
 static inline bool
