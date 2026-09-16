@@ -2979,12 +2979,7 @@ static u16 wpa_auth_process_pqc_params(struct hostapd_data *hapd,
 	if (pqc->content_present ==
 	    PQC_CONTENT_PUBLIC_KEY_PARAM_AND_ML_KEM_ENC_KEY ||
 	    pqc->content_present == PQC_CONTENT_ML_KEM_ENC_KEY) {
-		crypto_ml_kem_deinit(auth_data->ml_kem);
-		auth_data->ml_kem = NULL;
-		wpabuf_clear_free(auth_data->ml_kem_ss);
-		auth_data->ml_kem_ss = NULL;
-		wpabuf_clear_free(auth_data->ml_kem_ciphertext);
-		auth_data->ml_kem_ciphertext = NULL;
+		ap_sta_free_ml_kem_data(auth_data);
 
 		wpa_hexdump(MSG_DEBUG, "ML-KEM public info", pos, left);
 		auth_data->ml_kem =
@@ -3631,6 +3626,9 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 			return;
 		}
 
+		/* Drop ML-KEM material encapsulated for the rejected PMKSA */
+		ap_sta_free_ml_kem_data(&sta->eap_auth_data);
+
 		/* Start EAPOL SM to process EAPOL PDU */
 		if (!sta->eapol_sm) {
 			sta->eapol_sm = ieee802_1x_alloc_eapol_sm(hapd, sta);
@@ -3690,6 +3688,11 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 
 		sta->flags |= WLAN_STA_AUTH;
 		sta->auth_alg = WLAN_AUTH_802_1X;
+
+		/* Do not leak this exchange into the next one */
+		sta->eap_auth_data.auth_success = false;
+		ap_sta_free_ml_kem_data(&sta->eap_auth_data);
+
 		send_8021x_auth_reply(hapd, sta, auth_transaction + 1,
 					WLAN_STATUS_SUCCESS, reply);
 		return;
@@ -3707,6 +3710,12 @@ fail:
 	if (reply)
 		send_8021x_auth_reply(hapd, sta, auth_transaction + 1, resp,
 				      reply);
+
+	/* Do not leak this exchange into the next one */
+#ifdef CONFIG_PQC
+	sta->eap_auth_data.auth_success = false;
+#endif /* CONFIG_PQC */
+	ap_sta_free_ml_kem_data(&sta->eap_auth_data);
 }
 
 #endif /* CONFIG_IEEE8021X_AUTH */

@@ -583,9 +583,7 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	wpabuf_clear_free(sta->eap_auth_data.dhss);
 	os_free(sta->eap_auth_data.rsnxe);
 #ifdef CONFIG_PQC
-	crypto_ml_kem_deinit(sta->eap_auth_data.ml_kem);
-	wpabuf_clear_free(sta->eap_auth_data.ml_kem_ss);
-	wpabuf_clear_free(sta->eap_auth_data.ml_kem_ciphertext);
+	ap_sta_free_ml_kem_data(&sta->eap_auth_data);
 	wpabuf_free(sta->eap_auth_data.transcript);
 #endif /* CONFIG_PQC */
 #endif /* CONFIG_IEEE8021X_AUTH */
@@ -2190,3 +2188,16 @@ void ap_sta_free_sta_profile(struct mld_info *info)
 	}
 }
 #endif /* CONFIG_IEEE80211BE */
+
+
+void ap_sta_free_ml_kem_data(struct eap_over_auth_data *auth_data)
+{
+#ifdef CONFIG_PQC
+	crypto_ml_kem_deinit(auth_data->ml_kem);
+	auth_data->ml_kem = NULL;
+	wpabuf_clear_free(auth_data->ml_kem_ss);
+	auth_data->ml_kem_ss = NULL;
+	wpabuf_clear_free(auth_data->ml_kem_ciphertext);
+	auth_data->ml_kem_ciphertext = NULL;
+#endif /* CONFIG_PQC */
+}
