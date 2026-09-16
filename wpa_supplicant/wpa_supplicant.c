@@ -3746,6 +3746,63 @@ static int drv_supports_vht(struct wpa_supplicant *wpa_s,
 }
 
 
+static void ibss_mesh_setup_2G_he40(struct hostapd_freq_params *freq,
+					struct hostapd_hw_modes *mode,
+					struct wpa_supplicant *wpa_s,
+					const struct wpa_ssid *ssid,
+					int ieee80211_mode)
+{
+	static const int he40plus2G[] = {
+		2412, 2417, 2422, 2427, 2432, 2437
+	};
+	struct wpa_scan_results *scan_res;
+	int i, res;
+	u8 pri_chan, sec_chan;
+
+	if (!freq->he_enabled ||
+	    !(mode->he_capab[ieee80211_mode].phy_cap[
+		    HE_PHYCAP_CHANNEL_WIDTH_SET_IDX] &
+	      HE_PHYCAP_CHANNEL_WIDTH_SET_40MHZ_IN_2G))
+		return;
+
+	freq->vht_enabled = vht_supported(mode);
+	freq->sec_channel_offset = -1;
+	freq->bandwidth = 40;
+
+	/* Use HT40+ on channels 1-6 and HT40- on channels 7-13. */
+	for (i = 0; i < ARRAY_SIZE(he40plus2G); i++) {
+		if (freq->freq == he40plus2G[i]) {
+			freq->sec_channel_offset = 1;
+			break;
+		}
+	}
+
+	freq->center_freq1 = freq->freq + freq->sec_channel_offset * 10;
+	freq->center_freq2 = 0;
+
+	if (ssid->disable_40mhz_scan) {
+		wpa_printf(MSG_DEBUG, "IBSS/mesh: 40 MHz coexistence scan disabled");
+		return;
+	}
+
+	scan_res = wpa_supplicant_get_scan_results(wpa_s, NULL, 0, NULL);
+	if (!scan_res)
+		goto he20;
+
+	pri_chan = freq->channel;
+	sec_chan = pri_chan + freq->sec_channel_offset * 4;
+	res = check_40mhz_2g4(mode, scan_res, pri_chan, sec_chan);
+	wpa_scan_results_free(scan_res);
+	if (res)
+		return;
+
+he20:
+	freq->sec_channel_offset = 0;
+	freq->bandwidth = 20;
+	freq->center_freq1 = freq->freq;
+}
+
+
 static bool ibss_mesh_is_80mhz_avail(int channel, struct hostapd_hw_modes *mode, bool dfs_enabled)
 {
 	int i;
@@ -4305,6 +4362,9 @@ void ibss_mesh_setup_freq(struct wpa_supplicant *wpa_s,
 		freq->he_enabled = ibss_mesh_can_use_he(wpa_s, ssid, mode,
 							ieee80211_mode);
 	freq->channel = channel;
+	if (is_24ghz)
+		ibss_mesh_setup_2G_he40(freq, mode, wpa_s, ssid,
+					ieee80211_mode);
 	/* Setup higher BW only for 5 and 6 GHz */
 	if (mode->mode == HOSTAPD_MODE_IEEE80211G && ssid->noscan)
 		ibss_mesh_select_40mhz(wpa_s, ssid, mode, freq, obss_scan, is_6ghz, dfs_enabled);

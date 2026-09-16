@@ -1415,6 +1415,11 @@ struct wpa_driver_associate_params {
 	enum sae_pwe sae_pwe;
 
 	/**
+	 * disable_40mhz_scan - Disable HE40MHz coexistence scan
+	 */
+	int disable_40mhz_scan;
+
+	/**
 	 * disable_eht - Disable EHT for this connection
 	 */
 	int disable_eht;

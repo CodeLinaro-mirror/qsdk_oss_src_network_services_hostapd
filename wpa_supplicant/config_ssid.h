@@ -1310,6 +1310,11 @@ struct wpa_ssid {
 	int disable_eht;
 
 	/**
+	 * disable_40mhz_scan - Disable 40MHz coexistence scan for mesh
+	 */
+	int disable_40mhz_scan;
+
+	/**
 	 * disable_uhr - Disable UHR (IEEE 802.11bn) for this network
 	 *
 	 * By default, use it if it is available, but this can be configured
