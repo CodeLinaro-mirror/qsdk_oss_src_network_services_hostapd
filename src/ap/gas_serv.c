@@ -19,6 +19,7 @@
 #include "dpp_hostapd.h"
 #include "sta_info.h"
 #include "gas_serv.h"
+#include "neighbor_db.h"
 
 
 static void gas_serv_peer_timeout(void *eloop_ctx, void *timeout_ctx);
@@ -759,6 +760,28 @@ static void anqp_add_domain_name(struct hostapd_data *hapd, struct wpabuf **buf)
 	}
 }
 
+static void anqp_add_neighbor_report(struct hostapd_data *hapd,
+				     struct wpabuf **buf)
+{
+	if (anqp_add_override(hapd, buf, ANQP_NEIGHBOR_REPORT))
+		return;
+
+	if (hapd->conf->radio_measurements[0] &
+	      WLAN_RRM_CAPS_NEIGHBOR_REPORT) {
+		u8* len, *nei_len;
+		len = gas_anqp_add_element(*buf, ANQP_NEIGHBOR_REPORT);
+		wpabuf_put_u8(*buf, WLAN_EID_NEIGHBOR_REPORT);
+		nei_len = (u8 *)wpabuf_put(*buf, 1);
+
+		if (hostapd_prepare_neighbor_buf(hapd, hapd->own_addr,
+						 *buf)) {
+			(*buf)->used -= 2;
+			return;
+		}
+		*nei_len = ((u8 *)wpabuf_put(*buf, 0) - nei_len - 1);
+		gas_anqp_set_element_len(*buf, len);
+	}
+}
 
 #ifdef CONFIG_FILS
 static void anqp_add_fils_realm_info(struct hostapd_data *hapd,
@@ -1101,6 +1124,9 @@ gas_serv_build_gas_resp_payload(struct hostapd_data *hapd,
 		}
 	}
 
+	if (request & ANQP_REQ_NEIGHBOR_REPORT)
+		anqp_add_neighbor_report(hapd, &buf);
+
 	for (i = 0; i < num_extra_req; i++) {
 		prev_len = wpabuf_len(buf);
 #ifdef CONFIG_FILS
@@ -1296,6 +1322,12 @@ static void rx_anqp_query_list_id(struct hostapd_data *hapd, u16 info_id,
 			     "Emergency NAI",
 			     get_anqp_elem(hapd, info_id) != NULL, qi);
 		break;
+	 case ANQP_NEIGHBOR_REPORT:
+		 set_anqp_req(ANQP_REQ_NEIGHBOR_REPORT,
+			      "Neighbor report",
+			      (hapd->conf->radio_measurements[0] &
+			     WLAN_RRM_CAPS_NEIGHBOR_REPORT), qi);
+		 break;
 	default:
 #ifdef CONFIG_FILS
 		if (info_id == ANQP_FILS_REALM_INFO &&
