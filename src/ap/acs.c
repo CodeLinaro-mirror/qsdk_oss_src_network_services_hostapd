@@ -1240,7 +1240,7 @@ bw_selected:
 		mode = &iface->hw_features[i];
 		if (!hostapd_hw_skip_mode(iface, mode)) {
 #ifdef CONFIG_QCN_EXTN
-			acs_reset_chan_ranks(mode);
+			acs_reset_chan_ranks(iface, mode);
 #endif /* CONFIG_QCN_EXTN */
 			do {
 				acs_find_ideal_chan_mode(iface, mode, n_chans, bw,
@@ -1255,7 +1255,7 @@ bw_selected:
 				wpa_printf(MSG_DEBUG, "ACS: Finding ideal channel for downgraded bandwidth %d MHz", bw);
 			} while(1);
 #ifdef CONFIG_QCN_EXTN
-			acs_rank_channels(mode);
+			acs_rank_channels(iface, mode);
 #endif /* CONFIG_QCN_EXTN */
 		}
 	}

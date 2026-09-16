@@ -1635,6 +1635,9 @@ static void hostapd_cleanup_iface(struct hostapd_iface *iface)
 			     NULL);
 
 	hostapd_cleanup_iface_partial(iface);
+#ifdef CONFIG_QCN_EXTN
+	hostapd_iface_free_extn(iface);
+#endif /* CONFIG_QCN_EXTN */
 	for (j = 0; j < iface->multi_mbssid.num_mbssid_groups; j++) {
 		group = iface->multi_mbssid.group[j];
 		if (!group)
