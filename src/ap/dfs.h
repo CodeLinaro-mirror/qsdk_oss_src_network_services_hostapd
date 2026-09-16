@@ -11,6 +11,22 @@
 
 /* Wait duration between radar detection and channel switch*/
 #define HAPD_DFS_RADAR_CH_SWITCH_WAIT_DUR 500000
+
+#define IEEE80211_5GHZ_CHAN_SPACING 5
+#define IEEE80211_5GHZ_FREQ_BASE 5000
+/*
+ * DFS_SEG_IDX_TO_FREQ - Convert a center frequency segment index to
+ * frequency in MHz.
+ *
+ * The 5 GHz band channel numbering follows IEEE 802.11 convention:
+ *   freq_mhz = (channel_number * channel_spacing) + freq_base
+ * The same formula applies to center frequency segment indices
+ * (seg0/seg1) returned by hostapd_get_oper_centr_freq_seg0_idx().
+ *
+ */
+#define DFS_SEG_IDX_TO_FREQ(seg_idx) \
+        (((seg_idx) * IEEE80211_5GHZ_CHAN_SPACING) + IEEE80211_5GHZ_FREQ_BASE)
+
 #define HAPD_AGILE_CAC_RESTART_DELAY_SECS 3
 
 /* CSA count for uplink CSA notification to wpa_supplicant */
@@ -145,4 +161,18 @@ int dfs_check_chans_available(struct hostapd_iface *iface,
 bool hostapd_dfs_intercac_boot(struct hostapd_iface *iface);
 int hostapd_dfs_intercac_defer_non_radar_switch(struct hostapd_iface *iface,
 						struct csa_settings *settings);
+/**
+ * hostapd_dfs_chan_recovery_update_target - Save current channel as the
+ * DFS channel recovery target.
+ *
+ * Reads the current operating center frequency segment index and channel
+ * width from iface->conf and stores them in the dfs_chan_recovery config
+ * object. Called at feature enable time and after every channel switch
+ * to keep the target tracking the current operating channel.
+ *
+ * @iface: Pointer to hostapd interface data
+ */
+void hostapd_dfs_chan_recovery_update_target(struct hostapd_iface *iface,
+					     int chan,
+					     enum oper_chan_width chwidth);
 #endif /* DFS_H */

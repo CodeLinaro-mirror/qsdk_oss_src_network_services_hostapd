@@ -1570,6 +1570,22 @@ struct next_radar_chan {
 };
 
 /**
+ * struct dfs_chan_recovery_config - DFS channel recovery feature configuration
+ *
+ * Groups all configuration fields for the DFS channel recovery feature.
+ * Stored as an object inside hostapd_config.
+ *
+ * @feature_en: Enable/disable the feature
+ * @chan: Primary channel number of the target channel
+ * @chwidth: Channel width of the target channel
+ */
+struct dfs_chan_recovery_config {
+	bool feature_en;
+	int chan;
+	enum oper_chan_width chwidth;
+};
+
+/**
  * struct hostapd_config - Per-radio interface configuration
  */
 struct hostapd_config {
@@ -1602,6 +1618,7 @@ struct hostapd_config {
 	int bgcac_en;
 	bool dfs_bw_reduce_en;
 	int rcac_freq;
+	struct dfs_chan_recovery_config dfs_chan_recovery;
 	enum {
 		LONG_PREAMBLE = 0,
 		SHORT_PREAMBLE = 1
