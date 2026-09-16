@@ -452,6 +452,8 @@ void wpa_supplicant_mark_disassoc(struct wpa_supplicant *wpa_s)
 	if (wpa_s->enabled_4addr_mode && wpa_drv_set_4addr_mode(wpa_s, 0) == 0)
 		wpa_s->enabled_4addr_mode = 0;
 
+	wpa_s->extap_enabled = 0;
+
 	wpa_s->wps_scan_done = false;
 	wpas_reset_mlo_info(wpa_s);
 #ifndef CONFIG_NO_ROBUST_AV
@@ -3785,6 +3787,61 @@ fail:
 	wpa_supplicant_deauthenticate(wpa_s, WLAN_REASON_DEAUTH_LEAVING);
 }
 
+static void wpa_supplicant_set_extap_mode(struct wpa_supplicant *wpa_s)
+{
+	u8 data[8]; /* NLA header (4 bytes) + u32 value (4 bytes) */
+	const u8 *buf = NULL;
+	size_t buf_len = 0;
+	int max_clients;
+	int ret;
+
+	if (!wpa_s || !wpa_s->current_ssid)
+		return;
+
+	if (!wpa_s->current_ssid->extap_mode)
+		return;
+
+	if (wpa_s->extap_enabled)
+		return;
+
+	max_clients = wpa_s->current_ssid->extap_max_clients;
+	if (max_clients > 0) {
+		WPA_PUT_LE16(data,     sizeof(data));
+		WPA_PUT_LE16(data + 2, QCA_WLAN_VENDOR_ATTR_EXTAP_MAX_CLIENTS);
+		WPA_PUT_LE32(data + 4, (u32)max_clients);
+		buf     = data;
+		buf_len = sizeof(data);
+	}
+
+	ret = wpa_drv_vendor_cmd(wpa_s, OUI_QCA,
+				 QCA_NL80211_VENDOR_SUBCMD_EXTAP_SETUP,
+				 buf, buf_len, NESTED_ATTR_NOT_USED, NULL);
+	if (ret < 0) {
+		wpa_msg(wpa_s, MSG_ERROR, "extap: vendor cmd failed err=%d",
+			ret);
+		return;
+	}
+
+	wpa_s->extap_enabled = 1;
+	wpa_dbg(wpa_s, MSG_DEBUG, "extap: enabled (max_clients=%d)",
+		max_clients);
+
+	/* Add interface to bridge after vendor cmd — IFF_DONT_BRIDGE is
+	 * cleared in the vendor handler so brctl addif will succeed now.
+	 */
+	if (wpa_s->bridge_ifname[0]) {
+		if (wpa_drv_add_to_bridge(wpa_s) == 0) {
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"extap: added %s to bridge %s",
+				wpa_s->ifname, wpa_s->bridge_ifname);
+		} else {
+			wpa_msg(wpa_s, MSG_WARNING,
+				"extap: failed to add %s to bridge %s",
+				wpa_s->ifname, wpa_s->bridge_ifname);
+		}
+	}
+}
+
 
 static void multi_ap_process_assoc_resp(struct wpa_supplicant *wpa_s,
 					const u8 *ies, size_t ies_len)
@@ -5930,6 +5987,7 @@ static void wpa_supplicant_event_assoc(struct wpa_supplicant *wpa_s,
 #endif /* CONFIG_DPP2 */
 
 	wpa_supplicant_set_4addr_mode(wpa_s);
+	wpa_supplicant_set_extap_mode(wpa_s);
 
 	/* WAR: Check if all the links configured by user are associated,
 	 * otherwise trigger a scan request in background to re-associate

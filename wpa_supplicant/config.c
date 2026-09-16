@@ -3119,6 +3119,8 @@ static const struct parse_data ssid_fields[] = {
 	{ INT(ccfs) },
 	{ INT_RANGE(disable_eht, 0, 1)},
 	{ INT_RANGE(enable_4addr_mode, 0, 1)},
+	{ INT_RANGE(extap_mode, 0, 1)},
+	{ INT_RANGE(extap_max_clients, 0, 512)},
 	{ INT_RANGE(max_idle, 0, 65535)},
 	{ INT_RANGE(disable_reconfig, 0, 1)},
 	{ BOOL(ssid_protection)},
