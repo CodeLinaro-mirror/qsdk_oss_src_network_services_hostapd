@@ -895,7 +895,8 @@ int hostapd_flush(struct hostapd_data *hapd)
 {
 	int link_id = -1;
 
-	if (hapd->driver == NULL || hapd->driver->flush == NULL)
+	if (hapd->driver == NULL || hapd->driver->flush == NULL ||
+	    hapd->drv_priv == NULL)
 		return 0;
 
 #ifdef CONFIG_IEEE80211BE
