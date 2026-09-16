@@ -80,6 +80,8 @@ struct neighbor_report {
 
 int ieee802_11_send_wnmsleep_req(struct wpa_supplicant *wpa_s,
 				 u8 action, u16 intval, struct wpabuf *tfs_req);
+int ieee802_11_send_wnm_tim_bcast_req(struct wpa_supplicant *wpa_s,
+				       u8 interval);
 
 void ieee802_11_rx_wnm_action(struct wpa_supplicant *wpa_s,
 			      const struct ieee80211_mgmt *mgmt, size_t len);
