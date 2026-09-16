@@ -1873,6 +1873,13 @@ static void phy_info_freq(struct hostapd_hw_modes *mode,
 	if (tb_freq[NL80211_FREQUENCY_ATTR_NO_320MHZ])
 		chan->allowed_bw &= ~HOSTAPD_CHAN_WIDTH_320;
 
+	if (tb_freq[NL80211_FREQUENCY_ATTR_NO_HE])
+		chan->flag |= HOSTAPD_CHAN_NO_HE;
+	if (tb_freq[NL80211_FREQUENCY_ATTR_NO_EHT])
+		chan->flag |= HOSTAPD_CHAN_NO_EHT;
+	if (tb_freq[NL80211_FREQUENCY_ATTR_NO_UHR])
+		chan->flag |= HOSTAPD_CHAN_NO_UHR;
+
 	if (tb_freq[NL80211_FREQUENCY_ATTR_MAX_TX_POWER])
 		chan->eirp_power = nla_get_u32(tb_freq[NL80211_FREQUENCY_ATTR_MAX_TX_POWER]) / 100;
 
@@ -1972,6 +1979,9 @@ static struct nla_policy freq_policy[NL80211_FREQUENCY_ATTR_MAX + 1] = {
 	[NL80211_FREQUENCY_ATTR_FREQ] = { .type = NLA_U32 },
 	[NL80211_FREQUENCY_ATTR_DISABLED] = { .type = NLA_FLAG },
 	[NL80211_FREQUENCY_ATTR_NO_IR] = { .type = NLA_FLAG },
+	[NL80211_FREQUENCY_ATTR_NO_HE] = { .type = NLA_FLAG },
+	[NL80211_FREQUENCY_ATTR_NO_EHT] = { .type = NLA_FLAG },
+	[NL80211_FREQUENCY_ATTR_NO_UHR] = { .type = NLA_FLAG },
 	[NL80211_FREQUENCY_ATTR_RADAR] = { .type = NLA_FLAG },
 	[NL80211_FREQUENCY_ATTR_MAX_TX_POWER] = { .type = NLA_U32 },
 	[NL80211_FREQUENCY_ATTR_DFS_STATE] = { .type = NLA_U32 },
