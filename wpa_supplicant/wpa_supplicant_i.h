@@ -725,6 +725,7 @@ enum local_hw_capab {
 	CAPAB_VHT,
 	CAPAB_HE,
 	CAPAB_EHT,
+	CAPAB_UHR,
 };
 
 struct last_scan_ssid {
