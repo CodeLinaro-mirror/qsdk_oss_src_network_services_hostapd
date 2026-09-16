@@ -1862,6 +1862,8 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_MAPC_COTDMA_TXOP_POLICY = 543,
 	QCA_NL80211_VENDOR_SUBCMD_MAPC_COTDMA_E2E_CONFIG = 544,
 	QCA_NL80211_VENDOR_SUBCMD_MAPC_PEER_GET_PARAMS = 545,
+	QCA_NL80211_VENDOR_SUBCMD_EXTAP_SETUP = 546,
+	QCA_NL80211_VENDOR_SUBCMD_EXTAP_INFO  = 547,
 };
 
 /* Compatibility defines for previously used subcmd names.
@@ -29324,6 +29326,60 @@ enum qca_wlan_vendor_attr_igmp_tid_override {
 	QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_MAX =
 		QCA_WLAN_VENDOR_ATTR_IGMP_TID_OVERRIDE_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_extap - Attributes for
+ * %QCA_NL80211_VENDOR_SUBCMD_EXTAP_SETUP
+ *
+ * @QCA_WLAN_VENDOR_ATTR_EXTAP_WIFI_IFACE: NLA_STRING — name of the wifi
+ *   interface (e.g. "wlan0") on which NF netdev hooks are registered.
+ * @QCA_WLAN_VENDOR_ATTR_EXTAP_BRIDGE_IFACE: NLA_STRING — name of the bridge
+ *   interface (e.g. "br-lan") that bridges the wifi interface.
+ * @QCA_WLAN_VENDOR_ATTR_EXTAP_TEARDOWN: NLA_FLAG — when present, detach
+ *   (unregister hooks) instead of attach.
+ * @QCA_WLAN_VENDOR_ATTR_EXTAP_MAX_CLIENTS: NLA_U32 — maximum number of
+ *   backend client IP-MAC entries to track. Capped at MAC_DB_ENTRIES.
+ *   When absent the driver default is used.
+ */
+enum qca_wlan_vendor_attr_extap {
+	QCA_WLAN_VENDOR_ATTR_EXTAP_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_EXTAP_WIFI_IFACE   = 1,
+	QCA_WLAN_VENDOR_ATTR_EXTAP_BRIDGE_IFACE = 2,
+	QCA_WLAN_VENDOR_ATTR_EXTAP_TEARDOWN     = 3,
+	QCA_WLAN_VENDOR_ATTR_EXTAP_MAX_CLIENTS  = 4,
+
+	QCA_WLAN_VENDOR_ATTR_EXTAP_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_EXTAP_MAX =
+		QCA_WLAN_VENDOR_ATTR_EXTAP_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_extap_info_type - sub-command types for
+ * %QCA_NL80211_VENDOR_SUBCMD_EXTAP_INFO
+ *
+ * @QCA_WLAN_EXTAP_INFO_STATS: Print aggregate counters to dmesg.
+ *   Equivalent to: wlanconfig wlan0 extap_info stats
+ */
+enum qca_wlan_vendor_extap_info_type {
+	QCA_WLAN_EXTAP_INFO_STATS = 0,
+	QCA_WLAN_EXTAP_INFO_DUMP  = 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_extap_info - Attributes for
+ * %QCA_NL80211_VENDOR_SUBCMD_EXTAP_INFO
+ *
+ * @QCA_WLAN_VENDOR_ATTR_EXTAP_INFO_TYPE: NLA_U8 — one of
+ *   &enum qca_wlan_vendor_extap_info_type.
+ */
+enum qca_wlan_vendor_attr_extap_info {
+	QCA_WLAN_VENDOR_ATTR_EXTAP_INFO_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_EXTAP_INFO_TYPE = 1,
+
+	QCA_WLAN_VENDOR_ATTR_EXTAP_INFO_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_EXTAP_INFO_MAX =
+		QCA_WLAN_VENDOR_ATTR_EXTAP_INFO_AFTER_LAST - 1,
 };
 
 #endif /* QCA_VENDOR_H */
