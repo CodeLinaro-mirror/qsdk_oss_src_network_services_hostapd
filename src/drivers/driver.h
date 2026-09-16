@@ -7031,6 +7031,20 @@ struct wpa_driver_ops {
 	bool (*is_retail_afc_supported)(void *priv);
 #ifdef CONFIG_QCN_EXTN
 	int (*set_muedca_mode)(void *priv, int mode, int radio_idx);
+#ifdef RDK_ONEWIFI
+	/**
+	 * set_sta_vht_mcs10_11_and_he_cap_internal - Notify driver of
+	 * negotiated peer VHT MCS 10/11 and HE capability information.
+	 * @priv: Private driver interface data
+	 * @peer_addr: Associated peer address
+	 * @vht_mcs10_11: 1 if VHT MCS 10/11 is supported
+	 * @he_cap_internal: Internal HE capability bitmap
+	 * Returns: 0 on success, negative value on failure
+	 */
+	int (*set_sta_vht_mcs10_11_and_he_cap_internal)(
+		void *priv, const u8 *peer_addr, u8 vht_mcs10_11,
+		u32 he_cap_internal);
+#endif /* RDK_ONEWIFI */
 #endif /* CONFIG_QCN_EXTN */
 	int (*abort_cac)(void *priv, int link_id);
 
