@@ -417,9 +417,11 @@ int ap_sta_check_link_sta(struct hostapd_data *hapd, struct sta_info *sta,
 	if (lsta && lsta != sta) {
 		if (!ap_sta_is_authorized(lsta)) {
 			hostapd_drv_sta_deauth(hapd, lsta->addr, WLAN_REASON_PREV_AUTH_NOT_VALID);
-			hostapd_drv_sta_remove(hapd, lsta->addr);
+			if (ap_sta_is_mld(hapd, lsta)) {
+				hostapd_drv_sta_remove(hapd, lsta->addr);
+				lsta->skip_kernel_delete = true;
+			}
 			ap_sta_remove_link_sta(hapd, lsta, false, true);
-			lsta->skip_kernel_delete = true;
 			ap_free_sta(hapd, lsta);
 		} else
 			return 1;
