@@ -2558,6 +2558,128 @@ def test_ieee8021x_auth_pqc_constraint_mismatch(dev, apdev):
     if val != str(SECURITY_PROFILE_8021X_PQC_0):
         raise Exception("Unexpected security_profile: " + str(val))
 
+def _verify_pqc_roam(dev, hapd, bssid, profile, note):
+    if dev.get_status_field("bssid") != bssid:
+        raise Exception("Not connected to %s (%s)" % (bssid, note))
+
+    val = dev.get_status_field("security_profile")
+    if val != str(profile):
+        raise Exception("Unexpected security_profile %s (%s)" % (str(val),
+                                                                 note))
+
+    hapd.wait_sta(addr=dev.own_addr(), timeout=10)
+    sta = hapd.get_sta(dev.own_addr())
+    if sta["AKMSuiteSelector"] != '00-0f-ac-31':
+        raise Exception("Incorrect AKMSuiteSelector %s (%s)" %
+                        (sta["AKMSuiteSelector"], note))
+
+    hwsim_utils.test_connectivity(dev, hapd)
+
+def test_ieee8021x_auth_pqc_roam_back(dev, apdev):
+    """IEEE 802.1X over Authentication frames with PQC and roaming back to the first AP"""
+    check_pqc_capab(dev[0])
+
+    ssid = "test-8021x-pqc-roam"
+    profile = SECURITY_PROFILE_8021X_PQC_0
+    params = pqc_ap_params(ssid, profiles=str(profile))
+
+    hapd = hostapd.add_ap(apdev[0], params)
+    bssid = apdev[0]['bssid']
+
+    pqc_connect(dev[0], ssid, profiles=str(profile))
+    _verify_pqc_roam(dev[0], hapd, bssid, profile, "initial association")
+
+    pmksa = dev[0].get_pmksa(bssid)
+    if pmksa is None:
+        raise Exception("No PMKSA cache entry created for AP1")
+
+    hapd2 = hostapd.add_ap(apdev[1], params)
+    bssid2 = apdev[1]['bssid']
+
+    logger.info("Roam to AP2")
+    dev[0].scan_for_bss(bssid2, freq="2412")
+    hapd.dump_monitor()
+    hapd2.dump_monitor()
+    dev[0].roam(bssid2)
+    _verify_pqc_roam(dev[0], hapd2, bssid2, profile, "roam to AP2")
+
+    if dev[0].get_pmksa(bssid2) is None:
+        raise Exception("No PMKSA cache entry created for AP2")
+
+    logger.info("Roam back to AP1")
+    dev[0].scan_for_bss(bssid, freq="2412", force_scan=True)
+    hapd.dump_monitor()
+    hapd2.dump_monitor()
+    dev[0].dump_monitor()
+
+    # The reassociation with AP1 has to be accepted using the PMKSA that was
+    # created during the first association, i.e., without running EAP again.
+    if "OK" not in dev[0].request("ROAM " + bssid):
+        raise Exception("ROAM back to AP1 failed")
+    ev = dev[0].wait_event(["CTRL-EVENT-EAP-STARTED",
+                            "CTRL-EVENT-CONNECTED",
+                            "CTRL-EVENT-DISCONNECTED"], timeout=10)
+    if ev is None:
+        raise Exception("Roaming back to AP1 timed out")
+    if "CTRL-EVENT-EAP-STARTED" in ev:
+        raise Exception("Unexpected EAP exchange when roaming back to AP1")
+    if "CTRL-EVENT-DISCONNECTED" in ev:
+        raise Exception("Disconnected instead of reassociating with AP1")
+
+    _verify_pqc_roam(dev[0], hapd, bssid, profile, "roam back to AP1")
+
+    # PMKSA caching privacy replaces the PMKID on each association, so only the
+    # presence of the entry can be checked here.
+    if dev[0].get_pmksa(bssid) is None:
+        raise Exception("No PMKSA cache entry for AP1 after roaming back")
+
+    ev = dev[0].wait_event(["CTRL-EVENT-DISCONNECTED",
+                            "CTRL-EVENT-SSID-TEMP-DISABLED"], timeout=5)
+    if ev is not None:
+        raise Exception("Unexpected event after roaming back: " + ev)
+
+def test_ieee8021x_auth_pqc_roam_back_no_pmksa(dev, apdev):
+    """IEEE 802.1X over Authentication frames with PQC and roaming back without a PMKSA on the AP"""
+    check_pqc_capab(dev[0])
+
+    ssid = "test-8021x-pqc-roam-nopmksa"
+    profile = SECURITY_PROFILE_8021X_PQC_0
+    params = pqc_ap_params(ssid, profiles=str(profile))
+
+    hapd = hostapd.add_ap(apdev[0], params)
+    bssid = apdev[0]['bssid']
+
+    pqc_connect(dev[0], ssid, profiles=str(profile))
+    _verify_pqc_roam(dev[0], hapd, bssid, profile, "initial association")
+
+    hapd2 = hostapd.add_ap(apdev[1], params)
+    bssid2 = apdev[1]['bssid']
+
+    logger.info("Roam to AP2")
+    dev[0].scan_for_bss(bssid2, freq="2412")
+    hapd.dump_monitor()
+    hapd2.dump_monitor()
+    dev[0].roam(bssid2)
+    _verify_pqc_roam(dev[0], hapd2, bssid2, profile, "roam to AP2")
+
+    # AP1 no longer has the PMKSA, so the reassociation has to fall back to a
+    # new IEEE 802.1X exchange over Authentication frames instead of failing to
+    # obtain a PMK.
+    if "OK" not in hapd.request("PMKSA_FLUSH"):
+        raise Exception("PMKSA_FLUSH on AP1 failed")
+
+    logger.info("Roam back to AP1")
+    dev[0].scan_for_bss(bssid, freq="2412", force_scan=True)
+    hapd.dump_monitor()
+    hapd2.dump_monitor()
+    dev[0].roam(bssid)
+    _verify_pqc_roam(dev[0], hapd, bssid, profile, "roam back to AP1")
+
+    ev = dev[0].wait_event(["CTRL-EVENT-DISCONNECTED",
+                            "CTRL-EVENT-SSID-TEMP-DISABLED"], timeout=5)
+    if ev is not None:
+        raise Exception("Unexpected event after roaming back: " + ev)
+
 def _run_pqc_transcript(dev, hapd, ssid, tamper):
     """Forward Authentication frames to the AP, optionally modifying one
 
