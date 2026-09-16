@@ -1783,6 +1783,8 @@ static void wpa_config_write_global(FILE *f, struct wpa_config *config)
 		fprintf(f, "dpp_name=%s\n", config->dpp_name);
 	if (config->dpp_mud_url)
 		fprintf(f, "dpp_mud_url=%s\n", config->dpp_mud_url);
+	if (config->dpp_bsta_list)
+		fprintf(f, "dpp_bsta_list=%s\n", config->dpp_bsta_list);
 	if (config->dpp_extra_conf_req_name)
 		fprintf(f, "dpp_extra_conf_req_name=%s\n",
 			config->dpp_extra_conf_req_name);
