@@ -174,6 +174,7 @@ void ap_list_process_beacon(struct hostapd_iface *iface,
 	struct ap_info *ap;
 	int new_ap = 0;
 	int set_beacon = 0;
+	u32 he_operation;
 
 	if (iface->conf->ap_table_max_size < 1)
 		return;
@@ -209,6 +210,16 @@ void ap_list_process_beacon(struct hostapd_iface *iface,
 		ap->ht_support = 1;
 	else
 		ap->ht_support = 0;
+
+	/* Keep the neighbor color cache synchronized with the latest beacon. */
+	ap->color = 0;
+	if (iface->conf->ieee80211ax && elems->he_operation) {
+		he_operation = WPA_GET_LE32(elems->he_operation);
+
+		if (!(he_operation & HE_OPERATION_BSS_COLOR_DISABLED))
+			ap->color = (he_operation & HE_OPERATION_BSS_COLOR_MASK) >>
+				HE_OPERATION_BSS_COLOR_OFFSET;
+	}
 
 	os_get_reltime(&ap->last_beacon);
 
@@ -293,6 +304,20 @@ void ap_list_timer(struct hostapd_iface *iface)
 
 	if (set_beacon)
 		ieee802_11_update_beacons(iface);
+}
+
+
+u64 ap_list_get_color(struct hostapd_iface *iface)
+{
+	u64 used_color_bitmap = 0;
+	struct ap_info *ap;
+
+	for (ap = iface->ap_list; ap; ap = ap->next) {
+		if (ap->color)
+			used_color_bitmap |= BIT_ULL(ap->color);
+	}
+
+	return used_color_bitmap;
 }
 
 

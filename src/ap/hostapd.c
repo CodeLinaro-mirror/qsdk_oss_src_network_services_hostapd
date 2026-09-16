@@ -5123,6 +5123,7 @@ void hostapd_switch_color_timeout_handler(void *eloop_data, void *user_ctx)
 	os_time_t delta_t;
 	unsigned int b;
 	int i, r;
+	u64 neighbor_color;
 
 	 /* CCA can be triggered once the handler constantly receives
 	  * color collision events to for at least
@@ -5140,12 +5141,17 @@ void hostapd_switch_color_timeout_handler(void *eloop_data, void *user_ctx)
 	 */
 	hapd->iface->conf->he_op.he_bss_color_disabled = 1;
 
-	r = os_random() % HE_OPERATION_BSS_COLOR_MAX;
-	for (i = 0; i < HE_OPERATION_BSS_COLOR_MAX; i++) {
-		if (r && !(hapd->color_collision_bitmap & (1ULL << r)))
+	neighbor_color = ap_list_get_color(hapd->iface);
+	neighbor_color |= hapd->color_collision_bitmap;
+
+	/* BSS color 0 is reserved; search only the valid colors 1..63. */
+	r = os_random() % (HE_OPERATION_BSS_COLOR_MAX - 1) + 1;
+	for (i = 1; i < HE_OPERATION_BSS_COLOR_MAX; i++) {
+		if (!(neighbor_color & BIT_ULL(r)))
 			break;
 
-		r = (r + 1) % HE_OPERATION_BSS_COLOR_MAX;
+		if (++r == HE_OPERATION_BSS_COLOR_MAX)
+			r = 1;
 	}
 
 	if (i == HE_OPERATION_BSS_COLOR_MAX) {
