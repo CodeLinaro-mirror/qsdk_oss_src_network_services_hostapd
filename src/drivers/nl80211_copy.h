@@ -729,7 +729,9 @@
  *	to remain on the channel. This command is also used as an event to
  *	notify when the requested duration starts (it may take a while for the
  *	driver to schedule this time due to other concurrent needs for the
- *	radio).
+ *	radio). An optional attribute %NL80211_ATTR_MAC can be used to filter
+ *	incoming frames during remain-on-channel, such that frames
+ *	addressed to the specified destination MAC are reported.
  *	When called, this operation returns a cookie (%NL80211_ATTR_COOKIE)
  *	that will be included with any events pertaining to this request;
  *	the cookie is also used to cancel the request.
@@ -906,8 +908,9 @@
  * @NL80211_CMD_UNEXPECTED_FRAME: Used by an application controlling an AP
  *	(or GO) interface (i.e. hostapd) to ask for unexpected frames to
  *	implement sending deauth to stations that send unexpected class 3
- *	frames. Also used as the event sent by the kernel when such a frame
- *	is received.
+ *	frames. For NAN_DATA interfaces, this is used to report frames from
+ *	unknown peers (A2 not assigned to any active NDP).
+ *	Also used as the event sent by the kernel when such a frame is received.
  *	For the event, the %NL80211_ATTR_MAC attribute carries the TA and
  *	other attributes like the interface index are present.
  *	If used as the command it must have an interface index and you can
@@ -1092,8 +1095,9 @@
  *	%NL80211_ATTR_NAN_MASTER_PREF attribute and optional
  *	%NL80211_ATTR_BANDS attributes.  If %NL80211_ATTR_BANDS is
  *	omitted or set to 0, it means don't-care and the device will
- *	decide what to use.  After this command NAN functions can be
- *	added.
+ *	decide what to use. Additional cluster configuration may be
+ *	optionally provided with %NL80211_ATTR_NAN_CONFIG.
+ *	After this command NAN functions can be added.
  * @NL80211_CMD_STOP_NAN: Stop the NAN operation, identified by
  *	its %NL80211_ATTR_WDEV interface.
  * @NL80211_CMD_ADD_NAN_FUNCTION: Add a NAN function. The function is defined
@@ -1122,6 +1126,10 @@
  *	current configuration is not changed.  If it is present but
  *	set to zero, the configuration is changed to don't-care
  *	(i.e. the device can decide what to do).
+ *	Additional parameters may be provided with
+ *	%NL80211_ATTR_NAN_CONFIG. User space should provide all previously
+ *	configured nested attributes under %NL80211_ATTR_NAN_CONFIG, even if
+ *	only a subset was changed.
  * @NL80211_CMD_NAN_MATCH: Notification sent when a match is reported.
  *	This will contain a %NL80211_ATTR_NAN_MATCH nested attribute and
  *	%NL80211_ATTR_COOKIE.
@@ -1205,10 +1213,12 @@
  *	user space through the connect result as the user space would have
  *	initiated the connection through the connect request.
  *
- * @NL80211_CMD_STA_OPMODE_CHANGED: An event that notify station's
- *	ht opmode or vht opmode changes using any of %NL80211_ATTR_SMPS_MODE,
- *	%NL80211_ATTR_CHANNEL_WIDTH,%NL80211_ATTR_NSS attributes with its
- *	address(specified in %NL80211_ATTR_MAC).
+ * @NL80211_CMD_STA_OPMODE_CHANGED: An event that notifies that a station's
+ *	HT opmode or VHT opmode changed using any of %NL80211_ATTR_SMPS_MODE,
+ *	%NL80211_ATTR_CHANNEL_WIDTH, %NL80211_ATTR_NSS attributes with its
+ *	address (specified in %NL80211_ATTR_MAC).
+ *	Note that 80+80 and 160 MHz might not be differentiated, i.e. may
+ *	report %NL80211_CHAN_WIDTH_160 instead of %NL80211_CHAN_WIDTH_80P80.
  *
  * @NL80211_CMD_GET_FTM_RESPONDER_STATS: Retrieve FTM responder statistics, in
  *	the %NL80211_ATTR_FTM_RESPONDER_STATS attribute.
@@ -1337,11 +1347,90 @@
  *      TID to Link mapping for downlink/uplink traffic.
  *
  * @NL80211_CMD_ASSOC_MLO_RECONF: For a non-AP MLD station, request to
- *      add/remove links to/from the association.
+ *      add/remove links to/from the association. To indicate link
+ *      reconfiguration request results from the driver, this command is also
+ *      used as an event to notify userspace about the added links information.
+ *      For notifying the removed links information, the existing
+ *      %NL80211_CMD_LINKS_REMOVED command is used. This command is also used to
+ *      notify userspace about newly added links for the current connection in
+ *      case of AP-initiated link recommendation requests, received via
+ *      a BTM (BSS Transition Management) request or a link reconfig notify
+ *      frame, where the driver handles the link recommendation offload.
  *
  * @NL80211_CMD_EPCS_CFG: EPCS configuration for a station. Used by userland to
  *	control EPCS configuration. Used to notify userland on the current state
  *	of EPCS.
+ *
+ * @NL80211_CMD_NAN_NEXT_DW_NOTIFICATION: This command is used to notify
+ *	user space about the next NAN Discovery Window (DW). User space may use
+ *	it to prepare frames to be sent in the next DW.
+ *	%NL80211_ATTR_WIPHY_FREQ is used to indicate the frequency of the next
+ *	DW. SDF transmission should be requested with %NL80211_CMD_FRAME and
+ *	the device/driver shall take care of the actual transmission timing.
+ *	This notification is only sent to the NAN interface owning socket
+ *	(see %NL80211_ATTR_SOCKET_OWNER flag).
+ * @NL80211_CMD_NAN_CLUSTER_JOINED: This command is used to notify
+ *	user space that the NAN new cluster has been joined. The cluster ID is
+ *	indicated by %NL80211_ATTR_MAC.
+ *
+ * @NL80211_CMD_INCUMBENT_SIGNAL_DETECT: Once any incumbent signal is detected
+ *	on the operating channel in 6 GHz band, userspace is notified with the
+ *	signal interference bitmap using
+ *	%NL80211_ATTR_INCUMBENT_SIGNAL_INTERFERENCE_BITMAP. The current channel
+ *	definition is also sent.
+ *
+ * @NL80211_CMD_NAN_SET_LOCAL_SCHED: Set the local NAN schedule. NAN must be
+ *	operational (%NL80211_CMD_START_NAN was executed). Must contain
+ *	%NL80211_ATTR_NAN_TIME_SLOTS and %NL80211_ATTR_NAN_AVAIL_BLOB, but
+ *	%NL80211_ATTR_NAN_CHANNEL is optional (for example in case of a channel
+ *	removal, that channel won't be provided).
+ *	If %NL80211_ATTR_NAN_SCHED_DEFERRED is set, the command is a request
+ *	from the device to perform an announced schedule update. See
+ *	%NL80211_ATTR_NAN_SCHED_DEFERRED for more details.
+ *	If not set, the schedule should be applied immediately.
+ * @NL80211_CMD_NAN_SCHED_UPDATE_DONE: Event sent to user space to notify that
+ *	a deferred local NAN schedule update (requested with
+ *	%NL80211_CMD_NAN_SET_LOCAL_SCHED and %NL80211_ATTR_NAN_SCHED_DEFERRED)
+ *	has been completed. The presence of %NL80211_ATTR_NAN_SCHED_UPDATE_SUCCESS
+ *	indicates that the update was successful.
+ * @NL80211_CMD_NAN_SET_PEER_SCHED: Set the peer NAN schedule. NAN
+ *	must be operational (%NL80211_CMD_START_NAN was executed).
+ *	Required attributes: %NL80211_ATTR_MAC (peer NMI address) and
+ *	%NL80211_ATTR_NAN_COMMITTED_DW.
+ *	Optionally, the full schedule can be provided by including all of:
+ *	%NL80211_ATTR_NAN_SEQ_ID, %NL80211_ATTR_NAN_CHANNEL (one or more), and
+ *	%NL80211_ATTR_NAN_PEER_MAPS (see &enum nl80211_nan_peer_map_attrs).
+ *	If any of these three optional attributes is provided, all three must
+ *	be provided.
+ *	Each peer channel must be compatible with at least one local channel
+ *	set by %NL80211_CMD_SET_LOCAL_NAN_SCHED. Different maps must not
+ *	contain compatible channels.
+ *	For single-radio devices (n_radio <= 1), different maps must not
+ *	schedule the same time slot, as the device cannot operate on multiple
+ *	channels simultaneously.
+ *	When updating an existing peer schedule, the full new schedule must be
+ *	provided - partial updates are not supported. The new schedule will
+ *	completely replace the previous one.
+ *	The peer schedule is automatically removed when the NMI station is
+ *	removed.
+ * @NL80211_CMD_NAN_ULW_UPDATE: Notification from the driver to user space
+ *	with the updated ULW blob of the device. User space can use this blob
+ *	to attach to frames sent to peers. This notification contains
+ *	%NL80211_ATTR_NAN_ULW with the ULW blob.
+ * @NL80211_CMD_NAN_CHANNEL_EVAC: Notification to indicate that a NAN
+ *	channel has been evacuated due to resource conflicts with other
+ *	interfaces. This can happen when another interface sharing the channel
+ *	resource with NAN needs to move to a different channel (e.g., channel
+ *	switch or link switch on a BSS interface).
+ *	The notification contains %NL80211_ATTR_NAN_CHANNEL attribute
+ *	identifying the evacuated channel.
+ *	User space may reconfigure the local schedule in response to this
+ *	notification.
+ * @NL80211_CMD_START_PD: Start PD operation, identified by its
+ *	%NL80211_ATTR_WDEV interface. This interface must have been previously
+ *	created with %NL80211_CMD_NEW_INTERFACE.
+ * @NL80211_CMD_STOP_PD: Stop the PD operation, identified by
+ *	its %NL80211_ATTR_WDEV interface.
  *
  * @NL80211_CMD_UPDATE_HE_MUEDCA_PARAMS: Updated MU-EDCA parameters from driver.
  * 	This event is used to update dynamic MU-EDCA parameters in Beacon frame,
@@ -1650,6 +1739,25 @@ enum nl80211_commands {
 
 	NL80211_CMD_ASSOC_MLO_RECONF,
 	NL80211_CMD_EPCS_CFG,
+
+	NL80211_CMD_NAN_NEXT_DW_NOTIFICATION,
+	NL80211_CMD_NAN_CLUSTER_JOINED,
+
+	NL80211_CMD_INCUMBENT_SIGNAL_DETECT,
+
+	NL80211_CMD_NAN_SET_LOCAL_SCHED,
+
+	NL80211_CMD_NAN_SCHED_UPDATE_DONE,
+
+	NL80211_CMD_NAN_SET_PEER_SCHED,
+
+	NL80211_CMD_NAN_ULW_UPDATE,
+
+	NL80211_CMD_NAN_CHANNEL_EVAC,
+
+	NL80211_CMD_START_PD,
+	NL80211_CMD_STOP_PD,
+
 
 	/* Yet to upstream */
 	NL80211_CMD_UPDATE_HE_MUEDCA_PARAMS,
@@ -2028,8 +2136,8 @@ enum nl80211_commands {
  *	The driver must also specify support for this with the extended
  *	features NL80211_EXT_FEATURE_BEACON_RATE_LEGACY,
  *	NL80211_EXT_FEATURE_BEACON_RATE_HT,
- *	NL80211_EXT_FEATURE_BEACON_RATE_VHT and
- *	NL80211_EXT_FEATURE_BEACON_RATE_HE
+ *	NL80211_EXT_FEATURE_BEACON_RATE_VHT,
+ *	NL80211_EXT_FEATURE_BEACON_RATE_HE and
  *	NL80211_EXT_FEATURE_BEACON_RATE_EHT.
  *
  * @NL80211_ATTR_FRAME_MATCH: A binary attribute which typically must contain
@@ -2372,7 +2480,8 @@ enum nl80211_commands {
  * @NL80211_ATTR_PEER_AID: Association ID for the peer TDLS station (u16).
  *	This is similar to @NL80211_ATTR_STA_AID but with a difference of being
  *	allowed to be used with the first @NL80211_CMD_SET_STATION command to
- *	update a TDLS peer STA entry.
+ *	update a TDLS peer STA entry. For S1G interfaces, this is limited to
+ *	1600 for the current mac80211 implementation.
  *
  * @NL80211_ATTR_COALESCE_RULE: Coalesce rule information.
  *
@@ -2718,7 +2827,8 @@ enum nl80211_commands {
  *      a flow is assigned on each round of the DRR scheduler.
  * @NL80211_ATTR_HE_CAPABILITY: HE Capability information element (from
  *	association request when used with NL80211_CMD_NEW_STATION). Can be set
- *	only if %NL80211_STA_FLAG_WME is set.
+ *	only if %NL80211_STA_FLAG_WME is set (except for NAN, which uses WME
+ *	anyway).
  *
  * @NL80211_ATTR_AP_PS: enable/disable AP power save.
  * 	This attribute type is u8 and valid range is 0 to 1.
@@ -2952,8 +3062,9 @@ enum nl80211_commands {
  *	index. If the userspace includes more RNR elements than number of
  *	MBSSID elements then these will be added in every EMA beacon.
  *
- * @NL80211_ATTR_MLO_LINK_DISABLED: Flag attribute indicating that the link is
- *	disabled.
+ * @NL80211_ATTR_MLO_LINK_DISABLED: Unused. It was used to indicate that a link
+ *	is disabled during association. However, the AP will send the
+ *	information by including a TTLM in the association response.
  *
  * @NL80211_ATTR_BSS_DUMP_INCLUDE_USE_DATA: Include BSS usage data, i.e.
  *	include BSSes that can only be used in restricted scenarios and/or
@@ -2995,14 +3106,169 @@ enum nl80211_commands {
  * @NL80211_ATTR_EPCS: Flag attribute indicating that EPCS is enabled for a
  *	station interface.
  *
- * @NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS: Extended MLD capabilities and
- *	operations that userspace implements to use during association/ML
- *	link reconfig, currently only "BTM MLD Recommendation For Multiple
- *	APs Support". Drivers may set additional flags that they support
- *	in the kernel or device.
+ * @NL80211_ATTR_EXT_MLD_CAPA_AND_OPS: Extended MLD capabilities and operations.
+ *	For association and link reconfiguration, indicates extra capabilities
+ *	that userspace implements, currently only "BTM MLD Recommendation For
+ *	Multiple APs Support".
+ *	For wiphy information, additional flags that drivers will set, but
+ *	this is informational only for userspace (it's not expected to set
+ *	these.)
+ *
+ * @NL80211_ATTR_WIPHY_RADIO_INDEX: (int) Integer attribute denoting the index
+ *	of the radio in interest. Internally a value of -1 is used to
+ *	indicate that the radio id is not given in user-space. This means
+ *	that all the attributes are applicable to all the radios. If there is
+ *	a radio index provided in user-space, the attributes will be
+ *	applicable to that specific radio only. If the radio id is greater
+ *	thank the number of radios, error denoting invalid value is returned.
+ *
+ * @NL80211_ATTR_S1G_LONG_BEACON_PERIOD: (u8) Integer attribute that represents
+ *	the number of beacon intervals between each long beacon transmission
+ *	for an S1G BSS with short beaconing enabled. This is a required
+ *	attribute for initialising an S1G short beaconing BSS. When updating
+ *	the short beacon data, this is not required. It has a minimum value of
+ *	2 (i.e 2 beacon intervals).
+ *
+ * @NL80211_ATTR_S1G_SHORT_BEACON: Nested attribute containing the short beacon
+ *	head and tail used to set or update the short beacon templates. When
+ *	bringing up a new interface, %NL80211_ATTR_S1G_LONG_BEACON_PERIOD is
+ *	required alongside this attribute. Refer to
+ *	@enum nl80211_s1g_short_beacon_attrs for the attribute definitions.
+ *
+ * @NL80211_ATTR_BSS_PARAM: nested attribute used with %NL80211_CMD_GET_WIPHY
+ *	which indicates which BSS parameters can be modified. The attribute can
+ *	also be used as flag attribute by user-space in %NL80211_CMD_SET_BSS to
+ *	indicate that it wants strict checking on the BSS parameters to be
+ *	modified.
+ *
+ * @NL80211_ATTR_NAN_CONFIG: Nested attribute for
+ *	extended NAN cluster configuration. This is used with
+ *	%NL80211_CMD_START_NAN and %NL80211_CMD_CHANGE_NAN_CONFIG.
+ *	See &enum nl80211_nan_conf_attributes for details.
+ *	This attribute is optional.
+ * @NL80211_ATTR_NAN_NEW_CLUSTER: Flag attribute indicating that a new
+ *	NAN cluster has been created. This is used with
+ *	%NL80211_CMD_NAN_CLUSTER_JOINED
+ * @NL80211_ATTR_NAN_CAPABILITIES: Nested attribute for NAN capabilities.
+ *	This is used with %NL80211_CMD_GET_WIPHY to indicate the NAN
+ *	capabilities supported by the driver. See &enum nl80211_nan_capabilities
+ *	for details.
+ *
+ * @NL80211_ATTR_S1G_PRIMARY_2MHZ: flag attribute indicating that the S1G
+ *	primary channel is 2 MHz wide, and the control channel designates
+ *	the 1 MHz primary subchannel within that 2 MHz primary.
+ *
+ * @NL80211_ATTR_EPP_PEER: A flag attribute to indicate if the peer is an EPP
+ *	STA. Used with %NL80211_CMD_NEW_STA and %NL80211_CMD_ADD_LINK_STA
+ *
+ * @NL80211_ATTR_UHR_CAPABILITY: UHR Capability information element (from
+ *	association request when used with NL80211_CMD_NEW_STATION). Can be set
+ *	only if HE/EHT are also available.
+ * @NL80211_ATTR_DISABLE_UHR: Force UHR capable interfaces to disable
+ *	this feature during association. This is a flag attribute.
+ *	Currently only supported in mac80211 drivers.
+ * @NL80211_ATTR_NAN_CHANNEL: This is a nested attribute. There can be multiple
+ *	attributes of this type, each one represents a channel definition and
+ *	consists of top-level attributes like %NL80211_ATTR_WIPHY_FREQ.
+ *	When used with %NL80211_CMD_NAN_SET_LOCAL_SCHED, it specifies
+ *	the channel definitions on which the radio needs to operate during
+ *	specific time slots. All of the channel definitions should be mutually
+ *	incompatible. With this command, %NL80211_ATTR_NAN_CHANNEL_ENTRY and
+ *	%NL80211_ATTR_NAN_RX_NSS are mandatory.
+ *	When used with %NL80211_CMD_NAN_SET_PEER_SCHED, it configures the
+ *	peer NAN channels. In that case, the channel definitions can be
+ *	compatible to each other, or even identical just with different RX NSS.
+ *	With this command, %NL80211_ATTR_NAN_CHANNEL_ENTRY and
+ *	%NL80211_ATTR_NAN_RX_NSS are mandatory.
+ *	The number of channels should fit the current configuration of channels
+ *	and the possible interface combinations.
+ *	If an existing NAN channel is changed but the chandef isn't, the
+ *	channel entry must also remain unchanged.
+ *	When used with %NL80211_CMD_NAN_CHANNEL_EVAC, this identifies the
+ *	channels that were evacuated.
+ * @NL80211_ATTR_NAN_CHANNEL_ENTRY: a byte array of 6 bytes. contains the
+ *	Channel Entry as defined in Wi-Fi Aware (TM) 4.0 specification Table
+ *	100 (Channel Entry format for the NAN Availability attribute).
+ * @NL80211_ATTR_NAN_RX_NSS: (u8) RX NSS used for a NAN channel. This is
+ *	used with %NL80211_ATTR_NAN_CHANNEL when configuring NAN channels with
+ *	%NL80211_CMD_NAN_SET_LOCAL_SCHED or %NL80211_CMD_NAN_SET_PEER_SCHED.
+ * @NL80211_ATTR_NAN_TIME_SLOTS: an array of u8 values and 32 cells. each value
+ *	maps a time slot to the chandef on which the radio should operate on in
+ *	that time. %NL80211_NAN_SCHED_NOT_AVAIL_SLOT indicates unscheduled.
+ *	The chandef is represented using its index, where the index is the
+ *	sequential number of the %NL80211_ATTR_NAN_CHANNEL attribute within all
+ *	the attributes of this type.
+ *	Each slots spans over 16TUs, hence the entire schedule spans over
+ *	512TUs. Other slot durations and periods are currently not supported.
+ * @NL80211_ATTR_NAN_AVAIL_BLOB: (Binary) The NAN Availability attribute blob,
+ *	including the attribute header, as defined in Wi-Fi Aware (TM) 4.0
+ *	specification Table 93 (NAN Availability attribute format). Required with
+ *	%NL80211_CMD_NAN_SET_LOCAL_SCHED to provide the raw NAN Availability
+ *	attribute. Used by the device to publish Schedule Update NAFs.
+ * @NL80211_ATTR_NAN_SCHED_DEFERRED: Flag attribute used with
+ *	%NL80211_CMD_NAN_SET_LOCAL_SCHED. When present, the command is a
+ *	request from the device to perform an announced schedule update. This
+ *	means that it needs to send the updated NAN availability to the peers,
+ *	and do the actual switch on the right time (i.e. at the end of the slot
+ *	after the slot in which the updated NAN Availability was sent). Since
+ *	the slots management is done in the device, the update to the peers
+ *	needs to be sent by the device, so it knows the actual switch time.
+ *	If the flag is not set, the schedule should be applied immediately.
+ *	When this flag is set, the total number of NAN channels from both the
+ *	old and new schedules must not exceed the allowed number of local NAN
+ *	channels, because with deferred scheduling the old channels cannot be
+ *	removed before adding the new ones to free up space.
+ * @NL80211_ATTR_NAN_SCHED_UPDATE_SUCCESS: flag attribute used with
+ *	%NL80211_CMD_NAN_SCHED_UPDATE_DONE to indicate that the deferred
+ *	schedule update completed successfully. If this flag is not present,
+ *	the update failed.
+ * @NL80211_ATTR_NAN_NMI_MAC: The address of the NMI station to which this NDI
+ *	station belongs. Used with %NL80211_CMD_NEW_STATION when adding an NDI
+ *	station.
+ * @NL80211_ATTR_NAN_ULW: (Binary) The initial ULW(s) as published by the
+ *	peer, as defined in the Wi-Fi Aware (TM) 4.0 specification Table 109
+ *	(Unaligned Schedule attribute format). Used to configure the device
+ *	with the initial ULW(s) of a peer, before the device starts tracking it.
+ * @NL80211_ATTR_NAN_COMMITTED_DW: (u16) The committed DW as published by the
+ *	peer, as defined in the Wi-Fi Aware (TM) 4.0 specification Table 80
+ *	(Committed DW Information field format).
+ * @NL80211_ATTR_NAN_SEQ_ID: (u8) The sequence ID of the peer schedule that
+ *	%NL80211_CMD_NAN_SET_PEER_SCHED defines. The device follows the
+ *	sequence ID in the frames to identify newer schedules. Once a schedule
+ *	with a higher sequence ID is received, the device may stop communicating
+ *	with that peer until a new peer schedule with a matching sequence ID is
+ *	received.
+ * @NL80211_ATTR_NAN_MAX_CHAN_SWITCH_TIME: (u16) The maximum channel switch
+ *	time, in microseconds.
+ * @NL80211_ATTR_NAN_PEER_MAPS: Nested array of peer schedule maps.
+ *	Used with %NL80211_CMD_NAN_SET_PEER_SCHED. Contains up to 2 entries,
+ *	each containing nested attributes from &enum nl80211_nan_peer_map_attrs.
+ *
+ * @NL80211_ATTR_INCUMBENT_SIGNAL_INTERFERENCE_BITMAP: u32 attribute specifying
+ *	the signal interference bitmap detected on the operating bandwidth for
+ *	%NL80211_CMD_INCUMBENT_SIGNAL_DETECT. Each bit represents a 20 MHz
+ *	segment, lowest bit corresponds to the lowest 20 MHz segment, in the
+ *	operating bandwidth where the interference is detected. Punctured
+ *	sub-channels are included in the bitmap structure; however, since
+ *	interference detection is not performed on these sub-channels, their
+ *	corresponding bits are consistently set to zero.
+ *
+ * @NL80211_ATTR_UHR_OPERATION: Full UHR Operation element, as it appears in
+ *	association response etc., since it's abridged in the beacon. Used
+ *	for START_AP etc.
+ *
+ * @NL80211_ATTR_ASSOC_ENCRYPTED: Flag attribute, used only with the
+ *	%NL80211_CMD_CONNECT event in SME-in-driver mode. The driver should
+ *	set this flag to indicate that both the (Re)Association Request frame
+ *	and the corresponding (Re)Association Response frame are transmitted
+ *	encrypted over the air. Enhanced Privacy Protection (EPP), as defined
+ *	in IEEE P802.11bi/D4.0, mandates this encryption.
+ *
+ * @NL80211_ATTR_NPCA_PRIMARY_FREQ: NPCA primary channel (u32)
+ * @NL80211_ATTR_NPCA_PUNCT_BITMAP: NPCA puncturing bitmap (u32)
  *
  * @NL80211_ATTR_WIPHY_ANTENNA_GAIN: Configured antenna gain. Used to reduce
- * 	transmit power to stay within regulatory limits. u32, dBi.
+ *      transmit power to stay within regulatory limits. u32, dBi.
  *
  * @NL80211_ATTR_HE_MUEDCA_PARAMS: MU-EDCA AC parameters for the
  * 	%NL80211_CMD_UPDATE_HE_MUEDCA_PARAMS command.
@@ -3058,18 +3324,6 @@ enum nl80211_commands {
  * @NL80211_ATTR_CFP: Indicate whether control frame protection is
  *      enabled for the particular vdev.
  *
- * @NL80211_ATTR_EXT_MLD_CAPA_AND_OPS: Extended MLD Capabilities and Operations
- *	(u16)
- * @NL80211_ATTR_UHR_CAPABILITY: UHR Capability information element (from
- *	association request when used with NL80211_CMD_NEW_STATION). Can be set
- *	only if %NL80211_STA_FLAG_WME is set.
- *
- * @NL80211_ATTR_NPCA_PRIMARY_FREQ: u32 attribute specifying the NPCA primary
- *	channel frequency in MHz for UHR Non-Primary Channel Access operation.
- *
- * @NL80211_ATTR_NPCA_PUNCT_BITMAP: u32 attribute specifying the NPCA
- *	disabled subchannel bitmap for UHR Non-Primary Channel Access.
- *
  * @NL80211_ATTR_HE_MUEDCA_MODE: Attribute that denotes the mode of seeting MU
  *	EDCA parameters(See enum nl80211_muedca_mode).
  *
@@ -3113,9 +3367,6 @@ enum nl80211_commands {
  * @NL80211_ATTR_CU_STATE: (u32) Current CU session state,
  *	see &enum nl80211_cu_state. Carried in
  *	%NL80211_CMD_CRITICAL_UPDATE_NOTIFY events.
- *
- * @NL80211_ATTR_EPP_PEER: A flag attribute to indicate if the peer is an EPP
- *	STA. Used with %NL80211_CMD_NEW_STA and %NL80211_CMD_ADD_LINK_STA
  *
  * @NL80211_ATTR_SMD_ENABLED: Flag attribute indicating SMD is enabled for
  *	this association.
@@ -3776,9 +4027,48 @@ enum nl80211_attrs {
 	NL80211_ATTR_MLO_RECONF_REM_LINKS,
 	NL80211_ATTR_EPCS,
 
-	NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS,
+	NL80211_ATTR_EXT_MLD_CAPA_AND_OPS,
 
 	NL80211_ATTR_WIPHY_RADIO_INDEX,
+
+	NL80211_ATTR_S1G_LONG_BEACON_PERIOD,
+	NL80211_ATTR_S1G_SHORT_BEACON,
+	NL80211_ATTR_BSS_PARAM,
+	NL80211_ATTR_NAN_CONFIG,
+	NL80211_ATTR_NAN_NEW_CLUSTER,
+	NL80211_ATTR_NAN_CAPABILITIES,
+
+	NL80211_ATTR_S1G_PRIMARY_2MHZ,
+
+	NL80211_ATTR_EPP_PEER,
+
+	NL80211_ATTR_UHR_CAPABILITY,
+	NL80211_ATTR_DISABLE_UHR,
+
+	NL80211_ATTR_INCUMBENT_SIGNAL_INTERFERENCE_BITMAP,
+
+	NL80211_ATTR_UHR_OPERATION,
+
+	NL80211_ATTR_NAN_CHANNEL,
+	NL80211_ATTR_NAN_CHANNEL_ENTRY,
+	NL80211_ATTR_NAN_TIME_SLOTS,
+	NL80211_ATTR_NAN_RX_NSS,
+	NL80211_ATTR_NAN_AVAIL_BLOB,
+	NL80211_ATTR_NAN_SCHED_DEFERRED,
+	NL80211_ATTR_NAN_SCHED_UPDATE_SUCCESS,
+
+	NL80211_ATTR_NAN_NMI_MAC,
+
+	NL80211_ATTR_NAN_ULW,
+	NL80211_ATTR_NAN_COMMITTED_DW,
+	NL80211_ATTR_NAN_SEQ_ID,
+	NL80211_ATTR_NAN_MAX_CHAN_SWITCH_TIME,
+	NL80211_ATTR_NAN_PEER_MAPS,
+
+	NL80211_ATTR_ASSOC_ENCRYPTED,
+
+	NL80211_ATTR_NPCA_PRIMARY_FREQ,
+	NL80211_ATTR_NPCA_PUNCT_BITMAP,
 
 	NL80211_ATTR_WIPHY_ANTENNA_GAIN,
 
@@ -3833,15 +4123,7 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_CIGTK,
 
-	NL80211_ATTR_EXT_MLD_CAPA_AND_OPS,
-
 	NL80211_ATTR_BITRATE,
-
-	NL80211_ATTR_UHR_CAPABILITY,
-
-	NL80211_ATTR_DISABLE_UHR,
-	NL80211_ATTR_NPCA_PRIMARY_FREQ,
-	NL80211_ATTR_NPCA_PUNCT_BITMAP,
 
 	NL80211_ATTR_PCIE,
 	NL80211_ATTR_DCVS,
@@ -3872,8 +4154,6 @@ enum nl80211_attrs {
 	NL80211_ATTR_UHR_MODE_UPDATE_PARAMS,
 	NL80211_ATTR_CU_TYPE,
 	NL80211_ATTR_CU_STATE,
-
-	NL80211_ATTR_EPP_PEER,
 
 	NL80211_ATTR_SMD_TARGET_MLD_ADDR,
 	NL80211_ATTR_SMD_SNONCE,
