@@ -3913,9 +3913,60 @@ static int hostapd_dfs_start_channel_switch_cac(struct hostapd_iface *iface,
 }
 
 
+/*
+ * dfs_handle_background_radar_event - Switch agile channel after radar detection
+ * @iface: Hostpad interface data
+ * @freq: Radar-hit frequency
+ *
+ * Handle radar detected on the background/agile channel. Clear the current
+ * agile CAC state, invalidate the radar-hit agile channel, and trigger agile
+ * CAC on a newly selected channel.
+ *
+ * Return: 0 on success or a negative error code on failure.
+ */
 static int
-hostapd_dfs_background_start_channel_switch(struct hostapd_iface *iface,
-					    int freq)
+dfs_handle_background_radar_event(struct hostapd_iface *iface, int freq)
+{
+	wpa_printf(MSG_DEBUG,
+		   "%s called (background CAC active: %s, CSA active: %s)",
+		   __func__, iface->radar_background.cac_started ? "yes" : "no",
+		   hostapd_csa_in_progress(iface) ? "yes" : "no");
+
+	if (hostapd_csa_in_progress(iface))
+		return 0;
+
+	if (dfs_is_agile_cac_enabled(iface)) {
+		if (iface->dfs_domain != HOSTAPD_DFS_REGION_ETSI) {
+			if (iface->user_rcac_channel == iface->radar_background.channel)
+				iface->user_rcac_channel = 0;
+
+			iface->radar_background.cac_started = 0;
+			iface->radar_background.channel = -1;
+			iface->radar_background.freq = 0;
+		} else {
+			return hostapd_dfs_precac_restart_after_radar(iface, freq);
+		}
+	}
+
+	hostapd_dfs_update_background_chain(iface);
+	return 0;
+}
+
+/*
+ * hostapd_dfs_background_start_channel_switch - Switch operating channel to a
+ *                                               agile completed channel
+ *
+ * Handle radar detected on the operating channel when agile DFS is enabled.
+ * If a background/agile channel has already completed CAC, perform
+ * a CSA to that channel and continue operation without additional CAC.
+ *
+ * If the background/agile CAC is still in progress, fall back to bandwidth
+ * reduction or random channel selection.
+ *
+ * Return: 0 if a channel switch was initiated, otherwise -1.
+ */
+static int
+hostapd_dfs_background_start_channel_switch(struct hostapd_iface *iface)
 {
 	if (!dfs_use_radar_background(iface))
 		return -1; /* Background radar chain not supported. */
@@ -3925,31 +3976,8 @@ hostapd_dfs_background_start_channel_switch(struct hostapd_iface *iface,
 		   __func__, iface->radar_background.cac_started ? "yes" : "no",
 		   hostapd_csa_in_progress(iface) ? "yes" : "no");
 
-	/* Check if CSA in progress */
 	if (hostapd_csa_in_progress(iface))
 		return 0;
-
-	if (hostapd_dfs_is_background_event(iface, freq)) {
-		/*
-		 * Radar pattern is reported on the background chain.
-		 * Clear the background state and select a new random channel.
-		 */
-		if (dfs_is_agile_cac_enabled(iface)) {
-			if (iface->dfs_domain != HOSTAPD_DFS_REGION_ETSI) {
-				if (iface->user_rcac_channel == iface->radar_background.channel)
-					iface->user_rcac_channel = 0;
-
-				iface->radar_background.cac_started = 0;
-				iface->radar_background.channel = -1;
-				iface->radar_background.freq = 0;
-			} else {
-				return hostapd_dfs_precac_restart_after_radar(iface, freq);
-			}
-		}
-
-		hostapd_dfs_update_background_chain(iface);
-		return 0;
-	}
 
 	if (iface->dfs_domain == HOSTAPD_DFS_REGION_ETSI &&
 	    iface->conf->bgcac_en &&
@@ -4181,7 +4209,8 @@ static bool hostapd_dfs_radar_update_punct_bitmap(struct hostapd_iface *iface,
 static int hostapd_dfs_radar_handle_puncturing(struct hostapd_iface *iface,
 					       int freq, int chan_width,
 					       u16 radar_bitmap_oper,
-					       u16 cur_punct_bits)
+					       u16 cur_punct_bits,
+					       u16 center_freq)
 {
 	u8 oper_centr_freq_seg0_idx, oper_centr_freq_seg1_idx;
 
@@ -4196,6 +4225,12 @@ static int hostapd_dfs_radar_handle_puncturing(struct hostapd_iface *iface,
 	if (iface->skip_mesh_dfs)
 		return 0;
 
+	wpa_printf(MSG_DEBUG,
+			"DFS: Update puncture source for Radar puncture bitmap=0x%04x",
+			radar_bitmap_oper | iface->radar_bit_pattern);
+	dfs_update_puncture_source(iface, center_freq, chan_width,
+				   radar_bitmap_oper | iface->conf->punct_bitmap,
+				   DFS_CHAN_PUNC_RADAR);
 	oper_centr_freq_seg0_idx = iface->conf->vht_oper_centr_freq_seg0_idx;
 	oper_centr_freq_seg1_idx = iface->conf->vht_oper_centr_freq_seg1_idx;
 	chan_width = convert_to_oper_chan_width(chan_width);
@@ -4635,15 +4670,6 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 							      chan_width_device,
 							      cf_device,
 							      &device_params_present);
-	if (is_dfs_puncture_en) {
-		wpa_printf(MSG_DEBUG,
-			   "DFS: Update puncture source for Radar puncture bitmap=0x%04x",
-			   radar_bitmap_oper | iface->radar_bit_pattern);
-		dfs_update_puncture_source(iface, cf1, chan_width,
-					   radar_bitmap_oper | iface->conf->punct_bitmap,
-					   DFS_CHAN_PUNC_RADAR);
-	}
-
 	iface->radar_detected = true;
 	/* Proceed only if DFS is not offloaded to the driver */
 	if (iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD)
@@ -4664,7 +4690,12 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			return 0;
 	}
 
-	if (hostapd_dfs_radar_update_punct_bitmap(iface, radar_bitmap_oper))
+	/* Radar detected on the background/agile chain */
+	if (hostapd_dfs_is_background_event(iface, freq))
+		return dfs_handle_background_radar_event(iface, freq);
+
+	/* Skip if reported radar event not overlapped our channels */
+	if (!dfs_are_channels_overlapped(iface, freq, chan_width, cf1, cf2))
 		return 0;
 
 	if (iface->conf->dfs_test_mode) {
@@ -4674,14 +4705,9 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 		return hostapd_dfs_start_channel_switch(iface);
 	}
 
-	if (!hostapd_dfs_is_background_event(iface, freq)) {
-		/* Skip if reported radar event not overlapped our channels */
-		if (!dfs_are_channels_overlapped(iface, freq, chan_width,
-						 cf1, cf2)) {
-			iface->conf->punct_bitmap = cur_punct_bits;
-			return 0;
-		}
-	}
+	/* Radar detected on the home/operating channel. */
+	if (hostapd_dfs_radar_update_punct_bitmap(iface, radar_bitmap_oper))
+		return 0;
 
 #ifdef CONFIG_QCN_EXTN
 	hostapd_prepare_nol_ie_bmap_extn(iface, iface->conf->channel, freq,
@@ -4691,26 +4717,23 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 			hostapd_get_punct_bitmap(iface->bss[0]), radar_bitmap_oper);
 #endif
 
+	/*
+	 * Select the channel-switch target in the following order:
+	 * 1. Puncturing on current operating channel.
+	 * 2. Configured next-radar frequency.
+	 * 3. Agile CAC completed channel.
+	 * 4. Bandwidth-reduced channel.
+	 * 5. Randomly selected valid channel.
+	 */
 	if (is_dfs_puncture_en) {
 		if (hostapd_is_usable_punct_bitmap(iface))
-			return hostapd_dfs_radar_handle_puncturing(iface, freq,
-								   chan_width,
+			return hostapd_dfs_radar_handle_puncturing(iface, freq, chan_width,
 								   radar_bitmap_oper,
-								   cur_punct_bits);
+								   cur_punct_bits,
+								   cf1);
 
 		dfs_reset_punc_bitmap_src(iface, ALL_SUBCHANS_PUNC);
 	}
-
-	/*
-	 * Select the channel-switch target in the following order:
-	 * 1. Configured next-radar frequency.
-	 * 2. Agile CAC completed channel.
-	 * 3. Bandwidth-reduced channel.
-	 * 4. Randomly selected valid channel.
-	 *
-	 * Fallback to the next option if the current choice is unavailable
-	 * or results in an invalid puncturing pattern.
-	 */
 
 	iface->radar_bit_pattern = 0;
 	iface->conf->punct_bitmap = cur_punct_bits;
@@ -4722,7 +4745,7 @@ int hostapd_dfs_radar_detected(struct hostapd_iface *iface, int freq,
 	if (dfs_switch_next_radar_channel(iface))
 		return 0;
 
-	if (!hostapd_dfs_background_start_channel_switch(iface, freq))
+	if (!hostapd_dfs_background_start_channel_switch(iface))
 		return 0;
 
 	if (hostapd_dfs_radar_reduce_bandwidth(iface, &ret))
