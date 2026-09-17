@@ -433,10 +433,23 @@ struct hostapd_uhr_npca_params {
  * struct uhr_params_update_config - UHR params update configuration
  *
  * Configurable intervals for UHR parameter update notifications.
+ *
+ * @adv_notification_duration_ms: Desired advance-notification window in
+ *   milliseconds (MLD-level knob).  When non-zero, hostapd derives
+ *   adv_notification_interval for each affiliated BSS as:
+ *     ceil(adv_notification_duration_ms / (beacon_int_TU * 1.024))
+ *   clamped to [2, 31].  When zero the statically configured
+ *   adv_notification_interval is used unchanged.
  */
 struct uhr_params_update_config {
 	u8 adv_notification_interval;
 	u8 update_in_tim_interval;
+	/*
+	 * MLD-level desired advance-notification duration in milliseconds.
+	 * When non-zero, adv_notification_interval is computed from this
+	 * value and the per-link beacon interval at config-check time.
+	 */
+	u32 adv_notification_duration_ms;
 	u16 mode_changed;
 	struct hostapd_uhr_npca_params npca;
 	/* TODO: Add DPS, DUO, P-EDCA, DBE, AP PUO, ELR mode param structs */
