@@ -966,8 +966,16 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 		iface->cs_time = 0;
 	}
 
-	if (!errno && conf->conf_extn.skip_cac)
+	if (!errno && conf->conf_extn.skip_cac) {
 		skip_cac_rep = iface->iface_extn.dfs_available_from_sta = is_dfs && !iface->mcst;
+		if (skip_cac_rep) {
+			/* Seed a non-CAC MCST for Dep Rep FH add-iface skip-CAC.
+			 * This lets CAC/beacon setup advertise MCST while keeping skip_cac=1. */
+			iface->cs_time =
+				HOSTAPD_NON_CAC_SWITCH_TIME_MSEC_EXTN(conf->beacon_int);
+			iface->mcst = IEEE80211_MS_TO_TU(iface->cs_time);
+		}
+	}
 	wpa_printf(MSG_INFO, "%s: is_dfs=%d mcst=%u TU cs_time=%u ms skip_cac_rep=%d",
 		   __func__, is_dfs, iface->mcst, iface->cs_time, skip_cac_rep);
 #endif

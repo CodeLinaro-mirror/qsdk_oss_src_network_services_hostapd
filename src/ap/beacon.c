@@ -4575,11 +4575,14 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 		hostapd_ignorecac_update_freq_params_extn(iface,
 							   params.freq);
 		if (iface->mcst && iface->cs_time) {
-			/* Dependent repeater FH AP residual CAC: pass adjusted
-			 * cs_time to START_AP so kernel runs remaining CAC.
+			/* Pass adjusted cs_time to START_AP. For residual CAC,
+			 * keep skip_cac cleared so kernel runs remaining CAC.
 			 */
-			params.freq->skip_cac = 0;
 			params.freq->mcst = IEEE80211_MS_TO_TU(iface->cs_time);
+			if (!hostapd_mcst_allows_skip_cac_extn(
+				    iface->mcst, iface->conf->beacon_int,
+				    params.freq->skip_cac))
+				params.freq->skip_cac = 0;
 		}
 #endif
 	}
