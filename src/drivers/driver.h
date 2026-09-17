@@ -6889,6 +6889,22 @@ struct wpa_driver_ops {
 #ifdef RDK_ONEWIFI
 	int (*atf_sta_update)(void *priv, const u8 *sta_addr, bool is_join);
 #endif /* RDK_ONEWIFI */
+#ifdef CONFIG_QCN_EXTN
+	/**
+	 * mark_diagnostic_sta_vap - Mark a STA vif as diagnostic_sta_vap
+	 *			  (diagnostic client-serving STA VAP)
+	 * @priv: Private driver interface data
+	 * @vendor_id: Vendor ID (OUI_QCA)
+	 * @subcmd: Vendor subcommand
+	 * @ifname: Interface name of the STA vif to mark
+	 * @enable: 1 to enable CSA isolation, 0 to disable
+	 * @is_bss: true if @priv is a struct i802_bss pointer
+	 * Returns: 0 on success, negative value on failure
+	 */
+	int (*mark_diagnostic_sta_vap)(void *priv, unsigned int vendor_id,
+				       unsigned int subcmd, const char *ifname,
+				       int enable, bool is_bss);
+#endif
 
 	/**
 	 * set_qos - Send QoS management request data to driver and get back

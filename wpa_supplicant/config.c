@@ -6245,6 +6245,7 @@ static const struct global_parse_data global_fields[] = {
 	{ INT_KEY_RANGE("rptr_mgr_mode", rptr_mgr_comm_mode, 0, 2), 1 },
 	{ INT(channel), 0 },
 	{ INT_KEY_RANGE("uplink_csa", uplink_csa, 0, 1), 0 },
+	{ INT_RANGE(diagnostic_sta_vap, 0, 1), 0 }, /* diagnostic_sta_vap - client-serving STA VAP for diag purpose */
 	{ FUNC_NO_VAR(CSwOpts), 0 },
 	WPA_GLOBAL_FIELDS_EXTN
 #endif /* CONFIG_QCN_EXTN */

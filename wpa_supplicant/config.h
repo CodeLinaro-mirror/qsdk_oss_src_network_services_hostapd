@@ -1889,6 +1889,22 @@ struct wpa_config {
 	 */
 	int ppe_vp;
 
+#ifdef CONFIG_QCN_EXTN
+	/**
+	 * diagnostic_sta_vap - client-serving STA VAP for diag purpose
+	 *
+	 * When set, this STA vif must never participate in or block a
+	 * co-channel-context AP's channel switch, and its scan/connect must
+	 * stay pinned to that AP's operating channel. Marked to the driver
+	 * via a vendor command; the driver sets a mac80211 vif flag so the
+	 * channel-switch/scan restriction is enforced in-kernel rather than
+	 * relying on userspace ctrl_iface coordination.
+	 *
+	 * 0 = disabled (default), 1 = enabled
+	 */
+	int diagnostic_sta_vap;
+#endif
+
 #ifdef CONFIG_TESTING_OPTIONS
 	enum {
 		MLD_CONNECT_BAND_PREF_AUTO = 0,
