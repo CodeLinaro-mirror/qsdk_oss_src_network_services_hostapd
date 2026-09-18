@@ -5889,6 +5889,28 @@ static void wpa_supplicant_clear_connection(struct wpa_supplicant *wpa_s,
 	if (old_ssid != wpa_s->current_ssid)
 		wpas_notify_network_changed(wpa_s);
 
+#ifdef CONFIG_QCN_EXTN
+	/*
+	 * A disconnect/deauthenticate can land while this interface is still
+	 * in WPA_PRE_CONNECT waiting on one or more MLO links' CSA
+	 * completion (wpa_s->cache_cwork/pre_connect_cnt/
+	 * pre_connect_target_freqs[] set by
+	 * wpas_ucode_update_pre_connect_state()). Nothing else invalidates
+	 * that wait on disconnect, so uc_wpas_recvd_ch_sw_result_ev() only
+	 * matches a later channel-switch-result event against the
+	 * snapshotted frequencies and blindly resumes the aborted attempt -
+	 * and if the still-outstanding link's CSA never completes (e.g. its
+	 * radio gets disabled), pre_connect_cnt never reaches 0 and the
+	 * interface is left parked in DISCONNECTED with a leaked cache_cwork
+	 * forever. Tear the pending MLO pre-connect wait down together with
+	 * the connection so it cannot be resumed or leaked after this point.
+	 */
+	wpas_connect_work_free(wpa_s->cache_cwork);
+	wpa_s->cache_cwork = NULL;
+	wpa_s->pre_connect_cnt = 0;
+	wpa_s->pre_connect_target_freq_count = 0;
+#endif /* CONFIG_QCN_EXTN */
+
 #ifndef CONFIG_NO_ROBUST_AV
 	wpas_scs_deinit(wpa_s);
 	wpas_dscp_deinit(wpa_s);
