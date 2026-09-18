@@ -1515,6 +1515,7 @@ int set_dfs_state_freq(struct hostapd_iface *iface, int freq, u32 state)
 		if (chan->freq == freq) {
 			if (chan->flag & HOSTAPD_CHAN_RADAR) {
 				if (state == HOSTAPD_CHAN_DFS_AVAILABLE &&
+				   !iface->conf->dfs_test_mode &&
 				    (chan->flag & HOSTAPD_CHAN_DFS_MASK) ==
 				    HOSTAPD_CHAN_DFS_UNAVAILABLE) {
 					wpa_printf(MSG_DEBUG,
