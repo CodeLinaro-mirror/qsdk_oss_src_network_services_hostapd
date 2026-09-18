@@ -695,6 +695,7 @@ int wpa_supplicant_join_mesh(struct wpa_supplicant *wpa_s,
 	wpa_s->mesh_vht_enabled = !!params->freq.vht_enabled;
 	wpa_s->mesh_he_enabled = !!params->freq.he_enabled;
 	wpa_s->mesh_eht_enabled = !!params->freq.eht_enabled;
+	wpa_s->mesh_uhr_enabled = !!params->freq.uhr_enabled;
 	if (params->freq.ht_enabled && params->freq.sec_channel_offset)
 		ssid->ht40 = params->freq.sec_channel_offset;
 
