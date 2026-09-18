@@ -8773,6 +8773,9 @@ static int wpa_supplicant_init_iface(struct wpa_supplicant *wpa_s,
 		u16 i;
 
 		for (i = 0; i < wpa_s->hw.num_modes; i++) {
+			if (wpa_s->hw.modes[i].uhr_capab[IEEE80211_MODE_INFRA].
+			    uhr_supported)
+				wpa_s->hw_capab |= BIT(CAPAB_UHR);
 			if (wpa_s->hw.modes[i].eht_capab[IEEE80211_MODE_INFRA].
 			    eht_supported)
 				wpa_s->hw_capab |= BIT(CAPAB_EHT);
