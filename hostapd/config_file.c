@@ -6902,6 +6902,13 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->next_radar_freq = atoi(pos);
 	} else if (os_strcmp(buf, "next_radar_width") == 0) {
 		conf->next_radar_width = atoi(pos);
+	} else if (os_strcmp(buf, "vlan_idle_cleanup") == 0) {
+		bss->vlan_idle_cleanup = atoi(pos);
+		if (bss->vlan_idle_cleanup < 0) {
+			wpa_printf(MSG_ERROR, "Line %d: invalid period %d",
+				   line, bss->vlan_idle_cleanup);
+			return 1;
+		}
 	} else {
 #ifdef CONFIG_QCN_EXTN
 		if (!hostapd_config_fill_extn(conf, bss, buf, pos, line))
