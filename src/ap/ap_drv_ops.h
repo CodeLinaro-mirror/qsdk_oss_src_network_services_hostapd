@@ -66,7 +66,8 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
 		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
 		    int set, const u8 *link_addr, bool mld_link_sta,
-		    u16 eml_cap, int type, u8 control_mic_pad, bool epp_sta);
+		    u16 eml_cap, int type, u8 control_mic_pad, bool epp_sta,
+		    bool isolated);
 int hostapd_set_privacy(struct hostapd_data *hapd, int enabled);
 int hostapd_set_generic_elem(struct hostapd_data *hapd, const u8 *elem,
 			     size_t elem_len);
@@ -756,5 +757,20 @@ int hostapd_drv_get_smd_ctx(struct hostapd_data *hapd, const u8 *sta_addr,
 
 int hostapd_drv_set_rtt_responder_role(struct hostapd_data *hapd, int role);
 int hostapd_drv_set_rtt_initiator_role(struct hostapd_data *hapd, int role);
+
+/**
+ * hostapd_drv_set_sta_isolated - Set per-station isolation state
+ * @hapd: hostapd data
+ * @addr: Station MAC address
+ * @isolated: true to isolate, false to unisolate
+ * Returns: 0 on success, -1 on failure
+ */
+static inline int hostapd_drv_set_sta_isolated(struct hostapd_data *hapd,
+					       const u8 *addr, bool isolated)
+{
+	if (!hapd->driver || !hapd->driver->set_sta_isolated || !hapd->drv_priv)
+		return -1;
+	return hapd->driver->set_sta_isolated(hapd->drv_priv, addr, isolated);
+}
 
 #endif /* AP_DRV_OPS */

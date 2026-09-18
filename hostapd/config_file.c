@@ -2412,6 +2412,15 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line, pos);
 			return 1;
 		}
+	} else if (os_strcmp(buf, "isolated_sta_list") == 0) {
+		if (hostapd_config_read_isolated_sta_list(
+					pos, &bss->isolated_sta_list,
+					&bss->num_isolated_sta)) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Failed to parse isolated_sta_list '%s'",
+				   line, pos);
+			return 1;
+		}
 	} else if (os_strcmp(buf, "acl_deny_wait_time") == 0) {
 		int val = atoi(pos);
 		if (val < SOFTBLOCK_WAIT_TIME_MIN ||

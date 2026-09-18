@@ -1111,6 +1111,22 @@ static void hostapd_dpp_controller_conf_free(struct dpp_controller_conf *conf)
 #endif /* CONFIG_DPP2 */
 
 
+bool hostapd_sta_is_pre_isolated(struct hostapd_bss_config *conf,
+				  const u8 *addr)
+{
+	unsigned int i;
+
+	if (!conf->isolated_sta_list || conf->num_isolated_sta == 0)
+		return false;
+
+	for (i = 0; i < conf->num_isolated_sta; i++) {
+		if (ether_addr_equal(conf->isolated_sta_list[i], addr))
+			return true;
+	}
+	return false;
+}
+
+
 void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 {
 	size_t i;
@@ -1326,6 +1342,9 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 
 	os_free(conf->mapc_conf);
 #endif /* CONFIG_IEEE80211BN */
+	os_free(conf->isolated_sta_list);
+	conf->isolated_sta_list = NULL;
+	conf->num_isolated_sta = 0;
 	os_free(conf);
 }
 

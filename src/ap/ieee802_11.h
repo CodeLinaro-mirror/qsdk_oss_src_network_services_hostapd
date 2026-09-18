@@ -102,6 +102,8 @@ void hostapd_2040_coex_action(struct hostapd_data *hapd,
 
 int hostapd_config_read_maclist(const char *fname,
 				struct mac_acl_entry **acl, int *num);
+int hostapd_config_read_isolated_sta_list(const char *val, macaddr **list,
+						 unsigned int *num);
 #ifdef NEED_AP_MLME
 int ieee802_11_get_mib(struct hostapd_data *hapd, char *buf, size_t buflen);
 int ieee802_11_get_mib_sta(struct hostapd_data *hapd, struct sta_info *sta,

@@ -8899,7 +8899,7 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 					    NULL, sta->flags, 0, 0, 0, 0,
 					    mld_link_addr, mld_link_sta,
 					    eml_cap, reassoc, CONTROL_MIC_PAD_NOT_SET,
-					    epp_sta)) {
+					    epp_sta, sta->isolated)) {
 				hostapd_logger(hapd, sta->addr,HOSTAPD_MODULE_IEEE80211,HOSTAPD_LEVEL_NOTICE,
 					       "Could not add STA to kernel driver");
 				return -1;
@@ -9244,6 +9244,14 @@ int add_associated_sta(struct hostapd_data *hapd,
 	hostapd_set_sta_vht_mcs10_11_and_he_cap_internal_extn(hapd, sta);
 #endif /* CONFIG_QCN_EXTN */
 
+	/* Apply pre-association isolation list */
+	if (!sta->isolated) {
+		wpa_printf(MSG_INFO,
+			   "Pre-assoc isolation: marking STA " MACSTR " as isolated",
+			   MAC2STR(sta->addr));
+		sta->isolated = hostapd_sta_is_pre_isolated(hapd->conf, sta->addr);
+	}
+
 	/*
 	 * Add the station with forced WLAN_STA_ASSOC flag. The sta->flags
 	 * will be set when the ACK frame for the (Re)Association Response frame
@@ -9274,7 +9282,8 @@ int add_associated_sta(struct hostapd_data *hapd,
 			    sta->flags | WLAN_STA_ASSOC, sta->qosinfo,
 			    sta->vht_opmode, sta->p2p_ie ? 1 : 0,
 			    set, mld_link_addr, mld_link_sta, eml_cap,
-			    type, sta->control_mic_pad, epp_sta)) {
+			    type, sta->control_mic_pad, epp_sta,
+			    sta->isolated)) {
 		hostapd_logger(hapd, sta->addr,
 			       HOSTAPD_MODULE_IEEE80211, HOSTAPD_LEVEL_NOTICE,
 			       "Could not %s STA to kernel driver",
@@ -10466,7 +10475,7 @@ handle_assoc_sa_query_timeout_ml_setup(struct hostapd_data *hapd,
 			    NULL, sta->flags, 0, 0, 0, 0,
 			    mld_link_addr, mld_link_sta,
 			    eml_cap, reassoc, CONTROL_MIC_PAD_NOT_SET,
-			    epp_sta)) {
+			    epp_sta, sta->isolated)) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_NOTICE,
 			       "Could not add STA to kernel driver");
@@ -15482,7 +15491,54 @@ int hostapd_config_read_maclist(const char *fname,
 	return 0;
 }
 
+int hostapd_config_read_isolated_sta_list(const char *val, macaddr **list,
+						 unsigned int *num)
+{
+	char *list_copy, *tok, *saveptr = NULL;
+	macaddr *new_list = NULL, *tmp;
+	unsigned int count = 0;
 
+	list_copy = os_strdup(val);
+	if (!list_copy)
+		return -1;
+
+	tok = strtok_r(list_copy, ",", &saveptr);
+	while (tok) {
+		macaddr addr;
+
+		while (*tok == ' ')
+			tok++;
+
+		if (hwaddr_aton(tok, addr) == 0) {
+			tmp = os_realloc_array(new_list, count + 1,
+					       sizeof(macaddr));
+			if (!tmp) {
+				os_free(new_list);
+				os_free(list_copy);
+				return -1;
+			}
+
+			new_list = tmp;
+			os_memcpy(new_list[count], addr, ETH_ALEN);
+			count++;
+		} else {
+			wpa_printf(MSG_ERROR,
+				   "Invalid MAC in isolated_sta_list: '%s'",
+				   tok);
+		}
+
+		tok = strtok_r(NULL, ",", &saveptr);
+	}
+
+	os_free(list_copy);
+
+	/* Replace existing list only on success */
+	os_free(*list);
+	*list = new_list;
+	*num = count;
+
+	return 0;
+}
 
 static bool hostapd_nr_bssid_is_colocated(struct hostapd_data *hapd,
 					  const u8 *bssid)

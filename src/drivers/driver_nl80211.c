@@ -7979,6 +7979,12 @@ static int wpa_driver_nl80211_build_sta(struct wpa_driver_nl80211_data *drv,
 			goto fail;
 	}
 
+	if (params->isolated) {
+		wpa_printf(MSG_DEBUG, "  * isolated=1");
+		if (nla_put_u8(msg, NL80211_ATTR_STA_ISOLATED, 1))
+			goto fail;
+	}
+
 	/* In case we are an AP MLD need to always specify the link ID */
 	if (params->mld_link_id >= 0) {
 		wpa_printf(MSG_DEBUG, "  * mld_link_id=%d",
@@ -19834,6 +19840,27 @@ fail:
 #endif /* CONFIG_IEEE80211BN */
 
 
+static int wpa_driver_nl80211_set_sta_isolated(void *priv, const u8 *addr,
+					       bool isolated)
+{
+	struct i802_bss *bss = priv;
+	struct nl_msg *msg;
+
+	wpa_printf(MSG_DEBUG, "nl80211: Set STA " MACSTR " isolated=%d",
+		   MAC2STR(addr), isolated);
+
+	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_STATION);
+	if (!msg ||
+	    nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN, addr) ||
+	    nla_put_u8(msg, NL80211_ATTR_STA_ISOLATED, isolated ? 1 : 0))
+		goto fail;
+
+	return send_and_recv_cmd(bss->drv, msg);
+fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
 #ifdef CONFIG_IEEE80211BN
 static int nl80211_put_smd_ba_params(struct nl_msg *msg, int tid,
 				     const struct sta_smd_ba_info *ba)
@@ -20341,4 +20368,5 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.set_smd_ctx = nl80211_set_smd_ctx,
 	.get_smd_ctx = nl80211_get_smd_ctx,
 #endif
+	.set_sta_isolated = wpa_driver_nl80211_set_sta_isolated,
 };

@@ -3221,6 +3221,10 @@ enum nl80211_commands {
  * @NL80211_ATTR_MAPC_MAX_CTDMA_PEERS: u8. Maximum number of Co-TDMA peers
  *	supported by the hardware. 0 = not reported.
  *
+ * @NL80211_ATTR_STA_ISOLATED: u8 attribute to enable or disable isolation
+ *     from peer stations i.e, enable/disable intra-bss forwarding for this
+ *     station. 0 = not isolated, 1 = isolated.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3910,6 +3914,7 @@ enum nl80211_attrs {
 	NL80211_ATTR_MAPC_MAX_CTDMA_PEERS,
 
 	NL80211_ATTR_SMD_ROAM_STA,
+	NL80211_ATTR_STA_ISOLATED,
 	/* add attributes here, update the policy in nl80211.c */
 
 	__NL80211_ATTR_AFTER_LAST,
@@ -4473,6 +4478,8 @@ enum nl80211_sta_bss_param {
  *	authentication server (u8, 0 or 1)
  * @NL80211_STA_INFO_RX_RETRIES: number of rx packets(MPDUs) from this station
  *	with retry bit set (u32)
+ * @NL80211_STA_INFO_ISOLATED: Indicates if peer isolation is enabled/disabled
+ * 	for this station (u8, 0 or 1)
  * @__NL80211_STA_INFO_AFTER_LAST: internal
  * @NL80211_STA_INFO_MAX: highest possible station info attribute
  */
@@ -4522,6 +4529,7 @@ enum nl80211_sta_info {
 	NL80211_STA_INFO_ASSOC_AT_BOOTTIME,
 	NL80211_STA_INFO_CONNECTED_TO_AS,
 	NL80211_STA_INFO_RX_RETRIES,
+	NL80211_STA_INFO_ISOLATED,
 
 	/* Fix me: This section should be removed once the
 	 * corresponding changes are merged upstream.*/

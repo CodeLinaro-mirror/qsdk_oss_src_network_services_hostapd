@@ -632,6 +632,9 @@ struct hostapd_bss_config {
 	struct acl_timed_deny_entry *acl_timed_deny_list;
 	int wds_sta;
 	int isolate;
+	/* Pre-association isolation list */
+	macaddr *isolated_sta_list;
+	unsigned int num_isolated_sta;
 	int start_disabled;
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 	int external_plugin_enable; /* Enable external plugin for this BSS */
@@ -2228,6 +2231,8 @@ void hostapd_acl_clear(struct mac_acl_entry **exact_acl, int *num_exact,
 		       struct mac_acl_entry **masked_acl, int *num_masked);
 void hostapd_config_free_acl_timed_list(struct hostapd_bss_config *conf);
 bool hostapd_config_check_bss_6g(struct hostapd_bss_config *bss);
+bool hostapd_sta_is_pre_isolated(struct hostapd_bss_config *conf,
+				  const u8 *addr);
 
 #endif /* HOSTAPD_CONFIG_H */
 

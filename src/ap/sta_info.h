@@ -588,6 +588,7 @@ struct sta_info {
 #ifdef CONFIG_ENC_ASSOC
 	bool epp_sta; /* Indicates if the station is an EPP peer */
 #endif /* CONFIG_ENC_ASSOC */
+	bool isolated; /* Station is isolated from other stations */
 
 #ifdef CONFIG_PMKSA_PRIVACY
 	u8 snonce[NONCE_LEN]; /* SNonce to compute next PMKID if

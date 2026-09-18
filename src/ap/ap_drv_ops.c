@@ -632,7 +632,8 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
 		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
 		    int set, const u8 *link_addr, bool mld_link_sta,
-		    u16 eml_cap, int type, u8 control_mic_pad, bool epp_sta)
+		    u16 eml_cap, int type, u8 control_mic_pad, bool epp_sta,
+		    bool isolated)
 {
 	struct hostapd_sta_add_params params, *tmp = NULL;
 	struct hostapd_data *assoc_hapd;
@@ -679,6 +680,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 #ifdef CONFIG_ENC_ASSOC
 	params.epp_sta = epp_sta;
 #endif /* CONFIG_ENC_ASSOC */
+	params.isolated = isolated;
 
 #ifdef CONFIG_QCN_EXTN
 	hostapd_copy_sta_add_params_extn(&params.params_extn, sta_extn);
