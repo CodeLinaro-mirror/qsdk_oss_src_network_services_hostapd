@@ -24894,6 +24894,8 @@ enum qca_vendor_attr_extended_monitor {
  * @QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_MON_FLAG: u8 attribute.
  *     Configures the peer filtering mode for extended monitor.
  *     Uses enum qca_vendor_extended_monitor_flags.
+ *     It enables the hardware special-packet bypass and
+ *     type+subtype tiers.
  */
 enum qca_vendor_attr_extended_monitor_filter_config {
 	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_INVALID = 0,
@@ -24933,12 +24935,18 @@ enum qca_vendor_attr_extended_monitor_filter_config {
  * @QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_DATA_MPDU_TLV: Nested Attribute
  *     Per-subtype data MPDU TLV subscription masks.
  *     See enum qca_vendor_attr_extended_monitor_data_mpdu_tlv.
+ * @QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_STATUS_FILTER: Nested attribute.
+ *     Status-only capture subtype masks (TX monitor only): MPDU status
+ *     TLVs are captured with no payload. Sub-attributes reuse
+ *     enum qca_vendor_attr_extended_monitor_pkt_config_filter (MGMT/CTRL/
+ *     DATA). Absent means the status tier is disabled.
  */
 enum qca_vendor_attr_extended_monitor_packet_config {
 	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_INVALID = 0,
 	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER = 1,
 	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN = 2,
 	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_DATA_MPDU_TLV = 3,
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_STATUS_FILTER = 4,
 
 	/* keep last */
 	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_AFTER_LAST,
