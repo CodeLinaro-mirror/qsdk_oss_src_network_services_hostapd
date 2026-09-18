@@ -5680,7 +5680,7 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 		kde_len += wpabuf_len(conf->eapol_m3_elements);
 #endif /* CONFIG_TESTING_OPTIONS */
 
-	if (sm->security_profile_indication) {
+	if (sm->security_profile_indication || sm->ap_security_profile_indication) {
 		struct hostapd_data *hapd = sm->wpa_auth->cb_ctx;
 		size_t security_ie_len = hostapd_security_profile_ie_len(hapd);
 
