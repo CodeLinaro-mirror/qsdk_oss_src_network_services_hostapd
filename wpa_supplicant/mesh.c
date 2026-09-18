@@ -729,6 +729,10 @@ int wpa_supplicant_join_mesh(struct wpa_supplicant *wpa_s,
 		ssid->he = 1;
 	if (wpa_s->mesh_eht_enabled)
 		ssid->eht = 1;
+#ifdef CONFIG_IEEE80211BN
+	if (wpa_s->mesh_uhr_enabled)
+		ssid->uhr = 1;
+#endif /* CONFIG_IEEE80211BN */
 	if (ssid->beacon_int > 0)
 		params->beacon_int = ssid->beacon_int;
 	else if (wpa_s->conf->beacon_int > 0)
