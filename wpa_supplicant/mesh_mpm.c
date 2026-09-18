@@ -272,6 +272,12 @@ static void mesh_mpm_send_plink_action(struct wpa_supplicant *wpa_s,
 		buf_len += 3 + sizeof(struct ieee80211_eht_operation);
 }
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_IEEE80211BN
+	if (type != PLINK_CLOSE && wpa_s->mesh_uhr_enabled) {
+		buf_len += 3 + sizeof(struct ieee80211_uhr_capabilities);
+		buf_len += 3 + sizeof(struct ieee80211_uhr_operation);
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 	buf = wpabuf_alloc(buf_len);
 	if (!buf)
@@ -429,6 +435,17 @@ static void mesh_mpm_send_plink_action(struct wpa_supplicant *wpa_s,
 		wpabuf_put_data(buf, eht_capa_oper, pos - eht_capa_oper);
 	}
 #endif /* CONFIG_IEEE80211BE */
+#ifdef CONFIG_IEEE80211BN
+	if (type != PLINK_CLOSE && wpa_s->mesh_uhr_enabled) {
+		u8 uhr_capa_oper[3 + sizeof(struct ieee80211_uhr_capabilities) +
+				 3 + sizeof(struct ieee80211_uhr_operation)];
+
+		pos = hostapd_eid_uhr_capab(bss, uhr_capa_oper,
+					    IEEE80211_MODE_MESH);
+		pos = hostapd_eid_uhr_operation(bss, pos, false);
+		wpabuf_put_data(buf, uhr_capa_oper, pos - uhr_capa_oper);
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 	if (ampe && mesh_rsn_protect_frame(wpa_s->mesh_rsn, sta, cat, buf)) {
 		wpa_msg(wpa_s, MSG_INFO,
@@ -795,6 +812,10 @@ static struct sta_info * mesh_mpm_add_peer(struct wpa_supplicant *wpa_s,
 			   elems->eht_capabilities,
 			   elems->eht_capabilities_len);
 #endif /*CONFIG_IEEE80211BE */
+#ifdef CONFIG_IEEE80211BN
+	copy_sta_uhr_capab(data, sta, elems->uhr_capabilities,
+			   elems->uhr_capabilities_len);
+#endif /* CONFIG_IEEE80211BN */
 
 	if (hostapd_get_aid(data, sta) < 0) {
 		wpa_msg(wpa_s, MSG_ERROR, "No AIDs available");
@@ -818,6 +839,10 @@ static struct sta_info * mesh_mpm_add_peer(struct wpa_supplicant *wpa_s,
 	params.he_6ghz_capab = sta->he_6ghz_capab;
 	params.eht_capab = sta->eht_capab;
 	params.eht_capab_len = sta->eht_capab_len;
+#ifdef CONFIG_IEEE80211BN
+	params.uhr_capab = sta->uhr_capab;
+	params.uhr_capab_len = sta->uhr_capab_len;
+#endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_IEEE80211BE
 	if (elems->eht_operation && elems->eht_operation_len >= sizeof(*eht_oper_ie)) {
 		u16 bw = 0;
