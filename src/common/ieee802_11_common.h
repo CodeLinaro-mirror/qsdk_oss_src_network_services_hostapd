@@ -145,7 +145,7 @@ struct ieee802_11_elems {
 	const u8 *mscs_desc;
 	const u8 *cip_pad;
 	/* Security Profile element (802.11bn D1.4, 9.4.2.364, EID ext=162) */
-	const u8 *security_profile_ie;
+	const u8 *security_profile;
 	const u8 *smd;
 	const u8 *smd_bsstransparams;
 	const u8 *akm_suite_selector;
@@ -228,7 +228,7 @@ struct ieee802_11_elems {
 	u8 smd_bsstransparams_len;
 
 	/* Security Profile element (802.11bn D1.4, 9.4.2.364, EID ext=162) */
-	size_t security_profile_ie_len;
+	size_t security_profile_len;
 	u8 supported_groups_len;
 
 	struct mb_ies_info mb_ies;

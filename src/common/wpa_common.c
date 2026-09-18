@@ -3957,11 +3957,11 @@ static int wpa_parse_generic(const u8 *pos, struct wpa_eapol_ie_parse *ie)
 
 	if (left >= 1 && selector == RSN_KEY_DATA_UHR_SECURITY) {
 		/* KDE data: EID_Ext(1) + body */
-		ie->security_profile_ie = p;
-		ie->security_profile_ie_len = left > 1 ? left : 0;
+		ie->security_profile = p;
+		ie->security_profile_len = left > 1 ? left : 0;
 		wpa_printf(MSG_ERROR,
 			   "UHR: Found UHR Security KDE in EAPOL-Key (left=%zu body_len=%zu)",
-			   left, ie->security_profile_ie_len);
+			   left, ie->security_profile_len);
 		wpa_hexdump(MSG_ERROR, "UHR: UHR Security KDE data", p, left);
 		wpa_hexdump(MSG_ERROR, "UHR: UHR Security KDE in EAPOL-Key",
 			    pos, dlen);
@@ -4260,12 +4260,12 @@ int wpa_parse_kde_ies(const u8 *buf, size_t len, struct wpa_eapol_ie_parse *ie)
 			/* Security Profile element (802.11bn D1.4, 9.4.2.364).
 			 * Store pointer to the full element (EID byte included)
 			 * for comparison with the AP's Beacon/ProbeResp copy. */
-			ie->security_profile_ie = pos;
-			ie->security_profile_ie_len = pos[1] + 2;
+			ie->security_profile = pos;
+			ie->security_profile_len = pos[1] + 2;
 			wpa_hexdump(MSG_DEBUG,
 				    "WPA: Security Profile element in EAPOL-Key",
-				    ie->security_profile_ie,
-				    ie->security_profile_ie_len);
+				    ie->security_profile,
+				    ie->security_profile_len);
 		} else if (*pos == WLAN_EID_EXTENSION &&
 			   pos[1] >= 2 &&
 			   pos[2] == WLAN_EID_EXT_SMD) {
