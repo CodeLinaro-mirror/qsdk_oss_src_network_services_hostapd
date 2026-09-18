@@ -8022,6 +8022,10 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 				os_free(hapd);
 				return -1;
 			}
+
+			if (hapd_iface->state == HAPD_IFACE_ENABLED)
+				wpa_msg(hapd->msg_ctx, MSG_INFO,
+					AP_EVENT_ENABLED);
 		}
 		hostapd_owe_update_trans(hapd_iface);
 		return 0;
