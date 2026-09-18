@@ -972,15 +972,15 @@ struct wpa_supplicant {
 	 *   intersection of the AP's Security Profile Bitmap and the STA's
 	 *   supported profiles. -1 means no profile selected (feature inactive).
 	 *
-	 * security_profile_ie / security_profile_ie_len: pre-built Security
+	 * security_profile / security_profile_len: pre-built Security
 	 *   Profile element for the selected profile, built once in
 	 *   wpa_supplicant_set_suites() after RSNE and RSNXE are finalised.
 	 *   Appended to auth and assoc frames by sme_send_authentication() and
 	 *   sme_associate() respectively.
 	 */
 	int selected_security_profile_num;
-	u8 security_profile_ie[32];
-	size_t security_profile_ie_len;
+	u8 security_profile[32];
+	size_t security_profile_len;
 
 	struct scard_data *scard;
 	char imsi[20];

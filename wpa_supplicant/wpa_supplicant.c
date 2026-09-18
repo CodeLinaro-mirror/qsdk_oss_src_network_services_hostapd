@@ -429,7 +429,7 @@ void wpa_supplicant_set_non_wpa_policy(struct wpa_supplicant *wpa_s,
 	wpa_sm_set_ap_rsne_override(wpa_s->wpa, NULL, 0);
 	wpa_sm_set_ap_rsne_override_2(wpa_s->wpa, NULL, 0);
 	wpa_sm_set_ap_rsnxe_override(wpa_s->wpa, NULL, 0);
-	wpa_sm_set_ap_security_profile_ie(wpa_s->wpa, NULL, 0);
+	wpa_sm_set_ap_security_profile(wpa_s->wpa, NULL, 0);
 	wpa_sm_clear_ap_smd_info(wpa_s->wpa);
 	wpa_sm_set_assoc_wpa_ie(wpa_s->wpa, NULL, 0);
 #ifndef CONFIG_NO_WPA
@@ -437,7 +437,7 @@ void wpa_supplicant_set_non_wpa_policy(struct wpa_supplicant *wpa_s,
 #endif /* CONFIG_NO_WPA */
 	wpa_s->rsnxe_len = 0;
 	wpa_s->selected_security_profile_num = -1;
-	wpa_s->security_profile_ie_len = 0;
+	wpa_s->security_profile_len = 0;
 	wpa_s->pairwise_cipher = WPA_CIPHER_NONE;
 	wpa_s->group_cipher = WPA_CIPHER_NONE;
 	wpa_s->mgmt_group_cipher = 0;
@@ -2350,7 +2350,7 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 						  rsno2e ? 2 + rsno2e[1] : 0) ||
 		    wpa_sm_set_ap_rsnxe_override(wpa_s->wpa, rsnxoe,
 						 rsnxoe ? 2 + rsnxoe[1] : 0)||
-		    wpa_sm_set_ap_security_profile_ie(wpa_s->wpa, sec_prof,
+		    wpa_sm_set_ap_security_profile(wpa_s->wpa, sec_prof,
 						      sec_prof ? 2 + sec_prof[1] : 0) ||
 		    wpa_sm_set_ap_smd_info(wpa_s->wpa,
 					   smd_info,
@@ -2867,20 +2867,20 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 	 * Capabilities fields are identical to the values in the RSNE and
 	 * RSNXE respectively (9.4.2.364 p.206).
 	 *
-	 * The element is stored in wpa_s->security_profile_ie and appended to
+	 * The element is stored in wpa_s->security_profile and appended to
 	 * auth/assoc frames by sme_send_authentication() and sme_associate().
 	 */
-	wpa_s->security_profile_ie_len = 0;
+	wpa_s->security_profile_len = 0;
 	if (wpa_s->selected_security_profile_num >= 0) {
 		int ret;
 
 		ret = security_profile_build_sta_ie(
 			wpa_s->wpa,
 			wpa_s->selected_security_profile_num,
-			wpa_s->security_profile_ie,
-			sizeof(wpa_s->security_profile_ie));
+			wpa_s->security_profile,
+			sizeof(wpa_s->security_profile));
 		if (ret > 0) {
-			wpa_s->security_profile_ie_len = (size_t) ret;
+			wpa_s->security_profile_len = (size_t) ret;
 			wpa_dbg(wpa_s, MSG_DEBUG,
 				"Security Profile element built: profile=%d len=%d",
 				wpa_s->selected_security_profile_num, ret);
@@ -5015,17 +5015,17 @@ pfs_fail:
 	 * when WPA_DRIVER_FLAGS2_SECURITY_PROFILE is not set, so the element
 	 * is omitted.
 	 */
-	if (wpa_s->security_profile_ie_len > 0 &&
+	if (wpa_s->security_profile_len > 0 &&
 	    wpas_security_profile_active(wpa_s) &&
-	    wpa_s->security_profile_ie_len <= max_wpa_ie_len - wpa_ie_len) {
+	    wpa_s->security_profile_len <= max_wpa_ie_len - wpa_ie_len) {
 		os_memcpy(wpa_ie + wpa_ie_len,
-			  wpa_s->security_profile_ie,
-			  wpa_s->security_profile_ie_len);
-		wpa_ie_len += wpa_s->security_profile_ie_len;
+			  wpa_s->security_profile,
+			  wpa_s->security_profile_len);
+		wpa_ie_len += wpa_s->security_profile_len;
 		wpa_dbg(wpa_s, MSG_DEBUG,
 			"Security Profile element appended to connect IEs (profile=%d)",
 			wpa_s->selected_security_profile_num);
-	} else if (wpa_s->security_profile_ie_len > 0 &&
+	} else if (wpa_s->security_profile_len > 0 &&
 		   !wpas_security_profile_active(wpa_s)) {
 		wpa_dbg(wpa_s, MSG_DEBUG,
 			"Security Profile: driver does not support element — omitting from connect IEs");
@@ -5401,7 +5401,7 @@ static void wpas_start_assoc_cb(struct wpa_radio_work *work, int deinit)
 #endif /* CONFIG_NO_WPA */
 	wpa_s->rsnxe_len = 0;
 	wpa_s->selected_security_profile_num = -1;
-	wpa_s->security_profile_ie_len = 0;
+	wpa_s->security_profile_len = 0;
 #ifndef CONFIG_NO_ROBUST_AV
 	wpa_s->mscs_setup_done = false;
 #endif /* CONFIG_NO_ROBUST_AV */

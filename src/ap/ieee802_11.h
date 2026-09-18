@@ -587,7 +587,7 @@ u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool is_bcn);
 u8 * hostapd_eid_tx_power_indication(struct hostapd_data *hapd, u8 *eid);
 size_t hostapd_eid_tx_power_indication_len(void);
-size_t hostapd_security_profile_ie_len(struct hostapd_data *hapd);
+size_t hostapd_security_profile_len(struct hostapd_data *hapd);
 u8 *hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid);
 u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
 				   bool skip_post_phase, bool from_user);

@@ -232,7 +232,7 @@ int wpa_sm_set_ap_rsnxe(struct wpa_sm *sm, const u8 *ie, size_t len);
 int wpa_sm_set_ap_rsne_override(struct wpa_sm *sm, const u8 *ie, size_t len);
 int wpa_sm_set_ap_rsne_override_2(struct wpa_sm *sm, const u8 *ie, size_t len);
 int wpa_sm_set_ap_rsnxe_override(struct wpa_sm *sm, const u8 *ie, size_t len);
-int wpa_sm_set_ap_security_profile_ie(struct wpa_sm *sm, const u8 *ie, size_t len);
+int wpa_sm_set_ap_security_profile(struct wpa_sm *sm, const u8 *ie, size_t len);
 void wpa_sm_set_assoc_frame_encrypted(struct wpa_sm *sm, bool encrypted);
 int wpa_sm_set_ap_smd_ie(struct wpa_sm *sm, const u8 *ie, size_t len);
 int wpa_sm_set_ap_smd_info(struct wpa_sm *sm,
@@ -425,7 +425,7 @@ static inline int wpa_sm_set_ap_rsnxe_override(struct wpa_sm *sm, const u8 *ie,
 	return -1;
 }
 
-static inline int wpa_sm_set_ap_security_profile_ie(struct wpa_sm *sm,
+static inline int wpa_sm_set_ap_security_profile(struct wpa_sm *sm,
 						    const u8 *ie,
 						    size_t len)
 {

@@ -154,14 +154,14 @@ struct wpa_sm {
 	 *   WPA_DRIVER_FLAGS2_SECURITY_PROFILE is set.  When 0, all Security
 	 *   Profile element parsing and validation is skipped in wpa.c.
 	 *
-	 * ap_security_profile_ie / ap_security_profile_ie_len: copy of the
+	 * ap_security_profile / ap_security_profile_len: copy of the
 	 *   Security Profile element from the AP's Beacon/ProbeResp, stored
 	 *   for EAPOL-Key msg 3/4 or encrypted (Re)Association Response
 	 *   comparison.
 	 */
 	int security_profile_active;
-	u8 *ap_security_profile_ie;
-	size_t ap_security_profile_ie_len;
+	u8 *ap_security_profile;
+	size_t ap_security_profile_len;
 
 #ifdef CONFIG_TDLS
 	struct wpa_tdls_peer *tdls;

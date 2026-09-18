@@ -808,7 +808,7 @@ static u16 validate_security_profile_common(
 	if (!hapd->conf->security_profiles)
 		return WLAN_STATUS_SUCCESS;
 
-	if (!elems->security_profile_ie) {
+	if (!elems->security_profile) {
 		/* No Security Profile element present - validation not needed */
 		return WLAN_STATUS_SUCCESS;
 	}
@@ -816,14 +816,14 @@ static u16 validate_security_profile_common(
 	wpa_printf(MSG_DEBUG,
 		   "UHR: Validating Security Profile from " MACSTR
 		   " in %s auth (body_len=%zu)",
-		   MAC2STR(addr), auth_context, elems->security_profile_ie_len);
+		   MAC2STR(addr), auth_context, elems->security_profile_len);
 
 	/* Perform validation */
 	if (!validate_sta_security_profile(
 		    hapd, addr,
 		    elems->rsn_ie, elems->rsn_ie_len,
 		    elems->rsnxe, elems->rsnxe_len,
-		    elems->security_profile_ie, elems->security_profile_ie_len,
+		    elems->security_profile, elems->security_profile_len,
 		    profile_matched)) {
 		wpa_printf(MSG_INFO,
 			   "UHR: Rejecting %s auth from " MACSTR
@@ -3816,9 +3816,9 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 			goto fail;
 
 		/* UHR: Validate Security Profile if present */
-		if (elems.security_profile_ie && elems.security_profile_ie_len > 0) {
-			size_t security_profile_body_len = elems.security_profile_ie_len > 1 ?
-				elems.security_profile_ie_len - 1 : 0;
+		if (elems.security_profile && elems.security_profile_len > 0) {
+			size_t security_profile_body_len = elems.security_profile_len > 1 ?
+				elems.security_profile_len - 1 : 0;
 
 			wpa_printf(MSG_DEBUG,
 				   "UHR: Found Security Profile element from STA "
@@ -3826,13 +3826,13 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 				   MAC2STR(sta->addr), security_profile_body_len);
 			wpa_hexdump(MSG_DEBUG,
 				    "UHR: Security Profile element body",
-				    elems.security_profile_ie + 1, security_profile_body_len);
+				    elems.security_profile + 1, security_profile_body_len);
 
 			if (!validate_sta_security_profile(
 				    hapd, sta->addr,
 				    elems.rsn_ie, elems.rsn_ie_len,
 				    elems.rsnxe, elems.rsnxe_len,
-				    elems.security_profile_ie, elems.security_profile_ie_len,
+				    elems.security_profile, elems.security_profile_len,
 				    NULL)) {
 				wpa_printf(MSG_INFO,
 					   "UHR: Rejecting 802.1X auth from "
@@ -7345,12 +7345,12 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
 
 
 /*
- * hostapd_security_profile_ie_len - Calculate length of UHR Security Info IE
+ * hostapd_security_profile_len - Calculate length of UHR Security Info IE
  *
  * Returns the total byte length of the IE (including EID and Length fields),
  * or 0 if no profiles are configured.
  */
-size_t hostapd_security_profile_ie_len(struct hostapd_data *hapd)
+size_t hostapd_security_profile_len(struct hostapd_data *hapd)
 {
 	int i, max_profile = -1;
 	size_t bitmap_len, ext_rsn_capab_len = 0;
@@ -8018,7 +8018,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		 * AP's rsn_pairwise setting.
 		 */
 		if (hapd->conf->security_profiles && !security_profile_matched &&
-		    elems->security_profile_ie) {
+		    elems->security_profile) {
 			u16 sp_resp = validate_security_profile_common(
 				hapd, sta, elems,
 				type == LINK_PARSE_REASSOC ? "Reassoc" : "Assoc",
@@ -9481,7 +9481,7 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 	/* Security Profile IE is appended unconditionally when configured;
 	 * always reserve space regardless of CONFIG_IEEE80211BN. */
 	if (hapd->conf->security_profiles)
-		buflen += hostapd_security_profile_ie_len(hapd);
+		buflen += hostapd_security_profile_len(hapd);
 
 	buf = os_zalloc(buflen);
 	if (!buf) {

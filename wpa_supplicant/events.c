@@ -4925,7 +4925,7 @@ no_pfs:
 		    p[0] == WLAN_EID_EXTENSION && p[1] >= 1 &&
 		    p[2] == WLAN_EID_EXT_SECURITY_PROFILE) {
 			sec_prof_found = 1;
-			wpa_sm_set_ap_security_profile_ie(wpa_s->wpa, p, len);
+			wpa_sm_set_ap_security_profile(wpa_s->wpa, p, len);
 		}
 
 		l -= len;
@@ -4942,7 +4942,7 @@ no_pfs:
 		wpa_sm_set_ap_rsnxe_override(wpa_s->wpa, NULL, 0);
 	}
 	if (!sec_prof_found && data->assoc_info.beacon_ies)
-		wpa_sm_set_ap_security_profile_ie(wpa_s->wpa, NULL, 0);
+		wpa_sm_set_ap_security_profile(wpa_s->wpa, NULL, 0);
 	if (wpa_found || rsn_found)
 		wpa_s->ap_ies_from_associnfo = 1;
 
@@ -5074,7 +5074,7 @@ static int wpa_supplicant_assoc_update_ie(struct wpa_supplicant *wpa_s)
 					  rsno2e ? 2 + rsno2e[1] : 0) ||
 	    wpa_sm_set_ap_rsnxe_override(wpa_s->wpa, rsnxoe,
 					 rsnxoe ? 2 + rsnxoe[1] : 0) ||
-	    wpa_sm_set_ap_security_profile_ie(wpa_s->wpa, sec_prof,
+	    wpa_sm_set_ap_security_profile(wpa_s->wpa, sec_prof,
 				   sec_prof ? 2 + sec_prof[1] : 0))
 		return -1;
 

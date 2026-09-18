@@ -2483,22 +2483,22 @@ static int wpa_supplicant_validate_ie(struct wpa_sm *sm,
 	}
 
 	if (sm->security_profile_active) {
-		const u8 *msg3_sp = ie->security_profile_ie;
-		size_t msg3_sp_len = ie->security_profile_ie_len;
+		const u8 *msg3_sp = ie->security_profile;
+		size_t msg3_sp_len = ie->security_profile_len;
 		int sp_fail = 0;
 		const char *sp_fail_reason = NULL;
 
-		if (sm->ap_security_profile_ie &&
-		    sm->ap_security_profile_ie_len > 0) {
+		if (sm->ap_security_profile &&
+		    sm->ap_security_profile_len > 0) {
 			if (!msg3_sp || msg3_sp_len == 0) {
 				sp_fail = 1;
 				sp_fail_reason =
 					"Security Profile: element present in Beacon/ProbeResp but absent in EAPOL-Key msg 3/4";
 			} else if (msg3_sp_len !=
-				   sm->ap_security_profile_ie_len ||
+				   sm->ap_security_profile_len ||
 				   os_memcmp(msg3_sp,
-					     sm->ap_security_profile_ie,
-					     sm->ap_security_profile_ie_len)
+					     sm->ap_security_profile,
+					     sm->ap_security_profile_len)
 				   != 0) {
 				sp_fail = 1;
 				sp_fail_reason =
@@ -2518,8 +2518,8 @@ static int wpa_supplicant_validate_ie(struct wpa_sm *sm,
 				sp_fail_reason);
 			wpa_hexdump(MSG_DEBUG,
 				    "Security Profile element in Beacon/ProbeResp",
-				    sm->ap_security_profile_ie,
-				    sm->ap_security_profile_ie_len);
+				    sm->ap_security_profile,
+				    sm->ap_security_profile_len);
 			wpa_hexdump(MSG_DEBUG,
 				    "Security Profile element in EAPOL-Key msg 3/4",
 				    msg3_sp, msg3_sp_len);
@@ -4710,7 +4710,7 @@ void wpa_sm_deinit(struct wpa_sm *sm)
 	os_free(sm->ap_rsne_override);
 	os_free(sm->ap_rsne_override_2);
 	os_free(sm->ap_rsnxe_override);
-	os_free(sm->ap_security_profile_ie);
+	os_free(sm->ap_security_profile);
 	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
 		os_free(sm->mlo.links[i].ap_rsne);
 		os_free(sm->mlo.links[i].ap_rsnxe);
@@ -6069,7 +6069,7 @@ int wpa_sm_set_ap_rsnxe_override(struct wpa_sm *sm, const u8 *ie, size_t len)
 
 
 /**
- * wpa_sm_set_ap_security_profile_ie - Set AP Security Profile element from Beacon/ProbeResp
+ * wpa_sm_set_ap_security_profile - Set AP Security Profile element from Beacon/ProbeResp
  * @sm: Pointer to WPA state machine data from wpa_sm_init()
  * @ie: Pointer to IE data (starting from id), or NULL to clear
  * @len: IE length
@@ -6077,28 +6077,28 @@ int wpa_sm_set_ap_rsnxe_override(struct wpa_sm *sm, const u8 *ie, size_t len)
  *
  * Inform WPA state machine about the Security Profile element used in
  * Beacon / Probe Response frame.  The copy is stored in
- * sm->ap_security_profile_ie and compared against the element received in
+ * sm->ap_security_profile and compared against the element received in
  * EAPOL-Key msg 3/4 and encrypted (Re)Association Response frames.
  */
-int wpa_sm_set_ap_security_profile_ie(struct wpa_sm *sm, const u8 *ie, size_t len)
+int wpa_sm_set_ap_security_profile(struct wpa_sm *sm, const u8 *ie, size_t len)
 {
 	if (!sm)
 		return -1;
 
-	os_free(sm->ap_security_profile_ie);
+	os_free(sm->ap_security_profile);
 	if (!ie || len == 0) {
 		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
 			"RSN: Clearing AP Security Profile element");
-		sm->ap_security_profile_ie = NULL;
-		sm->ap_security_profile_ie_len = 0;
+		sm->ap_security_profile = NULL;
+		sm->ap_security_profile_len = 0;
 	} else {
 		wpa_hexdump(MSG_DEBUG, "RSN: Set AP Security Profile element",
 			    ie, len);
-		sm->ap_security_profile_ie = os_memdup(ie, len);
-		if (!sm->ap_security_profile_ie)
+		sm->ap_security_profile = os_memdup(ie, len);
+		if (!sm->ap_security_profile)
 			return -1;
 
-		sm->ap_security_profile_ie_len = len;
+		sm->ap_security_profile_len = len;
 	}
 
 	return 0;
@@ -7509,30 +7509,30 @@ int fils_process_assoc_resp(struct wpa_sm *sm, const u8 *resp, size_t len)
 	}
 
 	if (sm->security_profile_active) {
-		const u8 *assoc_sp = elems.security_profile_ie;
-		size_t assoc_sp_len = elems.security_profile_ie_len;
+		const u8 *assoc_sp = elems.security_profile;
+		size_t assoc_sp_len = elems.security_profile_len;
 
-		if (sm->ap_security_profile_ie &&
-		    sm->ap_security_profile_ie_len > 2) {
+		if (sm->ap_security_profile &&
+		    sm->ap_security_profile_len > 2) {
 			if (!assoc_sp || assoc_sp_len == 0) {
 				wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
 					"ENC_ASSOC: Security Profile element present in Beacon/ProbeResp but absent in (Re)Association Response");
 				wpa_hexdump(MSG_DEBUG,
 					    "ENC_ASSOC: Security Profile element in Beacon/ProbeResp",
-					    sm->ap_security_profile_ie,
-					    sm->ap_security_profile_ie_len);
+					    sm->ap_security_profile,
+					    sm->ap_security_profile_len);
 				goto fail;
 			}
-			if (sm->ap_security_profile_ie_len - 2 != assoc_sp_len ||
-			    os_memcmp(sm->ap_security_profile_ie + 2,
+			if (sm->ap_security_profile_len - 2 != assoc_sp_len ||
+			    os_memcmp(sm->ap_security_profile + 2,
 				      assoc_sp,
 				      assoc_sp_len) != 0) {
 				wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
 					"ENC_ASSOC: Security Profile element mismatch between Beacon/ProbeResp and (Re)Association Response");
 				wpa_hexdump(MSG_DEBUG,
 					    "ENC_ASSOC: Security Profile element in Beacon/ProbeResp",
-					    sm->ap_security_profile_ie,
-					    sm->ap_security_profile_ie_len);
+					    sm->ap_security_profile,
+					    sm->ap_security_profile_len);
 				wpa_hexdump(MSG_DEBUG,
 					    "ENC_ASSOC: Security Profile element in (Re)Association Response",
 					    assoc_sp, assoc_sp_len);
