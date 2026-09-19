@@ -1864,6 +1864,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_MAPC_PEER_GET_PARAMS = 545,
 	QCA_NL80211_VENDOR_SUBCMD_EXTAP_SETUP = 546,
 	QCA_NL80211_VENDOR_SUBCMD_EXTAP_INFO  = 547,
+	QCA_NL80211_VENDOR_SUBCMD_GET_IPA_DEBUG_INFO = 548,
 };
 
 /* Compatibility defines for previously used subcmd names.
@@ -29432,5 +29433,26 @@ enum qca_wlan_vendor_attr_extap_info {
 	QCA_WLAN_VENDOR_ATTR_EXTAP_INFO_MAX =
 		QCA_WLAN_VENDOR_ATTR_EXTAP_INFO_AFTER_LAST - 1,
 };
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+/**
+ * enum qca_wlan_vendor_attr_ipa_stats - Attributes for
+ * %QCA_NL80211_VENDOR_SUBCMD_GET_IPA_DEBUG_INFO
+ *
+ * @QCA_WLAN_VENDOR_ATTR_IPA_STATS_DEBUG_INFO: Nested attribute containing
+ * the IPA debug info. The sub-attributes are defined by enum
+ * ipa_debug_info_attr (and the enums it nests: ipa_init_attr, ipa_vp_attr,
+ * ipa_vap_attr, ipa_evt_attr).
+ */
+enum qca_wlan_vendor_attr_ipa_stats {
+	QCA_WLAN_VENDOR_ATTR_IPA_STATS_INVALID	= 0,
+	QCA_WLAN_VENDOR_ATTR_IPA_STATS_DEBUG_INFO	= 1, /* nested */
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_IPA_STATS_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_IPA_STATS_MAX =
+		QCA_WLAN_VENDOR_ATTR_IPA_STATS_AFTER_LAST - 1,
+};
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
 
 #endif /* QCA_VENDOR_H */
