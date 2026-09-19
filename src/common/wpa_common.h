@@ -1007,3 +1007,19 @@ static inline int smd_reason_read(const void *ring, uint8_t head,
 }
 
 #endif /* WPA_COMMON_H */
+/* Security Profile entry (IEEE P802.11bn/D2.0) */
+struct security_profile_entry {
+	int number;
+	int key_mgmt;
+	int pairwise_cipher;
+	bool ieee8021x_auth_frame;
+	bool assoc_frame_encrypt;
+	bool pmksa_caching_privacy;
+};
+
+
+
+int sec_prof_implied_key_mgmt(const int *profiles);
+const struct security_profile_entry * sec_prof_get(int p);
+
+#endif /* WPA_COMMON_H */
