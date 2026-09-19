@@ -7523,10 +7523,9 @@ int fils_process_assoc_resp(struct wpa_sm *sm, const u8 *resp, size_t len)
 					    sm->ap_security_profile_len);
 				goto fail;
 			}
-			if (sm->ap_security_profile_len - 2 != assoc_sp_len ||
-			    os_memcmp(sm->ap_security_profile + 2,
-				      assoc_sp,
-				      assoc_sp_len) != 0) {
+			if (sm->ap_security_profile_len - 3 != assoc_sp_len ||
+			    os_memcmp(sm->ap_security_profile + 3,
+				      assoc_sp, assoc_sp_len) != 0) {
 				wpa_msg(sm->ctx->msg_ctx, MSG_INFO,
 					"ENC_ASSOC: Security Profile element mismatch between Beacon/ProbeResp and (Re)Association Response");
 				wpa_hexdump(MSG_DEBUG,
