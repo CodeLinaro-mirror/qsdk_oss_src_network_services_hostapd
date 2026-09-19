@@ -647,10 +647,8 @@ static void sme_add_assoc_req_ie(struct wpa_supplicant *wpa_s,
 #ifdef CONFIG_ENC_ASSOC
 
 static bool wpas_eppke_ap_capable(struct wpa_supplicant *wpa_s,
-				  struct wpa_bss *bss)
+			      struct wpa_bss *bss)
 {
-	const u8 *ap_rsnxe;
-
 	if (!(wpa_s->drv_flags2 &
 	      WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION)) {
 		wpa_printf(MSG_DEBUG,
@@ -658,21 +656,23 @@ static bool wpas_eppke_ap_capable(struct wpa_supplicant *wpa_s,
 		return false;
 	}
 
-	ap_rsnxe = wpa_bss_get_rsnxe(wpa_s, bss, NULL, false);
-
-	if (!ieee802_11_rsnx_capab(ap_rsnxe, WLAN_RSNX_CAPAB_KEK_IN_PASN)) {
+	if (!wpas_eppke_ap_rsnx_capab(wpa_s, bss, WLAN_RSNX_CAPAB_KEK_IN_PASN))
+	{
 		wpa_printf(MSG_DEBUG, "EPPKE: AP does not support KEK_IN_PASN");
 		return false;
 	}
 
-	if (!ieee802_11_rsnx_capab(ap_rsnxe,
-				   WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION)) {
+	if (!wpas_eppke_ap_rsnx_capab(wpa_s, bss,
+				      WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION))
+	{
 		wpa_printf(MSG_DEBUG,
 			   "EPPKE: AP does not support association frame encryption");
 		return false;
 	}
 
 	return true;
+}
+
 }
 
 
@@ -770,7 +770,15 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 #ifdef CONFIG_SAE
 	} else if (wpa_key_mgmt_sae_ext_key(ssid->key_mgmt)) {
 		capab |= BIT(WLAN_RSNX_CAPAB_SAE_H2E);
-		if (!ieee802_11_rsnx_capab(ap_rsnxe, WLAN_RSNX_CAPAB_SAE_H2E)) {
+		/*
+		 * Security Profile element preference (IEEE P802.11bn/D2.0,
+		 * 37.33): check both the AP RSNXE and the (unmasked)
+		 * Extended RSN Capabilities embedded in the Security Profile
+		 * element -- the AP might mask capabilities from the RSNXE,
+		 * but not from the Security Profile element's copy.
+		 */
+		if (!wpas_eppke_ap_rsnx_capab(wpa_s, bss,
+					     WLAN_RSNX_CAPAB_SAE_H2E)) {
 			wpa_printf(MSG_DEBUG,
 				   "EPPKE: AP does not support SAE H2E");
 			goto fail;

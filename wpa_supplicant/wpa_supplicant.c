@@ -2677,9 +2677,20 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		/* Enable SSID protection based on the AP advertising support
 		 * for it to avoid potential interoperability issues with
 		 * incorrect AP behavior if we were to send an "unexpected"
-		 * RSNXE with multiple octets of payload. */
+		 * RSNXE with multiple octets of payload.
+		 *
+		 * Security Profile element preference (IEEE P802.11bn/D2.0,
+		 * 37.33):
+		 * bss_rsnx was already reassigned back to the AP's RSNXE
+		 * above (for wpa_sm_set_ap_rsnxe()), so also consult the
+		 * Security Profile element's unmasked copy here -- an AP
+		 * that strips this bit from its RSNXE still advertises the true
+		 * capability through the Security Profile element. */
 		ssid_prot = ieee802_11_rsnx_capab(
-			bss_rsnx, WLAN_RSNX_CAPAB_SSID_PROTECTION);
+			bss_rsnx, WLAN_RSNX_CAPAB_SSID_PROTECTION) ||
+			(bss && wpas_eppke_ap_rsnx_capab(
+				wpa_s, bss,
+				WLAN_RSNX_CAPAB_SSID_PROTECTION));
 		if (!skip_default_rsne)
 			wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_SSID_PROTECTION,
 					 proto == WPA_PROTO_RSN && ssid_prot);
@@ -2697,9 +2708,20 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		 * advertising support for it to avoid potential
 		 * interoperability issues with incorrect AP behavior if we
 		 * were to send an "unexpected" RSNXE with multiple octets of
-		 * payload. */
+		 * payload.
+		 *
+		 * Security Profile element preference (IEEE P802.11bn/D2.0,
+		 * 37.33):
+		 * bss_rsnx was already reassigned back to the AP's RSNXE above
+		 * (for wpa_sm_set_ap_rsnxe()), so also consult the
+		 * Security Profile element's unmasked copy here -- an AP
+		 * that strips this bit from its RSNXE still advertises the true
+		 * capability through the Security Profile element. */
 		assoc_enc = ieee802_11_rsnx_capab(
-			bss_rsnx, WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION);
+			bss_rsnx, WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION) ||
+			(bss && wpas_eppke_ap_rsnx_capab(
+				wpa_s, bss,
+				WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION));
 		if (!skip_default_rsne)
 			wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_ASSOC_ENC,
 					 assoc_enc);
@@ -11199,6 +11221,47 @@ int wpas_get_owe_trans_network(const u8 *owe_ie, const u8 **bssid,
 	return -1;
 #endif /* CONFIG_OWE */
 }
+
+
+#ifdef CONFIG_ENC_ASSOC
+
+/*
+ * wpas_eppke_ap_rsnx_capab - Check an RSNX capability bit for EPPKE purposes,
+ * consulting both the AP's RSNXE and the (unmasked) Extended RSN
+ * Capabilities embedded in its Security Profile element.
+ *
+ * The AP is expected to build the Security Profile element's Extended RSN
+ * Capabilities field from the full, unmasked RSNXE while it might mask some
+ * capabilities from the RSNXE. So a deployment that intentionally strips a
+ * capability bit from the RSNXE can still advertise the true capability through
+ * the Security Profile element, per IEEE P802.11bn/D2.0, 37.33 where the
+ * Security Profile element takes precedence over the RSNXE. Treat the bit as
+ * present if either source sets it.
+ */
+bool wpas_eppke_ap_rsnx_capab(struct wpa_supplicant *wpa_s,
+			      struct wpa_bss *bss, unsigned int capab)
+{
+	const u8 *ap_rsnxe = wpa_bss_get_rsnxe(wpa_s, bss, NULL, false);
+
+	if (ieee802_11_rsnx_capab(ap_rsnxe, capab))
+		return true;
+
+	if (wpas_security_profile_active(wpa_s)) {
+		const u8 *sp_rsnx;
+		size_t sp_rsnx_len;
+		const u8 *sp = wpa_bss_get_ie_ext(
+			bss, WLAN_EID_EXT_SECURITY_PROFILE);
+
+		sp_rsnx = security_profile_ie_get_rsnx(sp, &sp_rsnx_len);
+		if (sp_rsnx &&
+		    ieee802_11_rsnx_capab_len(sp_rsnx, sp_rsnx_len, capab))
+			return true;
+	}
+
+	return false;
+}
+
+#endif /* CONFIG_ENC_ASSOC */
 
 
 void wpas_update_dfs_ap_info(struct wpa_supplicant *wpa_s, int freq,

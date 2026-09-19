@@ -2380,6 +2380,9 @@ int security_profile_ie_get_key_mgmt(const u8 *sp_ie, int ssid_key_mgmt);
 const u8 *security_profile_ie_get_rsnx(const u8 *sp_ie, size_t *rsnx_len);
 int security_profile_ie_get_rsn_caps(const u8 *sp_ie);
 
+bool wpas_eppke_ap_rsnx_capab(struct wpa_supplicant *wpa_s,
+			      struct wpa_bss *bss, unsigned int capab);
+
 void wpas_rrm_handle_survey_results(struct wpa_supplicant *wpa_s,
 				    struct survey_results *survey_results);
 void wpas_rrm_build_channel_load_report(struct wpa_supplicant *wpa_s,
