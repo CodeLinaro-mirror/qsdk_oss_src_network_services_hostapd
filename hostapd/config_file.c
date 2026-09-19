@@ -823,7 +823,7 @@ static int hostapd_parse_he_mcs_nss_set(const char *pos,
 }
 #endif /* CONFIG_IEEE80211AX */
 
-static int hostapd_parse_intlist(int **int_list, char *val)
+static int hostapd_parse_intlist_helper(int **int_list, char *val, int delim)
 {
 	int *list;
 	int count;
@@ -855,10 +855,16 @@ static int hostapd_parse_intlist(int **int_list, char *val)
 			break;
 		pos = end + 1;
 	}
-	list[count] = 0;
+	list[count] = delim;
 
 	*int_list = list;
 	return 0;
+}
+
+
+static int hostapd_parse_intlist(int **int_list, char *val)
+{
+	return hostapd_parse_intlist_helper(int_list, val, 0);
 }
 
 
@@ -868,42 +874,8 @@ static int hostapd_parse_intlist(int **int_list, char *val)
  */
 static int hostapd_parse_intlist_neg1(int **int_list, char *val)
 {
-	int *list;
-	int count;
-	char *pos, *end;
-
-	os_free(*int_list);
-	*int_list = NULL;
-
-	pos = val;
-	count = 0;
-	while (*pos != '\0') {
-		if (*pos == ' ')
-			count++;
-		pos++;
-	}
-
-	list = os_malloc(sizeof(int) * (count + 2));
-	if (list == NULL)
-		return -1;
-	pos = val;
-	count = 0;
-	while (*pos != '\0') {
-		end = os_strchr(pos, ' ');
-		if (end)
-			*end = '\0';
-
-		list[count++] = atoi(pos);
-		if (!end)
-			break;
-		pos = end + 1;
-	}
-	list[count] = -1; /* sentinel; 0 is a valid profile number */
-
-	*int_list = list;
-	return 0;
+	return hostapd_parse_intlist_helper(int_list, val, -1);
 }
-
 
 static int hostapd_config_bss(struct hostapd_config *conf, const char *ifname)
 {
