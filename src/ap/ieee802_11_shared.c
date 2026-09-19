@@ -1679,6 +1679,8 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 	}
 #endif /* CONFIG_SAE_PK */
 
+	capab &= capab_mask;
+
 	if (!capab)
 		return eid; /* no supported extended RSN capabilities */
 	tmp = capab;

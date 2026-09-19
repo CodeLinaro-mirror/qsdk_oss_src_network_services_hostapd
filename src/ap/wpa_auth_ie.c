@@ -613,6 +613,7 @@ int wpa_write_rsnxe(struct wpa_auth_config *conf, u8 *buf, size_t len)
 	size_t flen;
 
 	capab = rsnxe_capab(conf, conf->wpa_key_mgmt);
+	capab &= conf->rsnxe_capab_mask;
 
 	/* Per 802.11bn D1.4, when Security Profile IE is present with
 	 * SAE-EXT-KEY base AKM, the SAE_H2E capability must not be
