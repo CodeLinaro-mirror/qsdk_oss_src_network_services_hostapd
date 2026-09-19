@@ -8622,6 +8622,14 @@ void wpa_auth_set_ssid_protection(struct wpa_state_machine *sm, bool val)
 }
 
 
+void wpa_auth_set_security_profile(struct wpa_state_machine *sm,
+				   const struct security_profile_entry_ap *val)
+{
+	if (sm)
+		sm->security_profile = val;
+}
+
+
 void wpa_auth_set_transition_disable(struct wpa_authenticator *wpa_auth,
 				     u8 val)
 {

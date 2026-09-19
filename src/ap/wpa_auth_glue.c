@@ -46,6 +46,7 @@ static void hostapd_wpa_auth_config_update(struct hostapd_data *hapd,
 					   struct wpa_auth_config *_conf)
 {
 	struct hostapd_data *tx_bss;
+	u8 *pos;
 
 	_conf->msg_ctx = hapd->msg_ctx;
 	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
@@ -126,6 +127,9 @@ static void hostapd_wpa_auth_config_update(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 	_conf->skip_gtk_install = hostapd_is_mesh_vap_extn(hapd->conf);
 #endif /* CONFIG_QCN_EXTN */
+
+	pos = hostapd_eid_security_profile(hapd, _conf->security_profile);
+	_conf->security_profile_len = pos - _conf->security_profile;
 }
 
 static void hostapd_wpa_auth_conf(struct hostapd_iface *iface,
