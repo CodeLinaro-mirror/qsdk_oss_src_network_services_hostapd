@@ -2502,9 +2502,7 @@ static void sae_pick_next_group(struct hostapd_data *hapd, struct sta_info *sta)
 
 	if (!groups) {
 		groups = default_groups;
-		if (wpa_key_mgmt_sae_ext_key(conf->wpa_key_mgmt |
-					     conf->rsn_override_key_mgmt |
-					     conf->rsn_override_key_mgmt_2 |
+		if (wpa_key_mgmt_sae_ext_key(hostapd_config_all_key_mgmt(conf) |
 					     hostapd_sp_implied_key_mgmt(conf)))
 			default_groups[1] = 20;
 	}
@@ -2580,9 +2578,7 @@ static int sae_is_group_enabled(struct hostapd_data *hapd, int group)
 
 	if (!groups) {
 		groups = default_groups;
-		if (wpa_key_mgmt_sae_ext_key(conf->wpa_key_mgmt |
-					     conf->rsn_override_key_mgmt |
-					     conf->rsn_override_key_mgmt_2 |
+		if (wpa_key_mgmt_sae_ext_key(hostapd_config_all_key_mgmt(conf) |
 					     hostapd_sp_implied_key_mgmt(conf)))
 			default_groups[1] = 20;
 	}
@@ -2654,9 +2650,7 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 
 	if (!groups) {
 		groups = default_groups;
-		if (wpa_key_mgmt_sae_ext_key(conf->wpa_key_mgmt |
-					     conf->rsn_override_key_mgmt |
-					     conf->rsn_override_key_mgmt_2 |
+		if (wpa_key_mgmt_sae_ext_key(hostapd_config_all_key_mgmt(conf) |
 					     hostapd_sp_implied_key_mgmt(conf)))
 			default_groups[1] = 20;
 	}
@@ -5497,7 +5491,7 @@ static void handle_auth(struct hostapd_data *hapd,
 #endif /* CONFIG_PASN */
 #ifdef CONFIG_ENC_ASSOC
 	      (hapd->conf->wpa &&
-	       ((hapd->conf->wpa_key_mgmt & WPA_KEY_MGMT_EPPKE) ||
+	       (((hapd->conf->wpa_key_mgmt | hostapd_config_sp_key_mgmt(hapd->conf)) & WPA_KEY_MGMT_EPPKE) ||
 		(hostapd_sp_implied_key_mgmt(hapd->conf) & WPA_KEY_MGMT_EPPKE)) &&
 	       hapd->conf->assoc_frame_encryption &&
 	       auth_alg == WLAN_AUTH_EPPKE) ||
