@@ -2767,51 +2767,25 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 			 */
 			u8 bitmap_len = sp_ie[4] & 0x0F;
 			const u8 *bitmap = sp_ie + 5;
-			int profile;
 
 			if (sp_ie[1] >= 3 + bitmap_len) {
-				/*
-				 * Walk Table 9-bb14 profiles 0-15 and find the
-				 * first one whose bit is set in the AP's bitmap
-				 * AND whose AKM/cipher match the negotiated
-				 * wpa_s->key_mgmt / wpa_s->pairwise_cipher.
-				 * All defined profiles use GCMP-256 as pairwise
-				 * cipher (Table 9-bb14, 802.11bn D1.4 p.205).
-				 */
-				for (profile = 0;
-				     profile <= SECURITY_PROFILE_NUM_MAX &&
-				     profile < bitmap_len * 8;
-				     profile++) {
-					u8 byte = bitmap[profile / 8];
+				wpa_s->selected_security_profile_num =
+					security_profile_select_num(
+						wpa_s->key_mgmt,
+						wpa_s->pairwise_cipher,
+						false, bitmap, bitmap_len);
 
-					if (!(byte & BIT(profile % 8)))
-						continue;
-
-					/* Check pairwise cipher: all defined
-					 * profiles (0-15) require GCMP-256 */
-					if (wpa_s->pairwise_cipher !=
-					    WPA_CIPHER_GCMP_256)
-						continue;
-
-					/* Check AKM matches profile definition
-					 * (Table 9-bb14) */
-					if (security_profile_akm_matches(
-						    profile,
-						    wpa_s->key_mgmt)) {
-						wpa_s->selected_security_profile_num = profile;
-						wpa_dbg(wpa_s, MSG_DEBUG,
-							"Security Profile: selected profile %d (key_mgmt=0x%x)",
-							profile,
-							wpa_s->key_mgmt);
-						break;
-					}
-				}
-
-				if (wpa_s->selected_security_profile_num < 0)
+				if (wpa_s->selected_security_profile_num >= 0) {
+					wpa_dbg(wpa_s, MSG_DEBUG,
+						"Security Profile: selected profile %d (key_mgmt=0x%x)",
+						wpa_s->selected_security_profile_num,
+						wpa_s->key_mgmt);
+				} else {
 					wpa_dbg(wpa_s, MSG_DEBUG,
 						"Security Profile: no matching profile found in AP bitmap (key_mgmt=0x%x pairwise=0x%x)",
 						wpa_s->key_mgmt,
 						wpa_s->pairwise_cipher);
+				}
 			}
 		}
         }

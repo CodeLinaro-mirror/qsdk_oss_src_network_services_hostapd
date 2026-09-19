@@ -357,6 +357,73 @@ int security_profile_akm_matches(int profile_num, int key_mgmt)
 
 
 /*
+ * security_profile_select_num - Map parameters to a unique profile number
+ * @akmp: Negotiated AKM (WPA_KEY_MGMT_*)
+ * @pairwise_cipher: Negotiated pairwise cipher (WPA_CIPHER_*)
+ * @eap_over_auth: true when EAP is carried over Authentication frames
+ * @bitmap: AP's Security Profile Bitmap (from the Security Profile element)
+ * @bitmap_len: Length of @bitmap in bytes
+ * Returns: Selected profile number (0-119) on success, -1 if no match found.
+ */
+int security_profile_select_num(int akmp, int pairwise_cipher,
+				bool eap_over_auth,
+				const u8 *bitmap, size_t bitmap_len)
+{
+	unsigned int profile;
+
+	if (!bitmap || bitmap_len == 0)
+		return -1;
+
+	/* All defined profiles (0-15) require GCMP-256 as pairwise cipher */
+	if (pairwise_cipher != WPA_CIPHER_GCMP_256)
+		return -1;
+
+	for (profile = 0;
+	     profile <= SECURITY_PROFILE_NUM_MAX && profile < bitmap_len * 8;
+	     profile++) {
+		u8 byte = bitmap[profile / 8];
+
+		/* Skip profiles not advertised by the AP */
+		if (!(byte & BIT(profile % 8)))
+			continue;
+
+		/* Check AKM match using the per-profile mapping */
+		if (!security_profile_akm_matches(profile, akmp))
+			continue;
+
+		/*
+		 * Disambiguate 802.1X _AUTH profiles (EAP over Authentication
+		 * frames) from non-_AUTH profiles (EAP in EAPOL frames).
+		 */
+		switch (profile) {
+		case SECURITY_PROFILE_NUM_8021X_AUTH:
+		case SECURITY_PROFILE_NUM_8021X_FT_AUTH:
+		case SECURITY_PROFILE_NUM_8021X_SHA384_AUTH:
+		case SECURITY_PROFILE_NUM_8021X_FT384_AUTH:
+		case SECURITY_PROFILE_NUM_8021X_SUITEB_AUTH:
+			if (!eap_over_auth)
+				continue;
+			break;
+		case SECURITY_PROFILE_NUM_8021X:
+		case SECURITY_PROFILE_NUM_8021X_FT:
+		case SECURITY_PROFILE_NUM_8021X_SHA384:
+		case SECURITY_PROFILE_NUM_8021X_FT384:
+		case SECURITY_PROFILE_NUM_8021X_SUITEB:
+			if (eap_over_auth)
+				continue;
+			break;
+		default:
+			break;
+		}
+
+		return profile;
+	}
+
+	return -1;
+}
+
+
+/*
  * wpa_external_auth_add_rsne - Build an RSNE for external authentication
  * @rsne: Buffer in which the RSNE will be written
  * @rsne_len: Length of the RSNE buffer
