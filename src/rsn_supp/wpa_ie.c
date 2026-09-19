@@ -504,7 +504,7 @@ int wpa_gen_rsnxe(struct wpa_sm *sm, u8 *rsnxe, size_t rsnxe_len)
  * responsible for inserting the length prefix before encoding.
  *
  * This is the single source of truth for RSNXE capabilities. Both
- * wpa_gen_rsnxe() and security_profile_build_sta_ie() call this function to
+ * wpa_gen_rsnxe() and security_profile_build_sta() call this function to
  * guarantee that the RSNXE and the Security Profile element's Extended RSN
  * Capabilities field always carry identical values (802.11bn D1.4, 9.4.2.364,
  * p.206: "field values must be configured to match the value specified in the
@@ -560,7 +560,7 @@ u64 wpa_sm_get_rsnxe_capab(struct wpa_sm *sm)
 
 
 /*
- * security_profile_build_sta_ie - Build Security Profile element for STA TX
+ * security_profile_build_sta - Build Security Profile element for STA TX
  * @sm: WPA state machine — same instance used by wpa_gen_wpa_ie_rsn() and
  *      wpa_gen_rsnxe(). All capability fields are derived from sm, NOT from
  *      the AP's advertised Security Profile element.
@@ -580,59 +580,60 @@ u64 wpa_sm_get_rsnxe_capab(struct wpa_sm *sm)
  * This ensures RSNE RSN Capabilities, RSNXE, and Security Profile element
  * always carry identical capability values (9.4.2.364 p.206).
  */
-int security_profile_build_sta_ie(struct wpa_sm *sm,
-				  int selected_profile_num,
-				  u8 *buf, size_t buf_len)
+/**
+ * security_profile_build - Build Security Profile element from explicit
+ *                          RSN Capabilities and RSNXE inputs
+ * @rsn_capab: RSN Capabilities field value (WPA_CAPABILITY_* bits)
+ * @rsnxe: Full RSNXE (starting at Element ID octet), or NULL if no RSNXE
+ * @rsnxe_len: Length of @rsnxe in bytes, or 0 if @rsnxe is NULL
+ * @selected_profile_num: Single profile number the STA has selected (0-119)
+ * @buf: Output buffer
+ * @buf_len: Size of output buffer
+ *
+ * Returns: Number of bytes written, or -1 on error.
+ *
+ * This is the single authoritative, driver-agnostic core builder for the
+ * Security Profile element (IEEE P802.11bn/D2.0, 9.4.2.369).
+ */
+int security_profile_build(u16 rsn_capab, const u8 *rsnxe, size_t rsnxe_len,
+			   int selected_profile_num, u8 *buf, size_t buf_len)
 {
 	u8 *pos = buf;
 	u8 *len_pos;
 	u8 reduced_rsn_caps = 0;
-	u16 rsn_caps;
-	u64 ext_rsn_capab;
-	u64 tmp;
+	const u8 *ext_rsn_body;
 	size_t ext_rsn_len;
 	size_t bitmap_len;
 	size_t total;
+	static const u8 ext_rsn_min[1] = { 0 };
 
-	if (!sm || selected_profile_num < 0 ||
-	    selected_profile_num > SECURITY_PROFILE_NUM_MAX)
+	if (selected_profile_num < 0 || selected_profile_num > SECURITY_PROFILE_NUM_MAX)
 		return -1;
 
-	/*
-	 * Reduced RSN Capabilities (Figure 9-aa71): B0=ExtKeyID, B1=OCVC.
-	 * Derived from rsn_supp_capab(sm) — the same function used by
-	 * wpa_gen_wpa_ie_rsn() — so this field always matches the RSN
-	 * Capabilities word in the STA's RSNE.
-	 */
-	rsn_caps = rsn_supp_capab(sm);
-
-	if (rsn_caps & WPA_CAPABILITY_EXT_KEY_ID_FOR_UNICAST)
+	/* Reduced RSN Capabilities (Figure 9-aa71): B0=ExtKeyID, B1=OCVC */
+	if (rsn_capab & WPA_CAPABILITY_EXT_KEY_ID_FOR_UNICAST)
 		reduced_rsn_caps |= REDUCED_RSN_CAPS_EXT_KEY_ID;
-	if (rsn_caps & WPA_CAPABILITY_OCVC)
+	if (rsn_capab & WPA_CAPABILITY_OCVC)
 		reduced_rsn_caps |= REDUCED_RSN_CAPS_OCVC;
 
 	/*
-	 * Extended RSN Capabilities (Table 9-408): derived from
-	 * wpa_sm_get_rsnxe_capab(sm) — the same helper used by
-	 * wpa_gen_rsnxe() — so this field always matches the STA's RSNXE.
-	 * Length prefix (bits 0-3) is added below after computing byte length.
+	 * Extended RSN Capabilities (Table 9-408): copy the RSNXE body
+	 * verbatim from the actually negotiated/sent RSNXE (skip the
+	 * EID + Length header of @rsnxe). If no RSNXE is present, encode
+	 * the minimum 1-octet field with all bits set to 0.
 	 */
-	ext_rsn_capab = wpa_sm_get_rsnxe_capab(sm);
-	tmp = ext_rsn_capab;
-	ext_rsn_len = 0;
-	while (tmp) {
-		ext_rsn_len++;
-		tmp >>= 8;
+	if (rsnxe && rsnxe_len >= 2 && rsnxe[1] > 0 &&
+	    rsnxe_len >= (size_t) (2 + rsnxe[1])) {
+		ext_rsn_body = rsnxe + 2;
+		ext_rsn_len = rsnxe[1];
+	} else {
+		ext_rsn_body = ext_rsn_min;
+		ext_rsn_len = sizeof(ext_rsn_min);
 	}
-	if (ext_rsn_len == 0)
-		ext_rsn_len = 1; /* minimum 1 octet */
-	/* Encode length in bits 0-3 of first byte (Table 9-408) */
-	ext_rsn_capab |= (u64)(ext_rsn_len - 1);
 
 	/*
 	 * Security Profile Bitmap: one bit per profile number.
 	 * Only the selected profile's bit is set (37.32).
-	 * Profile numbers 0-7 fit in 1 octet, 8-15 in 2 octets, etc.
 	 */
 	bitmap_len = (size_t)(selected_profile_num / 8) + 1;
 
@@ -642,11 +643,8 @@ int security_profile_build_sta_ie(struct wpa_sm *sm,
 	if (buf_len < total)
 		return -1;
 
-	/* Element ID = 255 (WLAN_EID_EXTENSION) */
 	*pos++ = WLAN_EID_EXTENSION;
 	len_pos = pos++; /* Length — filled in at end */
-
-	/* Element ID Extension = 162 (Table 9-164, 802.11bn D1.4 p.129) */
 	*pos++ = WLAN_EID_EXT_SECURITY_PROFILE;
 
 	/* Reduced RSN Capabilities (1 octet, Figure 9-aa71) */
@@ -664,17 +662,50 @@ int security_profile_build_sta_ie(struct wpa_sm *sm,
 	pos[selected_profile_num / 8] |= BIT(selected_profile_num % 8);
 	pos += bitmap_len;
 
-	/* Vendor Specific Security Profile List: empty (0 vendor profiles) */
-
 	/* Extended RSN Capabilities (variable, Table 9-408) */
-	tmp = ext_rsn_capab;
-	while (ext_rsn_len--) {
-		*pos++ = (u8)(tmp & 0xff);
-		tmp >>= 8;
-	}
+	os_memcpy(pos, ext_rsn_body, ext_rsn_len);
+	pos += ext_rsn_len;
 
 	/* Fill Length field (excludes EID and Length bytes, includes EID_EXT) */
 	*len_pos = (u8)(pos - len_pos - 1);
 
 	return (int)(pos - buf);
 }
+
+
+/**
+ * security_profile_build_sta - Build Security Profile element for STA TX
+ * @sm: WPA state machine
+ * @selected_profile_num: Single profile number the STA has selected (0-119)
+ * @buf: Output buffer
+ * @buf_len: Size of output buffer
+ *
+ * Returns: Number of bytes written, or -1 on error.
+ *
+ * Wrapper over security_profile_build() for the SME-in-wpa_supplicant case,
+ * deriving RSN Capabilities from rsn_supp_capab(sm) and RSNXE from
+ * wpa_gen_rsnxe(sm, ...) - the same helpers used to build the STA's actual
+ * RSNE/RSNXE.
+ */
+int security_profile_build_sta(struct wpa_sm *sm,
+			       int selected_profile_num,
+			       u8 *buf, size_t buf_len)
+{
+	u16 rsn_caps;
+	u8 rsnxe[257];
+	int rsnxe_len;
+
+	if (!sm)
+		return -1;
+
+	rsn_caps = rsn_supp_capab(sm);
+	rsnxe_len = wpa_gen_rsnxe(sm, rsnxe, sizeof(rsnxe));
+	if (rsnxe_len < 0)
+		return -1;
+
+	return security_profile_build(rsn_caps,
+				      rsnxe_len > 0 ? rsnxe : NULL,
+				      (size_t) rsnxe_len,
+				      selected_profile_num, buf, buf_len);
+}
+
