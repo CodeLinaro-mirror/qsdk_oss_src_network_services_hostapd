@@ -2767,24 +2767,44 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 			 */
 			u8 bitmap_len = sp_ie[4] & 0x0F;
 			const u8 *bitmap = sp_ie + 5;
+			bool eap_over_auth = false;
 
 			if (sp_ie[1] >= 3 + bitmap_len) {
+				/*
+				 * Compute eap_over_auth to disambiguate 802.1X _AUTH
+				 * profiles (EAP over Authentication frames, profiles 3-7)
+				 * from non-_AUTH profiles (EAPOL frames, profiles 11-15).
+				 * Both groups share the same AKM, so this flag is the
+				 * only distinguishing parameter available.
+				 */
+				if (ssid) {
+					const u8 *bss_rsnxe =
+						wpa_bss_get_ie(bss, WLAN_EID_RSNX);
+
+					eap_over_auth =
+						ieee802_11_rsnx_capab(
+							bss_rsnxe,
+							WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION) &&
+						(wpa_s->drv_flags2 &
+						 WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION);
+				}
+
 				wpa_s->selected_security_profile_num =
 					security_profile_select_num(
 						wpa_s->key_mgmt,
 						wpa_s->pairwise_cipher,
-						false, bitmap, bitmap_len);
+						eap_over_auth, bitmap, bitmap_len);
 
 				if (wpa_s->selected_security_profile_num >= 0) {
 					wpa_dbg(wpa_s, MSG_DEBUG,
-						"Security Profile: selected profile %d (key_mgmt=0x%x)",
+						"Security Profile: selected profile %d (key_mgmt=0x%x eap_over_auth=%d)",
 						wpa_s->selected_security_profile_num,
-						wpa_s->key_mgmt);
+						wpa_s->key_mgmt, eap_over_auth);
 				} else {
 					wpa_dbg(wpa_s, MSG_DEBUG,
-						"Security Profile: no matching profile found in AP bitmap (key_mgmt=0x%x pairwise=0x%x)",
+						"Security Profile: no matching profile found in AP bitmap (key_mgmt=0x%x pairwise=0x%x eap_over_auth=%d)",
 						wpa_s->key_mgmt,
-						wpa_s->pairwise_cipher);
+						wpa_s->pairwise_cipher, eap_over_auth);
 				}
 			}
 		}
