@@ -8418,6 +8418,9 @@ out:
 		}
 	}
 
+	if (resp == WLAN_STATUS_SUCCESS && matched_profile)
+		wpa_auth_set_security_profile(sta->wpa_sm, matched_profile);
+
 	return resp;
 }
 
