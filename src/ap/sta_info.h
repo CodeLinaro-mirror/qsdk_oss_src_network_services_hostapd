@@ -516,6 +516,7 @@ struct sta_info {
 
 #ifdef CONFIG_PASN
 	struct pasn_data *pasn;
+	bool sec_prof_used;
 #endif /* CONFIG_PASN */
 
 	/* Vendor Specific OUI from associated STA */
