@@ -476,8 +476,9 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
 		 * starting from Reduced RSN Capabilities. */
 		if (elen < 2)
 			break;
-		elems->security_profile = pos - 1; /* include ext_id byte */
-		elems->security_profile_len = elen + 1;
+		elems->security_profile = pos;
+		elems->security_profile_len = elen;
+		break;
 	case WLAN_EID_EXT_SMD:
 		if (elen < (ETH_ALEN + 1 + sizeof(u8))) {
 			if (show_errors) {

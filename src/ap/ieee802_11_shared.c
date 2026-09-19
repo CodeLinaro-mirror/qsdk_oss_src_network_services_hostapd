@@ -1679,7 +1679,18 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 	}
 #endif /* CONFIG_SAE_PK */
 
+	/* Apply mask but preserve SAE_H2E and SAE_PK if needed */
+	u64 preserved_bits = 0;
+	if (preserve_sae_h2e)
+		preserved_bits |= BIT(WLAN_RSNX_CAPAB_SAE_H2E);
+#ifdef CONFIG_SAE_PK
+	if (preserve_sae_pk)
+		preserved_bits |= BIT(WLAN_RSNX_CAPAB_SAE_PK);
+#endif /* CONFIG_SAE_PK */
+
 	capab &= capab_mask;
+
+	capab |= preserved_bits;
 
 	if (!capab)
 		return eid; /* no supported extended RSN capabilities */
@@ -1789,7 +1800,7 @@ u8 * hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid)
 			bitmap[p / 8] |= BIT(p % 8);
 	}
 
-	rsnxe_end = hostapd_eid_rsnxe(hapd, rsnxe_buf, sizeof(rsnxe_buf), false);
+	rsnxe_end = hostapd_eid_rsnxe(hapd, rsnxe_buf, sizeof(rsnxe_buf), ~0ULL);
 	if (rsnxe_end > rsnxe_buf + 2) {
 		ext_rsn_capab_len = rsnxe_end - rsnxe_buf - 2;
 		if (ext_rsn_capab_len > sizeof(ext_rsn_capab)) {
