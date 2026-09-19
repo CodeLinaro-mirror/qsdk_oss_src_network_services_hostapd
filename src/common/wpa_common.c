@@ -4255,13 +4255,10 @@ int wpa_parse_kde_ies(const u8 *buf, size_t len, struct wpa_eapol_ie_parse *ie)
 			ie->eht_capabilities = pos + 3;
 			ie->eht_capab_len = pos[1] - 1;
 		} else if (*pos == WLAN_EID_EXTENSION &&
-			   pos[1] >= 2 &&
+			   pos[1] >= 3 &&
 			   pos[2] == WLAN_EID_EXT_SECURITY_PROFILE) {
-			/* Security Profile element (802.11bn D1.4, 9.4.2.364).
-			 * Store pointer to the full element (EID byte included)
-			 * for comparison with the AP's Beacon/ProbeResp copy. */
 			ie->security_profile = pos;
-			ie->security_profile_len = pos[1] + 2;
+			ie->security_profile_len = dlen;
 			wpa_hexdump(MSG_DEBUG,
 				    "WPA: Security Profile element in EAPOL-Key",
 				    ie->security_profile,
