@@ -5230,6 +5230,8 @@ struct wpa_config * wpa_config_alloc_empty(const char *ctrl_interface,
 	config->mld_connect_band_pref = DEFAULT_MLD_CONNECT_BAND_PREF;
 #endif /* CONFIG_TESTING_OPTIONS */
 
+	config->security_profiles = DEFAULT_SECURITY_PROFILES;
+
 	return config;
 }
 
@@ -6304,6 +6306,7 @@ static const struct global_parse_data global_fields[] = {
 	{ BOOL(disable_op_classes_80_80_mhz), 0 },
 	{ INT(pr_pasn_type), 0 },
 	{ INT_RANGE(pr_preferred_role, 0, 1), 0},
+	{ BOOL(security_profiles), 0},
 #ifdef CONFIG_QCN_EXTN
 	{ INT_KEY_RANGE("athnewind", ind_rptr, 0, 1), 0 },
 	{ INT_KEY_RANGE("rptr_mgr_mode", rptr_mgr_comm_mode, 0, 2), 1 },

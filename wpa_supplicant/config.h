@@ -53,6 +53,7 @@
 #define RPTR_MGR_MODE_COMM_SOCK 2
 #endif
 
+#define DEFAULT_SECURITY_PROFILES 0
 #include "config_ssid.h"
 #include "wps/wps.h"
 #include "common/ieee802_11_defs.h"
@@ -1984,6 +1985,8 @@ struct wpa_config {
 	 */
 	int pr_preferred_role;
 
+	bool security_profiles;
+
  #ifdef CONFIG_QCN_EXTN
 
 	/*
@@ -2039,6 +2042,15 @@ struct wpa_config {
 	 * Bit 6 (0x40): Apriori next channel propagation
 	 */
 	unsigned int cswopts;
+
+	/**
+	 * security_profiles - Enable support for security profiles
+	 *
+	 * IEEE P802.11bn/D2.0 defines a new mechanism for negotiating RSN
+	 * parameters using a Security Profile element. Support for that
+	 * functionality can be enabled (if supported by the driver and the
+	 * target AP) using this parameter.
+	 */
 #endif
 };
 
