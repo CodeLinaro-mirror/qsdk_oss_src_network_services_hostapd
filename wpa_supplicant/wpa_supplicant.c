@@ -7396,6 +7396,8 @@ wpa_supplicant_alloc(struct wpa_supplicant *parent)
 #ifdef CONFIG_IEEE80211BN
 	dl_list_init(&wpa_s->smd_targets);
 	dl_list_init(&wpa_s->smd_groups);
+	dl_list_init(&wpa_s->smd_roam_records);
+	wpa_s->smd_roam_record_count = 0;
 #endif
 
 #ifdef CONFIG_QCN_EXTN
