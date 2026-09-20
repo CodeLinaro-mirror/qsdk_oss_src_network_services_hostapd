@@ -1738,6 +1738,81 @@ static int matching_ciphers(struct wpa_ssid *ssid, struct wpa_ie_data *ie,
 }
 
 
+static bool sec_prof_stronger(const struct security_profile_entry *a,
+			      const struct security_profile_entry *b)
+{
+	static const int pref[] = {
+		7, 15, 6, 14, 5, 13, 4, 12, 3, 11, 2, 10, 1, 9, 0, 8
+	};
+	int a_pos = -1, b_pos = -1;
+	unsigned int i;
+
+	if (a && !b)
+		return true;
+
+	for (i = 0; i < ARRAY_SIZE(pref); i++) {
+		if (a->number == pref[i]) {
+			a_pos = i;
+			break;
+		}
+	}
+
+	for (i = 0; i < ARRAY_SIZE(pref); i++) {
+		if (b->number == pref[i]) {
+			b_pos = i;
+			break;
+		}
+	}
+
+	if (a_pos > 0 && b_pos > 0 && a_pos < b_pos)
+		return true;
+
+	return false;
+}
+
+
+const struct security_profile_entry *
+security_profile_select_best(const u8 *sp, const int *numbers)
+{
+	u8 bitmap_len, num_vendor;
+	const u8 *bitmap;
+	int i;
+	const struct security_profile_entry *best = NULL;
+
+	if (!numbers)
+		return NULL;
+
+	if (!sp || sp[1] < 3)
+		return NULL;
+
+	bitmap_len = sp[4] & 0x0F;
+	num_vendor = (sp[4] & 0xF0) >> 4;
+	if (sp[1] < 3 + bitmap_len + 4 * num_vendor)
+		return NULL;
+
+	bitmap = sp + 5;
+
+	for (i = 0; numbers[i] != -1; i++) {
+		int profile;
+
+		profile = numbers[i];
+		if (profile >= 0 && profile <= SEC_PROF_MAX &&
+		    profile < bitmap_len * 8 &&
+		    (bitmap[profile / 8] & BIT(profile % 8))) {
+			const struct security_profile_entry *e;
+
+			e = sec_prof_get(profile);
+			if (!e)
+				continue;
+			if (sec_prof_stronger(e, best))
+				best = e;
+		}
+	}
+
+	return best;
+}
+
+
 /*
  * security_profile_ie_get_key_mgmt - Get key_mgmt bitmask implied by any
  * profile in the AP's Security Profile element that matches ssid->key_mgmt.
@@ -2178,7 +2253,7 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		 * RSNX/RSNXO elements for AKM, pairwise cipher, RSN
 		 * capabilities, and RSNX capabilities selection.
 		 */
-		if (wpas_security_profile_active(wpa_s))
+		if (ssid->security_profiles)
 			bss_sp_ie = wpa_bss_get_ie_ext(
 				bss, WLAN_EID_EXT_SECURITY_PROFILE);
 	} else {
@@ -2221,14 +2296,13 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 			int sp_key_mgmt = security_profile_ie_get_key_mgmt(
 				bss_sp_ie, ssid->key_mgmt);
 
-			if (!(ie.pairwise_cipher & ssid->pairwise_cipher) &&
-			    (ssid->pairwise_cipher & WPA_CIPHER_GCMP_256)) {
+			if ((ssid->pairwise_cipher & WPA_CIPHER_GCMP_256)) {
 				wpa_dbg(wpa_s, MSG_DEBUG,
 					"RSN: Security Profile element overrides RSN element pairwise cipher (GCMP-256)");
 				ie.pairwise_cipher |= WPA_CIPHER_GCMP_256;
 				ie.has_pairwise = 1;
 			}
-			if (!(ie.key_mgmt & ssid->key_mgmt) && sp_key_mgmt) {
+			if (sp_key_mgmt) {
 				wpa_dbg(wpa_s, MSG_DEBUG,
 					"RSN: Security Profile element overrides RSN element AKM (key_mgmt=0x%x)",
 					sp_key_mgmt);
@@ -2912,7 +2986,7 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 					wpa_s->pairwise_cipher,
 					eap_over_auth, eppke, bitmap, bitmap_len);
 
-				if (wpa_s->sel_security_profile >= 0) {
+				if (wpa_s->sel_security_profile != NULL) {
 					wpa_dbg(wpa_s, MSG_DEBUG,
 						"Security Profile: selected profile %d (key_mgmt=0x%x eap_over_auth=%d eppke=%d)",
 						wpa_s->sel_security_profile->number,
@@ -2982,7 +3056,7 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 	 * auth/assoc frames by sme_send_authentication() and sme_associate().
 	 */
 	wpa_s->security_profile_len = 0;
-	if (wpa_s->sel_security_profile >= 0) {
+	if (wpa_s->sel_security_profile != NULL) {
 		int ret;
 
 		ret = security_profile_build_sta(
@@ -10397,6 +10471,7 @@ int wpas_network_disabled(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid)
 #endif /* CONFIG_WEP */
 
 	if (wpa_key_mgmt_wpa_psk(ssid->key_mgmt) && !ssid->psk_set &&
+	    !(wpas_security_profile_active(wpa_s) && ssid->security_profiles) &&
 	    (!ssid->passphrase || ssid->ssid_len != 0) && !ssid->ext_psk &&
 	    !(wpa_key_mgmt_sae(ssid->key_mgmt) &&
 	      (ssid->passphrase || ssid->sae_password || ssid->pmk_valid)) &&
