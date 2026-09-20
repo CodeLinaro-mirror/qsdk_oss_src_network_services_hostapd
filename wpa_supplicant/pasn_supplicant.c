@@ -831,7 +831,7 @@ static int wpas_eppke_set_rsne(struct wpa_supplicant *wpa_s,
 }
 #endif /* CONFIG_ENC_ASSOC */
 
-
+#ifdef CONFIG_ENC_ASSOC
 static void wpas_pasn_sec_prof_eppke(struct wpa_supplicant *wpa_s,
 				     struct pasn_data *pasn,
 				     struct wpa_pasn_auth_work *awork,
@@ -910,6 +910,7 @@ static void wpas_pasn_sec_prof_eppke(struct wpa_supplicant *wpa_s,
 			   "EPPKE: Including Security Profile element in external auth EPPKE Auth1 frame (profile=%d)",
 			   profile_num);
 }
+#endif /* CONFIG_ENC_ASSOC */
 
 
 static void wpas_pasn_auth_start_cb(struct wpa_radio_work *work, int deinit)

@@ -613,7 +613,6 @@ int wpa_write_rsnxe(struct wpa_auth_config *conf, u8 *buf, size_t len)
 	size_t flen;
 
 	capab = rsnxe_capab(conf, conf->wpa_key_mgmt);
-	capab &= conf->rsnxe_capab_mask;
 
 	/* Per 802.11bn D1.4, when Security Profile IE is present with
 	 * SAE-EXT-KEY base AKM, the SAE_H2E capability must not be
@@ -972,7 +971,7 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 		    const u8 *owe_dh, size_t owe_dh_len,
 		    struct wpa_state_machine *assoc_sm, bool is_ml,
 		    bool external_pmk_cache,
-		    const struct security_profile_entry_ap *security_profile,
+		    const struct security_profile_entry *security_profile,
 		    bool smd_roam)
 {
 	struct wpa_auth_config *conf = &wpa_auth->conf;
@@ -1257,28 +1256,11 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 		}
 	}
 
-	/*
-	 * UHR Security Profile per-profile MFP enforcement.
-	 * All defined profiles require MFPC and MFPR regardless of the AP's
-	 * global ieee80211w setting.  Enforce them here so that a STA cannot
-	 * bypass the profile requirement by relying on a permissive global
-	 * ieee80211w=1 (optional) configuration.
-	 */
-	if (security_profile) {
-		if (security_profile->mfpc &&
-		    !(data.capabilities & WPA_CAPABILITY_MFPC)) {
-			wpa_printf(MSG_DEBUG,
-				   "UHR: Profile %d requires MFPC but STA did not set it",
-				   security_profile->profile_num);
-			return WPA_MGMT_FRAME_PROTECTION_VIOLATION;
-		}
-		if (security_profile->mfpr &&
-		    !(data.capabilities & WPA_CAPABILITY_MFPR)) {
-			wpa_printf(MSG_DEBUG,
-				   "UHR: Profile %d requires MFPR but STA did not set it",
-				   security_profile->profile_num);
-			return WPA_MGMT_FRAME_PROTECTION_VIOLATION;
-		}
+	/* All security profiles require MFP to be negotiated. Enforce this
+	 * regardless of the ieee80211w configuration parameter. */
+	if (security_profile && !(data.capabilities & WPA_CAPABILITY_MFPC)) {
+		wpa_printf(MSG_DEBUG,"STA used a security profile but did not enable MFP in RSNE");
+		return WPA_MGMT_FRAME_PROTECTION_VIOLATION;
 	}
 
 #ifdef CONFIG_SAE

@@ -4942,7 +4942,8 @@ security_profile_table[] = {
 	  true, true, true },
 
 	/* 4: EPP FT‑802.1X (AKM 3) */
-	{ 4, WPA_KEY_MGMT_FT_IEEE8021X, WPA_CIPHER_GCMP_256, true, true, true },
+	{ 4, WPA_KEY_MGMT_FT_IEEE8021X, WPA_CIPHER_GCMP_256, true, true, true,
+	  },
 
 	/* 5: EPP 802.1X (AKM 23) */
 	{ 5, WPA_KEY_MGMT_IEEE8021X_SHA384, WPA_CIPHER_GCMP_256,

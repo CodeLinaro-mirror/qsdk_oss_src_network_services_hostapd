@@ -523,19 +523,7 @@ enum chan_width get_sta_operation_chan_width(
 	struct supported_chan_width sta_supported_width);
 
 /* Security Profile entry (IEEE 802.11bn D1.4, Table 9-bb14) */
-struct security_profile_entry_ap {
-	u8 profile_num;
-	int key_mgmt;
-	int pairwise_cipher;
-	bool mfpr;
-	bool mfpc;
-	bool ieee8021x_auth_frame;
-	bool assoc_frame_encrypt;
-	bool ds_mac_addr;
-	bool pmksa_caching_privacy;
-	bool kek_in_pasn;
-	bool unauth_eppke;
-};
+
 
 #ifdef CONFIG_IEEE80211BN
 bool mapc_action_frame(u8 action_code);
