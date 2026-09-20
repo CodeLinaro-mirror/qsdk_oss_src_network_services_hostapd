@@ -454,6 +454,138 @@ static void reset_aid_bitmap(struct hostapd_data *hapd, u16 sta_aid)
 	}
 }
 
+#ifdef CONFIG_IEEE80211BN
+static void smd_fold_sta_roam_record(struct hostapd_data *hapd,
+				     struct sta_info *sta)
+{
+	struct hostapd_mld *mld = hapd->mld;
+	struct smd_sta_roam_record *rec;
+	const u8 *addr;
+
+	/* Use MLD address as the record key so counters from any link
+	 * are folded into the same record regardless of which link
+	 * carried the PREP/EXEC frame. */
+	if (sta->mld_info.mld_sta)
+		addr = sta->mld_info.common_info.mld_addr;
+	else
+		addr = sta->addr;
+
+	dl_list_for_each(rec, &mld->smd_sta_roam_records,
+			 struct smd_sta_roam_record, list) {
+		if (os_memcmp(rec->sta_mld_addr, addr, ETH_ALEN) == 0)
+			goto found;
+	}
+
+	if (mld->smd_sta_roam_record_count >= mld->smd_sta_roam_max_records) {
+		struct smd_sta_roam_record *oldest =
+			dl_list_first(&mld->smd_sta_roam_records,
+				      struct smd_sta_roam_record, list);
+		dl_list_del(&oldest->list);
+		os_free(oldest);
+		mld->smd_sta_roam_record_count--;
+	}
+
+	rec = os_zalloc(sizeof(*rec));
+	if (!rec)
+		return;
+	os_memcpy(rec->sta_mld_addr, addr, ETH_ALEN);
+	dl_list_add_tail(&mld->smd_sta_roam_records, &rec->list);
+	mld->smd_sta_roam_record_count++;
+
+found:
+	os_get_reltime(&rec->last_updated);
+
+#define SAP_ACC(f) rec->sap.f += sta->smd_info.sap_stats.f
+	SAP_ACC(sap_prep_req_rx);
+	SAP_ACC(sap_prep_req_parse_fail);
+	SAP_ACC(sap_prep_iap_sent);
+	SAP_ACC(sap_prep_iap_send_fail);
+	SAP_ACC(sap_prep_iap_timer_fail);
+	SAP_ACC(sap_iap_prep_req_tx_fail);
+	SAP_ACC(sap_iap_prep_resp_rx_ok);
+	SAP_ACC(sap_iap_prep_resp_rx_fail);
+	SAP_ACC(sap_prep_ota_resp_sent);
+	SAP_ACC(sap_prep_ota_resp_fail);
+	SAP_ACC(sap_prep_roam_notify_fail);
+	SAP_ACC(sap_prep_exec_timer_fail);
+	SAP_ACC(sap_prep_clone_fail);
+	SAP_ACC(sap_prep_iap_timeout);
+	SAP_ACC(sap_prep_exec_timeout);
+	SAP_ACC(sap_exec_req_rx);
+	SAP_ACC(sap_exec_req_parse_fail);
+	SAP_ACC(sap_exec_req_no_apinfo);
+	SAP_ACC(sap_exec_req_bad_state);
+	SAP_ACC(sap_exec_iap_sent);
+	SAP_ACC(sap_exec_iap_send_fail);
+	SAP_ACC(sap_exec_iap_timer_fail);
+	SAP_ACC(sap_iap_exec_req_tx_fail);
+	SAP_ACC(sap_iap_exec_resp_rx_ok);
+	SAP_ACC(sap_iap_exec_resp_rx_fail);
+	SAP_ACC(sap_exec_iap_resp_rx);
+	SAP_ACC(sap_exec_ota_resp_sent);
+	SAP_ACC(sap_exec_ota_resp_fail);
+	SAP_ACC(sap_exec_roam_notify_fail);
+	SAP_ACC(sap_exec_drain_timer_fail);
+	SAP_ACC(sap_exec_iap_timeout);
+	SAP_ACC(dl_drain_started);
+	SAP_ACC(dl_drain_no_sta);
+	SAP_ACC(dl_drain_bad_state);
+	SAP_ACC(dl_drain_complete);
+	SAP_ACC(roam_success);
+#undef SAP_ACC
+	smd_ts_ring_merge(&rec->sap.sap_prep_iap_sent_ts,
+			  &sta->smd_info.sap_stats.sap_prep_iap_sent_ts);
+	smd_ts_ring_merge(&rec->sap.sap_iap_prep_resp_rx_ok_ts,
+			  &sta->smd_info.sap_stats.sap_iap_prep_resp_rx_ok_ts);
+	smd_ts_ring_merge(&rec->sap.sap_exec_iap_sent_ts,
+			  &sta->smd_info.sap_stats.sap_exec_iap_sent_ts);
+	smd_ts_ring_merge(&rec->sap.sap_iap_exec_resp_rx_ok_ts,
+			  &sta->smd_info.sap_stats.sap_iap_exec_resp_rx_ok_ts);
+	smd_ts_ring_merge(&rec->sap.sap_prep_exec_timeout_ts,
+			  &sta->smd_info.sap_stats.sap_prep_exec_timeout_ts);
+	smd_ts_ring_merge(&rec->sap.sap_exec_iap_timeout_ts,
+			  &sta->smd_info.sap_stats.sap_exec_iap_timeout_ts);
+	smd_ts_ring_merge(&rec->sap.roam_success_ts,
+			  &sta->smd_info.sap_stats.roam_success_ts);
+
+#define TAP_ACC(f) rec->tap.f += sta->smd_info.tap_stats.f
+	TAP_ACC(tap_iap_prep_req_rx_ok);
+	TAP_ACC(tap_iap_prep_req_rx_fail);
+	TAP_ACC(tap_prep_iap_rx);
+	TAP_ACC(tap_prep_ok);
+	TAP_ACC(tap_prep_fail);
+	TAP_ACC(tap_iap_prep_resp_tx_ok);
+	TAP_ACC(tap_iap_prep_resp_tx_fail);
+	TAP_ACC(tap_prep_timer_started);
+	TAP_ACC(tap_prep_timer_start_fail);
+	TAP_ACC(tap_prep_exec_timeout);
+	TAP_ACC(tap_iap_exec_req_rx_ok);
+	TAP_ACC(tap_iap_exec_req_rx_fail);
+	TAP_ACC(tap_exec_ok);
+	TAP_ACC(tap_exec_fail);
+	TAP_ACC(ptk_install_ok);
+	TAP_ACC(ptk_install_fail);
+	TAP_ACC(gtk_install_ok);
+	TAP_ACC(tap_iap_exec_resp_tx_ok);
+	TAP_ACC(tap_iap_exec_resp_tx_fail);
+	TAP_ACC(tap_exec_prep_timer_cancel_fail);
+#undef TAP_ACC
+	smd_ts_ring_merge(&rec->tap.tap_prep_ok_ts,
+			  &sta->smd_info.tap_stats.tap_prep_ok_ts);
+	smd_ts_ring_merge(&rec->tap.tap_exec_ok_ts,
+			  &sta->smd_info.tap_stats.tap_exec_ok_ts);
+	smd_ts_ring_merge(&rec->tap.tap_iap_prep_req_rx_ok_ts,
+			  &sta->smd_info.tap_stats.tap_iap_prep_req_rx_ok_ts);
+	smd_ts_ring_merge(&rec->tap.tap_iap_prep_resp_tx_ok_ts,
+			  &sta->smd_info.tap_stats.tap_iap_prep_resp_tx_ok_ts);
+	smd_ts_ring_merge(&rec->tap.tap_iap_exec_req_rx_ok_ts,
+			  &sta->smd_info.tap_stats.tap_iap_exec_req_rx_ok_ts);
+	smd_ts_ring_merge(&rec->tap.tap_iap_exec_resp_tx_ok_ts,
+			  &sta->smd_info.tap_stats.tap_iap_exec_resp_tx_ok_ts);
+}
+#endif /* CONFIG_IEEE80211BN */
+
+
 void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 {
 #ifndef CONFIG_NO_VLAN
@@ -474,6 +606,10 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	hostapd_set_sta_flags(hapd, sta);
 
 #ifdef CONFIG_IEEE80211BN
+	/* Fold per-STA SMD counters into MLD archive before cleanup */
+	if (hapd->mld)
+		smd_fold_sta_roam_record(hapd, sta);
+
 	/* Clean up UHR roaming contexts */
 	uhr_cleanup_sta_roam_contexts(hapd, sta);
 
