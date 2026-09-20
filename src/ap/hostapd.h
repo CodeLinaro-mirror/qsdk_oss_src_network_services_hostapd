@@ -139,6 +139,15 @@ struct hapd_interfaces {
 	 */
 	struct mqtt_eloop_ctx *mqtt_ctx;
 #endif /* CONFIG_MQTT */
+
+#ifdef CONFIG_IEEE80211BN
+	/* SMD per-STA roam stats archive (process-lifetime; survives MLD teardown).
+	 * Keyed by (sta_mld_addr, ap_mld_addr).  FIFO eviction per MLD via reset.
+	 * Default max = SMD_ARCHIVE_MAX_RECORDS (8). */
+	struct dl_list smd_sta_roam_records;
+	u16            smd_sta_roam_record_count;
+	int            smd_sta_roam_max_records;
+#endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_QCN_EXTN
 	struct hapd_interfaces_extn interfaces_extn;
 #endif /* CONFIG_QCN_EXTN */
@@ -893,10 +902,8 @@ struct hostapd_mld {
 	 * Counters are folded in from sta_info at ap_free_sta() time.
 	 * Keyed by (sta_mld_addr, link_id).  Multiple roams by the same STA
 	 * accumulate into one record.  FIFO eviction at smd_sta_roam_max_records.
-	 * Default max = SMD_ARCHIVE_MAX_RECORDS (8), runtime-configurable via hostapd config. */
-	struct dl_list smd_sta_roam_records;
-	u16            smd_sta_roam_record_count;
-	int            smd_sta_roam_max_records;
+	 * Default max = SMD_ARCHIVE_MAX_RECORDS (8), runtime-configurable via hostapd config.
+	 * NOTE: moved to hapd_interfaces for process-lifetime persistence. */
 #endif /* CONFIG_IEEE80211BN */
 };
 

@@ -5940,23 +5940,6 @@ void hostapd_interface_deinit(struct hostapd_iface *iface)
 
 #ifdef CONFIG_IEEE80211BE
 
-#ifdef CONFIG_IEEE80211BN
-static void hostapd_mld_smd_archive_free(struct hostapd_mld *mld)
-{
-	struct smd_sta_roam_record *rec, *tmp;
-
-	if (!mld)
-		return;
-
-	dl_list_for_each_safe(rec, tmp, &mld->smd_sta_roam_records,
-			      struct smd_sta_roam_record, list) {
-		dl_list_del(&rec->list);
-		os_free(rec);
-	}
-	mld->smd_sta_roam_record_count = 0;
-}
-#endif /* CONFIG_IEEE80211BN */
-
 static void hostapd_mld_ref_inc(struct hostapd_mld *mld)
 {
 	if (!mld)
@@ -6258,10 +6241,6 @@ void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
 
 	os_strlcpy(mld->name, conf->iface, sizeof(conf->iface));
 	dl_list_init(&mld->links);
-#ifdef CONFIG_IEEE80211BN
-	dl_list_init(&mld->smd_sta_roam_records);
-	mld->smd_sta_roam_max_records = SMD_ARCHIVE_MAX_RECORDS;
-#endif /* CONFIG_IEEE80211BN */
 	mld->free_links = 0x7FFF;
 	mld->ctrl_sock = -1;
 	if (hapd->conf->ctrl_interface)
@@ -6298,9 +6277,6 @@ fail:
 	interfaces->mld_ctrl_iface_deinit(mld);
 	wpa_printf(MSG_DEBUG, "AP MLD %s: free mld %p", mld->name, mld);
 	os_free(mld->epcs_authorized_mac);
-#ifdef CONFIG_IEEE80211BN
-	hostapd_mld_smd_archive_free(mld);
-#endif /* CONFIG_IEEE80211BN */
 	os_free(mld);
 	hapd->mld = NULL;
 #endif /* CONFIG_IEEE80211BE */
@@ -6664,9 +6640,6 @@ static void hostapd_cleanup_unused_mlds(struct hapd_interfaces *interfaces)
 		wpa_printf(MSG_DEBUG, "AP MLD %s: Freed%s", mld->name,
 			   forced_remove ? " (forced)" : "");
 		os_free(mld->epcs_authorized_mac);
-#ifdef CONFIG_IEEE80211BN
-		hostapd_mld_smd_archive_free(mld);
-#endif /* CONFIG_IEEE80211BN */
 		os_free(mld);
 		interfaces->mld[i] = NULL;
 		num_mlds--;

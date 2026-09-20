@@ -794,67 +794,7 @@ void wpas_flush_sta_entry(void *eloop_ctx, void *timeout_ctx);
  * core functions.
  */
 
-/**
- * struct wpa_smd_sta_stats - STA-side SMD roaming debug counters
- *
- * Per-interface, accumulates across all roam attempts and all target APs.
- * Embedded as wpa_supplicant.smd_stats.
- *
- * Timestamp rings store the last 8 µs-since-boot values.
- * Acquisition: struct os_reltime t; os_get_reltime(&t);
- *              u64 ts = (u64)t.sec * 1000000ULL + t.usec;
- */
-struct wpa_smd_sta_stats {
-	/* PREP request to driver */
-	u32 prep_req_tx;               /* wpa_drv_uhr_reconfig_req() succeeded */
-	u32 prep_req_tx_fail;          /* driver call returned error */
-
-	/* PREP response from AP */
-	u32 prep_resp_rx;
-	u32 prep_resp_fail_no_target;  /* no prepared target matches response */
-	u32 prep_resp_fail_rejected;   /* AP status code != SUCCESS */
-	u32 prep_resp_ok;              /* target → SMD_TARGET_PREPARED */
-	u32 prep_exec_timeout;         /* exec window expired before EXEC was sent */
-
-	/* EXEC request to driver */
-	u32 exec_req_tx;
-	u32 exec_req_tx_fail_not_in_prep_list; /* wpas_smd_get_prepared_target returned NULL */
-	u32 exec_req_tx_fail_not_prepared; /* target not in SMD_TARGET_PREPARED state */
-	u32 exec_req_tx_fail_alloc;        /* os_zalloc for work ctx failed */
-	u32 exec_req_tx_fail_drv;
-
-	/* EXEC response from AP */
-	u32 exec_resp_rx;
-	u32 exec_resp_fail_no_target;
-	u32 exec_resp_fail_rejected;
-	u32 exec_resp_ok;              /* target → SMD_TARGET_EXEC_PENDING */
-
-	/* Final outcome */
-	u32 transition_complete;       /* port authorized, roam done */
-	u32 transition_abort;          /* any phase failure terminated the roam */
-
-	/* Timestamps (µs since boot, last 8 events each) */
-	struct smd_ts_ring transition_complete_ts;
-	struct smd_ts_ring transition_abort_ts;
-};
-
-enum wpa_smd_roam_outcome {
-	WPAS_SMD_OUTCOME_COMPLETE     = 0, /* firmware TRANSITION_COMPLETE */
-	WPAS_SMD_OUTCOME_ABORT,            /* firmware TRANSITION_ABORT */
-	WPAS_SMD_OUTCOME_EXEC_REJECTED,    /* TAP rejected EXEC response */
-	WPAS_SMD_OUTCOME_EXEC_TIMEOUT,     /* exec window expired */
-	WPAS_SMD_OUTCOME_DRAIN_TIMEOUT,    /* DL drain watchdog fired */
-	WPAS_SMD_OUTCOME_EXEC_FAIL,        /* driver send failure at exec phase */
-};
-
-#define WPAS_SMD_ROAM_RECORD_MAX  2
-
-struct wpa_smd_roam_record {
-	struct dl_list             list;
-	u8                         sap_mld_addr[ETH_ALEN];
-	u8                         tap_mld_addr[ETH_ALEN];
-	enum wpa_smd_roam_outcome  outcome;
-};
+#include "common/uhr_stats.h"
 
 struct wpa_supplicant {
 	int no_callback;
