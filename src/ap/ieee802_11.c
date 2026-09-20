@@ -602,6 +602,20 @@ static bool hostapd_find_validate_profile(
 		return false;
 	}
 
+#ifdef CONFIG_PASN
+	if ((entry->key_mgmt == (WPA_KEY_MGMT_EPPKE |
+	                          WPA_KEY_MGMT_SAE_EXT_KEY) ||
+	     entry->key_mgmt == (WPA_KEY_MGMT_EPPKE |
+	                          WPA_KEY_MGMT_FT_SAE_EXT_KEY)) &&
+	    assoc && sta->pasn && !wpa_key_mgmt_sae(sta->pasn->akmp)) {
+		wpa_printf(MSG_DEBUG,
+			   "Station " MACSTR
+			   " security profile number %d requires authentication with EPPKE, but STA used unauthenticated EPPKE",
+			   MAC2STR(sta->addr), sta_profile_num);
+		return false;
+	}
+#endif /* CONFIG_PASN */
+
 	if (!(entry->pairwise_cipher & rsne_data->pairwise_cipher)) {
 		wpa_printf(MSG_DEBUG,
 			   "Security profile number %d pairwise cipher mismatch: required=0x%x got=0x%x",
@@ -707,7 +721,8 @@ static bool validate_sta_security_profile(
 
 	/* Parse station's RSNE */
 	if (!wpa_ie || wpa_ie_len < 2) {
-		wpa_printf(MSG_INFO, "UHR: Station " MACSTR " missing RSNE",
+		wpa_printf(MSG_INFO, "Station " MACSTR
+			   " using security profiles without RSNE",
 			   MAC2STR(sta->addr));
 		return false;
 	}
