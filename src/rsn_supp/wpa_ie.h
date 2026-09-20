@@ -31,4 +31,5 @@ int wpa_external_auth_add_rsne(u8 *rsne, size_t rsne_len, struct wpa_sm *sm,
 			       int group_cipher, int group_mgmt_cipher,
 			       u16 rsn_capab);
 
+int security_profile_build_empty(u8 *buf, size_t buf_len);
 #endif /* WPA_IE_H */
