@@ -312,47 +312,12 @@ int wpa_gen_wpa_ie(struct wpa_sm *sm, u8 *wpa_ie, size_t wpa_ie_len)
  */
 int security_profile_akm_matches(int profile_num, int key_mgmt)
 {
-	switch (profile_num) {
-	case SECURITY_PROFILE_NUM_EPPKE_NO_AUTH:
-	case SECURITY_PROFILE_NUM_EPPKE_SAE:
-	case SECURITY_PROFILE_NUM_EPPKE_FT_SAE:
-		/* EPPKE AKM (00-0F-AC:29) */
-		return !!(key_mgmt & WPA_KEY_MGMT_EPPKE);
-	case SECURITY_PROFILE_NUM_8021X_AUTH:
-	case SECURITY_PROFILE_NUM_8021X:
-		/* 802.1X AKM (00-0F-AC:5) */
-		return key_mgmt == WPA_KEY_MGMT_IEEE8021X ||
-		       key_mgmt == WPA_KEY_MGMT_IEEE8021X_SHA256;
-	case SECURITY_PROFILE_NUM_8021X_FT_AUTH:
-	case SECURITY_PROFILE_NUM_8021X_FT:
-		/* 802.1X+FT AKM (00-0F-AC:3) */
-		return key_mgmt == WPA_KEY_MGMT_FT_IEEE8021X;
-	case SECURITY_PROFILE_NUM_8021X_SHA384_AUTH:
-	case SECURITY_PROFILE_NUM_8021X_SHA384:
-		/* 802.1X SHA384 AKM (00-0F-AC:23) */
-		return key_mgmt == WPA_KEY_MGMT_IEEE8021X_SHA384;
-	case SECURITY_PROFILE_NUM_8021X_FT384_AUTH:
-	case SECURITY_PROFILE_NUM_8021X_FT384:
-		/* 802.1X+FT SHA384 AKM (00-0F-AC:22) */
-		return key_mgmt == WPA_KEY_MGMT_FT_IEEE8021X_SHA384;
-	case SECURITY_PROFILE_NUM_8021X_SUITEB_AUTH:
-	case SECURITY_PROFILE_NUM_8021X_SUITEB:
-		/* 802.1X Suite-B-192 AKM (00-0F-AC:12) */
-		return key_mgmt == WPA_KEY_MGMT_IEEE8021X_SUITE_B_192;
-	case SECURITY_PROFILE_NUM_OWE:
-		/* OWE/None AKM (00-0F-AC:18) */
-		return key_mgmt == WPA_KEY_MGMT_OWE;
-	case SECURITY_PROFILE_NUM_SAE:
-		/* SAE AKM (00-0F-AC:24) */
-		return key_mgmt == WPA_KEY_MGMT_SAE_EXT_KEY ||
-		       key_mgmt == WPA_KEY_MGMT_SAE;
-	case SECURITY_PROFILE_NUM_FT_SAE:
-		/* FT/SAE AKM (00-0F-AC:25) */
-		return key_mgmt == WPA_KEY_MGMT_FT_SAE_EXT_KEY ||
-		       key_mgmt == WPA_KEY_MGMT_FT_SAE;
-	default:
-		return 0;
-	}
+	const struct security_profile_entry *sp;
+
+	sp = sec_prof_get(profile_num);
+	if (!sp)
+		return false;
+	return key_mgmt & sp->key_mgmt;
 }
 
 
@@ -415,6 +380,7 @@ int security_profile_select_num(int akmp, int pairwise_cipher,
 				const u8 *bitmap, size_t bitmap_len)
 {
 	unsigned int profile;
+	const struct security_profile_entry *sp;
 
 	if (!bitmap || bitmap_len == 0)
 		return -1;
@@ -433,33 +399,20 @@ int security_profile_select_num(int akmp, int pairwise_cipher,
 			continue;
 
 		/* Check AKM match using the per-profile mapping */
-		if (!security_profile_akm_matches(profile, akmp))
+
+		sp = sec_prof_get(profile);
+		if (!sp)
+			continue;
+		if (!(akmp & sp->key_mgmt))
 			continue;
 
 		/*
 		 * Disambiguate 802.1X _AUTH profiles (EAP over Authentication
 		 * frames) from non-_AUTH profiles (EAP in EAPOL frames).
 		 */
-		switch (profile) {
-		case SECURITY_PROFILE_NUM_8021X_AUTH:
-		case SECURITY_PROFILE_NUM_8021X_FT_AUTH:
-		case SECURITY_PROFILE_NUM_8021X_SHA384_AUTH:
-		case SECURITY_PROFILE_NUM_8021X_FT384_AUTH:
-		case SECURITY_PROFILE_NUM_8021X_SUITEB_AUTH:
-			if (!eap_over_auth)
-				continue;
-			break;
-		case SECURITY_PROFILE_NUM_8021X:
-		case SECURITY_PROFILE_NUM_8021X_FT:
-		case SECURITY_PROFILE_NUM_8021X_SHA384:
-		case SECURITY_PROFILE_NUM_8021X_FT384:
-		case SECURITY_PROFILE_NUM_8021X_SUITEB:
-			if (eap_over_auth)
-				continue;
-			break;
-		default:
-			break;
-		}
+		if ((eap_over_auth && !sp->ieee8021x_auth_frame) ||
+		    (!eap_over_auth && sp->ieee8021x_auth_frame))
+			continue;
 
 		return profile;
 	}
