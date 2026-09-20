@@ -375,19 +375,20 @@ bool security_profile_has_eppke(const u8 *sp, int ssid_key_mgmt)
  * @bitmap_len: Length of @bitmap in bytes
  * Returns: Selected profile number (0-119) on success, -1 if no match found.
  */
-int security_profile_select_num(int akmp, int pairwise_cipher,
-				bool eap_over_auth, bool eppke,
-				const u8 *bitmap, size_t bitmap_len)
+const struct security_profile_entry *
+security_profile_select(int akmp, int pairwise_cipher,
+                       bool eap_over_auth, bool eppke,
+                       const u8 *bitmap, size_t bitmap_len)
 {
 	unsigned int profile;
 	const struct security_profile_entry *sp;
 
 	if (!bitmap || bitmap_len == 0)
-		return -1;
+		return NULL;
 
 	/* All defined profiles (0-15) require GCMP-256 as pairwise cipher */
 	if (pairwise_cipher != WPA_CIPHER_GCMP_256)
-		return -1;
+		return NULL;
 
 	for (profile = 0;
 	     profile <= SECURITY_PROFILE_NUM_MAX && profile < bitmap_len * 8;
@@ -420,10 +421,10 @@ int security_profile_select_num(int akmp, int pairwise_cipher,
 		    sp->assoc_frame_encrypt != eppke)
 			continue;
 
-		return profile;
+		return sp;
 	}
 
-	return -1;
+	return NULL;
 }
 
 
