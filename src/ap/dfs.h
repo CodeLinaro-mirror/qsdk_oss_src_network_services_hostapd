@@ -41,6 +41,39 @@
 #define BASE_CHAN_5G 32
 #define GET_FREQ_CHAN_5G(chan) (BASE_FREQ_5G + ((chan - BASE_CHAN_5G) * 5))
 
+#define IEEE80211_5GHZ_CHAN_SPACING 5
+#define IEEE80211_5GHZ_FREQ_BASE 5000
+/*
+ * DFS_SEG_IDX_TO_FREQ - Convert a center frequency segment index to
+ * frequency in MHz.
+ *
+ * The 5 GHz band channel numbering follows IEEE 802.11 convention:
+ *   freq_mhz = (channel_number * channel_spacing) + freq_base
+ * The same formula applies to center frequency segment indices
+ * (seg0/seg1) returned by hostapd_get_oper_centr_freq_seg0_idx().
+ *
+ */
+#define DFS_SEG_IDX_TO_FREQ(seg_idx) \
+        (((seg_idx) * IEEE80211_5GHZ_CHAN_SPACING) + IEEE80211_5GHZ_FREQ_BASE)
+
+#define DFS_SUBCHAN_STEP_MHZ 20
+#define IEEE_SUBCHAN_BW 20
+
+/* Convert a frequency in MHz to an 802.11 channel number */
+#define DFS_FREQ_TO_CHAN(freq_mhz) \
+	(((freq_mhz) - IEEE80211_5GHZ_FREQ_BASE) / IEEE80211_5GHZ_CHAN_SPACING)
+
+/* First and last primary channel center frequency in a bonded block.
+ * @cen_mhz: Center frequency of the bonded block in MHz
+ * @bw_mhz:  Total bandwidth of the bonded block in MHz
+ * The +/- (DFS_SUBCHAN_STEP_MHZ / 2) offset converts from block edge
+ * to the first/last primary channel center (20 MHz subchannel center).
+ */
+#define DFS_BLOCK_FIRST_FREQ(cen_mhz, bw_mhz) \
+	((cen_mhz) - (bw_mhz) / 2 + (DFS_SUBCHAN_STEP_MHZ / 2))
+#define DFS_BLOCK_LAST_FREQ(cen_mhz, bw_mhz) \
+	((cen_mhz) + (bw_mhz) / 2 - (DFS_SUBCHAN_STEP_MHZ / 2))
+
 bool hostapd_is_freq_in_current_hw_info(struct hostapd_iface *iface, int freq);
 
 int hostapd_handle_dfs(struct hostapd_iface *iface);
