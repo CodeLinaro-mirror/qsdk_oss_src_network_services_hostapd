@@ -48,6 +48,7 @@ struct hostapd_hw_modes;
 struct wpa_driver_associate_params;
 struct wpa_cred;
 struct survey_results;
+struct wpa_config;
 
 /*
  * Forward declarations of private structures used within the ctrl_iface
@@ -2361,6 +2362,7 @@ void wpas_scan_for_rnr_entries(void *eloop_ctx, void *timeout_ctx);
  * parsing, override, and validation logic so that the driver-SME path
  * without driver support behaves identically to a legacy STA.
  */
+#ifdef CONFIG_QCN_EXTN
 static inline bool wpas_security_profile_active(struct wpa_supplicant *wpa_s)
 {
 	if (!wpa_s->conf->security_profiles)
@@ -2370,6 +2372,12 @@ static inline bool wpas_security_profile_active(struct wpa_supplicant *wpa_s)
 	/* driver-SME: only when driver advertises support */
 	return !!(wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_SECURITY_PROFILE);
 }
+#else
+static inline bool wpas_security_profile_active(struct wpa_supplicant *wpa_s)
+{
+	return false;
+}
+#endif /* CONFIG_QCN_EXTN */
 
 /*
  * Security Profile element helper functions (wpa_supplicant.c).

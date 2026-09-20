@@ -475,76 +475,6 @@ static size_t hostapd_supp_rates(struct hostapd_data *hapd, u8 *buf)
 
 #define MAX_SECURITY_PROFILE_NUM 16
 
-static const struct security_profile_entry_ap security_profile_table[MAX_SECURITY_PROFILE_NUM] = {
-    /* profile_num, key_mgmt, pairwise_cipher, mfpr, mfpc,
-     * ieee8021x_auth_frame, assoc_frame_encrypt,
-     * pmksa_caching_privacy, kek_in_pasn, unauth_eppke
-     */
-
-     /* 0: EPPKE (AKM 29), unauth‑EPPKE allowed */
-	[0]  = { 0,  WPA_KEY_MGMT_EPPKE,			  WPA_CIPHER_GCMP_256,
-		true, false, false,  true,  true,  true,  true },
-
-    /* 1: EPPKE + SAE (AKM 29+24) */
-	[1]  = { 1,  WPA_KEY_MGMT_EPPKE | WPA_KEY_MGMT_SAE_EXT_KEY,
-		WPA_CIPHER_GCMP_256, true, false, false,  true,	true,  true,  false },
-
-    /* 2: EPPKE + FT‑SAE (AKM 29+25) */
-	[2]  = { 2,  WPA_KEY_MGMT_EPPKE | WPA_KEY_MGMT_FT_SAE_EXT_KEY,
-		WPA_CIPHER_GCMP_256, true, false, true,  true,	true,  true,  false },
-
-    /* 3: 802.1X/5 + assoc‑encrypt */
-	[3]  = { 3,  WPA_KEY_MGMT_IEEE8021X_SHA256,  WPA_CIPHER_GCMP_256,
-		true, true,  true,  true,  true,  false, false },
-
-    /* 4: FT‑802.1X/3 + assoc‑encrypt */
-	[4]  = { 4,  WPA_KEY_MGMT_FT_IEEE8021X,      WPA_CIPHER_GCMP_256,
-		true, true,  true,  true,  true,  false, false },
-
-    /* 5: FILS‑SHA256/23 + assoc‑encrypt */
-	[5]  = { 5,  WPA_KEY_MGMT_IEEE8021X_SHA384,	     WPA_CIPHER_GCMP_256,
-		true, true,  true,  true,  true,  false, false },
-
-    /* 6: FT‑FILS‑SHA256/22 + assoc‑encrypt */
-	[6]  = { 6,  WPA_KEY_MGMT_FT_FILS_SHA256,    WPA_CIPHER_GCMP_256,
-		true, true,  true,  true,  true,  false, false },
-
-    /* 7: IEEE8021X‑SHA384/12 + assoc‑encrypt */
-	[7]  = { 7,  WPA_KEY_MGMT_IEEE8021X_SUITE_B_192,  WPA_CIPHER_GCMP_256,
-		true, true,  true,  true,  true,  false, false },
-
-    /* 8: OWE/18 */
-	[8]  = { 8,  WPA_KEY_MGMT_OWE,		     WPA_CIPHER_GCMP_256,
-		true, false, false, false, false, false, false },
-
-    /* 9: SAE/24 */
-	[9]  = { 9,  WPA_KEY_MGMT_SAE_EXT_KEY,	     WPA_CIPHER_GCMP_256,
-		true, false, false, false, false, false, false },
-
-    /* 10: FT‑SAE/25 */
-	[10] = { 10, WPA_KEY_MGMT_FT_SAE_EXT_KEY,    WPA_CIPHER_GCMP_256,
-		true, false, false, false, false, false, false },
-
-    /* 11: 802.1X/5 (no assoc‑encrypt) */
-	[11] = { 11, WPA_KEY_MGMT_IEEE8021X_SHA256,  WPA_CIPHER_GCMP_256,
-		true, false, false, false, false, false, false },
-
-    /* 12: FT‑802.1X/3 (no assoc‑encrypt) */
-	[12] = { 12, WPA_KEY_MGMT_FT_IEEE8021X,      WPA_CIPHER_GCMP_256,
-		true, false, false, false, false, false, false },
-
-    /* 13: FILS‑SHA256/23 (no assoc‑encrypt) */
-	[13] = { 13, WPA_KEY_MGMT_IEEE8021X_SHA384,	     WPA_CIPHER_GCMP_256,
-		true, false, false, false, false, false, false },
-
-    /* 14: FT‑FILS‑SHA256/22 (no assoc‑encrypt) */
-	[14] = { 14, WPA_KEY_MGMT_FT_FILS_SHA256,    WPA_CIPHER_GCMP_256,
-		true, false, false, false, false, false, false },
-
-    /* 15: IEEE8021X‑SHA384/12 (no assoc‑encrypt) */
-	[15] = { 15, WPA_KEY_MGMT_IEEE8021X_SUITE_B_192,  WPA_CIPHER_GCMP_256,
-		true, false, false, false, false, false, false },
-};
 
 static int get_sta_profile_num(const u8 *sec_prof, size_t len)
 {
@@ -605,15 +535,6 @@ static int get_sta_profile_num(const u8 *sec_prof, size_t len)
  * @profile_num: Profile number to validate (0-15)
  * Returns: true if valid, false otherwise
  */
-static bool is_valid_profile(int profile_num)
-{
-	if (profile_num < 0 || profile_num >= MAX_SECURITY_PROFILE_NUM)
-		return false;
-
-	return security_profile_table[profile_num].key_mgmt != 0;
-}
-
-
 /**
  * hostapd_find_validate_profile - Find and validate a matching security profile
  * @hapd: AP data
@@ -749,7 +670,7 @@ static bool validate_sta_security_profile(
 	const u8 *wpa_ie, size_t wpa_ie_len,
 	const u8 *rsnxe, size_t rsnxe_len,
 	const u8 *sta_sec_ie, size_t sta_sec_ie_len,
-	struct security_profile_entry_ap *profile_matched)
+	const struct security_profile_entry **profile_matched)
 {
 	struct wpa_ie_data data;
 	int sta_profile_num;
@@ -808,7 +729,7 @@ static u16 validate_security_profile_common(
 	struct sta_info *sta,
 	struct ieee802_11_elems *elems,
 	const char *auth_context,
-	struct security_profile_entry_ap *profile_matched)
+	const struct security_profile_entry *profile_matched)
 {
 	u8 *addr;
 
@@ -835,7 +756,7 @@ static u16 validate_security_profile_common(
 		    elems->rsn_ie, elems->rsn_ie_len,
 		    elems->rsnxe, elems->rsnxe_len,
 		    elems->security_profile, elems->security_profile_len,
-		    profile_matched)) {
+		    &profile_matched)) {
 		wpa_printf(MSG_INFO,
 			   "UHR: Rejecting %s auth from " MACSTR
 			   " - Security Profile mismatch",
@@ -2481,9 +2402,11 @@ int hostapd_sp_implied_key_mgmt(const struct hostapd_bss_config *conf)
 
 	for (i = 0; conf->security_profiles[i] >= 0; i++) {
 		int p = conf->security_profiles[i];
+		const struct security_profile_entry *sp;
 
-		if (p >= 0 && p < MAX_SECURITY_PROFILE_NUM)
-			implied |= security_profile_table[p].key_mgmt;
+		sp = sec_prof_get(p);
+		if (sp)
+			implied |= sp->key_mgmt;
 	}
 	return implied;
 }
@@ -7355,53 +7278,6 @@ static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_in
  * Returns the total byte length of the IE (including EID and Length fields),
  * or 0 if no profiles are configured.
  */
-size_t hostapd_security_profile_len(struct hostapd_data *hapd)
-{
-	int i, max_profile = -1;
-	size_t bitmap_len, ext_rsn_capab_len = 0;
-	u8 rsnxe_buf[2 + sizeof(u64)];
-	u8 *rsnxe_end;
-
-	if (!hapd || !hapd->conf || !hapd->conf->security_profiles)
-		return 0;
-
-	for (i = 0; hapd->conf->security_profiles[i] >= 0; i++) {
-		if (hapd->conf->security_profiles[i] > max_profile)
-			max_profile = hapd->conf->security_profiles[i];
-	}
-
-	if (max_profile < 0)
-		return 0;
-
-	/* Bitmap size: ceil((max_profile + 1) / 8) */
-	bitmap_len = (max_profile / 8) + 1;
-
-	rsnxe_end = hostapd_eid_rsnxe(hapd, rsnxe_buf, sizeof(rsnxe_buf), ~0ULL);
-	if (rsnxe_end > rsnxe_buf + 2)
-		ext_rsn_capab_len = rsnxe_end - rsnxe_buf - 2;
-
-	/* If any configured profile mandates SAE-H2E, ensure space for the bit */
-	for (i = 0; hapd->conf->security_profiles[i] >= 0; i++) {
-		int p = hapd->conf->security_profiles[i];
-
-		if (p == SECURITY_PROFILE_NUM_EPPKE_SAE ||
-		    p == SECURITY_PROFILE_NUM_EPPKE_FT_SAE ||
-		    p == SECURITY_PROFILE_NUM_SAE ||
-		    p == SECURITY_PROFILE_NUM_FT_SAE) {
-			if (ext_rsn_capab_len < 1)
-				ext_rsn_capab_len = 1;
-			break;
-		}
-	}
-
-	/*
-	 * D1.4 format:
-	 * EID (1) + Length (1) + EID_Ext (1) + Reduced_RSN_Capab (1) +
-	 * Security_Profile_Indication (1) + Security_Profile_Bitmap (bitmap_len) +
-	 * Ext_RSN_Capab (ext_rsn_capab_len)
-	 */
-	return 2 + 1 + 1 + 1 + bitmap_len + ext_rsn_capab_len;
-}
 
 
 /*
@@ -7410,102 +7286,6 @@ size_t hostapd_security_profile_len(struct hostapd_data *hapd)
  * Writes the D1.4 bitmap-format Security Profile element into @eid and
  * returns a pointer past the last written byte.
  */
-u8 *hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid)
-{
-	u8 *pos = eid;
-	u8 *len_pos;
-	u8 reduced_rsn_capab = 0;
-	u8 ext_rsn_capab[256] = {0};
-	size_t ext_rsn_capab_len = 0;
-	u8 bitmap[16] = {0}; /* max 128 profiles */
-	size_t bitmap_len = 0;
-	int i, max_profile = -1;
-	u8 rsnxe_buf[2 + sizeof(u64)];
-	u8 *rsnxe_end;
-
-	if (!hapd || !hapd->conf || !hapd->conf->security_profiles)
-		return eid;
-
-	for (i = 0; hapd->conf->security_profiles[i] >= 0; i++) {
-		if (hapd->conf->security_profiles[i] > max_profile)
-			max_profile = hapd->conf->security_profiles[i];
-	}
-
-	if (max_profile < 0)
-		return eid;
-
-	/* Build bitmap */
-	bitmap_len = (max_profile / 8) + 1;
-	if (bitmap_len > sizeof(bitmap))
-		bitmap_len = sizeof(bitmap);
-	os_memset(bitmap, 0, bitmap_len);
-	for (i = 0; hapd->conf->security_profiles[i] >= 0; i++) {
-		int p = hapd->conf->security_profiles[i];
-
-		if (p / 8 < (int) bitmap_len)
-			bitmap[p / 8] |= BIT(p % 8);
-	}
-
-	rsnxe_end = hostapd_eid_rsnxe(hapd, rsnxe_buf, sizeof(rsnxe_buf), ~0ULL);
-	if (rsnxe_end > rsnxe_buf + 2) {
-		ext_rsn_capab_len = rsnxe_end - rsnxe_buf - 2;
-		if (ext_rsn_capab_len > sizeof(ext_rsn_capab))
-			ext_rsn_capab_len = sizeof(ext_rsn_capab);
-		os_memcpy(ext_rsn_capab, rsnxe_buf + 2, ext_rsn_capab_len);
-	}
-
-	/* If any configured profile mandates SAE-H2E, force the H2E bit */
-	for (i = 0; hapd->conf->security_profiles[i] >= 0; i++) {
-		int p = hapd->conf->security_profiles[i];
-
-		if (p == SECURITY_PROFILE_NUM_EPPKE_SAE ||
-		    p == SECURITY_PROFILE_NUM_EPPKE_FT_SAE ||
-		    p == SECURITY_PROFILE_NUM_SAE ||
-		    p == SECURITY_PROFILE_NUM_FT_SAE) {
-			if (ext_rsn_capab_len < 1) {
-				ext_rsn_capab_len = 1;
-				os_memset(ext_rsn_capab, 0, 1);
-			}
-			ext_rsn_capab[0] |= BIT(WLAN_RSNX_CAPAB_SAE_H2E);
-			break;
-		}
-	}
-
-	/* Build Reduced RSN Capabilities */
-	if (hapd->conf->security_profile_ext_key_id)
-		reduced_rsn_capab |=
-			WLAN_SEC_PROF_REDUCED_RSN_CAPA_EXTENDED_KEY_ID;
-	if (hapd->conf->security_profile_ocvc)
-		reduced_rsn_capab |= WLAN_SEC_PROF_REDUCED_RSN_CAPA_OCVC;
-
-	/* Write IE */
-	*pos++ = WLAN_EID_EXTENSION;
-	len_pos = pos++;  /* Length field, filled later */
-	*pos++ = WLAN_EID_EXT_SECURITY_PROFILE;
-
-	/* Reduced RSN Capabilities (1 byte) */
-	*pos++ = reduced_rsn_capab;
-
-	/* Security Profile Indication (1 byte):
-	 * B0-B3: Number of octets in Security Profile Bitmap
-	 * B4-B7: Number of Vendor Specific Security Profiles (0)
-	 */
-	*pos++ = (u8) bitmap_len;
-
-	/* Security Profile Bitmap */
-	os_memcpy(pos, bitmap, bitmap_len);
-	pos += bitmap_len;
-
-	/* Extended RSN Capabilities */
-	if (ext_rsn_capab_len > 0) {
-		os_memcpy(pos, ext_rsn_capab, ext_rsn_capab_len);
-		pos += ext_rsn_capab_len;
-	}
-
-	/* Fill length */
-	*len_pos = (u8) (pos - len_pos - 1);
-	return pos;
-}
 
 static bool hostapd_deny_non_ht_assoc(struct hostapd_data *hapd,
 				      struct sta_info *sta)
@@ -7576,7 +7356,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 	const u8 *p2p_dev_addr = NULL;
 	const struct element *elem;
 	bool pmk_cache_based_sae;
-	struct security_profile_entry_ap matched_profile;
+	const struct security_profile_entry *matched_profile = NULL;
 	bool security_profile_matched = false;
 #ifdef CONFIG_SAE
 	bool epp_sta = false;
@@ -7599,7 +7379,6 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			break;
 	}
 
-	os_memset(&matched_profile, 0, sizeof(matched_profile));
 
 	if (type == LINK_PARSE_ASSOC || type == LINK_PARSE_REASSOC) {
 		resp = check_ssid(hapd, sta, elems->ssid, elems->ssid_len);
@@ -7758,7 +7537,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 
 			resp = validate_security_profile_common(hapd, sta, elems,
 								type == LINK_PARSE_REASSOC ?
-								"Reassoc" : "Assoc", &matched_profile);
+								"Reassoc" : "Assoc", matched_profile);
 			if (resp != WLAN_STATUS_SUCCESS) {
 				resp = WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE;
 				goto out;
@@ -7767,8 +7546,8 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 				   "UHR: (Re)Assoc Security Profile validated "
 				   "for " MACSTR, MAC2STR(sta->addr));
 
-			if (matched_profile.profile_num != 0) {
-				wpa_printf(MSG_ERROR," %d %s %d \n", matched_profile.profile_num, __func__, __LINE__);
+			if (matched_profile->number != 0) {
+				wpa_printf(MSG_ERROR," %d %s %d \n", matched_profile->number, __func__, __LINE__);
 				security_profile_matched = true;
 			}
 		}
@@ -8027,7 +7806,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			u16 sp_resp = validate_security_profile_common(
 				hapd, sta, elems,
 				type == LINK_PARSE_REASSOC ? "Reassoc" : "Assoc",
-				&matched_profile);
+				matched_profile);
 
 			if (sp_resp == WLAN_STATUS_SUCCESS) {
 				wpa_printf(MSG_DEBUG,
@@ -8053,7 +7832,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 					  ap_sta_is_mld(hapd, sta),
 					  hapd->conf->external_pmk_cache,
 					  security_profile_matched ?
-					  &matched_profile : NULL, smd_flag);
+					  matched_profile : NULL, smd_flag);
 		resp = wpa_res_to_status_code(res);
 		if (resp != WLAN_STATUS_SUCCESS)
 			goto out;

@@ -673,7 +673,6 @@ static bool wpas_eppke_ap_capable(struct wpa_supplicant *wpa_s,
 	return true;
 }
 
-}
 
 
 static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
@@ -910,7 +909,7 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 	 */
 	if (wpas_security_profile_active(wpa_s) &&
 	    wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_SECURITY_PROFILE) &&
-	    wpa_s->sel_security_profile >= 0 &&
+	    wpa_s->selected_security_profile_num >= 0 &&
 	    wpa_s->security_profile_len > 0) {
 		if (pasn_set_security_profile(
 			    pasn,
@@ -918,7 +917,7 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 			    wpa_s->security_profile_len) == 0)
 			wpa_printf(MSG_DEBUG,
 				   "EPPKE: Including Security Profile element in EPPKE Auth1 frame (profile=%d)",
-				   wpa_s->sel_security_profile);
+				   wpa_s->selected_security_profile_num);
 	}
 
 	return 0;
