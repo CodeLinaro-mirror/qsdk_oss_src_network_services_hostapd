@@ -12255,6 +12255,15 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		reply_len = hostapd_ctrl_iface_sta_next(hapd, buf + 9, reply,
 							reply_size);
 #endif
+	} else if (os_strncmp(buf, "STA_SMD_STATS ", 14) == 0) {
+		reply_len = hostapd_ctrl_iface_sta_smd_stats(hapd, buf + 14,
+							     reply, reply_size);
+	} else if (os_strcmp(buf, "SMD_MLD_STATS") == 0) {
+		reply_len = hostapd_ctrl_iface_smd_mld_stats(hapd, reply,
+							     reply_size);
+	} else if (os_strcmp(buf, "SMD_STATS_RESET") == 0) {
+		if (hostapd_ctrl_iface_smd_stats_reset(hapd))
+			reply_len = -1;
 	} else if (os_strcmp(buf, "ATTACH") == 0) {
 		if (hostapd_ctrl_iface_attach(hapd, from, fromlen, NULL))
 			reply_len = -1;

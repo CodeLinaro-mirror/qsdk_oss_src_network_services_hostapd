@@ -1809,6 +1809,31 @@ static int hostapd_cli_cmd_update_beacon(struct wpa_ctrl *ctrl, int argc,
 }
 
 #ifdef CONFIG_IEEE80211BN
+static int hostapd_cli_cmd_sta_smd_stats(struct wpa_ctrl *ctrl, int argc,
+					  char *argv[])
+{
+	char cmd[64];
+
+	if (argc < 1) {
+		printf("Invalid 'sta_smd_stats' command: requires <addr>\n");
+		return -1;
+	}
+	os_snprintf(cmd, sizeof(cmd), "STA_SMD_STATS %s", argv[0]);
+	return wpa_ctrl_command(ctrl, cmd);
+}
+
+static int hostapd_cli_cmd_smd_mld_stats(struct wpa_ctrl *ctrl, int argc,
+					  char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "SMD_MLD_STATS");
+}
+
+static int hostapd_cli_cmd_smd_stats_reset(struct wpa_ctrl *ctrl, int argc,
+					    char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "SMD_STATS_RESET");
+}
+
 /*
  * hostapd_cli_cmd_update_uhr_features - Send UPDATE_UHR_FEATURES command
  *
@@ -4056,6 +4081,12 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "update_beacon", hostapd_cli_cmd_update_beacon, NULL,
 	  "= update Beacon frame contents\n"},
 #ifdef CONFIG_IEEE80211BN
+	{ "sta_smd_stats", hostapd_cli_cmd_sta_smd_stats, NULL,
+	  "<addr> = dump SMD roaming debug counters for a given STA (live or archive)" },
+	{ "smd_mld_stats", hostapd_cli_cmd_smd_mld_stats, NULL,
+	  "= dump aggregate SMD roaming counters for this MLD (live + archive)" },
+	{ "smd_stats_reset", hostapd_cli_cmd_smd_stats_reset, NULL,
+	  "= reset all SMD roaming counters and archive on this MLD" },
 	{ "update_uhr_features", hostapd_cli_cmd_update_uhr_features, NULL,
 	  "[NPCA enable=<0|1> [primary_chan=chan]\n"
 	  "  [min_dur=<0-15>] [switch_delay=<0-63>] [switch_back=<0-63>]\n"
