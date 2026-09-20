@@ -436,7 +436,9 @@ void wpa_supplicant_set_non_wpa_policy(struct wpa_supplicant *wpa_s,
 	wpa_sm_set_assoc_rsnxe(wpa_s->wpa, NULL, 0);
 #endif /* CONFIG_NO_WPA */
 	wpa_s->rsnxe_len = 0;
+	wpa_sm_set_security_profile(wpa_s->wpa, NULL);
 	wpa_s->sel_security_profile = NULL;
+	wpa_sm_set_security_profile(wpa_s->wpa, NULL);
 	wpa_s->security_profile_len = 0;
 	wpa_s->pairwise_cipher = WPA_CIPHER_NONE;
 	wpa_s->group_cipher = WPA_CIPHER_NONE;
@@ -2854,6 +2856,7 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 	 * It is consumed below by security_profile_build_sta().
 	 */
 	wpa_s->sel_security_profile = NULL;
+	wpa_sm_set_security_profile(wpa_s->wpa, NULL);
 	if (bss && wpas_security_profile_active(wpa_s)) {
 		const u8 *sp_ie = wpa_bss_get_ie_ext(
 			bss, WLAN_EID_EXT_SECURITY_PROFILE);
@@ -5509,7 +5512,9 @@ static void wpas_start_assoc_cb(struct wpa_radio_work *work, int deinit)
 	wpa_sm_set_assoc_rsnxe(wpa_s->wpa, NULL, 0);
 #endif /* CONFIG_NO_WPA */
 	wpa_s->rsnxe_len = 0;
+	wpa_sm_set_security_profile(wpa_s->wpa, NULL);
 	wpa_s->sel_security_profile = NULL;
+	wpa_sm_set_security_profile(wpa_s->wpa, NULL);
 	wpa_s->security_profile_len = 0;
 #ifndef CONFIG_NO_ROBUST_AV
 	wpa_s->mscs_setup_done = false;
