@@ -909,7 +909,7 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 	 */
 	if (wpas_security_profile_active(wpa_s) &&
 	    wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_SECURITY_PROFILE) &&
-	    wpa_s->sel_security_profile >= 0 &&
+	    wpa_s->sel_security_profile &&
 	    wpa_s->security_profile_len > 0) {
 		if (pasn_set_security_profile(
 			    pasn,
@@ -918,6 +918,15 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 			wpa_printf(MSG_DEBUG,
 				   "EPPKE: Including Security Profile element in EPPKE Auth1 frame (profile=%d)",
 				   wpa_s->sel_security_profile->number);
+	} else if (wpas_security_profile_active(wpa_s)) {
+		u8 sp_elem[10];
+		int sp_len;
+
+		sp_len = security_profile_build_empty(sp_elem, sizeof(sp_elem));
+		if (sp_len > 0 &&
+		    pasn_set_security_profile(pasn, sp_elem, sp_len) == 0)
+			wpa_printf(MSG_DEBUG,
+				   "EPPKE: Including empty Security Profile element in EPPKE Auth1 frame");
 	}
 
 	return 0;
@@ -3610,6 +3619,19 @@ mscs_fail:
 		wpa_dbg(wpa_s, MSG_DEBUG,
 			"SME: Appended Security Profile element to assoc frame IEs (profile=%d)",
 			wpa_s->sel_security_profile->number);
+	} else if (wpas_security_profile_active(wpa_s) &&
+		   sizeof(wpa_s->sme.assoc_req_ie) - wpa_s->sme.assoc_req_ie_len >= 5) {
+		u8 sp_elem[10];
+		int sp_len;
+
+		sp_len = security_profile_build_empty(sp_elem, sizeof(sp_elem));
+		if (sp_len > 0) {
+			os_memcpy(wpa_s->sme.assoc_req_ie + wpa_s->sme.assoc_req_ie_len,
+				  sp_elem, sp_len);
+			wpa_s->sme.assoc_req_ie_len += sp_len;
+			wpa_dbg(wpa_s, MSG_DEBUG,
+				"SME: Appended empty Security Profile element to assoc frame IEs");
+		}
 	}
 
 #ifdef CONFIG_QCN_EXTN
