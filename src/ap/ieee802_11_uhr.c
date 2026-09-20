@@ -852,9 +852,15 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 		   "UHR Current AP: Processing request from STA " MACSTR " (frame_len=%zu)",
 		   MAC2STR(sta->addr), frame_len);
 
+	sta->smd_info.sap_stats.sap_prep_req_rx++;
+
 	if (frame_len < WLAN_ST_PREP_MIN_LEN) {
 		wpa_printf(MSG_ERROR, "UHR Current AP: Frame too short (%zu < 28)",
 			   frame_len);
+		sta->smd_info.sap_stats.sap_prep_req_parse_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_prep_parse_fail_reasons,
+			   sta->smd_info.sap_stats.sap_prep_parse_fail_reasons_head,
+			   SAP_PREP_PARSE_FAIL_SHORT_FRAME);
 		return -1;
 	}
 
@@ -863,23 +869,39 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 
 	if (ieee802_11_parse_elems(ies, ies_len, &elems, 1) == ParseFailed) {
 		wpa_printf(MSG_ERROR, "UHR Current AP: Failed to parse IEs");
+		sta->smd_info.sap_stats.sap_prep_req_parse_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_prep_parse_fail_reasons,
+			   sta->smd_info.sap_stats.sap_prep_parse_fail_reasons_head,
+			   SAP_PREP_PARSE_FAIL_IE_PARSE);
 		return -1;
 	}
 
 	if (uhr_parse_reconfig_mle(&elems, &mle) < 0) {
 		wpa_printf(MSG_ERROR, "UHR Current AP: Failed to parse ML-IE");
+		sta->smd_info.sap_stats.sap_prep_req_parse_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_prep_parse_fail_reasons,
+			   sta->smd_info.sap_stats.sap_prep_parse_fail_reasons_head,
+			   SAP_PREP_PARSE_FAIL_ML_IE);
 		return -1;
 	}
 
 	/* Parse SMD BSS Transition IE */
 	if (uhr_parse_smd_bss_trans_elem(&elems, 0, &sbte) < 0) {
 		wpa_printf(MSG_ERROR, "UHR Current AP: Failed to parse SBTE");
+		sta->smd_info.sap_stats.sap_prep_req_parse_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_prep_parse_fail_reasons,
+			   sta->smd_info.sap_stats.sap_prep_parse_fail_reasons_head,
+			   SAP_PREP_PARSE_FAIL_SBTE);
 		return -1;
 	}
 
 	if (!mle.has_target_ap_mld_addr) {
 		wpa_printf(MSG_ERROR,
 			   "UHR Current AP: No target AP MLD address in ML-IE");
+		sta->smd_info.sap_stats.sap_prep_req_parse_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_prep_parse_fail_reasons,
+			   sta->smd_info.sap_stats.sap_prep_parse_fail_reasons_head,
+			   SAP_PREP_PARSE_FAIL_NO_TARGET_ADDR);
 		return -1;
 	}
 
@@ -899,6 +921,10 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 		if (!ap_info) {
 			wpa_printf(MSG_ERROR,
 				   "UHR Current AP: Failed to allocate ap_info");
+			sta->smd_info.sap_stats.sap_prep_req_parse_fail++;
+			SMD_REASON(sta->smd_info.sap_stats.sap_prep_parse_fail_reasons,
+				   sta->smd_info.sap_stats.sap_prep_parse_fail_reasons_head,
+				   SAP_PREP_PARSE_FAIL_ALLOC);
 			return -1;
 		}
 
@@ -965,15 +991,22 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 		wpa_printf(MSG_ERROR,
 			   "UHR Current AP: Failed to send IAP request");
 		ap_info->state = SMD_AP_STATE_IDLE;
+		sta->smd_info.sap_stats.sap_prep_iap_send_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_prep_iap_fail_reasons,
+			   sta->smd_info.sap_stats.sap_prep_iap_fail_reasons_head,
+			   SAP_PREP_IAP_FAIL_TRANSPORT);
 		if (is_new_ap)
 			uhr_remove_ap_from_list(sta, ap_info->ap_mld_addr);
 		return -1;
 	}
+	sta->smd_info.sap_stats.sap_prep_iap_sent++;
+	smd_ts_record(&sta->smd_info.sap_stats.sap_prep_iap_sent_ts, smd_ts_now());
 
 	wpa_printf(MSG_DEBUG,
 		   "UHR Current AP: IAP request sent, waiting for response");
 	if (uhr_cur_start_iap_msg_timer(sta, mle.target_ap_mld_addr) < 0) {
 		wpa_printf(MSG_ERROR, "UHR Current AP: Failed to start ST prep timeout");
+		sta->smd_info.sap_stats.sap_prep_iap_timer_fail++;
 	}
 
 	return 0;
@@ -1007,8 +1040,10 @@ static void uhr_cur_ap_clone_ap_info_to_partners(struct hostapd_data *lhapd,
 			continue;
 
 		clone = os_zalloc(sizeof(*clone));
-		if (!clone)
+		if (!clone) {
+			sta->smd_info.sap_stats.sap_prep_clone_fail++;
 			continue;
+		}
 
 		os_memcpy(clone, ap_info, sizeof(*clone));
 		clone->uhr_st_iap_timer_ongoing = false;
@@ -1072,6 +1107,10 @@ void uhr_cur_ap_handle_st_prep_resp(struct hostapd_data *hapd,
 			   "UHR Current AP: Frame too short for MAC header (%u < %zu)",
 			   frame_len,
 			   offsetof(struct ieee80211_mgmt, bssid) + ETH_ALEN);
+		sta->smd_info.sap_stats.sap_prep_ota_resp_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_prep_resp_fail_reasons,
+			   sta->smd_info.sap_stats.sap_prep_resp_fail_reasons_head,
+			   SAP_PREP_RESP_FAIL_SHORT_FRAME);
 		uhr_remove_ap_from_list(sta, iap->target_ap_mld_addr);
 		return;
 	}
@@ -1082,8 +1121,13 @@ void uhr_cur_ap_handle_st_prep_resp(struct hostapd_data *hapd,
 		    frame, frame_len);
 
 	ap_info = uhr_find_ap_in_list(sta, iap->target_ap_mld_addr);
-	if (!ap_info)
+	if (!ap_info) {
+		sta->smd_info.sap_stats.sap_prep_ota_resp_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_prep_resp_fail_reasons,
+			   sta->smd_info.sap_stats.sap_prep_resp_fail_reasons_head,
+			   SAP_PREP_RESP_FAIL_NO_APINFO);
 		return;
+	}
 	uhr_cancel_iap_timeout(sta, iap->target_ap_mld_addr);
 
 	/* Check status code */
@@ -1091,6 +1135,10 @@ void uhr_cur_ap_handle_st_prep_resp(struct hostapd_data *hapd,
 		wpa_printf(MSG_ERROR,
 			   "UHR Current AP: IAP request failed (status=%u)",
 			   iap->status_code);
+		sta->smd_info.sap_stats.sap_prep_ota_resp_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_prep_resp_fail_reasons,
+			   sta->smd_info.sap_stats.sap_prep_resp_fail_reasons_head,
+			   SAP_PREP_RESP_FAIL_TAP_REJECTED);
 
 		/* Remove failed AP from candidate list */
 		uhr_remove_ap_from_list(sta, iap->target_ap_mld_addr);
@@ -1122,9 +1170,14 @@ void uhr_cur_ap_handle_st_prep_resp(struct hostapd_data *hapd,
 	if (hostapd_drv_send_mlme(lhapd, frame, frame_len, 0, NULL, 0, 0, 0, 0) < 0) {
 		wpa_printf(MSG_ERROR,
 			   "UHR Current AP: Failed to send response to STA");
+		sta->smd_info.sap_stats.sap_prep_ota_resp_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_prep_resp_fail_reasons,
+			   sta->smd_info.sap_stats.sap_prep_resp_fail_reasons_head,
+			   SAP_PREP_RESP_FAIL_MLME);
 		return;
 	}
 
+	sta->smd_info.sap_stats.sap_prep_ota_resp_sent++;
 	wpa_printf(MSG_DEBUG,
 		   "UHR Current AP: Response forwarded successfully");
 
@@ -1134,7 +1187,8 @@ void uhr_cur_ap_handle_st_prep_resp(struct hostapd_data *hapd,
 	u32 ul_sn_not_transferred = sta->ul_sn_not_transferred;
 	u32 dl_drain_time = lhapd->conf->smd.uhr_dl_drain_duration_tu;
 	if (hostapd_smd_roam(lhapd, sta, role, type, dl_sn_not_transferred, ul_sn_not_transferred, dl_drain_time)) {
-		wpa_printf(MSG_DEBUG, "UHR Current AP: Failed to send WMI roam notification - not skipping for now.");
+		wpa_printf(MSG_DEBUG, "UHR Current AP: Failed to send roam notification - not skipping for now.");
+		sta->smd_info.sap_stats.sap_prep_roam_notify_fail++;
 	}
 
 	ap_info->state = SMD_AP_STATE_ST_PREP_COMPLETE;
@@ -1144,6 +1198,7 @@ void uhr_cur_ap_handle_st_prep_resp(struct hostapd_data *hapd,
 	if (uhr_cur_start_st_prep_timer(sta, iap->target_ap_mld_addr, hapd->conf->smd.smd_prep_timeout) < 0) {
 		wpa_printf(MSG_ERROR,
 			   "UHR Current AP: Failed to start ST prep timeout");
+		sta->smd_info.sap_stats.sap_prep_exec_timer_fail++;
 	}
 
 	uhr_cur_ap_clone_ap_info_to_partners(lhapd, sta, ap_info);
@@ -1164,6 +1219,7 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 	wpa_printf(MSG_DEBUG,
 		   "UHR ST EXEC: Processing Execute request from " MACSTR,
 		   MAC2STR(sta->addr));
+	sta->smd_info.sap_stats.sap_exec_req_rx++;
 
 	if (len < IEEE80211_HDRLEN + 3) {
 		wpa_printf(MSG_ERROR, "UHR ST EXEC: Frame too short");
@@ -1198,6 +1254,7 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 		wpa_printf(MSG_ERROR,
 			   "UHR ST EXEC: Target AP " MACSTR " not in list",
 			   MAC2STR(mle.target_ap_mld_addr));
+		sta->smd_info.sap_stats.sap_exec_req_no_apinfo++;
 		return -1;
 	}
 
@@ -1205,6 +1262,7 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 		wpa_printf(MSG_ERROR,
 			   "UHR ST EXEC: Invalid state %d (expected ST_PREP_COMPLETE)",
 			   target_info->state);
+		sta->smd_info.sap_stats.sap_exec_req_bad_state++;
 		return -1;
 	}
 
@@ -1234,9 +1292,8 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 	u32 dl_sn_not_transferred = sta->dl_sn_not_transferred;
 	u32 ul_sn_not_transferred = sta->ul_sn_not_transferred;
 	u32 dl_drain_time = hapd->conf->smd.uhr_dl_drain_duration_tu;
-	if (hostapd_smd_roam(hapd, sta, role, type, dl_sn_not_transferred, ul_sn_not_transferred, dl_drain_time)) {
+	if (hostapd_smd_roam(hapd, sta, role, type, dl_sn_not_transferred, ul_sn_not_transferred, dl_drain_time))
 		wpa_printf(MSG_DEBUG, "UHR Current AP: Failed to send WMI roam notification - not skipping for now.");
-	}
 
 
 	ret = uhr_iap_send_st_exec_req(hapd, sta, mle.target_ap_mld_addr, buf, len);
@@ -1245,8 +1302,11 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 		target_info->state = SMD_AP_STATE_ST_PREP_COMPLETE;
 		wpa_printf(MSG_ERROR,
 			   "UHR ST EXEC: IAP send failed, state: ST_EXEC_STARTED → ST_PREP_COMPLETE");
+		sta->smd_info.sap_stats.sap_exec_iap_send_fail++;
 		return ret;
 	}
+	sta->smd_info.sap_stats.sap_exec_iap_sent++;
+	smd_ts_record(&sta->smd_info.sap_stats.sap_exec_iap_sent_ts, smd_ts_now());
 
 	target_info->state = SMD_AP_STATE_ST_EXEC_IAP_PENDING;
 	wpa_printf(MSG_INFO,
@@ -1258,6 +1318,7 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 	if (uhr_cur_start_iap_msg_timer(sta, mle.target_ap_mld_addr) < 0) {
 		wpa_printf(MSG_ERROR,
 			   "UHR Current AP: Failed to start ST exec IAP timeout");
+		sta->smd_info.sap_stats.sap_exec_iap_timer_fail++;
 	}
 	return ret;
 }
@@ -1287,11 +1348,14 @@ static void uhr_dl_drain_timeout(void *eloop_ctx, void *timeout_ctx)
                return;
        }
 
+       sta->smd_info.sap_stats.dl_drain_started++;
+
        /* Verify state is DL_DRAIN_ACTIVE */
        if (target_info->state != SMD_AP_STATE_DL_DRAIN_ACTIVE) {
                wpa_printf(MSG_ERROR,
                           "UHR DL DRAIN: Invalid state %d (expected DL_DRAIN_ACTIVE)",
                           target_info->state);
+               sta->smd_info.sap_stats.dl_drain_bad_state++;
        }
 
        /* STATE TRANSITION: DL_DRAIN_ACTIVE → TRANSITION_COMPLETE */
@@ -1307,7 +1371,16 @@ static void uhr_dl_drain_timeout(void *eloop_ctx, void *timeout_ctx)
        /* Transition COMPLETE - ap_list should now be empty */
        wpa_printf(MSG_INFO,
                   "UHR DL DRAIN: Station " MACSTR " fully transitioned to Target AP, deleting ML station", MAC2STR(sta->addr));
-	/* Delete ML station from all serving AP links */
+	/*
+	 * Delete ML station from all serving AP links.
+	 * Only count success if state was valid at entry.
+	 */
+       if (!sta->smd_info.sap_stats.dl_drain_bad_state) {
+               sta->smd_info.sap_stats.dl_drain_complete++;
+               sta->smd_info.sap_stats.roam_success++;
+               smd_ts_record(&sta->smd_info.sap_stats.roam_success_ts, smd_ts_now());
+       }
+
        ap_sta_remove_link_sta(hapd, sta, 0, false);
        ap_free_sta(hapd, sta);
 }
@@ -1524,6 +1597,10 @@ void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
                wpa_printf(MSG_ERROR,
                           "UHR ST EXEC: IAP response failed, status=%u",
                           iap->status_code);
+               sta->smd_info.sap_stats.sap_exec_ota_resp_fail++;
+               SMD_REASON(sta->smd_info.sap_stats.sap_exec_resp_fail_reasons,
+                          sta->smd_info.sap_stats.sap_exec_resp_fail_reasons_head,
+                          SAP_EXEC_RESP_FAIL_TAP_REJECTED);
 
                /* Revert to ST_PREP_COMPLETE (can retry) */
                target_info->state = SMD_AP_STATE_ST_PREP_COMPLETE;
@@ -1558,15 +1635,21 @@ void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
        ret = hostapd_drv_send_mlme(lhapd, frame_buf, frame_len, 0, NULL, 0, 0, 0, 0);
        if (ret < 0) {
                wpa_printf(MSG_ERROR, "UHR ST EXEC: Failed to send OTA response");
+		sta->smd_info.sap_stats.sap_exec_ota_resp_fail++;
+		SMD_REASON(sta->smd_info.sap_stats.sap_exec_resp_fail_reasons,
+			   sta->smd_info.sap_stats.sap_exec_resp_fail_reasons_head,
+			   SAP_EXEC_RESP_FAIL_MLME);
                target_info->state = SMD_AP_STATE_ST_PREP_COMPLETE;
                return;
        }
 
+	sta->smd_info.sap_stats.sap_exec_ota_resp_sent++;
 	dl_sn_not_transferred = sta->dl_sn_not_transferred;
 	ul_sn_not_transferred = sta->ul_sn_not_transferred;
 	dl_drain_time = hapd->conf->smd.uhr_dl_drain_duration_tu;
 	if (hostapd_smd_roam(lhapd, sta, role, type, dl_sn_not_transferred, ul_sn_not_transferred, dl_drain_time)) {
 		wpa_printf(MSG_DEBUG, "UHR Current AP: Failed to send WMI roam notification - not skipping for now.");
+		sta->smd_info.sap_stats.sap_exec_roam_notify_fail++;
 	}
 
 	/* Cancel the ST prep timer before it fires — exec succeeded. */
@@ -1586,7 +1669,8 @@ void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
 		dl_drain_duration_sec = 1;
 	wpa_printf(MSG_INFO, "UHR ST EXEC: DL Drain started = %u TU (%u.%06u sec)",
 		   dl_drain_time, dl_drain_duration_sec, dl_drain_duration_usec);
-	eloop_register_timeout(dl_drain_duration_sec, dl_drain_duration_usec, uhr_dl_drain_timeout, lhapd, target_info);
+	if (eloop_register_timeout(dl_drain_duration_sec, dl_drain_duration_usec, uhr_dl_drain_timeout, lhapd, target_info) < 0)
+		sta->smd_info.sap_stats.sap_exec_drain_timer_fail++;
        /* Exec succeeded: cancel all ST prep timers and clear the full ap_list. */
        uhr_cur_ap_purge_ap_list(lhapd, sta);
        wpa_printf(MSG_INFO, "UHR ST EXEC: Waiting for TX STATUS with ACK=1...");
@@ -2084,12 +2168,21 @@ static int uhr_finalize_assoc_and_keys(
         const struct uhr_iap_security_ctx *sec_ctx,
         struct uhr_link_reconf_req_list *req_list)
 {
+        struct sta_info *sta;
+
         if (uhr_target_ap_install_security_context(hapd, sta_addr, sec_ctx) < 0)
                 return -1;
 
+        sta = ap_get_sta(hapd, sta_addr);
         if (uhr_target_ap_install_ptk_to_driver(hapd, sta_addr,
-                                                req_list, sec_ctx) < 0)
+                                                req_list, sec_ctx) < 0) {
+                if (sta)
+                        sta->smd_info.tap_stats.ptk_install_fail++;
                 return -1;
+        }
+
+        if (sta)
+                sta->smd_info.tap_stats.ptk_install_ok++;
 
         return 0;
 }
@@ -3012,6 +3105,9 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 		goto send_response;
        }
 
+	assoc_sta->smd_info.tap_stats.tap_iap_prep_req_rx_ok++;
+	smd_ts_record(&assoc_sta->smd_info.tap_stats.tap_iap_prep_req_rx_ok_ts, smd_ts_now());
+
        /* Update flags based on the flags */
        sta->dl_sn_not_transferred = sbte.dl_sn_not_transferred;
        sta->ul_sn_not_transferred = sbte.ul_sn_not_transferred;
@@ -3045,12 +3141,20 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 		}
 		if (uhr_target_ap_set_smd_ctx(assoc_hapd, iap->sta_addr, smd_ctx)) {
 			wpa_printf(MSG_ERROR, "SMD ST PREP Target AP: Failed to set ctx");
+			if (assoc_sta) {
+				SMD_REASON(assoc_sta->smd_info.tap_stats.tap_prep_fail_reasons,
+					   assoc_sta->smd_info.tap_stats.tap_prep_fail_reasons_head,
+					   TAP_PREP_FAIL_CTX_SET);
+			}
 			status_code = 1;
 			goto send_response;
 		}
 	}
 
 send_response:
+	if (assoc_sta && status_code != 0)
+		assoc_sta->smd_info.tap_stats.tap_prep_fail++;
+
 	response_frame = uhr_tgt_ap_st_prep_resp(assoc_hapd, iap->sta_addr,
 					     dialog_token,
 					     status_code,
@@ -3134,8 +3238,12 @@ send_response:
 			   "SMD ST PREP Target AP: Ready for STA " MACSTR " with MLD-level PTK and assoc link marking",
 			   MAC2STR(iap->sta_addr));
 
-		if (assoc_hapd && assoc_sta)
+		if (assoc_hapd && assoc_sta) {
+			assoc_sta->smd_info.tap_stats.tap_prep_ok++;
+			smd_ts_record(&assoc_sta->smd_info.tap_stats.tap_prep_ok_ts, smd_ts_now());
 			uhr_tgt_start_st_prep_timer(assoc_hapd, iap->sta_addr);
+			assoc_sta->smd_info.tap_stats.tap_prep_timer_started++;
+		}
 	}
 	return;
 }
@@ -3251,8 +3359,10 @@ static u8 *uhr_tgt_build_st_exec_resp_frame(struct hostapd_data *lhapd,
 		(*rcsl_count)++;
 	}
 
-	if (key_deliv_len && sta->wpa_sm)
+	if (key_deliv_len && sta->wpa_sm) {
 		pos = wpa_auth_build_key_delivery_elem(sta->wpa_sm, 0xFFFF, pos);
+		sta->smd_info.tap_stats.gtk_install_ok++;
+	}
 
 	pos = hostapd_eid_smd_bss_trans_exec_resp(
 		pos, lhapd->conf->smd.uhr_dl_drain_duration_tu);
@@ -3348,6 +3458,10 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 		}
 		if (uhr_target_ap_set_smd_ctx(lhapd, iap->sta_addr, smd_ctx)) {
 			wpa_printf(MSG_ERROR, "SMD ST EXEC Target AP: Failed to set ctx");
+			sta->smd_info.tap_stats.tap_exec_fail++;
+			SMD_REASON(sta->smd_info.tap_stats.tap_exec_fail_reasons,
+				   sta->smd_info.tap_stats.tap_exec_fail_reasons_head,
+				   TAP_EXEC_FAIL_CTX_SET);
 			uhr_iap_send_st_exec_resp(lhapd,
 						  iap->current_ap_mld_addr,
 						  iap->sta_addr,
@@ -3396,6 +3510,8 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 	/* Frame is complete; advance state before sending */
 	sta->smd_info.state = SMD_STA_ST_EXEC_DONE;
 	sta->smd_info.roam_sta = false;
+	sta->smd_info.tap_stats.tap_exec_ok++;
+	smd_ts_record(&sta->smd_info.tap_stats.tap_exec_ok_ts, smd_ts_now());
 
 	ret = uhr_iap_send_st_exec_resp(lhapd,
 					iap->current_ap_mld_addr,
