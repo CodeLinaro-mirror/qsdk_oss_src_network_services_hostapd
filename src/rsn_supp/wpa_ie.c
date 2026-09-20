@@ -681,7 +681,6 @@ int security_profile_build(u16 rsn_capab, const u8 *rsnxe, size_t rsnxe_len,
 
 	if (selected_profile_num < 0 || selected_profile_num > SECURITY_PROFILE_NUM_MAX)
 		return -1;
-
 	/* Reduced RSN Capabilities (Figure 9-aa71): B0=ExtKeyID, B1=OCVC */
 	if (rsn_capab & WPA_CAPABILITY_EXT_KEY_ID_FOR_UNICAST)
 		reduced_rsn_caps |= REDUCED_RSN_CAPS_EXT_KEY_ID;
@@ -774,7 +773,6 @@ int security_profile_build_sta(struct wpa_sm *sm,
 	rsnxe_len = wpa_gen_rsnxe(sm, rsnxe, sizeof(rsnxe));
 	if (rsnxe_len < 0)
 		return -1;
-
 	return security_profile_build(rsn_caps,
 				      rsnxe_len > 0 ? rsnxe : NULL,
 				      (size_t) rsnxe_len,
