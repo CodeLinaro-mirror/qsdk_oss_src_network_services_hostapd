@@ -818,6 +818,9 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 		hostapd_bss_deinit_no_free(hapd);
 		hostapd_drv_stop_ap(hapd);
 		hapd->beacon_set_done = 0;
+
+		if (hapd->csa_in_progress)
+			hostapd_cleanup_cs_params(hapd);
 	}
 
 	iface->cac_type = 0;
