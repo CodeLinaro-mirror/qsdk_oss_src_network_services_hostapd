@@ -921,4 +921,87 @@ int wpa_auth_802_1x_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const u8 *spa,
 			       size_t dhss_len, struct wpa_ptk *ptk,
 			       size_t kdk_len);
 
+/* ---- SMD timestamp ring primitives ------------------------------------ */
+
+/* Same layout as struct smd_ts_ring in ath12k/core.h (kernel side).
+ * Acquisition: struct os_reltime t; os_get_reltime(&t);
+ *              u64 ts = (u64)t.sec * 1000000ULL + t.usec; */
+#define SMD_TS_RING_SIZE  8
+
+struct smd_ts_ring {
+	uint64_t ts[SMD_TS_RING_SIZE]; /* circular buffer of µs-since-boot timestamps */
+	uint8_t  head;  /* next write slot (0 .. SMD_TS_RING_SIZE-1) */
+	uint8_t  count; /* valid entries (0 .. SMD_TS_RING_SIZE) */
+};
+
+static inline void smd_ts_record(struct smd_ts_ring *r, uint64_t ts_us)
+{
+	if (!r)
+		return;
+	r->ts[r->head] = ts_us;
+	r->head = (uint8_t)((r->head + 1) % SMD_TS_RING_SIZE);
+	if (r->count < SMD_TS_RING_SIZE)
+		r->count++;
+}
+
+/* Replay src entries oldest-first into dst via smd_ts_record.
+ * Preserves temporal ordering across roams; evicts oldest when dst fills. */
+static inline void smd_ts_ring_merge(struct smd_ts_ring *dst,
+				     const struct smd_ts_ring *src)
+{
+	int i;
+
+	if (!dst || !src)
+		return;
+	for (i = src->count - 1; i >= 0; i--) {
+		int slot = ((int)src->head - 1 - i +
+			    SMD_TS_RING_SIZE * 2) % SMD_TS_RING_SIZE;
+		smd_ts_record(dst, src->ts[slot]);
+	}
+}
+
+static inline uint64_t smd_ts_now(void)
+{
+	struct os_reltime t;
+
+	os_get_reltime(&t);
+	return (uint64_t)t.sec * 1000000ULL + (uint64_t)t.usec;
+}
+
+/** SMD_TS - record a timestamp into a smd_ts_ring */
+#define SMD_TS(ring_ptr)  smd_ts_record((ring_ptr), smd_ts_now())
+
+/** SMD_REASON_SIZE - capacity of each failure-reason ring */
+#define SMD_REASON_SIZE  5
+
+/** SMD_REASON - write one failure reason into a circular ring, newest first */
+#define SMD_REASON(arr, head_field, val) do {                          \
+	(arr)[(head_field)] = (val);                                       \
+	(head_field) = (uint8_t)(((head_field) + 1) % SMD_REASON_SIZE);   \
+} while (0)
+
+/**
+ * smd_reason_read - read up to SMD_REASON_SIZE reasons, newest first.
+ * Stops at the first zero (NONE) sentinel. Returns count written into @out.
+ */
+static inline int smd_reason_read(const void *ring, uint8_t head,
+				  int *out, int size, size_t elem_sz)
+{
+	int n = 0, i;
+
+	if (!ring || !out || size <= 0 || size > SMD_REASON_SIZE ||
+	    elem_sz == 0 || elem_sz > sizeof(int))
+		return 0;
+	for (i = 0; i < size; i++) {
+		int slot = ((int)head - 1 - i + size * 2) % size;
+		int val = 0;
+
+		os_memcpy(&val, (const char *)ring + slot * elem_sz, elem_sz);
+		if (val == 0)
+			break;
+		out[n++] = val;
+	}
+	return n;
+}
+
 #endif /* WPA_COMMON_H */

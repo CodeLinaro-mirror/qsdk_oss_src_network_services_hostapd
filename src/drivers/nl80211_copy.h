@@ -1390,6 +1390,18 @@
  * @NL80211_CMD_GET_SMD_CTX: Get UHR SMD dynamic context from the current AP MLD
  *     for the non-AP MLD; the driver returns it as an event back to user-space.
  *
+ * @NL80211_CMD_SMD_STATS_RESET: Reset all SMD roaming debug counters
+ * and clear the per-STA stats archive on the specified interface.
+ * Resets counters at all kernel layers (mac80211, ath12k) atomically.
+ * Triggered by hostapd_cli SMD_STATS_RESET or wpa_cli SMD_STATS_RESET.
+ *
+ * @NL80211_CMD_SMD_STATS_GET: Fetch all SMD roaming debug counters from
+ * all kernel layers (mac80211 + ath12k driver) for the specified
+ * interface.  An optional %NL80211_ATTR_MAC attribute selects a single
+ * STA (AP-mode per-STA query); absent means STA-mode or AP aggregate.
+ * The reply carries %NL80211_ATTR_SMD_STATS with a binary blob of type
+ * &struct nl80211_smd_stats.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -1688,6 +1700,10 @@ enum nl80211_commands {
 
 	NL80211_CMD_SET_SMD_CTX,
 	NL80211_CMD_GET_SMD_CTX,
+
+	NL80211_CMD_SMD_STATS_RESET,
+
+	NL80211_CMD_SMD_STATS_GET,
 
 	/* add new commands above here */
 
@@ -3213,6 +3229,13 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_SMD_CTX: Nested attribute associated with UHR SMD BSS
  *	Transition data. See &enum nl8021_smd_attrs.
+ *
+ * @NL80211_ATTR_SMD_STATS: Binary blob of type &struct nl80211_smd_stats
+ *	carrying all SMD roaming debug counters from kernel layers (mac80211 +
+ *	ath12k driver).  Returned in response to %NL80211_CMD_SMD_STATS_GET.
+ *	An optional %NL80211_ATTR_MAC in the request selects a single STA for
+ *	AP-mode per-STA queries; absent means STA-mode or AP aggregate.
+ *
  * @NL80211_ATTR_STA_MAPC: Indicate whether perticular peer is MAPC peer
  *
  * @NL80211_ATTR_MAPC_HW_CAPS: u32. MAPC hardware capability bitmap
@@ -3908,6 +3931,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_SMD_PREFERRED_TARGET,
 	NL80211_ATTR_SMD_LINK_TRANSITION_STATE,
 	NL80211_ATTR_SMD_CTX,
+
+	NL80211_ATTR_SMD_STATS,
 
 	NL80211_ATTR_STA_MAPC,
 	NL80211_ATTR_MAPC_HW_CAPS,
@@ -9352,6 +9377,226 @@ enum nl80211_smd_params_attrs {
 	__NL80211_SMD_PARAMS_ATTR_LAST,
 	NL80211_SMD_PARAMS_ATTR_MAX = __NL80211_SMD_PARAMS_ATTR_LAST - 1
 };
+
+/**
+ * struct nl80211_smd_reason_ring - transport container for a failure-reason ring
+ *
+ * @reasons: circular buffer of up to 5 failure reason codes (newest at head-1)
+ * @head: next write slot (0 .. 4)
+ * @pad: explicit padding to 32-bit alignment; must be zero
+ */
+struct nl80211_smd_reason_ring {
+	__u32 reasons[5];
+	__u8  head;
+	__u8  pad[3];
+} __attribute__((packed));
+
+/**
+ * struct nl80211_smd_ts_ring - transport container for a timestamp ring
+ *
+ * @ts: circular buffer of up to 8 µs-since-boot timestamps (newest at head-1)
+ * @head: next write slot (0 .. 7)
+ * @count: number of valid entries (0 .. 8)
+ * @pad: explicit padding to 64-bit alignment; must be zero
+ */
+struct nl80211_smd_ts_ring {
+	struct {
+		__u32 ts_lo;
+		__u32 ts_hi;
+	} __attribute__((packed)) ts[8];
+	__u8  head;
+	__u8  count;
+	__u8  pad[6];
+} __attribute__((packed));
+
+/**
+ * struct nl80211_smd_vendor_ctx - vendor-specific context fields
+ *
+ * @version: vendor context version
+ * @pad: explicit zero-fill; must be zero
+ * @dl_mgmt_sn: DL management frame sequence number
+ * @dl_mgmt_pn: DL management frame PN
+ * @ul_mgmt_sn: UL management frame sequence number
+ * @ul_mgmt_pn: UL management frame PN
+ * @dl_data_lsn_offset: per-TID DL data LSN offsets
+ */
+struct nl80211_smd_vendor_ctx {
+	__u8  version;
+	__u8  pad[1];
+	__u16 dl_mgmt_sn;
+	__u8  dl_mgmt_pn[16];
+	__u16 ul_mgmt_sn;
+	__u8  ul_mgmt_pn[16];
+	__u16 dl_data_lsn_offset[8];
+} __attribute__((packed));
+
+/**
+ * struct nl80211_smd_ctx_snapshot - transport container for one ath12k_smd_ctx.
+ *
+ * Carries SAP-collected or TAP-readback HW context for one PREP or EXEC phase.
+ * ul_reo_bmap is excluded (1024B per snapshot); use kernel debugfs for raw REO
+ * window bitmaps.  Only populated on per-STA queries (valid == 1).
+ */
+struct nl80211_smd_ctx_snapshot {
+	/* Header */
+	__u8  valid_ctx_bmap;		/* ATH12K_SMD_CTX_VALID_* bits */
+	__u8  pn_len;			/* cipher PN length */
+	__u8  valid;			/* 1 = snapshot was populated */
+	__u8  pad;
+
+	/* DL per-TID (8 TIDs) */
+	__u16 dl_sn[8];
+	__u8  dl_pn[16];		/* ath12k_smd_ctx.dl.pn — single entry */
+	__u16 dl_ba_buf_size[8];
+	__u16 dl_ba_timeout[8];
+	__u8  dl_ba_amsdu[8];
+	__u8  dl_ba_policy[8];
+	__u16 dl_ba_ext_buf_size[8];
+
+	/* UL per-TID (8 TIDs) */
+	__u16 ul_sn[8];
+	__u8  ul_pn[8][16];		/* per-TID PN */
+	__u16 ul_ba_buf_size[8];
+	__u16 ul_ba_timeout[8];
+	__u8  ul_ba_amsdu[8];
+	__u8  ul_ba_policy[8];
+	__u16 ul_ba_ext_buf_size[8];
+
+	/* Vendor ctx v1 scalars (ul_reo_bmap excluded — use kernel debugfs) */
+	struct nl80211_smd_vendor_ctx vendor;
+} __attribute__((packed));
+
+struct nl80211_smd_stats {
+	__u32 iface_type;
+	__u32 ap_role;
+
+	__u16 drv_sap_prep_rx;
+	__u16 drv_sap_prep_rx_fail;
+	struct nl80211_smd_reason_ring drv_sap_prep_rx_fail_reasons;
+	__u16 drv_sap_prep_ctx_queued;
+	__u16 drv_sap_prep_ctx_fail;
+	struct nl80211_smd_reason_ring drv_sap_prep_ctx_fail_reasons;
+	__u16 drv_sap_prep_ctx_cache_hit;
+	__u16 drv_sap_prep_ctx_rx_ni_called;
+	__u16 drv_sap_exec_rx;
+	__u16 drv_sap_exec_rx_fail;
+	struct nl80211_smd_reason_ring drv_sap_exec_rx_fail_reasons;
+	__u16 drv_sap_exec_ctx_queued;
+	__u16 drv_sap_exec_ctx_fail;
+	struct nl80211_smd_reason_ring drv_sap_exec_ctx_fail_reasons;
+	__u16 drv_sap_exec_ctx_rx_ni_called;
+
+	/* --- ath12k AP-role SAP context collection per-TID bitmaps ---
+	 * RX bitmaps are u32 (wifi8 TIDs 0-19); TX bitmaps are u16 (TIDs 0-7 + BIT(15)) */
+	__u32 drv_sap_prep_ctx_rx_tid_ok_bmap;
+	__u32 drv_sap_prep_ctx_rx_tid_fail_bmap;
+	__u16 drv_sap_prep_ctx_tx_tid_ok_bmap;
+	__u16 drv_sap_prep_ctx_tx_tid_fail_bmap;
+	__u32 drv_sap_exec_ctx_rx_tid_ok_bmap;
+	__u32 drv_sap_exec_ctx_rx_tid_fail_bmap;
+	__u16 drv_sap_exec_ctx_tx_tid_ok_bmap;
+	__u16 drv_sap_exec_ctx_tx_tid_fail_bmap;
+
+	/* --- ath12k AP-role (TAP side) per-TID bitmaps split by phase --- */
+	__u32 drv_tap_prep_ctx_rx_tid_ok_bmap;
+	__u32 drv_tap_prep_ctx_rx_tid_fail_bmap;
+	__u16 drv_tap_prep_ctx_tx_tid_ok_bmap;
+	__u16 drv_tap_prep_ctx_tx_tid_fail_bmap;
+	__u32 drv_tap_exec_ctx_rx_tid_ok_bmap;
+	__u32 drv_tap_exec_ctx_rx_tid_fail_bmap;
+	__u16 drv_tap_exec_ctx_tx_tid_ok_bmap;
+	__u16 drv_tap_exec_ctx_tx_tid_fail_bmap;
+	__u16 drv_tap_ctx_vendor_ok;
+	__u16 drv_tap_ctx_vendor_fail;
+
+	struct nl80211_smd_ts_ring drv_ap_prep_rx_ts;
+	struct nl80211_smd_ts_ring drv_ap_prep_ctx_rx_ni_called_ts;
+	struct nl80211_smd_ts_ring drv_ap_exec_rx_ts;
+	struct nl80211_smd_ts_ring drv_ap_exec_ctx_rx_ni_called_ts;
+	__u16 drv_sap_prep_resp_wmi_send_ok;
+	__u16 drv_sap_exec_resp_wmi_send_ok;
+	__u16 drv_sap_resp_pad[2];
+	struct nl80211_smd_ts_ring drv_sap_prep_resp_wmi_send_ok_ts;
+	struct nl80211_smd_ts_ring drv_sap_exec_resp_wmi_send_ok_ts;
+
+	/* SAP: bridge FDB updated for roamed STA (post-EXEC convergence) */
+	__u16 drv_sap_fdb_event_rx;
+	__u16 drv_sap_fdb_event_pad[3]; /* align to 8 bytes before ts ring */
+	struct nl80211_smd_ts_ring drv_sap_fdb_event_rx_ts;
+
+	__u32 drv_prep_mgmt_tx_queued;
+	__u32 drv_prep_mgmt_tx_queue_full;
+	__u32 drv_prep_mgmt_wmi_send_ok;
+	__u32 drv_prep_mgmt_wmi_send_fail;
+	__u32 drv_prep_mgmt_tx_compl_ack;
+	__u32 drv_prep_mgmt_tx_compl_no_ack;
+	__u32 drv_exec_mgmt_tx_queued;
+	__u32 drv_exec_mgmt_tx_queue_full;
+	__u32 drv_exec_mgmt_wmi_send_ok;
+	__u32 drv_exec_mgmt_wmi_send_fail;
+	__u32 drv_exec_mgmt_tx_compl_ack;
+	__u32 drv_exec_mgmt_tx_compl_no_ack;
+	__u32 drv_wmi_dl_drain_event_rx;
+	__u32 drv_prep_rx_tid_park_ok;
+	__u32 drv_prep_rx_tid_park_fail;
+	__u32 drv_prep_ext_ctx_transfer_ok;
+	__u32 drv_prep_ext_ctx_transfer_fail;
+	__u32 drv_exec_ext_ctx_activate_ok;
+	__u32 drv_exec_rx_tid_restore_ok;
+	__u32 drv_exec_rx_tid_restore_fail;
+
+	struct nl80211_smd_ts_ring drv_wmi_dl_drain_event_rx_ts;
+	struct nl80211_smd_ts_ring drv_prep_mgmt_wmi_send_ok_ts;
+	struct nl80211_smd_ts_ring drv_exec_mgmt_wmi_send_ok_ts;
+	__u32 drv_prep_mgmt_resp_rx;
+	struct nl80211_smd_ts_ring drv_prep_mgmt_resp_rx_ts;
+	__u32 drv_exec_mgmt_resp_rx;
+	__u32 drv_exec_mgmt_resp_rx_pad;
+	struct nl80211_smd_ts_ring drv_exec_mgmt_resp_rx_ts;
+
+	__u32 mac_prep_frame_build_fail;
+	__u32 mac_prep_frame_tx;
+	__u32 mac_prep_resp_rx;
+	__u32 mac_prep_resp_fail;
+	struct nl80211_smd_reason_ring mac_prep_resp_fail_reasons;
+	__u32 mac_prep_resp_ok;
+	__u32 mac_prep_activate_drv_fail;
+	__u32 mac_prep_activate_ok;
+	__u32 mac_prep_timeout;
+	__u32 mac_exec_frame_build_fail;
+	__u32 mac_exec_frame_tx;
+	__u32 mac_exec_resp_rx;
+	__u32 mac_exec_resp_fail;
+	struct nl80211_smd_reason_ring mac_exec_resp_fail_reasons;
+	__u32 mac_exec_resp_ok;
+	__u32 mac_exec_phase_a_fail;
+	struct nl80211_smd_reason_ring mac_exec_phase_a_fail_reasons;
+	__u32 mac_exec_phase_a_drv_ok;
+	__u32 mac_dl_drain_phase_b_start;
+	__u32 mac_dl_drain_phase_b_fail;
+	struct nl80211_smd_reason_ring mac_dl_drain_phase_b_fail_reasons;
+	__u32 mac_dl_drain_phase_b_ok;
+	__u32 mac_transition_notified;
+
+	struct nl80211_smd_ts_ring mac_dl_drain_phase_b_ok_ts;
+
+	__u16 mac_ap_prep_delivered_with_ctx;
+	__u16 mac_ap_prep_delivered_no_ctx;
+	__u16 mac_ap_prep_delivery_fail;
+	__u16 mac_ap_exec_delivered_with_ctx;
+	__u16 mac_ap_exec_delivered_no_ctx;
+	__u16 mac_ap_exec_delivery_fail;
+	/* TAP: L2 update frame sent after EXEC to flush bridge FDB */
+	__u16 mac_ap_l2_update_sent;
+	__u16 mac_ap_pad[1]; /* was [2]; one slot consumed by mac_ap_l2_update_sent */
+	struct nl80211_smd_ts_ring mac_ap_l2_update_sent_ts;
+
+	/* DP context snapshots — only populated on per-STA queries (valid == 1) */
+	struct nl80211_smd_ctx_snapshot sap_prep_ctx;
+	struct nl80211_smd_ctx_snapshot sap_exec_ctx;
+	struct nl80211_smd_ctx_snapshot tap_prep_ctx;
+	struct nl80211_smd_ctx_snapshot tap_exec_ctx;
+} __attribute__((packed));
 
 /**
  * enum nl80211_smd_transition_type - SMD parameters attributes
