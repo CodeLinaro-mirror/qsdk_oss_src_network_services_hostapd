@@ -642,12 +642,8 @@ static int wpa_supplicant_wps_cred(void *ctx,
 #ifndef CONFIG_NO_CONFIG_WRITE
 	if (wpa_s->conf->update_config &&
 	    wpa_config_write(wpa_s->confname, wpa_s->conf)) {
-		/* Keep the in-memory network block even if persisting it to
-		 * disk failed, so that a later credential in the same WPS
-		 * exchange is not skipped because of an unrelated storage
-		 * failure.
-		 */
 		wpa_printf(MSG_DEBUG, "WPS: Failed to update configuration");
+		return -1;
 	}
 #endif /* CONFIG_NO_CONFIG_WRITE */
 
