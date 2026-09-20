@@ -833,8 +833,12 @@ static int wpa_supplicant_ssid_bss_match(struct wpa_supplicant *wpa_s,
 	 * to override the RSNE checks below when the AP advertises a security
 	 * profile that matches the STA's configured AKM/cipher.
 	 */
-	if (wpas_security_profile_active(wpa_s))
+	if (ssid->security_profiles)
 		sp = wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_SECURITY_PROFILE);
+	if (debug_print)
+		wpa_dbg(wpa_s, MSG_ERROR,
+			"   SP IE check: sp_ie=%p ssid->security_profiles=%p",
+			sp, ssid->security_profiles);
 
 	if (sp && ssid->security_profiles &&
 	    security_profile_select_best(sp, ssid->security_profiles)) {
@@ -913,12 +917,10 @@ static int wpa_supplicant_ssid_bss_match(struct wpa_supplicant *wpa_s,
 						"   Security Profile element overrides RSNE pairwise cipher");
 				ie.pairwise_cipher |= WPA_CIPHER_GCMP_256;
 			}
-			if (!(ie.key_mgmt & ssid->key_mgmt)) {
-				if (debug_print)
-					wpa_dbg(wpa_s, MSG_DEBUG,
-						"   Security Profile element overrides RSNE key_mgmt");
-				ie.key_mgmt |= sp_key_mgmt;
-			}
+			if (debug_print)
+				wpa_dbg(wpa_s, MSG_DEBUG,
+					"   Security Profile element overrides RSNE key_mgmt");
+			ie.key_mgmt |= sp_key_mgmt;
 			/* All defined profiles mandate MFPC=1/MFPR=1 */
 			ie.capabilities |= WPA_CAPABILITY_MFPC |
 				WPA_CAPABILITY_MFPR;
@@ -1524,7 +1526,7 @@ static bool wpa_scan_res_ok(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 	 * into rsnxe_capa so that SAE H2E and SAE-PK checks below use the
 	 * security profile values.
 	 */
-	if (wpas_security_profile_active(wpa_s)) {
+	if (ssid->security_profiles) {
 		const u8 *sp_rsnx;
 		size_t sp_rsnx_len;
 		const u8 *sp = wpa_bss_get_ie_ext(

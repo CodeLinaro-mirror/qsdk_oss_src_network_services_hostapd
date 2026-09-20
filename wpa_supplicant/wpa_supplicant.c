@@ -2248,7 +2248,7 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		 * RSNE/RSNOE/RSNO2E/RSNXE/RSNXOE for AKM, pairwise cipher, RSN
 		 * capabilities, and RSNX capabilities selection.
 		 */
-		if (wpas_security_profile_active(wpa_s))
+		if (ssid->security_profiles)
 			bss_sp = wpa_bss_get_ie_ext(
 				bss, WLAN_EID_EXT_SECURITY_PROFILE);
 	} else {
@@ -2299,14 +2299,13 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 			int sp_key_mgmt = security_profile_get_key_mgmt(
 				bss_sp, ssid->key_mgmt);
 
-			if (!(ie.pairwise_cipher & WPA_CIPHER_GCMP_256) &&
-			    (ssid->pairwise_cipher & WPA_CIPHER_GCMP_256)) {
+			if ((ssid->pairwise_cipher & WPA_CIPHER_GCMP_256)) {
 				wpa_dbg(wpa_s, MSG_DEBUG,
 					"RSN: Security Profile element overrides RSNE pairwise cipher (GCMP-256)");
 				ie.pairwise_cipher |= WPA_CIPHER_GCMP_256;
 				ie.has_pairwise = 1;
 			}
-			if (!(ie.key_mgmt & ssid->key_mgmt) && sp_key_mgmt) {
+			if (sp_key_mgmt) {
 				wpa_dbg(wpa_s, MSG_DEBUG,
 					"RSN: Security Profile element overrides RSNE AKM (key_mgmt=0x%x)",
 					sp_key_mgmt);
@@ -11953,22 +11952,15 @@ void wpas_configure_frame_filters(struct wpa_supplicant *wpa_s)
  * wpas_security_profile_active - Is Security Profile element active?
  * @wpa_s: Pointer to wpa_supplicant data
  *
- * Returns true when Security Profile element functionality is enabled:
- *   - wpa_supplicant-SME path (WPA_DRIVER_FLAGS_SME): always active when the
- *     AP
- *     advertises the element.
- *   - Driver-SME path: only active when the driver explicitly indicates
- *     support via WPA_DRIVER_FLAGS2_SECURITY_PROFILE.
- *     Without this flag the feature is fully disabled even if the AP
- *     advertises the Security Profile element.
- *
- * Use this helper as the single gate for all Security Profile element parsing,
- * override, and validation logic so that the driver-SME path without driver
- * support behaves identically to a legacy STA.
+ * Returns true when the current network enables security profiles and either
+ * wpa_supplicant handles SME or the driver advertises Security Profile support.
+ * Candidate selection checks the candidate network's security_profiles directly
+ * since current_ssid may refer to a different network or be unset.
  */
 bool wpas_security_profile_active(struct wpa_supplicant *wpa_s)
 {
-	if (!wpa_s->conf->security_profiles)
+	if (!wpa_s->current_ssid ||
+	    !wpa_s->current_ssid->security_profiles)
 		return false;
 	if (wpa_s->drv_flags & WPA_DRIVER_FLAGS_SME)
 		return true; /* wpa_supplicant-SME: always active */

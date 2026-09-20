@@ -362,7 +362,7 @@ static struct wpabuf * sme_auth_build_sae_commit(struct wpa_supplicant *wpa_s,
 		 * that SAE H2E and SAE-PK checks below use the security
 		 * profile values.
 		 */
-		if (wpas_security_profile_active(wpa_s)) {
+		if (ssid->security_profiles) {
 			const u8 *sp_rsnx;
 			size_t sp_rsnx_len;
 			const u8 *sp = wpa_bss_get_ie_ext(
@@ -1830,7 +1830,7 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 			wpabuf_len(wpa_s->sec_prof_override_auth));
 	} else
 #endif /* CONFIG_TESTING_OPTIONS */
-	if (wpas_security_profile_active(wpa_s) &&
+	if (ssid->security_profiles &&
 	    wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_SECURITY_PROFILE) &&
 	    wpa_s->sel_security_profile &&
 	    wpa_s->security_profile_len > 0) {
@@ -1841,7 +1841,7 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 			wpa_printf(MSG_DEBUG,
 				   "EPPKE: Including Security Profile element in EPPKE Auth1 frame (profile=%d)",
 				   wpa_s->sel_security_profile->number);
-	} else if (wpas_security_profile_active(wpa_s)) {
+	} else if (ssid->security_profiles) {
 		u8 sp_elem[10];
 		int sp_len;
 
@@ -2134,7 +2134,7 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 			 * ie.key_mgmt, but authentication algorithm selection
 			 * is a separate decision here.
 			 */
-			if (wpas_security_profile_active(wpa_s)) {
+			if (ssid->security_profiles) {
 				const u8 *sp = wpa_bss_get_ie_ext(
 					bss, WLAN_EID_EXT_SECURITY_PROFILE);
 				int sp_km = security_profile_get_key_mgmt(
