@@ -4735,6 +4735,7 @@ static const char * const smd_drv_ctx_fail_str[] = {
 #define SMD_INLINE_TS_DRV(pos, end, r) \
 	__SMD_INLINE_TS(pos, end, r, SMD_DRVTS2USR((r).ts[_slot]))
 
+#ifdef CONFIG_ATH12K_SMD_DP_DEBUG
 /* Write sap+tap counters in roam-flow order into buf.
  * pos/end follow the snprintf-accumulation idiom.
  * Format: counter=N(reason1,reason2) or counter=N(ts1 ts2) inline.
@@ -4796,6 +4797,7 @@ static void smd_write_ctx_snapshot(char **pos, char *end,
 		*pos += os_snprintf(*pos, (size_t)(end - *pos), "\n");
 	}
 }
+#endif /* CONFIG_ATH12K_SMD_DP_DEBUG */
 
 static void smd_write_sap_tap_stats(char **pos, char *end,
 				    const struct smd_sap_roam_stats *sap,
@@ -4857,7 +4859,9 @@ static void smd_write_sap_tap_stats(char **pos, char *end,
 					    k->drv_sap_prep_ctx_rx_tid_fail_bmap,
 					    k->drv_sap_prep_ctx_tx_tid_ok_bmap,
 					    k->drv_sap_prep_ctx_tx_tid_fail_bmap);
+#ifdef CONFIG_ATH12K_SMD_DP_DEBUG
 			smd_write_ctx_snapshot(pos, end, "SAP-PREP", &k->sap_prep_ctx);
+#endif /* CONFIG_ATH12K_SMD_DP_DEBUG */
 		}
 
 		/* [mac80211-rx]: frame delivered to hostapd */
@@ -4983,7 +4987,9 @@ static void smd_write_sap_tap_stats(char **pos, char *end,
 					    k->drv_sap_exec_ctx_rx_tid_fail_bmap,
 					    k->drv_sap_exec_ctx_tx_tid_ok_bmap,
 					    k->drv_sap_exec_ctx_tx_tid_fail_bmap);
+#ifdef CONFIG_ATH12K_SMD_DP_DEBUG
 			smd_write_ctx_snapshot(pos, end, "SAP-EXEC", &k->sap_exec_ctx);
+#endif /* CONFIG_ATH12K_SMD_DP_DEBUG */
 		}
 
 		/* [mac80211-rx]: frame delivered to hostapd */
@@ -5133,7 +5139,9 @@ static void smd_write_sap_tap_stats(char **pos, char *end,
 					    k->drv_tap_prep_ctx_tx_tid_fail_bmap,
 					    k->drv_tap_ctx_vendor_ok,
 					    k->drv_tap_ctx_vendor_fail);
+#ifdef CONFIG_ATH12K_SMD_DP_DEBUG
 			smd_write_ctx_snapshot(pos, end, "TAP-PREP", &k->tap_prep_ctx);
+#endif /* CONFIG_ATH12K_SMD_DP_DEBUG */
 		}
 
 		/* [hapd-iap tx]: TAP sends IAP PREP response to SAP */
@@ -5198,7 +5206,9 @@ static void smd_write_sap_tap_stats(char **pos, char *end,
 					    k->drv_tap_exec_ctx_rx_tid_fail_bmap,
 					    k->drv_tap_exec_ctx_tx_tid_ok_bmap,
 					    k->drv_tap_exec_ctx_tx_tid_fail_bmap);
+#ifdef CONFIG_ATH12K_SMD_DP_DEBUG
 			smd_write_ctx_snapshot(pos, end, "TAP-EXEC", &k->tap_exec_ctx);
+#endif /* CONFIG_ATH12K_SMD_DP_DEBUG */
 		}
 
 		/* [hapd-proc]: TAP marks EXEC complete */
