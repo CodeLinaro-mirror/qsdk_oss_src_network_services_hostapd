@@ -5786,7 +5786,7 @@ static bool is_uhr_section_keyword(const char *s)
 	       os_strncmp(s, "ELR ", 4) == 0;
 }
 
-static void
+void
 npca_params_from_mode(struct hostapd_uhr_npca_params *npca,
 		      const struct uhr_npca_info *info)
 {
@@ -5930,24 +5930,6 @@ parse_npca_params(struct hostapd_data *hapd,
 }
 
 static int
-hostapd_validate_uhr_cu_state(struct hostapd_data *hapd) {
-
-	if (!hostapd_is_uhr_enabled(hapd)) {
-		wpa_printf(MSG_ERROR,
-			   "UPDATE_UHR_FEATURES: UHR not enabled on this BSS");
-		return 0;
-	}
-
-	if (hapd->uhr_ecu.state != UHR_ECU_IDLE) {
-		wpa_printf(MSG_ERROR,
-			   "UPDATE_UHR_FEATURES: UHR_CU already in progress, try again later");
-		return -1;
-	}
-
-	return 0;
-}
-
-static int
 hostapd_validate_mld_uhr_cu_state(struct hostapd_data *hapd)
 {
 	struct hostapd_data *link;
@@ -5966,62 +5948,13 @@ hostapd_validate_mld_uhr_cu_state(struct hostapd_data *hapd)
 }
 
 static int
-hostapd_send_uhr_params_critical_update(struct hostapd_data *hapd)
-{
-	size_t elem_len;
-	u8 *elem, *elem_end;
-	int ret;
-
-	wpa_printf(MSG_DEBUG,
-		   "UPDATE_UHR_FEATURES [%s]: Initiating UHR enhanced critical update",
-		   hapd->conf->iface);
-
-	elem_len = hostapd_eid_uhr_params_update_len(hapd, false, true);
-	if (elem_len == 0) {
-		wpa_printf(MSG_ERROR,
-			   "UPDATE_UHR_FEATURES [%s]: UHR Params Update element is empty",
-			   hapd->conf->iface);
-		return -1;
-	}
-
-	elem = os_malloc(elem_len);
-	if (!elem) {
-		wpa_printf(MSG_ERROR,
-			   "UPDATE_UHR_FEATURES [%s]: failed to allocate element buffer",
-			   hapd->conf->iface);
-		return -1;
-	}
-
-	elem_end = hostapd_eid_uhr_params_update(hapd, elem, false, true);
-	elem_len = elem_end - elem;
-
-	wpa_hexdump(MSG_DEBUG,
-		    "UPDATE_UHR_FEATURES: UHR Params Update element",
-		    elem, elem_len);
-
-	ret = hostapd_drv_critical_update(hapd, hapd->mld_link_id,
-					  NL80211_CU_TYPE_UHR_PARAMS,
-					  elem, elem_len);
-	os_free(elem);
-	if (ret)
-		wpa_printf(MSG_ERROR,
-			   "UPDATE_UHR_FEATURES [%s] NL80211_CMD_CRITICAL_UPDATE failed: %d",
-			   hapd->conf->iface,
-			   ret);
-	return ret;
-}
-
-
-static int
 hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 {
 	struct hostapd_bss_config *conf = hapd->conf;
 	struct uhr_params_update_config *upd = &conf->uhr_params_update;
 	struct hostapd_uhr_npca_params new_npca;
-	struct hostapd_data *bss;
 	u16 mode_changed = 0;
 	char *pos;
-	int i;
 	struct hostapd_hw_modes *mode;
 	struct uhr_npca_info *npca_info;
 
@@ -6073,41 +6006,10 @@ hostapd_ctrl_iface_update_uhr_features(struct hostapd_data *hapd, char *cmd)
 		return -1;
 	}
 
-
 	if (mode_changed & BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA)) {
-		for (i = 0; i < hapd->iface->num_bss; i++) {
-			bss = hapd->iface->bss[i];
-
-			if (hostapd_validate_uhr_cu_state(bss) < 0)
-				return -1;
-		}
-
-		for (i = 0; i < hapd->iface->num_bss; i++) {
-			bss = hapd->iface->bss[i];
-
-			if (!hostapd_is_uhr_enabled(bss))
-				continue;
-
-			bss->conf->uhr_params_update.mode_changed |= BIT(UHR_PARAMS_UPDATE_MODE_ID_NPCA);
-			bss->conf->uhr_params_update.npca = new_npca;
-
-			if (!bss->started)
-				hostapd_update_ecu_params(bss);
-
-			/* TODO: Add the changes for to update bss specific uhr_params_update features e.g DPS */
-
-
-			bss->uhr_ecu.countdown_timer = upd->adv_notification_interval;
-			if (hostapd_send_uhr_params_critical_update(bss)) {
-				wpa_printf(MSG_ERROR,
-					   "UPDATE_UHR_FEATURES: failed to send critical update command");
-
-				/*TODO: how to reset the state of other BSS? */
-				return -1;
-			}
-		}
+		hostapd_trigger_npca_ecu(hapd, &new_npca);
 	} else {
-		/*TODO - Add support for BSS specific critical update params update */
+		/* TODO - Add support for BSS specific critical update params update */
 	}
 
 	wpa_printf(MSG_DEBUG,
