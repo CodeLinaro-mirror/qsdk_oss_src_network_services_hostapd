@@ -2016,13 +2016,39 @@ int __get_pmk_1x(struct sta_info *sta, int akm, uint8_t pmk[PMK_LEN_MAX],
 	return 0;
 }
 
+static
+int __hostapd_if_get_pmk_802_1x(struct hostapd_data *hapd,
+				struct sta_info *sta,
+				uint8_t pmk[PMK_LEN_MAX], size_t *pmk_len,
+				uint8_t pmkid[PMKID_LEN], bool is_privacy_pmk)
+{
+#ifdef CONFIG_IEEE8021X_AUTH
+	struct eap_over_auth_data *eap_data = &sta->eap_auth_data;
+
+	if (!eap_data->pmk_len)
+		return -1;
+
+	os_memcpy(pmk, eap_data->pmk, eap_data->pmk_len);
+	*pmk_len = eap_data->pmk_len;
+
+	if (is_privacy_pmk)
+		os_memcpy(pmkid, eap_data->epp_pmkid_next, PMKID_LEN);
+	else
+		os_memcpy(pmkid, eap_data->epp_pmkid_cur, PMKID_LEN);
+
+	return 0;
+#else
+	return -1;
+#endif /* CONFIG_IEEE8021X_AUTH */
+}
+
 /*
  * Use MLD mac of STA in case of 11be STA
  * This API reflects the PMK/PMKID after Assoc request - response sequence
  */
 int hostapd_if_get_pmk(char *ifname, uint8_t *sta_mac,
 		       uint8_t pmk[PMK_LEN_MAX], size_t *pmk_len,
-		       uint8_t pmkid[PMKID_LEN])
+		       uint8_t pmkid[PMKID_LEN], bool is_privacy_pmk)
 {
 	struct hostapd_data *hapd;
 	struct sta_info *sta;
@@ -2057,6 +2083,9 @@ int hostapd_if_get_pmk(char *ifname, uint8_t *sta_mac,
 	 * caller (since this is what will be used in the 4-way handshake
 	 * that follows this assoc request).
 	 */
+	if (sta->auth_alg == WLAN_AUTH_802_1X)
+		return __hostapd_if_get_pmk_802_1x(hapd, sta, pmk, pmk_len,
+						   pmkid, is_privacy_pmk);
 	if (sta->wpa_sm->pmksa) {
 		struct rsn_pmksa_cache_entry *pmksa = sta->wpa_sm->pmksa;
 
