@@ -830,6 +830,9 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	os_free(sta->eap_auth_data.rsnxe);
 #endif /* CONFIG_IEEE8021X_AUTH */
 
+#ifdef CONFIG_IEEE8021X_AUTH
+	os_free(sta->eap_auth_data.eapol_pdu);
+#endif
 #ifdef RDK_ONEWIFI
 	os_free(sta->assoc_req);
 #endif

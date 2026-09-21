@@ -3641,6 +3641,11 @@ void set_pmk_802_1x_auth(struct hostapd_data *hapd, struct sta_info *sta,
 	u16 resp = WLAN_STATUS_SUCCESS;
 	struct wpabuf *reply;
 
+	if (!sta->eap_auth_data.dhss) {
+		wpa_printf(MSG_ERROR, "ERROR! DHSS not found in auth_response()\n");
+		return;
+	}
+
 	aa = hapd->own_addr;
 	alg = wpa_cipher_to_alg(sta->eap_auth_data.cipher);
 	key_len = wpa_cipher_key_len(sta->eap_auth_data.cipher);
@@ -3729,11 +3734,28 @@ static bool __initialize_eapol_sm_802_1x_auth(struct hostapd_data *hapd,
 	return true;
 }
 
+void handle_auth_802_1x_eapol(struct hostapd_data *hapd,
+			      struct sta_info *sta)
+{
+	if (!sta->eap_auth_data.eapol_pdu) {
+		wpa_printf(MSG_ERROR, "ERROR! No eapol-pdu was stored\n");
+		return;
+	}
+	if (!__initialize_eapol_sm_802_1x_auth(hapd, sta))
+		return;
+
+    /* Forward the extracted EAP PDU to AS */
+	ieee802_1x_receive(hapd, sta->addr,
+			   (const u8 *) sta->eap_auth_data.eapol_pdu,
+			   sta->eap_auth_data.eap_len,
+			   FRAME_NOT_ENCRYPTED);
+}
 #endif /* CONFIG_IEEE8021X_AUTH */
 
 static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 			       const u8 *pos, size_t len, u16 auth_alg,
-			       u16 auth_transaction)
+			       u16 auth_transaction, const u8 *auth_frame,
+			       size_t auth_frame_len, int rssi)
 {
 	struct ieee802_1x_hdr *eapol_pdu;
 	u16 encap_len, resp = WLAN_STATUS_SUCCESS;
@@ -3834,6 +3856,29 @@ static void handle_auth_802_1x(struct hostapd_data *hapd, struct sta_info *sta,
 			ieee802_11_rsnx_capab_len(
 				elems.rsnxe, elems.rsnxe_len,
 				WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY);
+
+#ifdef CONFIG_HOSTAPD_IF
+		if (hostapd_if_notify_auth(hapd, sta, auth_frame,
+					   auth_frame_len, rssi,
+					   WLAN_STATUS_SUCCESS,
+					   auth_transaction, 0,
+					   auth_alg, sta->addr) ==
+		    HOSTAPD_IF_FRAME_PROCESSING_WAIT) {
+			if (!hapd->conf->plugin_eap_offload) {
+				os_free(sta->eap_auth_data.eapol_pdu);
+				sta->eap_auth_data.eapol_pdu =
+					os_memdup(eapol_pdu, encap_len);
+				if (sta->eap_auth_data.eapol_pdu)
+					sta->eap_auth_data.eap_len = encap_len;
+				else {
+					wpa_printf(MSG_ERROR, "sta->eapol_pdu allocation failed\n");
+					sta->eap_auth_data.eap_len = 0;
+				}
+			}
+
+			return;
+		}
+#endif /* CONFIG_HOSTAPD_IF */
 
 		os_memset(&data, 0, sizeof(data));
 		if (enc_assoc &&
@@ -6033,7 +6078,8 @@ static void handle_auth(struct hostapd_data *hapd,
 		handle_auth_802_1x(hapd, sta, mgmt->u.auth.variable,
 				   len - IEEE80211_HDRLEN -
 				   sizeof(mgmt->u.auth),
-				   auth_alg, auth_transaction);
+				   auth_alg, auth_transaction, (const u8 *)mgmt,
+				   len, rssi);
 		return;
 #endif /* CONFIG_IEEE8021X_AUTH */
 #ifdef CONFIG_ENC_ASSOC

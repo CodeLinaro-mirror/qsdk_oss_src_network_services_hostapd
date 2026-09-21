@@ -722,5 +722,7 @@ u8 * hostapd_add_auth_comeback(struct hostapd_data *hapd, struct sta_info *sta,
 void set_pmk_802_1x_auth(struct hostapd_data *hapd, struct sta_info *sta,
 		  u16 auth_transaction,
 		  struct rsn_pmksa_cache_entry *cached_pmk);
+void handle_auth_802_1x_eapol(struct hostapd_data *hapd,
+			       struct sta_info *sta);
 
 #endif /* IEEE802_11_H */
