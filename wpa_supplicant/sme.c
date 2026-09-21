@@ -2846,6 +2846,7 @@ void sme_event_auth(struct wpa_supplicant *wpa_s, union wpa_event_data *data)
 {
 	struct wpa_ssid *ssid = wpa_s->current_ssid;
 	int ie_offset = 0;
+	u8 reject_bssid[ETH_ALEN];
 
 	if (ssid == NULL) {
 		wpa_dbg(wpa_s, MSG_DEBUG, "SME: Ignore authentication event "
@@ -2998,9 +2999,21 @@ void sme_event_auth(struct wpa_supplicant *wpa_s, union wpa_event_data *data)
 			    data->auth.status_code ==
 			    WLAN_STATUS_CHALLENGE_FAIL)
 				wpas_notify_sae_password_mismatch(wpa_s);
-			wpas_connection_failed(wpa_s, wpa_s->pending_bssid,
-					       NULL);
+			/*
+			 * Reset to DISCONNECTED and clear pending_bssid before
+			 * reporting the failure. wpas_connection_failed() may
+			 * re-enter wpa_supplicant_connect() via fast-associate;
+			 * if the state still shows AUTHENTICATING with the same
+			 * pending BSSID, that path takes the "already trying to
+			 * connect" branch and suppresses the recovery scan,
+			 * leaving the STA idle with nothing scheduled. Preserve
+			 * the rejected BSSID so it is still added to the ignore
+			 * list.
+			 */
+			os_memcpy(reject_bssid, wpa_s->pending_bssid, ETH_ALEN);
 			wpa_supplicant_set_state(wpa_s, WPA_DISCONNECTED);
+			os_memset(wpa_s->pending_bssid, 0, ETH_ALEN);
+			wpas_connection_failed(wpa_s, reject_bssid, NULL);
 
 			if (wpa_s->sme.sae_rejected_groups &&
 			    ssid->disabled_until.sec) {
@@ -3049,9 +3062,10 @@ void sme_event_auth(struct wpa_supplicant *wpa_s, union wpa_event_data *data)
 		    WLAN_STATUS_NOT_SUPPORTED_AUTH_ALG ||
 		    wpa_s->sme.auth_alg == data->auth.auth_type ||
 		    wpa_s->current_ssid->auth_alg == WPA_AUTH_ALG_LEAP) {
-			wpas_connection_failed(wpa_s, wpa_s->pending_bssid,
-					       NULL);
+			os_memcpy(reject_bssid, wpa_s->pending_bssid, ETH_ALEN);
 			wpa_supplicant_set_state(wpa_s, WPA_DISCONNECTED);
+			os_memset(wpa_s->pending_bssid, 0, ETH_ALEN);
+			wpas_connection_failed(wpa_s, reject_bssid, NULL);
 			return;
 		}
 
