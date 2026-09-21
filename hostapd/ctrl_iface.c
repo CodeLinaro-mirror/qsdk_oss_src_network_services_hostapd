@@ -5622,6 +5622,20 @@ static int hostapd_ctrl_iface_chan_switch(struct hostapd_iface *iface,
 		hostapd_chan_switch_config(iface->bss[i],
 					   &settings.freq_params);
 
+#ifdef CONFIG_QCN_EXTN
+		/* Non-beaconing BSS cannot carry CSA beacon countdown.
+		 * Skip NL80211_CMD_CHANNEL_SWITCH for it — the driver
+		 * handles its channel update via the beaconing vdev's
+		 * CSA count=0 event piggyback.
+		 */
+		if (iface->bss[i]->conf->bss_extn.non_beacon_bss) {
+			wpa_printf(MSG_DEBUG,
+				   "chan_switch: skipping non-beaconing BSS %s",
+				   iface->bss[i]->conf->iface);
+			continue;
+		}
+#endif /* CONFIG_QCN_EXTN */
+
 		err = hostapd_switch_channel(iface->bss[i], &settings);
 		if (err) {
 			ret = err;
