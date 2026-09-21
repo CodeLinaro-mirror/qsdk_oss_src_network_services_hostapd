@@ -2017,7 +2017,20 @@ static int ap_sta_set_vlan_helper(struct hostapd_data *hapd, struct sta_info *st
 			       HOSTAPD_LEVEL_DEBUG,
 			       "added new dynamic VLAN interface '%s'",
 			       vlan->ifname);
-	} else if (vlan && vlan->dynamic_vlan > 0) {
+	/*
+	 * dynamic_vlan tracks the number of STAs currently using this
+	 * dynamically created VLAN. Prior to VLAN idle aging, a value of
+	 * zero implied that the VLAN interface and associated group state
+	 * had already been removed. With delayed cleanup, dynamic_vlan may
+	 * temporarily be zero while the VLAN interface and group state are
+	 * still being retained for reuse. Allow reuse of the existing VLAN
+	 * in this state and cancel any pending idle cleanup timer before
+	 * marking the VLAN active again.
+	 */
+	} else if (vlan) {
+		if (eloop_cancel_timeout(vlan_cleanup, vlan, vlan_bss))
+			wpa_printf(MSG_DEBUG, "Cancel VLAN idle timer to "
+				   "reuse VLAN:%d", vlan->vlan_id);
 		vlan->dynamic_vlan++;
 		hostapd_logger(vlan_bss, sta->addr,
 			       HOSTAPD_MODULE_IEEE80211,

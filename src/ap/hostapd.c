@@ -1541,6 +1541,8 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
 	hostapd_ubus_free_bss(hapd);
 	accounting_deinit(hapd);
 	hostapd_deinit_wpa(hapd);
+
+	vlan_cancel_cleanup_for_hapd(hapd);
 	vlan_deinit(hapd);
 	hostapd_acl_deinit(hapd);
 #ifndef CONFIG_NO_RADIUS
