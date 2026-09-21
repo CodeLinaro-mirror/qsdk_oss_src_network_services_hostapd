@@ -71,7 +71,9 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 		       u16 auth_transaction,
 		       u8 allow_reuse,
 		       u16 auth_alg,
-		       const u8 *sa);
+		       const u8 *sa,
+		       size_t eap_offset,
+		       size_t eap_len);
 
 enum hostapd_if_frame_processing_decision
 hostapd_if_frame_fwd_decision(struct hostapd_data *hapd, u16 auth_alg,
@@ -132,7 +134,8 @@ int hostapd_if_pull_pmk(struct hostapd_data *hapd, uint8_t *sta_mac,
 			int *session_timeout);
 
 void hostapd_if_eapol_rx(struct hostapd_data *hapd, const u8 *sa,
-			 const u8 *data, u16 data_len);
+			 const u8 *data, u16 data_len,
+			 uint16_t auth_transaction);
 
 void hostapd_if_eapol_key_rx(struct hostapd_data *hapd, const u8 *sa,
 			     const u8 *data, u16 data_len);
@@ -217,7 +220,8 @@ static inline enum hostapd_if_frame_processing_decision
 hostapd_if_notify_auth(struct hostapd_data *hapd, struct sta_info *sta,
 		       const uint8_t *frame, uint16_t frame_len, int rssi,
 		       u16 status_code, u16 auth_transaction, u8 allow_reuse,
-		       u16 auth_alg, const u8 *sa)
+		       u16 auth_alg, const u8 *sa, size_t eap_offset,
+		       size_t eap_len)
 { return HOSTAPD_IF_FRAME_PROCESSING_CONTINUE; }
 static inline void
 hostapd_if_notify_deauth(struct hostapd_data *hapd, struct sta_info *sta,
@@ -267,7 +271,7 @@ hostapd_if_pull_pmk(struct hostapd_data *hapd, uint8_t *sta_mac,
 		    int *session_timeout) { return -1; }
 static inline void
 hostapd_if_eapol_rx(struct hostapd_data *hapd, const u8 *sa,
-		    const u8 *data, u16 data_len) {}
+		    const u8 *data, u16 data_len, uint16_t auth_transaction) {}
 static inline void
 hostapd_if_eapol_key_rx(struct hostapd_data *hapd, const u8 *sa,
 			 const u8 *data, u16 data_len) {}

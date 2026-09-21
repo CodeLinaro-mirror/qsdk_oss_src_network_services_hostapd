@@ -669,7 +669,10 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 		       u16 auth_transaction,
 		       u8 allow_reuse,
 		       u16 auth_alg,
-		       const u8 *sa)
+		       const u8 *sa,
+		       size_t eap_offset,
+		       size_t eap_len
+		)
 {
 	enum hostapd_if_frame_policy policy;
 	enum hostapd_if_frame_processing_decision decision;
@@ -689,6 +692,8 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 	ctx_req.data.auth_req.auth_transaction = auth_transaction;
 	ctx_req.data.auth_req.allow_reuse = allow_reuse;
 	ctx_req.data.auth_req.auth_alg = auth_alg;
+	ctx_req.data.auth_req.eap_offset = eap_offset;
+	ctx_req.data.auth_req.eap_len = eap_len;
 
 	/*
 	 * rx_link_id selection: hw_idx for non-MLD, otherwise
@@ -1096,7 +1101,8 @@ void hostapd_if_notify_deauth(struct hostapd_data *hapd,
 }
 
 void hostapd_if_eapol_rx(struct hostapd_data *hapd, const u8 *sa,
-			 const u8 *data, u16 data_len)
+			 const u8 *data, u16 data_len,
+			 uint16_t auth_transaction)
 {
 	int link_id = hapd->iface->current_hw_info ?
 		hapd->iface->current_hw_info->hw_idx : -1;
@@ -1110,7 +1116,8 @@ void hostapd_if_eapol_rx(struct hostapd_data *hapd, const u8 *sa,
 		wpa_printf(MSG_DEBUG, "%s: executing EAPOL RX through plugin",
 			   __func__);
 		hostapd_if_plugin->eapol_rx(hapd->conf->iface, link_id, sa,
-					    (u8 *) data, data_len);
+					    (u8 *) data, data_len,
+					    auth_transaction);
 	}
 #endif
 }
@@ -2423,6 +2430,95 @@ int hostapd_if_get_sta_info(char *ifname, uint8_t *sta_mac, struct hostapd_if_st
 /*
  * Use MLD mac of STA in case of 11be STA
  */
+static int __hostapd_if_apply_pmk(struct hostapd_data *hapd, struct sta_info *sta,
+			   uint8_t *pmk, size_t pmk_len,
+			   struct dot1x_ctx *ctx, bool dot1x_done)
+{
+	struct eapol_state_machine *eapol = NULL;
+	struct wpa_state_machine *wpa_sm = NULL;
+
+	if (!sta->wpa_sm) {
+		__inbound_error_event(hapd, sta->addr,
+				HOSTAPD_IF_SET_PMK_ERROR,
+				__func__, __LINE__);
+		wpa_printf(MSG_ERROR,
+			   "hostapd_if: set_pmk - wpa_sm not initialized for STA " MACSTR " on %s",
+			   MAC2STR(sta->addr), hapd->conf->iface);
+		return -1;
+	}
+
+	eapol = sta->eapol_sm;
+	wpa_sm = sta->wpa_sm;
+
+	if (!dot1x_done || !ctx)
+		return -1;
+
+	if (!hapd->conf->plugin_eap_offload) {
+		wpa_printf(MSG_ERROR, "SET PMK CALLED WITHOUT OFFLOAD CONF\n");
+		return -1;
+	}
+
+	if (!eapol || !eapol->eap_if) {
+		wpa_printf(MSG_ERROR,
+				"hostapd_if: set_pmk - eapol not ready for STA "
+				MACSTR " on %s",
+				MAC2STR(sta->addr), hapd->conf->iface);
+		return -1;
+	}
+
+	/* Set the MSK in the EAPOL key location so ieee802_1x_get_key
+	 * can retrieve it, then signal keyRun and keyAvailable so the
+	 * WPA PTK state machine can transition AUTHENTICATION2 ->
+	 * INITPMK -> PTKSTART without a full RADIUS exchange.
+	 *
+	 * The external application provides either the xxkey (FT) or
+	 * PMK(non-FT). We must reconstruct
+	 * the MSK buffer layout that INITPMK expects:
+	 *   - non-FT: PMK occupies the first half of the MSK
+	 *   - FT: PMK occupies the second half of the MSK
+	 *
+	 * Total buffer must be 2*PMK_LEN (64) so the len >= 2*PMK_LEN guard in
+	 * INITPMK passes and sm->xxkey gets set.
+	 */
+	bin_clear_free(eapol->eap_if->eapKeyData, eapol->eap_if->eapKeyDataLen);
+	eapol->eap_if->eapKeyDataLen = 0;
+	eapol->eap_if->eapKeyData = os_zalloc(2 * PMK_LEN);
+	if (!eapol->eap_if->eapKeyData) {
+		wpa_printf(MSG_ERROR,
+				"hostapd_if: set_pmk - failed to set eapKeyData for STA "
+				MACSTR " on %s",
+				MAC2STR(sta->addr), hapd->conf->iface);
+		eapol->eap_if->eapKeyDataLen = 0;
+		return -1;
+	}
+	if ((pmk_len <= PMK_LEN) &&
+	    wpa_key_mgmt_ft(wpa_auth_sta_key_mgmt(sta->wpa_sm)))
+		os_memcpy(eapol->eap_if->eapKeyData + PMK_LEN, pmk, pmk_len);
+	else
+		os_memcpy(eapol->eap_if->eapKeyData, pmk, pmk_len);
+	eapol->eap_if->eapKeyDataLen = 2 * PMK_LEN;
+	eapol->eap_if->eapKeyAvailable = true;
+	eapol->keyRun = true;
+
+	if (ctx->identity && ctx->identity_len) {
+		os_free(eapol->identity);
+		eapol->identity_len = 0;
+		eapol->identity = (u8 *) dup_binstr(ctx->identity,
+						    ctx->identity_len);
+		if (eapol->identity)
+			eapol->identity_len = ctx->identity_len;
+	}
+	if (ctx->cui && ctx->cui_len) {
+		wpabuf_free(eapol->radius_cui);
+		eapol->radius_cui = wpabuf_alloc_copy(ctx->cui, ctx->cui_len);
+	}
+	eapol->acct_multi_session_id = ctx->multi_session_id;
+
+	wpa_auth_sm_notify(wpa_sm);
+	return 0;
+}
+
+
 void __hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 			  uint8_t *pmk, size_t pmk_len,
 			  uint8_t *pmkid, int session_timeout,
@@ -2430,8 +2526,6 @@ void __hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 {
 	struct hostapd_data *hapd;
 	struct sta_info *sta;
-	struct eapol_state_machine *eapol = NULL;
-	struct wpa_state_machine *wpa_sm = NULL;
 
 	wpa_printf(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " pmk_len=%zu\n",
@@ -2457,85 +2551,9 @@ void __hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 			   MAC2STR(sta_mac), ifname);
 		goto __hostapd_if_set_pmk_exit;
 	}
-	if (!sta->wpa_sm) {
-		__inbound_error_event(hapd, sta_mac,
-				HOSTAPD_IF_SET_PMK_ERROR,
-				__func__, __LINE__);
-		wpa_printf(MSG_ERROR,
-			   "hostapd_if: set_pmk - wpa_sm not initialized for STA " MACSTR " on %s",
-			   MAC2STR(sta_mac), ifname);
-		goto __hostapd_if_set_pmk_exit;
-	}
 
-	eapol = sta->eapol_sm;
-	wpa_sm = sta->wpa_sm;
-
-	if (!dot1x_done || !ctx)
-		goto __hostapd_if_set_pmk_exit;
-
-	if (!hapd->conf->plugin_eap_offload) {
-		wpa_printf(MSG_ERROR, "SET PMK CALLED WITHOUT OFFLOAD CONF\n");
-		goto __hostapd_if_set_pmk_exit;
-	}
-
-	if (!eapol || !eapol->eap_if) {
-		wpa_printf(MSG_ERROR,
-				"hostapd_if: set_pmk - eapol not ready for STA "
-				MACSTR " on %s",
-				MAC2STR(sta_mac), ifname);
-		goto __hostapd_if_set_pmk_exit;
-	}
-
-	/* Set the MSK in the EAPOL key location so ieee802_1x_get_key
-	 * can retrieve it, then signal keyRun and keyAvailable so the
-	 * WPA PTK state machine can transition AUTHENTICATION2 ->
-	 * INITPMK -> PTKSTART without a full RADIUS exchange.
-	 *
-	 * The external application provides either the xxkey (FT) or
-	 * PMK(non-FT). We must reconstruct
-	 * the MSK buffer layout that INITPMK expects:
-	 *   - non-FT: PMK occupies the first half of the MSK
-	 *   - FT: PMK occupies the second half of the MSK
-	 *
-	 * Total buffer must be 2*PMK_LEN (64) so the len >= 2*PMK_LEN guard in
-	 * INITPMK passes and sm->xxkey gets set.
-	 */
-	bin_clear_free(eapol->eap_if->eapKeyData, eapol->eap_if->eapKeyDataLen);
-	eapol->eap_if->eapKeyDataLen = 0;
-	eapol->eap_if->eapKeyData = os_zalloc(2 * PMK_LEN);
-	if (!eapol->eap_if->eapKeyData) {
-		wpa_printf(MSG_ERROR,
-				"hostapd_if: set_pmk - failed to set eapKeyData for STA "
-				MACSTR " on %s",
-				MAC2STR(sta_mac), ifname);
-		eapol->eap_if->eapKeyDataLen = 0;
-		goto __hostapd_if_set_pmk_exit;
-	}
-	if ((pmk_len <= PMK_LEN) &&
-	    wpa_key_mgmt_ft(wpa_auth_sta_key_mgmt(sta->wpa_sm)))
-		os_memcpy(eapol->eap_if->eapKeyData + PMK_LEN, pmk, pmk_len);
-	else
-		os_memcpy(eapol->eap_if->eapKeyData, pmk, pmk_len);
-	eapol->eap_if->eapKeyDataLen = 2 * PMK_LEN;
-	eapol->eap_if->eapKeyAvailable = true;
-	eapol->keyRun = true;
-
-	if (ctx->identity && ctx->identity_len) {
-		os_free(eapol->identity);
-		eapol->identity_len = 0;
-		eapol->identity = (u8 *) dup_binstr(ctx->identity,
-						    ctx->identity_len);
-		if (eapol->identity)
-			eapol->identity_len = ctx->identity_len;
-	}
-	if (ctx->cui && ctx->cui_len) {
-		wpabuf_free(eapol->radius_cui);
-		eapol->radius_cui = wpabuf_alloc_copy(ctx->cui, ctx->cui_len);
-	}
-	eapol->acct_multi_session_id = ctx->multi_session_id;
-
-
-	wpa_auth_sm_notify(wpa_sm);
+	if (__hostapd_if_apply_pmk(hapd, sta, pmk, pmk_len, ctx, dot1x_done) == 0)
+		return;
 
 __hostapd_if_set_pmk_exit:
 	os_free((void *)pmk);
@@ -2738,7 +2756,8 @@ __hostapd_if_eapol_key_tx_exit:
  */
 void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
 			   uint8_t type, uint8_t *data, uint16_t data_len,
-			   bool with_header)
+			   bool with_header, struct __hostapd_if_pmk pmk,
+			   uint16_t auth_transaction)
 {
 	struct hostapd_data *hapd = NULL;
 	struct sta_info *sta;
@@ -2762,16 +2781,41 @@ void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
 		goto  __hostapd_if_eapol_tx_exit;
 	}
 
-	if (with_header) {
-		int link_id = -1;
+	if (sta->auth_alg == WLAN_AUTH_802_1X) {
+		const uint8_t *eap;
+		size_t eap_len;
+
+		/*
+		 * Set PMK from pmk to the eapol object
+		 * this makes it fetchable via get_msk from
+		 * hapd->send_eap_req
+		 */
+		if (pmk.pmk)
+			__hostapd_if_apply_pmk(hapd, sta, pmk.pmk, pmk.pmk_len,
+					       pmk.ctx, true);
+		if (with_header) {
+			eap =
+			(const u8 *) (data + sizeof(struct ieee802_1x_hdr));
+			eap_len = data_len - sizeof(struct ieee802_1x_hdr);
+		} else {
+			eap = (const u8 *) data;
+			eap_len = data_len;
+		}
+		hapd->send_eap_req(hapd, sta, IEEE802_1X_TYPE_EAP_PACKET,
+				   auth_transaction + 1, WLAN_STATUS_SUCCESS,
+				   NULL, eap, eap_len);
+	} else {
+		if (with_header) {
+			int link_id = -1;
 #ifdef CONFIG_IEEE80211BE
-		link_id = hapd->conf->mld_ap ? hapd->mld_link_id : -1;
+			link_id = hapd->conf->mld_ap ? hapd->mld_link_id : -1;
 #endif /* CONFIG_IEEE80211BE */
-		hostapd_drv_hapd_send_eapol(hapd, sta->addr, data, data_len,
-					    wpa_auth_pairwise_set(sta->wpa_sm) ? 1 : 0,
-					    hostapd_sta_flags_to_drv(sta->flags, sta->flags_ext), link_id);
-	} else
-		ieee802_1x_send(hapd, sta, type, data, data_len);
+			hostapd_drv_hapd_send_eapol(hapd, sta->addr, data, data_len,
+					wpa_auth_pairwise_set(sta->wpa_sm) ? 1 : 0,
+					hostapd_sta_flags_to_drv(sta->flags, sta->flags_ext), link_id);
+		} else
+			ieee802_1x_send(hapd, sta, type, data, data_len);
+	}
 
  __hostapd_if_eapol_tx_exit:
 	os_free((void *)data);
