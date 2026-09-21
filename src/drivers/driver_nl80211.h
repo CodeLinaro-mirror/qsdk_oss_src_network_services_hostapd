@@ -281,6 +281,7 @@ struct wpa_driver_nl80211_data {
 	int auth_wep_tx_keyidx;
 	int auth_local_state_change;
 	int auth_p2p;
+	int auth_sta_max_bw;
 	bool auth_mld;
 	u8 auth_mld_link_id;
 	u8 auth_ap_mld_addr[ETH_ALEN];
