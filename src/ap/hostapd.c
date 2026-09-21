@@ -11434,7 +11434,7 @@ hostapd_get_bonded_chan_center_freq(u16 freq, u16 bw, u16 center_freq_320_mhz,
 		return 0;
 	}
 
-	return (bonded_chan_ptr->start_freq + bonded_chan_ptr->end_freq) / 2;
+	return bonded_chan_ptr->start_freq - 10 + bw / 2;
 }
 
 
