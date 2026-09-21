@@ -4523,6 +4523,14 @@ enum qca_wlan_vendor_attr_config {
 	 * 1 = enable, 0 = disable (default).
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_DIAGNOSTIC_STA_VAP = 156,
+	/*
+	 * QCA_WLAN_VENDOR_ATTR_CONFIG_NON_BEACON_BSS - u8
+	 * When set to 1, marks this VAP as non-beaconing. The driver skips
+	 * sending the beacon template to firmware for this vdev. Must be set
+	 * before start_ap / enable_beacon.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_NON_BEACON_BSS = 157,
+
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
