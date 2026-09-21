@@ -3958,6 +3958,7 @@ static struct wpabuf *cip_build_assoc_req(u8 cip_element_id_ext, u8 padding_dela
 static void sme_deauth(struct wpa_supplicant *wpa_s, const u8 **link_bssids)
 {
 	int bssid_changed;
+	u8 failed_bssid[ETH_ALEN];
 	const u8 *bssid;
 
 	bssid_changed = !is_zero_ether_addr(wpa_s->bssid);
@@ -3974,7 +3975,17 @@ static void sme_deauth(struct wpa_supplicant *wpa_s, const u8 **link_bssids)
 	}
 	wpa_s->sme.prev_bssid_set = 0;
 
-	wpas_connection_failed(wpa_s, wpa_s->pending_bssid, link_bssids);
+	/*
+	 * Save the failed BSSID and clear association state before calling
+	 * wpas_connection_failed(), since that function may synchronously
+	 * retry association via wpa_supplicant_fast_associate(). If
+	 * wpa_state/pending_bssid are still left at their pre-failure values
+	 * during that retry, wpa_supplicant_connect()'s re-entrancy guard
+	 * mistakes the retry for an already-in-progress connection to the
+	 * same AP and silently drops it, leaving the STA disconnected until
+	 * some later unrelated trigger (e.g. a new WPS_PBC) kicks it again.
+	 */
+	os_memcpy(failed_bssid, wpa_s->pending_bssid, ETH_ALEN);
 	wpa_supplicant_set_state(wpa_s, WPA_DISCONNECTED);
 
 #ifdef CONFIG_ENC_ASSOC
@@ -3990,6 +4001,8 @@ static void sme_deauth(struct wpa_supplicant *wpa_s, const u8 **link_bssids)
 	os_memset(wpa_s->pending_bssid, 0, ETH_ALEN);
 	if (bssid_changed)
 		wpas_notify_bssid_changed(wpa_s);
+
+	wpas_connection_failed(wpa_s, failed_bssid, link_bssids);
 }
 
 
