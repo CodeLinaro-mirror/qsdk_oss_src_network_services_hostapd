@@ -1266,6 +1266,7 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 		rsne = hostapd_wpa_ie(hapd, WLAN_EID_RSN);
 		if (!rsne) {
 			wpa_printf(MSG_INFO, "No AP RSNE");
+			os_free(buf);
 			return -1;
 		}
 		os_memcpy(data_buf, rsne, 2 + rsne[1]);
@@ -1294,6 +1295,7 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 				       aa, sta->addr, data, data_len,
 				       frame, frame_len, mic)) {
 			wpa_printf(MSG_INFO, "Failed to derive MIC");
+			os_free(buf);
 			return -1;
 		}
 		os_memcpy(ptr + 2, mic, mic_len);
