@@ -1617,6 +1617,11 @@ static bool hostapd_sae_pk_password_without_pk(struct hostapd_bss_config *bss)
 
 bool hostapd_config_check_bss_6g(struct hostapd_bss_config *bss)
 {
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_is_mesh_vap_extn(bss) && bss->wpa == 0)
+		return true;
+#endif /* CONFIG_QCN_EXTN */
+
 	if (bss->wpa != WPA_PROTO_RSN) {
 		wpa_printf(MSG_ERROR,
 			   "Pre-RSNA security methods are not allowed in 6 GHz");
@@ -1632,8 +1637,21 @@ bool hostapd_config_check_bss_6g(struct hostapd_bss_config *bss)
 	if (bss->wpa_key_mgmt & (WPA_KEY_MGMT_PSK |
 				 WPA_KEY_MGMT_FT_PSK |
 				 WPA_KEY_MGMT_PSK_SHA256)) {
+#ifdef CONFIG_QCN_EXTN
+		/* For managed mesh VAPs (vap_submode=MESH), allow PSK-SHA256
+		 * on 6 GHz as a deliberate non-standard deployment exception.
+		 * Plain PSK and FT-PSK remain rejected even for mesh. */
+		if (!hostapd_is_mesh_vap_extn(bss) ||
+		    (bss->wpa_key_mgmt & (WPA_KEY_MGMT_PSK | WPA_KEY_MGMT_FT_PSK))) {
+			wpa_printf(MSG_ERROR, "Invalid AKM suite for 6 GHz");
+			return false;
+		}
+		wpa_printf(MSG_DEBUG,
+			   "6 GHz managed mesh VAP: allowing PSK-SHA256 (non-standard)");
+#else
 		wpa_printf(MSG_ERROR, "Invalid AKM suite for 6 GHz");
 		return false;
+#endif /* CONFIG_QCN_EXTN */
 	}
 
 	if (bss->rsn_pairwise & (WPA_CIPHER_WEP40 |
@@ -1773,9 +1791,18 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 	    bss->wpa_psk_radius != PSK_RADIUS_DURING_4WAY_HS &&
 	    (bss->wpa_psk_radius != PSK_RADIUS_REQUIRED ||
 	     bss->macaddr_acl != USE_EXTERNAL_RADIUS_AUTH)) {
-		wpa_printf(MSG_ERROR, "WPA-PSK enabled, but PSK or passphrase "
-			   "is not configured.");
-		return -1;
+#ifdef CONFIG_QCN_EXTN
+		if (hostapd_is_mesh_vap_extn(bss)) {
+			wpa_printf(MSG_DEBUG,
+				   "Managed mesh VAP: skipping PSK/passphrase requirement (keys installed via SET_KEY)");
+		} else {
+#endif /* CONFIG_QCN_EXTN */
+			wpa_printf(MSG_ERROR, "WPA-PSK enabled, but PSK or passphrase "
+				   "is not configured.");
+			return -1;
+#ifdef CONFIG_QCN_EXTN
+		}
+#endif /* CONFIG_QCN_EXTN */
 	}
 
 	if (full_config && !is_zero_ether_addr(bss->bssid)) {
