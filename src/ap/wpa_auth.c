@@ -7131,7 +7131,12 @@ static int wpa_group_config_group_keys(struct wpa_authenticator *wpa_auth,
 	struct wpa_auth_config *conf = &wpa_auth->conf;
 	int ret = 0;
 
+#ifdef CONFIG_QCN_EXTN
+	if (!conf->skip_gtk_install &&
+	    wpa_auth_set_key(wpa_auth, group->vlan_id,
+#else
 	if (wpa_auth_set_key(wpa_auth, group->vlan_id,
+#endif /* CONFIG_QCN_EXTN */
 			     wpa_cipher_to_alg(conf->wpa_group),
 			     broadcast_ether_addr, group->GN,
 			     group->GTK[group->GN - 1], group->GTK_len,
