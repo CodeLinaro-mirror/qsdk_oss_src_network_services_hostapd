@@ -4217,10 +4217,9 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 	struct hostapd_multi_mbssid_group *group;
 	struct hostapd_data *tx_hapd, *bss;
 	bool error = false, auto_stop = false, auto_start = false;
-	u8 current_bss_index, group_size;
 	char *token, *context = NULL;
-	u32 mbssid_idx_disabled_bmap = 0, *mbssid_idx_bmap;
-	int ret, i, j, reorder_done_index = -1;
+	u32 mbssid_idx_disabled_bmap = 0;
+	int ret, i;
 	size_t num_bss, max_num_bss;
 
 	if (!hapd || !hapd->iconf || !hapd->iface || !hapd->conf) {
@@ -4250,7 +4249,7 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 	}
 
 	tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
-	if (!tx_hapd) {
+	if (!tx_hapd && !hapd->iconf->disable_auto_mbssid_tx_bss) {
 		wpa_printf(MSG_ERROR, "TX BSS not found for %s",
 			   hapd->conf->iface);
 		return -1;
@@ -4263,28 +4262,15 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 		return 0;
 	}
 
-	/* Retrive the MBSSID index bitmap to be updated after changing
-	 * transmitting interface.
-	 */
 	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
-		group_size = hapd->iface->conf->group_size;
 		group = hapd->mbssid_group;
 		if (!group) {
 			wpa_printf(MSG_ERROR,
 				   "Invalid MBSSID group for the provided interface");
 			return -1;
 		}
-
-		mbssid_idx_bmap = &group->mbssid_idx_bmap;
-	} else {
-		group_size = 1 << hostapd_max_bssid_indicator(hapd);
-		mbssid_idx_bmap = &hapd->iface->mbssid_idx_bmap;
 	}
 
-	/* Store the current MBSSID index of the non-transmitted profile which
-	 * is to be the new transmitting profile.
-	 */
-	current_bss_index = hapd->mbssid_idx;
 	num_bss = hostapd_get_mbssid_max_num_bss(hapd);
 
 	if (auto_stop) {
@@ -4311,7 +4297,7 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 		}
 
 		/* Stop the transmitted profiles of the MBSSID group */
-		if (tx_hapd->beacon_set_done) {
+		if (tx_hapd && tx_hapd->beacon_set_done) {
 			ret = hostapd_disable_bss(tx_hapd, 0, AP_EVENT_DISABLED);
 			if (ret) {
 				wpa_printf(MSG_ERROR, "Failed to disable %s link %u",
@@ -4323,54 +4309,29 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 					   tx_hapd->conf->iface, tx_hapd->mld_link_id);
 			}
 		}
-	} else if (tx_hapd->started) {
+	} else if (tx_hapd && tx_hapd->started && !tx_hapd->disabled) {
 		wpa_printf(MSG_ERROR,
 			   "Profiles from MBSSID group must be disabled using disable_bss command before changing transmitted profile");
 		return -1;
-	}
-
-	*mbssid_idx_bmap = 0;
-	/* Rotate the interface array or group BSS list such that the new
-	 * transmitting profile comes to the front, stop rotation once this
-	 * happens. Shift the MBSSID indices for each profile with respect to
-	 * the new transmitting profile.
-	 */
-	for (i = 0; i < num_bss; i++) {
-		if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
-			if (reorder_done_index < 0)
-				bss = hostapd_get_multi_group_bss(group, 0);
+	} else if (!tx_hapd) {
+		for (i = 0; i < num_bss; i++) {
+			if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
+				bss = hostapd_get_multi_group_bss(group, i);
 			else
-				bss = hostapd_get_multi_group_bss(group,
-								  i - reorder_done_index);
-		} else {
-			if (reorder_done_index < 0)
-				bss = hapd->iface->bss[0];
-			else
-				bss = hapd->iface->bss[i - reorder_done_index];
-		}
+				bss = hapd->iface->bss[i];
 
-		if (!bss || !bss->conf)
-			continue;
+			if (!bss || !bss->conf || !bss->started)
+				continue;
 
-		if (bss->mbssid_idx < current_bss_index)
-			bss->mbssid_idx += group_size;
-
-		bss->mbssid_idx -= current_bss_index;
-		*mbssid_idx_bmap |= BIT(bss->mbssid_idx);
-
-		if (!bss->mbssid_idx) {
-			reorder_done_index = i;
-		} else if (reorder_done_index < 0) {
-			if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED) {
-				dl_list_del(&bss->mbssid_bss);
-				dl_list_add_tail(&group->bss_list, &bss->mbssid_bss);
-			} else {
-				for (j = 0; j < num_bss - 1; j++)
-					hapd->iface->bss[j] = hapd->iface->bss[j + 1];
-				hapd->iface->bss[num_bss - 1] = bss;
-			}
+			wpa_printf(MSG_ERROR,
+				   "All BSSes in the MBSSID group must be disabled before setting the transmitting BSS: %s link %u is still running",
+				   bss->conf->iface, bss->mld_link_id);
+			return -1;
 		}
 	}
+
+	if (hostapd_multi_mbssid_update_mbssid_tx_bss_indices(hapd))
+		return -1;
 
 	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
 		group->txbss = hapd;
@@ -4381,8 +4342,20 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 
 	/* Clear previous Tx BSS(tx_hapd) AID bitmap and init AID bitmap for new Tx BSS */
 	for (i = 0; i < max_num_bss; i++) {
-		tx_hapd->sta_aid[0] &= ~BIT(i);
+		if (tx_hapd)
+			tx_hapd->sta_aid[0] &= ~BIT(i);
 		hapd->sta_aid[0] |= BIT(i);
+	}
+
+	/* Set mbssid_tx_bss for the new transmitted profile because
+	 * without it, the bring-up will not complete when
+	 * disable_auto_mbssid_tx_bss is set to true.
+	 */
+	if (hapd->iconf->disable_auto_mbssid_tx_bss) {
+		if (tx_hapd && tx_hapd->conf->mbssid_tx_bss)
+			tx_hapd->conf->mbssid_tx_bss = 0;
+
+		hapd->conf->mbssid_tx_bss = 1;
 	}
 
 	if (!auto_start)

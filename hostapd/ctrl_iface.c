@@ -2517,6 +2517,9 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 		if (!hapd->conf->is_cmn_param && tx_hapd)
 			ieee802_11_update_beacons(tx_hapd->iface);
 		return 0;
+	} else if (os_strcmp(cmd, "mbssid_tx_bss") == 0) {
+		wpa_printf(MSG_ERROR, "Use set_mbssid_tx command");
+		return -1;
 #endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211AC
 	} else if (os_strcasecmp(cmd, "bss_vht_mu_beamformer") == 0 ||
