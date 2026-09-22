@@ -7623,19 +7623,6 @@ hostapd_enable_bss_handle_cac(struct hostapd_data *hapd)
 #endif /* CONFIG_QCN_EXTN */
 
 		/* Check DFS */
-		/* Refresh hw features from the driver so that the channel DFS
-		 * state reflects the kernel's authoritative view, including NOL
-		 * entries, before running hostapd_handle_dfs().
-		 */
-		if (hostapd_get_hw_features(iface) ||
-		    hostapd_select_hw_mode(iface) < 0 ||
-		    hostapd_set_current_hw_info(iface, iface->freq)) {
-			hapd->reenable = REENABLE_NONE;
-			wpa_printf(MSG_ERROR,
-				   "DFS: hw feature refresh failed for BSS %s",
-				   hapd->conf->iface);
-			return ENABLE_BSS_ERROR;
-		}
 		res = hostapd_handle_dfs(iface);
 		if (res <= 0) {
 			if (res < 0) {
@@ -7723,6 +7710,18 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 	}
 
 	wpa_printf(MSG_DEBUG, "Enable BSS %s", hapd->conf->iface);
+
+	/* Refresh hw features on first BSS enable for this iface. */
+	if (i == hapd_iface->num_bss &&
+	    (hostapd_get_hw_features(hapd_iface) ||
+	     hostapd_select_hw_mode(hapd_iface) < 0 ||
+	     hostapd_set_current_hw_info(hapd_iface, hapd_iface->freq))) {
+		hapd->reenable = REENABLE_NONE;
+		wpa_printf(MSG_ERROR,
+			   "hw feature refresh failed for BSS %s",
+			   hapd->conf->iface);
+		return -1;
+	}
 
 	/* Enable flow: HT scan -> CAC/DFS -> setup_bss. */
 #ifdef CONFIG_QCN_EXTN
