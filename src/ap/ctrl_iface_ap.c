@@ -4374,6 +4374,8 @@ int hostapd_ctrl_iface_set_mbssid_tx(struct hostapd_data *hapd, const char *cmd)
 
 	if (hapd->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
 		group->txbss = hapd;
+	else
+		hapd->iface->tx_bss = hapd;
 
 	max_num_bss = (1 << hostapd_max_bssid_indicator(hapd));
 
