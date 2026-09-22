@@ -2434,7 +2434,7 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			return -1;
 		}
 
-		if (hapd != tx_hapd) {
+		if (!tx_hapd || hapd != tx_hapd) {
 			wpa_printf(MSG_ERROR,
 				   "Fils are allowed to enable only on Tx BSS");
 			hapd->conf->fils_discovery_max_int = 0;
@@ -2472,7 +2472,7 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 			return -1;
 		}
 
-		if (hapd != tx_hapd) {
+		if (!tx_hapd || hapd != tx_hapd) {
 			wpa_printf(MSG_ERROR,
 				   "UBPRs are allowed to enable only on Tx BSS");
 			hapd->conf->unsol_bcast_probe_resp_interval = 0;
@@ -2501,7 +2501,7 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 #endif /* CONFIG_FILS */
 		}
 
-		ieee802_11_set_beacon_per_bss_only(tx_hapd);
+		ieee802_11_set_beacon_per_bss_only(hapd);
 
 		return ret;
 
@@ -2514,7 +2514,7 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 		ret = hostapd_set_iface(hapd->iconf, hapd->conf, cmd, value);
 		if (ret)
 			return ret;
-		if (!hapd->conf->is_cmn_param)
+		if (!hapd->conf->is_cmn_param && tx_hapd)
 			ieee802_11_update_beacons(tx_hapd->iface);
 		return 0;
 #endif /* CONFIG_IEEE80211AX */
@@ -2910,7 +2910,7 @@ static int hostapd_get_vendor_elements(struct hostapd_data *hapd, char *buf, siz
 		pos += ret;
 	}
 
-	if (hapd != tx_hapd) {
+	if (tx_hapd && hapd != tx_hapd) {
 		ret = os_snprintf(pos, end - pos, "Available vendor elements size: %zu\n",
 				  hapd->conf->available_vendor_elem_size);
 		if (os_snprintf_error(end - pos, ret))

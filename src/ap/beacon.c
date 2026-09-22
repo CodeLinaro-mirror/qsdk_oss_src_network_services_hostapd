@@ -775,11 +775,17 @@ ieee802_11_build_ap_params_mbssid(struct hostapd_data *hapd,
 
 #ifdef RDK_ONEWIFI
        tx_bss = hostapd_drv_mbssid_get_tx_bss(hapd);
+       if (!tx_bss)
+	       goto fail;
+
        len = hostapd_drv_eid_mbssid_len(tx_bss, WLAN_FC_STYPE_BEACON, &elem_count,
                                     NULL, 0, &rnr_len);
 #else
 
 	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+	if (!tx_bss)
+		goto fail;
+
 	len = hostapd_eid_mbssid_len(tx_bss, WLAN_FC_STYPE_BEACON, &elem_count,
 				     NULL, 0, &rnr_len, true, params,
 				     &is_len_calc_failed);
@@ -966,6 +972,8 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 	u8 param_ext_cap = 0;
 
 	hapd = hostapd_mbssid_get_tx_bss(hapd);
+	if (!hapd)
+		return 0;
 
 #ifdef CONFIG_WPS
 	if (hapd->wps_probe_resp_ie)
@@ -1335,6 +1343,9 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	bool is_len_calc_failed = false;
 
 	hapd = hostapd_mbssid_get_tx_bss(hapd);
+	if (!hapd)
+		return pos;
+
 	epos = (u8 *) params->resp + len;
 
 	*pos++ = WLAN_EID_SSID;
@@ -1762,6 +1773,11 @@ static void hostapd_gen_probe_resp(struct hostapd_data *hapd,
 #else
 	hapd = hostapd_mbssid_get_tx_bss(hapd);
 #endif /* RDK_ONEWIFI */
+
+	if (!hapd) {
+		params->resp_len = 0;
+		return;
+	}
 
 #define MAX_PROBERESP_LEN 768
 	buflen = MAX_PROBERESP_LEN;
@@ -2367,6 +2383,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 		      const struct hostapd_frame_info *fi)
 {
 	enum hostapd_hw_mode hw_mode = hapd->iface->current_mode->mode;
+	struct hostapd_data *tx_bss;
 	struct ieee802_11_elems elems;
 	const u8 *ie;
 	size_t ie_len;
@@ -2448,6 +2465,14 @@ void handle_probe_req(struct hostapd_data *hapd,
 			return;
 
 	if (!hapd->conf->send_probe_response)
+		return;
+
+#ifdef RDK_ONEWIFI
+	tx_bss = hostapd_drv_mbssid_get_tx_bss(hapd);
+#else /* RDK_ONEWIFI */
+	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+#endif /* RDK_ONEWIFI */
+	if (!tx_bss)
 		return;
 
 	if (ieee802_11_parse_elems(ie, ie_len, &elems, 0) == ParseFailed) {
@@ -2689,7 +2714,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 	/* Do not send Probe Response frame from a non-transmitting multiple
 	 * BSSID profile unless the Probe Request frame is directed at that
 	 * particular BSS. */
-	if (hapd != hostapd_mbssid_get_tx_bss(hapd) && res != EXACT_SSID_MATCH)
+	if (tx_bss != hapd && res != EXACT_SSID_MATCH)
 		return;
 
 	if (hapd->conf->notify_mgmt_frames) {
@@ -2870,12 +2895,15 @@ skip_mu_cap_war:
 #endif /* CONFIG_QCN_EXTN && CONFIG_IEEE80211AC */
 
 #ifdef RDK_ONEWIFI
-       hapd = hostapd_drv_mbssid_get_tx_bss(hapd);
+	tx_bss = hostapd_mbssid_get_tx_bss(tx_bss);
+	if (!tx_bss) {
+		os_free(params.resp);
+		return;
+	}
 #endif /* RDK_ONEWIFI */
 
-	ret = hostapd_drv_send_mlme(hostapd_mbssid_get_tx_bss(hapd),
-				    params.resp, params.resp_len, noack,
-				    csa_offs_len ? csa_offs : NULL,
+	ret = hostapd_drv_send_mlme(tx_bss, params.resp, params.resp_len,
+				    noack, csa_offs_len ? csa_offs : NULL,
 				    csa_offs_len, 0, rate, rate_type);
 
 	if (ret < 0)
@@ -3614,6 +3642,8 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	}
 
 	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+	if (!tx_bss)
+		return -1;
 
 #ifdef NEED_AP_MLME
 #define BEACON_HEAD_BUF_SIZE 256
@@ -4365,6 +4395,7 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 	struct wpa_driver_ap_params params;
 	struct hostapd_freq_params freq;
 	struct hostapd_iface *iface = hapd->iface;
+	struct hostapd_data *tx_bss;
 	struct hostapd_config *iconf = iface->conf;
 	struct hostapd_hw_modes *cmode = iface->current_mode;
 	struct wpabuf *beacon, *proberesp, *assocresp;
@@ -4409,6 +4440,13 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 		return -1;
 	}
 #endif /* CONFIG_IEEE80211AX */
+
+	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+	if (!tx_bss) {
+		wpa_printf(MSG_ERROR, "TX BSS not yet set for %s",
+			   hapd->conf->iface);
+		return -1;
+	}
 
 	hapd->beacon_set_done = 1;
 
@@ -4683,7 +4721,6 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 #endif /* CONFIG_QCN_EXTN */
 	if (hapd->conf->mld_ap && hapd->conf->ttlm_enable && !beacon_set &&
 	    hapd->iface->drv_flags2 & WPA_DRIVER_FLAGS2_TTLM_BEACON_OFFLOAD) {
-		struct hostapd_data *tx_bss = hostapd_mbssid_get_tx_bss(hapd);
 		struct mlo_ttlm_ie *est_ttlm =
 			&hapd->mld->ttlm_ctx.established_ttlm;
 		struct mlo_ttlm_ie *up_ttlm =
