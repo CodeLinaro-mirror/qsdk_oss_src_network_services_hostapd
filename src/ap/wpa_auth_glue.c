@@ -2211,6 +2211,19 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 }
 
 
+void hostapd_setup_wpa_mbssid(struct hostapd_data *hapd)
+{
+	struct hostapd_data *tx_bss;
+
+	if (!hapd->wpa_auth)
+		return;
+
+	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+	if (tx_bss && tx_bss != hapd)
+		hapd->wpa_auth->conf.tx_bss_auth = tx_bss->wpa_auth;
+}
+
+
 void hostapd_reconfig_wpa(struct hostapd_data *hapd)
 {
 	struct wpa_auth_config wpa_auth_conf;

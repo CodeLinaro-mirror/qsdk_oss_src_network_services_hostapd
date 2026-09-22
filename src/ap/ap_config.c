@@ -181,6 +181,8 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 	bss->bss_index = -1;
 #endif /* CONFIG_QCN_EXTN */
 
+	bss->mbssid_tx_bss = false;
+
 #ifdef CONFIG_IEEE80211R_AP
 	bss->ft_over_ds = 1;
 	bss->rkh_pos_timeout = 86400;
@@ -1917,6 +1919,13 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 		bss->bss_require_he = false;
 		wpa_printf(MSG_INFO,
 			   "Disabling bss_require_he as IEEE 802.11ax is disabled for this BSS");
+	}
+
+	if (full_config && bss->mbssid_tx_bss &&
+	    !conf->disable_auto_mbssid_tx_bss) {
+		bss->mbssid_tx_bss = false;
+		wpa_printf(MSG_WARNING,
+			   "Ignoring mbssid_tx_bss option as disable_auto_mbssid_tx_bss is not enabled");
 	}
 #endif /* CONFIG_IEEE80211AX */
 

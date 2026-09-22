@@ -510,6 +510,8 @@ struct hostapd_data {
 	struct wps_context *wps;
 
 	int beacon_set_done;
+	int beacon_set_pending;
+
 	u8 reenable;
 	struct wpabuf *wps_beacon_ie;
 	struct wpabuf *wps_probe_resp_ie;
