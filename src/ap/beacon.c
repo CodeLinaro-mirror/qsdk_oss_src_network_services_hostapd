@@ -1350,7 +1350,8 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 
 	*pos++ = WLAN_EID_SSID;
 
-	if (hapd->conf->ignore_broadcast_ssid && hapd != hapd_probed) {
+	if (hapd->conf->ignore_broadcast_ssid &&
+	    (params->is_ubpr_probe || hapd != hapd_probed)) {
 		if (hapd->conf->ignore_broadcast_ssid == 2) {
 			*pos++ = hapd->conf->ssid.ssid_len;
 			os_memset(pos, 0, hapd->conf->ssid.ssid_len);
@@ -3014,6 +3015,7 @@ u8 * hostapd_unsol_bcast_probe_resp(struct hostapd_data *hapd,
 	probe_params.known_bss_len = 0;
 	probe_params.mld_ap = NULL;
 	probe_params.mld_info = NULL;
+	probe_params.is_ubpr_probe = true;
 
 	hostapd_gen_probe_resp(hapd, &probe_params);
 	if (!probe_params.resp)
