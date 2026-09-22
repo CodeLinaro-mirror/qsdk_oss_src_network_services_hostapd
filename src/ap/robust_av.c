@@ -3848,6 +3848,7 @@ static void hostapd_process_scs_req(struct hostapd_data *hapd,
 
 		switch (request_type) {
 		case QM_ADD_REQ:
+			scs_req_desc->client_initiated_scs = 1;
 			ret = hostapd_process_scs_add(hapd, sta, scs_req_desc,
 						      status);
 			if (!ret)
@@ -3875,6 +3876,7 @@ static void hostapd_process_scs_req(struct hostapd_data *hapd,
 			break;
 
 		case QM_CHANGE_REQ:
+			scs_req_desc->client_initiated_scs = 1;
 			ret = hostapd_process_scs_change(hapd, sta, scs_req_desc,
 							 status);
 			if (!ret)
