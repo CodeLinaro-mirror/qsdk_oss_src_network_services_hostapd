@@ -6366,9 +6366,9 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 	/*Skip mbssid_add_bss if mbssid_group already set*/
 	if (hapd->mbssid_group != NULL) {
 		wpa_printf(MSG_INFO,
-			   "Bss[%s] already part of MBSSID group %d with bss_index:%zu",
-			   hapd->conf->iface, hapd->mbssid_group->group_id,
-			   hapd->mbssid_idx);
+			   "%s link %u is already part of group %d with MBSSID index:%zu",
+			   hapd->conf->iface, hapd->mld_link_id,
+			   hapd->mbssid_group->group_id, hapd->mbssid_idx);
 		return 0;
 	}
 
@@ -6378,8 +6378,9 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 	mbssid_max_interfaces = iface->mbssid_max_interfaces / num_hws;
 	if (iface->num_bss > mbssid_max_interfaces) {
 		wpa_printf(MSG_ERROR,
-			   "Failed to add %s, driver can only support %u interfaces in MBSSID",
-			   hapd->conf->iface, mbssid_max_interfaces);
+			   "Failed to add %s link %u, driver can only support %u interfaces in MBSSID",
+			   hapd->conf->iface, hapd->mld_link_id,
+			   mbssid_max_interfaces);
 		return -1;
 	}
 
@@ -6391,7 +6392,8 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 
 #ifdef CONFIG_QCN_EXTN
 	if (hostapd_validate_mbssid_configuration_extn(hapd)) {
-		wpa_printf(MSG_ERROR, "Invalid MBSSID configuration");
+		wpa_printf(MSG_ERROR, "%s link %u has invalid MBSSID configuration",
+			   hapd->conf->iface, hapd->mld_link_id);
 		return -1;
 	}
 
@@ -6415,7 +6417,9 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 #endif
 			if (multi_mbssid->num_mbssid_groups > multi_mbssid->mbssid_max_ngroups) {
 				wpa_printf(MSG_ERROR,
-					   "Configured MBSSID group size results in more groups that supported by driver");
+					   "With %s link %u configured MBSSID group size results in more groups than supported by driver",
+					   hapd->conf->iface,
+					   hapd->mld_link_id);
 				return -1;
 			}
 		}
@@ -6516,7 +6520,8 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 #endif
 	    (hostapd_addr_to_u64(bss->own_addr) & prefix_mask) != (addr & prefix_mask)) {
 		wpa_printf(MSG_ERROR,
-			   "New BSS (" MACSTR ") doesn't satisfy prefix requirement for the MBSSID groups",
+			   "%s link %u (" MACSTR ") for does not satisfy prefix requirement for the MBSSID groups",
+			   hapd->conf->iface, hapd->mld_link_id,
 			   MAC2STR(hapd->own_addr));
 		goto fail;
 	}
@@ -6549,15 +6554,16 @@ static int hostapd_multi_mbssid_add_bss(struct hostapd_data *hapd)
 		dl_list_add_tail(&group->bss_list, &hapd->mbssid_bss);
 
 	wpa_printf(MSG_INFO,
-		   "Bss[%s] added to MBSSID group %d with bss_index:%zu",
-		   hapd->conf->iface, hapd->mbssid_group->group_id,
+		   "%s link %u added to MBSSID group %d with bss_index:%zu",
+		   hapd->conf->iface, hapd->mld_link_id,
+		   hapd->mbssid_group->group_id,
 		   hapd->mbssid_idx);
 
 	group->num_bss++;
 	return 0;
 fail:
-	wpa_printf(MSG_ERROR, "Failed to add Bss[%s] to MBSSID group",
-		   hapd->conf->iface);
+	wpa_printf(MSG_ERROR, "Failed to add %s link %u to MBSSID group",
+		   hapd->conf->iface, hapd->mld_link_id);
 
 	if (hapd->iconf->mbssid != MULTI_MBSSID_GROUP_ENABLED)
 		return -1;
@@ -6596,8 +6602,8 @@ int hostapd_mbssid_setup_bss(struct hostapd_data *hapd)
 	size_t num_bss, i;
 
 	if (hostapd_multi_mbssid_add_bss(hapd)) {
-		wpa_printf(MSG_ERROR, "Failed to set MBSSID parameters for %s",
-			   hapd->conf->iface);
+		wpa_printf(MSG_ERROR, "Failed to set MBSSID parameters for %s link %u",
+			   hapd->conf->iface, hapd->mld_link_id);
 		return -1;
 	}
 
