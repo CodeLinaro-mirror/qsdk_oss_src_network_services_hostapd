@@ -2596,6 +2596,21 @@ static int ieee802_1x_erp_add_key(void *ctx, struct eap_server_erp_key *erp)
 #endif /* CONFIG_ERP */
 
 
+#ifdef CONFIG_HOSTAPD_IF
+static void ieee802_1x_dot1x_eap_success(void *ctx, void *sta_ctx)
+{
+	struct hostapd_data *hapd = ctx;
+	struct sta_info *sta = sta_ctx;
+	size_t identity_len = 0;
+	const u8 *identity;
+
+	identity = ieee802_1x_get_identity(sta->eapol_sm, &identity_len);
+	hostapd_if_event_dot1x_complete(hapd, sta->addr, identity, identity_len,
+					1);
+}
+#endif /* CONFIG_HOSTAPD_IF */
+
+
 int ieee802_1x_init(struct hostapd_data *hapd)
 {
 	struct eapol_auth_config conf;
@@ -2638,6 +2653,9 @@ int ieee802_1x_init(struct hostapd_data *hapd)
 	cb.erp_get_key = ieee802_1x_erp_get_key;
 	cb.erp_add_key = ieee802_1x_erp_add_key;
 #endif /* CONFIG_ERP */
+#ifdef CONFIG_HOSTAPD_IF
+	cb.dot1x_eap_success = ieee802_1x_dot1x_eap_success;
+#endif /* CONFIG_HOSTAPD_IF */
 
 	hapd->eapol_auth = eapol_auth_init(&conf, &cb);
 	if (!hapd->eapol_auth)
@@ -3140,15 +3158,6 @@ static bool ieee802_1x_finished(struct hostapd_data *hapd,
 	} else {
 		session_timeout = dot11RSNAConfigPMKLifetime;
 	}
-
-#ifdef CONFIG_HOSTAPD_IF
-	{
-		size_t identity_len = 0;
-		const u8 *identity = ieee802_1x_get_identity(sta->eapol_sm, &identity_len);
-
-		hostapd_if_event_dot1x_complete(hapd, sta->addr, identity, identity_len, success);
-	}
-#endif /* CONFIG_HOSTAPD_IF */
 
 	if (success && key && len >= PMK_LEN &&
 	    !sta->hs20_deauth_requested &&
