@@ -4121,7 +4121,7 @@ SM_STATE(WPA_PTK, PTKCALCNEGOTIATING)
 				"invalid MIC in msg 2/4 of 4-Way Handshake");
 		if (psk_found)
 			wpa_auth_psk_failure_report(sm->wpa_auth, sm->addr);
-		reason = WLAN_REASON_UNSPECIFIED;
+		reason = WLAN_REASON_MICHAEL_MIC_FAILURE;
 		conn_fail_event = true;
 		goto out;
 	}
