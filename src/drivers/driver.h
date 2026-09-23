@@ -6757,6 +6757,14 @@ enum wpa_event_type {
 	EVENT_SETUP_LINK_RECONFIG,
 
 	/**
+	 * EVENT_RX_CRITICAL_UPDATE - Updated critical parameters received
+	 * this event is emitted when updated critical parameters from driver
+	 * are received. updated critical parameters need to be updated in
+	 * probe/assoc response.
+	 */
+	EVENT_RX_CRITICAL_UPDATE,
+
+	/**
 	 * EVENT_NAN_CLUSTER_JOIN - Notification of a new cluster having been
 	 * joined or started.
 	 *
@@ -7888,6 +7896,16 @@ union wpa_event_data {
 		const u8 *resp_ie; /* Starting from Group Key Data */
 		size_t resp_ie_len;
 	} reconfig_info;
+
+	/**
+	 * Data for critical_update
+	 */
+	struct cu_event {
+		bool critical_flag;
+		u8 bpcc;
+		u8 switch_count;
+		u8 link_id;
+	} cu_event;
 
 	struct nan_cluster_join_info {
 		const u8 *bssid;
