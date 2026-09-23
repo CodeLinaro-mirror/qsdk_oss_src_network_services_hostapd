@@ -2504,7 +2504,7 @@ static bool dfs_chan_recovery_trigger_csa_to_target(struct hostapd_iface *iface,
 	if (dfs_compute_chan_params(tgt_chan, tgt_bw_mhz,
 				    &oper_width, &seg0, &sec) < 0) {
 		wpa_printf(MSG_WARNING,
-			   "DFS: chan recovery: preCAC CSA params failed for chan=%d bw=%d MHz",
+			   "DFS: chan recovery: CSA params failed for chan=%d bw=%d MHz",
 			   tgt_chan, tgt_bw_mhz);
 		return false;
 	}
@@ -5537,6 +5537,51 @@ int hostapd_start_background_cac(struct hostapd_iface *iface)
 }
 
 
+/**
+ * dfs_check_chan_for_rcac - Trigger CSA to the DFS channel recovery target
+ * once all target subchannels have cleared the Non-Occupancy Period.
+ *
+ * When all subchannels of the configured recovery target are DFS_USABLE or
+ * better (i.e. no subchannel is in NOL), issues a CSA to that channel.
+ * The driver starts foreground CAC on the target after the switch.
+ * Called from hostapd_dfs_nop_finished() after each NOP expiry, guarded
+ * by the caller for the appropriate regulatory domain.
+ *
+ * @iface: Pointer to hostapd interface data
+ */
+static void dfs_check_chan_for_rcac(struct hostapd_iface *iface)
+{
+	const struct dfs_chan_recovery_config *cfg;
+	struct hostapd_hw_modes *mode;
+	int cfg_bw_mhz, tgt_cen_freq, tgt_start;
+
+	if (!iface->conf->dfs_chan_recovery.feature_en)
+		return;
+
+	if (!iface->current_mode)
+		return;
+
+	mode = iface->current_mode;
+	cfg = &iface->conf->dfs_chan_recovery;
+	cfg_bw_mhz = dfs_convert_chwidth_to_mhz(cfg->chwidth,
+						iface->conf->secondary_channel);
+	if (!cfg_bw_mhz)
+		return;
+
+	tgt_cen_freq = dfs_chan_get_cen_freq(cfg->chan, cfg_bw_mhz);
+	if (!tgt_cen_freq)
+		return;
+
+	tgt_start = DFS_BLOCK_FIRST_FREQ(tgt_cen_freq, cfg_bw_mhz);
+	if (rcac_block_has_nol(mode, tgt_start, cfg_bw_mhz, cfg->chan))
+		return;
+
+	wpa_printf(MSG_INFO, "DFS: chan recovery: rcac: all subchannels of target chan=%d bw=%d MHz cleared NOL, triggering CSA", cfg->chan, cfg_bw_mhz);
+
+	if (!dfs_chan_recovery_trigger_csa_to_target(iface, cfg->chan, cfg_bw_mhz))
+		wpa_printf(MSG_WARNING, "DFS: chan recovery: rcac: CSA failed for chan=%d bw=%d MHz", cfg->chan, cfg_bw_mhz);
+}
+
 int hostapd_dfs_nop_finished(struct hostapd_iface *iface, int freq,
 			     int ht_enabled, int chan_offset, int chan_width,
 			     int cf1, int cf2,
@@ -5582,12 +5627,15 @@ int hostapd_dfs_nop_finished(struct hostapd_iface *iface, int freq,
 	} else if (dfs_switch_to_postnol_chan_extn(iface)) {
 		return 0;
 #endif
-	} else if (iface->dfs_domain == HOSTAPD_DFS_REGION_ETSI &&
-		   iface->conf->bgcac_en &&
-		   !iface->radar_background.cac_started) {
+	} else if (iface->conf->bgcac_en && !iface->radar_background.cac_started) {
 		wpa_printf(MSG_INFO,
 			   "PRECAC_NOP expired - resuming PRECAC on newly available channel");
-		hostapd_dfs_start_precac(iface);
+		if (iface->dfs_domain == HOSTAPD_DFS_REGION_ETSI)
+			hostapd_dfs_start_precac(iface);
+		else if (iface->dfs_domain == HOSTAPD_DFS_REGION_FCC)
+			dfs_check_chan_for_rcac(iface);
+		else
+			wpa_printf(MSG_DEBUG, "BG CAC not supported for %u", iface->dfs_domain);
 	} else if (dfs_use_radar_background(iface) &&
 			iface->radar_background.channel == -1) {
 		/* Reset radar background chain if disabled */
