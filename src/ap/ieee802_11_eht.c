@@ -160,6 +160,43 @@ static bool hostapd_conf_eht_rtwt_enabled(struct hostapd_data *hapd)
 	return (hapd->conf->twt_responder_caps == TWT_ITWT_BTWT_RTWT_ENABLED);
 }
 
+static void hostapd_eht_clear_inapplicable_bw_capab(
+	enum hostapd_hw_mode mode, u8 op_class,
+	struct ieee80211_eht_capabilities *cap)
+{
+	u16 bfme_ss_mask = 0;
+	u8 mu_cap_mask = 0;
+
+	if (mode == HOSTAPD_MODE_IEEE80211B ||
+	    mode == HOSTAPD_MODE_IEEE80211G) {
+		bfme_ss_mask |= EHT_PHY_BFMEE_SS_160MHZ_MASK;
+		mu_cap_mask |= EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_160MHZ |
+			EHT_PHYCAP_MU_BEAMFORMER_160MHZ;
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_160_IDX] &=
+			~EHT_PHYCAP_NUM_SD_160_MASK;
+	}
+
+	if (!is_6ghz_op_class(op_class)) {
+		bfme_ss_mask |= EHT_PHY_BFMEE_SS_320MHZ_MASK;
+		mu_cap_mask |= EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ |
+			EHT_PHYCAP_MU_BEAMFORMER_320MHZ;
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_320_LOW_IDX] &=
+			~EHT_PHYCAP_NUM_SD_320_LOW_MASK;
+		cap->phy_cap[EHT_PHYCAP_NUM_SD_320_HIGH_IDX] &=
+			~EHT_PHYCAP_NUM_SD_320_HIGH_MASK;
+	}
+
+	if (bfme_ss_mask) {
+		u16 phy = WPA_GET_LE16(
+			&cap->phy_cap[EHT_PHY_BFMEE_SS_80MHZ_IDX]);
+
+		phy &= ~bfme_ss_mask;
+		WPA_PUT_LE16(&cap->phy_cap[EHT_PHY_BFMEE_SS_80MHZ_IDX], phy);
+	}
+
+	cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &= ~mu_cap_mask;
+}
+
 u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 			   enum ieee80211_op_mode opmode)
 {
@@ -277,24 +314,6 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 			cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
 				~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ;
 	}
-
-       /*
-        * Enforce band-specific Non-OFDMA UL MU-MIMO constraints
-        * unconditionally, regardless of config or BSS-level overrides:
-        * - 2.4 GHz: EHT max BW is 40 MHz, so 160 MHz and 320 MHz
-        *   Non-OFDMA UL MU-MIMO bits are not applicable and must be cleared.
-        * - 5 GHz: 320 MHz is a 6 GHz-only feature and must be cleared.
-        */
-       if (mode->mode == HOSTAPD_MODE_IEEE80211B ||
-           mode->mode == HOSTAPD_MODE_IEEE80211G) {
-               cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
-                       ~(EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_160MHZ |
-                         EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ);
-       } else if (!is_6ghz_op_class(hapd->iconf->op_class)) {
-               /* 5 GHz: 320 MHz Non-OFDMA UL MU-MIMO not applicable */
-               cap->phy_cap[EHT_PHYCAP_MU_CAPABILITY_IDX] &=
-                       ~EHT_PHYCAP_NON_OFDMA_UL_MU_MIMO_320MHZ;
-       }
 
 	/* Apply BSS-level beamformee spatial streams overrides */
 	if (hapd->conf->eht_phy_capab_mask &
@@ -475,6 +494,11 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
 			cap->phy_cap[EHT_PHYCAP_MCS14_DUP_IN_6GHZ_IDX] &=
 				~EHT_PHYCAP_MCS14_DUP_IN_6GHZ;
 	}
+
+	/* Apply band restrictions after all BSS-level PHY overrides. */
+	hostapd_eht_clear_inapplicable_bw_capab(mode->mode,
+						hapd->iconf->op_class, cap);
+
 	pos = cap->optional;
 
 	mcs_nss_len = ieee80211_eht_mcs_set_size(mode->mode,
