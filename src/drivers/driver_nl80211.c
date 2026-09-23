@@ -6419,6 +6419,8 @@ static u32 sta_flags_nl80211(int flags)
 		f |= BIT(NL80211_STA_FLAG_ASSOCIATED);
 	if (flags & WPA_STA_SPP_AMSDU)
 		f |= BIT(NL80211_STA_FLAG_SPP_AMSDU);
+	if (flags & WPA_STA_FT_AUTH)
+		f |= BIT(NL80211_STA_FLAG_FT_AUTH);
 
 	return f;
 }
@@ -7363,7 +7365,9 @@ static int wpa_driver_nl80211_sta_set_flags(void *priv, const u8 *addr,
 	    ((total_flags & WPA_STA_MFP) &&
 	     nla_put_flag(msg, NL80211_STA_FLAG_MFP)) ||
 	    ((total_flags & WPA_STA_TDLS_PEER) &&
-	     nla_put_flag(msg, NL80211_STA_FLAG_TDLS_PEER)))
+	     nla_put_flag(msg, NL80211_STA_FLAG_TDLS_PEER)) ||
+	    ((total_flags & WPA_STA_FT_AUTH) &&
+	     nla_put_flag(msg, NL80211_STA_FLAG_FT_AUTH)))
 		goto fail;
 
 	nla_nest_end(msg, flags);

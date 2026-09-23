@@ -27,9 +27,9 @@
 #include "ap_drv_ops.h"
 
 
-u32 hostapd_sta_flags_to_drv(u32 flags)
+u32 hostapd_sta_flags_to_drv(u64 flags)
 {
-	int res = 0;
+	u32 res = 0;
 	if (flags & WLAN_STA_AUTHORIZED)
 		res |= WPA_STA_AUTHORIZED;
 	if (flags & WLAN_STA_WMM)
@@ -44,6 +44,9 @@ u32 hostapd_sta_flags_to_drv(u32 flags)
 		res |= WPA_STA_ASSOCIATED;
 	if (flags & WLAN_STA_SPP_AMSDU)
 		res |= WPA_STA_SPP_AMSDU;
+	if (flags & WLAN_STA_FT_AUTH)
+		res |= WPA_STA_FT_AUTH;
+
 	return res;
 }
 
@@ -504,7 +507,8 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    const struct ieee80211_uhr_capabilities *uhr_capab,
 		    size_t uhr_capab_len,
 		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
-		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
+		    u64 flags, u8 qosinfo, u8 vht_opmode,
+		    int supp_p2p_ps,
 		    int set, const u8 *link_addr, bool mld_link_sta,
 		    u16 eml_cap, bool epp_sta)
 {

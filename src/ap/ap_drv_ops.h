@@ -16,7 +16,7 @@ struct ieee80211_ht_capabilities;
 struct ieee80211_vht_capabilities;
 struct hostapd_freq_params;
 
-u32 hostapd_sta_flags_to_drv(u32 flags);
+u32 hostapd_sta_flags_to_drv(u64 flags);
 int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 			       struct wpabuf **beacon,
 			       struct wpabuf **proberesp,
@@ -50,7 +50,8 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    const struct ieee80211_uhr_capabilities *uhr_capab,
 		    size_t uhr_capab_len,
 		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
-		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
+		    u64 flags, u8 qosinfo, u8 vht_opmode,
+		    int supp_p2p_ps,
 		    int set, const u8 *link_addr, bool mld_link_sta,
 		    u16 eml_cap, bool epp_sta);
 int hostapd_set_privacy(struct hostapd_data *hapd, int enabled);

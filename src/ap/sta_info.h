@@ -35,6 +35,7 @@
 #define WLAN_STA_WDS BIT_ULL(14)
 #define WLAN_STA_ASSOC_REQ_OK BIT_ULL(15)
 #define WLAN_STA_WPS2 BIT_ULL(16)
+#define WLAN_STA_GAS BIT_ULL(17)
 #define WLAN_STA_VHT BIT_ULL(18)
 #define WLAN_STA_WNM_SLEEP_MODE BIT_ULL(19)
 #define WLAN_STA_VHT_OPMODE_ENABLED BIT_ULL(20)
@@ -50,6 +51,7 @@
 #define WLAN_STA_PENDING_DEAUTH_CB BIT_ULL(30)
 #define WLAN_STA_NONERP BIT_ULL(31)
 #define WLAN_STA_UHR BIT_ULL(32)
+#define WLAN_STA_FT_AUTH BIT_ULL(33)
 
 /* Maximum number of supported rates (from both Supported Rates and Extended
  * Supported Rates IEs). */
