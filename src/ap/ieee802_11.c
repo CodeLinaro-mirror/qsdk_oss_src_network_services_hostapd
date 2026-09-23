@@ -1670,6 +1670,20 @@ static int auth_sae_send_commit(struct hostapd_data *hapd,
 	struct wpabuf *data;
 	int reply_res;
 	u16 status;
+	u8 *dst = sta->addr;
+#ifdef CONFIG_IEEE80211BE
+	u8 link_id = hapd->mld_link_id;
+
+	if (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta) {
+		/*
+		 * dst address should be partner link peer address,
+		 * if receive auth frame from sta partner link with same mld address
+		 * before disconnect with assoc link,
+		 */
+		if (sta->unadded_sta)
+			dst = sta->mld_info.links[link_id].peer_addr;
+	}
+#endif /* CONFIG_IEEE80211BE */
 
 	data = auth_build_sae_commit(hapd, sta, update, status_code);
 	if (!data && sta->sae->tmp &&
@@ -1693,7 +1707,7 @@ static int auth_sae_send_commit(struct hostapd_data *hapd,
 		status = hapd->conf->sae_commit_status;
 	}
 #endif /* CONFIG_TESTING_OPTIONS */
-	reply_res = send_auth_reply(hapd, sta, sta->addr,
+	reply_res = send_auth_reply(hapd, sta, dst,
 				    WLAN_AUTH_SAE, 1,
 				    status, wpabuf_head(data),
 				    wpabuf_len(data), "sae-send-commit");
@@ -1709,12 +1723,28 @@ static int auth_sae_send_confirm(struct hostapd_data *hapd,
 {
 	struct wpabuf *data;
 	int reply_res;
+	u8 *dst = sta->addr;
+
+#ifdef CONFIG_IEEE80211BE
+	u8 link_id = hapd->mld_link_id;
+	if (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta) {
+		if (sta->unadded_sta) {
+
+			/*
+			 * dst address should be partner link peer address,
+			 * if receive auth frame from sta partner link with same mld address
+			 * before disconnect with assoc link,
+			 */
+			dst = sta->mld_info.links[link_id].peer_addr;
+		}
+	}
+#endif /* CONFIG_IEEE80211BE */
 
 	data = auth_build_sae_confirm(hapd, sta);
 	if (data == NULL)
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 
-	reply_res = send_auth_reply(hapd, sta, sta->addr,
+	reply_res = send_auth_reply(hapd, sta, dst,
 				    WLAN_AUTH_SAE, 2,
 				    WLAN_STATUS_SUCCESS, wpabuf_head(data),
 				    wpabuf_len(data), "sae-send-confirm");
@@ -2345,12 +2375,22 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 	const u8 *pos, *end;
 	int sta_removed = 0;
 	bool success_status;
+	const u8 *dst = mgmt->sa;
+#ifdef CONFIG_IEEE80211BE
+	u8 link_id = hapd->mld_link_id;
+#endif
 
 	if (!groups) {
 		groups = default_groups;
 		if (hostapd_config_sae_ext_key(conf))
 			default_groups[1] = 20;
 	}
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap && sta && sta->mld_info.mld_sta &&
+	    sta->unadded_sta)
+		dst = sta->mld_info.links[link_id].peer_addr;
+#endif /* CONFIG_IEEE80211BE */
 
 #ifdef CONFIG_TESTING_OPTIONS
 	if (hapd->conf->sae_reflection_attack &&
@@ -2359,7 +2399,7 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 		pos = mgmt->u.auth.variable;
 		end = ((const u8 *) mgmt) + len;
 		resp = status_code;
-		send_auth_reply(hapd, sta, sta->addr,
+		send_auth_reply(hapd, sta, dst,
 				WLAN_AUTH_SAE,
 				auth_transaction, resp, pos, end - pos,
 				"auth-sae-reflection-attack");
@@ -2369,7 +2409,7 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 	if (hapd->conf->sae_commit_override &&
 	    auth_transaction == WLAN_AUTH_TR_SEQ_SAE_COMMIT) {
 		wpa_printf(MSG_DEBUG, "SAE: TESTING - commit override");
-		send_auth_reply(hapd, sta, sta->addr,
+		send_auth_reply(hapd, sta, dst,
 				WLAN_AUTH_SAE,
 				auth_transaction, resp,
 				wpabuf_head(hapd->conf->sae_commit_override),
@@ -2685,7 +2725,7 @@ reply:
 		    !data && end - pos >= 2)
 			data = wpabuf_alloc_copy(pos, 2);
 
-		send_auth_reply(hapd, sta, sta->addr,
+		send_auth_reply(hapd, sta, dst,
 				WLAN_AUTH_SAE,
 				auth_transaction, resp,
 				data ? wpabuf_head(data) : (u8 *) "",
@@ -5863,7 +5903,6 @@ static void handle_auth(struct hostapd_data *hapd,
 			return;
 		}
 #endif /* CONFIG_MESH */
-
 		sta = ap_sta_add(hapd, sa);
 		if (!sta) {
 			wpa_printf(MSG_DEBUG, "ap_sta_add() failed");
@@ -5961,10 +6000,17 @@ static void handle_auth(struct hostapd_data *hapd,
 	    (!(sta->flags & WLAN_STA_MFP) || !ap_sta_is_authorized(sta)) &&
 	    !(hapd->conf->mesh & MESH_ENABLED) &&
 	    !(sta->added_unassoc) && auth_alg != WLAN_AUTH_PASN) {
-		if (ap_sta_re_add(hapd, sta) < 0) {
-			resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
-			goto fail;
+		res = ap_sta_check_link_sta(hapd, sta);
+		if (!res) {
+			if (ap_sta_re_add(hapd, sta) < 0) {
+				resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
+				goto fail;
+			}
 		}
+#ifdef CONFIG_IEEE80211BE
+		if (res)
+			sta->unadded_sta = true;
+#endif /* CONFIG_IEEE80211BE */
 	}
 
 	switch (auth_alg) {
@@ -6111,8 +6157,14 @@ static void handle_auth(struct hostapd_data *hapd,
 	dst = mgmt->sa;
 
 #ifdef CONFIG_IEEE80211BE
-	if (ap_sta_is_mld(hapd, sta))
-		dst = sta->addr;
+	if (ap_sta_is_mld(hapd, sta)) {
+		u8 link_id = hapd->mld_link_id;
+
+		if (!sta->unadded_sta)
+			dst = sta->addr;
+		else
+			dst = sta->mld_info.links[link_id].peer_addr;
+	}
 #endif /* CONFIG_IEEE80211BE */
 
 	reply_res = send_auth_reply(hapd, sta, dst, auth_alg,
@@ -6853,6 +6905,28 @@ static bool check_sa_query(struct hostapd_data *hapd, struct sta_info *sta,
 	return false;
 }
 
+#ifdef CONFIG_IEEE80211BE
+static bool check_sa_query_partner_link(struct hostapd_data *hapd, struct sta_info *sta,
+					 enum link_parse_type type, const u8 *ies, size_t ies_len)
+{
+	struct hostapd_data *bss;
+	struct sta_info *lsta;
+
+	if (sta->mld_info.mld_sta &&
+	    sta->unadded_sta &&
+	    (sta->flags & WLAN_STA_AUTH)) {
+		for_each_mld_link(bss, hapd) {
+			if (bss == hapd)
+				continue;
+			lsta = ap_get_sta(bss, sta->addr);
+			if (lsta && check_sa_query(bss, lsta, type, ies, ies_len,
+						 false))
+				return true;
+		}
+	}
+	return false;
+}
+#endif /* CONFIG_IEEE80211BE */
 
 static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			     const u8 *ies, size_t ies_len,
@@ -7186,6 +7260,8 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 #ifdef CONFIG_IEEE80211BE
 		struct mld_info *info = &sta->mld_info;
 		bool init = !sta->wpa_sm;
+		if (!assoc_wpa_sm && check_sa_query_partner_link(hapd, sta, type, ies, ies_len))
+			return WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY;
 #endif /* CONFIG_IEEE80211BE */
 
 		wpa_ie -= 2;
@@ -8091,6 +8167,7 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 			ap_sta_remove_link_sta(hapd, sta);
 			hostapd_drv_sta_remove(hapd, sta->addr);
 			sta->flags &= ~(WLAN_STA_ASSOC | WLAN_STA_AUTHORIZED);
+			sta->unadded_sta = false;
 
 			if (hostapd_sta_add(hapd, sta->addr, 0, 0,
 					    sta->supported_rates,
@@ -8205,8 +8282,12 @@ static int add_associated_sta(struct hostapd_data *hapd,
 			set = 0;
 		eml_cap = sta->mld_info.common_info.eml_capa;
 	}
-#endif /* CONFIG_IEEE80211BE */
 
+	if (sta->unadded_sta) {
+		ap_sta_remove_link_sta(hapd, sta);
+		sta->unadded_sta = false;
+	}
+#endif /* CONFIG_IEEE80211BE */
 	/*
 	 * Remove the STA entry to ensure the STA PS state gets cleared and
 	 * configuration gets updated. This is relevant for cases, such as
@@ -9173,11 +9254,14 @@ static void handle_assoc(struct hostapd_data *hapd,
 
 #ifdef CONFIG_IEEE80211R_AP
 	if (!sta) {
-		wpa_printf(MSG_DEBUG,
-			   "FT over DS: Check for STA entry with ML address");
-		sta = get_sta_from_ft_ds_list(hapd, mgmt, len, reassoc);
-		if (sta)
-			sa = sta->addr;
+		sta = ap_get_unadded_sta(hapd, mgmt->sa);
+		if (!sta) {
+			wpa_printf(MSG_DEBUG,
+				   "FT over DS: Check for STA entry with ML address");
+			sta = get_sta_from_ft_ds_list(hapd, mgmt, len, reassoc);
+			if (sta)
+				sa = sta->addr;
+		}
 	}
 
 	if (sta && sta->auth_alg == WLAN_AUTH_FT) {
@@ -10296,10 +10380,13 @@ static void handle_auth_cb(struct hostapd_data *hapd,
 
 	sta = ap_get_sta(hapd, mgmt->da);
 	if (!sta) {
-		wpa_printf(MSG_DEBUG, "handle_auth_cb: STA " MACSTR
-			   " not found",
-			   MAC2STR(mgmt->da));
-		return;
+		sta = ap_get_unadded_sta(hapd, mgmt->da);
+		if (!sta) {
+			wpa_printf(MSG_DEBUG, "handle_auth_cb: STA " MACSTR
+				   " not found",
+				   MAC2STR(mgmt->da));
+			return;
+		}
 	}
 
 	if (len < IEEE80211_HDRLEN + sizeof(mgmt->u.auth)) {
@@ -10483,9 +10570,13 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 
 	sta = ap_get_sta(hapd, mgmt->da);
 	if (!sta) {
-		wpa_printf(MSG_INFO, "handle_assoc_cb: STA " MACSTR " not found",
-			   MAC2STR(mgmt->da));
-		return;
+		sta = ap_get_unadded_sta(hapd, mgmt->da);
+		if (!sta) {
+			wpa_printf(MSG_INFO,
+				   "handle_assoc_cb: STA " MACSTR " not found",
+				   MAC2STR(mgmt->da));
+			return;
+		}
 	}
 
 #ifdef CONFIG_ENC_ASSOC
