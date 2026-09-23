@@ -5816,6 +5816,7 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 #ifdef CONFIG_MESH
 	struct wpa_driver_mesh_bss_params mesh_params;
 #endif /* CONFIG_MESH */
+	u8 critical_update = 0;
 
 	if (params->mld_ap) {
 		if (!nl80211_link_valid(bss->valid_links,
@@ -6189,6 +6190,16 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 	if (params->fd_max_int && nl80211_fils_discovery(bss, msg, params) < 0)
 		goto fail;
 #endif /* CONFIG_FILS */
+
+	if (bss->valid_links && (params->elemid_added || params->elemid_modified)) {
+		if (params->elemid_added)
+			critical_update |= NL80211_CU_ELEMID_ADDED;
+		if (params->elemid_modified)
+			critical_update |= NL80211_CU_ELEMID_MODIFIED;
+		if (nla_put_u8(msg, NL80211_ATTR_SET_CRITICAL_UPDATE,
+			       critical_update))
+			goto fail;
+	}
 
 #ifdef CONFIG_DRIVER_NL80211_QCA
 	if (cmd == NL80211_CMD_NEW_BEACON && params->allowed_freqs)
@@ -12727,6 +12738,11 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 	if (settings->handle_dfs && nla_put_flag(msg, NL80211_ATTR_HANDLE_DFS))
 		goto fail;
 
+	if (bss->valid_links) {
+		if (nla_put_u8(msg, NL80211_ATTR_SET_CRITICAL_UPDATE, NL80211_CU_ELEMID_ADDED))
+			goto fail;
+	}
+
 	ret = send_and_recv_cmd(drv, msg);
 	if (ret) {
 		wpa_printf(MSG_DEBUG, "nl80211: switch_channel failed err=%d (%s)",
@@ -12751,6 +12767,7 @@ static int nl80211_switch_color(void *priv, struct cca_settings *settings)
 	struct nlattr *beacon_cca;
 	struct nl_msg *msg;
 	int ret = -ENOBUFS;
+	u8 critical_update = 0;
 
 	wpa_printf(MSG_DEBUG,
 		   "nl80211: Color change request (cca_count=%u color=%d)",
@@ -12828,6 +12845,12 @@ static int nl80211_switch_color(void *priv, struct cca_settings *settings)
 		}
 	}
 #endif /* CONFIG_IEEE80211BE */
+
+	if (bss->valid_links) {
+		critical_update |= NL80211_CU_ELEMID_ADDED;
+		if (nla_put_u8(msg, NL80211_ATTR_SET_CRITICAL_UPDATE, critical_update))
+			goto error;
+	}
 
 	ret = send_and_recv_cmd(drv, msg);
 	if (ret) {
