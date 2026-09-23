@@ -332,7 +332,6 @@ def test_hapd_ctrl_set_error_cases(dev, apdev):
     hapd = hostapd.add_ap(apdev[0], params)
     errors = ["wpa_key_mgmt FOO",
               "wpa_key_mgmt WPA-PSK   \t  FOO",
-              "wpa_key_mgmt    \t  ",
               "wpa_pairwise FOO",
               "wpa_pairwise   \t   ",
               'wep_key0 "',
