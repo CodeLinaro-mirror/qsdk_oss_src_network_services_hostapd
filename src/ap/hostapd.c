@@ -5003,6 +5003,7 @@ int hostapd_switch_channel(struct hostapd_data *hapd,
 	int cur_center_freq1;
 	int cur_center_freq2;
 	int cur_sec_channel_offset;
+	struct hostapd_data *link_bss;
 
 	if (!(hapd->iface->drv_flags & WPA_DRIVER_FLAGS_AP_CSA)) {
 		wpa_printf(MSG_INFO, "CSA is not supported");
@@ -5043,6 +5044,14 @@ int hostapd_switch_channel(struct hostapd_data *hapd,
 	}
 
 	hapd->csa_in_progress = 1;
+	if (hapd->conf->mld_ap) {
+		/* Generate per sta profiles for affiliated APs */
+		for_each_mld_link(link_bss, hapd) {
+			if (hapd == link_bss)
+				continue;
+			hostapd_gen_per_sta_profiles(link_bss);
+		}
+	}
 	return 0;
 }
 
@@ -5226,6 +5235,7 @@ void hostapd_switch_color_timeout_handler(void *eloop_data, void *user_ctx)
 	unsigned int b;
 	int i, r;
 	u64 neighbor_color;
+	struct hostapd_data *link_bss;
 
 	 /* CCA can be triggered once the handler constantly receives
 	  * color collision events to for at least
@@ -5303,6 +5313,16 @@ void hostapd_switch_color_timeout_handler(void *eloop_data, void *user_ctx)
 		free_beacon_data(&settings.beacon_cca);
 		free_beacon_data(&settings.beacon_after);
 		os_free(settings.ubpr.unsol_bcast_probe_resp_tmpl);
+
+		if (!ret && bss->conf->mld_ap) {
+			/* Generate per sta profiles for affiliated APs */
+			for_each_mld_link(link_bss, bss) {
+				if (bss == link_bss)
+					continue;
+				hostapd_gen_per_sta_profiles(link_bss);
+			}
+		}
+
 	}
 }
 

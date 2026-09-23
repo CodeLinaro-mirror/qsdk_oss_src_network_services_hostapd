@@ -197,6 +197,12 @@ struct hostapd_openwrt_stats {
 	} wnm;
 };
 
+struct rx_critical_param {
+	bool critical_flag;
+	u8 bpcc;
+	u8 switch_count;
+};
+
 /**
  * struct hostapd_data - hostapd per-BSS data structure
  */
@@ -520,6 +526,7 @@ struct hostapd_data {
        unsigned char ctrl_iface_cookie[CTRL_IFACE_COOKIE_LEN];
 #endif /* CONFIG_CTRL_IFACE_UDP */
 
+       struct rx_critical_param rx_cu_param;
 #ifdef CONFIG_IEEE80211BE
 	u8 eht_mld_bss_param_change;
 	struct hostapd_mld *mld;
@@ -1010,6 +1017,7 @@ static inline bool hostapd_mld_is_first_bss(struct hostapd_data *hapd)
 
 u16 hostapd_get_punct_bitmap(struct hostapd_data *hapd);
 bool hostapd_is_usable_punct_bitmap(struct hostapd_iface *iface);
+void hostapd_gen_per_sta_profiles(struct hostapd_data *hapd);
 
 void hostapd_get_oper_chan_info_of_bss(struct hostapd_data *hapd,
 				       enum oper_chan_width *width,
