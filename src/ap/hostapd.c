@@ -5537,6 +5537,14 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 				wpa_printf(MSG_DEBUG,
 					   "fetch and set vendor BSSID failed");
 		}
+
+		if (is_5ghz_freq(iface->freq) &&
+		    hostapd_drv_set_bootup_cac_feature_extn(hapd)) {
+			wpa_printf(MSG_ERROR,
+				   "disable_bootup_cac_feature vendor cmd failed for %s",
+				   hapd->conf->iface);
+			iface->conf->conf_extn.disable_bootup_cac_feature = 1;
+		}
 #endif /* CONFIG_QCN_EXTN */
 
 		if (hostapd_setup_monitor_iface(iface) < 0)
