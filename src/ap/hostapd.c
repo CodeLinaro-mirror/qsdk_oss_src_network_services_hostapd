@@ -1918,8 +1918,10 @@ static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason)
 	int ret = 0;
 	u8 addr[ETH_ALEN];
 
-	if (hostapd_drv_none(hapd) || hapd->drv_priv == NULL)
+	if (hostapd_drv_none(hapd) || hapd->drv_priv == NULL) {
+		hostapd_free_stas(hapd);
 		return 0;
+	}
 
 	if (!hapd->iface->driver_ap_teardown) {
 		wpa_dbg(hapd->msg_ctx, MSG_DEBUG,
@@ -1948,7 +1950,11 @@ void hostapd_bss_deinit_no_free(struct hostapd_data *hapd)
 #ifdef CONFIG_IEEE80211BE
 	ap_for_each_sta(hapd, hostapd_free_partner_link_stas, NULL);
 #endif /* CONFIG_IEEE80211BE */
-	hostapd_free_stas(hapd);
+	/*
+	 * Keep STA state intact until flush_old_stations sends broadcast
+	 * deauth so PMF clients can process AP-driven disconnect before keys
+	 * are removed.
+	 */
 	hostapd_flush_old_stations(hapd, WLAN_REASON_DEAUTH_LEAVING);
 #ifdef CONFIG_WEP
 	hostapd_clear_wep(hapd);
