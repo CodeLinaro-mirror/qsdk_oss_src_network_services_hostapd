@@ -2577,68 +2577,118 @@ static void dfs_check_target_chan_for_switch(struct hostapd_iface *iface)
 }
 
 /**
- * dfs_recovery_find_eligible_chan - Check one target BW block for preCAC
- * eligibility and populate CAC params.
+ * dfs_recovery_find_eligible_chan - Check if a given sub-block of the DFS
+ * channel recovery target is eligible for agile CAC and populate the CAC
+ * channel parameters if so.
+ *
+ * A block is ineligible if it overlaps the home channel, has any subchannel
+ * in NOL (DFS_UNAVAILABLE), or has all DFS subchannels already AVAILABLE
+ * (agile CAC already completed for this block).
  *
  * @iface: Pointer to hostapd interface data
- * @cfg: DFS channel recovery configuration
- * @tgt_bw_mhz: Bandwidth in MHz to check (full or half of recovery target)
+ * @block_start: First primary-channel center frequency (MHz) of the sub-block
+ * @tgt_bw_mhz: Bandwidth of the sub-block in MHz
  * @seg0: Output: center frequency segment 0 index
  * @seg1: Output: center frequency segment 1 index
  * @sec: Output: secondary channel direction
  * @home_chwidth: Home channel operating width
- * Returns: Pointer to primary channel data, or NULL if block is ineligible
+ * Return: Pointer to primary channel data, or NULL if the block is ineligible
  */
 static struct hostapd_channel_data *
 dfs_recovery_find_eligible_chan(struct hostapd_iface *iface,
-				const struct dfs_chan_recovery_config *cfg,
-				int tgt_bw_mhz, u8 *seg0, u8 *seg1, int *sec,
+				int block_start, int tgt_bw_mhz,
+				u8 *seg0, u8 *seg1, int *sec,
 				enum oper_chan_width home_chwidth)
 {
+	struct hostapd_hw_modes *mode = iface->current_mode;
 	struct hostapd_channel_data *chan;
 	enum oper_chan_width oper_width;
-	int tgt_cen_freq, tgt_start;
+	int block_pri_chan = DFS_FREQ_TO_CHAN(block_start);
+	int n_sub = tgt_bw_mhz / DFS_SUBCHAN_STEP_MHZ;
+	int first_chan_idx;
 
-	tgt_cen_freq = dfs_chan_get_cen_freq(cfg->chan, tgt_bw_mhz);
-	if (!tgt_cen_freq)
-		return NULL;
-
-	tgt_start = DFS_BLOCK_FIRST_FREQ(tgt_cen_freq, tgt_bw_mhz);
-	chan = hw_mode_get_channel(iface->current_mode, tgt_start, NULL);
+	chan = hw_mode_get_channel(mode, block_start, NULL);
 	if (!chan)
 		return NULL;
 
 	if (dfs_is_home_chan(iface, chan, home_chwidth))
 		return NULL;
 
-	if (rcac_block_has_nol(iface->current_mode, tgt_start, tgt_bw_mhz, cfg->chan))
+	if (rcac_block_has_nol(mode, block_start, tgt_bw_mhz, block_pri_chan))
 		return NULL;
 
-	if (dfs_compute_chan_params(cfg->chan, tgt_bw_mhz,
-				   &oper_width, seg0, sec) < 0)
+	first_chan_idx = hostapd_get_channel_idx(mode, block_pri_chan);
+	if (first_chan_idx >= 0 &&
+	    dfs_chan_range_available(mode, first_chan_idx, n_sub, DFS_AVAILABLE))
+		return NULL;
+
+	if (dfs_compute_chan_params(block_pri_chan, tgt_bw_mhz,
+				    &oper_width, seg0, sec) < 0)
 		return NULL;
 
 	dfs_adjust_center_freq(iface, chan, *sec, 0, oper_width, seg0, seg1);
 	wpa_printf(MSG_INFO,
 		   "DFS: chan recovery: get_precac_chan: selected chan=%d freq=%d MHz bw=%d MHz seg0=%u seg1=%u sec=%d",
-		   cfg->chan, tgt_start, tgt_bw_mhz, *seg0, *seg1, *sec);
+		   block_pri_chan, block_start, tgt_bw_mhz, *seg0, *seg1, *sec);
 	return chan;
 }
 
 /**
- * dfs_check_chan_for_precac - Check if the recovery target block is eligible
- * for preCAC. Tries full BW first; if the full block has a sub-channel in NOL,
- * falls back to the half-BW block containing the primary channel.
- * The correct half (left or right) is selected automatically via
- * dfs_chan_get_cen_freq() which derives the center freq for cfg->chan at half_bw.
+ * dfs_recovery_find_agile_cac_block - Find the first sub-block of the DFS
+ * channel recovery target that needs agile CAC to be started.
+ *
+ * Iterates all @bgcac_bw_mhz-sized sub-blocks within the full target
+ * frequency range, calling dfs_recovery_find_eligible_chan() on each.
+ * Returns the first block for which agile CAC can be initiated.
+ *
+ * @iface: Pointer to hostapd interface data
+ * @tgt_start: First primary-channel center frequency (MHz) of the target range
+ * @tgt_bw_mhz: Total bandwidth of the configured recovery target in MHz
+ * @bgcac_bw_mhz: Sub-block size in MHz for each agile CAC run
+ * @home_chwidth: Home channel operating width
+ * @seg0: Output: center frequency segment 0 index
+ * @seg1: Output: center frequency segment 1 index
+ * @sec: Output: secondary channel direction
+ * Return: Pointer to primary channel data of the selected block,
+ *         or NULL if no eligible block is found
+ */
+static struct hostapd_channel_data *
+dfs_recovery_find_agile_cac_block(struct hostapd_iface *iface,
+			 int tgt_start, int tgt_bw_mhz,
+			 int bgcac_bw_mhz, enum oper_chan_width home_chwidth,
+			 u8 *seg0, u8 *seg1, int *sec)
+{
+	int n_blocks = tgt_bw_mhz / bgcac_bw_mhz;
+	int block_start = tgt_start;
+	int i;
+
+	for (i = 0; i < n_blocks; i++, block_start += bgcac_bw_mhz) {
+		struct hostapd_channel_data *chan;
+
+		chan = dfs_recovery_find_eligible_chan(iface, block_start,
+						      bgcac_bw_mhz,
+						      seg0, seg1, sec,
+						      home_chwidth);
+		if (chan)
+			return chan;
+	}
+	return NULL;
+}
+
+/**
+ * dfs_check_chan_for_precac - Find the next bgCAC sub-block of the configured
+ * recovery target. Iterates all @bgcac_bw_mhz-sized sub-blocks across the full
+ * target range; skips blocks already AVAILABLE, in NOL, or overlapping the home
+ * channel. Falls back to @half_bgcac_bw_mhz-wide scan if all primary blocks are
+ * NOL-blocked.
  *
  * @iface: Pointer to hostapd interface data
  * @seg0: Output: center frequency segment 0 index
  * @seg1: Output: center frequency segment 1 index
  * @sec: Output: secondary channel direction
  * @home_chwidth: Home channel operating width
- * @chwidth: Output: oper_chan_width used to find the channel
- * Returns: Pointer to primary channel data, or NULL if no block is eligible
+ * @chwidth: Output: oper_chan_width used for the selected block
+ * Return: Pointer to primary channel data, or NULL if no block is eligible
  */
 static struct hostapd_channel_data *
 dfs_check_chan_for_precac(struct hostapd_iface *iface,
@@ -2648,7 +2698,8 @@ dfs_check_chan_for_precac(struct hostapd_iface *iface,
 {
 	const struct dfs_chan_recovery_config *cfg;
 	struct hostapd_channel_data *chan;
-	int tgt_bw_mhz, half_bw_mhz, oper_bw_mhz;
+	int tgt_bw_mhz, bgcac_bw_mhz, half_bgcac_bw_mhz, oper_bw_mhz;
+	int tgt_cen_freq, tgt_start;
 	enum oper_chan_width tgt_chwidth;
 
 	if (!iface->conf->dfs_chan_recovery.feature_en)
@@ -2663,10 +2714,17 @@ dfs_check_chan_for_precac(struct hostapd_iface *iface,
 	if (!tgt_bw_mhz)
 		return NULL;
 
+	tgt_cen_freq = dfs_chan_get_cen_freq(cfg->chan, tgt_bw_mhz);
+	if (!tgt_cen_freq)
+		return NULL;
+	tgt_start = DFS_BLOCK_FIRST_FREQ(tgt_cen_freq, tgt_bw_mhz);
+
 	/*
 	 * If the AP is operating at a narrower BW than the recovery target
 	 * (e.g. home=80 MHz, target=160 MHz), a bgCAC at the full target BW
 	 * would be rejected. So, change tgt_bw_mhz to the current operating BW.
+	 * bgCAC BW is capped to home BW — firmware rejects bgCAC wider than
+	 * the home channel. bgcac_bw_mhz is the iteration unit for sub-blocks.
 	 */
 	oper_bw_mhz = dfs_convert_chwidth_to_mhz(home_chwidth,
 						 iface->conf->secondary_channel);
@@ -2674,29 +2732,30 @@ dfs_check_chan_for_precac(struct hostapd_iface *iface,
 		wpa_printf(MSG_DEBUG,
 			   "DFS: chan recovery: capping precac BW from %d to %d MHz (home BW)",
 			   tgt_bw_mhz, oper_bw_mhz);
-		tgt_bw_mhz = oper_bw_mhz;
+		bgcac_bw_mhz = oper_bw_mhz;
 		tgt_chwidth = home_chwidth;
 	} else {
+		bgcac_bw_mhz = tgt_bw_mhz;
 		tgt_chwidth = cfg->chwidth;
 	}
 
-	chan = dfs_recovery_find_eligible_chan(iface, cfg, tgt_bw_mhz,
-					       seg0, seg1, sec, home_chwidth);
+	chan = dfs_recovery_find_agile_cac_block(iface, tgt_start, tgt_bw_mhz,
+						 bgcac_bw_mhz, home_chwidth,
+						 seg0, seg1, sec);
 	if (chan) {
 		*chwidth = tgt_chwidth;
 		return chan;
 	}
 
-	/* Full BW has NOL sub-channels; try the half-bandwidth block containing cfg->chan */
-	half_bw_mhz = tgt_bw_mhz / 2;
-	if (half_bw_mhz < IEEE_SUBCHAN_BW)
+	/* All full-step blocks NOL-blocked; try half-step iteration */
+	half_bgcac_bw_mhz = bgcac_bw_mhz / 2;
+	if (half_bgcac_bw_mhz < IEEE_SUBCHAN_BW)
 		return NULL;
 
-	wpa_printf(MSG_DEBUG,
-		   "DFS: chan recovery: full-BW blocked, trying half-BW precac: chan=%d bw=%d MHz",
-		   cfg->chan, half_bw_mhz);
-	chan = dfs_recovery_find_eligible_chan(iface, cfg, half_bw_mhz,
-					       seg0, seg1, sec, home_chwidth);
+	wpa_printf(MSG_DEBUG, "DFS: chan recovery: check_for_precac: all %d MHz blocks NOL-blocked, trying %d MHz sub-block scan", bgcac_bw_mhz, half_bgcac_bw_mhz);
+	chan = dfs_recovery_find_agile_cac_block(iface, tgt_start, tgt_bw_mhz,
+						 half_bgcac_bw_mhz, home_chwidth,
+						 seg0, seg1, sec);
 	if (chan)
 		*chwidth = dfs_get_next_lower_chwidth(tgt_chwidth);
 	return chan;
