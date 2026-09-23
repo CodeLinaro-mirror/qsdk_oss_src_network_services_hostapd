@@ -3515,16 +3515,16 @@ enum nl80211_commands {
  * @NL80211_ATTR_SMD_CTX: Nested attribute associated with UHR SMD BSS
  *	Transition data. See &enum nl8021_smd_attrs.
  *
+ *
+ * @NL80211_ATTR_STA_ISOLATED: u8 attribute to enable or disable isolation
+ *     from peer stations i.e, enable/disable intra-bss forwarding for this
+ *     station. 0 = not isolated, 1 = isolated.
+ *
  * @NL80211_ATTR_SMD_STATS: Binary blob of type &struct nl80211_smd_stats
  *	carrying all SMD roaming debug counters from kernel layers (mac80211 +
  *	ath12k driver).  Returned in response to %NL80211_CMD_SMD_STATS_GET.
  *	An optional %NL80211_ATTR_MAC in the request selects a single STA for
  *	AP-mode per-STA queries; absent means STA-mode or AP aggregate.
- *
- *
- * @NL80211_ATTR_STA_ISOLATED: u8 attribute to enable or disable isolation
- *     from peer stations i.e, enable/disable intra-bss forwarding for this
- *     station. 0 = not isolated, 1 = isolated.
  *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
@@ -4227,10 +4227,11 @@ enum nl80211_attrs {
 	NL80211_ATTR_SMD_LINK_TRANSITION_STATE,
 	NL80211_ATTR_SMD_CTX,
 
-	NL80211_ATTR_SMD_STATS,
-
 	NL80211_ATTR_SMD_ROAM_STA,
 	NL80211_ATTR_STA_ISOLATED,
+
+	NL80211_ATTR_SMD_STATS,
+
 	__NL80211_ATTR_AFTER_LAST,
 	NUM_NL80211_ATTR = __NL80211_ATTR_AFTER_LAST,
 	NL80211_ATTR_MAX = __NL80211_ATTR_AFTER_LAST - 1
