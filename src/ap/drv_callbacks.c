@@ -3827,6 +3827,28 @@ static void hostapd_event_color_change(struct hostapd_data *hapd, bool success)
 
 static void hostapd_iface_enable(struct hostapd_data *hapd)
 {
+	struct hostapd_iface *iface = hapd->iface;
+	int ret;
+
+	ret = hostapd_get_hw_features(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "Failed to get hardware features (%d)",
+			   ret);
+		return;
+	}
+
+	ret = hostapd_select_hw_mode(iface);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "Could not change 6GHZ power mode(%d)",
+			   ret);
+		hostapd_disable_iface(iface);
+	}
+
+	if (hostapd_set_current_hw_info(iface, iface->freq)) {
+		wpa_printf(MSG_ERROR, "Failed to get operating hw mac id");
+		hostapd_disable_iface(iface);
+	}
+
 	wpa_msg(hapd->msg_ctx, MSG_INFO, INTERFACE_ENABLED);
 	if (hapd->disabled && hapd->started) {
 		hapd->disabled = 0;
@@ -3840,11 +3862,15 @@ static void hostapd_iface_enable(struct hostapd_data *hapd)
 		else
 			hostapd_reconfig_encryption(hapd);
 		hapd->reenable_beacon = 1;
+
+#ifdef CONFIG_QCN_EXTN
+		hostapd_bootup_cac_start_extn(iface);
+#endif
 		ieee802_11_set_beacon(hapd);
 #ifdef NEED_AP_MLME
-	} else if (hapd->disabled && hapd->iface->cac_started) {
+	} else if (hapd->disabled && hostapd_is_cac_required(iface)) {
 		wpa_printf(MSG_DEBUG, "DFS: restarting pending CAC");
-		hostapd_handle_dfs(hapd->iface);
+		hostapd_handle_dfs(iface);
 #endif /* NEED_AP_MLME */
 	}
 }
