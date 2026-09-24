@@ -1892,6 +1892,7 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 #endif /* CONFIG_MBO */
 	int omit_rsnxe = 0;
 	u16 missing_links = 0;
+	bool dpp_akm = false;
 	unsigned int keys_to_clear = 0;
 	bool set_suites_done = false;
 #ifdef CONFIG_IEEE80211R
@@ -2074,6 +2075,7 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 		} else if ((ssid->key_mgmt & WPA_KEY_MGMT_DPP) &&
 			   (ied.key_mgmt & WPA_KEY_MGMT_DPP)) {
 			wpa_dbg(wpa_s, MSG_DEBUG, "Prefer DPP over SAE when both are enabled");
+			dpp_akm = true;
 #endif /* CONFIG_DPP */
 #ifdef CONFIG_ENC_ASSOC
 		} else if ((wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_EPPKE) &&
@@ -2257,7 +2259,7 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 			cache_id = wpa_bss_get_fils_cache_id(bss);
 #endif /* CONFIG_FILS */
 		if (pmksa_cache_set_current(wpa_s->wpa, NULL,
-					    params.mld ? params.ap_mld_addr :
+					    (params.mld && !dpp_akm) ? params.ap_mld_addr :
 					    bss->bssid,
 					    wpa_s->current_ssid,
 					    try_opportunistic, cache_id,
