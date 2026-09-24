@@ -3260,6 +3260,8 @@ static int hostapd_handle_scs_req(struct hostapd_data *hapd, const u8 *buf,
 			return ret;
 		}
 
+		scs_req.scs_req_desc[index].client_initiated_scs = 1;
+
 		/* capture raw element bytes (EID + len + payload) */
 		raw_desc[index].data = payload_start;
 		raw_desc[index].len  = elem_len + 2;
