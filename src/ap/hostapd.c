@@ -2467,7 +2467,7 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
 
 #ifdef CONFIG_IEEE80211BN
 	/* Initialize SMD Roaming transport if configured */
-	if (conf->smd_partners) {
+	if (conf->smd.enabled) {
 		static const u16 iap_msg_types[] = {
 			ETH_P_1905_IAP_MSG_REQUEST,
 			ETH_P_1905_IAP_MSG_RESPONSE,
