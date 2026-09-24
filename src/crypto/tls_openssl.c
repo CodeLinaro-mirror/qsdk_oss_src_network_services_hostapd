@@ -2048,6 +2048,9 @@ static int tls_match_altsubject(X509 *cert, const char *match)
 		} else if (os_strncmp(pos, "URI:", 4) == 0) {
 			type = GEN_URI;
 			pos += 4;
+		} else if (os_strncmp(pos, "IP:", 3) == 0) {
+			type = GEN_IPADD;
+			pos += 3;
 		} else {
 			wpa_printf(MSG_INFO, "TLS: Invalid altSubjectName "
 				   "match '%s'", pos);
