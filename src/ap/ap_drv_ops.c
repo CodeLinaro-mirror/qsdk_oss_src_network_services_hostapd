@@ -1483,14 +1483,38 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 			  bool radar_background,
 			  int bandwidth_device, int center_freq_device)
 {
-	struct hostapd_data *hapd = iface->bss[0];
+	struct hostapd_data *hapd = NULL;
 	struct hostapd_freq_params data;
 	int res, radio_idx;
 	struct hostapd_hw_modes *cmode = iface->current_mode;
+	size_t b;
 #ifdef CONFIG_QCN_EXTN
 	bool is_dfs = false;
 	enum chan_width chanwidth;
 #endif
+
+	/* Use the first started, non-disabled BSS as the CAC initiator.
+	 * If no BSS is started yet (e.g. enable_bss on a DFS channel before
+	 * setup completes), fall back to the first BSS pending re-enable
+	 * (reenable != REENABLE_REUSE_LINK) so we use the BSS being enabled
+	 * rather than a user-disabled bss[0] whose vdev the firmware would
+	 * bring up as AP after CAC completes. */
+	for (b = 0; b < iface->num_bss; b++) {
+		if (iface->bss[b]->started && !iface->bss[b]->disabled) {
+			hapd = iface->bss[b];
+			break;
+		}
+	}
+	if (!hapd) {
+		for (b = 0; b < iface->num_bss; b++) {
+			if (iface->bss[b]->reenable != REENABLE_REUSE_LINK) {
+				hapd = iface->bss[b];
+				break;
+			}
+		}
+	}
+	if (!hapd)
+		hapd = iface->bss[0];
 
 	if (!hapd->driver || !hapd->driver->start_dfs_cac || !cmode)
 		return 0;

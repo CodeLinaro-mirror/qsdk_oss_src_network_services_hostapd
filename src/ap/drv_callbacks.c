@@ -1436,7 +1436,8 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 
 				hostapd_set_state(hapd->iface, HAPD_IFACE_DFS);
 				hapd->iface->cac_type = HAPD_CAC_COMPLETE_AFTER_CSA;
-				ieee802_11_set_beacon(hapd);
+				if (!hapd->disabled)
+					ieee802_11_set_beacon(hapd);
 
 				if (hostapd_set_dfs_cac_time(hapd->iface))
 					return;
@@ -1510,7 +1511,12 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 			hapd->iconf->he_6ghz_reg_pwr_type = power_mode_6ghz;
 			hostapd_cleanup_cs_params(hapd);
 			hapd->disable_cu = 1;
-			ieee802_11_set_beacon(hapd);
+			if (!hapd->disabled)
+				ieee802_11_set_beacon(hapd);
+			if (!hapd->iface->cac_started &&
+			    hostapd_check_reenable_bss(hapd->iface, REENABLE_CAC))
+				hostapd_enable_pending_bss(hapd->iface,
+							   REENABLE_CAC, false);
 			hostapd_start_device_cac_background(hapd->iface);
 			hostapd_schedule_agile_cac_restart(hapd->iface);
 			wpa_msg(hapd->msg_ctx, MSG_INFO, AP_CSA_FINISHED

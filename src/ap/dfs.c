@@ -1607,8 +1607,7 @@ int set_dfs_state(struct hostapd_iface *iface, int freq, int ht_enabled,
 				ret += set_dfs_state_freq(iface, frequency2, state);
 				frequency2 = frequency2 + 20;
 			}
-		}
-		else {
+		} else {
 			ret += set_dfs_state_freq(iface, frequency, state);
 			frequency = frequency + 20;
 			if (chan_width == CHAN_WIDTH_80P80) {
@@ -2032,12 +2031,32 @@ int hostapd_dfs_request_channel_switch(struct hostapd_iface *iface,
 	 * radar detection. Cannot wait for mesh TBTT (1000 TU). */
 	hostapd_ubus_mesh_switch_channel(iface, &csa_settings);
 
-	if (hostapd_check_reenable_bss(iface, REENABLE_NONE)) {
-		num_err = hostapd_switch_pending_bss(iface, &csa_settings);
+	if (hostapd_check_reenable_bss(iface, REENABLE_HT_SCAN) ||
+	    hostapd_check_reenable_bss(iface, REENABLE_CAC)) {
+		/*
+		 * BSSes are deferred for HT scan or CAC. Switch them
+		 * alongside any started non-deferred BSSes.
+		 * REENABLE_REUSE_LINK (user-disabled) BSSes are NOT
+		 * switched here — their chanctx is managed via DEL_BEACON
+		 * and they track the channel automatically.
+		 */
+		hostapd_switch_pending_bss(iface, &csa_settings,
+					   REENABLE_HT_SCAN);
+		hostapd_switch_pending_bss(iface, &csa_settings,
+					   REENABLE_CAC);
+		for (i = 0; i < iface->num_bss; i++) {
+			struct hostapd_data *b = iface->bss[i];
+
+			if (!b->started || hapd_reenable_pending(b))
+				continue;
+			err = hostapd_switch_channel(b, &csa_settings);
+			if (err)
+				num_err++;
+		}
 	} else {
 		for (i = 0; i < iface->num_bss; i++) {
 			err = hostapd_switch_channel(iface->bss[i], &csa_settings);
-		if (err)
+			if (err)
 				num_err++;
 		}
 	}
@@ -2870,21 +2889,6 @@ bool hostapd_is_device_params_present(int chan_width, int cf1, int chan_width_de
 }
 
 
-static void hostapd_dfs_enable_pending_bss(struct hostapd_iface *iface)
-{
-	hostapd_enable_pending_bss(iface, REENABLE_NONE, false);
-
-	/* Enabling non-first bss starts CAC in first BSS
-	 * which enables the vif in driver.
-	 * Hence stop first vif incase it is not
-	 * enabled in hostapd.
-	 */
-	if (!iface->bss[0]->started) {
-		ieee802_11_set_beacon(iface->bss[0]);
-		hostapd_drv_stop_ap(iface->bss[0]);
-	}
-}
-
 static void hostapd_deferred_csa_dispatch(struct hostapd_iface *iface)
 {
 	struct hostapd_freq_params *freq_params;
@@ -2901,6 +2905,19 @@ static void hostapd_deferred_csa_dispatch(struct hostapd_iface *iface)
 
 	for (i = 0; i < iface->num_bss; i++) {
 		hostapd_chan_switch_config(iface->bss[i], freq_params);
+
+		/*
+		 * Skip BSSes that are not beaconing — NL80211_CMD_CHANNEL_SWITCH
+		 * returns -ENOTCONN on a non-beaconing AP. BSSes that were
+		 * user-disabled before the deferred CSA was queued will pick up
+		 * the new channel via their own re-enable path.
+		 */
+		if (!iface->bss[i]->beacon_set_done) {
+			wpa_printf(MSG_DEBUG,
+				   "DFS deferred CSA: skip non-beaconing BSS %s",
+				   iface->bss[i]->conf->iface);
+			continue;
+		}
 
 		err = hostapd_switch_channel(iface->bss[i], &iface->csa_settings);
 		if (err)
@@ -3463,7 +3480,6 @@ static int hostapd_dfs_unpunc_cacdone_subchans(struct hostapd_iface *iface,
 						  centr_chan1, centr_chan2,
 						  puncture_bitmap);
 }
-
 int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			     int ht_enabled, int chan_offset, int chan_width,
 			     int cf1, int cf2, u16 unpunc_bitmap,
@@ -3498,15 +3514,17 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 			 */
 			if (iface->state != HAPD_IFACE_ENABLED &&
 			    !iface->radar_detected) {
-				if (hostapd_check_reenable_bss(iface,
-							       REENABLE_NONE))
-					hostapd_enable_pending_bss(
-						iface, REENABLE_NONE, false);
-				else
-					hostapd_setup_interface_complete(iface, 0);
-			}
-			else
 				iface->cac_started = 0;
+				if (hostapd_check_reenable_bss(iface,
+							       REENABLE_CAC)) {
+					hostapd_enable_pending_bss(
+						iface, REENABLE_CAC, true);
+				} else {
+					hostapd_setup_interface_complete(iface, 0);
+				}
+			} else {
+				iface->cac_started = 0;
+			}
 		} else {
 			if (hostapd_is_device_params_present(chan_width, cf1,
 							     chan_width_device, cf_device))
@@ -3583,10 +3601,12 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 					ieee80211_freq_to_chan(cf1, &seg0);
 					hostapd_set_oper_centr_freq_seg0_idx(iface->conf, seg0);
 					if (hostapd_check_reenable_bss(
-						    iface, REENABLE_NONE))
-						hostapd_dfs_enable_pending_bss(iface);
-					else
+						    iface, REENABLE_CAC)) {
+						hostapd_enable_pending_bss(
+							iface, REENABLE_CAC, true);
+					} else {
 						hostapd_setup_interface_complete(iface, 0);
+					}
 				} else if (iface->cac_type == HAPD_CAC_COMPLETE_AFTER_CSA) {
 #ifdef CONFIG_QCN_EXTN
 					hostapd_cleanup_cs_params(iface->bss[0]);
@@ -3827,8 +3847,8 @@ static int hostapd_dfs_start_channel_switch_cac(struct hostapd_iface *iface)
 	err = 0;
 
 
-	if (hostapd_check_reenable_bss(iface, REENABLE_NONE))
-		hostapd_enable_pending_bss(iface, REENABLE_NONE, false);
+	if (hostapd_check_reenable_bss(iface, REENABLE_CAC))
+		hostapd_enable_pending_bss(iface, REENABLE_CAC, true);
 	else
 		hostapd_setup_interface_complete(iface, err);
 
