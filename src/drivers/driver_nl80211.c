@@ -19077,9 +19077,6 @@ static int wpa_driver_nl80211_set_ttlm_link_mapping(void *priv, enum wpa_driver_
 	int ret;
 
 	wpa_printf(MSG_DEBUG, "nl80211: MLD: set ttlm params");
-	msg = nlmsg_alloc();
-	if (!msg)
-		return -ENOMEM;
 
 	msg = nl80211_bss_msg(bss, 0, NL80211_CMD_SET_TID_TO_LINK_MAPPING);
 	if (!msg) {
