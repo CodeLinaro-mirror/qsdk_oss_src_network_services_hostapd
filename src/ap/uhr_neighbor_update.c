@@ -175,6 +175,18 @@ static bool smd_neighbor_update_validate_rx_addr(struct hostapd_data *hapd,
 				    ether_addr_equal(dst_addr, hapd->own_addr));
 }
 
+static const u8 *smd_neighbor_update_get_src_addr(struct hostapd_data *hapd)
+{
+	if (!hapd)
+		return NULL;
+
+	/* Use MLD address when available; fall back to link BSSID otherwise. */
+	if (hapd->mld)
+		return hapd->mld->mld_addr;
+
+	return hapd->own_addr;
+}
+
 static struct smd_neighbor_update_entry *
 smd_neighbor_update_get_entry(struct smd_neighbor_update_ctx *ctx,
 			      const u8 *bssid)
@@ -283,9 +295,74 @@ static int smd_neighbor_update_build_tlv(struct hostapd_data *hapd,
 	return 0;
 }
 
+static struct wpabuf *
+smd_neighbor_update_build_mld_tlvs(struct hostapd_data *hapd,
+				    enum smd_neighbor_update_type update_type)
+{
+	struct wpabuf *all = NULL;
+	struct hostapd_data *link_bss;
+	struct wpabuf *tlv;
+
+	if (smd_neighbor_update_build_tlv(hapd, update_type, &tlv) < 0)
+		return NULL;
+	all = tlv;
+
+	for_each_mld_link(link_bss, hapd) {
+		struct wpabuf *combined;
+
+		if (link_bss == hapd || !link_bss->started)
+			continue;
+
+		if (smd_neighbor_update_build_tlv(link_bss, update_type, &tlv) < 0)
+			continue;
+
+		combined = wpabuf_concat(all, tlv);
+		if (!combined) {
+			wpa_printf(MSG_WARNING,
+				   "SMD Neighbor: MLD TLV concat failed");
+			wpabuf_free(all);
+			wpabuf_free(tlv);
+			return NULL;
+		}
+		all = combined;
+	}
+
+	return all;
+}
+
+int smd_neighbor_update_send_mld(struct hostapd_data *hapd,
+				 enum smd_neighbor_update_type update_type)
+{
+	struct wpabuf *tlvs;
+	int ret;
+	const u8 *src_addr;
+	const u8 bcast[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+
+	if (!hapd || !hapd->eth_p_1905_ctx) {
+		wpa_printf(MSG_ERROR, "SMD Neighbor: hapd or oui ctx is NULL");
+		return -1;
+	}
+
+	tlvs = smd_neighbor_update_build_mld_tlvs(hapd, update_type);
+	if (!tlvs) {
+		wpa_printf(MSG_WARNING, "SMD Neighbor: MLD TLV build failed");
+		return -1;
+	}
+
+	src_addr = smd_neighbor_update_get_src_addr(hapd);
+
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, bcast, src_addr,
+			      ETH_P_1905_SMD_NEIGHBOR_UPDATE_MSG,
+			      wpabuf_head(tlvs), wpabuf_len(tlvs));
+	wpabuf_free(tlvs);
+	return ret;
+}
+
+
 static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 					const u8 *src_addr,
-					const u8 *data, size_t data_len)
+					const u8 *data, size_t data_len,
+					size_t *consumed)
 {
 	struct hostapd_data *hapd = ctx->hapd;
 	const u8 *pos = data;
@@ -339,6 +416,8 @@ static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 	}
 
 	tlv_end = pos + SMD_NEIGHBOR_TLV_LEN_FIELD_SIZE + pos[0];
+	if (consumed)
+		*consumed = (size_t)(tlv_end - data);
 	pos++;
 	update_type = *pos++;
 	bssid = pos;
@@ -397,6 +476,17 @@ static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 	if (update_type == SMD_NEIGHBOR_UPDATE_REMOVE_AP) {
 		hostapd_neighbor_remove(hapd, bssid, &ssid);
 		smd_neighbor_update_free_entry(ctx, bssid);
+
+		if (hapd->conf->mld_ap && hapd->mld) {
+			struct hostapd_data *link_bss;
+
+			for_each_mld_link(link_bss, hapd) {
+				if (link_bss == hapd || !link_bss->started)
+					continue;
+				hostapd_neighbor_remove(link_bss, bssid, &ssid);
+			}
+		}
+
 		wpa_printf(MSG_DEBUG,
 			   "SMD Neighbor: Removed " MACSTR " (from " MACSTR ")",
 			   MAC2STR(bssid), MAC2STR(src_addr));
@@ -448,6 +538,19 @@ static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 		return -1;
 	}
 
+	/* Propagate to all other started links in this MLD.
+	 * hostapd_neighbor_set() dups nr internally so one nr serves all calls. */
+	if (hapd->conf->mld_ap && hapd->mld) {
+		struct hostapd_data *link_bss;
+
+		for_each_mld_link(link_bss, hapd) {
+			if (link_bss == hapd || !link_bss->started)
+				continue;
+			hostapd_neighbor_set(link_bss, bssid, &ssid,
+					     nr, NULL, NULL, 0, 0);
+		}
+	}
+
 	smd_neighbor_update_set_timestamp(ctx, bssid);
 	wpabuf_free(nr);
 
@@ -455,10 +558,7 @@ static int smd_neighbor_update_parse_tlv(struct smd_neighbor_update_ctx *ctx,
 		   "SMD Neighbor: Updated " MACSTR " (type=0x%02x from " MACSTR ")",
 		   MAC2STR(bssid), update_type, MAC2STR(src_addr));
 
-	if (update_type == SMD_NEIGHBOR_UPDATE_NEW_AP)
-		smd_neighbor_update_send(hapd, SMD_NEIGHBOR_UPDATE_MODIFY_AP);
-
-	return 0;
+	return (int) update_type;
 }
 
 static void smd_neighbor_update_timer(void *eloop_ctx, void *timeout_ctx)
@@ -510,6 +610,9 @@ static void smd_neighbor_update_rx_frame(struct smd_neighbor_update_ctx *ctx,
 					 const u8 *data, size_t data_len)
 {
 	struct hostapd_data *hapd;
+	const u8 *pos;
+	size_t remaining;
+	bool got_new_ap = false;
 
 	if (!ctx)
 		return;
@@ -526,8 +629,34 @@ static void smd_neighbor_update_rx_frame(struct smd_neighbor_update_ctx *ctx,
 	if (ether_addr_equal(src_addr, hapd->own_addr))
 		return;
 
-	if (smd_neighbor_update_parse_tlv(ctx, src_addr, data, data_len) < 0)
-		wpa_printf(MSG_ERROR, "SMD Neighbor: Failed to parse update");
+	/* Process all TLVs — a multi-link NEW_AP carries one per link */
+	pos = data;
+	remaining = data_len;
+	while (remaining >= 2) {
+		size_t consumed = 0;
+		int ret;
+
+		ret = smd_neighbor_update_parse_tlv(ctx, src_addr, pos,
+						    remaining, &consumed);
+		if (ret < 0) {
+			wpa_printf(MSG_ERROR,
+				   "SMD Neighbor: Failed to parse update");
+			break;
+		}
+		if (ret == SMD_NEIGHBOR_UPDATE_NEW_AP)
+			got_new_ap = true;
+		if (consumed == 0 || consumed > remaining)
+			break;
+		pos += consumed;
+		remaining -= consumed;
+	}
+
+	/*
+	 * Send one multi-TLV MODIFY_AP covering all local started links so
+	 * the sender learns our full MLD topology in a single frame.
+	 */
+	if (got_new_ap)
+		smd_neighbor_update_send_mld(hapd, SMD_NEIGHBOR_UPDATE_MODIFY_AP);
 }
 
 
@@ -535,9 +664,10 @@ static void smd_neighbor_fetch_rx_frame(struct smd_neighbor_update_ctx *ctx,
 				  const u8 *src_addr, const u8 *dst_addr,
 				  const u8 *data, size_t data_len)
 {
-	int ret;
 	struct wpabuf *tlv = NULL;
 	struct hostapd_data *hapd;
+	const u8 *tx_src_addr;
+	int ret;
 
 	if (!ctx)
 		return;
@@ -560,7 +690,9 @@ static void smd_neighbor_fetch_rx_frame(struct smd_neighbor_update_ctx *ctx,
 		return;
 	}
 
-	eth_p_1905_send(hapd->eth_p_1905_ctx, src_addr, hapd->own_addr,
+	tx_src_addr = smd_neighbor_update_get_src_addr(hapd);
+
+	eth_p_1905_send(hapd->eth_p_1905_ctx, src_addr, tx_src_addr,
 			ETH_P_1905_SMD_NEIGHBOR_UPDATE_MSG,
 			wpabuf_head(tlv), wpabuf_len(tlv));
 	wpabuf_free(tlv);
@@ -596,6 +728,7 @@ int smd_neighbor_update_send(struct hostapd_data *hapd,
 			     enum smd_neighbor_update_type update_type)
 {
 	struct wpabuf *tlv = NULL;
+	const u8 *src_addr;
 	int ret;
 	const u8 bcast[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
@@ -612,7 +745,9 @@ int smd_neighbor_update_send(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, bcast, hapd->own_addr,
+	src_addr = smd_neighbor_update_get_src_addr(hapd);
+
+	ret = eth_p_1905_send(hapd->eth_p_1905_ctx, bcast, src_addr,
 			      ETH_P_1905_SMD_NEIGHBOR_UPDATE_MSG,
 			      wpabuf_head(tlv), wpabuf_len(tlv));
 	wpabuf_free(tlv);
@@ -622,30 +757,75 @@ int smd_neighbor_update_send(struct hostapd_data *hapd,
 int smd_neighbor_update_send_pull_ucast(struct hostapd_data *hapd,
 					const u8 *dst_addr)
 {
+	const u8 *src_addr;
 	const u8 dummy = 0;
 
-	if (!hapd || !hapd->eth_p_1905_ctx || !hapd->smd_neighbor_update_ctx || !dst_addr)
+	if (!hapd || !hapd->eth_p_1905_ctx || !hapd->smd_neighbor_update_ctx ||
+	    !dst_addr)
 		return -1;
 
-	return eth_p_1905_send(hapd->eth_p_1905_ctx, dst_addr, hapd->own_addr,
+	src_addr = smd_neighbor_update_get_src_addr(hapd);
+
+	return eth_p_1905_send(hapd->eth_p_1905_ctx, dst_addr, src_addr,
 			       ETH_P_1905_SMD_NEIGHBOR_FETCH_MSG, &dummy, 1);
 }
 
 void smd_neighbor_update_notify_own_report_changed(struct hostapd_data *hapd)
 {
-	if (!hapd || !hapd->smd_neighbor_update_ctx)
+	struct hostapd_data *first_bss;
+
+	if (!hapd)
 		return;
 
+	/* ctx lives on the first BSS; check it regardless of which link changed */
+	first_bss = hostapd_mld_get_first_bss(hapd);
+	if (!first_bss)
+		first_bss = hapd; /* non-MLD AP */
+	if (!first_bss->smd_neighbor_update_ctx)
+		return;
+
+	/* Send only this link's updated report — other links are unchanged */
 	smd_neighbor_update_send(hapd, SMD_NEIGHBOR_UPDATE_MODIFY_AP);
 }
 
 
 void smd_neighbor_update_notify_going_down(struct hostapd_data *hapd)
 {
+	bool full_mld_teardown = false;
+
 	if (!hapd || !hapd->smd_neighbor_update_ctx)
 		return;
 
-	smd_neighbor_update_send(hapd, SMD_NEIGHBOR_UPDATE_REMOVE_AP);
+	/*
+	 * Detect a full-MLD teardown: all partner ifaces will have had
+	 * HAPD_IFACE_DISABLED set at the top of hostapd_interface_deinit() or
+	 * hostapd_disable_iface() before the per-BSS deinit loop runs.
+	 * Checking iface->state avoids relying on REENABLE_DEINIT being
+	 * propagated cross-iface and works for both teardown paths.
+	 *
+	 * Full teardown: send one batched frame covering all links so peers
+	 * remove the entire MLD entry atomically.
+	 * Single-link removal: send only this link's REMOVE so peers keep the
+	 * surviving links in their neighbor DB.
+	 */
+	if (hapd->conf->mld_ap && hapd->mld) {
+		struct hostapd_data *link_bss;
+
+		full_mld_teardown = true;
+		for_each_mld_link(link_bss, hapd) {
+			if (!link_bss->iface ||
+			    link_bss->iface->state != HAPD_IFACE_DISABLED) {
+				full_mld_teardown = false;
+				break;
+			}
+		}
+	}
+
+	if (full_mld_teardown)
+		smd_neighbor_update_send_mld(hapd,
+					     SMD_NEIGHBOR_UPDATE_REMOVE_AP);
+	else
+		smd_neighbor_update_send(hapd, SMD_NEIGHBOR_UPDATE_REMOVE_AP);
 }
 
 
@@ -680,9 +860,52 @@ int smd_neighbor_update_init(struct hostapd_data *hapd)
 	eloop_register_timeout(ctx->pull_period_sec, 0,
 			       smd_neighbor_update_timer, ctx, NULL);
 
-	/* Announce presence */
-	smd_neighbor_update_send(hapd, SMD_NEIGHBOR_UPDATE_NEW_AP);
+	/*
+	 * Send NEW_AP now only if every configured MLD link is already up.
+	 * Otherwise the last link to start will trigger it via
+	 * smd_neighbor_update_notify_link_started().
+	 */
+	if (!hapd->conf->mld_ap || !hapd->mld ||
+	    hostapd_get_active_links(hapd) + 1 >= hapd->mld->num_links) {
+		smd_neighbor_update_send_mld(hapd, SMD_NEIGHBOR_UPDATE_NEW_AP);
+		ctx->new_ap_sent = true;
+	}
 	return 0;
+}
+
+void smd_neighbor_update_notify_link_started(struct hostapd_data *hapd)
+{
+	struct hostapd_data *first_bss;
+	struct smd_neighbor_update_ctx *ctx;
+
+	if (!hapd || !hapd->eth_p_1905_ctx)
+		return;
+
+	first_bss = hostapd_mld_get_first_bss(hapd);
+	if (!first_bss)
+		return;
+
+	ctx = first_bss->smd_neighbor_update_ctx;
+	if (!ctx) {
+		/* First BSS not initialised yet; init will pick this link up */
+		return;
+	}
+
+	if (!ctx->new_ap_sent) {
+		/* Still waiting for all links: send once the last one is up */
+		if (!first_bss->mld)
+			return;
+		if (hostapd_get_active_links(first_bss) + 1 <
+		    first_bss->mld->num_links)
+			return; /* more links still expected */
+
+		smd_neighbor_update_send_mld(first_bss,
+					     SMD_NEIGHBOR_UPDATE_NEW_AP);
+		ctx->new_ap_sent = true;
+	} else {
+		/* Dynamic add after initial NEW_AP: announce this link alone */
+		smd_neighbor_update_send(hapd, SMD_NEIGHBOR_UPDATE_NEW_AP);
+	}
 }
 
 void smd_neighbor_update_deinit(struct hostapd_data *hapd)
@@ -694,9 +917,26 @@ void smd_neighbor_update_deinit(struct hostapd_data *hapd)
 		return;
 
 	ctx = hapd->smd_neighbor_update_ctx;
-	if (!ctx)
+	if (!ctx) {
+		/*
+		 * Affiliated MLD link: no ctx here.  For a full MLD teardown via
+		 * hostapd_interface_deinit() the ctx-owner's going_down() already
+		 * sent a batched REMOVE_AP covering all links, so no per-link send
+		 * is needed there.
+		 * For teardown via hostapd_disable_iface() (single-link removal or
+		 * CSA), REENABLE_DEINIT is not propagated to partners and the
+		 * batched path does not fire; each affiliated link must send its
+		 * own REMOVE here.  The shared socket is still live because
+		 * hostapd_free_hapd_data() guards eth_p_1905_deinit() with
+		 * hostapd_mld_is_first_bss().
+		 */
+		if (hapd->eth_p_1905_ctx)
+			smd_neighbor_update_send(hapd,
+						 SMD_NEIGHBOR_UPDATE_REMOVE_AP);
 		return;
+	}
 
+	/* ctx-owner: send REMOVE for this link then free ctx */
 	smd_neighbor_update_notify_going_down(hapd);
 
 	eloop_cancel_timeout(smd_neighbor_update_timer, ctx, NULL);

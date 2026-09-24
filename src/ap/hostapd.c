@@ -2515,6 +2515,9 @@ static int hostapd_start_beacon(struct hostapd_data *hapd,
 				   "SMD: Failed to initialize neighbor update");
 			return -1;
 		}
+		if (!hostapd_mld_is_first_bss(hapd) &&
+		    conf->smd_neighbor_update_enabled)
+			smd_neighbor_update_notify_link_started(hapd);
 	}
 #endif /* CONFIG_IEEE80211BN */
 
