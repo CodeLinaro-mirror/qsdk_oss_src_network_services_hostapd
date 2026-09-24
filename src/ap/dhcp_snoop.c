@@ -40,8 +40,14 @@ static void handle_dhcp(void *ctx, const u8 *src_addr, const u8 *buf,
 	int res, msgtype = 0, prefixlen = 32;
 	u32 subnet_mask = 0;
 	u16 ip_len;
+	size_t hdr_len;
 
-	exten_len = len - ETH_HLEN - (sizeof(*b) - sizeof(b->exten));
+	hdr_len = ETH_HLEN + (sizeof(*b) - sizeof(b->exten));
+
+	if (len < hdr_len)
+		return;
+
+	exten_len = len - hdr_len;
 	if (exten_len < 4)
 		return;
 
@@ -80,7 +86,7 @@ static void handle_dhcp(void *ctx, const u8 *src_addr, const u8 *buf,
 			}
 			break;
 		case DHCP_OPT_MSG_TYPE:
-			if (opt[1])
+			if (opt[1] == 1)
 				msgtype = opt[2];
 			break;
 		default:
