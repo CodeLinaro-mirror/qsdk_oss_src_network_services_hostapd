@@ -125,14 +125,22 @@ struct wpabuf *eth_p_1905_iap_encode_exec_resp(struct hostapd_data *hapd,
  *
  * Serving AP → Target AP (deferred SMD context after MTU split).
  * TLVs included:
- *   Datapath Ctx TLV  (always — iap->flags must have UHR_IAP_FLAG_HAS_DYNAMIC_CTX)
+ *   Client Identifier TLV  (always — carries iap->sta_addr so the Target AP
+ *                           can correlate the context with the right STA)
+ *   Datapath Ctx TLV       (always — iap->flags must have UHR_IAP_FLAG_HAS_DYNAMIC_CTX)
  *
+ * The Client Identifier TLV dst_bssid field is encoded as zeros (BSSID not
+ * yet known at this stage).
+ *
+ * @hapd: hostapd instance (for smd_identifier and mld_link_id)
  * @iap: IAP frame with UHR_IAP_FLAG_HAS_DYNAMIC_CTX set and frame_len = 0;
- *       iap->target_ap_mld_addr is the destination.
+ *       iap->target_ap_mld_addr is the destination, iap->sta_addr is the STA
+ *       MLD address to carry in the Client Identifier TLV.
  *
  * Returns allocated wpabuf on success, NULL on failure.
  */
-struct wpabuf *eth_p_1905_iap_encode_prep_ctx(const struct uhr_iap_frame *iap);
+struct wpabuf *eth_p_1905_iap_encode_prep_ctx(struct hostapd_data *hapd,
+					      const struct uhr_iap_frame *iap);
 
 /**
  * eth_p_1905_iap_encode_roam_cleanup - Encode ST Roam Cleanup TLV payload

@@ -324,6 +324,7 @@ int uhr_iap_send_st_prep_ctx(struct hostapd_data *hapd,
 	os_memcpy(iap->sta_addr, sta_addr, ETH_ALEN);
 
 	iap->flags = UHR_IAP_FLAG_HAS_DYNAMIC_CTX;
+	iap->current_link_id = hapd->mld_link_id;
 	iap->frame_len = 0;
 	iap->smd_ctx_len = htole16((u16) smd_ctx_len);
 	os_memcpy(iap->frame_ctx_data, smd_ctx, smd_ctx_len);
@@ -333,7 +334,7 @@ int uhr_iap_send_st_prep_ctx(struct hostapd_data *hapd,
 		   MAC2STR(target_ap_mld_addr), smd_ctx_len);
 
 	/* TLV-encode and send via IEEE 1905.1 (ETH_P_1905_SMD_ST_PREP_CTX_MSG) */
-	struct wpabuf *tbuf = eth_p_1905_iap_encode_prep_ctx(iap);
+	struct wpabuf *tbuf = eth_p_1905_iap_encode_prep_ctx(hapd, iap);
 	if (!tbuf) {
 		wpa_printf(MSG_ERROR, "IAP: Failed to encode ST PREP CTX TLV");
 		os_free(iap);
