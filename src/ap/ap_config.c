@@ -29,6 +29,7 @@
 #endif /* CONFIG_QCN_EXTN */
 #include "ieee802_11.h"
 #include "uhr_neighbor_update.h"
+#include "vlan_init.h"
 
 #define RADIUS_CLIENT_MAX_RETRIES 10
 #define RADIUS_CLIENT_MAX_WAIT	120
@@ -42,6 +43,7 @@ static void hostapd_config_free_vlan(struct hostapd_bss_config *bss)
 	while (vlan) {
 		prev = vlan;
 		vlan = vlan->next;
+		vlan_cancel_cleanup_for_vlan(prev);
 		os_free(prev);
 	}
 
@@ -332,6 +334,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 #endif /* CONFIG_ENC_ASSOC */
 
 	bss->report_connection_failures = 0;
+	bss->vlan_idle_cleanup = 30;
 }
 
 #ifdef CONFIG_IEEE80211BE
