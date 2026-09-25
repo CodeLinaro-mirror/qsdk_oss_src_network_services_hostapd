@@ -1192,7 +1192,6 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 #ifdef CONFIG_ENC_ASSOC
 	} else if (wpa_s->sel_security_profile &&
 		   (wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_EPPKE) &&
-		   wpa_key_mgmt_sae(wpa_s->sel_security_profile->key_mgmt) &&
 		   (wpa_s->sel_security_profile->key_mgmt &
 		    WPA_KEY_MGMT_EPPKE)) {
 		wpa_dbg(wpa_s, MSG_DEBUG,
