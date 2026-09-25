@@ -804,7 +804,7 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 #ifdef CONFIG_PMKSA_PRIVACY
 	if (ssid->pmksa_privacy ||
 	    (wpas_security_profile_active(wpa_s) &&
-	     sec_prof_list_has_sae(ssid->security_profiles)))
+	     sec_prof_list_has_epp(ssid->security_profiles)))
 		capab |= BIT(WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY);
 #endif /* CONFIG_PMKSA_PRIVACY */
 	pasn->derive_kek = true;

@@ -10649,6 +10649,25 @@ int wpas_get_ssid_pmf(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid)
 }
 
 
+bool sec_prof_list_has_epp(const int *numbers)
+{
+	int i;
+
+	if (!numbers)
+		return false;
+
+	for (i = 0; numbers[i] != -1; i++) {
+		const struct security_profile_entry *e;
+
+		e = sec_prof_get(numbers[i]);
+		if (e)
+			return e->pmksa_caching_privacy;
+	}
+
+	return false;
+}
+
+
 #ifdef CONFIG_SAE
 
 bool sec_prof_list_has_sae(const int *numbers)
