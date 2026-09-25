@@ -748,6 +748,11 @@ NEED_SHA256=y
 NEED_SHA384=y
 endif
 
+ifdef CONFIG_RADIUS_TLS
+CONFIG_RADIUS_TLS=y
+CFLAGS += -DCONFIG_RADIUS_TLS
+endif
+
 ifdef CONFIG_EAP_IKEV2
 CFLAGS += -DEAP_SERVER_IKEV2
 OBJS += ../src/eap_server/eap_server_ikev2.o ../src/eap_server/ikev2.o
