@@ -2597,7 +2597,8 @@ static int ieee802_1x_erp_add_key(void *ctx, struct eap_server_erp_key *erp)
 
 
 #ifdef CONFIG_HOSTAPD_IF
-static void ieee802_1x_dot1x_eap_success(void *ctx, void *sta_ctx)
+static void ieee802_1x_dot1x_eap_complete(void *ctx, void *sta_ctx,
+					  int success)
 {
 	struct hostapd_data *hapd = ctx;
 	struct sta_info *sta = sta_ctx;
@@ -2606,7 +2607,7 @@ static void ieee802_1x_dot1x_eap_success(void *ctx, void *sta_ctx)
 
 	identity = ieee802_1x_get_identity(sta->eapol_sm, &identity_len);
 	hostapd_if_event_dot1x_complete(hapd, sta->addr, identity, identity_len,
-					1);
+					success);
 }
 #endif /* CONFIG_HOSTAPD_IF */
 
@@ -2654,7 +2655,7 @@ int ieee802_1x_init(struct hostapd_data *hapd)
 	cb.erp_add_key = ieee802_1x_erp_add_key;
 #endif /* CONFIG_ERP */
 #ifdef CONFIG_HOSTAPD_IF
-	cb.dot1x_eap_success = ieee802_1x_dot1x_eap_success;
+	cb.dot1x_eap_complete = ieee802_1x_dot1x_eap_complete;
 #endif /* CONFIG_HOSTAPD_IF */
 
 	hapd->eapol_auth = eapol_auth_init(&conf, &cb);

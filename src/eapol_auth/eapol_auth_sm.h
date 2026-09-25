@@ -62,7 +62,7 @@ struct eapol_auth_cb {
 						   const char *keyname);
 	int (*erp_add_key)(void *ctx, struct eap_server_erp_key *erp);
 #ifdef CONFIG_HOSTAPD_IF
-	void (*dot1x_eap_success)(void *ctx, void *sta_ctx);
+	void (*dot1x_eap_complete)(void *ctx, void *sta_ctx, int success);
 #endif /* CONFIG_HOSTAPD_IF */
 };
 
