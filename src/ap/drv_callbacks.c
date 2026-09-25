@@ -4012,6 +4012,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 			}
 
 			ap_for_each_sta(hapd, hostapd_sm_link_reconfigure, phapd);
+			hostapd_free_link_stas(hapd);
 
 			/* Store tx_hapd to update MBSSID beacon as hapd will be
 			 * freed by hostapd_remove_bss() */
