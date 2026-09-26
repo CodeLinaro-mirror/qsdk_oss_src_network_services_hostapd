@@ -3842,11 +3842,13 @@ static void hostapd_iface_enable(struct hostapd_data *hapd)
 		wpa_printf(MSG_ERROR, "Could not change 6GHZ power mode(%d)",
 			   ret);
 		hostapd_disable_iface(iface);
+		return;
 	}
 
 	if (hostapd_set_current_hw_info(iface, iface->freq)) {
 		wpa_printf(MSG_ERROR, "Failed to get operating hw mac id");
 		hostapd_disable_iface(iface);
+		return;
 	}
 
 	wpa_msg(hapd->msg_ctx, MSG_INFO, INTERFACE_ENABLED);
