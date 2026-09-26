@@ -1804,7 +1804,6 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 	iface->cac_started = 0;
 	iface->cac_type = 0;
 #ifdef CONFIG_QCN_EXTN
-	iface->bootup_cac_in_progress = 0;
 	iface->iface_extn.cac_abort = 0;
 	iface->bootup_cac_in_progress = 0;
 #endif
@@ -7897,6 +7896,7 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt, const char *event)
 		hapd->iface->csa_pending_on_cac_abort = false;
 		hapd->iface->cac_started = 0;
 #ifdef CONFIG_QCN_EXTN
+		hapd->iface->iface_extn.cac_abort = 0;
 		hapd->iface->bootup_cac_in_progress = 0;
 #endif
 		os_memset(&hapd->iface->csa_settings, 0, sizeof(struct csa_settings));
