@@ -11679,6 +11679,25 @@ hostapd_get_chan_width_from_oper_chan_width(struct hostapd_config *iconf)
 }
 
 
+int hostapd_get_bw_from_oper_width(enum oper_chan_width width,
+				   int secondary_channel)
+{
+	switch (width) {
+	case CONF_OPER_CHWIDTH_USE_HT:
+		return secondary_channel ? CHWIDTH_40 : CHWIDTH_20;
+	case CONF_OPER_CHWIDTH_80MHZ:
+		return CHWIDTH_80;
+	case CONF_OPER_CHWIDTH_80P80MHZ:
+	case CONF_OPER_CHWIDTH_160MHZ:
+		return CHWIDTH_160;
+	case CONF_OPER_CHWIDTH_320MHZ:
+		return CHWIDTH_320;
+	default:
+		return CHWIDTH_20;
+	}
+}
+
+
 u8
 hostapd_get_best_ap_6ghz_power_mode_for_iface(struct hostapd_iface *iface)
 {

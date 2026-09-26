@@ -2129,19 +2129,11 @@ bool hostapd_is_bss_in_category(struct hostapd_data *hapd,
 				enum hostapd_bss_category cat);
 
 /**
- * dfs_get_subchannel_count() - Get the total subchannel count for a given bandwidth
- * @bandwidth: Channel width enum value
- *
- * Return: Number of 20 MHz subchannels in the given bandwidth, or 0 if invalid.
- */
-int dfs_get_subchannel_count(int bandwidth);
-
-/**
  * hostapd_update_puncture_source() - Update puncture source per 20 MHz
  * subchannel
  * @iface: Pointer to hostapd interface
  * @center_freq: Center frequency in MHz
- * @bandwidth: Channel width enum value
+ * @bw_mhz: Channel bandwidth in MHz
  * @new_punct_bitmap: New puncture bitmap to apply
  * @source: Puncture source being updated
  *
@@ -2150,7 +2142,7 @@ int dfs_get_subchannel_count(int bandwidth);
  * Return: 0 on success, -1 on validation failure.
  */
 int dfs_update_puncture_source(struct hostapd_iface *iface,
-			       u16 center_freq, int bandwidth,
+			       u16 center_freq, int bw_mhz,
 			       u16 new_punct_bitmap,
 			       enum dfs_chan_puncture_source source);
 
@@ -2231,6 +2223,19 @@ hostapd_set_current_6ghz_pwr_type(struct hostapd_iface *iface,
 	}
 	*power_mode = cur_pwr_type;
 }
+
+/**
+ * hostapd_get_bw_from_oper_width() - Convert oper_chan_width enum to bandwidth in MHz.
+ * @width: Operating channel width.
+ * @secondary_channel: Secondary channel offset.
+ *
+ * Converts an enum oper_chan_width value to its corresponding bandwidth
+ * in MHz.
+ *
+ * Return: Bandwidth in MHz.
+ */
+int hostapd_get_bw_from_oper_width(enum oper_chan_width width,
+				   int secondary_channel);
 #endif /* CONFIG_IEEE80211AX */
 
 /**

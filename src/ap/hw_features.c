@@ -2477,13 +2477,16 @@ int hostapd_select_hw_mode(struct hostapd_iface *iface)
 		iface->is_no_ir = false;
 
 		if (iface->conf->use_ru_puncture_dfs && iface->conf->punct_bitmap) {
-			enum chan_width ch_width;
+			int bw_mhz, sec_offset;
+			enum oper_chan_width width;
 
-			ch_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
+			width = hostapd_get_oper_chwidth(iface->conf);
+			sec_offset = iface->conf->secondary_channel;
+			bw_mhz = hostapd_get_bw_from_oper_width(width, sec_offset);
 			wpa_printf(MSG_DEBUG,
 				   "DFS: Update puncture source for User puncture bitmap=0x%04x",
 				   iface->conf->punct_bitmap);
-			dfs_update_puncture_source(iface, 0, ch_width,
+			dfs_update_puncture_source(iface, 0, bw_mhz,
 						   iface->conf->punct_bitmap,
 						   DFS_CHAN_PUNC_USER);
 		}
