@@ -367,7 +367,7 @@ static int hostapd_iface_conf_changed(struct hostapd_config *newconf,
 }
 
 
-static int hostapd_remove_hapd_iface(struct hostapd_iface *hapd_iface)
+int hostapd_remove_hapd_iface(struct hostapd_iface *hapd_iface)
 {
 	struct hapd_interfaces *interfaces;
 	size_t i;
