@@ -600,6 +600,9 @@ static u8 * hostapd_eid_supported_op_classes(struct hostapd_data *hapd, u8 *eid)
 	*eid++ = WLAN_EID_SUPPORTED_OPERATING_CLASSES;
 	*eid++ = 2;
 
+	hostapd_modify_supported_op_class_for_240mhz_extn(hapd->iface->freq,
+		hostapd_get_oper_chwidth(hapd->iconf), &op_class);
+
 	/* Current Operating Class */
 	*eid++ = op_class;
 
@@ -867,6 +870,8 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 			buflen += hostapd_eid_eht_ml_tid_to_link_map_len(
 				hapd);
 
+		hostapd_modify_buflen_for_240mhz_extn(&buflen, hapd);
+
 		/* TTLM IE */
 		if (hapd->mld &&
 		    hapd->mld->ttlm_ctx.established_ttlm.ttlm.expected_duration_present)
@@ -1095,6 +1100,8 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 
 		if (hapd->conf->mld_ap)
 			pos = hostapd_eid_eht_ml_tid_to_link_map(hapd, pos);
+		pos = hostapd_eid_vendor_240mhz_extn(hapd, pos,
+						     IEEE80211_MODE_AP);
 
 		/* TTLM IE */
 		if (hapd->mld &&
@@ -2534,6 +2541,8 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		if (hapd->iconf->punct_bitmap)
 			tail_len += EHT_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
 
+		hostapd_modify_buflen_for_240mhz_extn(&tail_len, hapd);
+
 		/*
 		 * TODO: Multi-Link element has variable length and can be
 		 * long based on the common info and number of per
@@ -2800,6 +2809,9 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 			tailpos = hostapd_eid_eht_ml_tid_to_link_map(hapd,
 								     tailpos);
 		tailpos = hostapd_eid_channel_usage(hapd, tailpos, tailend - tailpos);
+
+		tailpos = hostapd_eid_vendor_240mhz_extn(hapd, tailpos,
+							 IEEE80211_MODE_AP);
 		if (hapd->conf->mld_ap)
 			tailpos = hostapd_add_traffic_ind_elem(hapd, tailpos);
 	}

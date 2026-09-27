@@ -37,6 +37,9 @@
 #include "mbo_ap.h"
 #include "ndisc_snoop.h"
 #include "sta_info.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../../qcn_extns/cmn.h"
+#endif
 #include "vlan.h"
 #include "wps_hostapd.h"
 #include "robust_av.h"
@@ -652,6 +655,11 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	os_free(sta->he_6ghz_capab);
 	os_free(sta->eht_capab);
 	os_free(sta->uhr_capab);
+
+#ifdef CONFIG_QCN_EXTN
+	hostapd_sta_os_free_extn(&sta->sta_extn);
+#endif
+
 	hostapd_free_psk_list(sta->psk);
 	os_free(sta->identity);
 	os_free(sta->radius_cui);
@@ -2536,7 +2544,13 @@ int ap_sta_re_add(struct hostapd_data *hapd, struct sta_info *sta, int check_aut
 	if (hostapd_sta_add(hapd, sta->addr, 0, 0,
 			    sta->supported_rates,
 			    sta->supported_rates_len,
-			    0, NULL, NULL, NULL, 0, NULL, 0, NULL, 0, NULL,
+#ifdef CONFIG_QCN_EXTN
+			    0, NULL, NULL, NULL, 0, NULL, 0,
+			    NULL, 0, NULL, NULL,
+#else
+			    0, NULL, NULL, NULL, 0, NULL, 0,
+			    NULL, 0, NULL,
+#endif
 			    sta->flags, 0, 0, 0, 0,
 			    mld_link_addr, mld_link_sta, eml_cap, epp_sta, 0)) {
 		hostapd_logger(hapd, sta->addr,

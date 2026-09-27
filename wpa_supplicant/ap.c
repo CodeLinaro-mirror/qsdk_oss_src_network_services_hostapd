@@ -103,10 +103,20 @@ static void wpas_conf_ap_vht(struct wpa_supplicant *wpa_s,
 				       &freq_seg_idx);
 		hostapd_set_oper_centr_freq_seg0_idx(conf, freq_seg_idx);
 
+#ifdef CONFIG_QCN_EXTN
 		wpa_printf(MSG_DEBUG,
 			   "VHT seg0 index %d and seg1 index %d for AP",
 			   hostapd_get_oper_centr_freq_seg0_idx(conf),
 			   hostapd_get_oper_centr_freq_seg1_idx(conf));
+
+#else
+		wpa_printf(MSG_DEBUG,
+			   "VHT seg0 index %d and seg1 index %d  BW %d for AP",
+			   hostapd_get_oper_centr_freq_seg0_idx(conf),
+			   hostapd_get_oper_centr_freq_seg1_idx(conf),
+			   hostapd_get_oper_chwidth(conf));
+#endif
+
 		return;
 	}
 

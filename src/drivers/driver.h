@@ -429,6 +429,10 @@ struct hostapd_channel_data {
 	 */
 	s8 eirp_power;
 
+#ifdef CONFIG_QCN_EXTN
+	struct hostapd_channel_data_extn extn;
+#endif
+
 };
 
 #define HE_MAC_CAPAB_0		0

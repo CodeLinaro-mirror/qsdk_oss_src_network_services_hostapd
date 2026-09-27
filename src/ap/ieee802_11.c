@@ -66,6 +66,7 @@
 #include "pasn/pasn_common.h"
 #include "ttlm.h"
 #include "dscp_policy.h"
+#include "../../qcn_extns/cmn.h"
 #include "robust_av.h"
 #include "wpa_auth_i.h"
 
@@ -7129,6 +7130,12 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			return WLAN_STATUS_DENIED_EHT_NOT_SUPPORTED;
 		}
 
+		resp = hostapd_copy_sta_eht_240mhz_cap_extn(hapd, sta,
+							    IEEE80211_MODE_AP,
+							    &elems->elems_extn);
+		if (resp != WLAN_STATUS_SUCCESS)
+			goto out;
+
 		if (!assoc_wpa_sm) {
 			resp = hostapd_process_ml_assoc_req(hapd, elems, sta);
 			if (resp != WLAN_STATUS_SUCCESS)
@@ -7921,6 +7928,8 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 		if (hostapd_is_eht_enabled(hapd)) {
 			p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
 			p = hostapd_eid_eht_operation(hapd, p);
+			p = hostapd_eid_vendor_240mhz_extn(hapd, p,
+							   IEEE80211_MODE_AP);
 		}
 	}
 
@@ -8236,8 +8245,13 @@ int hostapd_process_assoc_ml_info(struct hostapd_data *hapd,
 			if (hostapd_sta_add(hapd, sta->addr, 0, 0,
 					    sta->supported_rates,
 					    sta->supported_rates_len,
-					    0, NULL, NULL, NULL, 0,
-					    NULL, 0, NULL, 0, NULL,
+#ifdef CONFIG_QCN_EXTN
+					    0, NULL, NULL, NULL, 0, NULL, 0,
+					    NULL, 0, NULL, NULL,
+#else
+					    0, NULL, NULL, NULL, 0, NULL, 0,
+					    NULL, 0, NULL,
+#endif
 					    sta->flags, 0, 0, 0, 0,
 					    mld_link_addr, mld_link_sta,
 					    eml_cap, ap_sta_is_epp(sta), reassoc)) {
@@ -8445,6 +8459,9 @@ static int add_associated_sta(struct hostapd_data *hapd,
 			    sta->flags & WLAN_STA_EHT ? sta->eht_capab_len : 0,
 			    sta->flags & WLAN_STA_UHR ? &uhr_cap : NULL,
 			    sta->flags & WLAN_STA_UHR ? sta->uhr_capab_len : 0,
+#ifdef CONFIG_QCN_EXTN
+			    (struct sta_info_extn *)&sta->sta_extn,
+#endif
 			    sta->he_6ghz_capab,
 			    sta->flags | WLAN_STA_ASSOC, sta->qosinfo,
 			    sta->vht_opmode, sta->p2p_ie ? 1 : 0,
@@ -8505,6 +8522,7 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 		buflen += hostapd_eid_channel_usage_len(hapd);
 		if (hapd->iconf->punct_bitmap)
 			buflen += EHT_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
+		hostapd_modify_buflen_for_240mhz_extn(&buflen, hapd);
 		if (ap_sta_is_mld(hapd, sta)) {
 			buflen += hostapd_eid_eht_ml_tid_to_link_map_len(hapd);
 		buflen += hostapd_eid_eht_basic_ml_len(hapd, sta,
@@ -8689,6 +8707,8 @@ rsnxe_done:
 			p = hostapd_eid_eht_ml_assoc(hapd, sta, p);
 		p = hostapd_eid_eht_capab(hapd, p, IEEE80211_MODE_AP);
 		p = hostapd_eid_eht_operation(hapd, p);
+		p = hostapd_eid_vendor_240mhz_extn(hapd, p,
+						   IEEE80211_MODE_AP);
 		hostapd_get_epcs_capab(hapd, sta);
 
 		/* Append Channel Usage element to Association response */
@@ -13737,6 +13757,13 @@ static bool hostapd_rnr_get_bss_info(struct hostapd_data *hapd,
 		    secondary_channel, bss_chwidth,
 		    op_class, channel) == NUM_HOSTAPD_MODES)
 		return false;
+
+#ifdef CONFIG_QCN_EXTN
+	if (hostapd_get_oper_chan_width_of_bss(bss) ==
+	    CONF_OPER_CHWIDTH_320MHZ)
+		hostapd_modify_supported_op_class_for_320mhz_extn(
+			bss->iface->freq, op_class);
+#endif
 
 	return true;
 }
