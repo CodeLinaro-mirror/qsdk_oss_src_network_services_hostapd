@@ -5034,9 +5034,8 @@ static int hostapd_ctrl_set_tx_rx_chain_mask(struct hostapd_data *hapd,
 		for (i = 0; i < num_modes; i++) {
 			struct hostapd_hw_modes *mode = &modes[i];
 
-			if (mode->channels &&
-			    mode->channels->freq ==
-			    hapd->iface->current_mode->channels->freq) {
+			if (mode->channels && (mode->mode == hapd->iface->current_mode->mode) &&
+			    (mode->channels->freq == hapd->iface->current_mode->channels->freq)) {
 				if (hapd->iface->current_mode->rates)
 					os_free(hapd->iface->current_mode->rates);
 
