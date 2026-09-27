@@ -349,6 +349,7 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->he_6ghz_tx_ant_pat = 1;
 	conf->he_6ghz_reg_pwr_type = HE_REG_INFO_6GHZ_AP_TYPE_VLP;
 	conf->enable_best_power_mode = 1;
+	conf->original_chan_width = 0;
 	conf->puncture_strict_6ghz = 0;
 	conf->punc_eirp_thres_6ghz = CHAN_MIN_TX_POWER;
 	conf->reg_def_cli_eirp_psd = -1;

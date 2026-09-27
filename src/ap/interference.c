@@ -45,7 +45,7 @@ enum chan_seg {
 };
 
 
-static bool is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
+static bool intf_is_chan_disabled(struct hostapd_hw_modes *mode, int chan_num)
 {
 	struct hostapd_channel_data *chan;
 	int i;
@@ -104,7 +104,7 @@ static bool chan_range_available(struct hostapd_hw_modes *mode,
 	 * are enabled.
 	 */
 	for (i = 1; i < num_chans; i++) {
-		if (is_chan_disabled(mode, first_chan->chan + i * 4))
+		if (intf_is_chan_disabled(mode, first_chan->chan + i * 4))
 			return false;
 	}
 
@@ -1561,6 +1561,17 @@ int hostapd_intf_afc_received(struct hostapd_iface *iface)
 
 	chan_width = hostapd_get_chan_width_from_oper_chan_width(iface->conf);
 	wpa_printf(MSG_DEBUG, "chan_width=%d", chan_width);
+
+	/* Store the original channel width on first AFC request */
+	if (iface->conf->original_chan_width == 0) {
+		iface->conf->original_chan_width = chan_width;
+		wpa_printf(MSG_DEBUG, "AFC: Storing original channel width: %d",
+			   iface->conf->original_chan_width);
+	} else {
+		/* Use the original channel width as starting point for subsequent requests */
+		chan_width = iface->conf->original_chan_width;
+		wpa_printf(MSG_DEBUG, "AFC: Using original channel width: %d", chan_width);
+	}
 
 	chan_data = os_zalloc(sizeof(struct hostapd_channel_data));
 	if (!chan_data) {

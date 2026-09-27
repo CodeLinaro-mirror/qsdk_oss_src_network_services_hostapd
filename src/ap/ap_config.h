@@ -1397,6 +1397,7 @@ struct hostapd_config {
 	bool channel_usage;
 	bool peer_to_peer_twt;
 	int use_ru_puncture_dfs;
+	int original_chan_width; /* Original channel width for AFC */
 	int ccfs;
 	int afc_chan_sel_config;
 	int cur_chan_eirp;
