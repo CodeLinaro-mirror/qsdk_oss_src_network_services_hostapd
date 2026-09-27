@@ -18,6 +18,9 @@
 #include "crypto/sha384.h"
 #include "pasn/pasn_common.h"
 #include "hostapd.h"
+#ifdef CONFIG_QCN_EXTN
+#include "../../qcn_extns/cmn.h"
+#endif /* CONFIG_QCN_EXTN */
 
 /* sta_info.h must not include ap/robust_av.h: supplicant TUs (mesh_mpm.c,
  * mesh_rsn.c) include this header and robust_av.h's types collide with the
@@ -130,6 +133,11 @@ struct dscp_policy_state {
 struct sta_info {
 	struct sta_info *next; /* next entry in sta list */
 	struct sta_info *hnext; /* next entry in hash table list */
+
+#ifdef CONFIG_QCN_EXTN
+	struct sta_info_extn sta_extn;
+#endif /* CONFIG_QCN_EXTN */
+
 	u8 addr[6];
 	be32 ipaddr;
 	struct dl_list ip6addr; /* list head for struct ip6addr */

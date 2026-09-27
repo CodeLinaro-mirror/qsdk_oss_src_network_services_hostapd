@@ -2218,6 +2218,10 @@ ifdef CONFIG_NO_TKIP
 CFLAGS += -DCONFIG_NO_TKIP
 endif
 
+ifdef CONFIG_QCN_EXTN
+include ../qcn_extns/Makefile
+endif
+
 dynamic_eap_methods: $(EAPDYN)
 
 _OBJS_VAR := OBJS_priv
