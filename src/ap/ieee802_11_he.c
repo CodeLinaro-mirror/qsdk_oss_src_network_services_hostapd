@@ -355,7 +355,7 @@ u8 * hostapd_eid_he_mu_edca_parameter_set(struct hostapd_data *hapd, u8 *eid, bo
 	edca = (struct ieee80211_he_mu_edca_parameter_set *) pos;
 	os_memcpy(edca, he_mu_edca, sizeof(*edca));
 
-	wpa_hexdump(MSG_DEBUG, "HE: MU EDCA Parameter Set element",
+	wpa_hexdump(MSG_MSGDUMP, "HE: MU EDCA Parameter Set element",
 		    pos, sizeof(*edca));
 
 	pos += sizeof(*edca);
