@@ -13760,7 +13760,8 @@ static bool hostapd_rnr_get_bss_info(struct hostapd_data *hapd,
 
 #ifdef CONFIG_QCN_EXTN
 	if (hostapd_get_oper_chan_width_of_bss(bss) ==
-	    CONF_OPER_CHWIDTH_320MHZ)
+	    CONF_OPER_CHWIDTH_320MHZ &&
+	    bss->iconf->downgrade_320mhz_opclass)
 		hostapd_modify_supported_op_class_for_320mhz_extn(
 			bss->iface->freq, op_class);
 #endif

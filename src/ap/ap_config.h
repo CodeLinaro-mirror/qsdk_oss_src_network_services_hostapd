@@ -1385,6 +1385,10 @@ struct hostapd_config {
 	bool enable_6ghz_composite_ap;
 	bool enable_mcs15;
 
+#ifdef CONFIG_QCN_EXTN
+	bool downgrade_320mhz_opclass;
+#endif
+
 	/* Whether to enable TWT responder in HT and VHT modes */
 	bool ht_vht_twt_responder;
 
