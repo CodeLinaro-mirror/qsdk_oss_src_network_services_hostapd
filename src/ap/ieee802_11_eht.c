@@ -994,7 +994,7 @@ static size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd,
 
 		/* Element data and (fragmentation) headers */
 		eht_ml_len += sta_len;
-		eht_ml_len += 2 + (sta_len - 1) / 255 * 2;
+		eht_ml_len += 2 + (sta_len > 255 ? ((sta_len - 1) / 255) * 2 : 0);
 	}
 
 	/* EID_EXT_MULTI_LINK (1) + Element data */
@@ -1002,7 +1002,7 @@ static size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd,
 
 	/* Fragmentation headers */
 	if (eht_ml_len > 254)
-		len += (eht_ml_len + 1) / 255 * 2;
+		len += (eht_ml_len / 255) * 2;
 
 	/* Outer header EID_EXT (1) + length (1) */
 	len += 2;
