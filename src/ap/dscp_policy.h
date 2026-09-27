@@ -39,9 +39,6 @@
 
 #include "robust_av.h"
 
-size_t hostapd_dscp_cap_ie_len(struct hostapd_data *hapd);
-u8 *hostapd_set_dscp_capabilities(struct hostapd_data *hapd,
-				  struct sta_info *sta, u8 *eid);
 void hostapd_check_dscp_policy_capability(struct sta_info *sta,
 					  const u8 *ies, size_t ies_len);
 int validate_dscp_policy(struct hostapd_dscp_policy *policy);

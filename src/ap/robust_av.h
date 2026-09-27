@@ -152,6 +152,10 @@ int hostapd_handle_dscp_policy_response(struct hostapd_data *hapd,
 					struct sta_info *sta,
 					const u8 *data, size_t len);
 
+size_t hostapd_wfa_cap_ie_len(struct hostapd_data *hapd, struct sta_info *sta);
+u8 *hostapd_add_wfa_cap_ie(struct hostapd_data *hapd, struct sta_info *sta,
+				 u8 *eid);
+
 #ifdef CONFIG_IEEE80211AX
 #define HOSTAPD_SCS_MAX_DESCRIPTORS_PER_PEER		10
 #define HOSTAPD_SCS_MAX_DESCPRIPTORS_PER_REQUEST	4
@@ -412,8 +416,6 @@ struct hostapd_mscs_desc {
 	u32 stream_timeout;
 	struct hostapd_tclas_mask_elem tclas_mask_elem;
 };
-
-u8 *hostapd_add_scs_ie(u8 *frm, bool scs);
 
 int hostapd_dump_scs_list(struct hostapd_data *hapd, struct sta_info *sta,
 			  char *buf, size_t buflen);
