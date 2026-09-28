@@ -3228,7 +3228,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 					      struct link_removal_event *ev,
 					      enum wpa_event_type event)
 {
-	struct hostapd_data *phapd, *partner = NULL;
+	struct hostapd_data *phapd, *partner = NULL, *tx_hapd;
 	struct hostapd_iface *iface;
 	unsigned int i;
 	struct hapd_interfaces *interfaces;
@@ -3300,7 +3300,6 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 				}
 			}
 		} else {
-			/* Should be updated when MBSSID grouping is enabled */
 			for (i = 0; i < iface->conf->num_bss; i++) {
 				if (iface->bss[i] == hapd)
 					break;
@@ -3315,7 +3314,16 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 		if (partner)
 				ap_for_each_sta(hapd, hostapd_sm_link_reconfigure, partner);
 
+			/* Save tx_hapd to update MBSSID beacon as hapd will be
+			 * freed by hostapd_remove_bss() */
+			tx_hapd = hostapd_mbssid_get_tx_bss(hapd);
+			if (tx_hapd == hapd)
+				tx_hapd = NULL;
+
 			hostapd_remove_bss(iface, i);
+
+			if (tx_hapd)
+				ieee802_11_update_beacon_mbssid(tx_hapd);
 		}
 
 		/* Refresh all the partner beacons */
@@ -3567,6 +3575,7 @@ void hostapd_wpa_event(void *ctx, enum wpa_event_type event,
 #ifdef NEED_AP_MLME
 	case EVENT_INTERFACE_UNAVAILABLE:
 		hostapd_event_iface_unavailable(hapd);
+		ieee802_11_update_beacon_mbssid(hapd);
 		/* Update beacon information in all other interfaces to cover
 		 * removal/disabling of this BSS. */
 		hostapd_refresh_other_iface_beacons(hapd->iface);
