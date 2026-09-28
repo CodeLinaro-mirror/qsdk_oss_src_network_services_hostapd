@@ -3594,6 +3594,7 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
 				     hapd->iconf->ieee80211ac,
 				     hapd->iconf->ieee80211ax,
 				     hapd->iconf->ieee80211be,
+				     hapd->iconf->ieee80211bn,
 				     hapd->iconf->secondary_channel,
 				     hostapd_get_oper_chwidth(hapd->iconf),
 				     hostapd_get_oper_centr_freq_seg0_idx(
@@ -6214,6 +6215,12 @@ int hostapd_change_config_freq(struct hostapd_data *hapd,
 			.bandwidth_device = conf->bandwidth_device,
 			.center_freq_device = conf->center_freq_device,
 			.eht.punct_bitmap = hostapd_get_punct_bitmap(hapd),
+#ifdef CONFIG_IEEE80211BN
+			.uhr.enabled = conf->ieee80211bn,
+			.uhr.dbe_bandwidth = conf->dbe_bandwidth,
+			.uhr.cap = mode ? &mode->uhr_capab[IEEE80211_MODE_AP] : NULL,
+			.uhr.dbe_punct_bitmap = conf->dbe_punct_bitmap,
+#endif /* CONFIG_IEEE80211BN */
 			.he_6ghz_reg_pwr_type = hapd->iconf->he_6ghz_reg_pwr_type,
 		};
 
@@ -6698,6 +6705,7 @@ hostapd_switch_channel_fallback(struct hostapd_iface *iface,
 	iface->conf->ieee80211ac = freq_params->vht_enabled;
 	iface->conf->ieee80211ax = freq_params->he_enabled;
 	iface->conf->ieee80211be = freq_params->eht_enabled;
+	iface->conf->ieee80211bn = freq_params->uhr_enabled;
 	iface->conf->bandwidth_device = freq_params->bandwidth_device;
 	iface->conf->center_freq_device = freq_params->center_freq_device;
 	iface->conf->punct_bitmap = freq_params->punct_bitmap;

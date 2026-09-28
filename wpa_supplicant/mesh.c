@@ -210,6 +210,13 @@ static int wpas_mesh_update_freq_params(struct wpa_supplicant *wpa_s)
 		.vht.caps = ifmsh->conf->vht_capab,
 		.he.cap = ifmsh->current_mode ?
 		&ifmsh->current_mode->he_capab[IEEE80211_MODE_MESH] : NULL,
+	#ifdef CONFIG_IEEE80211BN
+		.uhr.enabled = ifmsh->conf->ieee80211bn,
+		.uhr.dbe_bandwidth = ifmsh->conf->dbe_bandwidth,
+		.uhr.cap = ifmsh->current_mode ?
+		&ifmsh->current_mode->uhr_capab[IEEE80211_MODE_MESH] : NULL,
+		.uhr.dbe_punct_bitmap = ifmsh->conf->dbe_punct_bitmap,
+	#endif /* CONFIG_IEEE80211BN */
 		.bandwidth_device = ifmsh->conf->bandwidth_device,
 		.center_freq_device = ifmsh->conf->center_freq_device,
 		.he_6ghz_reg_pwr_type = ifmsh->conf->he_6ghz_reg_pwr_type,

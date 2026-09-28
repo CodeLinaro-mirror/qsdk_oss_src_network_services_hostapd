@@ -707,6 +707,7 @@ out:
 				       conf->ieee80211ac,
 				       conf->ieee80211ax,
 				       conf->ieee80211be,
+				       conf->ieee80211bn,
 				       conf->secondary_channel,
 				       hostapd_get_oper_chwidth(conf),
 				       hostapd_get_oper_centr_freq_seg0_idx(conf),

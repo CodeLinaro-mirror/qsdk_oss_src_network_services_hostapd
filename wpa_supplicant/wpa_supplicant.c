@@ -4346,6 +4346,10 @@ skip_80mhz:
 		.vht.caps = vht_caps,
 		.he.cap = &mode->he_capab[ieee80211_mode],
 		.eht.cap = &mode->eht_capab[ieee80211_mode],
+	#ifdef CONFIG_IEEE80211BN
+		.uhr.enabled = freq->uhr_enabled,
+		.uhr.cap = &mode->uhr_capab[ieee80211_mode],
+	#endif /* CONFIG_IEEE80211BN */
 		.bandwidth_device = freq->bandwidth_device,
 		.center_freq_device = freq->center_freq_device,
 		.he_6ghz_reg_pwr_type = freq->he_6ghz_reg_pwr_type,
