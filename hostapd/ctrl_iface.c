@@ -8567,6 +8567,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "SEND_UNSOLICITED_SCS_RESP ", 26) == 0) {
 		if (hostapd_ctrl_iface_send_scs_resp(hapd, buf + 26))
 			reply_len = -1;
+	} else if (os_strncmp(buf, "SET_MBSSID_TX", 13) == 0) {
+		if (hostapd_ctrl_iface_set_mbssid_tx(hapd, buf + 13))
+			reply_len = -1;
 #endif /* CONFIG_IEEE80211AX */
 	} else {
 		if (!hostapd_ctrl_iface_receive_process_extn(hapd, buf, reply,
