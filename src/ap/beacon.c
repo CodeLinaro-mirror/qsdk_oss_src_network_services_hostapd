@@ -1575,6 +1575,7 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 		pos = hostapd_eid_uhr_capab(hapd, pos, IEEE80211_MODE_AP);
 		pos = hostapd_eid_uhr_operation(hapd, pos, false);
 		pos = hostapd_eid_tx_power_indication(hapd, pos);
+		pos = hostapd_eid_uhr_params_update(hapd, pos, false, false);
 	}
 #endif /* CONFIG_IEEE80211BN */
 	pos = hostapd_eid_security_profile(hapd, pos);
