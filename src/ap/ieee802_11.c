@@ -15589,14 +15589,12 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 	for (i = *bss_index; i < num_bss; i++) {
 		struct hostapd_data *bss;
 		struct hostapd_bss_config *conf;
-		struct hostapd_bss_config *tx_conf = tx_bss->conf;
 		struct non_inheritance_elem non_inherit_ie;
 		u8 *eid_len_pos, *nontx_bss_start = eid;
 		u16 capab_info;
 #ifdef CONFIG_IEEE80211BE
 		u16 modified_flag = 0;
 #endif /* CONFIG_IEEE80211BE */
-		u8 mbssindex;
 		size_t j, wmm_len;
 		ssize_t optional_ie_len = 0;
 
@@ -15609,10 +15607,6 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 		    !bss->beacon_set_done ||
 		    mbssid_known_bss(i, known_bss, known_bss_len))
 			continue;
-		if (tx_bss->iconf->mbssid == MULTI_MBSSID_GROUP_ENABLED)
-			mbssindex = i;
-		else
-			mbssindex = bss->mbssid_idx;
 		conf = bss->conf;
 
 		*eid++ = WLAN_MBSSID_SUBELEMENT_NONTRANSMITTED_BSSID_PROFILE;
@@ -15641,14 +15635,10 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 			*eid++ = 0;
 		}
 
-		if (conf->mbssid_index &&
-		    conf->mbssid_index > tx_conf->mbssid_index)
-			mbssindex = conf->mbssid_index - tx_conf->mbssid_index;
-
 		*eid++ = WLAN_EID_MULTIPLE_BSSID_INDEX;
 		if (frame_type == WLAN_FC_STYPE_BEACON) {
 			*eid++ = 3;
-			*eid++ = mbssindex; /* BSSID Index */
+			*eid++ = bss->mbssid_idx; /* BSSID Index */
 			if (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
 			    (conf->dtim_period % elem_count))
 				conf->dtim_period = elem_count;
@@ -15664,7 +15654,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 			/* Probe Request frame does not include DTIM Period and
 			 * DTIM Count fields. */
 			*eid++ = 1;
-			*eid++ = mbssindex; /* BSSID Index */
+			*eid++ = bss->mbssid_idx; /* BSSID Index */
 		}
 
 		os_memset(&non_inherit_ie, 0, sizeof(non_inherit_ie));
