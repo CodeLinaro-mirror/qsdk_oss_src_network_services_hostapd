@@ -7127,9 +7127,9 @@ u8 *hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid)
 	u8 *pos = eid;
 	u8 *len_pos;
 	u8 reduced_rsn_capab = 0;
-	u8 ext_rsn_capab[256];
+	u8 ext_rsn_capab[256] = {0};
 	size_t ext_rsn_capab_len = 0;
-	u8 bitmap[16]; /* max 128 profiles */
+	u8 bitmap[16] = {0}; /* max 128 profiles */
 	size_t bitmap_len = 0;
 	int i, max_profile = -1;
 	u8 rsnxe_buf[2 + sizeof(u64)];
