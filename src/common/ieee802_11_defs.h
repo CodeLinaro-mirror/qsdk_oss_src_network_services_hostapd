@@ -1343,6 +1343,12 @@ struct ieee80211_mgmt {
 					u8 subtype;
 					u8 variable[0];
 				} STRUCT_PACKED naf;
+#ifdef CONFIG_QCN_EXTN
+				struct {
+					u8 action;
+					u8 variable[];
+				} STRUCT_PACKED spectrum_mgmt;
+#endif
 			} u;
 		} STRUCT_PACKED action;
 	} u;

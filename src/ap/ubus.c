@@ -24,10 +24,25 @@
 #include "taxonomy.h"
 #include "airtime_policy.h"
 #include "hw_features.h"
+#ifdef CONFIG_QCN_EXTN
+#include  <../../qcn_extns/cmn.h>
+#endif
 
 static struct ubus_context *ctx;
 static struct blob_buf b;
 static int ctx_ref;
+
+#ifdef CONFIG_QCN_EXTN
+struct ubus_context *ubus_ap_fetch_context_extn(void)
+{
+	return ctx;
+}
+
+struct blob_buf *ubus_ap_fetch_bbuf_extn(void)
+{
+	return &b;
+}
+#endif
 
 static inline struct hostapd_data *get_hapd_from_object(struct ubus_object *obj)
 {

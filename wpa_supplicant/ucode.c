@@ -11,7 +11,9 @@
 #include "driver_i.h"
 #include "sme.h"
 #include "config.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/cmn.h"
+#endif
 #include "eloop.h"
 
 static struct wpa_global *wpa_global;
@@ -718,6 +720,10 @@ int wpas_ucode_init(struct wpa_global *gl)
 	};
 	static const uc_function_list_t iface_fns[] = {
 		{ "status", uc_wpas_iface_status },
+#ifdef CONFIG_QCN_EXTN
+		{ "notify_uplink_csa", uc_wpas_notify_uplink_csa_extn },
+		{ "reconnect", uc_wpas_iface_reconnect_extn },
+#endif
 	};
 
 	wpa_global = gl;

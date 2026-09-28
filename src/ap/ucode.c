@@ -12,12 +12,26 @@
 #include "robust_av.h"
 #include <libubox/uloop.h>
 #include "sta_info.h"
+#ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
+#endif
 
 static uc_resource_type_t *global_type, *bss_type, *iface_type;
 static struct hapd_interfaces *interfaces;
 static uc_value_t *global, *bss_registry, *iface_registry;
 static uc_vm_t *vm;
+
+#ifdef CONFIG_QCN_EXTN
+struct uc_value *ucode_ap_fetch_iface_reg_extn(void)
+{
+	return iface_registry;
+}
+
+struct uc_vm *ucode_ap_fetch_vm_extn(void)
+{
+	return vm;
+}
+#endif
 
 static uc_value_t *
 hostapd_ucode_bss_get_uval(struct hostapd_data *hapd)
