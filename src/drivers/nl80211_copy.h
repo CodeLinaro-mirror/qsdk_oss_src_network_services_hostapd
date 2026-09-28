@@ -3086,6 +3086,9 @@ enum nl80211_commands {
  *	this is informational only for userspace (it's not expected to set
  *	these.)
  *
+ * @NL80211_ATTR_BITRATE: This attribute is used with %NL80211_CMD_FRAME to
+ *	send legacy bitrate information of management packets to userspace.
+ *
  * @NL80211_ATTR_WIPHY_RADIO_INDEX: (int) Integer attribute denoting the index
  *	of the radio in interest. Internally a value of -1 is used to
  *	indicate that the radio id is not given in user-space. This means
@@ -3914,6 +3917,7 @@ enum nl80211_attrs {
 	NL80211_ATTR_USE_CFP = 394,
 	NL80211_ATTR_CFP = 395,
 	NL80211_ATTR_CIGTK = 396,
+	NL80211_ATTR_BITRATE = 397,
 
 	NL80211_ATTR_STA_DUMP_LINK_STATS,
 
