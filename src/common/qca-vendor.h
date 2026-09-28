@@ -1720,6 +1720,11 @@ enum qca_radiotap_vendor_ids {
  * @QCA_NL80211_VENDOR_SUBCMD_REPURPOSE_LINK_INDICATION: Vendor subcommand to
  *	indicate the repurposed link to driver. The command will be sent only
  *	if the link is repurposed to 11AC/11AX modes.
+ *
+ * @QCA_NL80211_VENDOR_SUBCMD_DCS_SIM: This vendor subcommand is to allow the
+ *     user to trigger interference in repeater scenario through simulation
+ *     and analyze the state of the channel to mitigate the same at the root
+ *     node through Dynamic Channel Selection(DCS).
  */
 enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_UNSPEC = 0,
@@ -2010,6 +2015,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_DERIVE_LINK_BSS_ADDR = 512,
 	QCA_NL80211_VENDOR_SUBCMD_GET_CHANNEL_SWITCH_TIME = 515,
 	QCA_NL80211_VENDOR_SUBCMD_REPURPOSE_LINK_INDICATION = 516,
+	QCA_NL80211_VENDOR_SUBCMD_DCS_SIM = 517,
 };
 
 /* Attributes for the 6 GHz power-mode vendor command and completion event. */
@@ -24560,6 +24566,29 @@ enum qca_wlan_vendor_attr_dcs {
 	QCA_WLAN_VENDOR_ATTR_DCS_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_DCS_MAX =
 	QCA_WLAN_VENDOR_ATTR_DCS_AFTER_LAST - 1
+};
+
+/**
+ * enum qca_wlan_vendor_attr_dcs_sim - Attributes used by
+ * %QCA_NL80211_VENDOR_SUBCMD_DCS_SIM.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_SIM_LINK_ID: 8-bit unsigned value for link ID.
+ * Specifies which link to set in a multi-link setup.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_SIM_TYPE: 16-bit bitmap for the type of DCS
+ * simulation.
+ *    BIT(0): Trigger Continuous Wave Interference Management(CW IM)
+ *    BIT(1): Trigger WLAN Interference Management(WLAN IM)
+ *    BIT(4): Trigger OBSS Interference Management(OBSS IM)
+ */
+enum qca_wlan_vendor_attr_dcs_sim {
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_LINK_ID,
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_TYPE,
+
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_MAX =
+		QCA_WLAN_VENDOR_ATTR_DCS_SIM_AFTER_LAST - 1
 };
 
 /**
