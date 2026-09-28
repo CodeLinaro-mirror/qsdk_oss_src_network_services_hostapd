@@ -3293,6 +3293,7 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 			for (i = 0; i < interfaces->count; i++) {
 				if (interfaces->iface[i] == iface) {
 					hostapd_interface_deinit_free(iface);
+					iface = NULL;
 					os_remove_in_array(interfaces->iface, interfaces->count, sizeof(struct hostapd_iface *), i);
 					interfaces->count--;
 					break;
@@ -3318,8 +3319,12 @@ static void hostapd_update_link_removal_field(struct hostapd_data *hapd,
 		}
 
 		/* Refresh all the partner beacons */
-		if (partner)
-			hostapd_refresh_other_iface_beacons(partner->iface);
+		if (partner) {
+			if (iface)
+				hostapd_refresh_other_iface_beacons(iface);
+			else
+				hostapd_refresh_all_iface_beacons(partner->iface);
+		}
 	}
 }
 #endif /* CONFIG_IEEE80211BE */
