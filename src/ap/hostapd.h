@@ -1252,8 +1252,7 @@ u8 *hostapd_eid_eht_reconf_ml(struct hostapd_data *hapd, u8 *eid);
  * @iface: Pointer to hostapd_iface
  * @idx: Index of the BSS
  *
- * Return: 0 on successful BSS removal, 1 if the entire interface was removed,
- * or -1 on failure.
+ * Return: 0 on successful BSS removal, or -1 on failure.
  */
 int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx);
 void hostapd_refresh_other_iface_beacons(struct hostapd_iface *hapd_iface);
