@@ -1551,6 +1551,7 @@ struct hostapd_bss_config {
 			u8 max_prep_target_apmlds;
 			bool smd_type;
 			bool ptk_mode;
+			bool neighboring_ap_probing; /* Neighboring AP Probing Support */
 		} caps;
 	} smd;
 	struct smd_partner_entry *smd_partners;

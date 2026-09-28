@@ -744,6 +744,8 @@ u8 * hostapd_eid_smd_ie(struct hostapd_data *hapd, u8 *eid)
 		smd_cap_byte |= BIT(4);
 	if (hapd->conf->smd.caps.ptk_mode)
 		smd_cap_byte |= BIT(5);
+	if (hapd->conf->smd.caps.neighboring_ap_probing)
+		smd_cap_byte |= BIT(6);
 	*pos++ = smd_cap_byte;
 	*pos++ = hapd->conf->smd.smd_prep_timeout;
 

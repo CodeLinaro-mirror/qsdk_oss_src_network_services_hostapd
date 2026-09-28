@@ -586,6 +586,8 @@
 #define SMD_PRES_DL_BA   BIT(0)
 #define SMD_PRES_UL_BA   BIT(1)
 #define SMD_PRES_SCS     BIT(2)
+/* Bit 6 of the Capabilities byte: Neighboring AP Probing Support */
+#define SMD_IE_CAPA_NEIGH_AP_PROBING BIT(6)
 #define WLAN_EID_EXT_EXT_CHAN_USAGE 156
 #define WLAN_EID_EXT_UHR_MODE_CHANGE 157
 #define WLAN_EID_EXT_UHR_PARAMS_UPDATE 158
