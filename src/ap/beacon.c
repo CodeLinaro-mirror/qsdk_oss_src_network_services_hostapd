@@ -2424,7 +2424,13 @@ void handle_probe_req(struct hostapd_data *hapd,
 #ifdef CONFIG_QCN_EXTN
 	if (!hostapd_is_repurpose_disabled_11be_extn(hapd->conf)) {
 #endif /* CONFIG_QCN_EXTN */
-	if (hapd->conf->mld_ap)
+	/* Defer the ACL decision for MLD modes that require the complete
+	 * MLD/link context. For ACCEPT_UNLESS_DENIED, the current-link
+	 * deny-list check can be applied while processing the Probe Request.
+	 */
+	if (hapd->conf->mld_ap &&
+	    (hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED ||
+	     hapd->conf->macaddr_acl == ACCEPT_IF_WHITELIST_AND_NOT_BLACKLIST))
 		skip_acl = true;
 #ifdef CONFIG_QCN_EXTN
 	}
