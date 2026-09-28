@@ -1522,6 +1522,7 @@ struct hostapd_bss_config {
 			u8 max_prep_target_apmlds; /* Max Number Of Prepared Target AP MLDs */
 			bool smd_type; /* SMD Type */
 			bool ptk_mode; /* PTK Mode */
+			bool neighboring_ap_probing; /* Neighboring AP Probing Support */
 		} caps;
 	} smd;
 
