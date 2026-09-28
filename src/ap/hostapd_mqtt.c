@@ -14,6 +14,8 @@
 #include "hostapd_mqtt.h"
 #include "beacon.h"
 #include "neighbor_db.h"
+#include "hostapd_if/hostapd_if.h"
+#include "hostapd_if/hostapd_if_mqtt.h"
 #ifdef CONFIG_IEEE80211BN
 #include "eth_p_1905.h"
 #endif /* CONFIG_IEEE80211BN */
@@ -763,6 +765,9 @@ static void hostapd_mqtt_msg_cb(const char *topic, const void *payload, int payl
 	case MQTT_FEAT_SMD:
 		hostapd_mqtt_smd_cmd(interfaces, hapd, msg_type, msg);
 		break;
+	case MQTT_FEAT_HOSTAPD_IF:
+		hostapd_mqtt_hif_cmd(interfaces, msg_type, msg);
+		break;
 	default:
 		wpa_printf(MSG_INFO,
 			   "MQTT RX: no dispatch handler for msg_type=0x%04x feature_nibble=%u",
@@ -781,7 +786,7 @@ static void hostapd_mqtt_state_cb(bool connected, void *userdata)
 	char topic[64];
 	uint8_t buf[256];
 	uint16_t num_ifaces = 0;
-	size_t i;
+	size_t i, j;
 	int len;
 
 	if (!interfaces)
@@ -808,6 +813,19 @@ static void hostapd_mqtt_state_cb(bool connected, void *userdata)
 		mqtt_eloop_publish(interfaces->mqtt_ctx, topic, buf, len, 0, false);
 	}
 	mqtt_tlv_message_free(msg);
+	for (i = 0; i < interfaces->count; i++) {
+		struct hostapd_iface *iface;
+
+		iface = interfaces->iface[i];
+		if (!iface)
+			continue;
+
+		for (j = 0; j < iface->num_bss; j++) {
+			if (!iface->bss[j])
+				continue;
+			hostapd_if_interface_create(iface->bss[j]);
+		}
+	}
 }
 
 void hostapd_mqtt_init(struct hostapd_iface *iface)
@@ -848,10 +866,13 @@ void hostapd_mqtt_init(struct hostapd_iface *iface)
 			     MQTT_TOPIC_RECEIVE "/" MQTT_FEATURE_SMD, 1);
 	mqtt_eloop_subscribe(iface->interfaces->mqtt_ctx,
 			     MQTT_TOPIC_RECEIVE "/" MQTT_FEATURE_SYS, 1);
+	mqtt_eloop_subscribe(iface->interfaces->mqtt_ctx,
+			     MQTT_TOPIC_RECEIVE "/" MQTT_FEATURE_HOSTAPD_IF, 1);
 	wpa_printf(MSG_INFO,
-		   "MQTT: subscribed topics=%s/%s and %s/%s",
+		   "MQTT: subscribed topics=\n%s/%s\n%s/%s\n%s/%s",
 		   MQTT_TOPIC_RECEIVE, MQTT_FEATURE_SMD,
-		   MQTT_TOPIC_RECEIVE, MQTT_FEATURE_SYS);
+		   MQTT_TOPIC_RECEIVE, MQTT_FEATURE_SYS,
+		   MQTT_TOPIC_RECEIVE, MQTT_FEATURE_HOSTAPD_IF);
 	mqtt_eloop_connect(iface->interfaces->mqtt_ctx);
 	wpa_printf(MSG_INFO, "MQTT: connect requested");
 }
