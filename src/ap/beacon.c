@@ -2100,16 +2100,18 @@ void handle_probe_req(struct hostapd_data *hapd,
 				struct hostapd_multi_mbssid_group *group =
 					hapd->mbssid_group;
 
-				dl_list_for_each(bss, &group->bss_list,
-						 struct hostapd_data, mbssid_bss) {
-					if (bss == hapd)
-						continue;
-					res = ssid_match(bss, elems.ssid, elems.ssid_len,
-							 elems.ssid_list, elems.ssid_list_len,
-							 elems.short_ssid_list,
-							 elems.short_ssid_list_len);
-					if (res != NO_SSID_MATCH)
-						break;
+				if (group) {
+					dl_list_for_each(bss, &group->bss_list,
+							 struct hostapd_data, mbssid_bss) {
+						if (bss == hapd)
+							continue;
+						res = ssid_match(bss, elems.ssid, elems.ssid_len,
+								 elems.ssid_list, elems.ssid_list_len,
+								 elems.short_ssid_list,
+								 elems.short_ssid_list_len);
+						if (res != NO_SSID_MATCH)
+							break;
+					}
 				}
 			} else {
 				for (i = 0; i < hapd->iface->num_bss; i++) {
