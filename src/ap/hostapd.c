@@ -6192,7 +6192,7 @@ int hostapd_remove_iface(struct hapd_interfaces *interfaces, char *buf)
 	struct hostapd_data *bss = NULL;
 	unsigned int i, j;
 	int ret = -1;
-	bool iface_remove = false;
+	bool iface_remove = false, found_bss = false;
 #ifdef CONFIG_IEEE80211BE
 	/* Parse optional link ID from input string ("<iface_name> <link_id>"). */
 	int link_id = hostapd_parse_link_id(buf);
@@ -6219,9 +6219,18 @@ int hostapd_remove_iface(struct hapd_interfaces *interfaces, char *buf)
 		}
 
 		for (j = 0; j < hapd_iface->conf->num_bss; j++) {
-			if (!os_strcmp(hapd_iface->conf->bss[j]->iface, buf))
+			if (!os_strcmp(hapd_iface->conf->bss[j]->iface, buf)) {
+				found_bss = true;
 				break;
+			}
 		}
+		/* If bss is not found in this iface, the BSS
+		 * may belong to a different interface.
+		 * Check the remaining interfaces.
+		 */
+		if (!found_bss)
+			continue;
+
 		bss = (j < hapd_iface->num_bss) ? hapd_iface->bss[j] : NULL;
 
 		if (!bss || !bss->conf) {
