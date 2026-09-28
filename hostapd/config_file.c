@@ -5837,6 +5837,13 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		if (get_u16(pos, line, &conf->dbe_punct_bitmap))
 			return 1;
 #endif /* CONFIG_IEEE80211BN */
+
+#ifdef CONFIG_IEEE80211BN
+	} else if (os_strcmp(buf, "uhr_oper_chwidth") == 0) {
+		conf->uhr_oper_chwidth = atoi(pos);
+	} else if (os_strcmp(buf, "uhr_oper_centr_freq_seg0_idx") == 0) {
+		conf->uhr_oper_centr_freq_seg0_idx = atoi(pos);
+#endif /* CONFIG_IEEE80211BN */
 	} else if (os_strcmp(buf, "enable_dscp_policy_capa") == 0) {
 		bss->enable_dscp_policy_capa = atoi(pos);
 	} else if (os_strcmp(buf, "twt_responder_caps") == 0) {

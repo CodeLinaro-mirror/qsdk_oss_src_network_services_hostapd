@@ -1763,6 +1763,13 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 	}
 #endif /* CONFIG_IEEE80211BE */
 
+#ifdef CONFIG_IEEE80211BN
+	if (full_config && conf->ieee80211bn && !conf->ieee80211be) {
+		wpa_printf(MSG_ERROR,
+			   "Cannot set ieee80211bn without ieee80211be");
+		return -1;
+	}
+#endif
 	/* Do not advertise SPP A-MSDU support if not using CCMP/GCMP */
 	if (full_config && bss->spp_amsdu &&
 	    !(bss->wpa &&

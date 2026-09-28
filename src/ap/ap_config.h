@@ -1455,6 +1455,8 @@ struct hostapd_config {
 	bool require_uhr;
 	u8 dbe_bandwidth;
 	u16 dbe_punct_bitmap;
+	enum oper_chan_width uhr_oper_chwidth;
+	u8 uhr_oper_centr_freq_seg0_idx;
 #endif /* CONFIG_IEEE80211BN */
 
 	/* EHT enable/disable config from CHAN_SWITCH */
