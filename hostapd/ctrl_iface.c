@@ -4007,6 +4007,8 @@ static void hostapd_get_channel_switch_time(struct hostapd_iface *iface,
 	if (iface->bss == NULL || iface->num_bss == 0)
 		return;
 
+	iface->cs_time = 0;
+
 	for (i = 0; i < iface->num_bss; i++) {
 		if (iface->bss[i]->driver == NULL ||
 		    iface->bss[i]->drv_priv == NULL)
@@ -4025,16 +4027,16 @@ static void hostapd_get_channel_switch_time(struct hostapd_iface *iface,
 	if (hapd->driver->get_channel_switch_time) {
 		ret = hapd->driver->get_channel_switch_time(hapd->drv_priv,
 							    freq_params,
-							    &hapd->cs_time);
+							    &iface->cs_time);
 		if (ret == 0) {
 			wpa_printf(MSG_DEBUG,
 				   "channel switch time from driver: %u",
-				   hapd->cs_time);
+				   iface->cs_time);
 		} else {
 			wpa_printf(MSG_WARNING,
 				   "Failed to get channel switch time from driver: %d",
 				   ret);
-			hapd->cs_time = 0;
+			iface->cs_time = 0;
 		}
 	}
 }

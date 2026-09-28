@@ -467,7 +467,6 @@ struct hostapd_data {
 	u8 cs_count;
 	int cs_block_tx;
 	unsigned int cs_c_off_beacon;
-	u32 cs_time;
 	unsigned int cs_c_off_proberesp;
 	int csa_in_progress;
 	unsigned int cs_c_off_ecsa_beacon;
@@ -983,6 +982,7 @@ struct hostapd_iface {
 	struct hostapd_multi_mbssid multi_mbssid;
 	u32 mbssid_idx_bmap;
 	size_t max_mgmt_frm_sz;
+	u32 cs_time;
 	int last_scan_aborted;
 
 	/* Use assisted DFS functionality from the driver. This is used only
