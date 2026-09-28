@@ -2769,6 +2769,7 @@ enum phy_type {
 	PHY_TYPE_CDMG = 12,
 	PHY_TYPE_CMMG = 13,
 	PHY_TYPE_HE = 14,
+	PHY_TYPE_EHT = 15,
 };
 
 /* IEEE Std 802.11-2024, 9.4.2.35 - Neighbor Report element */
