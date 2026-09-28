@@ -35,6 +35,7 @@
 #include "build_features.h"
 #include "ap/robust_av.h"
 #include "hostapd_if/hostapd_if.h"
+#include "ap/nft.h"
 #include "atf/atf_offload.h"
 
 struct hapd_global {
@@ -1038,6 +1039,12 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
+	/* Initialize NFT netlink socket */
+	if (nft_init() < 0) {
+		wpa_printf(MSG_ERROR, "Failed to initialize NFT");
+		goto out;
+	}
+
 	eloop_register_timeout(HOSTAPD_CLEANUP_INTERVAL, 0,
 			       hostapd_periodic, &interfaces, NULL);
 
@@ -1144,7 +1151,7 @@ int main(int argc, char *argv[])
 	hostapd_ucode_init(&interfaces);
 
 #ifdef CONFIG_IEEE80211AX
-	hostapd_ucode_config_nft_table(TABLE_NAME, true);
+	hostapd_config_nft_table(TABLE_NAME, true);
 
 	for (i = 0; i < interfaces.count; i++) {
 		struct hostapd_iface *iface = interfaces.iface[i];
@@ -1157,8 +1164,8 @@ int main(int argc, char *argv[])
 			if (hapd->conf->scs) {
 				os_snprintf(buf, 128, "%s_%s", CHAIN_NAME,
 					    hapd->conf->iface);
-				hostapd_ucode_config_nft_chain(hapd, TABLE_NAME,
-							       buf, true);
+				hostapd_config_nft_chain(hapd, TABLE_NAME,
+							 buf, true);
 			}
 		}
 	}
@@ -1172,7 +1179,7 @@ int main(int argc, char *argv[])
 	ret = 0;
 
 #ifdef CONFIG_IEEE80211AX
-	hostapd_ucode_config_nft_table(TABLE_NAME, false);
+	hostapd_config_nft_table(TABLE_NAME, false);
 #endif
 
  out:
@@ -1213,6 +1220,9 @@ int main(int argc, char *argv[])
 		eloop_cancel_timeout(hostapd_periodic, &interfaces, NULL);
 	hostapd_global_deinit(pid_file, interfaces.eloop_initialized);
 	os_free(pid_file);
+
+	/* Deinitialize NFT netlink socket */
+	nft_deinit();
 
 	wpa_debug_close_syslog();
 	if (log_file)

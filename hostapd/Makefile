@@ -410,6 +410,7 @@ OBJS += ../src/ap/ieee802_11_he.o
 ifndef CONFIG_ROBUST_AV
 OBJS += ../src/ap/robust_av.o
 endif
+OBJS += ../src/ap/nft.o
 endif
 
 ifdef CONFIG_IEEE80211AX
