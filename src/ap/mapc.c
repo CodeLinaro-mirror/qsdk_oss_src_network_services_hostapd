@@ -252,7 +252,13 @@ static void mapc_discovery_timeout_cb(void *eloop_data, void *user_data)
 	struct hostapd_data *hapd = (struct hostapd_data *)eloop_data;
 	struct mapc_discovery_req *req = user_data;
 
-	wpa_printf(MSG_DEBUG, "MAPC: Discovery timeout for token %d", req->dialog_token);
+	if (!req)
+		return;
+
+	if (!is_broadcast_ether_addr(req->dst_addr))
+		wpa_printf(MSG_DEBUG,
+			   "MAPC: Discovery timeout for token %d dst=" MACSTR,
+			   req->dialog_token, MAC2STR(req->dst_addr));
 	dl_list_del(&req->list);
 	os_free(req);
 	(void)hapd;
