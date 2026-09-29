@@ -1445,58 +1445,29 @@ static void mlme_event_uhr_reconfig_resp(struct wpa_driver_nl80211_data *drv,
 					  struct nlattr *transition_state_attr)
 {
 	union wpa_event_data event;
-	const u8 *pos, *end;
 	u16 status_code;
-	u8 type, count;
+	u8 type;
 
-	/*
-	 * Minimum length to safely read through the Count field:
-	 * 24 (MAC header) + 1+1+1+1 (Cat+Action+DlgToken+Type) +
-	 * 2 (Status Code) + 1 (Count) = 31 bytes.
-	 * (D1.2 was 28; the extra 3 bytes are the new Status Code field.)
-	 */
-	if (len < 31) {
+	if (len < 30) {
 		wpa_printf(MSG_DEBUG,
-			   "nl80211: UHR Reconfig response too short (%zu < 31)",
+			   "nl80211: UHR Reconfig response too short (%zu < 30)",
 			   len);
 		return;
 	}
-
-	end = frame + len;
 
 	type = frame[27]; /* Type: 0=ST Preparation, 1=ST Execution */
 
 	status_code = WPA_GET_LE16(frame + 28);
 
-        count = frame[30];
-
 	wpa_printf(MSG_DEBUG,
-		   "nl80211: UHR Reconfig response type=%u status=%u count=%u len=%zu",
-		   type, status_code, count, len);
-
-        pos = frame + 31;
-
-        /* Each duplet: Link ID (1 octet) + Status Code (2 octets) = 3 bytes */
-        if ((size_t)(end - pos) < (size_t)(3 * count)) {
-                wpa_printf(MSG_DEBUG,
-                           "nl80211: UHR Reconfig response: truncated status list "
-                           "(need %u bytes, have %td)",
-                           3 * count, end - pos);
-                return;
-        }
+		   "nl80211: UHR Reconfig response type=%u status=%u len=%zu",
+		   type, status_code, len);
 
 	os_memset(&event, 0, sizeof(event));
 	event.uhr_reconfig_resp.type        = type;
-	event.uhr_reconfig_resp.status_code = status_code;  /* top-level D1.4 */
-	event.uhr_reconfig_resp.count       = count;
-	event.uhr_reconfig_resp.status_list = pos;
+	event.uhr_reconfig_resp.status_code = status_code;
 	event.uhr_reconfig_resp.frame       = frame;
 	event.uhr_reconfig_resp.frame_len   = len;
-
-	pos += 3 * count;  /* skip past all per-link duplets */
-
-        event.uhr_reconfig_resp.resp_ie     = pos;
-        event.uhr_reconfig_resp.resp_ie_len = end - pos;
 
 	if (transition_state_attr)
 		event.uhr_reconfig_resp.link_transition_state =
