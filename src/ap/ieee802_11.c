@@ -12407,7 +12407,11 @@ static void handle_auth_cb(struct hostapd_data *hapd,
 		hostapd_logger(hapd, mgmt->da, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_NOTICE,
 			       "did not acknowledge authentication response");
-		goto fail;
+#ifdef CONFIG_QCN_EXTN
+		hostapd_log_trigger_emit(hapd, mgmt->da,
+						HOSTAPD_LOG_TRIG_AUTH_TX_FAIL);
+#endif /* CONFIG_QCN_EXTN */
+	   goto fail;
 	}
 
 	if (status_code == WLAN_STATUS_SUCCESS &&
@@ -12655,8 +12659,13 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 
 	if (!ok) {
 		hostapd_logger(hapd, mgmt->da, HOSTAPD_MODULE_IEEE80211,
-			       HOSTAPD_LEVEL_DEBUG,
-			       "did not acknowledge association response");
+			HOSTAPD_LEVEL_DEBUG,
+			"did not acknowledge association response");
+#ifdef CONFIG_QCN_EXTN
+		hostapd_log_trigger_emit(hapd, mgmt->da,
+						reassoc ? HOSTAPD_LOG_TRIG_REASSOC_RESP_TX_FAIL :
+						HOSTAPD_LOG_TRIG_ASSOC_RESP_TX_FAIL);
+#endif /* CONFIG_QCN_EXTN */
 		sta->flags &= ~WLAN_STA_ASSOC_REQ_OK;
 		/* The STA is added only in case of SUCCESS */
 		if (status == WLAN_STATUS_SUCCESS) {
@@ -12968,12 +12977,17 @@ static void handle_deauth_cb(struct hostapd_data *hapd,
 			   " not found", MAC2STR(mgmt->da));
 		return;
 	}
-	if (ok)
+	if (ok) {
 		wpa_printf(MSG_DEBUG, "STA " MACSTR " acknowledged deauth",
-			   MAC2STR(sta->addr));
-	else
+			MAC2STR(sta->addr));
+	} else {
 		wpa_printf(MSG_DEBUG, "STA " MACSTR " did not acknowledge "
-			   "deauth", MAC2STR(sta->addr));
+			"deauth", MAC2STR(sta->addr));
+#ifdef CONFIG_QCN_EXTN
+		hostapd_log_trigger_emit(hapd, mgmt->da,
+			HOSTAPD_LOG_TRIG_DEAUTH_TX_FAIL);
+#endif /* CONFIG_QCN_EXTN */
+	}
 
 #ifdef CONFIG_HOSTAPD_IF
 	hostapd_if_event_deauth(hapd, sta, HOSTAPD_IF_DISCONNECT_TO_STA,
@@ -12996,12 +13010,18 @@ static void handle_disassoc_cb(struct hostapd_data *hapd,
 			   " not found", MAC2STR(mgmt->da));
 		return;
 	}
-	if (ok)
+	if (ok) {
 		wpa_printf(MSG_DEBUG, "STA " MACSTR " acknowledged disassoc",
-			   MAC2STR(sta->addr));
-	else
+			MAC2STR(sta->addr));
+	} else {
 		wpa_printf(MSG_DEBUG, "STA " MACSTR " did not acknowledge "
-			   "disassoc", MAC2STR(sta->addr));
+			"disassoc", MAC2STR(sta->addr));
+#ifdef CONFIG_QCN_EXTN
+		hostapd_log_trigger_emit(hapd, mgmt->da,
+			HOSTAPD_LOG_TRIG_DISASSOC_TX_FAIL);
+#endif /* CONFIG_QCN_EXTN */
+	}
+
 
 #ifdef CONFIG_HOSTAPD_IF
 	hostapd_if_event_disassoc(hapd, sta, HOSTAPD_IF_DISCONNECT_TO_STA,
@@ -13059,6 +13079,12 @@ static void handle_action_cb(struct hostapd_data *hapd,
 			   " not found", MAC2STR(mgmt->da));
 		return;
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (!ok)
+		hostapd_log_trigger_emit(hapd, mgmt->da,
+					 HOSTAPD_LOG_TRIG_ACTION_TX_FAIL);
+#endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_HS20
 	if (ok && len >= IEEE80211_HDRLEN + 2 &&

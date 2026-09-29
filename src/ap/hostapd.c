@@ -15,6 +15,7 @@
 #include "utils/common.h"
 #include "utils/eloop.h"
 #include "utils/crc32.h"
+#include "hostapd_log.h"
 #include "common/ieee802_11_defs.h"
 #include "common/qca-vendor.h"
 #include "common/wpa_ctrl.h"
@@ -6070,12 +6071,15 @@ hostapd_alloc_bss_data(struct hostapd_iface *hapd_iface,
 		       struct hostapd_bss_config *bss)
 {
 	struct hostapd_data *hapd;
+	int i;
 
 	hapd = os_zalloc(sizeof(*hapd));
 	if (hapd == NULL)
 		return NULL;
 
 	hapd->new_assoc_sta_cb = hostapd_new_assoc_sta;
+	for (i = 0; i < HAPD_MOD_MAX; i++)
+		hapd->log_module_mask[i] = HAPD_LOG_DEFAULT_MASK;
 	hapd->iconf = conf;
 	hapd->conf = bss;
 	hapd->iface = hapd_iface;

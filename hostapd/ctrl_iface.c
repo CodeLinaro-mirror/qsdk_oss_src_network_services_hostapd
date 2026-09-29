@@ -49,6 +49,7 @@
 #include "radius/radius_server.h"
 #include "l2_packet/l2_packet.h"
 #include "ap/hostapd.h"
+#include "ap/hostapd_log.h"
 #include "ap/hw_features.h"
 #include "ap/hostapd_log.h"
 #include "ap/ap_config.h"
@@ -2238,6 +2239,136 @@ static int hostapd_ctrl_iface_set_next_radar_width(struct hostapd_data *hapd,
 
 	hapd->iface->conf->next_radar_chan.width = val;
 	return 0;
+}
+
+
+/*
+ * LOG_LEVEL <module> <level|default|none|all>
+ *
+ * Sets the per-module log bitmask for this BSS.
+ *
+ * <module>: core | sta | drv | hw | mlme | auth | assoc | probe | beacon |
+ *           wpa | ft | preauth | 8021x | fils | macsec | dfs | acs |
+ *           wnm | rrm | gas | radius | dpp | wps | p2p | mlo | vlan | wmm
+ * <level>:  debug_verbose | debug | info | notice | warning |
+ *           default | none | all
+ *
+ * "default" resets the module mask to HAPD_LOG_DEFAULT_MASK (info+notice+
+ * warning).  "none" disables all output.  "all" enables every level.
+ * A named level enables that single bit (additive); send "none" first to
+ * replace rather than extend the current mask.
+ *
+ * This is dispatched from the existing LOG_LEVEL handler when the first
+ * token is a module name rather than a global debug level name.
+ */
+static int hostapd_ctrl_iface_log_module_level(struct hostapd_data *hapd,
+					       char *cmd)
+{
+	char *mod_str, *lvl_str;
+	int level, idx;
+
+	mod_str = cmd;
+	lvl_str = os_strchr(cmd, ' ');
+	if (!lvl_str)
+		return -1;
+	*lvl_str++ = '\0';
+	while (*lvl_str == ' ')
+		lvl_str++;
+
+	idx = hostapd_mod_str_to_idx(mod_str);
+	if (idx < 0)
+		return -1;
+
+	if (os_strcmp(lvl_str, "default") == 0) {
+		hostapd_log_set_module(hapd, (enum hapd_log_module)idx,
+				       HAPD_LOG_SET_DEFAULT);
+		return 0;
+	}
+
+	if (os_strcmp(lvl_str, "none") == 0) {
+		hostapd_log_set_module(hapd, (enum hapd_log_module)idx,
+				       HAPD_LOG_SET_NONE);
+		return 0;
+	}
+
+	if (os_strcmp(lvl_str, "all") == 0) {
+		hostapd_log_set_module(hapd, (enum hapd_log_module)idx,
+				       HAPD_LOG_SET_ALL);
+		return 0;
+	}
+
+	level = hostapd_level_str_to_val(lvl_str);
+	if (level < 0)
+		return -1;
+
+	hostapd_log_set_module(hapd, (enum hapd_log_module)idx, level);
+	return 0;
+}
+
+/*
+ * LOG_STATUS - show current per-module log masks and peer filter state
+ *
+ * Output format (one line per module):
+ *   <module>: 0x<mask> [<active-level-names>]
+ *   ...
+ *   peer_filter: <addr|none>
+ *
+ * Active level names are the subset of
+ *   debug_verbose debug info notice warning
+ * whose corresponding bit is set in the module mask.
+ */
+static int hostapd_ctrl_iface_log_status(struct hostapd_data *hapd,
+					 char *buf, size_t buflen)
+{
+	char *pos = buf, *end = buf + buflen;
+	int i, level, ret;
+
+	for (i = 0; i < HAPD_MOD_MAX; i++) {
+		u16 mask = hapd->log_module_mask[i];
+		char levels[64];
+		char *lp = levels;
+		int first = 1;
+
+		/* Build bracketed list of enabled level names. */
+		for (level = HOSTAPD_LEVEL_EXCESSIVE;
+		     level <= HOSTAPD_LEVEL_WARNING; level++) {
+			if (!(mask & (1U << (unsigned int)level)))
+				continue;
+			if (!first)
+				*lp++ = ' ';
+			first = 0;
+			ret = os_snprintf(lp,
+					  levels + sizeof(levels) - lp,
+					  "%s",
+					  hostapd_level_val_to_str(level));
+			if (ret > 0 &&
+			    lp + ret < levels + sizeof(levels))
+				lp += ret;
+		}
+		*lp = '\0';
+
+		ret = os_snprintf(pos, end - pos,
+				  "  %s: 0x%04x [%s]\n",
+				  hostapd_mod_idx_to_str(i),
+				  (unsigned int)mask,
+				  levels);
+		if (os_snprintf_error(end - pos, ret))
+			return -1;
+		pos += ret;
+	}
+
+	if (hapd->log_peer_filter_set) {
+		ret = os_snprintf(pos, end - pos,
+				  "peer_filter: " MACSTR "\n",
+				  MAC2STR(hapd->log_peer_addr));
+	} else {
+		ret = os_snprintf(pos, end - pos, "peer_filter: none\n");
+	}
+	if (os_snprintf_error(end - pos, ret))
+		return -1;
+	pos += ret;
+
+	return pos - buf;
 }
 
 
@@ -6562,9 +6693,10 @@ static int hostapd_ctrl_iface_log_level(struct hostapd_data *hapd, char *cmd,
 					char *buf, size_t buflen)
 {
 	char *pos, *end, *stamp;
-	int ret;
+	int ret = -1;
+	char tmp[64];
 
-	/* cmd: "LOG_LEVEL [<level>]" */
+	/* cmd: "LOG_LEVEL [<level>]" or "LOG_LEVEL <module> <level|default>" */
 	if (*cmd == '\0') {
 		pos = buf;
 		end = buf + buflen;
@@ -6581,7 +6713,9 @@ static int hostapd_ctrl_iface_log_level(struct hostapd_data *hapd, char *cmd,
 	while (*cmd == ' ')
 		cmd++;
 
+	os_strlcpy(tmp, cmd, sizeof(tmp));
 	stamp = os_strchr(cmd, ' ');
+
 	if (stamp) {
 		*stamp++ = '\0';
 		while (*stamp == ' ') {
@@ -6590,14 +6724,30 @@ static int hostapd_ctrl_iface_log_level(struct hostapd_data *hapd, char *cmd,
 	}
 
 	if (os_strlen(cmd)) {
-		int level = str_to_debug_level(cmd);
-		if (level < 0)
-			return -1;
-		wpa_debug_level = level;
-	}
 
-	if (stamp && os_strlen(stamp))
-		wpa_debug_timestamp = atoi(stamp);
+		int level = str_to_debug_level(cmd);
+		int class_level = hostapd_mod_str_to_idx(cmd);
+
+		if (level >= 0) {
+
+			wpa_debug_level = level;
+			if (stamp && os_strlen(stamp))
+				wpa_debug_timestamp = atoi(stamp);
+		} else if (class_level >= 0) {
+
+		/*
+		 * If the first token is a module name, dispatch to the per-module
+		 * level handler.  hostapd_mod_str_to_idx() returns >= 0 only for
+		 * known module names, so there is no ambiguity with global level names.
+		 */
+
+			ret = hostapd_ctrl_iface_log_module_level(hapd, tmp);
+			if (ret < 0)
+				return ret;
+
+		} else
+			return -1;
+	}
 
 	os_memcpy(buf, "OK\n", 3);
 	return 3;
@@ -12416,6 +12566,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "LOG_PEER ", 9) == 0) {
 		if (hostapd_ctrl_iface_log_peer(hapd, buf + 9))
 			reply_len = -1;
+	} else if (os_strcmp(buf, "LOG_STATUS") == 0) {
+		reply_len = hostapd_ctrl_iface_log_status(hapd, reply,
+							  reply_size);
 	} else if (os_strncmp(buf, "GET ", 4) == 0) {
 		reply_len = hostapd_ctrl_iface_get(hapd, buf + 4, reply,
 						   reply_size);

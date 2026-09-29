@@ -21,6 +21,7 @@
 #include "ieee802_11.h"
 #include "dfs.h"
 #include "wmm.h"
+#include "hostapd_log.h"
 
 static u8 ieee80211_he_ppet_size(u8 ppe_thres_hdr, const u8 *phy_cap_info)
 {
@@ -673,6 +674,7 @@ u8 * hostapd_eid_he_mu_edca_parameter_set(struct hostapd_data *hapd, u8 *eid, bo
 
 	wpa_hexdump(MSG_MSGDUMP, "HE: MU EDCA Parameter Set element",
 		    pos, sizeof(*edca));
+
 
 	pos += sizeof(*edca);
 
