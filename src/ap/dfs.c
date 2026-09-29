@@ -2278,20 +2278,21 @@ hostapd_dfs_intercac_is_pref_chan(struct hostapd_hw_modes *mode,
 				  int n_chans_oper,
 				  int *first_chan_idx)
 {
-	int i;
+	enum oper_chan_width oper_width;
+	u8 seg0;
+	int sec, block_start, i;
 
-	*first_chan_idx = -1;
-	for (i = 0; i < mode->num_channels; i++) {
-		if (mode->channels[i].chan == preferred_chan) {
-			*first_chan_idx = i;
-			break;
-		}
-	}
+	block_start = dfs_compute_chan_params(preferred_chan, n_chans_pref * 20,
+					     &oper_width, &seg0, &sec);
+	if (block_start < 0)
+		return false;
+
+	*first_chan_idx = hostapd_get_channel_idx(mode, block_start);
 
 	if (*first_chan_idx < 0)
 		return false;
 
-	for (i = 0; i < n_chans_pref; i += n_chans_oper) {
+	for (i = 0; i < n_chans_pref; i++) {
 		if (*first_chan_idx + i >= mode->num_channels)
 			break;
 		if (mode->channels[*first_chan_idx + i].chan == completed_chan)
@@ -3617,7 +3618,6 @@ bool hostapd_dfs_intercac_agile_complete(struct hostapd_iface *iface,
 		   "intercac: agile_complete: all sub-chans cleared, upgrading to ch %d (width %d)",
 		   preferred_chan, preferred_width);
 
-
 	freq = hostapd_hw_get_freq(iface->bss[0], preferred_chan);
 	if (freq <= 0) {
 		wpa_printf(MSG_ERROR,
@@ -3686,13 +3686,6 @@ int hostapd_dfs_intercac_defer_non_radar_switch(struct hostapd_iface *iface,
 					    cur_oper_width);
 	if (n_chans <= 0 || n_chans_oper <= 0)
 		return 0;
-	/*
-	 * Reuse the Inter CAC preferred-channel helper only to locate the
-	 * first channel index of the requested target block. Since completed
-	 * channel and preferred channel are both @chan and n_chans_oper equals
-	 * n_chans, this is equivalent to finding the preferred block start
-	 * while avoiding another open-coded channel-index lookup.
-	 */
 	if (!hostapd_dfs_intercac_is_pref_chan(iface->current_mode, chan, chan,
 					       n_chans, n_chans,
 					       &first_chan_idx))
