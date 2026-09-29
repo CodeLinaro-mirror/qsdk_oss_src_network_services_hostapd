@@ -544,6 +544,12 @@ SM_STATE(BE_AUTH, TIMEOUT)
 	SM_ENTRY_MA(BE_AUTH, TIMEOUT, be_auth);
 
 	sm->authTimeout = true;
+#ifdef CONFIG_HOSTAPD_IF
+	if (sm->eapol->cb.dot1x_eap_complete)
+		sm->eapol->cb.dot1x_eap_complete(sm->eapol->conf.ctx, sm->sta,
+						  0);
+#endif /* CONFIG_HOSTAPD_IF */
+
 }
 
 
