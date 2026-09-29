@@ -23,6 +23,8 @@ struct wpa_ssid;
 #define SMD_PTK_MODE_PER_DOMAIN 0
 #define SMD_PTK_MODE_PER_AP     1
 
+#define SMD_DEFAULT_MAX_PREP_TARGETS 8
+
 struct smd_neighbor_target {
 	u32 short_ssid;
 	u32 freq;
@@ -55,6 +57,9 @@ struct smd_group {
 	bool ptk_mode_valid;
 	bool smd_type;
 	bool smd_type_valid;
+
+	u8 mobility_domain[MOBILITY_DOMAIN_ID_LEN];
+	bool mobility_domain_valid;
 
 	u16 min_timeout;
 	u8 min_max_targets;
@@ -126,7 +131,8 @@ struct wpa_smd_prepared_target {
 
 	u8 bssid[ETH_ALEN];
 	u8 target_mld_addr[ETH_ALEN];
-	u8 serving_bssid[ETH_ALEN];
+	u8 current_ap_bssid[ETH_ALEN];
+	bool no_retry;
 	/* REQ-PREP-RESP-011: AID assigned by target */
 	u16 aid;
 	u8 dialog_token;
@@ -203,8 +209,9 @@ struct wpa_smd_prepared_target {
 	 */
 	u8 force_diff_tx;
 
-	/* exec_path for auto-execute: 0=via serving AP, 1=via target AP */
+	/* exec_path for auto-execute: 0=via current AP, 1=via target AP */
 	u8 auto_exec_path;
+	u8 exec_path;
 	/* 1 = this is the ROAM ST preferred target; triggers
 	 * eloop ST Execute work on PREP response */
 	int is_preferred_target;
@@ -271,6 +278,7 @@ int smd_needs_bss_transition(struct wpa_supplicant *wpa_s, struct wpa_bss *bss);
 int smd_prepare_bss_transition(struct wpa_supplicant *wpa_s, struct wpa_bss *bss);
 int smd_should_suppress_connect(struct wpa_supplicant *wpa_s,
 				struct wpa_bss *selected);
+void smd_handle_link_unreliable(struct wpa_supplicant *wpa_s);
 
 int smd_parse_rnr_for_neighbors(struct wpa_supplicant *wpa_s,
 				struct wpa_bss *bss,
@@ -290,6 +298,7 @@ void smd_neighbor_discovery_flow(struct wpa_supplicant *wpa_s,
 void smd_groups_init(struct wpa_supplicant *wpa_s);
 void smd_groups_deinit(struct wpa_supplicant *wpa_s);
 void smd_targets_deinit(struct wpa_supplicant *wpa_s);
+void smd_invalidate_stale_prepared_targets(struct wpa_supplicant *wpa_s);
 struct smd_group *smd_group_find(struct wpa_supplicant *wpa_s,
 				 const u8 *smd_id);
 struct smd_group *smd_group_create(struct wpa_supplicant *wpa_s,
