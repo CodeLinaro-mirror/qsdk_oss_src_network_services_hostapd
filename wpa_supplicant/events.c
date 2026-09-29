@@ -4622,6 +4622,9 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 						wpa_s->current_bss->smd_capabilities = capabilities;
 						wpa_s->current_bss->smd_timeout = timeout;
 						wpa_s->current_bss->smd_ptk_mode = ptk_mode;
+						wpa_s->current_bss->smd_max_targets =
+							((capabilities & SMD_IE_CAPA_MAX_PREP_TARGETS_MASK) >>
+							 SMD_IE_CAPA_MAX_PREP_TARGETS_SHIFT) + 1;
 					}
 
 					wpa_msg(wpa_s, MSG_INFO, "SMD-ASSOC-ESTABLISHED SMD_ID=" MACSTR
@@ -9397,6 +9400,7 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 			break;
 		wpa_msg(wpa_s, MSG_INFO, WPA_EVENT_BEACON_LOSS);
 		bgscan_notify_beacon_loss(wpa_s);
+		smd_handle_link_unreliable(wpa_s);
 		break;
 	case EVENT_EXTERNAL_AUTH:
 #ifdef CONFIG_SAE

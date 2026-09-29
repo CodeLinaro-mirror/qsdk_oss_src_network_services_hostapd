@@ -1223,6 +1223,21 @@ void wpa_supplicant_set_state(struct wpa_supplicant *wpa_s,
 
 			smd_set_state(wpa_s, SMD_STATE_ASSOCIATED);
 		}
+
+		if (wpa_s->smd_capable)
+			smd_invalidate_stale_prepared_targets(wpa_s);
+
+		if (wpa_s->smd_capable && wpa_s->smd_me_associated &&
+		    (!wpa_s->current_bss || !wpa_s->current_bss->smd_capable)) {
+			wpa_printf(MSG_INFO,
+				   "SMD: Associated AP MLD is not part of an SMD, "
+				   "clearing stale SMD-ME association " MACSTR,
+				   MAC2STR(wpa_s->smd_id));
+			wpa_s->smd_me_associated = 0;
+			os_memset(wpa_s->smd_id, 0, ETH_ALEN);
+			os_memset(wpa_s->smd_me_initial_ap_mld_addr, 0, ETH_ALEN);
+			smd_set_state(wpa_s, SMD_STATE_IDLE);
+		}
 	}
 
 #ifdef CONFIG_P2P
