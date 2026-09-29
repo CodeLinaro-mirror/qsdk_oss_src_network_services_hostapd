@@ -1831,7 +1831,9 @@ static void hostapd_gen_probe_resp(struct hostapd_data *hapd,
 	}
 
 	params->resp_len = pos - (u8 *) params->resp;
-	wpa_printf(MSG_DEBUG,
+	hostapd_log(hapd, NULL,
+			HAPD_MOD_BEACON,
+			HOSTAPD_LEVEL_DEBUG,
 		   "Probe response:%s allocated buffer size :%zu actual frame size:%zu max allowed frame size:%zu",
 		   hapd->conf->iface, buflen, params->resp_len, hapd->iface->max_mgmt_frm_sz);
 
@@ -1863,7 +1865,9 @@ static void hostapd_fill_probe_resp_ml_params(struct hostapd_data *hapd,
 	if (!params->mld_info)
 		return;
 
-	wpa_printf(MSG_DEBUG,
+	hostapd_log(hapd, NULL,
+			HAPD_MOD_BEACON,
+			HOSTAPD_LEVEL_DEBUG,
 		   "MLD: Got ML probe request with AP MLD ID %d for links %04x",
 		   mld_id, links);
 
@@ -1907,7 +1911,9 @@ static void hostapd_fill_probe_resp_ml_params(struct hostapd_data *hapd,
 		os_memcpy(link_info, &hapd->partner_links[mld_link_id],
 			  sizeof(hapd->partner_links[mld_link_id]));
 
-		wpa_printf(MSG_DEBUG,
+		hostapd_log(hapd, NULL,
+			HAPD_MOD_BEACON,
+			HOSTAPD_LEVEL_DEBUG,
 			   "MLD: ML probe response includes link STA info for %d: %u bytes",
 			   mld_link_id, link_info->resp_sta_profile_len);
 	}
@@ -2437,6 +2443,10 @@ void handle_probe_req(struct hostapd_data *hapd,
 	if (hapd->iconf->track_sta_max_num)
 		sta_track_add(hapd->iface, mgmt->sa, ssi_signal);
 	ie_len = len - IEEE80211_HDRLEN;
+
+	/* Hexdump probe request frame for debugging */
+	hostapd_log_hexdump_debug(hapd, mgmt->sa, HAPD_MOD_PROBE,
+								"Probe request frame", (const u8 *)mgmt, len);
 
 #ifdef CONFIG_IEEE80211BE
 #ifdef CONFIG_QCN_EXTN

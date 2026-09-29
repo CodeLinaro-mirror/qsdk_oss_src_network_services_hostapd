@@ -1035,8 +1035,9 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 	if (hapd->conf->disable_eml)
 		hapd->iface->mld_eml_capa = 0;
 
-	wpa_printf(MSG_DEBUG, "MLD: EML Capabilities=0x%x",
-		   hapd->iface->mld_eml_capa);
+	hostapd_log(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
+		    HOSTAPD_LEVEL_DEBUG, "MLD: EML Capabilities=0x%x",
+		    hapd->iface->mld_eml_capa);
 	wpabuf_put_le16(buf, hapd->iface->mld_eml_capa);
 
 	mld_cap = hapd->iface->mld_mld_capa;
@@ -1058,13 +1059,15 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 
 	mld_cap |= EHT_ML_MLD_CAPA_LINK_RECONF_OP_SUPPORT;
 
-	wpa_printf(MSG_DEBUG, "MLD: MLD Capabilities and Operations=0x%x",
-		   mld_cap);
+	hostapd_log(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
+		    HOSTAPD_LEVEL_DEBUG,
+		    "MLD: MLD Capabilities and Operations=0x%x", mld_cap);
 	wpabuf_put_le16(buf, mld_cap);
 
 	if (include_mld_id) {
-		wpa_printf(MSG_DEBUG, "MLD: AP MLD ID=0x%x",
-			   hostapd_get_mld_id(hapd));
+		hostapd_log(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
+			    HOSTAPD_LEVEL_DEBUG, "MLD: AP MLD ID=0x%x",
+			    hostapd_get_mld_id(hapd));
 		wpabuf_put_u8(buf, hostapd_get_mld_id(hapd));
 	}
 

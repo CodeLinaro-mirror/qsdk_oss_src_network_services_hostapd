@@ -16,6 +16,7 @@
 #include "common/defs.h"
 #include "common/dpp.h"
 #include "utils/list.h"
+#include "hostapd_log.h"
 #include "ap_config.h"
 #include "drivers/driver.h"
 #include "ubus.h"
@@ -797,6 +798,7 @@ struct hostapd_data {
 	 * are suppressed regardless of the global level. Set via
 	 * LOG_LEVEL <module> <level> ctrl_iface command. */
 	int log_module_level[HOSTAPD_MOD_MAX];
+	u16 log_module_mask[HAPD_MOD_MAX]; /* bitmask per level; 0 = suppressed */
 	/* Per-peer log filter. Set by LOG_PEER ctrl command. */
 	u8  log_peer_filter_set;
 	u8  log_peer_addr[ETH_ALEN];
@@ -1208,6 +1210,8 @@ struct hostapd_iface {
 	u8   mapc_cotdma_active_count;
 	bool mapc_iface_initialized;
 #endif /* CONFIG_IEEE80211BN */
+
+	u16 log_iface_module_mask[HAPD_MOD_MAX];
 };
 
 

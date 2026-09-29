@@ -387,7 +387,7 @@ void hostapd_logger_register_cb(hostapd_logger_cb_func func);
 #define HOSTAPD_MODULE_MLME		0x00000040
 
 enum hostapd_logger_level {
-	HOSTAPD_LEVEL_DEBUG_VERBOSE = 0,
+	HOSTAPD_LEVEL_EXCESSIVE = 0,
 	HOSTAPD_LEVEL_DEBUG = 1,
 	HOSTAPD_LEVEL_INFO = 2,
 	HOSTAPD_LEVEL_NOTICE = 3,

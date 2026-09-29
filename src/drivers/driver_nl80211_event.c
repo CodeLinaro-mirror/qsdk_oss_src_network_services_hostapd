@@ -2209,13 +2209,14 @@ static void mlme_event_mgmt(struct i802_bss *bss, struct nlattr *freq,
 	if (bitrate)
 		event.rx_mgmt.datarate = nla_get_u16(bitrate);
 
-	wpa_printf(MSG_DEBUG,
-		   "nl80211: RX frame da=" MACSTR " sa=" MACSTR " bssid=" MACSTR
-		   " freq=%d ssi_signal=%d fc=0x%x seq_ctrl=0x%x stype=%u (%s) len=%u",
-		   MAC2STR(mgmt->da), MAC2STR(mgmt->sa), MAC2STR(mgmt->bssid),
-		   rx_freq, ssi_signal, fc,
-		   le_to_host16(mgmt->seq_ctrl), stype, fc2str(fc),
-		   (unsigned int) len);
+	hostapd_log(bss->ctx, NULL, nl80211_fc_to_hostapd_logs(fc), HOSTAPD_LEVEL_DEBUG,
+		"nl80211: RX frame da=" MACSTR " sa=" MACSTR " bssid=" MACSTR
+		" freq=%d ssi_signal=%d fc=0x%x seq_ctrl=0x%x stype=%u (%s) len=%u",
+		MAC2STR(mgmt->da), MAC2STR(mgmt->sa), MAC2STR(mgmt->bssid),
+		rx_freq, ssi_signal, fc,
+		le_to_host16(mgmt->seq_ctrl), stype, fc2str(fc),
+		(unsigned int) len);
+
 	event.rx_mgmt.frame = frame;
 	event.rx_mgmt.frame_len = len;
 	event.rx_mgmt.ssi_signal = ssi_signal;

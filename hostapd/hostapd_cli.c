@@ -2005,6 +2005,13 @@ static int hostapd_cli_cmd_log_peer(struct wpa_ctrl *ctrl, int argc,
 }
 
 
+static int hostapd_cli_cmd_log_status(struct wpa_ctrl *ctrl, int argc,
+				      char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "LOG_STATUS");
+}
+
+
 static int hostapd_cli_cmd_raw(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	if (argc == 0)
@@ -4105,6 +4112,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "[level] = show/change log verbosity level" },
 	{ "log_peer", hostapd_cli_cmd_log_peer, NULL,
 	  "<addr>|clear = restrict/clear per-peer log filter" },
+	{ "log_status", hostapd_cli_cmd_log_status, NULL,
+	  "= show per-module log masks and peer filter state" },
 	{ "pmksa", hostapd_cli_cmd_pmksa, NULL,
 	  " = show PMKSA cache entries" },
 	{ "pmksa_flush", hostapd_cli_cmd_pmksa_flush, NULL,
