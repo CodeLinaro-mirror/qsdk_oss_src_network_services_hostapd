@@ -53,6 +53,7 @@ struct uhr_smd_bss_transition_element {
 	bool dl_sn_not_transferred;
 	bool ul_sn_not_transferred;
 	u8 num_scs_ids;
+	u8 dl_tid_bitmap;
 };
 
 /**
@@ -77,6 +78,10 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 void uhr_cur_ap_handle_st_prep_resp(struct hostapd_data *hapd,
 				const struct uhr_iap_frame *iap,
 				u16 frame_len);
+
+void hostapd_uhr_link_reconf_resp_tx_status(struct hostapd_data *hapd,
+					    struct sta_info *sta,
+					    u8 dialog_token, int ok);
 
 /* EHT-style data structures for Per-STA Profile management */
 struct uhr_link_reconf_req_list;
@@ -164,6 +169,13 @@ size_t hostapd_uhr_eid_bmlie_from_rmlie(const struct wpabuf *mlbuf,
 /* Function declarations */
 int uhr_parse_reconfig_mle(const struct ieee802_11_elems *elems,
 			   struct uhr_reconfig_mle *mle);
+
+#define UHR_MAX_DELETE_ST_PREP_TARGETS 8
+
+int uhr_scan_delete_st_prep_targets(const u8 *ies, size_t ies_len,
+				    u8 targets[][ETH_ALEN],
+				    size_t max_targets,
+				    bool *has_add_link);
 
 
 /* Timeout management functions */
