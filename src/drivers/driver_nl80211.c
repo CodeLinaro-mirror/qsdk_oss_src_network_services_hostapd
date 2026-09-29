@@ -8064,7 +8064,7 @@ static int wpa_driver_nl80211_smd_roam(void *priv, struct hostapd_smd_roam_param
 {
 	struct i802_bss *bss = priv;
 	struct nl_msg *msg;
-	struct nlattr *macs_nest, *entry;
+	struct nlattr *macs_nest;
 	size_t i;
 
 	msg = nl80211_cmd_msg(bss, 0, NL80211_CMD_SMD_ROAM);
@@ -8092,12 +8092,8 @@ static int wpa_driver_nl80211_smd_roam(void *priv, struct hostapd_smd_roam_param
 		goto fail;
 
 	for (i = 0; i < params->n_macs; i++) {
-		entry = nla_nest_start(msg, i + 1);
-		if (!entry)
+		if (nla_put(msg, i + 1, ETH_ALEN, params->mac[i]))
 			goto fail;
-		if (nla_put(msg, NL80211_ATTR_SMD_STA_LINK_MAC, ETH_ALEN, params->mac[i]))
-			goto fail;
-		nla_nest_end(msg, entry);
 	}
 
 	nla_nest_end(msg, macs_nest);
@@ -18516,6 +18512,24 @@ wpa_driver_nl80211_uhr_reconfig_req(void *priv,
 		if (nla_put_u16(msg, NL80211_ATTR_MLO_RECONF_REM_LINKS,
 				params->reconfig_info->delete_links))
 			goto nla_fail;
+	}
+
+	if (params->delete_targets && params->num_delete_targets) {
+		struct nlattr *targets;
+		size_t i;
+
+		targets = nla_nest_start(msg,
+					 NL80211_ATTR_SMD_DELETE_TARGET_MLD_ADDRS);
+		if (!targets)
+			goto nla_fail;
+
+		for (i = 0; i < params->num_delete_targets; i++) {
+			if (nla_put(msg, i + 1, ETH_ALEN,
+				    params->delete_targets + i * ETH_ALEN))
+				goto nla_fail;
+		}
+
+		nla_nest_end(msg, targets);
 	}
 
 	if (params->is_preferred_target) {

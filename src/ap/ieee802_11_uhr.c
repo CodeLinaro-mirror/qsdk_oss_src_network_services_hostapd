@@ -787,15 +787,14 @@ u8 hostapd_npca_get_primary_chan(struct hostapd_data *hapd,
 	return (u8)(npca->params & UHR_OPER_PARAMS_NPCA_PRIMARY_CHAN);
 }
 
-/* Build and send an OTA ST Prep Response with failure status to the STA.
- * Used when the current AP rejects a new prep request due to an in-flight
- * operation for the same target AP. */
+
 static void uhr_cur_ap_send_st_prep_fail(struct hostapd_data *hapd,
 					  struct sta_info *sta,
-					  const u8 *frame, size_t frame_len)
+					  const u8 *frame, size_t frame_len,
+					  u16 status_code)
 {
-	/* hdr(24) + category(1) + action(1) + token(1) + type(1) + status(2) + count(1) */
-	u8 resp_buf[IEEE80211_HDRLEN + 7];
+	/* hdr(24) + category(1) + action(1) + token(1) + type(1) + status(2) */
+	u8 resp_buf[IEEE80211_HDRLEN + 6];
 	struct ieee80211_mgmt *mgmt;
 	u8 *pos;
 	const struct ieee80211_mgmt *req;
@@ -821,9 +820,52 @@ static void uhr_cur_ap_send_st_prep_fail(struct hostapd_data *hapd,
 	*pos++ = WLAN_PROT_UHR_LINK_RECONFIG_RESPONSE; /* Action */
 	*pos++ = req->u.action.u.uhr_link_reconf_req.dialog_token;
 	*pos++ = UHR_LINK_RECONFIG_TYPE_PREP;          /* Type = ST Preparation */
-	WPA_PUT_LE16(pos, WLAN_STATUS_UNSPECIFIED_FAILURE);
+	WPA_PUT_LE16(pos, status_code);
 	pos += 2;
-	*pos   = 0;               /* Count = 0 */
+
+	hostapd_drv_send_mlme(hapd, resp_buf, sizeof(resp_buf),
+			      0, NULL, 0, 0, 0, 0);
+}
+
+
+static void uhr_cur_ap_send_st_exec_fail(struct hostapd_data *hapd,
+					  struct sta_info *sta,
+					  const u8 *frame, size_t frame_len,
+					  u16 status_code)
+{
+	/* hdr(24) + category(1) + action(1) + token(1) + type(1) + status(2) */
+	u8 resp_buf[IEEE80211_HDRLEN + 6];
+	struct ieee80211_mgmt *mgmt;
+	u8 *pos;
+	const struct ieee80211_mgmt *req;
+
+	/* Dialog token for the ST Exec Request lives at IEEE80211_HDRLEN + 2
+	 * (Category, Action, Dialog Token — see uhr_handle_st_exec_req_tgt()'s
+	 * use of buf[IEEE80211_HDRLEN + 2] for the same frame type). */
+	if (frame_len < IEEE80211_HDRLEN + 3) {
+		wpa_printf(MSG_ERROR,
+			   "UHR Current AP: ST Exec fail frame too short (%zu)",
+			   frame_len);
+		return;
+	}
+
+	req = (const struct ieee80211_mgmt *) frame;
+
+	os_memset(resp_buf, 0, sizeof(resp_buf));
+	mgmt = (struct ieee80211_mgmt *)resp_buf;
+	mgmt->frame_control = host_to_le16((WLAN_FC_TYPE_MGMT << 2) |
+					   (WLAN_FC_STYPE_ACTION << 4));
+	os_memcpy(mgmt->da, sta->addr, ETH_ALEN);
+	os_memcpy(mgmt->sa, hapd->mld->mld_addr, ETH_ALEN);
+	os_memcpy(mgmt->bssid, hapd->mld->mld_addr, ETH_ALEN);
+
+	pos = (u8 *)&mgmt->u.action;
+	*pos++ = WLAN_ACTION_PROTECTED_UHR;
+	*pos++ = WLAN_PROT_UHR_LINK_RECONFIG_RESPONSE; /* Action */
+	*pos++ = ((const u8 *) req)[IEEE80211_HDRLEN + 2]; /* Dialog Token */
+	*pos++ = 1; /* Type = ST Execution */
+	WPA_PUT_LE16(pos, status_code);
+	pos += 2;
 
 	hostapd_drv_send_mlme(hapd, resp_buf, sizeof(resp_buf),
 			      0, NULL, 0, 0, 0, 0);
@@ -835,10 +877,13 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 				   const u8 *frame, size_t frame_len,
 				   struct sta_smd_ctx_info *smd_ctx)
 {
+	u8 delete_targets[UHR_MAX_DELETE_ST_PREP_TARGETS][ETH_ALEN];
 	struct ieee802_11_elems elems;
 	struct uhr_reconfig_mle mle;
 	struct uhr_smd_bss_transition_element sbte;
 	struct smd_roam_ap_info *ap_info;
+	bool has_add_link = false;
+	int num_delete;
 	const u8 *ies;
 	size_t ies_len;
 	int is_new_ap = 0;
@@ -867,6 +912,35 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 	ies = frame + WLAN_ST_PREP_MIN_LEN;
 	ies_len = frame_len - WLAN_ST_PREP_MIN_LEN;
 
+	num_delete = uhr_scan_delete_st_prep_targets(
+		ies, ies_len, delete_targets,
+		UHR_MAX_DELETE_ST_PREP_TARGETS, &has_add_link);
+
+	if (num_delete > 0) {
+		int i, n;
+
+		n = num_delete < UHR_MAX_DELETE_ST_PREP_TARGETS ?
+			num_delete : UHR_MAX_DELETE_ST_PREP_TARGETS;
+
+		for (i = 0; i < n; i++) {
+			wpa_printf(MSG_DEBUG,
+				   "UHR Current AP: Delete-ST-Prep for "
+				   "target " MACSTR " from STA " MACSTR,
+				   MAC2STR(delete_targets[i]),
+				   MAC2STR(sta->addr));
+			uhr_remove_ap_from_list(sta, delete_targets[i]);
+		}
+
+		if (!has_add_link) {
+			wpa_printf(MSG_DEBUG,
+				   "UHR Current AP: pure Delete-ST-Prep "
+				   "request, responding SUCCESS");
+			uhr_cur_ap_send_st_prep_fail(hapd, sta, frame,
+						     frame_len, 0);
+			return 0;
+		}
+	}
+
 	if (ieee802_11_parse_elems(ies, ies_len, &elems, 1) == ParseFailed) {
 		wpa_printf(MSG_ERROR, "UHR Current AP: Failed to parse IEs");
 		sta->smd_info.sap_stats.sap_prep_req_parse_fail++;
@@ -882,6 +956,18 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 		SMD_REASON(sta->smd_info.sap_stats.sap_prep_parse_fail_reasons,
 			   sta->smd_info.sap_stats.sap_prep_parse_fail_reasons_head,
 			   SAP_PREP_PARSE_FAIL_ML_IE);
+		return -1;
+	}
+
+	if (!ether_addr_equal(mle.mld_mac_addr,
+			      sta->mld_info.common_info.mld_addr)) {
+		wpa_printf(MSG_INFO,
+			   "UHR Current AP: ST Prep MLD MAC Address mismatch, got "
+			   MACSTR " expected " MACSTR ", declining",
+			   MAC2STR(mle.mld_mac_addr),
+			   MAC2STR(sta->mld_info.common_info.mld_addr));
+		uhr_cur_ap_send_st_prep_fail(hapd, sta, frame, frame_len,
+					     WLAN_STATUS_REQUEST_DECLINED);
 		return -1;
 	}
 
@@ -905,6 +991,18 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 		return -1;
 	}
 
+	if (hapd->conf->smd.caps.ptk_mode &&
+	    (!elems.owe_dh || !elems.owe_dh_len ||
+	     !elems.nonce || !elems.nonce_len)) {
+		wpa_printf(MSG_INFO,
+			   "UHR Current AP: ST Prep missing DH Parameter/Nonce "
+			   "element for Per-AP MLD PTK mode, declining");
+		uhr_cur_ap_send_st_prep_fail(
+			hapd, sta, frame, frame_len,
+			WLAN_STATUS_REJECTED_ST_PREP_MISSING_PTK_GEN_PARAMETERS);
+		return -1;
+	}
+
 	wpa_printf(MSG_DEBUG,
 		   "UHR Current AP: Target AP MLD " MACSTR ,
 		   MAC2STR(mle.target_ap_mld_addr));
@@ -912,6 +1010,30 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 	/* Find target AP in roaming candidate list */
 	ap_info = uhr_find_ap_in_list(sta, mle.target_ap_mld_addr);
 	if (!ap_info) {
+		struct smd_roam_ap_info *cnt_info;
+		unsigned int prepared = 0;
+		unsigned int max_prep =
+			sta->smd_info.caps.max_prep_target_apmlds + 1;
+
+		for (cnt_info = sta->smd_info.ap_list; cnt_info;
+		     cnt_info = cnt_info->next) {
+			if (cnt_info->state != SMD_AP_STATE_IDLE)
+				prepared++;
+		}
+
+		if (prepared >= max_prep) {
+			wpa_printf(MSG_INFO,
+				   "UHR Current AP: preparing " MACSTR
+				   " would exceed Max Number Of Prepared "
+				   "Target AP MLDs (%u >= %u), declining",
+				   MAC2STR(mle.target_ap_mld_addr),
+				   prepared, max_prep);
+			uhr_cur_ap_send_st_prep_fail(
+				hapd, sta, frame, frame_len,
+				WLAN_STATUS_REJECTED_ST_PREP_MAX_PREP_EXCEEDED);
+			return -1;
+		}
+
 		wpa_printf(MSG_DEBUG,
 			   "UHR Current AP: Target AP " MACSTR " not in list, creating entry",
 			   MAC2STR(mle.target_ap_mld_addr));
@@ -939,19 +1061,28 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG,
 			   "UHR Current AP: Created ap_info for " MACSTR ,
 			   MAC2STR(ap_info->ap_mld_addr));
+	} else if (ap_info->state == SMD_AP_STATE_ST_PREP_COMPLETE) {
+		wpa_printf(MSG_INFO,
+			   "UHR Current AP: target AP MLD " MACSTR
+			   " already prepared, declining",
+			   MAC2STR(mle.target_ap_mld_addr));
+		uhr_cur_ap_send_st_prep_fail(
+			hapd, sta, frame, frame_len,
+			WLAN_STATUS_REJECTED_ST_PREP_TARGET_AP_ALREADY_PREPARED);
+		return -1;
 	}
 
 	/* Reject a new prep while a previous prep or exec for this target is
-	 * still in flight.  ST_PREP_COMPLETE is the only existing state that
-	 * is legal to re-enter (STA re-prep after full OTA round-trip). */
-	if (!is_new_ap &&
-	    ap_info->state != SMD_AP_STATE_IDLE &&
-	    ap_info->state != SMD_AP_STATE_ST_PREP_COMPLETE) {
+	 * still in flight. ST_PREP_COMPLETE is handled above (with
+	 * REJECTED_ST_PREP_TARGET_AP_ALREADY_PREPARED), so only intermediate
+	 * in-flight states reach here. */
+	if (!is_new_ap && ap_info->state != SMD_AP_STATE_IDLE) {
 		wpa_printf(MSG_DEBUG,
 			   "UHR Current AP: ST Prep for " MACSTR
 			   " rejected, in-flight state %d",
 			   MAC2STR(mle.target_ap_mld_addr), ap_info->state);
-		uhr_cur_ap_send_st_prep_fail(hapd, sta, frame, frame_len);
+		uhr_cur_ap_send_st_prep_fail(hapd, sta, frame, frame_len,
+					     WLAN_STATUS_UNSPECIFIED_FAILURE);
 		return 0;
 	}
 	if (smd_ctx) {
@@ -1200,8 +1331,52 @@ void uhr_cur_ap_handle_st_prep_resp(struct hostapd_data *hapd,
 			   "UHR Current AP: Failed to start ST prep timeout");
 		sta->smd_info.sap_stats.sap_prep_exec_timer_fail++;
 	}
+	ap_info->st_prep_dialog_token =
+		((const struct ieee80211_mgmt *) frame)->u.action.u.uhr_link_reconf_resp.dialog_token;
 
 	uhr_cur_ap_clone_ap_info_to_partners(lhapd, sta, ap_info);
+}
+
+
+void hostapd_uhr_link_reconf_resp_tx_status(struct hostapd_data *hapd,
+					    struct sta_info *sta,
+					    u8 dialog_token, int ok)
+{
+	struct smd_roam_ap_info *ap_info;
+
+	if (!sta)
+		return;
+
+	for (ap_info = sta->smd_info.ap_list; ap_info; ap_info = ap_info->next) {
+		if (ap_info->state != SMD_AP_STATE_ST_PREP_COMPLETE ||
+		    ap_info->uhr_st_prep_timer_ongoing ||
+		    ap_info->st_prep_dialog_token != dialog_token)
+			continue;
+
+		if (!ok) {
+			wpa_printf(MSG_DEBUG,
+				   "UHR Current AP: ST Prep Response to " MACSTR
+				   " for target " MACSTR " was not ack'ed, not "
+				   "starting preparation timeout",
+				   MAC2STR(sta->addr),
+				   MAC2STR(ap_info->ap_mld_addr));
+			continue;
+		}
+
+		wpa_printf(MSG_DEBUG,
+			   "UHR Current AP: ST Prep Response to " MACSTR
+			   " for target " MACSTR " ack'ed, starting "
+			   "preparation timeout",
+			   MAC2STR(sta->addr), MAC2STR(ap_info->ap_mld_addr));
+
+		if (uhr_cur_start_st_prep_timer(
+			    sta, ap_info->ap_mld_addr,
+			    hapd->conf->smd.smd_prep_timeout) < 0) {
+			wpa_printf(MSG_ERROR,
+				   "UHR Current AP: Failed to start ST prep "
+				   "timeout");
+		}
+	}
 }
 
 int uhr_handle_st_exec_req(struct hostapd_data *hapd,
@@ -1209,6 +1384,7 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 				  const u8 *buf, size_t len,
 				 struct sta_smd_ctx_info *smd_ctx)
 {
+	struct uhr_smd_bss_transition_element sbte;
 	struct ieee802_11_elems elems;
 	struct uhr_reconfig_mle mle;
 	const u8 *ies;
@@ -1226,21 +1402,38 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 		return -1;
 	}
 
+	if (sta->smd_info.state == SMD_STA_ST_EXEC_DONE) {
+		wpa_printf(MSG_ERROR,
+			   "UHR ST EXEC: STA " MACSTR
+			   " already completed ST execution, declining",
+			   MAC2STR(sta->addr));
+		uhr_cur_ap_send_st_exec_fail(
+			hapd, sta, buf, len,
+			WLAN_STATUS_REJECTED_ST_EXEC_ALREADY_PERFORMED);
+		return -1;
+	}
+
 	ies = buf + IEEE80211_HDRLEN + 3  + 1;
 	ies_len = len - IEEE80211_HDRLEN - 3 - 1;
 
 	if (ieee802_11_parse_elems(ies, ies_len, &elems, 1) == ParseFailed) {
 		wpa_printf(MSG_ERROR, "UHR ST EXEC: Failed to parse elements");
+		uhr_cur_ap_send_st_exec_fail(hapd, sta, buf, len,
+					     WLAN_STATUS_UNSPECIFIED_FAILURE);
 		return -1;
 	}
 
 	if (uhr_parse_reconfig_mle(&elems, &mle) < 0) {
 		wpa_printf(MSG_ERROR, "UHR ST EXEC: Failed to parse Reconfig ML IE");
+		uhr_cur_ap_send_st_exec_fail(hapd, sta, buf, len,
+					     WLAN_STATUS_UNSPECIFIED_FAILURE);
 		return -1;
 	}
 
 	if (!mle.has_target_ap_mld_addr) {
 		wpa_printf(MSG_ERROR, "UHR ST EXEC: No Target AP MLD address in ML IE");
+		uhr_cur_ap_send_st_exec_fail(hapd, sta, buf, len,
+					     WLAN_STATUS_UNSPECIFIED_FAILURE);
 		return -1;
 	}
 
@@ -1255,6 +1448,9 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 			   "UHR ST EXEC: Target AP " MACSTR " not in list",
 			   MAC2STR(mle.target_ap_mld_addr));
 		sta->smd_info.sap_stats.sap_exec_req_no_apinfo++;
+		uhr_cur_ap_send_st_exec_fail(
+			hapd, sta, buf, len,
+			WLAN_STATUS_REJECTED_ST_EXEC_TARGET_NOT_PREPARED);
 		return -1;
 	}
 
@@ -1263,11 +1459,23 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 			   "UHR ST EXEC: Invalid state %d (expected ST_PREP_COMPLETE)",
 			   target_info->state);
 		sta->smd_info.sap_stats.sap_exec_req_bad_state++;
+		uhr_cur_ap_send_st_exec_fail(
+			hapd, sta, buf, len,
+			WLAN_STATUS_REJECTED_ST_EXEC_TARGET_NOT_PREPARED);
 		return -1;
 	}
 
 	target_info->state = SMD_AP_STATE_ST_EXEC_STARTED;
 	os_memcpy(target_info->sta_addr, sta->addr, ETH_ALEN);
+
+	if (uhr_parse_smd_bss_trans_elem(&elems, UHR_SMD_ST_EXEC_REQ,
+					  &sbte) == 0) {
+		target_info->exec_req_dl_tid_bitmap = sbte.dl_tid_bitmap;
+		if (sbte.dl_tid_bitmap)
+			wpa_printf(MSG_DEBUG,
+				   "UHR ST EXEC: DL TID Bitmap requested: 0x%02x",
+				   sbte.dl_tid_bitmap);
+	}
 
 	if (smd_ctx) {
 		uhr_smd_ctx_dump(smd_ctx, "UHR ST Exec");
@@ -1276,6 +1484,10 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 				   "UHR ST EXEC: ST Type invalid, "
 				   "expected 1 (Exec) but got %u",
 				   smd_ctx->st_type);
+			target_info->state = SMD_AP_STATE_ST_PREP_COMPLETE;
+			uhr_cur_ap_send_st_exec_fail(
+				hapd, sta, buf, len,
+				WLAN_STATUS_UNSPECIFIED_FAILURE);
 			return -1;
 		} else {
 			target_info->smd_ctx_valid = 1;
@@ -1607,15 +1819,15 @@ void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
                return;
        }
 
-       /* Extract DL Drain Duration from frame_buf (last 4 bytes) */
-	frame_buf = iap->frame_ctx_data;
-       if (frame_len >= 4) {
-               target_info->dl_drain_duration_tu = WPA_GET_LE32(frame_buf + frame_len - 4);
+       frame_buf = iap->frame_ctx_data;
+       target_info->dl_drain_duration_tu = hapd->conf->smd.uhr_dl_drain_duration_tu;
+       if (frame_len >= 2)
+               WPA_PUT_LE16((u8 *) frame_buf + frame_len - 2,
+                            (u16) target_info->dl_drain_duration_tu);
 
-               wpa_printf(MSG_DEBUG,
-                          "UHR ST EXEC: Extracted DL Drain Duration: %u TU",
-                          target_info->dl_drain_duration_tu);
-       }
+       wpa_printf(MSG_DEBUG,
+                  "UHR ST EXEC: Current AP DL Drain Duration: %u TU",
+                  target_info->dl_drain_duration_tu);
 
 	if (frame_len < offsetof(struct ieee80211_mgmt, bssid) + ETH_ALEN) {
 		wpa_printf(MSG_ERROR,
@@ -2238,6 +2450,8 @@ static int uhr_process_reconf_req_list(
                                 continue;
                         }
 
+                        sta->smd_info.roam_sta = true;
+
                         sta->wpa_sm = wpa_auth_sta_init(hapd_link->wpa_auth,
                                                        sta->addr, NULL);
                         if (!sta->wpa_sm) {
@@ -2267,7 +2481,6 @@ static int uhr_process_reconf_req_list(
                         sta->capability = info->capability;
                         uhr_mark_smd_features(hapd_link, sta,
 					      current_ap_mld_addr);
-                        sta->smd_info.roam_sta = true;
 
                         *assoc_link_found = true;
                         *assoc_link_id = info->link_id;
@@ -2530,23 +2743,14 @@ out:
 }
 
 
-#define SMD_PRES_AID     BIT(0)
-#define SMD_PRES_DL_BA   BIT(1)
-#define SMD_PRES_UL_BA   BIT(2)
-#define SMD_PRES_SCS     BIT(3)
-
 /*
  * Append SMD BSS Transition IE (ST Preparation Response)
  *  - status: IEEE 802.11 status code (LE)
- *  - aid_present: set true to include AID
- *  - aid: Association ID (LE)
  *  - dl_ba/ul_ba/scs: optional blocks if present (can be NULL/0)
  * Returns: advanced pos
  */
 static u8 * hostapd_eid_smd_bss_trans_prep_resp(u8 *pos,
                                                 u16 status,
-                                                bool aid_present,
-                                                u16 aid,
                                                 const u8 *dl_ba, u8 dl_ba_len,
                                                 const u8 *ul_ba, u8 ul_ba_len,
                                                 const u8 *scs,   u8 scs_len)
@@ -2568,8 +2772,6 @@ static u8 * hostapd_eid_smd_bss_trans_prep_resp(u8 *pos,
         /* ---- ST Info ---- */
 
         /* Presence Bitmap (1) */
-        if (aid_present)
-                presence |= SMD_PRES_AID;
         if (dl_ba && dl_ba_len)
                 presence |= SMD_PRES_DL_BA;
         if (ul_ba && ul_ba_len)
@@ -2581,11 +2783,6 @@ static u8 * hostapd_eid_smd_bss_trans_prep_resp(u8 *pos,
 	*len_pos += 1;
 
         /* Conditionally present fields (in the order of bits) */
-        if (aid_present) {
-                WPA_PUT_LE16(pos, aid);
-                pos += 2;
-		*len_pos += 2;
-        }
         if (dl_ba && dl_ba_len) {
                 os_memcpy(pos, dl_ba, dl_ba_len);
                 pos += dl_ba_len;
@@ -2619,30 +2816,18 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 	struct mld_info mld;
 	size_t mle_len = 0;
 	struct uhr_link_reconf_req_info *info;
-	unsigned int status_list_count = 0;
 
 	sta = ap_get_sta(hapd, sta_addr);
 
-	/* Count links for status list */
-	if (req_list) {
-		dl_list_for_each(info, &req_list->list,
-				 struct uhr_link_reconf_req_info, list) {
-			status_list_count++;
-		}
-	}
-	
-	/* Calculate frame length */
-	len = IEEE80211_HDRLEN + 1 + 1 + 1 + 1 + 2 + 1;  /* Header + Category + Action + Token + Type + Status Code + Count */
-	
-	/* **NEW: Reconfiguration Status List (ALWAYS present)** */
-	len += status_list_count * 3;  /* link_id (1B) + status (2B) per link */
+	len = IEEE80211_HDRLEN + 1 + 1 + 1 + 1 + 2;  /* Header + Category + Action + Token + Type + Status Code */
+
 	/* **NEW: Conditional content based on links_ok** */
 	if (status_code == 0 && sta && req_list && req_list->links_ok > 0) {
-		
+
 		/* REUSE: EHT ML-IE building */
 		os_memset(&mld, 0, sizeof(mld));
 		mld.mld_sta = true;
-		
+
 		/* Build mld_info for accepted links */
 		dl_list_for_each(info, &req_list->list,
 				 struct uhr_link_reconf_req_info, list) {
@@ -2654,7 +2839,7 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 				struct mld_link_info *link = &mld.links[info->link_id];
 				struct hostapd_data *lhapd;
 
-				
+
 				lhapd = hostapd_mld_get_link_bss(hapd, info->link_id);
 				if (!lhapd)
 					continue;
@@ -2662,28 +2847,34 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 				link->valid = true;
 				link->status = info->status;
 				ieee80211_ml_build_assoc_resp(lhapd, NULL, sta, link);
+				wpa_printf(MSG_DEBUG,
+					   "SMD ST PREP Target AP: link=%u aid=%u resp_sta_profile_len=%u",
+					   info->link_id, sta ? sta->aid : 0,
+					   link->resp_sta_profile_len);
 			}
 		}
-		
-		mle_len = hostapd_eid_eht_ml_len(hapd, &mld, false, true, 0, false,
-						  false, false);
+
+		mle_len = hostapd_eid_eht_ml_len(hapd, &mld, false, true, 0, true,
+						  false, false, false);
 		len += mle_len;
+		wpa_printf(MSG_DEBUG,
+			   "SMD ST PREP Target AP: computed mle_len=%zu",
+			   mle_len);
 	}
 
 	// SMD BSS Transition IE:
 	// Length = Element ID (1) + Length (1) + Element ID Extn (1) + ST Info (Variable)
 	len += 3;
 	// For ST Preparation Response, the ST Info contains the following:
-	// 1   byte - Presence Bitmap	
-	// 0/2 byte - AID
+	// 1   byte - Presence Bitmap
 	// ??? byte - DL BA Info
 	// ??? byte - UL BA Info
 	// ??? byte - SCS List
 	// ------------------------------------------------------------
-	// NOTE:
-	// For the time being, only the AID is present
-	// ------------------------------------------------------------
-	len += 1 + 2;
+	len += 1;
+
+	/* TODO: EPCS Priority Access Multi-Link element (Table 9-658bd) is
+	 * not yet implemented for SMD ST. */
 
 	buf = os_zalloc(len);
 	if (!buf)
@@ -2707,20 +2898,7 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
         /* Status Code (2, LE) */
         WPA_PUT_LE16(pos, status_code); /* Status Code */;
         pos += 2;
-	*pos++ = status_list_count;
 
-	/* **NEW: Build Reconfiguration Status List (ALWAYS)** */
-	if (req_list) {
-		dl_list_for_each(info, &req_list->list,
-				 struct uhr_link_reconf_req_info, list) {
-			*pos++ = info->link_id;
-			WPA_PUT_LE16(pos, info->status);
-			pos += 2;
-			wpa_printf(MSG_DEBUG,
-				   "SMD ST PREP Target AP: Status list - link %u: status=%u",
-				   info->link_id, info->status);
-		}
-	}
 	
 	/* **NEW: Conditional content (ONLY if links_ok > 0)** */
 	if (status_code != 0 || !sta || !req_list || req_list->links_ok == 0)
@@ -2736,14 +2914,9 @@ static u8 *uhr_tgt_ap_st_prep_resp(struct hostapd_data *hapd,
 			   mle_len);
 	}
 	
-        bool aid_present = true;
-        u16 aid = sta ? sta->aid : 0;
-
         pos = hostapd_eid_smd_bss_trans_prep_resp(
                 pos,
                 0,
-                aid_present,
-                aid,
                 NULL, 0,   // DL BA Info not present
                 NULL, 0,   // UL BA Info not present
                 NULL, 0    // SCS List not present
@@ -3070,7 +3243,45 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
                status_code = 1;
 		goto send_response;
        }
-	
+
+	if (hapd->conf->smd.caps.ptk_mode &&
+	    (!elems.owe_dh || !elems.owe_dh_len ||
+	     !elems.nonce || !elems.nonce_len)) {
+		wpa_printf(MSG_INFO,
+			   "SMD ST PREP Target AP: missing DH Parameter/Nonce "
+			   "element for Per-AP MLD PTK mode, declining");
+		status_code = WLAN_STATUS_REJECTED_ST_PREP_MISSING_PTK_GEN_PARAMETERS;
+		goto send_response;
+	}
+
+	if (hapd->conf->smd.caps.ptk_mode &&
+	    elems.owe_dh && elems.owe_dh_len >= 2) {
+		u16 dh_group = WPA_GET_LE16(elems.owe_dh);
+
+		if (dh_group != 19 && dh_group != 20 && dh_group != 21) {
+			struct hostapd_data *stale_hapd = NULL;
+			struct sta_info *stale_sta = NULL;
+
+			wpa_printf(MSG_INFO,
+				   "SMD ST PREP Target AP: unsupported finite "
+				   "cyclic group %u for Per-AP MLD PTK mode, declining",
+				   dh_group);
+
+			if (hostapd_mld_find_assoc_sta(hapd, iap->sta_addr,
+							&stale_hapd, &stale_sta)) {
+				wpa_printf(MSG_DEBUG,
+					   "SMD ST PREP Target AP: deleting stale "
+					   "transferred context for " MACSTR
+					   " on DH group mismatch",
+					   MAC2STR(iap->sta_addr));
+				ap_free_sta(stale_hapd, stale_sta);
+			}
+
+			status_code = WLAN_STATUS_FINITE_CYCLIC_GROUP_NOT_SUPPORTED;
+			goto send_response;
+		}
+	}
+
 	/* Parse ML-IE and process profiles (includes MLD-level PTK installation) */
 	if (uhr_tgt_ap_parse_ml(hapd, iap->sta_addr, iap->current_ap_mld_addr,
 				&iap->sec_ctx,
@@ -3093,6 +3304,17 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 
 	assoc_sta->smd_info.tap_stats.tap_iap_prep_req_rx_ok++;
 	smd_ts_record(&assoc_sta->smd_info.tap_stats.tap_iap_prep_req_rx_ok_ts, smd_ts_now());
+	if (!req_list || req_list->links_ok == 0) {
+		wpa_printf(MSG_ERROR,
+			   "SMD ST PREP Target AP: no requested link accepted for "
+			   MACSTR ", rejecting", MAC2STR(iap->sta_addr));
+		ap_sta_remove_link_sta(assoc_hapd, sta, 0, false);
+		ap_free_sta(assoc_hapd, sta);
+		assoc_sta = NULL;
+		sta = NULL;
+		status_code = WLAN_STATUS_REJECTED_ST_PREP_NO_LINK_ACCEPTED;
+		goto send_response;
+	}
 
        /* Update flags based on the flags */
        sta->dl_sn_not_transferred = sbte.dl_sn_not_transferred;
@@ -3235,7 +3457,8 @@ send_response:
 }
 
 static u8 * hostapd_eid_smd_bss_trans_exec_resp(u8 *pos,
-					        u16 dl_drain_time)
+					        u16 dl_drain_time,
+					        bool via_current_ap)
 {
         u8 *len_pos;
         u8 st_control = 0;
@@ -3254,15 +3477,18 @@ static u8 * hostapd_eid_smd_bss_trans_exec_resp(u8 *pos,
         /* ---- ST Info ---- */
 
         /* Presence Bitmap (1) */
-        st_control |= BIT(0); // DL Drain present
+        if (via_current_ap)
+                st_control |= BIT(0); /* DL Drain present */
 
         *pos++ = st_control;
 	*len_pos += 1;
 
         /* Conditionally present fields (in the order of bits) */
-        WPA_PUT_LE16(pos, dl_drain_time);
-        pos += 2;
-	*len_pos += 2;
+        if (via_current_ap) {
+                WPA_PUT_LE16(pos, dl_drain_time);
+                pos += 2;
+	        *len_pos += 2;
+        }
 
         return pos;
 }
@@ -3277,16 +3503,36 @@ static u8 * hostapd_eid_smd_bss_trans_exec_resp(u8 *pos,
  * Returns an os_malloc'd buffer of *out_len bytes on success, NULL on failure.
  * Caller must os_free() the returned buffer.
  */
+#define UHR_ST_EXEC_MINIMAL_BMLIE_LEN (1 + 1 + 1 + 2 + 1 + ETH_ALEN)
+
+static u8 *uhr_build_minimal_bmlie(struct hostapd_data *lhapd, u8 *pos)
+{
+	*pos++ = WLAN_EID_EXTENSION;
+	*pos++ = UHR_ST_EXEC_MINIMAL_BMLIE_LEN - 2; /* Length excludes EID+Length */
+	*pos++ = WLAN_EID_EXT_MULTI_LINK;
+	WPA_PUT_LE16(pos, MULTI_LINK_CONTROL_TYPE_BASIC);
+	pos += 2;
+	*pos++ = 1 + ETH_ALEN; /* Common Info Length: self (1) + MLD MAC Address */
+	os_memcpy(pos, lhapd->mld->mld_addr, ETH_ALEN);
+	pos += ETH_ALEN;
+
+	return pos;
+}
+
+
 static u8 *uhr_tgt_build_st_exec_resp_frame(struct hostapd_data *lhapd,
 					    struct sta_info *sta,
 					    u8 dialog_token,
 					    u16 status,
+					    bool via_current_ap,
 					    size_t *out_len)
 {
-	u8 *resp_buf, *pos, *rcsl_count;
+	u8 *resp_buf, *pos;
 	struct ieee80211_mgmt *mgmt;
-	int i, n = 0;
+	struct mld_info mld;
+	int i;
 	size_t key_deliv_len;
+	size_t mle_len = 0;
 	size_t len;
 
 	if (!lhapd || !sta || !out_len)
@@ -3294,10 +3540,42 @@ static u8 *uhr_tgt_build_st_exec_resp_frame(struct hostapd_data *lhapd,
 
 	*out_len = 0;
 
-	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
-		if (sta->mld_info.links[i].valid)
-			n++;
+	os_memset(&mld, 0, sizeof(mld));
+	mld.mld_sta = true;
+
+	if (!via_current_ap) {
+		for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
+			struct mld_link_info *link;
+			struct hostapd_data *link_hapd;
+
+			if (!sta->mld_info.links[i].valid)
+				continue;
+
+			link = &mld.links[i];
+			link_hapd = hostapd_mld_get_link_bss(lhapd, i);
+			if (!link_hapd)
+				continue;
+
+			os_memcpy(link->local_addr, sta->mld_info.links[i].local_addr,
+				  ETH_ALEN);
+			os_memcpy(link->peer_addr, sta->mld_info.links[i].peer_addr,
+				  ETH_ALEN);
+			link->valid = true;
+			link->status = WLAN_STATUS_SUCCESS;
+			ieee80211_ml_build_assoc_resp(link_hapd, NULL, sta, link);
+			wpa_printf(MSG_DEBUG,
+				   "SMD ST EXEC Target AP: link=%u aid=%u resp_sta_profile_len=%u",
+				   i, sta->aid, link->resp_sta_profile_len);
+		}
+
+		mle_len = hostapd_eid_eht_ml_len(lhapd, &mld, false, true, 0, true,
+						  false, false, false);
+	} else {
+		mle_len = UHR_ST_EXEC_MINIMAL_BMLIE_LEN;
 	}
+
+	wpa_printf(MSG_DEBUG,
+		   "SMD ST EXEC Target AP: computed mle_len=%zu", mle_len);
 
 	key_deliv_len = sta->wpa_sm ?
 		wpa_auth_key_delivery_elem_len(sta->wpa_sm, 0xFFFF) : 0;
@@ -3308,14 +3586,17 @@ static u8 *uhr_tgt_build_st_exec_resp_frame(struct hostapd_data *lhapd,
 	      1 +		/* Dialog Token */
 	      1 +		/* Type */
 	      2 +		/* Status Code */
-	      1 +		/* Count */
-	      (3 * n) +		/* RCSL: Link ID(1) + Status(2) per link */
 	      key_deliv_len +	/* Key Delivery element (9.4.2.184) */
-	      6;		/* SMD BSS Transition IE */
+	      mle_len +		/* Basic Multi-Link element */
+	      (via_current_ap ? 6 : 4); /* SMD BSS Transition IE: EID+Len+ExtID+
+					 * PresenceBitmap(4) [+DrainTime(2) iff
+					 * via_current_ap] */
 
 	resp_buf = os_zalloc(len);
-	if (!resp_buf)
+	if (!resp_buf) {
+		ap_sta_free_sta_profile(&mld);
 		return NULL;
+	}
 
 	mgmt = (struct ieee80211_mgmt *) resp_buf;
 	mgmt->frame_control = host_to_le16((WLAN_FC_TYPE_MGMT << 2) |
@@ -3332,29 +3613,55 @@ static u8 *uhr_tgt_build_st_exec_resp_frame(struct hostapd_data *lhapd,
 	WPA_PUT_LE16(pos, status);
 	pos += 2;
 
-	rcsl_count = pos;
-	*rcsl_count = 0;
-	pos++;
-
-	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
-		if (!sta->mld_info.links[i].valid)
-			continue;
-		*pos++ = (u8) i;
-		WPA_PUT_LE16(pos, WLAN_STATUS_SUCCESS);
-		pos += 2;
-		(*rcsl_count)++;
-	}
-
 	if (key_deliv_len && sta->wpa_sm) {
 		pos = wpa_auth_build_key_delivery_elem(sta->wpa_sm, 0xFFFF, pos);
 		sta->smd_info.tap_stats.gtk_install_ok++;
 	}
 
+	if (via_current_ap)
+		pos = uhr_build_minimal_bmlie(lhapd, pos);
+	else if (mle_len)
+		pos = hostapd_eid_eht_basic_ml_common(lhapd, pos, &mld,
+						      false, true, 0, true, false,
+						      false, false);
+
 	pos = hostapd_eid_smd_bss_trans_exec_resp(
-		pos, lhapd->conf->smd.uhr_dl_drain_duration_tu);
+		pos, lhapd->conf->smd.uhr_dl_drain_duration_tu, via_current_ap);
 
 	*out_len = (size_t)(pos - resp_buf);
+
+	ap_sta_free_sta_profile(&mld);
+
 	return resp_buf;
+}
+
+
+static void uhr_tgt_send_st_exec_fail(struct hostapd_data *lhapd,
+				      struct sta_info *sta,
+				      const u8 *sta_addr,
+				      u8 dialog_token,
+				      u16 status_code)
+{
+	u8 *resp_buf;
+	size_t resp_len;
+
+	resp_buf = uhr_tgt_build_st_exec_resp_frame(lhapd, sta, dialog_token,
+						    status_code,
+						    false /* via_current_ap:
+							   * via-target-direct
+							   * path, §37.16.8.4 */,
+						    &resp_len);
+	if (!resp_buf) {
+		wpa_printf(MSG_ERROR,
+			   "UHR ST EXEC (tgt): Failed to build failure "
+			   "ST Exec Response for " MACSTR, MAC2STR(sta_addr));
+		return;
+	}
+
+	os_memcpy(((struct ieee80211_mgmt *) resp_buf)->da, sta_addr, ETH_ALEN);
+
+	hostapd_drv_send_mlme(lhapd, resp_buf, resp_len, 0, NULL, 0, 0, 0, 0);
+	os_free(resp_buf);
 }
 
 
@@ -3480,7 +3787,13 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 
 	frame = iap->frame_ctx_data;
 	resp_buf = uhr_tgt_build_st_exec_resp_frame(lhapd, sta, frame[26],
-						    WLAN_STATUS_SUCCESS,&resp_len);
+						    WLAN_STATUS_SUCCESS,
+						    true /* via_current_ap:
+							  * IAP-forwarded content
+							  * relayed through the
+							  * current AP MLD, per
+							  * §37.16.7.4 */,
+						    &resp_len);
 	if (!resp_buf) {
 		uhr_iap_send_st_exec_resp(lhapd,
 					  iap->current_ap_mld_addr,
@@ -3535,6 +3848,7 @@ int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd, struct sta_info *sta,
 	const u8 *ies;
 	size_t ies_len;
 	int ret;
+	u8 dialog_token;
 
 	wpa_printf(MSG_DEBUG,
 		   "UHR ST EXEC via Target AP: Processing Execute from " MACSTR,
@@ -3550,20 +3864,39 @@ int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd, struct sta_info *sta,
 		return -1;
 	}
 
-	/* Save dialog token for use in the async CTX_RESPONSE path */
-	sta->smd_info.st_exec_dialog_token = buf[IEEE80211_HDRLEN + 2];
+	/* Save dialog token for use in the async CTX_RESPONSE path, and for
+	 * any failure response sent below. */
+	dialog_token = buf[IEEE80211_HDRLEN + 2];
+	sta->smd_info.st_exec_dialog_token = dialog_token;
+
+	if (sta->smd_info.state == SMD_STA_ST_EXEC_DONE) {
+		wpa_printf(MSG_ERROR,
+			   "UHR ST EXEC (tgt): STA " MACSTR
+			   " already completed ST execution, declining",
+			   MAC2STR(sta->addr));
+		uhr_tgt_send_st_exec_fail(
+			assoc_hapd, sta, sta->addr, dialog_token,
+			WLAN_STATUS_REJECTED_ST_EXEC_ALREADY_PERFORMED);
+		return -1;
+	}
 
 	ies = buf + IEEE80211_HDRLEN + 4;
 	ies_len = len - IEEE80211_HDRLEN - 4;
 
 	if (ieee802_11_parse_elems(ies, ies_len, &elems, 1) == ParseFailed) {
 		wpa_printf(MSG_ERROR, "UHR ST EXEC (tgt): Failed to parse IEs");
+		uhr_tgt_send_st_exec_fail(assoc_hapd, sta, sta->addr,
+					  dialog_token,
+					  WLAN_STATUS_UNSPECIFIED_FAILURE);
 		return -1;
 	}
 
 	if (uhr_parse_reconfig_mle(&elems, &mle) < 0) {
 		wpa_printf(MSG_ERROR,
 			   "UHR ST EXEC (tgt): Failed to parse Reconfig ML IE");
+		uhr_tgt_send_st_exec_fail(assoc_hapd, sta, sta->addr,
+					  dialog_token,
+					  WLAN_STATUS_UNSPECIFIED_FAILURE);
 		return -1;
 	}
 
@@ -3574,6 +3907,9 @@ int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd, struct sta_info *sta,
 			   " does not match our MLD " MACSTR,
 			   MAC2STR(mle.target_ap_mld_addr),
 			   MAC2STR(hapd->mld->mld_addr));
+		uhr_tgt_send_st_exec_fail(assoc_hapd, sta, sta->addr,
+					  dialog_token,
+					  WLAN_STATUS_UNSPECIFIED_FAILURE);
 		return -1;
 	}
 
@@ -3582,6 +3918,9 @@ int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd, struct sta_info *sta,
 		wpa_printf(MSG_DEBUG,
 			   "UHR ST EXEC (tgt): Current AP " MACSTR " already in list; ignore",
 			   MAC2STR(sta->smd_info.current_ap_mld_addr));
+		uhr_tgt_send_st_exec_fail(
+			assoc_hapd, sta, sta->addr, dialog_token,
+			WLAN_STATUS_REJECTED_ST_EXEC_ALREADY_PERFORMED);
 		return -1;
 	}
 
@@ -3589,6 +3928,9 @@ int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd, struct sta_info *sta,
 	if (!ap_info) {
 		wpa_printf(MSG_ERROR,
 			   "UHR ST EXEC (tgt): Failed to allocate ap_info");
+		uhr_tgt_send_st_exec_fail(assoc_hapd, sta, sta->addr,
+					  dialog_token,
+					  WLAN_STATUS_UNSPECIFIED_FAILURE);
 		return -1;
 	}
 
@@ -3620,6 +3962,9 @@ int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd, struct sta_info *sta,
 	if (ret < 0) {
 		wpa_printf(MSG_ERROR, "UHR ST EXEC (tgt): Failed to send IAP Ctx Request");
 		uhr_remove_ap_from_list(sta, sta->smd_info.current_ap_mld_addr);
+		uhr_tgt_send_st_exec_fail(assoc_hapd, sta, sta->addr,
+					  dialog_token,
+					  WLAN_STATUS_UNSPECIFIED_FAILURE);
 		return -1;
 	}
 
@@ -3673,6 +4018,14 @@ void uhr_cur_ap_handle_st_ctx_request(struct hostapd_data *hapd,
 	}
 
 	target_info->state = SMD_AP_STATE_ST_EXEC_VIA_TGT_CURR_CTX_REQ;
+
+	if (hostapd_smd_roam(hapd, sta, 1, 2,
+			     sta->dl_sn_not_transferred,
+			     sta->ul_sn_not_transferred,
+			     hapd->conf->smd.uhr_dl_drain_duration_tu))
+		wpa_printf(MSG_WARNING,
+			   "UHR CTX REQ: Failed to signal DL-TX-stop to driver for "
+			   MACSTR, MAC2STR(sta->addr));
 
 	/*
 	 * 1. if ret=0 and smd_ctx is valid, driver has sent an immediate response;
@@ -3791,6 +4144,9 @@ void uhr_tgt_ap_handle_st_ctx_response(struct hostapd_data *hapd,
 
 	resp_buf = uhr_tgt_build_st_exec_resp_frame(lhapd, sta, dialog_token,
 						    WLAN_STATUS_SUCCESS,
+						    false /* via_current_ap:
+							   * via-target-direct
+							   * path, §37.16.8.4 */,
 						    &resp_len);
 	if (!resp_buf) {
 		wpa_printf(MSG_ERROR,
@@ -3856,21 +4212,9 @@ send_exec_fail:
 	uhr_remove_ap_from_list(sta, sta->smd_info.current_ap_mld_addr);
 
 	dialog_token = sta->smd_info.st_exec_dialog_token;
-	resp_buf = uhr_tgt_build_st_exec_resp_frame(lhapd, sta, dialog_token,
-						    WLAN_STATUS_UNSPECIFIED_FAILURE,
-						    &resp_len);
-	if (!resp_buf) {
-		wpa_printf(MSG_ERROR,
-			   "UHR CTX RESP: Failed to build failure ST Exec Response");
-		uhr_tgt_cancel_st_prep_timer(lhapd, iap->sta_addr);
-		return;
-	}
-
-	os_memcpy(((struct ieee80211_mgmt *) resp_buf)->da,
-		  iap->sta_addr, ETH_ALEN);
-
-	hostapd_drv_send_mlme(lhapd, resp_buf, resp_len, 0, NULL, 0, 0, 0, 0);
-	os_free(resp_buf);
+	uhr_tgt_send_st_exec_fail(lhapd, sta, iap->sta_addr, dialog_token,
+				  WLAN_STATUS_UNSPECIFIED_FAILURE);
+	uhr_tgt_cancel_st_prep_timer(lhapd, iap->sta_addr);
 }
 
 

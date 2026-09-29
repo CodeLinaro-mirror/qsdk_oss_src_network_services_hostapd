@@ -370,6 +370,10 @@ int uhr_parse_smd_bss_trans_elem(const struct ieee802_11_elems *elems,
 	case UHR_SMD_ST_PREP_RESP:
 		break;
 	case UHR_SMD_ST_EXEC_REQ:
+		if (elems->smd_bsstransparams_len < 1)
+			break;
+		if ((pos[0] & BIT(0)) && elems->smd_bsstransparams_len >= 2)
+			sbte->dl_tid_bitmap = pos[1];
 		break;
 	case UHR_SMD_ST_EXEC_RESP:
 		break;
@@ -672,6 +676,129 @@ int uhr_parse_reconfig_mle(const struct ieee802_11_elems *elems,
 out:
 	wpabuf_free(mlbuf);
 	return ret;
+}
+
+
+int uhr_scan_delete_st_prep_targets(const u8 *ies, size_t ies_len,
+				    u8 targets[][ETH_ALEN],
+				    size_t max_targets,
+				    bool *has_add_link)
+{
+	const struct element *elem;
+	int num_found = 0;
+
+	if (has_add_link)
+		*has_add_link = false;
+
+	if (!ies || ies_len == 0)
+		return 0;
+
+	for_each_element_extid(elem, WLAN_EID_EXT_MULTI_LINK, ies, ies_len) {
+		const struct ieee80211_eht_ml *ml;
+		const struct eht_ml_reconf_common_info *common_info;
+		u16 ml_control, presence_bitmap;
+		size_t common_info_len;
+		u8 target_ap_mld_addr[ETH_ALEN];
+		const u8 *mld_mac_addr;
+		bool has_target_addr = false;
+		const u8 *pos, *end;
+
+		/* elem->data[0] is the ext_id byte; the actual ML-IE body
+		 * (ml_control onward) starts at elem->data[1]. */
+		if (elem->datalen < 1 + sizeof(*ml))
+			continue;
+
+		ml = (const struct ieee80211_eht_ml *) (elem->data + 1);
+		ml_control = le_to_host16(ml->ml_control);
+
+		if ((ml_control & UHR_RECONF_ML_CONTROL_TYPE_MASK) !=
+		    UHR_RECONF_ML_CONTROL_TYPE_RECONF)
+			continue;
+
+		presence_bitmap = ml_control >> 4;
+
+		if (!(presence_bitmap & RECONF_MULTI_LINK_CTRL_PRES_MLD_MAC_ADDR))
+			continue;
+
+		common_info_len = 1 + ETH_ALEN;
+		if (presence_bitmap & RECONF_MULTI_LINK_CTRL_PRES_EML_CAPA)
+			common_info_len += 2;
+		if (presence_bitmap & RECONF_MULTI_LINK_CTRL_PRES_MLD_CAPA)
+			common_info_len += 2;
+		if (presence_bitmap & RECONF_MULTI_LINK_CTRL_PRES_EXT_MLD_CAP)
+			common_info_len += 2;
+		if (presence_bitmap & UHR_RECONF_ML_CTRL_PRES_TARGET_AP_MLD_ADDR)
+			common_info_len += ETH_ALEN;
+
+		if (elem->datalen < 1 + sizeof(*ml) + common_info_len)
+			continue;
+
+		common_info = (const struct eht_ml_reconf_common_info *)
+			ml->variable;
+		if (common_info->len < common_info_len)
+			continue;
+
+		pos = common_info->variable;
+		mld_mac_addr = pos;
+		pos += ETH_ALEN;
+
+		if (presence_bitmap & RECONF_MULTI_LINK_CTRL_PRES_EML_CAPA)
+			pos += 2;
+		if (presence_bitmap & RECONF_MULTI_LINK_CTRL_PRES_MLD_CAPA)
+			pos += 2;
+		if (presence_bitmap & RECONF_MULTI_LINK_CTRL_PRES_EXT_MLD_CAP)
+			pos += 2;
+
+		if (presence_bitmap & UHR_RECONF_ML_CTRL_PRES_TARGET_AP_MLD_ADDR) {
+			os_memcpy(target_ap_mld_addr, pos, ETH_ALEN);
+			has_target_addr = true;
+			pos += ETH_ALEN;
+		} else {
+			os_memcpy(target_ap_mld_addr, mld_mac_addr, ETH_ALEN);
+			has_target_addr = true;
+		}
+
+		if (!has_target_addr)
+			continue;
+
+		end = elem->data + elem->datalen;
+		while (end - pos > 2) {
+			u8 subelem_id = pos[0];
+			size_t subelem_len = pos[1];
+			const struct ieee80211_eht_per_sta_profile *prof;
+			u16 sta_control;
+			u8 op_type;
+
+			if ((size_t) (end - pos) < 2 + subelem_len)
+				break;
+
+			if (subelem_id != MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE ||
+			    subelem_len < sizeof(*prof)) {
+				pos += 2 + subelem_len;
+				continue;
+			}
+
+			prof = (const struct ieee80211_eht_per_sta_profile *)
+				(pos + 2);
+			sta_control = le_to_host16(prof->sta_control);
+			op_type = (sta_control & EHT_PER_STA_RECONF_CTRL_OP_UPDATE_TYPE_MSK)
+				>> 7;
+
+			if (op_type == EHT_RECONF_TYPE_ADD_LINK) {
+				if (has_add_link)
+					*has_add_link = true;
+			} else if (op_type == EHT_RECONF_TYPE_DELETE_ST_PREP) {
+				if ((size_t) num_found < max_targets)
+					os_memcpy(targets[num_found],
+						  target_ap_mld_addr, ETH_ALEN);
+				num_found++;
+			}
+
+			pos += 2 + subelem_len;
+		}
+	}
+
+	return num_found;
 }
 
 

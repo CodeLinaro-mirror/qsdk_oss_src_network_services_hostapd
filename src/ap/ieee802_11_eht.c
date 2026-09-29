@@ -947,10 +947,14 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		return pos;
 
 	/* Multi-Link Control field */
-	control = MULTI_LINK_CONTROL_TYPE_BASIC |
-		BASIC_MULTI_LINK_CTRL_PRES_LINK_ID |
-		BASIC_MULTI_LINK_CTRL_PRES_BSS_PARAM_CH_COUNT |
-		BASIC_MULTI_LINK_CTRL_PRES_EML_CAPA |
+	control = MULTI_LINK_CONTROL_TYPE_BASIC;
+
+	if (!is_smd) {
+		control |= BASIC_MULTI_LINK_CTRL_PRES_LINK_ID |
+			BASIC_MULTI_LINK_CTRL_PRES_BSS_PARAM_CH_COUNT;
+	}
+
+	control |= BASIC_MULTI_LINK_CTRL_PRES_EML_CAPA |
 		BASIC_MULTI_LINK_CTRL_PRES_MLD_CAPA;
 
 	/*
@@ -961,6 +965,8 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 	 * MLD Capabilities and Operations (2)
 	 */
 	common_info_len = EHT_ML_COMMON_INFO_LEN;
+	if (is_smd)
+		common_info_len -= 2; /* no Link ID, no BSS Param Change Count */
 
 	if (include_mld_id) {
 		/* AP MLD ID */
@@ -968,12 +974,12 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		common_info_len++;
 	}
 
-	if (include_ext_cap) {
+	if (include_ext_cap || is_smd) {
 		control |= BASIC_MULTI_LINK_CTRL_PRES_EXT_MLD_CAP;
 		common_info_len += 2;
 	}
 
-	if (hostapd_is_uhr_enabled(hapd) && is_uhr_sta && !skip_uhr_extn) {
+	if (!is_smd && hostapd_is_uhr_enabled(hapd) && is_uhr_sta && !skip_uhr_extn) {
 		/* Enhanced Critical Updates Information */
 		control |= BASIC_MULTI_LINK_CTRL_PRES_ENH_CRIT_UPD;
 		common_info_len++;
@@ -985,6 +991,12 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		}
 	}
 
+	if (is_smd && include_bss_load_age &&
+	    hapd->conf->bss_load_update_period) {
+		control |= BASIC_MULTI_LINK_CTRL_PRES_AGE_OF_BSS_LOAD;
+		common_info_len++;
+	}
+
 	wpabuf_put_le16(buf, control);
 
 	wpabuf_put_u8(buf, common_info_len);
@@ -992,14 +1004,16 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 	/* Own MLD MAC Address */
 	wpabuf_put_data(buf, hapd->mld->mld_addr, ETH_ALEN);
 
-	/* Own Link ID */
-	wpabuf_put_u8(buf, hapd->mld_link_id);
+	if (!is_smd) {
+		/* Own Link ID */
+		wpabuf_put_u8(buf, hapd->mld_link_id);
 
-	/* BSS Parameters Change Count */
-	if (include_bpcc)
-		wpabuf_put_u8(buf, hapd->rx_cu_param.bpcc);
-	else
-		wpabuf_put_u8(buf, 0);
+		/* BSS Parameters Change Count */
+		if (include_bpcc)
+			wpabuf_put_u8(buf, hapd->rx_cu_param.bpcc);
+		else
+			wpabuf_put_u8(buf, 0);
+	}
 
 	/* Reset the EMLSR Transision and Padding delay to zero for
 	 * MLD AP as per IEEE802.11 be draft 5.0
@@ -1044,7 +1058,7 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		wpabuf_put_u8(buf, hostapd_get_mld_id(hapd));
 	}
 
-	if (include_ext_cap) {
+	if (include_ext_cap || is_smd) {
 		ext_mld_cap = 0;
 		if (include_ext_cap & BIT(BASIC_MULTI_LINK_CTRL_EXT_RMSL_INFO_EN)) {
 			max_rec_links = hapd->conf->ml_max_rec_links;
@@ -1082,6 +1096,10 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 			wpabuf_put_u8(buf, hostapd_bss_load_age(
 					&hapd->iface->ch_util_update_time));
 	}
+
+	if (is_smd && include_bss_load_age && hapd->conf->bss_load_update_period)
+		wpabuf_put_u8(buf, hostapd_bss_load_age(
+				&hapd->iface->ch_util_update_time));
 #endif /* CONFIG_IEEE80211BN */
 
 	if (!mld_info)
@@ -1118,13 +1136,17 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		}
 #endif /* CONFIG_QCN_EXTN */
 
+		if (is_smd)
+			sta_info_len -= 12; /* no Beacon Int/TSF Offset/DTIM Info */
+
 		/* BSS Parameters Change Count (1) for (Re)Association Response
 		 * frames */
-		if (include_bpcc)
+		if (include_bpcc || is_smd)
 			sta_info_len++;
-		/* Enhanced Critical Updates Information */
-		if (include_bpcc && hostapd_is_uhr_enabled(hapd) &&
-		    !skip_uhr_extn && is_uhr_sta)
+		/* Enhanced (BSS Parameter Change Count / Critical Updates)
+		 * Information */
+		if (is_smd || (include_bpcc && hostapd_is_uhr_enabled(hapd) &&
+			       !skip_uhr_extn && is_uhr_sta))
 			sta_info_len++;
 
 		total_len = sta_info_len + link->resp_sta_profile_len;
@@ -1148,15 +1170,17 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		/* STA Control */
 		control = (link_id & 0xf) |
 			BASIC_MLE_STA_CTRL_PRES_STA_MAC |
-			BASIC_MLE_STA_CTRL_COMPLETE_PROFILE |
-			BASIC_MLE_STA_CTRL_PRES_TSF_OFFSET |
-			BASIC_MLE_STA_CTRL_PRES_BEACON_INT |
-			BASIC_MLE_STA_CTRL_PRES_DTIM_INFO;
+			BASIC_MLE_STA_CTRL_COMPLETE_PROFILE;
 
-		if (include_bpcc)
+		if (!is_smd)
+			control |= BASIC_MLE_STA_CTRL_PRES_TSF_OFFSET |
+				BASIC_MLE_STA_CTRL_PRES_BEACON_INT |
+				BASIC_MLE_STA_CTRL_PRES_DTIM_INFO;
+
+		if (include_bpcc || is_smd)
 			control |= BASIC_MLE_STA_CTRL_PRES_BSS_PARAM_COUNT;
-		if (include_bpcc && hostapd_is_uhr_enabled(hapd) &&
-		    !skip_uhr_extn && is_uhr_sta)
+		if (is_smd || (include_bpcc && hostapd_is_uhr_enabled(hapd) &&
+			       !skip_uhr_extn && is_uhr_sta))
 			control |= BASIC_MLE_STA_CTRL_PRES_ENH_CRIT_UPD;
 
 		wpabuf_put_le16(buf, control);
@@ -1166,26 +1190,31 @@ u8 * hostapd_eid_eht_basic_ml_common(struct hostapd_data *hapd,
 		/* STA Info Length */
 		wpabuf_put_u8(buf, sta_info_len - 2);
 		wpabuf_put_data(buf, link->local_addr, ETH_ALEN);
-		wpabuf_put_le16(buf, link_bss->iconf->beacon_int);
 
-		/* TSF Offset */
-		/*
-		 * TODO: Currently setting TSF offset to zero. However, this
-		 * information needs to come from the driver.
-		 */
-		wpabuf_put_le64(buf, 0);
+		if (!is_smd) {
+			wpabuf_put_le16(buf, link_bss->iconf->beacon_int);
 
-		/* DTIM Info */
-		wpabuf_put_u8(buf, 0); /* DTIM Count */
-		wpabuf_put_u8(buf, link_bss->conf->dtim_period);
+			/* TSF Offset */
+			/*
+			 * TODO: Currently setting TSF offset to zero. However,
+			 * this information needs to come from the driver.
+			 */
+			wpabuf_put_le64(buf, 0);
+
+			/* DTIM Info */
+			wpabuf_put_u8(buf, 0); /* DTIM Count */
+			wpabuf_put_u8(buf, link_bss->conf->dtim_period);
+		}
 
 		/* BSS Parameters Change Count */
-		if (include_bpcc)
+		if (include_bpcc || is_smd)
 			wpabuf_put_u8(buf, link_bss->rx_cu_param.bpcc);
-		/* Enhanced Critical Updates Information */
-		if (include_bpcc && hostapd_is_uhr_enabled(hapd) &&
-		    !skip_uhr_extn && is_uhr_sta)
-			wpabuf_put_u8(buf, hostapd_get_ecu_info(&link_bss->rx_ecu_param));
+		/* Enhanced (BSS Parameter Change Count / Critical Updates)
+		 * Information */
+		if (is_smd || (include_bpcc && hostapd_is_uhr_enabled(hapd) &&
+			       !skip_uhr_extn && is_uhr_sta))
+			wpabuf_put_u8(buf, is_smd ? 0 :
+				      hostapd_get_ecu_info(&link_bss->rx_ecu_param));
 
 		if (!link->resp_sta_profile)
 			continue;
@@ -1330,25 +1359,31 @@ out:
 
 size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd, struct mld_info *info,
 			      bool include_mld_id, bool include_bpcc,
-			      u8 include_ext_cap, bool is_uhr_sta,
+			      u8 include_ext_cap, bool is_smd, bool is_uhr_sta,
 			      bool include_bss_load_age, bool skip_uhr_extn)
 {
 	size_t len = 0;
 	size_t eht_ml_len = 2 + EHT_ML_COMMON_INFO_LEN;
 	u8 link_id;
 
+	if (is_smd)
+		eht_ml_len -= 2; /* no Link ID, no BSS Param Change Count */
+
 	if (include_mld_id)
 		eht_ml_len++;
 
-	if (include_ext_cap)
+	if (include_ext_cap || is_smd)
 		eht_ml_len += 2;
 
-	if (hostapd_is_uhr_enabled(hapd) && is_uhr_sta && !skip_uhr_extn) {
+	if (!is_smd && hostapd_is_uhr_enabled(hapd) && is_uhr_sta && !skip_uhr_extn) {
 		/* Enhanced Critical Updates Information (1) in common info */
 		eht_ml_len++;
 		if (include_bss_load_age && hapd->conf->bss_load_update_period)
 			eht_ml_len++; /* Age of BSS Load */
 	}
+
+	if (is_smd && include_bss_load_age && hapd->conf->bss_load_update_period)
+		eht_ml_len++; /* Age of BSS Load */
 
 	for (link_id = 0; info && link_id < ARRAY_SIZE(info->links);
 	     link_id++) {
@@ -1359,16 +1394,20 @@ size_t hostapd_eid_eht_ml_len(struct hostapd_data *hapd, struct mld_info *info,
 		if (!link->valid)
 			continue;
 
+		if (is_smd)
+			sta_len -= 12; /* no Beacon Int/TSF Offset/DTIM Info */
+
 		sta_len += link->resp_sta_profile_len;
 
 		/* BSS Parameters Change Count (1) for (Re)Association Response
 		 * frames */
-		if (include_bpcc)
+		if (include_bpcc || is_smd)
 			sta_len++;
 
-		/* Enhanced Critical Updates Information (1) in per-STA profile */
-		if (include_bpcc && hostapd_is_uhr_enabled(hapd) &&
-		    !skip_uhr_extn && is_uhr_sta)
+		/* Enhanced (BSS Parameter Change Count / Critical Updates)
+		 * Information (1) in per-STA profile */
+		if (is_smd || (include_bpcc && hostapd_is_uhr_enabled(hapd) &&
+			       !skip_uhr_extn && is_uhr_sta))
 			sta_len++;
 
 		/* Element data and (fragmentation) headers */
@@ -1434,7 +1473,7 @@ size_t hostapd_eid_eht_ml_beacon_len(struct hostapd_data *hapd,
 				     bool include_bss_load_age, bool skip_uhr_extn)
 {
 	return hostapd_eid_eht_ml_len(hapd, info, include_mld_id, false,
-				       include_ext_cap, is_uhr_sta,
+				       include_ext_cap, false, is_uhr_sta,
 				       include_bss_load_age, skip_uhr_extn);
 }
 
@@ -2633,7 +2672,7 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 		 * be removed if the standard is modified to match
 		 * implementation). */
 		mle_len = hostapd_eid_eht_ml_len(hapd, &mld, false, true, 0, false,
-						  false, false);
+						  false, false, false);
 		len += mle_len;
 	}
 
