@@ -1588,8 +1588,10 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 		return;
 #endif /* CONFIG_QCN_EXTN */
 
-	/* Check if any of configured channels require DFS */
-	is_dfs0 = hostapd_is_dfs_required(hapd->iface);
+	/* Check if any channel in the target channel definition requires DFS. */
+	is_dfs0 = hostapd_is_dfs_overlap(hapd->iface, width, cf1);
+	if (width == CHAN_WIDTH_80P80 && cf2)
+		is_dfs0 += hostapd_is_dfs_overlap(hapd->iface, width, cf2);
 	if (finished)
 		hapd->iface->freq = freq;
 
