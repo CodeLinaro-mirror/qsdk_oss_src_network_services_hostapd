@@ -2818,6 +2818,8 @@ uhr_2xldpc_rollback:
 			ieee802_11_set_beacon(hapd);
 		} else if (os_strcasecmp(cmd, "rnr_ie_allowed") == 0) {
 			ieee802_11_set_beacon(hapd);
+		} else if (os_strcasecmp(cmd, "beacon_rate") == 0) {
+			ieee802_11_set_beacon(hapd);
 		} else if (os_strcasecmp(cmd, "dtim_period") == 0) {
 			ieee802_11_set_beacon(hapd);
 #ifdef CONFIG_IEEE80211AC
