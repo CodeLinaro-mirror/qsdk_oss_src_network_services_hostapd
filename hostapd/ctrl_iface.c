@@ -3769,6 +3769,24 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+	} else if (os_strcasecmp(cmd, "he_bss_color") == 0) {
+		res = os_snprintf(buf, buflen, "he_bss_color = %u\n",
+				  (unsigned int) hapd->iconf->he_op.he_bss_color);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "he_bss_color_partial") == 0) {
+		res = os_snprintf(buf, buflen, "he_bss_color_partial = %u\n",
+				  (unsigned int) hapd->iconf->he_op.he_bss_color_partial);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "he_spr_sr_control") == 0) {
+		res = os_snprintf(buf, buflen, "he_spr_sr_control = %u\n",
+				  (unsigned int) hapd->iconf->spr.sr_control);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
 #ifdef CONFIG_QCN_EXTN
 	} else {
 		res = hostapd_ctrl_iface_get_extn(hapd, cmd, buf, buflen);
