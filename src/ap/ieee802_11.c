@@ -1138,7 +1138,6 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 	u8 *buf;
 	size_t rlen;
 	size_t tail_len = 0;
-	size_t ml_len = 0;
 	int reply_res = WLAN_STATUS_UNSPECIFIED_FAILURE;
 	const u8 *sa = hapd->own_addr;
 	struct wpabuf *ml_resp = NULL;
@@ -1199,16 +1198,16 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 		os_memcpy(reply->u.auth.variable, ies, ies_len);
 #ifdef CONFIG_IEEE80211BE
 	if (ml_resp) {
-		ml_len = wpabuf_len(ml_resp);
 		os_memcpy(reply->u.auth.variable + ies_len,
-				wpabuf_head(ml_resp), ml_len);
+				wpabuf_head(ml_resp), ml_resp_len);
 	}
 #endif /* CONFIG_IEEE80211BE */
 
         wpabuf_free(ml_resp);
 
 #ifdef CONFIG_HOSTAPD_IF
-	hostapd_if_auth_reply_add_tail(sta, ies_len + ml_len, tail_len, reply);
+	hostapd_if_auth_reply_add_tail(sta, ies_len + ml_resp_len, tail_len,
+				       reply);
 #endif
 
 	wpa_printf(MSG_DEBUG, "authentication reply: STA=" MACSTR
@@ -1256,7 +1255,8 @@ int send_auth_reply(struct hostapd_data *hapd, struct sta_info *sta,
 		u8 data_buf[500], mic[WPA_1X_MAX_MIC_LEN];
 		size_t frame_len, data_len;
 		const u8 *aa = sa;
-		u8 *ptr = reply->u.auth.variable + ies_len + ml_resp_len;
+		u8 *ptr = reply->u.auth.variable + ies_len + ml_resp_len +
+			  tail_len;
 
 #ifdef CONFIG_IEEE80211BE
 		if (ap_sta_is_mld(hapd, sta))
