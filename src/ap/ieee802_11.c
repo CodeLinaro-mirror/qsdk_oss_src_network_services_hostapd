@@ -5533,6 +5533,11 @@ static void handle_auth(struct hostapd_data *hapd,
 		wpa_msg(hapd->msg_ctx, MSG_DEBUG,
 			"Ignore Authentication frame from " MACSTR
 			" due to ACL reject", MAC2STR(sa));
+		if (hapd->conf->multi_ap)
+			wpa_auth_connection_fail_event(
+				hapd->wpa_auth, len, "Authentication_frame",
+				(const u8 *) mgmt, sa, hapd->own_addr,
+				EM_AUTH_ACL_REJECT, true);
 		resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 		goto fail;
 	}
@@ -5560,6 +5565,12 @@ static void handle_auth(struct hostapd_data *hapd,
 			wpa_msg(hapd->msg_ctx, MSG_DEBUG,
 				"Ignore Authentication frame from " MACSTR
 				" due to ACL reject", MAC2STR(mgmt->sa));
+			if (hapd->conf->multi_ap)
+				wpa_auth_connection_fail_event(
+					hapd->wpa_auth, len, "Authentication_frame",
+					(const u8 *) mgmt, mgmt->sa,
+					hapd->own_addr,
+					EM_AUTH_ACL_REJECT, true);
 			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 			goto fail;
 		}
@@ -11307,6 +11318,12 @@ static void handle_assoc(struct hostapd_data *hapd,
 		wpa_printf(MSG_INFO, "STA " MACSTR " for acl checking",
 			   MAC2STR(sta->addr));
 		if (hostapd_check_ml_acl(hapd, sta) == HOSTAPD_ACL_REJECT) {
+			if (hapd->conf->multi_ap)
+				wpa_auth_connection_fail_event(
+					hapd->wpa_auth, len, "Association_frame",
+					(const u8 *) mgmt, sta->addr,
+					hapd->own_addr,
+					EM_ASSOC_ACL_REJECT, true);
 			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 			goto fail;
 		}

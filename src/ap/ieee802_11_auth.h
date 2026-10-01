@@ -9,6 +9,10 @@
 #ifndef IEEE802_11_AUTH_H
 #define IEEE802_11_AUTH_H
 
+/* EasyMesh connection-failure status values for ACL rejections. */
+#define EM_AUTH_ACL_REJECT  33
+#define EM_ASSOC_ACL_REJECT 34
+
 enum {
 	HOSTAPD_ACL_REJECT = 0,
 	HOSTAPD_ACL_ACCEPT = 1,
