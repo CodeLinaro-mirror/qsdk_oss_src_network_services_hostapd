@@ -684,3 +684,8 @@ CONFIG_DPP2=y
 
 # Wi-Fi Aware unsynchronized service discovery (NAN USD)
 #CONFIG_NAN_USD=y
+#
+# IEEE 802.1X (EAP) authentication in Authentication frames
+# IEEE P802.11bi/D4.0, 12.16.5 (IEEE 802.1X authentication utilizing
+# Authentication frames)
+#CONFIG_IEEE8021X_AUTH=y
