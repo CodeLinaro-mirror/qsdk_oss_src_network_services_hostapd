@@ -393,6 +393,72 @@ static int sme_get_pairwise_cipher(struct wpa_supplicant *wpa_s, bool external)
 }
 
 
+static int sme_get_key_mgmt(struct wpa_supplicant *wpa_s, bool external)
+{
+	return external ? wpa_s->sme.ext_auth_key_mgmt : wpa_s->key_mgmt;
+}
+
+
+static int sme_get_pmk_for_1x_auth(struct wpa_supplicant *wpa_s,
+				    const u8 *pmkid, bool external,
+				    u8 *pmk_buf, size_t *pmk_len)
+{
+	struct rsn_pmksa_cache *pmksa_cache;
+	struct rsn_pmksa_cache_entry *entry;
+	const u8 *peer_addr;
+	struct wpa_ssid *ssid;
+	int key_mgmt;
+	size_t len;
+	int res;
+
+	peer_addr = sme_get_peer_addr(wpa_s, external);
+	key_mgmt = sme_get_key_mgmt(wpa_s, external);
+	ssid = wpa_s->sme.ext_auth_wpa_ssid ?
+		wpa_s->sme.ext_auth_wpa_ssid : wpa_s->current_ssid;
+
+	pmksa_cache = wpa_sm_get_pmksa_cache(wpa_s->wpa);
+	if (!pmksa_cache) {
+		wpa_msg(wpa_s, MSG_DEBUG,
+			"IEEE 802.1X: No PMKSA cache available");
+		return -1;
+	}
+
+	if (pmkid) {
+		entry = pmksa_cache_get(pmksa_cache, peer_addr,	wpa_s->own_addr,
+					pmkid, ssid, key_mgmt);
+		if (!entry) {
+			wpa_msg(wpa_s, MSG_DEBUG,
+				"IEEE 802.1X: No PMKSA cache entry found for the given PMKID");
+			return -1;
+		}
+
+		os_memcpy(pmk_buf, entry->pmk, entry->pmk_len);
+		*pmk_len = entry->pmk_len;
+		return 0;
+	}
+
+	if (wpa_key_mgmt_sha384(key_mgmt))
+		len = PMK_LEN_SUITE_B_192;
+	else
+		len = PMK_LEN;
+
+	res = eapol_sm_get_key(wpa_s->eapol, pmk_buf, len);
+	if (res) {
+		wpa_msg(wpa_s, MSG_INFO,
+			"IEEE 802.1X: Failed to get MSK from EAP state machine");
+		return -1;
+	}
+
+	*pmk_len = len;
+
+	pmksa_cache_add(pmksa_cache, pmk_buf, len, NULL, NULL, 0, peer_addr,
+			wpa_s->own_addr, ssid, key_mgmt, NULL,
+			WLAN_AUTH_802_1X);
+
+	return 0;
+}
+
+
 static void sme_802_1x_auth_data_free(struct wpa_supplicant *wpa_s)
 {
 	if (!wpa_s || !wpa_s->auth_1x)
@@ -3856,20 +3922,22 @@ static void sme_process_802_1x_auth_response(struct wpa_supplicant *wpa_s,
 	if (data->auth.status_code == WLAN_STATUS_802_1_X_AUTH_SUCCESS ||
 	    wpa_s->auth_1x->pmkid_found) {
 		if (wpa_s->auth_1x->derive_ptk) {
-			const u8 *peer_addr = wpa_s->valid_links ?
-				wpa_s->ap_mld_addr : wpa_s->pending_bssid;
 			struct wpa_ptk ptk;
-			const u8 *pmk;
+			u8 pmk[PMK_LEN_MAX];
 			size_t pmk_len;
 			size_t kdk_len;
 			static const u8 zero[6] = { 0 };
 			enum wpa_alg alg;
+			bool external = wpa_s->sme.ext_auth_alg == WLAN_AUTH_802_1X;
+			const u8 *peer_addr = sme_get_peer_addr(wpa_s, external);
+			int pairwise_cipher = sme_get_pairwise_cipher(wpa_s,
+								  external);
 
-			pmk = wpa_sm_get_pmk(wpa_s->wpa, peer_addr,
-					     wpa_s->auth_1x->pmkid_found ?
-					     wpa_s->auth_1x->pmkid :
-					     NULL, &pmk_len);
-			if (!pmk) {
+			if (sme_get_pmk_for_1x_auth(
+				    wpa_s,
+				    wpa_s->auth_1x->pmkid_found ?
+				    wpa_s->auth_1x->pmkid : NULL,
+				    external, pmk, &pmk_len) < 0) {
 				wpa_msg(wpa_s, MSG_INFO,
 					"IEEE 802.1X: Failed to get PMK");
 				goto fail;
@@ -3882,14 +3950,17 @@ static void sme_process_802_1x_auth_response(struct wpa_supplicant *wpa_s,
 				    pmk, pmk_len, wpa_s->own_addr, peer_addr,
 				    wpa_s->auth_1x->snonce,
 				    wpa_s->auth_1x->anonce,
-				    wpa_s->key_mgmt, wpa_s->pairwise_cipher,
+				    sme_get_key_mgmt(wpa_s, external), pairwise_cipher,
 				    wpabuf_head(wpa_s->auth_1x->dhss),
 				    wpabuf_len(wpa_s->auth_1x->dhss),
 				    &ptk, kdk_len) < 0) {
 				wpa_msg(wpa_s, MSG_INFO,
 					"SME: PTK derivation failed");
+				forced_memzero(pmk, PMK_LEN_MAX);
 				goto fail;
 			}
+
+			forced_memzero(pmk, PMK_LEN_MAX);
 
 			/* Clear DHss after successful PTK derivation */
 			wpabuf_clear_free(wpa_s->auth_1x->dhss);
@@ -3904,7 +3975,7 @@ static void sme_process_802_1x_auth_response(struct wpa_supplicant *wpa_s,
 				goto fail;
 			}
 
-			alg = wpa_cipher_to_alg(wpa_s->pairwise_cipher);
+			alg = wpa_cipher_to_alg(pairwise_cipher);
 			if (wpa_drv_set_key(wpa_s, -1, alg, peer_addr, 0, 1,
 					    zero, sizeof(zero),
 					    ptk.tk, ptk.tk_len,
@@ -3916,9 +3987,9 @@ static void sme_process_802_1x_auth_response(struct wpa_supplicant *wpa_s,
 			}
 
 			ptksa_cache_add(wpa_s->ptksa, wpa_s->own_addr,
-					peer_addr, wpa_s->pairwise_cipher,
+					peer_addr, pairwise_cipher,
 					dot11RSNAConfigPMKLifetime, &ptk, NULL,
-					NULL, wpa_s->key_mgmt,
+					NULL, sme_get_key_mgmt(wpa_s, external),
 					WLAN_AUTH_802_1X);
 
 			forced_memzero(&ptk, sizeof(ptk));
