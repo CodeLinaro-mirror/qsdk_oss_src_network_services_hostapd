@@ -745,6 +745,18 @@ struct last_scan_ssid {
 	size_t ssid_len;
 };
 
+#ifdef CONFIG_IEEE8021X_AUTH
+/**
+ * struct auth_802_1x_data - Data for IEEE 802.1X Authentication algorithm
+ * @auth_trans: Authentication transaction sequence number
+ * @status: Status code
+ */
+struct auth_802_1x_data {
+	u16 auth_trans;
+	u16 status;
+};
+#endif /* CONFIG_IEEE8021X_AUTH */
+
 /**
  * enum sta_cac_result - Return values for wpas_sta_cac_start()
  * @STA_CAC_NOT_STARTED: STA CAC is not applicable for the selected connect
@@ -1802,6 +1814,10 @@ struct wpa_supplicant {
 	bool wps_overlap;
 	bool scan_in_progress_6ghz; /* Set upon a 6 GHz scan being triggered */
 	bool missing_link_scan;
+
+#ifdef CONFIG_IEEE8021X_AUTH
+	struct auth_802_1x_data *auth_1x;
+#endif /* CONFIG_IEEE8021X_AUTH */
 
 #ifdef CONFIG_PASN
 	struct pasn_data pasn;
