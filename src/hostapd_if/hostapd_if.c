@@ -63,6 +63,17 @@
 
 static struct hapd_interfaces *hostapd_if_ifaces;
 
+bool hostapd_if_logging_enabled = false;
+/*
+ * Logging guard: set via "hostapd_cli raw enable_hostapd_if_logging"
+ */
+#define HIFLOG(level, ...) \
+	do { if (hostapd_if_logging_enabled) wpa_printf(level, __VA_ARGS__); } while (0)
+#define HIFHEX(level, title, buf, len) \
+	do { if (hostapd_if_logging_enabled) wpa_hexdump(level, title, buf, len); } while (0)
+#define HIFHEX_KEY(level, title, buf, len) \
+	do { if (hostapd_if_logging_enabled) wpa_hexdump_key(level, title, buf, len); } while (0)
+
 /*
  * Per-interface/MLD frame registration table, reference counted
  * for MLD sharing
@@ -234,7 +245,7 @@ void __hostapd_if_trigger_eapol_m3(char *ifname, uint8_t *sta_mac)
 	struct sta_info *sta;
 	struct hostapd_data *hapd;
 
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR "\n",
 		   __func__, ifname, MAC2STR(sta_mac));
 
@@ -329,7 +340,7 @@ void hostapd_if_register_frame(void *ifname_ctx,
 				   __func__, type_str, cat->u.action_type);
 			return;
 		}
-		wpa_printf(MSG_DEBUG, "%s: registering action frame %s (%d) policy=%d ifname=%s\n",
+		HIFLOG(MSG_DEBUG, "%s: registering action frame %s (%d) policy=%d ifname=%s\n",
 			   __func__, type_str, cat->u.action_type, policy, ifname);
 		table->action[cat->u.action_type] = policy;
 		return;
@@ -370,7 +381,7 @@ void hostapd_if_register_event(void *ifname_ctx,
 	else
 		bitfield_clear(table->event_registration, type);
 
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 			   "hostapd_if: Event registration enabled for event type=%u",
 			   type);
 }
@@ -385,6 +396,13 @@ bool hostapd_if_plugin_enable = global_plugin_enable;
 #ifdef CONFIG_MQTT
 bool hostapd_if_mqtt_enable = true;
 #endif /* CONFIG_MQTT */
+void hostapd_if_set_logging(bool enable)
+{
+	hostapd_if_logging_enabled = enable;
+	wpa_printf(MSG_INFO, "hostapd_if: logging %s",
+		   enable ? "enabled" : "disabled");
+}
+
 /*
  * Call this once at startup (from hostapd_if_init)
  */
@@ -484,13 +502,13 @@ int hostapd_if_interface_create(struct hostapd_data *hapd)
 	if (hapd->hostapd_if_data)
 		return 0;
 
-	wpa_printf(MSG_DEBUG, "%s:%s link-id:%d", __func__, hapd->conf->iface,
+	HIFLOG(MSG_DEBUG, "%s:%s link-id:%d", __func__, hapd->conf->iface,
 		hapd->mld_link_id);
 
 	table = __get_shared_mld_table(hapd);
 	if (table) {
 
-		wpa_printf(MSG_DEBUG, "%s: sharing table for %s link-id:%d\n",
+		HIFLOG(MSG_DEBUG, "%s: sharing table for %s link-id:%d\n",
 			   __func__, hapd->conf->iface, hapd->mld_link_id);
 
 		hapd->hostapd_if_data = (void *) table;
@@ -505,7 +523,7 @@ int hostapd_if_interface_create(struct hostapd_data *hapd)
 		return -1;
 	}
 
-	wpa_printf(MSG_DEBUG, "%s:%s Allocating table link-id:%d\n", __func__,
+	HIFLOG(MSG_DEBUG, "%s:%s Allocating table link-id:%d\n", __func__,
 		   hapd->conf->iface, hapd->mld_link_id);
 	table->ref_count = 1;
 	/*
@@ -558,7 +576,7 @@ void hostapd_if_interface_remove(struct hostapd_data *hapd)
 	if (!hapd->conf)
 		return;
 
-	wpa_printf(MSG_DEBUG, "%s:%s link-id:%d", __func__, hapd->conf->iface,
+	HIFLOG(MSG_DEBUG, "%s:%s link-id:%d", __func__, hapd->conf->iface,
 		   hapd->mld_link_id);
 
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
@@ -609,10 +627,10 @@ hostapd_if_notify_get_policy_decision(struct hostapd_data *hapd, u16 auth_alg,
 
 	*policy = table->mgmt[frame_type];
 
-	wpa_printf(MSG_DEBUG, "%s: policy-before:%d invoke_supported: %d",
+	HIFLOG(MSG_DEBUG, "%s: policy-before:%d invoke_supported: %d",
 		   __func__, *policy, invoke_supported);
 	decision = __get_frame_decision(policy, invoke_supported);
-	wpa_printf(MSG_DEBUG, "%s: policy-after:%d decision: %d",
+	HIFLOG(MSG_DEBUG, "%s: policy-after:%d decision: %d",
 		__func__, *policy, decision);
 
 	return decision;
@@ -629,14 +647,14 @@ static void __sae_plugin_wait_timeout(void *eloop_ctx, void *timeout_ctx)
 	if (!sta->sae)
 		return;
 
-	wpa_printf(MSG_INFO,
+	HIFLOG(MSG_INFO,
 		   "%s: SAE plugin response timeout for " MACSTR
 		   " - sending deauth and removing STA",
 		   __func__, MAC2STR(sta->addr));
 
 	hostapd_drv_sta_deauth(hapd, sta->addr,
 			       WLAN_REASON_PREV_AUTH_NOT_VALID);
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "%s: " MACSTR " - deauth sent, freeing STA",
 		   __func__, MAC2STR(sta->addr));
 	ap_free_sta(hapd, sta);
@@ -649,7 +667,7 @@ void hostapd_if_sae_clear_plugin_wait(struct hostapd_data *hapd,
 	if (!sta->sae)
 	       return;
 
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "%s: " MACSTR " - plugin responded, cancelling guard timer",
 		   __func__, MAC2STR(sta->addr));
 	sta->sae->plugin_wait = 0;
@@ -736,7 +754,7 @@ hostapd_if_notify_auth(struct hostapd_data *hapd,
 		    hostapd_if_plugin->invoke_auth) {
 #ifdef CONFIG_SAE
 			if (auth_alg == WLAN_AUTH_SAE && sta && sta->sae) {
-				wpa_printf(MSG_DEBUG,
+				HIFLOG(MSG_DEBUG,
 					   "%s: SAE " MACSTR " - arming %ds wait timer before plugin invoke",
 					   __func__, MAC2STR(sta->addr),
 					   SAE_PLUGIN_WAIT_TIMEOUT_SEC);
@@ -1107,7 +1125,7 @@ void hostapd_if_eapol_rx(struct hostapd_data *hapd, const u8 *sa,
 #endif
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 	if (hostapd_if_plugin && hostapd_if_plugin->eapol_rx) {
-		wpa_printf(MSG_DEBUG, "%s: executing EAPOL RX through plugin",
+		HIFLOG(MSG_DEBUG, "%s: executing EAPOL RX through plugin",
 			   __func__);
 		hostapd_if_plugin->eapol_rx(hapd->conf->iface, link_id, sa,
 					    (u8 *) data, data_len);
@@ -1266,7 +1284,7 @@ void hostapd_if_eapol_key_rx(struct hostapd_data *hapd, const u8 *sa,
 #endif
 #ifdef HOSTAPD_EXTERNAL_PLUGIN
 	if (hostapd_if_plugin && hostapd_if_plugin->eapol_key_rx) {
-		wpa_printf(MSG_DEBUG,
+		HIFLOG(MSG_DEBUG,
 			   "%s: executing EAPOL-Key RX through plugin",
 			   __func__);
 		hostapd_if_plugin->eapol_key_rx(hapd->conf->iface, link_id, sa,
@@ -1289,13 +1307,13 @@ void __hostapd_if_assoc_response(char *ifname, uint8_t *sta_mac,
 	int omit_rsnxe = 0;
 	struct hostapd_data *hapd;
 
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " is_reassoc %d  RSSI %d status_code %d\n",
 		   __func__, ifname, MAC2STR(sta_mac),
 		   ctx->data.assoc_resp.is_reassoc,
 		   ctx->data.assoc_resp.rssi, ctx->status_code);
 
-	wpa_hexdump(MSG_EXCESSIVE,
+	HIFHEX(MSG_EXCESSIVE,
 		    "hostapd_if_assoc_response additional_ies",
 		    ctx->data.assoc_resp.additional_ies,
 		    ctx->data.assoc_resp.additional_ies_len);
@@ -1422,14 +1440,14 @@ void __hostapd_if_auth_response(char *ifname, uint8_t *sta_mac,
 	struct hostapd_data *hapd;
 
 
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " status=%u auth_alg=%u "
 		   "auth_transaction=%u\n",
 		   __func__, ifname, MAC2STR(sta_mac), ctx->status_code,
 		   ctx->data.auth_resp.auth_alg,
 		   ctx->data.auth_resp.auth_transaction);
 
-	wpa_hexdump(MSG_EXCESSIVE,
+	HIFHEX(MSG_EXCESSIVE,
 		    "hostapd_if_auth_response additional_ies",
 		    ctx->data.auth_resp.additional_ies,
 		    ctx->data.auth_resp.additional_ies_len);
@@ -1542,7 +1560,7 @@ void __hostapd_if_remote_auth_response(char *ifname, uint8_t *sta_mac,
 	struct hostapd_data *hapd;
 	struct wpa_state_machine *wpa_sm;
 
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " status=%u\n",
 		   __func__, ifname, MAC2STR(sta_mac), ctx->status_code);
 
@@ -1672,11 +1690,11 @@ static void __send_mgmt_disconnect(const char *ifname,
 		goto __send_mgmt_disconnect_exit;
 	}
 
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " reason_code=%u is_deauth %d\n",
 		   __func__, ifname, MAC2STR(sta_mac), reason_code, is_deauth);
 
-	wpa_hexdump(MSG_EXCESSIVE, "__send_mgmt_disconnect",
+	HIFHEX(MSG_EXCESSIVE, "__send_mgmt_disconnect",
 			added_data, added_data_len);
 
 	own_addr = hapd->own_addr;
@@ -1751,7 +1769,7 @@ static void __send_mgmt_disconnect(const char *ifname,
 		os_memcpy(buf + IEEE80211_HDRLEN + fixed_body_len,
 			  added_data, added_data_len);
 
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "hostapd_if: %s ifname=%s da=%02x:%02x:%02x:%02x:%02x:%02x "
 		   "reason=%u tail_len=%zu send_len=%zu",
 		   is_deauth ? "DEAUTH" : "DISASSOC", ifname,
@@ -1808,11 +1826,11 @@ void __hostapd_if_set_beacon_probe_vendor_ies(char *ifname, uint8_t *buf,
 	struct hostapd_data *hapd;
 	struct wpabuf *new_ies = NULL;
 
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, link_id=%d buf_len=%zu\n",
 		   __func__, ifname, link_id, buf_len);
 
-	wpa_hexdump(MSG_EXCESSIVE,
+	HIFHEX(MSG_EXCESSIVE,
 		    "hostapd_if_set_beacon_probe_vendor_ies buf",
 		    buf, buf_len);
 
@@ -1902,7 +1920,7 @@ void __hostapd_if_set_beacon_probe_vendor_ies(char *ifname, uint8_t *buf,
 		}
 	}
 
-	wpa_printf(MSG_DEBUG,
+	HIFLOG(MSG_DEBUG,
 		   "hostapd_if: set_beacon_probe_vendor_ies for %s, len=%zu",
 		   ifname, buf_len);
 
@@ -2194,7 +2212,7 @@ int hostapd_if_get_sta_info(char *ifname, uint8_t *sta_mac, struct hostapd_if_st
 		return -EINVAL;
 	}
 
-	wpa_printf(MSG_DEBUG, "%s: %s, " MACSTR, __func__, ifname, MAC2STR(sta_mac));
+	HIFLOG(MSG_DEBUG, "%s: %s, " MACSTR, __func__, ifname, MAC2STR(sta_mac));
 
 	/* Initialize output structure */
 	os_memset(info, 0, sizeof(*info));
@@ -2212,7 +2230,7 @@ int hostapd_if_get_sta_info(char *ifname, uint8_t *sta_mac, struct hostapd_if_st
 	os_memset(&data, 0, sizeof(data));
 	ret = hostapd_drv_read_sta_data(hapd, &data, sta->addr);
 	if (ret < 0) {
-		wpa_printf(MSG_DEBUG,
+		HIFLOG(MSG_DEBUG,
 			   "%s: Failed to read driver data for " MACSTR,
 			   __func__, MAC2STR(sta->addr));
 		/* Continue anyway - we can still populate from sta_info */
@@ -2284,7 +2302,7 @@ int hostapd_if_get_sta_info(char *ifname, uint8_t *sta_mac, struct hostapd_if_st
 			/* Get link-specific BSS */
 			link_hapd = hostapd_mld_get_link_bss(hapd, i);
 			if (!link_hapd) {
-				wpa_printf(MSG_WARNING,
+				HIFLOG(MSG_WARNING,
 					   "%s: No BSS found for link_id %d, "
 					   "skipping", __func__, i);
 				continue;
@@ -2310,7 +2328,7 @@ int hostapd_if_get_sta_info(char *ifname, uint8_t *sta_mac, struct hostapd_if_st
 			info->u.mld_info.num_links++;
 		}
 
-		wpa_printf(MSG_DEBUG,
+		HIFLOG(MSG_DEBUG,
 			   "%s: Successfully retrieved MLD info for " MACSTR " (num_links=%d)",
 			   __func__, MAC2STR(sta_mac), info->u.mld_info.num_links);
 	} else
@@ -2319,7 +2337,7 @@ int hostapd_if_get_sta_info(char *ifname, uint8_t *sta_mac, struct hostapd_if_st
 		/* Non-MLD station: populate single-link information */
 		populate_radio_info(&info->u.non_mld, hapd, sta, &data, (ret == 0), false);
 
-		wpa_printf(MSG_DEBUG,
+		HIFLOG(MSG_DEBUG,
 			   "%s: Successfully retrieved non-MLD info for " MACSTR
 			   " (freq=%d, band=%d, rssi=%d, cap_flags=0x%x)",
 			   __func__, MAC2STR(sta_mac), info->u.non_mld.freq,
@@ -2347,15 +2365,15 @@ void __hostapd_if_set_pmk(char *ifname, uint8_t *sta_mac,
 	struct eapol_state_machine *eapol = NULL;
 	struct wpa_state_machine *wpa_sm = NULL;
 
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " pmk_len=%zu\n",
 		   __func__, ifname, MAC2STR(sta_mac), pmk_len);
 
-	wpa_hexdump_key(MSG_EXCESSIVE,
+	HIFHEX_KEY(MSG_EXCESSIVE,
 			"hostapd_if_set_pmk pmk",
 			pmk, pmk_len);
 
-	wpa_hexdump(MSG_EXCESSIVE,
+	HIFHEX(MSG_EXCESSIVE,
 		    "hostapd_if_set_pmk pmkid",
 		    pmkid, PMKID_LEN);
 
@@ -2476,19 +2494,19 @@ void __hostapd_if_set_ptk(char *ifname, uint8_t *sta_mac,
 	struct hostapd_data *hapd;
 	struct sta_info *sta;
 
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " kck_len=%zu kek_len=%zu tk_len=%zu authorized=%d\n",
 		   __func__, ifname, MAC2STR(sta_mac), kck_len, kek_len, tk_len, authorized);
 
-	wpa_hexdump_key(MSG_EXCESSIVE,
+	HIFHEX_KEY(MSG_EXCESSIVE,
 			"hostapd_if_set_ptk kck",
 			kck, kck_len);
 
-	wpa_hexdump_key(MSG_EXCESSIVE,
+	HIFHEX_KEY(MSG_EXCESSIVE,
 			"hostapd_if_set_ptk kek",
 			kek, kek_len);
 
-	wpa_hexdump_key(MSG_EXCESSIVE,
+	HIFHEX_KEY(MSG_EXCESSIVE,
 			"hostapd_if_set_ptk tk",
 			tk, tk_len);
 
@@ -2531,12 +2549,12 @@ void __hostapd_if_set_gtk(char *ifname, int link_id,
 {
 	struct hostapd_data *hapd;
 
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, link-id:%d gtk_idx=%d gtk_len=%zu\n",
 		   __func__, ifname, link_id,
 		   gtk_idx, gtk_len);
 
-	wpa_hexdump_key(MSG_EXCESSIVE,
+	HIFHEX_KEY(MSG_EXCESSIVE,
 			"hostapd_if_set_gtk gtk",
 			gtk, gtk_len);
 
@@ -2575,7 +2593,7 @@ void __hostapd_if_start_sa_query(char *ifname, uint8_t *sta_mac, int link_id)
 	struct hostapd_data *hapd;
 	struct sta_info *sta;
 
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR "\n",
 		   __func__, ifname, MAC2STR(sta_mac));
 
@@ -2613,11 +2631,11 @@ void __hostapd_if_eapol_key_tx(char *ifname,  uint8_t *sta_mac, uint8_t link_id,
 	u32 flags = 0;
 	int encrypt = 0;
 
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 			"%s: %s, link_id=%d frame_len=%u\n",
 			__func__, ifname, link_id, (unsigned int) frame_len);
 
-	wpa_hexdump(MSG_EXCESSIVE,
+	HIFHEX(MSG_EXCESSIVE,
 			"hostapd_if_eapol_key_tx frame",
 			frame, frame_len);
 
@@ -2657,10 +2675,10 @@ void __hostapd_if_eapol_tx(char *ifname, uint8_t *sta_mac, int link_id,
 	struct hostapd_data *hapd = NULL;
 	struct sta_info *sta;
 
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " link_id=%d type=%u data_len=%u\n",
 		   __func__, ifname, MAC2STR(sta_mac), link_id, type, data_len);
-	wpa_hexdump(MSG_EXCESSIVE, "hostapd_if_eapol_tx data",
+	HIFHEX(MSG_EXCESSIVE, "hostapd_if_eapol_tx data",
 		    data, data_len);
 
 	sta = __get_sta(ifname, sta_mac, link_id, false, &hapd);
@@ -2698,7 +2716,7 @@ void __hostapd_if_set_authorized(char *ifname, uint8_t *sta_mac, int authorized)
 	struct hostapd_data *hapd = NULL;
 	struct sta_info *sta;
 
-	wpa_printf(MSG_MSGDUMP, "%s: %s, " MACSTR " authorized=%d\n",
+	HIFLOG(MSG_MSGDUMP, "%s: %s, " MACSTR " authorized=%d\n",
 		   __func__, ifname, MAC2STR(sta_mac), authorized);
 
 	sta = __get_sta(ifname, sta_mac, -1, false, &hapd);
@@ -2722,11 +2740,11 @@ void __hostapd_if_send_frame(char *ifname, int tx_link_id, uint8_t *frame, uint1
 	struct hostapd_data *hapd;
 	int ret;
 
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, link_id=%d frame_len=%u\n",
 		   __func__, ifname, tx_link_id, (unsigned int) frame_len);
 
-	wpa_hexdump(MSG_EXCESSIVE, "hostapd_if_send_frame frame", frame, frame_len);
+	HIFHEX(MSG_EXCESSIVE, "hostapd_if_send_frame frame", frame, frame_len);
 
 	hapd = __hostapd_get_link_iface(ifname, tx_link_id);
 	if (!hapd) {
@@ -2811,7 +2829,7 @@ void hostapd_if_event_deauth(struct hostapd_data *hapd, struct sta_info *sta,
 	evt.data.deauth_disassoc.is_tx_status = is_tx_status;
 	evt.data.deauth_disassoc.tx_status_ok = tx_status_ok;
 
-	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR" %d %d %d %d\n", __func__,
+	HIFLOG(MSG_MSGDUMP, "%s: %d %s "MACSTR" %d %d %d %d\n", __func__,
 		__LINE__, hapd->conf->iface, MAC2STR(sta->addr), link_id, reason_code,
 		is_tx_status, tx_status_ok);
 	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
@@ -2853,7 +2871,7 @@ void hostapd_if_event_disassoc(struct hostapd_data *hapd,
 	evt.data.deauth_disassoc.tx_status_ok = tx_status_ok;
 	evt.data.deauth_disassoc.is_tx_status = is_tx_status;
 
-	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR" %d %d %d %d\n", __func__,
+	HIFLOG(MSG_MSGDUMP, "%s: %d %s "MACSTR" %d %d %d %d\n", __func__,
 		__LINE__, hapd->conf->iface, MAC2STR(sta->addr), link_id, reason_code,
 		is_tx_status, tx_status_ok);
 	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
@@ -2877,7 +2895,7 @@ void hostapd_if_event_auth_tx_complete(struct hostapd_data *hapd,
 		   sizeof(evt.ifname));
 	os_memcpy(evt.sta_mac, addr, sizeof(evt.sta_mac));
 
-	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR"\n", __func__, __LINE__,
+	HIFLOG(MSG_MSGDUMP, "%s: %d %s "MACSTR"\n", __func__, __LINE__,
 		hapd->conf->iface, MAC2STR(addr));
 	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
@@ -2904,7 +2922,7 @@ void hostapd_if_event_assoc_tx_complete(struct hostapd_data *hapd,
 	evt.data.assoc_resp_completion.status = status;
 	evt.data.assoc_resp_completion.aid = aid;
 
-	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR"\n", __func__, __LINE__,
+	HIFLOG(MSG_MSGDUMP, "%s: %d %s "MACSTR"\n", __func__, __LINE__,
 		hapd->conf->iface, MAC2STR(addr));
 	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
@@ -3054,7 +3072,7 @@ void hostapd_if_event_dot1x_complete(struct hostapd_data *hapd,
 	evt.data.dot1x_completion.identity_len = copy_len;
 	evt.data.dot1x_completion.success = success;
 
-	wpa_printf(MSG_MSGDUMP, "%s: %d %s " MACSTR " %d %zu\n", __func__,
+	HIFLOG(MSG_MSGDUMP, "%s: %d %s " MACSTR " %d %zu\n", __func__,
 		   __LINE__, hapd->conf->iface, MAC2STR(addr), success, copy_len);
 	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
@@ -3077,7 +3095,7 @@ void hostapd_if_event_action_completion(struct hostapd_data *hapd,
 		   sizeof(evt.ifname));
 	os_memcpy(evt.sta_mac, addr, sizeof(evt.sta_mac));
 
-	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR"\n", __func__, __LINE__,
+	HIFLOG(MSG_MSGDUMP, "%s: %d %s "MACSTR"\n", __func__, __LINE__,
 		hapd->conf->iface, MAC2STR(addr));
 	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
@@ -3094,7 +3112,7 @@ void hostapd_if_event_gtk_completion(struct hostapd_data *hapd)
 	evt.type = HOSTAPD_IF_EVENT_GTK_COMPLETION;
 	os_strlcpy(evt.ifname, hapd->conf->iface, sizeof(evt.ifname));
 
-	wpa_printf(MSG_MSGDUMP, "%s: %d %s\n", __func__, __LINE__,
+	HIFLOG(MSG_MSGDUMP, "%s: %d %s\n", __func__, __LINE__,
 		hapd->conf->iface);
 	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
@@ -3117,7 +3135,7 @@ void hostapd_if_event_eapol_m2_received(struct hostapd_data *hapd,
 		   sizeof(evt.ifname));
 	os_memcpy(evt.sta_mac, addr, sizeof(evt.sta_mac));
 
-	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR"\n", __func__, __LINE__,
+	HIFLOG(MSG_MSGDUMP, "%s: %d %s "MACSTR"\n", __func__, __LINE__,
 		hapd->conf->iface, MAC2STR(addr));
 	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
@@ -3141,7 +3159,7 @@ void hostapd_if_event_authorize_completion(struct hostapd_data *hapd,
 		   sizeof(evt.ifname));
 	os_memcpy(evt.sta_mac, addr, sizeof(evt.sta_mac));
 
-	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR" %d\n", __func__, __LINE__,
+	HIFLOG(MSG_MSGDUMP, "%s: %d %s "MACSTR" %d\n", __func__, __LINE__,
 		hapd->conf->iface, MAC2STR(addr), authorized);
 	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
@@ -3167,7 +3185,7 @@ void hostapd_if_event_sa_query_completion(struct hostapd_data *hapd,
 	os_memcpy(evt.sta_mac, addr, sizeof(evt.sta_mac));
 	evt.data.sa_query.status = status;
 
-	wpa_printf(MSG_MSGDUMP, "%s: %d %s "MACSTR" %d\n", __func__, __LINE__,
+	HIFLOG(MSG_MSGDUMP, "%s: %d %s "MACSTR" %d\n", __func__, __LINE__,
 		hapd->conf->iface, MAC2STR(addr), status);
 	HOSTAPD_EXTERNAL_PLUGIN_NOTIFY_EVENT(hapd, evt);
 }
@@ -3512,13 +3530,13 @@ int hostapd_if_eapol_key_tx_validate_inputs(char *ifname, uint8_t *sta_mac, uint
 void hostapd_if_assoc_response_dump_params(char *ifname, uint8_t *sta_mac,
 					   struct hostapd_if_frame_ctx *ctx)
 {
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " %d %d\n",
 		   __func__, ifname, MAC2STR(sta_mac),
 		   ctx->data.assoc_resp.is_reassoc,
 		   ctx->data.assoc_resp.rssi);
 
-	wpa_hexdump(MSG_EXCESSIVE,
+	HIFHEX(MSG_EXCESSIVE,
 		    __func__,
 		    ctx->data.assoc_resp.additional_ies,
 		    ctx->data.assoc_resp.additional_ies_len);
@@ -3527,14 +3545,14 @@ void hostapd_if_assoc_response_dump_params(char *ifname, uint8_t *sta_mac,
 void hostapd_if_auth_response_dump_params(char *ifname, uint8_t *sta_mac,
 					  struct hostapd_if_frame_ctx *ctx)
 {
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " status=%u auth_alg=%u "
 		   "auth_transaction=%u\n",
 		   __func__, ifname, MAC2STR(sta_mac), ctx->status_code,
 		   ctx->data.auth_resp.auth_alg,
 		   ctx->data.auth_resp.auth_transaction);
 
-	wpa_hexdump(MSG_EXCESSIVE,
+	HIFHEX(MSG_EXCESSIVE,
 		    __func__,
 		    ctx->data.auth_resp.additional_ies,
 		    ctx->data.auth_resp.additional_ies_len);
@@ -3546,11 +3564,11 @@ void hostapd_if_send_deauth_dump_params(char *ifname, uint8_t *sta_mac,
 					uint8_t *added_data,
 					uint8_t added_data_len)
 {
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " reason_code=%u link_id = %d\n",
 		   __func__, ifname, MAC2STR(sta_mac), reason_code, link_id);
 
-	wpa_hexdump(MSG_EXCESSIVE,
+	HIFHEX(MSG_EXCESSIVE,
 		    __func__,
 		    added_data, added_data_len);
 }
@@ -3560,11 +3578,11 @@ void hostapd_if_send_disassoc_dump_params(char *ifname, uint8_t *sta_mac,
 					  uint8_t *added_data,
 					  uint8_t added_data_len)
 {
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " reason_code=%u\n",
 		   __func__, ifname, MAC2STR(sta_mac), reason_code);
 
-	wpa_hexdump(MSG_EXCESSIVE,
+	HIFHEX(MSG_EXCESSIVE,
 		    __func__,
 		    added_data, added_data_len);
 }
@@ -3572,11 +3590,11 @@ void hostapd_if_send_disassoc_dump_params(char *ifname, uint8_t *sta_mac,
 void hostapd_if_set_beacon_probe_vendor_ies_dump_params(
 	char *ifname, uint8_t *buf, size_t buf_len, int link_id)
 {
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, link_id=%d buf_len=%zu\n",
 		   __func__, ifname, link_id, buf_len);
 
-	wpa_hexdump(MSG_EXCESSIVE,
+	HIFHEX(MSG_EXCESSIVE,
 		    __func__,
 		    buf, buf_len);
 }
@@ -3585,15 +3603,15 @@ void hostapd_if_set_pmk_dump_params(char *ifname, uint8_t *sta_mac,
 				    uint8_t *pmk, size_t pmk_len,
 				    uint8_t *pmkid)
 {
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " pmk_len=%zu\n",
 		   __func__, ifname, MAC2STR(sta_mac), pmk_len);
 
-	wpa_hexdump_key(MSG_EXCESSIVE,
+	HIFHEX_KEY(MSG_EXCESSIVE,
 			__func__,
 			pmk, pmk_len);
 
-	wpa_hexdump(MSG_EXCESSIVE,
+	HIFHEX(MSG_EXCESSIVE,
 		    __func__,
 		    pmkid, PMKID_LEN);
 }
@@ -3604,21 +3622,21 @@ void hostapd_if_set_ptk_dump_params(char *ifname, uint8_t *sta_mac,
 				    uint8_t *tk, size_t tk_len,
 				    bool authorized)
 {
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " kck_len=%zu kek_len=%zu "
 		   "tk_len=%zu authorized=%d\n",
 		   __func__, ifname, MAC2STR(sta_mac),
 		   kck_len, kek_len, tk_len, authorized);
 
-	wpa_hexdump_key(MSG_EXCESSIVE,
+	HIFHEX_KEY(MSG_EXCESSIVE,
 			__func__,
 			kck, kck_len);
 
-	wpa_hexdump_key(MSG_EXCESSIVE,
+	HIFHEX_KEY(MSG_EXCESSIVE,
 			__func__,
 			kek, kek_len);
 
-	wpa_hexdump_key(MSG_EXCESSIVE,
+	HIFHEX_KEY(MSG_EXCESSIVE,
 			__func__,
 			tk, tk_len);
 }
@@ -3626,19 +3644,19 @@ void hostapd_if_set_ptk_dump_params(char *ifname, uint8_t *sta_mac,
 void hostapd_if_set_gtk_dump_params(char *ifname, int link_id,
 				    int gtk_idx, uint8_t *gtk, size_t gtk_len)
 {
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, link:%d gtk_idx=%d gtk_len=%zu\n",
 		   __func__, ifname, link_id,
 		   gtk_idx, gtk_len);
 
-	wpa_hexdump_key(MSG_EXCESSIVE,
+	HIFHEX_KEY(MSG_EXCESSIVE,
 			__func__,
 			gtk, gtk_len);
 }
 
 void hostapd_if_start_sa_query_dump_params(char *ifname, uint8_t *sta_mac, int link_id)
 {
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " %d\n",
 		   __func__, ifname, MAC2STR(sta_mac), link_id);
 }
@@ -3646,13 +3664,13 @@ void hostapd_if_start_sa_query_dump_params(char *ifname, uint8_t *sta_mac, int l
 void hostapd_if_set_authorized_dump_params(char *ifname, uint8_t *sta_mac,
 					   int authorized)
 {
-	wpa_printf(MSG_MSGDUMP, "%s: %s, " MACSTR " authorized=%d\n",
+	HIFLOG(MSG_MSGDUMP, "%s: %s, " MACSTR " authorized=%d\n",
 		   __func__, ifname, MAC2STR(sta_mac), authorized);
 }
 
 void hostapd_if_trigger_eapol_m3_dump_params(char *ifname, uint8_t *sta_mac)
 {
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR "\n",
 		   __func__, ifname, MAC2STR(sta_mac));
 }
@@ -3660,10 +3678,10 @@ void hostapd_if_trigger_eapol_m3_dump_params(char *ifname, uint8_t *sta_mac)
 void hostapd_if_send_frame_dump_params(char *ifname, int tx_link_id,
 				       uint8_t *frame, uint16_t frame_len)
 {
-	wpa_printf(MSG_MSGDUMP, "%s: %s, link_id=%d frame_len=%u\n",
+	HIFLOG(MSG_MSGDUMP, "%s: %s, link_id=%d frame_len=%u\n",
 		   __func__, ifname, tx_link_id, (unsigned int) frame_len);
 
-	wpa_hexdump(MSG_EXCESSIVE, __func__, frame, frame_len);
+	HIFHEX(MSG_EXCESSIVE, __func__, frame, frame_len);
 }
 
 void hostapd_if_eapol_key_tx_dump_params(char *ifname, uint8_t *sta_mac, uint8_t link_id,
@@ -3672,11 +3690,11 @@ void hostapd_if_eapol_key_tx_dump_params(char *ifname, uint8_t *sta_mac, uint8_t
 {
 	int tx_link_id = (link_id == 0xff) ? -1 : link_id;
 
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, link_id=%d frame_len=%u\n",
 		   __func__, ifname, tx_link_id, (unsigned int) frame_len);
 
-	wpa_hexdump(MSG_EXCESSIVE,
+	HIFHEX(MSG_EXCESSIVE,
 		    __func__,
 		    frame, frame_len);
 }
@@ -3684,7 +3702,7 @@ void hostapd_if_eapol_key_tx_dump_params(char *ifname, uint8_t *sta_mac, uint8_t
 void hostapd_if_remote_auth_response_dump_params(char *ifname, uint8_t *sta_mac,
 						 struct hostapd_if_frame_ctx *ctx)
 {
-	wpa_printf(MSG_MSGDUMP,
+	HIFLOG(MSG_MSGDUMP,
 		   "%s: %s, " MACSTR " status=%u\n",
 		   __func__, ifname, MAC2STR(sta_mac), ctx->status_code);
 }
@@ -3699,7 +3717,7 @@ size_t hostapd_if_auth_reply_tail_len(struct sta_info *sta, size_t current_len)
 	tail_len = sta->ext_auth_tail_len;
 
 	if (!sta->ext_auth_tail || !tail_len) {
-		wpa_printf(MSG_MSGDUMP, "%s: No tail %p %zu", __func__,
+		HIFLOG(MSG_MSGDUMP, "%s: No tail %p %zu", __func__,
 			sta->ext_auth_tail, tail_len);
 		return 0;
 	}
@@ -3736,7 +3754,7 @@ void hostapd_if_assoc_resp_tail(struct sta_info *sta, size_t buflen,
 
 	tail_len = sta->ext_assoc_tail_len;
 	if (!sta->ext_assoc_tail || !tail_len) {
-		wpa_printf(MSG_MSGDUMP, "%s: No tail %p %zu", __func__,
+		HIFLOG(MSG_MSGDUMP, "%s: No tail %p %zu", __func__,
 			sta->ext_assoc_tail, tail_len);
 		return;
 	}
@@ -3763,7 +3781,7 @@ size_t hostapd_if_assoc_resp_tail_len(struct sta_info *sta)
 
 	tail_len = sta->ext_assoc_tail_len;
 	if (!sta->ext_assoc_tail || !tail_len) {
-		wpa_printf(MSG_MSGDUMP, "%s: No tail %p %zu", __func__,
+		HIFLOG(MSG_MSGDUMP, "%s: No tail %p %zu", __func__,
 			sta->ext_assoc_tail, tail_len);
 		return 0;
 	}
