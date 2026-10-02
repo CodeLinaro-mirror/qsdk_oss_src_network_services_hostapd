@@ -275,7 +275,7 @@ enum {
 };
 
 static const struct blobmsg_policy wps_start_policy[] = {
-	[WPS_START_MULTI_AP] = { "multi_ap", BLOBMSG_TYPE_BOOL },
+	[WPS_START_MULTI_AP] = { "multi_ap", BLOBMSG_TYPE_INT32 },
 };
 
 static int
@@ -290,8 +290,10 @@ wpas_bss_wps_start(struct ubus_context *ctx, struct ubus_object *obj,
 
 	blobmsg_parse(wps_start_policy, __WPS_START_MAX, tb, blobmsg_data(msg), blobmsg_data_len(msg));
 
-	if (tb[WPS_START_MULTI_AP])
-		multi_ap = blobmsg_get_bool(tb[WPS_START_MULTI_AP]);
+	if (tb[WPS_START_MULTI_AP]) {
+		multi_ap = blobmsg_get_u32(tb[WPS_START_MULTI_AP]);
+        }
+        wpa_printf(MSG_INFO, "WPS: multi_ap=%d",multi_ap);
 
 	rc = wpas_wps_start_pbc(wpa_s, NULL, 0, multi_ap);
 
