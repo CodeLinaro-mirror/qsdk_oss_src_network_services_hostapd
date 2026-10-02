@@ -828,8 +828,11 @@ static void uhr_cur_ap_send_st_prep_fail(struct hostapd_data *hapd,
 	WPA_PUT_LE16(pos, status_code);
 	pos += 2;
 
-	hostapd_drv_send_mlme(hapd, resp_buf, sizeof(resp_buf),
-			      0, NULL, 0, 0, 0, 0);
+	if (hostapd_drv_send_mlme(hapd, resp_buf, sizeof(resp_buf),
+				  0, NULL, 0, 0, 0, 0) < 0)
+		wpa_printf(MSG_ERROR,
+			   "UHR Current AP: Failed to send ST Prep fail response to "
+			   MACSTR " status=%u", MAC2STR(sta->addr), status_code);
 }
 
 
@@ -872,8 +875,11 @@ static void uhr_cur_ap_send_st_exec_fail(struct hostapd_data *hapd,
 	WPA_PUT_LE16(pos, status_code);
 	pos += 2;
 
-	hostapd_drv_send_mlme(hapd, resp_buf, sizeof(resp_buf),
-			      0, NULL, 0, 0, 0, 0);
+	if (hostapd_drv_send_mlme(hapd, resp_buf, sizeof(resp_buf),
+				  0, NULL, 0, 0, 0, 0) < 0)
+		wpa_printf(MSG_ERROR,
+			   "UHR Current AP: Failed to send ST Exec fail response to "
+			   MACSTR " status=%u", MAC2STR(sta->addr), status_code);
 }
 
 
@@ -927,13 +933,21 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 		n = num_delete < UHR_MAX_DELETE_ST_PREP_TARGETS ?
 			num_delete : UHR_MAX_DELETE_ST_PREP_TARGETS;
 
+		if (num_delete > UHR_MAX_DELETE_ST_PREP_TARGETS)
+			wpa_printf(MSG_INFO,
+				   "UHR Current AP: STA " MACSTR
+				   " requested %d Delete-ST-Prep targets, "
+				   "processing only the first %d",
+				   MAC2STR(sta->addr), num_delete, n);
+
 		for (i = 0; i < n; i++) {
 			wpa_printf(MSG_DEBUG,
 				   "UHR Current AP: Delete-ST-Prep for "
 				   "target " MACSTR " from STA " MACSTR,
 				   MAC2STR(delete_targets[i]),
 				   MAC2STR(sta->addr));
-			uhr_remove_ap_from_list(sta, delete_targets[i]);
+			uhr_remove_ap_from_list_all_links(hapd, sta,
+							  delete_targets[i]);
 		}
 
 		if (!has_add_link) {
@@ -955,7 +969,7 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	if (uhr_parse_reconfig_mle(&elems, &mle) < 0) {
+	if (uhr_parse_reconfig_mle(ies, ies_len, &mle) < 0) {
 		wpa_printf(MSG_ERROR, "UHR Current AP: Failed to parse ML-IE");
 		sta->smd_info.sap_stats.sap_prep_req_parse_fail++;
 		SMD_REASON(sta->smd_info.sap_stats.sap_prep_parse_fail_reasons,
@@ -1156,45 +1170,43 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
  * prep timer stays registered only on the originating (sta, ap_info) pair; the
  * clones carry no timer state and act as read-only lookup entries.
  */
+static int uhr_cur_ap_clone_ap_info_cb(struct hostapd_data *partner_hapd,
+				       struct sta_info *partner_sta, void *data)
+{
+	struct smd_roam_ap_info *ap_info = data;
+	struct smd_roam_ap_info *clone;
+
+	if (uhr_find_ap_in_list(partner_sta, ap_info->ap_mld_addr))
+		return 0;
+
+	clone = os_zalloc(sizeof(*clone));
+	if (!clone) {
+		partner_sta->smd_info.sap_stats.sap_prep_clone_fail++;
+		return 0;
+	}
+
+	os_memcpy(clone, ap_info, sizeof(*clone));
+	clone->uhr_st_iap_timer_ongoing = false;
+	clone->uhr_st_prep_timeout_occurred = false;
+	clone->next = partner_sta->smd_info.ap_list;
+	partner_sta->smd_info.ap_list = clone;
+
+	wpa_printf(MSG_DEBUG,
+		   "UHR Current AP: Cloned ap_info for " MACSTR
+		   " to partner link %u sta " MACSTR,
+		   MAC2STR(ap_info->ap_mld_addr),
+		   partner_hapd->mld_link_id,
+		   MAC2STR(partner_sta->addr));
+
+	return 0;
+}
+
 static void uhr_cur_ap_clone_ap_info_to_partners(struct hostapd_data *lhapd,
 						  struct sta_info *sta,
 						  struct smd_roam_ap_info *ap_info)
 {
-	struct hostapd_data *partner_hapd;
-	struct sta_info *partner_sta;
-	struct smd_roam_ap_info *clone;
-
-	for_each_mld_link(partner_hapd, lhapd) {
-		if (partner_hapd == lhapd)
-			continue;
-
-		partner_sta = ap_get_sta(partner_hapd, sta->addr);
-		if (!partner_sta)
-			continue;
-
-		if (uhr_find_ap_in_list(partner_sta, ap_info->ap_mld_addr))
-			continue;
-
-		clone = os_zalloc(sizeof(*clone));
-		if (!clone) {
-			sta->smd_info.sap_stats.sap_prep_clone_fail++;
-			continue;
-		}
-
-		os_memcpy(clone, ap_info, sizeof(*clone));
-		clone->uhr_st_iap_timer_ongoing = false;
-		clone->uhr_st_prep_timeout_occurred = false;
-		clone->next = partner_sta->smd_info.ap_list;
-		partner_sta->smd_info.ap_list = clone;
-
-		wpa_printf(MSG_DEBUG,
-			   "UHR Current AP: Cloned ap_info for " MACSTR
-			   " to partner link %u sta current_link %u " MACSTR,
-			   MAC2STR(ap_info->ap_mld_addr),
-			   partner_hapd->mld_link_id,
-			   MAC2STR(partner_sta->addr),
-			   lhapd->mld_link_id);
-	}
+	set_for_each_partner_link_sta(lhapd, sta, ap_info,
+				      uhr_cur_ap_clone_ap_info_cb);
 }
 
 void uhr_cur_ap_handle_st_prep_resp(struct hostapd_data *hapd,
@@ -1428,7 +1440,7 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	if (uhr_parse_reconfig_mle(&elems, &mle) < 0) {
+	if (uhr_parse_reconfig_mle(ies, ies_len, &mle) < 0) {
 		wpa_printf(MSG_ERROR, "UHR ST EXEC: Failed to parse Reconfig ML IE");
 		uhr_cur_ap_send_st_exec_fail(hapd, sta, buf, len,
 					     WLAN_STATUS_UNSPECIFIED_FAILURE);
@@ -3180,6 +3192,8 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 {
 	const u8 *frame;
 	struct ieee802_11_elems elems;
+	const u8 *reconf_mle;
+	size_t reconf_mle_len;
 	u8 dialog_token = 0;
 	u8 *response_frame = NULL;
 	size_t response_len = 0;
@@ -3239,9 +3253,11 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 	}
 	
 	/* Check for ML-IE */
-	if (!elems.reconf_mle || !elems.reconf_mle_len) {
+	if (uhr_find_add_link_reconf_mle(frame + WLAN_ST_PREP_MIN_LEN,
+					 frame_len - WLAN_ST_PREP_MIN_LEN,
+					 &reconf_mle, &reconf_mle_len) < 0) {
 		wpa_printf(MSG_ERROR,
-			   "SMD ST PREP Target AP: No ML-IE");
+			   "SMD ST PREP Target AP: No Add-Link ML-IE");
 		status_code = 1;
 		goto send_response;
 	}
@@ -3294,8 +3310,8 @@ void uhr_tgt_ap_handle_st_prep_req(struct hostapd_data *hapd,
 	/* Parse ML-IE and process profiles (includes MLD-level PTK installation) */
 	if (uhr_tgt_ap_parse_ml(hapd, iap->sta_addr, iap->current_ap_mld_addr,
 				&iap->sec_ctx,
-			        elems.reconf_mle,
-			        elems.reconf_mle_len,
+			        reconf_mle,
+			        reconf_mle_len,
 			        &req_list,
 				&assoc_hapd, &assoc_sta) < 0) {
 		wpa_printf(MSG_ERROR,
@@ -3900,7 +3916,7 @@ int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd, struct sta_info *sta,
 		return -1;
 	}
 
-	if (uhr_parse_reconfig_mle(&elems, &mle) < 0) {
+	if (uhr_parse_reconfig_mle(ies, ies_len, &mle) < 0) {
 		wpa_printf(MSG_ERROR,
 			   "UHR ST EXEC (tgt): Failed to parse Reconfig ML IE");
 		uhr_tgt_send_st_exec_fail(assoc_hapd, sta, sta->addr,

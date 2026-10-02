@@ -15,6 +15,7 @@
 #include "hostapd.h"
 #include "sta_info.h"
 #include "uhr_utils.h"
+#include "uhr_iap.h"
 #include "ieee802_11.h"
 
 
@@ -113,8 +114,6 @@ static void uhr_st_prep_timeout_handler(void *eloop_ctx, void *timeout_ctx)
 	struct smd_roam_ap_info *ap_info = timeout_ctx;
 
 	struct hostapd_data *prep_hapd = ap_info->st_prep_hapd;
-	struct hostapd_data *partner_hapd;
-	struct sta_info *partner_sta;
 	u8 ap_mld_addr[ETH_ALEN];
 
 	os_memcpy(ap_mld_addr, ap_info->ap_mld_addr, ETH_ALEN);
@@ -127,19 +126,12 @@ static void uhr_st_prep_timeout_handler(void *eloop_ctx, void *timeout_ctx)
 	sta->smd_info.sap_stats.sap_prep_exec_timeout++;
 	smd_ts_record(&sta->smd_info.sap_stats.sap_prep_exec_timeout_ts, smd_ts_now());
 
-	/* Remove the original entry — frees ap_info */
-	uhr_remove_ap_from_list(sta, ap_mld_addr);
-
-	/* Remove stale clones from all partner link stations */
-	if (prep_hapd) {
-		for_each_mld_link(partner_hapd, prep_hapd) {
-			if (partner_hapd == prep_hapd)
-				continue;
-			partner_sta = ap_get_sta(partner_hapd, sta->addr);
-			if (partner_sta)
-				uhr_remove_ap_from_list(partner_sta, ap_mld_addr);
-		}
-	}
+	/* Remove the original entry and any stale clones on partner links --
+	 * frees ap_info and all its clones */
+	if (prep_hapd)
+		uhr_remove_ap_from_list_all_links(prep_hapd, sta, ap_mld_addr);
+	else
+		uhr_remove_ap_from_list(sta, ap_mld_addr);
 }
 
 
@@ -284,6 +276,32 @@ int uhr_remove_ap_from_list(struct sta_info *sta, const u8 *ap_mld_addr)
 	return -1;
 }
 
+
+static int uhr_remove_ap_from_list_cb(struct hostapd_data *hapd,
+				      struct sta_info *sta, void *data)
+{
+	uhr_remove_ap_from_list(sta, (const u8 *) data);
+	return 0;
+}
+
+void uhr_remove_ap_from_list_all_links(struct hostapd_data *hapd,
+				       struct sta_info *sta,
+				       const u8 *ap_mld_addr)
+{
+	if (!hapd || !sta || !ap_mld_addr)
+		return;
+
+	if (uhr_iap_send_st_roam_cleanup(hapd, ap_mld_addr, sta->addr) < 0)
+		wpa_printf(MSG_DEBUG,
+			   "UHR: Failed to send ROAM CLEANUP to " MACSTR
+			   ", TAP will self-clean via timer",
+			   MAC2STR(ap_mld_addr));
+
+	uhr_remove_ap_from_list(sta, ap_mld_addr);
+
+	set_for_each_partner_link_sta(hapd, sta, (void *) ap_mld_addr,
+				      uhr_remove_ap_from_list_cb);
+}
 
 /**
  * uhr_cleanup_sta_roam_contexts - Clean up all roaming contexts for a station
@@ -513,15 +531,90 @@ fail:
 }
 
 
+int uhr_find_add_link_reconf_mle(const u8 *ies, size_t ies_len,
+				 const u8 **mle_out, size_t *mle_len_out)
+{
+	const struct element *elem;
+
+	*mle_out = NULL;
+	*mle_len_out = 0;
+
+	if (!ies || ies_len == 0)
+		return -1;
+
+	for_each_element_extid(elem, WLAN_EID_EXT_MULTI_LINK, ies, ies_len) {
+		const struct ieee80211_eht_ml *ml;
+		const u8 *pos, *end;
+		u8 common_info_len;
+
+		/* elem->data[0] is the ext_id byte; the MLE body (ml_control
+		 * onward) starts at elem->data[1], matching the convention
+		 * ieee802_11_parse_elems() uses for elems->reconf_mle. */
+		if (elem->datalen < 1 + sizeof(*ml))
+			continue;
+
+		ml = (const struct ieee80211_eht_ml *) (elem->data + 1);
+		if ((le_to_host16(ml->ml_control) & UHR_RECONF_ML_CONTROL_TYPE_MASK) !=
+		    UHR_RECONF_ML_CONTROL_TYPE_RECONF)
+			continue;
+
+		if (elem->datalen < 1 + sizeof(*ml) + 1)
+			continue;
+
+		common_info_len = ml->variable[0];
+		if (elem->datalen < 1 + sizeof(*ml) + 1 + common_info_len)
+			continue;
+
+		pos = ml->variable + common_info_len;
+		end = elem->data + elem->datalen;
+
+		while (end - pos > 2) {
+			u8 subelem_id = pos[0];
+			size_t subelem_len = pos[1];
+			const struct ieee80211_eht_per_sta_profile *prof;
+			u16 sta_control;
+			u8 op_type;
+
+			if ((size_t) (end - pos) < 2 + subelem_len)
+				break;
+
+			if (subelem_id == MULTI_LINK_SUB_ELEM_ID_PER_STA_PROFILE &&
+			    subelem_len >= sizeof(*prof)) {
+				prof = (const struct ieee80211_eht_per_sta_profile *)
+					(pos + 2);
+				sta_control = le_to_host16(prof->sta_control);
+				op_type = (sta_control &
+					   EHT_PER_STA_RECONF_CTRL_OP_UPDATE_TYPE_MSK) >> 7;
+
+				if (op_type == EHT_RECONF_TYPE_ADD_LINK) {
+					*mle_out = elem->data + 1;
+					*mle_len_out = elem->datalen - 1;
+					return 0;
+				}
+			}
+
+			pos += 2 + subelem_len;
+		}
+	}
+
+	return -1;
+}
+
+
 /**
  * uhr_parse_reconfig_mle - Parse UHR Reconfiguration Multi-Link element
- * @elems: Parsed 802.11 elements
+ * @ies: Raw IE buffer (as passed to ieee802_11_parse_elems())
+ * @ies_len: Length of @ies
  * @mle: Output structure for parsed ML-IE data
  * Returns: 0 on success, -1 on error
  *
  * Parses IEEE 802.11bn UHR Reconfiguration ML-IE with proper defragmentation.
+ * Scans @ies directly via uhr_find_add_link_reconf_mle() rather than relying
+ * on ieee802_11_elems's single reconf_mle slot, since a request may carry
+ * multiple Reconfiguration MLEs (Add-Link plus one or more Delete-ST-Prep)
+ * and only the Add-Link one is relevant here.
  */
-int uhr_parse_reconfig_mle(const struct ieee802_11_elems *elems,
+int uhr_parse_reconfig_mle(const u8 *ies, size_t ies_len,
 			   struct uhr_reconfig_mle *mle)
 {
 	struct wpabuf *mlbuf = NULL;
@@ -531,26 +624,29 @@ int uhr_parse_reconfig_mle(const struct ieee802_11_elems *elems,
 	u16 ml_control, presence_bitmap;
 	const u8 *pos;
 	int ret = -1;
+	const u8 *reconf_mle;
+	size_t reconf_mle_len;
 	u8 bmlie[UHR_BMLIE_BUF_LEN];
 	os_memset(bmlie, 0, sizeof(bmlie));
 
 	/* NULL pointer checks */
-	if (!elems || !mle) {
+	if (!mle) {
 		wpa_printf(MSG_ERROR, "UHR ML-IE: NULL parameters");
 		return -1;
 	}
 	os_memset(mle, 0, sizeof(*mle));
 
-	/* Validate ML-IE presence and minimum length */
-	if (!elems->reconf_mle || elems->reconf_mle_len < 4) {
+	if (uhr_find_add_link_reconf_mle(ies, ies_len, &reconf_mle,
+					 &reconf_mle_len) < 0 ||
+	    reconf_mle_len < 4) {
 		wpa_printf(MSG_DEBUG,
 			   "UHR ML-IE: Not present or too short (%zu)",
-			   elems->reconf_mle_len);
+			   reconf_mle_len);
 		return -1;
 	}
 
 	/* STEP 1: Defragment ML-IE */
-	mlbuf = ieee802_11_defrag(elems->reconf_mle, elems->reconf_mle_len, true);
+	mlbuf = ieee802_11_defrag(reconf_mle, reconf_mle_len, true);
 	if (!mlbuf) {
 		wpa_printf(MSG_ERROR, "UHR: Failed to defrag Reconfiguration MLE");
 		return -1;
@@ -788,10 +884,22 @@ int uhr_scan_delete_st_prep_targets(const u8 *ies, size_t ies_len,
 				if (has_add_link)
 					*has_add_link = true;
 			} else if (op_type == EHT_RECONF_TYPE_DELETE_ST_PREP) {
-				if ((size_t) num_found < max_targets)
-					os_memcpy(targets[num_found],
-						  target_ap_mld_addr, ETH_ALEN);
-				num_found++;
+				int j, dup = 0;
+
+				for (j = 0; j < num_found && (size_t) j < max_targets; j++) {
+					if (ether_addr_equal(targets[j],
+							     target_ap_mld_addr)) {
+						dup = 1;
+						break;
+					}
+				}
+
+				if (!dup) {
+					if ((size_t) num_found < max_targets)
+						os_memcpy(targets[num_found],
+							  target_ap_mld_addr, ETH_ALEN);
+					num_found++;
+				}
 			}
 
 			pos += 2 + subelem_len;
