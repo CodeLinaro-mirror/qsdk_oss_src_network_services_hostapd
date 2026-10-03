@@ -22,6 +22,8 @@
 /* Maximum DL Drain Duration (in TU) (NEW in V25) */
 #define UHR_DL_DRAIN_DURATION_TU_MAX 65535
 
+/* Default Tx power indication value until the actual value is retrieved */
+#define UHR_TX_PWR_IND_DEFAULT_FVAL 19
 
 /* Extract IEs from frame
  * Frame format: MAC header + Category + Action + Dialog Token + Type + IEs

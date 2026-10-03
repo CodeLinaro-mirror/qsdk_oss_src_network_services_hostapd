@@ -660,6 +660,8 @@ size_t hostapd_eid_uhr_capab_len(struct hostapd_data *hapd,
 u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 			   enum ieee80211_op_mode opmode);
 u8 * hostapd_eid_uhr_operation(struct hostapd_data *hapd, u8 *eid, bool beacon);
+u8 * hostapd_eid_tx_power_indication(struct hostapd_data *hapd, u8 *eid);
+size_t hostapd_eid_tx_power_indication_len(void);
 u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
 				   bool skip_post_phase, bool from_user);
 size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,
