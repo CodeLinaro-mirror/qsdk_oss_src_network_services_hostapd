@@ -160,7 +160,7 @@ void hostapd_parse_smd_ie(struct hostapd_data *hapd, struct sta_info *sta,
 		(smd_cap_byte >> 1) & 0x07;
 	sta->smd_info.caps.smd_type = !!(smd_cap_byte & BIT(4));
 	sta->smd_info.caps.ptk_mode = !!(smd_cap_byte & BIT(5));
-	sta->smd_info.smd_timeout = *pos++;
+	sta->smd_info.smd_timeout = hapd->conf->smd.smd_prep_timeout;
 	sta->smd_info.smd_sta = true;
 
 	wpa_printf(MSG_INFO,
