@@ -8873,6 +8873,9 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 	u8 chan, old_reg_6ghz_power_mode;
 	u8 tpe_config = 0;
 	int sec_channel_offset;
+#ifdef CONFIG_IEEE80211BN
+	struct hostapd_npca_state old_npca;
+#endif /* CONFIG_IEEE80211BN */
 	u8 oper_centr_freq0_idx = 0, oper_centr_freq1_idx = 0;
 
 	os_memset(&old_freq, 0, sizeof(old_freq));
@@ -8991,6 +8994,10 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 		hapd->conf->tpe_ie_config.local_tpe_config = 0;
 	}
 
+#ifdef CONFIG_IEEE80211BN
+	hostapd_save_npca(iface->conf, &old_npca);
+	hostapd_disable_npca(iface->conf);
+#endif /* CONFIG_IEEE80211BN */
 	ret = hostapd_build_beacon_data(hapd, &settings->beacon_after);
 	if (settings->beacon_after.elemid_modified_bmap)
 		settings->beacon_after_cu = 1;
@@ -9003,6 +9010,10 @@ static int hostapd_fill_csa_settings(struct hostapd_data *hapd,
 				       &old_freq, NULL) < 0)
 		wpa_printf(MSG_INFO,
 			   "Failed to switch back to old frequency after preparing beacon data for CSA");
+
+#ifdef CONFIG_IEEE80211BN
+	hostapd_restore_npca(iface->conf, &old_npca);
+#endif /* CONFIG_IEEE80211BN */
 
 	if (tpe_config)
 		hapd->conf->tpe_ie_config.local_tpe_config = tpe_config;
@@ -9385,6 +9396,9 @@ hostapd_switch_channel_fallback(struct hostapd_iface *iface,
 	iface->conf->ieee80211bn = freq_params->uhr_enabled;
 	iface->conf->bandwidth_device = freq_params->bandwidth_device;
 	iface->conf->center_freq_device = freq_params->center_freq_device;
+#ifdef CONFIG_IEEE80211BN
+	hostapd_disable_npca(iface->conf);
+#endif /* CONFIG_IEEE80211BN */
 	iface->conf->punct_bitmap = freq_params->punct_bitmap;
 
 	/*
