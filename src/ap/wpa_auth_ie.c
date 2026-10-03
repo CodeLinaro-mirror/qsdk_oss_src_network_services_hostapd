@@ -615,7 +615,9 @@ int wpa_write_rsnxe(struct wpa_auth_config *conf, u8 *buf, size_t len)
 	size_t flen;
 
 	capab = rsnxe_capab(conf, conf->wpa_key_mgmt);
-	capab &= conf->rsnxe_capab_mask;
+	capab &= conf->rsnxe_capab_mask |
+		(wpa_key_mgmt_sae_ext_key(conf->wpa_key_mgmt) ?
+		 BIT(WLAN_RSNX_CAPAB_SAE_H2E) : 0);
 
 	if (!capab)
 		return 0; /* no supported extended RSN capabilities */

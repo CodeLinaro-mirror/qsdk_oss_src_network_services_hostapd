@@ -9491,9 +9491,12 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 		goto rsnxe_done;
 	}
 #endif /* CONFIG_TESTING_OPTIONS */
-	if (!omit_rsnxe)
+	if (!omit_rsnxe) {
+		hapd->sp_ie_activated_sta = sta && sta->sec_prof_used;
 		p = hostapd_eid_rsnxe(hapd, p, end - p,
 				      hapd->conf->rsnxe_capab_mask);
+		hapd->sp_ie_activated_sta = false;
+	}
 #ifdef CONFIG_TESTING_OPTIONS
 rsnxe_done:
 #endif /* CONFIG_TESTING_OPTIONS */

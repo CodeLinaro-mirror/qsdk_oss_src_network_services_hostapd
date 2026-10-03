@@ -1553,15 +1553,21 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 	 * field in the RSNXE to 1 shall set the (Re)Association
 	 * Frame Encryption Support field in the RSNXE to 1.
 	 */
-	if ((hapd->iface->drv_flags2 &
+	if ((!hapd->sp_ie_activated_sta ||
+	     (capab_mask & BIT_ULL(WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION))) &&
+	    (hapd->iface->drv_flags2 &
 	     WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION) &&
 	    (hapd->conf->assoc_frame_encryption ||
 	    hapd->conf->pmksa_caching_privacy))
 		capab |= BIT(WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION);
-	if ((hapd->conf->wpa_key_mgmt |
-	     hostapd_config_sp_key_mgmt(hapd->conf)) & WPA_KEY_MGMT_EPPKE)
+	if ((!hapd->sp_ie_activated_sta ||
+	     (capab_mask & BIT_ULL(WLAN_RSNX_CAPAB_KEK_IN_PASN))) &&
+	    ((hapd->conf->wpa_key_mgmt |
+	      hostapd_config_sp_key_mgmt(hapd->conf)) & WPA_KEY_MGMT_EPPKE))
 		capab |= BIT(WLAN_RSNX_CAPAB_KEK_IN_PASN);
-	if (hapd->conf->pmksa_caching_privacy)
+	if ((!hapd->sp_ie_activated_sta ||
+	     (capab_mask & BIT_ULL(WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY))) &&
+	    hapd->conf->pmksa_caching_privacy)
 		capab |= BIT(WLAN_RSNX_CAPAB_PMKSA_CACHING_PRIVACY);
 	if (hapd->conf->eap_using_authentication_frames)
 		capab |= BIT(WLAN_RSNX_CAPAB_802_1X_IN_AUTH_FRAMES);
@@ -1573,7 +1579,6 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 	    hapd->conf->control_frame_prot)
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
 
-	capab &= capab_mask;
 	if (!capab)
 		return eid; /* no supported extended RSN capabilities */
 	tmp = capab;

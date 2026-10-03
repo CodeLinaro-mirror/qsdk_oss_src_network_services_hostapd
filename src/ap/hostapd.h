@@ -767,6 +767,7 @@ struct hostapd_data {
 	struct channel_usage_config chan_usage_config;
 	void *hostapd_if_data; /* for per-interface/MLD frame_reg_table, opaque */
 	bool is_update_beacon;
+	bool sp_ie_activated_sta; /* Set when processing STA with validated SP IE */
 
 #ifdef CONFIG_IEEE80211BN
 	struct smd_neighbor_update_ctx *smd_neighbor_update_ctx;
