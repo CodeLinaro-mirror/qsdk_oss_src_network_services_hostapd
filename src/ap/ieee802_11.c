@@ -9291,8 +9291,9 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 			buflen += EHT_OPER_DISABLED_SUBCHAN_BITMAP_SIZE;
 		if (ap_sta_is_mld(hapd, sta)) {
 			buflen += hostapd_eid_eht_ml_tid_to_link_map_len(hapd);
-		buflen += hostapd_eid_eht_basic_ml_len(hapd, sta,
-						       false, true, 0);
+			buflen += hostapd_eid_eht_basic_ml_len(
+				hapd, sta, false, true, 0,
+				!!(sta->flags & WLAN_STA_UHR));
 		}
 	}
 #endif /* CONFIG_IEEE80211BE */
@@ -17099,6 +17100,7 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 
 	u8 ext_cap;
 	size_t len, i;
+	bool is_uhr_sta = false;
 
 	if (!tx_bss)
 		return 0;
@@ -17117,6 +17119,7 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 	if (frame_type == WLAN_FC_STYPE_PROBE_RESP && params) {
 		probe_params = (struct probe_resp_params *) params;
 		is_ml_probe = probe_params->is_ml_probe;
+		is_uhr_sta = probe_params->is_uhr_sta;
 	}
 
 	for (i = *bss_index; i < num_bss; i++) {
@@ -17192,7 +17195,7 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
 			}
 
 			nontx_profile_len += hostapd_eid_eht_basic_ml_len(
-				bss, NULL, true, false, ext_cap);
+				bss, NULL, true, false, ext_cap, is_uhr_sta);
 			nontx_profile_len += hostapd_eid_eht_ml_reconfig_len(bss);
 		}
 #ifdef CONFIG_QCN_EXTN
@@ -17383,6 +17386,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 #endif /* CONFIG_IEEE80211BE */
 	u8 ext_cap;
 	size_t i;
+	bool is_uhr_sta = false;
 
 	if (!tx_bss)
 		return eid;
@@ -17394,6 +17398,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 	if (frame_type == WLAN_FC_STYPE_PROBE_RESP && params) {
 		probe_params = (struct probe_resp_params *) params;
 		is_ml_probe = probe_params->is_ml_probe;
+		is_uhr_sta = probe_params->is_uhr_sta;
 	}
 
 	for (i = *bss_index; i < num_bss; i++) {
@@ -17503,7 +17508,8 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
 			}
 
 			eid = hostapd_eid_eht_basic_ml_common(bss, eid, NULL,
-							      true, false, ext_cap);
+							      true, false, ext_cap,
+							      is_uhr_sta);
 			eid = hostapd_eid_eht_reconf_ml(bss, eid);
 		}
 #ifdef CONFIG_QCN_EXTN

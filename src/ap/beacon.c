@@ -1034,21 +1034,24 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 
 			buflen += hostapd_eid_eht_ml_beacon_len(
 				params->mld_ap, params->mld_info,
-				!!params->mld_ap, param_ext_cap);
+				!!params->mld_ap, param_ext_cap,
+				params->is_uhr_sta);
 			if (params->mld_ap->iface->drv_flags2 &
 			    WPA_DRIVER_FLAGS2_MLD_LINK_REMOVAL_OFFLOAD)
 				buflen += hostapd_eid_eht_ml_reconfig_len(params->mld_ap);
 
 			if (hapd->conf->mld_ap)
 				buflen += hostapd_eid_eht_ml_beacon_len(
-					hapd, NULL, false, include_ext_cap);
+					hapd, NULL, false, include_ext_cap,
+					params->is_uhr_sta);
 
 			/* For Max Channel Switch Time element during channel
 			 * switch */
 			buflen += 6;
 		} else if (hapd->conf->mld_ap) {
 			buflen += hostapd_eid_eht_ml_beacon_len(
-				hapd, params->mld_info, false, include_ext_cap);
+				hapd, params->mld_info, false, include_ext_cap,
+				params->is_uhr_sta);
 
 			/* For Max Channel Switch Time element during channel
 			 * switch */
@@ -1490,19 +1493,22 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 
 			pos = hostapd_eid_eht_ml_beacon(
 				params->mld_ap, params->mld_info,
-				pos, !!params->mld_ap, p_ext_cap);
+				pos, !!params->mld_ap, p_ext_cap,
+				params->is_uhr_sta);
 			if (params->mld_ap->iface->drv_flags2 &
 			    WPA_DRIVER_FLAGS2_MLD_LINK_REMOVAL_OFFLOAD)
 				pos = hostapd_eid_eht_reconf_ml(params->mld_ap, pos);
 
 			if (hapd->conf->mld_ap)
 				pos = hostapd_eid_eht_ml_beacon(
-					hapd, NULL, pos, false, ext_cap);
+					hapd, NULL, pos, false, ext_cap,
+					params->is_uhr_sta);
 
 		} else if (hapd->conf->mld_ap) {
 			pos = hostapd_eid_eht_ml_beacon(hapd,
 							params->mld_info,
-							pos, false, ext_cap);
+							pos, false, ext_cap,
+							params->is_uhr_sta);
 		}
 		/* ML reconfigure feature */
 		/* Software removal is already included by the ML beacon helper. */
@@ -2737,6 +2743,12 @@ void handle_probe_req(struct hostapd_data *hapd,
 
 	params.req = mgmt;
 	params.is_p2p = !!elems.p2p;
+
+#ifdef CONFIG_IEEE80211BN
+	if (elems.uhr_capabilities)
+		params.is_uhr_sta = true;
+#endif /* CONFIG_IEEE80211BN */
+
 	params.known_bss = elems.mbssid_known_bss;
 	params.known_bss_len = elems.mbssid_known_bss_len;
 
@@ -3903,7 +3915,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 			     BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK)))
 				ext_cap |= BIT(BASIC_MULTI_LINK_CTRL_EXT_EMLSR_ONE_LINK);
 			tailpos = hostapd_eid_eht_ml_beacon(hapd, NULL,
-							    tailpos, false, ext_cap);
+							    tailpos, false, ext_cap, true);
 			hostapd_eid_update_cu_info(hapd, &elemid_modified, startpos,
 						   tailpos-startpos, ELEMID_CU_PARAM_EXT_ML);
 		}
