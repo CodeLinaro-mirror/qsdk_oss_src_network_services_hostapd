@@ -2367,7 +2367,7 @@ void wpas_scan_for_rnr_entries(void *eloop_ctx, void *timeout_ctx);
 #ifdef CONFIG_QCN_EXTN
 static inline bool wpas_security_profile_active(struct wpa_supplicant *wpa_s)
 {
-	if (!wpa_s->conf->security_profiles)
+	if (!wpa_s->current_ssid || !wpa_s->current_ssid->security_profiles)
 		return false;
 	if (wpa_s->drv_flags & WPA_DRIVER_FLAGS_SME)
 		return true; /* wpa_supplicant-SME: always active */
@@ -2386,6 +2386,8 @@ static inline bool wpas_security_profile_active(struct wpa_supplicant *wpa_s)
  * Used by both wpa_supplicant_set_suites() and BSS selection
  * (wpa_supplicant_ssid_bss_match() in events.c).
  */
+const struct security_profile_entry *
+security_profile_select_best(const u8 *sp, const int *numbers);
 int security_profile_ie_get_key_mgmt(const u8 *sp_ie, int ssid_key_mgmt);
 const u8 *security_profile_ie_get_rsnx(const u8 *sp_ie, size_t *rsnx_len);
 int security_profile_ie_get_rsn_caps(const u8 *sp_ie);
