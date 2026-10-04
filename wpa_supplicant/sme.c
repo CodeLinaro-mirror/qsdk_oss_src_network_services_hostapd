@@ -1059,6 +1059,15 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 			wpa_dbg(wpa_s, MSG_DEBUG,
 				"Prefer EPPKE over SAE when both are enabled");
 			params.auth_alg = WPA_AUTH_ALG_EPPKE;
+		} else if (wpas_security_profile_active(wpa_s) &&
+			   (security_profile_ie_get_key_mgmt(
+				   wpa_bss_get_ie_ext(
+					   bss,
+					   WLAN_EID_EXT_SECURITY_PROFILE),
+				   ssid->key_mgmt) & WPA_KEY_MGMT_EPPKE) &&
+			   wpas_eppke_ap_capable(wpa_s, bss)) {
+			wpa_dbg(wpa_s, MSG_DEBUG, "Using EPPKE auth_alg via security profile");
+			params.auth_alg = WPA_AUTH_ALG_EPPKE;
 #endif /* CONFIG_ENC_ASSOC */
 		} else if (wpa_key_mgmt_sae(ied.key_mgmt)) {
 			if (wpas_is_sae_avoided(wpa_s, ssid, &ied)) {
