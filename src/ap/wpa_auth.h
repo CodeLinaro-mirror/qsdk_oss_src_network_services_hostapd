@@ -143,15 +143,7 @@ struct ft_rrb_seq {
 #endif /* _MSC_VER */
 
 
-/* Security Profile entry (IEEE P802.11bn/D2.0) */
-struct security_profile_entry_ap {
-	int number;
-	int key_mgmt;
-	int pairwise_cipher;
-	bool ieee8021x_auth_frame;
-	bool assoc_frame_encrypt;
-	bool pmksa_caching_privacy;
-};
+
 
 
 /* per STA state machine data */
@@ -897,8 +889,6 @@ int wpa_write_eppke_rsne(const u8 *wpa_ie, size_t wpa_ie_len,
 			 u8 *buf, size_t len,
 			 const u8 *pmkid, int akmp,
 			 int pairwise_cipher, enum mfp_options mfp);
-int wpa_auth_sp_implied_key_mgmt(const int *profiles);
-const struct security_profile_entry_ap * wpa_auth_sp_get(int p);
 
 void wpa_auth_connection_fail_event(struct wpa_authenticator *wpa_auth,
 				    size_t frame_len, const char *frame_type,

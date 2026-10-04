@@ -644,9 +644,9 @@ static bool hostapd_find_validate_profile(
 	int sta_profile_num,
 	const struct wpa_ie_data *rsne_data,
 	const u8 *rsnxe, size_t rsnxe_len,
-	const struct security_profile_entry_ap **profile_matched)
+	const struct security_profile_entry **profile_matched)
 {
-	const struct security_profile_entry_ap *entry;
+	const struct security_profile_entry *entry;
 
 	/* Validate that security profile is enabled */
 	if (!hostapd_sec_prof_enabled(hapd->conf, sta_profile_num)) {
@@ -658,7 +658,7 @@ static bool hostapd_find_validate_profile(
 	}
 
 	/* Validate that the profile number is known */
-	entry = wpa_auth_sp_get(sta_profile_num);
+	entry = sec_prof_get(sta_profile_num);
 	if (!entry) {
 		wpa_printf(MSG_INFO, "Unsupported security profile %d",
 			   sta_profile_num);
