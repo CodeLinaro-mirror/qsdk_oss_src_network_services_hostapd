@@ -660,6 +660,10 @@ static void wpa_supplicant_cleanup(struct wpa_supplicant *wpa_s)
 	wpa_s->rsnxe_override_assoc = NULL;
 	wpabuf_free(wpa_s->rsnxe_override_eapol);
 	wpa_s->rsnxe_override_eapol = NULL;
+	wpabuf_free(wpa_s->sec_prof_override_auth);
+	wpa_s->sec_prof_override_auth = NULL;
+	wpabuf_free(wpa_s->sec_prof_override_assoc);
+	wpa_s->sec_prof_override_assoc = NULL;
 	wpas_clear_driver_signal_override(wpa_s);
 	for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
 		wpabuf_free(wpa_s->link_ies[i]);

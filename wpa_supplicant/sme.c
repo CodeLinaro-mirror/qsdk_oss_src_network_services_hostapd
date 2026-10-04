@@ -3591,6 +3591,18 @@ mscs_fail:
 	 * The element was pre-built in wpa_supplicant_set_suites() from the
 	 * same wpa_sm state as the RSNE and RSNXE, guaranteeing consistency.
 	 */
+#ifdef CONFIG_TESTING_OPTIONS
+	if (wpa_s->sec_prof_override_assoc &&
+	    wpabuf_len(wpa_s->sec_prof_override_assoc) <=
+	    sizeof(wpa_s->sme.assoc_req_ie) - wpa_s->sme.assoc_req_ie_len) {
+		wpa_printf(MSG_DEBUG, "TESTING: Security Profile element AssocReq override");
+		os_memcpy(wpa_s->sme.assoc_req_ie + wpa_s->sme.assoc_req_ie_len,
+			  wpabuf_head(wpa_s->sec_prof_override_assoc),
+			  wpabuf_len(wpa_s->sec_prof_override_assoc));
+		wpa_s->sme.assoc_req_ie_len +=
+			wpabuf_len(wpa_s->sec_prof_override_assoc);
+	} else
+#endif /* CONFIG_TESTING_OPTIONS */
 	if (wpa_s->security_profile_len > 0 &&
 	    wpa_s->security_profile_len <=
 	    sizeof(wpa_s->sme.assoc_req_ie) - wpa_s->sme.assoc_req_ie_len) {
