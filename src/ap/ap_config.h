@@ -1003,10 +1003,8 @@ struct hostapd_bss_config {
 	struct wpabuf *gtk_rsc_override;
 	struct wpabuf *igtk_rsc_override;
 	int no_beacon_rsnxe;
-	u64 rsnxe_capab_mask;
 	int skip_prune_assoc;
 	int ft_rsnxe_used;
-	u64 rsnxe_capab_mask;
 	unsigned int oci_freq_override_eapol_m3;
 	unsigned int oci_freq_override_eapol_g1;
 	unsigned int oci_freq_override_saquery_req;
@@ -1503,7 +1501,8 @@ struct hostapd_bss_config {
 #endif
 
 	int *security_profiles;       /* NULL-terminated array from hostapd_parse_intlist */
-	int security_profile_ext_key_id; /* Reduced RSN Capabilities bit 0 */
+	int security_profile_ext_key_id;
+	u64 rsnxe_capab_mask; /* Reduced RSN Capabilities bit 0 */
 	int security_profile_ocvc;    /* Reduced RSN Capabilities bit 1 */
 	/* AP side */
 #ifdef CONFIG_IEEE80211BN
@@ -1931,7 +1930,8 @@ struct hostapd_config {
 	/* Monitor interface name */
 	char monitor_iface_name[IFNAMSIZ + 1];
 	int *security_profiles;       /* NULL-terminated array from hostapd_parse_intlist */
-	int security_profile_ext_key_id; /* Reduced RSN Capabilities bit 0 */
+	int security_profile_ext_key_id;
+	u64 rsnxe_capab_mask; /* Reduced RSN Capabilities bit 0 */
 	int security_profile_ocvc;    /* Reduced RSN Capabilities bit 1 */
 #ifdef CONFIG_IEEE80211BN
 	bool npca_enable;

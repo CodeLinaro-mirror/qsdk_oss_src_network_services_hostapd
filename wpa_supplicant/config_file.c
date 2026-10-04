@@ -1845,8 +1845,10 @@ static void wpa_config_write_global(FILE *f, struct wpa_config *config)
 		fprintf(f, "pr_pasn_type=%d\n", config->pr_pasn_type);
 	if (config->pr_preferred_role)
 		fprintf(f, "pr_preferred_role=%d\n", config->pr_preferred_role);
+ #ifdef CONFIG_QCN_EXTN
 	if (config->security_profiles != DEFAULT_SECURITY_PROFILES)
 		fprintf(f, "security_profiles=%d\n", config->security_profiles);
+ #endif /* CONFIG_QCN_EXTN */
 
 #ifdef CONFIG_PASN
 	if (config->pasn_groups) {

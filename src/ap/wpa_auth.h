@@ -342,8 +342,6 @@ struct wpa_auth_config {
 	u64 rsnxe_capab_mask;
 #endif /* CONFIG_TESTING_OPTIONS */
 
-	u64 rsnxe_capab_mask;
-
 	unsigned int sae_pw_id_num;
 	u8 sae_pw_id_key[32];
 
@@ -543,7 +541,7 @@ wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 		    const u8 *owe_dh, size_t owe_dh_len,
 		    struct wpa_state_machine *assoc_sm,
 		    bool is_ml, bool external_pmk_cache,
-		    const struct security_profile_entry_ap *security_profile,
+		    const struct security_profile_entry *security_profile,
 		    bool smd_sta);
 int wpa_validate_osen(struct wpa_authenticator *wpa_auth,
 		      struct wpa_state_machine *sm,
@@ -773,7 +771,7 @@ void wpa_auth_set_rsn_selection(struct wpa_state_machine *sm, const u8 *ie,
 void wpa_auth_set_dpp_z(struct wpa_state_machine *sm, const struct wpabuf *z);
 void wpa_auth_set_ssid_protection(struct wpa_state_machine *sm, bool val);
 void wpa_auth_set_security_profile(struct wpa_state_machine *sm,
-				   const struct security_profile_entry_ap *val);
+				   const struct security_profile_entry *val);
 void wpa_auth_set_transition_disable(struct wpa_authenticator *wpa_auth,
 				     u8 val);
 

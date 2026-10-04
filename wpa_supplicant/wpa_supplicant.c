@@ -11318,7 +11318,7 @@ int wpas_get_owe_trans_network(const u8 *owe_ie, const u8 **bssid,
 }
 
 
-#ifdef CONFIG_ENC_ASSOC
+
 
 /*
  * wpas_eppke_ap_rsnx_capab - Check an RSNX capability bit for EPPKE purposes,
@@ -11356,7 +11356,7 @@ bool wpas_eppke_ap_rsnx_capab(struct wpa_supplicant *wpa_s,
 	return false;
 }
 
-#endif /* CONFIG_ENC_ASSOC */
+
 
 
 void wpas_update_dfs_ap_info(struct wpa_supplicant *wpa_s, int freq,

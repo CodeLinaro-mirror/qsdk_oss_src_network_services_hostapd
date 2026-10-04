@@ -1006,7 +1006,6 @@ static inline int smd_reason_read(const void *ring, uint8_t head,
 	return n;
 }
 
-#endif /* WPA_COMMON_H */
 /* Security Profile entry (IEEE P802.11bn/D2.0) */
 struct security_profile_entry {
 	int number;
@@ -1015,6 +1014,7 @@ struct security_profile_entry {
 	bool ieee8021x_auth_frame;
 	bool assoc_frame_encrypt;
 	bool pmksa_caching_privacy;
+	int pqc_profile;
 };
 
 
