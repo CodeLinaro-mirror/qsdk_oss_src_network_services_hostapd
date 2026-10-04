@@ -376,7 +376,7 @@ bool security_profile_has_eppke(const u8 *sp, int ssid_key_mgmt)
  * Returns: Selected profile number (0-119) on success, -1 if no match found.
  */
 int security_profile_select_num(int akmp, int pairwise_cipher,
-				bool eap_over_auth,
+				bool eap_over_auth, bool eppke,
 				const u8 *bitmap, size_t bitmap_len)
 {
 	unsigned int profile;
@@ -412,6 +412,12 @@ int security_profile_select_num(int akmp, int pairwise_cipher,
 		 */
 		if ((eap_over_auth && !sp->ieee8021x_auth_frame) ||
 		    (!eap_over_auth && sp->ieee8021x_auth_frame))
+			continue;
+
+		/* Handle the profile 1 vs. 9 based on whether EPPKE is used */
+		if (sp->key_mgmt == (WPA_KEY_MGMT_EPPKE |
+				     WPA_KEY_MGMT_SAE_EXT_KEY) &&
+		    sp->assoc_frame_encrypt != eppke)
 			continue;
 
 		return profile;
