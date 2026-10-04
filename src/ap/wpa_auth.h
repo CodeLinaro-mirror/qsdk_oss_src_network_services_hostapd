@@ -350,6 +350,8 @@ struct wpa_auth_config {
 	u64 rsnxe_capab_mask;
 #endif /* CONFIG_TESTING_OPTIONS */
 
+	u64 rsnxe_capab_mask;
+
 	unsigned int sae_pw_id_num;
 	u8 sae_pw_id_key[32];
 

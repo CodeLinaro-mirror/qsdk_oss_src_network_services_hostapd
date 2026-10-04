@@ -1005,6 +1005,7 @@ struct hostapd_bss_config {
 	u64 rsnxe_capab_mask;
 	int skip_prune_assoc;
 	int ft_rsnxe_used;
+	u64 rsnxe_capab_mask;
 	unsigned int oci_freq_override_eapol_m3;
 	unsigned int oci_freq_override_eapol_g1;
 	unsigned int oci_freq_override_saquery_req;
