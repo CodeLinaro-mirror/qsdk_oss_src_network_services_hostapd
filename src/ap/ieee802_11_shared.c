@@ -1705,6 +1705,146 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 }
 
 
+
+static int get_max_security_profile(const int *profiles)
+{
+	int i, max_profile = -1;
+
+	for (i = 0; profiles && profiles[i] >= 0; i++) {
+		if (profiles[i] > max_profile)
+			max_profile = profiles[i];
+	}
+
+	return max_profile;
+}
+
+
+size_t hostapd_security_profile_len(struct hostapd_data *hapd)
+{
+	int max_profile;
+	size_t bitmap_len, ext_rsn_capab_len = 0;
+	u8 rsnxe_buf[2 + sizeof(u64)];
+	u8 *rsnxe_end;
+
+#ifdef CONFIG_TESTING_OPTIONS
+	if (hapd->conf->security_profile_override)
+		return wpabuf_len(hapd->conf->security_profile_override);
+#endif /* CONFIG_TESTING_OPTIONS */
+
+	max_profile = get_max_security_profile(hapd->conf->security_profiles);
+	if (max_profile < 0)
+		return 0;
+
+	bitmap_len = max_profile / 8 + 1;
+
+	rsnxe_end = hostapd_eid_rsnxe(hapd, rsnxe_buf, sizeof(rsnxe_buf), false);
+	if (rsnxe_end > rsnxe_buf + 2)
+		ext_rsn_capab_len = rsnxe_end - rsnxe_buf - 2;
+
+	if (ext_rsn_capab_len == 0)
+		ext_rsn_capab_len = 1;
+
+	return 2 + 1 + 1 + 1 + bitmap_len + ext_rsn_capab_len;
+}
+
+
+u8 * hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid)
+{
+	u8 *pos = eid;
+	u8 *len_pos;
+	u8 reduced_rsn_capab = 0;
+	u8 ext_rsn_capab[16];
+	size_t ext_rsn_capab_len = 0;
+	u8 bitmap[16];
+	size_t bitmap_len = 0;
+	int i, max_profile;
+	u8 rsnxe_buf[2 + sizeof(u64)];
+	u8 *rsnxe_end;
+
+#ifdef CONFIG_TESTING_OPTIONS
+	if (hapd->conf->security_profile_override) {
+		os_memcpy(eid,
+			  wpabuf_head(hapd->conf->security_profile_override),
+			  wpabuf_len(hapd->conf->security_profile_override));
+		eid += wpabuf_len(hapd->conf->security_profile_override);
+		return eid;
+	}
+#endif /* CONFIG_TESTING_OPTIONS */
+
+	max_profile = get_max_security_profile(hapd->conf->security_profiles);
+	if (max_profile < 0)
+		return eid;
+
+	bitmap_len = max_profile / 8 + 1;
+	if (bitmap_len > sizeof(bitmap)) {
+		wpa_printf(MSG_ERROR,
+			   "No room for Security Profile element bitmap");
+		return NULL;
+	}
+	os_memset(bitmap, 0, bitmap_len);
+	for (i = 0; hapd->conf->security_profiles[i] >= 0; i++) {
+		int p = hapd->conf->security_profiles[i];
+
+		if (p / 8 < (int) bitmap_len)
+			bitmap[p / 8] |= BIT(p % 8);
+	}
+
+	rsnxe_end = hostapd_eid_rsnxe(hapd, rsnxe_buf, sizeof(rsnxe_buf), false);
+	if (rsnxe_end > rsnxe_buf + 2) {
+		ext_rsn_capab_len = rsnxe_end - rsnxe_buf - 2;
+		if (ext_rsn_capab_len > sizeof(ext_rsn_capab)) {
+			wpa_printf(MSG_ERROR,
+				   "No room for Security Profile element RSNX");
+			return NULL;
+		}
+		os_memcpy(ext_rsn_capab, rsnxe_buf + 2, ext_rsn_capab_len);
+	}
+
+	if (ext_rsn_capab_len < 1) {
+		ext_rsn_capab_len = 1;
+		ext_rsn_capab[0] = 0;
+	}
+
+	for (i = 0; hapd->conf->security_profiles[i] >= 0; i++) {
+		int p = hapd->conf->security_profiles[i];
+
+		if (sec_prof_is_sae(p)) {
+			ext_rsn_capab[0] |= BIT(WLAN_RSNX_CAPAB_SAE_H2E);
+			break;
+		}
+	}
+
+	if (hapd->conf->extended_key_id &&
+	    (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_EXTENDED_KEY_ID))
+		reduced_rsn_capab |=
+			SEC_PROF_REDUCED_RSN_CAPA_EXT_KEY_ID;
+#ifdef CONFIG_OCV
+	if (hapd->conf->ocv &&
+	    (hapd->iface->drv_flags2 &
+	     (WPA_DRIVER_FLAGS2_AP_SME | WPA_DRIVER_FLAGS2_OCV)))
+		reduced_rsn_capab |= SEC_PROF_REDUCED_RSN_CAPA_OCVC;
+#endif /* CONFIG_OCV */
+
+	*pos++ = WLAN_EID_EXTENSION;
+	len_pos = pos++;
+	*pos++ = WLAN_EID_EXT_SECURITY_PROFILE;
+
+	*pos++ = reduced_rsn_capab;
+
+	*pos++ = (u8) bitmap_len & 0x0F;
+
+	os_memcpy(pos, bitmap, bitmap_len);
+	pos += bitmap_len;
+
+	if (ext_rsn_capab_len > 0) {
+		os_memcpy(pos, ext_rsn_capab, ext_rsn_capab_len);
+		pos += ext_rsn_capab_len;
+	}
+
+	*len_pos = (u8) (pos - len_pos - 1);
+	return pos;
+}
+
 u16 check_ext_capab(struct hostapd_data *hapd, struct sta_info *sta,
 		    const u8 *ext_capab_ie, size_t ext_capab_ie_len)
 {
