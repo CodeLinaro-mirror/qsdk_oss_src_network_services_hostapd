@@ -2760,7 +2760,7 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 	 *
 	 * selected_security_profile_num is set here (or left at -1 if no
 	 * matching profile is found or the AP does not advertise the element).
-	 * It is consumed below by security_profile_build_sta_ie().
+	 * It is consumed below by security_profile_build_sta().
 	 */
 	wpa_s->selected_security_profile_num = -1;
 	if (bss && wpas_security_profile_active(wpa_s)) {
@@ -2889,7 +2889,7 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 	if (wpa_s->selected_security_profile_num >= 0) {
 		int ret;
 
-		ret = security_profile_build_sta_ie(
+		ret = security_profile_build_sta(
 			wpa_s->wpa,
 			wpa_s->selected_security_profile_num,
 			wpa_s->security_profile,
