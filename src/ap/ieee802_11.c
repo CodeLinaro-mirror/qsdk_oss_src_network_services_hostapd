@@ -7808,13 +7808,15 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 				type == LINK_PARSE_REASSOC ? "Reassoc" : "Assoc",
 				matched_profile);
 
-			if (sp_resp == WLAN_STATUS_SUCCESS) {
-				wpa_printf(MSG_DEBUG,
-					   "UHR: Security Profile validated for "
-					   MACSTR " in (Re)Assoc",
-					   MAC2STR(sta->addr));
-				security_profile_matched = true;
+			if (sp_resp != WLAN_STATUS_SUCCESS) {
+				resp = WLAN_STATUS_REJECTED_INVALID_SECURITY_PROFILE;
+				goto out;
 			}
+			wpa_printf(MSG_DEBUG,
+				   "UHR: Security Profile validated for "
+				   MACSTR " in (Re)Assoc",
+				   MAC2STR(sta->addr));
+			security_profile_matched = true;
 		}
 
 		if (type == LINK_PARSE_UHR_RECONF_ASSOC || type == LINK_PARSE_UHR_RECONF_LINK)
