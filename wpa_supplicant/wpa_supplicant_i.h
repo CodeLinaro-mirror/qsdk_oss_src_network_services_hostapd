@@ -23,6 +23,7 @@
 #include "pasn/pasn_common.h"
 #include "ubus.h"
 #include "ucode.h"
+#include "config.h"
 #ifdef CONFIG_QCN_EXTN
 #include "../qcn_extns/cmn.h"
 #endif /* CONFIG_QCN_EXTN */
@@ -2362,8 +2363,10 @@ void wpas_scan_for_rnr_entries(void *eloop_ctx, void *timeout_ctx);
  */
 static inline bool wpas_security_profile_active(struct wpa_supplicant *wpa_s)
 {
+	if (!wpa_s->conf->security_profiles)
+		return false;
 	if (wpa_s->drv_flags & WPA_DRIVER_FLAGS_SME)
-		return true; /* supplicant-SME: always active */
+		return true; /* wpa_supplicant-SME: always active */
 	/* driver-SME: only when driver advertises support */
 	return !!(wpa_s->drv_flags2 & WPA_DRIVER_FLAGS2_SECURITY_PROFILE);
 }
