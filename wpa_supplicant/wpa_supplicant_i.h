@@ -980,7 +980,7 @@ struct wpa_supplicant {
 	 *   Appended to auth and assoc frames by sme_send_authentication() and
 	 *   sme_associate() respectively.
 	 */
-	int selected_security_profile_num;
+	const struct security_profile_entry *sel_security_profile;
 	u8 security_profile[32];
 	size_t security_profile_len;
 
