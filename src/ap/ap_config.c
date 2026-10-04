@@ -2856,3 +2856,34 @@ bool hostapd_is_beacon_tx_rate_preamble_valid(const struct hostapd_config *iconf
 
 	return true;
 }
+
+
+/**
+ * hostapd_config_sp_key_mgmt - Derive implied key_mgmt from security profiles
+ * @conf: hostapd BSS level configuration
+ * Returns: Union of all AKMs defined by the enabled security profiles
+ *
+ * This can be used to allow the AP to accept associations whose AKM is implied
+ * by an enabled security profile even when that AKM is not explicitly listed in
+ * wpa_key_mgmt to be enabled in the RSNE.
+ */
+int hostapd_config_sp_key_mgmt(const struct hostapd_bss_config *conf)
+{
+	return wpa_auth_sp_implied_key_mgmt(conf->security_profiles);
+}
+
+
+int hostapd_config_all_key_mgmt(const struct hostapd_bss_config *conf)
+{
+	return conf->wpa_key_mgmt |
+		conf->rsn_override_key_mgmt |
+		conf->rsn_override_key_mgmt_2 |
+		hostapd_config_sp_key_mgmt(conf);
+}
+
+
+bool hostapd_config_sae_ext_key(const struct hostapd_bss_config *conf)
+{
+	return wpa_key_mgmt_sae_ext_key(hostapd_config_all_key_mgmt(conf));
+}
+
