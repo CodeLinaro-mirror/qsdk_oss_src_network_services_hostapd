@@ -78,8 +78,20 @@ def _6ghz_op_class_to_bw(op):
         132: "40",
         133: "80",
         134: "160",
+        136: "20",
         137: "320",
     }.get(op, "20")
+
+def _6ghz_op_class_to_chwidth(op):
+    # Maps 6 GHz op_class to he/vht/eht_oper_chwidth integer value
+    return {
+        131: 0,   # 20 MHz
+        132: 0,   # 40 MHz (HT40)
+        133: 1,   # 80 MHz
+        134: 2,   # 160 MHz
+        136: 0,   # 20 MHz (channel 2 / 5935 MHz only)
+        137: 9,   # 320 MHz
+    }.get(op, 0)
 
 def uhr_320mhz_supported():
     import subprocess
@@ -319,6 +331,18 @@ def _test_uhr_6ghz(dev, apdev, channel, op_class, ccfs1):
         params["eht_oper_centr_freq_seg0_idx"] = str(ccfs1)
         params["country_code"] = "CA"
 
+        # Align he/vht/eht chwidth with op_class — he_wpa2_params() hardcodes
+        # he_oper_chwidth=2 (160 MHz) which contradicts narrower op_classes.
+        chwidth = _6ghz_op_class_to_chwidth(op_class)
+        params["he_oper_chwidth"] = str(chwidth)
+        params["vht_oper_chwidth"] = str(chwidth)
+        params["eht_oper_chwidth"] = str(chwidth)
+        if op_class == 132:
+            if channel < ccfs1:
+                params["ht_capab"] = "[HT40+]"
+            else:
+                params["ht_capab"] = "[HT40-]"
+
         if not he_6ghz_supported():
             raise HwsimSkip("6 GHz frequency is not supported")
         if op_class == 137 and not uhr_320mhz_supported():
@@ -331,7 +355,14 @@ def _test_uhr_6ghz(dev, apdev, channel, op_class, ccfs1):
             wpas.interface_add(wpas_iface)
             check_sae_capab(wpas)
 
-            hapd = uhr_mld_enable_ap(hapd_iface, 0, params)
+            try:
+                hapd = uhr_mld_enable_ap(hapd_iface, 0, params)
+            except HwsimSkip:
+                raise
+            except Exception as e:
+                if str(e) == "Failed to set hostapd parameter ieee80211bn":
+                    raise HwsimSkip("UHR not supported")
+                raise
             status = hapd.get_status()
             logger.info("hostapd STATUS: " + str(status))
             if hapd.get_status_field("ieee80211ax") != "1":
@@ -353,7 +384,8 @@ def _test_uhr_6ghz(dev, apdev, channel, op_class, ccfs1):
                          scan_freq=str(freq))
             hapd.wait_sta()
 
-            uhr_verify_status(wpas, hapd, freq, bw)
+            uhr_verify_status(wpas, hapd, freq, bw, mld=True,
+                             valid_links=1, active_links=1)
             uhr_verify_wifi_version(wpas)
             sta = hapd.get_sta(wpas.own_addr())
             if 'supp_op_classes' not in sta:
@@ -368,6 +400,7 @@ def _test_uhr_6ghz(dev, apdev, channel, op_class, ccfs1):
     finally:
         dev[0].set("sae_pwe", "0")
         dev[0].cmd_execute(['iw', 'reg', 'set', '00'])
+        wait_regdom_changes(dev[0])
 
 def test_uhr_6ghz_20mhz(dev, apdev):
     """UHR with 20 MHz channel width on 6 GHz"""

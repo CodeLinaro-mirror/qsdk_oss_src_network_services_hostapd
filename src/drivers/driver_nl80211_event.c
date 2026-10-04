@@ -3539,7 +3539,6 @@ static void nl80211_radar_event(struct i802_bss *bss, struct nlattr **tb,
 
 	wpa_printf(MSG_DEBUG,
 		   "nl80211: Checking suitable BSS for the DFS event");
-
 	/* It is possible to have the event without ifidx and wdev_id, e.g.,
 	 * with NL80211_RADAR_NOP_FINISHED and NL80211_RADAR_PRE_CAC_EXPIRED.
 	 * Hence need to check on all BSSs. */
@@ -3578,9 +3577,18 @@ static void nl80211_radar_event(struct i802_bss *bss, struct nlattr **tb,
 		 * if the link frequency is 5 GHz, pass the event to it.
 		 */
 		for_each_link_default(bss_iter->valid_links, i, 0) {
-			if (bss_iter->links[i].freq < 5180 ||
-			    bss_iter->links[i].freq > 5900)
-				continue;
+			/* NOP_FINISHED: VAP may be down (link_freq=0).
+			 * Use event_freq for 5 GHz band check instead. */
+			if (event_type == NL80211_RADAR_NOP_FINISHED &&
+			    bss_iter->links[i].freq == 0) {
+				if (data.dfs_event.freq < 5180 ||
+				    data.dfs_event.freq > 5900)
+					continue;
+			} else {
+				if (bss_iter->links[i].freq < 5180 ||
+				    bss_iter->links[i].freq > 5900)
+					continue;
+			}
 
 			data.dfs_event.link_id = bss_iter->valid_links ?
 				i : NL80211_DRV_LINK_ID_NA;

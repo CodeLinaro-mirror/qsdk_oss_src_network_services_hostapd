@@ -4691,15 +4691,16 @@ cont:
 
 	freqs[j] = 0;
 
-	/* Trigger scan if,
-	 * 1 - Only beacon len is changed but there is no RNR IE present
-	 * 2 - if partner RNR is set but the partner beacon is not
-	 *     available in the scan res.  [Freqs is set]
-	 *
-	 * Trigger deauth if, RNR in associated beacon is updated with
+	/* Trigger deauth if, RNR in associated beacon is updated with
 	 * affiliated AP information.
 	 */
-	if ((changes & WPA_BSS_BEACON_LEN_CHANGED_FLAG || freqs[0]) &&
+	if (non_assoc_links) {
+		wpa_s->own_disconnect_req = 1;
+		wpa_supplicant_deauthenticate(wpa_s,
+				WLAN_REASON_DEAUTH_LEAVING);
+		wpa_printf(MSG_INFO, "Match found and triggering deauthenticate\n");
+		ret = false;
+	} else if ((changes & WPA_BSS_BEACON_LEN_CHANGED_FLAG || freqs[0]) &&
 	    (wpa_s->driver->scan2 && !wpa_s->missing_link_scan)) {
 		struct wpa_driver_scan_params scan;
 		int ret;
@@ -4733,12 +4734,6 @@ cont:
 		} else {
 			wpa_s->curr_scan_cookie = scan.scan_cookie;
 		}
-	} else if (non_assoc_links) {
-		wpa_s->own_disconnect_req = 1;
-		wpa_supplicant_deauthenticate(wpa_s,
-				WLAN_REASON_DEAUTH_LEAVING);
-		wpa_printf(MSG_INFO, "Match found and triggering deauthenticate\n");
-		ret = false;
 	}
 exit:
 	return ret;
