@@ -643,7 +643,6 @@ static int wpa_supplicant_wps_cred(void *ctx,
 	if (wpa_s->conf->update_config &&
 	    wpa_config_write(wpa_s->confname, wpa_s->conf)) {
 		wpa_printf(MSG_DEBUG, "WPS: Failed to update configuration");
-		return -1;
 	}
 #endif /* CONFIG_NO_CONFIG_WRITE */
 
