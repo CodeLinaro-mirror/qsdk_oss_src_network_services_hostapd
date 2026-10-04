@@ -3510,6 +3510,7 @@ void wpa_s_setup_sae_pt(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 	size_t password_id_len = ssid->sae_password_id ?
 		os_strlen(ssid->sae_password_id) : 0;
 	struct wpabuf_array *ids;
+	bool sec_prof_sae;
 
 	if (!groups || groups[0] <= 0)
 		groups = default_groups;
@@ -3520,10 +3521,13 @@ void wpa_s_setup_sae_pt(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 
 	sae_pwe = wpas_get_ssid_sae_pwe(wpa_s, ssid);
 
+	sec_prof_sae = wpas_security_profile_active(wpa_s) &&
+		sec_prof_list_has_sae(ssid->security_profiles);
+
 	if (!password ||
-	    !wpa_key_mgmt_sae(ssid->key_mgmt) ||
+	    (!wpa_key_mgmt_sae(ssid->key_mgmt) && !sec_prof_sae) ||
 	    (sae_pwe == SAE_PWE_HUNT_AND_PECK && !ssid->sae_password_id &&
-	     !wpa_key_mgmt_sae_ext_key(ssid->key_mgmt) &&
+	     !(wpa_key_mgmt_sae_ext_key(ssid->key_mgmt) || sec_prof_sae) &&
 	     !force &&
 	     !sae_pk_valid_password(password)) ||
 	    sae_pwe == SAE_PWE_FORCE_HUNT_AND_PECK) {
@@ -10568,6 +10572,10 @@ int wpas_get_ssid_pmf(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid)
 			return NO_MGMT_FRAME_PROTECTION;
 		}
 
+		if (ssid && ssid->security_profiles &&
+		    wpas_security_profile_active(wpa_s))
+			return MGMT_FRAME_PROTECTION_OPTIONAL;
+
 		if (ssid &&
 		    (ssid->key_mgmt &
 		     ~(WPA_KEY_MGMT_NONE | WPA_KEY_MGMT_WPS |
@@ -10597,11 +10605,43 @@ int wpas_get_ssid_pmf(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid)
 
 #ifdef CONFIG_SAE
 
+bool sec_prof_list_has_sae(const int *numbers)
+{
+	int i;
+
+	if (!numbers)
+		return false;
+
+	for (i = 0; numbers[i] != -1; i++) {
+		const struct security_profile_entry *e;
+
+		e = sec_prof_get(numbers[i]);
+		if (e && wpa_key_mgmt_sae_ext_key(e->key_mgmt))
+			return true;
+	}
+
+	return false;
+}
+
+
 enum sae_pwe wpas_get_ssid_sae_pwe(struct wpa_supplicant *wpa_s,
 				   struct wpa_ssid *ssid)
 {
-	if (!ssid || ssid->sae_pwe == DEFAULT_SAE_PWE)
+	if (!ssid)
 		return wpa_s->conf->sae_pwe;
+	if ((!wpas_security_profile_active(wpa_s) ||
+	     !sec_prof_list_has_sae(ssid->security_profiles)) &&
+	    ssid->sae_pwe == DEFAULT_SAE_PWE)
+		return wpa_s->conf->sae_pwe;
+
+	if (ssid->sae_pwe != SAE_PWE_FORCE_HUNT_AND_PECK &&
+	    wpas_security_profile_active(wpa_s) &&
+	    sec_prof_list_has_sae(ssid->security_profiles)) {
+		if (ssid->sae_pwe == SAE_PWE_HUNT_AND_PECK)
+			return SAE_PWE_BOTH;
+		return SAE_PWE_HASH_TO_ELEMENT;
+	}
+
 	return ssid->sae_pwe;
 }
 
