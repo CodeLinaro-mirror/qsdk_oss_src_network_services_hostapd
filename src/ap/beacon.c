@@ -1107,7 +1107,7 @@ static size_t hostapd_probe_resp_elems_len(struct hostapd_data *hapd,
 	buflen += hostapd_get_rsnxe_override_len(hapd);
 	buflen += hostapd_wfa_cap_ie_len(hapd, NULL);
 	buflen += hostapd_tpc_report_len(hapd);
-	buflen += hostapd_security_profile_ie_len(hapd);
+	buflen += hostapd_security_profile_len(hapd);
 #ifdef CONFIG_QCN_EXTN
 	buflen += hostapd_modify_buflen_for_qcn_ie_extn(hapd);
 	/* WDS vendor IE */
@@ -1179,7 +1179,7 @@ int ieee802_11_build_nontx_bss_probe_params(struct hostapd_data *hapd,
 		buflen += hostapd_eid_uhr_params_update_len(hapd, false, false);
 #endif /* CONFIG_IEEE80211BE */
 
-	buflen += hostapd_security_profile_ie_len(hapd);
+	buflen += hostapd_security_profile_len(hapd);
 
 	nontx_probe_params->resp = os_zalloc(buflen);
 	if (!nontx_probe_params->resp) {
@@ -3483,7 +3483,7 @@ int ieee802_11_build_nontx_bss_params(struct hostapd_data *hapd,
 	tail_len += hostapd_smd_ie_len(hapd);
 #endif /* CONFIG_IEEE80211BN */
 
-	tail_len += hostapd_security_profile_ie_len(hapd);
+	tail_len += hostapd_security_profile_len(hapd);
 
 	tailpos = tail = os_malloc(tail_len);
 	if (tail == NULL) {
@@ -3723,7 +3723,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
        if (hapd->iconf->mbssid == MBSSID_ENABLED)
                tail_len += 5; /* Multiple BSSID Configuration element */
 #endif /* RDK_ONEWIFI */
-	tail_len += hostapd_security_profile_ie_len(hapd);
+	tail_len += hostapd_security_profile_len(hapd);
 
 	if (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
 	    hapd == hostapd_mbssid_get_tx_bss(hapd))

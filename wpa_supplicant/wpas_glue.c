@@ -461,7 +461,7 @@ static int wpa_get_beacon_ie(struct wpa_supplicant *wpa_s)
 
 		ie = wpa_bss_get_ie_ext(curr,
 					WLAN_EID_EXT_SECURITY_PROFILE);
-		if (wpa_sm_set_ap_security_profile_ie(wpa_s->wpa, ie,
+		if (wpa_sm_set_ap_security_profile(wpa_s->wpa, ie,
 						      ie ? 2 + ie[1] : 0))
 			ret = -1;
 		ie = wpa_bss_get_ie_ext(curr, WLAN_EID_EXT_SMD);

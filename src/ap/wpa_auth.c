@@ -5719,7 +5719,7 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 
 	if (sm->security_profile_indication || sm->ap_security_profile_indication) {
 		struct hostapd_data *hapd = sm->wpa_auth->cb_ctx;
-		size_t security_ie_len = hostapd_security_profile_ie_len(hapd);
+		size_t security_ie_len = hostapd_security_profile_len(hapd);
 
 		if (security_ie_len > 0)
 			kde_len += security_ie_len;
@@ -5906,28 +5906,28 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 	 */
 	if (sm->security_profile_indication || sm->ap_security_profile_indication) {
 		struct hostapd_data *hapd = sm->wpa_auth->cb_ctx;
-		u8 security_profile_ie[MAX_LEN];
+		u8 security_profile[MAX_LEN];
 		u8 *security_profile_ie_start;
 		u8 *security_profile_ie_end;
-		size_t security_profile_ie_len;
+		size_t security_profile_len;
 
-		security_profile_ie_start = security_profile_ie;
+		security_profile_ie_start = security_profile;
 		security_profile_ie_end = hostapd_eid_security_profile(hapd, security_profile_ie_start);
-		security_profile_ie_len = security_profile_ie_end - security_profile_ie_start;
+		security_profile_len = security_profile_ie_end - security_profile_ie_start;
 
 		wpa_printf(MSG_ERROR,
 			   "UHR: Adding UHR Security KDE to M3 (ie_len=%zu)",
-			   security_profile_ie_len);
-		if (security_profile_ie_len > 0)
+			   security_profile_len);
+		if (security_profile_len > 0)
 			wpa_hexdump(MSG_ERROR, "UHR: UHR Security IE",
-				    security_profile_ie, security_profile_ie_len);
+				    security_profile, security_profile_len);
 
-		if (security_profile_ie_len > 0) {
-			os_memcpy(pos, security_profile_ie, security_profile_ie_len);
-			pos += security_profile_ie_len;
+		if (security_profile_len > 0) {
+			os_memcpy(pos, security_profile, security_profile_len);
+			pos += security_profile_len;
 			wpa_printf(MSG_ERROR,
 				   "UHR: UHR Security KDE added to M3 (kde_data_len=%zu)",
-				   security_profile_ie_len - 2);
+				   security_profile_len - 2);
 		}
 	}
 
