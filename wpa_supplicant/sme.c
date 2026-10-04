@@ -929,6 +929,12 @@ static int wpas_eppke_initialize(struct wpa_supplicant *wpa_s,
 		u8 sp_elem[10];
 		int sp_len;
 
+		if (wpa_bss_get_ie_ext(bss, WLAN_EID_EXT_SECURITY_PROFILE)) {
+			wpa_printf(MSG_INFO,
+				   "Both STA and AP enables security profiles, but no matching security profile - do not try to connect with this AP");
+			goto fail;
+		}
+
 		sp_len = security_profile_build_empty(sp_elem, sizeof(sp_elem));
 		if (sp_len > 0 &&
 		    pasn_set_security_profile(pasn, sp_elem, sp_len) == 0)
@@ -3678,6 +3684,11 @@ mscs_fail:
 		   sizeof(wpa_s->sme.assoc_req_ie) - wpa_s->sme.assoc_req_ie_len >= 5) {
 		u8 sp_elem[10];
 		int sp_len;
+
+		if (wpa_bss_get_ie_ext(wpa_s->current_bss,
+				       WLAN_EID_EXT_SECURITY_PROFILE)) {
+			wpa_printf(MSG_ERROR, "DEBUG SME: Found SP IE in AP beacon, will be matched by RSN state machine");
+		}
 
 		sp_len = security_profile_build_empty(sp_elem, sizeof(sp_elem));
 		if (sp_len > 0) {
