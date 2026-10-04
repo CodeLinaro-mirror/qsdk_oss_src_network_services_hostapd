@@ -712,6 +712,9 @@ struct wpabuf * wpas_pasn_build_auth_1(struct pasn_data *pasn,
 
 	wpa_pasn_add_extra_ies(buf, pasn->extra_ies, pasn->extra_ies_len);
 
+	if (pasn->security_profile)
+		wpabuf_put_buf(buf, pasn->security_profile);
+
 	wpas_pasn_add_mle(pasn, buf);
 
 	if (full_hdr) {
@@ -938,6 +941,9 @@ void wpa_pasn_reset(struct pasn_data *pasn)
 		os_free((u8 *) pasn->extra_ies);
 		pasn->extra_ies = NULL;
 	}
+
+	wpabuf_free(pasn->security_profile);
+	pasn->security_profile = NULL;
 
 	wpabuf_free(pasn->frame);
 	pasn->frame = NULL;
