@@ -919,13 +919,13 @@
 /* byte 1 (out of 5) */
 #define WLAN_RRM_CAPS_LINK_MEASUREMENT BIT(0)
 #define WLAN_RRM_CAPS_NEIGHBOR_REPORT BIT(1)
-#define WLAN_RRM_CAPS_CHANNEL_LOAD BIT(2)
 #define WLAN_RRM_CAPS_BEACON_REPORT_PASSIVE BIT(4)
 #define WLAN_RRM_CAPS_BEACON_REPORT_ACTIVE BIT(5)
 #define WLAN_RRM_CAPS_BEACON_REPORT_TABLE BIT(6)
 /* byte 2 (out of 5) */
-/* IEEE Std 802.11-2020, Table 9-157: byte 1, bit 1 = Noise Histogram */
-#define WLAN_RRM_CAPS_NOISE_HISTOGRAM BIT(1)
+/* IEEE Std 802.11-2020, Table 9-179: octet 2, bit 1 = Channel Load, bit 2 = Noise Histogram */
+#define WLAN_RRM_CAPS_CHANNEL_LOAD BIT(1)
+#define WLAN_RRM_CAPS_NOISE_HISTOGRAM BIT(2)
 #define WLAN_RRM_CAPS_LCI_MEASUREMENT BIT(4)
 /* byte 5 (out of 5) */
 #define WLAN_RRM_CAPS_FTM_RANGE_REPORT BIT(2)

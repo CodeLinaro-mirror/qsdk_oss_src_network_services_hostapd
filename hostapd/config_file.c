@@ -5526,7 +5526,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				WLAN_RRM_CAPS_NEIGHBOR_REPORT;
 	} else if (os_strcmp(buf, "rrm_channel_load") == 0) {
 		if (atoi(pos))
-			bss->radio_measurements[0] |=
+			bss->radio_measurements[1] |=
 				WLAN_RRM_CAPS_CHANNEL_LOAD;
 	} else if (os_strcmp(buf, "rrm_noise_histogram") == 0) {
 		if (atoi(pos))

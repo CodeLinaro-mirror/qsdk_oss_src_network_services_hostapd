@@ -1009,14 +1009,6 @@ static void hostapd_handle_noise_histogram_report(struct hostapd_data *hapd,
 	s8 anpi;
 	int i;
 
-	if (!hapd->noise_hist_req_active ||
-	    hapd->noise_hist_req_token != token) {
-		wpa_printf(MSG_DEBUG,
-			   "RRM: Unexpected Noise Histogram report, token %u",
-			   token);
-		return;
-	}
-
 	hapd->noise_hist_req_active = 0;
 	eloop_cancel_timeout(hostapd_noise_hist_rep_timeout_handler, hapd,
 			     NULL);
@@ -1027,8 +1019,9 @@ static void hostapd_handle_noise_histogram_report(struct hostapd_data *hapd,
 	 * Report body: op_class(1) chan(1) start_time(8) duration(2)
 	 * antenna_id(1) anpi(1) ipi[0..7](8) = 22 bytes;
 	 * total with header = 3+22 = 25.
+	 * Rejection responses may be only 3 bytes.
 	 */
-	if (len < 3 + 22) {
+	if (len < 3) {
 		wpa_printf(MSG_DEBUG,
 			   "RRM: Noise Histogram report too short (len=%zu)",
 			   len);
@@ -1041,6 +1034,13 @@ static void hostapd_handle_noise_histogram_report(struct hostapd_data *hapd,
 			   "RRM: Noise Histogram report refused/incapable from "
 			   MACSTR " mode=0x%02x",
 			   MAC2STR(addr), rep_mode);
+		return;
+	}
+
+	if (len < 3 + 22) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Noise Histogram report too short for full report (len=%zu)",
+			   len);
 		return;
 	}
 
@@ -1087,14 +1087,6 @@ static void hostapd_handle_channel_load_report(struct hostapd_data *hapd,
 {
 	u8 channel_load;
 
-	if (!hapd->chan_load_req_active ||
-	    hapd->chan_load_req_token != token) {
-		wpa_printf(MSG_DEBUG,
-			   "RRM: Unexpected Channel Load report, token %u",
-			   token);
-		return;
-	}
-
 	hapd->chan_load_req_active = 0;
 	eloop_cancel_timeout(hostapd_chan_load_rep_timeout_handler, hapd, NULL);
 
@@ -1103,8 +1095,9 @@ static void hostapd_handle_channel_load_report(struct hostapd_data *hapd,
 	 * pos[0]=token, pos[1]=mode, pos[2]=type, pos[3..]=report body.
 	 * Report body: op_class(1) chan(1) start_time(8) duration(2)
 	 * channel_load(1) = 13 bytes; total with header = 3+13 = 16.
+	 * Rejection responses may be only 3 bytes.
 	 */
-	if (len < 3 + 13) {
+	if (len < 3) {
 		wpa_printf(MSG_DEBUG,
 			   "RRM: Channel Load report too short (len=%zu)",
 			   len);
@@ -1117,6 +1110,13 @@ static void hostapd_handle_channel_load_report(struct hostapd_data *hapd,
 			   "RRM: Channel Load report refused/incapable from "
 			   MACSTR " mode=0x%02x",
 			   MAC2STR(addr), rep_mode);
+		return;
+	}
+
+	if (len < 3 + 13) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Channel Load report too short for full report (len=%zu)",
+			   len);
 		return;
 	}
 
@@ -1135,7 +1135,8 @@ int hostapd_send_channel_load_req(struct hostapd_data *hapd, const u8 *addr,
 				  u16 random_interval, u16 duration)
 {
 	struct wpabuf *buf;
-	struct sta_info *sta;
+	struct sta_info *sta = ap_get_sta(hapd, addr);
+	struct hostapd_data *link_hapd = hapd;
 	int ret;
 
 	wpa_printf(MSG_DEBUG,
@@ -1143,7 +1144,28 @@ int hostapd_send_channel_load_req(struct hostapd_data *hapd, const u8 *addr,
 		   " op_class=%u channel=%u rand_interval=%u duration=%u",
 		   MAC2STR(addr), op_class, channel, random_interval, duration);
 
-	sta = ap_get_sta(hapd, addr);
+	if (!sta) {
+		if (hapd->mld)
+			sta = ap_get_link_sta(hapd, addr);
+#ifdef CONFIG_IEEE80211BE
+		/* In MLO, sta_info may be on a partner link hapd.
+		 * Walk all MLD links to find the STA and track its hapd. */
+		if (!sta && hapd->mld) {
+			struct hostapd_data *lhapd;
+
+			for_each_mld_link(lhapd, hapd) {
+				sta = ap_get_sta(lhapd, addr);
+				if (!sta)
+					sta = ap_get_link_sta(lhapd, addr);
+				if (sta) {
+					link_hapd = lhapd;
+					break;
+				}
+			}
+		}
+#endif /* CONFIG_IEEE80211BE */
+	}
+
 	if (!sta || !(sta->flags & WLAN_STA_AUTHORIZED)) {
 		wpa_printf(MSG_INFO,
 			   "RRM: Channel Load request: " MACSTR
@@ -1151,7 +1173,7 @@ int hostapd_send_channel_load_req(struct hostapd_data *hapd, const u8 *addr,
 		return -1;
 	}
 
-	if (!(sta->rrm_enabled_capa[0] & WLAN_RRM_CAPS_CHANNEL_LOAD)) {
+	if (!(sta->rrm_enabled_capa[1] & WLAN_RRM_CAPS_CHANNEL_LOAD)) {
 		wpa_printf(MSG_INFO,
 			   "RRM: Channel Load request: " MACSTR
 			   " does not support Channel Load measurement",
@@ -1159,12 +1181,12 @@ int hostapd_send_channel_load_req(struct hostapd_data *hapd, const u8 *addr,
 		return -1;
 	}
 
-	if (hapd->chan_load_req_active) {
+	if (link_hapd->chan_load_req_active) {
 		wpa_printf(MSG_DEBUG,
 			   "RRM: Channel Load request already in progress - overriding");
-		hapd->chan_load_req_active = 0;
+		link_hapd->chan_load_req_active = 0;
 		eloop_cancel_timeout(hostapd_chan_load_rep_timeout_handler,
-				     hapd, NULL);
+				     link_hapd, NULL);
 	}
 
 	/*
@@ -1177,14 +1199,14 @@ int hostapd_send_channel_load_req(struct hostapd_data *hapd, const u8 *addr,
 	if (!buf)
 		return -1;
 
-	hapd->chan_load_req_token++;
-	if (!hapd->chan_load_req_token)
-		hapd->chan_load_req_token++;
+	link_hapd->chan_load_req_token++;
+	if (!link_hapd->chan_load_req_token)
+		link_hapd->chan_load_req_token++;
 
 	/* IEEE Std 802.11-2020, 9.6.6.2 - Radio Measurement Request frame */
 	wpabuf_put_u8(buf, WLAN_ACTION_RADIO_MEASUREMENT);
 	wpabuf_put_u8(buf, WLAN_RRM_RADIO_MEASUREMENT_REQUEST);
-	wpabuf_put_u8(buf, hapd->chan_load_req_token); /* Dialog Token */
+	wpabuf_put_u8(buf, link_hapd->chan_load_req_token); /* Dialog Token */
 	wpabuf_put_le16(buf, 0); /* Number of Repetitions */
 
 	/* IEEE Std 802.11-2020, 9.4.2.19 - Measurement Request element */
@@ -1200,19 +1222,25 @@ int hostapd_send_channel_load_req(struct hostapd_data *hapd, const u8 *addr,
 	wpabuf_put_le16(buf, random_interval);
 	wpabuf_put_le16(buf, duration);
 
-	ret = hostapd_drv_send_action(hapd, hapd->iface->freq, 0, addr,
-				      wpabuf_head(buf), wpabuf_len(buf));
+	ret = hostapd_drv_send_action(link_hapd, link_hapd->iface->freq, 0,
+				      sta->addr, wpabuf_head(buf),
+				      wpabuf_len(buf));
 	wpabuf_free(buf);
 	if (ret)
 		return ret;
 
-	hapd->chan_load_req_active = 1;
+	link_hapd->chan_load_req_active = 1;
 
-	eloop_register_timeout(HOSTAPD_RRM_REQUEST_TIMEOUT, 0,
-			       hostapd_chan_load_rep_timeout_handler, hapd,
+	/* Allow the requested measurement window plus channel-switch margin. */
+	link_hapd->chan_load_req_rand_interval = random_interval;
+	link_hapd->chan_load_req_duration = duration;
+	eloop_register_timeout(MAX(HOSTAPD_RRM_REQUEST_TIMEOUT,
+				  3 + (((u32) random_interval + duration) *
+				      1024 + 999) / 1000), 0,
+			       hostapd_chan_load_rep_timeout_handler, link_hapd,
 			       NULL);
 
-	return hapd->chan_load_req_token;
+	return link_hapd->chan_load_req_token;
 }
 
 
@@ -1221,7 +1249,8 @@ int hostapd_send_noise_histogram_req(struct hostapd_data *hapd, const u8 *addr,
 				     u16 random_interval, u16 duration)
 {
 	struct wpabuf *buf;
-	struct sta_info *sta;
+	struct sta_info *sta = ap_get_sta(hapd, addr);
+	struct hostapd_data *link_hapd = hapd;
 	int ret;
 
 	wpa_printf(MSG_DEBUG,
@@ -1229,7 +1258,28 @@ int hostapd_send_noise_histogram_req(struct hostapd_data *hapd, const u8 *addr,
 		   " op_class=%u channel=%u rand_interval=%u duration=%u",
 		   MAC2STR(addr), op_class, channel, random_interval, duration);
 
-	sta = ap_get_sta(hapd, addr);
+	if (!sta) {
+		if (hapd->mld)
+			sta = ap_get_link_sta(hapd, addr);
+#ifdef CONFIG_IEEE80211BE
+		/* In MLO, sta_info may be on a partner link hapd.
+		 * Walk all MLD links to find the STA and track its hapd. */
+		if (!sta && hapd->mld) {
+			struct hostapd_data *lhapd;
+
+			for_each_mld_link(lhapd, hapd) {
+				sta = ap_get_sta(lhapd, addr);
+				if (!sta)
+					sta = ap_get_link_sta(lhapd, addr);
+				if (sta) {
+					link_hapd = lhapd;
+					break;
+				}
+			}
+		}
+#endif /* CONFIG_IEEE80211BE */
+	}
+
 	if (!sta || !(sta->flags & WLAN_STA_AUTHORIZED)) {
 		wpa_printf(MSG_INFO,
 			   "RRM: Noise Histogram request: " MACSTR
@@ -1245,12 +1295,12 @@ int hostapd_send_noise_histogram_req(struct hostapd_data *hapd, const u8 *addr,
 		return -1;
 	}
 
-	if (hapd->noise_hist_req_active) {
+	if (link_hapd->noise_hist_req_active) {
 		wpa_printf(MSG_DEBUG,
 			   "RRM: Noise Histogram request already in progress - overriding");
-		hapd->noise_hist_req_active = 0;
+		link_hapd->noise_hist_req_active = 0;
 		eloop_cancel_timeout(hostapd_noise_hist_rep_timeout_handler,
-				     hapd, NULL);
+				     link_hapd, NULL);
 	}
 
 	/*
@@ -1263,20 +1313,20 @@ int hostapd_send_noise_histogram_req(struct hostapd_data *hapd, const u8 *addr,
 	if (!buf)
 		return -1;
 
-	hapd->noise_hist_req_token++;
-	if (!hapd->noise_hist_req_token)
-		hapd->noise_hist_req_token++;
+	link_hapd->noise_hist_req_token++;
+	if (!link_hapd->noise_hist_req_token)
+		link_hapd->noise_hist_req_token++;
 
 	/* IEEE Std 802.11-2020, 9.6.6.2 - Radio Measurement Request frame */
 	wpabuf_put_u8(buf, WLAN_ACTION_RADIO_MEASUREMENT);
 	wpabuf_put_u8(buf, WLAN_RRM_RADIO_MEASUREMENT_REQUEST);
-	wpabuf_put_u8(buf, hapd->noise_hist_req_token); /* Dialog Token */
+	wpabuf_put_u8(buf, link_hapd->noise_hist_req_token); /* Dialog Token */
 	wpabuf_put_le16(buf, 0); /* Number of Repetitions */
 
 	/* IEEE Std 802.11-2020, 9.4.2.19 - Measurement Request element */
 	wpabuf_put_u8(buf, WLAN_EID_MEASURE_REQUEST);
 	wpabuf_put_u8(buf, 3 + 6); /* len: token+mode+type + body */
-	wpabuf_put_u8(buf, hapd->noise_hist_req_token); /* Measurement Token */
+	wpabuf_put_u8(buf, link_hapd->noise_hist_req_token); /* Measurement Token */
 	wpabuf_put_u8(buf, 0); /* Measurement Request Mode */
 	wpabuf_put_u8(buf, MEASURE_TYPE_NOISE_HIST); /* Measurement Type */
 
@@ -1286,19 +1336,20 @@ int hostapd_send_noise_histogram_req(struct hostapd_data *hapd, const u8 *addr,
 	wpabuf_put_le16(buf, random_interval);
 	wpabuf_put_le16(buf, duration);
 
-	ret = hostapd_drv_send_action(hapd, hapd->iface->freq, 0, addr,
-				      wpabuf_head(buf), wpabuf_len(buf));
+	ret = hostapd_drv_send_action(link_hapd, link_hapd->iface->freq, 0,
+				      sta->addr, wpabuf_head(buf),
+				      wpabuf_len(buf));
 	wpabuf_free(buf);
 	if (ret)
 		return ret;
 
-	hapd->noise_hist_req_active = 1;
+	link_hapd->noise_hist_req_active = 1;
 
 	eloop_register_timeout(HOSTAPD_RRM_REQUEST_TIMEOUT, 0,
-			       hostapd_noise_hist_rep_timeout_handler, hapd,
+			       hostapd_noise_hist_rep_timeout_handler, link_hapd,
 			       NULL);
 
-	return hapd->noise_hist_req_token;
+	return link_hapd->noise_hist_req_token;
 }
 
 

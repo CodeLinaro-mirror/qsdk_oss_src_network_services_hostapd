@@ -6942,6 +6942,9 @@ static void wpas_event_rx_mgmt_action(struct wpa_supplicant *wpa_s,
 #ifndef CONFIG_NO_RRM
 	if (category == WLAN_ACTION_RADIO_MEASUREMENT &&
 	    payload[0] == WLAN_RRM_RADIO_MEASUREMENT_REQUEST) {
+		/* In MLO, store the link frequency where request was received.
+		 * For non-MLO or when frequency is unknown, fall back to assoc_freq. */
+		wpa_s->rrm.req_freq = freq ? freq : wpa_s->assoc_freq;
 		wpas_rrm_handle_radio_measurement_request(wpa_s, mgmt->sa,
 							  mgmt->da,
 							  payload + 1,
@@ -9081,6 +9084,8 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 				      data->rx_probe_req.ssi_signal);
 		break;
 	case EVENT_REMAIN_ON_CHANNEL:
+		wpas_rrm_handle_remain_on_channel(
+			wpa_s, data->remain_on_channel.freq);
 #ifdef CONFIG_OFFCHANNEL
 		offchannel_remain_on_channel_cb(
 			wpa_s, data->remain_on_channel.freq,
@@ -9101,6 +9106,8 @@ void supplicant_event(void *ctx, enum wpa_event_type event,
 #endif /* CONFIG_NAN_USD */
 		break;
 	case EVENT_CANCEL_REMAIN_ON_CHANNEL:
+		wpas_rrm_handle_cancel_remain_on_channel(
+			wpa_s, data->remain_on_channel.freq);
 #ifdef CONFIG_OFFCHANNEL
 		offchannel_cancel_remain_on_channel_cb(
 			wpa_s, data->remain_on_channel.freq);
