@@ -1570,6 +1570,10 @@ enum qca_radiotap_vendor_ids {
  *
  *	The attributes used with this command are defined in
  *	enum qca_wlan_vendor_attr_crypto_test.
+ *
+ * @QCA_NL80211_VENDOR_SUBCMD_BAND_CHANNEL_FILTER: This vendor subcommand is used to
+ * 	enable/disable sub-bands from the supported bands on the radio. The
+ * 	attributes are defined in qca_wlan_vendor_attr_band_channel_filter.
  */
 enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_UNSPEC = 0,
@@ -1890,6 +1894,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_CRYPTO_TEST = 549,
 	QCA_NL80211_VENDOR_SUBCMD_GET_IPA_DEBUG_INFO = 550,
 	QCA_NL80211_VENDOR_SUBCMD_WNM = 551,
+	QCA_NL80211_VENDOR_SUBCMD_BAND_CHANNEL_FILTER = 552,
 };
 
 /* Compatibility defines for previously used subcmd names.
@@ -24839,6 +24844,7 @@ enum qca_nl80211_vendor_events {
 	QCA_NL80211_VENDOR_SUBCMD_PASN_EVENT_INDEX = 27,
 	QCA_NL80211_VENDOR_SUBCMD_DRIVER_DISCONNECT_REASON_INDEX = 28,
 	QCA_NL80211_VENDOR_SUBCMD_CRYPTO_TEST_EVENT_INDEX = 30,
+	QCA_NL80211_VENDOR_SUBCMD_BAND_CHANNEL_FILTER_INDEX = 31,
 };
 
 /**
@@ -28450,25 +28456,23 @@ enum qca_wlan_vendor_attr_reg_params_update {
  *
  * @QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INDEX: u32 attribute.
  * Value is one of enum qca_wlan_vendor_rf_path_mode.
- * SET: desired RF path configuration for all eligible 5G non-6GHz radios.
- * GET (attribute absent in command): driver returns the current active
- *   mode via this attribute in the reply.
- * EVENT: carried in the completion vendor event after a SET attempt,
- *   regardless of success or failure. Indicates the RF path that was
- *   requested. Check QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_STATUS for outcome.
+ * SET: desired RF path for the radio in RADIO_IDX (required).
+ * GET (attribute absent): driver returns the current mode for RADIO_IDX.
+ * EVENT: RF path that was requested; check STATUS for outcome.
  *
  * @QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_STATUS: u32 attribute.
- * Carried in the completion vendor event after a SET attempt.
- * 0 = switch completed successfully.
- * Non-zero = switch failed; the RF path remains unchanged.
- * Userspace should check this attribute to determine whether the
- * requested RF path switch completed successfully before updating
- * any local state.
+ * Carried in the completion vendor event. 0 = success, non-zero = failed
+ * (RF path unchanged).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_RADIO_IDX: u32 attribute, required for
+ *   SET/GET, always present in GET responses and completion events.
+ *   0-based radio index.
  */
 enum qca_wlan_vendor_attr_rf_path_mode {
 	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INVALID = 0,
-	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INDEX   = 1,
-	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_STATUS  = 2,
+	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INDEX = 1,
+	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_STATUS = 2,
+	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_RADIO_IDX = 3,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_AFTER_LAST,
@@ -29736,6 +29740,64 @@ enum qca_wlan_vendor_attr_crypto_test {
         QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_AFTER_LAST,
         QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_MAX =
                 QCA_WLAN_VENDOR_ATTR_CRYPTO_TEST_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_band_filter_mask - band bitmask values for
+ * %QCA_WLAN_VENDOR_ATTR_BAND_CHANNEL_FILTER_ENABLED_MASK.
+ *
+ * @QCA_WLAN_VENDOR_BAND_2GHZ:      2.4 GHz band (channels 1-14).
+ * @QCA_WLAN_VENDOR_BAND_5GHZ_LOW:  5 GHz low sub-band (ch 36-64, up to 5330 MHz).
+ * @QCA_WLAN_VENDOR_BAND_5GHZ_HIGH: 5 GHz high sub-band (ch 100-177, from 5490 MHz).
+ * @QCA_WLAN_VENDOR_BAND_6GHZ_LOW:  6 GHz low sub-band (5925-6525 MHz).
+ * @QCA_WLAN_VENDOR_BAND_6GHZ_HIGH: 6 GHz high sub-band (6525-7125 MHz).
+ * @QCA_WLAN_VENDOR_BAND_NONE:      Must be passed alone; disables every band
+ *   on the radio. Distinct from a mask of 0, which clears the filter.
+ *
+ * Bits not supported by a given radio are ignored, as long as at least one
+ * bit applies to a band the radio supports (NONE is exempt from this).
+ * Pass 0 to clear the filter and restore full radio capabilities.
+ */
+enum qca_wlan_vendor_band_filter_mask {
+	QCA_WLAN_VENDOR_BAND_2GHZ = BIT(0),
+	QCA_WLAN_VENDOR_BAND_5GHZ_LOW = BIT(1),
+	QCA_WLAN_VENDOR_BAND_5GHZ_HIGH = BIT(2),
+	QCA_WLAN_VENDOR_BAND_6GHZ_LOW = BIT(3),
+	QCA_WLAN_VENDOR_BAND_6GHZ_HIGH = BIT(4),
+	QCA_WLAN_VENDOR_BAND_NONE = BIT(31),
+};
+
+/**
+ * enum qca_wlan_vendor_attr_band_channel_filter - Vendor attributes for
+ * %QCA_NL80211_VENDOR_SUBCMD_BAND_CHANNEL_FILTER.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_BAND_CHANNEL_FILTER_ENABLED_MASK: u32 attribute.
+ *   Bitmask of enum qca_wlan_vendor_band_filter_mask bits indicating which
+ *   bands the target radio should expose.  0 = clear filter (all bands).
+ *   Required for SET; included in GET responses and the event.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_BAND_CHANNEL_FILTER_RADIO_IDX: u32 attribute,
+ *   required for SET/GET, always present in GET responses and events.
+ *   0-based radio index; no broadcast-to-all-radios mode.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_BAND_CHANNEL_FILTER_NUM_CHANNELS: u32 attribute.
+ *   Event only. Total channels enabled on the radio after the filter, so
+ *   userspace knows the channel list changed without re-enumerating.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_BAND_CHANNEL_FILTER_STATUS: u32 attribute.
+ *   Event only. 0 = success, non-zero = lower layer failures to update
+ *   the new band setting.
+ */
+enum qca_wlan_vendor_attr_band_channel_filter {
+	QCA_WLAN_VENDOR_ATTR_BAND_CHANNEL_FILTER_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_BAND_CHANNEL_FILTER_ENABLED_MASK = 1,
+	QCA_WLAN_VENDOR_ATTR_BAND_CHANNEL_FILTER_RADIO_IDX = 2,
+	QCA_WLAN_VENDOR_ATTR_BAND_CHANNEL_FILTER_NUM_CHANNELS = 3,
+	QCA_WLAN_VENDOR_ATTR_BAND_CHANNEL_FILTER_STATUS = 4,
+
+	QCA_WLAN_VENDOR_ATTR_BAND_CHANNEL_FILTER_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_BAND_CHANNEL_FILTER_MAX =
+		QCA_WLAN_VENDOR_ATTR_BAND_CHANNEL_FILTER_AFTER_LAST - 1,
 };
 
 #endif /* QCA_VENDOR_H */
