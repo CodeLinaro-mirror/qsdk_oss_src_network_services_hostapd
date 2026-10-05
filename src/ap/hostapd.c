@@ -1843,7 +1843,6 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
 	iface->cac_type = 0;
 #ifdef CONFIG_QCN_EXTN
 	iface->iface_extn.cac_abort = 0;
-	iface->bootup_cac_in_progress = 0;
 #endif
 	ap_list_deinit(iface);
 	sta_track_deinit(iface);
@@ -5897,7 +5896,7 @@ dfs_offload:
 	 * performing CAC. The transition to ENABLED happens in
 	 * hostapd_bootup_cac_complete_extn() once CAC finishes.
 	 */
-	if (!iface->bootup_cac_in_progress ||
+	if (!iface->cac_started ||
 	    hostapd_is_dfs_required(iface) <= 0) {
 #endif /* CONFIG_QCN_EXTN */
 	hostapd_set_state(iface, HAPD_IFACE_ENABLED);
@@ -5960,7 +5959,8 @@ fail:
 #endif /* CONFIG_QCN_EXTN */
 	hostapd_ubus_free_iface(iface);
 #ifdef CONFIG_QCN_EXTN
-	iface->bootup_cac_in_progress = 0;
+	iface->cac_started = 0;
+	iface->cac_type = 0;
 #endif /* CONFIG_QCN_EXTN */
 
 	if (iface->is_no_ir) {
@@ -8046,7 +8046,6 @@ int hostapd_disable_bss(struct hostapd_data *hapd, int tbtt, const char *event)
 		hapd->iface->cac_started = 0;
 #ifdef CONFIG_QCN_EXTN
 		hapd->iface->iface_extn.cac_abort = 0;
-		hapd->iface->bootup_cac_in_progress = 0;
 #endif
 		os_memset(&hapd->iface->csa_settings, 0, sizeof(struct csa_settings));
 		os_memset(&hapd->iface->radar_background, 0,
@@ -8199,7 +8198,7 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 	if (hapd->started) {
 #ifdef CONFIG_QCN_EXTN
 		if (hostapd_bootup_cac_enabled_extn(hapd_iface) &&
-		    hapd_iface->bootup_cac_in_progress) {
+		    hapd_iface->cac_started) {
 			wpa_printf(MSG_DEBUG,
 				   "BSS %s already staged during CAC",
 				   hapd->conf->iface);
@@ -8233,7 +8232,7 @@ int hostapd_enable_bss(struct hostapd_data *hapd)
 	/* Enable flow: HT scan -> CAC/DFS -> setup_bss. */
 #ifdef CONFIG_QCN_EXTN
 	if (hostapd_bootup_cac_enabled_extn(hapd_iface) &&
-	    hapd_iface->bootup_cac_in_progress) {
+	    hapd_iface->cac_started) {
 		wpa_printf(MSG_DEBUG,
 			   "CAC in progress: setting up BSS %s",
 			   hapd->conf->iface);
@@ -8312,7 +8311,7 @@ setup_bss:
 	hapd->reenable = REENABLE_NONE;
 	hapd->disabled = 0;
 #ifdef CONFIG_QCN_EXTN
-	if (!hapd_iface->bootup_cac_in_progress)
+	if (!hapd_iface->cac_started)
 		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
 #else
 	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
