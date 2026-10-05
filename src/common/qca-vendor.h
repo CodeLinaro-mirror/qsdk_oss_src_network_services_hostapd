@@ -1862,6 +1862,8 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_MAPC_COTDMA_TXOP_POLICY = 543,
 	QCA_NL80211_VENDOR_SUBCMD_MAPC_COTDMA_E2E_CONFIG = 544,
 	QCA_NL80211_VENDOR_SUBCMD_MAPC_PEER_GET_PARAMS = 545,
+	/* WNM TIM Broadcast per-STA configuration (IEEE 802.11-2024 §11.21.10) */
+	QCA_NL80211_VENDOR_SUBCMD_WNM_TIM_BCAST = 548,
 	QCA_NL80211_VENDOR_SUBCMD_EXTAP_SETUP = 546,
 	QCA_NL80211_VENDOR_SUBCMD_EXTAP_INFO  = 547,
 };
@@ -24633,6 +24635,35 @@ enum qca_wlan_vendor_attr_mapc_cotdma_e2e_config {
 	QCA_WLAN_VENDOR_ATTR_MAPC_COTDMA_E2E_CONFIG_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_MAPC_COTDMA_E2E_CONFIG_MAX =
 	QCA_WLAN_VENDOR_ATTR_MAPC_COTDMA_E2E_CONFIG_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_wnm_tim_bcast - Attributes for
+ * QCA_NL80211_VENDOR_SUBCMD_WNM_TIM_BCAST.
+ *
+ * Configures per-STA TIM Broadcast parameters in the driver.
+ * The peer MAC address is carried in NL80211_ATTR_MAC.
+ */
+enum qca_wlan_vendor_attr_wnm_tim_bcast {
+	QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_INVALID = 0,
+	/* u8 - negotiated TIM Broadcast interval (DTIM multiplier); 0 = disable */
+	QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_INTERVAL = 1,
+	/* u8 - negotiated offset within the interval */
+	QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_OFFSET = 2,
+	/* u8 - AP high-rate DTIM multiplier */
+	QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_HIGH_RATE = 3,
+	/* u8 - AP low-rate DTIM multiplier */
+	QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_LOW_RATE = 4,
+	/* u8 - 1 to enable TIM Broadcast for this STA, 0 to disable */
+	QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_ENABLE = 5,
+
+	/* u8 array (ETH_ALEN) - peer MAC address */
+	QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_PEER_MAC = 6,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_MAX =
+		QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_AFTER_LAST - 1,
 };
 
 /* ---- Appended from vendor.h ---- */

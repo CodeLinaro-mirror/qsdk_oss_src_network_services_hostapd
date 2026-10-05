@@ -217,6 +217,13 @@ int hostapd_drv_notify_iface_state(struct hostapd_data *hapd, u32 bss_mode);
 int hostapd_drv_wnm_oper(struct hostapd_data *hapd,
 			 enum wnm_oper oper, const u8 *peer,
 			 u8 *buf, u16 *buf_len);
+int hostapd_drv_wnm_tim_bcast_set(struct hostapd_data *hapd,
+				   const u8 *peer,
+				   u8 interval, u8 offset,
+				   u8 high_rate, u8 low_rate,
+				   int enable);
+int hostapd_drv_wnm_tim_bcast_ap_enable(struct hostapd_data *hapd,
+					 int enable);
 
 int hostapd_drv_set_qos_map(struct hostapd_data *hapd, const u8 *qos_map_set,
 			    u8 qos_map_set_len);

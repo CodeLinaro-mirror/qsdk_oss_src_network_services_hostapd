@@ -1110,6 +1110,170 @@ static void ieee802_11_rx_wnm_event_report(struct hostapd_data *hapd,
 }
 
 
+static int ieee802_11_send_wnm_tim_bcast_resp(struct hostapd_data *hapd,
+					       const u8 *addr,
+					       u8 dialog_token,
+					       u8 status,
+					       u8 interval,
+					       u8 offset,
+					       u8 high_rate,
+					       u8 low_rate)
+{
+	struct ieee80211_mgmt *mgmt;
+	struct sta_info *sta;
+	const u8 *own_addr;
+	u8 *pos;
+	int res;
+	size_t buf_len = IEEE80211_HDRLEN + 3 + 7;
+
+	sta = ap_get_sta(hapd, addr);
+	if (!sta)
+		return -1;
+
+	mgmt = os_zalloc(buf_len);
+	if (!mgmt)
+		return -1;
+
+	own_addr = wnm_ap_get_own_addr(hapd, sta);
+
+	os_memcpy(mgmt->da, addr, ETH_ALEN);
+	os_memcpy(mgmt->sa, own_addr, ETH_ALEN);
+	os_memcpy(mgmt->bssid, own_addr, ETH_ALEN);
+	mgmt->frame_control = IEEE80211_FC(WLAN_FC_TYPE_MGMT,
+					   WLAN_FC_STYPE_ACTION);
+	mgmt->u.action.category = WLAN_ACTION_WNM;
+	pos = (u8 *) &mgmt->u.action.u.public_action.action;
+	*pos++ = WNM_TIM_BROADCAST_RESP;
+	*pos++ = dialog_token;
+	*pos++ = WLAN_EID_TIM_BROADCAST_RESPONSE;
+	*pos++ = 5;
+	*pos++ = status;
+	*pos++ = interval;
+	*pos++ = offset;
+	*pos++ = high_rate;
+	*pos++ = low_rate;
+
+	res = hostapd_drv_send_action(hapd, hapd->iface->freq, 0,
+				      mgmt->da,
+				      &mgmt->u.action.category,
+				      pos - &mgmt->u.action.category);
+	if (res)
+		wpa_printf(MSG_DEBUG,
+			   "WNM: Failed to send TIM Broadcast Response to "
+			   MACSTR, MAC2STR(addr));
+	else
+		wpa_printf(MSG_DEBUG,
+			   "WNM: Sent TIM Broadcast Response to " MACSTR
+			   " status=%u interval=%u offset=%u",
+			   MAC2STR(addr), status, interval, offset);
+
+	os_free(mgmt);
+	return res;
+}
+
+
+static void ieee802_11_rx_wnm_tim_bcast_req(struct hostapd_data *hapd,
+					     const u8 *addr,
+					     const u8 *frm, int len)
+{
+	const u8 *pos = frm;
+	u8 dialog_token, req_interval = 0;
+	u8 negotiated, offset;
+	struct sta_info *sta;
+
+	if (!hapd->conf->wnm_tim_bcast) {
+		wpa_printf(MSG_DEBUG,
+			   "WNM: TIM Broadcast not enabled, ignoring request from "
+			   MACSTR, MAC2STR(addr));
+		return;
+	}
+
+	if (len < 1)
+		return;
+
+	dialog_token = *pos++;
+	len--;
+
+	while (len >= 2) {
+		u8 eid = *pos++;
+		u8 elen = *pos++;
+		len -= 2;
+		if (len < elen)
+			break;
+		if (eid == WLAN_EID_TIM_BROADCAST_REQUEST && elen >= 1)
+			req_interval = pos[0];
+		pos += elen;
+		len -= elen;
+	}
+
+	sta = ap_get_sta(hapd, addr);
+	if (!sta) {
+		wpa_printf(MSG_DEBUG,
+			   "WNM: TIM Broadcast Request from unknown STA "
+			   MACSTR, MAC2STR(addr));
+		return;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "WNM: TIM Broadcast Request from " MACSTR
+		   " dialog_token=%u req_interval=%u",
+		   MAC2STR(addr), dialog_token, req_interval);
+
+	if (req_interval == 0) {
+		sta->tim_bcast_enabled = 0;
+		sta->tim_bcast_interval = 0;
+		wpa_printf(MSG_DEBUG,
+			   "WNM: TIM Broadcast cancelled by " MACSTR,
+			   MAC2STR(addr));
+		ieee802_11_send_wnm_tim_bcast_resp(hapd, addr, dialog_token,
+						   0, 0, 0, 0, 0);
+		if (hostapd_drv_wnm_tim_bcast_set(hapd, addr, 0, 0, 0, 0, 0))
+			wpa_printf(MSG_DEBUG,
+				   "WNM: Failed to clear TIM Broadcast in driver for "
+				   MACSTR, MAC2STR(addr));
+		return;
+	}
+
+	negotiated = req_interval;
+	if (hapd->conf->wnm_tim_bcast_high_rate &&
+	    negotiated > hapd->conf->wnm_tim_bcast_high_rate)
+		negotiated = hapd->conf->wnm_tim_bcast_high_rate;
+
+	offset = (u8) (sta->aid % negotiated);
+
+	sta->tim_bcast_enabled   = 1;
+	sta->tim_bcast_interval  = negotiated;
+	sta->tim_bcast_offset    = offset;
+	sta->tim_bcast_high_rate = hapd->conf->wnm_tim_bcast_high_rate;
+	sta->tim_bcast_low_rate  = hapd->conf->wnm_tim_bcast_low_rate;
+
+	wpa_printf(MSG_DEBUG,
+		   "WNM: TIM Broadcast negotiated for " MACSTR
+		   " req=%u negotiated=%u offset=%u high_rate=%u low_rate=%u",
+		   MAC2STR(addr), req_interval, negotiated, offset,
+		   sta->tim_bcast_high_rate, sta->tim_bcast_low_rate);
+
+	ieee802_11_send_wnm_tim_bcast_resp(hapd, addr, dialog_token,
+					   0 /* accept */,
+					   negotiated, offset,
+					   sta->tim_bcast_high_rate,
+					   sta->tim_bcast_low_rate);
+
+	if (hostapd_drv_wnm_tim_bcast_set(hapd, addr,
+					   negotiated, offset,
+					   sta->tim_bcast_high_rate,
+					   sta->tim_bcast_low_rate,
+					   1 /* enable */))
+		wpa_printf(MSG_DEBUG,
+			   "WNM: Failed to set TIM Broadcast in driver for "
+			   MACSTR, MAC2STR(addr));
+	else
+		wpa_printf(MSG_DEBUG,
+			   "WNM: TIM Broadcast set in driver for " MACSTR,
+			   MAC2STR(addr));
+}
+
+
 int ieee802_11_rx_wnm_action_ap(struct hostapd_data *hapd,
 				const struct ieee80211_mgmt *mgmt, size_t len)
 {
@@ -1149,6 +1313,10 @@ int ieee802_11_rx_wnm_action_ap(struct hostapd_data *hapd,
 	case WNM_COLLOCATED_INTERFERENCE_REPORT:
 		ieee802_11_rx_wnm_coloc_intf_report(hapd, mgmt->sa, payload,
 						    plen);
+		return 0;
+	case WNM_TIM_BROADCAST_REQ:
+		ieee802_11_rx_wnm_tim_bcast_req(hapd, mgmt->sa, payload,
+					        (int) plen);
 		return 0;
 	}
 

@@ -880,6 +880,11 @@ struct hostapd_bss_config {
 	int wnm_sleep_mode_no_keys;
 	int bss_transition;
 
+	/* WNM TIM Broadcast (IEEE 802.11-2024 §11.21.10) */
+	int wnm_tim_bcast;
+	u8 wnm_tim_bcast_high_rate;
+	u8 wnm_tim_bcast_low_rate;
+
 	/* IEEE 802.11u - Interworking */
 	int interworking;
 	int access_network_type;

@@ -3388,6 +3388,11 @@ static int wpa_cli_cmd_wnm_bss_query(struct wpa_ctrl *ctrl, int argc, char *argv
 	return wpa_cli_cmd(ctrl, "WNM_BSS_QUERY", 1, argc, argv);
 }
 
+static int wpa_cli_cmd_wnm_tim_bcast(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "WNM_TIM_BCAST", 1, argc, argv);
+}
+
 #endif /* CONFIG_WNM */
 
 
@@ -4492,6 +4497,8 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	  "<query reason> [list]"
 	  " [neighbor=<BSSID>,<BSSID information>,<operating class>,<channel number>,<PHY type>[,<hexdump of optional subelements>]"
 	  " = Send BSS Transition Management Query" },
+	{ "wnm_tim_bcast", wpa_cli_cmd_wnm_tim_bcast, NULL, cli_cmd_flag_none,
+	  "interval=<0-255> = Send WNM TIM Broadcast Request (0 = cancel)" },
 #endif /* CONFIG_WNM */
 #ifdef CONFIG_WNM_AP
 	{ "disassoc_imminent", wpa_cli_cmd_disassoc_imminent, NULL, cli_cmd_flag_none,

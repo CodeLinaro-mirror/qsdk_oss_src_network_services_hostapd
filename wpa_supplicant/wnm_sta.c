@@ -2136,6 +2136,111 @@ static void ieee802_11_rx_wnm_coloc_intf_req(struct wpa_supplicant *wpa_s,
 }
 
 
+int ieee802_11_send_wnm_tim_bcast_req(struct wpa_supplicant *wpa_s, u8 interval)
+{
+	struct ieee80211_mgmt *mgmt;
+	u8 *pos;
+	int ret;
+
+	mgmt = os_zalloc(sizeof(*mgmt) + 10);
+	if (!mgmt)
+		return -1;
+
+	os_memcpy(mgmt->da, wpa_s->bssid, ETH_ALEN);
+	os_memcpy(mgmt->sa, wpa_s->own_addr, ETH_ALEN);
+	os_memcpy(mgmt->bssid, wpa_s->bssid, ETH_ALEN);
+	mgmt->frame_control = IEEE80211_FC(WLAN_FC_TYPE_MGMT,
+					   WLAN_FC_STYPE_ACTION);
+	mgmt->u.action.category = WLAN_ACTION_WNM;
+	pos = (u8 *) &mgmt->u.action.u.public_action.action;
+	*pos++ = WNM_TIM_BROADCAST_REQ;
+	*pos++ = wpa_s->tim_bcast_dialog_token =
+		(wpa_s->tim_bcast_dialog_token + 1) & 0x7f;
+	/* TIM Broadcast Request IE (EID 94) */
+	*pos++ = WLAN_EID_TIM_BROADCAST_REQUEST;
+	*pos++ = 1;
+	*pos++ = interval;
+
+	wpa_printf(MSG_DEBUG,
+		   "WNM: Sending TIM Broadcast Request to " MACSTR
+		   " dialog_token=%u interval=%u",
+		   MAC2STR(wpa_s->bssid),
+		   wpa_s->tim_bcast_dialog_token, interval);
+
+	ret = wpa_drv_send_action(wpa_s, wpa_s->assoc_freq, 0,
+				  mgmt->da, mgmt->sa, mgmt->bssid,
+				  &mgmt->u.action.category,
+				  pos - &mgmt->u.action.category, 0);
+	os_free(mgmt);
+	return ret;
+}
+
+
+static void ieee802_11_rx_wnm_tim_bcast_resp(struct wpa_supplicant *wpa_s,
+					      const u8 *pos, size_t len)
+{
+	u8 dialog_token, status, interval, offset, high_rate, low_rate;
+
+	if (len < 2) {
+		wpa_printf(MSG_DEBUG,
+			   "WNM: Too short TIM Broadcast Response");
+		return;
+	}
+
+	dialog_token = *pos++;
+	len--;
+
+	/* Parse TIM Broadcast Response IE (EID 95) */
+	while (len >= 2) {
+		u8 eid = *pos++;
+		u8 elen = *pos++;
+		len -= 2;
+		if (len < elen)
+			break;
+		if (eid == WLAN_EID_TIM_BROADCAST_RESPONSE && elen >= 5) {
+			status    = pos[0];
+			interval  = pos[1];
+			offset    = pos[2];
+			high_rate = pos[3];
+			low_rate  = pos[4];
+
+			wpa_printf(MSG_DEBUG,
+				   "WNM: TIM Broadcast Response from " MACSTR
+				   " dialog_token=%u status=%u interval=%u"
+				   " offset=%u high_rate=%u low_rate=%u",
+				   MAC2STR(wpa_s->bssid), dialog_token,
+				   status, interval, offset,
+				   high_rate, low_rate);
+
+			if (status == 0) {
+				wpa_s->tim_bcast_enabled  = 1;
+				wpa_s->tim_bcast_interval = interval;
+				wpa_s->tim_bcast_offset   = offset;
+				wpa_s->tim_bcast_high_rate = high_rate;
+				wpa_s->tim_bcast_low_rate  = low_rate;
+				wpa_msg(wpa_s, MSG_INFO,
+					"WNM-TIM-BCAST-ACCEPTED interval=%u offset=%u",
+					interval, offset);
+			} else {
+				wpa_s->tim_bcast_enabled = 0;
+				wpa_printf(MSG_DEBUG,
+					   "WNM: TIM Broadcast rejected by AP status=%u",
+					   status);
+				wpa_msg(wpa_s, MSG_INFO,
+					"WNM-TIM-BCAST-REJECTED status=%u",
+					status);
+			}
+			return;
+		}
+		pos += elen;
+		len -= elen;
+	}
+
+	wpa_printf(MSG_DEBUG,
+		   "WNM: TIM Broadcast Response IE not found");
+}
+
+
 void ieee802_11_rx_wnm_action(struct wpa_supplicant *wpa_s,
 			      const struct ieee80211_mgmt *mgmt, size_t len)
 {
@@ -2176,6 +2281,9 @@ void ieee802_11_rx_wnm_action(struct wpa_supplicant *wpa_s,
 	case WNM_COLLOCATED_INTERFERENCE_REQ:
 		ieee802_11_rx_wnm_coloc_intf_req(wpa_s, mgmt->sa, pos,
 						 end - pos);
+		break;
+	case WNM_TIM_BROADCAST_RESP:
+		ieee802_11_rx_wnm_tim_bcast_resp(wpa_s, pos, end - pos);
 		break;
 	default:
 		wpa_printf(MSG_ERROR, "WNM: Unknown request");

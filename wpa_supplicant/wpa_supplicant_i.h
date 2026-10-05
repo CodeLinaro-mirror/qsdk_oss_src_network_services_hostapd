@@ -1548,6 +1548,15 @@ struct wpa_supplicant {
 	unsigned int oci_freq_override_ft_assoc;
 	unsigned int oci_freq_override_fils_assoc;
 	unsigned int oci_freq_override_wnm_sleep;
+
+	/* WNM TIM Broadcast agreement (IEEE 802.11-2024 §11.21.10) */
+	int tim_bcast_enabled;
+	u8 tim_bcast_interval;
+	u8 tim_bcast_offset;
+	u8 tim_bcast_high_rate;
+	u8 tim_bcast_low_rate;
+	u8 tim_bcast_dialog_token;
+
 	unsigned int disable_eapol_g2_tx;
 	unsigned int eapol_2_key_info_set_mask;
 	int test_assoc_comeback_type;
