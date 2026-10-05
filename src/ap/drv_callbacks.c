@@ -1498,6 +1498,27 @@ void hostapd_chan_switch_complete(struct hostapd_data *hapd, u8 power_mode_6ghz,
 			hostapd_schedule_agile_cac_restart(hapd->iface);
 			wpa_msg(hapd->msg_ctx, MSG_INFO, AP_CSA_FINISHED
 				"freq=%d dfs=%d", freq, is_dfs);
+
+			wpa_printf(MSG_DEBUG,
+				   "CSA: completion phy=%s bss=%s freq=%d csa_in_progress=%d pending_csa=%d",
+				   hapd->iface->phy, hapd->conf->iface, freq,
+				   hostapd_csa_in_progress(hapd->iface),
+				   hostapd_check_reenable_bss(hapd->iface, REENABLE_CSA));
+
+			/*
+			 * CSA on this radio is fully done; bring up any BSS
+			 * that was added/re-added while CSA was active on a
+			 * sibling link and got deferred in
+			 * hostapd_add_iface().
+			 */
+			if (!hostapd_csa_in_progress(hapd->iface) &&
+			    hostapd_check_reenable_bss(hapd->iface, REENABLE_CSA)) {
+				wpa_printf(MSG_DEBUG,
+					   "CSA: enabling deferred BSSes on phy=%s",
+					   hapd->iface->phy);
+				hostapd_enable_pending_bss(hapd->iface, REENABLE_CSA,
+							   false);
+			}
 		}
 #ifdef CONFIG_QCN_EXTN
 		if (hapd->iconf->conf_extn.ind_rptr &&

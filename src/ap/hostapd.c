@@ -474,6 +474,16 @@ bool hostapd_enable_pending_bss(struct hostapd_iface *iface,
 			continue;
 		}
 
+		if (reason == REENABLE_CSA) {
+			/* Clear the deferred state so hostapd_setup_bss() re-adds
+			 * the MLO link before configuring group keys.
+			 */
+			wpa_printf(MSG_DEBUG,
+				   "CSA: clearing REENABLE_CSA before enabling BSS %s",
+				   hapd->conf->iface);
+			hapd->reenable = REENABLE_NONE;
+		}
+
 		if (hostapd_enable_bss(hapd) < 0)
 			wpa_printf(MSG_ERROR, "Enabling of BSS %s failed",
 				   hapd->conf->iface);
@@ -7620,12 +7630,6 @@ hostapd_interface_init_bss(struct hapd_interfaces *interfaces, const char *phy,
 			return NULL;
 		}
 
-		if (hostapd_csa_in_progress(iface)) {
-			wpa_printf(MSG_ERROR, "Channel switch in progress, cannot add bss");
-			hostapd_config_free(conf);
-			return NULL;
-		}
-
 		ifname = conf->bss[0]->iface;
 		if (ifname[0] == '\0') {
 			wpa_printf(MSG_ERROR,
@@ -8537,6 +8541,20 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 			setup_bss |=
 				hostapd_bootup_cac_enabled_extn(hapd_iface);
 #endif /* CONFIG_QCN_EXTN */
+
+			if (setup_bss && hostapd_csa_in_progress(hapd_iface)) {
+				/*
+				 * A sibling BSS on this radio is mid channel
+				 * switch; the vdev/chanctx is not stable yet.
+				 * Defer this BSS and resume it once CSA
+				 * completes.
+				 */
+				wpa_printf(MSG_INFO,
+					   "CSA in progress on radio, deferring enable of BSS %s reenable state %d -> %d",
+					   hapd->conf->iface, hapd->reenable, REENABLE_CSA);
+				hapd->reenable = REENABLE_CSA;
+				setup_bss = false;
+			}
 
 			ret = start_ctrl_iface_bss(hapd);
 			if (!ret && setup_bss) {

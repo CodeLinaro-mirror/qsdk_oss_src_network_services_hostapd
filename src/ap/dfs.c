@@ -4080,6 +4080,21 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 						ieee802_11_set_beacon(bss);
 					}
 
+					/*
+					 * A BSS added while CSA was active on a sibling
+					 * link is deferred until the channel switch completes.
+					 * For a DFS target, CAC completes after CSA, so drain
+					 * those BSSes here instead of only in the CH_SWITCH_NOTIFY
+					 * path used for non-DFS targets.
+					 */
+					if (hostapd_check_reenable_bss(iface, REENABLE_CSA)) {
+						wpa_printf(MSG_DEBUG,
+							   "CSA: enabling deferred BSSes after CAC on phy=%s",
+							   iface->phy);
+						hostapd_enable_pending_bss(iface, REENABLE_CSA,
+									   false);
+					}
+
 					hostapd_start_device_cac_background(iface);
 				}
 			}

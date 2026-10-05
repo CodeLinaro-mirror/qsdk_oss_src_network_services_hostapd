@@ -4462,8 +4462,10 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 		return 0;
 	}
 
-	if (hapd->csa_in_progress) {
-		wpa_printf(MSG_ERROR, "Cannot set beacons during CSA period");
+	if (hostapd_csa_in_progress(hapd->iface)) {
+		wpa_printf(MSG_ERROR,
+			   "CSA: Cannot set beacon for BSS %s on phy %s during CSA period",
+			   hapd->conf->iface, hapd->iface->phy);
 		return -1;
 	}
 
