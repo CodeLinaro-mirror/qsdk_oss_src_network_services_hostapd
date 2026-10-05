@@ -351,6 +351,8 @@ enum hostapd_reenable_mode {
 	REENABLE_CAC = 3,
 	/* Interface teardown in progress */
 	REENABLE_DEINIT = 4,
+	/* CSA in progress on a sibling BSS of the same radio; defer enable */
+	REENABLE_CSA = 5,
 };
 
 
@@ -831,13 +833,16 @@ struct hostapd_data {
 	struct dl_list gas_peers; /* dl_list of struct gas_peer */
 #endif /* CONFIG_INTERWORKING || CONFIG_DPP */
 };
+
 /* True if hapd has a pending re-enable for any reason (user-disabled,
- * HT-scan deferred, or CAC in progress). */
+ * HT-scan deferred, CAC, or CSA in progress).
+ */
 static inline bool hapd_reenable_pending(const struct hostapd_data *hapd)
 {
 	return hapd->reenable == REENABLE_REUSE_LINK ||
 		hapd->reenable == REENABLE_HT_SCAN ||
-		hapd->reenable == REENABLE_CAC;
+		hapd->reenable == REENABLE_CAC ||
+		hapd->reenable == REENABLE_CSA;
 }
 
 
