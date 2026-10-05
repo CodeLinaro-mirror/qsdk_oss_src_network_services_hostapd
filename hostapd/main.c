@@ -139,7 +139,7 @@ static void hostapd_logger_cb(void *ctx, const u8 *addr, unsigned int module,
 	if ((conf_syslog & module) && level >= conf_syslog_level) {
 		int priority;
 		switch (level) {
-		case HOSTAPD_LEVEL_DEBUG_VERBOSE:
+		case HOSTAPD_LEVEL_EXCESSIVE:
 		case HOSTAPD_LEVEL_DEBUG:
 			priority = LOG_DEBUG;
 			break;

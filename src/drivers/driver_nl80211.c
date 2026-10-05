@@ -45,6 +45,7 @@
 #ifdef CONFIG_QCN_EXTN
 #include "../../qcn_extns/cmn.h"
 #endif /* CONFIG_QCN_EXTN */
+#include "ap/hostapd_log.h"
 #ifdef CONFIG_AP
 #include "ap/hostapd.h"
 #include "ap/beacon.h"
@@ -4962,6 +4963,31 @@ static int nl80211_get_link_freq(struct i802_bss *bss, const u8 *addr,
 	return bss->flink->freq;
 }
 
+/*
+ * Map 802.11 management frame subtype to HOSTAPD_MODULE_* for per-module
+ * log filtering.  Probe responses and beacons are high-volume; map them to
+ * HOSTAPD_MODULE_IEEE80211 so callers can suppress them independently of
+ * auth/assoc frames (HOSTAPD_MODULE_MLME).
+ */
+unsigned int nl80211_fc_to_hostapd_module(u16 fc)
+{
+	if (WLAN_FC_GET_TYPE(fc) != WLAN_FC_TYPE_MGMT)
+		return HOSTAPD_MODULE_DRIVER;
+	switch (WLAN_FC_GET_STYPE(fc)) {
+	case WLAN_FC_STYPE_PROBE_RESP:
+	case WLAN_FC_STYPE_BEACON:
+		return HOSTAPD_MODULE_IEEE80211;
+	case WLAN_FC_STYPE_AUTH:
+	case WLAN_FC_STYPE_ASSOC_RESP:
+	case WLAN_FC_STYPE_REASSOC_RESP:
+	case WLAN_FC_STYPE_DISASSOC:
+	case WLAN_FC_STYPE_DEAUTH:
+		return HOSTAPD_MODULE_MLME;
+	default:
+		return HOSTAPD_MODULE_DRIVER;
+	}
+}
+
 
 static int wpa_driver_nl80211_send_mlme(struct i802_bss *bss, const u8 *data,
 					size_t data_len, int noack,
@@ -4981,12 +5007,18 @@ static int wpa_driver_nl80211_send_mlme(struct i802_bss *bss, const u8 *data,
 
 	mgmt = (struct ieee80211_mgmt *) data;
 	fc = le_to_host16(mgmt->frame_control);
-	wpa_printf(MSG_DEBUG, "nl80211: send_mlme - da=" MACSTR " sa=" MACSTR
-		   " bssid=" MACSTR
-		   " noack=%d freq=%u no_cck=%d offchanok=%d wait_time=%u no_encrypt=%d fc=0x%x (%s) nlmode=%d",
-		   MAC2STR(mgmt->da), MAC2STR(mgmt->sa), MAC2STR(mgmt->bssid),
-		   noack, freq, no_cck, offchanok, wait_time,
-		   no_encrypt, fc, fc2str(fc), drv->nlmode);
+
+	hostapd_log(bss->ctx, mgmt->da,
+			nl80211_fc_to_hostapd_logs(fc),
+			HOSTAPD_LEVEL_DEBUG,
+			"nl80211: send_mlme - da=" MACSTR " sa=" MACSTR
+			" bssid=" MACSTR
+			" noack=%d freq=%u no_cck=%d offchanok=%d"
+			" wait_time=%u no_encrypt=%d fc=0x%x (%s) nlmode=%d",
+			MAC2STR(mgmt->da), MAC2STR(mgmt->sa),
+			MAC2STR(mgmt->bssid),
+			noack, freq, no_cck, offchanok, wait_time,
+			no_encrypt, fc, fc2str(fc), drv->nlmode);
 
 	if ((is_sta_interface(drv->nlmode) ||
 	     drv->nlmode == NL80211_IFTYPE_P2P_DEVICE) &&

@@ -1036,6 +1036,7 @@ CFLAGS += -DCONFIG_NO_ACCOUNTING
 CFLAGS += -DCONFIG_NO_VLAN
 endif
 OBJS += ../src/ap/hostapd.o
+OBJS += ../src/ap/hostapd_log.o
 OBJS += ../src/ap/wpa_auth_glue.o
 OBJS += ../src/ap/utils.o
 OBJS += ../src/ap/authsrv.o
