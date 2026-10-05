@@ -471,6 +471,9 @@ void wpa_supplicant_mark_disassoc(struct wpa_supplicant *wpa_s)
 	wpa_s->pending_eapol_rx = NULL;
 	wpa_s->ext_auth_to_same_bss = false;
 
+	wpa_s->sel_security_profile = NULL;
+	wpa_sm_set_security_profile(wpa_s->wpa, NULL);
+	wpa_s->security_profile_len = 0;
 }
 
 
