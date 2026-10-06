@@ -2343,6 +2343,7 @@ void wpa_bss_parse_basic_ml_element(struct wpa_supplicant *wpa_s,
 	l->center_freq2_idx = bss->center_freq2_idx;
 	l->width = bss->max_cw;
 	l->punc_bitmap = bss->punc_bitmap;
+	wpa_bss_update_mld_link_mcst_extn(bss, link_id, ies_pos, ies_len);
 	wpa_bss_parse_basic_mle_per_sta_mcst_extn(bss, mlbuf,
 						  ml_basic_common_info->len);
 
