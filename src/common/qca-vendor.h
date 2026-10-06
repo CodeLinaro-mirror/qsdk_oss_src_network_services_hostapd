@@ -24030,6 +24030,12 @@ enum qca_wlan_vendor_attr_channel_switch_time {
  *
  * @QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_BITMAP: 32-bit unsigned value to
  * set/get the interference bitmap.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_NPCA_ON_OBSS_CU: 8-bit unsigned value to set/get
+ * the channel utilization threshold for enabling NPCA on OBSS interference.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_NPCA_OFF_OBSS_CU: 8-bit unsigned value to set/get
+ * the channel utilization threshold for disabling NPCA on OBSS interference.
  */
 enum qca_wlan_vendor_attr_dcs {
 	QCA_WLAN_VENDOR_ATTR_DCS_INVALID = 0,
@@ -24045,6 +24051,8 @@ enum qca_wlan_vendor_attr_dcs {
 	QCA_WLAN_VENDOR_ATTR_DCS_COCHANNEL_INTERFERENCE_THRESHOLD = 10,
 	QCA_WLAN_VENDOR_ATTR_DCS_MAX_CU = 11,
 	QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_BITMAP = 12,
+	QCA_WLAN_VENDOR_ATTR_DCS_NPCA_ON_OBSS_CU = 13,
+	QCA_WLAN_VENDOR_ATTR_DCS_NPCA_OFF_OBSS_CU = 14,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_DCS_AFTER_LAST,
