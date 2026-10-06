@@ -250,7 +250,7 @@ static int ieee802_11_send_wnmsleep_resp(struct hostapd_data *hapd,
 
 /* Subelement lengths as defined in 9.6.13.20 of IEEE P802.11be/D7.0 */
 #define MAX_GTK_SUBELEM_LEN 46
-#define MAX_IGTK_SUBELEM_LEN 27
+#define MAX_IGTK_SUBELEM_LEN 10 + WPA_IGTK_MAX_LEN
 #define MAX_BIGTK_SUBELEM_LEN 43
 	n_mld_affiliated_links = wpa_sta_sm_get_num_mld_links(sta->wpa_sm);
 	if (ap_sta_is_mld(hapd, sta) && n_mld_affiliated_links)
