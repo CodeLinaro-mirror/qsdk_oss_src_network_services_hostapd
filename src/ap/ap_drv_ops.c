@@ -1486,6 +1486,8 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 	struct hostapd_data *hapd = NULL;
 	struct hostapd_freq_params data;
 	int res, radio_idx;
+	bool skip_monitor_update = iface->cac_type ==
+		HAPD_CAC_COMPLETE_AFTER_CSA;
 	struct hostapd_hw_modes *cmode = iface->current_mode;
 	size_t b;
 #ifdef CONFIG_QCN_EXTN
@@ -1615,7 +1617,8 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 		data.link_id = hapd->mld_link_id;
 #endif /* CONFIG_IEEE80211BE */
 
-	if (!radar_background && hostapd_update_monitor_channel(hapd, &data))
+	if (!radar_background && !skip_monitor_update &&
+	    hostapd_update_monitor_channel(hapd, &data))
 		return -1;
 
 	radio_idx = (radar_background && iface->current_hw_info) ?
