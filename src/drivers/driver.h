@@ -3704,6 +3704,12 @@ enum wnm_oper {
 	WNM_SLEEP_TFS_IE_DEL        /* AP delete the TFS IE */
 };
 
+#ifdef CONFIG_QCN_EXTN
+int nl80211_wnm_oper(void *priv, enum wnm_oper oper,
+		     const u8 *peer, u8 *buf, u16 *buf_len);
+#endif /* CONFIG_QCN_EXTN */
+
+
 /* enum smps_mode - SMPS mode definitions */
 enum smps_mode {
 	SMPS_AUTOMATIC,
@@ -5649,6 +5655,14 @@ struct wpa_driver_ops {
 	 * Returns: 0 on success, negative on failure
 	 */
 	int (*wnm_tim_bcast_ap_enable)(void *priv, int enable);
+
+	/**
+	 * wnm_tfs_ap_enable - Enable/disable WNM TFS capability at AP level
+	 * @priv: Private driver interface data
+	 * @enable: 1 to enable, 0 to disable
+	 * Returns: 0 on success, negative on failure
+	 */
+	int (*wnm_tfs_ap_enable)(void *priv, int enable);
 
 	/**
 	 * set_qos_map - Set QoS Map

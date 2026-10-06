@@ -4843,6 +4843,10 @@ set_ap:
 	else {
 		hostapd_apply_rtt_responder_role(hapd);
 		hostapd_apply_rtt_initiator_role(hapd);
+		if (hostapd_drv_wnm_tfs_ap_enable(hapd, !!hapd->conf->wnm_tfs))
+			wpa_printf(MSG_WARNING,
+				   "WNM: Failed to %s TFS in driver",
+				   hapd->conf->wnm_tfs ? "enable" : "disable");
 		ret = 0;
 	}
 fail2:

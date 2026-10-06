@@ -20581,6 +20581,8 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 #ifdef CONFIG_QCN_EXTN
 	.wnm_tim_bcast_set = nl80211_wnm_tim_bcast_set,
 	.wnm_tim_bcast_ap_enable = nl80211_wnm_tim_bcast_ap_enable,
+	.wnm_tfs_ap_enable = nl80211_wnm_tfs_ap_enable,
+	.wnm_oper = nl80211_wnm_oper,
 #endif /* CONFIG_QCN_EXTN */
 	.set_sta_isolated = wpa_driver_nl80211_set_sta_isolated,
 };

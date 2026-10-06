@@ -1292,6 +1292,14 @@ int hostapd_drv_wnm_tim_bcast_ap_enable(struct hostapd_data *hapd,
 }
 
 
+int hostapd_drv_wnm_tfs_ap_enable(struct hostapd_data *hapd, int enable)
+{
+	if (!hapd->driver || !hapd->driver->wnm_tfs_ap_enable)
+		return 0;
+	return hapd->driver->wnm_tfs_ap_enable(hapd->drv_priv, enable);
+}
+
+
 #ifdef CONFIG_IEEE80211BE
 static bool hostapd_is_action_frame_link_agnostic(const u8 *data, size_t len)
 {

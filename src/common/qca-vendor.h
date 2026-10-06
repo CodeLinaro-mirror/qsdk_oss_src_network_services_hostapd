@@ -1889,6 +1889,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_EXTAP_INFO  = 547,
 	QCA_NL80211_VENDOR_SUBCMD_CRYPTO_TEST = 549,
 	QCA_NL80211_VENDOR_SUBCMD_GET_IPA_DEBUG_INFO = 550,
+	QCA_NL80211_VENDOR_SUBCMD_WNM = 551,
 };
 
 /* Compatibility defines for previously used subcmd names.
@@ -24722,6 +24723,26 @@ enum qca_wlan_vendor_attr_wnm_tim_bcast {
 	QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_MAX =
 		QCA_WLAN_VENDOR_ATTR_WNM_TIM_BCAST_AFTER_LAST - 1,
+};
+
+enum qca_wlan_vendor_attr_wnm {
+	QCA_WLAN_VENDOR_ATTR_WNM_INVALID = 0,
+	/* u32: enum wnm_oper value */
+	QCA_WLAN_VENDOR_ATTR_WNM_OPER    = 1,
+	/* NLA_BINARY (ETH_ALEN): peer MAC address */
+	QCA_WLAN_VENDOR_ATTR_WNM_PEER    = 2,
+	/* NLA_BINARY: TFS Request IE bytes (input to WNM_SLEEP_TFS_REQ_IE_SET) */
+	QCA_WLAN_VENDOR_ATTR_WNM_IE      = 3,
+	/* NLA_BINARY: per-rule results returned by WNM_SLEEP_TFS_REQ_IE_SET.
+	 * Format: pairs of [tfs_id (u8)][status (u8)], length = n_results × 2.
+	 * Status values: 0=ACCEPT, 1=INVALID_CLASSIFIER, 2=RESOURCE_UNAVAILABLE. */
+	QCA_WLAN_VENDOR_ATTR_WNM_TFS_RESULTS = 4,
+	/* NLA_U8: BSS-level TFS capability enable/disable */
+	QCA_WLAN_VENDOR_ATTR_WNM_TFS_CAPAB = 5,
+
+	QCA_WLAN_VENDOR_ATTR_WNM_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_WNM_MAX =
+		QCA_WLAN_VENDOR_ATTR_WNM_AFTER_LAST - 1,
 };
 
 /* ---- Appended from vendor.h ---- */
