@@ -4331,7 +4331,9 @@ hostapd_handle_critical_update_notify(struct hostapd_data *hapd,
 		 * frames from this point on.
 		 */
 		hostapd_update_ecu_params(hapd);
-
+#ifdef CONFIG_QCN_EXTN
+                hostapd_dcs_restore_extn(hapd->iface, "NPCA auto ECU complete");
+#endif
 		break;
 
 	case NL80211_CU_STATE_POST_NOTIFICATION_END:
@@ -4353,6 +4355,9 @@ hostapd_handle_critical_update_notify(struct hostapd_data *hapd,
 			   "nl80211: ECU ABORT on %s link %u - session aborted",
 			   hapd->conf->iface, ev->link_id);
 		hostapd_reset_uhr_cu_params(hapd);
+#ifdef CONFIG_QCN_EXTN
+                hostapd_dcs_restore_extn(hapd->iface, "NPCA auto ECU aborted");
+#endif
 		break;
 	default:
 		wpa_printf(MSG_WARNING,
