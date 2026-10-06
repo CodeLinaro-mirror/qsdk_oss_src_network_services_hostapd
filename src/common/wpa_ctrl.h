@@ -735,6 +735,6 @@ char * wpa_ctrl_get_remote_ifname(struct wpa_ctrl *ctrl);
 }
 #endif
 
-int hostapd_cli_recovery_in_progress(void);
+int hostapd_cli_accept_cmd(void);
 void hostapd_cli_msg_cb(char *msg, size_t len);
 #endif /* WPA_CTRL_H */
