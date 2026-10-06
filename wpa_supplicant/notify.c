@@ -126,7 +126,7 @@ void wpas_notify_state_changed(struct wpa_supplicant *wpa_s,
 				"Failed to notify iface enabled state %s->%s",
 				wpa_supplicant_state_txt(old_state),
 				wpa_supplicant_state_txt(new_state));
-		if (wpa_drv_set_rtt_initiator_role(
+		if (wpa_s->conf->rtt_initiator_role && wpa_drv_set_rtt_initiator_role(
 			    wpa_s, wpa_s->conf->rtt_initiator_role))
 			wpa_dbg(wpa_s, MSG_DEBUG,
 				"Failed to set RTT initiator role %d on %s->%s",
@@ -138,11 +138,6 @@ void wpas_notify_state_changed(struct wpa_supplicant *wpa_s,
 					       QCA_WLAN_VENDOR_IFACE_MODE_CLEAR))
 			wpa_dbg(wpa_s, MSG_DEBUG,
 				"Failed to notify iface disabled state %s->%s",
-				wpa_supplicant_state_txt(old_state),
-				wpa_supplicant_state_txt(new_state));
-		if (wpa_drv_set_rtt_initiator_role(wpa_s, 0))
-			wpa_dbg(wpa_s, MSG_DEBUG,
-				"Failed to clear RTT initiator role on %s->%s",
 				wpa_supplicant_state_txt(old_state),
 				wpa_supplicant_state_txt(new_state));
 	}
