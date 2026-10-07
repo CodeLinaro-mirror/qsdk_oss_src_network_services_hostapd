@@ -1,9 +1,8 @@
 /*
  * hostapd_log - per-BSS structured logging for hostapd
- * Copyright (c) 2026, Qualcomm Innovation Center, Inc.
  *
- * This software may be distributed under the terms of the BSD license.
- * See README for more details.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: BSD-3-Clause-Clear
  */
 
 #include "utils/includes.h"
