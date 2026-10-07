@@ -1290,10 +1290,10 @@ void __hostapd_if_assoc_response(char *ifname, uint8_t *sta_mac,
 	struct hostapd_data *hapd;
 
 	wpa_printf(MSG_MSGDUMP,
-		   "%s: %s, " MACSTR " %d %d\n",
+		   "%s: %s, " MACSTR " is_reassoc %d  RSSI %d status_code %d\n",
 		   __func__, ifname, MAC2STR(sta_mac),
 		   ctx->data.assoc_resp.is_reassoc,
-		   ctx->data.assoc_resp.rssi);
+		   ctx->data.assoc_resp.rssi, ctx->status_code);
 
 	wpa_hexdump(MSG_EXCESSIVE,
 		    "hostapd_if_assoc_response additional_ies",
