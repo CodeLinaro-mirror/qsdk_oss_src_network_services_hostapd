@@ -7043,9 +7043,6 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 			if (hostapd_tx_bss_only(hapd, "ht_mcs_nss_set") < 0)
 				goto fail;
 		}
-#if defined(CONFIG_HOSTAPD_IF) && defined(CONFIG_QCN_EXTN)
-		hostapd_if_interface_create(hapd);
-#endif
 	}
 
 	hapd_iface->is_ch_switch_dfs = false;
