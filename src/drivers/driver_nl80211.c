@@ -1683,8 +1683,12 @@ static void wpa_driver_nl80211_event_rtm_newlink(void *ctx,
 			bss->ignore_if_down_event = 0;
 		} else {
 			bss->if_disabled = 1;
-			wpa_supplicant_event(bss->ctx,
-					     EVENT_INTERFACE_DISABLED, NULL);
+			if (bss->ctx)
+				wpa_supplicant_event(bss->ctx,
+						     EVENT_INTERFACE_DISABLED, NULL);
+			else
+				wpa_printf(MSG_DEBUG,
+					   "nl80211: Skip interface-disabled event with NULL ctx");
 
 			/*
 			 * Try to get drv again, since it may be removed as
