@@ -674,12 +674,18 @@ int hostapd_reload_config_iface(struct hostapd_iface **ifacep)
 	struct hostapd_data *hapd;
 	struct hostapd_config *newconf, *oldconf;
 	size_t j;
+#ifdef CONFIG_QCN_EXTN
+	u8 old_cbs_enable = 0;
+#endif
 
 	if (!iface)
 		return -1;
 
 	interfaces = iface->interfaces;
 	hapd = iface->bss[0];
+#ifdef CONFIG_QCN_EXTN
+	old_cbs_enable = hostapd_get_cbs_enable_extn(hapd->iconf);
+#endif
 
 	hostapd_ucode_reload_bss(hapd);
 
@@ -688,6 +694,10 @@ int hostapd_reload_config_iface(struct hostapd_iface **ifacep)
 		hostapd_clear_old(iface);
 		for (j = 0; j < iface->num_bss; j++)
 			hostapd_reload_bss(iface->bss[j]);
+#ifdef CONFIG_QCN_EXTN
+		if (old_cbs_enable)
+			hostapd_set_cbs_enable_extn(iface->conf, old_cbs_enable);
+#endif
 		return 0;
 	}
 
@@ -697,7 +707,6 @@ int hostapd_reload_config_iface(struct hostapd_iface **ifacep)
 	newconf = iface->interfaces->config_read_cb(iface->config_fname);
 	if (newconf == NULL)
 		return -1;
-
 	oldconf = hapd->iconf;
 	if (hostapd_iface_conf_changed(newconf, oldconf)) {
 		char *fname;
@@ -726,6 +735,10 @@ int hostapd_reload_config_iface(struct hostapd_iface **ifacep)
 				   "Failed to initialize interface on config reload");
 			return -1;
 		}
+#ifdef CONFIG_QCN_EXTN
+		if (old_cbs_enable)
+			hostapd_set_cbs_enable_extn(iface->conf, old_cbs_enable);
+#endif
 		iface->interfaces = interfaces;
 		interfaces->iface[interfaces->count] = iface;
 		interfaces->count++;
@@ -746,6 +759,10 @@ int hostapd_reload_config_iface(struct hostapd_iface **ifacep)
 		hapd->iconf = newconf;
 		hapd->iconf->channel = oldconf->channel;
 		hapd->iconf->acs = oldconf->acs;
+#ifdef CONFIG_QCN_EXTN
+		if (old_cbs_enable)
+			hostapd_set_cbs_enable_extn(hapd->iconf, old_cbs_enable);
+#endif
 		hapd->iconf->secondary_channel = oldconf->secondary_channel;
 		hapd->iconf->ieee80211n = oldconf->ieee80211n;
 		hapd->iconf->ieee80211ac = oldconf->ieee80211ac;
@@ -1691,6 +1708,9 @@ int hostapd_reload_config_bss(struct hostapd_iface *iface,
 	struct hostapd_config *newconf, *oldconf;
 	char *conf_file = NULL;
 	size_t j;
+#ifdef CONFIG_QCN_EXTN
+	u8 old_cbs_enable = 0;
+#endif
 
 	wpa_printf(MSG_DEBUG,"Relaod config bss %s\n", iface_name);
 	for (j = 0; j < iface->num_bss; j++) {
@@ -1705,6 +1725,9 @@ int hostapd_reload_config_bss(struct hostapd_iface *iface,
 	}
 
 	newconf = oldconf = hapd->iconf;
+#ifdef CONFIG_QCN_EXTN
+	old_cbs_enable = hostapd_get_cbs_enable_extn(oldconf);
+#endif
 
 	if (os_strncmp(buf, "bss_config=", 11) == 0) {
 		conf_file = buf + 11;
@@ -1731,6 +1754,10 @@ int hostapd_reload_config_bss(struct hostapd_iface *iface,
 	hapd->iconf = newconf;
 	hapd->iconf->channel = oldconf->channel;
 	hapd->iconf->acs = oldconf->acs;
+#ifdef CONFIG_QCN_EXTN
+	if (old_cbs_enable)
+		hostapd_set_cbs_enable_extn(hapd->iconf, old_cbs_enable);
+#endif
 	hapd->iconf->secondary_channel = oldconf->secondary_channel;
 	hapd->iconf->ieee80211n = oldconf->ieee80211n;
 	hapd->iconf->ieee80211ac = oldconf->ieee80211ac;
