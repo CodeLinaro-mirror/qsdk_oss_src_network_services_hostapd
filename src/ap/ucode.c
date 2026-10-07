@@ -1025,6 +1025,9 @@ out:
 	for (i = 0; i < iface->num_bss; i++) {
 		struct hostapd_data *hapd = iface->bss[i];
 
+		if (!hapd || !hapd->drv_priv)
+			continue;
+
 		hapd->conf->start_disabled = 0;
 
 		ret = hostapd_set_freq(hapd, conf->hw_mode, iface->freq,
