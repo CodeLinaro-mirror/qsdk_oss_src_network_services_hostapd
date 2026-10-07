@@ -8827,6 +8827,14 @@ radio_work_pending(struct wpa_supplicant *wpa_s, const char *type)
 	struct wpa_radio_work *work;
 	struct wpa_radio *radio = wpa_s->radio;
 
+#ifdef RDK_ONEWIFI
+	/* OneWifi embeds wpa_supplicant without the native radio_work_init()
+	 * setup, so wpa_s->radio is always NULL here. No radio work queue
+	 * exists, so nothing can ever be pending. */
+	if (!radio)
+		return NULL;
+#endif /* RDK_ONEWIFI */
+
 	dl_list_for_each(work, &radio->work, struct wpa_radio_work, list) {
 		if (work->wpa_s == wpa_s && os_strcmp(work->type, type) == 0)
 			return work;

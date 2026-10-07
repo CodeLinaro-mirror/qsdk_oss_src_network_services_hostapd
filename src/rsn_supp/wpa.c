@@ -908,6 +908,9 @@ static u8 * wpa_mlo_link_kde(struct wpa_sm *sm, u8 *pos)
 {
 	int i;
 	u8 hdr[1 + ETH_ALEN];
+#ifdef RDK_ONEWIFI
+	u8 link_addr[ETH_ALEN];
+#endif
 
 	for_each_link(sm->mlo.req_links, i) {
 		if (sm->mlo.assoc_link_id == i)
@@ -916,7 +919,21 @@ static u8 * wpa_mlo_link_kde(struct wpa_sm *sm, u8 *pos)
 		wpa_printf(MSG_DEBUG,
 			   "MLO: Add MLO Link %d KDE in EAPOL-Key 2/4", i);
 		hdr[0] = i & 0xF; /* LinkID; no RSNE or RSNXE */
+#ifndef RDK_ONEWIFI
 		os_memcpy(&hdr[1], sm->mlo.links[i].addr, ETH_ALEN);
+#else
+		/*
+		 * QCA reports the STA MLD address as the base of its associated
+		 * link-address set (link 0/1/2 are base/base+1/base+2).  The RDK
+		 * in-process driver can retain administratively-created link-device
+		 * addresses here after a synthetic association notification.  Those
+		 * 02:00:* placeholders are not the addresses associated by ath12k
+		 * and the AP correctly rejects them in the MLO Link KDE.
+		 */
+		os_memcpy(link_addr, sm->own_addr, ETH_ALEN);
+		link_addr[ETH_ALEN - 1] += i;
+		os_memcpy(&hdr[1], link_addr, ETH_ALEN);
+#endif
 		pos = rsn_add_kde(pos, RSN_KEY_DATA_MLO_LINK, hdr, sizeof(hdr));
 	}
 
@@ -4874,6 +4891,15 @@ void wpa_sm_notify_assoc(struct wpa_sm *sm, const u8 *bssid)
  */
 void wpa_sm_notify_disassoc(struct wpa_sm *sm)
 {
+#ifdef RDK_ONEWIFI
+	/* The in-process OneWiFi STA lifecycle can receive a late disassociation
+	 * while the embedded supplicant state machine is being torn down.  Native
+	 * wpa_supplicant never calls this with a missing SM, but dereferencing it
+	 * here crashes the OneWifi event thread and aborts MLO key negotiation. */
+	if (sm == NULL)
+		return;
+
+#endif
 	eloop_cancel_timeout(wpa_sm_start_preauth, sm, NULL);
 	eloop_cancel_timeout(wpa_sm_rekey_ptk, sm, NULL);
 	rsn_preauth_deinit(sm);
