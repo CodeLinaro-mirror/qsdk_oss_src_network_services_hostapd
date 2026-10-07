@@ -8524,7 +8524,7 @@ int hostapd_remove_bss(struct hostapd_iface *iface, unsigned int idx)
 int hostapd_remove_hapd_iface(struct hostapd_iface *hapd_iface)
 {
 	struct hapd_interfaces *interfaces;
-	size_t i;
+	size_t i, j;
 
 	if (hapd_iface == NULL)
 		return -1;
@@ -8542,6 +8542,13 @@ int hostapd_remove_hapd_iface(struct hostapd_iface *hapd_iface)
 
 	if (i >= interfaces->count)
 		return -1;
+
+	for (j = 0; j < hapd_iface->num_bss; j++) {
+		if(!hapd_iface->bss[j])
+			continue;
+
+		hapd_iface->bss[j]->reenable = REENABLE_DEINIT;
+	}
 
 	hostapd_interface_deinit_free(hapd_iface);
 
