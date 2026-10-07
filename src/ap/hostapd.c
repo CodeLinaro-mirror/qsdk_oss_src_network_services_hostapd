@@ -604,7 +604,7 @@ static int hostapd_iface_conf_changed(struct hostapd_config *newconf,
 int hostapd_remove_hapd_iface(struct hostapd_iface *hapd_iface)
 {
 	struct hapd_interfaces *interfaces;
-	size_t i;
+	size_t i, j;
 
 	hapd_iface->driver_ap_teardown =
 		!!(hapd_iface->drv_flags &
@@ -618,6 +618,13 @@ int hostapd_remove_hapd_iface(struct hostapd_iface *hapd_iface)
 
 	if (i >= interfaces->count)
 		return -1;
+
+	for (j = 0; j < hapd_iface->num_bss; j++) {
+		if(!hapd_iface->bss[j])
+			continue;
+
+		hapd_iface->bss[j]->reenable = REENABLE_DEINIT;
+	}
 
 	hostapd_interface_deinit_free(hapd_iface);
 
