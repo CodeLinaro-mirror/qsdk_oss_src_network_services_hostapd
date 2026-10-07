@@ -30,6 +30,15 @@
 
 static struct wpabuf * wpa_supplicant_extra_ies(struct wpa_supplicant *wpa_s);
 
+#ifdef RDK_ONEWIFI
+/*
+ * libhostap runs hostapd and wpa_supplicant in one process.  hostapd
+ * initialization can replace the legacy global wpa_supplicant_event callback,
+ * so STA-originated synthetic events must not dispatch through that global.
+ */
+extern void supplicant_event(void *ctx, enum wpa_event_type event,
+			     union wpa_event_data *data);
+#endif
 
 static void wpa_supplicant_gen_assoc_event(struct wpa_supplicant *wpa_s)
 {
@@ -48,7 +57,11 @@ static void wpa_supplicant_gen_assoc_event(struct wpa_supplicant *wpa_s)
 	wpa_dbg(wpa_s, MSG_DEBUG, "Already associated with a configured "
 		"network - generating associated event");
 	os_memset(&data, 0, sizeof(data));
+#ifndef RDK_ONEWIFI
 	wpa_supplicant_event(wpa_s, EVENT_ASSOC, &data);
+#else
+	supplicant_event(wpa_s, EVENT_ASSOC, &data);
+#endif
 }
 
 

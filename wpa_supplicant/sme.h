@@ -45,6 +45,11 @@ void sme_external_auth_mgmt_rx(struct wpa_supplicant *wpa_s,
 			       const u8 *auth_frame, size_t len);
 void sme_send_external_auth_status(struct wpa_supplicant *wpa_s, u16 status);
 const u8 * sme_get_ext_auth_pmkid(struct wpa_supplicant *wpa_s);
+#ifdef RDK_ONEWIFI
+int sme_send_authentication(struct wpa_supplicant *wpa_s,
+			    struct wpa_bss *bss, struct wpa_ssid *ssid,
+			    int start);
+#endif
 
 #ifdef CONFIG_QCN_EXTN
 void sme_schedule_auth_radio_work(struct wpa_supplicant *wpa_s,

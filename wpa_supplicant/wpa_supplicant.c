@@ -9102,6 +9102,9 @@ radio_work_pending(struct wpa_supplicant *wpa_s, const char *type)
 	struct wpa_radio_work *work;
 	struct wpa_radio *radio = wpa_s->radio;
 
+	/* OneWifi embeds wpa_supplicant without the native radio_work_init()
+	 * setup, so wpa_s->radio is always NULL here. No radio work queue
+	 * exists, so nothing can ever be pending. */
 	if (!radio)
 		return NULL;
 
