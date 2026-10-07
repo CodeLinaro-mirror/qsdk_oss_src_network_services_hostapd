@@ -2394,12 +2394,17 @@ static struct hostapd_data * get_hapd_bssid(struct hostapd_iface *iface,
 		if (!hapd)
 			continue;
 
+#ifdef CONFIG_IEEE80211BE
+		if (!hapd->conf || (hapd->conf->mld_ap && !hapd->mld))
+			continue;
+#endif /* CONFIG_IEEE80211BE */
+
 		if (ether_addr_equal(bssid, hapd->own_addr))
 			return hapd;
 
 #ifdef CONFIG_IEEE80211BE
 		if (ether_addr_equal(bssid, hapd->own_addr) ||
-		    (hapd->conf->mld_ap &&
+		    (hapd->conf->mld_ap && hapd->mld &&
 		     ether_addr_equal(bssid, hapd->mld->mld_addr) &&
 		     link_id == hapd->mld_link_id))
 			return hapd;
@@ -2412,7 +2417,7 @@ static struct hostapd_data * get_hapd_bssid(struct hostapd_iface *iface,
 				continue;
 
 			if (ether_addr_equal(bssid, p_hapd->own_addr) ||
-			    (p_hapd->conf->mld_ap &&
+			    (p_hapd->conf->mld_ap && p_hapd->mld &&
 			     ether_addr_equal(bssid, p_hapd->mld->mld_addr) &&
 			     link_id == p_hapd->mld_link_id))
 				return p_hapd;
