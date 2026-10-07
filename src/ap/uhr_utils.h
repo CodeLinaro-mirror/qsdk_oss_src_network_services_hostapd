@@ -167,7 +167,9 @@ size_t hostapd_uhr_eid_bmlie_from_rmlie(const struct wpabuf *mlbuf,
 						u8 link_id,
 						u8 *bmlie);
 /* Function declarations */
-int uhr_parse_reconfig_mle(const struct ieee802_11_elems *elems,
+int uhr_find_add_link_reconf_mle(const u8 *ies, size_t ies_len,
+				 const u8 **mle_out, size_t *mle_len_out);
+int uhr_parse_reconfig_mle(const u8 *ies, size_t ies_len,
 			   struct uhr_reconfig_mle *mle);
 
 #define UHR_MAX_DELETE_ST_PREP_TARGETS 8
@@ -185,6 +187,9 @@ void uhr_cancel_st_prep_timeout(struct sta_info *sta, const u8 *ap_mld_addr);
 /* AP list management functions */
 struct smd_roam_ap_info *uhr_find_ap_in_list(struct sta_info *sta, const u8 *ap_mld_addr);
 int uhr_remove_ap_from_list(struct sta_info *sta, const u8 *ap_mld_addr);
+void uhr_remove_ap_from_list_all_links(struct hostapd_data *hapd,
+				       struct sta_info *sta,
+				       const u8 *ap_mld_addr);
 
 /* Cleanup function for sta_info.c */
 void uhr_cleanup_sta_roam_contexts(struct hostapd_data *hapd, struct sta_info *sta);
