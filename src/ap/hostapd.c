@@ -1848,6 +1848,9 @@ static void hostapd_cleanup_iface(struct hostapd_iface *iface)
 			     NULL);
 
 	hostapd_cleanup_iface_partial(iface);
+#ifdef CONFIG_QCN_EXTN
+	hostapd_iface_free_extn(iface);
+#endif /* CONFIG_QCN_EXTN */
 
 	atf_deinit_algo(iface);
 
