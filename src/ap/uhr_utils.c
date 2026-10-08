@@ -956,7 +956,7 @@ void uhr_tgt_st_prep_timer_cleanup(void *eloop_ctx, void *timeout_ctx)
                                sta->smd_info.tgt_prep_timer_hapd = NULL;
 
 			       if (assoc_sta &&
-				   assoc_sta->smd_info.state == SMD_STA_ST_EXEC_DONE)
+				   uhr_sta_smd_state_get(assoc_hapd, assoc_sta) == SMD_STA_ST_EXEC_DONE)
 				       continue;
 
                                wpa_printf(MSG_DEBUG,
@@ -1036,6 +1036,26 @@ void uhr_tgt_start_st_prep_timer(struct hostapd_data *hapd,
                   MAC2STR(sta_addr), timeout_sec);
 }
 
+
+enum tgt_smd_roam_state uhr_sta_smd_state_get(struct hostapd_data *hapd,
+					      struct sta_info *sta)
+{
+	struct hostapd_data *assoc_hapd;
+	struct sta_info *assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta,
+							      &assoc_hapd);
+
+	return (assoc_sta ? assoc_sta : sta)->smd_info._state;
+}
+
+void uhr_sta_smd_state_set(struct hostapd_data *hapd, struct sta_info *sta,
+			   enum tgt_smd_roam_state state)
+{
+	struct hostapd_data *assoc_hapd;
+	struct sta_info *assoc_sta = hostapd_ml_get_assoc_sta(hapd, sta,
+							      &assoc_hapd);
+
+	(assoc_sta ? assoc_sta : sta)->smd_info._state = state;
+}
 
 /**
  * uhr_tgt_cancel_st_prep_timer - Cancel target prep timer
