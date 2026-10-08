@@ -531,19 +531,45 @@ fail:
 }
 
 
-int uhr_find_add_link_reconf_mle(const u8 *ies, size_t ies_len,
-				 const u8 **mle_out, size_t *mle_len_out)
+/**
+ * uhr_find_reconf_mle - Locate and defragment the relevant Reconfiguration MLE
+ * @ies: Raw IE buffer
+ * @ies_len: Length of @ies
+ * @require_add_link: true to return the one Reconfiguration MLE whose Link
+ *	Info carries an Add-Link Per-STA Profile -- needed for ST Prep
+ *	Request, which per IEEE 802.11bn D2.0 37.16.6 may carry multiple
+ *	Reconfiguration MLEs (at most one Add-Link, plus zero or more
+ *	Delete-ST-Preparation). false to return the first Reconfiguration
+ *	MLE found, with no content inspection -- the only correct mode for
+ *	ST Execution Request, whose Reconfiguration MLE per 37.16.7.2 has
+ *	its Link Info field absent by spec (Common Info only), so there is
+ *	nothing to disambiguate and no Add-Link content to find.
+ * Returns: Defragmented MLE body (ml_control onward) on success, NULL if no
+ *	matching MLE was found. Caller owns the buffer and must wpabuf_free()
+ *	it.
+ *
+ * Defragmentation happens here, once, so neither this function nor its
+ * callers need a second ieee802_11_defrag() pass over the same bytes.
+ */
+struct wpabuf *uhr_find_reconf_mle(const u8 *ies, size_t ies_len,
+				   bool require_add_link)
 {
 	const struct element *elem;
 
-	*mle_out = NULL;
-	*mle_len_out = 0;
-
 	if (!ies || ies_len == 0)
-		return -1;
+		return NULL;
 
+	/*
+	 * Fragment continuation elements use WLAN_EID_FRAGMENT, not
+	 * WLAN_EID_EXTENSION, so for_each_element_extid() skips them on
+	 * subsequent iterations without this loop having to advance past
+	 * the ones ieee802_11_fragments_length() just accounted for.
+	 */
 	for_each_element_extid(elem, WLAN_EID_EXT_MULTI_LINK, ies, ies_len) {
 		const struct ieee80211_eht_ml *ml;
+		size_t raw_len, frag_len;
+		bool is_add_link = false;
+		struct wpabuf *mlbuf;
 		const u8 *pos, *end;
 		u8 common_info_len;
 
@@ -558,15 +584,41 @@ int uhr_find_add_link_reconf_mle(const u8 *ies, size_t ies_len,
 		    UHR_RECONF_ML_CONTROL_TYPE_RECONF)
 			continue;
 
-		if (elem->datalen < 1 + sizeof(*ml) + 1)
+		raw_len = elem->datalen - 1;
+		frag_len = 0;
+		if (elem->datalen == 255) {
+			struct ieee802_11_elems frag_elems;
+
+			os_memset(&frag_elems, 0, sizeof(frag_elems));
+			frag_len = ieee802_11_fragments_length(
+				&frag_elems,
+				elem->data + elem->datalen,
+				(ies + ies_len) - (elem->data + elem->datalen));
+		}
+
+		mlbuf = ieee802_11_defrag(elem->data + 1, raw_len + frag_len,
+					 true);
+		if (!mlbuf)
 			continue;
 
-		common_info_len = ml->variable[0];
-		if (elem->datalen < 1 + sizeof(*ml) + 1 + common_info_len)
+		if (wpabuf_len(mlbuf) < sizeof(*ml) + 1) {
+			wpabuf_free(mlbuf);
 			continue;
+		}
+
+		if (!require_add_link)
+			return mlbuf;
+
+		ml = (const struct ieee80211_eht_ml *) wpabuf_head(mlbuf);
+		common_info_len = ml->variable[0];
+
+		if (wpabuf_len(mlbuf) < sizeof(*ml) + 1 + common_info_len) {
+			wpabuf_free(mlbuf);
+			continue;
+		}
 
 		pos = ml->variable + common_info_len;
-		end = elem->data + elem->datalen;
+		end = (const u8 *) wpabuf_head(mlbuf) + wpabuf_len(mlbuf);
 
 		while (end - pos > 2) {
 			u8 subelem_id = pos[0];
@@ -587,17 +639,21 @@ int uhr_find_add_link_reconf_mle(const u8 *ies, size_t ies_len,
 					   EHT_PER_STA_RECONF_CTRL_OP_UPDATE_TYPE_MSK) >> 7;
 
 				if (op_type == EHT_RECONF_TYPE_ADD_LINK) {
-					*mle_out = elem->data + 1;
-					*mle_len_out = elem->datalen - 1;
-					return 0;
+					is_add_link = true;
+					break;
 				}
 			}
 
 			pos += 2 + subelem_len;
 		}
+
+		if (is_add_link)
+			return mlbuf;
+
+		wpabuf_free(mlbuf);
 	}
 
-	return -1;
+	return NULL;
 }
 
 
@@ -605,16 +661,21 @@ int uhr_find_add_link_reconf_mle(const u8 *ies, size_t ies_len,
  * uhr_parse_reconfig_mle - Parse UHR Reconfiguration Multi-Link element
  * @ies: Raw IE buffer (as passed to ieee802_11_parse_elems())
  * @ies_len: Length of @ies
+ * @require_add_link: true for ST Prep (may carry an Add-Link MLE plus one or
+ *	more Delete-ST-Prep MLEs -- only the Add-Link one is relevant here);
+ *	false for ST Exec (never mixes MLEs, so the single Reconfiguration
+ *	MLE present is always the right one regardless of its content).
  * @mle: Output structure for parsed ML-IE data
  * Returns: 0 on success, -1 on error
  *
- * Parses IEEE 802.11bn UHR Reconfiguration ML-IE with proper defragmentation.
- * Scans @ies directly via uhr_find_add_link_reconf_mle() rather than relying
- * on ieee802_11_elems's single reconf_mle slot, since a request may carry
- * multiple Reconfiguration MLEs (Add-Link plus one or more Delete-ST-Prep)
- * and only the Add-Link one is relevant here.
+ * Parses IEEE 802.11bn UHR Reconfiguration ML-IE. Scans @ies directly via
+ * uhr_find_reconf_mle() rather than relying on ieee802_11_elems's single
+ * reconf_mle slot, since a Prep request may carry multiple Reconfiguration
+ * MLEs. uhr_find_reconf_mle() returns the MLE already defragmented, so no
+ * further ieee802_11_defrag() pass is needed here.
  */
 int uhr_parse_reconfig_mle(const u8 *ies, size_t ies_len,
+			   bool require_add_link,
 			   struct uhr_reconfig_mle *mle)
 {
 	struct wpabuf *mlbuf = NULL;
@@ -624,8 +685,6 @@ int uhr_parse_reconfig_mle(const u8 *ies, size_t ies_len,
 	u16 ml_control, presence_bitmap;
 	const u8 *pos;
 	int ret = -1;
-	const u8 *reconf_mle;
-	size_t reconf_mle_len;
 	u8 bmlie[UHR_BMLIE_BUF_LEN];
 	os_memset(bmlie, 0, sizeof(bmlie));
 
@@ -636,19 +695,9 @@ int uhr_parse_reconfig_mle(const u8 *ies, size_t ies_len,
 	}
 	os_memset(mle, 0, sizeof(*mle));
 
-	if (uhr_find_add_link_reconf_mle(ies, ies_len, &reconf_mle,
-					 &reconf_mle_len) < 0 ||
-	    reconf_mle_len < 4) {
-		wpa_printf(MSG_DEBUG,
-			   "UHR ML-IE: Not present or too short (%zu)",
-			   reconf_mle_len);
-		return -1;
-	}
-
-	/* STEP 1: Defragment ML-IE */
-	mlbuf = ieee802_11_defrag(reconf_mle, reconf_mle_len, true);
+	mlbuf = uhr_find_reconf_mle(ies, ies_len, require_add_link);
 	if (!mlbuf) {
-		wpa_printf(MSG_ERROR, "UHR: Failed to defrag Reconfiguration MLE");
+		wpa_printf(MSG_DEBUG, "UHR ML-IE: Not present");
 		return -1;
 	}
 
