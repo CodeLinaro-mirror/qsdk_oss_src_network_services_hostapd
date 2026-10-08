@@ -11529,7 +11529,11 @@ static void handle_uhr_link_reconfig(struct hostapd_data *hapd,
 {
 	const u8 *frame = (const u8 *) mgmt;
 	u8 type = frame[IEEE80211_HDRLEN + 3];  /* Skip header + category + action + dialog */
-	
+	struct uhr_reconfig_mle exec_mle;
+	const u8 *exec_ies;
+	size_t exec_ies_len;
+	bool via_target;
+
 	if (len < IEEE80211_HDRLEN + 4) {
 		wpa_printf(MSG_DEBUG, "UHR: Frame too short");
 		return;
@@ -11541,12 +11545,29 @@ static void handle_uhr_link_reconfig(struct hostapd_data *hapd,
 		break;
 	case UHR_LINK_RECONFIG_TYPE_EXECUTE:
 		/*
-		 * Distinguish ST Execute via Target AP-MLD from the normal
-		 * IAP-forwarded path: in the via-target path the STA sends
-		 * Execute directly to us, so the STA record is not yet
-		 * authorized (ST Prep created it but did not authorize it).
+		 * Distinguish ST Execute via Target AP-MLD from ST Execute
+		 * via Serving AP-MLD by the frame's own Target AP MLD MAC
+		 * Address field, not by whether the STA is authorized here.
+		 * The latter is only a proxy that happens to hold in the
+		 * common case (via-target: STA sends Execute directly to an
+		 * unauthorized target); it breaks across roam-back sequences
+		 * where this hapd was previously the target of an earlier
+		 * transition and the STA remains authorized here while
+		 * acting as the serving AP for a NEW via-serving-AP request
+		 * naming a different AP MLD as target.
 		 */
-		if (!(sta->flags & WLAN_STA_AUTHORIZED)) {
+		exec_ies = frame + IEEE80211_HDRLEN + 4;
+		exec_ies_len = len - IEEE80211_HDRLEN - 4;
+		via_target = !(sta->flags & WLAN_STA_AUTHORIZED);
+
+		if (uhr_parse_reconfig_mle(exec_ies, exec_ies_len,
+					   false, &exec_mle) == 0 &&
+		    exec_mle.has_target_ap_mld_addr)
+			via_target = os_memcmp(
+				exec_mle.target_ap_mld_addr,
+				hapd->mld->mld_addr, ETH_ALEN) == 0;
+
+		if (via_target) {
 			wpa_printf(MSG_INFO,
 				   "UHR: ST Execute received at Target AP "
 				   "for " MACSTR " — initiating CTX fetch",

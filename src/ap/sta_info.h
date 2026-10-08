@@ -169,17 +169,6 @@ enum smd_ap_state {
        SMD_AP_STATE_ST_EXEC_VIA_TGT_COMPLETE,  /* CTX_RESPONSE received, exec done */
 };
 
-/**
- * enum tgt_smd_roam_state - SMD roaming state for non-AP STA
- *
- * complete state machine for SMD at Target AP for non-AP STA MLD
- */
-enum tgt_smd_roam_state {
-	SMD_STA_ST_NONE,
-	SMD_STA_ST_PREP_DONE,
-	SMD_STA_ST_EXEC_DONE,
-};
-
 /* Forward declaration for sta_info pointer */
 struct sta_info;
 
@@ -246,7 +235,11 @@ struct smd_info {
 	int uhr_target_prep_timer; /* Target AP prep timer */
 	u8 *tgt_prep_timer_ctx; /* heap-allocated sta_addr copy passed to eloop */
 	struct hostapd_data *tgt_prep_timer_hapd; /* assoc-link hapd at timer registration */
-	enum tgt_smd_roam_state state; /* non-AP STA state in Tgt AP */
+	/* non-AP STA state in Tgt AP. Per-link; use uhr_sta_smd_state_get()/
+	 * uhr_sta_smd_state_set() (uhr_utils.h) instead of accessing this
+	 * directly -- they resolve to the MLD assoc-link STA, which is the
+	 * only copy that is meaningful across SMD transitions. */
+	enum tgt_smd_roam_state _state;
 	bool flag;
 	u8 current_ap_mld_addr[ETH_ALEN]; /* Current AP MLD addr at time of ST Prep */
 	u8 st_exec_dialog_token; /* Dialog token from STA's ST Execute frame */

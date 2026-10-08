@@ -905,8 +905,11 @@ int uhr_handle_st_prep_req(struct hostapd_data *hapd,
 	}
 
 	wpa_printf(MSG_DEBUG,
-		   "UHR Current AP: Processing request from STA " MACSTR " (frame_len=%zu)",
-		   MAC2STR(sta->addr), frame_len);
+		   "UHR Current AP: Processing request from STA " MACSTR " (frame_len=%zu) (smd state: %d)",
+		   MAC2STR(sta->addr), frame_len,
+		   uhr_sta_smd_state_get(hapd, sta));
+
+	uhr_sta_smd_state_set(hapd, sta, SMD_STA_ST_NONE);
 
 	sta->smd_info.sap_stats.sap_prep_req_rx++;
 
@@ -1410,7 +1413,8 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 	int ret;
 
 	wpa_printf(MSG_DEBUG,
-		   "UHR ST EXEC: Processing Execute request from " MACSTR,
+		   "UHR ST EXEC: Processing Execute request  state: %d from " MACSTR,
+		   uhr_sta_smd_state_get(hapd, sta),
 		   MAC2STR(sta->addr));
 	sta->smd_info.sap_stats.sap_exec_req_rx++;
 
@@ -1419,7 +1423,15 @@ int uhr_handle_st_exec_req(struct hostapd_data *hapd,
 		return -1;
 	}
 
-	if (sta->smd_info.state == SMD_STA_ST_EXEC_DONE) {
+	/*
+	 * sta is whichever per-link STA record received this frame, not
+	 * necessarily the MLD's assoc-link STA (see uhr_handle_st_prep_req()
+	 * for why this can differ). uhr_sta_smd_state_get() resolves to the
+	 * canonical assoc STA so a stale SMD_STA_ST_EXEC_DONE set on one
+	 * link is seen regardless of which link this Exec Request
+	 * physically arrives on.
+	 */
+	if (uhr_sta_smd_state_get(hapd, sta) == SMD_STA_ST_EXEC_DONE) {
 		wpa_printf(MSG_ERROR,
 			   "UHR ST EXEC: STA " MACSTR
 			   " already completed ST execution, declining",
@@ -2510,7 +2522,7 @@ static int uhr_process_reconf_req_list(
                         info->is_assoc_link = true;
 
 			sta->mld_assoc_link_id = info->link_id;
-                        sta->smd_info.state = SMD_STA_ST_PREP_DONE;
+                        uhr_sta_smd_state_set(hapd_link, sta, SMD_STA_ST_PREP_DONE);
 
                         if (ap_sta_re_add(hapd_link, sta, 0) < 0) {
                                 ap_free_sta(hapd_link, sta);
@@ -3099,7 +3111,7 @@ void uhr_tgt_ap_handle_st_roam_cleanup(struct hostapd_data *hapd,
 	 * winning AP because uhr_cur_ap_purge_ap_list() skips DL_DRAIN_ACTIVE
 	 * entries.
 	 */
-	if (assoc_sta->smd_info.state == SMD_STA_ST_EXEC_DONE)
+	if (uhr_sta_smd_state_get(assoc_hapd, assoc_sta) == SMD_STA_ST_EXEC_DONE)
 		wpa_printf(MSG_DEBUG,
 			   "UHR ROAM CLEANUP: STA " MACSTR " in EXEC_DONE, current AP timed out — undoing authorization",
 			   MAC2STR(iap->sta_addr));
@@ -3149,7 +3161,7 @@ void uhr_tgt_ap_handle_st_prep_ctx(struct hostapd_data *hapd,
 		return;
 	}
 
-	if (assoc_sta->smd_info.state == SMD_STA_ST_EXEC_DONE) {
+	if (uhr_sta_smd_state_get(assoc_hapd, assoc_sta) == SMD_STA_ST_EXEC_DONE) {
 		wpa_printf(MSG_DEBUG,
 			   "UHR ST PREP CTX: STA " MACSTR " already exec-done, ignoring",
 			   MAC2STR(iap->sta_addr));
@@ -3832,7 +3844,7 @@ void uhr_tgt_ap_handle_st_exec_req(struct hostapd_data *hapd,
 	}
 
 	/* Frame is complete; advance state before sending */
-	sta->smd_info.state = SMD_STA_ST_EXEC_DONE;
+	uhr_sta_smd_state_set(lhapd, sta, SMD_STA_ST_EXEC_DONE);
 	sta->smd_info.roam_sta = false;
 	sta->smd_info.tap_stats.tap_exec_ok++;
 	smd_ts_record(&sta->smd_info.tap_stats.tap_exec_ok_ts, smd_ts_now());
@@ -3894,7 +3906,7 @@ int uhr_handle_st_exec_req_tgt(struct hostapd_data *hapd, struct sta_info *sta,
 	dialog_token = buf[IEEE80211_HDRLEN + 2];
 	sta->smd_info.st_exec_dialog_token = dialog_token;
 
-	if (sta->smd_info.state == SMD_STA_ST_EXEC_DONE) {
+	if (uhr_sta_smd_state_get(assoc_hapd, sta) == SMD_STA_ST_EXEC_DONE) {
 		wpa_printf(MSG_ERROR,
 			   "UHR ST EXEC (tgt): STA " MACSTR
 			   " already completed ST execution, declining",
