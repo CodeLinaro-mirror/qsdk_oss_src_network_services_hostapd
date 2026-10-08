@@ -345,7 +345,7 @@ struct smd_partner_entry {
 };
 #endif /* CONFIG_IEEE80211BN */
 
-#define EXT_CAPA_MAX_LEN 15
+#define EXT_CAPA_MAX_LEN 16
 #define MAX_VENDOR_ELEM_ALLOWED 10
 
 #ifdef CONFIG_IEEE80211AX
