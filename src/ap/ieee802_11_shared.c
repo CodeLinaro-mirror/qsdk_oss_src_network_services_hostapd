@@ -1689,7 +1689,7 @@ u8 * hostapd_eid_rsnxe(struct hostapd_data *hapd, u8 *eid, size_t len,
 #ifdef CONFIG_IEEE80211BN
 	/* Suppress SMD bit in base RSNXE when SP IE is activated;
 	 * SMD support is indicated via SP IE's RSNXE field instead */
-	if (hapd->conf->smd.enabled && !hapd->sp_ie_activated_sta)
+	if (hapd->conf->smd.enabled)
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_SMD);
 #endif /* CONFIG_IEEE80211BN */
 
@@ -1788,7 +1788,7 @@ u8 * hostapd_eid_security_profile(struct hostapd_data *hapd, u8 *eid)
 	u8 *pos = eid;
 	u8 *len_pos;
 	u8 reduced_rsn_capab = 0;
-	u8 ext_rsn_capab[16] = {0};
+	u8 ext_rsn_capab[256] = {0};
 	size_t ext_rsn_capab_len = 0;
 	u8 bitmap[16] = {0}; /* max 128 profiles */
 	size_t bitmap_len = 0;
