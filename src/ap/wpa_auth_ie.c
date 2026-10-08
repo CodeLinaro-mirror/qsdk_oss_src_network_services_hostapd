@@ -578,6 +578,11 @@ static u64 rsnxe_capab(struct wpa_auth_config *conf, int key_mgmt)
 	if (conf->cigtk)
 		capab |= BIT_ULL(WLAN_RSNX_CAPAB_CIGTK);
 
+#ifdef CONFIG_IEEE80211BN
+	if (conf->smd_capable)
+		capab |= BIT_ULL(WLAN_RSNX_CAPAB_SMD);
+#endif /* CONFIG_IEEE80211BN */
+
 #ifdef CONFIG_ENC_ASSOC
 	/* Per IEEE 802.11bi/D4.0, 12.16.7 (PMKSA caching privacy)
 	 * a STA that sets the PMKSA Caching Privacy Support

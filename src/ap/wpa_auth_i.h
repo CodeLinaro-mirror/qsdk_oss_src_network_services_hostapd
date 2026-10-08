@@ -32,6 +32,8 @@ struct wpa_smd_info {
 	u8 smd_timeout; /* Timeout Value, units of 64 TUs */
 	struct wpa_smd_caps caps; /* SMD capabilities */
 	bool flag;
+	bool smd_rsnx_bit;   /* SMD bit (37) set in peer's Extended RSN Capabilities in the request */
+	bool smd_enc_assoc;  /* (Re)Association Request/Response exchange is encrypted */
 };
 #endif /* CONFIG_IEEE80211BN */
 
