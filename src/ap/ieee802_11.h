@@ -719,10 +719,12 @@ bool hostapd_find_auth_comeback_sta(struct hostapd_data *hapd, const u8 *addr,
 
 u8 * hostapd_add_auth_comeback(struct hostapd_data *hapd, struct sta_info *sta,
 			       u8 *pos, size_t max_len, u16 auth_alg);
+#ifdef CONFIG_IEEE8021X_AUTH
 void set_pmk_802_1x_auth(struct hostapd_data *hapd, struct sta_info *sta,
 		  u16 auth_transaction,
 		  struct rsn_pmksa_cache_entry *cached_pmk);
 void handle_auth_802_1x_eapol(struct hostapd_data *hapd,
 			       struct sta_info *sta);
+#endif /* CONFIG_IEEE8021X_AUTH */
 
 #endif /* IEEE802_11_H */
