@@ -3393,6 +3393,12 @@ static int wpa_cli_cmd_wnm_tim_bcast(struct wpa_ctrl *ctrl, int argc, char *argv
 	return wpa_cli_cmd(ctrl, "WNM_TIM_BCAST", 1, argc, argv);
 }
 
+
+static int wpa_cli_cmd_wnm_tfs_req(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_cli_cmd(ctrl, "WNM_TFS_REQ", 1, argc, argv);
+}
+
 #endif /* CONFIG_WNM */
 
 
@@ -4499,6 +4505,15 @@ static const struct wpa_cli_cmd wpa_cli_commands[] = {
 	  " = Send BSS Transition Management Query" },
 	{ "wnm_tim_bcast", wpa_cli_cmd_wnm_tim_bcast, NULL, cli_cmd_flag_none,
 	  "interval=<0-255> = Send WNM TIM Broadcast Request (0 = cancel)" },
+	{ "wnm_tfs_req", wpa_cli_cmd_wnm_tfs_req, NULL, cli_cmd_flag_none,
+	  "cancel | rule tfs_id=<0-255> [delete=0|1] [notify=0|1] subelem"
+	  " [tclas_process=or|and] tclas type=<1|3|4> [up=<0-7>] [mask=<0-255>]"
+	  " ip_version=<4|6> [src_ip=<addr>] [dst_ip=<addr>] [src_port=<n>]"
+	  " [dst_port=<n>] [proto=<n>] [dscp=<n>] | ... type=3 offset=<n>"
+	  " filter=<hex> filter_mask=<hex>"
+	  " = Send standalone WNM TFS Request (IEEE 802.11-2024 9.4.2.78);"
+	  " invoke as a single shell command, not via the interactive prompt"
+	  " (max_args tokenizer cap)" },
 #endif /* CONFIG_WNM */
 #ifdef CONFIG_WNM_AP
 	{ "disassoc_imminent", wpa_cli_cmd_disassoc_imminent, NULL, cli_cmd_flag_none,

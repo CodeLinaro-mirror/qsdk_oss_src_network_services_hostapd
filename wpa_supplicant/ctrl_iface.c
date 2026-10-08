@@ -8890,6 +8890,246 @@ static int wpas_ctrl_iface_wnm_tim_bcast(struct wpa_supplicant *wpa_s,
 }
 
 
+/* WNM_TFS_REQ cancel
+ * WNM_TFS_REQ rule tfs_id=<0-255> [delete=0|1] [notify=0|1]
+ *               subelem [tclas_process=or|and]
+ *                 tclas type=<1|3|4> [up=<0-7>] [mask=<0-255>]
+ *                       ip_version=<4|6> [src_ip=<addr>] [dst_ip=<addr>]
+ *                       [src_port=<0-65535>] [dst_port=<0-65535>]
+ *                       [proto=<0-255>] [dscp=<0-255>]
+ *                 tclas type=3 [up=<0-7>] [mask=<0-255>] offset=<0-65535>
+ *                       filter=<hex> filter_mask=<hex>
+ *                 [tclas ...]
+ *               [subelem ...]
+ *             [rule ...]
+ *
+ * ip_version= must precede src_ip=/dst_ip= within a tclas block.
+ */
+static int wpas_ctrl_iface_wnm_tfs_req(struct wpa_supplicant *wpa_s, char *cmd)
+{
+	struct tfs_rule rules[WNM_TFS_MAX_RULES];
+	struct tfs_rule *rule = NULL;
+	struct tfs_subelement *subelem = NULL;
+	struct tfs_tclas *tclas = NULL;
+	u8 num_rules = 0;
+	char *token, *context = NULL;
+	int ival;
+	int i, j;
+
+	if (os_strcmp(cmd, "cancel") == 0)
+		return ieee802_11_send_wnm_tfs_req(wpa_s, NULL, 0);
+
+	os_memset(rules, 0, sizeof(rules));
+
+	while ((token = str_token(cmd, " ", &context))) {
+		if (os_strcmp(token, "rule") == 0) {
+			if (num_rules >= WNM_TFS_MAX_RULES) {
+				wpa_printf(MSG_DEBUG,
+					   "WNM_TFS_REQ: too many 'rule' blocks (max %d)",
+					   WNM_TFS_MAX_RULES);
+				return -1;
+			}
+			rule = &rules[num_rules++];
+			subelem = NULL;
+			tclas = NULL;
+			continue;
+		}
+
+		if (os_strcmp(token, "subelem") == 0) {
+			if (!rule) {
+				wpa_printf(MSG_DEBUG,
+					   "WNM_TFS_REQ: 'subelem' before 'rule'");
+				return -1;
+			}
+			if (rule->num_subelem >= WNM_TFS_MAX_SUBELEMENTS) {
+				wpa_printf(MSG_DEBUG,
+					   "WNM_TFS_REQ: too many 'subelem' blocks (max %d)",
+					   WNM_TFS_MAX_SUBELEMENTS);
+				return -1;
+			}
+			subelem = &rule->subelem[rule->num_subelem++];
+			subelem->tclas_process = 1; /* default OR, Table 9-210 */
+			tclas = NULL;
+			continue;
+		}
+
+		if (os_strcmp(token, "tclas") == 0) {
+			if (!subelem) {
+				wpa_printf(MSG_DEBUG,
+					   "WNM_TFS_REQ: 'tclas' before 'subelem'");
+				return -1;
+			}
+			if (subelem->num_tclas >= WNM_TFS_MAX_TCLAS) {
+				wpa_printf(MSG_DEBUG,
+					   "WNM_TFS_REQ: too many 'tclas' blocks (max %d)",
+					   WNM_TFS_MAX_TCLAS);
+				return -1;
+			}
+			tclas = &subelem->tclas[subelem->num_tclas++];
+			tclas->classifier_mask = 0xff;
+			continue;
+		}
+
+		if (tclas) {
+			if (sscanf(token, "type=%d", &ival) == 1) {
+				tclas->type = (u8) ival;
+				continue;
+			}
+			if (sscanf(token, "up=%d", &ival) == 1) {
+				tclas->user_priority = (u8) ival;
+				continue;
+			}
+			if (sscanf(token, "mask=%i", &ival) == 1) {
+				tclas->classifier_mask = (u8) ival;
+				continue;
+			}
+			if (sscanf(token, "ip_version=%d", &ival) == 1) {
+				tclas->ip_version = (u8) ival;
+				continue;
+			}
+			if (sscanf(token, "src_port=%d", &ival) == 1) {
+				tclas->src_port = (u16) ival;
+				continue;
+			}
+			if (sscanf(token, "dst_port=%d", &ival) == 1) {
+				tclas->dst_port = (u16) ival;
+				continue;
+			}
+			if (sscanf(token, "proto=%d", &ival) == 1) {
+				tclas->protocol = (u8) ival;
+				continue;
+			}
+			if (sscanf(token, "dscp=%d", &ival) == 1) {
+				tclas->dscp = (u8) ival;
+				continue;
+			}
+			if (sscanf(token, "offset=%d", &ival) == 1) {
+				tclas->filter_offset = (u16) ival;
+				continue;
+			}
+			if (os_strncmp(token, "src_ip=", 7) == 0) {
+				if (tclas->ip_version != 4 &&
+				    tclas->ip_version != 6) {
+					wpa_printf(MSG_DEBUG,
+						   "WNM_TFS_REQ: ip_version= must precede src_ip=");
+					return -1;
+				}
+				if (inet_pton(tclas->ip_version == 6 ?
+					      AF_INET6 : AF_INET,
+					      token + 7, tclas->src_ip) != 1) {
+					wpa_printf(MSG_DEBUG,
+						   "WNM_TFS_REQ: invalid src_ip '%s'",
+						   token + 7);
+					return -1;
+				}
+				continue;
+			}
+			if (os_strncmp(token, "dst_ip=", 7) == 0) {
+				if (tclas->ip_version != 4 &&
+				    tclas->ip_version != 6) {
+					wpa_printf(MSG_DEBUG,
+						   "WNM_TFS_REQ: ip_version= must precede dst_ip=");
+					return -1;
+				}
+				if (inet_pton(tclas->ip_version == 6 ?
+					      AF_INET6 : AF_INET,
+					      token + 7, tclas->dst_ip) != 1) {
+					wpa_printf(MSG_DEBUG,
+						   "WNM_TFS_REQ: invalid dst_ip '%s'",
+						   token + 7);
+					return -1;
+				}
+				continue;
+			}
+			if (os_strncmp(token, "filter_mask=", 12) == 0) {
+				size_t flen = os_strlen(token + 12) / 2;
+
+				if (flen == 0 || flen > WNM_TFS_MAX_FILTER_LEN ||
+				    hexstr2bin(token + 12, tclas->filter_mask,
+					       flen) < 0) {
+					wpa_printf(MSG_DEBUG,
+						   "WNM_TFS_REQ: invalid filter_mask");
+					return -1;
+				}
+				continue;
+			}
+			if (os_strncmp(token, "filter=", 7) == 0) {
+				size_t flen = os_strlen(token + 7) / 2;
+
+				if (flen == 0 || flen > WNM_TFS_MAX_FILTER_LEN ||
+				    hexstr2bin(token + 7, tclas->filter_value,
+					       flen) < 0) {
+					wpa_printf(MSG_DEBUG,
+						   "WNM_TFS_REQ: invalid filter");
+					return -1;
+				}
+				tclas->filter_len = (u8) flen;
+				continue;
+			}
+		}
+
+		if (subelem && os_strncmp(token, "tclas_process=", 14) == 0) {
+			const char *val = token + 14;
+
+			if (os_strcmp(val, "and") == 0)
+				subelem->tclas_process = 0; /* Table 9-210 */
+			else if (os_strcmp(val, "or") == 0)
+				subelem->tclas_process = 1;
+			else {
+				wpa_printf(MSG_DEBUG,
+					   "WNM_TFS_REQ: invalid tclas_process '%s'",
+					   val);
+				return -1;
+			}
+			continue;
+		}
+
+		if (rule) {
+			if (sscanf(token, "tfs_id=%d", &ival) == 1) {
+				rule->tfs_id = (u8) ival;
+				continue;
+			}
+			if (sscanf(token, "delete=%d", &ival) == 1) {
+				rule->delete_rule = (u8) (ival != 0);
+				continue;
+			}
+			if (sscanf(token, "notify=%d", &ival) == 1) {
+				rule->notify = (u8) (ival != 0);
+				continue;
+			}
+		}
+
+		wpa_printf(MSG_DEBUG, "WNM_TFS_REQ: unrecognized token '%s'",
+			   token);
+		return -1;
+	}
+
+	if (num_rules == 0) {
+		wpa_printf(MSG_DEBUG, "WNM_TFS_REQ: no 'rule' block given");
+		return -1;
+	}
+
+	for (i = 0; i < num_rules; i++) {
+		if (rules[i].num_subelem == 0) {
+			wpa_printf(MSG_DEBUG,
+				   "WNM_TFS_REQ: rule tfs_id=%u has no 'subelem' block",
+				   rules[i].tfs_id);
+			return -1;
+		}
+		for (j = 0; j < rules[i].num_subelem; j++) {
+			if (rules[i].subelem[j].num_tclas == 0) {
+				wpa_printf(MSG_DEBUG,
+					   "WNM_TFS_REQ: rule tfs_id=%u subelem %d has no 'tclas' block",
+					   rules[i].tfs_id, j);
+				return -1;
+			}
+		}
+	}
+
+	return ieee802_11_send_wnm_tfs_req(wpa_s, rules, num_rules);
+}
+
+
 static int wpas_ctrl_iface_wnm_bss_query(struct wpa_supplicant *wpa_s, char *cmd)
 {
 	int query_reason, list = 0;
@@ -14868,6 +15108,9 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 			reply_len = -1;
 	} else if (os_strncmp(buf, "WNM_TIM_BCAST ", 14) == 0) {
 		if (wpas_ctrl_iface_wnm_tim_bcast(wpa_s, buf + 14))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "WNM_TFS_REQ ", 12) == 0) {
+		if (wpas_ctrl_iface_wnm_tfs_req(wpa_s, buf + 12))
 			reply_len = -1;
 	} else if (os_strncmp(buf, "WNM_BSS_QUERY ", 14) == 0) {
 		if (wpas_ctrl_iface_wnm_bss_query(wpa_s, buf + 14))
