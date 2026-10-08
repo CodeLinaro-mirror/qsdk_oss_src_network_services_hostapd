@@ -178,9 +178,10 @@ size_t hostapd_uhr_eid_bmlie_from_rmlie(const struct wpabuf *mlbuf,
 						u8 link_id,
 						u8 *bmlie);
 /* Function declarations */
-int uhr_find_add_link_reconf_mle(const u8 *ies, size_t ies_len,
-				 const u8 **mle_out, size_t *mle_len_out);
+struct wpabuf *uhr_find_reconf_mle(const u8 *ies, size_t ies_len,
+				   bool require_add_link);
 int uhr_parse_reconfig_mle(const u8 *ies, size_t ies_len,
+			   bool require_add_link,
 			   struct uhr_reconfig_mle *mle);
 
 #define UHR_MAX_DELETE_ST_PREP_TARGETS 8
