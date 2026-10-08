@@ -10744,7 +10744,24 @@ u8 hostapd_get_mld_id(struct hostapd_data *hapd)
 int hostapd_mld_link_config_check(struct hostapd_data *hapd)
 {
 	struct hostapd_mld *mld = hapd->mld;
+#ifndef RDK_ONEWIFI
 	struct hostapd_data *first = mld->fbss;
+#else
+	struct hostapd_data *first;
+
+	/*
+	 * An interface-status event can race MLD link add/remove.  In that
+	 * window the MLD object still exists but its first BSS has already been
+	 * cleared.  There is no link configuration to compare in that state.
+	 */
+	if (!mld || !mld->fbss) {
+		wpa_printf(MSG_DEBUG,
+			   "AP MLD: Skip link configuration check without a first BSS");
+		return 0;
+	}
+
+	first = mld->fbss;
+#endif
 
 #ifdef CONFIG_QCN_EXTN
 	/* skip check for repurposed link as it can have unique ssid */

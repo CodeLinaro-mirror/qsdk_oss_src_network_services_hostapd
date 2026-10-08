@@ -153,7 +153,11 @@ struct wpa_bss {
 	u8 center_freq2_idx;
 	le16 punc_bitmap;
 #endif
+#ifdef RDK_ONEWIFI
+	struct mld_link_wpa {
+#else
 	struct mld_link {
+#endif /* RDK_ONEWIFI */
 		u8 bssid[ETH_ALEN];
 		int freq;
 

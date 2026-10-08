@@ -587,6 +587,19 @@ static void wpas_sme_set_mlo_links(struct wpa_supplicant *wpa_s,
 		return;
 
 	usable_links = wpa_bss_get_usable_links(wpa_s, bss, ssid, missing_links);
+#ifdef RDK_ONEWIFI
+	/*
+	 * The RDK extender HAL constructs and validates partner BSS entries before
+	 * invoking the in-process SME.  Its BSS handoff carries the complete MLD
+	 * bitmap, while the generic scan-cache lookup above can temporarily see
+	 * only the association BSS and collapse a verified multi-link attempt to
+	 * one link. Retain the selected-link bitmap for repeater STA MLO.
+	 */
+	if (bss->valid_links && (bss->valid_links & (bss->valid_links - 1)) &&
+	    usable_links != bss->valid_links) {
+		usable_links = bss->valid_links;
+	}
+#endif
 	if (!usable_links)
 		return;
 
@@ -951,10 +964,15 @@ fail:
 
 #endif /* CONFIG_ENC_ASSOC */
 
-
+#ifdef RDK_ONEWIFI
+int sme_send_authentication(struct wpa_supplicant *wpa_s,
+			    struct wpa_bss *bss, struct wpa_ssid *ssid,
+			    int start)
+#else
 static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 				    struct wpa_bss *bss, struct wpa_ssid *ssid,
 				    int start)
+#endif
 {
 	struct wpa_driver_auth_params params;
 	struct wpa_ssid *old_ssid;
@@ -984,7 +1002,11 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 		wpa_msg(wpa_s, MSG_ERROR, "SME: No scan result available for "
 			"the network");
 		wpas_connect_work_done(wpa_s);
+#ifdef RDK_ONEWIFI
+		return -1;
+#else
 		return;
+#endif
 	}
 
 	if (start && wpas_security_profile_active(wpa_s) &&
@@ -1010,7 +1032,11 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 			wpa_msg(wpa_s, MSG_WARNING,
 				"SME: Failed to set key management and encryption suites");
 			wpas_connect_work_done(wpa_s);
+#ifdef RDK_ONEWIFI
+			return -1;
+#else
 			return;
+#endif
 		}
 		set_suites_done = true;
 	}
@@ -1047,7 +1073,11 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 		 */
 		wpa_s->reassociate = 1;
 		wpa_supplicant_req_scan(wpa_s, 0, 0);
+#ifdef RDK_ONEWIFI
+		return 0;
+#else
 		return;
+#endif
 	}
 
 	if (wpa_s->valid_links) {
@@ -1144,7 +1174,11 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 				"SAE enabled, but target BSS does not advertise RSN");
 		} else if (wpa_parse_wpa_ie(rsn, 2 + rsn[1], &ied)) {
 			wpa_printf(MSG_DEBUG, "SME: Failed parsing RSNE data");
+#ifdef RDK_ONEWIFI
+			return -1;
+#else
 			return;
+#endif
 #ifdef CONFIG_DPP
 		} else if ((ssid->key_mgmt & WPA_KEY_MGMT_DPP) &&
 			   (ied.key_mgmt & WPA_KEY_MGMT_DPP)) {
@@ -1255,7 +1289,11 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 				wpa_msg(wpa_s, MSG_WARNING, "SME: Failed to set WPA "
 					"key management and encryption suites");
 				wpas_connect_work_done(wpa_s);
+#ifdef RDK_ONEWIFI
+				return -1;
+#else
 				return;
+#endif
 			}
 	} else if ((ssid->key_mgmt & WPA_KEY_MGMT_IEEE8021X_NO_WPA) &&
 		   wpa_key_mgmt_wpa_ieee8021x(ssid->key_mgmt)) {
@@ -1276,7 +1314,11 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 				"key management and encryption suites (no "
 				"scan results)");
 			wpas_connect_work_done(wpa_s);
+#ifdef RDK_ONEWIFI
+			return -1;
+#else
 			return;
+#endif
 		}
 #ifdef CONFIG_WPS
 	} else if (ssid->key_mgmt & WPA_KEY_MGMT_WPS) {
@@ -1312,7 +1354,11 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 		} else {
 			wpa_msg(wpa_s, MSG_WARNING, "WPA: Failed copy WPA IE");
 			wpas_connect_work_done(wpa_s);
+#ifdef RDK_ONEWIFI
+			return -1;
+#else
 			return;
+#endif
 		}
 	}
 
@@ -1529,7 +1575,11 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 			 * frame */
 			if (wpas_eppke_initialize(wpa_s, bss, ssid) < 0) {
 				wpas_connection_failed(wpa_s, bss->bssid, NULL);
+#ifdef RDK_ONEWIFI
+				return -1;
+#else
 				return;
+#endif
 			}
 
 			resp = wpas_pasn_build_auth_1(&wpa_s->pasn, NULL,
@@ -1539,7 +1589,11 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 		}
 		if (!resp) {
 			wpas_connection_failed(wpa_s, bss->bssid, NULL);
+#ifdef RDK_ONEWIFI
+			return -1;
+#else
 			return;
+#endif
 		}
 		params.auth_data = wpabuf_head(resp);
 		params.auth_data_len = wpabuf_len(resp);
@@ -1576,7 +1630,11 @@ static void sme_send_authentication(struct wpa_supplicant *wpa_s,
 			resp = sme_auth_build_sae_confirm(wpa_s, 0);
 		if (resp == NULL) {
 			wpas_connection_failed(wpa_s, bss->bssid, NULL);
+#ifdef RDK_ONEWIFI
+			return -1;
+#else
 			return;
+#endif
 		}
 		params.auth_data = wpabuf_head(resp);
 		params.auth_data_len = wpabuf_len(resp);
@@ -1732,7 +1790,11 @@ no_fils:
 				wpa_supplicant_mark_disassoc(wpa_s);
 				wpabuf_free(resp);
 				wpas_connect_work_done(wpa_s);
+#ifdef RDK_ONEWIFI
+				return -1;
+#else
 				return;
+#endif
 			}
 		}
 	}
@@ -1743,7 +1805,11 @@ no_fils:
 			"SME: Skip authentication step on reassoc-to-same-BSS");
 		wpabuf_free(resp);
 		sme_associate(wpa_s, ssid->mode, bss->bssid, WLAN_AUTH_OPEN);
+#ifdef RDK_ONEWIFI
+		return 0;
+#else
 		return;
+#endif
 	}
 
 
@@ -1774,7 +1840,11 @@ no_fils:
 				wpa_supplicant_mark_disassoc(wpa_s);
 				wpabuf_free(resp);
 				wpas_connect_work_done(wpa_s);
+#ifdef RDK_ONEWIFI
+				return -1;
+#else
 				return;
+#endif
 			}
 			os_memcpy(auth_ie_buf, params.ie, params.ie_len);
 			os_memcpy(auth_ie_buf + params.ie_len,
@@ -1793,6 +1863,21 @@ no_fils:
 	}
 
 	wpa_s->sme.auth_alg = params.auth_alg;
+#ifdef RDK_ONEWIFI
+	{
+		int ret = wpa_drv_authenticate(wpa_s, &params);
+		if (ret < 0) {
+			wpa_msg(wpa_s, MSG_INFO, "SME: Authentication request to the "
+				"driver failed");
+			wpas_connection_failed(wpa_s, bss->bssid, NULL);
+			wpa_supplicant_mark_disassoc(wpa_s);
+			wpabuf_free(resp);
+			os_free(auth_ie_buf);
+			wpas_connect_work_done(wpa_s);
+			return ret;
+		}
+	}
+#else
 	if (wpa_drv_authenticate(wpa_s, &params) < 0) {
 		wpa_msg(wpa_s, MSG_INFO, "SME: Authentication request to the "
 			"driver failed");
@@ -1803,6 +1888,7 @@ no_fils:
 		wpas_connect_work_done(wpa_s);
 		return;
 	}
+#endif
 
 	eloop_register_timeout(SME_AUTH_TIMEOUT, 0, sme_auth_timer, wpa_s,
 			       NULL);
@@ -1814,6 +1900,9 @@ no_fils:
 
 	wpabuf_free(resp);
 	os_free(auth_ie_buf);
+#ifdef RDK_ONEWIFI
+	return 0;
+#endif
 }
 
 

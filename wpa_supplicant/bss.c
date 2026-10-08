@@ -1806,11 +1806,13 @@ wpa_bss_parse_ml_rnr_ap_info(struct wpa_supplicant *wpa_s,
 			wpa_printf(MSG_DEBUG, "ML Partner freq %d is not part of our scan list ignore this link", partner_freq);
 			continue;
 		}
-
-
+#ifndef RDK_ONEWIFI
 		if (*mld_params != ap_mld_id) {
 			wpa_printf(MSG_DEBUG,
 				   "MLD: Reported link not part of MLD");
+#else
+	if (*mld_params != ap_mld_id) {
+#endif
 		} else if (!(BIT(link_id) & *seen)) {
 			*seen |= BIT(link_id);
 			wpa_printf(MSG_DEBUG, "MLD: mld ID=%u, link ID=%u",
@@ -1830,7 +1832,11 @@ wpa_bss_parse_ml_rnr_ap_info(struct wpa_supplicant *wpa_s,
 			wpa_bss_update_link_rnr_ap_info_extn(wpa_s, bss, pos + 1, ap_info,
 							     mld_params, link_id);
 #else
+#ifdef RDK_ONEWIFI
+			struct mld_link_wpa *l;
+#else
 			struct mld_link *l;
+#endif /* RDK_ONEWIFI */
 			bss->valid_links |= BIT(link_id);
 			l = &bss->mld_links[link_id];
 			os_memcpy(l->bssid, pos + 1, ETH_ALEN);
@@ -2228,7 +2234,11 @@ void wpa_bss_parse_basic_ml_element(struct wpa_supplicant *wpa_s,
 	u16 seen;
 	const u8 *ies_pos = wpa_bss_ie_ptr(bss);
 	size_t ies_len = bss->ie_len ? bss->ie_len : bss->beacon_ie_len;
+#ifdef RDK_ONEWIFI
+	struct mld_link_wpa *l;
+#else
 	struct mld_link *l;
+#endif /* RDK_ONEWIFI */
 	s8 hw_idx;
 	u16 associated_hw_bmap = 0;
 

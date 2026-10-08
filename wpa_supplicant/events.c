@@ -2196,7 +2196,11 @@ static int wpas_sta_cac_get_link_chandef(struct wpa_supplicant *wpa_s,
 		cf2_idx = selected->center_freq2_idx;
 		punc_bitmap = selected->punc_bitmap;
 	} else {
+#ifdef RDK_ONEWIFI
+		const struct mld_link_wpa *link = &selected->mld_links[link_id];
+#else
 		const struct mld_link *link = &selected->mld_links[link_id];
+#endif /* RDK_ONEWIFI */
 
 		width = link->width;
 		cf1_idx = link->center_freq1_idx;
@@ -5464,6 +5468,19 @@ static int wpa_sm_set_ml_info(struct wpa_supplicant *wpa_s)
 	struct wpa_sm_mlo wpa_mlo;
 	int i;
 
+#ifdef RDK_ONEWIFI
+	/*
+	 * OneWiFi's in-process QCA HAL primes wpa_sm MLO state before sending
+	 * AUTHENTICATE/ASSOCIATE.  It does not expose the optional native
+	 * get_sta_mlo_info driver operation.  The generic fallback below then
+	 * sees an all-zero drv_mlo and overwrites that valid state at the
+	 * association event, causing M2 to omit the MLO KDEs.
+	 */
+	if (!wpa_s->driver->get_sta_mlo_info) {
+		return 0;
+	}
+
+#endif
 	os_memset(&drv_mlo, 0, sizeof(drv_mlo));
 	if (wpas_drv_get_sta_mlo_info(wpa_s, &drv_mlo)) {
 		wpa_dbg(wpa_s, MSG_INFO, "Failed to get MLO link info");
@@ -9536,5 +9553,9 @@ void supplicant_event_global(void *ctx, enum wpa_event_type event,
 #endif /* CONFIG_MATCH_IFACE */
 
 	if (wpa_s)
+#ifdef RDK_ONEWIFI
+		supplicant_event(wpa_s, event, data);
+#else
 		wpa_supplicant_event(wpa_s, event, data);
+#endif
 }

@@ -16030,16 +16030,37 @@ static size_t hostapd_eid_rnr_mlo_len(struct hostapd_data *hapd, u32 type,
 {
 	size_t len = 0;
 #ifdef CONFIG_IEEE80211BE
+#ifdef RDK_ONEWIFI
+	struct hostapd_data *link_hapd;
+#else /* RDK_ONEWIFI */
 	struct hostapd_iface *iface;
 	size_t i;
+#endif /* RDK_ONEWIFI */
 
+#ifdef RDK_ONEWIFI
+	if (!hapd->iface || !hapd->mld)
+		return 0;
+#else /* RDK_ONEWIFI */
 	if (!hapd->iface || !hapd->iface->interfaces)
 		return 0;
+#endif /* RDK_ONEWIFI */
 
 	/* TODO: Allow for FILS/Action as well */
 	if (type != WLAN_FC_STYPE_BEACON && type != WLAN_FC_STYPE_PROBE_RESP)
 		return 0;
 
+#ifdef RDK_ONEWIFI
+	for_each_mld_link(link_hapd, hapd) {
+		if (!link_hapd || !link_hapd->iface ||
+		    link_hapd->iface->freq == hapd->iface->freq ||
+		    !link_hapd->iface->num_bss)
+			continue;
+
+		len += hostapd_eid_rnr_iface_len(link_hapd->iface->bss[0], hapd,
+						 current_len, skip_profiles,
+						 true, num_rnr);
+	}
+#else /* RDK_ONEWIFI */
 	for (i = 0; i < hapd->iface->interfaces->count; i++) {
 		iface = hapd->iface->interfaces->iface[i];
 
@@ -16051,6 +16072,7 @@ static size_t hostapd_eid_rnr_mlo_len(struct hostapd_data *hapd, u32 type,
 						 current_len, skip_profiles,
 						 true, num_rnr);
 	}
+#endif /* RDK_ONEWIFI */
 #endif /* CONFIG_IEEE80211BE */
 
 	return len;
@@ -16612,16 +16634,37 @@ static u8 * hostapd_eid_rnr_mlo(struct hostapd_data *hapd, u32 type,
 				size_t *current_len, u8 *num_rnr)
 {
 #ifdef CONFIG_IEEE80211BE
+#ifdef RDK_ONEWIFI
+	struct hostapd_data *link_hapd;
+#else /* RDK_ONEWIFI */
 	struct hostapd_iface *iface;
 	size_t i;
+#endif /* RDK_ONEWIFI */
 
+#ifdef RDK_ONEWIFI
+	if (!hapd->iface || !hapd->mld)
+		return eid;
+#else /* RDK_ONEWIFI */
 	if (!hapd->iface || !hapd->iface->interfaces)
 		return eid;
+#endif /* RDK_ONEWIFI */
 
 	/* TODO: Allow for FILS/Action as well */
 	if (type != WLAN_FC_STYPE_BEACON && type != WLAN_FC_STYPE_PROBE_RESP)
 		return eid;
 
+#ifdef RDK_ONEWIFI
+	for_each_mld_link(link_hapd, hapd) {
+		if (!link_hapd || !link_hapd->iface ||
+		    link_hapd->iface->freq == hapd->iface->freq ||
+		    !link_hapd->iface->num_bss)
+			continue;
+
+		eid = hostapd_eid_rnr_iface(link_hapd->iface->bss[0], hapd, eid,
+					    current_len, skip_profiles, true,
+					    type, num_rnr);
+	}
+#else /* RDK_ONEWIFI */
 	for (i = 0; i < hapd->iface->interfaces->count; i++) {
 		iface = hapd->iface->interfaces->iface[i];
 
@@ -16636,6 +16679,7 @@ static u8 * hostapd_eid_rnr_mlo(struct hostapd_data *hapd, u32 type,
 					    current_len, skip_profiles, true,
 					    type, num_rnr);
 	}
+#endif /* RDK_ONEWIFI */
 #endif /* CONFIG_IEEE80211BE */
 
 	return eid;
