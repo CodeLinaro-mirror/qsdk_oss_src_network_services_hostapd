@@ -1653,6 +1653,12 @@ struct hostapd_config {
 	const struct wpa_driver_ops *driver;
 	char *driver_params;
 
+	/* Name of the PHY (radio) to bind this interface to; used when
+	 * hostapd is started directly from a config file (no explicit
+	 * ADD_IFACE phy argument) and the PHY cannot be inferred from the
+	 * driver query in setup_interface(). */
+	char phy_id[16];
+
 	int ap_table_max_size;
 	int ap_table_expiration_time;
 
