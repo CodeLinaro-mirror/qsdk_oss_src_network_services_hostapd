@@ -7785,10 +7785,8 @@ static s8 validate_user_eirp_tx_power(struct hostapd_data *hapd, s8 *local_tx_pw
 			expected_tx_pwr_count = 2;
 			break;
 		case CHAN_WIDTH_160:
-			expected_tx_pwr_count = 3;
-			break;
 		case CHAN_WIDTH_320:
-			expected_tx_pwr_count = 4;
+			expected_tx_pwr_count = 3;
 			break;
 		default:
 			wpa_printf(MSG_ERROR,
@@ -7877,6 +7875,17 @@ static s8 validate_user_psd_tx_power(struct hostapd_data *hapd,
 			     client_mode, chan_data, pwr_mode, tx_pwr_intrpn);
 	if (ret) {
 		wpa_printf(MSG_ERROR, "failed to get the PSD values");
+		goto free;
+	}
+
+	if (tpe_11ax_count != non_11be_chan_count ||
+	    ext_tx_pwr_val_count != (total_chan_count - non_11be_chan_count)) {
+		wpa_printf(MSG_ERROR,
+			   "PSD Tx power count(%d/%d) does not match expected(%d/%d) for current BW",
+			   tpe_11ax_count, ext_tx_pwr_val_count,
+			   non_11be_chan_count,
+			   total_chan_count - non_11be_chan_count);
+		ret = -1;
 		goto free;
 	}
 
@@ -8812,53 +8821,6 @@ static s8 validate_user_max_tx_pwr(struct hostapd_data *hapd,
 	return ret;
 }
 
-static s8 validatate_bw_pwr_count(struct hostapd_data *hapd,
-				  u8 local_max_txpwr_count,
-				  enum max_tx_pwr_interpretation tx_pwr_intrpn)
-{
-	struct hostapd_iface *iface = hapd->iface;
-	struct hostapd_config *iconf = iface->conf;
-	enum chan_width ch_width;
-	u16 bw_step_count = 0;
-	u16 max_bw = 0;
-
-	ch_width = hostapd_get_chan_width_from_oper_chan_width(iconf);
-	max_bw = channel_width_to_int(ch_width);
-
-	if (tx_pwr_intrpn == LOCAL_EIRP) {
-		switch (ch_width) {
-		case CHAN_WIDTH_20:
-			bw_step_count = 1;
-			break;
-		case CHAN_WIDTH_40:
-			bw_step_count = 2;
-			break;
-		case CHAN_WIDTH_80:
-			bw_step_count = 3;
-			break;
-		case CHAN_WIDTH_160:
-			bw_step_count = 4;
-			break;
-		case CHAN_WIDTH_320:
-			bw_step_count = 5;
-			break;
-		default:
-			bw_step_count = 1;
-			break;
-		}
-	} else if (tx_pwr_intrpn == LOCAL_EIRP_PSD) {
-		bw_step_count = max_bw / 20;
-	}
-
-	if (local_max_txpwr_count != bw_step_count) {
-		wpa_printf(MSG_ERROR, " Tx power values(%d) does not match BW channel count(%d) for %s",
-			   local_max_txpwr_count, bw_step_count, tx_pwr_intrpn_str(tx_pwr_intrpn));
-		return -1;
-	}
-
-	return 0;
-}
-
 static s8 validate_user_tpe_val(struct hostapd_data *hapd,
 				u8 *ext_tx_pwr_val_count,
 				u8 tx_pwr_count,
@@ -8896,7 +8858,7 @@ static s8 validate_user_tpe_val(struct hostapd_data *hapd,
 	}
 	*ext_tx_pwr_val_count = tmp_extn_count;
 
-	return validatate_bw_pwr_count(hapd, local_max_txpwr_count, tx_pwr_intrpn);
+	return 0;
 }
 
 int hostapd_ctrl_iface_set_tpe(struct hostapd_data *hapd, char *cmd)
