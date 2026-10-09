@@ -4510,8 +4510,13 @@ int hostapd_disassoc_deny_mac(struct hostapd_data *hapd)
 					      sta->addr, &vlan_id) &&
 		    (!vlan_id.notempty ||
 		     !vlan_compare(&vlan_id, sta->vlan_desc)))
+#ifdef CONFIG_QCN_EXTN
+			ap_sta_disconnect(hapd, sta, sta->addr,
+					  WLAN_REASON_PREV_AUTH_NOT_VALID);
+#else
 			ap_sta_disconnect(hapd, sta, sta->addr,
 					  WLAN_REASON_UNSPECIFIED);
+#endif
 #ifdef CONFIG_IEEE80211BE
 		for (link_id = 0; hapd->conf->mld_ap &&
 			     link_id < MAX_NUM_MLD_LINKS &&
@@ -4532,8 +4537,13 @@ int hostapd_disassoc_deny_mac(struct hostapd_data *hapd)
 						      &vlan_id) &&
 			    (!vlan_id.notempty ||
 			     !vlan_compare(&vlan_id, sta->vlan_desc)))
+#ifdef CONFIG_QCN_EXTN
+				ap_sta_disconnect(hapd, sta, sta->addr,
+						  WLAN_REASON_PREV_AUTH_NOT_VALID);
+#else
 				ap_sta_disconnect(hapd, sta, sta->addr,
 						  WLAN_REASON_UNSPECIFIED);
+#endif
 		}
 #endif /* CONFIG_IEEE80211BE */
 	}
