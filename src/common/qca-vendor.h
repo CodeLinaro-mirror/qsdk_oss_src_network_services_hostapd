@@ -4534,6 +4534,20 @@ enum qca_wlan_vendor_attr_config {
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_NON_BEACON_BSS = 157,
 
+	/*
+	 * QCA_WLAN_VENDOR_ATTR_CONFIG_BOOTUP_CAC_FEATURE - u8
+	 * Informs the driver whether this 5 GHz BSS should use the enhanced
+	 * boot-up CAC path (iface creation during DFS CAC).
+	 *
+	 * 1 = boot-up CAC enabled (disable_bootup_cac_feature=0)
+	 * 0 = boot-up CAC disabled (disable_bootup_cac_feature=1).
+	 *
+	 * The driver stores the inverse in
+	 * wiphy->radio_cfg[radio_idx].disable_bootup_cac. Must be sent before
+	 * start_ap.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_BOOTUP_CAC_FEATURE = 158,
+
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
