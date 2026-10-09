@@ -1697,17 +1697,20 @@ int security_profile_ie_get_key_mgmt(const u8 *sp_ie,
 		/*
 		 * security_profile_akm_matches() expects a single key_mgmt
 		 * value (not a bitmask), so iterate over each set bit in
-		 * ssid_key_mgmt and test them individually.
+		 * ssid_key_mgmt and test them individually. Do NOT break on
+		 * the first match: some profiles (e.g. profile 9, SAE) match
+		 * more than one AKM bit (plain SAE or SAE-EXT-KEY), and the
+		 * lower-numbered bit (SAE) would otherwise always shadow the
+		 * stronger/intended one (SAE-EXT-KEY) configured alongside
+		 * it, since bits are scanned in ascending order.
 		 */
 		for (akm_bit = 0; akm_bit < 32; akm_bit++) {
 			int akm = ssid_key_mgmt & BIT(akm_bit);
 
 			if (!akm)
 				continue;
-			if (security_profile_akm_matches(profile, akm)) {
+			if (security_profile_akm_matches(profile, akm))
 				result |= akm;
-				break;
-			}
 		}
 	}
 
@@ -2139,7 +2142,7 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 				ie.pairwise_cipher |= WPA_CIPHER_GCMP_256;
 				ie.has_pairwise = 1;
 			}
-			if (!(ie.key_mgmt & ssid->key_mgmt) && sp_key_mgmt) {
+			if (sp_key_mgmt && (sp_key_mgmt & ~ie.key_mgmt)) {
 				wpa_dbg(wpa_s, MSG_DEBUG,
 					"RSN: Security Profile element overrides RSN element AKM (key_mgmt=0x%x)",
 					sp_key_mgmt);
@@ -2488,6 +2491,23 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		wpa_s->key_mgmt = WPA_KEY_MGMT_DPP;
 		wpa_dbg(wpa_s, MSG_DEBUG, "RSN: using KEY_MGMT DPP");
 #endif /* CONFIG_DPP */
+#ifdef CONFIG_ENC_ASSOC
+	} else if ((sel & WPA_KEY_MGMT_EPPKE) &&
+		   !(sel & (WPA_KEY_MGMT_SAE_EXT_KEY |
+			    WPA_KEY_MGMT_FT_SAE_EXT_KEY))) {
+		/*
+		 * IEEE P802.11bi/D4.0, 12.16.9.1: EPPKE with a base AKM
+		 * (SAE-EXT-KEY/FT-SAE-EXT-KEY) uses that base AKM alone as
+		 * the RSNE AKM suite selector; EPPKE itself is signaled only
+		 * via the Authentication frame's auth_alg field, not the
+		 * RSNE. The RSNE AKM suite selector is EPPKE itself only in
+		 * the no-base-AKM (unauthenticated) case. So only select bare
+		 * EPPKE here when no base AKM is available; otherwise fall
+		 * through to the SAE-EXT-KEY/FT-SAE-EXT-KEY branches below.
+		 */
+		wpa_s->key_mgmt = WPA_KEY_MGMT_EPPKE;
+		wpa_dbg(wpa_s, MSG_DEBUG, "RSN: using KEY_MGMT EPPKE");
+#endif /* CONFIG_ENC_ASSOC */
 #ifdef CONFIG_SAE
 	} else if (sel & WPA_KEY_MGMT_FT_SAE_EXT_KEY) {
 		wpa_s->key_mgmt = WPA_KEY_MGMT_FT_SAE_EXT_KEY;
@@ -2765,13 +2785,43 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 			u8 bitmap_len = sp_ie[4] & 0x0F;
 			const u8 *bitmap = sp_ie + 5;
 			int profile;
+			int profile_match_km = wpa_s->key_mgmt;
+
+#ifdef CONFIG_ENC_ASSOC
+			/*
+			 * IEEE P802.11bi/D4.0, 12.16.9.1: wpa_s->key_mgmt only
+			 * carries the base AKM (e.g. SAE-EXT-KEY) for an EPPKE
+			 * connection with a base AKM, since that is what the
+			 * RSNE AKM suite selector carries on the wire; EPPKE
+			 * itself is signaled solely via the Authentication
+			 * frame's auth_alg field, decided later in
+			 * sme_send_authentication(). Profile matching here
+			 * happens earlier, so wpa_s->key_mgmt alone cannot
+			 * distinguish "profile 1 (EPPKE+SAE-EXT-KEY)" from
+			 * "profile 9 (plain SAE-EXT-KEY, no EPPKE)" -- both
+			 * produce the identical RSNE. Re-add the EPPKE bit
+			 * here, based on the STA's configured intent and
+			 * driver/AP EPPKE capability, so EPPKE-capable
+			 * profiles are preferred over plain-SAE ones whenever
+			 * EPPKE is actually usable for this connection.
+			 */
+			if (wpa_key_mgmt_eppke(ssid->key_mgmt) &&
+			    (wpa_s->drv_flags2 &
+			     WPA_DRIVER_FLAGS2_ASSOCIATION_FRAME_ENCRYPTION) &&
+			    ieee802_11_rsnx_capab(bss_rsnx,
+						  WLAN_RSNX_CAPAB_KEK_IN_PASN) &&
+			    ieee802_11_rsnx_capab(
+				    bss_rsnx,
+				    WLAN_RSNX_CAPAB_ASSOC_FRAME_ENCRYPTION))
+				profile_match_km |= WPA_KEY_MGMT_EPPKE;
+#endif /* CONFIG_ENC_ASSOC */
 
 			if (sp_ie[1] >= 3 + bitmap_len) {
 				/*
 				 * Walk Table 9-bb14 profiles 0-15 and find the
 				 * first one whose bit is set in the AP's bitmap
 				 * AND whose AKM/cipher match the negotiated
-				 * wpa_s->key_mgmt / wpa_s->pairwise_cipher.
+				 * profile_match_km / wpa_s->pairwise_cipher.
 				 * All defined profiles use GCMP-256 as pairwise
 				 * cipher (Table 9-bb14, 802.11bn D1.4 p.205).
 				 */
@@ -2791,10 +2841,19 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 						continue;
 
 					/* Check AKM matches profile definition
-					 * (Table 9-bb14) */
+					 * (Table 9-bb14). Try profile_match_km
+					 * (which may include a speculative
+					 * EPPKE bit) first, then fall back to
+					 * the plain negotiated wpa_s->key_mgmt
+					 * so profiles with no EPPKE AKM (e.g.
+					 * profile 9, plain SAE-EXT-KEY) still
+					 * match via their exact-equality check
+					 * even when the EPPKE bit was added
+					 * above. */
 					if (security_profile_akm_matches(
-						    profile,
-						    wpa_s->key_mgmt)) {
+						    profile, profile_match_km) ||
+					    security_profile_akm_matches(
+						    profile, wpa_s->key_mgmt)) {
 						wpa_s->selected_security_profile_num = profile;
 						wpa_dbg(wpa_s, MSG_DEBUG,
 							"Security Profile: selected profile %d (key_mgmt=0x%x)",

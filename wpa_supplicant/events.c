@@ -779,7 +779,7 @@ static int wpa_supplicant_ssid_bss_match(struct wpa_supplicant *wpa_s,
 						"   Security Profile element overrides RSN IE pairwise cipher");
 				ie.pairwise_cipher |= WPA_CIPHER_GCMP_256;
 				wpa_s->pairwise_cipher = WPA_CIPHER_GCMP_256;
-				if (!(ie.key_mgmt & ssid->key_mgmt)) {
+				if (sp_key_mgmt & ~ie.key_mgmt) {
 					if (debug_print)
 						wpa_dbg(wpa_s, MSG_DEBUG,
 							"   Security Profile element overrides RSN IE key_mgmt");
