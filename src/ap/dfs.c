@@ -3709,7 +3709,7 @@ int hostapd_dfs_intercac_defer_non_radar_switch(struct hostapd_iface *iface,
 
 	freq = &settings->freq_params;
 	chan = freq->channel;
-	if (!chan || chan == iface->conf->channel)
+	if (!chan)
 		return 0;
 
 	width = hostapd_chan_width_from_freq_params(freq);
@@ -3719,6 +3719,10 @@ int hostapd_dfs_intercac_defer_non_radar_switch(struct hostapd_iface *iface,
 					    cur_oper_width);
 	if (n_chans <= 0 || n_chans_oper <= 0)
 		return 0;
+
+	if (chan == iface->conf->channel && n_chans <= n_chans_oper)
+		return 0;
+
 	if (!hostapd_dfs_intercac_is_pref_chan(iface->current_mode, chan, chan,
 					       n_chans, n_chans,
 					       &first_chan_idx))
