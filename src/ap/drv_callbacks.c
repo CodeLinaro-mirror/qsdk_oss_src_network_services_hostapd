@@ -1536,6 +1536,11 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 	int channel, chwidth, is_dfs0, is_dfs;
 	u8 seg0_idx = 0, seg1_idx = 0, op_class, chan_no;
 	size_t i;
+#ifdef CONFIG_IEEE80211BN
+#ifdef CONFIG_QCN_EXTN
+	bool npca_was_enabled = false;
+#endif /* CONFIG_QCN_EXTN */
+#endif /* CONFIG_IEEE80211BN */
 
 	hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
 		       HOSTAPD_LEVEL_INFO,
@@ -1721,6 +1726,9 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 	hapd->iconf->ch_switch_eht_config = 0;
 	hapd->iconf->ch_switch_uhr_config = 0;
 #ifdef CONFIG_IEEE80211BN
+#ifdef CONFIG_QCN_EXTN
+	npca_was_enabled = hapd->iconf->npca_enable;
+#endif /* CONFIG_QCN_EXTN */
 	hostapd_disable_npca(hapd->iconf);
 #endif /* CONFIG_IEEE80211BN */
 
@@ -1782,6 +1790,11 @@ void hostapd_event_ch_switch(struct hostapd_data *hapd, int freq, int ht,
 		if (!mapc_handle_primary_channel_change(hapd))
 			mapc_handle_negotiation_update(hapd, MAPC_SCHEME_CO_TDMA);
 	}
+
+#ifdef CONFIG_QCN_EXTN
+	if (finished && npca_was_enabled)
+		hostapd_acs_npca_retrigger(hapd->iface);
+#endif /* CONFIG_QCN_EXTN */
 #endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_QCN_EXTN

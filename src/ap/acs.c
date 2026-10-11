@@ -1525,7 +1525,7 @@ static int acs_npca_build_punct_bitmap(struct hostapd_iface *iface,
  *
  *   score = |candidate - primary| / 4
  *
- * Does nothing if npca_enable=0 or npca_primary_channel already set.
+ * Does nothing if npca_primary_channel is already set.
  */
 int acs_npca_select_primary_chan(struct hostapd_iface *iface,
 				 u8 *npca_channel, u16 *npca_punct_bitmap)
@@ -1537,9 +1537,6 @@ int acs_npca_select_primary_chan(struct hostapd_iface *iface,
 	int seg0, lo, hi, i;
 	u8 primary, npca_best_chan = 0;
 	u32 best_score = 0;
-
-	if (!conf->npca_enable || conf->npca_primary_channel)
-		return 0;
 
 	mode = iface->current_mode;
 	if (!mode)
