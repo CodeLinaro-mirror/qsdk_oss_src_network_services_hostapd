@@ -716,6 +716,8 @@ int hostapd_ubus_mesh_switch_channel(struct hostapd_iface *iface,
 	if (iface->current_hw_info)
 		blobmsg_add_u32(&b, "radio", iface->current_hw_info->hw_idx);
 	blobmsg_add_u32(&b, "frequency", settings->freq_params.freq);
+	if (iface->freq > 0)
+		blobmsg_add_u32(&b, "source_frequency", iface->freq);
 	blobmsg_add_u32(&b, "csa_count", settings->cs_count);
 	blobmsg_add_u32(&b, "ap_beacon_int", iface->conf->beacon_int);
 	blobmsg_add_u8(&b, "block_tx", !!settings->block_tx);
