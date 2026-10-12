@@ -1760,6 +1760,26 @@ static int hostapd_validate_bss_uhr_capab(struct hostapd_data *hapd)
 		return -1;
 	}
 
+	if ((mask & UHR_PHY_BSS_OVR_ELR_TX) &&
+	    hapd->conf->uhr_phy_capab.uhr_elr_tx &&
+	    !_ieee80211uhr_cap_check(hw_uhr->phy_cap,
+				UHR_PHYCAP_ELR_TX_SUPP_IDX,
+				UHR_PHYCAP_ELR_TX_SUPP)) {
+		wpa_printf(MSG_ERROR,
+			   "Driver does not support uhr_elr_tx");
+		return -1;
+	}
+
+	if ((mask & UHR_PHY_BSS_OVR_ELR_RX) &&
+	    hapd->conf->uhr_phy_capab.uhr_elr_rx &&
+	    !_ieee80211uhr_cap_check(hw_uhr->phy_cap,
+				UHR_PHYCAP_ELR_RX_SUPP_IDX,
+				UHR_PHYCAP_ELR_RX_SUPP)) {
+		wpa_printf(MSG_ERROR,
+			   "Driver does not support uhr_elr_rx");
+		return -1;
+	}
+
 	return 0;
 }
 #endif /* CONFIG_IEEE80211BN */

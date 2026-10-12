@@ -2783,6 +2783,25 @@ uhr_2xldpc_rollback:
 		hapd->conf->uhr_phy_capab = old_uhr_phy_capab;
 		hapd->conf->uhr_phy_capab_mask = old_uhr_phy_capab_mask;
 		return -1;
+	} else if (os_strcasecmp(cmd, "bss_uhr_elr_tx") == 0 ||
+		   os_strcasecmp(cmd, "bss_uhr_elr_rx") == 0) {
+		struct uhr_phy_capabilities_info old_uhr_phy_capab = hapd->conf->uhr_phy_capab;
+		u32 old_uhr_phy_capab_mask = hapd->conf->uhr_phy_capab_mask;
+
+		if (hostapd_set_iface(hapd->iconf, hapd->conf, cmd, value))
+			goto uhr_elr_rollback;
+
+		if (hostapd_validate_bss_capab(hapd) < 0)
+			goto uhr_elr_rollback;
+
+		if (!hapd->conf->is_cmn_param && hostapd_reload_bss_only(hapd) < 0)
+			goto uhr_elr_rollback;
+
+		return 0;
+uhr_elr_rollback:
+		hapd->conf->uhr_phy_capab = old_uhr_phy_capab;
+		hapd->conf->uhr_phy_capab_mask = old_uhr_phy_capab_mask;
+		return -1;
 #endif /* CONFIG_IEEE80211BN */
 	} else {
 		if (hapd->iface->conf->disable_csa_dfs &&
@@ -4055,6 +4074,20 @@ static int hostapd_ctrl_iface_get(struct hostapd_data *hapd, char *cmd,
 		if (os_snprintf_error(buflen, res))
 			return -1;
 		return res;
+#ifdef CONFIG_IEEE80211BN
+	} else if (os_strcasecmp(cmd, "bss_uhr_elr_tx") == 0) {
+		res = os_snprintf(buf, buflen, "bss_uhr_elr_tx = %d\n",
+				hapd->conf->uhr_phy_capab.uhr_elr_tx);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+	} else if (os_strcasecmp(cmd, "bss_uhr_elr_rx") == 0) {
+		res = os_snprintf(buf, buflen, "bss_uhr_elr_rx = %d\n",
+				hapd->conf->uhr_phy_capab.uhr_elr_rx);
+		if (os_snprintf_error(buflen, res))
+			return -1;
+		return res;
+#endif /* CONFIG_IEEE80211BN */
 #ifdef CONFIG_QCN_EXTN
 	} else {
 		res = hostapd_ctrl_iface_get_extn(hapd, cmd, buf, buflen);
