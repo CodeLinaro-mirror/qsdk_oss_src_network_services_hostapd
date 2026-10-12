@@ -204,31 +204,34 @@ void hostapd_cli_msg_cb(char *msg, size_t len)
 }
 
 
-int hostapd_cli_recovery_in_progress(void)
+int hostapd_cli_accept_cmd(void)
 {
 	glob_t g;
 	size_t i;
 	FILE *f;
 	char val;
-	int found = 0;
+	int blocked = 0;
 
-	if (glob("/sys/kernel/debug/ath12k/*/recovery_in_progress",
+	/* accept_cmd reads 0 when bypass/SSR is in progress (commands
+	 * blocked), 1 when the group is idle and commands are accepted.
+	 */
+	if (glob("/sys/kernel/debug/ath12k/*/accept_cmd",
 		 0, NULL, &g) != 0)
-		return 0;
+		return 1;
 
 	for (i = 0; i < g.gl_pathc; i++) {
 		f = fopen(g.gl_pathv[i], "r");
 		if (!f)
 			continue;
-		if (fread(&val, 1, 1, f) == 1 && val == '1')
-			found = 1;
+		if (fread(&val, 1, 1, f) == 1 && val == '0')
+			blocked = 1;
 		fclose(f);
-		if (found)
+		if (blocked)
 			break;
 	}
 
 	globfree(&g);
-	return found;
+	return !blocked;
 }
 
 
@@ -246,8 +249,8 @@ static int _wpa_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd, int print)
 		printf("Not connected to hostapd - command dropped.\n");
 		return -1;
 	}
-	if (hostapd_cli_recovery_in_progress()) {
-		printf("'%s' command dropped: ath12k recovery in progress.\n",
+	if (!hostapd_cli_accept_cmd()) {
+		printf("'%s' command dropped: ath12k bypass/SSR in progress.\n",
 		       cmd);
 		return -1;
 	}
