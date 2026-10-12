@@ -3692,7 +3692,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			rate_type = BEACON_RATE_EHT;
 		} else {
 			val = atoi(pos);
-			if (val < 10 || val > 10000) {
+			if (val < 10 || val > 540) {
 				wpa_printf(MSG_ERROR,
 					   "Line %d: invalid legacy beacon_rate %d",
 					   line, val);
