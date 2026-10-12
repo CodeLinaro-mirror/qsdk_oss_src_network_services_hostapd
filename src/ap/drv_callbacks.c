@@ -4084,6 +4084,8 @@ static void hostapd_event_update_cu_param(struct hostapd_data *hapd,
 static void hostapd_event_update_ecu_param(struct hostapd_data *hapd,
 					   struct cu_event *cu_event)
 {
+	u8 old_countdown = hapd->uhr_ecu.countdown_timer;
+
 	/* Update Enhanced Critical Update (ECU) parameters.
 	 * The enhanced_bpcc is a 4-bit value (modulo 16) received from the
 	 * driver via EVENT_RX_CRITICAL_UPDATE when the kernel reports an
@@ -4092,6 +4094,18 @@ static void hostapd_event_update_ecu_param(struct hostapd_data *hapd,
 	hapd->rx_ecu_param.ebpcc = cu_event->enhanced_bpcc & 0x0F;
 	hapd->rx_ecu_param.critical_update = cu_event->enhanced_critical_update;
 	hapd->uhr_ecu.countdown_timer = cu_event->ecu_countdown;
+
+	/*
+	 * Rebuild per-STA profiles only when the countdown timer value has
+	 * actually changed so that the UHR Parameters Update element in ML
+	 * Probe Responses reflects the new value without redundant rebuilds.
+	 */
+	if (hapd->uhr_ecu.countdown_timer != old_countdown) {
+		struct hostapd_data *lbss;
+
+		for_each_mld_link(lbss, hapd)
+			hostapd_gen_per_sta_profiles(lbss);
+	}
 }
 #endif /* CONFIG_IEEE80211BN */
 
@@ -4313,6 +4327,7 @@ hostapd_handle_critical_update_notify(struct hostapd_data *hapd,
 				      const struct cu_notify_event *ev)
 {
 	enum uhr_ecu_state new_state;
+	struct hostapd_data *lbss;
 
 	if (!hostapd_is_uhr_enabled(hapd)) {
 		wpa_printf(MSG_DEBUG,
@@ -4393,8 +4408,14 @@ hostapd_handle_critical_update_notify(struct hostapd_data *hapd,
 		(new_state == UHR_ECU_ADVANCE_NOTIFY ||
 		 new_state == UHR_ECU_POST_ADVANCE_NOTIFY);
 
-	/* TODO: Refresh beacon so the UHR Params Update element is added, updated,
-	 * or removed according to the new ECU state. */
+	/*
+	 * ECU state has changed (STARTED / ADV_NOTIFICATION_END /
+	 * POST_NOTIFICATION_END / ECU_END / ABORT).  Rebuild per-STA profiles
+	 * so that the UHR Parameters Update element is added, updated, or
+	 * removed in ML Probe Responses according to the new ECU state.
+	 */
+	for_each_mld_link(lbss, hapd)
+		hostapd_gen_per_sta_profiles(lbss);
 }
 #endif /* CONFIG_IEEE80211BN */
 
