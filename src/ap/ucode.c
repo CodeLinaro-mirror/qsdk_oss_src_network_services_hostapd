@@ -769,12 +769,14 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 		return NULL;
 
 #ifdef CONFIG_QCN_EXTN
+	errno = 0;
 	iface->iface_extn.vap_type = ucv_int64_get(ucv_object_get(info, "vap_type", NULL));
 	if (!errno) {
 		wpa_printf(MSG_DEBUG, "%s: VAP type: %s", __func__,
 				vap_type_to_string(iface->iface_extn.vap_type));
 	}
 
+	errno = 0;
 	wpa_state_val = ucv_object_get(info, "wpa_state", NULL);
 	wpa_state = ucv_string_get(wpa_state_val);
 	if (wpa_state) {
@@ -791,6 +793,7 @@ uc_hostapd_iface_stop(uc_vm_t *vm, size_t nargs)
 		   iface->conf->conf_extn.ind_rptr,
 		   iface->conf->conf_extn.rpt_max_phy);
 
+	errno = 0;
 	intval = ucv_int64_get(ucv_object_get(info, "rpt_max_phy_override", NULL));
 	if (!errno)
 		rpt_max_phy_override = intval;
@@ -858,12 +861,14 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 		return NULL;
 
 #ifdef CONFIG_QCN_EXTN
+	errno = 0;
 	iface->iface_extn.vap_type = ucv_int64_get(ucv_object_get(info, "vap_type", NULL));
 	if (!errno) {
 		wpa_printf(MSG_DEBUG, "%s: VAP type: %s", __func__,
 				vap_type_to_string(iface->iface_extn.vap_type));
 	}
 
+	errno = 0;
 	wpa_state_val = ucv_object_get(info, "wpa_state", NULL);
 	wpa_state = ucv_string_get(wpa_state_val);
 	if (wpa_state) {
@@ -871,10 +876,12 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 				sizeof(iface->iface_extn.sta_wpa_state));
 		hostapd_update_bh_sta_connected_extn(iface, wpa_state);
 	}
+	errno = 0;
 	intval = ucv_int64_get(ucv_object_get(info, "rpt_max_phy_override", NULL));
 	if (!errno)
 		rpt_max_phy_override = intval;
 
+	errno = 0;
 	intval = ucv_int64_get(ucv_object_get(info, "frequency", NULL));
 	if (!errno)
 		event_freq = intval;
@@ -897,12 +904,14 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 		goto out;
 	}
 
+	errno = 0;
 	intval = ucv_int64_get(ucv_object_get(info, "mcst", NULL));
 	if (!errno)
 		mcst = intval;
 
 #endif
 #define UPDATE_VAL(field, name)							\
+	errno = 0;								\
 	if ((intval = ucv_int64_get(ucv_object_get(info, name, NULL))) &&	\
 		!errno && intval != conf->field) do {				\
 		conf->field = intval;						\
@@ -916,11 +925,13 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	UPDATE_VAL(hw_mode, "hw_mode");
 	UPDATE_VAL(channel, "channel");
 
+	errno = 0;
 	/*op_class for 5GHz 320MHz bw is not defined in spec. So unset op_class*/
 	intval = ucv_int64_get(ucv_object_get(info, "op_class", NULL));
 	if (!errno)
 		conf->op_class = intval;
 
+	errno = 0;
 	intval = ucv_int64_get(ucv_object_get(info, "sec_channel", NULL));
 	if (!errno) {
 		conf->secondary_channel = intval;
@@ -932,20 +943,24 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	     iface->state == HAPD_IFACE_DFS))
 		return ucv_boolean_new(true);
 
+	errno = 0;
 	intval = ucv_int64_get(ucv_object_get(info, "center_seg0_idx", NULL));
 	if (!errno)
 		hostapd_set_oper_centr_freq_seg0_idx(conf, intval);
 
+	errno = 0;
 	intval = ucv_int64_get(ucv_object_get(info, "center_seg1_idx", NULL));
 	if (!errno)
 		hostapd_set_oper_centr_freq_seg1_idx(conf, intval);
 
+	errno = 0;
 	intval = ucv_int64_get(ucv_object_get(info, "oper_chwidth", NULL));
 	if (!errno)
 		hostapd_set_oper_chwidth(conf, intval);
 
 	conf->acs = 0;
 
+	errno = 0;
 	intval = ucv_int64_get(ucv_object_get(info, "punct_bitmap", NULL));
 	if (!errno)
 		conf->punct_bitmap = intval;
@@ -953,6 +968,7 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 		conf->punct_bitmap = 0;
 
 #ifdef CONFIG_QCN_EXTN
+	errno = 0;
 	is_dfs = ucv_boolean_get(ucv_object_get(info, "is_dfs", NULL));
 	if (!errno && is_dfs && mcst) {
 		iface->mcst = mcst;
@@ -1155,6 +1171,7 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 	if (!iface || ucv_type(info) != UC_OBJECT)
 		return NULL;
 #ifdef CONFIG_QCN_EXTN
+	errno = 0;
 	iface->iface_extn.vap_type = ucv_int64_get(ucv_object_get(info, "vap_type", NULL));
 	if (!errno) {
 		wpa_printf(MSG_DEBUG, "%s: VAP type: %s", __func__,
@@ -1169,8 +1186,11 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 		csa.power_mode = conf->he_6ghz_reg_pwr_type;
 	else
 		csa.power_mode = -1;
+
+	errno = 0;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "csa_count", NULL))) && !errno)
 		csa.cs_count = intval;
+	errno = 0;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "sec_channel", NULL))) && !errno)
 		csa.freq_params.sec_channel_offset = intval;
 
@@ -1183,6 +1203,7 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 #ifdef CONFIG_IEEE80211BN
 	csa.freq_params.uhr_enabled = conf->ieee80211bn;
 #endif
+	errno = 0;
 	intval = ucv_int64_get(ucv_object_get(info, "oper_chwidth", NULL));
 	if (errno)
 		intval = hostapd_get_oper_chwidth(conf);
@@ -1193,29 +1214,38 @@ uc_hostapd_iface_switch_channel(uc_vm_t *vm, size_t nargs)
 	else
 		csa.freq_params.bandwidth = csa.freq_params.sec_channel_offset ? 40 : 20;
 
+	errno = 0;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "frequency", NULL))) && !errno)
 		csa.freq_params.freq = intval;
+	errno = 0;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "center_freq1", NULL))) && !errno)
 		csa.freq_params.center_freq1 = intval;
+	errno = 0;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "center_freq2", NULL))) && !errno)
 		csa.freq_params.center_freq2 = intval;
+	errno = 0;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "punct_bitmap", NULL))) && !errno)
 		csa.freq_params.punct_bitmap = intval;
+	errno = 0;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "power_mode", NULL))) && !errno)
 		csa.power_mode = intval;
 
+	errno = 0;
 	mesh_origin = ucv_boolean_get(ucv_object_get(info, "mesh_origin", NULL));
 	if (!mesh_origin) {
 		hostapd_ubus_mesh_switch_channel(iface, &csa);
 	}
 
 #ifdef CONFIG_QCN_EXTN
+	errno = 0;
 	if ((intval = ucv_int64_get(ucv_object_get(info, "mcst", NULL))) && !errno)
 		csa.mcst = intval;
 	csa.freq_params.mcst = csa.mcst;
 	iface->mcst = csa.mcst;
 
+	errno = 0;
 	is_dfs = ucv_boolean_get(ucv_object_get(info, "is_dfs", NULL));
+	errno = 0;
 	wpa_state_val = ucv_object_get(info, "wpa_state", NULL);
 	wpa_state = ucv_string_get(wpa_state_val);
 	if (wpa_state) {
@@ -1578,26 +1608,32 @@ int hostapd_ucode_get_sta_channel_per_band(struct hostapd_iface *iface,
 
 	os_memset(freq, 0, sizeof(*freq));
 
+	errno = 0;
 	val = ucv_int64_get(ucv_object_get(info, "frequency", NULL));
 	if (!errno)
 		freq->freq = val;
 
+	errno = 0;
 	val = ucv_int64_get(ucv_object_get(info, "sec_channel_offset", NULL));
 	if (!errno)
 		freq->sec_channel_offset = val;
 
+	errno = 0;
 	val = ucv_int64_get(ucv_object_get(info, "center_freq1", NULL));
 	if (!errno)
 		freq->center_freq1 = val;
 
+	errno = 0;
 	val = ucv_int64_get(ucv_object_get(info, "center_freq2", NULL));
 	if (!errno)
 		freq->center_freq2 = val;
 
+	errno = 0;
 	val = ucv_int64_get(ucv_object_get(info, "bandwidth", NULL));
 	if (!errno)
 		freq->bandwidth = val;
 
+	errno = 0;
 	val = ucv_int64_get(ucv_object_get(info, "punct_bitmap", NULL));
 	if (!errno)
 		freq->punct_bitmap = val;
