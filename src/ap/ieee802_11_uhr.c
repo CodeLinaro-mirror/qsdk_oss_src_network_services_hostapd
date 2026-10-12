@@ -77,6 +77,13 @@ u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 		  UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_SHIFT) &
 		 UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_MASK);
 
+	cap->mac_cap[5] =
+		(cap->mac_cap[5] &
+		 ~UHR_MACCAP5_POST_UPD_NOTIF_INTV_MASK) |
+		((hapd->conf->uhr_params_update.post_notification_interval <<
+		  UHR_MACCAP5_POST_UPD_NOTIF_INTV_SHIFT) &
+		 UHR_MACCAP5_POST_UPD_NOTIF_INTV_MASK);
+
 	os_memcpy(cap->phy_cap, uhr_cap->phy_cap, sizeof(cap->phy_cap));
 
 	if ((hapd->conf->uhr_phy_capab_mask & UHR_PHY_BSS_OVR_2XLDPC_TX) &&

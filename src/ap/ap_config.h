@@ -437,6 +437,7 @@ struct hostapd_uhr_npca_params {
 struct uhr_params_update_config {
 	u8 adv_notification_interval;
 	u8 update_in_tim_interval;
+	u8 post_notification_interval;
 	u16 mode_changed;
 	struct hostapd_uhr_npca_params npca;
 	/* TODO: Add DPS, DUO, P-EDCA, DBE, AP PUO, ELR mode param structs */
