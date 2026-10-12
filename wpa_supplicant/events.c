@@ -4564,7 +4564,8 @@ static int wpas_rx_enc_assoc_resp(struct wpa_supplicant *wpa_s, const u8 *aa,
 
 	wpa_sm_set_ptk_kck_kek(wpa_s->wpa, entry->ptk.hash_alg,
 			       entry->ptk.kck, entry->ptk.kck_len,
-			       entry->ptk.kek, entry->ptk.kek_len);
+			       entry->ptk.kek, entry->ptk.kek_len,
+			       entry->ptk.tk, entry->ptk.tk_len);
 
 	return process_encrypted_assoc_resp(wpa_s->wpa,
 					    ((wpa_s->drv_flags2 &
@@ -7817,7 +7818,8 @@ static void wpa_supplicant_event_assoc_auth(struct wpa_supplicant *wpa_s,
 			       data->assoc_info.ptk_kck,
 			       data->assoc_info.ptk_kck_len,
 			       data->assoc_info.ptk_kek,
-			       data->assoc_info.ptk_kek_len);
+			       data->assoc_info.ptk_kek_len,
+			       NULL, 0);
 #ifdef CONFIG_FILS
 	if (wpa_s->auth_alg == WPA_AUTH_ALG_FILS) {
 		struct wpa_bss *bss = wpa_bss_get_bssid(wpa_s, wpa_s->bssid);
