@@ -3960,6 +3960,10 @@ struct ieee80211_uhr_capabilities {
 #define UHR_PHYCAP_2XLDPC_TX_SUPP	((u8) BIT(3))
 #define UHR_PHYCAP_2XLDPC_RX_SUPP_IDX	1
 #define UHR_PHYCAP_2XLDPC_RX_SUPP	((u8) BIT(4))
+#define UHR_PHYCAP_ELR_TX_SUPP_IDX	0
+#define UHR_PHYCAP_ELR_TX_SUPP		((u8) BIT(6))
+#define UHR_PHYCAP_ELR_RX_SUPP_IDX	0
+#define UHR_PHYCAP_ELR_RX_SUPP		((u8) BIT(7))
 
 /* UHR Operation Control field */
 #define UHR_OPER_CTRL_DPS_ENA               0x0001
