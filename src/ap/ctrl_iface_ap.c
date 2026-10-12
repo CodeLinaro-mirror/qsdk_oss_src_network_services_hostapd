@@ -2463,9 +2463,11 @@ int hostapd_ctrl_iface_status(struct hostapd_data *hapd, char *buf,
 	if (hostapd_is_uhr_enabled(hapd)) {
 		ret = os_snprintf(buf + len, buflen - len,
 				  "uhr_adv_notification_interval=%u\n"
-				  "uhr_update_in_tim_interval=%u\n",
+				  "uhr_update_in_tim_interval=%u\n"
+				  "uhr_post_notification_interval=%u\n",
 				  hapd->conf->uhr_params_update.adv_notification_interval,
-				  hapd->conf->uhr_params_update.update_in_tim_interval);
+				  hapd->conf->uhr_params_update.update_in_tim_interval,
+				  hapd->conf->uhr_params_update.post_notification_interval);
 		if (os_snprintf_error(buflen - len, ret))
 			return len;
 		len += ret;

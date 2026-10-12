@@ -3635,6 +3635,11 @@ struct ieee80211_uhr_operation {
 							       BIT(2) | BIT(3)))
 #define UHR_MACCAP4_UPD_IND_TIM_INTV_HIGH_SHIFT	0
 
+/* B43-B45: Post Update Notification Interval (3 bits, byte 5) */
+#define UHR_MACCAP5_POST_UPD_NOTIF_INTV_MASK		((u8) (BIT(3) | BIT(4) | \
+						       BIT(5)))
+#define UHR_MACCAP5_POST_UPD_NOTIF_INTV_SHIFT		3
+
 #define UHR_MAC_CAPAB_LEN	6
 #define UHR_PHY_CAPAB_LEN	5
 
