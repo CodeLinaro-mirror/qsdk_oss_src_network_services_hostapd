@@ -16894,16 +16894,9 @@ static u8 * ieee802_11_inheritance_txbss_params(u8 *tx_elem, size_t tx_elem_len,
 					found_in_nontx_bss = true;
 
 					if (nontx_len == len &&
-					    os_memcmp(data, nontx_data, nontx_len) == 0) {
-						wpa_printf(MSG_DEBUG,
-							   "Element (%u) data matches with Tx BSS",
-							   nontx_id);
+					    os_memcmp(data, nontx_data, nontx_len) == 0)
 						break;
-					}
 
-					wpa_printf(MSG_DEBUG,
-						   "Element (%u) data doesn't match with Tx BSS",
-						   nontx_id);
 					/*
 					 * The length is computed before constructing the MBSSID
 					 * elements. The allocated memory accounts for optional
@@ -17011,14 +17004,8 @@ static u8 * ieee802_11_inheritance_txbss_params(u8 *tx_elem, size_t tx_elem_len,
 				found_in_nontx_bss = true;
 
 				if (nontx_len == len &&
-				    os_memcmp(data, nontx_data, nontx_len) == 0) {
-					wpa_printf(MSG_DEBUG, "Element (%u) data matches with Tx BSS",
-						   nontx_id);
+				    os_memcmp(data, nontx_data, nontx_len) == 0)
 					break;
-				}
-
-				wpa_printf(MSG_DEBUG, "Element:%u data doesn't match with Tx BSS, "
-					   "include in Non-Tx BSS profile", nontx_id);
 
 				 /* Boundary is validated only during length calculation */
 				if (!pos) {
