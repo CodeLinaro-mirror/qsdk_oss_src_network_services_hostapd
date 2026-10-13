@@ -4516,6 +4516,10 @@ enum qca_wlan_vendor_attr_config {
 	 * station add. Requires QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_MAC.
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_HE_CAP_INFO_INTERNAL = 155,
+	/* u8 attribute indicating that the peer advertised a valid QCN IE.
+	 * Requires QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_MAC in AP mode.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_QCN_NODE = 156,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,

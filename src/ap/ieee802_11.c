@@ -7535,6 +7535,7 @@ static int __check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 		goto out;
 
 #ifdef CONFIG_QCN_EXTN
+	hostapd_set_qcn_node_extn(sta, &elems->elems_extn);
 	/* WDS vendor IE: parse from assoc request and set sta_extn.wds_ie_peer */
 	resp = check_wds_ie_extn(hapd, sta,
 				 elems->elems_extn.wds_ie,
