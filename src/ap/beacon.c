@@ -3215,6 +3215,15 @@ static u8 * hostapd_gen_fils_discovery(struct hostapd_data *hapd, size_t *len)
 		FD_FRAME_CTL_SHORT_SSID_PRESENT |
 		FD_FRAME_CTL_LENGTH_PRESENT |
 		FD_FRAME_CTL_CAP_PRESENT;
+
+	/* OCE uses the B14/B15 portion of the FILS Discovery Frame Control
+	 * subfield to advertise nearby 11b-only and non-OCE APs. */
+	if (OCE_AP_ENABLED(hapd)) {
+		if (hapd->ap_11b_present)
+			ctl |= FD_FRAME_CTL_11B_AP_PRESENT;
+		if (hapd->non_oce_ap_present)
+			ctl |= FD_FRAME_CTL_NON_OCE_AP_PRESENT;
+	}
 	total_len += 4 + 1 + 2;
 
 	/* Fill primary channel information for 6 GHz channels with over 20 MHz
