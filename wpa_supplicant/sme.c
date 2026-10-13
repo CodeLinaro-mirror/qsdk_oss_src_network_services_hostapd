@@ -3171,6 +3171,9 @@ void sme_event_auth(struct wpa_supplicant *wpa_s, union wpa_event_data *data)
 						wpa_s->current_bss->smd_capabilities = capabilities;
 						wpa_s->current_bss->smd_ptk_mode = ptk_mode;
 						wpa_s->current_bss->smd_timeout = timeout;
+						wpa_s->current_bss->smd_max_targets =
+							((capabilities & SMD_IE_CAPA_MAX_PREP_TARGETS_MASK) >>
+							 SMD_IE_CAPA_MAX_PREP_TARGETS_SHIFT) + 1;
 					}
 				} else {
 					wpa_printf(MSG_WARNING, "SME: Failed to parse SMD IE from auth response");

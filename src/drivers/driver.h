@@ -3790,6 +3790,10 @@ struct wpa_mlo_reconfig_info {
  * @smd: SMD domain parameters
  * @reconfig_info: Link add/del information for SMD preparation (optional)
  * @tx_link_id: MLO link ID on which this frame must be transmitted
+ * @delete_targets: Array of target AP MLD addresses (ETH_ALEN each) whose
+ *	ST preparation is being deleted (IEEE P802.11bn/D2.0 Reconfiguration
+ *	Operation Type=6)
+ * @num_delete_targets: Number of entries in @delete_targets
  */
 struct wpa_driver_uhr_reconfig_params {
 	u8 type;
@@ -3814,6 +3818,8 @@ struct wpa_driver_uhr_reconfig_params {
 	int is_preferred_target;
 	struct wpa_mlo_reconfig_info *reconfig_info;
 	s8 tx_link_id;
+	const u8 *delete_targets;
+	size_t num_delete_targets;
 };
 
 /**
@@ -9091,10 +9097,6 @@ union wpa_event_data {
 	 * @frame: Pointer to the received frame
 	 * @frame_len: Length of the frame in bytes
 	 * @status_code: Status code from the response
-	 * @count: Number of statuses in the list
-	 * @status_list: List of status codes
-	 * @resp_ie: Pointer to the response IEs
-	 * @resp_ie_len: Length of the response IEs
 	 * @link_transition_state: Link distribution state from the kernel;
 	 *	one of &enum nl80211_smd_link_transition_state.
 	 */
@@ -9103,10 +9105,6 @@ union wpa_event_data {
 		const u8 *frame;
 		size_t frame_len;
 		u16 status_code;
-		u8 count;
-		const u8 *status_list;
-		const u8 *resp_ie;
-		size_t resp_ie_len;
 		enum nl80211_smd_link_transition_state link_transition_state;
 	} uhr_reconfig_resp;
 

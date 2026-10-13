@@ -1067,6 +1067,55 @@ bool smd_group_validate_timeout_consitency(struct smd_group *group,
 	return true;
 }
 
+bool smd_group_validate_mobility_domain(struct smd_group *group,
+					struct wpa_bss *bss)
+{
+	const u8 *mdie;
+
+	if (!group || !bss)
+		return true;
+
+	mdie = wpa_bss_get_ie(bss, WLAN_EID_MOBILITY_DOMAIN);
+	if (!mdie || mdie[1] < MOBILITY_DOMAIN_ID_LEN) {
+		if (!group->mobility_domain_valid)
+			return true;
+
+		wpa_printf(MSG_ERROR,
+			   "SMD: AP " MACSTR " has no/malformed FT Mobility "
+			   "Domain IE but group " MACSTR " requires mobility "
+			   "domain %02x%02x",
+			   MAC2STR(bss->bssid), MAC2STR(group->smd_id),
+			   group->mobility_domain[0], group->mobility_domain[1]);
+		wpa_printf(MSG_ERROR,
+			   "SMD:   Rejecting AP - SMD shall not span different FT mobility domains");
+		return false;
+	}
+
+	if (!group->mobility_domain_valid) {
+		os_memcpy(group->mobility_domain, mdie + 2, MOBILITY_DOMAIN_ID_LEN);
+		group->mobility_domain_valid = true;
+		wpa_printf(MSG_DEBUG,
+			   "SMD: Group " MACSTR " FT mobility domain set to %02x%02x",
+			   MAC2STR(group->smd_id), group->mobility_domain[0], group->mobility_domain[1]);
+		return true;
+	}
+
+	if (os_memcmp(group->mobility_domain, mdie + 2, MOBILITY_DOMAIN_ID_LEN) != 0) {
+		wpa_printf(MSG_ERROR, "SMD: FT mobility domain inconsistency detected");
+		wpa_printf(MSG_ERROR,
+			   "SMD:   Group " MACSTR " requires mobility domain %02x%02x",
+			   MAC2STR(group->smd_id), group->mobility_domain[0], group->mobility_domain[1]);
+		wpa_printf(MSG_ERROR,
+			   "SMD:   AP " MACSTR " advertises mobility domain %02x%02x",
+			   MAC2STR(bss->bssid), mdie[2], mdie[3]);
+		wpa_printf(MSG_ERROR,
+			   "SMD:   Rejecting AP - SMD shall not span different FT mobility domains");
+		return false;
+	}
+
+	return true;
+}
+
 int smd_group_add_member(struct wpa_supplicant *wpa_s, struct smd_group *group,
 			 struct wpa_bss *bss)
 {
@@ -1082,6 +1131,10 @@ int smd_group_add_member(struct wpa_supplicant *wpa_s, struct smd_group *group,
 			   MAC2STR(bss->bssid));
 		return -1;
 	}
+
+	if (!smd_group_validate_mobility_domain(group, bss))
+		return -1;
+
 	dl_list_for_each(member, &group->members, struct smd_group_member, list) {
 		if (os_memcmp(member->bssid, bss->bssid, ETH_ALEN) == 0) {
 			member->ptk_mode = bss->smd_ptk_mode;
@@ -1864,8 +1917,8 @@ wpas_smd_get_prepared_target(struct wpa_supplicant *wpa_s, const u8 *bssid)
 		if (!is_zero_ether_addr(target->target_mld_addr) &&
 		    os_memcmp(target->target_mld_addr, bssid, ETH_ALEN) == 0)
 			return target;
-		if (!is_zero_ether_addr(target->serving_bssid) &&
-		    os_memcmp(target->serving_bssid, bssid, ETH_ALEN) == 0 &&
+		if (!is_zero_ether_addr(target->current_ap_bssid) &&
+		    os_memcmp(target->current_ap_bssid, bssid, ETH_ALEN) == 0 &&
 		    (target->state == SMD_TARGET_PREP_PENDING ||
 		     target->state == SMD_TARGET_EXEC_PENDING))
 			return target;
@@ -1886,6 +1939,25 @@ wpas_smd_get_prepared_target_v2(struct wpa_supplicant *wpa_s)
 	}
 
 	return NULL;
+}
+
+void smd_handle_link_unreliable(struct wpa_supplicant *wpa_s)
+{
+	if (!wpa_s || !smd_enabled(wpa_s) || !wpa_s->smd_me_associated)
+		return;
+
+	if (wpas_smd_get_prepared_target_v2(wpa_s)) {
+		wpa_printf(MSG_DEBUG,
+			   "SMD: Link unreliable, but a target AP MLD is already "
+			   "prepared for ST - not falling back to PMKSA reassociation");
+		return;
+	}
+
+	wpa_printf(MSG_INFO,
+		   "SMD: Current AP MLD link unreliable and no target AP MLD "
+		   "prepared for ST - falling back to PMKSA-caching reassociation "
+		   "with SMD-ME " MACSTR, MAC2STR(wpa_s->smd_id));
+	wpas_request_connection(wpa_s);
 }
 
 /**
@@ -1941,6 +2013,7 @@ int wpas_smd_request_prepare(struct wpa_supplicant *wpa_s, const u8 *bssid,
 	struct wpa_driver_uhr_reconfig_params params;
 	int ret = -1;
 	size_t prepared_count = 0;
+	size_t max_prep;
 	struct wpa_bss *target_bss;
 	u8 target_mld_addr[ETH_ALEN];
 
@@ -1967,8 +2040,11 @@ int wpas_smd_request_prepare(struct wpa_supplicant *wpa_s, const u8 *bssid,
 			prepared_count++;
 	}
 
-	/* Assume max limit of 8 prepared targets (can be made configurable) */
-	if (prepared_count >= 8) {
+	max_prep = SMD_DEFAULT_MAX_PREP_TARGETS;
+	if (wpa_s->current_bss && wpa_s->current_bss->smd_max_targets)
+		max_prep = wpa_s->current_bss->smd_max_targets;
+
+	if (prepared_count >= max_prep) {
 		wpa_printf(MSG_ERROR, "SMD: Cannot prepare - max prepared targets limit (%zu) reached",
 			   prepared_count);
 		return -1;
@@ -2010,6 +2086,14 @@ int wpas_smd_request_prepare(struct wpa_supplicant *wpa_s, const u8 *bssid,
 	/* Step 5: Build request parameters */
 	target = wpas_smd_get_prepared_target(wpa_s, bssid);
 	if (target) {
+		if (target->no_retry) {
+			wpa_printf(MSG_ERROR,
+				   "SMD: Not retrying ST preparation for " MACSTR
+				   " (marked no-retry by a prior "
+				   "TARGET_AP_UNKNOWN/NOT_IN_SAME_SMD rejection)",
+				   MAC2STR(bssid));
+			return -1;
+		}
 		wpa_printf(MSG_DEBUG, "SMD: Updating existing prep target " MACSTR, MAC2STR(bssid));
 		target->state = SMD_TARGET_PREP_PENDING;
 	} else {
@@ -2024,7 +2108,7 @@ int wpas_smd_request_prepare(struct wpa_supplicant *wpa_s, const u8 *bssid,
 	target->no_dl_sn = no_dl_sn;
 	target->no_ul_sn = no_ul_sn;
 	if (!is_zero_ether_addr(wpa_s->bssid))
-		os_memcpy(target->serving_bssid, wpa_s->bssid, ETH_ALEN);
+		os_memcpy(target->current_ap_bssid, wpa_s->bssid, ETH_ALEN);
 
 	os_memset(&params, 0, sizeof(params));
 
@@ -2126,13 +2210,19 @@ wpas_uhr_link_reconfig_common_params(struct wpa_supplicant *wpa_s,
 
 	/* Max prepared targets check applies to ST Prep only */
 	if (!is_exec) {
+		size_t max_prep = SMD_DEFAULT_MAX_PREP_TARGETS;
+
 		dl_list_for_each(target, &wpa_s->smd_targets,
 				 struct wpa_smd_prepared_target, list) {
 			if (target->state == SMD_TARGET_PREP_PENDING ||
 			    target->state == SMD_TARGET_PREPARED)
 				prepared_count++;
 		}
-		if (prepared_count >= 8) {
+
+		if (wpa_s->current_bss && wpa_s->current_bss->smd_max_targets)
+			max_prep = wpa_s->current_bss->smd_max_targets;
+
+		if (prepared_count >= max_prep) {
 			wpa_printf(MSG_ERROR,
 				   "SMD: Cannot prepare - max prepared targets limit (%zu) reached",
 				   prepared_count);
@@ -2204,6 +2294,15 @@ wpas_uhr_link_reconfig_common_params(struct wpa_supplicant *wpa_s,
 	/* Alloc or update the prepared target entry */
 	target = wpas_smd_get_prepared_target(wpa_s, bssid);
 	if (target) {
+		if (!is_exec && target->no_retry) {
+			wpa_printf(MSG_ERROR,
+				   "SMD: Not retrying ST preparation for " MACSTR
+				   " (marked no-retry by a prior "
+				   "TARGET_AP_UNKNOWN/NOT_IN_SAME_SMD rejection)",
+				   MAC2STR(bssid));
+			return -1;
+		}
+
 		wpa_printf(MSG_DEBUG, "SMD: Updating existing target " MACSTR,
 			   MAC2STR(bssid));
 		if (!is_exec)
@@ -2220,8 +2319,8 @@ wpas_uhr_link_reconfig_common_params(struct wpa_supplicant *wpa_s,
 	target->no_dl_sn = no_dl_sn;
 	target->no_ul_sn = no_ul_sn;
 	target->is_preferred_target = is_preferred_target;
-	if (!is_zero_ether_addr(wpa_s->bssid))
-		os_memcpy(target->serving_bssid, wpa_s->bssid, ETH_ALEN);
+	if (!is_exec && !is_zero_ether_addr(wpa_s->bssid))
+		os_memcpy(target->current_ap_bssid, wpa_s->bssid, ETH_ALEN);
 
 	/* Base params */
 	os_memset(params, 0, sizeof(*params));
@@ -2382,6 +2481,7 @@ int wpas_uhr_link_reconfig_exec_request(struct wpa_supplicant *wpa_s,
 					int is_preferred_target)
 {
 	struct wpa_smd_prepared_target *target;
+	struct wpa_smd_prepared_target *other;
 	struct wpa_driver_uhr_reconfig_params params;
 	int ret;
 
@@ -2391,6 +2491,39 @@ int wpas_uhr_link_reconfig_exec_request(struct wpa_supplicant *wpa_s,
 						 is_preferred_target,
 						 &target, &params) < 0)
 		return -1;
+
+	if (reconfig_info)
+		params.exec_path = reconfig_info->exec_path;
+
+	target->exec_path = params.exec_path;
+
+	if (!is_zero_ether_addr(target->current_ap_bssid) &&
+	    os_memcmp(wpa_s->bssid, target->current_ap_bssid, ETH_ALEN) != 0 &&
+	    !params.exec_path) {
+		wpa_printf(MSG_ERROR,
+			   "SMD: Cannot execute ST to " MACSTR
+			   " - current AP " MACSTR
+			   " differs from the AP MLD through which preparation succeeded ("
+			   MACSTR ")",
+			   MAC2STR(bssid), MAC2STR(wpa_s->bssid),
+			   MAC2STR(target->current_ap_bssid));
+		wpas_smd_free_prepared_target(target);
+		return -1;
+	}
+
+	dl_list_for_each(other, &wpa_s->smd_targets,
+			 struct wpa_smd_prepared_target, list) {
+		if (other == target)
+			continue;
+		if (other->state == SMD_TARGET_EXEC_PENDING) {
+			wpa_printf(MSG_ERROR,
+				   "SMD: Cannot execute ST to " MACSTR
+				   " - execution already outstanding for "
+				   MACSTR,
+				   MAC2STR(bssid), MAC2STR(other->bssid));
+			return -1;
+		}
+	}
 
 	params.type = 1;
 	params.snonce = NULL;
@@ -2402,10 +2535,8 @@ int wpas_uhr_link_reconfig_exec_request(struct wpa_supplicant *wpa_s,
 	params.per_link_ie_len = NULL;
 	params.max_links = 0;
 
-	if (reconfig_info) {
-		params.exec_path = reconfig_info->exec_path;
+	if (reconfig_info)
 		params.dl_tid_bitmap = reconfig_info->dl_tid_bitmap;
-	}
 
 	if (reconfig_info && reconfig_info->force_diff_tx)
 		params.tx_link_id = wpas_smd_pick_exec_link(wpa_s);
@@ -2937,6 +3068,32 @@ void smd_targets_deinit(struct wpa_supplicant *wpa_s)
 	wpa_printf(MSG_DEBUG, "SMD: Prepared targets deinitialized");
 }
 
+void smd_invalidate_stale_prepared_targets(struct wpa_supplicant *wpa_s)
+{
+	struct wpa_smd_prepared_target *target, *tmp_target;
+
+	if (!wpa_s)
+		return;
+
+	dl_list_for_each_safe(target, tmp_target, &wpa_s->smd_targets,
+			      struct wpa_smd_prepared_target, list) {
+		if (target->state != SMD_TARGET_PREPARED &&
+		    target->state != SMD_TARGET_PREP_PENDING)
+			continue;
+		if (is_zero_ether_addr(target->current_ap_bssid))
+			continue;
+		if (os_memcmp(wpa_s->bssid, target->current_ap_bssid, ETH_ALEN) == 0)
+			continue;
+
+		wpa_printf(MSG_INFO,
+			   "SMD: Discarding stale ST preparation for " MACSTR
+			   " - no longer served by " MACSTR,
+			   MAC2STR(target->bssid),
+			   MAC2STR(target->current_ap_bssid));
+		wpas_smd_free_prepared_target(target);
+	}
+}
+
 /**
  * smd_handle_uhr_reconfig_response - Handle UHR Link Reconfiguration Response
  * @wpa_s: Pointer to wpa_supplicant data
@@ -3033,6 +3190,9 @@ smd_handle_transition_complete(struct wpa_supplicant *wpa_s,
 	os_memcpy(sap_mld, wpa_s->ap_mld_addr,      ETH_ALEN);
 	os_memcpy(tap_mld, target->target_mld_addr,  ETH_ALEN);
 	int i;
+	u8 old_current_ap_mld_addr[ETH_ALEN];
+
+	os_memcpy(old_current_ap_mld_addr, wpa_s->bssid, ETH_ALEN);
 
 	/* Cancel the DL drain watchdog — the driver confirmed transition. */
 	smd_cancel_drain_watchdog(wpa_s, target);
@@ -3223,6 +3383,17 @@ smd_handle_transition_complete(struct wpa_supplicant *wpa_s,
 
 	/* Finalize: enable RX+TX pairwise protection and set WPA_COMPLETED. */
 	wpa_sm_notify_smd_transition_complete(sm, target->target_mld_addr);
+
+	if (target->auto_exec_path &&
+	    !is_zero_ether_addr(old_current_ap_mld_addr) &&
+	    !ether_addr_equal(old_current_ap_mld_addr,
+			      target->target_mld_addr)) {
+		wpa_printf(MSG_DEBUG,
+			   "SMD: Deleting temporal key for old current AP MLD "
+			   MACSTR, MAC2STR(old_current_ap_mld_addr));
+		wpa_sm_set_key(sm, -1, WPA_ALG_NONE, old_current_ap_mld_addr,
+			       0, 0, NULL, 0, NULL, 0, KEY_FLAG_PAIRWISE);
+	}
 
 	target->state = SMD_TARGET_TRANSITIONED;
 	smd_set_state(wpa_s, SMD_STATE_ASSOCIATED);
@@ -3508,8 +3679,49 @@ static int smd_parse_mle(struct wpa_supplicant *wpa_s,
 		target->links[link_id].link_id = link_id;
 		target->prepared_links |= BIT(link_id);
 
-		if (wpa_s->valid_links && (wpa_s->valid_links & (wpa_s->valid_links - 1)))
-			target->accepted_links |= BIT(link_id);
+		if (subelem_defrag_len >= 3) {
+			size_t sta_info_fixed_len = 0;
+			size_t avail = subelem_defrag_len - 3;
+
+			if (sta_control & BASIC_MLE_STA_CTRL_PRES_STA_MAC)
+				sta_info_fixed_len += 6;
+			if (sta_control & BASIC_MLE_STA_CTRL_PRES_BEACON_INT)
+				sta_info_fixed_len += 2;
+			if (sta_control & BASIC_MLE_STA_CTRL_PRES_TSF_OFFSET)
+				sta_info_fixed_len += 8;
+			if (sta_control & BASIC_MLE_STA_CTRL_PRES_DTIM_INFO)
+				sta_info_fixed_len += 2;
+			if ((sta_control & BASIC_MLE_STA_CTRL_COMPLETE_PROFILE) &&
+			    (sta_control & BASIC_MLE_STA_CTRL_PRES_NSTR_LINK_PAIR)) {
+				if (sta_control & BASIC_MLE_STA_CTRL_NSTR_BITMAP)
+					sta_info_fixed_len += 2;
+				else
+					sta_info_fixed_len += 1;
+			}
+			if (sta_control & BASIC_MLE_STA_CTRL_PRES_BSS_PARAM_COUNT)
+				sta_info_fixed_len += 1;
+			if (sta_control & BASIC_MLE_STA_CTRL_PRES_ENH_CRIT_UPD)
+				sta_info_fixed_len += 1;
+
+			if (avail >= sta_info_fixed_len + 4) {
+				const u8 *sta_prof_body =
+					pos + 5 + sta_info_fixed_len;
+				u16 status_code =
+					WPA_GET_LE16(sta_prof_body + 2);
+
+				wpa_printf(MSG_DEBUG,
+					   "UHR: SMD: link[%u] status_code=%u",
+					   link_id, status_code);
+
+				if (status_code == WLAN_STATUS_SUCCESS)
+					target->accepted_links |= BIT(link_id);
+			} else {
+				wpa_printf(MSG_DEBUG,
+					   "UHR: SMD: link %u STA profile too "
+					   "short for Status Code", link_id);
+			}
+		}
+
 		/* Extract link MAC Addr from STA Info */
 		if (subelem_defrag_len >= 2 + 1 + ETH_ALEN) {
 			u8 sta_info_len = pos[4];
@@ -4130,11 +4342,9 @@ static void smd_handle_prepare_response(struct wpa_supplicant *wpa_s,
 	const u8 *smd_bss_trans;
 	struct wpabuf *mlbuf;
 	const u8 *ie, *ie_end;
-	size_t remaining;
 	const u8 *mle_for_mic = NULL;
 	size_t mle_for_mic_len = 0;
 	const u8 *pos;
-	u8 count;
 
 	wpa_printf(MSG_DEBUG, "SMD: Processing ST Preparation Response (UHR Link Reconfig)");
 	wpa_s->smd_stats.prep_resp_rx++;
@@ -4150,40 +4360,29 @@ static void smd_handle_prepare_response(struct wpa_supplicant *wpa_s,
 		    frame, frame_len);
 	/* Parse IEs first to extract MLD address from ML element */
 	/*
-	 * D1.4 fixed field layout (offsets from frame[0]):
+	 * D2.0 fixed field layout (offsets from frame[0]):
 	 *   [24]    Category
 	 *   [25]    Action
 	 *   [26]    Dialog Token
 	 *   [27]    Type (0=ST Prep, 1=ST Exec)
-	 *   [28-29] Status Code  ← D1.4: new 2-octet fixed field
-	 *   [30]    Count        ← D1.2 had Count at [28]
-	 *   [31+]   Status Duples (Count × 3 bytes)
-	 *   [31 + Count*3 +]  IEs
+	 *   [28-29] Status Code
+	 *   [29+]   IEs (Key Delivery / Basic Multi-Link / SMD BSS Transition
+	 *           Parameters, etc.) — IEEE P802.11bn/D2.0 removes the Count
+	 *           and Reconfiguration Status List fields that D1.4 carried
+	 *           here; per-link accept/reject status now lives exclusively
+	 *           in the Basic Multi-Link element's per-STA-profile Status
+	 *           Code fields.
 	 *
-	 * Minimum to read Count: 24 + Cat(1)+Action(1)+Token(1)+Type(1)+
-	 * StatusCode(2)+Count(1) = 31.  (D1.2 was 29.)
+	 * Minimum length: 24 + Cat(1)+Action(1)+Token(1)+Type(1)+StatusCode(2) = 30.
 	 */
-	if (frame_len < 31) {
+	if (frame_len < 30) {
 		wpa_printf(MSG_ERROR,
-			   "SMD: Frame too short (%zu bytes) for D1.4 action frame",
+			   "SMD: Frame too short (%zu bytes) for D2.0 action frame",
 			   frame_len);
 		return;
 	}
 
-	count = frame[30];           /* D1.4: Count shifted +2 vs D1.2 */
-	pos = frame + 31;            /* D1.4: status list starts at 31 */
-	remaining = frame_len - 31;
-
-	if (remaining < (size_t)(count * 3)) {
-		wpa_printf(MSG_ERROR,
-			   "SMD: Frame too short for %u Status Duples",
-			count);
-		return;
-	}
-
-	/* Skip status duples to get to IEs */
-	pos += count * 3;
-	remaining -= count * 3;
+	pos = frame + 30;
 
 	ie = pos;
 	ie_end = frame + frame_len;
@@ -4231,6 +4430,16 @@ static void smd_handle_prepare_response(struct wpa_supplicant *wpa_s,
 		wpa_s->smd_stats.prep_resp_fail_rejected++;
 		if (target) {
 			target->state = SMD_TARGET_FAILED;
+			if (status_code == WLAN_STATUS_REJECTED_TARGET_AP_UNKNOWN ||
+			    status_code ==
+			    WLAN_STATUS_REJECTED_TARGET_AP_NOT_IN_SAME_SMD) {
+				target->no_retry = true;
+				wpa_printf(MSG_INFO,
+					   "UHR: SMD: target " MACSTR
+					   " marked no-retry (status=%u)",
+					   MAC2STR(target->target_mld_addr),
+					   status_code);
+			}
 		}
 		smd_set_state(wpa_s, SMD_STATE_IDLE);
 		return;
@@ -4573,15 +4782,13 @@ int wpas_smd_request_execute(struct wpa_supplicant *wpa_s,
 	}
 
 
-	if (target->state != SMD_TARGET_PREPARED) {
+	if (target->state < SMD_TARGET_PREPARED) {
 		wpa_printf(MSG_ERROR,
 			   "SMD: Cannot execute - target " MACSTR
-			   " not in PREPARED state (current: %d)",
+			   " is not in PREPARED state (state=%d)",
 			   MAC2STR(bssid), target->state);
-		wpa_s->smd_stats.exec_req_tx_fail_not_prepared++;
 		return -1;
 	}
-
 
 	wpa_printf(MSG_INFO,
 		   "SMD: ST Execution queued for " MACSTR
@@ -4704,9 +4911,9 @@ static void smd_handle_execute_response(struct wpa_supplicant *wpa_s,
 	wpa_printf(MSG_DEBUG, "UHR: SMD: Processing ST Execution Response");
 	wpa_s->smd_stats.exec_resp_rx++;
 
-	/* 24-byte MAC header + 5-byte action header + 1-byte count = 30 min;
-	 * use 29 as the threshold (count field at [28], duples follow). */
-	if (frame_len < 29) {
+	/* 24-byte MAC header + Category(1)+Action(1)+DialogToken(1)+Type(1)+
+	 * StatusCode(2) = 30 bytes minimum (D2.0: no Count field). */
+	if (frame_len < 30) {
 		wpa_printf(MSG_ERROR,
 			   "SMD: Exec Response too short (%zu bytes)", frame_len);
 		return;
@@ -4777,58 +4984,79 @@ static void smd_handle_execute_response(struct wpa_supplicant *wpa_s,
 	if (target->exec_resp_frame)
 		target->exec_resp_frame_len = frame_len;
 
-	/* UHR Link Reconfiguration Response frame:
+	/* UHR Link Reconfiguration Response frame (D2.0):
 	 *
-	 * 29 bytes fixed header (Refer prepare handle)
-	 * Count * 3 bytes status duples
-	 * For type=1 : Group Key Data [length(1 byte) + KDE_blob(length)]
-	 * Variable: Information Elements
+	 * 29 bytes fixed header (Category/Action/DialogToken/Type/StatusCode)
+	 * For type=1: Group Key Data [length(1 byte) + KDE_blob(length)]
+	 * Variable: Information Elements (Basic Multi-Link element carries
+	 * per-link accept/reject status in its per-STA-profile Status Code
+	 * fields — there is no separate status-duple list in D2.0).
 	 */
 	{
 		const u8 *pos, *gkd_start = NULL;
 		size_t remaining, gkd_len = 0;
-		u8 count;
-		int i;
 		struct wpabuf *kde_buf = NULL;
+		struct ieee802_11_elems elems;
 
-		if (frame_len < 31) {
+		if (frame_len < 30) {
 			wpa_printf(MSG_ERROR,
 				   "UHR: SMD: Exec frame too short for header");
 			target->state = SMD_TARGET_FAILED;
 			return;
 		}
 
-		count = frame[30];
-		pos = frame + 31;
-		remaining = frame_len - 31;
-
-		if (remaining < (size_t)(count * 3)) {
-			wpa_printf(MSG_ERROR,
-				   "UHR: SMD: Exec frame too short for %u Status duples",
-				   count);
-			target->state = SMD_TARGET_FAILED;
-			return;
-		}
+		pos = frame + 30;
+		remaining = frame_len - 30;
 
 		target->accepted_links = 0;
-		for (i = 0; i < count; i++) {
-			u8 duple_link_id = pos[0];
-			u16 duple_status = WPA_GET_LE16(pos + 1);
+		if (ieee802_11_parse_elems(pos, remaining, &elems, 1) ==
+		    ParseFailed) {
+			wpa_printf(MSG_WARNING,
+				   "UHR: SMD: Failed to parse Exec Response IEs "
+				   "(non-fatal, continuing without ML status)");
+		} else {
+			const u8 *mle_ptr = NULL;
+			size_t mle_len = 0;
 
-			wpa_printf(MSG_DEBUG,
-				   "UHR: SMD: Exec status duple: link_id=%u status=%d",
-				duple_link_id, duple_status);
+			if (elems.basic_mle && elems.basic_mle_len >= 2) {
+				mle_ptr = elems.basic_mle;
+				mle_len = elems.basic_mle_len;
+			} else if (elems.reconf_mle && elems.reconf_mle_len >= 2) {
+				mle_ptr = elems.reconf_mle;
+				mle_len = elems.reconf_mle_len;
+			}
 
-			if (duple_link_id < MAX_NUM_MLD_LINKS &&
-			    duple_status == WLAN_STATUS_SUCCESS)
-				target->accepted_links |= BIT(duple_link_id);
+			if (!target->exec_path) {
+				wpa_printf(MSG_DEBUG,
+					   "UHR: SMD: Exec Response via current AP, "
+					   "no per-STA profiles to parse");
+			} else if (mle_ptr) {
+				struct wpabuf *mlbuf =
+					ieee802_11_defrag(mle_ptr, mle_len, true);
 
-			pos += 3;
-			remaining -= 3;
+				if (mlbuf) {
+					if (smd_parse_mle(wpa_s, wpabuf_head(mlbuf),
+							  wpabuf_len(mlbuf),
+							  target) < 0)
+						wpa_printf(MSG_WARNING,
+							   "UHR: SMD: Failed to parse "
+							   "Exec Response Multi-Link "
+							   "Element (non-fatal)");
+					wpabuf_free(mlbuf);
+				} else {
+					wpa_printf(MSG_WARNING,
+						   "UHR: SMD: Exec Response ML "
+						   "element defrag failed "
+						   "(non-fatal)");
+				}
+			} else {
+				wpa_printf(MSG_WARNING,
+					   "UHR: SMD: No Multi-Link element in "
+					   "Exec Response (non-fatal)");
+			}
 		}
 
-		/* Reconcile links with accpeted status duples */
-		{
+		if (target->exec_path) {
 			u16 rejected_prepared =
 				target->prepared_links & ~target->accepted_links;
 			u16 rejected_transitioning =
@@ -4857,21 +5085,19 @@ static void smd_handle_execute_response(struct wpa_supplicant *wpa_s,
 		ie = pos;
 		ie_end = frame + frame_len;
 
-		if (target->accepted_links > 0) {
-			kde_buf = smd_parse_key_delivery_element(
-				&pos, &remaining, ie_end);
-			ie = pos;
-			if (!kde_buf) {
-				wpa_printf(MSG_ERROR,
-					   "UHR: SMD: Failed to install group keys for transitioning links 0x%04x",
-					   target->accepted_links);
-				target->state = SMD_TARGET_FAILED;
-				wpa_msg(wpa_s, MSG_INFO,
-					"SMD-EXEC-FAILED " MACSTR
-					" reason=no_group_key_data",
-					MAC2STR(target->target_mld_addr));
-				return;
-			}
+		kde_buf = smd_parse_key_delivery_element(
+			&pos, &remaining, ie_end);
+		ie = pos;
+		if (!kde_buf) {
+			wpa_printf(MSG_ERROR,
+				   "UHR: SMD: Failed to install group keys for transitioning links 0x%04x",
+				   target->accepted_links);
+			target->state = SMD_TARGET_FAILED;
+			wpa_msg(wpa_s, MSG_INFO,
+				"SMD-EXEC-FAILED " MACSTR
+				" reason=no_group_key_data",
+				MAC2STR(target->target_mld_addr));
+			return;
 		}
 
 		/* Install group keys from Key Delivery element */
