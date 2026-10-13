@@ -54,6 +54,9 @@ static void smd_handle_execute_response(struct wpa_supplicant *wpa_s,
 					u16 status_code,
 					enum nl80211_smd_link_transition_state
 					transition_state);
+static void wpas_smd_add_roam_record(struct wpa_supplicant *wpa_s,
+				     const u8 *sap_mld, const u8 *tap_mld,
+				     enum wpa_smd_roam_outcome outcome);
 void smd_handle_uhr_reconfig_response(struct wpa_supplicant *wpa_s,
 				      u8 type,
 				      const u8 *frame, size_t frame_len,
@@ -1380,6 +1383,434 @@ int smd_ctrl_iface_status(struct wpa_supplicant *wpa_s,
 	return pos - buf;
 }
 
+
+/* Append "(reason1,reason2,...)" from a reason ring directly after a counter.
+ * Writes nothing if the ring is empty. */
+#define WPAS_DISP_REASONS(buf, len, buflen, ring, head, str_arr) do {    \
+	int _i, _n = 0;                                                  \
+	int _vals[SMD_REASON_SIZE];                                      \
+	for (_i = 0; _i < SMD_REASON_SIZE; _i++) {                       \
+		int _sl = ((int)(head) - 1 - _i +                       \
+			   SMD_REASON_SIZE * 2) % SMD_REASON_SIZE;       \
+		unsigned int _v = (unsigned int)(ring)[_sl];             \
+		if (_v == 0) break;                                      \
+		_vals[_n++] = (int)_v;                                   \
+	}                                                                \
+	if (_n > 0) {                                                    \
+		int _r = os_snprintf((buf) + (len), (buflen) - (len),   \
+				     "(");                               \
+		if (_r > 0 && (size_t)_r < (buflen) - (len)) (len) += _r;\
+		for (_i = 0; _i < _n; _i++) {                            \
+			unsigned int _v = (unsigned int)_vals[_i];       \
+			const char *_s = (_v < ARRAY_SIZE(str_arr))      \
+					 ? (str_arr)[_v] : "?";          \
+			_r = os_snprintf((buf) + (len), (buflen) - (len),\
+					 "%s%s", _i ? "," : "", _s);    \
+			if (_r > 0 && (size_t)_r < (buflen) - (len))    \
+				(len) += _r;                             \
+		}                                                        \
+		_r = os_snprintf((buf) + (len), (buflen) - (len), ")"); \
+		if (_r > 0 && (size_t)_r < (buflen) - (len)) (len) += _r;\
+	}                                                                \
+} while (0)
+
+/**
+ * __WPAS_DISP_TS - core body to write timestamps of different types
+ * @buf: output buffer
+ * @len: current write offset into buf
+ * @buflen: total size of buf
+ * @ring: ring entry
+ * @ts_expr: expression that evaluates to a single timestamp for index _sl
+ *
+ * Appends "(ts1 ts2 ...)" newest-first directly after a counter value.
+ * Writes nothing when the ring is empty.
+ * Shared print core. ts_expr must evaluate to a u64 for index _sl.
+ */
+#define __WPAS_DISP_TS(buf, len, buflen, ring, ts_expr) do {             \
+	if ((ring).count > 0) {                                          \
+		int _i;                                                  \
+		int _r = os_snprintf((buf) + (len), (buflen) - (len),   \
+				     "(");                               \
+		if (_r > 0 && (size_t)_r < (buflen) - (len)) (len) += _r;\
+		for (_i = 0; _i < (ring).count; _i++) {                  \
+			int _sl = ((int)(ring).head - 1 - _i +           \
+				   SMD_TS_RING_SIZE * 2)                 \
+				  % SMD_TS_RING_SIZE;                    \
+			_r = os_snprintf((buf) + (len), (buflen) - (len),\
+					 "%s%llu", _i ? " " : "",       \
+					 (unsigned long long)(ts_expr)); \
+			if (_r > 0 && (size_t)_r < (buflen) - (len))    \
+				(len) += _r;                             \
+		}                                                        \
+		_r = os_snprintf((buf) + (len), (buflen) - (len), ")"); \
+		if (_r > 0 && (size_t)_r < (buflen) - (len)) (len) += _r;\
+	}                                                                \
+} while (0)
+
+/**
+ * WPAS_DISP_TS - wrapper for timestamps of type &struct smd_ts_ring
+ */
+#define WPAS_DISP_TS(buf, len, buflen, ring) \
+	__WPAS_DISP_TS(buf, len, buflen, ring, (ring).ts[_sl])
+
+/**
+ * WPAS_DISP_TS_DRV - wrapper for timestamps of type &struct nl80211_smd_ts_ring
+ */
+#define WPAS_DISP_TS_DRV(buf, len, buflen, ring) \
+	__WPAS_DISP_TS(buf, len, buflen, ring, SMD_DRVTS2USR((ring).ts[_sl]))
+
+/* Append a fixed string, advancing len. */
+#define WPAS_DISP_W(buf, len, buflen, ...) do {                          \
+	int _r = os_snprintf((buf) + (len), (buflen) - (len),           \
+			     __VA_ARGS__);                               \
+	if (_r > 0 && (size_t)_r < (buflen) - (len)) (len) += _r;      \
+} while (0)
+
+/* Reason string tables — values must match kernel enums in core.h / ieee80211_i.h */
+static const char * const mac_prep_resp_fail_str[] = {
+	"NONE", "NO_TARGET", "ALL_LINKS_REJECTED", "IE_PARSE", "SETUP",
+};
+static const char * const mac_exec_resp_fail_str[] = {
+	"NONE", "NO_TARGET", "NO_LINKS_ACCEPTED", "TRANSITION",
+};
+static const char * const mac_phase_a_fail_str[] = {
+	"NONE", "NO_TARGET_STA", "NO_CURRENT_STA", "DRV",
+};
+static const char * const mac_phase_b_fail_str[] = {
+	"NONE", "NO_TARGET", "DRV",
+};
+static const char * const wpas_smd_roam_outcome_str[] = {
+	"complete",       /* WPAS_SMD_OUTCOME_COMPLETE */
+	"abort",          /* WPAS_SMD_OUTCOME_ABORT */
+	"exec_rejected",  /* WPAS_SMD_OUTCOME_EXEC_REJECTED */
+	"exec_timeout",   /* WPAS_SMD_OUTCOME_EXEC_TIMEOUT */
+	"drain_timeout",  /* WPAS_SMD_OUTCOME_DRAIN_TIMEOUT */
+	"exec_fail",      /* WPAS_SMD_OUTCOME_EXEC_FAIL */
+};
+
+int smd_ctrl_iface_stats(struct wpa_supplicant *wpa_s, char *buf, size_t buflen)
+{
+	struct wpa_smd_sta_stats *s = &wpa_s->smd_stats;
+	size_t len = 0;
+	struct nl80211_smd_stats k = {};
+	int has_kernel = 0;
+
+	if (wpa_s->driver && wpa_s->driver->smd_stats_get)
+		has_kernel = (wpa_s->driver->smd_stats_get(wpa_s->drv_priv,
+							    NULL, &k) == 0);
+
+	/* ---- PREP ---- */
+	WPAS_DISP_W(buf, len, buflen, "[SMD STA - PREP]\n");
+
+	WPAS_DISP_W(buf, len, buflen,
+		    "  [wpas]     prep_req_tx=%u\tprep_req_tx_fail=%u\n",
+		    s->prep_req_tx, s->prep_req_tx_fail);
+
+	if (has_kernel) {
+		WPAS_DISP_W(buf, len, buflen,
+			    "  [mac80211] prep_frame_tx=%u\tprep_frame_build_fail=%u\n",
+			    k.mac_prep_frame_tx, k.mac_prep_frame_build_fail);
+		WPAS_DISP_W(buf, len, buflen,
+			    "  [ath12k]   prep_mgmt_tx_queued=%u"
+			    "  prep_mgmt_wmi_send_ok=%u",
+			    k.drv_prep_mgmt_tx_queued,
+			    k.drv_prep_mgmt_wmi_send_ok);
+		WPAS_DISP_TS_DRV(buf, len, buflen, k.drv_prep_mgmt_wmi_send_ok_ts);
+		WPAS_DISP_W(buf, len, buflen, "\n");
+		WPAS_DISP_W(buf, len, buflen,
+			    "  [ath12k]   prep_mgmt_tx_compl_ack=%u"
+			    "\tprep_mgmt_tx_queue_full=%u"
+			    "  prep_mgmt_wmi_send_fail=%u"
+			    "  prep_mgmt_tx_compl_no_ack=%u\n",
+			    k.drv_prep_mgmt_tx_compl_ack,
+			    k.drv_prep_mgmt_tx_queue_full,
+			    k.drv_prep_mgmt_wmi_send_fail,
+			    k.drv_prep_mgmt_tx_compl_no_ack);
+
+		WPAS_DISP_W(buf, len, buflen, "  [ath12k]   prep_mgmt_resp_rx=%u",
+			    k.drv_prep_mgmt_resp_rx);
+		WPAS_DISP_TS_DRV(buf, len, buflen, k.drv_prep_mgmt_resp_rx_ts);
+		WPAS_DISP_W(buf, len, buflen, "\n");
+		WPAS_DISP_W(buf, len, buflen,
+			    "  [mac80211] prep_resp_rx=%u  prep_resp_ok=%u",
+			    k.mac_prep_resp_rx, k.mac_prep_resp_ok);
+		WPAS_DISP_W(buf, len, buflen,
+			    "\tprep_resp_fail=%u", k.mac_prep_resp_fail);
+		if (k.mac_prep_resp_fail)
+			WPAS_DISP_REASONS(buf, len, buflen,
+					  k.mac_prep_resp_fail_reasons.reasons,
+					  k.mac_prep_resp_fail_reasons.head,
+					  mac_prep_resp_fail_str);
+		WPAS_DISP_W(buf, len, buflen, "\n");
+	}
+
+	WPAS_DISP_W(buf, len, buflen,
+		    "  [wpas]     prep_resp_rx=%u  prep_resp_ok=%u",
+		    s->prep_resp_rx, s->prep_resp_ok);
+	WPAS_DISP_W(buf, len, buflen, "\tprep_resp_fail=%u",
+		    s->prep_resp_fail_no_target + s->prep_resp_fail_rejected);
+	if (s->prep_resp_fail_no_target || s->prep_resp_fail_rejected)
+		WPAS_DISP_W(buf, len, buflen,
+			    "(no_target=%u,rejected=%u)",
+			    s->prep_resp_fail_no_target,
+			    s->prep_resp_fail_rejected);
+	WPAS_DISP_W(buf, len, buflen, "\n");
+
+	if (has_kernel) {
+		WPAS_DISP_W(buf, len, buflen,
+			    "  [ath12k]   prep_rx_tid_park_ok=%u"
+			    "  prep_ext_ctx_transfer_ok=%u"
+			    "\tprep_rx_tid_park_fail=%u"
+			    "  prep_ext_ctx_transfer_fail=%u\n",
+			    k.drv_prep_rx_tid_park_ok,
+			    k.drv_prep_ext_ctx_transfer_ok,
+			    k.drv_prep_rx_tid_park_fail,
+			    k.drv_prep_ext_ctx_transfer_fail);
+		WPAS_DISP_W(buf, len, buflen,
+			    "  [mac80211] prep_activate_ok=%u"
+			    "\tprep_activate_drv_fail=%u\n",
+			    k.mac_prep_activate_ok,
+			    k.mac_prep_activate_drv_fail);
+		WPAS_DISP_W(buf, len, buflen,
+			    "  [prep timer] prep_timeout=%u  timeout=%u\n",
+			    k.mac_prep_timeout, s->prep_exec_timeout);
+	} else {
+		WPAS_DISP_W(buf, len, buflen, "  [prep timer] timeout=%u\n",
+			    s->prep_exec_timeout);
+	}
+
+	/* ---- EXEC ---- */
+	WPAS_DISP_W(buf, len, buflen, "\n[SMD STA - EXEC]\n");
+
+	WPAS_DISP_W(buf, len, buflen,
+		    "  [wpas]     exec_req_tx=%u",
+		    s->exec_req_tx);
+	WPAS_DISP_W(buf, len, buflen,
+		    "\texec_req_tx_fail=%u",
+		    s->exec_req_tx_fail_not_in_prep_list +
+		    s->exec_req_tx_fail_not_prepared +
+		    s->exec_req_tx_fail_alloc +
+		    s->exec_req_tx_fail_drv);
+	if (s->exec_req_tx_fail_not_in_prep_list || s->exec_req_tx_fail_not_prepared ||
+	    s->exec_req_tx_fail_alloc || s->exec_req_tx_fail_drv)
+		WPAS_DISP_W(buf, len, buflen,
+			    "(not_in_prep_list=%u,not_prepared=%u,alloc=%u,drv=%u)",
+			    s->exec_req_tx_fail_not_in_prep_list,
+			    s->exec_req_tx_fail_not_prepared,
+			    s->exec_req_tx_fail_alloc,
+			    s->exec_req_tx_fail_drv);
+	WPAS_DISP_W(buf, len, buflen, "\n");
+
+	if (has_kernel) {
+		WPAS_DISP_W(buf, len, buflen,
+			    "  [mac80211] exec_frame_tx=%u\texec_frame_build_fail=%u\n",
+			    k.mac_exec_frame_tx, k.mac_exec_frame_build_fail);
+
+		WPAS_DISP_W(buf, len, buflen,
+			    "  [ath12k]   exec_mgmt_tx_queued=%u"
+			    "  exec_mgmt_wmi_send_ok=%u",
+			    k.drv_exec_mgmt_tx_queued,
+			    k.drv_exec_mgmt_wmi_send_ok);
+		WPAS_DISP_TS_DRV(buf, len, buflen, k.drv_exec_mgmt_wmi_send_ok_ts);
+		WPAS_DISP_W(buf, len, buflen, "\n");
+		WPAS_DISP_W(buf, len, buflen,
+			    "  [ath12k]   exec_mgmt_tx_compl_ack=%u"
+			    "\texec_mgmt_tx_queue_full=%u"
+			    "  exec_mgmt_wmi_send_fail=%u"
+			    "  exec_mgmt_tx_compl_no_ack=%u\n",
+			    k.drv_exec_mgmt_tx_compl_ack,
+			    k.drv_exec_mgmt_tx_queue_full,
+			    k.drv_exec_mgmt_wmi_send_fail,
+			    k.drv_exec_mgmt_tx_compl_no_ack);
+
+		WPAS_DISP_W(buf, len, buflen, "  [ath12k]   exec_mgmt_resp_rx=%u",
+			    k.drv_exec_mgmt_resp_rx);
+		WPAS_DISP_TS_DRV(buf, len, buflen, k.drv_exec_mgmt_resp_rx_ts);
+		WPAS_DISP_W(buf, len, buflen, "\n");
+		WPAS_DISP_W(buf, len, buflen,
+			    "  [mac80211] exec_resp_rx=%u  exec_resp_ok=%u",
+			    k.mac_exec_resp_rx, k.mac_exec_resp_ok);
+		WPAS_DISP_W(buf, len, buflen,
+			    "\texec_resp_fail=%u", k.mac_exec_resp_fail);
+		if (k.mac_exec_resp_fail)
+			WPAS_DISP_REASONS(buf, len, buflen,
+					  k.mac_exec_resp_fail_reasons.reasons,
+					  k.mac_exec_resp_fail_reasons.head,
+					  mac_exec_resp_fail_str);
+		WPAS_DISP_W(buf, len, buflen, "\n");
+	}
+
+	WPAS_DISP_W(buf, len, buflen,
+		    "  [wpas]     exec_resp_rx=%u  exec_resp_ok=%u",
+		    s->exec_resp_rx, s->exec_resp_ok);
+	WPAS_DISP_W(buf, len, buflen, "\texec_resp_fail=%u",
+		    s->exec_resp_fail_no_target + s->exec_resp_fail_rejected);
+	if (s->exec_resp_fail_no_target || s->exec_resp_fail_rejected)
+		WPAS_DISP_W(buf, len, buflen,
+			    "(no_target=%u,rejected=%u)",
+			    s->exec_resp_fail_no_target,
+			    s->exec_resp_fail_rejected);
+	WPAS_DISP_W(buf, len, buflen, "\n");
+
+	if (has_kernel) {
+		WPAS_DISP_W(buf, len, buflen,
+			    "  [mac80211] exec_phase_a_drv_ok=%u"
+			    "\texec_phase_a_fail=%u",
+			    k.mac_exec_phase_a_drv_ok, k.mac_exec_phase_a_fail);
+		if (k.mac_exec_phase_a_fail)
+			WPAS_DISP_REASONS(buf, len, buflen,
+					  k.mac_exec_phase_a_fail_reasons.reasons,
+					  k.mac_exec_phase_a_fail_reasons.head,
+					  mac_phase_a_fail_str);
+		WPAS_DISP_W(buf, len, buflen, "\n");
+
+		WPAS_DISP_W(buf, len, buflen,
+			    "  [ath12k]   wmi_dl_drain_event_rx=%u",
+			    k.drv_wmi_dl_drain_event_rx);
+		WPAS_DISP_TS_DRV(buf, len, buflen, k.drv_wmi_dl_drain_event_rx_ts);
+		WPAS_DISP_W(buf, len, buflen, "\n");
+
+		WPAS_DISP_W(buf, len, buflen,
+			    "  [mac80211] dl_drain_phase_b_start=%u"
+			    "  dl_drain_phase_b_ok=%u",
+			    k.mac_dl_drain_phase_b_start,
+			    k.mac_dl_drain_phase_b_ok);
+		WPAS_DISP_TS_DRV(buf, len, buflen, k.mac_dl_drain_phase_b_ok_ts);
+		WPAS_DISP_W(buf, len, buflen,
+			    "\tdl_drain_phase_b_fail=%u",
+			    k.mac_dl_drain_phase_b_fail);
+		if (k.mac_dl_drain_phase_b_fail)
+			WPAS_DISP_REASONS(buf, len, buflen,
+					  k.mac_dl_drain_phase_b_fail_reasons.reasons,
+					  k.mac_dl_drain_phase_b_fail_reasons.head,
+					  mac_phase_b_fail_str);
+		WPAS_DISP_W(buf, len, buflen, "\n");
+
+		WPAS_DISP_W(buf, len, buflen,
+			    "  [ath12k]   exec_ext_ctx_activate_ok=%u"
+			    "  exec_rx_tid_restore_ok=%u"
+			    "\texec_rx_tid_restore_fail=%u\n",
+			    k.drv_exec_ext_ctx_activate_ok,
+			    k.drv_exec_rx_tid_restore_ok,
+			    k.drv_exec_rx_tid_restore_fail);
+
+		WPAS_DISP_W(buf, len, buflen,
+			    "  [mac80211] transition_notified=%u\n",
+			    k.mac_transition_notified);
+	}
+
+	/* ---- OUTCOME ---- */
+	WPAS_DISP_W(buf, len, buflen, "\n[SMD STA - OUTCOME]\n");
+
+	WPAS_DISP_W(buf, len, buflen, "  [wpas]     complete=%u",
+		    s->transition_complete);
+	WPAS_DISP_TS(buf, len, buflen, s->transition_complete_ts);
+	WPAS_DISP_W(buf, len, buflen, "  abort=%u", s->transition_abort);
+	WPAS_DISP_TS(buf, len, buflen, s->transition_abort_ts);
+	WPAS_DISP_W(buf, len, buflen, "\n");
+
+	/* ---- ROAM HISTORY ---- */
+	WPAS_DISP_W(buf, len, buflen, "\n[SMD STA - ROAM HISTORY]\n");
+	if (dl_list_empty(&wpa_s->smd_roam_records)) {
+		WPAS_DISP_W(buf, len, buflen, "  (none)\n");
+	} else {
+		int _ri = 0;
+		unsigned int _ring_sz = ARRAY_SIZE(k.drv_prep_mgmt_wmi_send_ok_ts.ts);
+		struct wpa_smd_roam_record *_rec;
+
+		dl_list_for_each_reverse(_rec, &wpa_s->smd_roam_records,
+					 struct wpa_smd_roam_record, list) {
+			const char *_outcome_str =
+				(_rec->outcome < ARRAY_SIZE(wpas_smd_roam_outcome_str))
+				? wpas_smd_roam_outcome_str[_rec->outcome] : "?";
+
+			WPAS_DISP_W(buf, len, buflen,
+				    "  SAP=" MACSTR "  TAP=" MACSTR "  %s",
+				    MAC2STR(_rec->sap_mld_addr),
+				    MAC2STR(_rec->tap_mld_addr),
+				    _outcome_str);
+
+			if (has_kernel &&
+                    k.drv_prep_mgmt_wmi_send_ok_ts.count == s->transition_complete_ts.count &&
+                    k.drv_prep_mgmt_wmi_send_ok_ts.count > (unsigned int)_ri &&
+                    k.drv_prep_mgmt_resp_rx_ts.count > (unsigned int)_ri) {
+				/* prep latency: wmi_send_ok -> resp_rx */
+				if (k.drv_prep_mgmt_wmi_send_ok_ts.count > (unsigned int)_ri &&
+				    k.drv_prep_mgmt_resp_rx_ts.count > (unsigned int)_ri) {
+					unsigned int _s0 = (k.drv_prep_mgmt_wmi_send_ok_ts.head +
+							    _ring_sz - 1 - _ri +
+							    _ring_sz * 2) % _ring_sz;
+					unsigned int _s1 = (k.drv_prep_mgmt_resp_rx_ts.head +
+							    _ring_sz - 1 - _ri +
+							    _ring_sz * 2) % _ring_sz;
+					u64 _t0 = SMD_DRVTS2USR(k.drv_prep_mgmt_wmi_send_ok_ts.ts[_s0]);
+					u64 _t1 = SMD_DRVTS2USR(k.drv_prep_mgmt_resp_rx_ts.ts[_s1]);
+					if (_t1 >= _t0)
+						WPAS_DISP_W(buf, len, buflen,
+							    "  prep_latency_us=%llu",
+							    (unsigned long long)(_t1 - _t0));
+				}
+
+				/* exec latency: wmi_send_ok -> resp_rx */
+				if (k.drv_exec_mgmt_wmi_send_ok_ts.count > (unsigned int)_ri &&
+				    k.drv_exec_mgmt_resp_rx_ts.count > (unsigned int)_ri) {
+					unsigned int _s0 = (k.drv_exec_mgmt_wmi_send_ok_ts.head +
+							    _ring_sz - 1 - _ri +
+							    _ring_sz * 2) % _ring_sz;
+					unsigned int _s1 = (k.drv_exec_mgmt_resp_rx_ts.head +
+							    _ring_sz - 1 - _ri +
+							    _ring_sz * 2) % _ring_sz;
+					u64 _t0 = SMD_DRVTS2USR(k.drv_exec_mgmt_wmi_send_ok_ts.ts[_s0]);
+					u64 _t1 = SMD_DRVTS2USR(k.drv_exec_mgmt_resp_rx_ts.ts[_s1]);
+					if (_t1 >= _t0)
+						WPAS_DISP_W(buf, len, buflen,
+							    "  exec_latency_us=%llu",
+							    (unsigned long long)(_t1 - _t0));
+				}
+
+				/* full roam latency: prep wmi_send_ok -> transition_complete */
+				if (k.drv_prep_mgmt_wmi_send_ok_ts.count > (unsigned int)_ri &&
+				    s->transition_complete_ts.count > (unsigned int)_ri) {
+					unsigned int _s0 = (k.drv_prep_mgmt_wmi_send_ok_ts.head +
+							    _ring_sz - 1 - _ri +
+							    _ring_sz * 2) % _ring_sz;
+					unsigned int _s1 = (s->transition_complete_ts.head +
+							    SMD_TS_RING_SIZE - 1 - _ri +
+							    SMD_TS_RING_SIZE * 2) % SMD_TS_RING_SIZE;
+					u64 _t0 = SMD_DRVTS2USR(k.drv_prep_mgmt_wmi_send_ok_ts.ts[_s0]);
+					u64 _t1 = s->transition_complete_ts.ts[_s1];
+					if (_t1 >= _t0)
+						WPAS_DISP_W(buf, len, buflen,
+							    "  full_roam_latency_us=%llu",
+							    (unsigned long long)(_t1 - _t0));
+				}
+			}
+
+			WPAS_DISP_W(buf, len, buflen, "\n");
+			_ri++;
+		}
+	}
+
+	return (int)len;
+}
+
+int smd_ctrl_iface_stats_reset(struct wpa_supplicant *wpa_s)
+{
+	struct wpa_smd_roam_record *rec, *tmp;
+
+	os_memset(&wpa_s->smd_stats, 0, sizeof(wpa_s->smd_stats));
+	dl_list_for_each_safe(rec, tmp, &wpa_s->smd_roam_records,
+			      struct wpa_smd_roam_record, list) {
+		dl_list_del(&rec->list);
+		os_free(rec);
+	}
+	wpa_s->smd_roam_record_count = 0;
+	/* Reset kernel-side counters */
+	if (wpa_s->driver && wpa_s->driver->smd_stats_reset)
+		wpa_s->driver->smd_stats_reset(wpa_s->drv_priv);
+	return 0;
+}
+
 bool smd_is_bss_fresh(struct wpa_bss *bss)
 {
 	struct os_reltime now, age;
@@ -1713,10 +2144,13 @@ int wpas_smd_request_prepare(struct wpa_supplicant *wpa_s, const u8 *bssid,
 
 	if (ret < 0) {
 		wpa_printf(MSG_ERROR, "SMD: Failed to send SMD Prepare request");
+		wpa_s->smd_stats.prep_req_tx_fail++;
 		target->state = SMD_TARGET_FAILED;
 		wpas_smd_free_prepared_target(target);
 		return -1;
 	}
+
+	wpa_s->smd_stats.prep_req_tx++;
 
 	/* Step 6: Transition to SMD_PREPARING state */
 	smd_set_state(wpa_s, SMD_STATE_TRANSITIONING);
@@ -2003,10 +2437,13 @@ int wpas_uhr_link_reconfig_prep_request(struct wpa_supplicant *wpa_s,
 
 	if (ret < 0) {
 		wpa_printf(MSG_ERROR, "SMD: ST Preparation Request failed");
+		wpa_s->smd_stats.prep_req_tx_fail++;
 		target->state = SMD_TARGET_FAILED;
 		wpas_smd_free_prepared_target(target);
 		return -1;
 	}
+
+	wpa_s->smd_stats.prep_req_tx++;
 
 	smd_set_state(wpa_s, SMD_STATE_TRANSITIONING);
 	wpa_printf(MSG_INFO,
@@ -2078,9 +2515,15 @@ int wpas_uhr_link_reconfig_exec_request(struct wpa_supplicant *wpa_s,
 
 	ret = wpa_drv_uhr_reconfig_req(wpa_s, &params);
 	if (ret < 0) {
+		u8 sap_mld[ETH_ALEN], tap_mld[ETH_ALEN];
+
 		wpa_printf(MSG_ERROR, "SMD: ST Execution Request failed");
+		os_memcpy(sap_mld, wpa_s->ap_mld_addr,      ETH_ALEN);
+		os_memcpy(tap_mld, target->target_mld_addr,  ETH_ALEN);
 		target->state = SMD_TARGET_FAILED;
 		wpas_smd_free_prepared_target(target);
+		wpas_smd_add_roam_record(wpa_s, sap_mld, tap_mld,
+					 WPAS_SMD_OUTCOME_EXEC_FAIL);
 		return -1;
 	}
 
@@ -2627,9 +3070,40 @@ void wpas_uhr_reconfig_resp(struct wpa_supplicant *wpa_s,
 	}
 
 	/* Call the main dispatcher */
-	smd_handle_uhr_reconfig_response(wpa_s, resp->type, resp->frame, 
+	smd_handle_uhr_reconfig_response(wpa_s, resp->type, resp->frame,
 					 resp->frame_len, resp->status_code,
 					 resp->link_transition_state);
+}
+
+static void wpas_smd_add_roam_record(struct wpa_supplicant *wpa_s,
+				     const u8 *sap_mld, const u8 *tap_mld,
+				     enum wpa_smd_roam_outcome outcome)
+{
+	struct wpa_smd_roam_record *rec;
+
+	if (is_zero_ether_addr(tap_mld))
+		return;
+	if (wpa_s->smd_roam_record_count >= WPAS_SMD_ROAM_RECORD_MAX) {
+		struct wpa_smd_roam_record *old =
+			dl_list_first(&wpa_s->smd_roam_records,
+				      struct wpa_smd_roam_record, list);
+        if (!old) {
+            wpa_s->smd_roam_record_count = 0;
+        }
+        else {
+		    dl_list_del(&old->list);
+		    os_free(old);
+		    wpa_s->smd_roam_record_count--;
+        }
+	}
+	rec = os_zalloc(sizeof(*rec));
+	if (!rec)
+		return;
+	os_memcpy(rec->sap_mld_addr, sap_mld, ETH_ALEN);
+	os_memcpy(rec->tap_mld_addr, tap_mld, ETH_ALEN);
+	rec->outcome = outcome;
+	dl_list_add_tail(&wpa_s->smd_roam_records, &rec->list);
+	wpa_s->smd_roam_record_count++;
 }
 
 static void
@@ -2637,6 +3111,11 @@ smd_handle_transition_complete(struct wpa_supplicant *wpa_s,
 			       struct wpa_smd_prepared_target *target)
 {
 	struct wpa_sm *sm = wpa_s->wpa;
+	u8 sap_mld[ETH_ALEN], tap_mld[ETH_ALEN];
+
+	/* Snapshot before wpa_sm_notify_smd_transition_complete may update ap_mld_addr */
+	os_memcpy(sap_mld, wpa_s->ap_mld_addr,      ETH_ALEN);
+	os_memcpy(tap_mld, target->target_mld_addr,  ETH_ALEN);
 	int i;
 
 	/* Cancel the DL drain watchdog — the driver confirmed transition. */
@@ -2839,6 +3318,9 @@ smd_handle_transition_complete(struct wpa_supplicant *wpa_s,
 	wpas_smd_free_prepared_target(target);
 
 	wpa_printf(MSG_INFO, "SMD: BSS transition completed successfully");
+	wpa_s->smd_stats.transition_complete++;
+	WPAS_SMD_TS(transition_complete_ts);
+	wpas_smd_add_roam_record(wpa_s, sap_mld, tap_mld, WPAS_SMD_OUTCOME_COMPLETE);
 }
 
 static void
@@ -2846,6 +3328,11 @@ smd_handle_transition_abort(struct wpa_supplicant *wpa_s,
 			    struct wpa_smd_prepared_target *target,
 			    u16 status_code)
 {
+	u8 sap_mld[ETH_ALEN], tap_mld[ETH_ALEN];
+
+	os_memcpy(sap_mld, wpa_s->ap_mld_addr,      ETH_ALEN);
+	os_memcpy(tap_mld, target->target_mld_addr,  ETH_ALEN);
+
 	wpa_printf(MSG_WARNING,
 		   "SMD: Transition ABORT for target " MACSTR
 		   " status=%u state=%d",
@@ -2873,6 +3360,9 @@ smd_handle_transition_abort(struct wpa_supplicant *wpa_s,
 
 	wpa_printf(MSG_INFO,
 		   "SMD: Reverted to ASSOCIATED after abort");
+	wpa_s->smd_stats.transition_abort++;
+	WPAS_SMD_TS(transition_abort_ts);
+	wpas_smd_add_roam_record(wpa_s, sap_mld, tap_mld, WPAS_SMD_OUTCOME_ABORT);
 }
 
 void smd_handle_transition_status(struct wpa_supplicant *wpa_s,
@@ -3731,6 +4221,7 @@ static void smd_handle_prepare_response(struct wpa_supplicant *wpa_s,
 	u8 count;
 
 	wpa_printf(MSG_DEBUG, "SMD: Processing ST Preparation Response (UHR Link Reconfig)");
+	wpa_s->smd_stats.prep_resp_rx++;
 
 	if (frame_len < 24) {
 		wpa_printf(MSG_ERROR, "SMD: Frame too short (%zu bytes)", frame_len);
@@ -3814,12 +4305,14 @@ static void smd_handle_prepare_response(struct wpa_supplicant *wpa_s,
 		wpa_printf(MSG_ERROR, "UHR: SMD: ST Preparation response from " MACSTR
 			   " but no matching target in Tx path",
 			   MAC2STR(mgmt->sa));
+		wpa_s->smd_stats.prep_resp_fail_no_target++;
 		return;
 	}
 
 	if (status_code != WLAN_STATUS_SUCCESS) {
 		wpa_printf(MSG_WARNING, "UHR: SMD: ST Preparation rejected by " MACSTR
 			   " status=%u", MAC2STR(mgmt->sa), status_code);
+		wpa_s->smd_stats.prep_resp_fail_rejected++;
 		if (target) {
 			target->state = SMD_TARGET_FAILED;
 		}
@@ -4073,6 +4566,7 @@ static void smd_handle_prepare_response(struct wpa_supplicant *wpa_s,
 	}
 
 	target->state = SMD_TARGET_PREPARED;
+	wpa_s->smd_stats.prep_resp_ok++;
 	os_get_reltime(&target->prep_time);
 
 	wpa_printf(MSG_INFO, "UHR: SMD: ST Preparation successful - target=" MACSTR
@@ -4158,8 +4652,20 @@ int wpas_smd_request_execute(struct wpa_supplicant *wpa_s,
 			   "SMD: Cannot execute - target " MACSTR
 			   " not found in prepared list",
 			   MAC2STR(bssid));
+		wpa_s->smd_stats.exec_req_tx_fail_not_in_prep_list++;
 		return -1;
 	}
+
+
+	if (target->state != SMD_TARGET_PREPARED) {
+		wpa_printf(MSG_ERROR,
+			   "SMD: Cannot execute - target " MACSTR
+			   " not in PREPARED state (current: %d)",
+			   MAC2STR(bssid), target->state);
+		wpa_s->smd_stats.exec_req_tx_fail_not_prepared++;
+		return -1;
+	}
+
 
 	wpa_printf(MSG_INFO,
 		   "SMD: ST Execution queued for " MACSTR
@@ -4171,6 +4677,7 @@ int wpas_smd_request_execute(struct wpa_supplicant *wpa_s,
 		wpa_printf(MSG_ERROR,
 			   "SMD: Failed to allocate smd-bss-transition "
 			   "context for EXEC");
+		wpa_s->smd_stats.exec_req_tx_fail_alloc++;
 		return -1;
 	}
 
@@ -4186,8 +4693,11 @@ int wpas_smd_request_execute(struct wpa_supplicant *wpa_s,
 			   "SMD: Failed to queue smd-bss-transition work "
 			   "for EXEC");
 		os_free(ctx);
+		wpa_s->smd_stats.exec_req_tx_fail_drv++;
 		return -1;
 	}
+
+	wpa_s->smd_stats.exec_req_tx++;
 
 	return 0;
 }
@@ -4276,6 +4786,7 @@ static void smd_handle_execute_response(struct wpa_supplicant *wpa_s,
 	const u8 *ie, *ie_end;
 
 	wpa_printf(MSG_DEBUG, "UHR: SMD: Processing ST Execution Response");
+	wpa_s->smd_stats.exec_resp_rx++;
 
 	/* 24-byte MAC header + 5-byte action header + 1-byte count = 30 min;
 	 * use 29 as the threshold (count field at [28], duples follow). */
@@ -4293,6 +4804,7 @@ static void smd_handle_execute_response(struct wpa_supplicant *wpa_s,
 	if (status_code != WLAN_STATUS_SUCCESS) {
 		wpa_printf(MSG_ERROR,
 			   "SMD: ST Exec rejected (status=%u)", status_code);
+		wpa_s->smd_stats.exec_resp_fail_rejected++;
 
 		target = wpas_smd_get_prepared_target(wpa_s, mgmt->sa);
 		if (target) {
@@ -4313,7 +4825,15 @@ static void smd_handle_execute_response(struct wpa_supplicant *wpa_s,
 					       0, 0, NULL, 0, NULL, 0,
 					       KEY_FLAG_PAIRWISE);
 			}
-			wpas_smd_free_prepared_target(target);
+			{
+				u8 sap_mld[ETH_ALEN], tap_mld[ETH_ALEN];
+
+				os_memcpy(sap_mld, wpa_s->ap_mld_addr,      ETH_ALEN);
+				os_memcpy(tap_mld, target->target_mld_addr,  ETH_ALEN);
+				wpas_smd_free_prepared_target(target);
+				wpas_smd_add_roam_record(wpa_s, sap_mld, tap_mld,
+							 WPAS_SMD_OUTCOME_EXEC_REJECTED);
+			}
 		}
 
 		wpa_msg(wpa_s, MSG_INFO, "SMD-EXEC-REJECTED " MACSTR
@@ -4329,12 +4849,14 @@ static void smd_handle_execute_response(struct wpa_supplicant *wpa_s,
 		wpa_printf(MSG_ERROR,
 			   "SMD: Exec Response from unknown target " MACSTR,
 			   MAC2STR(mgmt->sa));
+		wpa_s->smd_stats.exec_resp_fail_no_target++;
 		return;
 	}
 
 	smd_cancel_execution_timeout(wpa_s, target);
 
 	target->state = SMD_TARGET_EXEC_PENDING;
+	wpa_s->smd_stats.exec_resp_ok++;
 	target->exec_resp_frame = os_memdup(frame, frame_len);
 	if (target->exec_resp_frame)
 		target->exec_resp_frame_len = frame_len;
@@ -4578,18 +5100,24 @@ static void smd_execution_timeout_handler(void *eloop_data, void *user_ctx)
 {
 	struct wpa_supplicant *wpa_s = eloop_data;
 	struct wpa_smd_prepared_target *target = user_ctx;
+	u8 sap_mld[ETH_ALEN], tap_mld[ETH_ALEN];
 
 	wpa_printf(MSG_WARNING,
 		   "SMD: ST Exec timeout for " MACSTR
 		   " — deleting derived PTK and context (D1.4 §37.15.9)",
 		   MAC2STR(target->target_mld_addr));
 
+	os_memcpy(sap_mld, wpa_s->ap_mld_addr,      ETH_ALEN);
+	os_memcpy(tap_mld, target->target_mld_addr,  ETH_ALEN);
+
 	smd_set_state(wpa_s, SMD_STATE_ASSOCIATED);
+	wpa_s->smd_stats.prep_exec_timeout++;
 	wpa_msg(wpa_s, MSG_INFO, "SMD-EXEC-TIMEOUT " MACSTR,
 		MAC2STR(target->target_mld_addr));
 
 	/* D1.4 §37.15.9: delete the derived PTK and ST Preparation context. */
 	wpas_smd_free_prepared_target(target);
+	wpas_smd_add_roam_record(wpa_s, sap_mld, tap_mld, WPAS_SMD_OUTCOME_EXEC_TIMEOUT);
 }
 
 /**
@@ -4646,11 +5174,15 @@ static void smd_drain_watchdog_handler(void *eloop_data, void *user_ctx)
 {
 	struct wpa_supplicant *wpa_s = eloop_data;
 	struct wpa_smd_prepared_target *target = user_ctx;
+	u8 sap_mld[ETH_ALEN], tap_mld[ETH_ALEN];
 
 	wpa_printf(MSG_WARNING,
 		   "SMD: DL drain watchdog fired for " MACSTR
 		   " — driver did not send TRANSITION_COMPLETE; reverting",
 		   MAC2STR(target->target_mld_addr));
+
+	os_memcpy(sap_mld, wpa_s->ap_mld_addr,      ETH_ALEN);
+	os_memcpy(tap_mld, target->target_mld_addr,  ETH_ALEN);
 
 	/* SUCCESS exec response was received but the firmware stalled during
 	 * DL drain.  We cannot conclude the STA is at the target AP (D1.4
@@ -4681,6 +5213,7 @@ static void smd_drain_watchdog_handler(void *eloop_data, void *user_ctx)
 	wpa_msg(wpa_s, MSG_INFO, "SMD-DRAIN-TIMEOUT " MACSTR,
 		MAC2STR(target->target_mld_addr));
 	wpas_smd_free_prepared_target(target);
+	wpas_smd_add_roam_record(wpa_s, sap_mld, tap_mld, WPAS_SMD_OUTCOME_DRAIN_TIMEOUT);
 }
 
 static int smd_start_drain_watchdog(struct wpa_supplicant *wpa_s,
