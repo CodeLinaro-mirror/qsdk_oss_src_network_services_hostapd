@@ -6975,6 +6975,16 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		bss->smd.caps.ptk_mode = val;
 		wpa_printf(MSG_DEBUG, "SMD Config: smd_ptk_mode set to %d", val);
+	} else if (os_strcmp(buf, "smd_neighboring_ap_probing") == 0) {
+		int val = atoi(pos);
+		if (val < 0 || val > 1) {
+			wpa_printf(MSG_ERROR,
+				   "Line %d: Invalid smd_neighboring_ap_probing value %d (must be 0 or 1)",
+				   line, val);
+			return 1;
+		}
+		bss->smd.caps.neighboring_ap_probing = val;
+		wpa_printf(MSG_DEBUG, "SMD Config: smd_neighboring_ap_probing set to %d", val);
 	} else if (os_strcmp(buf, "npca_primary_channel") == 0) {
 		int val = atoi(pos);
 		if (val < 0 || val > 255) {
