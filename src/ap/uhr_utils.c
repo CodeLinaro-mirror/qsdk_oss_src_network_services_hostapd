@@ -46,6 +46,12 @@ static void uhr_st_iap_timeout_handler(void *eloop_ctx,
                                              sta->addr);
         }
 
+        /* Distinguish PREP vs EXEC IAP timeout by state */
+        if (ap_info->state == SMD_AP_STATE_ST_EXEC_IAP_PENDING) {
+                sta->smd_info.sap_stats.sap_exec_iap_timeout++;
+        } else {
+                sta->smd_info.sap_stats.sap_prep_iap_timeout++;
+        }
         uhr_remove_ap_from_list(sta, ap_info->ap_mld_addr);
 }
 
@@ -117,6 +123,9 @@ static void uhr_st_prep_timeout_handler(void *eloop_ctx, void *timeout_ctx)
 		   MAC2STR(ap_mld_addr));
 
 	ap_info->uhr_st_prep_timer_ongoing = false;
+
+	sta->smd_info.sap_stats.sap_prep_exec_timeout++;
+	smd_ts_record(&sta->smd_info.sap_stats.sap_prep_exec_timeout_ts, smd_ts_now());
 
 	/* Remove the original entry — frees ap_info */
 	uhr_remove_ap_from_list(sta, ap_mld_addr);
@@ -718,6 +727,9 @@ void uhr_tgt_st_prep_timer_cleanup(void *eloop_ctx, void *timeout_ctx)
                                wpa_printf(MSG_DEBUG,
                                           "UHR Target AP: Removing STA from link %u",
                                           bss->mld_link_id);
+
+                               if (assoc_sta)
+                                       assoc_sta->smd_info.tap_stats.tap_prep_exec_timeout++;
 
                                /* Remove station */
 				ap_sta_disconnect(bss, sta, sta->addr, WLAN_REASON_PREV_AUTH_NOT_VALID);
