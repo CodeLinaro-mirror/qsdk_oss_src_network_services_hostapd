@@ -8445,7 +8445,12 @@ void ieee80211_ml_build_assoc_resp(struct hostapd_data *hapd,
 	if (link->status != WLAN_STATUS_SUCCESS)
 		goto out;
 
-	/* AID is not included */
+#ifdef CONFIG_IEEE80211BN
+	if (sta && sta->smd_info.roam_sta) {
+		WPA_PUT_LE16(p, sta->aid);
+		p += 2;
+	}
+#endif /* CONFIG_IEEE80211BN */
 	p = hostapd_eid_supp_rates(hapd, p);
 	p = hostapd_eid_ext_supp_rates(hapd, p);
 	p = hostapd_eid_rm_enabled_capab(hapd, p, buf + buflen - p);
@@ -12975,6 +12980,21 @@ static void handle_action_cb(struct hostapd_data *hapd,
 		return;
 	}
 #endif /* CONFIG_HS20 */
+
+#ifdef CONFIG_IEEE80211BN
+	/* Frame header (24B) + Category(1B) + Action(1B) + Dialog Token(1B) +
+	 * Type(1B) + Status Code(2B) + Count(1B) */
+	if (len >= IEEE80211_HDRLEN + 7 &&
+	    mgmt->u.action.category == WLAN_ACTION_PROTECTED_UHR &&
+	    mgmt->u.action.u.uhr_link_reconf_resp.action ==
+	    WLAN_PROT_UHR_LINK_RECONFIG_RESPONSE) {
+		hostapd_uhr_link_reconf_resp_tx_status(
+			hapd, sta,
+			mgmt->u.action.u.uhr_link_reconf_resp.dialog_token,
+			ok);
+		return;
+	}
+#endif /* CONFIG_IEEE80211BN */
 
 #ifdef CONFIG_IEEE80211BE
 	/* Frame header (24B) + Category (1B) + Action code (1B) +

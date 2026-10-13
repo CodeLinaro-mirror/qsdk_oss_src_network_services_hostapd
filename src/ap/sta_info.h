@@ -209,10 +209,15 @@ struct smd_roam_ap_info {
 	struct os_reltime uhr_st_prep_start;
 	u8 st_prep_link_id;                /* MLD link that owns the ST prep timer */
 	struct hostapd_data *st_prep_hapd; /* hapd of the prep link (for clone cleanup) */
+	u8 st_prep_dialog_token;           /* dialog token of the pending ST Prep
+					     * Response, used to correlate the TX
+					     * status ack callback that starts the
+					     * preparation timeout */
 
 	/* ST Execute fields  */
 	u32 dl_drain_duration_tu;          /* DL Drain duration in TU */
 	struct os_reltime dl_drain_start;  /* DL Drain start time */
+	u8 exec_req_dl_tid_bitmap;
 	struct sta_info *sta;              /* Back pointer to station */
 	bool smd_ctx_valid;
 	struct sta_smd_ctx_info *smd_ctx;  /* SMD context for this AP MLD transition */

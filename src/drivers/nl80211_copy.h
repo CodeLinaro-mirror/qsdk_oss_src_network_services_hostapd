@@ -3204,16 +3204,11 @@ enum nl80211_commands {
  * @NL80211_ATTR_SMD_UL_SN_NOT_TRANSFERRED: Flag indicating UL sequence number
  *	is not transferred during SMD BSS Transition.
  *
- * @NL80211_ATTR_SMD_STA_LINK_MACS: Nested attribute carrying the per-link
- *      MAC addresses of a non-AP STA MLD for an SMD BSS Transition. Each
- *      nested entry is an attribute containing exactly one
- *      %NL80211_ATTR_SMD_STA_LINK_MAC.  Used in %NL80211_CMD_SMD_ROAM to
- *      specify which STA link MAC addresses are involved in the transition.
- *
- * @NL80211_ATTR_SMD_STA_LINK_MAC: Binary attribute (ETH_ALEN bytes) carrying
- *      the MAC address of a single STA link.  Nested inside
- *      %NL80211_ATTR_SMD_STA_LINK_MACS; each entry identifies one link of the
- *      non-AP MLD participating in the SMD BSS Transition.
+ * @NL80211_ATTR_SMD_STA_LINK_MACS: Array of nested MAC addresses, each the
+ *      MAC address of one non-AP STA MLD link involved in an SMD BSS
+ *      Transition. Each nested entry's payload is the raw 6-byte MAC
+ *      address, matching %NL80211_ATTR_MAC_ADDRS. Used in
+ *      %NL80211_CMD_SMD_ROAM.
  *
  * @NL80211_ATTR_SMD_PREFERRED_TARGET: Flag attribute (NLA_FLAG). When
  *      present in %NL80211_CMD_SMD_ROAM, marks the specified target AP MLD
@@ -3237,6 +3232,12 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_MAPC_MAX_CTDMA_PEERS: u8. Maximum number of Co-TDMA peers
  *	supported by the hardware. 0 = not reported.
+ *
+ * @NL80211_ATTR_SMD_DELETE_TARGET_MLD_ADDRS: Array of nested MAC addresses,
+ *	each a target AP MLD whose ST preparation is being deleted (IEEE
+ *	P802.11bn/D2.0 Reconfiguration Operation Type=6). Each nested entry's
+ *	payload is the raw 6-byte MLD address, matching
+ *	%NL80211_ATTR_MAC_ADDRS.
  *
  * @NL80211_ATTR_SMD_STATS: Binary blob of type &struct nl80211_smd_stats
  *	carrying all SMD roaming debug counters from kernel layers (mac80211 +
@@ -3923,7 +3924,6 @@ enum nl80211_attrs {
 	NL80211_ATTR_SMD_DL_DRAIN_TIME,
 
 	NL80211_ATTR_SMD_STA_LINK_MACS,
-	NL80211_ATTR_SMD_STA_LINK_MAC,
 	NL80211_ATTR_SMD_PREFERRED_TARGET,
 	NL80211_ATTR_SMD_LINK_TRANSITION_STATE,
 	NL80211_ATTR_SMD_CTX,
@@ -3934,6 +3934,7 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_SMD_ROAM_STA,
 
+	NL80211_ATTR_SMD_DELETE_TARGET_MLD_ADDRS,
 	NL80211_ATTR_SMD_STATS,
 
 	/* add attributes here, update the policy in nl80211.c */
