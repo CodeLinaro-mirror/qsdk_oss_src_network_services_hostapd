@@ -26,6 +26,9 @@
 #include "ap/ieee802_11.h"
 #include "config_file.h"
 #include "ap/uhr_utils.h"
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
 
 #if defined(HOSTAPD_EXTERNAL_PLUGIN_TESTAPP) && defined(CONFIG_QCN_EXTN)
 #include "../qcn_extns/hostapd_if_plugin.h"
@@ -512,6 +515,60 @@ static int hostapd_config_read_eap_user(const char *fname,
 
 
 #ifndef CONFIG_NO_RADIUS
+static int hostapd_radius_dns_resolution(struct hostapd_radius_server *nserv,
+					 const char *val)
+{
+	struct addrinfo hints, *res = NULL;
+	char ip[INET6_ADDRSTRLEN];
+
+	memset(&hints, 0, sizeof hints);
+	hints.ai_family = AF_UNSPEC;      /* IPv4 or IPv6 */
+	hints.ai_socktype = SOCK_STREAM;  /* TCP */
+
+	/*
+	 * DNS resolution may return multiple IP addresses for the
+	 * same hostname. Use only the first address returned for
+	 * connection establishment. Alternate addresses are not tried.
+	 */
+	if (getaddrinfo(val, NULL, &hints, &res)) {
+		wpa_printf(MSG_ERROR, "RADIUS: DNS resolution failed for %s",
+			   val);
+		return -1;
+	}
+
+	if (res->ai_family == AF_INET) {
+		struct sockaddr_in *sin = (struct sockaddr_in *)res->ai_addr;
+
+		nserv->addr.af = AF_INET;
+		os_memcpy(&nserv->addr.u.v4, &sin->sin_addr,
+			  sizeof(struct in_addr));
+		inet_ntop(AF_INET, &nserv->addr.u.v4, ip, sizeof(ip));
+	}
+#ifdef CONFIG_IPV6
+	else if (res->ai_family == AF_INET6) {
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)res->ai_addr;
+
+		nserv->addr.af = AF_INET6;
+		os_memcpy(&nserv->addr.u.v6, &sin6->sin6_addr,
+			  sizeof(struct in6_addr));
+		inet_ntop(AF_INET6, &nserv->addr.u.v6, ip, sizeof(ip));
+	}
+#endif /* CONFIG_IPV6 */
+	else {
+		wpa_printf(MSG_ERROR, "RADIUS: Unrecognized address family %d",
+			   res->ai_family);
+		freeaddrinfo(res);
+		return -1;
+	}
+
+	wpa_printf(MSG_DEBUG, "RADIUS: Resolved %s to %s", val, ip);
+
+	freeaddrinfo(res);
+
+	return 0;
+}
+
+
 static int
 hostapd_config_read_radius_addr(struct hostapd_radius_server **server,
 				int *num_server, const char *val, int def_port,
@@ -532,12 +589,19 @@ hostapd_config_read_radius_addr(struct hostapd_radius_server **server,
 
 	os_memset(nserv, 0, sizeof(*nserv));
 	nserv->port = def_port;
+
+	/*
+	 * Radius server address may be configured as an
+	 * IP Address or a hostname.
+	 */
 	ret = hostapd_parse_ip_addr(val, &nserv->addr);
+	if (ret) {
+		ret = hostapd_radius_dns_resolution(nserv, val);
+	}
 	nserv->index = server_index++;
 
 	return ret;
 }
-
 
 
 static int hostapd_parse_das_client(struct hostapd_bss_config *bss, char *val)
@@ -2779,16 +2843,17 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			    &bss->radius->num_auth_servers, pos, 1812,
 			    &bss->radius->auth_server)) {
 			wpa_printf(MSG_ERROR,
-				   "Line %d: invalid IP address '%s'",
+				   "Line %d: invalid server address '%s'",
 				   line, pos);
 			return 1;
 		}
+
 	} else if (bss->radius->auth_server &&
 		   os_strcmp(buf, "auth_server_addr_replace") == 0) {
 		if (hostapd_parse_ip_addr(pos,
 					  &bss->radius->auth_server->addr)) {
 			wpa_printf(MSG_ERROR,
-				   "Line %d: invalid IP address '%s'",
+				   "Line %d: invalid server address address '%s'",
 				   line, pos);
 			return 1;
 		}
@@ -2844,7 +2909,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			    &bss->radius->num_acct_servers, pos, 1813,
 			    &bss->radius->acct_server)) {
 			wpa_printf(MSG_ERROR,
-				   "Line %d: invalid IP address '%s'",
+				   "Line %d: invalid IP address or hostname '%s'",
 				   line, pos);
 			return 1;
 		}
