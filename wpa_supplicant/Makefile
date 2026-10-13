@@ -1074,6 +1074,7 @@ OBJS += ../src/ap/uhr_iap.o
 OBJS += ../src/ap/eth_p_1905.o
 OBJS += ../src/ap/eth_p_1905_iap.o
 OBJS += ../src/ap/mapc.o
+OBJS += ../src/ap/uhr_stats.o
 endif
 OBJS += ../src/ap/dscp_policy.o
 ifdef CONFIG_WNM_AP
