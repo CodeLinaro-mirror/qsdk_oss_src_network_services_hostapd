@@ -256,8 +256,10 @@ skip_chan_width:
 		ucv_object_add(ret, "center_freq1", ucv_int64_new(center_idx));
 	}
 
-	if (!cf1 && !cf2)
+	if (!cf1 && !cf2) {
+		ucv_object_add(ret, "punct_bitmap", ucv_int64_new(punct_bitmap));
 		return ret;
+	}
 
 	switch (hw_mode) {
 		case HOSTAPD_MODE_IEEE80211A:
