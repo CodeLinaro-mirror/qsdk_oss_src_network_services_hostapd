@@ -513,7 +513,6 @@ static u8 * uhr_put_npca_mode_tuple(u8 *pos,
 
 
 size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,
-					 bool skip_post_phase,
 					 bool from_user)
 {
 	const struct hostapd_bss_config *conf = hapd->conf;
@@ -522,16 +521,7 @@ size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,
 	if (!from_user && hapd->uhr_ecu.state == UHR_ECU_IDLE)
 		return 0;
 
-	if (hapd->uhr_ecu.state == UHR_ECU_UPDATE_IND_IN_TIM)
-		return 0;
-
-	/*
-	 * Per 37.30.2.2: during the post-notification phase the element is
-	 * included only in Beacon and Probe Response frames, not in
-	 * (Re)Association Response or Link Reconfiguration Response frames.
-	 */
-	if (skip_post_phase &&
-	    hapd->uhr_ecu.state >= UHR_ECU_POST_ADVANCE_NOTIFY)
+	if (hapd->uhr_ecu.state >= UHR_ECU_POST_ADVANCE_NOTIFY)
 		return 0;
 
 	if (!conf->uhr_params_update.mode_changed)
@@ -552,7 +542,7 @@ size_t hostapd_eid_uhr_params_update_len(struct hostapd_data *hapd,
 
 
 u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
-				   bool skip_post_phase, bool from_user)
+				   bool from_user)
 {
 	const struct hostapd_bss_config *conf = hapd->conf;
 	u8 *pos = eid;
@@ -561,11 +551,7 @@ u8 * hostapd_eid_uhr_params_update(struct hostapd_data *hapd, u8 *eid,
 	if (!from_user && hapd->uhr_ecu.state == UHR_ECU_IDLE)
 		return eid;
 
-	if (hapd->uhr_ecu.state == UHR_ECU_UPDATE_IND_IN_TIM)
-		return eid;
-
-	if (skip_post_phase &&
-	    hapd->uhr_ecu.state >= UHR_ECU_POST_ADVANCE_NOTIFY)
+	if (hapd->uhr_ecu.state >= UHR_ECU_POST_ADVANCE_NOTIFY)
 		return eid;
 
 	if (!conf->uhr_params_update.mode_changed)
@@ -823,7 +809,7 @@ int hostapd_send_uhr_params_critical_update(struct hostapd_data *hapd)
 		   "UPDATE_UHR_FEATURES [%s]: Initiating UHR enhanced critical update",
 		   hapd->conf->iface);
 
-	elem_len = hostapd_eid_uhr_params_update_len(hapd, false, true);
+	elem_len = hostapd_eid_uhr_params_update_len(hapd, true);
 	if (elem_len == 0) {
 		wpa_printf(MSG_ERROR,
 			   "UPDATE_UHR_FEATURES [%s]: UHR Params Update element is empty",
@@ -839,7 +825,7 @@ int hostapd_send_uhr_params_critical_update(struct hostapd_data *hapd)
 		return -1;
 	}
 
-	elem_end = hostapd_eid_uhr_params_update(hapd, elem, false, true);
+	elem_end = hostapd_eid_uhr_params_update(hapd, elem, true);
 	elem_len = elem_end - elem;
 
 	wpa_hexdump(MSG_DEBUG,

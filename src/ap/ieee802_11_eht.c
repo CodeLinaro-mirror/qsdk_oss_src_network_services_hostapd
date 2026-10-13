@@ -2653,7 +2653,7 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 	kde_len = mle_len = 0;
 #ifdef CONFIG_IEEE80211BN
 	if (hostapd_is_uhr_enabled(hapd))
-		len += hostapd_eid_uhr_params_update_len(hapd, true, false);
+		len += hostapd_eid_uhr_params_update_len(hapd, false);
 #endif /* CONFIG_IEEE80211BN */
 
 	if (req_list->links_add_ok) {
@@ -2821,7 +2821,7 @@ hostapd_send_link_reconf_resp(struct hostapd_data *hapd,
 
 #ifdef CONFIG_IEEE80211BN
 	if (hostapd_is_uhr_enabled(hapd))
-		pos = hostapd_eid_uhr_params_update(hapd, pos, true, false);
+		pos = hostapd_eid_uhr_params_update(hapd, pos, false);
 #endif /* CONFIG_IEEE80211BN */
 
 reject_all_req:
