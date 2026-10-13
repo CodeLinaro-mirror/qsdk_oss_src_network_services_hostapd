@@ -22,6 +22,11 @@
 #include "ap_mlme.h"
 #include "ieee802_1x.h"
 
+/* Fixed offset added to the current-AP DL Drain timer so it fires strictly
+ * after any peer/lower-layer drain timers, preventing a race where multiple
+ * layers time out on the same tick. 30 TU = 5 * 1024 us. */
+#define UHR_DL_DRAIN_TIMER_OFFSET_USEC (30 * 1024)
+
 
 u8 * hostapd_eid_uhr_capab(struct hostapd_data *hapd, u8 *eid,
 			    enum ieee80211_op_mode opmode)
@@ -1879,6 +1884,10 @@ void uhr_cur_ap_handle_st_exec_resp(struct hostapd_data *hapd,
 	/* coverity[overflow]: u64 intermediate prevents u32 wrap */
 	if (dl_drain_duration_sec == 0 && dl_drain_duration_usec == 0)
 		dl_drain_duration_sec = 1;
+	/* Add fixed 5 TU offset so this timer fires after the peer/lower-layer
+	 * drain timers, avoiding a race where they expire simultaneously.
+	 * eloop_register_timeout() normalizes usec >= 1000000 internally. */
+	dl_drain_duration_usec += UHR_DL_DRAIN_TIMER_OFFSET_USEC;
 	wpa_printf(MSG_INFO, "UHR ST EXEC: DL Drain started = %u TU (%u.%06u sec)",
 		   dl_drain_time, dl_drain_duration_sec, dl_drain_duration_usec);
 	if (eloop_register_timeout(dl_drain_duration_sec, dl_drain_duration_usec, uhr_dl_drain_timeout, lhapd, target_info) < 0)
