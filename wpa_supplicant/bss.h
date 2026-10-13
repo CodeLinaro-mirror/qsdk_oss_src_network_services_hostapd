@@ -297,6 +297,7 @@ const u8 * wpa_bss_get_rsnxe(struct wpa_supplicant *wpa_s,
 			     const struct wpa_bss *bss, struct wpa_ssid *ssid,
 			     bool mlo);
 const u8 * wpa_bss_get_ie_pos(const struct wpa_bss *bss, u8 ie, u8 idx);
+const u8 * wpa_bss_get_ie_beacon_pos(const struct wpa_bss *bss, u8 ie, u8 idx);
 u8 wpa_bss_get_mbssid_idx(const struct wpa_bss *bss);
 s8 wpa_get_hw_idx_by_freq(struct wpa_supplicant *wpa_s, int partner_freq);
 #endif /* BSS_H */

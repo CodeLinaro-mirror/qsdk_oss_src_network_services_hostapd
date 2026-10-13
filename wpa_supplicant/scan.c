@@ -4534,7 +4534,12 @@ static bool wpa_bss_update_scan_rnr_res(struct wpa_supplicant *wpa_s,
 	 * from rnr ie must be reflected in wpa_bss_update_scan_rnr_res API as
 	 * it uses similar logic for WAR
 	 */
-	while ((rnr_ie = wpa_bss_get_ie_pos(bss, WLAN_EID_REDUCED_NEIGHBOR_REPORT, i++))) {
+	/*
+	 * Prefer Beacon IEs for RNR since they may contain more recent
+	 * information than the primary IE buffer.
+	 */
+	while ((rnr_ie = wpa_bss_get_ie_beacon_pos(bss,
+                                                   WLAN_EID_REDUCED_NEIGHBOR_REPORT, i++))) {
 		rnr_ie_len = rnr_ie[1];
 		pos = rnr_ie + 2;
 
