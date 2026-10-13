@@ -1292,6 +1292,44 @@ static bool wpa_scan_res_ok(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 			    bool debug_print, bool link);
 
 
+static bool wpas_bss_matches_configured_bssid(const struct wpa_bss *bss,
+					       const u8 *bssid)
+{
+	u8 link_id;
+
+	if (ether_addr_equal(bss->bssid, bssid)) {
+		wpa_printf(MSG_DEBUG,
+			   "BSSID match: configured=" MACSTR " candidate=" MACSTR,
+			   MAC2STR(bssid), MAC2STR(bss->bssid));
+		return true;
+	}
+
+	if (ether_addr_equal(bss->mld_addr, bssid)) {
+		wpa_printf(MSG_DEBUG,
+			   "BSSID match: configured=" MACSTR " AP MLD=" MACSTR
+			   " candidate=" MACSTR,
+			   MAC2STR(bssid), MAC2STR(bss->mld_addr),
+			   MAC2STR(bss->bssid));
+		return true;
+	}
+
+	for_each_link(bss->valid_links, link_id) {
+		if (ether_addr_equal(bss->mld_links[link_id].bssid, bssid)) {
+			wpa_printf(MSG_DEBUG,
+				   "BSSID match: configured=" MACSTR
+				   " affiliated link=%u bssid=" MACSTR
+				   " candidate=" MACSTR " AP MLD=" MACSTR,
+				   MAC2STR(bssid), link_id,
+				   MAC2STR(bss->mld_links[link_id].bssid),
+				   MAC2STR(bss->bssid), MAC2STR(bss->mld_addr));
+			return true;
+		}
+	}
+
+	return false;
+}
+
+
 #ifdef CONFIG_SAE_PK
 static bool sae_pk_acceptable_bss_with_pk(struct wpa_supplicant *wpa_s,
 					  struct wpa_bss *orig_bss,
@@ -1344,6 +1382,7 @@ static bool wpa_scan_res_ok(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 	enum sae_pwe sae_pwe;
 #endif /* CONFIG_SAE */
 	const u8 *ie;
+	bool bssid_match = false;
 
 	ie = wpa_bss_get_vendor_ie(bss, WPA_IE_VENDOR_TYPE);
 	wpa = ie && ie[1];
@@ -1416,8 +1455,8 @@ static bool wpa_scan_res_ok(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 	}
 #endif /* CONFIG_WPS */
 
-	if (ssid->bssid_set && ssid->ssid_len == 0 &&
-	    ether_addr_equal(bss->bssid, ssid->bssid))
+	bssid_match = wpas_bss_matches_configured_bssid(bss, ssid->bssid);
+	if (ssid->bssid_set && ssid->ssid_len == 0 && bssid_match)
 		check_ssid = false;
 
 	if (check_ssid &&
@@ -1428,8 +1467,7 @@ static bool wpa_scan_res_ok(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid,
 		return false;
 	}
 
-	if (!link && ssid->bssid_set &&
-	    !ether_addr_equal(bss->bssid, ssid->bssid)) {
+	if (!link && ssid->bssid_set && !bssid_match) {
 		if (debug_print)
 			wpa_dbg(wpa_s, MSG_DEBUG, "   skip - BSSID mismatch");
 		return false;
