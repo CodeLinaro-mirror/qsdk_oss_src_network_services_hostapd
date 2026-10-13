@@ -4526,6 +4526,10 @@ enum qca_wlan_vendor_attr_config {
 	 * 1 = enable, 0 = disable (default).
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_DIAGNOSTIC_STA_VAP = 156,
+	/* u8 attribute indicating that the peer advertised a valid QCN IE.
+	 * Requires QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_MAC in AP mode.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_QCN_NODE = 157,
 	/*
 	 * QCA_WLAN_VENDOR_ATTR_CONFIG_NON_BEACON_BSS - u8
 	 * When set to 1, marks this VAP as non-beaconing. The driver skips
