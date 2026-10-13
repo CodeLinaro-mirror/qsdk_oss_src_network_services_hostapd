@@ -4883,6 +4883,10 @@ enum qca_wlan_vendor_attr_config {
 	 * start_ap.
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_BOOTUP_CAC_FEATURE = 158,
+	/* u8 attribute indicating that the peer advertised a valid QCN IE.
+	 * Requires QCA_WLAN_VENDOR_ATTR_CONFIG_PEER_MAC in AP mode.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_QCN_NODE = 159,
 
 
 	/* keep last */
