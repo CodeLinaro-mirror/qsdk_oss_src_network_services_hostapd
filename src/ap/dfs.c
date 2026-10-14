@@ -4097,6 +4097,11 @@ int hostapd_dfs_complete_cac(struct hostapd_iface *iface, int success, int freq,
 #ifdef CONFIG_QCN_EXTN
 					hostapd_cleanup_cs_params(iface->bss[0]);
 #endif
+					if (hostapd_check_reenable_bss(
+						    iface, REENABLE_CAC))
+						hostapd_enable_pending_bss(
+							iface, REENABLE_CAC, true);
+
 					hostapd_set_state(iface, HAPD_IFACE_ENABLED);
 					wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, AP_EVENT_ENABLED);
 					iface->cac_type = 0;
