@@ -543,9 +543,13 @@ struct rrm_data {
 	u8 noise_hist_token;
 	u8 noise_hist_op_class;
 	u8 noise_hist_channel;
+	u16 noise_hist_rand_interval;
 	u16 noise_hist_duration;
 	s8 noise_hist_anpi;
 	int noise_hist_req_freq;  /* Requested frequency from measurement request */
+	unsigned int noise_hist_offchannel:1;
+	unsigned int noise_hist_wait_roc:1;
+	unsigned int noise_hist_wait_cancel:1;
 
 	/* Requested frequency derived from Beacon Request operating class/channel */
 	unsigned int req_freq;

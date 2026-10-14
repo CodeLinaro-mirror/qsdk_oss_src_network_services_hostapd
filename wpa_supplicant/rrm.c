@@ -30,6 +30,7 @@ static int wpas_rrm_handle_channel_load_req(struct wpa_supplicant *wpa_s,
 					    const struct rrm_measurement_request_element *req,
 					    struct wpabuf **buf);
 static void wpas_rrm_noise_histogram_timeout(void *eloop_ctx, void *timeout_ctx);
+static void wpas_rrm_send_noise_histogram_report(struct wpa_supplicant *wpa_s);
 static int wpas_rrm_handle_noise_histogram_req(struct wpa_supplicant *wpa_s,
 					       const struct rrm_measurement_request_element *req,
 					       struct wpabuf **buf);
@@ -81,7 +82,14 @@ void wpas_rrm_reset(struct wpa_supplicant *wpa_s)
 	wpa_s->rrm.chan_load_baseline_valid = 0;
 	wpa_s->rrm.chan_load_final_valid = 0;
 	eloop_cancel_timeout(wpas_rrm_noise_histogram_timeout, wpa_s, NULL);
+	if (wpa_s->rrm.noise_hist_offchannel &&
+	    (wpa_s->rrm.noise_hist_wait_roc ||
+	     wpa_s->rrm.noise_hist_wait_cancel))
+		wpa_drv_cancel_remain_on_channel(wpa_s);
 	wpa_s->rrm.noise_hist_token = 0;
+	wpa_s->rrm.noise_hist_offchannel = 0;
+	wpa_s->rrm.noise_hist_wait_roc = 0;
+	wpa_s->rrm.noise_hist_wait_cancel = 0;
 }
 
 
@@ -1871,7 +1879,7 @@ void wpas_rrm_handle_survey_results(struct wpa_supplicant *wpa_s,
 			survey->freq == (rrm->chan_load_offchannel ?
 					  rrm->chan_load_req_freq : wpa_s->assoc_freq);
 		bool noise_survey = rrm->noise_hist_token &&
-			survey->freq == wpa_s->assoc_freq;
+			survey->freq == rrm->noise_hist_req_freq;
 
 		if (!channel_load_survey && !noise_survey)
 			continue;
@@ -1949,23 +1957,44 @@ void wpas_rrm_handle_remain_on_channel(struct wpa_supplicant *wpa_s,
 {
 	struct rrm_data *rrm = &wpa_s->rrm;
 
-	if (!rrm->chan_load_token || !rrm->chan_load_offchannel ||
-	    !rrm->chan_load_wait_roc || freq != (unsigned int) rrm->chan_load_req_freq)
-		return;
-
-	wpa_printf(MSG_DEBUG,
-		   "RRM: Channel Load: entered measurement channel %u", freq);
-	rrm->chan_load_wait_roc = 0;
-	rrm->chan_load_collect_baseline = 1;
-	if (wpa_drv_get_survey(wpa_s, rrm->chan_load_req_freq) < 0) {
+	/* Handle Channel Load ROC */
+	if (rrm->chan_load_token && rrm->chan_load_offchannel &&
+	    rrm->chan_load_wait_roc && freq == (unsigned int) rrm->chan_load_req_freq) {
 		wpa_printf(MSG_DEBUG,
-			   "RRM: Channel Load: failed to get baseline survey");
-		rrm->chan_load_collect_baseline = 0;
-		rrm->chan_load_wait_cancel = 1;
-		if (wpa_drv_cancel_remain_on_channel(wpa_s) < 0) {
-			rrm->chan_load_wait_cancel = 0;
-			wpas_rrm_send_channel_load_report(wpa_s);
+			   "RRM: Channel Load: entered measurement channel %u", freq);
+		rrm->chan_load_wait_roc = 0;
+		rrm->chan_load_collect_baseline = 1;
+		if (wpa_drv_get_survey(wpa_s, rrm->chan_load_req_freq) < 0) {
+			wpa_printf(MSG_DEBUG,
+				   "RRM: Channel Load: failed to get baseline survey");
+			rrm->chan_load_collect_baseline = 0;
+			rrm->chan_load_wait_cancel = 1;
+			if (wpa_drv_cancel_remain_on_channel(wpa_s) < 0) {
+				rrm->chan_load_wait_cancel = 0;
+				wpas_rrm_send_channel_load_report(wpa_s);
+			}
 		}
+		return;
+	}
+
+	/* Handle Noise Histogram ROC */
+	if (rrm->noise_hist_token && rrm->noise_hist_offchannel &&
+	    rrm->noise_hist_wait_roc && freq == (unsigned int) rrm->noise_hist_req_freq) {
+		u32 interval_usec;
+		u32 _rand;
+
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Noise Histogram: entered measurement channel %u", freq);
+		rrm->noise_hist_wait_roc = 0;
+
+		/* Start the measurement timer */
+		if (os_get_random((u8 *) &_rand, sizeof(_rand)) < 0)
+			_rand = os_random();
+		interval_usec = (_rand % (rrm->noise_hist_rand_interval + 1)) * 1024;
+
+		/* duration is in TUs (1024 us) */
+		eloop_register_timeout(0, interval_usec + (u32) rrm->noise_hist_duration * 1024,
+				       wpas_rrm_noise_histogram_timeout, wpa_s, NULL);
 	}
 }
 
@@ -1975,13 +2004,22 @@ void wpas_rrm_handle_cancel_remain_on_channel(struct wpa_supplicant *wpa_s,
 {
 	struct rrm_data *rrm = &wpa_s->rrm;
 
-	if (!rrm->chan_load_token || !rrm->chan_load_offchannel ||
-	    !rrm->chan_load_wait_cancel || freq != (unsigned int) rrm->chan_load_req_freq)
+	/* Handle Channel Load ROC cancellation */
+	if (rrm->chan_load_token && rrm->chan_load_offchannel &&
+	    rrm->chan_load_wait_cancel && freq == (unsigned int) rrm->chan_load_req_freq) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Channel Load: returned from measurement channel %u", freq);
+		wpas_rrm_send_channel_load_report(wpa_s);
 		return;
+	}
 
-	wpa_printf(MSG_DEBUG,
-		   "RRM: Channel Load: returned from measurement channel %u", freq);
-	wpas_rrm_send_channel_load_report(wpa_s);
+	/* Handle Noise Histogram ROC cancellation */
+	if (rrm->noise_hist_token && rrm->noise_hist_offchannel &&
+	    rrm->noise_hist_wait_cancel && freq == (unsigned int) rrm->noise_hist_req_freq) {
+		wpa_printf(MSG_DEBUG,
+			   "RRM: Noise Histogram: returned from measurement channel %u", freq);
+		wpas_rrm_send_noise_histogram_report(wpa_s);
+	}
 }
 
 
@@ -2139,20 +2177,40 @@ static void wpas_rrm_noise_histogram_timeout(void *eloop_ctx, void *timeout_ctx)
 {
 	struct wpa_supplicant *wpa_s = eloop_ctx;
 	struct rrm_data *rrm = &wpa_s->rrm;
-	struct wpabuf *buf = NULL;
-	u8 report[22]; /* op_class(1)+chan(1)+start_time(8)+duration(2)+
-			* antenna_id(1)+anpi(1)+ipi[0..7](8) = 22 bytes */
+
+	if (rrm->noise_hist_offchannel) {
+		/* Get final survey data on off-channel */
+		wpa_drv_get_survey(wpa_s, rrm->noise_hist_req_freq);
+
+		rrm->noise_hist_wait_cancel = 1;
+		if (wpa_drv_cancel_remain_on_channel(wpa_s) < 0) {
+			wpa_printf(MSG_DEBUG,
+				   "RRM: Noise Histogram: failed to cancel off-channel operation");
+			rrm->noise_hist_wait_cancel = 0;
+			wpas_rrm_send_noise_histogram_report(wpa_s);
+		}
+		return;
+	}
+
+	wpa_drv_get_survey(wpa_s, rrm->noise_hist_req_freq);
 
 	wpa_printf(MSG_DEBUG,
 		   "RRM: Noise Histogram measurement window expired, sending report");
+	wpas_rrm_send_noise_histogram_report(wpa_s);
+}
+
+
+static void wpas_rrm_send_noise_histogram_report(struct wpa_supplicant *wpa_s)
+{
+	struct rrm_data *rrm = &wpa_s->rrm;
+	struct wpabuf *buf = NULL;
+	u8 report[22]; /* op_class(1)+chan(1)+start_time(8)+duration(2)+
+			* antenna_id(1)+anpi(1)+ipi[0..7](8) = 22 bytes */
 
 	if (!rrm->noise_hist_token) {
 		wpa_printf(MSG_DEBUG, "RRM: No pending Noise Histogram measurement");
 		return;
 	}
-
-	/* End-of-window survey poll to get ANPI */
-	wpa_drv_get_survey(wpa_s, wpa_s->rrm.noise_hist_req_freq);
 
 	/* Build Noise Histogram Report body (IEEE Std 802.11-2020, 9.4.2.22.3) */
 	report[0] = rrm->noise_hist_op_class;
@@ -2182,6 +2240,7 @@ static void wpas_rrm_noise_histogram_timeout(void *eloop_ctx, void *timeout_ctx)
 	}
 
 	rrm->noise_hist_token = 0;
+	rrm->noise_hist_wait_cancel = 0;
 }
 
 
@@ -2215,10 +2274,11 @@ static int wpas_rrm_handle_noise_histogram_req(struct wpa_supplicant *wpa_s,
 
 	/* Convert requested (op_class, channel) to frequency */
 	cur_freq = ieee80211_chan_to_freq(NULL, op_class, channel);
-	if (cur_freq < 0) {
+	if (wpa_s->wpa_state != WPA_COMPLETED || !wpa_s->current_bss ||
+	    cur_freq < 0) {
 		wpa_printf(MSG_DEBUG,
-			   "RRM: Noise Histogram: invalid op_class=%u channel=%u",
-			   op_class, channel);
+			   "RRM: Noise Histogram: invalid requested channel %u (op_class %u)",
+			   channel, op_class);
 		goto incapable;
 	}
 
@@ -2236,13 +2296,64 @@ static int wpas_rrm_handle_noise_histogram_req(struct wpa_supplicant *wpa_s,
 
 	/* Cancel any pending measurement */
 	eloop_cancel_timeout(wpas_rrm_noise_histogram_timeout, wpa_s, NULL);
+	if (rrm->noise_hist_offchannel &&
+	    (rrm->noise_hist_wait_roc || rrm->noise_hist_wait_cancel)) {
+		rrm->noise_hist_offchannel = 0;
+		rrm->noise_hist_wait_roc = 0;
+		rrm->noise_hist_wait_cancel = 0;
+		wpa_drv_cancel_remain_on_channel(wpa_s);
+	}
 
 	rrm->noise_hist_token = req->token;
 	rrm->noise_hist_op_class = op_class;
 	rrm->noise_hist_channel = channel;
+	rrm->noise_hist_rand_interval = rand_interval;
 	rrm->noise_hist_duration = duration;
+	rrm->noise_hist_req_freq = cur_freq;
+	rrm->noise_hist_offchannel = cur_freq != (int) wpa_s->assoc_freq;
+	rrm->noise_hist_wait_roc = 0;
+	rrm->noise_hist_wait_cancel = 0;
 	rrm->noise_hist_anpi = 0;
 
+	if (rrm->noise_hist_offchannel) {
+		unsigned int roc_duration;
+
+		if (wpa_s->off_channel_freq || wpa_s->roc_waiting_drv_freq ||
+		    !wpa_s->driver->remain_on_channel ||
+		    !wpa_s->driver->cancel_remain_on_channel ||
+		    !wpa_s->driver->get_survey) {
+			wpa_printf(MSG_DEBUG,
+				   "RRM: Noise Histogram: off-channel measurement unavailable");
+			rrm->noise_hist_token = 0;
+			goto incapable;
+		}
+
+		/* Include a margin for channel entry and return. */
+		roc_duration = (((u32) rand_interval + duration) * 1024 +
+					999) / 1000 + 1000;
+		if (wpa_s->max_remain_on_chan &&
+		    roc_duration > wpa_s->max_remain_on_chan) {
+			wpa_printf(MSG_DEBUG,
+				   "RRM: Noise Histogram: requested off-channel window %u ms exceeds driver ROC limit %u ms",
+				   roc_duration, wpa_s->max_remain_on_chan);
+			rrm->noise_hist_offchannel = 0;
+			rrm->noise_hist_token = 0;
+			goto incapable;
+		}
+		rrm->noise_hist_wait_roc = 1;
+		if (wpa_drv_remain_on_channel(wpa_s, rrm->noise_hist_req_freq,
+					       roc_duration, NULL) < 0) {
+			wpa_printf(MSG_DEBUG,
+				   "RRM: Noise Histogram: failed to start off-channel operation");
+			rrm->noise_hist_wait_roc = 0;
+			rrm->noise_hist_token = 0;
+			goto incapable;
+		}
+
+		return 1;
+	}
+
+	/* Current channel measurement - start timer immediately */
 	if (os_get_random((u8 *) &_rand, sizeof(_rand)) < 0)
 		_rand = os_random();
 	interval_usec = (_rand % (rand_interval + 1)) * 1024;
