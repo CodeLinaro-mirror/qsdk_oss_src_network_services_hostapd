@@ -394,6 +394,16 @@ struct hostapd_uhr_ecu {
 struct eth_p_1905_ctx;
 #endif /* CONFIG_IEEE80211BN */
 
+/* Transaction Key (TK) storage for testbed negative tests, keyed by peer
+ * MAC address so GET_PREVIOUS_TK can retrieve a key after it has been
+ * superseded by a rekey or a new association. */
+struct tk_record {
+	u8 addr[ETH_ALEN];
+	u8 tk[32];
+	size_t tk_len;
+	struct dl_list list;
+};
+
 /**
  * struct hostapd_data - hostapd per-BSS data structure
  */
@@ -827,6 +837,8 @@ struct hostapd_data {
 	/* Transient guard: set during SET_RTT_RESPONDER_ROLE runtime update to
 	 * suppress duplicate vendor cmd during the triggered beacon rebuild. */
 	bool rtt_role_fw_sent;
+
+	struct dl_list tk_records; /* Transaction Key storage for testbed */
 };
 /* True if hapd has a pending re-enable for any reason (user-disabled,
  * HT-scan deferred, or CAC in progress). */

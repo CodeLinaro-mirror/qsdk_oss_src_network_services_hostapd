@@ -17931,4 +17931,35 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd_probed, u8 *eid, u8 *end,
 	return eid;
 }
 
+
+void hostapd_store_tk(struct hostapd_data *hapd, const u8 *addr,
+		      const u8 *tk, size_t tk_len)
+{
+	struct tk_record *rec, *existing = NULL;
+
+	if (!hapd || !addr || !tk || tk_len == 0 || tk_len > sizeof(rec->tk))
+		return;
+
+	dl_list_for_each(rec, &hapd->tk_records, struct tk_record, list) {
+		if (os_memcmp(rec->addr, addr, ETH_ALEN) == 0) {
+			existing = rec;
+			break;
+		}
+	}
+
+	if (existing) {
+		os_memcpy(existing->tk, tk, tk_len);
+		existing->tk_len = tk_len;
+	} else {
+		rec = os_zalloc(sizeof(*rec));
+		if (!rec)
+			return;
+
+		os_memcpy(rec->addr, addr, ETH_ALEN);
+		os_memcpy(rec->tk, tk, tk_len);
+		rec->tk_len = tk_len;
+		dl_list_add(&hapd->tk_records, &rec->list);
+	}
+}
+
 #endif /* CONFIG_NATIVE_WINDOWS */

@@ -11854,6 +11854,46 @@ static int hostapd_ctrl_iface_get_rtt_responder_role(struct hostapd_data *hapd,
 	return os_snprintf(reply, reply_size, "0x%x\n", role);
 }
 
+static int hostapd_ctrl_iface_get_previous_tk(struct hostapd_data *hapd,
+					      const char *txtaddr,
+					      char *reply, int reply_size)
+{
+	u8 addr[ETH_ALEN];
+	struct tk_record *rec;
+	int reply_len;
+	int i;
+
+	if (hwaddr_aton(txtaddr, addr))
+		return os_snprintf(reply, reply_size, "FAIL-INVALID-MAC\n");
+
+	dl_list_for_each(rec, &hapd->tk_records, struct tk_record, list) {
+		if (os_memcmp(rec->addr, addr, ETH_ALEN) == 0)
+			goto found;
+	}
+
+	return os_snprintf(reply, reply_size, "FAIL\nNot found\n");
+
+found:
+	reply_len = os_snprintf(reply, reply_size, "OK\nTK=");
+	if (reply_len < 0 || reply_len >= reply_size)
+		return -1;
+
+	for (i = 0; i < (int) rec->tk_len; i++) {
+		int res = os_snprintf(reply + reply_len,
+				      reply_size - reply_len,
+				      "%02x", rec->tk[i]);
+		if (res < 0 || res >= reply_size - reply_len)
+			return -1;
+		reply_len += res;
+	}
+	reply_len += os_snprintf(reply + reply_len, reply_size - reply_len,
+				 "\n");
+	if (reply_len < 0 || reply_len >= reply_size)
+		return -1;
+	return reply_len;
+}
+
+
 static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 					      char *buf, char *reply,
 					      int reply_size,
@@ -11977,6 +12017,9 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "DUMP_TK ", 8) == 0) {
 		reply_len = hostapd_ctrl_iface_dump_tk(hapd, buf + 8,
 						       reply, reply_size);
+	} else if (os_strncmp(buf, "GET_PREVIOUS_TK ", 16) == 0) {
+		reply_len = hostapd_ctrl_iface_get_previous_tk(hapd, buf + 16,
+							       reply, reply_size);
 	} else if (os_strncmp(buf, "POLL_STA ", 9) == 0) {
 		if (hostapd_ctrl_iface_poll_sta(hapd, buf + 9))
 			reply_len = -1;

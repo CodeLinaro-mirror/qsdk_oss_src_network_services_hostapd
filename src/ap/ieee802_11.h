@@ -726,4 +726,8 @@ bool hostapd_find_auth_comeback_sta(struct hostapd_data *hapd, const u8 *addr,
 
 u8 * hostapd_add_auth_comeback(struct hostapd_data *hapd, struct sta_info *sta,
 			       u8 *pos, size_t max_len, u16 auth_alg);
+
+void hostapd_store_tk(struct hostapd_data *hapd, const u8 *addr,
+		      const u8 *tk, size_t tk_len);
+
 #endif /* IEEE802_11_H */
