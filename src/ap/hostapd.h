@@ -687,6 +687,8 @@ struct hostapd_data {
 	u8 range_req_token;
 	u8 link_measurement_req_token;
 	u8 chan_load_req_token;
+	u16 chan_load_req_rand_interval;
+	u16 chan_load_req_duration;
 	u8 noise_hist_req_token;
 	unsigned int lci_req_active:1;
 	unsigned int range_req_active:1;

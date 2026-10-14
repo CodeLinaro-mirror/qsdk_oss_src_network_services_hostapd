@@ -506,12 +506,21 @@ struct rrm_data {
 	u8 chan_load_token;
 	u8 chan_load_op_class;
 	u8 chan_load_channel;
+	u16 chan_load_rand_interval;
 	u16 chan_load_duration;
 	u64 chan_load_last_time;
 	u64 chan_load_last_time_busy;
 	u64 chan_load_end_time;
 	u64 chan_load_end_time_busy;
 	struct os_reltime chan_load_start;
+	int chan_load_req_freq;  /* Requested frequency from measurement request */
+	unsigned int chan_load_offchannel:1;
+	unsigned int chan_load_wait_roc:1;
+	unsigned int chan_load_wait_cancel:1;
+	unsigned int chan_load_collect_baseline:1;
+	unsigned int chan_load_collect_final:1;
+	unsigned int chan_load_baseline_valid:1;
+	unsigned int chan_load_final_valid:1;
 
 	/* Noise Histogram measurement state */
 	u8 noise_hist_token;
@@ -519,6 +528,7 @@ struct rrm_data {
 	u8 noise_hist_channel;
 	u16 noise_hist_duration;
 	s8 noise_hist_anpi;
+	int noise_hist_req_freq;  /* Requested frequency from measurement request */
 
 	/* Requested frequency derived from Beacon Request operating class/channel */
 	unsigned int req_freq;
@@ -2407,5 +2417,9 @@ void wpas_rrm_handle_survey_results(struct wpa_supplicant *wpa_s,
 				    struct survey_results *survey_results);
 void wpas_rrm_build_channel_load_report(struct wpa_supplicant *wpa_s,
 					struct wpabuf **buf);
+void wpas_rrm_handle_remain_on_channel(struct wpa_supplicant *wpa_s,
+				       unsigned int freq);
+void wpas_rrm_handle_cancel_remain_on_channel(struct wpa_supplicant *wpa_s,
+					     unsigned int freq);
 
 #endif /* WPA_SUPPLICANT_I_H */
